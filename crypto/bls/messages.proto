@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package bls;
+
+message publicKeyProto {
+    bytes data = 1;
+}
+
+message signatureProto {
+    bytes data = 1;
+}
