@@ -2,10 +2,8 @@ package skipchain
 
 import (
 	"context"
-	fmt "fmt"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
 	"go.dedis.ch/m"
 	"go.dedis.ch/m/blockchain"
 	"go.dedis.ch/m/cosi"
@@ -14,7 +12,7 @@ import (
 	"go.dedis.ch/m/mino"
 )
 
-//go:generate protoc -I ./ --go_out=./ ./messages.proto
+//go:generate protoc -I ./ --proto_path=../../ --go_out=Mblockchain/messages.proto=go.dedis.ch/m/blockchain:. ./messages.proto
 
 // Skipchain implements the Blockchain interface by using collective signatures
 // to create a verifiable chain.
@@ -23,22 +21,31 @@ type Skipchain struct {
 	db           Database
 	signer       crypto.Signer
 	cosi         cosi.CollectiveSigning
+	rpc          mino.RPC
 }
 
 // NewSkipchain returns a new instance of Skipchain.
 func NewSkipchain(m mino.Mino, signer crypto.AggregateSigner, v Validator) (*Skipchain, error) {
 	db := NewInMemoryDatabase()
-	validator := newBlockValidator(v, db)
+	factory := newBlockFactory(signer)
+	validator := newBlockValidator(signer, v, db)
 
 	cosi, err := blscosi.NewBlsCoSi(m, signer, validator)
 	if err != nil {
 		return nil, err
 	}
 
+	rpc, err := m.MakeRPC("skipchain", newHandler(db, factory))
+	if err != nil {
+		return nil, err
+	}
+
 	sc := &Skipchain{
-		blockFactory: blockFactory{},
+		blockFactory: factory,
 		db:           db,
+		signer:       signer,
 		cosi:         cosi,
+		rpc:          rpc,
 	}
 
 	return sc, nil
@@ -47,8 +54,20 @@ func NewSkipchain(m mino.Mino, signer crypto.AggregateSigner, v Validator) (*Ski
 func (s *Skipchain) initChain(roster blockchain.Roster) error {
 	genesis := s.blockFactory.createGenesis(roster)
 
-	err := s.db.Write(genesis)
+	packed, err := genesis.Pack()
 	if err != nil {
+		return err
+	}
+
+	msg := &PropagateGenesis{
+		Genesis: packed.(*blockchain.Block),
+	}
+
+	closing, errs := s.rpc.Call(msg, roster.GetAddresses()...)
+	select {
+	case <-closing:
+	case err := <-errs:
+		m.Logger.Err(err).Msg("couldn't propagate genesis block")
 		return err
 	}
 
@@ -72,45 +91,27 @@ func (s *Skipchain) Store(roster blockchain.Roster, data proto.Message) error {
 		return err
 	}
 
-	blockproto, err := block.(SkipBlock).Pack()
+	fl, err := s.pbft(block.(SkipBlock))
 	if err != nil {
 		return err
 	}
 
-	fl, err := s.pbft(blockproto.(*blockchain.Block))
-	if err != nil {
-		return err
-	}
-
-	verifier := s.cosi.MakeVerifier()
-	commitSig, err := verifier.GetSignatureFactory().FromAny(fl.GetCommit())
-	if err != nil {
-		return err
-	}
-
-	m.Logger.Info().Msgf("Forward Link Commit: %x", commitSig)
+	m.Logger.Info().Msgf("Forward Link Commit: %x", fl.Commit)
 
 	return nil
 }
 
-func (s *Skipchain) pbft(block *blockchain.Block) (*ForwardLink, error) {
+func (s *Skipchain) pbft(block SkipBlock) (*ForwardLink, error) {
 	// 1. Prepare phase
 	// The block is sent for validation and participants will return a signature
 	// to confirm they agree the proposal is valid.
 	// Signature = Sign(FROM_HASH + TO_HASH)
-	sig, err := s.cosi.Sign(block.GetRoster(), block)
+	blockproto, err := block.Pack()
 	if err != nil {
 		return nil, err
 	}
 
-	m.Logger.Info().Str("hex", fmt.Sprintf("%x", sig)).Msg("Signature")
-
-	sigproto, err := sig.Pack()
-	if err != nil {
-		return nil, err
-	}
-
-	packed, err := ptypes.MarshalAny(sigproto)
+	sig, err := s.cosi.Sign(block.Roster, blockproto)
 	if err != nil {
 		return nil, err
 	}
@@ -121,27 +122,22 @@ func (s *Skipchain) pbft(block *blockchain.Block) (*ForwardLink, error) {
 	// that the prepare signature is correct.
 	// Signature = Sign(PREPARE_SIG)
 	fl := &ForwardLink{
-		From:    nil,
-		To:      nil,
-		Prepare: packed,
+		From:    block.BackLinks[0],
+		To:      block.hash,
+		Prepare: sig,
 	}
 
-	sig, err = s.cosi.Sign(block.GetRoster(), fl)
+	packed, err := fl.Pack()
 	if err != nil {
 		return nil, err
 	}
 
-	sigproto, err = sig.Pack()
+	sig, err = s.cosi.Sign(block.Roster, packed)
 	if err != nil {
 		return nil, err
 	}
 
-	packed, err = ptypes.MarshalAny(sigproto)
-	if err != nil {
-		return nil, err
-	}
-
-	fl.Commit = packed
+	fl.Commit = sig
 
 	return fl, nil
 }

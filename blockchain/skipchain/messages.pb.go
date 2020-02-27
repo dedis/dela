@@ -7,6 +7,7 @@ import (
 	fmt "fmt"
 	proto "github.com/golang/protobuf/proto"
 	any "github.com/golang/protobuf/ptypes/any"
+	blockchain "go.dedis.ch/m/blockchain"
 	math "math"
 )
 
@@ -21,7 +22,7 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.ProtoPackageIsVersion3 // please upgrade the proto package
 
-type ForwardLink struct {
+type ForwardLinkProto struct {
 	From                 []byte   `protobuf:"bytes,1,opt,name=from,proto3" json:"from,omitempty"`
 	To                   []byte   `protobuf:"bytes,2,opt,name=to,proto3" json:"to,omitempty"`
 	Prepare              *any.Any `protobuf:"bytes,3,opt,name=prepare,proto3" json:"prepare,omitempty"`
@@ -31,173 +32,215 @@ type ForwardLink struct {
 	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *ForwardLink) Reset()         { *m = ForwardLink{} }
-func (m *ForwardLink) String() string { return proto.CompactTextString(m) }
-func (*ForwardLink) ProtoMessage()    {}
-func (*ForwardLink) Descriptor() ([]byte, []int) {
+func (m *ForwardLinkProto) Reset()         { *m = ForwardLinkProto{} }
+func (m *ForwardLinkProto) String() string { return proto.CompactTextString(m) }
+func (*ForwardLinkProto) ProtoMessage()    {}
+func (*ForwardLinkProto) Descriptor() ([]byte, []int) {
 	return fileDescriptor_4dc296cbfe5ffcd5, []int{0}
 }
 
-func (m *ForwardLink) XXX_Unmarshal(b []byte) error {
-	return xxx_messageInfo_ForwardLink.Unmarshal(m, b)
+func (m *ForwardLinkProto) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_ForwardLinkProto.Unmarshal(m, b)
 }
-func (m *ForwardLink) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	return xxx_messageInfo_ForwardLink.Marshal(b, m, deterministic)
+func (m *ForwardLinkProto) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_ForwardLinkProto.Marshal(b, m, deterministic)
 }
-func (m *ForwardLink) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_ForwardLink.Merge(m, src)
+func (m *ForwardLinkProto) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ForwardLinkProto.Merge(m, src)
 }
-func (m *ForwardLink) XXX_Size() int {
-	return xxx_messageInfo_ForwardLink.Size(m)
+func (m *ForwardLinkProto) XXX_Size() int {
+	return xxx_messageInfo_ForwardLinkProto.Size(m)
 }
-func (m *ForwardLink) XXX_DiscardUnknown() {
-	xxx_messageInfo_ForwardLink.DiscardUnknown(m)
+func (m *ForwardLinkProto) XXX_DiscardUnknown() {
+	xxx_messageInfo_ForwardLinkProto.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_ForwardLink proto.InternalMessageInfo
+var xxx_messageInfo_ForwardLinkProto proto.InternalMessageInfo
 
-func (m *ForwardLink) GetFrom() []byte {
+func (m *ForwardLinkProto) GetFrom() []byte {
 	if m != nil {
 		return m.From
 	}
 	return nil
 }
 
-func (m *ForwardLink) GetTo() []byte {
+func (m *ForwardLinkProto) GetTo() []byte {
 	if m != nil {
 		return m.To
 	}
 	return nil
 }
 
-func (m *ForwardLink) GetPrepare() *any.Any {
+func (m *ForwardLinkProto) GetPrepare() *any.Any {
 	if m != nil {
 		return m.Prepare
 	}
 	return nil
 }
 
-func (m *ForwardLink) GetCommit() *any.Any {
+func (m *ForwardLinkProto) GetCommit() *any.Any {
 	if m != nil {
 		return m.Commit
 	}
 	return nil
 }
 
-type SkipBlockHeader struct {
-	Height               uint64         `protobuf:"varint,1,opt,name=height,proto3" json:"height,omitempty"`
-	BaseHeight           uint64         `protobuf:"varint,2,opt,name=baseHeight,proto3" json:"baseHeight,omitempty"`
-	MaximumHeight        uint64         `protobuf:"varint,3,opt,name=maximumHeight,proto3" json:"maximumHeight,omitempty"`
-	GenesisID            []byte         `protobuf:"bytes,4,opt,name=genesisID,proto3" json:"genesisID,omitempty"`
-	DataHash             []byte         `protobuf:"bytes,5,opt,name=dataHash,proto3" json:"dataHash,omitempty"`
-	Backlinks            [][]byte       `protobuf:"bytes,6,rep,name=backlinks,proto3" json:"backlinks,omitempty"`
-	Forwardlinks         []*ForwardLink `protobuf:"bytes,7,rep,name=forwardlinks,proto3" json:"forwardlinks,omitempty"`
-	XXX_NoUnkeyedLiteral struct{}       `json:"-"`
-	XXX_unrecognized     []byte         `json:"-"`
-	XXX_sizecache        int32          `json:"-"`
+type BlockHeaderProto struct {
+	Height               uint32              `protobuf:"varint,1,opt,name=height,proto3" json:"height,omitempty"`
+	BaseHeight           uint32              `protobuf:"varint,2,opt,name=baseHeight,proto3" json:"baseHeight,omitempty"`
+	MaximumHeight        uint32              `protobuf:"varint,3,opt,name=maximumHeight,proto3" json:"maximumHeight,omitempty"`
+	GenesisID            []byte              `protobuf:"bytes,4,opt,name=genesisID,proto3" json:"genesisID,omitempty"`
+	DataHash             []byte              `protobuf:"bytes,5,opt,name=dataHash,proto3" json:"dataHash,omitempty"`
+	Backlinks            [][]byte            `protobuf:"bytes,6,rep,name=backlinks,proto3" json:"backlinks,omitempty"`
+	Forwardlinks         []*ForwardLinkProto `protobuf:"bytes,7,rep,name=forwardlinks,proto3" json:"forwardlinks,omitempty"`
+	XXX_NoUnkeyedLiteral struct{}            `json:"-"`
+	XXX_unrecognized     []byte              `json:"-"`
+	XXX_sizecache        int32               `json:"-"`
 }
 
-func (m *SkipBlockHeader) Reset()         { *m = SkipBlockHeader{} }
-func (m *SkipBlockHeader) String() string { return proto.CompactTextString(m) }
-func (*SkipBlockHeader) ProtoMessage()    {}
-func (*SkipBlockHeader) Descriptor() ([]byte, []int) {
+func (m *BlockHeaderProto) Reset()         { *m = BlockHeaderProto{} }
+func (m *BlockHeaderProto) String() string { return proto.CompactTextString(m) }
+func (*BlockHeaderProto) ProtoMessage()    {}
+func (*BlockHeaderProto) Descriptor() ([]byte, []int) {
 	return fileDescriptor_4dc296cbfe5ffcd5, []int{1}
 }
 
-func (m *SkipBlockHeader) XXX_Unmarshal(b []byte) error {
-	return xxx_messageInfo_SkipBlockHeader.Unmarshal(m, b)
+func (m *BlockHeaderProto) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_BlockHeaderProto.Unmarshal(m, b)
 }
-func (m *SkipBlockHeader) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	return xxx_messageInfo_SkipBlockHeader.Marshal(b, m, deterministic)
+func (m *BlockHeaderProto) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_BlockHeaderProto.Marshal(b, m, deterministic)
 }
-func (m *SkipBlockHeader) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_SkipBlockHeader.Merge(m, src)
+func (m *BlockHeaderProto) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_BlockHeaderProto.Merge(m, src)
 }
-func (m *SkipBlockHeader) XXX_Size() int {
-	return xxx_messageInfo_SkipBlockHeader.Size(m)
+func (m *BlockHeaderProto) XXX_Size() int {
+	return xxx_messageInfo_BlockHeaderProto.Size(m)
 }
-func (m *SkipBlockHeader) XXX_DiscardUnknown() {
-	xxx_messageInfo_SkipBlockHeader.DiscardUnknown(m)
+func (m *BlockHeaderProto) XXX_DiscardUnknown() {
+	xxx_messageInfo_BlockHeaderProto.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_SkipBlockHeader proto.InternalMessageInfo
+var xxx_messageInfo_BlockHeaderProto proto.InternalMessageInfo
 
-func (m *SkipBlockHeader) GetHeight() uint64 {
+func (m *BlockHeaderProto) GetHeight() uint32 {
 	if m != nil {
 		return m.Height
 	}
 	return 0
 }
 
-func (m *SkipBlockHeader) GetBaseHeight() uint64 {
+func (m *BlockHeaderProto) GetBaseHeight() uint32 {
 	if m != nil {
 		return m.BaseHeight
 	}
 	return 0
 }
 
-func (m *SkipBlockHeader) GetMaximumHeight() uint64 {
+func (m *BlockHeaderProto) GetMaximumHeight() uint32 {
 	if m != nil {
 		return m.MaximumHeight
 	}
 	return 0
 }
 
-func (m *SkipBlockHeader) GetGenesisID() []byte {
+func (m *BlockHeaderProto) GetGenesisID() []byte {
 	if m != nil {
 		return m.GenesisID
 	}
 	return nil
 }
 
-func (m *SkipBlockHeader) GetDataHash() []byte {
+func (m *BlockHeaderProto) GetDataHash() []byte {
 	if m != nil {
 		return m.DataHash
 	}
 	return nil
 }
 
-func (m *SkipBlockHeader) GetBacklinks() [][]byte {
+func (m *BlockHeaderProto) GetBacklinks() [][]byte {
 	if m != nil {
 		return m.Backlinks
 	}
 	return nil
 }
 
-func (m *SkipBlockHeader) GetForwardlinks() []*ForwardLink {
+func (m *BlockHeaderProto) GetForwardlinks() []*ForwardLinkProto {
 	if m != nil {
 		return m.Forwardlinks
 	}
 	return nil
 }
 
+type PropagateGenesis struct {
+	Genesis              *blockchain.Block `protobuf:"bytes,1,opt,name=genesis,proto3" json:"genesis,omitempty"`
+	XXX_NoUnkeyedLiteral struct{}          `json:"-"`
+	XXX_unrecognized     []byte            `json:"-"`
+	XXX_sizecache        int32             `json:"-"`
+}
+
+func (m *PropagateGenesis) Reset()         { *m = PropagateGenesis{} }
+func (m *PropagateGenesis) String() string { return proto.CompactTextString(m) }
+func (*PropagateGenesis) ProtoMessage()    {}
+func (*PropagateGenesis) Descriptor() ([]byte, []int) {
+	return fileDescriptor_4dc296cbfe5ffcd5, []int{2}
+}
+
+func (m *PropagateGenesis) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_PropagateGenesis.Unmarshal(m, b)
+}
+func (m *PropagateGenesis) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_PropagateGenesis.Marshal(b, m, deterministic)
+}
+func (m *PropagateGenesis) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_PropagateGenesis.Merge(m, src)
+}
+func (m *PropagateGenesis) XXX_Size() int {
+	return xxx_messageInfo_PropagateGenesis.Size(m)
+}
+func (m *PropagateGenesis) XXX_DiscardUnknown() {
+	xxx_messageInfo_PropagateGenesis.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_PropagateGenesis proto.InternalMessageInfo
+
+func (m *PropagateGenesis) GetGenesis() *blockchain.Block {
+	if m != nil {
+		return m.Genesis
+	}
+	return nil
+}
+
 func init() {
-	proto.RegisterType((*ForwardLink)(nil), "skipchain.ForwardLink")
-	proto.RegisterType((*SkipBlockHeader)(nil), "skipchain.SkipBlockHeader")
+	proto.RegisterType((*ForwardLinkProto)(nil), "skipchain.ForwardLinkProto")
+	proto.RegisterType((*BlockHeaderProto)(nil), "skipchain.BlockHeaderProto")
+	proto.RegisterType((*PropagateGenesis)(nil), "skipchain.PropagateGenesis")
 }
 
 func init() { proto.RegisterFile("messages.proto", fileDescriptor_4dc296cbfe5ffcd5) }
 
 var fileDescriptor_4dc296cbfe5ffcd5 = []byte{
-	// 305 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x7c, 0x91, 0xc1, 0x4a, 0xc3, 0x40,
-	0x10, 0x86, 0x49, 0x52, 0x53, 0x3b, 0xad, 0x15, 0x06, 0x29, 0xb1, 0x88, 0x84, 0xe2, 0xa1, 0x07,
-	0xd9, 0x42, 0xbd, 0x79, 0x53, 0x44, 0x2a, 0x78, 0x8a, 0x4f, 0x30, 0x49, 0xb7, 0xc9, 0x92, 0x6e,
-	0x36, 0xec, 0x6e, 0xd1, 0x9e, 0x7d, 0x00, 0x5f, 0x59, 0xba, 0x69, 0x63, 0x7b, 0xf1, 0xb6, 0xf3,
-	0xfd, 0xdf, 0x30, 0xc3, 0x2c, 0x0c, 0x25, 0x37, 0x86, 0x72, 0x6e, 0x58, 0xad, 0x95, 0x55, 0xd8,
-	0x33, 0xa5, 0xa8, 0xb3, 0x82, 0x44, 0x35, 0xbe, 0xce, 0x95, 0xca, 0xd7, 0x7c, 0xe6, 0x82, 0x74,
-	0xb3, 0x9a, 0x51, 0xb5, 0x6d, 0xac, 0xc9, 0x8f, 0x07, 0xfd, 0x57, 0xa5, 0x3f, 0x49, 0x2f, 0xdf,
-	0x45, 0x55, 0x22, 0x42, 0x67, 0xa5, 0x95, 0x8c, 0xbc, 0xd8, 0x9b, 0x0e, 0x12, 0xf7, 0xc6, 0x21,
-	0xf8, 0x56, 0x45, 0xbe, 0x23, 0xbe, 0x55, 0xc8, 0xa0, 0x5b, 0x6b, 0x5e, 0x93, 0xe6, 0x51, 0x10,
-	0x7b, 0xd3, 0xfe, 0xfc, 0x8a, 0x35, 0x03, 0xd8, 0x61, 0x00, 0x7b, 0xaa, 0xb6, 0xc9, 0x41, 0xc2,
-	0x7b, 0x08, 0x33, 0x25, 0xa5, 0xb0, 0x51, 0xe7, 0x1f, 0x7d, 0xef, 0x4c, 0xbe, 0x7d, 0xb8, 0xfc,
-	0x28, 0x45, 0xfd, 0xbc, 0x56, 0x59, 0xb9, 0xe0, 0xb4, 0xe4, 0x1a, 0x47, 0x10, 0x16, 0x5c, 0xe4,
-	0x85, 0x75, 0x7b, 0x75, 0x92, 0x7d, 0x85, 0xb7, 0x00, 0x29, 0x19, 0xbe, 0x68, 0x32, 0xdf, 0x65,
-	0x47, 0x04, 0xef, 0xe0, 0x42, 0xd2, 0x97, 0x90, 0x1b, 0xb9, 0x57, 0x02, 0xa7, 0x9c, 0x42, 0xbc,
-	0x81, 0x5e, 0xce, 0x2b, 0x6e, 0x84, 0x79, 0x7b, 0x71, 0x2b, 0x0e, 0x92, 0x3f, 0x80, 0x63, 0x38,
-	0x5f, 0x92, 0xa5, 0x05, 0x99, 0x22, 0x3a, 0x73, 0x61, 0x5b, 0xef, 0x3a, 0x53, 0xca, 0xca, 0xb5,
-	0xa8, 0x4a, 0x13, 0x85, 0x71, 0xb0, 0xeb, 0x6c, 0x01, 0x3e, 0xc2, 0x60, 0xd5, 0x9c, 0xb6, 0x11,
-	0xba, 0x71, 0x30, 0xed, 0xcf, 0x47, 0xac, 0xfd, 0x18, 0x76, 0x74, 0xf9, 0xe4, 0xc4, 0x4d, 0x43,
-	0x77, 0x9b, 0x87, 0xdf, 0x00, 0x00, 0x00, 0xff, 0xff, 0x43, 0xb0, 0x74, 0xc0, 0xd6, 0x01, 0x00,
-	0x00,
+	// 347 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x7c, 0x91, 0xdf, 0x4a, 0xfb, 0x30,
+	0x14, 0xc7, 0x69, 0xbb, 0x5f, 0xf7, 0xdb, 0xd9, 0x1f, 0x66, 0x10, 0xe9, 0xa6, 0x48, 0x19, 0x5e,
+	0x0c, 0x94, 0x0c, 0xe6, 0x03, 0x0c, 0x45, 0x74, 0x82, 0x17, 0xa3, 0x6f, 0x70, 0xda, 0x65, 0x6d,
+	0xe8, 0xda, 0x94, 0x24, 0x43, 0xf7, 0x08, 0xde, 0xfb, 0xc0, 0xb2, 0xa4, 0xdb, 0x9c, 0x17, 0xde,
+	0x25, 0xdf, 0xf3, 0x39, 0xe1, 0xc3, 0x37, 0xd0, 0x2b, 0x98, 0x52, 0x98, 0x32, 0x45, 0x2b, 0x29,
+	0xb4, 0x20, 0x2d, 0x95, 0xf3, 0x2a, 0xc9, 0x90, 0x97, 0xc3, 0x41, 0x2a, 0x44, 0xba, 0x66, 0x13,
+	0x33, 0x88, 0x37, 0xab, 0x09, 0x96, 0x5b, 0x4b, 0x0d, 0x07, 0xf1, 0x5a, 0x24, 0xb9, 0xc1, 0x26,
+	0xa7, 0x0f, 0x8c, 0xbe, 0x1c, 0xe8, 0x3f, 0x0b, 0xf9, 0x8e, 0x72, 0xf9, 0xc6, 0xcb, 0x7c, 0x61,
+	0x5e, 0x25, 0xd0, 0x58, 0x49, 0x51, 0x04, 0x4e, 0xe8, 0x8c, 0x3b, 0x91, 0x39, 0x93, 0x1e, 0xb8,
+	0x5a, 0x04, 0xae, 0x49, 0x5c, 0x2d, 0x08, 0x85, 0x66, 0x25, 0x59, 0x85, 0x92, 0x05, 0x5e, 0xe8,
+	0x8c, 0xdb, 0xd3, 0x73, 0x6a, 0x05, 0xe8, 0x5e, 0x80, 0x3e, 0x94, 0xdb, 0x68, 0x0f, 0x91, 0x3b,
+	0xf0, 0x13, 0x51, 0x14, 0x5c, 0x07, 0x8d, 0x3f, 0xf0, 0x9a, 0x19, 0x7d, 0xba, 0xd0, 0x7f, 0xdc,
+	0x49, 0xcf, 0x19, 0x2e, 0x99, 0xb4, 0x5a, 0x17, 0xe0, 0x67, 0x8c, 0xa7, 0x99, 0x36, 0x62, 0xdd,
+	0xa8, 0xbe, 0x91, 0x6b, 0x80, 0x18, 0x15, 0x9b, 0xdb, 0x99, 0x6b, 0x66, 0x3f, 0x12, 0x72, 0x03,
+	0xdd, 0x02, 0x3f, 0x78, 0xb1, 0x29, 0x6a, 0xc4, 0x33, 0xc8, 0x69, 0x48, 0xae, 0xa0, 0x95, 0xb2,
+	0x92, 0x29, 0xae, 0x5e, 0x9f, 0x8c, 0x63, 0x27, 0x3a, 0x06, 0x64, 0x08, 0xff, 0x97, 0xa8, 0x71,
+	0x8e, 0x2a, 0x0b, 0xfe, 0x99, 0xe1, 0xe1, 0xbe, 0xdb, 0x8c, 0x31, 0xc9, 0xd7, 0xbc, 0xcc, 0x55,
+	0xe0, 0x87, 0xde, 0x6e, 0xf3, 0x10, 0x90, 0x19, 0x74, 0x56, 0xb6, 0x60, 0x0b, 0x34, 0x43, 0x6f,
+	0xdc, 0x9e, 0x5e, 0xd2, 0xc3, 0xcf, 0xd1, 0xdf, 0xfd, 0x47, 0x27, 0x0b, 0xa3, 0x19, 0xf4, 0x17,
+	0x52, 0x54, 0x98, 0xa2, 0x66, 0x2f, 0x56, 0x88, 0xdc, 0x42, 0xb3, 0x76, 0x33, 0x5d, 0xb4, 0xa7,
+	0x67, 0xf4, 0xf8, 0xc7, 0xd4, 0x34, 0x17, 0xed, 0x89, 0xd8, 0x37, 0x15, 0xdf, 0x7f, 0x07, 0x00,
+	0x00, 0xff, 0xff, 0xaa, 0x58, 0x57, 0xcc, 0x3d, 0x02, 0x00, 0x00,
 }

@@ -59,12 +59,9 @@ func (cosi *BlsCoSi) Sign(ro blockchain.Roster, msg proto.Message) (crypto.Signa
 		return nil, err
 	}
 
-	addrs := make([]*mino.Address, len(ro))
-	for i, conode := range ro {
-		addrs[i] = conode.GetAddress()
-	}
+	addrs := ro.GetAddresses()
 
-	m.Logger.Trace().Msgf("Roster %v", ro)
+	m.Logger.Trace().Msgf("Roster %v", addrs)
 	msgs, errs := cosi.rpc.Call(&SignatureRequest{Message: data}, addrs...)
 
 	var agg crypto.Signature
@@ -72,6 +69,7 @@ func (cosi *BlsCoSi) Sign(ro blockchain.Roster, msg proto.Message) (crypto.Signa
 		select {
 		case resp, ok := <-msgs:
 			if !ok {
+				// TODO: verify signature
 				m.Logger.Trace().Msgf("Closing")
 				return agg, nil
 			}

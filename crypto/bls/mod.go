@@ -21,6 +21,10 @@ type publicKey struct {
 	point kyber.Point
 }
 
+func (pk publicKey) MarshalBinary() ([]byte, error) {
+	return pk.point.MarshalBinary()
+}
+
 func (pk publicKey) Pack() (proto.Message, error) {
 	buffer, err := pk.point.MarshalBinary()
 	if err != nil {
@@ -32,6 +36,10 @@ func (pk publicKey) Pack() (proto.Message, error) {
 
 type signature struct {
 	data []byte
+}
+
+func (sig signature) MarshalBinary() ([]byte, error) {
+	return sig.data, nil
 }
 
 func (sig signature) Pack() (proto.Message, error) {

@@ -5,12 +5,17 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/m/crypto"
+	mino "go.dedis.ch/m/mino"
 )
 
 //go:generate protoc -I ./ --proto_path=../ --go_out=Mmino/messages.proto=go.dedis.ch/m/mino:. ./messages.proto
 
 // Roster is a set of identifiable addresses.
-type Roster []*Conode
+type Roster interface {
+	GetConodes() []*Conode
+	GetAddresses() []*mino.Address
+	GetPublicKeys() []crypto.PublicKey
+}
 
 // BlockFactory provides primitives to create blocks from a untrusted source.
 type BlockFactory interface {

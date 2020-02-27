@@ -14,7 +14,7 @@ message Block {
     uint64 index = 1;
     google.protobuf.Any header = 2;
     google.protobuf.Any payload = 3;
-    repeated Conode roster = 4;
+    repeated Conode conodes = 4;
 }
 
 message VerifiableBlock {

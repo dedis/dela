@@ -3,20 +3,25 @@ syntax = "proto3";
 package skipchain;
 
 import "google/protobuf/any.proto";
+import "blockchain/messages.proto";
 
-message ForwardLink {
+message ForwardLinkProto {
     bytes from = 1;
     bytes to = 2;
     google.protobuf.Any prepare = 3;
     google.protobuf.Any commit = 4;
 }
 
-message SkipBlockHeader {
-    uint64 height = 1;
-    uint64 baseHeight = 2;
-    uint64 maximumHeight = 3;
+message BlockHeaderProto {
+    uint32 height = 1;
+    uint32 baseHeight = 2;
+    uint32 maximumHeight = 3;
     bytes genesisID = 4;
     bytes dataHash = 5;
     repeated bytes backlinks = 6;
-    repeated ForwardLink forwardlinks = 7;
+    repeated ForwardLinkProto forwardlinks = 7;
+}
+
+message PropagateGenesis {
+    blockchain.Block genesis = 1;
 }
