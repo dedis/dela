@@ -1,6 +1,9 @@
 package blockchain
 
 import (
+	"io"
+
+	proto "github.com/golang/protobuf/proto"
 	"go.dedis.ch/m/crypto"
 	mino "go.dedis.ch/m/mino"
 )
@@ -47,4 +50,34 @@ func (r SimpleRoster) GetAddresses() []*mino.Address {
 // GetPublicKeys returns the list of public keys for the conodes.
 func (r SimpleRoster) GetPublicKeys() []crypto.PublicKey {
 	return r.pubkeys
+}
+
+// WriteTo casts the roster into bytes and write them to the writer.
+func (r SimpleRoster) WriteTo(w io.Writer) (int64, error) {
+	sum := int64(0)
+	for i, conode := range r.conodes {
+		sigbuf, err := r.pubkeys[i].MarshalBinary()
+		if err != nil {
+			return sum, err
+		}
+
+		n, err := w.Write(sigbuf)
+		sum += int64(n)
+		if err != nil {
+			return sum, err
+		}
+
+		buffer, err := proto.Marshal(conode.GetAddress())
+		if err != nil {
+			return sum, err
+		}
+
+		n, err = w.Write(buffer)
+		sum += int64(n)
+		if err != nil {
+			return sum, err
+		}
+	}
+
+	return sum, nil
 }

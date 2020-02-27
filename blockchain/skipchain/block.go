@@ -1,16 +1,26 @@
 package skipchain
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
+	fmt "fmt"
 
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	any "github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
+	"go.dedis.ch/m"
 	"go.dedis.ch/m/blockchain"
 	"go.dedis.ch/m/crypto"
 )
+
+// BlockID is the type that defines the block identifier.
+type BlockID []byte
+
+func (id BlockID) String() string {
+	return fmt.Sprintf("%x", []byte(id))
+}
 
 // SkipBlock is a representation of the data held by a block. It contains the
 // information to build a skipchain.
@@ -21,11 +31,16 @@ type SkipBlock struct {
 	Height        uint32
 	BaseHeight    uint32
 	MaximumHeight uint32
-	GenesisID     []byte
+	GenesisID     BlockID
 	DataHash      []byte
-	BackLinks     [][]byte
+	BackLinks     []BlockID
 	ForwardLinks  []ForwardLink
 	Payload       proto.Message
+}
+
+// GetID returns the unique identifier for this block.
+func (b SkipBlock) GetID() BlockID {
+	return b.hash
 }
 
 // Pack returns the protobuf message for a block.
@@ -61,13 +76,18 @@ func (b SkipBlock) packHeader() (*any.Any, error) {
 		fls[i] = flproto.(*ForwardLinkProto)
 	}
 
+	backLinks := make([][]byte, len(b.BackLinks))
+	for i, bl := range b.BackLinks {
+		backLinks[i] = []byte(bl)
+	}
+
 	header := &BlockHeaderProto{
 		Height:        b.Height,
 		BaseHeight:    b.BaseHeight,
 		MaximumHeight: b.MaximumHeight,
 		GenesisID:     b.GenesisID,
 		DataHash:      b.DataHash,
-		Backlinks:     b.BackLinks,
+		Backlinks:     backLinks,
 		Forwardlinks:  fls,
 	}
 
@@ -79,7 +99,7 @@ func (b SkipBlock) packHeader() (*any.Any, error) {
 	return headerAny, nil
 }
 
-func (b SkipBlock) computeHash() error {
+func (b SkipBlock) computeHash() ([]byte, error) {
 	h := sha256.New()
 
 	buffer := make([]byte, 20)
@@ -88,6 +108,7 @@ func (b SkipBlock) computeHash() error {
 	binary.LittleEndian.PutUint32(buffer[12:16], b.BaseHeight)
 	binary.LittleEndian.PutUint32(buffer[16:20], b.MaximumHeight)
 	h.Write(buffer)
+	b.Roster.WriteTo(h)
 	h.Write(b.GenesisID)
 	h.Write(b.DataHash)
 
@@ -95,154 +116,7 @@ func (b SkipBlock) computeHash() error {
 		h.Write(bl)
 	}
 
-	b.hash = h.Sum(nil)
-
-	return nil
-}
-
-type blockFactory struct {
-	verifier crypto.Verifier
-}
-
-func newBlockFactory(v crypto.Verifier) blockFactory {
-	return blockFactory{
-		verifier: v,
-	}
-}
-
-func (f blockFactory) createGenesis(roster blockchain.Roster) SkipBlock {
-	return SkipBlock{
-		Index:         0,
-		Roster:        roster,
-		Height:        1,
-		BaseHeight:    4,
-		MaximumHeight: 32,
-		GenesisID:     []byte{},
-		DataHash:      []byte{},
-		BackLinks:     [][]byte{},
-		ForwardLinks:  []ForwardLink{},
-		Payload:       &empty.Empty{},
-	}
-}
-
-func (f blockFactory) FromPrevious(previous interface{}, data proto.Message) (interface{}, error) {
-	prev := previous.(SkipBlock)
-
-	databuf, err := proto.Marshal(data)
-	if err != nil {
-		return nil, err
-	}
-
-	h := sha256.New()
-	h.Write(databuf)
-
-	block := SkipBlock{
-		Index:         prev.Index + 1,
-		Roster:        prev.Roster,
-		Height:        prev.Height,
-		BaseHeight:    prev.BaseHeight,
-		MaximumHeight: prev.MaximumHeight,
-		GenesisID:     prev.GenesisID,
-		DataHash:      h.Sum(nil),
-		BackLinks:     [][]byte{prev.hash},
-		ForwardLinks:  []ForwardLink{},
-		Payload:       data,
-	}
-
-	err = block.computeHash()
-	if err != nil {
-		return nil, err
-	}
-
-	return block, nil
-}
-
-func (f blockFactory) fromForwardLink(src *ForwardLinkProto) (fl ForwardLink, err error) {
-	fl.From = src.GetFrom()
-	fl.To = src.GetTo()
-
-	var sig crypto.Signature
-	if src.GetPrepare() != nil {
-		sig, err = f.verifier.GetSignatureFactory().FromAny(src.GetPrepare())
-		if err != nil {
-			return
-		}
-
-		fl.Prepare = sig
-	}
-
-	if src.GetCommit() != nil {
-		sig, err = f.verifier.GetSignatureFactory().FromAny(src.GetCommit())
-		if err != nil {
-			return
-		}
-
-		fl.Commit = sig
-	}
-
-	err = fl.computeHash()
-
-	return
-}
-
-func (f blockFactory) fromBlock(src *blockchain.Block) (interface{}, error) {
-	var header BlockHeaderProto
-	err := ptypes.UnmarshalAny(src.GetHeader(), &header)
-	if err != nil {
-		return nil, err
-	}
-
-	var payload ptypes.DynamicAny
-	err = ptypes.UnmarshalAny(src.GetPayload(), &payload)
-	if err != nil {
-		return nil, err
-	}
-
-	fls := make([]ForwardLink, len(header.GetForwardlinks()))
-	for i, packed := range header.GetForwardlinks() {
-		fl, err := f.fromForwardLink(packed)
-		if err != nil {
-			return nil, err
-		}
-
-		fls[i] = fl
-	}
-
-	roster, err := blockchain.NewRoster(f.verifier, src.GetConodes()...)
-	if err != nil {
-		return nil, err
-	}
-
-	block := SkipBlock{
-		Index:         src.GetIndex(),
-		Roster:        roster,
-		Height:        header.GetHeight(),
-		BaseHeight:    header.GetBaseHeight(),
-		MaximumHeight: header.GetMaximumHeight(),
-		GenesisID:     header.GetGenesisID(),
-		DataHash:      header.GetDataHash(),
-		BackLinks:     header.GetBacklinks(),
-		ForwardLinks:  fls,
-		Payload:       payload.Message,
-	}
-
-	err = block.computeHash()
-	if err != nil {
-		return nil, err
-	}
-
-	return block, nil
-}
-
-func (f blockFactory) FromVerifiable(src *blockchain.VerifiableBlock, pubkeys []crypto.PublicKey) (interface{}, error) {
-	// TODO: verify chain
-
-	block, err := f.fromBlock(src.GetBlock())
-	if err != nil {
-		return nil, err
-	}
-
-	return block, nil
+	return h.Sum(nil), nil
 }
 
 // ForwardLink is the cryptographic primitive to ensure a block is a successor
@@ -293,13 +167,263 @@ func (fl ForwardLink) Pack() (proto.Message, error) {
 	return flproto, nil
 }
 
-func (fl ForwardLink) computeHash() error {
+func (fl ForwardLink) computeHash() ([]byte, error) {
 	h := sha256.New()
 
 	h.Write(fl.From)
 	h.Write(fl.To)
 
-	fl.hash = h.Sum(nil)
+	return h.Sum(nil), nil
+}
+
+type blockFactory struct {
+	verifier crypto.Verifier
+}
+
+func newBlockFactory(v crypto.Verifier) blockFactory {
+	return blockFactory{
+		verifier: v,
+	}
+}
+
+func (f blockFactory) createGenesis(roster blockchain.Roster) SkipBlock {
+	return SkipBlock{
+		Index:         0,
+		Roster:        roster,
+		Height:        1,
+		BaseHeight:    4,
+		MaximumHeight: 32,
+		GenesisID:     []byte{},
+		DataHash:      []byte{},
+		BackLinks:     []BlockID{},
+		ForwardLinks:  []ForwardLink{},
+		Payload:       &empty.Empty{},
+	}
+}
+
+func (f blockFactory) FromPrevious(previous interface{}, data proto.Message) (interface{}, error) {
+	prev := previous.(SkipBlock)
+
+	databuf, err := proto.Marshal(data)
+	if err != nil {
+		return nil, err
+	}
+
+	h := sha256.New()
+	h.Write(databuf)
+
+	block := SkipBlock{
+		Index:         prev.Index + 1,
+		Roster:        prev.Roster,
+		Height:        prev.Height,
+		BaseHeight:    prev.BaseHeight,
+		MaximumHeight: prev.MaximumHeight,
+		GenesisID:     prev.GenesisID,
+		DataHash:      h.Sum(nil),
+		BackLinks:     []BlockID{prev.hash},
+		ForwardLinks:  []ForwardLink{},
+		Payload:       data,
+	}
+
+	hash, err := block.computeHash()
+	if err != nil {
+		return nil, err
+	}
+
+	block.hash = hash
+
+	return block, nil
+}
+
+func (f blockFactory) fromForwardLink(src *ForwardLinkProto) (fl ForwardLink, err error) {
+	fl.From = src.GetFrom()
+	fl.To = src.GetTo()
+
+	var sig crypto.Signature
+	if src.GetPrepare() != nil {
+		sig, err = f.verifier.GetSignatureFactory().FromAny(src.GetPrepare())
+		if err != nil {
+			return
+		}
+
+		fl.Prepare = sig
+	}
+
+	if src.GetCommit() != nil {
+		sig, err = f.verifier.GetSignatureFactory().FromAny(src.GetCommit())
+		if err != nil {
+			return
+		}
+
+		fl.Commit = sig
+	}
+
+	fl.hash, err = fl.computeHash()
+
+	return
+}
+
+func (f blockFactory) fromBlock(src *blockchain.Block) (interface{}, error) {
+	var header BlockHeaderProto
+	err := ptypes.UnmarshalAny(src.GetHeader(), &header)
+	if err != nil {
+		return nil, err
+	}
+
+	var payload ptypes.DynamicAny
+	err = ptypes.UnmarshalAny(src.GetPayload(), &payload)
+	if err != nil {
+		return nil, err
+	}
+
+	forwardLinks := make([]ForwardLink, len(header.GetForwardlinks()))
+	for i, packed := range header.GetForwardlinks() {
+		fl, err := f.fromForwardLink(packed)
+		if err != nil {
+			return nil, err
+		}
+
+		forwardLinks[i] = fl
+	}
+
+	backLinks := make([]BlockID, len(header.GetBacklinks()))
+	for i, packed := range header.GetBacklinks() {
+		backLinks[i] = BlockID(packed)
+	}
+
+	roster, err := blockchain.NewRoster(f.verifier, src.GetConodes()...)
+	if err != nil {
+		return nil, err
+	}
+
+	block := SkipBlock{
+		Index:         src.GetIndex(),
+		Roster:        roster,
+		Height:        header.GetHeight(),
+		BaseHeight:    header.GetBaseHeight(),
+		MaximumHeight: header.GetMaximumHeight(),
+		GenesisID:     header.GetGenesisID(),
+		DataHash:      header.GetDataHash(),
+		BackLinks:     backLinks,
+		ForwardLinks:  forwardLinks,
+		Payload:       payload.Message,
+	}
+
+	hash, err := block.computeHash()
+	if err != nil {
+		return nil, err
+	}
+
+	block.hash = hash
+
+	return block, nil
+}
+
+func (f blockFactory) FromVerifiable(src *blockchain.VerifiableBlock, pubkeys []crypto.PublicKey) (interface{}, error) {
+	// TODO: verify chain
+
+	block, err := f.fromBlock(src.GetBlock())
+	if err != nil {
+		return nil, err
+	}
+
+	return block, nil
+}
+
+// The triage will determine which block must go through to be appended to
+// the chain. It also acts as a buffer during the PBFT execution.
+type blockTriage struct {
+	db       Database
+	verifier crypto.Verifier
+	blocks   []SkipBlock
+}
+
+func newBlockTriage(db Database, v crypto.Verifier) *blockTriage {
+	return &blockTriage{
+		db:       db,
+		verifier: v,
+	}
+}
+
+func (t *blockTriage) Add(block SkipBlock) error {
+	last, err := t.db.ReadLast()
+	if err != nil {
+		return err
+	}
+
+	if block.Index <= last.Index {
+		return fmt.Errorf("wrong index: %d <= %d", block.Index, last.Index)
+	}
+
+	m.Logger.Debug().Msgf("Queuing block %v", block.GetID())
+	t.blocks = append(t.blocks, block)
+
+	return nil
+}
+
+func (t *blockTriage) getBlock(id BlockID) (SkipBlock, bool) {
+	for _, block := range t.blocks {
+		if bytes.Equal(block.hash, id) {
+			return block, true
+		}
+	}
+
+	return SkipBlock{}, false
+}
+
+func (t *blockTriage) Verify(fl ForwardLink) error {
+	block, ok := t.getBlock(fl.To)
+	if !ok {
+		return fmt.Errorf("block not found: %x", fl.To)
+	}
+
+	pubkeys := block.Roster.GetPublicKeys()
+
+	err := t.verifier.Verify(pubkeys, fl.hash, fl.Prepare)
+	if err != nil {
+		m.Logger.Err(err).Msg("found mismatching forward link")
+	}
+
+	return nil
+}
+
+func (t *blockTriage) Commit(fl ForwardLink) error {
+	block, ok := t.getBlock(fl.To)
+	if !ok {
+		return fmt.Errorf("block not found: %x", fl.To)
+	}
+
+	pubkeys := block.Roster.GetPublicKeys()
+
+	msg, err := fl.Prepare.MarshalBinary()
+	if err != nil {
+		return err
+	}
+
+	err = t.verifier.Verify(pubkeys, msg, fl.Commit)
+	if err != nil {
+		m.Logger.Err(err).Msg("found mismatching forward link")
+	}
+
+	last, err := t.db.ReadLast()
+	if err != nil {
+		return err
+	}
+
+	err = t.db.Write(block)
+	if err != nil {
+		return err
+	}
+
+	last.ForwardLinks = []ForwardLink{fl}
+	err = t.db.Write(last)
+	if err != nil {
+		return err
+	}
+
+	m.Logger.Debug().Msgf("Commit block %v", block.GetID())
+
+	t.blocks = []SkipBlock{}
 
 	return nil
 }

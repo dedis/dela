@@ -1,7 +1,7 @@
 package skipchain
 
 import (
-	"errors"
+	fmt "fmt"
 
 	proto "github.com/golang/protobuf/proto"
 	"go.dedis.ch/m"
@@ -13,12 +13,14 @@ type handler struct {
 
 	db      Database
 	factory blockFactory
+	triage  *blockTriage
 }
 
-func newHandler(db Database, f blockFactory) handler {
+func newHandler(db Database, t *blockTriage, f blockFactory) handler {
 	return handler{
 		db:      db,
 		factory: f,
+		triage:  t,
 	}
 }
 
@@ -35,9 +37,19 @@ func (h handler) Process(req proto.Message) (proto.Message, error) {
 		if err != nil {
 			return nil, err
 		}
+	case *PropagateForwardLink:
+		fl, err := h.factory.fromForwardLink(in.GetLink())
+		if err != nil {
+			return nil, err
+		}
 
-		return nil, nil
+		err = h.triage.Commit(fl)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("unknown message type: %#v", in)
 	}
 
-	return nil, errors.New("unknown message type")
+	return nil, nil
 }

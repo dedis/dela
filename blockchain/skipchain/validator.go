@@ -1,10 +1,7 @@
 package skipchain
 
 import (
-	"bytes"
-	"crypto/sha256"
 	"errors"
-	fmt "fmt"
 
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
@@ -21,16 +18,15 @@ type blockValidator struct {
 	factory   blockFactory
 	db        Database
 	validator Validator
-	queue     SkipBlock
-	verifier  crypto.Verifier
+	triage    *blockTriage
 }
 
-func newBlockValidator(verifier crypto.Verifier, v Validator, db Database) *blockValidator {
+func newBlockValidator(verifier crypto.Verifier, v Validator, db Database, t *blockTriage) *blockValidator {
 	return &blockValidator{
 		factory:   newBlockFactory(verifier),
 		db:        db,
 		validator: v,
-		verifier:  verifier,
+		triage:    t,
 	}
 }
 
@@ -45,57 +41,49 @@ func (b *blockValidator) Validate(msg proto.Message) ([]byte, error) {
 	return nil, errors.New("invalid message type")
 }
 
-func (b *blockValidator) verifyAndHashBlock(block *blockchain.Block) ([]byte, error) {
+func (b *blockValidator) verifyAndHashBlock(in *blockchain.Block) ([]byte, error) {
 	var da ptypes.DynamicAny
-	err := ptypes.UnmarshalAny(block.GetPayload(), &da)
+	err := ptypes.UnmarshalAny(in.GetPayload(), &da)
 	if err != nil {
 		return nil, err
 	}
 
-	unpacked, err := b.factory.fromBlock(block)
-	sb := unpacked.(SkipBlock)
+	unpacked, err := b.factory.fromBlock(in)
+	block := unpacked.(SkipBlock)
 
-	err = b.validator.Validate(sb)
+	err = b.validator.Validate(block)
 	if err != nil {
 		return nil, err
-	}
-
-	last, err := b.db.ReadLast()
-	if err != nil {
-		return nil, err
-	}
-
-	if sb.Index <= last.Index {
-		return nil, fmt.Errorf("wrong index: %d <= %d", block.Index, last.Index)
 	}
 
 	// Keep the block for the commit phase.
-	b.queue = sb
-
-	fl := ForwardLink{
-		From: sb.BackLinks[0],
-		To:   sb.hash,
-	}
-
-	err = fl.computeHash()
+	err = b.triage.Add(block)
 	if err != nil {
 		return nil, err
 	}
 
-	return fl.hash, nil
+	fl := ForwardLink{
+		From: block.BackLinks[0],
+		To:   block.hash,
+	}
+
+	hash, err := fl.computeHash()
+	if err != nil {
+		return nil, err
+	}
+
+	return hash, nil
 }
 
 func (b *blockValidator) verifyAndHashForwardLink(in *ForwardLinkProto) ([]byte, error) {
-	if !bytes.Equal(in.To, b.queue.hash) {
-		return nil, errors.New("forward link does not match queued block")
-	}
-
 	fl, err := b.factory.fromForwardLink(in)
 	if err != nil {
 		return nil, err
 	}
 
-	err = b.verifier.Verify(b.queue.Roster.GetPublicKeys(), fl.hash, fl.Prepare)
+	// Verify that the triage has a block waiting to be committed and that the
+	// forward link is matching correctly.
+	err = b.triage.Verify(fl)
 	if err != nil {
 		return nil, err
 	}
@@ -105,8 +93,5 @@ func (b *blockValidator) verifyAndHashForwardLink(in *ForwardLinkProto) ([]byte,
 		return nil, err
 	}
 
-	h := sha256.New()
-	h.Write(buffer)
-
-	return h.Sum(nil), nil
+	return buffer, nil
 }

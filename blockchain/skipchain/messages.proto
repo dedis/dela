@@ -25,3 +25,7 @@ message BlockHeaderProto {
 message PropagateGenesis {
     blockchain.Block genesis = 1;
 }
+
+message PropagateForwardLink {
+    ForwardLinkProto link = 1;
+}

@@ -2,6 +2,7 @@ package skipchain
 
 import (
 	"context"
+	fmt "fmt"
 
 	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/m"
@@ -28,14 +29,15 @@ type Skipchain struct {
 func NewSkipchain(m mino.Mino, signer crypto.AggregateSigner, v Validator) (*Skipchain, error) {
 	db := NewInMemoryDatabase()
 	factory := newBlockFactory(signer)
-	validator := newBlockValidator(signer, v, db)
+	triage := newBlockTriage(db, signer)
+	validator := newBlockValidator(signer, v, db, triage)
 
 	cosi, err := blscosi.NewBlsCoSi(m, signer, validator)
 	if err != nil {
 		return nil, err
 	}
 
-	rpc, err := m.MakeRPC("skipchain", newHandler(db, factory))
+	rpc, err := m.MakeRPC("skipchain", newHandler(db, triage, factory))
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +98,22 @@ func (s *Skipchain) Store(roster blockchain.Roster, data proto.Message) error {
 		return err
 	}
 
-	m.Logger.Info().Msgf("Forward Link Commit: %x", fl.Commit)
+	packed, err := fl.Pack()
+	if err != nil {
+		return err
+	}
+
+	msg := &PropagateForwardLink{
+		Link: packed.(*ForwardLinkProto),
+	}
+
+	m.Logger.Info().Msgf("Propagation new block to %v", roster.GetAddresses())
+	closing, errs := s.rpc.Call(msg, roster.GetAddresses()...)
+	select {
+	case <-closing:
+	case err := <-errs:
+		return fmt.Errorf("failed to propagate forward link: %v", err)
+	}
 
 	return nil
 }

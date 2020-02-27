@@ -28,7 +28,9 @@ func (c RPC) Call(req proto.Message, addrs ...*mino.Address) (<-chan proto.Messa
 				resp, err := peer.rpcs[c.path].h.Process(req)
 				if err != nil {
 					errs <- err
-				} else {
+				}
+
+				if resp != nil {
 					out <- resp
 				}
 			}

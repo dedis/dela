@@ -2,6 +2,7 @@ package blockchain
 
 import (
 	"context"
+	"io"
 
 	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/m/crypto"
@@ -12,6 +13,8 @@ import (
 
 // Roster is a set of identifiable addresses.
 type Roster interface {
+	io.WriterTo
+
 	GetConodes() []*Conode
 	GetAddresses() []*mino.Address
 	GetPublicKeys() []crypto.PublicKey
