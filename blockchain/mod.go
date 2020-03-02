@@ -22,8 +22,6 @@ type Roster interface {
 
 // BlockFactory provides primitives to create blocks from a untrusted source.
 type BlockFactory interface {
-	FromPrevious(previous interface{}, data proto.Message) (interface{}, error)
-
 	FromVerifiable(src *VerifiableBlock, originPublicKeys []crypto.PublicKey) (interface{}, error)
 }
 

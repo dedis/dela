@@ -22,6 +22,10 @@ message BlockHeaderProto {
     repeated ForwardLinkProto forwardlinks = 7;
 }
 
+message ProofProto {
+    repeated ForwardLinkProto forwardLinks = 1;
+}
+
 message PropagateGenesis {
     blockchain.Block genesis = 1;
 }
