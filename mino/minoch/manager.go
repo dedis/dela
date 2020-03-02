@@ -1,8 +1,9 @@
 package minoch
 
 import (
-	"errors"
 	"sync"
+
+	"golang.org/x/xerrors"
 )
 
 // Manager is an orchestrator to manage the communication between the local
@@ -29,14 +30,14 @@ func (m *Manager) get(id string) *Minoch {
 func (m *Manager) insert(inst *Minoch) error {
 	id := inst.Address().GetId()
 	if id == "" {
-		return errors.New("identifier must not be empty")
+		return xerrors.New("identifier must not be empty")
 	}
 
 	m.Lock()
 	defer m.Unlock()
 
 	if _, ok := m.instances[id]; ok {
-		return errors.New("identifier already exists")
+		return xerrors.New("identifier already exists")
 	}
 
 	m.instances[id] = inst

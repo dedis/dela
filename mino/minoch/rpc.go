@@ -2,11 +2,11 @@ package minoch
 
 import (
 	"context"
-	"errors"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"go.dedis.ch/fabric/mino"
+	"golang.org/x/xerrors"
 )
 
 // RPC is an implementation of the mino.RPC interface.
@@ -139,6 +139,6 @@ func (r receiver) Recv(ctx context.Context) (*mino.Address, proto.Message, error
 	case err := <-r.errs:
 		return nil, nil, err
 	case <-ctx.Done():
-		return nil, nil, errors.New("timeout")
+		return nil, nil, xerrors.New("timeout")
 	}
 }

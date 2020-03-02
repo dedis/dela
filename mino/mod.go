@@ -1,4 +1,4 @@
-// Package mino provides an abstraction for a application layer. It offers a
+// Package mino provides an abstraction for an application layer. It offers a
 // Minimalistic Overlay Network (MINO) to communicate between participants of
 // a distributed system.
 package mino
