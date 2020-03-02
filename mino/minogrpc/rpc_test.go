@@ -2,19 +2,18 @@ package minogrpc
 
 import (
 	"testing"
+	"time"
 
 	"github.com/golang/protobuf/ptypes"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/mino"
+	grpc "google.golang.org/grpc"
 )
 
 func TestSender(t *testing.T) {
 	identifier := "1234"
 	// srv := MakeMinoGrpc(identifier)
 
-	sender := Sender{
-		overlay: &UnimplementedOverlayServer{},
-	}
 	addr := mino.Address{
 		Id: identifier,
 	}
@@ -28,6 +27,28 @@ func TestSender(t *testing.T) {
 		Message: m,
 	}
 
-	err = sender.Send(&msg, &addr)
+	cert, err := makeCertificate()
 	require.NoError(t, err)
+
+	srv := grpc.NewServer()
+
+	overlay := GrpcRPC{
+		Server:     srv,
+		cert:       cert,
+		addr:       identifier,
+		listener:   nil,
+		neighbours: make(map[string]Peer),
+	}
+
+	_, errChan := overlay.Call(&msg, &addr)
+loop:
+	for {
+		select {
+		case msgErr := <-errChan:
+			t.Errorf("unexpected error: %v", msgErr)
+		case <-time.After(time.Second):
+			break loop
+		}
+	}
+
 }
