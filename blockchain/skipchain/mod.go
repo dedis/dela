@@ -5,15 +5,15 @@ import (
 	fmt "fmt"
 
 	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/m"
-	"go.dedis.ch/m/blockchain"
-	"go.dedis.ch/m/cosi"
-	"go.dedis.ch/m/cosi/blscosi"
-	"go.dedis.ch/m/crypto"
-	"go.dedis.ch/m/mino"
+	"go.dedis.ch/fabric"
+	"go.dedis.ch/fabric/blockchain"
+	"go.dedis.ch/fabric/cosi"
+	"go.dedis.ch/fabric/cosi/blscosi"
+	"go.dedis.ch/fabric/crypto"
+	"go.dedis.ch/fabric/mino"
 )
 
-//go:generate protoc -I ./ --proto_path=../../ --go_out=Mblockchain/messages.proto=go.dedis.ch/m/blockchain:. ./messages.proto
+//go:generate protoc -I ./ --proto_path=../../ --go_out=Mblockchain/messages.proto=go.dedis.ch/fabric/blockchain:. ./messages.proto
 
 // Skipchain implements the Blockchain interface by using collective signatures
 // to create a verifiable chain.
@@ -69,7 +69,7 @@ func (s *Skipchain) initChain(roster blockchain.Roster) error {
 	select {
 	case <-closing:
 	case err := <-errs:
-		m.Logger.Err(err).Msg("couldn't propagate genesis block")
+		fabric.Logger.Err(err).Msg("couldn't propagate genesis block")
 		return err
 	}
 
@@ -107,7 +107,7 @@ func (s *Skipchain) Store(roster blockchain.Roster, data proto.Message) error {
 		Link: packed.(*ForwardLinkProto),
 	}
 
-	m.Logger.Info().Msgf("Propagation new block to %v", roster.GetAddresses())
+	fabric.Logger.Info().Msgf("Propagation new block to %v", roster.GetAddresses())
 	closing, errs := s.rpc.Call(msg, roster.GetAddresses()...)
 	select {
 	case <-closing:

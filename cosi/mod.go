@@ -2,8 +2,8 @@ package cosi
 
 import (
 	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/m/blockchain"
-	"go.dedis.ch/m/crypto"
+	"go.dedis.ch/fabric/blockchain"
+	"go.dedis.ch/fabric/crypto"
 )
 
 // CollectiveSigning is the interface that provides the primitives to sign

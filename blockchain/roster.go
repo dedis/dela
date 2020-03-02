@@ -4,8 +4,8 @@ import (
 	"io"
 
 	proto "github.com/golang/protobuf/proto"
-	"go.dedis.ch/m/crypto"
-	mino "go.dedis.ch/m/mino"
+	"go.dedis.ch/fabric/crypto"
+	mino "go.dedis.ch/fabric/mino"
 )
 
 // SimpleRoster is a list of conodes.

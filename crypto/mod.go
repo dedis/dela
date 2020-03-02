@@ -3,7 +3,7 @@ package crypto
 import (
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
-	"go.dedis.ch/m/encoding"
+	"go.dedis.ch/fabric/encoding"
 )
 
 // PublicKey is a public identity that can be used to verify a signature.

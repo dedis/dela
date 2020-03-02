@@ -10,9 +10,9 @@ import (
 	"github.com/golang/protobuf/ptypes"
 	any "github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
-	"go.dedis.ch/m"
-	"go.dedis.ch/m/blockchain"
-	"go.dedis.ch/m/crypto"
+	"go.dedis.ch/fabric"
+	"go.dedis.ch/fabric/blockchain"
+	"go.dedis.ch/fabric/crypto"
 )
 
 // BlockID is the type that defines the block identifier.
@@ -355,7 +355,7 @@ func (t *blockTriage) Add(block SkipBlock) error {
 		return fmt.Errorf("wrong index: %d <= %d", block.Index, last.Index)
 	}
 
-	m.Logger.Debug().Msgf("Queuing block %v", block.GetID())
+	fabric.Logger.Debug().Msgf("Queuing block %v", block.GetID())
 	t.blocks = append(t.blocks, block)
 
 	return nil
@@ -381,7 +381,7 @@ func (t *blockTriage) Verify(fl ForwardLink) error {
 
 	err := t.verifier.Verify(pubkeys, fl.hash, fl.Prepare)
 	if err != nil {
-		m.Logger.Err(err).Msg("found mismatching forward link")
+		fabric.Logger.Err(err).Msg("found mismatching forward link")
 	}
 
 	return nil
@@ -402,7 +402,7 @@ func (t *blockTriage) Commit(fl ForwardLink) error {
 
 	err = t.verifier.Verify(pubkeys, msg, fl.Commit)
 	if err != nil {
-		m.Logger.Err(err).Msg("found mismatching forward link")
+		fabric.Logger.Err(err).Msg("found mismatching forward link")
 	}
 
 	last, err := t.db.ReadLast()
@@ -421,7 +421,7 @@ func (t *blockTriage) Commit(fl ForwardLink) error {
 		return err
 	}
 
-	m.Logger.Debug().Msgf("Commit block %v", block.GetID())
+	fabric.Logger.Debug().Msgf("Commit block %v", block.GetID())
 
 	t.blocks = []SkipBlock{}
 

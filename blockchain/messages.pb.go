@@ -7,7 +7,7 @@ import (
 	fmt "fmt"
 	proto "github.com/golang/protobuf/proto"
 	any "github.com/golang/protobuf/ptypes/any"
-	mino "go.dedis.ch/m/mino"
+	mino "go.dedis.ch/fabric/mino"
 	math "math"
 )
 

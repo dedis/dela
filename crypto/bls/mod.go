@@ -6,11 +6,11 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/any"
+	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/pairing"
 	"go.dedis.ch/kyber/v3/sign/bls"
 	"go.dedis.ch/kyber/v3/util/key"
-	"go.dedis.ch/m/crypto"
 )
 
 //go:generate protoc -I ./ --go_out=./ ./messages.proto

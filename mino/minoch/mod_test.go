@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/m/mino"
+	"go.dedis.ch/fabric/mino"
 )
 
 func TestMinoch_New(t *testing.T) {

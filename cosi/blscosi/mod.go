@@ -3,13 +3,13 @@ package blscosi
 import (
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
+	"go.dedis.ch/fabric"
+	"go.dedis.ch/fabric/blockchain"
+	"go.dedis.ch/fabric/crypto"
+	"go.dedis.ch/fabric/crypto/bls"
+	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/kyber/v3/pairing"
 	"go.dedis.ch/kyber/v3/util/key"
-	"go.dedis.ch/m"
-	"go.dedis.ch/m/blockchain"
-	"go.dedis.ch/m/crypto"
-	"go.dedis.ch/m/crypto/bls"
-	"go.dedis.ch/m/mino"
 )
 
 //go:generate protoc -I ./ --go_out=./ ./messages.proto
@@ -61,7 +61,7 @@ func (cosi *BlsCoSi) Sign(ro blockchain.Roster, msg proto.Message) (crypto.Signa
 
 	addrs := ro.GetAddresses()
 
-	m.Logger.Trace().Msgf("Roster %v", addrs)
+	fabric.Logger.Trace().Msgf("Roster %v", addrs)
 	msgs, errs := cosi.rpc.Call(&SignatureRequest{Message: data}, addrs...)
 
 	var agg crypto.Signature
@@ -70,11 +70,11 @@ func (cosi *BlsCoSi) Sign(ro blockchain.Roster, msg proto.Message) (crypto.Signa
 		case resp, ok := <-msgs:
 			if !ok {
 				// TODO: verify signature
-				m.Logger.Trace().Msgf("Closing")
+				fabric.Logger.Trace().Msgf("Closing")
 				return agg, nil
 			}
 
-			m.Logger.Trace().Msgf("Response: %+v", resp)
+			fabric.Logger.Trace().Msgf("Response: %+v", resp)
 
 			reply := resp.(*SignatureResponse)
 			sig, err := cosi.signer.GetSignatureFactory().FromAny(reply.GetSignature())
@@ -91,7 +91,7 @@ func (cosi *BlsCoSi) Sign(ro blockchain.Roster, msg proto.Message) (crypto.Signa
 				}
 			}
 		case err := <-errs:
-			m.Logger.Err(err).Msg("Error during collective signing")
+			fabric.Logger.Err(err).Msg("Error during collective signing")
 		}
 	}
 }

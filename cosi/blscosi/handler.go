@@ -5,8 +5,8 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
-	"go.dedis.ch/m/crypto"
-	"go.dedis.ch/m/mino"
+	"go.dedis.ch/fabric/crypto"
+	"go.dedis.ch/fabric/mino"
 )
 
 type handler struct {

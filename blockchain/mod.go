@@ -5,11 +5,11 @@ import (
 	"io"
 
 	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/m/crypto"
-	mino "go.dedis.ch/m/mino"
+	"go.dedis.ch/fabric/crypto"
+	mino "go.dedis.ch/fabric/mino"
 )
 
-//go:generate protoc -I ./ --proto_path=../ --go_out=Mmino/messages.proto=go.dedis.ch/m/mino:. ./messages.proto
+//go:generate protoc -I ./ --proto_path=../ --go_out=Mmino/messages.proto=go.dedis.ch/fabric/mino:. ./messages.proto
 
 // Roster is a set of identifiable addresses.
 type Roster interface {

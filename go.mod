@@ -1,4 +1,4 @@
-module go.dedis.ch/m
+module go.dedis.ch/fabric
 
 go 1.13
 

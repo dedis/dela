@@ -6,7 +6,7 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
-	"go.dedis.ch/m/mino"
+	"go.dedis.ch/fabric/mino"
 )
 
 // RPC is an implementation of the mino.RPC interface.

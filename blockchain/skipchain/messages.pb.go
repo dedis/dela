@@ -7,7 +7,7 @@ import (
 	fmt "fmt"
 	proto "github.com/golang/protobuf/proto"
 	any "github.com/golang/protobuf/ptypes/any"
-	blockchain "go.dedis.ch/m/blockchain"
+	blockchain "go.dedis.ch/fabric/blockchain"
 	math "math"
 )
 

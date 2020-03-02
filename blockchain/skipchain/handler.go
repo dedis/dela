@@ -4,8 +4,8 @@ import (
 	fmt "fmt"
 
 	proto "github.com/golang/protobuf/proto"
-	"go.dedis.ch/m"
-	"go.dedis.ch/m/mino"
+	"go.dedis.ch/fabric"
+	"go.dedis.ch/fabric/mino"
 )
 
 type handler struct {
@@ -32,7 +32,7 @@ func (h handler) Process(req proto.Message) (proto.Message, error) {
 			return nil, err
 		}
 
-		m.Logger.Info().Msg("New Genesis block written")
+		fabric.Logger.Info().Msg("New Genesis block written")
 		err = h.db.Write(genesis.(SkipBlock))
 		if err != nil {
 			return nil, err

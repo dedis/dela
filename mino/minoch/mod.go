@@ -5,8 +5,8 @@ package minoch
 import (
 	"fmt"
 
-	"go.dedis.ch/m"
-	"go.dedis.ch/m/mino"
+	m "go.dedis.ch/fabric"
+	"go.dedis.ch/fabric/mino"
 )
 
 // Minoch is an implementation of the Mino interface using channels. Each

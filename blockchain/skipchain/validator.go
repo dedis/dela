@@ -5,8 +5,8 @@ import (
 
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
-	"go.dedis.ch/m/blockchain"
-	"go.dedis.ch/m/crypto"
+	"go.dedis.ch/fabric/blockchain"
+	"go.dedis.ch/fabric/crypto"
 )
 
 // Validator is the validator provided by the user of the skipchain module.

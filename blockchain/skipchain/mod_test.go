@@ -6,9 +6,9 @@ import (
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/m/blockchain"
-	"go.dedis.ch/m/cosi/blscosi"
-	"go.dedis.ch/m/mino/minoch"
+	"go.dedis.ch/fabric/blockchain"
+	"go.dedis.ch/fabric/cosi/blscosi"
+	"go.dedis.ch/fabric/mino/minoch"
 )
 
 func TestSkipchain_Basic(t *testing.T) {
