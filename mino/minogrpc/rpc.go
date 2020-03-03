@@ -15,9 +15,11 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
+	"github.com/improbable-eng/grpc-web/go/grpcweb"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
 )
 
@@ -54,6 +56,7 @@ func (rpc GrpcRPC) Call(req proto.Message,
 
 	go func() {
 		for _, addr := range addrs {
+			fmt.Println("Using addr ", addr)
 			clientConn, err := rpc.getConnection(addr.GetId())
 			if err != nil {
 				errs <- xerrors.Errorf("failed to get client conn: %v", err)
@@ -61,11 +64,17 @@ func (rpc GrpcRPC) Call(req proto.Message,
 			}
 			cl := NewOverlayClient(clientConn)
 
-			callResp, err := cl.Call(context.Background(), sendMsg)
+			fmt.Println("Calling...")
+			ctx, ctxCancelFunc := context.WithTimeout(context.Background(), 10*time.Second)
+			defer ctxCancelFunc()
+			callResp, err := cl.Call(ctx, sendMsg)
+			fmt.Println("Checking...")
 			if err != nil {
+				fmt.Println("Error:", err)
 				errs <- xerrors.Errorf("failed to call client: %v", err)
 				continue
 			}
+			fmt.Println("Got a response!")
 			out <- callResp
 		}
 
@@ -90,7 +99,11 @@ func (rpc *GrpcRPC) getConnection(addr string) (*grpc.ClientConn, error) {
 	})
 
 	// Connecting using TLS and the distant server certificate as the root.
-	conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(ta))
+	conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(ta),
+		grpc.WithConnectParams(grpc.ConnectParams{
+			Backoff:           backoff.DefaultConfig,
+			MinConnectTimeout: 7 * time.Second,
+		}))
 	if err != nil {
 		return nil, fmt.Errorf("couldn't dial: %v", err)
 	}
@@ -142,6 +155,67 @@ func makeCertificate() (*tls.Certificate, error) {
 	}, nil
 }
 
+// gRPC service for the overlay.
+type overlayService struct {
+	overlayServer
+
+	GrpcRPC *GrpcRPC
+}
+
+type overlayServer struct {
+}
+
+func (o overlayServer) Call(context.Context, *CallMsg) (*CallResp, error) {
+	fmt.Println("Hi from the overlay Server")
+	msg := mino.Address{
+		Id: "blabla",
+	}
+	m, err := ptypes.MarshalAny(&msg)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to marshal message: %v", err)
+	}
+
+	return &CallResp{Message: m}, nil
+}
+
+// Serve starts the overlay to listen on the address.
+func (rpc *GrpcRPC) Serve() error {
+	lis, err := net.Listen("tcp4", rpc.addr)
+	if err != nil {
+		return fmt.Errorf("failed to listen: %v", err)
+	}
+
+	rpc.listener = lis
+
+	close(rpc.StartChan)
+
+	wrapped := grpcweb.WrapServer(rpc.Server)
+
+	rpc.srv = &http.Server{
+		TLSConfig: &tls.Config{
+			// TODO: a LE certificate or similar must be used alongside the actual
+			// server certificate for the browser to accept the TLS connection.
+			Certificates: []tls.Certificate{*rpc.cert},
+			ClientAuth:   tls.RequestClientCert,
+		},
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Content-Type") == "application/grpc" {
+				rpc.ServeHTTP(w, r)
+			} else {
+				wrapped.ServeHTTP(w, r)
+			}
+		}),
+	}
+
+	if err := rpc.srv.ServeTLS(lis, "", ""); err != nil {
+		if err != http.ErrServerClosed {
+			return fmt.Errorf("failed to serve: %v", err)
+		}
+	}
+
+	return nil
+}
+
 // Stream ...
 func (rpc GrpcRPC) Stream(ctx context.Context,
 	addrs ...*mino.Address) (in mino.Sender, out mino.Receiver) {
@@ -151,7 +225,7 @@ func (rpc GrpcRPC) Stream(ctx context.Context,
 
 // Sender ...
 type Sender struct {
-	overlay OverlayServer
+	Overlay OverlayServer
 }
 
 // Send sends msg to addrs, which should call the Receiver.Recv of each addrs.

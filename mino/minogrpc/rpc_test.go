@@ -1,6 +1,7 @@
 package minogrpc
 
 import (
+	fmt "fmt"
 	"testing"
 	"time"
 
@@ -11,7 +12,7 @@ import (
 )
 
 func TestSender(t *testing.T) {
-	identifier := "1234"
+	identifier := "127.0.0.1:2000"
 	// srv := MakeMinoGrpc(identifier)
 
 	addr := mino.Address{
@@ -37,16 +38,38 @@ func TestSender(t *testing.T) {
 		cert:       cert,
 		addr:       identifier,
 		listener:   nil,
+		StartChan:  make(chan struct{}),
 		neighbours: make(map[string]Peer),
 	}
 
-	_, errChan := overlay.Call(&msg, &addr)
+	RegisterOverlayServer(srv, &overlayService{GrpcRPC: &overlay})
+
+	go func() {
+		err := overlay.Serve()
+		require.NoError(t, err)
+	}()
+
+	<-overlay.StartChan
+
+	peer := Peer{
+		Address:     overlay.listener.Addr().String(),
+		Certificate: overlay.cert.Leaf,
+	}
+	overlay.neighbours[identifier] = peer
+
+	respChan, errChan := overlay.Call(&msg, &addr)
 loop:
 	for {
 		select {
 		case msgErr := <-errChan:
 			t.Errorf("unexpected error: %v", msgErr)
-		case <-time.After(time.Second):
+			break loop
+		case resp, ok := <-respChan:
+			if !ok {
+				break loop
+			}
+			fmt.Println("response: ", resp)
+		case <-time.After(60 * time.Second):
 			break loop
 		}
 	}
