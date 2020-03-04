@@ -42,7 +42,7 @@ func (h handler) Process(req proto.Message) (proto.Message, error) {
 			return nil, xerrors.Errorf("couldn't decode the forward link: %v", err)
 		}
 
-		err = h.triage.Commit(fl)
+		err = h.triage.Commit(fl.(forwardLink))
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't commit the forward link: %v", err)
 		}
