@@ -1,12 +1,12 @@
 package minogrpc
 
 import (
-	fmt "fmt"
 	"testing"
 	"time"
 
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
+	"github.com/golang/protobuf/ptypes/any"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/mino"
 	grpc "google.golang.org/grpc"
@@ -79,7 +79,17 @@ loop:
 			if !ok {
 				break loop
 			}
-			fmt.Println("response: ", resp)
+
+			anyResp, ok := resp.(*any.Any)
+			if !ok {
+				t.Error("failed to cast")
+				break loop
+			}
+			msg2 := &mino.Envelope{}
+			err = ptypes.UnmarshalAny(anyResp, msg2)
+			require.NoError(t, err)
+
+			require.Equal(t, msg.From.Id, msg2.From.Id)
 		case <-time.After(2 * time.Second):
 			break loop
 		}

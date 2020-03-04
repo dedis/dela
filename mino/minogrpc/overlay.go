@@ -3,7 +3,7 @@ package minogrpc
 import (
 	context "context"
 
-	"github.com/golang/protobuf/ptypes"
+	"github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc/metadata"
@@ -33,11 +33,14 @@ func (o overlayService) Call(ctx context.Context, msg *CallMsg) (*CallResp, erro
 	}
 
 	result, err := handler.Process(msg.Message)
-
-	m, err := ptypes.MarshalAny(result)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to marshal message: %v", err)
 	}
 
-	return &CallResp{Message: m}, nil
+	anyResult, ok := result.(*any.Any)
+	if !ok {
+		return nil, xerrors.Errorf("failed to cast result to any.Any: %v", err)
+	}
+
+	return &CallResp{Message: anyResult}, nil
 }

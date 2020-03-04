@@ -147,7 +147,8 @@ func (rpc RPC) Call(req proto.Message,
 				errs <- xerrors.Errorf("failed to call client: %v", err)
 				continue
 			}
-			out <- callResp
+
+			out <- callResp.Message
 		}
 
 		close(out)
