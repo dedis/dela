@@ -18,8 +18,9 @@ type BinaryMarshaler interface {
 	encoding.BinaryMarshaler
 }
 
-// AnyMarshaler is an interface to encode or decode Any messages.
-type AnyMarshaler interface {
+// ProtoMarshaler is an interface to encode or decode Any messages.
+type ProtoMarshaler interface {
+	Marshal(pb proto.Message) ([]byte, error)
 	MarshalAny(pb proto.Message) (*any.Any, error)
 	UnmarshalAny(any *any.Any, pb proto.Message) error
 }

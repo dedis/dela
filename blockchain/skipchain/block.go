@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	fmt "fmt"
+	math "math"
 
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
@@ -29,7 +30,7 @@ const (
 )
 
 var (
-	protoenc encoding.AnyMarshaler = defaultAnyEncoder{}
+	protoenc encoding.ProtoMarshaler = protoEncoder{}
 )
 
 // BlockID is the type that defines the block identifier.
@@ -65,17 +66,17 @@ func (b SkipBlock) GetID() BlockID {
 func (b SkipBlock) Pack() (proto.Message, error) {
 	header, err := b.packHeader()
 	if err != nil {
-		return nil, encoding.NewErrEncoding("header", err)
+		return nil, encoding.NewEncodingError("header", err)
 	}
 
 	headerAny, err := protoenc.MarshalAny(header)
 	if err != nil {
-		return nil, encoding.NewErrAnyEncoding(header, err)
+		return nil, encoding.NewAnyEncodingError(header, err)
 	}
 
 	payloadAny, err := protoenc.MarshalAny(b.Payload)
 	if err != nil {
-		return nil, encoding.NewErrAnyEncoding(b.Payload, err)
+		return nil, encoding.NewAnyEncodingError(b.Payload, err)
 	}
 
 	blockproto := &blockchain.Block{
@@ -93,7 +94,7 @@ func (b SkipBlock) packHeader() (*BlockHeaderProto, error) {
 	for i, fl := range b.ForwardLinks {
 		flproto, err := fl.Pack()
 		if err != nil {
-			return nil, encoding.NewErrEncoding("forward link", err)
+			return nil, encoding.NewEncodingError("forward link", err)
 		}
 
 		fls[i] = flproto.(*ForwardLinkProto)
@@ -201,12 +202,12 @@ func (fl forwardLink) Pack() (proto.Message, error) {
 	if fl.prepare != nil {
 		prepare, err := fl.prepare.Pack()
 		if err != nil {
-			return nil, encoding.NewErrEncoding("prepare", err)
+			return nil, encoding.NewEncodingError("prepare", err)
 		}
 
 		prepareAny, err := protoenc.MarshalAny(prepare)
 		if err != nil {
-			return nil, xerrors.Errorf("couldn't marshal prepare to any: %v", err)
+			return nil, encoding.NewAnyEncodingError(prepare, err)
 		}
 
 		flproto.Prepare = prepareAny
@@ -215,12 +216,12 @@ func (fl forwardLink) Pack() (proto.Message, error) {
 	if fl.commit != nil {
 		commit, err := fl.commit.Pack()
 		if err != nil {
-			return nil, xerrors.Errorf("couldn't encode commit: %v", err)
+			return nil, encoding.NewEncodingError("commit", err)
 		}
 
 		commitAny, err := protoenc.MarshalAny(commit)
 		if err != nil {
-			return nil, xerrors.Errorf("couldn't marshal commit to any: %v", err)
+			return nil, encoding.NewAnyEncodingError(commit, err)
 		}
 
 		flproto.Commit = commitAny
@@ -243,13 +244,17 @@ type Chain []SkipBlock
 
 // GetProof returns a verifiable proof of the latest block of the chain.
 func (c Chain) GetProof() Proof {
-	chain := c[:len(c)-1]
-
-	proof := Proof{
-		ForwardLinks: make([]ForwardLink, len(chain)),
+	numForwardLink := int(math.Max(0, float64(len(c)-1)))
+	if len(c) == 0 {
+		return Proof{}
 	}
 
-	for i, block := range chain {
+	proof := Proof{
+		GenesisBlock: c[0],
+		ForwardLinks: make([]ForwardLink, numForwardLink),
+	}
+
+	for i, block := range c[:numForwardLink] {
 		proof.ForwardLinks[i] = block.ForwardLinks[0]
 	}
 
@@ -273,13 +278,13 @@ func (p Proof) Pack() (proto.Message, error) {
 	for i, link := range p.ForwardLinks {
 		packed, err := link.Pack()
 		if err != nil {
-			return nil, xerrors.Errorf("couldn't pack the forward link: %v", err)
+			return nil, encoding.NewEncodingError("forward link", err)
 		}
 
 		var ok bool
 		proof.ForwardLinks[i], ok = packed.(*ForwardLinkProto)
 		if !ok {
-			return nil, xerrors.New("mismatching forward link protobuf message")
+			return nil, encoding.NewTypeError(packed, (*ForwardLinkProto)(nil))
 		}
 	}
 
@@ -288,26 +293,54 @@ func (p Proof) Pack() (proto.Message, error) {
 
 // Verify follows the chain from the beginning to insure the integrity.
 func (p Proof) Verify(v crypto.Verifier, block SkipBlock) error {
-	pubkeys := p.GenesisBlock.Roster.GetPublicKeys()
+	if len(p.ForwardLinks) == 0 {
+		// No forward links so the genesis block is the only one.
+		if !bytes.Equal(p.GenesisBlock.GetID(), block.GetID()) {
+			return xerrors.New("mismatch genesis block")
+		}
 
-	if !bytes.Equal(p.ForwardLinks[0].GetFrom(), p.GenesisBlock.hash) {
-		return xerrors.Errorf("got genesis hash %x but expect %v in forward link",
-			p.ForwardLinks[0].GetFrom(), p.GenesisBlock.GetID())
+		return nil
 	}
 
-	for i, link := range p.ForwardLinks {
-		err := link.Verify(v, pubkeys)
+	if p.GenesisBlock.Roster == nil {
+		return xerrors.New("missing roster in genesis block")
+	}
+
+	pubkeys := p.GenesisBlock.Roster.GetPublicKeys()
+
+	// Verify the first forward link against the genesis block.
+	err := p.verifyLink(v, pubkeys, p.ForwardLinks[0], p.GenesisBlock.GetID())
+	if err != nil {
+		return xerrors.Errorf("couldn't verify genesis forward link: %w", err)
+	}
+
+	// Then follow the chain of forward links.
+	prev := p.ForwardLinks[0].GetTo()
+	for _, link := range p.ForwardLinks[1:] {
+		err := p.verifyLink(v, pubkeys, link, prev)
 		if err != nil {
-			return xerrors.Errorf("couldn't verify the forward link: %v", err)
+			return xerrors.Errorf("couldn't verify the forward link: %w", err)
 		}
 
-		if i > 0 {
-			prev := p.ForwardLinks[i-1].GetTo()
-			if !bytes.Equal(prev, link.GetFrom()) {
-				return xerrors.Errorf("got previous block %x but expect %x in forward link",
-					link.GetFrom(), prev)
-			}
-		}
+		prev = link.GetTo()
+	}
+
+	if !bytes.Equal(prev, block.GetID()) {
+		return xerrors.Errorf("got forward link to %v but expect %v", prev, block.GetID())
+	}
+
+	return nil
+}
+
+func (p Proof) verifyLink(v crypto.Verifier, pubkeys []crypto.PublicKey, link ForwardLink, prev BlockID) error {
+	err := link.Verify(v, pubkeys)
+	if err != nil {
+		return xerrors.Errorf("couldn't verify the signatures: %w", err)
+	}
+
+	if !bytes.Equal(prev, link.GetFrom()) {
+		return xerrors.Errorf("got previous block %v but expect %v in forward link",
+			link.GetFrom(), prev)
 	}
 
 	return nil
@@ -332,9 +365,9 @@ func (f *blockFactory) createGenesis(roster blockchain.Roster, data proto.Messag
 		data = &empty.Empty{}
 	}
 
-	buffer, err := proto.Marshal(data)
+	buffer, err := protoenc.Marshal(data)
 	if err != nil {
-		return SkipBlock{}, xerrors.Errorf("couldn't encode the data: %v", err)
+		return SkipBlock{}, encoding.NewEncodingError("data", err)
 	}
 
 	h.Write(buffer)
@@ -367,9 +400,9 @@ func (f *blockFactory) createGenesis(roster blockchain.Roster, data proto.Messag
 }
 
 func (f *blockFactory) fromPrevious(prev SkipBlock, data proto.Message) (SkipBlock, error) {
-	databuf, err := proto.Marshal(data)
+	databuf, err := protoenc.Marshal(data)
 	if err != nil {
-		return SkipBlock{}, xerrors.Errorf("couldn't encode the data: %v", err)
+		return SkipBlock{}, encoding.NewEncodingError("data", err)
 	}
 
 	h := sha256.New()
@@ -405,18 +438,18 @@ func (f *blockFactory) fromForwardLink(src *ForwardLinkProto) (ForwardLink, erro
 	}
 
 	if src.GetPrepare() != nil {
-		sig, err := f.verifier.GetSignatureFactory().FromAny(src.GetPrepare())
+		sig, err := f.verifier.GetSignatureFactory().FromProto(src.GetPrepare())
 		if err != nil {
-			return nil, xerrors.Errorf("couldn't decode prepare signature: %v", err)
+			return nil, encoding.NewDecodingError("prepare signature", err)
 		}
 
 		fl.prepare = sig
 	}
 
 	if src.GetCommit() != nil {
-		sig, err := f.verifier.GetSignatureFactory().FromAny(src.GetCommit())
+		sig, err := f.verifier.GetSignatureFactory().FromProto(src.GetCommit())
 		if err != nil {
-			return nil, xerrors.Errorf("couldn't decode commit signature: %v", err)
+			return nil, encoding.NewDecodingError("commit signature", err)
 		}
 
 		fl.commit = sig
@@ -434,22 +467,22 @@ func (f *blockFactory) fromForwardLink(src *ForwardLinkProto) (ForwardLink, erro
 
 func (f *blockFactory) fromBlock(src *blockchain.Block) (interface{}, error) {
 	var header BlockHeaderProto
-	err := ptypes.UnmarshalAny(src.GetHeader(), &header)
+	err := protoenc.UnmarshalAny(src.GetHeader(), &header)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't decode header: %v", err)
+		return nil, encoding.NewAnyDecodingError(&header, err)
 	}
 
 	var payload ptypes.DynamicAny
-	err = ptypes.UnmarshalAny(src.GetPayload(), &payload)
+	err = protoenc.UnmarshalAny(src.GetPayload(), &payload)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't decode the payload: %v", err)
+		return nil, encoding.NewAnyDecodingError(&payload, err)
 	}
 
 	forwardLinks := make([]ForwardLink, len(header.GetForwardlinks()))
 	for i, packed := range header.GetForwardlinks() {
 		fl, err := f.fromForwardLink(packed)
 		if err != nil {
-			return nil, xerrors.Errorf("coudln't decode the forward link: %v", err)
+			return nil, encoding.NewDecodingError("forward link", err)
 		}
 
 		forwardLinks[i] = fl
@@ -490,9 +523,9 @@ func (f *blockFactory) fromBlock(src *blockchain.Block) (interface{}, error) {
 
 func (f *blockFactory) fromProof(src *any.Any) (Proof, error) {
 	packed := &ProofProto{}
-	err := ptypes.UnmarshalAny(src, packed)
+	err := protoenc.UnmarshalAny(src, packed)
 	if err != nil {
-		return Proof{}, xerrors.Errorf("couldn't unpack proof: %v", err)
+		return Proof{}, encoding.NewAnyDecodingError(packed, err)
 	}
 
 	proof := Proof{
@@ -634,12 +667,20 @@ func (t *blockTriage) Commit(fl forwardLink) error {
 	return nil
 }
 
-type defaultAnyEncoder struct{}
+type protoEncoder struct{}
 
-func (e defaultAnyEncoder) MarshalAny(pb proto.Message) (*any.Any, error) {
+func newProtoEncoder() protoEncoder {
+	return protoEncoder{}
+}
+
+func (e protoEncoder) Marshal(pb proto.Message) ([]byte, error) {
+	return proto.Marshal(pb)
+}
+
+func (e protoEncoder) MarshalAny(pb proto.Message) (*any.Any, error) {
 	return ptypes.MarshalAny(pb)
 }
 
-func (e defaultAnyEncoder) UnmarshalAny(any *any.Any, pb proto.Message) error {
+func (e protoEncoder) UnmarshalAny(any *any.Any, pb proto.Message) error {
 	return ptypes.UnmarshalAny(any, pb)
 }

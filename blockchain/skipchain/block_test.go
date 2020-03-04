@@ -6,10 +6,12 @@ import (
 	"encoding/binary"
 	fmt "fmt"
 	"io"
+	math "math"
 	"math/rand"
 	"reflect"
 	"testing"
 	"testing/quick"
+	"time"
 
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
@@ -79,7 +81,7 @@ func TestSkipBlock_Pack(t *testing.T) {
 
 func TestSkipBlock_PackFailures(t *testing.T) {
 	defer func() {
-		protoenc = defaultAnyEncoder{}
+		protoenc = protoEncoder{}
 	}()
 
 	block := SkipBlock{
@@ -89,23 +91,23 @@ func TestSkipBlock_PackFailures(t *testing.T) {
 	}
 
 	e := xerrors.New("pack error")
-	protoenc = &testAnyEncoder{err: e}
+	protoenc = &testProtoEncoder{err: e}
 	_, err := block.Pack()
 	require.Error(t, err)
 	require.True(t, xerrors.Is(err, e))
-	require.True(t, xerrors.Is(err, encoding.NewErrAnyEncoding((*BlockHeaderProto)(nil), nil)))
+	require.True(t, xerrors.Is(err, encoding.NewAnyEncodingError((*BlockHeaderProto)(nil), nil)))
 
-	protoenc = &testAnyEncoder{err: e, delay: 1}
+	protoenc = &testProtoEncoder{err: e, delay: 1}
 	_, err = block.Pack()
 	require.Error(t, err)
 	require.True(t, xerrors.Is(err, e))
-	require.True(t, xerrors.Is(err, encoding.NewErrAnyEncoding((*empty.Empty)(nil), nil)))
+	require.True(t, xerrors.Is(err, encoding.NewAnyEncodingError((*empty.Empty)(nil), nil)))
 
 	block.ForwardLinks[0] = testForwardLink{err: e}
 	_, err = block.Pack()
 	require.Error(t, err)
 	require.True(t, xerrors.Is(err, e))
-	require.True(t, xerrors.Is(err, encoding.NewErrEncoding("forward link", nil)))
+	require.True(t, xerrors.Is(err, encoding.NewEncodingError("forward link", nil)))
 }
 
 func TestSkipBlock_HashUniqueness(t *testing.T) {
@@ -247,6 +249,8 @@ func TestForwardLink_Pack(t *testing.T) {
 }
 
 func TestForwardLink_PackFailures(t *testing.T) {
+	defer func() { protoenc = newProtoEncoder() }()
+
 	fl := forwardLink{}
 
 	e := xerrors.New("sig error")
@@ -254,6 +258,25 @@ func TestForwardLink_PackFailures(t *testing.T) {
 	_, err := fl.Pack()
 	require.Error(t, err)
 	require.True(t, xerrors.Is(err, e))
+
+	fl.prepare = nil
+	fl.commit = testSignature{err: e}
+	_, err = fl.Pack()
+	require.Error(t, err)
+	require.True(t, xerrors.Is(err, e))
+
+	fl.prepare = testSignature{}
+	fl.commit = testSignature{}
+	protoenc = &testProtoEncoder{err: e}
+	_, err = fl.Pack()
+	require.Error(t, err)
+	require.True(t, xerrors.Is(err, encoding.NewAnyEncodingError((*empty.Empty)(nil), nil)))
+
+	protoenc = &testProtoEncoder{err: e, delay: 1}
+	_, err = fl.Pack()
+	require.Error(t, err)
+	require.True(t, xerrors.Is(err, encoding.NewAnyEncodingError((*empty.Empty)(nil), nil)))
+
 }
 
 func TestForwardLink_Hash(t *testing.T) {
@@ -268,6 +291,364 @@ func TestForwardLink_Hash(t *testing.T) {
 		h.Write(from)
 		h.Write(to)
 		return bytes.Equal(hash, h.Sum(nil))
+	}
+
+	err := quick.Check(f, nil)
+	require.NoError(t, err)
+}
+
+func TestChain_GetProof(t *testing.T) {
+	f := func(blocks []SkipBlock) bool {
+		numForwardLink := int(math.Max(0, float64(len(blocks)-1)))
+
+		for i := range blocks[:numForwardLink] {
+			blocks[i].ForwardLinks = []ForwardLink{
+				forwardLink{from: blocks[i].hash, to: blocks[i+1].hash},
+			}
+		}
+
+		proof := Chain(blocks).GetProof()
+		require.Len(t, proof.ForwardLinks, numForwardLink)
+
+		return true
+	}
+
+	err := quick.Check(f, nil)
+	require.NoError(t, err)
+}
+
+func TestProof_Pack(t *testing.T) {
+	proof := Proof{
+		ForwardLinks: []ForwardLink{
+			forwardLink{from: []byte{0}, to: []byte{1}},
+			forwardLink{from: []byte{1}, to: []byte{2}},
+		},
+	}
+
+	packed, err := proof.Pack()
+	require.NoError(t, err)
+
+	msg := packed.(*ProofProto)
+	require.Len(t, msg.ForwardLinks, len(proof.ForwardLinks))
+	for i := range proof.ForwardLinks {
+		require.Equal(t, proof.ForwardLinks[i].GetFrom(), BlockID(msg.ForwardLinks[i].GetFrom()))
+		require.Equal(t, proof.ForwardLinks[i].GetTo(), BlockID(msg.ForwardLinks[i].GetTo()))
+	}
+}
+
+func TestProof_PackFailures(t *testing.T) {
+	e := xerrors.New("pack error")
+	proof := Proof{
+		ForwardLinks: []ForwardLink{
+			testForwardLink{err: e},
+		},
+	}
+
+	_, err := proof.Pack()
+	require.Error(t, err)
+	require.True(t, xerrors.Is(err, encoding.NewEncodingError("forward link", nil)))
+
+	proof.ForwardLinks = []ForwardLink{
+		testForwardLink{packed: &empty.Empty{}},
+	}
+
+	_, err = proof.Pack()
+	require.Error(t, err)
+	expectErr := encoding.NewTypeError((*empty.Empty)(nil), (*ForwardLinkProto)(nil))
+	require.True(t, xerrors.Is(err, expectErr))
+}
+
+func TestProof_Verify(t *testing.T) {
+	f := func(blocks []SkipBlock) bool {
+		numForwardLink := int(math.Max(0, float64(len(blocks)-1)))
+
+		for i := range blocks[:numForwardLink] {
+			blocks[i].ForwardLinks = []ForwardLink{
+				forwardLink{
+					from:    blocks[i].hash,
+					to:      blocks[i+1].hash,
+					prepare: testSignature{},
+					commit:  testSignature{},
+				},
+			}
+		}
+
+		proof := Chain(blocks).GetProof()
+		v := &testVerifier{}
+
+		if len(blocks) > 0 {
+			err := proof.Verify(v, blocks[len(blocks)-1])
+			require.NoError(t, err)
+		}
+
+		return true
+	}
+
+	err := quick.Check(f, nil)
+	require.NoError(t, err)
+}
+
+func TestProof_VerifyFailures(t *testing.T) {
+	proof := Proof{GenesisBlock: SkipBlock{hash: []byte{123}}}
+	err := proof.Verify(nil, SkipBlock{})
+	require.Error(t, err)
+	require.EqualError(t, err, "mismatch genesis block")
+
+	proof = Proof{ForwardLinks: []ForwardLink{newTestForwardLink()}}
+	err = proof.Verify(nil, SkipBlock{})
+	require.Error(t, err)
+	require.EqualError(t, err, "missing roster in genesis block")
+
+	proof.GenesisBlock.Roster = testRoster{}
+	e := xerrors.New("verify error")
+	err = proof.Verify(&testVerifier{err: e}, SkipBlock{})
+	require.Error(t, err)
+	require.True(t, xerrors.Is(err, e), err.Error())
+
+	proof.GenesisBlock = SkipBlock{hash: []byte{0xaa}, Roster: testRoster{}}
+	err = proof.Verify(&testVerifier{}, SkipBlock{})
+	require.Error(t, err)
+	require.EqualError(t, xerrors.Unwrap(err), "got previous block 01 but expect aa in forward link")
+
+	proof.ForwardLinks = []ForwardLink{
+		forwardLink{from: []byte{0xaa}, to: []byte{0xbb}, prepare: testSignature{}, commit: testSignature{}},
+		forwardLink{from: []byte{0xcc}, prepare: testSignature{}, commit: testSignature{}},
+	}
+	err = proof.Verify(&testVerifier{}, SkipBlock{})
+	require.Error(t, err)
+	require.EqualError(t, xerrors.Unwrap(err), "got previous block cc but expect bb in forward link")
+
+	proof.ForwardLinks = []ForwardLink{
+		forwardLink{from: []byte{0xaa}, to: []byte{0xbb}, prepare: testSignature{}, commit: testSignature{}},
+	}
+	err = proof.Verify(&testVerifier{}, SkipBlock{hash: []byte{0xcc}})
+	require.Error(t, err)
+	require.EqualError(t, err, "got forward link to bb but expect cc")
+}
+
+func TestBlockFactory_CreateGenesis(t *testing.T) {
+	factory := newBlockFactory(&testVerifier{})
+
+	genesis, err := factory.createGenesis(testRoster{}, nil)
+	require.NoError(t, err)
+	require.NotNil(t, genesis)
+	require.NotNil(t, factory.genesis)
+
+	hash, err := genesis.computeHash()
+	require.NoError(t, err)
+	require.Equal(t, hash, genesis.hash)
+
+	genesis, err = factory.createGenesis(testRoster{}, &empty.Empty{})
+	require.NoError(t, err)
+}
+
+func TestBlockFactory_CreateGenesisFailures(t *testing.T) {
+	defer func() { protoenc = protoEncoder{} }()
+
+	e := xerrors.New("encode error")
+	protoenc = &testProtoEncoder{err: e}
+	factory := newBlockFactory(&testVerifier{})
+
+	_, err := factory.createGenesis(nil, nil)
+	require.Error(t, err)
+	require.True(t, xerrors.Is(err, e))
+}
+
+func TestBlockFactory_FromPrevious(t *testing.T) {
+	factory := newBlockFactory(&testVerifier{})
+
+	f := func(prev SkipBlock) bool {
+		block, err := factory.fromPrevious(prev, &empty.Empty{})
+		require.NoError(t, err)
+		require.Equal(t, prev.Index+1, block.Index)
+		require.Equal(t, prev.Height, block.Height)
+		require.Equal(t, prev.BaseHeight, block.BaseHeight)
+		require.Equal(t, prev.MaximumHeight, block.MaximumHeight)
+		require.Equal(t, prev.GenesisID, block.GenesisID)
+		require.NotEqual(t, prev.DataHash, block.DataHash)
+		require.Len(t, block.BackLinks, 1)
+		require.Equal(t, prev.GetID(), block.BackLinks[0])
+		require.Len(t, block.ForwardLinks, 0)
+
+		return true
+	}
+
+	err := quick.Check(f, nil)
+	require.NoError(t, err)
+}
+
+func TestBlockFactory_FromPreviousFailures(t *testing.T) {
+	defer func() { protoenc = newProtoEncoder() }()
+
+	factory := newBlockFactory(&testVerifier{})
+
+	e := xerrors.New("encoding error")
+	protoenc = &testProtoEncoder{err: e}
+
+	_, err := factory.fromPrevious(SkipBlock{}, nil)
+	require.Error(t, err)
+	require.True(t, xerrors.Is(err, e))
+}
+
+func TestBlockFactory_FromForwardLink(t *testing.T) {
+	factory := newBlockFactory(&testVerifier{})
+
+	src := &ForwardLinkProto{
+		From: []byte{0xaa},
+		To:   []byte{0xbb},
+	}
+
+	fl, err := factory.fromForwardLink(src)
+	require.NoError(t, err)
+	require.Equal(t, BlockID(src.GetFrom()), fl.GetFrom())
+	require.Equal(t, BlockID(src.GetTo()), fl.GetTo())
+	require.NotNil(t, fl.(forwardLink).hash)
+	require.NotEqual(t, []byte{}, fl.(forwardLink).hash)
+
+	src.Prepare = &any.Any{}
+	src.Commit = &any.Any{}
+
+	fl, err = factory.fromForwardLink(src)
+	require.NoError(t, err)
+	require.NotNil(t, fl.(forwardLink).prepare)
+	require.NotNil(t, fl.(forwardLink).commit)
+}
+
+func TestBlockFactory_FromForwardLinkFailures(t *testing.T) {
+	e := xerrors.New("sig factory error")
+	factory := newBlockFactory(&testVerifier{err: e})
+
+	src := &ForwardLinkProto{Prepare: &any.Any{}}
+	_, err := factory.fromForwardLink(src)
+	require.Error(t, err)
+	require.True(t, xerrors.Is(err, encoding.NewDecodingError("prepare signature", nil)))
+
+	src = &ForwardLinkProto{Commit: &any.Any{}}
+	_, err = factory.fromForwardLink(src)
+	require.Error(t, err)
+	require.True(t, xerrors.Is(err, encoding.NewDecodingError("commit signature", nil)))
+}
+
+func TestBlockFactory_FromBlock(t *testing.T) {
+	factory := newBlockFactory(&testVerifier{})
+
+	f := func(block SkipBlock) bool {
+		packed, err := block.Pack()
+		require.NoError(t, err)
+
+		nb, err := factory.fromBlock(packed.(*blockchain.Block))
+		newBlock := nb.(SkipBlock)
+
+		require.Equal(t, block, newBlock)
+
+		return reflect.DeepEqual(block, newBlock)
+	}
+
+	err := quick.Check(f, nil)
+	require.NoError(t, err)
+}
+
+func TestBlockFactory_FromBlockFailures(t *testing.T) {
+	defer func() { protoenc = newProtoEncoder() }()
+
+	gen := SkipBlock{}.Generate(rand.New(rand.NewSource(time.Now().Unix())), 5)
+	block := gen.Interface().(SkipBlock)
+
+	factory := newBlockFactory(&testVerifier{})
+
+	src, err := block.Pack()
+	require.NoError(t, err)
+
+	e := xerrors.New("encoding error")
+	protoenc = &testProtoEncoder{err: e}
+
+	_, err = factory.fromBlock(src.(*blockchain.Block))
+	require.Error(t, err)
+	require.True(t, xerrors.Is(err, encoding.NewAnyDecodingError((*BlockHeaderProto)(nil), nil)))
+
+	protoenc = &testProtoEncoder{err: e, delay: 1}
+	_, err = factory.fromBlock(src.(*blockchain.Block))
+	require.Error(t, err)
+	require.True(t, xerrors.Is(err, encoding.NewAnyDecodingError((*ptypes.DynamicAny)(nil), nil)), err.Error())
+}
+
+func TestBlockFactory_FromProof(t *testing.T) {
+	factory := newBlockFactory(&testVerifier{})
+
+	f := func(blocks []SkipBlock) bool {
+		if len(blocks) == 0 {
+			return true
+		}
+
+		numForwardLink := int(math.Max(0, float64(len(blocks)-1)))
+
+		for i := range blocks[:numForwardLink] {
+			fl := forwardLink{from: blocks[i].hash, to: blocks[i+1].hash}
+			hash, err := fl.computeHash()
+			require.NoError(t, err)
+			fl.hash = hash
+
+			blocks[i].ForwardLinks = []ForwardLink{fl}
+		}
+
+		proof := Chain(blocks).GetProof()
+		packed, err := proof.Pack()
+		require.NoError(t, err)
+
+		packedAny, err := protoenc.MarshalAny(packed)
+		require.NoError(t, err)
+
+		factory.genesis = &blocks[0]
+		decoded, err := factory.fromProof(packedAny)
+		require.NoError(t, err)
+		require.Equal(t, proof, decoded)
+
+		return true
+	}
+
+	err := quick.Check(f, nil)
+	require.NoError(t, err)
+}
+
+func TestBlockFactory_FromVerifiable(t *testing.T) {
+	factory := newBlockFactory(&testVerifier{})
+
+	f := func(blocks []SkipBlock) bool {
+		if len(blocks) == 0 {
+			return true
+		}
+
+		numForwardLink := int(math.Max(0, float64(len(blocks)-1)))
+
+		for i := range blocks[:numForwardLink] {
+			fl := forwardLink{from: blocks[i].hash, to: blocks[i+1].hash, prepare: testSignature{}, commit: testSignature{}}
+			hash, err := fl.computeHash()
+			require.NoError(t, err)
+			fl.hash = hash
+
+			blocks[i].ForwardLinks = []ForwardLink{fl}
+		}
+
+		proof := Chain(blocks).GetProof()
+		packed, err := proof.Pack()
+		require.NoError(t, err)
+		packedAny, err := protoenc.MarshalAny(packed)
+		require.NoError(t, err)
+
+		packed, err = blocks[len(blocks)-1].Pack()
+		require.NoError(t, err)
+
+		verifiableBlock := &blockchain.VerifiableBlock{
+			Block: packed.(*blockchain.Block),
+			Proof: packedAny,
+		}
+
+		factory.genesis = &blocks[0]
+		decoded, err := factory.FromVerifiable(verifiableBlock, nil)
+		require.NoError(t, err)
+		require.Equal(t, blocks[len(blocks)-1], decoded)
+
+		return true
 	}
 
 	err := quick.Check(f, nil)
@@ -301,21 +682,31 @@ func (s SkipBlock) Generate(rand *rand.Rand, size int) reflect.Value {
 
 	forwardlinks := make([]ForwardLink, rand.Int31n(int32(size)))
 	for i := range forwardlinks {
-		forwardlinks[i] = forwardLink{}
+		fl := forwardLink{}
+
+		hash, _ := fl.computeHash()
+		fl.hash = hash
+
+		forwardlinks[i] = fl
 	}
+
+	roster, _ := blockchain.NewRoster(&testVerifier{})
 
 	block := SkipBlock{
 		Index:         randomUint64(rand),
 		Height:        randomUint32(rand),
 		BaseHeight:    randomUint32(rand),
 		MaximumHeight: randomUint32(rand),
-		Roster:        blockchain.SimpleRoster{},
+		Roster:        roster,
 		GenesisID:     genesisID,
 		DataHash:      dataHash,
 		BackLinks:     []BlockID{{1}},
 		ForwardLinks:  forwardlinks,
 		Payload:       &empty.Empty{},
 	}
+
+	hash, _ := block.computeHash()
+	block.hash = hash
 
 	return reflect.ValueOf(block)
 }
@@ -341,26 +732,39 @@ func (r testRoster) WriteTo(w io.Writer) (int64, error) {
 	return int64(len(r.buffer)), nil
 }
 
-type testAnyEncoder struct {
+type testProtoEncoder struct {
 	delay int
 	err   error
 }
 
-func (e *testAnyEncoder) MarshalAny(pb proto.Message) (*any.Any, error) {
+func (e *testProtoEncoder) Marshal(pb proto.Message) ([]byte, error) {
 	if e.err != nil {
 		if e.delay == 0 {
 			return nil, e.err
 		}
+		e.delay--
+	}
 
+	return proto.Marshal(pb)
+}
+
+func (e *testProtoEncoder) MarshalAny(pb proto.Message) (*any.Any, error) {
+	if e.err != nil {
+		if e.delay == 0 {
+			return nil, e.err
+		}
 		e.delay--
 	}
 
 	return ptypes.MarshalAny(pb)
 }
 
-func (e *testAnyEncoder) UnmarshalAny(any *any.Any, pb proto.Message) error {
+func (e *testProtoEncoder) UnmarshalAny(any *any.Any, pb proto.Message) error {
 	if e.err != nil {
-		return e.err
+		if e.delay == 0 {
+			return e.err
+		}
+		e.delay--
 	}
 
 	return ptypes.UnmarshalAny(any, pb)
@@ -368,7 +772,8 @@ func (e *testAnyEncoder) UnmarshalAny(any *any.Any, pb proto.Message) error {
 
 type testForwardLink struct {
 	forwardLink
-	err error
+	err    error
+	packed proto.Message
 }
 
 func newTestForwardLink() testForwardLink {
@@ -380,9 +785,17 @@ func newTestForwardLink() testForwardLink {
 	}
 }
 
+func (fl testForwardLink) Verify(v crypto.Verifier, pubkeys []crypto.PublicKey) error {
+	return v.Verify(pubkeys, []byte{}, testSignature{})
+}
+
 func (fl testForwardLink) Pack() (proto.Message, error) {
 	if fl.err != nil {
 		return nil, fl.err
+	}
+
+	if fl.packed != nil {
+		return fl.packed, nil
 	}
 
 	return fl.forwardLink.Pack()
@@ -401,6 +814,14 @@ func (s testSignature) Pack() (proto.Message, error) {
 	return &empty.Empty{}, s.err
 }
 
+type testSignatureFactory struct {
+	err error
+}
+
+func (f testSignatureFactory) FromProto(pb proto.Message) (crypto.Signature, error) {
+	return testSignature{}, f.err
+}
+
 type testVerifier struct {
 	err   error
 	delay int
@@ -410,6 +831,10 @@ type testVerifier struct {
 	}
 
 	crypto.Verifier
+}
+
+func (v *testVerifier) GetSignatureFactory() crypto.SignatureFactory {
+	return testSignatureFactory{err: v.err}
 }
 
 func (v *testVerifier) Verify(pubkeys []crypto.PublicKey, msg []byte, sig crypto.Signature) error {

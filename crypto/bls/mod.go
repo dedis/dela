@@ -48,7 +48,7 @@ func (sig signature) Pack() (proto.Message, error) {
 
 type publicKeyFactory struct{}
 
-func (f publicKeyFactory) FromAny(src *any.Any) (crypto.PublicKey, error) {
+func (f publicKeyFactory) fromAny(src *any.Any) (crypto.PublicKey, error) {
 	var pkp PublicKeyProto
 	err := ptypes.UnmarshalAny(src, &pkp)
 	if err != nil {
@@ -59,18 +59,20 @@ func (f publicKeyFactory) FromAny(src *any.Any) (crypto.PublicKey, error) {
 }
 
 func (f publicKeyFactory) FromProto(src proto.Message) (crypto.PublicKey, error) {
-	pkp, ok := src.(*PublicKeyProto)
-	if !ok {
+	switch msg := src.(type) {
+	case *PublicKeyProto:
+		point := suite.Point()
+		err := point.UnmarshalBinary(msg.GetData())
+		if err != nil {
+			return nil, err
+		}
+
+		return publicKey{point: point}, nil
+	case *any.Any:
+		return f.fromAny(msg)
+	default:
 		return nil, errors.New("invalid public key type")
 	}
-
-	point := suite.Point()
-	err := point.UnmarshalBinary(pkp.GetData())
-	if err != nil {
-		return nil, err
-	}
-
-	return publicKey{point: point}, nil
 }
 
 type signatureFactory struct{}
@@ -86,12 +88,14 @@ func (f signatureFactory) FromAny(src *any.Any) (crypto.Signature, error) {
 }
 
 func (f signatureFactory) FromProto(src proto.Message) (crypto.Signature, error) {
-	sigproto, ok := src.(*SignatureProto)
-	if !ok {
+	switch msg := src.(type) {
+	case *SignatureProto:
+		return signature{data: msg.GetData()}, nil
+	case *any.Any:
+		return f.FromAny(msg)
+	default:
 		return nil, errors.New("invalid signature type")
 	}
-
-	return signature{data: sigproto.GetData()}, nil
 }
 
 // verifier implements the verifier interface for BLS.
