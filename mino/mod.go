@@ -68,16 +68,18 @@ func (h UnsupportedHandler) Stream(in Sender, out Receiver) error {
 	return errors.New("stream is not supported")
 }
 
-// Mino is a representation of a overlay network that allows the creation
+// Mino is a representation of an overlay network that allows the creation
 // of namespaces for internal protocols and associate handlers to it.
 type Mino interface {
 	// Address returns the address that other participants should use to contact
 	// this instance.
 	Address() *Address
 
-	// MakePath returns an instance restricted to the path.
-	MakePath(ns string) (Mino, error)
+	// MakeNamespace returns an instance restricted to the namespace.
+	MakeNamespace(namespace string) (Mino, error)
 
-	// MakeRPC creates an RPC that can send to and receive from the unique path.
+	// MakeRPC creates an RPC that can send to and receive from a uniq URI which
+	// is computed with URI = (namespace || name)
+	// The namespace is known by the minion instance.
 	MakeRPC(name string, h Handler) (RPC, error)
 }
