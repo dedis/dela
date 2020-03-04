@@ -19,11 +19,11 @@ import (
 
 const (
 	// DefaultMaximumHeight is the default value when creating a genesis block
-	// for the maximum height.
+	// for the maximum height of each block.
 	DefaultMaximumHeight = 32
 
 	// DefaultBaseHeight is the default value when creating a genesis block
-	// for the base height.
+	// for the base height of each block.
 	DefaultBaseHeight = 4
 )
 
@@ -215,7 +215,7 @@ func (fl ForwardLink) computeHash() ([]byte, error) {
 // Chain is an ordered list of skipblocks.
 type Chain []SkipBlock
 
-// GetProof returns a verifiable proof to the latest block of the chain.
+// GetProof returns a verifiable proof of the latest block of the chain.
 func (c Chain) GetProof() Proof {
 	chain := c[:len(c)-1]
 
@@ -250,7 +250,11 @@ func (p Proof) Pack() (proto.Message, error) {
 			return nil, xerrors.Errorf("couldn't pack the forward link: %v", err)
 		}
 
-		proof.ForwardLinks[i] = packed.(*ForwardLinkProto)
+		var ok bool
+		proof.ForwardLinks[i], ok = packed.(*ForwardLinkProto)
+		if !ok {
+			return nil, xerrors.New("mismatching forward link protobuf message")
+		}
 	}
 
 	return proof, nil
@@ -261,21 +265,22 @@ func (p Proof) Verify(v crypto.Verifier, block SkipBlock) error {
 	pubkeys := p.GenesisBlock.Roster.GetPublicKeys()
 
 	if !bytes.Equal(p.ForwardLinks[0].From, p.GenesisBlock.hash) {
-		fabric.Logger.Error().Msgf("%x != %x", p.ForwardLinks[0].From, p.GenesisBlock.hash)
-		return xerrors.New("mismatching genesis hash in forward link")
+		return xerrors.Errorf("got genesis hash %x but expect %v in forward link",
+			p.ForwardLinks[0].From, p.GenesisBlock.GetID())
 	}
 
 	for i, link := range p.ForwardLinks {
-		if i > 0 {
-			prev := p.ForwardLinks[i-1].To
-			if !bytes.Equal(prev, link.From) {
-				return xerrors.New("mismatching previous target in forward link")
-			}
-		}
-
 		err := link.Verify(v, pubkeys)
 		if err != nil {
 			return xerrors.Errorf("couldn't verify the forward link: %v", err)
+		}
+
+		if i > 0 {
+			prev := p.ForwardLinks[i-1].To
+			if !bytes.Equal(prev, link.From) {
+				return xerrors.Errorf("got previous block %x but expect %x in forward link",
+					link.From, prev)
+			}
 		}
 	}
 
