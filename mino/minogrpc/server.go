@@ -71,45 +71,6 @@ type RPC struct {
 	uri     string
 }
 
-// Serve starts the HTTP server that forwards gRPC calls to the gRPC server
-func (srv *Server) Serve() error {
-	lis, err := net.Listen("tcp4", srv.addr.Id)
-	if err != nil {
-		return xerrors.Errorf("failed to listen: %v", err)
-	}
-
-	srv.listener = lis
-
-	close(srv.StartChan)
-
-	wrapped := grpcweb.WrapServer(srv.grpcSrv)
-
-	srv.httpSrv = &http.Server{
-		TLSConfig: &tls.Config{
-			// TODO: a LE certificate or similar must be used alongside the
-			// actual server certificate for the browser to accept the TLS
-			// connection.
-			Certificates: []tls.Certificate{*srv.cert},
-			ClientAuth:   tls.RequestClientCert,
-		},
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Header.Get("Content-Type") == "application/grpc" {
-				srv.grpcSrv.ServeHTTP(w, r)
-			} else {
-				wrapped.ServeHTTP(w, r)
-			}
-		}),
-	}
-
-	// This call always returns an error
-	err = srv.httpSrv.ServeTLS(lis, "", "")
-	if err != http.ErrServerClosed {
-		return xerrors.Errorf("failed to serve: %v", err)
-	}
-
-	return nil
-}
-
 // Call implements the Mino.RPC interface
 func (rpc RPC) Call(req proto.Message,
 	addrs ...*mino.Address) (<-chan proto.Message, <-chan error) {
@@ -161,8 +122,8 @@ func (rpc RPC) Call(req proto.Message,
 	return out, errs
 }
 
-// StartServer creates a new server and starts listening
-func StartServer(addr *mino.Address) (*Server, error) {
+// CreateServer sets up a new server
+func CreateServer(addr *mino.Address) (*Server, error) {
 	cert, err := makeCertificate()
 	if err != nil {
 		return nil, xerrors.Errorf("failed to make certificate: %v", err)
@@ -182,17 +143,62 @@ func StartServer(addr *mino.Address) (*Server, error) {
 
 	RegisterOverlayServer(srv, &overlayService{handlers: server.handlers})
 
+	return server, nil
+}
+
+// StartServer makes the server start listening and wait until its started
+func (srv *Server) StartServer() error {
+
 	go func() {
-		err := server.Serve()
+		err := srv.Serve()
 		// TODO: better handle this error
 		if err != nil {
 			log.Fatal("failed to start server ", err)
 		}
 	}()
 
-	<-server.StartChan
+	<-srv.StartChan
 
-	return server, nil
+	return nil
+}
+
+// Serve starts the HTTP server that forwards gRPC calls to the gRPC server
+func (srv *Server) Serve() error {
+	lis, err := net.Listen("tcp4", srv.addr.Id)
+	if err != nil {
+		return xerrors.Errorf("failed to listen: %v", err)
+	}
+
+	srv.listener = lis
+
+	close(srv.StartChan)
+
+	wrapped := grpcweb.WrapServer(srv.grpcSrv)
+
+	srv.httpSrv = &http.Server{
+		TLSConfig: &tls.Config{
+			// TODO: a LE certificate or similar must be used alongside the
+			// actual server certificate for the browser to accept the TLS
+			// connection.
+			Certificates: []tls.Certificate{*srv.cert},
+			ClientAuth:   tls.RequestClientCert,
+		},
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Content-Type") == "application/grpc" {
+				srv.grpcSrv.ServeHTTP(w, r)
+			} else {
+				wrapped.ServeHTTP(w, r)
+			}
+		}),
+	}
+
+	// This call always returns an error
+	err = srv.httpSrv.ServeTLS(lis, "", "")
+	if err != http.ErrServerClosed {
+		return xerrors.Errorf("failed to serve: %v", err)
+	}
+
+	return nil
 }
 
 // getConnection creates a gRPC connection from the server to the client

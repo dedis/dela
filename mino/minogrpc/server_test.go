@@ -21,7 +21,9 @@ func Test_SingleSimpleCall(t *testing.T) {
 		Id: identifier,
 	}
 
-	server, err := StartServer(addr)
+	server, err := CreateServer(addr)
+	require.NoError(t, err)
+	err = server.StartServer()
 	require.NoError(t, err)
 
 	peer := Peer{
@@ -93,7 +95,9 @@ func Test_SingleModifyCall(t *testing.T) {
 		Id: identifier,
 	}
 
-	server, err := StartServer(addr)
+	server, err := CreateServer(addr)
+	require.NoError(t, err)
+	err = server.StartServer()
 	require.NoError(t, err)
 
 	peer := Peer{
@@ -145,7 +149,9 @@ func Test_MultipleModifyCall(t *testing.T) {
 	addr1 := &mino.Address{
 		Id: identifier1,
 	}
-	server1, err := StartServer(addr1)
+	server1, err := CreateServer(addr1)
+	require.NoError(t, err)
+	err = server1.StartServer()
 	require.NoError(t, err)
 	peer1 := Peer{
 		Address:     server1.listener.Addr().String(),
@@ -157,7 +163,9 @@ func Test_MultipleModifyCall(t *testing.T) {
 	addr2 := &mino.Address{
 		Id: identifier2,
 	}
-	server2, err := StartServer(addr2)
+	server2, err := CreateServer(addr2)
+	err = server2.StartServer()
+	require.NoError(t, err)
 	require.NoError(t, err)
 	peer2 := Peer{
 		Address:     server2.listener.Addr().String(),
@@ -169,7 +177,9 @@ func Test_MultipleModifyCall(t *testing.T) {
 	addr3 := &mino.Address{
 		Id: identifier3,
 	}
-	server3, err := StartServer(addr3)
+	server3, err := CreateServer(addr3)
+	err = server3.StartServer()
+	require.NoError(t, err)
 	require.NoError(t, err)
 	peer3 := Peer{
 		Address:     server3.listener.Addr().String(),

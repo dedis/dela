@@ -11,11 +11,18 @@ import (
 func Test_MakeMinoGrpc(t *testing.T) {
 	id := "127.0.0.1:3333"
 
-	server, err := MakeMinoGrpc(id)
+	minoRPC, err := MakeMinoGrpc(id)
 	require.NoError(t, err)
 
-	require.Equal(t, id, server.Address().GetId())
-	require.Equal(t, "", server.namespace)
+	require.Equal(t, id, minoRPC.Address().GetId())
+	require.Equal(t, "", minoRPC.namespace)
+
+	peer := Peer{
+		Address:     id,
+		Certificate: minoRPC.server.cert.Leaf,
+	}
+
+	require.Equal(t, peer, minoRPC.server.neighbours[id])
 }
 
 func Test_MakeNamespace(t *testing.T) {

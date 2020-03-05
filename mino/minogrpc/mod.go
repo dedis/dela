@@ -5,27 +5,29 @@ package minogrpc
 
 import (
 	fmt "fmt"
-	"log"
 
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
-	grpc "google.golang.org/grpc"
 )
 
 //go:generate protoc -I ./ --go_out=plugins=grpc:./ ./overlay.proto
 
-// Minogrpc ...
+// Minogrpc represents a grpc service restricted to a namespace
 type Minogrpc struct {
 	server    Server
 	namespace string
 }
 
-// Address ...
+// Address returns the address of the server
 func (m Minogrpc) Address() *mino.Address {
 	return m.server.addr
 }
 
-// MakeNamespace creates a new Minogrpc struct that has the specified path
+// MakeNamespace creates a new Minogrpc struct that has the specified namespace.
+// This namespace is further used to scope newly created RPCs.
+//
+// TODO: decide if a server can evolve through multiple different namespaces or
+// if a pre-condition of this function is to have an empty namespace.
 func (m Minogrpc) MakeNamespace(namespace string) (mino.Mino, error) {
 	newM := Minogrpc{
 		server:    m.server,
@@ -34,7 +36,8 @@ func (m Minogrpc) MakeNamespace(namespace string) (mino.Mino, error) {
 	return newM, nil
 }
 
-// MakeRPC ...
+// MakeRPC registers the handler using a uniq URI of form "namespace/name". It
+// returns a struct that allows client to call the RPC.
 func (m Minogrpc) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 	URI := fmt.Sprintf("%s/%s", m.namespace, name)
 	rpc := RPC{
@@ -48,39 +51,24 @@ func (m Minogrpc) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 	return rpc, nil
 }
 
-// MakeMinoGrpc ...
-// identifier must be an address with a port, something like 127.0.0.1:3333
+// MakeMinoGrpc sets up the grpc and http servers and starts them. Identifier
+// must be an address with a port, something like 127.0.0.1:3333
+//
+// TODO: use a different type of argument for identifier, maybe net/url ?
 func MakeMinoGrpc(identifier string) (*Minogrpc, error) {
 	addr := &mino.Address{
 		Id: identifier,
 	}
 
-	cert, err := makeCertificate()
+	server, err := CreateServer(addr)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to create certificate: %v", err)
+		return nil, xerrors.Errorf("failed to create server: %v", err)
 	}
 
-	srv := grpc.NewServer()
-
-	server := Server{
-		grpcSrv:    srv,
-		cert:       cert,
-		addr:       addr,
-		listener:   nil,
-		StartChan:  make(chan struct{}),
-		neighbours: make(map[string]Peer),
-		handlers:   make(map[string]mino.Handler),
+	err = server.StartServer()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to start the server: %v", err)
 	}
-
-	RegisterOverlayServer(srv, &overlayService{handlers: server.handlers})
-
-	go func() {
-		err := server.Serve()
-		// TODO: better handle this error
-		log.Fatal("failed to start server: ", err)
-	}()
-
-	<-server.StartChan
 
 	peer := Peer{
 		Address:     server.listener.Addr().String(),
@@ -89,7 +77,7 @@ func MakeMinoGrpc(identifier string) (*Minogrpc, error) {
 	server.neighbours[identifier] = peer
 
 	minoGrpc := &Minogrpc{
-		server:    server,
+		server:    *server,
 		namespace: "",
 	}
 

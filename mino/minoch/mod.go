@@ -43,7 +43,7 @@ func (m *Minoch) Address() *mino.Address {
 	return &mino.Address{Id: m.identifier}
 }
 
-// MakeNamespace returns an instance restricted to the path.
+// MakeNamespace returns an instance restricted to the namespace.
 func (m *Minoch) MakeNamespace(path string) (mino.Mino, error) {
 	newMinoch := &Minoch{
 		identifier: m.identifier,
