@@ -115,7 +115,7 @@ func NewTypeError(curr proto.Message, expected proto.Message) TypeError {
 }
 
 func (e TypeError) Error() string {
-	return fmt.Sprintf("got message type %#v but expect %#v", e.curr, e.expected)
+	return fmt.Sprintf("got message type '%#v' but expected '%#v'", e.curr, e.expected)
 }
 
 func (e TypeError) Is(err error) bool {

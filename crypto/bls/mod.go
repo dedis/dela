@@ -64,14 +64,14 @@ func (f publicKeyFactory) FromProto(src proto.Message) (crypto.PublicKey, error)
 		point := suite.Point()
 		err := point.UnmarshalBinary(msg.GetData())
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("failed to unmarshal msg to point: %v", err)
 		}
 
 		return publicKey{point: point}, nil
 	case *any.Any:
 		return f.fromAny(msg)
 	default:
-		return nil, errors.New("invalid public key type")
+		return nil, xerrors.Errorf("invalid public key type '%v'", msg)
 	}
 }
 
@@ -94,7 +94,7 @@ func (f signatureFactory) FromProto(src proto.Message) (crypto.Signature, error)
 	case *any.Any:
 		return f.FromAny(msg)
 	default:
-		return nil, errors.New("invalid signature type")
+		return nil, xerrors.Errorf("invalid signature type '%v'", msg)
 	}
 }
 
