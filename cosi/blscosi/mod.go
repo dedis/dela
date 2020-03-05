@@ -77,7 +77,7 @@ func (cosi *BlsCoSi) Sign(ro blockchain.Roster, msg proto.Message) (crypto.Signa
 			fabric.Logger.Trace().Msgf("Response: %+v", resp)
 
 			reply := resp.(*SignatureResponse)
-			sig, err := cosi.signer.GetSignatureFactory().FromAny(reply.GetSignature())
+			sig, err := cosi.signer.GetSignatureFactory().FromProto(reply.GetSignature())
 			if err != nil {
 				return nil, err
 			}

@@ -60,9 +60,9 @@ func (b *blockValidator) verifyAndHashBlock(in *blockchain.Block) ([]byte, error
 		return nil, xerrors.Errorf("couldn't add the block to the triage: %v", err)
 	}
 
-	fl := ForwardLink{
-		From: block.BackLinks[0],
-		To:   block.hash,
+	fl := forwardLink{
+		from: block.BackLinks[0],
+		to:   block.hash,
 	}
 
 	hash, err := fl.computeHash()
@@ -79,14 +79,16 @@ func (b *blockValidator) verifyAndHashForwardLink(in *ForwardLinkProto) ([]byte,
 		return nil, xerrors.Errorf("couldn't decode the forward link: %v", err)
 	}
 
+	forwardLink := fl.(forwardLink)
+
 	// Verify that the triage has a block waiting to be committed and that the
 	// forward link is matching correctly.
-	err = b.triage.Verify(fl)
+	err = b.triage.Verify(forwardLink)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't verify the block in triage: %v", err)
 	}
 
-	buffer, err := fl.Prepare.MarshalBinary()
+	buffer, err := forwardLink.prepare.MarshalBinary()
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't marshal the prepare signature: %v", err)
 	}

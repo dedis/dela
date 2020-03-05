@@ -1,8 +1,6 @@
 package bls
 
 import (
-	"errors"
-
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/any"
@@ -11,6 +9,7 @@ import (
 	"go.dedis.ch/kyber/v3/pairing"
 	"go.dedis.ch/kyber/v3/sign/bls"
 	"go.dedis.ch/kyber/v3/util/key"
+	"golang.org/x/xerrors"
 )
 
 //go:generate protoc -I ./ --go_out=./ ./messages.proto
@@ -48,7 +47,7 @@ func (sig signature) Pack() (proto.Message, error) {
 
 type publicKeyFactory struct{}
 
-func (f publicKeyFactory) FromAny(src *any.Any) (crypto.PublicKey, error) {
+func (f publicKeyFactory) fromAny(src *any.Any) (crypto.PublicKey, error) {
 	var pkp PublicKeyProto
 	err := ptypes.UnmarshalAny(src, &pkp)
 	if err != nil {
@@ -59,18 +58,20 @@ func (f publicKeyFactory) FromAny(src *any.Any) (crypto.PublicKey, error) {
 }
 
 func (f publicKeyFactory) FromProto(src proto.Message) (crypto.PublicKey, error) {
-	pkp, ok := src.(*PublicKeyProto)
-	if !ok {
-		return nil, errors.New("invalid public key type")
-	}
+	switch msg := src.(type) {
+	case *PublicKeyProto:
+		point := suite.Point()
+		err := point.UnmarshalBinary(msg.GetData())
+		if err != nil {
+			return nil, xerrors.Errorf("failed to unmarshal msg to point: %v", err)
+		}
 
-	point := suite.Point()
-	err := point.UnmarshalBinary(pkp.GetData())
-	if err != nil {
-		return nil, err
+		return publicKey{point: point}, nil
+	case *any.Any:
+		return f.fromAny(msg)
+	default:
+		return nil, xerrors.Errorf("invalid public key type '%v'", msg)
 	}
-
-	return publicKey{point: point}, nil
 }
 
 type signatureFactory struct{}
@@ -86,12 +87,14 @@ func (f signatureFactory) FromAny(src *any.Any) (crypto.Signature, error) {
 }
 
 func (f signatureFactory) FromProto(src proto.Message) (crypto.Signature, error) {
-	sigproto, ok := src.(*SignatureProto)
-	if !ok {
-		return nil, errors.New("invalid signature type")
+	switch msg := src.(type) {
+	case *SignatureProto:
+		return signature{data: msg.GetData()}, nil
+	case *any.Any:
+		return f.FromAny(msg)
+	default:
+		return nil, xerrors.Errorf("invalid signature type '%v'", msg)
 	}
-
-	return signature{data: sigproto.GetData()}, nil
 }
 
 // verifier implements the verifier interface for BLS.
