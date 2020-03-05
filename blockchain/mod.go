@@ -1,11 +1,14 @@
 package blockchain
 
 import (
+	"bytes"
 	"context"
+	fmt "fmt"
 	"io"
 
 	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric/crypto"
+	"go.dedis.ch/fabric/encoding"
 	mino "go.dedis.ch/fabric/mino"
 )
 
@@ -15,14 +18,47 @@ import (
 type Roster interface {
 	io.WriterTo
 
-	GetConodes() []*Conode
 	GetAddresses() []*mino.Address
 	GetPublicKeys() []crypto.PublicKey
+	GetConodes() ([]*Conode, error)
+}
+
+type BlockID [32]byte
+
+func NewBlockID(buffer []byte) BlockID {
+	id := BlockID{}
+	copy(id[:], buffer)
+	return id
+}
+
+func (id BlockID) Bytes() []byte {
+	return id[:]
+}
+
+func (id BlockID) Equal(other BlockID) bool {
+	return bytes.Equal(id[:], other[:])
+}
+
+func (id BlockID) String() string {
+	return fmt.Sprintf("%x", id[:])[:8]
+}
+
+type Block interface {
+	encoding.Packable
+
+	GetID() BlockID
+}
+
+type Chain interface {
+	encoding.Packable
+
+	Verify(crypto.Verifier) error
+	GetBlock() Block
 }
 
 // BlockFactory provides primitives to create blocks from a untrusted source.
 type BlockFactory interface {
-	FromVerifiable(src *VerifiableBlock, originPublicKeys []crypto.PublicKey) (interface{}, error)
+	FromVerifiable(src proto.Message, roster Roster) (Block, error)
 }
 
 // Blockchain is the interface that provides the primitives to interact with the
@@ -35,11 +71,11 @@ type Blockchain interface {
 	Store(roster Roster, data proto.Message) error
 
 	// GetBlock returns the latest block.
-	GetBlock() (*Block, error)
+	GetBlock() (Block, error)
 
 	// GetVerifiableBlock returns the latest block alongside with a proof from
 	// the genesis block.
-	GetVerifiableBlock() (*VerifiableBlock, error)
+	GetVerifiableChain() (Chain, error)
 
 	// Watch takes an observer that will be notified for each new block
 	// definitely appended to the chain.

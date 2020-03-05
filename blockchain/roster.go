@@ -4,47 +4,40 @@ import (
 	"io"
 
 	proto "github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes"
 	"go.dedis.ch/fabric/crypto"
 	mino "go.dedis.ch/fabric/mino"
 )
 
 // SimpleRoster is a list of conodes.
 type SimpleRoster struct {
-	conodes []*Conode
+	addrs   []*mino.Address
 	pubkeys []crypto.PublicKey
 }
 
 // NewRoster returns a new roster made from the list of conodes.
 func NewRoster(verifier crypto.Verifier, conodes ...*Conode) (SimpleRoster, error) {
 	pubkeys := make([]crypto.PublicKey, len(conodes))
+	addrs := make([]*mino.Address, len(conodes))
 	for i, conode := range conodes {
-		pubkey, err := verifier.GetPublicKeyFactory().FromProto(conode.GetPublicKey())
+		pubkey, err := verifier.GetPublicKeyFactory().FromProto(conode.PublicKey)
 		if err != nil {
 			return SimpleRoster{}, err
 		}
 
 		pubkeys[i] = pubkey
+		addrs[i] = conode.Address
 	}
 
 	return SimpleRoster{
-		conodes: conodes,
+		addrs:   addrs,
 		pubkeys: pubkeys,
 	}, nil
 }
 
-// GetConodes returns the list of conodes.
-func (r SimpleRoster) GetConodes() []*Conode {
-	return r.conodes
-}
-
 // GetAddresses returns the list of addresses for the conodes.
 func (r SimpleRoster) GetAddresses() []*mino.Address {
-	addrs := make([]*mino.Address, len(r.conodes))
-	for i, conode := range r.conodes {
-		addrs[i] = conode.GetAddress()
-	}
-
-	return addrs
+	return r.addrs
 }
 
 // GetPublicKeys returns the list of public keys for the conodes.
@@ -52,11 +45,33 @@ func (r SimpleRoster) GetPublicKeys() []crypto.PublicKey {
 	return r.pubkeys
 }
 
+func (r SimpleRoster) GetConodes() ([]*Conode, error) {
+	conodes := make([]*Conode, len(r.addrs))
+	for i, addr := range r.addrs {
+		packed, err := r.pubkeys[i].Pack()
+		if err != nil {
+			return nil, err
+		}
+
+		any, err := ptypes.MarshalAny(packed)
+		if err != nil {
+			return nil, err
+		}
+
+		conodes[i] = &Conode{
+			Address:   addr,
+			PublicKey: any,
+		}
+	}
+
+	return conodes, nil
+}
+
 // WriteTo casts the roster into bytes and write them to the writer.
 func (r SimpleRoster) WriteTo(w io.Writer) (int64, error) {
 	sum := int64(0)
-	for i, conode := range r.conodes {
-		sigbuf, err := r.pubkeys[i].MarshalBinary()
+	for i, pubkey := range r.pubkeys {
+		sigbuf, err := pubkey.MarshalBinary()
 		if err != nil {
 			return sum, err
 		}
@@ -67,7 +82,7 @@ func (r SimpleRoster) WriteTo(w io.Writer) (int64, error) {
 			return sum, err
 		}
 
-		buffer, err := proto.Marshal(conode.GetAddress())
+		buffer, err := proto.Marshal(r.addrs[i])
 		if err != nil {
 			return sum, err
 		}

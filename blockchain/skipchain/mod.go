@@ -12,8 +12,8 @@ import (
 	"github.com/golang/protobuf/ptypes"
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/blockchain"
-	"go.dedis.ch/fabric/cosi"
-	"go.dedis.ch/fabric/cosi/blscosi"
+	"go.dedis.ch/fabric/blockchain/consensus"
+	"go.dedis.ch/fabric/blockchain/consensus/cosipbft"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
@@ -27,20 +27,19 @@ type Skipchain struct {
 	blockFactory *blockFactory
 	db           Database
 	signer       crypto.Signer
-	cosi         cosi.CollectiveSigning
+	consensus    consensus.Consensus
 	rpc          mino.RPC
 }
 
 // NewSkipchain returns a new instance of Skipchain.
-func NewSkipchain(m mino.Mino, signer crypto.AggregateSigner, v Validator) (*Skipchain, error) {
+func NewSkipchain(m mino.Mino, signer crypto.AggregateSigner, v PayloadValidator) (*Skipchain, error) {
 	db := NewInMemoryDatabase()
 	factory := newBlockFactory(signer)
-	triage := newBlockTriage(db, signer)
-	validator := newBlockValidator(factory, v, db, triage)
+	triage := newBlockTriage(db, factory, v)
 
-	cosi, err := blscosi.NewBlsCoSi(m, signer, validator)
+	consensus, err := cosipbft.NewConsensus(m, signer, triage)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't create blscosi: %v", err)
+		return nil, xerrors.Errorf("couldn't create consensus: %v", err)
 	}
 
 	rpc, err := m.MakeRPC("skipchain", newHandler(db, triage, factory))
@@ -52,7 +51,7 @@ func NewSkipchain(m mino.Mino, signer crypto.AggregateSigner, v Validator) (*Ski
 		blockFactory: factory,
 		db:           db,
 		signer:       signer,
-		cosi:         cosi,
+		consensus:    consensus,
 		rpc:          rpc,
 	}
 
@@ -71,7 +70,7 @@ func (s *Skipchain) initChain(roster blockchain.Roster) error {
 	}
 
 	msg := &PropagateGenesis{
-		Genesis: packed.(*blockchain.Block),
+		Genesis: packed.(*BlockProto),
 	}
 
 	closing, errs := s.rpc.Call(msg, roster.GetAddresses()...)
@@ -102,21 +101,24 @@ func (s *Skipchain) Store(roster blockchain.Roster, data proto.Message) error {
 		return xerrors.Errorf("couldn't create next block: %v", err)
 	}
 
-	fl, err := s.pbft(block)
+	seal, err := s.consensus.Propose(roster, previous, block)
 	if err != nil {
-		return xerrors.Errorf("couldn't sign the block: %v", err)
+		return xerrors.Errorf("couldn't propose the block: %v", err)
 	}
 
-	packed, err := fl.Pack()
+	sealproto, err := seal.Pack()
 	if err != nil {
 		return xerrors.Errorf("couldn't encode the forward link: %v", err)
 	}
 
-	msg := &PropagateForwardLink{
-		Link: packed.(*ForwardLinkProto),
+	fabric.Logger.Info().Msgf("Propagation new block to %v", roster.GetAddresses())
+
+	msg := &PropagateSeal{}
+	msg.Seal, err = ptypes.MarshalAny(sealproto)
+	if err != nil {
+		return err
 	}
 
-	fabric.Logger.Info().Msgf("Propagation new block to %v", roster.GetAddresses())
 	closing, errs := s.rpc.Call(msg, roster.GetAddresses()...)
 	select {
 	case <-closing:
@@ -127,94 +129,25 @@ func (s *Skipchain) Store(roster blockchain.Roster, data proto.Message) error {
 	return nil
 }
 
-func (s *Skipchain) pbft(block SkipBlock) (*forwardLink, error) {
-	// 1. Prepare phase
-	// The block is sent for validation and participants will return a signature
-	// to confirm they agree the proposal is valid.
-	// Signature = Sign(FROM_HASH + TO_HASH)
-	blockproto, err := block.Pack()
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't encode the block: %v", err)
-	}
-
-	sig, err := s.cosi.Sign(block.Roster, blockproto)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't sign the block: %v", err)
-	}
-
-	// 2. Commit phase
-	// Forward link is updated with the prepare phase signature and then
-	// participants will sign their commitment to the block after verifying
-	// that the prepare signature is correct.
-	// Signature = Sign(PREPARE_SIG)
-	fl := &forwardLink{
-		from:    block.BackLinks[0],
-		to:      block.hash,
-		prepare: sig,
-	}
-
-	packed, err := fl.Pack()
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't encode the forward link: %v", err)
-	}
-
-	sig, err = s.cosi.Sign(block.Roster, packed)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't sign the forward link: %v", err)
-	}
-
-	fl.commit = sig
-
-	return fl, nil
-}
-
 // GetBlock returns the latest block.
-func (s *Skipchain) GetBlock() (*blockchain.Block, error) {
+func (s *Skipchain) GetBlock() (blockchain.Block, error) {
 	block, err := s.db.ReadLast()
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't read the latest block: %v", err)
 	}
 
-	packed, err := block.Pack()
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't encode the block: %v", err)
-	}
-
-	return packed.(*blockchain.Block), nil
+	return block, nil
 }
 
-// GetVerifiableBlock reads the latest block of the chain and creates a verifiable
+// GetVerifiableChain reads the latest block of the chain and creates a verifiable
 // proof of the shortest chain from the genesis to the block.
-func (s *Skipchain) GetVerifiableBlock() (*blockchain.VerifiableBlock, error) {
+func (s *Skipchain) GetVerifiableChain() (blockchain.Chain, error) {
 	blocks, err := s.db.ReadChain()
 	if err != nil {
 		return nil, xerrors.Errorf("error when reading chain: %v", err)
 	}
 
-	// Encode the latest block to a protobuf message.
-	packed, err := blocks[len(blocks)-1].Pack()
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack the block: %v", err)
-	}
-
-	// Get the chain of forward links from other blocks and encode
-	// them into a protobuf proof.
-	proof, err := blocks.GetProof().Pack()
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't get the proof: %v", err)
-	}
-
-	proofAny, err := ptypes.MarshalAny(proof)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack the proof: %v", err)
-	}
-
-	vBlock := &blockchain.VerifiableBlock{
-		Block: packed.(*blockchain.Block),
-		Proof: proofAny,
-	}
-
-	return vBlock, nil
+	return blocks.GetProof(), nil
 }
 
 // Watch registers the observer so that it will be notified of new blocks.

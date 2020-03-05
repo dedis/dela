@@ -32,17 +32,12 @@ func (h handler) Process(req proto.Message) (proto.Message, error) {
 		}
 
 		fabric.Logger.Info().Msg("New Genesis block written")
-		err = h.db.Write(genesis.(SkipBlock))
+		err = h.db.Write(genesis)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't write the block: %v", err)
 		}
-	case *PropagateForwardLink:
-		fl, err := h.factory.fromForwardLink(in.GetLink())
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't decode the forward link: %v", err)
-		}
-
-		err = h.triage.Commit(fl.(forwardLink))
+	case *PropagateSeal:
+		err := h.triage.processSeal(in.GetSeal())
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't commit the forward link: %v", err)
 		}

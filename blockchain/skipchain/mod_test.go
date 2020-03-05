@@ -3,6 +3,7 @@ package skipchain
 import (
 	"testing"
 
+	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
@@ -28,10 +29,13 @@ func TestSkipchain_Basic(t *testing.T) {
 		err = s2.Store(roster, &empty.Empty{})
 		require.NoError(t, err)
 
-		packed, err := s1.GetVerifiableBlock()
+		chain, err := s1.GetVerifiableChain()
 		require.NoError(t, err)
 
-		block, err := s1.GetBlockFactory().FromVerifiable(packed, roster.GetPublicKeys())
+		packed, err := chain.Pack()
+		require.NoError(t, err)
+
+		block, err := s1.GetBlockFactory().FromVerifiable(packed, roster)
 		require.NoError(t, err)
 		require.NotNil(t, block)
 		require.Equal(t, uint64(i+1), block.(SkipBlock).Index)
@@ -40,7 +44,7 @@ func TestSkipchain_Basic(t *testing.T) {
 
 type testValidator struct{}
 
-func (v testValidator) Validate(SkipBlock) error {
+func (v testValidator) Validate(payload proto.Message) error {
 	return nil
 }
 
