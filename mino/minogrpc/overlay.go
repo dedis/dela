@@ -9,38 +9,46 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-// gRPC service for the overlay.
+// gRPC service for the overlay. The handler map points to the one in
+// Server.Handlers, which is updated each time the makeRPC function is called.
 type overlayService struct {
 	handlers map[string]mino.Handler
 }
 
 // Call is the implementation of the overlay.Call proto definition
 func (o overlayService) Call(ctx context.Context, msg *CallMsg) (*CallResp, error) {
+	// We fetch the uri that identifies the handler in the handlers map with the
+	// grpc metadata api. Using context.Value won't work.
 	headers, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return nil, xerrors.Errorf("header not found in provided context")
 	}
 
 	apiURI, ok := headers["apiuri"]
-	if !ok || len(apiURI) != 1 {
-		return nil, xerrors.Errorf("failed to get the apiuri in context header: ", apiURI)
+	if !ok {
+		return nil, xerrors.Errorf("apiuri not found in context header: ", apiURI)
+	}
+	if len(apiURI) != 1 {
+		return nil, xerrors.Errorf("unexpected number of elements in apiuri "+
+			"header. Expected 1, found %d", len(apiURI))
 	}
 
 	handler, ok := o.handlers[apiURI[0]]
 	if !ok {
-		return nil, xerrors.Errorf("didn't find '%s' handler, did you "+
-			"register it?", apiURI)
+		return nil, xerrors.Errorf("didn't find the '%s' handler in the map "+
+			"of handlers, did you register it?", apiURI)
 	}
 
-	var parsedMsg ptypes.DynamicAny
-	err := ptypes.UnmarshalAny(msg.Message, &parsedMsg)
+	var dynamicAny ptypes.DynamicAny
+	err := ptypes.UnmarshalAny(msg.Message, &dynamicAny)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to unmarshal any: %v", err)
+		return nil, xerrors.Errorf("failed to unmarshal to any: %v", err)
 	}
 
-	result, err := handler.Process(parsedMsg.Message)
+	result, err := handler.Process(dynamicAny.Message)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to marshal message: %v", err)
+		return nil, xerrors.Errorf("failed to call the Process function from "+
+			"the handler using the provided message: %v", err)
 	}
 
 	anyResult, err := ptypes.MarshalAny(result)
