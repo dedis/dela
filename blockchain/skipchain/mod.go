@@ -1,16 +1,22 @@
+// Package skipchain implements the blockchain interface by using the skipchain
+// design, e.i. blocks are linked by one or several forward links collectively
+// signed by the participants.
+//
+// TODO: think about versioning for upgradability.
 package skipchain
 
 import (
 	"context"
-	fmt "fmt"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes"
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/cosi/blscosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/mino"
+	"golang.org/x/xerrors"
 )
 
 //go:generate protoc -I ./ --proto_path=../../ --go_out=Mblockchain/messages.proto=go.dedis.ch/fabric/blockchain:. ./messages.proto
@@ -18,7 +24,7 @@ import (
 // Skipchain implements the Blockchain interface by using collective signatures
 // to create a verifiable chain.
 type Skipchain struct {
-	blockFactory blockFactory
+	blockFactory *blockFactory
 	db           Database
 	signer       crypto.Signer
 	cosi         cosi.CollectiveSigning
@@ -30,16 +36,16 @@ func NewSkipchain(m mino.Mino, signer crypto.AggregateSigner, v Validator) (*Ski
 	db := NewInMemoryDatabase()
 	factory := newBlockFactory(signer)
 	triage := newBlockTriage(db, signer)
-	validator := newBlockValidator(signer, v, db, triage)
+	validator := newBlockValidator(factory, v, db, triage)
 
 	cosi, err := blscosi.NewBlsCoSi(m, signer, validator)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't create blscosi: %v", err)
 	}
 
 	rpc, err := m.MakeRPC("skipchain", newHandler(db, triage, factory))
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't create the rpc: %v", err)
 	}
 
 	sc := &Skipchain{
@@ -54,11 +60,14 @@ func NewSkipchain(m mino.Mino, signer crypto.AggregateSigner, v Validator) (*Ski
 }
 
 func (s *Skipchain) initChain(roster blockchain.Roster) error {
-	genesis := s.blockFactory.createGenesis(roster)
+	genesis, err := s.blockFactory.createGenesis(roster, nil)
+	if err != nil {
+		return xerrors.Errorf("couldn't create the genesis block: %v", err)
+	}
 
 	packed, err := genesis.Pack()
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't encode the block: %v", err)
 	}
 
 	msg := &PropagateGenesis{
@@ -70,7 +79,7 @@ func (s *Skipchain) initChain(roster blockchain.Roster) error {
 	case <-closing:
 	case err := <-errs:
 		fabric.Logger.Err(err).Msg("couldn't propagate genesis block")
-		return err
+		return xerrors.Errorf("error in propagation: %v", err)
 	}
 
 	return nil
@@ -85,22 +94,22 @@ func (s *Skipchain) GetBlockFactory() blockchain.BlockFactory {
 func (s *Skipchain) Store(roster blockchain.Roster, data proto.Message) error {
 	previous, err := s.db.ReadLast()
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't read the latest block: %v", err)
 	}
 
-	block, err := s.blockFactory.FromPrevious(previous, data)
+	block, err := s.blockFactory.fromPrevious(previous, data)
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't create next block: %v", err)
 	}
 
-	fl, err := s.pbft(block.(SkipBlock))
+	fl, err := s.pbft(block)
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't sign the block: %v", err)
 	}
 
 	packed, err := fl.Pack()
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't encode the forward link: %v", err)
 	}
 
 	msg := &PropagateForwardLink{
@@ -112,7 +121,7 @@ func (s *Skipchain) Store(roster blockchain.Roster, data proto.Message) error {
 	select {
 	case <-closing:
 	case err := <-errs:
-		return fmt.Errorf("failed to propagate forward link: %v", err)
+		return xerrors.Errorf("failed to propagate forward link: %v", err)
 	}
 
 	return nil
@@ -125,12 +134,12 @@ func (s *Skipchain) pbft(block SkipBlock) (*ForwardLink, error) {
 	// Signature = Sign(FROM_HASH + TO_HASH)
 	blockproto, err := block.Pack()
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't encode the block: %v", err)
 	}
 
 	sig, err := s.cosi.Sign(block.Roster, blockproto)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't sign the block: %v", err)
 	}
 
 	// 2. Commit phase
@@ -146,12 +155,12 @@ func (s *Skipchain) pbft(block SkipBlock) (*ForwardLink, error) {
 
 	packed, err := fl.Pack()
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't encode the forward link: %v", err)
 	}
 
 	sig, err = s.cosi.Sign(block.Roster, packed)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't sign the forward link: %v", err)
 	}
 
 	fl.Commit = sig
@@ -161,13 +170,51 @@ func (s *Skipchain) pbft(block SkipBlock) (*ForwardLink, error) {
 
 // GetBlock returns the latest block.
 func (s *Skipchain) GetBlock() (*blockchain.Block, error) {
-	return nil, nil
+	block, err := s.db.ReadLast()
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't read the latest block: %v", err)
+	}
+
+	packed, err := block.Pack()
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't encode the block: %v", err)
+	}
+
+	return packed.(*blockchain.Block), nil
 }
 
 // GetVerifiableBlock reads the latest block of the chain and creates a verifiable
 // proof of the shortest chain from the genesis to the block.
 func (s *Skipchain) GetVerifiableBlock() (*blockchain.VerifiableBlock, error) {
-	return nil, nil
+	blocks, err := s.db.ReadChain()
+	if err != nil {
+		return nil, xerrors.Errorf("error when reading chain: %v", err)
+	}
+
+	// Encode the latest block to a protobuf message.
+	packed, err := blocks[len(blocks)-1].Pack()
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't pack the block: %v", err)
+	}
+
+	// Get the chain of forward links from other blocks and encode
+	// them into a protobuf proof.
+	proof, err := blocks.GetProof().Pack()
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't get the proof: %v", err)
+	}
+
+	proofAny, err := ptypes.MarshalAny(proof)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't pack the proof: %v", err)
+	}
+
+	vBlock := &blockchain.VerifiableBlock{
+		Block: packed.(*blockchain.Block),
+		Proof: proofAny,
+	}
+
+	return vBlock, nil
 }
 
 // Watch registers the observer so that it will be notified of new blocks.
