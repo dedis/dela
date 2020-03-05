@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"log"
 	"math/big"
 	"net"
 	"net/http"
@@ -148,13 +149,50 @@ func (rpc RPC) Call(req proto.Message,
 				continue
 			}
 
-			out <- callResp.Message
+			var resp ptypes.DynamicAny
+			err = ptypes.UnmarshalAny(callResp.Message, &resp)
+
+			out <- resp.Message
 		}
 
 		close(out)
 	}()
 
 	return out, errs
+}
+
+// StartServer creates a new server and starts listening
+func StartServer(addr *mino.Address) (*Server, error) {
+	cert, err := makeCertificate()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to make certificate: %v", err)
+	}
+
+	srv := grpc.NewServer()
+
+	server := &Server{
+		grpcSrv:    srv,
+		cert:       cert,
+		addr:       addr,
+		listener:   nil,
+		StartChan:  make(chan struct{}),
+		neighbours: make(map[string]Peer),
+		handlers:   make(map[string]mino.Handler),
+	}
+
+	RegisterOverlayServer(srv, &overlayService{handlers: server.handlers})
+
+	go func() {
+		err := server.Serve()
+		// TODO: better handle this error
+		if err != nil {
+			log.Fatal("failed to start server ", err)
+		}
+	}()
+
+	<-server.StartChan
+
+	return server, nil
 }
 
 // getConnection creates a gRPC connection from the server to the client

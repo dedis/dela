@@ -3,7 +3,7 @@ package minogrpc
 import (
 	context "context"
 
-	"github.com/golang/protobuf/ptypes/any"
+	"github.com/golang/protobuf/ptypes"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc/metadata"
@@ -23,7 +23,7 @@ func (o overlayService) Call(ctx context.Context, msg *CallMsg) (*CallResp, erro
 
 	apiURI, ok := headers["apiuri"]
 	if !ok || len(apiURI) != 1 {
-		return nil, xerrors.Errorf("failed to get the apiURI in context header: ", apiURI)
+		return nil, xerrors.Errorf("failed to get the apiuri in context header: ", apiURI)
 	}
 
 	handler, ok := o.handlers[apiURI[0]]
@@ -32,14 +32,20 @@ func (o overlayService) Call(ctx context.Context, msg *CallMsg) (*CallResp, erro
 			"register it?", apiURI)
 	}
 
-	result, err := handler.Process(msg.Message)
+	var parsedMsg ptypes.DynamicAny
+	err := ptypes.UnmarshalAny(msg.Message, &parsedMsg)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to unmarshal any: %v", err)
+	}
+
+	result, err := handler.Process(parsedMsg.Message)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to marshal message: %v", err)
 	}
 
-	anyResult, ok := result.(*any.Any)
-	if !ok {
-		return nil, xerrors.Errorf("failed to cast result to any.Any: %v", err)
+	anyResult, err := ptypes.MarshalAny(result)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to marshal result to any: %v", err)
 	}
 
 	return &CallResp{Message: anyResult}, nil
