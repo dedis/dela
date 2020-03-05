@@ -408,7 +408,7 @@ func TestProof_VerifyFailures(t *testing.T) {
 	proof.GenesisBlock = SkipBlock{hash: []byte{0xaa}, Roster: testRoster{}}
 	err = proof.Verify(&testVerifier{}, SkipBlock{})
 	require.Error(t, err)
-	require.EqualError(t, xerrors.Unwrap(err), "got previous block 01 but expect aa in forward link")
+	require.EqualError(t, xerrors.Unwrap(err), "got previous block '01' but expected 'aa' in forward link")
 
 	proof.ForwardLinks = []ForwardLink{
 		forwardLink{from: []byte{0xaa}, to: []byte{0xbb}, prepare: testSignature{}, commit: testSignature{}},
@@ -416,14 +416,14 @@ func TestProof_VerifyFailures(t *testing.T) {
 	}
 	err = proof.Verify(&testVerifier{}, SkipBlock{})
 	require.Error(t, err)
-	require.EqualError(t, xerrors.Unwrap(err), "got previous block cc but expect bb in forward link")
+	require.EqualError(t, xerrors.Unwrap(err), "got previous block 'cc' but expected 'bb' in forward link")
 
 	proof.ForwardLinks = []ForwardLink{
 		forwardLink{from: []byte{0xaa}, to: []byte{0xbb}, prepare: testSignature{}, commit: testSignature{}},
 	}
 	err = proof.Verify(&testVerifier{}, SkipBlock{hash: []byte{0xcc}})
 	require.Error(t, err)
-	require.EqualError(t, err, "got forward link to bb but expect cc")
+	require.EqualError(t, err, "got forward link to 'bb' but expected 'cc'")
 }
 
 func TestBlockFactory_CreateGenesis(t *testing.T) {

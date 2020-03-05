@@ -1,8 +1,6 @@
 package bls
 
 import (
-	"errors"
-
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/any"
@@ -11,6 +9,7 @@ import (
 	"go.dedis.ch/kyber/v3/pairing"
 	"go.dedis.ch/kyber/v3/sign/bls"
 	"go.dedis.ch/kyber/v3/util/key"
+	"golang.org/x/xerrors"
 )
 
 //go:generate protoc -I ./ --go_out=./ ./messages.proto

@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	fmt "fmt"
-	math "math"
 
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
@@ -244,10 +243,11 @@ type Chain []SkipBlock
 
 // GetProof returns a verifiable proof of the latest block of the chain.
 func (c Chain) GetProof() Proof {
-	numForwardLink := int(math.Max(0, float64(len(c)-1)))
 	if len(c) == 0 {
 		return Proof{}
 	}
+
+	numForwardLink := len(c) - 1
 
 	proof := Proof{
 		GenesisBlock: c[0],
@@ -326,7 +326,7 @@ func (p Proof) Verify(v crypto.Verifier, block SkipBlock) error {
 	}
 
 	if !bytes.Equal(prev, block.GetID()) {
-		return xerrors.Errorf("got forward link to %v but expect %v", prev, block.GetID())
+		return xerrors.Errorf("got forward link to '%v' but expected '%v'", prev, block.GetID())
 	}
 
 	return nil
@@ -339,7 +339,7 @@ func (p Proof) verifyLink(v crypto.Verifier, pubkeys []crypto.PublicKey, link Fo
 	}
 
 	if !bytes.Equal(prev, link.GetFrom()) {
-		return xerrors.Errorf("got previous block %v but expect %v in forward link",
+		return xerrors.Errorf("got previous block '%v' but expected '%v' in forward link",
 			link.GetFrom(), prev)
 	}
 
