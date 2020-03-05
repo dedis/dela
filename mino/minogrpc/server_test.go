@@ -35,7 +35,7 @@ func Test_SingleSimpleCall(t *testing.T) {
 	rpc := RPC{
 		handler: handler,
 		srv:     *server,
-		URI:     uri,
+		uri:     uri,
 	}
 
 	server.handlers[uri] = handler
@@ -107,7 +107,7 @@ func Test_SingleModifyCall(t *testing.T) {
 	rpc := RPC{
 		handler: handler,
 		srv:     *server,
-		URI:     uri,
+		uri:     uri,
 	}
 
 	server.handlers[uri] = handler
@@ -187,7 +187,7 @@ func Test_MultipleModifyCall(t *testing.T) {
 	rpc := RPC{
 		handler: handler,
 		srv:     *server1,
-		URI:     uri,
+		uri:     uri,
 	}
 
 	server1.handlers[uri] = handler

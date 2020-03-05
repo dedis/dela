@@ -68,7 +68,7 @@ type Peer struct {
 type RPC struct {
 	handler mino.Handler
 	srv     Server
-	URI     string
+	uri     string
 }
 
 // Serve starts the HTTP server that forwards gRPC calls to the gRPC server
@@ -140,7 +140,7 @@ func (rpc RPC) Call(req proto.Message,
 				defaultContextTimeout)
 			defer ctxCancelFunc()
 
-			header := metadata.New(map[string]string{"apiuri": rpc.URI})
+			header := metadata.New(map[string]string{"apiuri": rpc.uri})
 			ctx = metadata.NewOutgoingContext(ctx, header)
 
 			callResp, err := cl.Call(ctx, sendMsg)

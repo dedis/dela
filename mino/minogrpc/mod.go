@@ -40,7 +40,7 @@ func (m Minogrpc) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 	rpc := RPC{
 		handler: h,
 		srv:     m.server,
-		URI:     URI,
+		uri:     URI,
 	}
 
 	m.server.handlers[URI] = h
