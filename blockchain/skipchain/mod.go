@@ -127,7 +127,7 @@ func (s *Skipchain) Store(roster blockchain.Roster, data proto.Message) error {
 	return nil
 }
 
-func (s *Skipchain) pbft(block SkipBlock) (*ForwardLink, error) {
+func (s *Skipchain) pbft(block SkipBlock) (*forwardLink, error) {
 	// 1. Prepare phase
 	// The block is sent for validation and participants will return a signature
 	// to confirm they agree the proposal is valid.
@@ -147,10 +147,10 @@ func (s *Skipchain) pbft(block SkipBlock) (*ForwardLink, error) {
 	// participants will sign their commitment to the block after verifying
 	// that the prepare signature is correct.
 	// Signature = Sign(PREPARE_SIG)
-	fl := &ForwardLink{
-		From:    block.BackLinks[0],
-		To:      block.hash,
-		Prepare: sig,
+	fl := &forwardLink{
+		from:    block.BackLinks[0],
+		to:      block.hash,
+		prepare: sig,
 	}
 
 	packed, err := fl.Pack()
@@ -163,7 +163,7 @@ func (s *Skipchain) pbft(block SkipBlock) (*ForwardLink, error) {
 		return nil, xerrors.Errorf("couldn't sign the forward link: %v", err)
 	}
 
-	fl.Commit = sig
+	fl.commit = sig
 
 	return fl, nil
 }

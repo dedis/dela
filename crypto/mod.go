@@ -2,29 +2,28 @@ package crypto
 
 import (
 	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/fabric/encoding"
 )
 
 // PublicKey is a public identity that can be used to verify a signature.
 type PublicKey interface {
 	encoding.Packable
+	encoding.BinaryMarshaler
 }
 
 // PublicKeyFactory is a factory to create public keys.
 type PublicKeyFactory interface {
-	FromAny(src *any.Any) (PublicKey, error)
 	FromProto(src proto.Message) (PublicKey, error)
 }
 
 // Signature is a verifiable element for a unique message.
 type Signature interface {
 	encoding.Packable
+	encoding.BinaryMarshaler
 }
 
 // SignatureFactory is a factory to create BLS signature.
 type SignatureFactory interface {
-	FromAny(src *any.Any) (Signature, error)
 	FromProto(src proto.Message) (Signature, error)
 }
 

@@ -18,7 +18,7 @@ type SimpleRoster struct {
 func NewRoster(verifier crypto.Verifier, conodes ...*Conode) (SimpleRoster, error) {
 	pubkeys := make([]crypto.PublicKey, len(conodes))
 	for i, conode := range conodes {
-		pubkey, err := verifier.GetPublicKeyFactory().FromAny(conode.GetPublicKey())
+		pubkey, err := verifier.GetPublicKeyFactory().FromProto(conode.GetPublicKey())
 		if err != nil {
 			return SimpleRoster{}, err
 		}
