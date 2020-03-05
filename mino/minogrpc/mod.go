@@ -51,8 +51,9 @@ func (m Minogrpc) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 	return rpc, nil
 }
 
-// MakeMinoGrpc sets up the grpc and http servers and starts them. Identifier
-// must be an address with a port, something like 127.0.0.1:3333
+// MakeMinoGrpc sets up the grpc and http servers. It does not start the
+// server. Identifier must be an address with a port, something like
+// 127.0.0.1:3333
 //
 // TODO: use a different type of argument for identifier, maybe net/url ?
 func MakeMinoGrpc(identifier string) (*Minogrpc, error) {

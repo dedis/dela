@@ -29,12 +29,13 @@ var (
 	// wait for a grpc connection to complete
 	defaultMinConnectTimeout = 7 * time.Second
 	// defaultContextTimeout is the amount of time we are willing to wait for a
-	// remote procedure call to finish. This value should always be lower than
-	// defaultMinConnectTimeout in order to capture server errors.
+	// remote procedure call to finish. This value should always be higher than
+	// defaultMinConnectTimeout in order to capture http server errors.
 	defaultContextTimeout = 10 * time.Second
 )
 
-// Server ...
+// Server represents the entity that accepts incoming requests and invoke the
+// corresponding RPCs.
 type Server struct {
 	grpcSrv *grpc.Server
 
@@ -64,14 +65,17 @@ type Peer struct {
 	Certificate *x509.Certificate
 }
 
-// RPC ...
+// RPC represents an RPC that has been registered by a client. This struct
+// implements the mino.RPC interface, which allows clients to call an RPC that
+// will execute the provided handler.
 type RPC struct {
 	handler mino.Handler
 	srv     Server
 	uri     string
 }
 
-// Call implements the Mino.RPC interface
+// Call implements the Mino.RPC interface. It calls the RPC on each provided
+// address.
 func (rpc RPC) Call(req proto.Message,
 	addrs ...*mino.Address) (<-chan proto.Message, <-chan error) {
 
