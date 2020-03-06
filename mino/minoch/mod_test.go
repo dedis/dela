@@ -37,13 +37,13 @@ func TestMinoch_Address(t *testing.T) {
 	require.Equal(t, "A", addr.GetId())
 }
 
-func TestMinoch_MakePath(t *testing.T) {
+func TestMinoch_MakeNamespace(t *testing.T) {
 	manager := NewManager()
 
 	m, err := NewMinoch(manager, "A")
 	require.NoError(t, err)
 
-	m2, err := m.MakePath("abc")
+	m2, err := m.MakeNamespace("abc")
 	require.NoError(t, err)
 	require.Equal(t, m.identifier, m2.(*Minoch).identifier)
 	require.Equal(t, "/abc", m2.(*Minoch).path)
