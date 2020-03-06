@@ -24,6 +24,11 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
+const (
+	headerURIKey        = "apiuri"
+	certificateDuration = time.Hour * 24 * 180
+)
+
 var (
 	// defaultMinConnectTimeout is the minimum amount of time we are willing to
 	// wait for a grpc connection to complete
@@ -105,7 +110,7 @@ func (rpc RPC) Call(req proto.Message,
 				defaultContextTimeout)
 			defer ctxCancelFunc()
 
-			header := metadata.New(map[string]string{"apiuri": rpc.uri})
+			header := metadata.New(map[string]string{headerURIKey: rpc.uri})
 			ctx = metadata.NewOutgoingContext(ctx, header)
 
 			callResp, err := cl.Call(ctx, sendMsg)
@@ -243,7 +248,7 @@ func makeCertificate() (*tls.Certificate, error) {
 		SerialNumber: big.NewInt(1),
 		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
 		NotBefore:    time.Now(),
-		NotAfter:     time.Now().Add(time.Hour * 24 * 180),
+		NotAfter:     time.Now().Add(certificateDuration),
 
 		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
