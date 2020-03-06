@@ -31,7 +31,7 @@ const (
 )
 
 var (
-	protoenc encoding.ProtoMarshaler = protoEncoder{}
+	protoenc encoding.ProtoMarshaler = encoding.NewProtoEncoder()
 )
 
 // SkipBlock is a representation of the data held by a block. It contains the
@@ -533,22 +533,4 @@ func (t *blockTriage) processSeal(in proto.Message) error {
 	t.blocks = []SkipBlock{}
 
 	return nil
-}
-
-type protoEncoder struct{}
-
-func newProtoEncoder() protoEncoder {
-	return protoEncoder{}
-}
-
-func (e protoEncoder) Marshal(pb proto.Message) ([]byte, error) {
-	return proto.Marshal(pb)
-}
-
-func (e protoEncoder) MarshalAny(pb proto.Message) (*any.Any, error) {
-	return ptypes.MarshalAny(pb)
-}
-
-func (e protoEncoder) UnmarshalAny(any *any.Any, pb proto.Message) error {
-	return ptypes.UnmarshalAny(any, pb)
 }

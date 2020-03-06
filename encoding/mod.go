@@ -4,6 +4,7 @@ import (
 	"encoding"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/any"
 )
 
@@ -23,4 +24,27 @@ type ProtoMarshaler interface {
 	Marshal(pb proto.Message) ([]byte, error)
 	MarshalAny(pb proto.Message) (*any.Any, error)
 	UnmarshalAny(any *any.Any, pb proto.Message) error
+}
+
+// ProtoEncoder is a default implementation of protobug encoding/decoding.
+type ProtoEncoder struct{}
+
+// NewProtoEncoder returns a new instance of the default protobuf encoder.
+func NewProtoEncoder() ProtoEncoder {
+	return ProtoEncoder{}
+}
+
+// Marshal encodes a protobuf message into bytes.
+func (e ProtoEncoder) Marshal(pb proto.Message) ([]byte, error) {
+	return proto.Marshal(pb)
+}
+
+// MarshalAny encodes a protobuf messages into the Any type.
+func (e ProtoEncoder) MarshalAny(pb proto.Message) (*any.Any, error) {
+	return ptypes.MarshalAny(pb)
+}
+
+// UnmarshalAny decodes a protobuf message from an Any type.
+func (e ProtoEncoder) UnmarshalAny(any *any.Any, pb proto.Message) error {
+	return ptypes.UnmarshalAny(any, pb)
 }

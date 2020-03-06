@@ -6,17 +6,22 @@ import (
 	"testing"
 	"testing/quick"
 
+	proto "github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes"
+	any "github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/fabric/blockchain"
+	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"golang.org/x/xerrors"
 )
 
 func TestForwardLink_GetFrom(t *testing.T) {
 	f := func(from []byte) bool {
-		seal := testSeal{from: from}
+		seal := forwardLink{from: blockchain.NewBlockID(from)}
 
-		return bytes.Equal(from, seal.GetFrom().Bytes())
+		return bytes.Equal(seal.from.Bytes(), seal.GetFrom().Bytes())
 	}
 
 	err := quick.Check(f, nil)
@@ -25,9 +30,9 @@ func TestForwardLink_GetFrom(t *testing.T) {
 
 func TestForwardLink_GetTo(t *testing.T) {
 	f := func(to []byte) bool {
-		seal := testSeal{to: to}
+		seal := forwardLink{to: blockchain.NewBlockID(to)}
 
-		return bytes.Equal(to, seal.GetTo().Bytes())
+		return bytes.Equal(seal.to.Bytes(), seal.GetTo().Bytes())
 	}
 
 	err := quick.Check(f, nil)
@@ -35,7 +40,7 @@ func TestForwardLink_GetTo(t *testing.T) {
 }
 
 func TestForwardLink_Verify(t *testing.T) {
-	fl := testSeal{
+	fl := forwardLink{
 		hash:    []byte("deadbeef"),
 		prepare: testSignature{buffer: []byte{1}},
 		commit:  testSignature{buffer: []byte{2}},
@@ -82,8 +87,8 @@ func TestForwardLink_VerifyFailures(t *testing.T) {
 
 func TestForwardLink_Pack(t *testing.T) {
 	fl := forwardLink{
-		from:    []byte{1, 2, 3},
-		to:      []byte{4, 5, 6},
+		from:    blockchain.NewBlockID([]byte{1, 2, 3}),
+		to:      blockchain.NewBlockID([]byte{4, 5, 6}),
 		prepare: testSignature{},
 		commit:  testSignature{},
 	}
@@ -93,12 +98,12 @@ func TestForwardLink_Pack(t *testing.T) {
 
 	flproto := packed.(*ForwardLinkProto)
 
-	require.Equal(t, fl.GetFrom(), BlockID(flproto.GetFrom()))
-	require.Equal(t, fl.GetTo(), BlockID(flproto.GetTo()))
+	require.Equal(t, fl.GetFrom(), blockchain.NewBlockID(flproto.GetFrom()))
+	require.Equal(t, fl.GetTo(), blockchain.NewBlockID(flproto.GetTo()))
 }
 
 func TestForwardLink_PackFailures(t *testing.T) {
-	defer func() { protoenc = newProtoEncoder() }()
+	defer func() { protoenc = encoding.NewProtoEncoder() }()
 
 	fl := forwardLink{}
 
@@ -130,18 +135,90 @@ func TestForwardLink_PackFailures(t *testing.T) {
 
 func TestForwardLink_Hash(t *testing.T) {
 	f := func(from, to []byte) bool {
-		fl := forwardLink{from: from, to: to}
+		fl := forwardLink{
+			from: blockchain.NewBlockID(from),
+			to:   blockchain.NewBlockID(to),
+		}
 		hash, err := fl.computeHash()
 		require.NoError(t, err)
 
 		// It is enough for the forward links to have From and To in the hash
 		// as the integrity of the block is then verified.
 		h := sha256.New()
-		h.Write(from)
-		h.Write(to)
+		h.Write(fl.GetFrom().Bytes())
+		h.Write(fl.GetTo().Bytes())
 		return bytes.Equal(hash, h.Sum(nil))
 	}
 
 	err := quick.Check(f, nil)
 	require.NoError(t, err)
+}
+
+type testSignature struct {
+	buffer []byte
+	err    error
+}
+
+func (s testSignature) MarshalBinary() ([]byte, error) {
+	return s.buffer, s.err
+}
+
+func (s testSignature) Pack() (proto.Message, error) {
+	return &empty.Empty{}, s.err
+}
+
+type testSignatureFactory struct {
+	err error
+}
+
+func (f testSignatureFactory) FromProto(pb proto.Message) (crypto.Signature, error) {
+	return testSignature{}, f.err
+}
+
+type testVerifier struct {
+	err   error
+	delay int
+	calls []struct {
+		msg []byte
+		sig crypto.Signature
+	}
+
+	crypto.Verifier
+}
+
+func (v *testVerifier) GetSignatureFactory() crypto.SignatureFactory {
+	return testSignatureFactory{err: v.err}
+}
+
+func (v *testVerifier) Verify(pubkeys []crypto.PublicKey, msg []byte, sig crypto.Signature) error {
+	v.calls = append(v.calls, struct {
+		msg []byte
+		sig crypto.Signature
+	}{msg, sig})
+
+	if v.err != nil {
+		if v.delay == 0 {
+			return v.err
+		}
+		v.delay--
+	}
+
+	return nil
+}
+
+type testProtoEncoder struct {
+	encoding.ProtoEncoder
+	delay int
+	err   error
+}
+
+func (e *testProtoEncoder) MarshalAny(pb proto.Message) (*any.Any, error) {
+	if e.err != nil {
+		if e.delay == 0 {
+			return nil, e.err
+		}
+		e.delay--
+	}
+
+	return ptypes.MarshalAny(pb)
 }

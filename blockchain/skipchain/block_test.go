@@ -63,9 +63,7 @@ func TestSkipBlock_Pack(t *testing.T) {
 }
 
 func TestSkipBlock_PackFailures(t *testing.T) {
-	defer func() {
-		protoenc = protoEncoder{}
-	}()
+	defer func() { protoenc = encoding.NewProtoEncoder() }()
 
 	block := SkipBlock{
 		BackLinks: []blockchain.BlockID{{}},
@@ -284,7 +282,7 @@ func TestBlockFactory_CreateGenesis(t *testing.T) {
 }
 
 func TestBlockFactory_CreateGenesisFailures(t *testing.T) {
-	defer func() { protoenc = protoEncoder{} }()
+	defer func() { protoenc = encoding.NewProtoEncoder() }()
 
 	e := xerrors.New("encode error")
 	protoenc = &testProtoEncoder{err: e}
@@ -319,7 +317,7 @@ func TestBlockFactory_FromPrevious(t *testing.T) {
 }
 
 func TestBlockFactory_FromPreviousFailures(t *testing.T) {
-	defer func() { protoenc = newProtoEncoder() }()
+	defer func() { protoenc = encoding.NewProtoEncoder() }()
 
 	factory := newBlockFactory(&testVerifier{})
 
@@ -351,7 +349,7 @@ func TestBlockFactory_FromBlock(t *testing.T) {
 }
 
 func TestBlockFactory_FromBlockFailures(t *testing.T) {
-	defer func() { protoenc = newProtoEncoder() }()
+	defer func() { protoenc = encoding.NewProtoEncoder() }()
 
 	gen := SkipBlock{}.Generate(rand.New(rand.NewSource(time.Now().Unix())), 5)
 	block := gen.Interface().(SkipBlock)

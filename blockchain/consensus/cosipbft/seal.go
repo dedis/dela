@@ -13,6 +13,8 @@ import (
 	"golang.org/x/xerrors"
 )
 
+var protoenc encoding.ProtoMarshaler = encoding.NewProtoEncoder()
+
 // forwardLink is the cryptographic primitive to ensure a block is a successor
 // of a previous one.
 type forwardLink struct {
@@ -68,7 +70,7 @@ func (fl forwardLink) Pack() (proto.Message, error) {
 			return nil, encoding.NewEncodingError("prepare", err)
 		}
 
-		prepareAny, err := ptypes.MarshalAny(prepare)
+		prepareAny, err := protoenc.MarshalAny(prepare)
 		if err != nil {
 			return nil, encoding.NewAnyEncodingError(prepare, err)
 		}
@@ -82,7 +84,7 @@ func (fl forwardLink) Pack() (proto.Message, error) {
 			return nil, encoding.NewEncodingError("commit", err)
 		}
 
-		commitAny, err := ptypes.MarshalAny(commit)
+		commitAny, err := protoenc.MarshalAny(commit)
 		if err != nil {
 			return nil, encoding.NewAnyEncodingError(commit, err)
 		}
@@ -106,6 +108,9 @@ type sealFactory struct {
 	verifier crypto.Verifier
 }
 
+// NewSealFactory returns a new insance of a seal factory that will create
+// forward links for appropriate protobuf messages and return an error
+// otherwise.
 func NewSealFactory(verifier crypto.Verifier) consensus.SealFactory {
 	return &sealFactory{verifier: verifier}
 }
