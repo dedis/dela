@@ -168,7 +168,7 @@ type Chain struct {
 func (p Chain) Pack() (proto.Message, error) {
 	block, err := p.last.Pack()
 	if err != nil {
-		return nil, err
+		return nil, encoding.NewEncodingError("block", err)
 	}
 
 	proof := &ChainProto{
@@ -179,12 +179,12 @@ func (p Chain) Pack() (proto.Message, error) {
 	for i, seal := range p.seals {
 		packed, err := seal.Pack()
 		if err != nil {
-			return nil, encoding.NewEncodingError("forward link", err)
+			return nil, encoding.NewEncodingError("seal", err)
 		}
 
 		proof.Seals[i], err = ptypes.MarshalAny(packed)
 		if err != nil {
-			return nil, err
+			return nil, encoding.NewAnyEncodingError(packed, err)
 		}
 	}
 
@@ -196,9 +196,17 @@ func (p Chain) GetBlock() blockchain.Block {
 	return p.last
 }
 
+func genSealErr(curr, expected blockchain.BlockID) string {
+	return fmt.Sprintf("got seal to %v but %v expected", curr, expected)
+}
+
 // Verify follows the chain from the beginning to insure the integrity.
 func (p Chain) Verify(v crypto.Verifier) error {
 	if len(p.seals) == 0 {
+		if !p.genesis.GetID().Equal(p.last.GetID()) {
+			return xerrors.New("mismatch genesis block")
+		}
+
 		return nil
 	}
 
@@ -226,7 +234,7 @@ func (p Chain) Verify(v crypto.Verifier) error {
 	}
 
 	if !prev.Equal(p.last.GetID()) {
-		return xerrors.Errorf("got forward link to %v but expect %v", prev, p.last.GetID())
+		return xerrors.Errorf(genSealErr(prev, p.last.GetID()))
 	}
 
 	return nil
@@ -239,8 +247,7 @@ func (p Chain) verifyLink(v crypto.Verifier, pubkeys []crypto.PublicKey, link co
 	}
 
 	if !prev.Equal(link.GetFrom()) {
-		return xerrors.Errorf("got previous block %v but expect %v in forward link",
-			link.GetFrom(), prev)
+		return xerrors.Errorf(genSealErr(link.GetFrom(), prev))
 	}
 
 	return nil

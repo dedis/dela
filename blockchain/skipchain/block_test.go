@@ -3,6 +3,7 @@ package skipchain
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/hex"
 	fmt "fmt"
 	"io"
 	math "math"
@@ -16,6 +17,7 @@ import (
 	"github.com/golang/protobuf/ptypes"
 	any "github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
+	pstruct "github.com/golang/protobuf/ptypes/struct"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/blockchain/consensus"
@@ -160,24 +162,33 @@ func TestChain_GetProof(t *testing.T) {
 }
 
 func TestProof_Pack(t *testing.T) {
-	chain := Chain{
-		last: SkipBlock{},
-		seals: []consensus.Seal{
-			testSeal{from: []byte{0}, to: []byte{1}},
-			testSeal{from: []byte{1}, to: []byte{2}},
-		},
+	f := func(block SkipBlock) bool {
+		chain := Chain{
+			last: block,
+			seals: []consensus.Seal{
+				testSeal{from: []byte{0}, to: []byte{1}},
+				testSeal{from: []byte{1}, to: []byte{2}},
+			},
+		}
+
+		packed, err := chain.Pack()
+		require.NoError(t, err)
+
+		msg := packed.(*ChainProto)
+		require.Len(t, msg.GetSeals(), len(chain.seals))
+		return true
 	}
 
-	packed, err := chain.Pack()
+	err := quick.Check(f, nil)
 	require.NoError(t, err)
-
-	msg := packed.(*ChainProto)
-	require.Len(t, msg.GetSeals(), len(chain.seals))
 }
 
 func TestProof_PackFailures(t *testing.T) {
+	block := SkipBlock{Payload: &empty.Empty{}}
+
 	e := xerrors.New("pack error")
 	chain := Chain{
+		last: block,
 		seals: []consensus.Seal{
 			testSeal{err: e},
 		},
@@ -185,16 +196,7 @@ func TestProof_PackFailures(t *testing.T) {
 
 	_, err := chain.Pack()
 	require.Error(t, err)
-	require.True(t, xerrors.Is(err, encoding.NewEncodingError("forward link", nil)))
-
-	chain.seals = []consensus.Seal{
-		testSeal{packed: &empty.Empty{}},
-	}
-
-	_, err = chain.Pack()
-	require.Error(t, err)
-	expectErr := encoding.NewTypeError((*empty.Empty)(nil), (*ChainProto)(nil))
-	require.True(t, xerrors.Is(err, expectErr))
+	require.True(t, xerrors.Is(err, encoding.NewEncodingError("seal", nil)), err.Error())
 }
 
 func TestProof_Verify(t *testing.T) {
@@ -245,7 +247,8 @@ func TestProof_VerifyFailures(t *testing.T) {
 	proof.genesis = SkipBlock{hash: []byte{0xaa}, Roster: testRoster{}}
 	err = proof.Verify(&testVerifier{})
 	require.Error(t, err)
-	require.EqualError(t, xerrors.Unwrap(err), "got previous block '01' but expected 'aa' in forward link")
+	require.EqualError(t, xerrors.Unwrap(err),
+		genSealErr(proof.seals[0].GetTo(), proof.genesis.GetID()))
 
 	proof.seals = []consensus.Seal{
 		testSeal{from: []byte{0xaa}, to: []byte{0xbb}},
@@ -253,14 +256,15 @@ func TestProof_VerifyFailures(t *testing.T) {
 	}
 	err = proof.Verify(&testVerifier{})
 	require.Error(t, err)
-	require.EqualError(t, xerrors.Unwrap(err), "got previous block 'cc' but expected 'bb' in forward link")
+	require.EqualError(t, xerrors.Unwrap(err),
+		genSealErr(proof.seals[1].GetFrom(), proof.seals[0].GetTo()))
 
 	proof.seals = []consensus.Seal{
 		testSeal{from: []byte{0xaa}, to: []byte{0xbb}},
 	}
 	err = proof.Verify(&testVerifier{})
 	require.Error(t, err)
-	require.EqualError(t, err, "got forward link to 'bb' but expected 'cc'")
+	require.EqualError(t, err, genSealErr(proof.seals[0].GetTo(), proof.last.GetID()))
 }
 
 func TestBlockFactory_CreateGenesis(t *testing.T) {
@@ -329,6 +333,7 @@ func TestBlockFactory_FromPreviousFailures(t *testing.T) {
 
 func TestBlockFactory_FromBlock(t *testing.T) {
 	factory := newBlockFactory(&testVerifier{})
+	factory.sealFactory = testSealFactory{}
 
 	f := func(block SkipBlock) bool {
 		packed, err := block.Pack()
@@ -357,13 +362,8 @@ func TestBlockFactory_FromBlockFailures(t *testing.T) {
 	require.NoError(t, err)
 
 	e := xerrors.New("encoding error")
+
 	protoenc = &testProtoEncoder{err: e}
-
-	_, err = factory.fromBlock(src.(*BlockProto))
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err, encoding.NewAnyDecodingError((*BlockProto)(nil), nil)))
-
-	protoenc = &testProtoEncoder{err: e, delay: 1}
 	_, err = factory.fromBlock(src.(*BlockProto))
 	require.Error(t, err)
 	require.True(t, xerrors.Is(err, encoding.NewAnyDecodingError((*ptypes.DynamicAny)(nil), nil)), err.Error())
@@ -373,18 +373,22 @@ func TestBlockFactory_FromVerifiable(t *testing.T) {
 	factory := newBlockFactory(&testVerifier{})
 	factory.sealFactory = testSealFactory{}
 
-	f := func(blocks []SkipBlock) bool {
-		if len(blocks) == 0 {
-			return true
+	f := func(genesis, last SkipBlock) bool {
+		chain := Chain{
+			last: last,
+			seals: []consensus.Seal{testSeal{
+				from: genesis.GetID().Bytes(),
+				to:   last.GetID().Bytes(),
+			}},
 		}
 
-		chain, err := SkipBlocks(blocks).GetProof().Pack()
+		packed, err := chain.Pack()
 		require.NoError(t, err)
 
-		factory.genesis = &blocks[0]
-		decoded, err := factory.FromVerifiable(chain, nil)
+		factory.genesis = &genesis
+		decoded, err := factory.FromVerifiable(packed, nil)
 		require.NoError(t, err)
-		require.Equal(t, blocks[len(blocks)-1], decoded)
+		require.Equal(t, last, decoded)
 
 		return true
 	}
@@ -419,7 +423,7 @@ func (s SkipBlock) Generate(rand *rand.Rand, size int) reflect.Value {
 
 	seals := make([]consensus.Seal, rand.Int31n(int32(size))+1)
 	for i := range seals {
-		fl := testSeal{}
+		fl := testSeal{from: []byte{}, to: []byte{}}
 
 		seals[i] = fl
 	}
@@ -536,13 +540,42 @@ func (s testSeal) Pack() (proto.Message, error) {
 		return s.packed, nil
 	}
 
-	return &empty.Empty{}, nil
+	packed := &pstruct.Struct{Fields: map[string]*pstruct.Value{
+		"from": &pstruct.Value{
+			Kind: &pstruct.Value_StringValue{
+				StringValue: hex.EncodeToString(s.from),
+			},
+		},
+		"to": &pstruct.Value{
+			Kind: &pstruct.Value_StringValue{
+				StringValue: hex.EncodeToString(s.to),
+			},
+		},
+	}}
+
+	return packed, nil
 }
 
 type testSealFactory struct{}
 
 func (f testSealFactory) FromProto(pb proto.Message) (consensus.Seal, error) {
-	return testSeal{}, nil
+	var msg *pstruct.Struct
+	switch in := pb.(type) {
+	case *any.Any:
+		msg = &pstruct.Struct{}
+
+		err := ptypes.UnmarshalAny(in, msg)
+		if err != nil {
+			return nil, err
+		}
+	case *pstruct.Struct:
+		msg = in
+	}
+
+	from, _ := hex.DecodeString(msg.Fields["from"].GetStringValue())
+	to, _ := hex.DecodeString(msg.Fields["to"].GetStringValue())
+
+	return testSeal{from: from, to: to}, nil
 }
 
 type testSignature struct {
