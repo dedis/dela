@@ -1,0 +1,15 @@
+language: go
+
+go:
+    - 1.13
+
+before_install:
+    - go get github.com/mattn/goveralls
+    - go mod download
+
+script:
+    - go test -covermode=count -coverprofile=coverage.out ./...
+    - $GOPATH/bin/goveralls -service=travis-cli -coverprofile=coverage.out
+
+notifications:
+    email: false
