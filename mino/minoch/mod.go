@@ -43,8 +43,8 @@ func (m *Minoch) Address() *mino.Address {
 	return &mino.Address{Id: m.identifier}
 }
 
-// MakePath returns an instance restricted to the path.
-func (m *Minoch) MakePath(path string) (mino.Mino, error) {
+// MakeNamespace returns an instance restricted to the namespace.
+func (m *Minoch) MakeNamespace(path string) (mino.Mino, error) {
 	newMinoch := &Minoch{
 		identifier: m.identifier,
 		path:       fmt.Sprintf("%s/%s", m.path, path),

@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package minogrpc;
+
+import "google/protobuf/any.proto";
+
+service Overlay {
+    rpc Call(CallMsg) returns (CallResp) {}
+}
+
+message CallMsg {
+    google.protobuf.Any message = 1;
+}
+
+message CallResp {
+    google.protobuf.Any message = 1;
+}
