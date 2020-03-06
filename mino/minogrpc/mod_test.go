@@ -8,10 +8,10 @@ import (
 	"go.dedis.ch/fabric/mino"
 )
 
-func Test_MakeMinoGrpc(t *testing.T) {
+func Test_NewMinogrpc(t *testing.T) {
 	id := "127.0.0.1:3333"
 
-	minoRPC, err := MakeMinoGrpc(id)
+	minoRPC, err := NewMinogrpc(id)
 	require.NoError(t, err)
 
 	require.Equal(t, id, minoRPC.Address().GetId())
@@ -27,7 +27,7 @@ func Test_MakeMinoGrpc(t *testing.T) {
 
 func Test_MakeNamespace(t *testing.T) {
 	minoGrpc := Minogrpc{}
-	ns := "test"
+	ns := "Test"
 	newMino, err := minoGrpc.MakeNamespace(ns)
 	require.NoError(t, err)
 
@@ -35,6 +35,24 @@ func Test_MakeNamespace(t *testing.T) {
 	require.True(t, ok)
 
 	require.Equal(t, ns, newMinoGrpc.namespace)
+
+	// A namespace can not be empty
+	ns = ""
+	newMino, err = minoGrpc.MakeNamespace(ns)
+	require.EqualError(t, err, "a namespace can not be empty")
+
+	// A namespace should match [a-zA-Z0-9]+
+	ns = "/namespace"
+	newMino, err = minoGrpc.MakeNamespace(ns)
+	require.EqualError(t, err, "a namespace should match [a-zA-Z0-9]+, but found '/namespace'")
+
+	ns = " test"
+	newMino, err = minoGrpc.MakeNamespace(ns)
+	require.EqualError(t, err, "a namespace should match [a-zA-Z0-9]+, but found ' test'")
+
+	ns = "test$"
+	newMino, err = minoGrpc.MakeNamespace(ns)
+	require.EqualError(t, err, "a namespace should match [a-zA-Z0-9]+, but found 'test$'")
 }
 
 func Test_Address(t *testing.T) {

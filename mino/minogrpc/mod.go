@@ -5,6 +5,7 @@ package minogrpc
 
 import (
 	fmt "fmt"
+	"regexp"
 
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
@@ -12,10 +13,46 @@ import (
 
 //go:generate protoc -I ./ --go_out=plugins=grpc:./ ./overlay.proto
 
+var namespaceMatch = regexp.MustCompile("^[a-zA-Z0-9]+$")
+
 // Minogrpc represents a grpc service restricted to a namespace
 type Minogrpc struct {
 	server    Server
 	namespace string
+}
+
+// NewMinogrpc sets up the grpc and http servers. It does not start the
+// server. Identifier must be an address with a port, something like
+// 127.0.0.1:3333
+//
+// TODO: use a different type of argument for identifier, maybe net/url ?
+func NewMinogrpc(identifier string) (Minogrpc, error) {
+	minoGrpc := Minogrpc{}
+
+	addr := &mino.Address{
+		Id: identifier,
+	}
+
+	server, err := CreateServer(addr)
+	if err != nil {
+		return minoGrpc, xerrors.Errorf("failed to create server: %v", err)
+	}
+
+	err = server.StartServer()
+	if err != nil {
+		return minoGrpc, xerrors.Errorf("failed to start the server: %v", err)
+	}
+
+	peer := Peer{
+		Address:     server.listener.Addr().String(),
+		Certificate: server.cert.Leaf,
+	}
+	server.neighbours[identifier] = peer
+
+	minoGrpc.server = *server
+	minoGrpc.namespace = ""
+
+	return minoGrpc, err
 }
 
 // Address returns the address of the server
@@ -24,11 +61,21 @@ func (m Minogrpc) Address() *mino.Address {
 }
 
 // MakeNamespace creates a new Minogrpc struct that has the specified namespace.
-// This namespace is further used to scope newly created RPCs.
-//
-// TODO: decide if a server can evolve through multiple different namespaces or
-// if a pre-condition of this function is to have an empty namespace.
+// This namespace is further used to scope newly created RPCs. There can be
+// multiple namespaces. If there is already a namespace, then the new one will
+// be concatenated leading to namespace1/namespace2. A namespace can not be
+// empty an should match [a-zA-Z0-9]+
 func (m Minogrpc) MakeNamespace(namespace string) (mino.Mino, error) {
+	if namespace == "" {
+		return nil, xerrors.Errorf("a namespace can not be empty")
+	}
+
+	ok := namespaceMatch.MatchString(namespace)
+	if !ok {
+		return nil, xerrors.Errorf("a namespace should match [a-zA-Z0-9]+, "+
+			"but found '%s'", namespace)
+	}
+
 	newM := Minogrpc{
 		server:    m.server,
 		namespace: namespace,
@@ -49,38 +96,4 @@ func (m Minogrpc) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 	m.server.handlers[URI] = h
 
 	return rpc, nil
-}
-
-// MakeMinoGrpc sets up the grpc and http servers. It does not start the
-// server. Identifier must be an address with a port, something like
-// 127.0.0.1:3333
-//
-// TODO: use a different type of argument for identifier, maybe net/url ?
-func MakeMinoGrpc(identifier string) (*Minogrpc, error) {
-	addr := &mino.Address{
-		Id: identifier,
-	}
-
-	server, err := CreateServer(addr)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to create server: %v", err)
-	}
-
-	err = server.StartServer()
-	if err != nil {
-		return nil, xerrors.Errorf("failed to start the server: %v", err)
-	}
-
-	peer := Peer{
-		Address:     server.listener.Addr().String(),
-		Certificate: server.cert.Leaf,
-	}
-	server.neighbours[identifier] = peer
-
-	minoGrpc := &Minogrpc{
-		server:    *server,
-		namespace: "",
-	}
-
-	return minoGrpc, err
 }

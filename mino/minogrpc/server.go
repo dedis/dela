@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"log"
 	"math/big"
 	"net"
 	"net/http"
@@ -16,6 +15,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/improbable-eng/grpc-web/go/grpcweb"
+	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
@@ -157,7 +157,7 @@ func (srv *Server) StartServer() error {
 		err := srv.Serve()
 		// TODO: better handle this error
 		if err != nil {
-			log.Fatal("failed to start server ", err)
+			fabric.Logger.Fatal().Msg("failed to start server " + err.Error())
 		}
 	}()
 

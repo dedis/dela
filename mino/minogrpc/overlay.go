@@ -4,6 +4,7 @@ import (
 	context "context"
 
 	"github.com/golang/protobuf/ptypes"
+	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc/metadata"
@@ -42,7 +43,7 @@ func (o overlayService) Call(ctx context.Context, msg *CallMsg) (*CallResp, erro
 	var dynamicAny ptypes.DynamicAny
 	err := ptypes.UnmarshalAny(msg.Message, &dynamicAny)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to unmarshal to any: %v", err)
+		return nil, encoding.NewAnyDecodingError(msg.Message, err)
 	}
 
 	result, err := handler.Process(dynamicAny.Message)
@@ -53,7 +54,7 @@ func (o overlayService) Call(ctx context.Context, msg *CallMsg) (*CallResp, erro
 
 	anyResult, err := ptypes.MarshalAny(result)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to marshal result to any: %v", err)
+		return nil, encoding.NewAnyEncodingError(result, err)
 	}
 
 	return &CallResp{Message: anyResult}, nil
