@@ -82,7 +82,7 @@ func TestSkipBlock_HashUniqueness(t *testing.T) {
 
 	block := SkipBlock{
 		Index:         1,
-		Roster:        testRoster{buffer: []byte{1}},
+		Conodes:       nil,
 		Height:        1,
 		BaseHeight:    1,
 		MaximumHeight: 1,
@@ -128,9 +128,9 @@ func TestSkipBlock_HashUniqueness(t *testing.T) {
 }
 
 func TestBlockFactory_CreateGenesis(t *testing.T) {
-	factory := newBlockFactory(&testVerifier{})
+	factory := newBlockFactory(&testVerifier{}, nil)
 
-	genesis, err := factory.createGenesis(testRoster{}, nil)
+	genesis, err := factory.createGenesis(Conodes{}, nil)
 	require.NoError(t, err)
 	require.NotNil(t, genesis)
 	require.NotNil(t, factory.genesis)
@@ -139,7 +139,7 @@ func TestBlockFactory_CreateGenesis(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, hash, genesis.hash)
 
-	genesis, err = factory.createGenesis(testRoster{}, &empty.Empty{})
+	genesis, err = factory.createGenesis(Conodes{}, &empty.Empty{})
 	require.NoError(t, err)
 }
 
@@ -148,7 +148,7 @@ func TestBlockFactory_CreateGenesisFailures(t *testing.T) {
 
 	e := xerrors.New("encode error")
 	protoenc = &testProtoEncoder{err: e}
-	factory := newBlockFactory(&testVerifier{})
+	factory := newBlockFactory(&testVerifier{}, nil)
 
 	_, err := factory.createGenesis(nil, nil)
 	require.Error(t, err)
@@ -156,7 +156,7 @@ func TestBlockFactory_CreateGenesisFailures(t *testing.T) {
 }
 
 func TestBlockFactory_FromPrevious(t *testing.T) {
-	factory := newBlockFactory(&testVerifier{})
+	factory := newBlockFactory(&testVerifier{}, nil)
 
 	f := func(prev SkipBlock) bool {
 		block, err := factory.fromPrevious(prev, &empty.Empty{})
@@ -180,7 +180,7 @@ func TestBlockFactory_FromPrevious(t *testing.T) {
 func TestBlockFactory_FromPreviousFailures(t *testing.T) {
 	defer func() { protoenc = encoding.NewProtoEncoder() }()
 
-	factory := newBlockFactory(&testVerifier{})
+	factory := newBlockFactory(&testVerifier{}, nil)
 
 	e := xerrors.New("encoding error")
 	protoenc = &testProtoEncoder{err: e}
@@ -191,7 +191,7 @@ func TestBlockFactory_FromPreviousFailures(t *testing.T) {
 }
 
 func TestBlockFactory_FromBlock(t *testing.T) {
-	factory := newBlockFactory(&testVerifier{})
+	factory := newBlockFactory(&testVerifier{}, nil)
 
 	f := func(block SkipBlock) bool {
 		packed, err := block.Pack()
@@ -214,7 +214,7 @@ func TestBlockFactory_FromBlockFailures(t *testing.T) {
 	gen := SkipBlock{}.Generate(rand.New(rand.NewSource(time.Now().Unix())), 5)
 	block := gen.Interface().(SkipBlock)
 
-	factory := newBlockFactory(&testVerifier{})
+	factory := newBlockFactory(&testVerifier{}, nil)
 
 	src, err := block.Pack()
 	require.NoError(t, err)
@@ -251,14 +251,12 @@ func (s SkipBlock) Generate(rand *rand.Rand, size int) reflect.Value {
 		rand.Read(backlinks[i][:])
 	}
 
-	roster, _ := blockchain.NewRoster(&testVerifier{})
-
 	block := SkipBlock{
 		Index:         randomUint64(rand),
 		Height:        randomUint32(rand),
 		BaseHeight:    randomUint32(rand),
 		MaximumHeight: randomUint32(rand),
-		Roster:        roster,
+		Conodes:       Conodes{},
 		GenesisID:     genesisID,
 		DataHash:      dataHash,
 		BackLinks:     []blockchain.BlockID{blockchain.NewBlockID([]byte{1})},

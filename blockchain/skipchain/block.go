@@ -35,7 +35,7 @@ var (
 type SkipBlock struct {
 	hash          []byte
 	Index         uint64
-	Roster        blockchain.Roster
+	Conodes       Conodes
 	Height        uint32
 	BaseHeight    uint32
 	MaximumHeight uint32
@@ -57,11 +57,6 @@ func (b SkipBlock) GetHash() []byte {
 	return b.hash
 }
 
-// GetRoster returns the roster that signed the block.
-func (b SkipBlock) GetRoster() blockchain.Roster {
-	return b.Roster
-}
-
 // Pack returns the protobuf message for a block.
 func (b SkipBlock) Pack() (proto.Message, error) {
 	payloadAny, err := protoenc.MarshalAny(b.Payload)
@@ -74,12 +69,9 @@ func (b SkipBlock) Pack() (proto.Message, error) {
 		backLinks[i] = bl.Bytes()
 	}
 
-	var conodes []*blockchain.Conode
-	if b.Roster != nil {
-		conodes, err = b.Roster.GetConodes()
-		if err != nil {
-			return nil, err
-		}
+	conodes, err := b.Conodes.ToProto()
+	if err != nil {
+		return nil, err
 	}
 
 	blockproto := &BlockProto{
@@ -110,8 +102,8 @@ func (b SkipBlock) computeHash() ([]byte, error) {
 	binary.LittleEndian.PutUint32(buffer[12:16], b.BaseHeight)
 	binary.LittleEndian.PutUint32(buffer[16:20], b.MaximumHeight)
 	h.Write(buffer)
-	if b.Roster != nil {
-		b.Roster.WriteTo(h)
+	if b.Conodes != nil {
+		b.Conodes.WriteTo(h)
 	}
 	h.Write(b.GenesisID.Bytes())
 	h.Write(b.DataHash)
@@ -135,6 +127,21 @@ func (vb VerifiableBlock) Verify(v crypto.Verifier) error {
 	return nil
 }
 
+// Pack returns the protobuf message for a verifiable block.
+func (vb VerifiableBlock) Pack() (proto.Message, error) {
+	block, err := vb.SkipBlock.Pack()
+	if err != nil {
+		return nil, err
+	}
+
+	packed := &VerifiableBlockProto{
+		Block: block.(*BlockProto),
+		Chain: nil, // TODO
+	}
+
+	return packed, nil
+}
+
 // blockFactory is responsible for the instantiation of the block and related
 // data structures like the forward links and the proves.
 type blockFactory struct {
@@ -143,13 +150,14 @@ type blockFactory struct {
 	chainFactory consensus.ChainFactory
 }
 
-func newBlockFactory(v crypto.Verifier) *blockFactory {
+func newBlockFactory(v crypto.Verifier, cf consensus.ChainFactory) *blockFactory {
 	return &blockFactory{
-		verifier: v,
+		verifier:     v,
+		chainFactory: cf,
 	}
 }
 
-func (f *blockFactory) createGenesis(roster blockchain.Roster, data proto.Message) (SkipBlock, error) {
+func (f *blockFactory) createGenesis(conodes []Conode, data proto.Message) (SkipBlock, error) {
 	h := sha256.New()
 	if data == nil {
 		data = &empty.Empty{}
@@ -168,7 +176,7 @@ func (f *blockFactory) createGenesis(roster blockchain.Roster, data proto.Messag
 
 	genesis := SkipBlock{
 		Index:         0,
-		Roster:        roster,
+		Conodes:       conodes,
 		Height:        1,
 		BaseHeight:    DefaultBaseHeight,
 		MaximumHeight: DefaultMaximumHeight,
@@ -202,7 +210,7 @@ func (f *blockFactory) fromPrevious(prev SkipBlock, data proto.Message) (SkipBlo
 
 	block := SkipBlock{
 		Index:         prev.Index + 1,
-		Roster:        prev.Roster,
+		Conodes:       prev.Conodes,
 		Height:        prev.Height,
 		BaseHeight:    prev.BaseHeight,
 		MaximumHeight: prev.MaximumHeight,
@@ -236,14 +244,14 @@ func (f *blockFactory) fromBlock(src proto.Message) (SkipBlock, error) {
 		backLinks[i] = blockchain.NewBlockID(packed)
 	}
 
-	roster, err := blockchain.NewRoster(f.verifier, in.GetConodes()...)
+	conodes, err := NewConodesFromProto(f.verifier, in.GetConodes())
 	if err != nil {
-		return SkipBlock{}, xerrors.Errorf("couldn't create the roster: %v", err)
+		return SkipBlock{}, xerrors.Errorf("couldn't create the conodes: %v", err)
 	}
 
 	block := SkipBlock{
 		Index:         in.GetIndex(),
-		Roster:        roster,
+		Conodes:       conodes,
 		Height:        in.GetHeight(),
 		BaseHeight:    in.GetBaseHeight(),
 		MaximumHeight: in.GetMaximumHeight(),
@@ -263,7 +271,7 @@ func (f *blockFactory) fromBlock(src proto.Message) (SkipBlock, error) {
 	return block, nil
 }
 
-func (f *blockFactory) FromVerifiable(src proto.Message, roster blockchain.Roster) (blockchain.Block, error) {
+func (f *blockFactory) FromVerifiable(src proto.Message) (blockchain.Block, error) {
 	in, ok := src.(*VerifiableBlockProto)
 	if !ok {
 		return nil, xerrors.New("unknown type")
@@ -283,7 +291,7 @@ func (f *blockFactory) FromVerifiable(src proto.Message, roster blockchain.Roste
 		return nil, xerrors.Errorf("couldn't decode the chain: %v", err)
 	}
 
-	err = chain.Verify(f.verifier, f.genesis.Roster.GetPublicKeys())
+	err = chain.Verify(f.verifier, f.genesis.Conodes.GetPublicKeys())
 	if err != nil {
 		return nil, err
 	}
@@ -295,4 +303,10 @@ func (f *blockFactory) FromVerifiable(src proto.Message, roster blockchain.Roste
 // when a new block is proposed.
 type PayloadValidator interface {
 	Validate(payload proto.Message) error
+}
+
+type blockValidator struct{}
+
+func (v blockValidator) Validate(previous []byte, pb proto.Message) (consensus.Proposal, error) {
+	return SkipBlock{}, nil
 }

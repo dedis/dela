@@ -21,45 +21,6 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.ProtoPackageIsVersion3 // please upgrade the proto package
 
-type Prepare struct {
-	Proposal             *any.Any `protobuf:"bytes,1,opt,name=proposal,proto3" json:"proposal,omitempty"`
-	XXX_NoUnkeyedLiteral struct{} `json:"-"`
-	XXX_unrecognized     []byte   `json:"-"`
-	XXX_sizecache        int32    `json:"-"`
-}
-
-func (m *Prepare) Reset()         { *m = Prepare{} }
-func (m *Prepare) String() string { return proto.CompactTextString(m) }
-func (*Prepare) ProtoMessage()    {}
-func (*Prepare) Descriptor() ([]byte, []int) {
-	return fileDescriptor_4dc296cbfe5ffcd5, []int{0}
-}
-
-func (m *Prepare) XXX_Unmarshal(b []byte) error {
-	return xxx_messageInfo_Prepare.Unmarshal(m, b)
-}
-func (m *Prepare) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	return xxx_messageInfo_Prepare.Marshal(b, m, deterministic)
-}
-func (m *Prepare) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_Prepare.Merge(m, src)
-}
-func (m *Prepare) XXX_Size() int {
-	return xxx_messageInfo_Prepare.Size(m)
-}
-func (m *Prepare) XXX_DiscardUnknown() {
-	xxx_messageInfo_Prepare.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_Prepare proto.InternalMessageInfo
-
-func (m *Prepare) GetProposal() *any.Any {
-	if m != nil {
-		return m.Proposal
-	}
-	return nil
-}
-
 type ForwardLinkProto struct {
 	From                 []byte   `protobuf:"bytes,1,opt,name=from,proto3" json:"from,omitempty"`
 	To                   []byte   `protobuf:"bytes,2,opt,name=to,proto3" json:"to,omitempty"`
@@ -74,7 +35,7 @@ func (m *ForwardLinkProto) Reset()         { *m = ForwardLinkProto{} }
 func (m *ForwardLinkProto) String() string { return proto.CompactTextString(m) }
 func (*ForwardLinkProto) ProtoMessage()    {}
 func (*ForwardLinkProto) Descriptor() ([]byte, []int) {
-	return fileDescriptor_4dc296cbfe5ffcd5, []int{1}
+	return fileDescriptor_4dc296cbfe5ffcd5, []int{0}
 }
 
 func (m *ForwardLinkProto) XXX_Unmarshal(b []byte) error {
@@ -123,6 +84,84 @@ func (m *ForwardLinkProto) GetCommit() *any.Any {
 	return nil
 }
 
+type ChainProto struct {
+	Links                []*ForwardLinkProto `protobuf:"bytes,1,rep,name=links,proto3" json:"links,omitempty"`
+	XXX_NoUnkeyedLiteral struct{}            `json:"-"`
+	XXX_unrecognized     []byte              `json:"-"`
+	XXX_sizecache        int32               `json:"-"`
+}
+
+func (m *ChainProto) Reset()         { *m = ChainProto{} }
+func (m *ChainProto) String() string { return proto.CompactTextString(m) }
+func (*ChainProto) ProtoMessage()    {}
+func (*ChainProto) Descriptor() ([]byte, []int) {
+	return fileDescriptor_4dc296cbfe5ffcd5, []int{1}
+}
+
+func (m *ChainProto) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_ChainProto.Unmarshal(m, b)
+}
+func (m *ChainProto) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_ChainProto.Marshal(b, m, deterministic)
+}
+func (m *ChainProto) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ChainProto.Merge(m, src)
+}
+func (m *ChainProto) XXX_Size() int {
+	return xxx_messageInfo_ChainProto.Size(m)
+}
+func (m *ChainProto) XXX_DiscardUnknown() {
+	xxx_messageInfo_ChainProto.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ChainProto proto.InternalMessageInfo
+
+func (m *ChainProto) GetLinks() []*ForwardLinkProto {
+	if m != nil {
+		return m.Links
+	}
+	return nil
+}
+
+type Prepare struct {
+	Proposal             *any.Any `protobuf:"bytes,1,opt,name=proposal,proto3" json:"proposal,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
+}
+
+func (m *Prepare) Reset()         { *m = Prepare{} }
+func (m *Prepare) String() string { return proto.CompactTextString(m) }
+func (*Prepare) ProtoMessage()    {}
+func (*Prepare) Descriptor() ([]byte, []int) {
+	return fileDescriptor_4dc296cbfe5ffcd5, []int{2}
+}
+
+func (m *Prepare) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_Prepare.Unmarshal(m, b)
+}
+func (m *Prepare) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_Prepare.Marshal(b, m, deterministic)
+}
+func (m *Prepare) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Prepare.Merge(m, src)
+}
+func (m *Prepare) XXX_Size() int {
+	return xxx_messageInfo_Prepare.Size(m)
+}
+func (m *Prepare) XXX_DiscardUnknown() {
+	xxx_messageInfo_Prepare.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_Prepare proto.InternalMessageInfo
+
+func (m *Prepare) GetProposal() *any.Any {
+	if m != nil {
+		return m.Proposal
+	}
+	return nil
+}
+
 type Commit struct {
 	ForwardLink          *ForwardLinkProto `protobuf:"bytes,1,opt,name=forwardLink,proto3" json:"forwardLink,omitempty"`
 	XXX_NoUnkeyedLiteral struct{}          `json:"-"`
@@ -134,7 +173,7 @@ func (m *Commit) Reset()         { *m = Commit{} }
 func (m *Commit) String() string { return proto.CompactTextString(m) }
 func (*Commit) ProtoMessage()    {}
 func (*Commit) Descriptor() ([]byte, []int) {
-	return fileDescriptor_4dc296cbfe5ffcd5, []int{2}
+	return fileDescriptor_4dc296cbfe5ffcd5, []int{3}
 }
 
 func (m *Commit) XXX_Unmarshal(b []byte) error {
@@ -162,28 +201,72 @@ func (m *Commit) GetForwardLink() *ForwardLinkProto {
 	return nil
 }
 
+type Propagate struct {
+	ForwardLink          *ForwardLinkProto `protobuf:"bytes,1,opt,name=forwardLink,proto3" json:"forwardLink,omitempty"`
+	XXX_NoUnkeyedLiteral struct{}          `json:"-"`
+	XXX_unrecognized     []byte            `json:"-"`
+	XXX_sizecache        int32             `json:"-"`
+}
+
+func (m *Propagate) Reset()         { *m = Propagate{} }
+func (m *Propagate) String() string { return proto.CompactTextString(m) }
+func (*Propagate) ProtoMessage()    {}
+func (*Propagate) Descriptor() ([]byte, []int) {
+	return fileDescriptor_4dc296cbfe5ffcd5, []int{4}
+}
+
+func (m *Propagate) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_Propagate.Unmarshal(m, b)
+}
+func (m *Propagate) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_Propagate.Marshal(b, m, deterministic)
+}
+func (m *Propagate) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Propagate.Merge(m, src)
+}
+func (m *Propagate) XXX_Size() int {
+	return xxx_messageInfo_Propagate.Size(m)
+}
+func (m *Propagate) XXX_DiscardUnknown() {
+	xxx_messageInfo_Propagate.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_Propagate proto.InternalMessageInfo
+
+func (m *Propagate) GetForwardLink() *ForwardLinkProto {
+	if m != nil {
+		return m.ForwardLink
+	}
+	return nil
+}
+
 func init() {
-	proto.RegisterType((*Prepare)(nil), "cosipbft.Prepare")
 	proto.RegisterType((*ForwardLinkProto)(nil), "cosipbft.ForwardLinkProto")
+	proto.RegisterType((*ChainProto)(nil), "cosipbft.ChainProto")
+	proto.RegisterType((*Prepare)(nil), "cosipbft.Prepare")
 	proto.RegisterType((*Commit)(nil), "cosipbft.Commit")
+	proto.RegisterType((*Propagate)(nil), "cosipbft.Propagate")
 }
 
 func init() { proto.RegisterFile("messages.proto", fileDescriptor_4dc296cbfe5ffcd5) }
 
 var fileDescriptor_4dc296cbfe5ffcd5 = []byte{
-	// 220 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x7c, 0x90, 0x4f, 0x4b, 0x87, 0x30,
-	0x18, 0xc7, 0xd1, 0x44, 0xe5, 0x31, 0x24, 0x46, 0x87, 0xe5, 0x29, 0x3c, 0x75, 0x88, 0x19, 0x75,
-	0xac, 0x4b, 0x04, 0x9e, 0x3a, 0x88, 0xef, 0x60, 0xda, 0x26, 0x92, 0xf3, 0x19, 0xdb, 0x22, 0x7c,
-	0x1f, 0xbd, 0xe0, 0x60, 0x6a, 0xfd, 0xf8, 0x1d, 0xbc, 0x3d, 0x7c, 0xf9, 0x7c, 0xff, 0x6c, 0x90,
-	0x2b, 0x61, 0x2d, 0x1f, 0x84, 0x65, 0xda, 0xa0, 0x43, 0x92, 0xf6, 0x68, 0x47, 0xdd, 0x49, 0x57,
-	0xdc, 0x0c, 0x88, 0xc3, 0x24, 0x2a, 0xaf, 0x77, 0x5f, 0xb2, 0xe2, 0xf3, 0xb2, 0x42, 0xe5, 0x33,
-	0x24, 0x8d, 0x11, 0x9a, 0x1b, 0x41, 0x1e, 0x20, 0xd5, 0x06, 0x35, 0x5a, 0x3e, 0xd1, 0xe0, 0x36,
-	0xb8, 0xcb, 0x1e, 0xaf, 0xd9, 0x6a, 0x64, 0xbb, 0x91, 0xbd, 0xce, 0x4b, 0xfb, 0x47, 0x95, 0x3f,
-	0x01, 0x5c, 0xd5, 0x68, 0xbe, 0xb9, 0xf9, 0x78, 0x1f, 0xe7, 0xcf, 0xc6, 0xd7, 0x12, 0x88, 0xa4,
-	0x41, 0xe5, 0x23, 0x2e, 0x5b, 0x7f, 0x93, 0x1c, 0x42, 0x87, 0x34, 0xf4, 0x4a, 0xe8, 0x90, 0x30,
-	0x48, 0xf4, 0xda, 0x4a, 0x2f, 0x0e, 0x9a, 0x76, 0x88, 0xdc, 0x43, 0xdc, 0xa3, 0x52, 0xa3, 0xa3,
-	0xd1, 0x01, 0xbe, 0x31, 0x65, 0x0d, 0xf1, 0x9b, 0xbf, 0xc8, 0x0b, 0x64, 0xf2, 0x7f, 0xdf, 0xf6,
-	0xaa, 0x82, 0xed, 0x1f, 0xc3, 0xce, 0xc7, 0xb7, 0xa7, 0x78, 0x17, 0xfb, 0xf4, 0xa7, 0xdf, 0x00,
-	0x00, 0x00, 0xff, 0xff, 0xfd, 0xb8, 0xc3, 0xd5, 0x59, 0x01, 0x00, 0x00,
+	// 258 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x09, 0x6e, 0x88, 0x02, 0xff, 0xa4, 0x8f, 0x41, 0x4b, 0xc3, 0x30,
+	0x18, 0x86, 0xe9, 0x36, 0xbb, 0xf9, 0x4d, 0x86, 0x04, 0x0f, 0x75, 0x27, 0xc9, 0xc9, 0x83, 0x64,
+	0x43, 0x8f, 0x8a, 0x20, 0x83, 0x81, 0xe0, 0x61, 0xf4, 0x1f, 0x7c, 0x9d, 0x69, 0x2d, 0xb6, 0xf9,
+	0x42, 0x12, 0x91, 0xfd, 0x0f, 0x7f, 0xb0, 0x21, 0x69, 0x55, 0x04, 0x7b, 0xf1, 0x16, 0x5e, 0x9e,
+	0x37, 0xcf, 0xfb, 0xc1, 0xa2, 0x95, 0xd6, 0x62, 0x25, 0xad, 0xd0, 0x86, 0x1c, 0xb1, 0xd9, 0x9e,
+	0x6c, 0xad, 0x8b, 0xd2, 0x2d, 0xcf, 0x2b, 0xa2, 0xaa, 0x91, 0xab, 0x90, 0x17, 0x6f, 0xe5, 0x0a,
+	0xd5, 0x21, 0x42, 0xfc, 0x23, 0x81, 0xd3, 0x2d, 0x99, 0x77, 0x34, 0xcf, 0x4f, 0xb5, 0x7a, 0xdd,
+	0x85, 0x26, 0x83, 0x49, 0x69, 0xa8, 0xcd, 0x92, 0x8b, 0xe4, 0xf2, 0x24, 0x0f, 0x6f, 0xb6, 0x80,
+	0x91, 0xa3, 0x6c, 0x14, 0x12, 0xff, 0x62, 0x02, 0xa6, 0xda, 0x48, 0x8d, 0x46, 0x66, 0x63, 0x1f,
+	0xce, 0xaf, 0xcf, 0x44, 0xb4, 0x88, 0xde, 0x22, 0x1e, 0xd4, 0x21, 0xef, 0x21, 0x76, 0x05, 0xe9,
+	0x9e, 0xda, 0xb6, 0x76, 0xd9, 0x64, 0x00, 0xef, 0x18, 0x7e, 0x0f, 0xb0, 0x79, 0xc1, 0x5a, 0xc5,
+	0x3d, 0x6b, 0x38, 0x6a, 0xfc, 0x38, 0xeb, 0x07, 0x8d, 0x7d, 0x75, 0x29, 0xfa, 0xcb, 0xc4, 0xef,
+	0xe9, 0x79, 0x04, 0xf9, 0x2d, 0x4c, 0x77, 0x9d, 0x78, 0x0d, 0x33, 0xaf, 0xd0, 0x64, 0xb1, 0x09,
+	0x07, 0xfd, 0xa5, 0xfe, 0xa2, 0xf8, 0x16, 0xd2, 0x4d, 0x98, 0xc1, 0xee, 0x60, 0x5e, 0x7e, 0x1b,
+	0xba, 0xfa, 0x90, 0xfe, 0x27, 0xce, 0x1f, 0xe1, 0xd8, 0xa7, 0x1a, 0x2b, 0x74, 0xf2, 0x7f, 0x5f,
+	0x15, 0x69, 0x98, 0x7a, 0xf3, 0x19, 0x00, 0x00, 0xff, 0xff, 0xa4, 0xac, 0xe1, 0x0d, 0xe4, 0x01,
+	0x00, 0x00,
 }

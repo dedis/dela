@@ -1,6 +1,7 @@
 package cosipbft
 
 import (
+	"bytes"
 	"crypto/sha256"
 
 	"github.com/golang/protobuf/proto"
@@ -106,20 +107,58 @@ func (fl forwardLink) computeHash() ([]byte, error) {
 	return h.Sum(nil), nil
 }
 
+type chain struct {
+	links []forwardLink
+}
+
+func (c chain) Verify(verifier crypto.Verifier, pubkeys []crypto.PublicKey) error {
+	prev := c.links[0]
+	for _, link := range c.links[1:] {
+		if !bytes.Equal(prev.GetTo(), link.GetFrom()) {
+			return xerrors.New("mismatch forward link")
+		}
+
+		err := link.Verify(verifier, pubkeys)
+		if err != nil {
+			return err
+		}
+
+		prev = link
+	}
+
+	return nil
+}
+
+func (c chain) Pack() (proto.Message, error) {
+	pb := &ChainProto{
+		Links: make([]*ForwardLinkProto, len(c.links)),
+	}
+
+	for i, link := range c.links {
+		packed, err := link.Pack()
+		if err != nil {
+			return nil, err
+		}
+
+		pb.Links[i] = packed.(*ForwardLinkProto)
+	}
+
+	return pb, nil
+}
+
 // ChainFactory is an implementation of the ChainFactory interface for forward links.
 type ChainFactory struct {
 	verifier crypto.Verifier
 }
 
-// NewSealFactory returns a new insance of a seal factory that will create
+// NewChainFactory returns a new insance of a seal factory that will create
 // forward links for appropriate protobuf messages and return an error
 // otherwise.
-func NewSealFactory(verifier crypto.Verifier) *ChainFactory {
+func NewChainFactory(verifier crypto.Verifier) *ChainFactory {
 	return &ChainFactory{verifier: verifier}
 }
 
-// FromProto returns an instance of a chain from appropriate messages.
-func (f *ChainFactory) FromProto(pb proto.Message) (consensus.Chain, error) {
+func (f *ChainFactory) decodeLink(pb proto.Message) (*forwardLink, error) {
 	var src *ForwardLinkProto
 	switch msg := pb.(type) {
 	case *any.Any:
@@ -165,5 +204,12 @@ func (f *ChainFactory) FromProto(pb proto.Message) (consensus.Chain, error) {
 
 	fl.hash = hash
 
-	return fl, nil
+	return &fl, nil
+}
+
+// FromProto returns a chain from a protobuf message.
+func (f *ChainFactory) FromProto(pb proto.Message) (consensus.Chain, error) {
+	chain := chain{}
+
+	return chain, nil
 }

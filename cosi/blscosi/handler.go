@@ -19,6 +19,7 @@ type handler struct {
 func newHandler(s crypto.Signer, h cosi.Hashable) handler {
 	return handler{
 		signer: s,
+		hasher: h,
 	}
 }
 

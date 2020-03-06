@@ -20,6 +20,12 @@ type Validator interface {
 	Validate(previous []byte, message proto.Message) (Proposal, error)
 }
 
+// Participant represents the participant in a consensus.
+type Participant interface {
+	GetAddress() *mino.Address
+	GetPublicKey() crypto.PublicKey
+}
+
 // Chain is a verifiable lock between proposals.
 type Chain interface {
 	encoding.Packable
@@ -32,17 +38,14 @@ type ChainFactory interface {
 	FromProto(pb proto.Message) (Chain, error)
 }
 
-type Participant interface {
-	GetAddress() *mino.Address
-	GetPublicKey() crypto.PublicKey
-}
-
 // Consensus is an interface that provides primitives to propose data to a set
 // of participants. They will validate the proposal according to the validator.
 type Consensus interface {
+	GetChainFactory() ChainFactory
+
 	GetChain(from uint64, to uint64) Chain
 
 	Listen(h Validator) error
 
-	Propose(proposal Proposal, participants ...Participant) error
+	Propose(proposal Proposal, addrs ...mino.Identity) error
 }

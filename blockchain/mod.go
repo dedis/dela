@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	fmt "fmt"
-	"io"
 
 	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric/crypto"
@@ -14,27 +13,23 @@ import (
 
 //go:generate protoc -I ./ --proto_path=../ --go_out=Mmino/messages.proto=go.dedis.ch/fabric/mino:. ./messages.proto
 
-// Roster is a set of identifiable addresses.
-type Roster interface {
-	io.WriterTo
-
-	GetAddresses() []*mino.Address
-	GetPublicKeys() []crypto.PublicKey
-	GetConodes() ([]*Conode, error)
-}
-
+// BlockID is a unique identifier for each block which is composed
+// of its hash.
 type BlockID [32]byte
 
+// NewBlockID returns an instance of a block identifier.
 func NewBlockID(buffer []byte) BlockID {
 	id := BlockID{}
 	copy(id[:], buffer)
 	return id
 }
 
+// Bytes returns the slice of bytes of the identifier.
 func (id BlockID) Bytes() []byte {
 	return id[:]
 }
 
+// Equal returns true when both identifiers are equal.
 func (id BlockID) Equal(other BlockID) bool {
 	return bytes.Equal(id[:], other[:])
 }
@@ -43,14 +38,15 @@ func (id BlockID) String() string {
 	return fmt.Sprintf("%x", id[:])[:8]
 }
 
+// Block is the interface of the unit of storage in the blockchain
 type Block interface {
 	encoding.Packable
 
 	GetID() BlockID
-
-	GetRoster() Roster
 }
 
+// VerifiableBlock is an extension of a block so that its integrity can be
+// verified from the genesis block.
 type VerifiableBlock interface {
 	Block
 
@@ -59,7 +55,7 @@ type VerifiableBlock interface {
 
 // BlockFactory provides primitives to create blocks from a untrusted source.
 type BlockFactory interface {
-	FromVerifiable(src proto.Message, roster Roster) (Block, error)
+	FromVerifiable(src proto.Message) (Block, error)
 }
 
 // Blockchain is the interface that provides the primitives to interact with the
@@ -69,7 +65,7 @@ type Blockchain interface {
 
 	// Store stores any representation of a data structure into a new block.
 	// The implementation is responsible for any validations required.
-	Store(roster Roster, data proto.Message) error
+	Store(data proto.Message, addrs mino.Identity) error
 
 	// GetBlock returns the latest block.
 	GetBlock() (Block, error)

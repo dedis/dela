@@ -12,6 +12,11 @@ import (
 
 //go:generate protoc -I ./ --go_out=./ ./messages.proto
 
+// Identity is a representation of a node's address.
+type Identity interface {
+	Address() *Address
+}
+
 // Sender is an interface to provide primitives to send messages to recipients.
 type Sender interface {
 	Send(msg proto.Message, addrs ...*Address) error

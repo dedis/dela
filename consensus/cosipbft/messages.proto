@@ -4,10 +4,6 @@ package cosipbft;
 
 import "google/protobuf/any.proto";
 
-message Prepare {
-    google.protobuf.Any proposal = 1;
-}
-
 message ForwardLinkProto {
     bytes from = 1;
     bytes to = 2;
@@ -15,6 +11,18 @@ message ForwardLinkProto {
     google.protobuf.Any commit = 4;
 }
 
+message ChainProto {
+    repeated ForwardLinkProto links = 1;
+}
+
+message Prepare {
+    google.protobuf.Any proposal = 1;
+}
+
 message Commit {
+    ForwardLinkProto forwardLink = 1;
+}
+
+message Propagate {
     ForwardLinkProto forwardLink = 1;
 }
