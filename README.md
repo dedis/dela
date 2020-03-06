@@ -2,6 +2,8 @@
 
 This framework aims to deliver a modular approach to a public ledger implementation.
 
+[![Coverage Status](https://coveralls.io/repos/github/dedis/fabric/badge.svg?branch=master)](https://coveralls.io/github/dedis/fabric?branch=master)
+
 ## Terminologies
 
 - **blockchain** - A blockchain is...
