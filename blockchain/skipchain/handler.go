@@ -12,14 +12,12 @@ type handler struct {
 
 	db      Database
 	factory *blockFactory
-	triage  *blockTriage
 }
 
-func newHandler(db Database, t *blockTriage, f *blockFactory) handler {
+func newHandler(db Database, f *blockFactory) handler {
 	return handler{
 		db:      db,
 		factory: f,
-		triage:  t,
 	}
 }
 
@@ -35,11 +33,6 @@ func (h handler) Process(req proto.Message) (proto.Message, error) {
 		err = h.db.Write(genesis)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't write the block: %v", err)
-		}
-	case *PropagateSeal:
-		err := h.triage.processSeal(in.GetSeal())
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't commit the forward link: %v", err)
 		}
 	default:
 		return nil, xerrors.Errorf("unknown message type: %#v", in)

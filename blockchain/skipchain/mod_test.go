@@ -29,7 +29,7 @@ func TestSkipchain_Basic(t *testing.T) {
 		err = s2.Store(roster, &empty.Empty{})
 		require.NoError(t, err)
 
-		chain, err := s1.GetVerifiableChain()
+		chain, err := s1.GetVerifiableBlock()
 		require.NoError(t, err)
 
 		packed, err := chain.Pack()

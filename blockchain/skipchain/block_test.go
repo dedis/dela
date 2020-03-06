@@ -3,10 +3,8 @@ package skipchain
 import (
 	"bytes"
 	"encoding/binary"
-	"encoding/hex"
 	fmt "fmt"
 	"io"
-	math "math"
 	"math/rand"
 	"reflect"
 	"testing"
@@ -17,10 +15,8 @@ import (
 	"github.com/golang/protobuf/ptypes"
 	any "github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
-	pstruct "github.com/golang/protobuf/ptypes/struct"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/blockchain"
-	"go.dedis.ch/fabric/blockchain/consensus"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
@@ -51,7 +47,6 @@ func TestSkipBlock_Pack(t *testing.T) {
 		require.Equal(t, block.BaseHeight, pblock.GetBaseHeight())
 		require.Equal(t, block.MaximumHeight, pblock.GetMaximumHeight())
 		require.Len(t, pblock.GetBacklinks(), len(block.BackLinks))
-		require.Len(t, pblock.GetSeals(), len(block.Seals))
 		require.Equal(t, block.GenesisID.Bytes(), pblock.GetGenesisID())
 		require.Equal(t, block.DataHash, pblock.GetDataHash())
 
@@ -67,20 +62,13 @@ func TestSkipBlock_PackFailures(t *testing.T) {
 
 	block := SkipBlock{
 		BackLinks: []blockchain.BlockID{{}},
-		Seals:     []consensus.Seal{newTestSeal()},
 		Payload:   &empty.Empty{},
 	}
 
 	e := xerrors.New("pack error")
 
-	block.Seals[0] = testSeal{err: e}
-	_, err := block.Pack()
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err, e))
-	require.True(t, xerrors.Is(err, encoding.NewEncodingError("forward link", nil)))
-
 	protoenc = &testProtoEncoder{err: e}
-	_, err = block.Pack()
+	_, err := block.Pack()
 	require.Error(t, err)
 	require.True(t, xerrors.Is(err, e))
 	require.True(t, xerrors.Is(err, encoding.NewAnyEncodingError((*empty.Empty)(nil), nil)))
@@ -139,132 +127,6 @@ func TestSkipBlock_HashUniqueness(t *testing.T) {
 	}
 }
 
-func TestChain_GetProof(t *testing.T) {
-	f := func(blocks []SkipBlock) bool {
-		numForwardLink := int(math.Max(0, float64(len(blocks)-1)))
-
-		for i := range blocks[:numForwardLink] {
-			blocks[i].Seals = []consensus.Seal{
-				testSeal{from: blocks[i].hash, to: blocks[i+1].hash},
-			}
-		}
-
-		chain := SkipBlocks(blocks).GetProof()
-		require.Len(t, chain.seals, numForwardLink)
-
-		return true
-	}
-
-	err := quick.Check(f, nil)
-	require.NoError(t, err)
-}
-
-func TestProof_Pack(t *testing.T) {
-	f := func(block SkipBlock) bool {
-		chain := Chain{
-			last: block,
-			seals: []consensus.Seal{
-				testSeal{from: []byte{0}, to: []byte{1}},
-				testSeal{from: []byte{1}, to: []byte{2}},
-			},
-		}
-
-		packed, err := chain.Pack()
-		require.NoError(t, err)
-
-		msg := packed.(*ChainProto)
-		require.Len(t, msg.GetSeals(), len(chain.seals))
-		return true
-	}
-
-	err := quick.Check(f, nil)
-	require.NoError(t, err)
-}
-
-func TestProof_PackFailures(t *testing.T) {
-	block := SkipBlock{Payload: &empty.Empty{}}
-
-	e := xerrors.New("pack error")
-	chain := Chain{
-		last: block,
-		seals: []consensus.Seal{
-			testSeal{err: e},
-		},
-	}
-
-	_, err := chain.Pack()
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err, encoding.NewEncodingError("seal", nil)), err.Error())
-}
-
-func TestProof_Verify(t *testing.T) {
-	f := func(blocks []SkipBlock) bool {
-		numForwardLink := int(math.Max(0, float64(len(blocks)-1)))
-
-		for i := range blocks[:numForwardLink] {
-			blocks[i].Seals = []consensus.Seal{
-				testSeal{
-					from: blocks[i].hash,
-					to:   blocks[i+1].hash,
-				},
-			}
-		}
-
-		chain := SkipBlocks(blocks).GetProof()
-		v := &testVerifier{}
-
-		if len(blocks) > 0 {
-			err := chain.Verify(v)
-			require.NoError(t, err)
-		}
-
-		return true
-	}
-
-	err := quick.Check(f, nil)
-	require.NoError(t, err)
-}
-
-func TestProof_VerifyFailures(t *testing.T) {
-	proof := Chain{genesis: SkipBlock{hash: []byte{123}}}
-	err := proof.Verify(nil)
-	require.Error(t, err)
-	require.EqualError(t, err, "mismatch genesis block")
-
-	proof = Chain{seals: []consensus.Seal{newTestSeal()}}
-	err = proof.Verify(nil)
-	require.Error(t, err)
-	require.EqualError(t, err, "missing roster in genesis block")
-
-	proof.genesis.Roster = testRoster{}
-	e := xerrors.New("verify error")
-	err = proof.Verify(&testVerifier{err: e})
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err, e), err.Error())
-
-	proof.genesis = SkipBlock{hash: []byte{0xaa}, Roster: testRoster{}}
-	err = proof.Verify(&testVerifier{})
-	require.Error(t, err)
-	require.EqualError(t, xerrors.Unwrap(err),
-		genSealErr(proof.seals[0].GetTo(), proof.genesis.GetID()))
-
-	proof.seals = []consensus.Seal{
-		testSeal{from: []byte{0xaa}, to: []byte{0xbb}},
-		testSeal{from: []byte{0xcc}},
-	}
-	err = proof.Verify(&testVerifier{})
-	require.Error(t, err)
-	require.EqualError(t, xerrors.Unwrap(err),
-		genSealErr(proof.seals[1].GetFrom(), proof.seals[0].GetTo()))
-
-	proof.seals = []consensus.Seal{
-		testSeal{from: []byte{0xaa}, to: []byte{0xbb}},
-	}
-	err = proof.Verify(&testVerifier{})
-	require.Error(t, err)
-	require.EqualError(t, err, genSealErr(proof.seals[0].GetTo(), proof.last.GetID()))
-}
-
 func TestBlockFactory_CreateGenesis(t *testing.T) {
 	factory := newBlockFactory(&testVerifier{})
 
@@ -307,7 +169,6 @@ func TestBlockFactory_FromPrevious(t *testing.T) {
 		require.NotEqual(t, prev.DataHash, block.DataHash)
 		require.Len(t, block.BackLinks, 1)
 		require.Equal(t, prev.GetID(), block.BackLinks[0])
-		require.Len(t, block.Seals, 0)
 
 		return true
 	}
@@ -331,7 +192,6 @@ func TestBlockFactory_FromPreviousFailures(t *testing.T) {
 
 func TestBlockFactory_FromBlock(t *testing.T) {
 	factory := newBlockFactory(&testVerifier{})
-	factory.sealFactory = testSealFactory{}
 
 	f := func(block SkipBlock) bool {
 		packed, err := block.Pack()
@@ -367,34 +227,6 @@ func TestBlockFactory_FromBlockFailures(t *testing.T) {
 	require.True(t, xerrors.Is(err, encoding.NewAnyDecodingError((*ptypes.DynamicAny)(nil), nil)), err.Error())
 }
 
-func TestBlockFactory_FromVerifiable(t *testing.T) {
-	factory := newBlockFactory(&testVerifier{})
-	factory.sealFactory = testSealFactory{}
-
-	f := func(genesis, last SkipBlock) bool {
-		chain := Chain{
-			last: last,
-			seals: []consensus.Seal{testSeal{
-				from: genesis.GetID().Bytes(),
-				to:   last.GetID().Bytes(),
-			}},
-		}
-
-		packed, err := chain.Pack()
-		require.NoError(t, err)
-
-		factory.genesis = &genesis
-		decoded, err := factory.FromVerifiable(packed, nil)
-		require.NoError(t, err)
-		require.Equal(t, last, decoded)
-
-		return true
-	}
-
-	err := quick.Check(f, nil)
-	require.NoError(t, err)
-}
-
 func randomUint64(rand *rand.Rand) uint64 {
 	buffer := make([]byte, 16)
 	rand.Read(buffer)
@@ -419,13 +251,6 @@ func (s SkipBlock) Generate(rand *rand.Rand, size int) reflect.Value {
 		rand.Read(backlinks[i][:])
 	}
 
-	seals := make([]consensus.Seal, rand.Int31n(int32(size))+1)
-	for i := range seals {
-		fl := testSeal{from: []byte{}, to: []byte{}}
-
-		seals[i] = fl
-	}
-
 	roster, _ := blockchain.NewRoster(&testVerifier{})
 
 	block := SkipBlock{
@@ -437,7 +262,6 @@ func (s SkipBlock) Generate(rand *rand.Rand, size int) reflect.Value {
 		GenesisID:     genesisID,
 		DataHash:      dataHash,
 		BackLinks:     []blockchain.BlockID{blockchain.NewBlockID([]byte{1})},
-		Seals:         seals,
 		Payload:       &empty.Empty{},
 	}
 
@@ -504,76 +328,6 @@ func (e *testProtoEncoder) UnmarshalAny(any *any.Any, pb proto.Message) error {
 	}
 
 	return ptypes.UnmarshalAny(any, pb)
-}
-
-type testSeal struct {
-	from   []byte
-	to     []byte
-	err    error
-	packed proto.Message
-}
-
-func newTestSeal() consensus.Seal {
-	return testSeal{}
-}
-
-func (s testSeal) GetFrom() blockchain.BlockID {
-	return blockchain.NewBlockID(s.from)
-}
-
-func (s testSeal) GetTo() blockchain.BlockID {
-	return blockchain.NewBlockID(s.to)
-}
-
-func (s testSeal) Verify(v crypto.Verifier, pubkeys []crypto.PublicKey) error {
-	return v.Verify(pubkeys, []byte{}, testSignature{})
-}
-
-func (s testSeal) Pack() (proto.Message, error) {
-	if s.err != nil {
-		return nil, s.err
-	}
-
-	if s.packed != nil {
-		return s.packed, nil
-	}
-
-	packed := &pstruct.Struct{Fields: map[string]*pstruct.Value{
-		"from": &pstruct.Value{
-			Kind: &pstruct.Value_StringValue{
-				StringValue: hex.EncodeToString(s.from),
-			},
-		},
-		"to": &pstruct.Value{
-			Kind: &pstruct.Value_StringValue{
-				StringValue: hex.EncodeToString(s.to),
-			},
-		},
-	}}
-
-	return packed, nil
-}
-
-type testSealFactory struct{}
-
-func (f testSealFactory) FromProto(pb proto.Message) (consensus.Seal, error) {
-	var msg *pstruct.Struct
-	switch in := pb.(type) {
-	case *any.Any:
-		msg = &pstruct.Struct{}
-
-		err := ptypes.UnmarshalAny(in, msg)
-		if err != nil {
-			return nil, err
-		}
-	case *pstruct.Struct:
-		msg = in
-	}
-
-	from, _ := hex.DecodeString(msg.Fields["from"].GetStringValue())
-	to, _ := hex.DecodeString(msg.Fields["to"].GetStringValue())
-
-	return testSeal{from: from, to: to}, nil
 }
 
 type testSignature struct {

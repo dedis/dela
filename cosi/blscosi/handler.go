@@ -5,22 +5,20 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
+	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/mino"
 )
 
 type handler struct {
 	mino.UnsupportedHandler
-	signer    crypto.Signer
-	onet      mino.Mino
-	validator Validator
+	signer crypto.Signer
+	hasher cosi.Hashable
 }
 
-func newHandler(o mino.Mino, s crypto.Signer, v Validator) handler {
+func newHandler(s crypto.Signer, h cosi.Hashable) handler {
 	return handler{
-		onet:      o,
-		signer:    s,
-		validator: v,
+		signer: s,
 	}
 }
 
@@ -33,7 +31,7 @@ func (h handler) Process(msg proto.Message) (proto.Message, error) {
 			return nil, err
 		}
 
-		buf, err := h.validator.Validate(da.Message)
+		buf, err := h.hasher.Hash(da.Message)
 		if err != nil {
 			return nil, err
 		}

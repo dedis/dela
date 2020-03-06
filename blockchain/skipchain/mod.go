@@ -9,11 +9,10 @@ import (
 	"context"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/blockchain"
-	"go.dedis.ch/fabric/blockchain/consensus"
-	"go.dedis.ch/fabric/blockchain/consensus/cosipbft"
+	"go.dedis.ch/fabric/consensus"
+	"go.dedis.ch/fabric/consensus/cosipbft"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
@@ -35,14 +34,10 @@ type Skipchain struct {
 func NewSkipchain(m mino.Mino, signer crypto.AggregateSigner, v PayloadValidator) (*Skipchain, error) {
 	db := NewInMemoryDatabase()
 	factory := newBlockFactory(signer)
-	triage := newBlockTriage(db, factory, v)
 
-	consensus, err := cosipbft.NewConsensus(m, signer, triage)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't create consensus: %v", err)
-	}
+	consensus := cosipbft.NewCoSiPBFT(nil)
 
-	rpc, err := m.MakeRPC("skipchain", newHandler(db, triage, factory))
+	rpc, err := m.MakeRPC("skipchain", newHandler(db, factory))
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't create the rpc: %v", err)
 	}
@@ -101,29 +96,9 @@ func (s *Skipchain) Store(roster blockchain.Roster, data proto.Message) error {
 		return xerrors.Errorf("couldn't create next block: %v", err)
 	}
 
-	seal, err := s.consensus.Propose(roster, previous, block)
+	err = s.consensus.Propose(block)
 	if err != nil {
 		return xerrors.Errorf("couldn't propose the block: %v", err)
-	}
-
-	sealproto, err := seal.Pack()
-	if err != nil {
-		return xerrors.Errorf("couldn't encode the forward link: %v", err)
-	}
-
-	fabric.Logger.Info().Msgf("Propagation new block to %v", roster.GetAddresses())
-
-	msg := &PropagateSeal{}
-	msg.Seal, err = ptypes.MarshalAny(sealproto)
-	if err != nil {
-		return err
-	}
-
-	closing, errs := s.rpc.Call(msg, roster.GetAddresses()...)
-	select {
-	case <-closing:
-	case err := <-errs:
-		return xerrors.Errorf("failed to propagate forward link: %v", err)
 	}
 
 	return nil
@@ -139,15 +114,15 @@ func (s *Skipchain) GetBlock() (blockchain.Block, error) {
 	return block, nil
 }
 
-// GetVerifiableChain reads the latest block of the chain and creates a verifiable
+// GetVerifiableBlock reads the latest block of the chain and creates a verifiable
 // proof of the shortest chain from the genesis to the block.
-func (s *Skipchain) GetVerifiableChain() (blockchain.Chain, error) {
-	blocks, err := s.db.ReadChain()
+func (s *Skipchain) GetVerifiableBlock() (blockchain.VerifiableBlock, error) {
+	_, err := s.db.ReadAll()
 	if err != nil {
 		return nil, xerrors.Errorf("error when reading chain: %v", err)
 	}
 
-	return blocks.GetProof(), nil
+	return nil, nil
 }
 
 // Watch registers the observer so that it will be notified of new blocks.

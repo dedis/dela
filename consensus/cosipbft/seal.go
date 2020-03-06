@@ -6,8 +6,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	any "github.com/golang/protobuf/ptypes/any"
-	"go.dedis.ch/fabric/blockchain"
-	"go.dedis.ch/fabric/blockchain/consensus"
+	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"golang.org/x/xerrors"
@@ -15,12 +14,15 @@ import (
 
 var protoenc encoding.ProtoMarshaler = encoding.NewProtoEncoder()
 
+// Digest is an alias for the bytes type for hash.
+type Digest = []byte
+
 // forwardLink is the cryptographic primitive to ensure a block is a successor
 // of a previous one.
 type forwardLink struct {
-	hash []byte
-	from blockchain.BlockID
-	to   blockchain.BlockID
+	hash Digest
+	from Digest
+	to   Digest
 	// prepare signs the combination of From and To to prove that the nodes
 	// agreed on a valid forward link between the two blocks.
 	prepare crypto.Signature
@@ -29,11 +31,11 @@ type forwardLink struct {
 	commit crypto.Signature
 }
 
-func (fl forwardLink) GetFrom() blockchain.BlockID {
+func (fl forwardLink) GetFrom() Digest {
 	return fl.from
 }
 
-func (fl forwardLink) GetTo() blockchain.BlockID {
+func (fl forwardLink) GetTo() Digest {
 	return fl.to
 }
 
@@ -60,8 +62,8 @@ func (fl forwardLink) Verify(v crypto.Verifier, pubkeys []crypto.PublicKey) erro
 // Pack returns the protobuf message of the forward link.
 func (fl forwardLink) Pack() (proto.Message, error) {
 	seal := &ForwardLinkProto{
-		From: fl.from.Bytes(),
-		To:   fl.to.Bytes(),
+		From: fl.from,
+		To:   fl.to,
 	}
 
 	if fl.prepare != nil {
@@ -98,24 +100,26 @@ func (fl forwardLink) Pack() (proto.Message, error) {
 func (fl forwardLink) computeHash() ([]byte, error) {
 	h := sha256.New()
 
-	h.Write(fl.from.Bytes())
-	h.Write(fl.to.Bytes())
+	h.Write(fl.from)
+	h.Write(fl.to)
 
 	return h.Sum(nil), nil
 }
 
-type sealFactory struct {
+// ChainFactory is an implementation of the ChainFactory interface for forward links.
+type ChainFactory struct {
 	verifier crypto.Verifier
 }
 
 // NewSealFactory returns a new insance of a seal factory that will create
 // forward links for appropriate protobuf messages and return an error
 // otherwise.
-func NewSealFactory(verifier crypto.Verifier) consensus.SealFactory {
-	return &sealFactory{verifier: verifier}
+func NewSealFactory(verifier crypto.Verifier) *ChainFactory {
+	return &ChainFactory{verifier: verifier}
 }
 
-func (f *sealFactory) FromProto(pb proto.Message) (consensus.Seal, error) {
+// FromProto returns an instance of a chain from appropriate messages.
+func (f *ChainFactory) FromProto(pb proto.Message) (consensus.Chain, error) {
 	var src *ForwardLinkProto
 	switch msg := pb.(type) {
 	case *any.Any:
@@ -132,8 +136,8 @@ func (f *sealFactory) FromProto(pb proto.Message) (consensus.Seal, error) {
 	}
 
 	fl := forwardLink{
-		from: blockchain.NewBlockID(src.GetFrom()),
-		to:   blockchain.NewBlockID(src.GetTo()),
+		from: src.GetFrom(),
+		to:   src.GetTo(),
 	}
 
 	if src.GetPrepare() != nil {

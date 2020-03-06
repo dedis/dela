@@ -4,6 +4,10 @@ package cosipbft;
 
 import "google/protobuf/any.proto";
 
+message Prepare {
+    google.protobuf.Any proposal = 1;
+}
+
 message ForwardLinkProto {
     bytes from = 1;
     bytes to = 2;
@@ -11,7 +15,6 @@ message ForwardLinkProto {
     google.protobuf.Any commit = 4;
 }
 
-message PrepareSignatureRequest {
-    bytes from = 1;
-    google.protobuf.Any proposal = 2;
+message Commit {
+    ForwardLinkProto forwardLink = 1;
 }

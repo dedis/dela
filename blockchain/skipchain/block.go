@@ -5,16 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	fmt "fmt"
-	math "math"
 
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
-	any "github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
-	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/blockchain"
-	"go.dedis.ch/fabric/blockchain/consensus"
-	"go.dedis.ch/fabric/blockchain/consensus/cosipbft"
+	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"golang.org/x/xerrors"
@@ -46,7 +42,6 @@ type SkipBlock struct {
 	GenesisID     blockchain.BlockID
 	DataHash      []byte
 	BackLinks     []blockchain.BlockID
-	Seals         []consensus.Seal
 	Payload       proto.Message
 }
 
@@ -57,24 +52,21 @@ func (b SkipBlock) GetID() blockchain.BlockID {
 	return id
 }
 
+// GetHash returns the hash of the block.
+func (b SkipBlock) GetHash() []byte {
+	return b.hash
+}
+
+// GetRoster returns the roster that signed the block.
+func (b SkipBlock) GetRoster() blockchain.Roster {
+	return b.Roster
+}
+
 // Pack returns the protobuf message for a block.
 func (b SkipBlock) Pack() (proto.Message, error) {
 	payloadAny, err := protoenc.MarshalAny(b.Payload)
 	if err != nil {
 		return nil, encoding.NewAnyEncodingError(b.Payload, err)
-	}
-
-	seals := make([]*any.Any, len(b.Seals))
-	for i, seal := range b.Seals {
-		packed, err := seal.Pack()
-		if err != nil {
-			return nil, encoding.NewEncodingError("forward link", err)
-		}
-
-		seals[i], err = ptypes.MarshalAny(packed)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	backLinks := make([][]byte, len(b.BackLinks))
@@ -98,7 +90,6 @@ func (b SkipBlock) Pack() (proto.Message, error) {
 		GenesisID:     b.GenesisID.Bytes(),
 		DataHash:      b.DataHash,
 		Backlinks:     backLinks,
-		Seals:         seals,
 		Payload:       payloadAny,
 		Conodes:       conodes,
 	}
@@ -132,139 +123,29 @@ func (b SkipBlock) computeHash() ([]byte, error) {
 	return h.Sum(nil), nil
 }
 
-// SkipBlocks is an ordered list of skipblocks.
-type SkipBlocks []SkipBlock
-
-// GetProof returns a verifiable proof of the latest block of the chain.
-func (c SkipBlocks) GetProof() Chain {
-	numSeals := int(math.Max(0, float64(len(c)-1)))
-	if len(c) == 0 {
-		return Chain{}
-	}
-
-	proof := Chain{
-		genesis: c[0],
-		last:    c[len(c)-1],
-		seals:   make([]consensus.Seal, numSeals),
-	}
-
-	for i, block := range c[:numSeals] {
-		proof.seals[i] = block.Seals[0]
-	}
-
-	return proof
+// VerifiableBlock is a block combined with a consensus chain that can be
+// verified from the genesis.
+type VerifiableBlock struct {
+	SkipBlock
+	Chain consensus.Chain
 }
 
-// Chain is a chain of forward links to a specific block so that the chain
-// can be followed and verified.
-type Chain struct {
-	genesis SkipBlock
-	last    SkipBlock
-	seals   []consensus.Seal
-}
-
-// Pack implements the Packable interface to encode the proof into a protobuf
-// message.
-func (p Chain) Pack() (proto.Message, error) {
-	block, err := p.last.Pack()
-	if err != nil {
-		return nil, encoding.NewEncodingError("block", err)
-	}
-
-	proof := &ChainProto{
-		Seals: make([]*any.Any, len(p.seals)),
-		Block: block.(*BlockProto),
-	}
-
-	for i, seal := range p.seals {
-		packed, err := seal.Pack()
-		if err != nil {
-			return nil, encoding.NewEncodingError("seal", err)
-		}
-
-		proof.Seals[i], err = ptypes.MarshalAny(packed)
-		if err != nil {
-			return nil, encoding.NewAnyEncodingError(packed, err)
-		}
-	}
-
-	return proof, nil
-}
-
-// GetBlock returns the latest block of the chain.
-func (p Chain) GetBlock() blockchain.Block {
-	return p.last
-}
-
-func genSealErr(curr, expected blockchain.BlockID) string {
-	return fmt.Sprintf("got seal to %v but %v expected", curr, expected)
-}
-
-// Verify follows the chain from the beginning to insure the integrity.
-func (p Chain) Verify(v crypto.Verifier) error {
-	if len(p.seals) == 0 {
-		if !p.genesis.GetID().Equal(p.last.GetID()) {
-			return xerrors.New("mismatch genesis block")
-		}
-
-		return nil
-	}
-
-	if p.genesis.Roster == nil {
-		return xerrors.New("missing roster in genesis block")
-	}
-
-	pubkeys := p.genesis.Roster.GetPublicKeys()
-
-	// Verify the first forward link against the genesis block.
-	err := p.verifyLink(v, pubkeys, p.seals[0], p.genesis.GetID())
-	if err != nil {
-		return xerrors.Errorf("couldn't verify genesis forward link: %w", err)
-	}
-
-	// Then follow the chain of forward links.
-	prev := p.seals[0].GetTo()
-	for _, link := range p.seals[1:] {
-		err := p.verifyLink(v, pubkeys, link, prev)
-		if err != nil {
-			return xerrors.Errorf("couldn't verify the forward link: %w", err)
-		}
-
-		prev = link.GetTo()
-	}
-
-	if !prev.Equal(p.last.GetID()) {
-		return xerrors.Errorf(genSealErr(prev, p.last.GetID()))
-	}
-
-	return nil
-}
-
-func (p Chain) verifyLink(v crypto.Verifier, pubkeys []crypto.PublicKey, link consensus.Seal, prev blockchain.BlockID) error {
-	err := link.Verify(v, pubkeys)
-	if err != nil {
-		return xerrors.Errorf("couldn't verify the signatures: %w", err)
-	}
-
-	if !prev.Equal(link.GetFrom()) {
-		return xerrors.Errorf(genSealErr(link.GetFrom(), prev))
-	}
-
+// Verify makes sure the integrity of the chain is valid.
+func (vb VerifiableBlock) Verify(v crypto.Verifier) error {
 	return nil
 }
 
 // blockFactory is responsible for the instantiation of the block and related
 // data structures like the forward links and the proves.
 type blockFactory struct {
-	genesis     *SkipBlock
-	verifier    crypto.Verifier
-	sealFactory consensus.SealFactory
+	genesis      *SkipBlock
+	verifier     crypto.Verifier
+	chainFactory consensus.ChainFactory
 }
 
 func newBlockFactory(v crypto.Verifier) *blockFactory {
 	return &blockFactory{
-		verifier:    v,
-		sealFactory: cosipbft.NewSealFactory(v),
+		verifier: v,
 	}
 }
 
@@ -294,7 +175,6 @@ func (f *blockFactory) createGenesis(roster blockchain.Roster, data proto.Messag
 		GenesisID:     blockchain.BlockID{},
 		DataHash:      h.Sum(nil),
 		BackLinks:     []blockchain.BlockID{randomBackLink},
-		Seals:         []consensus.Seal{},
 		Payload:       data,
 	}
 
@@ -329,7 +209,6 @@ func (f *blockFactory) fromPrevious(prev SkipBlock, data proto.Message) (SkipBlo
 		GenesisID:     prev.GenesisID,
 		DataHash:      h.Sum(nil),
 		BackLinks:     []blockchain.BlockID{backlink},
-		Seals:         []consensus.Seal{},
 		Payload:       data,
 	}
 
@@ -352,16 +231,6 @@ func (f *blockFactory) fromBlock(src proto.Message) (SkipBlock, error) {
 		return SkipBlock{}, encoding.NewAnyDecodingError(&payload, err)
 	}
 
-	seals := make([]consensus.Seal, len(in.GetSeals()))
-	for i, packed := range in.GetSeals() {
-		seal, err := f.sealFactory.FromProto(packed)
-		if err != nil {
-			return SkipBlock{}, encoding.NewDecodingError("forward link", err)
-		}
-
-		seals[i] = seal
-	}
-
 	backLinks := make([]blockchain.BlockID, len(in.GetBacklinks()))
 	for i, packed := range in.GetBacklinks() {
 		backLinks[i] = blockchain.NewBlockID(packed)
@@ -381,7 +250,6 @@ func (f *blockFactory) fromBlock(src proto.Message) (SkipBlock, error) {
 		GenesisID:     blockchain.NewBlockID(in.GetGenesisID()),
 		DataHash:      in.GetDataHash(),
 		BackLinks:     backLinks,
-		Seals:         seals,
 		Payload:       payload.Message,
 	}
 
@@ -396,7 +264,7 @@ func (f *blockFactory) fromBlock(src proto.Message) (SkipBlock, error) {
 }
 
 func (f *blockFactory) FromVerifiable(src proto.Message, roster blockchain.Roster) (blockchain.Block, error) {
-	in, ok := src.(*ChainProto)
+	in, ok := src.(*VerifiableBlockProto)
 	if !ok {
 		return nil, xerrors.New("unknown type")
 	}
@@ -410,22 +278,12 @@ func (f *blockFactory) FromVerifiable(src proto.Message, roster blockchain.Roste
 		return nil, xerrors.Errorf("couldn't decode the block: %v", err)
 	}
 
-	chain := Chain{
-		genesis: *f.genesis,
-		last:    block,
-		seals:   make([]consensus.Seal, len(in.GetSeals())),
+	chain, err := f.chainFactory.FromProto(in.GetChain())
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't decode the chain: %v", err)
 	}
 
-	for i, sealproto := range in.GetSeals() {
-		seal, err := f.sealFactory.FromProto(sealproto)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't unpack forward link: %v", err)
-		}
-
-		chain.seals[i] = seal
-	}
-
-	err = chain.Verify(f.verifier)
+	err = chain.Verify(f.verifier, f.genesis.Roster.GetPublicKeys())
 	if err != nil {
 		return nil, err
 	}
@@ -437,100 +295,4 @@ func (f *blockFactory) FromVerifiable(src proto.Message, roster blockchain.Roste
 // when a new block is proposed.
 type PayloadValidator interface {
 	Validate(payload proto.Message) error
-}
-
-// The triage will determine which block must go through to be appended to
-// the chain. It also acts as a buffer during the PBFT execution.
-type blockTriage struct {
-	factory   *blockFactory
-	validator PayloadValidator
-	db        Database
-	blocks    []SkipBlock
-}
-
-func newBlockTriage(db Database, f *blockFactory, v PayloadValidator) *blockTriage {
-	return &blockTriage{
-		factory:   f,
-		db:        db,
-		validator: v,
-	}
-}
-
-func (t *blockTriage) Prepare(in proto.Message) (blockchain.Block, error) {
-	block, err := t.factory.fromBlock(in)
-
-	last, err := t.db.ReadLast()
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't read the latest block: %v", err)
-	}
-
-	if block.Index <= last.Index {
-		return nil, xerrors.Errorf("wrong index: %d <= %d", block.Index, last.Index)
-	}
-
-	err = t.validator.Validate(block.Payload)
-	if err != nil {
-		return nil, err
-	}
-
-	fabric.Logger.Debug().Msgf("Queuing block %v", block.GetID())
-	t.blocks = append(t.blocks, block)
-
-	return block, nil
-}
-
-func (t *blockTriage) getBlock(id blockchain.BlockID) (SkipBlock, bool) {
-	for _, block := range t.blocks {
-		if id.Equal(block.GetID()) {
-			return block, true
-		}
-	}
-
-	return SkipBlock{}, false
-}
-
-func (t *blockTriage) Commit(proposed blockchain.BlockID) error {
-	block, ok := t.getBlock(proposed)
-	if !ok {
-		return xerrors.Errorf("block not found: %x", proposed)
-	}
-
-	fabric.Logger.Info().Msgf("Committed to block %v", block)
-
-	return nil
-}
-
-func (t *blockTriage) processSeal(in proto.Message) error {
-	seal, err := t.factory.sealFactory.FromProto(in)
-	if err != nil {
-		return err
-	}
-
-	block, ok := t.getBlock(seal.GetTo())
-	if !ok {
-		return xerrors.New("block not found")
-	}
-
-	// TODO: next OPs should be atomic.
-	last, err := t.db.ReadLast()
-	if err != nil {
-		return xerrors.Errorf("couldn't read the latest block: %v", err)
-	}
-
-	err = t.db.Write(block)
-	if err != nil {
-		return xerrors.Errorf("couldn't update the block: %v", err)
-	}
-
-	last.Seals = []consensus.Seal{seal}
-	err = t.db.Write(last)
-	if err != nil {
-		return xerrors.Errorf("couldn't update forward links: %v", err)
-	}
-
-	fabric.Logger.Debug().Msgf("Commit block %v", block.GetID())
-
-	t.blocks = []SkipBlock{}
-
-	return nil
 }

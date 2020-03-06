@@ -47,13 +47,14 @@ type Block interface {
 	encoding.Packable
 
 	GetID() BlockID
+
+	GetRoster() Roster
 }
 
-type Chain interface {
-	encoding.Packable
+type VerifiableBlock interface {
+	Block
 
 	Verify(crypto.Verifier) error
-	GetBlock() Block
 }
 
 // BlockFactory provides primitives to create blocks from a untrusted source.
@@ -75,7 +76,7 @@ type Blockchain interface {
 
 	// GetVerifiableBlock returns the latest block alongside with a proof from
 	// the genesis block.
-	GetVerifiableChain() (Chain, error)
+	GetVerifiableBlock() (VerifiableBlock, error)
 
 	// Watch takes an observer that will be notified for each new block
 	// definitely appended to the chain.

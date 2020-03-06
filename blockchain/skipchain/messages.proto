@@ -15,12 +15,11 @@ message BlockProto {
     google.protobuf.Any payload = 7;
     repeated blockchain.Conode conodes = 8;
     repeated bytes backlinks = 9;
-    repeated google.protobuf.Any seals = 10;
 }
 
-message ChainProto {
+message VerifiableBlockProto {
     BlockProto block = 1;
-    repeated google.protobuf.Any seals = 2;
+    google.protobuf.Any chain = 2;
 }
 
 message PropagateGenesis {
