@@ -22,7 +22,7 @@ func TestSkipchain_Basic(t *testing.T) {
 	require.NoError(t, err)
 
 	for i := 0; i < n; i++ {
-		err = s2.Store(&empty.Empty{})
+		err = s2.Store(&empty.Empty{}, conodes.GetNodes()...)
 		require.NoError(t, err)
 
 		chain, err := s1.GetVerifiableBlock()
@@ -51,7 +51,7 @@ func makeSkipchain(t *testing.T, id string, manager *minoch.Manager) (Conode, *S
 	signer := blscosi.NewSigner()
 
 	conode := Conode{
-		addr:      mino.Address(),
+		addr:      mino.GetAddress(),
 		publicKey: signer.PublicKey(),
 	}
 

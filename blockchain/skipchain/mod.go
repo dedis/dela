@@ -35,10 +35,14 @@ func NewSkipchain(m mino.Mino, cosi cosi.CollectiveSigning, v PayloadValidator) 
 	consensus := cosipbft.NewCoSiPBFT(m, cosi)
 
 	return &Skipchain{
-		mino:         m,
-		blockFactory: newBlockFactory(cosi.GetVerifier(), consensus.GetChainFactory()),
-		db:           NewInMemoryDatabase(),
-		consensus:    consensus,
+		mino: m,
+		blockFactory: newBlockFactory(
+			cosi.GetVerifier(),
+			consensus.GetChainFactory(),
+			m.GetAddressFactory(),
+		),
+		db:        NewInMemoryDatabase(),
+		consensus: consensus,
 	}
 }
 
@@ -57,7 +61,7 @@ func (s *Skipchain) initChain(conodes Conodes) error {
 		Genesis: packed.(*BlockProto),
 	}
 
-	closing, errs := s.rpc.Call(msg, conodes.GetAddresses()...)
+	closing, errs := s.rpc.Call(msg, conodes.GetNodes()...)
 	select {
 	case <-closing:
 	case err := <-errs:
@@ -77,7 +81,7 @@ func (s *Skipchain) Listen() error {
 
 	s.rpc = rpc
 
-	err = s.consensus.Listen(blockValidator{})
+	err = s.consensus.Listen(&blockValidator{Skipchain: s})
 	if err != nil {
 		return xerrors.Errorf("couldn't start the consensus: %v", err)
 	}
@@ -91,7 +95,7 @@ func (s *Skipchain) GetBlockFactory() blockchain.BlockFactory {
 }
 
 // Store will append a new block to chain filled with the data.
-func (s *Skipchain) Store(data proto.Message, addrs ...mino.Identity) error {
+func (s *Skipchain) Store(data proto.Message, nodes ...mino.Node) error {
 	previous, err := s.db.ReadLast()
 	if err != nil {
 		return xerrors.Errorf("couldn't read the latest block: %v", err)
@@ -102,7 +106,7 @@ func (s *Skipchain) Store(data proto.Message, addrs ...mino.Identity) error {
 		return xerrors.Errorf("couldn't create next block: %v", err)
 	}
 
-	err = s.consensus.Propose(block, addrs...)
+	err = s.consensus.Propose(block, nodes...)
 	if err != nil {
 		return xerrors.Errorf("couldn't propose the block: %v", err)
 	}
@@ -128,8 +132,11 @@ func (s *Skipchain) GetVerifiableBlock() (blockchain.VerifiableBlock, error) {
 		return nil, xerrors.Errorf("error when reading chain: %v", err)
 	}
 
+	chain := s.consensus.GetChain(0, 0)
+
 	vb := VerifiableBlock{
 		SkipBlock: blocks[len(blocks)-1],
+		Chain:     chain,
 	}
 
 	return vb, nil

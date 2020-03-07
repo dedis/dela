@@ -24,12 +24,12 @@ func newHandler(db Database, f *blockFactory) handler {
 func (h handler) Process(req proto.Message) (proto.Message, error) {
 	switch in := req.(type) {
 	case *PropagateGenesis:
-		genesis, err := h.factory.fromBlock(in.GetGenesis())
+		genesis, err := h.factory.decodeBlock(in.GetGenesis())
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't decode the block: %v", err)
 		}
 
-		fabric.Logger.Info().Msg("New Genesis block written")
+		fabric.Logger.Info().Msgf("New Genesis block written: %v", genesis.GetID())
 		err = h.db.Write(genesis)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't write the block: %v", err)

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	fmt "fmt"
-	"io"
 	"math/rand"
 	"reflect"
 	"testing"
@@ -19,7 +18,6 @@ import (
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
 
@@ -82,7 +80,7 @@ func TestSkipBlock_HashUniqueness(t *testing.T) {
 
 	block := SkipBlock{
 		Index:         1,
-		Conodes:       nil,
+		Conodes:       []Conode{randomConode()},
 		Height:        1,
 		BaseHeight:    1,
 		MaximumHeight: 1,
@@ -92,7 +90,6 @@ func TestSkipBlock_HashUniqueness(t *testing.T) {
 	}
 
 	whitelist := map[string]struct{}{
-		"Seals":   struct{}{},
 		"Payload": struct{}{},
 	}
 
@@ -128,7 +125,7 @@ func TestSkipBlock_HashUniqueness(t *testing.T) {
 }
 
 func TestBlockFactory_CreateGenesis(t *testing.T) {
-	factory := newBlockFactory(&testVerifier{}, nil)
+	factory := newBlockFactory(&testVerifier{}, nil, nil)
 
 	genesis, err := factory.createGenesis(Conodes{}, nil)
 	require.NoError(t, err)
@@ -148,7 +145,7 @@ func TestBlockFactory_CreateGenesisFailures(t *testing.T) {
 
 	e := xerrors.New("encode error")
 	protoenc = &testProtoEncoder{err: e}
-	factory := newBlockFactory(&testVerifier{}, nil)
+	factory := newBlockFactory(&testVerifier{}, nil, nil)
 
 	_, err := factory.createGenesis(nil, nil)
 	require.Error(t, err)
@@ -156,7 +153,7 @@ func TestBlockFactory_CreateGenesisFailures(t *testing.T) {
 }
 
 func TestBlockFactory_FromPrevious(t *testing.T) {
-	factory := newBlockFactory(&testVerifier{}, nil)
+	factory := newBlockFactory(&testVerifier{}, nil, nil)
 
 	f := func(prev SkipBlock) bool {
 		block, err := factory.fromPrevious(prev, &empty.Empty{})
@@ -180,7 +177,7 @@ func TestBlockFactory_FromPrevious(t *testing.T) {
 func TestBlockFactory_FromPreviousFailures(t *testing.T) {
 	defer func() { protoenc = encoding.NewProtoEncoder() }()
 
-	factory := newBlockFactory(&testVerifier{}, nil)
+	factory := newBlockFactory(&testVerifier{}, nil, nil)
 
 	e := xerrors.New("encoding error")
 	protoenc = &testProtoEncoder{err: e}
@@ -191,13 +188,13 @@ func TestBlockFactory_FromPreviousFailures(t *testing.T) {
 }
 
 func TestBlockFactory_FromBlock(t *testing.T) {
-	factory := newBlockFactory(&testVerifier{}, nil)
+	factory := newBlockFactory(&testVerifier{}, nil, nil)
 
 	f := func(block SkipBlock) bool {
 		packed, err := block.Pack()
 		require.NoError(t, err)
 
-		newBlock, err := factory.fromBlock(packed.(*BlockProto))
+		newBlock, err := factory.decodeBlock(packed.(*BlockProto))
 		require.NoError(t, err)
 		require.Equal(t, block, newBlock)
 
@@ -214,7 +211,7 @@ func TestBlockFactory_FromBlockFailures(t *testing.T) {
 	gen := SkipBlock{}.Generate(rand.New(rand.NewSource(time.Now().Unix())), 5)
 	block := gen.Interface().(SkipBlock)
 
-	factory := newBlockFactory(&testVerifier{}, nil)
+	factory := newBlockFactory(&testVerifier{}, nil, nil)
 
 	src, err := block.Pack()
 	require.NoError(t, err)
@@ -222,7 +219,7 @@ func TestBlockFactory_FromBlockFailures(t *testing.T) {
 	e := xerrors.New("encoding error")
 
 	protoenc = &testProtoEncoder{err: e}
-	_, err = factory.fromBlock(src.(*BlockProto))
+	_, err = factory.decodeBlock(src.(*BlockProto))
 	require.Error(t, err)
 	require.True(t, xerrors.Is(err, encoding.NewAnyDecodingError((*ptypes.DynamicAny)(nil), nil)), err.Error())
 }
@@ -237,6 +234,15 @@ func randomUint32(rand *rand.Rand) uint32 {
 	buffer := make([]byte, 8)
 	rand.Read(buffer)
 	return binary.LittleEndian.Uint32(buffer)
+}
+
+func randomConode() Conode {
+	buffer := make([]byte, 4)
+	rand.Read(buffer)
+	return Conode{
+		addr:      fakeAddress{id: buffer},
+		publicKey: fakePublicKey{},
+	}
 }
 
 func (s SkipBlock) Generate(rand *rand.Rand, size int) reflect.Value {
@@ -269,25 +275,22 @@ func (s SkipBlock) Generate(rand *rand.Rand, size int) reflect.Value {
 	return reflect.ValueOf(block)
 }
 
-type testRoster struct {
-	buffer []byte
+type fakeAddress struct {
+	id []byte
 }
 
-func (r testRoster) GetConodes() ([]*blockchain.Conode, error) {
-	return nil, nil
+func (a fakeAddress) String() string {
+	return fmt.Sprintf("%x", a.id)
 }
 
-func (r testRoster) GetAddresses() []*mino.Address {
-	return nil
+type fakePublicKey struct{}
+
+func (pk fakePublicKey) MarshalBinary() ([]byte, error) {
+	return []byte{}, nil
 }
 
-func (r testRoster) GetPublicKeys() []crypto.PublicKey {
-	return nil
-}
-
-func (r testRoster) WriteTo(w io.Writer) (int64, error) {
-	w.Write(r.buffer)
-	return int64(len(r.buffer)), nil
+func (pk fakePublicKey) Pack() (proto.Message, error) {
+	return &empty.Empty{}, nil
 }
 
 type testProtoEncoder struct {

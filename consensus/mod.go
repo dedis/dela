@@ -13,11 +13,15 @@ type Proposal interface {
 	encoding.Packable
 
 	GetHash() []byte
+
+	GetPrevious() []byte
 }
 
 // Validator is the interface to implement to start a consensus.
 type Validator interface {
-	Validate(previous []byte, message proto.Message) (Proposal, error)
+	Validate(message proto.Message) (Proposal, error)
+
+	Commit(id []byte) error
 }
 
 // Participant represents the participant in a consensus.
@@ -47,5 +51,5 @@ type Consensus interface {
 
 	Listen(h Validator) error
 
-	Propose(proposal Proposal, addrs ...mino.Identity) error
+	Propose(proposal Proposal, nodes ...mino.Node) error
 }

@@ -37,10 +37,15 @@ func NewMinoch(manager *Manager, identifier string) (*Minoch, error) {
 	return inst, nil
 }
 
-// Address returns the address that other participants should use to contact
+// GetAddressFactory returns the address factory.
+func (m *Minoch) GetAddressFactory() mino.AddressFactory {
+	return AddressFactory{}
+}
+
+// GetAddress returns the address that other participants should use to contact
 // this instance.
-func (m *Minoch) Address() *mino.Address {
-	return &mino.Address{Id: m.identifier}
+func (m *Minoch) GetAddress() mino.Address {
+	return address{id: m.identifier}
 }
 
 // MakeNamespace returns an instance restricted to the namespace.
@@ -64,4 +69,20 @@ func (m *Minoch) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 	m.rpcs[rpc.path] = rpc
 
 	return rpc, nil
+}
+
+type address struct {
+	id string
+}
+
+func (a address) String() string {
+	return a.id
+}
+
+// AddressFactory is an implementation of the factory interface.
+type AddressFactory struct{}
+
+// FromString returns an instance of an address from a string.
+func (f AddressFactory) FromString(addr string) mino.Address {
+	return address{id: addr}
 }

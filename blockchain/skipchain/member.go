@@ -5,7 +5,6 @@ import (
 
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
-	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/mino"
 )
@@ -13,12 +12,12 @@ import (
 // Conode is the type of participant for a skipchain. It contains an address
 // and a public key that is part of the key pair used to sign blocks.
 type Conode struct {
-	addr      *mino.Address
+	addr      mino.Address
 	publicKey crypto.PublicKey
 }
 
 // GetAddress returns the address of the conode.
-func (c Conode) GetAddress() *mino.Address {
+func (c Conode) GetAddress() mino.Address {
 	return c.addr
 }
 
@@ -34,7 +33,7 @@ func (c Conode) Pack() (proto.Message, error) {
 		return nil, err
 	}
 
-	conode := &blockchain.Conode{Address: c.addr}
+	conode := &ConodeProto{Address: c.addr.String()}
 	conode.PublicKey, err = ptypes.MarshalAny(packed)
 	if err != nil {
 		return nil, err
@@ -46,30 +45,13 @@ func (c Conode) Pack() (proto.Message, error) {
 // Conodes is a list of conodes.
 type Conodes []Conode
 
-// NewConodesFromProto returns the list of conodes from the protobuf messages.
-func NewConodesFromProto(v crypto.Verifier, msgs []*blockchain.Conode) (Conodes, error) {
-	conodes := make(Conodes, len(msgs))
-	for i, msg := range msgs {
-		publicKey, err := v.GetPublicKeyFactory().FromProto(msg.GetPublicKey())
-		if err != nil {
-			return nil, err
-		}
-
-		conodes[i] = Conode{
-			addr:      msg.GetAddress(),
-			publicKey: publicKey,
-		}
-	}
-	return conodes, nil
-}
-
-// GetAddresses returns the list of addresses.
-func (cc Conodes) GetAddresses() []*mino.Address {
-	addrs := make([]*mino.Address, len(cc))
+// GetNodes returns the list of addresses.
+func (cc Conodes) GetNodes() []mino.Node {
+	nodes := make([]mino.Node, len(cc))
 	for i, conode := range cc {
-		addrs[i] = conode.GetAddress()
+		nodes[i] = conode
 	}
-	return addrs
+	return nodes
 }
 
 // GetPublicKeys returns the list of public keys.
@@ -82,15 +64,15 @@ func (cc Conodes) GetPublicKeys() []crypto.PublicKey {
 }
 
 // ToProto converts the list of conodes to a list of protobuf messages.
-func (cc Conodes) ToProto() ([]*blockchain.Conode, error) {
-	conodes := make([]*blockchain.Conode, len(cc))
+func (cc Conodes) ToProto() ([]*ConodeProto, error) {
+	conodes := make([]*ConodeProto, len(cc))
 	for i, conode := range cc {
 		packed, err := conode.Pack()
 		if err != nil {
 			return nil, err
 		}
 
-		conodes[i] = packed.(*blockchain.Conode)
+		conodes[i] = packed.(*ConodeProto)
 	}
 
 	return conodes, nil
@@ -112,12 +94,7 @@ func (cc Conodes) WriteTo(w io.Writer) (int64, error) {
 			return sum, err
 		}
 
-		buffer, err = proto.Marshal(conode.GetAddress())
-		if err != nil {
-			return sum, err
-		}
-
-		n, err = w.Write(buffer)
+		n, err = w.Write([]byte(conode.GetAddress().String()))
 		sum += int64(n)
 		if err != nil {
 			return sum, err

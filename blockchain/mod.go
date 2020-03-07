@@ -11,8 +11,6 @@ import (
 	mino "go.dedis.ch/fabric/mino"
 )
 
-//go:generate protoc -I ./ --proto_path=../ --go_out=Mmino/messages.proto=go.dedis.ch/fabric/mino:. ./messages.proto
-
 // BlockID is a unique identifier for each block which is composed
 // of its hash.
 type BlockID [32]byte
@@ -65,7 +63,7 @@ type Blockchain interface {
 
 	// Store stores any representation of a data structure into a new block.
 	// The implementation is responsible for any validations required.
-	Store(data proto.Message, addrs mino.Identity) error
+	Store(data proto.Message, nodes mino.Node) error
 
 	// GetBlock returns the latest block.
 	GetBlock() (Block, error)

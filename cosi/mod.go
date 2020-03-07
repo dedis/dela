@@ -8,7 +8,7 @@ import (
 
 // Cosigner is the interface that represents a participant.
 type Cosigner interface {
-	Address() *mino.Address
+	GetAddress() mino.Address
 	GetPublicKey() crypto.PublicKey
 }
 

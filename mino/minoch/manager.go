@@ -28,7 +28,7 @@ func (m *Manager) get(id string) *Minoch {
 }
 
 func (m *Manager) insert(inst *Minoch) error {
-	id := inst.Address().GetId()
+	id := inst.GetAddress().String()
 	if id == "" {
 		return xerrors.New("identifier must not be empty")
 	}

@@ -19,7 +19,7 @@ func TestRPC_Call(t *testing.T) {
 	require.NoError(t, err)
 	_, err = m2.MakeRPC("test", testHandler{})
 
-	resps, errs := rpc1.Call(&empty.Empty{}, m2.Address())
+	resps, errs := rpc1.Call(&empty.Empty{}, m2)
 	select {
 	case <-resps:
 		t.Fatal("an error is expected")

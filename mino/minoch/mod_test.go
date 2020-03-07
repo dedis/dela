@@ -33,8 +33,8 @@ func TestMinoch_Address(t *testing.T) {
 	m, err := NewMinoch(manager, "A")
 	require.NoError(t, err)
 
-	addr := m.Address()
-	require.Equal(t, "A", addr.GetId())
+	addr := m.GetAddress()
+	require.Equal(t, "A", addr.String())
 }
 
 func TestMinoch_MakeNamespace(t *testing.T) {

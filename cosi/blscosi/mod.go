@@ -73,13 +73,13 @@ func (cosi *BlsCoSi) Sign(msg proto.Message, signers ...cosi.Cosigner) (crypto.S
 		return nil, err
 	}
 
-	addrs := make([]*mino.Address, len(signers))
+	nodes := make([]mino.Node, len(signers))
 	for i, signer := range signers {
-		addrs[i] = signer.Address()
+		nodes[i] = signer
 	}
 
 	// TODO: Address interface to inline ?
-	msgs, errs := cosi.rpc.Call(&SignatureRequest{Message: data}, addrs...)
+	msgs, errs := cosi.rpc.Call(&SignatureRequest{Message: data}, nodes...)
 
 	var agg crypto.Signature
 	for {

@@ -112,6 +112,10 @@ type chain struct {
 }
 
 func (c chain) Verify(verifier crypto.Verifier, pubkeys []crypto.PublicKey) error {
+	if len(c.links) == 0 {
+		return xerrors.New("chain must have at least one link")
+	}
+
 	prev := c.links[0]
 	for _, link := range c.links[1:] {
 		if !bytes.Equal(prev.GetTo(), link.GetFrom()) {
@@ -209,7 +213,32 @@ func (f *ChainFactory) decodeLink(pb proto.Message) (*forwardLink, error) {
 
 // FromProto returns a chain from a protobuf message.
 func (f *ChainFactory) FromProto(pb proto.Message) (consensus.Chain, error) {
-	chain := chain{}
+	var msg *ChainProto
+	switch in := pb.(type) {
+	case *any.Any:
+		msg = &ChainProto{}
+
+		err := ptypes.UnmarshalAny(in, msg)
+		if err != nil {
+			return nil, err
+		}
+	case *ChainProto:
+		msg = in
+	default:
+		return nil, xerrors.New("message type not supported")
+	}
+
+	chain := chain{
+		links: make([]forwardLink, len(msg.GetLinks())),
+	}
+	for i, plink := range msg.GetLinks() {
+		link, err := f.decodeLink(plink)
+		if err != nil {
+			return nil, err
+		}
+
+		chain.links[i] = *link
+	}
 
 	return chain, nil
 }

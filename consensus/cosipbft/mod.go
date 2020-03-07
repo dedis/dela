@@ -5,6 +5,7 @@ package cosipbft
 import (
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
+	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/encoding"
@@ -60,7 +61,7 @@ func (c *Consensus) Listen(v consensus.Validator) error {
 		return xerrors.Errorf("couldn't listen: %v", err)
 	}
 
-	c.rpc, err = c.mino.MakeRPC("cosipbft", rpcHandler{Consensus: c})
+	c.rpc, err = c.mino.MakeRPC("cosipbft", rpcHandler{Consensus: c, validator: v})
 	if err != nil {
 		return xerrors.Errorf("couldn't create the rpc: %v", err)
 	}
@@ -71,7 +72,9 @@ func (c *Consensus) Listen(v consensus.Validator) error {
 // Propose takes the proposal and send it to the participants of the consensus.
 // It returns nil if the consensus is reached and that the participant are
 // committed to it, otherwise it returns the refusal reason.
-func (c *Consensus) Propose(p consensus.Proposal, addrs ...mino.Identity) error {
+func (c *Consensus) Propose(p consensus.Proposal, nodes ...mino.Node) error {
+	fabric.Logger.Info().Msgf("Propose data %v with roster %v", p, nodes)
+
 	packed, err := p.Pack()
 	if err != nil {
 		return encoding.NewEncodingError("proposal", err)
@@ -83,8 +86,9 @@ func (c *Consensus) Propose(p consensus.Proposal, addrs ...mino.Identity) error 
 		return encoding.NewAnyEncodingError(packed, err)
 	}
 
-	cosigners := make([]cosi.Cosigner, len(addrs))
-	for i, addr := range addrs {
+	cosigners := make([]cosi.Cosigner, len(nodes))
+	for i, addr := range nodes {
+		// TODO: cast check
 		cosigners[i] = addr.(cosi.Cosigner)
 	}
 
@@ -95,7 +99,7 @@ func (c *Consensus) Propose(p consensus.Proposal, addrs ...mino.Identity) error 
 	}
 
 	forwardLink := forwardLink{
-		from:    nil,
+		from:    p.GetPrevious(),
 		to:      p.GetHash(),
 		prepare: sig,
 	}
@@ -121,13 +125,8 @@ func (c *Consensus) Propose(p consensus.Proposal, addrs ...mino.Identity) error 
 		return encoding.NewEncodingError("forward link", err)
 	}
 
-	tmp := make([]*mino.Address, len(addrs))
-	for i, addr := range addrs {
-		tmp[i] = addr.Address()
-	}
-
 	propagateReq := &Propagate{ForwardLink: packed.(*ForwardLinkProto)}
-	resps, errs := c.rpc.Call(propagateReq, tmp...)
+	resps, errs := c.rpc.Call(propagateReq, nodes...)
 	select {
 	case <-resps:
 	case err := <-errs:
@@ -139,7 +138,19 @@ func (c *Consensus) Propose(p consensus.Proposal, addrs ...mino.Identity) error 
 
 func (c *Consensus) verifyPrepareMessage(proposal consensus.Proposal) (forwardLink, error) {
 	// TODO: verify correct index, etc etc..
-	return forwardLink{}, nil
+	fl := forwardLink{
+		from: proposal.GetPrevious(),
+		to:   proposal.GetHash(),
+	}
+
+	hash, err := fl.computeHash()
+	if err != nil {
+		return fl, err
+	}
+
+	fl.hash = hash
+
+	return fl, nil
 }
 
 func (c *Consensus) verifyCommitMessage(forwardLink forwardLink) error {
@@ -156,11 +167,17 @@ type handler struct {
 func (h handler) Hash(in proto.Message) ([]byte, error) {
 	switch msg := in.(type) {
 	case *Prepare:
+		var da ptypes.DynamicAny
+		err := ptypes.UnmarshalAny(msg.GetProposal(), &da)
+		if err != nil {
+			return nil, err
+		}
+
 		// The proposal first need to be validated by the caller of the module
 		// to insure the generic data is valid.
 		// TODO: this should lock during the event propagation to insure atomic
 		// operations.
-		proposal, err := h.validator.Validate(nil, msg)
+		proposal, err := h.validator.Validate(da.Message)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't validate the proposal: %v", err)
 		}
@@ -199,6 +216,8 @@ func (h handler) Hash(in proto.Message) ([]byte, error) {
 type rpcHandler struct {
 	*Consensus
 	mino.UnsupportedHandler
+
+	validator consensus.Validator
 }
 
 func (h rpcHandler) Process(req proto.Message) (proto.Message, error) {
@@ -212,7 +231,10 @@ func (h rpcHandler) Process(req proto.Message) (proto.Message, error) {
 		return nil, xerrors.Errorf("couldn't not decode: %v", err)
 	}
 
+	fabric.Logger.Info().Msgf("Link appended: %x", forwardLink.GetFrom())
 	h.links = append(h.links, *forwardLink)
+
+	h.validator.Commit(forwardLink.GetTo())
 
 	return nil, nil
 }

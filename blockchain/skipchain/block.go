@@ -1,6 +1,7 @@
 package skipchain
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
@@ -13,6 +14,7 @@ import (
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
+	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
 
@@ -57,6 +59,11 @@ func (b SkipBlock) GetHash() []byte {
 	return b.hash
 }
 
+// GetPrevious returns the hash of the previous block.
+func (b SkipBlock) GetPrevious() []byte {
+	return b.BackLinks[0].Bytes()
+}
+
 // Pack returns the protobuf message for a block.
 func (b SkipBlock) Pack() (proto.Message, error) {
 	payloadAny, err := protoenc.MarshalAny(b.Payload)
@@ -71,7 +78,7 @@ func (b SkipBlock) Pack() (proto.Message, error) {
 
 	conodes, err := b.Conodes.ToProto()
 	if err != nil {
-		return nil, err
+		return nil, encoding.NewEncodingError("conodes", err)
 	}
 
 	blockproto := &BlockProto{
@@ -131,12 +138,20 @@ func (vb VerifiableBlock) Verify(v crypto.Verifier) error {
 func (vb VerifiableBlock) Pack() (proto.Message, error) {
 	block, err := vb.SkipBlock.Pack()
 	if err != nil {
-		return nil, err
+		return nil, encoding.NewEncodingError("block", err)
 	}
 
 	packed := &VerifiableBlockProto{
 		Block: block.(*BlockProto),
-		Chain: nil, // TODO
+	}
+
+	packedChain, err := vb.Chain.Pack()
+	if err != nil {
+		return nil, err
+	}
+	packed.Chain, err = ptypes.MarshalAny(packedChain)
+	if err != nil {
+		return nil, err
 	}
 
 	return packed, nil
@@ -145,15 +160,17 @@ func (vb VerifiableBlock) Pack() (proto.Message, error) {
 // blockFactory is responsible for the instantiation of the block and related
 // data structures like the forward links and the proves.
 type blockFactory struct {
-	genesis      *SkipBlock
-	verifier     crypto.Verifier
-	chainFactory consensus.ChainFactory
+	genesis        *SkipBlock
+	verifier       crypto.Verifier
+	chainFactory   consensus.ChainFactory
+	addressFactory mino.AddressFactory
 }
 
-func newBlockFactory(v crypto.Verifier, cf consensus.ChainFactory) *blockFactory {
+func newBlockFactory(v crypto.Verifier, cf consensus.ChainFactory, af mino.AddressFactory) *blockFactory {
 	return &blockFactory{
-		verifier:     v,
-		chainFactory: cf,
+		verifier:       v,
+		chainFactory:   cf,
+		addressFactory: af,
 	}
 }
 
@@ -230,7 +247,23 @@ func (f *blockFactory) fromPrevious(prev SkipBlock, data proto.Message) (SkipBlo
 	return block, nil
 }
 
-func (f *blockFactory) fromBlock(src proto.Message) (SkipBlock, error) {
+func (f *blockFactory) decodeConodes(msgs []*ConodeProto) (Conodes, error) {
+	conodes := make(Conodes, len(msgs))
+	for i, msg := range msgs {
+		publicKey, err := f.verifier.GetPublicKeyFactory().FromProto(msg.GetPublicKey())
+		if err != nil {
+			return nil, err
+		}
+
+		conodes[i] = Conode{
+			addr:      f.addressFactory.FromString(msg.GetAddress()),
+			publicKey: publicKey,
+		}
+	}
+	return conodes, nil
+}
+
+func (f *blockFactory) decodeBlock(src proto.Message) (SkipBlock, error) {
 	in := src.(*BlockProto)
 
 	var payload ptypes.DynamicAny
@@ -244,7 +277,7 @@ func (f *blockFactory) fromBlock(src proto.Message) (SkipBlock, error) {
 		backLinks[i] = blockchain.NewBlockID(packed)
 	}
 
-	conodes, err := NewConodesFromProto(f.verifier, in.GetConodes())
+	conodes, err := f.decodeConodes(in.GetConodes())
 	if err != nil {
 		return SkipBlock{}, xerrors.Errorf("couldn't create the conodes: %v", err)
 	}
@@ -281,7 +314,7 @@ func (f *blockFactory) FromVerifiable(src proto.Message) (blockchain.Block, erro
 		return nil, xerrors.New("genesis block not initialized")
 	}
 
-	block, err := f.fromBlock(in.GetBlock())
+	block, err := f.decodeBlock(in.GetBlock())
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't decode the block: %v", err)
 	}
@@ -305,8 +338,35 @@ type PayloadValidator interface {
 	Validate(payload proto.Message) error
 }
 
-type blockValidator struct{}
+type blockValidator struct {
+	*Skipchain
 
-func (v blockValidator) Validate(previous []byte, pb proto.Message) (consensus.Proposal, error) {
-	return SkipBlock{}, nil
+	buffer SkipBlock
+}
+
+func (v *blockValidator) Validate(pb proto.Message) (consensus.Proposal, error) {
+	// TODO: validate the block
+	block, err := v.blockFactory.decodeBlock(pb)
+	if err != nil {
+		return SkipBlock{}, err
+	}
+
+	v.buffer = block
+
+	return block, nil
+}
+
+func (v *blockValidator) Commit(id []byte) error {
+	block := v.buffer
+
+	if !bytes.Equal(id, block.GetHash()) {
+		return xerrors.New("mismatching blocks")
+	}
+
+	err := v.db.Write(block)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

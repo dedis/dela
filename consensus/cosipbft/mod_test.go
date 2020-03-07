@@ -25,7 +25,7 @@ func TestConsensus_Basic(t *testing.T) {
 	require.NoError(t, err)
 
 	err = cons.Propose(fakeProposal{}, fakeParticipant{
-		addr:      m1.Address(),
+		addr:      m1.GetAddress(),
 		publicKey: cosi.GetPublicKey(),
 	})
 	require.NoError(t, err)
@@ -42,18 +42,26 @@ func (p fakeProposal) GetHash() []byte {
 	return nil
 }
 
+func (p fakeProposal) GetPrevious() []byte {
+	return nil
+}
+
 type fakeValidator struct{}
 
-func (v fakeValidator) Validate(previous []byte, msg proto.Message) (consensus.Proposal, error) {
+func (v fakeValidator) Validate(msg proto.Message) (consensus.Proposal, error) {
 	return fakeProposal{}, nil
 }
 
+func (v fakeValidator) Commit(id []byte) error {
+	return nil
+}
+
 type fakeParticipant struct {
-	addr      *mino.Address
+	addr      mino.Address
 	publicKey crypto.PublicKey
 }
 
-func (p fakeParticipant) Address() *mino.Address {
+func (p fakeParticipant) GetAddress() mino.Address {
 	return p.addr
 }
 

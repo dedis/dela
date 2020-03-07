@@ -45,7 +45,7 @@ type Server struct {
 	grpcSrv *grpc.Server
 
 	cert      *tls.Certificate
-	addr      *mino.Address
+	addr      mino.Address
 	listener  net.Listener
 	httpSrv   *http.Server
 	StartChan chan struct{}
@@ -82,10 +82,10 @@ type RPC struct {
 // Call implements the Mino.RPC interface. It calls the RPC on each provided
 // address.
 func (rpc RPC) Call(req proto.Message,
-	addrs ...*mino.Address) (<-chan proto.Message, <-chan error) {
+	nodes ...mino.Node) (<-chan proto.Message, <-chan error) {
 
-	out := make(chan proto.Message, len(addrs))
-	errs := make(chan error, len(addrs))
+	out := make(chan proto.Message, len(nodes))
+	errs := make(chan error, len(nodes))
 
 	m, err := ptypes.MarshalAny(req)
 	if err != nil {
@@ -98,8 +98,8 @@ func (rpc RPC) Call(req proto.Message,
 	}
 
 	go func() {
-		for _, addr := range addrs {
-			clientConn, err := rpc.srv.getConnection(addr.GetId())
+		for _, node := range nodes {
+			clientConn, err := rpc.srv.getConnection(node.GetAddress().String())
 			if err != nil {
 				errs <- xerrors.Errorf("failed to get client conn: %v", err)
 				continue
@@ -132,7 +132,7 @@ func (rpc RPC) Call(req proto.Message,
 }
 
 // CreateServer sets up a new server
-func CreateServer(addr *mino.Address) (*Server, error) {
+func CreateServer(addr mino.Address) (*Server, error) {
 	cert, err := makeCertificate()
 	if err != nil {
 		return nil, xerrors.Errorf("failed to make certificate: %v", err)
@@ -173,7 +173,7 @@ func (srv *Server) StartServer() error {
 
 // Serve starts the HTTP server that forwards gRPC calls to the gRPC server
 func (srv *Server) Serve() error {
-	lis, err := net.Listen("tcp4", srv.addr.Id)
+	lis, err := net.Listen("tcp4", srv.addr.String())
 	if err != nil {
 		return xerrors.Errorf("failed to listen: %v", err)
 	}
@@ -274,7 +274,7 @@ func makeCertificate() (*tls.Certificate, error) {
 
 // Stream ...
 func (rpc RPC) Stream(ctx context.Context,
-	addrs ...*mino.Address) (in mino.Sender, out mino.Receiver) {
+	nodes ...mino.Node) (in mino.Sender, out mino.Receiver) {
 
 	return nil, nil
 }
