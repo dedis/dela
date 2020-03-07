@@ -332,16 +332,11 @@ func (f *blockFactory) FromVerifiable(src proto.Message) (blockchain.Block, erro
 	return block, nil
 }
 
-// PayloadValidator is the interface to implement to validate the payload
-// when a new block is proposed.
-type PayloadValidator interface {
-	Validate(payload proto.Message) error
-}
-
 type blockValidator struct {
 	*Skipchain
 
-	buffer SkipBlock
+	validator blockchain.Validator
+	buffer    SkipBlock
 }
 
 func (v *blockValidator) Validate(pb proto.Message) (consensus.Proposal, error) {
@@ -349,6 +344,11 @@ func (v *blockValidator) Validate(pb proto.Message) (consensus.Proposal, error) 
 	block, err := v.blockFactory.decodeBlock(pb)
 	if err != nil {
 		return SkipBlock{}, err
+	}
+
+	err = v.validator.Validate(block.Payload)
+	if err != nil {
+		return SkipBlock{}, xerrors.Errorf("couldn't validate the payload: %v", err)
 	}
 
 	v.buffer = block
@@ -364,6 +364,11 @@ func (v *blockValidator) Commit(id []byte) error {
 	}
 
 	err := v.db.Write(block)
+	if err != nil {
+		return err
+	}
+
+	err = v.validator.Commit(block.Payload)
 	if err != nil {
 		return err
 	}

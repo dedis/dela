@@ -44,6 +44,10 @@ func (v testValidator) Validate(payload proto.Message) error {
 	return nil
 }
 
+func (v testValidator) Commit(payload proto.Message) error {
+	return nil
+}
+
 func makeSkipchain(t *testing.T, id string, manager *minoch.Manager) (Conode, *Skipchain) {
 	mino, err := minoch.NewMinoch(manager, id)
 	require.NoError(t, err)
@@ -56,8 +60,10 @@ func makeSkipchain(t *testing.T, id string, manager *minoch.Manager) (Conode, *S
 	}
 
 	cosi := blscosi.NewBlsCoSi(mino, signer)
-	skipchain := NewSkipchain(mino, cosi, testValidator{})
-	skipchain.Listen()
+	skipchain := NewSkipchain(mino, cosi)
+
+	err = skipchain.Listen(testValidator{})
+	require.NoError(t, err)
 
 	return conode, skipchain
 }

@@ -56,10 +56,19 @@ type BlockFactory interface {
 	FromVerifiable(src proto.Message) (Block, error)
 }
 
+// Validator is the interface to implement to validate the generic payload
+// stored in the block.
+type Validator interface {
+	Validate(data proto.Message) error
+	Commit(data proto.Message) error
+}
+
 // Blockchain is the interface that provides the primitives to interact with the
 // blockchain.
 type Blockchain interface {
 	GetBlockFactory() BlockFactory
+
+	Listen(validator Validator) error
 
 	// Store stores any representation of a data structure into a new block.
 	// The implementation is responsible for any validations required.

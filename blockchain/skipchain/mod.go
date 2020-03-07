@@ -31,7 +31,7 @@ type Skipchain struct {
 }
 
 // NewSkipchain returns a new instance of Skipchain.
-func NewSkipchain(m mino.Mino, cosi cosi.CollectiveSigning, v PayloadValidator) *Skipchain {
+func NewSkipchain(m mino.Mino, cosi cosi.CollectiveSigning) *Skipchain {
 	consensus := cosipbft.NewCoSiPBFT(m, cosi)
 
 	return &Skipchain{
@@ -73,7 +73,7 @@ func (s *Skipchain) initChain(conodes Conodes) error {
 }
 
 // Listen starts the RPCs.
-func (s *Skipchain) Listen() error {
+func (s *Skipchain) Listen(v blockchain.Validator) error {
 	rpc, err := s.mino.MakeRPC("skipchain", newHandler(s.db, s.blockFactory))
 	if err != nil {
 		return xerrors.Errorf("couldn't create the rpc: %v", err)
@@ -81,7 +81,7 @@ func (s *Skipchain) Listen() error {
 
 	s.rpc = rpc
 
-	err = s.consensus.Listen(&blockValidator{Skipchain: s})
+	err = s.consensus.Listen(&blockValidator{Skipchain: s, validator: v})
 	if err != nil {
 		return xerrors.Errorf("couldn't start the consensus: %v", err)
 	}
