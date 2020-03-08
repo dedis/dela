@@ -1,9 +1,7 @@
 package blockchain
 
 import (
-	"bytes"
 	"context"
-	fmt "fmt"
 
 	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric/crypto"
@@ -11,36 +9,11 @@ import (
 	mino "go.dedis.ch/fabric/mino"
 )
 
-// BlockID is a unique identifier for each block which is composed
-// of its hash.
-type BlockID [32]byte
-
-// NewBlockID returns an instance of a block identifier.
-func NewBlockID(buffer []byte) BlockID {
-	id := BlockID{}
-	copy(id[:], buffer)
-	return id
-}
-
-// Bytes returns the slice of bytes of the identifier.
-func (id BlockID) Bytes() []byte {
-	return id[:]
-}
-
-// Equal returns true when both identifiers are equal.
-func (id BlockID) Equal(other BlockID) bool {
-	return bytes.Equal(id[:], other[:])
-}
-
-func (id BlockID) String() string {
-	return fmt.Sprintf("%x", id[:])[:8]
-}
-
 // Block is the interface of the unit of storage in the blockchain
 type Block interface {
 	encoding.Packable
 
-	GetID() BlockID
+	GetHash() []byte
 }
 
 // VerifiableBlock is an extension of a block so that its integrity can be

@@ -15,15 +15,14 @@ import (
 	any "github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"golang.org/x/xerrors"
 )
 
-func TestSkipBlock_GetID(t *testing.T) {
+func TestSkipBlock_GetHash(t *testing.T) {
 	f := func(block SkipBlock) bool {
-		return bytes.Equal(block.GetID().Bytes(), block.hash)
+		return bytes.Equal(block.GetHash(), block.hash.Bytes())
 	}
 
 	err := quick.Check(f, nil)
@@ -59,7 +58,7 @@ func TestSkipBlock_PackFailures(t *testing.T) {
 	defer func() { protoenc = encoding.NewProtoEncoder() }()
 
 	block := SkipBlock{
-		BackLinks: []blockchain.BlockID{{}},
+		BackLinks: []Digest{{}},
 		Payload:   &empty.Empty{},
 	}
 
@@ -84,9 +83,9 @@ func TestSkipBlock_HashUniqueness(t *testing.T) {
 		Height:        1,
 		BaseHeight:    1,
 		MaximumHeight: 1,
-		GenesisID:     blockchain.NewBlockID([]byte{1}),
+		GenesisID:     Digest{1},
 		DataHash:      []byte{0},
-		BackLinks:     []blockchain.BlockID{blockchain.NewBlockID(nil)},
+		BackLinks:     []Digest{{1}, {2}},
 	}
 
 	whitelist := map[string]struct{}{
@@ -165,7 +164,7 @@ func TestBlockFactory_FromPrevious(t *testing.T) {
 		require.Equal(t, prev.GenesisID, block.GenesisID)
 		require.NotEqual(t, prev.DataHash, block.DataHash)
 		require.Len(t, block.BackLinks, 1)
-		require.Equal(t, prev.GetID(), block.BackLinks[0])
+		require.Equal(t, prev.GetHash(), block.BackLinks[0].Bytes())
 
 		return true
 	}
@@ -246,13 +245,13 @@ func randomConode() Conode {
 }
 
 func (s SkipBlock) Generate(rand *rand.Rand, size int) reflect.Value {
-	genesisID := blockchain.BlockID{}
+	genesisID := Digest{}
 	rand.Read(genesisID[:])
 
 	dataHash := make([]byte, size)
 	rand.Read(dataHash)
 
-	backlinks := make([]blockchain.BlockID, rand.Int31n(int32(size)))
+	backlinks := make([]Digest, rand.Int31n(int32(size)))
 	for i := range backlinks {
 		rand.Read(backlinks[i][:])
 	}
@@ -265,7 +264,7 @@ func (s SkipBlock) Generate(rand *rand.Rand, size int) reflect.Value {
 		Conodes:       Conodes{},
 		GenesisID:     genesisID,
 		DataHash:      dataHash,
-		BackLinks:     []blockchain.BlockID{blockchain.NewBlockID([]byte{1})},
+		BackLinks:     []Digest{Digest{1}},
 		Payload:       &empty.Empty{},
 	}
 

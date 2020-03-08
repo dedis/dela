@@ -29,7 +29,7 @@ func (h handler) Process(req proto.Message) (proto.Message, error) {
 			return nil, xerrors.Errorf("couldn't decode the block: %v", err)
 		}
 
-		fabric.Logger.Info().Msgf("New Genesis block written: %v", genesis.GetID())
+		fabric.Logger.Debug().Msgf("New Genesis block written: %v", genesis.hash)
 		err = h.db.Write(genesis)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't write the block: %v", err)

@@ -33,31 +33,38 @@ var (
 	protoenc encoding.ProtoMarshaler = encoding.NewProtoEncoder()
 )
 
+// Digest is an alias of a slice of bytes that represents the digest of
+// a block.
+type Digest [32]byte
+
+// Bytes returns the slice of bytes representing the digest.
+func (d Digest) Bytes() []byte {
+	return d[:]
+}
+
+// String returns the short string representation of the digest.
+func (d Digest) String() string {
+	return fmt.Sprintf("%x", d[:])[:16]
+}
+
 // SkipBlock is a representation of the data held by a block. It contains the
 // information to build a skipchain.
 type SkipBlock struct {
-	hash          []byte
+	hash          Digest
 	Index         uint64
 	Conodes       Conodes
 	Height        uint32
 	BaseHeight    uint32
 	MaximumHeight uint32
-	GenesisID     blockchain.BlockID
+	GenesisID     Digest
 	DataHash      []byte
-	BackLinks     []blockchain.BlockID
+	BackLinks     []Digest
 	Payload       proto.Message
-}
-
-// GetID returns the unique identifier for this block.
-func (b SkipBlock) GetID() blockchain.BlockID {
-	id := blockchain.BlockID{}
-	copy(id[:], b.hash)
-	return id
 }
 
 // GetHash returns the hash of the block.
 func (b SkipBlock) GetHash() []byte {
-	return b.hash
+	return b.hash[:]
 }
 
 // GetPublicKeys returns the list of public keys of the block.
@@ -98,10 +105,10 @@ func (b SkipBlock) Pack() (proto.Message, error) {
 }
 
 func (b SkipBlock) String() string {
-	return fmt.Sprintf("Block[%v]", b.GetID())
+	return fmt.Sprintf("Block[%x]", b.hash)
 }
 
-func (b SkipBlock) computeHash() ([]byte, error) {
+func (b SkipBlock) computeHash() (Digest, error) {
 	h := sha256.New()
 
 	buffer := make([]byte, 20)
@@ -116,11 +123,14 @@ func (b SkipBlock) computeHash() ([]byte, error) {
 	h.Write(b.GenesisID.Bytes())
 	h.Write(b.DataHash)
 
-	for _, bl := range b.BackLinks {
-		h.Write(bl.Bytes())
+	for _, backLink := range b.BackLinks {
+		h.Write(backLink.Bytes())
 	}
 
-	return h.Sum(nil), nil
+	digest := Digest{}
+	copy(digest[:], h.Sum(nil))
+
+	return digest, nil
 }
 
 // VerifiableBlock is a block combined with a consensus chain that can be
@@ -189,7 +199,7 @@ func (f *blockFactory) createGenesis(conodes []Conode, data proto.Message) (Skip
 	h.Write(buffer)
 
 	// TODO: crypto module for randomness
-	randomBackLink := blockchain.BlockID{}
+	randomBackLink := Digest{}
 	rand.Read(randomBackLink[:])
 
 	genesis := SkipBlock{
@@ -198,9 +208,9 @@ func (f *blockFactory) createGenesis(conodes []Conode, data proto.Message) (Skip
 		Height:        1,
 		BaseHeight:    DefaultBaseHeight,
 		MaximumHeight: DefaultMaximumHeight,
-		GenesisID:     blockchain.BlockID{},
+		GenesisID:     Digest{},
 		DataHash:      h.Sum(nil),
-		BackLinks:     []blockchain.BlockID{randomBackLink},
+		BackLinks:     []Digest{randomBackLink},
 		Payload:       data,
 	}
 
@@ -223,9 +233,6 @@ func (f *blockFactory) fromPrevious(prev SkipBlock, data proto.Message) (SkipBlo
 	h := sha256.New()
 	h.Write(databuf)
 
-	backlink := blockchain.BlockID{}
-	copy(backlink[:], prev.hash)
-
 	block := SkipBlock{
 		Index:         prev.Index + 1,
 		Conodes:       prev.Conodes,
@@ -234,7 +241,7 @@ func (f *blockFactory) fromPrevious(prev SkipBlock, data proto.Message) (SkipBlo
 		MaximumHeight: prev.MaximumHeight,
 		GenesisID:     prev.GenesisID,
 		DataHash:      h.Sum(nil),
-		BackLinks:     []blockchain.BlockID{backlink},
+		BackLinks:     []Digest{prev.hash},
 		Payload:       data,
 	}
 
@@ -273,9 +280,9 @@ func (f *blockFactory) decodeBlock(src proto.Message) (SkipBlock, error) {
 		return SkipBlock{}, encoding.NewAnyDecodingError(&payload, err)
 	}
 
-	backLinks := make([]blockchain.BlockID, len(in.GetBacklinks()))
-	for i, packed := range in.GetBacklinks() {
-		backLinks[i] = blockchain.NewBlockID(packed)
+	backLinks := make([]Digest, len(in.GetBacklinks()))
+	for i, buffer := range in.GetBacklinks() {
+		copy(backLinks[i][:], buffer)
 	}
 
 	conodes, err := f.decodeConodes(in.GetConodes())
@@ -283,13 +290,16 @@ func (f *blockFactory) decodeBlock(src proto.Message) (SkipBlock, error) {
 		return SkipBlock{}, xerrors.Errorf("couldn't create the conodes: %v", err)
 	}
 
+	genesisID := Digest{}
+	copy(genesisID[:], in.GetGenesisID())
+
 	block := SkipBlock{
 		Index:         in.GetIndex(),
 		Conodes:       conodes,
 		Height:        in.GetHeight(),
 		BaseHeight:    in.GetBaseHeight(),
 		MaximumHeight: in.GetMaximumHeight(),
-		GenesisID:     blockchain.NewBlockID(in.GetGenesisID()),
+		GenesisID:     genesisID,
 		DataHash:      in.GetDataHash(),
 		BackLinks:     backLinks,
 		Payload:       payload.Message,
@@ -369,7 +379,7 @@ func (v *blockValidator) Commit(id []byte) error {
 		return xerrors.New("mismatching blocks")
 	}
 
-	fabric.Logger.Info().Msgf("Commit to block %x", id)
+	fabric.Logger.Debug().Msgf("Commit to block %v", block.hash)
 	err := v.db.Write(block)
 	if err != nil {
 		return err
