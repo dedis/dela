@@ -105,7 +105,7 @@ func (b SkipBlock) Pack() (proto.Message, error) {
 }
 
 func (b SkipBlock) String() string {
-	return fmt.Sprintf("Block[%x]", b.hash)
+	return fmt.Sprintf("Block[%v]", b.hash)
 }
 
 func (b SkipBlock) computeHash() (Digest, error) {

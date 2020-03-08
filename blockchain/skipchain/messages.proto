@@ -29,7 +29,3 @@ message VerifiableBlockProto {
 message PropagateGenesis {
     BlockProto genesis = 1;
 }
-
-message PropagateSeal {
-    google.protobuf.Any seal = 1;
-}

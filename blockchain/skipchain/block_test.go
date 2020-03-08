@@ -20,6 +20,28 @@ import (
 	"golang.org/x/xerrors"
 )
 
+func TestDigest_Bytes(t *testing.T) {
+	f := func(buffer [32]byte) bool {
+		id := Digest(buffer)
+
+		return bytes.Equal(id.Bytes(), buffer[:])
+	}
+
+	err := quick.Check(f, &quick.Config{})
+	require.NoError(t, err)
+}
+
+func TestDigest_String(t *testing.T) {
+	f := func(buffer [32]byte) bool {
+		id := Digest(buffer)
+
+		return id.String() == fmt.Sprintf("%x", buffer)[:16]
+	}
+
+	err := quick.Check(f, nil)
+	require.NoError(t, err)
+}
+
 func TestSkipBlock_GetHash(t *testing.T) {
 	f := func(block SkipBlock) bool {
 		return bytes.Equal(block.GetHash(), block.hash.Bytes())
@@ -121,6 +143,11 @@ func TestSkipBlock_HashUniqueness(t *testing.T) {
 
 		prevHash = hash
 	}
+}
+
+func TestSkipBlock_String(t *testing.T) {
+	block := SkipBlock{hash: Digest{1}}
+	require.Equal(t, block.String(), fmt.Sprintf("Block[0100000000000000]"))
 }
 
 func TestBlockFactory_CreateGenesis(t *testing.T) {
