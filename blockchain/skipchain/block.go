@@ -10,6 +10,7 @@ import (
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/empty"
+	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/crypto"
@@ -59,9 +60,9 @@ func (b SkipBlock) GetHash() []byte {
 	return b.hash
 }
 
-// GetPrevious returns the hash of the previous block.
-func (b SkipBlock) GetPrevious() []byte {
-	return b.BackLinks[0].Bytes()
+// GetPublicKeys returns the list of public keys of the block.
+func (b SkipBlock) GetPublicKeys() []crypto.PublicKey {
+	return b.Conodes.GetPublicKeys()
 }
 
 // Pack returns the protobuf message for a block.
@@ -339,21 +340,26 @@ type blockValidator struct {
 	buffer    SkipBlock
 }
 
-func (v *blockValidator) Validate(pb proto.Message) (consensus.Proposal, error) {
+func (v *blockValidator) Validate(pb proto.Message) (consensus.Proposal, consensus.Proposal, error) {
 	// TODO: validate the block
 	block, err := v.blockFactory.decodeBlock(pb)
 	if err != nil {
-		return SkipBlock{}, err
+		return nil, nil, err
 	}
 
 	err = v.validator.Validate(block.Payload)
 	if err != nil {
-		return SkipBlock{}, xerrors.Errorf("couldn't validate the payload: %v", err)
+		return nil, nil, xerrors.Errorf("couldn't validate the payload: %v", err)
 	}
 
 	v.buffer = block
 
-	return block, nil
+	last, err := v.db.ReadLast()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return block, last, nil
 }
 
 func (v *blockValidator) Commit(id []byte) error {
@@ -363,6 +369,7 @@ func (v *blockValidator) Commit(id []byte) error {
 		return xerrors.New("mismatching blocks")
 	}
 
+	fabric.Logger.Info().Msgf("Commit to block %x", id)
 	err := v.db.Write(block)
 	if err != nil {
 		return err

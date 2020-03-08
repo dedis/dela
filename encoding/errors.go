@@ -40,7 +40,7 @@ func NewDecodingError(field string, err error) Error {
 }
 
 func (e Error) Error() string {
-	return fmt.Sprintf("couldn't %s %s: %+v", e.key, e.Field, e.Err)
+	return fmt.Sprintf("couldn't %s %s: %v", e.key, e.Field, e.Err)
 }
 
 // Is returns true when both errors are similar.

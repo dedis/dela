@@ -132,10 +132,19 @@ func (s *Skipchain) GetVerifiableBlock() (blockchain.VerifiableBlock, error) {
 		return nil, xerrors.Errorf("error when reading chain: %v", err)
 	}
 
-	chain := s.consensus.GetChain(0, 0)
+	if len(blocks) == 0 {
+		return nil, xerrors.Errorf("expecting at least one block")
+	}
+
+	last := blocks[len(blocks)-1]
+
+	chain, err := s.consensus.GetChain(last.GetHash())
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't read the chain: %v", err)
+	}
 
 	vb := VerifiableBlock{
-		SkipBlock: blocks[len(blocks)-1],
+		SkipBlock: last,
 		Chain:     chain,
 	}
 

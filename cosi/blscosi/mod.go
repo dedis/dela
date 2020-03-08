@@ -91,8 +91,6 @@ func (cosi *BlsCoSi) Sign(msg proto.Message, signers ...cosi.Cosigner) (crypto.S
 				return agg, nil
 			}
 
-			fabric.Logger.Trace().Msgf("Response: %+v", resp)
-
 			reply := resp.(*SignatureResponse)
 			sig, err := cosi.signer.GetSignatureFactory().FromProto(reply.GetSignature())
 			if err != nil {
@@ -109,6 +107,7 @@ func (cosi *BlsCoSi) Sign(msg proto.Message, signers ...cosi.Cosigner) (crypto.S
 			}
 		case err := <-errs:
 			fabric.Logger.Err(err).Msg("Error during collective signing")
+			return nil, err
 		}
 	}
 }

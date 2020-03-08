@@ -3,6 +3,8 @@
 package cosipbft
 
 import (
+	"bytes"
+
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"go.dedis.ch/fabric"
@@ -15,22 +17,28 @@ import (
 
 //go:generate protoc -I ./ --go_out=./ ./messages.proto
 
+const (
+	rpcName = "cosipbft"
+)
+
 // Consensus is the implementation of the interface.
-// TODO: support asynchronous calls
 type Consensus struct {
+	storage Storage
 	cosi    cosi.CollectiveSigning
 	mino    mino.Mino
 	rpc     mino.RPC
-	links   []forwardLink
 	factory *ChainFactory
+	queue   *queue
 }
 
 // NewCoSiPBFT returns a new instance.
 func NewCoSiPBFT(mino mino.Mino, cosi cosi.CollectiveSigning) *Consensus {
 	c := &Consensus{
+		storage: newInMemoryStorage(),
 		mino:    mino,
 		cosi:    cosi,
 		factory: NewChainFactory(cosi.GetVerifier()),
+		queue:   &queue{verifier: cosi.GetVerifier()},
 	}
 
 	return c
@@ -38,32 +46,44 @@ func NewCoSiPBFT(mino mino.Mino, cosi cosi.CollectiveSigning) *Consensus {
 
 // GetChainFactory returns the chain factory.
 func (c *Consensus) GetChainFactory() consensus.ChainFactory {
-	return NewChainFactory(c.cosi.GetVerifier())
+	return c.factory
 }
 
-// GetChain return the seals from an index to another.
-func (c *Consensus) GetChain(from, to uint64) consensus.Chain {
-	// TODO: persistent storage for links
-	chain := chain{links: c.links}
+// GetChain returns a valid chain to the given identifier.
+func (c *Consensus) GetChain(id Digest) (consensus.Chain, error) {
+	stored, err := c.storage.ReadChain(id)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't read the chain: %v", err)
+	}
 
-	return chain
+	links := make([]forwardLink, len(stored))
+	for i, pb := range stored {
+		link, err := c.factory.decodeLink(pb)
+		if err != nil {
+			return nil, encoding.NewDecodingError("forward link", err)
+		}
+
+		links[i] = *link
+	}
+
+	return forwardLinkChain{links: links}, nil
 }
 
 // Listen is a blocking function that makes the consensus available on the
 // node.
 func (c *Consensus) Listen(v consensus.Validator) error {
 	if v == nil {
-		return xerrors.New("a validator is required for the consensus")
+		return xerrors.New("validator is nil")
 	}
 
 	err := c.cosi.Listen(handler{Consensus: c, validator: v})
 	if err != nil {
-		return xerrors.Errorf("couldn't listen: %v", err)
+		return xerrors.Errorf("couldn't listen: %w", err)
 	}
 
-	c.rpc, err = c.mino.MakeRPC("cosipbft", rpcHandler{Consensus: c, validator: v})
+	c.rpc, err = c.mino.MakeRPC(rpcName, rpcHandler{Consensus: c, validator: v})
 	if err != nil {
-		return xerrors.Errorf("couldn't create the rpc: %v", err)
+		return xerrors.Errorf("couldn't create the rpc: %w", err)
 	}
 
 	return nil
@@ -73,43 +93,43 @@ func (c *Consensus) Listen(v consensus.Validator) error {
 // It returns nil if the consensus is reached and that the participant are
 // committed to it, otherwise it returns the refusal reason.
 func (c *Consensus) Propose(p consensus.Proposal, nodes ...mino.Node) error {
-	fabric.Logger.Info().Msgf("Propose data %v with roster %v", p, nodes)
-
 	packed, err := p.Pack()
 	if err != nil {
 		return encoding.NewEncodingError("proposal", err)
 	}
 
 	prepareReq := &Prepare{}
-	prepareReq.Proposal, err = ptypes.MarshalAny(packed)
+	prepareReq.Proposal, err = protoenc.MarshalAny(packed)
 	if err != nil {
 		return encoding.NewAnyEncodingError(packed, err)
 	}
 
+	var ok bool
 	cosigners := make([]cosi.Cosigner, len(nodes))
 	for i, addr := range nodes {
-		// TODO: cast check
-		cosigners[i] = addr.(cosi.Cosigner)
+		cosigners[i], ok = addr.(cosi.Cosigner)
+		if !ok {
+			return xerrors.New("node must implement cosi.Cosigner")
+		}
 	}
 
-	// 1. Prepare phase.
+	// 1. Prepare phase: proposal must be validated by the nodes and a
+	// collective signature will be created for the forward link hash.
 	sig, err := c.cosi.Sign(prepareReq, cosigners...)
 	if err != nil {
 		return xerrors.Errorf("couldn't sign the proposal: %v", err)
 	}
 
-	forwardLink := forwardLink{
-		from:    p.GetPrevious(),
-		to:      p.GetHash(),
-		prepare: sig,
-	}
-
-	flpacked, err := forwardLink.Pack()
+	sigpacked, err := sig.Pack()
 	if err != nil {
-		return encoding.NewEncodingError("forward link", err)
+		return encoding.NewEncodingError("prepare signature", err)
 	}
 
-	commitReq := &Commit{ForwardLink: flpacked.(*ForwardLinkProto)}
+	commitReq := &Commit{To: p.GetHash()}
+	commitReq.Prepare, err = protoenc.MarshalAny(sigpacked)
+	if err != nil {
+		return encoding.NewAnyEncodingError(sigpacked, err)
+	}
 
 	// 2. Commit phase.
 	sig, err = c.cosi.Sign(commitReq, cosigners...)
@@ -117,15 +137,19 @@ func (c *Consensus) Propose(p consensus.Proposal, nodes ...mino.Node) error {
 		return xerrors.Errorf("couldn't sign the commit: %v", err)
 	}
 
-	forwardLink.commit = sig
-
-	// 3. Propagate the final commit signature.
-	packed, err = forwardLink.Pack()
+	sigpacked, err = sig.Pack()
 	if err != nil {
-		return encoding.NewEncodingError("forward link", err)
+		return encoding.NewEncodingError("commit signature", err)
 	}
 
-	propagateReq := &Propagate{ForwardLink: packed.(*ForwardLinkProto)}
+	// 3. Propagate the final commit signature.
+	propagateReq := &Propagate{To: p.GetHash()}
+	propagateReq.Commit, err = protoenc.MarshalAny(sigpacked)
+	if err != nil {
+		return encoding.NewAnyEncodingError(packed, err)
+	}
+
+	// TODO: timeout in context ?
 	resps, errs := c.rpc.Call(propagateReq, nodes...)
 	select {
 	case <-resps:
@@ -136,35 +160,12 @@ func (c *Consensus) Propose(p consensus.Proposal, nodes ...mino.Node) error {
 	return nil
 }
 
-func (c *Consensus) verifyPrepareMessage(proposal consensus.Proposal) (forwardLink, error) {
-	// TODO: verify correct index, etc etc..
-	fl := forwardLink{
-		from: proposal.GetPrevious(),
-		to:   proposal.GetHash(),
-	}
-
-	hash, err := fl.computeHash()
-	if err != nil {
-		return fl, err
-	}
-
-	fl.hash = hash
-
-	return fl, nil
-}
-
-func (c *Consensus) verifyCommitMessage(forwardLink forwardLink) error {
-	// TODO: verify prepare signature, integrity of the commit
-	// TODO: commit and store.
-	return nil
-}
-
 type handler struct {
 	*Consensus
 	validator consensus.Validator
 }
 
-func (h handler) Hash(in proto.Message) ([]byte, error) {
+func (h handler) Hash(in proto.Message) (Digest, error) {
 	switch msg := in.(type) {
 	case *Prepare:
 		var da ptypes.DynamicAny
@@ -177,32 +178,52 @@ func (h handler) Hash(in proto.Message) ([]byte, error) {
 		// to insure the generic data is valid.
 		// TODO: this should lock during the event propagation to insure atomic
 		// operations.
-		proposal, err := h.validator.Validate(da.Message)
+		proposal, prev, err := h.validator.Validate(da.Message)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't validate the proposal: %v", err)
 		}
 
-		// Then the consensus layer is verified.
-		forwardLink, err := h.verifyPrepareMessage(proposal)
+		last, err := h.storage.ReadLast()
 		if err != nil {
-			return nil, xerrors.Errorf("invalid proposal: %v", err)
+			return nil, xerrors.Errorf("couldn't read last: %v", err)
+		}
+
+		if last != nil && !bytes.Equal(last.GetTo(), prev.GetHash()) {
+			return nil, xerrors.Errorf("mismatch with previous link: %x != %x",
+				last.GetTo(), prev.GetHash())
+		}
+
+		forwardLink := forwardLink{
+			from: prev.GetHash(),
+			to:   proposal.GetHash(),
+		}
+
+		err = h.queue.New(proposal, prev)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't add to queue: %v", err)
+		}
+
+		hash, err := forwardLink.computeHash()
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't compute hash: %v", err)
 		}
 
 		// Finally, if the proposal is correct, the hash that will be signed
 		// by cosi is returned.
-		return forwardLink.hash, nil
+		return hash, nil
 	case *Commit:
-		forwardLink, err := h.factory.decodeLink(msg.GetForwardLink())
+		prepare, err := h.factory.decodeSignature(msg.GetPrepare())
 		if err != nil {
-			return nil, xerrors.Errorf("couldn't decode the forward link: %v", err)
+			return nil, encoding.NewDecodingError("prepare signature", err)
 		}
 
-		err = h.verifyCommitMessage(*forwardLink)
+		err = h.queue.LockProposal(msg.GetTo(), prepare)
 		if err != nil {
-			return nil, xerrors.Errorf("invalid commit: %v", err)
+			return nil, xerrors.Errorf("couldn't update signature: %v", err)
 		}
 
-		buffer, err := forwardLink.prepare.MarshalBinary()
+		buffer, err := prepare.MarshalBinary()
+		fabric.Logger.Trace().Msgf("buffer: %x", buffer)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't marshal the signature: %v", err)
 		}
@@ -226,15 +247,26 @@ func (h rpcHandler) Process(req proto.Message) (proto.Message, error) {
 		return nil, xerrors.New("message type not supported")
 	}
 
-	forwardLink, err := h.factory.decodeLink(msg.GetForwardLink())
+	commit, err := h.factory.decodeSignature(msg.GetCommit())
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't not decode: %v", err)
+		return nil, encoding.NewDecodingError("commit signature", err)
 	}
 
-	fabric.Logger.Info().Msgf("Link appended: %x", forwardLink.GetFrom())
-	h.links = append(h.links, *forwardLink)
+	forwardLink, err := h.queue.Finalize(msg.GetTo(), commit)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't finalize: %v", err)
+	}
 
-	h.validator.Commit(forwardLink.GetTo())
+	err = h.storage.Store(forwardLink)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't write forward link: %v", err)
+	}
+
+	// Apply the proposal to caller.
+	err = h.validator.Commit(forwardLink.GetTo())
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't commit: %v", err)
+	}
 
 	return nil, nil
 }

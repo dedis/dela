@@ -7,6 +7,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	any "github.com/golang/protobuf/ptypes/any"
+	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
@@ -32,19 +33,11 @@ type forwardLink struct {
 	commit crypto.Signature
 }
 
-func (fl forwardLink) GetFrom() Digest {
-	return fl.from
-}
-
-func (fl forwardLink) GetTo() Digest {
-	return fl.to
-}
-
 // Verify makes sure the signatures of the forward link are correct.
 func (fl forwardLink) Verify(v crypto.Verifier, pubkeys []crypto.PublicKey) error {
 	err := v.Verify(pubkeys, fl.hash, fl.prepare)
 	if err != nil {
-		return xerrors.Errorf("couldn't verify the prepare signature: %w", err)
+		return xerrors.Errorf("couldn't verify prepare signature: %w", err)
 	}
 
 	buffer, err := fl.prepare.MarshalBinary()
@@ -52,12 +45,27 @@ func (fl forwardLink) Verify(v crypto.Verifier, pubkeys []crypto.PublicKey) erro
 		return xerrors.Errorf("couldn't marshal the signature: %w", err)
 	}
 
+	fabric.Logger.Trace().Msgf("verifying commit %x", buffer)
 	err = v.Verify(pubkeys, buffer, fl.commit)
 	if err != nil {
-		return xerrors.Errorf("coudln't verify the commit signature: %w", err)
+		return xerrors.Errorf("couldn't verify commit signature: %w", err)
 	}
 
 	return nil
+}
+
+func encodeSignature(sig crypto.Signature) (*any.Any, error) {
+	packed, err := sig.Pack()
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't pack: %v", err)
+	}
+
+	packedAny, err := protoenc.MarshalAny(packed)
+	if err != nil {
+		return nil, encoding.NewAnyEncodingError(packed, err)
+	}
+
+	return packedAny, nil
 }
 
 // Pack returns the protobuf message of the forward link.
@@ -67,38 +75,27 @@ func (fl forwardLink) Pack() (proto.Message, error) {
 		To:   fl.to,
 	}
 
+	var err error
+
 	if fl.prepare != nil {
-		prepare, err := fl.prepare.Pack()
+		seal.Prepare, err = encodeSignature(fl.prepare)
 		if err != nil {
 			return nil, encoding.NewEncodingError("prepare", err)
 		}
-
-		prepareAny, err := protoenc.MarshalAny(prepare)
-		if err != nil {
-			return nil, encoding.NewAnyEncodingError(prepare, err)
-		}
-
-		seal.Prepare = prepareAny
 	}
 
 	if fl.commit != nil {
-		commit, err := fl.commit.Pack()
+		seal.Commit, err = encodeSignature(fl.commit)
 		if err != nil {
 			return nil, encoding.NewEncodingError("commit", err)
 		}
-
-		commitAny, err := protoenc.MarshalAny(commit)
-		if err != nil {
-			return nil, encoding.NewAnyEncodingError(commit, err)
-		}
-
-		seal.Commit = commitAny
 	}
 
 	return seal, nil
 }
 
 func (fl forwardLink) computeHash() ([]byte, error) {
+	// TODO: optional algorithm + errors
 	h := sha256.New()
 
 	h.Write(fl.from)
@@ -107,33 +104,36 @@ func (fl forwardLink) computeHash() ([]byte, error) {
 	return h.Sum(nil), nil
 }
 
-type chain struct {
+type forwardLinkChain struct {
 	links []forwardLink
 }
 
-func (c chain) Verify(verifier crypto.Verifier, pubkeys []crypto.PublicKey) error {
+// Verify follows the chain from the beginning and makes sure that the forward
+// links are correct and that they point to the correct targets.
+func (c forwardLinkChain) Verify(verifier crypto.Verifier, pubkeys []crypto.PublicKey) error {
 	if len(c.links) == 0 {
-		return xerrors.New("chain must have at least one link")
+		return xerrors.New("chain is empty")
 	}
 
-	prev := c.links[0]
-	for _, link := range c.links[1:] {
-		if !bytes.Equal(prev.GetTo(), link.GetFrom()) {
-			return xerrors.New("mismatch forward link")
-		}
+	lastIndex := len(c.links) - 1
 
+	for i, link := range c.links {
 		err := link.Verify(verifier, pubkeys)
 		if err != nil {
-			return err
+			return xerrors.Errorf("couldn't verify link %d: %w", i, err)
 		}
 
-		prev = link
+		if i != lastIndex && !bytes.Equal(link.to, c.links[i+1].from) {
+			return xerrors.Errorf("mismatch forward link '%x' != '%x'",
+				link.to, c.links[i+1].from)
+		}
 	}
 
 	return nil
 }
 
-func (c chain) Pack() (proto.Message, error) {
+// Pack returs the protobuf message for the chain.
+func (c forwardLinkChain) Pack() (proto.Message, error) {
 	pb := &ChainProto{
 		Links: make([]*ForwardLinkProto, len(c.links)),
 	}
@@ -141,7 +141,7 @@ func (c chain) Pack() (proto.Message, error) {
 	for i, link := range c.links {
 		packed, err := link.Pack()
 		if err != nil {
-			return nil, err
+			return nil, encoding.NewEncodingError("forward link", err)
 		}
 
 		pb.Links[i] = packed.(*ForwardLinkProto)
@@ -160,6 +160,15 @@ type ChainFactory struct {
 // otherwise.
 func NewChainFactory(verifier crypto.Verifier) *ChainFactory {
 	return &ChainFactory{verifier: verifier}
+}
+
+func (f *ChainFactory) decodeSignature(pb proto.Message) (crypto.Signature, error) {
+	sig, err := f.verifier.GetSignatureFactory().FromProto(pb)
+	if err != nil {
+		return nil, err
+	}
+
+	return sig, nil
 }
 
 func (f *ChainFactory) decodeLink(pb proto.Message) (*forwardLink, error) {
@@ -184,7 +193,7 @@ func (f *ChainFactory) decodeLink(pb proto.Message) (*forwardLink, error) {
 	}
 
 	if src.GetPrepare() != nil {
-		sig, err := f.verifier.GetSignatureFactory().FromProto(src.GetPrepare())
+		sig, err := f.decodeSignature(src.GetPrepare())
 		if err != nil {
 			return nil, encoding.NewDecodingError("prepare signature", err)
 		}
@@ -193,7 +202,7 @@ func (f *ChainFactory) decodeLink(pb proto.Message) (*forwardLink, error) {
 	}
 
 	if src.GetCommit() != nil {
-		sig, err := f.verifier.GetSignatureFactory().FromProto(src.GetCommit())
+		sig, err := f.decodeSignature(src.GetCommit())
 		if err != nil {
 			return nil, encoding.NewDecodingError("commit signature", err)
 		}
@@ -220,7 +229,7 @@ func (f *ChainFactory) FromProto(pb proto.Message) (consensus.Chain, error) {
 
 		err := ptypes.UnmarshalAny(in, msg)
 		if err != nil {
-			return nil, err
+			return nil, encoding.NewAnyDecodingError(msg, err)
 		}
 	case *ChainProto:
 		msg = in
@@ -228,13 +237,13 @@ func (f *ChainFactory) FromProto(pb proto.Message) (consensus.Chain, error) {
 		return nil, xerrors.New("message type not supported")
 	}
 
-	chain := chain{
+	chain := forwardLinkChain{
 		links: make([]forwardLink, len(msg.GetLinks())),
 	}
 	for i, plink := range msg.GetLinks() {
 		link, err := f.decodeLink(plink)
 		if err != nil {
-			return nil, err
+			return nil, encoding.NewDecodingError("forward link", err)
 		}
 
 		chain.links[i] = *link

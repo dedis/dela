@@ -12,44 +12,53 @@ import (
 type Proposal interface {
 	encoding.Packable
 
+	// GetHash returns the hash of the proposal.
 	GetHash() []byte
 
-	GetPrevious() []byte
+	GetPublicKeys() []crypto.PublicKey
 }
 
 // Validator is the interface to implement to start a consensus.
 type Validator interface {
-	Validate(message proto.Message) (Proposal, error)
+	// Validate should return the proposal decoded from the message or
+	// an error if it is invalid. It should also return the previous
+	// proposal.
+	Validate(message proto.Message) (curr Proposal, prev Proposal, err error)
 
+	// Commit should commit the proposal with the given identifier. The
+	// implementation makes sure that the commit is atomic with the validation
+	// so that no further locking is necessary.
 	Commit(id []byte) error
-}
-
-// Participant represents the participant in a consensus.
-type Participant interface {
-	GetAddress() *mino.Address
-	GetPublicKey() crypto.PublicKey
 }
 
 // Chain is a verifiable lock between proposals.
 type Chain interface {
 	encoding.Packable
 
+	// Verify returns nil if the integriy of the chain is valid, otherwise
+	// an error.
 	Verify(verifier crypto.Verifier, pubkeys []crypto.PublicKey) error
 }
 
 // ChainFactory is a factory to decodes chain from protobuf messages.
 type ChainFactory interface {
+	// FromProto returns the instance of the chain decoded from the message.
 	FromProto(pb proto.Message) (Chain, error)
 }
 
 // Consensus is an interface that provides primitives to propose data to a set
 // of participants. They will validate the proposal according to the validator.
 type Consensus interface {
+	// GetChainFactory returns the chain factory.
 	GetChainFactory() ChainFactory
 
-	GetChain(from uint64, to uint64) Chain
+	// GetChain returns a valid chain to the given identifier.
+	GetChain(id []byte) (Chain, error)
 
+	// Listen starts to listen for consensus messages.
 	Listen(h Validator) error
 
+	// Propose performs the consensus algorithm using the list of nodes
+	// as participants.
 	Propose(proposal Proposal, nodes ...mino.Node) error
 }
