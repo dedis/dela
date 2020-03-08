@@ -1,10 +1,13 @@
 package minoch
 
 import (
+	"context"
 	"testing"
 
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/fabric/mino"
+	"golang.org/x/xerrors"
 )
 
 func TestRPC_Call(t *testing.T) {
@@ -25,4 +28,69 @@ func TestRPC_Call(t *testing.T) {
 		t.Fatal("an error is expected")
 	case <-errs:
 	}
+}
+
+type fakeStreamHandler struct {
+	mino.UnsupportedHandler
+}
+
+func (h fakeStreamHandler) Stream(out mino.Sender, in mino.Receiver) error {
+	for {
+		addr, msg, err := in.Recv(context.Background())
+		if err != nil {
+			return err
+		}
+
+		err = out.Send(msg, addr)
+		if err != nil {
+			return err
+		}
+	}
+}
+
+type fakeBadStreamHandler struct {
+	mino.UnsupportedHandler
+}
+
+func (h fakeBadStreamHandler) Stream(out mino.Sender, in mino.Receiver) error {
+	return xerrors.New("oops")
+}
+
+func TestRPC_Stream(t *testing.T) {
+	manager := NewManager()
+
+	m, err := NewMinoch(manager, "A")
+	require.NoError(t, err)
+	rpc, err := m.MakeRPC("test", fakeStreamHandler{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sender, receiver := rpc.Stream(ctx, m)
+
+	sender.Send(&empty.Empty{}, m.GetAddress())
+	_, _, err = receiver.Recv(context.Background())
+	require.NoError(t, err)
+
+	ctx, cancel2 := context.WithCancel(context.Background())
+	cancel2() // fake a timeout
+	_, _, err = receiver.Recv(ctx)
+	require.Error(t, err)
+}
+
+func TestRPC_StreamFailures(t *testing.T) {
+	manager := NewManager()
+
+	m, err := NewMinoch(manager, "A")
+	require.NoError(t, err)
+	rpc, err := m.MakeRPC("test", fakeBadStreamHandler{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	out, in := rpc.Stream(ctx, m)
+	_, _, err = in.Recv(ctx)
+	require.Error(t, err)
+
+	err = out.Send(nil)
+	require.Error(t, err)
 }

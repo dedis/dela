@@ -257,7 +257,7 @@ func (f *blockFactory) decodeConodes(msgs []*ConodeProto) (Conodes, error) {
 		}
 
 		conodes[i] = Conode{
-			addr:      f.addressFactory.FromString(msg.GetAddress()),
+			addr:      f.addressFactory.FromText(msg.GetAddress()),
 			publicKey: publicKey,
 		}
 	}

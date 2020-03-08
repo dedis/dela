@@ -26,6 +26,10 @@ type address struct {
 	id string
 }
 
+func (a address) MarshalText() ([]byte, error) {
+	return []byte(a.id), nil
+}
+
 func (a address) String() string {
 	return a.id
 }

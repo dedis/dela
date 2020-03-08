@@ -33,7 +33,13 @@ func (c Conode) Pack() (proto.Message, error) {
 		return nil, err
 	}
 
-	conode := &ConodeProto{Address: c.addr.String()}
+	conode := &ConodeProto{}
+
+	conode.Address, err = c.addr.MarshalText()
+	if err != nil {
+		return nil, err
+	}
+
 	conode.PublicKey, err = ptypes.MarshalAny(packed)
 	if err != nil {
 		return nil, err

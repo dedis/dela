@@ -279,6 +279,10 @@ type fakeAddress struct {
 	id []byte
 }
 
+func (a fakeAddress) MarshalText() ([]byte, error) {
+	return []byte(a.id), nil
+}
+
 func (a fakeAddress) String() string {
 	return fmt.Sprintf("%x", a.id)
 }

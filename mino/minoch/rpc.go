@@ -12,7 +12,7 @@ import (
 
 // Envelope is the wrapper to send messages through streams.
 type Envelope struct {
-	to      []address
+	to      []mino.Address
 	from    address
 	message *any.Any
 }
@@ -31,7 +31,7 @@ func (c RPC) Call(req proto.Message, nodes ...mino.Node) (<-chan proto.Message, 
 
 	go func() {
 		for _, node := range nodes {
-			peer := c.manager.get(node.GetAddress().String())
+			peer := c.manager.get(node.GetAddress().(address))
 			if peer != nil {
 				resp, err := peer.rpcs[c.path].h.Process(req)
 				if err != nil {
@@ -63,7 +63,7 @@ func (c RPC) Stream(ctx context.Context, nodes ...mino.Node) (mino.Sender, mino.
 		ch := make(chan Envelope, 1)
 		outs[node.GetAddress().String()] = receiver{out: ch}
 
-		peer := c.manager.instances[node.GetAddress().String()]
+		peer := c.manager.instances[node.GetAddress().(address)]
 
 		go func(r receiver) {
 			s := sender{
@@ -112,15 +112,10 @@ type sender struct {
 	in   chan Envelope
 }
 
-func (s sender) Send(msg proto.Message, nodes ...mino.Node) error {
+func (s sender) Send(msg proto.Message, addrs ...mino.Address) error {
 	a, err := ptypes.MarshalAny(msg)
 	if err != nil {
 		return err
-	}
-
-	addrs := make([]address, len(nodes))
-	for i, node := range nodes {
-		addrs[i] = node.GetAddress().(address)
 	}
 
 	go func() {

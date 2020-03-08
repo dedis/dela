@@ -32,7 +32,7 @@ func NewMinoch(manager *Manager, identifier string) (*Minoch, error) {
 		return nil, err
 	}
 
-	m.Logger.Info().Msgf("New instance with identifier %s", identifier)
+	m.Logger.Debug().Msgf("New instance with identifier %s", identifier)
 
 	return inst, nil
 }
@@ -69,20 +69,4 @@ func (m *Minoch) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 	m.rpcs[rpc.path] = rpc
 
 	return rpc, nil
-}
-
-type address struct {
-	id string
-}
-
-func (a address) String() string {
-	return a.id
-}
-
-// AddressFactory is an implementation of the factory interface.
-type AddressFactory struct{}
-
-// FromString returns an instance of an address from a string.
-func (f AddressFactory) FromString(addr string) mino.Address {
-	return address{id: addr}
 }

@@ -5,6 +5,7 @@ package mino
 
 import (
 	"context"
+	"encoding"
 	"errors"
 
 	"github.com/golang/protobuf/proto"
@@ -12,6 +13,8 @@ import (
 
 // Address is a representation of a node's address.
 type Address interface {
+	encoding.TextMarshaler
+
 	String() string
 }
 
@@ -22,7 +25,7 @@ type Node interface {
 
 // Sender is an interface to provide primitives to send messages to recipients.
 type Sender interface {
-	Send(msg proto.Message, nodes ...Node) error
+	Send(msg proto.Message, addrs ...Address) error
 }
 
 // Receiver is an interface to provide primitives to receive messages from
@@ -78,7 +81,7 @@ func (h UnsupportedHandler) Stream(in Sender, out Receiver) error {
 
 // AddressFactory is the factory to decode addresses.
 type AddressFactory interface {
-	FromString(addr string) Address
+	FromText(text []byte) Address
 }
 
 // Mino is a representation of a overlay network that allows the creation
