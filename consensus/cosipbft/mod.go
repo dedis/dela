@@ -32,12 +32,17 @@ type Consensus struct {
 
 // NewCoSiPBFT returns a new instance.
 func NewCoSiPBFT(mino mino.Mino, cosi cosi.CollectiveSigning) *Consensus {
+	chainFactory := newChainFactory(cosi.GetVerifier())
+
 	c := &Consensus{
 		storage: newInMemoryStorage(),
 		mino:    mino,
 		cosi:    cosi,
-		factory: newChainFactory(cosi.GetVerifier()),
-		queue:   &queue{verifier: cosi.GetVerifier()},
+		factory: chainFactory,
+		queue: &queue{
+			verifier: cosi.GetVerifier(),
+			factory:  chainFactory,
+		},
 	}
 
 	return c
@@ -198,7 +203,7 @@ func (h handler) Hash(in proto.Message) (Digest, error) {
 			return nil, xerrors.Errorf("couldn't add to queue: %v", err)
 		}
 
-		hash, err := forwardLink.computeHash()
+		hash, err := forwardLink.computeHash(h.factory.GetHashFactory().New())
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't compute hash: %v", err)
 		}

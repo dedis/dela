@@ -70,7 +70,10 @@ func (s fakeStorage) ReadLast() (*ForwardLinkProto, error) {
 func TestConsensus_GetChain(t *testing.T) {
 	cons := &Consensus{
 		storage: newInMemoryStorage(),
-		factory: &defaultChainFactory{verifier: fakeVerifierWithFactory{}},
+		factory: &defaultChainFactory{
+			verifier:    fakeVerifierWithFactory{},
+			hashFactory: sha256Factory{},
+		},
 	}
 
 	err := cons.storage.Store(&ForwardLinkProto{To: []byte{0xaa}})
@@ -224,6 +227,7 @@ func TestHandler_HashPrepare(t *testing.T) {
 	h := handler{
 		validator: fakeValidator{},
 		Consensus: &Consensus{
+			factory: fakeFactory{},
 			storage: newInMemoryStorage(),
 			queue:   &queue{},
 		},
@@ -261,12 +265,21 @@ func TestHandler_HashPrepare(t *testing.T) {
 	h.Consensus.queue = &queue{locked: true}
 	_, err = h.Hash(&Prepare{Proposal: empty})
 	require.EqualError(t, err, "couldn't add to queue: queue is locked")
+
+	h.Consensus.queue = &queue{}
+	h.factory = &defaultChainFactory{hashFactory: badHashFactory{}}
+	_, err = h.Hash(&Prepare{Proposal: empty})
+	require.EqualError(t, err, "couldn't compute hash: couldn't write from: oops")
 }
 
 type fakeFactory struct {
 	ChainFactory
 	err          error
 	errSignature error
+}
+
+func (f fakeFactory) GetHashFactory() crypto.HashFactory {
+	return sha256Factory{}
 }
 
 func (f fakeFactory) DecodeSignature(pb proto.Message) (crypto.Signature, error) {
@@ -278,7 +291,11 @@ func (f fakeFactory) FromProto(pb proto.Message) (consensus.Chain, error) {
 }
 
 func TestHandler_HashCommit(t *testing.T) {
-	queue := &queue{verifier: &fakeVerifier{}}
+	queue := &queue{
+		verifier: &fakeVerifier{},
+		factory:  fakeFactory{},
+	}
+
 	h := handler{
 		Consensus: &Consensus{
 			factory: fakeFactory{},

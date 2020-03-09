@@ -1,6 +1,8 @@
 package cosipbft
 
 import (
+	"crypto/sha256"
+	"hash"
 	"testing"
 
 	"github.com/golang/protobuf/proto"
@@ -84,6 +86,34 @@ func TestForwardLink_Pack(t *testing.T) {
 	protoenc = &fakeEncoder{}
 	pb, err = fl.Pack()
 	require.EqualError(t, xerrors.Unwrap(xerrors.Unwrap(err)), "marshal any error")
+}
+
+type fakeHash struct {
+	hash.Hash
+	delay int
+}
+
+func (h *fakeHash) Write(data []byte) (int, error) {
+	if h.delay > 0 {
+		h.delay--
+		return 0, nil
+	}
+	return 0, xerrors.New("oops")
+}
+
+func TestForwardLink_Hash(t *testing.T) {
+	h := sha256.New()
+
+	fl := forwardLink{from: []byte{0xaa}, to: []byte{0xbb}}
+	digest, err := fl.computeHash(h)
+	require.NoError(t, err)
+	require.Len(t, digest, h.Size())
+
+	_, err = fl.computeHash(&fakeHash{})
+	require.EqualError(t, err, "couldn't write from: oops")
+
+	_, err = fl.computeHash(&fakeHash{delay: 1})
+	require.EqualError(t, err, "couldn't write to: oops")
 }
 
 func TestChain_Verify(t *testing.T) {
@@ -187,10 +217,26 @@ func TestChainFactory_DecodeSignature(t *testing.T) {
 	require.EqualError(t, err, "oops")
 }
 
+type badHash struct {
+	hash.Hash
+}
+
+func (h badHash) Write([]byte) (int, error) {
+	return 0, xerrors.New("oops")
+}
+
+type badHashFactory struct{}
+
+func (f badHashFactory) New() hash.Hash {
+	return badHash{}
+}
+
 func TestChainFactory_DecodeForwardLink(t *testing.T) {
 	defer func() { protoenc = encoding.NewProtoEncoder() }()
 
-	factory := defaultChainFactory{}
+	factory := defaultChainFactory{
+		hashFactory: sha256Factory{},
+	}
 
 	forwardLink := &ForwardLinkProto{}
 	flany, err := ptypes.MarshalAny(forwardLink)
@@ -212,6 +258,11 @@ func TestChainFactory_DecodeForwardLink(t *testing.T) {
 	forwardLink.Commit = &any.Any{}
 	_, err = factory.DecodeForwardLink(forwardLink)
 	require.EqualError(t, err, "couldn't decode commit signature: oops")
+
+	forwardLink.Commit = nil
+	factory.hashFactory = badHashFactory{}
+	_, err = factory.DecodeForwardLink(forwardLink)
+	require.EqualError(t, err, "couldn't hash the forward link: couldn't write from: oops")
 
 	protoenc = &fakeEncoder{}
 	_, err = factory.DecodeForwardLink(flany)
