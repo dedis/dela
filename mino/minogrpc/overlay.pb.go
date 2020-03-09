@@ -165,7 +165,9 @@ func init() {
 	proto.RegisterType((*CallResp)(nil), "minogrpc.CallResp")
 }
 
-func init() { proto.RegisterFile("overlay.proto", fileDescriptor_61fc82527fbe24ad) }
+func init() {
+	proto.RegisterFile("overlay.proto", fileDescriptor_61fc82527fbe24ad)
+}
 
 var fileDescriptor_61fc82527fbe24ad = []byte{
 	// 208 bytes of a gzipped FileDescriptorProto

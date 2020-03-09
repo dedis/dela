@@ -264,7 +264,9 @@ func init() {
 	proto.RegisterType((*PropagateGenesis)(nil), "skipchain.PropagateGenesis")
 }
 
-func init() { proto.RegisterFile("messages.proto", fileDescriptor_4dc296cbfe5ffcd5) }
+func init() {
+	proto.RegisterFile("messages.proto", fileDescriptor_4dc296cbfe5ffcd5)
+}
 
 var fileDescriptor_4dc296cbfe5ffcd5 = []byte{
 	// 363 bytes of a gzipped FileDescriptorProto
