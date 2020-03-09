@@ -7,7 +7,6 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
-	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/encoding"
@@ -27,8 +26,8 @@ type Consensus struct {
 	cosi    cosi.CollectiveSigning
 	mino    mino.Mino
 	rpc     mino.RPC
-	factory *ChainFactory
-	queue   *queue
+	factory ChainFactory
+	queue   Queue
 }
 
 // NewCoSiPBFT returns a new instance.
@@ -37,7 +36,7 @@ func NewCoSiPBFT(mino mino.Mino, cosi cosi.CollectiveSigning) *Consensus {
 		storage: newInMemoryStorage(),
 		mino:    mino,
 		cosi:    cosi,
-		factory: NewChainFactory(cosi.GetVerifier()),
+		factory: newChainFactory(cosi.GetVerifier()),
 		queue:   &queue{verifier: cosi.GetVerifier()},
 	}
 
@@ -56,17 +55,12 @@ func (c *Consensus) GetChain(id Digest) (consensus.Chain, error) {
 		return nil, xerrors.Errorf("couldn't read the chain: %v", err)
 	}
 
-	links := make([]forwardLink, len(stored))
-	for i, pb := range stored {
-		link, err := c.factory.decodeLink(pb)
-		if err != nil {
-			return nil, encoding.NewDecodingError("forward link", err)
-		}
-
-		links[i] = *link
+	chain, err := c.factory.FromProto(&ChainProto{Links: stored})
+	if err != nil {
+		return nil, encoding.NewDecodingError("chain", err)
 	}
 
-	return forwardLinkChain{links: links}, nil
+	return chain, nil
 }
 
 // Listen is a blocking function that makes the consensus available on the
@@ -169,9 +163,9 @@ func (h handler) Hash(in proto.Message) (Digest, error) {
 	switch msg := in.(type) {
 	case *Prepare:
 		var da ptypes.DynamicAny
-		err := ptypes.UnmarshalAny(msg.GetProposal(), &da)
+		err := protoenc.UnmarshalAny(msg.GetProposal(), &da)
 		if err != nil {
-			return nil, err
+			return nil, encoding.NewAnyDecodingError(&da, err)
 		}
 
 		// The proposal first need to be validated by the caller of the module
@@ -212,7 +206,7 @@ func (h handler) Hash(in proto.Message) (Digest, error) {
 		// by cosi is returned.
 		return hash, nil
 	case *Commit:
-		prepare, err := h.factory.decodeSignature(msg.GetPrepare())
+		prepare, err := h.factory.DecodeSignature(msg.GetPrepare())
 		if err != nil {
 			return nil, encoding.NewDecodingError("prepare signature", err)
 		}
@@ -223,14 +217,13 @@ func (h handler) Hash(in proto.Message) (Digest, error) {
 		}
 
 		buffer, err := prepare.MarshalBinary()
-		fabric.Logger.Trace().Msgf("buffer: %x", buffer)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't marshal the signature: %v", err)
 		}
 
 		return buffer, nil
 	default:
-		return nil, xerrors.New("unknown type of message")
+		return nil, xerrors.Errorf("message type not supported: %T", msg)
 	}
 }
 
@@ -244,10 +237,10 @@ type rpcHandler struct {
 func (h rpcHandler) Process(req proto.Message) (proto.Message, error) {
 	msg, ok := req.(*Propagate)
 	if !ok {
-		return nil, xerrors.New("message type not supported")
+		return nil, xerrors.Errorf("message type not supported: %T", req)
 	}
 
-	commit, err := h.factory.decodeSignature(msg.GetCommit())
+	commit, err := h.factory.DecodeSignature(msg.GetCommit())
 	if err != nil {
 		return nil, encoding.NewDecodingError("commit signature", err)
 	}

@@ -10,6 +10,14 @@ import (
 	"golang.org/x/xerrors"
 )
 
+// Queue is an interface specific to cosipbft that defines the primitives to
+// prepare and commit to proposals.
+type Queue interface {
+	New(curr, prev consensus.Proposal) error
+	LockProposal(to Digest, sig crypto.Signature) error
+	Finalize(to Digest, sig crypto.Signature) (*ForwardLinkProto, error)
+}
+
 type item struct {
 	from       Digest
 	to         Digest
