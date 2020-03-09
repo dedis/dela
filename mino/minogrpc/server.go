@@ -82,10 +82,10 @@ type RPC struct {
 // Call implements the Mino.RPC interface. It calls the RPC on each provided
 // address.
 func (rpc RPC) Call(req proto.Message,
-	nodes ...mino.Node) (<-chan proto.Message, <-chan error) {
+	memship mino.Membership) (<-chan proto.Message, <-chan error) {
 
-	out := make(chan proto.Message, len(nodes))
-	errs := make(chan error, len(nodes))
+	out := make(chan proto.Message, memship.Len())
+	errs := make(chan error, memship.Len())
 
 	m, err := ptypes.MarshalAny(req)
 	if err != nil {
@@ -98,8 +98,9 @@ func (rpc RPC) Call(req proto.Message,
 	}
 
 	go func() {
-		for _, node := range nodes {
-			clientConn, err := rpc.srv.getConnection(node.GetAddress().String())
+		iter := memship.AddressIterator()
+		for iter.Next() {
+			clientConn, err := rpc.srv.getConnection(iter.Get().String())
 			if err != nil {
 				errs <- xerrors.Errorf("failed to get client conn: %v", err)
 				continue
@@ -274,7 +275,7 @@ func makeCertificate() (*tls.Certificate, error) {
 
 // Stream ...
 func (rpc RPC) Stream(ctx context.Context,
-	nodes ...mino.Node) (in mino.Sender, out mino.Receiver) {
+	memship mino.Membership) (in mino.Sender, out mino.Receiver) {
 
 	return nil, nil
 }

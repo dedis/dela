@@ -22,7 +22,7 @@ func TestSkipchain_Basic(t *testing.T) {
 	require.NoError(t, err)
 
 	for i := 0; i < n; i++ {
-		err = s2.Store(&empty.Empty{}, conodes.GetNodes()...)
+		err = s2.Store(&empty.Empty{}, conodes)
 		require.NoError(t, err)
 
 		chain, err := s1.GetVerifiableBlock()

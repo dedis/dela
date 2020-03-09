@@ -31,10 +31,7 @@ func TestConsensus_Basic(t *testing.T) {
 	require.NoError(t, err)
 
 	prop := fakeProposal{}
-	err = cons.Propose(prop, fakeParticipant{
-		addr:      m1.GetAddress(),
-		publicKey: cosi.GetPublicKey(),
-	})
+	err = cons.Propose(prop, fakeCA{addrs: []mino.Address{m1.GetAddress()}})
 	require.NoError(t, err)
 
 	ch, err := cons.GetChain(prop.GetHash())
@@ -132,21 +129,19 @@ func TestConsensus_Propose(t *testing.T) {
 	rpc := &fakeRPC{}
 	cons := &Consensus{cosi: cs, rpc: rpc}
 
-	err := cons.Propose(fakeProposal{}, fakeParticipant{})
+	err := cons.Propose(fakeProposal{}, fakeCA{})
 	require.NoError(t, err)
 	require.Len(t, cs.calls, 2)
 
 	prepare := cs.calls[0]["message"].(*Prepare)
 	require.NotNil(t, prepare)
-	signers := cs.calls[0]["signers"].([]cosi.Cosigner)
-	require.Len(t, signers, 1)
+	require.IsType(t, fakeCA{}, cs.calls[0]["signers"])
 
 	commit := cs.calls[1]["message"].(*Commit)
 	require.NotNil(t, commit)
 	require.Equal(t, []byte{0xaa}, commit.GetTo())
 	checkSignatureValue(t, commit.GetPrepare(), 1)
-	signers = cs.calls[1]["signers"].([]cosi.Cosigner)
-	require.Len(t, signers, 1)
+	require.IsType(t, fakeCA{}, cs.calls[1]["signers"])
 
 	require.Len(t, rpc.calls, 1)
 	propagate := rpc.calls[0]["message"].(*Propagate)
@@ -160,7 +155,7 @@ type badCosi struct {
 	delay int
 }
 
-func (cs *badCosi) Sign(pb proto.Message, signers ...cosi.Cosigner) (crypto.Signature, error) {
+func (cs *badCosi) Sign(pb proto.Message, ca cosi.CollectiveAuthority) (crypto.Signature, error) {
 	if cs.delay > 0 {
 		cs.delay--
 		return fakeSignature{}, nil
@@ -169,57 +164,61 @@ func (cs *badCosi) Sign(pb proto.Message, signers ...cosi.Cosigner) (crypto.Sign
 	return fakeSignature{err: xerrors.New("oops")}, nil
 }
 
+type badCA struct {
+	mino.Membership
+}
+
 func TestConsensus_ProposeFailures(t *testing.T) {
 	defer func() { protoenc = encoding.NewProtoEncoder() }()
 
 	cons := &Consensus{}
 
 	e := xerrors.New("pack error")
-	err := cons.Propose(fakeProposal{err: e})
+	err := cons.Propose(fakeProposal{err: e}, fakeCA{})
 	require.Error(t, err)
 	require.True(t, xerrors.Is(err, encoding.NewEncodingError("proposal", nil)))
 
 	protoenc = &fakeEncoder{}
-	err = cons.Propose(fakeProposal{})
+	err = cons.Propose(fakeProposal{}, fakeCA{})
 	require.Error(t, err)
 	require.True(t, xerrors.Is(err,
 		encoding.NewAnyEncodingError((*empty.Empty)(nil), nil)))
 
 	protoenc = encoding.NewProtoEncoder()
-	err = cons.Propose(fakeProposal{}, fakeNode{})
-	require.EqualError(t, err, "node must implement cosi.Cosigner")
+	err = cons.Propose(fakeProposal{}, badCA{})
+	require.EqualError(t, err, "cosipbft.badCA should implement cosi.CollectiveAuthority")
 
 	cons.cosi = &fakeCosi{err: xerrors.New("oops")}
-	err = cons.Propose(fakeProposal{})
+	err = cons.Propose(fakeProposal{}, fakeCA{})
 	require.EqualError(t, err, "couldn't sign the proposal: oops")
 
 	cons.cosi = &badCosi{}
-	err = cons.Propose(fakeProposal{})
+	err = cons.Propose(fakeProposal{}, fakeCA{})
 	require.EqualError(t, err, "couldn't encode prepare signature: oops")
 
 	cons.cosi = &badCosi{delay: 1}
 	protoenc = &fakeEncoder{delay: 1}
-	err = cons.Propose(fakeProposal{})
+	err = cons.Propose(fakeProposal{}, fakeCA{})
 	require.EqualError(t, xerrors.Unwrap(err), "marshal any error")
 
 	cons.cosi = &fakeCosi{err: xerrors.New("oops"), delay: 1}
 	protoenc = encoding.NewProtoEncoder()
-	err = cons.Propose(fakeProposal{})
+	err = cons.Propose(fakeProposal{}, fakeCA{})
 	require.EqualError(t, err, "couldn't sign the commit: oops")
 
 	cons.cosi = &badCosi{delay: 1}
-	err = cons.Propose(fakeProposal{})
+	err = cons.Propose(fakeProposal{}, fakeCA{})
 	require.EqualError(t, err, "couldn't encode commit signature: oops")
 
 	cons.cosi = &badCosi{delay: 2}
 	protoenc = &fakeEncoder{delay: 2}
-	err = cons.Propose(fakeProposal{})
+	err = cons.Propose(fakeProposal{}, fakeCA{})
 	require.EqualError(t, xerrors.Unwrap(err), "marshal any error")
 
 	protoenc = encoding.NewProtoEncoder()
 	cons.cosi = &fakeCosi{}
 	cons.rpc = &fakeRPC{err: xerrors.New("oops")}
-	err = cons.Propose(fakeProposal{})
+	err = cons.Propose(fakeProposal{}, fakeCA{})
 	require.EqualError(t, err, "couldn't propagate the link: oops")
 }
 
@@ -405,21 +404,37 @@ func (v fakeValidator) Commit(id []byte) error {
 	return v.err
 }
 
-type fakeNode struct {
-	mino.Node
+type fakeIterator struct {
+	addrs []mino.Address
+	index int
 }
 
-type fakeParticipant struct {
-	addr      mino.Address
-	publicKey crypto.PublicKey
+func (i *fakeIterator) Next() bool {
+	i.index++
+	if i.index >= len(i.addrs) {
+		return false
+	}
+	return true
 }
 
-func (p fakeParticipant) GetAddress() mino.Address {
-	return p.addr
+func (i *fakeIterator) Get() mino.Address {
+	return i.addrs[i.index]
 }
 
-func (p fakeParticipant) GetPublicKey() crypto.PublicKey {
-	return p.publicKey
+type fakeCA struct {
+	cosi.CollectiveAuthority
+	addrs []mino.Address
+}
+
+func (ca fakeCA) AddressIterator() mino.AddressIterator {
+	return &fakeIterator{
+		addrs: ca.addrs,
+		index: -1,
+	}
+}
+
+func (ca fakeCA) Len() int {
+	return len(ca.addrs)
 }
 
 type fakeSignature struct {
@@ -450,13 +465,13 @@ func (cs *fakeCosi) Listen(h cosi.Hashable) error {
 	return cs.err
 }
 
-func (cs *fakeCosi) Sign(pb proto.Message, signers ...cosi.Cosigner) (crypto.Signature, error) {
+func (cs *fakeCosi) Sign(pb proto.Message, ca cosi.CollectiveAuthority) (crypto.Signature, error) {
 	// Increase the counter each time a test sign a message.
 	cs.count++
 	// Store the call parameters so that they can be verified in the test.
 	cs.calls = append(cs.calls, map[string]interface{}{
 		"message": pb,
-		"signers": signers,
+		"signers": ca,
 	})
 	if cs.err != nil {
 		if cs.delay == 0 {
@@ -474,7 +489,7 @@ type fakeRPC struct {
 	err   error
 }
 
-func (rpc *fakeRPC) Call(pb proto.Message, nodes ...mino.Node) (<-chan proto.Message, <-chan error) {
+func (rpc *fakeRPC) Call(pb proto.Message, memship mino.Membership) (<-chan proto.Message, <-chan error) {
 	msgs := make(chan proto.Message, 0)
 	errs := make(chan error, 1)
 	if rpc.err != nil {
@@ -483,8 +498,8 @@ func (rpc *fakeRPC) Call(pb proto.Message, nodes ...mino.Node) (<-chan proto.Mes
 		close(msgs)
 	}
 	rpc.calls = append(rpc.calls, map[string]interface{}{
-		"message": pb,
-		"nodes":   nodes,
+		"message":    pb,
+		"membership": memship,
 	})
 	return msgs, errs
 }

@@ -63,7 +63,7 @@ func (cosi *BlsCoSi) Listen(h cosi.Hashable) error {
 }
 
 // Sign returns the collective signature of the block.
-func (cosi *BlsCoSi) Sign(msg proto.Message, signers ...cosi.Cosigner) (crypto.Signature, error) {
+func (cosi *BlsCoSi) Sign(msg proto.Message, ca cosi.CollectiveAuthority) (crypto.Signature, error) {
 	if cosi.rpc == nil {
 		return nil, xerrors.New("cosi is not listening")
 	}
@@ -73,13 +73,7 @@ func (cosi *BlsCoSi) Sign(msg proto.Message, signers ...cosi.Cosigner) (crypto.S
 		return nil, err
 	}
 
-	nodes := make([]mino.Node, len(signers))
-	for i, signer := range signers {
-		nodes[i] = signer
-	}
-
-	// TODO: Address interface to inline ?
-	msgs, errs := cosi.rpc.Call(&SignatureRequest{Message: data}, nodes...)
+	msgs, errs := cosi.rpc.Call(&SignatureRequest{Message: data}, ca)
 
 	var agg crypto.Signature
 	for {

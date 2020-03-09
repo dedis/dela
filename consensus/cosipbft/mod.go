@@ -91,7 +91,7 @@ func (c *Consensus) Listen(v consensus.Validator) error {
 // Propose takes the proposal and send it to the participants of the consensus.
 // It returns nil if the consensus is reached and that the participant are
 // committed to it, otherwise it returns the refusal reason.
-func (c *Consensus) Propose(p consensus.Proposal, nodes ...mino.Node) error {
+func (c *Consensus) Propose(p consensus.Proposal, memship mino.Membership) error {
 	packed, err := p.Pack()
 	if err != nil {
 		return encoding.NewEncodingError("proposal", err)
@@ -103,18 +103,14 @@ func (c *Consensus) Propose(p consensus.Proposal, nodes ...mino.Node) error {
 		return encoding.NewAnyEncodingError(packed, err)
 	}
 
-	var ok bool
-	cosigners := make([]cosi.Cosigner, len(nodes))
-	for i, addr := range nodes {
-		cosigners[i], ok = addr.(cosi.Cosigner)
-		if !ok {
-			return xerrors.New("node must implement cosi.Cosigner")
-		}
+	ca, ok := memship.(cosi.CollectiveAuthority)
+	if !ok {
+		return xerrors.Errorf("%T should implement cosi.CollectiveAuthority", memship)
 	}
 
 	// 1. Prepare phase: proposal must be validated by the nodes and a
 	// collective signature will be created for the forward link hash.
-	sig, err := c.cosi.Sign(prepareReq, cosigners...)
+	sig, err := c.cosi.Sign(prepareReq, ca)
 	if err != nil {
 		return xerrors.Errorf("couldn't sign the proposal: %v", err)
 	}
@@ -131,7 +127,7 @@ func (c *Consensus) Propose(p consensus.Proposal, nodes ...mino.Node) error {
 	}
 
 	// 2. Commit phase.
-	sig, err = c.cosi.Sign(commitReq, cosigners...)
+	sig, err = c.cosi.Sign(commitReq, ca)
 	if err != nil {
 		return xerrors.Errorf("couldn't sign the commit: %v", err)
 	}
@@ -149,7 +145,7 @@ func (c *Consensus) Propose(p consensus.Proposal, nodes ...mino.Node) error {
 	}
 
 	// TODO: timeout in context ?
-	resps, errs := c.rpc.Call(propagateReq, nodes...)
+	resps, errs := c.rpc.Call(propagateReq, ca)
 	select {
 	case <-resps:
 	case err := <-errs:

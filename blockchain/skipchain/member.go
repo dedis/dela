@@ -5,6 +5,7 @@ import (
 
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
+	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/mino"
 )
@@ -48,25 +49,76 @@ func (c Conode) Pack() (proto.Message, error) {
 	return conode, nil
 }
 
+type iterator struct {
+	conodes []Conode
+	index   int
+}
+
+func (i *iterator) Next() bool {
+	i.index++
+	if i.index >= len(i.conodes) {
+		return false
+	}
+	return true
+}
+
+func (i *iterator) Get() *Conode {
+	if i.index < 0 || i.index >= len(i.conodes) {
+		return nil
+	}
+	return &i.conodes[i.index]
+}
+
+type addressIterator struct {
+	*iterator
+}
+
+func (i *addressIterator) Get() mino.Address {
+	conode := i.iterator.Get()
+	if conode != nil {
+		return conode.GetAddress()
+	}
+	return nil
+}
+
+type publicKeyIterator struct {
+	*iterator
+}
+
+func (i *publicKeyIterator) Get() crypto.PublicKey {
+	conode := i.iterator.Get()
+	if conode != nil {
+		return conode.GetPublicKey()
+	}
+	return nil
+}
+
 // Conodes is a list of conodes.
 type Conodes []Conode
 
-// GetNodes returns the list of addresses.
-func (cc Conodes) GetNodes() []mino.Node {
-	nodes := make([]mino.Node, len(cc))
-	for i, conode := range cc {
-		nodes[i] = conode
-	}
-	return nodes
+// Len returns the length of the list of conodes.
+func (cc Conodes) Len() int {
+	return len(cc)
 }
 
-// GetPublicKeys returns the list of public keys.
-func (cc Conodes) GetPublicKeys() []crypto.PublicKey {
-	pubkeys := make([]crypto.PublicKey, len(cc))
-	for i, conode := range cc {
-		pubkeys[i] = conode.GetPublicKey()
+// AddressIterator returns the address iterator.
+func (cc Conodes) AddressIterator() mino.AddressIterator {
+	return &addressIterator{
+		iterator: &iterator{
+			index:   -1,
+			conodes: cc,
+		},
 	}
-	return pubkeys
+}
+
+// PublicKeyIterator returns the public key iterator.
+func (cc Conodes) PublicKeyIterator() cosi.PublicKeyIterator {
+	return &publicKeyIterator{
+		iterator: &iterator{
+			index:   -1,
+			conodes: cc,
+		},
+	}
 }
 
 // ToProto converts the list of conodes to a list of protobuf messages.

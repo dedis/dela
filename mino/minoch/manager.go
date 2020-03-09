@@ -3,6 +3,7 @@ package minoch
 import (
 	"sync"
 
+	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
 
@@ -10,37 +11,47 @@ import (
 // instances of Mino.
 type Manager struct {
 	sync.Mutex
-	instances map[address]*Minoch
+	instances map[string]*Minoch
 }
 
 // NewManager creates a new empty manager.
 func NewManager() *Manager {
 	return &Manager{
-		instances: make(map[address]*Minoch),
+		instances: make(map[string]*Minoch),
 	}
 }
 
-func (m *Manager) get(addr address) *Minoch {
+func (m *Manager) get(addr mino.Address) *Minoch {
 	m.Lock()
 	defer m.Unlock()
 
-	return m.instances[addr]
+	text, err := addr.MarshalText()
+	if err != nil {
+		return nil
+	}
+
+	return m.instances[string(text)]
 }
 
 func (m *Manager) insert(inst *Minoch) error {
 	addr := inst.GetAddress().(address)
-	if addr.String() == "" {
+	text, err := addr.MarshalText()
+	if err != nil {
+		return xerrors.Errorf("couldn't marshal address: %v", err)
+	}
+
+	if string(text) == "" {
 		return xerrors.New("identifier must not be empty")
 	}
 
 	m.Lock()
 	defer m.Unlock()
 
-	if _, ok := m.instances[addr]; ok {
+	if _, ok := m.instances[string(text)]; ok {
 		return xerrors.New("identifier already exists")
 	}
 
-	m.instances[addr] = inst
+	m.instances[string(text)] = inst
 
 	return nil
 }

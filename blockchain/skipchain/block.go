@@ -68,7 +68,12 @@ func (b SkipBlock) GetHash() []byte {
 
 // GetPublicKeys returns the list of public keys of the block.
 func (b SkipBlock) GetPublicKeys() []crypto.PublicKey {
-	return b.Conodes.GetPublicKeys()
+	pubkeys := make([]crypto.PublicKey, 0, b.Conodes.Len())
+	iter := b.Conodes.PublicKeyIterator()
+	for iter.Next() {
+		pubkeys = append(pubkeys, iter.Get())
+	}
+	return pubkeys
 }
 
 // Pack returns the protobuf message for a block.
@@ -334,7 +339,7 @@ func (f *blockFactory) FromVerifiable(src proto.Message) (blockchain.Block, erro
 		return nil, xerrors.Errorf("couldn't decode the chain: %v", err)
 	}
 
-	err = chain.Verify(f.verifier, f.genesis.Conodes.GetPublicKeys())
+	err = chain.Verify(f.verifier, f.genesis.GetPublicKeys())
 	if err != nil {
 		return nil, err
 	}

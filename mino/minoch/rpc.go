@@ -25,13 +25,14 @@ type RPC struct {
 }
 
 // Call sends the message to all participants and gather their reply.
-func (c RPC) Call(req proto.Message, nodes ...mino.Node) (<-chan proto.Message, <-chan error) {
-	out := make(chan proto.Message, len(nodes))
-	errs := make(chan error, len(nodes))
+func (c RPC) Call(req proto.Message, memship mino.Membership) (<-chan proto.Message, <-chan error) {
+	out := make(chan proto.Message, memship.Len())
+	errs := make(chan error, memship.Len())
 
 	go func() {
-		for _, node := range nodes {
-			peer := c.manager.get(node.GetAddress().(address))
+		iter := memship.AddressIterator()
+		for iter.Next() {
+			peer := c.manager.get(iter.Get())
 			if peer != nil {
 				resp, err := peer.rpcs[c.path].h.Process(req)
 				if err != nil {
@@ -52,18 +53,20 @@ func (c RPC) Call(req proto.Message, nodes ...mino.Node) (<-chan proto.Message, 
 
 // Stream opens a stream. The caller is responsible for cancelling the context
 // to close the stream.
-func (c RPC) Stream(ctx context.Context, nodes ...mino.Node) (mino.Sender, mino.Receiver) {
+func (c RPC) Stream(ctx context.Context, memship mino.Membership) (mino.Sender, mino.Receiver) {
 	in := make(chan Envelope)
 	out := make(chan Envelope, 1)
 	errs := make(chan error, 1)
 
 	outs := make(map[string]receiver)
 
-	for _, node := range nodes {
+	iter := memship.AddressIterator()
+	for iter.Next() {
+		addr := iter.Get()
 		ch := make(chan Envelope, 1)
-		outs[node.GetAddress().String()] = receiver{out: ch}
+		outs[addr.String()] = receiver{out: ch}
 
-		peer := c.manager.instances[node.GetAddress().(address)]
+		peer := c.manager.get(addr)
 
 		go func(r receiver) {
 			s := sender{
@@ -75,7 +78,7 @@ func (c RPC) Stream(ctx context.Context, nodes ...mino.Node) (mino.Sender, mino.
 			if err != nil {
 				errs <- err
 			}
-		}(outs[node.GetAddress().String()])
+		}(outs[addr.String()])
 	}
 
 	orchSender := sender{addr: address{}, in: in}

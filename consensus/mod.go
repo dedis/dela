@@ -60,5 +60,5 @@ type Consensus interface {
 
 	// Propose performs the consensus algorithm using the list of nodes
 	// as participants.
-	Propose(proposal Proposal, nodes ...mino.Node) error
+	Propose(proposal Proposal, memship mino.Membership) error
 }
