@@ -5,13 +5,10 @@ package minogrpc;
 import "google/protobuf/any.proto";
 
 service Overlay {
-    rpc Call(CallMsg) returns (CallResp) {}
+    rpc Call(OverlayMsg) returns (OverlayMsg) {}
+    rpc Stream(stream OverlayMsg) returns (stream OverlayMsg) {}
 }
 
-message CallMsg {
-    google.protobuf.Any message = 1;
-}
-
-message CallResp {
+message OverlayMsg {
     google.protobuf.Any message = 1;
 }

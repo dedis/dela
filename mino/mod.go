@@ -46,7 +46,7 @@ type Handler interface {
 
 	// Stream is a handler for a stream request. It will open a stream with the
 	// participants.
-	Stream(in Sender, out Receiver) error
+	Stream(out Sender, in Receiver) error
 }
 
 // UnsupportedHandler implements the Handler interface with default behaviour so

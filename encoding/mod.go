@@ -24,3 +24,6 @@ type ProtoMarshaler interface {
 	MarshalAny(pb proto.Message) (*any.Any, error)
 	UnmarshalAny(any *any.Any, pb proto.Message) error
 }
+
+// VerifiableBlock is a block combined with a consensus chain that can be
+// verified from the genesis.

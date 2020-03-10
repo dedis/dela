@@ -4,11 +4,14 @@
 package minogrpc
 
 import (
+	"context"
 	fmt "fmt"
 	"regexp"
 
+	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
+	"google.golang.org/grpc/metadata"
 )
 
 //go:generate protoc -I ./ --go_out=plugins=grpc:./ ./overlay.proto
@@ -94,6 +97,26 @@ func (m Minogrpc) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 	}
 
 	m.server.handlers[URI] = h
+	// m.server.streamIn[URI] = make(chan *mino.Envelope, 1)
+
+	// Creating the local stream
+	clientConn, err := m.server.getConnection(m.server.addr.GetId())
+	if err != nil {
+		fabric.Logger.Fatal().Msgf("failed to get client conn: %v", err)
+	}
+	cl := NewOverlayClient(clientConn)
+
+	header := metadata.New(map[string]string{
+		"apiuri": rpc.uri,
+		"addr":   rpc.srv.addr.Id})
+	ctx := metadata.NewOutgoingContext(context.Background(), header)
+
+	stream, err := cl.Stream(ctx)
+	if err != nil {
+		fabric.Logger.Fatal().Msgf("failed to get stream from client: %v", err)
+	}
+
+	m.server.localStreamClients[URI] = stream
 
 	return rpc, nil
 }

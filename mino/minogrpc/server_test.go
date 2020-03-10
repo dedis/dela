@@ -2,6 +2,7 @@ package minogrpc
 
 import (
 	context "context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -288,6 +289,69 @@ loop2:
 
 }
 
+// Use a single node to make a stream that just sends back the same message.
+func Test_SingleSimpleStream(t *testing.T) {
+	identifier := "127.0.0.1:2000"
+
+	addr := &mino.Address{
+		Id: identifier,
+	}
+
+	server, err := CreateServer(addr)
+	require.NoError(t, err)
+	err = server.StartServer()
+	require.NoError(t, err)
+
+	peer := Peer{
+		Address:     server.listener.Addr().String(),
+		Certificate: server.cert.Leaf,
+	}
+	server.neighbours[identifier] = peer
+
+	handler := testSameHandler{}
+	uri := "blabla"
+	rpc := RPC{
+		handler: handler,
+		srv:     *server,
+		uri:     uri,
+	}
+
+	server.handlers[uri] = handler
+
+	m, err := ptypes.MarshalAny(addr)
+	require.NoError(t, err)
+
+	msg := mino.Envelope{
+		From:    addr,
+		To:      []*mino.Address{addr},
+		Message: m,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	fmt.Println("before rpc.Stream")
+	sender, receiver := rpc.Stream(ctx, addr)
+	fmt.Println("after rpc.Stream")
+
+	fmt.Println("\nbefore the send")
+	err = sender.Send(&msg, addr)
+	require.NoError(t, err)
+	fmt.Println("after the send")
+
+	fmt.Println("\nbefore revc")
+	_, msg2, err := receiver.Recv(context.Background())
+	fmt.Println("after recv")
+	require.NoError(t, err)
+
+	enveloppe, ok := msg2.(*mino.Envelope)
+	require.True(t, ok)
+	addr2 := &mino.Address{}
+	err = ptypes.UnmarshalAny(enveloppe.Message, addr2)
+	require.NoError(t, err)
+	require.Equal(t, addr.Id, addr2.Id)
+}
+
 // -------
 // Utility functions
 
@@ -303,8 +367,31 @@ func (t testSameHandler) Combine(req []proto.Message) ([]proto.Message, error) {
 	return nil, nil
 }
 
-func (t testSameHandler) Stream(in mino.Sender, out mino.Receiver) error {
-	return nil
+// Stream is a dummy handler that forwards input messages to the sender
+func (t testSameHandler) Stream(out mino.Sender, in mino.Receiver) error {
+	fmt.Println("inside the Stream handler")
+	count := 0
+	for {
+		fmt.Println("count = ", count)
+		if count >= 1 {
+			return nil
+		}
+		// ctx if I want a timeout
+		fmt.Println("handler calling in.Recv")
+		addr, msg, err := in.Recv(context.Background())
+		if err != nil {
+			return xerrors.Errorf("failed to receive message in handler: %v", err)
+		}
+
+		fmt.Printf("from the handler, got this message: %v\n", msg)
+
+		err = out.Send(msg, addr)
+		if err != nil {
+			return xerrors.Errorf("failed to send message to the sender: %v", err)
+		}
+
+		count++
+	}
 }
 
 // implements a handler interface that receives an address and adds a suffix to
@@ -327,6 +414,6 @@ func (t testModifyHandler) Combine(req []proto.Message) ([]proto.Message, error)
 	return nil, nil
 }
 
-func (t testModifyHandler) Stream(in mino.Sender, out mino.Receiver) error {
+func (t testModifyHandler) Stream(out mino.Sender, in mino.Receiver) error {
 	return nil
 }

@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 	"math/big"
 	"net"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"github.com/golang/protobuf/ptypes"
 	"github.com/improbable-eng/grpc-web/go/grpcweb"
 	"go.dedis.ch/fabric"
+	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
@@ -49,6 +51,8 @@ type Server struct {
 	neighbours map[string]Peer
 
 	handlers map[string]mino.Handler
+
+	localStreamClients map[string]Overlay_StreamClient
 }
 
 type ctxURIKey string
@@ -88,7 +92,7 @@ func (rpc RPC) Call(req proto.Message,
 		return out, errs
 	}
 
-	sendMsg := &CallMsg{
+	sendMsg := &OverlayMsg{
 		Message: m,
 	}
 
@@ -145,7 +149,9 @@ func CreateServer(addr *mino.Address) (*Server, error) {
 		handlers:   make(map[string]mino.Handler),
 	}
 
-	RegisterOverlayServer(srv, &overlayService{handlers: server.handlers})
+	RegisterOverlayServer(srv, &overlayService{
+		handlers: server.handlers,
+	})
 
 	return server, nil
 }
@@ -269,28 +275,177 @@ func makeCertificate() (*tls.Certificate, error) {
 
 // Stream ...
 func (rpc RPC) Stream(ctx context.Context,
-	addrs ...*mino.Address) (in mino.Sender, out mino.Receiver) {
+	addrs ...*mino.Address) (mino.Sender, mino.Receiver) {
 
-	return nil, nil
+	errs := make(chan error, 1)
+
+	orchSender := sender{
+		addr:         &mino.Address{},
+		participants: make([]player, len(addrs)),
+	}
+
+	// Creating the local stream
+	// clientConn, err := rpc.srv.getConnection(rpc.srv.addr.GetId())
+	// if err != nil {
+	// 	fabric.Logger.Fatal().Msgf("failed to get client conn: %v", err)
+	// }
+	// cl := NewOverlayClient(clientConn)
+
+	// header := metadata.New(map[string]string{
+	// 	"apiuri": rpc.uri,
+	// 	"addr":   rpc.srv.addr.Id})
+	// ctx = metadata.NewOutgoingContext(context.Background(), header)
+
+	// stream, err := cl.Stream(ctx)
+	// if err != nil {
+	// 	fabric.Logger.Fatal().Msgf("failed to get stream from client: %v", err)
+	// }
+
+	orchRecv := receiver{
+		errs: make(chan error, 1),
+		in:   make(chan *OverlayMsg, 1),
+	}
+
+	// orchSender.participants[len(addrs)] = player{
+	// 	addr:         &mino.Address{},
+	// 	streamClient: rpc.srv.localStreamClients[rpc.uri],
+	// }
+
+	// Creating a stream for each provided addr
+	fmt.Println("before the loop")
+	for i, addr := range addrs {
+
+		fmt.Println("doing an address")
+		clientConn, err := rpc.srv.getConnection(addr.GetId())
+		if err != nil {
+			// TODO: essayer de passer par ailleurs
+			errs <- xerrors.Errorf("failed to get client conn: %v", err)
+			continue
+		}
+		cl := NewOverlayClient(clientConn)
+
+		header := metadata.New(map[string]string{
+			"apiuri": rpc.uri,
+			"addr":   ""})
+		ctx = metadata.NewOutgoingContext(ctx, header)
+
+		stream, err := cl.Stream(ctx)
+		if err != nil {
+			fabric.Logger.Fatal().Msgf("failed to get stream from client: %v", err)
+		}
+
+		orchSender.participants[i] = player{
+			addr:         addr,
+			streamClient: stream,
+		}
+
+		go func() {
+			msg, err := stream.Recv()
+			if err != nil {
+				fabric.Logger.Error().Msgf("failed to receive: %v", err)
+			}
+
+			orchRecv.in <- msg
+		}()
+	}
+
+	return orchSender, orchRecv
 }
 
-// Sender ...
-type Sender struct {
-	Overlay OverlayServer
+// sender ...
+type sender struct {
+	addr         *mino.Address
+	participants []player
 }
 
-// Send sends msg to addrs, which should call the Receiver.Recv of each addrs.
-func (s Sender) Send(msg proto.Message, addrs ...*mino.Address) error {
-
-	return nil
+type player struct {
+	addr         *mino.Address
+	streamClient overlayStream
 }
 
-// Receiver ...
-type Receiver struct {
-	overlay OverlayClient
+// receiver ...
+type receiver struct {
+	errs chan error
+	in   chan *OverlayMsg
 }
 
 // Recv ...
-func (r Receiver) Recv(ctx context.Context) (*mino.Address, proto.Message, error) {
-	return nil, nil, nil
+// TODO: check the error chan
+func (r receiver) Recv(ctx context.Context) (*mino.Address, proto.Message, error) {
+	fmt.Println("in the receiver.Recv()")
+
+	// TODO: close the channel
+	msg := <-r.in
+
+	enveloppe := &mino.Envelope{}
+	err := ptypes.UnmarshalAny(msg.Message, enveloppe)
+	if err != nil {
+		return nil, nil, xerrors.Errorf("failed to unmarshal enveloppe: %v", err)
+	}
+
+	var dynamicAny ptypes.DynamicAny
+	err = ptypes.UnmarshalAny(enveloppe.Message, &dynamicAny)
+	if err != nil {
+		return nil, nil, encoding.NewAnyDecodingError(enveloppe.Message, err)
+	}
+
+	return enveloppe.From, dynamicAny.Message, nil
+}
+
+// This interface is used to have a common object between Overlay_StreamServer
+// and Overlay_StreamClient
+type overlayStream interface {
+	Send(*OverlayMsg) error
+	Recv() (*OverlayMsg, error)
+}
+
+func (s sender) getParticipant(addr *mino.Address) *player {
+	for _, p := range s.participants {
+		if p.addr.Id == addr.Id {
+			return &p
+		}
+	}
+	return nil
+}
+
+// send ...
+func (s sender) Send(msg proto.Message, addrs ...*mino.Address) error {
+	fmt.Println("in the sender.Send()", s.participants)
+
+	for _, add := range addrs {
+
+		player := s.getParticipant(add)
+		if player == nil {
+			fmt.Println("Participant not found: ", add)
+			continue
+		}
+
+		msgAny, err := ptypes.MarshalAny(msg)
+		if err != nil {
+			return encoding.NewAnyEncodingError(msg, err)
+		}
+
+		envelope := &mino.Envelope{
+			From:    s.addr,
+			To:      []*mino.Address{add},
+			Message: msgAny,
+		}
+
+		envelopeAny, err := ptypes.MarshalAny(envelope)
+		if err != nil {
+			return encoding.NewAnyEncodingError(msg, err)
+		}
+
+		sendMsg := &OverlayMsg{
+			Message: envelopeAny,
+		}
+
+		fmt.Println("calling overlayServer.Send()")
+		err = player.streamClient.Send(sendMsg)
+		if err != nil {
+			return xerrors.Errorf("failed to call the send on client stream: %v", err)
+		}
+	}
+
+	return nil
 }
