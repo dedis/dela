@@ -24,11 +24,11 @@ type forwardLink struct {
 	hash Digest
 	from Digest
 	to   Digest
-	// prepare signs the combination of From and To to prove that the nodes
-	// agreed on a valid forward link between the two blocks.
+	// prepare is the signature of the combination of From and To to prove that
+	// the nodes agreed on a valid forward link between the two blocks.
 	prepare crypto.Signature
-	// commit signs the Prepare signature to prove that a threshold of the
-	// nodes have committed the block.
+	// commit is the signature of the Prepare signature to prove that a
+	// threshold of the nodes have committed the block.
 	commit crypto.Signature
 }
 
@@ -69,7 +69,7 @@ func encodeSignature(sig crypto.Signature) (*any.Any, error) {
 
 // Pack returns the protobuf message of the forward link.
 func (fl forwardLink) Pack() (proto.Message, error) {
-	seal := &ForwardLinkProto{
+	pb := &ForwardLinkProto{
 		From: fl.from,
 		To:   fl.to,
 	}
@@ -77,20 +77,20 @@ func (fl forwardLink) Pack() (proto.Message, error) {
 	var err error
 
 	if fl.prepare != nil {
-		seal.Prepare, err = encodeSignature(fl.prepare)
+		pb.Prepare, err = encodeSignature(fl.prepare)
 		if err != nil {
 			return nil, encoding.NewEncodingError("prepare", err)
 		}
 	}
 
 	if fl.commit != nil {
-		seal.Commit, err = encodeSignature(fl.commit)
+		pb.Commit, err = encodeSignature(fl.commit)
 		if err != nil {
 			return nil, encoding.NewEncodingError("commit", err)
 		}
 	}
 
-	return seal, nil
+	return pb, nil
 }
 
 func (fl forwardLink) computeHash() ([]byte, error) {
@@ -158,12 +158,13 @@ type ChainFactory interface {
 	DecodeForwardLink(pb proto.Message) (forwardLink, error)
 }
 
-// defaultChainFactory is an implementation of the defaultChainFactory interface for forward links.
+// defaultChainFactory is an implementation of the defaultChainFactory interface
+// for forward links.
 type defaultChainFactory struct {
 	verifier crypto.Verifier
 }
 
-// newChainFactory returns a new insance of a seal factory that will create
+// newChainFactory returns a new instance of a seal factory that will create
 // forward links for appropriate protobuf messages and return an error
 // otherwise.
 func newChainFactory(verifier crypto.Verifier) *defaultChainFactory {

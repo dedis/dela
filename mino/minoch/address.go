@@ -20,7 +20,7 @@ func (a address) String() string {
 // AddressFactory is an implementation of the factory interface.
 type AddressFactory struct{}
 
-// FromText returns an instance of an address from a string.
+// FromText returns an instance of an address from a byte slice.
 func (f AddressFactory) FromText(text []byte) mino.Address {
 	return address{id: string(text)}
 }

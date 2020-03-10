@@ -33,8 +33,7 @@ var (
 	protoenc encoding.ProtoMarshaler = encoding.NewProtoEncoder()
 )
 
-// Digest is an alias of a slice of bytes that represents the digest of
-// a block.
+// Digest is an alias of a slice of bytes that represents the digest of a block.
 type Digest [32]byte
 
 // Bytes returns the slice of bytes representing the digest.

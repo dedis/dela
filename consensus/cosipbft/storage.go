@@ -56,8 +56,8 @@ func (s *inMemoryStorage) ReadLast() (*ForwardLinkProto, error) {
 	return s.links[len(s.links)-1], nil
 }
 
-// ReadChain returns the list of forward links to the id. It returns an error
-// if the target is never reached.
+// ReadChain returns the list of forward links to the id. It returns an error if
+// the target is never reached.
 func (s *inMemoryStorage) ReadChain(id Digest) ([]*ForwardLinkProto, error) {
 	s.Lock()
 	defer s.Unlock()

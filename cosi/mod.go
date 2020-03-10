@@ -12,14 +12,14 @@ type Cosigner interface {
 	GetPublicKey() crypto.PublicKey
 }
 
-// Hashable is the interface to implement to validate an incoming message
-// for a collective signing. It will return the hash that will be signed.
+// Hashable is the interface to implement to validate an incoming message for a
+// collective signing. It will return the hash that will be signed.
 type Hashable interface {
 	Hash(in proto.Message) ([]byte, error)
 }
 
-// CollectiveSigning is the interface that provides the primitives to sign
-// a message by members of a network.
+// CollectiveSigning is the interface that provides the primitives to sign a
+// message by members of a network.
 type CollectiveSigning interface {
 	GetPublicKey() crypto.PublicKey
 	GetVerifier() crypto.Verifier

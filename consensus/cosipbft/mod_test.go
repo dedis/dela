@@ -278,11 +278,12 @@ func (f fakeFactory) FromProto(pb proto.Message) (consensus.Chain, error) {
 }
 
 func TestHandler_HashCommit(t *testing.T) {
+	queue := &queue{verifier: &fakeVerifier{}}
 	h := handler{
 		Consensus: &Consensus{
 			factory: fakeFactory{},
 			storage: newInMemoryStorage(),
-			queue:   &queue{verifier: &fakeVerifier{}},
+			queue:   queue,
 		},
 	}
 
@@ -298,6 +299,7 @@ func TestHandler_HashCommit(t *testing.T) {
 	require.EqualError(t, err, "couldn't decode prepare signature: oops")
 
 	h.Consensus.factory = fakeFactory{}
+	queue.locked = false
 	_, err = h.Hash(&Commit{To: []byte("unknown")})
 	require.EqualError(t, err, "couldn't update signature: couldn't find proposal '756e6b6e6f776e'")
 

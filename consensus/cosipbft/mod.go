@@ -20,7 +20,7 @@ const (
 	rpcName = "cosipbft"
 )
 
-// Consensus is the implementation of the interface.
+// Consensus is the implementation of the consensus.Consensus interface.
 type Consensus struct {
 	storage Storage
 	cosi    cosi.CollectiveSigning
@@ -168,8 +168,9 @@ func (h handler) Hash(in proto.Message) (Digest, error) {
 			return nil, encoding.NewAnyDecodingError(&da, err)
 		}
 
-		// The proposal first need to be validated by the caller of the module
+		// The proposal first needs to be validated by the caller of the module
 		// to insure the generic data is valid.
+		//
 		// TODO: this should lock during the event propagation to insure atomic
 		// operations.
 		proposal, prev, err := h.validator.Validate(da.Message)

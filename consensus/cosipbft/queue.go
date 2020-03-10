@@ -69,6 +69,10 @@ func (q *queue) LockProposal(to Digest, sig crypto.Signature) error {
 	q.Lock()
 	defer q.Unlock()
 
+	if q.locked {
+		return xerrors.New("queue is locked")
+	}
+
 	item, index, ok := q.getItem(to)
 	if !ok {
 		return xerrors.Errorf("couldn't find proposal '%x'", to)

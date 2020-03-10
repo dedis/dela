@@ -6,9 +6,8 @@ option go_package = ".;cosipbft";
 
 import "google/protobuf/any.proto";
 
-// ForwardLinkProto is the message representing a forward link between
-// two proposals. It contains both hash and the prepare and commit
-// signatures.
+// ForwardLinkProto is the message representing a forward link between two
+// proposals. It contains both hash and the prepare and commit signatures.
 message ForwardLinkProto {
     bytes from = 1;
     bytes to = 2;
