@@ -4,6 +4,13 @@ package minogrpc;
 
 import "google/protobuf/any.proto";
 
+// Envelope is wrapper around a message and one or several recipients.
+message Envelope {
+    string from = 1;
+    repeated string to = 2;
+    google.protobuf.Any message = 3;
+}
+
 service Overlay {
     rpc Call(OverlayMsg) returns (OverlayMsg) {}
     rpc Stream(stream OverlayMsg) returns (stream OverlayMsg) {}

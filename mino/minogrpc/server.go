@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"fmt"
 	"math/big"
 	"net"
 	"net/http"
@@ -26,6 +25,11 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
+const (
+	headerURIKey        = "apiuri"
+	certificateDuration = time.Hour * 24 * 180
+)
+
 var (
 	// defaultMinConnectTimeout is the minimum amount of time we are willing to
 	// wait for a grpc connection to complete
@@ -42,7 +46,7 @@ type Server struct {
 	grpcSrv *grpc.Server
 
 	cert      *tls.Certificate
-	addr      *mino.Address
+	addr      mino.Address
 	listener  net.Listener
 	httpSrv   *http.Server
 	StartChan chan struct{}
@@ -81,10 +85,10 @@ type RPC struct {
 // Call implements the Mino.RPC interface. It calls the RPC on each provided
 // address.
 func (rpc RPC) Call(req proto.Message,
-	addrs ...*mino.Address) (<-chan proto.Message, <-chan error) {
+	nodes ...mino.Node) (<-chan proto.Message, <-chan error) {
 
-	out := make(chan proto.Message, len(addrs))
-	errs := make(chan error, len(addrs))
+	out := make(chan proto.Message, len(nodes))
+	errs := make(chan error, len(nodes))
 
 	m, err := ptypes.MarshalAny(req)
 	if err != nil {
@@ -97,8 +101,8 @@ func (rpc RPC) Call(req proto.Message,
 	}
 
 	go func() {
-		for _, addr := range addrs {
-			clientConn, err := rpc.srv.getConnection(addr.GetId())
+		for _, node := range nodes {
+			clientConn, err := rpc.srv.getConnection(node.GetAddress().String())
 			if err != nil {
 				errs <- xerrors.Errorf("failed to get client conn: %v", err)
 				continue
@@ -109,7 +113,7 @@ func (rpc RPC) Call(req proto.Message,
 				defaultContextTimeout)
 			defer ctxCancelFunc()
 
-			header := metadata.New(map[string]string{"apiuri": rpc.uri})
+			header := metadata.New(map[string]string{headerURIKey: rpc.uri})
 			ctx = metadata.NewOutgoingContext(ctx, header)
 
 			callResp, err := cl.Call(ctx, sendMsg)
@@ -131,7 +135,7 @@ func (rpc RPC) Call(req proto.Message,
 }
 
 // CreateServer sets up a new server
-func CreateServer(addr *mino.Address) (*Server, error) {
+func CreateServer(addr mino.Address) (*Server, error) {
 	cert, err := makeCertificate()
 	if err != nil {
 		return nil, xerrors.Errorf("failed to make certificate: %v", err)
@@ -174,7 +178,7 @@ func (srv *Server) StartServer() error {
 
 // Serve starts the HTTP server that forwards gRPC calls to the gRPC server
 func (srv *Server) Serve() error {
-	lis, err := net.Listen("tcp4", srv.addr.Id)
+	lis, err := net.Listen("tcp4", srv.addr.String())
 	if err != nil {
 		return xerrors.Errorf("failed to listen: %v", err)
 	}
@@ -249,7 +253,7 @@ func makeCertificate() (*tls.Certificate, error) {
 		SerialNumber: big.NewInt(1),
 		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
 		NotBefore:    time.Now(),
-		NotAfter:     time.Now().Add(time.Hour * 24 * 180),
+		NotAfter:     time.Now().Add(certificateDuration),
 
 		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
@@ -275,13 +279,13 @@ func makeCertificate() (*tls.Certificate, error) {
 
 // Stream ...
 func (rpc RPC) Stream(ctx context.Context,
-	addrs ...*mino.Address) (mino.Sender, mino.Receiver) {
+	nodes ...mino.Node) (in mino.Sender, out mino.Receiver) {
 
 	errs := make(chan error, 1)
 
 	orchSender := sender{
-		addr:         &mino.Address{},
-		participants: make([]player, len(addrs)),
+		node:         simpleNode{},
+		participants: make([]player, len(nodes)),
 	}
 
 	// Creating the local stream
@@ -312,11 +316,9 @@ func (rpc RPC) Stream(ctx context.Context,
 	// }
 
 	// Creating a stream for each provided addr
-	fmt.Println("before the loop")
-	for i, addr := range addrs {
+	for i, node := range nodes {
 
-		fmt.Println("doing an address")
-		clientConn, err := rpc.srv.getConnection(addr.GetId())
+		clientConn, err := rpc.srv.getConnection(node.GetAddress().String())
 		if err != nil {
 			// TODO: essayer de passer par ailleurs
 			errs <- xerrors.Errorf("failed to get client conn: %v", err)
@@ -335,7 +337,7 @@ func (rpc RPC) Stream(ctx context.Context,
 		}
 
 		orchSender.participants[i] = player{
-			addr:         addr,
+			node:         node,
 			streamClient: stream,
 		}
 
@@ -354,12 +356,12 @@ func (rpc RPC) Stream(ctx context.Context,
 
 // sender ...
 type sender struct {
-	addr         *mino.Address
+	node         mino.Node
 	participants []player
 }
 
 type player struct {
-	addr         *mino.Address
+	node         mino.Node
 	streamClient overlayStream
 }
 
@@ -371,13 +373,12 @@ type receiver struct {
 
 // Recv ...
 // TODO: check the error chan
-func (r receiver) Recv(ctx context.Context) (*mino.Address, proto.Message, error) {
-	fmt.Println("in the receiver.Recv()")
+func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error) {
 
 	// TODO: close the channel
 	msg := <-r.in
 
-	enveloppe := &mino.Envelope{}
+	enveloppe := &Envelope{}
 	err := ptypes.UnmarshalAny(msg.Message, enveloppe)
 	if err != nil {
 		return nil, nil, xerrors.Errorf("failed to unmarshal enveloppe: %v", err)
@@ -389,7 +390,7 @@ func (r receiver) Recv(ctx context.Context) (*mino.Address, proto.Message, error
 		return nil, nil, encoding.NewAnyDecodingError(enveloppe.Message, err)
 	}
 
-	return enveloppe.From, dynamicAny.Message, nil
+	return address{id: enveloppe.From}, dynamicAny.Message, nil
 }
 
 // This interface is used to have a common object between Overlay_StreamServer
@@ -399,9 +400,9 @@ type overlayStream interface {
 	Recv() (*OverlayMsg, error)
 }
 
-func (s sender) getParticipant(addr *mino.Address) *player {
+func (s sender) getParticipant(addr mino.Address) *player {
 	for _, p := range s.participants {
-		if p.addr.Id == addr.Id {
+		if p.node.GetAddress().String() == addr.String() {
 			return &p
 		}
 	}
@@ -409,14 +410,12 @@ func (s sender) getParticipant(addr *mino.Address) *player {
 }
 
 // send ...
-func (s sender) Send(msg proto.Message, addrs ...*mino.Address) error {
-	fmt.Println("in the sender.Send()", s.participants)
+func (s sender) Send(msg proto.Message, addrs ...mino.Address) error {
 
-	for _, add := range addrs {
+	for _, addr := range addrs {
 
-		player := s.getParticipant(add)
+		player := s.getParticipant(addr)
 		if player == nil {
-			fmt.Println("Participant not found: ", add)
 			continue
 		}
 
@@ -425,9 +424,9 @@ func (s sender) Send(msg proto.Message, addrs ...*mino.Address) error {
 			return encoding.NewAnyEncodingError(msg, err)
 		}
 
-		envelope := &mino.Envelope{
-			From:    s.addr,
-			To:      []*mino.Address{add},
+		envelope := &Envelope{
+			From:    s.node.GetAddress().String(),
+			To:      []string{addr.String()},
 			Message: msgAny,
 		}
 
@@ -440,7 +439,6 @@ func (s sender) Send(msg proto.Message, addrs ...*mino.Address) error {
 			Message: envelopeAny,
 		}
 
-		fmt.Println("calling overlayServer.Send()")
 		err = player.streamClient.Send(sendMsg)
 		if err != nil {
 			return xerrors.Errorf("failed to call the send on client stream: %v", err)
@@ -448,4 +446,12 @@ func (s sender) Send(msg proto.Message, addrs ...*mino.Address) error {
 	}
 
 	return nil
+}
+
+type simpleNode struct {
+	addr address
+}
+
+func (o simpleNode) GetAddress() mino.Address {
+	return o.addr
 }

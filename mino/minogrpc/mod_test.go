@@ -14,7 +14,7 @@ func Test_NewMinogrpc(t *testing.T) {
 	minoRPC, err := NewMinogrpc(id)
 	require.NoError(t, err)
 
-	require.Equal(t, id, minoRPC.Address().GetId())
+	require.Equal(t, id, minoRPC.GetAddress().String())
 	require.Equal(t, "", minoRPC.namespace)
 
 	peer := Peer{
@@ -56,8 +56,8 @@ func Test_MakeNamespace(t *testing.T) {
 }
 
 func Test_Address(t *testing.T) {
-	addr := &mino.Address{
-		Id: "test",
+	addr := address{
+		id: "test",
 	}
 	minoGrpc := Minogrpc{
 		server: Server{
@@ -65,7 +65,7 @@ func Test_Address(t *testing.T) {
 		},
 	}
 
-	require.Equal(t, addr, minoGrpc.Address())
+	require.Equal(t, addr, minoGrpc.GetAddress())
 }
 
 func Test_MakeRPC(t *testing.T) {

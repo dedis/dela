@@ -29,13 +29,14 @@ func (o overlayService) Call(ctx context.Context, msg *OverlayMsg) (*OverlayMsg,
 		return nil, xerrors.Errorf("header not found in provided context")
 	}
 
-	apiURI, ok := headers["apiuri"]
+	apiURI, ok := headers[headerURIKey]
 	if !ok {
-		return nil, xerrors.Errorf("apiuri not found in context header: ", apiURI)
+		return nil, xerrors.Errorf("%s not found in context header: ",
+			headerURIKey, apiURI)
 	}
 	if len(apiURI) != 1 {
-		return nil, xerrors.Errorf("unexpected number of elements in apiuri "+
-			"header. Expected 1, found %d", len(apiURI))
+		return nil, xerrors.Errorf("unexpected number of elements in %s "+
+			"header. Expected 1, found %d", headerURIKey, len(apiURI))
 	}
 
 	handler, ok := o.handlers[apiURI[0]]

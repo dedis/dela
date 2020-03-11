@@ -27,14 +27,19 @@ func TestMinoch_New(t *testing.T) {
 	require.Nil(t, m4)
 }
 
-func TestMinoch_Address(t *testing.T) {
+func TestMinoch_GetAddressFactory(t *testing.T) {
+	m := &Minoch{}
+	require.IsType(t, AddressFactory{}, m.GetAddressFactory())
+}
+
+func TestMinoch_GetAddress(t *testing.T) {
 	manager := NewManager()
 
 	m, err := NewMinoch(manager, "A")
 	require.NoError(t, err)
 
-	addr := m.Address()
-	require.Equal(t, "A", addr.GetId())
+	addr := m.GetAddress()
+	require.Equal(t, "A", addr.String())
 }
 
 func TestMinoch_MakeNamespace(t *testing.T) {

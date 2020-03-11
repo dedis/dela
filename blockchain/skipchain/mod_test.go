@@ -3,10 +3,9 @@ package skipchain
 import (
 	"testing"
 
-	"github.com/golang/protobuf/ptypes"
+	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/cosi/blscosi"
 	"go.dedis.ch/fabric/mino/minoch"
 )
@@ -17,21 +16,22 @@ func TestSkipchain_Basic(t *testing.T) {
 
 	c1, s1 := makeSkipchain(t, "A", manager)
 	c2, s2 := makeSkipchain(t, "B", manager)
+	conodes := Conodes{c1, c2}
 
-	roster, err := blockchain.NewRoster(s1.signer, c1, c2)
-	require.NoError(t, err)
-
-	err = s1.initChain(roster)
+	err := s1.initChain(conodes)
 	require.NoError(t, err)
 
 	for i := 0; i < n; i++ {
-		err = s2.Store(roster, &empty.Empty{})
+		err = s2.Store(&empty.Empty{}, conodes.GetNodes()...)
 		require.NoError(t, err)
 
-		packed, err := s1.GetVerifiableBlock()
+		chain, err := s1.GetVerifiableBlock()
 		require.NoError(t, err)
 
-		block, err := s1.GetBlockFactory().FromVerifiable(packed, roster.GetPublicKeys())
+		packed, err := chain.Pack()
+		require.NoError(t, err)
+
+		block, err := s1.GetBlockFactory().FromVerifiable(packed)
 		require.NoError(t, err)
 		require.NotNil(t, block)
 		require.Equal(t, uint64(i+1), block.(SkipBlock).Index)
@@ -40,28 +40,30 @@ func TestSkipchain_Basic(t *testing.T) {
 
 type testValidator struct{}
 
-func (v testValidator) Validate(SkipBlock) error {
+func (v testValidator) Validate(payload proto.Message) error {
 	return nil
 }
 
-func makeSkipchain(t *testing.T, id string, manager *minoch.Manager) (*blockchain.Conode, *Skipchain) {
-	m1, err := minoch.NewMinoch(manager, id)
+func (v testValidator) Commit(payload proto.Message) error {
+	return nil
+}
+
+func makeSkipchain(t *testing.T, id string, manager *minoch.Manager) (Conode, *Skipchain) {
+	mino, err := minoch.NewMinoch(manager, id)
 	require.NoError(t, err)
 
-	i1 := blscosi.NewSigner()
-	pubkey, err := i1.PublicKey().Pack()
-	require.NoError(t, err)
+	signer := blscosi.NewSigner()
 
-	pubkeyany, err := ptypes.MarshalAny(pubkey)
-	require.NoError(t, err)
-
-	conode := &blockchain.Conode{
-		Address:   m1.Address(),
-		PublicKey: pubkeyany,
+	conode := Conode{
+		addr:      mino.GetAddress(),
+		publicKey: signer.PublicKey(),
 	}
 
-	s1, err := NewSkipchain(m1, i1, testValidator{})
+	cosi := blscosi.NewBlsCoSi(mino, signer)
+	skipchain := NewSkipchain(mino, cosi)
+
+	err = skipchain.Listen(testValidator{})
 	require.NoError(t, err)
 
-	return conode, s1
+	return conode, skipchain
 }

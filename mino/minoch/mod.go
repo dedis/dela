@@ -32,15 +32,20 @@ func NewMinoch(manager *Manager, identifier string) (*Minoch, error) {
 		return nil, err
 	}
 
-	m.Logger.Info().Msgf("New instance with identifier %s", identifier)
+	m.Logger.Debug().Msgf("New instance with identifier %s", identifier)
 
 	return inst, nil
 }
 
-// Address returns the address that other participants should use to contact
+// GetAddressFactory returns the address factory.
+func (m *Minoch) GetAddressFactory() mino.AddressFactory {
+	return AddressFactory{}
+}
+
+// GetAddress returns the address that other participants should use to contact
 // this instance.
-func (m *Minoch) Address() *mino.Address {
-	return &mino.Address{Id: m.identifier}
+func (m *Minoch) GetAddress() mino.Address {
+	return address{id: m.identifier}
 }
 
 // MakeNamespace returns an instance restricted to the namespace.

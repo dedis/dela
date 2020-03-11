@@ -9,6 +9,7 @@ import (
 
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
+	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
@@ -18,8 +19,8 @@ import (
 func Test_SingleSimpleCall(t *testing.T) {
 	identifier := "127.0.0.1:2000"
 
-	addr := &mino.Address{
-		Id: identifier,
+	addr := address{
+		id: identifier,
 	}
 
 	server, err := CreateServer(addr)
@@ -43,16 +44,16 @@ func Test_SingleSimpleCall(t *testing.T) {
 
 	server.handlers[uri] = handler
 
-	m, err := ptypes.MarshalAny(addr)
+	pba, err := ptypes.MarshalAny(&empty.Empty{})
 	require.NoError(t, err)
 
-	msg := mino.Envelope{
-		From:    addr,
-		To:      []*mino.Address{addr},
-		Message: m,
+	msg := &Envelope{
+		From:    addr.String(),
+		To:      []string{addr.String()},
+		Message: pba,
 	}
 
-	respChan, errChan := rpc.Call(&msg, addr)
+	respChan, errChan := rpc.Call(msg, fakeNode{addr: addr})
 loop:
 	for {
 		select {
@@ -64,18 +65,17 @@ loop:
 				break loop
 			}
 
-			msg2, ok := resp.(*mino.Envelope)
+			msg2, ok := resp.(*Envelope)
 			require.True(t, ok)
 
-			require.Equal(t, msg.From.Id, msg2.From.Id)
+			require.Equal(t, msg.From, msg2.From)
 			require.Equal(t, len(msg.To), len(msg2.To))
 			require.Equal(t, len(msg.To), 1)
-			require.Equal(t, msg.To[0].Id, msg2.To[0].Id)
+			require.Equal(t, msg.To[0], msg2.To[0])
 
-			addr2 := &mino.Address{}
-			err = ptypes.UnmarshalAny(msg2.Message, addr2)
+			msg := &empty.Empty{}
+			err = ptypes.UnmarshalAny(msg2.Message, msg)
 			require.NoError(t, err)
-			require.Equal(t, addr.Id, addr2.Id)
 
 		case <-time.After(2 * time.Second):
 			break loop
@@ -92,8 +92,8 @@ loop:
 func Test_SingleModifyCall(t *testing.T) {
 	identifier := "127.0.0.1:2000"
 
-	addr := &mino.Address{
-		Id: identifier,
+	addr := address{
+		id: identifier,
 	}
 
 	server, err := CreateServer(addr)
@@ -117,7 +117,7 @@ func Test_SingleModifyCall(t *testing.T) {
 
 	server.handlers[uri] = handler
 
-	respChan, errChan := rpc.Call(addr, addr)
+	respChan, errChan := rpc.Call(&empty.Empty{}, fakeNode{addr: addr})
 loop:
 	for {
 		select {
@@ -129,9 +129,8 @@ loop:
 				break loop
 			}
 
-			addr2, ok := resp.(*mino.Address)
-			require.NoError(t, err)
-			require.Equal(t, addr.Id+"suffix", addr2.Id)
+			_, ok = resp.(*empty.Empty)
+			require.True(t, ok)
 
 		case <-time.After(2 * time.Second):
 			break loop
@@ -147,8 +146,8 @@ loop:
 func Test_MultipleModifyCall(t *testing.T) {
 	// Server 1
 	identifier1 := "127.0.0.1:2001"
-	addr1 := &mino.Address{
-		Id: identifier1,
+	addr1 := address{
+		id: identifier1,
 	}
 	server1, err := CreateServer(addr1)
 	require.NoError(t, err)
@@ -161,8 +160,8 @@ func Test_MultipleModifyCall(t *testing.T) {
 
 	// Server 2
 	identifier2 := "127.0.0.1:2002"
-	addr2 := &mino.Address{
-		Id: identifier2,
+	addr2 := address{
+		id: identifier2,
 	}
 	server2, err := CreateServer(addr2)
 	err = server2.StartServer()
@@ -175,8 +174,8 @@ func Test_MultipleModifyCall(t *testing.T) {
 
 	// Server 3
 	identifier3 := "127.0.0.1:2003"
-	addr3 := &mino.Address{
-		Id: identifier3,
+	addr3 := address{
+		id: identifier3,
 	}
 	server3, err := CreateServer(addr3)
 	err = server3.StartServer()
@@ -206,7 +205,8 @@ func Test_MultipleModifyCall(t *testing.T) {
 	server3.handlers[uri] = handler
 
 	// Call the rpc on server1
-	respChan, errChan := rpc.Call(addr1, addr1, addr2, addr3)
+	respChan, errChan := rpc.Call(&empty.Empty{},
+		fakeNode{addr: addr1}, fakeNode{addr: addr2}, fakeNode{addr: addr3})
 
 	// To track the number of message we got back. Should be 3
 	numRequests := 0
@@ -221,9 +221,8 @@ loop:
 				break loop
 			}
 
-			respAddr, ok := resp.(*mino.Address)
-			require.NoError(t, err)
-			require.Equal(t, addr1.Id+"suffix", respAddr.Id)
+			_, ok = resp.(*empty.Empty)
+			require.True(t, ok)
 
 			numRequests++
 
@@ -242,7 +241,8 @@ loop:
 	require.NoError(t, err)
 
 	// Call the rpc on server1
-	respChan, errChan = rpc.Call(addr1, addr1, addr2, addr3)
+	respChan, errChan = rpc.Call(&empty.Empty{},
+		fakeNode{addr: addr1}, fakeNode{addr: addr2}, fakeNode{addr: addr3})
 
 	// To track the number of message we got back. Should be 2
 	numRequests = 0
@@ -263,9 +263,8 @@ loop2:
 				break loop2
 			}
 
-			respAddr, ok := resp.(*mino.Address)
-			require.NoError(t, err)
-			require.Equal(t, addr1.Id+"suffix", respAddr.Id)
+			_, ok = resp.(*empty.Empty)
+			require.True(t, ok)
 
 			numRequests++
 
@@ -400,14 +399,12 @@ type testModifyHandler struct {
 }
 
 func (t testModifyHandler) Process(req proto.Message) (proto.Message, error) {
-	addr, ok := req.(*mino.Address)
+	msg, ok := req.(*empty.Empty)
 	if !ok {
 		return nil, xerrors.Errorf("failed to parse request")
 	}
 
-	addr.Id = addr.Id + "suffix"
-
-	return addr, nil
+	return msg, nil
 }
 
 func (t testModifyHandler) Combine(req []proto.Message) ([]proto.Message, error) {
@@ -416,4 +413,12 @@ func (t testModifyHandler) Combine(req []proto.Message) ([]proto.Message, error)
 
 func (t testModifyHandler) Stream(out mino.Sender, in mino.Receiver) error {
 	return nil
+}
+
+type fakeNode struct {
+	addr address
+}
+
+func (n fakeNode) GetAddress() mino.Address {
+	return n.addr
 }

@@ -10,37 +10,37 @@ import (
 // instances of Mino.
 type Manager struct {
 	sync.Mutex
-	instances map[string]*Minoch
+	instances map[address]*Minoch
 }
 
 // NewManager creates a new empty manager.
 func NewManager() *Manager {
 	return &Manager{
-		instances: make(map[string]*Minoch),
+		instances: make(map[address]*Minoch),
 	}
 }
 
-func (m *Manager) get(id string) *Minoch {
+func (m *Manager) get(addr address) *Minoch {
 	m.Lock()
 	defer m.Unlock()
 
-	return m.instances[id]
+	return m.instances[addr]
 }
 
 func (m *Manager) insert(inst *Minoch) error {
-	id := inst.Address().GetId()
-	if id == "" {
+	addr := inst.GetAddress().(address)
+	if addr.String() == "" {
 		return xerrors.New("identifier must not be empty")
 	}
 
 	m.Lock()
 	defer m.Unlock()
 
-	if _, ok := m.instances[id]; ok {
+	if _, ok := m.instances[addr]; ok {
 		return xerrors.New("identifier already exists")
 	}
 
-	m.instances[id] = inst
+	m.instances[addr] = inst
 
 	return nil
 }
