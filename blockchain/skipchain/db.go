@@ -8,7 +8,7 @@ type Database interface {
 	Write(block SkipBlock) error
 	Read(index int64) (SkipBlock, error)
 	ReadLast() (SkipBlock, error)
-	ReadChain() (Chain, error)
+	ReadAll() ([]SkipBlock, error)
 }
 
 // InMemoryDatabase is an implementation of the database interface that is
@@ -53,7 +53,7 @@ func (db *InMemoryDatabase) ReadLast() (SkipBlock, error) {
 	return db.blocks[len(db.blocks)-1], nil
 }
 
-// ReadChain returns the list of blocks available.
-func (db *InMemoryDatabase) ReadChain() (Chain, error) {
+// ReadAll returns the list of blocks available.
+func (db *InMemoryDatabase) ReadAll() ([]SkipBlock, error) {
 	return db.blocks, nil
 }

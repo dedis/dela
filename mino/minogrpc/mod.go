@@ -21,6 +21,19 @@ type Minogrpc struct {
 	namespace string
 }
 
+// TODO: improve to support internet addresses.
+type address struct {
+	id string
+}
+
+func (a address) MarshalText() ([]byte, error) {
+	return []byte(a.id), nil
+}
+
+func (a address) String() string {
+	return a.id
+}
+
 // NewMinogrpc sets up the grpc and http servers. It does not start the
 // server. Identifier must be an address with a port, something like
 // 127.0.0.1:3333
@@ -29,8 +42,8 @@ type Minogrpc struct {
 func NewMinogrpc(identifier string) (Minogrpc, error) {
 	minoGrpc := Minogrpc{}
 
-	addr := &mino.Address{
-		Id: identifier,
+	addr := address{
+		id: identifier,
 	}
 
 	server, err := CreateServer(addr)
@@ -55,8 +68,14 @@ func NewMinogrpc(identifier string) (Minogrpc, error) {
 	return minoGrpc, err
 }
 
-// Address returns the address of the server
-func (m Minogrpc) Address() *mino.Address {
+// GetAddressFactory returns the address factory.
+// TODO: need implementation
+func (m Minogrpc) GetAddressFactory() mino.AddressFactory {
+	return nil
+}
+
+// GetAddress returns the address of the server
+func (m Minogrpc) GetAddress() mino.Address {
 	return m.server.addr
 }
 

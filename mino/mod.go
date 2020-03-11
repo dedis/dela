@@ -5,33 +5,44 @@ package mino
 
 import (
 	"context"
+	"encoding"
 	"errors"
 
 	"github.com/golang/protobuf/proto"
 )
 
-//go:generate protoc -I ./ --go_out=./ ./messages.proto
+// Address is a representation of a node's address.
+type Address interface {
+	encoding.TextMarshaler
+
+	String() string
+}
+
+// Node represents a reachable node.
+type Node interface {
+	GetAddress() Address
+}
 
 // Sender is an interface to provide primitives to send messages to recipients.
 type Sender interface {
-	Send(msg proto.Message, addrs ...*Address) error
+	Send(msg proto.Message, addrs ...Address) error
 }
 
 // Receiver is an interface to provide primitives to receive messages from
 // recipients.
 type Receiver interface {
-	Recv(context.Context) (*Address, proto.Message, error)
+	Recv(context.Context) (Address, proto.Message, error)
 }
 
 // RPC is a representation of a remote procedure call that can call a single
 // distant procedure or multiple.
 type RPC interface {
 	// Call is a basic request to one or multiple distant peers.
-	Call(req proto.Message, addrs ...*Address) (<-chan proto.Message, <-chan error)
+	Call(req proto.Message, nodes ...Node) (<-chan proto.Message, <-chan error)
 
 	// Stream is a persistent request that will be closed only when the
 	// orchestrator is done or an error occured.
-	Stream(ctx context.Context, addrs ...*Address) (in Sender, out Receiver)
+	Stream(ctx context.Context, nodes ...Node) (in Sender, out Receiver)
 }
 
 // Handler is the interface to implement to create a public endpoint.
@@ -68,12 +79,19 @@ func (h UnsupportedHandler) Stream(in Sender, out Receiver) error {
 	return errors.New("stream is not supported")
 }
 
-// Mino is a representation of an overlay network that allows the creation
+// AddressFactory is the factory to decode addresses.
+type AddressFactory interface {
+	FromText(text []byte) Address
+}
+
+// Mino is a representation of a overlay network that allows the creation
 // of namespaces for internal protocols and associate handlers to it.
 type Mino interface {
+	GetAddressFactory() AddressFactory
+
 	// Address returns the address that other participants should use to contact
 	// this instance.
-	Address() *Address
+	GetAddress() Address
 
 	// MakeNamespace returns an instance restricted to the namespace.
 	MakeNamespace(namespace string) (Mino, error)
