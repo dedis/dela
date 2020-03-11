@@ -4,12 +4,6 @@ This framework aims to deliver a modular approach to a public ledger implementat
 
 [![Build Status](https://travis-ci.org/dedis/fabric.svg?branch=master)](https://travis-ci.org/dedis/fabric) [![Coverage Status](https://coveralls.io/repos/github/dedis/fabric/badge.svg?branch=master)](https://coveralls.io/github/dedis/fabric?branch=master)
 
-## Quick start
-
-```
-go get -u github.com/golang/protobuf@v1.3.3
-```
-
 ## Terminologies
 
 - **blockchain** - A blockchain is...

@@ -1,2 +1,3 @@
 generate:
+	go get -u github.com/golang/protobuf/protoc-gen-go@v1.3.4
 	go generate ./...

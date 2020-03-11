@@ -34,10 +34,24 @@ func TestQueue_New(t *testing.T) {
 	require.EqualError(t, err, "queue is locked")
 }
 
+// fakeQueueFactory is only used to return a specific hash factory.
+type fakeQueueFactory struct {
+	ChainFactory
+	bad bool
+}
+
+func (f fakeQueueFactory) GetHashFactory() crypto.HashFactory {
+	if f.bad {
+		return badHashFactory{}
+	}
+	return sha256Factory{}
+}
+
 func TestQueue_LockProposal(t *testing.T) {
 	verifier := &fakeVerifier{}
 	queue := &queue{
-		verifier: verifier,
+		chainFactory: fakeQueueFactory{},
+		verifier:     verifier,
 		items: []item{
 			{
 				from:       []byte{0xaa},
@@ -54,7 +68,7 @@ func TestQueue_LockProposal(t *testing.T) {
 	require.Len(t, verifier.calls, 1)
 
 	forwardLink := forwardLink{from: []byte{0xaa}, to: []byte{0xbb}}
-	hash, err := forwardLink.computeHash()
+	hash, err := forwardLink.computeHash(sha256Factory{}.New())
 	require.NoError(t, err)
 	require.Equal(t, hash, verifier.calls[0]["message"])
 
@@ -63,9 +77,18 @@ func TestQueue_LockProposal(t *testing.T) {
 	require.EqualError(t, err, "couldn't find proposal 'aa'")
 
 	queue.locked = false
+	queue.chainFactory = fakeQueueFactory{bad: true}
+	err = queue.LockProposal([]byte{0xbb}, fakeSignature{})
+	require.EqualError(t, err, "couldn't hash proposal: couldn't write 'from': oops")
+
+	queue.chainFactory = fakeQueueFactory{}
 	queue.verifier = &fakeVerifier{err: xerrors.New("oops")}
 	err = queue.LockProposal([]byte{0xbb}, fakeSignature{})
 	require.EqualError(t, err, "couldn't verify signature: oops")
+
+	queue.locked = true
+	err = queue.LockProposal([]byte{0xbb}, nil)
+	require.EqualError(t, err, "queue is locked")
 }
 
 func TestQueue_Finalize(t *testing.T) {
@@ -104,6 +127,10 @@ func TestQueue_Finalize(t *testing.T) {
 	queue.verifier = &fakeVerifier{err: xerrors.New("oops")}
 	_, err = queue.Finalize([]byte{0xaa}, fakeSignature{})
 	require.EqualError(t, err, "couldn't verify signature: oops")
+
+	queue.verifier = &fakeVerifier{}
+	_, err = queue.Finalize([]byte{0xaa}, fakeSignature{err: xerrors.New("oops")})
+	require.EqualError(t, xerrors.Unwrap(xerrors.Unwrap(err)), "couldn't pack: oops")
 }
 
 type fakeItem struct {

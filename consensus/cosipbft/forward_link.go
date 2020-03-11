@@ -3,6 +3,7 @@ package cosipbft
 import (
 	"bytes"
 	"crypto/sha256"
+	"hash"
 
 	"github.com/golang/protobuf/proto"
 	any "github.com/golang/protobuf/ptypes/any"
@@ -93,12 +94,15 @@ func (fl forwardLink) Pack() (proto.Message, error) {
 	return pb, nil
 }
 
-func (fl forwardLink) computeHash() ([]byte, error) {
-	// TODO: optional algorithm + errors
-	h := sha256.New()
-
-	h.Write(fl.from)
-	h.Write(fl.to)
+func (fl forwardLink) computeHash(h hash.Hash) ([]byte, error) {
+	_, err := h.Write(fl.from)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't write 'from': %v", err)
+	}
+	_, err = h.Write(fl.to)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't write 'to': %v", err)
+	}
 
 	return h.Sum(nil), nil
 }
@@ -149,9 +153,17 @@ func (c forwardLinkChain) Pack() (proto.Message, error) {
 	return pb, nil
 }
 
+type sha256Factory struct{}
+
+func (f sha256Factory) New() hash.Hash {
+	return sha256.New()
+}
+
 // ChainFactory is an interface for a chain factory specific to forward links.
 type ChainFactory interface {
 	consensus.ChainFactory
+
+	GetHashFactory() crypto.HashFactory
 
 	DecodeSignature(pb proto.Message) (crypto.Signature, error)
 
@@ -161,14 +173,22 @@ type ChainFactory interface {
 // defaultChainFactory is an implementation of the defaultChainFactory interface
 // for forward links.
 type defaultChainFactory struct {
-	verifier crypto.Verifier
+	verifier    crypto.Verifier
+	hashFactory crypto.HashFactory
 }
 
 // newChainFactory returns a new instance of a seal factory that will create
 // forward links for appropriate protobuf messages and return an error
 // otherwise.
 func newChainFactory(verifier crypto.Verifier) *defaultChainFactory {
-	return &defaultChainFactory{verifier: verifier}
+	return &defaultChainFactory{
+		verifier:    verifier,
+		hashFactory: sha256Factory{},
+	}
+}
+
+func (f *defaultChainFactory) GetHashFactory() crypto.HashFactory {
+	return f.hashFactory
 }
 
 func (f *defaultChainFactory) DecodeSignature(pb proto.Message) (crypto.Signature, error) {
@@ -220,7 +240,7 @@ func (f *defaultChainFactory) DecodeForwardLink(pb proto.Message) (forwardLink, 
 		fl.commit = sig
 	}
 
-	hash, err := fl.computeHash()
+	hash, err := fl.computeHash(f.hashFactory.New())
 	if err != nil {
 		return fl, xerrors.Errorf("couldn't hash the forward link: %v", err)
 	}

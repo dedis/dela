@@ -27,9 +27,10 @@ type item struct {
 
 type queue struct {
 	sync.Mutex
-	locked   bool
-	verifier crypto.Verifier
-	items    []item
+	locked       bool
+	chainFactory ChainFactory
+	verifier     crypto.Verifier
+	items        []item
 }
 
 func (q *queue) getItem(id Digest) (item, int, bool) {
@@ -83,7 +84,7 @@ func (q *queue) LockProposal(to Digest, sig crypto.Signature) error {
 		to:   item.to,
 	}
 
-	hash, err := forwardLink.computeHash()
+	hash, err := forwardLink.computeHash(q.chainFactory.GetHashFactory().New())
 	if err != nil {
 		return xerrors.Errorf("couldn't hash proposal: %v", err)
 	}
