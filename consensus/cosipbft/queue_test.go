@@ -50,8 +50,8 @@ func (f fakeQueueFactory) GetHashFactory() crypto.HashFactory {
 func TestQueue_LockProposal(t *testing.T) {
 	verifier := &fakeVerifier{}
 	queue := &queue{
-		factory:  fakeQueueFactory{},
-		verifier: verifier,
+		chainFactory: fakeQueueFactory{},
+		verifier:     verifier,
 		items: []item{
 			{
 				from:       []byte{0xaa},
@@ -77,11 +77,11 @@ func TestQueue_LockProposal(t *testing.T) {
 	require.EqualError(t, err, "couldn't find proposal 'aa'")
 
 	queue.locked = false
-	queue.factory = fakeQueueFactory{bad: true}
+	queue.chainFactory = fakeQueueFactory{bad: true}
 	err = queue.LockProposal([]byte{0xbb}, fakeSignature{})
 	require.EqualError(t, err, "couldn't hash proposal: couldn't write from: oops")
 
-	queue.factory = fakeQueueFactory{}
+	queue.chainFactory = fakeQueueFactory{}
 	queue.verifier = &fakeVerifier{err: xerrors.New("oops")}
 	err = queue.LockProposal([]byte{0xbb}, fakeSignature{})
 	require.EqualError(t, err, "couldn't verify signature: oops")

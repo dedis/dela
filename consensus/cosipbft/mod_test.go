@@ -292,8 +292,8 @@ func (f fakeFactory) FromProto(pb proto.Message) (consensus.Chain, error) {
 
 func TestHandler_HashCommit(t *testing.T) {
 	queue := &queue{
-		verifier: &fakeVerifier{},
-		factory:  fakeFactory{},
+		verifier:     &fakeVerifier{},
+		chainFactory: fakeFactory{},
 	}
 
 	h := handler{

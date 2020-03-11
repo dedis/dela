@@ -40,8 +40,8 @@ func NewCoSiPBFT(mino mino.Mino, cosi cosi.CollectiveSigning) *Consensus {
 		cosi:    cosi,
 		factory: chainFactory,
 		queue: &queue{
-			verifier: cosi.GetVerifier(),
-			factory:  chainFactory,
+			verifier:     cosi.GetVerifier(),
+			chainFactory: chainFactory,
 		},
 	}
 
