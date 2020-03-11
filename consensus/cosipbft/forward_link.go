@@ -97,11 +97,11 @@ func (fl forwardLink) Pack() (proto.Message, error) {
 func (fl forwardLink) computeHash(h hash.Hash) ([]byte, error) {
 	_, err := h.Write(fl.from)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't write from: %v", err)
+		return nil, xerrors.Errorf("couldn't write 'from': %v", err)
 	}
 	_, err = h.Write(fl.to)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't write to: %v", err)
+		return nil, xerrors.Errorf("couldn't write 'to': %v", err)
 	}
 
 	return h.Sum(nil), nil
