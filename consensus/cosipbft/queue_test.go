@@ -85,6 +85,10 @@ func TestQueue_LockProposal(t *testing.T) {
 	queue.verifier = &fakeVerifier{err: xerrors.New("oops")}
 	err = queue.LockProposal([]byte{0xbb}, fakeSignature{})
 	require.EqualError(t, err, "couldn't verify signature: oops")
+
+	queue.locked = true
+	err = queue.LockProposal([]byte{0xbb}, nil)
+	require.EqualError(t, err, "queue is locked")
 }
 
 func TestQueue_Finalize(t *testing.T) {
