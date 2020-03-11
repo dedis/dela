@@ -15,6 +15,8 @@ type Proposal interface {
 	// GetHash returns the hash of the proposal.
 	GetHash() []byte
 
+	GetPreviousHash() []byte
+
 	GetPublicKeys() []crypto.PublicKey
 }
 
@@ -23,7 +25,7 @@ type Validator interface {
 	// Validate should return the proposal decoded from the message or
 	// an error if it is invalid. It should also return the previous
 	// proposal.
-	Validate(message proto.Message) (curr Proposal, prev Proposal, err error)
+	Validate(message proto.Message) (curr Proposal, err error)
 
 	// Commit should commit the proposal with the given identifier. The
 	// implementation makes sure that the commit is atomic with the validation

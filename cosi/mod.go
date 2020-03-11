@@ -3,6 +3,7 @@ package cosi
 import (
 	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric/crypto"
+	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 )
 
@@ -26,11 +27,19 @@ type Hashable interface {
 	Hash(in proto.Message) ([]byte, error)
 }
 
+// Message is the type of input that can be provided to a collective signing
+// protocol.
+type Message interface {
+	encoding.Packable
+
+	GetHash() []byte
+}
+
 // CollectiveSigning is the interface that provides the primitives to sign a
 // message by members of a network.
 type CollectiveSigning interface {
 	GetPublicKey() crypto.PublicKey
 	GetVerifier() crypto.Verifier
 	Listen(Hashable) error
-	Sign(msg proto.Message, ca CollectiveAuthority) (crypto.Signature, error)
+	Sign(msg Message, ca CollectiveAuthority) (crypto.Signature, error)
 }

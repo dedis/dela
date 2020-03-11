@@ -13,7 +13,7 @@ import (
 // Queue is an interface specific to cosipbft that defines the primitives to
 // prepare and commit to proposals.
 type Queue interface {
-	New(curr, prev consensus.Proposal) error
+	New(curr consensus.Proposal) error
 	LockProposal(to Digest, sig crypto.Signature) error
 	Finalize(to Digest, sig crypto.Signature) (*ForwardLinkProto, error)
 }
@@ -43,7 +43,7 @@ func (q *queue) getItem(id Digest) (item, int, bool) {
 	return item{}, -1, false
 }
 
-func (q *queue) New(curr, prev consensus.Proposal) error {
+func (q *queue) New(curr consensus.Proposal) error {
 	q.Lock()
 	defer q.Unlock()
 
@@ -58,8 +58,8 @@ func (q *queue) New(curr, prev consensus.Proposal) error {
 
 	q.items = append(q.items, item{
 		to:         curr.GetHash(),
-		from:       prev.GetHash(),
-		publicKeys: prev.GetPublicKeys(),
+		from:       curr.GetPreviousHash(),
+		publicKeys: curr.GetPublicKeys(),
 	})
 	return nil
 }

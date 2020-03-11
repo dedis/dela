@@ -31,7 +31,10 @@ func TestConsensus_Basic(t *testing.T) {
 	require.NoError(t, err)
 
 	prop := fakeProposal{}
-	err = cons.Propose(prop, fakeCA{addrs: []mino.Address{m1.GetAddress()}})
+	err = cons.Propose(prop, fakeCA{
+		addrs:   []mino.Address{m1.GetAddress()},
+		pubkeys: []crypto.PublicKey{cosi.GetPublicKey()},
+	})
 	require.NoError(t, err)
 
 	ch, err := cons.GetChain(prop.GetHash())
@@ -127,24 +130,24 @@ func checkSignatureValue(t *testing.T, pb *any.Any, value uint64) {
 func TestConsensus_Propose(t *testing.T) {
 	cs := &fakeCosi{}
 	rpc := &fakeRPC{}
-	cons := &Consensus{cosi: cs, rpc: rpc}
+	cons := &Consensus{cosi: cs, rpc: rpc, factory: fakeFactory{}}
 
 	err := cons.Propose(fakeProposal{}, fakeCA{})
 	require.NoError(t, err)
 	require.Len(t, cs.calls, 2)
 
-	prepare := cs.calls[0]["message"].(*Prepare)
+	prepare := cs.calls[0]["message"].(*PrepareRequest)
 	require.NotNil(t, prepare)
 	require.IsType(t, fakeCA{}, cs.calls[0]["signers"])
 
-	commit := cs.calls[1]["message"].(*Commit)
+	commit := cs.calls[1]["message"].(*CommitRequest)
 	require.NotNil(t, commit)
 	require.Equal(t, []byte{0xaa}, commit.GetTo())
 	checkSignatureValue(t, commit.GetPrepare(), 1)
 	require.IsType(t, fakeCA{}, cs.calls[1]["signers"])
 
 	require.Len(t, rpc.calls, 1)
-	propagate := rpc.calls[0]["message"].(*Propagate)
+	propagate := rpc.calls[0]["message"].(*PropagateRequest)
 	require.NotNil(t, propagate)
 	require.Equal(t, []byte{0xaa}, propagate.GetTo())
 	checkSignatureValue(t, propagate.GetCommit(), 2)
@@ -155,7 +158,7 @@ type badCosi struct {
 	delay int
 }
 
-func (cs *badCosi) Sign(pb proto.Message, ca cosi.CollectiveAuthority) (crypto.Signature, error) {
+func (cs *badCosi) Sign(pb cosi.Message, ca cosi.CollectiveAuthority) (crypto.Signature, error) {
 	if cs.delay > 0 {
 		cs.delay--
 		return fakeSignature{}, nil
@@ -171,21 +174,9 @@ type badCA struct {
 func TestConsensus_ProposeFailures(t *testing.T) {
 	defer func() { protoenc = encoding.NewProtoEncoder() }()
 
-	cons := &Consensus{}
+	cons := &Consensus{factory: fakeFactory{}}
 
-	e := xerrors.New("pack error")
-	err := cons.Propose(fakeProposal{err: e}, fakeCA{})
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err, encoding.NewEncodingError("proposal", nil)))
-
-	protoenc = &fakeEncoder{}
-	err = cons.Propose(fakeProposal{}, fakeCA{})
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err,
-		encoding.NewAnyEncodingError((*empty.Empty)(nil), nil)))
-
-	protoenc = encoding.NewProtoEncoder()
-	err = cons.Propose(fakeProposal{}, badCA{})
+	err := cons.Propose(fakeProposal{}, badCA{})
 	require.EqualError(t, err, "cosipbft.badCA should implement cosi.CollectiveAuthority")
 
 	cons.cosi = &fakeCosi{err: xerrors.New("oops")}
@@ -194,12 +185,7 @@ func TestConsensus_ProposeFailures(t *testing.T) {
 
 	cons.cosi = &badCosi{}
 	err = cons.Propose(fakeProposal{}, fakeCA{})
-	require.EqualError(t, err, "couldn't encode prepare signature: oops")
-
-	cons.cosi = &badCosi{delay: 1}
-	protoenc = &fakeEncoder{delay: 1}
-	err = cons.Propose(fakeProposal{}, fakeCA{})
-	require.EqualError(t, xerrors.Unwrap(err), "marshal any error")
+	require.EqualError(t, xerrors.Unwrap(err), "couldn't marshal prepare signature: oops")
 
 	cons.cosi = &fakeCosi{err: xerrors.New("oops"), delay: 1}
 	protoenc = encoding.NewProtoEncoder()
@@ -211,7 +197,7 @@ func TestConsensus_ProposeFailures(t *testing.T) {
 	require.EqualError(t, err, "couldn't encode commit signature: oops")
 
 	cons.cosi = &badCosi{delay: 2}
-	protoenc = &fakeEncoder{delay: 2}
+	protoenc = &fakeEncoder{}
 	err = cons.Propose(fakeProposal{}, fakeCA{})
 	require.EqualError(t, xerrors.Unwrap(err), "marshal any error")
 
@@ -238,36 +224,36 @@ func TestHandler_HashPrepare(t *testing.T) {
 	empty, err := ptypes.MarshalAny(&empty.Empty{})
 	require.NoError(t, err)
 
-	buffer, err := h.Hash(&Prepare{Proposal: empty})
+	buffer, err := h.Hash(&PrepareRequest{Proposal: empty})
 	require.NoError(t, err)
 	require.NotEmpty(t, buffer)
 
-	_, err = h.Hash(&Prepare{Proposal: nil})
+	_, err = h.Hash(&PrepareRequest{Proposal: nil})
 	require.Error(t, err)
 	require.True(t, xerrors.Is(err, encoding.NewAnyDecodingError((*ptypes.DynamicAny)(nil), nil)))
 
 	h.validator = fakeValidator{err: xerrors.New("oops")}
-	_, err = h.Hash(&Prepare{Proposal: empty})
+	_, err = h.Hash(&PrepareRequest{Proposal: empty})
 	require.EqualError(t, err, "couldn't validate the proposal: oops")
 
 	h.validator = fakeValidator{}
 	h.Consensus = &Consensus{storage: fakeStorage{}}
-	_, err = h.Hash(&Prepare{Proposal: empty})
+	_, err = h.Hash(&PrepareRequest{Proposal: empty})
 	require.EqualError(t, err, "couldn't read last: oops")
 
 	h.Consensus.storage = newInMemoryStorage()
-	h.Consensus.storage.Store(&ForwardLinkProto{To: []byte{0xbb}})
-	_, err = h.Hash(&Prepare{Proposal: empty})
-	require.EqualError(t, err, "mismatch with previous link: bb != aa")
+	h.Consensus.storage.Store(&ForwardLinkProto{To: []byte{0xaa}})
+	_, err = h.Hash(&PrepareRequest{Proposal: empty})
+	require.EqualError(t, err, "mismatch with previous link: aa != bb")
 
 	h.Consensus.storage = newInMemoryStorage()
 	h.Consensus.queue = &queue{locked: true}
-	_, err = h.Hash(&Prepare{Proposal: empty})
+	_, err = h.Hash(&PrepareRequest{Proposal: empty})
 	require.EqualError(t, err, "couldn't add to queue: queue is locked")
 
 	h.Consensus.queue = &queue{}
 	h.factory = &defaultChainFactory{hashFactory: badHashFactory{}}
-	_, err = h.Hash(&Prepare{Proposal: empty})
+	_, err = h.Hash(&PrepareRequest{Proposal: empty})
 	require.EqualError(t, err, "couldn't compute hash: couldn't write 'from': oops")
 }
 
@@ -303,24 +289,24 @@ func TestHandler_HashCommit(t *testing.T) {
 		},
 	}
 
-	err := h.Consensus.queue.New(fakeProposal{}, fakeProposal{})
+	err := h.Consensus.queue.New(fakeProposal{})
 	require.NoError(t, err)
 
-	buffer, err := h.Hash(&Commit{To: []byte{0xaa}})
+	buffer, err := h.Hash(&CommitRequest{To: []byte{0xaa}})
 	require.NoError(t, err)
 	require.Equal(t, []byte{0xde, 0xad, 0xbe, 0xef}, buffer)
 
 	h.Consensus.factory = fakeFactory{err: xerrors.New("oops")}
-	_, err = h.Hash(&Commit{})
+	_, err = h.Hash(&CommitRequest{})
 	require.EqualError(t, err, "couldn't decode prepare signature: oops")
 
 	h.Consensus.factory = fakeFactory{}
 	queue.locked = false
-	_, err = h.Hash(&Commit{To: []byte("unknown")})
+	_, err = h.Hash(&CommitRequest{To: []byte("unknown")})
 	require.EqualError(t, err, "couldn't update signature: couldn't find proposal '756e6b6e6f776e'")
 
 	h.Consensus.factory = fakeFactory{errSignature: xerrors.New("oops")}
-	_, err = h.Hash(&Commit{To: []byte{0xaa}})
+	_, err = h.Hash(&CommitRequest{To: []byte{0xaa}})
 	require.EqualError(t, err, "couldn't marshal the signature: oops")
 }
 
@@ -347,27 +333,27 @@ func TestRPCHandler_Process(t *testing.T) {
 	require.EqualError(t, err, "message type not supported: *empty.Empty")
 	require.Nil(t, resp)
 
-	resp, err = h.Process(&Propagate{})
+	resp, err = h.Process(&PropagateRequest{})
 	require.NoError(t, err)
 	require.Nil(t, resp)
 
 	h.Consensus.factory = fakeFactory{err: xerrors.New("oops")}
-	_, err = h.Process(&Propagate{})
+	_, err = h.Process(&PropagateRequest{})
 	require.EqualError(t, err, "couldn't decode commit signature: oops")
 
 	h.Consensus.factory = fakeFactory{}
 	h.Consensus.queue = fakeQueue{err: xerrors.New("oops")}
-	_, err = h.Process(&Propagate{})
+	_, err = h.Process(&PropagateRequest{})
 	require.EqualError(t, err, "couldn't finalize: oops")
 
 	h.Consensus.queue = fakeQueue{}
 	h.Consensus.storage = fakeStorage{}
-	_, err = h.Process(&Propagate{})
+	_, err = h.Process(&PropagateRequest{})
 	require.EqualError(t, err, "couldn't write forward link: oops")
 
 	h.Consensus.storage = newInMemoryStorage()
 	h.validator = fakeValidator{err: xerrors.New("oops")}
-	_, err = h.Process(&Propagate{})
+	_, err = h.Process(&PropagateRequest{})
 	require.EqualError(t, err, "couldn't commit: oops")
 }
 
@@ -384,6 +370,10 @@ func (p fakeProposal) GetHash() []byte {
 	return []byte{0xaa}
 }
 
+func (p fakeProposal) GetPreviousHash() []byte {
+	return []byte{0xbb}
+}
+
 func (p fakeProposal) GetPublicKeys() []crypto.PublicKey {
 	return p.pubkeys
 }
@@ -393,23 +383,23 @@ type fakeValidator struct {
 	err    error
 }
 
-func (v fakeValidator) Validate(msg proto.Message) (consensus.Proposal, consensus.Proposal, error) {
+func (v fakeValidator) Validate(msg proto.Message) (consensus.Proposal, error) {
 	p := fakeProposal{
 		pubkeys: []crypto.PublicKey{v.pubkey},
 	}
-	return p, p, v.err
+	return p, v.err
 }
 
 func (v fakeValidator) Commit(id []byte) error {
 	return v.err
 }
 
-type fakeIterator struct {
+type fakeAddrIterator struct {
 	addrs []mino.Address
 	index int
 }
 
-func (i *fakeIterator) Next() bool {
+func (i *fakeAddrIterator) Next() bool {
 	i.index++
 	if i.index >= len(i.addrs) {
 		return false
@@ -417,19 +407,44 @@ func (i *fakeIterator) Next() bool {
 	return true
 }
 
-func (i *fakeIterator) Get() mino.Address {
+func (i *fakeAddrIterator) Get() mino.Address {
 	return i.addrs[i.index]
+}
+
+type fakePKIterator struct {
+	pubkeys []crypto.PublicKey
+	index   int
+}
+
+func (i *fakePKIterator) Next() bool {
+	i.index++
+	if i.index >= len(i.pubkeys) {
+		return false
+	}
+	return true
+}
+
+func (i *fakePKIterator) Get() crypto.PublicKey {
+	return i.pubkeys[i.index]
 }
 
 type fakeCA struct {
 	cosi.CollectiveAuthority
-	addrs []mino.Address
+	addrs   []mino.Address
+	pubkeys []crypto.PublicKey
 }
 
 func (ca fakeCA) AddressIterator() mino.AddressIterator {
-	return &fakeIterator{
+	return &fakeAddrIterator{
 		addrs: ca.addrs,
 		index: -1,
+	}
+}
+
+func (ca fakeCA) PublicKeyIterator() cosi.PublicKeyIterator {
+	return &fakePKIterator{
+		pubkeys: ca.pubkeys,
+		index:   -1,
 	}
 }
 
@@ -465,12 +480,17 @@ func (cs *fakeCosi) Listen(h cosi.Hashable) error {
 	return cs.err
 }
 
-func (cs *fakeCosi) Sign(pb proto.Message, ca cosi.CollectiveAuthority) (crypto.Signature, error) {
+func (cs *fakeCosi) Sign(msg cosi.Message, ca cosi.CollectiveAuthority) (crypto.Signature, error) {
+	packed, err := msg.Pack()
+	if err != nil {
+		return nil, err
+	}
+
 	// Increase the counter each time a test sign a message.
 	cs.count++
 	// Store the call parameters so that they can be verified in the test.
 	cs.calls = append(cs.calls, map[string]interface{}{
-		"message": pb,
+		"message": packed,
 		"signers": ca,
 	})
 	if cs.err != nil {

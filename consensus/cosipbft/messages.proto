@@ -21,20 +21,20 @@ message ChainProto {
     repeated ForwardLinkProto links = 1;
 }
 
-// Prepare is the message sent to start a consensus for a proposal.
-message Prepare {
+// PrepareRequest is the message sent to start a consensus for a proposal.
+message PrepareRequest {
     google.protobuf.Any proposal = 1;
 }
 
-// Commit is the message sent to commit to a proposal.
-message Commit {
+// CommitRequest is the message sent to commit to a proposal.
+message CommitRequest {
     bytes to = 1;
     google.protobuf.Any prepare = 2;
 }
 
-// Propagate is the last message of a consensus process to send the valid
+// PropagateRequest is the last message of a consensus process to send the valid
 // forward link to participants.
-message Propagate {
+message PropagateRequest {
     bytes to = 1;
     google.protobuf.Any commit = 2;
 }

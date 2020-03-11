@@ -10,27 +10,25 @@ import (
 )
 
 func TestQueue_New(t *testing.T) {
-	prev := fakeItem{hash: []byte{0xaa}}
-	curr := fakeItem{hash: []byte{0xbb}}
+	prop := fakeItem{from: []byte{0xaa}, hash: []byte{0xbb}}
 
 	queue := &queue{}
-	err := queue.New(curr, prev)
+	err := queue.New(prop)
 	require.NoError(t, err)
 	require.Len(t, queue.items, 1)
-	require.Equal(t, prev.hash, queue.items[0].from)
-	require.Equal(t, curr.hash, queue.items[0].to)
+	require.Equal(t, prop.from, queue.items[0].from)
+	require.Equal(t, prop.hash, queue.items[0].to)
 
-	err = queue.New(prev, curr)
+	err = queue.New(fakeItem{from: []byte{0xbb}})
 	require.NoError(t, err)
 	require.Len(t, queue.items, 2)
-	require.Equal(t, curr.hash, queue.items[1].from)
-	require.Equal(t, prev.hash, queue.items[1].to)
+	require.Equal(t, prop.hash, queue.items[1].from)
 
-	err = queue.New(curr, prev)
+	err = queue.New(prop)
 	require.EqualError(t, err, "proposal 'bb' already exists")
 
 	queue.locked = true
-	err = queue.New(curr, prev)
+	err = queue.New(prop)
 	require.EqualError(t, err, "queue is locked")
 }
 
@@ -135,11 +133,16 @@ func TestQueue_Finalize(t *testing.T) {
 
 type fakeItem struct {
 	consensus.Proposal
+	from []byte
 	hash []byte
 }
 
 func (i fakeItem) GetHash() []byte {
 	return i.hash
+}
+
+func (i fakeItem) GetPreviousHash() []byte {
+	return i.from
 }
 
 func (i fakeItem) GetPublicKeys() []crypto.PublicKey {

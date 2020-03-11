@@ -1,12 +1,12 @@
 package blscosi
 
 import (
-	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/crypto/bls"
+	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/kyber/v3/pairing"
 	"go.dedis.ch/kyber/v3/util/key"
@@ -29,6 +29,7 @@ type BlsCoSi struct {
 	mino   mino.Mino
 	rpc    mino.RPC
 	signer crypto.AggregateSigner
+	hasher cosi.Hashable
 }
 
 // NewBlsCoSi returns a new collective signing instance.
@@ -52,6 +53,8 @@ func (cosi *BlsCoSi) GetVerifier() crypto.Verifier {
 
 // Listen starts the RPC that will handle signing requests.
 func (cosi *BlsCoSi) Listen(h cosi.Hashable) error {
+	cosi.hasher = h
+
 	rpc, err := cosi.mino.MakeRPC("cosi", newHandler(cosi.signer, h))
 	if err != nil {
 		return err
@@ -63,14 +66,25 @@ func (cosi *BlsCoSi) Listen(h cosi.Hashable) error {
 }
 
 // Sign returns the collective signature of the block.
-func (cosi *BlsCoSi) Sign(msg proto.Message, ca cosi.CollectiveAuthority) (crypto.Signature, error) {
+func (cosi *BlsCoSi) Sign(msg cosi.Message, ca cosi.CollectiveAuthority) (crypto.Signature, error) {
 	if cosi.rpc == nil {
 		return nil, xerrors.New("cosi is not listening")
 	}
 
-	data, err := ptypes.MarshalAny(msg)
+	packed, err := msg.Pack()
+	if err != nil {
+		return nil, encoding.NewEncodingError("message", err)
+	}
+
+	data, err := ptypes.MarshalAny(packed)
 	if err != nil {
 		return nil, err
+	}
+
+	pubkeys := make([]crypto.PublicKey, 0, ca.Len())
+	iter := ca.PublicKeyIterator()
+	for iter.Next() {
+		pubkeys = append(pubkeys, iter.Get())
 	}
 
 	msgs, errs := cosi.rpc.Call(&SignatureRequest{Message: data}, ca)
@@ -80,8 +94,11 @@ func (cosi *BlsCoSi) Sign(msg proto.Message, ca cosi.CollectiveAuthority) (crypt
 		select {
 		case resp, ok := <-msgs:
 			if !ok {
-				// TODO: verify signature
-				fabric.Logger.Trace().Msgf("Closing")
+				err = cosi.signer.Verify(pubkeys, msg.GetHash(), agg)
+				if err != nil {
+					return nil, xerrors.Errorf("couldn't verify the aggregation: %v", err)
+				}
+
 				return agg, nil
 			}
 

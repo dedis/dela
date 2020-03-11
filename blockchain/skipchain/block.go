@@ -66,6 +66,11 @@ func (b SkipBlock) GetHash() []byte {
 	return b.hash[:]
 }
 
+// GetPreviousHash returns the previous block digest.
+func (b SkipBlock) GetPreviousHash() []byte {
+	return b.BackLinks[0].Bytes()
+}
+
 // GetPublicKeys returns the list of public keys of the block.
 func (b SkipBlock) GetPublicKeys() []crypto.PublicKey {
 	pubkeys := make([]crypto.PublicKey, 0, b.Conodes.Len())
@@ -354,26 +359,21 @@ type blockValidator struct {
 	buffer    SkipBlock
 }
 
-func (v *blockValidator) Validate(pb proto.Message) (consensus.Proposal, consensus.Proposal, error) {
+func (v *blockValidator) Validate(pb proto.Message) (consensus.Proposal, error) {
 	// TODO: validate the block
 	block, err := v.blockFactory.decodeBlock(pb)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	err = v.validator.Validate(block.Payload)
 	if err != nil {
-		return nil, nil, xerrors.Errorf("couldn't validate the payload: %v", err)
+		return nil, xerrors.Errorf("couldn't validate the payload: %v", err)
 	}
 
 	v.buffer = block
 
-	last, err := v.db.ReadLast()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return block, last, nil
+	return block, nil
 }
 
 func (v *blockValidator) Commit(id []byte) error {
