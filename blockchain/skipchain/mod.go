@@ -37,7 +37,7 @@ func NewSkipchain(m mino.Mino, cosi cosi.CollectiveSigning) *Skipchain {
 	return &Skipchain{
 		mino: m,
 		blockFactory: newBlockFactory(
-			cosi.GetVerifier(),
+			cosi,
 			consensus.GetChainFactory(),
 			m.GetAddressFactory(),
 		),

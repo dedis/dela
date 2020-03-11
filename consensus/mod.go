@@ -17,7 +17,7 @@ type Proposal interface {
 
 	GetPreviousHash() []byte
 
-	GetPublicKeys() []crypto.PublicKey
+	GetVerifier() crypto.Verifier
 }
 
 // Validator is the interface to implement to start a consensus.
@@ -39,7 +39,7 @@ type Chain interface {
 
 	// Verify returns nil if the integriy of the chain is valid, otherwise
 	// an error.
-	Verify(verifier crypto.Verifier, pubkeys []crypto.PublicKey) error
+	Verify(verifier crypto.Verifier) error
 }
 
 // ChainFactory is a factory to decodes chain from protobuf messages.

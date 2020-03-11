@@ -38,8 +38,9 @@ type Message interface {
 // CollectiveSigning is the interface that provides the primitives to sign a
 // message by members of a network.
 type CollectiveSigning interface {
-	GetPublicKey() crypto.PublicKey
-	GetVerifier() crypto.Verifier
+	GetPublicKeyFactory() crypto.PublicKeyFactory
+	GetSignatureFactory() crypto.SignatureFactory
+	GetVerifier(ca CollectiveAuthority) crypto.Verifier
 	Listen(Hashable) error
 	Sign(msg Message, ca CollectiveAuthority) (crypto.Signature, error)
 }

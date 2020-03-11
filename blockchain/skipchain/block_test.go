@@ -15,6 +15,7 @@ import (
 	any "github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"golang.org/x/xerrors"
@@ -150,8 +151,24 @@ func TestSkipBlock_String(t *testing.T) {
 	require.Equal(t, block.String(), fmt.Sprintf("Block[0100000000000000]"))
 }
 
+type fakeVerifier struct {
+	crypto.Verifier
+}
+
+func (v fakeVerifier) GetPublicKeyFactory() crypto.PublicKeyFactory {
+	return nil
+}
+
+type fakeCosi struct {
+	cosi.CollectiveSigning
+}
+
+func (cosi fakeCosi) GetVerifier(cosi.CollectiveAuthority) crypto.Verifier {
+	return fakeVerifier{}
+}
+
 func TestBlockFactory_CreateGenesis(t *testing.T) {
-	factory := newBlockFactory(&testVerifier{}, nil, nil)
+	factory := newBlockFactory(fakeCosi{}, nil, nil)
 
 	genesis, err := factory.createGenesis(Conodes{}, nil)
 	require.NoError(t, err)
@@ -171,7 +188,7 @@ func TestBlockFactory_CreateGenesisFailures(t *testing.T) {
 
 	e := xerrors.New("encode error")
 	protoenc = &testProtoEncoder{err: e}
-	factory := newBlockFactory(&testVerifier{}, nil, nil)
+	factory := newBlockFactory(nil, nil, nil)
 
 	_, err := factory.createGenesis(nil, nil)
 	require.Error(t, err)
@@ -179,7 +196,7 @@ func TestBlockFactory_CreateGenesisFailures(t *testing.T) {
 }
 
 func TestBlockFactory_FromPrevious(t *testing.T) {
-	factory := newBlockFactory(&testVerifier{}, nil, nil)
+	factory := newBlockFactory(nil, nil, nil)
 
 	f := func(prev SkipBlock) bool {
 		block, err := factory.fromPrevious(prev, &empty.Empty{})
@@ -203,7 +220,7 @@ func TestBlockFactory_FromPrevious(t *testing.T) {
 func TestBlockFactory_FromPreviousFailures(t *testing.T) {
 	defer func() { protoenc = encoding.NewProtoEncoder() }()
 
-	factory := newBlockFactory(&testVerifier{}, nil, nil)
+	factory := newBlockFactory(nil, nil, nil)
 
 	e := xerrors.New("encoding error")
 	protoenc = &testProtoEncoder{err: e}
@@ -213,14 +230,22 @@ func TestBlockFactory_FromPreviousFailures(t *testing.T) {
 	require.True(t, xerrors.Is(err, e))
 }
 
+type fakePublicKeyFactory struct {
+	crypto.PublicKeyFactory
+}
+
+func (f fakePublicKeyFactory) FromProto(pb proto.Message) (crypto.PublicKey, error) {
+	return nil, nil
+}
+
 func TestBlockFactory_FromBlock(t *testing.T) {
-	factory := newBlockFactory(&testVerifier{}, nil, nil)
+	factory := newBlockFactory(fakeCosi{}, nil, nil)
 
 	f := func(block SkipBlock) bool {
 		packed, err := block.Pack()
 		require.NoError(t, err)
 
-		newBlock, err := factory.decodeBlock(packed.(*BlockProto))
+		newBlock, err := factory.decodeBlock(fakePublicKeyFactory{}, packed.(*BlockProto))
 		require.NoError(t, err)
 		require.Equal(t, block, newBlock)
 
@@ -237,7 +262,7 @@ func TestBlockFactory_FromBlockFailures(t *testing.T) {
 	gen := SkipBlock{}.Generate(rand.New(rand.NewSource(time.Now().Unix())), 5)
 	block := gen.Interface().(SkipBlock)
 
-	factory := newBlockFactory(&testVerifier{}, nil, nil)
+	factory := newBlockFactory(nil, nil, nil)
 
 	src, err := block.Pack()
 	require.NoError(t, err)
@@ -245,7 +270,7 @@ func TestBlockFactory_FromBlockFailures(t *testing.T) {
 	e := xerrors.New("encoding error")
 
 	protoenc = &testProtoEncoder{err: e}
-	_, err = factory.decodeBlock(src.(*BlockProto))
+	_, err = factory.decodeBlock(nil, src.(*BlockProto))
 	require.Error(t, err)
 	require.True(t, xerrors.Is(err, encoding.NewAnyDecodingError((*ptypes.DynamicAny)(nil), nil)), err.Error())
 }
@@ -284,6 +309,7 @@ func (s SkipBlock) Generate(rand *rand.Rand, size int) reflect.Value {
 	}
 
 	block := SkipBlock{
+		verifier:      fakeVerifier{},
 		Index:         randomUint64(rand),
 		Height:        randomUint32(rand),
 		BaseHeight:    randomUint32(rand),
@@ -397,7 +423,7 @@ func (v *testVerifier) GetSignatureFactory() crypto.SignatureFactory {
 	return testSignatureFactory{err: v.err}
 }
 
-func (v *testVerifier) Verify(pubkeys []crypto.PublicKey, msg []byte, sig crypto.Signature) error {
+func (v *testVerifier) Verify(msg []byte, sig crypto.Signature) error {
 	v.calls = append(v.calls, struct {
 		msg []byte
 		sig crypto.Signature

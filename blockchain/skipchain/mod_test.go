@@ -7,6 +7,7 @@ import (
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/cosi/blscosi"
+	"go.dedis.ch/fabric/crypto/bls"
 	"go.dedis.ch/fabric/mino/minoch"
 )
 
@@ -52,11 +53,11 @@ func makeSkipchain(t *testing.T, id string, manager *minoch.Manager) (Conode, *S
 	mino, err := minoch.NewMinoch(manager, id)
 	require.NoError(t, err)
 
-	signer := blscosi.NewSigner()
+	signer := bls.NewSigner()
 
 	conode := Conode{
 		addr:      mino.GetAddress(),
-		publicKey: signer.PublicKey(),
+		publicKey: signer.GetPublicKey(),
 	}
 
 	cosi := blscosi.NewBlsCoSi(mino, signer)

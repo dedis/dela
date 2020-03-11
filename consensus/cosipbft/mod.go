@@ -32,17 +32,14 @@ type Consensus struct {
 
 // NewCoSiPBFT returns a new instance.
 func NewCoSiPBFT(mino mino.Mino, cosi cosi.CollectiveSigning) *Consensus {
-	chainFactory := newChainFactory(cosi.GetVerifier())
+	chainFactory := newChainFactory(cosi.GetSignatureFactory())
 
 	c := &Consensus{
 		storage: newInMemoryStorage(),
 		mino:    mino,
 		cosi:    cosi,
 		factory: chainFactory,
-		queue: &queue{
-			verifier:     cosi.GetVerifier(),
-			chainFactory: chainFactory,
-		},
+		queue:   newQueue(chainFactory),
 	}
 
 	return c

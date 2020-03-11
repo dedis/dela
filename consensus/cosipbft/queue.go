@@ -19,18 +19,24 @@ type Queue interface {
 }
 
 type item struct {
-	from       Digest
-	to         Digest
-	prepare    crypto.Signature
-	publicKeys []crypto.PublicKey
+	from     Digest
+	to       Digest
+	prepare  crypto.Signature
+	verifier crypto.Verifier
 }
 
 type queue struct {
 	sync.Mutex
 	locked       bool
 	chainFactory ChainFactory
-	verifier     crypto.Verifier
 	items        []item
+}
+
+func newQueue(factory ChainFactory) *queue {
+	return &queue{
+		locked:       false,
+		chainFactory: factory,
+	}
 }
 
 func (q *queue) getItem(id Digest) (item, int, bool) {
@@ -57,9 +63,9 @@ func (q *queue) New(curr consensus.Proposal) error {
 	}
 
 	q.items = append(q.items, item{
-		to:         curr.GetHash(),
-		from:       curr.GetPreviousHash(),
-		publicKeys: curr.GetPublicKeys(),
+		to:       curr.GetHash(),
+		from:     curr.GetPreviousHash(),
+		verifier: curr.GetVerifier(),
 	})
 	return nil
 }
@@ -89,7 +95,7 @@ func (q *queue) LockProposal(to Digest, sig crypto.Signature) error {
 		return xerrors.Errorf("couldn't hash proposal: %v", err)
 	}
 
-	err = q.verifier.Verify(item.publicKeys, hash, sig)
+	err = item.verifier.Verify(hash, sig)
 	if err != nil {
 		return xerrors.Errorf("couldn't verify signature: %v", err)
 	}
@@ -127,7 +133,7 @@ func (q *queue) Finalize(to Digest, sig crypto.Signature) (*ForwardLinkProto, er
 		return nil, xerrors.Errorf("couldn't marshal the signature: %v", err)
 	}
 
-	err = q.verifier.Verify(item.publicKeys, buffer, sig)
+	err = item.verifier.Verify(buffer, sig)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't verify signature: %v", err)
 	}

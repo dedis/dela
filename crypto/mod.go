@@ -37,16 +37,20 @@ type SignatureFactory interface {
 // Verifier provides the primitive to verify a signature w.r.t. a message.
 type Verifier interface {
 	GetPublicKeyFactory() PublicKeyFactory
-	GetSignatureFactory() SignatureFactory
 
-	Verify(publicKeys []PublicKey, msg []byte, signature Signature) error
+	Verify(msg []byte, signature Signature) error
+}
+
+type VerifierFactory interface {
+	Create(publicKeys []PublicKey) Verifier
 }
 
 // Signer provides the primitives to sign and verify signatures.
 type Signer interface {
-	Verifier
-
-	PublicKey() PublicKey
+	GetVerifierFactory() VerifierFactory
+	GetPublicKeyFactory() PublicKeyFactory
+	GetSignatureFactory() SignatureFactory
+	GetPublicKey() PublicKey
 	Sign(msg []byte) (Signature, error)
 }
 

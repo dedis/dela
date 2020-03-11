@@ -13,6 +13,7 @@ import (
 	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/cosi/blscosi"
 	"go.dedis.ch/fabric/crypto"
+	"go.dedis.ch/fabric/crypto/bls"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/minoch"
@@ -24,16 +25,17 @@ func TestConsensus_Basic(t *testing.T) {
 	m1, err := minoch.NewMinoch(manager, "A")
 	require.NoError(t, err)
 
-	cosi := blscosi.NewBlsCoSi(m1, blscosi.NewSigner())
+	signer := bls.NewSigner()
+	cosi := blscosi.NewBlsCoSi(m1, signer)
 
 	cons := NewCoSiPBFT(m1, cosi)
-	err = cons.Listen(fakeValidator{pubkey: cosi.GetPublicKey()})
+	err = cons.Listen(fakeValidator{pubkey: signer.GetPublicKey()})
 	require.NoError(t, err)
 
 	prop := fakeProposal{}
 	err = cons.Propose(prop, fakeCA{
 		addrs:   []mino.Address{m1.GetAddress()},
-		pubkeys: []crypto.PublicKey{cosi.GetPublicKey()},
+		pubkeys: []crypto.PublicKey{signer.GetPublicKey()},
 	})
 	require.NoError(t, err)
 
@@ -71,8 +73,8 @@ func TestConsensus_GetChain(t *testing.T) {
 	cons := &Consensus{
 		storage: newInMemoryStorage(),
 		factory: &defaultChainFactory{
-			verifier:    fakeVerifierWithFactory{},
-			hashFactory: sha256Factory{},
+			signatureFactory: fakeSignatureFactory{},
+			hashFactory:      sha256Factory{},
 		},
 	}
 
@@ -276,10 +278,7 @@ func (f fakeFactory) FromProto(pb proto.Message) (consensus.Chain, error) {
 }
 
 func TestHandler_HashCommit(t *testing.T) {
-	queue := &queue{
-		verifier:     &fakeVerifier{},
-		chainFactory: fakeFactory{},
-	}
+	queue := newQueue(fakeFactory{})
 
 	h := handler{
 		Consensus: &Consensus{
@@ -358,8 +357,7 @@ func TestRPCHandler_Process(t *testing.T) {
 }
 
 type fakeProposal struct {
-	pubkeys []crypto.PublicKey
-	err     error
+	err error
 }
 
 func (p fakeProposal) Pack() (proto.Message, error) {
@@ -374,8 +372,8 @@ func (p fakeProposal) GetPreviousHash() []byte {
 	return []byte{0xbb}
 }
 
-func (p fakeProposal) GetPublicKeys() []crypto.PublicKey {
-	return p.pubkeys
+func (p fakeProposal) GetVerifier() crypto.Verifier {
+	return &fakeVerifier{}
 }
 
 type fakeValidator struct {
@@ -384,9 +382,7 @@ type fakeValidator struct {
 }
 
 func (v fakeValidator) Validate(msg proto.Message) (consensus.Proposal, error) {
-	p := fakeProposal{
-		pubkeys: []crypto.PublicKey{v.pubkey},
-	}
+	p := fakeProposal{}
 	return p, v.err
 }
 
