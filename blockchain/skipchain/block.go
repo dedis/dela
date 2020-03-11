@@ -13,6 +13,7 @@ import (
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/consensus"
+	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
@@ -50,6 +51,7 @@ func (d Digest) String() string {
 // information to build a skipchain.
 type SkipBlock struct {
 	hash          Digest
+	verifier      crypto.Verifier
 	Index         uint64
 	Conodes       Conodes
 	Height        uint32
@@ -66,9 +68,14 @@ func (b SkipBlock) GetHash() []byte {
 	return b.hash[:]
 }
 
-// GetPublicKeys returns the list of public keys of the block.
-func (b SkipBlock) GetPublicKeys() []crypto.PublicKey {
-	return b.Conodes.GetPublicKeys()
+// GetPreviousHash returns the previous block digest.
+func (b SkipBlock) GetPreviousHash() []byte {
+	return b.BackLinks[0].Bytes()
+}
+
+// GetVerifier returns the verifier for the block.
+func (b SkipBlock) GetVerifier() crypto.Verifier {
+	return b.verifier
 }
 
 // Pack returns the protobuf message for a block.
@@ -171,20 +178,20 @@ func (vb VerifiableBlock) Pack() (proto.Message, error) {
 // data structures like the forward links and the proves.
 type blockFactory struct {
 	genesis        *SkipBlock
-	verifier       crypto.Verifier
+	cosi           cosi.CollectiveSigning
 	chainFactory   consensus.ChainFactory
 	addressFactory mino.AddressFactory
 }
 
-func newBlockFactory(v crypto.Verifier, cf consensus.ChainFactory, af mino.AddressFactory) *blockFactory {
+func newBlockFactory(cosi cosi.CollectiveSigning, cf consensus.ChainFactory, af mino.AddressFactory) *blockFactory {
 	return &blockFactory{
-		verifier:       v,
+		cosi:           cosi,
 		chainFactory:   cf,
 		addressFactory: af,
 	}
 }
 
-func (f *blockFactory) createGenesis(conodes []Conode, data proto.Message) (SkipBlock, error) {
+func (f *blockFactory) createGenesis(conodes Conodes, data proto.Message) (SkipBlock, error) {
 	h := sha256.New()
 	if data == nil {
 		data = &empty.Empty{}
@@ -202,6 +209,7 @@ func (f *blockFactory) createGenesis(conodes []Conode, data proto.Message) (Skip
 	rand.Read(randomBackLink[:])
 
 	genesis := SkipBlock{
+		verifier:      f.cosi.GetVerifier(conodes),
 		Index:         0,
 		Conodes:       conodes,
 		Height:        1,
@@ -254,10 +262,10 @@ func (f *blockFactory) fromPrevious(prev SkipBlock, data proto.Message) (SkipBlo
 	return block, nil
 }
 
-func (f *blockFactory) decodeConodes(msgs []*ConodeProto) (Conodes, error) {
+func (f *blockFactory) decodeConodes(factory crypto.PublicKeyFactory, msgs []*ConodeProto) (Conodes, error) {
 	conodes := make(Conodes, len(msgs))
 	for i, msg := range msgs {
-		publicKey, err := f.verifier.GetPublicKeyFactory().FromProto(msg.GetPublicKey())
+		publicKey, err := factory.FromProto(msg.GetPublicKey())
 		if err != nil {
 			return nil, err
 		}
@@ -270,8 +278,11 @@ func (f *blockFactory) decodeConodes(msgs []*ConodeProto) (Conodes, error) {
 	return conodes, nil
 }
 
-func (f *blockFactory) decodeBlock(src proto.Message) (SkipBlock, error) {
-	in := src.(*BlockProto)
+func (f *blockFactory) decodeBlock(factory crypto.PublicKeyFactory, src proto.Message) (SkipBlock, error) {
+	in, ok := src.(*BlockProto)
+	if !ok {
+		return SkipBlock{}, xerrors.Errorf("unknown message type: '%T'", src)
+	}
 
 	var payload ptypes.DynamicAny
 	err := protoenc.UnmarshalAny(in.GetPayload(), &payload)
@@ -284,7 +295,7 @@ func (f *blockFactory) decodeBlock(src proto.Message) (SkipBlock, error) {
 		copy(backLinks[i][:], buffer)
 	}
 
-	conodes, err := f.decodeConodes(in.GetConodes())
+	conodes, err := f.decodeConodes(factory, in.GetConodes())
 	if err != nil {
 		return SkipBlock{}, xerrors.Errorf("couldn't create the conodes: %v", err)
 	}
@@ -293,6 +304,7 @@ func (f *blockFactory) decodeBlock(src proto.Message) (SkipBlock, error) {
 	copy(genesisID[:], in.GetGenesisID())
 
 	block := SkipBlock{
+		verifier:      f.cosi.GetVerifier(conodes),
 		Index:         in.GetIndex(),
 		Conodes:       conodes,
 		Height:        in.GetHeight(),
@@ -324,7 +336,7 @@ func (f *blockFactory) FromVerifiable(src proto.Message) (blockchain.Block, erro
 		return nil, xerrors.New("genesis block not initialized")
 	}
 
-	block, err := f.decodeBlock(in.GetBlock())
+	block, err := f.decodeBlock(f.cosi.GetPublicKeyFactory(), in.GetBlock())
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't decode the block: %v", err)
 	}
@@ -334,7 +346,7 @@ func (f *blockFactory) FromVerifiable(src proto.Message) (blockchain.Block, erro
 		return nil, xerrors.Errorf("couldn't decode the chain: %v", err)
 	}
 
-	err = chain.Verify(f.verifier, f.genesis.Conodes.GetPublicKeys())
+	err = chain.Verify(f.genesis.GetVerifier())
 	if err != nil {
 		return nil, err
 	}
@@ -349,26 +361,21 @@ type blockValidator struct {
 	buffer    SkipBlock
 }
 
-func (v *blockValidator) Validate(pb proto.Message) (consensus.Proposal, consensus.Proposal, error) {
+func (v *blockValidator) Validate(pb proto.Message) (consensus.Proposal, error) {
 	// TODO: validate the block
-	block, err := v.blockFactory.decodeBlock(pb)
+	block, err := v.blockFactory.decodeBlock(v.blockFactory.cosi.GetPublicKeyFactory(), pb)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	err = v.validator.Validate(block.Payload)
 	if err != nil {
-		return nil, nil, xerrors.Errorf("couldn't validate the payload: %v", err)
+		return nil, xerrors.Errorf("couldn't validate the payload: %v", err)
 	}
 
 	v.buffer = block
 
-	last, err := v.db.ReadLast()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return block, last, nil
+	return block, nil
 }
 
 func (v *blockValidator) Commit(id []byte) error {

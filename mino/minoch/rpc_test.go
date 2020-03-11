@@ -22,7 +22,7 @@ func TestRPC_Call(t *testing.T) {
 	require.NoError(t, err)
 	_, err = m2.MakeRPC("test", testHandler{})
 
-	resps, errs := rpc1.Call(&empty.Empty{}, m2)
+	resps, errs := rpc1.Call(&empty.Empty{}, fakeMembership{instances: []*Minoch{m2}})
 	select {
 	case <-resps:
 		t.Fatal("an error is expected")
@@ -65,7 +65,7 @@ func TestRPC_Stream(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	sender, receiver := rpc.Stream(ctx, m)
+	sender, receiver := rpc.Stream(ctx, fakeMembership{instances: []*Minoch{m}})
 
 	sender.Send(&empty.Empty{}, m.GetAddress())
 	_, _, err = receiver.Recv(context.Background())
@@ -87,10 +87,45 @@ func TestRPC_StreamFailures(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	out, in := rpc.Stream(ctx, m)
+	out, in := rpc.Stream(ctx, fakeMembership{instances: []*Minoch{m}})
 	_, _, err = in.Recv(ctx)
 	require.Error(t, err)
 
 	err = out.Send(nil)
 	require.Error(t, err)
+}
+
+type fakeIterator struct {
+	instances []*Minoch
+	index     int
+}
+
+func (i *fakeIterator) HasNext() bool {
+	if i.index+1 < len(i.instances) {
+		return true
+	}
+	return false
+}
+
+func (i *fakeIterator) GetNext() mino.Address {
+	if i.HasNext() {
+		i.index++
+		return i.instances[i.index].GetAddress()
+	}
+	return nil
+}
+
+type fakeMembership struct {
+	instances []*Minoch
+}
+
+func (m fakeMembership) AddressIterator() mino.AddressIterator {
+	return &fakeIterator{
+		index:     -1,
+		instances: m.instances,
+	}
+}
+
+func (m fakeMembership) Len() int {
+	return len(m.instances)
 }

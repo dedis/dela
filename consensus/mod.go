@@ -15,7 +15,9 @@ type Proposal interface {
 	// GetHash returns the hash of the proposal.
 	GetHash() []byte
 
-	GetPublicKeys() []crypto.PublicKey
+	GetPreviousHash() []byte
+
+	GetVerifier() crypto.Verifier
 }
 
 // Validator is the interface to implement to start a consensus.
@@ -23,7 +25,7 @@ type Validator interface {
 	// Validate should return the proposal decoded from the message or
 	// an error if it is invalid. It should also return the previous
 	// proposal.
-	Validate(message proto.Message) (curr Proposal, prev Proposal, err error)
+	Validate(message proto.Message) (curr Proposal, err error)
 
 	// Commit should commit the proposal with the given identifier. The
 	// implementation makes sure that the commit is atomic with the validation
@@ -37,7 +39,7 @@ type Chain interface {
 
 	// Verify returns nil if the integriy of the chain is valid, otherwise
 	// an error.
-	Verify(verifier crypto.Verifier, pubkeys []crypto.PublicKey) error
+	Verify(verifier crypto.Verifier) error
 }
 
 // ChainFactory is a factory to decodes chain from protobuf messages.
@@ -60,5 +62,5 @@ type Consensus interface {
 
 	// Propose performs the consensus algorithm using the list of nodes
 	// as participants.
-	Propose(proposal Proposal, nodes ...mino.Node) error
+	Propose(proposal Proposal, players mino.Players) error
 }

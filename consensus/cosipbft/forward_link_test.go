@@ -22,27 +22,24 @@ func TestForwardLink_Verify(t *testing.T) {
 	}
 
 	verifier := &fakeVerifier{}
-	pubkeys := []crypto.PublicKey{fakePublicKey{}}
 
-	err := fl.Verify(verifier, pubkeys)
+	err := fl.Verify(verifier)
 	require.NoError(t, err)
 	require.Len(t, verifier.calls, 2)
 	require.Equal(t, []byte{0xaa}, verifier.calls[0]["message"])
-	require.Equal(t, pubkeys, verifier.calls[0]["pubkeys"])
 	require.Equal(t, []byte{0xde, 0xad, 0xbe, 0xef}, verifier.calls[1]["message"])
-	require.Equal(t, pubkeys, verifier.calls[1]["pubkeys"])
 
 	verifier.err = xerrors.New("oops")
-	err = fl.Verify(verifier, nil)
+	err = fl.Verify(verifier)
 	require.EqualError(t, err, "couldn't verify prepare signature: oops")
 
 	verifier.delay = 1
-	err = fl.Verify(verifier, nil)
+	err = fl.Verify(verifier)
 	require.EqualError(t, err, "couldn't verify commit signature: oops")
 
 	verifier.err = nil
 	fl.prepare = fakeSignature{err: xerrors.New("oops")}
-	err = fl.Verify(verifier, pubkeys)
+	err = fl.Verify(verifier)
 	require.EqualError(t, err, "couldn't marshal the signature: oops")
 }
 
@@ -117,7 +114,6 @@ func TestForwardLink_Hash(t *testing.T) {
 }
 
 func TestChain_Verify(t *testing.T) {
-	pubkeys := []crypto.PublicKey{fakePublicKey{}}
 	chain := forwardLinkChain{
 		links: []forwardLink{
 			{from: []byte{0xaa}, to: []byte{0xbb}, prepare: fakeSignature{}, commit: fakeSignature{}},
@@ -126,19 +122,19 @@ func TestChain_Verify(t *testing.T) {
 	}
 
 	verifier := &fakeVerifier{}
-	err := chain.Verify(verifier, pubkeys)
+	err := chain.Verify(verifier)
 	require.NoError(t, err)
 	require.Len(t, verifier.calls, 4)
 
-	err = chain.Verify(&fakeVerifier{err: xerrors.New("oops")}, pubkeys)
+	err = chain.Verify(&fakeVerifier{err: xerrors.New("oops")})
 	require.EqualError(t, xerrors.Unwrap(err), "couldn't verify prepare signature: oops")
 
 	chain.links[0].to = []byte{0xff}
-	err = chain.Verify(&fakeVerifier{}, pubkeys)
+	err = chain.Verify(&fakeVerifier{})
 	require.EqualError(t, err, "mismatch forward link 'ff' != 'bb'")
 
 	chain.links = nil
-	err = chain.Verify(&fakeVerifier{}, pubkeys)
+	err = chain.Verify(&fakeVerifier{})
 	require.EqualError(t, err, "chain is empty")
 }
 
@@ -169,14 +165,6 @@ func (f fakeSignatureFactory) FromProto(pb proto.Message) (crypto.Signature, err
 	return nil, xerrors.New("oops")
 }
 
-type fakeVerifierWithFactory struct {
-	crypto.Verifier
-}
-
-func (v fakeVerifierWithFactory) GetSignatureFactory() crypto.SignatureFactory {
-	return fakeSignatureFactory{}
-}
-
 func TestChainFactory_FromProto(t *testing.T) {
 	defer func() { protoenc = encoding.NewProtoEncoder() }()
 
@@ -187,7 +175,7 @@ func TestChainFactory_FromProto(t *testing.T) {
 		},
 	}
 
-	factory := newChainFactory(fakeVerifierWithFactory{})
+	factory := newChainFactory(fakeSignatureFactory{})
 	chain, err := factory.FromProto(chainpb)
 	require.NoError(t, err)
 	require.NotNil(t, chain)
@@ -212,7 +200,7 @@ func TestChainFactory_FromProto(t *testing.T) {
 }
 
 func TestChainFactory_DecodeSignature(t *testing.T) {
-	factory := defaultChainFactory{verifier: fakeVerifierWithFactory{}}
+	factory := defaultChainFactory{signatureFactory: fakeSignatureFactory{}}
 	_, err := factory.DecodeSignature(nil)
 	require.EqualError(t, err, "oops")
 }
@@ -235,7 +223,8 @@ func TestChainFactory_DecodeForwardLink(t *testing.T) {
 	defer func() { protoenc = encoding.NewProtoEncoder() }()
 
 	factory := defaultChainFactory{
-		hashFactory: sha256Factory{},
+		signatureFactory: fakeSignatureFactory{},
+		hashFactory:      sha256Factory{},
 	}
 
 	forwardLink := &ForwardLinkProto{}
@@ -249,7 +238,6 @@ func TestChainFactory_DecodeForwardLink(t *testing.T) {
 	_, err = factory.DecodeForwardLink(&empty.Empty{})
 	require.EqualError(t, err, "unknown message type: *empty.Empty")
 
-	factory.verifier = fakeVerifierWithFactory{}
 	forwardLink.Prepare = &any.Any{}
 	_, err = factory.DecodeForwardLink(forwardLink)
 	require.EqualError(t, err, "couldn't decode prepare signature: oops")

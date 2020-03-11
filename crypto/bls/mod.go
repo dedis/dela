@@ -98,11 +98,15 @@ func (f signatureFactory) FromProto(src proto.Message) (crypto.Signature, error)
 }
 
 // verifier implements the verifier interface for BLS.
-type verifier struct{}
+type verifier struct {
+	pubkeys []crypto.PublicKey
+}
 
 // NewVerifier returns a new verifier that can verify BLS signatures.
-func NewVerifier() crypto.Verifier {
-	return verifier{}
+func newVerifier(pubkeys []crypto.PublicKey) crypto.Verifier {
+	return verifier{
+		pubkeys: pubkeys,
+	}
 }
 
 // GetPublicKeyFactory returns a factory to make BLS public keys.
@@ -116,9 +120,9 @@ func (v verifier) GetSignatureFactory() crypto.SignatureFactory {
 }
 
 // Verify returns no error if the signature matches the message.
-func (v verifier) Verify(pubkeys []crypto.PublicKey, msg []byte, sig crypto.Signature) error {
-	points := make([]kyber.Point, len(pubkeys))
-	for i, pubkey := range pubkeys {
+func (v verifier) Verify(msg []byte, sig crypto.Signature) error {
+	points := make([]kyber.Point, len(v.pubkeys))
+	for i, pubkey := range v.pubkeys {
 		points[i] = pubkey.(publicKey).point
 	}
 
@@ -132,18 +136,37 @@ func (v verifier) Verify(pubkeys []crypto.PublicKey, msg []byte, sig crypto.Sign
 	return nil
 }
 
-type signer struct {
-	verifier
+type verifierFactory struct{}
 
+func (v verifierFactory) Create(publicKeys []crypto.PublicKey) crypto.Verifier {
+	return newVerifier(publicKeys)
+}
+
+type signer struct {
 	keyPair *key.Pair
 }
 
 // NewSigner returns a new BLS signer. It supports aggregation.
-func NewSigner(kp *key.Pair) crypto.AggregateSigner {
-	return signer{keyPair: kp}
+func NewSigner() crypto.AggregateSigner {
+	kp := key.NewKeyPair(suite)
+	return signer{
+		keyPair: kp,
+	}
 }
 
-func (s signer) PublicKey() crypto.PublicKey {
+func (s signer) GetVerifierFactory() crypto.VerifierFactory {
+	return verifierFactory{}
+}
+
+func (s signer) GetPublicKeyFactory() crypto.PublicKeyFactory {
+	return publicKeyFactory{}
+}
+
+func (s signer) GetSignatureFactory() crypto.SignatureFactory {
+	return signatureFactory{}
+}
+
+func (s signer) GetPublicKey() crypto.PublicKey {
 	return publicKey{point: s.keyPair.Public}
 }
 
