@@ -54,27 +54,27 @@ type iterator struct {
 	index   int
 }
 
-func (i *iterator) Next() bool {
-	i.index++
-	if i.index >= len(i.conodes) {
-		return false
+func (i *iterator) HasNext() bool {
+	if i.index+1 < len(i.conodes) {
+		return true
 	}
-	return true
+	return false
 }
 
-func (i *iterator) Get() *Conode {
-	if i.index < 0 || i.index >= len(i.conodes) {
-		return nil
+func (i *iterator) GetNext() *Conode {
+	if i.HasNext() {
+		i.index++
+		return &i.conodes[i.index]
 	}
-	return &i.conodes[i.index]
+	return nil
 }
 
 type addressIterator struct {
 	*iterator
 }
 
-func (i *addressIterator) Get() mino.Address {
-	conode := i.iterator.Get()
+func (i *addressIterator) GetNext() mino.Address {
+	conode := i.iterator.GetNext()
 	if conode != nil {
 		return conode.GetAddress()
 	}
@@ -85,8 +85,8 @@ type publicKeyIterator struct {
 	*iterator
 }
 
-func (i *publicKeyIterator) Get() crypto.PublicKey {
-	conode := i.iterator.Get()
+func (i *publicKeyIterator) GetNext() crypto.PublicKey {
+	conode := i.iterator.GetNext()
 	if conode != nil {
 		return conode.GetPublicKey()
 	}

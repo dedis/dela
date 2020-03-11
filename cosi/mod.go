@@ -10,14 +10,14 @@ import (
 // PublicKeyIterator is an iterator over the list of public keys of a
 // collective authority.
 type PublicKeyIterator interface {
-	Next() bool
-	Get() crypto.PublicKey
+	HasNext() bool
+	GetNext() crypto.PublicKey
 }
 
 // CollectiveAuthority (or Cothority in short) is a set of participant to a
 // collective signature.
 type CollectiveAuthority interface {
-	mino.Membership
+	mino.Players
 	PublicKeyIterator() PublicKeyIterator
 }
 

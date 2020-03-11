@@ -88,15 +88,15 @@ func (c *Consensus) Listen(v consensus.Validator) error {
 // Propose takes the proposal and send it to the participants of the consensus.
 // It returns nil if the consensus is reached and that the participant are
 // committed to it, otherwise it returns the refusal reason.
-func (c *Consensus) Propose(p consensus.Proposal, memship mino.Membership) error {
+func (c *Consensus) Propose(p consensus.Proposal, players mino.Players) error {
 	prepareReq, err := newPrepareRequest(p, c.factory.GetHashFactory())
 	if err != nil {
 		return xerrors.Errorf("couldn't create prepare request: %v", err)
 	}
 
-	ca, ok := memship.(cosi.CollectiveAuthority)
+	ca, ok := players.(cosi.CollectiveAuthority)
 	if !ok {
-		return xerrors.Errorf("%T should implement cosi.CollectiveAuthority", memship)
+		return xerrors.Errorf("%T should implement cosi.CollectiveAuthority", players)
 	}
 
 	// 1. Prepare phase: proposal must be validated by the nodes and a

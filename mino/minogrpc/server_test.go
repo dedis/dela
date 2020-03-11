@@ -333,16 +333,19 @@ type fakeIterator struct {
 	index int
 }
 
-func (i *fakeIterator) Next() bool {
-	i.index++
-	if i.index >= len(i.addrs) {
-		return false
+func (i *fakeIterator) HasNext() bool {
+	if i.index+1 < len(i.addrs) {
+		return true
 	}
-	return true
+	return false
 }
 
-func (i *fakeIterator) Get() mino.Address {
-	return i.addrs[i.index]
+func (i *fakeIterator) GetNext() mino.Address {
+	if i.HasNext() {
+		i.index++
+		return i.addrs[i.index]
+	}
+	return nil
 }
 
 type fakeMembership struct {

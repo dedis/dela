@@ -32,8 +32,8 @@ func newPrepareRequest(prop consensus.Proposal, f crypto.HashFactory) (Prepare, 
 	return req, nil
 }
 
-// GetHash returns the hash of the proposal that will be signed by the collective
-// authority.
+// GetHash returns the hash of the prepare request that will be signed by the
+// collective authority.
 func (p Prepare) GetHash() []byte {
 	return p.digest
 }
@@ -76,12 +76,14 @@ func newCommitRequest(to []byte, prepare crypto.Signature) (Commit, error) {
 	return commit, nil
 }
 
-// GetHash returns the bytes of the prepare signature.
+// GetHash returns the hash for the commit message. The actual value is the
+// marshaled prepare signature.
 func (c Commit) GetHash() []byte {
 	return c.hash
 }
 
-// Pack returns the protobuf message or an error,
+// Pack returns the protobuf message representation of a commit, or an error if
+// something goes wrong during encoding.
 func (c Commit) Pack() (proto.Message, error) {
 	packed, err := c.prepare.Pack()
 	if err != nil {

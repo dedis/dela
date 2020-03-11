@@ -279,7 +279,10 @@ func (f *blockFactory) decodeConodes(factory crypto.PublicKeyFactory, msgs []*Co
 }
 
 func (f *blockFactory) decodeBlock(factory crypto.PublicKeyFactory, src proto.Message) (SkipBlock, error) {
-	in := src.(*BlockProto)
+	in, ok := src.(*BlockProto)
+	if !ok {
+		return SkipBlock{}, xerrors.Errorf("unknown message type: '%T'", src)
+	}
 
 	var payload ptypes.DynamicAny
 	err := protoenc.UnmarshalAny(in.GetPayload(), &payload)

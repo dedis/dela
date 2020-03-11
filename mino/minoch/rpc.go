@@ -25,14 +25,14 @@ type RPC struct {
 }
 
 // Call sends the message to all participants and gather their reply.
-func (c RPC) Call(req proto.Message, memship mino.Membership) (<-chan proto.Message, <-chan error) {
+func (c RPC) Call(req proto.Message, memship mino.Players) (<-chan proto.Message, <-chan error) {
 	out := make(chan proto.Message, memship.Len())
 	errs := make(chan error, memship.Len())
 
 	go func() {
 		iter := memship.AddressIterator()
-		for iter.Next() {
-			peer := c.manager.get(iter.Get())
+		for iter.HasNext() {
+			peer := c.manager.get(iter.GetNext())
 			if peer != nil {
 				resp, err := peer.rpcs[c.path].h.Process(req)
 				if err != nil {
@@ -53,7 +53,7 @@ func (c RPC) Call(req proto.Message, memship mino.Membership) (<-chan proto.Mess
 
 // Stream opens a stream. The caller is responsible for cancelling the context
 // to close the stream.
-func (c RPC) Stream(ctx context.Context, memship mino.Membership) (mino.Sender, mino.Receiver) {
+func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, mino.Receiver) {
 	in := make(chan Envelope)
 	out := make(chan Envelope, 1)
 	errs := make(chan error, 1)
@@ -61,8 +61,8 @@ func (c RPC) Stream(ctx context.Context, memship mino.Membership) (mino.Sender, 
 	outs := make(map[string]receiver)
 
 	iter := memship.AddressIterator()
-	for iter.Next() {
-		addr := iter.Get()
+	for iter.HasNext() {
+		addr := iter.GetNext()
 		ch := make(chan Envelope, 1)
 		outs[addr.String()] = receiver{out: ch}
 

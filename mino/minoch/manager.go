@@ -41,7 +41,7 @@ func (m *Manager) insert(inst *Minoch) error {
 	}
 
 	if string(text) == "" {
-		return xerrors.New("identifier must not be empty")
+		return xerrors.New("can't have an empty marshaled address")
 	}
 
 	m.Lock()

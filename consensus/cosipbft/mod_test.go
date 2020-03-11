@@ -170,7 +170,7 @@ func (cs *badCosi) Sign(pb cosi.Message, ca cosi.CollectiveAuthority) (crypto.Si
 }
 
 type badCA struct {
-	mino.Membership
+	mino.Players
 }
 
 func TestConsensus_ProposeFailures(t *testing.T) {
@@ -395,16 +395,19 @@ type fakeAddrIterator struct {
 	index int
 }
 
-func (i *fakeAddrIterator) Next() bool {
-	i.index++
-	if i.index >= len(i.addrs) {
-		return false
+func (i *fakeAddrIterator) HasNext() bool {
+	if i.index+1 < len(i.addrs) {
+		return true
 	}
-	return true
+	return false
 }
 
-func (i *fakeAddrIterator) Get() mino.Address {
-	return i.addrs[i.index]
+func (i *fakeAddrIterator) GetNext() mino.Address {
+	if i.HasNext() {
+		i.index++
+		return i.addrs[i.index]
+	}
+	return nil
 }
 
 type fakePKIterator struct {
@@ -412,16 +415,19 @@ type fakePKIterator struct {
 	index   int
 }
 
-func (i *fakePKIterator) Next() bool {
-	i.index++
-	if i.index >= len(i.pubkeys) {
-		return false
+func (i *fakePKIterator) HasNext() bool {
+	if i.index+1 < len(i.pubkeys) {
+		return true
 	}
-	return true
+	return false
 }
 
-func (i *fakePKIterator) Get() crypto.PublicKey {
-	return i.pubkeys[i.index]
+func (i *fakePKIterator) GetNext() crypto.PublicKey {
+	if i.HasNext() {
+		i.index++
+		return i.pubkeys[i.index]
+	}
+	return nil
 }
 
 type fakeCA struct {
@@ -505,7 +511,7 @@ type fakeRPC struct {
 	err   error
 }
 
-func (rpc *fakeRPC) Call(pb proto.Message, memship mino.Membership) (<-chan proto.Message, <-chan error) {
+func (rpc *fakeRPC) Call(pb proto.Message, memship mino.Players) (<-chan proto.Message, <-chan error) {
 	msgs := make(chan proto.Message, 0)
 	errs := make(chan error, 1)
 	if rpc.err != nil {

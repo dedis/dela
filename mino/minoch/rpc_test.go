@@ -100,17 +100,19 @@ type fakeIterator struct {
 	index     int
 }
 
-func (i *fakeIterator) Next() bool {
-	i.index++
-	if i.index >= len(i.instances) {
-		return false
+func (i *fakeIterator) HasNext() bool {
+	if i.index+1 < len(i.instances) {
+		return true
 	}
-
-	return true
+	return false
 }
 
-func (i *fakeIterator) Get() mino.Address {
-	return i.instances[i.index].GetAddress()
+func (i *fakeIterator) GetNext() mino.Address {
+	if i.HasNext() {
+		i.index++
+		return i.instances[i.index].GetAddress()
+	}
+	return nil
 }
 
 type fakeMembership struct {

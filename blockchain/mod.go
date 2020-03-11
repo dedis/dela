@@ -45,7 +45,7 @@ type Blockchain interface {
 
 	// Store stores any representation of a data structure into a new block.
 	// The implementation is responsible for any validations required.
-	Store(data proto.Message, memship mino.Membership) error
+	Store(data proto.Message, players mino.Players) error
 
 	// GetBlock returns the latest block.
 	GetBlock() (Block, error)

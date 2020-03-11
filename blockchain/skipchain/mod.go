@@ -95,7 +95,7 @@ func (s *Skipchain) GetBlockFactory() blockchain.BlockFactory {
 }
 
 // Store will append a new block to chain filled with the data.
-func (s *Skipchain) Store(data proto.Message, memship mino.Membership) error {
+func (s *Skipchain) Store(data proto.Message, players mino.Players) error {
 	previous, err := s.db.ReadLast()
 	if err != nil {
 		return xerrors.Errorf("couldn't read the latest block: %v", err)
@@ -106,7 +106,7 @@ func (s *Skipchain) Store(data proto.Message, memship mino.Membership) error {
 		return xerrors.Errorf("couldn't create next block: %v", err)
 	}
 
-	err = s.consensus.Propose(block, memship)
+	err = s.consensus.Propose(block, players)
 	if err != nil {
 		return xerrors.Errorf("couldn't propose the block: %v", err)
 	}

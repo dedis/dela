@@ -29,6 +29,7 @@ func NewBlsCoSi(o mino.Mino, signer crypto.AggregateSigner) *BlsCoSi {
 	}
 }
 
+// GetPublicKeyFactory returns the public key factory.
 func (cosi *BlsCoSi) GetPublicKeyFactory() crypto.PublicKeyFactory {
 	return cosi.signer.GetPublicKeyFactory()
 }
@@ -44,8 +45,8 @@ func (cosi *BlsCoSi) GetVerifier(ca cosi.CollectiveAuthority) crypto.Verifier {
 	pubkeys := make([]crypto.PublicKey, 0, ca.Len())
 	if ca != nil {
 		iter := ca.PublicKeyIterator()
-		for iter.Next() {
-			pubkeys = append(pubkeys, iter.Get())
+		for iter.HasNext() {
+			pubkeys = append(pubkeys, iter.GetNext())
 		}
 	}
 
@@ -84,8 +85,8 @@ func (cosi *BlsCoSi) Sign(msg cosi.Message, ca cosi.CollectiveAuthority) (crypto
 
 	pubkeys := make([]crypto.PublicKey, 0, ca.Len())
 	iter := ca.PublicKeyIterator()
-	for iter.Next() {
-		pubkeys = append(pubkeys, iter.Get())
+	for iter.HasNext() {
+		pubkeys = append(pubkeys, iter.GetNext())
 	}
 
 	verifier := cosi.signer.GetVerifierFactory().Create(pubkeys)
