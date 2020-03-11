@@ -269,7 +269,7 @@ func TestHandler_HashPrepare(t *testing.T) {
 	h.Consensus.queue = &queue{}
 	h.factory = &defaultChainFactory{hashFactory: badHashFactory{}}
 	_, err = h.Hash(&Prepare{Proposal: empty})
-	require.EqualError(t, err, "couldn't compute hash: couldn't write from: oops")
+	require.EqualError(t, err, "couldn't compute hash: couldn't write 'from': oops")
 }
 
 type fakeFactory struct {

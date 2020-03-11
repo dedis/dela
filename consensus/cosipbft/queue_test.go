@@ -79,7 +79,7 @@ func TestQueue_LockProposal(t *testing.T) {
 	queue.locked = false
 	queue.chainFactory = fakeQueueFactory{bad: true}
 	err = queue.LockProposal([]byte{0xbb}, fakeSignature{})
-	require.EqualError(t, err, "couldn't hash proposal: couldn't write from: oops")
+	require.EqualError(t, err, "couldn't hash proposal: couldn't write 'from': oops")
 
 	queue.chainFactory = fakeQueueFactory{}
 	queue.verifier = &fakeVerifier{err: xerrors.New("oops")}

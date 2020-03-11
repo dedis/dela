@@ -110,10 +110,10 @@ func TestForwardLink_Hash(t *testing.T) {
 	require.Len(t, digest, h.Size())
 
 	_, err = fl.computeHash(&fakeHash{})
-	require.EqualError(t, err, "couldn't write from: oops")
+	require.EqualError(t, err, "couldn't write 'from': oops")
 
 	_, err = fl.computeHash(&fakeHash{delay: 1})
-	require.EqualError(t, err, "couldn't write to: oops")
+	require.EqualError(t, err, "couldn't write 'to': oops")
 }
 
 func TestChain_Verify(t *testing.T) {
@@ -262,7 +262,7 @@ func TestChainFactory_DecodeForwardLink(t *testing.T) {
 	forwardLink.Commit = nil
 	factory.hashFactory = badHashFactory{}
 	_, err = factory.DecodeForwardLink(forwardLink)
-	require.EqualError(t, err, "couldn't hash the forward link: couldn't write from: oops")
+	require.EqualError(t, err, "couldn't hash the forward link: couldn't write 'from': oops")
 
 	protoenc = &fakeEncoder{}
 	_, err = factory.DecodeForwardLink(flany)
