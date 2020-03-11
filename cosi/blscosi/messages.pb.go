@@ -104,7 +104,9 @@ func init() {
 	proto.RegisterType((*SignatureResponse)(nil), "blscosi.SignatureResponse")
 }
 
-func init() { proto.RegisterFile("messages.proto", fileDescriptor_4dc296cbfe5ffcd5) }
+func init() {
+	proto.RegisterFile("messages.proto", fileDescriptor_4dc296cbfe5ffcd5)
+}
 
 var fileDescriptor_4dc296cbfe5ffcd5 = []byte{
 	// 145 bytes of a gzipped FileDescriptorProto

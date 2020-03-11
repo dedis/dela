@@ -1,9 +1,16 @@
 package crypto
 
 import (
+	"hash"
+
 	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric/encoding"
 )
+
+// HashFactory is an interface to produce a hash digest.
+type HashFactory interface {
+	New() hash.Hash
+}
 
 // PublicKey is a public identity that can be used to verify a signature.
 type PublicKey interface {
