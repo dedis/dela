@@ -50,7 +50,7 @@ func (cosi *BlsCoSi) GetVerifier(ca cosi.CollectiveAuthority) crypto.Verifier {
 		}
 	}
 
-	return cosi.signer.GetVerifierFactory().Create(pubkeys)
+	return cosi.signer.GetVerifierFactory().Create(pubkeys...)
 }
 
 // Listen starts the RPC that will handle signing requests.
@@ -89,7 +89,7 @@ func (cosi *BlsCoSi) Sign(msg cosi.Message, ca cosi.CollectiveAuthority) (crypto
 		pubkeys = append(pubkeys, iter.GetNext())
 	}
 
-	verifier := cosi.signer.GetVerifierFactory().Create(pubkeys)
+	verifier := cosi.signer.GetVerifierFactory().Create(pubkeys...)
 
 	msgs, errs := cosi.rpc.Call(&SignatureRequest{Message: data}, ca)
 

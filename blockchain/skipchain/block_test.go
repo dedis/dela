@@ -339,7 +339,9 @@ func (a fakeAddress) String() string {
 	return fmt.Sprintf("%x", a.id)
 }
 
-type fakePublicKey struct{}
+type fakePublicKey struct {
+	crypto.PublicKey
+}
 
 func (pk fakePublicKey) MarshalBinary() ([]byte, error) {
 	return []byte{}, nil
@@ -388,6 +390,7 @@ func (e *testProtoEncoder) UnmarshalAny(any *any.Any, pb proto.Message) error {
 }
 
 type testSignature struct {
+	crypto.Signature
 	buffer []byte
 	err    error
 }

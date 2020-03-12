@@ -16,6 +16,8 @@ type HashFactory interface {
 type PublicKey interface {
 	encoding.Packable
 	encoding.BinaryMarshaler
+
+	Equal(other PublicKey) bool
 }
 
 // PublicKeyFactory is a factory to create public keys.
@@ -27,6 +29,8 @@ type PublicKeyFactory interface {
 type Signature interface {
 	encoding.Packable
 	encoding.BinaryMarshaler
+
+	Equal(other Signature) bool
 }
 
 // SignatureFactory is a factory to create BLS signature.
@@ -42,7 +46,7 @@ type Verifier interface {
 }
 
 type VerifierFactory interface {
-	Create(publicKeys []PublicKey) Verifier
+	Create(publicKeys ...PublicKey) Verifier
 }
 
 // Signer provides the primitives to sign and verify signatures.

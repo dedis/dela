@@ -1,10 +1,12 @@
 package bls
 
 import (
+	"bytes"
+
 	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/fabric/crypto"
+	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/pairing"
 	"go.dedis.ch/kyber/v3/sign/bls"
@@ -14,113 +16,155 @@ import (
 
 //go:generate protoc -I ./ --go_out=./ ./messages.proto
 
-var suite = pairing.NewSuiteBn256()
+var (
+	suite = pairing.NewSuiteBn256()
 
+	protoenc encoding.ProtoMarshaler = encoding.NewProtoEncoder()
+)
+
+// publicKey is the implementation of the crypto.PublicKey interface for a BLS
+// signature. The public key can be used to verify a signature.
 type publicKey struct {
 	point kyber.Point
 }
 
+// MarshalBinary implements encoding.BinaryMarshaler. It produces a slice of
+// bytes representing the public key.
 func (pk publicKey) MarshalBinary() ([]byte, error) {
 	return pk.point.MarshalBinary()
 }
 
+// Pack implements encoding.Packable. It returns the protobuf message
+// representing the public key.
 func (pk publicKey) Pack() (proto.Message, error) {
 	buffer, err := pk.point.MarshalBinary()
 	if err != nil {
-		return nil, err
+		return nil, encoding.NewEncodingError("point", err)
 	}
 
 	return &PublicKeyProto{Data: buffer}, nil
 }
 
+// Equal returns true if the other public key is the same.
+func (pk publicKey) Equal(other crypto.PublicKey) bool {
+	pubkey, ok := other.(publicKey)
+	if !ok {
+		return false
+	}
+
+	return pubkey.point.Equal(pk.point)
+}
+
+// signature is the implementation of the crypto.Signature interface for a BLS
+// signature. The signature is a proof of the integrity of a single message
+// associated with a unique public key.
 type signature struct {
 	data []byte
 }
 
+// MarshalBinary implements encoding.BinaryMarshaler. It returns a slice of
+// bytes representing the signature.
 func (sig signature) MarshalBinary() ([]byte, error) {
 	return sig.data, nil
 }
 
+// Pack implements encoding.Packable. It returns  the protobuf message
+// representing the signature.
 func (sig signature) Pack() (proto.Message, error) {
 	return &SignatureProto{Data: sig.data}, nil
 }
 
+func (sig signature) Equal(other crypto.Signature) bool {
+	otherSig, ok := other.(signature)
+	if !ok {
+		return false
+	}
+
+	return bytes.Equal(sig.data, otherSig.data)
+}
+
+// publicKeyFactory is the implementation of the crypto.PublicKeyFactory
+// interface for a BLS signature.
 type publicKeyFactory struct{}
 
-func (f publicKeyFactory) fromAny(src *any.Any) (crypto.PublicKey, error) {
-	var pkp PublicKeyProto
-	err := ptypes.UnmarshalAny(src, &pkp)
-	if err != nil {
-		return nil, err
-	}
-
-	return f.FromProto(&pkp)
-}
-
+// FromProto returns the public key decoded from the message, or an error if the
+// message is invalid.
 func (f publicKeyFactory) FromProto(src proto.Message) (crypto.PublicKey, error) {
+	var pb *PublicKeyProto
+
 	switch msg := src.(type) {
 	case *PublicKeyProto:
-		point := suite.Point()
-		err := point.UnmarshalBinary(msg.GetData())
-		if err != nil {
-			return nil, xerrors.Errorf("failed to unmarshal msg to point: %v", err)
-		}
-
-		return publicKey{point: point}, nil
+		pb = msg
 	case *any.Any:
-		return f.fromAny(msg)
+		pb = &PublicKeyProto{}
+
+		err := protoenc.UnmarshalAny(msg, pb)
+		if err != nil {
+			return nil, encoding.NewAnyDecodingError(pb, err)
+		}
 	default:
-		return nil, xerrors.Errorf("invalid public key type '%v'", msg)
+		return nil, xerrors.Errorf("invalid public key type '%T'", src)
 	}
+
+	point := suite.Point()
+	err := point.UnmarshalBinary(pb.GetData())
+	if err != nil {
+		return nil, xerrors.Errorf("failed to unmarshal point: %v", err)
+	}
+
+	return publicKey{point: point}, nil
 }
 
+// signatureFactory is the implementation of the crypto.SignatureFactory
+// interface for a BLS signature.
 type signatureFactory struct{}
 
-func (f signatureFactory) FromAny(src *any.Any) (crypto.Signature, error) {
-	var sigproto SignatureProto
-	err := ptypes.UnmarshalAny(src, &sigproto)
-	if err != nil {
-		return nil, err
-	}
-
-	return f.FromProto(&sigproto)
-}
-
+// FromProto returns the protobuf message representing the signature, or an
+// error if the message is invalid.
 func (f signatureFactory) FromProto(src proto.Message) (crypto.Signature, error) {
+	var pb *SignatureProto
+
 	switch msg := src.(type) {
 	case *SignatureProto:
-		return signature{data: msg.GetData()}, nil
+		pb = msg
 	case *any.Any:
-		return f.FromAny(msg)
+		pb = &SignatureProto{}
+
+		err := protoenc.UnmarshalAny(msg, pb)
+		if err != nil {
+			return nil, encoding.NewAnyDecodingError(pb, err)
+		}
 	default:
-		return nil, xerrors.Errorf("invalid signature type '%v'", msg)
+		return nil, xerrors.Errorf("invalid signature type '%T'", src)
 	}
+
+	return signature{data: pb.GetData()}, nil
 }
 
-// verifier implements the verifier interface for BLS.
-type verifier struct {
+// verifier implements the crypto.Verifier interface for BLS signatures.
+type blsVerifier struct {
 	pubkeys []crypto.PublicKey
 }
 
 // NewVerifier returns a new verifier that can verify BLS signatures.
 func newVerifier(pubkeys []crypto.PublicKey) crypto.Verifier {
-	return verifier{
+	return blsVerifier{
 		pubkeys: pubkeys,
 	}
 }
 
 // GetPublicKeyFactory returns a factory to make BLS public keys.
-func (v verifier) GetPublicKeyFactory() crypto.PublicKeyFactory {
+func (v blsVerifier) GetPublicKeyFactory() crypto.PublicKeyFactory {
 	return publicKeyFactory{}
 }
 
 // GetSignatureFactory returns a factory to make BLS signatures.
-func (v verifier) GetSignatureFactory() crypto.SignatureFactory {
+func (v blsVerifier) GetSignatureFactory() crypto.SignatureFactory {
 	return signatureFactory{}
 }
 
 // Verify returns no error if the signature matches the message.
-func (v verifier) Verify(msg []byte, sig crypto.Signature) error {
+func (v blsVerifier) Verify(msg []byte, sig crypto.Signature) error {
 	points := make([]kyber.Point, len(v.pubkeys))
 	for i, pubkey := range v.pubkeys {
 		points[i] = pubkey.(publicKey).point
@@ -138,7 +182,7 @@ func (v verifier) Verify(msg []byte, sig crypto.Signature) error {
 
 type verifierFactory struct{}
 
-func (v verifierFactory) Create(publicKeys []crypto.PublicKey) crypto.Verifier {
+func (v verifierFactory) Create(publicKeys ...crypto.PublicKey) crypto.Verifier {
 	return newVerifier(publicKeys)
 }
 
@@ -146,7 +190,7 @@ type signer struct {
 	keyPair *key.Pair
 }
 
-// NewSigner returns a new BLS signer. It supports aggregation.
+// NewSigner returns a new random BLS signer that supports aggregation.
 func NewSigner() crypto.AggregateSigner {
 	kp := key.NewKeyPair(suite)
 	return signer{
@@ -154,31 +198,39 @@ func NewSigner() crypto.AggregateSigner {
 	}
 }
 
+// GetVerifierFactory returns the verifier factory for BLS signatures.
 func (s signer) GetVerifierFactory() crypto.VerifierFactory {
 	return verifierFactory{}
 }
 
+// GetPublicKeyFactory returns the public key factory for BLS signatures.
 func (s signer) GetPublicKeyFactory() crypto.PublicKeyFactory {
 	return publicKeyFactory{}
 }
 
+// GetSignatureFactory returns the signature factory for BLS signatures.
 func (s signer) GetSignatureFactory() crypto.SignatureFactory {
 	return signatureFactory{}
 }
 
+// GetPublicKey returns the public key of the signer.
 func (s signer) GetPublicKey() crypto.PublicKey {
 	return publicKey{point: s.keyPair.Public}
 }
 
+// Sign signs the message in parameter and returns the signature, or an error if
+// it cannot sign.
 func (s signer) Sign(msg []byte) (crypto.Signature, error) {
 	sig, err := bls.Sign(suite, s.keyPair.Private, msg)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't make bls signature: %v", err)
 	}
 
 	return signature{data: sig}, nil
 }
 
+// Aggregate aggregates the signatures into a single one that can be verifier
+// with the aggregated public key associated.
 func (s signer) Aggregate(signatures ...crypto.Signature) (crypto.Signature, error) {
 	buffers := make([][]byte, len(signatures))
 	for i, sig := range signatures {
@@ -187,7 +239,7 @@ func (s signer) Aggregate(signatures ...crypto.Signature) (crypto.Signature, err
 
 	agg, err := bls.AggregateSignatures(suite, buffers...)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't aggregate: %v", err)
 	}
 
 	return signature{data: agg}, nil
