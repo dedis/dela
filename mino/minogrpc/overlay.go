@@ -73,9 +73,9 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		return xerrors.Errorf("header not found in provided context")
 	}
 
-	apiURI, ok := headers["apiuri"]
+	apiURI, ok := headers[headerURIKey]
 	if !ok {
-		return xerrors.Errorf("apiuri not found in context header: ", apiURI)
+		return xerrors.Errorf("%s not found in context header", headerURIKey)
 	}
 	if len(apiURI) != 1 {
 		return xerrors.Errorf("unexpected number of elements in apiuri "+
@@ -85,16 +85,16 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 	handler, ok := o.handlers[apiURI[0]]
 	if !ok {
 		return xerrors.Errorf("didn't find the '%s' handler in the map "+
-			"of handlers, did you register it?", apiURI)
+			"of handlers, did you register it?", apiURI[0])
 	}
 
-	addrs, ok := headers["addr"]
+	addrs, ok := headers[headerAddressKey]
 	if !ok {
-		return xerrors.Errorf("addr not found in context header: ", apiURI)
+		return xerrors.Errorf("%s not found in context header", headerAddressKey)
 	}
 	if len(addrs) != 1 {
-		return xerrors.Errorf("unexpected number of elements in addr "+
-			"header. Expected 1, found %d", len(addrs))
+		return xerrors.Errorf("unexpected number of elements in %s "+
+			"header. Expected 1, found %d", headerAddressKey, len(addrs))
 	}
 
 	addr := addrs[0]

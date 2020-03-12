@@ -27,6 +27,7 @@ import (
 
 const (
 	headerURIKey        = "apiuri"
+	headerAddressKey    = "addr"
 	certificateDuration = time.Hour * 24 * 180
 )
 
@@ -331,8 +332,8 @@ func (rpc RPC) Stream(ctx context.Context,
 		cl := NewOverlayClient(clientConn)
 
 		header := metadata.New(map[string]string{
-			"apiuri": rpc.uri,
-			"addr":   ""})
+			headerURIKey:     rpc.uri,
+			headerAddressKey: ""})
 		ctx = metadata.NewOutgoingContext(ctx, header)
 
 		stream, err := cl.Stream(ctx)
