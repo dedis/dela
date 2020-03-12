@@ -2,7 +2,6 @@ package minogrpc
 
 import (
 	context "context"
-	"fmt"
 
 	"github.com/golang/protobuf/ptypes"
 	"go.dedis.ch/fabric"
@@ -31,8 +30,7 @@ func (o overlayService) Call(ctx context.Context, msg *OverlayMsg) (*OverlayMsg,
 
 	apiURI, ok := headers[headerURIKey]
 	if !ok {
-		return nil, xerrors.Errorf("%s not found in context header: ",
-			headerURIKey, apiURI)
+		return nil, xerrors.Errorf("%s not found in context header", headerURIKey)
 	}
 	if len(apiURI) != 1 {
 		return nil, xerrors.Errorf("unexpected number of elements in %s "+
@@ -42,7 +40,7 @@ func (o overlayService) Call(ctx context.Context, msg *OverlayMsg) (*OverlayMsg,
 	handler, ok := o.handlers[apiURI[0]]
 	if !ok {
 		return nil, xerrors.Errorf("didn't find the '%s' handler in the map "+
-			"of handlers, did you register it?", apiURI)
+			"of handlers, did you register it?", apiURI[0])
 	}
 
 	var dynamicAny ptypes.DynamicAny
@@ -67,7 +65,6 @@ func (o overlayService) Call(ctx context.Context, msg *OverlayMsg) (*OverlayMsg,
 
 // Stream ...
 func (o overlayService) Stream(stream Overlay_StreamServer) error {
-	fmt.Println("inside the overlay Stream")
 	// We fetch the uri that identifies the handler in the handlers map with the
 	// grpc metadata api. Using context.Value won't work.
 	ctx := stream.Context()
@@ -101,16 +98,16 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 	}
 
 	addr := addrs[0]
-	fmt.Println("histoire d'être fixé: ", addrs)
 
 	sender := sender{
 		// empty now
-		addr: o.addr,
+		node: simpleNode{},
 		participants: []player{
 			player{
-				addr: &mino.Address{
-					// empty for the moment
-					Id: addr,
+				node: simpleNode{
+					addr: address{
+						id: addr,
+					},
 				},
 				streamClient: stream,
 			},
@@ -129,13 +126,10 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		receiver.in <- msg
 	}()
 
-	fmt.Println("calling handler.Stream")
 	err := handler.Stream(sender, receiver)
 	if err != nil {
 		return xerrors.Errorf("failed to call the stream handler: %v", err)
 	}
-
-	fmt.Println("exiting overlay")
 
 	return nil
 

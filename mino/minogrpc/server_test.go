@@ -2,7 +2,6 @@ package minogrpc
 
 import (
 	context "context"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -292,8 +291,8 @@ loop2:
 func Test_SingleSimpleStream(t *testing.T) {
 	identifier := "127.0.0.1:2000"
 
-	addr := &mino.Address{
-		Id: identifier,
+	addr := &address{
+		id: identifier,
 	}
 
 	server, err := CreateServer(addr)
@@ -317,38 +316,31 @@ func Test_SingleSimpleStream(t *testing.T) {
 
 	server.handlers[uri] = handler
 
-	m, err := ptypes.MarshalAny(addr)
+	m, err := ptypes.MarshalAny(&empty.Empty{})
 	require.NoError(t, err)
 
-	msg := mino.Envelope{
-		From:    addr,
-		To:      []*mino.Address{addr},
+	msg := Envelope{
+		From:    addr.String(),
+		To:      []string{addr.String()},
 		Message: m,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	fmt.Println("before rpc.Stream")
-	sender, receiver := rpc.Stream(ctx, addr)
-	fmt.Println("after rpc.Stream")
+	sender, receiver := rpc.Stream(ctx, simpleNode{addr: *addr})
 
-	fmt.Println("\nbefore the send")
 	err = sender.Send(&msg, addr)
 	require.NoError(t, err)
-	fmt.Println("after the send")
 
-	fmt.Println("\nbefore revc")
 	_, msg2, err := receiver.Recv(context.Background())
-	fmt.Println("after recv")
 	require.NoError(t, err)
 
-	enveloppe, ok := msg2.(*mino.Envelope)
+	enveloppe, ok := msg2.(*Envelope)
 	require.True(t, ok)
-	addr2 := &mino.Address{}
-	err = ptypes.UnmarshalAny(enveloppe.Message, addr2)
+	empty2 := &empty.Empty{}
+	err = ptypes.UnmarshalAny(enveloppe.Message, empty2)
 	require.NoError(t, err)
-	require.Equal(t, addr.Id, addr2.Id)
 }
 
 // -------
@@ -368,28 +360,17 @@ func (t testSameHandler) Combine(req []proto.Message) ([]proto.Message, error) {
 
 // Stream is a dummy handler that forwards input messages to the sender
 func (t testSameHandler) Stream(out mino.Sender, in mino.Receiver) error {
-	fmt.Println("inside the Stream handler")
-	count := 0
 	for {
-		fmt.Println("count = ", count)
-		if count >= 1 {
-			return nil
-		}
 		// ctx if I want a timeout
-		fmt.Println("handler calling in.Recv")
 		addr, msg, err := in.Recv(context.Background())
 		if err != nil {
 			return xerrors.Errorf("failed to receive message in handler: %v", err)
 		}
 
-		fmt.Printf("from the handler, got this message: %v\n", msg)
-
 		err = out.Send(msg, addr)
 		if err != nil {
 			return xerrors.Errorf("failed to send message to the sender: %v", err)
 		}
-
-		count++
 	}
 }
 

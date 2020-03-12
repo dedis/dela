@@ -4,14 +4,11 @@
 package minogrpc
 
 import (
-	"context"
 	fmt "fmt"
 	"regexp"
 
-	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
-	"google.golang.org/grpc/metadata"
 )
 
 //go:generate protoc -I ./ --go_out=plugins=grpc:./ ./overlay.proto
@@ -24,6 +21,7 @@ type Minogrpc struct {
 	namespace string
 }
 
+// address implements mino.Address
 // TODO: improve to support internet addresses.
 type address struct {
 	id string
@@ -37,13 +35,26 @@ func (a address) String() string {
 	return a.id
 }
 
+// AddressFactory implements mino.AddressFactory
+type AddressFactory struct{}
+
+// FromText returns an instance of an address from a byte slice.
+func (f AddressFactory) FromText(text []byte) mino.Address {
+	return address{id: string(text)}
+}
+
 // NewMinogrpc sets up the grpc and http servers. It does not start the
 // server. Identifier must be an address with a port, something like
 // 127.0.0.1:3333
 //
 // TODO: use a different type of argument for identifier, maybe net/url ?
 func NewMinogrpc(identifier string) (Minogrpc, error) {
+
 	minoGrpc := Minogrpc{}
+
+	if identifier == "" {
+		return minoGrpc, xerrors.New("identifier can't be empty")
+	}
 
 	addr := address{
 		id: identifier,
@@ -74,7 +85,7 @@ func NewMinogrpc(identifier string) (Minogrpc, error) {
 // GetAddressFactory returns the address factory.
 // TODO: need implementation
 func (m Minogrpc) GetAddressFactory() mino.AddressFactory {
-	return nil
+	return AddressFactory{}
 }
 
 // GetAddress returns the address of the server
@@ -116,26 +127,6 @@ func (m Minogrpc) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 	}
 
 	m.server.handlers[URI] = h
-	// m.server.streamIn[URI] = make(chan *mino.Envelope, 1)
-
-	// Creating the local stream
-	clientConn, err := m.server.getConnection(m.server.addr.GetId())
-	if err != nil {
-		fabric.Logger.Fatal().Msgf("failed to get client conn: %v", err)
-	}
-	cl := NewOverlayClient(clientConn)
-
-	header := metadata.New(map[string]string{
-		"apiuri": rpc.uri,
-		"addr":   rpc.srv.addr.Id})
-	ctx := metadata.NewOutgoingContext(context.Background(), header)
-
-	stream, err := cl.Stream(ctx)
-	if err != nil {
-		fabric.Logger.Fatal().Msgf("failed to get stream from client: %v", err)
-	}
-
-	m.server.localStreamClients[URI] = stream
 
 	return rpc, nil
 }

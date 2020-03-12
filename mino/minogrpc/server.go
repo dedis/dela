@@ -136,6 +136,10 @@ func (rpc RPC) Call(req proto.Message,
 
 // CreateServer sets up a new server
 func CreateServer(addr mino.Address) (*Server, error) {
+	if addr.String() == "" {
+		return nil, xerrors.New("addr.String() should not be empty")
+	}
+
 	cert, err := makeCertificate()
 	if err != nil {
 		return nil, xerrors.Errorf("failed to make certificate: %v", err)

@@ -1,14 +1,17 @@
 package minogrpc
 
 import (
+	"bytes"
 	fmt "fmt"
 	"testing"
+	"testing/quick"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/mino"
 )
 
 func Test_NewMinogrpc(t *testing.T) {
+	// The happy path
 	id := "127.0.0.1:3333"
 
 	minoRPC, err := NewMinogrpc(id)
@@ -23,6 +26,10 @@ func Test_NewMinogrpc(t *testing.T) {
 	}
 
 	require.Equal(t, peer, minoRPC.server.neighbours[id])
+
+	// Giving an empty address
+	minoRPC, err = NewMinogrpc("")
+	require.EqualError(t, err, "identifier can't be empty")
 }
 
 func Test_MakeNamespace(t *testing.T) {
@@ -92,4 +99,45 @@ func Test_MakeRPC(t *testing.T) {
 
 	require.Equal(t, expectedRPC, rpc)
 
+}
+
+func Test_Address_MarshalText(t *testing.T) {
+	f := func(id string) bool {
+		addr := address{id: id}
+		buffer, err := addr.MarshalText()
+		require.NoError(t, err)
+
+		return bytes.Equal([]byte(id), buffer)
+	}
+
+	err := quick.Check(f, nil)
+	require.NoError(t, err)
+}
+
+func Test_Address_String(t *testing.T) {
+	f := func(id string) bool {
+		addr := address{id: id}
+
+		return id == addr.String()
+	}
+
+	err := quick.Check(f, nil)
+	require.NoError(t, err)
+}
+
+func Test_AddressFactory_FromText(t *testing.T) {
+	f := func(id string) bool {
+		factory := AddressFactory{}
+		addr := factory.FromText([]byte(id))
+
+		return addr.(address).id == id
+	}
+
+	err := quick.Check(f, nil)
+	require.NoError(t, err)
+}
+
+func Test_GetAddressFactory(t *testing.T) {
+	m := &Minogrpc{}
+	require.IsType(t, AddressFactory{}, m.GetAddressFactory())
 }
