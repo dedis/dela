@@ -196,7 +196,8 @@ func TestChainFactory_FromProto(t *testing.T) {
 
 	protoenc = &fakeEncoder{}
 	_, err = factory.FromProto(chainany)
-	require.EqualError(t, err, "couldn't decode *cosipbft.ChainProto to any: unmarshal any error")
+	require.Error(t, err)
+	require.True(t, xerrors.Is(err, encoding.NewAnyDecodingError((*ChainProto)(nil), nil)))
 }
 
 func TestChainFactory_DecodeSignature(t *testing.T) {

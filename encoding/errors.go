@@ -82,8 +82,7 @@ func NewAnyDecodingError(msg proto.Message, err error) AnyError {
 }
 
 func (e AnyError) Error() string {
-	msgType := reflect.TypeOf(e.Message)
-	return fmt.Sprintf("couldn't %s %v to any: %v", e.key, msgType, e.Err)
+	return fmt.Sprintf("couldn't %s any %T: %v", e.key, e.Message, e.Err)
 }
 
 // Is returns true when both errors are similar.
@@ -97,29 +96,4 @@ func (e AnyError) Is(err error) bool {
 // Unwrap returns the error wrapped.
 func (e AnyError) Unwrap() error {
 	return e.Err
-}
-
-type TypeError struct {
-	curr     string
-	expected string
-}
-
-func NewTypeError(curr proto.Message, expected proto.Message) TypeError {
-	currType := reflect.TypeOf(curr)
-	expectedType := reflect.TypeOf(expected)
-
-	return TypeError{
-		curr:     currType.String(),
-		expected: expectedType.String(),
-	}
-}
-
-func (e TypeError) Error() string {
-	return fmt.Sprintf("got message type '%#v' but expected '%#v'", e.curr, e.expected)
-}
-
-func (e TypeError) Is(err error) bool {
-	errtype, ok := err.(TypeError)
-
-	return ok && errtype.curr == e.curr && errtype.expected == e.expected
 }
