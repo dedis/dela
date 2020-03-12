@@ -33,7 +33,7 @@ func Test_Serve(t *testing.T) {
 	// The host should be resolvable
 	server.addr = address{id: "blabla:2000"}
 	err = server.Serve()
-	require.EqualError(t, err, "failed to listen: listen tcp4: lookup blabla: no such host")
+	require.True(t, strings.HasPrefix(err.Error(), "failed to listen: listen tcp4: lookup blabla"))
 }
 
 // Use a single node to make a call that just sends back the same message.
