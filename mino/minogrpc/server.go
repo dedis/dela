@@ -73,9 +73,9 @@ type Peer struct {
 	Certificate *x509.Certificate
 }
 
-// RPC represents an RPC that has been registered by a client. This struct
-// implements the mino.RPC interface, which allows clients to call an RPC that
-// will execute the provided handler.
+// RPC implements mino.RPC{}. It represents an RPC that has been registered by a
+// client, which allows clients to call an RPC that will execute the provided
+// handler.
 type RPC struct {
 	handler mino.Handler
 	srv     Server
@@ -336,7 +336,7 @@ func makeCertificate() (*tls.Certificate, error) {
 	}, nil
 }
 
-// sender ...
+// sender implements mino.Sender{}
 type sender struct {
 	node         mino.Node
 	participants []player
@@ -347,7 +347,7 @@ type player struct {
 	streamClient overlayStream
 }
 
-// send ...
+// send implements mino.Sender.Send()
 func (s sender) Send(msg proto.Message, addrs ...mino.Address) error {
 
 	for _, addr := range addrs {
@@ -386,13 +386,13 @@ func (s sender) Send(msg proto.Message, addrs ...mino.Address) error {
 	return nil
 }
 
-// receiver ...
+// receiver implements mino.receiver{}
 type receiver struct {
 	errs chan error
 	in   chan *OverlayMsg
 }
 
-// Recv ...
+// Recv implements mino.receiver.Recv()
 // TODO: check the error chan
 func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error) {
 
@@ -431,13 +431,15 @@ func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error)
 
 // This interface is used to have a common object between Overlay_StreamServer
 // and Overlay_StreamClient. We need it because the orchastrator is setting
-// Overlay_StreamClient but the RPC (overlay.go) is setting an
+// Overlay_StreamClient, while the RPC (in overlay.go) is setting an
 // Overlay_StreamServer
 type overlayStream interface {
 	Send(*OverlayMsg) error
 	Recv() (*OverlayMsg, error)
 }
 
+// getParticipant checks if a participant exists on the list of participant.
+// Returns nil if the participant is not in the list.
 func (s sender) getParticipant(addr mino.Address) *player {
 	for _, p := range s.participants {
 		if p.node.GetAddress().String() == addr.String() {
@@ -447,10 +449,12 @@ func (s sender) getParticipant(addr mino.Address) *player {
 	return nil
 }
 
+// simpleNode implements mino.Node{}
 type simpleNode struct {
 	addr address
 }
 
+// getAddress implements mino.Node.GetAddress()
 func (o simpleNode) GetAddress() mino.Address {
 	return o.addr
 }

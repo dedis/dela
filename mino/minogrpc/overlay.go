@@ -63,7 +63,8 @@ func (o overlayService) Call(ctx context.Context, msg *OverlayMsg) (*OverlayMsg,
 	return &OverlayMsg{Message: anyResult}, nil
 }
 
-// Stream ...
+// Stream is the fonction used to perform mino.RPC.Stream() calls. It is called
+// by the client side.
 func (o overlayService) Stream(stream Overlay_StreamServer) error {
 	// We fetch the uri that identifies the handler in the handlers map with the
 	// grpc metadata api. Using context.Value won't work.
@@ -99,20 +100,21 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 
 	addr := addrs[0]
 
+	// For the moment this sender can only receive messages to itself
+	// TODO: find a way to know the other nodes.
 	sender := sender{
 		// empty now
-		node: simpleNode{},
+		node: simpleNode{address{}},
 		participants: []player{
 			player{
 				node: simpleNode{
-					addr: address{
-						id: addr,
-					},
+					addr: address{addr},
 				},
 				streamClient: stream,
 			},
 		},
 	}
+
 	receiver := receiver{
 		in:   make(chan *OverlayMsg),
 		errs: make(chan error),
