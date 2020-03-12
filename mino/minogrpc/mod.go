@@ -65,10 +65,7 @@ func NewMinogrpc(identifier string) (Minogrpc, error) {
 		return minoGrpc, xerrors.Errorf("failed to create server: %v", err)
 	}
 
-	err = server.StartServer()
-	if err != nil {
-		return minoGrpc, xerrors.Errorf("failed to start the server: %v", err)
-	}
+	server.StartServer()
 
 	peer := Peer{
 		Address:     server.listener.Addr().String(),
