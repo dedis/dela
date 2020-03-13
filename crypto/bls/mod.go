@@ -22,8 +22,7 @@ var (
 	protoenc encoding.ProtoMarshaler = encoding.NewProtoEncoder()
 )
 
-// publicKey is the implementation of the crypto.PublicKey interface for a BLS
-// signature. The public key can be used to verify a signature.
+// publicKey can be provided to verify a BLS signature.
 type publicKey struct {
 	point kyber.Point
 }
@@ -45,7 +44,8 @@ func (pk publicKey) Pack() (proto.Message, error) {
 	return &PublicKeyProto{Data: buffer}, nil
 }
 
-// Equal returns true if the other public key is the same.
+// Equal implements crypto.PublicKey. It returns true if the other public key
+// is the same.
 func (pk publicKey) Equal(other crypto.PublicKey) bool {
 	pubkey, ok := other.(publicKey)
 	if !ok {
@@ -55,9 +55,8 @@ func (pk publicKey) Equal(other crypto.PublicKey) bool {
 	return pubkey.point.Equal(pk.point)
 }
 
-// signature is the implementation of the crypto.Signature interface for a BLS
-// signature. The signature is a proof of the integrity of a single message
-// associated with a unique public key.
+// signature is a proof of the integrity of a single message associated with a
+// unique public key.
 type signature struct {
 	data []byte
 }
@@ -74,6 +73,7 @@ func (sig signature) Pack() (proto.Message, error) {
 	return &SignatureProto{Data: sig.data}, nil
 }
 
+// Equal implements crypto.PublicKey.
 func (sig signature) Equal(other crypto.Signature) bool {
 	otherSig, ok := other.(signature)
 	if !ok {
@@ -83,12 +83,11 @@ func (sig signature) Equal(other crypto.Signature) bool {
 	return bytes.Equal(sig.data, otherSig.data)
 }
 
-// publicKeyFactory is the implementation of the crypto.PublicKeyFactory
-// interface for a BLS signature.
+// publicKeyFactory creates BLS compatible public key from protobuf messages.
 type publicKeyFactory struct{}
 
-// FromProto returns the public key decoded from the message, or an error if the
-// message is invalid.
+// FromProto implements crypto.PublicKeyFactory. It creates a public key from
+// its protobuf representation.
 func (f publicKeyFactory) FromProto(src proto.Message) (crypto.PublicKey, error) {
 	var pb *PublicKeyProto
 
@@ -115,12 +114,12 @@ func (f publicKeyFactory) FromProto(src proto.Message) (crypto.PublicKey, error)
 	return publicKey{point: point}, nil
 }
 
-// signatureFactory is the implementation of the crypto.SignatureFactory
-// interface for a BLS signature.
+// signatureFactory provides functions to create BLS signatures from protobuf
+// messages.
 type signatureFactory struct{}
 
-// FromProto returns the protobuf message representing the signature, or an
-// error if the message is invalid.
+// FromProto implements crypto.SignatureFactory. It creates a BLS signature from
+// its protobuf representation.
 func (f signatureFactory) FromProto(src proto.Message) (crypto.Signature, error) {
 	var pb *SignatureProto
 
@@ -141,7 +140,7 @@ func (f signatureFactory) FromProto(src proto.Message) (crypto.Signature, error)
 	return signature{data: pb.GetData()}, nil
 }
 
-// verifier implements the crypto.Verifier interface for BLS signatures.
+// verifier provides primitives to verify a BLS signature of a unique message.
 type blsVerifier struct {
 	points []kyber.Point
 }
@@ -151,7 +150,8 @@ func newVerifier(points []kyber.Point) crypto.Verifier {
 	return blsVerifier{points: points}
 }
 
-// Verify returns no error if the signature matches the message.
+// Verify implements crypto.Verifier. It returns nil if the signature matches
+// the message, or an error otherwise.
 func (v blsVerifier) Verify(msg []byte, sig crypto.Signature) error {
 	aggKey := bls.AggregatePublicKeys(suite, v.points...)
 
@@ -165,9 +165,9 @@ func (v blsVerifier) Verify(msg []byte, sig crypto.Signature) error {
 
 type verifierFactory struct{}
 
-// FromIterator implements the crypto.VerifierFactory interface. It returns a
-// verifier that will verify the signatures collectively signed by all the
-// signers associated with the public keys.
+// FromIterator implements crypto.VerifierFactory. It returns a verifier that
+// will verify the signatures collectively signed by all the signers associated
+// with the public keys.
 func (v verifierFactory) FromIterator(iter crypto.PublicKeyIterator) (crypto.Verifier, error) {
 	if iter == nil {
 		return nil, xerrors.New("iterator is nil")
@@ -187,9 +187,9 @@ func (v verifierFactory) FromIterator(iter crypto.PublicKeyIterator) (crypto.Ver
 	return newVerifier(points), nil
 }
 
-// FromArray implements the crypto.VerifierFactory interface. It returns a
-// verifier that will verify the signatures collectively signed by all the
-// signers associated with the public keys.
+// FromArray implements crypto.VerifierFactory. It returns a verifier that will
+// verify the signatures collectively signed by all the signers associated with
+// the public keys.
 func (v verifierFactory) FromArray(publicKeys []crypto.PublicKey) (crypto.Verifier, error) {
 	points := make([]kyber.Point, len(publicKeys))
 	for i, pubkey := range publicKeys {
@@ -216,28 +216,32 @@ func NewSigner() crypto.AggregateSigner {
 	}
 }
 
-// GetVerifierFactory returns the verifier factory for BLS signatures.
+// GetVerifierFactory implements crypto.Signer. It returns the verifier factory
+// for BLS signatures.
 func (s signer) GetVerifierFactory() crypto.VerifierFactory {
 	return verifierFactory{}
 }
 
-// GetPublicKeyFactory returns the public key factory for BLS signatures.
+// GetPublicKeyFactory implements crypto.Signer. It returns the public key
+// factory for BLS signatures.
 func (s signer) GetPublicKeyFactory() crypto.PublicKeyFactory {
 	return publicKeyFactory{}
 }
 
-// GetSignatureFactory returns the signature factory for BLS signatures.
+// GetSignatureFactory implements crypto.Signer. It returns the signature
+// factory for BLS signatures.
 func (s signer) GetSignatureFactory() crypto.SignatureFactory {
 	return signatureFactory{}
 }
 
-// GetPublicKey returns the public key of the signer.
+// GetPublicKey implements crypto.Signer. It returns the public key of the
+// signer that can be used to verify signatures.
 func (s signer) GetPublicKey() crypto.PublicKey {
 	return publicKey{point: s.keyPair.Public}
 }
 
-// Sign signs the message in parameter and returns the signature, or an error if
-// it cannot sign.
+// Sign implements crypto.Signer. It signs the message in parameter and returns
+// the signature, or an error if it cannot sign.
 func (s signer) Sign(msg []byte) (crypto.Signature, error) {
 	sig, err := bls.Sign(suite, s.keyPair.Private, msg)
 	if err != nil {
@@ -247,8 +251,8 @@ func (s signer) Sign(msg []byte) (crypto.Signature, error) {
 	return signature{data: sig}, nil
 }
 
-// Aggregate aggregates the signatures into a single one that can be verifier
-// with the aggregated public key associated.
+// Aggregate implements crypto.Signer. It aggregates the signatures into a
+// single one that can be verifier with the aggregated public key associated.
 func (s signer) Aggregate(signatures ...crypto.Signature) (crypto.Signature, error) {
 	buffers := make([][]byte, len(signatures))
 	for i, sig := range signatures {

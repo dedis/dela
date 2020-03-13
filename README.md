@@ -6,6 +6,10 @@ This framework aims to deliver a modular approach to a public ledger implementat
 
 ## Terminologies
 
+- **actor** - An actor is a player of a protocol or a module. It is intended to
+  be accessible only after the initialization and it provides the primitives to
+  start the underlying protocol logic.
+
 - **blockchain** - A blockchain is...
 
 - **cosi** - Cosi stands for *Collective Signature**, ...

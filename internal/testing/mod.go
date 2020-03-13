@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gogo/protobuf/protoc-gen-gogo/descriptor"
+	"github.com/golang/protobuf/descriptor"
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
 )
