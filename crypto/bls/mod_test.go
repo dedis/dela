@@ -12,9 +12,21 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
+	internal "go.dedis.ch/fabric/internal/testing"
 	"go.dedis.ch/kyber/v3"
 	"golang.org/x/xerrors"
 )
+
+func TestMessages(t *testing.T) {
+	messages := []proto.Message{
+		&PublicKeyProto{},
+		&SignatureProto{},
+	}
+
+	for _, m := range messages {
+		internal.CoverProtoMessage(t, m)
+	}
+}
 
 func TestPublicKey_MarshalBinary(t *testing.T) {
 	signer := NewSigner()
@@ -195,23 +207,15 @@ func TestSignatureFactory_FromProto(t *testing.T) {
 	require.True(t, xerrors.Is(err, encoding.NewAnyDecodingError((*SignatureProto)(nil), nil)))
 }
 
-func TestVerifier_GetPublicKeyFactory(t *testing.T) {
-	verifier := blsVerifier{}
-	require.IsType(t, publicKeyFactory{}, verifier.GetPublicKeyFactory())
-}
-
-func TestVerifier_GetSignatureFactory(t *testing.T) {
-	verifier := blsVerifier{}
-	require.IsType(t, signatureFactory{}, verifier.GetSignatureFactory())
-}
-
 func TestVerifier_Verify(t *testing.T) {
 	f := func(msg []byte) bool {
 		signer := NewSigner()
 		sig, err := signer.Sign(msg)
 		require.NoError(t, err)
 
-		verifier := newVerifier([]crypto.PublicKey{signer.GetPublicKey()})
+		verifier := newVerifier(
+			[]kyber.Point{signer.GetPublicKey().(publicKey).point},
+		)
 		err = verifier.Verify(msg, sig)
 		require.NoError(t, err)
 
@@ -225,17 +229,62 @@ func TestVerifier_Verify(t *testing.T) {
 	require.NoError(t, err)
 }
 
+type fakeIterator struct {
+	count int
+	bad   bool
+}
+
+func (i *fakeIterator) HasNext() bool {
+	return i.count > 0
+}
+
+func (i *fakeIterator) GetNext() crypto.PublicKey {
+	i.count--
+	if i.bad {
+		return fakePublicKey{}
+	}
+
+	return publicKey{point: suite.Point()}
+}
+
+func TestVerifierFactory_FromIterator(t *testing.T) {
+	factory := verifierFactory{}
+
+	verifier, err := factory.FromIterator(&fakeIterator{count: 2})
+	require.NoError(t, err)
+	require.IsType(t, blsVerifier{}, verifier)
+	require.Len(t, verifier.(blsVerifier).points, 2)
+	require.NotNil(t, verifier.(blsVerifier).points[0])
+	require.NotNil(t, verifier.(blsVerifier).points[1])
+
+	verifier, err = factory.FromIterator(nil)
+	require.EqualError(t, err, "iterator is nil")
+
+	verifier, err = factory.FromIterator(&fakeIterator{count: 1, bad: true})
+	require.EqualError(t, err, "invalid public key type: bls.fakePublicKey")
+}
+
+func TestVerifierFactory_FromArray(t *testing.T) {
+	factory := verifierFactory{}
+
+	verifier, err := factory.FromArray([]crypto.PublicKey{publicKey{}})
+	require.NoError(t, err)
+	require.Len(t, verifier.(blsVerifier).points, 1)
+
+	verifier, err = factory.FromArray(nil)
+	require.NoError(t, err)
+	require.Empty(t, verifier.(blsVerifier).points)
+
+	verifier, err = factory.FromArray([]crypto.PublicKey{fakePublicKey{}})
+	require.EqualError(t, err, "invalid public key type: bls.fakePublicKey")
+}
+
 func TestSigner_GetVerifierFactory(t *testing.T) {
 	signer := NewSigner()
 
 	factory := signer.GetVerifierFactory()
 	require.NotNil(t, factory)
 	require.IsType(t, verifierFactory{}, factory)
-
-	verifier := factory.Create(signer.GetPublicKey())
-	require.NotNil(t, verifier)
-	require.IsType(t, blsVerifier{}, verifier)
-	require.Len(t, verifier.(blsVerifier).pubkeys, 1)
 }
 
 func TestSigner_GetPublicKeyFactory(t *testing.T) {
@@ -260,7 +309,10 @@ func TestSigner_Sign(t *testing.T) {
 		sig, err := signer.Sign(msg)
 		require.NoError(t, err)
 
-		verifier := signer.GetVerifierFactory().Create(signer.GetPublicKey())
+		verifier, err := signer.GetVerifierFactory().FromArray(
+			[]crypto.PublicKey{signer.GetPublicKey()},
+		)
+		require.NoError(t, err)
 		err = verifier.Verify(msg, sig)
 		return err == nil
 	}
@@ -287,7 +339,8 @@ func TestSigner_Aggregate(t *testing.T) {
 		agg, err := signer.Aggregate(signatures...)
 		require.NoError(t, err)
 
-		verifier := signer.GetVerifierFactory().Create(pubkeys...)
+		verifier, err := signer.GetVerifierFactory().FromArray(pubkeys)
+		require.NoError(t, err)
 		err = verifier.Verify(msg, agg)
 		require.NoError(t, err)
 

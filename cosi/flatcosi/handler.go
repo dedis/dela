@@ -1,13 +1,13 @@
-package blscosi
+package flatcosi
 
 import (
-	"errors"
-
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto"
+	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
+	"golang.org/x/xerrors"
 )
 
 type handler struct {
@@ -24,36 +24,40 @@ func newHandler(s crypto.Signer, h cosi.Hashable) handler {
 }
 
 func (h handler) Process(msg proto.Message) (proto.Message, error) {
+	var resp proto.Message
+
 	switch req := msg.(type) {
 	case *SignatureRequest:
 		var da ptypes.DynamicAny
-		err := ptypes.UnmarshalAny(req.Message, &da)
+		err := protoenc.UnmarshalAny(req.Message, &da)
 		if err != nil {
-			return nil, err
+			return nil, encoding.NewAnyDecodingError(&da, err)
 		}
 
 		buf, err := h.hasher.Hash(da.Message)
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("couldn't hash message: %v", err)
 		}
 
 		sig, err := h.signer.Sign(buf)
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("couldn't sign: %v", err)
 		}
 
 		sigproto, err := sig.Pack()
 		if err != nil {
-			return nil, err
+			return nil, encoding.NewEncodingError("signature", err)
 		}
 
-		sigany, err := ptypes.MarshalAny(sigproto)
+		sigany, err := protoenc.MarshalAny(sigproto)
 		if err != nil {
-			return nil, err
+			return nil, encoding.NewAnyEncodingError(sigproto, err)
 		}
 
-		return &SignatureResponse{Signature: sigany}, nil
+		resp = &SignatureResponse{Signature: sigany}
+	default:
+		return nil, xerrors.Errorf("invalid message type: %T", msg)
 	}
 
-	return nil, errors.New("unknown type of message")
+	return resp, nil
 }

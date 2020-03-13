@@ -5,7 +5,6 @@ import (
 
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
-	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/mino"
 )
@@ -112,7 +111,7 @@ func (cc Conodes) AddressIterator() mino.AddressIterator {
 }
 
 // PublicKeyIterator returns the public key iterator.
-func (cc Conodes) PublicKeyIterator() cosi.PublicKeyIterator {
+func (cc Conodes) PublicKeyIterator() crypto.PublicKeyIterator {
 	return &publicKeyIterator{
 		iterator: &iterator{
 			index:   -1,

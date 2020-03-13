@@ -25,6 +25,13 @@ type PublicKeyFactory interface {
 	FromProto(src proto.Message) (PublicKey, error)
 }
 
+// PublicKeyIterator is an iterator over the list of public keys of a
+// collective authority.
+type PublicKeyIterator interface {
+	HasNext() bool
+	GetNext() PublicKey
+}
+
 // Signature is a verifiable element for a unique message.
 type Signature interface {
 	encoding.Packable
@@ -40,13 +47,13 @@ type SignatureFactory interface {
 
 // Verifier provides the primitive to verify a signature w.r.t. a message.
 type Verifier interface {
-	GetPublicKeyFactory() PublicKeyFactory
-
 	Verify(msg []byte, signature Signature) error
 }
 
+// VerifierFactory provides the primitives to create a verifier.
 type VerifierFactory interface {
-	Create(publicKeys ...PublicKey) Verifier
+	FromIterator(iter PublicKeyIterator) (Verifier, error)
+	FromArray(keys []PublicKey) (Verifier, error)
 }
 
 // Signer provides the primitives to sign and verify signatures.

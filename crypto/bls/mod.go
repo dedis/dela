@@ -143,34 +143,17 @@ func (f signatureFactory) FromProto(src proto.Message) (crypto.Signature, error)
 
 // verifier implements the crypto.Verifier interface for BLS signatures.
 type blsVerifier struct {
-	pubkeys []crypto.PublicKey
+	points []kyber.Point
 }
 
 // NewVerifier returns a new verifier that can verify BLS signatures.
-func newVerifier(pubkeys []crypto.PublicKey) crypto.Verifier {
-	return blsVerifier{
-		pubkeys: pubkeys,
-	}
-}
-
-// GetPublicKeyFactory returns a factory to make BLS public keys.
-func (v blsVerifier) GetPublicKeyFactory() crypto.PublicKeyFactory {
-	return publicKeyFactory{}
-}
-
-// GetSignatureFactory returns a factory to make BLS signatures.
-func (v blsVerifier) GetSignatureFactory() crypto.SignatureFactory {
-	return signatureFactory{}
+func newVerifier(points []kyber.Point) crypto.Verifier {
+	return blsVerifier{points: points}
 }
 
 // Verify returns no error if the signature matches the message.
 func (v blsVerifier) Verify(msg []byte, sig crypto.Signature) error {
-	points := make([]kyber.Point, len(v.pubkeys))
-	for i, pubkey := range v.pubkeys {
-		points[i] = pubkey.(publicKey).point
-	}
-
-	aggKey := bls.AggregatePublicKeys(suite, points...)
+	aggKey := bls.AggregatePublicKeys(suite, v.points...)
 
 	err := bls.Verify(suite, aggKey, msg, sig.(signature).data)
 	if err != nil {
@@ -182,8 +165,43 @@ func (v blsVerifier) Verify(msg []byte, sig crypto.Signature) error {
 
 type verifierFactory struct{}
 
-func (v verifierFactory) Create(publicKeys ...crypto.PublicKey) crypto.Verifier {
-	return newVerifier(publicKeys)
+// FromIterator implements the crypto.VerifierFactory interface. It returns a
+// verifier that will verify the signatures collectively signed by all the
+// signers associated with the public keys.
+func (v verifierFactory) FromIterator(iter crypto.PublicKeyIterator) (crypto.Verifier, error) {
+	if iter == nil {
+		return nil, xerrors.New("iterator is nil")
+	}
+
+	points := make([]kyber.Point, 0)
+	for iter.HasNext() {
+		next := iter.GetNext()
+		pk, ok := next.(publicKey)
+		if !ok {
+			return nil, xerrors.Errorf("invalid public key type: %T", next)
+		}
+
+		points = append(points, pk.point)
+	}
+
+	return newVerifier(points), nil
+}
+
+// FromArray implements the crypto.VerifierFactory interface. It returns a
+// verifier that will verify the signatures collectively signed by all the
+// signers associated with the public keys.
+func (v verifierFactory) FromArray(publicKeys []crypto.PublicKey) (crypto.Verifier, error) {
+	points := make([]kyber.Point, len(publicKeys))
+	for i, pubkey := range publicKeys {
+		pk, ok := pubkey.(publicKey)
+		if !ok {
+			return nil, xerrors.Errorf("invalid public key type: %T", pubkey)
+		}
+
+		points[i] = pk.point
+	}
+
+	return newVerifier(points), nil
 }
 
 type signer struct {

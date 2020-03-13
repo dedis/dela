@@ -163,8 +163,8 @@ type fakeCosi struct {
 	cosi.CollectiveSigning
 }
 
-func (cosi fakeCosi) GetVerifier(cosi.CollectiveAuthority) crypto.Verifier {
-	return fakeVerifier{}
+func (cosi fakeCosi) GetVerifier(cosi.CollectiveAuthority) (crypto.Verifier, error) {
+	return fakeVerifier{}, nil
 }
 
 func TestBlockFactory_CreateGenesis(t *testing.T) {

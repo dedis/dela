@@ -208,8 +208,13 @@ func (f *blockFactory) createGenesis(conodes Conodes, data proto.Message) (SkipB
 	randomBackLink := Digest{}
 	rand.Read(randomBackLink[:])
 
+	verifier, err := f.cosi.GetVerifier(conodes)
+	if err != nil {
+		return SkipBlock{}, xerrors.Errorf("couldn't make the verifier: %v", err)
+	}
+
 	genesis := SkipBlock{
-		verifier:      f.cosi.GetVerifier(conodes),
+		verifier:      verifier,
 		Index:         0,
 		Conodes:       conodes,
 		Height:        1,
@@ -303,8 +308,13 @@ func (f *blockFactory) decodeBlock(factory crypto.PublicKeyFactory, src proto.Me
 	genesisID := Digest{}
 	copy(genesisID[:], in.GetGenesisID())
 
+	verifier, err := f.cosi.GetVerifier(conodes)
+	if err != nil {
+		return SkipBlock{}, xerrors.Errorf("couldn't make verifier: %v", err)
+	}
+
 	block := SkipBlock{
-		verifier:      f.cosi.GetVerifier(conodes),
+		verifier:      verifier,
 		Index:         in.GetIndex(),
 		Conodes:       conodes,
 		Height:        in.GetHeight(),
