@@ -171,7 +171,7 @@ func Test_Stream(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// -------
+// -----------------
 // Utility functions
 
 // implements a handler interface that returns an error in call and stream

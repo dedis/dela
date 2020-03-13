@@ -179,7 +179,7 @@ func Test_AddressIterator(t *testing.T) {
 	require.False(t, it.HasNext())
 }
 
-// -------
+// -----------------
 // Utility functions
 
 // fakePlayers implements mino.Players{}

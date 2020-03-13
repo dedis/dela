@@ -534,7 +534,7 @@ func Test_Recv(t *testing.T) {
 	require.EqualError(t, err, encoding.NewAnyDecodingError(msg.Message, errors.New("message is nil")).Error())
 }
 
-// -------
+// -----------------
 // Utility functions
 
 // implements a handler interface that just returns the input

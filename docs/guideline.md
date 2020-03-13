@@ -40,3 +40,15 @@ type RPC struct {
 	uri     string
 }
 ```
+
+## Tests
+
+In test files, all the utility stuff should be grouped at the end of the file,
+preceded by
+
+```go
+// -----------------
+// Utility functions
+
+// utility stuff...
+```
