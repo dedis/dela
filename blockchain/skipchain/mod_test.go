@@ -16,11 +16,11 @@ func TestSkipchain_Basic(t *testing.T) {
 	n := 5
 	manager := minoch.NewManager()
 
-	c1, s1, _ := makeSkipchain(t, "A", manager)
+	c1, s1, a1 := makeSkipchain(t, "A", manager)
 	c2, _, a2 := makeSkipchain(t, "B", manager)
 	conodes := Conodes{c1, c2}
 
-	err := s1.initChain(conodes)
+	err := a1.InitChain(&empty.Empty{}, conodes)
 	require.NoError(t, err)
 
 	for i := 0; i < n; i++ {

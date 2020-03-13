@@ -5,6 +5,7 @@ import (
 
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
+	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/mino"
 )
@@ -95,6 +96,20 @@ func (i *publicKeyIterator) GetNext() crypto.PublicKey {
 // Conodes is a list of conodes.
 type Conodes []Conode
 
+func newConodes(ca cosi.CollectiveAuthority) Conodes {
+	conodes := make([]Conode, ca.Len())
+	addrIter := ca.AddressIterator()
+	publicKeyIter := ca.PublicKeyIterator()
+	for i := range conodes {
+		conodes[i] = Conode{
+			addr:      addrIter.GetNext(),
+			publicKey: publicKeyIter.GetNext(),
+		}
+	}
+
+	return conodes
+}
+
 // Take returns a subset of the conodes.
 func (cc Conodes) Take(filters ...mino.FilterUpdater) mino.Players {
 	f := mino.ApplyFilters(filters)
@@ -102,7 +117,6 @@ func (cc Conodes) Take(filters ...mino.FilterUpdater) mino.Players {
 	for i, k := range f.Indices {
 		conodes[i] = cc[k]
 	}
-
 	return conodes
 }
 

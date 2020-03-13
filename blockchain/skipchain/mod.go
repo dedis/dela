@@ -18,7 +18,7 @@ import (
 	"golang.org/x/xerrors"
 )
 
-//go:generate protoc -I ./ --proto_path=../../ --go_out=Mblockchain/messages.proto=go.dedis.ch/fabric/blockchain:. ./messages.proto
+//go:generate protoc -I ./ --go_out=./ ./messages.proto
 
 // Skipchain implements the Blockchain interface by using collective signatures
 // to create a verifiable chain.
@@ -27,7 +27,6 @@ type Skipchain struct {
 	blockFactory *blockFactory
 	db           Database
 	consensus    consensus.Consensus
-	rpc          mino.RPC
 }
 
 // NewSkipchain returns a new instance of Skipchain.
@@ -46,44 +45,17 @@ func NewSkipchain(m mino.Mino, cosi cosi.CollectiveSigning) *Skipchain {
 	}
 }
 
-func (s *Skipchain) initChain(conodes Conodes) error {
-	genesis, err := s.blockFactory.createGenesis(conodes, nil)
-	if err != nil {
-		return xerrors.Errorf("couldn't create the genesis block: %v", err)
-	}
-
-	packed, err := genesis.Pack()
-	if err != nil {
-		return xerrors.Errorf("couldn't encode the block: %v", err)
-	}
-
-	msg := &PropagateGenesis{
-		Genesis: packed.(*BlockProto),
-	}
-
-	closing, errs := s.rpc.Call(msg, conodes)
-	select {
-	case <-closing:
-	case err := <-errs:
-		fabric.Logger.Err(err).Msg("couldn't propagate genesis block")
-		return xerrors.Errorf("error in propagation: %v", err)
-	}
-
-	return nil
-}
-
 // Listen starts the RPCs.
 func (s *Skipchain) Listen(v blockchain.Validator) (blockchain.Actor, error) {
-	rpc, err := s.mino.MakeRPC("skipchain", newHandler(s.db, s.blockFactory))
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't create the rpc: %v", err)
-	}
-
-	s.rpc = rpc
-
 	actor := skipchainActor{
 		db:           s.db,
 		blockFactory: s.blockFactory,
+	}
+
+	var err error
+	actor.rpc, err = s.mino.MakeRPC("skipchain", newHandler(s.db, s.blockFactory))
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't create the rpc: %v", err)
 	}
 
 	actor.consensus, err = s.consensus.Listen(&blockValidator{Skipchain: s, validator: v})
@@ -145,6 +117,40 @@ type skipchainActor struct {
 	db           Database
 	blockFactory *blockFactory
 	consensus    consensus.Actor
+	rpc          mino.RPC
+}
+
+func (a skipchainActor) InitChain(data proto.Message, players mino.Players) error {
+	ca, ok := players.(cosi.CollectiveAuthority)
+	if !ok {
+		return xerrors.Errorf("players must implement cosi.CollectiveAuthority")
+	}
+
+	conodes := newConodes(ca)
+
+	genesis, err := a.blockFactory.createGenesis(conodes, nil)
+	if err != nil {
+		return xerrors.Errorf("couldn't create the genesis block: %v", err)
+	}
+
+	packed, err := genesis.Pack()
+	if err != nil {
+		return xerrors.Errorf("couldn't encode the block: %v", err)
+	}
+
+	msg := &PropagateGenesis{
+		Genesis: packed.(*BlockProto),
+	}
+
+	closing, errs := a.rpc.Call(msg, conodes)
+	select {
+	case <-closing:
+	case err := <-errs:
+		fabric.Logger.Err(err).Msg("couldn't propagate genesis block")
+		return xerrors.Errorf("error in propagation: %v", err)
+	}
+
+	return nil
 }
 
 // Store will append a new block to chain filled with the data.
