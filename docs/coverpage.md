@@ -9,7 +9,7 @@
     <a href='https://coveralls.io/github/dedis/fabric?branch=master'><img src='https://coveralls.io/repos/github/dedis/fabric/badge.svg?branch=master' alt='Coverage Status' /></a>
 </p>
 
-- Set of modular abstraction to perform DL operations
-- Implementation of a minimalistic DL
-- Implementation of a complete DL based on [1](https://www.usenix.org/system/files/conference/usenixsecurity16/sec16_paper_kokoris-kogias.pdf)
-- A platform that supports reseach in DLT
+- A set of modular abstractions to perform DL operations
+- Provides an implementation of a minimalistic DL
+- Demonstrates a full working DL implementation based on [Byzcoin](https://www.usenix.org/system/files/conference/usenixsecurity16/sec16_paper_kokoris-kogias.pdf)
+- Offers a platform that supports reseach in DLT
