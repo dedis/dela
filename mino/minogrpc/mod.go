@@ -21,17 +21,29 @@ type Minogrpc struct {
 	namespace string
 }
 
+// address implements mino.Address{}
 // TODO: improve to support internet addresses.
 type address struct {
 	id string
 }
 
+// MarshalText implements mino.Address.MarshalText()
 func (a address) MarshalText() ([]byte, error) {
 	return []byte(a.id), nil
 }
 
+// String implements mino.Address.String()
 func (a address) String() string {
 	return a.id
+}
+
+// addressFactory implements mino.AddressFactory{}
+type addressFactory struct{}
+
+// FromText implements AddressFactory.FromText(). It returns an instance of an
+// address from a byte slice.
+func (f addressFactory) FromText(text []byte) mino.Address {
+	return address{id: string(text)}
 }
 
 // NewMinogrpc sets up the grpc and http servers. It does not start the
@@ -40,7 +52,12 @@ func (a address) String() string {
 //
 // TODO: use a different type of argument for identifier, maybe net/url ?
 func NewMinogrpc(identifier string) (Minogrpc, error) {
+
 	minoGrpc := Minogrpc{}
+
+	if identifier == "" {
+		return minoGrpc, xerrors.New("identifier can't be empty")
+	}
 
 	addr := address{
 		id: identifier,
@@ -51,10 +68,7 @@ func NewMinogrpc(identifier string) (Minogrpc, error) {
 		return minoGrpc, xerrors.Errorf("failed to create server: %v", err)
 	}
 
-	err = server.StartServer()
-	if err != nil {
-		return minoGrpc, xerrors.Errorf("failed to start the server: %v", err)
-	}
+	server.StartServer()
 
 	peer := Peer{
 		Address:     server.listener.Addr().String(),
@@ -68,22 +82,23 @@ func NewMinogrpc(identifier string) (Minogrpc, error) {
 	return minoGrpc, err
 }
 
-// GetAddressFactory returns the address factory.
-// TODO: need implementation
+// GetAddressFactory implements mino.GetAddressFactory(). It returns the address
+// factory.
 func (m Minogrpc) GetAddressFactory() mino.AddressFactory {
-	return nil
+	return addressFactory{}
 }
 
-// GetAddress returns the address of the server
+// GetAddress implements mino.GetAddress(). It returns the address of the server
 func (m Minogrpc) GetAddress() mino.Address {
 	return m.server.addr
 }
 
-// MakeNamespace creates a new Minogrpc struct that has the specified namespace.
-// This namespace is further used to scope newly created RPCs. There can be
-// multiple namespaces. If there is already a namespace, then the new one will
-// be concatenated leading to namespace1/namespace2. A namespace can not be
-// empty an should match [a-zA-Z0-9]+
+// MakeNamespace implements mino.MakeNamespace(). It creates a new Minogrpc
+// struct that has the specified namespace. This namespace is further used to
+// scope newly created RPCs. There can be multiple namespaces. If there is
+// already a namespace, then the new one will be concatenated leading to
+// namespace1/namespace2. A namespace can not be empty an should match
+// [a-zA-Z0-9]+
 func (m Minogrpc) MakeNamespace(namespace string) (mino.Mino, error) {
 	if namespace == "" {
 		return nil, xerrors.Errorf("a namespace can not be empty")
@@ -102,8 +117,9 @@ func (m Minogrpc) MakeNamespace(namespace string) (mino.Mino, error) {
 	return newM, nil
 }
 
-// MakeRPC registers the handler using a uniq URI of form "namespace/name". It
-// returns a struct that allows client to call the RPC.
+// MakeRPC implements mino.MakeRPC(). It registers the handler using a uniq URI of
+// form "namespace/name". It returns a struct that allows client to call the
+// RPC.
 func (m Minogrpc) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 	URI := fmt.Sprintf("%s/%s", m.namespace, name)
 	rpc := RPC{

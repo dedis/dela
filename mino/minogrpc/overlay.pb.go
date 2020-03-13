@@ -81,78 +81,39 @@ func (m *Envelope) GetMessage() *any.Any {
 	return nil
 }
 
-type CallMsg struct {
+type OverlayMsg struct {
 	Message              *any.Any `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
 	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *CallMsg) Reset()         { *m = CallMsg{} }
-func (m *CallMsg) String() string { return proto.CompactTextString(m) }
-func (*CallMsg) ProtoMessage()    {}
-func (*CallMsg) Descriptor() ([]byte, []int) {
+func (m *OverlayMsg) Reset()         { *m = OverlayMsg{} }
+func (m *OverlayMsg) String() string { return proto.CompactTextString(m) }
+func (*OverlayMsg) ProtoMessage()    {}
+func (*OverlayMsg) Descriptor() ([]byte, []int) {
 	return fileDescriptor_61fc82527fbe24ad, []int{1}
 }
 
-func (m *CallMsg) XXX_Unmarshal(b []byte) error {
-	return xxx_messageInfo_CallMsg.Unmarshal(m, b)
+func (m *OverlayMsg) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_OverlayMsg.Unmarshal(m, b)
 }
-func (m *CallMsg) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	return xxx_messageInfo_CallMsg.Marshal(b, m, deterministic)
+func (m *OverlayMsg) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_OverlayMsg.Marshal(b, m, deterministic)
 }
-func (m *CallMsg) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_CallMsg.Merge(m, src)
+func (m *OverlayMsg) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_OverlayMsg.Merge(m, src)
 }
-func (m *CallMsg) XXX_Size() int {
-	return xxx_messageInfo_CallMsg.Size(m)
+func (m *OverlayMsg) XXX_Size() int {
+	return xxx_messageInfo_OverlayMsg.Size(m)
 }
-func (m *CallMsg) XXX_DiscardUnknown() {
-	xxx_messageInfo_CallMsg.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_CallMsg proto.InternalMessageInfo
-
-func (m *CallMsg) GetMessage() *any.Any {
-	if m != nil {
-		return m.Message
-	}
-	return nil
+func (m *OverlayMsg) XXX_DiscardUnknown() {
+	xxx_messageInfo_OverlayMsg.DiscardUnknown(m)
 }
 
-type CallResp struct {
-	Message              *any.Any `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
-	XXX_NoUnkeyedLiteral struct{} `json:"-"`
-	XXX_unrecognized     []byte   `json:"-"`
-	XXX_sizecache        int32    `json:"-"`
-}
+var xxx_messageInfo_OverlayMsg proto.InternalMessageInfo
 
-func (m *CallResp) Reset()         { *m = CallResp{} }
-func (m *CallResp) String() string { return proto.CompactTextString(m) }
-func (*CallResp) ProtoMessage()    {}
-func (*CallResp) Descriptor() ([]byte, []int) {
-	return fileDescriptor_61fc82527fbe24ad, []int{2}
-}
-
-func (m *CallResp) XXX_Unmarshal(b []byte) error {
-	return xxx_messageInfo_CallResp.Unmarshal(m, b)
-}
-func (m *CallResp) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	return xxx_messageInfo_CallResp.Marshal(b, m, deterministic)
-}
-func (m *CallResp) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_CallResp.Merge(m, src)
-}
-func (m *CallResp) XXX_Size() int {
-	return xxx_messageInfo_CallResp.Size(m)
-}
-func (m *CallResp) XXX_DiscardUnknown() {
-	xxx_messageInfo_CallResp.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_CallResp proto.InternalMessageInfo
-
-func (m *CallResp) GetMessage() *any.Any {
+func (m *OverlayMsg) GetMessage() *any.Any {
 	if m != nil {
 		return m.Message
 	}
@@ -161,8 +122,7 @@ func (m *CallResp) GetMessage() *any.Any {
 
 func init() {
 	proto.RegisterType((*Envelope)(nil), "minogrpc.Envelope")
-	proto.RegisterType((*CallMsg)(nil), "minogrpc.CallMsg")
-	proto.RegisterType((*CallResp)(nil), "minogrpc.CallResp")
+	proto.RegisterType((*OverlayMsg)(nil), "minogrpc.OverlayMsg")
 }
 
 func init() {
@@ -170,7 +130,7 @@ func init() {
 }
 
 var fileDescriptor_61fc82527fbe24ad = []byte{
-	// 208 bytes of a gzipped FileDescriptorProto
+	// 210 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0xe2, 0xcd, 0x2f, 0x4b, 0x2d,
 	0xca, 0x49, 0xac, 0xd4, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0xe2, 0xc8, 0xcd, 0xcc, 0xcb, 0x4f,
 	0x2f, 0x2a, 0x48, 0x96, 0x92, 0x4c, 0xcf, 0xcf, 0x4f, 0xcf, 0x49, 0xd5, 0x07, 0x8b, 0x27, 0x95,
@@ -179,38 +139,40 @@ var fileDescriptor_61fc82527fbe24ad = []byte{
 	0x06, 0x81, 0xd9, 0x42, 0x7c, 0x5c, 0x4c, 0x25, 0xf9, 0x12, 0x4c, 0x0a, 0xcc, 0x1a, 0x9c, 0x41,
 	0x4c, 0x25, 0xf9, 0x42, 0x7a, 0x5c, 0xec, 0xb9, 0xa9, 0xc5, 0xc5, 0x89, 0xe9, 0xa9, 0x12, 0xcc,
 	0x0a, 0x8c, 0x1a, 0xdc, 0x46, 0x22, 0x7a, 0x10, 0xc3, 0xf5, 0x60, 0x86, 0xeb, 0x39, 0xe6, 0x55,
-	0x06, 0xc1, 0x14, 0x29, 0x59, 0x72, 0xb1, 0x3b, 0x27, 0xe6, 0xe4, 0xf8, 0x16, 0xa7, 0x23, 0x6b,
-	0x65, 0x24, 0x46, 0xab, 0x15, 0x17, 0x07, 0x48, 0x6b, 0x50, 0x6a, 0x71, 0x01, 0xa9, 0x7a, 0x8d,
-	0xac, 0xb8, 0xd8, 0xfd, 0x21, 0x81, 0x21, 0xa4, 0xcf, 0xc5, 0x02, 0x32, 0x46, 0x48, 0x50, 0x0f,
-	0x16, 0x1e, 0x7a, 0x50, 0x17, 0x49, 0x09, 0xa1, 0x0a, 0x81, 0x6c, 0x52, 0x62, 0x48, 0x62, 0x03,
-	0x1b, 0x69, 0x0c, 0x08, 0x00, 0x00, 0xff, 0xff, 0xf2, 0x1c, 0x3f, 0xb5, 0x4f, 0x01, 0x00, 0x00,
+	0x06, 0xc1, 0x14, 0x29, 0xd9, 0x70, 0x71, 0xf9, 0x43, 0x5c, 0xe5, 0x5b, 0x9c, 0x8e, 0xac, 0x9b,
+	0x91, 0x08, 0xdd, 0x46, 0xd5, 0x5c, 0xec, 0x50, 0xdd, 0x42, 0x26, 0x5c, 0x2c, 0xce, 0x89, 0x39,
+	0x39, 0x42, 0x22, 0x7a, 0x30, 0x6f, 0xe9, 0x21, 0x0c, 0x96, 0xc2, 0x2a, 0xaa, 0xc4, 0x20, 0x64,
+	0xc5, 0xc5, 0x16, 0x5c, 0x52, 0x94, 0x9a, 0x98, 0x4b, 0x9a, 0x3e, 0x0d, 0x46, 0x03, 0xc6, 0x24,
+	0x36, 0xb0, 0x9b, 0x8c, 0x01, 0x01, 0x00, 0x00, 0xff, 0xff, 0x27, 0x44, 0xc9, 0x49, 0x57, 0x01,
+	0x00, 0x00,
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
 var _ context.Context
-var _ grpc.ClientConnInterface
+var _ grpc.ClientConn
 
 // This is a compile-time assertion to ensure that this generated file
 // is compatible with the grpc package it is being compiled against.
-const _ = grpc.SupportPackageIsVersion6
+const _ = grpc.SupportPackageIsVersion4
 
 // OverlayClient is the client API for Overlay service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
 type OverlayClient interface {
-	Call(ctx context.Context, in *CallMsg, opts ...grpc.CallOption) (*CallResp, error)
+	Call(ctx context.Context, in *OverlayMsg, opts ...grpc.CallOption) (*OverlayMsg, error)
+	Stream(ctx context.Context, opts ...grpc.CallOption) (Overlay_StreamClient, error)
 }
 
 type overlayClient struct {
-	cc grpc.ClientConnInterface
+	cc *grpc.ClientConn
 }
 
-func NewOverlayClient(cc grpc.ClientConnInterface) OverlayClient {
+func NewOverlayClient(cc *grpc.ClientConn) OverlayClient {
 	return &overlayClient{cc}
 }
 
-func (c *overlayClient) Call(ctx context.Context, in *CallMsg, opts ...grpc.CallOption) (*CallResp, error) {
-	out := new(CallResp)
+func (c *overlayClient) Call(ctx context.Context, in *OverlayMsg, opts ...grpc.CallOption) (*OverlayMsg, error) {
+	out := new(OverlayMsg)
 	err := c.cc.Invoke(ctx, "/minogrpc.Overlay/Call", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -218,17 +180,52 @@ func (c *overlayClient) Call(ctx context.Context, in *CallMsg, opts ...grpc.Call
 	return out, nil
 }
 
+func (c *overlayClient) Stream(ctx context.Context, opts ...grpc.CallOption) (Overlay_StreamClient, error) {
+	stream, err := c.cc.NewStream(ctx, &_Overlay_serviceDesc.Streams[0], "/minogrpc.Overlay/Stream", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &overlayStreamClient{stream}
+	return x, nil
+}
+
+type Overlay_StreamClient interface {
+	Send(*OverlayMsg) error
+	Recv() (*OverlayMsg, error)
+	grpc.ClientStream
+}
+
+type overlayStreamClient struct {
+	grpc.ClientStream
+}
+
+func (x *overlayStreamClient) Send(m *OverlayMsg) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *overlayStreamClient) Recv() (*OverlayMsg, error) {
+	m := new(OverlayMsg)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // OverlayServer is the server API for Overlay service.
 type OverlayServer interface {
-	Call(context.Context, *CallMsg) (*CallResp, error)
+	Call(context.Context, *OverlayMsg) (*OverlayMsg, error)
+	Stream(Overlay_StreamServer) error
 }
 
 // UnimplementedOverlayServer can be embedded to have forward compatible implementations.
 type UnimplementedOverlayServer struct {
 }
 
-func (*UnimplementedOverlayServer) Call(ctx context.Context, req *CallMsg) (*CallResp, error) {
+func (*UnimplementedOverlayServer) Call(ctx context.Context, req *OverlayMsg) (*OverlayMsg, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Call not implemented")
+}
+func (*UnimplementedOverlayServer) Stream(srv Overlay_StreamServer) error {
+	return status.Errorf(codes.Unimplemented, "method Stream not implemented")
 }
 
 func RegisterOverlayServer(s *grpc.Server, srv OverlayServer) {
@@ -236,7 +233,7 @@ func RegisterOverlayServer(s *grpc.Server, srv OverlayServer) {
 }
 
 func _Overlay_Call_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CallMsg)
+	in := new(OverlayMsg)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -248,9 +245,35 @@ func _Overlay_Call_Handler(srv interface{}, ctx context.Context, dec func(interf
 		FullMethod: "/minogrpc.Overlay/Call",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(OverlayServer).Call(ctx, req.(*CallMsg))
+		return srv.(OverlayServer).Call(ctx, req.(*OverlayMsg))
 	}
 	return interceptor(ctx, in, info, handler)
+}
+
+func _Overlay_Stream_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(OverlayServer).Stream(&overlayStreamServer{stream})
+}
+
+type Overlay_StreamServer interface {
+	Send(*OverlayMsg) error
+	Recv() (*OverlayMsg, error)
+	grpc.ServerStream
+}
+
+type overlayStreamServer struct {
+	grpc.ServerStream
+}
+
+func (x *overlayStreamServer) Send(m *OverlayMsg) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *overlayStreamServer) Recv() (*OverlayMsg, error) {
+	m := new(OverlayMsg)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 var _Overlay_serviceDesc = grpc.ServiceDesc{
@@ -262,6 +285,13 @@ var _Overlay_serviceDesc = grpc.ServiceDesc{
 			Handler:    _Overlay_Call_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "Stream",
+			Handler:       _Overlay_Stream_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+	},
 	Metadata: "overlay.proto",
 }
