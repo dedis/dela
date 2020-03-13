@@ -6,9 +6,22 @@ import (
 	"testing"
 	"testing/quick"
 
+	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
+	internal "go.dedis.ch/fabric/internal/testing"
 	"go.dedis.ch/fabric/mino"
 )
+
+func TestMessages(t *testing.T) {
+	messages := []proto.Message{
+		&OverlayMsg{},
+		&Envelope{},
+	}
+
+	for _, m := range messages {
+		internal.CoverProtoMessage(t, m)
+	}
+}
 
 func Test_NewMinogrpc(t *testing.T) {
 	// The happy path
