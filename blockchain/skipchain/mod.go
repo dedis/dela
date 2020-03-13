@@ -37,7 +37,7 @@ func NewSkipchain(m mino.Mino, cosi cosi.CollectiveSigning) *Skipchain {
 	return &Skipchain{
 		mino: m,
 		blockFactory: newBlockFactory(
-			cosi.GetVerifier(),
+			cosi,
 			consensus.GetChainFactory(),
 			m.GetAddressFactory(),
 		),
@@ -61,7 +61,7 @@ func (s *Skipchain) initChain(conodes Conodes) error {
 		Genesis: packed.(*BlockProto),
 	}
 
-	closing, errs := s.rpc.Call(msg, conodes.GetNodes()...)
+	closing, errs := s.rpc.Call(msg, conodes)
 	select {
 	case <-closing:
 	case err := <-errs:
@@ -95,7 +95,7 @@ func (s *Skipchain) GetBlockFactory() blockchain.BlockFactory {
 }
 
 // Store will append a new block to chain filled with the data.
-func (s *Skipchain) Store(data proto.Message, nodes ...mino.Node) error {
+func (s *Skipchain) Store(data proto.Message, players mino.Players) error {
 	previous, err := s.db.ReadLast()
 	if err != nil {
 		return xerrors.Errorf("couldn't read the latest block: %v", err)
@@ -106,7 +106,7 @@ func (s *Skipchain) Store(data proto.Message, nodes ...mino.Node) error {
 		return xerrors.Errorf("couldn't create next block: %v", err)
 	}
 
-	err = s.consensus.Propose(block, nodes...)
+	err = s.consensus.Propose(block, players)
 	if err != nil {
 		return xerrors.Errorf("couldn't propose the block: %v", err)
 	}

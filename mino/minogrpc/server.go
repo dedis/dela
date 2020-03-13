@@ -84,10 +84,10 @@ type RPC struct {
 
 // Call implements mino.RPC.Call(). It calls the RPC on each provided address.
 func (rpc RPC) Call(req proto.Message,
-	nodes ...mino.Node) (<-chan proto.Message, <-chan error) {
+	players mino.Players) (<-chan proto.Message, <-chan error) {
 
-	out := make(chan proto.Message, len(nodes))
-	errs := make(chan error, len(nodes))
+	out := make(chan proto.Message, players.Len())
+	errs := make(chan error, players.Len())
 
 	m, err := ptypes.MarshalAny(req)
 	if err != nil {
@@ -100,8 +100,9 @@ func (rpc RPC) Call(req proto.Message,
 	}
 
 	go func() {
-		for _, node := range nodes {
-			clientConn, err := rpc.srv.getConnection(node.GetAddress().String())
+		iter := players.AddressIterator()
+		for iter.HasNext() {
+			clientConn, err := rpc.srv.getConnection(iter.GetNext().String())
 			if err != nil {
 				errs <- xerrors.Errorf("failed to get client conn: %v", err)
 				continue
@@ -135,13 +136,13 @@ func (rpc RPC) Call(req proto.Message,
 
 // Stream implements mino.RPC.Stream()
 func (rpc RPC) Stream(ctx context.Context,
-	nodes ...mino.Node) (in mino.Sender, out mino.Receiver) {
+	players mino.Players) (in mino.Sender, out mino.Receiver) {
 
 	errs := make(chan error, 1)
 
 	orchSender := sender{
-		node:         simpleNode{},
-		participants: make([]player, len(nodes)),
+		address:      address{},
+		participants: make([]player, players.Len()),
 	}
 
 	orchRecv := receiver{
@@ -150,9 +151,10 @@ func (rpc RPC) Stream(ctx context.Context,
 	}
 
 	// Creating a stream for each provided addr
-	for i, node := range nodes {
+	for i := 0; players.AddressIterator().HasNext(); i++ {
+		addr := players.AddressIterator().GetNext()
 
-		clientConn, err := rpc.srv.getConnection(node.GetAddress().String())
+		clientConn, err := rpc.srv.getConnection(addr.String())
 		if err != nil {
 			// TODO: try another path (maybe use another node to relay that
 			// message)
@@ -173,7 +175,7 @@ func (rpc RPC) Stream(ctx context.Context,
 		}
 
 		orchSender.participants[i] = player{
-			node:         node,
+			address:      address{},
 			streamClient: stream,
 		}
 
@@ -338,12 +340,12 @@ func makeCertificate() (*tls.Certificate, error) {
 
 // sender implements mino.Sender{}
 type sender struct {
-	node         mino.Node
+	address      address
 	participants []player
 }
 
 type player struct {
-	node         mino.Node
+	address      address
 	streamClient overlayStream
 }
 
@@ -363,7 +365,7 @@ func (s sender) Send(msg proto.Message, addrs ...mino.Address) error {
 		}
 
 		envelope := &Envelope{
-			From:    s.node.GetAddress().String(),
+			From:    s.address.String(),
 			To:      []string{addr.String()},
 			Message: msgAny,
 		}
@@ -442,7 +444,7 @@ type overlayStream interface {
 // Returns nil if the participant is not in the list.
 func (s sender) getParticipant(addr mino.Address) *player {
 	for _, p := range s.participants {
-		if p.node.GetAddress().String() == addr.String() {
+		if p.address.String() == addr.String() {
 			return &p
 		}
 	}

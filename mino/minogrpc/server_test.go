@@ -73,7 +73,7 @@ func Test_SingleSimpleCall(t *testing.T) {
 		Message: pba,
 	}
 
-	respChan, errChan := rpc.Call(msg, fakeNode{addr: addr})
+	respChan, errChan := rpc.Call(msg, fakeMembership{addrs: []address{addr}})
 loop:
 	for {
 		select {
@@ -204,7 +204,7 @@ func Test_SingleModifyCall(t *testing.T) {
 
 	server.handlers[uri] = handler
 
-	respChan, errChan := rpc.Call(&empty.Empty{}, fakeNode{addr: addr})
+	respChan, errChan := rpc.Call(&empty.Empty{}, fakeMembership{addrs: []address{addr}})
 loop:
 	for {
 		select {
@@ -286,9 +286,10 @@ func Test_MultipleModifyCall(t *testing.T) {
 	server2.handlers[uri] = handler
 	server3.handlers[uri] = handler
 
+	memship := fakeMembership{addrs: []address{addr1, addr2, addr3}}
+
 	// Call the rpc on server1
-	respChan, errChan := rpc.Call(&empty.Empty{},
-		fakeNode{addr: addr1}, fakeNode{addr: addr2}, fakeNode{addr: addr3})
+	respChan, errChan := rpc.Call(&empty.Empty{}, memship)
 
 	// To track the number of message we got back. Should be 3
 	numRequests := 0
@@ -323,8 +324,7 @@ loop:
 	require.NoError(t, err)
 
 	// Call the rpc on server1
-	respChan, errChan = rpc.Call(&empty.Empty{},
-		fakeNode{addr: addr1}, fakeNode{addr: addr2}, fakeNode{addr: addr3})
+	respChan, errChan = rpc.Call(&empty.Empty{}, memship)
 
 	// To track the number of message we got back. Should be 2
 	numRequests = 0
@@ -606,10 +606,37 @@ func (t testModifyHandler) Stream(out mino.Sender, in mino.Receiver) error {
 	return nil
 }
 
-type fakeNode struct {
-	addr address
+type fakeIterator struct {
+	addrs []address
+	index int
 }
 
-func (n fakeNode) GetAddress() mino.Address {
-	return n.addr
+func (i *fakeIterator) HasNext() bool {
+	if i.index+1 < len(i.addrs) {
+		return true
+	}
+	return false
+}
+
+func (i *fakeIterator) GetNext() mino.Address {
+	if i.HasNext() {
+		i.index++
+		return i.addrs[i.index]
+	}
+	return nil
+}
+
+type fakeMembership struct {
+	addrs []address
+}
+
+func (m fakeMembership) AddressIterator() mino.AddressIterator {
+	return &fakeIterator{
+		addrs: m.addrs,
+		index: -1,
+	}
+}
+
+func (m fakeMembership) Len() int {
+	return len(m.addrs)
 }

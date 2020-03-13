@@ -18,9 +18,17 @@ type Address interface {
 	String() string
 }
 
-// Node represents a reachable node.
-type Node interface {
-	GetAddress() Address
+// AddressIterator is an iterator over the list of addresses of a membership.
+type AddressIterator interface {
+	HasNext() bool
+	GetNext() Address
+}
+
+// Players is an interface to represent a set of nodes participating in a
+// message passing protocol.
+type Players interface {
+	AddressIterator() AddressIterator
+	Len() int
 }
 
 // Sender is an interface to provide primitives to send messages to recipients.
@@ -38,11 +46,11 @@ type Receiver interface {
 // distant procedure or multiple.
 type RPC interface {
 	// Call is a basic request to one or multiple distant peers.
-	Call(req proto.Message, nodes ...Node) (<-chan proto.Message, <-chan error)
+	Call(req proto.Message, memship Players) (<-chan proto.Message, <-chan error)
 
 	// Stream is a persistent request that will be closed only when the
 	// orchestrator is done or an error occured.
-	Stream(ctx context.Context, nodes ...Node) (in Sender, out Receiver)
+	Stream(ctx context.Context, memship Players) (in Sender, out Receiver)
 }
 
 // Handler is the interface to implement to create a public endpoint.

@@ -32,17 +32,14 @@ type Consensus struct {
 
 // NewCoSiPBFT returns a new instance.
 func NewCoSiPBFT(mino mino.Mino, cosi cosi.CollectiveSigning) *Consensus {
-	chainFactory := newChainFactory(cosi.GetVerifier())
+	chainFactory := newChainFactory(cosi.GetSignatureFactory())
 
 	c := &Consensus{
 		storage: newInMemoryStorage(),
 		mino:    mino,
 		cosi:    cosi,
 		factory: chainFactory,
-		queue: &queue{
-			verifier:     cosi.GetVerifier(),
-			chainFactory: chainFactory,
-		},
+		queue:   newQueue(chainFactory),
 	}
 
 	return c
@@ -91,65 +88,49 @@ func (c *Consensus) Listen(v consensus.Validator) error {
 // Propose takes the proposal and send it to the participants of the consensus.
 // It returns nil if the consensus is reached and that the participant are
 // committed to it, otherwise it returns the refusal reason.
-func (c *Consensus) Propose(p consensus.Proposal, nodes ...mino.Node) error {
-	packed, err := p.Pack()
+func (c *Consensus) Propose(p consensus.Proposal, players mino.Players) error {
+	prepareReq, err := newPrepareRequest(p, c.factory.GetHashFactory())
 	if err != nil {
-		return encoding.NewEncodingError("proposal", err)
+		return xerrors.Errorf("couldn't create prepare request: %v", err)
 	}
 
-	prepareReq := &Prepare{}
-	prepareReq.Proposal, err = protoenc.MarshalAny(packed)
-	if err != nil {
-		return encoding.NewAnyEncodingError(packed, err)
-	}
-
-	var ok bool
-	cosigners := make([]cosi.Cosigner, len(nodes))
-	for i, addr := range nodes {
-		cosigners[i], ok = addr.(cosi.Cosigner)
-		if !ok {
-			return xerrors.New("node must implement cosi.Cosigner")
-		}
+	ca, ok := players.(cosi.CollectiveAuthority)
+	if !ok {
+		return xerrors.Errorf("%T should implement cosi.CollectiveAuthority", players)
 	}
 
 	// 1. Prepare phase: proposal must be validated by the nodes and a
 	// collective signature will be created for the forward link hash.
-	sig, err := c.cosi.Sign(prepareReq, cosigners...)
+	sig, err := c.cosi.Sign(prepareReq, ca)
 	if err != nil {
 		return xerrors.Errorf("couldn't sign the proposal: %v", err)
 	}
 
-	sigpacked, err := sig.Pack()
+	commitReq, err := newCommitRequest(p.GetHash(), sig)
 	if err != nil {
-		return encoding.NewEncodingError("prepare signature", err)
-	}
-
-	commitReq := &Commit{To: p.GetHash()}
-	commitReq.Prepare, err = protoenc.MarshalAny(sigpacked)
-	if err != nil {
-		return encoding.NewAnyEncodingError(sigpacked, err)
+		return xerrors.Errorf("couldn't create commit request: %w", err)
 	}
 
 	// 2. Commit phase.
-	sig, err = c.cosi.Sign(commitReq, cosigners...)
+	sig, err = c.cosi.Sign(commitReq, ca)
 	if err != nil {
 		return xerrors.Errorf("couldn't sign the commit: %v", err)
 	}
 
-	sigpacked, err = sig.Pack()
+	sigpacked, err := sig.Pack()
 	if err != nil {
 		return encoding.NewEncodingError("commit signature", err)
 	}
 
 	// 3. Propagate the final commit signature.
-	propagateReq := &Propagate{To: p.GetHash()}
+	propagateReq := &PropagateRequest{To: p.GetHash()}
 	propagateReq.Commit, err = protoenc.MarshalAny(sigpacked)
 	if err != nil {
-		return encoding.NewAnyEncodingError(packed, err)
+		return encoding.NewAnyEncodingError(sigpacked, err)
 	}
 
 	// TODO: timeout in context ?
-	resps, errs := c.rpc.Call(propagateReq, nodes...)
+	resps, errs := c.rpc.Call(propagateReq, ca)
 	select {
 	case <-resps:
 	case err := <-errs:
@@ -166,7 +147,7 @@ type handler struct {
 
 func (h handler) Hash(in proto.Message) (Digest, error) {
 	switch msg := in.(type) {
-	case *Prepare:
+	case *PrepareRequest:
 		var da ptypes.DynamicAny
 		err := protoenc.UnmarshalAny(msg.GetProposal(), &da)
 		if err != nil {
@@ -178,7 +159,7 @@ func (h handler) Hash(in proto.Message) (Digest, error) {
 		//
 		// TODO: this should lock during the event propagation to insure atomic
 		// operations.
-		proposal, prev, err := h.validator.Validate(da.Message)
+		proposal, err := h.validator.Validate(da.Message)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't validate the proposal: %v", err)
 		}
@@ -188,17 +169,17 @@ func (h handler) Hash(in proto.Message) (Digest, error) {
 			return nil, xerrors.Errorf("couldn't read last: %v", err)
 		}
 
-		if last != nil && !bytes.Equal(last.GetTo(), prev.GetHash()) {
+		if last != nil && !bytes.Equal(last.GetTo(), proposal.GetPreviousHash()) {
 			return nil, xerrors.Errorf("mismatch with previous link: %x != %x",
-				last.GetTo(), prev.GetHash())
+				last.GetTo(), proposal.GetPreviousHash())
 		}
 
 		forwardLink := forwardLink{
-			from: prev.GetHash(),
+			from: proposal.GetPreviousHash(),
 			to:   proposal.GetHash(),
 		}
 
-		err = h.queue.New(proposal, prev)
+		err = h.queue.New(proposal)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't add to queue: %v", err)
 		}
@@ -211,7 +192,7 @@ func (h handler) Hash(in proto.Message) (Digest, error) {
 		// Finally, if the proposal is correct, the hash that will be signed
 		// by cosi is returned.
 		return hash, nil
-	case *Commit:
+	case *CommitRequest:
 		prepare, err := h.factory.DecodeSignature(msg.GetPrepare())
 		if err != nil {
 			return nil, encoding.NewDecodingError("prepare signature", err)
@@ -241,7 +222,7 @@ type rpcHandler struct {
 }
 
 func (h rpcHandler) Process(req proto.Message) (proto.Message, error) {
-	msg, ok := req.(*Propagate)
+	msg, ok := req.(*PropagateRequest)
 	if !ok {
 		return nil, xerrors.Errorf("message type not supported: %T", req)
 	}

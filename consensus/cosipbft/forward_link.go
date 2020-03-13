@@ -34,8 +34,8 @@ type forwardLink struct {
 }
 
 // Verify makes sure the signatures of the forward link are correct.
-func (fl forwardLink) Verify(v crypto.Verifier, pubkeys []crypto.PublicKey) error {
-	err := v.Verify(pubkeys, fl.hash, fl.prepare)
+func (fl forwardLink) Verify(v crypto.Verifier) error {
+	err := v.Verify(fl.hash, fl.prepare)
 	if err != nil {
 		return xerrors.Errorf("couldn't verify prepare signature: %w", err)
 	}
@@ -46,7 +46,7 @@ func (fl forwardLink) Verify(v crypto.Verifier, pubkeys []crypto.PublicKey) erro
 	}
 
 	fabric.Logger.Trace().Msgf("verifying commit %x", buffer)
-	err = v.Verify(pubkeys, buffer, fl.commit)
+	err = v.Verify(buffer, fl.commit)
 	if err != nil {
 		return xerrors.Errorf("couldn't verify commit signature: %w", err)
 	}
@@ -113,7 +113,7 @@ type forwardLinkChain struct {
 
 // Verify follows the chain from the beginning and makes sure that the forward
 // links are correct and that they point to the correct targets.
-func (c forwardLinkChain) Verify(verifier crypto.Verifier, pubkeys []crypto.PublicKey) error {
+func (c forwardLinkChain) Verify(verifier crypto.Verifier) error {
 	if len(c.links) == 0 {
 		return xerrors.New("chain is empty")
 	}
@@ -121,7 +121,7 @@ func (c forwardLinkChain) Verify(verifier crypto.Verifier, pubkeys []crypto.Publ
 	lastIndex := len(c.links) - 1
 
 	for i, link := range c.links {
-		err := link.Verify(verifier, pubkeys)
+		err := link.Verify(verifier)
 		if err != nil {
 			return xerrors.Errorf("couldn't verify link %d: %w", i, err)
 		}
@@ -173,17 +173,17 @@ type ChainFactory interface {
 // defaultChainFactory is an implementation of the defaultChainFactory interface
 // for forward links.
 type defaultChainFactory struct {
-	verifier    crypto.Verifier
-	hashFactory crypto.HashFactory
+	signatureFactory crypto.SignatureFactory
+	hashFactory      crypto.HashFactory
 }
 
 // newChainFactory returns a new instance of a seal factory that will create
 // forward links for appropriate protobuf messages and return an error
 // otherwise.
-func newChainFactory(verifier crypto.Verifier) *defaultChainFactory {
+func newChainFactory(f crypto.SignatureFactory) *defaultChainFactory {
 	return &defaultChainFactory{
-		verifier:    verifier,
-		hashFactory: sha256Factory{},
+		signatureFactory: f,
+		hashFactory:      sha256Factory{},
 	}
 }
 
@@ -192,7 +192,7 @@ func (f *defaultChainFactory) GetHashFactory() crypto.HashFactory {
 }
 
 func (f *defaultChainFactory) DecodeSignature(pb proto.Message) (crypto.Signature, error) {
-	sig, err := f.verifier.GetSignatureFactory().FromProto(pb)
+	sig, err := f.signatureFactory.FromProto(pb)
 	if err != nil {
 		return nil, err
 	}
