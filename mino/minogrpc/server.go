@@ -175,7 +175,7 @@ func (rpc RPC) Stream(ctx context.Context,
 		}
 
 		orchSender.participants[i] = player{
-			address:      address{},
+			address:      address{addr.String()},
 			streamClient: stream,
 		}
 

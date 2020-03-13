@@ -104,12 +104,10 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 	// TODO: find a way to know the other nodes.
 	sender := sender{
 		// empty now
-		node: simpleNode{address{}},
+		address: address{},
 		participants: []player{
 			player{
-				node: simpleNode{
-					addr: address{addr},
-				},
+				address:      address{addr},
 				streamClient: stream,
 			},
 		},

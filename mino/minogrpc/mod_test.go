@@ -141,3 +141,27 @@ func Test_GetAddressFactory(t *testing.T) {
 	m := &Minogrpc{}
 	require.IsType(t, AddressFactory{}, m.GetAddressFactory())
 }
+
+func Test_Players(t *testing.T) {
+	players := players{players: []address{address{"test"}}}
+	it := players.AddressIterator()
+	it2, ok := it.(*addressIterator)
+	require.True(t, ok)
+
+	require.Equal(t, players.players, it2.players)
+
+	require.Equal(t, 1, players.Len())
+}
+
+func Test_AddressIterator(t *testing.T) {
+	a := address{"test"}
+	it := addressIterator{
+		players: []address{a},
+	}
+
+	require.True(t, it.HasNext())
+	addr := it.GetNext()
+	require.Equal(t, a, addr)
+
+	require.False(t, it.HasNext())
+}

@@ -27,6 +27,7 @@ type AddressIterator interface {
 // Players is an interface to represent a set of nodes participating in a
 // message passing protocol.
 type Players interface {
+	// TODO: explain why we choose to use an iterator: security + speed
 	AddressIterator() AddressIterator
 	Len() int
 }
@@ -46,11 +47,11 @@ type Receiver interface {
 // distant procedure or multiple.
 type RPC interface {
 	// Call is a basic request to one or multiple distant peers.
-	Call(req proto.Message, memship Players) (<-chan proto.Message, <-chan error)
+	Call(req proto.Message, players Players) (<-chan proto.Message, <-chan error)
 
 	// Stream is a persistent request that will be closed only when the
 	// orchestrator is done or an error occured.
-	Stream(ctx context.Context, memship Players) (in Sender, out Receiver)
+	Stream(ctx context.Context, players Players) (in Sender, out Receiver)
 }
 
 // Handler is the interface to implement to create a public endpoint.

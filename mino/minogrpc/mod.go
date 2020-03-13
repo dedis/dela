@@ -132,3 +132,45 @@ func (m Minogrpc) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 
 	return rpc, nil
 }
+
+// players implements mino.Players{}
+type players struct {
+	players  []address
+	iterator *addressIterator
+}
+
+// AddressIterator implements mino.Players.AddressIterator()
+func (p *players) AddressIterator() mino.AddressIterator {
+	if p.iterator == nil {
+		p.iterator = &addressIterator{players: p.players}
+	}
+	return p.iterator
+}
+
+// Len() implements mino.Players.Len()
+func (p *players) Len() int {
+	return len(p.players)
+}
+
+// addressIterator implements mino.addressIterator{}
+type addressIterator struct {
+	players []address
+	cursor  int
+}
+
+// HasNext implements mino.AddressIterator.HasNext()
+func (it *addressIterator) HasNext() bool {
+	if it.cursor < len(it.players) {
+		return true
+	}
+	return false
+}
+
+// GetNext implements mino.AddressIterator.GetNext(). It is the responsibility
+// of the caller to check there is still elements to get. Otherwise it may
+// crash.
+func (it *addressIterator) GetNext() mino.Address {
+	p := it.players[it.cursor]
+	it.cursor++
+	return p
+}

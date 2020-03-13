@@ -3,6 +3,7 @@ package minogrpc
 import (
 	context "context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -127,7 +128,7 @@ func Test_ErrorsSimpleCall(t *testing.T) {
 	}
 
 	// Using a wrong request message (nil) should yield an error while decoding
-	respChan, errChan := rpc.Call(nil, fakeNode{addr: addr})
+	respChan, errChan := rpc.Call(nil, &players{players: []address{addr}})
 loop:
 	for {
 		select {
@@ -154,7 +155,7 @@ loop:
 		To:      []string{addr.String()},
 		Message: pba,
 	}
-	respChan, errChan = rpc.Call(msg, fakeNode{addr: addr})
+	respChan, errChan = rpc.Call(msg, &players{players: []address{addr}})
 loop2:
 	for {
 		select {
@@ -410,7 +411,7 @@ func Test_SingleSimpleStream(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	sender, receiver := rpc.Stream(ctx, simpleNode{addr: *addr})
+	sender, receiver := rpc.Stream(ctx, &players{players: []address{*addr}})
 
 	err = sender.Send(&msg, addr)
 	require.NoError(t, err)
@@ -459,35 +460,15 @@ func Test_ErrorsSimpleStream(t *testing.T) {
 
 	server.handlers[uri] = handler
 
-	// m, err := ptypes.MarshalAny(&empty.Empty{})
-	// require.NoError(t, err)
-
-	// msg := Envelope{
-	// 	From:    addr.String(),
-	// 	To:      []string{addr.String()},
-	// 	Message: m,
-	// }
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Using an empty address should yield an error
-	_, receiver := rpc.Stream(ctx, simpleNode{addr: address{}})
+	fmt.Println("empty address")
+	_, receiver := rpc.Stream(ctx, &players{players: []address{address{}}})
 
 	_, _, err = receiver.Recv(context.Background())
 	require.EqualError(t, err, "got an error from the error chan: failed to get client conn: empty address is not allowed")
-
-	// err = sender.Send(&msg, addr)
-	// require.NoError(t, err)
-
-	// _, msg2, err := receiver.Recv(context.Background())
-	// require.NoError(t, err)
-
-	// enveloppe, ok := msg2.(*Envelope)
-	// require.True(t, ok)
-	// empty2 := &empty.Empty{}
-	// err = ptypes.UnmarshalAny(enveloppe.Message, empty2)
-	// require.NoError(t, err)
 
 	server.grpcSrv.Stop()
 	err = server.httpSrv.Shutdown(context.Background())
@@ -527,7 +508,7 @@ func Test_Sender(t *testing.T) {
 	// message is nil
 	addr = address{id: "fake"}
 	sender.participants = append(sender.participants, player{
-		node: fakeNode{addr: addr},
+		address: addr,
 	})
 	err = sender.Send(nil, addr)
 	require.EqualError(t, err, encoding.NewAnyEncodingError(nil, errors.New("proto: Marshal called with nil")).Error())
@@ -612,18 +593,16 @@ type fakeIterator struct {
 }
 
 func (i *fakeIterator) HasNext() bool {
-	if i.index+1 < len(i.addrs) {
+	if i.index < len(i.addrs) {
 		return true
 	}
 	return false
 }
 
 func (i *fakeIterator) GetNext() mino.Address {
-	if i.HasNext() {
-		i.index++
-		return i.addrs[i.index]
-	}
-	return nil
+	a := i.addrs[i.index]
+	i.index++
+	return a
 }
 
 type fakeMembership struct {
@@ -633,7 +612,6 @@ type fakeMembership struct {
 func (m fakeMembership) AddressIterator() mino.AddressIterator {
 	return &fakeIterator{
 		addrs: m.addrs,
-		index: -1,
 	}
 }
 
