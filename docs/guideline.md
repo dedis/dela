@@ -5,7 +5,7 @@ the golang best practices.
 
 ## Files
 
-The root implementation of a package should always be located in a `go.mod`
+The root implementation of a package should always be located in a `mod.go`
 files.
 
 ## Comments
