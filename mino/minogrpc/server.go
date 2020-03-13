@@ -73,9 +73,10 @@ type Peer struct {
 	Certificate *x509.Certificate
 }
 
-// RPC implements mino.RPC{}. It represents an RPC that has been registered by a
-// client, which allows clients to call an RPC that will execute the provided
-// handler.
+// RPC represents an RPC that has been registered by a client, which allows
+// clients to call an RPC that will execute the provided handler.
+//
+// - implements mino.RPC
 type RPC struct {
 	handler mino.Handler
 	srv     Server
