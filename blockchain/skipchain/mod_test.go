@@ -6,6 +6,7 @@ import (
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/cosi/flatcosi"
 	"go.dedis.ch/fabric/crypto/bls"
 	"go.dedis.ch/fabric/mino/minoch"
@@ -15,15 +16,15 @@ func TestSkipchain_Basic(t *testing.T) {
 	n := 5
 	manager := minoch.NewManager()
 
-	c1, s1 := makeSkipchain(t, "A", manager)
-	c2, s2 := makeSkipchain(t, "B", manager)
+	c1, s1, _ := makeSkipchain(t, "A", manager)
+	c2, _, a2 := makeSkipchain(t, "B", manager)
 	conodes := Conodes{c1, c2}
 
 	err := s1.initChain(conodes)
 	require.NoError(t, err)
 
 	for i := 0; i < n; i++ {
-		err = s2.Store(&empty.Empty{}, conodes)
+		err = a2.Store(&empty.Empty{}, conodes)
 		require.NoError(t, err)
 
 		chain, err := s1.GetVerifiableBlock()
@@ -49,7 +50,7 @@ func (v testValidator) Commit(payload proto.Message) error {
 	return nil
 }
 
-func makeSkipchain(t *testing.T, id string, manager *minoch.Manager) (Conode, *Skipchain) {
+func makeSkipchain(t *testing.T, id string, manager *minoch.Manager) (Conode, *Skipchain, blockchain.Actor) {
 	mino, err := minoch.NewMinoch(manager, id)
 	require.NoError(t, err)
 
@@ -63,8 +64,8 @@ func makeSkipchain(t *testing.T, id string, manager *minoch.Manager) (Conode, *S
 	cosi := flatcosi.NewFlat(mino, signer)
 	skipchain := NewSkipchain(mino, cosi)
 
-	err = skipchain.Listen(testValidator{})
+	actor, err := skipchain.Listen(testValidator{})
 	require.NoError(t, err)
 
-	return conode, skipchain
+	return conode, skipchain, actor
 }

@@ -44,11 +44,11 @@ func TestConsensus_Basic(t *testing.T) {
 	cosi := flatcosi.NewFlat(m1, signer)
 
 	cons := NewCoSiPBFT(m1, cosi)
-	err = cons.Listen(fakeValidator{pubkey: signer.GetPublicKey()})
+	actor, err := cons.Listen(fakeValidator{pubkey: signer.GetPublicKey()})
 	require.NoError(t, err)
 
 	prop := fakeProposal{}
-	err = cons.Propose(prop, fakeCA{
+	err = actor.Propose(prop, fakeCA{
 		addrs:   []mino.Address{m1.GetAddress()},
 		pubkeys: []crypto.PublicKey{signer.GetPublicKey()},
 	})
@@ -114,25 +114,26 @@ func TestConsensus_GetChain(t *testing.T) {
 func TestConsensus_Listen(t *testing.T) {
 	fakeCosi := &fakeCosi{}
 	fakeMino := &fakeMino{}
-	cons := &Consensus{cosi: fakeCosi, mino: fakeMino}
+	cons := &Consensus{cosi: fakeCosi, mino: fakeMino, factory: fakeFactory{}}
 
-	err := cons.Listen(fakeValidator{})
+	actor, err := cons.Listen(fakeValidator{})
 	require.NoError(t, err)
+	require.NotNil(t, actor)
 	require.IsType(t, handler{}, fakeCosi.handler)
 	require.IsType(t, rpcHandler{}, fakeMino.h)
 	require.Equal(t, rpcName, fakeMino.name)
 
-	err = cons.Listen(nil)
+	_, err = cons.Listen(nil)
 	require.EqualError(t, err, "validator is nil")
 
 	fakeCosi.err = xerrors.New("cosi error")
-	err = cons.Listen(fakeValidator{})
+	_, err = cons.Listen(fakeValidator{})
 	require.Error(t, err)
 	require.True(t, xerrors.Is(err, fakeCosi.err))
 
 	fakeCosi.err = nil
 	fakeMino.err = xerrors.New("rpc error")
-	err = cons.Listen(fakeValidator{})
+	_, err = cons.Listen(fakeValidator{})
 	require.Error(t, err)
 	require.True(t, xerrors.Is(err, fakeMino.err))
 }
@@ -145,27 +146,27 @@ func checkSignatureValue(t *testing.T, pb *any.Any, value uint64) {
 }
 
 func TestConsensus_Propose(t *testing.T) {
-	actor := &fakeActor{}
 	rpc := &fakeRPC{}
-	cons := &Consensus{
-		actor:   actor,
-		rpc:     rpc,
-		factory: fakeFactory{},
+	cosiActor := &fakeCosiActor{}
+	actor := &pbftActor{
+		hashFactory: sha256Factory{},
+		rpc:         rpc,
+		cosiActor:   cosiActor,
 	}
 
-	err := cons.Propose(fakeProposal{}, fakeCA{})
+	err := actor.Propose(fakeProposal{}, fakeCA{})
 	require.NoError(t, err)
-	require.Len(t, actor.calls, 2)
+	require.Len(t, cosiActor.calls, 2)
 
-	prepare := actor.calls[0]["message"].(*PrepareRequest)
+	prepare := cosiActor.calls[0]["message"].(*PrepareRequest)
 	require.NotNil(t, prepare)
-	require.IsType(t, fakeCA{}, actor.calls[0]["signers"])
+	require.IsType(t, fakeCA{}, cosiActor.calls[0]["signers"])
 
-	commit := actor.calls[1]["message"].(*CommitRequest)
+	commit := cosiActor.calls[1]["message"].(*CommitRequest)
 	require.NotNil(t, commit)
 	require.Equal(t, []byte{0xaa}, commit.GetTo())
 	checkSignatureValue(t, commit.GetPrepare(), 1)
-	require.IsType(t, fakeCA{}, actor.calls[1]["signers"])
+	require.IsType(t, fakeCA{}, cosiActor.calls[1]["signers"])
 
 	require.Len(t, rpc.calls, 1)
 	propagate := rpc.calls[0]["message"].(*PropagateRequest)
@@ -174,12 +175,12 @@ func TestConsensus_Propose(t *testing.T) {
 	checkSignatureValue(t, propagate.GetCommit(), 2)
 }
 
-type badActor struct {
+type badCosiActor struct {
 	cosi.CollectiveSigning
 	delay int
 }
 
-func (cs *badActor) Sign(pb cosi.Message, ca cosi.CollectiveAuthority) (crypto.Signature, error) {
+func (cs *badCosiActor) Sign(pb cosi.Message, ca cosi.CollectiveAuthority) (crypto.Signature, error) {
 	if cs.delay > 0 {
 		cs.delay--
 		return fakeSignature{}, nil
@@ -195,37 +196,37 @@ type badCA struct {
 func TestConsensus_ProposeFailures(t *testing.T) {
 	defer func() { protoenc = encoding.NewProtoEncoder() }()
 
-	cons := &Consensus{factory: fakeFactory{}}
+	actor := &pbftActor{hashFactory: sha256Factory{}}
 
-	err := cons.Propose(fakeProposal{}, badCA{})
+	err := actor.Propose(fakeProposal{}, badCA{})
 	require.EqualError(t, err, "cosipbft.badCA should implement cosi.CollectiveAuthority")
 
-	cons.actor = &fakeActor{err: xerrors.New("oops")}
-	err = cons.Propose(fakeProposal{}, fakeCA{})
+	actor.cosiActor = &fakeCosiActor{err: xerrors.New("oops")}
+	err = actor.Propose(fakeProposal{}, fakeCA{})
 	require.EqualError(t, err, "couldn't sign the proposal: oops")
 
-	cons.actor = &badActor{}
-	err = cons.Propose(fakeProposal{}, fakeCA{})
+	actor.cosiActor = &badCosiActor{}
+	err = actor.Propose(fakeProposal{}, fakeCA{})
 	require.EqualError(t, xerrors.Unwrap(err), "couldn't marshal prepare signature: oops")
 
-	cons.actor = &fakeActor{err: xerrors.New("oops"), delay: 1}
+	actor.cosiActor = &fakeCosiActor{err: xerrors.New("oops"), delay: 1}
 	protoenc = encoding.NewProtoEncoder()
-	err = cons.Propose(fakeProposal{}, fakeCA{})
+	err = actor.Propose(fakeProposal{}, fakeCA{})
 	require.EqualError(t, err, "couldn't sign the commit: oops")
 
-	cons.actor = &badActor{delay: 1}
-	err = cons.Propose(fakeProposal{}, fakeCA{})
+	actor.cosiActor = &badCosiActor{delay: 1}
+	err = actor.Propose(fakeProposal{}, fakeCA{})
 	require.EqualError(t, err, "couldn't encode commit signature: oops")
 
-	cons.actor = &badActor{delay: 2}
+	actor.cosiActor = &badCosiActor{delay: 2}
 	protoenc = &fakeEncoder{}
-	err = cons.Propose(fakeProposal{}, fakeCA{})
+	err = actor.Propose(fakeProposal{}, fakeCA{})
 	require.EqualError(t, xerrors.Unwrap(err), "marshal any error")
 
 	protoenc = encoding.NewProtoEncoder()
-	cons.actor = &fakeActor{}
-	cons.rpc = &fakeRPC{err: xerrors.New("oops")}
-	err = cons.Propose(fakeProposal{}, fakeCA{})
+	actor.cosiActor = &fakeCosiActor{}
+	actor.rpc = &fakeRPC{err: xerrors.New("oops")}
+	err = actor.Propose(fakeProposal{}, fakeCA{})
 	require.EqualError(t, err, "couldn't propagate the link: oops")
 }
 
@@ -498,14 +499,14 @@ func (cs *fakeCosi) Listen(h cosi.Hashable) (cosi.Actor, error) {
 	return nil, cs.err
 }
 
-type fakeActor struct {
+type fakeCosiActor struct {
 	calls []map[string]interface{}
 	count uint64
 	delay int
 	err   error
 }
 
-func (a *fakeActor) Sign(msg cosi.Message, ca cosi.CollectiveAuthority) (crypto.Signature, error) {
+func (a *fakeCosiActor) Sign(msg cosi.Message, ca cosi.CollectiveAuthority) (crypto.Signature, error) {
 	packed, err := msg.Pack()
 	if err != nil {
 		return nil, err

@@ -73,45 +73,30 @@ func (s *Skipchain) initChain(conodes Conodes) error {
 }
 
 // Listen starts the RPCs.
-func (s *Skipchain) Listen(v blockchain.Validator) error {
+func (s *Skipchain) Listen(v blockchain.Validator) (blockchain.Actor, error) {
 	rpc, err := s.mino.MakeRPC("skipchain", newHandler(s.db, s.blockFactory))
 	if err != nil {
-		return xerrors.Errorf("couldn't create the rpc: %v", err)
+		return nil, xerrors.Errorf("couldn't create the rpc: %v", err)
 	}
 
 	s.rpc = rpc
 
-	err = s.consensus.Listen(&blockValidator{Skipchain: s, validator: v})
-	if err != nil {
-		return xerrors.Errorf("couldn't start the consensus: %v", err)
+	actor := skipchainActor{
+		db:           s.db,
+		blockFactory: s.blockFactory,
 	}
 
-	return nil
+	actor.consensus, err = s.consensus.Listen(&blockValidator{Skipchain: s, validator: v})
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't start the consensus: %v", err)
+	}
+
+	return actor, nil
 }
 
 // GetBlockFactory returns the block factory for skipchains.
 func (s *Skipchain) GetBlockFactory() blockchain.BlockFactory {
 	return s.blockFactory
-}
-
-// Store will append a new block to chain filled with the data.
-func (s *Skipchain) Store(data proto.Message, players mino.Players) error {
-	previous, err := s.db.ReadLast()
-	if err != nil {
-		return xerrors.Errorf("couldn't read the latest block: %v", err)
-	}
-
-	block, err := s.blockFactory.fromPrevious(previous, data)
-	if err != nil {
-		return xerrors.Errorf("couldn't create next block: %v", err)
-	}
-
-	err = s.consensus.Propose(block, players)
-	if err != nil {
-		return xerrors.Errorf("couldn't propose the block: %v", err)
-	}
-
-	return nil
 }
 
 // GetBlock returns the latest block.
@@ -154,4 +139,30 @@ func (s *Skipchain) GetVerifiableBlock() (blockchain.VerifiableBlock, error) {
 // Watch registers the observer so that it will be notified of new blocks.
 func (s *Skipchain) Watch(ctx context.Context, obs blockchain.Observer) {
 
+}
+
+type skipchainActor struct {
+	db           Database
+	blockFactory *blockFactory
+	consensus    consensus.Actor
+}
+
+// Store will append a new block to chain filled with the data.
+func (a skipchainActor) Store(data proto.Message, players mino.Players) error {
+	previous, err := a.db.ReadLast()
+	if err != nil {
+		return xerrors.Errorf("couldn't read the latest block: %v", err)
+	}
+
+	block, err := a.blockFactory.fromPrevious(previous, data)
+	if err != nil {
+		return xerrors.Errorf("couldn't create next block: %v", err)
+	}
+
+	err = a.consensus.Propose(block, players)
+	if err != nil {
+		return xerrors.Errorf("couldn't propose the block: %v", err)
+	}
+
+	return nil
 }

@@ -36,16 +36,22 @@ type Validator interface {
 	Commit(data proto.Message) error
 }
 
-// Blockchain is the interface that provides the primitives to interact with the
-// blockchain.
-type Blockchain interface {
-	GetBlockFactory() BlockFactory
-
-	Listen(validator Validator) error
-
+// Actor is a primitive created by the blockchain to propose new blocks.
+type Actor interface {
 	// Store stores any representation of a data structure into a new block.
 	// The implementation is responsible for any validations required.
 	Store(data proto.Message, players mino.Players) error
+}
+
+// Blockchain is the interface that provides the primitives to interact with the
+// blockchain.
+type Blockchain interface {
+	// GetBlockFactory returns the block factory.
+	GetBlockFactory() BlockFactory
+
+	// Listen starts to listen for messages and returns the actor that the
+	// client can use to propose new blocks.
+	Listen(validator Validator) (Actor, error)
 
 	// GetBlock returns the latest block.
 	GetBlock() (Block, error)
