@@ -37,12 +37,12 @@ func (a address) String() string {
 	return a.id
 }
 
-// AddressFactory implements mino.AddressFactory{}
-type AddressFactory struct{}
+// addressFactory implements mino.AddressFactory{}
+type addressFactory struct{}
 
 // FromText implements AddressFactory.FromText(). It returns an instance of an
 // address from a byte slice.
-func (f AddressFactory) FromText(text []byte) mino.Address {
+func (f addressFactory) FromText(text []byte) mino.Address {
 	return address{id: string(text)}
 }
 
@@ -85,7 +85,7 @@ func NewMinogrpc(identifier string) (Minogrpc, error) {
 // GetAddressFactory implements mino.GetAddressFactory(). It returns the address
 // factory.
 func (m Minogrpc) GetAddressFactory() mino.AddressFactory {
-	return AddressFactory{}
+	return addressFactory{}
 }
 
 // GetAddress implements mino.GetAddress(). It returns the address of the server
@@ -131,46 +131,4 @@ func (m Minogrpc) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 	m.server.handlers[URI] = h
 
 	return rpc, nil
-}
-
-// players implements mino.Players{}
-type players struct {
-	players  []address
-	iterator *addressIterator
-}
-
-// AddressIterator implements mino.Players.AddressIterator()
-func (p *players) AddressIterator() mino.AddressIterator {
-	if p.iterator == nil {
-		p.iterator = &addressIterator{players: p.players}
-	}
-	return p.iterator
-}
-
-// Len() implements mino.Players.Len()
-func (p *players) Len() int {
-	return len(p.players)
-}
-
-// addressIterator implements mino.addressIterator{}
-type addressIterator struct {
-	players []address
-	cursor  int
-}
-
-// HasNext implements mino.AddressIterator.HasNext()
-func (it *addressIterator) HasNext() bool {
-	if it.cursor < len(it.players) {
-		return true
-	}
-	return false
-}
-
-// GetNext implements mino.AddressIterator.GetNext(). It is the responsibility
-// of the caller to check there is still elements to get. Otherwise it may
-// crash.
-func (it *addressIterator) GetNext() mino.Address {
-	p := it.players[it.cursor]
-	it.cursor++
-	return p
 }

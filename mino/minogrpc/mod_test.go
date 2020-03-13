@@ -127,7 +127,7 @@ func Test_Address_String(t *testing.T) {
 
 func Test_AddressFactory_FromText(t *testing.T) {
 	f := func(id string) bool {
-		factory := AddressFactory{}
+		factory := addressFactory{}
 		addr := factory.FromText([]byte(id))
 
 		return addr.(address).id == id
@@ -139,13 +139,13 @@ func Test_AddressFactory_FromText(t *testing.T) {
 
 func Test_GetAddressFactory(t *testing.T) {
 	m := &Minogrpc{}
-	require.IsType(t, AddressFactory{}, m.GetAddressFactory())
+	require.IsType(t, addressFactory{}, m.GetAddressFactory())
 }
 
 func Test_Players(t *testing.T) {
-	players := players{players: []address{address{"test"}}}
+	players := fakePlayers{players: []address{address{"test"}}}
 	it := players.AddressIterator()
-	it2, ok := it.(*addressIterator)
+	it2, ok := it.(*fakeAddressIterator)
 	require.True(t, ok)
 
 	require.Equal(t, players.players, it2.players)
@@ -155,7 +155,7 @@ func Test_Players(t *testing.T) {
 
 func Test_AddressIterator(t *testing.T) {
 	a := address{"test"}
-	it := addressIterator{
+	it := fakeAddressIterator{
 		players: []address{a},
 	}
 
@@ -164,4 +164,49 @@ func Test_AddressIterator(t *testing.T) {
 	require.Equal(t, a, addr)
 
 	require.False(t, it.HasNext())
+}
+
+// -------
+// Utility functions
+
+// fakePlayers implements mino.Players{}
+type fakePlayers struct {
+	players  []address
+	iterator *fakeAddressIterator
+}
+
+// AddressIterator implements mino.Players.AddressIterator()
+func (p *fakePlayers) AddressIterator() mino.AddressIterator {
+	if p.iterator == nil {
+		p.iterator = &fakeAddressIterator{players: p.players}
+	}
+	return p.iterator
+}
+
+// Len() implements mino.Players.Len()
+func (p *fakePlayers) Len() int {
+	return len(p.players)
+}
+
+// fakeAddressIterator implements mino.addressIterator{}
+type fakeAddressIterator struct {
+	players []address
+	cursor  int
+}
+
+// HasNext implements mino.AddressIterator.HasNext()
+func (it *fakeAddressIterator) HasNext() bool {
+	if it.cursor < len(it.players) {
+		return true
+	}
+	return false
+}
+
+// GetNext implements mino.AddressIterator.GetNext(). It is the responsibility
+// of the caller to check there is still elements to get. Otherwise it may
+// crash.
+func (it *fakeAddressIterator) GetNext() mino.Address {
+	p := it.players[it.cursor]
+	it.cursor++
+	return p
 }

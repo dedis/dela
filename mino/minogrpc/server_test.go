@@ -128,7 +128,7 @@ func Test_ErrorsSimpleCall(t *testing.T) {
 	}
 
 	// Using a wrong request message (nil) should yield an error while decoding
-	respChan, errChan := rpc.Call(nil, &players{players: []address{addr}})
+	respChan, errChan := rpc.Call(nil, &fakePlayers{players: []address{addr}})
 loop:
 	for {
 		select {
@@ -155,7 +155,7 @@ loop:
 		To:      []string{addr.String()},
 		Message: pba,
 	}
-	respChan, errChan = rpc.Call(msg, &players{players: []address{addr}})
+	respChan, errChan = rpc.Call(msg, &fakePlayers{players: []address{addr}})
 loop2:
 	for {
 		select {
@@ -411,7 +411,7 @@ func Test_SingleSimpleStream(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	sender, receiver := rpc.Stream(ctx, &players{players: []address{*addr}})
+	sender, receiver := rpc.Stream(ctx, &fakePlayers{players: []address{*addr}})
 
 	err = sender.Send(&msg, addr)
 	require.NoError(t, err)
@@ -465,7 +465,7 @@ func Test_ErrorsSimpleStream(t *testing.T) {
 
 	// Using an empty address should yield an error
 	fmt.Println("empty address")
-	_, receiver := rpc.Stream(ctx, &players{players: []address{address{}}})
+	_, receiver := rpc.Stream(ctx, &fakePlayers{players: []address{address{}}})
 
 	_, _, err = receiver.Recv(context.Background())
 	require.EqualError(t, err, "got an error from the error chan: failed to get client conn: empty address is not allowed")
