@@ -48,6 +48,13 @@ type ChainFactory interface {
 	FromProto(pb proto.Message) (Chain, error)
 }
 
+// Actor is the primitive to send proposals to a consensus implementation.
+type Actor interface {
+	// Propose performs the consensus algorithm using the list of nodes
+	// as participants.
+	Propose(proposal Proposal, players mino.Players) error
+}
+
 // Consensus is an interface that provides primitives to propose data to a set
 // of participants. They will validate the proposal according to the validator.
 type Consensus interface {
@@ -58,9 +65,5 @@ type Consensus interface {
 	GetChain(id []byte) (Chain, error)
 
 	// Listen starts to listen for consensus messages.
-	Listen(h Validator) error
-
-	// Propose performs the consensus algorithm using the list of nodes
-	// as participants.
-	Propose(proposal Proposal, players mino.Players) error
+	Listen(h Validator) (Actor, error)
 }

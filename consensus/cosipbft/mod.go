@@ -9,6 +9,7 @@ import (
 	"github.com/golang/protobuf/ptypes"
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/cosi"
+	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
@@ -24,7 +25,6 @@ const (
 type Consensus struct {
 	storage Storage
 	cosi    cosi.CollectiveSigning
-	actor   cosi.Actor
 	mino    mino.Mino
 	rpc     mino.RPC
 	factory ChainFactory
@@ -68,31 +68,40 @@ func (c *Consensus) GetChain(id Digest) (consensus.Chain, error) {
 
 // Listen is a blocking function that makes the consensus available on the
 // node.
-func (c *Consensus) Listen(v consensus.Validator) error {
+func (c *Consensus) Listen(v consensus.Validator) (consensus.Actor, error) {
 	if v == nil {
-		return xerrors.New("validator is nil")
+		return nil, xerrors.New("validator is nil")
 	}
 
-	actor, err := c.cosi.Listen(handler{Consensus: c, validator: v})
+	actor := pbftActor{
+		hashFactory: c.factory.GetHashFactory(),
+	}
+
+	var err error
+	actor.cosiActor, err = c.cosi.Listen(handler{Consensus: c, validator: v})
 	if err != nil {
-		return xerrors.Errorf("couldn't listen: %w", err)
+		return nil, xerrors.Errorf("couldn't listen: %w", err)
 	}
 
-	c.actor = actor
-
-	c.rpc, err = c.mino.MakeRPC(rpcName, rpcHandler{Consensus: c, validator: v})
+	actor.rpc, err = c.mino.MakeRPC(rpcName, rpcHandler{Consensus: c, validator: v})
 	if err != nil {
-		return xerrors.Errorf("couldn't create the rpc: %w", err)
+		return nil, xerrors.Errorf("couldn't create the rpc: %w", err)
 	}
 
-	return nil
+	return actor, nil
+}
+
+type pbftActor struct {
+	hashFactory crypto.HashFactory
+	cosiActor   cosi.Actor
+	rpc         mino.RPC
 }
 
 // Propose takes the proposal and send it to the participants of the consensus.
 // It returns nil if the consensus is reached and that the participant are
 // committed to it, otherwise it returns the refusal reason.
-func (c *Consensus) Propose(p consensus.Proposal, players mino.Players) error {
-	prepareReq, err := newPrepareRequest(p, c.factory.GetHashFactory())
+func (a pbftActor) Propose(p consensus.Proposal, players mino.Players) error {
+	prepareReq, err := newPrepareRequest(p, a.hashFactory)
 	if err != nil {
 		return xerrors.Errorf("couldn't create prepare request: %v", err)
 	}
@@ -104,7 +113,7 @@ func (c *Consensus) Propose(p consensus.Proposal, players mino.Players) error {
 
 	// 1. Prepare phase: proposal must be validated by the nodes and a
 	// collective signature will be created for the forward link hash.
-	sig, err := c.actor.Sign(prepareReq, ca)
+	sig, err := a.cosiActor.Sign(prepareReq, ca)
 	if err != nil {
 		return xerrors.Errorf("couldn't sign the proposal: %v", err)
 	}
@@ -115,7 +124,7 @@ func (c *Consensus) Propose(p consensus.Proposal, players mino.Players) error {
 	}
 
 	// 2. Commit phase.
-	sig, err = c.actor.Sign(commitReq, ca)
+	sig, err = a.cosiActor.Sign(commitReq, ca)
 	if err != nil {
 		return xerrors.Errorf("couldn't sign the commit: %v", err)
 	}
@@ -133,7 +142,7 @@ func (c *Consensus) Propose(p consensus.Proposal, players mino.Players) error {
 	}
 
 	// TODO: timeout in context ?
-	resps, errs := c.rpc.Call(propagateReq, ca)
+	resps, errs := a.rpc.Call(propagateReq, ca)
 	select {
 	case <-resps:
 	case err := <-errs:
