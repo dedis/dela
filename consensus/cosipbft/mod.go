@@ -24,6 +24,7 @@ const (
 type Consensus struct {
 	storage Storage
 	cosi    cosi.CollectiveSigning
+	actor   cosi.Actor
 	mino    mino.Mino
 	rpc     mino.RPC
 	factory ChainFactory
@@ -72,10 +73,12 @@ func (c *Consensus) Listen(v consensus.Validator) error {
 		return xerrors.New("validator is nil")
 	}
 
-	err := c.cosi.Listen(handler{Consensus: c, validator: v})
+	actor, err := c.cosi.Listen(handler{Consensus: c, validator: v})
 	if err != nil {
 		return xerrors.Errorf("couldn't listen: %w", err)
 	}
+
+	c.actor = actor
 
 	c.rpc, err = c.mino.MakeRPC(rpcName, rpcHandler{Consensus: c, validator: v})
 	if err != nil {
@@ -101,7 +104,7 @@ func (c *Consensus) Propose(p consensus.Proposal, players mino.Players) error {
 
 	// 1. Prepare phase: proposal must be validated by the nodes and a
 	// collective signature will be created for the forward link hash.
-	sig, err := c.cosi.Sign(prepareReq, ca)
+	sig, err := c.actor.Sign(prepareReq, ca)
 	if err != nil {
 		return xerrors.Errorf("couldn't sign the proposal: %v", err)
 	}
@@ -112,7 +115,7 @@ func (c *Consensus) Propose(p consensus.Proposal, players mino.Players) error {
 	}
 
 	// 2. Commit phase.
-	sig, err = c.cosi.Sign(commitReq, ca)
+	sig, err = c.actor.Sign(commitReq, ca)
 	if err != nil {
 		return xerrors.Errorf("couldn't sign the commit: %v", err)
 	}

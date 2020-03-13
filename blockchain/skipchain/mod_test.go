@@ -6,7 +6,7 @@ import (
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/cosi/blscosi"
+	"go.dedis.ch/fabric/cosi/flatcosi"
 	"go.dedis.ch/fabric/crypto/bls"
 	"go.dedis.ch/fabric/mino/minoch"
 )
@@ -60,7 +60,7 @@ func makeSkipchain(t *testing.T, id string, manager *minoch.Manager) (Conode, *S
 		publicKey: signer.GetPublicKey(),
 	}
 
-	cosi := blscosi.NewBlsCoSi(mino, signer)
+	cosi := flatcosi.NewFlat(mino, signer)
 	skipchain := NewSkipchain(mino, cosi)
 
 	err = skipchain.Listen(testValidator{})

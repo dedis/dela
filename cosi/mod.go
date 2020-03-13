@@ -7,18 +7,11 @@ import (
 	"go.dedis.ch/fabric/mino"
 )
 
-// PublicKeyIterator is an iterator over the list of public keys of a
-// collective authority.
-type PublicKeyIterator interface {
-	HasNext() bool
-	GetNext() crypto.PublicKey
-}
-
 // CollectiveAuthority (or Cothority in short) is a set of participant to a
 // collective signature.
 type CollectiveAuthority interface {
 	mino.Players
-	PublicKeyIterator() PublicKeyIterator
+	PublicKeyIterator() crypto.PublicKeyIterator
 }
 
 // Hashable is the interface to implement to validate an incoming message for a
@@ -35,12 +28,17 @@ type Message interface {
 	GetHash() []byte
 }
 
+// Actor is the listener of a collective signing instance. It provides a
+// primitive to sign a message.
+type Actor interface {
+	Sign(msg Message, ca CollectiveAuthority) (crypto.Signature, error)
+}
+
 // CollectiveSigning is the interface that provides the primitives to sign a
 // message by members of a network.
 type CollectiveSigning interface {
 	GetPublicKeyFactory() crypto.PublicKeyFactory
 	GetSignatureFactory() crypto.SignatureFactory
-	GetVerifier(ca CollectiveAuthority) crypto.Verifier
-	Listen(Hashable) error
-	Sign(msg Message, ca CollectiveAuthority) (crypto.Signature, error)
+	GetVerifier(ca CollectiveAuthority) (crypto.Verifier, error)
+	Listen(Hashable) (Actor, error)
 }

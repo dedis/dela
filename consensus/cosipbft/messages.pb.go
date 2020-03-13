@@ -21,9 +21,8 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.ProtoPackageIsVersion3 // please upgrade the proto package
 
-// ForwardLinkProto is the message representing a forward link between
-// two proposals. It contains both hash and the prepare and commit
-// signatures.
+// ForwardLinkProto is the message representing a forward link between two
+// proposals. It contains both hash and the prepare and commit signatures.
 type ForwardLinkProto struct {
 	From                 []byte   `protobuf:"bytes,1,opt,name=from,proto3" json:"from,omitempty"`
 	To                   []byte   `protobuf:"bytes,2,opt,name=to,proto3" json:"to,omitempty"`
