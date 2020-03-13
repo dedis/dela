@@ -1,5 +1,3 @@
-![logo](assets/modulus.png)
-
 # Modulus
 
 > Modular Distributed Ledger System
