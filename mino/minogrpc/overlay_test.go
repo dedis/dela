@@ -29,7 +29,7 @@ func Test_Call(t *testing.T) {
 	_, err := overlayService.Call(ctx, msg)
 	require.EqualError(t, err, "header not found in provided context")
 
-	// Now I provide metadata but without the require "apiuri" element
+	// Now I provide metadata but without the required "apiuri" element
 	header := metadata.New(map[string]string{"a": "b"})
 	ctx = metadata.NewIncomingContext(context.Background(), header)
 	_, err = overlayService.Call(ctx, msg)
@@ -109,7 +109,7 @@ func Test_Stream(t *testing.T) {
 	err := overlayService.Stream(&streamServer)
 	require.EqualError(t, err, "header not found in provided context")
 
-	// Now I provide metadata but without the require "apiuri" element
+	// Now I provide metadata but without the required "apiuri" element
 	header := metadata.New(map[string]string{"a": "b"})
 	streamServer.ctx = metadata.NewIncomingContext(context.Background(), header)
 	err = overlayService.Stream(&streamServer)
