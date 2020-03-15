@@ -36,7 +36,6 @@ type bTLCR struct {
 	players  mino.Players
 	rpc      mino.RPC
 	previous *MessageSet
-	next     *MessageSet
 	// Mino handler impl should redirect the messages to this channel..
 	ch chan *Wrapper
 }
@@ -54,9 +53,6 @@ func newTLCR(mino mino.Mino, players mino.Players) (*bTLCR, error) {
 		ch:       ch,
 		players:  players,
 		previous: nil,
-		next: &MessageSet{
-			Messages: make(map[int64]*Message),
-		},
 	}
 
 	return tlcr, nil
@@ -70,8 +66,7 @@ func (b *bTLCR) execute(message *Message) (*View, error) {
 		Set:      b.previous,
 	}
 
-	current := b.next
-	b.next = &MessageSet{
+	current := &MessageSet{
 		Messages: make(map[int64]*Message),
 	}
 
@@ -85,12 +80,13 @@ func (b *bTLCR) execute(message *Message) (*View, error) {
 		case wrapper := <-b.ch:
 			if wrapper.GetTimeStep() == b.timeStep {
 				current.Messages[wrapper.GetNode()] = wrapper.GetMessage()
-			} else if wrapper.GetTimeStep() == b.timeStep+1 {
-				for k, v := range wrapper.GetSet().GetMessages() {
-					current.Messages[k] = v
-				}
-				b.next.Messages[wrapper.GetNode()] = wrapper.GetMessage()
 			} else {
+				if wrapper.GetTimeStep() == b.timeStep+1 {
+					for k, v := range wrapper.GetSet().GetMessages() {
+						current.Messages[k] = v
+					}
+				}
+
 				// Reinsert the message in the queue so that it can be processed
 				// at the right time.
 				b.ch <- wrapper
