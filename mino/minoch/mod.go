@@ -32,7 +32,7 @@ func NewMinoch(manager *Manager, identifier string) (*Minoch, error) {
 		return nil, err
 	}
 
-	m.Logger.Debug().Msgf("New instance with identifier %s", identifier)
+	m.Logger.Trace().Msgf("New instance with identifier %s", identifier)
 
 	return inst, nil
 }

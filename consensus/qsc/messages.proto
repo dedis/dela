@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package qsc;
+
+import "google/protobuf/any.proto";
+
+message Epoch {
+    int64 random = 1;
+    google.protobuf.Any proposal = 3;
+}
+
+message Message {
+    repeated Epoch epochs = 1;
+}
+
+message MessageSet {
+    map<int64, Message> messages = 1;
+}
+
+message Wrapper {
+    int64 node = 1;
+    uint64 timeStep = 2;
+    Message message = 3;
+    MessageSet set = 4;
+}
+
+message View {
+    MessageSet received = 1;
+    MessageSet broadcasted = 2;
+}
