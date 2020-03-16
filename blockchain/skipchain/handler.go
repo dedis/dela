@@ -3,31 +3,27 @@ package skipchain
 import (
 	proto "github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric"
-	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
 
 type handler struct {
 	mino.UnsupportedHandler
-
-	db               Database
-	blockFactory     *blockFactory
-	publicKeyFactory crypto.PublicKeyFactory
+	*Skipchain
 }
 
-func newHandler(db Database, f *blockFactory) handler {
+func newHandler(sc *Skipchain) handler {
 	return handler{
-		db:               db,
-		blockFactory:     f,
-		publicKeyFactory: f.cosi.GetPublicKeyFactory(),
+		Skipchain: sc,
 	}
 }
 
 func (h handler) Process(req proto.Message) (proto.Message, error) {
 	switch in := req.(type) {
 	case *PropagateGenesis:
-		genesis, err := h.blockFactory.decodeBlock(h.publicKeyFactory, in.GetGenesis())
+		factory := h.GetBlockFactory().(*blockFactory)
+
+		genesis, err := factory.decodeBlock(factory.publicKeyFactory, in.GetGenesis())
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't decode the block: %v", err)
 		}

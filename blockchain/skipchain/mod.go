@@ -23,24 +23,20 @@ import (
 // Skipchain implements the Blockchain interface by using collective signatures
 // to create a verifiable chain.
 type Skipchain struct {
-	mino         mino.Mino
-	blockFactory *blockFactory
-	db           Database
-	consensus    consensus.Consensus
+	mino      mino.Mino
+	cosi      cosi.CollectiveSigning
+	db        Database
+	consensus consensus.Consensus
 }
 
 // NewSkipchain returns a new instance of Skipchain.
 func NewSkipchain(m mino.Mino, cosi cosi.CollectiveSigning) *Skipchain {
 	consensus := cosipbft.NewCoSiPBFT(m, cosi)
+	db := NewInMemoryDatabase()
 
 	return &Skipchain{
-		mino: m,
-		blockFactory: newBlockFactory(
-			cosi,
-			consensus.GetChainFactory(),
-			m.GetAddressFactory(),
-		),
-		db:        NewInMemoryDatabase(),
+		mino:      m,
+		db:        db,
 		consensus: consensus,
 	}
 }
@@ -48,12 +44,11 @@ func NewSkipchain(m mino.Mino, cosi cosi.CollectiveSigning) *Skipchain {
 // Listen starts the RPCs.
 func (s *Skipchain) Listen(v blockchain.Validator) (blockchain.Actor, error) {
 	actor := skipchainActor{
-		db:           s.db,
-		blockFactory: s.blockFactory,
+		Skipchain: s,
 	}
 
 	var err error
-	actor.rpc, err = s.mino.MakeRPC("skipchain", newHandler(s.db, s.blockFactory))
+	actor.rpc, err = s.mino.MakeRPC("skipchain", newHandler(s))
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't create the rpc: %v", err)
 	}
@@ -67,8 +62,8 @@ func (s *Skipchain) Listen(v blockchain.Validator) (blockchain.Actor, error) {
 }
 
 // GetBlockFactory returns the block factory for skipchains.
-func (s *Skipchain) GetBlockFactory() blockchain.BlockFactory {
-	return s.blockFactory
+func (s *Skipchain) GetBlockFactory() (blockchain.BlockFactory, error) {
+	return &blockFactory{}, nil
 }
 
 // GetBlock returns the latest block.
@@ -114,13 +109,18 @@ func (s *Skipchain) Watch(ctx context.Context, obs blockchain.Observer) {
 }
 
 type skipchainActor struct {
-	db           Database
-	blockFactory *blockFactory
-	consensus    consensus.Actor
-	rpc          mino.RPC
+	*Skipchain
+	consensus consensus.Actor
+	rpc       mino.RPC
 }
 
 func (a skipchainActor) InitChain(data proto.Message, players mino.Players) error {
+	factory := a.GetBlockFactory().(*blockFactory)
+	if factory.genesis.GetHash() != nil {
+		// Only allow one chain per database.
+		return xerrors.Errorf("chain already exists: %v", factory.genesis)
+	}
+
 	ca, ok := players.(cosi.CollectiveAuthority)
 	if !ok {
 		return xerrors.Errorf("players must implement cosi.CollectiveAuthority")
@@ -128,9 +128,14 @@ func (a skipchainActor) InitChain(data proto.Message, players mino.Players) erro
 
 	conodes := newConodes(ca)
 
-	genesis, err := a.blockFactory.createGenesis(conodes, nil)
+	genesis, err := factory.createGenesis(conodes, nil)
 	if err != nil {
 		return xerrors.Errorf("couldn't create the genesis block: %v", err)
+	}
+
+	err = a.db.Write(genesis)
+	if err != nil {
+		return xerrors.Errorf("couldn't write genesis block: %v", err)
 	}
 
 	packed, err := genesis.Pack()
@@ -155,12 +160,14 @@ func (a skipchainActor) InitChain(data proto.Message, players mino.Players) erro
 
 // Store will append a new block to chain filled with the data.
 func (a skipchainActor) Store(data proto.Message, players mino.Players) error {
+	factory := a.GetBlockFactory().(*blockFactory)
+
 	previous, err := a.db.ReadLast()
 	if err != nil {
 		return xerrors.Errorf("couldn't read the latest block: %v", err)
 	}
 
-	block, err := a.blockFactory.fromPrevious(previous, data)
+	block, err := factory.fromPrevious(previous, data)
 	if err != nil {
 		return xerrors.Errorf("couldn't create next block: %v", err)
 	}

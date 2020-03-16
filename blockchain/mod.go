@@ -51,7 +51,7 @@ type Actor interface {
 // blockchain.
 type Blockchain interface {
 	// GetBlockFactory returns the block factory.
-	GetBlockFactory() BlockFactory
+	GetBlockFactory() (BlockFactory, error)
 
 	// Listen starts to listen for messages and returns the actor that the
 	// client can use to propose new blocks.

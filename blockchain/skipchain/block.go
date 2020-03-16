@@ -13,21 +13,10 @@ import (
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/consensus"
-	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
-)
-
-const (
-	// DefaultMaximumHeight is the default value when creating a genesis block
-	// for the maximum height of each block.
-	DefaultMaximumHeight = 32
-
-	// DefaultBaseHeight is the default value when creating a genesis block
-	// for the base height of each block.
-	DefaultBaseHeight = 4
 )
 
 var (
@@ -50,17 +39,14 @@ func (d Digest) String() string {
 // SkipBlock is a representation of the data held by a block. It contains the
 // information to build a skipchain.
 type SkipBlock struct {
-	hash          Digest
-	verifier      crypto.Verifier
-	Index         uint64
-	Conodes       Conodes
-	Height        uint32
-	BaseHeight    uint32
-	MaximumHeight uint32
-	GenesisID     Digest
-	DataHash      []byte
-	BackLinks     []Digest
-	Payload       proto.Message
+	hash      Digest
+	verifier  crypto.Verifier
+	Index     uint64
+	Conodes   Conodes
+	GenesisID Digest
+	DataHash  []byte
+	BackLinks []Digest
+	Payload   proto.Message
 }
 
 // GetHash returns the hash of the block.
@@ -96,15 +82,12 @@ func (b SkipBlock) Pack() (proto.Message, error) {
 	}
 
 	blockproto := &BlockProto{
-		Index:         b.Index,
-		Height:        b.Height,
-		BaseHeight:    b.BaseHeight,
-		MaximumHeight: b.MaximumHeight,
-		GenesisID:     b.GenesisID.Bytes(),
-		DataHash:      b.DataHash,
-		Backlinks:     backLinks,
-		Payload:       payloadAny,
-		Conodes:       conodes,
+		Index:     b.Index,
+		GenesisID: b.GenesisID.Bytes(),
+		DataHash:  b.DataHash,
+		Backlinks: backLinks,
+		Payload:   payloadAny,
+		Conodes:   conodes,
 	}
 
 	return blockproto, nil
@@ -119,9 +102,6 @@ func (b SkipBlock) computeHash() (Digest, error) {
 
 	buffer := make([]byte, 20)
 	binary.LittleEndian.PutUint64(buffer[0:8], b.Index)
-	binary.LittleEndian.PutUint32(buffer[8:12], b.Height)
-	binary.LittleEndian.PutUint32(buffer[12:16], b.BaseHeight)
-	binary.LittleEndian.PutUint32(buffer[16:20], b.MaximumHeight)
 	h.Write(buffer)
 	if b.Conodes != nil {
 		b.Conodes.WriteTo(h)
@@ -177,18 +157,11 @@ func (vb VerifiableBlock) Pack() (proto.Message, error) {
 // blockFactory is responsible for the instantiation of the block and related
 // data structures like the forward links and the proves.
 type blockFactory struct {
-	genesis        *SkipBlock
-	cosi           cosi.CollectiveSigning
-	chainFactory   consensus.ChainFactory
-	addressFactory mino.AddressFactory
-}
-
-func newBlockFactory(cosi cosi.CollectiveSigning, cf consensus.ChainFactory, af mino.AddressFactory) *blockFactory {
-	return &blockFactory{
-		cosi:           cosi,
-		chainFactory:   cf,
-		addressFactory: af,
-	}
+	genesis          *SkipBlock
+	verifier         crypto.Verifier
+	chainFactory     consensus.ChainFactory
+	addressFactory   mino.AddressFactory
+	publicKeyFactory crypto.PublicKeyFactory
 }
 
 func (f *blockFactory) createGenesis(conodes Conodes, data proto.Message) (SkipBlock, error) {
@@ -208,30 +181,20 @@ func (f *blockFactory) createGenesis(conodes Conodes, data proto.Message) (SkipB
 	randomBackLink := Digest{}
 	rand.Read(randomBackLink[:])
 
-	verifier, err := f.cosi.GetVerifier(conodes)
-	if err != nil {
-		return SkipBlock{}, xerrors.Errorf("couldn't make the verifier: %v", err)
-	}
-
 	genesis := SkipBlock{
-		verifier:      verifier,
-		Index:         0,
-		Conodes:       conodes,
-		Height:        1,
-		BaseHeight:    DefaultBaseHeight,
-		MaximumHeight: DefaultMaximumHeight,
-		GenesisID:     Digest{},
-		DataHash:      h.Sum(nil),
-		BackLinks:     []Digest{randomBackLink},
-		Payload:       data,
+		verifier:  f.verifier,
+		Index:     0,
+		Conodes:   conodes,
+		GenesisID: Digest{},
+		DataHash:  h.Sum(nil),
+		BackLinks: []Digest{randomBackLink},
+		Payload:   data,
 	}
 
 	genesis.hash, err = genesis.computeHash()
 	if err != nil {
 		return genesis, xerrors.Errorf("couldn't hash the genesis block: %v", err)
 	}
-
-	f.genesis = &genesis
 
 	return genesis, nil
 }
@@ -246,15 +209,12 @@ func (f *blockFactory) fromPrevious(prev SkipBlock, data proto.Message) (SkipBlo
 	h.Write(databuf)
 
 	block := SkipBlock{
-		Index:         prev.Index + 1,
-		Conodes:       prev.Conodes,
-		Height:        prev.Height,
-		BaseHeight:    prev.BaseHeight,
-		MaximumHeight: prev.MaximumHeight,
-		GenesisID:     prev.GenesisID,
-		DataHash:      h.Sum(nil),
-		BackLinks:     []Digest{prev.hash},
-		Payload:       data,
+		Index:     prev.Index + 1,
+		Conodes:   prev.Conodes,
+		GenesisID: prev.GenesisID,
+		DataHash:  h.Sum(nil),
+		BackLinks: []Digest{prev.hash},
+		Payload:   data,
 	}
 
 	hash, err := block.computeHash()
@@ -308,22 +268,14 @@ func (f *blockFactory) decodeBlock(factory crypto.PublicKeyFactory, src proto.Me
 	genesisID := Digest{}
 	copy(genesisID[:], in.GetGenesisID())
 
-	verifier, err := f.cosi.GetVerifier(conodes)
-	if err != nil {
-		return SkipBlock{}, xerrors.Errorf("couldn't make verifier: %v", err)
-	}
-
 	block := SkipBlock{
-		verifier:      verifier,
-		Index:         in.GetIndex(),
-		Conodes:       conodes,
-		Height:        in.GetHeight(),
-		BaseHeight:    in.GetBaseHeight(),
-		MaximumHeight: in.GetMaximumHeight(),
-		GenesisID:     genesisID,
-		DataHash:      in.GetDataHash(),
-		BackLinks:     backLinks,
-		Payload:       payload.Message,
+		verifier:  f.verifier,
+		Index:     in.GetIndex(),
+		Conodes:   conodes,
+		GenesisID: genesisID,
+		DataHash:  in.GetDataHash(),
+		BackLinks: backLinks,
+		Payload:   payload.Message,
 	}
 
 	hash, err := block.computeHash()
@@ -342,11 +294,7 @@ func (f *blockFactory) FromVerifiable(src proto.Message) (blockchain.Block, erro
 		return nil, xerrors.New("unknown type")
 	}
 
-	if f.genesis == nil {
-		return nil, xerrors.New("genesis block not initialized")
-	}
-
-	block, err := f.decodeBlock(f.cosi.GetPublicKeyFactory(), in.GetBlock())
+	block, err := f.decodeBlock(f.publicKeyFactory, in.GetBlock())
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't decode the block: %v", err)
 	}
@@ -356,7 +304,7 @@ func (f *blockFactory) FromVerifiable(src proto.Message) (blockchain.Block, erro
 		return nil, xerrors.Errorf("couldn't decode the chain: %v", err)
 	}
 
-	err = chain.Verify(f.genesis.GetVerifier())
+	err = chain.Verify(f.verifier)
 	if err != nil {
 		return nil, err
 	}
@@ -372,8 +320,10 @@ type blockValidator struct {
 }
 
 func (v *blockValidator) Validate(pb proto.Message) (consensus.Proposal, error) {
+	factory := v.GetBlockFactory().(*blockFactory)
+
 	// TODO: validate the block
-	block, err := v.blockFactory.decodeBlock(v.blockFactory.cosi.GetPublicKeyFactory(), pb)
+	block, err := factory.decodeBlock(factory.publicKeyFactory, pb)
 	if err != nil {
 		return nil, err
 	}

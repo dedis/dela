@@ -63,9 +63,6 @@ func TestSkipBlock_Pack(t *testing.T) {
 		pblock := packed.(*BlockProto)
 
 		require.Equal(t, block.Index, pblock.Index)
-		require.Equal(t, block.Height, pblock.GetHeight())
-		require.Equal(t, block.BaseHeight, pblock.GetBaseHeight())
-		require.Equal(t, block.MaximumHeight, pblock.GetMaximumHeight())
 		require.Len(t, pblock.GetBacklinks(), len(block.BackLinks))
 		require.Equal(t, block.GenesisID.Bytes(), pblock.GetGenesisID())
 		require.Equal(t, block.DataHash, pblock.GetDataHash())
@@ -101,14 +98,11 @@ func TestSkipBlock_HashUniqueness(t *testing.T) {
 	// different from the zero of the type.
 
 	block := SkipBlock{
-		Index:         1,
-		Conodes:       []Conode{randomConode()},
-		Height:        1,
-		BaseHeight:    1,
-		MaximumHeight: 1,
-		GenesisID:     Digest{1},
-		DataHash:      []byte{0},
-		BackLinks:     []Digest{{1}, {2}},
+		Index:     1,
+		Conodes:   []Conode{randomConode()},
+		GenesisID: Digest{1},
+		DataHash:  []byte{0},
+		BackLinks: []Digest{{1}, {2}},
 	}
 
 	whitelist := map[string]struct{}{
@@ -168,12 +162,11 @@ func (cosi fakeCosi) GetVerifier(cosi.CollectiveAuthority) (crypto.Verifier, err
 }
 
 func TestBlockFactory_CreateGenesis(t *testing.T) {
-	factory := newBlockFactory(fakeCosi{}, nil, nil)
+	factory := newBlockFactory(nil, fakeCosi{}, nil, nil)
 
 	genesis, err := factory.createGenesis(Conodes{}, nil)
 	require.NoError(t, err)
 	require.NotNil(t, genesis)
-	require.NotNil(t, factory.genesis)
 
 	hash, err := genesis.computeHash()
 	require.NoError(t, err)
@@ -188,7 +181,7 @@ func TestBlockFactory_CreateGenesisFailures(t *testing.T) {
 
 	e := xerrors.New("encode error")
 	protoenc = &testProtoEncoder{err: e}
-	factory := newBlockFactory(nil, nil, nil)
+	factory := newBlockFactory(nil, nil, nil, nil)
 
 	_, err := factory.createGenesis(nil, nil)
 	require.Error(t, err)
@@ -196,15 +189,12 @@ func TestBlockFactory_CreateGenesisFailures(t *testing.T) {
 }
 
 func TestBlockFactory_FromPrevious(t *testing.T) {
-	factory := newBlockFactory(nil, nil, nil)
+	factory := newBlockFactory(nil, nil, nil, nil)
 
 	f := func(prev SkipBlock) bool {
 		block, err := factory.fromPrevious(prev, &empty.Empty{})
 		require.NoError(t, err)
 		require.Equal(t, prev.Index+1, block.Index)
-		require.Equal(t, prev.Height, block.Height)
-		require.Equal(t, prev.BaseHeight, block.BaseHeight)
-		require.Equal(t, prev.MaximumHeight, block.MaximumHeight)
 		require.Equal(t, prev.GenesisID, block.GenesisID)
 		require.NotEqual(t, prev.DataHash, block.DataHash)
 		require.Len(t, block.BackLinks, 1)
@@ -220,7 +210,7 @@ func TestBlockFactory_FromPrevious(t *testing.T) {
 func TestBlockFactory_FromPreviousFailures(t *testing.T) {
 	defer func() { protoenc = encoding.NewProtoEncoder() }()
 
-	factory := newBlockFactory(nil, nil, nil)
+	factory := newBlockFactory(nil, nil, nil, nil)
 
 	e := xerrors.New("encoding error")
 	protoenc = &testProtoEncoder{err: e}
@@ -239,7 +229,7 @@ func (f fakePublicKeyFactory) FromProto(pb proto.Message) (crypto.PublicKey, err
 }
 
 func TestBlockFactory_FromBlock(t *testing.T) {
-	factory := newBlockFactory(fakeCosi{}, nil, nil)
+	factory := newBlockFactory(nil, fakeCosi{}, nil, nil)
 
 	f := func(block SkipBlock) bool {
 		packed, err := block.Pack()
@@ -262,7 +252,7 @@ func TestBlockFactory_FromBlockFailures(t *testing.T) {
 	gen := SkipBlock{}.Generate(rand.New(rand.NewSource(time.Now().Unix())), 5)
 	block := gen.Interface().(SkipBlock)
 
-	factory := newBlockFactory(nil, nil, nil)
+	factory := newBlockFactory(nil, nil, nil, nil)
 
 	src, err := block.Pack()
 	require.NoError(t, err)
@@ -309,16 +299,13 @@ func (s SkipBlock) Generate(rand *rand.Rand, size int) reflect.Value {
 	}
 
 	block := SkipBlock{
-		verifier:      fakeVerifier{},
-		Index:         randomUint64(rand),
-		Height:        randomUint32(rand),
-		BaseHeight:    randomUint32(rand),
-		MaximumHeight: randomUint32(rand),
-		Conodes:       Conodes{},
-		GenesisID:     genesisID,
-		DataHash:      dataHash,
-		BackLinks:     []Digest{Digest{1}},
-		Payload:       &empty.Empty{},
+		verifier:  fakeVerifier{},
+		Index:     randomUint64(rand),
+		Conodes:   Conodes{},
+		GenesisID: genesisID,
+		DataHash:  dataHash,
+		BackLinks: []Digest{Digest{1}},
+		Payload:   &empty.Empty{},
 	}
 
 	hash, _ := block.computeHash()
