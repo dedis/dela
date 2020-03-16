@@ -3,6 +3,7 @@ package minoch
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
@@ -23,9 +24,9 @@ func TestRPC_Call(t *testing.T) {
 	_, err = m2.MakeRPC("test", testHandler{})
 	require.NoError(t, err)
 
-	resps, errs := rpc1.Call(&empty.Empty{}, fakePlayers{instances: []*Minoch{m2}})
+	_, errs := rpc1.Call(&empty.Empty{}, fakePlayers{instances: []*Minoch{m2}})
 	select {
-	case <-resps:
+	case <-time.After(50 * time.Millisecond):
 		t.Fatal("an error is expected")
 	case <-errs:
 	}

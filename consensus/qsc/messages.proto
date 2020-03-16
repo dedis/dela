@@ -16,8 +16,8 @@ message MessageSet {
 }
 
 message View {
-    MessageSet received = 1;
-    MessageSet broadcasted = 2;
+    map<int64, Message> received = 1;
+    map<int64, Message> broadcasted = 2;
 }
 
 message RequestMessageSet {

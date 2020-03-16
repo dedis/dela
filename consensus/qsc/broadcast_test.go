@@ -5,7 +5,10 @@ import (
 	"sync"
 	"testing"
 
+	proto "github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/minoch"
 )
@@ -27,9 +30,32 @@ func TestTLCR_Basic(t *testing.T) {
 	}
 
 	wg.Wait()
-	println("Done.. !")
 
 	require.Equal(t, uint64(k), bcs[0].timeStep)
+}
+
+func TestTLCB_Basic(t *testing.T) {
+	n := 3
+	k := 5
+
+	bcs := makeTLCB(t, n)
+	wg := sync.WaitGroup{}
+	wg.Add(n)
+	for _, bc := range bcs {
+		go func(bc *bTLCB) {
+			defer wg.Done()
+			var view *View
+			var err error
+			for i := 0; i < k; i++ {
+				view, err = bc.execute(fakeProposal{})
+				require.NoError(t, err)
+				require.Len(t, view.GetBroadcasted(), n)
+				require.Len(t, view.GetReceived(), n)
+			}
+		}(bc)
+	}
+
+	wg.Wait()
 }
 
 func makeTLCR(t *testing.T, n int) []*bTLCR {
@@ -42,9 +68,30 @@ func makeTLCR(t *testing.T, n int) []*bTLCR {
 
 		players.addrs = append(players.addrs, m.GetAddress())
 
-		bc, err := newTLCR(m, players)
+		bc, err := newTLCR("tlcr", m, players)
 		require.NoError(t, err)
 		bc.node = int64(i)
+
+		bcs[i] = bc
+	}
+
+	return bcs
+}
+
+func makeTLCB(t *testing.T, n int) []*bTLCB {
+	manager := minoch.NewManager()
+	players := &fakePlayers{}
+	bcs := make([]*bTLCB, n)
+	for i := range bcs {
+		m, err := minoch.NewMinoch(manager, fmt.Sprintf("node%d", i))
+		require.NoError(t, err)
+
+		players.addrs = append(players.addrs, m.GetAddress())
+
+		bc, err := newTLCB(m, players)
+		require.NoError(t, err)
+		bc.b1.node = int64(i)
+		bc.b2.node = int64(i)
 
 		bcs[i] = bc
 	}
@@ -83,4 +130,12 @@ func (p *fakePlayers) AddressIterator() mino.AddressIterator {
 
 func (p *fakePlayers) Len() int {
 	return len(p.addrs)
+}
+
+type fakeProposal struct {
+	consensus.Proposal
+}
+
+func (p fakeProposal) Pack() (proto.Message, error) {
+	return &empty.Empty{}, nil
 }
