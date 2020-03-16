@@ -40,13 +40,13 @@ func (c RPC) Call(req proto.Message, players mino.Players) (<-chan proto.Message
 			defer wg.Done()
 
 			if m != nil {
-				resp, err := m.rpcs[c.path].h.Process(req)
+				resp, err := m.rpcs[c.path].h.Process(proto.Clone(req))
 				if err != nil {
 					errs <- err
 				}
 
 				if resp != nil {
-					out <- resp
+					out <- proto.Clone(resp)
 				}
 			}
 		}(peer)

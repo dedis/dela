@@ -14,9 +14,8 @@ import (
 //go:generate protoc -I ./ --go_out=./ ./messages.proto
 
 type epoch struct {
-	random   int
-	proposal consensus.Proposal
-	node     int
+	consensus.Proposal
+	random int
 }
 
 // Consensus is an abstraction to send proposals to a network of nodes that will
@@ -46,14 +45,13 @@ func (c Consensus) Listen(val consensus.Validator) (consensus.Actor, error) {
 		for {
 			// ChooseMessage + RandomValue
 			e := epoch{
-				node:   c.node,
 				random: rand.Int(),
 			}
 
 			select {
-			case e.proposal = <-c.ch:
+			case e.Proposal = <-c.ch:
 			default:
-				e.proposal = emptyProposal{}
+				e.Proposal = emptyProposal{}
 			}
 
 			// Create the node proposed history for the round.
@@ -62,7 +60,7 @@ func (c Consensus) Listen(val consensus.Validator) (consensus.Actor, error) {
 			Hp = append(Hp, e)
 
 			// Broadcast.. !
-			Rp, Bp, err := c.broadcast.send(Hp)
+			Rp, Bp, err := c.broadcast.send(nil)
 			if err != nil {
 				fabric.Logger.Err(err).Send()
 				return
@@ -71,7 +69,7 @@ func (c Consensus) Listen(val consensus.Validator) (consensus.Actor, error) {
 			// Get the best history from the broadcast.
 			Hpp := Bp.getBest()
 
-			Rpp, Bpp, err := c.broadcast.send(Hpp)
+			Rpp, Bpp, err := c.broadcast.send(Hpp[0])
 			if err != nil {
 				fabric.Logger.Err(err).Send()
 				return

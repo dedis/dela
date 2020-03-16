@@ -184,6 +184,7 @@ func TestAddressIterator(t *testing.T) {
 
 // fakePlayers implements mino.Players{}
 type fakePlayers struct {
+	mino.Players
 	players  []address
 	iterator *fakeAddressIterator
 }

@@ -95,6 +95,12 @@ func (i *publicKeyIterator) GetNext() crypto.PublicKey {
 // Conodes is a list of conodes.
 type Conodes []Conode
 
+// SubSet returns a subset of the conodes.
+func (cc Conodes) SubSet(from, to int) mino.Players {
+	// TODO: bounds check..
+	return cc[from:to]
+}
+
 // Len returns the length of the list of conodes.
 func (cc Conodes) Len() int {
 	return len(cc)

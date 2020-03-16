@@ -20,7 +20,7 @@ func TestTLCR_Basic(t *testing.T) {
 	for _, bc := range bcs {
 		go func(bc *bTLCR) {
 			for i := 0; i < k; i++ {
-				bc.execute(&Message{})
+				bc.execute(&Message{Node: bc.node})
 			}
 			wg.Done()
 		}(bc)
@@ -71,6 +71,10 @@ func (i *fakeIterator) GetNext() mino.Address {
 
 type fakePlayers struct {
 	addrs []mino.Address
+}
+
+func (p *fakePlayers) SubSet(from, to int) mino.Players {
+	return &fakePlayers{addrs: p.addrs[from:to]}
 }
 
 func (p *fakePlayers) AddressIterator() mino.AddressIterator {
