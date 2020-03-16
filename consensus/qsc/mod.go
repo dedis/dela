@@ -2,11 +2,8 @@
 package qsc
 
 import (
-	"bytes"
 	"math/rand"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/mino"
@@ -52,68 +49,73 @@ func (c *Consensus) GetChain(id []byte) (consensus.Chain, error) {
 func (c *Consensus) Listen(val consensus.Validator) (consensus.Actor, error) {
 	go func() {
 		for {
-			// ChooseMessage + RandomValue
+			// 1. Choose the message and the random value.
 			e := epoch{
 				random: rand.Int63(),
 			}
 
-			var ok bool
 			select {
-			case e.proposal, ok = <-c.ch:
+			case prop, ok := <-c.ch:
 				if !ok {
 					fabric.Logger.Trace().Msg("closing")
 					return
 				}
+
+				e.hash = prop.GetHash()
 			default:
-				e.proposal = nil
+				// If the current node does not have anything to propose, it
+				// still has to participate so it sends an empty proposal.
+				e.hash = nil
 			}
 
-			// Create the node proposed history for the round.
 			Hp := make(history, len(c.history), len(c.history)+1)
 			copy(Hp, c.history)
 			Hp = append(Hp, e)
 
-			// Broadcast.. !
+			// 2. Broadcast our history to the network and get back messages
+			// from this time step.
 			view, err := c.broadcast.send(Hp)
 			if err != nil {
 				fabric.Logger.Err(err).Send()
 				return
 			}
 
-			// Get the best history from the broadcast.
-			Bp, err := fromMessageSet(val, view.GetBroadcasted())
+			// 3. Get the best history from the received messages.
+			Bp, err := fromMessageSet(view.GetBroadcasted())
 			if err != nil {
 				fabric.Logger.Err(err).Send()
 				return
 			}
 
+			// 4. Broadcast what we received in step 3.
 			viewPrime, err := c.broadcast.send(Bp.getBest())
 			if err != nil {
 				fabric.Logger.Err(err).Send()
 				return
 			}
 
-			Rpp, err := fromMessageSet(val, viewPrime.GetReceived())
+			// 5. Get the best history from the second broadcast.
+			Rpp, err := fromMessageSet(viewPrime.GetReceived())
 			if err != nil {
 				fabric.Logger.Err(err).Send()
 				return
 			}
 			c.history = Rpp.getBest()
 
-			broadcasted, err := fromMessageSet(val, viewPrime.GetBroadcasted())
+			// 6. Verify that the best history is present and unique.
+			broadcasted, err := fromMessageSet(viewPrime.GetBroadcasted())
 			if err != nil {
 				fabric.Logger.Err(err).Send()
 				return
 			}
-			received, err := fromMessageSet(val, view.GetReceived())
+			received, err := fromMessageSet(view.GetReceived())
 			if err != nil {
 				fabric.Logger.Err(err).Send()
 				return
 			}
 
 			if broadcasted.contains(c.history) && received.isUniqueBest(c.history) {
-				// TODO: deliver to the upper layer
-				val.Commit(nil)
+				val.Commit(c.history.getLast().hash)
 			}
 		}
 	}()
@@ -128,137 +130,4 @@ type actor struct {
 func (a actor) Propose(proposal consensus.Proposal, players mino.Players) error {
 	a.ch <- proposal
 	return nil
-}
-
-type epoch struct {
-	proposal consensus.Proposal
-	random   int64
-}
-
-func (e epoch) Pack() (proto.Message, error) {
-	pb := &Epoch{
-		Random:   e.random,
-		Proposal: nil, // TODO
-	}
-
-	return pb, nil
-}
-
-func (e epoch) Equal(other epoch) bool {
-	if e.random != other.random {
-		return false
-	}
-	if e.proposal != nil || other.proposal != nil {
-		if e.proposal != nil && other.proposal != nil {
-			if !bytes.Equal(e.proposal.GetHash(), other.proposal.GetHash()) {
-				return false
-			}
-		} else {
-			return false
-		}
-	}
-
-	return true
-}
-
-type history []epoch
-
-func (h history) getLast() epoch {
-	return h[len(h)-1]
-}
-
-func (h history) Equal(other history) bool {
-	if len(h) != len(other) {
-		return false
-	}
-
-	for i, e := range h {
-		if !e.Equal(other[i]) {
-			return false
-		}
-	}
-
-	return true
-}
-
-func (h history) Pack() (proto.Message, error) {
-	pb := &History{
-		Epochs: make([]*Epoch, len(h)),
-	}
-
-	for i, epoch := range h {
-		packed, err := epoch.Pack()
-		if err != nil {
-			return nil, err
-		}
-
-		pb.Epochs[i] = packed.(*Epoch)
-	}
-
-	return pb, nil
-}
-
-type histories []history
-
-func fromMessageSet(v consensus.Validator, ms map[int64]*Message) (histories, error) {
-	hists := make(histories, len(ms))
-	for i, msg := range ms {
-		hist := &History{}
-		err := ptypes.UnmarshalAny(msg.GetValue(), hist)
-		if err != nil {
-			return nil, err
-		}
-
-		epochs := make([]epoch, len(hist.GetEpochs()))
-		for j, e := range hist.GetEpochs() {
-			prop, err := v.Validate(e.GetProposal())
-			if err != nil {
-				return nil, err
-			}
-
-			epochs[j] = epoch{
-				random:   e.GetRandom(),
-				proposal: prop,
-			}
-		}
-
-		hists[i] = history(epochs)
-	}
-
-	return hists, nil
-}
-
-func (hists histories) getBest() history {
-	best := 0
-	random := int64(0)
-	for i, h := range hists[1:] {
-		if h.getLast().random > random {
-			random = h.getLast().random
-			best = i
-		}
-	}
-
-	return hists[best]
-}
-
-func (hists histories) contains(h history) bool {
-	for _, history := range hists {
-		if history.getLast().Equal(h.getLast()) {
-			return true
-		}
-	}
-
-	return false
-}
-
-func (hists histories) isUniqueBest(h history) bool {
-	for _, history := range hists {
-		isEqual := history.Equal(h)
-
-		if !isEqual && history.getLast().random >= h.getLast().random {
-			return false
-		}
-	}
-
-	return true
 }

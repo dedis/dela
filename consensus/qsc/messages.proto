@@ -27,7 +27,7 @@ message RequestMessageSet {
 
 message Epoch {
     int64 random = 1;
-    google.protobuf.Any proposal = 2;
+    bytes hash = 2;
 }
 
 message History {

@@ -1,11 +1,12 @@
 package qsc
 
 import (
-	fmt "fmt"
+	"crypto/rand"
+	"fmt"
 	"sync"
 	"testing"
 
-	proto "github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/mino/minoch"
@@ -27,25 +28,24 @@ func TestQSC_Basic(t *testing.T) {
 		actors[i] = actor
 	}
 
-	wg := sync.WaitGroup{}
-	wg.Add(n)
 	for j := 0; j < n; j++ {
 		c := cons[j]
 		actor := actors[j]
 		go func() {
-			defer wg.Done()
 			for i := 0; i < k; i++ {
-				err := actor.Propose(nil, nil)
+				err := actor.Propose(newFakeProposal(), nil)
 				require.NoError(t, err)
 			}
 			close(c.ch)
 		}()
 	}
 
-	wg.Wait()
+	val.wg.Wait()
 
 	require.Equal(t, cons[0].history, cons[1].history)
 	require.Len(t, cons[0].history, k)
+	t.Logf("%v\n", cons[0].history)
+	t.Logf("%v\n", cons[1].history)
 }
 
 func makeQSC(t *testing.T, n int) []*Consensus {
@@ -79,4 +79,19 @@ func (v *fakeValidator) Validate(pb proto.Message) (consensus.Proposal, error) {
 func (v *fakeValidator) Commit(id []byte) error {
 	v.wg.Done()
 	return nil
+}
+
+type fakeProposal struct {
+	consensus.Proposal
+	hash []byte
+}
+
+func newFakeProposal() fakeProposal {
+	buffer := make([]byte, 32)
+	rand.Read(buffer)
+	return fakeProposal{hash: buffer}
+}
+
+func (p fakeProposal) GetHash() []byte {
+	return p.hash
 }
