@@ -3,10 +3,7 @@ package qsc
 import (
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
-	any "github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/fabric"
-	"go.dedis.ch/fabric/consensus"
-	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 )
 
@@ -14,10 +11,29 @@ type storage struct {
 	previous *MessageSet
 }
 
-type broadcast struct{}
+type broadcast struct {
+	*bTLCB
+}
 
-func (b broadcast) send(prop consensus.Proposal) (view, view, error) {
-	return view{}, view{}, nil
+func newBroadcast(node int64, mino mino.Mino, players mino.Players) (broadcast, error) {
+	bc := broadcast{}
+
+	tlcb, err := newTLCB(node, mino, players)
+	if err != nil {
+		return bc, err
+	}
+
+	bc.bTLCB = tlcb
+	return bc, nil
+}
+
+func (b broadcast) send(h history) (*View, error) {
+	packed, err := h.Pack()
+	if err != nil {
+		return nil, err
+	}
+
+	return b.execute(packed)
 }
 
 type hTLCR struct {
@@ -58,7 +74,7 @@ type bTLCR struct {
 	ch chan *MessageSet
 }
 
-func newTLCR(name string, mino mino.Mino, players mino.Players) (*bTLCR, error) {
+func newTLCR(name string, node int64, mino mino.Mino, players mino.Players) (*bTLCR, error) {
 	ch := make(chan *MessageSet, 100)
 	store := &storage{}
 	rpc, err := mino.MakeRPC(name, hTLCR{ch: ch, store: store})
@@ -67,6 +83,7 @@ func newTLCR(name string, mino mino.Mino, players mino.Players) (*bTLCR, error) 
 	}
 
 	tlcr := &bTLCR{
+		node:     node,
 		timeStep: 0,
 		rpc:      rpc,
 		ch:       ch,
@@ -77,7 +94,7 @@ func newTLCR(name string, mino mino.Mino, players mino.Players) (*bTLCR, error) 
 	return tlcr, nil
 }
 
-func (b *bTLCR) processEpoch(curr *MessageSet, other *MessageSet) error {
+func (b *bTLCR) processMessageSet(curr *MessageSet, other *MessageSet) error {
 	if other.GetTimeStep() == b.timeStep {
 		// Merge both message set.
 		for k, v := range other.GetMessages() {
@@ -92,7 +109,7 @@ func (b *bTLCR) processEpoch(curr *MessageSet, other *MessageSet) error {
 		b.ch <- other
 
 		if other.GetTimeStep() == b.timeStep+1 {
-			fabric.Logger.Debug().Msgf("%d requesting previous message set for time step %d", b.node, b.timeStep)
+			fabric.Logger.Trace().Msgf("%d requesting previous message set for time step %d", b.node, b.timeStep)
 			req := &RequestMessageSet{
 				TimeStep: b.timeStep,
 				Nodes:    make([]int64, 0, len(curr.GetMessages())),
@@ -109,7 +126,7 @@ func (b *bTLCR) processEpoch(curr *MessageSet, other *MessageSet) error {
 				return err
 			}
 
-			fabric.Logger.Debug().Msgf("filling missing %d messages", len(previous.GetMessages()))
+			fabric.Logger.Trace().Msgf("filling missing %d messages", len(previous.GetMessages()))
 
 			for k, v := range previous.GetMessages() {
 				curr.Messages[k] = v
@@ -152,7 +169,7 @@ func (b *bTLCR) execute(messages ...*Message) (*View, error) {
 		case err := <-errs:
 			fabric.Logger.Err(err).Send()
 		case req := <-b.ch:
-			err := b.processEpoch(ms, req)
+			err := b.processMessageSet(ms, req)
 			if err != nil {
 				return nil, err
 			}
@@ -173,12 +190,12 @@ type bTLCB struct {
 	b2              *bTLCR
 }
 
-func newTLCB(mino mino.Mino, players mino.Players) (*bTLCB, error) {
-	b1, err := newTLCR("tlcr-prepare", mino, players)
+func newTLCB(node int64, mino mino.Mino, players mino.Players) (*bTLCB, error) {
+	b1, err := newTLCR("tlcr-prepare", node, mino, players)
 	if err != nil {
 		return nil, err
 	}
-	b2, err := newTLCR("tlcr-commit", mino, players)
+	b2, err := newTLCR("tlcr-commit", node, mino, players)
 	if err != nil {
 		return nil, err
 	}
@@ -190,27 +207,18 @@ func newTLCB(mino mino.Mino, players mino.Players) (*bTLCB, error) {
 	}, nil
 }
 
-func pack(p encoding.Packable) (*any.Any, error) {
-	packed, err := p.Pack()
-	if err != nil {
-		return nil, err
-	}
-
-	return ptypes.MarshalAny(packed)
-}
-
-func (b *bTLCB) execute(prop consensus.Proposal) (*View, error) {
-	propAny, err := pack(prop)
+func (b *bTLCB) execute(message proto.Message) (*View, error) {
+	value, err := ptypes.MarshalAny(message)
 	if err != nil {
 		return nil, err
 	}
 
 	m := &Message{
-		Node:     b.b1.node,
-		Proposal: propAny,
+		Node:  b.b1.node,
+		Value: value,
 	}
 
-	fabric.Logger.Debug().Msgf("%d going through prepare broadcast", b.b1.node)
+	fabric.Logger.Trace().Msgf("%d going through prepare broadcast", b.b1.node)
 	view, err := b.b1.execute(m)
 	if err != nil {
 		return nil, err
@@ -222,11 +230,11 @@ func (b *bTLCB) execute(prop consensus.Proposal) (*View, error) {
 	}
 
 	m2 := &Message{
-		Node:     b.b2.node,
-		Proposal: receivedAny,
+		Node:  b.b2.node,
+		Value: receivedAny,
 	}
 
-	fabric.Logger.Debug().Msgf("%d going through commit broadcast", b.b1.node)
+	fabric.Logger.Trace().Msgf("%d going through commit broadcast", b.b1.node)
 	view2, err := b.b2.execute(m2)
 	if err != nil {
 		return nil, err
@@ -242,22 +250,20 @@ func (b *bTLCB) execute(prop consensus.Proposal) (*View, error) {
 		ret.Received[k] = v
 	}
 	counter := make(map[int64]int)
-	for node, msg := range view2.GetReceived() {
-		ret.Received[node] = msg
-
+	for _, msg := range view2.GetReceived() {
 		ms := &MessageSet{}
-		err := ptypes.UnmarshalAny(msg.GetProposal(), ms)
+		err := ptypes.UnmarshalAny(msg.GetValue(), ms)
 		if err != nil {
 			return nil, err
 		}
 
 		for k, v := range ms.GetMessages() {
+			ret.Received[k] = v
 			if _, ok := counter[k]; !ok {
 				counter[k] = 0
+				ret.Broadcasted[k] = v
 			}
 			counter[k]++
-
-			ret.Broadcasted[k] = v
 		}
 	}
 

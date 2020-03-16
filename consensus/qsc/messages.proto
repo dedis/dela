@@ -6,7 +6,7 @@ import "google/protobuf/any.proto";
 
 message Message {
     int64 node = 1;
-    google.protobuf.Any proposal = 2;
+    google.protobuf.Any value = 2;
 }
 
 message MessageSet {
@@ -23,4 +23,13 @@ message View {
 message RequestMessageSet {
     uint64 timeStep = 1;
     repeated int64 nodes = 2;
+}
+
+message Epoch {
+    int64 random = 1;
+    google.protobuf.Any proposal = 2;
+}
+
+message History {
+    repeated Epoch epochs = 1;
 }

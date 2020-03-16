@@ -5,10 +5,8 @@ import (
 	"sync"
 	"testing"
 
-	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/minoch"
 )
@@ -47,7 +45,7 @@ func TestTLCB_Basic(t *testing.T) {
 			var view *View
 			var err error
 			for i := 0; i < k; i++ {
-				view, err = bc.execute(fakeProposal{})
+				view, err = bc.execute(&empty.Empty{})
 				require.NoError(t, err)
 				require.Len(t, view.GetBroadcasted(), n)
 				require.Len(t, view.GetReceived(), n)
@@ -68,9 +66,8 @@ func makeTLCR(t *testing.T, n int) []*bTLCR {
 
 		players.addrs = append(players.addrs, m.GetAddress())
 
-		bc, err := newTLCR("tlcr", m, players)
+		bc, err := newTLCR("tlcr", int64(i), m, players)
 		require.NoError(t, err)
-		bc.node = int64(i)
 
 		bcs[i] = bc
 	}
@@ -88,10 +85,8 @@ func makeTLCB(t *testing.T, n int) []*bTLCB {
 
 		players.addrs = append(players.addrs, m.GetAddress())
 
-		bc, err := newTLCB(m, players)
+		bc, err := newTLCB(int64(i), m, players)
 		require.NoError(t, err)
-		bc.b1.node = int64(i)
-		bc.b2.node = int64(i)
 
 		bcs[i] = bc
 	}
@@ -130,12 +125,4 @@ func (p *fakePlayers) AddressIterator() mino.AddressIterator {
 
 func (p *fakePlayers) Len() int {
 	return len(p.addrs)
-}
-
-type fakeProposal struct {
-	consensus.Proposal
-}
-
-func (p fakeProposal) Pack() (proto.Message, error) {
-	return &empty.Empty{}, nil
 }
