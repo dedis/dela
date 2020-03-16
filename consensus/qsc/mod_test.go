@@ -9,8 +9,24 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/consensus"
+	internal "go.dedis.ch/fabric/internal/testing"
 	"go.dedis.ch/fabric/mino/minoch"
 )
+
+func TestMessages(t *testing.T) {
+	messages := []proto.Message{
+		&Message{},
+		&MessageSet{},
+		&View{},
+		&RequestMessageSet{},
+		&Epoch{},
+		&History{},
+	}
+
+	for _, m := range messages {
+		internal.CoverProtoMessage(t, m)
+	}
+}
 
 func TestQSC_Basic(t *testing.T) {
 	n := 5

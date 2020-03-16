@@ -36,8 +36,12 @@ func (e epoch) Equal(other epoch) bool {
 
 type history []epoch
 
-func (h history) getLast() epoch {
-	return h[len(h)-1]
+func (h history) getLast() (epoch, bool) {
+	if len(h) == 0 {
+		return epoch{}, false
+	}
+
+	return h[len(h)-1], true
 }
 
 func (h history) Equal(other history) bool {
@@ -74,7 +78,7 @@ func (h history) Pack() (proto.Message, error) {
 func (h history) String() string {
 	epochs := make([]string, len(h))
 	for i, e := range h {
-		if len(e.hash) >= 4 {
+		if len(e.hash) >= 2 {
 			epochs[i] = fmt.Sprintf("%x", e.hash)[:4]
 		} else {
 			epochs[i] = "nil"
@@ -109,21 +113,33 @@ func fromMessageSet(ms map[int64]*Message) (histories, error) {
 }
 
 func (hists histories) getBest() history {
-	best := 0
-	random := hists[best].getLast().random
-	for i, h := range hists[1:] {
-		if h.getLast().random > random {
-			random = h.getLast().random
-			best = i + 1
+	best := -1
+	random := int64(0)
+	for i, h := range hists {
+		last, ok := h.getLast()
+		if ok && last.random > random {
+			random = last.random
+			best = i
 		}
+	}
+
+	if best == -1 {
+		// It happens if the histories are all empty.
+		return nil
 	}
 
 	return hists[best]
 }
 
 func (hists histories) contains(h history) bool {
+	last, ok := h.getLast()
+	if !ok {
+		return false
+	}
+
 	for _, history := range hists {
-		if history.getLast().Equal(h.getLast()) {
+		other, ok := history.getLast()
+		if ok && last.Equal(other) {
 			return true
 		}
 	}
@@ -132,11 +148,19 @@ func (hists histories) contains(h history) bool {
 }
 
 func (hists histories) isUniqueBest(h history) bool {
-	for _, history := range hists {
-		isEqual := history.Equal(h)
+	last, ok := h.getLast()
+	if !ok {
+		return false
+	}
 
-		if !isEqual && history.getLast().random >= h.getLast().random {
-			return false
+	for _, history := range hists {
+		other, ok := history.getLast()
+		if ok {
+			isEqual := history.Equal(h)
+
+			if !isEqual && other.random >= last.random {
+				return false
+			}
 		}
 	}
 

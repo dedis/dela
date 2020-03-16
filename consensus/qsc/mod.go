@@ -115,7 +115,12 @@ func (c *Consensus) Listen(val consensus.Validator) (consensus.Actor, error) {
 			}
 
 			if broadcasted.contains(c.history) && received.isUniqueBest(c.history) {
-				val.Commit(c.history.getLast().hash)
+				// TODO: node responsible for the best proposal should broadcast
+				// it to the others.
+				last, ok := c.history.getLast()
+				if ok {
+					val.Commit(last.hash)
+				}
 			}
 		}
 	}()

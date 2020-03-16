@@ -180,7 +180,7 @@ func (b *bTLCR) execute(messages ...*Message) (*View, error) {
 	fabric.Logger.Trace().Msgf("node %d moving to time step %d", b.node, b.timeStep)
 
 	b.store.previous = ms
-	// TODO: implement the view.
+
 	return &View{Received: ms.GetMessages()}, nil
 }
 
@@ -246,24 +246,28 @@ func (b *bTLCB) execute(message proto.Message) (*View, error) {
 	}
 
 	// Merge received sets.
-	for k, v := range view.GetReceived() {
-		ret.Received[k] = v
+	for node, msg := range view.GetReceived() {
+		ret.Received[node] = msg
 	}
+
 	counter := make(map[int64]int)
-	for _, msg := range view2.GetReceived() {
+	for _, msproto := range view2.GetReceived() {
 		ms := &MessageSet{}
-		err := ptypes.UnmarshalAny(msg.GetValue(), ms)
+		err := ptypes.UnmarshalAny(msproto.GetValue(), ms)
 		if err != nil {
 			return nil, err
 		}
 
-		for k, v := range ms.GetMessages() {
-			ret.Received[k] = v
-			if _, ok := counter[k]; !ok {
-				counter[k] = 0
-				ret.Broadcasted[k] = v
+		for node, msg := range ms.GetMessages() {
+			// Populate the received set anyway.
+			ret.Received[node] = msg
+			// The broadcasted set is filled and later on cleaned according to
+			// the spread threshold.
+			if _, ok := counter[node]; !ok {
+				counter[node] = 0
+				ret.Broadcasted[node] = msg
 			}
-			counter[k]++
+			counter[node]++
 		}
 	}
 
