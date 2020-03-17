@@ -18,17 +18,21 @@ type storage struct {
 	previous *MessageSet
 }
 
-// broadcast implements the Threshold Synchronous Broadcast primitive necessary
+type broadcast interface {
+	send(context.Context, history) (*View, error)
+}
+
+// broadcastTCLB implements the Threshold Synchronous Broadcast primitive necessary
 // to implement the Que Sera Consensus.
-type broadcast struct {
+type broadcastTCLB struct {
 	*bTLCB
 }
 
 // newBroadcast returns a TSB primitive that is using TLCB for the underlying
 // implementation.
 // TODO: implement TLCWR
-func newBroadcast(node int64, mino mino.Mino, players mino.Players) (broadcast, error) {
-	bc := broadcast{}
+func newBroadcast(node int64, mino mino.Mino, players mino.Players) (broadcastTCLB, error) {
+	bc := broadcastTCLB{}
 
 	tlcb, err := newTLCB(node, mino, players)
 	if err != nil {
@@ -41,7 +45,7 @@ func newBroadcast(node int64, mino mino.Mino, players mino.Players) (broadcast, 
 
 // send broadcasts the history for the current time step and move to the next
 // one.
-func (b broadcast) send(ctx context.Context, h history) (*View, error) {
+func (b broadcastTCLB) send(ctx context.Context, h history) (*View, error) {
 	packed, err := h.Pack()
 	if err != nil {
 		return nil, err
@@ -101,7 +105,8 @@ type bTLCR struct {
 }
 
 func newTLCR(name string, node int64, mino mino.Mino, players mino.Players) (*bTLCR, error) {
-	ch := make(chan *MessageSet, 100)
+	// TODO: improve to have a buffer per node with limited size.
+	ch := make(chan *MessageSet, 1000)
 	store := &storage{}
 	rpc, err := mino.MakeRPC(name, hTLCR{ch: ch, store: store})
 	if err != nil {

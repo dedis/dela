@@ -1,4 +1,9 @@
-// Package qsc implements the Que Sera Consensus algorithm.
+// Package qsc implements the Que Sera Consensus algorithm. At the time this is
+// written, the algorithm does *not* support Byzantine behavior. This is
+// currently work in progress.
+// TODO: link to the paper when published
+// TODO: Byzantine behaviors
+// TODO: chain integrity
 package qsc
 
 import (
@@ -10,6 +15,7 @@ import (
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/net/context"
+	"golang.org/x/xerrors"
 )
 
 //go:generate protoc -I ./ --go_out=./ ./messages.proto
@@ -25,9 +31,10 @@ var protoenc encoding.ProtoMarshaler = encoding.NewProtoEncoder()
 // Consensus is an abstraction to send proposals to a network of nodes that will
 // decide to include them in the common state.
 type Consensus struct {
-	ch        chan consensus.Proposal
-	history   history
-	broadcast broadcast
+	ch               chan consensus.Proposal
+	history          history
+	broadcast        broadcast
+	historiesFactory historiesFactory
 }
 
 // NewQSC returns a new instance of QSC.
@@ -38,103 +45,32 @@ func NewQSC(node int64, mino mino.Mino, players mino.Players) (*Consensus, error
 	}
 
 	return &Consensus{
-		ch:        make(chan consensus.Proposal),
-		history:   make(history, 0),
-		broadcast: bc,
+		ch:               make(chan consensus.Proposal),
+		history:          make(history, 0),
+		broadcast:        bc,
+		historiesFactory: defaultHistoriesFactory{},
 	}, nil
 }
 
-// GetChainFactory returns the chain factory.
+// GetChainFactory implements consensus.Consensus. It returns the chain factory.
 func (c *Consensus) GetChainFactory() consensus.ChainFactory {
 	return nil
 }
 
-// GetChain returns the chain that can prove the integrity of the proposal with
-// the given identifier.
+// GetChain implements consensus.Consensus. It returns the chain that can prove
+// the integrity of the proposal with the given identifier.
 func (c *Consensus) GetChain(id []byte) (consensus.Chain, error) {
 	return nil, nil
 }
 
-// Listen returns the actor that provides the primitives to send proposals to a
-// network of nodes.
+// Listen implements consensus.Consensus. It returns the actor that provides the
+// primitives to send proposals to a network of nodes.
 func (c *Consensus) Listen(val consensus.Validator) (consensus.Actor, error) {
 	go func() {
 		for {
-			// 1. Choose the message and the random value.
-			e := epoch{
-				random: rand.Int63(),
-			}
-
-			select {
-			case prop, ok := <-c.ch:
-				if !ok {
-					fabric.Logger.Trace().Msg("closing")
-					return
-				}
-
-				e.hash = prop.GetHash()
-			default:
-				// If the current node does not have anything to propose, it
-				// still has to participate so it sends an empty proposal.
-				e.hash = nil
-			}
-
-			Hp := make(history, len(c.history), len(c.history)+1)
-			copy(Hp, c.history)
-			Hp = append(Hp, e)
-
-			ctx, cancel := context.WithTimeout(context.Background(), EpochTimeout)
-			defer cancel() // TODO: function for the defer
-
-			// 2. Broadcast our history to the network and get back messages
-			// from this time step.
-			view, err := c.broadcast.send(ctx, Hp)
+			err := c.executeRound(val)
 			if err != nil {
 				fabric.Logger.Err(err).Send()
-				return
-			}
-
-			// 3. Get the best history from the received messages.
-			Bp, err := decodeHistories(view.GetBroadcasted())
-			if err != nil {
-				fabric.Logger.Err(err).Send()
-				return
-			}
-
-			// 4. Broadcast what we received in step 3.
-			viewPrime, err := c.broadcast.send(ctx, Bp.getBest())
-			if err != nil {
-				fabric.Logger.Err(err).Send()
-				return
-			}
-
-			// 5. Get the best history from the second broadcast.
-			Rpp, err := decodeHistories(viewPrime.GetReceived())
-			if err != nil {
-				fabric.Logger.Err(err).Send()
-				return
-			}
-			c.history = Rpp.getBest()
-
-			// 6. Verify that the best history is present and unique.
-			broadcasted, err := decodeHistories(viewPrime.GetBroadcasted())
-			if err != nil {
-				fabric.Logger.Err(err).Send()
-				return
-			}
-			received, err := decodeHistories(view.GetReceived())
-			if err != nil {
-				fabric.Logger.Err(err).Send()
-				return
-			}
-
-			if broadcasted.contains(c.history) && received.isUniqueBest(c.history) {
-				// TODO: node responsible for the best proposal should broadcast
-				// it to the others.
-				last, ok := c.history.getLast()
-				if ok {
-					val.Commit(last.hash)
-				}
 			}
 		}
 	}()
@@ -142,10 +78,93 @@ func (c *Consensus) Listen(val consensus.Validator) (consensus.Actor, error) {
 	return actor{ch: c.ch}, nil
 }
 
+func (c *Consensus) executeRound(val consensus.Validator) error {
+	// 1. Choose the message and the random value.
+	e := epoch{
+		// TODO: ask about randomness
+		random: rand.Int63(),
+	}
+
+	select {
+	case prop, ok := <-c.ch:
+		if !ok {
+			fabric.Logger.Trace().Msg("closing")
+			return nil
+		}
+
+		e.hash = prop.GetHash()
+	default:
+		// If the current node does not have anything to propose, it
+		// still has to participate so it sends an empty proposal.
+		e.hash = nil
+	}
+
+	Hp := make(history, len(c.history), len(c.history)+1)
+	copy(Hp, c.history)
+	Hp = append(Hp, e)
+
+	ctx, cancel := context.WithTimeout(context.Background(), EpochTimeout)
+	defer cancel()
+
+	// 2. Broadcast our history to the network and get back messages
+	// from this time step.
+	prepareSet, err := c.broadcast.send(ctx, Hp)
+	if err != nil {
+		return xerrors.Errorf("couldn't broadcast: %v", err)
+	}
+
+	// 3. Get the best history from the received messages.
+	Bp, err := c.historiesFactory.FromMessageSet(prepareSet.GetBroadcasted())
+	if err != nil {
+		return encoding.NewDecodingError("broadcasted set", err)
+	}
+
+	// 4. Broadcast what we received in step 3.
+	commitSet, err := c.broadcast.send(ctx, Bp.getBest())
+	if err != nil {
+		return xerrors.Errorf("couldn't broadcast: %v", err)
+	}
+
+	// 5. Get the best history from the second broadcast.
+	Rpp, err := c.historiesFactory.FromMessageSet(commitSet.GetReceived())
+	if err != nil {
+		return encoding.NewDecodingError("received set", err)
+	}
+	c.history = Rpp.getBest()
+
+	// 6. Verify that the best history is present and unique.
+	broadcasted, err := c.historiesFactory.FromMessageSet(commitSet.GetBroadcasted())
+	if err != nil {
+		return encoding.NewDecodingError("broadcasted set", err)
+	}
+	received, err := c.historiesFactory.FromMessageSet(prepareSet.GetReceived())
+	if err != nil {
+		return encoding.NewDecodingError("received set", err)
+	}
+
+	if broadcasted.contains(c.history) && received.isUniqueBest(c.history) {
+		// TODO: node responsible for the best proposal should broadcast
+		// it to the others.
+		last, ok := c.history.getLast()
+		if ok {
+			err := val.Commit(last.hash)
+			if err != nil {
+				return xerrors.Errorf("couldn't commit: %v", err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// actor provides the primitive to send proposal to the consensus group.
+//
+// - implements consensus.Actor
 type actor struct {
 	ch chan consensus.Proposal
 }
 
+// Propose implements consensus.Actor. It sends the proposal to the qsc loop.
 func (a actor) Propose(proposal consensus.Proposal, players mino.Players) error {
 	a.ch <- proposal
 	return nil

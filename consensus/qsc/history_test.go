@@ -97,38 +97,6 @@ func TestHistory_String(t *testing.T) {
 	require.Equal(t, "History[1]{aabb}", h.String())
 }
 
-func TestHistories_Decode(t *testing.T) {
-	h1, h1a := makeHistory(t, 1)
-	h2, h2a := makeHistory(t, 2)
-	h3, h3a := makeHistory(t, 3)
-
-	ms := map[int64]*Message{
-		1:  {Node: 1, Value: h1a},
-		2:  {Node: 2, Value: h2a},
-		30: {Node: 30, Value: h3a},
-	}
-
-	hists, err := decodeHistories(ms)
-	require.NoError(t, err)
-	require.Len(t, hists, 3)
-	for _, history := range hists {
-		if len(history) == 1 {
-			require.Equal(t, h1, history)
-		} else if len(history) == 2 {
-			require.Equal(t, h2, history)
-		} else {
-			require.Equal(t, h3, history)
-		}
-	}
-
-	ms = map[int64]*Message{
-		1: {},
-	}
-	_, err = decodeHistories(ms)
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err, encoding.NewAnyDecodingError((*History)(nil), nil)))
-}
-
 func TestHistories_GetBest(t *testing.T) {
 	f := func(r1, r2 int64) bool {
 		h1 := history{{random: r1}}
@@ -188,6 +156,40 @@ func TestHistories_IsUniqueBest(t *testing.T) {
 
 	err := quick.Check(f, nil)
 	require.NoError(t, err)
+}
+
+func TestHistoriesFactory_FromMessageSet(t *testing.T) {
+	h1, h1a := makeHistory(t, 1)
+	h2, h2a := makeHistory(t, 2)
+	h3, h3a := makeHistory(t, 3)
+
+	ms := map[int64]*Message{
+		1:  {Node: 1, Value: h1a},
+		2:  {Node: 2, Value: h2a},
+		30: {Node: 30, Value: h3a},
+	}
+
+	factory := defaultHistoriesFactory{}
+
+	hists, err := factory.FromMessageSet(ms)
+	require.NoError(t, err)
+	require.Len(t, hists, 3)
+	for _, history := range hists {
+		if len(history) == 1 {
+			require.Equal(t, h1, history)
+		} else if len(history) == 2 {
+			require.Equal(t, h2, history)
+		} else {
+			require.Equal(t, h3, history)
+		}
+	}
+
+	ms = map[int64]*Message{
+		1: {},
+	}
+	_, err = factory.FromMessageSet(ms)
+	require.Error(t, err)
+	require.True(t, xerrors.Is(err, encoding.NewAnyDecodingError((*History)(nil), nil)))
 }
 
 func makeHistory(t *testing.T, n int) (history, *any.Any) {

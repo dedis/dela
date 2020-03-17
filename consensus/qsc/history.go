@@ -10,11 +10,17 @@ import (
 	"go.dedis.ch/fabric/encoding"
 )
 
+// epoch is a part of an history. In other words, it represents a time step in
+// the QSC algorithm.
+//
+// - implements encoding.Packable
 type epoch struct {
 	hash   []byte
 	random int64
 }
 
+// Pack implements encoding.Packable. It returns the protobuf message for an
+// epoch.
 func (e epoch) Pack() (proto.Message, error) {
 	pb := &Epoch{
 		Random: e.random,
@@ -24,6 +30,7 @@ func (e epoch) Pack() (proto.Message, error) {
 	return pb, nil
 }
 
+// Equal returns true when the other epoch is the same as the current one.
 func (e epoch) Equal(other epoch) bool {
 	if e.random != other.random {
 		return false
@@ -35,6 +42,10 @@ func (e epoch) Equal(other epoch) bool {
 	return true
 }
 
+// history is an ordered list of epochs, or a list of QSC time steps.
+//
+// - implements encoding.Packable
+// - implements fmt.Stringer
 type history []epoch
 
 func (h history) getLast() (epoch, bool) {
@@ -45,6 +56,7 @@ func (h history) getLast() (epoch, bool) {
 	return h[len(h)-1], true
 }
 
+// Equal returns true when both histories are equal, false otherwise.
 func (h history) Equal(other history) bool {
 	if len(h) != len(other) {
 		return false
@@ -59,6 +71,8 @@ func (h history) Equal(other history) bool {
 	return true
 }
 
+// Pack implements encoding.Packable. It returns the protobuf message for an
+// history.
 func (h history) Pack() (proto.Message, error) {
 	pb := &History{
 		Epochs: make([]*Epoch, len(h)),
@@ -76,6 +90,8 @@ func (h history) Pack() (proto.Message, error) {
 	return pb, nil
 }
 
+// String implements fmt.Stringer. It returns a string representation of the
+// history.
 func (h history) String() string {
 	epochs := make([]string, len(h))
 	for i, e := range h {
@@ -89,29 +105,6 @@ func (h history) String() string {
 }
 
 type histories []history
-
-func decodeHistories(ms map[int64]*Message) (histories, error) {
-	hists := make(histories, 0, len(ms))
-	for _, msg := range ms {
-		hist := &History{}
-		err := ptypes.UnmarshalAny(msg.GetValue(), hist)
-		if err != nil {
-			return nil, encoding.NewAnyDecodingError(hist, err)
-		}
-
-		epochs := make([]epoch, len(hist.GetEpochs()))
-		for j, e := range hist.GetEpochs() {
-			epochs[j] = epoch{
-				random: e.GetRandom(),
-				hash:   e.GetHash(),
-			}
-		}
-
-		hists = append(hists, history(epochs))
-	}
-
-	return hists, nil
-}
 
 // getBest returns the best history in the set. The best history is defined such
 // that the random value of the latest epoch is the highest for every last epoch
@@ -173,4 +166,33 @@ func (hists histories) isUniqueBest(h history) bool {
 	}
 
 	return true
+}
+
+type historiesFactory interface {
+	FromMessageSet(set map[int64]*Message) (histories, error)
+}
+
+type defaultHistoriesFactory struct{}
+
+func (f defaultHistoriesFactory) FromMessageSet(set map[int64]*Message) (histories, error) {
+	hists := make(histories, 0, len(set))
+	for _, msg := range set {
+		hist := &History{}
+		err := ptypes.UnmarshalAny(msg.GetValue(), hist)
+		if err != nil {
+			return nil, encoding.NewAnyDecodingError(hist, err)
+		}
+
+		epochs := make([]epoch, len(hist.GetEpochs()))
+		for j, e := range hist.GetEpochs() {
+			epochs[j] = epoch{
+				random: e.GetRandom(),
+				hash:   e.GetHash(),
+			}
+		}
+
+		hists = append(hists, history(epochs))
+	}
+
+	return hists, nil
 }

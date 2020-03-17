@@ -1,6 +1,7 @@
 package qsc
 
 import (
+	"context"
 	"crypto/rand"
 	"fmt"
 	"sync"
@@ -9,8 +10,10 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/consensus"
+	"go.dedis.ch/fabric/encoding"
 	internal "go.dedis.ch/fabric/internal/testing"
 	"go.dedis.ch/fabric/mino/minoch"
+	"golang.org/x/xerrors"
 )
 
 func TestMessages(t *testing.T) {
@@ -30,7 +33,7 @@ func TestMessages(t *testing.T) {
 
 func TestQSC_Basic(t *testing.T) {
 	n := 5
-	k := 10
+	k := 100
 
 	val := &fakeValidator{}
 	val.wg.Add(n * k)
@@ -61,6 +64,53 @@ func TestQSC_Basic(t *testing.T) {
 	require.Equal(t, cons[0].history, cons[1].history)
 	require.Len(t, cons[0].history, k)
 }
+
+func TestQSC_ExecuteRound(t *testing.T) {
+	bc := &fakeBroadcast{}
+	factory := &fakeFactory{}
+	qsc := &Consensus{
+		broadcast:        bc,
+		historiesFactory: factory,
+	}
+
+	bc.err = xerrors.New("oops")
+	err := qsc.executeRound(&fakeValidator{})
+	require.EqualError(t, err, "couldn't broadcast: oops")
+
+	bc.delay = 1
+	factory.err = xerrors.New("oops")
+	err = qsc.executeRound(&fakeValidator{})
+	require.Error(t, err)
+	require.True(t, xerrors.Is(err, encoding.NewDecodingError("broadcasted set", nil)))
+
+	bc.delay = 1
+	factory.delay = 1
+	err = qsc.executeRound(&fakeValidator{})
+	require.EqualError(t, err, "couldn't broadcast: oops")
+
+	bc.err = nil
+	factory.delay = 1
+	err = qsc.executeRound(&fakeValidator{})
+	require.Error(t, err)
+	require.True(t, xerrors.Is(err, encoding.NewDecodingError("received set", nil)))
+
+	factory.delay = 2
+	err = qsc.executeRound(&fakeValidator{})
+	require.Error(t, err)
+	require.True(t, xerrors.Is(err, encoding.NewDecodingError("broadcasted set", nil)))
+
+	factory.delay = 3
+	err = qsc.executeRound(&fakeValidator{})
+	require.Error(t, err)
+	require.True(t, xerrors.Is(err, encoding.NewDecodingError("received set", nil)))
+
+	factory.err = nil
+	err = qsc.executeRound(badValidator{})
+	require.EqualError(t, err, "couldn't commit: oops")
+}
+
+// -----------------
+// Utility functions
 
 func makeQSC(t *testing.T, n int) []*Consensus {
 	manager := minoch.NewManager()
@@ -95,6 +145,14 @@ func (v *fakeValidator) Commit(id []byte) error {
 	return nil
 }
 
+type badValidator struct {
+	consensus.Validator
+}
+
+func (v badValidator) Commit([]byte) error {
+	return xerrors.New("oops")
+}
+
 type fakeProposal struct {
 	consensus.Proposal
 	hash []byte
@@ -108,4 +166,34 @@ func newFakeProposal() fakeProposal {
 
 func (p fakeProposal) GetHash() []byte {
 	return p.hash
+}
+
+type fakeBroadcast struct {
+	broadcast
+	err   error
+	delay int
+}
+
+func (b *fakeBroadcast) send(context.Context, history) (*View, error) {
+	if b.delay == 0 {
+		return nil, b.err
+	}
+	b.delay--
+	return nil, nil
+}
+
+type fakeFactory struct {
+	historiesFactory
+	err   error
+	delay int
+}
+
+func (f *fakeFactory) FromMessageSet(map[int64]*Message) (histories, error) {
+	if f.delay == 0 && f.err != nil {
+		return nil, f.err
+	}
+	f.delay--
+
+	h := history{{random: 1}}
+	return histories{h}, nil
 }
