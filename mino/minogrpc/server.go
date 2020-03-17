@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"io"
 	"math/big"
 	"net"
@@ -21,8 +22,10 @@ import (
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -206,7 +209,10 @@ func (rpc RPC) Stream(ctx context.Context,
 				if err == io.EOF {
 					return
 				}
-
+				status, ok := status.FromError(err)
+				if ok && err != nil && status.Code() == codes.Canceled {
+					return
+				}
 				if err != nil {
 					fabric.Logger.Error().Msgf("failed to receive for client '%s': %v",
 						addr.String(), err)
@@ -234,7 +240,7 @@ func CreateServer(addr mino.Address) (*Server, error) {
 		return nil, xerrors.Errorf("failed to make certificate: %v", err)
 	}
 
-	srv := grpc.NewServer()
+	srv := grpc.NewServer(grpc.Creds(credentials.NewServerTLSFromCert(cert)))
 
 	server := &Server{
 		grpcSrv:    srv,
@@ -278,25 +284,12 @@ func (srv *Server) Serve() error {
 
 	close(srv.StartChan)
 
-	srv.httpSrv = &http.Server{
-		TLSConfig: &tls.Config{
-			// TODO: a LE certificate or similar must be used alongside the
-			// actual server certificate for the browser to accept the TLS
-			// connection.
-			Certificates: []tls.Certificate{*srv.cert},
-			ClientAuth:   tls.RequestClientCert,
-		},
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Header.Get("Content-Type") == "application/grpc" {
-				srv.grpcSrv.ServeHTTP(w, r)
-			}
-		}),
-	}
-
 	// This call always returns an error
-	err = srv.httpSrv.ServeTLS(lis, "", "")
-	if err != http.ErrServerClosed {
-		return xerrors.Errorf("failed to serve: %v", err)
+	// err = srv.httpSrv.ServeTLS(lis, "", "")
+	err = srv.grpcSrv.Serve(lis)
+	if err != nil {
+		return xerrors.Errorf("failed to serve, did you forget to call "+
+			"server.Stop() or server.GracefulStop()?: %v", err)
 	}
 
 	return nil
@@ -380,7 +373,7 @@ type player struct {
 	streamClient overlayStream
 }
 
-// send implements mino.Sender.Send()
+// send implements mino.Sender.Send
 func (s sender) Send(msg proto.Message, addrs ...mino.Address) error {
 
 	ok := false
@@ -411,6 +404,9 @@ func (s sender) Send(msg proto.Message, addrs ...mino.Address) error {
 			Message: envelopeAny,
 		}
 		err = player.streamClient.Send(sendMsg)
+		if err == io.EOF {
+			return nil
+		}
 		if err != nil {
 			return xerrors.Errorf("failed to call the send on client stream: %v", err)
 		}
@@ -438,10 +434,16 @@ func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error)
 	// TODO: close the channel
 	var msg *OverlayMsg
 	var err error
+	var ok bool
 
 	select {
-	case msg = <-r.in:
+	case msg, ok = <-r.in:
+		if !ok {
+			return nil, nil, errors.New("time to end")
+		}
 	case err = <-r.errs:
+	case <-ctx.Done():
+		return nil, nil, ctx.Err()
 	}
 
 	if err != nil {

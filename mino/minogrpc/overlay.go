@@ -126,6 +126,7 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 			msg, err := stream.Recv()
 			status, ok := status.FromError(err)
 			if ok && err != nil && status.Code() == codes.Canceled {
+				close(receiver.in)
 				return
 			}
 			if err != nil {

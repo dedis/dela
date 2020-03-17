@@ -16,14 +16,14 @@ import (
 	"golang.org/x/xerrors"
 )
 
-func Test_CreateServer(t *testing.T) {
+func TestCreateServer(t *testing.T) {
 	// Using an empty address should yield an error
 	addr := address{}
 	_, err := CreateServer(addr)
 	require.EqualError(t, err, "addr.String() should not give an empty string")
 }
 
-func Test_Serve(t *testing.T) {
+func TestServe(t *testing.T) {
 	server := Server{
 		addr: address{id: "blabla"},
 	}
@@ -37,7 +37,7 @@ func Test_Serve(t *testing.T) {
 }
 
 // Use a single node to make a call that just sends back the same message.
-func Test_SingleSimpleCall(t *testing.T) {
+func TestSingleSimpleCall(t *testing.T) {
 	identifier := "127.0.0.1:2000"
 
 	addr := address{
@@ -54,7 +54,7 @@ func Test_SingleSimpleCall(t *testing.T) {
 	}
 	server.neighbours[identifier] = peer
 
-	handler := testSameHandler{}
+	handler := testSameHandler{time.Millisecond * 200}
 	uri := "blabla"
 	rpc := RPC{
 		handler: handler,
@@ -103,11 +103,10 @@ loop:
 	}
 
 	server.grpcSrv.GracefulStop()
-	err = server.httpSrv.Shutdown(context.Background())
 	require.NoError(t, err)
 }
 
-func Test_ErrorsSimpleCall(t *testing.T) {
+func TestErrorsSimpleCall(t *testing.T) {
 	identifier := "127.0.0.1:2000"
 
 	addr := address{
@@ -118,7 +117,7 @@ func Test_ErrorsSimpleCall(t *testing.T) {
 	require.NoError(t, err)
 	server.StartServer()
 
-	handler := testSameHandler{}
+	handler := testSameHandler{time.Millisecond * 200}
 	uri := "blabla"
 	rpc := RPC{
 		handler: handler,
@@ -172,12 +171,10 @@ loop2:
 	}
 
 	server.grpcSrv.GracefulStop()
-	err = server.httpSrv.Shutdown(context.Background())
-	require.NoError(t, err)
 }
 
 // Using a single node to make a call that sends back a modified message.
-func Test_SingleModifyCall(t *testing.T) {
+func TestSingleModifyCall(t *testing.T) {
 	identifier := "127.0.0.1:2000"
 
 	addr := address{
@@ -225,12 +222,10 @@ loop:
 	}
 
 	server.grpcSrv.GracefulStop()
-	err = server.httpSrv.Shutdown(context.Background())
-	require.NoError(t, err)
 }
 
 // Using 3 nodes to make a call that sends back a modified message.
-func Test_MultipleModifyCall(t *testing.T) {
+func TestMultipleModifyCall(t *testing.T) {
 	// Server 1
 	identifier1 := "127.0.0.1:2001"
 	addr1 := address{
@@ -322,8 +317,6 @@ loop:
 	// Doing the same but closing server3
 	//
 	server3.grpcSrv.GracefulStop()
-	err = server3.httpSrv.Shutdown(context.Background())
-	require.NoError(t, err)
 
 	// Call the rpc on server1
 	respChan, errChan = rpc.Call(&empty.Empty{}, memship)
@@ -363,17 +356,12 @@ loop2:
 	// Closing servers 1 and 2
 
 	server1.grpcSrv.GracefulStop()
-	err = server1.httpSrv.Shutdown(context.Background())
-	require.NoError(t, err)
-
 	server2.grpcSrv.GracefulStop()
-	err = server2.httpSrv.Shutdown(context.Background())
-	require.NoError(t, err)
 
 }
 
 // Use a 3 nodes to make a stream that just sends back the same message.
-func Test_SingleSimpleStream(t *testing.T) {
+func TestSingleSimpleStream(t *testing.T) {
 	identifier := "127.0.0.1:2000"
 
 	addr := &address{
@@ -390,7 +378,7 @@ func Test_SingleSimpleStream(t *testing.T) {
 	}
 	server.neighbours[identifier] = peer
 
-	handler := testSameHandler{}
+	handler := testSameHandler{time.Millisecond * 200}
 	uri := "blabla"
 	rpc := RPC{
 		handler: handler,
@@ -426,15 +414,12 @@ func Test_SingleSimpleStream(t *testing.T) {
 	err = ptypes.UnmarshalAny(enveloppe.Message, empty2)
 	require.NoError(t, err)
 
-	// TODO: investigate why GracefullStop yields an error
-	server.grpcSrv.Stop()
-	err = server.httpSrv.Shutdown(context.Background())
-	require.NoError(t, err)
+	server.grpcSrv.GracefulStop()
 
 }
 
 // Use a single node to make a stream that just sends back the same message.
-func Test_ErrorsSimpleStream(t *testing.T) {
+func TestErrorsSimpleStream(t *testing.T) {
 	identifier := "127.0.0.1:2000"
 
 	addr := &address{
@@ -451,7 +436,7 @@ func Test_ErrorsSimpleStream(t *testing.T) {
 	}
 	server.neighbours[identifier] = peer
 
-	handler := testSameHandler{}
+	handler := testSameHandler{time.Millisecond * 200}
 	uri := "blabla"
 	rpc := RPC{
 		handler: handler,
@@ -470,14 +455,12 @@ func Test_ErrorsSimpleStream(t *testing.T) {
 	_, _, err = receiver.Recv(context.Background())
 	require.EqualError(t, err, "got an error from the error chan: failed to get client conn for client '': empty address is not allowed")
 
-	server.grpcSrv.Stop()
-	err = server.httpSrv.Shutdown(context.Background())
-	require.NoError(t, err)
+	server.grpcSrv.GracefulStop()
 
 }
 
 // Use multiple nodes to use a stream that just sends back the same message.
-func Test_MultipleSimpleStream(t *testing.T) {
+func TestMultipleSimpleStream(t *testing.T) {
 	identifier1 := "127.0.0.1:2001"
 	addr1 := &address{
 		id: identifier1,
@@ -519,7 +502,7 @@ func Test_MultipleSimpleStream(t *testing.T) {
 	server1.neighbours[identifier2] = peer2
 	server1.neighbours[identifier3] = peer3
 
-	handler := testSameHandler{}
+	handler := testSameHandler{time.Millisecond * 900}
 	uri := "blabla"
 	rpc := RPC{
 		handler: handler,
@@ -585,19 +568,14 @@ func Test_MultipleSimpleStream(t *testing.T) {
 	}
 
 	// TODO: investigate why GracefullStop yields an error
-	server1.grpcSrv.Stop()
-	err = server1.httpSrv.Shutdown(context.Background())
-	require.NoError(t, err)
-	server2.grpcSrv.Stop()
-	err = server2.httpSrv.Shutdown(context.Background())
-	require.NoError(t, err)
-	server3.grpcSrv.Stop()
-	err = server3.httpSrv.Shutdown(context.Background())
+	server1.grpcSrv.GracefulStop()
+	server2.grpcSrv.GracefulStop()
+	server3.grpcSrv.GracefulStop()
 	require.NoError(t, err)
 }
 
 // Use multiple nodes to use a stream that aggregates the dummyMessages
-func Test_MultipleChangeStream(t *testing.T) {
+func TestMultipleChangeStream(t *testing.T) {
 	identifier1 := "127.0.0.1:2001"
 	addr1 := &address{
 		id: identifier1,
@@ -696,18 +674,13 @@ func Test_MultipleChangeStream(t *testing.T) {
 	}
 
 	// TODO: investigate why GracefullStop yields an error
-	server1.grpcSrv.Stop()
-	err = server1.httpSrv.Shutdown(context.Background())
-	require.NoError(t, err)
-	server2.grpcSrv.Stop()
-	err = server2.httpSrv.Shutdown(context.Background())
-	require.NoError(t, err)
-	server3.grpcSrv.Stop()
-	err = server3.httpSrv.Shutdown(context.Background())
+	server1.grpcSrv.GracefulStop()
+	server2.grpcSrv.GracefulStop()
+	server3.grpcSrv.GracefulStop()
 	require.NoError(t, err)
 }
 
-func Test_GetConnection(t *testing.T) {
+func TestGetConnection(t *testing.T) {
 	addr := &address{
 		id: "127.0.0.1:2000",
 	}
@@ -721,7 +694,7 @@ func Test_GetConnection(t *testing.T) {
 	require.EqualError(t, err, "empty address is not allowed")
 }
 
-func Test_Sender(t *testing.T) {
+func TestSender(t *testing.T) {
 	sender := sender{
 		participants: make([]player, 0),
 	}
@@ -745,7 +718,7 @@ func Test_Sender(t *testing.T) {
 	require.EqualError(t, err, encoding.NewAnyEncodingError(nil, errors.New("proto: Marshal called with nil")).Error())
 }
 
-func Test_Recv(t *testing.T) {
+func TestRecv(t *testing.T) {
 	receiver := receiver{
 		errs: make(chan error, 1),
 		in:   make(chan *OverlayMsg, 1),
@@ -770,6 +743,7 @@ func Test_Recv(t *testing.T) {
 
 // implements a handler interface that just returns the input
 type testSameHandler struct {
+	timeout time.Duration
 }
 
 func (t testSameHandler) Process(req proto.Message) (proto.Message, error) {
@@ -783,8 +757,12 @@ func (t testSameHandler) Combine(req []proto.Message) ([]proto.Message, error) {
 // Stream is a dummy handler that forwards input messages to the sender
 func (t testSameHandler) Stream(out mino.Sender, in mino.Receiver) error {
 	for {
-		// ctx if I want a timeout
-		addr, msg, err := in.Recv(context.Background())
+		ctx, cancelFunc := context.WithTimeout(context.Background(), t.timeout)
+		defer cancelFunc()
+		addr, msg, err := in.Recv(ctx)
+		if err == context.DeadlineExceeded {
+			return nil
+		}
 		if err != nil {
 			return xerrors.Errorf("failed to receive message in handler: %v", err)
 		}
