@@ -7,6 +7,7 @@ import (
 
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
+	"go.dedis.ch/fabric/encoding"
 )
 
 type epoch struct {
@@ -89,13 +90,13 @@ func (h history) String() string {
 
 type histories []history
 
-func fromMessageSet(ms map[int64]*Message) (histories, error) {
-	hists := make(histories, len(ms))
-	for i, msg := range ms {
+func decodeHistories(ms map[int64]*Message) (histories, error) {
+	hists := make(histories, 0, len(ms))
+	for _, msg := range ms {
 		hist := &History{}
 		err := ptypes.UnmarshalAny(msg.GetValue(), hist)
 		if err != nil {
-			return nil, err
+			return nil, encoding.NewAnyDecodingError(hist, err)
 		}
 
 		epochs := make([]epoch, len(hist.GetEpochs()))
@@ -106,18 +107,21 @@ func fromMessageSet(ms map[int64]*Message) (histories, error) {
 			}
 		}
 
-		hists[i] = history(epochs)
+		hists = append(hists, history(epochs))
 	}
 
 	return hists, nil
 }
 
+// getBest returns the best history in the set. The best history is defined such
+// that the random value of the latest epoch is the highest for every last epoch
+// in the histories. It returns nil if not history is found.
 func (hists histories) getBest() history {
 	best := -1
 	random := int64(0)
 	for i, h := range hists {
 		last, ok := h.getLast()
-		if ok && last.random > random {
+		if ok && (best == -1 || last.random > random) {
 			random = last.random
 			best = i
 		}
@@ -131,6 +135,8 @@ func (hists histories) getBest() history {
 	return hists[best]
 }
 
+// contains returns true when the given history is found in the set, otherwise
+// it returns false.
 func (hists histories) contains(h history) bool {
 	last, ok := h.getLast()
 	if !ok {
@@ -147,6 +153,8 @@ func (hists histories) contains(h history) bool {
 	return false
 }
 
+// isUniqueBest returns true if the given history is uniquely best as defined in
+// the histories.getBest function, false otherwise.
 func (hists histories) isUniqueBest(h history) bool {
 	last, ok := h.getLast()
 	if !ok {

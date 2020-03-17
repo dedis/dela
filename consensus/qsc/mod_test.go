@@ -60,8 +60,6 @@ func TestQSC_Basic(t *testing.T) {
 
 	require.Equal(t, cons[0].history, cons[1].history)
 	require.Len(t, cons[0].history, k)
-	t.Logf("%v\n", cons[0].history)
-	t.Logf("%v\n", cons[1].history)
 }
 
 func makeQSC(t *testing.T, n int) []*Consensus {

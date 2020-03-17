@@ -3,13 +3,24 @@ package qsc
 
 import (
 	"math/rand"
+	"time"
 
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/consensus"
+	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
+	"golang.org/x/net/context"
 )
 
 //go:generate protoc -I ./ --go_out=./ ./messages.proto
+
+const (
+	// EpochTimeout is the maximum amount of time given to an epoch to end
+	// before the request is aborted.
+	EpochTimeout = 20 * time.Second
+)
+
+var protoenc encoding.ProtoMarshaler = encoding.NewProtoEncoder()
 
 // Consensus is an abstraction to send proposals to a network of nodes that will
 // decide to include them in the common state.
@@ -72,30 +83,33 @@ func (c *Consensus) Listen(val consensus.Validator) (consensus.Actor, error) {
 			copy(Hp, c.history)
 			Hp = append(Hp, e)
 
+			ctx, cancel := context.WithTimeout(context.Background(), EpochTimeout)
+			defer cancel() // TODO: function for the defer
+
 			// 2. Broadcast our history to the network and get back messages
 			// from this time step.
-			view, err := c.broadcast.send(Hp)
+			view, err := c.broadcast.send(ctx, Hp)
 			if err != nil {
 				fabric.Logger.Err(err).Send()
 				return
 			}
 
 			// 3. Get the best history from the received messages.
-			Bp, err := fromMessageSet(view.GetBroadcasted())
+			Bp, err := decodeHistories(view.GetBroadcasted())
 			if err != nil {
 				fabric.Logger.Err(err).Send()
 				return
 			}
 
 			// 4. Broadcast what we received in step 3.
-			viewPrime, err := c.broadcast.send(Bp.getBest())
+			viewPrime, err := c.broadcast.send(ctx, Bp.getBest())
 			if err != nil {
 				fabric.Logger.Err(err).Send()
 				return
 			}
 
 			// 5. Get the best history from the second broadcast.
-			Rpp, err := fromMessageSet(viewPrime.GetReceived())
+			Rpp, err := decodeHistories(viewPrime.GetReceived())
 			if err != nil {
 				fabric.Logger.Err(err).Send()
 				return
@@ -103,12 +117,12 @@ func (c *Consensus) Listen(val consensus.Validator) (consensus.Actor, error) {
 			c.history = Rpp.getBest()
 
 			// 6. Verify that the best history is present and unique.
-			broadcasted, err := fromMessageSet(viewPrime.GetBroadcasted())
+			broadcasted, err := decodeHistories(viewPrime.GetBroadcasted())
 			if err != nil {
 				fabric.Logger.Err(err).Send()
 				return
 			}
-			received, err := fromMessageSet(view.GetReceived())
+			received, err := decodeHistories(view.GetReceived())
 			if err != nil {
 				fabric.Logger.Err(err).Send()
 				return
