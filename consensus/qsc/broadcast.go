@@ -211,7 +211,7 @@ func (b *bTLCR) catchUp(current, received *MessageSet) error {
 }
 
 func (b *bTLCR) requestPreviousSet(node int, req *RequestMessageSet) (*MessageSet, error) {
-	resps, errs := b.rpc.Call(req, b.players.SubSet(node, node+1))
+	resps, errs := b.rpc.Call(req, b.players.Take(mino.FilterIndex(node)))
 	select {
 	case resp, ok := <-resps:
 		if !ok {

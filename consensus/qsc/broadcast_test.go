@@ -236,8 +236,9 @@ type fakePlayers struct {
 	addrs []mino.Address
 }
 
-func (p *fakePlayers) SubSet(from, to int) mino.Players {
-	return &fakePlayers{addrs: p.addrs[from:to]}
+func (p *fakePlayers) Take(filters ...mino.Filter) mino.Players {
+	index := filters[0].(mino.FilterIndex)
+	return &fakePlayers{addrs: p.addrs[index : index+1]}
 }
 
 func (p *fakePlayers) AddressIterator() mino.AddressIterator {
@@ -256,7 +257,7 @@ func (p fakeSinglePlayer) Len() int {
 	return 1
 }
 
-func (p fakeSinglePlayer) SubSet(from, to int) mino.Players {
+func (p fakeSinglePlayer) Take(...mino.Filter) mino.Players {
 	return fakeSinglePlayer{}
 }
 

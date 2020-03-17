@@ -95,10 +95,27 @@ func (i *publicKeyIterator) GetNext() crypto.PublicKey {
 // Conodes is a list of conodes.
 type Conodes []Conode
 
-// SubSet returns a subset of the conodes.
-func (cc Conodes) SubSet(from, to int) mino.Players {
-	// TODO: bounds check..
-	return cc[from:to]
+// Take returns a subset of the conodes.
+func (cc Conodes) Take(filters ...mino.Filter) mino.Players {
+	// TODO: optimize and test
+	indices := map[int]struct{}{}
+	for _, f := range filters {
+		switch filter := f.(type) {
+		case mino.FilterIndex:
+			indices[int(filter)] = struct{}{}
+		case mino.FilterSlice:
+			for i := filter.From; i < filter.To; i++ {
+				indices[i] = struct{}{}
+			}
+		}
+	}
+
+	conodes := make(Conodes, 0, len(indices))
+	for i := range indices {
+		conodes = append(conodes, cc[i])
+	}
+
+	return conodes
 }
 
 // Len returns the length of the list of conodes.
