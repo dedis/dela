@@ -476,7 +476,7 @@ func Test_ErrorsSimpleStream(t *testing.T) {
 
 }
 
-// Use a multiple nodes to use a stream that just sends back the same message.
+// Use multiple nodes to use a stream that just sends back the same message.
 func Test_MultipleSimpleStream(t *testing.T) {
 	identifier1 := "127.0.0.1:2001"
 	addr1 := &address{
@@ -596,7 +596,7 @@ func Test_MultipleSimpleStream(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// Use a 3 nodes to use a stream that aggregates the dummyMessages
+// Use multiple nodes to use a stream that aggregates the dummyMessages
 func Test_MultipleChangeStream(t *testing.T) {
 	identifier1 := "127.0.0.1:2001"
 	addr1 := &address{
