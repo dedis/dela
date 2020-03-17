@@ -1,3 +1,5 @@
+![Infography](assets/infograph.png)
+
 # Modulus
 
 An intro...
