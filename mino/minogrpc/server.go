@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
@@ -103,9 +104,11 @@ func (rpc RPC) Call(req proto.Message,
 	go func() {
 		iter := players.AddressIterator()
 		for iter.HasNext() {
-			clientConn, err := rpc.srv.getConnection(iter.GetNext().String())
+			addrStr := iter.GetNext().String()
+			clientConn, err := rpc.srv.getConnection(addrStr)
 			if err != nil {
-				errs <- xerrors.Errorf("failed to get client conn: %v", err)
+				errs <- xerrors.Errorf("failed to get client conn for '%s': %v",
+					addrStr, err)
 				continue
 			}
 			cl := NewOverlayClient(clientConn)
@@ -119,7 +122,7 @@ func (rpc RPC) Call(req proto.Message,
 
 			callResp, err := cl.Call(ctx, sendMsg)
 			if err != nil {
-				errs <- xerrors.Errorf("failed to call client: %v", err)
+				errs <- xerrors.Errorf("failed to call client '%s': %v", addrStr, err)
 				continue
 			}
 
@@ -135,20 +138,27 @@ func (rpc RPC) Call(req proto.Message,
 	return out, errs
 }
 
-// Stream implements mino.RPC.Stream()
+// Stream implements mino.RPC.Stream.
 func (rpc RPC) Stream(ctx context.Context,
 	players mino.Players) (in mino.Sender, out mino.Receiver) {
 
-	errs := make(chan error, 1)
+	// if every player produces an error the buffer should be large enought so
+	// that we are never blocked in the for loop and we can termninate this
+	// function.
+	errs := make(chan error, players.Len())
 
 	orchSender := sender{
 		address:      address{},
 		participants: make([]player, players.Len()),
+		name:         "orchestrator",
 	}
 
 	orchRecv := receiver{
 		errs: errs,
-		in:   make(chan *OverlayMsg, 1),
+		// it is okay to have a blocking chan here because every use of it is in
+		// a goroutine, where we don't mind if it blocks.
+		in:   make(chan *OverlayMsg),
+		name: "orchestrator",
 	}
 
 	// Creating a stream for each provided addr
@@ -159,7 +169,10 @@ func (rpc RPC) Stream(ctx context.Context,
 		if err != nil {
 			// TODO: try another path (maybe use another node to relay that
 			// message)
-			errs <- xerrors.Errorf("failed to get client conn: %v", err)
+			fabric.Logger.Error().Msgf("failed to get client conn for client '%s': %v",
+				addr.String(), err)
+			errs <- xerrors.Errorf("failed to get client conn for client '%s': %v",
+				addr.String(), err)
 			continue
 		}
 		cl := NewOverlayClient(clientConn)
@@ -171,7 +184,10 @@ func (rpc RPC) Stream(ctx context.Context,
 
 		stream, err := cl.Stream(ctx)
 		if err != nil {
-			errs <- xerrors.Errorf("failed to get stream from client: %v", err)
+			fabric.Logger.Error().Msgf("failed to get stream for client '%s': %v",
+				addr.String(), err)
+			errs <- xerrors.Errorf("failed to get stream for client '%s': %v",
+				addr.String(), err)
 			continue
 		}
 
@@ -181,13 +197,22 @@ func (rpc RPC) Stream(ctx context.Context,
 		}
 
 		go func() {
-			msg, err := stream.Recv()
-			if err != nil {
-				errs <- xerrors.Errorf("failed to receive: %v", err)
-				return
-			}
+			for {
+				msg, err := stream.Recv()
+				if err == io.EOF {
+					return
+				}
 
-			orchRecv.in <- msg
+				if err != nil {
+					fabric.Logger.Error().Msgf("failed to receive for client '%s': %v",
+						addr.String(), err)
+					errs <- xerrors.Errorf("failed to receive for client '%s': %v",
+						addr.String(), err)
+					return
+				}
+
+				orchRecv.in <- msg
+			}
 		}()
 	}
 
@@ -343,6 +368,7 @@ func makeCertificate() (*tls.Certificate, error) {
 type sender struct {
 	address      address
 	participants []player
+	name         string
 }
 
 type player struct {
@@ -353,13 +379,14 @@ type player struct {
 // send implements mino.Sender.Send()
 func (s sender) Send(msg proto.Message, addrs ...mino.Address) error {
 
+	ok := false
 	for _, addr := range addrs {
-
 		player := s.getParticipant(addr)
 		if player == nil {
 			continue
 		}
 
+		ok = true
 		msgAny, err := ptypes.MarshalAny(msg)
 		if err != nil {
 			return encoding.NewAnyEncodingError(msg, err)
@@ -379,11 +406,15 @@ func (s sender) Send(msg proto.Message, addrs ...mino.Address) error {
 		sendMsg := &OverlayMsg{
 			Message: envelopeAny,
 		}
-
 		err = player.streamClient.Send(sendMsg)
 		if err != nil {
 			return xerrors.Errorf("failed to call the send on client stream: %v", err)
 		}
+	}
+
+	if !ok {
+		fabric.Logger.Warn().Msg("warning: the given address didn't match " +
+			"any of the RPC. No message sent.")
 	}
 
 	return nil
@@ -393,6 +424,7 @@ func (s sender) Send(msg proto.Message, addrs ...mino.Address) error {
 type receiver struct {
 	errs chan error
 	in   chan *OverlayMsg
+	name string
 }
 
 // Recv implements mino.receiver.Recv()
