@@ -16,6 +16,7 @@ func TestMessages(t *testing.T) {
 	messages := []proto.Message{
 		&OverlayMsg{},
 		&Envelope{},
+		&DummyMsg{},
 	}
 
 	for _, m := range messages {
