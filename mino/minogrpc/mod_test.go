@@ -58,20 +58,20 @@ func Test_MakeNamespace(t *testing.T) {
 
 	// A namespace can not be empty
 	ns = ""
-	newMino, err = minoGrpc.MakeNamespace(ns)
+	_, err = minoGrpc.MakeNamespace(ns)
 	require.EqualError(t, err, "a namespace can not be empty")
 
 	// A namespace should match [a-zA-Z0-9]+
 	ns = "/namespace"
-	newMino, err = minoGrpc.MakeNamespace(ns)
+	_, err = minoGrpc.MakeNamespace(ns)
 	require.EqualError(t, err, "a namespace should match [a-zA-Z0-9]+, but found '/namespace'")
 
 	ns = " test"
-	newMino, err = minoGrpc.MakeNamespace(ns)
+	_, err = minoGrpc.MakeNamespace(ns)
 	require.EqualError(t, err, "a namespace should match [a-zA-Z0-9]+, but found ' test'")
 
 	ns = "test$"
-	newMino, err = minoGrpc.MakeNamespace(ns)
+	_, err = minoGrpc.MakeNamespace(ns)
 	require.EqualError(t, err, "a namespace should match [a-zA-Z0-9]+, but found 'test$'")
 }
 

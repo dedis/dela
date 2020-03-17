@@ -250,6 +250,7 @@ func Test_MultipleModifyCall(t *testing.T) {
 		id: identifier2,
 	}
 	server2, err := CreateServer(addr2)
+	require.NoError(t, err)
 	server2.StartServer()
 	peer2 := Peer{
 		Address:     server2.listener.Addr().String(),
@@ -262,6 +263,7 @@ func Test_MultipleModifyCall(t *testing.T) {
 		id: identifier3,
 	}
 	server3, err := CreateServer(addr3)
+	require.NoError(t, err)
 	server3.StartServer()
 	peer3 := Peer{
 		Address:     server3.listener.Addr().String(),
@@ -505,6 +507,7 @@ func Test_MultipleSimpleStream(t *testing.T) {
 		id: identifier3,
 	}
 	server3, err := CreateServer(addr3)
+	require.NoError(t, err)
 	require.NoError(t, err)
 	server3.StartServer()
 	peer3 := Peer{

@@ -21,6 +21,7 @@ func TestRPC_Call(t *testing.T) {
 	m2, err := NewMinoch(manager, "B")
 	require.NoError(t, err)
 	_, err = m2.MakeRPC("test", testHandler{})
+	require.NoError(t, err)
 
 	resps, errs := rpc1.Call(&empty.Empty{}, fakeMembership{instances: []*Minoch{m2}})
 	select {
@@ -62,6 +63,7 @@ func TestRPC_Stream(t *testing.T) {
 	m, err := NewMinoch(manager, "A")
 	require.NoError(t, err)
 	rpc, err := m.MakeRPC("test", fakeStreamHandler{})
+	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -83,6 +85,7 @@ func TestRPC_StreamFailures(t *testing.T) {
 	m, err := NewMinoch(manager, "A")
 	require.NoError(t, err)
 	rpc, err := m.MakeRPC("test", fakeBadStreamHandler{})
+	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

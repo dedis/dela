@@ -128,6 +128,10 @@ func (rpc RPC) Call(req proto.Message,
 
 			var resp ptypes.DynamicAny
 			err = ptypes.UnmarshalAny(callResp.Message, &resp)
+			if err != nil {
+				errs <- encoding.NewAnyDecodingError(resp, err)
+				continue
+			}
 
 			out <- resp.Message
 		}

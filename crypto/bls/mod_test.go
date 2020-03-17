@@ -257,10 +257,10 @@ func TestVerifierFactory_FromIterator(t *testing.T) {
 	require.NotNil(t, verifier.(blsVerifier).points[0])
 	require.NotNil(t, verifier.(blsVerifier).points[1])
 
-	verifier, err = factory.FromIterator(nil)
+	_, err = factory.FromIterator(nil)
 	require.EqualError(t, err, "iterator is nil")
 
-	verifier, err = factory.FromIterator(&fakeIterator{count: 1, bad: true})
+	_, err = factory.FromIterator(&fakeIterator{count: 1, bad: true})
 	require.EqualError(t, err, "invalid public key type: bls.fakePublicKey")
 }
 
@@ -275,7 +275,7 @@ func TestVerifierFactory_FromArray(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, verifier.(blsVerifier).points)
 
-	verifier, err = factory.FromArray([]crypto.PublicKey{fakePublicKey{}})
+	_, err = factory.FromArray([]crypto.PublicKey{fakePublicKey{}})
 	require.EqualError(t, err, "invalid public key type: bls.fakePublicKey")
 }
 
