@@ -24,7 +24,7 @@ func Test_CreateServer(t *testing.T) {
 	require.EqualError(t, err, "addr.String() should not give an empty string")
 }
 
-func Test_Server_Serve(t *testing.T) {
+func TestServer_Serve(t *testing.T) {
 	server := Server{
 		addr: address{id: "blabla"},
 	}
@@ -37,7 +37,7 @@ func Test_Server_Serve(t *testing.T) {
 	require.True(t, strings.HasPrefix(err.Error(), "failed to listen: listen tcp4: lookup blabla"))
 }
 
-func Test_Server_GetConnection(t *testing.T) {
+func TestServer_GetConnection(t *testing.T) {
 	addr := &address{
 		id: "127.0.0.1:2000",
 	}
@@ -49,10 +49,12 @@ func Test_Server_GetConnection(t *testing.T) {
 	// An empty address should yield an error
 	_, err = server.getConnection("")
 	require.EqualError(t, err, "empty address is not allowed")
+
+	server.grpcSrv.GracefulStop()
 }
 
 // Use a single node to make a call that just sends back the same message.
-func Test_RPC_SingleSimple_Call(t *testing.T) {
+func TestRPC_SingleSimple_Call(t *testing.T) {
 	identifier := "127.0.0.1:2000"
 
 	addr := address{
@@ -121,7 +123,7 @@ loop:
 	require.NoError(t, err)
 }
 
-func Test_RPC_ErrorsSimple_Call(t *testing.T) {
+func TestRPC_ErrorsSimple_Call(t *testing.T) {
 	identifier := "127.0.0.1:2000"
 
 	addr := address{
@@ -189,7 +191,7 @@ loop2:
 }
 
 // Using a single node to make a call that sends back a modified message.
-func Test_RPC_SingleModify_Call(t *testing.T) {
+func TestRPC_SingleModify_Call(t *testing.T) {
 	identifier := "127.0.0.1:2000"
 
 	addr := address{
@@ -376,7 +378,7 @@ loop2:
 }
 
 // Use a 3 nodes to make a stream that just sends back the same message.
-func Test_RPC_SingleSimple_Stream(t *testing.T) {
+func TestRPC_SingleSimple_Stream(t *testing.T) {
 	identifier := "127.0.0.1:2000"
 
 	addr := &address{
@@ -434,7 +436,7 @@ func Test_RPC_SingleSimple_Stream(t *testing.T) {
 }
 
 // Use a single node to make a stream that just sends back the same message.
-func Test_RPC_ErrorsSimple_Stream(t *testing.T) {
+func TestRPC_ErrorsSimple_Stream(t *testing.T) {
 	identifier := "127.0.0.1:2000"
 
 	addr := &address{
@@ -475,7 +477,7 @@ func Test_RPC_ErrorsSimple_Stream(t *testing.T) {
 }
 
 // Use multiple nodes to use a stream that just sends back the same message.
-func Test_RPC_MultipleSimple_Stream(t *testing.T) {
+func TestRPC_MultipleSimple_Stream(t *testing.T) {
 	identifier1 := "127.0.0.1:2001"
 	addr1 := &address{
 		id: identifier1,
@@ -590,7 +592,7 @@ func Test_RPC_MultipleSimple_Stream(t *testing.T) {
 }
 
 // Use multiple nodes to use a stream that aggregates the dummyMessages
-func Test_RPC_MultipleChange_Stream(t *testing.T) {
+func TestRPC_MultipleChange_Stream(t *testing.T) {
 	identifier1 := "127.0.0.1:2001"
 	addr1 := &address{
 		id: identifier1,

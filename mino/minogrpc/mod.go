@@ -21,26 +21,26 @@ type Minogrpc struct {
 	namespace string
 }
 
-// address implements Mino.Address
+// address implements mino.Address
 // TODO: improve to support internet addresses.
 type address struct {
 	id string
 }
 
-// MarshalText implements Mino.Address
+// MarshalText implements mino.Address
 func (a address) MarshalText() ([]byte, error) {
 	return []byte(a.id), nil
 }
 
-// String implements Mino.Address
+// String implements mino.Address
 func (a address) String() string {
 	return a.id
 }
 
-// addressFactory implements Mino.AddressFactory
+// addressFactory implements mino.AddressFactory
 type addressFactory struct{}
 
-// FromText implements Mino.AddressFactory. It returns an instance of an
+// FromText implements mino.AddressFactory. It returns an instance of an
 // address from a byte slice.
 func (f addressFactory) FromText(text []byte) mino.Address {
 	return address{id: string(text)}
