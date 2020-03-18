@@ -12,6 +12,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/golang/protobuf/proto"
@@ -373,51 +374,65 @@ type player struct {
 	streamClient overlayStream
 }
 
-// send implements mino.Sender.Send
-func (s sender) Send(msg proto.Message, addrs ...mino.Address) error {
+// send implements mino.Sender.Send. This function sends the message
+// asynchrously to all the addrs. The chan error is closed when all the send on
+// each addrs are done. This function guarantees that the error chan is
+// eventually closed.
+func (s sender) Send(msg proto.Message, addrs ...mino.Address) chan error {
 
-	ok := false
+	errs := make(chan error, len(addrs))
+	var wg sync.WaitGroup
+	wg.Add(len(addrs))
+
 	for _, addr := range addrs {
-		player := s.getParticipant(addr)
-		if player == nil {
-			continue
-		}
+		go func(addr mino.Address) {
+			defer wg.Done()
 
-		ok = true
-		msgAny, err := ptypes.MarshalAny(msg)
-		if err != nil {
-			return encoding.NewAnyEncodingError(msg, err)
-		}
+			player := s.getParticipant(addr)
+			if player == nil {
+				errs <- xerrors.Errorf("participant '%s' not in the list", addr)
+				return
+			}
 
-		envelope := &Envelope{
-			From:    s.address.String(),
-			To:      []string{addr.String()},
-			Message: msgAny,
-		}
+			msgAny, err := ptypes.MarshalAny(msg)
+			if err != nil {
+				errs <- encoding.NewAnyEncodingError(msg, err)
+				return
+			}
 
-		envelopeAny, err := ptypes.MarshalAny(envelope)
-		if err != nil {
-			return encoding.NewAnyEncodingError(msg, err)
-		}
+			envelope := &Envelope{
+				From:    s.address.String(),
+				To:      []string{addr.String()},
+				Message: msgAny,
+			}
 
-		sendMsg := &OverlayMsg{
-			Message: envelopeAny,
-		}
-		err = player.streamClient.Send(sendMsg)
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return xerrors.Errorf("failed to call the send on client stream: %v", err)
-		}
+			envelopeAny, err := ptypes.MarshalAny(envelope)
+			if err != nil {
+				errs <- encoding.NewAnyEncodingError(msg, err)
+				return
+			}
+
+			sendMsg := &OverlayMsg{
+				Message: envelopeAny,
+			}
+			err = player.streamClient.Send(sendMsg)
+			if err == io.EOF {
+				return
+			}
+			if err != nil {
+				errs <- xerrors.Errorf("failed to call the send on client stream: %v", err)
+				return
+			}
+		}(addr)
 	}
 
-	if !ok {
-		fabric.Logger.Warn().Msg("warning: the given address didn't match " +
-			"any of the RPC. No message sent.")
-	}
+	// waits for all the goroutine to end and close the errors chan
+	go func() {
+		wg.Wait()
+		close(errs)
+	}()
 
-	return nil
+	return errs
 }
 
 // receiver implements mino.receiver

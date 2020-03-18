@@ -419,8 +419,13 @@ func TestRPC_SingleSimple_Stream(t *testing.T) {
 
 	sender, receiver := rpc.Stream(ctx, &fakePlayers{players: []address{*addr}})
 
-	err = sender.Send(&msg, addr)
-	require.NoError(t, err)
+	errs := sender.Send(&msg, addr)
+	select {
+	case err, ok := <-errs:
+		if ok {
+			t.Error("unexpected error from send: ", err)
+		}
+	}
 
 	_, msg2, err := receiver.Recv(context.Background())
 	require.NoError(t, err)
@@ -558,8 +563,13 @@ func TestRPC_MultipleSimple_Stream(t *testing.T) {
 	}
 
 	// sending to one server and checking if we got an empty back
-	err = sender.Send(&msg, addr1)
-	require.NoError(t, err)
+	errs := sender.Send(&msg, addr1)
+	select {
+	case err, ok := <-errs:
+		if ok {
+			t.Error("unexpected error from send: ", err)
+		}
+	}
 
 	_, msg2, err := rcvr.Recv(context.Background())
 	require.NoError(t, err)
@@ -571,8 +581,14 @@ func TestRPC_MultipleSimple_Stream(t *testing.T) {
 	require.NoError(t, err)
 
 	// sending to three servers
-	err = sender.Send(&msg, addr1, addr2, addr3)
-	require.NoError(t, err)
+	errs = sender.Send(&msg, addr1, addr2, addr3)
+	select {
+	case err, ok := <-errs:
+		if ok {
+			t.Error("unexpected error from send: ", err)
+		}
+	}
+
 	// we should get three responses
 	for i := 0; i < 3; i++ {
 		_, msg2, err := rcvr.Recv(context.Background())
@@ -662,7 +678,6 @@ func TestRPC_MultipleChange_Stream(t *testing.T) {
 	defer cancel()
 
 	sender, rcvr := rpc.Stream(ctx, &fakePlayers{players: []address{*addr1, *addr2, *addr3}})
-
 	localRcvr, ok := rcvr.(receiver)
 	require.True(t, ok)
 
@@ -673,10 +688,21 @@ func TestRPC_MultipleChange_Stream(t *testing.T) {
 	}
 
 	// sending two messages, we should get one from each server
-	err = sender.Send(&msg, addr1, addr2, addr3)
-	require.NoError(t, err)
-	err = sender.Send(&msg, addr1, addr2, addr3)
-	require.NoError(t, err)
+	errs := sender.Send(&msg, addr1, addr2, addr3)
+	select {
+	case err, ok := <-errs:
+		if ok {
+			t.Error("unexpected error from send: ", err)
+		}
+	}
+
+	errs = sender.Send(&msg, addr1, addr2, addr3)
+	select {
+	case err, ok := <-errs:
+		if ok {
+			t.Error("unexpected error from send: ", err)
+		}
+	}
 
 	for i := 0; i < 3; i++ {
 		_, msg2, err := rcvr.Recv(context.Background())
@@ -703,13 +729,25 @@ func TestSender_Send(t *testing.T) {
 	}
 
 	// sending to an empty list should not yield an error
-	err := sender.Send(nil)
-	require.NoError(t, err)
+	errs := sender.Send(nil)
+	select {
+	case err, ok := <-errs:
+		if ok {
+			t.Error("unexpected error from send: ", err)
+		}
+	}
 
-	// giving an empty address should not yield an error since it won't be found
-	// in the list of participants
+	// giving an empty address should add an error since it won't be found in the list of
+	// participants
 	addr := address{}
-	err = sender.Send(nil, addr)
+	errs = sender.Send(nil, addr)
+	select {
+	case err, ok := <-errs:
+		if !ok {
+			t.Error("there should be an error")
+		}
+		require.EqualError(t, err, xerrors.Errorf("participant '%s' not in the list", addr).Error())
+	}
 
 	// now I add the participant to the list, an error should be given since the
 	// message is nil
@@ -717,8 +755,14 @@ func TestSender_Send(t *testing.T) {
 	sender.participants = append(sender.participants, player{
 		address: addr,
 	})
-	err = sender.Send(nil, addr)
-	require.EqualError(t, err, encoding.NewAnyEncodingError(nil, errors.New("proto: Marshal called with nil")).Error())
+	errs = sender.Send(nil, addr)
+	select {
+	case err, ok := <-errs:
+		if !ok {
+			t.Error("there should be an error")
+		}
+		require.EqualError(t, err, encoding.NewAnyEncodingError(nil, errors.New("proto: Marshal called with nil")).Error())
+	}
 }
 
 func TestReceiver_Recv(t *testing.T) {
@@ -769,9 +813,12 @@ func (t testSameHandler) Stream(out mino.Sender, in mino.Receiver) error {
 		if err != nil {
 			return xerrors.Errorf("failed to receive message in handler: %v", err)
 		}
-		err = out.Send(msg, addr)
-		if err != nil {
-			return xerrors.Errorf("failed to send message to the sender: %v", err)
+		errs := out.Send(msg, addr)
+		select {
+		case err, ok := <-errs:
+			if ok {
+				return xerrors.Errorf("failed to send message to the sender: %v", err)
+			}
 		}
 	}
 }
@@ -823,10 +870,16 @@ func (t testModifyHandler) Stream(out mino.Sender, in mino.Receiver) error {
 	}
 	dummyReturn := &wrappers.StringValue{Value: dummyMsg}
 	anyDummy, err := ptypes.MarshalAny(dummyReturn)
-
-	err = out.Send(&Envelope{Message: anyDummy}, addr)
 	if err != nil {
-		return xerrors.Errorf("failed to send message to the sender: %v", err)
+		return xerrors.Errorf("failed to marshal any: %v", err)
+	}
+
+	errs := out.Send(&Envelope{Message: anyDummy}, addr)
+	select {
+	case err, ok := <-errs:
+		if ok {
+			return xerrors.Errorf("failed to send message to the sender: %v", err)
+		}
 	}
 
 	return nil
