@@ -22,8 +22,8 @@ type broadcast interface {
 	send(context.Context, history) (*View, error)
 }
 
-// broadcastTCLB implements the Threshold Synchronous Broadcast primitive necessary
-// to implement the Que Sera Consensus.
+// broadcastTCLB implements the Threshold Synchronous Broadcast primitive
+// necessary to implement the Que Sera Consensus.
 type broadcastTCLB struct {
 	*bTLCB
 }
@@ -164,24 +164,24 @@ func (b *bTLCR) execute(ctx context.Context, messages ...*Message) (*View, error
 	return &View{Received: ms.GetMessages()}, nil
 }
 
-// merge merges received into curr.
+// merge merges messages from received into current.
 func (b *bTLCR) merge(current, received *MessageSet) {
 	for k, v := range received.GetMessages() {
 		current.Messages[k] = v
 	}
 }
 
-// catchUp analyses the received message set compared to the current one and
-// tries to catch up if possible, otherwise it delays the processing by
-// inserting the message at the end of the queue.
+// catchUp analyses the messageSet 'received' compared to 'current' and tries to
+// catch up if possible, otherwise it delays the processing by inserting the
+// message at the end of the queue.
 func (b *bTLCR) catchUp(current, received *MessageSet) error {
-	// Reinsert the message in the queue so that it can be processed
-	// at the right time.
+	// Reinserts the messageSet in the queue so that it can be processed at the
+	// right time.
 	b.ch <- received
 
 	if received.GetTimeStep() == b.timeStep+1 {
-		// The message is only one step further than the current time step so we
-		// can use the previous message set to catch up and move forward.
+		// The messageSet is only one step further than the current time step so
+		// we can use the previous messageSet to catch up and move forward.
 		b.logger.Trace().Msgf("%d requesting previous message set for time step %d", b.node, b.timeStep)
 
 		req := &RequestMessageSet{

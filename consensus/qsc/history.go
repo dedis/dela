@@ -129,7 +129,8 @@ func (hists histories) getBest() history {
 }
 
 // contains returns true when the given history is found in the set, otherwise
-// it returns false.
+// it returns false. Two histories are considered the same if their last epochs
+// are equal.
 func (hists histories) contains(h history) bool {
 	last, ok := h.getLast()
 	if !ok {

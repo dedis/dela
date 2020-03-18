@@ -6,6 +6,11 @@ import (
 
 // Filters is a set of parameters for the Players.Take function.
 type Filters struct {
+	// Indices indicates the indexes of the elements that must be included. This
+	// list if updated based on the filter that we apply. For example, [0,3]
+	// tells that this filter keeps 2 elements from the underlying data
+	// structure we filter that are stored at indexes 0, 3. This list is always
+	// sorted.
 	Indices []int
 }
 
@@ -30,6 +35,7 @@ func IndexFilter(index int) Filter {
 	return func(filters *Filters) {
 		arr := filters.Indices
 		i := sort.IntSlice(arr).Search(index)
+		// do nothing if the element is already there
 		if i < len(arr) && arr[i] == index {
 			return
 		}
