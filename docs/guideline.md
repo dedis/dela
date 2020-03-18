@@ -72,3 +72,16 @@ preceded by
 
 // utility stuff...
 ```
+
+## Error
+
+Don't feel guilty providing too much information in an error message. You never
+really know you needed it until you experience it. The following is an example
+where providing the address gives a precious information when the error occurs:
+
+```go
+neighbour, ok := srv.neighbours[addr]
+if !ok {
+	return nil, xerrors.Errorf("couldn't find neighbour [%s]", addr)
+}
+```

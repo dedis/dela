@@ -8,7 +8,9 @@ import (
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 // gRPC service for the overlay. The handler map points to the one in
@@ -111,19 +113,28 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 				streamClient: stream,
 			},
 		},
+		name: "remote RPC",
 	}
 
 	receiver := receiver{
 		in:   make(chan *OverlayMsg),
 		errs: make(chan error),
+		name: "remote RPC",
 	}
 	go func() {
-		msg, err := stream.Recv()
-		if err != nil {
-			fabric.Logger.Error().Msgf("failed to receive in overlay: %v", err)
-			receiver.errs <- xerrors.Errorf("failed to receive in overlay: %v", err)
+		for {
+			msg, err := stream.Recv()
+			status, ok := status.FromError(err)
+			if ok && err != nil && status.Code() == codes.Canceled {
+				close(receiver.in)
+				return
+			}
+			if err != nil {
+				fabric.Logger.Error().Msgf("failed to receive in overlay: %v", err)
+				receiver.errs <- xerrors.Errorf("failed to receive in overlay: %v", err)
+			}
+			receiver.in <- msg
 		}
-		receiver.in <- msg
 	}()
 
 	err := handler.Stream(sender, receiver)

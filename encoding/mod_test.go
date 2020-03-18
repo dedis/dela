@@ -16,6 +16,7 @@ func TestProtoEncoder_Marshal(t *testing.T) {
 	bufferA, err := enc.Marshal(&empty.Empty{})
 	require.NoError(t, err)
 	bufferB, err := proto.Marshal(&empty.Empty{})
+	require.NoError(t, err)
 	require.Equal(t, bufferA, bufferB)
 }
 

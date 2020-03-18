@@ -3,7 +3,6 @@ package minogrpc
 import (
 	context "context"
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +10,7 @@ import (
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/empty"
+	"github.com/golang/protobuf/ptypes/wrappers"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
@@ -24,7 +24,7 @@ func Test_CreateServer(t *testing.T) {
 	require.EqualError(t, err, "addr.String() should not give an empty string")
 }
 
-func Test_Serve(t *testing.T) {
+func TestServer_Serve(t *testing.T) {
 	server := Server{
 		addr: address{id: "blabla"},
 	}
@@ -37,8 +37,24 @@ func Test_Serve(t *testing.T) {
 	require.True(t, strings.HasPrefix(err.Error(), "failed to listen: listen tcp4: lookup blabla"))
 }
 
+func TestServer_GetConnection(t *testing.T) {
+	addr := &address{
+		id: "127.0.0.1:2000",
+	}
+
+	server, err := CreateServer(addr)
+	require.NoError(t, err)
+	server.StartServer()
+
+	// An empty address should yield an error
+	_, err = server.getConnection("")
+	require.EqualError(t, err, "empty address is not allowed")
+
+	server.grpcSrv.GracefulStop()
+}
+
 // Use a single node to make a call that just sends back the same message.
-func Test_SingleSimpleCall(t *testing.T) {
+func TestRPC_SingleSimple_Call(t *testing.T) {
 	identifier := "127.0.0.1:2000"
 
 	addr := address{
@@ -55,7 +71,7 @@ func Test_SingleSimpleCall(t *testing.T) {
 	}
 	server.neighbours[identifier] = peer
 
-	handler := testSameHandler{}
+	handler := testSameHandler{time.Millisecond * 200}
 	uri := "blabla"
 	rpc := RPC{
 		handler: handler,
@@ -104,11 +120,10 @@ loop:
 	}
 
 	server.grpcSrv.GracefulStop()
-	err = server.httpSrv.Shutdown(context.Background())
 	require.NoError(t, err)
 }
 
-func Test_ErrorsSimpleCall(t *testing.T) {
+func TestRPC_ErrorsSimple_Call(t *testing.T) {
 	identifier := "127.0.0.1:2000"
 
 	addr := address{
@@ -119,7 +134,7 @@ func Test_ErrorsSimpleCall(t *testing.T) {
 	require.NoError(t, err)
 	server.StartServer()
 
-	handler := testSameHandler{}
+	handler := testSameHandler{time.Millisecond * 200}
 	uri := "blabla"
 	rpc := RPC{
 		handler: handler,
@@ -160,7 +175,7 @@ loop2:
 	for {
 		select {
 		case msgErr := <-errChan:
-			require.EqualError(t, msgErr, "failed to get client conn: couldn't find neighbour [127.0.0.1:2000]")
+			require.EqualError(t, msgErr, "failed to get client conn for '127.0.0.1:2000': couldn't find neighbour [127.0.0.1:2000]")
 			break loop2
 		case resp, ok := <-respChan:
 			if !ok {
@@ -173,12 +188,10 @@ loop2:
 	}
 
 	server.grpcSrv.GracefulStop()
-	err = server.httpSrv.Shutdown(context.Background())
-	require.NoError(t, err)
 }
 
 // Using a single node to make a call that sends back a modified message.
-func Test_SingleModifyCall(t *testing.T) {
+func TestRPC_SingleModify_Call(t *testing.T) {
 	identifier := "127.0.0.1:2000"
 
 	addr := address{
@@ -226,12 +239,10 @@ loop:
 	}
 
 	server.grpcSrv.GracefulStop()
-	err = server.httpSrv.Shutdown(context.Background())
-	require.NoError(t, err)
 }
 
 // Using 3 nodes to make a call that sends back a modified message.
-func Test_MultipleModifyCall(t *testing.T) {
+func TestRPC_MultipleModify_Call(t *testing.T) {
 	// Server 1
 	identifier1 := "127.0.0.1:2001"
 	addr1 := address{
@@ -251,6 +262,7 @@ func Test_MultipleModifyCall(t *testing.T) {
 		id: identifier2,
 	}
 	server2, err := CreateServer(addr2)
+	require.NoError(t, err)
 	server2.StartServer()
 	peer2 := Peer{
 		Address:     server2.listener.Addr().String(),
@@ -263,6 +275,7 @@ func Test_MultipleModifyCall(t *testing.T) {
 		id: identifier3,
 	}
 	server3, err := CreateServer(addr3)
+	require.NoError(t, err)
 	server3.StartServer()
 	peer3 := Peer{
 		Address:     server3.listener.Addr().String(),
@@ -321,8 +334,6 @@ loop:
 	// Doing the same but closing server3
 	//
 	server3.grpcSrv.GracefulStop()
-	err = server3.httpSrv.Shutdown(context.Background())
-	require.NoError(t, err)
 
 	// Call the rpc on server1
 	respChan, errChan = rpc.Call(&empty.Empty{}, memship)
@@ -335,7 +346,7 @@ loop2:
 	for {
 		select {
 		case msgErr := <-errChan:
-			if strings.HasPrefix(msgErr.Error(), "failed to call client: ") {
+			if strings.HasPrefix(msgErr.Error(), "failed to call client '127.0.0.1:2003': ") {
 				numExpectedErrors++
 			} else {
 				t.Errorf("unexpected error: %v", msgErr)
@@ -362,17 +373,12 @@ loop2:
 	// Closing servers 1 and 2
 
 	server1.grpcSrv.GracefulStop()
-	err = server1.httpSrv.Shutdown(context.Background())
-	require.NoError(t, err)
-
 	server2.grpcSrv.GracefulStop()
-	err = server2.httpSrv.Shutdown(context.Background())
-	require.NoError(t, err)
 
 }
 
-// Use a single node to make a stream that just sends back the same message.
-func Test_SingleSimpleStream(t *testing.T) {
+// Use a 3 nodes to make a stream that just sends back the same message.
+func TestRPC_SingleSimple_Stream(t *testing.T) {
 	identifier := "127.0.0.1:2000"
 
 	addr := &address{
@@ -389,7 +395,7 @@ func Test_SingleSimpleStream(t *testing.T) {
 	}
 	server.neighbours[identifier] = peer
 
-	handler := testSameHandler{}
+	handler := testSameHandler{time.Millisecond * 200}
 	uri := "blabla"
 	rpc := RPC{
 		handler: handler,
@@ -413,8 +419,13 @@ func Test_SingleSimpleStream(t *testing.T) {
 
 	sender, receiver := rpc.Stream(ctx, &fakePlayers{players: []address{*addr}})
 
-	err = sender.Send(&msg, addr)
-	require.NoError(t, err)
+	errs := sender.Send(&msg, addr)
+	select {
+	case err, ok := <-errs:
+		if ok {
+			t.Error("unexpected error from send: ", err)
+		}
+	}
 
 	_, msg2, err := receiver.Recv(context.Background())
 	require.NoError(t, err)
@@ -425,15 +436,12 @@ func Test_SingleSimpleStream(t *testing.T) {
 	err = ptypes.UnmarshalAny(enveloppe.Message, empty2)
 	require.NoError(t, err)
 
-	// TODO: investigate why GracefullStop yields an error
-	server.grpcSrv.Stop()
-	err = server.httpSrv.Shutdown(context.Background())
-	require.NoError(t, err)
+	server.grpcSrv.GracefulStop()
 
 }
 
 // Use a single node to make a stream that just sends back the same message.
-func Test_ErrorsSimpleStream(t *testing.T) {
+func TestRPC_ErrorsSimple_Stream(t *testing.T) {
 	identifier := "127.0.0.1:2000"
 
 	addr := &address{
@@ -450,7 +458,7 @@ func Test_ErrorsSimpleStream(t *testing.T) {
 	}
 	server.neighbours[identifier] = peer
 
-	handler := testSameHandler{}
+	handler := testSameHandler{time.Millisecond * 200}
 	uri := "blabla"
 	rpc := RPC{
 		handler: handler,
@@ -464,45 +472,282 @@ func Test_ErrorsSimpleStream(t *testing.T) {
 	defer cancel()
 
 	// Using an empty address should yield an error
-	fmt.Println("empty address")
 	_, receiver := rpc.Stream(ctx, &fakePlayers{players: []address{address{}}})
 
 	_, _, err = receiver.Recv(context.Background())
-	require.EqualError(t, err, "got an error from the error chan: failed to get client conn: empty address is not allowed")
+	require.EqualError(t, err, "got an error from the error chan: failed to get client conn for client '': empty address is not allowed")
 
-	server.grpcSrv.Stop()
-	err = server.httpSrv.Shutdown(context.Background())
-	require.NoError(t, err)
+	server.grpcSrv.GracefulStop()
 
 }
 
-func Test_GetConnection(t *testing.T) {
-	addr := &address{
-		id: "127.0.0.1:2000",
+// Use multiple nodes to use a stream that just sends back the same message.
+func TestRPC_MultipleSimple_Stream(t *testing.T) {
+	identifier1 := "127.0.0.1:2001"
+	addr1 := &address{
+		id: identifier1,
+	}
+	server1, err := CreateServer(addr1)
+	require.NoError(t, err)
+	server1.StartServer()
+	peer1 := Peer{
+		Address:     server1.listener.Addr().String(),
+		Certificate: server1.cert.Leaf,
 	}
 
-	server, err := CreateServer(addr)
+	identifier2 := "127.0.0.1:2002"
+	addr2 := &address{
+		id: identifier2,
+	}
+	server2, err := CreateServer(addr2)
 	require.NoError(t, err)
-	server.StartServer()
+	server2.StartServer()
+	peer2 := Peer{
+		Address:     server2.listener.Addr().String(),
+		Certificate: server2.cert.Leaf,
+	}
 
-	// An empty address should yield an error
-	_, err = server.getConnection("")
-	require.EqualError(t, err, "empty address is not allowed")
+	identifier3 := "127.0.0.1:2003"
+	addr3 := &address{
+		id: identifier3,
+	}
+	server3, err := CreateServer(addr3)
+	require.NoError(t, err)
+	require.NoError(t, err)
+	server3.StartServer()
+	peer3 := Peer{
+		Address:     server3.listener.Addr().String(),
+		Certificate: server3.cert.Leaf,
+	}
+
+	server1.neighbours[identifier1] = peer1
+	server1.neighbours[identifier2] = peer2
+	server1.neighbours[identifier3] = peer3
+
+	handler := testSameHandler{time.Millisecond * 900}
+	uri := "blabla"
+	rpc := RPC{
+		handler: handler,
+		srv:     *server1,
+		uri:     uri,
+	}
+
+	// the handler must be registered on each server. Fron the client side, that
+	// means the "registerNamespace" and "makeRPC" must be called on each
+	// server.
+	server1.handlers[uri] = handler
+	server2.handlers[uri] = handler
+	server3.handlers[uri] = handler
+
+	m, err := ptypes.MarshalAny(&empty.Empty{})
+	require.NoError(t, err)
+
+	msg := Envelope{
+		From:    addr1.String(),
+		To:      []string{addr1.String()},
+		Message: m,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sender, rcvr := rpc.Stream(ctx, &fakePlayers{players: []address{*addr1, *addr2, *addr3}})
+
+	localRcvr, ok := rcvr.(receiver)
+	require.True(t, ok)
+
+	select {
+	case err := <-localRcvr.errs:
+		t.Errorf("unexpected error in rcvr: %v", err)
+	case <-time.After(time.Millisecond * 200):
+	}
+
+	// sending to one server and checking if we got an empty back
+	errs := sender.Send(&msg, addr1)
+	select {
+	case err, ok := <-errs:
+		if ok {
+			t.Error("unexpected error from send: ", err)
+		}
+	}
+
+	_, msg2, err := rcvr.Recv(context.Background())
+	require.NoError(t, err)
+
+	enveloppe, ok := msg2.(*Envelope)
+	require.True(t, ok)
+	empty2 := &empty.Empty{}
+	err = ptypes.UnmarshalAny(enveloppe.Message, empty2)
+	require.NoError(t, err)
+
+	// sending to three servers
+	errs = sender.Send(&msg, addr1, addr2, addr3)
+	select {
+	case err, ok := <-errs:
+		if ok {
+			t.Error("unexpected error from send: ", err)
+		}
+	}
+
+	// we should get three responses
+	for i := 0; i < 3; i++ {
+		_, msg2, err := rcvr.Recv(context.Background())
+		require.NoError(t, err)
+		enveloppe, ok := msg2.(*Envelope)
+		require.True(t, ok)
+		empty2 := &empty.Empty{}
+		err = ptypes.UnmarshalAny(enveloppe.Message, empty2)
+		require.NoError(t, err)
+	}
+
+	// TODO: investigate why GracefullStop yields an error
+	server1.grpcSrv.GracefulStop()
+	server2.grpcSrv.GracefulStop()
+	server3.grpcSrv.GracefulStop()
+	require.NoError(t, err)
 }
 
-func Test_Sender(t *testing.T) {
+// Use multiple nodes to use a stream that aggregates the dummyMessages
+func TestRPC_MultipleChange_Stream(t *testing.T) {
+	identifier1 := "127.0.0.1:2001"
+	addr1 := &address{
+		id: identifier1,
+	}
+	server1, err := CreateServer(addr1)
+	require.NoError(t, err)
+	server1.StartServer()
+	peer1 := Peer{
+		Address:     server1.listener.Addr().String(),
+		Certificate: server1.cert.Leaf,
+	}
+
+	identifier2 := "127.0.0.1:2002"
+	addr2 := &address{
+		id: identifier2,
+	}
+	server2, err := CreateServer(addr2)
+	require.NoError(t, err)
+	server2.StartServer()
+	peer2 := Peer{
+		Address:     server2.listener.Addr().String(),
+		Certificate: server2.cert.Leaf,
+	}
+
+	identifier3 := "127.0.0.1:2003"
+	addr3 := &address{
+		id: identifier3,
+	}
+	server3, err := CreateServer(addr3)
+	require.NoError(t, err)
+	server3.StartServer()
+	peer3 := Peer{
+		Address:     server3.listener.Addr().String(),
+		Certificate: server3.cert.Leaf,
+	}
+
+	server1.neighbours[identifier1] = peer1
+	server1.neighbours[identifier2] = peer2
+	server1.neighbours[identifier3] = peer3
+
+	handler := testModifyHandler{}
+	uri := "blabla"
+	rpc := RPC{
+		handler: handler,
+		srv:     *server1,
+		uri:     uri,
+	}
+
+	// the handler must be registered on each server. Fron the client side, that
+	// means the "registerNamespace" and "makeRPC" must be called on each
+	// server.
+	server1.handlers[uri] = handler
+	server2.handlers[uri] = handler
+	server3.handlers[uri] = handler
+
+	dummyMsg := &wrappers.StringValue{Value: "dummy_value"}
+	m, err := ptypes.MarshalAny(dummyMsg)
+	require.NoError(t, err)
+
+	msg := Envelope{
+		From:    addr1.String(),
+		To:      []string{addr1.String()},
+		Message: m,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sender, rcvr := rpc.Stream(ctx, &fakePlayers{players: []address{*addr1, *addr2, *addr3}})
+	localRcvr, ok := rcvr.(receiver)
+	require.True(t, ok)
+
+	select {
+	case err := <-localRcvr.errs:
+		t.Errorf("unexpected error in rcvr: %v", err)
+	case <-time.After(time.Millisecond * 200):
+	}
+
+	// sending two messages, we should get one from each server
+	errs := sender.Send(&msg, addr1, addr2, addr3)
+	select {
+	case err, ok := <-errs:
+		if ok {
+			t.Error("unexpected error from send: ", err)
+		}
+	}
+
+	errs = sender.Send(&msg, addr1, addr2, addr3)
+	select {
+	case err, ok := <-errs:
+		if ok {
+			t.Error("unexpected error from send: ", err)
+		}
+	}
+
+	for i := 0; i < 3; i++ {
+		_, msg2, err := rcvr.Recv(context.Background())
+		require.NoError(t, err)
+
+		enveloppe, ok := msg2.(*Envelope)
+		require.True(t, ok)
+		dummyMsg2 := &wrappers.StringValue{}
+		err = ptypes.UnmarshalAny(enveloppe.Message, dummyMsg2)
+		require.NoError(t, err)
+		require.Equal(t, dummyMsg.Value+dummyMsg.Value, dummyMsg2.Value)
+	}
+
+	// TODO: investigate why GracefullStop yields an error
+	server1.grpcSrv.GracefulStop()
+	server2.grpcSrv.GracefulStop()
+	server3.grpcSrv.GracefulStop()
+	require.NoError(t, err)
+}
+
+func TestSender_Send(t *testing.T) {
 	sender := sender{
 		participants: make([]player, 0),
 	}
 
 	// sending to an empty list should not yield an error
-	err := sender.Send(nil)
-	require.NoError(t, err)
+	errs := sender.Send(nil)
+	select {
+	case err, ok := <-errs:
+		if ok {
+			t.Error("unexpected error from send: ", err)
+		}
+	}
 
-	// giving an empty address should not yield an error since it won't be found
-	// in the list of participants
+	// giving an empty address should add an error since it won't be found in the list of
+	// participants
 	addr := address{}
-	err = sender.Send(nil, addr)
+	errs = sender.Send(nil, addr)
+	select {
+	case err, ok := <-errs:
+		if !ok {
+			t.Error("there should be an error")
+		}
+		require.EqualError(t, err, xerrors.Errorf("participant '%s' not in the list", addr).Error())
+	}
 
 	// now I add the participant to the list, an error should be given since the
 	// message is nil
@@ -510,11 +755,17 @@ func Test_Sender(t *testing.T) {
 	sender.participants = append(sender.participants, player{
 		address: addr,
 	})
-	err = sender.Send(nil, addr)
-	require.EqualError(t, err, encoding.NewAnyEncodingError(nil, errors.New("proto: Marshal called with nil")).Error())
+	errs = sender.Send(nil, addr)
+	select {
+	case err, ok := <-errs:
+		if !ok {
+			t.Error("there should be an error")
+		}
+		require.EqualError(t, err, encoding.NewAnyEncodingError(nil, errors.New("proto: Marshal called with nil")).Error())
+	}
 }
 
-func Test_Recv(t *testing.T) {
+func TestReceiver_Recv(t *testing.T) {
 	receiver := receiver{
 		errs: make(chan error, 1),
 		in:   make(chan *OverlayMsg, 1),
@@ -539,6 +790,7 @@ func Test_Recv(t *testing.T) {
 
 // implements a handler interface that just returns the input
 type testSameHandler struct {
+	timeout time.Duration
 }
 
 func (t testSameHandler) Process(req proto.Message) (proto.Message, error) {
@@ -552,21 +804,28 @@ func (t testSameHandler) Combine(req []proto.Message) ([]proto.Message, error) {
 // Stream is a dummy handler that forwards input messages to the sender
 func (t testSameHandler) Stream(out mino.Sender, in mino.Receiver) error {
 	for {
-		// ctx if I want a timeout
-		addr, msg, err := in.Recv(context.Background())
+		ctx, cancelFunc := context.WithTimeout(context.Background(), t.timeout)
+		defer cancelFunc()
+		addr, msg, err := in.Recv(ctx)
+		if err == context.DeadlineExceeded {
+			return nil
+		}
 		if err != nil {
 			return xerrors.Errorf("failed to receive message in handler: %v", err)
 		}
-
-		err = out.Send(msg, addr)
-		if err != nil {
-			return xerrors.Errorf("failed to send message to the sender: %v", err)
+		errs := out.Send(msg, addr)
+		select {
+		case err, ok := <-errs:
+			if ok {
+				return xerrors.Errorf("failed to send message to the sender: %v", err)
+			}
 		}
 	}
 }
 
 // implements a handler interface that receives an address and adds a suffix to
-// it
+// it (for the call) or aggregate all the address (for the stream). The stream
+// expects 3 calls before returning the aggregate addresses.
 type testModifyHandler struct {
 }
 
@@ -583,7 +842,46 @@ func (t testModifyHandler) Combine(req []proto.Message) ([]proto.Message, error)
 	return nil, nil
 }
 
+// This function reads two messages and outputs an aggregation
 func (t testModifyHandler) Stream(out mino.Sender, in mino.Receiver) error {
+	var dummyMsg string
+	var addr mino.Address
+	for i := 0; i < 2; i++ {
+		var msg proto.Message
+		var err error
+		// ctx if I want a timeout
+		addr, msg, err = in.Recv(context.Background())
+		if err != nil {
+			return xerrors.Errorf("failed to receive message in handler: %v", err)
+		}
+
+		enveloppe, ok := msg.(*Envelope)
+		if !ok {
+			return xerrors.New("failed to cast message to envelope")
+		}
+
+		dummy := &wrappers.StringValue{}
+		err = ptypes.UnmarshalAny(enveloppe.Message, dummy)
+		if err != nil {
+			return xerrors.Errorf("failed to unmarshal dummy message: %v", err)
+		}
+
+		dummyMsg += dummy.Value
+	}
+	dummyReturn := &wrappers.StringValue{Value: dummyMsg}
+	anyDummy, err := ptypes.MarshalAny(dummyReturn)
+	if err != nil {
+		return xerrors.Errorf("failed to marshal any: %v", err)
+	}
+
+	errs := out.Send(&Envelope{Message: anyDummy}, addr)
+	select {
+	case err, ok := <-errs:
+		if ok {
+			return xerrors.Errorf("failed to send message to the sender: %v", err)
+		}
+	}
+
 	return nil
 }
 

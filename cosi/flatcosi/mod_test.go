@@ -86,15 +86,15 @@ func TestFlat_GetVerifier(t *testing.T) {
 	signer := bls.NewSigner()
 	flat := NewFlat(nil, signer)
 
-	verifier, err := flat.GetVerifier(fakeCollectiveAuthority{})
+	_, err := flat.GetVerifier(fakeCollectiveAuthority{})
 	require.NoError(t, err)
 
-	verifier, err = flat.GetVerifier(nil)
+	verifier, err := flat.GetVerifier(nil)
 	require.Error(t, err)
 	require.Nil(t, verifier)
 
 	flat.signer = fakeSigner{}
-	verifier, err = flat.GetVerifier(fakeCollectiveAuthority{})
+	_, err = flat.GetVerifier(fakeCollectiveAuthority{})
 	require.EqualError(t, err, "couldn't create verifier: oops")
 }
 
@@ -127,7 +127,7 @@ func TestFlat_Listen(t *testing.T) {
 	require.NotNil(t, actor.rpc)
 
 	flat.mino = fakeMino{err: xerrors.New("oops")}
-	a, err = flat.Listen(fakeHasher{})
+	_, err = flat.Listen(fakeHasher{})
 	require.EqualError(t, err, "couldn't make the rpc: oops")
 }
 

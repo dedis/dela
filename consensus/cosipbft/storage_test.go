@@ -63,6 +63,6 @@ func TestStorage_ReadChain(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, chain, 2)
 
-	chain, err = storage.ReadChain([]byte{0xcc})
+	_, err = storage.ReadChain([]byte{0xcc})
 	require.EqualError(t, err, "id 'cc' not found")
 }

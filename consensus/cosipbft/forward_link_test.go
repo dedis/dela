@@ -74,14 +74,14 @@ func TestForwardLink_Pack(t *testing.T) {
 
 	// Test if the prepare signature cannot be packed.
 	fl.prepare = fakeSignature{err: xerrors.New("oops")}
-	pb, err = fl.Pack()
+	_, err = fl.Pack()
 	require.EqualError(t, xerrors.Unwrap(err), "couldn't pack: oops")
 
 	// Test if the commit signature cannot be packed.
 	fl.prepare = nil
 	fl.commit = fakeSignature{}
 	protoenc = &fakeEncoder{}
-	pb, err = fl.Pack()
+	_, err = fl.Pack()
 	require.EqualError(t, xerrors.Unwrap(xerrors.Unwrap(err)), "marshal any error")
 }
 
@@ -152,7 +152,7 @@ func TestChain_Pack(t *testing.T) {
 	require.Len(t, pb.(*ChainProto).GetLinks(), 2)
 
 	chain.links[0].prepare = fakeSignature{err: xerrors.New("oops")}
-	pb, err = chain.Pack()
+	_, err = chain.Pack()
 	require.EqualError(t, err, "couldn't encode forward link: "+
 		"couldn't encode prepare: couldn't pack: oops")
 }

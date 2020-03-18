@@ -21,26 +21,26 @@ type Minogrpc struct {
 	namespace string
 }
 
-// address implements mino.Address{}
+// address implements mino.Address
 // TODO: improve to support internet addresses.
 type address struct {
 	id string
 }
 
-// MarshalText implements mino.Address.MarshalText()
+// MarshalText implements mino.Address
 func (a address) MarshalText() ([]byte, error) {
 	return []byte(a.id), nil
 }
 
-// String implements mino.Address.String()
+// String implements mino.Address
 func (a address) String() string {
 	return a.id
 }
 
-// addressFactory implements mino.AddressFactory{}
+// addressFactory implements mino.AddressFactory
 type addressFactory struct{}
 
-// FromText implements AddressFactory.FromText(). It returns an instance of an
+// FromText implements mino.AddressFactory. It returns an instance of an
 // address from a byte slice.
 func (f addressFactory) FromText(text []byte) mino.Address {
 	return address{id: string(text)}
@@ -82,18 +82,18 @@ func NewMinogrpc(identifier string) (Minogrpc, error) {
 	return minoGrpc, err
 }
 
-// GetAddressFactory implements mino.GetAddressFactory(). It returns the address
+// GetAddressFactory implements Mino. It returns the address
 // factory.
 func (m Minogrpc) GetAddressFactory() mino.AddressFactory {
 	return addressFactory{}
 }
 
-// GetAddress implements mino.GetAddress(). It returns the address of the server
+// GetAddress implements Mino. It returns the address of the server
 func (m Minogrpc) GetAddress() mino.Address {
 	return m.server.addr
 }
 
-// MakeNamespace implements mino.MakeNamespace(). It creates a new Minogrpc
+// MakeNamespace implements Mino. It creates a new Minogrpc
 // struct that has the specified namespace. This namespace is further used to
 // scope newly created RPCs. There can be multiple namespaces. If there is
 // already a namespace, then the new one will be concatenated leading to
@@ -117,7 +117,7 @@ func (m Minogrpc) MakeNamespace(namespace string) (mino.Mino, error) {
 	return newM, nil
 }
 
-// MakeRPC implements mino.MakeRPC(). It registers the handler using a uniq URI of
+// MakeRPC implements Mino. It registers the handler using a uniq URI of
 // form "namespace/name". It returns a struct that allows client to call the
 // RPC.
 func (m Minogrpc) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {

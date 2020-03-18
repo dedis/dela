@@ -34,7 +34,7 @@ type Players interface {
 
 // Sender is an interface to provide primitives to send messages to recipients.
 type Sender interface {
-	Send(msg proto.Message, addrs ...Address) error
+	Send(msg proto.Message, addrs ...Address) <-chan error
 }
 
 // Receiver is an interface to provide primitives to receive messages from
