@@ -43,8 +43,9 @@ type RPC struct {
 
 ## Tests
 
-Tests should be named according to their specific scope of testing. For
-instance, a unit test of a function should follow that convention:
+Tests should be named according to their specific scope of testing, following 
+the syntax `Test<scope>_<function>`. For instance, a unit test of a function 
+should follow that convention:
 
 ```go
 // dummy.go
