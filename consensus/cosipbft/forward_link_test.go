@@ -113,6 +113,19 @@ func TestForwardLink_Hash(t *testing.T) {
 	require.EqualError(t, err, "couldn't write 'to': oops")
 }
 
+func TestChain_GetLastHash(t *testing.T) {
+	chain := forwardLinkChain{}
+	require.Nil(t, chain.GetLastHash())
+
+	hash := Digest{1, 2, 3}
+	chain = forwardLinkChain{
+		links: []forwardLink{{}, {to: hash}},
+	}
+
+	last := chain.GetLastHash()
+	require.Equal(t, hash, last)
+}
+
 func TestChain_Verify(t *testing.T) {
 	chain := forwardLinkChain{
 		links: []forwardLink{

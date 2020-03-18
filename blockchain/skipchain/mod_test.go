@@ -9,8 +9,22 @@ import (
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/cosi/flatcosi"
 	"go.dedis.ch/fabric/crypto/bls"
+	internal "go.dedis.ch/fabric/internal/testing"
 	"go.dedis.ch/fabric/mino/minoch"
 )
+
+func TestMessages(t *testing.T) {
+	messages := []proto.Message{
+		&ConodeProto{},
+		&BlockProto{},
+		&VerifiableBlockProto{},
+		&PropagateGenesis{},
+	}
+
+	for _, m := range messages {
+		internal.CoverProtoMessage(t, m)
+	}
+}
 
 func TestSkipchain_Basic(t *testing.T) {
 	n := 5

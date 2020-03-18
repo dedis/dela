@@ -114,6 +114,10 @@ type forwardLinkChain struct {
 // GetLastHash implements consensus.Chain. It returns the last hash of the
 // chain.
 func (c forwardLinkChain) GetLastHash() []byte {
+	if len(c.links) == 0 {
+		return nil
+	}
+
 	return c.links[len(c.links)-1].to
 }
 
