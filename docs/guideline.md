@@ -44,7 +44,7 @@ type RPC struct {
 ## Tests
 
 Tests should be named according to their specific scope of testing, following 
-the syntax `Test<scope>_<function>`. For instance, a unit test of a function 
+the syntax `Test<scope>(_<purpose>)_<function>`. For instance, a unit test of a function 
 should follow that convention:
 
 ```go
@@ -59,6 +59,8 @@ func (d Dummy) String() string {...}
 // dummy_test.go
 
 func TestDummy_String(t *testing.T) {}
+
+func TestDummy_Failures_String(t *testing.T) {}
 ```
 
 In test files, all the utility stuff should be grouped at the end of the file,
