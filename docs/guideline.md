@@ -18,10 +18,10 @@ job pretty well).
 The implementation of an abstraction should start with `<function> implements <abstraction>. It ...`
 
 ```go
-// FromText implements AddressFactory.FromText(). It returns an instance of an
+// FromText implements mino.AddressFactory. It returns an instance of an
 // address from a byte slice.
 func (f addressFactory) FromText(text []byte) mino.Address {
-	return address{id: string(text)}
+    return address{id: string(text)}
 }
 ```
 
