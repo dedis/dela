@@ -2,6 +2,7 @@ package minoch
 
 import (
 	"context"
+	"math"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
@@ -115,10 +116,14 @@ type sender struct {
 	in   chan Envelope
 }
 
-func (s sender) Send(msg proto.Message, addrs ...mino.Address) error {
+func (s sender) Send(msg proto.Message, addrs ...mino.Address) <-chan error {
+	errs := make(chan error, int(math.Max(1, float64(len(addrs)))))
+
 	a, err := ptypes.MarshalAny(msg)
 	if err != nil {
-		return err
+		errs <- err
+		close(errs)
+		return errs
 	}
 
 	go func() {
@@ -129,7 +134,8 @@ func (s sender) Send(msg proto.Message, addrs ...mino.Address) error {
 		}
 	}()
 
-	return nil
+	close(errs)
+	return errs
 }
 
 type receiver struct {

@@ -42,8 +42,8 @@ func (h fakeStreamHandler) Stream(out mino.Sender, in mino.Receiver) error {
 			return err
 		}
 
-		err = out.Send(msg, addr)
-		if err != nil {
+		errs := out.Send(msg, addr)
+		for err := range errs {
 			return err
 		}
 	}
@@ -93,9 +93,13 @@ func TestRPC_StreamFailures(t *testing.T) {
 	out, in := rpc.Stream(ctx, fakeMembership{instances: []*Minoch{m}})
 	_, _, err = in.Recv(ctx)
 	require.Error(t, err)
-
-	err = out.Send(nil)
-	require.Error(t, err)
+	errs := out.Send(nil)
+	select {
+	case _, ok := <-errs:
+		if !ok {
+			t.Error("expected an error")
+		}
+	}
 }
 
 type fakeIterator struct {

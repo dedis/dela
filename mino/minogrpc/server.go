@@ -378,7 +378,7 @@ type player struct {
 // asynchrously to all the addrs. The chan error is closed when all the send on
 // each addrs are done. This function guarantees that the error chan is
 // eventually closed.
-func (s sender) Send(msg proto.Message, addrs ...mino.Address) chan error {
+func (s sender) Send(msg proto.Message, addrs ...mino.Address) <-chan error {
 
 	errs := make(chan error, len(addrs))
 	var wg sync.WaitGroup
