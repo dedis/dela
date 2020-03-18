@@ -18,10 +18,10 @@ job pretty well).
 The implementation of an abstraction should start with `<function> implements <abstraction>. It ...`
 
 ```go
-// FromText implements AddressFactory.FromText(). It returns an instance of an
+// FromText implements mino.AddressFactory. It returns an instance of an
 // address from a byte slice.
 func (f addressFactory) FromText(text []byte) mino.Address {
-	return address{id: string(text)}
+    return address{id: string(text)}
 }
 ```
 
@@ -42,6 +42,26 @@ type RPC struct {
 ```
 
 ## Tests
+
+Tests should be named according to their specific scope of testing, following 
+the syntax `Test<scope>(_<purpose>)_<function>`. For instance, a unit test of a function 
+should follow that convention:
+
+```go
+// dummy.go
+
+type Dummy struct{}
+
+func (d Dummy) String() string {...}
+```
+
+```go
+// dummy_test.go
+
+func TestDummy_String(t *testing.T) {}
+
+func TestDummy_Failures_String(t *testing.T) {}
+```
 
 In test files, all the utility stuff should be grouped at the end of the file,
 preceded by
