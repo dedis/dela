@@ -569,10 +569,15 @@ func (f fakeAddressFactory) FromText([]byte) mino.Address {
 
 type fakeMino struct {
 	mino.Mino
+	err error
 }
 
 func (m fakeMino) GetAddressFactory() mino.AddressFactory {
 	return fakeAddressFactory{}
+}
+
+func (m fakeMino) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
+	return nil, m.err
 }
 
 type fakePublicKeyFactory struct {
@@ -626,4 +631,12 @@ func (c fakeConsensus) GetChainFactory() consensus.ChainFactory {
 		err:      c.err,
 		errChain: c.errChain,
 	}
+}
+
+func (c fakeConsensus) GetChain(id []byte) (consensus.Chain, error) {
+	return fakeChain{}, c.err
+}
+
+func (c fakeConsensus) Listen(consensus.Validator) (consensus.Actor, error) {
+	return nil, c.err
 }

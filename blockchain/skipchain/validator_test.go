@@ -104,3 +104,7 @@ func (db fakeDatabase) Read(index int64) (SkipBlock, error) {
 func (db fakeDatabase) Write(SkipBlock) error {
 	return db.err
 }
+
+func (db fakeDatabase) ReadLast() (SkipBlock, error) {
+	return SkipBlock{hash: db.genesisID}, db.err
+}
