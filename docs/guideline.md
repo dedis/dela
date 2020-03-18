@@ -43,6 +43,23 @@ type RPC struct {
 
 ## Tests
 
+Tests should be named according to their specific scope of testing. For
+instance, a unit test of a function should follow that convention:
+
+```go
+// dummy.go
+
+type Dummy struct{}
+
+func (d Dummy) String() string {...}
+```
+
+```go
+// dummy_test.go
+
+func TestDummy_String(t *testing.T) {}
+```
+
 In test files, all the utility stuff should be grouped at the end of the file,
 preceded by
 
