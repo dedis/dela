@@ -27,7 +27,7 @@ type AddressIterator interface {
 // Players is an interface to represent a set of nodes participating in a
 // message passing protocol.
 type Players interface {
-	Take(...Filter) Players
+	Take(...FilterUpdater) Players
 	// TODO: explain why we choose to use an iterator: security + speed
 	AddressIterator() AddressIterator
 	Len() int

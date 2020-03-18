@@ -40,6 +40,30 @@ func TestTLCR_Basic(t *testing.T) {
 	require.Equal(t, uint64(k), bcs[0].timeStep)
 }
 
+func TestHandlerTLCR_Process(t *testing.T) {
+	ch := make(chan *MessageSet, 1)
+	h := hTLCR{
+		ch: ch,
+		store: &storage{
+			previous: &MessageSet{
+				TimeStep: 1,
+			},
+		},
+	}
+
+	resp, err := h.Process(&MessageSet{})
+	require.NoError(t, err)
+	require.Nil(t, resp)
+	require.NotNil(t, <-ch)
+
+	resp, err = h.Process(&RequestMessageSet{TimeStep: 0})
+	require.NoError(t, err)
+	require.Nil(t, resp)
+
+	_, err = h.Process(&empty.Empty{})
+	require.EqualError(t, err, "invalid message type '*empty.Empty'")
+}
+
 func TestTLCR_Execute(t *testing.T) {
 	buffer := new(bytes.Buffer)
 	ch := make(chan *MessageSet, 1)
@@ -67,7 +91,7 @@ func TestTLCR_Execute(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 	_, err = bc.execute(ctx)
-	require.EqualError(t, err, "context is done: context deadline exceeded")
+	require.EqualError(t, err, "context deadline exceeded")
 	require.Contains(t, buffer.String(), "oops")
 }
 
@@ -103,17 +127,20 @@ func TestTLCR_CatchUp(t *testing.T) {
 
 	bc.rpc = fakeRPC{msg: &empty.Empty{}}
 	err = bc.catchUp(m1, m2)
-	require.EqualError(t, err, "couldn't fetch previous message set: invalid message type: *empty.Empty")
+	require.EqualError(t, xerrors.Unwrap(err),
+		"got message type '*empty.Empty' but expected '*qsc.MessageSet'")
 	require.Equal(t, m2, <-ch)
 
 	bc.rpc = fakeRPC{err: xerrors.New("oops")}
 	err = bc.catchUp(m1, m2)
-	require.EqualError(t, err, "couldn't fetch previous message set: couldn't reach the node: oops")
+	require.EqualError(t, err,
+		"couldn't fetch previous message set: couldn't reach the node: oops")
 	require.Equal(t, m2, <-ch)
 
 	bc.rpc = fakeRPC{closed: true}
 	err = bc.catchUp(m1, m2)
-	require.EqualError(t, err, "couldn't fetch previous message set: couldn't get a reply")
+	require.EqualError(t, err,
+		"couldn't fetch previous message set: couldn't get a reply")
 	require.Equal(t, m2, <-ch)
 }
 
@@ -236,8 +263,8 @@ type fakePlayers struct {
 	addrs []mino.Address
 }
 
-func (p *fakePlayers) Take(filters ...mino.Filter) mino.Players {
-	ff := mino.ParseFilters(filters)
+func (p *fakePlayers) Take(filters ...mino.FilterUpdater) mino.Players {
+	ff := mino.ApplyFilters(filters)
 	addrs := make([]mino.Address, len(ff.Indices))
 	for i, k := range ff.Indices {
 		addrs[i] = p.addrs[k]
@@ -261,7 +288,7 @@ func (p fakeSinglePlayer) Len() int {
 	return 1
 }
 
-func (p fakeSinglePlayer) Take(...mino.Filter) mino.Players {
+func (p fakeSinglePlayer) Take(...mino.FilterUpdater) mino.Players {
 	return fakeSinglePlayer{}
 }
 

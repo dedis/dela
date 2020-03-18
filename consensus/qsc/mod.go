@@ -67,6 +67,7 @@ func (c *Consensus) GetChain(id []byte) (consensus.Chain, error) {
 // primitives to send proposals to a network of nodes.
 func (c *Consensus) Listen(val consensus.Validator) (consensus.Actor, error) {
 	go func() {
+		// TODO: how to stop the loop ?
 		for {
 			err := c.executeRound(val)
 			if err != nil {
@@ -79,7 +80,8 @@ func (c *Consensus) Listen(val consensus.Validator) (consensus.Actor, error) {
 }
 
 func (c *Consensus) executeRound(val consensus.Validator) error {
-	// 1. Choose the message and the random value.
+	// 1. Choose the message and the random value. The new epoch will be
+	// appended to the current history.
 	e := epoch{
 		// TODO: ask about randomness
 		random: rand.Int63(),
@@ -99,16 +101,16 @@ func (c *Consensus) executeRound(val consensus.Validator) error {
 		e.hash = nil
 	}
 
-	Hp := make(history, len(c.history), len(c.history)+1)
-	copy(Hp, c.history)
-	Hp = append(Hp, e)
-
-	ctx, cancel := context.WithTimeout(context.Background(), EpochTimeout)
-	defer cancel()
+	newHistory := make(history, len(c.history), len(c.history)+1)
+	copy(newHistory, c.history)
+	newHistory = append(newHistory, e)
 
 	// 2. Broadcast our history to the network and get back messages
 	// from this time step.
-	prepareSet, err := c.broadcast.send(ctx, Hp)
+	ctx, cancel := context.WithTimeout(context.Background(), EpochTimeout)
+	defer cancel()
+
+	prepareSet, err := c.broadcast.send(ctx, newHistory)
 	if err != nil {
 		return xerrors.Errorf("couldn't broadcast: %v", err)
 	}

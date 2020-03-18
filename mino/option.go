@@ -14,8 +14,8 @@ type Filters struct {
 	Indices []int
 }
 
-// ParseFilters applies the filters and return the result.
-func ParseFilters(filters []Filter) *Filters {
+// ApplyFilters applies the filters and return the result.
+func ApplyFilters(filters []FilterUpdater) *Filters {
 	f := &Filters{
 		Indices: []int{},
 	}
@@ -27,11 +27,11 @@ func ParseFilters(filters []Filter) *Filters {
 	return f
 }
 
-// Filter is a function to update the filters.
-type Filter func(*Filters)
+// FilterUpdater is a function to update the filters.
+type FilterUpdater func(*Filters)
 
 // IndexFilter is a filter to include a given index.
-func IndexFilter(index int) Filter {
+func IndexFilter(index int) FilterUpdater {
 	return func(filters *Filters) {
 		arr := filters.Indices
 		i := sort.IntSlice(arr).Search(index)
@@ -46,7 +46,7 @@ func IndexFilter(index int) Filter {
 }
 
 // RangeFilter is a filter to include a range of indices.
-func RangeFilter(start, end int) Filter {
+func RangeFilter(start, end int) FilterUpdater {
 	return func(filters *Filters) {
 		arr := filters.Indices
 		queue := []int{}

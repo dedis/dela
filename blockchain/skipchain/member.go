@@ -96,8 +96,8 @@ func (i *publicKeyIterator) GetNext() crypto.PublicKey {
 type Conodes []Conode
 
 // Take returns a subset of the conodes.
-func (cc Conodes) Take(filters ...mino.Filter) mino.Players {
-	f := mino.ParseFilters(filters)
+func (cc Conodes) Take(filters ...mino.FilterUpdater) mino.Players {
+	f := mino.ApplyFilters(filters)
 	conodes := make(Conodes, len(f.Indices))
 	for i, k := range f.Indices {
 		conodes[i] = cc[k]

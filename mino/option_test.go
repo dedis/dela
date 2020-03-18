@@ -7,7 +7,7 @@ import (
 )
 
 func TestFilters_ParseFilters(t *testing.T) {
-	filters := ParseFilters([]Filter{IndexFilter(1)})
+	filters := ApplyFilters([]FilterUpdater{IndexFilter(1)})
 	require.Equal(t, []int{1}, filters.Indices)
 }
 

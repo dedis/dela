@@ -35,12 +35,14 @@ func TestQSC_Basic(t *testing.T) {
 	n := 5
 	k := 100
 
-	val := &fakeValidator{}
-	val.wg.Add(n * k)
-
 	cons := makeQSC(t, n)
 	actors := make([]consensus.Actor, n)
+	validators := make([]*fakeValidator, n)
 	for i, c := range cons {
+		val := &fakeValidator{count: 0, max: k}
+		val.wg.Add(1)
+		validators[i] = val
+
 		actor, err := c.Listen(val)
 		require.NoError(t, err)
 
@@ -59,7 +61,9 @@ func TestQSC_Basic(t *testing.T) {
 		}()
 	}
 
-	val.wg.Wait()
+	for _, val := range validators {
+		val.wg.Wait()
+	}
 
 	require.Equal(t, cons[0].history, cons[1].history)
 	require.Len(t, cons[0].history, k)
@@ -133,7 +137,9 @@ func makeQSC(t *testing.T, n int) []*Consensus {
 
 type fakeValidator struct {
 	consensus.Validator
-	wg sync.WaitGroup
+	count int
+	max   int
+	wg    sync.WaitGroup
 }
 
 func (v *fakeValidator) Validate(pb proto.Message) (consensus.Proposal, error) {
@@ -141,7 +147,10 @@ func (v *fakeValidator) Validate(pb proto.Message) (consensus.Proposal, error) {
 }
 
 func (v *fakeValidator) Commit(id []byte) error {
-	v.wg.Done()
+	v.count++
+	if v.count == v.max {
+		v.wg.Done()
+	}
 	return nil
 }
 

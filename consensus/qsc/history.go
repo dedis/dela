@@ -81,7 +81,7 @@ func (h history) Pack() (proto.Message, error) {
 	for i, epoch := range h {
 		packed, err := epoch.Pack()
 		if err != nil {
-			return nil, err
+			return nil, encoding.NewEncodingError("epoch", err)
 		}
 
 		pb.Epochs[i] = packed.(*Epoch)
@@ -156,13 +156,15 @@ func (hists histories) isUniqueBest(h history) bool {
 	}
 
 	for _, history := range hists {
-		other, ok := history.getLast()
-		if ok {
-			isEqual := history.Equal(h)
+		// We skip to avoid comparing h to itself, which would make this
+		// function always return false
+		if history.Equal(h) {
+			continue
+		}
 
-			if !isEqual && other.random >= last.random {
-				return false
-			}
+		other, ok := history.getLast()
+		if ok && other.random >= last.random {
+			return false
 		}
 	}
 

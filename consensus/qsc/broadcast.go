@@ -36,7 +36,7 @@ func newBroadcast(node int64, mino mino.Mino, players mino.Players) (broadcastTC
 
 	tlcb, err := newTLCB(node, mino, players)
 	if err != nil {
-		return bc, err
+		return bc, xerrors.Errorf("couldn't make TLCB: %v", err)
 	}
 
 	bc.bTLCB = tlcb
@@ -71,6 +71,7 @@ func (h hTLCR) Process(in proto.Message) (proto.Message, error) {
 	switch msg := in.(type) {
 	case *MessageSet:
 		h.ch <- msg
+		return nil, nil
 	case *RequestMessageSet:
 		if msg.GetTimeStep() != h.store.previous.GetTimeStep() {
 			return nil, nil
@@ -83,9 +84,9 @@ func (h hTLCR) Process(in proto.Message) (proto.Message, error) {
 		}
 
 		return h.store.previous, nil
+	default:
+		return nil, xerrors.Errorf("invalid message type '%T'", in)
 	}
-
-	return nil, nil
 }
 
 type tlcr interface {
@@ -152,7 +153,7 @@ func (b *bTLCR) execute(ctx context.Context, messages ...*Message) (*View, error
 				}
 			}
 		case <-ctx.Done():
-			return nil, xerrors.Errorf("context is done: %v", ctx.Err())
+			return nil, ctx.Err()
 		}
 	}
 
@@ -197,7 +198,7 @@ func (b *bTLCR) catchUp(current, received *MessageSet) error {
 
 		previous, err := b.requestPreviousSet(int(received.GetNode()), req)
 		if err != nil {
-			return xerrors.Errorf("couldn't fetch previous message set: %v", err)
+			return xerrors.Errorf("couldn't fetch previous message set: %w", err)
 		}
 
 		b.logger.Trace().Msgf("filling missing %d messages", len(previous.GetMessages()))
@@ -220,7 +221,8 @@ func (b *bTLCR) requestPreviousSet(node int, req *RequestMessageSet) (*MessageSe
 
 		ms, ok := resp.(*MessageSet)
 		if !ok {
-			return nil, xerrors.Errorf("invalid message type: %T", resp)
+			return nil, xerrors.Errorf("got message type '%T' but expected '%T'",
+				resp, ms)
 		}
 
 		return ms, nil
