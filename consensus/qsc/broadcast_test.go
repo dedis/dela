@@ -237,8 +237,12 @@ type fakePlayers struct {
 }
 
 func (p *fakePlayers) Take(filters ...mino.Filter) mino.Players {
-	index := filters[0].(mino.FilterIndex)
-	return &fakePlayers{addrs: p.addrs[index : index+1]}
+	ff := mino.ParseFilters(filters)
+	addrs := make([]mino.Address, len(ff.Indices))
+	for i, k := range ff.Indices {
+		addrs[i] = p.addrs[k]
+	}
+	return &fakePlayers{addrs: addrs}
 }
 
 func (p *fakePlayers) AddressIterator() mino.AddressIterator {

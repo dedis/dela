@@ -24,19 +24,6 @@ type AddressIterator interface {
 	GetNext() Address
 }
 
-// Filter is a generic type to give to the Players.Take function to filter some
-// of the players.
-type Filter interface{}
-
-// FilterIndex is a single index to include in the new set.
-type FilterIndex int
-
-// FilterSlice is a range of indices to include in the new set.
-type FilterSlice struct {
-	From int
-	To   int
-}
-
 // Players is an interface to represent a set of nodes participating in a
 // message passing protocol.
 type Players interface {

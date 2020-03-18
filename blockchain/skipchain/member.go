@@ -97,22 +97,10 @@ type Conodes []Conode
 
 // Take returns a subset of the conodes.
 func (cc Conodes) Take(filters ...mino.Filter) mino.Players {
-	// TODO: optimize and test
-	indices := map[int]struct{}{}
-	for _, f := range filters {
-		switch filter := f.(type) {
-		case mino.FilterIndex:
-			indices[int(filter)] = struct{}{}
-		case mino.FilterSlice:
-			for i := filter.From; i < filter.To; i++ {
-				indices[i] = struct{}{}
-			}
-		}
-	}
-
-	conodes := make(Conodes, 0, len(indices))
-	for i := range indices {
-		conodes = append(conodes, cc[i])
+	f := mino.ParseFilters(filters)
+	conodes := make(Conodes, len(f.Indices))
+	for i, k := range f.Indices {
+		conodes[i] = cc[k]
 	}
 
 	return conodes
