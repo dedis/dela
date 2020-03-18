@@ -87,7 +87,7 @@ type RPC struct {
 	uri     string
 }
 
-// Call implements mino.RPC.Call(). It calls the RPC on each provided address.
+// Call implements Mino.RPC. It calls the RPC on each provided address.
 func (rpc RPC) Call(req proto.Message,
 	players mino.Players) (<-chan proto.Message, <-chan error) {
 
@@ -145,7 +145,7 @@ func (rpc RPC) Call(req proto.Message,
 	return out, errs
 }
 
-// Stream implements mino.RPC.Stream.
+// Stream implements Mino.RPC.
 func (rpc RPC) Stream(ctx context.Context,
 	players mino.Players) (in mino.Sender, out mino.Receiver) {
 
@@ -361,7 +361,7 @@ func makeCertificate() (*tls.Certificate, error) {
 	}, nil
 }
 
-// sender implements mino.Sender{}
+// sender implements Mino.Sender
 type sender struct {
 	address      address
 	participants []player
@@ -373,7 +373,7 @@ type player struct {
 	streamClient overlayStream
 }
 
-// send implements mino.Sender.Send
+// send implements Mino.Sender.Send
 func (s sender) Send(msg proto.Message, addrs ...mino.Address) error {
 
 	ok := false
@@ -420,14 +420,14 @@ func (s sender) Send(msg proto.Message, addrs ...mino.Address) error {
 	return nil
 }
 
-// receiver implements mino.receiver{}
+// receiver implements Mino.receiver
 type receiver struct {
 	errs chan error
 	in   chan *OverlayMsg
 	name string
 }
 
-// Recv implements mino.receiver.Recv()
+// Recv implements Mino.receiver
 // TODO: check the error chan
 func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error) {
 
@@ -490,12 +490,12 @@ func (s sender) getParticipant(addr mino.Address) *player {
 	return nil
 }
 
-// simpleNode implements mino.Node{}
+// simpleNode implements mino.Node
 type simpleNode struct {
 	addr address
 }
 
-// getAddress implements mino.Node.GetAddress()
+// getAddress implements Mino.Node
 func (o simpleNode) GetAddress() mino.Address {
 	return o.addr
 }
