@@ -11,14 +11,10 @@ message ConodeProto {
 
 message BlockProto {
     uint64 index = 1;
-    uint32 height = 2;
-    uint32 baseHeight = 3;
-    uint32 maximumHeight = 4;
     bytes genesisID = 5;
-    bytes dataHash = 6;
+    bytes backlink = 6;
     google.protobuf.Any payload = 7;
     repeated ConodeProto conodes = 8;
-    repeated bytes backlinks = 9;
 }
 
 message VerifiableBlockProto {

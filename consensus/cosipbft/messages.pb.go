@@ -272,7 +272,9 @@ func init() {
 	proto.RegisterType((*PropagateRequest)(nil), "cosipbft.PropagateRequest")
 }
 
-func init() { proto.RegisterFile("messages.proto", fileDescriptor_4dc296cbfe5ffcd5) }
+func init() {
+	proto.RegisterFile("messages.proto", fileDescriptor_4dc296cbfe5ffcd5)
+}
 
 var fileDescriptor_4dc296cbfe5ffcd5 = []byte{
 	// 275 bytes of a gzipped FileDescriptorProto

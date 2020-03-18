@@ -111,6 +111,12 @@ type forwardLinkChain struct {
 	links []forwardLink
 }
 
+// GetLastHash implements consensus.Chain. It returns the last hash of the
+// chain.
+func (c forwardLinkChain) GetLastHash() []byte {
+	return c.links[len(c.links)-1].to
+}
+
 // Verify follows the chain from the beginning and makes sure that the forward
 // links are correct and that they point to the correct targets.
 func (c forwardLinkChain) Verify(verifier crypto.Verifier) error {

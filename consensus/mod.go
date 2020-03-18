@@ -37,6 +37,8 @@ type Validator interface {
 type Chain interface {
 	encoding.Packable
 
+	GetLastHash() []byte
+
 	// Verify returns nil if the integriy of the chain is valid, otherwise
 	// an error.
 	Verify(verifier crypto.Verifier) error

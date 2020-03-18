@@ -7,6 +7,7 @@ package skipchain
 
 import (
 	"context"
+	"crypto/rand"
 
 	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric"
@@ -36,6 +37,7 @@ func NewSkipchain(m mino.Mino, cosi cosi.CollectiveSigning) *Skipchain {
 
 	return &Skipchain{
 		mino:      m,
+		cosi:      cosi,
 		db:        db,
 		consensus: consensus,
 	}
@@ -62,8 +64,11 @@ func (s *Skipchain) Listen(v blockchain.Validator) (blockchain.Actor, error) {
 }
 
 // GetBlockFactory returns the block factory for skipchains.
-func (s *Skipchain) GetBlockFactory() (blockchain.BlockFactory, error) {
-	return &blockFactory{}, nil
+func (s *Skipchain) GetBlockFactory() blockchain.BlockFactory {
+	return blockFactory{
+		Skipchain:   s,
+		hashFactory: sha256Factory{},
+	}
 }
 
 // GetBlock returns the latest block.
@@ -115,12 +120,6 @@ type skipchainActor struct {
 }
 
 func (a skipchainActor) InitChain(data proto.Message, players mino.Players) error {
-	factory := a.GetBlockFactory().(*blockFactory)
-	if factory.genesis.GetHash() != nil {
-		// Only allow one chain per database.
-		return xerrors.Errorf("chain already exists: %v", factory.genesis)
-	}
-
 	ca, ok := players.(cosi.CollectiveAuthority)
 	if !ok {
 		return xerrors.Errorf("players must implement cosi.CollectiveAuthority")
@@ -128,9 +127,21 @@ func (a skipchainActor) InitChain(data proto.Message, players mino.Players) erro
 
 	conodes := newConodes(ca)
 
-	genesis, err := factory.createGenesis(conodes, nil)
+	// TODO: crypto module for randomness
+	randomBackLink := Digest{}
+	rand.Read(randomBackLink[:])
+
+	genesis, err := newSkipBlock(
+		sha256Factory{},
+		nil,
+		0,
+		conodes,
+		Digest{},
+		randomBackLink,
+		data,
+	)
 	if err != nil {
-		return xerrors.Errorf("couldn't create the genesis block: %v", err)
+		return xerrors.Errorf("couldn't create block: %v", err)
 	}
 
 	err = a.db.Write(genesis)
@@ -160,7 +171,7 @@ func (a skipchainActor) InitChain(data proto.Message, players mino.Players) erro
 
 // Store will append a new block to chain filled with the data.
 func (a skipchainActor) Store(data proto.Message, players mino.Players) error {
-	factory := a.GetBlockFactory().(*blockFactory)
+	factory := a.GetBlockFactory().(blockFactory)
 
 	previous, err := a.db.ReadLast()
 	if err != nil {
