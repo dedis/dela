@@ -19,7 +19,3 @@ service Overlay {
 message OverlayMsg {
     google.protobuf.Any message = 1;
 }
-
-message DummyMsg {
-    string value = 1;
-}

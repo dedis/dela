@@ -17,7 +17,7 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-func Test_Call(t *testing.T) {
+func TestOverlay_Call(t *testing.T) {
 	ctx := context.Background()
 	msg := &OverlayMsg{}
 
@@ -70,30 +70,7 @@ func Test_Call(t *testing.T) {
 	require.EqualError(t, err, encoding.NewAnyEncodingError(nil, errors.New("proto: Marshal called with nil")).Error())
 }
 
-type testServerStream struct {
-	overlayStreamServer
-	ctx       context.Context
-	recvError bool
-}
-
-// This is to mock grpc.ServerStream.Context()
-func (t testServerStream) Context() context.Context {
-	return t.ctx
-}
-
-// This is to mock Overlay_StreamServer.Recv()
-func (t testServerStream) Recv() (*OverlayMsg, error) {
-	if t.recvError {
-		return nil, errors.New("oops from the server")
-	}
-	anyMsg, err := ptypes.MarshalAny(&empty.Empty{})
-	if err != nil {
-		fabric.Logger.Fatal().Msg("unexpected nil in marshal: " + err.Error())
-	}
-	return &OverlayMsg{Message: anyMsg}, nil
-}
-
-func Test_Stream(t *testing.T) {
+func TestOverlay_Stream(t *testing.T) {
 	// ctx := context.Background()
 	// msg := &OverlayMsg{}
 
@@ -173,6 +150,30 @@ func Test_Stream(t *testing.T) {
 
 // -----------------
 // Utility functions
+
+// this is to mock an overlay server stream
+type testServerStream struct {
+	overlayStreamServer
+	ctx       context.Context
+	recvError bool
+}
+
+// This is to mock grpc.ServerStream.Context()
+func (t testServerStream) Context() context.Context {
+	return t.ctx
+}
+
+// This is to mock Overlay_StreamServer.Recv()
+func (t testServerStream) Recv() (*OverlayMsg, error) {
+	if t.recvError {
+		return nil, errors.New("oops from the server")
+	}
+	anyMsg, err := ptypes.MarshalAny(&empty.Empty{})
+	if err != nil {
+		fabric.Logger.Fatal().Msg("unexpected nil in marshal: " + err.Error())
+	}
+	return &OverlayMsg{Message: anyMsg}, nil
+}
 
 // implements a handler interface that returns an error in call and stream
 type testFailHandler struct {

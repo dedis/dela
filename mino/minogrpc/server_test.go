@@ -10,20 +10,21 @@ import (
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/empty"
+	"github.com/golang/protobuf/ptypes/wrappers"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
 
-func TestCreateServer(t *testing.T) {
+func Test_CreateServer(t *testing.T) {
 	// Using an empty address should yield an error
 	addr := address{}
 	_, err := CreateServer(addr)
 	require.EqualError(t, err, "addr.String() should not give an empty string")
 }
 
-func TestServe(t *testing.T) {
+func Test_Server_Serve(t *testing.T) {
 	server := Server{
 		addr: address{id: "blabla"},
 	}
@@ -36,8 +37,22 @@ func TestServe(t *testing.T) {
 	require.True(t, strings.HasPrefix(err.Error(), "failed to listen: listen tcp4: lookup blabla"))
 }
 
+func Test_Server_GetConnection(t *testing.T) {
+	addr := &address{
+		id: "127.0.0.1:2000",
+	}
+
+	server, err := CreateServer(addr)
+	require.NoError(t, err)
+	server.StartServer()
+
+	// An empty address should yield an error
+	_, err = server.getConnection("")
+	require.EqualError(t, err, "empty address is not allowed")
+}
+
 // Use a single node to make a call that just sends back the same message.
-func TestSingleSimpleCall(t *testing.T) {
+func Test_RPC_SingleSimple_Call(t *testing.T) {
 	identifier := "127.0.0.1:2000"
 
 	addr := address{
@@ -106,7 +121,7 @@ loop:
 	require.NoError(t, err)
 }
 
-func TestErrorsSimpleCall(t *testing.T) {
+func Test_RPC_ErrorsSimple_Call(t *testing.T) {
 	identifier := "127.0.0.1:2000"
 
 	addr := address{
@@ -174,7 +189,7 @@ loop2:
 }
 
 // Using a single node to make a call that sends back a modified message.
-func TestSingleModifyCall(t *testing.T) {
+func Test_RPC_SingleModify_Call(t *testing.T) {
 	identifier := "127.0.0.1:2000"
 
 	addr := address{
@@ -225,7 +240,7 @@ loop:
 }
 
 // Using 3 nodes to make a call that sends back a modified message.
-func TestMultipleModifyCall(t *testing.T) {
+func TestRPC_MultipleModify_Call(t *testing.T) {
 	// Server 1
 	identifier1 := "127.0.0.1:2001"
 	addr1 := address{
@@ -361,7 +376,7 @@ loop2:
 }
 
 // Use a 3 nodes to make a stream that just sends back the same message.
-func TestSingleSimpleStream(t *testing.T) {
+func Test_RPC_SingleSimple_Stream(t *testing.T) {
 	identifier := "127.0.0.1:2000"
 
 	addr := &address{
@@ -419,7 +434,7 @@ func TestSingleSimpleStream(t *testing.T) {
 }
 
 // Use a single node to make a stream that just sends back the same message.
-func TestErrorsSimpleStream(t *testing.T) {
+func Test_RPC_ErrorsSimple_Stream(t *testing.T) {
 	identifier := "127.0.0.1:2000"
 
 	addr := &address{
@@ -460,7 +475,7 @@ func TestErrorsSimpleStream(t *testing.T) {
 }
 
 // Use multiple nodes to use a stream that just sends back the same message.
-func TestMultipleSimpleStream(t *testing.T) {
+func Test_RPC_MultipleSimple_Stream(t *testing.T) {
 	identifier1 := "127.0.0.1:2001"
 	addr1 := &address{
 		id: identifier1,
@@ -575,7 +590,7 @@ func TestMultipleSimpleStream(t *testing.T) {
 }
 
 // Use multiple nodes to use a stream that aggregates the dummyMessages
-func TestMultipleChangeStream(t *testing.T) {
+func Test_RPC_MultipleChange_Stream(t *testing.T) {
 	identifier1 := "127.0.0.1:2001"
 	addr1 := &address{
 		id: identifier1,
@@ -631,7 +646,7 @@ func TestMultipleChangeStream(t *testing.T) {
 	server2.handlers[uri] = handler
 	server3.handlers[uri] = handler
 
-	dummyMsg := &DummyMsg{Value: "dummy_value"}
+	dummyMsg := &wrappers.StringValue{Value: "dummy_value"}
 	m, err := ptypes.MarshalAny(dummyMsg)
 	require.NoError(t, err)
 
@@ -667,7 +682,7 @@ func TestMultipleChangeStream(t *testing.T) {
 
 		enveloppe, ok := msg2.(*Envelope)
 		require.True(t, ok)
-		dummyMsg2 := &DummyMsg{}
+		dummyMsg2 := &wrappers.StringValue{}
 		err = ptypes.UnmarshalAny(enveloppe.Message, dummyMsg2)
 		require.NoError(t, err)
 		require.Equal(t, dummyMsg.Value+dummyMsg.Value, dummyMsg2.Value)
@@ -680,21 +695,7 @@ func TestMultipleChangeStream(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestGetConnection(t *testing.T) {
-	addr := &address{
-		id: "127.0.0.1:2000",
-	}
-
-	server, err := CreateServer(addr)
-	require.NoError(t, err)
-	server.StartServer()
-
-	// An empty address should yield an error
-	_, err = server.getConnection("")
-	require.EqualError(t, err, "empty address is not allowed")
-}
-
-func TestSender(t *testing.T) {
+func TestSender_Send(t *testing.T) {
 	sender := sender{
 		participants: make([]player, 0),
 	}
@@ -718,7 +719,7 @@ func TestSender(t *testing.T) {
 	require.EqualError(t, err, encoding.NewAnyEncodingError(nil, errors.New("proto: Marshal called with nil")).Error())
 }
 
-func TestRecv(t *testing.T) {
+func TestReceiver_Recv(t *testing.T) {
 	receiver := receiver{
 		errs: make(chan error, 1),
 		in:   make(chan *OverlayMsg, 1),
@@ -810,7 +811,7 @@ func (t testModifyHandler) Stream(out mino.Sender, in mino.Receiver) error {
 			return xerrors.New("failed to cast message to envelope")
 		}
 
-		dummy := &DummyMsg{}
+		dummy := &wrappers.StringValue{}
 		err = ptypes.UnmarshalAny(enveloppe.Message, dummy)
 		if err != nil {
 			return xerrors.Errorf("failed to unmarshal dummy message: %v", err)
@@ -818,7 +819,7 @@ func (t testModifyHandler) Stream(out mino.Sender, in mino.Receiver) error {
 
 		dummyMsg += dummy.Value
 	}
-	dummyReturn := &DummyMsg{Value: dummyMsg}
+	dummyReturn := &wrappers.StringValue{Value: dummyMsg}
 	anyDummy, err := ptypes.MarshalAny(dummyReturn)
 
 	err = out.Send(&Envelope{Message: anyDummy}, addr)

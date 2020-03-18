@@ -16,7 +16,6 @@ func TestMessages(t *testing.T) {
 	messages := []proto.Message{
 		&OverlayMsg{},
 		&Envelope{},
-		&DummyMsg{},
 	}
 
 	for _, m := range messages {
@@ -115,7 +114,7 @@ func Test_MakeRPC(t *testing.T) {
 
 }
 
-func Test_Address_MarshalText(t *testing.T) {
+func TestAddress_MarshalText(t *testing.T) {
 	f := func(id string) bool {
 		addr := address{id: id}
 		buffer, err := addr.MarshalText()
@@ -128,7 +127,7 @@ func Test_Address_MarshalText(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func Test_Address_String(t *testing.T) {
+func TestAddress_String(t *testing.T) {
 	f := func(id string) bool {
 		addr := address{id: id}
 
@@ -139,7 +138,7 @@ func Test_Address_String(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func Test_AddressFactory_FromText(t *testing.T) {
+func TestAddressFactory_FromText(t *testing.T) {
 	f := func(id string) bool {
 		factory := addressFactory{}
 		addr := factory.FromText([]byte(id))
@@ -151,12 +150,12 @@ func Test_AddressFactory_FromText(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func Test_GetAddressFactory(t *testing.T) {
+func TestMinogrpc_GetAddressFactory(t *testing.T) {
 	m := &Minogrpc{}
 	require.IsType(t, addressFactory{}, m.GetAddressFactory())
 }
 
-func Test_Players(t *testing.T) {
+func TestPlayers_AddressIterator(t *testing.T) {
 	players := fakePlayers{players: []address{address{"test"}}}
 	it := players.AddressIterator()
 	it2, ok := it.(*fakeAddressIterator)
@@ -167,7 +166,7 @@ func Test_Players(t *testing.T) {
 	require.Equal(t, 1, players.Len())
 }
 
-func Test_AddressIterator(t *testing.T) {
+func TestAddressIterator(t *testing.T) {
 	a := address{"test"}
 	it := fakeAddressIterator{
 		players: []address{a},
