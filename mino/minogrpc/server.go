@@ -176,10 +176,10 @@ func (rpc RPC) Stream(ctx context.Context,
 		if err != nil {
 			// TODO: try another path (maybe use another node to relay that
 			// message)
-			fabric.Logger.Error().Msgf("failed to get client conn for client '%s': %v",
+			err = xerrors.Errorf("failed to get client conn for client '%s': %v",
 				addr.String(), err)
-			errs <- xerrors.Errorf("failed to get client conn for client '%s': %v",
-				addr.String(), err)
+			fabric.Logger.Err(err).Send()
+			errs <- err
 			continue
 		}
 		cl := NewOverlayClient(clientConn)
@@ -191,10 +191,10 @@ func (rpc RPC) Stream(ctx context.Context,
 
 		stream, err := cl.Stream(ctx)
 		if err != nil {
-			fabric.Logger.Error().Msgf("failed to get stream for client '%s': %v",
+			err = xerrors.Errorf("failed to get stream for client '%s': %v",
 				addr.String(), err)
-			errs <- xerrors.Errorf("failed to get stream for client '%s': %v",
-				addr.String(), err)
+			fabric.Logger.Err(err).Send()
+			errs <- err
 			continue
 		}
 
@@ -214,10 +214,10 @@ func (rpc RPC) Stream(ctx context.Context,
 					return
 				}
 				if err != nil {
-					fabric.Logger.Error().Msgf("failed to receive for client '%s': %v",
+					err = xerrors.Errorf("failed to receive for client '%s': %v",
 						addr.String(), err)
-					errs <- xerrors.Errorf("failed to receive for client '%s': %v",
-						addr.String(), err)
+					fabric.Logger.Err(err).Send()
+					errs <- err
 					return
 				}
 
