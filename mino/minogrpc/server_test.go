@@ -472,7 +472,7 @@ func TestRPC_ErrorsSimple_Stream(t *testing.T) {
 	defer cancel()
 
 	// Using an empty address should yield an error
-	_, receiver := rpc.Stream(ctx, &fakePlayers{players: []address{address{}}})
+	_, receiver := rpc.Stream(ctx, &fakePlayers{players: []address{{}}})
 
 	_, _, err = receiver.Recv(context.Background())
 	require.EqualError(t, err, "got an error from the error chan: failed to get client conn for client '': empty address is not allowed")

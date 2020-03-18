@@ -108,7 +108,7 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		// empty now
 		address: address{},
 		participants: []player{
-			player{
+			{
 				address:      address{addr},
 				streamClient: stream,
 			},

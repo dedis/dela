@@ -156,7 +156,7 @@ func TestMinogrpc_GetAddressFactory(t *testing.T) {
 }
 
 func TestPlayers_AddressIterator(t *testing.T) {
-	players := fakePlayers{players: []address{address{"test"}}}
+	players := fakePlayers{players: []address{{"test"}}}
 	it := players.AddressIterator()
 	it2, ok := it.(*fakeAddressIterator)
 	require.True(t, ok)
