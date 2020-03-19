@@ -35,13 +35,15 @@ type Consensus struct {
 	history          history
 	broadcast        broadcast
 	historiesFactory historiesFactory
+
+	Stopped chan struct{}
 }
 
 // NewQSC returns a new instance of QSC.
 func NewQSC(node int64, mino mino.Mino, players mino.Players) (*Consensus, error) {
 	bc, err := newBroadcast(node, mino, players)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't create broadcast: %v", err)
 	}
 
 	return &Consensus{
@@ -49,6 +51,7 @@ func NewQSC(node int64, mino mino.Mino, players mino.Players) (*Consensus, error
 		history:          make(history, 0),
 		broadcast:        bc,
 		historiesFactory: defaultHistoriesFactory{},
+		Stopped:          make(chan struct{}),
 	}, nil
 }
 
@@ -67,11 +70,25 @@ func (c *Consensus) GetChain(id []byte) (consensus.Chain, error) {
 // primitives to send proposals to a network of nodes.
 func (c *Consensus) Listen(val consensus.Validator) (consensus.Actor, error) {
 	go func() {
-		// TODO: how to stop the loop ?
 		for {
-			err := c.executeRound(val)
+			var proposal consensus.Proposal
+			select {
+			case prop, ok := <-c.ch:
+				if !ok {
+					fabric.Logger.Trace().Msg("closing")
+					return
+				}
+
+				proposal = prop
+			default:
+				// If the current node does not have anything to propose, it
+				// still has to participate so it sends an empty proposal.
+				proposal = nil
+			}
+
+			err := c.executeRound(proposal, val)
 			if err != nil {
-				fabric.Logger.Err(err).Send()
+				fabric.Logger.Err(err).Msg("failed to execute a time step")
 			}
 		}
 	}()
@@ -79,7 +96,14 @@ func (c *Consensus) Listen(val consensus.Validator) (consensus.Actor, error) {
 	return actor{ch: c.ch}, nil
 }
 
-func (c *Consensus) executeRound(val consensus.Validator) error {
+// Close stops and cleans the main loop.
+func (c *Consensus) Close() error {
+	close(c.ch)
+
+	return nil
+}
+
+func (c *Consensus) executeRound(prop consensus.Proposal, val consensus.Validator) error {
 	// 1. Choose the message and the random value. The new epoch will be
 	// appended to the current history.
 	e := epoch{
@@ -87,18 +111,8 @@ func (c *Consensus) executeRound(val consensus.Validator) error {
 		random: rand.Int63(),
 	}
 
-	select {
-	case prop, ok := <-c.ch:
-		if !ok {
-			fabric.Logger.Trace().Msg("closing")
-			return nil
-		}
-
+	if prop != nil {
 		e.hash = prop.GetHash()
-	default:
-		// If the current node does not have anything to propose, it
-		// still has to participate so it sends an empty proposal.
-		e.hash = nil
 	}
 
 	newHistory := make(history, len(c.history), len(c.history)+1)
