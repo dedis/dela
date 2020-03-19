@@ -21,6 +21,8 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.ProtoPackageIsVersion3 // please upgrade the proto package
 
+// ConodeProto is the message that contains the address and the public key of a
+// conode.
 type ConodeProto struct {
 	Address              []byte   `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
 	PublicKey            *any.Any `protobuf:"bytes,2,opt,name=publicKey,proto3" json:"publicKey,omitempty"`
@@ -68,6 +70,9 @@ func (m *ConodeProto) GetPublicKey() *any.Any {
 	return nil
 }
 
+// BlockProto is the message that contains the minimal data to instantiate a
+// block. It is not sufficient to prove the block integrity as the chain from
+// the genesis block is missing.
 type BlockProto struct {
 	Index                uint64         `protobuf:"varint,1,opt,name=index,proto3" json:"index,omitempty"`
 	GenesisID            []byte         `protobuf:"bytes,5,opt,name=genesisID,proto3" json:"genesisID,omitempty"`
@@ -139,6 +144,9 @@ func (m *BlockProto) GetConodes() []*ConodeProto {
 	return nil
 }
 
+// VerifiableBlockProto is the message that contains a verifiable block. It
+// contains everything necessary to prove a block is valid as long as the
+// receiver has the genesis block.
 type VerifiableBlockProto struct {
 	Block                *BlockProto `protobuf:"bytes,1,opt,name=block,proto3" json:"block,omitempty"`
 	Chain                *any.Any    `protobuf:"bytes,2,opt,name=chain,proto3" json:"chain,omitempty"`
@@ -186,6 +194,8 @@ func (m *VerifiableBlockProto) GetChain() *any.Any {
 	return nil
 }
 
+// PropagateGenesis is the message containing a genesis to be transmitted to the
+// participants.
 type PropagateGenesis struct {
 	Genesis              *BlockProto `protobuf:"bytes,1,opt,name=genesis,proto3" json:"genesis,omitempty"`
 	XXX_NoUnkeyedLiteral struct{}    `json:"-"`

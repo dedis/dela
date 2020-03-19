@@ -4,11 +4,16 @@ package skipchain;
 
 import "google/protobuf/any.proto";
 
+// ConodeProto is the message that contains the address and the public key of a
+// conode.
 message ConodeProto {
     bytes address = 1;
     google.protobuf.Any publicKey = 2;
 }
 
+// BlockProto is the message that contains the minimal data to instantiate a
+// block. It is not sufficient to prove the block integrity as the chain from
+// the genesis block is missing.
 message BlockProto {
     uint64 index = 1;
     bytes genesisID = 5;
@@ -17,11 +22,16 @@ message BlockProto {
     repeated ConodeProto conodes = 8;
 }
 
+// VerifiableBlockProto is the message that contains a verifiable block. It
+// contains everything necessary to prove a block is valid as long as the
+// receiver has the genesis block.
 message VerifiableBlockProto {
     BlockProto block = 1;
     google.protobuf.Any chain = 2;
 }
 
+// PropagateGenesis is the message containing a genesis to be transmitted to the
+// participants.
 message PropagateGenesis {
     BlockProto genesis = 1;
 }

@@ -33,22 +33,38 @@ func (d Digest) String() string {
 	return fmt.Sprintf("%x", d[:])[:16]
 }
 
+// sha256Factory is a factory for SHA256 digests.
+//
+// - implements crypto.HashFactory
 type sha256Factory struct{}
 
+// New implements crypto.HashFactory. It returns a new instance of a SHA256
+// hash.
 func (f sha256Factory) New() hash.Hash {
 	return sha256.New()
 }
 
 // SkipBlock is a representation of the data held by a block. It contains the
 // information to build a skipchain.
+//
+// - implements blockchain.Block
+// - implements consensus.Proposal
+// - implements fmt.Stringer
 type SkipBlock struct {
-	hash      Digest
-	verifier  crypto.Verifier
-	Index     uint64
-	Conodes   Conodes
+	hash     Digest
+	verifier crypto.Verifier
+	// Index is the block index since the genesis block.
+	Index uint64
+	// Conodes is the list of conodes participating in the consensus.
+	Conodes Conodes
+	// GenesisID is the hash of the genesis block which represents the chain
+	// identifier.
 	GenesisID Digest
-	BackLink  Digest
-	Payload   proto.Message
+	// BackLink is the hash of the previous block in the chain.
+	BackLink Digest
+	// Payload is the data stored in the block. It representation is independant
+	// from the skipchain module.
+	Payload proto.Message
 }
 
 func newSkipBlock(
@@ -79,22 +95,27 @@ func newSkipBlock(
 	return block, nil
 }
 
-// GetHash returns the hash of the block.
+// GetHash implements blockchain.Block and consensus.Proposal. It returns the
+// hash of the block.
 func (b SkipBlock) GetHash() []byte {
 	return b.hash[:]
 }
 
-// GetPreviousHash returns the previous block digest.
+// GetPreviousHash implements consensus.Proposal. It returns the previous block
+// digest.
 func (b SkipBlock) GetPreviousHash() []byte {
 	return b.BackLink.Bytes()
 }
 
-// GetVerifier returns the verifier for the block.
+// GetVerifier implements consensus.Proposal. It returns the verifier for the
+// block.
+// TODO: it might have sense to remove this function.
 func (b SkipBlock) GetVerifier() crypto.Verifier {
 	return b.verifier
 }
 
-// Pack returns the protobuf message for a block.
+// Pack implements encoding.Packable. It returns the protobuf message for a
+// block.
 func (b SkipBlock) Pack() (proto.Message, error) {
 	payloadAny, err := protoenc.MarshalAny(b.Payload)
 	if err != nil {
@@ -117,6 +138,8 @@ func (b SkipBlock) Pack() (proto.Message, error) {
 	return blockproto, nil
 }
 
+// String implements fmt.Stringer. It returns a string representation of the
+// block.
 func (b SkipBlock) String() string {
 	return fmt.Sprintf("Block[%v]", b.hash)
 }
@@ -167,12 +190,15 @@ func (b SkipBlock) computeHash(factory crypto.HashFactory) (Digest, error) {
 
 // VerifiableBlock is a block combined with a consensus chain that can be
 // verified from the genesis.
+//
+// - implements blockchain.VerifiableBlock
 type VerifiableBlock struct {
 	SkipBlock
 	Chain consensus.Chain
 }
 
-// Verify makes sure the integrity of the chain is valid.
+// Verify implements blockchain.VerifiableBlock. It makes sure the integrity of
+// the chain is valid.
 func (vb VerifiableBlock) Verify(v crypto.Verifier) error {
 	err := vb.Chain.Verify(v)
 	if err != nil {
@@ -186,7 +212,8 @@ func (vb VerifiableBlock) Verify(v crypto.Verifier) error {
 	return nil
 }
 
-// Pack returns the protobuf message for a verifiable block.
+// Pack implements encoding.Packable. It returns the protobuf message for a
+// verifiable block.
 func (vb VerifiableBlock) Pack() (proto.Message, error) {
 	block, err := vb.SkipBlock.Pack()
 	if err != nil {
@@ -211,6 +238,8 @@ func (vb VerifiableBlock) Pack() (proto.Message, error) {
 
 // blockFactory is responsible for the instantiation of the block and related
 // data structures like the forward links and the proves.
+//
+// - implements blockchain.BlockFactory
 type blockFactory struct {
 	*Skipchain
 	hashFactory crypto.HashFactory
@@ -305,6 +334,8 @@ func (f blockFactory) decodeBlock(src proto.Message) (SkipBlock, error) {
 	return block, nil
 }
 
+// FromVerifiable implements blockchain.BlockFactory. It returns the block if
+// the integrity of the message is verified.
 func (f blockFactory) FromVerifiable(src proto.Message) (blockchain.Block, error) {
 	in, ok := src.(*VerifiableBlockProto)
 	if !ok {

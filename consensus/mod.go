@@ -15,8 +15,11 @@ type Proposal interface {
 	// GetHash returns the hash of the proposal.
 	GetHash() []byte
 
+	// GetPreviousHash returns the hash of the previous proposal.
 	GetPreviousHash() []byte
 
+	// GetVerifier returns a verifier that can be used to assert the validity of
+	// the signatures from the participants of this proposal.
 	GetVerifier() crypto.Verifier
 }
 
@@ -37,6 +40,7 @@ type Validator interface {
 type Chain interface {
 	encoding.Packable
 
+	// GetLastHash returns the last proposal hash of the chain.
 	GetLastHash() []byte
 
 	// Verify returns nil if the integriy of the chain is valid, otherwise
