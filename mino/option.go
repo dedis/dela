@@ -4,8 +4,8 @@ import (
 	"sort"
 )
 
-// Filters is a set of parameters for the Players.Take function.
-type Filters struct {
+// Filter is a set of parameters for the Players.Take function.
+type Filter struct {
 	// Indices indicates the indexes of the elements that must be included. This
 	// list if updated based on the filter that we apply. For example, [0,3]
 	// tells that this filter keeps 2 elements from the underlying data
@@ -15,8 +15,8 @@ type Filters struct {
 }
 
 // ApplyFilters applies the filters and return the result.
-func ApplyFilters(filters []FilterUpdater) *Filters {
-	f := &Filters{
+func ApplyFilters(filters []FilterUpdater) *Filter {
+	f := &Filter{
 		Indices: []int{},
 	}
 
@@ -28,11 +28,11 @@ func ApplyFilters(filters []FilterUpdater) *Filters {
 }
 
 // FilterUpdater is a function to update the filters.
-type FilterUpdater func(*Filters)
+type FilterUpdater func(*Filter)
 
 // IndexFilter is a filter to include a given index.
 func IndexFilter(index int) FilterUpdater {
-	return func(filters *Filters) {
+	return func(filters *Filter) {
 		arr := filters.Indices
 		i := sort.IntSlice(arr).Search(index)
 		// do nothing if the element is already there
@@ -47,7 +47,7 @@ func IndexFilter(index int) FilterUpdater {
 
 // RangeFilter is a filter to include a range of indices.
 func RangeFilter(start, end int) FilterUpdater {
-	return func(filters *Filters) {
+	return func(filters *Filter) {
 		arr := filters.Indices
 		queue := []int{}
 

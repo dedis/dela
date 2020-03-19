@@ -6,13 +6,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestFilters_ParseFilters(t *testing.T) {
+func TestFilter_ParseFilters(t *testing.T) {
 	filters := ApplyFilters([]FilterUpdater{IndexFilter(1)})
 	require.Equal(t, []int{1}, filters.Indices)
 }
 
-func TestFilters_IndexFilter(t *testing.T) {
-	filters := &Filters{Indices: []int{}}
+func TestFilter_IndexFilter(t *testing.T) {
+	filters := &Filter{Indices: []int{}}
 
 	IndexFilter(1)(filters)
 	require.Equal(t, filters.Indices, []int{1})
@@ -29,8 +29,8 @@ func TestFilters_IndexFilter(t *testing.T) {
 	require.Equal(t, filters.Indices, []int{0, 1, 2})
 }
 
-func TestFilters_RangeFilter(t *testing.T) {
-	filters := &Filters{Indices: []int{}}
+func TestFilter_RangeFilter(t *testing.T) {
+	filters := &Filter{Indices: []int{}}
 
 	RangeFilter(2, 5)(filters)
 	require.Equal(t, []int{2, 3, 4}, filters.Indices)
@@ -44,7 +44,7 @@ func TestFilters_RangeFilter(t *testing.T) {
 	RangeFilter(2, 5)(filters)
 	require.Equal(t, []int{0, 1, 2, 3, 4, 5, 6}, filters.Indices)
 
-	filters = &Filters{Indices: []int{0, 1, 4, 5}}
+	filters = &Filter{Indices: []int{0, 1, 4, 5}}
 	RangeFilter(1, 7)(filters)
 	require.Equal(t, []int{0, 1, 2, 3, 4, 5, 6}, filters.Indices)
 }
