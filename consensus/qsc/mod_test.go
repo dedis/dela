@@ -73,15 +73,22 @@ func TestQSC_Basic(t *testing.T) {
 }
 
 func TestQSC_Listen(t *testing.T) {
+	bc := &fakeBroadcast{wait: true, waiting: make(chan struct{})}
 	qsc := &Consensus{
 		closing:          make(chan struct{}),
 		stopped:          make(chan struct{}),
-		broadcast:        &fakeBroadcast{wait: true},
+		broadcast:        bc,
 		historiesFactory: &fakeFactory{},
 	}
 
 	actor, err := qsc.Listen(nil)
 	require.NoError(t, err)
+
+	select {
+	case <-bc.waiting:
+	case <-time.After(10 * time.Millisecond):
+		t.Fatal("timeout")
+	}
 	require.NoError(t, actor.Close())
 
 	// Make sure the Go routine is stopped.
@@ -204,13 +211,15 @@ func (p fakeProposal) GetHash() []byte {
 
 type fakeBroadcast struct {
 	broadcast
-	err   error
-	delay int
-	wait  bool
+	err     error
+	delay   int
+	wait    bool
+	waiting chan struct{}
 }
 
 func (b *fakeBroadcast) send(ctx context.Context, h history) (*View, error) {
 	if b.wait {
+		close(b.waiting)
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
