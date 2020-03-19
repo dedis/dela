@@ -904,6 +904,7 @@ func (i *fakeIterator) GetNext() mino.Address {
 }
 
 type fakeMembership struct {
+	mino.Players
 	addrs []address
 }
 

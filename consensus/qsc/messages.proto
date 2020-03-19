@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package qsc;
+
+import "google/protobuf/any.proto";
+
+message Message {
+    int64 node = 1;
+    google.protobuf.Any value = 2;
+}
+
+message MessageSet {
+    map<int64, Message> messages = 1;
+    uint64 timeStep = 2;
+    int64 node = 3;
+}
+
+message View {
+    map<int64, Message> received = 1;
+    map<int64, Message> broadcasted = 2;
+}
+
+message RequestMessageSet {
+    uint64 timeStep = 1;
+    repeated int64 nodes = 2;
+}
+
+message Epoch {
+    int64 random = 1;
+    bytes hash = 2;
+}
+
+message History {
+    repeated Epoch epochs = 1;
+}

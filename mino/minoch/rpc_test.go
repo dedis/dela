@@ -3,6 +3,7 @@ package minoch
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
@@ -23,9 +24,9 @@ func TestRPC_Call(t *testing.T) {
 	_, err = m2.MakeRPC("test", testHandler{})
 	require.NoError(t, err)
 
-	resps, errs := rpc1.Call(&empty.Empty{}, fakeMembership{instances: []*Minoch{m2}})
+	_, errs := rpc1.Call(&empty.Empty{}, fakePlayers{instances: []*Minoch{m2}})
 	select {
-	case <-resps:
+	case <-time.After(50 * time.Millisecond):
 		t.Fatal("an error is expected")
 	case <-errs:
 	}
@@ -67,7 +68,7 @@ func TestRPC_Stream(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	sender, receiver := rpc.Stream(ctx, fakeMembership{instances: []*Minoch{m}})
+	sender, receiver := rpc.Stream(ctx, fakePlayers{instances: []*Minoch{m}})
 
 	sender.Send(&empty.Empty{}, m.GetAddress())
 	_, _, err = receiver.Recv(context.Background())
@@ -90,7 +91,7 @@ func TestRPC_StreamFailures(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	out, in := rpc.Stream(ctx, fakeMembership{instances: []*Minoch{m}})
+	out, in := rpc.Stream(ctx, fakePlayers{instances: []*Minoch{m}})
 	_, _, err = in.Recv(ctx)
 	require.Error(t, err)
 	errs := out.Send(nil)
@@ -122,17 +123,18 @@ func (i *fakeIterator) GetNext() mino.Address {
 	return nil
 }
 
-type fakeMembership struct {
+type fakePlayers struct {
+	mino.Players
 	instances []*Minoch
 }
 
-func (m fakeMembership) AddressIterator() mino.AddressIterator {
+func (m fakePlayers) AddressIterator() mino.AddressIterator {
 	return &fakeIterator{
 		index:     -1,
 		instances: m.instances,
 	}
 }
 
-func (m fakeMembership) Len() int {
+func (m fakePlayers) Len() int {
 	return len(m.instances)
 }

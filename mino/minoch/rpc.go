@@ -3,6 +3,7 @@ package minoch
 import (
 	"context"
 	"math"
+	"sync"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
@@ -26,28 +27,33 @@ type RPC struct {
 }
 
 // Call sends the message to all participants and gather their reply.
-func (c RPC) Call(req proto.Message, memship mino.Players) (<-chan proto.Message, <-chan error) {
-	out := make(chan proto.Message, memship.Len())
-	errs := make(chan error, memship.Len())
+func (c RPC) Call(req proto.Message, players mino.Players) (<-chan proto.Message, <-chan error) {
+	out := make(chan proto.Message, players.Len())
+	errs := make(chan error, players.Len())
 
-	go func() {
-		iter := memship.AddressIterator()
-		for iter.HasNext() {
-			peer := c.manager.get(iter.GetNext())
-			if peer != nil {
-				resp, err := peer.rpcs[c.path].h.Process(req)
+	wg := sync.WaitGroup{}
+	wg.Add(players.Len())
+	iter := players.AddressIterator()
+	for iter.HasNext() {
+		peer := c.manager.get(iter.GetNext())
+		go func(m *Minoch) {
+			defer wg.Done()
+
+			if m != nil {
+				resp, err := m.rpcs[c.path].h.Process(proto.Clone(req))
 				if err != nil {
 					errs <- err
 				}
 
 				if resp != nil {
-					out <- resp
+					out <- proto.Clone(resp)
 				}
 			}
-		}
+		}(peer)
+	}
 
-		close(out)
-	}()
+	wg.Wait()
+	close(out)
 
 	return out, errs
 }
