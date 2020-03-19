@@ -112,7 +112,11 @@ func (c *Consensus) Listen(val consensus.Validator) (consensus.Actor, error) {
 	return actor{ch: c.ch, closing: c.closing}, nil
 }
 
-func (c *Consensus) executeRound(ctx context.Context, prop consensus.Proposal, val consensus.Validator) error {
+func (c *Consensus) executeRound(
+	ctx context.Context,
+	prop consensus.Proposal,
+	val consensus.Validator,
+) error {
 	// 1. Choose the message and the random value. The new epoch will be
 	// appended to the current history.
 	e := epoch{
@@ -132,7 +136,7 @@ func (c *Consensus) executeRound(ctx context.Context, prop consensus.Proposal, v
 	// from this time step.
 	prepareSet, err := c.broadcast.send(ctx, newHistory)
 	if err != nil {
-		return xerrors.Errorf("couldn't broadcast: %w", err)
+		return xerrors.Errorf("couldn't broadcast: %v", err)
 	}
 
 	// 3. Get the best history from the received messages.
@@ -144,7 +148,7 @@ func (c *Consensus) executeRound(ctx context.Context, prop consensus.Proposal, v
 	// 4. Broadcast what we received in step 3.
 	commitSet, err := c.broadcast.send(ctx, Bp.getBest())
 	if err != nil {
-		return xerrors.Errorf("couldn't broadcast: %w", err)
+		return xerrors.Errorf("couldn't broadcast: %v", err)
 	}
 
 	// 5. Get the best history from the second broadcast.

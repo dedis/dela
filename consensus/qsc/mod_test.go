@@ -71,6 +71,18 @@ func TestQSC_Basic(t *testing.T) {
 	require.GreaterOrEqual(t, len(cons[0].history), k)
 }
 
+func TestQSC_Listen(t *testing.T) {
+	qsc := &Consensus{
+		closing:          make(chan struct{}),
+		broadcast:        &fakeBroadcast{wait: true},
+		historiesFactory: &fakeFactory{},
+	}
+
+	actor, err := qsc.Listen(nil)
+	require.NoError(t, err)
+	require.NoError(t, actor.Close())
+}
+
 func TestQSC_ExecuteRound(t *testing.T) {
 	bc := &fakeBroadcast{}
 	factory := &fakeFactory{}
@@ -185,9 +197,14 @@ type fakeBroadcast struct {
 	broadcast
 	err   error
 	delay int
+	wait  bool
 }
 
-func (b *fakeBroadcast) send(context.Context, history) (*View, error) {
+func (b *fakeBroadcast) send(ctx context.Context, h history) (*View, error) {
+	if b.wait {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	if b.delay == 0 {
 		return nil, b.err
 	}

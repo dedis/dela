@@ -265,7 +265,7 @@ func (b *bTLCB) execute(ctx context.Context, message proto.Message) (*View, erro
 	fabric.Logger.Trace().Msgf("%d going through prepare broadcast", b.node)
 	prepareSet, err := b.b1.execute(ctx, m)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't broadcast: %w", err)
+		return nil, xerrors.Errorf("couldn't broadcast: %v", err)
 	}
 
 	m2, err := b.makeMessage(&MessageSet{Messages: prepareSet.GetReceived()})
@@ -276,7 +276,7 @@ func (b *bTLCB) execute(ctx context.Context, message proto.Message) (*View, erro
 	fabric.Logger.Trace().Msgf("%d going through commit broadcast", b.node)
 	commitSet, err := b.b2.execute(ctx, m2)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't broadcast: %w", err)
+		return nil, xerrors.Errorf("couldn't broadcast: %v", err)
 	}
 
 	ret, err := b.merge(prepareSet, commitSet)

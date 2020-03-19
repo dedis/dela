@@ -146,9 +146,10 @@ func checkSignatureValue(t *testing.T, pb *any.Any, value uint64) {
 }
 
 func TestActor_Propose(t *testing.T) {
-	rpc := &fakeRPC{}
+	rpc := &fakeRPC{close: true}
 	cosiActor := &fakeCosiActor{}
 	actor := &pbftActor{
+		closing:     make(chan struct{}),
 		hashFactory: sha256Factory{},
 		rpc:         rpc,
 		cosiActor:   cosiActor,
@@ -173,16 +174,11 @@ func TestActor_Propose(t *testing.T) {
 	require.NotNil(t, propagate)
 	require.Equal(t, []byte{0xaa}, propagate.GetTo())
 	checkSignatureValue(t, propagate.GetCommit(), 2)
-}
 
-func TestActor_Close(t *testing.T) {
-	actor := &pbftActor{
-		closing: make(chan struct{}),
-	}
-
+	rpc.close = false
 	require.NoError(t, actor.Close())
-	_, ok := <-actor.closing
-	require.False(t, ok)
+	err = actor.Propose(fakeProposal{}, fakeCA{})
+	require.NoError(t, err)
 }
 
 type badCosiActor struct {
@@ -238,6 +234,16 @@ func TestConsensus_ProposeFailures(t *testing.T) {
 	actor.rpc = &fakeRPC{err: xerrors.New("oops")}
 	err = actor.Propose(fakeProposal{}, fakeCA{})
 	require.EqualError(t, err, "couldn't propagate the link: oops")
+}
+
+func TestActor_Close(t *testing.T) {
+	actor := &pbftActor{
+		closing: make(chan struct{}),
+	}
+
+	require.NoError(t, actor.Close())
+	_, ok := <-actor.closing
+	require.False(t, ok)
 }
 
 func TestHandler_HashPrepare(t *testing.T) {
@@ -543,6 +549,7 @@ type fakeRPC struct {
 
 	calls []map[string]interface{}
 	err   error
+	close bool
 }
 
 func (rpc *fakeRPC) Call(pb proto.Message, memship mino.Players) (<-chan proto.Message, <-chan error) {
@@ -550,7 +557,7 @@ func (rpc *fakeRPC) Call(pb proto.Message, memship mino.Players) (<-chan proto.M
 	errs := make(chan error, 1)
 	if rpc.err != nil {
 		errs <- rpc.err
-	} else {
+	} else if rpc.close {
 		close(msgs)
 	}
 	rpc.calls = append(rpc.calls, map[string]interface{}{
