@@ -7,49 +7,153 @@ package skipchain
 
 import (
 	"context"
+	"crypto/rand"
 
 	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/consensus/cosipbft"
 	"go.dedis.ch/fabric/cosi"
+	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
 
-//go:generate protoc -I ./ --proto_path=../../ --go_out=Mblockchain/messages.proto=go.dedis.ch/fabric/blockchain:. ./messages.proto
+//go:generate protoc -I ./ --go_out=./ ./messages.proto
 
-// Skipchain implements the Blockchain interface by using collective signatures
-// to create a verifiable chain.
+// Skipchain is a blockchain that is using collective signatures to create links
+// between the blocks.
+//
+// - implements blockchain.Blockchain
 type Skipchain struct {
-	mino         mino.Mino
-	blockFactory *blockFactory
-	db           Database
-	consensus    consensus.Consensus
-	rpc          mino.RPC
+	mino      mino.Mino
+	cosi      cosi.CollectiveSigning
+	db        Database
+	consensus consensus.Consensus
 }
 
 // NewSkipchain returns a new instance of Skipchain.
 func NewSkipchain(m mino.Mino, cosi cosi.CollectiveSigning) *Skipchain {
 	consensus := cosipbft.NewCoSiPBFT(m, cosi)
+	db := NewInMemoryDatabase()
 
 	return &Skipchain{
-		mino: m,
-		blockFactory: newBlockFactory(
-			cosi,
-			consensus.GetChainFactory(),
-			m.GetAddressFactory(),
-		),
-		db:        NewInMemoryDatabase(),
+		mino:      m,
+		cosi:      cosi,
+		db:        db,
 		consensus: consensus,
 	}
 }
 
-func (s *Skipchain) initChain(conodes Conodes) error {
-	genesis, err := s.blockFactory.createGenesis(conodes, nil)
+// Listen implements blockchain.Blockchain. It registers the RPC and starts the
+// consensus module.
+func (s *Skipchain) Listen(v blockchain.Validator) (blockchain.Actor, error) {
+	actor := skipchainActor{
+		Skipchain:   s,
+		hashFactory: sha256Factory{},
+	}
+
+	var err error
+	actor.rpc, err = s.mino.MakeRPC("skipchain", newHandler(s))
 	if err != nil {
-		return xerrors.Errorf("couldn't create the genesis block: %v", err)
+		return nil, xerrors.Errorf("couldn't create the rpc: %v", err)
+	}
+
+	actor.consensus, err = s.consensus.Listen(&blockValidator{Skipchain: s, validator: v})
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't start the consensus: %v", err)
+	}
+
+	return actor, nil
+}
+
+// GetBlockFactory implements blockchain.Blockchain. It returns the block
+// factory for skipchains.
+func (s *Skipchain) GetBlockFactory() blockchain.BlockFactory {
+	return blockFactory{
+		Skipchain:   s,
+		hashFactory: sha256Factory{},
+	}
+}
+
+// GetBlock implements blockchain.Blockchain. It returns the latest block.
+func (s *Skipchain) GetBlock() (blockchain.Block, error) {
+	block, err := s.db.ReadLast()
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't read the latest block: %v", err)
+	}
+
+	return block, nil
+}
+
+// GetVerifiableBlock implements blockchain.Blockchain. It reads the latest
+// block of the chain and creates a verifiable proof of the shortest chain from
+// the genesis to the block.
+func (s *Skipchain) GetVerifiableBlock() (blockchain.VerifiableBlock, error) {
+	block, err := s.db.ReadLast()
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't read the latest block: %v", err)
+	}
+
+	chain, err := s.consensus.GetChain(block.GetHash())
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't read the chain: %v", err)
+	}
+
+	vb := VerifiableBlock{
+		SkipBlock: block,
+		Chain:     chain,
+	}
+
+	return vb, nil
+}
+
+// Watch implements blockchain.Blockchain. It registers the observer so that it
+// will be notified of new blocks.
+func (s *Skipchain) Watch(ctx context.Context, obs blockchain.Observer) {
+	// TODO
+}
+
+// skipchainActor provides the primitives of a blockchain actor.
+//
+// - implements blockchain.Actor
+type skipchainActor struct {
+	*Skipchain
+	hashFactory crypto.HashFactory
+	consensus   consensus.Actor
+	rpc         mino.RPC
+}
+
+// InitChain implements blockchain.Actor. It creates a genesis block if none
+// exists and propagate it to the conodes.
+func (a skipchainActor) InitChain(data proto.Message, players mino.Players) error {
+	ca, ok := players.(cosi.CollectiveAuthority)
+	if !ok {
+		return xerrors.New("players must implement cosi.CollectiveAuthority")
+	}
+
+	conodes := newConodes(ca)
+
+	// TODO: crypto module for randomness
+	randomBackLink := Digest{}
+	rand.Read(randomBackLink[:])
+
+	genesis, err := newSkipBlock(
+		a.hashFactory,
+		nil,
+		0,
+		conodes,
+		Digest{},
+		randomBackLink,
+		data,
+	)
+	if err != nil {
+		return xerrors.Errorf("couldn't create block: %v", err)
+	}
+
+	err = a.db.Write(genesis)
+	if err != nil {
+		return xerrors.Errorf("couldn't write genesis block: %v", err)
 	}
 
 	packed, err := genesis.Pack()
@@ -61,100 +165,27 @@ func (s *Skipchain) initChain(conodes Conodes) error {
 		Genesis: packed.(*BlockProto),
 	}
 
-	closing, errs := s.rpc.Call(msg, conodes)
+	closing, errs := a.rpc.Call(msg, conodes)
 	select {
 	case <-closing:
 	case err := <-errs:
-		fabric.Logger.Err(err).Msg("couldn't propagate genesis block")
-		return xerrors.Errorf("error in propagation: %v", err)
+		return xerrors.Errorf("couldn't propagate: %v", err)
 	}
 
 	return nil
 }
 
-// Listen starts the RPCs.
-func (s *Skipchain) Listen(v blockchain.Validator) (blockchain.Actor, error) {
-	rpc, err := s.mino.MakeRPC("skipchain", newHandler(s.db, s.blockFactory))
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't create the rpc: %v", err)
-	}
-
-	s.rpc = rpc
-
-	actor := skipchainActor{
-		db:           s.db,
-		blockFactory: s.blockFactory,
-	}
-
-	actor.consensus, err = s.consensus.Listen(&blockValidator{Skipchain: s, validator: v})
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't start the consensus: %v", err)
-	}
-
-	return actor, nil
-}
-
-// GetBlockFactory returns the block factory for skipchains.
-func (s *Skipchain) GetBlockFactory() blockchain.BlockFactory {
-	return s.blockFactory
-}
-
-// GetBlock returns the latest block.
-func (s *Skipchain) GetBlock() (blockchain.Block, error) {
-	block, err := s.db.ReadLast()
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't read the latest block: %v", err)
-	}
-
-	return block, nil
-}
-
-// GetVerifiableBlock reads the latest block of the chain and creates a verifiable
-// proof of the shortest chain from the genesis to the block.
-func (s *Skipchain) GetVerifiableBlock() (blockchain.VerifiableBlock, error) {
-	blocks, err := s.db.ReadAll()
-	if err != nil {
-		return nil, xerrors.Errorf("error when reading chain: %v", err)
-	}
-
-	if len(blocks) == 0 {
-		return nil, xerrors.Errorf("expecting at least one block")
-	}
-
-	last := blocks[len(blocks)-1]
-
-	chain, err := s.consensus.GetChain(last.GetHash())
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't read the chain: %v", err)
-	}
-
-	vb := VerifiableBlock{
-		SkipBlock: last,
-		Chain:     chain,
-	}
-
-	return vb, nil
-}
-
-// Watch registers the observer so that it will be notified of new blocks.
-func (s *Skipchain) Watch(ctx context.Context, obs blockchain.Observer) {
-
-}
-
-type skipchainActor struct {
-	db           Database
-	blockFactory *blockFactory
-	consensus    consensus.Actor
-}
-
-// Store will append a new block to chain filled with the data.
+// Store implements blockchain.Actor. It will append a new block to chain filled
+// with the data.
 func (a skipchainActor) Store(data proto.Message, players mino.Players) error {
+	factory := a.GetBlockFactory().(blockFactory)
+
 	previous, err := a.db.ReadLast()
 	if err != nil {
 		return xerrors.Errorf("couldn't read the latest block: %v", err)
 	}
 
-	block, err := a.blockFactory.fromPrevious(previous, data)
+	block, err := factory.fromPrevious(previous, data)
 	if err != nil {
 		return xerrors.Errorf("couldn't create next block: %v", err)
 	}

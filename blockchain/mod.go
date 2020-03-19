@@ -38,6 +38,11 @@ type Validator interface {
 
 // Actor is a primitive created by the blockchain to propose new blocks.
 type Actor interface {
+	// InitChain initializes a new chain by creating the genesis block with the
+	// given data stored as the payload and the given players to be the roster
+	// of the genesis block.
+	InitChain(data proto.Message, players mino.Players) error
+
 	// Store stores any representation of a data structure into a new block.
 	// The implementation is responsible for any validations required.
 	Store(data proto.Message, players mino.Players) error

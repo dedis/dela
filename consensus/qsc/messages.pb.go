@@ -315,7 +315,9 @@ func init() {
 	proto.RegisterType((*History)(nil), "qsc.History")
 }
 
-func init() { proto.RegisterFile("messages.proto", fileDescriptor_4dc296cbfe5ffcd5) }
+func init() {
+	proto.RegisterFile("messages.proto", fileDescriptor_4dc296cbfe5ffcd5)
+}
 
 var fileDescriptor_4dc296cbfe5ffcd5 = []byte{
 	// 371 bytes of a gzipped FileDescriptorProto

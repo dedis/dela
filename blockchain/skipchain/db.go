@@ -20,7 +20,7 @@ type InMemoryDatabase struct {
 // NewInMemoryDatabase creates a new in-memory storage for blocks.
 func NewInMemoryDatabase() *InMemoryDatabase {
 	return &InMemoryDatabase{
-		blocks: make([]SkipBlock, 1),
+		blocks: make([]SkipBlock, 0),
 	}
 }
 

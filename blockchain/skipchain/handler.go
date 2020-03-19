@@ -3,43 +3,45 @@ package skipchain
 import (
 	proto "github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric"
-	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
 
+// handler is the RPC handler. The only message processed is the genesis block
+// propagation.
+//
+// - implements mino.Handler
 type handler struct {
 	mino.UnsupportedHandler
-
-	db               Database
-	blockFactory     *blockFactory
-	publicKeyFactory crypto.PublicKeyFactory
+	*Skipchain
 }
 
-func newHandler(db Database, f *blockFactory) handler {
+func newHandler(sc *Skipchain) handler {
 	return handler{
-		db:               db,
-		blockFactory:     f,
-		publicKeyFactory: f.cosi.GetPublicKeyFactory(),
+		Skipchain: sc,
 	}
 }
 
+// Process implements mino.Handler. It handles genesis block propagation
+// messages only and return an error for any other type.
 func (h handler) Process(req proto.Message) (proto.Message, error) {
 	switch in := req.(type) {
 	case *PropagateGenesis:
-		genesis, err := h.blockFactory.decodeBlock(h.publicKeyFactory, in.GetGenesis())
+		factory := h.GetBlockFactory().(blockFactory)
+
+		genesis, err := factory.decodeBlock(in.GetGenesis())
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't decode the block: %v", err)
 		}
 
-		fabric.Logger.Debug().Msgf("New Genesis block written: %v", genesis.hash)
 		err = h.db.Write(genesis)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't write the block: %v", err)
 		}
-	default:
-		return nil, xerrors.Errorf("unknown message type: %#v", in)
-	}
 
-	return nil, nil
+		fabric.Logger.Trace().Msgf("New Genesis block written: %v", genesis.hash)
+		return nil, nil
+	default:
+		return nil, xerrors.Errorf("unknown message type '%T'", in)
+	}
 }
