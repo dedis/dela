@@ -53,6 +53,8 @@ type Actor interface {
 	// Propose performs the consensus algorithm using the list of nodes
 	// as participants.
 	Propose(proposal Proposal, players mino.Players) error
+
+	Close() error
 }
 
 // Consensus is an interface that provides primitives to propose data to a set

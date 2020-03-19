@@ -74,6 +74,7 @@ func (c *Consensus) Listen(v consensus.Validator) (consensus.Actor, error) {
 	}
 
 	actor := pbftActor{
+		closing:     make(chan struct{}),
 		hashFactory: c.factory.GetHashFactory(),
 	}
 
@@ -92,14 +93,16 @@ func (c *Consensus) Listen(v consensus.Validator) (consensus.Actor, error) {
 }
 
 type pbftActor struct {
+	closing     chan struct{}
 	hashFactory crypto.HashFactory
 	cosiActor   cosi.Actor
 	rpc         mino.RPC
 }
 
-// Propose takes the proposal and send it to the participants of the consensus.
-// It returns nil if the consensus is reached and that the participant are
-// committed to it, otherwise it returns the refusal reason.
+// Propose implements consensus.Actor. It takes the proposal and send it to the
+// participants of the consensus. It returns nil if the consensus is reached and
+// that the participant are committed to it, otherwise it returns the refusal
+// reason.
 func (a pbftActor) Propose(p consensus.Proposal, players mino.Players) error {
 	prepareReq, err := newPrepareRequest(p, a.hashFactory)
 	if err != nil {
@@ -144,11 +147,21 @@ func (a pbftActor) Propose(p consensus.Proposal, players mino.Players) error {
 	// TODO: timeout in context ?
 	resps, errs := a.rpc.Call(propagateReq, ca)
 	select {
+	case <-a.closing:
+		// Abort the RPC call.
+		// TODO: add context to the RPC.Call
 	case <-resps:
 	case err := <-errs:
 		return xerrors.Errorf("couldn't propagate the link: %v", err)
 	}
 
+	return nil
+}
+
+// Close implements consensus.Actor. It announces a close event to allow current
+// execution to be aborted.
+func (a pbftActor) Close() error {
+	close(a.closing)
 	return nil
 }
 

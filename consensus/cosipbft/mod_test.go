@@ -145,7 +145,7 @@ func checkSignatureValue(t *testing.T, pb *any.Any, value uint64) {
 	require.Equal(t, value, wrapper.GetValue())
 }
 
-func TestConsensus_Propose(t *testing.T) {
+func TestActor_Propose(t *testing.T) {
 	rpc := &fakeRPC{}
 	cosiActor := &fakeCosiActor{}
 	actor := &pbftActor{
@@ -173,6 +173,16 @@ func TestConsensus_Propose(t *testing.T) {
 	require.NotNil(t, propagate)
 	require.Equal(t, []byte{0xaa}, propagate.GetTo())
 	checkSignatureValue(t, propagate.GetCommit(), 2)
+}
+
+func TestActor_Close(t *testing.T) {
+	actor := &pbftActor{
+		closing: make(chan struct{}),
+	}
+
+	require.NoError(t, actor.Close())
+	_, ok := <-actor.closing
+	require.False(t, ok)
 }
 
 type badCosiActor struct {

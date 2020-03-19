@@ -49,26 +49,22 @@ func TestQSC_Basic(t *testing.T) {
 		actors[i] = actor
 	}
 
-	wg := sync.WaitGroup{}
-	wg.Add(n)
 	for j := 0; j < n; j++ {
 		actor := actors[j]
 		go func() {
-			defer wg.Done()
 			for i := 0; i < k; i++ {
 				err := actor.Propose(newFakeProposal(), nil)
 				require.NoError(t, err)
 			}
 		}()
 	}
-	wg.Wait()
 
 	for _, val := range validators {
 		val.wg.Wait()
 	}
 
-	for _, c := range cons {
-		require.NoError(t, c.Close())
+	for _, actor := range actors {
+		actor.Close()
 	}
 
 	require.Equal(t, cons[0].history, cons[1].history)
@@ -83,39 +79,41 @@ func TestQSC_ExecuteRound(t *testing.T) {
 		historiesFactory: factory,
 	}
 
+	ctx := context.Background()
+
 	bc.err = xerrors.New("oops")
-	err := qsc.executeRound(fakeProposal{}, &fakeValidator{})
+	err := qsc.executeRound(ctx, fakeProposal{}, &fakeValidator{})
 	require.EqualError(t, err, "couldn't broadcast: oops")
 
 	bc.delay = 1
 	factory.err = xerrors.New("oops")
-	err = qsc.executeRound(fakeProposal{}, &fakeValidator{})
+	err = qsc.executeRound(ctx, fakeProposal{}, &fakeValidator{})
 	require.Error(t, err)
 	require.True(t, xerrors.Is(err, encoding.NewDecodingError("broadcasted set", nil)))
 
 	bc.delay = 1
 	factory.delay = 1
-	err = qsc.executeRound(fakeProposal{}, &fakeValidator{})
+	err = qsc.executeRound(ctx, fakeProposal{}, &fakeValidator{})
 	require.EqualError(t, err, "couldn't broadcast: oops")
 
 	bc.err = nil
 	factory.delay = 1
-	err = qsc.executeRound(fakeProposal{}, &fakeValidator{})
+	err = qsc.executeRound(ctx, fakeProposal{}, &fakeValidator{})
 	require.Error(t, err)
 	require.True(t, xerrors.Is(err, encoding.NewDecodingError("received set", nil)))
 
 	factory.delay = 2
-	err = qsc.executeRound(fakeProposal{}, &fakeValidator{})
+	err = qsc.executeRound(ctx, fakeProposal{}, &fakeValidator{})
 	require.Error(t, err)
 	require.True(t, xerrors.Is(err, encoding.NewDecodingError("broadcasted set", nil)))
 
 	factory.delay = 3
-	err = qsc.executeRound(fakeProposal{}, &fakeValidator{})
+	err = qsc.executeRound(ctx, fakeProposal{}, &fakeValidator{})
 	require.Error(t, err)
 	require.True(t, xerrors.Is(err, encoding.NewDecodingError("received set", nil)))
 
 	factory.err = nil
-	err = qsc.executeRound(fakeProposal{}, badValidator{})
+	err = qsc.executeRound(ctx, fakeProposal{}, badValidator{})
 	require.EqualError(t, err, "couldn't commit: oops")
 }
 

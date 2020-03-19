@@ -32,11 +32,10 @@ var protoenc encoding.ProtoMarshaler = encoding.NewProtoEncoder()
 // decide to include them in the common state.
 type Consensus struct {
 	ch               chan consensus.Proposal
+	closing          chan struct{}
 	history          history
 	broadcast        broadcast
 	historiesFactory historiesFactory
-
-	Stopped chan struct{}
 }
 
 // NewQSC returns a new instance of QSC.
@@ -48,10 +47,10 @@ func NewQSC(node int64, mino mino.Mino, players mino.Players) (*Consensus, error
 
 	return &Consensus{
 		ch:               make(chan consensus.Proposal),
+		closing:          make(chan struct{}),
 		history:          make(history, 0),
 		broadcast:        bc,
 		historiesFactory: defaultHistoriesFactory{},
-		Stopped:          make(chan struct{}),
 	}, nil
 }
 
@@ -73,37 +72,47 @@ func (c *Consensus) Listen(val consensus.Validator) (consensus.Actor, error) {
 		for {
 			var proposal consensus.Proposal
 			select {
-			case prop, ok := <-c.ch:
-				if !ok {
-					fabric.Logger.Trace().Msg("closing")
-					return
-				}
-
-				proposal = prop
+			case <-c.closing:
+				fabric.Logger.Trace().Msg("closing")
+				return
+			case proposal = <-c.ch:
 			default:
 				// If the current node does not have anything to propose, it
 				// still has to participate so it sends an empty proposal.
 				proposal = nil
 			}
 
-			err := c.executeRound(proposal, val)
+			ctx, cancel := context.WithTimeout(context.Background(), EpochTimeout)
+
+			go func() {
+				// This Go routine is responsible for listening a close event
+				// from the actor.
+				select {
+				case <-ctx.Done():
+				case <-c.closing:
+					// Cancel the execution of the next time step.
+					cancel()
+				}
+			}()
+
+			err := c.executeRound(ctx, proposal, val)
 			if err != nil {
-				fabric.Logger.Err(err).Msg("failed to execute a time step")
+				select {
+				case <-c.closing:
+				default:
+					// Only log if the consensus has not been closed properly.
+					fabric.Logger.Err(err).Msg("failed to execute a time step")
+				}
 			}
+
+			cancel()
 		}
 	}()
 
-	return actor{ch: c.ch}, nil
+	return actor{ch: c.ch, closing: c.closing}, nil
 }
 
-// Close stops and cleans the main loop.
-func (c *Consensus) Close() error {
-	close(c.ch)
-
-	return nil
-}
-
-func (c *Consensus) executeRound(prop consensus.Proposal, val consensus.Validator) error {
+func (c *Consensus) executeRound(ctx context.Context, prop consensus.Proposal, val consensus.Validator) error {
 	// 1. Choose the message and the random value. The new epoch will be
 	// appended to the current history.
 	e := epoch{
@@ -121,12 +130,9 @@ func (c *Consensus) executeRound(prop consensus.Proposal, val consensus.Validato
 
 	// 2. Broadcast our history to the network and get back messages
 	// from this time step.
-	ctx, cancel := context.WithTimeout(context.Background(), EpochTimeout)
-	defer cancel()
-
 	prepareSet, err := c.broadcast.send(ctx, newHistory)
 	if err != nil {
-		return xerrors.Errorf("couldn't broadcast: %v", err)
+		return xerrors.Errorf("couldn't broadcast: %w", err)
 	}
 
 	// 3. Get the best history from the received messages.
@@ -138,7 +144,7 @@ func (c *Consensus) executeRound(prop consensus.Proposal, val consensus.Validato
 	// 4. Broadcast what we received in step 3.
 	commitSet, err := c.broadcast.send(ctx, Bp.getBest())
 	if err != nil {
-		return xerrors.Errorf("couldn't broadcast: %v", err)
+		return xerrors.Errorf("couldn't broadcast: %w", err)
 	}
 
 	// 5. Get the best history from the second broadcast.
@@ -177,11 +183,20 @@ func (c *Consensus) executeRound(prop consensus.Proposal, val consensus.Validato
 //
 // - implements consensus.Actor
 type actor struct {
-	ch chan consensus.Proposal
+	ch      chan consensus.Proposal
+	closing chan struct{}
 }
 
-// Propose implements consensus.Actor. It sends the proposal to the qsc loop.
+// Propose implements consensus.Actor. It sends the proposal to the qsc loop. If
+// the actor has been closed, it will panic.
 func (a actor) Propose(proposal consensus.Proposal, players mino.Players) error {
 	a.ch <- proposal
+	return nil
+}
+
+// Close implements consensus.Actor. It stops and cleans the main loop.
+func (a actor) Close() error {
+	close(a.closing)
+
 	return nil
 }
