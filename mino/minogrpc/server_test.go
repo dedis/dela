@@ -761,9 +761,22 @@ func TestRPC_MultipleRing_Stream(t *testing.T) {
 		Certificate: server3.cert.Leaf,
 	}
 
+	identifier4 := "127.0.0.1:2004"
+	addr4 := &address{
+		id: identifier4,
+	}
+	server4, err := CreateServer(addr4)
+	require.NoError(t, err)
+	server4.StartServer()
+	peer4 := Peer{
+		Address:     server4.listener.Addr().String(),
+		Certificate: server4.cert.Leaf,
+	}
+
 	server1.neighbours[identifier1] = peer1
 	server1.neighbours[identifier2] = peer2
 	server1.neighbours[identifier3] = peer3
+	server1.neighbours[identifier4] = peer4
 
 	uri := "blabla"
 	handler1 := testRingHandler{addrID: identifier1, neighborID: identifier2}
@@ -778,7 +791,8 @@ func TestRPC_MultipleRing_Stream(t *testing.T) {
 	// server.
 	server1.handlers[uri] = handler1
 	server2.handlers[uri] = testRingHandler{addrID: identifier2, neighborID: identifier3}
-	server3.handlers[uri] = testRingHandler{addrID: identifier3}
+	server3.handlers[uri] = testRingHandler{addrID: identifier3, neighborID: identifier4}
+	server4.handlers[uri] = testRingHandler{addrID: identifier4}
 
 	dummyMsg := &wrappers.StringValue{Value: "dummy_value"}
 	m, err := ptypes.MarshalAny(dummyMsg)
@@ -794,7 +808,7 @@ func TestRPC_MultipleRing_Stream(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	sender, rcvr := rpc.Stream(ctx, &fakePlayers{players: []address{*addr1, *addr2, *addr3}})
+	sender, rcvr := rpc.Stream(ctx, &fakePlayers{players: []address{*addr1, *addr2, *addr3, *addr4}})
 	localRcvr, ok := rcvr.(receiver)
 	require.True(t, ok)
 
@@ -820,12 +834,13 @@ func TestRPC_MultipleRing_Stream(t *testing.T) {
 	fmt.Println("got this message back: ", msg2, "ok?", ok)
 	fmt.Printf("%T\n", msg2)
 	require.True(t, ok)
-	require.Equal(t, "dummy_value_"+identifier1+"_"+identifier2+"_"+identifier3,
+	require.Equal(t, "dummy_value_"+identifier1+"_"+identifier2+"_"+identifier3+"_"+identifier4,
 		dummyMsg2.Value)
 
 	server1.grpcSrv.GracefulStop()
 	server2.grpcSrv.GracefulStop()
 	server3.grpcSrv.GracefulStop()
+	server4.grpcSrv.GracefulStop()
 	require.NoError(t, err)
 }
 
