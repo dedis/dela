@@ -23,7 +23,7 @@ type blockValidator struct {
 }
 
 // Validate implements consensus.Validator. It decodes the message into a block
-// and validate its integrity. It returns the block if it is correct, otherwise
+// and validates its integrity. It returns the block if it is correct, otherwise
 // the error.
 func (v *blockValidator) Validate(pb proto.Message) (consensus.Proposal, error) {
 	factory := v.GetBlockFactory().(blockFactory)
@@ -39,7 +39,8 @@ func (v *blockValidator) Validate(pb proto.Message) (consensus.Proposal, error) 
 	}
 
 	if !bytes.Equal(genesis.GetHash(), block.GenesisID.Bytes()) {
-		return nil, xerrors.Errorf("mismatch genesis hash %v != %v", genesis.hash, block.GenesisID)
+		return nil, xerrors.Errorf("mismatch genesis hash '%v' != '%v'",
+			genesis.hash, block.GenesisID)
 	}
 
 	err = v.validator.Validate(block.Payload)

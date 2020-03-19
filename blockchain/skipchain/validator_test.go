@@ -41,7 +41,7 @@ func TestBlockValidator_Validate(t *testing.T) {
 		v.Skipchain.db = fakeDatabase{genesisID: Digest{}}
 		_, err = v.Validate(packed)
 		require.EqualError(t, err,
-			fmt.Sprintf("mismatch genesis hash %v != %v", Digest{}, block.GenesisID))
+			fmt.Sprintf("mismatch genesis hash '%v' != '%v'", Digest{}, block.GenesisID))
 
 		v.Skipchain.db = fakeDatabase{genesisID: block.GenesisID}
 		v.validator = fakeValidator{err: xerrors.New("oops")}
