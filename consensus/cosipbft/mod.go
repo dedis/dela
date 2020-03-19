@@ -101,8 +101,7 @@ type pbftActor struct {
 
 // Propose implements consensus.Actor. It takes the proposal and send it to the
 // participants of the consensus. It returns nil if the consensus is reached and
-// that the participant are committed to it, otherwise it returns the refusal
-// reason.
+// the participant are committed to it, otherwise it returns the refusal reason.
 func (a pbftActor) Propose(p consensus.Proposal, players mino.Players) error {
 	prepareReq, err := newPrepareRequest(p, a.hashFactory)
 	if err != nil {
