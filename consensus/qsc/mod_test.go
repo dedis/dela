@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
@@ -74,6 +75,7 @@ func TestQSC_Basic(t *testing.T) {
 func TestQSC_Listen(t *testing.T) {
 	qsc := &Consensus{
 		closing:          make(chan struct{}),
+		stopped:          make(chan struct{}),
 		broadcast:        &fakeBroadcast{wait: true},
 		historiesFactory: &fakeFactory{},
 	}
@@ -81,6 +83,13 @@ func TestQSC_Listen(t *testing.T) {
 	actor, err := qsc.Listen(nil)
 	require.NoError(t, err)
 	require.NoError(t, actor.Close())
+
+	// Make sure the Go routine is stopped.
+	select {
+	case <-qsc.stopped:
+	case <-time.After(10 * time.Millisecond):
+		t.Fatal("timeout")
+	}
 }
 
 func TestQSC_ExecuteRound(t *testing.T) {
