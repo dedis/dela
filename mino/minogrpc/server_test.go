@@ -3,6 +3,7 @@ package minogrpc
 import (
 	context "context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -600,7 +601,6 @@ func TestRPC_MultipleSimple_Stream(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// TODO: investigate why GracefullStop yields an error
 	server1.grpcSrv.GracefulStop()
 	server2.grpcSrv.GracefulStop()
 	server3.grpcSrv.GracefulStop()
@@ -716,7 +716,113 @@ func TestRPC_MultipleChange_Stream(t *testing.T) {
 		require.Equal(t, dummyMsg.Value+dummyMsg.Value, dummyMsg2.Value)
 	}
 
-	// TODO: investigate why GracefullStop yields an error
+	server1.grpcSrv.GracefulStop()
+	server2.grpcSrv.GracefulStop()
+	server3.grpcSrv.GracefulStop()
+	require.NoError(t, err)
+}
+
+// Use multiple nodes to use a stream where each node sends a message to its
+// neighbor in a ring fashion.
+func TestRPC_MultipleRing_Stream(t *testing.T) {
+	identifier1 := "127.0.0.1:2001"
+	addr1 := &address{
+		id: identifier1,
+	}
+	server1, err := CreateServer(addr1)
+	require.NoError(t, err)
+	server1.StartServer()
+	peer1 := Peer{
+		Address:     server1.listener.Addr().String(),
+		Certificate: server1.cert.Leaf,
+	}
+
+	identifier2 := "127.0.0.1:2002"
+	addr2 := &address{
+		id: identifier2,
+	}
+	server2, err := CreateServer(addr2)
+	require.NoError(t, err)
+	server2.StartServer()
+	peer2 := Peer{
+		Address:     server2.listener.Addr().String(),
+		Certificate: server2.cert.Leaf,
+	}
+
+	identifier3 := "127.0.0.1:2003"
+	addr3 := &address{
+		id: identifier3,
+	}
+	server3, err := CreateServer(addr3)
+	require.NoError(t, err)
+	server3.StartServer()
+	peer3 := Peer{
+		Address:     server3.listener.Addr().String(),
+		Certificate: server3.cert.Leaf,
+	}
+
+	server1.neighbours[identifier1] = peer1
+	server1.neighbours[identifier2] = peer2
+	server1.neighbours[identifier3] = peer3
+
+	uri := "blabla"
+	handler1 := testRingHandler{addrID: identifier1, neighborID: identifier2}
+	rpc := RPC{
+		handler: handler1,
+		srv:     *server1,
+		uri:     uri,
+	}
+
+	// the handler must be registered on each server. Fron the client side, that
+	// means the "registerNamespace" and "makeRPC" must be called on each
+	// server.
+	server1.handlers[uri] = handler1
+	server2.handlers[uri] = testRingHandler{addrID: identifier2, neighborID: identifier3}
+	server3.handlers[uri] = testRingHandler{addrID: identifier3}
+
+	dummyMsg := &wrappers.StringValue{Value: "dummy_value"}
+	m, err := ptypes.MarshalAny(dummyMsg)
+	require.NoError(t, err)
+
+	msg := Envelope{
+		// From:    addr1.String(),
+		To:      []string{addr1.String()},
+		Relay:   addr1.String(),
+		Message: m,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sender, rcvr := rpc.Stream(ctx, &fakePlayers{players: []address{*addr1, *addr2, *addr3}})
+	localRcvr, ok := rcvr.(receiver)
+	require.True(t, ok)
+
+	select {
+	case err := <-localRcvr.errs:
+		t.Errorf("unexpected error in rcvr: %v", err)
+	case <-time.After(time.Millisecond * 200):
+	}
+
+	// sending message to server1, which should send to its neighbor, etc...
+	errs := sender.Send(&msg, addr1)
+	select {
+	case err, ok := <-errs:
+		if ok {
+			t.Error("unexpected error from send: ", err)
+		}
+	}
+
+	_, msg2, err := rcvr.Recv(context.Background())
+	require.NoError(t, err)
+
+	dummyMsg2, ok := msg2.(*wrappers.StringValue)
+	fmt.Println("got this message back: ", msg2, "ok?", ok)
+	fmt.Printf("%T\n", msg2)
+	require.True(t, ok)
+	require.Equal(t, "dummy_value_"+identifier1+"_"+identifier2+"_"+identifier3,
+		dummyMsg2.Value)
+
 	server1.grpcSrv.GracefulStop()
 	server2.grpcSrv.GracefulStop()
 	server3.grpcSrv.GracefulStop()
@@ -788,6 +894,7 @@ func TestReceiver_Recv(t *testing.T) {
 // -----------------
 // Utility functions
 
+// Handler:
 // implements a handler interface that just returns the input
 type testSameHandler struct {
 	timeout time.Duration
@@ -823,6 +930,7 @@ func (t testSameHandler) Stream(out mino.Sender, in mino.Receiver) error {
 	}
 }
 
+// Handler:
 // implements a handler interface that receives an address and adds a suffix to
 // it (for the call) or aggregate all the address (for the stream). The stream
 // expects 3 calls before returning the aggregate addresses.
@@ -916,4 +1024,50 @@ func (m fakeMembership) AddressIterator() mino.AddressIterator {
 
 func (m fakeMembership) Len() int {
 	return len(m.addrs)
+}
+
+// Handler:
+// implements a handler where the stream sends a message to its neighbot in a
+// ring fashion
+type testRingHandler struct {
+	mino.UnsupportedHandler
+	// a map to register the neighbor of each node
+	neighborID string
+	// address of the node
+	addrID string
+	// tells if it is the server that know all the other clients
+	isRelay bool
+}
+
+func (t testRingHandler) Stream(out mino.Sender, in mino.Receiver) error {
+	addr, msg, err := in.Recv(context.Background())
+	if err != nil {
+		return xerrors.Errorf("failed to receive message: %v", err)
+	}
+	fmt.Println("in handler from ", t.addrID+", received ", msg)
+
+	dummy, ok := msg.(*wrappers.StringValue)
+	if !ok {
+		return xerrors.Errorf("failed to cast to dummy string: %v (type %T)", msg, msg)
+	}
+
+	var to mino.Address
+	if t.neighborID == "" {
+		to = addr
+	} else {
+		to = address{t.neighborID}
+	}
+
+	stringMsg := dummy.Value + "_" + t.addrID
+
+	dummyReturn := &wrappers.StringValue{Value: stringMsg}
+	fmt.Println("Handler is sending to ", to)
+	errs := out.Send(dummyReturn, to)
+	err, ok = <-errs
+	if ok {
+		return xerrors.Errorf("got an error sending from the relay to the "+
+			"neighbor: %v", err)
+	}
+	fmt.Println("end of handler for ", t.addrID)
+	return nil
 }

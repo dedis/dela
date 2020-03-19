@@ -8,7 +8,8 @@ import "google/protobuf/any.proto";
 message Envelope {
     string from = 1;
     repeated string to = 2;
-    google.protobuf.Any message = 3;
+    string relay = 3;
+    google.protobuf.Any message = 4;
 }
 
 service Overlay {

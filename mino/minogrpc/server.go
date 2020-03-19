@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
 	"net"
@@ -222,7 +223,40 @@ func (rpc RPC) Stream(ctx context.Context,
 					return
 				}
 
-				orchRecv.in <- msg
+				// check if this is an envelop that needs to be forwarded
+				enveloppe := &Envelope{}
+				err = ptypes.UnmarshalAny(msg.Message, enveloppe)
+				if err == nil && len(enveloppe.To) != 0 {
+					fmt.Println("relaying message")
+					var dynamicAny ptypes.DynamicAny
+					err = ptypes.UnmarshalAny(enveloppe.Message, &dynamicAny)
+					if err != nil {
+						err = encoding.NewAnyDecodingError(enveloppe.Message, err)
+						fabric.Logger.Err(err).Send()
+						errs <- err
+						return
+					}
+					for _, addr := range enveloppe.To {
+						fmt.Println("sending relayed message from ", enveloppe.From, " to ", addr)
+						errChan := orchSender.Send(&Envelope{Message: enveloppe.Message}, address{addr})
+						err, ok := <-errChan
+						if ok {
+							err = xerrors.Errorf("failed to relay message: %v", err)
+							fabric.Logger.Err(err).Send()
+							errs <- err
+							return
+						}
+					}
+					continue
+				}
+				anyEnvelope, err := ptypes.MarshalAny(&Envelope{Message: msg.Message})
+				if err != nil {
+					err = xerrors.Errorf("failed to marshal envelope: %v", err)
+					fabric.Logger.Err(err).Send()
+					errs <- err
+					return
+				}
+				orchRecv.in <- &OverlayMsg{Message: anyEnvelope}
 			}
 		}()
 	}
@@ -367,6 +401,7 @@ type sender struct {
 	address      address
 	participants []player
 	name         string
+	relay        address
 }
 
 type player struct {
@@ -379,6 +414,7 @@ type player struct {
 // each addrs are done. This function guarantees that the error chan is
 // eventually closed.
 func (s sender) Send(msg proto.Message, addrs ...mino.Address) <-chan error {
+	fmt.Println("sender.Send() called for ", addrs)
 
 	errs := make(chan error, len(addrs))
 	var wg sync.WaitGroup
@@ -388,33 +424,64 @@ func (s sender) Send(msg proto.Message, addrs ...mino.Address) <-chan error {
 		go func(addr mino.Address) {
 			defer wg.Done()
 
-			player := s.getParticipant(addr)
-			if player == nil {
-				errs <- xerrors.Errorf("participant '%s' not in the list", addr)
-				return
-			}
-
 			msgAny, err := ptypes.MarshalAny(msg)
 			if err != nil {
 				errs <- encoding.NewAnyEncodingError(msg, err)
 				return
 			}
 
-			envelope := &Envelope{
-				From:    s.address.String(),
-				To:      []string{addr.String()},
-				Message: msgAny,
-			}
+			player := s.getParticipant(addr)
+			if player == nil {
+				// in this case we try to use the relay, which is the node that
+				// knows everyone
+				relay := s.getParticipant(s.relay)
+				if relay == nil {
+					errs <- xerrors.Errorf("participant '%s' not in the list "+
+						"and no relay found", addr)
+					return
+				}
+				fmt.Println("relay found: ", relay.address)
 
-			envelopeAny, err := ptypes.MarshalAny(envelope)
-			if err != nil {
-				errs <- encoding.NewAnyEncodingError(msg, err)
+				envelope := &Envelope{
+					From:    s.address.String(),
+					To:      []string{addr.String()},
+					Message: msgAny,
+				}
+				envelopeAny, err := ptypes.MarshalAny(envelope)
+				if err != nil {
+					errs <- encoding.NewAnyEncodingError(msg, err)
+					return
+				}
+				sendMsg := &OverlayMsg{
+					Message: envelopeAny,
+				}
+				err = relay.streamClient.Send(sendMsg)
+				if err == io.EOF {
+					return
+				}
+				if err != nil {
+					errs <- xerrors.Errorf("failed to call the send on client stream: %v", err)
+					return
+				}
 				return
 			}
 
+			// envelope := &Envelope{
+			// 	From:    s.address.String(),
+			// 	To:      []string{},
+			// 	Message: msgAny,
+			// }
+
+			// envelopeAny, err := ptypes.MarshalAny(envelope)
+			// if err != nil {
+			// 	errs <- encoding.NewAnyEncodingError(msg, err)
+			// 	return
+			// }
+
 			sendMsg := &OverlayMsg{
-				Message: envelopeAny,
+				Message: msgAny,
 			}
+
 			err = player.streamClient.Send(sendMsg)
 			if err == io.EOF {
 				return
