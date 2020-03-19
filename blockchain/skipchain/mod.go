@@ -59,7 +59,7 @@ func (s *Skipchain) Listen(v blockchain.Validator) (blockchain.Actor, error) {
 		return nil, xerrors.Errorf("couldn't create the rpc: %v", err)
 	}
 
-	actor.consensus, err = s.consensus.Listen(&blockValidator{Skipchain: s, validator: v})
+	actor.consensus, err = s.consensus.Listen(newBlockValidator(s, v))
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't start the consensus: %v", err)
 	}

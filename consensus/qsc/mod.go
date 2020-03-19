@@ -33,6 +33,7 @@ var protoenc encoding.ProtoMarshaler = encoding.NewProtoEncoder()
 type Consensus struct {
 	ch               chan consensus.Proposal
 	closing          chan struct{}
+	stopped          chan struct{}
 	history          history
 	broadcast        broadcast
 	historiesFactory historiesFactory
@@ -48,6 +49,7 @@ func NewQSC(node int64, mino mino.Mino, players mino.Players) (*Consensus, error
 	return &Consensus{
 		ch:               make(chan consensus.Proposal),
 		closing:          make(chan struct{}),
+		stopped:          make(chan struct{}),
 		history:          make(history, 0),
 		broadcast:        bc,
 		historiesFactory: defaultHistoriesFactory{},
@@ -74,6 +76,7 @@ func (c *Consensus) Listen(val consensus.Validator) (consensus.Actor, error) {
 			select {
 			case <-c.closing:
 				fabric.Logger.Trace().Msg("closing")
+				close(c.stopped)
 				return
 			case proposal = <-c.ch:
 			default:

@@ -17,6 +17,9 @@ func TestBlockValidator_Validate(t *testing.T) {
 		require.NoError(t, err)
 
 		v := &blockValidator{
+			queue: &blockQueue{
+				buffer: make(map[Digest]SkipBlock),
+			},
 			validator: fakeValidator{},
 			Skipchain: &Skipchain{
 				db:        fakeDatabase{genesisID: block.GenesisID},
@@ -57,21 +60,27 @@ func TestBlockValidator_Validate(t *testing.T) {
 
 func TestBlockValidator_Commit(t *testing.T) {
 	v := &blockValidator{
+		queue:     &blockQueue{buffer: make(map[Digest]SkipBlock)},
 		validator: fakeValidator{},
 		Skipchain: &Skipchain{db: fakeDatabase{}},
 	}
 
-	v.buffer = SkipBlock{hash: Digest{1, 2, 3}}
+	v.queue.Add(SkipBlock{hash: Digest{1, 2, 3}})
+	v.queue.Add(SkipBlock{hash: Digest{1, 3}})
 	err := v.Commit(Digest{1, 2, 3}.Bytes())
 	require.NoError(t, err)
+	require.Len(t, v.queue.buffer, 0)
 
 	err = v.Commit([]byte{0xaa})
-	require.EqualError(t, err, "unknown block aa")
+	require.EqualError(t, err,
+		fmt.Sprintf("couldn't find block '%v'", Digest{0xaa}))
 
+	v.queue.Add(SkipBlock{hash: Digest{1, 2, 3}})
 	v.Skipchain.db = fakeDatabase{err: xerrors.New("oops")}
 	err = v.Commit(Digest{1, 2, 3}.Bytes())
 	require.EqualError(t, err, "couldn't persist the block: oops")
 
+	v.queue.Add(SkipBlock{hash: Digest{1, 2, 3}})
 	v.Skipchain.db = fakeDatabase{}
 	v.validator = fakeValidator{err: xerrors.New("oops")}
 	err = v.Commit(Digest{1, 2, 3}.Bytes())

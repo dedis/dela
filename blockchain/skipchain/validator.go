@@ -2,6 +2,7 @@ package skipchain
 
 import (
 	"bytes"
+	"sync"
 
 	proto "github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric"
@@ -19,7 +20,17 @@ type blockValidator struct {
 	*Skipchain
 
 	validator blockchain.Validator
-	buffer    SkipBlock
+	queue     *blockQueue
+}
+
+func newBlockValidator(s *Skipchain, v blockchain.Validator) *blockValidator {
+	return &blockValidator{
+		Skipchain: s,
+		validator: v,
+		queue: &blockQueue{
+			buffer: make(map[Digest]SkipBlock),
+		},
+	}
 }
 
 // Validate implements consensus.Validator. It decodes the message into a block
@@ -48,7 +59,7 @@ func (v *blockValidator) Validate(pb proto.Message) (consensus.Proposal, error) 
 		return nil, xerrors.Errorf("couldn't validate the payload: %v", err)
 	}
 
-	v.buffer = block
+	v.queue.Add(block)
 
 	return block, nil
 }
@@ -56,12 +67,13 @@ func (v *blockValidator) Validate(pb proto.Message) (consensus.Proposal, error) 
 // Commit implements consensus.Validator. It commits the block that matches the
 // identifier if it is present.
 func (v *blockValidator) Commit(id []byte) error {
-	// TODO: multi-block buffer.
 	// TODO: atomic operation if commit failed.
-	block := v.buffer
+	digest := Digest{}
+	copy(digest[:], id)
 
-	if !bytes.Equal(id, block.GetHash()) {
-		return xerrors.Errorf("unknown block %x", id)
+	block, ok := v.queue.Get(digest)
+	if !ok {
+		return xerrors.Errorf("couldn't find block '%v'", digest)
 	}
 
 	err := v.db.Write(block)
@@ -75,6 +87,37 @@ func (v *blockValidator) Commit(id []byte) error {
 	}
 
 	fabric.Logger.Trace().Msgf("commit to block %v", block.hash)
+	v.queue.Clear()
 
 	return nil
+}
+
+type blockQueue struct {
+	sync.Mutex
+
+	buffer map[Digest]SkipBlock
+}
+
+func (q *blockQueue) Get(id Digest) (SkipBlock, bool) {
+	q.Lock()
+	defer q.Unlock()
+
+	block, ok := q.buffer[id]
+	return block, ok
+}
+
+func (q *blockQueue) Add(block SkipBlock) {
+	q.Lock()
+	defer q.Unlock()
+
+	// As the block is indexed by the hash, it does not matter if it overrides
+	// an already existing one.
+	q.buffer[block.hash] = block
+}
+
+func (q *blockQueue) Clear() {
+	q.Lock()
+	defer q.Unlock()
+
+	q.buffer = make(map[Digest]SkipBlock)
 }
