@@ -105,8 +105,7 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 	// For the moment this sender can only receive messages to itself
 	// TODO: find a way to know the other nodes.
 	sender := sender{
-		// empty now
-		address: address{},
+		address: address{addr},
 		participants: []player{
 			{
 				address:      address{addr},

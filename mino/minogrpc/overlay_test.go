@@ -139,13 +139,6 @@ func TestOverlay_Stream(t *testing.T) {
 	// We have to wait there so we catch the goroutine error
 	time.Sleep(time.Microsecond * 400)
 
-	// Now we use a handler that checks if an error is received. There should be
-	// an error because the receiver.Recv() expects an enveloppe but we are
-	// giving an empty
-	streamServer.recvError = false
-	overlayService.handlers["handler_key"] = testFailHandler2{t: t}
-	err = overlayService.Stream(&streamServer)
-	require.NoError(t, err)
 }
 
 // -----------------
@@ -197,13 +190,4 @@ type testFailHandler2 struct {
 
 func (t testFailHandler2) Process(req proto.Message) (proto.Message, error) {
 	return nil, nil
-}
-
-func (t testFailHandler2) Stream(out mino.Sender, in mino.Receiver) error {
-	any, err := ptypes.MarshalAny(&empty.Empty{})
-	require.NoError(t.t, err)
-
-	_, _, err = in.Recv(context.Background())
-	require.EqualError(t.t, err, encoding.NewAnyDecodingError(any, errors.New("mismatched message type: got \"google.protobuf.Empty\" want \"minogrpc.Envelope\"")).Error())
-	return nil
 }

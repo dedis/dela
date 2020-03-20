@@ -3,7 +3,6 @@ package minogrpc
 import (
 	context "context"
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -421,21 +420,16 @@ func TestRPC_SingleSimple_Stream(t *testing.T) {
 	sender, receiver := rpc.Stream(ctx, &fakePlayers{players: []address{*addr}})
 
 	errs := sender.Send(&msg, addr)
-	select {
-	case err, ok := <-errs:
-		if ok {
-			t.Error("unexpected error from send: ", err)
-		}
+	err, more := <-errs
+	if more {
+		t.Error("unexpected error from send: ", err)
 	}
 
 	_, msg2, err := receiver.Recv(context.Background())
 	require.NoError(t, err)
 
-	enveloppe, ok := msg2.(*Envelope)
+	_, ok := msg2.(*empty.Empty)
 	require.True(t, ok)
-	empty2 := &empty.Empty{}
-	err = ptypes.UnmarshalAny(enveloppe.Message, empty2)
-	require.NoError(t, err)
 
 	server.grpcSrv.GracefulStop()
 
@@ -540,15 +534,6 @@ func TestRPC_MultipleSimple_Stream(t *testing.T) {
 	server2.handlers[uri] = handler
 	server3.handlers[uri] = handler
 
-	m, err := ptypes.MarshalAny(&empty.Empty{})
-	require.NoError(t, err)
-
-	msg := Envelope{
-		From:    addr1.String(),
-		To:      []string{addr1.String()},
-		Message: m,
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -564,41 +549,31 @@ func TestRPC_MultipleSimple_Stream(t *testing.T) {
 	}
 
 	// sending to one server and checking if we got an empty back
-	errs := sender.Send(&msg, addr1)
-	select {
-	case err, ok := <-errs:
-		if ok {
-			t.Error("unexpected error from send: ", err)
-		}
+	errs := sender.Send(&empty.Empty{}, addr1)
+	err, more := <-errs
+	if more {
+		t.Error("unexpected error from send: ", err)
 	}
 
 	_, msg2, err := rcvr.Recv(context.Background())
 	require.NoError(t, err)
 
-	enveloppe, ok := msg2.(*Envelope)
+	_, ok = msg2.(*empty.Empty)
 	require.True(t, ok)
-	empty2 := &empty.Empty{}
-	err = ptypes.UnmarshalAny(enveloppe.Message, empty2)
-	require.NoError(t, err)
 
 	// sending to three servers
-	errs = sender.Send(&msg, addr1, addr2, addr3)
-	select {
-	case err, ok := <-errs:
-		if ok {
-			t.Error("unexpected error from send: ", err)
-		}
+	errs = sender.Send(&empty.Empty{}, addr1, addr2, addr3)
+	err, more = <-errs
+	if more {
+		t.Error("unexpected error from send: ", err)
 	}
 
 	// we should get three responses
 	for i := 0; i < 3; i++ {
 		_, msg2, err := rcvr.Recv(context.Background())
 		require.NoError(t, err)
-		enveloppe, ok := msg2.(*Envelope)
+		_, ok := msg2.(*empty.Empty)
 		require.True(t, ok)
-		empty2 := &empty.Empty{}
-		err = ptypes.UnmarshalAny(enveloppe.Message, empty2)
-		require.NoError(t, err)
 	}
 
 	server1.grpcSrv.GracefulStop()
@@ -664,15 +639,7 @@ func TestRPC_MultipleChange_Stream(t *testing.T) {
 	server2.handlers[uri] = handler
 	server3.handlers[uri] = handler
 
-	dummyMsg := &wrappers.StringValue{Value: "dummy_value"}
-	m, err := ptypes.MarshalAny(dummyMsg)
-	require.NoError(t, err)
-
-	msg := Envelope{
-		From:    addr1.String(),
-		To:      []string{addr1.String()},
-		Message: m,
-	}
+	m := &wrappers.StringValue{Value: "dummy_value"}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -688,32 +655,25 @@ func TestRPC_MultipleChange_Stream(t *testing.T) {
 	}
 
 	// sending two messages, we should get one from each server
-	errs := sender.Send(&msg, addr1, addr2, addr3)
-	select {
-	case err, ok := <-errs:
-		if ok {
-			t.Error("unexpected error from send: ", err)
-		}
+	errs := sender.Send(m, addr1, addr2, addr3)
+	err, more := <-errs
+	if more {
+		t.Error("unexpected error from send: ", err)
 	}
 
-	errs = sender.Send(&msg, addr1, addr2, addr3)
-	select {
-	case err, ok := <-errs:
-		if ok {
-			t.Error("unexpected error from send: ", err)
-		}
+	errs = sender.Send(m, addr1, addr2, addr3)
+	err, more = <-errs
+	if more {
+		t.Error("unexpected error from send: ", err)
 	}
 
 	for i := 0; i < 3; i++ {
 		_, msg2, err := rcvr.Recv(context.Background())
 		require.NoError(t, err)
 
-		enveloppe, ok := msg2.(*Envelope)
+		dummyMsg2, ok := msg2.(*wrappers.StringValue)
 		require.True(t, ok)
-		dummyMsg2 := &wrappers.StringValue{}
-		err = ptypes.UnmarshalAny(enveloppe.Message, dummyMsg2)
-		require.NoError(t, err)
-		require.Equal(t, dummyMsg.Value+dummyMsg.Value, dummyMsg2.Value)
+		require.Equal(t, m.Value+m.Value, dummyMsg2.Value)
 	}
 
 	server1.grpcSrv.GracefulStop()
@@ -820,19 +780,15 @@ func TestRPC_MultipleRing_Stream(t *testing.T) {
 
 	// sending message to server1, which should send to its neighbor, etc...
 	errs := sender.Send(&msg, addr1)
-	select {
-	case err, ok := <-errs:
-		if ok {
-			t.Error("unexpected error from send: ", err)
-		}
+	err, more := <-errs
+	if more {
+		t.Error("unexpected error from send: ", err)
 	}
 
 	_, msg2, err := rcvr.Recv(context.Background())
 	require.NoError(t, err)
 
 	dummyMsg2, ok := msg2.(*wrappers.StringValue)
-	fmt.Println("got this message back: ", msg2, "ok?", ok)
-	fmt.Printf("%T\n", msg2)
 	require.True(t, ok)
 	require.Equal(t, "dummy_value_"+identifier1+"_"+identifier2+"_"+identifier3+"_"+identifier4,
 		dummyMsg2.Value)
@@ -851,24 +807,20 @@ func TestSender_Send(t *testing.T) {
 
 	// sending to an empty list should not yield an error
 	errs := sender.Send(nil)
-	select {
-	case err, ok := <-errs:
-		if ok {
-			t.Error("unexpected error from send: ", err)
-		}
+	err, more := <-errs
+	if more {
+		t.Error("unexpected error from send: ", err)
 	}
 
 	// giving an empty address should add an error since it won't be found in the list of
 	// participants
 	addr := address{}
-	errs = sender.Send(nil, addr)
-	select {
-	case err, ok := <-errs:
-		if !ok {
-			t.Error("there should be an error")
-		}
-		require.EqualError(t, err, xerrors.Errorf("participant '%s' not in the list", addr).Error())
+	errs = sender.Send(&empty.Empty{}, addr)
+	err, more = <-errs
+	if !more {
+		t.Error("there should be an error")
 	}
+	require.EqualError(t, err, "failed to send back a message that should be relayed. My client '' was not found in the list of participant: '[]'")
 
 	// now I add the participant to the list, an error should be given since the
 	// message is nil
@@ -877,13 +829,11 @@ func TestSender_Send(t *testing.T) {
 		address: addr,
 	})
 	errs = sender.Send(nil, addr)
-	select {
-	case err, ok := <-errs:
-		if !ok {
-			t.Error("there should be an error")
-		}
-		require.EqualError(t, err, encoding.NewAnyEncodingError(nil, errors.New("proto: Marshal called with nil")).Error())
+	err, more = <-errs
+	if !more {
+		t.Error("there should be an error")
 	}
+	require.EqualError(t, err, encoding.NewAnyEncodingError(nil, errors.New("proto: Marshal called with nil")).Error())
 }
 
 func TestReceiver_Recv(t *testing.T) {
@@ -936,11 +886,9 @@ func (t testSameHandler) Stream(out mino.Sender, in mino.Receiver) error {
 			return xerrors.Errorf("failed to receive message in handler: %v", err)
 		}
 		errs := out.Send(msg, addr)
-		select {
-		case err, ok := <-errs:
-			if ok {
-				return xerrors.Errorf("failed to send message to the sender: %v", err)
-			}
+		err, more := <-errs
+		if more {
+			return xerrors.Errorf("failed to send message to the sender: %v", err)
 		}
 	}
 }
@@ -978,31 +926,19 @@ func (t testModifyHandler) Stream(out mino.Sender, in mino.Receiver) error {
 			return xerrors.Errorf("failed to receive message in handler: %v", err)
 		}
 
-		enveloppe, ok := msg.(*Envelope)
+		dummy, ok := msg.(*wrappers.StringValue)
 		if !ok {
-			return xerrors.New("failed to cast message to envelope")
-		}
-
-		dummy := &wrappers.StringValue{}
-		err = ptypes.UnmarshalAny(enveloppe.Message, dummy)
-		if err != nil {
-			return xerrors.Errorf("failed to unmarshal dummy message: %v", err)
+			return xerrors.Errorf("failed to cast message to StringValue: %T", msg)
 		}
 
 		dummyMsg += dummy.Value
 	}
 	dummyReturn := &wrappers.StringValue{Value: dummyMsg}
-	anyDummy, err := ptypes.MarshalAny(dummyReturn)
-	if err != nil {
-		return xerrors.Errorf("failed to marshal any: %v", err)
-	}
 
-	errs := out.Send(&Envelope{Message: anyDummy}, addr)
-	select {
-	case err, ok := <-errs:
-		if ok {
-			return xerrors.Errorf("failed to send message to the sender: %v", err)
-		}
+	errs := out.Send(dummyReturn, addr)
+	err, more := <-errs
+	if more {
+		return xerrors.Errorf("failed to send message to the sender: %v", err)
 	}
 
 	return nil
@@ -1055,11 +991,10 @@ type testRingHandler struct {
 }
 
 func (t testRingHandler) Stream(out mino.Sender, in mino.Receiver) error {
-	addr, msg, err := in.Recv(context.Background())
+	_, msg, err := in.Recv(context.Background())
 	if err != nil {
 		return xerrors.Errorf("failed to receive message: %v", err)
 	}
-	fmt.Println("in handler from ", t.addrID+", received ", msg)
 
 	dummy, ok := msg.(*wrappers.StringValue)
 	if !ok {
@@ -1067,8 +1002,12 @@ func (t testRingHandler) Stream(out mino.Sender, in mino.Receiver) error {
 	}
 
 	var to mino.Address
+	// if I have no neighbor that means I am at the end of the ring. In that
+	// case I send the message to myself, so the message won't be relayed
+	// (because my own address is in the list of participants) and the receiver
+	// channel will be filled.
 	if t.neighborID == "" {
-		to = addr
+		to = address{t.addrID}
 	} else {
 		to = address{t.neighborID}
 	}
@@ -1076,13 +1015,11 @@ func (t testRingHandler) Stream(out mino.Sender, in mino.Receiver) error {
 	stringMsg := dummy.Value + "_" + t.addrID
 
 	dummyReturn := &wrappers.StringValue{Value: stringMsg}
-	fmt.Println("Handler is sending to ", to)
 	errs := out.Send(dummyReturn, to)
-	err, ok = <-errs
-	if ok {
+	err, more := <-errs
+	if more {
 		return xerrors.Errorf("got an error sending from the relay to the "+
 			"neighbor: %v", err)
 	}
-	fmt.Println("end of handler for ", t.addrID)
 	return nil
 }
