@@ -1,6 +1,7 @@
 package skipchain
 
 import (
+	"context"
 	"testing"
 
 	proto "github.com/golang/protobuf/proto"
@@ -40,9 +41,17 @@ func TestSkipchain_Basic(t *testing.T) {
 	err := a1.InitChain(&empty.Empty{}, conodes)
 	require.NoError(t, err)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	blocks := s1.Watch(ctx)
+
 	for i := 0; i < n; i++ {
 		err = a2.Store(&empty.Empty{}, conodes)
 		require.NoError(t, err)
+
+		event := <-blocks
+		require.NotNil(t, event)
+		require.IsType(t, SkipBlock{}, event)
 
 		chain, err := s1.GetVerifiableBlock()
 		require.NoError(t, err)
@@ -54,6 +63,7 @@ func TestSkipchain_Basic(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, block)
 		require.Equal(t, uint64(i+1), block.(SkipBlock).Index)
+		require.Equal(t, event, block)
 	}
 }
 
@@ -114,6 +124,23 @@ func TestSkipchain_GetVerifiableBlock(t *testing.T) {
 	require.EqualError(t, err, "couldn't read the chain: oops")
 }
 
+func TestSkipchain_Watch(t *testing.T) {
+	w := &fakeWatcher{}
+	s := &Skipchain{
+		watcher: w,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	blocks := s.Watch(ctx)
+	require.NotNil(t, blocks)
+	require.Equal(t, 1, w.count)
+
+	cancel()
+	_, ok := <-blocks
+	require.False(t, ok)
+	require.Equal(t, 0, w.count)
+}
+
 func TestActor_InitChain(t *testing.T) {
 	actor := skipchainActor{
 		hashFactory: sha256Factory{},
@@ -164,6 +191,19 @@ func TestActor_Store(t *testing.T) {
 	actor.consensus = fakeConsensusActor{err: xerrors.New("oops")}
 	err = actor.Store(&empty.Empty{}, Conodes{})
 	require.EqualError(t, err, "couldn't propose the block: oops")
+}
+
+func TestObserver_NotifyCallback(t *testing.T) {
+	obs := skipchainObserver{
+		ch: make(chan blockchain.Block, 1),
+	}
+
+	obs.NotifyCallback(struct{}{})
+	require.Len(t, obs.ch, 0)
+
+	obs.NotifyCallback(SkipBlock{Index: 1})
+	block := <-obs.ch
+	require.Equal(t, uint64(1), block.(SkipBlock).Index)
 }
 
 // -----------------
