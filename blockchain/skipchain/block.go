@@ -122,7 +122,7 @@ func (b SkipBlock) Pack() (proto.Message, error) {
 		return nil, encoding.NewAnyEncodingError(b.Payload, err)
 	}
 
-	conodes, err := b.Conodes.ToProto()
+	roster, err := b.Conodes.Pack()
 	if err != nil {
 		return nil, encoding.NewEncodingError("conodes", err)
 	}
@@ -132,7 +132,7 @@ func (b SkipBlock) Pack() (proto.Message, error) {
 		GenesisID: b.GenesisID.Bytes(),
 		Backlink:  b.BackLink.Bytes(),
 		Payload:   payloadAny,
-		Conodes:   conodes,
+		Roster:    roster.(*Roster),
 	}
 
 	return blockproto, nil
@@ -304,7 +304,7 @@ func (f blockFactory) decodeBlock(src proto.Message) (SkipBlock, error) {
 	backLink := Digest{}
 	copy(backLink[:], in.GetBacklink())
 
-	conodes, err := f.decodeConodes(in.GetConodes())
+	conodes, err := f.decodeConodes(in.GetRoster().GetConodes())
 	if err != nil {
 		return SkipBlock{}, xerrors.Errorf("couldn't create the conodes: %v", err)
 	}

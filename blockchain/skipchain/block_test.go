@@ -103,7 +103,8 @@ func TestSkipBlock_Hash(t *testing.T) {
 	require.EqualError(t, err, "couldn't write index: oops")
 
 	_, err = block.computeHash(badHashFactory{delay: 1})
-	require.EqualError(t, err, "couldn't write conodes: oops")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "couldn't write conodes: ")
 
 	_, err = block.computeHash(badHashFactory{delay: 3})
 	require.EqualError(t, err, "couldn't write genesis hash: oops")
@@ -403,11 +404,12 @@ func (s SkipBlock) Generate(rand *rand.Rand, size int) reflect.Value {
 }
 
 type fakeAddress struct {
-	id []byte
+	id  []byte
+	err error
 }
 
 func (a fakeAddress) MarshalText() ([]byte, error) {
-	return []byte(a.id), nil
+	return []byte(a.id), a.err
 }
 
 func (a fakeAddress) String() string {
@@ -416,14 +418,15 @@ func (a fakeAddress) String() string {
 
 type fakePublicKey struct {
 	crypto.PublicKey
+	err error
 }
 
 func (pk fakePublicKey) MarshalBinary() ([]byte, error) {
-	return []byte{}, nil
+	return []byte{}, pk.err
 }
 
 func (pk fakePublicKey) Pack() (proto.Message, error) {
-	return &empty.Empty{}, nil
+	return &empty.Empty{}, pk.err
 }
 
 type testProtoEncoder struct {
