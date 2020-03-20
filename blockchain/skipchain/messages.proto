@@ -11,6 +11,10 @@ message ConodeProto {
     google.protobuf.Any publicKey = 2;
 }
 
+message Roster {
+    repeated ConodeProto conodes = 1;
+}
+
 // BlockProto is the message that contains the minimal data to instantiate a
 // block. It is not sufficient to prove the block integrity as the chain from
 // the genesis block is missing.
@@ -18,8 +22,8 @@ message BlockProto {
     uint64 index = 1;
     bytes genesisID = 5;
     bytes backlink = 6;
-    google.protobuf.Any payload = 7;
-    repeated ConodeProto conodes = 8;
+    Roster roster = 7;
+    google.protobuf.Any payload = 8;
 }
 
 // VerifiableBlockProto is the message that contains a verifiable block. It
