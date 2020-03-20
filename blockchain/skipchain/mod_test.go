@@ -90,14 +90,14 @@ func TestSkipchain_Listen(t *testing.T) {
 func TestSkipchain_GetBlock(t *testing.T) {
 	digest := Digest{1, 2, 3}
 	s := &Skipchain{
-		db: fakeDatabase{genesisID: digest},
+		db: &fakeDatabase{genesisID: digest},
 	}
 
 	block, err := s.GetBlock()
 	require.NoError(t, err)
 	require.Equal(t, digest, block.(SkipBlock).hash)
 
-	s.db = fakeDatabase{err: xerrors.New("oops")}
+	s.db = &fakeDatabase{err: xerrors.New("oops")}
 	_, err = s.GetBlock()
 	require.EqualError(t, err, "couldn't read the latest block: oops")
 }
@@ -105,7 +105,7 @@ func TestSkipchain_GetBlock(t *testing.T) {
 func TestSkipchain_GetVerifiableBlock(t *testing.T) {
 	digest := Digest{1, 2, 3}
 	s := &Skipchain{
-		db:        fakeDatabase{genesisID: digest},
+		db:        &fakeDatabase{genesisID: digest},
 		consensus: fakeConsensus{},
 	}
 
@@ -114,11 +114,11 @@ func TestSkipchain_GetVerifiableBlock(t *testing.T) {
 	require.Equal(t, digest, block.(VerifiableBlock).hash)
 	require.NotNil(t, block.(VerifiableBlock).Chain)
 
-	s.db = fakeDatabase{err: xerrors.New("oops")}
+	s.db = &fakeDatabase{err: xerrors.New("oops")}
 	_, err = s.GetVerifiableBlock()
 	require.EqualError(t, err, "couldn't read the latest block: oops")
 
-	s.db = fakeDatabase{}
+	s.db = &fakeDatabase{}
 	s.consensus = fakeConsensus{err: xerrors.New("oops")}
 	_, err = s.GetVerifiableBlock()
 	require.EqualError(t, err, "couldn't read the chain: oops")
@@ -145,7 +145,7 @@ func TestActor_InitChain(t *testing.T) {
 	actor := skipchainActor{
 		hashFactory: sha256Factory{},
 		Skipchain: &Skipchain{
-			db: fakeDatabase{},
+			db: &fakeDatabase{},
 		},
 		rpc: fakeRPC{},
 	}
@@ -162,11 +162,11 @@ func TestActor_InitChain(t *testing.T) {
 	require.Contains(t, err.Error(), "couldn't create block: ")
 
 	actor.hashFactory = sha256Factory{}
-	actor.Skipchain.db = fakeDatabase{err: xerrors.New("oops")}
+	actor.Skipchain.db = &fakeDatabase{err: xerrors.New("oops")}
 	err = actor.InitChain(&empty.Empty{}, Conodes{})
 	require.EqualError(t, err, "couldn't write genesis block: oops")
 
-	actor.Skipchain.db = fakeDatabase{}
+	actor.Skipchain.db = &fakeDatabase{}
 	actor.rpc = fakeRPC{err: xerrors.New("oops")}
 	err = actor.InitChain(&empty.Empty{}, Conodes{})
 	require.EqualError(t, err, "couldn't propagate: oops")
@@ -175,7 +175,7 @@ func TestActor_InitChain(t *testing.T) {
 func TestActor_Store(t *testing.T) {
 	actor := skipchainActor{
 		Skipchain: &Skipchain{
-			db: fakeDatabase{},
+			db: &fakeDatabase{},
 		},
 		consensus: fakeConsensusActor{},
 	}
@@ -183,11 +183,11 @@ func TestActor_Store(t *testing.T) {
 	err := actor.Store(&empty.Empty{}, Conodes{})
 	require.NoError(t, err)
 
-	actor.Skipchain.db = fakeDatabase{err: xerrors.New("oops")}
+	actor.Skipchain.db = &fakeDatabase{err: xerrors.New("oops")}
 	err = actor.Store(&empty.Empty{}, Conodes{})
 	require.EqualError(t, err, "couldn't read the latest block: oops")
 
-	actor.Skipchain.db = fakeDatabase{}
+	actor.Skipchain.db = &fakeDatabase{}
 	actor.consensus = fakeConsensusActor{err: xerrors.New("oops")}
 	err = actor.Store(&empty.Empty{}, Conodes{})
 	require.EqualError(t, err, "couldn't propose the block: oops")

@@ -73,7 +73,6 @@ func (v *blockValidator) Validate(pb proto.Message) (consensus.Proposal, error) 
 // Commit implements consensus.Validator. It commits the block that matches the
 // identifier if it is present.
 func (v *blockValidator) Commit(id []byte) error {
-	// TODO: atomic operation if commit failed.
 	digest := Digest{}
 	copy(digest[:], id)
 
@@ -82,14 +81,24 @@ func (v *blockValidator) Commit(id []byte) error {
 		return xerrors.Errorf("couldn't find block '%v'", digest)
 	}
 
-	err := v.db.Write(block)
-	if err != nil {
-		return xerrors.Errorf("couldn't persist the block: %v", err)
-	}
+	err := v.db.Atomic(func(ops Queries) error {
+		err := ops.Write(block)
+		if err != nil {
+			return xerrors.Errorf("couldn't persist the block: %v", err)
+		}
 
-	err = v.validator.Commit(block.Payload)
+		err = v.validator.Commit(block.Payload)
+		if err != nil {
+			// If the upper layer fails to commit to the block, it won't be
+			// written so that the node keeps a stable state.
+			return xerrors.Errorf("couldn't commit the payload: %v", err)
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		return xerrors.Errorf("couldn't commit the payload: %v", err)
+		return xerrors.Errorf("transaction aborted: %v", err)
 	}
 
 	// Notify every observer that we committed to a new block. This is blocking

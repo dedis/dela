@@ -12,7 +12,7 @@ import (
 func TestHandler_Process(t *testing.T) {
 	f := func(block SkipBlock) bool {
 		h := newHandler(&Skipchain{
-			db:        fakeDatabase{},
+			db:        &fakeDatabase{},
 			cosi:      fakeCosi{},
 			mino:      fakeMino{},
 			consensus: fakeConsensus{},
@@ -32,7 +32,7 @@ func TestHandler_Process(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "couldn't decode the block: ")
 
-		h.Skipchain.db = fakeDatabase{err: xerrors.New("oops")}
+		h.Skipchain.db = &fakeDatabase{err: xerrors.New("oops")}
 		_, err = h.Process(&PropagateGenesis{Genesis: packed.(*BlockProto)})
 		require.EqualError(t, err, "couldn't write the block: oops")
 
