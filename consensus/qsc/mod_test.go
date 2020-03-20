@@ -94,7 +94,7 @@ func TestQSC_Listen(t *testing.T) {
 	// Make sure the Go routine is stopped.
 	select {
 	case <-qsc.stopped:
-	case <-time.After(10 * time.Millisecond):
+	case <-time.After(100 * time.Millisecond):
 		t.Fatal("timeout")
 	}
 }
