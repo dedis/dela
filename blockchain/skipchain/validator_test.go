@@ -21,6 +21,7 @@ func TestBlockValidator_Validate(t *testing.T) {
 				buffer: make(map[Digest]SkipBlock),
 			},
 			validator: fakeValidator{},
+			watcher:   &fakeWatcher{},
 			Skipchain: &Skipchain{
 				db:        fakeDatabase{genesisID: block.GenesisID},
 				cosi:      fakeCosi{},
@@ -59,9 +60,11 @@ func TestBlockValidator_Validate(t *testing.T) {
 }
 
 func TestBlockValidator_Commit(t *testing.T) {
+	watcher := &fakeWatcher{}
 	v := &blockValidator{
 		queue:     &blockQueue{buffer: make(map[Digest]SkipBlock)},
 		validator: fakeValidator{},
+		watcher:   watcher,
 		Skipchain: &Skipchain{db: fakeDatabase{}},
 	}
 
@@ -70,6 +73,7 @@ func TestBlockValidator_Commit(t *testing.T) {
 	err := v.Commit(Digest{1, 2, 3}.Bytes())
 	require.NoError(t, err)
 	require.Len(t, v.queue.buffer, 0)
+	require.Equal(t, 1, watcher.notified)
 
 	err = v.Commit([]byte{0xaa})
 	require.EqualError(t, err,
@@ -116,4 +120,22 @@ func (db fakeDatabase) Write(SkipBlock) error {
 
 func (db fakeDatabase) ReadLast() (SkipBlock, error) {
 	return SkipBlock{hash: db.genesisID}, db.err
+}
+
+type fakeWatcher struct {
+	blockchain.Observable
+	count    int
+	notified int
+}
+
+func (w *fakeWatcher) Notify(event interface{}) {
+	w.notified++
+}
+
+func (w *fakeWatcher) Add(obs blockchain.Observer) {
+	w.count++
+}
+
+func (w *fakeWatcher) Remove(obs blockchain.Observer) {
+	w.count--
 }

@@ -65,7 +65,7 @@ type Blockchain interface {
 	// the genesis block.
 	GetVerifiableBlock() (VerifiableBlock, error)
 
-	// Watch takes an observer that will be notified for each new block
-	// definitely appended to the chain.
-	Watch(ctx context.Context, obs Observer)
+	// Watch returns a channel that will be filled by new incoming blocks. The
+	// caller is responsible for cancelling the context to clean the observer.
+	Watch(ctx context.Context) <-chan Block
 }

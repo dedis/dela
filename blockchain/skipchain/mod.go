@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 
 	"github.com/golang/protobuf/proto"
+	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/consensus/cosipbft"
@@ -30,6 +31,7 @@ type Skipchain struct {
 	cosi      cosi.CollectiveSigning
 	db        Database
 	consensus consensus.Consensus
+	watcher   blockchain.Observable
 }
 
 // NewSkipchain returns a new instance of Skipchain.
@@ -42,6 +44,7 @@ func NewSkipchain(m mino.Mino, cosi cosi.CollectiveSigning) *Skipchain {
 		cosi:      cosi,
 		db:        db,
 		consensus: consensus,
+		watcher:   blockchain.NewWatcher(),
 	}
 }
 
@@ -59,7 +62,7 @@ func (s *Skipchain) Listen(v blockchain.Validator) (blockchain.Actor, error) {
 		return nil, xerrors.Errorf("couldn't create the rpc: %v", err)
 	}
 
-	actor.consensus, err = s.consensus.Listen(newBlockValidator(s, v))
+	actor.consensus, err = s.consensus.Listen(newBlockValidator(s, v, s.watcher))
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't start the consensus: %v", err)
 	}
@@ -109,9 +112,23 @@ func (s *Skipchain) GetVerifiableBlock() (blockchain.VerifiableBlock, error) {
 }
 
 // Watch implements blockchain.Blockchain. It registers the observer so that it
-// will be notified of new blocks.
-func (s *Skipchain) Watch(ctx context.Context, obs blockchain.Observer) {
-	// TODO
+// will be notified of new blocks. The caller is responsible for cancelling the
+// context when the work is done.
+func (s *Skipchain) Watch(ctx context.Context) <-chan blockchain.Block {
+	ch := make(chan blockchain.Block, 10)
+	obs := skipchainObserver{ch: ch}
+
+	s.watcher.Add(obs)
+
+	// Go routine to listen to the context cancel event. When it occurs, the
+	// observer will be removed.
+	go func() {
+		<-ctx.Done()
+		s.watcher.Remove(obs)
+		close(ch)
+	}()
+
+	return ch
 }
 
 // skipchainActor provides the primitives of a blockchain actor.
@@ -196,4 +213,24 @@ func (a skipchainActor) Store(data proto.Message, players mino.Players) error {
 	}
 
 	return nil
+}
+
+// skipchainObserver can be registered in the watcher to listen for incoming new
+// blocks.
+//
+// - implements blockchain.Observer
+type skipchainObserver struct {
+	ch chan blockchain.Block
+}
+
+// NotifyCallback implements blockchain.Observer. It sends the event to the
+// channel if the type is correct, otherwise it issues a warning.
+func (o skipchainObserver) NotifyCallback(event interface{}) {
+	block, ok := event.(SkipBlock)
+	if !ok {
+		fabric.Logger.Warn().Msgf("got invalid event '%T'", event)
+		return
+	}
+
+	o.ch <- block
 }

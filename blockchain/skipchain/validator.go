@@ -21,12 +21,18 @@ type blockValidator struct {
 
 	validator blockchain.Validator
 	queue     *blockQueue
+	watcher   blockchain.Observable
 }
 
-func newBlockValidator(s *Skipchain, v blockchain.Validator) *blockValidator {
+func newBlockValidator(
+	s *Skipchain,
+	v blockchain.Validator,
+	w blockchain.Observable,
+) *blockValidator {
 	return &blockValidator{
 		Skipchain: s,
 		validator: v,
+		watcher:   w,
 		queue: &blockQueue{
 			buffer: make(map[Digest]SkipBlock),
 		},
@@ -85,6 +91,10 @@ func (v *blockValidator) Commit(id []byte) error {
 	if err != nil {
 		return xerrors.Errorf("couldn't commit the payload: %v", err)
 	}
+
+	// Notify every observer that we committed to a new block. This is blocking
+	// to allow atomic operations.
+	v.watcher.Notify(block)
 
 	fabric.Logger.Trace().Msgf("commit to block %v", block.hash)
 	v.queue.Clear()
