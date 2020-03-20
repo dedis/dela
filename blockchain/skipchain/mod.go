@@ -7,7 +7,6 @@ package skipchain
 
 import (
 	"context"
-	"crypto/rand"
 
 	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric"
@@ -54,6 +53,7 @@ func (s *Skipchain) Listen(v blockchain.Validator) (blockchain.Actor, error) {
 	actor := skipchainActor{
 		Skipchain:   s,
 		hashFactory: sha256Factory{},
+		rand:        crypto.CryptographicRandomGenerator{},
 	}
 
 	var err error
@@ -137,6 +137,7 @@ func (s *Skipchain) Watch(ctx context.Context) <-chan blockchain.Block {
 type skipchainActor struct {
 	*Skipchain
 	hashFactory crypto.HashFactory
+	rand        crypto.RandGenerator
 	consensus   consensus.Actor
 	rpc         mino.RPC
 }
@@ -151,9 +152,14 @@ func (a skipchainActor) InitChain(data proto.Message, players mino.Players) erro
 
 	conodes := newConodes(ca)
 
-	// TODO: crypto module for randomness
 	randomBackLink := Digest{}
-	rand.Read(randomBackLink[:])
+	n, err := a.rand.Read(randomBackLink[:])
+	if err != nil {
+		return xerrors.Errorf("couldn't generate backlink: %v", err)
+	}
+	if n != len(randomBackLink) {
+		return xerrors.Errorf("mismatch rand length %d != %d", n, len(randomBackLink))
+	}
 
 	genesis, err := newSkipBlock(
 		a.hashFactory,

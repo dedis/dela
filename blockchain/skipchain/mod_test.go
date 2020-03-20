@@ -10,6 +10,7 @@ import (
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/cosi/flatcosi"
+	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/crypto/bls"
 	internal "go.dedis.ch/fabric/internal/testing"
 	"go.dedis.ch/fabric/mino"
@@ -144,6 +145,7 @@ func TestSkipchain_Watch(t *testing.T) {
 func TestActor_InitChain(t *testing.T) {
 	actor := skipchainActor{
 		hashFactory: sha256Factory{},
+		rand:        crypto.CryptographicRandomGenerator{},
 		Skipchain: &Skipchain{
 			db: fakeDatabase{},
 		},
@@ -156,6 +158,15 @@ func TestActor_InitChain(t *testing.T) {
 	err = actor.InitChain(&empty.Empty{}, fakePlayers{})
 	require.EqualError(t, err, "players must implement cosi.CollectiveAuthority")
 
+	actor.rand = fakeRandGenerator{err: xerrors.New("oops")}
+	err = actor.InitChain(&empty.Empty{}, Conodes{})
+	require.EqualError(t, err, "couldn't generate backlink: oops")
+
+	actor.rand = fakeRandGenerator{noSize: true}
+	err = actor.InitChain(&empty.Empty{}, Conodes{})
+	require.EqualError(t, err, "mismatch rand length 0 != 32")
+
+	actor.rand = crypto.CryptographicRandomGenerator{}
 	actor.hashFactory = badHashFactory{}
 	err = actor.InitChain(&empty.Empty{}, Conodes{})
 	require.Error(t, err)
@@ -267,4 +278,16 @@ type fakeConsensusActor struct {
 
 func (a fakeConsensusActor) Propose(consensus.Proposal, mino.Players) error {
 	return a.err
+}
+
+type fakeRandGenerator struct {
+	noSize bool
+	err    error
+}
+
+func (rand fakeRandGenerator) Read(buffer []byte) (int, error) {
+	if rand.noSize {
+		return 0, nil
+	}
+	return len(buffer), rand.err
 }
