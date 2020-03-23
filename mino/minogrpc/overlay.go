@@ -50,7 +50,12 @@ func (o overlayService) Call(ctx context.Context, msg *OverlayMsg) (*OverlayMsg,
 		return nil, encoding.NewAnyDecodingError(msg.Message, err)
 	}
 
-	result, err := handler.Process(dynamicAny.Message)
+	req := mino.Request{
+		Address: o.addr,
+		Message: dynamicAny.Message,
+	}
+
+	result, err := handler.Process(req)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to call the Process function from "+
 			"the handler using the provided message: %v", err)

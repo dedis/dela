@@ -408,6 +408,10 @@ type fakeAddress struct {
 	err error
 }
 
+func (a fakeAddress) Equal(other mino.Address) bool {
+	return bytes.Equal(other.(fakeAddress).id, a.id)
+}
+
 func (a fakeAddress) MarshalText() ([]byte, error) {
 	return []byte(a.id), a.err
 }

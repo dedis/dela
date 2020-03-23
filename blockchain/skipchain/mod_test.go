@@ -35,8 +35,8 @@ func TestSkipchain_Basic(t *testing.T) {
 	n := 5
 	manager := minoch.NewManager()
 
-	c1, s1, a1 := makeSkipchain(t, "A", manager)
-	c2, _, a2 := makeSkipchain(t, "B", manager)
+	c1, _, a1 := makeSkipchain(t, "A", manager)
+	c2, s2, _ := makeSkipchain(t, "B", manager)
 	conodes := Conodes{c1, c2}
 
 	err := a1.InitChain(&empty.Empty{}, conodes)
@@ -44,23 +44,23 @@ func TestSkipchain_Basic(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	blocks := s1.Watch(ctx)
+	blocks := s2.Watch(ctx)
 
 	for i := 0; i < n; i++ {
-		err = a2.Store(&empty.Empty{}, conodes)
+		err = a1.Store(&empty.Empty{}, conodes)
 		require.NoError(t, err)
 
 		event := <-blocks
 		require.NotNil(t, event)
 		require.IsType(t, SkipBlock{}, event)
 
-		chain, err := s1.GetVerifiableBlock()
+		chain, err := s2.GetVerifiableBlock()
 		require.NoError(t, err)
 
 		packed, err := chain.Pack()
 		require.NoError(t, err)
 
-		block, err := s1.GetBlockFactory().FromVerifiable(packed)
+		block, err := s2.GetBlockFactory().FromVerifiable(packed)
 		require.NoError(t, err)
 		require.NotNil(t, block)
 		require.Equal(t, uint64(i+1), block.(SkipBlock).Index)

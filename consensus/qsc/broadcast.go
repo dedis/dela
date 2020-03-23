@@ -67,8 +67,8 @@ type hTLCR struct {
 // Process implements mino.Handler. It handles two cases: (1) A message set sent
 // from a player that must be processed. (2) A message set request that returns
 // the list of messages missing to the distant player.
-func (h hTLCR) Process(in proto.Message) (proto.Message, error) {
-	switch msg := in.(type) {
+func (h hTLCR) Process(req mino.Request) (proto.Message, error) {
+	switch msg := req.Message.(type) {
 	case *MessageSet:
 		h.ch <- msg
 		return nil, nil
@@ -85,7 +85,7 @@ func (h hTLCR) Process(in proto.Message) (proto.Message, error) {
 
 		return h.store.previous, nil
 	default:
-		return nil, xerrors.Errorf("invalid message type '%T'", in)
+		return nil, xerrors.Errorf("invalid message type '%T'", req.Message)
 	}
 }
 

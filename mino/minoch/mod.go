@@ -63,6 +63,7 @@ func (m *Minoch) MakeNamespace(path string) (mino.Mino, error) {
 func (m *Minoch) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 	rpc := RPC{
 		manager: m.manager,
+		addr:    m.GetAddress(),
 		path:    fmt.Sprintf("%s/%s", m.path, name),
 		h:       h,
 	}

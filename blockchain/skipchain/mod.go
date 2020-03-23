@@ -218,6 +218,8 @@ func (a skipchainActor) Store(data proto.Message, players mino.Players) error {
 		return xerrors.Errorf("couldn't read the latest block: %v", err)
 	}
 
+	// TODO: skip if not leader..
+
 	block, err := factory.fromPrevious(previous, data)
 	if err != nil {
 		return xerrors.Errorf("couldn't create next block: %v", err)

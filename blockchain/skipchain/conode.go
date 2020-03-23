@@ -128,6 +128,21 @@ func newConodes(ca cosi.CollectiveAuthority) Conodes {
 	return conodes
 }
 
+// GetLeader returns the leader of the conodes which is the conode at index 0.
+func (cc Conodes) GetLeader() mino.Address {
+	if len(cc) == 0 {
+		return nil
+	}
+
+	return cc[0].GetAddress()
+}
+
+// HasLeader returns true if the address belongs to the current leader.
+func (cc Conodes) HasLeader(addr mino.Address) bool {
+	leader := cc.GetLeader()
+	return leader != nil && leader.Equal(addr)
+}
+
 // Take implements mino.Players. It returns a subset of the conodes.
 func (cc Conodes) Take(filters ...mino.FilterUpdater) mino.Players {
 	f := mino.ApplyFilters(filters)

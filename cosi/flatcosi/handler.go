@@ -23,18 +23,18 @@ func newHandler(s crypto.Signer, h cosi.Hashable) handler {
 	}
 }
 
-func (h handler) Process(msg proto.Message) (proto.Message, error) {
+func (h handler) Process(req mino.Request) (proto.Message, error) {
 	var resp proto.Message
 
-	switch req := msg.(type) {
+	switch msg := req.Message.(type) {
 	case *SignatureRequest:
 		var da ptypes.DynamicAny
-		err := protoenc.UnmarshalAny(req.Message, &da)
+		err := protoenc.UnmarshalAny(msg.Message, &da)
 		if err != nil {
 			return nil, encoding.NewAnyDecodingError(&da, err)
 		}
 
-		buf, err := h.hasher.Hash(da.Message)
+		buf, err := h.hasher.Hash(req.Address, da.Message)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't hash message: %v", err)
 		}

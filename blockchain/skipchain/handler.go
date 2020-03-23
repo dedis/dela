@@ -24,8 +24,8 @@ func newHandler(sc *Skipchain) handler {
 
 // Process implements mino.Handler. It handles genesis block propagation
 // messages only and return an error for any other type.
-func (h handler) Process(req proto.Message) (proto.Message, error) {
-	switch in := req.(type) {
+func (h handler) Process(req mino.Request) (proto.Message, error) {
+	switch in := req.Message.(type) {
 	case *PropagateGenesis:
 		factory := h.GetBlockFactory().(blockFactory)
 

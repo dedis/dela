@@ -10,7 +10,7 @@ import (
 
 func TestUnsupportedHandler_Process(t *testing.T) {
 	h := UnsupportedHandler{}
-	resp, err := h.Process(nil)
+	resp, err := h.Process(Request{})
 	require.Error(t, err)
 	require.Nil(t, resp)
 }
