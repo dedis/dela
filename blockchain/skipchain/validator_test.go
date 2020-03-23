@@ -23,7 +23,7 @@ func TestBlockValidator_Validate(t *testing.T) {
 			validator: fakeValidator{},
 			watcher:   &fakeWatcher{},
 			Skipchain: &Skipchain{
-				db:        fakeDatabase{genesisID: block.GenesisID},
+				db:        &fakeDatabase{genesisID: block.GenesisID},
 				cosi:      fakeCosi{},
 				mino:      fakeMino{},
 				consensus: fakeConsensus{},
@@ -38,16 +38,16 @@ func TestBlockValidator_Validate(t *testing.T) {
 		_, err = v.Validate(nil)
 		require.EqualError(t, err, "couldn't decode block: invalid message type '<nil>'")
 
-		v.Skipchain.db = fakeDatabase{err: xerrors.New("oops")}
+		v.Skipchain.db = &fakeDatabase{err: xerrors.New("oops")}
 		_, err = v.Validate(packed)
 		require.EqualError(t, err, "couldn't read genesis block: oops")
 
-		v.Skipchain.db = fakeDatabase{genesisID: Digest{}}
+		v.Skipchain.db = &fakeDatabase{genesisID: Digest{}}
 		_, err = v.Validate(packed)
 		require.EqualError(t, err,
 			fmt.Sprintf("mismatch genesis hash '%v' != '%v'", Digest{}, block.GenesisID))
 
-		v.Skipchain.db = fakeDatabase{genesisID: block.GenesisID}
+		v.Skipchain.db = &fakeDatabase{genesisID: block.GenesisID}
 		v.validator = fakeValidator{err: xerrors.New("oops")}
 		_, err = v.Validate(packed)
 		require.EqualError(t, err, "couldn't validate the payload: oops")
@@ -65,7 +65,7 @@ func TestBlockValidator_Commit(t *testing.T) {
 		queue:     &blockQueue{buffer: make(map[Digest]SkipBlock)},
 		validator: fakeValidator{},
 		watcher:   watcher,
-		Skipchain: &Skipchain{db: fakeDatabase{}},
+		Skipchain: &Skipchain{db: &fakeDatabase{}},
 	}
 
 	v.queue.Add(SkipBlock{hash: Digest{1, 2, 3}})
@@ -76,19 +76,22 @@ func TestBlockValidator_Commit(t *testing.T) {
 	require.Equal(t, 1, watcher.notified)
 
 	err = v.Commit([]byte{0xaa})
+	require.Equal(t, 0, v.Skipchain.db.(*fakeDatabase).aborts)
 	require.EqualError(t, err,
 		fmt.Sprintf("couldn't find block '%v'", Digest{0xaa}))
 
 	v.queue.Add(SkipBlock{hash: Digest{1, 2, 3}})
-	v.Skipchain.db = fakeDatabase{err: xerrors.New("oops")}
+	v.Skipchain.db = &fakeDatabase{err: xerrors.New("oops")}
 	err = v.Commit(Digest{1, 2, 3}.Bytes())
-	require.EqualError(t, err, "couldn't persist the block: oops")
+	require.EqualError(t, err, "transaction aborted: couldn't persist the block: oops")
+	require.Equal(t, 1, v.Skipchain.db.(*fakeDatabase).aborts)
 
 	v.queue.Add(SkipBlock{hash: Digest{1, 2, 3}})
-	v.Skipchain.db = fakeDatabase{}
+	v.Skipchain.db = &fakeDatabase{}
 	v.validator = fakeValidator{err: xerrors.New("oops")}
 	err = v.Commit(Digest{1, 2, 3}.Bytes())
-	require.EqualError(t, err, "couldn't commit the payload: oops")
+	require.EqualError(t, err, "transaction aborted: couldn't commit the payload: oops")
+	require.Equal(t, 1, v.Skipchain.db.(*fakeDatabase).aborts)
 }
 
 type fakeValidator struct {
@@ -108,18 +111,27 @@ type fakeDatabase struct {
 	Database
 	genesisID Digest
 	err       error
+	aborts    int
 }
 
-func (db fakeDatabase) Read(index int64) (SkipBlock, error) {
+func (db *fakeDatabase) Read(index int64) (SkipBlock, error) {
 	return SkipBlock{hash: db.genesisID}, db.err
 }
 
-func (db fakeDatabase) Write(SkipBlock) error {
+func (db *fakeDatabase) Write(SkipBlock) error {
 	return db.err
 }
 
-func (db fakeDatabase) ReadLast() (SkipBlock, error) {
+func (db *fakeDatabase) ReadLast() (SkipBlock, error) {
 	return SkipBlock{hash: db.genesisID}, db.err
+}
+
+func (db *fakeDatabase) Atomic(tx func(Queries) error) error {
+	err := tx(db)
+	if err != nil {
+		db.aborts++
+	}
+	return err
 }
 
 type fakeWatcher struct {
