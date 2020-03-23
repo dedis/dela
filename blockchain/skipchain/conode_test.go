@@ -125,6 +125,19 @@ func TestPublicKeyIterator_GetNext(t *testing.T) {
 	require.Nil(t, iter.GetNext())
 }
 
+func TestConodes_GetLeader(t *testing.T) {
+	require.Nil(t, Conodes{}.GetLeader())
+	require.NotNil(t, Conodes{{addr: fakeAddress{}}}.GetLeader())
+}
+
+func TestConodes_HasLeader(t *testing.T) {
+	addr := fakeAddress{id: []byte{0xaa}}
+	conodes := Conodes{{addr: addr}}
+
+	require.True(t, conodes.HasLeader(addr))
+	require.False(t, conodes.HasLeader(fakeAddress{}))
+}
+
 func TestConodes_Take(t *testing.T) {
 	conodes := Conodes{randomConode(), randomConode(), randomConode()}
 

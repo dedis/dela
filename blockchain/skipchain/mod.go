@@ -213,21 +213,30 @@ func (a skipchainActor) InitChain(data proto.Message, players mino.Players) erro
 func (a skipchainActor) Store(data proto.Message, players mino.Players) error {
 	factory := a.GetBlockFactory().(blockFactory)
 
+	ca, ok := players.(cosi.CollectiveAuthority)
+	if !ok {
+		return xerrors.Errorf("players must implement cosi.CollectiveAuthority")
+	}
+
 	previous, err := a.db.ReadLast()
 	if err != nil {
 		return xerrors.Errorf("couldn't read the latest block: %v", err)
 	}
-
-	// TODO: skip if not leader..
 
 	block, err := factory.fromPrevious(previous, data)
 	if err != nil {
 		return xerrors.Errorf("couldn't create next block: %v", err)
 	}
 
-	err = a.consensus.Propose(block, players)
-	if err != nil {
-		return xerrors.Errorf("couldn't propose the block: %v", err)
+	block.Conodes = newConodes(ca)
+
+	if block.Conodes.HasLeader(a.mino.GetAddress()) {
+		err = a.consensus.Propose(block, players)
+		if err != nil {
+			return xerrors.Errorf("couldn't propose the block: %v", err)
+		}
+	} else {
+		// TODO: send proposal to the leader..
 	}
 
 	return nil

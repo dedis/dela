@@ -186,21 +186,27 @@ func TestActor_InitChain(t *testing.T) {
 func TestActor_Store(t *testing.T) {
 	actor := skipchainActor{
 		Skipchain: &Skipchain{
-			db: &fakeDatabase{},
+			mino: fakeMino{},
+			db:   &fakeDatabase{},
 		},
 		consensus: fakeConsensusActor{},
 	}
 
-	err := actor.Store(&empty.Empty{}, Conodes{})
+	conodes := Conodes{{addr: fakeAddress{}}}
+
+	err := actor.Store(&empty.Empty{}, conodes)
 	require.NoError(t, err)
 
+	err = actor.Store(&empty.Empty{}, fakePlayers{})
+	require.EqualError(t, err, "players must implement cosi.CollectiveAuthority")
+
 	actor.Skipchain.db = &fakeDatabase{err: xerrors.New("oops")}
-	err = actor.Store(&empty.Empty{}, Conodes{})
+	err = actor.Store(&empty.Empty{}, conodes)
 	require.EqualError(t, err, "couldn't read the latest block: oops")
 
 	actor.Skipchain.db = &fakeDatabase{}
 	actor.consensus = fakeConsensusActor{err: xerrors.New("oops")}
-	err = actor.Store(&empty.Empty{}, Conodes{})
+	err = actor.Store(&empty.Empty{}, conodes)
 	require.EqualError(t, err, "couldn't propose the block: oops")
 }
 

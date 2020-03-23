@@ -579,6 +579,10 @@ type fakeMino struct {
 	err error
 }
 
+func (m fakeMino) GetAddress() mino.Address {
+	return fakeAddress{}
+}
+
 func (m fakeMino) GetAddressFactory() mino.AddressFactory {
 	return fakeAddressFactory{}
 }
