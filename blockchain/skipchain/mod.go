@@ -3,6 +3,8 @@
 // signed by the participants.
 //
 // TODO: think about versioning for upgradability.
+// TODO: only the current leader should create a block. It should collect
+// proposals from nodes and unified them.
 package skipchain
 
 import (

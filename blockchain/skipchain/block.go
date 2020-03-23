@@ -120,6 +120,11 @@ func (b SkipBlock) GetVerifier() crypto.Verifier {
 	return b.verifier
 }
 
+// GetPayload returns the block payload.
+func (b SkipBlock) GetPayload() proto.Message {
+	return b.Payload
+}
+
 // Pack implements encoding.Packable. It returns the protobuf message for a
 // block.
 func (b SkipBlock) Pack() (proto.Message, error) {

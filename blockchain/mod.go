@@ -16,6 +16,8 @@ type Block interface {
 	GetHash() []byte
 
 	GetPlayers() mino.Players
+
+	GetPayload() proto.Message
 }
 
 // VerifiableBlock is an extension of a block so that its integrity can be

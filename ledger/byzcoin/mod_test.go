@@ -1,0 +1,93 @@
+package byzcoin
+
+import (
+	"context"
+	fmt "fmt"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+	"go.dedis.ch/fabric/crypto"
+	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/fabric/mino/minoch"
+)
+
+func TestLedger_Basic(t *testing.T) {
+	manager := minoch.NewManager()
+
+	m, err := minoch.NewMinoch(manager, "A")
+	require.NoError(t, err)
+
+	ledger := NewLedger(m)
+	roster := roster{members: []*Ledger{ledger}}
+
+	actor, err := ledger.Listen(roster)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	trs := ledger.Watch(ctx)
+
+	tx, err := ledger.GetTransactionFactory().Create("abc")
+	require.NoError(t, err)
+
+	err = actor.AddTransaction(context.Background(), tx)
+	require.NoError(t, err)
+
+	res := <-trs
+	require.NotNil(t, res)
+	fmt.Printf("%v\n", res)
+}
+
+type addressIterator struct {
+	index   int
+	members []*Ledger
+}
+
+func (i *addressIterator) HasNext() bool {
+	return i.index+1 < len(i.members)
+}
+
+func (i *addressIterator) GetNext() mino.Address {
+	if i.HasNext() {
+		i.index++
+		return i.members[i.index].addr
+	}
+	return nil
+}
+
+type publicKeyIterator struct {
+	index   int
+	members []*Ledger
+}
+
+func (i *publicKeyIterator) HasNext() bool {
+	return i.index+1 < len(i.members)
+}
+
+func (i *publicKeyIterator) GetNext() crypto.PublicKey {
+	if i.HasNext() {
+		i.index++
+		return i.members[i.index].signer.GetPublicKey()
+	}
+	return nil
+}
+
+type roster struct {
+	members []*Ledger
+}
+
+func (r roster) Len() int {
+	return len(r.members)
+}
+
+func (r roster) Take(...mino.FilterUpdater) mino.Players {
+	return roster{members: r.members}
+}
+
+func (r roster) AddressIterator() mino.AddressIterator {
+	return &addressIterator{index: -1, members: r.members}
+}
+
+func (r roster) PublicKeyIterator() crypto.PublicKeyIterator {
+	return &publicKeyIterator{index: -1, members: r.members}
+}

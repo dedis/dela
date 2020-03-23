@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package byzcoin;
+
+message TransactionProto {
+    string value = 1;
+}
+
+message BlockPayload {
+    repeated TransactionProto txs = 1;
+}
