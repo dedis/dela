@@ -12,6 +12,12 @@ type HashFactory interface {
 	New() hash.Hash
 }
 
+// RandGenerator is an interface to generate random values with a fully seeded
+// random source.
+type RandGenerator interface {
+	Read([]byte) (int, error)
+}
+
 // PublicKey is a public identity that can be used to verify a signature.
 type PublicKey interface {
 	encoding.Packable
