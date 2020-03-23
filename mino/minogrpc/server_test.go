@@ -796,7 +796,6 @@ func TestRPC_MultipleRing_Stream(t *testing.T) {
 	server2.grpcSrv.GracefulStop()
 	server3.grpcSrv.GracefulStop()
 	server4.grpcSrv.GracefulStop()
-	require.NoError(t, err)
 }
 
 func TestSender_Send(t *testing.T) {
