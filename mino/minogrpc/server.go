@@ -156,7 +156,7 @@ func (rpc RPC) Stream(ctx context.Context,
 	errs := make(chan error, players.Len())
 
 	orchSender := sender{
-		address:      address{"127.0.0.1:2001"},
+		address:      address{},
 		participants: make([]player, players.Len()),
 		name:         "orchestrator",
 	}
@@ -489,11 +489,6 @@ func (s sender) Send(msg proto.Message, addrs ...mino.Address) <-chan error {
 				return
 			}
 
-			// enveloppeAny, err := ptypes.MarshalAny(&Envelope{Message: msgAny})
-			// if err != nil {
-			// 	fillAndLog(errs, xerrors.Errorf("failed to marshal enveloppe: %v", err))
-			// }
-
 			sendMsg := &OverlayMsg{
 				Message: msgAny,
 			}
@@ -526,7 +521,6 @@ type receiver struct {
 }
 
 // Recv implements mino.receiver
-// TODO: check the error chan
 func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error) {
 
 	// TODO: close the channel
@@ -555,6 +549,9 @@ func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error)
 
 	enveloppe := &Envelope{}
 	err = ptypes.UnmarshalAny(msg.Message, enveloppe)
+	// we can receive two types of messages: enveloppes and other messages. If
+	// this is an enveloppe, then we must return enveloppe.Message, otherwise we
+	// return the message.
 	if err == nil {
 		var dynamicAny ptypes.DynamicAny
 		err = ptypes.UnmarshalAny(enveloppe.Message, &dynamicAny)
