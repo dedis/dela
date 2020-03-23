@@ -2,6 +2,7 @@ package flatcosi
 
 import (
 	"bytes"
+	"context"
 	"testing"
 
 	"github.com/golang/protobuf/proto"
@@ -40,6 +41,184 @@ func TestFlat_GetSignatureFactory(t *testing.T) {
 	signer := bls.NewSigner()
 	flat := NewFlat(nil, signer)
 	require.NotNil(t, flat.GetSignatureFactory())
+}
+
+func TestFlat_GetVerifier(t *testing.T) {
+	signer := bls.NewSigner()
+	flat := NewFlat(nil, signer)
+
+	_, err := flat.GetVerifier(fakeCollectiveAuthority{})
+	require.NoError(t, err)
+
+	verifier, err := flat.GetVerifier(nil)
+	require.Error(t, err)
+	require.Nil(t, verifier)
+
+	flat.signer = fakeSigner{}
+	_, err = flat.GetVerifier(fakeCollectiveAuthority{})
+	require.EqualError(t, err, "couldn't create verifier: oops")
+}
+
+func TestFlat_Listen(t *testing.T) {
+	flat := NewFlat(fakeMino{}, bls.NewSigner())
+
+	a, err := flat.Listen(fakeHasher{})
+	require.NoError(t, err)
+	actor := a.(flatActor)
+	require.NotNil(t, actor.signer)
+	require.NotNil(t, actor.rpc)
+
+	flat.mino = fakeMino{err: xerrors.New("oops")}
+	_, err = flat.Listen(fakeHasher{})
+	require.EqualError(t, err, "couldn't make the rpc: oops")
+}
+
+func TestActor_Sign(t *testing.T) {
+	defer func() { protoenc = encoding.NewProtoEncoder() }()
+
+	message := fakeMessage{}
+
+	msgs := make(chan proto.Message, 2)
+	actor := flatActor{
+		signer: bls.NewSigner(),
+		rpc:    fakeRPC{msgs: msgs},
+	}
+
+	sigAny := makePackedSignature(t, actor.signer, message.GetHash())
+	ca := fakeCollectiveAuthority{pubkey: actor.signer.GetPublicKey()}
+
+	msgs <- &SignatureResponse{Signature: sigAny}
+	msgs <- &SignatureResponse{Signature: sigAny}
+	close(msgs)
+
+	ctx := context.Background()
+
+	sig, err := actor.Sign(ctx, message, ca)
+	require.NoError(t, err)
+	require.NotNil(t, sig)
+
+	_, err = actor.Sign(ctx, fakeMessage{err: xerrors.New("oops")}, nil)
+	require.EqualError(t, err, "couldn't encode message: oops")
+
+	protoenc = fakeProtoEncoder{}
+	_, err = actor.Sign(ctx, message, nil)
+	require.EqualError(t, err, "couldn't encode any *empty.Empty: oops")
+
+	protoenc = encoding.NewProtoEncoder()
+	actor.signer = fakeSigner{}
+	_, err = actor.Sign(ctx, message, ca)
+	require.EqualError(t, err, "couldn't make verifier: oops")
+}
+
+func TestActor_SignWrongSignature(t *testing.T) {
+	message := fakeMessage{}
+
+	msgs := make(chan proto.Message, 1)
+	actor := flatActor{
+		signer: bls.NewSigner(),
+		rpc:    fakeRPC{msgs: msgs},
+	}
+
+	sigAny := makePackedSignature(t, actor.signer, message.GetHash())
+
+	msgs <- &SignatureResponse{Signature: sigAny}
+	close(msgs)
+
+	ctx := context.Background()
+
+	_, err := actor.Sign(ctx, message, fakeCollectiveAuthority{})
+	require.EqualError(t, err, "couldn't verify the aggregation: bls: invalid signature")
+}
+
+func TestActor_RPCError_Sign(t *testing.T) {
+	buffer := new(bytes.Buffer)
+	message := fakeMessage{}
+
+	msgs := make(chan proto.Message)
+	errs := make(chan error)
+	actor := flatActor{
+		logger: zerolog.New(buffer),
+		signer: bls.NewSigner(),
+		rpc:    fakeRPC{msgs: msgs, errs: errs},
+	}
+
+	go func() {
+		errs <- xerrors.New("oops")
+		close(msgs)
+	}()
+
+	ctx := context.Background()
+
+	sig, err := actor.Sign(ctx, message, fakeCollectiveAuthority{})
+	require.EqualError(t, err, "signature is nil")
+	require.Nil(t, sig)
+	require.Contains(t, buffer.String(), "error during collective signing")
+}
+
+func TestActor_Context_Sign(t *testing.T) {
+	buffer := new(bytes.Buffer)
+	message := fakeMessage{}
+
+	msgs := make(chan proto.Message)
+	errs := make(chan error)
+	actor := flatActor{
+		logger: zerolog.New(buffer),
+		signer: bls.NewSigner(),
+		rpc:    fakeRPC{msgs: msgs, errs: errs},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	sig, err := actor.Sign(ctx, message, fakeCollectiveAuthority{})
+	require.EqualError(t, err, "signature is nil")
+	require.Nil(t, sig)
+	require.Contains(t, buffer.String(), "error during collective signing")
+}
+
+func TestActor_SignProcessError(t *testing.T) {
+	buffer := new(bytes.Buffer)
+	message := fakeMessage{}
+
+	msgs := make(chan proto.Message, 1)
+	actor := flatActor{
+		logger: zerolog.New(buffer),
+		signer: bls.NewSigner(),
+		rpc:    fakeRPC{msgs: msgs},
+	}
+
+	msgs <- &empty.Empty{}
+	close(msgs)
+
+	ctx := context.Background()
+
+	_, err := actor.Sign(ctx, message, fakeCollectiveAuthority{})
+	require.EqualError(t, err, "signature is nil")
+	require.Contains(t, buffer.String(), "error when processing response")
+
+	actor.signer = fakeSigner{err: xerrors.New("oops")}
+	_, err = actor.processResponse(&SignatureResponse{}, fakeSignature{})
+	require.EqualError(t, err, "couldn't aggregate: oops")
+
+	actor.signer = fakeSigner{errSignatureFactory: xerrors.New("oops")}
+	_, err = actor.processResponse(&SignatureResponse{}, nil)
+	require.EqualError(t, err, "couldn't decode signature: oops")
+}
+
+//------------------
+// Utility functions
+
+func makePackedSignature(t *testing.T, signer crypto.Signer, message []byte) *any.Any {
+	sig, err := signer.Sign(message)
+	require.NoError(t, err)
+
+	packed, err := sig.Pack()
+	require.NoError(t, err)
+
+	packedAny, err := ptypes.MarshalAny(packed)
+	require.NoError(t, err)
+
+	return packedAny
 }
 
 type badVerifierFactory struct {
@@ -82,29 +261,24 @@ func (s fakeSigner) Aggregate(...crypto.Signature) (crypto.Signature, error) {
 	return nil, s.err
 }
 
-func TestFlat_GetVerifier(t *testing.T) {
-	signer := bls.NewSigner()
-	flat := NewFlat(nil, signer)
-
-	_, err := flat.GetVerifier(fakeCollectiveAuthority{})
-	require.NoError(t, err)
-
-	verifier, err := flat.GetVerifier(nil)
-	require.Error(t, err)
-	require.Nil(t, verifier)
-
-	flat.signer = fakeSigner{}
-	_, err = flat.GetVerifier(fakeCollectiveAuthority{})
-	require.EqualError(t, err, "couldn't create verifier: oops")
-}
-
 type fakeRPC struct {
 	mino.RPC
 	msgs chan proto.Message
 	errs chan error
 }
 
-func (rpc fakeRPC) Call(msg proto.Message, players mino.Players) (<-chan proto.Message, <-chan error) {
+func (rpc fakeRPC) Call(ctx context.Context, msg proto.Message,
+	players mino.Players) (<-chan proto.Message, <-chan error) {
+
+	select {
+	case <-ctx.Done():
+		go func() {
+			rpc.errs <- ctx.Err()
+			close(rpc.msgs)
+		}()
+	default:
+	}
+
 	return rpc.msgs, rpc.errs
 }
 
@@ -115,20 +289,6 @@ type fakeMino struct {
 
 func (m fakeMino) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 	return fakeRPC{}, m.err
-}
-
-func TestFlat_Listen(t *testing.T) {
-	flat := NewFlat(fakeMino{}, bls.NewSigner())
-
-	a, err := flat.Listen(fakeHasher{})
-	require.NoError(t, err)
-	actor := a.(flatActor)
-	require.NotNil(t, actor.signer)
-	require.NotNil(t, actor.rpc)
-
-	flat.mino = fakeMino{err: xerrors.New("oops")}
-	_, err = flat.Listen(fakeHasher{})
-	require.EqualError(t, err, "couldn't make the rpc: oops")
 }
 
 type fakeMessage struct {
@@ -181,82 +341,6 @@ func (e fakeProtoEncoder) UnmarshalAny(*any.Any, proto.Message) error {
 	return e.errUnmarshal
 }
 
-func TestActor_Sign(t *testing.T) {
-	defer func() { protoenc = encoding.NewProtoEncoder() }()
-
-	message := fakeMessage{}
-
-	msgs := make(chan proto.Message, 2)
-	actor := flatActor{
-		signer: bls.NewSigner(),
-		rpc:    fakeRPC{msgs: msgs},
-	}
-
-	sigAny := makePackedSignature(t, actor.signer, message.GetHash())
-	ca := fakeCollectiveAuthority{pubkey: actor.signer.GetPublicKey()}
-
-	msgs <- &SignatureResponse{Signature: sigAny}
-	msgs <- &SignatureResponse{Signature: sigAny}
-	close(msgs)
-
-	sig, err := actor.Sign(message, ca)
-	require.NoError(t, err)
-	require.NotNil(t, sig)
-
-	_, err = actor.Sign(fakeMessage{err: xerrors.New("oops")}, nil)
-	require.EqualError(t, err, "couldn't encode message: oops")
-
-	protoenc = fakeProtoEncoder{}
-	_, err = actor.Sign(message, nil)
-	require.EqualError(t, err, "couldn't encode any *empty.Empty: oops")
-
-	protoenc = encoding.NewProtoEncoder()
-	actor.signer = fakeSigner{}
-	_, err = actor.Sign(message, ca)
-	require.EqualError(t, err, "couldn't make verifier: oops")
-}
-
-func TestActor_SignWrongSignature(t *testing.T) {
-	message := fakeMessage{}
-
-	msgs := make(chan proto.Message, 1)
-	actor := flatActor{
-		signer: bls.NewSigner(),
-		rpc:    fakeRPC{msgs: msgs},
-	}
-
-	sigAny := makePackedSignature(t, actor.signer, message.GetHash())
-
-	msgs <- &SignatureResponse{Signature: sigAny}
-	close(msgs)
-
-	_, err := actor.Sign(message, fakeCollectiveAuthority{})
-	require.EqualError(t, err, "couldn't verify the aggregation: bls: invalid signature")
-}
-
-func TestActor_SignRPCError(t *testing.T) {
-	buffer := new(bytes.Buffer)
-	message := fakeMessage{}
-
-	msgs := make(chan proto.Message)
-	errs := make(chan error)
-	actor := flatActor{
-		logger: zerolog.New(buffer),
-		signer: bls.NewSigner(),
-		rpc:    fakeRPC{msgs: msgs, errs: errs},
-	}
-
-	go func() {
-		errs <- xerrors.New("oops")
-		close(msgs)
-	}()
-
-	sig, err := actor.Sign(message, fakeCollectiveAuthority{})
-	require.EqualError(t, err, "signature is nil")
-	require.Nil(t, sig)
-	require.Contains(t, buffer.String(), "error during collective signing")
-}
-
 type fakeSignature struct {
 	crypto.Signature
 	err error
@@ -264,44 +348,4 @@ type fakeSignature struct {
 
 func (s fakeSignature) Pack() (proto.Message, error) {
 	return &empty.Empty{}, s.err
-}
-
-func TestActor_SignProcessError(t *testing.T) {
-	buffer := new(bytes.Buffer)
-	message := fakeMessage{}
-
-	msgs := make(chan proto.Message, 1)
-	actor := flatActor{
-		logger: zerolog.New(buffer),
-		signer: bls.NewSigner(),
-		rpc:    fakeRPC{msgs: msgs},
-	}
-
-	msgs <- &empty.Empty{}
-	close(msgs)
-
-	_, err := actor.Sign(message, fakeCollectiveAuthority{})
-	require.EqualError(t, err, "signature is nil")
-	require.Contains(t, buffer.String(), "error when processing response")
-
-	actor.signer = fakeSigner{err: xerrors.New("oops")}
-	_, err = actor.processResponse(&SignatureResponse{}, fakeSignature{})
-	require.EqualError(t, err, "couldn't aggregate: oops")
-
-	actor.signer = fakeSigner{errSignatureFactory: xerrors.New("oops")}
-	_, err = actor.processResponse(&SignatureResponse{}, nil)
-	require.EqualError(t, err, "couldn't decode signature: oops")
-}
-
-func makePackedSignature(t *testing.T, signer crypto.Signer, message []byte) *any.Any {
-	sig, err := signer.Sign(message)
-	require.NoError(t, err)
-
-	packed, err := sig.Pack()
-	require.NoError(t, err)
-
-	packedAny, err := ptypes.MarshalAny(packed)
-	require.NoError(t, err)
-
-	return packedAny
 }

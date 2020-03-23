@@ -24,7 +24,9 @@ func TestRPC_Call(t *testing.T) {
 	_, err = m2.MakeRPC("test", testHandler{})
 	require.NoError(t, err)
 
-	_, errs := rpc1.Call(&empty.Empty{}, fakePlayers{instances: []*Minoch{m2}})
+	ctx := context.Background()
+
+	_, errs := rpc1.Call(ctx, &empty.Empty{}, fakePlayers{instances: []*Minoch{m2}})
 	select {
 	case <-time.After(50 * time.Millisecond):
 		t.Fatal("an error is expected")

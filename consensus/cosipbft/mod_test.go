@@ -1,6 +1,7 @@
 package cosipbft
 
 import (
+	"context"
 	"testing"
 
 	proto "github.com/golang/protobuf/proto"
@@ -186,7 +187,9 @@ type badCosiActor struct {
 	delay int
 }
 
-func (cs *badCosiActor) Sign(pb cosi.Message, ca cosi.CollectiveAuthority) (crypto.Signature, error) {
+func (cs *badCosiActor) Sign(ctx context.Context, pb cosi.Message,
+	ca cosi.CollectiveAuthority) (crypto.Signature, error) {
+
 	if cs.delay > 0 {
 		cs.delay--
 		return fakeSignature{}, nil
@@ -522,7 +525,9 @@ type fakeCosiActor struct {
 	err   error
 }
 
-func (a *fakeCosiActor) Sign(msg cosi.Message, ca cosi.CollectiveAuthority) (crypto.Signature, error) {
+func (a *fakeCosiActor) Sign(ctx context.Context, msg cosi.Message,
+	ca cosi.CollectiveAuthority) (crypto.Signature, error) {
+
 	packed, err := msg.Pack()
 	if err != nil {
 		return nil, err
@@ -552,7 +557,9 @@ type fakeRPC struct {
 	close bool
 }
 
-func (rpc *fakeRPC) Call(pb proto.Message, memship mino.Players) (<-chan proto.Message, <-chan error) {
+func (rpc *fakeRPC) Call(ctx context.Context, pb proto.Message,
+	memship mino.Players) (<-chan proto.Message, <-chan error) {
+
 	msgs := make(chan proto.Message, 0)
 	errs := make(chan error, 1)
 	if rpc.err != nil {

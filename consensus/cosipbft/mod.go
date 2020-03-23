@@ -4,6 +4,7 @@ package cosipbft
 
 import (
 	"bytes"
+	"context"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
@@ -113,9 +114,11 @@ func (a pbftActor) Propose(p consensus.Proposal, players mino.Players) error {
 		return xerrors.Errorf("%T should implement cosi.CollectiveAuthority", players)
 	}
 
+	ctx := context.Background()
+
 	// 1. Prepare phase: proposal must be validated by the nodes and a
 	// collective signature will be created for the forward link hash.
-	sig, err := a.cosiActor.Sign(prepareReq, ca)
+	sig, err := a.cosiActor.Sign(ctx, prepareReq, ca)
 	if err != nil {
 		return xerrors.Errorf("couldn't sign the proposal: %v", err)
 	}
@@ -126,7 +129,7 @@ func (a pbftActor) Propose(p consensus.Proposal, players mino.Players) error {
 	}
 
 	// 2. Commit phase.
-	sig, err = a.cosiActor.Sign(commitReq, ca)
+	sig, err = a.cosiActor.Sign(ctx, commitReq, ca)
 	if err != nil {
 		return xerrors.Errorf("couldn't sign the commit: %v", err)
 	}
@@ -143,12 +146,14 @@ func (a pbftActor) Propose(p consensus.Proposal, players mino.Players) error {
 		return encoding.NewAnyEncodingError(sigpacked, err)
 	}
 
-	// TODO: timeout in context ?
-	resps, errs := a.rpc.Call(propagateReq, ca)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	resps, errs := a.rpc.Call(ctx, propagateReq, ca)
 	select {
 	case <-a.closing:
 		// Abort the RPC call.
-		// TODO: add context to the RPC.Call
+		cancel()
 	case <-resps:
 	case err := <-errs:
 		return xerrors.Errorf("couldn't propagate the link: %v", err)

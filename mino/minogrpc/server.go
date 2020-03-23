@@ -39,10 +39,6 @@ var (
 	// defaultMinConnectTimeout is the minimum amount of time we are willing to
 	// wait for a grpc connection to complete
 	defaultMinConnectTimeout = 7 * time.Second
-	// defaultContextTimeout is the amount of time we are willing to wait for a
-	// remote procedure call to finish. This value should always be higher than
-	// defaultMinConnectTimeout in order to capture http server errors.
-	defaultContextTimeout = 10 * time.Second
 )
 
 // Server represents the entity that accepts incoming requests and invoke the
@@ -89,7 +85,7 @@ type RPC struct {
 }
 
 // Call implements mino.RPC. It calls the RPC on each provided address.
-func (rpc RPC) Call(req proto.Message,
+func (rpc RPC) Call(ctx context.Context, req proto.Message,
 	players mino.Players) (<-chan proto.Message, <-chan error) {
 
 	out := make(chan proto.Message, players.Len())
@@ -116,10 +112,6 @@ func (rpc RPC) Call(req proto.Message,
 				continue
 			}
 			cl := NewOverlayClient(clientConn)
-
-			ctx, ctxCancelFunc := context.WithTimeout(context.Background(),
-				defaultContextTimeout)
-			defer ctxCancelFunc()
 
 			header := metadata.New(map[string]string{headerURIKey: rpc.uri})
 			ctx = metadata.NewOutgoingContext(ctx, header)

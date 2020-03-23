@@ -1,6 +1,8 @@
 package cosi
 
 import (
+	"context"
+
 	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
@@ -31,7 +33,7 @@ type Message interface {
 // Actor is the listener of a collective signing instance. It provides a
 // primitive to sign a message.
 type Actor interface {
-	Sign(msg Message, ca CollectiveAuthority) (crypto.Signature, error)
+	Sign(ctx context.Context, msg Message, ca CollectiveAuthority) (crypto.Signature, error)
 }
 
 // CollectiveSigning is the interface that provides the primitives to sign a
