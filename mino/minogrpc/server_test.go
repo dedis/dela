@@ -761,7 +761,6 @@ func TestRPC_MultipleRing_Stream(t *testing.T) {
 	msg := Envelope{
 		// From:    addr1.String(),
 		To:      []string{addr1.String()},
-		Relay:   addr1.String(),
 		Message: m,
 	}
 
