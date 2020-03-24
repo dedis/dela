@@ -30,6 +30,25 @@ func ApplyFilters(filters []FilterUpdater) *Filter {
 // FilterUpdater is a function to update the filters.
 type FilterUpdater func(*Filter)
 
+// RotateFilter is a filter to rotate the indices. When n is above zero, it will
+// rotate by n steps on the left and when n is below, it will do the same on the
+// right. The behaviour is unknown if not used as the last filter as next
+// updaters could change the order.
+func RotateFilter(n int) FilterUpdater {
+	return func(filter *Filter) {
+		if len(filter.Indices) == 0 {
+			return
+		}
+
+		n = n % len(filter.Indices)
+		if n < 0 {
+			n += len(filter.Indices)
+		}
+
+		filter.Indices = append(filter.Indices[n:], filter.Indices[:n]...)
+	}
+}
+
 // IndexFilter is a filter to include a given index.
 func IndexFilter(index int) FilterUpdater {
 	return func(filters *Filter) {

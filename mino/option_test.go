@@ -11,6 +11,26 @@ func TestFilter_ParseFilters(t *testing.T) {
 	require.Equal(t, []int{1}, filters.Indices)
 }
 
+func TestFilter_RotateFilter(t *testing.T) {
+	filters := &Filter{Indices: []int{1, 2, 3, 4, 5}}
+
+	RotateFilter(-2)(filters)
+	require.Equal(t, filters.Indices, []int{4, 5, 1, 2, 3})
+
+	RotateFilter(3)(filters)
+	require.Equal(t, filters.Indices, []int{2, 3, 4, 5, 1})
+
+	RotateFilter(10)(filters)
+	require.Equal(t, filters.Indices, []int{2, 3, 4, 5, 1})
+
+	RotateFilter(-7)(filters)
+	require.Equal(t, filters.Indices, []int{5, 1, 2, 3, 4})
+
+	filters = &Filter{}
+	RotateFilter(3)(filters)
+	require.Equal(t, filters.Indices, []int(nil))
+}
+
 func TestFilter_IndexFilter(t *testing.T) {
 	filters := &Filter{Indices: []int{}}
 

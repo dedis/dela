@@ -7,12 +7,14 @@ package skipchain
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/rs/zerolog"
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/blockchain"
-	"go.dedis.ch/fabric/blockchain/skipchain/viewchange"
+	"go.dedis.ch/fabric/blockchain/viewchange"
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/consensus/cosipbft"
 	"go.dedis.ch/fabric/cosi"
@@ -33,7 +35,9 @@ const (
 // between the blocks.
 //
 // - implements blockchain.Blockchain
+// - implements fmt.Stringer
 type Skipchain struct {
+	logger     zerolog.Logger
 	mino       mino.Mino
 	cosi       cosi.CollectiveSigning
 	db         Database
@@ -48,6 +52,7 @@ func NewSkipchain(m mino.Mino, cosi cosi.CollectiveSigning) *Skipchain {
 	db := NewInMemoryDatabase()
 
 	return &Skipchain{
+		logger:    fabric.Logger,
 		mino:      m,
 		cosi:      cosi,
 		db:        db,
@@ -140,6 +145,12 @@ func (s *Skipchain) Watch(ctx context.Context) <-chan blockchain.Block {
 	}()
 
 	return ch
+}
+
+// String implements fmt.Stringer. It returns a simple representation of the
+// skipchain instance to easily identify it.
+func (s *Skipchain) String() string {
+	return fmt.Sprintf("skipchain@%v", s.mino.GetAddress())
 }
 
 // skipchainActor provides the primitives of a blockchain actor.
@@ -238,14 +249,13 @@ func (a skipchainActor) Store(data proto.Message, players mino.Players) error {
 	// If the leader has failed and this node has to take over, we use the
 	// inherant property of CoSiPBFT to prove that 2f participants want the view
 	// change.
-	err = a.viewchange.Wait(block)
+	rotation, err := a.viewchange.Wait(block)
 	if err == nil {
 		// If the node is not the current leader and a rotation is necessary, it
 		// will be done.
-		block.Conodes = block.Conodes.Rotate(a.mino.GetAddress())
+		block.Conodes = rotation.(Conodes)
 	} else {
-		fabric.Logger.Debug().Msgf("%v refusing view change: %v",
-			a.mino.GetAddress(), err)
+		a.logger.Debug().Msgf("%v refusing view change: %v", a, err)
 		// Not authorized to propose a block as the leader is moving
 		// forward so we drop the proposal. The upper layer is responsible to
 		// try again until the leader includes the data.

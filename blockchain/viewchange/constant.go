@@ -7,7 +7,8 @@ import (
 )
 
 // ConstantViewChange is a naive implementation of the view change that will
-// simply keep the same leader all the time.
+// simply keep the same leader all the time and only allow a leader to propose a
+// block.
 //
 // - implements viewchange.ViewChange
 type ConstantViewChange struct {
@@ -24,24 +25,25 @@ func NewConstant(addr mino.Address, bc blockchain.Blockchain) ConstantViewChange
 }
 
 // Wait implements viewchange.ViewChange. It returns an error if the address
-// does not match the leader of the previous block.
-func (vc ConstantViewChange) Wait(block blockchain.Block) error {
+// does not match the leader of the previous block. The implementation of the
+// returned players is preserved.
+func (vc ConstantViewChange) Wait(block blockchain.Block) (mino.Players, error) {
 	latest, err := vc.bc.GetBlock()
 	if err != nil {
-		return xerrors.Errorf("couldn't read latest block: %v", err)
+		return nil, xerrors.Errorf("couldn't read latest block: %v", err)
 	}
 
 	if latest.GetPlayers().Len() == 0 {
-		return xerrors.New("players is empty")
+		return nil, xerrors.New("players is empty")
 	}
 
 	leader := latest.GetPlayers().AddressIterator().GetNext()
 
 	if !leader.Equal(vc.addr) {
-		return xerrors.Errorf("mismatching leader: %v != %v", leader, vc.addr)
+		return nil, xerrors.Errorf("mismatching leader: %v != %v", leader, vc.addr)
 	}
 
-	return nil
+	return block.GetPlayers(), nil
 }
 
 func getLeader(block blockchain.Block) mino.Address {

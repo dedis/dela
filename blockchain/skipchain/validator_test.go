@@ -49,6 +49,11 @@ func TestBlockValidator_Validate(t *testing.T) {
 			fmt.Sprintf("mismatch genesis hash '%v' != '%v'", Digest{}, block.GenesisID))
 
 		v.Skipchain.db = &fakeDatabase{genesisID: block.GenesisID}
+		v.Skipchain.viewchange = fakeViewChange{err: xerrors.New("oops")}
+		_, err = v.Validate(fakeAddress{}, packed)
+		require.EqualError(t, err, "viewchange refused the block: oops")
+
+		v.Skipchain.viewchange = fakeViewChange{}
 		v.validator = fakeValidator{err: xerrors.New("oops")}
 		_, err = v.Validate(fakeAddress{}, packed)
 		require.EqualError(t, err, "couldn't validate the payload: oops")

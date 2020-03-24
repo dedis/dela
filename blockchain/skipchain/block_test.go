@@ -580,7 +580,7 @@ type fakeMino struct {
 }
 
 func (m fakeMino) GetAddress() mino.Address {
-	return fakeAddress{}
+	return fakeAddress{id: []byte{0xaa}}
 }
 
 func (m fakeMino) GetAddressFactory() mino.AddressFactory {

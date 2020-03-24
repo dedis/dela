@@ -128,26 +128,6 @@ func newConodes(ca cosi.CollectiveAuthority) Conodes {
 	return conodes
 }
 
-// Rotate takes the new leader and moves it to the beginning of the array while
-// moving the old one to the end.
-func (cc Conodes) Rotate(addr mino.Address) Conodes {
-	index := 0
-	for i, conode := range cc {
-		if conode.GetAddress().Equal(addr) {
-			index = i
-		}
-	}
-
-	if index == 0 {
-		return cc
-	}
-
-	newConodes := append(Conodes{cc[index]}, cc[1:index]...)
-	newConodes = append(newConodes, cc[index+1:]...)
-	newConodes = append(newConodes, cc[0])
-	return newConodes
-}
-
 // Take implements mino.Players. It returns a subset of the conodes.
 func (cc Conodes) Take(filters ...mino.FilterUpdater) mino.Players {
 	f := mino.ApplyFilters(filters)
