@@ -186,8 +186,9 @@ func TestActor_InitChain(t *testing.T) {
 func TestActor_Store(t *testing.T) {
 	actor := skipchainActor{
 		Skipchain: &Skipchain{
-			mino: fakeMino{},
-			db:   &fakeDatabase{},
+			viewchange: fakeViewChange{},
+			mino:       fakeMino{},
+			db:         &fakeDatabase{},
 		},
 		consensus: fakeConsensusActor{},
 	}
@@ -298,4 +299,14 @@ func (rand fakeRandGenerator) Read(buffer []byte) (int, error) {
 		return 0, nil
 	}
 	return len(buffer), rand.err
+}
+
+type fakeViewChange struct{}
+
+func (vc fakeViewChange) Wait(blockchain.Block) error {
+	return nil
+}
+
+func (vc fakeViewChange) Verify(blockchain.Block) error {
+	return nil
 }

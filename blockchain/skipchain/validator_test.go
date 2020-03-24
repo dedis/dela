@@ -23,10 +23,11 @@ func TestBlockValidator_Validate(t *testing.T) {
 			validator: fakeValidator{},
 			watcher:   &fakeWatcher{},
 			Skipchain: &Skipchain{
-				db:        &fakeDatabase{genesisID: block.GenesisID},
-				cosi:      fakeCosi{},
-				mino:      fakeMino{},
-				consensus: fakeConsensus{},
+				viewchange: fakeViewChange{},
+				db:         &fakeDatabase{genesisID: block.GenesisID},
+				cosi:       fakeCosi{},
+				mino:       fakeMino{},
+				consensus:  fakeConsensus{},
 			},
 		}
 		prop, err := v.Validate(fakeAddress{}, packed)
@@ -95,7 +96,7 @@ func TestBlockValidator_Commit(t *testing.T) {
 }
 
 type fakeValidator struct {
-	blockchain.Validator
+	blockchain.PayloadProcessor
 	err error
 }
 

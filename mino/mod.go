@@ -48,7 +48,9 @@ type Sender interface {
 // and that needs to be processed by the node. It provides some useful
 // information about the network layer.
 type Request struct {
+	// Address is the address of the sender of the request.
 	Address Address
+	// Message is the message of the request.
 	Message proto.Message
 }
 

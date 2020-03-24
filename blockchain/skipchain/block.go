@@ -13,6 +13,7 @@ import (
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
+	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
 
@@ -105,6 +106,11 @@ func (b SkipBlock) GetHash() []byte {
 // digest.
 func (b SkipBlock) GetPreviousHash() []byte {
 	return b.BackLink.Bytes()
+}
+
+// GetPlayers implements blockchain.Block. It returns the list of players.
+func (b SkipBlock) GetPlayers() mino.Players {
+	return b.Conodes
 }
 
 // GetVerifier implements consensus.Proposal. It returns the verifier for the

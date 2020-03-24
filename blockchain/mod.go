@@ -14,6 +14,8 @@ type Block interface {
 	encoding.Packable
 
 	GetHash() []byte
+
+	GetPlayers() mino.Players
 }
 
 // VerifiableBlock is an extension of a block so that its integrity can be
@@ -29,10 +31,14 @@ type BlockFactory interface {
 	FromVerifiable(src proto.Message) (Block, error)
 }
 
-// Validator is the interface to implement to validate the generic payload
-// stored in the block.
-type Validator interface {
+// PayloadProcessor is the interface to implement to validate the generic
+// payload stored in the block.
+type PayloadProcessor interface {
+	// Validate should return nil if the data pass the validation.
 	Validate(data proto.Message) error
+
+	// Commit should process the data and perform any operation required when
+	// new data is stored on the chain.
 	Commit(data proto.Message) error
 }
 
@@ -56,7 +62,7 @@ type Blockchain interface {
 
 	// Listen starts to listen for messages and returns the actor that the
 	// client can use to propose new blocks.
-	Listen(validator Validator) (Actor, error)
+	Listen(validator PayloadProcessor) (Actor, error)
 
 	// GetBlock returns the latest block.
 	GetBlock() (Block, error)

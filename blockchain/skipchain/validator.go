@@ -20,14 +20,14 @@ import (
 type blockValidator struct {
 	*Skipchain
 
-	validator blockchain.Validator
+	validator blockchain.PayloadProcessor
 	queue     *blockQueue
 	watcher   blockchain.Observable
 }
 
 func newBlockValidator(
 	s *Skipchain,
-	v blockchain.Validator,
+	v blockchain.PayloadProcessor,
 	w blockchain.Observable,
 ) *blockValidator {
 	return &blockValidator{
@@ -63,8 +63,9 @@ func (v *blockValidator) Validate(addr mino.Address,
 			genesis.hash, block.GenesisID)
 	}
 
-	if !genesis.Conodes.HasLeader(addr) {
-		return nil, xerrors.Errorf("mismatch leader %v != %v", addr, genesis.Conodes.GetLeader())
+	err = v.viewchange.Verify(block)
+	if err != nil {
+		return nil, xerrors.Errorf("viewchange refused the block: %v", err)
 	}
 
 	err = v.validator.Validate(block.Payload)
