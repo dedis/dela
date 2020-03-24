@@ -405,21 +405,14 @@ func TestRPC_SingleSimple_Stream(t *testing.T) {
 
 	server.handlers[uri] = handler
 
-	m, err := ptypes.MarshalAny(&empty.Empty{})
-	require.NoError(t, err)
-
-	msg := Envelope{
-		From:    addr.String(),
-		To:      []string{addr.String()},
-		Message: m,
-	}
+	m := &empty.Empty{}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	sender, receiver := rpc.Stream(ctx, &fakePlayers{players: []address{*addr}})
 
-	errs := sender.Send(&msg, addr)
+	errs := sender.Send(m, addr)
 	err, more := <-errs
 	if more {
 		t.Error("unexpected error from send: ", err)
@@ -755,14 +748,6 @@ func TestRPC_MultipleRing_Stream(t *testing.T) {
 	server4.handlers[uri] = testRingHandler{addrID: identifier4}
 
 	dummyMsg := &wrappers.StringValue{Value: "dummy_value"}
-	m, err := ptypes.MarshalAny(dummyMsg)
-	require.NoError(t, err)
-
-	msg := Envelope{
-		// From:    addr1.String(),
-		To:      []string{addr1.String()},
-		Message: m,
-	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -778,7 +763,7 @@ func TestRPC_MultipleRing_Stream(t *testing.T) {
 	}
 
 	// sending message to server1, which should send to its neighbor, etc...
-	errs := sender.Send(&msg, addr1)
+	errs := sender.Send(dummyMsg, addr1)
 	err, more := <-errs
 	if more {
 		t.Error("unexpected error from send: ", err)
@@ -818,7 +803,7 @@ func TestSender_Send(t *testing.T) {
 	if !more {
 		t.Error("there should be an error")
 	}
-	require.EqualError(t, err, "failed to send back a message that should be relayed. My client '' was not found in the list of participant: '[]'")
+	require.EqualError(t, err, "failed to send to client '': failed to send back a message that should be relayed to ''. My client '' was not found in the list of participant: '[]'")
 
 	// now I add the participant to the list, an error should be given since the
 	// message is nil
@@ -831,7 +816,7 @@ func TestSender_Send(t *testing.T) {
 	if !more {
 		t.Error("there should be an error")
 	}
-	require.EqualError(t, err, encoding.NewAnyEncodingError(nil, errors.New("proto: Marshal called with nil")).Error())
+	require.EqualError(t, err, "failed to send to client 'fake': "+encoding.NewAnyEncodingError(nil, errors.New("proto: Marshal called with nil")).Error())
 }
 
 func TestReceiver_Recv(t *testing.T) {
@@ -851,7 +836,7 @@ func TestReceiver_Recv(t *testing.T) {
 	}
 	receiver.in <- msg
 	_, _, err = receiver.Recv(context.Background())
-	require.EqualError(t, err, encoding.NewAnyDecodingError(msg.Message, errors.New("message is nil")).Error())
+	require.EqualError(t, err, encoding.NewAnyDecodingError(&Envelope{}, errors.New("message is nil")).Error())
 }
 
 // -----------------

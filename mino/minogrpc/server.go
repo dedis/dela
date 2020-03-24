@@ -32,6 +32,9 @@ import (
 const (
 	headerURIKey        = "apiuri"
 	certificateDuration = time.Hour * 24 * 180
+	// this string is used to identify the orchestrator. We use it as its
+	// address.
+	orchestratorID = "orchestrator"
 )
 
 var (
@@ -155,7 +158,7 @@ func (rpc RPC) Stream(ctx context.Context,
 	errs := make(chan error, players.Len())
 
 	orchSender := sender{
-		address:      address{},
+		address:      address{orchestratorID},
 		participants: make([]player, players.Len()),
 		name:         "orchestrator",
 	}
@@ -201,41 +204,16 @@ func (rpc RPC) Stream(ctx context.Context,
 			streamClient: stream,
 		}
 
+		// Listen on the clients streams and notify the orchestrator or relay
+		// messages
 		go func() {
 			for {
-				msg, err := stream.Recv()
-				if err == io.EOF {
-					return
-				}
-				status, ok := status.FromError(err)
-				if ok && err != nil && status.Code() == codes.Canceled {
-					return
-				}
+				err = listenClient(stream, orchRecv, orchSender, addr)
 				if err != nil {
-					fillAndLog(errs, xerrors.Errorf("client '%s' failed to "+
-						"receive from RPC server: %v", addr.String(), err))
+					err = xerrors.Errorf("failed to listen stream: %v")
+					fabric.Logger.Err(err).Send()
+					errs <- err
 					return
-				}
-
-				// check if this is an envelop that needs to be relayed
-				enveloppe := &Envelope{}
-				err = ptypes.UnmarshalAny(msg.Message, enveloppe)
-				if err == nil && len(enveloppe.To) != 0 {
-					err = relayMessage(enveloppe, orchSender)
-					if err != nil {
-						fillAndLog(errs, xerrors.Errorf("failed to relay "+
-							"message: %v", err))
-						return
-					}
-				} else {
-					anyEnvelope, err := ptypes.MarshalAny(&Envelope{
-						Message: msg.Message})
-					if err != nil {
-						fillAndLog(errs, encoding.NewAnyEncodingError(anyEnvelope, err))
-						return
-					}
-
-					orchRecv.in <- &OverlayMsg{Message: anyEnvelope}
 				}
 			}
 		}()
@@ -244,23 +222,50 @@ func (rpc RPC) Stream(ctx context.Context,
 	return orchSender, orchRecv
 }
 
-func relayMessage(enveloppe *Envelope, orchSender sender) error {
-	var dynamicAny ptypes.DynamicAny
-	err := ptypes.UnmarshalAny(enveloppe.Message, &dynamicAny)
+func listenClient(stream Overlay_StreamClient, orchRecv receiver,
+	orchSender sender, addr mino.Address) error {
+
+	// This msg.Message should always be an enveloppe
+	msg, err := stream.Recv()
+	if err == io.EOF {
+		return nil
+	}
+	status, ok := status.FromError(err)
+	if ok && err != nil && status.Code() == codes.Canceled {
+		return nil
+	}
 	if err != nil {
-		return encoding.NewAnyDecodingError(enveloppe.Message, err)
+		return xerrors.Errorf("client '%s' failed to "+
+			"receive from RPC server: %v", addr.String(), err)
 	}
 
-	for _, addr := range enveloppe.To {
-		fabric.Logger.Trace().Msgf("(orchestrator) relaying message from "+
-			"'%s' to '%s'", enveloppe.From, addr)
-		errChan := orchSender.Send(&Envelope{
-			Message: enveloppe.Message,
-		}, address{addr})
+	envelope := &Envelope{}
+	err = ptypes.UnmarshalAny(msg.Message, envelope)
+	if err != nil {
+		return encoding.NewAnyDecodingError(envelope, err)
+	}
 
-		err, more := <-errChan
-		if more {
-			return xerrors.Errorf("failed to send relay message: %v", err)
+	var dynamicAny ptypes.DynamicAny
+	err = ptypes.UnmarshalAny(envelope.Message, &dynamicAny)
+	if err != nil {
+		return encoding.NewAnyDecodingError(envelope.Message, err)
+	}
+
+	for _, toSend := range envelope.To {
+		// if we receive a message to ourself or the orchestrator, then we
+		// notify the orchstrator receiver by filling orchRecv.in. If this is
+		// not the case we then relay the message.
+		if toSend == addr.String() || toSend == orchestratorID {
+			orchRecv.in <- msg
+		} else {
+			fabric.Logger.Trace().Msgf("(orchestrator) relaying message from "+
+				"'%s' to '%s'", envelope.From, addr)
+
+			errChan := orchSender.Send(dynamicAny.Message, address{toSend})
+			err, more := <-errChan
+			if more {
+				return xerrors.Errorf("failed to send relay message: %v", err)
+			}
 		}
 	}
 	return nil
@@ -415,7 +420,7 @@ type player struct {
 // send implements mino.Sender.Send. This function sends the message
 // asynchrously to all the addrs. The chan error is closed when all the send on
 // each addrs are done. This function guarantees that the error chan is
-// eventually closed.
+// eventually closed. This function should not receive envelopes or OverlayMsgs
 func (s sender) Send(msg proto.Message, addrs ...mino.Address) <-chan error {
 
 	errs := make(chan error, len(addrs))
@@ -425,79 +430,11 @@ func (s sender) Send(msg proto.Message, addrs ...mino.Address) <-chan error {
 	for _, addr := range addrs {
 		go func(addr mino.Address) {
 			defer wg.Done()
-
-			msgAny, err := ptypes.MarshalAny(msg)
+			err := sendSingle(s, msg, addr)
 			if err != nil {
-				errs <- encoding.NewAnyEncodingError(msg, err)
-				return
-			}
-
-			player := s.getParticipant(addr)
-			if player == nil {
-				// in this case we send back a message using our client, which
-				// will hit the orchestrator that will see that this message
-				// should be relayed thanks to the enveloppe.
-				myClient := s.getParticipant(s.address)
-				if myClient == nil {
-					err = xerrors.Errorf("failed to send back a message "+
-						"that should be relayed. My client '%s' was not found "+
-						"in the list of participant: '%v'", s.address, s.participants)
-					fabric.Logger.Err(err).Send()
-					errs <- err
-					return
-				}
-				fabric.Logger.Trace().Msgf("sending back a message that must "+
-					"be relayed. From '%s', To '%s'", s.address.String(), addr.String())
-
-				if addr.String() == "" {
-					err = myClient.streamClient.Send(&OverlayMsg{Message: msgAny})
-					if err == io.EOF {
-						return
-					}
-					if err != nil {
-						errs <- xerrors.Errorf("failed to call the send on client "+
-							"stream: %v", err)
-						return
-					}
-					return
-				}
-
-				envelope := &Envelope{
-					From:    s.address.String(),
-					To:      []string{addr.String()},
-					Message: msgAny,
-				}
-				envelopeAny, err := ptypes.MarshalAny(envelope)
-				if err != nil {
-					errs <- encoding.NewAnyEncodingError(msg, err)
-					return
-				}
-				sendMsg := &OverlayMsg{
-					Message: envelopeAny,
-				}
-				err = myClient.streamClient.Send(sendMsg)
-				if err == io.EOF {
-					return
-				}
-				if err != nil {
-					errs <- xerrors.Errorf("failed to call the send on client "+
-						"stream: %v", err)
-					return
-				}
-				return
-			}
-
-			sendMsg := &OverlayMsg{
-				Message: msgAny,
-			}
-
-			err = player.streamClient.Send(sendMsg)
-			if err == io.EOF {
-				return
-			} else if err != nil {
-				errs <- xerrors.Errorf("failed to call the send on client "+
-					"stream: %v", err)
-				return
+				err = xerrors.Errorf("failed to send to client '%s': %v", addr, err)
+				fabric.Logger.Err(err).Send()
+				errs <- err
 			}
 		}(addr)
 	}
@@ -511,6 +448,76 @@ func (s sender) Send(msg proto.Message, addrs ...mino.Address) <-chan error {
 	return errs
 }
 
+// sendSingle sends a message to a single recipient
+func sendSingle(s sender, msg proto.Message, addr mino.Address) error {
+	msgAny, err := ptypes.MarshalAny(msg)
+	if err != nil {
+		return encoding.NewAnyEncodingError(msg, err)
+	}
+
+	player := s.getParticipant(addr)
+	if player == nil {
+		// in this case we send back a message using our client, which
+		// will hit the orchestrator that will see that this message
+		// should be relayed thanks to the enveloppe.
+		myClient := s.getParticipant(s.address)
+		if myClient == nil {
+			return xerrors.Errorf("failed to send back a message that should "+
+				"be relayed to '%s'. My client '%s' was not found in the list "+
+				"of participant: '%v'", addr, s.address, s.participants)
+		}
+
+		fabric.Logger.Trace().Msgf("sending back a message that must be "+
+			"relayed. From '%s', To '%s'", s.address.String(), addr.String())
+
+		envelope := &Envelope{
+			From:    s.address.String(),
+			To:      []string{addr.String()},
+			Message: msgAny,
+		}
+		envelopeAny, err := ptypes.MarshalAny(envelope)
+		if err != nil {
+			return encoding.NewAnyEncodingError(msg, err)
+		}
+
+		sendMsg := &OverlayMsg{
+			Message: envelopeAny,
+		}
+
+		err = myClient.streamClient.Send(sendMsg)
+		if err == io.EOF {
+			return nil
+		} else if err != nil {
+			return xerrors.Errorf("failed to call the send on client stream: %v", err)
+		}
+
+		return nil
+	}
+
+	envelope := &Envelope{
+		From:    s.address.String(),
+		To:      []string{addr.String()},
+		Message: msgAny,
+	}
+	envelopeAny, err := ptypes.MarshalAny(envelope)
+	if err != nil {
+		return encoding.NewAnyEncodingError(msg, err)
+	}
+
+	sendMsg := &OverlayMsg{
+		Message: envelopeAny,
+	}
+
+	err = player.streamClient.Send(sendMsg)
+	if err == io.EOF {
+		return nil
+	} else if err != nil {
+		return xerrors.Errorf("failed to call the send on client stream: %v", err)
+	}
+
+	return nil
+}
+
 // receiver implements mino.receiver
 type receiver struct {
 	errs chan error
@@ -520,7 +527,6 @@ type receiver struct {
 
 // Recv implements mino.receiver
 func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error) {
-
 	// TODO: close the channel
 	var msg *OverlayMsg
 	var err error
@@ -547,26 +553,17 @@ func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error)
 
 	enveloppe := &Envelope{}
 	err = ptypes.UnmarshalAny(msg.Message, enveloppe)
-	// we can receive two types of messages: enveloppes and other messages. If
-	// this is an enveloppe, then we must return enveloppe.Message, otherwise we
-	// return the message.
-	if err == nil {
-		var dynamicAny ptypes.DynamicAny
-		err = ptypes.UnmarshalAny(enveloppe.Message, &dynamicAny)
-		if err != nil {
-			return nil, nil, encoding.NewAnyDecodingError(enveloppe.Message, err)
-		}
-
-		return address{id: enveloppe.From}, dynamicAny.Message, nil
+	if err != nil {
+		return nil, nil, encoding.NewAnyDecodingError(enveloppe, err)
 	}
 
 	var dynamicAny ptypes.DynamicAny
-	err = ptypes.UnmarshalAny(msg.Message, &dynamicAny)
+	err = ptypes.UnmarshalAny(enveloppe.Message, &dynamicAny)
 	if err != nil {
 		return nil, nil, encoding.NewAnyDecodingError(enveloppe.Message, err)
 	}
-	return address{}, dynamicAny.Message, nil
 
+	return address{id: enveloppe.From}, dynamicAny.Message, nil
 }
 
 // This interface is used to have a common object between Overlay_StreamServer
@@ -597,9 +594,4 @@ type simpleNode struct {
 // getAddress implements mino.Node
 func (o simpleNode) GetAddress() mino.Address {
 	return o.addr
-}
-
-func fillAndLog(errs chan<- error, err error) {
-	fabric.Logger.Err(err).Send()
-	errs <- err
 }
