@@ -1,6 +1,8 @@
 package flatcosi
 
 import (
+	"context"
+
 	"github.com/golang/protobuf/proto"
 	"github.com/rs/zerolog"
 	"go.dedis.ch/fabric"
@@ -84,7 +86,9 @@ type flatActor struct {
 }
 
 // Sign returns the collective signature of the block.
-func (a flatActor) Sign(msg cosi.Message, ca cosi.CollectiveAuthority) (crypto.Signature, error) {
+func (a flatActor) Sign(ctx context.Context, msg cosi.Message,
+	ca cosi.CollectiveAuthority) (crypto.Signature, error) {
+
 	packed, err := msg.Pack()
 	if err != nil {
 		return nil, encoding.NewEncodingError("message", err)
@@ -100,7 +104,7 @@ func (a flatActor) Sign(msg cosi.Message, ca cosi.CollectiveAuthority) (crypto.S
 		return nil, xerrors.Errorf("couldn't make verifier: %v", err)
 	}
 
-	msgs, errs := a.rpc.Call(&SignatureRequest{Message: data}, ca)
+	msgs, errs := a.rpc.Call(ctx, &SignatureRequest{Message: data}, ca)
 
 	var agg crypto.Signature
 	for {

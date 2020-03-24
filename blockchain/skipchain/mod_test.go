@@ -255,7 +255,9 @@ type fakeRPC struct {
 	err error
 }
 
-func (rpc fakeRPC) Call(proto.Message, mino.Players) (<-chan proto.Message, <-chan error) {
+func (rpc fakeRPC) Call(context.Context, proto.Message,
+	mino.Players) (<-chan proto.Message, <-chan error) {
+
 	errs := make(chan error, 1)
 	if rpc.err != nil {
 		errs <- rpc.err

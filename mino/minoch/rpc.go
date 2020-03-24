@@ -26,8 +26,11 @@ type RPC struct {
 	h       mino.Handler
 }
 
-// Call sends the message to all participants and gather their reply.
-func (c RPC) Call(req proto.Message, players mino.Players) (<-chan proto.Message, <-chan error) {
+// Call sends the message to all participants and gather their reply. The
+// context in the scope of channel communication as there is no blocking I/O.
+func (c RPC) Call(ctx context.Context, req proto.Message,
+	players mino.Players) (<-chan proto.Message, <-chan error) {
+
 	out := make(chan proto.Message, players.Len())
 	errs := make(chan error, players.Len())
 
@@ -36,11 +39,12 @@ func (c RPC) Call(req proto.Message, players mino.Players) (<-chan proto.Message
 	iter := players.AddressIterator()
 	for iter.HasNext() {
 		peer := c.manager.get(iter.GetNext())
+		cloneReq := proto.Clone(req)
 		go func(m *Minoch) {
 			defer wg.Done()
 
 			if m != nil {
-				resp, err := m.rpcs[c.path].h.Process(proto.Clone(req))
+				resp, err := m.rpcs[c.path].h.Process(cloneReq)
 				if err != nil {
 					errs <- err
 				}
@@ -52,8 +56,10 @@ func (c RPC) Call(req proto.Message, players mino.Players) (<-chan proto.Message
 		}(peer)
 	}
 
-	wg.Wait()
-	close(out)
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
 
 	return out, errs
 }

@@ -7,6 +7,7 @@ package skipchain
 
 import (
 	"context"
+	"time"
 
 	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric"
@@ -20,6 +21,12 @@ import (
 )
 
 //go:generate protoc -I ./ --go_out=./ ./messages.proto
+
+const (
+	// defaultPropagationTimeout is the default maximum amount of time given to
+	// a propagation to reach every player.
+	defaultPropogationTimeout = 30 * time.Second
+)
 
 // Skipchain is a blockchain that is using collective signatures to create links
 // between the blocks.
@@ -188,7 +195,10 @@ func (a skipchainActor) InitChain(data proto.Message, players mino.Players) erro
 		Genesis: packed.(*BlockProto),
 	}
 
-	closing, errs := a.rpc.Call(msg, conodes)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultPropogationTimeout)
+	defer cancel()
+
+	closing, errs := a.rpc.Call(ctx, msg, conodes)
 	select {
 	case <-closing:
 	case err := <-errs:

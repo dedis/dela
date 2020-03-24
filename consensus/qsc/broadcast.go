@@ -137,7 +137,7 @@ func (b *bTLCR) execute(ctx context.Context, messages ...*Message) (*View, error
 		ms.Messages[msg.GetNode()] = msg
 	}
 
-	_, errs := b.rpc.Call(ms, b.players)
+	_, errs := b.rpc.Call(ctx, ms, b.players)
 
 	for len(ms.GetMessages()) < b.players.Len() {
 		select {
@@ -147,7 +147,7 @@ func (b *bTLCR) execute(ctx context.Context, messages ...*Message) (*View, error
 			if req.GetTimeStep() == b.timeStep {
 				b.merge(ms, req)
 			} else {
-				err := b.catchUp(ms, req)
+				err := b.catchUp(ctx, ms, req)
 				if err != nil {
 					b.logger.Err(err).Send()
 				}
@@ -175,7 +175,7 @@ func (b *bTLCR) merge(current, received *MessageSet) {
 // catchUp analyses the messageSet 'received' compared to 'current' and tries to
 // catch up if possible, otherwise it delays the processing by inserting the
 // message at the end of the queue.
-func (b *bTLCR) catchUp(current, received *MessageSet) error {
+func (b *bTLCR) catchUp(ctx context.Context, current, received *MessageSet) error {
 	// Reinserts the messageSet in the queue so that it can be processed at the
 	// right time.
 	b.ch <- received
@@ -196,7 +196,7 @@ func (b *bTLCR) catchUp(current, received *MessageSet) error {
 			req.Nodes = append(req.Nodes, node)
 		}
 
-		previous, err := b.requestPreviousSet(int(received.GetNode()), req)
+		previous, err := b.requestPreviousSet(ctx, int(received.GetNode()), req)
 		if err != nil {
 			return xerrors.Errorf("couldn't fetch previous message set: %w", err)
 		}
@@ -211,8 +211,10 @@ func (b *bTLCR) catchUp(current, received *MessageSet) error {
 	return nil
 }
 
-func (b *bTLCR) requestPreviousSet(node int, req *RequestMessageSet) (*MessageSet, error) {
-	resps, errs := b.rpc.Call(req, b.players.Take(mino.IndexFilter(node)))
+func (b *bTLCR) requestPreviousSet(ctx context.Context, node int,
+	req *RequestMessageSet) (*MessageSet, error) {
+
+	resps, errs := b.rpc.Call(ctx, req, b.players.Take(mino.IndexFilter(node)))
 	select {
 	case resp, ok := <-resps:
 		if !ok {

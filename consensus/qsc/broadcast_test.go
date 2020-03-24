@@ -113,32 +113,34 @@ func TestTLCR_CatchUp(t *testing.T) {
 		players:  fakeSinglePlayer{},
 	}
 
+	ctx := context.Background()
+
 	m1 := &MessageSet{Messages: map[int64]*Message{1: {}}}
 	m2 := &MessageSet{Node: 2}
-	err := bc.catchUp(m1, m2)
+	err := bc.catchUp(ctx, m1, m2)
 	require.NoError(t, err)
 	require.Equal(t, m2, <-ch)
 
 	m2.TimeStep = 1
 	bc.rpc = fakeRPC{msg: &MessageSet{Messages: map[int64]*Message{2: {}}}}
-	err = bc.catchUp(m1, m2)
+	err = bc.catchUp(ctx, m1, m2)
 	require.NoError(t, err)
 	require.Equal(t, m2, <-ch)
 
 	bc.rpc = fakeRPC{msg: &empty.Empty{}}
-	err = bc.catchUp(m1, m2)
+	err = bc.catchUp(ctx, m1, m2)
 	require.EqualError(t, xerrors.Unwrap(err),
 		"got message type '*empty.Empty' but expected '*qsc.MessageSet'")
 	require.Equal(t, m2, <-ch)
 
 	bc.rpc = fakeRPC{err: xerrors.New("oops")}
-	err = bc.catchUp(m1, m2)
+	err = bc.catchUp(ctx, m1, m2)
 	require.EqualError(t, err,
 		"couldn't fetch previous message set: couldn't reach the node: oops")
 	require.Equal(t, m2, <-ch)
 
 	bc.rpc = fakeRPC{closed: true}
-	err = bc.catchUp(m1, m2)
+	err = bc.catchUp(ctx, m1, m2)
 	require.EqualError(t, err,
 		"couldn't fetch previous message set: couldn't get a reply")
 	require.Equal(t, m2, <-ch)
@@ -299,7 +301,9 @@ type fakeRPC struct {
 	closed bool
 }
 
-func (rpc fakeRPC) Call(pb proto.Message, players mino.Players) (<-chan proto.Message, <-chan error) {
+func (rpc fakeRPC) Call(ctx context.Context, pb proto.Message,
+	players mino.Players) (<-chan proto.Message, <-chan error) {
+
 	errs := make(chan error, 1)
 	if rpc.err != nil {
 		errs <- rpc.err

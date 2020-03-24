@@ -90,7 +90,9 @@ func TestRPC_SingleSimple_Call(t *testing.T) {
 		Message: pba,
 	}
 
-	respChan, errChan := rpc.Call(msg, fakeMembership{addrs: []address{addr}})
+	ctx := context.Background()
+
+	respChan, errChan := rpc.Call(ctx, msg, fakeMembership{addrs: []address{addr}})
 loop:
 	for {
 		select {
@@ -142,8 +144,10 @@ func TestRPC_ErrorsSimple_Call(t *testing.T) {
 		uri:     uri,
 	}
 
+	ctx := context.Background()
+
 	// Using a wrong request message (nil) should yield an error while decoding
-	respChan, errChan := rpc.Call(nil, &fakePlayers{players: []address{addr}})
+	respChan, errChan := rpc.Call(ctx, nil, &fakePlayers{players: []address{addr}})
 loop:
 	for {
 		select {
@@ -170,7 +174,7 @@ loop:
 		To:      []string{addr.String()},
 		Message: pba,
 	}
-	respChan, errChan = rpc.Call(msg, &fakePlayers{players: []address{addr}})
+	respChan, errChan = rpc.Call(ctx, msg, &fakePlayers{players: []address{addr}})
 loop2:
 	for {
 		select {
@@ -218,7 +222,9 @@ func TestRPC_SingleModify_Call(t *testing.T) {
 
 	server.handlers[uri] = handler
 
-	respChan, errChan := rpc.Call(&empty.Empty{}, fakeMembership{addrs: []address{addr}})
+	ctx := context.Background()
+
+	respChan, errChan := rpc.Call(ctx, &empty.Empty{}, fakeMembership{addrs: []address{addr}})
 loop:
 	for {
 		select {
@@ -302,8 +308,10 @@ func TestRPC_MultipleModify_Call(t *testing.T) {
 
 	memship := fakeMembership{addrs: []address{addr1, addr2, addr3}}
 
+	ctx := context.Background()
+
 	// Call the rpc on server1
-	respChan, errChan := rpc.Call(&empty.Empty{}, memship)
+	respChan, errChan := rpc.Call(ctx, &empty.Empty{}, memship)
 
 	// To track the number of message we got back. Should be 3
 	numRequests := 0
@@ -336,7 +344,7 @@ loop:
 	server3.grpcSrv.GracefulStop()
 
 	// Call the rpc on server1
-	respChan, errChan = rpc.Call(&empty.Empty{}, memship)
+	respChan, errChan = rpc.Call(ctx, &empty.Empty{}, memship)
 
 	// To track the number of message we got back. Should be 2
 	numRequests = 0
