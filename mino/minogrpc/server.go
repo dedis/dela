@@ -222,6 +222,8 @@ func (rpc RPC) Stream(ctx context.Context,
 	return orchSender, orchRecv
 }
 
+// listenClient reads the client RPC stream and handle the received messages
+// accordingly: It formwards messages or notify the orchestrator.
 func listenClient(stream Overlay_StreamClient, orchRecv receiver,
 	orchSender sender, addr mino.Address) error {
 
