@@ -17,8 +17,7 @@ import (
 // Server.Handlers, which is updated each time the makeRPC function is called.
 type overlayService struct {
 	handlers map[string]mino.Handler
-	// TODO: populate
-	addr *mino.Address
+	addr     mino.Address
 }
 
 // Call is the implementation of the overlay.Call proto definition
@@ -91,16 +90,7 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 			"of handlers, did you register it?", apiURI[0])
 	}
 
-	addrs, ok := headers[headerAddressKey]
-	if !ok {
-		return xerrors.Errorf("%s not found in context header", headerAddressKey)
-	}
-	if len(addrs) != 1 {
-		return xerrors.Errorf("unexpected number of elements in %s "+
-			"header. Expected 1, found %d", headerAddressKey, len(addrs))
-	}
-
-	addr := addrs[0]
+	addr := o.addr.String()
 
 	// For the moment this sender can only receive messages to itself
 	// TODO: find a way to know the other nodes.

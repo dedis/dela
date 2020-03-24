@@ -31,7 +31,6 @@ import (
 
 const (
 	headerURIKey        = "apiuri"
-	headerAddressKey    = "addr"
 	certificateDuration = time.Hour * 24 * 180
 )
 
@@ -185,9 +184,7 @@ func (rpc RPC) Stream(ctx context.Context,
 		}
 		cl := NewOverlayClient(clientConn)
 
-		header := metadata.New(map[string]string{
-			headerURIKey:     rpc.uri,
-			headerAddressKey: addr.String()})
+		header := metadata.New(map[string]string{headerURIKey: rpc.uri})
 		ctx = metadata.NewOutgoingContext(ctx, header)
 
 		stream, err := cl.Stream(ctx)
@@ -294,6 +291,7 @@ func CreateServer(addr mino.Address) (*Server, error) {
 
 	RegisterOverlayServer(srv, &overlayService{
 		handlers: server.handlers,
+		addr:     addr,
 	})
 
 	return server, nil
