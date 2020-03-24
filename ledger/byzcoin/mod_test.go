@@ -5,11 +5,24 @@ import (
 	fmt "fmt"
 	"testing"
 
+	proto "github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/crypto"
+	internal "go.dedis.ch/fabric/internal/testing"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/minoch"
 )
+
+func TestMessages(t *testing.T) {
+	messages := []proto.Message{
+		&TransactionProto{},
+		&BlockPayload{},
+	}
+
+	for _, m := range messages {
+		internal.CoverProtoMessage(t, m)
+	}
+}
 
 func TestLedger_Basic(t *testing.T) {
 	manager := minoch.NewManager()

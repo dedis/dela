@@ -20,6 +20,7 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.ProtoPackageIsVersion3 // please upgrade the proto package
 
+// TransactionProto is the message that represents a transaction.
 type TransactionProto struct {
 	Value                string   `protobuf:"bytes,1,opt,name=value,proto3" json:"value,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
@@ -59,6 +60,9 @@ func (m *TransactionProto) GetValue() string {
 	return ""
 }
 
+// BlockPayload is the message that will be stored in the blocks. It is composed
+// of the transactions and the new states of the chain after they have been
+// applied.
 type BlockPayload struct {
 	Txs                  []*TransactionProto `protobuf:"bytes,1,rep,name=txs,proto3" json:"txs,omitempty"`
 	XXX_NoUnkeyedLiteral struct{}            `json:"-"`

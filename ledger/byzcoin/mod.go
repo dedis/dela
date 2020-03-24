@@ -64,6 +64,7 @@ func (l *Ledger) Listen(players mino.Players) (ledger.Actor, error) {
 		return nil, xerrors.Errorf("couldn't start the blockchain: %v", err)
 	}
 
+	// TODO: init with multiple nodes
 	err = actor.InitChain(&empty.Empty{}, players)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't initialize the chain: %v", err)
@@ -78,7 +79,7 @@ func (l *Ledger) Listen(players mino.Players) (ledger.Actor, error) {
 			case tx := <-l.chTxs:
 				buffer[tx.hash] = tx
 			case <-round:
-				// Reset the buffer.
+				// TODO: update buffer based on stored transactions.
 				txs := buffer
 				buffer = make(map[Digest]Transaction)
 
@@ -87,6 +88,9 @@ func (l *Ledger) Listen(players mino.Players) (ledger.Actor, error) {
 					fabric.Logger.Err(err).Msg("couldn't make the payload")
 				}
 
+				// Each instance proposes a payload based on the received
+				// transactions but it depends on the blockchain implementation
+				// if it will be accepted.
 				err = actor.Store(payload, players)
 				if err != nil {
 					fabric.Logger.Err(err).Msg("couldn't send the payload")
@@ -167,6 +171,7 @@ func (a actor) AddTransaction(ctx context.Context, in ledger.Transaction) error 
 		return xerrors.Errorf("invalid message type '%T'", in)
 	}
 
+	// TODO: txs gossiping
 	a.ch <- tx
 
 	return nil
