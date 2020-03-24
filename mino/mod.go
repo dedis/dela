@@ -38,15 +38,9 @@ type Players interface {
 	Len() int
 }
 
-// ChanMessages is an alias for a channel of Protobuf messages.
-type ChanMessages = <-chan proto.Message
-
-// ChanErrors is an alias for a channel of errors.
-type ChanErrors = <-chan error
-
 // Sender is an interface to provide primitives to send messages to recipients.
 type Sender interface {
-	Send(msg proto.Message, addrs ...Address) ChanErrors
+	Send(msg proto.Message, addrs ...Address) <-chan error
 }
 
 // Receiver is an interface to provide primitives to receive messages from
@@ -59,7 +53,8 @@ type Receiver interface {
 // distant procedure or multiple.
 type RPC interface {
 	// Call is a basic request to one or multiple distant peers.
-	Call(ctx context.Context, req proto.Message, players Players) (ChanMessages, ChanErrors)
+	Call(ctx context.Context, req proto.Message,
+		players Players) (<-chan proto.Message, <-chan error)
 
 	// Stream is a persistent request that will be closed only when the
 	// orchestrator is done or an error occured.
