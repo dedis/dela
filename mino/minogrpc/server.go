@@ -296,7 +296,7 @@ func CreateServer(addr mino.Address) (*Server, error) {
 
 	RegisterOverlayServer(srv, &overlayService{
 		handlers: server.handlers,
-		addr:     addr,
+		addr:     address{addr.String()},
 	})
 
 	return server, nil
@@ -409,7 +409,6 @@ type sender struct {
 	address      address
 	participants []player
 	name         string
-	relay        address
 }
 
 type player struct {
