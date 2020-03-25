@@ -38,10 +38,12 @@ func TestSkipchain_Basic(t *testing.T) {
 	manager := minoch.NewManager()
 
 	c1, _, a1 := makeSkipchain(t, "A", manager)
-	c2, s2, _ := makeSkipchain(t, "B", manager)
+	c2, s2, a2 := makeSkipchain(t, "B", manager)
 	conodes := Conodes{c1, c2}
 
 	err := a1.InitChain(&empty.Empty{}, conodes)
+	require.NoError(t, err)
+	err = a2.InitChain(&empty.Empty{}, conodes)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -149,40 +151,59 @@ func TestActor_InitChain(t *testing.T) {
 		hashFactory: sha256Factory{},
 		rand:        crypto.CryptographicRandomGenerator{},
 		Skipchain: &Skipchain{
-			db: &fakeDatabase{},
+			mino: fakeMino{},
+			db:   &fakeDatabase{err: NewNoBlockError(0)},
 		},
 		rpc: fakeRPC{},
 	}
 
-	err := actor.InitChain(&empty.Empty{}, Conodes{})
+	conodes := Conodes{randomConode()}
+	conodes[0].addr = fakeAddress{id: []byte{0xaa}}
+
+	err := actor.InitChain(&empty.Empty{}, conodes)
 	require.NoError(t, err)
 
 	err = actor.InitChain(&empty.Empty{}, fakePlayers{})
 	require.EqualError(t, err, "players must implement cosi.CollectiveAuthority")
 
+	actor.rpc = fakeRPC{err: xerrors.New("oops")}
+	err = actor.InitChain(&empty.Empty{}, conodes)
+	require.EqualError(t, xerrors.Unwrap(err), "couldn't propagate: oops")
+
+	// No error so the genesis block exists already.
+	actor.Skipchain.db = &fakeDatabase{}
+	err = actor.InitChain(&empty.Empty{}, conodes)
+	require.NoError(t, err)
+
+	// Unexpected database error
+	actor.Skipchain.db = &fakeDatabase{err: xerrors.New("oops")}
+	err = actor.InitChain(&empty.Empty{}, conodes)
+	require.EqualError(t, err, "couldn't read the genesis block: oops")
+}
+
+func TestActor_NewChain(t *testing.T) {
+	actor := skipchainActor{
+		hashFactory: sha256Factory{},
+		rand:        crypto.CryptographicRandomGenerator{},
+		Skipchain: &Skipchain{
+			db: &fakeDatabase{},
+		},
+		rpc: fakeRPC{},
+	}
+
 	actor.rand = fakeRandGenerator{err: xerrors.New("oops")}
-	err = actor.InitChain(&empty.Empty{}, Conodes{})
+	err := actor.newChain(&empty.Empty{}, Conodes{})
 	require.EqualError(t, err, "couldn't generate backlink: oops")
 
 	actor.rand = fakeRandGenerator{noSize: true}
-	err = actor.InitChain(&empty.Empty{}, Conodes{})
+	err = actor.newChain(&empty.Empty{}, Conodes{})
 	require.EqualError(t, err, "mismatch rand length 0 != 32")
 
 	actor.rand = crypto.CryptographicRandomGenerator{}
 	actor.hashFactory = badHashFactory{}
-	err = actor.InitChain(&empty.Empty{}, Conodes{})
+	err = actor.newChain(&empty.Empty{}, Conodes{})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "couldn't create block: ")
-
-	actor.hashFactory = sha256Factory{}
-	actor.Skipchain.db = &fakeDatabase{err: xerrors.New("oops")}
-	err = actor.InitChain(&empty.Empty{}, Conodes{})
-	require.EqualError(t, err, "couldn't write genesis block: oops")
-
-	actor.Skipchain.db = &fakeDatabase{}
-	actor.rpc = fakeRPC{err: xerrors.New("oops")}
-	err = actor.InitChain(&empty.Empty{}, Conodes{})
-	require.EqualError(t, err, "couldn't propagate: oops")
 }
 
 func TestActor_Store(t *testing.T) {

@@ -4,7 +4,15 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/xerrors"
 )
+
+func TestNoBlockError_Is(t *testing.T) {
+	err := NewNoBlockError(0)
+	require.True(t, xerrors.Is(err, NewNoBlockError(0)))
+	require.False(t, xerrors.Is(err, NewNoBlockError(1)))
+	require.False(t, xerrors.Is(err, xerrors.New("oops")))
+}
 
 func TestInMemoryDatabase_Write(t *testing.T) {
 	db := NewInMemoryDatabase()
