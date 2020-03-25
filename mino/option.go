@@ -10,7 +10,7 @@ type Filter struct {
 	// list if updated based on the filter that we apply. For example, [0,3]
 	// tells that this filter keeps 2 elements from the underlying data
 	// structure we filter that are stored at indexes 0, 3. This list is always
-	// sorted.
+	// sorted and can be shifted in a circular way.
 	Indices []int
 }
 
