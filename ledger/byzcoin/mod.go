@@ -14,13 +14,15 @@ import (
 	"go.dedis.ch/fabric/crypto/bls"
 	"go.dedis.ch/fabric/ledger"
 	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/fabric/mino/gossip"
 	"golang.org/x/xerrors"
 )
 
 //go:generate protoc -I ./ --go_out=./ ./messages.proto
 
 const (
-	roundTime = 50 * time.Millisecond
+	initialRoundTime = 50 * time.Millisecond
+	timeoutRoundTime = 1 * time.Minute
 )
 
 // Ledger is a distributed public ledger implemented by using a blockchain. Each
@@ -34,75 +36,124 @@ type Ledger struct {
 	signer    crypto.Signer
 	bc        blockchain.Blockchain
 	txFactory transactionFactory
-	chTxs     chan Transaction
+	gossiper  gossip.Gossiper
+	queue     *txQueue
 }
 
 // NewLedger creates a new Byzcoin ledger.
 func NewLedger(mino mino.Mino) *Ledger {
 	signer := bls.NewSigner()
 	cosi := flatcosi.NewFlat(mino, signer)
+	factory := transactionFactory{}
+	decoder := func(pb proto.Message) (gossip.Rumor, error) {
+		return factory.FromProto(pb)
+	}
 
 	return &Ledger{
 		addr:      mino.GetAddress(),
 		signer:    signer,
 		bc:        skipchain.NewSkipchain(mino, cosi),
-		txFactory: transactionFactory{},
-		chTxs:     make(chan Transaction, 100),
+		txFactory: factory,
+		gossiper:  gossip.NewFlat(mino, decoder),
+		queue:     newTxQueue(),
 	}
 }
 
 // GetTransactionFactory implements ledger.Ledger. It ..
-func (l *Ledger) GetTransactionFactory() ledger.TransactionFactory {
+func (ldgr *Ledger) GetTransactionFactory() ledger.TransactionFactory {
 	return transactionFactory{}
 }
 
 // Listen implements ledger.Ledger. It starts to participate in the blockchain
 // and returns an actor that can send transactions.
-func (l *Ledger) Listen(players mino.Players) (ledger.Actor, error) {
-	actor, err := l.bc.Listen(newValidator())
+func (ldgr *Ledger) Listen(players mino.Players) (ledger.Actor, error) {
+	bcActor, err := ldgr.bc.Listen(newValidator())
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't start the blockchain: %v", err)
 	}
 
-	// TODO: init with multiple nodes
-	err = actor.InitChain(&empty.Empty{}, players)
+	err = bcActor.InitChain(&empty.Empty{}, players)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't initialize the chain: %v", err)
 	}
 
-	go func() {
-		buffer := make(map[Digest]Transaction)
-		round := time.After(roundTime)
+	err = ldgr.gossiper.Start(players)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't start the gossiper: %v", err)
+	}
 
-		for {
-			select {
-			case tx := <-l.chTxs:
-				buffer[tx.hash] = tx
-			case <-round:
-				// TODO: update buffer based on stored transactions.
-				txs := buffer
-				buffer = make(map[Digest]Transaction)
+	go ldgr.routineTx(bcActor, players)
 
-				payload, err := l.makePayload(txs)
-				if err != nil {
-					fabric.Logger.Err(err).Msg("couldn't make the payload")
-				}
-
-				// Each instance proposes a payload based on the received
-				// transactions but it depends on the blockchain implementation
-				// if it will be accepted.
-				err = actor.Store(payload, players)
-				if err != nil {
-					fabric.Logger.Err(err).Msg("couldn't send the payload")
-				}
-			}
-		}
-	}()
-
-	return newActor(l.chTxs), err
+	return newActor(ldgr.gossiper), err
 }
 
-func (l *Ledger) makePayload(txs map[Digest]Transaction) (*BlockPayload, error) {
+func (ldgr *Ledger) routineTx(actor blockchain.Actor, players mino.Players) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	blocks := ldgr.bc.Watch(ctx)
+
+	roundTimeout := time.After(initialRoundTime)
+
+	for {
+		select {
+		// TODO: closing
+		case rumor := <-ldgr.gossiper.Rumors():
+			tx, ok := rumor.(Transaction)
+			if ok {
+				ldgr.queue.Add(tx)
+			}
+		case <-roundTimeout:
+			// This timeout has two purposes. The very first use will determine
+			// the round time before the first block is proposed after a boot.
+			// Then it will be used to insure that blocks are still proposed in
+			// of catastrophic failure in the consensus layer (i.e. too many
+			// players offline for a while).
+			go ldgr.proposeBlock(actor, players)
+
+			roundTimeout = time.After(timeoutRoundTime)
+		case block := <-blocks:
+			payload := block.GetPayload().(*BlockPayload)
+
+			txRes := make([]TransactionResult, len(payload.GetTxs()))
+			for i, pb := range payload.GetTxs() {
+				tx, err := ldgr.txFactory.FromProto(pb)
+				if err != nil {
+					return
+				}
+
+				txRes[i] = TransactionResult{
+					txID: tx.(Transaction).hash,
+				}
+			}
+
+			ldgr.queue.Remove(txRes...)
+
+			// This is executed in a different go routine so that the gathering
+			// of transactions can keep on while the block is created.
+			go ldgr.proposeBlock(actor, players)
+
+			roundTimeout = time.After(timeoutRoundTime)
+		}
+	}
+}
+
+func (ldgr *Ledger) proposeBlock(actor blockchain.Actor, players mino.Players) {
+	payload, err := ldgr.makePayload(ldgr.queue.GetAll())
+	if err != nil {
+		fabric.Logger.Err(err).Msg("couldn't make the payload")
+	}
+
+	// Each instance proposes a payload based on the received
+	// transactions but it depends on the blockchain implementation
+	// if it will be accepted.
+	err = actor.Store(payload, players)
+	if err != nil {
+		fabric.Logger.Err(err).Msg("couldn't send the payload")
+	}
+}
+
+func (ldgr *Ledger) makePayload(txs []Transaction) (*BlockPayload, error) {
 	payload := &BlockPayload{
 		Txs: make([]*TransactionProto, 0, len(txs)),
 	}
@@ -122,8 +173,8 @@ func (l *Ledger) makePayload(txs map[Digest]Transaction) (*BlockPayload, error) 
 // Watch implements ledger.Ledger. It listens for new transactions and returns
 // the transaction result that can be used to verify if the transaction has been
 // accepted or rejected.
-func (l *Ledger) Watch(ctx context.Context) <-chan ledger.TransactionResult {
-	blocks := l.bc.Watch(ctx)
+func (ldgr *Ledger) Watch(ctx context.Context) <-chan ledger.TransactionResult {
+	blocks := ldgr.bc.Watch(ctx)
 	results := make(chan ledger.TransactionResult)
 
 	go func() {
@@ -137,7 +188,7 @@ func (l *Ledger) Watch(ctx context.Context) <-chan ledger.TransactionResult {
 			payload := block.GetPayload().(*BlockPayload)
 
 			for _, pb := range payload.GetTxs() {
-				tx, err := l.txFactory.FromProto(pb)
+				tx, err := ldgr.txFactory.FromProto(pb)
 				if err != nil {
 					return
 				}
@@ -153,26 +204,29 @@ func (l *Ledger) Watch(ctx context.Context) <-chan ledger.TransactionResult {
 }
 
 type actor struct {
-	ch chan Transaction
+	gossiper gossip.Gossiper
 }
 
-func newActor(ch chan Transaction) actor {
+func newActor(g gossip.Gossiper) actor {
 	return actor{
-		ch: ch,
+		gossiper: g,
 	}
 }
 
 // AddTransaction implements ledger.Actor. It sends the transaction towards the
-// consensus layer. The context can be used to pass a timeout or to cancel the
-// request.
-func (a actor) AddTransaction(ctx context.Context, in ledger.Transaction) error {
+// consensus layer.
+func (a actor) AddTransaction(in ledger.Transaction) error {
 	tx, ok := in.(Transaction)
 	if !ok {
 		return xerrors.Errorf("invalid message type '%T'", in)
 	}
 
-	// TODO: txs gossiping
-	a.ch <- tx
+	// The gossiper will propagate the transaction to other players but also to
+	// the transaction buffer of this player.
+	err := a.gossiper.Add(tx)
+	if err != nil {
+		return xerrors.Errorf("couldn't propagate the tx: %v", err)
+	}
 
 	return nil
 }

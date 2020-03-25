@@ -2,7 +2,6 @@ package byzcoin
 
 import (
 	"context"
-	fmt "fmt"
 	"testing"
 
 	proto "github.com/golang/protobuf/proto"
@@ -43,12 +42,12 @@ func TestLedger_Basic(t *testing.T) {
 	tx, err := ledger.GetTransactionFactory().Create("abc")
 	require.NoError(t, err)
 
-	err = actor.AddTransaction(context.Background(), tx)
+	err = actor.AddTransaction(tx)
 	require.NoError(t, err)
 
 	res := <-trs
 	require.NotNil(t, res)
-	fmt.Printf("%v\n", res)
+	require.Equal(t, tx.GetID(), res.GetTransactionID())
 }
 
 type addressIterator struct {

@@ -8,19 +8,16 @@ import (
 	"go.dedis.ch/fabric/mino"
 )
 
-// TransactionID is the unique identifier of a transaction.
-type TransactionID []byte
-
 // Transaction is an atomic execution of one or several instructions.
 type Transaction interface {
 	encoding.Packable
 
-	GetID() TransactionID
+	GetID() []byte
 }
 
 // TransactionResult is the result of a transaction execution.
 type TransactionResult interface {
-	GetTransactionID() TransactionID
+	GetTransactionID() []byte
 }
 
 // TransactionFactory is a factory to create new transactions or decode from
@@ -33,7 +30,7 @@ type TransactionFactory interface {
 
 // Actor provides the primitives to send transactions to the public ledger.
 type Actor interface {
-	AddTransaction(ctx context.Context, tx Transaction) error
+	AddTransaction(tx Transaction) error
 }
 
 // Ledger provides the primitives to update a distributed public ledger through

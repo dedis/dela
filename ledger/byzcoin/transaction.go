@@ -38,7 +38,7 @@ func newTransaction(f crypto.HashFactory, value string) (Transaction, error) {
 }
 
 // GetID returns the unique identifier of the transaction.
-func (t Transaction) GetID() ledger.TransactionID {
+func (t Transaction) GetID() []byte {
 	return t.hash[:]
 }
 
@@ -62,7 +62,7 @@ type TransactionResult struct {
 }
 
 // GetTransactionID returns the unique identifier of the related transaction.
-func (tr TransactionResult) GetTransactionID() ledger.TransactionID {
+func (tr TransactionResult) GetTransactionID() []byte {
 	return tr.txID[:]
 }
 
