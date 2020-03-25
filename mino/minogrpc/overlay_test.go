@@ -23,6 +23,7 @@ func TestOverlay_Call(t *testing.T) {
 
 	overlayService := overlayService{
 		handlers: make(map[string]mino.Handler),
+		addr:     address{},
 	}
 
 	// The context has no metadata, which should yield an error
@@ -76,6 +77,7 @@ func TestOverlay_Stream(t *testing.T) {
 
 	overlayService := overlayService{
 		handlers: make(map[string]mino.Handler),
+		addr:     address{},
 	}
 
 	streamServer := testServerStream{
@@ -108,26 +110,13 @@ func TestOverlay_Stream(t *testing.T) {
 	require.EqualError(t, err, fmt.Sprintf("didn't find the '%s' handler in the map "+
 		"of handlers, did you register it?", "handler_key"))
 
-	// Now I provide a handler but then we miss the address in the header
-	// metadata
+	// Now I provide a handler
 	overlayService.handlers["handler_key"] = testFailHandler{}
-	err = overlayService.Stream(&streamServer)
-	require.EqualError(t, err, fmt.Sprintf("%s not found in context header", headerAddressKey))
-
-	// Now I add more than one element at the address key in the header metadata
-	header = metadata.New(map[string]string{})
-	header.Append(headerURIKey, "handler_key")
-	header.Append(headerAddressKey, "a", "b")
-	streamServer.ctx = metadata.NewIncomingContext(context.Background(), header)
-	err = overlayService.Stream(&streamServer)
-	require.EqualError(t, err, fmt.Sprintf("unexpected number of elements in %s "+
-		"header. Expected 1, found %d", headerAddressKey, 2))
 
 	// Now I set the right elements in the header but use a handler that should
 	// raise an error
 	header = metadata.New(map[string]string{})
 	header.Append(headerURIKey, "handler_key")
-	header.Append(headerAddressKey, "")
 	streamServer.ctx = metadata.NewIncomingContext(context.Background(), header)
 	err = overlayService.Stream(&streamServer)
 	require.EqualError(t, err, "failed to call the stream handler: oops")
@@ -139,13 +128,6 @@ func TestOverlay_Stream(t *testing.T) {
 	// We have to wait there so we catch the goroutine error
 	time.Sleep(time.Microsecond * 400)
 
-	// Now we use a handler that checks if an error is received. There should be
-	// an error because the receiver.Recv() expects an enveloppe but we are
-	// giving an empty
-	streamServer.recvError = false
-	overlayService.handlers["handler_key"] = testFailHandler2{t: t}
-	err = overlayService.Stream(&streamServer)
-	require.NoError(t, err)
 }
 
 // -----------------
@@ -197,13 +179,4 @@ type testFailHandler2 struct {
 
 func (t testFailHandler2) Process(req proto.Message) (proto.Message, error) {
 	return nil, nil
-}
-
-func (t testFailHandler2) Stream(out mino.Sender, in mino.Receiver) error {
-	any, err := ptypes.MarshalAny(&empty.Empty{})
-	require.NoError(t.t, err)
-
-	_, _, err = in.Recv(context.Background())
-	require.EqualError(t.t, err, encoding.NewAnyDecodingError(any, errors.New("mismatched message type: got \"google.protobuf.Empty\" want \"minogrpc.Envelope\"")).Error())
-	return nil
 }
