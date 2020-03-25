@@ -1,6 +1,8 @@
 package gossip
 
 import (
+	"context"
+
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"go.dedis.ch/fabric/encoding"
@@ -66,7 +68,9 @@ func (flat *Flat) Add(rumor Rumor) error {
 
 	req := &RumorProto{Message: packedAny}
 
-	resps, errs := flat.rpc.Call(req, flat.players)
+	ctx := context.Background()
+
+	resps, errs := flat.rpc.Call(ctx, req, flat.players)
 	for {
 		select {
 		case _, ok := <-resps:
@@ -89,8 +93,8 @@ type handler struct {
 	mino.UnsupportedHandler
 }
 
-func (h handler) Process(pb proto.Message) (proto.Message, error) {
-	switch msg := pb.(type) {
+func (h handler) Process(req mino.Request) (proto.Message, error) {
+	switch msg := req.Message.(type) {
 	case *RumorProto:
 		dynamicAny := &ptypes.DynamicAny{}
 		err := ptypes.UnmarshalAny(msg.GetMessage(), dynamicAny)
@@ -107,6 +111,6 @@ func (h handler) Process(pb proto.Message) (proto.Message, error) {
 
 		return nil, nil
 	default:
-		return nil, xerrors.Errorf("invalid message type '%T'", pb)
+		return nil, xerrors.Errorf("invalid message type '%T'", req.Message)
 	}
 }
