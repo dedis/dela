@@ -44,7 +44,7 @@ type Ledger struct {
 func NewLedger(mino mino.Mino) *Ledger {
 	signer := bls.NewSigner()
 	cosi := flatcosi.NewFlat(mino, signer)
-	factory := transactionFactory{}
+	factory := newTransactionFactory()
 	decoder := func(pb proto.Message) (gossip.Rumor, error) {
 		return factory.FromProto(pb)
 	}
@@ -61,7 +61,7 @@ func NewLedger(mino mino.Mino) *Ledger {
 
 // GetTransactionFactory implements ledger.Ledger. It ..
 func (ldgr *Ledger) GetTransactionFactory() ledger.TransactionFactory {
-	return transactionFactory{}
+	return ldgr.txFactory
 }
 
 // Listen implements ledger.Ledger. It starts to participate in the blockchain
@@ -82,12 +82,12 @@ func (ldgr *Ledger) Listen(players mino.Players) (ledger.Actor, error) {
 		return nil, xerrors.Errorf("couldn't start the gossiper: %v", err)
 	}
 
-	go ldgr.routineTx(bcActor, players)
+	go ldgr.routine(bcActor, players)
 
 	return newActor(ldgr.gossiper), err
 }
 
-func (ldgr *Ledger) routineTx(actor blockchain.Actor, players mino.Players) {
+func (ldgr *Ledger) routine(actor blockchain.Actor, players mino.Players) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
