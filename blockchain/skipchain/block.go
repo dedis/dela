@@ -120,7 +120,7 @@ func (b SkipBlock) GetVerifier() crypto.Verifier {
 	return b.verifier
 }
 
-// GetPayload returns the block payload.
+// GetPayload implements blockchain.Block. It returns the block payload.
 func (b SkipBlock) GetPayload() proto.Message {
 	return b.Payload
 }

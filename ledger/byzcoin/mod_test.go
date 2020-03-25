@@ -50,6 +50,9 @@ func TestLedger_Basic(t *testing.T) {
 	require.Equal(t, tx.GetID(), res.GetTransactionID())
 }
 
+//------------------------------------------------------------------------------
+// Utility functions
+
 type addressIterator struct {
 	index   int
 	members []*Ledger
