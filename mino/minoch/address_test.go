@@ -6,7 +6,15 @@ import (
 	"testing/quick"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/fabric/mino"
 )
+
+func TestAddress_Equal(t *testing.T) {
+	addr := address{id: "A"}
+	require.True(t, addr.Equal(addr))
+	require.False(t, addr.Equal(address{}))
+	require.False(t, addr.Equal(fakeAddress{}))
+}
 
 func TestAddress_MarshalText(t *testing.T) {
 	f := func(id string) bool {
@@ -42,4 +50,11 @@ func TestAddressFactory_FromText(t *testing.T) {
 
 	err := quick.Check(f, nil)
 	require.NoError(t, err)
+}
+
+//------------------------------------------------------------------------------
+// Utility functions
+
+type fakeAddress struct {
+	mino.Address
 }

@@ -9,6 +9,7 @@ import (
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/encoding"
+	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
 
@@ -19,14 +20,14 @@ import (
 type blockValidator struct {
 	*Skipchain
 
-	validator blockchain.Validator
+	validator blockchain.PayloadProcessor
 	queue     *blockQueue
 	watcher   blockchain.Observable
 }
 
 func newBlockValidator(
 	s *Skipchain,
-	v blockchain.Validator,
+	v blockchain.PayloadProcessor,
 	w blockchain.Observable,
 ) *blockValidator {
 	return &blockValidator{
@@ -42,7 +43,9 @@ func newBlockValidator(
 // Validate implements consensus.Validator. It decodes the message into a block
 // and validates its integrity. It returns the block if it is correct, otherwise
 // the error.
-func (v *blockValidator) Validate(pb proto.Message) (consensus.Proposal, error) {
+func (v *blockValidator) Validate(addr mino.Address,
+	pb proto.Message) (consensus.Proposal, error) {
+
 	factory := v.GetBlockFactory().(blockFactory)
 
 	block, err := factory.decodeBlock(pb)
@@ -58,6 +61,11 @@ func (v *blockValidator) Validate(pb proto.Message) (consensus.Proposal, error) 
 	if !bytes.Equal(genesis.GetHash(), block.GenesisID.Bytes()) {
 		return nil, xerrors.Errorf("mismatch genesis hash '%v' != '%v'",
 			genesis.hash, block.GenesisID)
+	}
+
+	err = v.viewchange.Verify(block)
+	if err != nil {
+		return nil, xerrors.Errorf("viewchange refused the block: %v", err)
 	}
 
 	err = v.validator.Validate(block.Payload)

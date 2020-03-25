@@ -19,7 +19,7 @@ type CollectiveAuthority interface {
 // Hashable is the interface to implement to validate an incoming message for a
 // collective signing. It will return the hash that will be signed.
 type Hashable interface {
-	Hash(in proto.Message) ([]byte, error)
+	Hash(addr mino.Address, in proto.Message) ([]byte, error)
 }
 
 // Message is the type of input that can be provided to a collective signing

@@ -28,7 +28,7 @@ type Validator interface {
 	// Validate should return the proposal decoded from the message or
 	// an error if it is invalid. It should also return the previous
 	// proposal.
-	Validate(message proto.Message) (curr Proposal, err error)
+	Validate(addr mino.Address, message proto.Message) (curr Proposal, err error)
 
 	// Commit should commit the proposal with the given identifier. The
 	// implementation makes sure that the commit is atomic with the validation

@@ -408,6 +408,10 @@ type fakeAddress struct {
 	err error
 }
 
+func (a fakeAddress) Equal(other mino.Address) bool {
+	return bytes.Equal(other.(fakeAddress).id, a.id)
+}
+
 func (a fakeAddress) MarshalText() ([]byte, error) {
 	return []byte(a.id), a.err
 }
@@ -573,6 +577,10 @@ func (f fakeAddressFactory) FromText([]byte) mino.Address {
 type fakeMino struct {
 	mino.Mino
 	err error
+}
+
+func (m fakeMino) GetAddress() mino.Address {
+	return fakeAddress{id: []byte{0xaa}}
 }
 
 func (m fakeMino) GetAddressFactory() mino.AddressFactory {

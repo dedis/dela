@@ -1,11 +1,13 @@
 package skipchain
 
 import (
+	"bytes"
 	"context"
 	"testing"
 
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/empty"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/consensus"
@@ -35,8 +37,8 @@ func TestSkipchain_Basic(t *testing.T) {
 	n := 5
 	manager := minoch.NewManager()
 
-	c1, s1, a1 := makeSkipchain(t, "A", manager)
-	c2, _, a2 := makeSkipchain(t, "B", manager)
+	c1, _, a1 := makeSkipchain(t, "A", manager)
+	c2, s2, _ := makeSkipchain(t, "B", manager)
 	conodes := Conodes{c1, c2}
 
 	err := a1.InitChain(&empty.Empty{}, conodes)
@@ -44,23 +46,23 @@ func TestSkipchain_Basic(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	blocks := s1.Watch(ctx)
+	blocks := s2.Watch(ctx)
 
 	for i := 0; i < n; i++ {
-		err = a2.Store(&empty.Empty{}, conodes)
+		err = a1.Store(&empty.Empty{}, conodes)
 		require.NoError(t, err)
 
 		event := <-blocks
 		require.NotNil(t, event)
 		require.IsType(t, SkipBlock{}, event)
 
-		chain, err := s1.GetVerifiableBlock()
+		chain, err := s2.GetVerifiableBlock()
 		require.NoError(t, err)
 
 		packed, err := chain.Pack()
 		require.NoError(t, err)
 
-		block, err := s1.GetBlockFactory().FromVerifiable(packed)
+		block, err := s2.GetBlockFactory().FromVerifiable(packed)
 		require.NoError(t, err)
 		require.NotNil(t, block)
 		require.Equal(t, uint64(i+1), block.(SkipBlock).Index)
@@ -184,23 +186,48 @@ func TestActor_InitChain(t *testing.T) {
 }
 
 func TestActor_Store(t *testing.T) {
+	buffer := new(bytes.Buffer)
+	cons := &fakeConsensusActor{}
 	actor := skipchainActor{
 		Skipchain: &Skipchain{
-			db: &fakeDatabase{},
+			logger:     zerolog.New(buffer),
+			viewchange: fakeViewChange{},
+			mino:       fakeMino{},
+			db:         &fakeDatabase{},
 		},
-		consensus: fakeConsensusActor{},
+		consensus: cons,
 	}
 
-	err := actor.Store(&empty.Empty{}, Conodes{})
+	conodes := Conodes{
+		{addr: fakeAddress{id: []byte{0xbb}}},
+		{addr: fakeAddress{id: []byte{0xaa}}},
+		{addr: fakeAddress{id: []byte{0xcc}}},
+	}
+
+	err := actor.Store(&empty.Empty{}, conodes)
 	require.NoError(t, err)
+	// Make sure the conodes rotate if the view change allows it.
+	require.NotNil(t, cons.prop)
+	prop := cons.prop.(SkipBlock)
+	require.Equal(t, prop.Conodes[0].GetAddress(), conodes[1].GetAddress())
+
+	err = actor.Store(&empty.Empty{}, fakePlayers{})
+	require.EqualError(t, err, "players must implement cosi.CollectiveAuthority")
 
 	actor.Skipchain.db = &fakeDatabase{err: xerrors.New("oops")}
-	err = actor.Store(&empty.Empty{}, Conodes{})
+	err = actor.Store(&empty.Empty{}, conodes)
 	require.EqualError(t, err, "couldn't read the latest block: oops")
 
 	actor.Skipchain.db = &fakeDatabase{}
-	actor.consensus = fakeConsensusActor{err: xerrors.New("oops")}
-	err = actor.Store(&empty.Empty{}, Conodes{})
+	actor.Skipchain.viewchange = fakeViewChange{err: xerrors.New("oops")}
+	err = actor.Store(&empty.Empty{}, conodes)
+	// A view change is ignored.
+	require.NoError(t, err)
+	require.Contains(t, buffer.String(), "skipchain@aa refusing view change: oops")
+
+	actor.Skipchain.viewchange = fakeViewChange{}
+	actor.consensus = &fakeConsensusActor{err: xerrors.New("oops")}
+	err = actor.Store(&empty.Empty{}, conodes)
 	require.EqualError(t, err, "couldn't propose the block: oops")
 }
 
@@ -275,10 +302,12 @@ type fakePlayers struct {
 
 type fakeConsensusActor struct {
 	consensus.Actor
-	err error
+	err  error
+	prop consensus.Proposal
 }
 
-func (a fakeConsensusActor) Propose(consensus.Proposal, mino.Players) error {
+func (a *fakeConsensusActor) Propose(prop consensus.Proposal, pp mino.Players) error {
+	a.prop = prop
 	return a.err
 }
 
@@ -292,4 +321,19 @@ func (rand fakeRandGenerator) Read(buffer []byte) (int, error) {
 		return 0, nil
 	}
 	return len(buffer), rand.err
+}
+
+type fakeViewChange struct {
+	err error
+}
+
+func (vc fakeViewChange) Wait(block blockchain.Block) (mino.Players, error) {
+	// Simulate a rotating view change.
+	players := block.GetPlayers().
+		Take(mino.RangeFilter(0, block.GetPlayers().Len()), mino.RotateFilter(1))
+	return players, vc.err
+}
+
+func (vc fakeViewChange) Verify(blockchain.Block) error {
+	return vc.err
 }

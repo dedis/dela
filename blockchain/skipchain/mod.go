@@ -7,11 +7,14 @@ package skipchain
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/rs/zerolog"
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/blockchain"
+	"go.dedis.ch/fabric/blockchain/viewchange"
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/consensus/cosipbft"
 	"go.dedis.ch/fabric/cosi"
@@ -32,12 +35,15 @@ const (
 // between the blocks.
 //
 // - implements blockchain.Blockchain
+// - implements fmt.Stringer
 type Skipchain struct {
-	mino      mino.Mino
-	cosi      cosi.CollectiveSigning
-	db        Database
-	consensus consensus.Consensus
-	watcher   blockchain.Observable
+	logger     zerolog.Logger
+	mino       mino.Mino
+	cosi       cosi.CollectiveSigning
+	db         Database
+	consensus  consensus.Consensus
+	watcher    blockchain.Observable
+	viewchange viewchange.ViewChange
 }
 
 // NewSkipchain returns a new instance of Skipchain.
@@ -46,6 +52,7 @@ func NewSkipchain(m mino.Mino, cosi cosi.CollectiveSigning) *Skipchain {
 	db := NewInMemoryDatabase()
 
 	return &Skipchain{
+		logger:    fabric.Logger,
 		mino:      m,
 		cosi:      cosi,
 		db:        db,
@@ -56,7 +63,9 @@ func NewSkipchain(m mino.Mino, cosi cosi.CollectiveSigning) *Skipchain {
 
 // Listen implements blockchain.Blockchain. It registers the RPC and starts the
 // consensus module.
-func (s *Skipchain) Listen(v blockchain.Validator) (blockchain.Actor, error) {
+func (s *Skipchain) Listen(v blockchain.PayloadProcessor) (blockchain.Actor, error) {
+	s.viewchange = viewchange.NewConstant(s.mino.GetAddress(), s)
+
 	actor := skipchainActor{
 		Skipchain:   s,
 		hashFactory: sha256Factory{},
@@ -138,6 +147,12 @@ func (s *Skipchain) Watch(ctx context.Context) <-chan blockchain.Block {
 	return ch
 }
 
+// String implements fmt.Stringer. It returns a simple representation of the
+// skipchain instance to easily identify it.
+func (s *Skipchain) String() string {
+	return fmt.Sprintf("skipchain@%v", s.mino.GetAddress())
+}
+
 // skipchainActor provides the primitives of a blockchain actor.
 //
 // - implements blockchain.Actor
@@ -213,6 +228,11 @@ func (a skipchainActor) InitChain(data proto.Message, players mino.Players) erro
 func (a skipchainActor) Store(data proto.Message, players mino.Players) error {
 	factory := a.GetBlockFactory().(blockFactory)
 
+	ca, ok := players.(cosi.CollectiveAuthority)
+	if !ok {
+		return xerrors.Errorf("players must implement cosi.CollectiveAuthority")
+	}
+
 	previous, err := a.db.ReadLast()
 	if err != nil {
 		return xerrors.Errorf("couldn't read the latest block: %v", err)
@@ -221,6 +241,25 @@ func (a skipchainActor) Store(data proto.Message, players mino.Players) error {
 	block, err := factory.fromPrevious(previous, data)
 	if err != nil {
 		return xerrors.Errorf("couldn't create next block: %v", err)
+	}
+
+	block.Conodes = newConodes(ca)
+
+	// Wait for the view change module green signal to go through the proposal.
+	// If the leader has failed and this node has to take over, we use the
+	// inherant property of CoSiPBFT to prove that 2f participants want the view
+	// change.
+	rotation, err := a.viewchange.Wait(block)
+	if err == nil {
+		// If the node is not the current leader and a rotation is necessary, it
+		// will be done.
+		block.Conodes = rotation.(Conodes)
+	} else {
+		a.logger.Debug().Msgf("%v refusing view change: %v", a, err)
+		// Not authorized to propose a block as the leader is moving
+		// forward so we drop the proposal. The upper layer is responsible to
+		// try again until the leader includes the data.
+		return nil
 	}
 
 	err = a.consensus.Propose(block, players)

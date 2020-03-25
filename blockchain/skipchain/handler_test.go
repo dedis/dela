@@ -6,6 +6,7 @@ import (
 
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
 
@@ -21,19 +22,25 @@ func TestHandler_Process(t *testing.T) {
 		packed, err := block.Pack()
 		require.NoError(t, err)
 
-		resp, err := h.Process(&PropagateGenesis{Genesis: packed.(*BlockProto)})
+		req := mino.Request{
+			Message: &PropagateGenesis{Genesis: packed.(*BlockProto)},
+		}
+		resp, err := h.Process(req)
 		require.NoError(t, err)
 		require.Nil(t, resp)
 
-		_, err = h.Process(&empty.Empty{})
+		req.Message = &empty.Empty{}
+		_, err = h.Process(req)
 		require.EqualError(t, err, "unknown message type '*empty.Empty'")
 
-		_, err = h.Process(&PropagateGenesis{})
+		req.Message = &PropagateGenesis{}
+		_, err = h.Process(req)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "couldn't decode the block: ")
 
 		h.Skipchain.db = &fakeDatabase{err: xerrors.New("oops")}
-		_, err = h.Process(&PropagateGenesis{Genesis: packed.(*BlockProto)})
+		req.Message = &PropagateGenesis{Genesis: packed.(*BlockProto)}
+		_, err = h.Process(req)
 		require.EqualError(t, err, "couldn't write the block: oops")
 
 		return true

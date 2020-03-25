@@ -13,6 +13,7 @@ import (
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/encoding"
 	internal "go.dedis.ch/fabric/internal/testing"
+	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/minoch"
 	"golang.org/x/xerrors"
 )
@@ -174,7 +175,9 @@ type fakeValidator struct {
 	wg    sync.WaitGroup
 }
 
-func (v *fakeValidator) Validate(pb proto.Message) (consensus.Proposal, error) {
+func (v *fakeValidator) Validate(addr mino.Address,
+	pb proto.Message) (consensus.Proposal, error) {
+
 	return nil, nil
 }
 

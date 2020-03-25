@@ -15,6 +15,7 @@ import (
 type Address interface {
 	encoding.TextMarshaler
 
+	Equal(other Address) bool
 	String() string
 }
 
@@ -43,6 +44,16 @@ type Sender interface {
 	Send(msg proto.Message, addrs ...Address) <-chan error
 }
 
+// Request is a wrapper around the context of a message received from a player
+// and that needs to be processed by the node. It provides some useful
+// information about the network layer.
+type Request struct {
+	// Address is the address of the sender of the request.
+	Address Address
+	// Message is the message of the request.
+	Message proto.Message
+}
+
 // Receiver is an interface to provide primitives to receive messages from
 // recipients.
 type Receiver interface {
@@ -65,7 +76,7 @@ type RPC interface {
 type Handler interface {
 	// Process handles a single request by producing the response according to
 	// the request message.
-	Process(req proto.Message) (resp proto.Message, err error)
+	Process(req Request) (resp proto.Message, err error)
 
 	// Combine gives a chance to reduce the network load by combining multiple
 	// messages for a collect call on the intermediate nodes.
@@ -81,7 +92,7 @@ type Handler interface {
 type UnsupportedHandler struct{}
 
 // Process is the default implementation for a handler. It will return an error.
-func (h UnsupportedHandler) Process(req proto.Message) (proto.Message, error) {
+func (h UnsupportedHandler) Process(req Request) (proto.Message, error) {
 	return nil, errors.New("rpc is not supported")
 }
 

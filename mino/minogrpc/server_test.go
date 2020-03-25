@@ -856,8 +856,8 @@ type testSameHandler struct {
 	timeout time.Duration
 }
 
-func (t testSameHandler) Process(req proto.Message) (proto.Message, error) {
-	return req, nil
+func (t testSameHandler) Process(req mino.Request) (proto.Message, error) {
+	return req.Message, nil
 }
 
 func (t testSameHandler) Combine(req []proto.Message) ([]proto.Message, error) {
@@ -891,8 +891,8 @@ func (t testSameHandler) Stream(out mino.Sender, in mino.Receiver) error {
 type testModifyHandler struct {
 }
 
-func (t testModifyHandler) Process(req proto.Message) (proto.Message, error) {
-	msg, ok := req.(*empty.Empty)
+func (t testModifyHandler) Process(req mino.Request) (proto.Message, error) {
+	msg, ok := req.Message.(*empty.Empty)
 	if !ok {
 		return nil, xerrors.Errorf("failed to parse request")
 	}

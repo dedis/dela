@@ -23,33 +23,39 @@ func TestBlockValidator_Validate(t *testing.T) {
 			validator: fakeValidator{},
 			watcher:   &fakeWatcher{},
 			Skipchain: &Skipchain{
-				db:        &fakeDatabase{genesisID: block.GenesisID},
-				cosi:      fakeCosi{},
-				mino:      fakeMino{},
-				consensus: fakeConsensus{},
+				viewchange: fakeViewChange{},
+				db:         &fakeDatabase{genesisID: block.GenesisID},
+				cosi:       fakeCosi{},
+				mino:       fakeMino{},
+				consensus:  fakeConsensus{},
 			},
 		}
-		prop, err := v.Validate(packed)
+		prop, err := v.Validate(fakeAddress{}, packed)
 		require.NoError(t, err)
 		require.NotNil(t, prop)
 		require.Equal(t, block.GetHash(), prop.GetHash())
 		require.Equal(t, block.BackLink.Bytes(), prop.GetPreviousHash())
 
-		_, err = v.Validate(nil)
+		_, err = v.Validate(fakeAddress{}, nil)
 		require.EqualError(t, err, "couldn't decode block: invalid message type '<nil>'")
 
 		v.Skipchain.db = &fakeDatabase{err: xerrors.New("oops")}
-		_, err = v.Validate(packed)
+		_, err = v.Validate(fakeAddress{}, packed)
 		require.EqualError(t, err, "couldn't read genesis block: oops")
 
 		v.Skipchain.db = &fakeDatabase{genesisID: Digest{}}
-		_, err = v.Validate(packed)
+		_, err = v.Validate(fakeAddress{}, packed)
 		require.EqualError(t, err,
 			fmt.Sprintf("mismatch genesis hash '%v' != '%v'", Digest{}, block.GenesisID))
 
 		v.Skipchain.db = &fakeDatabase{genesisID: block.GenesisID}
+		v.Skipchain.viewchange = fakeViewChange{err: xerrors.New("oops")}
+		_, err = v.Validate(fakeAddress{}, packed)
+		require.EqualError(t, err, "viewchange refused the block: oops")
+
+		v.Skipchain.viewchange = fakeViewChange{}
 		v.validator = fakeValidator{err: xerrors.New("oops")}
-		_, err = v.Validate(packed)
+		_, err = v.Validate(fakeAddress{}, packed)
 		require.EqualError(t, err, "couldn't validate the payload: oops")
 
 		return true
@@ -95,7 +101,7 @@ func TestBlockValidator_Commit(t *testing.T) {
 }
 
 type fakeValidator struct {
-	blockchain.Validator
+	blockchain.PayloadProcessor
 	err error
 }
 
@@ -115,7 +121,8 @@ type fakeDatabase struct {
 }
 
 func (db *fakeDatabase) Read(index int64) (SkipBlock, error) {
-	return SkipBlock{hash: db.genesisID}, db.err
+	conodes := Conodes{{addr: fakeAddress{}}}
+	return SkipBlock{hash: db.genesisID, Conodes: conodes}, db.err
 }
 
 func (db *fakeDatabase) Write(SkipBlock) error {

@@ -22,6 +22,7 @@ type Envelope struct {
 // RPC is an implementation of the mino.RPC interface.
 type RPC struct {
 	manager *Manager
+	addr    mino.Address
 	path    string
 	h       mino.Handler
 }
@@ -44,7 +45,12 @@ func (c RPC) Call(ctx context.Context, req proto.Message,
 			defer wg.Done()
 
 			if m != nil {
-				resp, err := m.rpcs[c.path].h.Process(cloneReq)
+				req := mino.Request{
+					Address: c.addr,
+					Message: cloneReq,
+				}
+
+				resp, err := m.rpcs[c.path].h.Process(req)
 				if err != nil {
 					errs <- err
 				}

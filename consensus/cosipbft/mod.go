@@ -174,7 +174,7 @@ type handler struct {
 	validator consensus.Validator
 }
 
-func (h handler) Hash(in proto.Message) (Digest, error) {
+func (h handler) Hash(addr mino.Address, in proto.Message) (Digest, error) {
 	switch msg := in.(type) {
 	case *PrepareRequest:
 		var da ptypes.DynamicAny
@@ -185,10 +185,7 @@ func (h handler) Hash(in proto.Message) (Digest, error) {
 
 		// The proposal first needs to be validated by the caller of the module
 		// to insure the generic data is valid.
-		//
-		// TODO: this should lock during the event propagation to insure atomic
-		// operations.
-		proposal, err := h.validator.Validate(da.Message)
+		proposal, err := h.validator.Validate(addr, da.Message)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't validate the proposal: %v", err)
 		}
@@ -250,10 +247,10 @@ type rpcHandler struct {
 	validator consensus.Validator
 }
 
-func (h rpcHandler) Process(req proto.Message) (proto.Message, error) {
-	msg, ok := req.(*PropagateRequest)
+func (h rpcHandler) Process(req mino.Request) (proto.Message, error) {
+	msg, ok := req.Message.(*PropagateRequest)
 	if !ok {
-		return nil, xerrors.Errorf("message type not supported: %T", req)
+		return nil, xerrors.Errorf("message type not supported: %T", req.Message)
 	}
 
 	commit, err := h.factory.DecodeSignature(msg.GetCommit())

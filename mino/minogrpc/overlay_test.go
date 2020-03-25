@@ -14,6 +14,7 @@ import (
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
+	"golang.org/x/xerrors"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -162,7 +163,7 @@ type testFailHandler struct {
 	mino.UnsupportedHandler
 }
 
-func (t testFailHandler) Process(req proto.Message) (proto.Message, error) {
+func (t testFailHandler) Process(req mino.Request) (proto.Message, error) {
 	return nil, errors.New("oops")
 }
 
@@ -177,6 +178,15 @@ type testFailHandler2 struct {
 	t *testing.T
 }
 
-func (t testFailHandler2) Process(req proto.Message) (proto.Message, error) {
+func (t testFailHandler2) Process(req mino.Request) (proto.Message, error) {
 	return nil, nil
+}
+
+func (t testFailHandler2) Stream(out mino.Sender, in mino.Receiver) error {
+	any, err := ptypes.MarshalAny(&empty.Empty{})
+	require.NoError(t.t, err)
+
+	_, _, err = in.Recv(context.Background())
+	require.True(t.t, xerrors.Is(err, encoding.NewAnyDecodingError(any, nil)))
+	return nil
 }

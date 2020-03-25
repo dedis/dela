@@ -259,42 +259,42 @@ func TestHandler_HashPrepare(t *testing.T) {
 		},
 	}
 
-	_, err := h.Hash(&empty.Empty{})
+	_, err := h.Hash(nil, &empty.Empty{})
 	require.EqualError(t, err, "message type not supported: *empty.Empty")
 
 	empty, err := ptypes.MarshalAny(&empty.Empty{})
 	require.NoError(t, err)
 
-	buffer, err := h.Hash(&PrepareRequest{Proposal: empty})
+	buffer, err := h.Hash(nil, &PrepareRequest{Proposal: empty})
 	require.NoError(t, err)
 	require.NotEmpty(t, buffer)
 
-	_, err = h.Hash(&PrepareRequest{Proposal: nil})
+	_, err = h.Hash(nil, &PrepareRequest{Proposal: nil})
 	require.Error(t, err)
 	require.True(t, xerrors.Is(err, encoding.NewAnyDecodingError((*ptypes.DynamicAny)(nil), nil)))
 
 	h.validator = fakeValidator{err: xerrors.New("oops")}
-	_, err = h.Hash(&PrepareRequest{Proposal: empty})
+	_, err = h.Hash(nil, &PrepareRequest{Proposal: empty})
 	require.EqualError(t, err, "couldn't validate the proposal: oops")
 
 	h.validator = fakeValidator{}
 	h.Consensus = &Consensus{storage: fakeStorage{}}
-	_, err = h.Hash(&PrepareRequest{Proposal: empty})
+	_, err = h.Hash(nil, &PrepareRequest{Proposal: empty})
 	require.EqualError(t, err, "couldn't read last: oops")
 
 	h.Consensus.storage = newInMemoryStorage()
 	h.Consensus.storage.Store(&ForwardLinkProto{To: []byte{0xaa}})
-	_, err = h.Hash(&PrepareRequest{Proposal: empty})
+	_, err = h.Hash(nil, &PrepareRequest{Proposal: empty})
 	require.EqualError(t, err, "mismatch with previous link: aa != bb")
 
 	h.Consensus.storage = newInMemoryStorage()
 	h.Consensus.queue = &queue{locked: true}
-	_, err = h.Hash(&PrepareRequest{Proposal: empty})
+	_, err = h.Hash(nil, &PrepareRequest{Proposal: empty})
 	require.EqualError(t, err, "couldn't add to queue: queue is locked")
 
 	h.Consensus.queue = &queue{}
 	h.factory = &defaultChainFactory{hashFactory: badHashFactory{}}
-	_, err = h.Hash(&PrepareRequest{Proposal: empty})
+	_, err = h.Hash(nil, &PrepareRequest{Proposal: empty})
 	require.EqualError(t, err, "couldn't compute hash: couldn't write 'from': oops")
 }
 
@@ -330,21 +330,21 @@ func TestHandler_HashCommit(t *testing.T) {
 	err := h.Consensus.queue.New(fakeProposal{})
 	require.NoError(t, err)
 
-	buffer, err := h.Hash(&CommitRequest{To: []byte{0xaa}})
+	buffer, err := h.Hash(nil, &CommitRequest{To: []byte{0xaa}})
 	require.NoError(t, err)
 	require.Equal(t, []byte{0xde, 0xad, 0xbe, 0xef}, buffer)
 
 	h.Consensus.factory = fakeFactory{err: xerrors.New("oops")}
-	_, err = h.Hash(&CommitRequest{})
+	_, err = h.Hash(nil, &CommitRequest{})
 	require.EqualError(t, err, "couldn't decode prepare signature: oops")
 
 	h.Consensus.factory = fakeFactory{}
 	queue.locked = false
-	_, err = h.Hash(&CommitRequest{To: []byte("unknown")})
+	_, err = h.Hash(nil, &CommitRequest{To: []byte("unknown")})
 	require.EqualError(t, err, "couldn't update signature: couldn't find proposal '756e6b6e6f776e'")
 
 	h.Consensus.factory = fakeFactory{errSignature: xerrors.New("oops")}
-	_, err = h.Hash(&CommitRequest{To: []byte{0xaa}})
+	_, err = h.Hash(nil, &CommitRequest{To: []byte{0xaa}})
 	require.EqualError(t, err, "couldn't marshal the signature: oops")
 }
 
@@ -367,31 +367,32 @@ func TestRPCHandler_Process(t *testing.T) {
 		},
 	}
 
-	resp, err := h.Process(&empty.Empty{})
+	resp, err := h.Process(mino.Request{Message: &empty.Empty{}})
 	require.EqualError(t, err, "message type not supported: *empty.Empty")
 	require.Nil(t, resp)
 
-	resp, err = h.Process(&PropagateRequest{})
+	req := mino.Request{Message: &PropagateRequest{}}
+	resp, err = h.Process(req)
 	require.NoError(t, err)
 	require.Nil(t, resp)
 
 	h.Consensus.factory = fakeFactory{err: xerrors.New("oops")}
-	_, err = h.Process(&PropagateRequest{})
+	_, err = h.Process(req)
 	require.EqualError(t, err, "couldn't decode commit signature: oops")
 
 	h.Consensus.factory = fakeFactory{}
 	h.Consensus.queue = fakeQueue{err: xerrors.New("oops")}
-	_, err = h.Process(&PropagateRequest{})
+	_, err = h.Process(req)
 	require.EqualError(t, err, "couldn't finalize: oops")
 
 	h.Consensus.queue = fakeQueue{}
 	h.Consensus.storage = fakeStorage{}
-	_, err = h.Process(&PropagateRequest{})
+	_, err = h.Process(req)
 	require.EqualError(t, err, "couldn't write forward link: oops")
 
 	h.Consensus.storage = newInMemoryStorage()
 	h.validator = fakeValidator{err: xerrors.New("oops")}
-	_, err = h.Process(&PropagateRequest{})
+	_, err = h.Process(req)
 	require.EqualError(t, err, "couldn't commit: oops")
 }
 
@@ -420,7 +421,9 @@ type fakeValidator struct {
 	err    error
 }
 
-func (v fakeValidator) Validate(msg proto.Message) (consensus.Proposal, error) {
+func (v fakeValidator) Validate(addr mino.Address,
+	msg proto.Message) (consensus.Proposal, error) {
+
 	p := fakeProposal{}
 	return p, v.err
 }

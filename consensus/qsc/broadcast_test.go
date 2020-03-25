@@ -51,16 +51,16 @@ func TestHandlerTLCR_Process(t *testing.T) {
 		},
 	}
 
-	resp, err := h.Process(&MessageSet{})
+	resp, err := h.Process(mino.Request{Message: &MessageSet{}})
 	require.NoError(t, err)
 	require.Nil(t, resp)
 	require.NotNil(t, <-ch)
 
-	resp, err = h.Process(&RequestMessageSet{TimeStep: 0})
+	resp, err = h.Process(mino.Request{Message: &RequestMessageSet{TimeStep: 0}})
 	require.NoError(t, err)
 	require.Nil(t, resp)
 
-	_, err = h.Process(&empty.Empty{})
+	_, err = h.Process(mino.Request{Message: &empty.Empty{}})
 	require.EqualError(t, err, "invalid message type '*empty.Empty'")
 }
 

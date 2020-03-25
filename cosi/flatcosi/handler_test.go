@@ -11,6 +11,7 @@ import (
 	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto/bls"
 	"go.dedis.ch/fabric/encoding"
+	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
 
@@ -19,7 +20,7 @@ type fakeHasher struct {
 	err error
 }
 
-func (h fakeHasher) Hash(proto.Message) ([]byte, error) {
+func (h fakeHasher) Hash(mino.Address, proto.Message) ([]byte, error) {
 	return []byte{0xab}, h.err
 }
 
@@ -27,12 +28,14 @@ func TestHandler_Process(t *testing.T) {
 	defer func() { protoenc = encoding.NewProtoEncoder() }()
 
 	h := newHandler(bls.NewSigner(), fakeHasher{})
-	req := &SignatureRequest{Message: makeMessage(t)}
+	req := mino.Request{
+		Message: &SignatureRequest{Message: makeMessage(t)},
+	}
 
 	_, err := h.Process(req)
 	require.NoError(t, err)
 
-	resp, err := h.Process(&empty.Empty{})
+	resp, err := h.Process(mino.Request{Message: &empty.Empty{}})
 	require.EqualError(t, err, "invalid message type: *empty.Empty")
 	require.Nil(t, resp)
 
