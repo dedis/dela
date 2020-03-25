@@ -1,6 +1,7 @@
 package skipchain
 
 import (
+	fmt "fmt"
 	"sync"
 
 	"golang.org/x/xerrors"
@@ -22,6 +23,27 @@ type Database interface {
 	// Atomic allows the execution of atomic operations. If the callback returns
 	// any error, the transaction will be aborted.
 	Atomic(func(ops Queries) error) error
+}
+
+// NoBlockError is an error returned when the block is not found. It can be used
+// in comparison as it complies with the xerrors.Is requirement.
+type NoBlockError struct {
+	index int64
+}
+
+// NewNoBlockError returns a new instance of the error.
+func NewNoBlockError(index int64) NoBlockError {
+	return NoBlockError{index: index}
+}
+
+func (err NoBlockError) Error() string {
+	return fmt.Sprintf("block at index %d not found", err.index)
+}
+
+// Is returns true when both errors are equal, otherwise it returns false.
+func (err NoBlockError) Is(other error) bool {
+	otherErr, ok := other.(NoBlockError)
+	return ok && otherErr.index == err.index
 }
 
 // InMemoryDatabase is an implementation of the database interface that is
@@ -66,7 +88,7 @@ func (db *InMemoryDatabase) Read(index int64) (SkipBlock, error) {
 		return db.blocks[index], nil
 	}
 
-	return SkipBlock{}, xerrors.Errorf("block at index %d not found", index)
+	return SkipBlock{}, NewNoBlockError(index)
 }
 
 // ReadLast implements skipchain.Database. It reads the last known block of the

@@ -172,8 +172,34 @@ func (a skipchainActor) InitChain(data proto.Message, players mino.Players) erro
 		return xerrors.New("players must implement cosi.CollectiveAuthority")
 	}
 
-	conodes := newConodes(ca)
+	_, err := a.db.Read(0)
+	if err == nil {
+		// Genesis block already exists.
+		return nil
+	}
 
+	if !xerrors.Is(err, NewNoBlockError(0)) {
+		return xerrors.Errorf("couldn't read the genesis block: %v", err)
+	}
+
+	conodes := newConodes(ca)
+	iter := conodes.AddressIterator()
+
+	if conodes.Len() > 0 && iter.GetNext().Equal(a.mino.GetAddress()) {
+		// Only the first player tries to create the genesis block and then
+		// propagates it to the other players.
+		// This is done only once for a new chain thus we can assume that the
+		// first one will be online at that moment.
+		err := a.newChain(data, conodes)
+		if err != nil {
+			return xerrors.Errorf("couldn't init genesis block: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (a skipchainActor) newChain(data proto.Message, conodes Conodes) error {
 	randomBackLink := Digest{}
 	n, err := a.rand.Read(randomBackLink[:])
 	if err != nil {
@@ -196,11 +222,6 @@ func (a skipchainActor) InitChain(data proto.Message, players mino.Players) erro
 		return xerrors.Errorf("couldn't create block: %v", err)
 	}
 
-	err = a.db.Write(genesis)
-	if err != nil {
-		return xerrors.Errorf("couldn't write genesis block: %v", err)
-	}
-
 	packed, err := genesis.Pack()
 	if err != nil {
 		return xerrors.Errorf("couldn't encode the block: %v", err)
@@ -216,11 +237,10 @@ func (a skipchainActor) InitChain(data proto.Message, players mino.Players) erro
 	closing, errs := a.rpc.Call(ctx, msg, conodes)
 	select {
 	case <-closing:
+		return nil
 	case err := <-errs:
 		return xerrors.Errorf("couldn't propagate: %v", err)
 	}
-
-	return nil
 }
 
 // Store implements blockchain.Actor. It will append a new block to chain filled
