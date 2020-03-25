@@ -185,7 +185,7 @@ func (a skipchainActor) InitChain(data proto.Message, players mino.Players) erro
 	conodes := newConodes(ca)
 	iter := conodes.AddressIterator()
 
-	if conodes.Len() > 0 && iter.GetNext().Equal(a.mino.GetAddress()) {
+	if iter.HasNext() && iter.GetNext().Equal(a.mino.GetAddress()) {
 		// Only the first player tries to create the genesis block and then
 		// propagates it to the other players.
 		// This is done only once for a new chain thus we can assume that the
