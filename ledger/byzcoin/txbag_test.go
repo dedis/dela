@@ -7,7 +7,7 @@ import (
 )
 
 func TestTxQueue_GetAll(t *testing.T) {
-	q := newTxQueue()
+	q := newTxBag()
 
 	q.buffer[Digest{1}] = Transaction{}
 	q.buffer[Digest{2}] = Transaction{}
@@ -17,7 +17,7 @@ func TestTxQueue_GetAll(t *testing.T) {
 }
 
 func TestTxQueue_Add(t *testing.T) {
-	q := newTxQueue()
+	q := newTxBag()
 
 	q.Add(Transaction{hash: Digest{1}})
 	q.Add(Transaction{hash: Digest{2}})
@@ -28,7 +28,7 @@ func TestTxQueue_Add(t *testing.T) {
 }
 
 func TestTxQueue_Remove(t *testing.T) {
-	q := newTxQueue()
+	q := newTxBag()
 
 	q.buffer[Digest{1}] = Transaction{}
 	q.buffer[Digest{2}] = Transaction{}

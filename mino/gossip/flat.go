@@ -12,6 +12,8 @@ import (
 
 // Flat is an implementation of a message passing protocol that is using a flat
 // communication approach.
+//
+// - implements gossip.Gossiper
 type Flat struct {
 	mino    mino.Mino
 	players mino.Players
@@ -29,8 +31,8 @@ func NewFlat(m mino.Mino, dec Decoder) *Flat {
 	}
 }
 
-// Start creates the RPC and starts to listen for incoming rumors while
-// spreading its own ones.
+// Start implements gossip.Gossiper. It creates the RPC and starts to listen for
+// incoming rumors while spreading its own ones.
 func (flat *Flat) Start(players mino.Players) error {
 	rpc, err := flat.mino.MakeRPC("flatgossip", handler{Flat: flat})
 	if err != nil {
@@ -43,14 +45,15 @@ func (flat *Flat) Start(players mino.Players) error {
 	return nil
 }
 
-// Stop stops the gossiper.
+// Stop implements gossip.Gossiper. It stops the gossiper.
 func (flat *Flat) Stop() error {
 	flat.rpc = nil
 
 	return nil
 }
 
-// Add adds the rumor to the pool of rumors. It will be spread to the players.
+// Add implements gossip.Gossiper. It adds the rumor to the pool of rumors. It
+// will be spread to the players.
 func (flat *Flat) Add(rumor Rumor) error {
 	if flat.rpc == nil {
 		return xerrors.New("gossiper not started")
@@ -83,7 +86,8 @@ func (flat *Flat) Add(rumor Rumor) error {
 	}
 }
 
-// Rumors returns the channel that is populated with new rumors.
+// Rumors implements gossip.Gossiper. It returns the channel that is populated
+// with new rumors.
 func (flat *Flat) Rumors() <-chan Rumor {
 	return flat.ch
 }

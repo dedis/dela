@@ -12,6 +12,7 @@ import (
 type Transaction interface {
 	encoding.Packable
 
+	// GetID returns a unique identifier for the transaction.
 	GetID() []byte
 }
 

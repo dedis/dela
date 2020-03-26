@@ -59,7 +59,7 @@ func (t Transaction) computeHash(f crypto.HashFactory) (Digest, error) {
 	h := f.New()
 	_, err := h.Write([]byte(t.value))
 	if err != nil {
-		return Digest{}, xerrors.Errorf("couldn't write value: %v", err)
+		return Digest{}, xerrors.Errorf("couldn't write t.value: %v", err)
 	}
 
 	d := Digest{}
@@ -67,7 +67,7 @@ func (t Transaction) computeHash(f crypto.HashFactory) (Digest, error) {
 	return d, nil
 }
 
-// TransactionResult contains the result of an execution of a transaction.
+// TransactionResult contains the result of a transaction execution.
 //
 // - implements ledger.TransactionResult
 // - implements fmt.Stringer

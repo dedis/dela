@@ -9,7 +9,7 @@ import (
 //go:generate protoc -I ./ --go_out=./ ./messages.proto
 
 // Rumor is the message that must be gossiped through the network. It is using
-// the identifier as a unique way of differentiate all the rumors.
+// the identifier as a unique way to differentiate all the rumors.
 type Rumor interface {
 	encoding.Packable
 

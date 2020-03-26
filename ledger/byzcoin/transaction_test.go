@@ -26,7 +26,7 @@ func TestTransaction_NewTransaction(t *testing.T) {
 	require.NotEmpty(t, tx.hash)
 
 	_, err = newTransaction(fakeHashFactory{err: xerrors.New("oops")}, "abc")
-	require.EqualError(t, err, "couldn't hash the tx: couldn't write value: oops")
+	require.EqualError(t, err, "couldn't hash the tx: couldn't write t.value: oops")
 }
 
 func TestTransaction_GetID(t *testing.T) {
@@ -102,7 +102,7 @@ func TestTransactionFactory_FromProto(t *testing.T) {
 	require.Contains(t, err.Error(), "couldn't hash the tx: ")
 }
 
-//------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 // Utility functions
 
 type fakeHash struct {

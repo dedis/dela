@@ -37,7 +37,7 @@ type Ledger struct {
 	bc        blockchain.Blockchain
 	txFactory transactionFactory
 	gossiper  gossip.Gossiper
-	queue     *txQueue
+	queue     *txBag
 }
 
 // NewLedger creates a new Byzcoin ledger.
@@ -55,7 +55,7 @@ func NewLedger(mino mino.Mino) *Ledger {
 		bc:        skipchain.NewSkipchain(mino, cosi),
 		txFactory: factory,
 		gossiper:  gossip.NewFlat(mino, decoder),
-		queue:     newTxQueue(),
+		queue:     newTxBag(),
 	}
 }
 
@@ -107,13 +107,18 @@ func (ldgr *Ledger) routine(actor blockchain.Actor, players mino.Players) {
 			// This timeout has two purposes. The very first use will determine
 			// the round time before the first block is proposed after a boot.
 			// Then it will be used to insure that blocks are still proposed in
-			// of catastrophic failure in the consensus layer (i.e. too many
-			// players offline for a while).
+			// case of catastrophic failure in the consensus layer (i.e. too
+			// many players offline for a while).
 			go ldgr.proposeBlock(actor, players)
 
 			roundTimeout = time.After(timeoutRoundTime)
 		case block := <-blocks:
-			payload := block.GetPayload().(*BlockPayload)
+			payload, ok := block.GetPayload().(*BlockPayload)
+			if !ok {
+				fabric.Logger.Warn().Msgf("found invalid payload type '%T' != '%T'",
+					block.GetPayload(), payload)
+				break
+			}
 
 			txRes := make([]TransactionResult, len(payload.GetTxs()))
 			for i, pb := range payload.GetTxs() {
@@ -155,16 +160,16 @@ func (ldgr *Ledger) proposeBlock(actor blockchain.Actor, players mino.Players) {
 
 func (ldgr *Ledger) makePayload(txs []Transaction) (*BlockPayload, error) {
 	payload := &BlockPayload{
-		Txs: make([]*TransactionProto, 0, len(txs)),
+		Txs: make([]*TransactionProto, len(txs)),
 	}
 
-	for _, tx := range txs {
+	for i, tx := range txs {
 		packed, err := tx.Pack()
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("failed to pack tx: %v", err)
 		}
 
-		payload.Txs = append(payload.Txs, packed.(*TransactionProto))
+		payload.Txs[i] = packed.(*TransactionProto)
 	}
 
 	return payload, nil
@@ -185,16 +190,17 @@ func (ldgr *Ledger) Watch(ctx context.Context) <-chan ledger.TransactionResult {
 				return
 			}
 
-			payload := block.GetPayload().(*BlockPayload)
+			payload, ok := block.GetPayload().(*BlockPayload)
+			if ok {
+				for _, txProto := range payload.GetTxs() {
+					tx, err := ldgr.txFactory.FromProto(txProto)
+					if err != nil {
+						return
+					}
 
-			for _, pb := range payload.GetTxs() {
-				tx, err := ldgr.txFactory.FromProto(pb)
-				if err != nil {
-					return
-				}
-
-				results <- TransactionResult{
-					txID: tx.(Transaction).hash,
+					results <- TransactionResult{
+						txID: tx.(Transaction).hash,
+					}
 				}
 			}
 		}
@@ -218,7 +224,7 @@ func newActor(g gossip.Gossiper) actor {
 func (a actor) AddTransaction(in ledger.Transaction) error {
 	tx, ok := in.(Transaction)
 	if !ok {
-		return xerrors.Errorf("invalid message type '%T'", in)
+		return xerrors.Errorf("message type '%T' but expected '%T'", in, tx)
 	}
 
 	// The gossiper will propagate the transaction to other players but also to
