@@ -17,7 +17,7 @@ var namespaceMatch = regexp.MustCompile("^[a-zA-Z0-9]+$")
 
 // Minogrpc represents a grpc service restricted to a namespace
 type Minogrpc struct {
-	server    Server
+	server    *Server
 	namespace string
 }
 
@@ -81,7 +81,7 @@ func NewMinogrpc(identifier string) (Minogrpc, error) {
 	}
 	server.neighbours[identifier] = peer
 
-	minoGrpc.server = *server
+	minoGrpc.server = server
 	minoGrpc.namespace = ""
 
 	return minoGrpc, err
@@ -135,5 +135,5 @@ func (m Minogrpc) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 
 	m.server.handlers[URI] = h
 
-	return rpc, nil
+	return &rpc, nil
 }
