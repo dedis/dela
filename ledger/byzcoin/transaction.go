@@ -25,6 +25,7 @@ func (d Digest) String() string {
 //
 // - implements ledger.Transaction
 // - implements encoding.Packable
+// - implements fmt.Stringer
 type Transaction struct {
 	hash Digest
 	// TODO: smart contract input
@@ -53,6 +54,10 @@ func (t Transaction) GetID() []byte {
 // transaction.
 func (t Transaction) Pack() (proto.Message, error) {
 	return &TransactionProto{Value: t.value}, nil
+}
+
+func (t Transaction) String() string {
+	return fmt.Sprintf("Transaction{Value: %s}", t.value)
 }
 
 func (t Transaction) computeHash(f crypto.HashFactory) (Digest, error) {

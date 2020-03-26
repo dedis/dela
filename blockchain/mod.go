@@ -36,12 +36,12 @@ type BlockFactory interface {
 // PayloadProcessor is the interface to implement to validate the generic
 // payload stored in the block.
 type PayloadProcessor interface {
-	// Validate should return nil if the data pass the validation.
-	Validate(data proto.Message) error
+	// Validate should return nil if the payload pass the validation.
+	Validate(index uint64, payload proto.Message) error
 
 	// Commit should process the data and perform any operation required when
 	// new data is stored on the chain.
-	Commit(data proto.Message) error
+	Commit(payload proto.Message) error
 }
 
 // Actor is a primitive created by the blockchain to propose new blocks.

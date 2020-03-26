@@ -12,4 +12,5 @@ message TransactionProto {
 // applied.
 message BlockPayload {
     repeated TransactionProto txs = 1;
+    bytes root = 2;
 }

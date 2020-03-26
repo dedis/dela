@@ -68,7 +68,7 @@ func (v *blockValidator) Validate(addr mino.Address,
 		return nil, xerrors.Errorf("viewchange refused the block: %v", err)
 	}
 
-	err = v.validator.Validate(block.Payload)
+	err = v.validator.Validate(block.Index, block.Payload)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't validate the payload: %v", err)
 	}
