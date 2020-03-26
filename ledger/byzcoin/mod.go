@@ -56,7 +56,7 @@ func NewLedger(mino mino.Mino) *Ledger {
 		txFactory: factory,
 		gossiper:  gossip.NewFlat(mino, decoder),
 		queue:     newTxBag(),
-		inventory: newValidator(),
+		inventory: newTxProcessor(),
 	}
 }
 
@@ -196,7 +196,7 @@ func (ldgr *Ledger) Watch(ctx context.Context) <-chan ledger.TransactionResult {
 		for {
 			block, ok := <-blocks
 			if !ok {
-				fabric.Logger.Debug().Msg("watcher is closing")
+				fabric.Logger.Trace().Msg("watcher is closing")
 				return
 			}
 

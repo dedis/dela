@@ -12,18 +12,25 @@ import (
 	"golang.org/x/xerrors"
 )
 
+// txProcessor provides primitives to pre-process transactions and commit their
+// payload later on.
+//
+// - implements blockchain.PayloadProcessor
 type txProcessor struct {
 	txFactory ledger.TransactionFactory
 	inventory inventory.Inventory
 }
 
-func newValidator() *txProcessor {
+func newTxProcessor() *txProcessor {
 	return &txProcessor{
 		txFactory: newTransactionFactory(),
 		inventory: mem.NewInventory(),
 	}
 }
 
+// Validate implements blockchain.PayloadProcessor. It returns if the validation
+// is a success. In that case, the payload has been staged in the inventory and
+// is waiting for a commit order.
 func (proc *txProcessor) Validate(index uint64, data proto.Message) error {
 	payload, ok := data.(*BlockPayload)
 	if !ok {
@@ -35,35 +42,40 @@ func (proc *txProcessor) Validate(index uint64, data proto.Message) error {
 		return xerrors.Errorf("couldn't stage the transactions: %v", err)
 	}
 
-	if snap.GetVersion() != index {
-		return xerrors.Errorf("invalid index %d != %d", snap.GetVersion(), index)
+	if snap.GetIndex() != index {
+		return xerrors.Errorf("invalid index %d != %d", snap.GetIndex(), index)
 	}
 
 	if !bytes.Equal(snap.GetRoot(), payload.GetRoot()) {
-		return xerrors.Errorf("mismatch payload root %x != %x",
+		return xerrors.Errorf("mismatch payload root '%#x' != '%#x'",
 			snap.GetRoot(), payload.GetRoot())
 	}
 
-	fabric.Logger.Info().Msgf("staging new inventory %x", snap.GetRoot())
+	fabric.Logger.Trace().Msgf("staging new inventory %x", snap.GetRoot())
 
 	return nil
 }
 
-func (proc *txProcessor) process(payload *BlockPayload) (inventory.Snapshot, error) {
-	return proc.inventory.Stage(func(snap inventory.WritableSnapshot) error {
+func (proc *txProcessor) process(payload *BlockPayload) (inventory.Page, error) {
+	return proc.inventory.Stage(func(snap inventory.WritablePage) error {
 		for _, txpb := range payload.GetTxs() {
 			tx, err := proc.txFactory.FromProto(txpb)
 			if err != nil {
 				return encoding.NewDecodingError("transaction", err)
 			}
 
-			fabric.Logger.Info().Msgf("processing %v", tx)
+			fabric.Logger.Trace().Msgf("processing %v", tx)
+
+			// TODO: execute the transaction with a smart contract executor.
 		}
 
 		return nil
 	})
 }
 
+// Commit implements blockchain.PayloadProcessor. It tries to commit to the
+// payload as it should have previously been processed. It returns nil if the
+// commit is a success, otherwise an error.
 func (proc *txProcessor) Commit(data proto.Message) error {
 	payload, ok := data.(*BlockPayload)
 	if !ok {
@@ -72,7 +84,7 @@ func (proc *txProcessor) Commit(data proto.Message) error {
 
 	err := proc.inventory.Commit(payload.GetRoot())
 	if err != nil {
-		return xerrors.Errorf("couldn't commit to snapshot %x: %v", payload.GetRoot(), err)
+		return xerrors.Errorf("couldn't commit to page '%#x': %v", payload.GetRoot(), err)
 	}
 
 	return nil
