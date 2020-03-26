@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package byzcoin;
+
+// TransactionProto is the message that represents a transaction.
+message TransactionProto {
+    string value = 1;
+}
+
+// BlockPayload is the message that will be stored in the blocks. It is composed
+// of the transactions and the new states of the chain after they have been
+// applied.
+message BlockPayload {
+    repeated TransactionProto txs = 1;
+}
