@@ -692,6 +692,7 @@ func TestRPC_MultipleRingRelay_Stream(t *testing.T) {
 	}
 	server1, err := CreateServer(addr1)
 	require.NoError(t, err)
+	server1.traffic.log = true
 	server1.StartServer()
 	peer1 := Peer{
 		Address:     server1.listener.Addr().String(),
@@ -704,6 +705,7 @@ func TestRPC_MultipleRingRelay_Stream(t *testing.T) {
 	}
 	server2, err := CreateServer(addr2)
 	require.NoError(t, err)
+	server2.traffic.log = true
 	server2.StartServer()
 	peer2 := Peer{
 		Address:     server2.listener.Addr().String(),
@@ -716,6 +718,7 @@ func TestRPC_MultipleRingRelay_Stream(t *testing.T) {
 	}
 	server3, err := CreateServer(addr3)
 	require.NoError(t, err)
+	server3.traffic.log = true
 	server3.StartServer()
 	peer3 := Peer{
 		Address:     server3.listener.Addr().String(),
@@ -728,6 +731,7 @@ func TestRPC_MultipleRingRelay_Stream(t *testing.T) {
 	}
 	server4, err := CreateServer(addr4)
 	require.NoError(t, err)
+	server4.traffic.log = true
 	server4.StartServer()
 	peer4 := Peer{
 		Address:     server4.listener.Addr().String(),
@@ -893,6 +897,7 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 	}
 	server1, err := CreateServer(addr1)
 	require.NoError(t, err)
+	server1.traffic.log = true
 	server1.StartServer()
 	peer1 := Peer{
 		Address:     server1.listener.Addr().String(),
@@ -905,6 +910,7 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 	}
 	server2, err := CreateServer(addr2)
 	require.NoError(t, err)
+	server2.traffic.log = true
 	server2.StartServer()
 	peer2 := Peer{
 		Address:     server2.listener.Addr().String(),
@@ -917,6 +923,7 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 	}
 	server3, err := CreateServer(addr3)
 	require.NoError(t, err)
+	server3.traffic.log = true
 	server3.StartServer()
 	peer3 := Peer{
 		Address:     server3.listener.Addr().String(),
@@ -929,6 +936,7 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 	}
 	server4, err := CreateServer(addr4)
 	require.NoError(t, err)
+	server4.traffic.log = true
 	server4.StartServer()
 	peer4 := Peer{
 		Address:     server4.listener.Addr().String(),

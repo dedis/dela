@@ -2,6 +2,7 @@ package minogrpc
 
 import (
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 
@@ -14,19 +15,49 @@ var eachLine = regexp.MustCompile(`(?m)^(.+)$`)
 // traffic is used to keep track of packets traffic in a server
 type traffic struct {
 	items []item
+	log   bool
 }
 
-func (h traffic) String() string {
+func newTraffic() traffic {
+	log := false
+
+	flag := os.Getenv("MINO_LOG_PACKETS")
+	if flag == "true" {
+		log = true
+	}
+
+	return traffic{
+		items: make([]item, 0),
+		log:   log,
+	}
+}
+
+func (t *traffic) logSend(to mino.Address, msg proto.Message, context string) {
+	t.addItem("send", to, msg, context)
+}
+
+func (t *traffic) logRcv(from mino.Address, msg proto.Message, context string) {
+	t.addItem("received", from, msg, context)
+}
+
+func (t *traffic) logRcvRelay(from mino.Address, msg proto.Message, context string) {
+	t.addItem("received to relay", from, msg, context)
+}
+
+func (t traffic) String() string {
 	out := new(strings.Builder)
 	out.WriteString("- traffic:\n")
-	for _, item := range h.items {
+	for _, item := range t.items {
 		out.WriteString(eachLine.ReplaceAllString(item.String(), "-$1"))
 	}
 	return out.String()
 }
 
-func (h *traffic) addItem(typeStr string, addr mino.Address, msg proto.Message, context string) {
-	h.items = append(h.items, item{typeStr: typeStr, addr: addr, msg: msg, context: context})
+func (t *traffic) addItem(typeStr string, addr mino.Address, msg proto.Message, context string) {
+	if !t.log {
+		return
+	}
+	t.items = append(t.items, item{typeStr: typeStr, addr: addr, msg: msg, context: context})
 }
 
 type item struct {

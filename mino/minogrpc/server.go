@@ -253,7 +253,8 @@ func listenClient(stream Overlay_StreamClient, orchRecv receiver,
 		if toSend == addr.String() || toSend == orchestratorID {
 			orchRecv.in <- msg
 		} else {
-			orchRecv.srv.logRcvRelay(address{envelope.From}, envelope, orchRecv.name)
+			orchRecv.srv.traffic.logRcvRelay(address{envelope.From}, envelope,
+				orchRecv.name)
 			fabric.Logger.Trace().Msgf("(orchestrator) relaying message from "+
 				"'%s' to '%s'", envelope.From, toSend)
 
@@ -289,7 +290,7 @@ func CreateServer(addr mino.Address) (*Server, error) {
 		neighbours: make(map[string]Peer),
 		handlers:   make(map[string]mino.Handler),
 		handlerRW:  m,
-		traffic:    traffic{items: make([]item, 0)},
+		traffic:    newTraffic(),
 	}
 
 	RegisterOverlayServer(srv, &overlayService{
@@ -368,18 +369,6 @@ func (srv *Server) getConnection(addr string) (*grpc.ClientConn, error) {
 	}
 
 	return conn, nil
-}
-
-func (srv *Server) logSend(to mino.Address, msg proto.Message, context string) {
-	srv.traffic.addItem("send", to, msg, context)
-}
-
-func (srv *Server) logRcv(from mino.Address, msg proto.Message, context string) {
-	srv.traffic.addItem("received", from, msg, context)
-}
-
-func (srv *Server) logRcvRelay(from mino.Address, msg proto.Message, context string) {
-	srv.traffic.addItem("received to relay", from, msg, context)
 }
 
 func makeCertificate() (*tls.Certificate, error) {
@@ -529,7 +518,7 @@ func sendSingle(s *sender, msg proto.Message, addr mino.Address) error {
 		Message: envelopeAny,
 	}
 
-	s.srv.logSend(addr, sendMsg, s.name)
+	s.srv.traffic.logSend(addr, sendMsg, s.name)
 	err = player.Send(sendMsg)
 	if err == io.EOF {
 		return nil
@@ -587,7 +576,7 @@ func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error)
 		return nil, nil, encoding.NewAnyDecodingError(enveloppe.Message, err)
 	}
 
-	r.srv.logRcv(address{enveloppe.From}, dynamicAny.Message, r.name)
+	r.srv.traffic.logRcv(address{enveloppe.From}, dynamicAny.Message, r.name)
 
 	return address{id: enveloppe.From}, dynamicAny.Message, nil
 }
