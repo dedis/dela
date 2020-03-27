@@ -233,7 +233,6 @@ func (rpc RPC) Stream(ctx context.Context,
 			errs <- err
 			continue
 		}
-
 		orchSender.participants[addr.String()] = stream
 
 		// Listen on the clients streams and notify the orchestrator or relay
@@ -292,6 +291,7 @@ func listenClient(stream Overlay_StreamClient, orchRecv receiver,
 		if toSend == addr.String() || toSend == orchestratorID {
 			orchRecv.in <- msg
 		} else {
+			orchRecv.srv.logRcvRelay(address{envelope.From}, envelope, orchRecv.name)
 			fabric.Logger.Trace().Msgf("(orchestrator) relaying message from "+
 				"'%s' to '%s'", envelope.From, toSend)
 
@@ -416,6 +416,10 @@ func (srv *Server) logRcv(from mino.Address, msg proto.Message, context string) 
 	srv.history.addItem("received", from, msg, context)
 }
 
+func (srv *Server) logRcvRelay(from mino.Address, msg proto.Message, context string) {
+	srv.history.addItem("received to relay", from, msg, context)
+}
+
 func makeCertificate() (*tls.Certificate, error) {
 	priv, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
 	if err != nil {
@@ -508,7 +512,6 @@ func sendSingle(s *sender, msg proto.Message, addr mino.Address) error {
 		// address into our neighbor list
 		_, found = s.srv.neighbours[addr.String()]
 		if found {
-			fmt.Println(">> creating client: ", addr.String())
 
 			clientConn, err := s.srv.getConnection(addr.String())
 			if err != nil {
@@ -524,6 +527,8 @@ func sendSingle(s *sender, msg proto.Message, addr mino.Address) error {
 				return xerrors.Errorf("failed to create new stream from new client: %v", err)
 			}
 
+			s.participants[addr.String()] = player
+
 			// We relay the message
 		} else {
 
@@ -536,8 +541,6 @@ func sendSingle(s *sender, msg proto.Message, addr mino.Address) error {
 					"be relayed to '%s'. My client '%s' was not found in the list "+
 					"of participant: '%v'", addr, s.address, s.participants)
 			}
-
-			s.participants[addr.String()] = player
 
 			fabric.Logger.Trace().Msgf("I don't know client '%s', so I'm sending "+
 				"back a message that must be relayed. From '%s', To '%s'",

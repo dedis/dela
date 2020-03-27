@@ -3,7 +3,6 @@ package minogrpc
 import (
 	context "context"
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -786,8 +785,13 @@ func TestRPC_MultipleRingRelay_Stream(t *testing.T) {
 	require.Equal(t, "dummy_value_"+identifier1+"_"+identifier2+"_"+identifier3+"_"+identifier4,
 		dummyMsg2.Value)
 
+	// fmt.Println("server1: " + server1.history.String())
+	// fmt.Println("server2: " + server2.history.String())
+	// fmt.Println("server3: " + server3.history.String())
+	// fmt.Println("server4: " + server4.history.String())
+
 	// history of server 1
-	require.Equal(t, 6, len(server1.history.items))
+	require.Equal(t, 8, len(server1.history.items))
 	require.Equal(t, "send", server1.history.items[0].typeStr)
 	require.Equal(t, "127.0.0.1:2001", server1.history.items[0].addr.String())
 	require.IsType(t, &OverlayMsg{}, server1.history.items[0].msg)
@@ -803,20 +807,40 @@ func TestRPC_MultipleRingRelay_Stream(t *testing.T) {
 	require.IsType(t, &OverlayMsg{}, server1.history.items[2].msg)
 	require.Equal(t, "remote RPC", server1.history.items[2].context)
 
-	require.Equal(t, "send", server1.history.items[3].typeStr)
-	require.Equal(t, "127.0.0.1:2003", server1.history.items[3].addr.String())
-	require.IsType(t, &OverlayMsg{}, server1.history.items[3].msg)
+	require.Equal(t, "received to relay", server1.history.items[3].typeStr)
+	require.Equal(t, "127.0.0.1:2002", server1.history.items[3].addr.String())
+	require.IsType(t, &Envelope{}, server1.history.items[3].msg)
 	require.Equal(t, "orchestrator", server1.history.items[3].context)
+	env, ok := server1.history.items[3].msg.(*Envelope)
+	require.True(t, ok)
+	require.Equal(t, "127.0.0.1:2002", env.From)
+	require.Equal(t, 1, len(env.To))
+	require.Equal(t, "127.0.0.1:2003", env.To[0])
 
 	require.Equal(t, "send", server1.history.items[4].typeStr)
-	require.Equal(t, "127.0.0.1:2004", server1.history.items[4].addr.String())
+	require.Equal(t, "127.0.0.1:2003", server1.history.items[4].addr.String())
 	require.IsType(t, &OverlayMsg{}, server1.history.items[4].msg)
 	require.Equal(t, "orchestrator", server1.history.items[4].context)
 
-	require.Equal(t, "received", server1.history.items[5].typeStr)
-	require.Equal(t, "127.0.0.1:2004", server1.history.items[5].addr.String())
-	require.IsType(t, &wrappers.StringValue{}, server1.history.items[5].msg)
+	require.Equal(t, "received to relay", server1.history.items[5].typeStr)
+	require.Equal(t, "127.0.0.1:2003", server1.history.items[5].addr.String())
+	require.IsType(t, &Envelope{}, server1.history.items[5].msg)
 	require.Equal(t, "orchestrator", server1.history.items[5].context)
+	env, ok = server1.history.items[5].msg.(*Envelope)
+	require.True(t, ok)
+	require.Equal(t, "127.0.0.1:2003", env.From)
+	require.Equal(t, 1, len(env.To))
+	require.Equal(t, "127.0.0.1:2004", env.To[0])
+
+	require.Equal(t, "send", server1.history.items[6].typeStr)
+	require.Equal(t, "127.0.0.1:2004", server1.history.items[6].addr.String())
+	require.IsType(t, &OverlayMsg{}, server1.history.items[6].msg)
+	require.Equal(t, "orchestrator", server1.history.items[6].context)
+
+	require.Equal(t, "received", server1.history.items[7].typeStr)
+	require.Equal(t, "127.0.0.1:2004", server1.history.items[7].addr.String())
+	require.IsType(t, &wrappers.StringValue{}, server1.history.items[7].msg)
+	require.Equal(t, "orchestrator", server1.history.items[7].context)
 
 	// history of server 2
 	require.Equal(t, 2, len(server2.history.items))
@@ -853,11 +877,6 @@ func TestRPC_MultipleRingRelay_Stream(t *testing.T) {
 	require.Equal(t, "127.0.0.1:2004", server4.history.items[1].addr.String())
 	require.IsType(t, &OverlayMsg{}, server4.history.items[1].msg)
 	require.Equal(t, "remote RPC", server4.history.items[1].context)
-
-	fmt.Println("server1: " + server1.history.String())
-	fmt.Println("server2: " + server2.history.String())
-	fmt.Println("server3: " + server3.history.String())
-	fmt.Println("server4: " + server4.history.String())
 
 	server1.grpcSrv.GracefulStop()
 	server2.grpcSrv.GracefulStop()
@@ -1038,6 +1057,7 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 func TestSender_Send(t *testing.T) {
 	sender := sender{
 		participants: make(map[string]overlayStream),
+		srv:          &Server{neighbours: make(map[string]Peer)},
 	}
 
 	// sending to an empty list should not yield an error
@@ -1055,7 +1075,7 @@ func TestSender_Send(t *testing.T) {
 	if !more {
 		t.Error("there should be an error")
 	}
-	require.EqualError(t, err, "failed to send to client '': failed to send back a message that should be relayed to ''. My client '' was not found in the list of participant: '[]'")
+	require.EqualError(t, err, "sender '' failed to send to client '': failed to send back a message that should be relayed to ''. My client '' was not found in the list of participant: 'map[]'")
 
 	// now I add the participant to the list, an error should be given since the
 	// message is nil
@@ -1066,7 +1086,7 @@ func TestSender_Send(t *testing.T) {
 	if !more {
 		t.Error("there should be an error")
 	}
-	require.EqualError(t, err, "failed to send to client 'fake': "+encoding.NewAnyEncodingError(nil, errors.New("proto: Marshal called with nil")).Error())
+	require.EqualError(t, err, "sender '' failed to send to client 'fake': "+encoding.NewAnyEncodingError(nil, errors.New("proto: Marshal called with nil")).Error())
 }
 
 func TestReceiver_Recv(t *testing.T) {

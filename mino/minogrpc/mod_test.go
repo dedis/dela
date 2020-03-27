@@ -100,7 +100,7 @@ func Test_MakeRPC(t *testing.T) {
 	rpc, err := minoGrpc.MakeRPC("name", handler)
 	require.NoError(t, err)
 
-	expectedRPC := RPC{
+	expectedRPC := &RPC{
 		handler: handler,
 		srv:     minoGrpc.server,
 		uri:     fmt.Sprintf("namespace/name"),
