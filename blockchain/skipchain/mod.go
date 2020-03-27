@@ -63,7 +63,7 @@ func NewSkipchain(m mino.Mino, cosi cosi.CollectiveSigning) *Skipchain {
 
 // Listen implements blockchain.Blockchain. It registers the RPC and starts the
 // consensus module.
-func (s *Skipchain) Listen(v blockchain.PayloadProcessor) (blockchain.Actor, error) {
+func (s *Skipchain) Listen(proc blockchain.PayloadProcessor) (blockchain.Actor, error) {
 	s.viewchange = viewchange.NewConstant(s.mino.GetAddress(), s)
 
 	actor := skipchainActor{
@@ -73,12 +73,12 @@ func (s *Skipchain) Listen(v blockchain.PayloadProcessor) (blockchain.Actor, err
 	}
 
 	var err error
-	actor.rpc, err = s.mino.MakeRPC("skipchain", newHandler(s))
+	actor.rpc, err = s.mino.MakeRPC("skipchain", newHandler(s, proc))
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't create the rpc: %v", err)
 	}
 
-	actor.consensus, err = s.consensus.Listen(newBlockValidator(s, v, s.watcher))
+	actor.consensus, err = s.consensus.Listen(newBlockValidator(s, proc, s.watcher))
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't start the consensus: %v", err)
 	}

@@ -35,6 +35,10 @@ type Inventory interface {
 	// with the given index.
 	GetPage(index uint64) (Page, error)
 
+	// GetStagingPage returns the staging page that matches the root if any,
+	// otherwise nil.
+	GetStagingPage(root []byte) Page
+
 	// Stage starts a new version of the inventory and temporarily stores it
 	// until it is committed or another staging version is.
 	Stage(func(WritablePage) error) (Page, error)

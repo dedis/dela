@@ -16,11 +16,13 @@ func TestTxProcessor_Validate(t *testing.T) {
 	require.NoError(t, err)
 
 	err = proc.Validate(0, nil)
-	require.EqualError(t, err, "message type '<nil>' but expected '*byzcoin.BlockPayload'")
+	require.EqualError(t, err,
+		"message type '<nil>' but expected '*byzcoin.BlockPayload'")
 
 	proc.inventory = fakeInventory{err: xerrors.New("oops")}
 	err = proc.Validate(0, &BlockPayload{})
-	require.EqualError(t, err, "couldn't stage the transactions: oops")
+	require.EqualError(t, err,
+		"couldn't stage the transactions: couldn't stage new page: oops")
 
 	proc.inventory = fakeInventory{index: 1}
 	err = proc.Validate(0, &BlockPayload{})
@@ -29,6 +31,15 @@ func TestTxProcessor_Validate(t *testing.T) {
 	proc.inventory = fakeInventory{footprint: []byte{0xab}}
 	err = proc.Validate(0, &BlockPayload{Footprint: []byte{0xcd}})
 	require.EqualError(t, err, "mismatch payload footprint '0xab' != '0xcd'")
+}
+
+func TestTxProcessor_Process(t *testing.T) {
+	proc := newTxProcessor()
+	proc.inventory = fakeInventory{page: &fakePage{index: 999}}
+
+	page, err := proc.process(&BlockPayload{})
+	require.NoError(t, err)
+	require.Equal(t, uint64(999), page.GetIndex())
 }
 
 func TestTxProcessor_Commit(t *testing.T) {
@@ -55,11 +66,11 @@ type fakePage struct {
 	footprint []byte
 }
 
-func (p fakePage) GetIndex() uint64 {
+func (p *fakePage) GetIndex() uint64 {
 	return p.index
 }
 
-func (p fakePage) GetFootprint() []byte {
+func (p *fakePage) GetFootprint() []byte {
 	return p.footprint
 }
 
@@ -67,11 +78,19 @@ type fakeInventory struct {
 	inventory.Inventory
 	index     uint64
 	footprint []byte
+	page      *fakePage
 	err       error
 }
 
+func (inv fakeInventory) GetStagingPage([]byte) inventory.Page {
+	if inv.page != nil {
+		return inv.page
+	}
+	return nil
+}
+
 func (inv fakeInventory) Stage(func(inventory.WritablePage) error) (inventory.Page, error) {
-	return fakePage{index: inv.index, footprint: inv.footprint}, inv.err
+	return &fakePage{index: inv.index, footprint: inv.footprint}, inv.err
 }
 
 func (inv fakeInventory) Commit([]byte) error {

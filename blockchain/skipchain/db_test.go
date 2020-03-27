@@ -70,6 +70,8 @@ func TestInMemoryDatabase_Atomic(t *testing.T) {
 	db := NewInMemoryDatabase()
 
 	err := db.Atomic(func(ops Queries) error {
+		// Make sure you can still use out of tx operations.
+		require.NoError(t, db.Write(SkipBlock{Index: 0}))
 		return ops.Write(SkipBlock{Index: 0})
 	})
 	require.NoError(t, err)

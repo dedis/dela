@@ -24,6 +24,8 @@ func (d Digest) String() string {
 
 // InMemoryInventory is an implementation of the inventory interface by using a
 // memory storage which means that it will not persist.
+//
+// - implements inventory.Inventory
 type InMemoryInventory struct {
 	hashFactory  crypto.HashFactory
 	pages        []inMemoryPage
@@ -33,15 +35,14 @@ type InMemoryInventory struct {
 // NewInventory returns a new empty instance of the inventory.
 func NewInventory() *InMemoryInventory {
 	return &InMemoryInventory{
-		hashFactory: crypto.NewSha256Factory(),
-		// TODO: first page should come from the genesis block.
-		pages:        []inMemoryPage{{}},
+		hashFactory:  crypto.NewSha256Factory(),
+		pages:        []inMemoryPage{},
 		stagingPages: make(map[Digest]inMemoryPage),
 	}
 }
 
-// GetPage returns the snapshot for the version if it exists, otherwise an
-// error.
+// GetPage implements inventory.Inventory. It returns the snapshot for the
+// version if it exists, otherwise an error.
 func (inv *InMemoryInventory) GetPage(index uint64) (inventory.Page, error) {
 	i := int(index)
 	if i >= len(inv.pages) {
@@ -51,8 +52,22 @@ func (inv *InMemoryInventory) GetPage(index uint64) (inventory.Page, error) {
 	return inv.pages[i], nil
 }
 
-// Stage starts a new version. It returns the new snapshot that is not yet
-// committed to the available versions.
+// GetStagingPage implements inventory.Inventory. It returns the staging page
+// that matches the root if any, otherwise nil.
+func (inv *InMemoryInventory) GetStagingPage(root []byte) inventory.Page {
+	digest := Digest{}
+	copy(digest[:], root)
+
+	page, ok := inv.stagingPages[digest]
+	if !ok {
+		return nil
+	}
+
+	return page
+}
+
+// Stage implements inventory.Inventory. It starts a new version. It returns the
+// new snapshot that is not yet committed to the available versions.
 func (inv *InMemoryInventory) Stage(f func(inventory.WritablePage) error) (inventory.Page, error) {
 	var page inMemoryPage
 	if len(inv.pages) > 0 {
