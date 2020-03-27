@@ -118,6 +118,8 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 				rcvr.in <- msg
 			}
 		}()
+		// we must wait on this signal before exiting in order to keep the
+		// stream open
 		<-o.handlerRcvr[apiURI[0]].stop
 		return nil
 	}
@@ -128,9 +130,6 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 			"of handlers, did you register it?", apiURI[0])
 	}
 
-	// This participant is used to send back messages that must be
-	// relayed.
-	// o.participants["server_"+o.addr.String()] = stream
 	rpcID := "server_" + o.addr.String()
 
 	// For the moment this sender can only receive messages to itself
