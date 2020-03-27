@@ -270,7 +270,7 @@ func TestObserver_NotifyCallback(t *testing.T) {
 
 type testValidator struct{}
 
-func (v testValidator) Validate(payload proto.Message) error {
+func (v testValidator) Validate(index uint64, payload proto.Message) error {
 	return nil
 }
 

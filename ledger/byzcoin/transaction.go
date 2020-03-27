@@ -1,9 +1,7 @@
 package byzcoin
 
 import (
-	"crypto/sha256"
 	fmt "fmt"
-	"hash"
 
 	proto "github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric/crypto"
@@ -25,6 +23,7 @@ func (d Digest) String() string {
 //
 // - implements ledger.Transaction
 // - implements encoding.Packable
+// - implements fmt.Stringer
 type Transaction struct {
 	hash Digest
 	// TODO: smart contract input
@@ -53,6 +52,10 @@ func (t Transaction) GetID() []byte {
 // transaction.
 func (t Transaction) Pack() (proto.Message, error) {
 	return &TransactionProto{Value: t.value}, nil
+}
+
+func (t Transaction) String() string {
+	return fmt.Sprintf("Transaction{Value: %s}", t.value)
 }
 
 func (t Transaction) computeHash(f crypto.HashFactory) (Digest, error) {
@@ -87,16 +90,6 @@ func (tr TransactionResult) String() string {
 	return fmt.Sprintf("TransactionResult@%v", tr.txID)
 }
 
-// sha256Factory is an implementation of a hash factory using SHA256.
-//
-// - implements crypto.HashFactory
-type sha256Factory struct{}
-
-// New implements crypto.HashFactory. It returns a new SHA256 digest instance.
-func (h sha256Factory) New() hash.Hash {
-	return sha256.New()
-}
-
 // transactionFactory is an implementation of a Byzcoin transaction factory.
 //
 // - implements ledger.TransactionFactory
@@ -106,7 +99,7 @@ type transactionFactory struct {
 
 func newTransactionFactory() transactionFactory {
 	return transactionFactory{
-		hashFactory: sha256Factory{},
+		hashFactory: crypto.NewSha256Factory(),
 	}
 }
 

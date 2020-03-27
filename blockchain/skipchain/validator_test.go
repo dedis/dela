@@ -105,7 +105,7 @@ type fakeValidator struct {
 	err error
 }
 
-func (v fakeValidator) Validate(proto.Message) error {
+func (v fakeValidator) Validate(uint64, proto.Message) error {
 	return v.err
 }
 

@@ -8,8 +8,11 @@ message TransactionProto {
 }
 
 // BlockPayload is the message that will be stored in the blocks. It is composed
-// of the transactions and the new states of the chain after they have been
-// applied.
+// of the transactions and the footprint of the new inventory.
 message BlockPayload {
     repeated TransactionProto txs = 1;
+
+    // Footprint is an integrity check of the final state of the inventory after
+    // applying the transactions.
+    bytes footprint = 2;
 }

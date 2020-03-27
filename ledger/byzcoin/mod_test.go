@@ -3,6 +3,7 @@ package byzcoin
 import (
 	"context"
 	"testing"
+	"time"
 
 	proto "github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
@@ -45,12 +46,17 @@ func TestLedger_Basic(t *testing.T) {
 	err = actor.AddTransaction(tx)
 	require.NoError(t, err)
 
-	res := <-trs
-	require.NotNil(t, res)
-	require.Equal(t, tx.GetID(), res.GetTransactionID())
+	select {
+	case res := <-trs:
+		require.NotNil(t, res)
+		require.Equal(t, tx.GetID(), res.GetTransactionID())
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("timeout")
+	}
+
 }
 
-//------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 // Utility functions
 
 type addressIterator struct {

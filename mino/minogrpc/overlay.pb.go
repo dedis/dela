@@ -125,7 +125,9 @@ func init() {
 	proto.RegisterType((*OverlayMsg)(nil), "minogrpc.OverlayMsg")
 }
 
-func init() { proto.RegisterFile("overlay.proto", fileDescriptor_61fc82527fbe24ad) }
+func init() {
+	proto.RegisterFile("overlay.proto", fileDescriptor_61fc82527fbe24ad)
+}
 
 var fileDescriptor_61fc82527fbe24ad = []byte{
 	// 210 bytes of a gzipped FileDescriptorProto
@@ -147,11 +149,11 @@ var fileDescriptor_61fc82527fbe24ad = []byte{
 
 // Reference imports to suppress errors if they are not otherwise used.
 var _ context.Context
-var _ grpc.ClientConn
+var _ grpc.ClientConnInterface
 
 // This is a compile-time assertion to ensure that this generated file
 // is compatible with the grpc package it is being compiled against.
-const _ = grpc.SupportPackageIsVersion4
+const _ = grpc.SupportPackageIsVersion6
 
 // OverlayClient is the client API for Overlay service.
 //
@@ -162,10 +164,10 @@ type OverlayClient interface {
 }
 
 type overlayClient struct {
-	cc *grpc.ClientConn
+	cc grpc.ClientConnInterface
 }
 
-func NewOverlayClient(cc *grpc.ClientConn) OverlayClient {
+func NewOverlayClient(cc grpc.ClientConnInterface) OverlayClient {
 	return &overlayClient{cc}
 }
 

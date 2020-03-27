@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/empty"
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/blockchain/skipchain"
@@ -38,6 +37,7 @@ type Ledger struct {
 	txFactory transactionFactory
 	gossiper  gossip.Gossiper
 	queue     *txBag
+	inventory *txProcessor
 }
 
 // NewLedger creates a new Byzcoin ledger.
@@ -56,6 +56,7 @@ func NewLedger(mino mino.Mino) *Ledger {
 		txFactory: factory,
 		gossiper:  gossip.NewFlat(mino, decoder),
 		queue:     newTxBag(),
+		inventory: newTxProcessor(),
 	}
 }
 
@@ -67,12 +68,12 @@ func (ldgr *Ledger) GetTransactionFactory() ledger.TransactionFactory {
 // Listen implements ledger.Ledger. It starts to participate in the blockchain
 // and returns an actor that can send transactions.
 func (ldgr *Ledger) Listen(players mino.Players) (ledger.Actor, error) {
-	bcActor, err := ldgr.bc.Listen(newValidator())
+	bcActor, err := ldgr.bc.Listen(ldgr.inventory)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't start the blockchain: %v", err)
 	}
 
-	err = bcActor.InitChain(&empty.Empty{}, players)
+	err = bcActor.InitChain(&BlockPayload{}, players)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't initialize the chain: %v", err)
 	}
@@ -144,7 +145,7 @@ func (ldgr *Ledger) routine(actor blockchain.Actor, players mino.Players) {
 }
 
 func (ldgr *Ledger) proposeBlock(actor blockchain.Actor, players mino.Players) {
-	payload, err := ldgr.makePayload(ldgr.queue.GetAll())
+	payload, err := ldgr.stagePayload(ldgr.queue.GetAll())
 	if err != nil {
 		fabric.Logger.Err(err).Msg("couldn't make the payload")
 	}
@@ -158,7 +159,9 @@ func (ldgr *Ledger) proposeBlock(actor blockchain.Actor, players mino.Players) {
 	}
 }
 
-func (ldgr *Ledger) makePayload(txs []Transaction) (*BlockPayload, error) {
+// stagePayload creates a payload with the list of transactions by staging a new
+// snapshot to the inventory.
+func (ldgr *Ledger) stagePayload(txs []Transaction) (*BlockPayload, error) {
 	payload := &BlockPayload{
 		Txs: make([]*TransactionProto, len(txs)),
 	}
@@ -171,6 +174,13 @@ func (ldgr *Ledger) makePayload(txs []Transaction) (*BlockPayload, error) {
 
 		payload.Txs[i] = packed.(*TransactionProto)
 	}
+
+	snap, err := ldgr.inventory.process(payload)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't process the txs: %v", err)
+	}
+
+	payload.Footprint = snap.GetFootprint()
 
 	return payload, nil
 }
@@ -186,7 +196,7 @@ func (ldgr *Ledger) Watch(ctx context.Context) <-chan ledger.TransactionResult {
 		for {
 			block, ok := <-blocks
 			if !ok {
-				fabric.Logger.Debug().Msg("watcher is closing")
+				fabric.Logger.Trace().Msg("watcher is closing")
 				return
 			}
 
@@ -234,22 +244,5 @@ func (a actor) AddTransaction(in ledger.Transaction) error {
 		return xerrors.Errorf("couldn't propagate the tx: %v", err)
 	}
 
-	return nil
-}
-
-type validator struct{}
-
-func newValidator() validator {
-	return validator{}
-}
-
-func (v validator) Validate(data proto.Message) error {
-	// TODO: implements
-	// TODO: return more than just an error to produce tx results
-	return nil
-}
-
-func (v validator) Commit(data proto.Message) error {
-	// TODO: implements
 	return nil
 }
