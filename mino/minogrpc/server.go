@@ -34,7 +34,7 @@ const (
 	certificateDuration = time.Hour * 24 * 180
 	// this string is used to identify the orchestrator. We use it as its
 	// address.
-	orchestratorID = "orchestrator"
+	orchestratorAddr = "orchestrator_addr"
 )
 
 var (
@@ -160,7 +160,7 @@ func (rpc RPC) Stream(ctx context.Context,
 	errs := make(chan error, players.Len())
 
 	orchSender := &sender{
-		address:      address{orchestratorID},
+		address:      address{orchestratorAddr},
 		participants: make(map[string]overlayStream),
 		name:         "orchestrator",
 		neighbours:   rpc.srv.neighbours,
@@ -267,7 +267,7 @@ func listenClient(stream Overlay_StreamClient, orchRecv receiver,
 		// if we receive a message to ourself or the orchestrator, then we
 		// notify the orchstrator receiver by filling orchRecv.in. If this is
 		// not the case we then relay the message.
-		if toSend == addr.String() || toSend == orchestratorID {
+		if toSend == addr.String() || toSend == orchestratorAddr {
 			orchRecv.in <- msg
 		} else {
 			orchRecv.traffic.logRcvRelay(address{envelope.From}, envelope,

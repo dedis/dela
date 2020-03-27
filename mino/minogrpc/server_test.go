@@ -802,7 +802,7 @@ func TestRPC_MultipleRingRelay_Stream(t *testing.T) {
 	require.Equal(t, "orchestrator", server1.traffic.items[0].context)
 
 	require.Equal(t, "received", server1.traffic.items[1].typeStr)
-	require.Equal(t, "orchestrator", server1.traffic.items[1].addr.String())
+	require.Equal(t, orchestratorAddr, server1.traffic.items[1].addr.String())
 	require.IsType(t, &wrappers.StringValue{}, server1.traffic.items[1].msg)
 	require.Equal(t, "remote RPC", server1.traffic.items[1].context)
 
@@ -812,12 +812,12 @@ func TestRPC_MultipleRingRelay_Stream(t *testing.T) {
 	require.Equal(t, "remote RPC", server1.traffic.items[2].context)
 
 	require.Equal(t, "received to relay", server1.traffic.items[3].typeStr)
-	require.Equal(t, "127.0.0.1:2002", server1.traffic.items[3].addr.String())
+	require.Equal(t, "server_127.0.0.1:2002", server1.traffic.items[3].addr.String())
 	require.IsType(t, &Envelope{}, server1.traffic.items[3].msg)
 	require.Equal(t, "orchestrator", server1.traffic.items[3].context)
 	env, ok := server1.traffic.items[3].msg.(*Envelope)
 	require.True(t, ok)
-	require.Equal(t, "127.0.0.1:2002", env.From)
+	require.Equal(t, "server_127.0.0.1:2002", env.From)
 	require.Equal(t, 1, len(env.To))
 	require.Equal(t, "127.0.0.1:2003", env.To[0])
 
@@ -827,12 +827,12 @@ func TestRPC_MultipleRingRelay_Stream(t *testing.T) {
 	require.Equal(t, "orchestrator", server1.traffic.items[4].context)
 
 	require.Equal(t, "received to relay", server1.traffic.items[5].typeStr)
-	require.Equal(t, "127.0.0.1:2003", server1.traffic.items[5].addr.String())
+	require.Equal(t, "server_127.0.0.1:2003", server1.traffic.items[5].addr.String())
 	require.IsType(t, &Envelope{}, server1.traffic.items[5].msg)
 	require.Equal(t, "orchestrator", server1.traffic.items[5].context)
 	env, ok = server1.traffic.items[5].msg.(*Envelope)
 	require.True(t, ok)
-	require.Equal(t, "127.0.0.1:2003", env.From)
+	require.Equal(t, "server_127.0.0.1:2003", env.From)
 	require.Equal(t, 1, len(env.To))
 	require.Equal(t, "127.0.0.1:2004", env.To[0])
 
@@ -842,14 +842,14 @@ func TestRPC_MultipleRingRelay_Stream(t *testing.T) {
 	require.Equal(t, "orchestrator", server1.traffic.items[6].context)
 
 	require.Equal(t, "received", server1.traffic.items[7].typeStr)
-	require.Equal(t, "127.0.0.1:2004", server1.traffic.items[7].addr.String())
+	require.Equal(t, "server_127.0.0.1:2004", server1.traffic.items[7].addr.String())
 	require.IsType(t, &wrappers.StringValue{}, server1.traffic.items[7].msg)
 	require.Equal(t, "orchestrator", server1.traffic.items[7].context)
 
 	// traffic of server 2
 	require.Equal(t, 2, len(server2.traffic.items))
 	require.Equal(t, "received", server2.traffic.items[0].typeStr)
-	require.Equal(t, "127.0.0.1:2001", server2.traffic.items[0].addr.String())
+	require.Equal(t, "server_127.0.0.1:2001", server2.traffic.items[0].addr.String())
 	require.IsType(t, &wrappers.StringValue{}, server2.traffic.items[0].msg)
 	require.Equal(t, "remote RPC", server2.traffic.items[0].context)
 
@@ -861,7 +861,7 @@ func TestRPC_MultipleRingRelay_Stream(t *testing.T) {
 	// traffic of server 3
 	require.Equal(t, 2, len(server3.traffic.items))
 	require.Equal(t, "received", server3.traffic.items[0].typeStr)
-	require.Equal(t, "orchestrator", server3.traffic.items[0].addr.String())
+	require.Equal(t, orchestratorAddr, server3.traffic.items[0].addr.String())
 	require.IsType(t, &wrappers.StringValue{}, server3.traffic.items[0].msg)
 	require.Equal(t, "remote RPC", server3.traffic.items[0].context)
 
@@ -873,7 +873,7 @@ func TestRPC_MultipleRingRelay_Stream(t *testing.T) {
 	// traffic of server 4
 	require.Equal(t, 2, len(server4.traffic.items))
 	require.Equal(t, "received", server4.traffic.items[0].typeStr)
-	require.Equal(t, "orchestrator", server4.traffic.items[0].addr.String())
+	require.Equal(t, orchestratorAddr, server4.traffic.items[0].addr.String())
 	require.IsType(t, &wrappers.StringValue{}, server4.traffic.items[0].msg)
 	require.Equal(t, "remote RPC", server4.traffic.items[0].context)
 
@@ -1006,7 +1006,7 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 	require.Equal(t, "orchestrator", server1.traffic.items[0].context)
 
 	require.Equal(t, "received", server1.traffic.items[1].typeStr)
-	require.Equal(t, "orchestrator", server1.traffic.items[1].addr.String())
+	require.Equal(t, orchestratorAddr, server1.traffic.items[1].addr.String())
 	require.IsType(t, &wrappers.StringValue{}, server1.traffic.items[1].msg)
 	require.Equal(t, "remote RPC", server1.traffic.items[1].context)
 
@@ -1016,14 +1016,14 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 	require.Equal(t, "remote RPC", server1.traffic.items[2].context)
 
 	require.Equal(t, "received", server1.traffic.items[3].typeStr)
-	require.Equal(t, "127.0.0.1:2004", server1.traffic.items[3].addr.String())
+	require.Equal(t, "server_127.0.0.1:2004", server1.traffic.items[3].addr.String())
 	require.IsType(t, &wrappers.StringValue{}, server1.traffic.items[3].msg)
 	require.Equal(t, "orchestrator", server1.traffic.items[3].context)
 
 	// traffic of server 2
 	require.Equal(t, 2, len(server2.traffic.items))
 	require.Equal(t, "received", server2.traffic.items[0].typeStr)
-	require.Equal(t, "127.0.0.1:2001", server2.traffic.items[0].addr.String())
+	require.Equal(t, "server_127.0.0.1:2001", server2.traffic.items[0].addr.String())
 	require.IsType(t, &wrappers.StringValue{}, server2.traffic.items[0].msg)
 	require.Equal(t, "remote RPC", server2.traffic.items[0].context)
 
@@ -1035,7 +1035,7 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 	// traffic of server 3
 	require.Equal(t, 2, len(server3.traffic.items))
 	require.Equal(t, "received", server3.traffic.items[0].typeStr)
-	require.Equal(t, "127.0.0.1:2002", server3.traffic.items[0].addr.String())
+	require.Equal(t, "server_127.0.0.1:2002", server3.traffic.items[0].addr.String())
 	require.IsType(t, &wrappers.StringValue{}, server3.traffic.items[0].msg)
 	require.Equal(t, "remote RPC", server3.traffic.items[0].context)
 
@@ -1047,7 +1047,7 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 	// traffic of server 4
 	require.Equal(t, 2, len(server4.traffic.items))
 	require.Equal(t, "received", server4.traffic.items[0].typeStr)
-	require.Equal(t, "127.0.0.1:2003", server4.traffic.items[0].addr.String())
+	require.Equal(t, "server_127.0.0.1:2003", server4.traffic.items[0].addr.String())
 	require.IsType(t, &wrappers.StringValue{}, server4.traffic.items[0].msg)
 	require.Equal(t, "remote RPC", server4.traffic.items[0].context)
 

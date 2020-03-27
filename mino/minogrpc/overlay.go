@@ -17,12 +17,20 @@ import (
 // gRPC service for the overlay. The handler map points to the one in
 // Server.Handlers, which is updated each time the makeRPC function is called.
 type overlayService struct {
-	handlers    map[string]mino.Handler
-	addr        address
-	neighbours  map[string]Peer
-	srvCert     *tls.Certificate
-	traffic     *traffic
+	handlers map[string]mino.Handler
+	// this one is used when we open a new connexion on an existing RPC stream.
+	// In that case we must use the already existing receiver for this RPC.
 	handlerRcvr map[string]receiver
+	// this is the address of the server. This address is used to provide
+	// insighful information in the traffic history, as it is used to form the
+	// addressID of the sender.
+	addr address
+	// This map is used to create a new stream connection if possible
+	neighbours map[string]Peer
+	// This certificate is used to create a new stream connection if possible
+	srvCert *tls.Certificate
+	// Used to record traffic activity
+	traffic *traffic
 }
 
 // Call is the implementation of the overlay.Call proto definition
@@ -123,6 +131,7 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 	// This participant is used to send back messages that must be
 	// relayed.
 	// o.participants["server_"+o.addr.String()] = stream
+	rpcID := "server_" + o.addr.String()
 
 	// For the moment this sender can only receive messages to itself
 	// TODO: find a way to know the other nodes.
@@ -131,8 +140,10 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		// should send the message to in the list of participant. In that case
 		// it packs the message in an enveloppe and send it back to this
 		// address, which is registered in the list of participant.
-		address:      o.addr,
-		participants: map[string]overlayStream{o.addr.String(): stream},
+		// It is also used to indicate the "from" of the message in the case it
+		// doesn't relay but sends directly.
+		address:      address{rpcID},
+		participants: map[string]overlayStream{rpcID: stream},
 		name:         "remote RPC",
 		neighbours:   o.neighbours,
 		srvCert:      o.srvCert,
