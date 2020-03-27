@@ -21,6 +21,10 @@ An intro...
   implementation, it's about the definitions of modular pieces that build
   a blockchain.
 
+- **footprint** - Footprint defines a digest commonly produced by a hash
+  algorithm that can be used to verify the integrity of some data. One example
+  is the inventory page integrity to prove which instances are stored.
+
 - **ledger** - A ledger is...
 
 - **message** - A message...
