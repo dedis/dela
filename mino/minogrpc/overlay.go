@@ -135,11 +135,11 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 	}
 
 	receiver := receiver{
-		in:   make(chan *OverlayMsg),
-		errs: make(chan error),
-		name: "remote RPC",
-		stop: make(chan interface{}),
-		srv:  o.srv,
+		in:      make(chan *OverlayMsg),
+		errs:    make(chan error),
+		name:    "remote RPC",
+		stop:    make(chan interface{}),
+		traffic: &o.srv.traffic,
 	}
 	go func() {
 		for {

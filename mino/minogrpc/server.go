@@ -163,9 +163,9 @@ func (rpc RPC) Stream(ctx context.Context,
 		errs: errs,
 		// it is okay to have a blocking chan here because every use of it is in
 		// a goroutine, where we don't mind if it blocks.
-		in:   make(chan *OverlayMsg),
-		name: "orchestrator",
-		srv:  rpc.srv,
+		in:      make(chan *OverlayMsg),
+		name:    "orchestrator",
+		traffic: &rpc.srv.traffic,
 	}
 
 	// Creating a stream for each provided addr
@@ -253,7 +253,7 @@ func listenClient(stream Overlay_StreamClient, orchRecv receiver,
 		if toSend == addr.String() || toSend == orchestratorID {
 			orchRecv.in <- msg
 		} else {
-			orchRecv.srv.traffic.logRcvRelay(address{envelope.From}, envelope,
+			orchRecv.traffic.logRcvRelay(address{envelope.From}, envelope,
 				orchRecv.name)
 			fabric.Logger.Trace().Msgf("(orchestrator) relaying message from "+
 				"'%s' to '%s'", envelope.From, toSend)
@@ -531,11 +531,11 @@ func sendSingle(s *sender, msg proto.Message, addr mino.Address) error {
 
 // receiver implements mino.receiver
 type receiver struct {
-	errs chan error
-	in   chan *OverlayMsg
-	name string
-	stop chan interface{}
-	srv  *Server
+	errs    chan error
+	in      chan *OverlayMsg
+	name    string
+	stop    chan interface{}
+	traffic *traffic
 }
 
 // Recv implements mino.receiver
@@ -576,7 +576,7 @@ func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error)
 		return nil, nil, encoding.NewAnyDecodingError(enveloppe.Message, err)
 	}
 
-	r.srv.traffic.logRcv(address{enveloppe.From}, dynamicAny.Message, r.name)
+	r.traffic.logRcv(address{enveloppe.From}, dynamicAny.Message, r.name)
 
 	return address{id: enveloppe.From}, dynamicAny.Message, nil
 }
