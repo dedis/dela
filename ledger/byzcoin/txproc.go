@@ -37,27 +37,31 @@ func (proc *txProcessor) Validate(index uint64, data proto.Message) error {
 		return xerrors.Errorf("message type '%T' but expected '%T'", data, payload)
 	}
 
-	snap, err := proc.process(payload)
+	page, err := proc.process(payload)
 	if err != nil {
 		return xerrors.Errorf("couldn't stage the transactions: %v", err)
 	}
 
-	if snap.GetIndex() != index {
-		return xerrors.Errorf("invalid index %d != %d", snap.GetIndex(), index)
+	if page.GetIndex() != index {
+		return xerrors.Errorf("invalid index %d != %d", page.GetIndex(), index)
 	}
 
-	if !bytes.Equal(snap.GetFootprint(), payload.GetFootprint()) {
+	if !bytes.Equal(page.GetFootprint(), payload.GetFootprint()) {
 		return xerrors.Errorf("mismatch payload footprint '%#x' != '%#x'",
-			snap.GetFootprint(), payload.GetFootprint())
+			page.GetFootprint(), payload.GetFootprint())
 	}
-
-	fabric.Logger.Trace().Msgf("staging new inventory %x", snap.GetFootprint())
 
 	return nil
 }
 
 func (proc *txProcessor) process(payload *BlockPayload) (inventory.Page, error) {
-	return proc.inventory.Stage(func(snap inventory.WritablePage) error {
+	page := proc.inventory.GetStagingPage(payload.GetFootprint())
+	if page != nil {
+		// Page has already been processed previously.
+		return page, nil
+	}
+
+	page, err := proc.inventory.Stage(func(snap inventory.WritablePage) error {
 		for _, txpb := range payload.GetTxs() {
 			tx, err := proc.txFactory.FromProto(txpb)
 			if err != nil {
@@ -71,6 +75,12 @@ func (proc *txProcessor) process(payload *BlockPayload) (inventory.Page, error) 
 
 		return nil
 	})
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't stage new page: %v", err)
+	}
+
+	fabric.Logger.Trace().Msgf("staging new inventory %#x", page.GetFootprint())
+	return page, err
 }
 
 // Commit implements blockchain.PayloadProcessor. It tries to commit to the

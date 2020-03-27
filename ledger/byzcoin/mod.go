@@ -73,7 +73,12 @@ func (ldgr *Ledger) Listen(players mino.Players) (ledger.Actor, error) {
 		return nil, xerrors.Errorf("couldn't start the blockchain: %v", err)
 	}
 
-	err = bcActor.InitChain(&BlockPayload{}, players)
+	payload, err := ldgr.stagePayload(nil)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't make genesis payload: %v", err)
+	}
+
+	err = bcActor.InitChain(payload, players)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't initialize the chain: %v", err)
 	}
@@ -162,6 +167,7 @@ func (ldgr *Ledger) proposeBlock(actor blockchain.Actor, players mino.Players) {
 // stagePayload creates a payload with the list of transactions by staging a new
 // snapshot to the inventory.
 func (ldgr *Ledger) stagePayload(txs []Transaction) (*BlockPayload, error) {
+	fabric.Logger.Trace().Msgf("staging payload with %d transactions", len(txs))
 	payload := &BlockPayload{
 		Txs: make([]*TransactionProto, len(txs)),
 	}

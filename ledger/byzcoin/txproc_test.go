@@ -16,11 +16,13 @@ func TestTxProcessor_Validate(t *testing.T) {
 	require.NoError(t, err)
 
 	err = proc.Validate(0, nil)
-	require.EqualError(t, err, "message type '<nil>' but expected '*byzcoin.BlockPayload'")
+	require.EqualError(t, err,
+		"message type '<nil>' but expected '*byzcoin.BlockPayload'")
 
 	proc.inventory = fakeInventory{err: xerrors.New("oops")}
 	err = proc.Validate(0, &BlockPayload{})
-	require.EqualError(t, err, "couldn't stage the transactions: oops")
+	require.EqualError(t, err,
+		"couldn't stage the transactions: couldn't stage new page: oops")
 
 	proc.inventory = fakeInventory{index: 1}
 	err = proc.Validate(0, &BlockPayload{})
@@ -68,6 +70,10 @@ type fakeInventory struct {
 	index     uint64
 	footprint []byte
 	err       error
+}
+
+func (inv fakeInventory) GetStagingPage([]byte) inventory.Page {
+	return nil
 }
 
 func (inv fakeInventory) Stage(func(inventory.WritablePage) error) (inventory.Page, error) {

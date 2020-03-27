@@ -3,6 +3,7 @@ package skipchain
 import (
 	proto "github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric"
+	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
@@ -14,11 +15,14 @@ import (
 type handler struct {
 	mino.UnsupportedHandler
 	*Skipchain
+
+	proc blockchain.PayloadProcessor
 }
 
-func newHandler(sc *Skipchain) handler {
+func newHandler(sc *Skipchain, proc blockchain.PayloadProcessor) handler {
 	return handler{
 		Skipchain: sc,
+		proc:      proc,
 	}
 }
 
@@ -34,12 +38,29 @@ func (h handler) Process(req mino.Request) (proto.Message, error) {
 			return nil, xerrors.Errorf("couldn't decode the block: %v", err)
 		}
 
-		err = h.db.Write(genesis)
+		err = h.proc.Validate(0, genesis.GetPayload())
 		if err != nil {
-			return nil, xerrors.Errorf("couldn't write the block: %v", err)
+			return nil, xerrors.Errorf("couldn't validate genesis payload: %v", err)
 		}
 
-		fabric.Logger.Trace().Msgf("New Genesis block written: %v", genesis.hash)
+		err = h.db.Atomic(func(ops Queries) error {
+			err = ops.Write(genesis)
+			if err != nil {
+				return xerrors.Errorf("couldn't write the block: %v", err)
+			}
+
+			err = h.proc.Commit(genesis.GetPayload())
+			if err != nil {
+				return xerrors.Errorf("couldn't commit genesis payload: %v", err)
+			}
+
+			return nil
+		})
+		if err != nil {
+			return nil, xerrors.Errorf("tx aborted: %v", err)
+		}
+
+		fabric.Logger.Trace().Msgf("new genesis block written: %v", genesis.hash)
 		return nil, nil
 	default:
 		return nil, xerrors.Errorf("unknown message type '%T'", in)

@@ -20,7 +20,7 @@ func TestBlockValidator_Validate(t *testing.T) {
 			queue: &blockQueue{
 				buffer: make(map[Digest]SkipBlock),
 			},
-			validator: fakeValidator{},
+			validator: &fakePayloadProc{},
 			watcher:   &fakeWatcher{},
 			Skipchain: &Skipchain{
 				viewchange: fakeViewChange{},
@@ -54,7 +54,7 @@ func TestBlockValidator_Validate(t *testing.T) {
 		require.EqualError(t, err, "viewchange refused the block: oops")
 
 		v.Skipchain.viewchange = fakeViewChange{}
-		v.validator = fakeValidator{err: xerrors.New("oops")}
+		v.validator = &fakePayloadProc{errValidate: xerrors.New("oops")}
 		_, err = v.Validate(fakeAddress{}, packed)
 		require.EqualError(t, err, "couldn't validate the payload: oops")
 
@@ -69,7 +69,7 @@ func TestBlockValidator_Commit(t *testing.T) {
 	watcher := &fakeWatcher{}
 	v := &blockValidator{
 		queue:     &blockQueue{buffer: make(map[Digest]SkipBlock)},
-		validator: fakeValidator{},
+		validator: &fakePayloadProc{},
 		watcher:   watcher,
 		Skipchain: &Skipchain{db: &fakeDatabase{}},
 	}
@@ -94,23 +94,27 @@ func TestBlockValidator_Commit(t *testing.T) {
 
 	v.queue.Add(SkipBlock{hash: Digest{1, 2, 3}})
 	v.Skipchain.db = &fakeDatabase{}
-	v.validator = fakeValidator{err: xerrors.New("oops")}
+	v.validator = &fakePayloadProc{errCommit: xerrors.New("oops")}
 	err = v.Commit(Digest{1, 2, 3}.Bytes())
 	require.EqualError(t, err, "transaction aborted: couldn't commit the payload: oops")
 	require.Equal(t, 1, v.Skipchain.db.(*fakeDatabase).aborts)
 }
 
-type fakeValidator struct {
+type fakePayloadProc struct {
 	blockchain.PayloadProcessor
-	err error
+	calls       [][]interface{}
+	errValidate error
+	errCommit   error
 }
 
-func (v fakeValidator) Validate(uint64, proto.Message) error {
-	return v.err
+func (v *fakePayloadProc) Validate(index uint64, data proto.Message) error {
+	v.calls = append(v.calls, []interface{}{index, data})
+	return v.errValidate
 }
 
-func (v fakeValidator) Commit(proto.Message) error {
-	return v.err
+func (v *fakePayloadProc) Commit(data proto.Message) error {
+	v.calls = append(v.calls, []interface{}{data})
+	return v.errCommit
 }
 
 type fakeDatabase struct {

@@ -108,16 +108,17 @@ func (db *InMemoryDatabase) ReadLast() (SkipBlock, error) {
 // error returned will revert any previous operations.
 func (db *InMemoryDatabase) Atomic(tx func(Queries) error) error {
 	db.Lock()
-	defer db.Unlock()
-
 	snapshot := db.clone()
+	db.Unlock()
 
-	err := tx(snapshot)
+	err := tx(db)
 	if err != nil {
+		db.Lock()
+		db.blocks = snapshot.blocks
+		db.Unlock()
+
 		return xerrors.Errorf("couldn't execute transaction: %v", err)
 	}
-
-	db.blocks = snapshot.blocks
 
 	return nil
 }
