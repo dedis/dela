@@ -9,13 +9,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/crypto"
 	internal "go.dedis.ch/fabric/internal/testing"
+	"go.dedis.ch/fabric/ledger/consumer/smartcontract"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/minoch"
 )
 
 func TestMessages(t *testing.T) {
 	messages := []proto.Message{
-		&TransactionProto{},
 		&BlockPayload{},
 	}
 
@@ -40,7 +40,7 @@ func TestLedger_Basic(t *testing.T) {
 	defer cancel()
 	trs := ledger.Watch(ctx)
 
-	tx, err := ledger.GetTransactionFactory().Create("abc")
+	tx, err := smartcontract.NewTransactionFactory().New("abc")
 	require.NoError(t, err)
 
 	err = actor.AddTransaction(tx)

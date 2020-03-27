@@ -6,7 +6,7 @@ import (
 	proto "github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/ledger"
+	"go.dedis.ch/fabric/ledger/consumer"
 	"go.dedis.ch/fabric/ledger/inventory"
 	"go.dedis.ch/fabric/ledger/inventory/mem"
 	"golang.org/x/xerrors"
@@ -17,14 +17,14 @@ import (
 //
 // - implements blockchain.PayloadProcessor
 type txProcessor struct {
-	txFactory ledger.TransactionFactory
 	inventory inventory.Inventory
+	consumer  consumer.Consumer
 }
 
-func newTxProcessor() *txProcessor {
+func newTxProcessor(c consumer.Consumer) *txProcessor {
 	return &txProcessor{
-		txFactory: newTransactionFactory(),
 		inventory: mem.NewInventory(),
+		consumer:  c,
 	}
 }
 
@@ -61,16 +61,24 @@ func (proc *txProcessor) process(payload *BlockPayload) (inventory.Page, error) 
 		return page, nil
 	}
 
-	page, err := proc.inventory.Stage(func(snap inventory.WritablePage) error {
-		for _, txpb := range payload.GetTxs() {
-			tx, err := proc.txFactory.FromProto(txpb)
+	page, err := proc.inventory.Stage(func(page inventory.WritablePage) error {
+		for _, txpb := range payload.GetTransactions() {
+			tx, err := proc.consumer.GetTransactionFactory().FromText(txpb)
 			if err != nil {
 				return encoding.NewDecodingError("transaction", err)
 			}
 
 			fabric.Logger.Trace().Msgf("processing %v", tx)
 
-			// TODO: execute the transaction with a smart contract executor.
+			instances, err := proc.consumer.Consume(tx)
+			if err != nil {
+				return xerrors.Errorf("couldn't consume tx: %v", err)
+			}
+
+			err = page.Write(instances...)
+			if err != nil {
+				return xerrors.Errorf("couldn't write instances: %v", err)
+			}
 		}
 
 		return nil

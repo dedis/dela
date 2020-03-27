@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+package smartcontract;
+
+// TransactionProto is the message that represents a transaction.
+message TransactionProto {
+    string value = 1;
+}

@@ -11,22 +11,18 @@ import (
 // Transaction is an atomic execution of one or several instructions.
 type Transaction interface {
 	encoding.Packable
+	encoding.TextMarshaler
 
 	// GetID returns a unique identifier for the transaction.
 	GetID() []byte
 }
 
-// TransactionResult is the result of a transaction execution.
-type TransactionResult interface {
-	GetTransactionID() []byte
-}
-
 // TransactionFactory is a factory to create new transactions or decode from
 // network messages.
 type TransactionFactory interface {
-	Create(...interface{}) (Transaction, error)
-
 	FromProto(pb proto.Message) (Transaction, error)
+
+	FromText(text []byte) (Transaction, error)
 }
 
 // Actor provides the primitives to send transactions to the public ledger.
@@ -34,11 +30,14 @@ type Actor interface {
 	AddTransaction(tx Transaction) error
 }
 
+// TransactionResult is the result of a transaction execution.
+type TransactionResult interface {
+	GetTransactionID() []byte
+}
+
 // Ledger provides the primitives to update a distributed public ledger through
 // transactions.
 type Ledger interface {
-	GetTransactionFactory() TransactionFactory
-
 	Listen(mino.Players) (Actor, error)
 
 	Watch(ctx context.Context) <-chan TransactionResult

@@ -19,6 +19,10 @@ type BinaryMarshaler interface {
 	encoding.BinaryMarshaler
 }
 
+type TextMarshaler interface {
+	encoding.TextMarshaler
+}
+
 // ProtoMarshaler is an interface to encode or decode Any messages.
 type ProtoMarshaler interface {
 	Marshal(pb proto.Message) ([]byte, error)

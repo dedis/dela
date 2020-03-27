@@ -25,7 +25,7 @@ type Page interface {
 type WritablePage interface {
 	Page
 
-	Write(instance Instance) error
+	Write(instances ...Instance) error
 }
 
 // Inventory is an abstraction of the state of the ledger at different point in

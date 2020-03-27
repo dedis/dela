@@ -12,6 +12,8 @@ import (
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/crypto/bls"
 	"go.dedis.ch/fabric/ledger"
+	"go.dedis.ch/fabric/ledger/consumer"
+	"go.dedis.ch/fabric/ledger/consumer/smartcontract"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/gossip"
 	"golang.org/x/xerrors"
@@ -34,35 +36,30 @@ type Ledger struct {
 	addr      mino.Address
 	signer    crypto.Signer
 	bc        blockchain.Blockchain
-	txFactory transactionFactory
 	gossiper  gossip.Gossiper
 	queue     *txBag
 	inventory *txProcessor
+	consumer  consumer.Consumer
 }
 
 // NewLedger creates a new Byzcoin ledger.
 func NewLedger(mino mino.Mino) *Ledger {
 	signer := bls.NewSigner()
 	cosi := flatcosi.NewFlat(mino, signer)
-	factory := newTransactionFactory()
+	consumer := smartcontract.NewConsumer()
 	decoder := func(pb proto.Message) (gossip.Rumor, error) {
-		return factory.FromProto(pb)
+		return consumer.GetTransactionFactory().FromProto(pb)
 	}
 
 	return &Ledger{
 		addr:      mino.GetAddress(),
 		signer:    signer,
 		bc:        skipchain.NewSkipchain(mino, cosi),
-		txFactory: factory,
 		gossiper:  gossip.NewFlat(mino, decoder),
 		queue:     newTxBag(),
-		inventory: newTxProcessor(),
+		inventory: newTxProcessor(consumer),
+		consumer:  consumer,
 	}
-}
-
-// GetTransactionFactory implements ledger.Ledger. It ..
-func (ldgr *Ledger) GetTransactionFactory() ledger.TransactionFactory {
-	return ldgr.txFactory
 }
 
 // Listen implements ledger.Ledger. It starts to participate in the blockchain
@@ -105,7 +102,7 @@ func (ldgr *Ledger) routine(actor blockchain.Actor, players mino.Players) {
 		select {
 		// TODO: closing
 		case rumor := <-ldgr.gossiper.Rumors():
-			tx, ok := rumor.(Transaction)
+			tx, ok := rumor.(ledger.Transaction)
 			if ok {
 				ldgr.queue.Add(tx)
 			}
@@ -126,15 +123,17 @@ func (ldgr *Ledger) routine(actor blockchain.Actor, players mino.Players) {
 				break
 			}
 
-			txRes := make([]TransactionResult, len(payload.GetTxs()))
-			for i, pb := range payload.GetTxs() {
-				tx, err := ldgr.txFactory.FromProto(pb)
+			factory := ldgr.consumer.GetTransactionFactory()
+
+			txRes := make([]TransactionResult, len(payload.GetTransactions()))
+			for i, text := range payload.GetTransactions() {
+				tx, err := factory.FromText(text)
 				if err != nil {
 					return
 				}
 
 				txRes[i] = TransactionResult{
-					txID: tx.(Transaction).hash,
+					txID: tx.GetID(),
 				}
 			}
 
@@ -166,27 +165,27 @@ func (ldgr *Ledger) proposeBlock(actor blockchain.Actor, players mino.Players) {
 
 // stagePayload creates a payload with the list of transactions by staging a new
 // snapshot to the inventory.
-func (ldgr *Ledger) stagePayload(txs []Transaction) (*BlockPayload, error) {
+func (ldgr *Ledger) stagePayload(txs []ledger.Transaction) (*BlockPayload, error) {
 	fabric.Logger.Trace().Msgf("staging payload with %d transactions", len(txs))
 	payload := &BlockPayload{
-		Txs: make([]*TransactionProto, len(txs)),
+		Transactions: make([][]byte, len(txs)),
 	}
 
 	for i, tx := range txs {
-		packed, err := tx.Pack()
+		text, err := tx.MarshalText()
 		if err != nil {
 			return nil, xerrors.Errorf("failed to pack tx: %v", err)
 		}
 
-		payload.Txs[i] = packed.(*TransactionProto)
+		payload.Transactions[i] = text
 	}
 
-	snap, err := ldgr.inventory.process(payload)
+	page, err := ldgr.inventory.process(payload)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't process the txs: %v", err)
 	}
 
-	payload.Footprint = snap.GetFootprint()
+	payload.Footprint = page.GetFootprint()
 
 	return payload, nil
 }
@@ -208,14 +207,17 @@ func (ldgr *Ledger) Watch(ctx context.Context) <-chan ledger.TransactionResult {
 
 			payload, ok := block.GetPayload().(*BlockPayload)
 			if ok {
-				for _, txProto := range payload.GetTxs() {
-					tx, err := ldgr.txFactory.FromProto(txProto)
+				factory := ldgr.consumer.GetTransactionFactory()
+
+				for _, txText := range payload.GetTransactions() {
+					tx, err := factory.FromText(txText)
 					if err != nil {
 						return
 					}
 
 					results <- TransactionResult{
-						txID: tx.(Transaction).hash,
+						txID:     tx.GetID(),
+						Accepted: true,
 					}
 				}
 			}
@@ -227,6 +229,7 @@ func (ldgr *Ledger) Watch(ctx context.Context) <-chan ledger.TransactionResult {
 
 type actor struct {
 	gossiper gossip.Gossiper
+	consumer consumer.Consumer
 }
 
 func newActor(g gossip.Gossiper) actor {
@@ -237,12 +240,7 @@ func newActor(g gossip.Gossiper) actor {
 
 // AddTransaction implements ledger.Actor. It sends the transaction towards the
 // consensus layer.
-func (a actor) AddTransaction(in ledger.Transaction) error {
-	tx, ok := in.(Transaction)
-	if !ok {
-		return xerrors.Errorf("message type '%T' but expected '%T'", in, tx)
-	}
-
+func (a actor) AddTransaction(tx ledger.Transaction) error {
 	// The gossiper will propagate the transaction to other players but also to
 	// the transaction buffer of this player.
 	err := a.gossiper.Add(tx)

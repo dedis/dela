@@ -9,7 +9,7 @@ import (
 )
 
 func TestTxProcessor_Validate(t *testing.T) {
-	proc := newTxProcessor()
+	proc := newTxProcessor(nil)
 	proc.inventory = fakeInventory{}
 
 	err := proc.Validate(0, &BlockPayload{})
@@ -34,7 +34,7 @@ func TestTxProcessor_Validate(t *testing.T) {
 }
 
 func TestTxProcessor_Process(t *testing.T) {
-	proc := newTxProcessor()
+	proc := newTxProcessor(nil)
 	proc.inventory = fakeInventory{page: &fakePage{index: 999}}
 
 	page, err := proc.process(&BlockPayload{})
@@ -43,7 +43,7 @@ func TestTxProcessor_Process(t *testing.T) {
 }
 
 func TestTxProcessor_Commit(t *testing.T) {
-	proc := newTxProcessor()
+	proc := newTxProcessor(nil)
 	proc.inventory = fakeInventory{}
 
 	err := proc.Commit(&BlockPayload{})

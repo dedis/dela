@@ -202,16 +202,18 @@ func (page inMemoryPage) Read(key []byte) (inventory.Instance, error) {
 
 // Write implements inventory.WritablePage. It updates the state of the page by
 // adding or updating the instance.
-func (page inMemoryPage) Write(instance inventory.Instance) error {
-	if len(instance.GetKey()) > digestLength {
-		return xerrors.Errorf("key length (%d) is higher than %d",
-			len(instance.GetKey()), digestLength)
+func (page inMemoryPage) Write(instances ...inventory.Instance) error {
+	for _, instance := range instances {
+		if len(instance.GetKey()) > digestLength {
+			return xerrors.Errorf("key length (%d) is higher than %d",
+				len(instance.GetKey()), digestLength)
+		}
+
+		digest := Digest{}
+		copy(digest[:], instance.GetKey())
+
+		page.instances[digest] = instance.(inMemoryInstance)
 	}
-
-	digest := Digest{}
-	copy(digest[:], instance.GetKey())
-
-	page.instances[digest] = instance.(inMemoryInstance)
 
 	return nil
 }
