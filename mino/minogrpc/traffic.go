@@ -11,20 +11,21 @@ import (
 
 var eachLine = regexp.MustCompile(`(?m)^(.+)$`)
 
-type history struct {
+// traffic is used to keep track of packets traffic in a server
+type traffic struct {
 	items []item
 }
 
-func (h history) String() string {
+func (h traffic) String() string {
 	out := new(strings.Builder)
-	out.WriteString("- history:\n")
+	out.WriteString("- traffic:\n")
 	for _, item := range h.items {
 		out.WriteString(eachLine.ReplaceAllString(item.String(), "-$1"))
 	}
 	return out.String()
 }
 
-func (h *history) addItem(typeStr string, addr mino.Address, msg proto.Message, context string) {
+func (h *traffic) addItem(typeStr string, addr mino.Address, msg proto.Message, context string) {
 	h.items = append(h.items, item{typeStr: typeStr, addr: addr, msg: msg, context: context})
 }
 

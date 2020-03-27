@@ -62,7 +62,7 @@ type Server struct {
 
 	localStreamClients map[string]Overlay_StreamClient
 
-	history history
+	traffic traffic
 }
 
 type ctxURIKey string
@@ -289,7 +289,7 @@ func CreateServer(addr mino.Address) (*Server, error) {
 		neighbours: make(map[string]Peer),
 		handlers:   make(map[string]mino.Handler),
 		handlerRW:  m,
-		history:    history{items: make([]item, 0)},
+		traffic:    traffic{items: make([]item, 0)},
 	}
 
 	RegisterOverlayServer(srv, &overlayService{
@@ -371,15 +371,15 @@ func (srv *Server) getConnection(addr string) (*grpc.ClientConn, error) {
 }
 
 func (srv *Server) logSend(to mino.Address, msg proto.Message, context string) {
-	srv.history.addItem("send", to, msg, context)
+	srv.traffic.addItem("send", to, msg, context)
 }
 
 func (srv *Server) logRcv(from mino.Address, msg proto.Message, context string) {
-	srv.history.addItem("received", from, msg, context)
+	srv.traffic.addItem("received", from, msg, context)
 }
 
 func (srv *Server) logRcvRelay(from mino.Address, msg proto.Message, context string) {
-	srv.history.addItem("received to relay", from, msg, context)
+	srv.traffic.addItem("received to relay", from, msg, context)
 }
 
 func makeCertificate() (*tls.Certificate, error) {
