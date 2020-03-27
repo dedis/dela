@@ -26,9 +26,9 @@ func TestTxProcessor_Validate(t *testing.T) {
 	err = proc.Validate(0, &BlockPayload{})
 	require.EqualError(t, err, "invalid index 1 != 0")
 
-	proc.inventory = fakeInventory{root: []byte{0xab}}
-	err = proc.Validate(0, &BlockPayload{Root: []byte{0xcd}})
-	require.EqualError(t, err, "mismatch payload root '0xab' != '0xcd'")
+	proc.inventory = fakeInventory{footprint: []byte{0xab}}
+	err = proc.Validate(0, &BlockPayload{Footprint: []byte{0xcd}})
+	require.EqualError(t, err, "mismatch payload footprint '0xab' != '0xcd'")
 }
 
 func TestTxProcessor_Commit(t *testing.T) {
@@ -42,7 +42,7 @@ func TestTxProcessor_Commit(t *testing.T) {
 	require.EqualError(t, err, "message type '<nil>' but expected '*byzcoin.BlockPayload'")
 
 	proc.inventory = fakeInventory{err: xerrors.New("oops")}
-	err = proc.Commit(&BlockPayload{Root: []byte{0xab}})
+	err = proc.Commit(&BlockPayload{Footprint: []byte{0xab}})
 	require.EqualError(t, err, "couldn't commit to page '0xab': oops")
 }
 
@@ -51,27 +51,27 @@ func TestTxProcessor_Commit(t *testing.T) {
 
 type fakePage struct {
 	inventory.Page
-	index uint64
-	root  []byte
+	index     uint64
+	footprint []byte
 }
 
 func (p fakePage) GetIndex() uint64 {
 	return p.index
 }
 
-func (p fakePage) GetRoot() []byte {
-	return p.root
+func (p fakePage) GetFootprint() []byte {
+	return p.footprint
 }
 
 type fakeInventory struct {
 	inventory.Inventory
-	index uint64
-	root  []byte
-	err   error
+	index     uint64
+	footprint []byte
+	err       error
 }
 
 func (inv fakeInventory) Stage(func(inventory.WritablePage) error) (inventory.Page, error) {
-	return fakePage{index: inv.index, root: inv.root}, inv.err
+	return fakePage{index: inv.index, footprint: inv.footprint}, inv.err
 }
 
 func (inv fakeInventory) Commit([]byte) error {

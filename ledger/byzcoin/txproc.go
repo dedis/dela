@@ -46,12 +46,12 @@ func (proc *txProcessor) Validate(index uint64, data proto.Message) error {
 		return xerrors.Errorf("invalid index %d != %d", snap.GetIndex(), index)
 	}
 
-	if !bytes.Equal(snap.GetRoot(), payload.GetRoot()) {
-		return xerrors.Errorf("mismatch payload root '%#x' != '%#x'",
-			snap.GetRoot(), payload.GetRoot())
+	if !bytes.Equal(snap.GetFootprint(), payload.GetFootprint()) {
+		return xerrors.Errorf("mismatch payload footprint '%#x' != '%#x'",
+			snap.GetFootprint(), payload.GetFootprint())
 	}
 
-	fabric.Logger.Trace().Msgf("staging new inventory %x", snap.GetRoot())
+	fabric.Logger.Trace().Msgf("staging new inventory %x", snap.GetFootprint())
 
 	return nil
 }
@@ -82,9 +82,10 @@ func (proc *txProcessor) Commit(data proto.Message) error {
 		return xerrors.Errorf("message type '%T' but expected '%T'", data, payload)
 	}
 
-	err := proc.inventory.Commit(payload.GetRoot())
+	err := proc.inventory.Commit(payload.GetFootprint())
 	if err != nil {
-		return xerrors.Errorf("couldn't commit to page '%#x': %v", payload.GetRoot(), err)
+		return xerrors.Errorf("couldn't commit to page '%#x': %v",
+			payload.GetFootprint(), err)
 	}
 
 	return nil

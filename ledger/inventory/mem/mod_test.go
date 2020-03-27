@@ -23,7 +23,7 @@ func TestInMemoryInventory(t *testing.T) {
 	require.IsType(t, inMemoryPage{}, page)
 
 	_, err = inv.GetPage(2)
-	require.EqualError(t, err, "invalid page at index 2")
+	require.EqualError(t, err, "invalid page (2 >= 1)")
 }
 
 func TestInMemoryInventory_Stage(t *testing.T) {
@@ -40,7 +40,7 @@ func TestInMemoryInventory_Stage(t *testing.T) {
 	require.Len(t, inv.stagingPages, 1)
 	require.Len(t, inv.pages, 0)
 
-	inv.pages = append(inv.pages, inv.stagingPages[page.(inMemoryPage).root])
+	inv.pages = append(inv.pages, inv.stagingPages[page.(inMemoryPage).footprint])
 	inv.stagingPages = make(map[Digest]inMemoryPage)
 	page, err = inv.Stage(func(page inventory.WritablePage) error {
 		instance, err := page.Read([]byte{1})
@@ -75,7 +75,7 @@ func TestInMemoryInventory_Commit(t *testing.T) {
 	require.NoError(t, err)
 
 	err = inv.Commit([]byte{1, 2, 3, 4})
-	require.EqualError(t, err, "couldn't find page with root '0x01020304'")
+	require.EqualError(t, err, "couldn't find page with footprint '0x01020304'")
 }
 
 func TestInstance_GetKey(t *testing.T) {
@@ -126,10 +126,10 @@ func TestPage_GetIndex(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestPage_GetRoot(t *testing.T) {
-	f := func(root Digest) bool {
-		page := inMemoryPage{root: root}
-		return bytes.Equal(root[:], page.GetRoot())
+func TestPage_GetFootprint(t *testing.T) {
+	f := func(footprint Digest) bool {
+		page := inMemoryPage{footprint: footprint}
+		return bytes.Equal(footprint[:], page.GetFootprint())
 	}
 
 	err := quick.Check(f, nil)

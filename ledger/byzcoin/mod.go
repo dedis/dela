@@ -180,7 +180,7 @@ func (ldgr *Ledger) stagePayload(txs []Transaction) (*BlockPayload, error) {
 		return nil, xerrors.Errorf("couldn't process the txs: %v", err)
 	}
 
-	payload.Root = snap.GetRoot()
+	payload.Footprint = snap.GetFootprint()
 
 	return payload, nil
 }

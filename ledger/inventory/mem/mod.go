@@ -6,6 +6,7 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric/crypto"
+	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/ledger/inventory"
 	"golang.org/x/xerrors"
 )
@@ -44,7 +45,7 @@ func NewInventory() *InMemoryInventory {
 func (inv *InMemoryInventory) GetPage(index uint64) (inventory.Page, error) {
 	i := int(index)
 	if i >= len(inv.pages) {
-		return inMemoryPage{}, xerrors.Errorf("invalid page at index %d", i)
+		return inMemoryPage{}, xerrors.Errorf("invalid page (%d >= %d)", i, len(inv.pages))
 	}
 
 	return inv.pages[i], nil
@@ -68,25 +69,25 @@ func (inv *InMemoryInventory) Stage(f func(inventory.WritablePage) error) (inven
 		return page, xerrors.Errorf("couldn't fill new page: %v", err)
 	}
 
-	page.root, err = page.computeHash(inv.hashFactory)
+	page.footprint, err = page.computeHash(inv.hashFactory)
 	if err != nil {
 		return page, xerrors.Errorf("couldn't compute page hash: %v", err)
 	}
 
-	inv.stagingPages[page.root] = page
+	inv.stagingPages[page.footprint] = page
 
 	return page, nil
 }
 
-// Commit stores the snapshot with the given root permanently to the list of
+// Commit stores the page with the given footprint permanently to the list of
 // available versions.
-func (inv *InMemoryInventory) Commit(id []byte) error {
-	root := Digest{}
-	copy(root[:], id)
+func (inv *InMemoryInventory) Commit(footprint []byte) error {
+	digest := Digest{}
+	copy(digest[:], footprint)
 
-	page, ok := inv.stagingPages[root]
+	page, ok := inv.stagingPages[digest]
 	if !ok {
-		return xerrors.Errorf("couldn't find page with root '%v'", root)
+		return xerrors.Errorf("couldn't find page with footprint '%v'", digest)
 	}
 
 	inv.pages = append(inv.pages, page)
@@ -130,7 +131,7 @@ func (i inMemoryInstance) WriteTo(w io.Writer) (int64, error) {
 
 	buffer, err := proto.Marshal(i.value)
 	if err != nil {
-		return sum, err
+		return sum, encoding.NewEncodingError("value", err)
 	}
 
 	n, err = w.Write(buffer)
@@ -149,7 +150,7 @@ func (i inMemoryInstance) WriteTo(w io.Writer) (int64, error) {
 // - implements inventory.WritablePage
 type inMemoryPage struct {
 	index     uint64
-	root      Digest
+	footprint Digest
 	instances map[Digest]inMemoryInstance
 }
 
@@ -159,10 +160,10 @@ func (page inMemoryPage) GetIndex() uint64 {
 	return page.index
 }
 
-// GetRoot implements inventory.Page. It returns the integrity footprint of the
+// GetFootprint implements inventory.Page. It returns the integrity footprint of the
 // page.
-func (page inMemoryPage) GetRoot() []byte {
-	return page.root[:]
+func (page inMemoryPage) GetFootprint() []byte {
+	return page.footprint[:]
 }
 
 // Read implements inventory.Page. It returns the instance associated with the

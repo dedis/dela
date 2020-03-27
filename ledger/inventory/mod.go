@@ -8,10 +8,16 @@ type Instance interface {
 	GetValue() proto.Message
 }
 
-// Page represents the state of the inventory at the given point in time.
+// Page represents the state of the inventory at some point in time.
 type Page interface {
+	// GetIndex returns the index of the page since the beginning of the
+	// inventory.
 	GetIndex() uint64
-	GetRoot() []byte
+
+	// GetFootprint returns the footprint of the page. It can be used to verify
+	// the integrity.
+	GetFootprint() []byte
+
 	Read(key []byte) (Instance, error)
 }
 
@@ -34,5 +40,5 @@ type Inventory interface {
 	Stage(func(WritablePage) error) (Page, error)
 
 	// Commit commits the new version with the identifier.
-	Commit([]byte) error
+	Commit(footprint []byte) error
 }
