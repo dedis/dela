@@ -8,13 +8,10 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	"fmt"
 	"io"
 	"math/big"
 	"net"
 	"net/http"
-	"regexp"
-	"strings"
 	"sync"
 	"time"
 
@@ -44,7 +41,6 @@ var (
 	// defaultMinConnectTimeout is the minimum amount of time we are willing to
 	// wait for a grpc connection to complete
 	defaultMinConnectTimeout = 7 * time.Second
-	eachLine                 = regexp.MustCompile(`(?m)^(.+)$`)
 )
 
 // Server represents the entity that accepts incoming requests and invoke the
@@ -67,40 +63,6 @@ type Server struct {
 	localStreamClients map[string]Overlay_StreamClient
 
 	history history
-}
-
-type history struct {
-	items []item
-}
-
-func (h history) String() string {
-	out := new(strings.Builder)
-	out.WriteString("- history:\n")
-	for _, item := range h.items {
-		out.WriteString(eachLine.ReplaceAllString(item.String(), "-$1"))
-	}
-	return out.String()
-}
-
-func (h *history) addItem(typeStr string, addr mino.Address, msg proto.Message, context string) {
-	h.items = append(h.items, item{typeStr: typeStr, addr: addr, msg: msg, context: context})
-}
-
-type item struct {
-	typeStr string
-	addr    mino.Address
-	msg     proto.Message
-	context string
-}
-
-func (p item) String() string {
-	out := new(strings.Builder)
-	out.WriteString("- item:\n")
-	fmt.Fprintf(out, "-- typeStr: %s\n", p.typeStr)
-	fmt.Fprintf(out, "-- addr: %s\n", p.addr)
-	fmt.Fprintf(out, "-- msg: (type %T) %s\n", p.msg, p.msg)
-	fmt.Fprintf(out, "-- context: %s\n", p.context)
-	return out.String()
 }
 
 type ctxURIKey string
@@ -506,13 +468,15 @@ func sendSingle(s *sender, msg proto.Message, addr mino.Address) error {
 		return encoding.NewAnyEncodingError(msg, err)
 	}
 
-	player, found := s.participants[addr.String()]
-	if !found {
+	player, participantFound := s.participants[addr.String()]
+	if !participantFound {
 		// The first option is to create a new connection if we have this
-		// address into our neighbor list
-		_, found = s.srv.neighbours[addr.String()]
-		if found {
+		// address in our list of neighbors. Otherwise we wrap the message in an
+		// enveloppe and send it back to the orchestrator that will relay that
+		// message.
+		_, neighbourFound := s.srv.neighbours[addr.String()]
 
+		if neighbourFound {
 			clientConn, err := s.srv.getConnection(addr.String())
 			if err != nil {
 				return xerrors.Errorf("failed to create new client in send: %v", err)
@@ -527,16 +491,18 @@ func sendSingle(s *sender, msg proto.Message, addr mino.Address) error {
 				return xerrors.Errorf("failed to create new stream from new client: %v", err)
 			}
 
+			// we add this new participant to our list in case we have to send
+			// again a message to him
 			s.participants[addr.String()] = player
 
-			// We relay the message
 		} else {
-
-			// in this case we send back a message using our client, which
-			// will hit the orchestrator that will see that this message
-			// should be relayed thanks to the enveloppe.
-			myClient, found := s.participants[s.address.String()]
-			if !found {
+			// If we don't have it as neighbour our last option is to ask the
+			// orchestrator to relay the message for us. In this case we send
+			// back a message using our client, which will hit the orchestrator
+			// that will see that this message should be relayed thanks to the
+			// enveloppe.
+			player, participantFound = s.participants[s.address.String()]
+			if !participantFound {
 				return xerrors.Errorf("failed to send back a message that should "+
 					"be relayed to '%s'. My client '%s' was not found in the list "+
 					"of participant: '%v'", addr, s.address, s.participants)
@@ -546,29 +512,6 @@ func sendSingle(s *sender, msg proto.Message, addr mino.Address) error {
 				"back a message that must be relayed. From '%s', To '%s'",
 				addr.String(), s.address.String(), addr.String())
 
-			envelope := &Envelope{
-				From:    s.address.String(),
-				To:      []string{addr.String()},
-				Message: msgAny,
-			}
-			envelopeAny, err := ptypes.MarshalAny(envelope)
-			if err != nil {
-				return encoding.NewAnyEncodingError(msg, err)
-			}
-
-			sendMsg := &OverlayMsg{
-				Message: envelopeAny,
-			}
-
-			s.srv.logSend(s.address, sendMsg, s.name)
-			err = myClient.Send(sendMsg)
-			if err == io.EOF {
-				return nil
-			} else if err != nil {
-				return xerrors.Errorf("failed to call the send on client stream: %v", err)
-			}
-
-			return nil
 		}
 	}
 

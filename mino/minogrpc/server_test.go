@@ -850,7 +850,7 @@ func TestRPC_MultipleRingRelay_Stream(t *testing.T) {
 	require.Equal(t, "remote RPC", server2.history.items[0].context)
 
 	require.Equal(t, "send", server2.history.items[1].typeStr)
-	require.Equal(t, "127.0.0.1:2002", server2.history.items[1].addr.String())
+	require.Equal(t, "127.0.0.1:2003", server2.history.items[1].addr.String())
 	require.IsType(t, &OverlayMsg{}, server2.history.items[1].msg)
 	require.Equal(t, "remote RPC", server2.history.items[1].context)
 
@@ -862,7 +862,7 @@ func TestRPC_MultipleRingRelay_Stream(t *testing.T) {
 	require.Equal(t, "remote RPC", server3.history.items[0].context)
 
 	require.Equal(t, "send", server3.history.items[1].typeStr)
-	require.Equal(t, "127.0.0.1:2003", server3.history.items[1].addr.String())
+	require.Equal(t, "127.0.0.1:2004", server3.history.items[1].addr.String())
 	require.IsType(t, &OverlayMsg{}, server3.history.items[1].msg)
 	require.Equal(t, "remote RPC", server3.history.items[1].context)
 
