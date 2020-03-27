@@ -24,7 +24,7 @@ func TestTransactionResult_String(t *testing.T) {
 	f := func(buffer []byte) bool {
 		txr := TransactionResult{txID: buffer}
 
-		return txr.String() == fmt.Sprintf("TransactionResult@%v", buffer)
+		return txr.String() == fmt.Sprintf("TransactionResult@%#x", buffer)
 	}
 
 	err := quick.Check(f, nil)

@@ -14,7 +14,7 @@ import (
 	"golang.org/x/xerrors"
 )
 
-func TestInMemoryInventory(t *testing.T) {
+func TestInMemoryInventory_GetPage(t *testing.T) {
 	inv := NewInventory()
 	inv.pages = []inMemoryPage{{}}
 
@@ -24,6 +24,14 @@ func TestInMemoryInventory(t *testing.T) {
 
 	_, err = inv.GetPage(2)
 	require.EqualError(t, err, "invalid page (2 >= 1)")
+}
+
+func TestInMemoryInventory_GetStagingPage(t *testing.T) {
+	inv := NewInventory()
+	inv.stagingPages[Digest{1}] = inMemoryPage{}
+
+	require.Nil(t, inv.GetStagingPage([]byte{2}))
+	require.NotNil(t, inv.GetStagingPage([]byte{1}))
 }
 
 func TestInMemoryInventory_Stage(t *testing.T) {

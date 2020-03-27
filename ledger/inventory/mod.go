@@ -5,6 +5,7 @@ import "github.com/golang/protobuf/proto"
 // Instance is the smallest unit of storage of a ledger.
 type Instance interface {
 	GetKey() []byte
+
 	GetValue() proto.Message
 }
 

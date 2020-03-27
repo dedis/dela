@@ -16,11 +16,11 @@ type TransactionResult struct {
 // GetTransactionID implements ledger.TransactionResult. It returns the unique
 // identifier of the related transaction.
 func (tr TransactionResult) GetTransactionID() []byte {
-	return tr.txID[:]
+	return tr.txID
 }
 
 // String implements fmt.Stringer. It returns a string representation of the
 // transaction result.
 func (tr TransactionResult) String() string {
-	return fmt.Sprintf("TransactionResult@%v", tr.txID)
+	return fmt.Sprintf("TransactionResult@%#x", tr.txID)
 }
