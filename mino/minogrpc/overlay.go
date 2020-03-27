@@ -2,6 +2,7 @@ package minogrpc
 
 import (
 	context "context"
+	"crypto/tls"
 
 	"github.com/golang/protobuf/ptypes"
 	"go.dedis.ch/fabric"
@@ -18,7 +19,9 @@ import (
 type overlayService struct {
 	handlers    map[string]mino.Handler
 	addr        address
-	srv         *Server
+	neighbours  map[string]Peer
+	srvCert     *tls.Certificate
+	traffic     *traffic
 	handlerRcvr map[string]receiver
 }
 
@@ -131,7 +134,9 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		address:      o.addr,
 		participants: map[string]overlayStream{o.addr.String(): stream},
 		name:         "remote RPC",
-		srv:          o.srv,
+		neighbours:   o.neighbours,
+		srvCert:      o.srvCert,
+		traffic:      o.traffic,
 	}
 
 	receiver := receiver{
@@ -139,7 +144,7 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		errs:    make(chan error),
 		name:    "remote RPC",
 		stop:    make(chan interface{}),
-		traffic: &o.srv.traffic,
+		traffic: o.traffic,
 	}
 	go func() {
 		for {

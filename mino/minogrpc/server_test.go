@@ -37,7 +37,7 @@ func TestServer_Serve(t *testing.T) {
 	require.True(t, strings.HasPrefix(err.Error(), "failed to listen: listen tcp4: lookup blabla"))
 }
 
-func TestServer_GetConnection(t *testing.T) {
+func TestGetConnection(t *testing.T) {
 	addr := &address{
 		id: "127.0.0.1:2000",
 	}
@@ -47,7 +47,7 @@ func TestServer_GetConnection(t *testing.T) {
 	server.StartServer()
 
 	// An empty address should yield an error
-	_, err = server.getConnection("")
+	_, err = getConnection("", Peer{}, *server.cert)
 	require.EqualError(t, err, "empty address is not allowed")
 
 	server.grpcSrv.GracefulStop()
@@ -179,7 +179,7 @@ loop2:
 	for {
 		select {
 		case msgErr := <-errChan:
-			require.EqualError(t, msgErr, "failed to get client conn for '127.0.0.1:2000': couldn't find neighbour [127.0.0.1:2000]")
+			require.EqualError(t, msgErr, "addr '127.0.0.1:2000' not is our list of neighbours")
 			break loop2
 		case resp, ok := <-respChan:
 			if !ok {
@@ -471,7 +471,7 @@ func TestRPC_ErrorsSimple_Stream(t *testing.T) {
 	_, receiver := rpc.Stream(ctx, &fakePlayers{players: []address{{}}})
 
 	_, _, err = receiver.Recv(context.Background())
-	require.EqualError(t, err, "got an error from the error chan: failed to get client conn for client '': empty address is not allowed")
+	require.EqualError(t, err, "got an error from the error chan: addr '' not is our list of neighbours")
 
 	server.grpcSrv.GracefulStop()
 
@@ -1065,7 +1065,7 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 func TestSender_Send(t *testing.T) {
 	sender := sender{
 		participants: make(map[string]overlayStream),
-		srv:          &Server{neighbours: make(map[string]Peer)},
+		neighbours:   make(map[string]Peer),
 	}
 
 	// sending to an empty list should not yield an error

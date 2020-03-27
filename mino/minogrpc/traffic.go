@@ -18,7 +18,7 @@ type traffic struct {
 	log   bool
 }
 
-func newTraffic() traffic {
+func newTraffic() *traffic {
 	log := false
 
 	flag := os.Getenv("MINO_LOG_PACKETS")
@@ -26,7 +26,7 @@ func newTraffic() traffic {
 		log = true
 	}
 
-	return traffic{
+	return &traffic{
 		items: make([]item, 0),
 		log:   log,
 	}

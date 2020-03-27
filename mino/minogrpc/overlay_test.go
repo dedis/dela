@@ -114,7 +114,7 @@ func TestOverlay_Stream(t *testing.T) {
 	// Now I provide a handler
 	overlayService.handlers["handler_key"] = testFailHandler{}
 	overlayService.handlerRcvr = make(map[string]receiver)
-	overlayService.srv = &Server{traffic: traffic{}}
+	overlayService.traffic = &traffic{}
 
 	// Now I set the right elements in the header but use a handler that should
 	// raise an error

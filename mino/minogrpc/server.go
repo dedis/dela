@@ -57,12 +57,9 @@ type Server struct {
 	// neighbours contains the certificate and details about known peers.
 	neighbours map[string]Peer
 
-	handlerRW *sync.RWMutex
-	handlers  map[string]mino.Handler
+	handlers map[string]mino.Handler
 
-	localStreamClients map[string]Overlay_StreamClient
-
-	traffic traffic
+	traffic *traffic
 }
 
 type ctxURIKey string
@@ -110,7 +107,17 @@ func (rpc *RPC) Call(ctx context.Context, req proto.Message,
 		iter := players.AddressIterator()
 		for iter.HasNext() {
 			addrStr := iter.GetNext().String()
-			clientConn, err := rpc.srv.getConnection(addrStr)
+
+			peer, ok := rpc.srv.neighbours[addrStr]
+			if !ok {
+				err := xerrors.Errorf("addr '%s' not is our list of neighbours",
+					addrStr)
+				fabric.Logger.Err(err).Send()
+				errs <- err
+				continue
+			}
+
+			clientConn, err := getConnection(addrStr, peer, *rpc.srv.cert)
 			if err != nil {
 				errs <- xerrors.Errorf("failed to get client conn for '%s': %v",
 					addrStr, err)
@@ -156,7 +163,9 @@ func (rpc RPC) Stream(ctx context.Context,
 		address:      address{orchestratorID},
 		participants: make(map[string]overlayStream),
 		name:         "orchestrator",
-		srv:          rpc.srv,
+		neighbours:   rpc.srv.neighbours,
+		srvCert:      rpc.srv.cert,
+		traffic:      rpc.srv.traffic,
 	}
 
 	orchRecv := receiver{
@@ -165,14 +174,22 @@ func (rpc RPC) Stream(ctx context.Context,
 		// a goroutine, where we don't mind if it blocks.
 		in:      make(chan *OverlayMsg),
 		name:    "orchestrator",
-		traffic: &rpc.srv.traffic,
+		traffic: rpc.srv.traffic,
 	}
 
 	// Creating a stream for each provided addr
 	for i := 0; players.AddressIterator().HasNext(); i++ {
 		addr := players.AddressIterator().GetNext()
 
-		clientConn, err := rpc.srv.getConnection(addr.String())
+		peer, ok := rpc.srv.neighbours[addr.String()]
+		if !ok {
+			err := xerrors.Errorf("addr '%s' not is our list of neighbours", addr)
+			fabric.Logger.Err(err).Send()
+			errs <- err
+			continue
+		}
+
+		clientConn, err := getConnection(addr.String(), peer, *rpc.srv.cert)
 		if err != nil {
 			// TODO: try another path (maybe use another node to relay that
 			// message)
@@ -280,7 +297,6 @@ func CreateServer(addr mino.Address) (*Server, error) {
 	}
 
 	srv := grpc.NewServer(grpc.Creds(credentials.NewServerTLSFromCert(cert)))
-	var m *sync.RWMutex
 	server := &Server{
 		grpcSrv:    srv,
 		cert:       cert,
@@ -289,7 +305,6 @@ func CreateServer(addr mino.Address) (*Server, error) {
 		StartChan:  make(chan struct{}),
 		neighbours: make(map[string]Peer),
 		handlers:   make(map[string]mino.Handler),
-		handlerRW:  m,
 		traffic:    newTraffic(),
 	}
 
@@ -297,7 +312,9 @@ func CreateServer(addr mino.Address) (*Server, error) {
 		handlers:    server.handlers,
 		handlerRcvr: make(map[string]receiver),
 		addr:        address{addr.String()},
-		srv:         server,
+		neighbours:  server.neighbours,
+		srvCert:     server.cert,
+		traffic:     server.traffic,
 	})
 
 	return server, nil
@@ -339,22 +356,17 @@ func (srv *Server) Serve() error {
 	return nil
 }
 
-// getConnection creates a gRPC connection from the server to the client
-func (srv *Server) getConnection(addr string) (*grpc.ClientConn, error) {
+// getConnection creates a gRPC connection from the server to the client.
+func getConnection(addr string, peer Peer, cert tls.Certificate) (*grpc.ClientConn, error) {
 	if addr == "" {
 		return nil, xerrors.New("empty address is not allowed")
 	}
 
-	neighbour, ok := srv.neighbours[addr]
-	if !ok {
-		return nil, xerrors.Errorf("couldn't find neighbour [%s]", addr)
-	}
-
 	pool := x509.NewCertPool()
-	pool.AddCert(neighbour.Certificate)
+	pool.AddCert(peer.Certificate)
 
 	ta := credentials.NewTLS(&tls.Config{
-		Certificates: []tls.Certificate{*srv.cert},
+		Certificates: []tls.Certificate{cert},
 		RootCAs:      pool,
 	})
 
@@ -410,7 +422,9 @@ type sender struct {
 	address      address
 	participants map[string]overlayStream
 	name         string
-	srv          *Server
+	neighbours   map[string]Peer
+	srvCert      *tls.Certificate
+	traffic      *traffic
 }
 
 type player struct {
@@ -463,10 +477,10 @@ func sendSingle(s *sender, msg proto.Message, addr mino.Address) error {
 		// address in our list of neighbors. Otherwise we wrap the message in an
 		// enveloppe and send it back to the orchestrator that will relay that
 		// message.
-		_, neighbourFound := s.srv.neighbours[addr.String()]
+		peer, neighbourFound := s.neighbours[addr.String()]
 
 		if neighbourFound {
-			clientConn, err := s.srv.getConnection(addr.String())
+			clientConn, err := getConnection(addr.String(), peer, *s.srvCert)
 			if err != nil {
 				return xerrors.Errorf("failed to create new client in send: %v", err)
 			}
@@ -518,7 +532,7 @@ func sendSingle(s *sender, msg proto.Message, addr mino.Address) error {
 		Message: envelopeAny,
 	}
 
-	s.srv.traffic.logSend(addr, sendMsg, s.name)
+	s.traffic.logSend(addr, sendMsg, s.name)
 	err = player.Send(sendMsg)
 	if err == io.EOF {
 		return nil
