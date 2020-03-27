@@ -33,6 +33,15 @@ func TestTxProcessor_Validate(t *testing.T) {
 	require.EqualError(t, err, "mismatch payload footprint '0xab' != '0xcd'")
 }
 
+func TestTxProcessor_Process(t *testing.T) {
+	proc := newTxProcessor()
+	proc.inventory = fakeInventory{page: &fakePage{index: 999}}
+
+	page, err := proc.process(&BlockPayload{})
+	require.NoError(t, err)
+	require.Equal(t, uint64(999), page.GetIndex())
+}
+
 func TestTxProcessor_Commit(t *testing.T) {
 	proc := newTxProcessor()
 	proc.inventory = fakeInventory{}
@@ -57,11 +66,11 @@ type fakePage struct {
 	footprint []byte
 }
 
-func (p fakePage) GetIndex() uint64 {
+func (p *fakePage) GetIndex() uint64 {
 	return p.index
 }
 
-func (p fakePage) GetFootprint() []byte {
+func (p *fakePage) GetFootprint() []byte {
 	return p.footprint
 }
 
@@ -69,15 +78,19 @@ type fakeInventory struct {
 	inventory.Inventory
 	index     uint64
 	footprint []byte
+	page      *fakePage
 	err       error
 }
 
 func (inv fakeInventory) GetStagingPage([]byte) inventory.Page {
+	if inv.page != nil {
+		return inv.page
+	}
 	return nil
 }
 
 func (inv fakeInventory) Stage(func(inventory.WritablePage) error) (inventory.Page, error) {
-	return fakePage{index: inv.index, footprint: inv.footprint}, inv.err
+	return &fakePage{index: inv.index, footprint: inv.footprint}, inv.err
 }
 
 func (inv fakeInventory) Commit([]byte) error {

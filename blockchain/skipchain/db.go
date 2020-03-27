@@ -111,14 +111,14 @@ func (db *InMemoryDatabase) Atomic(tx func(Queries) error) error {
 	snapshot := db.clone()
 	db.Unlock()
 
-	err := tx(db)
+	err := tx(snapshot)
 	if err != nil {
-		db.Lock()
-		db.blocks = snapshot.blocks
-		db.Unlock()
-
 		return xerrors.Errorf("couldn't execute transaction: %v", err)
 	}
+
+	db.Lock()
+	db.blocks = snapshot.blocks
+	db.Unlock()
 
 	return nil
 }
