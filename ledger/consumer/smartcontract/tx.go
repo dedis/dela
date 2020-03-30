@@ -26,6 +26,8 @@ func (t transaction) GetID() []byte {
 
 // SpawnTransaction is a smart contract transaction that will create a new
 // instance.
+//
+// - implements encoding.Packable
 type SpawnTransaction struct {
 	transaction
 	encoder    encoding.ProtoMarshaler
@@ -68,6 +70,8 @@ func (t SpawnTransaction) computeHash(f crypto.HashFactory,
 
 // InvokeTransaction is a smart contract transaction that will update an
 // instance.
+//
+// - implements encoding.Packable
 type InvokeTransaction struct {
 	transaction
 	encoder  encoding.ProtoMarshaler

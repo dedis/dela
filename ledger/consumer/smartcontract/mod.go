@@ -19,6 +19,8 @@ type Executor interface {
 }
 
 // Consumer is a consumer of smart contract transactions.
+//
+// - implements consumer.Consumer
 type Consumer struct {
 	encoder   encoding.ProtoMarshaler
 	executors map[string]Executor
@@ -38,12 +40,14 @@ func (c Consumer) Register(name string, exec Executor) {
 	c.executors[name] = exec
 }
 
-// GetTransactionFactory returns the factory for smart contract transactions.
+// GetTransactionFactory implements consumer.Consumer. It returns the factory
+// for smart contract transactions.
 func (c Consumer) GetTransactionFactory() ledger.TransactionFactory {
 	return NewTransactionFactory()
 }
 
-// Consume returns the instances produce from the execution of the transaction.
+// Consume implements consumer.Consumer. It returns the instance produced from
+// the execution of the transaction.
 func (c Consumer) Consume(in ledger.Transaction, page inventory.Page) (consumer.Output, error) {
 	out := consumer.Output{}
 

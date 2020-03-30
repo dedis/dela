@@ -43,7 +43,7 @@ func TestSpawnTransaction_Pack(t *testing.T) {
 	require.Equal(t, spawn.ContractID, spawnpb.(*SpawnTransactionProto).GetContractID())
 	require.NotNil(t, spawnpb.(*SpawnTransactionProto).GetArgument())
 
-	spawn.encoder = badEncoder{}
+	spawn.encoder = badEncoder{errMarshal: xerrors.New("oops")}
 	_, err = spawn.Pack()
 	require.EqualError(t, err, "couldn't marshal the argument: oops")
 }
@@ -84,7 +84,7 @@ func TestInvokeTransaction_Pack(t *testing.T) {
 	require.Equal(t, invoke.Key, invokepb.(*InvokeTransactionProto).Key)
 	require.NotNil(t, invokepb.(*InvokeTransactionProto).Argument)
 
-	invoke.encoder = badEncoder{}
+	invoke.encoder = badEncoder{errMarshal: xerrors.New("oops")}
 	_, err = invoke.Pack()
 	require.EqualError(t, err, "couldn't marshal the argument: oops")
 }
@@ -200,7 +200,7 @@ func TestTransactionFactory_FromProto(t *testing.T) {
 	require.True(t, proto.Equal(spawn.Argument, tx.(SpawnTransaction).Argument))
 	require.Equal(t, spawn.ContractID, tx.(SpawnTransaction).ContractID)
 
-	factory.encoder = badEncoder{}
+	factory.encoder = badEncoder{errUnmarshal: xerrors.New("oops")}
 	_, err = factory.FromProto(spawnpb)
 	require.EqualError(t, err, "couldn't unmarshal argument: oops")
 
@@ -220,7 +220,7 @@ func TestTransactionFactory_FromProto(t *testing.T) {
 	require.Equal(t, invoke.Key, tx.(InvokeTransaction).Key)
 	require.True(t, proto.Equal(invoke.Argument, tx.(InvokeTransaction).Argument))
 
-	factory.encoder = badEncoder{}
+	factory.encoder = badEncoder{errUnmarshal: xerrors.New("oops")}
 	_, err = factory.FromProto(invokepb)
 	require.EqualError(t, err, "couldn't unmarshal argument: oops")
 
@@ -241,7 +241,7 @@ func TestTransactionFactory_FromProto(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, delete.Key, tx.(DeleteTransaction).Key)
 
-	factory.encoder = badEncoder{}
+	factory.encoder = badEncoder{errUnmarshal: xerrors.New("oops")}
 	_, err = factory.FromProto(deleteany)
 	require.EqualError(t, err, "couldn't unmarshal input: oops")
 
@@ -296,7 +296,7 @@ func TestTransactionContext_Read(t *testing.T) {
 	require.EqualError(t, err, "instance type '*empty.Empty' != '*smartcontract.InstanceProto'")
 
 	ctx.page = fakePage{instance: &InstanceProto{}}
-	ctx.encoder = badEncoder{}
+	ctx.encoder = badEncoder{errUnmarshal: xerrors.New("oops")}
 	_, err = ctx.Read(nil)
 	require.EqualError(t, err, "couldn't unmarshal the value: oops")
 }
@@ -328,14 +328,16 @@ func (f fakeHashFactory) New() hash.Hash {
 
 type badEncoder struct {
 	encoding.ProtoEncoder
+	errMarshal   error
+	errUnmarshal error
 }
 
 func (e badEncoder) MarshalAny(proto.Message) (*any.Any, error) {
-	return nil, xerrors.New("oops")
+	return nil, e.errMarshal
 }
 
 func (e badEncoder) UnmarshalDynamicAny(*any.Any) (proto.Message, error) {
-	return nil, xerrors.New("oops")
+	return nil, e.errUnmarshal
 }
 
 type badMarshaler struct {
