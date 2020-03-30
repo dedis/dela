@@ -2,11 +2,11 @@ package mem
 
 import (
 	"fmt"
-	"io"
+	"hash"
 
+	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/ledger/inventory"
 	"golang.org/x/xerrors"
 )
@@ -76,7 +76,7 @@ func (inv *InMemoryInventory) Stage(f func(inventory.WritablePage) error) (inven
 		page = inv.pages[len(inv.pages)-1].clone()
 		page.index++
 	} else {
-		page.instances = make(map[Digest]inMemoryInstance)
+		page.entries = make(map[Digest]inMemoryEntry)
 	}
 
 	err := f(page)
@@ -111,51 +111,20 @@ func (inv *InMemoryInventory) Commit(footprint []byte) error {
 	return nil
 }
 
-// inMemoryInstance is an instance stored in an in-memory inventory.
-//
-// - implements inventory.Instance
-// - implements io.WriterTo
-type inMemoryInstance struct {
-	key   []byte
+// inMemoryEntry is an instance stored in an in-memory inventory.
+type inMemoryEntry struct {
 	value proto.Message
 }
 
-// GetKey implements inventory.Instance. It returns the key of the instance.
-func (i inMemoryInstance) GetKey() []byte {
-	return i.key
-}
-
-// GetValue implements inventory.Instance. It returns the value of the instance.
-func (i inMemoryInstance) GetValue() proto.Message {
-	return i.value
-}
-
-// WriteTo implements io.WriterTo. It writes the key and the value of the
-// instance into the writer by using their bytes representation.
-func (i inMemoryInstance) WriteTo(w io.Writer) (int64, error) {
-	sum := int64(0)
-	n, err := w.Write(i.key)
-	sum += int64(n)
+func (i inMemoryEntry) hash(h hash.Hash) error {
+	// The JSON format is used to insure a deterministic hash.
+	m := &jsonpb.Marshaler{OrigName: true}
+	err := m.Marshal(h, i.value)
 	if err != nil {
-		return sum, xerrors.Errorf("couldn't write the key: %v", err)
+		return err
 	}
 
-	if i.value == nil {
-		return sum, nil
-	}
-
-	buffer, err := proto.Marshal(i.value)
-	if err != nil {
-		return sum, encoding.NewEncodingError("value", err)
-	}
-
-	n, err = w.Write(buffer)
-	sum += int64(n)
-	if err != nil {
-		return sum, xerrors.Errorf("couldn't write the value: %v", err)
-	}
-
-	return sum, nil
+	return nil
 }
 
 // inMemoryPage is an implementation of the Page interface for an inventory. It
@@ -166,7 +135,7 @@ func (i inMemoryInstance) WriteTo(w io.Writer) (int64, error) {
 type inMemoryPage struct {
 	index     uint64
 	footprint Digest
-	instances map[Digest]inMemoryInstance
+	entries   map[Digest]inMemoryEntry
 }
 
 // GetIndex implements inventory.Page. It returns the index of the page from the
@@ -183,7 +152,7 @@ func (page inMemoryPage) GetFootprint() []byte {
 
 // Read implements inventory.Page. It returns the instance associated with the
 // key if it exists, otherwise an error.
-func (page inMemoryPage) Read(key []byte) (inventory.Instance, error) {
+func (page inMemoryPage) Read(key []byte) (proto.Message, error) {
 	if len(key) > digestLength {
 		return nil, xerrors.Errorf("key length (%d) is higher than %d",
 			len(key), digestLength)
@@ -192,40 +161,37 @@ func (page inMemoryPage) Read(key []byte) (inventory.Instance, error) {
 	digest := Digest{}
 	copy(digest[:], key)
 
-	instance, ok := page.instances[digest]
+	entry, ok := page.entries[digest]
 	if !ok {
 		return nil, xerrors.Errorf("instance with key '%#x' not found", key)
 	}
 
-	return instance, nil
+	return entry.value, nil
 }
 
 // Write implements inventory.WritablePage. It updates the state of the page by
 // adding or updating the instance.
-func (page inMemoryPage) Write(instances ...inventory.Instance) error {
-	for _, instance := range instances {
-		if len(instance.GetKey()) > digestLength {
-			return xerrors.Errorf("key length (%d) is higher than %d",
-				len(instance.GetKey()), digestLength)
-		}
-
-		digest := Digest{}
-		copy(digest[:], instance.GetKey())
-
-		page.instances[digest] = instance.(inMemoryInstance)
+func (page inMemoryPage) Write(key []byte, value proto.Message) error {
+	if len(key) > digestLength {
+		return xerrors.Errorf("key length (%d) is higher than %d", len(key), digestLength)
 	}
+
+	digest := Digest{}
+	copy(digest[:], key)
+
+	page.entries[digest] = inMemoryEntry{value: value}
 
 	return nil
 }
 
 func (page inMemoryPage) clone() inMemoryPage {
 	clone := inMemoryPage{
-		index:     page.index,
-		instances: make(map[Digest]inMemoryInstance),
+		index:   page.index,
+		entries: make(map[Digest]inMemoryEntry),
 	}
 
-	for k, v := range page.instances {
-		clone.instances[k] = v
+	for k, v := range page.entries {
+		clone.entries[k] = v
 	}
 
 	return clone
@@ -234,8 +200,8 @@ func (page inMemoryPage) clone() inMemoryPage {
 func (page inMemoryPage) computeHash(factory crypto.HashFactory) (Digest, error) {
 	h := factory.New()
 
-	for _, instance := range page.instances {
-		_, err := instance.WriteTo(h)
+	for _, entry := range page.entries {
+		err := entry.hash(h)
 		if err != nil {
 			return Digest{}, err
 		}

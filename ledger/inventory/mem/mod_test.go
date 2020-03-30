@@ -38,9 +38,11 @@ func TestInMemoryInventory_Stage(t *testing.T) {
 	inv := NewInventory()
 	inv.pages = nil
 
+	value := &wrappers.BoolValue{Value: true}
+
 	page, err := inv.Stage(func(page inventory.WritablePage) error {
-		require.NoError(t, page.Write(inMemoryInstance{key: []byte{1}}))
-		require.NoError(t, page.Write(inMemoryInstance{key: []byte{2}}))
+		require.NoError(t, page.Write([]byte{1}, value))
+		require.NoError(t, page.Write([]byte{2}, value))
 		return nil
 	})
 	require.NoError(t, err)
@@ -51,9 +53,9 @@ func TestInMemoryInventory_Stage(t *testing.T) {
 	inv.pages = append(inv.pages, inv.stagingPages[page.(inMemoryPage).footprint])
 	inv.stagingPages = make(map[Digest]inMemoryPage)
 	page, err = inv.Stage(func(page inventory.WritablePage) error {
-		instance, err := page.Read([]byte{1})
+		value, err := page.Read([]byte{1})
 		require.NoError(t, err)
-		require.Equal(t, []byte{1}, instance.GetKey())
+		require.True(t, value.(*wrappers.BoolValue).Value)
 		return nil
 	})
 	require.NoError(t, err)
@@ -86,44 +88,6 @@ func TestInMemoryInventory_Commit(t *testing.T) {
 	require.EqualError(t, err, "couldn't find page with footprint '0x01020304'")
 }
 
-func TestInstance_GetKey(t *testing.T) {
-	instance := inMemoryInstance{}
-	require.Nil(t, instance.GetKey())
-
-	instance.key = []byte{0xab}
-	require.Equal(t, []byte{0xab}, instance.GetKey())
-}
-
-func TestInstance_GetValue(t *testing.T) {
-	instance := inMemoryInstance{}
-	require.Nil(t, instance.GetValue())
-
-	instance.value = &wrappers.StringValue{Value: "abc"}
-	require.Equal(t, instance.value, instance.GetValue())
-}
-
-func TestInstance_WriteTo(t *testing.T) {
-	instance := inMemoryInstance{}
-
-	buffer := new(bytes.Buffer)
-	n, err := instance.WriteTo(buffer)
-	require.NoError(t, err)
-	require.Equal(t, int64(0), n)
-	require.Len(t, buffer.Bytes(), 0)
-
-	instance.key = []byte{0xab}
-	instance.value = &wrappers.BoolValue{Value: true}
-	n, err = instance.WriteTo(buffer)
-	require.NoError(t, err)
-	require.Equal(t, int64(3), n)
-
-	_, err = instance.WriteTo(&badWriter{delay: 0})
-	require.EqualError(t, err, "couldn't write the key: oops")
-
-	_, err = instance.WriteTo(&badWriter{delay: 1})
-	require.EqualError(t, err, "couldn't write the value: oops")
-}
-
 func TestPage_GetIndex(t *testing.T) {
 	f := func(index uint64) bool {
 		page := inMemoryPage{index: index}
@@ -146,15 +110,15 @@ func TestPage_GetFootprint(t *testing.T) {
 
 func TestPage_Read(t *testing.T) {
 	page := inMemoryPage{
-		instances: map[Digest]inMemoryInstance{
-			Digest{1}: {key: []byte{1}},
-			Digest{2}: {key: []byte{2}},
+		entries: map[Digest]inMemoryEntry{
+			Digest{1}: {value: &wrappers.StringValue{Value: "1"}},
+			Digest{2}: {value: &wrappers.StringValue{Value: "2"}},
 		},
 	}
 
-	instance, err := page.Read([]byte{1})
+	value, err := page.Read([]byte{1})
 	require.NoError(t, err)
-	require.Equal(t, []byte{1}, instance.GetKey())
+	require.Equal(t, "1", value.(*wrappers.StringValue).Value)
 
 	badKey := [digestLength + 1]byte{}
 	_, err = page.Read(badKey[:])
@@ -166,23 +130,25 @@ func TestPage_Read(t *testing.T) {
 
 func TestPage_Write(t *testing.T) {
 	page := inMemoryPage{
-		instances: make(map[Digest]inMemoryInstance),
+		entries: make(map[Digest]inMemoryEntry),
 	}
 
-	err := page.Write(inMemoryInstance{key: []byte{1}})
-	require.NoError(t, err)
-	require.Len(t, page.instances, 1)
+	value := &wrappers.BoolValue{Value: true}
 
-	err = page.Write(inMemoryInstance{key: []byte{2}})
+	err := page.Write([]byte{1}, value)
 	require.NoError(t, err)
-	require.Len(t, page.instances, 2)
+	require.Len(t, page.entries, 1)
 
-	err = page.Write(inMemoryInstance{key: []byte{1}})
+	err = page.Write([]byte{2}, value)
 	require.NoError(t, err)
-	require.Len(t, page.instances, 2)
+	require.Len(t, page.entries, 2)
+
+	err = page.Write([]byte{1}, value)
+	require.NoError(t, err)
+	require.Len(t, page.entries, 2)
 
 	badKey := [digestLength + 1]byte{}
-	err = page.Write(inMemoryInstance{key: badKey[:]})
+	err = page.Write(badKey[:], value)
 	require.EqualError(t, err, "key length (33) is higher than 32")
 }
 

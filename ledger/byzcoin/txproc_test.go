@@ -3,6 +3,8 @@ package byzcoin
 import (
 	"testing"
 
+	proto "github.com/golang/protobuf/proto"
+	any "github.com/golang/protobuf/ptypes/any"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/ledger"
 	"go.dedis.ch/fabric/ledger/consumer"
@@ -11,7 +13,7 @@ import (
 )
 
 func TestTxProcessor_Validate(t *testing.T) {
-	proc := newTxProcessor(nil)
+	proc := newTxProcessor(fakeConsumer{})
 	proc.inventory = fakeInventory{}
 
 	err := proc.Validate(0, &BlockPayload{})
@@ -38,19 +40,19 @@ func TestTxProcessor_Validate(t *testing.T) {
 func TestTxProcessor_Process(t *testing.T) {
 	proc := newTxProcessor(nil)
 	proc.inventory = fakeInventory{page: &fakePage{index: 999}}
-	proc.consumer = fakeConsumer{}
+	proc.consumer = fakeConsumer{key: []byte{0xab}}
 
 	page, err := proc.process(&BlockPayload{})
 	require.NoError(t, err)
 	require.Equal(t, uint64(999), page.GetIndex())
 
-	payload := &BlockPayload{Transactions: [][]byte{{}}}
+	payload := &BlockPayload{Transactions: []*any.Any{{}}}
 
 	proc.inventory = fakeInventory{}
 	page, err = proc.process(payload)
 	require.NoError(t, err)
 	require.Len(t, page.(*fakePage).calls, 1)
-	require.Len(t, page.(*fakePage).calls[0][0], 2)
+	require.Equal(t, []byte{0xab}, page.(*fakePage).calls[0][0])
 
 	proc.consumer = fakeConsumer{errFactory: xerrors.New("oops")}
 	_, err = proc.process(payload)
@@ -103,8 +105,8 @@ func (p *fakePage) GetFootprint() []byte {
 	return p.footprint
 }
 
-func (p *fakePage) Write(instances ...inventory.Instance) error {
-	p.calls = append(p.calls, []interface{}{instances})
+func (p *fakePage) Write(key []byte, value proto.Message) error {
+	p.calls = append(p.calls, []interface{}{key, value})
 	return p.err
 }
 
@@ -148,16 +150,13 @@ type fakeTxFactory struct {
 	err error
 }
 
-func (f fakeTxFactory) FromText([]byte) (ledger.Transaction, error) {
+func (f fakeTxFactory) FromProto(proto.Message) (ledger.Transaction, error) {
 	return nil, f.err
-}
-
-type fakeInstance struct {
-	inventory.Instance
 }
 
 type fakeConsumer struct {
 	consumer.Consumer
+	key        []byte
 	err        error
 	errFactory error
 }
@@ -166,6 +165,6 @@ func (c fakeConsumer) GetTransactionFactory() ledger.TransactionFactory {
 	return fakeTxFactory{err: c.errFactory}
 }
 
-func (c fakeConsumer) Consume(ledger.Transaction) ([]inventory.Instance, error) {
-	return []inventory.Instance{fakeInstance{}, fakeInstance{}}, c.err
+func (c fakeConsumer) Consume(ledger.Transaction, inventory.Page) (consumer.Output, error) {
+	return consumer.Output{Key: c.key}, c.err
 }

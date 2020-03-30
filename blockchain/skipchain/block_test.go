@@ -434,6 +434,7 @@ func (pk fakePublicKey) Pack() (proto.Message, error) {
 }
 
 type testProtoEncoder struct {
+	encoding.ProtoEncoder
 	delay int
 	err   error
 }

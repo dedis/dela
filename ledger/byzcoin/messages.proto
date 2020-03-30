@@ -2,10 +2,12 @@ syntax = "proto3";
 
 package byzcoin;
 
+import "google/protobuf/any.proto";
+
 // BlockPayload is the message that will be stored in the blocks. It is composed
 // of the transactions and the footprint of the new inventory.
 message BlockPayload {
-    repeated bytes transactions = 1;
+    repeated google.protobuf.Any transactions = 1;
 
     // Footprint is an integrity check of the final state of the inventory after
     // applying the transactions.

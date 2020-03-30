@@ -6,9 +6,11 @@ import (
 	"time"
 
 	proto "github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/crypto"
 	internal "go.dedis.ch/fabric/internal/testing"
+	"go.dedis.ch/fabric/ledger/consumer"
 	"go.dedis.ch/fabric/ledger/consumer/smartcontract"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/minoch"
@@ -30,7 +32,7 @@ func TestLedger_Basic(t *testing.T) {
 	m, err := minoch.NewMinoch(manager, "A")
 	require.NoError(t, err)
 
-	ledger := NewLedger(m)
+	ledger := NewLedger(m, makeConsumer())
 	roster := roster{members: []*Ledger{ledger}}
 
 	actor, err := ledger.Listen(roster)
@@ -40,7 +42,8 @@ func TestLedger_Basic(t *testing.T) {
 	defer cancel()
 	trs := ledger.Watch(ctx)
 
-	tx, err := smartcontract.NewTransactionFactory().New("abc")
+	tx, err := smartcontract.NewTransactionFactory().
+		NewSpawn(simpleContractName, &empty.Empty{})
 	require.NoError(t, err)
 
 	err = actor.AddTransaction(tx)
@@ -58,6 +61,24 @@ func TestLedger_Basic(t *testing.T) {
 
 // -----------------------------------------------------------------------------
 // Utility functions
+
+type simpleContract struct{}
+
+const simpleContractName = "simpleContract"
+
+func (c simpleContract) Spawn(ctx smartcontract.SpawnContext) (proto.Message, error) {
+	return &empty.Empty{}, nil
+}
+
+func (c simpleContract) Invoke(ctx smartcontract.InvokeContext) (proto.Message, error) {
+	return &empty.Empty{}, nil
+}
+
+func makeConsumer() consumer.Consumer {
+	c := smartcontract.NewConsumer()
+	c.Register(simpleContractName, simpleContract{})
+	return c
+}
 
 type addressIterator struct {
 	index   int

@@ -11,7 +11,6 @@ import (
 // Transaction is an atomic execution of one or several instructions.
 type Transaction interface {
 	encoding.Packable
-	encoding.TextMarshaler
 
 	// GetID returns a unique identifier for the transaction.
 	GetID() []byte
@@ -21,8 +20,6 @@ type Transaction interface {
 // network messages.
 type TransactionFactory interface {
 	FromProto(pb proto.Message) (Transaction, error)
-
-	FromText(text []byte) (Transaction, error)
 }
 
 // Actor provides the primitives to send transactions to the public ledger.

@@ -2,10 +2,12 @@ package encoding
 
 import (
 	"encoding"
+	"io"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/any"
+	"golang.org/x/xerrors"
 )
 
 // Packable is an interface that provides primitives to pack data model into
@@ -19,8 +21,10 @@ type BinaryMarshaler interface {
 	encoding.BinaryMarshaler
 }
 
-type TextMarshaler interface {
-	encoding.TextMarshaler
+// JSONMarshaler provides the primitives to encode a protobuf message into a
+// JSON formatted text.
+type JSONMarshaler interface {
+	Marshal(io.Writer, proto.Message) error
 }
 
 // ProtoMarshaler is an interface to encode or decode Any messages.
@@ -28,6 +32,7 @@ type ProtoMarshaler interface {
 	Marshal(pb proto.Message) ([]byte, error)
 	MarshalAny(pb proto.Message) (*any.Any, error)
 	UnmarshalAny(any *any.Any, pb proto.Message) error
+	UnmarshalDynamicAny(any *any.Any) (proto.Message, error)
 }
 
 // ProtoEncoder is a default implementation of protobug encoding/decoding.
@@ -51,4 +56,19 @@ func (e ProtoEncoder) MarshalAny(pb proto.Message) (*any.Any, error) {
 // UnmarshalAny decodes a protobuf message from an Any type.
 func (e ProtoEncoder) UnmarshalAny(any *any.Any, pb proto.Message) error {
 	return ptypes.UnmarshalAny(any, pb)
+}
+
+// UnmarshalDynamicAny decodes an Any message dynamically.
+func (e ProtoEncoder) UnmarshalDynamicAny(any *any.Any) (proto.Message, error) {
+	if any == nil {
+		return nil, xerrors.New("message is nil")
+	}
+
+	var da ptypes.DynamicAny
+	err := ptypes.UnmarshalAny(any, &da)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't unmarshal dynamically: %v", err)
+	}
+
+	return da.Message, nil
 }

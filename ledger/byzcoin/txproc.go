@@ -62,20 +62,22 @@ func (proc *txProcessor) process(payload *BlockPayload) (inventory.Page, error) 
 	}
 
 	page, err := proc.inventory.Stage(func(page inventory.WritablePage) error {
+		factory := proc.consumer.GetTransactionFactory()
+
 		for _, txpb := range payload.GetTransactions() {
-			tx, err := proc.consumer.GetTransactionFactory().FromText(txpb)
+			tx, err := factory.FromProto(txpb)
 			if err != nil {
 				return encoding.NewDecodingError("transaction", err)
 			}
 
 			fabric.Logger.Trace().Msgf("processing %v", tx)
 
-			instances, err := proc.consumer.Consume(tx)
+			out, err := proc.consumer.Consume(tx, page)
 			if err != nil {
 				return xerrors.Errorf("couldn't consume tx: %v", err)
 			}
 
-			err = page.Write(instances...)
+			err = page.Write(out.Key, out.Instance)
 			if err != nil {
 				return xerrors.Errorf("couldn't write instances: %v", err)
 			}

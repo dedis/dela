@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes"
+	any "github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/blockchain/skipchain"
@@ -13,7 +15,6 @@ import (
 	"go.dedis.ch/fabric/crypto/bls"
 	"go.dedis.ch/fabric/ledger"
 	"go.dedis.ch/fabric/ledger/consumer"
-	"go.dedis.ch/fabric/ledger/consumer/smartcontract"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/gossip"
 	"golang.org/x/xerrors"
@@ -43,10 +44,9 @@ type Ledger struct {
 }
 
 // NewLedger creates a new Byzcoin ledger.
-func NewLedger(mino mino.Mino) *Ledger {
+func NewLedger(mino mino.Mino, consumer consumer.Consumer) *Ledger {
 	signer := bls.NewSigner()
 	cosi := flatcosi.NewFlat(mino, signer)
-	consumer := smartcontract.NewConsumer()
 	decoder := func(pb proto.Message) (gossip.Rumor, error) {
 		return consumer.GetTransactionFactory().FromProto(pb)
 	}
@@ -126,14 +126,15 @@ func (ldgr *Ledger) routine(actor blockchain.Actor, players mino.Players) {
 			factory := ldgr.consumer.GetTransactionFactory()
 
 			txRes := make([]TransactionResult, len(payload.GetTransactions()))
-			for i, text := range payload.GetTransactions() {
-				tx, err := factory.FromText(text)
+			for i, txProto := range payload.GetTransactions() {
+				tx, err := factory.FromProto(txProto)
 				if err != nil {
 					return
 				}
 
 				txRes[i] = TransactionResult{
-					txID: tx.GetID(),
+					txID:     tx.GetID(),
+					Accepted: true,
 				}
 			}
 
@@ -168,16 +169,18 @@ func (ldgr *Ledger) proposeBlock(actor blockchain.Actor, players mino.Players) {
 func (ldgr *Ledger) stagePayload(txs []ledger.Transaction) (*BlockPayload, error) {
 	fabric.Logger.Trace().Msgf("staging payload with %d transactions", len(txs))
 	payload := &BlockPayload{
-		Transactions: make([][]byte, len(txs)),
+		Transactions: make([]*any.Any, len(txs)),
 	}
 
 	for i, tx := range txs {
-		text, err := tx.MarshalText()
+		packed, err := tx.Pack()
 		if err != nil {
 			return nil, xerrors.Errorf("failed to pack tx: %v", err)
 		}
 
-		payload.Transactions[i] = text
+		packedAny, err := ptypes.MarshalAny(packed)
+
+		payload.Transactions[i] = packedAny
 	}
 
 	page, err := ldgr.inventory.process(payload)
@@ -209,8 +212,8 @@ func (ldgr *Ledger) Watch(ctx context.Context) <-chan ledger.TransactionResult {
 			if ok {
 				factory := ldgr.consumer.GetTransactionFactory()
 
-				for _, txText := range payload.GetTransactions() {
-					tx, err := factory.FromText(txText)
+				for _, txProto := range payload.GetTransactions() {
+					tx, err := factory.FromProto(txProto)
 					if err != nil {
 						return
 					}
