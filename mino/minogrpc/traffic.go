@@ -14,11 +14,12 @@ var eachLine = regexp.MustCompile(`(?m)^(.+)$`)
 
 // traffic is used to keep track of packets traffic in a server
 type traffic struct {
+	name  string
 	items []item
 	log   bool
 }
 
-func newTraffic() *traffic {
+func newTraffic(name string) *traffic {
 	log := false
 
 	flag := os.Getenv("MINO_LOG_PACKETS")
@@ -27,6 +28,7 @@ func newTraffic() *traffic {
 	}
 
 	return &traffic{
+		name:  name,
 		items: make([]item, 0),
 		log:   log,
 	}
@@ -57,7 +59,9 @@ func (t *traffic) addItem(typeStr string, addr mino.Address, msg proto.Message, 
 	if !t.log {
 		return
 	}
-	t.items = append(t.items, item{typeStr: typeStr, addr: addr, msg: msg, context: context})
+	newItem := item{typeStr: typeStr, addr: addr, msg: msg, context: context}
+	// fmt.Println("\n", t.name, newItem)
+	t.items = append(t.items, newItem)
 }
 
 type item struct {

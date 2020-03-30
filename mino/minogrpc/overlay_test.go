@@ -113,7 +113,6 @@ func TestOverlay_Stream(t *testing.T) {
 
 	// Now I provide a handler
 	overlayService.handlers["handler_key"] = testFailHandler{}
-	overlayService.handlerRcvr = make(map[string]receiver)
 	overlayService.traffic = &traffic{}
 
 	// Now I set the right elements in the header but use a handler that should
@@ -127,7 +126,6 @@ func TestOverlay_Stream(t *testing.T) {
 	// Now we set our mock StreamServer to return an error on receive
 	streamServer.recvError = true
 	// We have to reset it because it's already used and then would deadlock
-	overlayService.handlerRcvr = make(map[string]receiver)
 	err = overlayService.Stream(&streamServer)
 	require.EqualError(t, err, "failed to call the stream handler: oops")
 	// We have to wait there so we catch the goroutine error
