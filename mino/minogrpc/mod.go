@@ -127,7 +127,7 @@ func (m Minogrpc) MakeNamespace(namespace string) (mino.Mino, error) {
 // RPC.
 func (m Minogrpc) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 	URI := fmt.Sprintf("%s/%s", m.namespace, name)
-	rpc := RPC{
+	rpc := &RPC{
 		handler: h,
 		srv:     m.server,
 		uri:     URI,
@@ -135,5 +135,5 @@ func (m Minogrpc) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 
 	m.server.handlers[URI] = h
 
-	return &rpc, nil
+	return rpc, nil
 }

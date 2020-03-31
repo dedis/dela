@@ -56,16 +56,17 @@ type Server struct {
 
 	// neighbours contains the certificate and details about known peers.
 	neighbours map[string]Peer
-	mesh       map[string]Peer
-
-	handlers map[string]mino.Handler
-
-	traffic *traffic
-
+	// mesh is used in the rpc overlay and indicates clients the RPC must create
+	// a stream to
+	mesh map[string]Peer
 	// routingTable indicates gateways for unkown clients. For example, the
 	// entry {"A": "B"} tells that if you want to send to "A", then you should
 	// use the gateway "B" (ie. send to "B").
 	routingTable map[string]string
+
+	handlers map[string]mino.Handler
+
+	traffic *traffic
 }
 
 type ctxURIKey string
@@ -475,6 +476,9 @@ func (s *sender) Send(msg proto.Message, addrs ...mino.Address) <-chan error {
 	return s.sendWithFrom(msg, s.address, addrs...)
 }
 
+// sendWithFrom is needed in the case we send a relayed message. In this case
+// the "from" attribute sould be the original sender of the message that must be
+// relayed, and not ourselve.
 func (s *sender) sendWithFrom(msg proto.Message, from mino.Address, addrs ...mino.Address) <-chan error {
 
 	errs := make(chan error, len(addrs))
