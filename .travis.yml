@@ -6,9 +6,10 @@ go:
 before_install:
     - go get github.com/mattn/goveralls
     - go mod download
+    - go mod tidy && [ -z "$(git status -s)" ]
 
 script:
-    - make check
+    - make lint
     - go test -covermode=count -coverprofile=coverage.out ./...
     - $GOPATH/bin/goveralls -service=travis-cli -coverprofile=coverage.out
 
