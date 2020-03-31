@@ -959,13 +959,25 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 		Certificate: server4.cert.Leaf,
 	}
 
+	// We have the following topology:
+	// srv1:
+	// - srv2 (direct)
+	// - srv3 (via srv2)
+	// - srv4 (via srv2)
+	// srv2:
+	// - srv3 (direct)
+	// - srv4 (via srv3)
+	// srv3:
+	// - srv4 (direct)
 	server1.neighbours[identifier1] = peer1
 	server1.neighbours[identifier2] = peer2
 	server1.routingTable[identifier3] = identifier2
 	server1.routingTable[identifier4] = identifier2
 
 	server2.mesh[identifier3] = peer3
-	server2.mesh[identifier4] = peer4
+	server2.routingTable[identifier4] = identifier3
+
+	server3.mesh[identifier4] = peer4
 
 	uri := "blabla"
 	handler1 := testMeshHandler{addrID: identifier1}
