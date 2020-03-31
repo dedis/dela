@@ -249,7 +249,7 @@ func (rpc RPC) Stream(ctx context.Context,
 		}()
 	}
 
-	// For unokwn clients (ie. not in our neighbour list) we set their clients
+	// For unkown clients (ie. not in our neighbour list) we set their clients
 	// to their gateways' clients.
 	for _, addr := range toAdd {
 		gateway, ok := rpc.srv.routingTable[addr]
