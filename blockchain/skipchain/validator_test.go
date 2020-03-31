@@ -8,12 +8,13 @@ import (
 	proto "github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/blockchain"
+	"go.dedis.ch/fabric/encoding"
 	"golang.org/x/xerrors"
 )
 
 func TestBlockValidator_Validate(t *testing.T) {
 	f := func(block SkipBlock) bool {
-		packed, err := block.Pack()
+		packed, err := block.Pack(encoding.NewProtoEncoder())
 		require.NoError(t, err)
 
 		v := &blockValidator{
@@ -23,6 +24,7 @@ func TestBlockValidator_Validate(t *testing.T) {
 			validator: &fakePayloadProc{},
 			watcher:   &fakeWatcher{},
 			Skipchain: &Skipchain{
+				encoder:    encoding.NewProtoEncoder(),
 				viewchange: fakeViewChange{},
 				db:         &fakeDatabase{genesisID: block.GenesisID},
 				cosi:       fakeCosi{},

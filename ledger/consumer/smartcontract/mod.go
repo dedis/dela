@@ -118,7 +118,6 @@ func (c Consumer) consumeSpawn(ctx SpawnContext) (consumer.Instance, error) {
 		contractID: contractID,
 		deleted:    false,
 		value:      value,
-		encoder:    c.encoder,
 	}
 
 	return instance, nil

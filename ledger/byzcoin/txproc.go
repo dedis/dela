@@ -17,12 +17,14 @@ import (
 //
 // - implements blockchain.PayloadProcessor
 type txProcessor struct {
+	encoder   encoding.ProtoMarshaler
 	inventory inventory.Inventory
 	consumer  consumer.Consumer
 }
 
 func newTxProcessor(c consumer.Consumer) *txProcessor {
 	return &txProcessor{
+		encoder:   encoding.NewProtoEncoder(),
 		inventory: mem.NewInventory(),
 		consumer:  c,
 	}
@@ -77,9 +79,9 @@ func (proc *txProcessor) process(payload *BlockPayload) (inventory.Page, error) 
 				return xerrors.Errorf("couldn't consume tx: %v", err)
 			}
 
-			outpb, err := out.Pack()
+			outpb, err := proc.encoder.Pack(out)
 			if err != nil {
-				return encoding.NewEncodingError("instance", err)
+				return xerrors.Errorf("encoder: %v", err)
 			}
 
 			err = page.Write(out.GetKey(), outpb)

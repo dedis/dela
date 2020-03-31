@@ -4,6 +4,7 @@ import (
 	"encoding"
 	"io"
 
+	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/any"
@@ -13,7 +14,7 @@ import (
 // Packable is an interface that provides primitives to pack data model into
 // network messages.
 type Packable interface {
-	Pack() (proto.Message, error)
+	Pack(encoder ProtoMarshaler) (proto.Message, error)
 }
 
 // BinaryMarshaler is an alias of the standard encoding library.
@@ -21,31 +22,65 @@ type BinaryMarshaler interface {
 	encoding.BinaryMarshaler
 }
 
-// JSONMarshaler provides the primitives to encode a protobuf message into a
-// JSON formatted text.
-type JSONMarshaler interface {
-	Marshal(io.Writer, proto.Message) error
-}
-
 // ProtoMarshaler is an interface to encode or decode Any messages.
 type ProtoMarshaler interface {
-	Marshal(pb proto.Message) ([]byte, error)
+	// Pack will pack the object into a protobuf message.
+	Pack(p Packable) (proto.Message, error)
+
+	// PackAny will pack the object into an any message.
+	PackAny(p Packable) (*any.Any, error)
+
+	// Marshal is a deterministic marshaling of the message into the writer.
+	Marshal(io.Writer, proto.Message) error
+
+	// MarshalAny encodes a protobuf message into an any message.
 	MarshalAny(pb proto.Message) (*any.Any, error)
+
+	// UnmarshalAny decodes back the any message into the protobuf message.
 	UnmarshalAny(any *any.Any, pb proto.Message) error
+
+	// UnmarshalDynamicAny decodes the any message into a new instance of the
+	// protobuf message.
 	UnmarshalDynamicAny(any *any.Any) (proto.Message, error)
 }
 
 // ProtoEncoder is a default implementation of protobug encoding/decoding.
-type ProtoEncoder struct{}
+type ProtoEncoder struct {
+	marshaler *jsonpb.Marshaler
+}
 
 // NewProtoEncoder returns a new instance of the default protobuf encoder.
 func NewProtoEncoder() ProtoEncoder {
-	return ProtoEncoder{}
+	return ProtoEncoder{
+		marshaler: &jsonpb.Marshaler{},
+	}
 }
 
-// Marshal encodes a protobuf message into bytes.
-func (e ProtoEncoder) Marshal(pb proto.Message) ([]byte, error) {
-	return proto.Marshal(pb)
+func (e ProtoEncoder) Pack(p Packable) (proto.Message, error) {
+	pb, err := p.Pack(e)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't pack '%T': %v", p, err)
+	}
+
+	return pb, nil
+}
+
+func (e ProtoEncoder) PackAny(p Packable) (*any.Any, error) {
+	pb, err := p.Pack(e)
+	if err != nil {
+		return nil, err
+	}
+
+	pbAny, err := ptypes.MarshalAny(pb)
+	if err != nil {
+		return nil, err
+	}
+
+	return pbAny, nil
+}
+
+func (e ProtoEncoder) Marshal(w io.Writer, pb proto.Message) error {
+	return e.marshaler.Marshal(w, pb)
 }
 
 // MarshalAny encodes a protobuf messages into the Any type.

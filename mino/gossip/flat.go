@@ -20,6 +20,7 @@ type Flat struct {
 	decoder Decoder
 	ch      chan Rumor
 	rpc     mino.RPC
+	encoder encoding.ProtoMarshaler
 }
 
 // NewFlat creates a new instance of a flat gossip protocol.
@@ -27,6 +28,7 @@ func NewFlat(m mino.Mino, dec Decoder) *Flat {
 	return &Flat{
 		mino:    m,
 		decoder: dec,
+		encoder: encoding.NewProtoEncoder(),
 		ch:      make(chan Rumor, 100),
 	}
 }
@@ -59,17 +61,12 @@ func (flat *Flat) Add(rumor Rumor) error {
 		return xerrors.New("gossiper not started")
 	}
 
-	packed, err := rumor.Pack()
+	rumorpb, err := flat.encoder.PackAny(rumor)
 	if err != nil {
-		return encoding.NewEncodingError("rumor", err)
+		return xerrors.Errorf("encoder: %v", err)
 	}
 
-	packedAny, err := ptypes.MarshalAny(packed)
-	if err != nil {
-		return encoding.NewAnyEncodingError(packed, err)
-	}
-
-	req := &RumorProto{Message: packedAny}
+	req := &RumorProto{Message: rumorpb}
 
 	ctx := context.Background()
 

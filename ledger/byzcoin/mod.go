@@ -42,6 +42,7 @@ type Ledger struct {
 	bag      *txBag
 	proc     *txProcessor
 	consumer consumer.Consumer
+	encoder  encoding.ProtoMarshaler
 }
 
 // NewLedger creates a new Byzcoin ledger.
@@ -60,6 +61,7 @@ func NewLedger(mino mino.Mino, consumer consumer.Consumer) *Ledger {
 		bag:      newTxBag(),
 		proc:     newTxProcessor(consumer),
 		consumer: consumer,
+		encoder:  encoding.NewProtoEncoder(),
 	}
 }
 
@@ -201,7 +203,7 @@ func (ldgr *Ledger) stagePayload(txs []consumer.Transaction) (*BlockPayload, err
 	}
 
 	for i, tx := range txs {
-		packed, err := tx.Pack()
+		packed, err := tx.Pack(ldgr.encoder)
 		if err != nil {
 			return nil, xerrors.Errorf("failed to pack tx: %v", err)
 		}

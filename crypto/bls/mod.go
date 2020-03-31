@@ -35,7 +35,7 @@ func (pk publicKey) MarshalBinary() ([]byte, error) {
 
 // Pack implements encoding.Packable. It returns the protobuf message
 // representing the public key.
-func (pk publicKey) Pack() (proto.Message, error) {
+func (pk publicKey) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 	buffer, err := pk.point.MarshalBinary()
 	if err != nil {
 		return nil, encoding.NewEncodingError("point", err)
@@ -69,7 +69,7 @@ func (sig signature) MarshalBinary() ([]byte, error) {
 
 // Pack implements encoding.Packable. It returns  the protobuf message
 // representing the signature.
-func (sig signature) Pack() (proto.Message, error) {
+func (sig signature) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 	return &SignatureProto{Data: sig.data}, nil
 }
 

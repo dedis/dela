@@ -2,7 +2,6 @@ package flatcosi
 
 import (
 	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
 	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
@@ -12,29 +11,28 @@ import (
 
 type handler struct {
 	mino.UnsupportedHandler
-	signer crypto.Signer
-	hasher cosi.Hashable
+	signer  crypto.Signer
+	hasher  cosi.Hashable
+	encoder encoding.ProtoMarshaler
 }
 
 func newHandler(s crypto.Signer, h cosi.Hashable) handler {
 	return handler{
-		signer: s,
-		hasher: h,
+		signer:  s,
+		hasher:  h,
+		encoder: encoding.NewProtoEncoder(),
 	}
 }
 
 func (h handler) Process(req mino.Request) (proto.Message, error) {
-	var resp proto.Message
-
 	switch msg := req.Message.(type) {
 	case *SignatureRequest:
-		var da ptypes.DynamicAny
-		err := protoenc.UnmarshalAny(msg.Message, &da)
+		data, err := h.encoder.UnmarshalDynamicAny(msg.Message)
 		if err != nil {
-			return nil, encoding.NewAnyDecodingError(&da, err)
+			return nil, xerrors.Errorf("encoder: %v", err)
 		}
 
-		buf, err := h.hasher.Hash(req.Address, da.Message)
+		buf, err := h.hasher.Hash(req.Address, data)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't hash message: %v", err)
 		}
@@ -44,20 +42,14 @@ func (h handler) Process(req mino.Request) (proto.Message, error) {
 			return nil, xerrors.Errorf("couldn't sign: %v", err)
 		}
 
-		sigproto, err := sig.Pack()
+		resp := &SignatureResponse{}
+		resp.Signature, err = h.encoder.PackAny(sig)
 		if err != nil {
-			return nil, encoding.NewEncodingError("signature", err)
+			return nil, xerrors.Errorf("encoder: %v", err)
 		}
 
-		sigany, err := protoenc.MarshalAny(sigproto)
-		if err != nil {
-			return nil, encoding.NewAnyEncodingError(sigproto, err)
-		}
-
-		resp = &SignatureResponse{Signature: sigany}
+		return resp, nil
 	default:
 		return nil, xerrors.Errorf("invalid message type: %T", msg)
 	}
-
-	return resp, nil
 }

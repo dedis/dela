@@ -11,7 +11,6 @@ import (
 	"testing/quick"
 
 	proto "github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
 	any "github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/golang/protobuf/ptypes/wrappers"
@@ -67,11 +66,8 @@ func TestSkipBlock_GetHash(t *testing.T) {
 
 func TestSkipBlock_Pack(t *testing.T) {
 	f := func(block SkipBlock) bool {
-		packed, err := block.Pack()
-		if err != nil {
-			t.Log(err)
-			return false
-		}
+		packed, err := block.Pack(encoding.NewProtoEncoder())
+		require.NoError(t, err)
 
 		pblock := packed.(*BlockProto)
 
@@ -79,28 +75,17 @@ func TestSkipBlock_Pack(t *testing.T) {
 		require.Equal(t, block.BackLink.Bytes(), pblock.GetBacklink())
 		require.Equal(t, block.GenesisID.Bytes(), pblock.GetGenesisID())
 
+		_, err = block.Pack(badMarshalAnyEncoder{})
+		require.EqualError(t, err, "couldn't marshal the payload: oops")
+
+		_, err = block.Pack(badPackEncoder{})
+		require.EqualError(t, err, "couldn't pack the conodes: oops")
+
 		return true
 	}
 
 	err := quick.Check(f, nil)
 	require.NoError(t, err)
-}
-
-func TestSkipBlock_PackFailures(t *testing.T) {
-	defer func() { protoenc = encoding.NewProtoEncoder() }()
-
-	block := SkipBlock{
-		BackLink: Digest{},
-		Payload:  &empty.Empty{},
-	}
-
-	e := xerrors.New("pack error")
-
-	protoenc = &testProtoEncoder{err: e}
-	_, err := block.Pack()
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err, e))
-	require.True(t, xerrors.Is(err, encoding.NewAnyEncodingError((*empty.Empty)(nil), nil)))
 }
 
 func TestSkipBlock_Hash(t *testing.T) {
@@ -195,33 +180,20 @@ func TestVerifiableBlock_Verify(t *testing.T) {
 
 func TestVerifiableBlock_Pack(t *testing.T) {
 	f := func(block SkipBlock) bool {
-		defer func() { protoenc = encoding.NewProtoEncoder() }()
-
 		vb := VerifiableBlock{
 			SkipBlock: block,
 			Chain:     fakeChain{},
 		}
 
-		packed, err := vb.Pack()
+		packed, err := vb.Pack(encoding.NewProtoEncoder())
 		require.NoError(t, err)
 		require.IsType(t, (*VerifiableBlockProto)(nil), packed)
 
-		vb.SkipBlock = SkipBlock{}
-		_, err = vb.Pack()
-		require.Error(t, err)
-		require.True(t, xerrors.Is(err, encoding.NewEncodingError("block", nil)))
+		_, err = vb.Pack(badPackEncoder{})
+		require.EqualError(t, err, "encoder: oops")
 
-		vb.SkipBlock = block
-		vb.Chain = fakeChain{err: xerrors.Errorf("oops")}
-		_, err = vb.Pack()
-		require.Error(t, err)
-		require.True(t, xerrors.Is(err, encoding.NewEncodingError("chain", nil)))
-
-		vb.Chain = fakeChain{}
-		protoenc = &testProtoEncoder{delay: 1, err: xerrors.New("oops")}
-		_, err = vb.Pack()
-		require.Error(t, err)
-		require.True(t, xerrors.Is(err, encoding.NewAnyEncodingError((*empty.Empty)(nil), nil)))
+		_, err = vb.Pack(badPackAnyEncoder{})
+		require.EqualError(t, err, "encoder: oops")
 
 		return true
 	}
@@ -277,6 +249,7 @@ func TestBlockFactory_DecodeConodes(t *testing.T) {
 func TestBlockFactory_DecodeBlock(t *testing.T) {
 	f := func(block SkipBlock) bool {
 		factory := blockFactory{
+			encoder:     encoding.NewProtoEncoder(),
 			hashFactory: sha256Factory{},
 			Skipchain: &Skipchain{
 				cosi: fakeCosi{},
@@ -284,7 +257,7 @@ func TestBlockFactory_DecodeBlock(t *testing.T) {
 			},
 		}
 
-		packed, err := block.Pack()
+		packed, err := block.Pack(encoding.NewProtoEncoder())
 		require.NoError(t, err)
 
 		newBlock, err := factory.decodeBlock(packed.(*BlockProto))
@@ -294,11 +267,11 @@ func TestBlockFactory_DecodeBlock(t *testing.T) {
 		_, err = factory.decodeBlock(&empty.Empty{})
 		require.EqualError(t, err, "invalid message type '*empty.Empty'")
 
+		factory.encoder = badUnmarshalDynEncoder{}
 		_, err = factory.decodeBlock(&BlockProto{})
-		require.Error(t, err)
-		require.True(t, xerrors.Is(err,
-			encoding.NewAnyDecodingError((*ptypes.DynamicAny)(nil), nil)))
+		require.EqualError(t, err, "encoder: oops")
 
+		factory.encoder = encoding.NewProtoEncoder()
 		factory.cosi = fakeCosi{err: xerrors.New("oops")}
 		_, err = factory.decodeBlock(packed.(*BlockProto))
 		require.EqualError(t, err, "couldn't make verifier: oops")
@@ -319,6 +292,7 @@ func TestBlockFactory_DecodeBlock(t *testing.T) {
 func TestBlockFactory_FromVerifiable(t *testing.T) {
 	f := func(block SkipBlock) bool {
 		factory := blockFactory{
+			encoder:     encoding.NewProtoEncoder(),
 			hashFactory: sha256Factory{},
 			Skipchain: &Skipchain{
 				cosi:      fakeCosi{},
@@ -327,7 +301,7 @@ func TestBlockFactory_FromVerifiable(t *testing.T) {
 			},
 		}
 
-		packed, err := block.Pack()
+		packed, err := block.Pack(encoding.NewProtoEncoder())
 		require.NoError(t, err)
 
 		pb := &VerifiableBlockProto{
@@ -439,47 +413,40 @@ func (pk fakePublicKey) MarshalBinary() ([]byte, error) {
 	return []byte{}, pk.err
 }
 
-func (pk fakePublicKey) Pack() (proto.Message, error) {
+func (pk fakePublicKey) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 	return &empty.Empty{}, pk.err
 }
 
-type testProtoEncoder struct {
+type badPackEncoder struct {
 	encoding.ProtoEncoder
-	delay int
-	err   error
 }
 
-func (e *testProtoEncoder) Marshal(pb proto.Message) ([]byte, error) {
-	if e.err != nil {
-		if e.delay == 0 {
-			return nil, e.err
-		}
-		e.delay--
-	}
-
-	return proto.Marshal(pb)
+func (e badPackEncoder) Pack(encoding.Packable) (proto.Message, error) {
+	return nil, xerrors.New("oops")
 }
 
-func (e *testProtoEncoder) MarshalAny(pb proto.Message) (*any.Any, error) {
-	if e.err != nil {
-		if e.delay == 0 {
-			return nil, e.err
-		}
-		e.delay--
-	}
-
-	return ptypes.MarshalAny(pb)
+type badPackAnyEncoder struct {
+	encoding.ProtoEncoder
 }
 
-func (e *testProtoEncoder) UnmarshalAny(any *any.Any, pb proto.Message) error {
-	if e.err != nil {
-		if e.delay == 0 {
-			return e.err
-		}
-		e.delay--
-	}
+func (e badPackAnyEncoder) PackAny(encoding.Packable) (*any.Any, error) {
+	return nil, xerrors.New("oops")
+}
 
-	return ptypes.UnmarshalAny(any, pb)
+type badMarshalAnyEncoder struct {
+	encoding.ProtoEncoder
+}
+
+func (e badMarshalAnyEncoder) MarshalAny(proto.Message) (*any.Any, error) {
+	return nil, xerrors.New("oops")
+}
+
+type badUnmarshalDynEncoder struct {
+	encoding.ProtoEncoder
+}
+
+func (e badUnmarshalDynEncoder) UnmarshalDynamicAny(*any.Any) (proto.Message, error) {
+	return nil, xerrors.New("oops")
 }
 
 type testSignature struct {
@@ -492,7 +459,7 @@ func (s testSignature) MarshalBinary() ([]byte, error) {
 	return s.buffer, s.err
 }
 
-func (s testSignature) Pack() (proto.Message, error) {
+func (s testSignature) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 	return &empty.Empty{}, s.err
 }
 
@@ -625,7 +592,7 @@ func (c fakeChain) GetLastHash() []byte {
 	return c.hash.Bytes()
 }
 
-func (c fakeChain) Pack() (proto.Message, error) {
+func (c fakeChain) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 	return &empty.Empty{}, c.err
 }
 

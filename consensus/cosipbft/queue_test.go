@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/crypto"
+	"go.dedis.ch/fabric/encoding"
 	"golang.org/x/xerrors"
 )
 
@@ -33,23 +34,10 @@ func TestQueue_New(t *testing.T) {
 	require.EqualError(t, err, "queue is locked")
 }
 
-// fakeQueueFactory is only used to return a specific hash factory.
-type fakeQueueFactory struct {
-	ChainFactory
-	bad bool
-}
-
-func (f fakeQueueFactory) GetHashFactory() crypto.HashFactory {
-	if f.bad {
-		return badHashFactory{}
-	}
-	return sha256Factory{}
-}
-
 func TestQueue_LockProposal(t *testing.T) {
 	verifier := &fakeVerifier{}
 	queue := &queue{
-		chainFactory: fakeQueueFactory{},
+		hashFactory: crypto.NewSha256Factory(),
 		items: []item{
 			{
 				from:     []byte{0xaa},
@@ -75,11 +63,11 @@ func TestQueue_LockProposal(t *testing.T) {
 	require.EqualError(t, err, "couldn't find proposal 'aa'")
 
 	queue.locked = false
-	queue.chainFactory = fakeQueueFactory{bad: true}
+	queue.hashFactory = badHashFactory{}
 	err = queue.LockProposal([]byte{0xbb}, fakeSignature{})
 	require.EqualError(t, err, "couldn't hash proposal: couldn't write 'from': oops")
 
-	queue.chainFactory = fakeQueueFactory{}
+	queue.hashFactory = crypto.NewSha256Factory()
 	verifier.err = xerrors.New("oops")
 	err = queue.LockProposal([]byte{0xbb}, fakeSignature{})
 	require.EqualError(t, err, "couldn't verify signature: oops")
@@ -92,6 +80,7 @@ func TestQueue_LockProposal(t *testing.T) {
 func TestQueue_Finalize(t *testing.T) {
 	verifier := &fakeVerifier{}
 	queue := &queue{
+		encoder: encoding.NewProtoEncoder(),
 		items: []item{
 			{
 				from:     []byte{0xaa},
@@ -132,9 +121,9 @@ func TestQueue_Finalize(t *testing.T) {
 	require.EqualError(t, err, "couldn't verify signature: oops")
 
 	queue.items[0].verifier = &fakeVerifier{}
+	queue.encoder = badPackEncoder{}
 	_, err = queue.Finalize([]byte{0xaa}, fakeSignature{err: xerrors.New("oops")})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "couldn't encode forward link:")
+	require.EqualError(t, err, "encoder: oops")
 }
 
 type fakeItem struct {

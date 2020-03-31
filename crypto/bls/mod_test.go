@@ -47,7 +47,7 @@ func (p fakePoint) MarshalBinary() ([]byte, error) {
 func TestPublicKey_Pack(t *testing.T) {
 	f := func() bool {
 		signer := NewSigner()
-		packed, err := signer.GetPublicKey().Pack()
+		packed, err := signer.GetPublicKey().Pack(nil)
 		require.NoError(t, err)
 
 		pubkey, err := signer.GetPublicKeyFactory().FromProto(packed)
@@ -61,7 +61,7 @@ func TestPublicKey_Pack(t *testing.T) {
 	require.NoError(t, err)
 
 	pubkey := publicKey{point: fakePoint{}}
-	_, err = pubkey.Pack()
+	_, err = pubkey.Pack(nil)
 	require.EqualError(t, err, "couldn't encode point: oops")
 }
 
@@ -102,7 +102,7 @@ func TestSignature_MarshalBinary(t *testing.T) {
 func TestSignature_Pack(t *testing.T) {
 	f := func(data []byte) bool {
 		sig := signature{data: data}
-		packed, err := sig.Pack()
+		packed, err := sig.Pack(nil)
 		require.NoError(t, err)
 
 		pb, ok := packed.(*SignatureProto)
@@ -150,7 +150,7 @@ func TestPublicKeyFactory_FromProto(t *testing.T) {
 	factory := publicKeyFactory{}
 
 	signer := NewSigner()
-	packed, err := signer.GetPublicKey().Pack()
+	packed, err := signer.GetPublicKey().Pack(nil)
 	require.NoError(t, err)
 
 	pubkey, err := factory.FromProto(packed)
@@ -185,7 +185,7 @@ func TestSignatureFactory_FromProto(t *testing.T) {
 	signer := NewSigner()
 	sig, err := signer.Sign([]byte{1})
 	require.NoError(t, err)
-	packed, err := sig.Pack()
+	packed, err := sig.Pack(nil)
 	require.NoError(t, err)
 
 	decoded, err := factory.FromProto(packed)

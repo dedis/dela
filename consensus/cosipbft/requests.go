@@ -39,8 +39,8 @@ func (p Prepare) GetHash() []byte {
 }
 
 // Pack returns the protobuf message, or an error.
-func (p Prepare) Pack() (proto.Message, error) {
-	packed, err := p.proposal.Pack()
+func (p Prepare) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
+	packed, err := p.proposal.Pack(enc)
 	if err != nil {
 		return nil, encoding.NewEncodingError("proposal", err)
 	}
@@ -84,8 +84,8 @@ func (c Commit) GetHash() []byte {
 
 // Pack returns the protobuf message representation of a commit, or an error if
 // something goes wrong during encoding.
-func (c Commit) Pack() (proto.Message, error) {
-	packed, err := c.prepare.Pack()
+func (c Commit) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
+	packed, err := c.prepare.Pack(enc)
 	if err != nil {
 		return nil, encoding.NewEncodingError("prepare signature", err)
 	}
