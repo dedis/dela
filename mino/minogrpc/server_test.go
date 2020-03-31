@@ -1033,10 +1033,15 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 	require.Equal(t, "dummy_value_"+identifier3, msgs[2])
 	require.Equal(t, "dummy_value_"+identifier4, msgs[3])
 
-	// fmt.Println("server1: " + server1.traffic.String())
-	// fmt.Println("server2: " + server2.traffic.String())
-	// fmt.Println("server3: " + server3.traffic.String())
-	// fmt.Println("server4: " + server4.traffic.String())
+	// out := os.Stdout
+	// out.WriteString("\nserver1:\n")
+	// server1.traffic.Display(out)
+	// out.WriteString("\nserver2:\n")
+	// server2.traffic.Display(out)
+	// out.WriteString("\nserver3:\n")
+	// server3.traffic.Display(out)
+	// out.WriteString("\nserver4:\n")
+	// server4.traffic.Display(out)
 
 	server1.grpcSrv.GracefulStop()
 	server2.grpcSrv.GracefulStop()

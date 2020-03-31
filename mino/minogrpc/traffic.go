@@ -1,10 +1,11 @@
 package minogrpc
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
-	"strings"
 
 	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric/mino"
@@ -46,13 +47,13 @@ func (t *traffic) logRcvRelay(from mino.Address, msg proto.Message, context stri
 	t.addItem("received to relay", from, msg, context)
 }
 
-func (t traffic) String() string {
-	out := new(strings.Builder)
-	out.WriteString("- traffic:\n")
+func (t traffic) Display(out io.Writer) {
+	fmt.Fprint(out, "- traffic:\n")
+	var buf bytes.Buffer
 	for _, item := range t.items {
-		out.WriteString(eachLine.ReplaceAllString(item.String(), "-$1"))
+		item.Display(&buf)
 	}
-	return out.String()
+	fmt.Fprintf(out, eachLine.ReplaceAllString(buf.String(), "-$1"))
 }
 
 func (t *traffic) addItem(typeStr string, addr mino.Address, msg proto.Message, context string) {
@@ -71,12 +72,10 @@ type item struct {
 	context string
 }
 
-func (p item) String() string {
-	out := new(strings.Builder)
-	out.WriteString("- item:\n")
+func (p item) Display(out io.Writer) {
+	fmt.Fprint(out, "- item:\n")
 	fmt.Fprintf(out, "-- typeStr: %s\n", p.typeStr)
 	fmt.Fprintf(out, "-- addr: %s\n", p.addr)
 	fmt.Fprintf(out, "-- msg: (type %T) %s\n", p.msg, p.msg)
 	fmt.Fprintf(out, "-- context: %s\n", p.context)
-	return out.String()
 }
