@@ -26,6 +26,8 @@ type overlayService struct {
 	addr address
 	// This map is used to create a new stream connection if possible
 	mesh map[string]Peer
+	// routing table from the server
+	routingTable map[string]string
 	// This certificate is used to create a new stream connection if possible
 	srvCert *tls.Certificate
 	// Used to record traffic activity
@@ -180,6 +182,15 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 				}
 			}
 		}()
+	}
+
+	// add the gateways based on the routing table
+	for k, v := range o.routingTable {
+		gateway, ok := sender.participants[v]
+		if !ok {
+			// TODO: handle this situation
+		}
+		sender.participants[k] = gateway
 	}
 
 	// listen on my own stream

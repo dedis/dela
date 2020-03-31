@@ -346,11 +346,12 @@ func CreateServer(addr mino.Address) (*Server, error) {
 	}
 
 	RegisterOverlayServer(srv, &overlayService{
-		handlers: server.handlers,
-		addr:     address{addr.String()},
-		mesh:     server.mesh,
-		srvCert:  server.cert,
-		traffic:  server.traffic,
+		handlers:     server.handlers,
+		addr:         address{addr.String()},
+		mesh:         server.mesh,
+		routingTable: server.routingTable,
+		srvCert:      server.cert,
+		traffic:      server.traffic,
 	})
 
 	return server, nil
