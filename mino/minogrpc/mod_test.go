@@ -2,7 +2,6 @@ package minogrpc
 
 import (
 	"bytes"
-	fmt "fmt"
 	"testing"
 	"testing/quick"
 
@@ -103,7 +102,7 @@ func Test_MakeRPC(t *testing.T) {
 	expectedRPC := &RPC{
 		handler: handler,
 		srv:     minoGrpc.server,
-		uri:     fmt.Sprintf("namespace/name"),
+		uri:     "namespace/name",
 	}
 
 	h, ok := minoGrpc.server.handlers[expectedRPC.uri]
@@ -217,10 +216,7 @@ type fakeAddressIterator struct {
 
 // HasNext implements mino.AddressIterator.HasNext()
 func (it *fakeAddressIterator) HasNext() bool {
-	if it.cursor < len(it.players) {
-		return true
-	}
-	return false
+	return it.cursor < len(it.players)
 }
 
 // GetNext implements mino.AddressIterator.GetNext(). It is the responsibility

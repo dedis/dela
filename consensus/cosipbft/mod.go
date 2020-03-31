@@ -26,7 +26,6 @@ type Consensus struct {
 	storage      Storage
 	cosi         cosi.CollectiveSigning
 	mino         mino.Mino
-	rpc          mino.RPC
 	queue        Queue
 	encoder      encoding.ProtoMarshaler
 	hashFactory  crypto.HashFactory

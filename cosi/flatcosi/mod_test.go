@@ -344,19 +344,6 @@ func (ca fakeCollectiveAuthority) PublicKeyIterator() crypto.PublicKeyIterator {
 	return &fakeIterator{count: 2, pubkey: ca.pubkey}
 }
 
-type fakeProtoEncoder struct {
-	encoding.ProtoEncoder
-	errUnmarshal error
-}
-
-func (e fakeProtoEncoder) MarshalAny(pb proto.Message) (*any.Any, error) {
-	return nil, xerrors.New("oops")
-}
-
-func (e fakeProtoEncoder) UnmarshalAny(*any.Any, proto.Message) error {
-	return e.errUnmarshal
-}
-
 type fakeSignature struct {
 	crypto.Signature
 	err error

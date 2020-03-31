@@ -155,7 +155,7 @@ func TestSkipBlock_HashUniqueness(t *testing.T) {
 
 func TestSkipBlock_String(t *testing.T) {
 	block := SkipBlock{hash: Digest{1}}
-	require.Equal(t, block.String(), fmt.Sprintf("Block[0100000000000000]"))
+	require.Equal(t, block.String(), "Block[0100000000000000]")
 }
 
 func TestVerifiableBlock_Verify(t *testing.T) {
@@ -347,12 +347,6 @@ func randomUint64(rand *rand.Rand) uint64 {
 	return binary.LittleEndian.Uint64(buffer)
 }
 
-func randomUint32(rand *rand.Rand) uint32 {
-	buffer := make([]byte, 8)
-	rand.Read(buffer)
-	return binary.LittleEndian.Uint32(buffer)
-}
-
 func randomConode() Conode {
 	buffer := make([]byte, 4)
 	rand.Read(buffer)
@@ -447,59 +441,6 @@ type badUnmarshalDynEncoder struct {
 
 func (e badUnmarshalDynEncoder) UnmarshalDynamicAny(*any.Any) (proto.Message, error) {
 	return nil, xerrors.New("oops")
-}
-
-type testSignature struct {
-	crypto.Signature
-	buffer []byte
-	err    error
-}
-
-func (s testSignature) MarshalBinary() ([]byte, error) {
-	return s.buffer, s.err
-}
-
-func (s testSignature) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
-	return &empty.Empty{}, s.err
-}
-
-type testSignatureFactory struct {
-	err error
-}
-
-func (f testSignatureFactory) FromProto(pb proto.Message) (crypto.Signature, error) {
-	return testSignature{}, f.err
-}
-
-type testVerifier struct {
-	err   error
-	delay int
-	calls []struct {
-		msg []byte
-		sig crypto.Signature
-	}
-
-	crypto.Verifier
-}
-
-func (v *testVerifier) GetSignatureFactory() crypto.SignatureFactory {
-	return testSignatureFactory{err: v.err}
-}
-
-func (v *testVerifier) Verify(msg []byte, sig crypto.Signature) error {
-	v.calls = append(v.calls, struct {
-		msg []byte
-		sig crypto.Signature
-	}{msg, sig})
-
-	if v.err != nil {
-		if v.delay == 0 {
-			return v.err
-		}
-		v.delay--
-	}
-
-	return nil
 }
 
 type badHash struct {

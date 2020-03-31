@@ -7,7 +7,6 @@ import (
 	"testing"
 	"testing/quick"
 
-	"github.com/golang/protobuf/jsonpb"
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	any "github.com/golang/protobuf/ptypes/any"
@@ -336,6 +335,7 @@ func TestInstanceFactory_FromProto(t *testing.T) {
 
 	instance, err = factory.FromProto(instanceany)
 	require.NoError(t, err)
+	require.Equal(t, instancepb.GetKey(), instance.GetKey())
 
 	factory.encoder = badEncoder{errUnmarshal: xerrors.New("oops")}
 	_, err = factory.FromProto(instanceany)
@@ -425,14 +425,6 @@ func (e badEncoder) UnmarshalAny(*any.Any, proto.Message) error {
 
 func (e badEncoder) UnmarshalDynamicAny(*any.Any) (proto.Message, error) {
 	return nil, e.errDynUnmarshal
-}
-
-type badMarshaler struct {
-	*jsonpb.Marshaler
-}
-
-func (m badMarshaler) Marshal(io.Writer, proto.Message) error {
-	return xerrors.New("oops")
 }
 
 type fakePage struct {

@@ -11,7 +11,6 @@ import (
 	"io"
 	"math/big"
 	"net"
-	"net/http"
 	"sync"
 	"time"
 
@@ -51,7 +50,6 @@ type Server struct {
 	cert      *tls.Certificate
 	addr      mino.Address
 	listener  net.Listener
-	httpSrv   *http.Server
 	StartChan chan struct{}
 
 	// neighbours contains the certificate and details about known peers.
@@ -68,10 +66,6 @@ type Server struct {
 
 	traffic *traffic
 }
-
-type ctxURIKey string
-
-const ctxKey = ctxURIKey("URI")
 
 // Roster is a set of peers that will work together
 // to execute protocols.
@@ -614,14 +608,4 @@ func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error)
 type overlayStream interface {
 	Send(*OverlayMsg) error
 	Recv() (*OverlayMsg, error)
-}
-
-// simpleNode implements mino.Node
-type simpleNode struct {
-	addr address
-}
-
-// getAddress implements mino.Node
-func (o simpleNode) GetAddress() mino.Address {
-	return o.addr
 }

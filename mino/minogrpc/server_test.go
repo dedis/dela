@@ -1198,10 +1198,7 @@ type fakeIterator struct {
 }
 
 func (i *fakeIterator) HasNext() bool {
-	if i.index < len(i.addrs) {
-		return true
-	}
-	return false
+	return i.index < len(i.addrs)
 }
 
 func (i *fakeIterator) GetNext() mino.Address {
@@ -1264,8 +1261,6 @@ type testRingHandler struct {
 	neighborID string
 	// address of the node
 	addrID string
-	// tells if it is the server that know all the other clients
-	isRelay bool
 }
 
 func (t testRingHandler) Stream(out mino.Sender, in mino.Receiver) error {

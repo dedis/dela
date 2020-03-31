@@ -295,24 +295,3 @@ type badUnmarshalDynEncoder struct {
 func (e badUnmarshalDynEncoder) UnmarshalDynamicAny(*any.Any) (proto.Message, error) {
 	return nil, xerrors.New("oops")
 }
-
-type fakePublicKey struct {
-	crypto.PublicKey
-}
-
-type fakeEncoder struct {
-	encoding.ProtoMarshaler
-	delay int
-}
-
-func (e *fakeEncoder) MarshalAny(pb proto.Message) (*any.Any, error) {
-	if e.delay > 0 {
-		e.delay--
-		return ptypes.MarshalAny(pb)
-	}
-	return nil, xerrors.New("marshal any error")
-}
-
-func (e *fakeEncoder) UnmarshalAny(*any.Any, proto.Message) error {
-	return xerrors.New("unmarshal any error")
-}

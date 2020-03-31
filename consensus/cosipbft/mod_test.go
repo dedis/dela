@@ -425,10 +425,7 @@ type fakeAddrIterator struct {
 }
 
 func (i *fakeAddrIterator) HasNext() bool {
-	if i.index+1 < len(i.addrs) {
-		return true
-	}
-	return false
+	return i.index+1 < len(i.addrs)
 }
 
 func (i *fakeAddrIterator) GetNext() mino.Address {
@@ -445,10 +442,7 @@ type fakePKIterator struct {
 }
 
 func (i *fakePKIterator) HasNext() bool {
-	if i.index+1 < len(i.pubkeys) {
-		return true
-	}
-	return false
+	return i.index+1 < len(i.pubkeys)
 }
 
 func (i *fakePKIterator) GetNext() crypto.PublicKey {
@@ -555,7 +549,7 @@ type fakeRPC struct {
 func (rpc *fakeRPC) Call(ctx context.Context, pb proto.Message,
 	memship mino.Players) (<-chan proto.Message, <-chan error) {
 
-	msgs := make(chan proto.Message, 0)
+	msgs := make(chan proto.Message)
 	errs := make(chan error, 1)
 	if rpc.err != nil {
 		errs <- rpc.err

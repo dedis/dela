@@ -8,6 +8,7 @@ before_install:
     - go mod download
 
 script:
+    - make check
     - go test -covermode=count -coverprofile=coverage.out ./...
     - $GOPATH/bin/goveralls -service=travis-cli -coverprofile=coverage.out
 

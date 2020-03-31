@@ -56,10 +56,7 @@ type iterator struct {
 }
 
 func (i *iterator) HasNext() bool {
-	if i.index+1 < len(i.conodes) {
-		return true
-	}
-	return false
+	return i.index+1 < len(i.conodes)
 }
 
 func (i *iterator) GetNext() *Conode {
