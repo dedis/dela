@@ -6,7 +6,7 @@ import (
 	"github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/ledger"
+	"go.dedis.ch/fabric/ledger/consumer"
 	"go.dedis.ch/fabric/ledger/inventory"
 	"golang.org/x/xerrors"
 )
@@ -220,7 +220,7 @@ func (f TransactionFactory) NewDelete(key []byte) (DeleteTransaction, error) {
 
 // FromProto implements ledger.TransactionFactory. It returns a new transaction
 // built from the protobuf message.
-func (f TransactionFactory) FromProto(pb proto.Message) (ledger.Transaction, error) {
+func (f TransactionFactory) FromProto(pb proto.Message) (consumer.Transaction, error) {
 	var txProto proto.Message
 
 	switch in := pb.(type) {
@@ -256,38 +256,119 @@ func (f TransactionFactory) FromProto(pb proto.Message) (ledger.Transaction, err
 	}
 }
 
-// Instance is the output of a transaction. This is the type returned when
-// reading a transaction context.
-type Instance interface {
-	GetValue() proto.Message
+// ContractInstance is a specialization of the consumer instance to include
+// smart contract details.
+type ContractInstance interface {
+	consumer.Instance
+
 	GetContractID() string
-	IsDeleted() bool
+	Deleted() bool
 }
 
-type instance struct {
+// contractInstance is the result of a smart contract transaction execution. The
+// key is defined by the hash of the spawn transaction that created the
+// instance. It is immutable exactly like the the contract identifier.
+//
+// - implements consumer.Instance
+// - implements smartcontract.ContractInstance
+// - implements encoding.Packable
+type contractInstance struct {
+	key        []byte
 	contractID string
 	deleted    bool
 	value      proto.Message
+
+	encoder encoding.ProtoMarshaler
 }
 
-func (i instance) GetValue() proto.Message {
-	return i.value
+// GetKey implements consumer.Instance. It returns the key of the instance.
+func (i contractInstance) GetKey() []byte {
+	return i.key
 }
 
-func (i instance) GetContractID() string {
+// GetContractID implements smartcontract.ContractInstance. It returns the
+// contract identifier.
+func (i contractInstance) GetContractID() string {
 	return i.contractID
 }
 
-func (i instance) IsDeleted() bool {
+// GetValue implements consumer.Instance. It returns the value produced by the
+// transaction execution.
+func (i contractInstance) GetValue() proto.Message {
+	return i.value
+}
+
+// Deleted implements smartcontract.ContractInstance. It returns true if the
+// instance has been permanently deleted.
+func (i contractInstance) Deleted() bool {
 	return i.deleted
 }
 
+// Pack implements encoding.Packable. It returns the protobuf message for this
+// instance.
+func (i contractInstance) Pack() (proto.Message, error) {
+	pb := &InstanceProto{
+		Key:        i.key,
+		ContractID: i.contractID,
+		Deleted:    i.deleted,
+	}
+
+	var err error
+	pb.Value, err = i.encoder.MarshalAny(i.value)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't marshal the value: %v", err)
+	}
+
+	return pb, nil
+}
+
+// instanceFactory is the implementation of the consumer.InstanceFactory for
+// smart contract instances.
+//
+// - implements consumer.InstanceFactory
+type instanceFactory struct {
+	encoder encoding.ProtoMarshaler
+}
+
+// FromProto implements consumer.InstanceFactory. It returns the instance from
+// the protobuf message if it applies, otherwise an error.
+func (f instanceFactory) FromProto(pb proto.Message) (consumer.Instance, error) {
+	var instancepb *InstanceProto
+	switch i := pb.(type) {
+	case *any.Any:
+		instancepb = &InstanceProto{}
+		err := f.encoder.UnmarshalAny(i, instancepb)
+		if err != nil {
+			return nil, encoding.NewAnyDecodingError(instancepb, err)
+		}
+	case *InstanceProto:
+		instancepb = i
+	}
+
+	value, err := f.encoder.UnmarshalDynamicAny(instancepb.GetValue())
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't unmarshal the value: %v", err)
+	}
+
+	instance := contractInstance{
+		key:        instancepb.GetKey(),
+		contractID: instancepb.GetContractID(),
+		deleted:    instancepb.GetDeleted(),
+		value:      value,
+		encoder:    f.encoder,
+	}
+
+	return instance, nil
+}
+
+// transactionContext is provided to smart contract execution. It provides
+// valuable information to the implementation.
 type transactionContext struct {
 	encoder encoding.ProtoMarshaler
 	page    inventory.Page
 }
 
-func (ctx transactionContext) Read(key []byte) (Instance, error) {
+func (ctx transactionContext) Read(key []byte) (ContractInstance, error) {
 	entry, err := ctx.page.Read(key)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't read the entry: %v", err)
@@ -303,10 +384,12 @@ func (ctx transactionContext) Read(key []byte) (Instance, error) {
 		return nil, xerrors.Errorf("couldn't unmarshal the value: %v", err)
 	}
 
-	instance := instance{
+	instance := contractInstance{
+		key:        key,
 		value:      value,
 		contractID: instancepb.GetContractID(),
 		deleted:    instancepb.GetDeleted(),
+		encoder:    ctx.encoder,
 	}
 
 	return instance, nil

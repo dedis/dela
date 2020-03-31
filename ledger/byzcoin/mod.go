@@ -13,6 +13,7 @@ import (
 	"go.dedis.ch/fabric/cosi/flatcosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/crypto/bls"
+	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/ledger"
 	"go.dedis.ch/fabric/ledger/consumer"
 	"go.dedis.ch/fabric/mino"
@@ -34,13 +35,13 @@ const (
 //
 // - implements ledger.Ledger
 type Ledger struct {
-	addr      mino.Address
-	signer    crypto.Signer
-	bc        blockchain.Blockchain
-	gossiper  gossip.Gossiper
-	queue     *txBag
-	inventory *txProcessor
-	consumer  consumer.Consumer
+	addr     mino.Address
+	signer   crypto.Signer
+	bc       blockchain.Blockchain
+	gossiper gossip.Gossiper
+	queue    *txBag
+	proc     *txProcessor
+	consumer consumer.Consumer
 }
 
 // NewLedger creates a new Byzcoin ledger.
@@ -52,20 +53,46 @@ func NewLedger(mino mino.Mino, consumer consumer.Consumer) *Ledger {
 	}
 
 	return &Ledger{
-		addr:      mino.GetAddress(),
-		signer:    signer,
-		bc:        skipchain.NewSkipchain(mino, cosi),
-		gossiper:  gossip.NewFlat(mino, decoder),
-		queue:     newTxBag(),
-		inventory: newTxProcessor(consumer),
-		consumer:  consumer,
+		addr:     mino.GetAddress(),
+		signer:   signer,
+		bc:       skipchain.NewSkipchain(mino, cosi),
+		gossiper: gossip.NewFlat(mino, decoder),
+		queue:    newTxBag(),
+		proc:     newTxProcessor(consumer),
+		consumer: consumer,
 	}
+}
+
+// GetInstance implements ledger.Ledger. It returns the instance with the given
+// key as of the latest block.
+func (ldgr *Ledger) GetInstance(key []byte) (consumer.Instance, error) {
+	latest, err := ldgr.bc.GetBlock()
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't read latest block: %v", err)
+	}
+
+	page, err := ldgr.proc.inventory.GetPage(latest.GetIndex())
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't read the page: %v", err)
+	}
+
+	instancepb, err := page.Read(key)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't read the instance: %v", err)
+	}
+
+	instance, err := ldgr.consumer.GetInstanceFactory().FromProto(instancepb)
+	if err != nil {
+		return nil, encoding.NewDecodingError("instance", err)
+	}
+
+	return instance, nil
 }
 
 // Listen implements ledger.Ledger. It starts to participate in the blockchain
 // and returns an actor that can send transactions.
 func (ldgr *Ledger) Listen(players mino.Players) (ledger.Actor, error) {
-	bcActor, err := ldgr.bc.Listen(ldgr.inventory)
+	bcActor, err := ldgr.bc.Listen(ldgr.proc)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't start the blockchain: %v", err)
 	}
@@ -102,7 +129,7 @@ func (ldgr *Ledger) routine(actor blockchain.Actor, players mino.Players) {
 		select {
 		// TODO: closing
 		case rumor := <-ldgr.gossiper.Rumors():
-			tx, ok := rumor.(ledger.Transaction)
+			tx, ok := rumor.(consumer.Transaction)
 			if ok {
 				ldgr.queue.Add(tx)
 			}
@@ -166,7 +193,7 @@ func (ldgr *Ledger) proposeBlock(actor blockchain.Actor, players mino.Players) {
 
 // stagePayload creates a payload with the list of transactions by staging a new
 // snapshot to the inventory.
-func (ldgr *Ledger) stagePayload(txs []ledger.Transaction) (*BlockPayload, error) {
+func (ldgr *Ledger) stagePayload(txs []consumer.Transaction) (*BlockPayload, error) {
 	fabric.Logger.Trace().Msgf("staging payload with %d transactions", len(txs))
 	payload := &BlockPayload{
 		Transactions: make([]*any.Any, len(txs)),
@@ -183,7 +210,7 @@ func (ldgr *Ledger) stagePayload(txs []ledger.Transaction) (*BlockPayload, error
 		payload.Transactions[i] = packedAny
 	}
 
-	page, err := ldgr.inventory.process(payload)
+	page, err := ldgr.proc.process(payload)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't process the txs: %v", err)
 	}
@@ -243,7 +270,7 @@ func newActor(g gossip.Gossiper) actor {
 
 // AddTransaction implements ledger.Actor. It sends the transaction towards the
 // consensus layer.
-func (a actor) AddTransaction(tx ledger.Transaction) error {
+func (a actor) AddTransaction(tx consumer.Transaction) error {
 	// The gossiper will propagate the transaction to other players but also to
 	// the transaction buffer of this player.
 	err := a.gossiper.Add(tx)

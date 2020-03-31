@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/encoding"
 	internal "go.dedis.ch/fabric/internal/testing"
-	"go.dedis.ch/fabric/ledger"
+	"go.dedis.ch/fabric/ledger/consumer"
 	"golang.org/x/xerrors"
 )
 
@@ -30,18 +30,23 @@ func TestConsumer_Register(t *testing.T) {
 	c := NewConsumer()
 
 	c.Register("contract", fakeContract{})
-	require.Len(t, c.executors, 1)
+	require.Len(t, c.contracts, 1)
 
 	c.Register("another contract", fakeContract{})
-	require.Len(t, c.executors, 2)
+	require.Len(t, c.contracts, 2)
 
 	c.Register("contract", fakeContract{})
-	require.Len(t, c.executors, 2)
+	require.Len(t, c.contracts, 2)
 }
 
 func TestConsumer_GetTransactionFactory(t *testing.T) {
 	c := NewConsumer()
 	require.NotNil(t, c.GetTransactionFactory())
+}
+
+func TestConsumer_GetInstanceFactory(t *testing.T) {
+	c := NewConsumer()
+	require.NotNil(t, c.GetInstanceFactory())
 }
 
 func TestConsumer_Consume(t *testing.T) {
@@ -57,17 +62,13 @@ func TestConsumer_Consume(t *testing.T) {
 
 	out, err := c.Consume(spawn, fakePage{})
 	require.NoError(t, err)
-	require.Equal(t, spawn.hash, out.Key)
+	require.Equal(t, spawn.hash, out.GetKey())
 
 	_, err = c.Consume(SpawnTransaction{ContractID: "abc"}, fakePage{})
 	require.EqualError(t, err, "unknown contract with id 'abc'")
 
 	_, err = c.Consume(SpawnTransaction{ContractID: "bad"}, fakePage{})
 	require.EqualError(t, err, "couldn't execute spawn: oops")
-
-	c.encoder = badEncoder{errMarshal: xerrors.New("oops")}
-	_, err = c.Consume(spawn, fakePage{})
-	require.EqualError(t, err, "couldn't marshal the value: oops")
 
 	// 2. Consume an invoke transaction.
 	c.encoder = encoding.NewProtoEncoder()
@@ -78,7 +79,7 @@ func TestConsumer_Consume(t *testing.T) {
 
 	out, err = c.Consume(invoke, fakePage{instance: makeInstanceProto(t)})
 	require.NoError(t, err)
-	require.Equal(t, invoke.Key, out.Key)
+	require.Equal(t, invoke.Key, out.GetKey())
 
 	_, err = c.Consume(invoke, fakePage{err: xerrors.New("oops")})
 	require.EqualError(t, err, "couldn't read the instance: couldn't read the entry: oops")
@@ -92,10 +93,6 @@ func TestConsumer_Consume(t *testing.T) {
 	_, err = c.Consume(invoke, fakePage{instance: instancepb})
 	require.EqualError(t, err, "couldn't invoke: oops")
 
-	c.encoder = badEncoder{errMarshal: xerrors.New("oops")}
-	_, err = c.Consume(invoke, fakePage{instance: makeInstanceProto(t)})
-	require.EqualError(t, err, "couldn't marshal the value: oops")
-
 	// 3. Consume a delete transaction.
 	delete := DeleteTransaction{
 		Key: []byte{0xab},
@@ -103,10 +100,10 @@ func TestConsumer_Consume(t *testing.T) {
 
 	out, err = c.Consume(delete, fakePage{instance: makeInstanceProto(t)})
 	require.NoError(t, err)
-	require.True(t, out.Instance.(*InstanceProto).GetDeleted())
+	require.True(t, out.(contractInstance).deleted)
 
 	_, err = c.Consume(delete, fakePage{err: xerrors.New("oops")})
-	require.EqualError(t, err, "couldn't read the instance: oops")
+	require.EqualError(t, err, "couldn't read the instance: couldn't read the entry: oops")
 
 	// 4. Consume an invalid transaction.
 	_, err = c.Consume(fakeTx{}, nil)
@@ -128,7 +125,7 @@ func makeInstanceProto(t *testing.T) *InstanceProto {
 }
 
 type fakeContract struct {
-	Executor
+	Contract
 	err error
 }
 
@@ -143,5 +140,5 @@ func (c fakeContract) Invoke(ctx InvokeContext) (proto.Message, error) {
 }
 
 type fakeTx struct {
-	ledger.Transaction
+	consumer.Transaction
 }

@@ -13,10 +13,16 @@ import (
 type Block interface {
 	encoding.Packable
 
+	// GetIndex returns the index since the genesis block.
+	GetIndex() uint64
+
+	// GetHash returns the footprint of the block.
 	GetHash() []byte
 
+	// GetPlayers returns the participants involved in the block creation.
 	GetPlayers() mino.Players
 
+	// GetPayload returns the payload of the block.
 	GetPayload() proto.Message
 }
 

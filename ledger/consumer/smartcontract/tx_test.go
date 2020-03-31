@@ -200,7 +200,7 @@ func TestTransactionFactory_FromProto(t *testing.T) {
 	require.True(t, proto.Equal(spawn.Argument, tx.(SpawnTransaction).Argument))
 	require.Equal(t, spawn.ContractID, tx.(SpawnTransaction).ContractID)
 
-	factory.encoder = badEncoder{errUnmarshal: xerrors.New("oops")}
+	factory.encoder = badEncoder{errDynUnmarshal: xerrors.New("oops")}
 	_, err = factory.FromProto(spawnpb)
 	require.EqualError(t, err, "couldn't unmarshal argument: oops")
 
@@ -220,7 +220,7 @@ func TestTransactionFactory_FromProto(t *testing.T) {
 	require.Equal(t, invoke.Key, tx.(InvokeTransaction).Key)
 	require.True(t, proto.Equal(invoke.Argument, tx.(InvokeTransaction).Argument))
 
-	factory.encoder = badEncoder{errUnmarshal: xerrors.New("oops")}
+	factory.encoder = badEncoder{errDynUnmarshal: xerrors.New("oops")}
 	_, err = factory.FromProto(invokepb)
 	require.EqualError(t, err, "couldn't unmarshal argument: oops")
 
@@ -241,7 +241,7 @@ func TestTransactionFactory_FromProto(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, delete.Key, tx.(DeleteTransaction).Key)
 
-	factory.encoder = badEncoder{errUnmarshal: xerrors.New("oops")}
+	factory.encoder = badEncoder{errDynUnmarshal: xerrors.New("oops")}
 	_, err = factory.FromProto(deleteany)
 	require.EqualError(t, err, "couldn't unmarshal input: oops")
 
@@ -250,22 +250,101 @@ func TestTransactionFactory_FromProto(t *testing.T) {
 	require.EqualError(t, err, "invalid transaction type '<nil>'")
 }
 
-func TestInstance_GetValue(t *testing.T) {
-	i := instance{value: &empty.Empty{}}
-	require.NotNil(t, i.GetValue())
+func TestContractInstance_GetKey(t *testing.T) {
+	f := func(key []byte) bool {
+		ci := contractInstance{key: key}
+		return bytes.Equal(key, ci.GetKey())
+	}
+
+	err := quick.Check(f, nil)
+	require.NoError(t, err)
 }
 
-func TestInstance_GetContractID(t *testing.T) {
-	i := instance{contractID: "abc"}
-	require.Equal(t, i.GetContractID(), "abc")
+func TestContractInstance_GetContractID(t *testing.T) {
+	f := func(id string) bool {
+		ci := contractInstance{contractID: id}
+		return ci.GetContractID() == id
+	}
+
+	err := quick.Check(f, nil)
+	require.NoError(t, err)
 }
 
-func TestInstance_IsDeleted(t *testing.T) {
-	i := instance{deleted: true}
-	require.True(t, i.IsDeleted())
+func TestContractInstance_GetValue(t *testing.T) {
+	f := func(value string) bool {
+		ci := contractInstance{value: &wrappers.StringValue{Value: value}}
+		return proto.Equal(ci.GetValue(), &wrappers.StringValue{Value: value})
+	}
 
-	i.deleted = false
-	require.False(t, i.IsDeleted())
+	err := quick.Check(f, nil)
+	require.NoError(t, err)
+}
+
+func TestContractInstance_Deleted(t *testing.T) {
+	ci := contractInstance{deleted: true}
+	require.True(t, ci.Deleted())
+
+	ci.deleted = false
+	require.False(t, ci.Deleted())
+}
+
+func TestContractInstance_Pack(t *testing.T) {
+	f := func(key []byte, id, value string, deleted bool) bool {
+		ci := contractInstance{
+			key:        key,
+			contractID: id,
+			value:      &wrappers.StringValue{Value: value},
+			deleted:    deleted,
+			encoder:    encoding.NewProtoEncoder(),
+		}
+
+		cipb, err := ci.Pack()
+		require.NoError(t, err)
+		instancepb := cipb.(*InstanceProto)
+		require.Equal(t, ci.key, instancepb.GetKey())
+		require.Equal(t, ci.contractID, instancepb.GetContractID())
+		require.Equal(t, ci.deleted, instancepb.GetDeleted())
+
+		msg, err := ci.encoder.UnmarshalDynamicAny(instancepb.GetValue())
+		require.NoError(t, err)
+		require.True(t, proto.Equal(ci.value, msg))
+
+		ci.encoder = badEncoder{errMarshal: xerrors.New("oops")}
+		_, err = ci.Pack()
+		require.EqualError(t, err, "couldn't marshal the value: oops")
+
+		return true
+	}
+
+	err := quick.Check(f, nil)
+	require.NoError(t, err)
+}
+
+func TestInstanceFactory_FromProto(t *testing.T) {
+	factory := instanceFactory{encoder: encoding.NewProtoEncoder()}
+
+	instancepb := makeInstanceProto(t)
+	instanceany, err := ptypes.MarshalAny(instancepb)
+	require.NoError(t, err)
+
+	instance, err := factory.FromProto(instancepb)
+	require.NoError(t, err)
+	require.IsType(t, contractInstance{}, instance)
+	ci := instance.(contractInstance)
+	require.Equal(t, instancepb.GetKey(), ci.key)
+	require.Equal(t, instancepb.GetContractID(), ci.contractID)
+	require.Equal(t, instancepb.GetDeleted(), ci.deleted)
+
+	instance, err = factory.FromProto(instanceany)
+	require.NoError(t, err)
+
+	factory.encoder = badEncoder{errUnmarshal: xerrors.New("oops")}
+	_, err = factory.FromProto(instanceany)
+	require.EqualError(t, err, "couldn't decode any *smartcontract.InstanceProto: oops")
+
+	factory.encoder = badEncoder{errDynUnmarshal: xerrors.New("oops")}
+	_, err = factory.FromProto(instancepb)
+	require.EqualError(t, err, "couldn't unmarshal the value: oops")
 }
 
 func TestTransactionContext_Read(t *testing.T) {
@@ -296,7 +375,7 @@ func TestTransactionContext_Read(t *testing.T) {
 	require.EqualError(t, err, "instance type '*empty.Empty' != '*smartcontract.InstanceProto'")
 
 	ctx.page = fakePage{instance: &InstanceProto{}}
-	ctx.encoder = badEncoder{errUnmarshal: xerrors.New("oops")}
+	ctx.encoder = badEncoder{errDynUnmarshal: xerrors.New("oops")}
 	_, err = ctx.Read(nil)
 	require.EqualError(t, err, "couldn't unmarshal the value: oops")
 }
@@ -328,16 +407,21 @@ func (f fakeHashFactory) New() hash.Hash {
 
 type badEncoder struct {
 	encoding.ProtoEncoder
-	errMarshal   error
-	errUnmarshal error
+	errMarshal      error
+	errUnmarshal    error
+	errDynUnmarshal error
 }
 
 func (e badEncoder) MarshalAny(proto.Message) (*any.Any, error) {
 	return nil, e.errMarshal
 }
 
+func (e badEncoder) UnmarshalAny(*any.Any, proto.Message) error {
+	return e.errUnmarshal
+}
+
 func (e badEncoder) UnmarshalDynamicAny(*any.Any) (proto.Message, error) {
-	return nil, e.errUnmarshal
+	return nil, e.errDynUnmarshal
 }
 
 type badMarshaler struct {

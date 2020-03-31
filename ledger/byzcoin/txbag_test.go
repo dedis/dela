@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/ledger"
+	"go.dedis.ch/fabric/ledger/consumer"
 )
 
 func TestTxQueue_GetAll(t *testing.T) {
@@ -52,7 +52,7 @@ func TestTxQueue_Remove(t *testing.T) {
 // Utility functions
 
 type fakeTx struct {
-	ledger.Transaction
+	consumer.Transaction
 	id []byte
 }
 

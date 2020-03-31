@@ -5,9 +5,10 @@ package smartcontract;
 import "google/protobuf/any.proto";
 
 message InstanceProto {
-    google.protobuf.Any value = 1;
-    string contractID = 2;
-    bool deleted = 3;
+    bytes key = 1;
+    google.protobuf.Any value = 2;
+    string contractID = 3;
+    bool deleted = 4;
 }
 
 message SpawnTransactionProto {

@@ -3,7 +3,6 @@ package smartcontract
 import (
 	proto "github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/ledger"
 	"go.dedis.ch/fabric/ledger/consumer"
 	"go.dedis.ch/fabric/ledger/inventory"
 	"golang.org/x/xerrors"
@@ -11,10 +10,13 @@ import (
 
 //go:generate protoc -I ./ --go_out=./ ./messages.proto
 
-// Executor is an interface that provides the primitives to execute a smart
-// contract and produce the instances of a transaction.
-type Executor interface {
+// Contract is an interface that provides the primitives to execute a smart
+// contract transaction and produce the resulting instance.
+type Contract interface {
+	// Spawn is called to create a new instance.
 	Spawn(ctx SpawnContext) (proto.Message, error)
+
+	// Invoke is called to update an existing instance.
 	Invoke(ctx InvokeContext) (proto.Message, error)
 }
 
@@ -23,33 +25,39 @@ type Executor interface {
 // - implements consumer.Consumer
 type Consumer struct {
 	encoder   encoding.ProtoMarshaler
-	executors map[string]Executor
+	contracts map[string]Contract
 }
 
 // NewConsumer returns a new instance of the smart contract consumer.
 func NewConsumer() Consumer {
 	return Consumer{
 		encoder:   encoding.NewProtoEncoder(),
-		executors: make(map[string]Executor),
+		contracts: make(map[string]Contract),
 	}
 }
 
 // Register registers an executor that can be triggers by a transaction with the
 // contract ID sets to the name.
-func (c Consumer) Register(name string, exec Executor) {
-	c.executors[name] = exec
+func (c Consumer) Register(name string, exec Contract) {
+	c.contracts[name] = exec
 }
 
 // GetTransactionFactory implements consumer.Consumer. It returns the factory
 // for smart contract transactions.
-func (c Consumer) GetTransactionFactory() ledger.TransactionFactory {
+func (c Consumer) GetTransactionFactory() consumer.TransactionFactory {
 	return NewTransactionFactory()
+}
+
+// GetInstanceFactory implements consumer.Consumer. It returns the factory for
+// smart contract instances.
+func (c Consumer) GetInstanceFactory() consumer.InstanceFactory {
+	return instanceFactory{encoder: c.encoder}
 }
 
 // Consume implements consumer.Consumer. It returns the instance produced from
 // the execution of the transaction.
-func (c Consumer) Consume(in ledger.Transaction, page inventory.Page) (consumer.Output, error) {
-	out := consumer.Output{}
+func (c Consumer) Consume(in consumer.Transaction,
+	page inventory.Page) (consumer.Instance, error) {
 
 	switch tx := in.(type) {
 	case SpawnTransaction:
@@ -61,12 +69,7 @@ func (c Consumer) Consume(in ledger.Transaction, page inventory.Page) (consumer.
 			Transaction: tx,
 		}
 
-		out, err := c.consumeSpawn(ctx)
-		if err != nil {
-			return out, err
-		}
-
-		return out, nil
+		return c.consumeSpawn(ctx)
 	case InvokeTransaction:
 		ctx := InvokeContext{
 			transactionContext: transactionContext{
@@ -76,110 +79,69 @@ func (c Consumer) Consume(in ledger.Transaction, page inventory.Page) (consumer.
 			Transaction: tx,
 		}
 
-		out, err := c.consumeInvoke(ctx)
-		if err != nil {
-			return out, err
-		}
-
-		return out, nil
+		return c.consumeInvoke(ctx)
 	case DeleteTransaction:
-		out := consumer.Output{}
-
-		instancepb, err := page.Read(tx.Key)
-		if err != nil {
-			return out, xerrors.Errorf("couldn't read the instance: %v", err)
+		ctx := transactionContext{
+			encoder: c.encoder,
+			page:    page,
 		}
 
-		instance := instancepb.(*InstanceProto)
-		instance.Deleted = true
+		instance, err := ctx.Read(tx.Key)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't read the instance: %v", err)
+		}
 
-		out.Key = tx.Key
-		out.Instance = instance
+		ci := instance.(contractInstance)
+		ci.deleted = true
 
-		return out, nil
+		return ci, nil
 	default:
-		return out, xerrors.Errorf("invalid tx type '%T'", in)
+		return nil, xerrors.Errorf("invalid tx type '%T'", in)
 	}
 }
 
-func (c Consumer) consumeSpawn(ctx SpawnContext) (out consumer.Output, err error) {
+func (c Consumer) consumeSpawn(ctx SpawnContext) (consumer.Instance, error) {
 	contractID := ctx.Transaction.ContractID
 
-	exec := c.executors[contractID]
+	exec := c.contracts[contractID]
 	if exec == nil {
-		err = xerrors.Errorf("unknown contract with id '%s'", contractID)
-		return
+		return nil, xerrors.Errorf("unknown contract with id '%s'", contractID)
 	}
 
 	value, err := exec.Spawn(ctx)
 	if err != nil {
-		err = xerrors.Errorf("couldn't execute spawn: %v", err)
-		return
+		return nil, xerrors.Errorf("couldn't execute spawn: %v", err)
 	}
 
-	instance := instance{
+	instance := contractInstance{
+		key:        ctx.Transaction.hash,
 		contractID: contractID,
 		deleted:    false,
 		value:      value,
+		encoder:    c.encoder,
 	}
 
-	out.Instance, err = c.packInstance(instance)
-	if err != nil {
-		return
-	}
-
-	out.Key = ctx.Transaction.hash
-	return
+	return instance, nil
 }
 
-func (c Consumer) consumeInvoke(ctx InvokeContext) (out consumer.Output, err error) {
+func (c Consumer) consumeInvoke(ctx InvokeContext) (consumer.Instance, error) {
 	inst, err := ctx.Read(ctx.Transaction.Key)
 	if err != nil {
-		err = xerrors.Errorf("couldn't read the instance: %v", err)
-		return
+		return nil, xerrors.Errorf("couldn't read the instance: %v", err)
 	}
 
 	contractID := inst.GetContractID()
 
-	exec := c.executors[contractID]
+	exec := c.contracts[contractID]
 	if exec == nil {
-		err = xerrors.Errorf("unknown contract with id '%s'", contractID)
-		return
+		return nil, xerrors.Errorf("unknown contract with id '%s'", contractID)
 	}
 
-	value, err := exec.Invoke(ctx)
+	ci := inst.(contractInstance)
+	ci.value, err = exec.Invoke(ctx)
 	if err != nil {
-		err = xerrors.Errorf("couldn't invoke: %v", err)
-		return
+		return nil, xerrors.Errorf("couldn't invoke: %v", err)
 	}
 
-	instance := instance{
-		contractID: contractID,
-		deleted:    inst.IsDeleted(),
-		value:      value,
-	}
-
-	out.Instance, err = c.packInstance(instance)
-	if err != nil {
-		return
-	}
-
-	out.Key = ctx.Transaction.Key
-
-	return
-}
-
-func (c Consumer) packInstance(instance Instance) (proto.Message, error) {
-	pb := &InstanceProto{
-		ContractID: instance.GetContractID(),
-		Deleted:    instance.IsDeleted(),
-	}
-
-	var err error
-	pb.Value, err = c.encoder.MarshalAny(instance.GetValue())
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't marshal the value: %v", err)
-	}
-
-	return pb, nil
+	return ci, nil
 }

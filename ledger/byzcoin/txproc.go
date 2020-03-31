@@ -77,7 +77,12 @@ func (proc *txProcessor) process(payload *BlockPayload) (inventory.Page, error) 
 				return xerrors.Errorf("couldn't consume tx: %v", err)
 			}
 
-			err = page.Write(out.Key, out.Instance)
+			outpb, err := out.Pack()
+			if err != nil {
+				return encoding.NewEncodingError("instance", err)
+			}
+
+			err = page.Write(out.GetKey(), outpb)
 			if err != nil {
 				return xerrors.Errorf("couldn't write instances: %v", err)
 			}

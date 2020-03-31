@@ -5,8 +5,8 @@ import (
 
 	proto "github.com/golang/protobuf/proto"
 	any "github.com/golang/protobuf/ptypes/any"
+	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/ledger"
 	"go.dedis.ch/fabric/ledger/consumer"
 	"go.dedis.ch/fabric/ledger/inventory"
 	"golang.org/x/xerrors"
@@ -64,6 +64,11 @@ func TestTxProcessor_Process(t *testing.T) {
 	require.EqualError(t, err,
 		"couldn't stage new page: couldn't consume tx: oops")
 
+	proc.consumer = fakeConsumer{errInstance: xerrors.New("oops")}
+	_, err = proc.process(payload)
+	require.EqualError(t, err,
+		"couldn't stage new page: couldn't encode instance: oops")
+
 	proc.consumer = fakeConsumer{}
 	proc.inventory = fakeInventory{errPage: xerrors.New("oops")}
 	_, err = proc.process(payload)
@@ -105,6 +110,10 @@ func (p *fakePage) GetFootprint() []byte {
 	return p.footprint
 }
 
+func (p *fakePage) Read([]byte) (proto.Message, error) {
+	return &empty.Empty{}, p.err
+}
+
 func (p *fakePage) Write(key []byte, value proto.Message) error {
 	p.calls = append(p.calls, []interface{}{key, value})
 	return p.err
@@ -117,6 +126,13 @@ type fakeInventory struct {
 	page      *fakePage
 	err       error
 	errPage   error
+}
+
+func (inv fakeInventory) GetPage(index uint64) (inventory.Page, error) {
+	if inv.page != nil {
+		return inv.page, inv.err
+	}
+	return nil, inv.err
 }
 
 func (inv fakeInventory) GetStagingPage([]byte) inventory.Page {
@@ -146,25 +162,55 @@ func (inv fakeInventory) Commit([]byte) error {
 }
 
 type fakeTxFactory struct {
-	ledger.TransactionFactory
+	consumer.TransactionFactory
 	err error
 }
 
-func (f fakeTxFactory) FromProto(proto.Message) (ledger.Transaction, error) {
+func (f fakeTxFactory) FromProto(proto.Message) (consumer.Transaction, error) {
 	return nil, f.err
+}
+
+type fakeInstance struct {
+	consumer.Instance
+	key []byte
+	err error
+}
+
+func (i fakeInstance) GetKey() []byte {
+	return i.key
+}
+
+func (i fakeInstance) Pack() (proto.Message, error) {
+	return &empty.Empty{}, i.err
+}
+
+type fakeInstanceFactory struct {
+	consumer.InstanceFactory
+	err error
+}
+
+func (f fakeInstanceFactory) FromProto(proto.Message) (consumer.Instance, error) {
+	return fakeInstance{}, f.err
 }
 
 type fakeConsumer struct {
 	consumer.Consumer
-	key        []byte
-	err        error
-	errFactory error
+	key         []byte
+	err         error
+	errFactory  error
+	errInstance error
 }
 
-func (c fakeConsumer) GetTransactionFactory() ledger.TransactionFactory {
+func (c fakeConsumer) GetTransactionFactory() consumer.TransactionFactory {
 	return fakeTxFactory{err: c.errFactory}
 }
 
-func (c fakeConsumer) Consume(ledger.Transaction, inventory.Page) (consumer.Output, error) {
-	return consumer.Output{Key: c.key}, c.err
+func (c fakeConsumer) GetInstanceFactory() consumer.InstanceFactory {
+	return fakeInstanceFactory{err: c.errFactory}
+}
+
+func (c fakeConsumer) Consume(consumer.Transaction,
+	inventory.Page) (consumer.Instance, error) {
+
+	return fakeInstance{key: c.key, err: c.errInstance}, c.err
 }
