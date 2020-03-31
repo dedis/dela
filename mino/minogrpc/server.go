@@ -62,6 +62,9 @@ type Server struct {
 
 	traffic *traffic
 
+	// routingTable indicates gateways for unkown clients. For example, the
+	// entry {"A": "B"} tells that if you want to send to "A", then you should
+	// use the gateway "B" (ie. send to "B").
 	routingTable map[string]string
 }
 
@@ -227,7 +230,7 @@ func (rpc RPC) Stream(ctx context.Context,
 		// messages
 		go func() {
 			for {
-				err = listenClient(stream, &orchRecv, orchSender, addr)
+				err = listenStream(stream, &orchRecv, orchSender, addr)
 				if err == io.EOF {
 					return
 				}
@@ -245,6 +248,8 @@ func (rpc RPC) Stream(ctx context.Context,
 		}()
 	}
 
+	// For unokwn clients (ie. not in our neighbour list) we set their clients
+	// to their gateways' clients.
 	for _, addr := range toAdd {
 		gateway, ok := rpc.srv.routingTable[addr]
 		if !ok {
@@ -260,9 +265,9 @@ func (rpc RPC) Stream(ctx context.Context,
 	return orchSender, orchRecv
 }
 
-// listenClient reads the client RPC stream and handle the received messages
+// listenStream reads the client RPC stream and handle the received messages
 // accordingly: It formwards messages or notify the orchestrator.
-func listenClient(stream overlayStream, orchRecv *receiver,
+func listenStream(stream overlayStream, orchRecv *receiver,
 	orchSender *sender, addr mino.Address) error {
 
 	// This msg.Message should always be an enveloppe
@@ -449,13 +454,12 @@ func makeCertificate() (*tls.Certificate, error) {
 
 // sender implements mino.Sender
 type sender struct {
-	address          address
-	participants     map[string]overlayStream
-	name             string
-	mesh             map[string]Peer
-	srvCert          *tls.Certificate
-	traffic          *traffic
-	orchestratorAddr string
+	address      address
+	participants map[string]overlayStream
+	name         string
+	mesh         map[string]Peer
+	srvCert      *tls.Certificate
+	traffic      *traffic
 }
 
 type player struct {

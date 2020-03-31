@@ -80,7 +80,7 @@ func Test_Address(t *testing.T) {
 		id: "test",
 	}
 	minoGrpc := Minogrpc{
-		server: Server{
+		server: &Server{
 			addr: addr,
 		},
 	}
@@ -91,7 +91,7 @@ func Test_Address(t *testing.T) {
 func Test_MakeRPC(t *testing.T) {
 	minoGrpc := Minogrpc{}
 	minoGrpc.namespace = "namespace"
-	minoGrpc.server = Server{
+	minoGrpc.server = &Server{
 		handlers: make(map[string]mino.Handler),
 	}
 
@@ -102,7 +102,7 @@ func Test_MakeRPC(t *testing.T) {
 
 	expectedRPC := &RPC{
 		handler: handler,
-		srv:     &minoGrpc.server,
+		srv:     minoGrpc.server,
 		uri:     fmt.Sprintf("namespace/name"),
 	}
 

@@ -118,13 +118,12 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		// address, which is registered in the list of participant.
 		// It is also used to indicate the "from" of the message in the case it
 		// doesn't relay but sends directly.
-		address:          address{rpcID},
-		participants:     map[string]overlayStream{rpcID: stream},
-		name:             "remote RPC",
-		mesh:             o.mesh,
-		srvCert:          o.srvCert,
-		traffic:          o.traffic,
-		orchestratorAddr: rpcID,
+		address:      address{rpcID},
+		participants: map[string]overlayStream{rpcID: stream},
+		name:         "remote RPC",
+		mesh:         o.mesh,
+		srvCert:      o.srvCert,
+		traffic:      o.traffic,
 	}
 
 	receiver := receiver{
@@ -140,8 +139,6 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		addr := address{peer.Address}
 		clientConn, err := getConnection(addr.String(), peer, *o.srvCert)
 		if err != nil {
-			// TODO: try another path (maybe use another node to relay that
-			// message)
 			err = xerrors.Errorf("failed to get client conn for client '%s': %v",
 				addr.String(), err)
 			fabric.Logger.Err(err).Send()
@@ -168,7 +165,7 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		go func() {
 			defer peerWait.Done()
 			for {
-				err := listenClient(clientStream, &receiver, sender, addr)
+				err := listenStream(clientStream, &receiver, sender, addr)
 				if err == io.EOF {
 					return
 				}
@@ -185,9 +182,10 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		}()
 	}
 
+	// listen on my own stream
 	go func() {
 		for {
-			err := listenClient(stream, &receiver, sender, o.addr)
+			err := listenStream(stream, &receiver, sender, o.addr)
 			if err == io.EOF {
 				return
 			}
