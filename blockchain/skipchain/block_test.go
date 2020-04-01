@@ -94,21 +94,24 @@ func TestSkipBlock_Hash(t *testing.T) {
 		Payload: &empty.Empty{},
 	}
 
-	_, err := block.computeHash(badHashFactory{})
+	enc := encoding.NewProtoEncoder()
+
+	_, err := block.computeHash(badHashFactory{}, enc)
 	require.EqualError(t, err, "couldn't write index: oops")
 
-	_, err = block.computeHash(badHashFactory{delay: 1})
+	_, err = block.computeHash(badHashFactory{delay: 1}, enc)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "couldn't write conodes: ")
 
-	_, err = block.computeHash(badHashFactory{delay: 3})
+	_, err = block.computeHash(badHashFactory{delay: 3}, enc)
 	require.EqualError(t, err, "couldn't write genesis hash: oops")
 
-	_, err = block.computeHash(badHashFactory{delay: 4})
+	_, err = block.computeHash(badHashFactory{delay: 4}, enc)
 	require.EqualError(t, err, "couldn't write backlink: oops")
 
-	_, err = block.computeHash(badHashFactory{delay: 5})
-	require.EqualError(t, err, "couldn't write payload: oops")
+	_, err = block.computeHash(badHashFactory{delay: 5}, enc)
+	require.EqualError(t, err,
+		"couldn't write payload: stable serialization failed: oops")
 }
 
 func TestSkipBlock_HashUniqueness(t *testing.T) {
@@ -125,7 +128,9 @@ func TestSkipBlock_HashUniqueness(t *testing.T) {
 		Payload:   &wrappers.StringValue{Value: "deadbeef"},
 	}
 
-	prevHash, err := block.computeHash(sha256Factory{})
+	enc := encoding.NewProtoEncoder()
+
+	prevHash, err := block.computeHash(sha256Factory{}, enc)
 	require.NoError(t, err)
 
 	value := reflect.ValueOf(&block)
@@ -143,7 +148,7 @@ func TestSkipBlock_HashUniqueness(t *testing.T) {
 		field.Set(reflect.Zero(value.Elem().Field(i).Type()))
 		newBlock := value.Interface()
 
-		hash, err := newBlock.(*SkipBlock).computeHash(sha256Factory{})
+		hash, err := newBlock.(*SkipBlock).computeHash(sha256Factory{}, enc)
 		require.NoError(t, err)
 
 		errMsg := fmt.Sprintf("field %#v produced same hash", fieldName)
@@ -205,6 +210,7 @@ func TestVerifiableBlock_Pack(t *testing.T) {
 func TestBlockFactory_FromPrevious(t *testing.T) {
 	f := func(prev SkipBlock) bool {
 		factory := blockFactory{
+			encoder:     encoding.NewProtoEncoder(),
 			hashFactory: sha256Factory{},
 		}
 
@@ -374,7 +380,7 @@ func (s SkipBlock) Generate(rand *rand.Rand, size int) reflect.Value {
 		Payload:   &empty.Empty{},
 	}
 
-	hash, _ := block.computeHash(sha256Factory{})
+	hash, _ := block.computeHash(sha256Factory{}, encoding.NewProtoEncoder())
 	block.hash = hash
 
 	return reflect.ValueOf(block)

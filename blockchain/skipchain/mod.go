@@ -214,6 +214,7 @@ func (a skipchainActor) newChain(data proto.Message, conodes Conodes) error {
 	}
 
 	genesis, err := newSkipBlock(
+		a.encoder,
 		a.hashFactory,
 		nil,
 		0,

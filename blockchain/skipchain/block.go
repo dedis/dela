@@ -7,7 +7,6 @@ import (
 	fmt "fmt"
 	"hash"
 
-	"github.com/golang/protobuf/jsonpb"
 	proto "github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/consensus"
@@ -70,6 +69,7 @@ type SkipBlock struct {
 }
 
 func newSkipBlock(
+	encoder encoding.ProtoMarshaler,
 	hashFactory crypto.HashFactory,
 	verifier crypto.Verifier,
 	index uint64,
@@ -87,7 +87,7 @@ func newSkipBlock(
 		Payload:   data,
 	}
 
-	hash, err := block.computeHash(hashFactory)
+	hash, err := block.computeHash(hashFactory, encoder)
 	if err != nil {
 		return SkipBlock{}, xerrors.Errorf("couldn't hash the block: %w", err)
 	}
@@ -161,7 +161,9 @@ func (b SkipBlock) String() string {
 	return fmt.Sprintf("Block[%v]", b.hash)
 }
 
-func (b SkipBlock) computeHash(factory crypto.HashFactory) (Digest, error) {
+func (b SkipBlock) computeHash(factory crypto.HashFactory,
+	enc encoding.ProtoMarshaler) (Digest, error) {
+
 	h := factory.New()
 
 	buffer := make([]byte, 20)
@@ -188,9 +190,7 @@ func (b SkipBlock) computeHash(factory crypto.HashFactory) (Digest, error) {
 	}
 
 	if b.Payload != nil {
-		m := &jsonpb.Marshaler{}
-
-		err := m.Marshal(h, b.Payload)
+		err := enc.MarshalStable(h, b.Payload)
 		if err != nil {
 			return Digest{}, xerrors.Errorf("couldn't write payload: %v", err)
 		}
@@ -265,6 +265,7 @@ func (f blockFactory) fromPrevious(prev SkipBlock, data proto.Message) (SkipBloc
 	}
 
 	block, err := newSkipBlock(
+		f.encoder,
 		f.hashFactory,
 		prev.verifier,
 		prev.Index+1,
@@ -328,6 +329,7 @@ func (f blockFactory) decodeBlock(src proto.Message) (SkipBlock, error) {
 	copy(genesisID[:], in.GetGenesisID())
 
 	block, err := newSkipBlock(
+		f.encoder,
 		f.hashFactory,
 		verifier,
 		in.GetIndex(),

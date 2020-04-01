@@ -213,6 +213,7 @@ func TestActor_Store(t *testing.T) {
 	cons := &fakeConsensusActor{}
 	actor := skipchainActor{
 		Skipchain: &Skipchain{
+			encoder:    encoding.NewProtoEncoder(),
 			logger:     zerolog.New(buffer),
 			viewchange: fakeViewChange{},
 			mino:       fakeMino{},
