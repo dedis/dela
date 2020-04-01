@@ -58,7 +58,7 @@ func (t SpawnTransaction) computeHash(f crypto.HashFactory,
 		return nil, xerrors.Errorf("couldn't write the contract ID: %v", err)
 	}
 
-	err = enc.Marshal(h, t.Argument)
+	err = enc.MarshalStable(h, t.Argument)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't write the argument: %v", err)
 	}
@@ -101,7 +101,7 @@ func (t InvokeTransaction) computeHash(f crypto.HashFactory,
 		return nil, xerrors.Errorf("couldn't write the key: %v", err)
 	}
 
-	err = enc.Marshal(h, t.Argument)
+	err = enc.MarshalStable(h, t.Argument)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't write the argument: %v", err)
 	}

@@ -411,7 +411,7 @@ type badEncoder struct {
 	errDynUnmarshal error
 }
 
-func (e badEncoder) Marshal(io.Writer, proto.Message) error {
+func (e badEncoder) MarshalStable(io.Writer, proto.Message) error {
 	return e.errMarshal
 }
 

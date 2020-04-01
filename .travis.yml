@@ -20,7 +20,5 @@ jobs:
         - go test -covermode=count -coverprofile=coverage.out ./...
         - $GOPATH/bin/goveralls -service=travis-cli -coverprofile=coverage.out
 
-        
-
 notifications:
   email: false

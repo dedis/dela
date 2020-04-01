@@ -66,11 +66,11 @@ func TestOverlay_Call(t *testing.T) {
 	_, err = overlayService.Call(ctx, msg)
 	require.EqualError(t, err, "failed to call the Process function from the handler using the provided message: oops")
 
-	// Now use a handler that returns a wrong message
+	// Now with a failing encoder.
 	overlayService.handlers["handler_key"] = testFailHandler2{}
+	overlayService.encoder = badMarshalAnyEncoder{}
 	_, err = overlayService.Call(ctx, msg)
-	require.EqualError(t, err,
-		"couldn't marshal result: proto: Marshal called with nil")
+	require.EqualError(t, err, "couldn't marshal result: oops")
 }
 
 func TestOverlay_Stream(t *testing.T) {
