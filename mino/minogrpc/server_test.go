@@ -3,6 +3,7 @@ package minogrpc
 import (
 	context "context"
 	"errors"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -37,7 +38,7 @@ func TestServer_Serve(t *testing.T) {
 	require.True(t, strings.HasPrefix(err.Error(), "failed to listen: listen tcp4: lookup blabla"))
 }
 
-func TestServer_GetConnection(t *testing.T) {
+func TestGetConnection(t *testing.T) {
 	addr := &address{
 		id: "127.0.0.1:2000",
 	}
@@ -47,7 +48,7 @@ func TestServer_GetConnection(t *testing.T) {
 	server.StartServer()
 
 	// An empty address should yield an error
-	_, err = server.getConnection("")
+	_, err = getConnection("", Peer{}, *server.cert)
 	require.EqualError(t, err, "empty address is not allowed")
 
 	server.grpcSrv.GracefulStop()
@@ -75,7 +76,7 @@ func TestRPC_SingleSimple_Call(t *testing.T) {
 	uri := "blabla"
 	rpc := RPC{
 		handler: handler,
-		srv:     *server,
+		srv:     server,
 		uri:     uri,
 	}
 
@@ -140,7 +141,7 @@ func TestRPC_ErrorsSimple_Call(t *testing.T) {
 	uri := "blabla"
 	rpc := RPC{
 		handler: handler,
-		srv:     *server,
+		srv:     server,
 		uri:     uri,
 	}
 
@@ -179,7 +180,7 @@ loop2:
 	for {
 		select {
 		case msgErr := <-errChan:
-			require.EqualError(t, msgErr, "failed to get client conn for '127.0.0.1:2000': couldn't find neighbour [127.0.0.1:2000]")
+			require.EqualError(t, msgErr, "addr '127.0.0.1:2000' not is our list of neighbours")
 			break loop2
 		case resp, ok := <-respChan:
 			if !ok {
@@ -216,7 +217,7 @@ func TestRPC_SingleModify_Call(t *testing.T) {
 	uri := "blabla"
 	rpc := RPC{
 		handler: handler,
-		srv:     *server,
+		srv:     server,
 		uri:     uri,
 	}
 
@@ -298,7 +299,7 @@ func TestRPC_MultipleModify_Call(t *testing.T) {
 	uri := "blabla"
 	rpc := RPC{
 		handler: handler,
-		srv:     *server1,
+		srv:     server1,
 		uri:     uri,
 	}
 
@@ -407,7 +408,7 @@ func TestRPC_SingleSimple_Stream(t *testing.T) {
 	uri := "blabla"
 	rpc := RPC{
 		handler: handler,
-		srv:     *server,
+		srv:     server,
 		uri:     uri,
 	}
 
@@ -458,7 +459,7 @@ func TestRPC_ErrorsSimple_Stream(t *testing.T) {
 	uri := "blabla"
 	rpc := RPC{
 		handler: handler,
-		srv:     *server,
+		srv:     server,
 		uri:     uri,
 	}
 
@@ -471,7 +472,7 @@ func TestRPC_ErrorsSimple_Stream(t *testing.T) {
 	_, receiver := rpc.Stream(ctx, &fakePlayers{players: []address{{}}})
 
 	_, _, err = receiver.Recv(context.Background())
-	require.EqualError(t, err, "got an error from the error chan: failed to get client conn for client '': empty address is not allowed")
+	require.EqualError(t, err, "got an error from the error chan: addr '' not is our list of neighbours and the routing table")
 
 	server.grpcSrv.GracefulStop()
 
@@ -524,7 +525,7 @@ func TestRPC_MultipleSimple_Stream(t *testing.T) {
 	uri := "blabla"
 	rpc := RPC{
 		handler: handler,
-		srv:     *server1,
+		srv:     server1,
 		uri:     uri,
 	}
 
@@ -629,7 +630,7 @@ func TestRPC_MultipleChange_Stream(t *testing.T) {
 	uri := "blabla"
 	rpc := RPC{
 		handler: handler,
-		srv:     *server1,
+		srv:     server1,
 		uri:     uri,
 	}
 
@@ -685,13 +686,14 @@ func TestRPC_MultipleChange_Stream(t *testing.T) {
 
 // Use multiple nodes to use a stream where each node sends a message to its
 // neighbor in a ring fashion.
-func TestRPC_MultipleRing_Stream(t *testing.T) {
+func TestRPC_MultipleRingRelay_Stream(t *testing.T) {
 	identifier1 := "127.0.0.1:2001"
 	addr1 := &address{
 		id: identifier1,
 	}
 	server1, err := CreateServer(addr1)
 	require.NoError(t, err)
+	server1.traffic.log = true
 	server1.StartServer()
 	peer1 := Peer{
 		Address:     server1.listener.Addr().String(),
@@ -704,6 +706,7 @@ func TestRPC_MultipleRing_Stream(t *testing.T) {
 	}
 	server2, err := CreateServer(addr2)
 	require.NoError(t, err)
+	server2.traffic.log = true
 	server2.StartServer()
 	peer2 := Peer{
 		Address:     server2.listener.Addr().String(),
@@ -716,6 +719,7 @@ func TestRPC_MultipleRing_Stream(t *testing.T) {
 	}
 	server3, err := CreateServer(addr3)
 	require.NoError(t, err)
+	server3.traffic.log = true
 	server3.StartServer()
 	peer3 := Peer{
 		Address:     server3.listener.Addr().String(),
@@ -728,6 +732,7 @@ func TestRPC_MultipleRing_Stream(t *testing.T) {
 	}
 	server4, err := CreateServer(addr4)
 	require.NoError(t, err)
+	server4.traffic.log = true
 	server4.StartServer()
 	peer4 := Peer{
 		Address:     server4.listener.Addr().String(),
@@ -743,7 +748,7 @@ func TestRPC_MultipleRing_Stream(t *testing.T) {
 	handler1 := testRingHandler{addrID: identifier1, neighborID: identifier2}
 	rpc := RPC{
 		handler: handler1,
-		srv:     *server1,
+		srv:     server1,
 		uri:     uri,
 	}
 
@@ -785,6 +790,259 @@ func TestRPC_MultipleRing_Stream(t *testing.T) {
 	require.Equal(t, "dummy_value_"+identifier1+"_"+identifier2+"_"+identifier3+"_"+identifier4,
 		dummyMsg2.Value)
 
+	// fmt.Println("server1: " + server1.traffic.String())
+	// fmt.Println("server2: " + server2.traffic.String())
+	// fmt.Println("server3: " + server3.traffic.String())
+	// fmt.Println("server4: " + server4.traffic.String())
+
+	// traffic of server 1
+	require.Equal(t, 10, len(server1.traffic.items))
+	require.Equal(t, "send", server1.traffic.items[0].typeStr)
+	require.Equal(t, "127.0.0.1:2001", server1.traffic.items[0].addr.String())
+	require.IsType(t, &OverlayMsg{}, server1.traffic.items[0].msg)
+	require.Equal(t, "orchestrator", server1.traffic.items[0].context)
+
+	require.Equal(t, "received", server1.traffic.items[1].typeStr)
+	require.Equal(t, orchestratorAddr, server1.traffic.items[1].addr.String())
+	require.IsType(t, &wrappers.StringValue{}, server1.traffic.items[1].msg)
+	require.Equal(t, "remote RPC", server1.traffic.items[1].context)
+
+	require.Equal(t, "send", server1.traffic.items[2].typeStr)
+	require.Equal(t, "127.0.0.1:2002", server1.traffic.items[2].addr.String())
+	require.IsType(t, &OverlayMsg{}, server1.traffic.items[2].msg)
+	require.Equal(t, "remote RPC", server1.traffic.items[2].context)
+
+	require.Equal(t, "received to relay", server1.traffic.items[3].typeStr)
+	require.Equal(t, "server_127.0.0.1:2001", server1.traffic.items[3].addr.String())
+	require.IsType(t, &Envelope{}, server1.traffic.items[3].msg)
+	require.Equal(t, "orchestrator", server1.traffic.items[3].context)
+	env, ok := server1.traffic.items[3].msg.(*Envelope)
+	require.True(t, ok)
+	require.Equal(t, "server_127.0.0.1:2001", env.From)
+	require.Equal(t, 1, len(env.To))
+	require.Equal(t, "127.0.0.1:2002", env.To[0])
+
+	require.Equal(t, "send", server1.traffic.items[4].typeStr)
+	require.Equal(t, "127.0.0.1:2002", server1.traffic.items[4].addr.String())
+	require.IsType(t, &OverlayMsg{}, server1.traffic.items[4].msg)
+	require.Equal(t, "orchestrator", server1.traffic.items[4].context)
+
+	require.Equal(t, "received to relay", server1.traffic.items[5].typeStr)
+	require.Equal(t, "server_127.0.0.1:2002", server1.traffic.items[5].addr.String())
+	require.IsType(t, &Envelope{}, server1.traffic.items[5].msg)
+	require.Equal(t, "orchestrator", server1.traffic.items[5].context)
+	env, ok = server1.traffic.items[5].msg.(*Envelope)
+	require.True(t, ok)
+	require.Equal(t, "server_127.0.0.1:2002", env.From)
+	require.Equal(t, 1, len(env.To))
+	require.Equal(t, "127.0.0.1:2003", env.To[0])
+
+	require.Equal(t, "send", server1.traffic.items[6].typeStr)
+	require.Equal(t, "127.0.0.1:2003", server1.traffic.items[6].addr.String())
+	require.IsType(t, &OverlayMsg{}, server1.traffic.items[6].msg)
+	require.Equal(t, "orchestrator", server1.traffic.items[6].context)
+
+	require.Equal(t, "received to relay", server1.traffic.items[7].typeStr)
+	require.Equal(t, "server_127.0.0.1:2003", server1.traffic.items[7].addr.String())
+	require.IsType(t, &Envelope{}, server1.traffic.items[7].msg)
+	require.Equal(t, "orchestrator", server1.traffic.items[7].context)
+	env, ok = server1.traffic.items[7].msg.(*Envelope)
+	require.True(t, ok)
+	require.Equal(t, "server_127.0.0.1:2003", env.From)
+	require.Equal(t, 1, len(env.To))
+	require.Equal(t, "127.0.0.1:2004", env.To[0])
+
+	require.Equal(t, "send", server1.traffic.items[8].typeStr)
+	require.Equal(t, "127.0.0.1:2004", server1.traffic.items[8].addr.String())
+	require.IsType(t, &OverlayMsg{}, server1.traffic.items[8].msg)
+	require.Equal(t, "orchestrator", server1.traffic.items[8].context)
+
+	require.Equal(t, "received", server1.traffic.items[9].typeStr)
+	require.Equal(t, "server_127.0.0.1:2004", server1.traffic.items[9].addr.String())
+	require.IsType(t, &wrappers.StringValue{}, server1.traffic.items[9].msg)
+	require.Equal(t, "orchestrator", server1.traffic.items[9].context)
+
+	// traffic of server 2
+	require.Equal(t, 2, len(server2.traffic.items))
+	require.Equal(t, "received", server2.traffic.items[0].typeStr)
+	require.Equal(t, "server_127.0.0.1:2001", server2.traffic.items[0].addr.String())
+	require.IsType(t, &wrappers.StringValue{}, server2.traffic.items[0].msg)
+	require.Equal(t, "remote RPC", server2.traffic.items[0].context)
+
+	require.Equal(t, "send", server2.traffic.items[1].typeStr)
+	require.Equal(t, "127.0.0.1:2003", server2.traffic.items[1].addr.String())
+	require.IsType(t, &OverlayMsg{}, server2.traffic.items[1].msg)
+	require.Equal(t, "remote RPC", server2.traffic.items[1].context)
+
+	// traffic of server 3
+	require.Equal(t, 2, len(server3.traffic.items))
+	require.Equal(t, "received", server3.traffic.items[0].typeStr)
+	require.Equal(t, "server_127.0.0.1:2002", server3.traffic.items[0].addr.String())
+	require.IsType(t, &wrappers.StringValue{}, server3.traffic.items[0].msg)
+	require.Equal(t, "remote RPC", server3.traffic.items[0].context)
+
+	require.Equal(t, "send", server3.traffic.items[1].typeStr)
+	require.Equal(t, "127.0.0.1:2004", server3.traffic.items[1].addr.String())
+	require.IsType(t, &OverlayMsg{}, server3.traffic.items[1].msg)
+	require.Equal(t, "remote RPC", server3.traffic.items[1].context)
+
+	// traffic of server 4
+	require.Equal(t, 2, len(server4.traffic.items))
+	require.Equal(t, "received", server4.traffic.items[0].typeStr)
+	require.Equal(t, "server_127.0.0.1:2003", server4.traffic.items[0].addr.String())
+	require.IsType(t, &wrappers.StringValue{}, server4.traffic.items[0].msg)
+	require.Equal(t, "remote RPC", server4.traffic.items[0].context)
+
+	require.Equal(t, "send", server4.traffic.items[1].typeStr)
+	require.Equal(t, "127.0.0.1:2004", server4.traffic.items[1].addr.String())
+	require.IsType(t, &OverlayMsg{}, server4.traffic.items[1].msg)
+	require.Equal(t, "remote RPC", server4.traffic.items[1].context)
+
+	server1.grpcSrv.GracefulStop()
+	server2.grpcSrv.GracefulStop()
+	server3.grpcSrv.GracefulStop()
+	server4.grpcSrv.GracefulStop()
+}
+
+// Sends a message to 4 participants, but the server where the rpc is sent from
+// only knows itself and a second one.
+func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
+	identifier1 := "127.0.0.1:2001"
+	addr1 := &address{
+		id: identifier1,
+	}
+	server1, err := CreateServer(addr1)
+	require.NoError(t, err)
+	server1.traffic.log = true
+	server1.StartServer()
+	peer1 := Peer{
+		Address:     server1.listener.Addr().String(),
+		Certificate: server1.cert.Leaf,
+	}
+
+	identifier2 := "127.0.0.1:2002"
+	addr2 := &address{
+		id: identifier2,
+	}
+	server2, err := CreateServer(addr2)
+	require.NoError(t, err)
+	server2.traffic.log = true
+	server2.StartServer()
+	peer2 := Peer{
+		Address:     server2.listener.Addr().String(),
+		Certificate: server2.cert.Leaf,
+	}
+
+	identifier3 := "127.0.0.1:2003"
+	addr3 := &address{
+		id: identifier3,
+	}
+	server3, err := CreateServer(addr3)
+	require.NoError(t, err)
+	server3.traffic.log = true
+	server3.StartServer()
+	peer3 := Peer{
+		Address:     server3.listener.Addr().String(),
+		Certificate: server3.cert.Leaf,
+	}
+
+	identifier4 := "127.0.0.1:2004"
+	addr4 := &address{
+		id: identifier4,
+	}
+	server4, err := CreateServer(addr4)
+	require.NoError(t, err)
+	server4.traffic.log = true
+	server4.StartServer()
+	peer4 := Peer{
+		Address:     server4.listener.Addr().String(),
+		Certificate: server4.cert.Leaf,
+	}
+
+	// We have the following topology:
+	// srv1:
+	// - srv2 (direct)
+	// - srv3 (via srv2)
+	// - srv4 (via srv2)
+	// srv2:
+	// - srv3 (direct)
+	// - srv4 (via srv3)
+	// srv3:
+	// - srv4 (direct)
+	server1.neighbours[identifier1] = peer1
+	server1.neighbours[identifier2] = peer2
+	server1.routingTable[identifier3] = identifier2
+	server1.routingTable[identifier4] = identifier2
+
+	server2.mesh[identifier3] = peer3
+	server2.routingTable[identifier4] = identifier3
+
+	server3.mesh[identifier4] = peer4
+
+	uri := "blabla"
+	handler1 := testMeshHandler{addrID: identifier1}
+	rpc := RPC{
+		handler: handler1,
+		srv:     server1,
+		uri:     uri,
+	}
+
+	// the handler must be registered on each server. Fron the client side, that
+	// means the "registerNamespace" and "makeRPC" must be called on each
+	// server.
+	server1.handlers[uri] = handler1
+	server2.handlers[uri] = testMeshHandler{addrID: identifier2}
+	server3.handlers[uri] = testMeshHandler{addrID: identifier3}
+	server4.handlers[uri] = testMeshHandler{addrID: identifier4}
+
+	dummyMsg := &wrappers.StringValue{Value: "dummy_value"}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sender, rcvr := rpc.Stream(ctx, &fakePlayers{players: []address{*addr1, *addr2, *addr3, *addr4}})
+	localRcvr, ok := rcvr.(receiver)
+	require.True(t, ok)
+
+	select {
+	case err := <-localRcvr.errs:
+		t.Errorf("unexpected error in rcvr: %v", err)
+	case <-time.After(time.Millisecond * 200):
+	}
+
+	// sending message to server1, which should send to its neighbor, etc...
+	errs := sender.Send(dummyMsg, addr1, addr2, addr3, addr4)
+	err, more := <-errs
+	if more {
+		t.Error("unexpected error from send: ", err)
+	}
+
+	msgs := make([]string, 4)
+
+	for i := range msgs {
+		_, msg2, err := rcvr.Recv(context.Background())
+		require.NoError(t, err)
+
+		dummyMsg2, ok := msg2.(*wrappers.StringValue)
+		require.True(t, ok)
+		msgs[i] = dummyMsg2.Value
+	}
+	sort.Strings(msgs)
+	require.Equal(t, "dummy_value_"+identifier1, msgs[0])
+	require.Equal(t, "dummy_value_"+identifier2, msgs[1])
+	require.Equal(t, "dummy_value_"+identifier3, msgs[2])
+	require.Equal(t, "dummy_value_"+identifier4, msgs[3])
+
+	// out := os.Stdout
+	// out.WriteString("\nserver1:\n")
+	// server1.traffic.Display(out)
+	// out.WriteString("\nserver2:\n")
+	// server2.traffic.Display(out)
+	// out.WriteString("\nserver3:\n")
+	// server3.traffic.Display(out)
+	// out.WriteString("\nserver4:\n")
+	// server4.traffic.Display(out)
+
 	server1.grpcSrv.GracefulStop()
 	server2.grpcSrv.GracefulStop()
 	server3.grpcSrv.GracefulStop()
@@ -793,7 +1051,8 @@ func TestRPC_MultipleRing_Stream(t *testing.T) {
 
 func TestSender_Send(t *testing.T) {
 	sender := sender{
-		participants: make([]player, 0),
+		participants: make(map[string]overlayStream),
+		mesh:         make(map[string]Peer),
 	}
 
 	// sending to an empty list should not yield an error
@@ -811,20 +1070,18 @@ func TestSender_Send(t *testing.T) {
 	if !more {
 		t.Error("there should be an error")
 	}
-	require.EqualError(t, err, "failed to send to client '': failed to send back a message that should be relayed to ''. My client '' was not found in the list of participant: '[]'")
+	require.EqualError(t, err, "sender '' failed to send to client '': failed to send back a message that should be relayed to ''. My client '' was not found in the list of participant: 'map[]'")
 
 	// now I add the participant to the list, an error should be given since the
 	// message is nil
 	addr = address{id: "fake"}
-	sender.participants = append(sender.participants, player{
-		address: addr,
-	})
+	sender.participants[addr.String()] = nil
 	errs = sender.Send(nil, addr)
 	err, more = <-errs
 	if !more {
 		t.Error("there should be an error")
 	}
-	require.EqualError(t, err, "failed to send to client 'fake': "+encoding.NewAnyEncodingError(nil, errors.New("proto: Marshal called with nil")).Error())
+	require.EqualError(t, err, "sender '' failed to send to client 'fake': "+encoding.NewAnyEncodingError(nil, errors.New("proto: Marshal called with nil")).Error())
 }
 
 func TestReceiver_Recv(t *testing.T) {
@@ -966,6 +1223,36 @@ func (m fakeMembership) AddressIterator() mino.AddressIterator {
 
 func (m fakeMembership) Len() int {
 	return len(m.addrs)
+}
+
+// Handler:
+// implements a handler where the stream sends back the message with its id
+type testMeshHandler struct {
+	mino.UnsupportedHandler
+	addrID string
+}
+
+func (t testMeshHandler) Stream(out mino.Sender, in mino.Receiver) error {
+	fromAddr, msg, err := in.Recv(context.Background())
+	if err != nil {
+		return xerrors.Errorf("failed to receive message: %v", err)
+	}
+
+	dummy, ok := msg.(*wrappers.StringValue)
+	if !ok {
+		return xerrors.Errorf("failed to cast to dummy string: %v (type %T)", msg, msg)
+	}
+
+	stringMsg := dummy.Value + "_" + t.addrID
+
+	dummyReturn := &wrappers.StringValue{Value: stringMsg}
+	errs := out.Send(dummyReturn, fromAddr)
+	err, more := <-errs
+	if more {
+		return xerrors.Errorf("got an error sending from the relay to the "+
+			"neighbor: %v", err)
+	}
+	return nil
 }
 
 // Handler:

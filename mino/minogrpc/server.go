@@ -34,7 +34,7 @@ const (
 	certificateDuration = time.Hour * 24 * 180
 	// this string is used to identify the orchestrator. We use it as its
 	// address.
-	orchestratorID = "orchestrator"
+	orchestratorAddr = "orchestrator_addr"
 )
 
 var (
@@ -56,10 +56,17 @@ type Server struct {
 
 	// neighbours contains the certificate and details about known peers.
 	neighbours map[string]Peer
+	// mesh is used in the rpc overlay and indicates clients the RPC must create
+	// a stream to
+	mesh map[string]Peer
+	// routingTable indicates gateways for unkown clients. For example, the
+	// entry {"A": "B"} tells that if you want to send to "A", then you should
+	// use the gateway "B" (ie. send to "B").
+	routingTable map[string]string
 
 	handlers map[string]mino.Handler
 
-	localStreamClients map[string]Overlay_StreamClient
+	traffic *traffic
 }
 
 type ctxURIKey string
@@ -82,12 +89,12 @@ type Peer struct {
 // - implements mino.RPC
 type RPC struct {
 	handler mino.Handler
-	srv     Server
+	srv     *Server
 	uri     string
 }
 
 // Call implements mino.RPC. It calls the RPC on each provided address.
-func (rpc RPC) Call(ctx context.Context, req proto.Message,
+func (rpc *RPC) Call(ctx context.Context, req proto.Message,
 	players mino.Players) (<-chan proto.Message, <-chan error) {
 
 	out := make(chan proto.Message, players.Len())
@@ -107,7 +114,17 @@ func (rpc RPC) Call(ctx context.Context, req proto.Message,
 		iter := players.AddressIterator()
 		for iter.HasNext() {
 			addrStr := iter.GetNext().String()
-			clientConn, err := rpc.srv.getConnection(addrStr)
+
+			peer, ok := rpc.srv.neighbours[addrStr]
+			if !ok {
+				err := xerrors.Errorf("addr '%s' not is our list of neighbours",
+					addrStr)
+				fabric.Logger.Err(err).Send()
+				errs <- err
+				continue
+			}
+
+			clientConn, err := getConnection(addrStr, peer, *rpc.srv.cert)
 			if err != nil {
 				errs <- xerrors.Errorf("failed to get client conn for '%s': %v",
 					addrStr, err)
@@ -149,25 +166,43 @@ func (rpc RPC) Stream(ctx context.Context,
 	// function.
 	errs := make(chan error, players.Len())
 
-	orchSender := sender{
-		address:      address{orchestratorID},
-		participants: make([]player, players.Len()),
+	orchSender := &sender{
+		address:      address{orchestratorAddr},
+		participants: make(map[string]overlayStream),
 		name:         "orchestrator",
+		mesh:         rpc.srv.mesh,
+		srvCert:      rpc.srv.cert,
+		traffic:      rpc.srv.traffic,
 	}
 
 	orchRecv := receiver{
 		errs: errs,
 		// it is okay to have a blocking chan here because every use of it is in
 		// a goroutine, where we don't mind if it blocks.
-		in:   make(chan *OverlayMsg),
-		name: "orchestrator",
+		in:      make(chan *OverlayMsg),
+		name:    "orchestrator",
+		traffic: rpc.srv.traffic,
 	}
+
+	toAdd := make([]string, 0)
 
 	// Creating a stream for each provided addr
 	for i := 0; players.AddressIterator().HasNext(); i++ {
 		addr := players.AddressIterator().GetNext()
 
-		clientConn, err := rpc.srv.getConnection(addr.String())
+		peer, ok := rpc.srv.neighbours[addr.String()]
+		if !ok {
+			_, ok := rpc.srv.routingTable[addr.String()]
+			if !ok {
+				err := xerrors.Errorf("addr '%s' not is our list of neighbours and the routing table", addr)
+				fabric.Logger.Err(err).Send()
+				errs <- err
+			}
+			toAdd = append(toAdd, addr.String())
+			continue
+		}
+
+		clientConn, err := getConnection(addr.String(), peer, *rpc.srv.cert)
 		if err != nil {
 			// TODO: try another path (maybe use another node to relay that
 			// message)
@@ -190,19 +225,22 @@ func (rpc RPC) Stream(ctx context.Context,
 			errs <- err
 			continue
 		}
-
-		orchSender.participants[i] = player{
-			address:      address{addr.String()},
-			streamClient: stream,
-		}
+		orchSender.participants[addr.String()] = stream
 
 		// Listen on the clients streams and notify the orchestrator or relay
 		// messages
 		go func() {
 			for {
-				err = listenClient(stream, orchRecv, orchSender, addr)
+				err = listenStream(stream, &orchRecv, orchSender, addr)
+				if err == io.EOF {
+					return
+				}
+				status, ok := status.FromError(err)
+				if ok && err != nil && status.Code() == codes.Canceled {
+					return
+				}
 				if err != nil {
-					err = xerrors.Errorf("failed to listen stream: %v")
+					err = xerrors.Errorf("failed to listen stream: %v", err)
 					fabric.Logger.Err(err).Send()
 					errs <- err
 					return
@@ -211,22 +249,36 @@ func (rpc RPC) Stream(ctx context.Context,
 		}()
 	}
 
+	// For unkown clients (ie. not in our neighbour list) we set their clients
+	// to their gateways' clients.
+	for _, addr := range toAdd {
+		gateway, ok := rpc.srv.routingTable[addr]
+		if !ok {
+			// TODO Handle this situation
+		}
+		_, ok = orchSender.participants[gateway]
+		if !ok {
+			// TODO Handle this situation
+		}
+		orchSender.participants[addr] = orchSender.participants[gateway]
+	}
+
 	return orchSender, orchRecv
 }
 
-// listenClient reads the client RPC stream and handle the received messages
+// listenStream reads the client RPC stream and handle the received messages
 // accordingly: It formwards messages or notify the orchestrator.
-func listenClient(stream Overlay_StreamClient, orchRecv receiver,
-	orchSender sender, addr mino.Address) error {
+func listenStream(stream overlayStream, orchRecv *receiver,
+	orchSender *sender, addr mino.Address) error {
 
 	// This msg.Message should always be an enveloppe
 	msg, err := stream.Recv()
 	if err == io.EOF {
-		return nil
+		return io.EOF
 	}
 	status, ok := status.FromError(err)
 	if ok && err != nil && status.Code() == codes.Canceled {
-		return nil
+		return status.Err()
 	}
 	if err != nil {
 		return xerrors.Errorf("client '%s' failed to "+
@@ -249,13 +301,16 @@ func listenClient(stream Overlay_StreamClient, orchRecv receiver,
 		// if we receive a message to ourself or the orchestrator, then we
 		// notify the orchstrator receiver by filling orchRecv.in. If this is
 		// not the case we then relay the message.
-		if toSend == addr.String() || toSend == orchestratorID {
+		if toSend == addr.String() || toSend == orchSender.address.String() {
 			orchRecv.in <- msg
 		} else {
+			orchRecv.traffic.logRcvRelay(address{envelope.From}, envelope,
+				orchRecv.name)
 			fabric.Logger.Trace().Msgf("(orchestrator) relaying message from "+
-				"'%s' to '%s'", envelope.From, addr)
+				"'%s' to '%s'", envelope.From, toSend)
 
-			errChan := orchSender.Send(dynamicAny.Message, address{toSend})
+			errChan := orchSender.sendWithFrom(dynamicAny.Message,
+				address{envelope.From}, address{toSend})
 			err, more := <-errChan
 			if more {
 				return xerrors.Errorf("failed to send relay message: %v", err)
@@ -277,20 +332,26 @@ func CreateServer(addr mino.Address) (*Server, error) {
 	}
 
 	srv := grpc.NewServer(grpc.Creds(credentials.NewServerTLSFromCert(cert)))
-
 	server := &Server{
-		grpcSrv:    srv,
-		cert:       cert,
-		addr:       addr,
-		listener:   nil,
-		StartChan:  make(chan struct{}),
-		neighbours: make(map[string]Peer),
-		handlers:   make(map[string]mino.Handler),
+		grpcSrv:      srv,
+		cert:         cert,
+		addr:         addr,
+		listener:     nil,
+		StartChan:    make(chan struct{}),
+		neighbours:   make(map[string]Peer),
+		mesh:         make(map[string]Peer),
+		handlers:     make(map[string]mino.Handler),
+		traffic:      newTraffic(addr.String()),
+		routingTable: make(map[string]string),
 	}
 
 	RegisterOverlayServer(srv, &overlayService{
-		handlers: server.handlers,
-		addr:     address{addr.String()},
+		handlers:     server.handlers,
+		addr:         address{addr.String()},
+		mesh:         server.mesh,
+		routingTable: server.routingTable,
+		srvCert:      server.cert,
+		traffic:      server.traffic,
 	})
 
 	return server, nil
@@ -332,22 +393,17 @@ func (srv *Server) Serve() error {
 	return nil
 }
 
-// getConnection creates a gRPC connection from the server to the client
-func (srv *Server) getConnection(addr string) (*grpc.ClientConn, error) {
+// getConnection creates a gRPC connection from the server to the client.
+func getConnection(addr string, peer Peer, cert tls.Certificate) (*grpc.ClientConn, error) {
 	if addr == "" {
 		return nil, xerrors.New("empty address is not allowed")
 	}
 
-	neighbour, ok := srv.neighbours[addr]
-	if !ok {
-		return nil, xerrors.Errorf("couldn't find neighbour [%s]", addr)
-	}
-
 	pool := x509.NewCertPool()
-	pool.AddCert(neighbour.Certificate)
+	pool.AddCert(peer.Certificate)
 
 	ta := credentials.NewTLS(&tls.Config{
-		Certificates: []tls.Certificate{*srv.cert},
+		Certificates: []tls.Certificate{cert},
 		RootCAs:      pool,
 	})
 
@@ -401,8 +457,11 @@ func makeCertificate() (*tls.Certificate, error) {
 // sender implements mino.Sender
 type sender struct {
 	address      address
-	participants []player
+	participants map[string]overlayStream
 	name         string
+	mesh         map[string]Peer
+	srvCert      *tls.Certificate
+	traffic      *traffic
 }
 
 type player struct {
@@ -414,7 +473,14 @@ type player struct {
 // asynchrously to all the addrs. The chan error is closed when all the send on
 // each addrs are done. This function guarantees that the error chan is
 // eventually closed. This function should not receive envelopes or OverlayMsgs
-func (s sender) Send(msg proto.Message, addrs ...mino.Address) <-chan error {
+func (s *sender) Send(msg proto.Message, addrs ...mino.Address) <-chan error {
+	return s.sendWithFrom(msg, s.address, addrs...)
+}
+
+// sendWithFrom is needed in the case we send a relayed message. In this case
+// the "from" attribute sould be the original sender of the message that must be
+// relayed, and not ourselve.
+func (s *sender) sendWithFrom(msg proto.Message, from mino.Address, addrs ...mino.Address) <-chan error {
 
 	errs := make(chan error, len(addrs))
 	var wg sync.WaitGroup
@@ -423,9 +489,9 @@ func (s sender) Send(msg proto.Message, addrs ...mino.Address) <-chan error {
 	for _, addr := range addrs {
 		go func(addr mino.Address) {
 			defer wg.Done()
-			err := sendSingle(s, msg, addr)
+			err := sendSingle(s, msg, from, addr)
 			if err != nil {
-				err = xerrors.Errorf("failed to send to client '%s': %v", addr, err)
+				err = xerrors.Errorf("sender '%s' failed to send to client '%s': %v", s.address.String(), addr, err)
 				fabric.Logger.Err(err).Send()
 				errs <- err
 			}
@@ -441,55 +507,33 @@ func (s sender) Send(msg proto.Message, addrs ...mino.Address) <-chan error {
 	return errs
 }
 
-// sendSingle sends a message to a single recipient
-func sendSingle(s sender, msg proto.Message, addr mino.Address) error {
+// sendSingle sends a message to a single recipient. This function should be
+// called asynchonously for each addrs set in mino.Sender.Send
+func sendSingle(s *sender, msg proto.Message, from, to mino.Address) error {
 	msgAny, err := ptypes.MarshalAny(msg)
 	if err != nil {
 		return encoding.NewAnyEncodingError(msg, err)
 	}
 
-	player := s.getParticipant(addr)
-	if player == nil {
-		// in this case we send back a message using our client, which
-		// will hit the orchestrator that will see that this message
-		// should be relayed thanks to the enveloppe.
-		myClient := s.getParticipant(s.address)
-		if myClient == nil {
+	player, participantFound := s.participants[to.String()]
+	if !participantFound {
+
+		player, participantFound = s.participants[s.address.String()]
+		if !participantFound {
 			return xerrors.Errorf("failed to send back a message that should "+
 				"be relayed to '%s'. My client '%s' was not found in the list "+
-				"of participant: '%v'", addr, s.address, s.participants)
+				"of participant: '%v'", to, s.address, s.participants)
 		}
 
-		fabric.Logger.Trace().Msgf("sending back a message that must be "+
-			"relayed. From '%s', To '%s'", s.address.String(), addr.String())
+		fabric.Logger.Trace().Msgf("I don't know client '%s', so I'm sending "+
+			"back a message that must be relayed. From '%s', To '%s'",
+			to.String(), s.address.String(), to.String())
 
-		envelope := &Envelope{
-			From:    s.address.String(),
-			To:      []string{addr.String()},
-			Message: msgAny,
-		}
-		envelopeAny, err := ptypes.MarshalAny(envelope)
-		if err != nil {
-			return encoding.NewAnyEncodingError(msg, err)
-		}
-
-		sendMsg := &OverlayMsg{
-			Message: envelopeAny,
-		}
-
-		err = myClient.streamClient.Send(sendMsg)
-		if err == io.EOF {
-			return nil
-		} else if err != nil {
-			return xerrors.Errorf("failed to call the send on client stream: %v", err)
-		}
-
-		return nil
 	}
 
 	envelope := &Envelope{
-		From:    s.address.String(),
-		To:      []string{addr.String()},
+		From:    from.String(),
+		To:      []string{to.String()},
 		Message: msgAny,
 	}
 	envelopeAny, err := ptypes.MarshalAny(envelope)
@@ -501,7 +545,8 @@ func sendSingle(s sender, msg proto.Message, addr mino.Address) error {
 		Message: envelopeAny,
 	}
 
-	err = player.streamClient.Send(sendMsg)
+	s.traffic.logSend(to, sendMsg, s.name)
+	err = player.Send(sendMsg)
 	if err == io.EOF {
 		return nil
 	} else if err != nil {
@@ -513,9 +558,10 @@ func sendSingle(s sender, msg proto.Message, addr mino.Address) error {
 
 // receiver implements mino.receiver
 type receiver struct {
-	errs chan error
-	in   chan *OverlayMsg
-	name string
+	errs    chan error
+	in      chan *OverlayMsg
+	name    string
+	traffic *traffic
 }
 
 // Recv implements mino.receiver
@@ -556,6 +602,8 @@ func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error)
 		return nil, nil, encoding.NewAnyDecodingError(enveloppe.Message, err)
 	}
 
+	r.traffic.logRcv(address{enveloppe.From}, dynamicAny.Message, r.name)
+
 	return address{id: enveloppe.From}, dynamicAny.Message, nil
 }
 
@@ -566,17 +614,6 @@ func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error)
 type overlayStream interface {
 	Send(*OverlayMsg) error
 	Recv() (*OverlayMsg, error)
-}
-
-// getParticipant checks if a participant exists on the list of participant.
-// Returns nil if the participant is not in the list.
-func (s sender) getParticipant(addr mino.Address) *player {
-	for _, p := range s.participants {
-		if p.address.String() == addr.String() {
-			return &p
-		}
-	}
-	return nil
 }
 
 // simpleNode implements mino.Node

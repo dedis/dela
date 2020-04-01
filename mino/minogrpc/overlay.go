@@ -2,6 +2,9 @@ package minogrpc
 
 import (
 	context "context"
+	"crypto/tls"
+	"io"
+	"sync"
 
 	"github.com/golang/protobuf/ptypes"
 	"go.dedis.ch/fabric"
@@ -17,7 +20,18 @@ import (
 // Server.Handlers, which is updated each time the makeRPC function is called.
 type overlayService struct {
 	handlers map[string]mino.Handler
-	addr     address
+	// this is the address of the server. This address is used to provide
+	// insighful information in the traffic history, as it is used to form the
+	// addressID of the sender.
+	addr address
+	// This map is used to create a new stream connection if possible
+	mesh map[string]Peer
+	// routing table from the server
+	routingTable map[string]string
+	// This certificate is used to create a new stream connection if possible
+	srvCert *tls.Certificate
+	// Used to record traffic activity
+	traffic *traffic
 }
 
 // Call is the implementation of the overlay.Call proto definition
@@ -95,43 +109,106 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 			"of handlers, did you register it?", apiURI[0])
 	}
 
+	rpcID := "server_" + o.addr.String()
+
 	// For the moment this sender can only receive messages to itself
 	// TODO: find a way to know the other nodes.
-	sender := sender{
+	sender := &sender{
 		// This address is used when the client doesn't find the address it
 		// should send the message to in the list of participant. In that case
 		// it packs the message in an enveloppe and send it back to this
 		// address, which is registered in the list of participant.
-		address: o.addr,
-		participants: []player{
-			// This participant is used to send back messages that must be
-			// relayed.
-			{
-				address:      o.addr,
-				streamClient: stream,
-			},
-		},
-		name: "remote RPC",
+		// It is also used to indicate the "from" of the message in the case it
+		// doesn't relay but sends directly.
+		address:      address{rpcID},
+		participants: map[string]overlayStream{rpcID: stream},
+		name:         "remote RPC",
+		mesh:         o.mesh,
+		srvCert:      o.srvCert,
+		traffic:      o.traffic,
 	}
 
 	receiver := receiver{
-		in:   make(chan *OverlayMsg),
-		errs: make(chan error),
-		name: "remote RPC",
+		in:      make(chan *OverlayMsg),
+		errs:    make(chan error),
+		name:    "remote RPC",
+		traffic: o.traffic,
 	}
+
+	var peerWait sync.WaitGroup
+
+	for _, peer := range o.mesh {
+		addr := address{peer.Address}
+		clientConn, err := getConnection(addr.String(), peer, *o.srvCert)
+		if err != nil {
+			err = xerrors.Errorf("failed to get client conn for client '%s': %v",
+				addr.String(), err)
+			fabric.Logger.Err(err).Send()
+			return err
+		}
+		cl := NewOverlayClient(clientConn)
+
+		header := metadata.New(map[string]string{headerURIKey: apiURI[0]})
+		ctx = metadata.NewOutgoingContext(ctx, header)
+
+		clientStream, err := cl.Stream(ctx)
+
+		if err != nil {
+			err = xerrors.Errorf("failed to get stream for client '%s': %v",
+				addr.String(), err)
+			fabric.Logger.Err(err).Send()
+			return err
+		}
+		sender.participants[addr.String()] = clientStream
+
+		// Listen on the clients streams and notify the orchestrator or relay
+		// messages
+		peerWait.Add(1)
+		go func() {
+			defer peerWait.Done()
+			for {
+				err := listenStream(clientStream, &receiver, sender, addr)
+				if err == io.EOF {
+					return
+				}
+				status, ok := status.FromError(err)
+				if ok && err != nil && status.Code() == codes.Canceled {
+					return
+				}
+				if err != nil {
+					err = xerrors.Errorf("failed to listen stream: %v")
+					fabric.Logger.Err(err).Send()
+					return
+				}
+			}
+		}()
+	}
+
+	// add the gateways based on the routing table
+	for k, v := range o.routingTable {
+		gateway, ok := sender.participants[v]
+		if !ok {
+			// TODO: handle this situation
+		}
+		sender.participants[k] = gateway
+	}
+
+	// listen on my own stream
 	go func() {
 		for {
-			msg, err := stream.Recv()
+			err := listenStream(stream, &receiver, sender, o.addr)
+			if err == io.EOF {
+				return
+			}
 			status, ok := status.FromError(err)
 			if ok && err != nil && status.Code() == codes.Canceled {
-				close(receiver.in)
 				return
 			}
 			if err != nil {
-				fabric.Logger.Error().Msgf("failed to receive in overlay: %v", err)
-				receiver.errs <- xerrors.Errorf("failed to receive in overlay: %v", err)
+				err = xerrors.Errorf("failed to listen stream: %v")
+				fabric.Logger.Err(err).Send()
+				return
 			}
-			receiver.in <- msg
 		}
 	}()
 
@@ -140,6 +217,7 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		return xerrors.Errorf("failed to call the stream handler: %v", err)
 	}
 
+	peerWait.Wait()
 	return nil
 
 }
