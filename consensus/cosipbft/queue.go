@@ -142,7 +142,7 @@ func (q *queue) Finalize(to Digest, sig crypto.Signature) (*ForwardLinkProto, er
 
 	packed, err := q.encoder.Pack(forwardLink)
 	if err != nil {
-		return nil, xerrors.Errorf("encoder: %v", err)
+		return nil, xerrors.Errorf("couldn't pack forward link: %v", err)
 	}
 
 	q.locked = false

@@ -84,7 +84,7 @@ func (ldgr *Ledger) GetInstance(key []byte) (consumer.Instance, error) {
 
 	instance, err := ldgr.consumer.GetInstanceFactory().FromProto(instancepb)
 	if err != nil {
-		return nil, encoding.NewDecodingError("instance", err)
+		return nil, xerrors.Errorf("couldn't decode instance: %v", err)
 	}
 
 	return instance, nil
@@ -204,7 +204,7 @@ func (ldgr *Ledger) stagePayload(txs []consumer.Transaction) (*BlockPayload, err
 	for i, tx := range txs {
 		txpb, err := ldgr.encoder.PackAny(tx)
 		if err != nil {
-			return nil, xerrors.Errorf("encoder: %v", err)
+			return nil, xerrors.Errorf("couldn't pack tx: %v", err)
 		}
 
 		payload.Transactions[i] = txpb

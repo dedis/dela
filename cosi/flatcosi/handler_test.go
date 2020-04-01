@@ -39,11 +39,11 @@ func TestHandler_Process(t *testing.T) {
 
 	h.encoder = badUnmarshalDynEncoder{}
 	_, err = h.Process(req)
-	require.EqualError(t, err, "encoder: oops")
+	require.EqualError(t, err, "couldn't unmarshal message: oops")
 
 	h.encoder = badPackAnyEncoder{}
 	_, err = h.Process(req)
-	require.EqualError(t, err, "encoder: oops")
+	require.EqualError(t, err, "couldn't pack signature: oops")
 
 	h.encoder = encoding.NewProtoEncoder()
 	h.hasher = fakeHasher{err: xerrors.New("oops")}

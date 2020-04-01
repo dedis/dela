@@ -98,7 +98,7 @@ func TestActor_Sign(t *testing.T) {
 
 	actor.encoder = badPackAnyEncoder{}
 	_, err = actor.Sign(ctx, message, nil)
-	require.EqualError(t, err, "encoder: oops")
+	require.EqualError(t, err, "couldn't pack message: oops")
 
 	actor.encoder = encoding.NewProtoEncoder()
 	actor.signer = fakeSigner{}

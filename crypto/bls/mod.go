@@ -18,8 +18,6 @@ import (
 
 var (
 	suite = pairing.NewSuiteBn256()
-
-	protoenc encoding.ProtoMarshaler = encoding.NewProtoEncoder()
 )
 
 // publicKey can be provided to verify a BLS signature.
@@ -38,7 +36,7 @@ func (pk publicKey) MarshalBinary() ([]byte, error) {
 func (pk publicKey) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 	buffer, err := pk.point.MarshalBinary()
 	if err != nil {
-		return nil, encoding.NewEncodingError("point", err)
+		return nil, xerrors.Errorf("couldn't marshal point: %v", err)
 	}
 
 	return &PublicKeyProto{Data: buffer}, nil
@@ -84,7 +82,9 @@ func (sig signature) Equal(other crypto.Signature) bool {
 }
 
 // publicKeyFactory creates BLS compatible public key from protobuf messages.
-type publicKeyFactory struct{}
+type publicKeyFactory struct {
+	encoder encoding.ProtoMarshaler
+}
 
 // FromProto implements crypto.PublicKeyFactory. It creates a public key from
 // its protobuf representation.
@@ -97,9 +97,9 @@ func (f publicKeyFactory) FromProto(src proto.Message) (crypto.PublicKey, error)
 	case *any.Any:
 		pb = &PublicKeyProto{}
 
-		err := protoenc.UnmarshalAny(msg, pb)
+		err := f.encoder.UnmarshalAny(msg, pb)
 		if err != nil {
-			return nil, encoding.NewAnyDecodingError(pb, err)
+			return nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
 		}
 	default:
 		return nil, xerrors.Errorf("invalid public key type '%T'", src)
@@ -116,7 +116,9 @@ func (f publicKeyFactory) FromProto(src proto.Message) (crypto.PublicKey, error)
 
 // signatureFactory provides functions to create BLS signatures from protobuf
 // messages.
-type signatureFactory struct{}
+type signatureFactory struct {
+	encoder encoding.ProtoMarshaler
+}
 
 // FromProto implements crypto.SignatureFactory. It creates a BLS signature from
 // its protobuf representation.
@@ -129,9 +131,9 @@ func (f signatureFactory) FromProto(src proto.Message) (crypto.Signature, error)
 	case *any.Any:
 		pb = &SignatureProto{}
 
-		err := protoenc.UnmarshalAny(msg, pb)
+		err := f.encoder.UnmarshalAny(msg, pb)
 		if err != nil {
-			return nil, encoding.NewAnyDecodingError(pb, err)
+			return nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
 		}
 	default:
 		return nil, xerrors.Errorf("invalid signature type '%T'", src)
@@ -225,13 +227,17 @@ func (s signer) GetVerifierFactory() crypto.VerifierFactory {
 // GetPublicKeyFactory implements crypto.Signer. It returns the public key
 // factory for BLS signatures.
 func (s signer) GetPublicKeyFactory() crypto.PublicKeyFactory {
-	return publicKeyFactory{}
+	return publicKeyFactory{
+		encoder: encoding.NewProtoEncoder(),
+	}
 }
 
 // GetSignatureFactory implements crypto.Signer. It returns the signature
 // factory for BLS signatures.
 func (s signer) GetSignatureFactory() crypto.SignatureFactory {
-	return signatureFactory{}
+	return signatureFactory{
+		encoder: encoding.NewProtoEncoder(),
+	}
 }
 
 // GetPublicKey implements crypto.Signer. It returns the public key of the

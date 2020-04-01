@@ -64,14 +64,14 @@ func (fl forwardLink) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	if fl.prepare != nil {
 		pb.Prepare, err = enc.PackAny(fl.prepare)
 		if err != nil {
-			return nil, xerrors.Errorf("encoder: %v", err)
+			return nil, xerrors.Errorf("couldn't pack prepare signature: %v", err)
 		}
 	}
 
 	if fl.commit != nil {
 		pb.Commit, err = enc.PackAny(fl.commit)
 		if err != nil {
-			return nil, xerrors.Errorf("encoder: %v", err)
+			return nil, xerrors.Errorf("couldn't pack commit signature: %v", err)
 		}
 	}
 
@@ -138,7 +138,7 @@ func (c forwardLinkChain) Pack(enc encoding.ProtoMarshaler) (proto.Message, erro
 	for i, link := range c.links {
 		packed, err := enc.Pack(link)
 		if err != nil {
-			return nil, xerrors.Errorf("encoder: %v", err)
+			return nil, xerrors.Errorf("couldn't pack forward link: %v", err)
 		}
 
 		pb.Links[i] = packed.(*ForwardLinkProto)
@@ -181,7 +181,7 @@ func (f *chainFactory) decodeForwardLink(pb proto.Message) (forwardLink, error) 
 
 		err := f.encoder.UnmarshalAny(msg, src)
 		if err != nil {
-			return fl, xerrors.Errorf("encoder: %v", err)
+			return fl, xerrors.Errorf("couldn't unmarshal forward link: %v", err)
 		}
 	case *ForwardLinkProto:
 		src = msg
@@ -197,7 +197,7 @@ func (f *chainFactory) decodeForwardLink(pb proto.Message) (forwardLink, error) 
 	if src.GetPrepare() != nil {
 		sig, err := f.signatureFactory.FromProto(src.GetPrepare())
 		if err != nil {
-			return fl, encoding.NewDecodingError("prepare signature", err)
+			return fl, xerrors.Errorf("couldn't decode prepare signature: %v", err)
 		}
 
 		fl.prepare = sig
@@ -206,7 +206,7 @@ func (f *chainFactory) decodeForwardLink(pb proto.Message) (forwardLink, error) 
 	if src.GetCommit() != nil {
 		sig, err := f.signatureFactory.FromProto(src.GetCommit())
 		if err != nil {
-			return fl, encoding.NewDecodingError("commit signature", err)
+			return fl, xerrors.Errorf("couldn't decode commit signature: %v", err)
 		}
 
 		fl.commit = sig
@@ -231,7 +231,7 @@ func (f *chainFactory) FromProto(pb proto.Message) (consensus.Chain, error) {
 
 		err := f.encoder.UnmarshalAny(in, msg)
 		if err != nil {
-			return nil, xerrors.Errorf("encoder: oops")
+			return nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
 		}
 	case *ChainProto:
 		msg = in

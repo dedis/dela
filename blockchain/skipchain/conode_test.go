@@ -36,12 +36,11 @@ func TestConode_Pack(t *testing.T) {
 	require.IsType(t, (*ConodeProto)(nil), pb)
 
 	_, err = conode.Pack(badPackAnyEncoder{})
-	require.EqualError(t, err, "encoder: oops")
+	require.EqualError(t, err, "couldn't pack public key: oops")
 
 	conode.addr = fakeAddress{err: xerrors.New("oops")}
 	_, err = conode.Pack(encoding.NewProtoEncoder())
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err, encoding.NewEncodingError("address", nil)))
+	require.EqualError(t, err, "couldn't marshal address: oops")
 }
 
 func TestIterator_HasNext(t *testing.T) {
@@ -161,7 +160,7 @@ func TestConodes_Pack(t *testing.T) {
 	require.Len(t, pb.(*Roster).GetConodes(), 2)
 
 	_, err = conodes.Pack(badPackEncoder{})
-	require.EqualError(t, err, "encoder: oops")
+	require.EqualError(t, err, "couldn't pack conode: oops")
 }
 
 func TestConodes_WriteTo(t *testing.T) {

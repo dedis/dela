@@ -8,7 +8,6 @@ import (
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/consensus"
-	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
@@ -50,7 +49,7 @@ func (v *blockValidator) Validate(addr mino.Address,
 
 	block, err := factory.decodeBlock(pb)
 	if err != nil {
-		return nil, encoding.NewDecodingError("block", err)
+		return nil, xerrors.Errorf("couldn't decode block: %v", err)
 	}
 
 	genesis, err := v.db.Read(0)

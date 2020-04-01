@@ -228,7 +228,7 @@ func (a skipchainActor) newChain(data proto.Message, conodes Conodes) error {
 
 	packed, err := a.encoder.Pack(genesis)
 	if err != nil {
-		return xerrors.Errorf("encoder: %v", err)
+		return xerrors.Errorf("couldn't pack genesis: %v", err)
 	}
 
 	msg := &PropagateGenesis{

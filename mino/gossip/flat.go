@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
@@ -36,7 +35,12 @@ func NewFlat(m mino.Mino, dec Decoder) *Flat {
 // Start implements gossip.Gossiper. It creates the RPC and starts to listen for
 // incoming rumors while spreading its own ones.
 func (flat *Flat) Start(players mino.Players) error {
-	rpc, err := flat.mino.MakeRPC("flatgossip", handler{Flat: flat})
+	h := handler{
+		Flat:    flat,
+		encoder: encoding.NewProtoEncoder(),
+	}
+
+	rpc, err := flat.mino.MakeRPC("flatgossip", h)
 	if err != nil {
 		return xerrors.Errorf("couldn't create the rpc: %v", err)
 	}
@@ -63,7 +67,7 @@ func (flat *Flat) Add(rumor Rumor) error {
 
 	rumorpb, err := flat.encoder.PackAny(rumor)
 	if err != nil {
-		return xerrors.Errorf("encoder: %v", err)
+		return xerrors.Errorf("couldn't pack rumor: %v", err)
 	}
 
 	req := &RumorProto{Message: rumorpb}
@@ -92,20 +96,21 @@ func (flat *Flat) Rumors() <-chan Rumor {
 type handler struct {
 	*Flat
 	mino.UnsupportedHandler
+
+	encoder encoding.ProtoMarshaler
 }
 
 func (h handler) Process(req mino.Request) (proto.Message, error) {
 	switch msg := req.Message.(type) {
 	case *RumorProto:
-		dynamicAny := &ptypes.DynamicAny{}
-		err := ptypes.UnmarshalAny(msg.GetMessage(), dynamicAny)
+		message, err := h.encoder.UnmarshalDynamicAny(msg.GetMessage())
 		if err != nil {
-			return nil, encoding.NewAnyDecodingError(msg.GetMessage(), err)
+			return nil, xerrors.Errorf("couldn't pack rumor: %v", err)
 		}
 
-		rumor, err := h.decoder(dynamicAny.Message)
+		rumor, err := h.decoder(message)
 		if err != nil {
-			return nil, encoding.NewDecodingError("rumor", err)
+			return nil, xerrors.Errorf("couldn't decode rumor: %v", err)
 		}
 
 		h.ch <- rumor

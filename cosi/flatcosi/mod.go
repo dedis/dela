@@ -91,7 +91,7 @@ func (a flatActor) Sign(ctx context.Context, msg cosi.Message,
 
 	data, err := a.encoder.PackAny(msg)
 	if err != nil {
-		return nil, xerrors.Errorf("encoder: %v", err)
+		return nil, xerrors.Errorf("couldn't pack message: %v", err)
 	}
 
 	verifier, err := a.signer.GetVerifierFactory().FromIterator(ca.PublicKeyIterator())
@@ -139,7 +139,7 @@ func (a flatActor) processResponse(resp proto.Message, agg crypto.Signature) (cr
 
 	sig, err := a.signer.GetSignatureFactory().FromProto(reply.GetSignature())
 	if err != nil {
-		return nil, encoding.NewDecodingError("signature", err)
+		return nil, xerrors.Errorf("couldn't decode signature: %v", err)
 	}
 
 	if agg == nil {

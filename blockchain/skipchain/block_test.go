@@ -190,10 +190,10 @@ func TestVerifiableBlock_Pack(t *testing.T) {
 		require.IsType(t, (*VerifiableBlockProto)(nil), packed)
 
 		_, err = vb.Pack(badPackEncoder{})
-		require.EqualError(t, err, "encoder: oops")
+		require.EqualError(t, err, "couldn't pack block: oops")
 
 		_, err = vb.Pack(badPackAnyEncoder{})
-		require.EqualError(t, err, "encoder: oops")
+		require.EqualError(t, err, "couldn't pack chain: oops")
 
 		return true
 	}
@@ -242,8 +242,7 @@ func TestBlockFactory_DecodeConodes(t *testing.T) {
 
 	factory.cosi = fakeCosi{err: xerrors.New("oops")}
 	_, err = factory.decodeConodes(pb)
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err, encoding.NewDecodingError("public key", nil)))
+	require.EqualError(t, err, "couldn't decode public key: oops")
 }
 
 func TestBlockFactory_DecodeBlock(t *testing.T) {
@@ -269,7 +268,7 @@ func TestBlockFactory_DecodeBlock(t *testing.T) {
 
 		factory.encoder = badUnmarshalDynEncoder{}
 		_, err = factory.decodeBlock(&BlockProto{})
-		require.EqualError(t, err, "encoder: oops")
+		require.EqualError(t, err, "couldn't unmarshal payload: oops")
 
 		factory.encoder = encoding.NewProtoEncoder()
 		factory.cosi = fakeCosi{err: xerrors.New("oops")}

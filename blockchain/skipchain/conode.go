@@ -38,12 +38,12 @@ func (c Conode) Pack(encoder encoding.ProtoMarshaler) (proto.Message, error) {
 	var err error
 	conode.Address, err = c.addr.MarshalText()
 	if err != nil {
-		return nil, encoding.NewEncodingError("address", err)
+		return nil, xerrors.Errorf("couldn't marshal address: %v", err)
 	}
 
 	conode.PublicKey, err = encoder.PackAny(c.publicKey)
 	if err != nil {
-		return nil, xerrors.Errorf("encoder: %v", err)
+		return nil, xerrors.Errorf("couldn't pack public key: %v", err)
 	}
 
 	return conode, nil
@@ -167,7 +167,7 @@ func (cc Conodes) Pack(encoder encoding.ProtoMarshaler) (proto.Message, error) {
 	for i, conode := range cc {
 		conodepb, err := encoder.Pack(conode)
 		if err != nil {
-			return nil, xerrors.Errorf("encoder: %v", err)
+			return nil, xerrors.Errorf("couldn't pack conode: %v", err)
 		}
 
 		pb.Conodes[i] = conodepb.(*ConodeProto)

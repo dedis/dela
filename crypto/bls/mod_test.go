@@ -62,7 +62,7 @@ func TestPublicKey_Pack(t *testing.T) {
 
 	pubkey := publicKey{point: fakePoint{}}
 	_, err = pubkey.Pack(nil)
-	require.EqualError(t, err, "couldn't encode point: oops")
+	require.EqualError(t, err, "couldn't marshal point: oops")
 }
 
 type fakePublicKey struct {
@@ -136,18 +136,10 @@ func TestSignature_Equal(t *testing.T) {
 	require.NoError(t, err)
 }
 
-type fakeProtoEncoder struct {
-	encoding.ProtoMarshaler
-}
-
-func (e fakeProtoEncoder) UnmarshalAny(*any.Any, proto.Message) error {
-	return xerrors.New("oops")
-}
-
 func TestPublicKeyFactory_FromProto(t *testing.T) {
-	defer func() { protoenc = encoding.NewProtoEncoder() }()
-
-	factory := publicKeyFactory{}
+	factory := publicKeyFactory{
+		encoder: encoding.NewProtoEncoder(),
+	}
 
 	signer := NewSigner()
 	packed, err := signer.GetPublicKey().Pack(nil)
@@ -167,10 +159,9 @@ func TestPublicKeyFactory_FromProto(t *testing.T) {
 	_, err = factory.FromProto(&empty.Empty{})
 	require.EqualError(t, err, "invalid public key type '*empty.Empty'")
 
-	protoenc = fakeProtoEncoder{}
+	factory.encoder = badUnmarshalAnyEncoder{}
 	_, err = factory.FromProto(packedAny)
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err, encoding.NewAnyDecodingError((*PublicKeyProto)(nil), nil)))
+	require.EqualError(t, err, "couldn't unmarshal message: oops")
 
 	_, err = factory.FromProto(&PublicKeyProto{Data: []byte{}})
 	require.Error(t, err)
@@ -178,9 +169,9 @@ func TestPublicKeyFactory_FromProto(t *testing.T) {
 }
 
 func TestSignatureFactory_FromProto(t *testing.T) {
-	defer func() { protoenc = encoding.NewProtoEncoder() }()
-
-	factory := signatureFactory{}
+	factory := signatureFactory{
+		encoder: encoding.NewProtoEncoder(),
+	}
 
 	signer := NewSigner()
 	sig, err := signer.Sign([]byte{1})
@@ -201,10 +192,9 @@ func TestSignatureFactory_FromProto(t *testing.T) {
 	_, err = factory.FromProto(&empty.Empty{})
 	require.EqualError(t, err, "invalid signature type '*empty.Empty'")
 
-	protoenc = fakeProtoEncoder{}
+	factory.encoder = badUnmarshalAnyEncoder{}
 	_, err = factory.FromProto(packedAny)
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err, encoding.NewAnyDecodingError((*SignatureProto)(nil), nil)))
+	require.EqualError(t, err, "couldn't unmarshal message: oops")
 }
 
 func TestVerifier_Verify(t *testing.T) {
@@ -349,4 +339,15 @@ func TestSigner_Aggregate(t *testing.T) {
 
 	err := quick.Check(f, nil)
 	require.NoError(t, err)
+}
+
+// -----------------------------------------------------------------------------
+// Utility functions
+
+type badUnmarshalAnyEncoder struct {
+	encoding.ProtoEncoder
+}
+
+func (e badUnmarshalAnyEncoder) UnmarshalAny(*any.Any, proto.Message) error {
+	return xerrors.New("oops")
 }

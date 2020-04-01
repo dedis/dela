@@ -223,7 +223,7 @@ func TestConsensus_ProposeFailures(t *testing.T) {
 	actor.cosiActor = &fakeCosiActor{}
 	actor.encoder = badPackAnyEncoder{}
 	err = actor.Propose(fakeProposal{}, fakeCA{})
-	require.EqualError(t, err, "encoder: oops")
+	require.EqualError(t, err, "couldn't pack signature: oops")
 
 	actor.encoder = encoding.NewProtoEncoder()
 	actor.cosiActor = &fakeCosiActor{}
@@ -266,7 +266,7 @@ func TestHandler_HashPrepare(t *testing.T) {
 
 	cons.encoder = badUnmarshalDynEncoder{}
 	_, err = h.Hash(nil, &PrepareRequest{})
-	require.EqualError(t, err, "encoder: oops")
+	require.EqualError(t, err, "couldn't unmarshal proposal: oops")
 
 	cons.encoder = encoding.NewProtoEncoder()
 	h.validator = fakeValidator{err: xerrors.New("oops")}

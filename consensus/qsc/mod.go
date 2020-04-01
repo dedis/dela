@@ -26,8 +26,6 @@ const (
 	EpochTimeout = 20 * time.Second
 )
 
-var protoenc encoding.ProtoMarshaler = encoding.NewProtoEncoder()
-
 // Consensus is an abstraction to send proposals to a network of nodes that will
 // decide to include them in the common state.
 type Consensus struct {
@@ -47,12 +45,14 @@ func NewQSC(node int64, mino mino.Mino, players mino.Players) (*Consensus, error
 	}
 
 	return &Consensus{
-		ch:               make(chan consensus.Proposal),
-		closing:          make(chan struct{}),
-		stopped:          make(chan struct{}),
-		history:          make(history, 0),
-		broadcast:        bc,
-		historiesFactory: defaultHistoriesFactory{},
+		ch:        make(chan consensus.Proposal),
+		closing:   make(chan struct{}),
+		stopped:   make(chan struct{}),
+		history:   make(history, 0),
+		broadcast: bc,
+		historiesFactory: defaultHistoriesFactory{
+			encoder: encoding.NewProtoEncoder(),
+		},
 	}, nil
 }
 
@@ -145,7 +145,7 @@ func (c *Consensus) executeRound(
 	// 3. Get the best history from the received messages.
 	Bp, err := c.historiesFactory.FromMessageSet(prepareSet.GetBroadcasted())
 	if err != nil {
-		return encoding.NewDecodingError("broadcasted set", err)
+		return xerrors.Errorf("couldn't decode broadcasted set: %v", err)
 	}
 
 	// 4. Broadcast what we received in step 3.
@@ -157,18 +157,18 @@ func (c *Consensus) executeRound(
 	// 5. Get the best history from the second broadcast.
 	Rpp, err := c.historiesFactory.FromMessageSet(commitSet.GetReceived())
 	if err != nil {
-		return encoding.NewDecodingError("received set", err)
+		return xerrors.Errorf("couldn't decode received set: %v", err)
 	}
 	c.history = Rpp.getBest()
 
 	// 6. Verify that the best history is present and unique.
 	broadcasted, err := c.historiesFactory.FromMessageSet(commitSet.GetBroadcasted())
 	if err != nil {
-		return encoding.NewDecodingError("broadcasted set", err)
+		return xerrors.Errorf("couldn't decode broadcasted set: %v", err)
 	}
 	received, err := c.historiesFactory.FromMessageSet(prepareSet.GetReceived())
 	if err != nil {
-		return encoding.NewDecodingError("received set", err)
+		return xerrors.Errorf("couldn't decode received set: %v", err)
 	}
 
 	if broadcasted.contains(c.history) && received.isUniqueBest(c.history) {

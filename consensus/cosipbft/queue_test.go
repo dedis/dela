@@ -123,7 +123,7 @@ func TestQueue_Finalize(t *testing.T) {
 	queue.items[0].verifier = &fakeVerifier{}
 	queue.encoder = badPackEncoder{}
 	_, err = queue.Finalize([]byte{0xaa}, fakeSignature{err: xerrors.New("oops")})
-	require.EqualError(t, err, "encoder: oops")
+	require.EqualError(t, err, "couldn't pack forward link: oops")
 }
 
 type fakeItem struct {

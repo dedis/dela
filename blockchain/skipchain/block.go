@@ -231,7 +231,7 @@ func (vb VerifiableBlock) Verify(v crypto.Verifier) error {
 func (vb VerifiableBlock) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	block, err := enc.Pack(vb.SkipBlock)
 	if err != nil {
-		return nil, xerrors.Errorf("encoder: %v", err)
+		return nil, xerrors.Errorf("couldn't pack block: %v", err)
 	}
 
 	packed := &VerifiableBlockProto{
@@ -240,7 +240,7 @@ func (vb VerifiableBlock) Pack(enc encoding.ProtoMarshaler) (proto.Message, erro
 
 	packed.Chain, err = enc.PackAny(vb.Chain)
 	if err != nil {
-		return nil, xerrors.Errorf("encoder: %v", err)
+		return nil, xerrors.Errorf("couldn't pack chain: %v", err)
 	}
 
 	return packed, nil
@@ -289,7 +289,7 @@ func (f blockFactory) decodeConodes(msgs []*ConodeProto) (Conodes, error) {
 	for i, msg := range msgs {
 		publicKey, err := pubkeyFactory.FromProto(msg.GetPublicKey())
 		if err != nil {
-			return nil, encoding.NewDecodingError("public key", err)
+			return nil, xerrors.Errorf("couldn't decode public key: %v", err)
 		}
 
 		conodes[i] = Conode{
@@ -308,7 +308,7 @@ func (f blockFactory) decodeBlock(src proto.Message) (SkipBlock, error) {
 
 	payload, err := f.encoder.UnmarshalDynamicAny(in.GetPayload())
 	if err != nil {
-		return SkipBlock{}, xerrors.Errorf("encoder: %v", err)
+		return SkipBlock{}, xerrors.Errorf("couldn't unmarshal payload: %v", err)
 	}
 
 	backLink := Digest{}

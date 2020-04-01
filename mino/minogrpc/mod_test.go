@@ -7,6 +7,7 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/fabric/encoding"
 	internal "go.dedis.ch/fabric/internal/testing"
 	"go.dedis.ch/fabric/mino"
 )
@@ -100,6 +101,7 @@ func Test_MakeRPC(t *testing.T) {
 	require.NoError(t, err)
 
 	expectedRPC := &RPC{
+		encoder: encoding.NewProtoEncoder(),
 		handler: handler,
 		srv:     minoGrpc.server,
 		uri:     "namespace/name",

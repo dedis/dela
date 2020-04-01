@@ -29,7 +29,7 @@ func (h handler) Process(req mino.Request) (proto.Message, error) {
 	case *SignatureRequest:
 		data, err := h.encoder.UnmarshalDynamicAny(msg.Message)
 		if err != nil {
-			return nil, xerrors.Errorf("encoder: %v", err)
+			return nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
 		}
 
 		buf, err := h.hasher.Hash(req.Address, data)
@@ -45,7 +45,7 @@ func (h handler) Process(req mino.Request) (proto.Message, error) {
 		resp := &SignatureResponse{}
 		resp.Signature, err = h.encoder.PackAny(sig)
 		if err != nil {
-			return nil, xerrors.Errorf("encoder: %v", err)
+			return nil, xerrors.Errorf("couldn't pack signature: %v", err)
 		}
 
 		return resp, nil

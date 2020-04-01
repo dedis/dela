@@ -171,11 +171,10 @@ func TestTLCB_Basic(t *testing.T) {
 }
 
 func TestTLCB_Execute(t *testing.T) {
-	defer func() { protoenc = encoding.NewProtoEncoder() }()
-
 	bc := &bTLCB{
-		b1: fakeTLCR{},
-		b2: fakeTLCR{},
+		encoder: encoding.NewProtoEncoder(),
+		b1:      fakeTLCR{},
+		b2:      fakeTLCR{},
 	}
 
 	view, err := bc.execute(context.Background(), &empty.Empty{})
@@ -192,15 +191,13 @@ func TestTLCB_Execute(t *testing.T) {
 	require.EqualError(t, err, "couldn't broadcast: oops")
 
 	bc.b2 = fakeTLCR{}
-	protoenc = &fakeEncoder{}
+	bc.encoder = &badMarshalAnyEncoder{}
 	_, err = bc.execute(context.Background(), &empty.Empty{})
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err, encoding.NewAnyEncodingError((*empty.Empty)(nil), nil)))
+	require.EqualError(t, err, "couldn't marshal message: oops")
 
-	protoenc = &fakeEncoder{delay: 1}
+	bc.encoder = &badMarshalAnyEncoder{delay: 1}
 	_, err = bc.execute(context.Background(), &empty.Empty{})
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err, encoding.NewAnyEncodingError((*MessageSet)(nil), nil)))
+	require.EqualError(t, err, "couldn't marshal message: oops")
 }
 
 func makeTLCR(t *testing.T, n int) []*bTLCR {
@@ -243,6 +240,19 @@ func makeTLCB(t *testing.T, n int) []*bTLCB {
 
 // -----------------
 // Utility functions
+
+type badMarshalAnyEncoder struct {
+	encoding.ProtoEncoder
+	delay int
+}
+
+func (e *badMarshalAnyEncoder) MarshalAny(proto.Message) (*any.Any, error) {
+	if e.delay == 0 {
+		return nil, xerrors.New("oops")
+	}
+	e.delay--
+	return nil, nil
+}
 
 type fakeIterator struct {
 	index int
@@ -324,17 +334,4 @@ type fakeTLCR struct {
 
 func (b fakeTLCR) execute(context.Context, ...*Message) (*View, error) {
 	return nil, b.err
-}
-
-type fakeEncoder struct {
-	encoding.ProtoEncoder
-	delay int
-}
-
-func (e *fakeEncoder) MarshalAny(pb proto.Message) (*any.Any, error) {
-	if e.delay == 0 {
-		return nil, xerrors.New("oops")
-	}
-	e.delay--
-	return nil, nil
 }

@@ -330,7 +330,7 @@ func (f instanceFactory) FromProto(pb proto.Message) (consumer.Instance, error) 
 		instancepb = &InstanceProto{}
 		err := f.encoder.UnmarshalAny(i, instancepb)
 		if err != nil {
-			return nil, encoding.NewAnyDecodingError(instancepb, err)
+			return nil, xerrors.Errorf("couldn't unmarshal: %v", err)
 		}
 	case *InstanceProto:
 		instancepb = i

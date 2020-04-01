@@ -73,13 +73,13 @@ func TestForwardLink_Pack(t *testing.T) {
 	// Test if the prepare signature cannot be packed.
 	fl.prepare = fakeSignature{}
 	_, err = fl.Pack(badPackAnyEncoder{})
-	require.EqualError(t, err, "encoder: oops")
+	require.EqualError(t, err, "couldn't pack prepare signature: oops")
 
 	// Test if the commit signature cannot be packed.
 	fl.prepare = nil
 	fl.commit = fakeSignature{}
 	_, err = fl.Pack(badPackAnyEncoder{})
-	require.EqualError(t, err, "encoder: oops")
+	require.EqualError(t, err, "couldn't pack commit signature: oops")
 }
 
 type fakeHash struct {
@@ -163,7 +163,7 @@ func TestChain_Pack(t *testing.T) {
 
 	chain.links[0].prepare = fakeSignature{err: xerrors.New("oops")}
 	_, err = chain.Pack(badPackEncoder{})
-	require.EqualError(t, err, "encoder: oops")
+	require.EqualError(t, err, "couldn't pack forward link: oops")
 }
 
 type fakeSignatureFactory struct {
@@ -206,7 +206,7 @@ func TestChainFactory_FromProto(t *testing.T) {
 
 	factory.encoder = badUnmarshalAnyEncoder{}
 	_, err = factory.FromProto(chainany)
-	require.EqualError(t, err, "encoder: oops")
+	require.EqualError(t, err, "couldn't unmarshal message: oops")
 }
 
 type badHash struct {
@@ -258,7 +258,7 @@ func TestChainFactory_DecodeForwardLink(t *testing.T) {
 
 	factory.encoder = badUnmarshalAnyEncoder{}
 	_, err = factory.decodeForwardLink(flany)
-	require.EqualError(t, err, "encoder: oops")
+	require.EqualError(t, err, "couldn't unmarshal forward link: oops")
 }
 
 // -----------------------------------------------------------------------------

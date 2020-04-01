@@ -11,7 +11,6 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/consensus"
-	"go.dedis.ch/fabric/encoding"
 	internal "go.dedis.ch/fabric/internal/testing"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/minoch"
@@ -117,8 +116,7 @@ func TestQSC_ExecuteRound(t *testing.T) {
 	bc.delay = 1
 	factory.err = xerrors.New("oops")
 	err = qsc.executeRound(ctx, fakeProposal{}, &fakeValidator{})
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err, encoding.NewDecodingError("broadcasted set", nil)))
+	require.EqualError(t, err, "couldn't decode broadcasted set: oops")
 
 	bc.delay = 1
 	factory.delay = 1
@@ -128,18 +126,15 @@ func TestQSC_ExecuteRound(t *testing.T) {
 	bc.err = nil
 	factory.delay = 1
 	err = qsc.executeRound(ctx, fakeProposal{}, &fakeValidator{})
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err, encoding.NewDecodingError("received set", nil)))
+	require.EqualError(t, err, "couldn't decode received set: oops")
 
 	factory.delay = 2
 	err = qsc.executeRound(ctx, fakeProposal{}, &fakeValidator{})
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err, encoding.NewDecodingError("broadcasted set", nil)))
+	require.EqualError(t, err, "couldn't decode broadcasted set: oops")
 
 	factory.delay = 3
 	err = qsc.executeRound(ctx, fakeProposal{}, &fakeValidator{})
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err, encoding.NewDecodingError("received set", nil)))
+	require.EqualError(t, err, "couldn't decode received set: oops")
 
 	factory.err = nil
 	err = qsc.executeRound(ctx, fakeProposal{}, badValidator{})

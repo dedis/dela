@@ -69,22 +69,22 @@ func (proc *txProcessor) process(payload *BlockPayload) (inventory.Page, error) 
 		for _, txpb := range payload.GetTransactions() {
 			tx, err := factory.FromProto(txpb)
 			if err != nil {
-				return encoding.NewDecodingError("transaction", err)
+				return xerrors.Errorf("couldn't decode tx: %v", err)
 			}
 
 			fabric.Logger.Trace().Msgf("processing %v", tx)
 
-			out, err := proc.consumer.Consume(tx, page)
+			instance, err := proc.consumer.Consume(tx, page)
 			if err != nil {
 				return xerrors.Errorf("couldn't consume tx: %v", err)
 			}
 
-			outpb, err := proc.encoder.Pack(out)
+			instancepb, err := proc.encoder.Pack(instance)
 			if err != nil {
-				return xerrors.Errorf("encoder: %v", err)
+				return xerrors.Errorf("couldn't pack instance: %v", err)
 			}
 
-			err = page.Write(out.GetKey(), outpb)
+			err = page.Write(instance.GetKey(), instancepb)
 			if err != nil {
 				return xerrors.Errorf("couldn't write instances: %v", err)
 			}

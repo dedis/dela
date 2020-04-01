@@ -58,7 +58,7 @@ func TestTxProcessor_Process(t *testing.T) {
 	proc.consumer = fakeConsumer{errFactory: xerrors.New("oops")}
 	_, err = proc.process(payload)
 	require.EqualError(t, err,
-		"couldn't stage new page: couldn't decode transaction: oops")
+		"couldn't stage new page: couldn't decode tx: oops")
 
 	proc.consumer = fakeConsumer{err: xerrors.New("oops")}
 	_, err = proc.process(payload)
@@ -69,7 +69,7 @@ func TestTxProcessor_Process(t *testing.T) {
 	proc.encoder = badPackEncoder{}
 	_, err = proc.process(payload)
 	require.EqualError(t, err,
-		"couldn't stage new page: encoder: oops")
+		"couldn't stage new page: couldn't pack instance: oops")
 
 	proc.encoder = encoding.NewProtoEncoder()
 	proc.inventory = fakeInventory{errPage: xerrors.New("oops")}

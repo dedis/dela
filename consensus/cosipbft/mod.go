@@ -61,7 +61,7 @@ func (c *Consensus) GetChain(id Digest) (consensus.Chain, error) {
 
 	chain, err := c.chainFactory.FromProto(&ChainProto{Links: stored})
 	if err != nil {
-		return nil, encoding.NewDecodingError("chain", err)
+		return nil, xerrors.Errorf("couldn't decode chain: %v", err)
 	}
 
 	return chain, nil
@@ -140,7 +140,7 @@ func (a pbftActor) Propose(p consensus.Proposal, players mino.Players) error {
 	propagateReq := &PropagateRequest{To: p.GetHash()}
 	propagateReq.Commit, err = a.encoder.PackAny(sig)
 	if err != nil {
-		return xerrors.Errorf("encoder: %v", err)
+		return xerrors.Errorf("couldn't pack signature: %v", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -176,7 +176,7 @@ func (h handler) Hash(addr mino.Address, in proto.Message) (Digest, error) {
 	case *PrepareRequest:
 		proposalpb, err := h.encoder.UnmarshalDynamicAny(msg.GetProposal())
 		if err != nil {
-			return nil, xerrors.Errorf("encoder: %v", err)
+			return nil, xerrors.Errorf("couldn't unmarshal proposal: %v", err)
 		}
 
 		// The proposal first needs to be validated by the caller of the module

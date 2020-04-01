@@ -339,7 +339,7 @@ func TestInstanceFactory_FromProto(t *testing.T) {
 
 	factory.encoder = badEncoder{errUnmarshal: xerrors.New("oops")}
 	_, err = factory.FromProto(instanceany)
-	require.EqualError(t, err, "couldn't decode any *smartcontract.InstanceProto: oops")
+	require.EqualError(t, err, "couldn't unmarshal: oops")
 
 	factory.encoder = badEncoder{errDynUnmarshal: xerrors.New("oops")}
 	_, err = factory.FromProto(instancepb)
