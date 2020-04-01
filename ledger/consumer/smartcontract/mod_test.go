@@ -51,75 +51,83 @@ func TestConsumer_GetInstanceFactory(t *testing.T) {
 }
 
 func TestConsumer_Consume(t *testing.T) {
+	factory := &fakeAccessFactory{access: &fakeAccessControl{match: true}}
+
 	c := NewConsumer()
+	c.AccessFactory = factory
 	c.Register("fake", fakeContract{})
 	c.Register("bad", fakeContract{err: xerrors.New("oops")})
 
 	// 1. Consume a spawn transaction.
-	spawn := SpawnTransaction{
-		transaction: transaction{hash: []byte{0xab}},
-		ContractID:  "fake",
+	tx := transaction{
+		hash:     []byte{0xab},
+		identity: fakeIdentity{},
+		action: SpawnAction{
+			ContractID: "fake",
+		},
 	}
 
-	out, err := c.Consume(newContext(spawn, nil))
+	out, err := c.Consume(newContext(tx, nil))
 	require.NoError(t, err)
-	require.Equal(t, spawn.hash, out.GetKey())
+	require.Equal(t, tx.hash, out.GetKey())
 
-	_, err = c.Consume(newContext(SpawnTransaction{ContractID: "abc"}, nil))
+	tx.action = SpawnAction{ContractID: "abc"}
+	_, err = c.Consume(newContext(tx, nil))
 	require.EqualError(t, err, "unknown contract with id 'abc'")
 
-	_, err = c.Consume(newContext(SpawnTransaction{ContractID: "bad"}, nil))
+	tx.action = SpawnAction{ContractID: "bad"}
+	_, err = c.Consume(newContext(tx, nil))
 	require.EqualError(t, err, "couldn't execute spawn: oops")
 
 	// 2. Consume an invoke transaction.
 	c.encoder = encoding.NewProtoEncoder()
-	invoke := InvokeTransaction{
-		transaction: transaction{identity: []byte{0xab}},
-		Key:         []byte{0xab},
-		Argument:    &empty.Empty{},
+	tx.action = InvokeAction{
+		Key:      []byte{0xab},
+		Argument: &empty.Empty{},
 	}
 
 	instance := makeInstance()
-	instance.key = invoke.Key
-	ctx := newContext(invoke, instance)
+	instance.key = []byte{0xab}
+	ctx := newContext(tx, instance)
 	out, err = c.Consume(ctx)
 	require.NoError(t, err)
-	require.Equal(t, invoke.Key, out.GetKey())
-	require.Len(t, ctx.accessControl.calls, 1)
-	require.Equal(t, []byte{0xab}, ctx.accessControl.calls[0][0])
-	require.Equal(t, "invoke:fake", ctx.accessControl.calls[0][1])
+	require.Equal(t, []byte{0xab}, out.GetKey())
+	require.Len(t, factory.access.calls, 1)
+	require.Equal(t, fakeIdentity{}, factory.access.calls[0][0])
+	require.Equal(t, "invoke:fake", factory.access.calls[0][1])
 
-	_, err = c.Consume(testContext{tx: invoke, errRead: xerrors.New("oops")})
+	_, err = c.Consume(testContext{tx: tx, errRead: xerrors.New("oops")})
 	require.EqualError(t, err, "couldn't read the instance: oops")
 
 	instance.contractID = "unknown"
-	_, err = c.Consume(newContext(invoke, instance))
+	_, err = c.Consume(newContext(tx, instance))
 	require.EqualError(t, err, "unknown contract with id 'unknown'")
 
 	instance.contractID = "fake"
-	ctx.errAccessControl = xerrors.New("oops")
+	factory.err = xerrors.New("oops")
 	_, err = c.Consume(ctx)
 	require.EqualError(t, err, "couldn't read access control: oops")
 
-	ctx.errAccessControl = nil
-	ctx.accessControl = &fakeAccessControl{match: false}
+	factory.err = nil
+	factory.access.match = false
 	_, err = c.Consume(ctx)
-	require.EqualError(t, err, "[171] is refused to 'invoke:fake' by fakeAccessControl")
+	require.EqualError(t, err, "fakePublicKey is refused to 'invoke:fake' by fakeAccessControl")
 
+	factory.access.match = true
 	instance.contractID = "bad"
-	_, err = c.Consume(newContext(invoke, instance))
+	_, err = c.Consume(newContext(tx, instance))
 	require.EqualError(t, err, "couldn't invoke: oops")
 
 	// 3. Consume a delete transaction.
-	delete := DeleteTransaction{
+	tx.action = DeleteAction{
 		Key: []byte{0xab},
 	}
 
-	out, err = c.Consume(newContext(delete, makeInstance()))
+	out, err = c.Consume(newContext(tx, makeInstance()))
 	require.NoError(t, err)
 	require.True(t, out.(contractInstance).deleted)
 
-	_, err = c.Consume(testContext{tx: delete, errRead: xerrors.New("oops")})
+	_, err = c.Consume(testContext{tx: tx, errRead: xerrors.New("oops")})
 	require.EqualError(t, err, "couldn't read the instance: oops")
 
 	// 4. Consume an invalid transaction.
@@ -173,18 +181,15 @@ func (ac *fakeAccessControl) String() string {
 }
 
 type testContext struct {
-	tx               consumer.Transaction
-	instance         ContractInstance
-	accessControl    *fakeAccessControl
-	errRead          error
-	errAccessControl error
+	tx       consumer.Transaction
+	instance ContractInstance
+	errRead  error
 }
 
 func newContext(tx consumer.Transaction, inst ContractInstance) testContext {
 	return testContext{
-		tx:            tx,
-		instance:      inst,
-		accessControl: &fakeAccessControl{match: true},
+		tx:       tx,
+		instance: inst,
 	}
 }
 
@@ -192,10 +197,16 @@ func (c testContext) GetTransaction() consumer.Transaction {
 	return c.tx
 }
 
-func (c testContext) GetAccessControl([]byte) (permissions.AccessControl, error) {
-	return c.accessControl, c.errAccessControl
-}
-
 func (c testContext) Read([]byte) (consumer.Instance, error) {
 	return c.instance, c.errRead
+}
+
+type fakeAccessFactory struct {
+	permissions.AccessControlFactory
+	access *fakeAccessControl
+	err    error
+}
+
+func (f *fakeAccessFactory) FromProto(proto.Message) (permissions.AccessControl, error) {
+	return f.access, f.err
 }

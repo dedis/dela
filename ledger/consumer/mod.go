@@ -12,6 +12,8 @@ type Transaction interface {
 
 	// GetID returns a unique identifier for the transaction.
 	GetID() []byte
+
+	GetIdentity() permissions.Identity
 }
 
 // TransactionFactory is a factory to create new transactions or decode from
@@ -42,8 +44,6 @@ type InstanceFactory interface {
 
 type Context interface {
 	GetTransaction() Transaction
-
-	GetAccessControl([]byte) (permissions.AccessControl, error)
 
 	Read([]byte) (Instance, error)
 }

@@ -42,6 +42,10 @@ func (pk publicKey) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 	return &PublicKeyProto{Data: buffer}, nil
 }
 
+func (pk publicKey) Verify(msg []byte, signature crypto.Signature) error {
+	return nil
+}
+
 // Equal implements crypto.PublicKey. It returns true if the other public key
 // is the same.
 func (pk publicKey) Equal(other crypto.PublicKey) bool {
@@ -86,6 +90,13 @@ type publicKeyFactory struct {
 	encoder encoding.ProtoMarshaler
 }
 
+// NewPublicKeyFactory returns a new instance of the factory.
+func NewPublicKeyFactory() crypto.PublicKeyFactory {
+	return publicKeyFactory{
+		encoder: encoding.NewProtoEncoder(),
+	}
+}
+
 // FromProto implements crypto.PublicKeyFactory. It creates a public key from
 // its protobuf representation.
 func (f publicKeyFactory) FromProto(src proto.Message) (crypto.PublicKey, error) {
@@ -118,6 +129,13 @@ func (f publicKeyFactory) FromProto(src proto.Message) (crypto.PublicKey, error)
 // messages.
 type signatureFactory struct {
 	encoder encoding.ProtoMarshaler
+}
+
+// NewSignatureFactory returns a new instance of the factory.
+func NewSignatureFactory() crypto.SignatureFactory {
+	return signatureFactory{
+		encoder: encoding.NewProtoEncoder(),
+	}
 }
 
 // FromProto implements crypto.SignatureFactory. It creates a BLS signature from

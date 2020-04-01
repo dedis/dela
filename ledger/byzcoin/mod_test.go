@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/crypto"
+	"go.dedis.ch/fabric/crypto/bls"
 	internal "go.dedis.ch/fabric/internal/testing"
 	"go.dedis.ch/fabric/ledger/consumer"
 	"go.dedis.ch/fabric/ledger/consumer/smartcontract"
@@ -44,8 +45,12 @@ func TestLedger_Basic(t *testing.T) {
 	defer cancel()
 	trs := ledger.Watch(ctx)
 
-	tx, err := smartcontract.NewTransactionFactory([]byte("deadbeef")).
-		NewSpawn(simpleContractName, &empty.Empty{})
+	txFactory := smartcontract.NewTransactionFactory(bls.NewSigner())
+
+	tx, err := txFactory.New(smartcontract.SpawnAction{
+		ContractID: simpleContractName,
+		Argument:   &empty.Empty{},
+	})
 	require.NoError(t, err)
 
 	err = actor.AddTransaction(tx)

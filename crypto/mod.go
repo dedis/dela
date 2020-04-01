@@ -23,6 +23,8 @@ type PublicKey interface {
 	encoding.Packable
 	encoding.BinaryMarshaler
 
+	Verify(msg []byte, signature Signature) error
+
 	Equal(other PublicKey) bool
 }
 

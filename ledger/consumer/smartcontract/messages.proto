@@ -30,7 +30,7 @@ message Delete {
 }
 
 message TransactionProto {
-    bytes identity = 1;
+    google.protobuf.Any identity = 1;
     uint64 nonce = 2;
 
     oneof action {
@@ -38,4 +38,6 @@ message TransactionProto {
         Invoke invoke = 4;
         Delete delete = 5;
     }
+
+    google.protobuf.Any signature = 6;
 }

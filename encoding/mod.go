@@ -72,6 +72,10 @@ func (e ProtoEncoder) Pack(p Packable) (proto.Message, error) {
 // PackAny implements encoding.ProtoMarshaler. It returns the protobuf message
 // wrapped into an any object.
 func (e ProtoEncoder) PackAny(p Packable) (*any.Any, error) {
+	if p == nil {
+		return nil, xerrors.New("message is nil")
+	}
+
 	pb, err := p.Pack(e)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't pack '%T': %v", p, err)

@@ -1,21 +1,34 @@
 package smartcontract
 
 import (
+	"encoding/binary"
+	"hash"
+
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/fabric/crypto"
+	"go.dedis.ch/fabric/crypto/common"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/ledger/consumer"
+	"go.dedis.ch/fabric/ledger/permissions"
 	"golang.org/x/xerrors"
 )
+
+type action interface {
+	encoding.Packable
+
+	hashTo(hash.Hash, encoding.ProtoMarshaler) error
+}
 
 // transaction is an atomic execution.
 //
 // - implements ledger.transaction
 type transaction struct {
-	hash     []byte
-	nonce    uint64
-	identity []byte
+	hash      []byte
+	nonce     uint64
+	action    action
+	identity  crypto.PublicKey
+	signature crypto.Signature
 }
 
 // GetID implements ledger.Transaction. It returns the unique identifier of the
@@ -24,220 +37,220 @@ func (t transaction) GetID() []byte {
 	return t.hash[:]
 }
 
-// SpawnTransaction is a smart contract transaction that will create a new
-// instance.
+func (t transaction) GetIdentity() permissions.Identity {
+	return t.identity
+}
+
+func (t transaction) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
+	pb := &TransactionProto{
+		Nonce: t.nonce,
+	}
+
+	var err error
+	pb.Identity, err = enc.PackAny(t.identity)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't pack identity: %v", err)
+	}
+
+	pb.Signature, err = enc.PackAny(t.signature)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't pack signature: %v", err)
+	}
+
+	actionpb, err := enc.Pack(t.action)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't pack action: %v", err)
+	}
+
+	switch action := actionpb.(type) {
+	case *Spawn:
+		pb.Action = &TransactionProto_Spawn{Spawn: action}
+	case *Invoke:
+		pb.Action = &TransactionProto_Invoke{Invoke: action}
+	case *Delete:
+		pb.Action = &TransactionProto_Delete{Delete: action}
+	}
+
+	return pb, nil
+}
+
+func (t transaction) computeHash(h hash.Hash, enc encoding.ProtoMarshaler) ([]byte, error) {
+	buffer := make([]byte, 8)
+	binary.LittleEndian.PutUint64(buffer[:], t.nonce)
+
+	_, err := h.Write(buffer)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't write nonce: %v", err)
+	}
+
+	buffer, err = t.identity.MarshalBinary()
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't marshal identity: %v", err)
+	}
+
+	_, err = h.Write(buffer)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't write identity: %v", err)
+	}
+
+	err = t.action.hashTo(h, enc)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't write action: %v", err)
+	}
+
+	return h.Sum(nil), nil
+}
+
+// SpawnAction is a transaction action that will create a new instance.
 //
 // - implements encoding.Packable
-type SpawnTransaction struct {
-	transaction
+type SpawnAction struct {
 	ContractID string
 	Argument   proto.Message
 }
 
 // Pack implements encoding.Packable. It returns the protobuf message for a
 // spawn transaction.
-func (t SpawnTransaction) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
-	argany, err := enc.MarshalAny(t.Argument)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't marshal the argument: %v", err)
+func (t SpawnAction) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
+	pb := &Spawn{
+		ContractID: t.ContractID,
 	}
 
-	tx := &TransactionProto{
-		Identity: t.identity,
-		Nonce:    0,
-		Action: &TransactionProto_Spawn{
-			Spawn: &Spawn{
-				ContractID: t.ContractID,
-				Argument:   argany,
-			},
-		},
+	if t.Argument != nil {
+		var err error
+		pb.Argument, err = enc.MarshalAny(t.Argument)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't marshal the argument: %v", err)
+		}
 	}
 
-	return tx, nil
+	return pb, nil
 }
 
-func (t SpawnTransaction) computeHash(f crypto.HashFactory,
-	enc encoding.ProtoMarshaler) ([]byte, error) {
-
-	h := f.New()
+func (t SpawnAction) hashTo(h hash.Hash, enc encoding.ProtoMarshaler) error {
 	_, err := h.Write([]byte(t.ContractID))
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't write the contract ID: %v", err)
+		return xerrors.Errorf("couldn't write contract ID: %v", err)
 	}
 
-	err = enc.MarshalStable(h, t.Argument)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't write the argument: %v", err)
+	if t.Argument != nil {
+		err = enc.MarshalStable(h, t.Argument)
+		if err != nil {
+			return xerrors.Errorf("couldn't write argument: %v", err)
+		}
 	}
 
-	return h.Sum(nil), nil
+	return nil
 }
 
-// InvokeTransaction is a smart contract transaction that will update an
-// instance.
+// InvokeAction is a transaction action that will update an instance.
 //
 // - implements encoding.Packable
-type InvokeTransaction struct {
-	transaction
+type InvokeAction struct {
 	Key      []byte
 	Argument proto.Message
 }
 
 // Pack implements encoding.Packable. It returns the protobuf message of the
 // invoke transaction.
-func (t InvokeTransaction) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
+func (t InvokeAction) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	argany, err := enc.MarshalAny(t.Argument)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't marshal the argument: %v", err)
 	}
 
-	tx := &TransactionProto{
-		Identity: t.identity,
-		Nonce:    0,
-		Action: &TransactionProto_Invoke{
-			Invoke: &Invoke{
-				Key:      t.Key,
-				Argument: argany,
-			},
-		},
-	}
-
-	return tx, nil
-}
-
-func (t InvokeTransaction) computeHash(f crypto.HashFactory,
-	enc encoding.ProtoMarshaler) ([]byte, error) {
-
-	h := f.New()
-	_, err := h.Write(t.Key)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't write the key: %v", err)
-	}
-
-	err = enc.MarshalStable(h, t.Argument)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't write the argument: %v", err)
-	}
-
-	return h.Sum(nil), nil
-}
-
-// DeleteTransaction is a smart contract transaction that will tag an instance
-// as deleted so that it will become immutable.
-//
-// implements encoding.Packable
-type DeleteTransaction struct {
-	transaction
-	Key []byte
-}
-
-// Pack implements encoding.Packable. It returns the protobuf message for the
-// delete transaction.
-func (t DeleteTransaction) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
-	pb := &TransactionProto{
-		Identity: t.identity,
-		Nonce:    0,
-		Action: &TransactionProto_Delete{
-			Delete: &Delete{Key: t.Key},
-		},
+	pb := &Invoke{
+		Key:      t.Key,
+		Argument: argany,
 	}
 
 	return pb, nil
 }
 
-func (t DeleteTransaction) computeHash(f crypto.HashFactory) ([]byte, error) {
-	h := f.New()
-
+func (t InvokeAction) hashTo(h hash.Hash, enc encoding.ProtoMarshaler) error {
 	_, err := h.Write(t.Key)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't write the key: %v", err)
+		return xerrors.Errorf("couldn't write key: %v", err)
 	}
 
-	return h.Sum(nil), nil
+	if t.Argument != nil {
+		err = enc.MarshalStable(h, t.Argument)
+		if err != nil {
+			return xerrors.Errorf("couldn't write argument: %v", err)
+		}
+	}
+
+	return nil
+}
+
+// DeleteAction is a transaction action that will tag an instance as deleted so
+// that it will become immutable.
+//
+// implements encoding.Packable
+type DeleteAction struct {
+	Key []byte
+}
+
+// Pack implements encoding.Packable. It returns the protobuf message for the
+// delete transaction.
+func (t DeleteAction) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
+	pb := &Delete{
+		Key: t.Key,
+	}
+
+	return pb, nil
+}
+
+func (t DeleteAction) hashTo(h hash.Hash, enc encoding.ProtoMarshaler) error {
+	_, err := h.Write(t.Key)
+	if err != nil {
+		return xerrors.Errorf("couldn't write key: %v", err)
+	}
+
+	return nil
 }
 
 // TransactionFactory is an implementation of a Byzcoin transaction factory.
 //
 // - implements ledger.TransactionFactory
 type TransactionFactory struct {
-	identity    []byte // TODO: signed identity
-	hashFactory crypto.HashFactory
-	encoder     encoding.ProtoMarshaler
+	signer           crypto.Signer
+	hashFactory      crypto.HashFactory
+	publicKeyFactory crypto.PublicKeyFactory
+	signatureFactory crypto.SignatureFactory
+	encoder          encoding.ProtoMarshaler
 }
 
 // NewTransactionFactory returns a new instance of the transaction factory.
-func NewTransactionFactory(identity []byte) TransactionFactory {
+//
+// - implements ledger.TransactionFactory
+func NewTransactionFactory(signer crypto.Signer) TransactionFactory {
 	return TransactionFactory{
-		identity:    identity,
-		hashFactory: crypto.NewSha256Factory(),
-		encoder:     encoding.NewProtoEncoder(),
+		signer:           signer,
+		hashFactory:      crypto.NewSha256Factory(),
+		publicKeyFactory: common.NewPublicKeyFactory(),
+		signatureFactory: common.NewSignatureFactory(),
+		encoder:          encoding.NewProtoEncoder(),
 	}
 }
 
-// NewSpawn returns a new spawn transaction.
-func (f TransactionFactory) NewSpawn(contractID string,
-	arg proto.Message) (SpawnTransaction, error) {
-
-	if arg == nil {
-		return SpawnTransaction{}, xerrors.New("argument cannot be nil")
+// New returns a new transaction.
+func (f TransactionFactory) New(action action) (consumer.Transaction, error) {
+	tx := transaction{
+		nonce:    0, // TODO:
+		identity: f.signer.GetPublicKey(),
+		action:   action,
 	}
 
-	tx := SpawnTransaction{
-		ContractID: contractID,
-		Argument:   arg,
-	}
-
-	hash, err := tx.computeHash(f.hashFactory, f.encoder)
+	var err error
+	tx.hash, err = tx.computeHash(f.hashFactory.New(), f.encoder)
 	if err != nil {
-		return tx, xerrors.Errorf("couldn't hash tx: %v", err)
+		return tx, xerrors.Errorf("couldn't compute hash: %v", err)
 	}
 
-	tx.transaction = transaction{
-		hash:     hash,
-		identity: f.identity,
-	}
-
-	return tx, nil
-}
-
-// NewInvoke returns a new invoke transaction.
-func (f TransactionFactory) NewInvoke(key []byte, arg proto.Message) (InvokeTransaction, error) {
-	if arg == nil {
-		return InvokeTransaction{}, xerrors.New("argument cannot be nil")
-	}
-
-	tx := InvokeTransaction{
-		Key:      key,
-		Argument: arg,
-	}
-
-	hash, err := tx.computeHash(f.hashFactory, f.encoder)
+	tx.signature, err = f.signer.Sign(tx.hash)
 	if err != nil {
-		return tx, xerrors.Errorf("couldn't hash tx: %v", err)
-	}
-
-	tx.transaction = transaction{
-		hash:     hash,
-		identity: f.identity,
-	}
-
-	return tx, nil
-}
-
-// NewDelete returns a new delete transaction.
-func (f TransactionFactory) NewDelete(key []byte) (DeleteTransaction, error) {
-	tx := DeleteTransaction{
-		Key: key,
-	}
-
-	hash, err := tx.computeHash(f.hashFactory)
-	if err != nil {
-		return tx, xerrors.Errorf("couldn't hash tx: %v", err)
-	}
-
-	tx.transaction = transaction{
-		hash:     hash,
-		identity: f.identity,
+		return tx, xerrors.Errorf("couldn't sign tx: %v", err)
 	}
 
 	return tx, nil
@@ -261,19 +274,20 @@ func (f TransactionFactory) FromProto(pb proto.Message) (consumer.Transaction, e
 		return nil, xerrors.Errorf("invalid transaction type '%T'", pb)
 	}
 
+	tx := transaction{
+		nonce: txProto.GetNonce(),
+	}
+
 	if spawn := txProto.GetSpawn(); spawn != nil {
 		arg, err := f.encoder.UnmarshalDynamicAny(spawn.GetArgument())
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't unmarshal argument: %v", err)
 		}
 
-		tx, err := f.NewSpawn(spawn.GetContractID(), arg)
-		if err != nil {
-			return nil, err
+		tx.action = SpawnAction{
+			ContractID: spawn.GetContractID(),
+			Argument:   arg,
 		}
-
-		tx.identity = txProto.GetIdentity()
-		return tx, nil
 	}
 
 	if invoke := txProto.GetInvoke(); invoke != nil {
@@ -282,26 +296,49 @@ func (f TransactionFactory) FromProto(pb proto.Message) (consumer.Transaction, e
 			return nil, xerrors.Errorf("couldn't unmarshal argument: %v", err)
 		}
 
-		tx, err := f.NewInvoke(invoke.GetKey(), arg)
-		if err != nil {
-			return nil, err
+		tx.action = InvokeAction{
+			Key:      invoke.GetKey(),
+			Argument: arg,
 		}
-
-		tx.identity = txProto.GetIdentity()
-		return tx, nil
 	}
 
 	if delete := txProto.GetDelete(); delete != nil {
-		tx, err := f.NewDelete(delete.GetKey())
-		if err != nil {
-			return nil, err
+		tx.action = DeleteAction{
+			Key: delete.GetKey(),
 		}
-
-		tx.identity = txProto.GetIdentity()
-		return tx, nil
 	}
 
-	return nil, xerrors.New("tx is malformed")
+	err := f.fillIdentity(&tx, txProto)
+	if err != nil {
+		return nil, err
+	}
+
+	return tx, nil
+}
+
+func (f TransactionFactory) fillIdentity(tx *transaction, pb *TransactionProto) error {
+	var err error
+	tx.identity, err = f.publicKeyFactory.FromProto(pb.GetIdentity())
+	if err != nil {
+		return xerrors.Errorf("couldn't decode public key: %v", err)
+	}
+
+	tx.signature, err = f.signatureFactory.FromProto(pb.GetSignature())
+	if err != nil {
+		return xerrors.Errorf("couldn't decode signature: %v", err)
+	}
+
+	tx.hash, err = tx.computeHash(f.hashFactory.New(), f.encoder)
+	if err != nil {
+		return xerrors.Errorf("couldn't compute hash: %v", err)
+	}
+
+	err = tx.identity.Verify(tx.hash, tx.signature)
+	if err != nil {
+		return xerrors.Errorf("signature does not match tx: %v", err)
+	}
+
+	return nil
 }
 
 // ContractInstance is a specialization of the consumer instance to include
