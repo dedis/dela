@@ -26,6 +26,7 @@ type InstanceProto struct {
 	Value                *any.Any `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
 	ContractID           string   `protobuf:"bytes,3,opt,name=contractID,proto3" json:"contractID,omitempty"`
 	Deleted              bool     `protobuf:"varint,4,opt,name=deleted,proto3" json:"deleted,omitempty"`
+	AccessControl        []byte   `protobuf:"bytes,5,opt,name=accessControl,proto3" json:"accessControl,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
 	XXX_sizecache        int32    `json:"-"`
@@ -84,144 +85,287 @@ func (m *InstanceProto) GetDeleted() bool {
 	return false
 }
 
-type SpawnTransactionProto struct {
+func (m *InstanceProto) GetAccessControl() []byte {
+	if m != nil {
+		return m.AccessControl
+	}
+	return nil
+}
+
+type Spawn struct {
 	ContractID           string   `protobuf:"bytes,1,opt,name=contractID,proto3" json:"contractID,omitempty"`
 	Argument             *any.Any `protobuf:"bytes,2,opt,name=argument,proto3" json:"argument,omitempty"`
+	Identity             []byte   `protobuf:"bytes,3,opt,name=identity,proto3" json:"identity,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
 	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *SpawnTransactionProto) Reset()         { *m = SpawnTransactionProto{} }
-func (m *SpawnTransactionProto) String() string { return proto.CompactTextString(m) }
-func (*SpawnTransactionProto) ProtoMessage()    {}
-func (*SpawnTransactionProto) Descriptor() ([]byte, []int) {
+func (m *Spawn) Reset()         { *m = Spawn{} }
+func (m *Spawn) String() string { return proto.CompactTextString(m) }
+func (*Spawn) ProtoMessage()    {}
+func (*Spawn) Descriptor() ([]byte, []int) {
 	return fileDescriptor_4dc296cbfe5ffcd5, []int{1}
 }
 
-func (m *SpawnTransactionProto) XXX_Unmarshal(b []byte) error {
-	return xxx_messageInfo_SpawnTransactionProto.Unmarshal(m, b)
+func (m *Spawn) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_Spawn.Unmarshal(m, b)
 }
-func (m *SpawnTransactionProto) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	return xxx_messageInfo_SpawnTransactionProto.Marshal(b, m, deterministic)
+func (m *Spawn) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_Spawn.Marshal(b, m, deterministic)
 }
-func (m *SpawnTransactionProto) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_SpawnTransactionProto.Merge(m, src)
+func (m *Spawn) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Spawn.Merge(m, src)
 }
-func (m *SpawnTransactionProto) XXX_Size() int {
-	return xxx_messageInfo_SpawnTransactionProto.Size(m)
+func (m *Spawn) XXX_Size() int {
+	return xxx_messageInfo_Spawn.Size(m)
 }
-func (m *SpawnTransactionProto) XXX_DiscardUnknown() {
-	xxx_messageInfo_SpawnTransactionProto.DiscardUnknown(m)
+func (m *Spawn) XXX_DiscardUnknown() {
+	xxx_messageInfo_Spawn.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_SpawnTransactionProto proto.InternalMessageInfo
+var xxx_messageInfo_Spawn proto.InternalMessageInfo
 
-func (m *SpawnTransactionProto) GetContractID() string {
+func (m *Spawn) GetContractID() string {
 	if m != nil {
 		return m.ContractID
 	}
 	return ""
 }
 
-func (m *SpawnTransactionProto) GetArgument() *any.Any {
+func (m *Spawn) GetArgument() *any.Any {
 	if m != nil {
 		return m.Argument
 	}
 	return nil
 }
 
-type InvokeTransactionProto struct {
+func (m *Spawn) GetIdentity() []byte {
+	if m != nil {
+		return m.Identity
+	}
+	return nil
+}
+
+type Invoke struct {
 	Key                  []byte   `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
 	Argument             *any.Any `protobuf:"bytes,2,opt,name=argument,proto3" json:"argument,omitempty"`
+	Identity             []byte   `protobuf:"bytes,4,opt,name=identity,proto3" json:"identity,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
 	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *InvokeTransactionProto) Reset()         { *m = InvokeTransactionProto{} }
-func (m *InvokeTransactionProto) String() string { return proto.CompactTextString(m) }
-func (*InvokeTransactionProto) ProtoMessage()    {}
-func (*InvokeTransactionProto) Descriptor() ([]byte, []int) {
+func (m *Invoke) Reset()         { *m = Invoke{} }
+func (m *Invoke) String() string { return proto.CompactTextString(m) }
+func (*Invoke) ProtoMessage()    {}
+func (*Invoke) Descriptor() ([]byte, []int) {
 	return fileDescriptor_4dc296cbfe5ffcd5, []int{2}
 }
 
-func (m *InvokeTransactionProto) XXX_Unmarshal(b []byte) error {
-	return xxx_messageInfo_InvokeTransactionProto.Unmarshal(m, b)
+func (m *Invoke) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_Invoke.Unmarshal(m, b)
 }
-func (m *InvokeTransactionProto) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	return xxx_messageInfo_InvokeTransactionProto.Marshal(b, m, deterministic)
+func (m *Invoke) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_Invoke.Marshal(b, m, deterministic)
 }
-func (m *InvokeTransactionProto) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_InvokeTransactionProto.Merge(m, src)
+func (m *Invoke) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Invoke.Merge(m, src)
 }
-func (m *InvokeTransactionProto) XXX_Size() int {
-	return xxx_messageInfo_InvokeTransactionProto.Size(m)
+func (m *Invoke) XXX_Size() int {
+	return xxx_messageInfo_Invoke.Size(m)
 }
-func (m *InvokeTransactionProto) XXX_DiscardUnknown() {
-	xxx_messageInfo_InvokeTransactionProto.DiscardUnknown(m)
+func (m *Invoke) XXX_DiscardUnknown() {
+	xxx_messageInfo_Invoke.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_InvokeTransactionProto proto.InternalMessageInfo
+var xxx_messageInfo_Invoke proto.InternalMessageInfo
 
-func (m *InvokeTransactionProto) GetKey() []byte {
+func (m *Invoke) GetKey() []byte {
 	if m != nil {
 		return m.Key
 	}
 	return nil
 }
 
-func (m *InvokeTransactionProto) GetArgument() *any.Any {
+func (m *Invoke) GetArgument() *any.Any {
 	if m != nil {
 		return m.Argument
 	}
 	return nil
 }
 
-type DeleteTransactionProto struct {
+func (m *Invoke) GetIdentity() []byte {
+	if m != nil {
+		return m.Identity
+	}
+	return nil
+}
+
+type Delete struct {
 	Key                  []byte   `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Identity             []byte   `protobuf:"bytes,2,opt,name=identity,proto3" json:"identity,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
 	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *DeleteTransactionProto) Reset()         { *m = DeleteTransactionProto{} }
-func (m *DeleteTransactionProto) String() string { return proto.CompactTextString(m) }
-func (*DeleteTransactionProto) ProtoMessage()    {}
-func (*DeleteTransactionProto) Descriptor() ([]byte, []int) {
+func (m *Delete) Reset()         { *m = Delete{} }
+func (m *Delete) String() string { return proto.CompactTextString(m) }
+func (*Delete) ProtoMessage()    {}
+func (*Delete) Descriptor() ([]byte, []int) {
 	return fileDescriptor_4dc296cbfe5ffcd5, []int{3}
 }
 
-func (m *DeleteTransactionProto) XXX_Unmarshal(b []byte) error {
-	return xxx_messageInfo_DeleteTransactionProto.Unmarshal(m, b)
+func (m *Delete) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_Delete.Unmarshal(m, b)
 }
-func (m *DeleteTransactionProto) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	return xxx_messageInfo_DeleteTransactionProto.Marshal(b, m, deterministic)
+func (m *Delete) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_Delete.Marshal(b, m, deterministic)
 }
-func (m *DeleteTransactionProto) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_DeleteTransactionProto.Merge(m, src)
+func (m *Delete) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Delete.Merge(m, src)
 }
-func (m *DeleteTransactionProto) XXX_Size() int {
-	return xxx_messageInfo_DeleteTransactionProto.Size(m)
+func (m *Delete) XXX_Size() int {
+	return xxx_messageInfo_Delete.Size(m)
 }
-func (m *DeleteTransactionProto) XXX_DiscardUnknown() {
-	xxx_messageInfo_DeleteTransactionProto.DiscardUnknown(m)
+func (m *Delete) XXX_DiscardUnknown() {
+	xxx_messageInfo_Delete.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_DeleteTransactionProto proto.InternalMessageInfo
+var xxx_messageInfo_Delete proto.InternalMessageInfo
 
-func (m *DeleteTransactionProto) GetKey() []byte {
+func (m *Delete) GetKey() []byte {
 	if m != nil {
 		return m.Key
 	}
 	return nil
+}
+
+func (m *Delete) GetIdentity() []byte {
+	if m != nil {
+		return m.Identity
+	}
+	return nil
+}
+
+type TransactionProto struct {
+	Identity []byte `protobuf:"bytes,1,opt,name=identity,proto3" json:"identity,omitempty"`
+	Nonce    uint64 `protobuf:"varint,2,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	// Types that are valid to be assigned to Action:
+	//	*TransactionProto_Spawn
+	//	*TransactionProto_Invoke
+	//	*TransactionProto_Delete
+	Action               isTransactionProto_Action `protobuf_oneof:"action"`
+	XXX_NoUnkeyedLiteral struct{}                  `json:"-"`
+	XXX_unrecognized     []byte                    `json:"-"`
+	XXX_sizecache        int32                     `json:"-"`
+}
+
+func (m *TransactionProto) Reset()         { *m = TransactionProto{} }
+func (m *TransactionProto) String() string { return proto.CompactTextString(m) }
+func (*TransactionProto) ProtoMessage()    {}
+func (*TransactionProto) Descriptor() ([]byte, []int) {
+	return fileDescriptor_4dc296cbfe5ffcd5, []int{4}
+}
+
+func (m *TransactionProto) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_TransactionProto.Unmarshal(m, b)
+}
+func (m *TransactionProto) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_TransactionProto.Marshal(b, m, deterministic)
+}
+func (m *TransactionProto) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_TransactionProto.Merge(m, src)
+}
+func (m *TransactionProto) XXX_Size() int {
+	return xxx_messageInfo_TransactionProto.Size(m)
+}
+func (m *TransactionProto) XXX_DiscardUnknown() {
+	xxx_messageInfo_TransactionProto.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_TransactionProto proto.InternalMessageInfo
+
+func (m *TransactionProto) GetIdentity() []byte {
+	if m != nil {
+		return m.Identity
+	}
+	return nil
+}
+
+func (m *TransactionProto) GetNonce() uint64 {
+	if m != nil {
+		return m.Nonce
+	}
+	return 0
+}
+
+type isTransactionProto_Action interface {
+	isTransactionProto_Action()
+}
+
+type TransactionProto_Spawn struct {
+	Spawn *Spawn `protobuf:"bytes,3,opt,name=spawn,proto3,oneof"`
+}
+
+type TransactionProto_Invoke struct {
+	Invoke *Invoke `protobuf:"bytes,4,opt,name=invoke,proto3,oneof"`
+}
+
+type TransactionProto_Delete struct {
+	Delete *Delete `protobuf:"bytes,5,opt,name=delete,proto3,oneof"`
+}
+
+func (*TransactionProto_Spawn) isTransactionProto_Action() {}
+
+func (*TransactionProto_Invoke) isTransactionProto_Action() {}
+
+func (*TransactionProto_Delete) isTransactionProto_Action() {}
+
+func (m *TransactionProto) GetAction() isTransactionProto_Action {
+	if m != nil {
+		return m.Action
+	}
+	return nil
+}
+
+func (m *TransactionProto) GetSpawn() *Spawn {
+	if x, ok := m.GetAction().(*TransactionProto_Spawn); ok {
+		return x.Spawn
+	}
+	return nil
+}
+
+func (m *TransactionProto) GetInvoke() *Invoke {
+	if x, ok := m.GetAction().(*TransactionProto_Invoke); ok {
+		return x.Invoke
+	}
+	return nil
+}
+
+func (m *TransactionProto) GetDelete() *Delete {
+	if x, ok := m.GetAction().(*TransactionProto_Delete); ok {
+		return x.Delete
+	}
+	return nil
+}
+
+// XXX_OneofWrappers is for the internal use of the proto package.
+func (*TransactionProto) XXX_OneofWrappers() []interface{} {
+	return []interface{}{
+		(*TransactionProto_Spawn)(nil),
+		(*TransactionProto_Invoke)(nil),
+		(*TransactionProto_Delete)(nil),
+	}
 }
 
 func init() {
 	proto.RegisterType((*InstanceProto)(nil), "smartcontract.InstanceProto")
-	proto.RegisterType((*SpawnTransactionProto)(nil), "smartcontract.SpawnTransactionProto")
-	proto.RegisterType((*InvokeTransactionProto)(nil), "smartcontract.InvokeTransactionProto")
-	proto.RegisterType((*DeleteTransactionProto)(nil), "smartcontract.DeleteTransactionProto")
+	proto.RegisterType((*Spawn)(nil), "smartcontract.Spawn")
+	proto.RegisterType((*Invoke)(nil), "smartcontract.Invoke")
+	proto.RegisterType((*Delete)(nil), "smartcontract.Delete")
+	proto.RegisterType((*TransactionProto)(nil), "smartcontract.TransactionProto")
 }
 
 func init() {
@@ -229,21 +373,28 @@ func init() {
 }
 
 var fileDescriptor_4dc296cbfe5ffcd5 = []byte{
-	// 246 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x8f, 0x4f, 0x4b, 0xc3, 0x40,
-	0x10, 0xc5, 0x59, 0xeb, 0x9f, 0x3a, 0x5a, 0x91, 0xa0, 0x65, 0xf5, 0x20, 0x21, 0xa7, 0xd0, 0x43,
-	0x2a, 0xfa, 0x09, 0x84, 0x5e, 0x72, 0x93, 0xe8, 0xd1, 0xcb, 0x34, 0x1d, 0x43, 0x69, 0x32, 0x5b,
-	0x76, 0x27, 0x95, 0x7c, 0x02, 0xbf, 0xb6, 0xb8, 0x4b, 0x44, 0x09, 0x28, 0xde, 0x76, 0x67, 0xde,
-	0xfc, 0xde, 0x7b, 0x70, 0xd6, 0x90, 0x73, 0x58, 0x91, 0xcb, 0xb6, 0xd6, 0x88, 0x89, 0x26, 0xae,
-	0x41, 0x2b, 0xa5, 0x61, 0xb1, 0x58, 0xca, 0xf5, 0x55, 0x65, 0x4c, 0x55, 0xd3, 0xdc, 0x2f, 0x97,
-	0xed, 0xeb, 0x1c, 0xb9, 0x0b, 0xca, 0xe4, 0x5d, 0xc1, 0x24, 0x67, 0x27, 0xc8, 0x25, 0x3d, 0xfa,
-	0xdb, 0x73, 0x18, 0x6d, 0xa8, 0xd3, 0x2a, 0x56, 0xe9, 0x69, 0xf1, 0xf9, 0x8c, 0x66, 0x70, 0xb0,
-	0xc3, 0xba, 0x25, 0xbd, 0x17, 0xab, 0xf4, 0xe4, 0xee, 0x22, 0x0b, 0xb8, 0xac, 0xc7, 0x65, 0x0f,
-	0xdc, 0x15, 0x41, 0x12, 0xdd, 0x00, 0xf4, 0xb6, 0xf9, 0x42, 0x8f, 0x62, 0x95, 0x1e, 0x17, 0xdf,
-	0x26, 0x91, 0x86, 0xa3, 0x15, 0xd5, 0x24, 0xb4, 0xd2, 0xfb, 0xb1, 0x4a, 0xc7, 0x45, 0xff, 0x4d,
-	0xd6, 0x70, 0xf9, 0xb4, 0xc5, 0x37, 0x7e, 0xb6, 0xc8, 0x0e, 0x4b, 0x59, 0x1b, 0x0e, 0x81, 0x7e,
-	0x22, 0xd5, 0x00, 0x79, 0x0b, 0x63, 0xb4, 0x55, 0xdb, 0x10, 0xcb, 0xaf, 0x09, 0xbf, 0x54, 0xc9,
-	0x0b, 0x4c, 0x73, 0xde, 0x99, 0x0d, 0x0d, 0xbc, 0x86, 0xe5, 0xff, 0x4f, 0x9f, 0xc1, 0x74, 0xe1,
-	0x3b, 0xfd, 0x4d, 0x5f, 0x1e, 0x7a, 0xc6, 0xfd, 0x47, 0x00, 0x00, 0x00, 0xff, 0xff, 0xd5, 0x38,
-	0xb1, 0x3d, 0xc1, 0x01, 0x00, 0x00,
+	// 362 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xa4, 0x92, 0xd1, 0x4e, 0xfa, 0x30,
+	0x14, 0xc6, 0x29, 0xb0, 0xfd, 0xf7, 0x3f, 0x80, 0x21, 0x0d, 0x26, 0x93, 0x0b, 0xb3, 0x10, 0x2f,
+	0x16, 0x63, 0x86, 0xc1, 0xc4, 0x7b, 0x95, 0x0b, 0xb8, 0x33, 0xd5, 0x17, 0x28, 0xa5, 0xce, 0x85,
+	0xd1, 0x92, 0xb5, 0xc3, 0xec, 0xa1, 0x7c, 0x25, 0x9f, 0xc5, 0xac, 0x15, 0xc2, 0x06, 0xf1, 0xc6,
+	0xbb, 0x9d, 0xee, 0xfb, 0xfa, 0x9d, 0xf3, 0x3b, 0x85, 0xb3, 0x35, 0x57, 0x8a, 0xc6, 0x5c, 0x45,
+	0x9b, 0x4c, 0x6a, 0x89, 0x7b, 0x6a, 0x4d, 0x33, 0xcd, 0xa4, 0xd0, 0x19, 0x65, 0x7a, 0x78, 0x11,
+	0x4b, 0x19, 0xa7, 0x7c, 0x6c, 0x7e, 0x2e, 0xf2, 0xb7, 0x31, 0x15, 0x85, 0x55, 0x8e, 0x3e, 0x11,
+	0xf4, 0xe6, 0x42, 0x69, 0x2a, 0x18, 0x7f, 0x36, 0xde, 0x3e, 0xb4, 0x56, 0xbc, 0xf0, 0x51, 0x80,
+	0xc2, 0x2e, 0x29, 0x3f, 0xf1, 0x35, 0x38, 0x5b, 0x9a, 0xe6, 0xdc, 0x6f, 0x06, 0x28, 0xec, 0x4c,
+	0x06, 0x91, 0xbd, 0x2e, 0xda, 0x5d, 0x17, 0x3d, 0x88, 0x82, 0x58, 0x09, 0xbe, 0x04, 0xd8, 0xc5,
+	0xce, 0xa7, 0x7e, 0x2b, 0x40, 0xe1, 0x7f, 0x72, 0x70, 0x82, 0x7d, 0xf8, 0xb7, 0xe4, 0x29, 0xd7,
+	0x7c, 0xe9, 0xb7, 0x03, 0x14, 0x7a, 0x64, 0x57, 0xe2, 0x2b, 0xe8, 0x51, 0xc6, 0xb8, 0x52, 0x4f,
+	0xa5, 0x5a, 0xa6, 0xbe, 0x63, 0x3a, 0xa8, 0x1e, 0x8e, 0x72, 0x70, 0x5e, 0x36, 0xf4, 0x43, 0xd4,
+	0x82, 0xd0, 0x51, 0xd0, 0x2d, 0x78, 0x34, 0x8b, 0xf3, 0x35, 0x17, 0xfa, 0xd7, 0xbe, 0xf7, 0x2a,
+	0x3c, 0x04, 0x2f, 0x59, 0x72, 0xa1, 0x13, 0x5d, 0x98, 0xc6, 0xbb, 0x64, 0x5f, 0x8f, 0xde, 0xc1,
+	0x9d, 0x8b, 0xad, 0x5c, 0xf1, 0x13, 0x78, 0xfe, 0x96, 0xd4, 0xae, 0x25, 0xdd, 0x83, 0x3b, 0x35,
+	0x44, 0x4e, 0x24, 0x1d, 0xfa, 0x9a, 0x35, 0xdf, 0x17, 0x82, 0xfe, 0x6b, 0x46, 0x85, 0xa2, 0x4c,
+	0x27, 0x52, 0xd8, 0x5d, 0x1e, 0x1a, 0x50, 0xd5, 0x80, 0x07, 0xe0, 0x08, 0x29, 0x98, 0xdd, 0x6a,
+	0x9b, 0xd8, 0x02, 0xdf, 0x80, 0xa3, 0x4a, 0xbe, 0x86, 0x40, 0x39, 0x49, 0xe5, 0x25, 0x45, 0x86,
+	0xfd, 0xac, 0x41, 0xac, 0x08, 0x8f, 0xc1, 0x4d, 0x0c, 0x16, 0x33, 0x46, 0x67, 0x72, 0x5e, 0x93,
+	0x5b, 0x66, 0xb3, 0x06, 0xf9, 0x91, 0x95, 0x06, 0xbb, 0x6f, 0xb3, 0xdd, 0x63, 0x83, 0x1d, 0xbd,
+	0x34, 0x58, 0xd9, 0xa3, 0x07, 0xae, 0x1d, 0x68, 0xe1, 0x1a, 0x98, 0x77, 0xdf, 0x01, 0x00, 0x00,
+	0xff, 0xff, 0xf9, 0x11, 0x7f, 0x47, 0xec, 0x02, 0x00, 0x00,
 }

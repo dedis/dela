@@ -6,7 +6,6 @@ import (
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/ledger/consumer"
-	"go.dedis.ch/fabric/ledger/inventory"
 	"golang.org/x/xerrors"
 )
 
@@ -14,7 +13,9 @@ import (
 //
 // - implements ledger.transaction
 type transaction struct {
-	hash []byte
+	hash     []byte
+	nonce    uint64
+	identity []byte
 }
 
 // GetID implements ledger.Transaction. It returns the unique identifier of the
@@ -41,9 +42,15 @@ func (t SpawnTransaction) Pack(enc encoding.ProtoMarshaler) (proto.Message, erro
 		return nil, xerrors.Errorf("couldn't marshal the argument: %v", err)
 	}
 
-	tx := &SpawnTransactionProto{
-		ContractID: t.ContractID,
-		Argument:   argany,
+	tx := &TransactionProto{
+		Identity: t.identity,
+		Nonce:    0,
+		Action: &TransactionProto_Spawn{
+			Spawn: &Spawn{
+				ContractID: t.ContractID,
+				Argument:   argany,
+			},
+		},
 	}
 
 	return tx, nil
@@ -84,9 +91,15 @@ func (t InvokeTransaction) Pack(enc encoding.ProtoMarshaler) (proto.Message, err
 		return nil, xerrors.Errorf("couldn't marshal the argument: %v", err)
 	}
 
-	tx := &InvokeTransactionProto{
-		Key:      t.Key,
-		Argument: argany,
+	tx := &TransactionProto{
+		Identity: t.identity,
+		Nonce:    0,
+		Action: &TransactionProto_Invoke{
+			Invoke: &Invoke{
+				Key:      t.Key,
+				Argument: argany,
+			},
+		},
 	}
 
 	return tx, nil
@@ -121,7 +134,15 @@ type DeleteTransaction struct {
 // Pack implements encoding.Packable. It returns the protobuf message for the
 // delete transaction.
 func (t DeleteTransaction) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
-	return &DeleteTransactionProto{Key: t.Key}, nil
+	pb := &TransactionProto{
+		Identity: t.identity,
+		Nonce:    0,
+		Action: &TransactionProto_Delete{
+			Delete: &Delete{Key: t.Key},
+		},
+	}
+
+	return pb, nil
 }
 
 func (t DeleteTransaction) computeHash(f crypto.HashFactory) ([]byte, error) {
@@ -139,13 +160,15 @@ func (t DeleteTransaction) computeHash(f crypto.HashFactory) ([]byte, error) {
 //
 // - implements ledger.TransactionFactory
 type TransactionFactory struct {
+	identity    []byte // TODO: signed identity
 	hashFactory crypto.HashFactory
 	encoder     encoding.ProtoMarshaler
 }
 
 // NewTransactionFactory returns a new instance of the transaction factory.
-func NewTransactionFactory() TransactionFactory {
+func NewTransactionFactory(identity []byte) TransactionFactory {
 	return TransactionFactory{
+		identity:    identity,
 		hashFactory: crypto.NewSha256Factory(),
 		encoder:     encoding.NewProtoEncoder(),
 	}
@@ -169,7 +192,10 @@ func (f TransactionFactory) NewSpawn(contractID string,
 		return tx, xerrors.Errorf("couldn't hash tx: %v", err)
 	}
 
-	tx.transaction = transaction{hash: hash}
+	tx.transaction = transaction{
+		hash:     hash,
+		identity: f.identity,
+	}
 
 	return tx, nil
 }
@@ -190,7 +216,10 @@ func (f TransactionFactory) NewInvoke(key []byte, arg proto.Message) (InvokeTran
 		return tx, xerrors.Errorf("couldn't hash tx: %v", err)
 	}
 
-	tx.transaction = transaction{hash: hash}
+	tx.transaction = transaction{
+		hash:     hash,
+		identity: f.identity,
+	}
 
 	return tx, nil
 }
@@ -206,7 +235,10 @@ func (f TransactionFactory) NewDelete(key []byte) (DeleteTransaction, error) {
 		return tx, xerrors.Errorf("couldn't hash tx: %v", err)
 	}
 
-	tx.transaction = transaction{hash: hash}
+	tx.transaction = transaction{
+		hash:     hash,
+		identity: f.identity,
+	}
 
 	return tx, nil
 }
@@ -214,39 +246,62 @@ func (f TransactionFactory) NewDelete(key []byte) (DeleteTransaction, error) {
 // FromProto implements ledger.TransactionFactory. It returns a new transaction
 // built from the protobuf message.
 func (f TransactionFactory) FromProto(pb proto.Message) (consumer.Transaction, error) {
-	var txProto proto.Message
+	var txProto *TransactionProto
 
 	switch in := pb.(type) {
 	case *any.Any:
-		var err error
-		txProto, err = f.encoder.UnmarshalDynamicAny(in)
+		txProto = &TransactionProto{}
+		err := f.encoder.UnmarshalAny(in, txProto)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't unmarshal input: %v", err)
 		}
+	case *TransactionProto:
+		txProto = in
 	default:
-		txProto = pb
+		return nil, xerrors.Errorf("invalid transaction type '%T'", pb)
 	}
 
-	switch tx := txProto.(type) {
-	case *SpawnTransactionProto:
-		arg, err := f.encoder.UnmarshalDynamicAny(tx.GetArgument())
+	if spawn := txProto.GetSpawn(); spawn != nil {
+		arg, err := f.encoder.UnmarshalDynamicAny(spawn.GetArgument())
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't unmarshal argument: %v", err)
 		}
 
-		return f.NewSpawn(tx.GetContractID(), arg)
-	case *InvokeTransactionProto:
-		arg, err := f.encoder.UnmarshalDynamicAny(tx.GetArgument())
+		tx, err := f.NewSpawn(spawn.GetContractID(), arg)
+		if err != nil {
+			return nil, err
+		}
+
+		tx.identity = txProto.GetIdentity()
+		return tx, nil
+	}
+
+	if invoke := txProto.GetInvoke(); invoke != nil {
+		arg, err := f.encoder.UnmarshalDynamicAny(invoke.GetArgument())
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't unmarshal argument: %v", err)
 		}
 
-		return f.NewInvoke(tx.GetKey(), arg)
-	case *DeleteTransactionProto:
-		return f.NewDelete(tx.GetKey())
-	default:
-		return nil, xerrors.Errorf("invalid transaction type '%T'", txProto)
+		tx, err := f.NewInvoke(invoke.GetKey(), arg)
+		if err != nil {
+			return nil, err
+		}
+
+		tx.identity = txProto.GetIdentity()
+		return tx, nil
 	}
+
+	if delete := txProto.GetDelete(); delete != nil {
+		tx, err := f.NewDelete(delete.GetKey())
+		if err != nil {
+			return nil, err
+		}
+
+		tx.identity = txProto.GetIdentity()
+		return tx, nil
+	}
+
+	return nil, xerrors.New("tx is malformed")
 }
 
 // ContractInstance is a specialization of the consumer instance to include
@@ -266,15 +321,20 @@ type ContractInstance interface {
 // - implements smartcontract.ContractInstance
 // - implements encoding.Packable
 type contractInstance struct {
-	key        []byte
-	contractID string
-	deleted    bool
-	value      proto.Message
+	key           []byte
+	accessControl []byte
+	contractID    string
+	deleted       bool
+	value         proto.Message
 }
 
 // GetKey implements consumer.Instance. It returns the key of the instance.
 func (i contractInstance) GetKey() []byte {
 	return i.key
+}
+
+func (i contractInstance) GetAccessControlID() []byte {
+	return i.accessControl
 }
 
 // GetContractID implements smartcontract.ContractInstance. It returns the
@@ -299,9 +359,10 @@ func (i contractInstance) Deleted() bool {
 // instance.
 func (i contractInstance) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	pb := &InstanceProto{
-		Key:        i.key,
-		ContractID: i.contractID,
-		Deleted:    i.deleted,
+		Key:           i.key,
+		ContractID:    i.contractID,
+		Deleted:       i.deleted,
+		AccessControl: i.accessControl,
 	}
 
 	var err error
@@ -334,6 +395,8 @@ func (f instanceFactory) FromProto(pb proto.Message) (consumer.Instance, error) 
 		}
 	case *InstanceProto:
 		instancepb = i
+	default:
+		return nil, xerrors.Errorf("invalid instance type '%T'", pb)
 	}
 
 	value, err := f.encoder.UnmarshalDynamicAny(instancepb.GetValue())
@@ -342,60 +405,12 @@ func (f instanceFactory) FromProto(pb proto.Message) (consumer.Instance, error) 
 	}
 
 	instance := contractInstance{
-		key:        instancepb.GetKey(),
-		contractID: instancepb.GetContractID(),
-		deleted:    instancepb.GetDeleted(),
-		value:      value,
+		key:           instancepb.GetKey(),
+		accessControl: instancepb.GetAccessControl(),
+		contractID:    instancepb.GetContractID(),
+		deleted:       instancepb.GetDeleted(),
+		value:         value,
 	}
 
 	return instance, nil
-}
-
-// transactionContext is provided to smart contract execution. It provides
-// valuable information to the implementation.
-type transactionContext struct {
-	encoder encoding.ProtoMarshaler
-	page    inventory.Page
-}
-
-func (ctx transactionContext) Read(key []byte) (ContractInstance, error) {
-	entry, err := ctx.page.Read(key)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't read the entry: %v", err)
-	}
-
-	instancepb, ok := entry.(*InstanceProto)
-	if !ok {
-		return nil, xerrors.Errorf("instance type '%T' != '%T'", entry, instancepb)
-	}
-
-	value, err := ctx.encoder.UnmarshalDynamicAny(instancepb.GetValue())
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't unmarshal the value: %v", err)
-	}
-
-	instance := contractInstance{
-		key:        key,
-		value:      value,
-		contractID: instancepb.GetContractID(),
-		deleted:    instancepb.GetDeleted(),
-	}
-
-	return instance, nil
-}
-
-// SpawnContext is the context provided to a smart contract execution of a spawn
-// transaction.
-type SpawnContext struct {
-	transactionContext
-
-	Transaction SpawnTransaction
-}
-
-// InvokeContext is the context provided to a smart contract execution of an
-// invoke transaction.
-type InvokeContext struct {
-	transactionContext
-
-	Transaction InvokeTransaction
 }

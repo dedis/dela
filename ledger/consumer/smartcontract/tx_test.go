@@ -36,10 +36,9 @@ func TestSpawnTransaction_Pack(t *testing.T) {
 		Argument:   &wrappers.StringValue{Value: "abc"},
 	}
 
-	spawnpb, err := spawn.Pack(encoding.NewProtoEncoder())
+	txpb, err := spawn.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
-	require.Equal(t, spawn.ContractID, spawnpb.(*SpawnTransactionProto).GetContractID())
-	require.NotNil(t, spawnpb.(*SpawnTransactionProto).GetArgument())
+	require.NotNil(t, txpb.(*TransactionProto).GetSpawn())
 
 	_, err = spawn.Pack(badEncoder{errMarshal: xerrors.New("oops")})
 	require.EqualError(t, err, "couldn't marshal the argument: oops")
@@ -78,10 +77,9 @@ func TestInvokeTransaction_Pack(t *testing.T) {
 		Argument: &wrappers.StringValue{Value: "abc"},
 	}
 
-	invokepb, err := invoke.Pack(encoding.NewProtoEncoder())
+	txpb, err := invoke.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
-	require.Equal(t, invoke.Key, invokepb.(*InvokeTransactionProto).Key)
-	require.NotNil(t, invokepb.(*InvokeTransactionProto).Argument)
+	require.NotNil(t, txpb.(*TransactionProto).GetInvoke())
 
 	_, err = invoke.Pack(badEncoder{errMarshal: xerrors.New("oops")})
 	require.EqualError(t, err, "couldn't marshal the argument: oops")
@@ -117,9 +115,9 @@ func TestInvokeTransaction_ComputeHash(t *testing.T) {
 func TestDeleteTransaction_Pack(t *testing.T) {
 	delete := DeleteTransaction{Key: []byte{0xab}}
 
-	deletepb, err := delete.Pack(encoding.NewProtoEncoder())
+	txpb, err := delete.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
-	require.Equal(t, delete.Key, deletepb.(*DeleteTransactionProto).Key)
+	require.NotNil(t, txpb.(*TransactionProto).GetDelete())
 }
 
 func TestDeleteTransaction_ComputeHash(t *testing.T) {
@@ -140,7 +138,7 @@ func TestDeleteTransaction_ComputeHash(t *testing.T) {
 }
 
 func TestTransactionFactory_NewSpawn(t *testing.T) {
-	factory := NewTransactionFactory()
+	factory := NewTransactionFactory(nil)
 
 	spawn, err := factory.NewSpawn("abc", &empty.Empty{})
 	require.NoError(t, err)
@@ -156,7 +154,7 @@ func TestTransactionFactory_NewSpawn(t *testing.T) {
 }
 
 func TestTransactionFactory_NewInvoke(t *testing.T) {
-	factory := NewTransactionFactory()
+	factory := NewTransactionFactory(nil)
 
 	invoke, err := factory.NewInvoke([]byte{0xab}, &empty.Empty{})
 	require.NoError(t, err)
@@ -172,7 +170,7 @@ func TestTransactionFactory_NewInvoke(t *testing.T) {
 }
 
 func TestTransactionFactory_NewDelete(t *testing.T) {
-	factory := NewTransactionFactory()
+	factory := NewTransactionFactory(nil)
 
 	delete, err := factory.NewDelete([]byte{0xab})
 	require.NoError(t, err)
@@ -184,7 +182,7 @@ func TestTransactionFactory_NewDelete(t *testing.T) {
 }
 
 func TestTransactionFactory_FromProto(t *testing.T) {
-	factory := NewTransactionFactory()
+	factory := NewTransactionFactory(nil)
 
 	// 1. Spawn transaction
 	spawn := SpawnTransaction{
@@ -239,7 +237,7 @@ func TestTransactionFactory_FromProto(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, delete.Key, tx.(DeleteTransaction).Key)
 
-	factory.encoder = badEncoder{errDynUnmarshal: xerrors.New("oops")}
+	factory.encoder = badEncoder{errUnmarshal: xerrors.New("oops")}
 	_, err = factory.FromProto(deleteany)
 	require.EqualError(t, err, "couldn't unmarshal input: oops")
 
@@ -321,7 +319,9 @@ func TestContractInstance_Pack(t *testing.T) {
 func TestInstanceFactory_FromProto(t *testing.T) {
 	factory := instanceFactory{encoder: encoding.NewProtoEncoder()}
 
-	instancepb := makeInstanceProto(t)
+	pb, err := makeInstance().Pack(factory.encoder)
+	require.NoError(t, err)
+	instancepb := pb.(*InstanceProto)
 	instanceany, err := ptypes.MarshalAny(instancepb)
 	require.NoError(t, err)
 
@@ -362,7 +362,7 @@ func TestTransactionContext_Read(t *testing.T) {
 
 	instance, err := ctx.Read([]byte{0xab})
 	require.NoError(t, err)
-	require.Equal(t, "abc", instance.GetContractID())
+	require.Equal(t, "abc", instance.(ContractInstance).GetContractID())
 	require.IsType(t, (*empty.Empty)(nil), instance.GetValue())
 
 	ctx.page = fakePage{err: xerrors.New("oops")}
@@ -371,12 +371,7 @@ func TestTransactionContext_Read(t *testing.T) {
 
 	ctx.page = fakePage{instance: &empty.Empty{}}
 	_, err = ctx.Read(nil)
-	require.EqualError(t, err, "instance type '*empty.Empty' != '*smartcontract.InstanceProto'")
-
-	ctx.page = fakePage{instance: &InstanceProto{}}
-	ctx.encoder = badEncoder{errDynUnmarshal: xerrors.New("oops")}
-	_, err = ctx.Read(nil)
-	require.EqualError(t, err, "couldn't unmarshal the value: oops")
+	require.EqualError(t, err, "couldn't decode instance: invalid instance type '*empty.Empty'")
 }
 
 // -----------------------------------------------------------------------------

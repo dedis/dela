@@ -3,7 +3,7 @@ package consumer
 import (
 	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/ledger/inventory"
+	"go.dedis.ch/fabric/ledger/permissions"
 )
 
 // Transaction is an atomic execution of one or several instructions.
@@ -28,6 +28,8 @@ type Instance interface {
 	// GetKey returns the identifier of the instance.
 	GetKey() []byte
 
+	GetAccessControlID() []byte
+
 	// GetValue returns the value stored in the instance.
 	GetValue() proto.Message
 }
@@ -36,6 +38,14 @@ type Instance interface {
 type InstanceFactory interface {
 	// FromProto returns the instance from the protobuf message.
 	FromProto(pb proto.Message) (Instance, error)
+}
+
+type Context interface {
+	GetTransaction() Transaction
+
+	GetAccessControl([]byte) (permissions.AccessControl, error)
+
+	Read([]byte) (Instance, error)
 }
 
 // Consumer is an abstraction for a ledger to consume the incoming transactions.
@@ -50,5 +60,5 @@ type Consumer interface {
 
 	// Consume returns the resulting instance of the transaction execution. The
 	// current page of the inventory is provided.
-	Consume(tx Transaction, page inventory.Page) (Instance, error)
+	Consume(ctx Context) (Instance, error)
 }

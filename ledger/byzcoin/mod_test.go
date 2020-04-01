@@ -44,7 +44,7 @@ func TestLedger_Basic(t *testing.T) {
 	defer cancel()
 	trs := ledger.Watch(ctx)
 
-	tx, err := smartcontract.NewTransactionFactory().
+	tx, err := smartcontract.NewTransactionFactory([]byte("deadbeef")).
 		NewSpawn(simpleContractName, &empty.Empty{})
 	require.NoError(t, err)
 

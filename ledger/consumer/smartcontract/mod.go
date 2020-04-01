@@ -1,10 +1,12 @@
 package smartcontract
 
 import (
+	fmt "fmt"
+
 	proto "github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/ledger/consumer"
-	"go.dedis.ch/fabric/ledger/inventory"
+	"go.dedis.ch/fabric/ledger/permissions"
 	"golang.org/x/xerrors"
 )
 
@@ -26,6 +28,7 @@ type Contract interface {
 type Consumer struct {
 	encoder   encoding.ProtoMarshaler
 	contracts map[string]Contract
+	access    permissions.AccessControlRegistry
 }
 
 // NewConsumer returns a new instance of the smart contract consumer.
@@ -45,7 +48,7 @@ func (c Consumer) Register(name string, exec Contract) {
 // GetTransactionFactory implements consumer.Consumer. It returns the factory
 // for smart contract transactions.
 func (c Consumer) GetTransactionFactory() consumer.TransactionFactory {
-	return NewTransactionFactory()
+	return NewTransactionFactory(nil)
 }
 
 // GetInstanceFactory implements consumer.Consumer. It returns the factory for
@@ -56,36 +59,17 @@ func (c Consumer) GetInstanceFactory() consumer.InstanceFactory {
 
 // Consume implements consumer.Consumer. It returns the instance produced from
 // the execution of the transaction.
-func (c Consumer) Consume(in consumer.Transaction,
-	page inventory.Page) (consumer.Instance, error) {
-
-	switch tx := in.(type) {
+func (c Consumer) Consume(ctx consumer.Context) (consumer.Instance, error) {
+	switch tx := ctx.GetTransaction().(type) {
 	case SpawnTransaction:
-		ctx := SpawnContext{
-			transactionContext: transactionContext{
-				encoder: c.encoder,
-				page:    page,
-			},
-			Transaction: tx,
-		}
+		ctx := SpawnContext{Context: ctx}
 
 		return c.consumeSpawn(ctx)
 	case InvokeTransaction:
-		ctx := InvokeContext{
-			transactionContext: transactionContext{
-				encoder: c.encoder,
-				page:    page,
-			},
-			Transaction: tx,
-		}
+		ctx := InvokeContext{Context: ctx}
 
 		return c.consumeInvoke(ctx)
 	case DeleteTransaction:
-		ctx := transactionContext{
-			encoder: c.encoder,
-			page:    page,
-		}
-
 		instance, err := ctx.Read(tx.Key)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't read the instance: %v", err)
@@ -96,12 +80,12 @@ func (c Consumer) Consume(in consumer.Transaction,
 
 		return ci, nil
 	default:
-		return nil, xerrors.Errorf("invalid tx type '%T'", in)
+		return nil, xerrors.Errorf("invalid tx type '%T'", ctx.GetTransaction())
 	}
 }
 
 func (c Consumer) consumeSpawn(ctx SpawnContext) (consumer.Instance, error) {
-	contractID := ctx.Transaction.ContractID
+	contractID := ctx.GetTransaction().ContractID
 
 	exec := c.contracts[contractID]
 	if exec == nil {
@@ -114,26 +98,40 @@ func (c Consumer) consumeSpawn(ctx SpawnContext) (consumer.Instance, error) {
 	}
 
 	instance := contractInstance{
-		key:        ctx.Transaction.hash,
-		contractID: contractID,
-		deleted:    false,
-		value:      value,
+		key:           ctx.GetTransaction().hash,
+		accessControl: []byte{},
+		contractID:    contractID,
+		deleted:       false,
+		value:         value,
 	}
 
 	return instance, nil
 }
 
 func (c Consumer) consumeInvoke(ctx InvokeContext) (consumer.Instance, error) {
-	inst, err := ctx.Read(ctx.Transaction.Key)
+	inst, err := ctx.Read(ctx.GetTransaction().Key)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't read the instance: %v", err)
 	}
 
-	contractID := inst.GetContractID()
+	contractID := inst.(ContractInstance).GetContractID()
 
 	exec := c.contracts[contractID]
 	if exec == nil {
 		return nil, xerrors.Errorf("unknown contract with id '%s'", contractID)
+	}
+
+	ac, err := ctx.GetAccessControl(inst.GetAccessControlID())
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't read access control: %v", err)
+	}
+
+	// TODO: improve rule
+	rule := fmt.Sprintf("invoke:%s", contractID)
+
+	if !ac.Match(ctx.GetTransaction().identity, rule) {
+		return nil, xerrors.Errorf("%v is refused to '%s' by %v",
+			ctx.GetTransaction().identity, rule, ac)
 	}
 
 	ci := inst.(contractInstance)

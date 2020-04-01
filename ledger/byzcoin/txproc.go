@@ -7,6 +7,7 @@ import (
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/ledger/consumer"
+	"go.dedis.ch/fabric/ledger/consumer/smartcontract"
 	"go.dedis.ch/fabric/ledger/inventory"
 	"go.dedis.ch/fabric/ledger/inventory/mem"
 	"golang.org/x/xerrors"
@@ -74,7 +75,9 @@ func (proc *txProcessor) process(payload *BlockPayload) (inventory.Page, error) 
 
 			fabric.Logger.Trace().Msgf("processing %v", tx)
 
-			instance, err := proc.consumer.Consume(tx, page)
+			ctx := smartcontract.NewContext(tx, page)
+
+			instance, err := proc.consumer.Consume(ctx)
 			if err != nil {
 				return xerrors.Errorf("couldn't consume tx: %v", err)
 			}

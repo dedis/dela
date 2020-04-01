@@ -4,21 +4,22 @@ import (
 	"testing"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/encoding"
 	internal "go.dedis.ch/fabric/internal/testing"
 	"go.dedis.ch/fabric/ledger/consumer"
+	"go.dedis.ch/fabric/ledger/permissions"
 	"golang.org/x/xerrors"
 )
 
 func TestMessages(t *testing.T) {
 	messages := []proto.Message{
 		&InstanceProto{},
-		&SpawnTransactionProto{},
-		&InvokeTransactionProto{},
-		&DeleteTransactionProto{},
+		&TransactionProto{},
+		&Spawn{},
+		&Invoke{},
+		&Delete{},
 	}
 
 	for _, m := range messages {
@@ -60,37 +61,53 @@ func TestConsumer_Consume(t *testing.T) {
 		ContractID:  "fake",
 	}
 
-	out, err := c.Consume(spawn, fakePage{})
+	out, err := c.Consume(newContext(spawn, nil))
 	require.NoError(t, err)
 	require.Equal(t, spawn.hash, out.GetKey())
 
-	_, err = c.Consume(SpawnTransaction{ContractID: "abc"}, fakePage{})
+	_, err = c.Consume(newContext(SpawnTransaction{ContractID: "abc"}, nil))
 	require.EqualError(t, err, "unknown contract with id 'abc'")
 
-	_, err = c.Consume(SpawnTransaction{ContractID: "bad"}, fakePage{})
+	_, err = c.Consume(newContext(SpawnTransaction{ContractID: "bad"}, nil))
 	require.EqualError(t, err, "couldn't execute spawn: oops")
 
 	// 2. Consume an invoke transaction.
 	c.encoder = encoding.NewProtoEncoder()
 	invoke := InvokeTransaction{
-		Key:      []byte{0xab},
-		Argument: &empty.Empty{},
+		transaction: transaction{identity: []byte{0xab}},
+		Key:         []byte{0xab},
+		Argument:    &empty.Empty{},
 	}
 
-	out, err = c.Consume(invoke, fakePage{instance: makeInstanceProto(t)})
+	instance := makeInstance()
+	instance.key = invoke.Key
+	ctx := newContext(invoke, instance)
+	out, err = c.Consume(ctx)
 	require.NoError(t, err)
 	require.Equal(t, invoke.Key, out.GetKey())
+	require.Len(t, ctx.accessControl.calls, 1)
+	require.Equal(t, []byte{0xab}, ctx.accessControl.calls[0][0])
+	require.Equal(t, "invoke:fake", ctx.accessControl.calls[0][1])
 
-	_, err = c.Consume(invoke, fakePage{err: xerrors.New("oops")})
-	require.EqualError(t, err, "couldn't read the instance: couldn't read the entry: oops")
+	_, err = c.Consume(testContext{tx: invoke, errRead: xerrors.New("oops")})
+	require.EqualError(t, err, "couldn't read the instance: oops")
 
-	instancepb := makeInstanceProto(t)
-	instancepb.ContractID = "unknown"
-	_, err = c.Consume(invoke, fakePage{instance: instancepb})
+	instance.contractID = "unknown"
+	_, err = c.Consume(newContext(invoke, instance))
 	require.EqualError(t, err, "unknown contract with id 'unknown'")
 
-	instancepb.ContractID = "bad"
-	_, err = c.Consume(invoke, fakePage{instance: instancepb})
+	instance.contractID = "fake"
+	ctx.errAccessControl = xerrors.New("oops")
+	_, err = c.Consume(ctx)
+	require.EqualError(t, err, "couldn't read access control: oops")
+
+	ctx.errAccessControl = nil
+	ctx.accessControl = &fakeAccessControl{match: false}
+	_, err = c.Consume(ctx)
+	require.EqualError(t, err, "[171] is refused to 'invoke:fake' by fakeAccessControl")
+
+	instance.contractID = "bad"
+	_, err = c.Consume(newContext(invoke, instance))
 	require.EqualError(t, err, "couldn't invoke: oops")
 
 	// 3. Consume a delete transaction.
@@ -98,29 +115,26 @@ func TestConsumer_Consume(t *testing.T) {
 		Key: []byte{0xab},
 	}
 
-	out, err = c.Consume(delete, fakePage{instance: makeInstanceProto(t)})
+	out, err = c.Consume(newContext(delete, makeInstance()))
 	require.NoError(t, err)
 	require.True(t, out.(contractInstance).deleted)
 
-	_, err = c.Consume(delete, fakePage{err: xerrors.New("oops")})
-	require.EqualError(t, err, "couldn't read the instance: couldn't read the entry: oops")
+	_, err = c.Consume(testContext{tx: delete, errRead: xerrors.New("oops")})
+	require.EqualError(t, err, "couldn't read the instance: oops")
 
 	// 4. Consume an invalid transaction.
-	_, err = c.Consume(fakeTx{}, nil)
+	_, err = c.Consume(newContext(fakeTx{}, nil))
 	require.EqualError(t, err, "invalid tx type 'smartcontract.fakeTx'")
 }
 
 // -----------------------------------------------------------------------------
 // Utility functions
 
-func makeInstanceProto(t *testing.T) *InstanceProto {
-	any, err := ptypes.MarshalAny(&empty.Empty{})
-	require.NoError(t, err)
-
-	return &InstanceProto{
-		Value:      any,
-		ContractID: "fake",
-		Deleted:    false,
+func makeInstance() contractInstance {
+	return contractInstance{
+		value:      &empty.Empty{},
+		contractID: "fake",
+		deleted:    false,
 	}
 }
 
@@ -141,4 +155,47 @@ func (c fakeContract) Invoke(ctx InvokeContext) (proto.Message, error) {
 
 type fakeTx struct {
 	consumer.Transaction
+}
+
+type fakeAccessControl struct {
+	permissions.AccessControl
+	match bool
+	calls [][]interface{}
+}
+
+func (ac *fakeAccessControl) Match(ident permissions.Identity, rule string) bool {
+	ac.calls = append(ac.calls, []interface{}{ident, rule})
+	return ac.match
+}
+
+func (ac *fakeAccessControl) String() string {
+	return "fakeAccessControl"
+}
+
+type testContext struct {
+	tx               consumer.Transaction
+	instance         ContractInstance
+	accessControl    *fakeAccessControl
+	errRead          error
+	errAccessControl error
+}
+
+func newContext(tx consumer.Transaction, inst ContractInstance) testContext {
+	return testContext{
+		tx:            tx,
+		instance:      inst,
+		accessControl: &fakeAccessControl{match: true},
+	}
+}
+
+func (c testContext) GetTransaction() consumer.Transaction {
+	return c.tx
+}
+
+func (c testContext) GetAccessControl([]byte) (permissions.AccessControl, error) {
+	return c.accessControl, c.errAccessControl
+}
+
+func (c testContext) Read([]byte) (consumer.Instance, error) {
+	return c.instance, c.errRead
 }

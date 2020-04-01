@@ -219,8 +219,6 @@ func (c fakeConsumer) GetInstanceFactory() consumer.InstanceFactory {
 	return fakeInstanceFactory{err: c.errFactory}
 }
 
-func (c fakeConsumer) Consume(consumer.Transaction,
-	inventory.Page) (consumer.Instance, error) {
-
+func (c fakeConsumer) Consume(consumer.Context) (consumer.Instance, error) {
 	return fakeInstance{key: c.key, err: c.errInstance}, c.err
 }
