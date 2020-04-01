@@ -1,17 +1,26 @@
 language: go
 
 go:
-    - 1.13
+  - 1.13
 
-before_install:
-    - go get github.com/mattn/goveralls
-    - go mod download
-    - go mod tidy && [ -z "$(git status -s)" ]
+jobs:
+  include:
+    - stage: "Lint"
+      script:
+        - go mod tidy && [ -z "$(git status -s)" ]
+        - make lint
+        
+    - stage: "Test"
+      name: "Unit Tests"
+      before_install:
+        - go get github.com/mattn/goveralls
+        - go mod download
 
-script:
-    - make lint
-    - go test -covermode=count -coverprofile=coverage.out ./...
-    - $GOPATH/bin/goveralls -service=travis-cli -coverprofile=coverage.out
+      script:
+        - go test -covermode=count -coverprofile=coverage.out ./...
+        - $GOPATH/bin/goveralls -service=travis-cli -coverprofile=coverage.out
+
+        
 
 notifications:
-    email: false
+  email: false
