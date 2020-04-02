@@ -50,7 +50,7 @@ func (f PublicKeyFactory) FromProto(in proto.Message) (crypto.PublicKey, error) 
 		var err error
 		in, err = f.encoder.UnmarshalDynamicAny(inAny)
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("couldn't decode message: %v", err)
 		}
 	}
 
@@ -96,7 +96,7 @@ func (f SignatureFactory) FromProto(in proto.Message) (crypto.Signature, error) 
 		var err error
 		in, err = f.encoder.UnmarshalDynamicAny(inAny)
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("couldn't decode message: %v", err)
 		}
 	}
 

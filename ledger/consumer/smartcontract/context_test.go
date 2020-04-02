@@ -9,6 +9,13 @@ import (
 	"golang.org/x/xerrors"
 )
 
+func TestTransactionContext_GetTransaction(t *testing.T) {
+	tx := transaction{}
+	ctx := NewContext(tx, nil)
+
+	require.Equal(t, tx, ctx.GetTransaction())
+}
+
 func TestTransactionContext_Read(t *testing.T) {
 	valueAny, err := ptypes.MarshalAny(&empty.Empty{})
 	require.NoError(t, err)

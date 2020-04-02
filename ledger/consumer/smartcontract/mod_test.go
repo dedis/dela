@@ -133,6 +133,10 @@ func TestConsumer_Consume(t *testing.T) {
 	// 4. Consume an invalid transaction.
 	_, err = c.Consume(newContext(fakeTx{}, nil))
 	require.EqualError(t, err, "invalid tx type 'smartcontract.fakeTx'")
+
+	tx.action = nil
+	_, err = c.Consume(newContext(tx, nil))
+	require.EqualError(t, err, "invalid action type '<nil>'")
 }
 
 // -----------------------------------------------------------------------------

@@ -61,6 +61,10 @@ func NewProtoEncoder() ProtoEncoder {
 // Pack implements encoding.ProtoMarshaler. It returns the protobuf message of
 // the packable object.
 func (e ProtoEncoder) Pack(p Packable) (proto.Message, error) {
+	if p == nil {
+		return nil, xerrors.New("message is nil")
+	}
+
 	pb, err := p.Pack(e)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't pack '%T': %v", p, err)
@@ -94,6 +98,14 @@ func (e ProtoEncoder) PackAny(p Packable) (*any.Any, error) {
 // environment. It is different from the usual protobuf marshaling as this last
 // is not stable.
 func (e ProtoEncoder) MarshalStable(w io.Writer, pb proto.Message) error {
+	if pb == nil {
+		return xerrors.New("message is nil")
+	}
+
+	if w == nil {
+		return xerrors.New("writer is nil")
+	}
+
 	err := e.marshaler.Marshal(w, pb)
 	if err != nil {
 		return xerrors.Errorf("stable serialization failed: %v", err)
@@ -105,6 +117,10 @@ func (e ProtoEncoder) MarshalStable(w io.Writer, pb proto.Message) error {
 // MarshalAny implements encoding.ProtoMarshaler. It encodes a protobuf messages
 // into the Any type.
 func (e ProtoEncoder) MarshalAny(pb proto.Message) (*any.Any, error) {
+	if pb == nil {
+		return nil, xerrors.New("message is nil")
+	}
+
 	res, err := ptypes.MarshalAny(pb)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't wrap '%T' to any: %v", pb, err)
@@ -115,10 +131,18 @@ func (e ProtoEncoder) MarshalAny(pb proto.Message) (*any.Any, error) {
 
 // UnmarshalAny implements encoding.ProtoMarshaler. It decodes a protobuf
 // message from an Any type.
-func (e ProtoEncoder) UnmarshalAny(any *any.Any, pb proto.Message) error {
-	err := ptypes.UnmarshalAny(any, pb)
+func (e ProtoEncoder) UnmarshalAny(msg *any.Any, rcver proto.Message) error {
+	if msg == nil {
+		return xerrors.New("message is nil")
+	}
+
+	if rcver == nil {
+		return xerrors.New("receiver is nil")
+	}
+
+	err := ptypes.UnmarshalAny(msg, rcver)
 	if err != nil {
-		return xerrors.Errorf("couldn't unwrap '%T' to '%T': %v", any, pb, err)
+		return xerrors.Errorf("couldn't unwrap '%T' to '%T': %v", msg, rcver, err)
 	}
 
 	return nil

@@ -69,20 +69,29 @@ type fakePublicKey struct {
 	crypto.PublicKey
 }
 
-func TestPublicKey_Equal(t *testing.T) {
-	f := func() bool {
-		signerA := NewSigner()
-		signerB := NewSigner()
-		require.True(t, signerA.GetPublicKey().Equal(signerA.GetPublicKey()))
-		require.True(t, signerB.GetPublicKey().Equal(signerB.GetPublicKey()))
-		require.False(t, signerA.GetPublicKey().Equal(signerB.GetPublicKey()))
-		require.False(t, signerA.GetPublicKey().Equal(fakePublicKey{}))
-
-		return true
-	}
-
-	err := quick.Check(f, nil)
+func TestPublicKey_Verify(t *testing.T) {
+	msg := []byte("deadbeef")
+	signer := NewSigner()
+	sig, err := signer.Sign(msg)
 	require.NoError(t, err)
+
+	err = signer.GetPublicKey().Verify(msg, sig)
+	require.NoError(t, err)
+
+	err = signer.GetPublicKey().Verify([]byte{}, sig)
+	require.EqualError(t, err, "bls: invalid signature")
+
+	err = signer.GetPublicKey().Verify(msg, fakeSignature{})
+	require.EqualError(t, err, "invalid signature type 'bls.fakeSignature'")
+}
+
+func TestPublicKey_Equal(t *testing.T) {
+	signerA := NewSigner()
+	signerB := NewSigner()
+	require.True(t, signerA.GetPublicKey().Equal(signerA.GetPublicKey()))
+	require.True(t, signerB.GetPublicKey().Equal(signerB.GetPublicKey()))
+	require.False(t, signerA.GetPublicKey().Equal(signerB.GetPublicKey()))
+	require.False(t, signerA.GetPublicKey().Equal(fakePublicKey{}))
 }
 
 func TestSignature_MarshalBinary(t *testing.T) {
@@ -137,9 +146,7 @@ func TestSignature_Equal(t *testing.T) {
 }
 
 func TestPublicKeyFactory_FromProto(t *testing.T) {
-	factory := publicKeyFactory{
-		encoder: encoding.NewProtoEncoder(),
-	}
+	factory := NewPublicKeyFactory().(publicKeyFactory)
 
 	signer := NewSigner()
 	packed, err := signer.GetPublicKey().Pack(nil)
@@ -169,9 +176,7 @@ func TestPublicKeyFactory_FromProto(t *testing.T) {
 }
 
 func TestSignatureFactory_FromProto(t *testing.T) {
-	factory := signatureFactory{
-		encoder: encoding.NewProtoEncoder(),
-	}
+	factory := NewSignatureFactory().(signatureFactory)
 
 	signer := NewSigner()
 	sig, err := signer.Sign([]byte{1})

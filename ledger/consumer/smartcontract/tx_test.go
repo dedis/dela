@@ -64,6 +64,15 @@ func TestTransaction_ComputeHash(t *testing.T) {
 
 	_, err = tx.computeHash(fakeHash{err: xerrors.New("oops")}, nil)
 	require.EqualError(t, err, "couldn't write nonce: oops")
+
+	tx.identity = fakeIdentity{err: xerrors.New("oops")}
+	_, err = tx.computeHash(fakeHash{}, nil)
+	require.EqualError(t, err, "couldn't marshal identity: oops")
+
+	tx.identity = fakeIdentity{}
+	tx.action = badAction{}
+	_, err = tx.computeHash(fakeHash{}, nil)
+	require.EqualError(t, err, "couldn't write action: oops")
 }
 
 func TestSpawnAction_Pack(t *testing.T) {
@@ -374,6 +383,7 @@ func (s fakeSigner) Sign([]byte) (crypto.Signature, error) {
 
 type fakeIdentity struct {
 	crypto.PublicKey
+	err       error
 	errVerify error
 }
 
@@ -382,7 +392,7 @@ func (ident fakeIdentity) Verify([]byte, crypto.Signature) error {
 }
 
 func (ident fakeIdentity) MarshalBinary() ([]byte, error) {
-	return []byte{0xff}, nil
+	return []byte{0xff}, ident.err
 }
 
 func (ident fakeIdentity) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
@@ -489,4 +499,12 @@ type fakePage struct {
 
 func (p fakePage) Read(key []byte) (proto.Message, error) {
 	return p.instance, p.err
+}
+
+type badAction struct {
+	action
+}
+
+func (a badAction) hashTo(hash.Hash, encoding.ProtoMarshaler) error {
+	return xerrors.New("oops")
 }

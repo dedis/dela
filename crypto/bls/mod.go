@@ -42,7 +42,19 @@ func (pk publicKey) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 	return &PublicKeyProto{Data: buffer}, nil
 }
 
-func (pk publicKey) Verify(msg []byte, signature crypto.Signature) error {
+// Verify implements crypto.PublicKey. It returns nil if the signature matches
+// the message with this public key.
+func (pk publicKey) Verify(msg []byte, sig crypto.Signature) error {
+	signature, ok := sig.(signature)
+	if !ok {
+		return xerrors.Errorf("invalid signature type '%T'", sig)
+	}
+
+	err := bls.Verify(suite, pk.point, msg, signature.data)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 

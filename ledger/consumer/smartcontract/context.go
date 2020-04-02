@@ -14,6 +14,8 @@ type transactionContext struct {
 }
 
 // NewContext returns a new instance of a smart contract transaction context.
+//
+// - implements consumer.Context
 func NewContext(tx consumer.Transaction, page inventory.Page) consumer.Context {
 	return transactionContext{
 		encoder: encoding.NewProtoEncoder(),
@@ -22,10 +24,14 @@ func NewContext(tx consumer.Transaction, page inventory.Page) consumer.Context {
 	}
 }
 
+// GetTransaction implements consumer.Context. It returns the transaction of the
+// context.
 func (ctx transactionContext) GetTransaction() consumer.Transaction {
 	return ctx.tx
 }
 
+// Read implements consumer.Context. It returns the instance stored to the given
+// key, or an error if it does not find it.
 func (ctx transactionContext) Read(key []byte) (consumer.Instance, error) {
 	entry, err := ctx.page.Read(key)
 	if err != nil {
