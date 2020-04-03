@@ -22,6 +22,11 @@ type BinaryMarshaler interface {
 	encoding.BinaryMarshaler
 }
 
+// TextMarshaler is an alias of the standard encoding library.
+type TextMarshaler interface {
+	encoding.TextMarshaler
+}
+
 // ProtoMarshaler is an interface to encode or decode Any messages.
 type ProtoMarshaler interface {
 	// MarshalStable is a deterministic marshaling of the message into the writer.
@@ -54,7 +59,9 @@ type ProtoEncoder struct {
 // - implements encoding.ProtoMarshaler
 func NewProtoEncoder() ProtoEncoder {
 	return ProtoEncoder{
-		marshaler: &jsonpb.Marshaler{},
+		marshaler: &jsonpb.Marshaler{
+			EmitDefaults: true,
+		},
 	}
 }
 

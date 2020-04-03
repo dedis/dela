@@ -1,12 +1,13 @@
 package smartcontract
 
 import (
-	fmt "fmt"
+	"bytes"
 
 	proto "github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric/encoding"
+	"go.dedis.ch/fabric/ledger/arc"
+	"go.dedis.ch/fabric/ledger/arc/common"
 	"go.dedis.ch/fabric/ledger/consumer"
-	"go.dedis.ch/fabric/ledger/permissions"
 	"golang.org/x/xerrors"
 )
 
@@ -15,8 +16,9 @@ import (
 // Contract is an interface that provides the primitives to execute a smart
 // contract transaction and produce the resulting instance.
 type Contract interface {
-	// Spawn is called to create a new instance.
-	Spawn(ctx SpawnContext) (proto.Message, error)
+	// Spawn is called to create a new instance. It returns the initial value of
+	// the new instance and its access control ID.
+	Spawn(ctx SpawnContext) (proto.Message, []byte, error)
 
 	// Invoke is called to update an existing instance.
 	Invoke(ctx InvokeContext) (proto.Message, error)
@@ -29,15 +31,15 @@ type Consumer struct {
 	encoder   encoding.ProtoMarshaler
 	contracts map[string]Contract
 
-	// TODO: common factory
-	AccessFactory permissions.AccessControlFactory
+	AccessFactory arc.AccessControlFactory
 }
 
 // NewConsumer returns a new instance of the smart contract consumer.
 func NewConsumer() Consumer {
 	return Consumer{
-		encoder:   encoding.NewProtoEncoder(),
-		contracts: make(map[string]Contract),
+		encoder:       encoding.NewProtoEncoder(),
+		contracts:     make(map[string]Contract),
+		AccessFactory: common.NewAccessControlFactory(),
 	}
 }
 
@@ -99,14 +101,26 @@ func (c Consumer) consumeSpawn(ctx SpawnContext) (consumer.Instance, error) {
 		return nil, xerrors.Errorf("unknown contract with id '%s'", contractID)
 	}
 
-	value, err := exec.Spawn(ctx)
+	value, arcid, err := exec.Spawn(ctx)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't execute spawn: %v", err)
 	}
 
+	if !bytes.Equal(arcid, ctx.GetTransaction().GetID()) {
+		// If the instance is a new access control, it is left to the contract
+		// to insure the transaction is correct.
+
+		rule := arc.Compile(ctx.GetAction().ContractID, "spawn")
+
+		err = c.hasAccess(ctx, arcid, rule)
+		if err != nil {
+			return nil, xerrors.Errorf("no access: %v", err)
+		}
+	}
+
 	instance := contractInstance{
 		key:           ctx.GetTransaction().GetID(),
-		accessControl: []byte{},
+		accessControl: arcid,
 		contractID:    contractID,
 		deleted:       false,
 		value:         value,
@@ -128,17 +142,11 @@ func (c Consumer) consumeInvoke(ctx InvokeContext) (consumer.Instance, error) {
 		return nil, xerrors.Errorf("unknown contract with id '%s'", contractID)
 	}
 
-	access, err := c.getAccessControl(ctx, inst.GetAccessControlID())
+	rule := arc.Compile(contractID, "invoke")
+
+	err = c.hasAccess(ctx, inst.GetArcID(), rule)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't read access control: %v", err)
-	}
-
-	// TODO: improve rule
-	rule := fmt.Sprintf("invoke:%s", contractID)
-
-	if !access.Match(ctx.GetTransaction().GetIdentity(), rule) {
-		return nil, xerrors.Errorf("%v is refused to '%s' by %v",
-			ctx.GetTransaction().GetIdentity(), rule, access)
+		return nil, xerrors.Errorf("no access: %v", err)
 	}
 
 	ci := inst.(contractInstance)
@@ -150,16 +158,22 @@ func (c Consumer) consumeInvoke(ctx InvokeContext) (consumer.Instance, error) {
 	return ci, nil
 }
 
-func (c Consumer) getAccessControl(ctx consumer.Context, key []byte) (permissions.AccessControl, error) {
+func (c Consumer) hasAccess(ctx consumer.Context, key []byte, rule string) error {
 	instance, err := ctx.Read(key)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	access, err := c.AccessFactory.FromProto(instance.GetValue())
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return access, nil
+	err = access.Match(rule, ctx.GetTransaction().GetIdentity())
+	if err != nil {
+		return xerrors.Errorf("%v is refused to '%s' by %v: %v",
+			ctx.GetTransaction().GetIdentity(), rule, access, err)
+	}
+
+	return nil
 }

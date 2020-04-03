@@ -2,6 +2,7 @@ package smartcontract
 
 import (
 	"encoding/binary"
+	fmt "fmt"
 	"hash"
 
 	"github.com/golang/protobuf/proto"
@@ -9,8 +10,8 @@ import (
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/crypto/common"
 	"go.dedis.ch/fabric/encoding"
+	"go.dedis.ch/fabric/ledger/arc"
 	"go.dedis.ch/fabric/ledger/consumer"
-	"go.dedis.ch/fabric/ledger/permissions"
 	"golang.org/x/xerrors"
 )
 
@@ -37,7 +38,7 @@ func (t transaction) GetID() []byte {
 	return t.hash[:]
 }
 
-func (t transaction) GetIdentity() permissions.Identity {
+func (t transaction) GetIdentity() arc.Identity {
 	return t.identity
 }
 
@@ -72,6 +73,10 @@ func (t transaction) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	}
 
 	return pb, nil
+}
+
+func (t transaction) String() string {
+	return fmt.Sprintf("Transaction[%v]", t.identity)
 }
 
 func (t transaction) computeHash(h hash.Hash, enc encoding.ProtoMarshaler) ([]byte, error) {
@@ -370,7 +375,9 @@ func (i contractInstance) GetKey() []byte {
 	return i.key
 }
 
-func (i contractInstance) GetAccessControlID() []byte {
+// GetArcID implements consumer.Instance. It returns the access control
+// identifier for this instance.
+func (i contractInstance) GetArcID() []byte {
 	return i.accessControl
 }
 

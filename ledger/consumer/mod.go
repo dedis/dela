@@ -3,7 +3,7 @@ package consumer
 import (
 	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/ledger/permissions"
+	"go.dedis.ch/fabric/ledger/arc"
 )
 
 // Transaction is an atomic execution of one or several instructions.
@@ -13,7 +13,8 @@ type Transaction interface {
 	// GetID returns a unique identifier for the transaction.
 	GetID() []byte
 
-	GetIdentity() permissions.Identity
+	// GetIdentity returns the identity of the signer of the transaction.
+	GetIdentity() arc.Identity
 }
 
 // TransactionFactory is a factory to create new transactions or decode from
@@ -30,7 +31,8 @@ type Instance interface {
 	// GetKey returns the identifier of the instance.
 	GetKey() []byte
 
-	GetAccessControlID() []byte
+	// GetArcID returns the access rights control identifier.
+	GetArcID() []byte
 
 	// GetValue returns the value stored in the instance.
 	GetValue() proto.Message
@@ -42,6 +44,7 @@ type InstanceFactory interface {
 	FromProto(pb proto.Message) (Instance, error)
 }
 
+// Context is provided during a transaction execution.
 type Context interface {
 	GetTransaction() Transaction
 

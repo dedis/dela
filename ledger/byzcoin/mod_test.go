@@ -6,12 +6,13 @@ import (
 	"time"
 
 	proto "github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/crypto/bls"
 	internal "go.dedis.ch/fabric/internal/testing"
+	"go.dedis.ch/fabric/ledger/arc/darc"
+	"go.dedis.ch/fabric/ledger/arc/darc/contract"
 	"go.dedis.ch/fabric/ledger/consumer"
 	"go.dedis.ch/fabric/ledger/consumer/smartcontract"
 	"go.dedis.ch/fabric/mino"
@@ -47,10 +48,8 @@ func TestLedger_Basic(t *testing.T) {
 
 	txFactory := smartcontract.NewTransactionFactory(bls.NewSigner())
 
-	tx, err := txFactory.New(smartcontract.SpawnAction{
-		ContractID: simpleContractName,
-		Argument:   &empty.Empty{},
-	})
+	// Try to create a DARC with the conode key pair.
+	tx, err := contract.NewGenesisTransaction(txFactory)
 	require.NoError(t, err)
 
 	err = actor.AddTransaction(tx)
@@ -67,6 +66,23 @@ func TestLedger_Basic(t *testing.T) {
 	instance, err := ledger.GetInstance(tx.GetID())
 	require.NoError(t, err)
 	require.Equal(t, tx.GetID(), instance.GetKey())
+	require.Equal(t, tx.GetID(), instance.GetArcID())
+	require.IsType(t, (*darc.AccessControlProto)(nil), instance.GetValue())
+
+	// Then update it.
+	tx, err = contract.NewUpdateTransaction(txFactory, tx.GetID())
+	require.NoError(t, err)
+
+	err = actor.AddTransaction(tx)
+	require.NoError(t, err)
+
+	select {
+	case res := <-trs:
+		require.NotNil(t, res)
+		require.Equal(t, tx.GetID(), res.GetTransactionID())
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("timeout")
+	}
 }
 
 func TestLedger_GetInstance(t *testing.T) {
@@ -106,21 +122,10 @@ func TestLedger_GetInstance(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-type simpleContract struct{}
-
-const simpleContractName = "simpleContract"
-
-func (c simpleContract) Spawn(ctx smartcontract.SpawnContext) (proto.Message, error) {
-	return &empty.Empty{}, nil
-}
-
-func (c simpleContract) Invoke(ctx smartcontract.InvokeContext) (proto.Message, error) {
-	return &empty.Empty{}, nil
-}
-
 func makeConsumer() consumer.Consumer {
 	c := smartcontract.NewConsumer()
-	c.Register(simpleContractName, simpleContract{})
+	contract.RegisterContract(c)
+
 	return c
 }
 

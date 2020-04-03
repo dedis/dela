@@ -36,11 +36,11 @@ func TestPublicKey_MarshalBinary(t *testing.T) {
 	require.NotEmpty(t, buffer)
 }
 
-type fakePoint struct {
+type badPoint struct {
 	kyber.Point
 }
 
-func (p fakePoint) MarshalBinary() ([]byte, error) {
+func (p badPoint) MarshalBinary() ([]byte, error) {
 	return nil, xerrors.New("oops")
 }
 
@@ -60,7 +60,7 @@ func TestPublicKey_Pack(t *testing.T) {
 	err := quick.Check(f, nil)
 	require.NoError(t, err)
 
-	pubkey := publicKey{point: fakePoint{}}
+	pubkey := publicKey{point: badPoint{}}
 	_, err = pubkey.Pack(nil)
 	require.EqualError(t, err, "couldn't marshal point: oops")
 }
@@ -92,6 +92,27 @@ func TestPublicKey_Equal(t *testing.T) {
 	require.True(t, signerB.GetPublicKey().Equal(signerB.GetPublicKey()))
 	require.False(t, signerA.GetPublicKey().Equal(signerB.GetPublicKey()))
 	require.False(t, signerA.GetPublicKey().Equal(fakePublicKey{}))
+}
+
+func TestPublicKey_MarshalText(t *testing.T) {
+	signer := NewSigner()
+	text, err := signer.GetPublicKey().MarshalText()
+	require.NoError(t, err)
+	require.Contains(t, string(text), "bls:")
+
+	pk := publicKey{point: badPoint{}}
+	_, err = pk.MarshalText()
+	require.EqualError(t, err, "couldn't marshal: oops")
+}
+
+func TestPublicKey_String(t *testing.T) {
+	signer := NewSigner()
+	str := signer.GetPublicKey().(publicKey).String()
+	require.Contains(t, str, "bls:")
+
+	pk := publicKey{point: badPoint{}}
+	str = pk.String()
+	require.Equal(t, "bls:malformed point", str)
 }
 
 func TestSignature_MarshalBinary(t *testing.T) {
@@ -308,8 +329,9 @@ func TestSigner_Sign(t *testing.T) {
 			[]crypto.PublicKey{signer.GetPublicKey()},
 		)
 		require.NoError(t, err)
-		err = verifier.Verify(msg, sig)
-		return err == nil
+		require.NoError(t, verifier.Verify(msg, sig))
+
+		return true
 	}
 
 	err := quick.Check(f, nil)

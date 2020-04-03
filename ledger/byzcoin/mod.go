@@ -182,6 +182,7 @@ func (ldgr *Ledger) proposeBlock(actor blockchain.Actor, players mino.Players) {
 	payload, err := ldgr.stagePayload(ldgr.bag.GetAll())
 	if err != nil {
 		fabric.Logger.Err(err).Msg("couldn't make the payload")
+		return
 	}
 
 	// Each instance proposes a payload based on the received

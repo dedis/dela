@@ -2,6 +2,7 @@ package bls
 
 import (
 	"bytes"
+	fmt "fmt"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
@@ -67,6 +68,28 @@ func (pk publicKey) Equal(other crypto.PublicKey) bool {
 	}
 
 	return pubkey.point.Equal(pk.point)
+}
+
+// MarshalText implements encoding.TextMarshaler. It returns a text
+// representation of the public key.
+func (pk publicKey) MarshalText() ([]byte, error) {
+	buffer, err := pk.MarshalBinary()
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't marshal: %v", err)
+	}
+
+	return []byte(fmt.Sprintf("bls:%x", buffer)), nil
+}
+
+// String implements fmt.String. It returns a string representation of the
+// point.
+func (pk publicKey) String() string {
+	buffer, err := pk.MarshalText()
+	if err != nil {
+		return "bls:malformed point"
+	}
+
+	return string(buffer)[:4+16]
 }
 
 // signature is a proof of the integrity of a single message associated with a

@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/encoding"
 	internal "go.dedis.ch/fabric/internal/testing"
+	"go.dedis.ch/fabric/ledger/arc"
 	"go.dedis.ch/fabric/ledger/consumer"
-	"go.dedis.ch/fabric/ledger/permissions"
 	"golang.org/x/xerrors"
 )
 
@@ -67,7 +67,7 @@ func TestConsumer_Consume(t *testing.T) {
 		},
 	}
 
-	out, err := c.Consume(newContext(tx, nil))
+	out, err := c.Consume(newContext(tx, makeInstance()))
 	require.NoError(t, err)
 	require.Equal(t, tx.hash, out.GetKey())
 
@@ -89,12 +89,13 @@ func TestConsumer_Consume(t *testing.T) {
 	instance := makeInstance()
 	instance.key = []byte{0xab}
 	ctx := newContext(tx, instance)
+	factory.access.calls = make([][]interface{}, 0)
 	out, err = c.Consume(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []byte{0xab}, out.GetKey())
 	require.Len(t, factory.access.calls, 1)
-	require.Equal(t, fakeIdentity{}, factory.access.calls[0][0])
-	require.Equal(t, "invoke:fake", factory.access.calls[0][1])
+	require.Equal(t, []arc.Identity{fakeIdentity{}}, factory.access.calls[0][0])
+	require.Equal(t, arc.Compile("fake", "invoke"), factory.access.calls[0][1])
 
 	_, err = c.Consume(testContext{tx: tx, errRead: xerrors.New("oops")})
 	require.EqualError(t, err, "couldn't read the instance: oops")
@@ -106,12 +107,13 @@ func TestConsumer_Consume(t *testing.T) {
 	instance.contractID = "fake"
 	factory.err = xerrors.New("oops")
 	_, err = c.Consume(ctx)
-	require.EqualError(t, err, "couldn't read access control: oops")
+	require.EqualError(t, err, "no access: oops")
 
 	factory.err = nil
 	factory.access.match = false
 	_, err = c.Consume(ctx)
-	require.EqualError(t, err, "fakePublicKey is refused to 'invoke:fake' by fakeAccessControl")
+	require.EqualError(t, err,
+		"no access: fakePublicKey is refused to 'fake:invoke' by fakeAccessControl: not authorized")
 
 	factory.access.match = true
 	instance.contractID = "bad"
@@ -155,9 +157,9 @@ type fakeContract struct {
 	err error
 }
 
-func (c fakeContract) Spawn(ctx SpawnContext) (proto.Message, error) {
+func (c fakeContract) Spawn(ctx SpawnContext) (proto.Message, []byte, error) {
 	ctx.Read([]byte{0xab})
-	return &empty.Empty{}, c.err
+	return &empty.Empty{}, []byte{0xff}, c.err
 }
 
 func (c fakeContract) Invoke(ctx InvokeContext) (proto.Message, error) {
@@ -170,14 +172,17 @@ type fakeTx struct {
 }
 
 type fakeAccessControl struct {
-	permissions.AccessControl
+	arc.AccessControl
 	match bool
 	calls [][]interface{}
 }
 
-func (ac *fakeAccessControl) Match(ident permissions.Identity, rule string) bool {
-	ac.calls = append(ac.calls, []interface{}{ident, rule})
-	return ac.match
+func (ac *fakeAccessControl) Match(rule string, idents ...arc.Identity) error {
+	ac.calls = append(ac.calls, []interface{}{idents, rule})
+	if ac.match {
+		return nil
+	}
+	return xerrors.New("not authorized")
 }
 
 func (ac *fakeAccessControl) String() string {
@@ -206,11 +211,11 @@ func (c testContext) Read([]byte) (consumer.Instance, error) {
 }
 
 type fakeAccessFactory struct {
-	permissions.AccessControlFactory
+	arc.AccessControlFactory
 	access *fakeAccessControl
 	err    error
 }
 
-func (f *fakeAccessFactory) FromProto(proto.Message) (permissions.AccessControl, error) {
+func (f *fakeAccessFactory) FromProto(proto.Message) (arc.AccessControl, error) {
 	return f.access, f.err
 }

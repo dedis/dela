@@ -54,6 +54,7 @@ func TestProtoEncoder_MarshalStable(t *testing.T) {
 	require.NoError(t, err)
 	// JSON format is exploited for stable serialization.
 	require.Equal(t, "\"abc\"", buffer.String())
+	// TODO: test empty fields stability
 
 	err = enc.MarshalStable(nil, nil)
 	require.EqualError(t, err, "message is nil")
