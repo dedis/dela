@@ -3,6 +3,7 @@ package darc
 
 import (
 	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/ledger/arc"
 	"golang.org/x/xerrors"
@@ -33,7 +34,7 @@ func (ac Access) Evolve(rule string, targets ...arc.Identity) (Access, error) {
 
 	expr, err := expr.Evolve(targets)
 	if err != nil {
-		return access, err
+		return access, xerrors.Errorf("couldn't evolve rule: %v", err)
 	}
 
 	access.rules[rule] = expr
@@ -63,7 +64,10 @@ func (ac Access) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	}
 
 	for rule, expr := range ac.rules {
-		exprpb, _ := expr.Pack(enc)
+		exprpb, err := enc.Pack(expr)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't pack expression: %v", err)
+		}
 
 		pb.Rules[rule] = exprpb.(*Expression)
 	}
@@ -82,12 +86,33 @@ func (ac Access) Clone() Access {
 }
 
 // Factory is the implementation of an access control factory for DARCs.
-type Factory struct{}
+type Factory struct {
+	encoder encoding.ProtoMarshaler
+}
+
+// NewFactory returns a new instance of the factory.
+func NewFactory() Factory {
+	return Factory{
+		encoder: encoding.NewProtoEncoder(),
+	}
+}
 
 // FromProto implements arc.AccessControlFactory. It returns the access control
 // associated with the protobuf message.
 func (f Factory) FromProto(in proto.Message) (arc.AccessControl, error) {
-	pb := in.(*AccessControlProto)
+	var pb *AccessControlProto
+	switch msg := in.(type) {
+	case *any.Any:
+		pb = &AccessControlProto{}
+		err := f.encoder.UnmarshalAny(msg, pb)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
+		}
+	case *AccessControlProto:
+		pb = msg
+	default:
+		return nil, xerrors.Errorf("invalid message type '%T'", in)
+	}
 
 	ac := newAccessControl()
 

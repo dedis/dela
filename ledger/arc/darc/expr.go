@@ -7,6 +7,10 @@ import (
 	"golang.org/x/xerrors"
 )
 
+// expression is an abstraction of a list of identities allowed for a given
+// rule.
+//
+// - implements encoding.Packable
 type expression struct {
 	matches map[string]struct{}
 }
@@ -17,13 +21,15 @@ func newExpression() expression {
 	}
 }
 
+// Evolve returns a new expression with the targets added in the list of
+// authorized identities.
 func (expr expression) Evolve(targets []arc.Identity) (expression, error) {
 	e := expr.Clone()
 
 	for _, target := range targets {
 		text, err := target.MarshalText()
 		if err != nil {
-			return e, err
+			return e, xerrors.Errorf("couldn't marshal identity: %v", err)
 		}
 
 		e.matches[string(text)] = struct{}{}
@@ -32,6 +38,8 @@ func (expr expression) Evolve(targets []arc.Identity) (expression, error) {
 	return e, nil
 }
 
+// Match returns nil if all the targets are allowed for the rule, otherwise it
+// returns the reason why it failed.
 func (expr expression) Match(targets []arc.Identity) error {
 	for _, target := range targets {
 		text, err := target.MarshalText()
@@ -40,13 +48,15 @@ func (expr expression) Match(targets []arc.Identity) error {
 		}
 
 		if _, ok := expr.matches[string(text)]; !ok {
-			return xerrors.Errorf("couldn't match identity %v", target)
+			return xerrors.Errorf("couldn't match identity '%v'", target)
 		}
 	}
 
 	return nil
 }
 
+// Pack implements encoding.Packable. It returns the protobuf message for the
+// expression.
 func (expr expression) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 	pb := &Expression{
 		Matches: make([]string, 0, len(expr.matches)),
@@ -59,6 +69,7 @@ func (expr expression) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 	return pb, nil
 }
 
+// Clone returns a deep copy of the expression.
 func (expr expression) Clone() expression {
 	e := newExpression()
 	for match := range expr.matches {

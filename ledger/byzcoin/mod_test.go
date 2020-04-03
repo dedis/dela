@@ -49,7 +49,7 @@ func TestLedger_Basic(t *testing.T) {
 	txFactory := smartcontract.NewTransactionFactory(bls.NewSigner())
 
 	// Try to create a DARC with the conode key pair.
-	tx, err := contract.NewGenesisTransaction(txFactory)
+	tx, err := txFactory.New(contract.NewGenesisAction())
 	require.NoError(t, err)
 
 	err = actor.AddTransaction(tx)
@@ -70,7 +70,7 @@ func TestLedger_Basic(t *testing.T) {
 	require.IsType(t, (*darc.AccessControlProto)(nil), instance.GetValue())
 
 	// Then update it.
-	tx, err = contract.NewUpdateTransaction(txFactory, tx.GetID())
+	tx, err = txFactory.New(contract.NewUpdateAction(tx.GetID()))
 	require.NoError(t, err)
 
 	err = actor.AddTransaction(tx)

@@ -3,10 +3,9 @@ package contract
 import (
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/empty"
-	"go.dedis.ch/fabric"
+	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/ledger/arc"
 	"go.dedis.ch/fabric/ledger/arc/darc"
-	"go.dedis.ch/fabric/ledger/consumer"
 	sc "go.dedis.ch/fabric/ledger/consumer/smartcontract"
 	"golang.org/x/xerrors"
 )
@@ -16,7 +15,8 @@ const ContractName = "darc"
 
 // Contract is the smart contract implementation for DARCs.
 type Contract struct {
-	factory darc.Factory
+	encoder encoding.ProtoMarshaler
+	factory arc.AccessControlFactory
 }
 
 // Spawn implements smartcontract.Contract. It returns an access control if the
@@ -39,9 +39,7 @@ func (c Contract) Spawn(ctx sc.SpawnContext) (proto.Message, []byte, error) {
 		return nil, nil, err
 	}
 
-	fabric.Logger.Trace().Msgf("new darc: %+v", access)
-
-	darcpb, err := access.Pack(nil)
+	darcpb, err := c.encoder.Pack(access)
 	if err != nil {
 		return nil, nil, xerrors.Errorf("couldn't pack darc: %v", err)
 	}
@@ -63,7 +61,7 @@ func (c Contract) Invoke(ctx sc.InvokeContext) (proto.Message, error) {
 
 	// TODO: use argument to update the darc..
 
-	darcpb, err := access.(darc.Access).Pack(nil)
+	darcpb, err := c.encoder.Pack(access.(darc.Access))
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't pack darc: %v", err)
 	}
@@ -71,37 +69,26 @@ func (c Contract) Invoke(ctx sc.InvokeContext) (proto.Message, error) {
 	return darcpb, nil
 }
 
-// NewGenesisTransaction returns a transaction to spawn a new empty DARC.
-func NewGenesisTransaction(factory sc.TransactionFactory) (consumer.Transaction, error) {
-	spawn := sc.SpawnAction{
+// NewGenesisAction returns a transaction to spawn a new empty DARC.
+func NewGenesisAction() sc.SpawnAction {
+	return sc.SpawnAction{
 		ContractID: ContractName,
 		Argument:   &darc.AccessControlProto{},
 	}
-
-	tx, err := factory.New(spawn)
-	if err != nil {
-		return nil, err
-	}
-
-	return tx, nil
 }
 
-// NewUpdateTransaction returns a transaction to update an existing DARC.
-func NewUpdateTransaction(factory sc.TransactionFactory, key []byte) (consumer.Transaction, error) {
-	invoke := sc.InvokeAction{
+// NewUpdateAction returns a transaction to update an existing DARC.
+func NewUpdateAction(key []byte) sc.InvokeAction {
+	return sc.InvokeAction{
 		Key:      key,
 		Argument: &empty.Empty{},
 	}
-
-	tx, err := factory.New(invoke)
-	if err != nil {
-		return nil, err
-	}
-
-	return tx, nil
 }
 
 // RegisterContract can be used to enable DARC for a smart contract consumer.
 func RegisterContract(c sc.Consumer) {
-	c.Register(ContractName, Contract{})
+	c.Register(ContractName, Contract{
+		encoder: encoding.NewProtoEncoder(),
+		factory: darc.NewFactory(),
+	})
 }

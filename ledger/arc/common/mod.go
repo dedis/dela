@@ -13,6 +13,8 @@ import (
 
 // AccessControlFactory is an access control factory that can decode multiple
 // types of access controls.
+//
+// - implements arc.AccessControlFactory
 type AccessControlFactory struct {
 	encoder   encoding.ProtoMarshaler
 	factories map[reflect.Type]arc.AccessControlFactory

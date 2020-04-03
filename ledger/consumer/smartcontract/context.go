@@ -52,22 +52,22 @@ func (ctx transactionContext) Read(key []byte) (consumer.Instance, error) {
 // transaction.
 type SpawnContext struct {
 	consumer.Context
-	action SpawnAction
+	Action SpawnAction
 }
 
 // GetAction returns the transaction casted as a spawn transaction.
 func (ctx SpawnContext) GetAction() SpawnAction {
-	return ctx.action
+	return ctx.Action
 }
 
 // InvokeContext is the context provided to a smart contract execution of an
 // invoke transaction.
 type InvokeContext struct {
 	consumer.Context
-	action InvokeAction
+	Action InvokeAction
 }
 
 // GetAction returns the transaction casted as an invoke transaction.
 func (ctx InvokeContext) GetAction() InvokeAction {
-	return ctx.action
+	return ctx.Action
 }

@@ -71,11 +71,11 @@ func (c Consumer) Consume(ctx consumer.Context) (consumer.Instance, error) {
 
 	switch action := tx.action.(type) {
 	case SpawnAction:
-		ctx := SpawnContext{Context: ctx, action: action}
+		ctx := SpawnContext{Context: ctx, Action: action}
 
 		return c.consumeSpawn(ctx)
 	case InvokeAction:
-		ctx := InvokeContext{Context: ctx, action: action}
+		ctx := InvokeContext{Context: ctx, Action: action}
 
 		return c.consumeInvoke(ctx)
 	case DeleteAction:
