@@ -15,29 +15,26 @@ message InstanceProto {
 message Spawn {
     string contractID = 1;
     google.protobuf.Any argument = 2;
-    bytes identity = 3;
 }
 
 message Invoke {
     bytes key = 1;
     google.protobuf.Any argument = 2;
-    bytes identity = 4;
 }
 
 message Delete {
     bytes key = 1;
-    bytes identity = 2;
 }
 
 message TransactionProto {
-    google.protobuf.Any identity = 1;
-    uint64 nonce = 2;
+    uint64 nonce = 1;
 
     oneof action {
-        Spawn spawn = 3;
-        Invoke invoke = 4;
-        Delete delete = 5;
+        Spawn spawn = 2;
+        Invoke invoke = 3;
+        Delete delete = 4;
     }
 
+    google.protobuf.Any identity = 5;
     google.protobuf.Any signature = 6;
 }
