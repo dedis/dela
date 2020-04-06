@@ -27,16 +27,17 @@ func (c Contract) Spawn(ctx sc.SpawnContext) (proto.Message, []byte, error) {
 		return nil, nil, xerrors.Errorf("couldn't decode argument: %v", err)
 	}
 
-	access, ok := gnrc.(darc.Access)
+	access, ok := gnrc.(darc.EvolvableAccessControl)
 	if !ok {
-		return nil, nil, xerrors.Errorf("invalid access type '%T'", gnrc)
+		return nil, nil,
+			xerrors.Errorf("'%T' does not implement 'darc.EvolvableAccessControl'", gnrc)
 	}
 
 	// Set a rule to allow the creator of the DARC to update it.
 	rule := arc.Compile(ContractName, "invoke")
 	access, err = access.Evolve(rule, ctx.GetTransaction().GetIdentity())
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, xerrors.Errorf("couldn't evolve darc: %v", err)
 	}
 
 	darcpb, err := c.encoder.Pack(access)
@@ -54,14 +55,19 @@ func (c Contract) Invoke(ctx sc.InvokeContext) (proto.Message, error) {
 		return nil, xerrors.Errorf("couldn't read instance: %v", err)
 	}
 
-	access, err := c.factory.FromProto(instance.GetValue())
+	gnrc, err := c.factory.FromProto(instance.GetValue())
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't decode darc: %v", err)
 	}
 
+	access, ok := gnrc.(darc.EvolvableAccessControl)
+	if !ok {
+		return nil, xerrors.Errorf("'%T' does not implement 'darc.EvolvableAccessControl'", gnrc)
+	}
+
 	// TODO: use argument to update the darc..
 
-	darcpb, err := c.encoder.Pack(access.(darc.Access))
+	darcpb, err := c.encoder.Pack(access)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't pack darc: %v", err)
 	}

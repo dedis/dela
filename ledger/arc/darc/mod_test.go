@@ -92,7 +92,7 @@ func TestFactory_FromProto(t *testing.T) {
 
 	pb := &AccessControlProto{
 		Rules: map[string]*Expression{
-			"fake": &Expression{
+			"fake": {
 				Matches: []string{"aa", "bb"},
 			},
 		},

@@ -17,6 +17,8 @@ type Identity interface {
 // AccessControl is an abstraction to verify if an identity has access to a
 // specific rule.
 type AccessControl interface {
+	encoding.Packable
+
 	Match(rule string, idents ...Identity) error
 }
 

@@ -11,7 +11,18 @@ import (
 
 //go:generate protoc -I ./ --go_out=./ ./messages.proto
 
+// EvolvableAccessControl is an extension of the arc.AccessControl interface to
+// evolve the access control.
+type EvolvableAccessControl interface {
+	arc.AccessControl
+
+	Evolve(rule string, targets ...arc.Identity) (Access, error)
+}
+
 // Access is the implementation for DARC of Access Control.
+//
+// - implements darc.EvolvableAccessControl
+// - implements encoding.Packable
 type Access struct {
 	rules map[string]expression
 }
@@ -23,7 +34,8 @@ func newAccessControl() Access {
 	}
 }
 
-// Evolve updates the rule with the list of targets.
+// Evolve implements darc.EvolvableAccessControl. It updates the rule with the
+// list of targets.
 func (ac Access) Evolve(rule string, targets ...arc.Identity) (Access, error) {
 	access := ac.Clone()
 

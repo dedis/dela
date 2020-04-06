@@ -10,12 +10,13 @@ import (
 	"go.dedis.ch/fabric/ledger/arc/darc"
 	"go.dedis.ch/fabric/ledger/consumer"
 	"go.dedis.ch/fabric/ledger/consumer/smartcontract"
+	"golang.org/x/xerrors"
 )
 
 func TestContract_Spawn(t *testing.T) {
 	contract := Contract{
 		encoder: encoding.NewProtoEncoder(),
-		factory: darc.Factory{},
+		factory: darc.NewFactory(),
 	}
 
 	ctx := smartcontract.SpawnContext{
@@ -26,13 +27,31 @@ func TestContract_Spawn(t *testing.T) {
 	}
 
 	arg := &darc.AccessControlProto{Rules: map[string]*darc.Expression{
-		"darc:invoke": &darc.Expression{Matches: []string{"\252"}},
+		"darc:invoke": {Matches: []string{"\252"}},
 	}}
 
 	pb, arcid, err := contract.Spawn(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []byte{0xff}, arcid)
 	require.True(t, proto.Equal(arg, pb), "%+v != %+v", pb, arg)
+
+	contract.factory = badArcFactory{err: xerrors.New("oops")}
+	_, _, err = contract.Spawn(ctx)
+	require.EqualError(t, err, "couldn't decode argument: oops")
+
+	contract.factory = badArcFactory{arc: fakeArc{}}
+	_, _, err = contract.Spawn(ctx)
+	require.EqualError(t, err,
+		"'contract.fakeArc' does not implement 'darc.EvolvableAccessControl'")
+
+	contract.factory = badArcFactory{arc: badArc{}}
+	_, _, err = contract.Spawn(ctx)
+	require.EqualError(t, err, "couldn't evolve darc: oops")
+
+	contract.factory = darc.NewFactory()
+	contract.encoder = badEncoder{}
+	_, _, err = contract.Spawn(ctx)
+	require.EqualError(t, err, "couldn't pack darc: oops")
 }
 
 func TestContract_Invoke(t *testing.T) {
@@ -49,6 +68,25 @@ func TestContract_Invoke(t *testing.T) {
 	pb, err := contract.Invoke(ctx)
 	require.NoError(t, err)
 	require.NotNil(t, pb)
+
+	ctx.Context = fakeContext{err: xerrors.New("oops")}
+	_, err = contract.Invoke(ctx)
+	require.EqualError(t, err, "couldn't read instance: oops")
+
+	ctx.Context = fakeContext{}
+	contract.factory = badArcFactory{err: xerrors.New("oops")}
+	_, err = contract.Invoke(ctx)
+	require.EqualError(t, err, "couldn't decode darc: oops")
+
+	contract.factory = badArcFactory{arc: fakeArc{}}
+	_, err = contract.Invoke(ctx)
+	require.EqualError(t, err,
+		"'contract.fakeArc' does not implement 'darc.EvolvableAccessControl'")
+
+	contract.factory = darc.NewFactory()
+	contract.encoder = badEncoder{}
+	_, err = contract.Invoke(ctx)
+	require.EqualError(t, err, "couldn't pack darc: oops")
 }
 
 func Test_NewGenesisTransaction(t *testing.T) {
@@ -67,6 +105,14 @@ func Test_RegisterContract(t *testing.T) {
 
 // -----------------------------------------------------------------------------
 // Utility functions
+
+type badEncoder struct {
+	encoding.ProtoEncoder
+}
+
+func (e badEncoder) Pack(encoding.Packable) (proto.Message, error) {
+	return nil, xerrors.New("oops")
+}
 
 type fakeIdentity struct {
 	arc.Identity
@@ -98,6 +144,7 @@ func (i fakeInstance) GetValue() proto.Message {
 
 type fakeContext struct {
 	consumer.Context
+	err error
 }
 
 func (ctx fakeContext) GetTransaction() consumer.Transaction {
@@ -105,5 +152,27 @@ func (ctx fakeContext) GetTransaction() consumer.Transaction {
 }
 
 func (ctx fakeContext) Read([]byte) (consumer.Instance, error) {
-	return fakeInstance{}, nil
+	return fakeInstance{}, ctx.err
+}
+
+type fakeArc struct {
+	arc.AccessControl
+}
+
+type badArc struct {
+	arc.AccessControl
+}
+
+func (arc badArc) Evolve(string, ...arc.Identity) (darc.Access, error) {
+	return darc.Access{}, xerrors.New("oops")
+}
+
+type badArcFactory struct {
+	arc.AccessControlFactory
+	err error
+	arc arc.AccessControl
+}
+
+func (f badArcFactory) FromProto(proto.Message) (arc.AccessControl, error) {
+	return f.arc, f.err
 }

@@ -110,8 +110,8 @@ func TestPage_GetFootprint(t *testing.T) {
 func TestPage_Read(t *testing.T) {
 	page := inMemoryPage{
 		entries: map[Digest]inMemoryEntry{
-			Digest{1}: {value: &wrappers.StringValue{Value: "1"}},
-			Digest{2}: {value: &wrappers.StringValue{Value: "2"}},
+			{1}: {value: &wrappers.StringValue{Value: "1"}},
+			{2}: {value: &wrappers.StringValue{Value: "2"}},
 		},
 	}
 
