@@ -96,6 +96,11 @@ func newSkipBlock(
 	return block, nil
 }
 
+// GetIndex returns the index of the block since the genesis block.
+func (b SkipBlock) GetIndex() uint64 {
+	return b.Index
+}
+
 // GetHash implements blockchain.Block and consensus.Proposal. It returns the
 // hash of the block.
 func (b SkipBlock) GetHash() []byte {

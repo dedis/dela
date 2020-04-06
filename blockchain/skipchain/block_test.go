@@ -46,6 +46,16 @@ func TestDigest_String(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestSkipBlock_GetIndex(t *testing.T) {
+	f := func(index uint64) bool {
+		block := SkipBlock{Index: index}
+		return index == block.GetIndex()
+	}
+
+	err := quick.Check(f, nil)
+	require.NoError(t, err)
+}
+
 func TestSkipBlock_GetHash(t *testing.T) {
 	f := func(block SkipBlock) bool {
 		return bytes.Equal(block.GetHash(), block.hash.Bytes())
@@ -434,6 +444,7 @@ func (pk fakePublicKey) Pack() (proto.Message, error) {
 }
 
 type testProtoEncoder struct {
+	encoding.ProtoEncoder
 	delay int
 	err   error
 }

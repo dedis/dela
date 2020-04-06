@@ -2,12 +2,6 @@ package inventory
 
 import "github.com/golang/protobuf/proto"
 
-// Instance is the smallest unit of storage of a ledger.
-type Instance interface {
-	GetKey() []byte
-	GetValue() proto.Message
-}
-
 // Page represents the state of the inventory at some point in time.
 type Page interface {
 	// GetIndex returns the index of the page since the beginning of the
@@ -18,14 +12,16 @@ type Page interface {
 	// the integrity.
 	GetFootprint() []byte
 
-	Read(key []byte) (Instance, error)
+	// Read returns the value stored at the given key.
+	Read(key []byte) (proto.Message, error)
 }
 
 // WritablePage is an upgradable snapshot that can be committed later on.
 type WritablePage interface {
 	Page
 
-	Write(instance Instance) error
+	// Write stores the value with the key as an identifier.
+	Write(key []byte, value proto.Message) error
 }
 
 // Inventory is an abstraction of the state of the ledger at different point in
