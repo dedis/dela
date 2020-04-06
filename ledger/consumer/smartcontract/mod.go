@@ -36,8 +36,8 @@ func NewConsumer() Consumer {
 	}
 }
 
-// Register registers an executor that can be triggers by a transaction with the
-// contract ID sets to the name.
+// Register registers an executor that can be triggered by a transaction with
+// the contract ID sets to the provided name.
 func (c Consumer) Register(name string, exec Contract) {
 	c.contracts[name] = exec
 }

@@ -39,7 +39,7 @@ type Ledger struct {
 	signer   crypto.Signer
 	bc       blockchain.Blockchain
 	gossiper gossip.Gossiper
-	queue    *txBag
+	bag      *txBag
 	proc     *txProcessor
 	consumer consumer.Consumer
 }
@@ -57,7 +57,7 @@ func NewLedger(mino mino.Mino, consumer consumer.Consumer) *Ledger {
 		signer:   signer,
 		bc:       skipchain.NewSkipchain(mino, cosi),
 		gossiper: gossip.NewFlat(mino, decoder),
-		queue:    newTxBag(),
+		bag:      newTxBag(),
 		proc:     newTxProcessor(consumer),
 		consumer: consumer,
 	}
@@ -131,7 +131,7 @@ func (ldgr *Ledger) routine(actor blockchain.Actor, players mino.Players) {
 		case rumor := <-ldgr.gossiper.Rumors():
 			tx, ok := rumor.(consumer.Transaction)
 			if ok {
-				ldgr.queue.Add(tx)
+				ldgr.bag.Add(tx)
 			}
 		case <-roundTimeout:
 			// This timeout has two purposes. The very first use will determine
@@ -156,6 +156,7 @@ func (ldgr *Ledger) routine(actor blockchain.Actor, players mino.Players) {
 			for i, txProto := range payload.GetTransactions() {
 				tx, err := factory.FromProto(txProto)
 				if err != nil {
+					fabric.Logger.Warn().Err(err).Msg("couldn't decode transaction")
 					return
 				}
 
@@ -165,7 +166,7 @@ func (ldgr *Ledger) routine(actor blockchain.Actor, players mino.Players) {
 				}
 			}
 
-			ldgr.queue.Remove(txRes...)
+			ldgr.bag.Remove(txRes...)
 
 			// This is executed in a different go routine so that the gathering
 			// of transactions can keep on while the block is created.
@@ -177,7 +178,7 @@ func (ldgr *Ledger) routine(actor blockchain.Actor, players mino.Players) {
 }
 
 func (ldgr *Ledger) proposeBlock(actor blockchain.Actor, players mino.Players) {
-	payload, err := ldgr.stagePayload(ldgr.queue.GetAll())
+	payload, err := ldgr.stagePayload(ldgr.bag.GetAll())
 	if err != nil {
 		fabric.Logger.Err(err).Msg("couldn't make the payload")
 	}
@@ -206,6 +207,9 @@ func (ldgr *Ledger) stagePayload(txs []consumer.Transaction) (*BlockPayload, err
 		}
 
 		packedAny, err := ptypes.MarshalAny(packed)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't marshal any: %v", err)
+		}
 
 		payload.Transactions[i] = packedAny
 	}
@@ -242,6 +246,7 @@ func (ldgr *Ledger) Watch(ctx context.Context) <-chan ledger.TransactionResult {
 				for _, txProto := range payload.GetTransactions() {
 					tx, err := factory.FromProto(txProto)
 					if err != nil {
+						fabric.Logger.Warn().Err(err).Msg("couldn't decode transaction")
 						return
 					}
 
