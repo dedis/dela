@@ -251,10 +251,12 @@ func (rpc RPC) Stream(ctx context.Context,
 		gateway, ok := rpc.srv.routingTable[addr]
 		if !ok {
 			// TODO Handle this situation
+			fabric.Logger.Warn().Msg("fix static check until it's done")
 		}
 		_, ok = orchSender.participants[gateway]
 		if !ok {
 			// TODO Handle this situation
+			fabric.Logger.Warn().Msg("fix static check until it's done")
 		}
 		orchSender.participants[addr] = orchSender.participants[gateway]
 	}
@@ -304,7 +306,8 @@ func listenStream(stream overlayStream, orchRecv *receiver,
 			fabric.Logger.Trace().Msgf("(orchestrator) relaying message from "+
 				"'%s' to '%s'", envelope.From, toSend)
 
-			errChan := orchSender.Send(message, address{toSend})
+			errChan := orchSender.sendWithFrom(message,
+				address{envelope.From}, address{toSend})
 			err, more := <-errChan
 			if more {
 				return xerrors.Errorf("failed to send relay message: %v", err)
@@ -460,11 +463,6 @@ type sender struct {
 	traffic      *traffic
 }
 
-type player struct {
-	address      address
-	streamClient overlayStream
-}
-
 // send implements mino.Sender.Send. This function sends the message
 // asynchrously to all the addrs. The chan error is closed when all the send on
 // each addrs are done. This function guarantees that the error chan is
@@ -505,7 +503,7 @@ func (s *sender) sendWithFrom(msg proto.Message, from mino.Address, addrs ...min
 
 // sendSingle sends a message to a single recipient. This function should be
 // called asynchonously for each addrs set in mino.Sender.Send
-func (s sender) sendSingle(msg proto.Message, from, to mino.Address) error {
+func (s *sender) sendSingle(msg proto.Message, from, to mino.Address) error {
 	msgAny, err := s.encoder.MarshalAny(msg)
 	if err != nil {
 		return xerrors.Errorf("couldn't marshal message: %v", err)

@@ -990,6 +990,7 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 	uri := "blabla"
 	handler1 := testMeshHandler{addrID: identifier1}
 	rpc := RPC{
+		encoder: encoding.NewProtoEncoder(),
 		handler: handler1,
 		srv:     server1,
 		uri:     uri,
@@ -1092,7 +1093,7 @@ func TestSender_Send(t *testing.T) {
 		t.Error("there should be an error")
 	}
 	require.EqualError(t, err,
-		"failed to send to client 'fake': couldn't marshal message: oops")
+		"sender '' failed to send to client 'fake': couldn't marshal message: oops")
 }
 
 func TestReceiver_Recv(t *testing.T) {

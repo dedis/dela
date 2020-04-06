@@ -177,7 +177,7 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 					return
 				}
 				if err != nil {
-					err = xerrors.Errorf("failed to listen stream: %v")
+					err = xerrors.Errorf("failed to listen stream: %v", err)
 					fabric.Logger.Err(err).Send()
 					return
 				}
@@ -190,6 +190,7 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		gateway, ok := sender.participants[v]
 		if !ok {
 			// TODO: handle this situation
+			fabric.Logger.Warn().Msg("fix static check until it's done")
 		}
 		sender.participants[k] = gateway
 	}
