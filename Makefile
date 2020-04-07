@@ -7,5 +7,6 @@ lint:
 	@go get -v honnef.co/go/tools/cmd/staticcheck
 	@go mod tidy
 	staticcheck ./...
-	# Custom check with go vet
+
+vet:
 	go build ./internal/check && go vet -vettool=./check -commentLen ./...
