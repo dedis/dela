@@ -144,8 +144,8 @@ func (page inMemoryPage) GetIndex() uint64 {
 	return page.index
 }
 
-// GetFootprint implements inventory.Page. It returns the integrity footprint of the
-// page.
+// GetFootprint implements inventory.Page. It returns the integrity footprint of
+// the page.
 func (page inMemoryPage) GetFootprint() []byte {
 	return page.footprint[:]
 }
