@@ -15,7 +15,7 @@ import (
 // MaxLen is the maximum length of a comment
 var MaxLen = 80
 
-var analyzer = &analysis.Analyzer{
+var commentAnalyzer = &analysis.Analyzer{
 	Name: "commentLen",
 	Doc:  "checks the lengths of comments",
 	Run:  run,
@@ -23,7 +23,7 @@ var analyzer = &analysis.Analyzer{
 
 func main() {
 	unitchecker.Main(
-		analyzer,
+		commentAnalyzer,
 	)
 }
 
@@ -37,9 +37,13 @@ fileLoop:
 				if isFirst && strings.HasPrefix(c.Text, "// Code generated") {
 					continue fileLoop
 				}
-				if len(c.Text) > MaxLen {
-					pass.Reportf(c.Pos(), "Comment too long: %s (%d)",
-						c.Text, len(c.Text))
+				// in case of /* */ comment there might be multiple lines
+				lines := strings.Split(c.Text, "\n")
+				for _, line := range lines {
+					if len(line) > MaxLen {
+						pass.Reportf(c.Pos(), "Comment too long: %s (%d)",
+							line, len(line))
+					}
 				}
 				isFirst = false
 			}
