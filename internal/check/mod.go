@@ -6,7 +6,7 @@ package main
 // `go build && go vet -vettool=./check -commentLen ./...`
 
 import (
-	"go/ast"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/unitchecker"
@@ -29,24 +29,21 @@ func main() {
 
 // run parses all the comments in ast.File
 func run(pass *analysis.Pass) (interface{}, error) {
+fileLoop:
 	for _, file := range pass.Files {
-		ast.Inspect(file, func(node ast.Node) bool {
-			switch x := node.(type) {
-			case *ast.File:
-				comments := x.Comments
-				for _, cg := range comments {
-					for _, c := range cg.List {
-						if len(c.Text) > MaxLen {
-							pass.Reportf(x.Pos(), "Comment too long: %s (%d)",
-								c.Text, len(c.Text))
-						}
-					}
+		isFirst := true
+		for _, cg := range file.Comments {
+			for _, c := range cg.List {
+				if isFirst && strings.HasPrefix(c.Text, "// Code generated") {
+					continue fileLoop
 				}
-				return false
-			default:
+				if len(c.Text) > MaxLen {
+					pass.Reportf(c.Pos(), "Comment too long: %s (%d)",
+						c.Text, len(c.Text))
+				}
+				isFirst = false
 			}
-			return false
-		})
+		}
 	}
 	return nil, nil
 }
