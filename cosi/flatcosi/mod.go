@@ -19,8 +19,6 @@ const (
 	rpcName = "cosi"
 )
 
-var protoenc encoding.ProtoMarshaler = encoding.NewProtoEncoder()
-
 // Flat is an implementation of the collective signing interface by
 // using BLS signatures.
 type Flat struct {
@@ -65,8 +63,9 @@ func (cosi *Flat) GetVerifier(ca cosi.CollectiveAuthority) (crypto.Verifier, err
 // requests. The actor can also be used to sign a message.
 func (cosi *Flat) Listen(h cosi.Hashable) (cosi.Actor, error) {
 	actor := flatActor{
-		logger: fabric.Logger,
-		signer: cosi.signer,
+		logger:  fabric.Logger,
+		signer:  cosi.signer,
+		encoder: encoding.NewProtoEncoder(),
 	}
 
 	rpc, err := cosi.mino.MakeRPC(rpcName, newHandler(cosi.signer, h))
@@ -80,23 +79,19 @@ func (cosi *Flat) Listen(h cosi.Hashable) (cosi.Actor, error) {
 }
 
 type flatActor struct {
-	logger zerolog.Logger
-	rpc    mino.RPC
-	signer crypto.AggregateSigner
+	logger  zerolog.Logger
+	rpc     mino.RPC
+	signer  crypto.AggregateSigner
+	encoder encoding.ProtoMarshaler
 }
 
 // Sign returns the collective signature of the block.
 func (a flatActor) Sign(ctx context.Context, msg cosi.Message,
 	ca cosi.CollectiveAuthority) (crypto.Signature, error) {
 
-	packed, err := msg.Pack()
+	data, err := a.encoder.PackAny(msg)
 	if err != nil {
-		return nil, encoding.NewEncodingError("message", err)
-	}
-
-	data, err := protoenc.MarshalAny(packed)
-	if err != nil {
-		return nil, encoding.NewAnyEncodingError(packed, err)
+		return nil, xerrors.Errorf("couldn't pack message: %v", err)
 	}
 
 	verifier, err := a.signer.GetVerifierFactory().FromIterator(ca.PublicKeyIterator())
@@ -144,7 +139,7 @@ func (a flatActor) processResponse(resp proto.Message, agg crypto.Signature) (cr
 
 	sig, err := a.signer.GetSignatureFactory().FromProto(reply.GetSignature())
 	if err != nil {
-		return nil, encoding.NewDecodingError("signature", err)
+		return nil, xerrors.Errorf("couldn't decode signature: %v", err)
 	}
 
 	if agg == nil {

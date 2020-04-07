@@ -7,7 +7,6 @@ import (
 	"context"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto"
@@ -24,24 +23,25 @@ const (
 
 // Consensus is the implementation of the consensus.Consensus interface.
 type Consensus struct {
-	storage Storage
-	cosi    cosi.CollectiveSigning
-	mino    mino.Mino
-	rpc     mino.RPC
-	factory ChainFactory
-	queue   Queue
+	storage      Storage
+	cosi         cosi.CollectiveSigning
+	mino         mino.Mino
+	queue        Queue
+	encoder      encoding.ProtoMarshaler
+	hashFactory  crypto.HashFactory
+	chainFactory consensus.ChainFactory
 }
 
 // NewCoSiPBFT returns a new instance.
 func NewCoSiPBFT(mino mino.Mino, cosi cosi.CollectiveSigning) *Consensus {
-	chainFactory := newChainFactory(cosi.GetSignatureFactory())
-
 	c := &Consensus{
-		storage: newInMemoryStorage(),
-		mino:    mino,
-		cosi:    cosi,
-		factory: chainFactory,
-		queue:   newQueue(chainFactory),
+		storage:      newInMemoryStorage(),
+		mino:         mino,
+		cosi:         cosi,
+		queue:        newQueue(),
+		encoder:      encoding.NewProtoEncoder(),
+		hashFactory:  crypto.NewSha256Factory(),
+		chainFactory: newChainFactory(cosi.GetSignatureFactory()),
 	}
 
 	return c
@@ -49,7 +49,7 @@ func NewCoSiPBFT(mino mino.Mino, cosi cosi.CollectiveSigning) *Consensus {
 
 // GetChainFactory returns the chain factory.
 func (c *Consensus) GetChainFactory() consensus.ChainFactory {
-	return c.factory
+	return c.chainFactory
 }
 
 // GetChain returns a valid chain to the given identifier.
@@ -59,9 +59,9 @@ func (c *Consensus) GetChain(id Digest) (consensus.Chain, error) {
 		return nil, xerrors.Errorf("couldn't read the chain: %v", err)
 	}
 
-	chain, err := c.factory.FromProto(&ChainProto{Links: stored})
+	chain, err := c.chainFactory.FromProto(&ChainProto{Links: stored})
 	if err != nil {
-		return nil, encoding.NewDecodingError("chain", err)
+		return nil, xerrors.Errorf("couldn't decode chain: %v", err)
 	}
 
 	return chain, nil
@@ -76,7 +76,8 @@ func (c *Consensus) Listen(v consensus.Validator) (consensus.Actor, error) {
 
 	actor := pbftActor{
 		closing:     make(chan struct{}),
-		hashFactory: c.factory.GetHashFactory(),
+		hashFactory: c.hashFactory,
+		encoder:     c.encoder,
 	}
 
 	var err error
@@ -98,6 +99,7 @@ type pbftActor struct {
 	hashFactory crypto.HashFactory
 	cosiActor   cosi.Actor
 	rpc         mino.RPC
+	encoder     encoding.ProtoMarshaler
 }
 
 // Propose implements consensus.Actor. It takes the proposal and send it to the
@@ -134,16 +136,11 @@ func (a pbftActor) Propose(p consensus.Proposal, players mino.Players) error {
 		return xerrors.Errorf("couldn't sign the commit: %v", err)
 	}
 
-	sigpacked, err := sig.Pack()
-	if err != nil {
-		return encoding.NewEncodingError("commit signature", err)
-	}
-
 	// 3. Propagate the final commit signature.
 	propagateReq := &PropagateRequest{To: p.GetHash()}
-	propagateReq.Commit, err = protoenc.MarshalAny(sigpacked)
+	propagateReq.Commit, err = a.encoder.PackAny(sig)
 	if err != nil {
-		return encoding.NewAnyEncodingError(sigpacked, err)
+		return xerrors.Errorf("couldn't pack signature: %v", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -177,15 +174,14 @@ type handler struct {
 func (h handler) Hash(addr mino.Address, in proto.Message) (Digest, error) {
 	switch msg := in.(type) {
 	case *PrepareRequest:
-		var da ptypes.DynamicAny
-		err := protoenc.UnmarshalAny(msg.GetProposal(), &da)
+		proposalpb, err := h.encoder.UnmarshalDynamicAny(msg.GetProposal())
 		if err != nil {
-			return nil, encoding.NewAnyDecodingError(&da, err)
+			return nil, xerrors.Errorf("couldn't unmarshal proposal: %v", err)
 		}
 
 		// The proposal first needs to be validated by the caller of the module
 		// to insure the generic data is valid.
-		proposal, err := h.validator.Validate(addr, da.Message)
+		proposal, err := h.validator.Validate(addr, proposalpb)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't validate the proposal: %v", err)
 		}
@@ -210,7 +206,7 @@ func (h handler) Hash(addr mino.Address, in proto.Message) (Digest, error) {
 			return nil, xerrors.Errorf("couldn't add to queue: %v", err)
 		}
 
-		hash, err := forwardLink.computeHash(h.factory.GetHashFactory().New())
+		hash, err := forwardLink.computeHash(h.hashFactory.New())
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't compute hash: %v", err)
 		}
@@ -219,9 +215,9 @@ func (h handler) Hash(addr mino.Address, in proto.Message) (Digest, error) {
 		// by cosi is returned.
 		return hash, nil
 	case *CommitRequest:
-		prepare, err := h.factory.DecodeSignature(msg.GetPrepare())
+		prepare, err := h.cosi.GetSignatureFactory().FromProto(msg.GetPrepare())
 		if err != nil {
-			return nil, encoding.NewDecodingError("prepare signature", err)
+			return nil, xerrors.Errorf("couldn't decode prepare signature: %v", err)
 		}
 
 		err = h.queue.LockProposal(msg.GetTo(), prepare)
@@ -253,9 +249,9 @@ func (h rpcHandler) Process(req mino.Request) (proto.Message, error) {
 		return nil, xerrors.Errorf("message type not supported: %T", req.Message)
 	}
 
-	commit, err := h.factory.DecodeSignature(msg.GetCommit())
+	commit, err := h.cosi.GetSignatureFactory().FromProto(msg.GetCommit())
 	if err != nil {
-		return nil, encoding.NewDecodingError("commit signature", err)
+		return nil, xerrors.Errorf("couldn't decode commit signature: %v", err)
 	}
 
 	forwardLink, err := h.queue.Finalize(msg.GetTo(), commit)

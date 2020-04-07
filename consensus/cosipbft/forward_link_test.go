@@ -44,14 +44,12 @@ func TestForwardLink_Verify(t *testing.T) {
 }
 
 func TestForwardLink_Pack(t *testing.T) {
-	defer func() { protoenc = encoding.NewProtoEncoder() }()
-
 	fl := forwardLink{
 		from: []byte{0xaa},
 		to:   []byte{0xbb},
 	}
 
-	pb, err := fl.Pack()
+	pb, err := fl.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
 	flp, ok := pb.(*ForwardLinkProto)
 	require.True(t, ok)
@@ -61,28 +59,27 @@ func TestForwardLink_Pack(t *testing.T) {
 	require.Nil(t, flp.GetCommit())
 
 	fl.prepare = fakeSignature{value: 1}
-	pb, err = fl.Pack()
+	pb, err = fl.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
 	flp = pb.(*ForwardLinkProto)
 	checkSignatureValue(t, flp.GetPrepare(), 1)
 
 	fl.commit = fakeSignature{value: 2}
-	pb, err = fl.Pack()
+	pb, err = fl.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
 	flp = pb.(*ForwardLinkProto)
 	checkSignatureValue(t, flp.GetCommit(), 2)
 
 	// Test if the prepare signature cannot be packed.
-	fl.prepare = fakeSignature{err: xerrors.New("oops")}
-	_, err = fl.Pack()
-	require.EqualError(t, xerrors.Unwrap(err), "couldn't pack: oops")
+	fl.prepare = fakeSignature{}
+	_, err = fl.Pack(badPackAnyEncoder{})
+	require.EqualError(t, err, "couldn't pack prepare signature: oops")
 
 	// Test if the commit signature cannot be packed.
 	fl.prepare = nil
 	fl.commit = fakeSignature{}
-	protoenc = &fakeEncoder{}
-	_, err = fl.Pack()
-	require.EqualError(t, xerrors.Unwrap(xerrors.Unwrap(err)), "marshal any error")
+	_, err = fl.Pack(badPackAnyEncoder{})
+	require.EqualError(t, err, "couldn't pack commit signature: oops")
 }
 
 type fakeHash struct {
@@ -159,28 +156,27 @@ func TestChain_Pack(t *testing.T) {
 		},
 	}
 
-	pb, err := chain.Pack()
+	pb, err := chain.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
 	require.IsType(t, (*ChainProto)(nil), pb)
 	require.Len(t, pb.(*ChainProto).GetLinks(), 2)
 
 	chain.links[0].prepare = fakeSignature{err: xerrors.New("oops")}
-	_, err = chain.Pack()
-	require.EqualError(t, err, "couldn't encode forward link: "+
-		"couldn't encode prepare: couldn't pack: oops")
+	_, err = chain.Pack(badPackEncoder{})
+	require.EqualError(t, err, "couldn't pack forward link: oops")
 }
 
 type fakeSignatureFactory struct {
 	crypto.SignatureFactory
+	err    error
+	errSig error
 }
 
 func (f fakeSignatureFactory) FromProto(pb proto.Message) (crypto.Signature, error) {
-	return nil, xerrors.New("oops")
+	return fakeSignature{err: f.errSig}, f.err
 }
 
 func TestChainFactory_FromProto(t *testing.T) {
-	defer func() { protoenc = encoding.NewProtoEncoder() }()
-
 	chainpb := &ChainProto{
 		Links: []*ForwardLinkProto{
 			{},
@@ -204,19 +200,13 @@ func TestChainFactory_FromProto(t *testing.T) {
 	require.EqualError(t, err, "message type not supported: *empty.Empty")
 
 	chainpb.Links[0].Prepare = &any.Any{}
+	factory = newChainFactory(fakeSignatureFactory{err: xerrors.New("oops")})
 	_, err = factory.FromProto(chainpb)
-	require.EqualError(t, xerrors.Unwrap(err), "couldn't decode prepare signature: oops")
+	require.EqualError(t, err, "couldn't decode prepare signature: oops")
 
-	protoenc = &fakeEncoder{}
+	factory.encoder = badUnmarshalAnyEncoder{}
 	_, err = factory.FromProto(chainany)
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err, encoding.NewAnyDecodingError((*ChainProto)(nil), nil)))
-}
-
-func TestChainFactory_DecodeSignature(t *testing.T) {
-	factory := defaultChainFactory{signatureFactory: fakeSignatureFactory{}}
-	_, err := factory.DecodeSignature(nil)
-	require.EqualError(t, err, "oops")
+	require.EqualError(t, err, "couldn't unmarshal message: oops")
 }
 
 type badHash struct {
@@ -234,9 +224,8 @@ func (f badHashFactory) New() hash.Hash {
 }
 
 func TestChainFactory_DecodeForwardLink(t *testing.T) {
-	defer func() { protoenc = encoding.NewProtoEncoder() }()
-
-	factory := defaultChainFactory{
+	factory := chainFactory{
+		encoder:          encoding.NewProtoEncoder(),
 		signatureFactory: fakeSignatureFactory{},
 		hashFactory:      sha256Factory{},
 	}
@@ -245,50 +234,64 @@ func TestChainFactory_DecodeForwardLink(t *testing.T) {
 	flany, err := ptypes.MarshalAny(forwardLink)
 	require.NoError(t, err)
 
-	chain, err := factory.DecodeForwardLink(flany)
+	chain, err := factory.decodeForwardLink(flany)
 	require.NoError(t, err)
 	require.NotNil(t, chain)
 
-	_, err = factory.DecodeForwardLink(&empty.Empty{})
+	_, err = factory.decodeForwardLink(&empty.Empty{})
 	require.EqualError(t, err, "unknown message type: *empty.Empty")
 
 	forwardLink.Prepare = &any.Any{}
-	_, err = factory.DecodeForwardLink(forwardLink)
+	factory.signatureFactory = fakeSignatureFactory{err: xerrors.New("oops")}
+	_, err = factory.decodeForwardLink(forwardLink)
 	require.EqualError(t, err, "couldn't decode prepare signature: oops")
 
 	forwardLink.Prepare = nil
 	forwardLink.Commit = &any.Any{}
-	_, err = factory.DecodeForwardLink(forwardLink)
+	_, err = factory.decodeForwardLink(forwardLink)
 	require.EqualError(t, err, "couldn't decode commit signature: oops")
 
 	forwardLink.Commit = nil
 	factory.hashFactory = badHashFactory{}
-	_, err = factory.DecodeForwardLink(forwardLink)
+	_, err = factory.decodeForwardLink(forwardLink)
 	require.EqualError(t, err, "couldn't hash the forward link: couldn't write 'from': oops")
 
-	protoenc = &fakeEncoder{}
-	_, err = factory.DecodeForwardLink(flany)
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err, encoding.NewAnyDecodingError((*ForwardLinkProto)(nil), nil)))
+	factory.encoder = badUnmarshalAnyEncoder{}
+	_, err = factory.decodeForwardLink(flany)
+	require.EqualError(t, err, "couldn't unmarshal forward link: oops")
 }
 
-type fakePublicKey struct {
-	crypto.PublicKey
+// -----------------------------------------------------------------------------
+// Utility functions
+
+type badPackAnyEncoder struct {
+	encoding.ProtoEncoder
 }
 
-type fakeEncoder struct {
-	encoding.ProtoMarshaler
-	delay int
+func (e badPackAnyEncoder) PackAny(encoding.Packable) (*any.Any, error) {
+	return nil, xerrors.New("oops")
 }
 
-func (e *fakeEncoder) MarshalAny(pb proto.Message) (*any.Any, error) {
-	if e.delay > 0 {
-		e.delay--
-		return ptypes.MarshalAny(pb)
-	}
-	return nil, xerrors.New("marshal any error")
+type badPackEncoder struct {
+	encoding.ProtoEncoder
 }
 
-func (e *fakeEncoder) UnmarshalAny(*any.Any, proto.Message) error {
-	return xerrors.New("unmarshal any error")
+func (e badPackEncoder) Pack(encoding.Packable) (proto.Message, error) {
+	return nil, xerrors.New("oops")
+}
+
+type badUnmarshalAnyEncoder struct {
+	encoding.ProtoEncoder
+}
+
+func (e badUnmarshalAnyEncoder) UnmarshalAny(*any.Any, proto.Message) error {
+	return xerrors.New("oops")
+}
+
+type badUnmarshalDynEncoder struct {
+	encoding.ProtoEncoder
+}
+
+func (e badUnmarshalDynEncoder) UnmarshalDynamicAny(*any.Any) (proto.Message, error) {
+	return nil, xerrors.New("oops")
 }

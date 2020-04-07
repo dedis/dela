@@ -3,7 +3,6 @@ package mem
 import (
 	"bytes"
 	"hash"
-	"io"
 	"testing"
 	"testing/quick"
 
@@ -154,19 +153,6 @@ func TestPage_Write(t *testing.T) {
 
 // -----------------------------------------------------------------------------
 // Utility functions
-
-type badWriter struct {
-	io.Writer
-	delay int
-}
-
-func (w *badWriter) Write([]byte) (int, error) {
-	if w.delay == 0 {
-		return 0, xerrors.New("oops")
-	}
-	w.delay--
-	return 0, nil
-}
 
 type badHash struct {
 	hash.Hash

@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	proto "github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
 	"go.dedis.ch/fabric/encoding"
+	"golang.org/x/xerrors"
 )
 
 // epoch is a part of an history. In other words, it represents a time step in
@@ -21,7 +21,7 @@ type epoch struct {
 
 // Pack implements encoding.Packable. It returns the protobuf message for an
 // epoch.
-func (e epoch) Pack() (proto.Message, error) {
+func (e epoch) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 	pb := &Epoch{
 		Random: e.random,
 		Hash:   e.hash,
@@ -73,15 +73,15 @@ func (h history) Equal(other history) bool {
 
 // Pack implements encoding.Packable. It returns the protobuf message for an
 // history.
-func (h history) Pack() (proto.Message, error) {
+func (h history) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	pb := &History{
 		Epochs: make([]*Epoch, len(h)),
 	}
 
 	for i, epoch := range h {
-		packed, err := epoch.Pack()
+		packed, err := enc.Pack(epoch)
 		if err != nil {
-			return nil, encoding.NewEncodingError("epoch", err)
+			return nil, xerrors.Errorf("couldn't pack epoch: %v", err)
 		}
 
 		pb.Epochs[i] = packed.(*Epoch)
@@ -175,15 +175,17 @@ type historiesFactory interface {
 	FromMessageSet(set map[int64]*Message) (histories, error)
 }
 
-type defaultHistoriesFactory struct{}
+type defaultHistoriesFactory struct {
+	encoder encoding.ProtoMarshaler
+}
 
 func (f defaultHistoriesFactory) FromMessageSet(set map[int64]*Message) (histories, error) {
 	hists := make(histories, 0, len(set))
 	for _, msg := range set {
 		hist := &History{}
-		err := ptypes.UnmarshalAny(msg.GetValue(), hist)
+		err := f.encoder.UnmarshalAny(msg.GetValue(), hist)
 		if err != nil {
-			return nil, encoding.NewAnyDecodingError(hist, err)
+			return nil, xerrors.Errorf("couldn't unmarshal history: %v", err)
 		}
 
 		epochs := make([]epoch, len(hist.GetEpochs()))

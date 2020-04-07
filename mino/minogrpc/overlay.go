@@ -6,7 +6,6 @@ import (
 	"io"
 	"sync"
 
-	"github.com/golang/protobuf/ptypes"
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
@@ -19,6 +18,7 @@ import (
 // gRPC service for the overlay. The handler map points to the one in
 // Server.Handlers, which is updated each time the makeRPC function is called.
 type overlayService struct {
+	encoder  encoding.ProtoMarshaler
 	handlers map[string]mino.Handler
 	// this is the address of the server. This address is used to provide
 	// insighful information in the traffic history, as it is used to form the
@@ -58,15 +58,14 @@ func (o overlayService) Call(ctx context.Context, msg *OverlayMsg) (*OverlayMsg,
 			"of handlers, did you register it?", apiURI[0])
 	}
 
-	var dynamicAny ptypes.DynamicAny
-	err := ptypes.UnmarshalAny(msg.Message, &dynamicAny)
+	message, err := o.encoder.UnmarshalDynamicAny(msg.Message)
 	if err != nil {
-		return nil, encoding.NewAnyDecodingError(msg.Message, err)
+		return nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
 	}
 
 	req := mino.Request{
 		Address: o.addr,
-		Message: dynamicAny.Message,
+		Message: message,
 	}
 
 	result, err := handler.Process(req)
@@ -75,9 +74,9 @@ func (o overlayService) Call(ctx context.Context, msg *OverlayMsg) (*OverlayMsg,
 			"the handler using the provided message: %v", err)
 	}
 
-	anyResult, err := ptypes.MarshalAny(result)
+	anyResult, err := o.encoder.MarshalAny(result)
 	if err != nil {
-		return nil, encoding.NewAnyEncodingError(result, err)
+		return nil, xerrors.Errorf("couldn't marshal result: %v", err)
 	}
 
 	return &OverlayMsg{Message: anyResult}, nil
@@ -114,6 +113,7 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 	// For the moment this sender can only receive messages to itself
 	// TODO: find a way to know the other nodes.
 	sender := &sender{
+		encoder: o.encoder,
 		// This address is used when the client doesn't find the address it
 		// should send the message to in the list of participant. In that case
 		// it packs the message in an enveloppe and send it back to this
@@ -129,6 +129,7 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 	}
 
 	receiver := receiver{
+		encoder: o.encoder,
 		in:      make(chan *OverlayMsg),
 		errs:    make(chan error),
 		name:    "remote RPC",
@@ -176,7 +177,7 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 					return
 				}
 				if err != nil {
-					err = xerrors.Errorf("failed to listen stream: %v")
+					err = xerrors.Errorf("failed to listen stream: %v", err)
 					fabric.Logger.Err(err).Send()
 					return
 				}
@@ -189,6 +190,7 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		gateway, ok := sender.participants[v]
 		if !ok {
 			// TODO: handle this situation
+			fabric.Logger.Warn().Msg("fix static check until it's done")
 		}
 		sender.participants[k] = gateway
 	}
@@ -205,7 +207,7 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 				return
 			}
 			if err != nil {
-				err = xerrors.Errorf("failed to listen stream: %v")
+				err = xerrors.Errorf("failed to listen stream: %v", err)
 				fabric.Logger.Err(err).Send()
 				return
 			}

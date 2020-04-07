@@ -8,17 +8,12 @@ import (
 	"hash"
 
 	proto "github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
-)
-
-var (
-	protoenc encoding.ProtoMarshaler = encoding.NewProtoEncoder()
 )
 
 // Digest is an alias of a slice of bytes that represents the digest of a block.
@@ -54,21 +49,27 @@ func (f sha256Factory) New() hash.Hash {
 type SkipBlock struct {
 	hash     Digest
 	verifier crypto.Verifier
+
 	// Index is the block index since the genesis block.
 	Index uint64
+
 	// Conodes is the list of conodes participating in the consensus.
 	Conodes Conodes
+
 	// GenesisID is the hash of the genesis block which represents the chain
 	// identifier.
 	GenesisID Digest
+
 	// BackLink is the hash of the previous block in the chain.
 	BackLink Digest
+
 	// Payload is the data stored in the block. It representation is independant
 	// from the skipchain module.
 	Payload proto.Message
 }
 
 func newSkipBlock(
+	encoder encoding.ProtoMarshaler,
 	hashFactory crypto.HashFactory,
 	verifier crypto.Verifier,
 	index uint64,
@@ -86,7 +87,7 @@ func newSkipBlock(
 		Payload:   data,
 	}
 
-	hash, err := block.computeHash(hashFactory)
+	hash, err := block.computeHash(hashFactory, encoder)
 	if err != nil {
 		return SkipBlock{}, xerrors.Errorf("couldn't hash the block: %w", err)
 	}
@@ -132,15 +133,15 @@ func (b SkipBlock) GetPayload() proto.Message {
 
 // Pack implements encoding.Packable. It returns the protobuf message for a
 // block.
-func (b SkipBlock) Pack() (proto.Message, error) {
-	payloadAny, err := protoenc.MarshalAny(b.Payload)
+func (b SkipBlock) Pack(encoder encoding.ProtoMarshaler) (proto.Message, error) {
+	payloadAny, err := encoder.MarshalAny(b.Payload)
 	if err != nil {
-		return nil, encoding.NewAnyEncodingError(b.Payload, err)
+		return nil, xerrors.Errorf("couldn't marshal the payload: %v", err)
 	}
 
-	roster, err := b.Conodes.Pack()
+	roster, err := encoder.Pack(b.Conodes)
 	if err != nil {
-		return nil, encoding.NewEncodingError("conodes", err)
+		return nil, xerrors.Errorf("couldn't pack the conodes: %v", err)
 	}
 
 	blockproto := &BlockProto{
@@ -160,7 +161,9 @@ func (b SkipBlock) String() string {
 	return fmt.Sprintf("Block[%v]", b.hash)
 }
 
-func (b SkipBlock) computeHash(factory crypto.HashFactory) (Digest, error) {
+func (b SkipBlock) computeHash(factory crypto.HashFactory,
+	enc encoding.ProtoMarshaler) (Digest, error) {
+
 	h := factory.New()
 
 	buffer := make([]byte, 20)
@@ -187,12 +190,7 @@ func (b SkipBlock) computeHash(factory crypto.HashFactory) (Digest, error) {
 	}
 
 	if b.Payload != nil {
-		databuf, err := protoenc.Marshal(b.Payload)
-		if err != nil {
-			return Digest{}, xerrors.Errorf("couldn't marshal payload: %w", err)
-		}
-
-		_, err = h.Write(databuf)
+		err := enc.MarshalStable(h, b.Payload)
 		if err != nil {
 			return Digest{}, xerrors.Errorf("couldn't write payload: %v", err)
 		}
@@ -230,23 +228,19 @@ func (vb VerifiableBlock) Verify(v crypto.Verifier) error {
 
 // Pack implements encoding.Packable. It returns the protobuf message for a
 // verifiable block.
-func (vb VerifiableBlock) Pack() (proto.Message, error) {
-	block, err := vb.SkipBlock.Pack()
+func (vb VerifiableBlock) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
+	block, err := enc.Pack(vb.SkipBlock)
 	if err != nil {
-		return nil, encoding.NewEncodingError("block", err)
+		return nil, xerrors.Errorf("couldn't pack block: %v", err)
 	}
 
 	packed := &VerifiableBlockProto{
 		Block: block.(*BlockProto),
 	}
 
-	packedChain, err := vb.Chain.Pack()
+	packed.Chain, err = enc.PackAny(vb.Chain)
 	if err != nil {
-		return nil, encoding.NewEncodingError("chain", err)
-	}
-	packed.Chain, err = protoenc.MarshalAny(packedChain)
-	if err != nil {
-		return nil, encoding.NewAnyEncodingError(packedChain, err)
+		return nil, xerrors.Errorf("couldn't pack chain: %v", err)
 	}
 
 	return packed, nil
@@ -258,6 +252,7 @@ func (vb VerifiableBlock) Pack() (proto.Message, error) {
 // - implements blockchain.BlockFactory
 type blockFactory struct {
 	*Skipchain
+	encoder     encoding.ProtoMarshaler
 	hashFactory crypto.HashFactory
 }
 
@@ -270,6 +265,7 @@ func (f blockFactory) fromPrevious(prev SkipBlock, data proto.Message) (SkipBloc
 	}
 
 	block, err := newSkipBlock(
+		f.encoder,
 		f.hashFactory,
 		prev.verifier,
 		prev.Index+1,
@@ -294,7 +290,7 @@ func (f blockFactory) decodeConodes(msgs []*ConodeProto) (Conodes, error) {
 	for i, msg := range msgs {
 		publicKey, err := pubkeyFactory.FromProto(msg.GetPublicKey())
 		if err != nil {
-			return nil, encoding.NewDecodingError("public key", err)
+			return nil, xerrors.Errorf("couldn't decode public key: %v", err)
 		}
 
 		conodes[i] = Conode{
@@ -311,10 +307,9 @@ func (f blockFactory) decodeBlock(src proto.Message) (SkipBlock, error) {
 		return SkipBlock{}, xerrors.Errorf("invalid message type '%T'", src)
 	}
 
-	var payload ptypes.DynamicAny
-	err := protoenc.UnmarshalAny(in.GetPayload(), &payload)
+	payload, err := f.encoder.UnmarshalDynamicAny(in.GetPayload())
 	if err != nil {
-		return SkipBlock{}, encoding.NewAnyDecodingError(&payload, err)
+		return SkipBlock{}, xerrors.Errorf("couldn't unmarshal payload: %v", err)
 	}
 
 	backLink := Digest{}
@@ -322,7 +317,7 @@ func (f blockFactory) decodeBlock(src proto.Message) (SkipBlock, error) {
 
 	conodes, err := f.decodeConodes(in.GetRoster().GetConodes())
 	if err != nil {
-		return SkipBlock{}, xerrors.Errorf("couldn't create the conodes: %v", err)
+		return SkipBlock{}, err
 	}
 
 	verifier, err := f.cosi.GetVerifier(conodes)
@@ -334,13 +329,14 @@ func (f blockFactory) decodeBlock(src proto.Message) (SkipBlock, error) {
 	copy(genesisID[:], in.GetGenesisID())
 
 	block, err := newSkipBlock(
+		f.encoder,
 		f.hashFactory,
 		verifier,
 		in.GetIndex(),
 		conodes,
 		genesisID,
 		backLink,
-		payload.Message,
+		payload,
 	)
 
 	if err != nil {
@@ -370,7 +366,12 @@ func (f blockFactory) FromVerifiable(src proto.Message) (blockchain.Block, error
 		return nil, xerrors.Errorf("couldn't decode the chain: %v", err)
 	}
 
-	err = VerifiableBlock{SkipBlock: block, Chain: chain}.Verify(block.verifier)
+	vb := VerifiableBlock{
+		SkipBlock: block,
+		Chain:     chain,
+	}
+
+	err = vb.Verify(block.verifier)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't verify: %v", err)
 	}

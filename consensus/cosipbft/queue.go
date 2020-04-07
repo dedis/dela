@@ -27,15 +27,17 @@ type item struct {
 
 type queue struct {
 	sync.Mutex
-	locked       bool
-	chainFactory ChainFactory
-	items        []item
+	locked      bool
+	hashFactory crypto.HashFactory
+	items       []item
+	encoder     encoding.ProtoMarshaler
 }
 
-func newQueue(factory ChainFactory) *queue {
+func newQueue() *queue {
 	return &queue{
-		locked:       false,
-		chainFactory: factory,
+		locked:      false,
+		hashFactory: crypto.NewSha256Factory(),
+		encoder:     encoding.NewProtoEncoder(),
 	}
 }
 
@@ -90,7 +92,7 @@ func (q *queue) LockProposal(to Digest, sig crypto.Signature) error {
 		to:   item.to,
 	}
 
-	hash, err := forwardLink.computeHash(q.chainFactory.GetHashFactory().New())
+	hash, err := forwardLink.computeHash(q.hashFactory.New())
 	if err != nil {
 		return xerrors.Errorf("couldn't hash proposal: %v", err)
 	}
@@ -138,9 +140,9 @@ func (q *queue) Finalize(to Digest, sig crypto.Signature) (*ForwardLinkProto, er
 		return nil, xerrors.Errorf("couldn't verify signature: %v", err)
 	}
 
-	packed, err := forwardLink.Pack()
+	packed, err := q.encoder.Pack(forwardLink)
 	if err != nil {
-		return nil, encoding.NewEncodingError("forward link", err)
+		return nil, xerrors.Errorf("couldn't pack forward link: %v", err)
 	}
 
 	q.locked = false

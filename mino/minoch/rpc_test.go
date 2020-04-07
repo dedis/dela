@@ -102,6 +102,8 @@ func TestRPC_StreamFailures(t *testing.T) {
 		if !ok {
 			t.Error("expected an error")
 		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("timeout")
 	}
 }
 
@@ -111,10 +113,7 @@ type fakeIterator struct {
 }
 
 func (i *fakeIterator) HasNext() bool {
-	if i.index+1 < len(i.instances) {
-		return true
-	}
-	return false
+	return i.index+1 < len(i.instances)
 }
 
 func (i *fakeIterator) GetNext() mino.Address {

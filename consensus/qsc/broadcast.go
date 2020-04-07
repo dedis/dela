@@ -4,7 +4,6 @@ import (
 	"context"
 
 	proto "github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
 	"github.com/rs/zerolog"
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/encoding"
@@ -46,7 +45,7 @@ func newBroadcast(node int64, mino mino.Mino, players mino.Players) (broadcastTC
 // send broadcasts the history for the current time step and move to the next
 // one.
 func (b broadcastTCLB) send(ctx context.Context, h history) (*View, error) {
-	packed, err := h.Pack()
+	packed, err := h.Pack(b.encoder)
 	if err != nil {
 		return nil, err
 	}
@@ -234,6 +233,7 @@ func (b *bTLCR) requestPreviousSet(ctx context.Context, node int,
 }
 
 type bTLCB struct {
+	encoder         encoding.ProtoMarshaler
 	node            int64
 	spreadThreshold int
 	b1              tlcr
@@ -251,6 +251,7 @@ func newTLCB(node int64, mino mino.Mino, players mino.Players) (*bTLCB, error) {
 	}
 
 	return &bTLCB{
+		encoder:         encoding.NewProtoEncoder(),
 		b1:              b1,
 		b2:              b2,
 		node:            node,
@@ -290,9 +291,9 @@ func (b *bTLCB) execute(ctx context.Context, message proto.Message) (*View, erro
 }
 
 func (b *bTLCB) makeMessage(message proto.Message) (*Message, error) {
-	value, err := protoenc.MarshalAny(message)
+	value, err := b.encoder.MarshalAny(message)
 	if err != nil {
-		return nil, encoding.NewAnyEncodingError(message, err)
+		return nil, xerrors.Errorf("couldn't marshal message: %v", err)
 	}
 
 	m := &Message{
@@ -316,9 +317,9 @@ func (b *bTLCB) merge(prepare, commit *View) (*View, error) {
 	counter := make(map[int64]int)
 	for _, msproto := range commit.GetReceived() {
 		ms := &MessageSet{}
-		err := ptypes.UnmarshalAny(msproto.GetValue(), ms)
+		err := b.encoder.UnmarshalAny(msproto.GetValue(), ms)
 		if err != nil {
-			return nil, encoding.NewAnyDecodingError(ms, err)
+			return nil, xerrors.Errorf("couldn't unmarshal message set: %v", err)
 		}
 
 		for node, msg := range ms.GetMessages() {

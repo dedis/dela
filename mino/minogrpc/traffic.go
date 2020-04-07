@@ -53,7 +53,7 @@ func (t traffic) Display(out io.Writer) {
 	for _, item := range t.items {
 		item.Display(&buf)
 	}
-	fmt.Fprintf(out, eachLine.ReplaceAllString(buf.String(), "-$1"))
+	fmt.Fprint(out, eachLine.ReplaceAllString(buf.String(), "-$1"))
 }
 
 func (t *traffic) addItem(typeStr string, addr mino.Address, msg proto.Message, context string) {

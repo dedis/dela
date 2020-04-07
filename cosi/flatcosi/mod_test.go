@@ -74,14 +74,13 @@ func TestFlat_Listen(t *testing.T) {
 }
 
 func TestActor_Sign(t *testing.T) {
-	defer func() { protoenc = encoding.NewProtoEncoder() }()
-
 	message := fakeMessage{}
 
 	msgs := make(chan proto.Message, 2)
 	actor := flatActor{
-		signer: bls.NewSigner(),
-		rpc:    fakeRPC{msgs: msgs},
+		encoder: encoding.NewProtoEncoder(),
+		signer:  bls.NewSigner(),
+		rpc:     fakeRPC{msgs: msgs},
 	}
 
 	sigAny := makePackedSignature(t, actor.signer, message.GetHash())
@@ -97,14 +96,11 @@ func TestActor_Sign(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, sig)
 
-	_, err = actor.Sign(ctx, fakeMessage{err: xerrors.New("oops")}, nil)
-	require.EqualError(t, err, "couldn't encode message: oops")
-
-	protoenc = fakeProtoEncoder{}
+	actor.encoder = badPackAnyEncoder{}
 	_, err = actor.Sign(ctx, message, nil)
-	require.EqualError(t, err, "couldn't encode any *empty.Empty: oops")
+	require.EqualError(t, err, "couldn't pack message: oops")
 
-	protoenc = encoding.NewProtoEncoder()
+	actor.encoder = encoding.NewProtoEncoder()
 	actor.signer = fakeSigner{}
 	_, err = actor.Sign(ctx, message, ca)
 	require.EqualError(t, err, "couldn't make verifier: oops")
@@ -115,8 +111,9 @@ func TestActor_SignWrongSignature(t *testing.T) {
 
 	msgs := make(chan proto.Message, 1)
 	actor := flatActor{
-		signer: bls.NewSigner(),
-		rpc:    fakeRPC{msgs: msgs},
+		encoder: encoding.NewProtoEncoder(),
+		signer:  bls.NewSigner(),
+		rpc:     fakeRPC{msgs: msgs},
 	}
 
 	sigAny := makePackedSignature(t, actor.signer, message.GetHash())
@@ -137,9 +134,10 @@ func TestActor_RPCError_Sign(t *testing.T) {
 	msgs := make(chan proto.Message)
 	errs := make(chan error)
 	actor := flatActor{
-		logger: zerolog.New(buffer),
-		signer: bls.NewSigner(),
-		rpc:    fakeRPC{msgs: msgs, errs: errs},
+		encoder: encoding.NewProtoEncoder(),
+		logger:  zerolog.New(buffer),
+		signer:  bls.NewSigner(),
+		rpc:     fakeRPC{msgs: msgs, errs: errs},
 	}
 
 	go func() {
@@ -162,9 +160,10 @@ func TestActor_Context_Sign(t *testing.T) {
 	msgs := make(chan proto.Message)
 	errs := make(chan error)
 	actor := flatActor{
-		logger: zerolog.New(buffer),
-		signer: bls.NewSigner(),
-		rpc:    fakeRPC{msgs: msgs, errs: errs},
+		encoder: encoding.NewProtoEncoder(),
+		logger:  zerolog.New(buffer),
+		signer:  bls.NewSigner(),
+		rpc:     fakeRPC{msgs: msgs, errs: errs},
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -182,9 +181,10 @@ func TestActor_SignProcessError(t *testing.T) {
 
 	msgs := make(chan proto.Message, 1)
 	actor := flatActor{
-		logger: zerolog.New(buffer),
-		signer: bls.NewSigner(),
-		rpc:    fakeRPC{msgs: msgs},
+		encoder: encoding.NewProtoEncoder(),
+		logger:  zerolog.New(buffer),
+		signer:  bls.NewSigner(),
+		rpc:     fakeRPC{msgs: msgs},
 	}
 
 	msgs <- &empty.Empty{}
@@ -212,13 +212,29 @@ func makePackedSignature(t *testing.T, signer crypto.Signer, message []byte) *an
 	sig, err := signer.Sign(message)
 	require.NoError(t, err)
 
-	packed, err := sig.Pack()
+	packed, err := sig.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
 
 	packedAny, err := ptypes.MarshalAny(packed)
 	require.NoError(t, err)
 
 	return packedAny
+}
+
+type badPackAnyEncoder struct {
+	encoding.ProtoEncoder
+}
+
+func (e badPackAnyEncoder) PackAny(encoding.Packable) (*any.Any, error) {
+	return nil, xerrors.New("oops")
+}
+
+type badUnmarshalDynEncoder struct {
+	encoding.ProtoEncoder
+}
+
+func (e badUnmarshalDynEncoder) UnmarshalDynamicAny(*any.Any) (proto.Message, error) {
+	return nil, xerrors.New("oops")
 }
 
 type badVerifierFactory struct {
@@ -300,7 +316,7 @@ func (m fakeMessage) GetHash() []byte {
 	return []byte{0xab}
 }
 
-func (m fakeMessage) Pack() (proto.Message, error) {
+func (m fakeMessage) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 	return &empty.Empty{}, m.err
 }
 
@@ -328,24 +344,11 @@ func (ca fakeCollectiveAuthority) PublicKeyIterator() crypto.PublicKeyIterator {
 	return &fakeIterator{count: 2, pubkey: ca.pubkey}
 }
 
-type fakeProtoEncoder struct {
-	encoding.ProtoEncoder
-	errUnmarshal error
-}
-
-func (e fakeProtoEncoder) MarshalAny(pb proto.Message) (*any.Any, error) {
-	return nil, xerrors.New("oops")
-}
-
-func (e fakeProtoEncoder) UnmarshalAny(*any.Any, proto.Message) error {
-	return e.errUnmarshal
-}
-
 type fakeSignature struct {
 	crypto.Signature
 	err error
 }
 
-func (s fakeSignature) Pack() (proto.Message, error) {
+func (s fakeSignature) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 	return &empty.Empty{}, s.err
 }

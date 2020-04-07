@@ -19,6 +19,7 @@ import (
 	"go.dedis.ch/fabric/consensus/cosipbft"
 	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto"
+	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
@@ -44,6 +45,7 @@ type Skipchain struct {
 	consensus  consensus.Consensus
 	watcher    blockchain.Observable
 	viewchange viewchange.ViewChange
+	encoder    encoding.ProtoMarshaler
 }
 
 // NewSkipchain returns a new instance of Skipchain.
@@ -58,6 +60,7 @@ func NewSkipchain(m mino.Mino, cosi cosi.CollectiveSigning) *Skipchain {
 		db:        db,
 		consensus: consensus,
 		watcher:   blockchain.NewWatcher(),
+		encoder:   encoding.NewProtoEncoder(),
 	}
 }
 
@@ -91,6 +94,7 @@ func (s *Skipchain) Listen(proc blockchain.PayloadProcessor) (blockchain.Actor, 
 func (s *Skipchain) GetBlockFactory() blockchain.BlockFactory {
 	return blockFactory{
 		Skipchain:   s,
+		encoder:     s.encoder,
 		hashFactory: sha256Factory{},
 	}
 }
@@ -210,6 +214,7 @@ func (a skipchainActor) newChain(data proto.Message, conodes Conodes) error {
 	}
 
 	genesis, err := newSkipBlock(
+		a.encoder,
 		a.hashFactory,
 		nil,
 		0,
@@ -222,9 +227,9 @@ func (a skipchainActor) newChain(data proto.Message, conodes Conodes) error {
 		return xerrors.Errorf("couldn't create block: %v", err)
 	}
 
-	packed, err := genesis.Pack()
+	packed, err := a.encoder.Pack(genesis)
 	if err != nil {
-		return xerrors.Errorf("couldn't encode the block: %v", err)
+		return xerrors.Errorf("couldn't pack genesis: %v", err)
 	}
 
 	msg := &PropagateGenesis{

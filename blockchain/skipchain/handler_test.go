@@ -8,6 +8,7 @@ import (
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
@@ -16,6 +17,7 @@ func TestHandler_Process(t *testing.T) {
 	f := func(block SkipBlock) bool {
 		proc := &fakePayloadProc{}
 		h := newHandler(&Skipchain{
+			encoder:   encoding.NewProtoEncoder(),
 			db:        &fakeDatabase{},
 			cosi:      fakeCosi{},
 			mino:      fakeMino{},
@@ -24,7 +26,7 @@ func TestHandler_Process(t *testing.T) {
 
 		block.Payload = &wrappers.BoolValue{Value: true}
 
-		packed, err := block.Pack()
+		packed, err := block.Pack(encoding.NewProtoEncoder())
 		require.NoError(t, err)
 
 		req := mino.Request{

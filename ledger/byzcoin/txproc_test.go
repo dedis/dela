@@ -7,6 +7,7 @@ import (
 	any "github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/ledger/consumer"
 	"go.dedis.ch/fabric/ledger/inventory"
 	"golang.org/x/xerrors"
@@ -57,19 +58,20 @@ func TestTxProcessor_Process(t *testing.T) {
 	proc.consumer = fakeConsumer{errFactory: xerrors.New("oops")}
 	_, err = proc.process(payload)
 	require.EqualError(t, err,
-		"couldn't stage new page: couldn't decode transaction: oops")
+		"couldn't stage new page: couldn't decode tx: oops")
 
 	proc.consumer = fakeConsumer{err: xerrors.New("oops")}
 	_, err = proc.process(payload)
 	require.EqualError(t, err,
 		"couldn't stage new page: couldn't consume tx: oops")
 
-	proc.consumer = fakeConsumer{errInstance: xerrors.New("oops")}
+	proc.consumer = fakeConsumer{}
+	proc.encoder = badPackEncoder{}
 	_, err = proc.process(payload)
 	require.EqualError(t, err,
-		"couldn't stage new page: couldn't encode instance: oops")
+		"couldn't stage new page: couldn't pack instance: oops")
 
-	proc.consumer = fakeConsumer{}
+	proc.encoder = encoding.NewProtoEncoder()
 	proc.inventory = fakeInventory{errPage: xerrors.New("oops")}
 	_, err = proc.process(payload)
 	require.EqualError(t, err,
@@ -93,6 +95,14 @@ func TestTxProcessor_Commit(t *testing.T) {
 
 // -----------------------------------------------------------------------------
 // Utility functions
+
+type badPackEncoder struct {
+	encoding.ProtoEncoder
+}
+
+func (e badPackEncoder) Pack(encoding.Packable) (proto.Message, error) {
+	return nil, xerrors.New("oops")
+}
 
 type fakePage struct {
 	inventory.WritablePage
@@ -180,7 +190,7 @@ func (i fakeInstance) GetKey() []byte {
 	return i.key
 }
 
-func (i fakeInstance) Pack() (proto.Message, error) {
+func (i fakeInstance) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 	return &empty.Empty{}, i.err
 }
 

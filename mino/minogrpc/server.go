@@ -11,7 +11,6 @@ import (
 	"io"
 	"math/big"
 	"net"
-	"net/http"
 	"sync"
 	"time"
 
@@ -51,7 +50,6 @@ type Server struct {
 	cert      *tls.Certificate
 	addr      mino.Address
 	listener  net.Listener
-	httpSrv   *http.Server
 	StartChan chan struct{}
 
 	// neighbours contains the certificate and details about known peers.
@@ -69,10 +67,6 @@ type Server struct {
 	traffic *traffic
 }
 
-type ctxURIKey string
-
-const ctxKey = ctxURIKey("URI")
-
 // Roster is a set of peers that will work together
 // to execute protocols.
 type Roster []Peer
@@ -88,6 +82,7 @@ type Peer struct {
 //
 // - implements mino.RPC
 type RPC struct {
+	encoder encoding.ProtoMarshaler
 	handler mino.Handler
 	srv     *Server
 	uri     string
@@ -141,14 +136,13 @@ func (rpc *RPC) Call(ctx context.Context, req proto.Message,
 				continue
 			}
 
-			var resp ptypes.DynamicAny
-			err = ptypes.UnmarshalAny(callResp.Message, &resp)
+			resp, err := rpc.encoder.UnmarshalDynamicAny(callResp.Message)
 			if err != nil {
-				errs <- encoding.NewAnyDecodingError(resp, err)
+				errs <- xerrors.Errorf("couldn't unmarshal message: %v", err)
 				continue
 			}
 
-			out <- resp.Message
+			out <- resp
 		}
 
 		close(out)
@@ -167,6 +161,7 @@ func (rpc RPC) Stream(ctx context.Context,
 	errs := make(chan error, players.Len())
 
 	orchSender := &sender{
+		encoder:      rpc.encoder,
 		address:      address{orchestratorAddr},
 		participants: make(map[string]overlayStream),
 		name:         "orchestrator",
@@ -176,7 +171,8 @@ func (rpc RPC) Stream(ctx context.Context,
 	}
 
 	orchRecv := receiver{
-		errs: errs,
+		encoder: rpc.encoder,
+		errs:    errs,
 		// it is okay to have a blocking chan here because every use of it is in
 		// a goroutine, where we don't mind if it blocks.
 		in:      make(chan *OverlayMsg),
@@ -255,10 +251,12 @@ func (rpc RPC) Stream(ctx context.Context,
 		gateway, ok := rpc.srv.routingTable[addr]
 		if !ok {
 			// TODO Handle this situation
+			fabric.Logger.Warn().Msg("fix static check until it's done")
 		}
 		_, ok = orchSender.participants[gateway]
 		if !ok {
 			// TODO Handle this situation
+			fabric.Logger.Warn().Msg("fix static check until it's done")
 		}
 		orchSender.participants[addr] = orchSender.participants[gateway]
 	}
@@ -286,15 +284,14 @@ func listenStream(stream overlayStream, orchRecv *receiver,
 	}
 
 	envelope := &Envelope{}
-	err = ptypes.UnmarshalAny(msg.Message, envelope)
+	err = orchRecv.encoder.UnmarshalAny(msg.Message, envelope)
 	if err != nil {
-		return encoding.NewAnyDecodingError(envelope, err)
+		return xerrors.Errorf("couldn't unmarshal envelope: %v", err)
 	}
 
-	var dynamicAny ptypes.DynamicAny
-	err = ptypes.UnmarshalAny(envelope.Message, &dynamicAny)
+	message, err := orchRecv.encoder.UnmarshalDynamicAny(envelope.Message)
 	if err != nil {
-		return encoding.NewAnyDecodingError(envelope.Message, err)
+		return xerrors.Errorf("couldn't unmarshal message: %v", err)
 	}
 
 	for _, toSend := range envelope.To {
@@ -309,7 +306,7 @@ func listenStream(stream overlayStream, orchRecv *receiver,
 			fabric.Logger.Trace().Msgf("(orchestrator) relaying message from "+
 				"'%s' to '%s'", envelope.From, toSend)
 
-			errChan := orchSender.sendWithFrom(dynamicAny.Message,
+			errChan := orchSender.sendWithFrom(message,
 				address{envelope.From}, address{toSend})
 			err, more := <-errChan
 			if more {
@@ -346,6 +343,7 @@ func CreateServer(addr mino.Address) (*Server, error) {
 	}
 
 	RegisterOverlayServer(srv, &overlayService{
+		encoder:      encoding.NewProtoEncoder(),
 		handlers:     server.handlers,
 		addr:         address{addr.String()},
 		mesh:         server.mesh,
@@ -456,17 +454,13 @@ func makeCertificate() (*tls.Certificate, error) {
 
 // sender implements mino.Sender
 type sender struct {
+	encoder      encoding.ProtoMarshaler
 	address      address
 	participants map[string]overlayStream
 	name         string
 	mesh         map[string]Peer
 	srvCert      *tls.Certificate
 	traffic      *traffic
-}
-
-type player struct {
-	address      address
-	streamClient overlayStream
 }
 
 // send implements mino.Sender.Send. This function sends the message
@@ -489,7 +483,7 @@ func (s *sender) sendWithFrom(msg proto.Message, from mino.Address, addrs ...min
 	for _, addr := range addrs {
 		go func(addr mino.Address) {
 			defer wg.Done()
-			err := sendSingle(s, msg, from, addr)
+			err := s.sendSingle(msg, from, addr)
 			if err != nil {
 				err = xerrors.Errorf("sender '%s' failed to send to client '%s': %v", s.address.String(), addr, err)
 				fabric.Logger.Err(err).Send()
@@ -509,10 +503,10 @@ func (s *sender) sendWithFrom(msg proto.Message, from mino.Address, addrs ...min
 
 // sendSingle sends a message to a single recipient. This function should be
 // called asynchonously for each addrs set in mino.Sender.Send
-func sendSingle(s *sender, msg proto.Message, from, to mino.Address) error {
-	msgAny, err := ptypes.MarshalAny(msg)
+func (s *sender) sendSingle(msg proto.Message, from, to mino.Address) error {
+	msgAny, err := s.encoder.MarshalAny(msg)
 	if err != nil {
-		return encoding.NewAnyEncodingError(msg, err)
+		return xerrors.Errorf("couldn't marshal message: %v", err)
 	}
 
 	player, participantFound := s.participants[to.String()]
@@ -536,9 +530,9 @@ func sendSingle(s *sender, msg proto.Message, from, to mino.Address) error {
 		To:      []string{to.String()},
 		Message: msgAny,
 	}
-	envelopeAny, err := ptypes.MarshalAny(envelope)
+	envelopeAny, err := s.encoder.MarshalAny(envelope)
 	if err != nil {
-		return encoding.NewAnyEncodingError(msg, err)
+		return xerrors.Errorf("couldn't marshal envelope: %v", err)
 	}
 
 	sendMsg := &OverlayMsg{
@@ -558,6 +552,7 @@ func sendSingle(s *sender, msg proto.Message, from, to mino.Address) error {
 
 // receiver implements mino.receiver
 type receiver struct {
+	encoder encoding.ProtoMarshaler
 	errs    chan error
 	in      chan *OverlayMsg
 	name    string
@@ -591,20 +586,19 @@ func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error)
 	}
 
 	enveloppe := &Envelope{}
-	err = ptypes.UnmarshalAny(msg.Message, enveloppe)
+	err = r.encoder.UnmarshalAny(msg.Message, enveloppe)
 	if err != nil {
-		return nil, nil, encoding.NewAnyDecodingError(enveloppe, err)
+		return nil, nil, xerrors.Errorf("couldn't unmarshal envelope: %v", err)
 	}
 
-	var dynamicAny ptypes.DynamicAny
-	err = ptypes.UnmarshalAny(enveloppe.Message, &dynamicAny)
+	message, err := r.encoder.UnmarshalDynamicAny(enveloppe.Message)
 	if err != nil {
-		return nil, nil, encoding.NewAnyDecodingError(enveloppe.Message, err)
+		return nil, nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
 	}
 
-	r.traffic.logRcv(address{enveloppe.From}, dynamicAny.Message, r.name)
+	r.traffic.logRcv(address{enveloppe.From}, message, r.name)
 
-	return address{id: enveloppe.From}, dynamicAny.Message, nil
+	return address{id: enveloppe.From}, message, nil
 }
 
 // This interface is used to have a common object between Overlay_StreamServer
@@ -614,14 +608,4 @@ func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error)
 type overlayStream interface {
 	Send(*OverlayMsg) error
 	Recv() (*OverlayMsg, error)
-}
-
-// simpleNode implements mino.Node
-type simpleNode struct {
-	addr address
-}
-
-// getAddress implements mino.Node
-func (o simpleNode) GetAddress() mino.Address {
-	return o.addr
 }

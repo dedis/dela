@@ -25,8 +25,6 @@ func (h fakeHasher) Hash(mino.Address, proto.Message) ([]byte, error) {
 }
 
 func TestHandler_Process(t *testing.T) {
-	defer func() { protoenc = encoding.NewProtoEncoder() }()
-
 	h := newHandler(bls.NewSigner(), fakeHasher{})
 	req := mino.Request{
 		Message: &SignatureRequest{Message: makeMessage(t)},
@@ -39,12 +37,15 @@ func TestHandler_Process(t *testing.T) {
 	require.EqualError(t, err, "invalid message type: *empty.Empty")
 	require.Nil(t, resp)
 
-	protoenc = fakeProtoEncoder{errUnmarshal: xerrors.New("oops")}
+	h.encoder = badUnmarshalDynEncoder{}
 	_, err = h.Process(req)
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err, encoding.NewAnyDecodingError((*ptypes.DynamicAny)(nil), nil)))
+	require.EqualError(t, err, "couldn't unmarshal message: oops")
 
-	protoenc = encoding.NewProtoEncoder()
+	h.encoder = badPackAnyEncoder{}
+	_, err = h.Process(req)
+	require.EqualError(t, err, "couldn't pack signature: oops")
+
+	h.encoder = encoding.NewProtoEncoder()
 	h.hasher = fakeHasher{err: xerrors.New("oops")}
 	_, err = h.Process(req)
 	require.EqualError(t, err, "couldn't hash message: oops")
@@ -53,17 +54,6 @@ func TestHandler_Process(t *testing.T) {
 	h.signer = fakeSigner{err: xerrors.New("oops")}
 	_, err = h.Process(req)
 	require.EqualError(t, err, "couldn't sign: oops")
-
-	h.signer = fakeSigner{errSignature: xerrors.New("oops")}
-	_, err = h.Process(req)
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err, encoding.NewEncodingError("signature", nil)))
-
-	protoenc = fakeProtoEncoder{}
-	h.signer = fakeSigner{}
-	_, err = h.Process(req)
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err, encoding.NewAnyEncodingError((*empty.Empty)(nil), nil)))
 }
 
 func makeMessage(t *testing.T) *any.Any {

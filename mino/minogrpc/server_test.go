@@ -2,7 +2,6 @@ package minogrpc
 
 import (
 	context "context"
-	"errors"
 	"sort"
 	"strings"
 	"testing"
@@ -10,6 +9,7 @@ import (
 
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
+	any "github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"github.com/stretchr/testify/require"
@@ -75,6 +75,7 @@ func TestRPC_SingleSimple_Call(t *testing.T) {
 	handler := testSameHandler{time.Millisecond * 200}
 	uri := "blabla"
 	rpc := RPC{
+		encoder: encoding.NewProtoEncoder(),
 		handler: handler,
 		srv:     server,
 		uri:     uri,
@@ -216,6 +217,7 @@ func TestRPC_SingleModify_Call(t *testing.T) {
 	handler := testModifyHandler{}
 	uri := "blabla"
 	rpc := RPC{
+		encoder: encoding.NewProtoEncoder(),
 		handler: handler,
 		srv:     server,
 		uri:     uri,
@@ -298,6 +300,7 @@ func TestRPC_MultipleModify_Call(t *testing.T) {
 	handler := testModifyHandler{}
 	uri := "blabla"
 	rpc := RPC{
+		encoder: encoding.NewProtoEncoder(),
 		handler: handler,
 		srv:     server1,
 		uri:     uri,
@@ -407,6 +410,7 @@ func TestRPC_SingleSimple_Stream(t *testing.T) {
 	handler := testSameHandler{time.Millisecond * 200}
 	uri := "blabla"
 	rpc := RPC{
+		encoder: encoding.NewProtoEncoder(),
 		handler: handler,
 		srv:     server,
 		uri:     uri,
@@ -458,6 +462,7 @@ func TestRPC_ErrorsSimple_Stream(t *testing.T) {
 	handler := testSameHandler{time.Millisecond * 200}
 	uri := "blabla"
 	rpc := RPC{
+		encoder: encoding.NewProtoEncoder(),
 		handler: handler,
 		srv:     server,
 		uri:     uri,
@@ -524,6 +529,7 @@ func TestRPC_MultipleSimple_Stream(t *testing.T) {
 	handler := testSameHandler{time.Millisecond * 900}
 	uri := "blabla"
 	rpc := RPC{
+		encoder: encoding.NewProtoEncoder(),
 		handler: handler,
 		srv:     server1,
 		uri:     uri,
@@ -629,6 +635,7 @@ func TestRPC_MultipleChange_Stream(t *testing.T) {
 	handler := testModifyHandler{}
 	uri := "blabla"
 	rpc := RPC{
+		encoder: encoding.NewProtoEncoder(),
 		handler: handler,
 		srv:     server1,
 		uri:     uri,
@@ -747,6 +754,7 @@ func TestRPC_MultipleRingRelay_Stream(t *testing.T) {
 	uri := "blabla"
 	handler1 := testRingHandler{addrID: identifier1, neighborID: identifier2}
 	rpc := RPC{
+		encoder: encoding.NewProtoEncoder(),
 		handler: handler1,
 		srv:     server1,
 		uri:     uri,
@@ -982,6 +990,7 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 	uri := "blabla"
 	handler1 := testMeshHandler{addrID: identifier1}
 	rpc := RPC{
+		encoder: encoding.NewProtoEncoder(),
 		handler: handler1,
 		srv:     server1,
 		uri:     uri,
@@ -1051,6 +1060,7 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 
 func TestSender_Send(t *testing.T) {
 	sender := sender{
+		encoder:      encoding.NewProtoEncoder(),
 		participants: make(map[string]overlayStream),
 		mesh:         make(map[string]Peer),
 	}
@@ -1075,19 +1085,22 @@ func TestSender_Send(t *testing.T) {
 	// now I add the participant to the list, an error should be given since the
 	// message is nil
 	addr = address{id: "fake"}
+	sender.encoder = badMarshalAnyEncoder{}
 	sender.participants[addr.String()] = nil
 	errs = sender.Send(nil, addr)
 	err, more = <-errs
 	if !more {
 		t.Error("there should be an error")
 	}
-	require.EqualError(t, err, "sender '' failed to send to client 'fake': "+encoding.NewAnyEncodingError(nil, errors.New("proto: Marshal called with nil")).Error())
+	require.EqualError(t, err,
+		"sender '' failed to send to client 'fake': couldn't marshal message: oops")
 }
 
 func TestReceiver_Recv(t *testing.T) {
 	receiver := receiver{
-		errs: make(chan error, 1),
-		in:   make(chan *OverlayMsg, 1),
+		encoder: encoding.NewProtoEncoder(),
+		errs:    make(chan error, 1),
+		in:      make(chan *OverlayMsg, 1),
 	}
 
 	// If there is a wrong message (nil), then it should output an error
@@ -1095,17 +1108,50 @@ func TestReceiver_Recv(t *testing.T) {
 	_, _, err := receiver.Recv(context.Background())
 	require.EqualError(t, err, "message is nil")
 
-	// now with a non nil message, but its content is nil
+	// now with a failing unmarshal of the envelope
 	msg := &OverlayMsg{
 		Message: nil,
 	}
+	receiver.encoder = badUnmarshalAnyEncoder{}
 	receiver.in <- msg
 	_, _, err = receiver.Recv(context.Background())
-	require.EqualError(t, err, encoding.NewAnyDecodingError(&Envelope{}, errors.New("message is nil")).Error())
+	require.EqualError(t, err, "couldn't unmarshal envelope: oops")
+
+	// now with a failing unmarshal of the message
+	msg.Message, err = ptypes.MarshalAny(&Envelope{})
+	require.NoError(t, err)
+	receiver.encoder = badUnmarshalDynEncoder{}
+	receiver.in <- msg
+	_, _, err = receiver.Recv(context.Background())
+	require.EqualError(t, err, "couldn't unmarshal message: oops")
 }
 
 // -----------------
 // Utility functions
+
+type badMarshalAnyEncoder struct {
+	encoding.ProtoEncoder
+}
+
+func (e badMarshalAnyEncoder) MarshalAny(proto.Message) (*any.Any, error) {
+	return nil, xerrors.New("oops")
+}
+
+type badUnmarshalAnyEncoder struct {
+	encoding.ProtoEncoder
+}
+
+func (e badUnmarshalAnyEncoder) UnmarshalAny(*any.Any, proto.Message) error {
+	return xerrors.New("oops")
+}
+
+type badUnmarshalDynEncoder struct {
+	encoding.ProtoEncoder
+}
+
+func (e badUnmarshalDynEncoder) UnmarshalDynamicAny(*any.Any) (proto.Message, error) {
+	return nil, xerrors.New("oops")
+}
 
 // Handler:
 // implements a handler interface that just returns the input
@@ -1198,10 +1244,7 @@ type fakeIterator struct {
 }
 
 func (i *fakeIterator) HasNext() bool {
-	if i.index < len(i.addrs) {
-		return true
-	}
-	return false
+	return i.index < len(i.addrs)
 }
 
 func (i *fakeIterator) GetNext() mino.Address {
@@ -1264,8 +1307,6 @@ type testRingHandler struct {
 	neighborID string
 	// address of the node
 	addrID string
-	// tells if it is the server that know all the other clients
-	isRelay bool
 }
 
 func (t testRingHandler) Stream(out mino.Sender, in mino.Receiver) error {

@@ -14,8 +14,6 @@ import (
 	"golang.org/x/xerrors"
 )
 
-var protoenc encoding.ProtoMarshaler = encoding.NewProtoEncoder()
-
 // Digest is an alias for the bytes type for hash.
 type Digest = []byte
 
@@ -54,22 +52,8 @@ func (fl forwardLink) Verify(v crypto.Verifier) error {
 	return nil
 }
 
-func encodeSignature(sig crypto.Signature) (*any.Any, error) {
-	packed, err := sig.Pack()
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack: %v", err)
-	}
-
-	packedAny, err := protoenc.MarshalAny(packed)
-	if err != nil {
-		return nil, encoding.NewAnyEncodingError(packed, err)
-	}
-
-	return packedAny, nil
-}
-
 // Pack returns the protobuf message of the forward link.
-func (fl forwardLink) Pack() (proto.Message, error) {
+func (fl forwardLink) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	pb := &ForwardLinkProto{
 		From: fl.from,
 		To:   fl.to,
@@ -78,16 +62,16 @@ func (fl forwardLink) Pack() (proto.Message, error) {
 	var err error
 
 	if fl.prepare != nil {
-		pb.Prepare, err = encodeSignature(fl.prepare)
+		pb.Prepare, err = enc.PackAny(fl.prepare)
 		if err != nil {
-			return nil, encoding.NewEncodingError("prepare", err)
+			return nil, xerrors.Errorf("couldn't pack prepare signature: %v", err)
 		}
 	}
 
 	if fl.commit != nil {
-		pb.Commit, err = encodeSignature(fl.commit)
+		pb.Commit, err = enc.PackAny(fl.commit)
 		if err != nil {
-			return nil, encoding.NewEncodingError("commit", err)
+			return nil, xerrors.Errorf("couldn't pack commit signature: %v", err)
 		}
 	}
 
@@ -146,15 +130,15 @@ func (c forwardLinkChain) Verify(verifier crypto.Verifier) error {
 }
 
 // Pack returs the protobuf message for the chain.
-func (c forwardLinkChain) Pack() (proto.Message, error) {
+func (c forwardLinkChain) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	pb := &ChainProto{
 		Links: make([]*ForwardLinkProto, len(c.links)),
 	}
 
 	for i, link := range c.links {
-		packed, err := link.Pack()
+		packed, err := enc.Pack(link)
 		if err != nil {
-			return nil, encoding.NewEncodingError("forward link", err)
+			return nil, xerrors.Errorf("couldn't pack forward link: %v", err)
 		}
 
 		pb.Links[i] = packed.(*ForwardLinkProto)
@@ -169,57 +153,35 @@ func (f sha256Factory) New() hash.Hash {
 	return sha256.New()
 }
 
-// ChainFactory is an interface for a chain factory specific to forward links.
-type ChainFactory interface {
-	consensus.ChainFactory
-
-	GetHashFactory() crypto.HashFactory
-
-	DecodeSignature(pb proto.Message) (crypto.Signature, error)
-
-	DecodeForwardLink(pb proto.Message) (forwardLink, error)
-}
-
-// defaultChainFactory is an implementation of the defaultChainFactory interface
+// chainFactory is an implementation of the chainFactory interface
 // for forward links.
-type defaultChainFactory struct {
+type chainFactory struct {
 	signatureFactory crypto.SignatureFactory
 	hashFactory      crypto.HashFactory
+	encoder          encoding.ProtoMarshaler
 }
 
 // newChainFactory returns a new instance of a seal factory that will create
 // forward links for appropriate protobuf messages and return an error
 // otherwise.
-func newChainFactory(f crypto.SignatureFactory) *defaultChainFactory {
-	return &defaultChainFactory{
+func newChainFactory(f crypto.SignatureFactory) *chainFactory {
+	return &chainFactory{
 		signatureFactory: f,
 		hashFactory:      sha256Factory{},
+		encoder:          encoding.NewProtoEncoder(),
 	}
 }
 
-func (f *defaultChainFactory) GetHashFactory() crypto.HashFactory {
-	return f.hashFactory
-}
-
-func (f *defaultChainFactory) DecodeSignature(pb proto.Message) (crypto.Signature, error) {
-	sig, err := f.signatureFactory.FromProto(pb)
-	if err != nil {
-		return nil, err
-	}
-
-	return sig, nil
-}
-
-func (f *defaultChainFactory) DecodeForwardLink(pb proto.Message) (forwardLink, error) {
+func (f *chainFactory) decodeForwardLink(pb proto.Message) (forwardLink, error) {
 	var fl forwardLink
 	var src *ForwardLinkProto
 	switch msg := pb.(type) {
 	case *any.Any:
 		src = &ForwardLinkProto{}
 
-		err := protoenc.UnmarshalAny(msg, src)
+		err := f.encoder.UnmarshalAny(msg, src)
 		if err != nil {
-			return fl, encoding.NewAnyDecodingError(src, err)
+			return fl, xerrors.Errorf("couldn't unmarshal forward link: %v", err)
 		}
 	case *ForwardLinkProto:
 		src = msg
@@ -233,18 +195,18 @@ func (f *defaultChainFactory) DecodeForwardLink(pb proto.Message) (forwardLink, 
 	}
 
 	if src.GetPrepare() != nil {
-		sig, err := f.DecodeSignature(src.GetPrepare())
+		sig, err := f.signatureFactory.FromProto(src.GetPrepare())
 		if err != nil {
-			return fl, encoding.NewDecodingError("prepare signature", err)
+			return fl, xerrors.Errorf("couldn't decode prepare signature: %v", err)
 		}
 
 		fl.prepare = sig
 	}
 
 	if src.GetCommit() != nil {
-		sig, err := f.DecodeSignature(src.GetCommit())
+		sig, err := f.signatureFactory.FromProto(src.GetCommit())
 		if err != nil {
-			return fl, encoding.NewDecodingError("commit signature", err)
+			return fl, xerrors.Errorf("couldn't decode commit signature: %v", err)
 		}
 
 		fl.commit = sig
@@ -261,15 +223,15 @@ func (f *defaultChainFactory) DecodeForwardLink(pb proto.Message) (forwardLink, 
 }
 
 // FromProto returns a chain from a protobuf message.
-func (f *defaultChainFactory) FromProto(pb proto.Message) (consensus.Chain, error) {
+func (f *chainFactory) FromProto(pb proto.Message) (consensus.Chain, error) {
 	var msg *ChainProto
 	switch in := pb.(type) {
 	case *any.Any:
 		msg = &ChainProto{}
 
-		err := protoenc.UnmarshalAny(in, msg)
+		err := f.encoder.UnmarshalAny(in, msg)
 		if err != nil {
-			return nil, encoding.NewAnyDecodingError(msg, err)
+			return nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
 		}
 	case *ChainProto:
 		msg = in
@@ -281,9 +243,9 @@ func (f *defaultChainFactory) FromProto(pb proto.Message) (consensus.Chain, erro
 		links: make([]forwardLink, len(msg.GetLinks())),
 	}
 	for i, plink := range msg.GetLinks() {
-		link, err := f.DecodeForwardLink(plink)
+		link, err := f.decodeForwardLink(plink)
 		if err != nil {
-			return nil, encoding.NewDecodingError("forward link", err)
+			return nil, err
 		}
 
 		chain.links[i] = link

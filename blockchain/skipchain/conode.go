@@ -32,22 +32,18 @@ func (c Conode) GetPublicKey() crypto.PublicKey {
 
 // Pack implements encoding.Packable. It returns the protobuf message for the
 // conode.
-func (c Conode) Pack() (proto.Message, error) {
-	packed, err := c.publicKey.Pack()
-	if err != nil {
-		return nil, encoding.NewEncodingError("public key", err)
-	}
-
+func (c Conode) Pack(encoder encoding.ProtoMarshaler) (proto.Message, error) {
 	conode := &ConodeProto{}
 
+	var err error
 	conode.Address, err = c.addr.MarshalText()
 	if err != nil {
-		return nil, encoding.NewEncodingError("address", err)
+		return nil, xerrors.Errorf("couldn't marshal address: %v", err)
 	}
 
-	conode.PublicKey, err = protoenc.MarshalAny(packed)
+	conode.PublicKey, err = encoder.PackAny(c.publicKey)
 	if err != nil {
-		return nil, encoding.NewAnyEncodingError(packed, err)
+		return nil, xerrors.Errorf("couldn't pack public key: %v", err)
 	}
 
 	return conode, nil
@@ -60,10 +56,7 @@ type iterator struct {
 }
 
 func (i *iterator) HasNext() bool {
-	if i.index+1 < len(i.conodes) {
-		return true
-	}
-	return false
+	return i.index+1 < len(i.conodes)
 }
 
 func (i *iterator) GetNext() *Conode {
@@ -166,18 +159,18 @@ func (cc Conodes) PublicKeyIterator() crypto.PublicKeyIterator {
 
 // Pack implements encoding.Packable. It converts the list of conodes to a list
 // of protobuf messages.
-func (cc Conodes) Pack() (proto.Message, error) {
+func (cc Conodes) Pack(encoder encoding.ProtoMarshaler) (proto.Message, error) {
 	pb := &Roster{
 		Conodes: make([]*ConodeProto, len(cc)),
 	}
 
 	for i, conode := range cc {
-		packed, err := conode.Pack()
+		conodepb, err := encoder.Pack(conode)
 		if err != nil {
-			return nil, encoding.NewEncodingError("conode", err)
+			return nil, xerrors.Errorf("couldn't pack conode: %v", err)
 		}
 
-		pb.Conodes[i] = packed.(*ConodeProto)
+		pb.Conodes[i] = conodepb.(*ConodeProto)
 	}
 
 	return pb, nil

@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
 	any "github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/blockchain"
@@ -42,6 +41,7 @@ type Ledger struct {
 	bag      *txBag
 	proc     *txProcessor
 	consumer consumer.Consumer
+	encoder  encoding.ProtoMarshaler
 }
 
 // NewLedger creates a new Byzcoin ledger.
@@ -60,6 +60,7 @@ func NewLedger(mino mino.Mino, consumer consumer.Consumer) *Ledger {
 		bag:      newTxBag(),
 		proc:     newTxProcessor(consumer),
 		consumer: consumer,
+		encoder:  encoding.NewProtoEncoder(),
 	}
 }
 
@@ -83,7 +84,7 @@ func (ldgr *Ledger) GetInstance(key []byte) (consumer.Instance, error) {
 
 	instance, err := ldgr.consumer.GetInstanceFactory().FromProto(instancepb)
 	if err != nil {
-		return nil, encoding.NewDecodingError("instance", err)
+		return nil, xerrors.Errorf("couldn't decode instance: %v", err)
 	}
 
 	return instance, nil
@@ -201,17 +202,12 @@ func (ldgr *Ledger) stagePayload(txs []consumer.Transaction) (*BlockPayload, err
 	}
 
 	for i, tx := range txs {
-		packed, err := tx.Pack()
+		txpb, err := ldgr.encoder.PackAny(tx)
 		if err != nil {
-			return nil, xerrors.Errorf("failed to pack tx: %v", err)
+			return nil, xerrors.Errorf("couldn't pack tx: %v", err)
 		}
 
-		packedAny, err := ptypes.MarshalAny(packed)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't marshal any: %v", err)
-		}
-
-		payload.Transactions[i] = packedAny
+		payload.Transactions[i] = txpb
 	}
 
 	page, err := ldgr.proc.process(payload)
@@ -264,7 +260,6 @@ func (ldgr *Ledger) Watch(ctx context.Context) <-chan ledger.TransactionResult {
 
 type actor struct {
 	gossiper gossip.Gossiper
-	consumer consumer.Consumer
 }
 
 func newActor(g gossip.Gossiper) actor {

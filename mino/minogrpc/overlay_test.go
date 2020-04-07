@@ -14,7 +14,6 @@ import (
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
-	"golang.org/x/xerrors"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -23,6 +22,7 @@ func TestOverlay_Call(t *testing.T) {
 	msg := &OverlayMsg{}
 
 	overlayService := overlayService{
+		encoder:  encoding.NewProtoEncoder(),
 		handlers: make(map[string]mino.Handler),
 		addr:     address{},
 	}
@@ -57,7 +57,7 @@ func TestOverlay_Call(t *testing.T) {
 	// yield a decoding error
 	overlayService.handlers["handler_key"] = testFailHandler{}
 	_, err = overlayService.Call(ctx, msg)
-	require.EqualError(t, err, encoding.NewAnyDecodingError(msg.Message, errors.New("message is nil")).Error())
+	require.EqualError(t, err, "couldn't unmarshal message: message is nil")
 
 	// Now set the 'msg.Message', but the handler should retrun an error
 	anyMsg, err := ptypes.MarshalAny(&empty.Empty{})
@@ -66,10 +66,11 @@ func TestOverlay_Call(t *testing.T) {
 	_, err = overlayService.Call(ctx, msg)
 	require.EqualError(t, err, "failed to call the Process function from the handler using the provided message: oops")
 
-	// Now use a handler that returns a wrong message
+	// Now with a failing encoder.
 	overlayService.handlers["handler_key"] = testFailHandler2{}
+	overlayService.encoder = badMarshalAnyEncoder{}
 	_, err = overlayService.Call(ctx, msg)
-	require.EqualError(t, err, encoding.NewAnyEncodingError(nil, errors.New("proto: Marshal called with nil")).Error())
+	require.EqualError(t, err, "couldn't marshal result: oops")
 }
 
 func TestOverlay_Stream(t *testing.T) {
@@ -77,6 +78,7 @@ func TestOverlay_Stream(t *testing.T) {
 	// msg := &OverlayMsg{}
 
 	overlayService := overlayService{
+		encoder:  encoding.NewProtoEncoder(),
 		handlers: make(map[string]mino.Handler),
 		addr:     address{},
 	}
@@ -185,10 +187,7 @@ func (t testFailHandler2) Process(req mino.Request) (proto.Message, error) {
 }
 
 func (t testFailHandler2) Stream(out mino.Sender, in mino.Receiver) error {
-	any, err := ptypes.MarshalAny(&empty.Empty{})
-	require.NoError(t.t, err)
-
-	_, _, err = in.Recv(context.Background())
-	require.True(t.t, xerrors.Is(err, encoding.NewAnyDecodingError(any, nil)))
+	_, _, err := in.Recv(context.Background())
+	require.EqualError(t.t, err, "")
 	return nil
 }

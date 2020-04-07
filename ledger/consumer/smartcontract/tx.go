@@ -1,7 +1,6 @@
 package smartcontract
 
 import (
-	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/fabric/crypto"
@@ -30,15 +29,14 @@ func (t transaction) GetID() []byte {
 // - implements encoding.Packable
 type SpawnTransaction struct {
 	transaction
-	encoder    encoding.ProtoMarshaler
 	ContractID string
 	Argument   proto.Message
 }
 
 // Pack implements encoding.Packable. It returns the protobuf message for a
 // spawn transaction.
-func (t SpawnTransaction) Pack() (proto.Message, error) {
-	argany, err := t.encoder.MarshalAny(t.Argument)
+func (t SpawnTransaction) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
+	argany, err := enc.MarshalAny(t.Argument)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't marshal the argument: %v", err)
 	}
@@ -52,7 +50,7 @@ func (t SpawnTransaction) Pack() (proto.Message, error) {
 }
 
 func (t SpawnTransaction) computeHash(f crypto.HashFactory,
-	m encoding.JSONMarshaler) ([]byte, error) {
+	enc encoding.ProtoMarshaler) ([]byte, error) {
 
 	h := f.New()
 	_, err := h.Write([]byte(t.ContractID))
@@ -60,7 +58,7 @@ func (t SpawnTransaction) computeHash(f crypto.HashFactory,
 		return nil, xerrors.Errorf("couldn't write the contract ID: %v", err)
 	}
 
-	err = m.Marshal(h, t.Argument)
+	err = enc.MarshalStable(h, t.Argument)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't write the argument: %v", err)
 	}
@@ -74,15 +72,14 @@ func (t SpawnTransaction) computeHash(f crypto.HashFactory,
 // - implements encoding.Packable
 type InvokeTransaction struct {
 	transaction
-	encoder  encoding.ProtoMarshaler
 	Key      []byte
 	Argument proto.Message
 }
 
 // Pack implements encoding.Packable. It returns the protobuf message of the
 // invoke transaction.
-func (t InvokeTransaction) Pack() (proto.Message, error) {
-	argany, err := t.encoder.MarshalAny(t.Argument)
+func (t InvokeTransaction) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
+	argany, err := enc.MarshalAny(t.Argument)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't marshal the argument: %v", err)
 	}
@@ -96,7 +93,7 @@ func (t InvokeTransaction) Pack() (proto.Message, error) {
 }
 
 func (t InvokeTransaction) computeHash(f crypto.HashFactory,
-	m encoding.JSONMarshaler) ([]byte, error) {
+	enc encoding.ProtoMarshaler) ([]byte, error) {
 
 	h := f.New()
 	_, err := h.Write(t.Key)
@@ -104,7 +101,7 @@ func (t InvokeTransaction) computeHash(f crypto.HashFactory,
 		return nil, xerrors.Errorf("couldn't write the key: %v", err)
 	}
 
-	err = m.Marshal(h, t.Argument)
+	err = enc.MarshalStable(h, t.Argument)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't write the argument: %v", err)
 	}
@@ -123,7 +120,7 @@ type DeleteTransaction struct {
 
 // Pack implements encoding.Packable. It returns the protobuf message for the
 // delete transaction.
-func (t DeleteTransaction) Pack() (proto.Message, error) {
+func (t DeleteTransaction) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 	return &DeleteTransactionProto{Key: t.Key}, nil
 }
 
@@ -144,7 +141,6 @@ func (t DeleteTransaction) computeHash(f crypto.HashFactory) ([]byte, error) {
 type TransactionFactory struct {
 	hashFactory crypto.HashFactory
 	encoder     encoding.ProtoMarshaler
-	marshaler   encoding.JSONMarshaler
 }
 
 // NewTransactionFactory returns a new instance of the transaction factory.
@@ -152,7 +148,6 @@ func NewTransactionFactory() TransactionFactory {
 	return TransactionFactory{
 		hashFactory: crypto.NewSha256Factory(),
 		encoder:     encoding.NewProtoEncoder(),
-		marshaler:   &jsonpb.Marshaler{},
 	}
 }
 
@@ -165,12 +160,11 @@ func (f TransactionFactory) NewSpawn(contractID string,
 	}
 
 	tx := SpawnTransaction{
-		encoder:    f.encoder,
 		ContractID: contractID,
 		Argument:   arg,
 	}
 
-	hash, err := tx.computeHash(f.hashFactory, f.marshaler)
+	hash, err := tx.computeHash(f.hashFactory, f.encoder)
 	if err != nil {
 		return tx, xerrors.Errorf("couldn't hash tx: %v", err)
 	}
@@ -187,12 +181,11 @@ func (f TransactionFactory) NewInvoke(key []byte, arg proto.Message) (InvokeTran
 	}
 
 	tx := InvokeTransaction{
-		encoder:  f.encoder,
 		Key:      key,
 		Argument: arg,
 	}
 
-	hash, err := tx.computeHash(f.hashFactory, f.marshaler)
+	hash, err := tx.computeHash(f.hashFactory, f.encoder)
 	if err != nil {
 		return tx, xerrors.Errorf("couldn't hash tx: %v", err)
 	}
@@ -277,8 +270,6 @@ type contractInstance struct {
 	contractID string
 	deleted    bool
 	value      proto.Message
-
-	encoder encoding.ProtoMarshaler
 }
 
 // GetKey implements consumer.Instance. It returns the key of the instance.
@@ -306,7 +297,7 @@ func (i contractInstance) Deleted() bool {
 
 // Pack implements encoding.Packable. It returns the protobuf message for this
 // instance.
-func (i contractInstance) Pack() (proto.Message, error) {
+func (i contractInstance) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	pb := &InstanceProto{
 		Key:        i.key,
 		ContractID: i.contractID,
@@ -314,7 +305,7 @@ func (i contractInstance) Pack() (proto.Message, error) {
 	}
 
 	var err error
-	pb.Value, err = i.encoder.MarshalAny(i.value)
+	pb.Value, err = enc.MarshalAny(i.value)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't marshal the value: %v", err)
 	}
@@ -339,7 +330,7 @@ func (f instanceFactory) FromProto(pb proto.Message) (consumer.Instance, error) 
 		instancepb = &InstanceProto{}
 		err := f.encoder.UnmarshalAny(i, instancepb)
 		if err != nil {
-			return nil, encoding.NewAnyDecodingError(instancepb, err)
+			return nil, xerrors.Errorf("couldn't unmarshal: %v", err)
 		}
 	case *InstanceProto:
 		instancepb = i
@@ -355,7 +346,6 @@ func (f instanceFactory) FromProto(pb proto.Message) (consumer.Instance, error) 
 		contractID: instancepb.GetContractID(),
 		deleted:    instancepb.GetDeleted(),
 		value:      value,
-		encoder:    f.encoder,
 	}
 
 	return instance, nil
@@ -389,7 +379,6 @@ func (ctx transactionContext) Read(key []byte) (ContractInstance, error) {
 		value:      value,
 		contractID: instancepb.GetContractID(),
 		deleted:    instancepb.GetDeleted(),
-		encoder:    ctx.encoder,
 	}
 
 	return instance, nil

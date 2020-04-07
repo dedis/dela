@@ -2,7 +2,6 @@ package cosipbft
 
 import (
 	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
@@ -39,16 +38,12 @@ func (p Prepare) GetHash() []byte {
 }
 
 // Pack returns the protobuf message, or an error.
-func (p Prepare) Pack() (proto.Message, error) {
-	packed, err := p.proposal.Pack()
-	if err != nil {
-		return nil, encoding.NewEncodingError("proposal", err)
-	}
-
+func (p Prepare) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	pb := &PrepareRequest{}
-	pb.Proposal, err = ptypes.MarshalAny(packed)
+	var err error
+	pb.Proposal, err = enc.PackAny(p.proposal)
 	if err != nil {
-		return nil, encoding.NewAnyEncodingError(packed, err)
+		return nil, xerrors.Errorf("couldn't pack proposal: %v", err)
 	}
 
 	return pb, nil
@@ -84,20 +79,15 @@ func (c Commit) GetHash() []byte {
 
 // Pack returns the protobuf message representation of a commit, or an error if
 // something goes wrong during encoding.
-func (c Commit) Pack() (proto.Message, error) {
-	packed, err := c.prepare.Pack()
-	if err != nil {
-		return nil, encoding.NewEncodingError("prepare signature", err)
-	}
-
-	packedany, err := ptypes.MarshalAny(packed)
-	if err != nil {
-		return nil, encoding.NewAnyEncodingError(packed, err)
-	}
-
+func (c Commit) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	pb := &CommitRequest{
-		To:      c.to,
-		Prepare: packedany,
+		To: c.to,
+	}
+
+	var err error
+	pb.Prepare, err = enc.PackAny(c.prepare)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't pack prepare signature: %v", err)
 	}
 
 	return pb, nil

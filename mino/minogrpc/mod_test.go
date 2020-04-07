@@ -2,12 +2,12 @@ package minogrpc
 
 import (
 	"bytes"
-	fmt "fmt"
 	"testing"
 	"testing/quick"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/fabric/encoding"
 	internal "go.dedis.ch/fabric/internal/testing"
 	"go.dedis.ch/fabric/mino"
 )
@@ -101,9 +101,10 @@ func Test_MakeRPC(t *testing.T) {
 	require.NoError(t, err)
 
 	expectedRPC := &RPC{
+		encoder: encoding.NewProtoEncoder(),
 		handler: handler,
 		srv:     minoGrpc.server,
-		uri:     fmt.Sprintf("namespace/name"),
+		uri:     "namespace/name",
 	}
 
 	h, ok := minoGrpc.server.handlers[expectedRPC.uri]
@@ -217,10 +218,7 @@ type fakeAddressIterator struct {
 
 // HasNext implements mino.AddressIterator.HasNext()
 func (it *fakeAddressIterator) HasNext() bool {
-	if it.cursor < len(it.players) {
-		return true
-	}
-	return false
+	return it.cursor < len(it.players)
 }
 
 // GetNext implements mino.AddressIterator.GetNext(). It is the responsibility

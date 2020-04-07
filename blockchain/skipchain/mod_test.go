@@ -14,6 +14,7 @@ import (
 	"go.dedis.ch/fabric/cosi/flatcosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/crypto/bls"
+	"go.dedis.ch/fabric/encoding"
 	internal "go.dedis.ch/fabric/internal/testing"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/minoch"
@@ -61,7 +62,7 @@ func TestSkipchain_Basic(t *testing.T) {
 		chain, err := s2.GetVerifiableBlock()
 		require.NoError(t, err)
 
-		packed, err := chain.Pack()
+		packed, err := chain.Pack(s2.encoder)
 		require.NoError(t, err)
 
 		block, err := s2.GetBlockFactory().FromVerifiable(packed)
@@ -151,8 +152,9 @@ func TestActor_InitChain(t *testing.T) {
 		hashFactory: sha256Factory{},
 		rand:        crypto.CryptographicRandomGenerator{},
 		Skipchain: &Skipchain{
-			mino: fakeMino{},
-			db:   &fakeDatabase{err: NewNoBlockError(0)},
+			encoder: encoding.NewProtoEncoder(),
+			mino:    fakeMino{},
+			db:      &fakeDatabase{err: NewNoBlockError(0)},
 		},
 		rpc: fakeRPC{},
 	}
@@ -211,6 +213,7 @@ func TestActor_Store(t *testing.T) {
 	cons := &fakeConsensusActor{}
 	actor := skipchainActor{
 		Skipchain: &Skipchain{
+			encoder:    encoding.NewProtoEncoder(),
 			logger:     zerolog.New(buffer),
 			viewchange: fakeViewChange{},
 			mino:       fakeMino{},

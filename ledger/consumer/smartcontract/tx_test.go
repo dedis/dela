@@ -7,7 +7,6 @@ import (
 	"testing"
 	"testing/quick"
 
-	"github.com/golang/protobuf/jsonpb"
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	any "github.com/golang/protobuf/ptypes/any"
@@ -33,18 +32,16 @@ func TestTransaction_GetID(t *testing.T) {
 
 func TestSpawnTransaction_Pack(t *testing.T) {
 	spawn := SpawnTransaction{
-		encoder:    encoding.NewProtoEncoder(),
 		ContractID: "abc",
 		Argument:   &wrappers.StringValue{Value: "abc"},
 	}
 
-	spawnpb, err := spawn.Pack()
+	spawnpb, err := spawn.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
 	require.Equal(t, spawn.ContractID, spawnpb.(*SpawnTransactionProto).GetContractID())
 	require.NotNil(t, spawnpb.(*SpawnTransactionProto).GetArgument())
 
-	spawn.encoder = badEncoder{errMarshal: xerrors.New("oops")}
-	_, err = spawn.Pack()
+	_, err = spawn.Pack(badEncoder{errMarshal: xerrors.New("oops")})
 	require.EqualError(t, err, "couldn't marshal the argument: oops")
 }
 
@@ -55,14 +52,17 @@ func TestSpawnTransaction_ComputeHash(t *testing.T) {
 			Argument:   &wrappers.StringValue{Value: value},
 		}
 
-		hash, err := spawn.computeHash(crypto.NewSha256Factory(), &jsonpb.Marshaler{})
+		var enc encoding.ProtoMarshaler = encoding.NewProtoEncoder()
+
+		hash, err := spawn.computeHash(crypto.NewSha256Factory(), enc)
 		require.NoError(t, err)
 		require.Len(t, hash, 32)
 
-		_, err = spawn.computeHash(fakeHashFactory{err: xerrors.New("oops")}, nil)
+		_, err = spawn.computeHash(fakeHashFactory{err: xerrors.New("oops")}, enc)
 		require.EqualError(t, err, "couldn't write the contract ID: oops")
 
-		_, err = spawn.computeHash(crypto.NewSha256Factory(), badMarshaler{})
+		enc = badEncoder{errMarshal: xerrors.New("oops")}
+		_, err = spawn.computeHash(crypto.NewSha256Factory(), enc)
 		require.EqualError(t, err, "couldn't write the argument: oops")
 
 		return true
@@ -74,18 +74,16 @@ func TestSpawnTransaction_ComputeHash(t *testing.T) {
 
 func TestInvokeTransaction_Pack(t *testing.T) {
 	invoke := InvokeTransaction{
-		encoder:  encoding.NewProtoEncoder(),
 		Key:      []byte{0xab},
 		Argument: &wrappers.StringValue{Value: "abc"},
 	}
 
-	invokepb, err := invoke.Pack()
+	invokepb, err := invoke.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
 	require.Equal(t, invoke.Key, invokepb.(*InvokeTransactionProto).Key)
 	require.NotNil(t, invokepb.(*InvokeTransactionProto).Argument)
 
-	invoke.encoder = badEncoder{errMarshal: xerrors.New("oops")}
-	_, err = invoke.Pack()
+	_, err = invoke.Pack(badEncoder{errMarshal: xerrors.New("oops")})
 	require.EqualError(t, err, "couldn't marshal the argument: oops")
 }
 
@@ -96,15 +94,17 @@ func TestInvokeTransaction_ComputeHash(t *testing.T) {
 			Argument: &wrappers.StringValue{Value: value},
 		}
 
-		hash, err := invoke.computeHash(crypto.NewSha256Factory(), &jsonpb.Marshaler{})
+		var enc encoding.ProtoMarshaler = encoding.NewProtoEncoder()
+
+		hash, err := invoke.computeHash(crypto.NewSha256Factory(), enc)
 		require.NoError(t, err)
 		require.Len(t, hash, 32)
 
-		_, err = invoke.computeHash(fakeHashFactory{err: xerrors.New("oops")}, nil)
+		_, err = invoke.computeHash(fakeHashFactory{err: xerrors.New("oops")}, enc)
 		require.EqualError(t, err, "couldn't write the key: oops")
 
-		invoke.Argument = nil
-		_, err = invoke.computeHash(crypto.NewSha256Factory(), badMarshaler{})
+		enc = badEncoder{errMarshal: xerrors.New("oops")}
+		_, err = invoke.computeHash(crypto.NewSha256Factory(), enc)
 		require.EqualError(t, err, "couldn't write the argument: oops")
 
 		return true
@@ -117,7 +117,7 @@ func TestInvokeTransaction_ComputeHash(t *testing.T) {
 func TestDeleteTransaction_Pack(t *testing.T) {
 	delete := DeleteTransaction{Key: []byte{0xab}}
 
-	deletepb, err := delete.Pack()
+	deletepb, err := delete.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
 	require.Equal(t, delete.Key, deletepb.(*DeleteTransactionProto).Key)
 }
@@ -188,11 +188,10 @@ func TestTransactionFactory_FromProto(t *testing.T) {
 
 	// 1. Spawn transaction
 	spawn := SpawnTransaction{
-		encoder:    encoding.NewProtoEncoder(),
 		ContractID: "abc",
 		Argument:   &wrappers.BoolValue{Value: true},
 	}
-	spawnpb, err := spawn.Pack()
+	spawnpb, err := spawn.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
 
 	tx, err := factory.FromProto(spawnpb)
@@ -208,11 +207,10 @@ func TestTransactionFactory_FromProto(t *testing.T) {
 
 	// 2. Invoke transaction
 	invoke := InvokeTransaction{
-		encoder:  encoding.NewProtoEncoder(),
 		Key:      []byte{0xab},
 		Argument: &wrappers.BoolValue{Value: true},
 	}
-	invokepb, err := invoke.Pack()
+	invokepb, err := invoke.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
 
 	tx, err = factory.FromProto(invokepb)
@@ -228,7 +226,7 @@ func TestTransactionFactory_FromProto(t *testing.T) {
 
 	// 3. Delete transaction
 	delete := DeleteTransaction{Key: []byte{0xab}}
-	deletepb, err := delete.Pack()
+	deletepb, err := delete.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
 	deleteany, err := ptypes.MarshalAny(deletepb)
 	require.NoError(t, err)
@@ -295,22 +293,22 @@ func TestContractInstance_Pack(t *testing.T) {
 			contractID: id,
 			value:      &wrappers.StringValue{Value: value},
 			deleted:    deleted,
-			encoder:    encoding.NewProtoEncoder(),
 		}
 
-		cipb, err := ci.Pack()
+		enc := encoding.NewProtoEncoder()
+
+		cipb, err := ci.Pack(enc)
 		require.NoError(t, err)
 		instancepb := cipb.(*InstanceProto)
 		require.Equal(t, ci.key, instancepb.GetKey())
 		require.Equal(t, ci.contractID, instancepb.GetContractID())
 		require.Equal(t, ci.deleted, instancepb.GetDeleted())
 
-		msg, err := ci.encoder.UnmarshalDynamicAny(instancepb.GetValue())
+		msg, err := enc.UnmarshalDynamicAny(instancepb.GetValue())
 		require.NoError(t, err)
 		require.True(t, proto.Equal(ci.value, msg))
 
-		ci.encoder = badEncoder{errMarshal: xerrors.New("oops")}
-		_, err = ci.Pack()
+		_, err = ci.Pack(badEncoder{errMarshal: xerrors.New("oops")})
 		require.EqualError(t, err, "couldn't marshal the value: oops")
 
 		return true
@@ -337,10 +335,11 @@ func TestInstanceFactory_FromProto(t *testing.T) {
 
 	instance, err = factory.FromProto(instanceany)
 	require.NoError(t, err)
+	require.Equal(t, instancepb.GetKey(), instance.GetKey())
 
 	factory.encoder = badEncoder{errUnmarshal: xerrors.New("oops")}
 	_, err = factory.FromProto(instanceany)
-	require.EqualError(t, err, "couldn't decode any *smartcontract.InstanceProto: oops")
+	require.EqualError(t, err, "couldn't unmarshal: oops")
 
 	factory.encoder = badEncoder{errDynUnmarshal: xerrors.New("oops")}
 	_, err = factory.FromProto(instancepb)
@@ -412,6 +411,10 @@ type badEncoder struct {
 	errDynUnmarshal error
 }
 
+func (e badEncoder) MarshalStable(io.Writer, proto.Message) error {
+	return e.errMarshal
+}
+
 func (e badEncoder) MarshalAny(proto.Message) (*any.Any, error) {
 	return nil, e.errMarshal
 }
@@ -422,14 +425,6 @@ func (e badEncoder) UnmarshalAny(*any.Any, proto.Message) error {
 
 func (e badEncoder) UnmarshalDynamicAny(*any.Any) (proto.Message, error) {
 	return nil, e.errDynUnmarshal
-}
-
-type badMarshaler struct {
-	*jsonpb.Marshaler
-}
-
-func (m badMarshaler) Marshal(io.Writer, proto.Message) error {
-	return xerrors.New("oops")
 }
 
 type fakePage struct {

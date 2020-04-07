@@ -5,7 +5,6 @@ import (
 	"io"
 	"testing"
 
-	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
@@ -27,33 +26,21 @@ func TestConode_GetPublicKey(t *testing.T) {
 }
 
 func TestConode_Pack(t *testing.T) {
-	defer func() { protoenc = encoding.NewProtoEncoder() }()
-
 	conode := Conode{
 		addr:      fakeAddress{},
 		publicKey: fakePublicKey{},
 	}
 
-	pb, err := conode.Pack()
+	pb, err := conode.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
 	require.IsType(t, (*ConodeProto)(nil), pb)
 
-	conode.publicKey = fakePublicKey{err: xerrors.New("oops")}
-	_, err = conode.Pack()
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err, encoding.NewEncodingError("public key", nil)))
+	_, err = conode.Pack(badPackAnyEncoder{})
+	require.EqualError(t, err, "couldn't pack public key: oops")
 
-	conode.publicKey = fakePublicKey{}
 	conode.addr = fakeAddress{err: xerrors.New("oops")}
-	_, err = conode.Pack()
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err, encoding.NewEncodingError("address", nil)))
-
-	conode.addr = fakeAddress{}
-	protoenc = &testProtoEncoder{err: xerrors.New("oops")}
-	_, err = conode.Pack()
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err, encoding.NewAnyEncodingError((*empty.Empty)(nil), nil)))
+	_, err = conode.Pack(encoding.NewProtoEncoder())
+	require.EqualError(t, err, "couldn't marshal address: oops")
 }
 
 func TestIterator_HasNext(t *testing.T) {
@@ -167,15 +154,13 @@ func TestConodes_PublicKeyIterator(t *testing.T) {
 func TestConodes_Pack(t *testing.T) {
 	conodes := Conodes{randomConode(), randomConode()}
 
-	pb, err := conodes.Pack()
+	pb, err := conodes.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
 	require.IsType(t, (*Roster)(nil), pb)
 	require.Len(t, pb.(*Roster).GetConodes(), 2)
 
-	conodes[1].addr = fakeAddress{err: xerrors.New("oops")}
-	_, err = conodes.Pack()
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err, encoding.NewEncodingError("conode", nil)))
+	_, err = conodes.Pack(badPackEncoder{})
+	require.EqualError(t, err, "couldn't pack conode: oops")
 }
 
 func TestConodes_WriteTo(t *testing.T) {

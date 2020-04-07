@@ -5,6 +5,7 @@ import (
 	"testing"
 	"testing/quick"
 
+	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	any "github.com/golang/protobuf/ptypes/any"
 	"github.com/stretchr/testify/require"
@@ -19,7 +20,7 @@ func TestEpoch_Pack(t *testing.T) {
 			random: random,
 		}
 
-		packed, err := e.Pack()
+		packed, err := e.Pack(encoding.NewProtoEncoder())
 		require.NoError(t, err)
 		require.Equal(t, hash, packed.(*Epoch).GetHash())
 		require.Equal(t, random, packed.(*Epoch).GetRandom())
@@ -81,7 +82,7 @@ func TestHistory_Equal(t *testing.T) {
 
 func TestHistory_Pack(t *testing.T) {
 	h := history{{}, {}, {}}
-	packed, err := h.Pack()
+	packed, err := h.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
 	require.IsType(t, (*History)(nil), packed)
 }
@@ -169,7 +170,9 @@ func TestHistoriesFactory_FromMessageSet(t *testing.T) {
 		30: {Node: 30, Value: h3a},
 	}
 
-	factory := defaultHistoriesFactory{}
+	factory := defaultHistoriesFactory{
+		encoder: encoding.NewProtoEncoder(),
+	}
 
 	hists, err := factory.FromMessageSet(ms)
 	require.NoError(t, err)
@@ -184,12 +187,9 @@ func TestHistoriesFactory_FromMessageSet(t *testing.T) {
 		}
 	}
 
-	ms = map[int64]*Message{
-		1: {},
-	}
+	factory.encoder = &badUnmarshalAnyEncoder{}
 	_, err = factory.FromMessageSet(ms)
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err, encoding.NewAnyDecodingError((*History)(nil), nil)))
+	require.EqualError(t, err, "couldn't unmarshal history: oops")
 }
 
 func makeHistory(t *testing.T, n int) (history, *any.Any) {
@@ -202,10 +202,21 @@ func makeHistory(t *testing.T, n int) (history, *any.Any) {
 	}
 
 	h := history(epochs)
-	pb, err := h.Pack()
+	pb, err := h.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
 	pbany, err := ptypes.MarshalAny(pb)
 	require.NoError(t, err)
 
 	return h, pbany
+}
+
+// -----------------------------------------------------------------------------
+// Utility functions
+
+type badUnmarshalAnyEncoder struct {
+	encoding.ProtoEncoder
+}
+
+func (e badUnmarshalAnyEncoder) UnmarshalAny(*any.Any, proto.Message) error {
+	return xerrors.New("oops")
 }

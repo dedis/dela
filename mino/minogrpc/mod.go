@@ -7,6 +7,7 @@ import (
 	fmt "fmt"
 	"regexp"
 
+	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
@@ -128,6 +129,7 @@ func (m Minogrpc) MakeNamespace(namespace string) (mino.Mino, error) {
 func (m Minogrpc) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 	URI := fmt.Sprintf("%s/%s", m.namespace, name)
 	rpc := &RPC{
+		encoder: encoding.NewProtoEncoder(),
 		handler: h,
 		srv:     m.server,
 		uri:     URI,
