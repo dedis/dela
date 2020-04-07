@@ -1,4 +1,4 @@
-package ok
+package testdata
 
 // Code generated so this should no generate errors even with long lines
 
