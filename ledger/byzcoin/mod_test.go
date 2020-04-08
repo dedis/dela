@@ -8,6 +8,7 @@ import (
 	proto "github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/blockchain"
+	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/crypto/bls"
 	internal "go.dedis.ch/fabric/internal/testing"
@@ -164,6 +165,7 @@ func (i *publicKeyIterator) GetNext() crypto.PublicKey {
 }
 
 type roster struct {
+	cosi.CollectiveAuthority
 	members []*Ledger
 }
 

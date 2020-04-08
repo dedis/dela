@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package threshold;
+
+import "google/protobuf/any.proto";
+
+message SignatureProto {
+    google.protobuf.Any aggregation = 1;
+    bytes mask = 2;
+}

@@ -13,6 +13,7 @@ import (
 // collective signature.
 type CollectiveAuthority interface {
 	mino.Players
+	GetPublicKey(addr mino.Address) (crypto.PublicKey, int)
 	PublicKeyIterator() crypto.PublicKeyIterator
 }
 

@@ -136,6 +136,18 @@ func (cc Conodes) Len() int {
 	return len(cc)
 }
 
+// GetPublicKey implements cosi.CollectiveAuthority. It returns the public key
+// associated with the address and its index.
+func (cc Conodes) GetPublicKey(addr mino.Address) (crypto.PublicKey, int) {
+	for i, conode := range cc {
+		if conode.GetAddress().Equal(addr) {
+			return conode.GetPublicKey(), i
+		}
+	}
+
+	return nil, -1
+}
+
 // AddressIterator implements mino.Players. It returns the address iterator.
 func (cc Conodes) AddressIterator() mino.AddressIterator {
 	return &addressIterator{

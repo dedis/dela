@@ -2,6 +2,7 @@ package minoch
 
 import (
 	"context"
+	"io"
 	"math"
 	"sync"
 
@@ -163,7 +164,11 @@ type receiver struct {
 
 func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error) {
 	select {
-	case env := <-r.out:
+	case env, ok := <-r.out:
+		if !ok {
+			return nil, nil, io.EOF
+		}
+
 		var da ptypes.DynamicAny
 		err := ptypes.UnmarshalAny(env.message, &da)
 		if err != nil {
