@@ -13,7 +13,7 @@ lint:
 
 vet:
 	@# `go vet` with our custom check encouters a known bug with go < 14
-	@if [ ${gover} -ge 14 ] ; then \
+	@if [ "${gover}" -ge 14 ] ; then \
 		go install ./internal/mcheck && \
 		go vet -vettool=`go env GOPATH`/bin/mcheck -commentLen -ifInit ./...; \
 	else \
