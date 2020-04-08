@@ -9,6 +9,7 @@ lint:
 	staticcheck ./...
 
 vet:
+	# `go vet` with our custom check encouters a known bug with go < 14
 	gover=`go version | sed 's/.*go[0-9]\{1,\}\.\([0-9]\{2,\}\)\..*/\1/'` && \
 	[[ gover -ge 14 ]] && \
 	go install ./internal/mcheck && \
