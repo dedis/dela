@@ -101,7 +101,7 @@ func (i *publicKeyIterator) GetNext() crypto.PublicKey {
 // Conodes is a list of conodes.
 //
 // - implements mino.Players
-// - implements cosi.CollectiveAuthority
+// - implements crypto.CollectiveAuthority
 // - implements io.WriterTo
 // - implements encoding.Packable
 type Conodes []Conode
@@ -135,7 +135,7 @@ func (cc Conodes) Len() int {
 	return len(cc)
 }
 
-// GetPublicKey implements cosi.CollectiveAuthority. It returns the public key
+// GetPublicKey implements crypto.CollectiveAuthority. It returns the public key
 // associated with the address and its index.
 func (cc Conodes) GetPublicKey(addr mino.Address) (crypto.PublicKey, int) {
 	for i, conode := range cc {
@@ -157,8 +157,8 @@ func (cc Conodes) AddressIterator() mino.AddressIterator {
 	}
 }
 
-// PublicKeyIterator implements cosi.CollectiveAuthority. It returns the public
-// key iterator.
+// PublicKeyIterator implements crypto.CollectiveAuthority. It returns the
+// public key iterator.
 func (cc Conodes) PublicKeyIterator() crypto.PublicKeyIterator {
 	return &publicKeyIterator{
 		iterator: &iterator{

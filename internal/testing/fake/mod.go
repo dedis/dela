@@ -10,18 +10,22 @@ import (
 	"golang.org/x/xerrors"
 )
 
+// Call is a tool to keep track of a function calls.
 type Call struct {
 	calls [][]interface{}
 }
 
+// Get returns the nth call ith parameter.
 func (c *Call) Get(n, i int) interface{} {
 	return c.calls[n][i]
 }
 
+// Len returns the number of calls.
 func (c *Call) Len() int {
 	return len(c.calls)
 }
 
+// Add adds a call to the list.
 func (c *Call) Add(args ...interface{}) {
 	c.calls = append(c.calls, args)
 }
@@ -89,6 +93,7 @@ type CollectiveAuthority struct {
 	signers []crypto.AggregateSigner
 }
 
+// GenSigner is a function to generate a signer.
 type GenSigner func() crypto.AggregateSigner
 
 // NewAuthority returns a new fake collective authority of size n.
@@ -229,6 +234,7 @@ func (f SignatureFactory) FromProto(proto.Message) (crypto.Signature, error) {
 	return Signature{}, f.err
 }
 
+// PublicKey is a fake implementation of crypto.PublicKey.
 type PublicKey struct {
 	crypto.PublicKey
 }
@@ -252,6 +258,8 @@ func NewSignerWithSignatureFactory(f SignatureFactory) Signer {
 	return Signer{signatureFactory: f}
 }
 
+// NewSignerWithVerifierFactory returns a new fake signer with the specific
+// verifier factory.
 func NewSignerWithVerifierFactory(f VerifierFactory) Signer {
 	return Signer{verifierFactory: f}
 }
@@ -277,6 +285,7 @@ func (s Signer) GetVerifierFactory() crypto.VerifierFactory {
 	return s.verifierFactory
 }
 
+// GetPublicKey implements crypto.Signer.
 func (s Signer) GetPublicKey() crypto.PublicKey {
 	return PublicKey{}
 }
@@ -315,13 +324,15 @@ type VerifierFactory struct {
 	call     *Call
 }
 
-func NewVerifier(c *Call) VerifierFactory {
-	return VerifierFactory{call: c}
-}
-
 // NewVerifierFactory returns a new fake verifier factory.
 func NewVerifierFactory(v Verifier) VerifierFactory {
 	return VerifierFactory{verifier: v}
+}
+
+// NewVerifierFactoryWithCalls returns a new verifier factory that will register
+// the calls.
+func NewVerifierFactoryWithCalls(c *Call) VerifierFactory {
+	return VerifierFactory{call: c}
 }
 
 // NewBadVerifierFactory returns a fake verifier factory that returns an error

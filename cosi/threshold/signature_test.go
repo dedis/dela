@@ -132,7 +132,9 @@ func TestSignatureFactory_FromProto(t *testing.T) {
 func TestVerifier_Verify(t *testing.T) {
 	call := &fake.Call{}
 
-	verifier := newVerifier(fake.NewAuthority(3, fake.NewSigner), fake.NewVerifier(call))
+	verifier := newVerifier(
+		fake.NewAuthority(3, fake.NewSigner),
+		fake.NewVerifierFactoryWithCalls(call))
 
 	err := verifier.Verify([]byte{0xff}, &Signature{mask: []byte{0x3}})
 	require.NoError(t, err)

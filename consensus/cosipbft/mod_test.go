@@ -17,6 +17,7 @@ import (
 	"go.dedis.ch/fabric/crypto/bls"
 	"go.dedis.ch/fabric/encoding"
 	internal "go.dedis.ch/fabric/internal/testing"
+	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/minoch"
 	"golang.org/x/xerrors"
@@ -41,18 +42,16 @@ func TestConsensus_Basic(t *testing.T) {
 	m1, err := minoch.NewMinoch(manager, "A")
 	require.NoError(t, err)
 
-	signer := bls.NewSigner()
-	cosi := flatcosi.NewFlat(m1, signer)
+	ca := fake.NewAuthorityFromMino(bls.NewSigner, m1)
+
+	cosi := flatcosi.NewFlat(m1, ca.GetSigner(0))
 
 	cons := NewCoSiPBFT(m1, cosi)
-	actor, err := cons.Listen(fakeValidator{pubkey: signer.GetPublicKey()})
+	actor, err := cons.Listen(fakeValidator{})
 	require.NoError(t, err)
 
 	prop := fakeProposal{}
-	err = actor.Propose(prop, fakeCA{
-		addrs:   []mino.Address{m1.GetAddress()},
-		pubkeys: []crypto.PublicKey{signer.GetPublicKey()},
-	})
+	err = actor.Propose(prop, ca)
 	require.NoError(t, err)
 
 	ch, err := cons.GetChain(prop.GetHash())
@@ -153,19 +152,21 @@ func TestActor_Propose(t *testing.T) {
 		cosiActor:   cosiActor,
 	}
 
-	err := actor.Propose(fakeProposal{}, fakeCA{})
+	ca := fake.NewAuthority(1, fake.NewSigner)
+
+	err := actor.Propose(fakeProposal{}, ca)
 	require.NoError(t, err)
 	require.Len(t, cosiActor.calls, 2)
 
 	prepare := cosiActor.calls[0]["message"].(*PrepareRequest)
 	require.NotNil(t, prepare)
-	require.IsType(t, fakeCA{}, cosiActor.calls[0]["signers"])
+	require.IsType(t, ca, cosiActor.calls[0]["signers"])
 
 	commit := cosiActor.calls[1]["message"].(*CommitRequest)
 	require.NotNil(t, commit)
 	require.Equal(t, []byte{0xaa}, commit.GetTo())
 	checkSignatureValue(t, commit.GetPrepare(), 1)
-	require.IsType(t, fakeCA{}, cosiActor.calls[1]["signers"])
+	require.IsType(t, ca, cosiActor.calls[1]["signers"])
 
 	require.Len(t, rpc.calls, 1)
 	propagate := rpc.calls[0]["message"].(*PropagateRequest)
@@ -175,7 +176,7 @@ func TestActor_Propose(t *testing.T) {
 
 	rpc.close = false
 	require.NoError(t, actor.Close())
-	err = actor.Propose(fakeProposal{}, fakeCA{})
+	err = actor.Propose(fakeProposal{}, ca)
 	require.NoError(t, err)
 }
 
@@ -205,30 +206,32 @@ func TestConsensus_ProposeFailures(t *testing.T) {
 		hashFactory: sha256Factory{},
 	}
 
+	ca := fake.NewAuthority(1, fake.NewSigner)
+
 	err := actor.Propose(fakeProposal{}, badCA{})
 	require.EqualError(t, err, "cosipbft.badCA should implement cosi.CollectiveAuthority")
 
 	actor.cosiActor = &fakeCosiActor{err: xerrors.New("oops")}
-	err = actor.Propose(fakeProposal{}, fakeCA{})
+	err = actor.Propose(fakeProposal{}, ca)
 	require.EqualError(t, err, "couldn't sign the proposal: oops")
 
 	actor.cosiActor = &badCosiActor{}
-	err = actor.Propose(fakeProposal{}, fakeCA{})
+	err = actor.Propose(fakeProposal{}, ca)
 	require.EqualError(t, xerrors.Unwrap(err), "couldn't marshal prepare signature: oops")
 
 	actor.cosiActor = &fakeCosiActor{err: xerrors.New("oops"), delay: 1}
-	err = actor.Propose(fakeProposal{}, fakeCA{})
+	err = actor.Propose(fakeProposal{}, ca)
 	require.EqualError(t, err, "couldn't sign the commit: oops")
 
 	actor.cosiActor = &fakeCosiActor{}
 	actor.encoder = badPackAnyEncoder{}
-	err = actor.Propose(fakeProposal{}, fakeCA{})
+	err = actor.Propose(fakeProposal{}, ca)
 	require.EqualError(t, err, "couldn't pack signature: oops")
 
 	actor.encoder = encoding.NewProtoEncoder()
 	actor.cosiActor = &fakeCosiActor{}
 	actor.rpc = &fakeRPC{err: xerrors.New("oops")}
-	err = actor.Propose(fakeProposal{}, fakeCA{})
+	err = actor.Propose(fakeProposal{}, ca)
 	require.EqualError(t, err, "couldn't propagate the link: oops")
 }
 
@@ -404,8 +407,7 @@ func (p fakeProposal) GetVerifier() crypto.Verifier {
 }
 
 type fakeValidator struct {
-	pubkey crypto.PublicKey
-	err    error
+	err error
 }
 
 func (v fakeValidator) Validate(addr mino.Address,
@@ -417,64 +419,6 @@ func (v fakeValidator) Validate(addr mino.Address,
 
 func (v fakeValidator) Commit(id []byte) error {
 	return v.err
-}
-
-type fakeAddrIterator struct {
-	addrs []mino.Address
-	index int
-}
-
-func (i *fakeAddrIterator) HasNext() bool {
-	return i.index+1 < len(i.addrs)
-}
-
-func (i *fakeAddrIterator) GetNext() mino.Address {
-	if i.HasNext() {
-		i.index++
-		return i.addrs[i.index]
-	}
-	return nil
-}
-
-type fakePKIterator struct {
-	pubkeys []crypto.PublicKey
-	index   int
-}
-
-func (i *fakePKIterator) HasNext() bool {
-	return i.index+1 < len(i.pubkeys)
-}
-
-func (i *fakePKIterator) GetNext() crypto.PublicKey {
-	if i.HasNext() {
-		i.index++
-		return i.pubkeys[i.index]
-	}
-	return nil
-}
-
-type fakeCA struct {
-	crypto.CollectiveAuthority
-	addrs   []mino.Address
-	pubkeys []crypto.PublicKey
-}
-
-func (ca fakeCA) AddressIterator() mino.AddressIterator {
-	return &fakeAddrIterator{
-		addrs: ca.addrs,
-		index: -1,
-	}
-}
-
-func (ca fakeCA) PublicKeyIterator() crypto.PublicKeyIterator {
-	return &fakePKIterator{
-		pubkeys: ca.pubkeys,
-		index:   -1,
-	}
-}
-
-func (ca fakeCA) Len() int {
-	return len(ca.addrs)
 }
 
 type fakeSignature struct {
