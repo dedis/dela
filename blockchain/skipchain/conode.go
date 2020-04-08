@@ -4,7 +4,6 @@ import (
 	"io"
 
 	proto "github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
@@ -107,7 +106,7 @@ func (i *publicKeyIterator) GetNext() crypto.PublicKey {
 // - implements encoding.Packable
 type Conodes []Conode
 
-func newConodes(ca cosi.CollectiveAuthority) Conodes {
+func newConodes(ca crypto.CollectiveAuthority) Conodes {
 	conodes := make([]Conode, ca.Len())
 	addrIter := ca.AddressIterator()
 	publicKeyIter := ca.PublicKeyIterator()

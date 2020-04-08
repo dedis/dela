@@ -5,6 +5,7 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric/encoding"
+	"go.dedis.ch/fabric/mino"
 )
 
 // HashFactory is an interface to produce a hash digest.
@@ -61,7 +62,7 @@ type Verifier interface {
 
 // VerifierFactory provides the primitives to create a verifier.
 type VerifierFactory interface {
-	FromIterator(iter PublicKeyIterator) (Verifier, error)
+	FromAuthority(ca CollectiveAuthority) (Verifier, error)
 	FromArray(keys []PublicKey) (Verifier, error)
 }
 
@@ -80,4 +81,18 @@ type AggregateSigner interface {
 	Signer
 
 	Aggregate(signatures ...Signature) (Signature, error)
+}
+
+// CollectiveAuthority (or Cothority in short) is a set of participant to a
+// collective signature.
+type CollectiveAuthority interface {
+	mino.Players
+
+	// GetPublicKey returns the public key and its index of the corresponding
+	// address if any matches.
+	GetPublicKey(addr mino.Address) (PublicKey, int)
+
+	// PublicKeyIterator creates an public key iterator that iterates over the
+	// list of public keys.
+	PublicKeyIterator() PublicKeyIterator
 }

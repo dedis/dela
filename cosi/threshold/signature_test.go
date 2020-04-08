@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/internal/testing/fake"
+	"go.dedis.ch/fabric/mino"
 )
 
 func TestSignature_HasBit(t *testing.T) {
@@ -17,6 +18,12 @@ func TestSignature_HasBit(t *testing.T) {
 	require.True(t, sig.HasBit(15))
 	require.False(t, sig.HasBit(16))
 	require.False(t, sig.HasBit(-1))
+}
+
+func TestSignature_GetIndices(t *testing.T) {
+	sig := &Signature{mask: []byte{0x0c, 0x01}}
+
+	require.Equal(t, []int{2, 3, 8}, sig.GetIndices())
 }
 
 func TestSignature_Merge(t *testing.T) {
@@ -123,13 +130,14 @@ func TestSignatureFactory_FromProto(t *testing.T) {
 }
 
 func TestVerifier_Verify(t *testing.T) {
-	verifier := newVerifier(
-		fake.NewCollectiveAuthority(3),
-		fake.VerifierFactory{},
-	)
+	call := &fake.Call{}
 
-	err := verifier.Verify([]byte{0xff}, &Signature{})
+	verifier := newVerifier(fake.NewAuthority(3, fake.NewSigner), fake.NewVerifier(call))
+
+	err := verifier.Verify([]byte{0xff}, &Signature{mask: []byte{0x3}})
 	require.NoError(t, err)
+	require.Equal(t, 1, call.Len())
+	require.Equal(t, 2, call.Get(0, 0).(mino.Players).Len())
 
 	err = verifier.Verify([]byte{}, nil)
 	require.EqualError(t, err, "invalid signature type '<nil>' != '*threshold.Signature'")

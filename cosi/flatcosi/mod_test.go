@@ -16,6 +16,7 @@ import (
 	"go.dedis.ch/fabric/crypto/bls"
 	"go.dedis.ch/fabric/encoding"
 	internal "go.dedis.ch/fabric/internal/testing"
+	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
@@ -32,31 +33,32 @@ func TestMessages(t *testing.T) {
 }
 
 func TestFlat_GetPublicKeyFactory(t *testing.T) {
-	signer := bls.NewSigner()
+	signer := fake.NewSigner()
 	flat := NewFlat(nil, signer)
 	require.NotNil(t, flat.GetPublicKeyFactory())
 }
 
 func TestFlat_GetSignatureFactory(t *testing.T) {
-	signer := bls.NewSigner()
+	signer := fake.NewSigner()
 	flat := NewFlat(nil, signer)
 	require.NotNil(t, flat.GetSignatureFactory())
 }
 
 func TestFlat_GetVerifier(t *testing.T) {
-	signer := bls.NewSigner()
+	ca := fake.NewAuthority(2, fake.NewSigner)
+	signer := fake.NewSigner()
 	flat := NewFlat(nil, signer)
 
-	_, err := flat.GetVerifier(fakeCollectiveAuthority{})
+	_, err := flat.GetVerifier(ca)
 	require.NoError(t, err)
 
 	verifier, err := flat.GetVerifier(nil)
 	require.Error(t, err)
 	require.Nil(t, verifier)
 
-	flat.signer = fakeSigner{}
-	_, err = flat.GetVerifier(fakeCollectiveAuthority{})
-	require.EqualError(t, err, "couldn't create verifier: oops")
+	flat.signer = fake.NewSignerWithVerifierFactory(fake.NewBadVerifierFactory())
+	_, err = flat.GetVerifier(ca)
+	require.EqualError(t, err, "couldn't create verifier: fake error")
 }
 
 func TestFlat_Listen(t *testing.T) {
@@ -75,16 +77,16 @@ func TestFlat_Listen(t *testing.T) {
 
 func TestActor_Sign(t *testing.T) {
 	message := fakeMessage{}
+	ca := fake.NewAuthority(1, fake.NewSigner)
 
 	msgs := make(chan proto.Message, 2)
 	actor := flatActor{
 		encoder: encoding.NewProtoEncoder(),
-		signer:  bls.NewSigner(),
+		signer:  fake.NewSigner(),
 		rpc:     fakeRPC{msgs: msgs},
 	}
 
 	sigAny := makePackedSignature(t, actor.signer, message.GetHash())
-	ca := fakeCollectiveAuthority{pubkey: actor.signer.GetPublicKey()}
 
 	msgs <- &SignatureResponse{Signature: sigAny}
 	msgs <- &SignatureResponse{Signature: sigAny}
@@ -101,42 +103,44 @@ func TestActor_Sign(t *testing.T) {
 	require.EqualError(t, err, "couldn't pack message: oops")
 
 	actor.encoder = encoding.NewProtoEncoder()
-	actor.signer = fakeSigner{}
+	actor.signer = fake.NewSignerWithVerifierFactory(fake.NewBadVerifierFactory())
 	_, err = actor.Sign(ctx, message, ca)
-	require.EqualError(t, err, "couldn't make verifier: oops")
+	require.EqualError(t, err, "couldn't make verifier: fake error")
 }
 
 func TestActor_SignWrongSignature(t *testing.T) {
 	message := fakeMessage{}
+	ca := fake.NewAuthority(1, bls.NewSigner)
 
 	msgs := make(chan proto.Message, 1)
 	actor := flatActor{
 		encoder: encoding.NewProtoEncoder(),
-		signer:  bls.NewSigner(),
+		signer:  ca.GetSigner(0),
 		rpc:     fakeRPC{msgs: msgs},
 	}
 
-	sigAny := makePackedSignature(t, actor.signer, message.GetHash())
+	sigAny := makePackedSignature(t, ca.GetSigner(0), []byte{0xef})
 
 	msgs <- &SignatureResponse{Signature: sigAny}
 	close(msgs)
 
 	ctx := context.Background()
 
-	_, err := actor.Sign(ctx, message, fakeCollectiveAuthority{})
+	_, err := actor.Sign(ctx, message, ca)
 	require.EqualError(t, err, "couldn't verify the aggregation: bls: invalid signature")
 }
 
 func TestActor_RPCError_Sign(t *testing.T) {
 	buffer := new(bytes.Buffer)
 	message := fakeMessage{}
+	ca := fake.NewAuthority(1, fake.NewSigner)
 
 	msgs := make(chan proto.Message)
 	errs := make(chan error)
 	actor := flatActor{
 		encoder: encoding.NewProtoEncoder(),
 		logger:  zerolog.New(buffer),
-		signer:  bls.NewSigner(),
+		signer:  ca.GetSigner(0),
 		rpc:     fakeRPC{msgs: msgs, errs: errs},
 	}
 
@@ -147,7 +151,7 @@ func TestActor_RPCError_Sign(t *testing.T) {
 
 	ctx := context.Background()
 
-	sig, err := actor.Sign(ctx, message, fakeCollectiveAuthority{})
+	sig, err := actor.Sign(ctx, message, ca)
 	require.EqualError(t, err, "signature is nil")
 	require.Nil(t, sig)
 	require.Contains(t, buffer.String(), "error during collective signing")
@@ -156,20 +160,21 @@ func TestActor_RPCError_Sign(t *testing.T) {
 func TestActor_Context_Sign(t *testing.T) {
 	buffer := new(bytes.Buffer)
 	message := fakeMessage{}
+	ca := fake.NewAuthority(1, fake.NewSigner)
 
 	msgs := make(chan proto.Message)
 	errs := make(chan error)
 	actor := flatActor{
 		encoder: encoding.NewProtoEncoder(),
 		logger:  zerolog.New(buffer),
-		signer:  bls.NewSigner(),
+		signer:  ca.GetSigner(0),
 		rpc:     fakeRPC{msgs: msgs, errs: errs},
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	sig, err := actor.Sign(ctx, message, fakeCollectiveAuthority{})
+	sig, err := actor.Sign(ctx, message, ca)
 	require.EqualError(t, err, "signature is nil")
 	require.Nil(t, sig)
 	require.Contains(t, buffer.String(), "error during collective signing")
@@ -178,12 +183,13 @@ func TestActor_Context_Sign(t *testing.T) {
 func TestActor_SignProcessError(t *testing.T) {
 	buffer := new(bytes.Buffer)
 	message := fakeMessage{}
+	ca := fake.NewAuthority(1, fake.NewSigner)
 
 	msgs := make(chan proto.Message, 1)
 	actor := flatActor{
 		encoder: encoding.NewProtoEncoder(),
 		logger:  zerolog.New(buffer),
-		signer:  bls.NewSigner(),
+		signer:  ca.GetSigner(0),
 		rpc:     fakeRPC{msgs: msgs},
 	}
 
@@ -192,7 +198,7 @@ func TestActor_SignProcessError(t *testing.T) {
 
 	ctx := context.Background()
 
-	_, err := actor.Sign(ctx, message, fakeCollectiveAuthority{})
+	_, err := actor.Sign(ctx, message, ca)
 	require.EqualError(t, err, "signature is nil")
 	require.Contains(t, buffer.String(), "error when processing response")
 
@@ -336,7 +342,7 @@ func (i *fakeIterator) GetNext() crypto.PublicKey {
 }
 
 type fakeCollectiveAuthority struct {
-	cosi.CollectiveAuthority
+	crypto.CollectiveAuthority
 	pubkey crypto.PublicKey
 }
 

@@ -4,13 +4,27 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
-	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/crypto/bls"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
+
+type Call struct {
+	calls [][]interface{}
+}
+
+func (c *Call) Get(n, i int) interface{} {
+	return c.calls[n][i]
+}
+
+func (c *Call) Len() int {
+	return len(c.calls)
+}
+
+func (c *Call) Add(args ...interface{}) {
+	c.calls = append(c.calls, args)
+}
 
 // Address is a fake implementation of mino.Address
 type Address struct {
@@ -70,16 +84,18 @@ func (i *PublicKeyIterator) GetNext() crypto.PublicKey {
 // CollectiveAuthority is a fake implementation of the cosi.CollectiveAuthority
 // interface.
 type CollectiveAuthority struct {
-	cosi.CollectiveAuthority
+	crypto.CollectiveAuthority
 	addrs   []mino.Address
 	signers []crypto.AggregateSigner
 }
 
-// NewCollectiveAuthority returns a new fake collective authority of size n.
-func NewCollectiveAuthority(n int) CollectiveAuthority {
+type GenSigner func() crypto.AggregateSigner
+
+// NewAuthority returns a new fake collective authority of size n.
+func NewAuthority(n int, g GenSigner) CollectiveAuthority {
 	signers := make([]crypto.AggregateSigner, n)
 	for i := range signers {
-		signers[i] = bls.NewSigner()
+		signers[i] = g()
 	}
 
 	addrs := make([]mino.Address, n)
@@ -93,12 +109,12 @@ func NewCollectiveAuthority(n int) CollectiveAuthority {
 	}
 }
 
-// NewCollectiveAuthorityFromMino returns a new fake collective authority using
+// NewAuthorityFromMino returns a new fake collective authority using
 // the addresses of the Mino instances.
-func NewCollectiveAuthorityFromMino(instances ...mino.Mino) CollectiveAuthority {
+func NewAuthorityFromMino(g func() crypto.AggregateSigner, instances ...mino.Mino) CollectiveAuthority {
 	signers := make([]crypto.AggregateSigner, len(instances))
 	for i := range signers {
-		signers[i] = bls.NewSigner()
+		signers[i] = g()
 	}
 
 	addrs := make([]mino.Address, len(instances))
@@ -130,6 +146,20 @@ func (ca CollectiveAuthority) GetPublicKey(addr mino.Address) (crypto.PublicKey,
 		}
 	}
 	return nil, -1
+}
+
+// Take implements mino.Players.
+func (ca CollectiveAuthority) Take(updaters ...mino.FilterUpdater) mino.Players {
+	filter := mino.ApplyFilters(updaters)
+	newCA := CollectiveAuthority{
+		addrs:   make([]mino.Address, len(filter.Indices)),
+		signers: make([]crypto.AggregateSigner, len(filter.Indices)),
+	}
+	for i, k := range filter.Indices {
+		newCA.addrs[i] = ca.addrs[k]
+		newCA.signers[i] = ca.signers[k]
+	}
+	return newCA
 }
 
 // Len implements mino.Players.
@@ -199,15 +229,20 @@ func (f SignatureFactory) FromProto(proto.Message) (crypto.Signature, error) {
 	return Signature{}, f.err
 }
 
+type PublicKey struct {
+	crypto.PublicKey
+}
+
 // Signer is a fake implementation of the crypto.AggregateSigner interface.
 type Signer struct {
 	crypto.AggregateSigner
 	signatureFactory SignatureFactory
+	verifierFactory  VerifierFactory
 	err              error
 }
 
 // NewSigner returns a new instance of the fake signer.
-func NewSigner() Signer {
+func NewSigner() crypto.AggregateSigner {
 	return Signer{}
 }
 
@@ -215,6 +250,10 @@ func NewSigner() Signer {
 // factory.
 func NewSignerWithSignatureFactory(f SignatureFactory) Signer {
 	return Signer{signatureFactory: f}
+}
+
+func NewSignerWithVerifierFactory(f VerifierFactory) Signer {
+	return Signer{verifierFactory: f}
 }
 
 // NewBadSigner returns a fake signer that will return an error when
@@ -235,7 +274,11 @@ func (s Signer) GetSignatureFactory() crypto.SignatureFactory {
 
 // GetVerifierFactory implements crypto.Signer.
 func (s Signer) GetVerifierFactory() crypto.VerifierFactory {
-	return VerifierFactory{}
+	return s.verifierFactory
+}
+
+func (s Signer) GetPublicKey() crypto.PublicKey {
+	return PublicKey{}
 }
 
 // Sign implements crypto.Signer.
@@ -269,6 +312,11 @@ type VerifierFactory struct {
 	crypto.VerifierFactory
 	verifier Verifier
 	err      error
+	call     *Call
+}
+
+func NewVerifier(c *Call) VerifierFactory {
+	return VerifierFactory{call: c}
 }
 
 // NewVerifierFactory returns a new fake verifier factory.
@@ -282,8 +330,11 @@ func NewBadVerifierFactory() VerifierFactory {
 	return VerifierFactory{err: xerrors.New("fake error")}
 }
 
-// FromIterator implements crypto.VerifierFactory.
-func (f VerifierFactory) FromIterator(crypto.PublicKeyIterator) (crypto.Verifier, error) {
+// FromAuthority implements crypto.VerifierFactory.
+func (f VerifierFactory) FromAuthority(ca crypto.CollectiveAuthority) (crypto.Verifier, error) {
+	if f.call != nil {
+		f.call.Add(ca)
+	}
 	return f.verifier, f.err
 }
 

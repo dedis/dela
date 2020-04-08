@@ -30,7 +30,7 @@ func newActor(c *CoSi, rpc mino.RPC) thresholdActor {
 // Sign implements cosi.Actor. It returns the collective signature from the
 // collective authority, or an error if it failed.
 func (a thresholdActor) Sign(ctx context.Context,
-	msg cosi.Message, ca cosi.CollectiveAuthority) (crypto.Signature, error) {
+	msg cosi.Message, ca crypto.CollectiveAuthority) (crypto.Signature, error) {
 
 	innerCtx, cancel := context.WithCancel(context.Background())
 

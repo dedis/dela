@@ -5,9 +5,9 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	any "github.com/golang/protobuf/ptypes/any"
-	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
+	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
 
@@ -37,6 +37,21 @@ func (s *Signature) HasBit(index int) bool {
 	}
 
 	return s.mask[i]&(1<<uint(index&mask)) != 0
+}
+
+// GetIndices returns the list of indices that have participated in the
+// collective signature.
+func (s *Signature) GetIndices() []int {
+	indices := []int{}
+	for i, word := range s.mask {
+		for j := 0; j < 8; j++ {
+			if word&(1<<j) != 0 {
+				indices = append(indices, i*8+j)
+			}
+		}
+	}
+
+	return indices
 }
 
 // Merge adds the signature.
@@ -148,11 +163,11 @@ func (f signatureFactory) FromProto(in proto.Message) (crypto.Signature, error) 
 //
 // - implements crypto.Verifier
 type Verifier struct {
-	ca      cosi.CollectiveAuthority
+	ca      crypto.CollectiveAuthority
 	factory crypto.VerifierFactory
 }
 
-func newVerifier(ca cosi.CollectiveAuthority, f crypto.VerifierFactory) Verifier {
+func newVerifier(ca crypto.CollectiveAuthority, f crypto.VerifierFactory) Verifier {
 	return Verifier{
 		ca:      ca,
 		factory: f,
@@ -166,7 +181,10 @@ func (v Verifier) Verify(msg []byte, s crypto.Signature) error {
 		return xerrors.Errorf("invalid signature type '%T' != '%T'", s, signature)
 	}
 
-	verifier, err := v.factory.FromIterator(v.ca.PublicKeyIterator())
+	filter := mino.ListFilter(signature.GetIndices())
+	subset := v.ca.Take(filter).(crypto.CollectiveAuthority)
+
+	verifier, err := v.factory.FromAuthority(subset)
 	if err != nil {
 		return xerrors.Errorf("couldn't make verifier: %v", err)
 	}

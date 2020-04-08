@@ -8,11 +8,13 @@ import (
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/cosi"
+	"go.dedis.ch/fabric/crypto/bls"
 	"go.dedis.ch/fabric/encoding"
 	internal "go.dedis.ch/fabric/internal/testing"
 	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/minoch"
+	"golang.org/x/xerrors"
 )
 
 func TestMessages(t *testing.T) {
@@ -31,10 +33,18 @@ func TestCoSi_Basic(t *testing.T) {
 	m1, err := minoch.NewMinoch(manager, "A")
 	require.NoError(t, err)
 
-	ca := fake.NewCollectiveAuthorityFromMino(m1)
+	m2, err := minoch.NewMinoch(manager, "B")
+	require.NoError(t, err)
+
+	ca := fake.NewAuthorityFromMino(bls.NewSigner, m1, m2)
 	c1 := NewCoSi(m1, ca.GetSigner(0))
+	c1.Threshold = func(n int) int { return n - 1 }
 
 	actor, err := c1.Listen(fakeHashable{})
+	require.NoError(t, err)
+
+	c2 := NewCoSi(m2, ca.GetSigner(1))
+	_, err = c2.Listen(fakeHashable{err: xerrors.New("oops")})
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -45,6 +55,11 @@ func TestCoSi_Basic(t *testing.T) {
 	verifier, err := c1.GetVerifier(ca)
 	require.NoError(t, err)
 	require.NoError(t, verifier.Verify([]byte{0xff}, sig))
+}
+
+func TestDefaultThreshold(t *testing.T) {
+	require.Equal(t, 2, defaultThreshold(2))
+	require.Equal(t, 5, defaultThreshold(5))
 }
 
 func TestCoSi_GetPublicKeyFactory(t *testing.T) {
@@ -60,7 +75,7 @@ func TestCoSi_GetSignatureFactory(t *testing.T) {
 func TestCoSi_GetVerifier(t *testing.T) {
 	c := &CoSi{signer: fake.NewSigner()}
 
-	verifier, err := c.GetVerifier(fake.NewCollectiveAuthority(3))
+	verifier, err := c.GetVerifier(fake.NewAuthority(3, fake.NewSigner))
 	require.NoError(t, err)
 	require.NotNil(t, verifier)
 }

@@ -13,6 +13,10 @@ import (
 // Threshold is a function that returns the threshold to reach for a given n.
 type Threshold func(int) int
 
+func defaultThreshold(n int) int {
+	return n
+}
+
 // CoSi is an implementation of the cosi.CollectiveSigning interface that is
 // using streams to parallelize the work.
 type CoSi struct {
@@ -29,7 +33,7 @@ func NewCoSi(m mino.Mino, signer crypto.AggregateSigner) *CoSi {
 		encoder:   encoding.NewProtoEncoder(),
 		mino:      m,
 		signer:    signer,
-		Threshold: func(n int) int { return n },
+		Threshold: defaultThreshold,
 	}
 }
 
@@ -50,7 +54,7 @@ func (c *CoSi) GetSignatureFactory() crypto.SignatureFactory {
 
 // GetVerifier implements cosi.CollectiveSigning. It returns a verifier that
 // will verify a signature from the collective authority.
-func (c *CoSi) GetVerifier(ca cosi.CollectiveAuthority) (crypto.Verifier, error) {
+func (c *CoSi) GetVerifier(ca crypto.CollectiveAuthority) (crypto.Verifier, error) {
 	return newVerifier(ca, c.signer.GetVerifierFactory()), nil
 }
 

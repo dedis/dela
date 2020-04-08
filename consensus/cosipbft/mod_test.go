@@ -185,7 +185,7 @@ type badCosiActor struct {
 }
 
 func (cs *badCosiActor) Sign(ctx context.Context, pb cosi.Message,
-	ca cosi.CollectiveAuthority) (crypto.Signature, error) {
+	ca crypto.CollectiveAuthority) (crypto.Signature, error) {
 
 	if cs.delay > 0 {
 		cs.delay--
@@ -454,7 +454,7 @@ func (i *fakePKIterator) GetNext() crypto.PublicKey {
 }
 
 type fakeCA struct {
-	cosi.CollectiveAuthority
+	crypto.CollectiveAuthority
 	addrs   []mino.Address
 	pubkeys []crypto.PublicKey
 }
@@ -515,7 +515,7 @@ type fakeCosiActor struct {
 }
 
 func (a *fakeCosiActor) Sign(ctx context.Context, msg cosi.Message,
-	ca cosi.CollectiveAuthority) (crypto.Signature, error) {
+	ca crypto.CollectiveAuthority) (crypto.Signature, error) {
 
 	packed, err := msg.Pack(encoding.NewProtoEncoder())
 	if err != nil {

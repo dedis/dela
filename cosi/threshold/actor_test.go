@@ -8,6 +8,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/fabric/crypto/bls"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/mino"
@@ -15,7 +16,7 @@ import (
 )
 
 func TestActor_Sign(t *testing.T) {
-	ca := fake.NewCollectiveAuthority(3)
+	ca := fake.NewAuthority(3, bls.NewSigner)
 
 	actor := thresholdActor{
 		CoSi: &CoSi{

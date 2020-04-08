@@ -13,6 +13,7 @@ import (
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	internal "go.dedis.ch/fabric/internal/testing"
+	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/kyber/v3"
 	"golang.org/x/xerrors"
 )
@@ -263,21 +264,21 @@ func (i *fakeIterator) GetNext() crypto.PublicKey {
 	return publicKey{point: suite.Point()}
 }
 
-func TestVerifierFactory_FromIterator(t *testing.T) {
+func TestVerifierFactory_FromAuthority(t *testing.T) {
 	factory := verifierFactory{}
 
-	verifier, err := factory.FromIterator(&fakeIterator{count: 2})
+	verifier, err := factory.FromAuthority(fake.NewAuthority(2, NewSigner))
 	require.NoError(t, err)
 	require.IsType(t, blsVerifier{}, verifier)
 	require.Len(t, verifier.(blsVerifier).points, 2)
 	require.NotNil(t, verifier.(blsVerifier).points[0])
 	require.NotNil(t, verifier.(blsVerifier).points[1])
 
-	_, err = factory.FromIterator(nil)
-	require.EqualError(t, err, "iterator is nil")
+	_, err = factory.FromAuthority(nil)
+	require.EqualError(t, err, "authority is nil")
 
-	_, err = factory.FromIterator(&fakeIterator{count: 1, bad: true})
-	require.EqualError(t, err, "invalid public key type: bls.fakePublicKey")
+	_, err = factory.FromAuthority(fake.NewAuthority(2, fake.NewSigner))
+	require.EqualError(t, err, "invalid public key type: fake.PublicKey")
 }
 
 func TestVerifierFactory_FromArray(t *testing.T) {
