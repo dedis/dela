@@ -93,7 +93,8 @@ func (f SignatureFactory) Register(msg proto.Message, factory crypto.SignatureFa
 // of the signature if the message is a known signature message, otherwise it
 // returns an error.
 func (f SignatureFactory) FromProto(in proto.Message) (crypto.Signature, error) {
-	if inAny, ok := in.(*any.Any); ok {
+	inAny, ok := in.(*any.Any)
+	if ok {
 		var err error
 		in, err = f.encoder.UnmarshalDynamicAny(inAny)
 		if err != nil {

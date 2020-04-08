@@ -42,7 +42,8 @@ func (f *AccessControlFactory) Register(msg proto.Message, factory arc.AccessCon
 // FromProto implements arc.AccessControlFactory. It returns the access control
 // associated with the message.
 func (f *AccessControlFactory) FromProto(pb proto.Message) (arc.AccessControl, error) {
-	if pbAny, ok := pb.(*any.Any); ok {
+	pbAny, ok := pb.(*any.Any)
+	if ok {
 		var err error
 		pb, err = f.encoder.UnmarshalDynamicAny(pbAny)
 		if err != nil {
