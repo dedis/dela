@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-gover = `go version | sed 's/.*go[0-9]\{1,\}\.\([0-9]\{2,\}\)\..*/\1/'`
+gover=`go version | sed 's/.*go[0-9]\{1,\}\.\([0-9]\{2,\}\)\..*/\1/'`
 
 generate:
 	go get -u github.com/golang/protobuf/protoc-gen-go@v1.3.4
