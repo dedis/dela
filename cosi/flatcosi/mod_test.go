@@ -326,30 +326,6 @@ func (m fakeMessage) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 	return &empty.Empty{}, m.err
 }
 
-type fakeIterator struct {
-	crypto.PublicKeyIterator
-	count  int
-	pubkey crypto.PublicKey
-}
-
-func (i *fakeIterator) HasNext() bool {
-	return i.count > 0 && i.pubkey != nil
-}
-
-func (i *fakeIterator) GetNext() crypto.PublicKey {
-	i.count--
-	return i.pubkey
-}
-
-type fakeCollectiveAuthority struct {
-	crypto.CollectiveAuthority
-	pubkey crypto.PublicKey
-}
-
-func (ca fakeCollectiveAuthority) PublicKeyIterator() crypto.PublicKeyIterator {
-	return &fakeIterator{count: 2, pubkey: ca.pubkey}
-}
-
 type fakeSignature struct {
 	crypto.Signature
 	err error

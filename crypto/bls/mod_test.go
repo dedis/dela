@@ -246,24 +246,6 @@ func TestVerifier_Verify(t *testing.T) {
 	require.NoError(t, err)
 }
 
-type fakeIterator struct {
-	count int
-	bad   bool
-}
-
-func (i *fakeIterator) HasNext() bool {
-	return i.count > 0
-}
-
-func (i *fakeIterator) GetNext() crypto.PublicKey {
-	i.count--
-	if i.bad {
-		return fakePublicKey{}
-	}
-
-	return publicKey{point: suite.Point()}
-}
-
 func TestVerifierFactory_FromAuthority(t *testing.T) {
 	factory := verifierFactory{}
 
