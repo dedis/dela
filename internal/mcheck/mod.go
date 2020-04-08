@@ -4,6 +4,8 @@ package main
 // comments exceed the "MaxLen" length.
 // It can be used like the following:
 // `go build && go vet -vettool=./check -commentLen ./...`
+// It ignores files that have as first comment a "// Code genereated..." comment
+// it ignores comments that start with "//go:generate"
 
 import (
 	"strings"
@@ -40,6 +42,9 @@ fileLoop:
 				// in case of /* */ comment there might be multiple lines
 				lines := strings.Split(c.Text, "\n")
 				for _, line := range lines {
+					if strings.HasPrefix(line, "//go:generate") {
+						continue
+					}
 					if len(line) > MaxLen {
 						pass.Reportf(c.Pos(), "Comment too long: %s (%d)",
 							line, len(line))

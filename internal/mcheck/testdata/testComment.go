@@ -9,3 +9,5 @@ package testdata
 This line is not too long and should raise an error because it exceed the 80
 chars
 */
+
+//go:generate this line should be ignore even if it's too long because it started with a go:generate
