@@ -7,5 +7,9 @@ import (
 )
 
 func TestCommentLen(t *testing.T) {
-	analysistest.Run(t, analysistest.TestData(), commentAnalyzer)
+	analysistest.Run(t, analysistest.TestData(), commentLenAnalyzer, "comment")
+}
+
+func TestIfCheck(t *testing.T) {
+	analysistest.Run(t, analysistest.TestData(), ifInitAnalyzer, "ifcheck")
 }

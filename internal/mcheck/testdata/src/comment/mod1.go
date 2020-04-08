@@ -1,4 +1,4 @@
-package testdata
+package comment
 
 // This line should be ok, this is why there is no "want" at the end of it,
 // which is the way of testing an analyzer.

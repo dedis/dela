@@ -1,4 +1,4 @@
-package testdata
+package comment
 
 // Code generated so this should no generate errors even with long lines
 
