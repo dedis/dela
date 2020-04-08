@@ -9,7 +9,7 @@ jobs:
       script:
         - go mod tidy && [ -z "$(git status -s)" ]
         - make lint
-        - make vet
+        - go install ./internal/mcheck && go vet -vettool=`go env GOPATH`/bin/mcheck -commentLen ./... 
         
     - stage: "Test"
       name: "Unit Tests"
