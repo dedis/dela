@@ -79,7 +79,7 @@ func TestPublicKey_Verify(t *testing.T) {
 	require.NoError(t, err)
 
 	err = signer.GetPublicKey().Verify([]byte{}, sig)
-	require.EqualError(t, err, "bls: invalid signature")
+	require.EqualError(t, err, "bls verify failed: bls: invalid signature")
 
 	err = signer.GetPublicKey().Verify(msg, fakeSignature{})
 	require.EqualError(t, err, "invalid signature type 'bls.fakeSignature'")
@@ -112,7 +112,7 @@ func TestPublicKey_String(t *testing.T) {
 
 	pk := publicKey{point: badPoint{}}
 	str = pk.String()
-	require.Equal(t, "bls:malformed point", str)
+	require.Equal(t, "bls:malformed_point", str)
 }
 
 func TestSignature_MarshalBinary(t *testing.T) {

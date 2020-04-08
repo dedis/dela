@@ -53,7 +53,7 @@ func (pk publicKey) Verify(msg []byte, sig crypto.Signature) error {
 
 	err := bls.Verify(suite, pk.point, msg, signature.data)
 	if err != nil {
-		return err
+		return xerrors.Errorf("bls verify failed: %v", err)
 	}
 
 	return nil
@@ -86,9 +86,10 @@ func (pk publicKey) MarshalText() ([]byte, error) {
 func (pk publicKey) String() string {
 	buffer, err := pk.MarshalText()
 	if err != nil {
-		return "bls:malformed point"
+		return "bls:malformed_point"
 	}
 
+	// Output only the prefix and 16 characters of the buffer in hexadecimal.
 	return string(buffer)[:4+16]
 }
 

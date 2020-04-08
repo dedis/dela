@@ -19,7 +19,7 @@ type EvolvableAccessControl interface {
 	Evolve(rule string, targets ...arc.Identity) (Access, error)
 }
 
-// Access is the implementation for DARC of Access Control.
+// Access is the DARC implementation of an Evolvable Access Control.
 //
 // - implements darc.EvolvableAccessControl
 // - implements encoding.Packable

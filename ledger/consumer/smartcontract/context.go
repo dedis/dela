@@ -30,7 +30,7 @@ func (ctx transactionContext) GetTransaction() consumer.Transaction {
 	return ctx.tx
 }
 
-// Read implements consumer.Context. It returns the instance stored to the given
+// Read implements consumer.Context. It returns the instance stored at the given
 // key, or an error if it does not find it.
 func (ctx transactionContext) Read(key []byte) (consumer.Instance, error) {
 	entry, err := ctx.page.Read(key)

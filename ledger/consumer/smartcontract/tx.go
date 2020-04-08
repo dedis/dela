@@ -283,7 +283,8 @@ func (f TransactionFactory) FromProto(pb proto.Message) (consumer.Transaction, e
 		nonce: txProto.GetNonce(),
 	}
 
-	if spawn := txProto.GetSpawn(); spawn != nil {
+	spawn := txProto.GetSpawn()
+	if spawn != nil {
 		arg, err := f.encoder.UnmarshalDynamicAny(spawn.GetArgument())
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't unmarshal argument: %v", err)
@@ -295,7 +296,8 @@ func (f TransactionFactory) FromProto(pb proto.Message) (consumer.Transaction, e
 		}
 	}
 
-	if invoke := txProto.GetInvoke(); invoke != nil {
+	invoke := txProto.GetInvoke()
+	if invoke != nil {
 		arg, err := f.encoder.UnmarshalDynamicAny(invoke.GetArgument())
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't unmarshal argument: %v", err)
@@ -307,7 +309,8 @@ func (f TransactionFactory) FromProto(pb proto.Message) (consumer.Transaction, e
 		}
 	}
 
-	if delete := txProto.GetDelete(); delete != nil {
+	delete := txProto.GetDelete()
+	if delete != nil {
 		tx.action = DeleteAction{
 			Key: delete.GetKey(),
 		}

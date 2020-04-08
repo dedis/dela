@@ -17,7 +17,7 @@ import (
 // contract transaction and produce the resulting instance.
 type Contract interface {
 	// Spawn is called to create a new instance. It returns the initial value of
-	// the new instance and its access control ID.
+	// the new instance and its access rights control (arc) ID.
 	Spawn(ctx SpawnContext) (proto.Message, []byte, error)
 
 	// Invoke is called to update an existing instance.
@@ -135,21 +135,23 @@ func (c Consumer) consumeInvoke(ctx InvokeContext) (consumer.Instance, error) {
 		return nil, xerrors.Errorf("couldn't read the instance: %v", err)
 	}
 
-	contractID := inst.(ContractInstance).GetContractID()
-
-	exec := c.contracts[contractID]
-	if exec == nil {
-		return nil, xerrors.Errorf("unknown contract with id '%s'", contractID)
+	ci, ok := inst.(contractInstance)
+	if !ok {
+		return nil, xerrors.Errorf("invalid instance type '%T' != '%T'", inst, ci)
 	}
 
-	rule := arc.Compile(contractID, "invoke")
+	exec := c.contracts[ci.GetContractID()]
+	if exec == nil {
+		return nil, xerrors.Errorf("unknown contract with id '%s'", ci.GetContractID())
+	}
+
+	rule := arc.Compile(ci.GetContractID(), "invoke")
 
 	err = c.hasAccess(ctx, inst.GetArcID(), rule)
 	if err != nil {
 		return nil, xerrors.Errorf("no access: %v", err)
 	}
 
-	ci := inst.(contractInstance)
 	ci.value, err = exec.Invoke(ctx)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't invoke: %v", err)
@@ -161,12 +163,12 @@ func (c Consumer) consumeInvoke(ctx InvokeContext) (consumer.Instance, error) {
 func (c Consumer) hasAccess(ctx consumer.Context, key []byte, rule string) error {
 	instance, err := ctx.Read(key)
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't read instance: %v", err)
 	}
 
 	access, err := c.AccessFactory.FromProto(instance.GetValue())
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't decode access: %v", err)
 	}
 
 	err = access.Match(rule, ctx.GetTransaction().GetIdentity())

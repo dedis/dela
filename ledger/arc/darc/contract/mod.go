@@ -10,7 +10,8 @@ import (
 	"golang.org/x/xerrors"
 )
 
-// ContractName is the name used to differentiate the contract from others.
+// ContractName is the unique name used to differentiate the contract among
+// others.
 const ContractName = "darc"
 
 // Contract is the smart contract implementation for DARCs.
@@ -55,14 +56,14 @@ func (c Contract) Invoke(ctx sc.InvokeContext) (proto.Message, error) {
 		return nil, xerrors.Errorf("couldn't read instance: %v", err)
 	}
 
-	gnrc, err := c.factory.FromProto(instance.GetValue())
+	generic, err := c.factory.FromProto(instance.GetValue())
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't decode darc: %v", err)
 	}
 
-	access, ok := gnrc.(darc.EvolvableAccessControl)
+	access, ok := generic.(darc.EvolvableAccessControl)
 	if !ok {
-		return nil, xerrors.Errorf("'%T' does not implement 'darc.EvolvableAccessControl'", gnrc)
+		return nil, xerrors.Errorf("'%T' does not implement 'darc.EvolvableAccessControl'", generic)
 	}
 
 	// TODO: use argument to update the darc..

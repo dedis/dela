@@ -46,7 +46,8 @@ func (f PublicKeyFactory) Register(msg proto.Message, factory crypto.PublicKeyFa
 // of the public key if the message is a known public key message, otherwise it
 // returns an error.
 func (f PublicKeyFactory) FromProto(in proto.Message) (crypto.PublicKey, error) {
-	if inAny, ok := in.(*any.Any); ok {
+	inAny, ok := in.(*any.Any)
+	if ok {
 		var err error
 		in, err = f.encoder.UnmarshalDynamicAny(inAny)
 		if err != nil {

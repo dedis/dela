@@ -107,7 +107,7 @@ func TestConsumer_Consume(t *testing.T) {
 	instance.contractID = "fake"
 	factory.err = xerrors.New("oops")
 	_, err = c.Consume(ctx)
-	require.EqualError(t, err, "no access: oops")
+	require.EqualError(t, err, "no access: couldn't decode access: oops")
 
 	factory.err = nil
 	factory.access.match = false

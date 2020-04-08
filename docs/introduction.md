@@ -14,6 +14,9 @@ definitions of modular pieces that build a blockchain.
   be accessible only after the initialization and it provides the primitives to
   start the underlying protocol logic.
 
+- **arc** - Arc stands for Access Rights Control. It is the abstraction that
+  controls the access to the instances.
+
 - **blockchain** - A blockchain is a distributed and immutable storage
   abstraction. A well-defined threshold of participants work together to reach a
   consensus on every block.

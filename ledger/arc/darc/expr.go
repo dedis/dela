@@ -47,7 +47,8 @@ func (expr expression) Match(targets []arc.Identity) error {
 			return xerrors.Errorf("couldn't marshal identity: %v", err)
 		}
 
-		if _, ok := expr.matches[string(text)]; !ok {
+		_, ok := expr.matches[string(text)]
+		if !ok {
 			return xerrors.Errorf("couldn't match identity '%v'", target)
 		}
 	}
