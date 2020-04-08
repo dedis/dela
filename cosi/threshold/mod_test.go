@@ -108,6 +108,10 @@ type fakeMessage struct {
 	cosi.Message
 }
 
+func (m fakeMessage) GetHash() []byte {
+	return []byte{0xff}
+}
+
 func (m fakeMessage) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 	return &wrappers.StringValue{Value: "abc"}, nil
 }

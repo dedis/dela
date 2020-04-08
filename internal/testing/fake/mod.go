@@ -237,6 +237,18 @@ func (f SignatureFactory) FromProto(proto.Message) (crypto.Signature, error) {
 // PublicKey is a fake implementation of crypto.PublicKey.
 type PublicKey struct {
 	crypto.PublicKey
+	err error
+}
+
+// NewBadPublicKey returns a new fake public key that returns error when
+// appropriate.
+func NewBadPublicKey() PublicKey {
+	return PublicKey{err: xerrors.New("fake error")}
+}
+
+// Verify implements crypto.PublicKey.
+func (pk PublicKey) Verify([]byte, crypto.Signature) error {
+	return pk.err
 }
 
 // Signer is a fake implementation of the crypto.AggregateSigner interface.

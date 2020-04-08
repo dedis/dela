@@ -60,9 +60,9 @@ func (a thresholdActor) Sign(ctx context.Context,
 			return nil, xerrors.Errorf("couldn't receive more messages: %v", err)
 		}
 
-		_, index := ca.GetPublicKey(addr)
+		pubkey, index := ca.GetPublicKey(addr)
 		if index >= 0 {
-			err = a.merge(signature, resp, index)
+			err = a.merge(signature, resp, index, pubkey, msg)
 			if err != nil {
 				fabric.Logger.Warn().Err(err).Send()
 			} else {
@@ -109,13 +109,18 @@ func (a thresholdActor) waitCtx(inner, upper context.Context, cancel func()) {
 	}
 }
 
-func (a thresholdActor) merge(signature *Signature, resp proto.Message, index int) error {
+func (a thresholdActor) merge(signature *Signature, resp proto.Message,
+	index int, pubkey crypto.PublicKey, msg cosi.Message) error {
+
 	sig, err := a.signer.GetSignatureFactory().FromProto(resp)
 	if err != nil {
 		return xerrors.Errorf("couldn't decode signature: %v", err)
 	}
 
-	// TODO: err = publicKey.Verify(msg.GetHash(), sig)
+	err = pubkey.Verify(msg.GetHash(), sig)
+	if err != nil {
+		return xerrors.Errorf("couldn't verify: %v", err)
+	}
 
 	err = signature.Merge(a.signer, index, sig)
 	if err != nil {
