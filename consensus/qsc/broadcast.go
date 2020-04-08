@@ -327,7 +327,8 @@ func (b *bTLCB) merge(prepare, commit *View) (*View, error) {
 			ret.Received[node] = msg
 			// The broadcasted set is filled and later on cleaned according to
 			// the spread threshold.
-			if _, ok := counter[node]; !ok {
+			_, found := counter[node]
+			if !found {
 				counter[node] = 0
 				ret.Broadcasted[node] = msg
 			}

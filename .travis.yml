@@ -1,7 +1,7 @@
 language: go
 
 go:
-  - 1.13
+  - 1.14
 
 jobs:
   include:
@@ -9,6 +9,7 @@ jobs:
       script:
         - go mod tidy && [ -z "$(git status -s)" ]
         - make lint
+        - make vet
         
     - stage: "Test"
       name: "Unit Tests"

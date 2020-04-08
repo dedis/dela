@@ -7,3 +7,8 @@ lint:
 	@go get -v honnef.co/go/tools/cmd/staticcheck
 	@go mod tidy
 	staticcheck ./...
+
+vet:
+	@echo "⚠️ Warning: the following only works with go >= 1.14" && \
+	go install ./internal/mcheck && \
+	go vet -vettool=`go env GOPATH`/bin/mcheck -commentLen -ifInit ./...

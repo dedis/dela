@@ -1072,8 +1072,8 @@ func TestSender_Send(t *testing.T) {
 		t.Error("unexpected error from send: ", err)
 	}
 
-	// giving an empty address should add an error since it won't be found in the list of
-	// participants
+	// giving an empty address should add an error since it won't be found in
+	// the list of participants
 	addr := address{}
 	errs = sender.Send(&empty.Empty{}, addr)
 	err, more = <-errs

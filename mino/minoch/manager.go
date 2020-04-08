@@ -47,7 +47,8 @@ func (m *Manager) insert(inst *Minoch) error {
 	m.Lock()
 	defer m.Unlock()
 
-	if _, ok := m.instances[string(text)]; ok {
+	_, found := m.instances[string(text)]
+	if found {
 		return xerrors.New("identifier already exists")
 	}
 
