@@ -2,6 +2,7 @@ package bls
 
 import (
 	"bytes"
+	fmt "fmt"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
@@ -42,6 +43,22 @@ func (pk publicKey) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 	return &PublicKeyProto{Data: buffer}, nil
 }
 
+// Verify implements crypto.PublicKey. It returns nil if the signature matches
+// the message with this public key.
+func (pk publicKey) Verify(msg []byte, sig crypto.Signature) error {
+	signature, ok := sig.(signature)
+	if !ok {
+		return xerrors.Errorf("invalid signature type '%T'", sig)
+	}
+
+	err := bls.Verify(suite, pk.point, msg, signature.data)
+	if err != nil {
+		return xerrors.Errorf("bls verify failed: %v", err)
+	}
+
+	return nil
+}
+
 // Equal implements crypto.PublicKey. It returns true if the other public key
 // is the same.
 func (pk publicKey) Equal(other crypto.PublicKey) bool {
@@ -51,6 +68,29 @@ func (pk publicKey) Equal(other crypto.PublicKey) bool {
 	}
 
 	return pubkey.point.Equal(pk.point)
+}
+
+// MarshalText implements encoding.TextMarshaler. It returns a text
+// representation of the public key.
+func (pk publicKey) MarshalText() ([]byte, error) {
+	buffer, err := pk.MarshalBinary()
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't marshal: %v", err)
+	}
+
+	return []byte(fmt.Sprintf("bls:%x", buffer)), nil
+}
+
+// String implements fmt.String. It returns a string representation of the
+// point.
+func (pk publicKey) String() string {
+	buffer, err := pk.MarshalText()
+	if err != nil {
+		return "bls:malformed_point"
+	}
+
+	// Output only the prefix and 16 characters of the buffer in hexadecimal.
+	return string(buffer)[:4+16]
 }
 
 // signature is a proof of the integrity of a single message associated with a
@@ -86,6 +126,13 @@ type publicKeyFactory struct {
 	encoder encoding.ProtoMarshaler
 }
 
+// NewPublicKeyFactory returns a new instance of the factory.
+func NewPublicKeyFactory() crypto.PublicKeyFactory {
+	return publicKeyFactory{
+		encoder: encoding.NewProtoEncoder(),
+	}
+}
+
 // FromProto implements crypto.PublicKeyFactory. It creates a public key from
 // its protobuf representation.
 func (f publicKeyFactory) FromProto(src proto.Message) (crypto.PublicKey, error) {
@@ -118,6 +165,13 @@ func (f publicKeyFactory) FromProto(src proto.Message) (crypto.PublicKey, error)
 // messages.
 type signatureFactory struct {
 	encoder encoding.ProtoMarshaler
+}
+
+// NewSignatureFactory returns a new instance of the factory.
+func NewSignatureFactory() crypto.SignatureFactory {
+	return signatureFactory{
+		encoder: encoding.NewProtoEncoder(),
+	}
 }
 
 // FromProto implements crypto.SignatureFactory. It creates a BLS signature from

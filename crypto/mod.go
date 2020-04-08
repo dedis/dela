@@ -22,6 +22,9 @@ type RandGenerator interface {
 type PublicKey interface {
 	encoding.Packable
 	encoding.BinaryMarshaler
+	encoding.TextMarshaler
+
+	Verify(msg []byte, signature Signature) error
 
 	Equal(other PublicKey) bool
 }

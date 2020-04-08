@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package darc;
+
+message Expression {
+    repeated string matches = 1;
+}
+
+message AccessControlProto {
+    map<string, Expression> rules = 1;
+}

@@ -9,18 +9,32 @@ message InstanceProto {
     google.protobuf.Any value = 2;
     string contractID = 3;
     bool deleted = 4;
+    bytes accessControl = 5;
 }
 
-message SpawnTransactionProto {
+message Spawn {
     string contractID = 1;
     google.protobuf.Any argument = 2;
 }
 
-message InvokeTransactionProto {
+message Invoke {
     bytes key = 1;
     google.protobuf.Any argument = 2;
 }
 
-message DeleteTransactionProto {
+message Delete {
     bytes key = 1;
+}
+
+message TransactionProto {
+    uint64 nonce = 1;
+
+    oneof action {
+        Spawn spawn = 2;
+        Invoke invoke = 3;
+        Delete delete = 4;
+    }
+
+    google.protobuf.Any identity = 5;
+    google.protobuf.Any signature = 6;
 }
