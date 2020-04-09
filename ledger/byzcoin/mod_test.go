@@ -59,8 +59,8 @@ func TestLedger_Basic(t *testing.T) {
 	case res := <-trs:
 		require.NotNil(t, res)
 		require.Equal(t, tx.GetID(), res.GetTransactionID())
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("timeout")
+	case <-time.After(1 * time.Second):
+		t.Fatal("timeout 1")
 	}
 
 	instance, err := ledger.GetInstance(tx.GetID())
@@ -80,8 +80,8 @@ func TestLedger_Basic(t *testing.T) {
 	case res := <-trs:
 		require.NotNil(t, res)
 		require.Equal(t, tx.GetID(), res.GetTransactionID())
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("timeout")
+	case <-time.After(1 * time.Second):
+		t.Fatal("timeout 2")
 	}
 }
 
