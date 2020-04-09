@@ -6,9 +6,14 @@
 package fake
 
 import (
+	"encoding/binary"
+	"fmt"
+	"hash"
+
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
+	"github.com/golang/protobuf/ptypes/wrappers"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
@@ -39,12 +44,31 @@ func (c *Call) Add(args ...interface{}) {
 type Address struct {
 	mino.Address
 	index int
+	err   error
+}
+
+func NewAddress(index int) Address {
+	return Address{index: index}
+}
+
+func NewBadAddress() Address {
+	return Address{err: xerrors.New("fake error")}
 }
 
 // Equal implements mino.Address.
 func (a Address) Equal(o mino.Address) bool {
 	other, ok := o.(Address)
 	return ok && other.index == a.index
+}
+
+func (a Address) MarshalText() ([]byte, error) {
+	buffer := make([]byte, 4)
+	binary.LittleEndian.PutUint32(buffer, uint32(a.index))
+	return buffer, a.err
+}
+
+func (a Address) String() string {
+	return fmt.Sprintf("fake.Address[%d]", a.index)
 }
 
 // AddressIterator is a fake implementation of the mino.AddressIterator
@@ -101,8 +125,13 @@ type CollectiveAuthority struct {
 // GenSigner is a function to generate a signer.
 type GenSigner func() crypto.AggregateSigner
 
-// NewAuthority returns a new fake collective authority of size n.
 func NewAuthority(n int, g GenSigner) CollectiveAuthority {
+	return NewAuthorityWithBase(0, n, g)
+}
+
+// NewAuthorityWithBase returns a new fake collective authority of size n with
+// a given starting base index.
+func NewAuthorityWithBase(base int, n int, g GenSigner) CollectiveAuthority {
 	signers := make([]crypto.AggregateSigner, n)
 	for i := range signers {
 		signers[i] = g()
@@ -110,7 +139,7 @@ func NewAuthority(n int, g GenSigner) CollectiveAuthority {
 
 	addrs := make([]mino.Address, n)
 	for i := range addrs {
-		addrs[i] = Address{index: i}
+		addrs[i] = Address{index: i + base}
 	}
 
 	return CollectiveAuthority{
@@ -190,6 +219,15 @@ func (ca CollectiveAuthority) PublicKeyIterator() crypto.PublicKeyIterator {
 // PublicKeyFactory is a fake implementation of a public key factory.
 type PublicKeyFactory struct {
 	crypto.PublicKeyFactory
+	err error
+}
+
+func NewBadPublicKeyFactory() PublicKeyFactory {
+	return PublicKeyFactory{err: xerrors.New("fake error")}
+}
+
+func (f PublicKeyFactory) FromProto(proto.Message) (crypto.PublicKey, error) {
+	return PublicKey{}, f.err
 }
 
 // SignatureByte is the byte returned when marshaling a fake signature.
@@ -198,7 +236,8 @@ const SignatureByte = 0xfe
 // Signature is a fake implementation of the signature.
 type Signature struct {
 	crypto.Signature
-	err error
+	value int
+	err   error
 }
 
 // NewBadSignature returns a signature that will return error when appropriate.
@@ -214,7 +253,7 @@ func (s Signature) Equal(o crypto.Signature) bool {
 
 // Pack implements encoding.Packable.
 func (s Signature) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
-	return &empty.Empty{}, s.err
+	return &wrappers.BytesValue{Value: []byte{SignatureByte}}, s.err
 }
 
 // MarshalBinary implements crypto.Signature.
@@ -225,7 +264,12 @@ func (s Signature) MarshalBinary() ([]byte, error) {
 // SignatureFactory is a fake implementation of the signature factory.
 type SignatureFactory struct {
 	crypto.SignatureFactory
-	err error
+	signature Signature
+	err       error
+}
+
+func NewSignatureFactory(s Signature) SignatureFactory {
+	return SignatureFactory{signature: s}
 }
 
 // NewBadSignatureFactory returns a signature factory that will return an error
@@ -236,7 +280,7 @@ func NewBadSignatureFactory() SignatureFactory {
 
 // FromProto implements crypto.SignatureFactory.
 func (f SignatureFactory) FromProto(proto.Message) (crypto.Signature, error) {
-	return Signature{}, f.err
+	return f.signature, f.err
 }
 
 // PublicKey is a fake implementation of crypto.PublicKey.
@@ -254,6 +298,14 @@ func NewBadPublicKey() PublicKey {
 // Verify implements crypto.PublicKey.
 func (pk PublicKey) Verify([]byte, crypto.Signature) error {
 	return pk.err
+}
+
+func (pk PublicKey) MarshalBinary() ([]byte, error) {
+	return []byte{0xdf}, pk.err
+}
+
+func (pk PublicKey) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
+	return &empty.Empty{}, pk.err
 }
 
 // Signer is a fake implementation of the crypto.AggregateSigner interface.
@@ -386,6 +438,14 @@ func (e BadPackAnyEncoder) PackAny(encoding.Packable) (*any.Any, error) {
 	return nil, xerrors.New("fake error")
 }
 
+type BadMarshalAnyEncoder struct {
+	encoding.ProtoEncoder
+}
+
+func (e BadMarshalAnyEncoder) MarshalAny(proto.Message) (*any.Any, error) {
+	return nil, xerrors.New("fake error")
+}
+
 // BadUnmarshalAnyEncoder is a fake implementation of encoding.ProtoMarshaler.
 type BadUnmarshalAnyEncoder struct {
 	encoding.ProtoEncoder
@@ -394,6 +454,26 @@ type BadUnmarshalAnyEncoder struct {
 // UnmarshalAny implements encoding.ProtoMarshaler.
 func (e BadUnmarshalAnyEncoder) UnmarshalAny(*any.Any, proto.Message) error {
 	return xerrors.New("fake error")
+}
+
+type BadUnmarshalDynEncoder struct {
+	encoding.ProtoEncoder
+}
+
+func (e BadUnmarshalDynEncoder) UnmarshalDynamicAny(*any.Any) (proto.Message, error) {
+	return nil, xerrors.New("fake error")
+}
+
+type AddressFactory struct {
+	mino.AddressFactory
+}
+
+func (f AddressFactory) FromText(text []byte) mino.Address {
+	if len(text) > 4 {
+		index := binary.LittleEndian.Uint32(text)
+		return Address{index: int(index)}
+	}
+	return Address{}
 }
 
 // Mino is a fake implementation of mino.Mino.
@@ -407,7 +487,49 @@ func NewBadMino() Mino {
 	return Mino{err: xerrors.New("fake error")}
 }
 
+func (m Mino) GetAddress() mino.Address {
+	return Address{}
+}
+
+func (m Mino) GetAddressFactory() mino.AddressFactory {
+	return AddressFactory{}
+}
+
 // MakeRPC implements mino.Mino.
 func (m Mino) MakeRPC(string, mino.Handler) (mino.RPC, error) {
 	return nil, m.err
+}
+
+type Hash struct {
+	hash.Hash
+	delay int
+	err   error
+}
+
+func NewBadHash() *Hash {
+	return &Hash{err: xerrors.New("fake error")}
+}
+
+func NewBadHashWithDelay(delay int) *Hash {
+	return &Hash{err: xerrors.New("fake error"), delay: delay}
+}
+
+func (h *Hash) Write([]byte) (int, error) {
+	if h.delay > 0 {
+		h.delay--
+		return 0, nil
+	}
+	return 0, xerrors.New("fake error")
+}
+
+type HashFactory struct {
+	hash *Hash
+}
+
+func NewHashFactory(h *Hash) HashFactory {
+	return HashFactory{hash: h}
+}
+
+func (f HashFactory) New() hash.Hash {
+	return f.hash
 }

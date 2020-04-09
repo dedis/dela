@@ -134,11 +134,11 @@ func TestConsensus_Listen(t *testing.T) {
 	require.True(t, xerrors.Is(err, fakeMino.err))
 }
 
-func checkSignatureValue(t *testing.T, pb *any.Any, value uint64) {
-	var wrapper wrappers.UInt64Value
+func checkSignatureValue(t *testing.T, pb *any.Any) {
+	var wrapper wrappers.BytesValue
 	err := ptypes.UnmarshalAny(pb, &wrapper)
 	require.NoError(t, err)
-	require.Equal(t, value, wrapper.GetValue())
+	require.Equal(t, []byte{fake.SignatureByte}, wrapper.GetValue())
 }
 
 func TestActor_Propose(t *testing.T) {
@@ -165,14 +165,14 @@ func TestActor_Propose(t *testing.T) {
 	commit := cosiActor.calls[1]["message"].(*CommitRequest)
 	require.NotNil(t, commit)
 	require.Equal(t, []byte{0xaa}, commit.GetTo())
-	checkSignatureValue(t, commit.GetPrepare(), 1)
+	checkSignatureValue(t, commit.GetPrepare())
 	require.IsType(t, ca, cosiActor.calls[1]["signers"])
 
 	require.Len(t, rpc.calls, 1)
 	propagate := rpc.calls[0]["message"].(*PropagateRequest)
 	require.NotNil(t, propagate)
 	require.Equal(t, []byte{0xaa}, propagate.GetTo())
-	checkSignatureValue(t, propagate.GetCommit(), 2)
+	checkSignatureValue(t, propagate.GetCommit())
 
 	rpc.close = false
 	require.NoError(t, actor.Close())
@@ -190,10 +190,10 @@ func (cs *badCosiActor) Sign(ctx context.Context, pb cosi.Message,
 
 	if cs.delay > 0 {
 		cs.delay--
-		return fakeSignature{}, nil
+		return fake.Signature{}, nil
 	}
 
-	return fakeSignature{err: xerrors.New("oops")}, nil
+	return fake.NewBadSignature(), nil
 }
 
 type badCA struct {
@@ -217,16 +217,17 @@ func TestConsensus_ProposeFailures(t *testing.T) {
 
 	actor.cosiActor = &badCosiActor{}
 	err = actor.Propose(fakeProposal{}, ca)
-	require.EqualError(t, xerrors.Unwrap(err), "couldn't marshal prepare signature: oops")
+	require.EqualError(t, xerrors.Unwrap(err),
+		"couldn't marshal prepare signature: fake error")
 
 	actor.cosiActor = &fakeCosiActor{err: xerrors.New("oops"), delay: 1}
 	err = actor.Propose(fakeProposal{}, ca)
 	require.EqualError(t, err, "couldn't sign the commit: oops")
 
 	actor.cosiActor = &fakeCosiActor{}
-	actor.encoder = badPackAnyEncoder{}
+	actor.encoder = fake.BadPackAnyEncoder{}
 	err = actor.Propose(fakeProposal{}, ca)
-	require.EqualError(t, err, "couldn't pack signature: oops")
+	require.EqualError(t, err, "couldn't pack signature: fake error")
 
 	actor.encoder = encoding.NewProtoEncoder()
 	actor.cosiActor = &fakeCosiActor{}
@@ -267,9 +268,9 @@ func TestHandler_HashPrepare(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, buffer)
 
-	cons.encoder = badUnmarshalDynEncoder{}
+	cons.encoder = fake.BadUnmarshalDynEncoder{}
 	_, err = h.Hash(nil, &PrepareRequest{})
-	require.EqualError(t, err, "couldn't unmarshal proposal: oops")
+	require.EqualError(t, err, "couldn't unmarshal proposal: fake error")
 
 	cons.encoder = encoding.NewProtoEncoder()
 	h.validator = fakeValidator{err: xerrors.New("oops")}
@@ -292,9 +293,10 @@ func TestHandler_HashPrepare(t *testing.T) {
 	require.EqualError(t, err, "couldn't add to queue: queue is locked")
 
 	cons.queue = &queue{}
-	cons.hashFactory = badHashFactory{}
+	cons.hashFactory = fake.NewHashFactory(fake.NewBadHash())
 	_, err = h.Hash(nil, &PrepareRequest{Proposal: empty})
-	require.EqualError(t, err, "couldn't compute hash: couldn't write 'from': oops")
+	require.EqualError(t, err,
+		"couldn't compute hash: couldn't write 'from': fake error")
 }
 
 func TestHandler_HashCommit(t *testing.T) {
@@ -313,29 +315,20 @@ func TestHandler_HashCommit(t *testing.T) {
 
 	buffer, err := h.Hash(nil, &CommitRequest{To: []byte{0xaa}})
 	require.NoError(t, err)
-	require.Equal(t, []byte{0xde, 0xad, 0xbe, 0xef}, buffer)
+	require.Equal(t, []byte{fake.SignatureByte}, buffer)
 
-	h.cosi = &fakeCosi{err: xerrors.New("oops")}
+	h.cosi = &fakeCosi{factory: fake.NewBadSignatureFactory()}
 	_, err = h.Hash(nil, &CommitRequest{})
-	require.EqualError(t, err, "couldn't decode prepare signature: oops")
+	require.EqualError(t, err, "couldn't decode prepare signature: fake error")
 
 	h.cosi = &fakeCosi{}
 	queue.locked = false
 	_, err = h.Hash(nil, &CommitRequest{To: []byte("unknown")})
 	require.EqualError(t, err, "couldn't update signature: couldn't find proposal '756e6b6e6f776e'")
 
-	h.cosi = &fakeCosi{errSig: xerrors.New("oops")}
+	h.cosi = &fakeCosi{factory: fake.NewSignatureFactory(fake.NewBadSignature())}
 	_, err = h.Hash(nil, &CommitRequest{To: []byte{0xaa}})
-	require.EqualError(t, err, "couldn't marshal the signature: oops")
-}
-
-type fakeQueue struct {
-	Queue
-	err error
-}
-
-func (q fakeQueue) Finalize(to Digest, commit crypto.Signature) (*ForwardLinkProto, error) {
-	return &ForwardLinkProto{}, q.err
+	require.EqualError(t, err, "couldn't marshal the signature: fake error")
 }
 
 func TestRPCHandler_Process(t *testing.T) {
@@ -357,9 +350,9 @@ func TestRPCHandler_Process(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, resp)
 
-	h.cosi = &fakeCosi{err: xerrors.New("oops")}
+	h.cosi = &fakeCosi{factory: fake.NewBadSignatureFactory()}
 	_, err = h.Process(req)
-	require.EqualError(t, err, "couldn't decode commit signature: oops")
+	require.EqualError(t, err, "couldn't decode commit signature: fake error")
 
 	h.cosi = &fakeCosi{}
 	h.Consensus.queue = fakeQueue{err: xerrors.New("oops")}
@@ -379,6 +372,15 @@ func TestRPCHandler_Process(t *testing.T) {
 
 // -----------------------------------------------------------------------------
 // Utility functions
+
+type fakeQueue struct {
+	Queue
+	err error
+}
+
+func (q fakeQueue) Finalize(to Digest, commit crypto.Signature) (*ForwardLinkProto, error) {
+	return &ForwardLinkProto{}, q.err
+}
 
 type badChainFactory struct{}
 
@@ -421,29 +423,15 @@ func (v fakeValidator) Commit(id []byte) error {
 	return v.err
 }
 
-type fakeSignature struct {
-	crypto.Signature
-	value uint64
-	err   error
-}
-
-func (s fakeSignature) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
-	return &wrappers.UInt64Value{Value: s.value}, nil
-}
-
-func (s fakeSignature) MarshalBinary() ([]byte, error) {
-	return []byte{0xde, 0xad, 0xbe, 0xef}, s.err
-}
-
 type fakeCosi struct {
 	cosi.CollectiveSigning
 	handler cosi.Hashable
 	err     error
-	errSig  error
+	factory fake.SignatureFactory
 }
 
 func (cs *fakeCosi) GetSignatureFactory() crypto.SignatureFactory {
-	return fakeSignatureFactory{err: cs.err, errSig: cs.errSig}
+	return cs.factory
 }
 
 func (cs *fakeCosi) Listen(h cosi.Hashable) (cosi.Actor, error) {
@@ -479,7 +467,7 @@ func (a *fakeCosiActor) Sign(ctx context.Context, msg cosi.Message,
 		}
 		a.delay--
 	}
-	return fakeSignature{value: a.count}, nil
+	return fake.Signature{}, nil
 }
 
 type fakeRPC struct {

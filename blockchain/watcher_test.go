@@ -46,6 +46,9 @@ func TestWatcher_Notify(t *testing.T) {
 	require.NotNil(t, evt)
 }
 
+// -----------------------------------------------------------------------------
+// Utility functions
+
 type fakeObserver struct {
 	ch chan interface{}
 }

@@ -7,6 +7,7 @@ import (
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
+	"go.dedis.ch/fabric/internal/testing/fake"
 	"golang.org/x/xerrors"
 )
 
@@ -47,7 +48,7 @@ func TestQueue_LockProposal(t *testing.T) {
 		},
 	}
 
-	err := queue.LockProposal([]byte{0xbb}, fakeSignature{})
+	err := queue.LockProposal([]byte{0xbb}, fake.Signature{})
 	require.NoError(t, err)
 	require.NotNil(t, queue.items[0].prepare)
 	require.True(t, queue.locked)
@@ -63,13 +64,14 @@ func TestQueue_LockProposal(t *testing.T) {
 	require.EqualError(t, err, "couldn't find proposal 'aa'")
 
 	queue.locked = false
-	queue.hashFactory = badHashFactory{}
-	err = queue.LockProposal([]byte{0xbb}, fakeSignature{})
-	require.EqualError(t, err, "couldn't hash proposal: couldn't write 'from': oops")
+	queue.hashFactory = fake.NewHashFactory(fake.NewBadHash())
+	err = queue.LockProposal([]byte{0xbb}, fake.Signature{})
+	require.EqualError(t, err,
+		"couldn't hash proposal: couldn't write 'from': fake error")
 
 	queue.hashFactory = crypto.NewSha256Factory()
 	verifier.err = xerrors.New("oops")
-	err = queue.LockProposal([]byte{0xbb}, fakeSignature{})
+	err = queue.LockProposal([]byte{0xbb}, fake.Signature{})
 	require.EqualError(t, err, "couldn't verify signature: oops")
 
 	queue.locked = true
@@ -85,19 +87,19 @@ func TestQueue_Finalize(t *testing.T) {
 			{
 				from:     []byte{0xaa},
 				to:       []byte{0xbb},
-				prepare:  fakeSignature{},
+				prepare:  fake.Signature{},
 				verifier: verifier,
 			},
 		},
 	}
 
-	pb, err := queue.Finalize([]byte{0xbb}, fakeSignature{})
+	pb, err := queue.Finalize([]byte{0xbb}, fake.Signature{})
 	require.NoError(t, err)
 	require.NotNil(t, pb)
 	require.False(t, queue.locked)
 	require.Nil(t, queue.items)
 	require.Len(t, verifier.calls, 1)
-	require.Equal(t, []byte{0xde, 0xad, 0xbe, 0xef}, verifier.calls[0]["message"])
+	require.Equal(t, []byte{fake.SignatureByte}, verifier.calls[0]["message"])
 
 	_, err = queue.Finalize([]byte{0xaa}, nil)
 	require.EqualError(t, err, "couldn't find proposal 'aa'")
@@ -106,25 +108,28 @@ func TestQueue_Finalize(t *testing.T) {
 	_, err = queue.Finalize([]byte{0xaa}, nil)
 	require.EqualError(t, err, "no signature for proposal 'aa'")
 
-	queue.items = []item{{to: []byte{0xaa}, prepare: fakeSignature{err: xerrors.New("oops")}}}
-	_, err = queue.Finalize([]byte{0xaa}, fakeSignature{})
-	require.EqualError(t, err, "couldn't marshal the signature: oops")
+	queue.items = []item{{to: []byte{0xaa}, prepare: fake.NewBadSignature()}}
+	_, err = queue.Finalize([]byte{0xaa}, fake.Signature{})
+	require.EqualError(t, err, "couldn't marshal the signature: fake error")
 
 	queue.items = []item{
 		{
 			to:       []byte{0xaa},
-			prepare:  fakeSignature{},
+			prepare:  fake.Signature{},
 			verifier: &fakeVerifier{err: xerrors.New("oops")},
 		},
 	}
-	_, err = queue.Finalize([]byte{0xaa}, fakeSignature{})
+	_, err = queue.Finalize([]byte{0xaa}, fake.Signature{})
 	require.EqualError(t, err, "couldn't verify signature: oops")
 
 	queue.items[0].verifier = &fakeVerifier{}
-	queue.encoder = badPackEncoder{}
-	_, err = queue.Finalize([]byte{0xaa}, fakeSignature{err: xerrors.New("oops")})
-	require.EqualError(t, err, "couldn't pack forward link: oops")
+	queue.encoder = fake.BadPackEncoder{}
+	_, err = queue.Finalize([]byte{0xaa}, fake.NewBadSignature())
+	require.EqualError(t, err, "couldn't pack forward link: fake error")
 }
+
+// -----------------------------------------------------------------------------
+// Utility functions
 
 type fakeItem struct {
 	consensus.Proposal

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	fmt "fmt"
-	"hash"
 	"math/rand"
 	"reflect"
 	"testing"
@@ -19,7 +18,7 @@ import (
 	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/fabric/internal/testing/fake"
 	"golang.org/x/xerrors"
 )
 
@@ -75,11 +74,11 @@ func TestSkipBlock_Pack(t *testing.T) {
 		require.Equal(t, block.BackLink.Bytes(), pblock.GetBacklink())
 		require.Equal(t, block.GenesisID.Bytes(), pblock.GetGenesisID())
 
-		_, err = block.Pack(badMarshalAnyEncoder{})
-		require.EqualError(t, err, "couldn't marshal the payload: oops")
+		_, err = block.Pack(fake.BadMarshalAnyEncoder{})
+		require.EqualError(t, err, "couldn't marshal the payload: fake error")
 
-		_, err = block.Pack(badPackEncoder{})
-		require.EqualError(t, err, "couldn't pack the conodes: oops")
+		_, err = block.Pack(fake.BadPackEncoder{})
+		require.EqualError(t, err, "couldn't pack the conodes: fake error")
 
 		return true
 	}
@@ -96,22 +95,22 @@ func TestSkipBlock_Hash(t *testing.T) {
 
 	enc := encoding.NewProtoEncoder()
 
-	_, err := block.computeHash(badHashFactory{}, enc)
-	require.EqualError(t, err, "couldn't write index: oops")
+	_, err := block.computeHash(fake.NewHashFactory(fake.NewBadHashWithDelay(0)), enc)
+	require.EqualError(t, err, "couldn't write index: fake error")
 
-	_, err = block.computeHash(badHashFactory{delay: 1}, enc)
+	_, err = block.computeHash(fake.NewHashFactory(fake.NewBadHashWithDelay(1)), enc)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "couldn't write conodes: ")
 
-	_, err = block.computeHash(badHashFactory{delay: 3}, enc)
-	require.EqualError(t, err, "couldn't write genesis hash: oops")
+	_, err = block.computeHash(fake.NewHashFactory(fake.NewBadHashWithDelay(3)), enc)
+	require.EqualError(t, err, "couldn't write genesis hash: fake error")
 
-	_, err = block.computeHash(badHashFactory{delay: 4}, enc)
-	require.EqualError(t, err, "couldn't write backlink: oops")
+	_, err = block.computeHash(fake.NewHashFactory(fake.NewBadHashWithDelay(4)), enc)
+	require.EqualError(t, err, "couldn't write backlink: fake error")
 
-	_, err = block.computeHash(badHashFactory{delay: 5}, enc)
+	_, err = block.computeHash(fake.NewHashFactory(fake.NewBadHashWithDelay(5)), enc)
 	require.EqualError(t, err,
-		"couldn't write payload: stable serialization failed: oops")
+		"couldn't write payload: stable serialization failed: fake error")
 }
 
 func TestSkipBlock_HashUniqueness(t *testing.T) {
@@ -170,16 +169,16 @@ func TestVerifiableBlock_Verify(t *testing.T) {
 		Chain:     fakeChain{hash: hash},
 	}
 
-	err := vb.Verify(fakeVerifier{})
+	err := vb.Verify(fake.Verifier{})
 	require.NoError(t, err)
 
 	vb.Chain = fakeChain{err: xerrors.New("oops")}
-	err = vb.Verify(fakeVerifier{})
+	err = vb.Verify(fake.Verifier{})
 	require.EqualError(t, err, "couldn't verify the chain: oops")
 
 	vb.Chain = fakeChain{hash: hash}
 	vb.hash = Digest{}
-	err = vb.Verify(fakeVerifier{})
+	err = vb.Verify(fake.Verifier{})
 	require.Error(t, err)
 }
 
@@ -194,11 +193,11 @@ func TestVerifiableBlock_Pack(t *testing.T) {
 		require.NoError(t, err)
 		require.IsType(t, (*VerifiableBlockProto)(nil), packed)
 
-		_, err = vb.Pack(badPackEncoder{})
-		require.EqualError(t, err, "couldn't pack block: oops")
+		_, err = vb.Pack(fake.BadPackEncoder{})
+		require.EqualError(t, err, "couldn't pack block: fake error")
 
-		_, err = vb.Pack(badPackAnyEncoder{})
-		require.EqualError(t, err, "couldn't pack chain: oops")
+		_, err = vb.Pack(fake.BadPackAnyEncoder{})
+		require.EqualError(t, err, "couldn't pack chain: fake error")
 
 		return true
 	}
@@ -220,7 +219,7 @@ func TestBlockFactory_FromPrevious(t *testing.T) {
 		require.Equal(t, prev.GenesisID, block.GenesisID)
 		require.Equal(t, prev.GetHash(), block.BackLink.Bytes())
 
-		factory.hashFactory = badHashFactory{}
+		factory.hashFactory = fake.NewHashFactory(fake.NewBadHash())
 		_, err = factory.fromPrevious(prev, nil)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "couldn't make block: ")
@@ -238,7 +237,7 @@ func TestBlockFactory_DecodeConodes(t *testing.T) {
 	factory := blockFactory{
 		Skipchain: &Skipchain{
 			cosi: fakeCosi{},
-			mino: fakeMino{},
+			mino: fake.Mino{},
 		},
 	}
 
@@ -248,7 +247,7 @@ func TestBlockFactory_DecodeConodes(t *testing.T) {
 
 	factory.cosi = fakeCosi{err: xerrors.New("oops")}
 	_, err = factory.decodeConodes(pb)
-	require.EqualError(t, err, "couldn't decode public key: oops")
+	require.EqualError(t, err, "couldn't decode public key: fake error")
 }
 
 func TestBlockFactory_DecodeBlock(t *testing.T) {
@@ -258,7 +257,7 @@ func TestBlockFactory_DecodeBlock(t *testing.T) {
 			hashFactory: sha256Factory{},
 			Skipchain: &Skipchain{
 				cosi: fakeCosi{},
-				mino: fakeMino{},
+				mino: fake.Mino{},
 			},
 		}
 
@@ -272,9 +271,9 @@ func TestBlockFactory_DecodeBlock(t *testing.T) {
 		_, err = factory.decodeBlock(&empty.Empty{})
 		require.EqualError(t, err, "invalid message type '*empty.Empty'")
 
-		factory.encoder = badUnmarshalDynEncoder{}
+		factory.encoder = fake.BadUnmarshalDynEncoder{}
 		_, err = factory.decodeBlock(&BlockProto{})
-		require.EqualError(t, err, "couldn't unmarshal payload: oops")
+		require.EqualError(t, err, "couldn't unmarshal payload: fake error")
 
 		factory.encoder = encoding.NewProtoEncoder()
 		factory.cosi = fakeCosi{err: xerrors.New("oops")}
@@ -282,7 +281,7 @@ func TestBlockFactory_DecodeBlock(t *testing.T) {
 		require.EqualError(t, err, "couldn't make verifier: oops")
 
 		factory.cosi = fakeCosi{}
-		factory.hashFactory = badHashFactory{}
+		factory.hashFactory = fake.NewHashFactory(fake.NewBadHash())
 		_, err = factory.decodeBlock(packed.(*BlockProto))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "couldn't make block: ")
@@ -301,7 +300,7 @@ func TestBlockFactory_FromVerifiable(t *testing.T) {
 			hashFactory: sha256Factory{},
 			Skipchain: &Skipchain{
 				cosi:      fakeCosi{},
-				mino:      fakeMino{},
+				mino:      fake.Mino{},
 				consensus: fakeConsensus{hash: block.hash},
 			},
 		}
@@ -321,7 +320,7 @@ func TestBlockFactory_FromVerifiable(t *testing.T) {
 		_, err = factory.FromVerifiable(&empty.Empty{})
 		require.EqualError(t, err, "invalid message type '*empty.Empty'")
 
-		factory.hashFactory = badHashFactory{}
+		factory.hashFactory = fake.NewHashFactory(fake.NewBadHash())
 		_, err = factory.FromVerifiable(pb)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "couldn't decode the block: ")
@@ -343,7 +342,7 @@ func TestBlockFactory_FromVerifiable(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// -----------------
+// -----------------------------------------------------------------------------
 // Utility functions
 
 func randomUint64(rand *rand.Rand) uint64 {
@@ -353,11 +352,9 @@ func randomUint64(rand *rand.Rand) uint64 {
 }
 
 func randomConode() Conode {
-	buffer := make([]byte, 4)
-	rand.Read(buffer)
 	return Conode{
-		addr:      fakeAddress{id: buffer},
-		publicKey: fakePublicKey{},
+		addr:      fake.NewAddress(rand.Int()),
+		publicKey: fake.PublicKey{},
 	}
 }
 
@@ -372,7 +369,7 @@ func (s SkipBlock) Generate(rand *rand.Rand, size int) reflect.Value {
 	rand.Read(backLink[:])
 
 	block := SkipBlock{
-		verifier:  fakeVerifier{},
+		verifier:  fake.Verifier{},
 		Index:     randomUint64(rand),
 		Conodes:   Conodes{},
 		GenesisID: genesisID,
@@ -386,142 +383,20 @@ func (s SkipBlock) Generate(rand *rand.Rand, size int) reflect.Value {
 	return reflect.ValueOf(block)
 }
 
-type fakeAddress struct {
-	id  []byte
-	err error
-}
-
-func (a fakeAddress) Equal(other mino.Address) bool {
-	return bytes.Equal(other.(fakeAddress).id, a.id)
-}
-
-func (a fakeAddress) MarshalText() ([]byte, error) {
-	return []byte(a.id), a.err
-}
-
-func (a fakeAddress) String() string {
-	return fmt.Sprintf("%x", a.id)
-}
-
-type fakePublicKey struct {
-	crypto.PublicKey
-	err error
-}
-
-func (pk fakePublicKey) MarshalBinary() ([]byte, error) {
-	return []byte{}, pk.err
-}
-
-func (pk fakePublicKey) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
-	return &empty.Empty{}, pk.err
-}
-
-type badPackEncoder struct {
-	encoding.ProtoEncoder
-}
-
-func (e badPackEncoder) Pack(encoding.Packable) (proto.Message, error) {
-	return nil, xerrors.New("oops")
-}
-
-type badPackAnyEncoder struct {
-	encoding.ProtoEncoder
-}
-
-func (e badPackAnyEncoder) PackAny(encoding.Packable) (*any.Any, error) {
-	return nil, xerrors.New("oops")
-}
-
-type badMarshalAnyEncoder struct {
-	encoding.ProtoEncoder
-}
-
-func (e badMarshalAnyEncoder) MarshalAny(proto.Message) (*any.Any, error) {
-	return nil, xerrors.New("oops")
-}
-
-type badUnmarshalDynEncoder struct {
-	encoding.ProtoEncoder
-}
-
-func (e badUnmarshalDynEncoder) UnmarshalDynamicAny(*any.Any) (proto.Message, error) {
-	return nil, xerrors.New("oops")
-}
-
-type badHash struct {
-	hash.Hash
-	delay int
-}
-
-func (h *badHash) Write([]byte) (int, error) {
-	if h.delay > 0 {
-		h.delay--
-		return 0, nil
-	}
-	return 0, xerrors.New("oops")
-}
-
-type badHashFactory struct {
-	delay int
-}
-
-func (f badHashFactory) New() hash.Hash {
-	return &badHash{delay: f.delay}
-}
-
-type fakeVerifier struct {
-	crypto.Verifier
-}
-
-func (v fakeVerifier) GetPublicKeyFactory() crypto.PublicKeyFactory {
-	return nil
-}
-
 type fakeCosi struct {
 	cosi.CollectiveSigning
 	err error
 }
 
 func (cosi fakeCosi) GetPublicKeyFactory() crypto.PublicKeyFactory {
-	return fakePublicKeyFactory{err: cosi.err}
+	if cosi.err != nil {
+		return fake.NewBadPublicKeyFactory()
+	}
+	return fake.PublicKeyFactory{}
 }
 
 func (cosi fakeCosi) GetVerifier(crypto.CollectiveAuthority) (crypto.Verifier, error) {
-	return fakeVerifier{}, cosi.err
-}
-
-type fakeAddressFactory struct {
-	mino.AddressFactory
-}
-
-func (f fakeAddressFactory) FromText([]byte) mino.Address {
-	return nil
-}
-
-type fakeMino struct {
-	mino.Mino
-	err error
-}
-
-func (m fakeMino) GetAddress() mino.Address {
-	return fakeAddress{id: []byte{0xaa}}
-}
-
-func (m fakeMino) GetAddressFactory() mino.AddressFactory {
-	return fakeAddressFactory{}
-}
-
-func (m fakeMino) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
-	return nil, m.err
-}
-
-type fakePublicKeyFactory struct {
-	crypto.PublicKeyFactory
-	err error
-}
-
-func (f fakePublicKeyFactory) FromProto(pb proto.Message) (crypto.PublicKey, error) {
-	return nil, f.err
+	return fake.Verifier{}, cosi.err
 }
 
 type fakeChain struct {
