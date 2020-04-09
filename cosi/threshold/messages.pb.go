@@ -21,6 +21,9 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.ProtoPackageIsVersion3 // please upgrade the proto package
 
+// SignatureProto is the message tha represents a threshold signature. It wraps
+// the aggregated signature and the mask that defines who participated from the
+// collective authority known in advance.
 type SignatureProto struct {
 	Aggregation          *any.Any `protobuf:"bytes,1,opt,name=aggregation,proto3" json:"aggregation,omitempty"`
 	Mask                 []byte   `protobuf:"bytes,2,opt,name=mask,proto3" json:"mask,omitempty"`

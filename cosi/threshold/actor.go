@@ -33,8 +33,8 @@ func (a thresholdActor) Sign(ctx context.Context,
 	msg cosi.Message, ca crypto.CollectiveAuthority) (crypto.Signature, error) {
 
 	innerCtx, cancel := context.WithCancel(context.Background())
-
 	defer cancel()
+
 	sender, rcvr := a.rpc.Stream(innerCtx, ca)
 
 	req, err := a.encoder.Pack(msg)
@@ -46,7 +46,7 @@ func (a thresholdActor) Sign(ctx context.Context,
 	// signatures.
 	thres := a.Threshold(ca.Len())
 
-	errs := sender.Send(req, iter2arr(ca)...)
+	errs := sender.Send(req, iter2slice(ca)...)
 
 	go a.waitResp(errs, ca.Len()-thres, cancel)
 
@@ -72,23 +72,18 @@ func (a thresholdActor) Sign(ctx context.Context,
 	}
 
 	// Each signature is individually verified so we can assume the aggregated
-	// is correct.
+	// signature is correct.
 	return signature, nil
 }
 
 func (a thresholdActor) waitResp(errs <-chan error, maxErrs int, cancel func()) {
 	errCount := 0
-	for {
-		err, ok := <-errs
-		if !ok {
-			return
-		}
-
+	for err := range errs {
 		fabric.Logger.Warn().Err(err).Send()
 		errCount++
 
 		if errCount > maxErrs {
-			// Too many errors to continue.
+			fabric.Logger.Warn().Msg("aborting collective signing due to too many errors")
 			cancel()
 			return
 		}
@@ -130,7 +125,7 @@ func (a thresholdActor) merge(signature *Signature, resp proto.Message,
 	return nil
 }
 
-func iter2arr(players mino.Players) []mino.Address {
+func iter2slice(players mino.Players) []mino.Address {
 	addrs := make([]mino.Address, 0, players.Len())
 	iter := players.AddressIterator()
 	for iter.HasNext() {

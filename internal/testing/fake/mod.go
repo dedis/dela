@@ -1,3 +1,8 @@
+// Package fake provides fake implementations for interfaces commonly used in
+// the repository.
+// The implementations offer configuration to return errors when it is needed by
+// the unit test and it is also possible to record the call of functions of an
+// object in some cases.
 package fake
 
 import (

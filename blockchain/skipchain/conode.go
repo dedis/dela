@@ -136,7 +136,7 @@ func (cc Conodes) Len() int {
 }
 
 // GetPublicKey implements crypto.CollectiveAuthority. It returns the public key
-// associated with the address and its index.
+// associated with the address and its position in the collective authority.
 func (cc Conodes) GetPublicKey(addr mino.Address) (crypto.PublicKey, int) {
 	for i, conode := range cc {
 		if conode.GetAddress().Equal(addr) {

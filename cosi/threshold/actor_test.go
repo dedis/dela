@@ -90,12 +90,17 @@ type fakeReceiver struct {
 	mino.Receiver
 	blocking bool
 	resps    [][]interface{}
+	err      error
 }
 
 func (r *fakeReceiver) Recv(ctx context.Context) (mino.Address, proto.Message, error) {
 	if r.blocking {
 		<-ctx.Done()
 		return nil, nil, ctx.Err()
+	}
+
+	if r.err != nil {
+		return nil, nil, r.err
 	}
 
 	if len(r.resps) == 0 {

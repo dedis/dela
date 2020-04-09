@@ -22,7 +22,12 @@ func TestThresholdHandler_Stream(t *testing.T) {
 	err := handler.Stream(sender, rcvr)
 	require.NoError(t, err)
 
+	rcvr.err = xerrors.New("oops")
+	err = handler.processRequest(sender, rcvr)
+	require.EqualError(t, err, "failed to receive: oops")
+
 	handler.hasher = fakeHashable{err: xerrors.New("oops")}
+	rcvr.err = nil
 	rcvr.resps = makeResponse()
 	err = handler.processRequest(sender, rcvr)
 	require.EqualError(t, err, "couldn't hash message: oops")

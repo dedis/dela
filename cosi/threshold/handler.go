@@ -44,8 +44,11 @@ func (h thresholdHandler) processRequest(sender mino.Sender, rcvr mino.Receiver)
 	ctx := context.Background()
 
 	addr, resp, err := rcvr.Recv(ctx)
-	if err != nil {
+	if err == io.EOF {
 		return err
+	}
+	if err != nil {
+		return xerrors.Errorf("failed to receive: %v", err)
 	}
 
 	buffer, err := h.hasher.Hash(addr, resp)
@@ -64,8 +67,8 @@ func (h thresholdHandler) processRequest(sender mino.Sender, rcvr mino.Receiver)
 	}
 
 	errs := sender.Send(signaturepb, addr)
-	err, ok := <-errs
-	if ok && err != nil {
+	err, more := <-errs
+	if more {
 		return xerrors.Errorf("couldn't send the response: %v", err)
 	}
 

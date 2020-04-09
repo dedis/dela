@@ -12,11 +12,14 @@ import (
 )
 
 const (
+	wordlength = 8
+	// shift is used to divide by 8.
 	shift = 3
-	mask  = 0x7
+	// mask is used to get the remainder of a division by 8.
+	mask = 0x7
 )
 
-// Signature is a threshold signature which includes a aggregated signature and
+// Signature is a threshold signature which includes an aggregated signature and
 // the mask of signers from the associated collective authority.
 //
 // - implements crypto.Signature
@@ -44,9 +47,9 @@ func (s *Signature) HasBit(index int) bool {
 func (s *Signature) GetIndices() []int {
 	indices := []int{}
 	for i, word := range s.mask {
-		for j := 0; j < 8; j++ {
+		for j := 0; j < wordlength; j++ {
 			if word&(1<<j) != 0 {
-				indices = append(indices, i*8+j)
+				indices = append(indices, i*wordlength+j)
 			}
 		}
 	}
