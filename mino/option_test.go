@@ -68,3 +68,10 @@ func TestFilter_RangeFilter(t *testing.T) {
 	RangeFilter(1, 7)(filters)
 	require.Equal(t, []int{0, 1, 2, 3, 4, 5, 6}, filters.Indices)
 }
+
+func TestFilter_ListFilter(t *testing.T) {
+	filters := &Filter{Indices: []int{1, 2, 3}}
+
+	ListFilter([]int{3, 4, 7})(filters)
+	require.Equal(t, []int{3, 4, 7}, filters.Indices)
+}

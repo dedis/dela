@@ -486,7 +486,7 @@ func (cosi fakeCosi) GetPublicKeyFactory() crypto.PublicKeyFactory {
 	return fakePublicKeyFactory{err: cosi.err}
 }
 
-func (cosi fakeCosi) GetVerifier(cosi.CollectiveAuthority) (crypto.Verifier, error) {
+func (cosi fakeCosi) GetVerifier(crypto.CollectiveAuthority) (crypto.Verifier, error) {
 	return fakeVerifier{}, cosi.err
 }
 

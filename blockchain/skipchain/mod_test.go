@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/consensus"
-	"go.dedis.ch/fabric/cosi/flatcosi"
+	"go.dedis.ch/fabric/cosi/threshold"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/crypto/bls"
 	"go.dedis.ch/fabric/encoding"
@@ -292,7 +292,7 @@ func makeSkipchain(t *testing.T, id string, manager *minoch.Manager) (Conode, *S
 		publicKey: signer.GetPublicKey(),
 	}
 
-	cosi := flatcosi.NewFlat(mino, signer)
+	cosi := threshold.NewCoSi(mino, signer)
 	skipchain := NewSkipchain(mino, cosi)
 
 	actor, err := skipchain.Listen(testValidator{})

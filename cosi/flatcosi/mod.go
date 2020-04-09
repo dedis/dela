@@ -46,12 +46,12 @@ func (cosi *Flat) GetSignatureFactory() crypto.SignatureFactory {
 
 // GetVerifier returns a verifier that can be used to verify signatures
 // from this collective authority.
-func (cosi *Flat) GetVerifier(ca cosi.CollectiveAuthority) (crypto.Verifier, error) {
+func (cosi *Flat) GetVerifier(ca crypto.CollectiveAuthority) (crypto.Verifier, error) {
 	if ca == nil {
 		return nil, xerrors.New("collective authority is nil")
 	}
 
-	verifier, err := cosi.signer.GetVerifierFactory().FromIterator(ca.PublicKeyIterator())
+	verifier, err := cosi.signer.GetVerifierFactory().FromAuthority(ca)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't create verifier: %v", err)
 	}
@@ -87,14 +87,14 @@ type flatActor struct {
 
 // Sign returns the collective signature of the block.
 func (a flatActor) Sign(ctx context.Context, msg cosi.Message,
-	ca cosi.CollectiveAuthority) (crypto.Signature, error) {
+	ca crypto.CollectiveAuthority) (crypto.Signature, error) {
 
 	data, err := a.encoder.PackAny(msg)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't pack message: %v", err)
 	}
 
-	verifier, err := a.signer.GetVerifierFactory().FromIterator(ca.PublicKeyIterator())
+	verifier, err := a.signer.GetVerifierFactory().FromAuthority(ca)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't make verifier: %v", err)
 	}

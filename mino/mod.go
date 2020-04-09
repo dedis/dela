@@ -41,6 +41,10 @@ type Players interface {
 
 // Sender is an interface to provide primitives to send messages to recipients.
 type Sender interface {
+	// Send sends the message to all the addresses. It returns a channel that
+	// will be populated with errors coming from the network layer if the
+	// message cannot be sent. The channel must be closed after the message has
+	// been/failed to be sent.
 	Send(msg proto.Message, addrs ...Address) <-chan error
 }
 

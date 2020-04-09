@@ -4,7 +4,6 @@ import (
 	"io"
 
 	proto "github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
@@ -102,12 +101,12 @@ func (i *publicKeyIterator) GetNext() crypto.PublicKey {
 // Conodes is a list of conodes.
 //
 // - implements mino.Players
-// - implements cosi.CollectiveAuthority
+// - implements crypto.CollectiveAuthority
 // - implements io.WriterTo
 // - implements encoding.Packable
 type Conodes []Conode
 
-func newConodes(ca cosi.CollectiveAuthority) Conodes {
+func newConodes(ca crypto.CollectiveAuthority) Conodes {
 	conodes := make([]Conode, ca.Len())
 	addrIter := ca.AddressIterator()
 	publicKeyIter := ca.PublicKeyIterator()
@@ -136,6 +135,18 @@ func (cc Conodes) Len() int {
 	return len(cc)
 }
 
+// GetPublicKey implements crypto.CollectiveAuthority. It returns the public key
+// associated with the address and its position in the collective authority.
+func (cc Conodes) GetPublicKey(addr mino.Address) (crypto.PublicKey, int) {
+	for i, conode := range cc {
+		if conode.GetAddress().Equal(addr) {
+			return conode.GetPublicKey(), i
+		}
+	}
+
+	return nil, -1
+}
+
 // AddressIterator implements mino.Players. It returns the address iterator.
 func (cc Conodes) AddressIterator() mino.AddressIterator {
 	return &addressIterator{
@@ -146,8 +157,8 @@ func (cc Conodes) AddressIterator() mino.AddressIterator {
 	}
 }
 
-// PublicKeyIterator implements cosi.CollectiveAuthority. It returns the public
-// key iterator.
+// PublicKeyIterator implements crypto.CollectiveAuthority. It returns the
+// public key iterator.
 func (cc Conodes) PublicKeyIterator() crypto.PublicKeyIterator {
 	return &publicKeyIterator{
 		iterator: &iterator{

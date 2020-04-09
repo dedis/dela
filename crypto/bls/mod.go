@@ -224,12 +224,13 @@ type verifierFactory struct{}
 // FromIterator implements crypto.VerifierFactory. It returns a verifier that
 // will verify the signatures collectively signed by all the signers associated
 // with the public keys.
-func (v verifierFactory) FromIterator(iter crypto.PublicKeyIterator) (crypto.Verifier, error) {
-	if iter == nil {
-		return nil, xerrors.New("iterator is nil")
+func (v verifierFactory) FromAuthority(ca crypto.CollectiveAuthority) (crypto.Verifier, error) {
+	if ca == nil {
+		return nil, xerrors.New("authority is nil")
 	}
 
-	points := make([]kyber.Point, 0)
+	points := make([]kyber.Point, 0, ca.Len())
+	iter := ca.PublicKeyIterator()
 	for iter.HasNext() {
 		next := iter.GetNext()
 		pk, ok := next.(publicKey)

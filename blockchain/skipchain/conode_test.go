@@ -129,6 +129,18 @@ func TestConodes_Len(t *testing.T) {
 	require.Equal(t, 0, conodes.Len())
 }
 
+func TestConodes_GetPublicKey(t *testing.T) {
+	conodes := Conodes{randomConode(), randomConode(), randomConode()}
+
+	pubkey, index := conodes.GetPublicKey(conodes[1].GetAddress())
+	require.Equal(t, 1, index)
+	require.Equal(t, conodes[1].GetPublicKey(), pubkey)
+
+	pubkey, index = conodes.GetPublicKey(fakeAddress{})
+	require.Equal(t, -1, index)
+	require.Nil(t, pubkey)
+}
+
 func TestConodes_AddressIterator(t *testing.T) {
 	conodes := Conodes{randomConode(), randomConode()}
 	iter := conodes.AddressIterator()

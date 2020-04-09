@@ -111,7 +111,7 @@ func (a pbftActor) Propose(p consensus.Proposal, players mino.Players) error {
 		return xerrors.Errorf("couldn't create prepare request: %v", err)
 	}
 
-	ca, ok := players.(cosi.CollectiveAuthority)
+	ca, ok := players.(crypto.CollectiveAuthority)
 	if !ok {
 		return xerrors.Errorf("%T should implement cosi.CollectiveAuthority", players)
 	}

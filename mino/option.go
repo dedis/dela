@@ -83,3 +83,11 @@ func RangeFilter(start, end int) FilterUpdater {
 		sort.Ints(filters.Indices)
 	}
 }
+
+// ListFilter is a filter to set the list of indices. It will override any index
+// previously set.
+func ListFilter(indices []int) FilterUpdater {
+	return func(filters *Filter) {
+		filters.Indices = indices
+	}
+}

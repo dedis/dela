@@ -171,7 +171,7 @@ type skipchainActor struct {
 // InitChain implements blockchain.Actor. It creates a genesis block if none
 // exists and propagate it to the conodes.
 func (a skipchainActor) InitChain(data proto.Message, players mino.Players) error {
-	ca, ok := players.(cosi.CollectiveAuthority)
+	ca, ok := players.(crypto.CollectiveAuthority)
 	if !ok {
 		return xerrors.New("players must implement cosi.CollectiveAuthority")
 	}
@@ -253,7 +253,7 @@ func (a skipchainActor) newChain(data proto.Message, conodes Conodes) error {
 func (a skipchainActor) Store(data proto.Message, players mino.Players) error {
 	factory := a.GetBlockFactory().(blockFactory)
 
-	ca, ok := players.(cosi.CollectiveAuthority)
+	ca, ok := players.(crypto.CollectiveAuthority)
 	if !ok {
 		return xerrors.Errorf("players must implement cosi.CollectiveAuthority")
 	}
