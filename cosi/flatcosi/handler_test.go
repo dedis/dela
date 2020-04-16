@@ -11,18 +11,10 @@ import (
 	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto/bls"
 	"go.dedis.ch/fabric/encoding"
+	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
-
-type fakeHasher struct {
-	cosi.Hashable
-	err error
-}
-
-func (h fakeHasher) Hash(mino.Address, proto.Message) ([]byte, error) {
-	return []byte{0xab}, h.err
-}
 
 func TestHandler_Process(t *testing.T) {
 	h := newHandler(bls.NewSigner(), fakeHasher{})
@@ -37,13 +29,13 @@ func TestHandler_Process(t *testing.T) {
 	require.EqualError(t, err, "invalid message type: *empty.Empty")
 	require.Nil(t, resp)
 
-	h.encoder = badUnmarshalDynEncoder{}
+	h.encoder = fake.BadUnmarshalDynEncoder{}
 	_, err = h.Process(req)
-	require.EqualError(t, err, "couldn't unmarshal message: oops")
+	require.EqualError(t, err, "couldn't unmarshal message: fake error")
 
-	h.encoder = badPackAnyEncoder{}
+	h.encoder = fake.BadPackAnyEncoder{}
 	_, err = h.Process(req)
-	require.EqualError(t, err, "couldn't pack signature: oops")
+	require.EqualError(t, err, "couldn't pack signature: fake error")
 
 	h.encoder = encoding.NewProtoEncoder()
 	h.hasher = fakeHasher{err: xerrors.New("oops")}
@@ -51,9 +43,21 @@ func TestHandler_Process(t *testing.T) {
 	require.EqualError(t, err, "couldn't hash message: oops")
 
 	h.hasher = fakeHasher{}
-	h.signer = fakeSigner{err: xerrors.New("oops")}
+	h.signer = fake.NewBadSigner()
 	_, err = h.Process(req)
-	require.EqualError(t, err, "couldn't sign: oops")
+	require.EqualError(t, err, "couldn't sign: fake error")
+}
+
+// -----------------------------------------------------------------------------
+// Utility functions
+
+type fakeHasher struct {
+	cosi.Hashable
+	err error
+}
+
+func (h fakeHasher) Hash(mino.Address, proto.Message) ([]byte, error) {
+	return []byte{0xab}, h.err
 }
 
 func makeMessage(t *testing.T) *any.Any {

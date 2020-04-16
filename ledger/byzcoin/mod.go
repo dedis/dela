@@ -11,7 +11,6 @@ import (
 	"go.dedis.ch/fabric/blockchain/skipchain"
 	"go.dedis.ch/fabric/cosi/flatcosi"
 	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/crypto/bls"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/ledger"
 	"go.dedis.ch/fabric/ledger/consumer"
@@ -45,8 +44,7 @@ type Ledger struct {
 }
 
 // NewLedger creates a new Byzcoin ledger.
-func NewLedger(mino mino.Mino, consumer consumer.Consumer) *Ledger {
-	signer := bls.NewSigner()
+func NewLedger(mino mino.Mino, signer crypto.AggregateSigner, consumer consumer.Consumer) *Ledger {
 	cosi := flatcosi.NewFlat(mino, signer)
 	decoder := func(pb proto.Message) (gossip.Rumor, error) {
 		return consumer.GetTransactionFactory().FromProto(pb)

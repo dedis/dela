@@ -8,6 +8,7 @@ import (
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/encoding"
+	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/ledger/consumer"
 	"go.dedis.ch/fabric/ledger/inventory"
 	"golang.org/x/xerrors"
@@ -66,10 +67,10 @@ func TestTxProcessor_Process(t *testing.T) {
 		"couldn't stage new page: couldn't consume tx: oops")
 
 	proc.consumer = fakeConsumer{}
-	proc.encoder = badPackEncoder{}
+	proc.encoder = fake.BadPackEncoder{}
 	_, err = proc.process(payload)
 	require.EqualError(t, err,
-		"couldn't stage new page: couldn't pack instance: oops")
+		"couldn't stage new page: couldn't pack instance: fake error")
 
 	proc.encoder = encoding.NewProtoEncoder()
 	proc.inventory = fakeInventory{errPage: xerrors.New("oops")}
@@ -95,14 +96,6 @@ func TestTxProcessor_Commit(t *testing.T) {
 
 // -----------------------------------------------------------------------------
 // Utility functions
-
-type badPackEncoder struct {
-	encoding.ProtoEncoder
-}
-
-func (e badPackEncoder) Pack(encoding.Packable) (proto.Message, error) {
-	return nil, xerrors.New("oops")
-}
 
 type fakePage struct {
 	inventory.WritablePage

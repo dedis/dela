@@ -5,11 +5,11 @@ import (
 
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
-	"github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/encoding"
 	internal "go.dedis.ch/fabric/internal/testing"
+	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/ledger/arc"
 	"golang.org/x/xerrors"
 )
@@ -83,8 +83,8 @@ func TestAccess_Pack(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, pb.(*AccessControlProto).GetRules(), 1)
 
-	_, err = access.Pack(badEncoder{})
-	require.EqualError(t, err, "couldn't pack expression: oops")
+	_, err = access.Pack(fake.BadPackEncoder{})
+	require.EqualError(t, err, "couldn't pack expression: fake error")
 }
 
 func TestFactory_FromProto(t *testing.T) {
@@ -111,22 +111,7 @@ func TestFactory_FromProto(t *testing.T) {
 	_, err = factory.FromProto(&empty.Empty{})
 	require.EqualError(t, err, "invalid message type '*empty.Empty'")
 
-	factory.encoder = badEncoder{}
+	factory.encoder = fake.BadUnmarshalAnyEncoder{}
 	_, err = factory.FromProto(pbAny)
-	require.EqualError(t, err, "couldn't unmarshal message: oops")
-}
-
-// -----------------------------------------------------------------------------
-// Utility functions
-
-type badEncoder struct {
-	encoding.ProtoEncoder
-}
-
-func (e badEncoder) Pack(encoding.Packable) (proto.Message, error) {
-	return nil, xerrors.New("oops")
-}
-
-func (e badEncoder) UnmarshalAny(*any.Any, proto.Message) error {
-	return xerrors.New("oops")
+	require.EqualError(t, err, "couldn't unmarshal message: fake error")
 }

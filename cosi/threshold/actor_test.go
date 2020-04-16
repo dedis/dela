@@ -64,7 +64,7 @@ func TestActor_Sign(t *testing.T) {
 	require.EqualError(t, err, "couldn't decode signature: fake error")
 
 	actor.signer = fake.NewSigner()
-	err = actor.merge(&Signature{}, &empty.Empty{}, 0, fake.NewBadPublicKey(), fakeMessage{})
+	err = actor.merge(&Signature{}, &empty.Empty{}, 0, fake.NewInvalidPublicKey(), fakeMessage{})
 	require.EqualError(t, err, "couldn't verify: fake error")
 }
 

@@ -7,11 +7,9 @@ import (
 
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
-	"github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/encoding"
 	internal "go.dedis.ch/fabric/internal/testing"
 	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/kyber/v3"
@@ -37,14 +35,6 @@ func TestPublicKey_MarshalBinary(t *testing.T) {
 	require.NotEmpty(t, buffer)
 }
 
-type badPoint struct {
-	kyber.Point
-}
-
-func (p badPoint) MarshalBinary() ([]byte, error) {
-	return nil, xerrors.New("oops")
-}
-
 func TestPublicKey_Pack(t *testing.T) {
 	f := func() bool {
 		signer := NewSigner()
@@ -66,10 +56,6 @@ func TestPublicKey_Pack(t *testing.T) {
 	require.EqualError(t, err, "couldn't marshal point: oops")
 }
 
-type fakePublicKey struct {
-	crypto.PublicKey
-}
-
 func TestPublicKey_Verify(t *testing.T) {
 	msg := []byte("deadbeef")
 	signer := NewSigner()
@@ -82,8 +68,8 @@ func TestPublicKey_Verify(t *testing.T) {
 	err = signer.GetPublicKey().Verify([]byte{}, sig)
 	require.EqualError(t, err, "bls verify failed: bls: invalid signature")
 
-	err = signer.GetPublicKey().Verify(msg, fakeSignature{})
-	require.EqualError(t, err, "invalid signature type 'bls.fakeSignature'")
+	err = signer.GetPublicKey().Verify(msg, fake.Signature{})
+	require.EqualError(t, err, "invalid signature type 'fake.Signature'")
 }
 
 func TestPublicKey_Equal(t *testing.T) {
@@ -92,7 +78,7 @@ func TestPublicKey_Equal(t *testing.T) {
 	require.True(t, signerA.GetPublicKey().Equal(signerA.GetPublicKey()))
 	require.True(t, signerB.GetPublicKey().Equal(signerB.GetPublicKey()))
 	require.False(t, signerA.GetPublicKey().Equal(signerB.GetPublicKey()))
-	require.False(t, signerA.GetPublicKey().Equal(fakePublicKey{}))
+	require.False(t, signerA.GetPublicKey().Equal(fake.PublicKey{}))
 }
 
 func TestPublicKey_MarshalText(t *testing.T) {
@@ -146,10 +132,6 @@ func TestSignature_Pack(t *testing.T) {
 	require.NoError(t, err)
 }
 
-type fakeSignature struct {
-	crypto.Signature
-}
-
 func TestSignature_Equal(t *testing.T) {
 	f := func(data []byte) bool {
 		sig := signature{data: data}
@@ -158,7 +140,7 @@ func TestSignature_Equal(t *testing.T) {
 		buffer := append(append([]byte{}, data...), 0xaa)
 		require.False(t, sig.Equal(signature{data: buffer}))
 
-		require.False(t, sig.Equal(fakeSignature{}))
+		require.False(t, sig.Equal(fake.Signature{}))
 
 		return true
 	}
@@ -188,9 +170,9 @@ func TestPublicKeyFactory_FromProto(t *testing.T) {
 	_, err = factory.FromProto(&empty.Empty{})
 	require.EqualError(t, err, "invalid public key type '*empty.Empty'")
 
-	factory.encoder = badUnmarshalAnyEncoder{}
+	factory.encoder = fake.BadUnmarshalAnyEncoder{}
 	_, err = factory.FromProto(packedAny)
-	require.EqualError(t, err, "couldn't unmarshal message: oops")
+	require.EqualError(t, err, "couldn't unmarshal message: fake error")
 
 	_, err = factory.FromProto(&PublicKeyProto{Data: []byte{}})
 	require.Error(t, err)
@@ -219,9 +201,9 @@ func TestSignatureFactory_FromProto(t *testing.T) {
 	_, err = factory.FromProto(&empty.Empty{})
 	require.EqualError(t, err, "invalid signature type '*empty.Empty'")
 
-	factory.encoder = badUnmarshalAnyEncoder{}
+	factory.encoder = fake.BadUnmarshalAnyEncoder{}
 	_, err = factory.FromProto(packedAny)
-	require.EqualError(t, err, "couldn't unmarshal message: oops")
+	require.EqualError(t, err, "couldn't unmarshal message: fake error")
 }
 
 func TestVerifier_Verify(t *testing.T) {
@@ -274,8 +256,8 @@ func TestVerifierFactory_FromArray(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, verifier.(blsVerifier).points)
 
-	_, err = factory.FromArray([]crypto.PublicKey{fakePublicKey{}})
-	require.EqualError(t, err, "invalid public key type: bls.fakePublicKey")
+	_, err = factory.FromArray([]crypto.PublicKey{fake.PublicKey{}})
+	require.EqualError(t, err, "invalid public key type: fake.PublicKey")
 }
 
 func TestSigner_GetVerifierFactory(t *testing.T) {
@@ -354,10 +336,10 @@ func TestSigner_Aggregate(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-type badUnmarshalAnyEncoder struct {
-	encoding.ProtoEncoder
+type badPoint struct {
+	kyber.Point
 }
 
-func (e badUnmarshalAnyEncoder) UnmarshalAny(*any.Any, proto.Message) error {
-	return xerrors.New("oops")
+func (p badPoint) MarshalBinary() ([]byte, error) {
+	return nil, xerrors.New("oops")
 }

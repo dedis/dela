@@ -3,15 +3,11 @@ package common
 import (
 	"testing"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
-	"github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/encoding"
-	"golang.org/x/xerrors"
+	"go.dedis.ch/fabric/internal/testing/fake"
 )
 
 func TestPublicKeyFactory_Register(t *testing.T) {
@@ -19,16 +15,16 @@ func TestPublicKeyFactory_Register(t *testing.T) {
 
 	length := len(factory.factories)
 
-	factory.Register(&empty.Empty{}, fakePublicKeyFactory{})
+	factory.Register(&empty.Empty{}, fake.PublicKeyFactory{})
 	require.Len(t, factory.factories, length+1)
 
-	factory.Register(&empty.Empty{}, fakePublicKeyFactory{})
+	factory.Register(&empty.Empty{}, fake.PublicKeyFactory{})
 	require.Len(t, factory.factories, length+1)
 }
 
 func TestPublicKeyFactory_FromProto(t *testing.T) {
 	factory := NewPublicKeyFactory()
-	factory.Register(&empty.Empty{}, fakePublicKeyFactory{})
+	factory.Register(&empty.Empty{}, fake.PublicKeyFactory{})
 
 	publicKey, err := factory.FromProto(&empty.Empty{})
 	require.NoError(t, err)
@@ -42,9 +38,9 @@ func TestPublicKeyFactory_FromProto(t *testing.T) {
 	_, err = factory.FromProto(&wrappers.StringValue{})
 	require.EqualError(t, err, "couldn't find factory for '*wrappers.StringValue'")
 
-	factory.encoder = badUnmarshalDynEncoder{}
+	factory.encoder = fake.BadUnmarshalDynEncoder{}
 	_, err = factory.FromProto(pbany)
-	require.EqualError(t, err, "couldn't decode message: oops")
+	require.EqualError(t, err, "couldn't decode message: fake error")
 }
 
 func TestSignatureFactory_Register(t *testing.T) {
@@ -52,16 +48,16 @@ func TestSignatureFactory_Register(t *testing.T) {
 
 	length := len(factory.factories)
 
-	factory.Register(&empty.Empty{}, fakeSignatureFactory{})
+	factory.Register(&empty.Empty{}, fake.SignatureFactory{})
 	require.Len(t, factory.factories, length+1)
 
-	factory.Register(&empty.Empty{}, fakeSignatureFactory{})
+	factory.Register(&empty.Empty{}, fake.SignatureFactory{})
 	require.Len(t, factory.factories, length+1)
 }
 
 func TestSignatureFactory_FromProto(t *testing.T) {
 	factory := NewSignatureFactory()
-	factory.Register(&empty.Empty{}, fakeSignatureFactory{})
+	factory.Register(&empty.Empty{}, fake.SignatureFactory{})
 
 	sig, err := factory.FromProto(&empty.Empty{})
 	require.NoError(t, err)
@@ -75,42 +71,7 @@ func TestSignatureFactory_FromProto(t *testing.T) {
 	_, err = factory.FromProto(&wrappers.BoolValue{})
 	require.EqualError(t, err, "couldn't find factory for '*wrappers.BoolValue'")
 
-	factory.encoder = badUnmarshalDynEncoder{}
+	factory.encoder = fake.BadUnmarshalDynEncoder{}
 	_, err = factory.FromProto(sigany)
-	require.EqualError(t, err, "couldn't decode message: oops")
-}
-
-// -----------------------------------------------------------------------------
-// Utility functions
-
-type badUnmarshalDynEncoder struct {
-	encoding.ProtoEncoder
-}
-
-func (e badUnmarshalDynEncoder) UnmarshalDynamicAny(*any.Any) (proto.Message, error) {
-	return nil, xerrors.New("oops")
-}
-
-type fakePublicKey struct {
-	crypto.PublicKey
-}
-
-type fakePublicKeyFactory struct {
-	crypto.PublicKeyFactory
-}
-
-func (f fakePublicKeyFactory) FromProto(proto.Message) (crypto.PublicKey, error) {
-	return fakePublicKey{}, nil
-}
-
-type fakeSignature struct {
-	crypto.Signature
-}
-
-type fakeSignatureFactory struct {
-	crypto.SignatureFactory
-}
-
-func (f fakeSignatureFactory) FromProto(proto.Message) (crypto.Signature, error) {
-	return fakeSignature{}, nil
+	require.EqualError(t, err, "couldn't decode message: fake error")
 }

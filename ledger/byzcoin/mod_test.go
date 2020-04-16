@@ -8,14 +8,13 @@ import (
 	proto "github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/blockchain"
-	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/crypto/bls"
 	internal "go.dedis.ch/fabric/internal/testing"
+	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/ledger/arc/darc"
 	"go.dedis.ch/fabric/ledger/arc/darc/contract"
 	"go.dedis.ch/fabric/ledger/consumer"
 	"go.dedis.ch/fabric/ledger/consumer/smartcontract"
-	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/minoch"
 	"golang.org/x/xerrors"
 )
@@ -36,10 +35,11 @@ func TestLedger_Basic(t *testing.T) {
 	m, err := minoch.NewMinoch(manager, "A")
 	require.NoError(t, err)
 
-	ledger := NewLedger(m, makeConsumer())
-	roster := roster{members: []*Ledger{ledger}}
+	ca := fake.NewAuthorityFromMino(bls.NewSigner, m)
 
-	actor, err := ledger.Listen(roster)
+	ledger := NewLedger(m, ca.GetSigner(0), makeConsumer())
+
+	actor, err := ledger.Listen(ca)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -127,61 +127,6 @@ func makeConsumer() consumer.Consumer {
 	contract.RegisterContract(c)
 
 	return c
-}
-
-type addressIterator struct {
-	index   int
-	members []*Ledger
-}
-
-func (i *addressIterator) HasNext() bool {
-	return i.index+1 < len(i.members)
-}
-
-func (i *addressIterator) GetNext() mino.Address {
-	if i.HasNext() {
-		i.index++
-		return i.members[i.index].addr
-	}
-	return nil
-}
-
-type publicKeyIterator struct {
-	index   int
-	members []*Ledger
-}
-
-func (i *publicKeyIterator) HasNext() bool {
-	return i.index+1 < len(i.members)
-}
-
-func (i *publicKeyIterator) GetNext() crypto.PublicKey {
-	if i.HasNext() {
-		i.index++
-		return i.members[i.index].signer.GetPublicKey()
-	}
-	return nil
-}
-
-type roster struct {
-	crypto.CollectiveAuthority
-	members []*Ledger
-}
-
-func (r roster) Len() int {
-	return len(r.members)
-}
-
-func (r roster) Take(...mino.FilterUpdater) mino.Players {
-	return roster{members: r.members}
-}
-
-func (r roster) AddressIterator() mino.AddressIterator {
-	return &addressIterator{index: -1, members: r.members}
-}
-
-func (r roster) PublicKeyIterator() crypto.PublicKeyIterator {
-	return &publicKeyIterator{index: -1, members: r.members}
 }
 
 type fakeBlock struct {
