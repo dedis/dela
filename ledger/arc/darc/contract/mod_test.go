@@ -6,6 +6,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/encoding"
+	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/ledger/arc"
 	"go.dedis.ch/fabric/ledger/arc/darc"
 	"go.dedis.ch/fabric/ledger/consumer"
@@ -49,9 +50,9 @@ func TestContract_Spawn(t *testing.T) {
 	require.EqualError(t, err, "couldn't evolve darc: oops")
 
 	contract.factory = darc.NewFactory()
-	contract.encoder = badEncoder{}
+	contract.encoder = fake.BadPackEncoder{}
 	_, _, err = contract.Spawn(ctx)
-	require.EqualError(t, err, "couldn't pack darc: oops")
+	require.EqualError(t, err, "couldn't pack darc: fake error")
 }
 
 func TestContract_Invoke(t *testing.T) {
@@ -84,9 +85,9 @@ func TestContract_Invoke(t *testing.T) {
 		"'contract.fakeArc' does not implement 'darc.EvolvableAccessControl'")
 
 	contract.factory = darc.NewFactory()
-	contract.encoder = badEncoder{}
+	contract.encoder = fake.BadPackEncoder{}
 	_, err = contract.Invoke(ctx)
-	require.EqualError(t, err, "couldn't pack darc: oops")
+	require.EqualError(t, err, "couldn't pack darc: fake error")
 }
 
 func Test_NewGenesisTransaction(t *testing.T) {
@@ -105,14 +106,6 @@ func Test_RegisterContract(t *testing.T) {
 
 // -----------------------------------------------------------------------------
 // Utility functions
-
-type badEncoder struct {
-	encoding.ProtoEncoder
-}
-
-func (e badEncoder) Pack(encoding.Packable) (proto.Message, error) {
-	return nil, xerrors.New("oops")
-}
 
 type fakeIdentity struct {
 	arc.Identity

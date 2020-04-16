@@ -9,6 +9,7 @@ import (
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/encoding"
+	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
@@ -20,7 +21,7 @@ func TestHandler_Process(t *testing.T) {
 			encoder:   encoding.NewProtoEncoder(),
 			db:        &fakeDatabase{},
 			cosi:      fakeCosi{},
-			mino:      fakeMino{},
+			mino:      fake.Mino{},
 			consensus: fakeConsensus{},
 		}, proc)
 

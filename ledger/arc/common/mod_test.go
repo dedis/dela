@@ -5,13 +5,11 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
-	"github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/encoding"
+	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/ledger/arc"
-	"golang.org/x/xerrors"
 )
 
 func TestAccessControlFactory_Register(t *testing.T) {
@@ -42,9 +40,9 @@ func TestAccessControlFactory_FromProto(t *testing.T) {
 	_, err = factory.FromProto(&wrappers.BoolValue{})
 	require.EqualError(t, err, "couldn't find factory for '*wrappers.BoolValue'")
 
-	factory.encoder = badEncoder{}
+	factory.encoder = fake.BadUnmarshalDynEncoder{}
 	_, err = factory.FromProto(pbAny)
-	require.EqualError(t, err, "couldn't unmarshal: oops")
+	require.EqualError(t, err, "couldn't unmarshal: fake error")
 }
 
 // -----------------------------------------------------------------------------
@@ -60,12 +58,4 @@ type fakeFactory struct {
 
 func (f fakeFactory) FromProto(proto.Message) (arc.AccessControl, error) {
 	return fakeAccessControl{}, nil
-}
-
-type badEncoder struct {
-	encoding.ProtoEncoder
-}
-
-func (e badEncoder) UnmarshalDynamicAny(*any.Any) (proto.Message, error) {
-	return nil, xerrors.New("oops")
 }

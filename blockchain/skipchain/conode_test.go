@@ -2,24 +2,23 @@ package skipchain
 
 import (
 	"bytes"
-	"io"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/encoding"
+	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/mino"
-	"golang.org/x/xerrors"
 )
 
 func TestConode_GetAddress(t *testing.T) {
-	addr := fakeAddress{}
+	addr := fake.Address{}
 	conode := Conode{addr: addr}
 
 	require.Equal(t, addr, conode.GetAddress())
 }
 
 func TestConode_GetPublicKey(t *testing.T) {
-	pk := fakePublicKey{}
+	pk := fake.PublicKey{}
 	conode := Conode{publicKey: pk}
 
 	require.Equal(t, pk, conode.GetPublicKey())
@@ -27,20 +26,20 @@ func TestConode_GetPublicKey(t *testing.T) {
 
 func TestConode_Pack(t *testing.T) {
 	conode := Conode{
-		addr:      fakeAddress{},
-		publicKey: fakePublicKey{},
+		addr:      fake.Address{},
+		publicKey: fake.PublicKey{},
 	}
 
 	pb, err := conode.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
 	require.IsType(t, (*ConodeProto)(nil), pb)
 
-	_, err = conode.Pack(badPackAnyEncoder{})
-	require.EqualError(t, err, "couldn't pack public key: oops")
+	_, err = conode.Pack(fake.BadPackAnyEncoder{})
+	require.EqualError(t, err, "couldn't pack public key: fake error")
 
-	conode.addr = fakeAddress{err: xerrors.New("oops")}
+	conode.addr = fake.NewBadAddress()
 	_, err = conode.Pack(encoding.NewProtoEncoder())
-	require.EqualError(t, err, "couldn't marshal address: oops")
+	require.EqualError(t, err, "couldn't marshal address: fake error")
 }
 
 func TestIterator_HasNext(t *testing.T) {
@@ -136,7 +135,7 @@ func TestConodes_GetPublicKey(t *testing.T) {
 	require.Equal(t, 1, index)
 	require.Equal(t, conodes[1].GetPublicKey(), pubkey)
 
-	pubkey, index = conodes.GetPublicKey(fakeAddress{})
+	pubkey, index = conodes.GetPublicKey(fake.Address{})
 	require.Equal(t, -1, index)
 	require.Nil(t, pubkey)
 }
@@ -171,8 +170,8 @@ func TestConodes_Pack(t *testing.T) {
 	require.IsType(t, (*Roster)(nil), pb)
 	require.Len(t, pb.(*Roster).GetConodes(), 2)
 
-	_, err = conodes.Pack(badPackEncoder{})
-	require.EqualError(t, err, "couldn't pack conode: oops")
+	_, err = conodes.Pack(fake.BadPackEncoder{})
+	require.EqualError(t, err, "couldn't pack conode: fake error")
 }
 
 func TestConodes_WriteTo(t *testing.T) {
@@ -183,30 +182,13 @@ func TestConodes_WriteTo(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, sum, int64(buffer.Len()))
 
-	_, err = conodes.WriteTo(&badWriter{err: xerrors.New("oops")})
-	require.EqualError(t, err, "couldn't write public key: oops")
+	_, err = conodes.WriteTo(fake.NewBadHash())
+	require.EqualError(t, err, "couldn't write public key: fake error")
 
-	_, err = conodes.WriteTo(&badWriter{delay: 1, err: xerrors.New("oops")})
-	require.EqualError(t, err, "couldn't write address: oops")
+	_, err = conodes.WriteTo(fake.NewBadHashWithDelay(1))
+	require.EqualError(t, err, "couldn't write address: fake error")
 
-	conodes[1].publicKey = fakePublicKey{err: xerrors.New("oops")}
+	conodes[1].publicKey = fake.NewBadPublicKey()
 	_, err = conodes.WriteTo(buffer)
-	require.EqualError(t, err, "couldn't marshal public key: oops")
-}
-
-//------------------
-// Utility functions
-
-type badWriter struct {
-	io.Writer
-	err   error
-	delay int
-}
-
-func (w *badWriter) Write([]byte) (int, error) {
-	if w.delay == 0 {
-		return 0, w.err
-	}
-	w.delay--
-	return 0, nil
+	require.EqualError(t, err, "couldn't marshal public key: fake error")
 }

@@ -2,13 +2,12 @@ package mem
 
 import (
 	"bytes"
-	"hash"
 	"testing"
 	"testing/quick"
 
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/crypto"
+	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/ledger/inventory"
 	"golang.org/x/xerrors"
 )
@@ -67,7 +66,7 @@ func TestInMemoryInventory_Stage(t *testing.T) {
 	})
 	require.EqualError(t, err, "couldn't fill new page: oops")
 
-	inv.hashFactory = badHashFactory{}
+	inv.hashFactory = fake.NewHashFactory(fake.NewBadHash())
 	_, err = inv.Stage(func(inventory.WritablePage) error {
 		return nil
 	})
@@ -149,23 +148,4 @@ func TestPage_Write(t *testing.T) {
 	badKey := [digestLength + 1]byte{}
 	err = page.Write(badKey[:], value)
 	require.EqualError(t, err, "key length (33) is higher than 32")
-}
-
-// -----------------------------------------------------------------------------
-// Utility functions
-
-type badHash struct {
-	hash.Hash
-}
-
-func (h badHash) Write([]byte) (int, error) {
-	return 0, xerrors.New("oops")
-}
-
-type badHashFactory struct {
-	crypto.HashFactory
-}
-
-func (f badHashFactory) New() hash.Hash {
-	return badHash{}
 }

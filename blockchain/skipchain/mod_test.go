@@ -16,6 +16,7 @@ import (
 	"go.dedis.ch/fabric/crypto/bls"
 	"go.dedis.ch/fabric/encoding"
 	internal "go.dedis.ch/fabric/internal/testing"
+	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/minoch"
 	"golang.org/x/xerrors"
@@ -75,7 +76,7 @@ func TestSkipchain_Basic(t *testing.T) {
 
 func TestSkipchain_Listen(t *testing.T) {
 	s := &Skipchain{
-		mino:      fakeMino{},
+		mino:      fake.Mino{},
 		consensus: fakeConsensus{},
 	}
 
@@ -83,11 +84,11 @@ func TestSkipchain_Listen(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, actor)
 
-	s.mino = fakeMino{err: xerrors.New("oops")}
+	s.mino = fake.NewBadMino()
 	_, err = s.Listen(nil)
-	require.EqualError(t, err, "couldn't create the rpc: oops")
+	require.EqualError(t, err, "couldn't create the rpc: fake error")
 
-	s.mino = fakeMino{}
+	s.mino = fake.Mino{}
 	s.consensus = fakeConsensus{err: xerrors.New("oops")}
 	_, err = s.Listen(nil)
 	require.EqualError(t, err, "couldn't start the consensus: oops")
@@ -153,14 +154,14 @@ func TestActor_InitChain(t *testing.T) {
 		rand:        crypto.CryptographicRandomGenerator{},
 		Skipchain: &Skipchain{
 			encoder: encoding.NewProtoEncoder(),
-			mino:    fakeMino{},
+			mino:    fake.Mino{},
 			db:      &fakeDatabase{err: NewNoBlockError(0)},
 		},
 		rpc: fakeRPC{},
 	}
 
 	conodes := Conodes{randomConode()}
-	conodes[0].addr = fakeAddress{id: []byte{0xaa}}
+	conodes[0].addr = fake.NewAddress(0)
 
 	err := actor.InitChain(&empty.Empty{}, conodes)
 	require.NoError(t, err)
@@ -202,7 +203,7 @@ func TestActor_NewChain(t *testing.T) {
 	require.EqualError(t, err, "mismatch rand length 0 != 32")
 
 	actor.rand = crypto.CryptographicRandomGenerator{}
-	actor.hashFactory = badHashFactory{}
+	actor.hashFactory = fake.NewHashFactory(fake.NewBadHash())
 	err = actor.newChain(&empty.Empty{}, Conodes{})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "couldn't create block: ")
@@ -216,16 +217,16 @@ func TestActor_Store(t *testing.T) {
 			encoder:    encoding.NewProtoEncoder(),
 			logger:     zerolog.New(buffer),
 			viewchange: fakeViewChange{},
-			mino:       fakeMino{},
+			mino:       fake.Mino{},
 			db:         &fakeDatabase{},
 		},
 		consensus: cons,
 	}
 
 	conodes := Conodes{
-		{addr: fakeAddress{id: []byte{0xbb}}},
-		{addr: fakeAddress{id: []byte{0xaa}}},
-		{addr: fakeAddress{id: []byte{0xcc}}},
+		{addr: fake.NewAddress(0)},
+		{addr: fake.NewAddress(1)},
+		{addr: fake.NewAddress(2)},
 	}
 
 	err := actor.Store(&empty.Empty{}, conodes)
@@ -247,7 +248,7 @@ func TestActor_Store(t *testing.T) {
 	err = actor.Store(&empty.Empty{}, conodes)
 	// A view change is ignored.
 	require.NoError(t, err)
-	require.Contains(t, buffer.String(), "skipchain@aa refusing view change: oops")
+	require.Contains(t, buffer.String(), "skipchain@fake.Address[0] refusing view change: oops")
 
 	actor.Skipchain.viewchange = fakeViewChange{}
 	actor.consensus = &fakeConsensusActor{err: xerrors.New("oops")}
