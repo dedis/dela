@@ -207,7 +207,7 @@ func TestActor_SignProcessError(t *testing.T) {
 	require.EqualError(t, err, "couldn't decode signature: fake error")
 }
 
-//------------------
+// -----------------------------------------------------------------------------
 // Utility functions
 
 func makePackedSignature(t *testing.T, signer crypto.Signer, message []byte) *any.Any {
