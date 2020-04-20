@@ -17,12 +17,14 @@ import (
 func TestHandler_Process(t *testing.T) {
 	f := func(block SkipBlock) bool {
 		proc := &fakePayloadProc{}
+		watcher := &fakeWatcher{}
 		h := newHandler(&Skipchain{
 			encoder:   encoding.NewProtoEncoder(),
 			db:        &fakeDatabase{},
 			cosi:      fakeCosi{},
 			mino:      fake.Mino{},
 			consensus: fakeConsensus{},
+			watcher:   watcher,
 		}, proc)
 
 		block.Payload = &wrappers.BoolValue{Value: true}
@@ -40,6 +42,7 @@ func TestHandler_Process(t *testing.T) {
 		require.Equal(t, uint64(0), proc.calls[0][0])
 		require.True(t, proto.Equal(block.Payload, proc.calls[0][1].(proto.Message)))
 		require.True(t, proto.Equal(block.Payload, proc.calls[1][0].(proto.Message)))
+		require.Equal(t, 1, watcher.notified)
 
 		req.Message = &empty.Empty{}
 		_, err = h.Process(req)

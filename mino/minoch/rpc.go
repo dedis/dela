@@ -51,7 +51,11 @@ func (c RPC) Call(ctx context.Context, req proto.Message,
 					Message: cloneReq,
 				}
 
-				resp, err := m.rpcs[c.path].h.Process(req)
+				m.Lock()
+				rpc := m.rpcs[c.path]
+				m.Unlock()
+
+				resp, err := rpc.h.Process(req)
 				if err != nil {
 					errs <- err
 				}

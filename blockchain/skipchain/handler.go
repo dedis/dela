@@ -60,6 +60,8 @@ func (h handler) Process(req mino.Request) (proto.Message, error) {
 			return nil, xerrors.Errorf("tx aborted: %v", err)
 		}
 
+		h.watcher.Notify(genesis)
+
 		fabric.Logger.Trace().Msgf("new genesis block written: %v", genesis.hash)
 		return nil, nil
 	default:

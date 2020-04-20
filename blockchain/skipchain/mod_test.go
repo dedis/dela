@@ -248,7 +248,8 @@ func TestActor_Store(t *testing.T) {
 	err = actor.Store(&empty.Empty{}, conodes)
 	// A view change is ignored.
 	require.NoError(t, err)
-	require.Contains(t, buffer.String(), "skipchain@fake.Address[0] refusing view change: oops")
+	require.Contains(t, buffer.String(),
+		"skipchain@fake.Address[0] proposal refused by view change: oops")
 
 	actor.Skipchain.viewchange = fakeViewChange{}
 	actor.consensus = &fakeConsensusActor{err: xerrors.New("oops")}

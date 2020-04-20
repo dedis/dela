@@ -280,7 +280,7 @@ func (a skipchainActor) Store(data proto.Message, players mino.Players) error {
 		// will be done.
 		block.Conodes = rotation.(Conodes)
 	} else {
-		a.logger.Debug().Msgf("%v refusing view change: %v", a, err)
+		a.logger.Trace().Msgf("%v proposal refused by view change: %v", a, err)
 		// Not authorized to propose a block as the leader is moving
 		// forward so we drop the proposal. The upper layer is responsible to
 		// try again until the leader includes the data.

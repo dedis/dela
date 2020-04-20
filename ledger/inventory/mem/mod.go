@@ -3,6 +3,7 @@ package mem
 import (
 	"fmt"
 	"hash"
+	"sync"
 
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
@@ -27,6 +28,7 @@ func (d Digest) String() string {
 //
 // - implements inventory.Inventory
 type InMemoryInventory struct {
+	sync.Mutex
 	hashFactory  crypto.HashFactory
 	pages        []inMemoryPage
 	stagingPages map[Digest]inMemoryPage
@@ -44,6 +46,9 @@ func NewInventory() *InMemoryInventory {
 // GetPage implements inventory.Inventory. It returns the snapshot for the
 // version if it exists, otherwise an error.
 func (inv *InMemoryInventory) GetPage(index uint64) (inventory.Page, error) {
+	inv.Lock()
+	defer inv.Unlock()
+
 	i := int(index)
 	if i >= len(inv.pages) {
 		return inMemoryPage{}, xerrors.Errorf("invalid page (%d >= %d)", i, len(inv.pages))
@@ -55,6 +60,9 @@ func (inv *InMemoryInventory) GetPage(index uint64) (inventory.Page, error) {
 // GetStagingPage implements inventory.Inventory. It returns the staging page
 // that matches the root if any, otherwise nil.
 func (inv *InMemoryInventory) GetStagingPage(root []byte) inventory.Page {
+	inv.Lock()
+	defer inv.Unlock()
+
 	digest := Digest{}
 	copy(digest[:], root)
 
@@ -70,6 +78,7 @@ func (inv *InMemoryInventory) GetStagingPage(root []byte) inventory.Page {
 // new snapshot that is not yet committed to the available versions.
 func (inv *InMemoryInventory) Stage(f func(inventory.WritablePage) error) (inventory.Page, error) {
 	var page inMemoryPage
+	inv.Lock()
 	if len(inv.pages) > 0 {
 		// Clone the previous page of the inventory so that previous instances
 		// are carried over.
@@ -78,6 +87,7 @@ func (inv *InMemoryInventory) Stage(f func(inventory.WritablePage) error) (inven
 	} else {
 		page.entries = make(map[Digest]inMemoryEntry)
 	}
+	inv.Unlock()
 
 	err := f(page)
 	if err != nil {
@@ -89,7 +99,9 @@ func (inv *InMemoryInventory) Stage(f func(inventory.WritablePage) error) (inven
 		return page, xerrors.Errorf("couldn't compute page hash: %v", err)
 	}
 
+	inv.Lock()
 	inv.stagingPages[page.footprint] = page
+	inv.Unlock()
 
 	return page, nil
 }
@@ -97,6 +109,9 @@ func (inv *InMemoryInventory) Stage(f func(inventory.WritablePage) error) (inven
 // Commit stores the page with the given footprint permanently to the list of
 // available versions.
 func (inv *InMemoryInventory) Commit(footprint []byte) error {
+	inv.Lock()
+	defer inv.Unlock()
+
 	digest := Digest{}
 	copy(digest[:], footprint)
 

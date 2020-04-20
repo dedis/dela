@@ -4,6 +4,7 @@ package minoch
 
 import (
 	"fmt"
+	"sync"
 
 	m "go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/mino"
@@ -12,6 +13,7 @@ import (
 // Minoch is an implementation of the Mino interface using channels. Each
 // instance must have a unique string assigned to it.
 type Minoch struct {
+	sync.Mutex
 	manager    *Manager
 	identifier string
 	path       string
@@ -67,7 +69,10 @@ func (m *Minoch) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 		path:    fmt.Sprintf("%s/%s", m.path, name),
 		h:       h,
 	}
+
+	m.Lock()
 	m.rpcs[rpc.path] = rpc
+	m.Unlock()
 
 	return rpc, nil
 }

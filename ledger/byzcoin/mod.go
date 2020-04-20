@@ -90,33 +90,57 @@ func (ldgr *Ledger) GetInstance(key []byte) (consumer.Instance, error) {
 
 // Listen implements ledger.Ledger. It starts to participate in the blockchain
 // and returns an actor that can send transactions.
-func (ldgr *Ledger) Listen(players mino.Players) (ledger.Actor, error) {
+func (ldgr *Ledger) Listen() (ledger.Actor, error) {
 	bcActor, err := ldgr.bc.Listen(ldgr.proc)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't start the blockchain: %v", err)
 	}
 
-	payload, err := ldgr.stagePayload(nil)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't make genesis payload: %v", err)
-	}
+	go func() {
+		// Wait for the genesis block to be created to start the routines
+		// TODO: if ledger already exists == persistence, skip
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 
-	err = bcActor.InitChain(payload, players)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't initialize the chain: %v", err)
-	}
+		blocks := ldgr.bc.Watch(ctx)
 
-	err = ldgr.gossiper.Start(players)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't start the gossiper: %v", err)
-	}
+		genesis := <-blocks
+		if genesis.GetIndex() != 0 {
+			fabric.Logger.Error().Msgf("expect genesis but got block %d", genesis.GetIndex())
+			return
+		}
 
-	go ldgr.routine(bcActor, players)
+		fabric.Logger.Trace().
+			Bytes("hash", genesis.GetHash()).
+			Msg("received genesis block")
 
-	return newActor(ldgr.gossiper), err
+		go ldgr.gossipTxs(genesis.GetPlayers())
+		go ldgr.proposeBlocks(bcActor, genesis.GetPlayers())
+	}()
+
+	return newActor(ldgr, bcActor), err
 }
 
-func (ldgr *Ledger) routine(actor blockchain.Actor, players mino.Players) {
+func (ldgr *Ledger) gossipTxs(roster mino.Players) {
+	err := ldgr.gossiper.Start(roster)
+	if err != nil {
+		fabric.Logger.Error().Msgf("couldn't start the gossiper: %v", err)
+		return
+	}
+
+	for {
+		select {
+		// TODO: closing
+		case rumor := <-ldgr.gossiper.Rumors():
+			tx, ok := rumor.(consumer.Transaction)
+			if ok {
+				ldgr.bag.Add(tx)
+			}
+		}
+	}
+}
+
+func (ldgr *Ledger) proposeBlocks(actor blockchain.Actor, players mino.Players) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -127,18 +151,16 @@ func (ldgr *Ledger) routine(actor blockchain.Actor, players mino.Players) {
 	for {
 		select {
 		// TODO: closing
-		case rumor := <-ldgr.gossiper.Rumors():
-			tx, ok := rumor.(consumer.Transaction)
-			if ok {
-				ldgr.bag.Add(tx)
-			}
 		case <-roundTimeout:
 			// This timeout has two purposes. The very first use will determine
 			// the round time before the first block is proposed after a boot.
 			// Then it will be used to insure that blocks are still proposed in
 			// case of catastrophic failure in the consensus layer (i.e. too
 			// many players offline for a while).
-			go ldgr.proposeBlock(actor, players)
+			err := ldgr.proposeBlock(actor, players)
+			if err != nil {
+				fabric.Logger.Err(err).Msg("couldn't propose new block")
+			}
 
 			roundTimeout = time.After(timeoutRoundTime)
 		case block := <-blocks:
@@ -169,18 +191,20 @@ func (ldgr *Ledger) routine(actor blockchain.Actor, players mino.Players) {
 
 			// This is executed in a different go routine so that the gathering
 			// of transactions can keep on while the block is created.
-			go ldgr.proposeBlock(actor, players)
+			err := ldgr.proposeBlock(actor, players)
+			if err != nil {
+				fabric.Logger.Err(err).Msg("couldn't propose new block")
+			}
 
 			roundTimeout = time.After(timeoutRoundTime)
 		}
 	}
 }
 
-func (ldgr *Ledger) proposeBlock(actor blockchain.Actor, players mino.Players) {
+func (ldgr *Ledger) proposeBlock(actor blockchain.Actor, players mino.Players) error {
 	payload, err := ldgr.stagePayload(ldgr.bag.GetAll())
 	if err != nil {
-		fabric.Logger.Err(err).Msg("couldn't make the payload")
-		return
+		return xerrors.Errorf("couldn't make the payload: %v", err)
 	}
 
 	// Each instance proposes a payload based on the received
@@ -188,8 +212,10 @@ func (ldgr *Ledger) proposeBlock(actor blockchain.Actor, players mino.Players) {
 	// if it will be accepted.
 	err = actor.Store(payload, players)
 	if err != nil {
-		fabric.Logger.Err(err).Msg("couldn't send the payload")
+		return xerrors.Errorf("couldn't send the payload: %v", err)
 	}
+
+	return nil
 }
 
 // stagePayload creates a payload with the list of transactions by staging a new
@@ -257,21 +283,38 @@ func (ldgr *Ledger) Watch(ctx context.Context) <-chan ledger.TransactionResult {
 	return results
 }
 
-type actor struct {
-	gossiper gossip.Gossiper
+type actorLedger struct {
+	*Ledger
+	bcActor blockchain.Actor
 }
 
-func newActor(g gossip.Gossiper) actor {
-	return actor{
-		gossiper: g,
+func newActor(l *Ledger, a blockchain.Actor) actorLedger {
+	return actorLedger{
+		Ledger:  l,
+		bcActor: a,
 	}
+}
+
+func (a actorLedger) Setup(roster mino.Players) error {
+	payload, err := a.stagePayload(nil)
+	if err != nil {
+		return xerrors.Errorf("couldn't make genesis payload: %v", err)
+	}
+
+	err = a.bcActor.InitChain(payload, roster)
+	if err != nil {
+		return xerrors.Errorf("couldn't initialize the chain: %v", err)
+	}
+
+	return nil
 }
 
 // AddTransaction implements ledger.Actor. It sends the transaction towards the
 // consensus layer.
-func (a actor) AddTransaction(tx consumer.Transaction) error {
+func (a actorLedger) AddTransaction(tx consumer.Transaction) error {
 	// The gossiper will propagate the transaction to other players but also to
 	// the transaction buffer of this player.
+	// TODO: gossiper should accept tx before it has started.
 	err := a.gossiper.Add(tx)
 	if err != nil {
 		return xerrors.Errorf("couldn't propagate the tx: %v", err)
