@@ -108,11 +108,12 @@ func (v *blockValidator) Commit(id []byte) error {
 		return xerrors.Errorf("transaction aborted: %v", err)
 	}
 
+	fabric.Logger.Trace().Msgf("commit to block %v", block.hash)
+
 	// Notify every observer that we committed to a new block. This is blocking
 	// to allow atomic operations.
 	v.watcher.Notify(block)
 
-	fabric.Logger.Trace().Msgf("commit to block %v", block.hash)
 	v.queue.Clear()
 
 	return nil

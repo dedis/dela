@@ -40,8 +40,18 @@ func TestMessages(t *testing.T) {
 // 3. Send transactions and accept them.
 func TestLedger_Basic(t *testing.T) {
 	ledgers, actors, ca := makeLedger(t, 20)
+	defer func() {
+		for _, actor := range actors {
+			require.NoError(t, actor.Close())
+		}
+	}()
 
 	require.NoError(t, actors[0].Setup(ca))
+
+	for _, actor := range actors {
+		err := <-actor.HasStarted()
+		require.Nil(t, err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

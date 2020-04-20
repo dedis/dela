@@ -33,14 +33,16 @@ const (
 //
 // - implements ledger.Ledger
 type Ledger struct {
-	addr     mino.Address
-	signer   crypto.Signer
-	bc       blockchain.Blockchain
-	gossiper gossip.Gossiper
-	bag      *txBag
-	proc     *txProcessor
-	consumer consumer.Consumer
-	encoder  encoding.ProtoMarshaler
+	addr      mino.Address
+	signer    crypto.Signer
+	bc        blockchain.Blockchain
+	gossiper  gossip.Gossiper
+	bag       *txBag
+	proc      *txProcessor
+	consumer  consumer.Consumer
+	encoder   encoding.ProtoMarshaler
+	closing   chan struct{}
+	initiated chan error
 }
 
 // NewLedger creates a new Byzcoin ledger.
@@ -51,14 +53,16 @@ func NewLedger(mino mino.Mino, signer crypto.AggregateSigner, consumer consumer.
 	}
 
 	return &Ledger{
-		addr:     mino.GetAddress(),
-		signer:   signer,
-		bc:       skipchain.NewSkipchain(mino, cosi),
-		gossiper: gossip.NewFlat(mino, decoder),
-		bag:      newTxBag(),
-		proc:     newTxProcessor(consumer),
-		consumer: consumer,
-		encoder:  encoding.NewProtoEncoder(),
+		addr:      mino.GetAddress(),
+		signer:    signer,
+		bc:        skipchain.NewSkipchain(mino, cosi),
+		gossiper:  gossip.NewFlat(mino, decoder),
+		bag:       newTxBag(),
+		proc:      newTxProcessor(consumer),
+		consumer:  consumer,
+		encoder:   encoding.NewProtoEncoder(),
+		closing:   make(chan struct{}),
+		initiated: make(chan error, 1),
 	}
 }
 
@@ -98,39 +102,52 @@ func (ldgr *Ledger) Listen() (ledger.Actor, error) {
 
 	go func() {
 		// Wait for the genesis block to be created to start the routines
-		// TODO: if ledger already exists == persistence, skip
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
 		blocks := ldgr.bc.Watch(ctx)
 
-		genesis := <-blocks
-		if genesis.GetIndex() != 0 {
-			fabric.Logger.Error().Msgf("expect genesis but got block %d", genesis.GetIndex())
-			return
+		genesis, err := ldgr.bc.GetBlock()
+		if err != nil {
+			// Genesis is not stored so it listens for a setup from a
+			// participant.
+			genesis = <-blocks
+			if genesis.GetIndex() != 0 {
+				ldgr.initiated <- xerrors.Errorf("expect genesis but got block %d",
+					genesis.GetIndex())
+				return
+			}
 		}
 
 		fabric.Logger.Trace().
-			Bytes("hash", genesis.GetHash()).
+			Hex("hash", genesis.GetHash()).
 			Msg("received genesis block")
 
-		go ldgr.gossipTxs(genesis.GetPlayers())
+		err = ldgr.gossiper.Start(genesis.GetPlayers())
+		if err != nil {
+			ldgr.initiated <- xerrors.Errorf("couldn't start the gossiper: %v", err)
+			return
+		}
+
+		close(ldgr.initiated)
+
+		go ldgr.gossipTxs()
 		go ldgr.proposeBlocks(bcActor, genesis.GetPlayers())
 	}()
 
 	return newActor(ldgr, bcActor), err
 }
 
-func (ldgr *Ledger) gossipTxs(roster mino.Players) {
-	err := ldgr.gossiper.Start(roster)
-	if err != nil {
-		fabric.Logger.Error().Msgf("couldn't start the gossiper: %v", err)
-		return
-	}
-
+func (ldgr *Ledger) gossipTxs() {
 	for {
 		select {
-		// TODO: closing
+		case <-ldgr.closing:
+			err := ldgr.gossiper.Stop()
+			if err != nil {
+				fabric.Logger.Err(err).Msg("couldn't stop gossiper")
+			}
+
+			return
 		case rumor := <-ldgr.gossiper.Rumors():
 			tx, ok := rumor.(consumer.Transaction)
 			if ok {
@@ -150,7 +167,9 @@ func (ldgr *Ledger) proposeBlocks(actor blockchain.Actor, players mino.Players) 
 
 	for {
 		select {
-		// TODO: closing
+		case <-ldgr.closing:
+			// The actor has been closed.
+			return
 		case <-roundTimeout:
 			// This timeout has two purposes. The very first use will determine
 			// the round time before the first block is proposed after a boot.
@@ -295,6 +314,10 @@ func newActor(l *Ledger, a blockchain.Actor) actorLedger {
 	}
 }
 
+func (a actorLedger) HasStarted() <-chan error {
+	return a.initiated
+}
+
 func (a actorLedger) Setup(roster mino.Players) error {
 	payload, err := a.stagePayload(nil)
 	if err != nil {
@@ -319,6 +342,12 @@ func (a actorLedger) AddTransaction(tx consumer.Transaction) error {
 	if err != nil {
 		return xerrors.Errorf("couldn't propagate the tx: %v", err)
 	}
+
+	return nil
+}
+
+func (a actorLedger) Close() error {
+	close(a.closing)
 
 	return nil
 }

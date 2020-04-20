@@ -52,8 +52,13 @@ func (c RPC) Call(ctx context.Context, req proto.Message,
 				}
 
 				m.Lock()
-				rpc := m.rpcs[c.path]
+				rpc, ok := m.rpcs[c.path]
 				m.Unlock()
+
+				if !ok {
+					errs <- xerrors.Errorf("unknown rpc %s", c.path)
+					return
+				}
 
 				resp, err := rpc.h.Process(req)
 				if err != nil {
