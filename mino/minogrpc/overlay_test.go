@@ -9,10 +9,12 @@ import (
 
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
+	any "github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/encoding"
+	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/mino"
 	"google.golang.org/grpc/metadata"
 )
@@ -117,11 +119,15 @@ func TestOverlay_Stream(t *testing.T) {
 	overlayService.handlers["handler_key"] = testFailHandler{}
 	overlayService.traffic = &traffic{}
 
-	// Now I set the right elements in the header but use a handler that should
+	// Now I set the right elements in the header but do not send the routing
+	// message as it is expected to have one first
+	err = overlayService.Stream(&streamServer)
+	require.EqualError(t, err, "failed to decode first routing message: couldn't unwrap '*any.Any' to '*minogrpc.RoutingMsg': mismatched message type: got \"google.protobuf.Empty\" want \"minogrpc.RoutingMsg\"")
+
+	// Now I set the right elements in the header and set a dummy encoder to
+	// ignore the decoding of routing message but use a handler that should
 	// raise an error
-	header = metadata.New(map[string]string{})
-	header.Append(headerURIKey, "handler_key")
-	streamServer.ctx = metadata.NewIncomingContext(context.Background(), header)
+	overlayService.encoder = goodEncoder{}
 	err = overlayService.Stream(&streamServer)
 	require.EqualError(t, err, "failed to call the stream handler: oops")
 
@@ -129,13 +135,13 @@ func TestOverlay_Stream(t *testing.T) {
 	streamServer.recvError = true
 	// We have to reset it because it's already used and then would deadlock
 	err = overlayService.Stream(&streamServer)
-	require.EqualError(t, err, "failed to call the stream handler: oops")
+	require.EqualError(t, err, "failed to receive first routing message: oops from the server")
 	// We have to wait there so we catch the goroutine error
 	time.Sleep(time.Microsecond * 400)
 
 }
 
-// -----------------
+// -----------------------------------------------------------------------------
 // Utility functions
 
 // this is to mock an overlay server stream
@@ -189,5 +195,17 @@ func (t testFailHandler2) Process(req mino.Request) (proto.Message, error) {
 func (t testFailHandler2) Stream(out mino.Sender, in mino.Receiver) error {
 	_, _, err := in.Recv(context.Background())
 	require.EqualError(t.t, err, "")
+	return nil
+}
+
+type goodEncoder struct {
+	fake.BadMarshalStableEncoder
+	fake.BadPackAnyEncoder
+	fake.BadPackEncoder
+	fake.BadUnmarshalDynEncoder
+	fake.BadMarshalAnyEncoder
+}
+
+func (g goodEncoder) UnmarshalAny(any *any.Any, pb proto.Message) error {
 	return nil
 }

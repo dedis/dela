@@ -61,7 +61,7 @@ func (t *traffic) addItem(typeStr string, addr mino.Address, msg proto.Message, 
 		return
 	}
 	newItem := item{typeStr: typeStr, addr: addr, msg: msg, context: context}
-	// fmt.Println("\n", t.name, newItem)
+	// newItem.Display(os.Stdout)
 	t.items = append(t.items, newItem)
 }
 

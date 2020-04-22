@@ -19,3 +19,8 @@ service Overlay {
 message OverlayMsg {
     google.protobuf.Any message = 1;
 }
+
+message RoutingMsg {
+    string type = 1;
+    repeated string addrs = 2;
+}

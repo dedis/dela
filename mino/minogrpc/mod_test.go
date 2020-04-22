@@ -16,6 +16,7 @@ func TestMessages(t *testing.T) {
 	messages := []proto.Message{
 		&OverlayMsg{},
 		&Envelope{},
+		&RoutingMsg{},
 	}
 
 	for _, m := range messages {
@@ -187,7 +188,7 @@ func TestAddressIterator(t *testing.T) {
 	require.False(t, it.HasNext())
 }
 
-// -----------------
+// -----------------------------------------------------------------------------
 // Utility functions
 
 // fakePlayers implements mino.Players{}

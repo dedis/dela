@@ -25,9 +25,7 @@ type overlayService struct {
 	// addressID of the sender.
 	addr address
 	// This map is used to create a new stream connection if possible
-	mesh map[string]Peer
-	// routing table from the server
-	routingTable map[string]string
+	neighbour map[string]Peer
 	// This certificate is used to create a new stream connection if possible
 	srvCert *tls.Certificate
 	// Used to record traffic activity
@@ -110,6 +108,27 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 
 	rpcID := "server_" + o.addr.String()
 
+	// Listen on the first message, which should be the routing infos
+	overlayMsg, err := stream.Recv()
+	if err != nil {
+		return xerrors.Errorf("failed to receive first routing message: %v", err)
+	}
+
+	routingMsg := &RoutingMsg{}
+	err = o.encoder.UnmarshalAny(overlayMsg.Message, routingMsg)
+	if err != nil {
+		return xerrors.Errorf("failed to decode first routing message: %v", err)
+	}
+
+	addrs := make([]mino.Address, len(routingMsg.Addrs))
+	for i, addrStr := range routingMsg.Addrs {
+		addrs[i] = address{addrStr}
+	}
+	routing, err := NewTreeRouting(addrs, o.addr, treeeHeight)
+	if err != nil {
+		return xerrors.Errorf("failed to create routing struct: %v", err)
+	}
+
 	// For the moment this sender can only receive messages to itself
 	// TODO: find a way to know the other nodes.
 	sender := &sender{
@@ -123,9 +142,9 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		address:      address{rpcID},
 		participants: map[string]overlayStream{rpcID: stream},
 		name:         "remote RPC",
-		mesh:         o.mesh,
 		srvCert:      o.srvCert,
 		traffic:      o.traffic,
+		routing:      routing,
 	}
 
 	receiver := receiver{
@@ -138,8 +157,16 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 
 	var peerWait sync.WaitGroup
 
-	for _, peer := range o.mesh {
-		addr := address{peer.Address}
+	for _, c := range routing.me.Childs {
+		addr := c.Addr
+		peer, found := o.neighbour[addr.String()]
+		if !found {
+			err = xerrors.Errorf("failed to find peer '%s' from the neighbours: %v",
+				addr.String(), err)
+			fabric.Logger.Err(err).Send()
+			return err
+		}
+
 		clientConn, err := getConnection(addr.String(), peer, *o.srvCert)
 		if err != nil {
 			err = xerrors.Errorf("failed to get client conn for client '%s': %v",
@@ -161,6 +188,9 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 			return err
 		}
 		sender.participants[addr.String()] = clientStream
+
+		// Sending the routing info as first messages to our childs
+		clientStream.Send(&OverlayMsg{Message: overlayMsg.Message})
 
 		// Listen on the clients streams and notify the orchestrator or relay
 		// messages
@@ -185,16 +215,6 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		}()
 	}
 
-	// add the gateways based on the routing table
-	for k, v := range o.routingTable {
-		gateway, ok := sender.participants[v]
-		if !ok {
-			// TODO: handle this situation
-			fabric.Logger.Warn().Msg("fix static check until it's done")
-		}
-		sender.participants[k] = gateway
-	}
-
 	// listen on my own stream
 	go func() {
 		for {
@@ -214,7 +234,7 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		}
 	}()
 
-	err := handler.Stream(sender, receiver)
+	err = handler.Stream(sender, receiver)
 	if err != nil {
 		return xerrors.Errorf("failed to call the stream handler: %v", err)
 	}
