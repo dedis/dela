@@ -148,12 +148,15 @@ func TestSkipchain_Watch(t *testing.T) {
 
 func TestActor_InitChain(t *testing.T) {
 	actor := skipchainActor{
-		hashFactory: sha256Factory{},
-		rand:        crypto.CryptographicRandomGenerator{},
+		rand: crypto.CryptographicRandomGenerator{},
 		Skipchain: &Skipchain{
 			encoder: encoding.NewProtoEncoder(),
-			mino:    fake.Mino{},
-			db:      &fakeDatabase{err: NewNoBlockError(0)},
+			blockFactory: blockFactory{
+				encoder:     encoding.NewProtoEncoder(),
+				hashFactory: crypto.NewSha256Factory(),
+			},
+			mino: fake.Mino{},
+			db:   &fakeDatabase{err: NewNoBlockError(0)},
 		},
 		rpc: fakeRPC{},
 	}
@@ -180,11 +183,14 @@ func TestActor_InitChain(t *testing.T) {
 
 func TestActor_NewChain(t *testing.T) {
 	actor := skipchainActor{
-		hashFactory: sha256Factory{},
-		rand:        crypto.CryptographicRandomGenerator{},
+		rand: crypto.CryptographicRandomGenerator{},
 		Skipchain: &Skipchain{
 			encoder: encoding.NewProtoEncoder(),
 			db:      &fakeDatabase{},
+			blockFactory: blockFactory{
+				encoder:     encoding.NewProtoEncoder(),
+				hashFactory: crypto.NewSha256Factory(),
+			},
 		},
 		rpc: fakeRPC{},
 	}
@@ -198,6 +204,15 @@ func TestActor_NewChain(t *testing.T) {
 	actor.rand = fakeRandGenerator{noSize: true}
 	err = actor.newChain(&empty.Empty{}, authority)
 	require.EqualError(t, err, "mismatch rand length 0 != 32")
+
+	actor.rand = crypto.CryptographicRandomGenerator{}
+	actor.encoder = fake.BadPackEncoder{}
+	err = actor.newChain(&empty.Empty{}, authority)
+	require.EqualError(t, err, "couldn't pack genesis: fake error")
+
+	actor.blockFactory.hashFactory = fake.NewHashFactory(fake.NewBadHash())
+	err = actor.newChain(&empty.Empty{}, authority)
+	require.Contains(t, err.Error(), "couldn't create block: ")
 }
 
 func TestActor_Store(t *testing.T) {
@@ -206,9 +221,13 @@ func TestActor_Store(t *testing.T) {
 	actor := skipchainActor{
 		Skipchain: &Skipchain{
 			encoder: encoding.NewProtoEncoder(),
-			logger:  zerolog.New(buffer),
-			mino:    fake.Mino{},
-			db:      &fakeDatabase{},
+			blockFactory: blockFactory{
+				encoder:     encoding.NewProtoEncoder(),
+				hashFactory: crypto.NewSha256Factory(),
+			},
+			logger: zerolog.New(buffer),
+			mino:   fake.Mino{},
+			db:     &fakeDatabase{},
 		},
 		consensus: cons,
 	}
@@ -220,11 +239,16 @@ func TestActor_Store(t *testing.T) {
 	// Make sure the conodes rotate if the view change allows it.
 	require.NotNil(t, cons.prop)
 
-	actor.Skipchain.db = &fakeDatabase{err: xerrors.New("oops")}
+	actor.db = &fakeDatabase{err: xerrors.New("oops")}
 	err = actor.Store(&empty.Empty{}, authority)
 	require.EqualError(t, err, "couldn't read the latest block: oops")
 
-	actor.Skipchain.db = &fakeDatabase{}
+	actor.db = &fakeDatabase{}
+	actor.blockFactory.hashFactory = fake.NewHashFactory(fake.NewBadHash())
+	err = actor.Store(&empty.Empty{}, authority)
+	require.Contains(t, err.Error(), "couldn't create next block: ")
+
+	actor.blockFactory.hashFactory = crypto.NewSha256Factory()
 	actor.consensus = &fakeConsensusActor{err: xerrors.New("oops")}
 	err = actor.Store(&empty.Empty{}, authority)
 	require.EqualError(t, err, "couldn't propose the block: oops")

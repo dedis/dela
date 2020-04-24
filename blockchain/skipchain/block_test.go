@@ -119,7 +119,7 @@ func TestSkipBlock_HashUniqueness(t *testing.T) {
 
 	enc := encoding.NewProtoEncoder()
 
-	prevHash, err := block.computeHash(sha256Factory{}, enc)
+	prevHash, err := block.computeHash(crypto.NewSha256Factory(), enc)
 	require.NoError(t, err)
 
 	value := reflect.ValueOf(&block)
@@ -137,7 +137,7 @@ func TestSkipBlock_HashUniqueness(t *testing.T) {
 		field.Set(reflect.Zero(value.Elem().Field(i).Type()))
 		newBlock := value.Interface()
 
-		hash, err := newBlock.(*SkipBlock).computeHash(sha256Factory{}, enc)
+		hash, err := newBlock.(*SkipBlock).computeHash(crypto.NewSha256Factory(), enc)
 		require.NoError(t, err)
 
 		errMsg := fmt.Sprintf("field %#v produced same hash", fieldName)
@@ -180,7 +180,7 @@ func TestBlockFactory_FromPrevious(t *testing.T) {
 	f := func(prev SkipBlock) bool {
 		factory := blockFactory{
 			encoder:     encoding.NewProtoEncoder(),
-			hashFactory: sha256Factory{},
+			hashFactory: crypto.NewSha256Factory(),
 		}
 
 		block, err := factory.fromPrevious(prev, &empty.Empty{})
@@ -205,10 +205,7 @@ func TestBlockFactory_DecodeBlock(t *testing.T) {
 	f := func(block SkipBlock) bool {
 		factory := blockFactory{
 			encoder:     encoding.NewProtoEncoder(),
-			hashFactory: sha256Factory{},
-			Skipchain: &Skipchain{
-				mino: fake.Mino{},
-			},
+			hashFactory: crypto.NewSha256Factory(),
 		}
 
 		packed, err := block.Pack(encoding.NewProtoEncoder())
@@ -236,11 +233,8 @@ func TestBlockFactory_FromVerifiable(t *testing.T) {
 	f := func(block SkipBlock) bool {
 		factory := blockFactory{
 			encoder:     encoding.NewProtoEncoder(),
-			hashFactory: sha256Factory{},
-			Skipchain: &Skipchain{
-				mino:      fake.Mino{},
-				consensus: fakeConsensus{hash: block.hash},
-			},
+			hashFactory: crypto.NewSha256Factory(),
+			consensus:   fakeConsensus{hash: block.hash},
 		}
 
 		packed, err := block.Pack(encoding.NewProtoEncoder())
@@ -263,10 +257,19 @@ func TestBlockFactory_FromVerifiable(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "couldn't decode the block: ")
 
-		factory.hashFactory = sha256Factory{}
+		factory.hashFactory = crypto.NewSha256Factory()
+		factory.consensus = fakeConsensus{errFactory: xerrors.New("oops")}
+		_, err = factory.FromVerifiable(pb)
+		require.EqualError(t, err, "couldn't get the chain factory: oops")
+
 		factory.consensus = fakeConsensus{err: xerrors.New("oops")}
 		_, err = factory.FromVerifiable(pb)
 		require.EqualError(t, err, "couldn't decode the chain: oops")
+
+		factory.consensus = fakeConsensus{hash: Digest{}}
+		_, err = factory.FromVerifiable(pb)
+		require.EqualError(t, err,
+			fmt.Sprintf("mismatch hashes: %#x != %#x", [32]byte{}, block.hash))
 
 		return true
 	}
@@ -301,7 +304,7 @@ func (s SkipBlock) Generate(rand *rand.Rand, size int) reflect.Value {
 		Payload:   &empty.Empty{},
 	}
 
-	hash, _ := block.computeHash(sha256Factory{}, encoding.NewProtoEncoder())
+	hash, _ := block.computeHash(crypto.NewSha256Factory(), encoding.NewProtoEncoder())
 	block.hash = hash
 
 	return reflect.ValueOf(block)
@@ -338,9 +341,10 @@ func (f fakeChainFactory) FromProto(proto.Message) (consensus.Chain, error) {
 
 type fakeConsensus struct {
 	consensus.Consensus
-	hash     Digest
-	err      error
-	errChain error
+	hash       Digest
+	err        error
+	errChain   error
+	errFactory error
 }
 
 func (c fakeConsensus) GetChainFactory() (consensus.ChainFactory, error) {
@@ -348,7 +352,7 @@ func (c fakeConsensus) GetChainFactory() (consensus.ChainFactory, error) {
 		hash:     c.hash,
 		err:      c.err,
 		errChain: c.errChain,
-	}, nil
+	}, c.errFactory
 }
 
 func (c fakeConsensus) GetChain(id []byte) (consensus.Chain, error) {

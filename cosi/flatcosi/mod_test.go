@@ -32,15 +32,18 @@ func TestMessages(t *testing.T) {
 }
 
 func TestFlat_GetPublicKeyFactory(t *testing.T) {
-	signer := fake.NewSigner()
-	flat := NewFlat(nil, signer)
+	flat := NewFlat(nil, fake.NewSigner())
 	require.NotNil(t, flat.GetPublicKeyFactory())
 }
 
 func TestFlat_GetSignatureFactory(t *testing.T) {
-	signer := fake.NewSigner()
-	flat := NewFlat(nil, signer)
+	flat := NewFlat(nil, fake.NewSigner())
 	require.NotNil(t, flat.GetSignatureFactory())
+}
+
+func TestFlat_GetVerifierFactory(t *testing.T) {
+	flat := NewFlat(nil, fake.NewSigner())
+	require.NotNil(t, flat.GetVerifierFactory())
 }
 
 func TestFlat_Listen(t *testing.T) {

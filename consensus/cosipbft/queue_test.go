@@ -35,6 +35,12 @@ func TestQueue_New(t *testing.T) {
 	queue.locked = true
 	err = queue.New(prop, authority)
 	require.EqualError(t, err, "queue is locked")
+
+	queue.locked = false
+	queue.cosi = &fakeCosi{verifierFactory: fake.NewBadVerifierFactory()}
+	prop.hash = []byte{0xcc}
+	err = queue.New(prop, authority)
+	require.EqualError(t, err, "couldn't make verifier: fake error")
 }
 
 func TestQueue_LockProposal(t *testing.T) {

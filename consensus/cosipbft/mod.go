@@ -69,7 +69,7 @@ func NewCoSiPBFT(mino mino.Mino, cosi cosi.CollectiveSigning, gov Governance) *C
 func (c *Consensus) GetChainFactory() (consensus.ChainFactory, error) {
 	authority, err := c.governance.GetAuthority(0)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't get genesis authority: %v", err)
 	}
 
 	return newChainFactory(c.cosi, authority), nil
@@ -130,7 +130,8 @@ type pbftActor struct {
 func (a pbftActor) Propose(p consensus.Proposal) error {
 	authority, err := a.governance.GetAuthority(p.GetIndex() - 1)
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't read authority for index %d: %v",
+			p.GetIndex()-1, err)
 	}
 
 	// Wait for the view change module green signal to go through the proposal.
@@ -139,7 +140,7 @@ func (a pbftActor) Propose(p consensus.Proposal) error {
 	// change.
 	rotate, ok := a.viewchange.Wait(p, authority)
 	if !ok {
-		fabric.Logger.Trace().Msgf("%v proposal skipped by view change", a.mino.GetAddress())
+		fabric.Logger.Trace().Msg("proposal skipped by view change")
 		// Not authorized to propose a block as the leader is moving
 		// forward so we drop the proposal. The upper layer is responsible to
 		// try again until the leader includes the data.
@@ -243,10 +244,11 @@ func (h handler) Hash(addr mino.Address, in proto.Message) (Digest, error) {
 
 		authority, err := h.governance.GetAuthority(proposal.GetIndex() - 1)
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("couldn't read authority: %v", err)
 		}
 
 		rotate := h.viewchange.Verify(proposal, authority)
+		// TODO: verify that the proposal comes from the leader after rotation.
 
 		last, err := h.storage.ReadLast()
 		if err != nil {

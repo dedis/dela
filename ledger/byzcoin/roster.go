@@ -59,11 +59,18 @@ func (i *publicKeyIterator) GetNext() crypto.PublicKey {
 	return nil
 }
 
+// roster contains a list of participants with their addresses and public keys.
+//
+// - implements crypto.CollectiveSigning
+// - implements mino.Players
+// - implements encoding.Packable
 type roster struct {
 	addrs   []mino.Address
 	pubkeys []crypto.PublicKey
 }
 
+// Take implements mino.Players. It returns a subset of the roster according to
+// the filter.
 func (r roster) Take(updaters ...mino.FilterUpdater) mino.Players {
 	filter := mino.ApplyFilters(updaters)
 	newRoster := roster{
@@ -79,10 +86,14 @@ func (r roster) Take(updaters ...mino.FilterUpdater) mino.Players {
 	return newRoster
 }
 
+// Len implements mino.Players. It returns the length of the roster.
 func (r roster) Len() int {
 	return len(r.addrs)
 }
 
+// GetPublicKey implements crypto.CollectiveAuthority. It returns the public key
+// of the address if it exists, nil otherwise. The second return is the index of
+// the public key in the roster.
 func (r roster) GetPublicKey(target mino.Address) (crypto.PublicKey, int) {
 	for i, addr := range r.addrs {
 		if addr.Equal(target) {
@@ -93,14 +104,20 @@ func (r roster) GetPublicKey(target mino.Address) (crypto.PublicKey, int) {
 	return nil, -1
 }
 
+// AddressIterator implements mino.Players. It returns an iterator of the
+// addresses of the roster in a deterministic order.
 func (r roster) AddressIterator() mino.AddressIterator {
 	return &addressIterator{iterator: &iterator{roster: &r, index: -1}}
 }
 
+// PublicKeyIterator implements crypto.CollectiveAuthority. It returns an
+// iterator of the public keys of the roster in a deterministic order.
 func (r roster) PublicKeyIterator() crypto.PublicKeyIterator {
 	return &publicKeyIterator{iterator: &iterator{roster: &r, index: -1}}
 }
 
+// Pack implements encoding.Packable. It returns the protobuf message for the
+// roster.
 func (r roster) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	pb := &Roster{
 		Addresses:  make([][]byte, r.Len()),
@@ -111,18 +128,19 @@ func (r roster) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	for i, addr := range r.addrs {
 		pb.Addresses[i], err = addr.MarshalText()
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("couldn't marshal address: %v", err)
 		}
 
 		pb.PublicKeys[i], err = enc.PackAny(r.pubkeys[i])
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("couldn't pack public key: %v", err)
 		}
 	}
 
 	return pb, nil
 }
 
+// rosterFactory provide functions to create and decode a roster.
 type rosterFactory struct {
 	addressFactory mino.AddressFactory
 	pubkeyFactory  crypto.PublicKeyFactory
@@ -163,7 +181,8 @@ func (f rosterFactory) FromProto(in proto.Message) (crypto.CollectiveAuthority, 
 	}
 
 	if len(pb.Addresses) != len(pb.PublicKeys) {
-		return nil, xerrors.Errorf("mismatch array length")
+		return nil, xerrors.Errorf("mismatch array length %d != %d",
+			len(pb.Addresses), len(pb.PublicKeys))
 	}
 
 	roster := roster{
@@ -177,7 +196,7 @@ func (f rosterFactory) FromProto(in proto.Message) (crypto.CollectiveAuthority, 
 
 		roster.pubkeys[i], err = f.pubkeyFactory.FromProto(pb.GetPublicKeys()[i])
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("couldn't decode public key: %v", err)
 		}
 	}
 

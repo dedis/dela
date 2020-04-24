@@ -3,13 +3,12 @@ package mem
 import (
 	"bytes"
 	"fmt"
-	"hash"
 	"sort"
 	"sync"
 
-	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric/crypto"
+	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/ledger/inventory"
 	"golang.org/x/xerrors"
 )
@@ -47,6 +46,7 @@ func (p DigestSlice) Swap(i, j int) {
 // - implements inventory.Inventory
 type InMemoryInventory struct {
 	sync.Mutex
+	encoder      encoding.ProtoMarshaler
 	hashFactory  crypto.HashFactory
 	pages        []inMemoryPage
 	stagingPages map[Digest]inMemoryPage
@@ -55,6 +55,7 @@ type InMemoryInventory struct {
 // NewInventory returns a new empty instance of the inventory.
 func NewInventory() *InMemoryInventory {
 	return &InMemoryInventory{
+		encoder:      encoding.NewProtoEncoder(),
 		hashFactory:  crypto.NewSha256Factory(),
 		pages:        []inMemoryPage{},
 		stagingPages: make(map[Digest]inMemoryPage),
@@ -103,7 +104,7 @@ func (inv *InMemoryInventory) Stage(f func(inventory.WritablePage) error) (inven
 		page = inv.pages[len(inv.pages)-1].clone()
 		page.index++
 	} else {
-		page.entries = make(map[Digest]inMemoryEntry)
+		page.entries = make(map[Digest]proto.Message)
 	}
 	inv.Unlock()
 
@@ -112,7 +113,7 @@ func (inv *InMemoryInventory) Stage(f func(inventory.WritablePage) error) (inven
 		return page, xerrors.Errorf("couldn't fill new page: %v", err)
 	}
 
-	page.footprint, err = page.computeHash(inv.hashFactory)
+	err = inv.computeHash(&page)
 	if err != nil {
 		return page, xerrors.Errorf("couldn't compute page hash: %v", err)
 	}
@@ -122,6 +123,33 @@ func (inv *InMemoryInventory) Stage(f func(inventory.WritablePage) error) (inven
 	inv.Unlock()
 
 	return page, nil
+}
+
+func (inv *InMemoryInventory) computeHash(page *inMemoryPage) error {
+	h := inv.hashFactory.New()
+
+	keys := make(DigestSlice, 0, len(page.entries))
+	for key := range page.entries {
+		keys = append(keys, key)
+	}
+
+	sort.Sort(keys)
+
+	for _, key := range keys {
+		_, err := h.Write(key[:])
+		if err != nil {
+			return xerrors.Errorf("couldn't write key: %v", err)
+		}
+
+		err = inv.encoder.MarshalStable(h, page.entries[key])
+		if err != nil {
+			return xerrors.Errorf("couldn't marshal entry: %v", err)
+		}
+	}
+
+	page.footprint = Digest{}
+	copy(page.footprint[:], h.Sum(nil))
+	return nil
 }
 
 // Commit stores the page with the given footprint permanently to the list of
@@ -144,22 +172,6 @@ func (inv *InMemoryInventory) Commit(footprint []byte) error {
 	return nil
 }
 
-// inMemoryEntry is an instance stored in an in-memory inventory.
-type inMemoryEntry struct {
-	value proto.Message
-}
-
-func (i inMemoryEntry) hash(h hash.Hash) error {
-	// The JSON format is used to insure a deterministic hash.
-	m := &jsonpb.Marshaler{OrigName: true}
-	err := m.Marshal(h, i.value)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 // inMemoryPage is an implementation of the Page interface for an inventory. It
 // holds in memory the instances that have been created up to that index.
 //
@@ -168,7 +180,7 @@ func (i inMemoryEntry) hash(h hash.Hash) error {
 type inMemoryPage struct {
 	index     uint64
 	footprint Digest
-	entries   map[Digest]inMemoryEntry
+	entries   map[Digest]proto.Message
 }
 
 // GetIndex implements inventory.Page. It returns the index of the page from the
@@ -199,7 +211,7 @@ func (page inMemoryPage) Read(key []byte) (proto.Message, error) {
 		return nil, xerrors.Errorf("instance with key '%#x' not found", key)
 	}
 
-	return entry.value, nil
+	return entry, nil
 }
 
 // Write implements inventory.WritablePage. It updates the state of the page by
@@ -212,7 +224,7 @@ func (page inMemoryPage) Write(key []byte, value proto.Message) error {
 	digest := Digest{}
 	copy(digest[:], key)
 
-	page.entries[digest] = inMemoryEntry{value: value}
+	page.entries[digest] = value
 
 	return nil
 }
@@ -220,7 +232,7 @@ func (page inMemoryPage) Write(key []byte, value proto.Message) error {
 func (page inMemoryPage) clone() inMemoryPage {
 	clone := inMemoryPage{
 		index:   page.index,
-		entries: make(map[Digest]inMemoryEntry),
+		entries: make(map[Digest]proto.Message),
 	}
 
 	for k, v := range page.entries {
@@ -228,31 +240,4 @@ func (page inMemoryPage) clone() inMemoryPage {
 	}
 
 	return clone
-}
-
-func (page inMemoryPage) computeHash(factory crypto.HashFactory) (Digest, error) {
-	h := factory.New()
-
-	keys := make(DigestSlice, 0, len(page.entries))
-	for key := range page.entries {
-		keys = append(keys, key)
-	}
-
-	sort.Sort(keys)
-
-	for _, key := range keys {
-		_, err := h.Write(key[:])
-		if err != nil {
-			return Digest{}, err
-		}
-
-		err = page.entries[key].hash(h)
-		if err != nil {
-			return Digest{}, err
-		}
-	}
-
-	digest := Digest{}
-	copy(digest[:], h.Sum(nil))
-	return digest, nil
 }

@@ -121,7 +121,6 @@ func (c forwardLinkChain) Pack(enc encoding.ProtoMarshaler) (proto.Message, erro
 	}
 
 	for i, link := range c.links {
-		println("test")
 		packed, err := enc.Pack(link)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't pack forward link: %v", err)
@@ -261,7 +260,7 @@ func (f *chainFactory) FromProto(pb proto.Message) (consensus.Chain, error) {
 
 	err = f.verify(chain.(forwardLinkChain))
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't verify the chain: %v", err)
 	}
 
 	return chain, nil
@@ -275,7 +274,7 @@ func (f *chainFactory) verify(chain forwardLinkChain) error {
 	lastIndex := len(chain.links) - 1
 	verifier, err := f.verifierFactory.FromAuthority(f.authority)
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't create the verifier: %v", err)
 	}
 
 	for i, link := range chain.links {

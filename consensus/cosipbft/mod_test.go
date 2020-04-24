@@ -31,6 +31,7 @@ func TestMessages(t *testing.T) {
 		&PrepareRequest{},
 		&CommitRequest{},
 		&PropagateRequest{},
+		&ChangeSet{},
 	}
 
 	for _, m := range messages {
@@ -79,22 +80,10 @@ func TestConsensus_GetChainFactory(t *testing.T) {
 	factory, err := cons.GetChainFactory()
 	require.NoError(t, err)
 	require.NotNil(t, factory)
-}
 
-type fakeStorage struct {
-	Storage
-}
-
-func (s fakeStorage) Store(*ForwardLinkProto) error {
-	return xerrors.New("oops")
-}
-
-func (s fakeStorage) ReadChain(id Digest) ([]*ForwardLinkProto, error) {
-	return nil, xerrors.New("oops")
-}
-
-func (s fakeStorage) ReadLast() (*ForwardLinkProto, error) {
-	return nil, xerrors.New("oops")
+	cons.governance = fakeGovernance{err: xerrors.New("oops")}
+	_, err = cons.GetChainFactory()
+	require.EqualError(t, err, "couldn't get genesis authority: oops")
 }
 
 func TestConsensus_GetChain(t *testing.T) {
@@ -171,7 +160,12 @@ func TestActor_Propose(t *testing.T) {
 		cosiActor: cosiActor,
 	}
 
+	actor.viewchange = fakeViewChange{denied: true}
 	err := actor.Propose(fakeProposal{})
+	require.NoError(t, err)
+
+	actor.viewchange = fakeViewChange{denied: false, rotate: 2}
+	err = actor.Propose(fakeProposal{})
 	require.NoError(t, err)
 	require.Len(t, cosiActor.calls, 2)
 
@@ -195,22 +189,6 @@ func TestActor_Propose(t *testing.T) {
 	require.NoError(t, err)
 }
 
-type badCosiActor struct {
-	cosi.CollectiveSigning
-	delay int
-}
-
-func (cs *badCosiActor) Sign(ctx context.Context, pb cosi.Message,
-	ca crypto.CollectiveAuthority) (crypto.Signature, error) {
-
-	if cs.delay > 0 {
-		cs.delay--
-		return fake.Signature{}, nil
-	}
-
-	return fake.NewBadSignature(), nil
-}
-
 func TestConsensus_ProposeFailures(t *testing.T) {
 	actor := &pbftActor{
 		Consensus: &Consensus{
@@ -221,8 +199,20 @@ func TestConsensus_ProposeFailures(t *testing.T) {
 		},
 	}
 
-	actor.cosiActor = &fakeCosiActor{err: xerrors.New("oops")}
+	actor.governance = fakeGovernance{err: xerrors.New("oops")}
 	err := actor.Propose(fakeProposal{})
+	require.EqualError(t, err, "couldn't read authority for index 0: oops")
+
+	actor.governance = fakeGovernance{}
+	actor.hashFactory = fake.NewHashFactory(fake.NewBadHash())
+	err = actor.Propose(fakeProposal{})
+	require.Error(t, err)
+	require.Contains(t, err.Error(),
+		"couldn't create prepare request: couldn't compute hash: ")
+
+	actor.hashFactory = crypto.NewSha256Factory()
+	actor.cosiActor = &fakeCosiActor{err: xerrors.New("oops")}
+	err = actor.Propose(fakeProposal{})
 	require.EqualError(t, err, "couldn't sign the proposal: oops")
 
 	actor.cosiActor = &badCosiActor{}
@@ -263,7 +253,7 @@ func TestHandler_HashPrepare(t *testing.T) {
 		hashFactory: crypto.NewSha256Factory(),
 		encoder:     encoding.NewProtoEncoder(),
 		governance:  fakeGovernance{},
-		viewchange:  fakeViewChange{},
+		viewchange:  fakeViewChange{rotate: 2},
 	}
 	h := handler{
 		validator: fakeValidator{},
@@ -290,6 +280,11 @@ func TestHandler_HashPrepare(t *testing.T) {
 	require.EqualError(t, err, "couldn't validate the proposal: oops")
 
 	h.validator = fakeValidator{}
+	h.governance = fakeGovernance{err: xerrors.New("oops")}
+	_, err = h.Hash(nil, &PrepareRequest{Proposal: empty})
+	require.EqualError(t, err, "couldn't read authority: oops")
+
+	h.governance = fakeGovernance{}
 	cons.storage = fakeStorage{}
 	_, err = h.Hash(nil, &PrepareRequest{Proposal: empty})
 	require.EqualError(t, err, "couldn't read last: oops")
@@ -387,25 +382,60 @@ func TestRPCHandler_Process(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
+type badCosiActor struct {
+	cosi.CollectiveSigning
+	delay int
+}
+
+func (cs *badCosiActor) Sign(ctx context.Context, pb cosi.Message,
+	ca crypto.CollectiveAuthority) (crypto.Signature, error) {
+
+	if cs.delay > 0 {
+		cs.delay--
+		return fake.Signature{}, nil
+	}
+
+	return fake.NewBadSignature(), nil
+}
+
+type fakeStorage struct {
+	Storage
+}
+
+func (s fakeStorage) Store(*ForwardLinkProto) error {
+	return xerrors.New("oops")
+}
+
+func (s fakeStorage) ReadChain(id Digest) ([]*ForwardLinkProto, error) {
+	return nil, xerrors.New("oops")
+}
+
+func (s fakeStorage) ReadLast() (*ForwardLinkProto, error) {
+	return nil, xerrors.New("oops")
+}
+
 type fakeViewChange struct {
 	viewchange.ViewChange
+	rotate int
+	denied bool
 }
 
 func (vc fakeViewChange) Wait(consensus.Proposal, crypto.CollectiveAuthority) (int, bool) {
-	return 0, true
+	return vc.rotate, !vc.denied
 }
 
 func (vc fakeViewChange) Verify(consensus.Proposal, crypto.CollectiveAuthority) int {
-	return 0
+	return vc.rotate
 }
 
 type fakeGovernance struct {
 	Governance
 	authority fake.CollectiveAuthority
+	err       error
 }
 
-func (g fakeGovernance) GetAuthority(index uint64) (crypto.CollectiveAuthority, error) {
-	return g.authority, nil
+func (gov fakeGovernance) GetAuthority(index uint64) (crypto.CollectiveAuthority, error) {
+	return gov.authority, gov.err
 }
 
 type fakeQueue struct {
@@ -433,7 +463,7 @@ func (p fakeProposal) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 }
 
 func (p fakeProposal) GetIndex() uint64 {
-	return 0
+	return 1
 }
 
 func (p fakeProposal) GetHash() []byte {
@@ -465,9 +495,10 @@ func (v fakeValidator) Commit(id []byte) error {
 
 type fakeCosi struct {
 	cosi.CollectiveSigning
-	handler cosi.Hashable
-	err     error
-	factory fake.SignatureFactory
+	handler         cosi.Hashable
+	err             error
+	factory         fake.SignatureFactory
+	verifierFactory fake.VerifierFactory
 }
 
 func (cs *fakeCosi) GetSignatureFactory() crypto.SignatureFactory {
@@ -475,7 +506,7 @@ func (cs *fakeCosi) GetSignatureFactory() crypto.SignatureFactory {
 }
 
 func (cs *fakeCosi) GetVerifierFactory() crypto.VerifierFactory {
-	return fake.NewVerifierFactory(fake.Verifier{})
+	return cs.verifierFactory
 }
 
 func (cs *fakeCosi) Listen(h cosi.Hashable) (cosi.Actor, error) {

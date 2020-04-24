@@ -31,9 +31,7 @@ func newHandler(sc *Skipchain, proc blockchain.PayloadProcessor) handler {
 func (h handler) Process(req mino.Request) (proto.Message, error) {
 	switch in := req.Message.(type) {
 	case *PropagateGenesis:
-		factory := h.GetBlockFactory().(blockFactory)
-
-		genesis, err := factory.decodeBlock(in.GetGenesis())
+		genesis, err := h.blockFactory.decodeBlock(in.GetGenesis())
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't decode the block: %v", err)
 		}

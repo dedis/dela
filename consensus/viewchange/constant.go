@@ -7,8 +7,7 @@ import (
 )
 
 // ConstantViewChange is a naive implementation of the view change that will
-// simply keep the same leader all the time and only allow a leader to propose a
-// block.
+// simply keep the same leader all the time.
 //
 // - implements viewchange.ViewChange
 type ConstantViewChange struct {
@@ -22,9 +21,8 @@ func NewConstant(addr mino.Address) ConstantViewChange {
 	}
 }
 
-// Wait implements viewchange.ViewChange. It returns an error if the address
-// does not match the leader of the previous block. The implementation of the
-// returned players is preserved.
+// Wait implements viewchange.ViewChange. It true if the first player of the
+// authority is the current participant.
 func (vc ConstantViewChange) Wait(p consensus.Proposal, a crypto.CollectiveAuthority) (int, bool) {
 	leader := a.AddressIterator().GetNext()
 
@@ -35,8 +33,8 @@ func (vc ConstantViewChange) Wait(p consensus.Proposal, a crypto.CollectiveAutho
 	return 0, true
 }
 
-// Verify implements viewchange.ViewChange. It returns an error if the first
-// player of the block does not match the address.
+// Verify implements viewchange.ViewChange. It always return 0 that means no
+// rotation.
 func (vc ConstantViewChange) Verify(consensus.Proposal, crypto.CollectiveAuthority) int {
 	return 0
 }

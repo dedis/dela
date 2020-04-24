@@ -139,8 +139,8 @@ func TestChain_Pack(t *testing.T) {
 func TestChainFactory_FromProto(t *testing.T) {
 	chainpb := &ChainProto{
 		Links: []*ForwardLinkProto{
-			{Prepare: &any.Any{}, Commit: &any.Any{}},
-			{Prepare: &any.Any{}, Commit: &any.Any{}},
+			{Prepare: &any.Any{}, Commit: &any.Any{}, From: []byte{0x01}, To: []byte{0x02}},
+			{Prepare: &any.Any{}, Commit: &any.Any{}, From: []byte{0x02}, To: []byte{0x03}},
 		},
 	}
 
@@ -164,9 +164,29 @@ func TestChainFactory_FromProto(t *testing.T) {
 	_, err = factory.FromProto(chainpb)
 	require.EqualError(t, err, "couldn't decode prepare signature: fake error")
 
+	factory.signatureFactory = fake.NewSignatureFactory(fake.Signature{})
 	factory.encoder = fake.BadUnmarshalAnyEncoder{}
 	_, err = factory.FromProto(chainany)
 	require.EqualError(t, err, "couldn't unmarshal message: fake error")
+
+	factory.encoder = encoding.NewProtoEncoder()
+	_, err = factory.FromProto(&ChainProto{})
+	require.EqualError(t, err, "couldn't verify the chain: chain is empty")
+
+	factory.verifierFactory = fake.NewBadVerifierFactory()
+	_, err = factory.FromProto(chainpb)
+	require.EqualError(t, err,
+		"couldn't verify the chain: couldn't create the verifier: fake error")
+
+	factory.verifierFactory = fake.NewVerifierFactory(fake.NewBadVerifier())
+	_, err = factory.FromProto(chainpb)
+	require.EqualError(t, err,
+		"couldn't verify the chain: couldn't verify link 0: couldn't verify prepare signature: fake error")
+
+	chainpb.Links[0].To = []byte{0x00}
+	factory.verifierFactory = fake.VerifierFactory{}
+	_, err = factory.FromProto(chainpb)
+	require.EqualError(t, err, "couldn't verify the chain: mismatch forward link '00' != '02'")
 }
 
 func TestChainFactory_DecodeForwardLink(t *testing.T) {

@@ -7,7 +7,6 @@ package skipchain
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/golang/protobuf/proto"
@@ -35,17 +34,19 @@ const (
 // - implements blockchain.Blockchain
 // - implements fmt.Stringer
 type Skipchain struct {
-	logger    zerolog.Logger
-	mino      mino.Mino
-	db        Database
-	consensus consensus.Consensus
-	watcher   blockchain.Observable
-	encoder   encoding.ProtoMarshaler
+	logger       zerolog.Logger
+	mino         mino.Mino
+	db           Database
+	consensus    consensus.Consensus
+	watcher      blockchain.Observable
+	encoder      encoding.ProtoMarshaler
+	blockFactory blockFactory
 }
 
 // NewSkipchain returns a new instance of Skipchain.
 func NewSkipchain(m mino.Mino, consensus consensus.Consensus) *Skipchain {
 	db := NewInMemoryDatabase()
+	encoder := encoding.NewProtoEncoder()
 
 	return &Skipchain{
 		logger:    fabric.Logger,
@@ -53,7 +54,12 @@ func NewSkipchain(m mino.Mino, consensus consensus.Consensus) *Skipchain {
 		db:        db,
 		consensus: consensus,
 		watcher:   blockchain.NewWatcher(),
-		encoder:   encoding.NewProtoEncoder(),
+		encoder:   encoder,
+		blockFactory: blockFactory{
+			encoder:     encoder,
+			consensus:   consensus,
+			hashFactory: crypto.NewSha256Factory(),
+		},
 	}
 }
 
@@ -61,9 +67,8 @@ func NewSkipchain(m mino.Mino, consensus consensus.Consensus) *Skipchain {
 // consensus module.
 func (s *Skipchain) Listen(proc blockchain.PayloadProcessor) (blockchain.Actor, error) {
 	actor := skipchainActor{
-		Skipchain:   s,
-		hashFactory: sha256Factory{},
-		rand:        crypto.CryptographicRandomGenerator{},
+		Skipchain: s,
+		rand:      crypto.CryptographicRandomGenerator{},
 	}
 
 	var err error
@@ -83,11 +88,7 @@ func (s *Skipchain) Listen(proc blockchain.PayloadProcessor) (blockchain.Actor, 
 // GetBlockFactory implements blockchain.Blockchain. It returns the block
 // factory for skipchains.
 func (s *Skipchain) GetBlockFactory() blockchain.BlockFactory {
-	return blockFactory{
-		Skipchain:   s,
-		encoder:     s.encoder,
-		hashFactory: sha256Factory{},
-	}
+	return s.blockFactory
 }
 
 // GetBlock implements blockchain.Blockchain. It returns the latest block.
@@ -142,21 +143,14 @@ func (s *Skipchain) Watch(ctx context.Context) <-chan blockchain.Block {
 	return ch
 }
 
-// String implements fmt.Stringer. It returns a simple representation of the
-// skipchain instance to easily identify it.
-func (s *Skipchain) String() string {
-	return fmt.Sprintf("skipchain@%v", s.mino.GetAddress())
-}
-
 // skipchainActor provides the primitives of a blockchain actor.
 //
 // - implements blockchain.Actor
 type skipchainActor struct {
 	*Skipchain
-	hashFactory crypto.HashFactory
-	rand        crypto.RandGenerator
-	consensus   consensus.Actor
-	rpc         mino.RPC
+	rand      crypto.RandGenerator
+	consensus consensus.Actor
+	rpc       mino.RPC
 }
 
 // InitChain implements blockchain.Actor. It creates a genesis block if none
@@ -205,7 +199,7 @@ func (a skipchainActor) newChain(data proto.Message, conodes mino.Players) error
 		Payload:   data,
 	}
 
-	err = a.GetBlockFactory().(blockFactory).prepareBlock(&genesis)
+	err = a.blockFactory.prepareBlock(&genesis)
 	if err != nil {
 		return xerrors.Errorf("couldn't create block: %v", err)
 	}
@@ -234,14 +228,12 @@ func (a skipchainActor) newChain(data proto.Message, conodes mino.Players) error
 // Store implements blockchain.Actor. It will append a new block to chain filled
 // with the data.
 func (a skipchainActor) Store(data proto.Message, players mino.Players) error {
-	factory := a.GetBlockFactory().(blockFactory)
-
 	previous, err := a.db.ReadLast()
 	if err != nil {
 		return xerrors.Errorf("couldn't read the latest block: %v", err)
 	}
 
-	block, err := factory.fromPrevious(previous, data)
+	block, err := a.blockFactory.fromPrevious(previous, data)
 	if err != nil {
 		return xerrors.Errorf("couldn't create next block: %v", err)
 	}

@@ -39,7 +39,7 @@ func (proc *txProcessor) Validate(index uint64, data proto.Message) error {
 	case *GenesisPayload:
 		page, err := proc.setup(payload)
 		if err != nil {
-			return err
+			return xerrors.Errorf("couldn't stage genesis: %v", err)
 		}
 
 		if page.GetIndex() != 0 {
@@ -74,13 +74,13 @@ func (proc *txProcessor) setup(payload *GenesisPayload) (inventory.Page, error) 
 	page, err := proc.inventory.Stage(func(page inventory.WritablePage) error {
 		err := page.Write(authorityKey, payload.Roster)
 		if err != nil {
-			return err
+			return xerrors.Errorf("couldn't write roster: %v", err)
 		}
 
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't stage page: %v", err)
 	}
 
 	return page, nil
@@ -136,21 +136,20 @@ func (proc *txProcessor) process(payload *BlockPayload) (inventory.Page, error) 
 // payload as it should have previously been processed. It returns nil if the
 // commit is a success, otherwise an error.
 func (proc *txProcessor) Commit(data proto.Message) error {
+	var footprint []byte
+
 	switch payload := data.(type) {
 	case *GenesisPayload:
-		err := proc.inventory.Commit(payload.GetFootprint())
-		if err != nil {
-			return xerrors.Errorf("couldn't commit to page '%#x': %v",
-				payload.GetFootprint(), err)
-		}
+		footprint = payload.GetFootprint()
 	case *BlockPayload:
-		err := proc.inventory.Commit(payload.GetFootprint())
-		if err != nil {
-			return xerrors.Errorf("couldn't commit to page '%#x': %v",
-				payload.GetFootprint(), err)
-		}
+		footprint = payload.GetFootprint()
 	default:
 		return xerrors.Errorf("invalid message type '%T'", data)
+	}
+
+	err := proc.inventory.Commit(footprint)
+	if err != nil {
+		return xerrors.Errorf("couldn't commit to page '%#x': %v", footprint, err)
 	}
 
 	return nil

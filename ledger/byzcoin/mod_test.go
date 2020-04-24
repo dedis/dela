@@ -26,6 +26,8 @@ import (
 func TestMessages(t *testing.T) {
 	messages := []proto.Message{
 		&BlockPayload{},
+		&Roster{},
+		&GenesisPayload{},
 	}
 
 	for _, m := range messages {

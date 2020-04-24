@@ -8,6 +8,7 @@ import (
 	proto "github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/blockchain"
+	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/internal/testing/fake"
 	"golang.org/x/xerrors"
@@ -25,10 +26,13 @@ func TestBlockValidator_Validate(t *testing.T) {
 			validator: &fakePayloadProc{},
 			watcher:   &fakeWatcher{},
 			Skipchain: &Skipchain{
-				encoder:   encoding.NewProtoEncoder(),
-				db:        &fakeDatabase{genesisID: block.GenesisID},
-				mino:      fake.Mino{},
-				consensus: fakeConsensus{},
+				encoder: encoding.NewProtoEncoder(),
+				db:      &fakeDatabase{genesisID: block.GenesisID},
+				mino:    fake.Mino{},
+				blockFactory: blockFactory{
+					encoder:     encoding.NewProtoEncoder(),
+					hashFactory: crypto.NewSha256Factory(),
+				},
 			},
 		}
 		prop, err := v.Validate(fake.Address{}, packed)

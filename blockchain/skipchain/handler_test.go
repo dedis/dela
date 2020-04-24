@@ -8,8 +8,8 @@ import (
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
@@ -19,11 +19,12 @@ func TestHandler_Process(t *testing.T) {
 		proc := &fakePayloadProc{}
 		watcher := &fakeWatcher{}
 		h := newHandler(&Skipchain{
-			encoder:   encoding.NewProtoEncoder(),
-			db:        &fakeDatabase{},
-			mino:      fake.Mino{},
-			consensus: fakeConsensus{},
-			watcher:   watcher,
+			blockFactory: blockFactory{
+				encoder:     encoding.NewProtoEncoder(),
+				hashFactory: crypto.NewSha256Factory(),
+			},
+			db:      &fakeDatabase{},
+			watcher: watcher,
 		}, proc)
 
 		block.Payload = &wrappers.BoolValue{Value: true}

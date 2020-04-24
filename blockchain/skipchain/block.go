@@ -2,10 +2,8 @@ package skipchain
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"encoding/binary"
 	fmt "fmt"
-	"hash"
 
 	proto "github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric/blockchain"
@@ -26,17 +24,6 @@ func (d Digest) Bytes() []byte {
 // String returns the short string representation of the digest.
 func (d Digest) String() string {
 	return fmt.Sprintf("%x", d[:])[:16]
-}
-
-// sha256Factory is a factory for SHA256 digests.
-//
-// - implements crypto.HashFactory
-type sha256Factory struct{}
-
-// New implements crypto.HashFactory. It returns a new instance of a SHA256
-// hash.
-func (f sha256Factory) New() hash.Hash {
-	return sha256.New()
 }
 
 // SkipBlock is a representation of the data held by a block. It contains the
@@ -152,16 +139,6 @@ type VerifiableBlock struct {
 	Chain consensus.Chain
 }
 
-// Verify implements blockchain.VerifiableBlock. It makes sure the integrity of
-// the chain is valid.
-func (vb VerifiableBlock) Verify(v crypto.Verifier) error {
-	if !bytes.Equal(vb.GetHash(), vb.Chain.GetLastHash()) {
-		return xerrors.Errorf("mismatch target %x != %x", vb.GetHash(), vb.Chain.GetLastHash())
-	}
-
-	return nil
-}
-
 // Pack implements encoding.Packable. It returns the protobuf message for a
 // verifiable block.
 func (vb VerifiableBlock) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
@@ -187,9 +164,9 @@ func (vb VerifiableBlock) Pack(enc encoding.ProtoMarshaler) (proto.Message, erro
 //
 // - implements blockchain.BlockFactory
 type blockFactory struct {
-	*Skipchain
 	encoder     encoding.ProtoMarshaler
 	hashFactory crypto.HashFactory
+	consensus   consensus.Consensus
 }
 
 func (f blockFactory) prepareBlock(block *SkipBlock) error {
@@ -273,22 +250,18 @@ func (f blockFactory) FromVerifiable(src proto.Message) (blockchain.Block, error
 
 	chainFactory, err := f.consensus.GetChainFactory()
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't get the chain factory: %v", err)
 	}
 
+	// Integrity of the chain is verifier during decoding.
 	chain, err := chainFactory.FromProto(in.GetChain())
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't decode the chain: %v", err)
 	}
 
-	vb := VerifiableBlock{
-		SkipBlock: block,
-		Chain:     chain,
-	}
-
-	err = vb.Verify(nil)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't verify: %v", err)
+	// Only the link between the chain and the block needs to be verified.
+	if !bytes.Equal(chain.GetLastHash(), block.hash[:]) {
+		return nil, xerrors.Errorf("mismatch hashes: %#x != %#x", chain.GetLastHash(), block.hash)
 	}
 
 	return block, nil

@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	mino "go.dedis.ch/fabric/mino"
 )
@@ -27,8 +26,6 @@ type Block interface {
 // verified from the genesis block.
 type VerifiableBlock interface {
 	Block
-
-	Verify(crypto.Verifier) error
 }
 
 // BlockFactory provides primitives to create blocks from a untrusted source.

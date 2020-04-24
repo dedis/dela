@@ -21,6 +21,9 @@ func TestTxProcessor_Validate(t *testing.T) {
 	err := proc.Validate(0, &BlockPayload{})
 	require.NoError(t, err)
 
+	err = proc.Validate(0, &GenesisPayload{})
+	require.NoError(t, err)
+
 	err = proc.Validate(0, nil)
 	require.EqualError(t, err, "invalid message type '<nil>'")
 
@@ -29,9 +32,17 @@ func TestTxProcessor_Validate(t *testing.T) {
 	require.EqualError(t, err,
 		"couldn't stage the transactions: couldn't stage new page: oops")
 
+	proc.inventory = fakeInventory{errPage: xerrors.New("oops")}
+	err = proc.Validate(0, &GenesisPayload{})
+	require.EqualError(t, err,
+		"couldn't stage genesis: couldn't stage page: couldn't write roster: oops")
+
 	proc.inventory = fakeInventory{index: 1}
 	err = proc.Validate(0, &BlockPayload{})
 	require.EqualError(t, err, "invalid index 1 != 0")
+
+	err = proc.Validate(0, &GenesisPayload{})
+	require.EqualError(t, err, "index 0 expected but got 1")
 
 	proc.inventory = fakeInventory{footprint: []byte{0xab}}
 	err = proc.Validate(0, &BlockPayload{Footprint: []byte{0xcd}})
