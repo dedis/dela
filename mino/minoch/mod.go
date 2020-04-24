@@ -51,6 +51,7 @@ func (m *Minoch) GetAddress() mino.Address {
 // MakeNamespace returns an instance restricted to the namespace.
 func (m *Minoch) MakeNamespace(path string) (mino.Mino, error) {
 	newMinoch := &Minoch{
+		manager:    m.manager,
 		identifier: m.identifier,
 		path:       fmt.Sprintf("%s/%s", m.path, path),
 		rpcs:       m.rpcs,
