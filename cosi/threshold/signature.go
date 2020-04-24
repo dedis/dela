@@ -199,3 +199,15 @@ func (v Verifier) Verify(msg []byte, s crypto.Signature) error {
 
 	return nil
 }
+
+type verifierFactory struct {
+	factory crypto.VerifierFactory
+}
+
+func (f verifierFactory) FromAuthority(authority crypto.CollectiveAuthority) (crypto.Verifier, error) {
+	return newVerifier(authority, f.factory), nil
+}
+
+func (f verifierFactory) FromArray([]crypto.PublicKey) (crypto.Verifier, error) {
+	return nil, xerrors.New("not implemented")
+}

@@ -14,30 +14,33 @@ import (
 func TestQueue_New(t *testing.T) {
 	prop := fakeItem{from: []byte{0xaa}, hash: []byte{0xbb}}
 
-	queue := &queue{}
-	err := queue.New(prop)
+	authority := fake.NewAuthority(3, fake.NewSigner)
+
+	queue := &queue{cosi: &fakeCosi{}}
+	err := queue.New(prop, authority)
 	require.NoError(t, err)
 	require.Len(t, queue.items, 1)
 	require.Equal(t, prop.from, queue.items[0].from)
 	require.Equal(t, prop.hash, queue.items[0].to)
 	require.NotNil(t, queue.items[0].verifier)
 
-	err = queue.New(fakeItem{from: []byte{0xbb}})
+	err = queue.New(fakeItem{from: []byte{0xbb}}, authority)
 	require.NoError(t, err)
 	require.Len(t, queue.items, 2)
 	require.Equal(t, prop.hash, queue.items[1].from)
 
-	err = queue.New(prop)
+	err = queue.New(prop, authority)
 	require.EqualError(t, err, "proposal 'bb' already exists")
 
 	queue.locked = true
-	err = queue.New(prop)
+	err = queue.New(prop, authority)
 	require.EqualError(t, err, "queue is locked")
 }
 
 func TestQueue_LockProposal(t *testing.T) {
 	verifier := &fakeVerifier{}
 	queue := &queue{
+		encoder:     encoding.NewProtoEncoder(),
 		hashFactory: crypto.NewSha256Factory(),
 		items: []item{
 			{
@@ -55,7 +58,7 @@ func TestQueue_LockProposal(t *testing.T) {
 	require.Len(t, verifier.calls, 1)
 
 	forwardLink := forwardLink{from: []byte{0xaa}, to: []byte{0xbb}}
-	hash, err := forwardLink.computeHash(sha256Factory{}.New())
+	hash, err := forwardLink.computeHash(sha256Factory{}.New(), encoding.NewProtoEncoder())
 	require.NoError(t, err)
 	require.Equal(t, hash, verifier.calls[0]["message"])
 

@@ -19,9 +19,6 @@ type Block interface {
 	// GetHash returns the footprint of the block.
 	GetHash() []byte
 
-	// GetPlayers returns the participants involved in the block creation.
-	GetPlayers() mino.Players
-
 	// GetPayload returns the payload of the block.
 	GetPayload() proto.Message
 }

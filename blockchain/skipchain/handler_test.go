@@ -21,7 +21,6 @@ func TestHandler_Process(t *testing.T) {
 		h := newHandler(&Skipchain{
 			encoder:   encoding.NewProtoEncoder(),
 			db:        &fakeDatabase{},
-			cosi:      fakeCosi{},
 			mino:      fake.Mino{},
 			consensus: fakeConsensus{},
 			watcher:   watcher,

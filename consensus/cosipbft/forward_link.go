@@ -6,9 +6,9 @@ import (
 	"hash"
 
 	"github.com/golang/protobuf/proto"
-	any "github.com/golang/protobuf/ptypes/any"
-	"go.dedis.ch/fabric"
+	"github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/fabric/consensus"
+	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"golang.org/x/xerrors"
@@ -29,6 +29,8 @@ type forwardLink struct {
 	// commit is the signature of the Prepare signature to prove that a
 	// threshold of the nodes have committed the block.
 	commit crypto.Signature
+	// changeset announces the changes in the authority for the next proposal.
+	changeset *ChangeSet
 }
 
 // Verify makes sure the signatures of the forward link are correct.
@@ -43,7 +45,6 @@ func (fl forwardLink) Verify(v crypto.Verifier) error {
 		return xerrors.Errorf("couldn't marshal the signature: %w", err)
 	}
 
-	fabric.Logger.Trace().Msgf("verifying commit %x", buffer)
 	err = v.Verify(buffer, fl.commit)
 	if err != nil {
 		return xerrors.Errorf("couldn't verify commit signature: %w", err)
@@ -55,8 +56,9 @@ func (fl forwardLink) Verify(v crypto.Verifier) error {
 // Pack returns the protobuf message of the forward link.
 func (fl forwardLink) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	pb := &ForwardLinkProto{
-		From: fl.from,
-		To:   fl.to,
+		From:      fl.from,
+		To:        fl.to,
+		ChangeSet: fl.changeset,
 	}
 
 	var err error
@@ -78,7 +80,7 @@ func (fl forwardLink) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	return pb, nil
 }
 
-func (fl forwardLink) computeHash(h hash.Hash) ([]byte, error) {
+func (fl forwardLink) computeHash(h hash.Hash, enc encoding.ProtoMarshaler) ([]byte, error) {
 	_, err := h.Write(fl.from)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't write 'from': %v", err)
@@ -86,6 +88,13 @@ func (fl forwardLink) computeHash(h hash.Hash) ([]byte, error) {
 	_, err = h.Write(fl.to)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't write 'to': %v", err)
+	}
+
+	if fl.changeset != nil {
+		err = enc.MarshalStable(h, fl.changeset)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't write 'changeset': %v", err)
+		}
 	}
 
 	return h.Sum(nil), nil
@@ -105,30 +114,6 @@ func (c forwardLinkChain) GetLastHash() []byte {
 	return c.links[len(c.links)-1].to
 }
 
-// Verify follows the chain from the beginning and makes sure that the forward
-// links are correct and that they point to the correct targets.
-func (c forwardLinkChain) Verify(verifier crypto.Verifier) error {
-	if len(c.links) == 0 {
-		return xerrors.New("chain is empty")
-	}
-
-	lastIndex := len(c.links) - 1
-
-	for i, link := range c.links {
-		err := link.Verify(verifier)
-		if err != nil {
-			return xerrors.Errorf("couldn't verify link %d: %w", i, err)
-		}
-
-		if i != lastIndex && !bytes.Equal(link.to, c.links[i+1].from) {
-			return xerrors.Errorf("mismatch forward link '%x' != '%x'",
-				link.to, c.links[i+1].from)
-		}
-	}
-
-	return nil
-}
-
 // Pack returs the protobuf message for the chain.
 func (c forwardLinkChain) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	pb := &ChainProto{
@@ -136,6 +121,7 @@ func (c forwardLinkChain) Pack(enc encoding.ProtoMarshaler) (proto.Message, erro
 	}
 
 	for i, link := range c.links {
+		println("test")
 		packed, err := enc.Pack(link)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't pack forward link: %v", err)
@@ -153,26 +139,23 @@ func (f sha256Factory) New() hash.Hash {
 	return sha256.New()
 }
 
-// chainFactory is an implementation of the chainFactory interface
-// for forward links.
-type chainFactory struct {
+type unsecureChainFactory struct {
 	signatureFactory crypto.SignatureFactory
+	verifierFactory  crypto.VerifierFactory
 	hashFactory      crypto.HashFactory
 	encoder          encoding.ProtoMarshaler
 }
 
-// newChainFactory returns a new instance of a seal factory that will create
-// forward links for appropriate protobuf messages and return an error
-// otherwise.
-func newChainFactory(f crypto.SignatureFactory) *chainFactory {
-	return &chainFactory{
-		signatureFactory: f,
+func newUnsecureChainFactory(cosi cosi.CollectiveSigning) *unsecureChainFactory {
+	return &unsecureChainFactory{
+		signatureFactory: cosi.GetSignatureFactory(),
+		verifierFactory:  cosi.GetVerifierFactory(),
 		hashFactory:      sha256Factory{},
 		encoder:          encoding.NewProtoEncoder(),
 	}
 }
 
-func (f *chainFactory) decodeForwardLink(pb proto.Message) (forwardLink, error) {
+func (f *unsecureChainFactory) decodeForwardLink(pb proto.Message) (forwardLink, error) {
 	var fl forwardLink
 	var src *ForwardLinkProto
 	switch msg := pb.(type) {
@@ -190,8 +173,9 @@ func (f *chainFactory) decodeForwardLink(pb proto.Message) (forwardLink, error) 
 	}
 
 	fl = forwardLink{
-		from: src.GetFrom(),
-		to:   src.GetTo(),
+		from:      src.GetFrom(),
+		to:        src.GetTo(),
+		changeset: src.GetChangeSet(),
 	}
 
 	if src.GetPrepare() != nil {
@@ -212,7 +196,7 @@ func (f *chainFactory) decodeForwardLink(pb proto.Message) (forwardLink, error) 
 		fl.commit = sig
 	}
 
-	hash, err := fl.computeHash(f.hashFactory.New())
+	hash, err := fl.computeHash(f.hashFactory.New(), f.encoder)
 	if err != nil {
 		return fl, xerrors.Errorf("couldn't hash the forward link: %v", err)
 	}
@@ -222,8 +206,7 @@ func (f *chainFactory) decodeForwardLink(pb proto.Message) (forwardLink, error) 
 	return fl, nil
 }
 
-// FromProto returns a chain from a protobuf message.
-func (f *chainFactory) FromProto(pb proto.Message) (consensus.Chain, error) {
+func (f *unsecureChainFactory) FromProto(pb proto.Message) (consensus.Chain, error) {
 	var msg *ChainProto
 	switch in := pb.(type) {
 	case *any.Any:
@@ -239,17 +222,73 @@ func (f *chainFactory) FromProto(pb proto.Message) (consensus.Chain, error) {
 		return nil, xerrors.Errorf("message type not supported: %T", in)
 	}
 
-	chain := forwardLinkChain{
-		links: make([]forwardLink, len(msg.GetLinks())),
-	}
+	links := make([]forwardLink, len(msg.GetLinks()))
 	for i, plink := range msg.GetLinks() {
 		link, err := f.decodeForwardLink(plink)
 		if err != nil {
 			return nil, err
 		}
 
-		chain.links[i] = link
+		links[i] = link
+	}
+
+	return forwardLinkChain{links: links}, nil
+}
+
+// chainFactory is an implementation of the chainFactory interface
+// for forward links.
+type chainFactory struct {
+	*unsecureChainFactory
+	authority crypto.CollectiveAuthority
+}
+
+// newChainFactory returns a new instance of a seal factory that will create
+// forward links for appropriate protobuf messages and return an error
+// otherwise.
+func newChainFactory(cosi cosi.CollectiveSigning, authority crypto.CollectiveAuthority) *chainFactory {
+	return &chainFactory{
+		unsecureChainFactory: newUnsecureChainFactory(cosi),
+		authority:            authority,
+	}
+}
+
+// FromProto returns a chain from a protobuf message.
+func (f *chainFactory) FromProto(pb proto.Message) (consensus.Chain, error) {
+	chain, err := f.unsecureChainFactory.FromProto(pb)
+	if err != nil {
+		return nil, err
+	}
+
+	err = f.verify(chain.(forwardLinkChain))
+	if err != nil {
+		return nil, err
 	}
 
 	return chain, nil
+}
+
+func (f *chainFactory) verify(chain forwardLinkChain) error {
+	if len(chain.links) == 0 {
+		return xerrors.New("chain is empty")
+	}
+
+	lastIndex := len(chain.links) - 1
+	verifier, err := f.verifierFactory.FromAuthority(f.authority)
+	if err != nil {
+		return err
+	}
+
+	for i, link := range chain.links {
+		err := link.Verify(verifier)
+		if err != nil {
+			return xerrors.Errorf("couldn't verify link %d: %w", i, err)
+		}
+
+		if i != lastIndex && !bytes.Equal(link.to, chain.links[i+1].from) {
+			return xerrors.Errorf("mismatch forward link '%x' != '%x'",
+				link.to, chain.links[i+1].from)
+		}
+	}
+
+	return nil
 }

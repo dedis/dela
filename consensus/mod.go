@@ -2,7 +2,6 @@ package consensus
 
 import (
 	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 )
@@ -12,15 +11,13 @@ import (
 type Proposal interface {
 	encoding.Packable
 
+	GetIndex() uint64
+
 	// GetHash returns the hash of the proposal.
 	GetHash() []byte
 
 	// GetPreviousHash returns the hash of the previous proposal.
 	GetPreviousHash() []byte
-
-	// GetVerifier returns a verifier that can be used to assert the validity of
-	// the signatures from the participants of this proposal.
-	GetVerifier() crypto.Verifier
 }
 
 // Validator is the interface to implement to start a consensus.
@@ -42,10 +39,6 @@ type Chain interface {
 
 	// GetLastHash returns the last proposal hash of the chain.
 	GetLastHash() []byte
-
-	// Verify returns nil if the integriy of the chain is valid, otherwise
-	// an error.
-	Verify(verifier crypto.Verifier) error
 }
 
 // ChainFactory is a factory to decodes chain from protobuf messages.
@@ -58,7 +51,7 @@ type ChainFactory interface {
 type Actor interface {
 	// Propose performs the consensus algorithm using the list of nodes
 	// as participants.
-	Propose(proposal Proposal, players mino.Players) error
+	Propose(proposal Proposal) error
 
 	Close() error
 }
@@ -67,10 +60,10 @@ type Actor interface {
 // of participants. They will validate the proposal according to the validator.
 type Consensus interface {
 	// GetChainFactory returns the chain factory.
-	GetChainFactory() ChainFactory
+	GetChainFactory() (ChainFactory, error)
 
 	// GetChain returns a valid chain to the given identifier.
-	GetChain(id []byte) (Chain, error)
+	GetChain(to []byte) (Chain, error)
 
 	// Listen starts to listen for consensus messages.
 	Listen(h Validator) (Actor, error)

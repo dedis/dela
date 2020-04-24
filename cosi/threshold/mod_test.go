@@ -52,7 +52,7 @@ func TestCoSi_Basic(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, sig)
 
-	verifier, err := c1.GetVerifier(ca)
+	verifier, err := c1.GetVerifierFactory().FromAuthority(ca)
 	require.NoError(t, err)
 	require.NoError(t, verifier.Verify([]byte{0xff}, sig))
 }
@@ -70,14 +70,6 @@ func TestCoSi_GetPublicKeyFactory(t *testing.T) {
 func TestCoSi_GetSignatureFactory(t *testing.T) {
 	c := &CoSi{signer: fake.NewSigner()}
 	require.NotNil(t, c.GetSignatureFactory())
-}
-
-func TestCoSi_GetVerifier(t *testing.T) {
-	c := &CoSi{signer: fake.NewSigner()}
-
-	verifier, err := c.GetVerifier(fake.NewAuthority(3, fake.NewSigner))
-	require.NoError(t, err)
-	require.NotNil(t, verifier)
 }
 
 func TestCoSi_Listen(t *testing.T) {

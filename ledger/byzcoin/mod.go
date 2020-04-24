@@ -9,11 +9,13 @@ import (
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/blockchain/skipchain"
+	"go.dedis.ch/fabric/consensus/cosipbft"
 	"go.dedis.ch/fabric/cosi/flatcosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/ledger"
 	"go.dedis.ch/fabric/ledger/consumer"
+	"go.dedis.ch/fabric/ledger/inventory"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/gossip"
 	"golang.org/x/xerrors"
@@ -26,6 +28,10 @@ const (
 	timeoutRoundTime = 1 * time.Minute
 )
 
+var (
+	authorityKey = []byte{0x01}
+)
+
 // Ledger is a distributed public ledger implemented by using a blockchain. Each
 // node is responsible for collecting transactions from clients and propose them
 // to the consensus. The blockchain layer will take care of gathering all the
@@ -33,16 +39,17 @@ const (
 //
 // - implements ledger.Ledger
 type Ledger struct {
-	addr      mino.Address
-	signer    crypto.Signer
-	bc        blockchain.Blockchain
-	gossiper  gossip.Gossiper
-	bag       *txBag
-	proc      *txProcessor
-	consumer  consumer.Consumer
-	encoder   encoding.ProtoMarshaler
-	closing   chan struct{}
-	initiated chan error
+	addr       mino.Address
+	signer     crypto.Signer
+	bc         blockchain.Blockchain
+	gossiper   gossip.Gossiper
+	bag        *txBag
+	proc       *txProcessor
+	governance governance
+	consumer   consumer.Consumer
+	encoder    encoding.ProtoMarshaler
+	closing    chan struct{}
+	initiated  chan error
 }
 
 // NewLedger creates a new Byzcoin ledger.
@@ -52,17 +59,25 @@ func NewLedger(mino mino.Mino, signer crypto.AggregateSigner, consumer consumer.
 		return consumer.GetTransactionFactory().FromProto(pb)
 	}
 
+	proc := newTxProcessor(consumer)
+	gov := governance{
+		inventory:     proc.inventory,
+		rosterFactory: newRosterFactory(mino.GetAddressFactory(), signer.GetPublicKeyFactory()),
+	}
+	consensus := cosipbft.NewCoSiPBFT(mino, cosi, gov)
+
 	return &Ledger{
-		addr:      mino.GetAddress(),
-		signer:    signer,
-		bc:        skipchain.NewSkipchain(mino, cosi),
-		gossiper:  gossip.NewFlat(mino, decoder),
-		bag:       newTxBag(),
-		proc:      newTxProcessor(consumer),
-		consumer:  consumer,
-		encoder:   encoding.NewProtoEncoder(),
-		closing:   make(chan struct{}),
-		initiated: make(chan error, 1),
+		addr:       mino.GetAddress(),
+		signer:     signer,
+		bc:         skipchain.NewSkipchain(mino, consensus),
+		gossiper:   gossip.NewFlat(mino, decoder),
+		bag:        newTxBag(),
+		proc:       proc,
+		governance: gov,
+		consumer:   consumer,
+		encoder:    encoding.NewProtoEncoder(),
+		closing:    make(chan struct{}),
+		initiated:  make(chan error, 1),
 	}
 }
 
@@ -123,7 +138,13 @@ func (ldgr *Ledger) Listen() (ledger.Actor, error) {
 			Hex("hash", genesis.GetHash()).
 			Msg("received genesis block")
 
-		err = ldgr.gossiper.Start(genesis.GetPlayers())
+		authority, err := ldgr.governance.GetAuthority(genesis.GetIndex())
+		if err != nil {
+			ldgr.initiated <- xerrors.Errorf("couldn't read authority: %v", err)
+			return
+		}
+
+		err = ldgr.gossiper.Start(authority)
 		if err != nil {
 			ldgr.initiated <- xerrors.Errorf("couldn't start the gossiper: %v", err)
 			return
@@ -132,7 +153,7 @@ func (ldgr *Ledger) Listen() (ledger.Actor, error) {
 		close(ldgr.initiated)
 
 		go ldgr.gossipTxs()
-		go ldgr.proposeBlocks(bcActor, genesis.GetPlayers())
+		go ldgr.proposeBlocks(bcActor, authority)
 	}()
 
 	return newActor(ldgr, bcActor), err
@@ -240,7 +261,10 @@ func (ldgr *Ledger) proposeBlock(actor blockchain.Actor, players mino.Players) e
 // stagePayload creates a payload with the list of transactions by staging a new
 // snapshot to the inventory.
 func (ldgr *Ledger) stagePayload(txs []consumer.Transaction) (*BlockPayload, error) {
-	fabric.Logger.Trace().Msgf("staging payload with %d transactions", len(txs))
+	fabric.Logger.Trace().
+		Str("addr", ldgr.addr.String()).
+		Msgf("staging payload with %d transactions", len(txs))
+
 	payload := &BlockPayload{
 		Transactions: make([]*any.Any, len(txs)),
 	}
@@ -318,13 +342,27 @@ func (a actorLedger) HasStarted() <-chan error {
 	return a.initiated
 }
 
-func (a actorLedger) Setup(roster mino.Players) error {
-	payload, err := a.stagePayload(nil)
-	if err != nil {
-		return xerrors.Errorf("couldn't make genesis payload: %v", err)
+func (a actorLedger) Setup(players mino.Players) error {
+	authority, ok := players.(crypto.CollectiveAuthority)
+	if !ok {
+		return xerrors.Errorf("players must implement '%T'", authority)
 	}
 
-	err = a.bcActor.InitChain(payload, roster)
+	rosterpb, err := a.encoder.Pack(a.governance.rosterFactory.New(authority))
+	if err != nil {
+		return err
+	}
+
+	payload := &GenesisPayload{Roster: rosterpb.(*Roster)}
+
+	page, err := a.proc.setup(payload)
+	if err != nil {
+		return err
+	}
+
+	payload.Footprint = page.GetFootprint()
+
+	err = a.bcActor.InitChain(payload, authority)
 	if err != nil {
 		return xerrors.Errorf("couldn't initialize the chain: %v", err)
 	}
@@ -350,4 +388,32 @@ func (a actorLedger) Close() error {
 	close(a.closing)
 
 	return nil
+}
+
+type governance struct {
+	inventory     inventory.Inventory
+	rosterFactory rosterFactory
+}
+
+func (gov governance) GetAuthority(index uint64) (crypto.CollectiveAuthority, error) {
+	page, err := gov.inventory.GetPage(index)
+	if err != nil {
+		return nil, err
+	}
+
+	rosterpb, err := page.Read(authorityKey)
+	if err != nil {
+		return nil, err
+	}
+
+	roster, err := gov.rosterFactory.FromProto(rosterpb)
+	if err != nil {
+		return nil, err
+	}
+
+	return roster, nil
+}
+
+func (gov governance) GetChangeSet(index uint64) *cosipbft.ChangeSet {
+	return &cosipbft.ChangeSet{}
 }

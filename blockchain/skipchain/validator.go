@@ -62,11 +62,6 @@ func (v *blockValidator) Validate(addr mino.Address,
 			genesis.hash, block.GenesisID)
 	}
 
-	err = v.viewchange.Verify(block)
-	if err != nil {
-		return nil, xerrors.Errorf("viewchange refused the block: %v", err)
-	}
-
 	err = v.validator.Validate(block.Index, block.Payload)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't validate the payload: %v", err)

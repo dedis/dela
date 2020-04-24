@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"go.dedis.ch/fabric/consensus"
+	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"golang.org/x/xerrors"
@@ -13,7 +14,7 @@ import (
 // Queue is an interface specific to cosipbft that defines the primitives to
 // prepare and commit to proposals.
 type Queue interface {
-	New(curr consensus.Proposal) error
+	New(curr consensus.Proposal, authority crypto.CollectiveAuthority) error
 	LockProposal(to Digest, sig crypto.Signature) error
 	Finalize(to Digest, sig crypto.Signature) (*ForwardLinkProto, error)
 }
@@ -29,14 +30,16 @@ type queue struct {
 	sync.Mutex
 	locked      bool
 	hashFactory crypto.HashFactory
+	cosi        cosi.CollectiveSigning
 	items       []item
 	encoder     encoding.ProtoMarshaler
 }
 
-func newQueue() *queue {
+func newQueue(cosi cosi.CollectiveSigning) *queue {
 	return &queue{
 		locked:      false,
 		hashFactory: crypto.NewSha256Factory(),
+		cosi:        cosi,
 		encoder:     encoding.NewProtoEncoder(),
 	}
 }
@@ -51,7 +54,7 @@ func (q *queue) getItem(id Digest) (item, int, bool) {
 	return item{}, -1, false
 }
 
-func (q *queue) New(curr consensus.Proposal) error {
+func (q *queue) New(curr consensus.Proposal, authority crypto.CollectiveAuthority) error {
 	q.Lock()
 	defer q.Unlock()
 
@@ -64,10 +67,16 @@ func (q *queue) New(curr consensus.Proposal) error {
 		return xerrors.Errorf("proposal '%x' already exists", curr.GetHash())
 	}
 
+	verifier, err := q.cosi.GetVerifierFactory().FromAuthority(authority)
+	if err != nil {
+		return xerrors.Errorf("couldn't make verifier: %v", err)
+	}
+
+	// TODO: changeset
 	q.items = append(q.items, item{
 		to:       curr.GetHash(),
 		from:     curr.GetPreviousHash(),
-		verifier: curr.GetVerifier(),
+		verifier: verifier,
 	})
 	return nil
 }
@@ -92,7 +101,7 @@ func (q *queue) LockProposal(to Digest, sig crypto.Signature) error {
 		to:   item.to,
 	}
 
-	hash, err := forwardLink.computeHash(q.hashFactory.New())
+	hash, err := forwardLink.computeHash(q.hashFactory.New(), q.encoder)
 	if err != nil {
 		return xerrors.Errorf("couldn't hash proposal: %v", err)
 	}

@@ -1,8 +1,8 @@
 package viewchange
 
 import (
-	"go.dedis.ch/fabric/blockchain"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/fabric/consensus"
+	"go.dedis.ch/fabric/crypto"
 )
 
 // ViewChange provides primitives to verify if a participant is allowed to
@@ -15,9 +15,9 @@ type ViewChange interface {
 	//
 	// Note: the implementation of the returned mino.Players interface must be
 	// preserved.
-	Wait(block blockchain.Block) (mino.Players, error)
+	Wait(consensus.Proposal, crypto.CollectiveAuthority) (int, bool)
 
 	// Verify makes sure that the players for the given are authorized and in
 	// the right order if necessary.
-	Verify(block blockchain.Block) error
+	Verify(consensus.Proposal, crypto.CollectiveAuthority) int
 }

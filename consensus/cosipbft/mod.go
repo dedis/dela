@@ -7,7 +7,9 @@ import (
 	"context"
 
 	"github.com/golang/protobuf/proto"
+	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/consensus"
+	"go.dedis.ch/fabric/consensus/viewchange"
 	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
@@ -21,6 +23,18 @@ const (
 	rpcName = "cosipbft"
 )
 
+// Governance is an interface to get information about the collective authority
+// of a proposal.
+type Governance interface {
+	// GetAuthority must return the authority that governs the block. It will be
+	// used to sign the forward link to the next proposal.
+	GetAuthority(index uint64) (crypto.CollectiveAuthority, error)
+
+	// GetChangeSet must return the changes to the authority that will be
+	// applied for the next proposal.
+	GetChangeSet(index uint64) *ChangeSet
+}
+
 // Consensus is the implementation of the consensus.Consensus interface.
 type Consensus struct {
 	storage      Storage
@@ -30,35 +44,45 @@ type Consensus struct {
 	encoder      encoding.ProtoMarshaler
 	hashFactory  crypto.HashFactory
 	chainFactory consensus.ChainFactory
+	governance   Governance
+	viewchange   viewchange.ViewChange
 }
 
 // NewCoSiPBFT returns a new instance.
-func NewCoSiPBFT(mino mino.Mino, cosi cosi.CollectiveSigning) *Consensus {
+func NewCoSiPBFT(mino mino.Mino, cosi cosi.CollectiveSigning, gov Governance) *Consensus {
 	c := &Consensus{
 		storage:      newInMemoryStorage(),
 		mino:         mino,
 		cosi:         cosi,
-		queue:        newQueue(),
+		queue:        newQueue(cosi),
 		encoder:      encoding.NewProtoEncoder(),
 		hashFactory:  crypto.NewSha256Factory(),
-		chainFactory: newChainFactory(cosi.GetSignatureFactory()),
+		chainFactory: newUnsecureChainFactory(cosi),
+		governance:   gov,
+		viewchange:   viewchange.NewConstant(mino.GetAddress()),
 	}
 
 	return c
 }
 
 // GetChainFactory returns the chain factory.
-func (c *Consensus) GetChainFactory() consensus.ChainFactory {
-	return c.chainFactory
+func (c *Consensus) GetChainFactory() (consensus.ChainFactory, error) {
+	authority, err := c.governance.GetAuthority(0)
+	if err != nil {
+		return nil, err
+	}
+
+	return newChainFactory(c.cosi, authority), nil
 }
 
 // GetChain returns a valid chain to the given identifier.
-func (c *Consensus) GetChain(id Digest) (consensus.Chain, error) {
-	stored, err := c.storage.ReadChain(id)
+func (c *Consensus) GetChain(to Digest) (consensus.Chain, error) {
+	stored, err := c.storage.ReadChain(to)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't read the chain: %v", err)
 	}
 
+	// The chain stored has already been verified so we can skip that step.
 	chain, err := c.chainFactory.FromProto(&ChainProto{Links: stored})
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't decode chain: %v", err)
@@ -75,9 +99,8 @@ func (c *Consensus) Listen(v consensus.Validator) (consensus.Actor, error) {
 	}
 
 	actor := pbftActor{
-		closing:     make(chan struct{}),
-		hashFactory: c.hashFactory,
-		encoder:     c.encoder,
+		Consensus: c,
+		closing:   make(chan struct{}),
 	}
 
 	var err error
@@ -95,32 +118,43 @@ func (c *Consensus) Listen(v consensus.Validator) (consensus.Actor, error) {
 }
 
 type pbftActor struct {
-	closing     chan struct{}
-	hashFactory crypto.HashFactory
-	cosiActor   cosi.Actor
-	rpc         mino.RPC
-	encoder     encoding.ProtoMarshaler
+	*Consensus
+	closing   chan struct{}
+	cosiActor cosi.Actor
+	rpc       mino.RPC
 }
 
 // Propose implements consensus.Actor. It takes the proposal and send it to the
 // participants of the consensus. It returns nil if the consensus is reached and
 // the participant are committed to it, otherwise it returns the refusal reason.
-func (a pbftActor) Propose(p consensus.Proposal, players mino.Players) error {
-	prepareReq, err := newPrepareRequest(p, a.hashFactory)
+func (a pbftActor) Propose(p consensus.Proposal) error {
+	authority, err := a.governance.GetAuthority(p.GetIndex() - 1)
+	if err != nil {
+		return err
+	}
+
+	// Wait for the view change module green signal to go through the proposal.
+	// If the leader has failed and this node has to take over, we use the
+	// inherant property of CoSiPBFT to prove that 2f participants want the view
+	// change.
+	rotate, ok := a.viewchange.Wait(p, authority)
+	if !ok {
+		fabric.Logger.Trace().Msgf("%v proposal skipped by view change", a.mino.GetAddress())
+		// Not authorized to propose a block as the leader is moving
+		// forward so we drop the proposal. The upper layer is responsible to
+		// try again until the leader includes the data.
+		return nil
+	}
+
+	ctx := context.Background()
+	prepareReq, err := a.newPrepareRequest(p, rotate)
 	if err != nil {
 		return xerrors.Errorf("couldn't create prepare request: %v", err)
 	}
 
-	ca, ok := players.(crypto.CollectiveAuthority)
-	if !ok {
-		return xerrors.Errorf("%T should implement cosi.CollectiveAuthority", players)
-	}
-
-	ctx := context.Background()
-
 	// 1. Prepare phase: proposal must be validated by the nodes and a
 	// collective signature will be created for the forward link hash.
-	sig, err := a.cosiActor.Sign(ctx, prepareReq, ca)
+	sig, err := a.cosiActor.Sign(ctx, prepareReq, authority)
 	if err != nil {
 		return xerrors.Errorf("couldn't sign the proposal: %v", err)
 	}
@@ -131,7 +165,7 @@ func (a pbftActor) Propose(p consensus.Proposal, players mino.Players) error {
 	}
 
 	// 2. Commit phase.
-	sig, err = a.cosiActor.Sign(ctx, commitReq, ca)
+	sig, err = a.cosiActor.Sign(ctx, commitReq, authority)
 	if err != nil {
 		return xerrors.Errorf("couldn't sign the commit: %v", err)
 	}
@@ -146,7 +180,7 @@ func (a pbftActor) Propose(p consensus.Proposal, players mino.Players) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	resps, errs := a.rpc.Call(ctx, propagateReq, ca)
+	resps, errs := a.rpc.Call(ctx, propagateReq, authority)
 	select {
 	case <-a.closing:
 		// Abort the RPC call.
@@ -157,6 +191,27 @@ func (a pbftActor) Propose(p consensus.Proposal, players mino.Players) error {
 	}
 
 	return nil
+}
+
+func (a pbftActor) newPrepareRequest(prop consensus.Proposal, n int) (Prepare, error) {
+	req := Prepare{proposal: prop}
+
+	forwardLink := forwardLink{
+		from: prop.GetPreviousHash(),
+		to:   prop.GetHash(),
+	}
+
+	if n > 0 {
+		forwardLink.changeset = &ChangeSet{Rotation: int32(n)}
+	}
+
+	var err error
+	req.digest, err = forwardLink.computeHash(a.hashFactory.New(), a.encoder)
+	if err != nil {
+		return req, xerrors.Errorf("couldn't compute hash: %v", err)
+	}
+
+	return req, nil
 }
 
 // Close implements consensus.Actor. It announces a close event to allow current
@@ -186,6 +241,13 @@ func (h handler) Hash(addr mino.Address, in proto.Message) (Digest, error) {
 			return nil, xerrors.Errorf("couldn't validate the proposal: %v", err)
 		}
 
+		authority, err := h.governance.GetAuthority(proposal.GetIndex() - 1)
+		if err != nil {
+			return nil, err
+		}
+
+		rotate := h.viewchange.Verify(proposal, authority)
+
 		last, err := h.storage.ReadLast()
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't read last: %v", err)
@@ -201,12 +263,16 @@ func (h handler) Hash(addr mino.Address, in proto.Message) (Digest, error) {
 			to:   proposal.GetHash(),
 		}
 
-		err = h.queue.New(proposal)
+		if rotate > 0 {
+			forwardLink.changeset = &ChangeSet{Rotation: int32(rotate)}
+		}
+
+		err = h.queue.New(proposal, authority)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't add to queue: %v", err)
 		}
 
-		hash, err := forwardLink.computeHash(h.hashFactory.New())
+		hash, err := forwardLink.computeHash(h.hashFactory.New(), h.encoder)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't compute hash: %v", err)
 		}

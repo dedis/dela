@@ -22,8 +22,7 @@ func TestTxProcessor_Validate(t *testing.T) {
 	require.NoError(t, err)
 
 	err = proc.Validate(0, nil)
-	require.EqualError(t, err,
-		"message type '<nil>' but expected '*byzcoin.BlockPayload'")
+	require.EqualError(t, err, "invalid message type '<nil>'")
 
 	proc.inventory = fakeInventory{err: xerrors.New("oops")}
 	err = proc.Validate(0, &BlockPayload{})
@@ -87,7 +86,7 @@ func TestTxProcessor_Commit(t *testing.T) {
 	require.NoError(t, err)
 
 	err = proc.Commit(nil)
-	require.EqualError(t, err, "message type '<nil>' but expected '*byzcoin.BlockPayload'")
+	require.EqualError(t, err, "invalid message type '<nil>'")
 
 	proc.inventory = fakeInventory{err: xerrors.New("oops")}
 	err = proc.Commit(&BlockPayload{Footprint: []byte{0xab}})

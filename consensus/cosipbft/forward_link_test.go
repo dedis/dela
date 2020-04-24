@@ -43,8 +43,9 @@ func TestForwardLink_Verify(t *testing.T) {
 
 func TestForwardLink_Pack(t *testing.T) {
 	fl := forwardLink{
-		from: []byte{0xaa},
-		to:   []byte{0xbb},
+		from:      []byte{0xaa},
+		to:        []byte{0xbb},
+		changeset: &ChangeSet{Rotation: 5},
 	}
 
 	pb, err := fl.Pack(encoding.NewProtoEncoder())
@@ -55,6 +56,7 @@ func TestForwardLink_Pack(t *testing.T) {
 	require.Equal(t, flp.GetTo(), fl.to)
 	require.Nil(t, flp.GetPrepare())
 	require.Nil(t, flp.GetCommit())
+	require.Equal(t, fl.changeset, flp.GetChangeSet())
 
 	fl.prepare = fake.Signature{}
 	pb, err = fl.Pack(encoding.NewProtoEncoder())
@@ -83,16 +85,24 @@ func TestForwardLink_Pack(t *testing.T) {
 func TestForwardLink_Hash(t *testing.T) {
 	h := sha256.New()
 
-	fl := forwardLink{from: []byte{0xaa}, to: []byte{0xbb}}
-	digest, err := fl.computeHash(h)
+	fl := forwardLink{
+		from:      []byte{0xaa},
+		to:        []byte{0xbb},
+		changeset: &ChangeSet{},
+	}
+
+	digest, err := fl.computeHash(h, encoding.NewProtoEncoder())
 	require.NoError(t, err)
 	require.Len(t, digest, h.Size())
 
-	_, err = fl.computeHash(fake.NewBadHash())
+	_, err = fl.computeHash(fake.NewBadHash(), encoding.NewProtoEncoder())
 	require.EqualError(t, err, "couldn't write 'from': fake error")
 
-	_, err = fl.computeHash(fake.NewBadHashWithDelay(1))
+	_, err = fl.computeHash(fake.NewBadHashWithDelay(1), encoding.NewProtoEncoder())
 	require.EqualError(t, err, "couldn't write 'to': fake error")
+
+	_, err = fl.computeHash(h, fake.BadMarshalStableEncoder{})
+	require.EqualError(t, err, "couldn't write 'changeset': fake error")
 }
 
 func TestChain_GetLastHash(t *testing.T) {
@@ -106,31 +116,6 @@ func TestChain_GetLastHash(t *testing.T) {
 
 	last := chain.GetLastHash()
 	require.Equal(t, hash, last)
-}
-
-func TestChain_Verify(t *testing.T) {
-	chain := forwardLinkChain{
-		links: []forwardLink{
-			{from: []byte{0xaa}, to: []byte{0xbb}, prepare: fake.Signature{}, commit: fake.Signature{}},
-			{from: []byte{0xbb}, to: []byte{0xcc}, prepare: fake.Signature{}, commit: fake.Signature{}},
-		},
-	}
-
-	verifier := &fakeVerifier{}
-	err := chain.Verify(verifier)
-	require.NoError(t, err)
-	require.Len(t, verifier.calls, 4)
-
-	err = chain.Verify(&fakeVerifier{err: xerrors.New("oops")})
-	require.EqualError(t, xerrors.Unwrap(err), "couldn't verify prepare signature: oops")
-
-	chain.links[0].to = []byte{0xff}
-	err = chain.Verify(&fakeVerifier{})
-	require.EqualError(t, err, "mismatch forward link 'ff' != 'bb'")
-
-	chain.links = nil
-	err = chain.Verify(&fakeVerifier{})
-	require.EqualError(t, err, "chain is empty")
 }
 
 func TestChain_Pack(t *testing.T) {
@@ -154,12 +139,12 @@ func TestChain_Pack(t *testing.T) {
 func TestChainFactory_FromProto(t *testing.T) {
 	chainpb := &ChainProto{
 		Links: []*ForwardLinkProto{
-			{},
-			{},
+			{Prepare: &any.Any{}, Commit: &any.Any{}},
+			{Prepare: &any.Any{}, Commit: &any.Any{}},
 		},
 	}
 
-	factory := newChainFactory(fake.SignatureFactory{})
+	factory := newChainFactory(&fakeCosi{}, nil)
 	chain, err := factory.FromProto(chainpb)
 	require.NoError(t, err)
 	require.NotNil(t, chain)
@@ -175,7 +160,7 @@ func TestChainFactory_FromProto(t *testing.T) {
 	require.EqualError(t, err, "message type not supported: *empty.Empty")
 
 	chainpb.Links[0].Prepare = &any.Any{}
-	factory = newChainFactory(fake.NewBadSignatureFactory())
+	factory.signatureFactory = fake.NewBadSignatureFactory()
 	_, err = factory.FromProto(chainpb)
 	require.EqualError(t, err, "couldn't decode prepare signature: fake error")
 
@@ -185,7 +170,7 @@ func TestChainFactory_FromProto(t *testing.T) {
 }
 
 func TestChainFactory_DecodeForwardLink(t *testing.T) {
-	factory := chainFactory{
+	factory := unsecureChainFactory{
 		encoder:          encoding.NewProtoEncoder(),
 		signatureFactory: fake.SignatureFactory{},
 		hashFactory:      sha256Factory{},

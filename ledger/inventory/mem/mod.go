@@ -1,8 +1,10 @@
 package mem
 
 import (
+	"bytes"
 	"fmt"
 	"hash"
+	"sort"
 	"sync"
 
 	"github.com/golang/protobuf/jsonpb"
@@ -21,6 +23,22 @@ type Digest [digestLength]byte
 
 func (d Digest) String() string {
 	return fmt.Sprintf("%#x", d[:4])
+}
+
+// DigestSlice is a sortable slice of digests. It allows to hash the inventory
+// page in a deterministic manner.
+type DigestSlice []Digest
+
+func (p DigestSlice) Len() int {
+	return len(p)
+}
+
+func (p DigestSlice) Less(i, j int) bool {
+	return bytes.Compare(p[i][:], p[j][:]) < 0
+}
+
+func (p DigestSlice) Swap(i, j int) {
+	p[i], p[j] = p[j], p[i]
 }
 
 // InMemoryInventory is an implementation of the inventory interface by using a
@@ -215,8 +233,20 @@ func (page inMemoryPage) clone() inMemoryPage {
 func (page inMemoryPage) computeHash(factory crypto.HashFactory) (Digest, error) {
 	h := factory.New()
 
-	for _, entry := range page.entries {
-		err := entry.hash(h)
+	keys := make(DigestSlice, 0, len(page.entries))
+	for key := range page.entries {
+		keys = append(keys, key)
+	}
+
+	sort.Sort(keys)
+
+	for _, key := range keys {
+		_, err := h.Write(key[:])
+		if err != nil {
+			return Digest{}, err
+		}
+
+		err = page.entries[key].hash(h)
 		if err != nil {
 			return Digest{}, err
 		}
