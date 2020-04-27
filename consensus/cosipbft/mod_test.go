@@ -164,7 +164,7 @@ func TestActor_Propose(t *testing.T) {
 	err := actor.Propose(fakeProposal{})
 	require.NoError(t, err)
 
-	actor.viewchange = fakeViewChange{denied: false, rotate: 2}
+	actor.viewchange = fakeViewChange{denied: false, leader: 2}
 	err = actor.Propose(fakeProposal{})
 	require.NoError(t, err)
 	require.Len(t, cosiActor.calls, 2)
@@ -253,7 +253,7 @@ func TestHandler_HashPrepare(t *testing.T) {
 		hashFactory: crypto.NewSha256Factory(),
 		encoder:     encoding.NewProtoEncoder(),
 		governance:  fakeGovernance{},
-		viewchange:  fakeViewChange{rotate: 2},
+		viewchange:  fakeViewChange{leader: 2},
 	}
 	h := handler{
 		validator: fakeValidator{},
@@ -319,7 +319,7 @@ func TestHandler_HashCommit(t *testing.T) {
 
 	authority := fake.NewAuthority(3, fake.NewSigner)
 
-	err := h.Consensus.queue.New(fakeProposal{}, authority)
+	err := h.Consensus.queue.New(forwardLink{to: []byte{0xaa}}, authority)
 	require.NoError(t, err)
 
 	buffer, err := h.Hash(nil, &CommitRequest{To: []byte{0xaa}})
@@ -416,25 +416,25 @@ func (s fakeStorage) ReadLast() (*ForwardLinkProto, error) {
 
 type fakeViewChange struct {
 	viewchange.ViewChange
-	rotate int
+	leader uint32
 	denied bool
 }
 
-func (vc fakeViewChange) Wait(consensus.Proposal, crypto.CollectiveAuthority) (int, bool) {
-	return vc.rotate, !vc.denied
+func (vc fakeViewChange) Wait(consensus.Proposal, crypto.CollectiveAuthority) (uint32, bool) {
+	return vc.leader, !vc.denied
 }
 
-func (vc fakeViewChange) Verify(consensus.Proposal, crypto.CollectiveAuthority) int {
-	return vc.rotate
+func (vc fakeViewChange) Verify(consensus.Proposal, crypto.CollectiveAuthority) uint32 {
+	return vc.leader
 }
 
 type fakeGovernance struct {
-	Governance
+	viewchange.Governance
 	authority fake.CollectiveAuthority
 	err       error
 }
 
-func (gov fakeGovernance) GetAuthority(index uint64) (crypto.CollectiveAuthority, error) {
+func (gov fakeGovernance) GetAuthority(index uint64) (viewchange.EvolvableAuthority, error) {
 	return gov.authority, gov.err
 }
 

@@ -10,6 +10,7 @@ import (
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/blockchain/skipchain"
 	"go.dedis.ch/fabric/consensus/cosipbft"
+	"go.dedis.ch/fabric/consensus/viewchange"
 	"go.dedis.ch/fabric/cosi/flatcosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
@@ -395,7 +396,7 @@ type governance struct {
 	rosterFactory rosterFactory
 }
 
-func (gov governance) GetAuthority(index uint64) (crypto.CollectiveAuthority, error) {
+func (gov governance) GetAuthority(index uint64) (viewchange.EvolvableAuthority, error) {
 	page, err := gov.inventory.GetPage(index)
 	if err != nil {
 		return nil, err
@@ -414,6 +415,6 @@ func (gov governance) GetAuthority(index uint64) (crypto.CollectiveAuthority, er
 	return roster, nil
 }
 
-func (gov governance) GetChangeSet(index uint64) *cosipbft.ChangeSet {
-	return &cosipbft.ChangeSet{}
+func (gov governance) GetChangeSet(index uint64) viewchange.ChangeSet {
+	return viewchange.ChangeSet{}
 }

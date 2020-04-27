@@ -8,6 +8,7 @@ import (
 	any "github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/fabric/consensus/viewchange"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/internal/testing/fake"
 	"golang.org/x/xerrors"
@@ -45,7 +46,7 @@ func TestForwardLink_Pack(t *testing.T) {
 	fl := forwardLink{
 		from:      []byte{0xaa},
 		to:        []byte{0xbb},
-		changeset: &ChangeSet{Rotation: 5},
+		changeset: viewchange.ChangeSet{Leader: 5},
 	}
 
 	pb, err := fl.Pack(encoding.NewProtoEncoder())
@@ -56,7 +57,7 @@ func TestForwardLink_Pack(t *testing.T) {
 	require.Equal(t, flp.GetTo(), fl.to)
 	require.Nil(t, flp.GetPrepare())
 	require.Nil(t, flp.GetCommit())
-	require.Equal(t, fl.changeset, flp.GetChangeSet())
+	require.Equal(t, &ChangeSet{Leader: 5}, flp.GetChangeSet())
 
 	fl.prepare = fake.Signature{}
 	pb, err = fl.Pack(encoding.NewProtoEncoder())
@@ -86,9 +87,8 @@ func TestForwardLink_Hash(t *testing.T) {
 	h := sha256.New()
 
 	fl := forwardLink{
-		from:      []byte{0xaa},
-		to:        []byte{0xbb},
-		changeset: &ChangeSet{},
+		from: []byte{0xaa},
+		to:   []byte{0xbb},
 	}
 
 	digest, err := fl.computeHash(h, encoding.NewProtoEncoder())
@@ -100,9 +100,6 @@ func TestForwardLink_Hash(t *testing.T) {
 
 	_, err = fl.computeHash(fake.NewBadHashWithDelay(1), encoding.NewProtoEncoder())
 	require.EqualError(t, err, "couldn't write 'to': fake error")
-
-	_, err = fl.computeHash(h, fake.BadMarshalStableEncoder{})
-	require.EqualError(t, err, "couldn't write 'changeset': fake error")
 }
 
 func TestChain_GetLastHash(t *testing.T) {
@@ -120,10 +117,7 @@ func TestChain_GetLastHash(t *testing.T) {
 
 func TestChain_Pack(t *testing.T) {
 	chain := forwardLinkChain{
-		links: []forwardLink{
-			{},
-			{},
-		},
+		links: []forwardLink{{}, {}},
 	}
 
 	pb, err := chain.Pack(encoding.NewProtoEncoder())
@@ -139,15 +133,22 @@ func TestChain_Pack(t *testing.T) {
 func TestChainFactory_FromProto(t *testing.T) {
 	chainpb := &ChainProto{
 		Links: []*ForwardLinkProto{
-			{Prepare: &any.Any{}, Commit: &any.Any{}, From: []byte{0x01}, To: []byte{0x02}},
-			{Prepare: &any.Any{}, Commit: &any.Any{}, From: []byte{0x02}, To: []byte{0x03}},
+			makeLinkProto([]byte{0x01}, []byte{0x02}, 1),
+			makeLinkProto([]byte{0x02}, []byte{0x03}, 3),
 		},
 	}
 
-	factory := newChainFactory(&fakeCosi{}, nil)
+	call := &fake.Call{}
+	authority := fake.NewAuthority(3, fake.NewSigner)
+	authority.Call = call
+
+	factory := newChainFactory(&fakeCosi{}, authority)
 	chain, err := factory.FromProto(chainpb)
 	require.NoError(t, err)
 	require.NotNil(t, chain)
+	require.Equal(t, 2, call.Len())
+	require.Equal(t, viewchange.ChangeSet{Leader: 1}, call.Get(0, 1))
+	require.Equal(t, viewchange.ChangeSet{Leader: 3}, call.Get(1, 1))
 
 	chainany, err := ptypes.MarshalAny(chainpb)
 	require.NoError(t, err)
@@ -226,4 +227,19 @@ func TestChainFactory_DecodeForwardLink(t *testing.T) {
 	factory.encoder = fake.BadUnmarshalAnyEncoder{}
 	_, err = factory.decodeForwardLink(flany)
 	require.EqualError(t, err, "couldn't unmarshal forward link: fake error")
+}
+
+// -----------------------------------------------------------------------------
+// Utility functions
+
+func makeLinkProto(from, to []byte, leader uint32) *ForwardLinkProto {
+	return &ForwardLinkProto{
+		Prepare: &any.Any{},
+		Commit:  &any.Any{},
+		From:    from,
+		To:      to,
+		ChangeSet: &ChangeSet{
+			Leader: leader,
+		},
+	}
 }

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"sync"
 
-	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
@@ -14,15 +13,13 @@ import (
 // Queue is an interface specific to cosipbft that defines the primitives to
 // prepare and commit to proposals.
 type Queue interface {
-	New(curr consensus.Proposal, authority crypto.CollectiveAuthority) error
+	New(fl forwardLink, authority crypto.CollectiveAuthority) error
 	LockProposal(to Digest, sig crypto.Signature) error
 	Finalize(to Digest, sig crypto.Signature) (*ForwardLinkProto, error)
 }
 
 type item struct {
-	from     Digest
-	to       Digest
-	prepare  crypto.Signature
+	forwardLink
 	verifier crypto.Verifier
 }
 
@@ -54,7 +51,7 @@ func (q *queue) getItem(id Digest) (item, int, bool) {
 	return item{}, -1, false
 }
 
-func (q *queue) New(curr consensus.Proposal, authority crypto.CollectiveAuthority) error {
+func (q *queue) New(fl forwardLink, authority crypto.CollectiveAuthority) error {
 	q.Lock()
 	defer q.Unlock()
 
@@ -62,9 +59,9 @@ func (q *queue) New(curr consensus.Proposal, authority crypto.CollectiveAuthorit
 		return xerrors.New("queue is locked")
 	}
 
-	_, _, ok := q.getItem(curr.GetHash())
+	_, _, ok := q.getItem(fl.to)
 	if ok {
-		return xerrors.Errorf("proposal '%x' already exists", curr.GetHash())
+		return xerrors.Errorf("proposal '%x' already exists", fl.to)
 	}
 
 	verifier, err := q.cosi.GetVerifierFactory().FromAuthority(authority)
@@ -72,11 +69,9 @@ func (q *queue) New(curr consensus.Proposal, authority crypto.CollectiveAuthorit
 		return xerrors.Errorf("couldn't make verifier: %v", err)
 	}
 
-	// TODO: changeset
 	q.items = append(q.items, item{
-		to:       curr.GetHash(),
-		from:     curr.GetPreviousHash(),
-		verifier: verifier,
+		forwardLink: fl,
+		verifier:    verifier,
 	})
 	return nil
 }
@@ -96,10 +91,8 @@ func (q *queue) LockProposal(to Digest, sig crypto.Signature) error {
 		return xerrors.Errorf("couldn't find proposal '%x'", to)
 	}
 
-	forwardLink := forwardLink{
-		from: item.from,
-		to:   item.to,
-	}
+	forwardLink := item
+	forwardLink.prepare = sig
 
 	hash, err := forwardLink.computeHash(q.hashFactory.New(), q.encoder)
 	if err != nil {
@@ -111,7 +104,7 @@ func (q *queue) LockProposal(to Digest, sig crypto.Signature) error {
 		return xerrors.Errorf("couldn't verify signature: %v", err)
 	}
 
-	q.items[index].prepare = sig
+	q.items[index] = forwardLink
 	q.locked = true
 
 	return nil
@@ -131,12 +124,8 @@ func (q *queue) Finalize(to Digest, sig crypto.Signature) (*ForwardLinkProto, er
 		return nil, xerrors.Errorf("no signature for proposal '%x'", to)
 	}
 
-	forwardLink := forwardLink{
-		from:    item.from,
-		to:      item.to,
-		prepare: item.prepare,
-		commit:  sig,
-	}
+	forwardLink := item
+	forwardLink.commit = sig
 
 	// Make sure the commit signature is a valid one before committing.
 	buffer, err := forwardLink.prepare.MarshalBinary()

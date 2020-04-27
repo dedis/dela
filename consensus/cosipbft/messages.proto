@@ -7,7 +7,7 @@ option go_package = ".;cosipbft";
 import "google/protobuf/any.proto";
 
 message ChangeSet {
-    int32 rotation = 1;
+    uint32 leader = 1;
 }
 
 // ForwardLinkProto is the message representing a forward link between two

@@ -13,6 +13,7 @@ import (
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/consensus/cosipbft"
+	"go.dedis.ch/fabric/consensus/viewchange"
 	"go.dedis.ch/fabric/cosi/threshold"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/crypto/bls"
@@ -351,10 +352,10 @@ func (rand fakeRandGenerator) Read(buffer []byte) (int, error) {
 }
 
 type fakeGovernance struct {
-	cosipbft.Governance
-	authority crypto.CollectiveAuthority
+	viewchange.Governance
+	authority fake.CollectiveAuthority
 }
 
-func (gov fakeGovernance) GetAuthority(index uint64) (crypto.CollectiveAuthority, error) {
+func (gov fakeGovernance) GetAuthority(index uint64) (viewchange.EvolvableAuthority, error) {
 	return gov.authority, nil
 }

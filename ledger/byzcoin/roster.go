@@ -3,6 +3,7 @@ package byzcoin
 import (
 	proto "github.com/golang/protobuf/proto"
 	any "github.com/golang/protobuf/ptypes/any"
+	"go.dedis.ch/fabric/consensus/viewchange"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
@@ -84,6 +85,10 @@ func (r roster) Take(updaters ...mino.FilterUpdater) mino.Players {
 	}
 
 	return newRoster
+}
+
+func (r roster) Apply(viewchange.ChangeSet) viewchange.EvolvableAuthority {
+	return r
 }
 
 // Len implements mino.Players. It returns the length of the roster.
@@ -171,7 +176,7 @@ func (f rosterFactory) New(authority crypto.CollectiveAuthority) roster {
 	return roster
 }
 
-func (f rosterFactory) FromProto(in proto.Message) (crypto.CollectiveAuthority, error) {
+func (f rosterFactory) FromProto(in proto.Message) (viewchange.EvolvableAuthority, error) {
 	var pb *Roster
 	switch msg := in.(type) {
 	case *Roster:

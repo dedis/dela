@@ -3,11 +3,13 @@ package cosipbft
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/binary"
 	"hash"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/fabric/consensus"
+	"go.dedis.ch/fabric/consensus/viewchange"
 	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
@@ -30,7 +32,7 @@ type forwardLink struct {
 	// threshold of the nodes have committed the block.
 	commit crypto.Signature
 	// changeset announces the changes in the authority for the next proposal.
-	changeset *ChangeSet
+	changeset viewchange.ChangeSet
 }
 
 // Verify makes sure the signatures of the forward link are correct.
@@ -56,9 +58,11 @@ func (fl forwardLink) Verify(v crypto.Verifier) error {
 // Pack returns the protobuf message of the forward link.
 func (fl forwardLink) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	pb := &ForwardLinkProto{
-		From:      fl.from,
-		To:        fl.to,
-		ChangeSet: fl.changeset,
+		From: fl.from,
+		To:   fl.to,
+		ChangeSet: &ChangeSet{
+			Leader: fl.changeset.Leader,
+		},
 	}
 
 	var err error
@@ -90,12 +94,8 @@ func (fl forwardLink) computeHash(h hash.Hash, enc encoding.ProtoMarshaler) ([]b
 		return nil, xerrors.Errorf("couldn't write 'to': %v", err)
 	}
 
-	if fl.changeset != nil {
-		err = enc.MarshalStable(h, fl.changeset)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't write 'changeset': %v", err)
-		}
-	}
+	buffer := make([]byte, 4)
+	binary.LittleEndian.PutUint32(buffer, fl.changeset.Leader)
 
 	return h.Sum(nil), nil
 }
@@ -172,9 +172,11 @@ func (f *unsecureChainFactory) decodeForwardLink(pb proto.Message) (forwardLink,
 	}
 
 	fl = forwardLink{
-		from:      src.GetFrom(),
-		to:        src.GetTo(),
-		changeset: src.GetChangeSet(),
+		from: src.GetFrom(),
+		to:   src.GetTo(),
+		changeset: viewchange.ChangeSet{
+			Leader: src.GetChangeSet().GetLeader(),
+		},
 	}
 
 	if src.GetPrepare() != nil {
@@ -238,13 +240,13 @@ func (f *unsecureChainFactory) FromProto(pb proto.Message) (consensus.Chain, err
 // for forward links.
 type chainFactory struct {
 	*unsecureChainFactory
-	authority crypto.CollectiveAuthority
+	authority viewchange.EvolvableAuthority
 }
 
 // newChainFactory returns a new instance of a seal factory that will create
 // forward links for appropriate protobuf messages and return an error
 // otherwise.
-func newChainFactory(cosi cosi.CollectiveSigning, authority crypto.CollectiveAuthority) *chainFactory {
+func newChainFactory(cosi cosi.CollectiveSigning, authority viewchange.EvolvableAuthority) *chainFactory {
 	return &chainFactory{
 		unsecureChainFactory: newUnsecureChainFactory(cosi),
 		authority:            authority,
@@ -271,14 +273,16 @@ func (f *chainFactory) verify(chain forwardLinkChain) error {
 		return xerrors.New("chain is empty")
 	}
 
-	lastIndex := len(chain.links) - 1
-	verifier, err := f.verifierFactory.FromAuthority(f.authority)
-	if err != nil {
-		return xerrors.Errorf("couldn't create the verifier: %v", err)
-	}
+	authority := f.authority
 
+	lastIndex := len(chain.links) - 1
 	for i, link := range chain.links {
-		err := link.Verify(verifier)
+		verifier, err := f.verifierFactory.FromAuthority(f.authority)
+		if err != nil {
+			return xerrors.Errorf("couldn't create the verifier: %v", err)
+		}
+
+		err = link.Verify(verifier)
 		if err != nil {
 			return xerrors.Errorf("couldn't verify link %d: %w", i, err)
 		}
@@ -287,6 +291,8 @@ func (f *chainFactory) verify(chain forwardLinkChain) error {
 			return xerrors.Errorf("mismatch forward link '%x' != '%x'",
 				link.to, chain.links[i+1].from)
 		}
+
+		authority = authority.Apply(link.changeset)
 	}
 
 	return nil

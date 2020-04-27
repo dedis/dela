@@ -16,6 +16,7 @@ import (
 	"github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/golang/protobuf/ptypes/wrappers"
+	"go.dedis.ch/fabric/consensus/viewchange"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
@@ -125,6 +126,8 @@ type CollectiveAuthority struct {
 	crypto.CollectiveAuthority
 	addrs   []mino.Address
 	signers []crypto.AggregateSigner
+
+	Call *Call
 }
 
 // GenSigner is a function to generate a signer.
@@ -198,6 +201,7 @@ func (ca CollectiveAuthority) GetPublicKey(addr mino.Address) (crypto.PublicKey,
 func (ca CollectiveAuthority) Take(updaters ...mino.FilterUpdater) mino.Players {
 	filter := mino.ApplyFilters(updaters)
 	newCA := CollectiveAuthority{
+		Call:    ca.Call,
 		addrs:   make([]mino.Address, len(filter.Indices)),
 		signers: make([]crypto.AggregateSigner, len(filter.Indices)),
 	}
@@ -206,6 +210,17 @@ func (ca CollectiveAuthority) Take(updaters ...mino.FilterUpdater) mino.Players 
 		newCA.signers[i] = ca.signers[k]
 	}
 	return newCA
+}
+
+// Apply implements viewchange.EvolvableAuthority.
+func (ca CollectiveAuthority) Apply(cs viewchange.ChangeSet) viewchange.EvolvableAuthority {
+	if ca.Call != nil {
+		ca.Call.Add("apply", cs)
+	}
+
+	rnge := mino.RangeFilter(0, len(ca.addrs))
+
+	return ca.Take(rnge).(CollectiveAuthority)
 }
 
 // Len implements mino.Players.

@@ -10,6 +10,7 @@ import (
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/consensus/viewchange"
+	"go.dedis.ch/fabric/consensus/viewchange/constant"
 	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
@@ -23,18 +24,6 @@ const (
 	rpcName = "cosipbft"
 )
 
-// Governance is an interface to get information about the collective authority
-// of a proposal.
-type Governance interface {
-	// GetAuthority must return the authority that governs the block. It will be
-	// used to sign the forward link to the next proposal.
-	GetAuthority(index uint64) (crypto.CollectiveAuthority, error)
-
-	// GetChangeSet must return the changes to the authority that will be
-	// applied for the next proposal.
-	GetChangeSet(index uint64) *ChangeSet
-}
-
 // Consensus is the implementation of the consensus.Consensus interface.
 type Consensus struct {
 	storage      Storage
@@ -44,12 +33,12 @@ type Consensus struct {
 	encoder      encoding.ProtoMarshaler
 	hashFactory  crypto.HashFactory
 	chainFactory consensus.ChainFactory
-	governance   Governance
+	governance   viewchange.Governance
 	viewchange   viewchange.ViewChange
 }
 
 // NewCoSiPBFT returns a new instance.
-func NewCoSiPBFT(mino mino.Mino, cosi cosi.CollectiveSigning, gov Governance) *Consensus {
+func NewCoSiPBFT(mino mino.Mino, cosi cosi.CollectiveSigning, gov viewchange.Governance) *Consensus {
 	c := &Consensus{
 		storage:      newInMemoryStorage(),
 		mino:         mino,
@@ -59,7 +48,7 @@ func NewCoSiPBFT(mino mino.Mino, cosi cosi.CollectiveSigning, gov Governance) *C
 		hashFactory:  crypto.NewSha256Factory(),
 		chainFactory: newUnsecureChainFactory(cosi),
 		governance:   gov,
-		viewchange:   viewchange.NewConstant(mino.GetAddress()),
+		viewchange:   constant.NewViewChange(mino.GetAddress()),
 	}
 
 	return c
@@ -138,7 +127,7 @@ func (a pbftActor) Propose(p consensus.Proposal) error {
 	// If the leader has failed and this node has to take over, we use the
 	// inherant property of CoSiPBFT to prove that 2f participants want the view
 	// change.
-	rotate, ok := a.viewchange.Wait(p, authority)
+	leader, ok := a.viewchange.Wait(p, authority)
 	if !ok {
 		fabric.Logger.Trace().Msg("proposal skipped by view change")
 		// Not authorized to propose a block as the leader is moving
@@ -147,8 +136,12 @@ func (a pbftActor) Propose(p consensus.Proposal) error {
 		return nil
 	}
 
+	changeset := viewchange.ChangeSet{
+		Leader: leader,
+	}
+
 	ctx := context.Background()
-	prepareReq, err := a.newPrepareRequest(p, rotate)
+	prepareReq, err := a.newPrepareRequest(p, changeset)
 	if err != nil {
 		return xerrors.Errorf("couldn't create prepare request: %v", err)
 	}
@@ -194,16 +187,13 @@ func (a pbftActor) Propose(p consensus.Proposal) error {
 	return nil
 }
 
-func (a pbftActor) newPrepareRequest(prop consensus.Proposal, n int) (Prepare, error) {
+func (a pbftActor) newPrepareRequest(prop consensus.Proposal, cs viewchange.ChangeSet) (Prepare, error) {
 	req := Prepare{proposal: prop}
 
 	forwardLink := forwardLink{
-		from: prop.GetPreviousHash(),
-		to:   prop.GetHash(),
-	}
-
-	if n > 0 {
-		forwardLink.changeset = &ChangeSet{Rotation: int32(n)}
+		from:      prop.GetPreviousHash(),
+		to:        prop.GetHash(),
+		changeset: cs,
 	}
 
 	var err error
@@ -247,7 +237,7 @@ func (h handler) Hash(addr mino.Address, in proto.Message) (Digest, error) {
 			return nil, xerrors.Errorf("couldn't read authority: %v", err)
 		}
 
-		rotate := h.viewchange.Verify(proposal, authority)
+		leader := h.viewchange.Verify(proposal, authority)
 		// TODO: verify that the proposal comes from the leader after rotation.
 
 		last, err := h.storage.ReadLast()
@@ -263,13 +253,12 @@ func (h handler) Hash(addr mino.Address, in proto.Message) (Digest, error) {
 		forwardLink := forwardLink{
 			from: proposal.GetPreviousHash(),
 			to:   proposal.GetHash(),
+			changeset: viewchange.ChangeSet{
+				Leader: leader,
+			},
 		}
 
-		if rotate > 0 {
-			forwardLink.changeset = &ChangeSet{Rotation: int32(rotate)}
-		}
-
-		err = h.queue.New(proposal, authority)
+		err = h.queue.New(forwardLink, authority)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't add to queue: %v", err)
 		}
