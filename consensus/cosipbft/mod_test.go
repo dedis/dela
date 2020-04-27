@@ -2,6 +2,7 @@ package cosipbft
 
 import (
 	"context"
+	fmt "fmt"
 	"testing"
 
 	proto "github.com/golang/protobuf/proto"
@@ -40,30 +41,50 @@ func TestMessages(t *testing.T) {
 }
 
 func TestConsensus_Basic(t *testing.T) {
-	manager := minoch.NewManager()
-	m1, err := minoch.NewMinoch(manager, "A")
+	prop := &fakeProposal{hash: []byte{0xbb}, previous: []byte{0xaa}}
+	cons, actors, authority := makeConsensus(t, 3, prop)
+
+	initial := authority.Take(mino.RangeFilter(0, 2)).(fake.CollectiveAuthority)
+	for _, c := range cons {
+		c.governance = fakeGovernance{authority: initial}
+	}
+
+	// 1. Send a fake proposal with the initial authority.
+	err := actors[0].Propose(prop)
 	require.NoError(t, err)
 
-	ca := fake.NewAuthorityFromMino(bls.NewSigner, m1)
-
-	cosi := flatcosi.NewFlat(m1, ca.GetSigner(0))
-
-	cons := NewCoSiPBFT(m1, cosi, fakeGovernance{authority: ca})
-	actor, err := cons.Listen(fakeValidator{})
+	// 2. Send another fake proposal but with a changeset to add the missing
+	// player.
+	changeset := viewchange.ChangeSet{Add: []viewchange.Player{{
+		Address:   cons[2].mino.GetAddress(),
+		PublicKey: authority.GetSigner(2).GetPublicKey(),
+	}}}
+	for _, c := range cons {
+		c.governance = fakeGovernance{authority: initial, changeset: changeset}
+	}
+	prop.hash = []byte{0xcc}
+	prop.previous = []byte{0xbb}
+	err = actors[0].Propose(prop)
 	require.NoError(t, err)
 
-	prop := fakeProposal{}
-	err = actor.Propose(prop)
+	// 3. Send a final proposal with the new authority
+	for _, c := range cons {
+		c.governance = fakeGovernance{authority: authority}
+	}
+	prop.hash = []byte{0xdd}
+	prop.previous = []byte{0xcc}
+	err = actors[0].Propose(prop)
 	require.NoError(t, err)
 
-	chain, err := cons.GetChain(prop.GetHash())
+	chain, err := cons[0].GetChain(prop.GetHash())
 	require.NoError(t, err)
-	require.Len(t, chain.(forwardLinkChain).links, 1)
+	require.Len(t, chain.(forwardLinkChain).links, 3)
 
 	chainpb, err := chain.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
 
-	factory, err := cons.GetChainFactory()
+	cons[0].governance = fakeGovernance{authority: initial}
+	factory, err := cons[0].GetChainFactory()
 	require.NoError(t, err)
 
 	chain2, err := factory.FromProto(chainpb)
@@ -73,6 +94,7 @@ func TestConsensus_Basic(t *testing.T) {
 
 func TestConsensus_GetChainFactory(t *testing.T) {
 	cons := &Consensus{
+		mino:       fake.Mino{},
 		cosi:       &fakeCosi{},
 		governance: fakeGovernance{},
 	}
@@ -89,7 +111,7 @@ func TestConsensus_GetChainFactory(t *testing.T) {
 func TestConsensus_GetChain(t *testing.T) {
 	cons := &Consensus{
 		storage:      newInMemoryStorage(),
-		chainFactory: newUnsecureChainFactory(&fakeCosi{}),
+		chainFactory: newUnsecureChainFactory(&fakeCosi{}, fake.Mino{}),
 	}
 
 	err := cons.storage.Store(&ForwardLinkProto{To: []byte{0xaa}})
@@ -165,7 +187,7 @@ func TestActor_Propose(t *testing.T) {
 	require.NoError(t, err)
 
 	actor.viewchange = fakeViewChange{denied: false, leader: 2}
-	err = actor.Propose(fakeProposal{})
+	err = actor.Propose(fakeProposal{hash: []byte{0xaa}})
 	require.NoError(t, err)
 	require.Len(t, cosiActor.calls, 2)
 
@@ -256,7 +278,7 @@ func TestHandler_HashPrepare(t *testing.T) {
 		viewchange:  fakeViewChange{leader: 2},
 	}
 	h := handler{
-		validator: fakeValidator{},
+		validator: fakeValidator{proposal: fakeProposal{}},
 		Consensus: cons,
 	}
 
@@ -279,7 +301,7 @@ func TestHandler_HashPrepare(t *testing.T) {
 	_, err = h.Hash(nil, &PrepareRequest{Proposal: empty})
 	require.EqualError(t, err, "couldn't validate the proposal: oops")
 
-	h.validator = fakeValidator{}
+	h.validator = fakeValidator{proposal: fakeProposal{previous: []byte{0xbb}}}
 	h.governance = fakeGovernance{err: xerrors.New("oops")}
 	_, err = h.Hash(nil, &PrepareRequest{Proposal: empty})
 	require.EqualError(t, err, "couldn't read authority: oops")
@@ -382,6 +404,35 @@ func TestRPCHandler_Process(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
+func makeConsensus(t *testing.T, n int,
+	p consensus.Proposal) ([]*Consensus, []consensus.Actor, fake.CollectiveAuthority) {
+
+	manager := minoch.NewManager()
+
+	mm := make([]mino.Mino, n)
+	for i := range mm {
+		m, err := minoch.NewMinoch(manager, fmt.Sprintf("node%d", i))
+		require.NoError(t, err)
+		mm[i] = m
+	}
+
+	ca := fake.NewAuthorityFromMino(bls.NewSigner, mm...)
+	cons := make([]*Consensus, n)
+	actors := make([]consensus.Actor, n)
+	for i, m := range mm {
+		cosi := flatcosi.NewFlat(m, ca.GetSigner(i))
+
+		c := NewCoSiPBFT(m, cosi, nil)
+		actor, err := c.Listen(fakeValidator{proposal: p})
+		require.NoError(t, err)
+
+		cons[i] = c
+		actors[i] = actor
+	}
+
+	return cons, actors, ca
+}
+
 type badCosiActor struct {
 	cosi.CollectiveSigning
 	delay int
@@ -431,11 +482,16 @@ func (vc fakeViewChange) Verify(consensus.Proposal, crypto.CollectiveAuthority) 
 type fakeGovernance struct {
 	viewchange.Governance
 	authority fake.CollectiveAuthority
+	changeset viewchange.ChangeSet
 	err       error
 }
 
 func (gov fakeGovernance) GetAuthority(index uint64) (viewchange.EvolvableAuthority, error) {
 	return gov.authority, gov.err
+}
+
+func (gov fakeGovernance) GetChangeSet(uint64) viewchange.ChangeSet {
+	return gov.changeset
 }
 
 type fakeQueue struct {
@@ -455,7 +511,9 @@ func (f badChainFactory) FromProto(proto.Message) (consensus.Chain, error) {
 
 type fakeProposal struct {
 	consensus.Proposal
-	err error
+	hash     []byte
+	previous []byte
+	err      error
 }
 
 func (p fakeProposal) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
@@ -467,11 +525,11 @@ func (p fakeProposal) GetIndex() uint64 {
 }
 
 func (p fakeProposal) GetHash() []byte {
-	return []byte{0xaa}
+	return p.hash
 }
 
 func (p fakeProposal) GetPreviousHash() []byte {
-	return []byte{0xbb}
+	return p.previous
 }
 
 func (p fakeProposal) GetVerifier() crypto.Verifier {
@@ -479,14 +537,14 @@ func (p fakeProposal) GetVerifier() crypto.Verifier {
 }
 
 type fakeValidator struct {
-	err error
+	err      error
+	proposal consensus.Proposal
 }
 
 func (v fakeValidator) Validate(addr mino.Address,
 	msg proto.Message) (consensus.Proposal, error) {
 
-	p := fakeProposal{}
-	return p, v.err
+	return v.proposal, v.err
 }
 
 func (v fakeValidator) Commit(id []byte) error {
@@ -499,6 +557,10 @@ type fakeCosi struct {
 	err             error
 	factory         fake.SignatureFactory
 	verifierFactory fake.VerifierFactory
+}
+
+func (cs *fakeCosi) GetPublicKeyFactory() crypto.PublicKeyFactory {
+	return fake.PublicKeyFactory{}
 }
 
 func (cs *fakeCosi) GetSignatureFactory() crypto.SignatureFactory {

@@ -212,15 +212,39 @@ func (ca CollectiveAuthority) Take(updaters ...mino.FilterUpdater) mino.Players 
 	return newCA
 }
 
+type signerWrapper struct {
+	crypto.AggregateSigner
+	pubkey crypto.PublicKey
+}
+
+func (s signerWrapper) GetPublicKey() crypto.PublicKey {
+	return s.pubkey
+}
+
 // Apply implements viewchange.EvolvableAuthority.
 func (ca CollectiveAuthority) Apply(cs viewchange.ChangeSet) viewchange.EvolvableAuthority {
 	if ca.Call != nil {
 		ca.Call.Add("apply", cs)
 	}
 
-	rnge := mino.RangeFilter(0, len(ca.addrs))
+	newAuthority := CollectiveAuthority{
+		Call:    ca.Call,
+		addrs:   make([]mino.Address, len(ca.addrs)),
+		signers: make([]crypto.AggregateSigner, len(ca.signers)),
+	}
+	for i := range ca.addrs {
+		newAuthority.addrs[i] = ca.addrs[i]
+		newAuthority.signers[i] = ca.signers[i]
+	}
 
-	return ca.Take(rnge).(CollectiveAuthority)
+	for _, player := range cs.Add {
+		newAuthority.addrs = append(newAuthority.addrs, player.Address)
+		newAuthority.signers = append(newAuthority.signers, signerWrapper{
+			pubkey: player.PublicKey,
+		})
+	}
+
+	return newAuthority
 }
 
 // Len implements mino.Players.

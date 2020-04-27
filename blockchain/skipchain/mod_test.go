@@ -352,10 +352,13 @@ func (rand fakeRandGenerator) Read(buffer []byte) (int, error) {
 }
 
 type fakeGovernance struct {
-	viewchange.Governance
 	authority fake.CollectiveAuthority
 }
 
 func (gov fakeGovernance) GetAuthority(index uint64) (viewchange.EvolvableAuthority, error) {
 	return gov.authority, nil
+}
+
+func (gov fakeGovernance) GetChangeSet(uint64) viewchange.ChangeSet {
+	return viewchange.ChangeSet{}
 }

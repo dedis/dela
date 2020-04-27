@@ -142,7 +142,7 @@ func TestChainFactory_FromProto(t *testing.T) {
 	authority := fake.NewAuthority(3, fake.NewSigner)
 	authority.Call = call
 
-	factory := newChainFactory(&fakeCosi{}, authority)
+	factory := newChainFactory(&fakeCosi{}, fake.Mino{}, authority)
 	chain, err := factory.FromProto(chainpb)
 	require.NoError(t, err)
 	require.NotNil(t, chain)

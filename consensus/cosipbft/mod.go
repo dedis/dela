@@ -46,7 +46,7 @@ func NewCoSiPBFT(mino mino.Mino, cosi cosi.CollectiveSigning, gov viewchange.Gov
 		queue:        newQueue(cosi),
 		encoder:      encoding.NewProtoEncoder(),
 		hashFactory:  crypto.NewSha256Factory(),
-		chainFactory: newUnsecureChainFactory(cosi),
+		chainFactory: newUnsecureChainFactory(cosi, mino),
 		governance:   gov,
 		viewchange:   constant.NewViewChange(mino.GetAddress()),
 	}
@@ -61,7 +61,7 @@ func (c *Consensus) GetChainFactory() (consensus.ChainFactory, error) {
 		return nil, xerrors.Errorf("couldn't get genesis authority: %v", err)
 	}
 
-	return newChainFactory(c.cosi, authority), nil
+	return newChainFactory(c.cosi, c.mino, authority), nil
 }
 
 // GetChain returns a valid chain to the given identifier.
@@ -136,9 +136,8 @@ func (a pbftActor) Propose(p consensus.Proposal) error {
 		return nil
 	}
 
-	changeset := viewchange.ChangeSet{
-		Leader: leader,
-	}
+	changeset := a.governance.GetChangeSet(p.GetIndex() - 1)
+	changeset.Leader = leader
 
 	ctx := context.Background()
 	prepareReq, err := a.newPrepareRequest(p, changeset)
@@ -237,9 +236,6 @@ func (h handler) Hash(addr mino.Address, in proto.Message) (Digest, error) {
 			return nil, xerrors.Errorf("couldn't read authority: %v", err)
 		}
 
-		leader := h.viewchange.Verify(proposal, authority)
-		// TODO: verify that the proposal comes from the leader after rotation.
-
 		last, err := h.storage.ReadLast()
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't read last: %v", err)
@@ -251,12 +247,14 @@ func (h handler) Hash(addr mino.Address, in proto.Message) (Digest, error) {
 		}
 
 		forwardLink := forwardLink{
-			from: proposal.GetPreviousHash(),
-			to:   proposal.GetHash(),
-			changeset: viewchange.ChangeSet{
-				Leader: leader,
-			},
+			from:      proposal.GetPreviousHash(),
+			to:        proposal.GetHash(),
+			changeset: h.governance.GetChangeSet(proposal.GetIndex() - 1),
 		}
+
+		leader := h.viewchange.Verify(proposal, authority)
+		// TODO: verify that the proposal comes from the leader after rotation.
+		forwardLink.changeset.Leader = leader
 
 		err = h.queue.New(forwardLink, authority)
 		if err != nil {

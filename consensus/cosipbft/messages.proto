@@ -6,8 +6,15 @@ option go_package = ".;cosipbft";
 
 import "google/protobuf/any.proto";
 
+message Player {
+    bytes address = 1;
+    google.protobuf.Any publicKey = 2;
+}
+
 message ChangeSet {
     uint32 leader = 1;
+    repeated Player add = 2;
+    repeated Player remove = 3;
 }
 
 // ForwardLinkProto is the message representing a forward link between two

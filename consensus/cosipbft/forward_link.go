@@ -13,6 +13,7 @@ import (
 	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
+	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
 
@@ -60,12 +61,13 @@ func (fl forwardLink) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	pb := &ForwardLinkProto{
 		From: fl.from,
 		To:   fl.to,
-		ChangeSet: &ChangeSet{
-			Leader: fl.changeset.Leader,
-		},
 	}
 
-	var err error
+	changeset, err := fl.packChangeSet(enc)
+	if err != nil {
+		return nil, err
+	}
+	pb.ChangeSet = changeset
 
 	if fl.prepare != nil {
 		pb.Prepare, err = enc.PackAny(fl.prepare)
@@ -78,6 +80,34 @@ func (fl forwardLink) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 		pb.Commit, err = enc.PackAny(fl.commit)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't pack commit signature: %v", err)
+		}
+	}
+
+	return pb, nil
+}
+
+func (fl forwardLink) packChangeSet(enc encoding.ProtoMarshaler) (*ChangeSet, error) {
+	pb := &ChangeSet{
+		Leader: fl.changeset.Leader,
+	}
+
+	if len(fl.changeset.Add) > 0 {
+		pb.Add = make([]*Player, len(fl.changeset.Add))
+		for i, add := range fl.changeset.Add {
+			addr, err := add.Address.MarshalText()
+			if err != nil {
+				return nil, err
+			}
+
+			pubkey, err := enc.PackAny(add.PublicKey)
+			if err != nil {
+				return nil, err
+			}
+
+			pb.Add[i] = &Player{
+				Address:   addr,
+				PublicKey: pubkey,
+			}
 		}
 	}
 
@@ -139,14 +169,18 @@ func (f sha256Factory) New() hash.Hash {
 }
 
 type unsecureChainFactory struct {
+	addrFactory      mino.AddressFactory
+	pubkeyFactory    crypto.PublicKeyFactory
 	signatureFactory crypto.SignatureFactory
 	verifierFactory  crypto.VerifierFactory
 	hashFactory      crypto.HashFactory
 	encoder          encoding.ProtoMarshaler
 }
 
-func newUnsecureChainFactory(cosi cosi.CollectiveSigning) *unsecureChainFactory {
+func newUnsecureChainFactory(cosi cosi.CollectiveSigning, m mino.Mino) *unsecureChainFactory {
 	return &unsecureChainFactory{
+		addrFactory:      m.GetAddressFactory(),
+		pubkeyFactory:    cosi.GetPublicKeyFactory(),
 		signatureFactory: cosi.GetSignatureFactory(),
 		verifierFactory:  cosi.GetVerifierFactory(),
 		hashFactory:      sha256Factory{},
@@ -174,9 +208,12 @@ func (f *unsecureChainFactory) decodeForwardLink(pb proto.Message) (forwardLink,
 	fl = forwardLink{
 		from: src.GetFrom(),
 		to:   src.GetTo(),
-		changeset: viewchange.ChangeSet{
-			Leader: src.GetChangeSet().GetLeader(),
-		},
+	}
+
+	var err error
+	fl.changeset, err = f.decodeChangeSet(src.GetChangeSet())
+	if err != nil {
+		return fl, err
 	}
 
 	if src.GetPrepare() != nil {
@@ -205,6 +242,30 @@ func (f *unsecureChainFactory) decodeForwardLink(pb proto.Message) (forwardLink,
 	fl.hash = hash
 
 	return fl, nil
+}
+
+func (f *unsecureChainFactory) decodeChangeSet(in *ChangeSet) (viewchange.ChangeSet, error) {
+	changeset := viewchange.ChangeSet{
+		Leader: in.GetLeader(),
+	}
+
+	if len(in.GetAdd()) > 0 {
+		changeset.Add = make([]viewchange.Player, len(in.GetAdd()))
+		for i, add := range in.GetAdd() {
+			addr := f.addrFactory.FromText(add.GetAddress())
+			pubkey, err := f.pubkeyFactory.FromProto(add.GetPublicKey())
+			if err != nil {
+				return changeset, err
+			}
+
+			changeset.Add[i] = viewchange.Player{
+				Address:   addr,
+				PublicKey: pubkey,
+			}
+		}
+	}
+
+	return changeset, nil
 }
 
 func (f *unsecureChainFactory) FromProto(pb proto.Message) (consensus.Chain, error) {
@@ -246,9 +307,11 @@ type chainFactory struct {
 // newChainFactory returns a new instance of a seal factory that will create
 // forward links for appropriate protobuf messages and return an error
 // otherwise.
-func newChainFactory(cosi cosi.CollectiveSigning, authority viewchange.EvolvableAuthority) *chainFactory {
+func newChainFactory(cosi cosi.CollectiveSigning, m mino.Mino,
+	authority viewchange.EvolvableAuthority) *chainFactory {
+
 	return &chainFactory{
-		unsecureChainFactory: newUnsecureChainFactory(cosi),
+		unsecureChainFactory: newUnsecureChainFactory(cosi, m),
 		authority:            authority,
 	}
 }
@@ -277,7 +340,7 @@ func (f *chainFactory) verify(chain forwardLinkChain) error {
 
 	lastIndex := len(chain.links) - 1
 	for i, link := range chain.links {
-		verifier, err := f.verifierFactory.FromAuthority(f.authority)
+		verifier, err := f.verifierFactory.FromAuthority(authority)
 		if err != nil {
 			return xerrors.Errorf("couldn't create the verifier: %v", err)
 		}
