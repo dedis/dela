@@ -116,6 +116,9 @@ func (h *Handler) start(start *Start, from mino.Address,
 
 	// 1. Create the DKG
 	d, err := pedersen.NewDistKeyGenerator(suite, h.privKey, h.pubKeys, int(start.T))
+	if err != nil {
+		return xerrors.Errorf("failed to create new DKG: %v", err)
+	}
 	h.dkg = d
 
 	// 2. Send my Deals to the other nodes
