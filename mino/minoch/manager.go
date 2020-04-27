@@ -35,6 +35,7 @@ func (m *Manager) get(addr mino.Address) *Minoch {
 
 func (m *Manager) insert(inst *Minoch) error {
 	addr := inst.GetAddress().(address)
+
 	text, err := addr.MarshalText()
 	if err != nil {
 		return xerrors.Errorf("couldn't marshal address: %v", err)
