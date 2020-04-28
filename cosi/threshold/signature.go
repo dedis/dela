@@ -209,5 +209,6 @@ func (f verifierFactory) FromAuthority(authority crypto.CollectiveAuthority) (cr
 }
 
 func (f verifierFactory) FromArray([]crypto.PublicKey) (crypto.Verifier, error) {
+	// TODO: think about this
 	return nil, xerrors.New("not implemented")
 }

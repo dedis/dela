@@ -30,6 +30,8 @@ const (
 )
 
 var (
+	// AuthorityKey is a reserved instance key for the roster of the chain. It
+	// may evolve after each block.
 	authorityKey = []byte{0x01}
 )
 

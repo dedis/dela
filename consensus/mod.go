@@ -11,6 +11,7 @@ import (
 type Proposal interface {
 	encoding.Packable
 
+	// GetIndex returns the index of the proposal from the first one.
 	GetIndex() uint64
 
 	// GetHash returns the hash of the proposal.
@@ -49,10 +50,11 @@ type ChainFactory interface {
 
 // Actor is the primitive to send proposals to a consensus implementation.
 type Actor interface {
-	// Propose performs the consensus algorithm using the list of nodes
-	// as participants.
+	// Propose performs the consensus algorithm. The list of participants is
+	// left to the implementation.
 	Propose(proposal Proposal) error
 
+	// Close must clean the resources of the actor.
 	Close() error
 }
 
