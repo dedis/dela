@@ -351,14 +351,14 @@ func (a actorLedger) Setup(players mino.Players) error {
 
 	rosterpb, err := a.encoder.Pack(a.governance.rosterFactory.New(authority))
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't pack roster: %v", err)
 	}
 
 	payload := &GenesisPayload{Roster: rosterpb.(*Roster)}
 
 	page, err := a.proc.setup(payload)
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't store genesis payload: %v", err)
 	}
 
 	payload.Footprint = page.GetFootprint()
@@ -391,30 +391,39 @@ func (a actorLedger) Close() error {
 	return nil
 }
 
+// Governance is an implementation of viewchange.Governance so that the module
+// can act on the roster which is done through transactions.
+// TODO: implement the roster txs
+//
+// - implements viewchange.Governance
 type governance struct {
 	inventory     inventory.Inventory
 	rosterFactory rosterFactory
 }
 
+// GetAuthority implements viewchange.Governance. It returns the authority for
+// the given block index by reading the inventory page associated.
 func (gov governance) GetAuthority(index uint64) (viewchange.EvolvableAuthority, error) {
 	page, err := gov.inventory.GetPage(index)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't read page: %v", err)
 	}
 
 	rosterpb, err := page.Read(authorityKey)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't read roster: %v", err)
 	}
 
 	roster, err := gov.rosterFactory.FromProto(rosterpb)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't decode roster: %v", err)
 	}
 
 	return roster, nil
 }
 
+// GetChangeSet implements viewchange.Governance. It returns the change set for
+// that block by reading the transactions.
 func (gov governance) GetChangeSet(index uint64) viewchange.ChangeSet {
 	return viewchange.ChangeSet{}
 }

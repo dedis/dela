@@ -112,6 +112,7 @@ type fakePage struct {
 	index     uint64
 	footprint []byte
 	err       error
+	value     proto.Message
 	calls     [][]interface{}
 }
 
@@ -124,7 +125,7 @@ func (p *fakePage) GetFootprint() []byte {
 }
 
 func (p *fakePage) Read([]byte) (proto.Message, error) {
-	return &empty.Empty{}, p.err
+	return p.value, p.err
 }
 
 func (p *fakePage) Write(key []byte, value proto.Message) error {

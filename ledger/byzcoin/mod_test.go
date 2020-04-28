@@ -11,6 +11,7 @@ import (
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/crypto/bls"
+	"go.dedis.ch/fabric/encoding"
 	internal "go.dedis.ch/fabric/internal/testing"
 	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/ledger"
@@ -130,6 +131,38 @@ func TestLedger_GetInstance(t *testing.T) {
 	ledger.consumer = fakeConsumer{errFactory: xerrors.New("oops")}
 	_, err = ledger.GetInstance(nil)
 	require.EqualError(t, err, "couldn't decode instance: oops")
+}
+
+func TestGovernance_GetAuthority(t *testing.T) {
+	factory := rosterFactory{
+		addressFactory: fake.AddressFactory{},
+		pubkeyFactory:  fake.PublicKeyFactory{},
+	}
+
+	roster := factory.New(fake.NewAuthority(3, fake.NewSigner))
+	rosterpb, err := roster.Pack(encoding.NewProtoEncoder())
+	require.NoError(t, err)
+
+	gov := governance{
+		rosterFactory: factory,
+		inventory:     fakeInventory{page: &fakePage{value: rosterpb}},
+	}
+
+	authority, err := gov.GetAuthority(3)
+	require.NoError(t, err)
+	require.Equal(t, 3, authority.Len())
+
+	gov.inventory = fakeInventory{err: xerrors.New("oops")}
+	_, err = gov.GetAuthority(3)
+	require.EqualError(t, err, "couldn't read page: oops")
+
+	gov.inventory = fakeInventory{page: &fakePage{err: xerrors.New("oops")}}
+	_, err = gov.GetAuthority(3)
+	require.EqualError(t, err, "couldn't read roster: oops")
+
+	gov.inventory = fakeInventory{page: &fakePage{}}
+	_, err = gov.GetAuthority(3)
+	require.EqualError(t, err, "couldn't decode roster: invalid message type '<nil>'")
 }
 
 // -----------------------------------------------------------------------------

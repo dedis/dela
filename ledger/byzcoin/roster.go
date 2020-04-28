@@ -62,7 +62,8 @@ func (i *publicKeyIterator) GetNext() crypto.PublicKey {
 
 // roster contains a list of participants with their addresses and public keys.
 //
-// - implements crypto.CollectiveSigning
+// - implements crypto.CollectiveAuthority
+// - implements viewchange.EvolvableAuthority
 // - implements mino.Players
 // - implements encoding.Packable
 type roster struct {
@@ -87,7 +88,10 @@ func (r roster) Take(updaters ...mino.FilterUpdater) mino.Players {
 	return newRoster
 }
 
+// Apply implements viewchange.EvolvableAuthority. It returns a new authority
+// after applying the change set.
 func (r roster) Apply(viewchange.ChangeSet) viewchange.EvolvableAuthority {
+	// TODO: implement
 	return r
 }
 
