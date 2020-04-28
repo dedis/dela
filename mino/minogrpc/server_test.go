@@ -2,6 +2,7 @@ package minogrpc
 
 import (
 	context "context"
+	"fmt"
 	"sort"
 	"strings"
 	"testing"
@@ -522,9 +523,21 @@ func TestRPC_MultipleSimple_Stream(t *testing.T) {
 		Certificate: server3.cert.Leaf,
 	}
 
+	// Computed routing:
+	//
+	// Node[orchestrator_addr-index[-1]-lastIndex[2]](
+	// 	Node[127.0.0.1:2001-index[0]-lastIndex[0]](
+	// 	)
+	// 	Node[127.0.0.1:2002-index[1]-lastIndex[2]](
+	// 		Node[127.0.0.1:2003-index[2]-lastIndex[2]](
+	// 		)
+	// 	)
+	// )
+
 	server1.neighbours[identifier1] = peer1
 	server1.neighbours[identifier2] = peer2
-	server1.neighbours[identifier3] = peer3
+
+	server2.neighbours[identifier3] = peer3
 
 	handler := testSameHandler{time.Millisecond * 900}
 	uri := "blabla"
@@ -628,15 +641,45 @@ func TestRPC_MultipleChange_Stream(t *testing.T) {
 		Certificate: server3.cert.Leaf,
 	}
 
+	identifier4 := "127.0.0.1:2004"
+	addr4 := &address{
+		id: identifier4,
+	}
+	server4, err := CreateServer(addr4)
+	require.NoError(t, err)
+	server4.traffic.log = true
+	server4.StartServer()
+	peer4 := Peer{
+		Address:     server4.listener.Addr().String(),
+		Certificate: server4.cert.Leaf,
+	}
+
+	// Computed routing:
+	//
+	// Node[orchestrator_addr-index[-1]-lastIndex[3]](
+	// 	Node[127.0.0.1:2002-index[0]-lastIndex[1]](
+	// 		Node[127.0.0.1:2003-index[1]-lastIndex[1]](
+	// 		)
+	// 	)
+	// 	Node[127.0.0.1:2004-index[2]-lastIndex[3]](
+	// 		Node[127.0.0.1:2001-index[3]-lastIndex[3]](
+	// 		)
+	// 	)
+	// )
 	server1.neighbours[identifier1] = peer1
 	server1.neighbours[identifier2] = peer2
-	server1.neighbours[identifier3] = peer3
+	server1.neighbours[identifier4] = peer4
 
-	handler := testModifyHandler{}
+	server2.neighbours[identifier2] = peer2
+	server2.neighbours[identifier3] = peer3
+
+	server3.neighbours[identifier3] = peer3
+
+	server4.neighbours[identifier1] = peer1
+
 	uri := "blabla"
 	rpc := RPC{
 		encoder: encoding.NewProtoEncoder(),
-		handler: handler,
 		srv:     server1,
 		uri:     uri,
 	}
@@ -644,16 +687,17 @@ func TestRPC_MultipleChange_Stream(t *testing.T) {
 	// the handler must be registered on each server. Fron the client side, that
 	// means the "registerNamespace" and "makeRPC" must be called on each
 	// server.
-	server1.handlers[uri] = handler
-	server2.handlers[uri] = handler
-	server3.handlers[uri] = handler
+	server1.handlers[uri] = testModifyHandler{identifier1}
+	server2.handlers[uri] = testModifyHandler{identifier2}
+	server3.handlers[uri] = testModifyHandler{identifier3}
+	server4.handlers[uri] = testModifyHandler{identifier4}
 
 	m := &wrappers.StringValue{Value: "dummy_value"}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	sender, rcvr := rpc.Stream(ctx, &fakePlayers{players: []address{*addr1, *addr2, *addr3}})
+	sender, rcvr := rpc.Stream(ctx, &fakePlayers{players: []address{*addr1, *addr2, *addr3, *addr4}})
 	localRcvr, ok := rcvr.(receiver)
 	require.True(t, ok)
 
@@ -664,30 +708,39 @@ func TestRPC_MultipleChange_Stream(t *testing.T) {
 	}
 
 	// sending two messages, we should get one from each server
-	errs := sender.Send(m, addr1, addr2, addr3)
+	errs := sender.Send(m, addr1, addr2, addr3, addr4)
 	err, more := <-errs
 	if more {
 		t.Error("unexpected error from send: ", err)
 	}
 
-	errs = sender.Send(m, addr1, addr2, addr3)
+	errs = sender.Send(m, addr1, addr2, addr3, addr4)
 	err, more = <-errs
 	if more {
 		t.Error("unexpected error from send: ", err)
 	}
 
-	for i := 0; i < 3; i++ {
+	msgs := make([]string, 4)
+
+	for i := range msgs {
 		_, msg2, err := rcvr.Recv(context.Background())
 		require.NoError(t, err)
 
 		dummyMsg2, ok := msg2.(*wrappers.StringValue)
 		require.True(t, ok)
-		require.Equal(t, m.Value+m.Value, dummyMsg2.Value)
+		msgs[i] = dummyMsg2.Value
 	}
+
+	sort.Strings(msgs)
+	require.Equal(t, "dummy_valuedummy_value_"+identifier1, msgs[0])
+	require.Equal(t, "dummy_valuedummy_value_"+identifier2, msgs[1])
+	require.Equal(t, "dummy_valuedummy_value_"+identifier3, msgs[2])
+	require.Equal(t, "dummy_valuedummy_value_"+identifier4, msgs[3])
 
 	server1.grpcSrv.GracefulStop()
 	server2.grpcSrv.GracefulStop()
 	server3.grpcSrv.GracefulStop()
+	server4.grpcSrv.GracefulStop()
 	require.NoError(t, err)
 }
 
@@ -746,31 +799,31 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 		Certificate: server4.cert.Leaf,
 	}
 
-	// Here will be the computed deterministic topology
+	// Computed routing:
 	//
 	// Node[orchestrator_addr-index[-1]-lastIndex[3]](
 	// 	Node[127.0.0.1:2002-index[0]-lastIndex[1]](
-	// 		Node[127.0.0.1:2004-index[1]-lastIndex[1]](
+	// 		Node[127.0.0.1:2003-index[1]-lastIndex[1]](
 	// 		)
 	// 	)
-	// 	Node[127.0.0.1:2001-index[2]-lastIndex[3]](
-	// 		Node[127.0.0.1:2003-index[3]-lastIndex[3]](
+	// 	Node[127.0.0.1:2004-index[2]-lastIndex[3]](
+	// 		Node[127.0.0.1:2001-index[3]-lastIndex[3]](
 	// 		)
 	// 	)
 	// )
 	server1.neighbours[identifier1] = peer1
 	server1.neighbours[identifier2] = peer2
-	server1.neighbours[identifier3] = peer3
+	server1.neighbours[identifier4] = peer4
 
 	server2.neighbours[identifier2] = peer2
-	server2.neighbours[identifier4] = peer4
+	server2.neighbours[identifier3] = peer3
 
 	server3.neighbours[identifier3] = peer3
 
 	server4.neighbours[identifier1] = peer1
 
 	uri := "blabla"
-	handler1 := testMeshHandler{addrID: identifier1}
+	handler1 := testRingHandler{addrID: addr1, neighbor: addr2}
 	rpc := RPC{
 		encoder: encoding.NewProtoEncoder(),
 		handler: handler1,
@@ -782,9 +835,9 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 	// means the "registerNamespace" and "makeRPC" must be called on each
 	// server.
 	server1.handlers[uri] = handler1
-	server2.handlers[uri] = testMeshHandler{addrID: identifier2}
-	server3.handlers[uri] = testMeshHandler{addrID: identifier3}
-	server4.handlers[uri] = testMeshHandler{addrID: identifier4}
+	server2.handlers[uri] = testRingHandler{addrID: addr2, neighbor: addr3}
+	server3.handlers[uri] = testRingHandler{addrID: addr3, neighbor: addr4}
+	server4.handlers[uri] = testRingHandler{addrID: addr4, neighbor: nil}
 
 	dummyMsg := &wrappers.StringValue{Value: "dummy_value"}
 
@@ -804,27 +857,19 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 	}
 
 	// sending message to server1, which should send to its neighbor, etc...
-	errs := sender.Send(dummyMsg, addr1, addr2, addr3, addr4)
+	errs := sender.Send(dummyMsg, addr1)
 	err, more := <-errs
 	if more {
 		t.Error("unexpected error from send: ", err)
 	}
 
-	msgs := make([]string, 4)
+	fmt.Println("trying to receive...")
+	_, msg2, err := rcvr.Recv(context.Background())
+	require.NoError(t, err)
 
-	for i := range msgs {
-		_, msg2, err := rcvr.Recv(context.Background())
-		require.NoError(t, err)
-
-		dummyMsg2, ok := msg2.(*wrappers.StringValue)
-		require.True(t, ok)
-		msgs[i] = dummyMsg2.Value
-	}
-	sort.Strings(msgs)
-	require.Equal(t, "dummy_value_"+identifier1, msgs[0])
-	require.Equal(t, "dummy_value_"+identifier2, msgs[1])
-	require.Equal(t, "dummy_value_"+identifier3, msgs[2])
-	require.Equal(t, "dummy_value_"+identifier4, msgs[3])
+	dummyMsg2, ok := msg2.(*wrappers.StringValue)
+	require.True(t, ok)
+	fmt.Println("received", dummyMsg2.Value)
 
 	// out := os.Stdout
 	// out.WriteString("\nserver1:\n")
@@ -979,6 +1024,7 @@ func (t testSameHandler) Stream(out mino.Sender, in mino.Receiver) error {
 // it (for the call) or aggregate all the address (for the stream). The stream
 // expects 3 calls before returning the aggregate addresses.
 type testModifyHandler struct {
+	addrID string
 }
 
 func (t testModifyHandler) Process(req mino.Request) (proto.Message, error) {
@@ -1014,7 +1060,8 @@ func (t testModifyHandler) Stream(out mino.Sender, in mino.Receiver) error {
 
 		dummyMsg += dummy.Value
 	}
-	dummyReturn := &wrappers.StringValue{Value: dummyMsg}
+	stringMsg := dummyMsg + "_" + t.addrID
+	dummyReturn := &wrappers.StringValue{Value: stringMsg}
 
 	errs := out.Send(dummyReturn, addr)
 	err, more := <-errs
@@ -1057,26 +1104,38 @@ func (m fakeMembership) Len() int {
 
 // Handler:
 // implements a handler where the stream sends back the message with its id
-type testMeshHandler struct {
+type testRingHandler struct {
 	mino.UnsupportedHandler
-	addrID string
+	addrID   mino.Address
+	neighbor mino.Address
 }
 
-func (t testMeshHandler) Stream(out mino.Sender, in mino.Receiver) error {
+func (t testRingHandler) Stream(out mino.Sender, in mino.Receiver) error {
 	fromAddr, msg, err := in.Recv(context.Background())
 	if err != nil {
-		return xerrors.Errorf("failed to receive message: %v", err)
+		return xerrors.Errorf("failed to receive message from '%s': %v",
+			fromAddr, err)
 	}
 
 	dummy, ok := msg.(*wrappers.StringValue)
 	if !ok {
-		return xerrors.Errorf("failed to cast to dummy string: %v (type %T)", msg, msg)
+		return xerrors.Errorf("failed to cast to dummy string: %v (type %T)",
+			msg, msg)
 	}
 
-	stringMsg := dummy.Value + "_" + t.addrID
+	stringMsg := dummy.Value + "_" + t.addrID.String()
 
 	dummyReturn := &wrappers.StringValue{Value: stringMsg}
-	errs := out.Send(dummyReturn, fromAddr)
+	var toAddr mino.Address
+	// If I am at the end of the ring I send the message to myself, which will
+	// be relay by the orchestrator.
+	if t.neighbor == nil {
+		toAddr = t.addrID
+	} else {
+		toAddr = t.neighbor
+	}
+	fmt.Printf("%s in handler, received from %s and seding to %s\n", t.addrID, fromAddr, toAddr)
+	errs := out.Send(dummyReturn, toAddr)
 
 	err, more := <-errs
 	if more {
