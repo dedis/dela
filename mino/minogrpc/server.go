@@ -37,7 +37,7 @@ const (
 	// in a tree based communication, this parameter (H) defines the height of
 	// the tree. Based on this parameter and the total number of nodes N we can
 	// compute the number of direct connection D for each node with D = N^(1/H)
-	treeeHeight = 3
+	treeHeight = 3
 )
 
 var (
@@ -162,7 +162,7 @@ func (rpc RPC) Stream(ctx context.Context,
 	}
 
 	// warning: this call will shuffle addrs
-	routing, err := NewTreeRouting(addrs, address{orchestratorAddr}, treeeHeight)
+	routing, err := NewTreeRouting(addrs, address{orchestratorAddr}, treeHeight)
 	if err != nil {
 		// TODO better handle this error
 		fabric.Logger.Fatal().Msgf("failed to create routing: %v", err)

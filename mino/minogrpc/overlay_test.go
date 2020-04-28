@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/mino"
 	"google.golang.org/grpc/metadata"
 )
@@ -199,11 +198,7 @@ func (t testFailHandler2) Stream(out mino.Sender, in mino.Receiver) error {
 }
 
 type goodEncoder struct {
-	fake.BadMarshalStableEncoder
-	fake.BadPackAnyEncoder
-	fake.BadPackEncoder
-	fake.BadUnmarshalDynEncoder
-	fake.BadMarshalAnyEncoder
+	encoding.ProtoEncoder
 }
 
 func (g goodEncoder) UnmarshalAny(any *any.Any, pb proto.Message) error {

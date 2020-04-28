@@ -31,30 +31,30 @@ type TreeRouting struct {
 func NewTreeRouting(addrs []mino.Address, addr mino.Address,
 	treeHeight int) (*TreeRouting, error) {
 
-	addrsStr := make([]string, len(addrs))
+	addrsBuf := make([][]byte, len(addrs))
 	for i, addr := range addrs {
-		addrsStr[i] = addr.String()
+		addrBuf, err := addr.MarshalText()
+		if err != nil {
+			return nil, xerrors.Errorf("failed to marshal addr '%s': %v", addr, err)
+		}
+		addrsBuf[i] = addrBuf
 	}
-	sort.Strings(addrsStr)
+	sort.Stable(&addrBufSorter{addrsBuf})
 
 	// We will use the hash of the addresses to set the random seed.
 	hash := sha256.New()
-	for _, addr := range addrsStr {
-		_, err := hash.Write([]byte(addr))
+	for _, addr := range addrsBuf {
+		_, err := hash.Write(addr)
 		if err != nil {
 			fabric.Logger.Fatal().Msgf("failed to write hash: %v", err)
 		}
 	}
 
-	hashBuf := bytes.NewBuffer(hash.Sum(nil))
-	hashInt, err := binary.ReadVarint(hashBuf)
-	if err != nil {
-		fabric.Logger.Fatal().Msgf("failed to convert hash to int: %v", err)
-	}
+	seed := binary.LittleEndian.Uint64(hash.Sum(nil))
 
 	// We shuffle the list of addresses, which will then be used to create the
 	// network tree.
-	rand.Seed(hashInt)
+	rand.Seed(int64(seed))
 	rand.Shuffle(len(addrs), func(i, j int) {
 		addrs[i], addrs[j] = addrs[j], addrs[i]
 	})
@@ -70,7 +70,7 @@ func NewTreeRouting(addrs []mino.Address, addr mino.Address,
 	// N = D^H
 	// D = sqrt[H](N)
 	// H = log_D N
-	d := int(math.Ceil(math.Pow(float64(len(addrs)), 1.0/treeeHeight)))
+	d := int(math.Ceil(math.Pow(float64(len(addrs)), 1.0/float64(treeHeight))))
 
 	tree := buildTree(address{orchestratorAddr}, addrs, d, -1)
 
@@ -198,4 +198,21 @@ func (n *treeNode) ForEach(f func(n *treeNode)) {
 	for _, c := range n.Childs {
 		c.ForEach(f)
 	}
+}
+
+// Addresses buffer sorter
+type addrBufSorter struct {
+	addrs [][]byte
+}
+
+func (a *addrBufSorter) Len() int {
+	return len(a.addrs)
+}
+
+func (a *addrBufSorter) Swap(i, j int) {
+	a.addrs[i], a.addrs[j] = a.addrs[j], a.addrs[i]
+}
+
+func (a *addrBufSorter) Less(i, j int) bool {
+	return bytes.Compare(a.addrs[i], a.addrs[j]) < 0
 }

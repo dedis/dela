@@ -124,7 +124,9 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 	for i, addrStr := range routingMsg.Addrs {
 		addrs[i] = address{addrStr}
 	}
-	routing, err := NewTreeRouting(addrs, o.addr, treeeHeight)
+
+	// TODO: use an interface and allow different types of routing
+	routing, err := NewTreeRouting(addrs, o.addr, treeHeight)
 	if err != nil {
 		return xerrors.Errorf("failed to create routing struct: %v", err)
 	}
