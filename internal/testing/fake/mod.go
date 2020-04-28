@@ -244,6 +244,11 @@ func (ca CollectiveAuthority) Apply(cs viewchange.ChangeSet) viewchange.Evolvabl
 		})
 	}
 
+	for _, i := range cs.Remove {
+		newAuthority.addrs = append(newAuthority.addrs[:i], newAuthority.addrs[i+1:]...)
+		newAuthority.signers = append(newAuthority.signers[:i], newAuthority.signers[i+1:]...)
+	}
+
 	return newAuthority
 }
 
@@ -619,6 +624,7 @@ type Hash struct {
 	hash.Hash
 	delay int
 	err   error
+	Call  *Call
 }
 
 // NewBadHash returns a fake hash that returns an error when appropriate.
@@ -632,7 +638,11 @@ func NewBadHashWithDelay(delay int) *Hash {
 	return &Hash{err: xerrors.New("fake error"), delay: delay}
 }
 
-func (h *Hash) Write([]byte) (int, error) {
+func (h *Hash) Write(in []byte) (int, error) {
+	if h.Call != nil {
+		h.Call.Add(in)
+	}
+
 	if h.delay > 0 {
 		h.delay--
 		return 0, nil

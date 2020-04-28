@@ -71,7 +71,19 @@ func TestForwardLink_Pack(t *testing.T) {
 	flp = pb.(*ForwardLinkProto)
 	checkSignatureValue(t, flp.GetCommit())
 
+	// Test if the changeset cannot be packed.
+	fl.changeset.Add = []viewchange.Player{{Address: fake.NewBadAddress()}}
+	_, err = fl.Pack(encoding.NewProtoEncoder())
+	require.EqualError(t, err,
+		"couldn't pack changeset: couldn't pack players: couldn't marshal address: fake error")
+
+	fl.changeset.Add = []viewchange.Player{{Address: fake.NewAddress(0)}}
+	_, err = fl.Pack(fake.BadPackAnyEncoder{})
+	require.EqualError(t, err,
+		"couldn't pack changeset: couldn't pack players: couldn't pack public key: fake error")
+
 	// Test if the prepare signature cannot be packed.
+	fl.changeset = viewchange.ChangeSet{}
 	fl.prepare = fake.Signature{}
 	_, err = fl.Pack(fake.BadPackAnyEncoder{})
 	require.EqualError(t, err, "couldn't pack prepare signature: fake error")
@@ -95,11 +107,45 @@ func TestForwardLink_Hash(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, digest, h.Size())
 
+	call := &fake.Call{}
+	h = &fake.Hash{Call: call}
+	fl.changeset.Leader = 5
+	fl.changeset.Remove = []uint32{1, 3}
+	fl.changeset.Add = []viewchange.Player{{Address: fake.NewAddress(4), PublicKey: fake.PublicKey{}}}
+	_, err = fl.computeHash(h, encoding.NewProtoEncoder())
+	require.NoError(t, err)
+	require.Equal(t, 4, call.Len())
+	require.Equal(t, []byte{0xaa}, call.Get(0, 0))
+	require.Equal(t, []byte{0xbb}, call.Get(1, 0))
+	require.Equal(t, []byte{4, 0, 0, 0, 0xdf}, call.Get(2, 0))
+	require.Equal(t, []byte{5, 0, 0, 0, 1, 0, 0, 0, 3, 0, 0, 0}, call.Get(3, 0))
+
 	_, err = fl.computeHash(fake.NewBadHash(), encoding.NewProtoEncoder())
 	require.EqualError(t, err, "couldn't write 'from': fake error")
 
 	_, err = fl.computeHash(fake.NewBadHashWithDelay(1), encoding.NewProtoEncoder())
 	require.EqualError(t, err, "couldn't write 'to': fake error")
+
+	fl.changeset.Add = []viewchange.Player{{Address: fake.NewBadAddress()}}
+	_, err = fl.computeHash(&fake.Hash{}, encoding.NewProtoEncoder())
+	require.EqualError(t, err, "couldn't marshal address: fake error")
+
+	fl.changeset.Add = []viewchange.Player{{
+		Address:   fake.NewAddress(0),
+		PublicKey: fake.NewBadPublicKey(),
+	}}
+	_, err = fl.computeHash(&fake.Hash{}, encoding.NewProtoEncoder())
+	require.EqualError(t, err, "couldn't marshal public key: fake error")
+
+	fl.changeset.Add = []viewchange.Player{{
+		Address:   fake.NewAddress(0),
+		PublicKey: fake.PublicKey{},
+	}}
+	_, err = fl.computeHash(fake.NewBadHashWithDelay(2), encoding.NewProtoEncoder())
+	require.EqualError(t, err, "couldn't write player: fake error")
+
+	_, err = fl.computeHash(fake.NewBadHashWithDelay(3), encoding.NewProtoEncoder())
+	require.EqualError(t, err, "couldn't write integers: fake error")
 }
 
 func TestChain_GetLastHash(t *testing.T) {
@@ -193,11 +239,17 @@ func TestChainFactory_FromProto(t *testing.T) {
 func TestChainFactory_DecodeForwardLink(t *testing.T) {
 	factory := unsecureChainFactory{
 		encoder:          encoding.NewProtoEncoder(),
+		addrFactory:      fake.AddressFactory{},
+		pubkeyFactory:    fake.PublicKeyFactory{},
 		signatureFactory: fake.SignatureFactory{},
 		hashFactory:      sha256Factory{},
 	}
 
-	forwardLink := &ForwardLinkProto{}
+	forwardLink := &ForwardLinkProto{
+		ChangeSet: &ChangeSet{
+			Add: []*Player{{}},
+		},
+	}
 	flany, err := ptypes.MarshalAny(forwardLink)
 	require.NoError(t, err)
 
@@ -208,7 +260,13 @@ func TestChainFactory_DecodeForwardLink(t *testing.T) {
 	_, err = factory.decodeForwardLink(&empty.Empty{})
 	require.EqualError(t, err, "unknown message type: *empty.Empty")
 
+	factory.pubkeyFactory = fake.NewBadPublicKeyFactory()
+	_, err = factory.decodeForwardLink(forwardLink)
+	require.EqualError(t, err,
+		"couldn't decode changeset: couldn't decode add: couldn't decode public key: fake error")
+
 	forwardLink.Prepare = &any.Any{}
+	factory.pubkeyFactory = fake.PublicKeyFactory{}
 	factory.signatureFactory = fake.NewBadSignatureFactory()
 	_, err = factory.decodeForwardLink(forwardLink)
 	require.EqualError(t, err, "couldn't decode prepare signature: fake error")

@@ -33,8 +33,7 @@ func (vc ViewChange) Wait(p consensus.Proposal, a crypto.CollectiveAuthority) (u
 	return 0, true
 }
 
-// Verify implements viewchange.ViewChange. It always return 0 that means no
-// rotation.
+// Verify implements viewchange.ViewChange. It always return 0 as the leader.
 func (vc ViewChange) Verify(consensus.Proposal, crypto.CollectiveAuthority) uint32 {
 	return 0
 }

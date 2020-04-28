@@ -6,15 +6,20 @@ option go_package = ".;cosipbft";
 
 import "google/protobuf/any.proto";
 
+// Player is part of the change set of a forward link. It provides the
+// information necessary to add a player.
 message Player {
     bytes address = 1;
     google.protobuf.Any publicKey = 2;
 }
 
+// ChangeSet contains the information about changes related to the authority for
+// the next proposal. Leader does not affect the authority but can be used by
+// the viewchange to decide on the next leader.
 message ChangeSet {
     uint32 leader = 1;
-    repeated Player add = 2;
-    repeated Player remove = 3;
+    repeated uint32 remove = 2;
+    repeated Player add = 3;
 }
 
 // ForwardLinkProto is the message representing a forward link between two

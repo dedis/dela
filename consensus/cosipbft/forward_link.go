@@ -63,11 +63,11 @@ func (fl forwardLink) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 		To:   fl.to,
 	}
 
-	changeset, err := fl.packChangeSet(enc)
+	var err error
+	pb.ChangeSet, err = fl.packChangeSet(enc)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't pack changeset: %v", err)
 	}
-	pb.ChangeSet = changeset
 
 	if fl.prepare != nil {
 		pb.Prepare, err = enc.PackAny(fl.prepare)
@@ -89,29 +89,44 @@ func (fl forwardLink) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 func (fl forwardLink) packChangeSet(enc encoding.ProtoMarshaler) (*ChangeSet, error) {
 	pb := &ChangeSet{
 		Leader: fl.changeset.Leader,
+		Remove: fl.changeset.Remove,
 	}
 
-	if len(fl.changeset.Add) > 0 {
-		pb.Add = make([]*Player, len(fl.changeset.Add))
-		for i, add := range fl.changeset.Add {
-			addr, err := add.Address.MarshalText()
-			if err != nil {
-				return nil, err
-			}
-
-			pubkey, err := enc.PackAny(add.PublicKey)
-			if err != nil {
-				return nil, err
-			}
-
-			pb.Add[i] = &Player{
-				Address:   addr,
-				PublicKey: pubkey,
-			}
-		}
+	var err error
+	pb.Add, err = fl.packPlayers(fl.changeset.Add, enc)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't pack players: %v", err)
 	}
 
 	return pb, nil
+}
+
+func (fl forwardLink) packPlayers(in []viewchange.Player,
+	enc encoding.ProtoMarshaler) ([]*Player, error) {
+
+	if len(in) == 0 {
+		// Save some bytes in the message with a nil array.
+		return nil, nil
+	}
+
+	players := make([]*Player, len(in))
+	for i, player := range in {
+		addr, err := player.Address.MarshalText()
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't marshal address: %v", err)
+		}
+
+		pubkey, err := enc.PackAny(player.PublicKey)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't pack public key: %v", err)
+		}
+
+		players[i] = &Player{
+			Address:   addr,
+			PublicKey: pubkey,
+		}
+	}
+	return players, nil
 }
 
 func (fl forwardLink) computeHash(h hash.Hash, enc encoding.ProtoMarshaler) ([]byte, error) {
@@ -124,8 +139,34 @@ func (fl forwardLink) computeHash(h hash.Hash, enc encoding.ProtoMarshaler) ([]b
 		return nil, xerrors.Errorf("couldn't write 'to': %v", err)
 	}
 
-	buffer := make([]byte, 4)
+	for _, player := range fl.changeset.Add {
+		addr, err := player.Address.MarshalText()
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't marshal address: %v", err)
+		}
+
+		pubkey, err := player.PublicKey.MarshalBinary()
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't marshal public key: %v", err)
+		}
+
+		_, err = h.Write(append(addr, pubkey...))
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't write player: %v", err)
+		}
+	}
+
+	buffer := make([]byte, 4+(4*len(fl.changeset.Remove)))
 	binary.LittleEndian.PutUint32(buffer, fl.changeset.Leader)
+
+	for i, index := range fl.changeset.Remove {
+		binary.LittleEndian.PutUint32(buffer[(i+1)*4:], index)
+	}
+
+	_, err = h.Write(buffer)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't write integers: %v", err)
+	}
 
 	return h.Sum(nil), nil
 }
@@ -213,7 +254,7 @@ func (f *unsecureChainFactory) decodeForwardLink(pb proto.Message) (forwardLink,
 	var err error
 	fl.changeset, err = f.decodeChangeSet(src.GetChangeSet())
 	if err != nil {
-		return fl, err
+		return fl, xerrors.Errorf("couldn't decode changeset: %v", err)
 	}
 
 	if src.GetPrepare() != nil {
@@ -247,25 +288,37 @@ func (f *unsecureChainFactory) decodeForwardLink(pb proto.Message) (forwardLink,
 func (f *unsecureChainFactory) decodeChangeSet(in *ChangeSet) (viewchange.ChangeSet, error) {
 	changeset := viewchange.ChangeSet{
 		Leader: in.GetLeader(),
+		Remove: in.GetRemove(),
 	}
 
-	if len(in.GetAdd()) > 0 {
-		changeset.Add = make([]viewchange.Player, len(in.GetAdd()))
-		for i, add := range in.GetAdd() {
-			addr := f.addrFactory.FromText(add.GetAddress())
-			pubkey, err := f.pubkeyFactory.FromProto(add.GetPublicKey())
-			if err != nil {
-				return changeset, err
-			}
-
-			changeset.Add[i] = viewchange.Player{
-				Address:   addr,
-				PublicKey: pubkey,
-			}
-		}
+	var err error
+	changeset.Add, err = f.decodeAdd(in.GetAdd())
+	if err != nil {
+		return changeset, xerrors.Errorf("couldn't decode add: %v", err)
 	}
 
 	return changeset, nil
+}
+
+func (f *unsecureChainFactory) decodeAdd(in []*Player) ([]viewchange.Player, error) {
+	if len(in) == 0 {
+		return nil, nil
+	}
+
+	players := make([]viewchange.Player, len(in))
+	for i, player := range in {
+		addr := f.addrFactory.FromText(player.GetAddress())
+		pubkey, err := f.pubkeyFactory.FromProto(player.GetPublicKey())
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't decode public key: %v", err)
+		}
+
+		players[i] = viewchange.Player{
+			Address:   addr,
+			PublicKey: pubkey,
+		}
+	}
+	return players, nil
 }
 
 func (f *unsecureChainFactory) FromProto(pb proto.Message) (consensus.Chain, error) {

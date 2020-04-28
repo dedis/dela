@@ -7,14 +7,15 @@ import (
 )
 
 // ViewChange provides primitives to verify if a participant is allowed to
-// propose a block as the leader.
+// propose a block as the leader. Some consensus needs a single node to propose
+// and the others as backups when it is failing. The index returned announces
+// who is allowed to be the leader.
 type ViewChange interface {
 	// Wait returns true if the participant is allowed to proceed with the
-	// proposal and it returns the rotation if necessary.
+	// proposal. It also returns the participant index if true.
 	Wait(consensus.Proposal, crypto.CollectiveAuthority) (uint32, bool)
 
-	// Verify returns the rotation that should be applied for the proposal if
-	// any.
+	// Verify returns the leader index for that proposal.
 	Verify(consensus.Proposal, crypto.CollectiveAuthority) uint32
 }
 
@@ -26,7 +27,7 @@ type Player struct {
 
 // ChangeSet is a combination of changes of a collective authority.
 type ChangeSet struct {
-	Remove []Player
+	Remove []uint32
 	Add    []Player
 	Leader uint32
 }
@@ -36,6 +37,8 @@ type ChangeSet struct {
 type EvolvableAuthority interface {
 	crypto.CollectiveAuthority
 
+	// Apply must apply the change set to the collective authority. It should
+	// first remove, then add the new players.
 	Apply(ChangeSet) EvolvableAuthority
 }
 

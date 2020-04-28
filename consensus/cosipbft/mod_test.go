@@ -27,12 +27,13 @@ import (
 
 func TestMessages(t *testing.T) {
 	messages := []proto.Message{
+		&Player{},
+		&ChangeSet{},
 		&ForwardLinkProto{},
 		&ChainProto{},
 		&PrepareRequest{},
 		&CommitRequest{},
 		&PropagateRequest{},
-		&ChangeSet{},
 	}
 
 	for _, m := range messages {
@@ -67,18 +68,28 @@ func TestConsensus_Basic(t *testing.T) {
 	err = actors[0].Propose(prop)
 	require.NoError(t, err)
 
-	// 3. Send a final proposal with the new authority
+	// 3. Send another fake proposal but with a changeset to remove the player.
+	changeset = viewchange.ChangeSet{Remove: []uint32{2}}
 	for _, c := range cons {
-		c.governance = fakeGovernance{authority: authority}
+		c.governance = fakeGovernance{authority: authority, changeset: changeset}
 	}
 	prop.hash = []byte{0xdd}
 	prop.previous = []byte{0xcc}
 	err = actors[0].Propose(prop)
 	require.NoError(t, err)
 
+	// 4. Send a final fake proposal with the initial authority.
+	for _, c := range cons {
+		c.governance = fakeGovernance{authority: initial}
+	}
+	prop.hash = []byte{0xee}
+	prop.previous = []byte{0xdd}
+	err = actors[0].Propose(prop)
+	require.NoError(t, err)
+
 	chain, err := cons[0].GetChain(prop.GetHash())
 	require.NoError(t, err)
-	require.Len(t, chain.(forwardLinkChain).links, 3)
+	require.Len(t, chain.(forwardLinkChain).links, 4)
 
 	chainpb, err := chain.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
@@ -87,6 +98,7 @@ func TestConsensus_Basic(t *testing.T) {
 	factory, err := cons[0].GetChainFactory()
 	require.NoError(t, err)
 
+	// Make sure the chain can be verified with the roster changes.
 	chain2, err := factory.FromProto(chainpb)
 	require.NoError(t, err)
 	require.Equal(t, chain, chain2)
