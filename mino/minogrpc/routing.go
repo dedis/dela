@@ -97,7 +97,7 @@ func (t treeRoutingFactory) FromAddrs(addrs []mino.Address,
 		return nil, xerrors.Errorf("failed to get treeHeight from opts: %v", err)
 	}
 
-	addrsBuf := make([][]byte, len(addrs))
+	addrsBuf := make(addrsBuf, len(addrs))
 	for i, addr := range addrs {
 		addrBuf, err := addr.MarshalText()
 		if err != nil {
@@ -105,7 +105,7 @@ func (t treeRoutingFactory) FromAddrs(addrs []mino.Address,
 		}
 		addrsBuf[i] = addrBuf
 	}
-	sort.Stable(&addrBufSorter{addrsBuf})
+	sort.Stable(&addrsBuf)
 
 	// We will use the hash of the addresses to set the random seed.
 	hash := sha256.New()
@@ -279,19 +279,17 @@ func (n *treeNode) ForEach(f func(n *treeNode)) {
 	}
 }
 
-// Addresses buffer sorter
-type addrBufSorter struct {
-	addrs [][]byte
+// addrsBuf represents a slice of marshalled addresses that can be sorted
+type addrsBuf [][]byte
+
+func (a addrsBuf) Len() int {
+	return len(a)
 }
 
-func (a *addrBufSorter) Len() int {
-	return len(a.addrs)
+func (a addrsBuf) Swap(i, j int) {
+	a[i], a[j] = a[j], a[i]
 }
 
-func (a *addrBufSorter) Swap(i, j int) {
-	a.addrs[i], a.addrs[j] = a.addrs[j], a.addrs[i]
-}
-
-func (a *addrBufSorter) Less(i, j int) bool {
-	return bytes.Compare(a.addrs[i], a.addrs[j]) < 0
+func (a addrsBuf) Less(i, j int) bool {
+	return bytes.Compare(a[i], a[j]) < 0
 }
