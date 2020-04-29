@@ -28,7 +28,7 @@ func Test_NewMinogrpc(t *testing.T) {
 	// The happy path
 	id := "127.0.0.1:3333"
 
-	minoRPC, err := NewMinogrpc(id)
+	minoRPC, err := NewMinogrpc(id, TreeRoutingFactory)
 	require.NoError(t, err)
 
 	require.Equal(t, id, minoRPC.GetAddress().String())
@@ -42,7 +42,7 @@ func Test_NewMinogrpc(t *testing.T) {
 	require.Equal(t, peer, minoRPC.server.neighbours[id])
 
 	// Giving an empty address
-	minoRPC, err = NewMinogrpc("")
+	minoRPC, err = NewMinogrpc("", TreeRoutingFactory)
 	require.EqualError(t, err, "identifier can't be empty")
 }
 

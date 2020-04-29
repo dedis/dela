@@ -35,8 +35,14 @@ func TestNewTreeRouting(t *testing.T) {
 	// 		)
 	// 	)
 	// )
+	routing, err := TreeRoutingFactory.FromAddrs(addrs, map[string]interface{}{
+		TreeRoutingOpts.Addr:       address{orchestratorAddr},
+		TreeRoutingOpts.TreeHeight: h,
+	})
 
-	treeRouting, err := NewTreeRouting(addrs, address{orchestratorAddr}, h)
+	treeRouting, ok := routing.(*TreeRouting)
+	require.True(t, ok)
+
 	// fmt.Println(treeRouting.root)
 	require.NoError(t, err)
 	require.Equal(t, address{orchestratorAddr}, treeRouting.me.Addr)

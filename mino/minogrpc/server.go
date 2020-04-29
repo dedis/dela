@@ -34,16 +34,16 @@ const (
 	// this string is used to identify the orchestrator. We use it as its
 	// address.
 	orchestratorAddr = "orchestrator_addr"
-	// in a tree based communication, this parameter (H) defines the height of
-	// the tree. Based on this parameter and the total number of nodes N we can
-	// compute the number of direct connection D for each node with D = N^(1/H)
-	treeHeight = 3
 )
 
 var (
 	// defaultMinConnectTimeout is the minimum amount of time we are willing to
 	// wait for a grpc connection to complete
 	defaultMinConnectTimeout = 7 * time.Second
+	// in a tree based communication, this parameter (H) defines the height of
+	// the tree. Based on this parameter and the total number of nodes N we can
+	// compute the number of direct connection D for each node with D = N^(1/H)
+	treeHeight = 3
 )
 
 // Server represents the entity that accepts incoming requests and invoke the
@@ -57,7 +57,8 @@ type Server struct {
 	StartChan chan struct{}
 
 	// neighbours contains the certificate and details about known peers.
-	neighbours map[string]Peer
+	neighbours     map[string]Peer
+	routingFactory RoutingFactory
 
 	handlers map[string]mino.Handler
 
@@ -79,10 +80,11 @@ type Peer struct {
 //
 // - implements mino.RPC
 type RPC struct {
-	encoder encoding.ProtoMarshaler
-	handler mino.Handler
-	srv     *Server
-	uri     string
+	encoder        encoding.ProtoMarshaler
+	handler        mino.Handler
+	srv            *Server
+	uri            string
+	routingFactory RoutingFactory
 }
 
 // Call implements mino.RPC. It calls the RPC on each provided address.
@@ -162,7 +164,11 @@ func (rpc RPC) Stream(ctx context.Context,
 	}
 
 	// warning: this call will shuffle addrs
-	routing, err := NewTreeRouting(addrs, address{orchestratorAddr}, treeHeight)
+
+	routing, err := rpc.routingFactory.FromAddrs(addrs, map[string]interface{}{
+		TreeRoutingOpts.Addr:       address{orchestratorAddr},
+		TreeRoutingOpts.TreeHeight: treeHeight,
+	})
 	if err != nil {
 		// TODO better handle this error
 		fabric.Logger.Fatal().Msgf("failed to create routing: %v", err)
@@ -203,8 +209,7 @@ func (rpc RPC) Stream(ctx context.Context,
 	}
 
 	// Creating a stream for each addr in our tree routing
-	for _, c := range routing.me.Childs {
-		addr := c.Addr
+	for _, addr := range routing.GetDirectLinks() {
 
 		peer, ok := rpc.srv.neighbours[addr.String()]
 		if !ok {
@@ -300,8 +305,12 @@ func listenStream(stream overlayStream, orchRecv *receiver,
 	for _, toSend := range envelope.To {
 		// if we receive a message to ourself or the orchestrator, then we
 		// notify the orchstrator receiver by filling orchRecv.in. If this is
-		// not the case we then relay the message.
-		if toSend == addr.String() || toSend == orchSender.address.String() {
+		// not the case we then relay the message. In the case we receive a
+		// message to ourself but we are in the orchestrator we then must not
+		// notify the orchestrator because in that case the message has not
+		// reached its final destination, in a tree networking it means we are
+		// in the root but we need to reach a node.
+		if toSend == orchSender.address.String() || (toSend == addr.String() && orchSender.name != "orchestrator") {
 			orchRecv.in <- msg
 		} else {
 			orchRecv.traffic.logRcvRelay(address{envelope.From}, envelope,
@@ -320,8 +329,8 @@ func listenStream(stream overlayStream, orchRecv *receiver,
 	return nil
 }
 
-// CreateServer sets up a new server
-func CreateServer(addr mino.Address) (*Server, error) {
+// NewServer sets up a new server
+func NewServer(addr mino.Address, rf RoutingFactory) (*Server, error) {
 	if addr.String() == "" {
 		return nil, xerrors.New("addr.String() should not give an empty string")
 	}
@@ -333,23 +342,25 @@ func CreateServer(addr mino.Address) (*Server, error) {
 
 	srv := grpc.NewServer(grpc.Creds(credentials.NewServerTLSFromCert(cert)))
 	server := &Server{
-		grpcSrv:    srv,
-		cert:       cert,
-		addr:       addr,
-		listener:   nil,
-		StartChan:  make(chan struct{}),
-		neighbours: make(map[string]Peer),
-		handlers:   make(map[string]mino.Handler),
-		traffic:    newTraffic(addr.String()),
+		grpcSrv:        srv,
+		cert:           cert,
+		addr:           addr,
+		listener:       nil,
+		StartChan:      make(chan struct{}),
+		neighbours:     make(map[string]Peer),
+		handlers:       make(map[string]mino.Handler),
+		traffic:        newTraffic(addr.String()),
+		routingFactory: rf,
 	}
 
 	RegisterOverlayServer(srv, &overlayService{
-		encoder:   encoding.NewProtoEncoder(),
-		handlers:  server.handlers,
-		addr:      address{addr.String()},
-		neighbour: server.neighbours,
-		srvCert:   server.cert,
-		traffic:   server.traffic,
+		encoder:        encoding.NewProtoEncoder(),
+		handlers:       server.handlers,
+		addr:           address{addr.String()},
+		neighbour:      server.neighbours,
+		srvCert:        server.cert,
+		traffic:        server.traffic,
+		routingFactory: rf,
 	})
 
 	return server, nil
@@ -460,7 +471,7 @@ type sender struct {
 	name         string
 	srvCert      *tls.Certificate
 	traffic      *traffic
-	routing      *TreeRouting
+	routing      Routing
 }
 
 // send implements mino.Sender.Send. This function sends the message

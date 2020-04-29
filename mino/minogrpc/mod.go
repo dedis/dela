@@ -57,7 +57,7 @@ func (f addressFactory) FromText(text []byte) mino.Address {
 // 127.0.0.1:3333
 //
 // TODO: use a different type of argument for identifier, maybe net/url ?
-func NewMinogrpc(identifier string) (Minogrpc, error) {
+func NewMinogrpc(identifier string, rf RoutingFactory) (Minogrpc, error) {
 
 	minoGrpc := Minogrpc{}
 
@@ -69,7 +69,7 @@ func NewMinogrpc(identifier string) (Minogrpc, error) {
 		id: identifier,
 	}
 
-	server, err := CreateServer(addr)
+	server, err := NewServer(addr, rf)
 	if err != nil {
 		return minoGrpc, xerrors.Errorf("failed to create server: %v", err)
 	}
@@ -129,10 +129,11 @@ func (m Minogrpc) MakeNamespace(namespace string) (mino.Mino, error) {
 func (m Minogrpc) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 	URI := fmt.Sprintf("%s/%s", m.namespace, name)
 	rpc := &RPC{
-		encoder: encoding.NewProtoEncoder(),
-		handler: h,
-		srv:     m.server,
-		uri:     URI,
+		encoder:        encoding.NewProtoEncoder(),
+		handler:        h,
+		srv:            m.server,
+		uri:            URI,
+		routingFactory: m.server.routingFactory,
 	}
 
 	m.server.handlers[URI] = h

@@ -15,21 +15,87 @@ import (
 	"golang.org/x/xerrors"
 )
 
-// TreeRouting holds the routing tree of a network. It allows each node of the
-// tree to know which child it should contact in order to relay a message that
-// is in it sub-tree.
+// RoutingFactory defines the primitive to create a Routing
+type RoutingFactory interface {
+	FromAddrs(addrs []mino.Address, opts map[string]interface{}) (Routing, error)
+}
+
+// Routing defines the functions needed to route messages
+type Routing interface {
+	GetRoute(from mino.Address) (to mino.Address, err error)
+	GetDirectLinks() []mino.Address
+}
+
+// TreeRouting implements Routing. It holds the routing tree of a network. It
+// allows each node of the tree to know which child it should contact in order
+// to relay a message that is in it sub-tree.
 type TreeRouting struct {
 	root         *treeNode
 	me           *treeNode
 	routingNodes map[string]*treeNode
 }
 
-// NewTreeRouting creates the network tree in a deterministic manner based on
+// TreeRoutingOpts is the implementation of treeTreeRoutingOpts
+var TreeRoutingOpts = treeRoutingOpts{
+	Addr:       "addr",
+	TreeHeight: "treeHeight",
+}
+
+type treeRoutingOpts struct {
+	Addr       string
+	TreeHeight string
+}
+
+// Addr is the address of the node using the routing
+func (t treeRoutingOpts) GetAddr(opts map[string]interface{}) (mino.Address, error) {
+	addrItf, found := opts[t.Addr]
+	if !found {
+		return nil, xerrors.Errorf("didn't find address option")
+	}
+	addr, ok := addrItf.(mino.Address)
+	if !ok {
+		return nil, xerrors.Errorf("provided adress option is not a "+
+			"mino.Address: %v", addrItf)
+	}
+	return addr, nil
+}
+
+// TreeHeight is the height of the tree
+func (t treeRoutingOpts) GetTreeHeight(opts map[string]interface{}) (int, error) {
+	treeHeightItf, found := opts[t.TreeHeight]
+	if !found {
+		return -1, xerrors.Errorf("didn't find treeHeight option")
+	}
+	treeHeight, ok := treeHeightItf.(int)
+	if !ok {
+		return -1, xerrors.Errorf("provided treeHeight option is not an int: %v",
+			treeHeightItf)
+	}
+	return treeHeight, nil
+}
+
+// TreeRoutingFactory is the default TreeTreeRoutingFactory
+var TreeRoutingFactory treeRoutingFactory
+
+// TreeRoutingFactory defines the factory for tree routing
+type treeRoutingFactory struct{}
+
+// FromAddrs creates the network tree in a deterministic manner based on
 // the list of addresses. Please be careful that the provided list of addresses
 // is shuffled, which could affect subsequent use of this list, especially
 // outside the function's scope.
-func NewTreeRouting(addrs []mino.Address, addr mino.Address,
-	treeHeight int) (*TreeRouting, error) {
+func (t treeRoutingFactory) FromAddrs(addrs []mino.Address,
+	opts map[string]interface{}) (Routing, error) {
+
+	addr, err := TreeRoutingOpts.GetAddr(opts)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to get address from opts: %v", err)
+	}
+
+	treeHeight, err := TreeRoutingOpts.GetTreeHeight(opts)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to get treeHeight from opts: %v", err)
+	}
 
 	addrsBuf := make([][]byte, len(addrs))
 	for i, addr := range addrs {
@@ -107,16 +173,18 @@ func NewTreeRouting(addrs []mino.Address, addr mino.Address,
 // contact in order to reach node 4, it then checks the "index" and "indexLast"
 // for all its children, an see that for its child 3, 3 >= 4 <= 5, so the root
 // will send its message to node 3.
-func (t TreeRouting) GetRoute(addr mino.Address) (mino.Address, error) {
+//
+// - implements Routing
+func (t TreeRouting) GetRoute(from mino.Address) (mino.Address, error) {
 
-	if t.me.Addr != nil && t.me.Addr.Equal(addr) {
-		return addr, nil
+	if t.me.Addr != nil && t.me.Addr.Equal(from) {
+		return from, nil
 	}
 
-	target, ok := t.routingNodes[addr.String()]
+	target, ok := t.routingNodes[from.String()]
 	if !ok || target == nil {
 		return nil, xerrors.Errorf("failed to find node '%s' in routingNode map",
-			addr.String())
+			from.String())
 	}
 
 	for _, c := range t.me.Childs {
@@ -126,6 +194,17 @@ func (t TreeRouting) GetRoute(addr mino.Address) (mino.Address, error) {
 	}
 
 	return nil, xerrors.Errorf("didn't find any route")
+}
+
+// GetDirectLinks returns the childs
+//
+// // - implements Routing
+func (t TreeRouting) GetDirectLinks() []mino.Address {
+	res := make([]mino.Address, len(t.me.Childs))
+	for i, c := range t.me.Childs {
+		res[i] = c.Addr
+	}
+	return res
 }
 
 // buildTree builds the newtwork tree based on the list of addresses. The first

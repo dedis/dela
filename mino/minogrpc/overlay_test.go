@@ -79,9 +79,10 @@ func TestOverlay_Stream(t *testing.T) {
 	// msg := &OverlayMsg{}
 
 	overlayService := overlayService{
-		encoder:  encoding.NewProtoEncoder(),
-		handlers: make(map[string]mino.Handler),
-		addr:     address{},
+		encoder:        encoding.NewProtoEncoder(),
+		handlers:       make(map[string]mino.Handler),
+		addr:           address{},
+		routingFactory: TreeRoutingFactory,
 	}
 
 	streamServer := testServerStream{
