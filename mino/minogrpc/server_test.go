@@ -2,7 +2,6 @@ package minogrpc
 
 import (
 	context "context"
-	"os"
 	"sort"
 	"strings"
 	"testing"
@@ -873,9 +872,9 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 	// out.WriteString("\nserver4:\n")
 	// server4.traffic.Display(out)
 
-	GenerateGraphviz(os.Stdout, server1.traffic, server2.traffic,
-		server3.traffic, server4.traffic, server5.traffic, server5.traffic,
-		server6.traffic, server7.traffic, server8.traffic, server9.traffic)
+	// GenerateGraphviz(os.Stdout, server1.traffic, server2.traffic,
+	// 	server3.traffic, server4.traffic, server5.traffic, server5.traffic,
+	// 	server6.traffic, server7.traffic, server8.traffic, server9.traffic)
 
 	server1.grpcSrv.GracefulStop()
 	server2.grpcSrv.GracefulStop()
