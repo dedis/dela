@@ -860,7 +860,10 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 	dummyMsg2, ok := msg2.(*wrappers.StringValue)
 	require.True(t, ok)
 
-	require.Equal(t, dummyMsg2.Value, "dummy_value_127.0.0.1:2001_127.0.0.1:2002_127.0.0.1:2003_127.0.0.1:2004_127.0.0.1:2005_127.0.0.1:2006_127.0.0.1:2007_127.0.0.1:2008_127.0.0.1:2009")
+	require.Equal(t, dummyMsg2.Value,
+		"dummy_value_127.0.0.1:2001_127.0.0.1:2002_127.0.0.1:2003_"+
+			"127.0.0.1:2004_127.0.0.1:2005_127.0.0.1:2006_127.0.0.1:2007_"+
+			"127.0.0.1:2008_127.0.0.1:2009")
 
 	// out := os.Stdout
 	// out.WriteString("\nserver1:\n")
@@ -880,6 +883,11 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 	server2.grpcSrv.GracefulStop()
 	server3.grpcSrv.GracefulStop()
 	server4.grpcSrv.GracefulStop()
+	server5.grpcSrv.GracefulStop()
+	server6.grpcSrv.GracefulStop()
+	server7.grpcSrv.GracefulStop()
+	server8.grpcSrv.GracefulStop()
+	server9.grpcSrv.GracefulStop()
 }
 
 func TestSender_Send(t *testing.T) {
