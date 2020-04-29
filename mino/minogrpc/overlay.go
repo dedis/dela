@@ -29,7 +29,8 @@ type overlayService struct {
 	// This certificate is used to create a new stream connection if possible
 	srvCert *tls.Certificate
 	// Used to record traffic activity
-	traffic *traffic
+	traffic        *traffic
+	routingFactory RoutingFactory
 }
 
 // Call is the implementation of the overlay.Call proto definition
@@ -106,7 +107,7 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 			"of handlers, did you register it?", apiURI[0])
 	}
 
-	rpcID := "server_" + o.addr.String()
+	rpcID := o.addr.String()
 
 	// Listen on the first message, which should be the routing infos
 	overlayMsg, err := stream.Recv()
@@ -126,7 +127,9 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 	}
 
 	// TODO: use an interface and allow different types of routing
-	routing, err := NewTreeRouting(addrs, o.addr, treeHeight)
+	routing, err := o.routingFactory.FromAddrs(addrs, map[string]interface{}{
+		TreeRoutingOpts.Addr: o.addr, "treeHeight": treeHeight,
+	})
 	if err != nil {
 		return xerrors.Errorf("failed to create routing struct: %v", err)
 	}
@@ -143,7 +146,7 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		// doesn't relay but sends directly.
 		address:      address{rpcID},
 		participants: map[string]overlayStream{rpcID: stream},
-		name:         "remote RPC",
+		name:         "remote RPC of " + o.addr.String(),
 		srvCert:      o.srvCert,
 		traffic:      o.traffic,
 		routing:      routing,
@@ -153,14 +156,13 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		encoder: o.encoder,
 		in:      make(chan *OverlayMsg),
 		errs:    make(chan error),
-		name:    "remote RPC",
+		name:    "remote RPC of " + o.addr.String(),
 		traffic: o.traffic,
 	}
 
 	var peerWait sync.WaitGroup
 
-	for _, c := range routing.me.Childs {
-		addr := c.Addr
+	for _, addr := range routing.GetDirectLinks() {
 		peer, found := o.neighbour[addr.String()]
 		if !found {
 			err = xerrors.Errorf("failed to find peer '%s' from the neighbours: %v",
@@ -242,6 +244,7 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 	}
 
 	peerWait.Wait()
+
 	return nil
 
 }
