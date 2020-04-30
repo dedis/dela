@@ -379,6 +379,11 @@ func (pk PublicKey) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 	return &empty.Empty{}, pk.err
 }
 
+// String implements fmt.Stringer.
+func (pk PublicKey) String() string {
+	return "fake.PublicKey"
+}
+
 // Signer is a fake implementation of the crypto.AggregateSigner interface.
 type Signer struct {
 	crypto.AggregateSigner

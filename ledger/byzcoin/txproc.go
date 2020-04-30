@@ -5,11 +5,9 @@ import (
 
 	proto "github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/ledger/consumer"
-	"go.dedis.ch/fabric/ledger/consumer/smartcontract"
 	"go.dedis.ch/fabric/ledger/inventory"
 	"go.dedis.ch/fabric/ledger/inventory/mem"
+	"go.dedis.ch/fabric/ledger/transactions"
 	"golang.org/x/xerrors"
 )
 
@@ -18,16 +16,14 @@ import (
 //
 // - implements blockchain.PayloadProcessor
 type txProcessor struct {
-	encoder   encoding.ProtoMarshaler
 	inventory inventory.Inventory
-	consumer  consumer.Consumer
+	txFactory transactions.TransactionFactory
 }
 
-func newTxProcessor(c consumer.Consumer) *txProcessor {
+func newTxProcessor(f transactions.TransactionFactory) *txProcessor {
 	return &txProcessor{
-		encoder:   encoding.NewProtoEncoder(),
 		inventory: mem.NewInventory(),
-		consumer:  c,
+		txFactory: f,
 	}
 }
 
@@ -94,31 +90,17 @@ func (proc *txProcessor) process(payload *BlockPayload) (inventory.Page, error) 
 	}
 
 	page, err := proc.inventory.Stage(func(page inventory.WritablePage) error {
-		factory := proc.consumer.GetTransactionFactory()
-
 		for _, txpb := range payload.GetTransactions() {
-			tx, err := factory.FromProto(txpb)
+			tx, err := proc.txFactory.FromProto(txpb)
 			if err != nil {
 				return xerrors.Errorf("couldn't decode tx: %v", err)
 			}
 
 			fabric.Logger.Trace().Msgf("processing %v", tx)
 
-			ctx := smartcontract.NewContext(tx, page)
-
-			instance, err := proc.consumer.Consume(ctx)
+			err = tx.Consume(page)
 			if err != nil {
 				return xerrors.Errorf("couldn't consume tx: %v", err)
-			}
-
-			instancepb, err := proc.encoder.Pack(instance)
-			if err != nil {
-				return xerrors.Errorf("couldn't pack instance: %v", err)
-			}
-
-			err = page.Write(instance.GetKey(), instancepb)
-			if err != nil {
-				return xerrors.Errorf("couldn't write instances: %v", err)
 			}
 		}
 

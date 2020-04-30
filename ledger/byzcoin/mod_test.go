@@ -16,9 +16,7 @@ import (
 	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/ledger"
 	"go.dedis.ch/fabric/ledger/arc/darc"
-	"go.dedis.ch/fabric/ledger/arc/darc/contract"
-	"go.dedis.ch/fabric/ledger/consumer"
-	"go.dedis.ch/fabric/ledger/consumer/smartcontract"
+	"go.dedis.ch/fabric/ledger/transactions/basic"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/minoch"
 	"golang.org/x/xerrors"
@@ -60,10 +58,10 @@ func TestLedger_Basic(t *testing.T) {
 	defer cancel()
 	txs := ledgers[2].Watch(ctx)
 
-	txFactory := smartcontract.NewTransactionFactory(bls.NewSigner())
+	txFactory := basic.NewTransactionFactory(bls.NewSigner(), nil)
 
 	// Try to create a DARC.
-	tx, err := txFactory.New(contract.NewGenesisAction())
+	tx, err := txFactory.New(darc.NewCreate())
 	require.NoError(t, err)
 
 	err = actors[1].AddTransaction(tx)
@@ -77,14 +75,12 @@ func TestLedger_Basic(t *testing.T) {
 		t.Fatal("timeout 1")
 	}
 
-	instance, err := ledgers[2].GetInstance(tx.GetID())
+	value, err := ledgers[2].GetValue(tx.GetID())
 	require.NoError(t, err)
-	require.Equal(t, tx.GetID(), instance.GetKey())
-	require.Equal(t, tx.GetID(), instance.GetArcID())
-	require.IsType(t, (*darc.AccessControlProto)(nil), instance.GetValue())
+	require.IsType(t, (*darc.AccessControlProto)(nil), value)
 
 	// Then update it.
-	tx, err = txFactory.New(contract.NewUpdateAction(tx.GetID()))
+	tx, err = txFactory.New(darc.NewUpdate(tx.GetID()))
 	require.NoError(t, err)
 
 	err = actors[0].AddTransaction(tx)
@@ -97,40 +93,6 @@ func TestLedger_Basic(t *testing.T) {
 	case <-time.After(1 * time.Second):
 		t.Fatal("timeout 2")
 	}
-}
-
-func TestLedger_GetInstance(t *testing.T) {
-	ledger := &Ledger{
-		bc: fakeBlockchain{},
-		proc: &txProcessor{
-			inventory: fakeInventory{
-				page: &fakePage{},
-			},
-		},
-		consumer: fakeConsumer{},
-	}
-
-	instance, err := ledger.GetInstance([]byte{0xab})
-	require.NoError(t, err)
-	require.NotNil(t, instance)
-
-	ledger.bc = fakeBlockchain{err: xerrors.New("oops")}
-	_, err = ledger.GetInstance(nil)
-	require.EqualError(t, err, "couldn't read latest block: oops")
-
-	ledger.bc = fakeBlockchain{}
-	ledger.proc.inventory = fakeInventory{err: xerrors.New("oops")}
-	_, err = ledger.GetInstance(nil)
-	require.EqualError(t, err, "couldn't read the page: oops")
-
-	ledger.proc.inventory = fakeInventory{page: &fakePage{err: xerrors.New("oops")}}
-	_, err = ledger.GetInstance(nil)
-	require.EqualError(t, err, "couldn't read the instance: oops")
-
-	ledger.proc.inventory = fakeInventory{page: &fakePage{}}
-	ledger.consumer = fakeConsumer{errFactory: xerrors.New("oops")}
-	_, err = ledger.GetInstance(nil)
-	require.EqualError(t, err, "couldn't decode instance: oops")
 }
 
 func TestGovernance_GetAuthority(t *testing.T) {
@@ -183,7 +145,7 @@ func makeLedger(t *testing.T, n int) ([]ledger.Ledger, []ledger.Actor, crypto.Co
 	ledgers := make([]ledger.Ledger, n)
 	actors := make([]ledger.Actor, n)
 	for i, m := range minos {
-		ledger := NewLedger(m, ca.GetSigner(i), makeConsumer())
+		ledger := NewLedger(m, ca.GetSigner(i))
 		ledgers[i] = ledger
 
 		actor, err := ledger.Listen()
@@ -193,13 +155,6 @@ func makeLedger(t *testing.T, n int) ([]ledger.Ledger, []ledger.Actor, crypto.Co
 	}
 
 	return ledgers, actors, ca
-}
-
-func makeConsumer() consumer.Consumer {
-	c := smartcontract.NewConsumer()
-	contract.RegisterContract(c)
-
-	return c
 }
 
 type fakeBlock struct {

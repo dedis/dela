@@ -9,3 +9,8 @@ message Expression {
 message AccessControlProto {
     map<string, Expression> rules = 1;
 }
+
+message ActionProto {
+    bytes key = 1;
+    AccessControlProto access = 2;
+}
