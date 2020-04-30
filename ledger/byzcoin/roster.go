@@ -17,15 +17,13 @@ type iterator struct {
 }
 
 func (i *iterator) HasNext() bool {
-	return i.index+1 < i.roster.Len()
+	return i.index < i.roster.Len()
 }
 
 func (i *iterator) GetNext() int {
-	if i.HasNext() {
-		i.index++
-		return i.index
-	}
-	return -1
+	res := i.index
+	i.index++
+	return res
 }
 
 // addressIterator is an iterator for a list of addresses.
@@ -37,9 +35,8 @@ type addressIterator struct {
 
 // GetNext implements mino.AddressIterator. It returns the next address.
 func (i *addressIterator) GetNext() mino.Address {
-	index := i.iterator.GetNext()
-	if index >= 0 {
-		return i.roster.addrs[index]
+	if i.iterator.HasNext() {
+		return i.roster.addrs[i.iterator.GetNext()]
 	}
 	return nil
 }
@@ -53,9 +50,8 @@ type publicKeyIterator struct {
 
 // GetNext implements crypto.PublicKeyIterator. It returns the next public key.
 func (i *publicKeyIterator) GetNext() crypto.PublicKey {
-	index := i.iterator.GetNext()
-	if index >= 0 {
-		return i.roster.pubkeys[index]
+	if i.iterator.HasNext() {
+		return i.roster.pubkeys[i.iterator.GetNext()]
 	}
 	return nil
 }
@@ -116,13 +112,13 @@ func (r roster) GetPublicKey(target mino.Address) (crypto.PublicKey, int) {
 // AddressIterator implements mino.Players. It returns an iterator of the
 // addresses of the roster in a deterministic order.
 func (r roster) AddressIterator() mino.AddressIterator {
-	return &addressIterator{iterator: &iterator{roster: &r, index: -1}}
+	return &addressIterator{iterator: &iterator{roster: &r}}
 }
 
 // PublicKeyIterator implements crypto.CollectiveAuthority. It returns an
 // iterator of the public keys of the roster in a deterministic order.
 func (r roster) PublicKeyIterator() crypto.PublicKeyIterator {
-	return &publicKeyIterator{iterator: &iterator{roster: &r, index: -1}}
+	return &publicKeyIterator{iterator: &iterator{roster: &r}}
 }
 
 // Pack implements encoding.Packable. It returns the protobuf message for the
@@ -170,11 +166,9 @@ func (f rosterFactory) New(authority crypto.CollectiveAuthority) roster {
 
 	addrIter := authority.AddressIterator()
 	pubkeyIter := authority.PublicKeyIterator()
-	index := 0
-	for addrIter.HasNext() && pubkeyIter.HasNext() {
-		roster.addrs[index] = addrIter.GetNext()
-		roster.pubkeys[index] = pubkeyIter.GetNext()
-		index++
+	for i := 0; addrIter.HasNext() && pubkeyIter.HasNext(); i++ {
+		roster.addrs[i] = addrIter.GetNext()
+		roster.pubkeys[i] = pubkeyIter.GetNext()
 	}
 
 	return roster
@@ -194,19 +188,23 @@ func (f rosterFactory) FromProto(in proto.Message) (viewchange.EvolvableAuthorit
 			len(pb.Addresses), len(pb.PublicKeys))
 	}
 
-	roster := roster{
-		addrs:   make([]mino.Address, len(pb.Addresses)),
-		pubkeys: make([]crypto.PublicKey, len(pb.PublicKeys)),
-	}
+	addrs := make([]mino.Address, len(pb.Addresses))
+	pubkeys := make([]crypto.PublicKey, len(pb.PublicKeys))
 
-	var err error
 	for i, addrpb := range pb.GetAddresses() {
-		roster.addrs[i] = f.addressFactory.FromText(addrpb)
+		addrs[i] = f.addressFactory.FromText(addrpb)
 
-		roster.pubkeys[i], err = f.pubkeyFactory.FromProto(pb.GetPublicKeys()[i])
+		pubkey, err := f.pubkeyFactory.FromProto(pb.GetPublicKeys()[i])
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't decode public key: %v", err)
 		}
+
+		pubkeys[i] = pubkey
+	}
+
+	roster := roster{
+		addrs:   addrs,
+		pubkeys: pubkeys,
 	}
 
 	return roster, nil

@@ -130,9 +130,9 @@ func (a pbftActor) Propose(p consensus.Proposal) error {
 	leader, ok := a.viewchange.Wait(p, authority)
 	if !ok {
 		fabric.Logger.Trace().Msg("proposal skipped by view change")
-		// Not authorized to propose a block as the leader is moving
-		// forward so we drop the proposal. The upper layer is responsible to
-		// try again until the leader includes the data.
+		// Not authorized to propose a block as the leader is moving forward so
+		// we drop the proposal. The upper layer is responsible for trying again
+		// until the leader includes the data.
 		return nil
 	}
 
@@ -186,7 +186,9 @@ func (a pbftActor) Propose(p consensus.Proposal) error {
 	return nil
 }
 
-func (a pbftActor) newPrepareRequest(prop consensus.Proposal, cs viewchange.ChangeSet) (Prepare, error) {
+func (a pbftActor) newPrepareRequest(prop consensus.Proposal,
+	cs viewchange.ChangeSet) (Prepare, error) {
+
 	req := Prepare{proposal: prop}
 
 	forwardLink := forwardLink{
@@ -195,11 +197,12 @@ func (a pbftActor) newPrepareRequest(prop consensus.Proposal, cs viewchange.Chan
 		changeset: cs,
 	}
 
-	var err error
-	req.digest, err = forwardLink.computeHash(a.hashFactory.New(), a.encoder)
+	digest, err := forwardLink.computeHash(a.hashFactory.New(), a.encoder)
 	if err != nil {
 		return req, xerrors.Errorf("couldn't compute hash: %v", err)
 	}
+
+	req.digest = digest
 
 	return req, nil
 }

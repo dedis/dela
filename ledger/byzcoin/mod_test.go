@@ -53,7 +53,7 @@ func TestLedger_Basic(t *testing.T) {
 
 	for _, actor := range actors {
 		err := <-actor.HasStarted()
-		require.Nil(t, err)
+		require.NoError(t, err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

@@ -7,7 +7,7 @@ import (
 )
 
 // ViewChange provides primitives to verify if a participant is allowed to
-// propose a block as the leader. Some consensus needs a single node to propose
+// propose a block as the leader. Some consensus need a single node to propose
 // and the others as backups when it is failing. The index returned announces
 // who is allowed to be the leader.
 type ViewChange interface {
@@ -45,11 +45,12 @@ type EvolvableAuthority interface {
 // Governance is an interface to get information about the collective authority
 // of a proposal.
 type Governance interface {
-	// GetAuthority must return the authority that governs the block. It will be
-	// used to sign the forward link to the next proposal.
+	// GetAuthority must return the authority that governs the proposal at the
+	// given index. It will be used to sign the forward link to the next
+	// proposal.
 	GetAuthority(index uint64) (EvolvableAuthority, error)
 
 	// GetChangeSet must return the changes to the authority that will be
-	// applied for the next proposal.
+	// applied for the proposal following the given index.
 	GetChangeSet(index uint64) ChangeSet
 }

@@ -87,15 +87,15 @@ func (fl forwardLink) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 }
 
 func (fl forwardLink) packChangeSet(enc encoding.ProtoMarshaler) (*ChangeSet, error) {
+	add, err := fl.packPlayers(fl.changeset.Add, enc)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't pack players: %v", err)
+	}
+
 	pb := &ChangeSet{
 		Leader: fl.changeset.Leader,
 		Remove: fl.changeset.Remove,
-	}
-
-	var err error
-	pb.Add, err = fl.packPlayers(fl.changeset.Add, enc)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack players: %v", err)
+		Add:    add,
 	}
 
 	return pb, nil
@@ -156,6 +156,8 @@ func (fl forwardLink) computeHash(h hash.Hash, enc encoding.ProtoMarshaler) ([]b
 		}
 	}
 
+	// This buffer will store all the encoded integers where each one is using 4
+	// bytes: leader index + removal indices.
 	buffer := make([]byte, 4+(4*len(fl.changeset.Remove)))
 	binary.LittleEndian.PutUint32(buffer, fl.changeset.Leader)
 
@@ -246,15 +248,15 @@ func (f *unsecureChainFactory) decodeForwardLink(pb proto.Message) (forwardLink,
 		return fl, xerrors.Errorf("unknown message type: %T", msg)
 	}
 
-	fl = forwardLink{
-		from: src.GetFrom(),
-		to:   src.GetTo(),
-	}
-
-	var err error
-	fl.changeset, err = f.decodeChangeSet(src.GetChangeSet())
+	changeset, err := f.decodeChangeSet(src.GetChangeSet())
 	if err != nil {
 		return fl, xerrors.Errorf("couldn't decode changeset: %v", err)
+	}
+
+	fl = forwardLink{
+		from:      src.GetFrom(),
+		to:        src.GetTo(),
+		changeset: changeset,
 	}
 
 	if src.GetPrepare() != nil {
@@ -286,15 +288,15 @@ func (f *unsecureChainFactory) decodeForwardLink(pb proto.Message) (forwardLink,
 }
 
 func (f *unsecureChainFactory) decodeChangeSet(in *ChangeSet) (viewchange.ChangeSet, error) {
+	add, err := f.decodeAdd(in.GetAdd())
+	if err != nil {
+		return viewchange.ChangeSet{}, xerrors.Errorf("couldn't decode add: %v", err)
+	}
+
 	changeset := viewchange.ChangeSet{
 		Leader: in.GetLeader(),
 		Remove: in.GetRemove(),
-	}
-
-	var err error
-	changeset.Add, err = f.decodeAdd(in.GetAdd())
-	if err != nil {
-		return changeset, xerrors.Errorf("couldn't decode add: %v", err)
+		Add:    add,
 	}
 
 	return changeset, nil
@@ -373,6 +375,8 @@ func newChainFactory(cosi cosi.CollectiveSigning, m mino.Mino,
 func (f *chainFactory) FromProto(pb proto.Message) (consensus.Chain, error) {
 	chain, err := f.unsecureChainFactory.FromProto(pb)
 	if err != nil {
+		// No wrapping to avoid redundancy in the error message. It will point
+		// anyway to a meaningful line.
 		return nil, err
 	}
 

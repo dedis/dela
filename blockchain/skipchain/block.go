@@ -253,7 +253,7 @@ func (f blockFactory) FromVerifiable(src proto.Message) (blockchain.Block, error
 		return nil, xerrors.Errorf("couldn't get the chain factory: %v", err)
 	}
 
-	// Integrity of the chain is verifier during decoding.
+	// Integrity of the chain is verified during decoding.
 	chain, err := chainFactory.FromProto(in.GetChain())
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't decode the chain: %v", err)

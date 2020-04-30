@@ -12,18 +12,17 @@ import (
 func TestIterator_HasNext(t *testing.T) {
 	iter := &iterator{
 		roster: &roster{addrs: make([]mino.Address, 3)},
-		index:  -1,
 	}
 
-	require.True(t, iter.HasNext())
-
-	iter.index = 0
 	require.True(t, iter.HasNext())
 
 	iter.index = 1
 	require.True(t, iter.HasNext())
 
 	iter.index = 2
+	require.True(t, iter.HasNext())
+
+	iter.index = 3
 	require.False(t, iter.HasNext())
 
 	iter.index = 10
@@ -33,7 +32,6 @@ func TestIterator_HasNext(t *testing.T) {
 func TestIterator_GetNext(t *testing.T) {
 	iter := &iterator{
 		roster: &roster{addrs: make([]mino.Address, 3)},
-		index:  -1,
 	}
 
 	for i := 0; i < 3; i++ {
@@ -41,7 +39,7 @@ func TestIterator_GetNext(t *testing.T) {
 		require.NotNil(t, c)
 	}
 
-	require.Equal(t, -1, iter.GetNext())
+	require.Equal(t, 3, iter.GetNext())
 }
 
 func TestAddressIterator_GetNext(t *testing.T) {
@@ -49,7 +47,6 @@ func TestAddressIterator_GetNext(t *testing.T) {
 	iter := &addressIterator{
 		iterator: &iterator{
 			roster: &roster,
-			index:  -1,
 		},
 	}
 
@@ -66,7 +63,6 @@ func TestPublicKeyIterator_GetNext(t *testing.T) {
 	iter := &publicKeyIterator{
 		iterator: &iterator{
 			roster: &roster,
-			index:  -1,
 		},
 	}
 

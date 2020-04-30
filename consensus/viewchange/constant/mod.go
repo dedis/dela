@@ -21,8 +21,8 @@ func NewViewChange(addr mino.Address) ViewChange {
 	}
 }
 
-// Wait implements viewchange.ViewChange. It true if the first player of the
-// authority is the current participant.
+// Wait implements viewchange.ViewChange. It returns true if the first player of
+// the authority is the current participant.
 func (vc ViewChange) Wait(p consensus.Proposal, a crypto.CollectiveAuthority) (uint32, bool) {
 	leader := a.AddressIterator().GetNext()
 
