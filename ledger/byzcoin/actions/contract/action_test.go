@@ -1,6 +1,7 @@
 package contract
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/golang/protobuf/proto"
@@ -13,6 +14,100 @@ import (
 	"go.dedis.ch/fabric/ledger/inventory"
 	"golang.org/x/xerrors"
 )
+
+func TestSpawnAction_Pack(t *testing.T) {
+	action := SpawnAction{
+		ContractID: "deadbeef",
+		Argument:   []byte{0x01},
+	}
+
+	pb, err := action.Pack(encoding.NewProtoEncoder())
+	require.NoError(t, err)
+	require.IsType(t, (*SpawnActionProto)(nil), pb)
+
+	actionpb := pb.(*SpawnActionProto)
+	require.Equal(t, action.ContractID, actionpb.GetContractID())
+	require.Equal(t, action.Argument, actionpb.GetArgument())
+}
+
+func TestSpawnAction_WriteTo(t *testing.T) {
+	action := SpawnAction{
+		ContractID: "deadbeef",
+		Argument:   []byte{0x01},
+	}
+
+	buffer := new(bytes.Buffer)
+	sum, err := action.WriteTo(buffer)
+	require.NoError(t, err)
+	require.Equal(t, int64(9), sum)
+
+	_, err = action.WriteTo(fake.NewBadHash())
+	require.EqualError(t, err, "couldn't write contract: fake error")
+
+	_, err = action.WriteTo(fake.NewBadHashWithDelay(1))
+	require.EqualError(t, err, "couldn't write argument: fake error")
+}
+
+func TestInvokeAction_Pack(t *testing.T) {
+	action := InvokeAction{
+		Key:      []byte{0x1},
+		Argument: []byte{0x02},
+	}
+
+	pb, err := action.Pack(encoding.NewProtoEncoder())
+	require.NoError(t, err)
+	require.IsType(t, (*InvokeActionProto)(nil), pb)
+
+	actionpb := pb.(*InvokeActionProto)
+	require.Equal(t, action.Key, actionpb.GetKey())
+	require.Equal(t, action.Argument, actionpb.GetArgument())
+}
+
+func TestInvokeAction_WriteTo(t *testing.T) {
+	action := InvokeAction{
+		Key:      []byte{0x01},
+		Argument: []byte{0x02},
+	}
+
+	buffer := new(bytes.Buffer)
+	sum, err := action.WriteTo(buffer)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), sum)
+
+	_, err = action.WriteTo(fake.NewBadHash())
+	require.EqualError(t, err, "couldn't write key: fake error")
+
+	_, err = action.WriteTo(fake.NewBadHashWithDelay(1))
+	require.EqualError(t, err, "couldn't write argument: fake error")
+}
+
+func TestDeleteAction_Pack(t *testing.T) {
+	action := DeleteAction{
+		Key: []byte{0x01},
+	}
+
+	pb, err := action.Pack(encoding.NewProtoEncoder())
+	require.NoError(t, err)
+	require.IsType(t, (*DeleteActionProto)(nil), pb)
+
+	actionpb := pb.(*DeleteActionProto)
+	require.Equal(t, action.Key, actionpb.GetKey())
+}
+
+func TestDeleteAction_WriteTo(t *testing.T) {
+	action := DeleteAction{
+		Key: []byte{0x01},
+	}
+
+	buffer := new(bytes.Buffer)
+
+	sum, err := action.WriteTo(buffer)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), sum)
+
+	_, err = action.WriteTo(fake.NewBadHash())
+	require.EqualError(t, err, "couldn't write key: fake error")
+}
 
 func TestServerAction_Consume(t *testing.T) {
 	factory := &fakeAccessFactory{access: &fakeAccess{match: true}}

@@ -4,6 +4,7 @@ import (
 	"io"
 
 	"github.com/golang/protobuf/proto"
+	any "github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/ledger/arc"
 	"go.dedis.ch/fabric/ledger/inventory"
@@ -14,34 +15,76 @@ import (
 // SpawnAction is a contract transaction action to create a new instance.
 type SpawnAction struct {
 	ContractID string
-	Argument   proto.Message
+	// Argument is a generic slice of bytes that the contract is responsible for
+	// decoding. It allows a fingerprint to be calculated deterministically.
+	Argument []byte
 }
 
 // Pack implements encoding.Packable.
 func (act SpawnAction) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
-	return &SpawnActionProto{}, nil
+	pb := &SpawnActionProto{
+		ContractID: act.ContractID,
+		Argument:   act.Argument,
+	}
+
+	return pb, nil
 }
 
 // WriteTo implements io.WriterTo.
-func (act SpawnAction) WriteTo(io.Writer) (int64, error) {
-	return 0, nil
+func (act SpawnAction) WriteTo(w io.Writer) (int64, error) {
+	sum := int64(0)
+
+	n, err := w.Write([]byte(act.ContractID))
+	sum += int64(n)
+	if err != nil {
+		return sum, xerrors.Errorf("couldn't write contract: %v", err)
+	}
+
+	n, err = w.Write(act.Argument)
+	sum += int64(n)
+	if err != nil {
+		return sum, xerrors.Errorf("couldn't write argument: %v", err)
+	}
+
+	return sum, nil
 }
 
 // InvokeAction is a contract transaction action to update an existing instance
 // of the access control allows it.
 type InvokeAction struct {
-	Key      []byte
-	Argument proto.Message
+	Key []byte
+	// Argument is a generic slice of bytes that the contract is responsible for
+	// decoding. It allows a fingerprint to be calculated deterministically.
+	Argument []byte
 }
 
 // Pack implements encoding.Packable.
 func (act InvokeAction) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
-	return &SpawnActionProto{}, nil
+	pb := &InvokeActionProto{
+		Key:      act.Key,
+		Argument: act.Argument,
+	}
+
+	return pb, nil
 }
 
 // WriteTo implements io.WriterTo.
-func (act InvokeAction) WriteTo(io.Writer) (int64, error) {
-	return 0, nil
+func (act InvokeAction) WriteTo(w io.Writer) (int64, error) {
+	sum := int64(0)
+
+	n, err := w.Write(act.Key)
+	sum += int64(n)
+	if err != nil {
+		return sum, xerrors.Errorf("couldn't write key: %v", err)
+	}
+
+	n, err = w.Write(act.Argument)
+	sum += int64(n)
+	if err != nil {
+		return sum, xerrors.Errorf("couldn't write argument: %v", err)
+	}
+
+	return sum, nil
 }
 
 // DeleteAction is a contract transaction action to mark an instance as deleted
@@ -56,8 +99,16 @@ func (a DeleteAction) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 }
 
 // WriteTo implements io.WriterTo.
-func (a DeleteAction) WriteTo(io.Writer) (int64, error) {
-	return 0, nil
+func (a DeleteAction) WriteTo(w io.Writer) (int64, error) {
+	sum := int64(0)
+
+	n, err := w.Write(a.Key)
+	sum += int64(n)
+	if err != nil {
+		return sum, xerrors.Errorf("couldn't write key: %v", err)
+	}
+
+	return sum, nil
 }
 
 type serverAction struct {
@@ -102,7 +153,7 @@ func (act serverAction) Consume(ctx basic.Context, page inventory.WritablePage) 
 
 	err = page.Write(instance.Key, instance)
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't write instance to page: %v", err)
 	}
 
 	return nil
@@ -206,9 +257,46 @@ func (act serverAction) hasAccess(ctx Context, key []byte, rule string) error {
 	return nil
 }
 
-type actionFactory struct{}
+type actionFactory struct {
+	contracts  map[string]Contract
+	arcFactory arc.AccessControlFactory
+	encoder    encoding.ProtoMarshaler
+}
 
 func (f actionFactory) FromProto(in proto.Message) (basic.ServerAction, error) {
+	inAny, ok := in.(*any.Any)
+	if ok {
+		var err error
+		in, err = f.encoder.UnmarshalDynamicAny(inAny)
+		if err != nil {
+			return nil, xerrors.Errorf("..")
+		}
+	}
 
-	return serverAction{}, nil
+	action := serverAction{
+		contracts:  f.contracts,
+		arcFactory: f.arcFactory,
+		encoder:    f.encoder,
+	}
+
+	switch pb := in.(type) {
+	case *SpawnActionProto:
+		action.ClientAction = SpawnAction{
+			ContractID: pb.GetContractID(),
+			Argument:   pb.GetArgument(),
+		}
+	case *InvokeActionProto:
+		action.ClientAction = InvokeAction{
+			Key:      pb.GetKey(),
+			Argument: pb.GetArgument(),
+		}
+	case *DeleteActionProto:
+		action.ClientAction = DeleteAction{
+			Key: pb.GetKey(),
+		}
+	default:
+		return nil, xerrors.Errorf("invalid message type '%T'", in)
+	}
+
+	return action, nil
 }
