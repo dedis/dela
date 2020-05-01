@@ -52,9 +52,8 @@ func (f addressFactory) FromText(text []byte) mino.Address {
 	return address{id: string(text)}
 }
 
-// NewMinogrpc sets up the grpc and http servers. It does not start the
-// server. Identifier must be an address with a port, something like
-// 127.0.0.1:3333
+// NewMinogrpc sets up the grpc and http servers. Identifier must be an address
+// with a port, something like 127.0.0.1:3333
 //
 // TODO: use a different type of argument for identifier, maybe net/url ?
 func NewMinogrpc(identifier string, rf RoutingFactory) (Minogrpc, error) {
@@ -139,4 +138,11 @@ func (m Minogrpc) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 	m.server.handlers[URI] = h
 
 	return rpc, nil
+}
+
+// AddNeighbours ...
+func (m Minogrpc) AddNeighbours(minoGrpcs ...*Minogrpc) {
+	for _, minogrpc := range minoGrpcs {
+		m.server.addNeighbour(minogrpc.server)
+	}
 }

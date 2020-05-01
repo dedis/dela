@@ -3,6 +3,7 @@ package minogrpc
 import (
 	context "context"
 	"crypto/tls"
+	fmt "fmt"
 	"io"
 	"sync"
 
@@ -181,28 +182,30 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		cl := NewOverlayClient(clientConn)
 
 		header := metadata.New(map[string]string{headerURIKey: apiURI[0]})
-		ctx = metadata.NewOutgoingContext(ctx, header)
+		newCtx := stream.Context()
+		newCtx = metadata.NewOutgoingContext(newCtx, header)
 
-		clientStream, err := cl.Stream(ctx)
-
+		cs, err := cl.Stream(newCtx)
 		if err != nil {
 			err = xerrors.Errorf("failed to get stream for client '%s': %v",
 				addr.String(), err)
 			fabric.Logger.Err(err).Send()
 			return err
 		}
-		sender.participants[addr.String()] = clientStream
+
+		safeClientStream := newSafeOverlayStream(cs)
+		sender.participants[addr.String()] = safeClientStream
 
 		// Sending the routing info as first messages to our childs
-		clientStream.Send(&OverlayMsg{Message: overlayMsg.Message})
+		safeClientStream.Send(&OverlayMsg{Message: overlayMsg.Message})
 
 		// Listen on the clients streams and notify the orchestrator or relay
 		// messages
 		peerWait.Add(1)
-		go func() {
+		go func(addr mino.Address) {
 			defer peerWait.Done()
 			for {
-				err := listenStream(clientStream, &receiver, sender, addr)
+				err := listenStream(safeClientStream, &receiver, sender, addr)
 				if err == io.EOF {
 					return
 				}
@@ -211,28 +214,32 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 					return
 				}
 				if err != nil {
-					err = xerrors.Errorf("failed to listen stream: %v", err)
+					err = xerrors.Errorf("failed to listen stream on child in overlay: %v", err)
 					fabric.Logger.Err(err).Send()
 					return
 				}
 			}
-		}()
+		}(addr)
 	}
 
 	// listen on my own stream
 	go func() {
+
 		for {
 			err := listenStream(stream, &receiver, sender, o.addr)
 			if err == io.EOF {
+				<-ctx.Done()
 				return
 			}
 			status, ok := status.FromError(err)
 			if ok && err != nil && status.Code() == codes.Canceled {
+				<-ctx.Done()
 				return
 			}
 			if err != nil {
-				err = xerrors.Errorf("failed to listen stream: %v", err)
+				err = xerrors.Errorf("failed to listen stream in overlay: %v", err)
 				fabric.Logger.Err(err).Send()
+				<-ctx.Done()
 				return
 			}
 		}
@@ -243,7 +250,9 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		return xerrors.Errorf("failed to call the stream handler: %v", err)
 	}
 
-	peerWait.Wait()
+	<-ctx.Done()
+
+	fmt.Println("EXIT in", o.addr)
 
 	return nil
 
