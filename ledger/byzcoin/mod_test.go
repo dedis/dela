@@ -58,10 +58,12 @@ func TestLedger_Basic(t *testing.T) {
 	defer cancel()
 	txs := ledgers[2].Watch(ctx)
 
-	txFactory := basic.NewTransactionFactory(bls.NewSigner(), nil)
+	signer := bls.NewSigner()
+	txFactory := basic.NewTransactionFactory(signer, nil)
 
 	// Try to create a DARC.
-	tx, err := txFactory.New(darc.NewCreate())
+	access := makeDarc(t, signer)
+	tx, err := txFactory.New(darc.NewCreate(access))
 	require.NoError(t, err)
 
 	err = actors[1].AddTransaction(tx)
@@ -77,10 +79,10 @@ func TestLedger_Basic(t *testing.T) {
 
 	value, err := ledgers[2].GetValue(tx.GetID())
 	require.NoError(t, err)
-	require.IsType(t, (*darc.AccessControlProto)(nil), value)
+	require.IsType(t, (*darc.AccessProto)(nil), value)
 
 	// Then update it.
-	tx, err = txFactory.New(darc.NewUpdate(tx.GetID()))
+	tx, err = txFactory.New(darc.NewUpdate(tx.GetID(), access))
 	require.NoError(t, err)
 
 	err = actors[0].AddTransaction(tx)
@@ -155,6 +157,14 @@ func makeLedger(t *testing.T, n int) ([]ledger.Ledger, []ledger.Actor, crypto.Co
 	}
 
 	return ledgers, actors, ca
+}
+
+func makeDarc(t *testing.T, signer crypto.Signer) darc.Access {
+	access := darc.NewAccess()
+	access, err := access.Evolve(darc.UpdateAccessRule, signer.GetPublicKey())
+	require.NoError(t, err)
+
+	return access
 }
 
 type fakeBlock struct {

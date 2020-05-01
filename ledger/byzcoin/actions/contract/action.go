@@ -4,9 +4,10 @@ import (
 	"io"
 
 	"github.com/golang/protobuf/proto"
-	any "github.com/golang/protobuf/ptypes/any"
+	"github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/ledger/arc"
+	"go.dedis.ch/fabric/ledger/arc/common"
 	"go.dedis.ch/fabric/ledger/inventory"
 	"go.dedis.ch/fabric/ledger/transactions/basic"
 	"golang.org/x/xerrors"
@@ -15,76 +16,74 @@ import (
 // SpawnAction is a contract transaction action to create a new instance.
 type SpawnAction struct {
 	ContractID string
-	// Argument is a generic slice of bytes that the contract is responsible for
-	// decoding. It allows a fingerprint to be calculated deterministically.
-	Argument []byte
+	Argument   proto.Message
 }
 
 // Pack implements encoding.Packable.
-func (act SpawnAction) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
+func (act SpawnAction) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
+	argument, err := enc.MarshalAny(act.Argument)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't pack argument: %v", err)
+	}
+
 	pb := &SpawnActionProto{
 		ContractID: act.ContractID,
-		Argument:   act.Argument,
+		Argument:   argument,
 	}
 
 	return pb, nil
 }
 
-// WriteTo implements io.WriterTo.
-func (act SpawnAction) WriteTo(w io.Writer) (int64, error) {
-	sum := int64(0)
-
-	n, err := w.Write([]byte(act.ContractID))
-	sum += int64(n)
+// Fingerprint implements encoding.Fingerprinter.
+func (act SpawnAction) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
+	_, err := w.Write([]byte(act.ContractID))
 	if err != nil {
-		return sum, xerrors.Errorf("couldn't write contract: %v", err)
+		return xerrors.Errorf("couldn't write contract: %v", err)
 	}
 
-	n, err = w.Write(act.Argument)
-	sum += int64(n)
+	err = e.MarshalStable(w, act.Argument)
 	if err != nil {
-		return sum, xerrors.Errorf("couldn't write argument: %v", err)
+		return xerrors.Errorf("couldn't write argument: %v", err)
 	}
 
-	return sum, nil
+	return nil
 }
 
 // InvokeAction is a contract transaction action to update an existing instance
 // of the access control allows it.
 type InvokeAction struct {
-	Key []byte
-	// Argument is a generic slice of bytes that the contract is responsible for
-	// decoding. It allows a fingerprint to be calculated deterministically.
-	Argument []byte
+	Key      []byte
+	Argument proto.Message
 }
 
 // Pack implements encoding.Packable.
-func (act InvokeAction) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
+func (act InvokeAction) Pack(e encoding.ProtoMarshaler) (proto.Message, error) {
+	argument, err := e.MarshalAny(act.Argument)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't pack argument: %v", err)
+	}
+
 	pb := &InvokeActionProto{
 		Key:      act.Key,
-		Argument: act.Argument,
+		Argument: argument,
 	}
 
 	return pb, nil
 }
 
-// WriteTo implements io.WriterTo.
-func (act InvokeAction) WriteTo(w io.Writer) (int64, error) {
-	sum := int64(0)
-
-	n, err := w.Write(act.Key)
-	sum += int64(n)
+// Fingerprint implements encoding.Fingeprinter.
+func (act InvokeAction) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
+	_, err := w.Write(act.Key)
 	if err != nil {
-		return sum, xerrors.Errorf("couldn't write key: %v", err)
+		return xerrors.Errorf("couldn't write key: %v", err)
 	}
 
-	n, err = w.Write(act.Argument)
-	sum += int64(n)
+	err = e.MarshalStable(w, act.Argument)
 	if err != nil {
-		return sum, xerrors.Errorf("couldn't write argument: %v", err)
+		return xerrors.Errorf("couldn't write argument: %v", err)
 	}
 
-	return sum, nil
+	return nil
 }
 
 // DeleteAction is a contract transaction action to mark an instance as deleted
@@ -98,17 +97,14 @@ func (a DeleteAction) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 	return &DeleteActionProto{Key: a.Key}, nil
 }
 
-// WriteTo implements io.WriterTo.
-func (a DeleteAction) WriteTo(w io.Writer) (int64, error) {
-	sum := int64(0)
-
-	n, err := w.Write(a.Key)
-	sum += int64(n)
+// Fingerprint implements encoding.Fingerprinter.
+func (a DeleteAction) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
+	_, err := w.Write(a.Key)
 	if err != nil {
-		return sum, xerrors.Errorf("couldn't write key: %v", err)
+		return xerrors.Errorf("couldn't write key: %v", err)
 	}
 
-	return sum, nil
+	return nil
 }
 
 type serverAction struct {
@@ -119,7 +115,7 @@ type serverAction struct {
 }
 
 func (act serverAction) Consume(ctx basic.Context, page inventory.WritablePage) error {
-	txCtx := transactionContext{
+	txCtx := actionContext{
 		Context:    ctx,
 		arcFactory: act.arcFactory,
 		page:       page,
@@ -144,10 +140,11 @@ func (act serverAction) Consume(ctx basic.Context, page inventory.WritablePage) 
 			DeleteAction: action,
 		})
 	default:
-		return xerrors.New("missing action")
+		return xerrors.Errorf("invalid action type '%T'", act.ClientAction)
 	}
 
 	if err != nil {
+		// No wrapping to avoid redundancy in the error message.
 		return err
 	}
 
@@ -184,7 +181,7 @@ func (act serverAction) consumeSpawn(ctx SpawnContext) (*Instance, error) {
 
 	valueAny, err := act.encoder.MarshalAny(value)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't pack value: %v", err)
 	}
 
 	instance := &Instance{
@@ -223,7 +220,7 @@ func (act serverAction) consumeInvoke(ctx InvokeContext) (*Instance, error) {
 
 	valueAny, err := act.encoder.MarshalAny(value)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't pack value: %v", err)
 	}
 
 	instance.Value = valueAny
@@ -245,7 +242,7 @@ func (act serverAction) consumeDelete(ctx DeleteContext) (*Instance, error) {
 func (act serverAction) hasAccess(ctx Context, key []byte, rule string) error {
 	access, err := ctx.GetArc(key)
 	if err != nil {
-		return xerrors.Errorf("couldn't decode access: %v", err)
+		return xerrors.Errorf("couldn't read access: %v", err)
 	}
 
 	err = access.Match(rule, ctx.GetIdentity())
@@ -257,19 +254,38 @@ func (act serverAction) hasAccess(ctx Context, key []byte, rule string) error {
 	return nil
 }
 
-type actionFactory struct {
+// ActionFactory is a factory to decode protobuf messages into contract actions
+// and register static contracts.
+type ActionFactory struct {
 	contracts  map[string]Contract
 	arcFactory arc.AccessControlFactory
 	encoder    encoding.ProtoMarshaler
 }
 
-func (f actionFactory) FromProto(in proto.Message) (basic.ServerAction, error) {
+// NewActionFactory returns a new empty instance of the factory.
+func NewActionFactory() ActionFactory {
+	return ActionFactory{
+		contracts:  make(map[string]Contract),
+		arcFactory: common.NewAccessControlFactory(),
+		encoder:    encoding.NewProtoEncoder(),
+	}
+}
+
+// Register registers the contract using the name as the identifier. If an
+// identifier already exists, it will be overwritten.
+func (f ActionFactory) Register(name string, contract Contract) {
+	f.contracts[name] = contract
+}
+
+// FromProto implements basic.ActionFactory. It returns the server action of a
+// protobuf message when appropriate, otherwise an error.
+func (f ActionFactory) FromProto(in proto.Message) (basic.ServerAction, error) {
 	inAny, ok := in.(*any.Any)
 	if ok {
 		var err error
 		in, err = f.encoder.UnmarshalDynamicAny(inAny)
 		if err != nil {
-			return nil, xerrors.Errorf("..")
+			return nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
 		}
 	}
 

@@ -27,7 +27,7 @@ import (
 // ClientAction is used to create a transaction.
 type ClientAction interface {
 	encoding.Packable
-	io.WriterTo
+	encoding.Fingerprinter
 }
 
 // Context is the context provided to a server transaction when consumed.
@@ -101,36 +101,31 @@ func (t transaction) String() string {
 	return fmt.Sprintf("Transaction[%v]", t.identity)
 }
 
-func (t transaction) WriteTo(w io.Writer) (int64, error) {
+func (t transaction) Fingerprint(w io.Writer, enc encoding.ProtoMarshaler) error {
 	buffer := make([]byte, 8)
 	binary.LittleEndian.PutUint64(buffer[:], t.nonce)
 
-	sum := int64(0)
-
-	n, err := w.Write(buffer)
-	sum += int64(n)
+	_, err := w.Write(buffer)
 	if err != nil {
-		return sum, xerrors.Errorf("couldn't write nonce: %v", err)
+		return xerrors.Errorf("couldn't write nonce: %v", err)
 	}
 
 	buffer, err = t.identity.MarshalBinary()
 	if err != nil {
-		return sum, xerrors.Errorf("couldn't marshal identity: %v", err)
+		return xerrors.Errorf("couldn't marshal identity: %v", err)
 	}
 
-	n, err = w.Write(buffer)
-	sum += int64(n)
+	_, err = w.Write(buffer)
 	if err != nil {
-		return sum, xerrors.Errorf("couldn't write identity: %v", err)
+		return xerrors.Errorf("couldn't write identity: %v", err)
 	}
 
-	k, err := t.action.WriteTo(w)
-	sum += k
+	err = t.action.Fingerprint(w, enc)
 	if err != nil {
-		return sum, xerrors.Errorf("couldn't write action: %v", err)
+		return xerrors.Errorf("couldn't write action: %v", err)
 	}
 
-	return sum, nil
+	return nil
 }
 
 type serverTransaction struct {
@@ -188,7 +183,7 @@ func (f TransactionFactory) New(action ClientAction) (transactions.ClientTransac
 	}
 
 	h := f.hashFactory.New()
-	_, err := tx.WriteTo(h)
+	err := tx.Fingerprint(h, f.encoder)
 	if err != nil {
 		return tx, xerrors.Errorf("couldn't compute hash: %v", err)
 	}
@@ -254,7 +249,7 @@ func (f TransactionFactory) fillIdentity(tx *serverTransaction, pb *TransactionP
 	}
 
 	h := f.hashFactory.New()
-	_, err = tx.WriteTo(h)
+	err = tx.Fingerprint(h, f.encoder)
 	if err != nil {
 		return xerrors.Errorf("couldn't compute hash: %v", err)
 	}

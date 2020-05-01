@@ -1,10 +1,12 @@
 package darc
 
 import (
+	"bytes"
 	fmt "fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/ledger/arc"
 	"golang.org/x/xerrors"
 )
@@ -50,6 +52,22 @@ func TestExpression_Match(t *testing.T) {
 
 	err = expr.Match([]arc.Identity{fakeIdentity{err: xerrors.New("oops")}})
 	require.EqualError(t, err, "couldn't marshal identity: oops")
+}
+
+func TestExpression_Fingerprint(t *testing.T) {
+	expr := expression{matches: map[string]struct{}{
+		"\x01": {},
+		"\x03": {},
+	}}
+
+	buffer := new(bytes.Buffer)
+
+	err := expr.Fingerprint(buffer, nil)
+	require.NoError(t, err)
+	require.Equal(t, "\x01\x03", buffer.String())
+
+	err = expr.Fingerprint(fake.NewBadHash(), nil)
+	require.EqualError(t, err, "couldn't write match: fake error")
 }
 
 func TestExpression_Pack(t *testing.T) {

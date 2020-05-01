@@ -14,12 +14,12 @@ message Instance {
 
 message SpawnActionProto {
     string contractID = 1;
-    bytes argument = 2;
+    google.protobuf.Any argument = 2;
 }
 
 message InvokeActionProto {
     bytes key = 1;
-    bytes argument = 2;
+    google.protobuf.Any argument = 2;
 }
 
 message DeleteActionProto {

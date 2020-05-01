@@ -6,11 +6,11 @@ message Expression {
     repeated string matches = 1;
 }
 
-message AccessControlProto {
+message AccessProto {
     map<string, Expression> rules = 1;
 }
 
 message ActionProto {
     bytes key = 1;
-    AccessControlProto access = 2;
+    AccessProto access = 2;
 }

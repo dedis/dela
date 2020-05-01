@@ -52,22 +52,22 @@ func TestTransaction_WriteTo(t *testing.T) {
 	}
 
 	w := new(bytes.Buffer)
+	encoder := encoding.NewProtoEncoder()
 
-	sum, err := tx.WriteTo(w)
+	err := tx.Fingerprint(w, encoder)
 	require.NoError(t, err)
-	require.Equal(t, int64(10), sum)
 	require.Equal(t, "0100000000000000dfcc", fmt.Sprintf("%x", w.Bytes()))
 
-	_, err = tx.WriteTo(fake.NewBadHash())
+	err = tx.Fingerprint(fake.NewBadHash(), encoder)
 	require.EqualError(t, err, "couldn't write nonce: fake error")
 
 	tx.identity = fake.NewBadPublicKey()
-	_, err = tx.WriteTo(&fake.Hash{})
+	err = tx.Fingerprint(&fake.Hash{}, encoder)
 	require.EqualError(t, err, "couldn't marshal identity: fake error")
 
 	tx.identity = fake.PublicKey{}
 	tx.action = fakeClientAction{err: xerrors.New("oops")}
-	_, err = tx.WriteTo(&fake.Hash{})
+	err = tx.Fingerprint(&fake.Hash{}, encoder)
 	require.EqualError(t, err, "couldn't write action: oops")
 }
 
@@ -144,9 +144,9 @@ type fakeClientAction struct {
 	err error
 }
 
-func (a fakeClientAction) WriteTo(w io.Writer) (int64, error) {
+func (a fakeClientAction) Fingerprint(w io.Writer, enc encoding.ProtoMarshaler) error {
 	w.Write([]byte{0xcc})
-	return 1, a.err
+	return a.err
 }
 
 func (a fakeClientAction) Pack(encoding.ProtoMarshaler) (proto.Message, error) {

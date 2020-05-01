@@ -3,11 +3,17 @@ package darc
 import (
 	"io"
 
-	proto "github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric/encoding"
+	"go.dedis.ch/fabric/ledger/arc"
 	"go.dedis.ch/fabric/ledger/inventory"
 	"go.dedis.ch/fabric/ledger/transactions/basic"
 	"golang.org/x/xerrors"
+)
+
+const (
+	// UpdateAccessRule is the rule to be defined in the DARC to update it.
+	UpdateAccessRule = "darc:update"
 )
 
 // darcAction is a transaction action to create or update an access right
@@ -18,75 +24,93 @@ type darcAction struct {
 }
 
 // NewCreate returns a new action to create a DARC.
-func NewCreate() basic.ClientAction {
-	return darcAction{}
+func NewCreate(access Access) basic.ClientAction {
+	return darcAction{access: access}
 }
 
 // NewUpdate returns a new action to update a DARC.
-func NewUpdate(key []byte) basic.ClientAction {
-	return darcAction{key: key}
+func NewUpdate(key []byte, access Access) basic.ClientAction {
+	return darcAction{key: key, access: access}
 }
 
-// Pack implements encoding.Packable.
+// Pack implements encoding.Packable. It returns the protobuf message for the
+// action.
 func (act darcAction) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
-	pb := &ActionProto{
-		Key: act.key,
-	}
-
 	access, err := enc.Pack(act.access)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't pack access: %v", err)
 	}
 
-	pb.Access = access.(*AccessControlProto)
+	pb := &ActionProto{
+		Key:    act.key,
+		Access: access.(*AccessProto),
+	}
 
 	return pb, nil
 }
 
-// WriteTo implements io.WriterTo.
-func (act darcAction) WriteTo(w io.Writer) (int64, error) {
-	// TODO: write to
-	sum := int64(0)
-
-	n, err := w.Write(act.key)
-	sum += int64(n)
+// Fingerprint implements encoding.Fingerprinter. It serializes the DARC action
+// into the writer in a deterministic way.
+func (act darcAction) Fingerprint(w io.Writer, enc encoding.ProtoMarshaler) error {
+	_, err := w.Write(act.key)
 	if err != nil {
-		return sum, err
+		return xerrors.Errorf("couldn't write key: %v", err)
 	}
 
-	return 0, nil
+	err = act.access.Fingerprint(w, enc)
+	if err != nil {
+		return xerrors.Errorf("couldn't fingerprint access: %v", err)
+	}
+
+	return nil
 }
 
-type serverArcAction struct {
+// serverAction is the server-side action for DARCs.
+type serverAction struct {
 	encoder encoding.ProtoMarshaler
 	darcAction
 }
 
-func (act serverArcAction) Consume(ctx basic.Context, page inventory.WritablePage) error {
+// Consume implements basic.ServerAction. It writes the DARC into the page if it
+// is allowed to do so, otherwise it returns an error.
+func (act serverAction) Consume(ctx basic.Context, page inventory.WritablePage) error {
 	accesspb, err := act.encoder.Pack(act.access)
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't pack access: %v", err)
 	}
 
-	err = page.Write(ctx.GetID(), accesspb)
+	key := act.key
+	if key == nil {
+		// No key defined means a creation request then we use the transaction
+		// ID as a unique key for the DARC.
+		key = ctx.GetID()
+	} else {
+		// TODO: access control
+	}
+
+	err = page.Write(key, accesspb)
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't write access: %v", err)
 	}
 
 	return nil
 }
 
 type actionFactory struct {
-	darcFactory Factory
+	encoder     encoding.ProtoMarshaler
+	darcFactory arc.AccessControlFactory
 }
 
 // NewActionFactory returns a new instance of the action factory.
 func NewActionFactory() basic.ActionFactory {
 	return actionFactory{
+		encoder:     encoding.NewProtoEncoder(),
 		darcFactory: NewFactory(),
 	}
 }
 
+// FromProto implements basic.ActionFactory. It returns the server action of the
+// protobuf message when approriate, otherwise an error.
 func (f actionFactory) FromProto(in proto.Message) (basic.ServerAction, error) {
 	var pb *ActionProto
 	switch msg := in.(type) {
@@ -98,15 +122,15 @@ func (f actionFactory) FromProto(in proto.Message) (basic.ServerAction, error) {
 
 	access, err := f.darcFactory.FromProto(pb.GetAccess())
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't decode access: %v", err)
 	}
 
-	servAccess := serverArcAction{
+	servAccess := serverAction{
 		darcAction: darcAction{
 			key:    pb.GetKey(),
 			access: access.(Access),
 		},
-		encoder: f.darcFactory.encoder,
+		encoder: f.encoder,
 	}
 
 	return servAccess, nil

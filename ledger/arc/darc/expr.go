@@ -1,6 +1,9 @@
 package darc
 
 import (
+	"io"
+	"sort"
+
 	proto "github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/ledger/arc"
@@ -50,6 +53,26 @@ func (expr expression) Match(targets []arc.Identity) error {
 		_, ok := expr.matches[string(text)]
 		if !ok {
 			return xerrors.Errorf("couldn't match identity '%v'", target)
+		}
+	}
+
+	return nil
+}
+
+// Fingerprint implements encoding.Fingerprinter. It serializes the expression
+// into the writer in a deterministic way.
+func (expr expression) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
+	matches := make(sort.StringSlice, 0, len(expr.matches))
+	for key := range expr.matches {
+		matches = append(matches, key)
+	}
+
+	sort.Sort(matches)
+
+	for _, match := range matches {
+		_, err := w.Write([]byte(match))
+		if err != nil {
+			return xerrors.Errorf("couldn't write match: %v", err)
 		}
 	}
 

@@ -30,16 +30,28 @@ type Call struct {
 
 // Get returns the nth call ith parameter.
 func (c *Call) Get(n, i int) interface{} {
+	if c == nil {
+		return nil
+	}
+
 	return c.calls[n][i]
 }
 
 // Len returns the number of calls.
 func (c *Call) Len() int {
+	if c == nil {
+		return 0
+	}
+
 	return len(c.calls)
 }
 
 // Add adds a call to the list.
 func (c *Call) Add(args ...interface{}) {
+	if c == nil {
+		return
+	}
+
 	c.calls = append(c.calls, args)
 }
 
