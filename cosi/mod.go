@@ -43,9 +43,9 @@ type CollectiveSigning interface {
 	// GetSignatureFactory returns the signature factory.
 	GetSignatureFactory() crypto.SignatureFactory
 
-	// GetVerifier returns a verifier that can verify the signature created from
-	// a collective signing.
-	GetVerifier(ca crypto.CollectiveAuthority) (crypto.Verifier, error)
+	// GetVerifierFactory returns a factory that can create a verifier to check
+	// the validity of a signature.
+	GetVerifierFactory() crypto.VerifierFactory
 
 	// Listen starts the collective signing so that it will answer to requests.
 	Listen(Hashable) (Actor, error)

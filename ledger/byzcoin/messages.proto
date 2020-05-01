@@ -4,6 +4,16 @@ package byzcoin;
 
 import "google/protobuf/any.proto";
 
+message Roster {
+    repeated bytes addresses = 1;
+    repeated google.protobuf.Any publicKeys = 2;
+}
+
+message GenesisPayload {
+    Roster roster = 1;
+    bytes footprint = 2;
+}
+
 // BlockPayload is the message that will be stored in the blocks. It is composed
 // of the transactions and the footprint of the new inventory.
 message BlockPayload {

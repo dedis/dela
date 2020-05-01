@@ -21,18 +21,28 @@ func TestTxProcessor_Validate(t *testing.T) {
 	err := proc.Validate(0, &BlockPayload{})
 	require.NoError(t, err)
 
+	err = proc.Validate(0, &GenesisPayload{})
+	require.NoError(t, err)
+
 	err = proc.Validate(0, nil)
-	require.EqualError(t, err,
-		"message type '<nil>' but expected '*byzcoin.BlockPayload'")
+	require.EqualError(t, err, "invalid message type '<nil>'")
 
 	proc.inventory = fakeInventory{err: xerrors.New("oops")}
 	err = proc.Validate(0, &BlockPayload{})
 	require.EqualError(t, err,
 		"couldn't stage the transactions: couldn't stage new page: oops")
 
+	proc.inventory = fakeInventory{errPage: xerrors.New("oops")}
+	err = proc.Validate(0, &GenesisPayload{})
+	require.EqualError(t, err,
+		"couldn't stage genesis: couldn't stage page: couldn't write roster: oops")
+
 	proc.inventory = fakeInventory{index: 1}
 	err = proc.Validate(0, &BlockPayload{})
 	require.EqualError(t, err, "invalid index 1 != 0")
+
+	err = proc.Validate(0, &GenesisPayload{})
+	require.EqualError(t, err, "index 0 expected but got 1")
 
 	proc.inventory = fakeInventory{footprint: []byte{0xab}}
 	err = proc.Validate(0, &BlockPayload{Footprint: []byte{0xcd}})
@@ -87,7 +97,7 @@ func TestTxProcessor_Commit(t *testing.T) {
 	require.NoError(t, err)
 
 	err = proc.Commit(nil)
-	require.EqualError(t, err, "message type '<nil>' but expected '*byzcoin.BlockPayload'")
+	require.EqualError(t, err, "invalid message type '<nil>'")
 
 	proc.inventory = fakeInventory{err: xerrors.New("oops")}
 	err = proc.Commit(&BlockPayload{Footprint: []byte{0xab}})
@@ -102,6 +112,7 @@ type fakePage struct {
 	index     uint64
 	footprint []byte
 	err       error
+	value     proto.Message
 	calls     [][]interface{}
 }
 
@@ -114,7 +125,7 @@ func (p *fakePage) GetFootprint() []byte {
 }
 
 func (p *fakePage) Read([]byte) (proto.Message, error) {
-	return &empty.Empty{}, p.err
+	return p.value, p.err
 }
 
 func (p *fakePage) Write(key []byte, value proto.Message) error {

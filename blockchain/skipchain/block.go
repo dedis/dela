@@ -2,17 +2,14 @@ package skipchain
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"encoding/binary"
 	fmt "fmt"
-	"hash"
 
 	proto "github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
 
@@ -29,17 +26,6 @@ func (d Digest) String() string {
 	return fmt.Sprintf("%x", d[:])[:16]
 }
 
-// sha256Factory is a factory for SHA256 digests.
-//
-// - implements crypto.HashFactory
-type sha256Factory struct{}
-
-// New implements crypto.HashFactory. It returns a new instance of a SHA256
-// hash.
-func (f sha256Factory) New() hash.Hash {
-	return sha256.New()
-}
-
 // SkipBlock is a representation of the data held by a block. It contains the
 // information to build a skipchain.
 //
@@ -47,14 +33,10 @@ func (f sha256Factory) New() hash.Hash {
 // - implements consensus.Proposal
 // - implements fmt.Stringer
 type SkipBlock struct {
-	hash     Digest
-	verifier crypto.Verifier
+	hash Digest
 
 	// Index is the block index since the genesis block.
 	Index uint64
-
-	// Conodes is the list of conodes participating in the consensus.
-	Conodes Conodes
 
 	// GenesisID is the hash of the genesis block which represents the chain
 	// identifier.
@@ -66,35 +48,6 @@ type SkipBlock struct {
 	// Payload is the data stored in the block. It representation is independant
 	// from the skipchain module.
 	Payload proto.Message
-}
-
-func newSkipBlock(
-	encoder encoding.ProtoMarshaler,
-	hashFactory crypto.HashFactory,
-	verifier crypto.Verifier,
-	index uint64,
-	conodes Conodes,
-	id Digest,
-	backLink Digest,
-	data proto.Message,
-) (SkipBlock, error) {
-	block := SkipBlock{
-		verifier:  verifier,
-		Index:     index,
-		Conodes:   conodes,
-		GenesisID: id,
-		BackLink:  backLink,
-		Payload:   data,
-	}
-
-	hash, err := block.computeHash(hashFactory, encoder)
-	if err != nil {
-		return SkipBlock{}, xerrors.Errorf("couldn't hash the block: %w", err)
-	}
-
-	block.hash = hash
-
-	return block, nil
 }
 
 // GetIndex returns the index of the block since the genesis block.
@@ -114,18 +67,6 @@ func (b SkipBlock) GetPreviousHash() []byte {
 	return b.BackLink.Bytes()
 }
 
-// GetPlayers implements blockchain.Block. It returns the list of players.
-func (b SkipBlock) GetPlayers() mino.Players {
-	return b.Conodes
-}
-
-// GetVerifier implements consensus.Proposal. It returns the verifier for the
-// block.
-// TODO: it might have sense to remove this function.
-func (b SkipBlock) GetVerifier() crypto.Verifier {
-	return b.verifier
-}
-
 // GetPayload implements blockchain.Block. It returns the block payload.
 func (b SkipBlock) GetPayload() proto.Message {
 	return b.Payload
@@ -139,17 +80,11 @@ func (b SkipBlock) Pack(encoder encoding.ProtoMarshaler) (proto.Message, error) 
 		return nil, xerrors.Errorf("couldn't marshal the payload: %v", err)
 	}
 
-	roster, err := encoder.Pack(b.Conodes)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack the conodes: %v", err)
-	}
-
 	blockproto := &BlockProto{
 		Index:     b.Index,
 		GenesisID: b.GenesisID.Bytes(),
 		Backlink:  b.BackLink.Bytes(),
 		Payload:   payloadAny,
-		Roster:    roster.(*Roster),
 	}
 
 	return blockproto, nil
@@ -171,13 +106,6 @@ func (b SkipBlock) computeHash(factory crypto.HashFactory,
 	_, err := h.Write(buffer)
 	if err != nil {
 		return Digest{}, xerrors.Errorf("couldn't write index: %v", err)
-	}
-
-	if b.Conodes != nil {
-		_, err = b.Conodes.WriteTo(h)
-		if err != nil {
-			return Digest{}, xerrors.Errorf("couldn't write conodes: %v", err)
-		}
 	}
 
 	_, err = h.Write(b.GenesisID.Bytes())
@@ -211,21 +139,6 @@ type VerifiableBlock struct {
 	Chain consensus.Chain
 }
 
-// Verify implements blockchain.VerifiableBlock. It makes sure the integrity of
-// the chain is valid.
-func (vb VerifiableBlock) Verify(v crypto.Verifier) error {
-	err := vb.Chain.Verify(v)
-	if err != nil {
-		return xerrors.Errorf("couldn't verify the chain: %v", err)
-	}
-
-	if !bytes.Equal(vb.GetHash(), vb.Chain.GetLastHash()) {
-		return xerrors.Errorf("mismatch target %x != %x", vb.GetHash(), vb.Chain.GetLastHash())
-	}
-
-	return nil
-}
-
 // Pack implements encoding.Packable. It returns the protobuf message for a
 // verifiable block.
 func (vb VerifiableBlock) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
@@ -251,9 +164,20 @@ func (vb VerifiableBlock) Pack(enc encoding.ProtoMarshaler) (proto.Message, erro
 //
 // - implements blockchain.BlockFactory
 type blockFactory struct {
-	*Skipchain
 	encoder     encoding.ProtoMarshaler
 	hashFactory crypto.HashFactory
+	consensus   consensus.Consensus
+}
+
+func (f blockFactory) prepareBlock(block *SkipBlock) error {
+	hash, err := block.computeHash(f.hashFactory, f.encoder)
+	if err != nil {
+		return xerrors.Errorf("couldn't hash the block: %w", err)
+	}
+
+	block.hash = hash
+
+	return nil
 }
 
 func (f blockFactory) fromPrevious(prev SkipBlock, data proto.Message) (SkipBlock, error) {
@@ -264,41 +188,19 @@ func (f blockFactory) fromPrevious(prev SkipBlock, data proto.Message) (SkipBloc
 		genesisID = prev.GenesisID
 	}
 
-	block, err := newSkipBlock(
-		f.encoder,
-		f.hashFactory,
-		prev.verifier,
-		prev.Index+1,
-		prev.Conodes,
-		genesisID,
-		prev.hash,
-		data,
-	)
+	block := SkipBlock{
+		Index:     prev.Index + 1,
+		GenesisID: genesisID,
+		BackLink:  prev.hash,
+		Payload:   data,
+	}
 
+	err := f.prepareBlock(&block)
 	if err != nil {
 		return block, xerrors.Errorf("couldn't make block: %w", err)
 	}
 
 	return block, nil
-}
-
-func (f blockFactory) decodeConodes(msgs []*ConodeProto) (Conodes, error) {
-	pubkeyFactory := f.cosi.GetPublicKeyFactory()
-	addrFactory := f.mino.GetAddressFactory()
-
-	conodes := make(Conodes, len(msgs))
-	for i, msg := range msgs {
-		publicKey, err := pubkeyFactory.FromProto(msg.GetPublicKey())
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't decode public key: %v", err)
-		}
-
-		conodes[i] = Conode{
-			addr:      addrFactory.FromText(msg.GetAddress()),
-			publicKey: publicKey,
-		}
-	}
-	return conodes, nil
 }
 
 func (f blockFactory) decodeBlock(src proto.Message) (SkipBlock, error) {
@@ -315,32 +217,19 @@ func (f blockFactory) decodeBlock(src proto.Message) (SkipBlock, error) {
 	backLink := Digest{}
 	copy(backLink[:], in.GetBacklink())
 
-	conodes, err := f.decodeConodes(in.GetRoster().GetConodes())
-	if err != nil {
-		return SkipBlock{}, err
-	}
-
-	verifier, err := f.cosi.GetVerifier(conodes)
-	if err != nil {
-		return SkipBlock{}, xerrors.Errorf("couldn't make verifier: %v", err)
-	}
-
 	genesisID := Digest{}
 	copy(genesisID[:], in.GetGenesisID())
 
-	block, err := newSkipBlock(
-		f.encoder,
-		f.hashFactory,
-		verifier,
-		in.GetIndex(),
-		conodes,
-		genesisID,
-		backLink,
-		payload,
-	)
+	block := SkipBlock{
+		Index:     in.GetIndex(),
+		GenesisID: genesisID,
+		BackLink:  backLink,
+		Payload:   payload,
+	}
 
+	err = f.prepareBlock(&block)
 	if err != nil {
-		return block, xerrors.Errorf("couldn't make block: %v", err)
+		return block, xerrors.Errorf("couldn't prepare block: %v", err)
 	}
 
 	return block, nil
@@ -359,21 +248,20 @@ func (f blockFactory) FromVerifiable(src proto.Message) (blockchain.Block, error
 		return nil, xerrors.Errorf("couldn't decode the block: %v", err)
 	}
 
-	chainFactory := f.consensus.GetChainFactory()
+	chainFactory, err := f.consensus.GetChainFactory()
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't get the chain factory: %v", err)
+	}
 
+	// Integrity of the chain is verified during decoding.
 	chain, err := chainFactory.FromProto(in.GetChain())
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't decode the chain: %v", err)
 	}
 
-	vb := VerifiableBlock{
-		SkipBlock: block,
-		Chain:     chain,
-	}
-
-	err = vb.Verify(block.verifier)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't verify: %v", err)
+	// Only the link between the chain and the block needs to be verified.
+	if !bytes.Equal(chain.GetLastHash(), block.hash[:]) {
+		return nil, xerrors.Errorf("mismatch hashes: %#x != %#x", chain.GetLastHash(), block.hash)
 	}
 
 	return block, nil

@@ -16,6 +16,7 @@ import (
 	"github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/golang/protobuf/ptypes/wrappers"
+	"go.dedis.ch/fabric/consensus/viewchange"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
@@ -125,6 +126,8 @@ type CollectiveAuthority struct {
 	crypto.CollectiveAuthority
 	addrs   []mino.Address
 	signers []crypto.AggregateSigner
+
+	Call *Call
 }
 
 // GenSigner is a function to generate a signer.
@@ -198,6 +201,7 @@ func (ca CollectiveAuthority) GetPublicKey(addr mino.Address) (crypto.PublicKey,
 func (ca CollectiveAuthority) Take(updaters ...mino.FilterUpdater) mino.Players {
 	filter := mino.ApplyFilters(updaters)
 	newCA := CollectiveAuthority{
+		Call:    ca.Call,
 		addrs:   make([]mino.Address, len(filter.Indices)),
 		signers: make([]crypto.AggregateSigner, len(filter.Indices)),
 	}
@@ -206,6 +210,46 @@ func (ca CollectiveAuthority) Take(updaters ...mino.FilterUpdater) mino.Players 
 		newCA.signers[i] = ca.signers[k]
 	}
 	return newCA
+}
+
+type signerWrapper struct {
+	crypto.AggregateSigner
+	pubkey crypto.PublicKey
+}
+
+func (s signerWrapper) GetPublicKey() crypto.PublicKey {
+	return s.pubkey
+}
+
+// Apply implements viewchange.EvolvableAuthority.
+func (ca CollectiveAuthority) Apply(cs viewchange.ChangeSet) viewchange.EvolvableAuthority {
+	if ca.Call != nil {
+		ca.Call.Add("apply", cs)
+	}
+
+	newAuthority := CollectiveAuthority{
+		Call:    ca.Call,
+		addrs:   make([]mino.Address, len(ca.addrs)),
+		signers: make([]crypto.AggregateSigner, len(ca.signers)),
+	}
+	for i := range ca.addrs {
+		newAuthority.addrs[i] = ca.addrs[i]
+		newAuthority.signers[i] = ca.signers[i]
+	}
+
+	for _, player := range cs.Add {
+		newAuthority.addrs = append(newAuthority.addrs, player.Address)
+		newAuthority.signers = append(newAuthority.signers, signerWrapper{
+			pubkey: player.PublicKey,
+		})
+	}
+
+	for _, i := range cs.Remove {
+		newAuthority.addrs = append(newAuthority.addrs[:i], newAuthority.addrs[i+1:]...)
+		newAuthority.signers = append(newAuthority.signers[:i], newAuthority.signers[i+1:]...)
+	}
+
+	return newAuthority
 }
 
 // Len implements mino.Players.
@@ -580,6 +624,7 @@ type Hash struct {
 	hash.Hash
 	delay int
 	err   error
+	Call  *Call
 }
 
 // NewBadHash returns a fake hash that returns an error when appropriate.
@@ -593,7 +638,11 @@ func NewBadHashWithDelay(delay int) *Hash {
 	return &Hash{err: xerrors.New("fake error"), delay: delay}
 }
 
-func (h *Hash) Write([]byte) (int, error) {
+func (h *Hash) Write(in []byte) (int, error) {
+	if h.Call != nil {
+		h.Call.Add(in)
+	}
+
 	if h.delay > 0 {
 		h.delay--
 		return 0, nil

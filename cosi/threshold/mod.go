@@ -52,10 +52,10 @@ func (c *CoSi) GetSignatureFactory() crypto.SignatureFactory {
 	}
 }
 
-// GetVerifier implements cosi.CollectiveSigning. It returns a verifier that
-// will verify a signature from the collective authority.
-func (c *CoSi) GetVerifier(ca crypto.CollectiveAuthority) (crypto.Verifier, error) {
-	return newVerifier(ca, c.signer.GetVerifierFactory()), nil
+// GetVerifierFactory implements cosi.CollectiveSigning. It returns the verifier
+// factory.
+func (c *CoSi) GetVerifierFactory() crypto.VerifierFactory {
+	return verifierFactory{factory: c.signer.GetVerifierFactory()}
 }
 
 // Listen implements cosi.CollectiveSigning.

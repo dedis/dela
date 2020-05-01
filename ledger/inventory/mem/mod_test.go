@@ -5,6 +5,7 @@ import (
 	"testing"
 	"testing/quick"
 
+	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/internal/testing/fake"
@@ -61,6 +62,14 @@ func TestInMemoryInventory_Stage(t *testing.T) {
 	require.Len(t, inv.stagingPages, 1)
 	require.Len(t, inv.pages, 1)
 
+	// Check stability of the hash of the page.
+	mempage := page.(inMemoryPage)
+	for i := 0; i < 10; i++ {
+		require.NoError(t, inv.computeHash(&mempage))
+		_, ok := inv.stagingPages[mempage.footprint]
+		require.True(t, ok)
+	}
+
 	_, err = inv.Stage(func(inventory.WritablePage) error {
 		return xerrors.New("oops")
 	})
@@ -72,6 +81,14 @@ func TestInMemoryInventory_Stage(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "couldn't compute page hash: ")
+
+	inv.hashFactory = fake.NewHashFactory(&fake.Hash{})
+	inv.encoder = fake.BadMarshalStableEncoder{}
+	_, err = inv.Stage(func(inventory.WritablePage) error {
+		return nil
+	})
+	require.EqualError(t, err,
+		"couldn't compute page hash: couldn't marshal entry: fake error")
 }
 
 func TestInMemoryInventory_Commit(t *testing.T) {
@@ -108,9 +125,9 @@ func TestPage_GetFootprint(t *testing.T) {
 
 func TestPage_Read(t *testing.T) {
 	page := inMemoryPage{
-		entries: map[Digest]inMemoryEntry{
-			{1}: {value: &wrappers.StringValue{Value: "1"}},
-			{2}: {value: &wrappers.StringValue{Value: "2"}},
+		entries: map[Digest]proto.Message{
+			{1}: &wrappers.StringValue{Value: "1"},
+			{2}: &wrappers.StringValue{Value: "2"},
 		},
 	}
 
@@ -128,7 +145,7 @@ func TestPage_Read(t *testing.T) {
 
 func TestPage_Write(t *testing.T) {
 	page := inMemoryPage{
-		entries: make(map[Digest]inMemoryEntry),
+		entries: make(map[Digest]proto.Message),
 	}
 
 	value := &wrappers.BoolValue{Value: true}

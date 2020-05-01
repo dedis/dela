@@ -29,6 +29,9 @@ definitions of modular pieces that build a blockchain.
   algorithm that can be used to verify the integrity of some data. One example
   is the inventory page integrity to prove which instances are stored.
 
+- **governance** - Governance is a black box that gives the ability to act on
+  the participants of a consensus.
+
 - **instance** - An instance is the smallest unit of storage in a ledger. It is
   identified by a unique key and stores a generic piece of data.
 

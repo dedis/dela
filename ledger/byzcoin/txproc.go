@@ -35,26 +35,55 @@ func newTxProcessor(c consumer.Consumer) *txProcessor {
 // is a success. In that case, the payload has been staged in the inventory and
 // is waiting for a commit order.
 func (proc *txProcessor) Validate(index uint64, data proto.Message) error {
-	payload, ok := data.(*BlockPayload)
-	if !ok {
-		return xerrors.Errorf("message type '%T' but expected '%T'", data, payload)
-	}
+	switch payload := data.(type) {
+	case *GenesisPayload:
+		page, err := proc.setup(payload)
+		if err != nil {
+			return xerrors.Errorf("couldn't stage genesis: %v", err)
+		}
 
-	page, err := proc.process(payload)
-	if err != nil {
-		return xerrors.Errorf("couldn't stage the transactions: %v", err)
-	}
+		if page.GetIndex() != 0 {
+			return xerrors.Errorf("index 0 expected but got %d", page.GetIndex())
+		}
+	case *BlockPayload:
+		fabric.Logger.Trace().
+			Hex("footprint", payload.GetFootprint()).
+			Msgf("validating block payload")
 
-	if page.GetIndex() != index {
-		return xerrors.Errorf("invalid index %d != %d", page.GetIndex(), index)
-	}
+		page, err := proc.process(payload)
+		if err != nil {
+			return xerrors.Errorf("couldn't stage the transactions: %v", err)
+		}
 
-	if !bytes.Equal(page.GetFootprint(), payload.GetFootprint()) {
-		return xerrors.Errorf("mismatch payload footprint '%#x' != '%#x'",
-			page.GetFootprint(), payload.GetFootprint())
+		if page.GetIndex() != index {
+			return xerrors.Errorf("invalid index %d != %d", page.GetIndex(), index)
+		}
+
+		if !bytes.Equal(page.GetFootprint(), payload.GetFootprint()) {
+			return xerrors.Errorf("mismatch payload footprint '%#x' != '%#x'",
+				page.GetFootprint(), payload.GetFootprint())
+		}
+	default:
+		return xerrors.Errorf("invalid message type '%T'", data)
 	}
 
 	return nil
+}
+
+func (proc *txProcessor) setup(payload *GenesisPayload) (inventory.Page, error) {
+	page, err := proc.inventory.Stage(func(page inventory.WritablePage) error {
+		err := page.Write(authorityKey, payload.Roster)
+		if err != nil {
+			return xerrors.Errorf("couldn't write roster: %v", err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't stage page: %v", err)
+	}
+
+	return page, nil
 }
 
 func (proc *txProcessor) process(payload *BlockPayload) (inventory.Page, error) {
@@ -107,15 +136,20 @@ func (proc *txProcessor) process(payload *BlockPayload) (inventory.Page, error) 
 // payload as it should have previously been processed. It returns nil if the
 // commit is a success, otherwise an error.
 func (proc *txProcessor) Commit(data proto.Message) error {
-	payload, ok := data.(*BlockPayload)
-	if !ok {
-		return xerrors.Errorf("message type '%T' but expected '%T'", data, payload)
+	var footprint []byte
+
+	switch payload := data.(type) {
+	case *GenesisPayload:
+		footprint = payload.GetFootprint()
+	case *BlockPayload:
+		footprint = payload.GetFootprint()
+	default:
+		return xerrors.Errorf("invalid message type '%T'", data)
 	}
 
-	err := proc.inventory.Commit(payload.GetFootprint())
+	err := proc.inventory.Commit(footprint)
 	if err != nil {
-		return xerrors.Errorf("couldn't commit to page '%#x': %v",
-			payload.GetFootprint(), err)
+		return xerrors.Errorf("couldn't commit to page '%#x': %v", footprint, err)
 	}
 
 	return nil
