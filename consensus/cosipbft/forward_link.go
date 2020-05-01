@@ -58,29 +58,33 @@ func (fl forwardLink) Verify(v crypto.Verifier) error {
 
 // Pack returns the protobuf message of the forward link.
 func (fl forwardLink) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
-	pb := &ForwardLinkProto{
-		From: fl.from,
-		To:   fl.to,
-	}
-
-	var err error
-	pb.ChangeSet, err = fl.packChangeSet(enc)
+	changeset, err := fl.packChangeSet(enc)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't pack changeset: %v", err)
 	}
 
+	var prepare *any.Any
 	if fl.prepare != nil {
-		pb.Prepare, err = enc.PackAny(fl.prepare)
+		prepare, err = enc.PackAny(fl.prepare)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't pack prepare signature: %v", err)
 		}
 	}
 
+	var commit *any.Any
 	if fl.commit != nil {
-		pb.Commit, err = enc.PackAny(fl.commit)
+		commit, err = enc.PackAny(fl.commit)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't pack commit signature: %v", err)
 		}
+	}
+
+	pb := &ForwardLinkProto{
+		From:      fl.from,
+		To:        fl.to,
+		Prepare:   prepare,
+		Commit:    commit,
+		ChangeSet: changeset,
 	}
 
 	return pb, nil

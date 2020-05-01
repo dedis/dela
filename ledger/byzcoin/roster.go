@@ -124,22 +124,25 @@ func (r roster) PublicKeyIterator() crypto.PublicKeyIterator {
 // Pack implements encoding.Packable. It returns the protobuf message for the
 // roster.
 func (r roster) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
-	pb := &Roster{
-		Addresses:  make([][]byte, r.Len()),
-		PublicKeys: make([]*any.Any, r.Len()),
-	}
+	addrs := make([][]byte, r.Len())
+	pubkeys := make([]*any.Any, r.Len())
 
 	var err error
 	for i, addr := range r.addrs {
-		pb.Addresses[i], err = addr.MarshalText()
+		addrs[i], err = addr.MarshalText()
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't marshal address: %v", err)
 		}
 
-		pb.PublicKeys[i], err = enc.PackAny(r.pubkeys[i])
+		pubkeys[i], err = enc.PackAny(r.pubkeys[i])
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't pack public key: %v", err)
 		}
+	}
+
+	pb := &Roster{
+		Addresses:  addrs,
+		PublicKeys: pubkeys,
 	}
 
 	return pb, nil
@@ -159,16 +162,19 @@ func newRosterFactory(af mino.AddressFactory, pf crypto.PublicKeyFactory) roster
 }
 
 func (f rosterFactory) New(authority crypto.CollectiveAuthority) roster {
-	roster := roster{
-		addrs:   make([]mino.Address, authority.Len()),
-		pubkeys: make([]crypto.PublicKey, authority.Len()),
-	}
+	addrs := make([]mino.Address, authority.Len())
+	pubkeys := make([]crypto.PublicKey, authority.Len())
 
 	addrIter := authority.AddressIterator()
 	pubkeyIter := authority.PublicKeyIterator()
 	for i := 0; addrIter.HasNext() && pubkeyIter.HasNext(); i++ {
-		roster.addrs[i] = addrIter.GetNext()
-		roster.pubkeys[i] = pubkeyIter.GetNext()
+		addrs[i] = addrIter.GetNext()
+		pubkeys[i] = pubkeyIter.GetNext()
+	}
+
+	roster := roster{
+		addrs:   addrs,
+		pubkeys: pubkeys,
 	}
 
 	return roster
