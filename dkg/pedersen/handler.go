@@ -2,7 +2,9 @@ package pedersen
 
 import (
 	"context"
+	"fmt"
 	"sync"
+	"time"
 
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/mino"
@@ -21,6 +23,7 @@ var suite = suites.MustFind("Ed25519")
 //
 // - implements mino.Handler
 type Handler struct {
+	sync.RWMutex
 	mino.UnsupportedHandler
 	af        mino.AddressFactory
 	dkg       *pedersen.DistKeyGenerator
@@ -55,7 +58,7 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 	// We expect a Start message or a decrypt request at first
 	switch msg := msg.(type) {
 	case *Start:
-		err := h.start(msg, from, out, in)
+		err := h.start(msg, []*Deal{}, from, out, in)
 		if err != nil {
 			return xerrors.Errorf("failed to start: %v", err)
 		}
@@ -73,7 +76,9 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 			return xerrors.Errorf("failed tun unmarshal C: %v", err)
 		}
 
+		h.RLock()
 		S := suite.Point().Mul(h.privShare.V, K)
+		h.RUnlock()
 		partial := suite.Point().Sub(C, S)
 
 		VBuf, err := partial.MarshalBinary()
@@ -81,12 +86,14 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 			return xerrors.Errorf("failed to marshal the partial: %v", err)
 		}
 
+		h.RLock()
 		decryptReply := &DecryptReply{
 			V: VBuf,
 			// TODO: check if using the private index is the same as the public
 			// index.
 			I: int64(h.privShare.I),
 		}
+		h.RUnlock()
 
 		errs := out.Send(decryptReply, from)
 		err, more := <-errs
@@ -95,14 +102,39 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 				"reply: %v", err)
 		}
 
+	case *Deal:
+		// This is a special case where a DKG started, some nodes received the
+		// start signal and started sending their deals but we have not yet
+		// received out start signal. In this case we will collect the Deals and
+		// wait for the start signal.
+		deals := []*Deal{msg}
+		for {
+			from, msg, err := in.Recv(context.Background())
+			if err != nil {
+				return xerrors.Errorf("failed to receive: %v", err)
+			}
+			switch msg := msg.(type) {
+			case *Start:
+				err := h.start(msg, deals, from, out, in)
+				if err != nil {
+					return xerrors.Errorf("failed to start: %v", err)
+				}
+			case *Deal:
+				deals = append(deals, msg)
+			default:
+				return xerrors.Errorf("unexpected message, expected Deal or "+
+					"Start, got: %T", msg)
+			}
+		}
+
 	default:
 		return xerrors.Errorf("expected Start message or decrypt request as "+
-			"first message, got %T: %v", msg, msg)
+			"first message, got: %T", msg)
 	}
 	return nil
 }
 
-func (h *Handler) start(start *Start, from mino.Address,
+func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 	out mino.Sender, in mino.Receiver) error {
 
 	addrs := make([]mino.Address, len(start.Addresses))
@@ -152,9 +184,26 @@ func (h *Handler) start(start *Start, from mino.Address,
 	}
 	wg.Wait()
 
-	for !h.dkg.Certified() {
+	fabric.Logger.Trace().Msgf("%s sent all its deals", h.me)
 
-		// 3. Receive the deals or the Responses
+	receivedResps := make([]*pedersen.Response, 0)
+
+	numReceivedDeals := 0
+
+	// Process the deals we received before the start
+	for _, deal := range receivedDeals {
+		err = h.handleDeal(deal, from, addrs, out)
+		if err != nil {
+			fabric.Logger.Warn().Msgf("%s failed to handle received deal "+
+				"from %s: %v", h.me, from, err)
+		}
+		numReceivedDeals++
+	}
+
+	// It there are N nodes, then N nodes first send (N-1) Deals. Then each node
+	// send a response to every other nodes. So the number of responses a node
+	// get is (N-1) * (N-1)
+	for numReceivedDeals < len(deals) {
 		from, msg, err := in.Recv(context.Background())
 		if err != nil {
 			return xerrors.Errorf("failed to receive after sending deals: %v", err)
@@ -165,9 +214,10 @@ func (h *Handler) start(start *Start, from mino.Address,
 			// 4. Process the Deal and Send the response to all the other nodes
 			err = h.handleDeal(msg, from, addrs, out)
 			if err != nil {
-				fabric.Logger.Warn().Msgf("failed to handle received deal "+
-					"from %s: %v", from, err)
+				fabric.Logger.Warn().Msgf("%s failed to handle received deal "+
+					"from %s: %v", h.me, from, err)
 			}
+			numReceivedDeals++
 		case *Response:
 			// 5. Processing responses
 			fabric.Logger.Trace().Msgf("%s received response from %s", h.me, from)
@@ -180,12 +230,53 @@ func (h *Handler) start(start *Start, from mino.Address,
 					Signature: msg.Response.Signature,
 				},
 			}
-			_, err = h.dkg.ProcessResponse(response)
-			if err != nil {
-				return xerrors.Errorf("failed to process response: %v", err)
-			}
+			receivedResps = append(receivedResps, response)
+		default:
+			return xerrors.Errorf("undexpected message: %T", msg)
 		}
 	}
+
+	for _, response := range receivedResps {
+		_, err = h.dkg.ProcessResponse(response)
+		if err != nil {
+			fabric.Logger.Warn().Msgf("%s failed to process response from '%s': %v",
+				h.me, from, err)
+		}
+	}
+
+	for !h.dkg.Certified() {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		from, msg, err := in.Recv(ctx)
+		if err != nil {
+			return xerrors.Errorf("failed to receive after sending deals: %v", err)
+		}
+
+		switch msg := msg.(type) {
+		case *Response:
+			// 5. Processing responses
+			fabric.Logger.Trace().Msgf("%s received response from %s", h.me, from)
+			response := &pedersen.Response{
+				Index: msg.Index,
+				Response: &vss.Response{
+					SessionID: msg.Response.SessionID,
+					Index:     msg.Response.Index,
+					Status:    msg.Response.Status,
+					Signature: msg.Response.Signature,
+				},
+			}
+
+			_, err = h.dkg.ProcessResponse(response)
+			if err != nil {
+				fabric.Logger.Warn().Msgf("%s, failed to process response from '%s': %v",
+					h.me, from, err)
+			}
+		default:
+			return xerrors.Errorf("expected a response, got: %T", msg)
+		}
+	}
+
+	fmt.Println(h.me, "is certified")
 
 	fabric.Logger.Trace().Msgf("%s is certified", h.me)
 
@@ -207,7 +298,14 @@ func (h *Handler) start(start *Start, from mino.Address,
 		return xerrors.Errorf("got an error while sending pub key: %v", err)
 	}
 
+	h.Lock()
 	h.privShare = distrKey.PriShare()
+	h.Unlock()
+
+	// Here we should not exit too late in order to let others contact us
+	time.Sleep(5 * time.Second)
+
+	fmt.Println("EXIT handler", h.me)
 
 	return nil
 }
@@ -250,6 +348,7 @@ func (h *Handler) handleDeal(msg *Deal, from mino.Address, addrs []mino.Address,
 			wg.Done()
 			continue
 		}
+
 		errs := out.Send(respProto, addr)
 		go func(errs <-chan error) {
 			err, more := <-errs
