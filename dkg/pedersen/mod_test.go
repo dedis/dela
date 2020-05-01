@@ -7,11 +7,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/minoch"
+	"go.dedis.ch/fabric/mino/minogrpc"
 	"go.dedis.ch/kyber/v3"
 )
 
 func TestStart(t *testing.T) {
-	n := 3
+	n := 20
 
 	addrFactory := minoch.AddressFactory{}
 
@@ -19,17 +20,21 @@ func TestStart(t *testing.T) {
 	pubKeys := make([]kyber.Point, n)
 	privKeys := make([]kyber.Scalar, n)
 
-	manager := minoch.NewManager()
-	minos := make([]mino.Mino, n)
+	// manager := minoch.NewManager()
+	minos := make([]*minogrpc.Minogrpc, n)
 	pedersens := make([]*Pedersen, n)
 
 	for i := 0; i < n; i++ {
-		addrs[i] = addrFactory.FromText([]byte(fmt.Sprintf("%d", i)))
+		addrs[i] = addrFactory.FromText([]byte(fmt.Sprintf("127.0.0.1:200%d", i)))
 		privKeys[i] = suite.Scalar().Pick(suite.RandomStream())
 		pubKeys[i] = suite.Point().Mul(privKeys[i], nil)
-		minoch, err := minoch.NewMinoch(manager, fmt.Sprintf("%d", i))
+		minogrpc, err := minogrpc.NewMinogrpc(addrs[i].String(), minogrpc.TreeRoutingFactory)
 		require.NoError(t, err)
-		minos[i] = minoch
+		minos[i] = &minogrpc
+	}
+
+	for _, minogrpc := range minos {
+		minogrpc.AddNeighbours(minos...)
 	}
 
 	for i := 0; i < n; i++ {
@@ -42,7 +47,7 @@ func TestStart(t *testing.T) {
 		players: addrs,
 	}
 
-	err := pedersens[0].Start(players, 3)
+	err := pedersens[0].Start(players, uint32(n))
 	require.NoError(t, err)
 
 	message := []byte("Hello world")
