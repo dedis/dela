@@ -1,3 +1,4 @@
+// Package contract is for static smart contracts.
 package contract
 
 import (

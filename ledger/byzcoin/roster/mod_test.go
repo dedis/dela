@@ -1,13 +1,25 @@
-package byzcoin
+package roster
 
 import (
 	"testing"
 
+	proto "github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/encoding"
+	internal "go.dedis.ch/fabric/internal/testing"
 	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/mino"
 )
+
+func TestMessages(t *testing.T) {
+	messages := []proto.Message{
+		&Roster{},
+	}
+
+	for _, m := range messages {
+		internal.CoverProtoMessage(t, m)
+	}
+}
 
 func TestIterator_HasNext(t *testing.T) {
 	iter := &iterator{
@@ -43,7 +55,7 @@ func TestIterator_GetNext(t *testing.T) {
 }
 
 func TestAddressIterator_GetNext(t *testing.T) {
-	roster := rosterFactory{}.New(fake.NewAuthority(3, fake.NewSigner))
+	roster := rosterFactory{}.New(fake.NewAuthority(3, fake.NewSigner)).(roster)
 	iter := &addressIterator{
 		iterator: &iterator{
 			roster: &roster,
@@ -59,7 +71,7 @@ func TestAddressIterator_GetNext(t *testing.T) {
 }
 
 func TestPublicKeyIterator_GetNext(t *testing.T) {
-	roster := rosterFactory{}.New(fake.NewAuthority(3, fake.NewSigner))
+	roster := rosterFactory{}.New(fake.NewAuthority(3, fake.NewSigner)).(roster)
 	iter := &publicKeyIterator{
 		iterator: &iterator{
 			roster: &roster,
@@ -108,7 +120,7 @@ func TestRoster_GetPublicKey(t *testing.T) {
 }
 
 func TestRoster_Pack(t *testing.T) {
-	roster := rosterFactory{}.New(fake.NewAuthority(3, fake.NewSigner))
+	roster := rosterFactory{}.New(fake.NewAuthority(3, fake.NewSigner)).(roster)
 
 	rosterpb, err := roster.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
@@ -127,7 +139,7 @@ func TestRosterFactory_FromProto(t *testing.T) {
 	rosterpb, err := roster.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
 
-	factory := newRosterFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
+	factory := NewRosterFactory(fake.AddressFactory{}, fake.PublicKeyFactory{}).(rosterFactory)
 
 	decoded, err := factory.FromProto(rosterpb)
 	require.NoError(t, err)

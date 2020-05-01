@@ -135,6 +135,7 @@ func (i *PublicKeyIterator) GetNext() crypto.PublicKey {
 // CollectiveAuthority is a fake implementation of the cosi.CollectiveAuthority
 // interface.
 type CollectiveAuthority struct {
+	encoding.Packable
 	crypto.CollectiveAuthority
 	addrs   []mino.Address
 	signers []crypto.AggregateSigner

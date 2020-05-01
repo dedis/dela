@@ -15,7 +15,7 @@ import (
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/ledger"
-	"go.dedis.ch/fabric/ledger/byzcoin/actions"
+	"go.dedis.ch/fabric/ledger/byzcoin/roster"
 	"go.dedis.ch/fabric/ledger/inventory"
 	"go.dedis.ch/fabric/ledger/transactions"
 	"go.dedis.ch/fabric/ledger/transactions/basic"
@@ -24,7 +24,7 @@ import (
 	"golang.org/x/xerrors"
 )
 
-//go:generate protoc -I ./ --go_out=./ ./messages.proto
+//go:generate protoc -I ./ -I ../../. --go_out=Mledger/byzcoin/roster/messages.proto=go.dedis.ch/fabric/ledger/byzcoin/roster:. ./messages.proto
 
 const (
 	initialRoundTime = 50 * time.Millisecond
@@ -59,15 +59,15 @@ type Ledger struct {
 
 // NewLedger creates a new Byzcoin ledger.
 func NewLedger(mino mino.Mino, signer crypto.AggregateSigner) *Ledger {
-	factory := basic.NewTransactionFactory(signer, actions.NewActionFactory())
+	factory := basic.NewTransactionFactory(signer, NewActionFactory())
 	decoder := func(pb proto.Message) (gossip.Rumor, error) {
 		return factory.FromProto(pb)
 	}
 
 	proc := newTxProcessor(factory)
 	gov := governance{
-		inventory:     proc.inventory,
-		rosterFactory: newRosterFactory(mino.GetAddressFactory(), signer.GetPublicKeyFactory()),
+		inventory:        proc.inventory,
+		authorityFactory: roster.NewRosterFactory(mino.GetAddressFactory(), signer.GetPublicKeyFactory()),
 	}
 	cosi := flatcosi.NewFlat(mino, signer)
 	consensus := cosipbft.NewCoSiPBFT(mino, cosi, gov)
@@ -344,12 +344,12 @@ func (a actorLedger) Setup(players mino.Players) error {
 		return xerrors.Errorf("players must implement '%T'", authority)
 	}
 
-	rosterpb, err := a.encoder.Pack(a.governance.rosterFactory.New(authority))
+	rosterpb, err := a.encoder.Pack(a.governance.authorityFactory.New(authority))
 	if err != nil {
 		return xerrors.Errorf("couldn't pack roster: %v", err)
 	}
 
-	payload := &GenesisPayload{Roster: rosterpb.(*Roster)}
+	payload := &GenesisPayload{Roster: rosterpb.(*roster.Roster)}
 
 	page, err := a.proc.setup(payload)
 	if err != nil {
@@ -392,8 +392,8 @@ func (a actorLedger) Close() error {
 //
 // - implements viewchange.Governance
 type governance struct {
-	inventory     inventory.Inventory
-	rosterFactory rosterFactory
+	inventory        inventory.Inventory
+	authorityFactory viewchange.AuthorityFactory
 }
 
 // GetAuthority implements viewchange.Governance. It returns the authority for
@@ -409,7 +409,7 @@ func (gov governance) GetAuthority(index uint64) (viewchange.EvolvableAuthority,
 		return nil, xerrors.Errorf("couldn't read roster: %v", err)
 	}
 
-	roster, err := gov.rosterFactory.FromProto(rosterpb)
+	roster, err := gov.authorityFactory.FromProto(rosterpb)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't decode roster: %v", err)
 	}

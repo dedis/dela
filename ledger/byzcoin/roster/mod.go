@@ -1,4 +1,4 @@
-package byzcoin
+package roster
 
 import (
 	proto "github.com/golang/protobuf/proto"
@@ -9,6 +9,8 @@ import (
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
+
+//go:generate protoc -I ./ --go_out=./ ./messages.proto
 
 // iterator is a generic implementation of an iterator over a list of conodes.
 type iterator struct {
@@ -149,19 +151,22 @@ func (r roster) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 }
 
 // rosterFactory provide functions to create and decode a roster.
+//
+// - implements viewchange.AuthorityFactory
 type rosterFactory struct {
 	addressFactory mino.AddressFactory
 	pubkeyFactory  crypto.PublicKeyFactory
 }
 
-func newRosterFactory(af mino.AddressFactory, pf crypto.PublicKeyFactory) rosterFactory {
+// NewRosterFactory creates a new instance of the authority factory.
+func NewRosterFactory(af mino.AddressFactory, pf crypto.PublicKeyFactory) viewchange.AuthorityFactory {
 	return rosterFactory{
 		addressFactory: af,
 		pubkeyFactory:  pf,
 	}
 }
 
-func (f rosterFactory) New(authority crypto.CollectiveAuthority) roster {
+func (f rosterFactory) New(authority crypto.CollectiveAuthority) viewchange.EvolvableAuthority {
 	addrs := make([]mino.Address, authority.Len())
 	pubkeys := make([]crypto.PublicKey, authority.Len())
 

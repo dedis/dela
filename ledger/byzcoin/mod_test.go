@@ -15,6 +15,7 @@ import (
 	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/ledger"
 	"go.dedis.ch/fabric/ledger/arc/darc"
+	"go.dedis.ch/fabric/ledger/byzcoin/roster"
 	"go.dedis.ch/fabric/ledger/transactions/basic"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/minoch"
@@ -24,7 +25,6 @@ import (
 func TestMessages(t *testing.T) {
 	messages := []proto.Message{
 		&BlockPayload{},
-		&Roster{},
 		&GenesisPayload{},
 	}
 
@@ -97,18 +97,15 @@ func TestLedger_Basic(t *testing.T) {
 }
 
 func TestGovernance_GetAuthority(t *testing.T) {
-	factory := rosterFactory{
-		addressFactory: fake.AddressFactory{},
-		pubkeyFactory:  fake.PublicKeyFactory{},
-	}
+	factory := roster.NewRosterFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 
 	roster := factory.New(fake.NewAuthority(3, fake.NewSigner))
 	rosterpb, err := roster.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
 
 	gov := governance{
-		rosterFactory: factory,
-		inventory:     fakeInventory{page: &fakePage{value: rosterpb}},
+		authorityFactory: factory,
+		inventory:        fakeInventory{page: &fakePage{value: rosterpb}},
 	}
 
 	authority, err := gov.GetAuthority(3)

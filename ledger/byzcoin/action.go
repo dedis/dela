@@ -1,9 +1,9 @@
-package actions
+package byzcoin
 
 import (
 	"reflect"
 
-	"github.com/golang/protobuf/proto"
+	proto "github.com/golang/protobuf/proto"
 	any "github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/ledger/arc/darc"
@@ -11,6 +11,9 @@ import (
 	"golang.org/x/xerrors"
 )
 
+// ActionFactory is an action factory that can process several types of actions.
+//
+// - implements basic.ActionFactory
 type ActionFactory struct {
 	encoder  encoding.ProtoMarshaler
 	registry map[reflect.Type]basic.ActionFactory
@@ -28,11 +31,14 @@ func NewActionFactory() basic.ActionFactory {
 	return f
 }
 
+// Register registers the factory for the protobuf message.
 func (f ActionFactory) Register(pb proto.Message, factory basic.ActionFactory) {
 	key := reflect.TypeOf(pb)
 	f.registry[key] = factory
 }
 
+// FromProto implements basic.ActionFactory. It returns the server action for
+// the protobuf message if appropriate, otherwise an error.
 func (f ActionFactory) FromProto(in proto.Message) (basic.ServerAction, error) {
 	inAny, ok := in.(*any.Any)
 	if ok {
