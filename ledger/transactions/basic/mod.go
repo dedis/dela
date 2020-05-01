@@ -24,6 +24,8 @@ import (
 	"golang.org/x/xerrors"
 )
 
+//go:generate protoc -I ./ --go_out=./ ./messages.proto
+
 // ClientAction is used to create a transaction.
 type ClientAction interface {
 	encoding.Packable
@@ -32,7 +34,10 @@ type ClientAction interface {
 
 // Context is the context provided to a server transaction when consumed.
 type Context interface {
+	// GetID returns the unique identifier of the transaction.
 	GetID() []byte
+
+	// GetIdentity returns the identity who signed the transaction.
 	GetIdentity() arc.Identity
 }
 
@@ -50,11 +55,9 @@ type ActionFactory interface {
 	FromProto(proto.Message) (ServerAction, error)
 }
 
-//go:generate protoc -I ./ --go_out=./ ./messages.proto
-
 // transaction is an atomic execution.
 //
-// - implements ledger.transaction
+// - implements transactions.ClientTransaction
 type transaction struct {
 	hash      []byte
 	nonce     uint64
@@ -63,16 +66,20 @@ type transaction struct {
 	action    ClientAction
 }
 
-// GetID implements ledger.Transaction. It returns the unique identifier of the
-// transaction.
+// GetID implements transactions.ClientTransaction. It returns the unique
+// identifier of the transaction.
 func (t transaction) GetID() []byte {
 	return t.hash[:]
 }
 
+// GetIdentity implements basic.Context. It returns the identity who signed the
+// transaction.
 func (t transaction) GetIdentity() arc.Identity {
 	return t.identity
 }
 
+// Pack implements encoding.Packable. It returns the protobuf message of the
+// transaction.
 func (t transaction) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	pb := &TransactionProto{
 		Nonce: t.nonce,
@@ -97,10 +104,8 @@ func (t transaction) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	return pb, nil
 }
 
-func (t transaction) String() string {
-	return fmt.Sprintf("Transaction[%v]", t.identity)
-}
-
+// Fingerprint implements encoding.Fingerprinter. It serializes the transaction
+// into the writer in a deterministic way.
 func (t transaction) Fingerprint(w io.Writer, enc encoding.ProtoMarshaler) error {
 	buffer := make([]byte, 8)
 	binary.LittleEndian.PutUint64(buffer[:], t.nonce)
@@ -128,21 +133,33 @@ func (t transaction) Fingerprint(w io.Writer, enc encoding.ProtoMarshaler) error
 	return nil
 }
 
+// String implements fmt.Stringer. It returns a string representation of the
+// transaction.
+func (t transaction) String() string {
+	return fmt.Sprintf("Transaction[%v]", t.identity)
+}
+
+// serverTransaction is an extension of the transaction that can be consumed.
+//
+// - implements transactions.ServerTransaction
 type serverTransaction struct {
 	transaction
 }
 
+// Consume implements transactions.ServerTransaction. It first insures the nonce
+// is correct and writes the new one into the page. It then consumes the action
+// of the transaction.
 func (t serverTransaction) Consume(page inventory.WritablePage) error {
 	// TODO: consume nonce
 
 	action, ok := t.action.(ServerAction)
 	if !ok {
-		return xerrors.Errorf("action must implement '%T'", action)
+		return xerrors.Errorf("action must implement 'basic.ServerAction'")
 	}
 
 	err := action.Consume(t, page)
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't consume action: %v", err)
 	}
 
 	return nil
@@ -161,8 +178,6 @@ type TransactionFactory struct {
 }
 
 // NewTransactionFactory returns a new instance of the transaction factory.
-//
-// - implements ledger.TransactionFactory
 func NewTransactionFactory(signer crypto.Signer, f ActionFactory) TransactionFactory {
 	return TransactionFactory{
 		signer:           signer,
@@ -174,7 +189,8 @@ func NewTransactionFactory(signer crypto.Signer, f ActionFactory) TransactionFac
 	}
 }
 
-// New returns a new transaction.
+// New returns a new transaction from the given action. The transaction will be
+// signed.
 func (f TransactionFactory) New(action ClientAction) (transactions.ClientTransaction, error) {
 	tx := transaction{
 		nonce:    0, // TODO: monotonic nonce
@@ -216,16 +232,16 @@ func (f TransactionFactory) FromProto(in proto.Message) (transactions.ServerTran
 		return nil, xerrors.Errorf("invalid transaction type '%T'", in)
 	}
 
-	tx := serverTransaction{
-		transaction: transaction{
-			nonce: pb.GetNonce(),
-		},
-	}
-
-	var err error
-	tx.action, err = f.actionFactory.FromProto(pb.GetAction())
+	action, err := f.actionFactory.FromProto(pb.GetAction())
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't decode action: %v", err)
+	}
+
+	tx := serverTransaction{
+		transaction: transaction{
+			nonce:  pb.GetNonce(),
+			action: action,
+		},
 	}
 
 	err = f.fillIdentity(&tx, pb)
@@ -237,16 +253,18 @@ func (f TransactionFactory) FromProto(in proto.Message) (transactions.ServerTran
 }
 
 func (f TransactionFactory) fillIdentity(tx *serverTransaction, pb *TransactionProto) error {
-	var err error
-	tx.identity, err = f.publicKeyFactory.FromProto(pb.GetIdentity())
+	identity, err := f.publicKeyFactory.FromProto(pb.GetIdentity())
 	if err != nil {
 		return xerrors.Errorf("couldn't decode public key: %v", err)
 	}
 
-	tx.signature, err = f.signatureFactory.FromProto(pb.GetSignature())
+	signature, err := f.signatureFactory.FromProto(pb.GetSignature())
 	if err != nil {
 		return xerrors.Errorf("couldn't decode signature: %v", err)
 	}
+
+	tx.identity = identity
+	tx.signature = signature
 
 	h := f.hashFactory.New()
 	err = tx.Fingerprint(h, f.encoder)

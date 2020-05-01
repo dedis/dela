@@ -506,6 +506,27 @@ func (f VerifierFactory) FromAuthority(ca crypto.CollectiveAuthority) (crypto.Ve
 	return f.verifier, f.err
 }
 
+// Counter is a helper to delay errors or actions. It can be nil without panics.
+type Counter struct {
+	Value int
+}
+
+// Done returns true when the counter reached zero.
+func (c *Counter) Done() bool {
+	if c == nil {
+		return true
+	}
+	return c.Value <= 0
+}
+
+// Decrease decrements the counter.
+func (c *Counter) Decrease() {
+	if c == nil {
+		return
+	}
+	c.Value--
+}
+
 // BadPackEncoder is a fake implementation of encoding.ProtoMarshaler.
 type BadPackEncoder struct {
 	encoding.ProtoEncoder
@@ -519,10 +540,15 @@ func (e BadPackEncoder) Pack(encoding.Packable) (proto.Message, error) {
 // BadPackAnyEncoder is a fake implementation of encoding.ProtoMarshaler.
 type BadPackAnyEncoder struct {
 	encoding.ProtoEncoder
+	Counter *Counter
 }
 
 // PackAny implements encoding.ProtoMarshaler.
 func (e BadPackAnyEncoder) PackAny(encoding.Packable) (*any.Any, error) {
+	defer e.Counter.Decrease()
+	if !e.Counter.Done() {
+		return &any.Any{}, nil
+	}
 	return nil, xerrors.New("fake error")
 }
 
