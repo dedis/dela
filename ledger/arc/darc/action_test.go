@@ -54,13 +54,17 @@ func TestAction_Fingerprint(t *testing.T) {
 }
 
 func TestServerAction_Consume(t *testing.T) {
+	access, err := NewAccess().Evolve(UpdateAccessRule, fakeIdentity{buffer: []byte("doggy")})
+	require.NoError(t, err)
+
 	action := serverAction{
-		encoder:    encoding.NewProtoEncoder(),
-		darcAction: darcAction{key: []byte{0x01}},
+		encoder:     encoding.NewProtoEncoder(),
+		darcFactory: NewFactory(),
+		darcAction:  darcAction{key: []byte{0x01}, access: access},
 	}
 
 	call := &fake.Call{}
-	err := action.Consume(fakeContext{}, fakePage{call: call})
+	err = action.Consume(fakeContext{}, fakePage{call: call})
 	require.NoError(t, err)
 	require.Equal(t, 1, call.Len())
 	// Key is provided so it's an update.
@@ -80,6 +84,20 @@ func TestServerAction_Consume(t *testing.T) {
 	action.encoder = encoding.NewProtoEncoder()
 	err = action.Consume(fakeContext{}, fakePage{err: xerrors.New("oops")})
 	require.EqualError(t, err, "couldn't write access: oops")
+
+	action.darcAction.key = []byte{0x01}
+	err = action.Consume(fakeContext{}, fakePage{err: xerrors.New("oops")})
+	require.EqualError(t, err, "couldn't read value: oops")
+
+	action.darcFactory = badArcFactory{}
+	err = action.Consume(fakeContext{}, fakePage{})
+	require.EqualError(t, err, "couldn't decode access: oops")
+
+	action.darcFactory = NewFactory()
+	action.access.rules[UpdateAccessRule].matches["cat"] = struct{}{}
+	err = action.Consume(fakeContext{identity: []byte("cat")}, fakePage{})
+	require.EqualError(t, err,
+		"no access: couldn't match 'darc:update': couldn't match identity 'cat'")
 }
 
 func TestActionFactory_FromProto(t *testing.T) {
@@ -101,18 +119,36 @@ func TestActionFactory_FromProto(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
+var testAccess = &AccessProto{
+	Rules: map[string]*Expression{
+		UpdateAccessRule: {Matches: []string{"doggy"}},
+	},
+}
+
 type fakeContext struct {
 	basic.Context
+	identity []byte
 }
 
 func (ctx fakeContext) GetID() []byte {
 	return []byte{0x34}
 }
 
+func (ctx fakeContext) GetIdentity() arc.Identity {
+	if ctx.identity != nil {
+		return fakeIdentity{buffer: ctx.identity}
+	}
+	return fakeIdentity{buffer: []byte("doggy")}
+}
+
 type fakePage struct {
 	inventory.WritablePage
 	call *fake.Call
 	err  error
+}
+
+func (page fakePage) Read(key []byte) (proto.Message, error) {
+	return testAccess, page.err
 }
 
 func (page fakePage) Write(key []byte, value proto.Message) error {

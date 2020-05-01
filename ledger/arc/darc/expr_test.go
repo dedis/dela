@@ -2,7 +2,6 @@ package darc
 
 import (
 	"bytes"
-	fmt "fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -48,7 +47,7 @@ func TestExpression_Match(t *testing.T) {
 	require.NoError(t, err)
 
 	err = expr.Match([]arc.Identity{fakeIdentity{buffer: []byte{0xcc}}})
-	require.EqualError(t, err, "couldn't match identity '0xcc'")
+	require.EqualError(t, err, "couldn't match identity '\xcc'")
 
 	err = expr.Match([]arc.Identity{fakeIdentity{err: xerrors.New("oops")}})
 	require.EqualError(t, err, "couldn't marshal identity: oops")
@@ -98,5 +97,5 @@ func (i fakeIdentity) MarshalText() ([]byte, error) {
 }
 
 func (i fakeIdentity) String() string {
-	return fmt.Sprintf("%#x", i.buffer)
+	return string(i.buffer)
 }

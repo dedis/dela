@@ -8,7 +8,6 @@ import (
 
 	proto "github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/crypto/bls"
 	"go.dedis.ch/fabric/encoding"
@@ -165,21 +164,4 @@ func makeDarc(t *testing.T, signer crypto.Signer) darc.Access {
 	require.NoError(t, err)
 
 	return access
-}
-
-type fakeBlock struct {
-	blockchain.Block
-}
-
-func (b fakeBlock) GetIndex() uint64 {
-	return 0
-}
-
-type fakeBlockchain struct {
-	blockchain.Blockchain
-	err error
-}
-
-func (bc fakeBlockchain) GetBlock() (blockchain.Block, error) {
-	return fakeBlock{}, bc.err
 }

@@ -23,6 +23,8 @@ type darcAction struct {
 	access Access
 }
 
+// TODO: client factory
+
 // NewCreate returns a new action to create a DARC.
 func NewCreate(access Access) basic.ClientAction {
 	return darcAction{access: access}
@@ -67,7 +69,8 @@ func (act darcAction) Fingerprint(w io.Writer, enc encoding.ProtoMarshaler) erro
 
 // serverAction is the server-side action for DARCs.
 type serverAction struct {
-	encoder encoding.ProtoMarshaler
+	encoder     encoding.ProtoMarshaler
+	darcFactory arc.AccessControlFactory
 	darcAction
 }
 
@@ -79,13 +82,33 @@ func (act serverAction) Consume(ctx basic.Context, page inventory.WritablePage) 
 		return xerrors.Errorf("couldn't pack access: %v", err)
 	}
 
+	err = act.access.Match(UpdateAccessRule, ctx.GetIdentity())
+	if err != nil {
+		// This prevents to update the arc so that no one is allowed to update
+		// it in the future.
+		return xerrors.New("transaction identity should be allowed to update")
+	}
+
 	key := act.key
 	if key == nil {
 		// No key defined means a creation request then we use the transaction
 		// ID as a unique key for the DARC.
 		key = ctx.GetID()
 	} else {
-		// TODO: access control
+		value, err := page.Read(key)
+		if err != nil {
+			return xerrors.Errorf("couldn't read value: %v", err)
+		}
+
+		access, err := act.darcFactory.FromProto(value)
+		if err != nil {
+			return xerrors.Errorf("couldn't decode access: %v", err)
+		}
+
+		err = access.Match(UpdateAccessRule, ctx.GetIdentity())
+		if err != nil {
+			return xerrors.Errorf("no access: %v", err)
+		}
 	}
 
 	err = page.Write(key, accesspb)
@@ -126,11 +149,12 @@ func (f actionFactory) FromProto(in proto.Message) (basic.ServerAction, error) {
 	}
 
 	servAccess := serverAction{
+		encoder:     f.encoder,
+		darcFactory: f.darcFactory,
 		darcAction: darcAction{
 			key:    pb.GetKey(),
 			access: access.(Access),
 		},
-		encoder: f.encoder,
 	}
 
 	return servAccess, nil

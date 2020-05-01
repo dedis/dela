@@ -68,6 +68,10 @@ func TestAccess_Match(t *testing.T) {
 
 	err = access.Match("unknown", idents...)
 	require.EqualError(t, err, "rule 'unknown' not found")
+
+	err = access.Match("fake", fakeIdentity{buffer: []byte{0xcc}})
+	require.EqualError(t, err,
+		"couldn't match 'fake': couldn't match identity '\xcc'")
 }
 
 func TestAccess_Fingerprint(t *testing.T) {

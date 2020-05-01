@@ -7,7 +7,6 @@ import (
 	any "github.com/golang/protobuf/ptypes/any"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/ledger/inventory"
-	"go.dedis.ch/fabric/ledger/transactions"
 	"golang.org/x/xerrors"
 )
 
@@ -59,6 +58,7 @@ func TestTxProcessor_Process(t *testing.T) {
 	proc.inventory = fakeInventory{page: &fakePage{}}
 	page, err = proc.process(payload)
 	require.NoError(t, err)
+	require.NotNil(t, page)
 }
 
 func TestTxProcessor_Commit(t *testing.T) {
@@ -145,13 +145,4 @@ func (inv fakeInventory) Stage(f func(inventory.WritablePage) error) (inventory.
 
 func (inv fakeInventory) Commit([]byte) error {
 	return inv.err
-}
-
-type fakeTxFactory struct {
-	transactions.TransactionFactory
-	err error
-}
-
-func (f fakeTxFactory) FromProto(proto.Message) (transactions.ServerTransaction, error) {
-	return nil, f.err
 }

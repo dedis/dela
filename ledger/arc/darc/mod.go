@@ -61,7 +61,12 @@ func (ac Access) Match(rule string, targets ...arc.Identity) error {
 		return xerrors.Errorf("rule '%s' not found", rule)
 	}
 
-	return expr.Match(targets)
+	err := expr.Match(targets)
+	if err != nil {
+		return xerrors.Errorf("couldn't match '%s': %v", rule, err)
+	}
+
+	return nil
 }
 
 // Fingerprint implements encoding.Fingerprinter. It serializes the access to
