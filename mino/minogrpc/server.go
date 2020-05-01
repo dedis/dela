@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	fmt "fmt"
 	"io"
 	"math/big"
 	"net"
@@ -43,7 +44,7 @@ var (
 	// in a tree based communication, this parameter (H) defines the height of
 	// the tree. Based on this parameter and the total number of nodes N we can
 	// compute the number of direct connection D for each node with D = N^(1/H)
-	treeHeight = 3
+	treeHeight = 6
 )
 
 // Server represents the entity that accepts incoming requests and invoke the
@@ -127,9 +128,9 @@ func (rpc *RPC) Call(ctx context.Context, req proto.Message,
 			cl := NewOverlayClient(clientConn)
 
 			header := metadata.New(map[string]string{headerURIKey: rpc.uri})
-			ctx = metadata.NewOutgoingContext(ctx, header)
+			newCtx := metadata.NewOutgoingContext(ctx, header)
 
-			callResp, err := cl.Call(ctx, sendMsg)
+			callResp, err := cl.Call(newCtx, sendMsg)
 			if err != nil {
 				errs <- xerrors.Errorf("failed to call client '%s': %v", addrStr, err)
 				continue
@@ -173,6 +174,8 @@ func (rpc RPC) Stream(ctx context.Context,
 		// TODO better handle this error
 		fabric.Logger.Fatal().Msgf("failed to create routing: %v", err)
 	}
+
+	fmt.Println("tree topology:", routing.(*TreeRouting).root)
 
 	routingProto := &RoutingMsg{Type: "tree", Addrs: addrsStr}
 
@@ -232,9 +235,9 @@ func (rpc RPC) Stream(ctx context.Context,
 		cl := NewOverlayClient(clientConn)
 
 		header := metadata.New(map[string]string{headerURIKey: rpc.uri})
-		ctx = metadata.NewOutgoingContext(ctx, header)
+		newCtx := metadata.NewOutgoingContext(ctx, header)
 
-		stream, err := cl.Stream(ctx)
+		s, err := cl.Stream(newCtx)
 		if err != nil {
 			err = xerrors.Errorf("failed to get stream for client '%s': %v",
 				addr.String(), err)
@@ -242,31 +245,37 @@ func (rpc RPC) Stream(ctx context.Context,
 			errs <- err
 			continue
 		}
-		orchSender.participants[addr.String()] = stream
+
+		safeStream := newSafeOverlayStream(s)
+		orchSender.participants[addr.String()] = safeStream
 
 		// Sending the routing info as first messages to our childs
-		stream.Send(&OverlayMsg{Message: anyRoutintg})
+		safeStream.Send(&OverlayMsg{Message: anyRoutintg})
 
 		// Listen on the clients streams and notify the orchestrator or relay
 		// messages
-		go func() {
+		go func(addr mino.Address) {
 			for {
-				err = listenStream(stream, &orchRecv, orchSender, addr)
+				addrCopy := address{addr.String()}
+				err := listenStream(safeStream, &orchRecv, orchSender, addrCopy)
 				if err == io.EOF {
+					<-ctx.Done()
 					return
 				}
 				status, ok := status.FromError(err)
 				if ok && err != nil && status.Code() == codes.Canceled {
+					<-ctx.Done()
 					return
 				}
 				if err != nil {
 					err = xerrors.Errorf("failed to listen stream: %v", err)
 					fabric.Logger.Err(err).Send()
 					errs <- err
+					<-ctx.Done()
 					return
 				}
 			}
-		}()
+		}(addr)
 	}
 
 	return orchSender, orchRecv
@@ -304,13 +313,13 @@ func listenStream(stream overlayStream, orchRecv *receiver,
 
 	for _, toSend := range envelope.To {
 		// if we receive a message to ourself or the orchestrator, then we
-		// notify the orchstrator receiver by filling orchRecv.in. If this is
+		// notify the orchestrator receiver by filling orchRecv.in. If this is
 		// not the case we then relay the message. In the case we receive a
 		// message to ourself but we are in the orchestrator we then must not
 		// notify the orchestrator because in that case the message has not
 		// reached its final destination, in a tree networking it means we are
 		// in the root but we need to reach a node.
-		if toSend == orchSender.address.String() || (toSend == addr.String() && orchSender.name != "orchestrator") {
+		if toSend == orchSender.address.String() {
 			orchRecv.in <- msg
 		} else {
 			orchRecv.traffic.logRcvRelay(address{envelope.From}, envelope,
@@ -402,6 +411,15 @@ func (srv *Server) Serve() error {
 	return nil
 }
 
+func (srv *Server) addNeighbour(servers ...*Server) {
+	for _, server := range servers {
+		srv.neighbours[server.addr.String()] = Peer{
+			Address:     server.listener.Addr().String(),
+			Certificate: server.cert.Leaf,
+		}
+	}
+}
+
 // getConnection creates a gRPC connection from the server to the client.
 func getConnection(addr string, peer Peer, cert tls.Certificate) (*grpc.ClientConn, error) {
 	if addr == "" {
@@ -465,6 +483,7 @@ func makeCertificate() (*tls.Certificate, error) {
 
 // sender implements mino.Sender
 type sender struct {
+	sync.Mutex
 	encoder      encoding.ProtoMarshaler
 	address      address
 	participants map[string]overlayStream
@@ -515,6 +534,9 @@ func (s *sender) sendWithFrom(msg proto.Message, from mino.Address, addrs ...min
 // sendSingle sends a message to a single recipient. This function should be
 // called asynchonously for each addrs set in mino.Sender.Send
 func (s *sender) sendSingle(msg proto.Message, from, to mino.Address) error {
+	s.Lock()
+	defer s.Unlock()
+
 	msgAny, err := s.encoder.MarshalAny(msg)
 	if err != nil {
 		return xerrors.Errorf("couldn't marshal message: %v", err)
@@ -523,6 +545,7 @@ func (s *sender) sendSingle(msg proto.Message, from, to mino.Address) error {
 	routingTo, err := s.routing.GetRoute(to)
 	if err != nil {
 		// If we can't get a route we send the message to ourself, which will
+		// reach our orchestrator.
 		routingTo = s.address
 	}
 
@@ -615,4 +638,28 @@ func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error)
 type overlayStream interface {
 	Send(*OverlayMsg) error
 	Recv() (*OverlayMsg, error)
+}
+
+type safeOverlayStream struct {
+	sendLock sync.Mutex
+	recvLock sync.Mutex
+	os       overlayStream
+}
+
+func newSafeOverlayStream(o overlayStream) *safeOverlayStream {
+	return &safeOverlayStream{
+		os: o,
+	}
+}
+
+func (os *safeOverlayStream) Send(msg *OverlayMsg) error {
+	// os.sendLock.Lock()
+	// defer os.sendLock.Unlock()
+	return os.os.Send(msg)
+}
+
+func (os *safeOverlayStream) Recv() (*OverlayMsg, error) {
+	// os.recvLock.Lock()
+	// defer os.recvLock.Unlock()
+	return os.os.Recv()
 }

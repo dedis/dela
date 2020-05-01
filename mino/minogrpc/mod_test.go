@@ -165,7 +165,7 @@ func TestMinogrpc_GetAddressFactory(t *testing.T) {
 }
 
 func TestPlayers_AddressIterator(t *testing.T) {
-	players := fakePlayers{players: []address{{"test"}}}
+	players := fakePlayers{players: []mino.Address{address{"test"}}}
 	it := players.AddressIterator()
 	it2, ok := it.(*fakeAddressIterator)
 	require.True(t, ok)
@@ -176,9 +176,9 @@ func TestPlayers_AddressIterator(t *testing.T) {
 }
 
 func TestAddressIterator(t *testing.T) {
-	a := address{"test"}
+	a := &address{"test"}
 	it := fakeAddressIterator{
-		players: []address{a},
+		players: []mino.Address{a},
 	}
 
 	require.True(t, it.HasNext())
@@ -194,7 +194,7 @@ func TestAddressIterator(t *testing.T) {
 // fakePlayers implements mino.Players{}
 type fakePlayers struct {
 	mino.Players
-	players  []address
+	players  []mino.Address
 	iterator *fakeAddressIterator
 }
 
@@ -213,7 +213,7 @@ func (p *fakePlayers) Len() int {
 
 // fakeAddressIterator implements mino.addressIterator{}
 type fakeAddressIterator struct {
-	players []address
+	players []mino.Address
 	cursor  int
 }
 

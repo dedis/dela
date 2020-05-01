@@ -2,6 +2,9 @@ package minogrpc
 
 import (
 	context "context"
+	"fmt"
+	"math/rand"
+	"os"
 	"sort"
 	"strings"
 	"testing"
@@ -130,7 +133,7 @@ loop:
 func TestRPC_ErrorsSimple_Call(t *testing.T) {
 	identifier := "127.0.0.1:2000"
 
-	addr := address{
+	addr := &address{
 		id: identifier,
 	}
 
@@ -149,7 +152,7 @@ func TestRPC_ErrorsSimple_Call(t *testing.T) {
 	ctx := context.Background()
 
 	// Using a wrong request message (nil) should yield an error while decoding
-	respChan, errChan := rpc.Call(ctx, nil, &fakePlayers{players: []address{addr}})
+	respChan, errChan := rpc.Call(ctx, nil, &fakePlayers{players: []mino.Address{addr}})
 loop:
 	for {
 		select {
@@ -176,7 +179,7 @@ loop:
 		To:      []string{addr.String()},
 		Message: pba,
 	}
-	respChan, errChan = rpc.Call(ctx, msg, &fakePlayers{players: []address{addr}})
+	respChan, errChan = rpc.Call(ctx, msg, &fakePlayers{players: []mino.Address{addr}})
 loop2:
 	for {
 		select {
@@ -424,7 +427,7 @@ func TestRPC_SingleSimple_Stream(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	sender, receiver := rpc.Stream(ctx, &fakePlayers{players: []address{*addr}})
+	sender, receiver := rpc.Stream(ctx, &fakePlayers{players: []mino.Address{addr}})
 
 	errs := sender.Send(m, addr)
 	err, more := <-errs
@@ -438,48 +441,9 @@ func TestRPC_SingleSimple_Stream(t *testing.T) {
 	_, ok := msg2.(*empty.Empty)
 	require.True(t, ok)
 
-	server.grpcSrv.GracefulStop()
+	fmt.Println("OK")
 
-}
-
-// Use a single node to make a stream that just sends back the same message.
-func TestRPC_ErrorsSimple_Stream(t *testing.T) {
-	identifier := "127.0.0.1:2000"
-
-	addr := &address{
-		id: identifier,
-	}
-
-	server, err := NewServer(addr, TreeRoutingFactory)
-	require.NoError(t, err)
-	server.StartServer()
-
-	peer := Peer{
-		Address:     server.listener.Addr().String(),
-		Certificate: server.cert.Leaf,
-	}
-	server.neighbours[identifier] = peer
-
-	handler := testSameHandler{time.Millisecond * 200}
-	uri := "blabla"
-	rpc := RPC{
-		encoder:        encoding.NewProtoEncoder(),
-		handler:        handler,
-		srv:            server,
-		uri:            uri,
-		routingFactory: TreeRoutingFactory,
-	}
-
-	server.handlers[uri] = handler
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Using an empty address should yield an error
-	_, receiver := rpc.Stream(ctx, &fakePlayers{players: []address{{}}})
-
-	_, _, err = receiver.Recv(context.Background())
-	require.EqualError(t, err, "got an error from the error chan: addr '' not is our list of neighbours")
+	cancel()
 
 	server.grpcSrv.GracefulStop()
 
@@ -558,9 +522,8 @@ func TestRPC_MultipleSimple_Stream(t *testing.T) {
 	server3.handlers[uri] = handler
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
-	sender, rcvr := rpc.Stream(ctx, &fakePlayers{players: []address{*addr1, *addr2, *addr3}})
+	sender, rcvr := rpc.Stream(ctx, &fakePlayers{players: []mino.Address{addr1, addr2, addr3}})
 
 	localRcvr, ok := rcvr.(receiver)
 	require.True(t, ok)
@@ -598,6 +561,8 @@ func TestRPC_MultipleSimple_Stream(t *testing.T) {
 		_, ok := msg2.(*empty.Empty)
 		require.True(t, ok)
 	}
+
+	cancel()
 
 	server1.grpcSrv.GracefulStop()
 	server2.grpcSrv.GracefulStop()
@@ -698,9 +663,8 @@ func TestRPC_MultipleChange_Stream(t *testing.T) {
 	m := &wrappers.StringValue{Value: "dummy_value"}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
-	sender, rcvr := rpc.Stream(ctx, &fakePlayers{players: []address{*addr1, *addr2, *addr3, *addr4}})
+	sender, rcvr := rpc.Stream(ctx, &fakePlayers{players: []mino.Address{addr1, addr2, addr3, addr4}})
 	localRcvr, ok := rcvr.(receiver)
 	require.True(t, ok)
 
@@ -739,6 +703,8 @@ func TestRPC_MultipleChange_Stream(t *testing.T) {
 	require.Equal(t, "dummy_valuedummy_value_"+identifier2, msgs[1])
 	require.Equal(t, "dummy_valuedummy_value_"+identifier3, msgs[2])
 	require.Equal(t, "dummy_valuedummy_value_"+identifier4, msgs[3])
+
+	cancel()
 
 	server1.grpcSrv.GracefulStop()
 	server2.grpcSrv.GracefulStop()
@@ -831,10 +797,9 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 	dummyMsg := &wrappers.StringValue{Value: "dummy_value"}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
-	sender, rcvr := rpc.Stream(ctx, &fakePlayers{players: []address{
-		*addr1, *addr2, *addr3, *addr4, *addr5, *addr6, *addr7, *addr8, *addr9},
+	sender, rcvr := rpc.Stream(ctx, &fakePlayers{players: []mino.Address{
+		addr1, addr2, addr3, addr4, addr5, addr6, addr7, addr8, addr9},
 	})
 	localRcvr, ok := rcvr.(receiver)
 	require.True(t, ok)
@@ -879,6 +844,8 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 	// 	server3.traffic, server4.traffic, server5.traffic, server5.traffic,
 	// 	server6.traffic, server7.traffic, server8.traffic, server9.traffic)
 
+	cancel()
+
 	server1.grpcSrv.GracefulStop()
 	server2.grpcSrv.GracefulStop()
 	server3.grpcSrv.GracefulStop()
@@ -888,6 +855,126 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 	server7.grpcSrv.GracefulStop()
 	server8.grpcSrv.GracefulStop()
 	server9.grpcSrv.GracefulStop()
+}
+
+// Sends a message to all participants, that then send a message to all
+// participants
+func TestRPC_DKG_Stream(t *testing.T) {
+	rand.Seed(time.Now().UnixNano())
+
+	oldTH := treeHeight
+	treeHeight = 4
+	defer func() {
+		treeHeight = oldTH
+	}()
+
+	n := 5
+
+	identifiers := make([]string, n)
+	addrs := make([]mino.Address, n)
+	servers := make([]*Server, n)
+	peers := make([]Peer, n)
+	traffics := make([]*traffic, n)
+
+	for i := 0; i < n; i++ {
+		identifiers[i], addrs[i], servers[i], peers[i] = createServer(t, fmt.Sprintf("127.0.0.1:200%d", i))
+	}
+
+	for i, server := range servers {
+		server.addNeighbour(servers...)
+		traffics[i] = server.traffic
+	}
+
+	defer func() {
+		GenerateGraphviz(os.Stdout, traffics...)
+	}()
+
+	// Computed routing with n=9:
+	//
+	// tree topology: Node[orchestrator_addr-index[-1]-lastIndex[8]](
+	// 	Node[127.0.0.1:2008-index[0]-lastIndex[3]](
+	// 		Node[127.0.0.1:2001-index[1]-lastIndex[1]](
+	// 		)
+	// 		Node[127.0.0.1:2005-index[2]-lastIndex[3]](
+	// 			Node[127.0.0.1:2002-index[3]-lastIndex[3]](
+	// 			)
+	// 		)
+	// 	)
+	// 	Node[127.0.0.1:2006-index[4]-lastIndex[8]](
+	// 		Node[127.0.0.1:2007-index[5]-lastIndex[6]](
+	// 			Node[127.0.0.1:2004-index[6]-lastIndex[6]](
+	// 			)
+	// 		)
+	// 		Node[127.0.0.1:2003-index[7]-lastIndex[8]](
+	// 			Node[127.0.0.1:2000-index[8]-lastIndex[8]](
+	// 			)
+	// 		)
+	// 	)
+	// )
+
+	uri := "blabla"
+	handler1 := testDKGHandler{addr: addrs[1], addrs: addrs}
+	rpc := RPC{
+		encoder:        encoding.NewProtoEncoder(),
+		handler:        handler1,
+		srv:            servers[1],
+		uri:            uri,
+		routingFactory: TreeRoutingFactory,
+	}
+
+	for i, server := range servers {
+		server.handlers[uri] = testDKGHandler{addr: addrs[i], addrs: addrs}
+	}
+
+	dummyMsg := &wrappers.StringValue{Value: "start"}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	sender, rcvr := rpc.Stream(ctx, &fakePlayers{players: addrs})
+	localRcvr, ok := rcvr.(receiver)
+	require.True(t, ok)
+
+	time.Sleep(time.Second)
+
+	select {
+	case err := <-localRcvr.errs:
+		t.Errorf("unexpected error in rcvr: %v", err)
+	case <-time.After(time.Millisecond * 200):
+	}
+
+	// sending message to each server
+	errs := sender.Send(dummyMsg, addrs...)
+	err, more := <-errs
+	if more {
+		t.Error("unexpected error from send: ", err)
+	}
+
+	for i := 0; i < n; i++ {
+		from, msg, err := rcvr.Recv(context.Background())
+		require.NoError(t, err)
+
+		dummy, ok := msg.(*wrappers.StringValue)
+		require.True(t, ok)
+
+		require.Equal(t, dummy.Value, "finish")
+		fmt.Println("received from", from)
+	}
+
+	// out := os.Stdout
+	// out.WriteString("\nserver1:\n")
+	// server1.traffic.Display(out)
+	// out.WriteString("\nserver2:\n")
+	// server2.traffic.Display(out)
+	// out.WriteString("\nserver3:\n")
+	// server3.traffic.Display(out)
+	// out.WriteString("\nserver4:\n")
+	// server4.traffic.Display(out)
+
+	cancel()
+
+	for _, server := range servers {
+		server.grpcSrv.GracefulStop()
+	}
 }
 
 func TestSender_Send(t *testing.T) {
@@ -1142,12 +1229,120 @@ func (t testRingHandler) Stream(out mino.Sender, in mino.Receiver) error {
 		toAddr = t.neighbor
 	}
 
+	fmt.Println("received from", fromAddr, "sending to", toAddr)
+
 	errs := out.Send(dummyReturn, toAddr)
 	err, more := <-errs
 	if more {
 		return xerrors.Errorf("got an error sending from the relay to the "+
 			"neighbor: %v", err)
 	}
+	return nil
+}
+
+// Handler:
+// implements a handler that simulates a DKG process, where nodes must send
+// messages to all the other nodes
+type testDKGHandler struct {
+	mino.UnsupportedHandler
+	addr  mino.Address
+	addrs []mino.Address
+}
+
+func (t testDKGHandler) Stream(out mino.Sender, in mino.Receiver) error {
+
+	rsleep()
+
+	// This is the start message
+	fromAddr, msg, err := in.Recv(context.Background())
+	if err != nil {
+		return xerrors.Errorf("failed to receive first message: %v", err)
+	}
+
+	dummy, ok := msg.(*wrappers.StringValue)
+	if !ok {
+		return xerrors.Errorf("unexpeted first message: %T", msg)
+	}
+
+	if dummy.Value != "start" {
+		return xerrors.Errorf("expected start message, got '%s'", dummy.Value)
+	}
+
+	fmt.Println(t.addr, "got start message from", fromAddr)
+
+	for _, addr := range t.addrs {
+
+		rsleep()
+
+		if addr.String() == t.addr.String() {
+			continue
+		}
+		fmt.Println(t.addr, "send first message to", addr)
+		errs := out.Send(&wrappers.StringValue{Value: "first"}, addr)
+		err, more := <-errs
+		if more {
+			return xerrors.Errorf("unexpected error while sending first: %v", err)
+		}
+	}
+
+	fmt.Println(t.addr, "sent all its first")
+
+	firstAddrs := make([]string, len(t.addrs)-1)
+	for i := 0; i < len(t.addrs)-1; i++ {
+
+		rsleep()
+
+		from, msg, err := in.Recv(context.Background())
+		if err != nil {
+			return xerrors.Errorf("failed to receive first message: %v", err)
+		}
+
+		fmt.Println(t.addr, "received first message from", from)
+
+		dummy, ok := msg.(*wrappers.StringValue)
+		if !ok {
+			return xerrors.Errorf("unexpected second message: %T", msg)
+		}
+
+		if dummy.Value != "first" {
+			return xerrors.Errorf("%s expected first message, got '%s'", t.addr, dummy.Value)
+		}
+		firstAddrs[i] = from.String()
+	}
+
+	// try to see if there is additional msg
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	from, msg, err := in.Recv(ctx)
+	if err == nil {
+		return xerrors.Errorf("%s got an aditional message from %s: %v", t.addr, from, msg)
+	}
+
+	sort.Strings(firstAddrs)
+	fmt.Println(t.addr, "has received from", firstAddrs)
+	for i, j := 0, 0; i < len(firstAddrs); j++ {
+		fmt.Println(t.addr, "checking", t.addrs[i], "i=", i)
+
+		rsleep()
+
+		if t.addr.String() == t.addrs[j].String() {
+			continue
+		}
+		if firstAddrs[i] != t.addrs[j].String() {
+			return xerrors.Errorf("expected '%s' to equal '%s'", firstAddrs[i], t.addrs[j].String())
+		}
+		i++
+	}
+
+	rsleep()
+
+	fmt.Println(t.addr, "sends finish to", fromAddr)
+	errs := out.Send(&wrappers.StringValue{Value: "finish"}, fromAddr)
+	err, more := <-errs
+	if more {
+		return xerrors.Errorf("unexpected error while sending finsh: %v", err)
+	}
+
 	return nil
 }
 
@@ -1168,4 +1363,11 @@ func createServer(t *testing.T, id string) (string, *address, *Server, Peer) {
 	}
 
 	return identifier, addr, server, peer
+}
+
+// Sleep random
+
+func rsleep() {
+	n := rand.Intn(100) // n will be between 0 and 10
+	time.Sleep(time.Duration(n) * time.Millisecond)
 }
