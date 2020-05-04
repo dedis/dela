@@ -88,9 +88,28 @@ func (r roster) Take(updaters ...mino.FilterUpdater) mino.Players {
 
 // Apply implements viewchange.EvolvableAuthority. It returns a new authority
 // after applying the change set.
-func (r roster) Apply(viewchange.ChangeSet) viewchange.EvolvableAuthority {
-	// TODO: implement
-	return r
+func (r roster) Apply(changeset viewchange.ChangeSet) viewchange.EvolvableAuthority {
+	addrs := make([]mino.Address, r.Len())
+	pubkeys := make([]crypto.PublicKey, r.Len())
+
+	for i, addr := range r.addrs {
+		addrs[i] = addr
+		pubkeys[i] = r.pubkeys[i]
+	}
+
+	for _, i := range changeset.Remove {
+		if int(i) < len(addrs) {
+			addrs = append(addrs[:i], addrs[i+1:]...)
+			pubkeys = append(pubkeys[:i], pubkeys[i+1:]...)
+		}
+	}
+
+	roster := roster{
+		addrs:   addrs,
+		pubkeys: pubkeys,
+	}
+
+	return roster
 }
 
 // Len implements mino.Players. It returns the length of the roster.

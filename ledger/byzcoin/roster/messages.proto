@@ -9,3 +9,11 @@ message Roster {
     repeated bytes addresses = 1;
     repeated google.protobuf.Any publicKeys = 2;
 }
+
+message ChangeSet {
+    repeated uint32 remove = 1;
+}
+
+message ActionProto {
+    repeated uint32 remove = 1;
+}

@@ -502,8 +502,8 @@ func (gov fakeGovernance) GetAuthority(index uint64) (viewchange.EvolvableAuthor
 	return gov.authority, gov.err
 }
 
-func (gov fakeGovernance) GetChangeSet(uint64) viewchange.ChangeSet {
-	return gov.changeset
+func (gov fakeGovernance) GetChangeSet(uint64) (viewchange.ChangeSet, error) {
+	return gov.changeset, nil
 }
 
 type fakeQueue struct {

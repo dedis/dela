@@ -3,43 +3,53 @@ package byzcoin
 import (
 	"reflect"
 
-	proto "github.com/golang/protobuf/proto"
-	any "github.com/golang/protobuf/ptypes/any"
+	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes/any"
+	"go.dedis.ch/fabric/consensus/viewchange"
+	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/ledger/arc/darc"
+	"go.dedis.ch/fabric/ledger/byzcoin/roster"
+	"go.dedis.ch/fabric/ledger/inventory"
 	"go.dedis.ch/fabric/ledger/transactions/basic"
+	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
 
-// ActionFactory is an action factory that can process several types of actions.
+// taskFactory is an action factory that can process several types of actions.
 //
-// - implements basic.ActionFactory
-type ActionFactory struct {
+// - implements basic.TaskFactory
+type taskFactory struct {
 	encoder  encoding.ProtoMarshaler
 	registry map[reflect.Type]basic.ActionFactory
 }
 
-// NewActionFactory creates a new action factory.
-func NewActionFactory() basic.ActionFactory {
-	f := ActionFactory{
+func newtaskFactory(m mino.Mino, signer crypto.Signer,
+	i inventory.Inventory) (*taskFactory, viewchange.Governance) {
+
+	f := &taskFactory{
 		encoder:  encoding.NewProtoEncoder(),
 		registry: make(map[reflect.Type]basic.ActionFactory),
 	}
 
-	f.Register((*darc.ActionProto)(nil), darc.NewActionFactory())
+	rosterFactory := roster.NewRosterFactory(m.GetAddressFactory(), signer.GetPublicKeyFactory())
+	gov := roster.NewTaskManager(rosterFactory, i)
 
-	return f
+	f.Register((*darc.ActionProto)(nil), darc.NewActionFactory())
+	f.Register((*roster.ActionProto)(nil), gov)
+
+	return f, gov
 }
 
 // Register registers the factory for the protobuf message.
-func (f ActionFactory) Register(pb proto.Message, factory basic.ActionFactory) {
+func (f *taskFactory) Register(pb proto.Message, factory basic.ActionFactory) {
 	key := reflect.TypeOf(pb)
 	f.registry[key] = factory
 }
 
-// FromProto implements basic.ActionFactory. It returns the server action for
+// FromProto implements basic.TaskFactory. It returns the server action for
 // the protobuf message if appropriate, otherwise an error.
-func (f ActionFactory) FromProto(in proto.Message) (basic.ServerAction, error) {
+func (f *taskFactory) FromProto(in proto.Message) (basic.ServerAction, error) {
 	inAny, ok := in.(*any.Any)
 	if ok {
 		var err error

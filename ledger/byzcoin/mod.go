@@ -16,7 +16,7 @@ import (
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/ledger"
 	"go.dedis.ch/fabric/ledger/byzcoin/roster"
-	"go.dedis.ch/fabric/ledger/inventory"
+	"go.dedis.ch/fabric/ledger/inventory/mem"
 	"go.dedis.ch/fabric/ledger/transactions"
 	"go.dedis.ch/fabric/ledger/transactions/basic"
 	"go.dedis.ch/fabric/mino"
@@ -34,7 +34,7 @@ const (
 var (
 	// AuthorityKey is a reserved instance key for the roster of the chain. It
 	// may evolve after each block.
-	authorityKey = []byte{0x01}
+	authorityKey = []byte(roster.AuthorityKey)
 )
 
 // Ledger is a distributed public ledger implemented by using a blockchain. Each
@@ -50,7 +50,7 @@ type Ledger struct {
 	gossiper   gossip.Gossiper
 	bag        *txBag
 	proc       *txProcessor
-	governance governance
+	governance viewchange.Governance
 	encoder    encoding.ProtoMarshaler
 	txFactory  transactions.TransactionFactory
 	closing    chan struct{}
@@ -58,30 +58,27 @@ type Ledger struct {
 }
 
 // NewLedger creates a new Byzcoin ledger.
-func NewLedger(mino mino.Mino, signer crypto.AggregateSigner) *Ledger {
-	factory := basic.NewTransactionFactory(signer, NewActionFactory())
+func NewLedger(m mino.Mino, signer crypto.AggregateSigner) *Ledger {
+	inventory := mem.NewInventory()
+	taskFactory, gov := newtaskFactory(m, signer, inventory)
+
+	txFactory := basic.NewTransactionFactory(signer, taskFactory)
 	decoder := func(pb proto.Message) (gossip.Rumor, error) {
-		return factory.FromProto(pb)
+		return txFactory.FromProto(pb)
 	}
 
-	proc := newTxProcessor(factory)
-	gov := governance{
-		inventory:        proc.inventory,
-		authorityFactory: roster.NewRosterFactory(mino.GetAddressFactory(), signer.GetPublicKeyFactory()),
-	}
-	cosi := flatcosi.NewFlat(mino, signer)
-	consensus := cosipbft.NewCoSiPBFT(mino, cosi, gov)
+	consensus := cosipbft.NewCoSiPBFT(m, flatcosi.NewFlat(m, signer), gov)
 
 	return &Ledger{
-		addr:       mino.GetAddress(),
+		addr:       m.GetAddress(),
 		signer:     signer,
-		bc:         skipchain.NewSkipchain(mino, consensus),
-		gossiper:   gossip.NewFlat(mino, decoder),
+		bc:         skipchain.NewSkipchain(m, consensus),
+		gossiper:   gossip.NewFlat(m, decoder),
 		bag:        newTxBag(),
-		proc:       proc,
+		proc:       newTxProcessor(txFactory, inventory),
 		governance: gov,
 		encoder:    encoding.NewProtoEncoder(),
-		txFactory:  factory,
+		txFactory:  txFactory,
 		closing:    make(chan struct{}),
 		initiated:  make(chan error, 1),
 	}
@@ -344,7 +341,7 @@ func (a actorLedger) Setup(players mino.Players) error {
 		return xerrors.Errorf("players must implement '%T'", authority)
 	}
 
-	rosterpb, err := a.encoder.Pack(a.governance.authorityFactory.New(authority))
+	rosterpb, err := a.encoder.Pack(a.governance.GetAuthorityFactory().New(authority))
 	if err != nil {
 		return xerrors.Errorf("couldn't pack roster: %v", err)
 	}
@@ -384,41 +381,4 @@ func (a actorLedger) Close() error {
 	close(a.closing)
 
 	return nil
-}
-
-// Governance is an implementation of viewchange.Governance so that the module
-// can act on the roster which is done through transactions.
-// TODO: implement the roster txs
-//
-// - implements viewchange.Governance
-type governance struct {
-	inventory        inventory.Inventory
-	authorityFactory viewchange.AuthorityFactory
-}
-
-// GetAuthority implements viewchange.Governance. It returns the authority for
-// the given block index by reading the inventory page associated.
-func (gov governance) GetAuthority(index uint64) (viewchange.EvolvableAuthority, error) {
-	page, err := gov.inventory.GetPage(index)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't read page: %v", err)
-	}
-
-	rosterpb, err := page.Read(authorityKey)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't read roster: %v", err)
-	}
-
-	roster, err := gov.authorityFactory.FromProto(rosterpb)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't decode roster: %v", err)
-	}
-
-	return roster, nil
-}
-
-// GetChangeSet implements viewchange.Governance. It returns the change set for
-// that block by reading the transactions.
-func (gov governance) GetChangeSet(index uint64) viewchange.ChangeSet {
-	return viewchange.ChangeSet{}
 }

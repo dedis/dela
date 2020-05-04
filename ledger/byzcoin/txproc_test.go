@@ -11,8 +11,7 @@ import (
 )
 
 func TestTxProcessor_Validate(t *testing.T) {
-	proc := newTxProcessor(nil)
-	proc.inventory = fakeInventory{}
+	proc := newTxProcessor(nil, fakeInventory{})
 
 	err := proc.Validate(0, &BlockPayload{})
 	require.NoError(t, err)
@@ -46,8 +45,7 @@ func TestTxProcessor_Validate(t *testing.T) {
 }
 
 func TestTxProcessor_Process(t *testing.T) {
-	proc := newTxProcessor(nil)
-	proc.inventory = fakeInventory{page: &fakePage{index: 999}}
+	proc := newTxProcessor(nil, fakeInventory{page: &fakePage{index: 999}})
 
 	page, err := proc.process(&BlockPayload{})
 	require.NoError(t, err)
@@ -62,8 +60,7 @@ func TestTxProcessor_Process(t *testing.T) {
 }
 
 func TestTxProcessor_Commit(t *testing.T) {
-	proc := newTxProcessor(nil)
-	proc.inventory = fakeInventory{}
+	proc := newTxProcessor(nil, fakeInventory{})
 
 	err := proc.Commit(&BlockPayload{})
 	require.NoError(t, err)

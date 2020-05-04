@@ -26,6 +26,8 @@ import (
 
 //go:generate protoc -I ./ --go_out=./ ./messages.proto
 
+// TODO: rename action to task
+
 // ClientAction is used to create a transaction.
 type ClientAction interface {
 	encoding.Packable

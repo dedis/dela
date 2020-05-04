@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/crypto/bls"
-	"go.dedis.ch/fabric/encoding"
 	internal "go.dedis.ch/fabric/internal/testing"
 	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/ledger"
@@ -19,7 +18,6 @@ import (
 	"go.dedis.ch/fabric/ledger/transactions/basic"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/minoch"
-	"golang.org/x/xerrors"
 )
 
 func TestMessages(t *testing.T) {
@@ -60,9 +58,8 @@ func TestLedger_Basic(t *testing.T) {
 	signer := bls.NewSigner()
 	txFactory := basic.NewTransactionFactory(signer, nil)
 
-	// Try to create a DARC.
-	access := makeDarc(t, signer)
-	tx, err := txFactory.New(darc.NewCreate(access))
+	// Execute a roster change tx by removing one of the participants.
+	tx, err := txFactory.New(roster.NewClientTask([]uint32{15}))
 	require.NoError(t, err)
 
 	err = actors[1].AddTransaction(tx)
@@ -74,6 +71,26 @@ func TestLedger_Basic(t *testing.T) {
 		require.Equal(t, tx.GetID(), res.GetTransactionID())
 	case <-time.After(1 * time.Second):
 		t.Fatal("timeout 1")
+	}
+
+	roster, err := ledgers[5].(*Ledger).governance.GetAuthority(1)
+	require.NoError(t, err)
+	require.Equal(t, 19, roster.Len())
+
+	// Try to create a DARC.
+	access := makeDarc(t, signer)
+	tx, err = txFactory.New(darc.NewCreate(access))
+	require.NoError(t, err)
+
+	err = actors[1].AddTransaction(tx)
+	require.NoError(t, err)
+
+	select {
+	case res := <-txs:
+		require.NotNil(t, res)
+		require.Equal(t, tx.GetID(), res.GetTransactionID())
+	case <-time.After(1 * time.Second):
+		t.Fatal("timeout 2")
 	}
 
 	value, err := ledgers[2].GetValue(tx.GetID())
@@ -92,37 +109,8 @@ func TestLedger_Basic(t *testing.T) {
 		require.NotNil(t, res)
 		require.Equal(t, tx.GetID(), res.GetTransactionID())
 	case <-time.After(1 * time.Second):
-		t.Fatal("timeout 2")
+		t.Fatal("timeout 3")
 	}
-}
-
-func TestGovernance_GetAuthority(t *testing.T) {
-	factory := roster.NewRosterFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
-
-	roster := factory.New(fake.NewAuthority(3, fake.NewSigner))
-	rosterpb, err := roster.Pack(encoding.NewProtoEncoder())
-	require.NoError(t, err)
-
-	gov := governance{
-		authorityFactory: factory,
-		inventory:        fakeInventory{page: &fakePage{value: rosterpb}},
-	}
-
-	authority, err := gov.GetAuthority(3)
-	require.NoError(t, err)
-	require.Equal(t, 3, authority.Len())
-
-	gov.inventory = fakeInventory{err: xerrors.New("oops")}
-	_, err = gov.GetAuthority(3)
-	require.EqualError(t, err, "couldn't read page: oops")
-
-	gov.inventory = fakeInventory{page: &fakePage{err: xerrors.New("oops")}}
-	_, err = gov.GetAuthority(3)
-	require.EqualError(t, err, "couldn't read roster: oops")
-
-	gov.inventory = fakeInventory{page: &fakePage{}}
-	_, err = gov.GetAuthority(3)
-	require.EqualError(t, err, "couldn't decode roster: invalid message type '<nil>'")
 }
 
 // -----------------------------------------------------------------------------

@@ -6,7 +6,6 @@ import (
 	proto "github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/ledger/inventory"
-	"go.dedis.ch/fabric/ledger/inventory/mem"
 	"go.dedis.ch/fabric/ledger/transactions"
 	"golang.org/x/xerrors"
 )
@@ -20,9 +19,9 @@ type txProcessor struct {
 	txFactory transactions.TransactionFactory
 }
 
-func newTxProcessor(f transactions.TransactionFactory) *txProcessor {
+func newTxProcessor(f transactions.TransactionFactory, i inventory.Inventory) *txProcessor {
 	return &txProcessor{
-		inventory: mem.NewInventory(),
+		inventory: i,
 		txFactory: f,
 	}
 }
