@@ -43,7 +43,7 @@ var (
 	// in a tree based communication, this parameter (H) defines the height of
 	// the tree. Based on this parameter and the total number of nodes N we can
 	// compute the number of direct connection D for each node with D = N^(1/H)
-	treeHeight = 6
+	treeHeight = 3
 )
 
 // Server represents the entity that accepts incoming requests and invoke the
@@ -308,13 +308,9 @@ func listenStream(stream overlayStream, orchRecv *receiver,
 	}
 
 	for _, toSend := range envelope.To {
-		// if we receive a message to ourself or the orchestrator, then we
-		// notify the orchestrator receiver by filling orchRecv.in. If this is
-		// not the case we then relay the message. In the case we receive a
-		// message to ourself but we are in the orchestrator we then must not
-		// notify the orchestrator because in that case the message has not
-		// reached its final destination, in a tree networking it means we are
-		// in the root but we need to reach a node.
+		// if we receive a message to the orchestrator then we notify the
+		// orchestrator receiver by filling orchRecv.in. If this is not the case
+		// we relay the message.
 		if toSend == orchSender.address.String() {
 			orchRecv.in <- msg
 		} else {
@@ -540,8 +536,9 @@ func (s *sender) sendSingle(msg proto.Message, from, to mino.Address) error {
 
 	routingTo, err := s.routing.GetRoute(to)
 	if err != nil {
-		// If we can't get a route we send the message to ourself, which will
-		// reach our orchestrator.
+		// If we can't get a route we send the message to the orchestrator. In a
+		// tree based communication this means sending the message to our
+		// parent.
 		routingTo = s.address
 	}
 

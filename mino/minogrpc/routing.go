@@ -22,7 +22,12 @@ type RoutingFactory interface {
 
 // Routing defines the functions needed to route messages
 type Routing interface {
-	GetRoute(from mino.Address) (to mino.Address, err error)
+	// GetRoute should return the gateway address for a corresponding addresse.
+	// In a tree communication it is typically the address of the child that
+	// contains the "to" address in its sub-tree.
+	GetRoute(to mino.Address) (gateway mino.Address, err error)
+	// GetDirectLinks return the direct links of the elements. In a tree routing
+	// this is typically the childs of the node.
 	GetDirectLinks() []mino.Address
 }
 
@@ -37,7 +42,9 @@ type TreeRouting struct {
 
 // TreeRoutingOpts is the implementation of treeTreeRoutingOpts
 var TreeRoutingOpts = treeRoutingOpts{
-	Addr:       "addr",
+	// Addr is the address of the node, the value should be of type mino.Address
+	Addr: "addr",
+	// TreeHeight is the maximum tree height
 	TreeHeight: "treeHeight",
 }
 
@@ -46,7 +53,7 @@ type treeRoutingOpts struct {
 	TreeHeight string
 }
 
-// Addr is the address of the node using the routing
+// GetAddr parses the Addr option
 func (t treeRoutingOpts) GetAddr(opts map[string]interface{}) (mino.Address, error) {
 	addrItf, found := opts[t.Addr]
 	if !found {
@@ -60,7 +67,7 @@ func (t treeRoutingOpts) GetAddr(opts map[string]interface{}) (mino.Address, err
 	return addr, nil
 }
 
-// TreeHeight is the height of the tree
+// GetTreeHeight parses the tee height option
 func (t treeRoutingOpts) GetTreeHeight(opts map[string]interface{}) (int, error) {
 	treeHeightItf, found := opts[t.TreeHeight]
 	if !found {
@@ -68,7 +75,7 @@ func (t treeRoutingOpts) GetTreeHeight(opts map[string]interface{}) (int, error)
 	}
 	treeHeight, ok := treeHeightItf.(int)
 	if !ok {
-		return -1, xerrors.Errorf("provided treeHeight option is not an int: %v",
+		return -1, xerrors.Errorf("provided treeHeight option is not an int: %T",
 			treeHeightItf)
 	}
 	return treeHeight, nil
@@ -175,16 +182,16 @@ func (t treeRoutingFactory) FromAddrs(addrs []mino.Address,
 // will send its message to node 3.
 //
 // - implements Routing
-func (t TreeRouting) GetRoute(from mino.Address) (mino.Address, error) {
+func (t TreeRouting) GetRoute(to mino.Address) (mino.Address, error) {
 
-	if t.me.Addr != nil && t.me.Addr.Equal(from) {
-		return from, nil
+	if t.me.Addr != nil && t.me.Addr.Equal(to) {
+		return to, nil
 	}
 
-	target, ok := t.routingNodes[from.String()]
+	target, ok := t.routingNodes[to.String()]
 	if !ok || target == nil {
 		return nil, xerrors.Errorf("failed to find node '%s' in routingNode map",
-			from.String())
+			to.String())
 	}
 
 	for _, c := range t.me.Childs {

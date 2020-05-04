@@ -140,7 +140,7 @@ func (m Minogrpc) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 	return rpc, nil
 }
 
-// AddNeighbours ...
+// AddNeighbours fills the neighbours map of the server
 func (m Minogrpc) AddNeighbours(minoGrpcs ...*Minogrpc) {
 	for _, minogrpc := range minoGrpcs {
 		m.server.addNeighbour(minogrpc.server)

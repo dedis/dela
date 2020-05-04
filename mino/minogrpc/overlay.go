@@ -125,7 +125,6 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		addrs[i] = address{addrStr}
 	}
 
-	// TODO: use an interface and allow different types of routing
 	routing, err := o.routingFactory.FromAddrs(addrs, map[string]interface{}{
 		TreeRoutingOpts.Addr: o.addr, "treeHeight": treeHeight,
 	})
@@ -162,8 +161,8 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 	for _, addr := range routing.GetDirectLinks() {
 		peer, found := o.neighbour[addr.String()]
 		if !found {
-			err = xerrors.Errorf("failed to find peer '%s' from the neighbours: %v",
-				addr.String(), err)
+			err = xerrors.Errorf("failed to find routing peer '%s' from the "+
+				"neighbours: %v", addr.String(), err)
 			fabric.Logger.Err(err).Send()
 			return err
 		}
@@ -207,7 +206,8 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 					return
 				}
 				if err != nil {
-					err = xerrors.Errorf("failed to listen stream on child in overlay: %v", err)
+					err = xerrors.Errorf("failed to listen stream on child in "+
+						"overlay: %v", err)
 					fabric.Logger.Err(err).Send()
 					return
 				}
