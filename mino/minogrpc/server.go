@@ -234,7 +234,7 @@ func (rpc RPC) Stream(ctx context.Context,
 		header := metadata.New(map[string]string{headerURIKey: rpc.uri})
 		newCtx := metadata.NewOutgoingContext(ctx, header)
 
-		s, err := cl.Stream(newCtx)
+		stream, err := cl.Stream(newCtx)
 		if err != nil {
 			err = xerrors.Errorf("failed to get stream for client '%s': %v",
 				addr.String(), err)
@@ -243,18 +243,17 @@ func (rpc RPC) Stream(ctx context.Context,
 			continue
 		}
 
-		safeStream := newSafeOverlayStream(s)
-		orchSender.participants[addr.String()] = safeStream
+		orchSender.participants[addr.String()] = stream
 
 		// Sending the routing info as first messages to our childs
-		safeStream.Send(&OverlayMsg{Message: anyRoutintg})
+		stream.Send(&OverlayMsg{Message: anyRoutintg})
 
 		// Listen on the clients streams and notify the orchestrator or relay
 		// messages
 		go func(addr mino.Address) {
 			for {
 				addrCopy := address{addr.String()}
-				err := listenStream(safeStream, &orchRecv, orchSender, addrCopy)
+				err := listenStream(stream, &orchRecv, orchSender, addrCopy)
 				if err == io.EOF {
 					<-ctx.Done()
 					return
@@ -635,28 +634,4 @@ func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error)
 type overlayStream interface {
 	Send(*OverlayMsg) error
 	Recv() (*OverlayMsg, error)
-}
-
-type safeOverlayStream struct {
-	sendLock sync.Mutex
-	recvLock sync.Mutex
-	os       overlayStream
-}
-
-func newSafeOverlayStream(o overlayStream) *safeOverlayStream {
-	return &safeOverlayStream{
-		os: o,
-	}
-}
-
-func (os *safeOverlayStream) Send(msg *OverlayMsg) error {
-	// os.sendLock.Lock()
-	// defer os.sendLock.Unlock()
-	return os.os.Send(msg)
-}
-
-func (os *safeOverlayStream) Recv() (*OverlayMsg, error) {
-	// os.recvLock.Lock()
-	// defer os.recvLock.Unlock()
-	return os.os.Recv()
 }

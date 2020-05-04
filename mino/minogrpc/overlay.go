@@ -181,7 +181,7 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		newCtx := stream.Context()
 		newCtx = metadata.NewOutgoingContext(newCtx, header)
 
-		cs, err := cl.Stream(newCtx)
+		clientStream, err := cl.Stream(newCtx)
 		if err != nil {
 			err = xerrors.Errorf("failed to get stream for client '%s': %v",
 				addr.String(), err)
@@ -189,17 +189,16 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 			return err
 		}
 
-		safeClientStream := newSafeOverlayStream(cs)
-		sender.participants[addr.String()] = safeClientStream
+		sender.participants[addr.String()] = clientStream
 
 		// Sending the routing info as first messages to our childs
-		safeClientStream.Send(&OverlayMsg{Message: overlayMsg.Message})
+		clientStream.Send(&OverlayMsg{Message: overlayMsg.Message})
 
 		// Listen on the clients streams and notify the orchestrator or relay
 		// messages
 		go func(addr mino.Address) {
 			for {
-				err := listenStream(safeClientStream, &receiver, sender, addr)
+				err := listenStream(clientStream, &receiver, sender, addr)
 				if err == io.EOF {
 					return
 				}
