@@ -4,7 +4,6 @@ import (
 	context "context"
 	"fmt"
 	"math/rand"
-	"os"
 	"sort"
 	"strings"
 	"testing"
@@ -440,8 +439,6 @@ func TestRPC_SingleSimple_Stream(t *testing.T) {
 
 	_, ok := msg2.(*empty.Empty)
 	require.True(t, ok)
-
-	fmt.Println("OK")
 
 	cancel()
 
@@ -885,9 +882,9 @@ func TestRPC_DKG_Stream(t *testing.T) {
 		traffics[i] = server.traffic
 	}
 
-	defer func() {
-		GenerateGraphviz(os.Stdout, traffics...)
-	}()
+	// defer func() {
+	// 	GenerateGraphviz(os.Stdout, traffics...)
+	// }()
 
 	// Computed routing with n=9:
 	//
@@ -950,14 +947,13 @@ func TestRPC_DKG_Stream(t *testing.T) {
 	}
 
 	for i := 0; i < n; i++ {
-		from, msg, err := rcvr.Recv(context.Background())
+		_, msg, err := rcvr.Recv(context.Background())
 		require.NoError(t, err)
 
 		dummy, ok := msg.(*wrappers.StringValue)
 		require.True(t, ok)
 
 		require.Equal(t, dummy.Value, "finish")
-		fmt.Println("received from", from)
 	}
 
 	// out := os.Stdout
@@ -1229,8 +1225,6 @@ func (t testRingHandler) Stream(out mino.Sender, in mino.Receiver) error {
 		toAddr = t.neighbor
 	}
 
-	fmt.Println("received from", fromAddr, "sending to", toAddr)
-
 	errs := out.Send(dummyReturn, toAddr)
 	err, more := <-errs
 	if more {
@@ -1268,8 +1262,6 @@ func (t testDKGHandler) Stream(out mino.Sender, in mino.Receiver) error {
 		return xerrors.Errorf("expected start message, got '%s'", dummy.Value)
 	}
 
-	fmt.Println(t.addr, "got start message from", fromAddr)
-
 	for _, addr := range t.addrs {
 
 		rsleep()
@@ -1277,15 +1269,13 @@ func (t testDKGHandler) Stream(out mino.Sender, in mino.Receiver) error {
 		if addr.String() == t.addr.String() {
 			continue
 		}
-		fmt.Println(t.addr, "send first message to", addr)
+
 		errs := out.Send(&wrappers.StringValue{Value: "first"}, addr)
 		err, more := <-errs
 		if more {
 			return xerrors.Errorf("unexpected error while sending first: %v", err)
 		}
 	}
-
-	fmt.Println(t.addr, "sent all its first")
 
 	firstAddrs := make([]string, len(t.addrs)-1)
 	for i := 0; i < len(t.addrs)-1; i++ {
@@ -1296,8 +1286,6 @@ func (t testDKGHandler) Stream(out mino.Sender, in mino.Receiver) error {
 		if err != nil {
 			return xerrors.Errorf("failed to receive first message: %v", err)
 		}
-
-		fmt.Println(t.addr, "received first message from", from)
 
 		dummy, ok := msg.(*wrappers.StringValue)
 		if !ok {
@@ -1319,10 +1307,7 @@ func (t testDKGHandler) Stream(out mino.Sender, in mino.Receiver) error {
 	}
 
 	sort.Strings(firstAddrs)
-	fmt.Println(t.addr, "has received from", firstAddrs)
 	for i, j := 0, 0; i < len(firstAddrs); j++ {
-		fmt.Println(t.addr, "checking", t.addrs[i], "i=", i)
-
 		rsleep()
 
 		if t.addr.String() == t.addrs[j].String() {
@@ -1336,7 +1321,6 @@ func (t testDKGHandler) Stream(out mino.Sender, in mino.Receiver) error {
 
 	rsleep()
 
-	fmt.Println(t.addr, "sends finish to", fromAddr)
 	errs := out.Send(&wrappers.StringValue{Value: "finish"}, fromAddr)
 	err, more := <-errs
 	if more {

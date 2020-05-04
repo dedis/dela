@@ -8,7 +8,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	fmt "fmt"
 	"io"
 	"math/big"
 	"net"
@@ -174,8 +173,6 @@ func (rpc RPC) Stream(ctx context.Context,
 		// TODO better handle this error
 		fabric.Logger.Fatal().Msgf("failed to create routing: %v", err)
 	}
-
-	fmt.Println("tree topology:", routing.(*TreeRouting).root)
 
 	routingProto := &RoutingMsg{Type: "tree", Addrs: addrsStr}
 

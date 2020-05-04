@@ -3,9 +3,7 @@ package minogrpc
 import (
 	context "context"
 	"crypto/tls"
-	fmt "fmt"
 	"io"
-	"sync"
 
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/encoding"
@@ -161,8 +159,6 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		traffic: o.traffic,
 	}
 
-	var peerWait sync.WaitGroup
-
 	for _, addr := range routing.GetDirectLinks() {
 		peer, found := o.neighbour[addr.String()]
 		if !found {
@@ -201,9 +197,7 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 
 		// Listen on the clients streams and notify the orchestrator or relay
 		// messages
-		peerWait.Add(1)
 		go func(addr mino.Address) {
-			defer peerWait.Done()
 			for {
 				err := listenStream(safeClientStream, &receiver, sender, addr)
 				if err == io.EOF {
@@ -251,8 +245,6 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 	}
 
 	<-ctx.Done()
-
-	fmt.Println("EXIT in", o.addr)
 
 	return nil
 
