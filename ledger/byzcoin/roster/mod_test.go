@@ -103,8 +103,8 @@ func TestRoster_Take(t *testing.T) {
 func TestRoster_Apply(t *testing.T) {
 	roster := rosterFactory{}.New(fake.NewAuthority(3, fake.NewSigner))
 
-	roster2 := roster.Apply(viewchange.ChangeSet{Remove: []uint32{1, 3}})
-	require.Equal(t, roster.Len()-1, roster2.Len())
+	roster2 := roster.Apply(viewchange.ChangeSet{Remove: []uint32{3, 2, 0}})
+	require.Equal(t, roster.Len()-2, roster2.Len())
 }
 
 func TestRoster_Len(t *testing.T) {

@@ -66,13 +66,12 @@ func TestServerTask_Consume(t *testing.T) {
 	require.Equal(t, uint64(5), changesetpb.(*ChangeSet).GetIndex())
 	require.Equal(t, []uint32{2}, changesetpb.(*ChangeSet).GetRemove())
 
-	task.clientTask.remove = []uint32{4, 2}
+	task.clientTask.remove = []uint32{4, 2, 4, 2, 3, 2, 4, 6, 4, 2}
 	err = task.Consume(nil, fakePage{values: values})
 	require.NoError(t, err)
 
 	changesetpb = values[RosterChangeSetKey]
-	// TODO: unique and sorted
-	require.Equal(t, []uint32{2, 4, 2}, changesetpb.(*ChangeSet).GetRemove())
+	require.Equal(t, []uint32{6, 4, 3, 2}, changesetpb.(*ChangeSet).GetRemove())
 
 	err = task.Consume(nil, fakePage{errRead: xerrors.New("oops")})
 	require.EqualError(t, err, "couldn't read roster: oops")

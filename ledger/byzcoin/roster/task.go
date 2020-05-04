@@ -3,6 +3,7 @@ package roster
 import (
 	"encoding/binary"
 	"io"
+	"sort"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
@@ -144,9 +145,21 @@ func (t serverTask) updateChangeSet(page inventory.WritablePage) error {
 		}
 	}
 
-	// Merge the change set.
-	// TODO: unique and sorted
-	changesetpb.Remove = append(changesetpb.Remove, t.remove...)
+	removals := append(changesetpb.GetRemove(), t.remove...)
+	// Sort by ascending order in O(n*log(n)).
+	sort.Slice(removals, func(i, j int) bool { return removals[i] > removals[j] })
+	// Remove duplicates in O(n).
+	for i := 0; i < len(removals)-1; {
+		if removals[i] == removals[i+1] {
+			removals = append(removals[:i], removals[i+1:]...)
+		} else {
+			// Only moves to the next when all occurances of the same index are
+			// removed.
+			i++
+		}
+	}
+
+	changesetpb.Remove = removals
 
 	err = page.Write(rosterChangeSetKey, changesetpb)
 	if err != nil {

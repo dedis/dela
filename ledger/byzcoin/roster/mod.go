@@ -87,8 +87,8 @@ func (r roster) Take(updaters ...mino.FilterUpdater) mino.Players {
 }
 
 // Apply implements viewchange.EvolvableAuthority. It returns a new authority
-// after applying the change set. The removals must be sorted and unique or the
-// behaviour could be unexpected.
+// after applying the change set. The removals must be sorted by descending
+// order and unique or the behaviour will be undefined.
 func (r roster) Apply(changeset viewchange.ChangeSet) viewchange.EvolvableAuthority {
 	addrs := make([]mino.Address, r.Len())
 	pubkeys := make([]crypto.PublicKey, r.Len())
