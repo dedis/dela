@@ -206,12 +206,7 @@ func (page inMemoryPage) Read(key []byte) (proto.Message, error) {
 	digest := Digest{}
 	copy(digest[:], key)
 
-	entry, ok := page.entries[digest]
-	if !ok {
-		return nil, xerrors.Errorf("instance with key '%#x' not found", key)
-	}
-
-	return entry, nil
+	return page.entries[digest], nil
 }
 
 // Write implements inventory.WritablePage. It updates the state of the page by

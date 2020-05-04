@@ -12,7 +12,8 @@ type Page interface {
 	// the integrity.
 	GetFootprint() []byte
 
-	// Read returns the value stored at the given key.
+	// Read returns the value stored at the given key. If the key does not
+	// exist, it should a nil value without error.
 	Read(key []byte) (proto.Message, error)
 }
 

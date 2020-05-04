@@ -135,12 +135,13 @@ func TestPage_Read(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "1", value.(*wrappers.StringValue).Value)
 
+	value, err = page.Read([]byte{3})
+	require.NoError(t, err)
+	require.Nil(t, value)
+
 	badKey := [digestLength + 1]byte{}
 	_, err = page.Read(badKey[:])
 	require.EqualError(t, err, "key length (33) is higher than 32")
-
-	_, err = page.Read([]byte{3})
-	require.EqualError(t, err, "instance with key '0x03' not found")
 }
 
 func TestPage_Write(t *testing.T) {

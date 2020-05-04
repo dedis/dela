@@ -183,7 +183,7 @@ func TestServerTask_Consume(t *testing.T) {
 	task.ClientTask = InvokeTask{Key: []byte("c")}
 	err = task.Consume(fakeContext{}, page)
 	require.EqualError(t, err,
-		"couldn't read the instance: couldn't read the value: not found")
+		"couldn't read the instance: invalid message type '<nil>' != '*contract.Instance'")
 
 	task.ClientTask = InvokeTask{Key: []byte("z")}
 	err = task.Consume(fakeContext{}, page)
@@ -220,10 +220,10 @@ func TestServerTask_Consume(t *testing.T) {
 	task.ClientTask = DeleteTask{Key: []byte("c")}
 	err = task.Consume(fakeContext{}, page)
 	require.EqualError(t, err,
-		"couldn't read the instance: couldn't read the value: not found")
+		"couldn't read the instance: invalid message type '<nil>' != '*contract.Instance'")
 
 	// 4. Consume an invalid task.
-	page.err = xerrors.New("oops")
+	page.errWrite = xerrors.New("oops")
 	task.ClientTask = DeleteTask{Key: []byte("a")}
 	err = task.Consume(fakeContext{}, page)
 	require.EqualError(t, err, "couldn't write instance to page: oops")
@@ -308,22 +308,18 @@ func (c fakeContract) Invoke(ctx InvokeContext) (proto.Message, error) {
 
 type fakePage struct {
 	inventory.WritablePage
-	store map[string]proto.Message
-	err   error
+	store    map[string]proto.Message
+	errRead  error
+	errWrite error
 }
 
 func (page fakePage) Read(key []byte) (proto.Message, error) {
-	instance := page.store[string(key)]
-	if instance == nil {
-		return nil, xerrors.New("not found")
-	}
-
-	return instance, nil
+	return page.store[string(key)], page.errRead
 }
 
 func (page fakePage) Write(key []byte, value proto.Message) error {
 	page.store[string(key)] = value
-	return page.err
+	return page.errWrite
 }
 
 type fakeContext struct {

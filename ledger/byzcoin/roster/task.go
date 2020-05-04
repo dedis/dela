@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/golang/protobuf/proto"
+	any "github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/fabric/consensus/viewchange"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/ledger/inventory"
@@ -16,12 +17,15 @@ const (
 	// AuthorityKey is the key used to store the roster.
 	AuthorityKey = "authority:value"
 
+	// ChangeSetKey is the key used to store the roster change set.
+	ChangeSetKey = "authority:changeset"
+
 	// ArcKey is the ke used to store the access rights control of the roster.
 	ArcKey = "authority:arc"
 )
 
 var authorityKey = []byte(AuthorityKey)
-var changesetKey = []byte("authority:changeset")
+var changeSetKey = []byte(ChangeSetKey)
 
 // clientTask is the client task implementation to update the roster of a
 // consensus using the transactions for access rights control.
@@ -88,12 +92,12 @@ func (t serverTask) Consume(ctx basic.Context, page inventory.WritablePage) erro
 	// 2. Update the roster stored in the inventory.
 	value, err := page.Read(authorityKey)
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't read roster: %v", err)
 	}
 
 	roster, err := t.rosterFactory.FromProto(value)
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't decode roster: %v", err)
 	}
 
 	changeset := t.GetChangeSet()
@@ -101,22 +105,46 @@ func (t serverTask) Consume(ctx basic.Context, page inventory.WritablePage) erro
 
 	value, err = t.encoder.Pack(roster)
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't encode roster: %v", err)
 	}
 
 	err = page.Write(authorityKey, value)
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't write roster: %v", err)
 	}
 
 	// 3. Store the changeset so it can be read later on.
-	changesetpb := &ChangeSet{
-		Remove: changeset.Remove,
+	err = t.updateChangeSet(page)
+	if err != nil {
+		return xerrors.Errorf("couldn't update change set: %v", err)
 	}
 
-	err = page.Write(changesetKey, changesetpb)
+	return nil
+}
+
+func (t serverTask) updateChangeSet(page inventory.WritablePage) error {
+	pb, err := page.Read(changeSetKey)
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't read from page: %v", err)
+	}
+
+	changesetpb, ok := pb.(*ChangeSet)
+	if !ok || changesetpb.GetIndex() != page.GetIndex() {
+		// Initialize if nil or reset if the change set comes from a previous
+		// block.
+		changesetpb = &ChangeSet{
+			// Keep track of which index the change set is for as the inventory
+			// moves values from previous pages.
+			Index: page.GetIndex(),
+		}
+	}
+
+	// Merge the change set.
+	changesetpb.Remove = append(changesetpb.Remove, t.remove...)
+
+	err = page.Write(changeSetKey, changesetpb)
+	if err != nil {
+		return xerrors.Errorf("couldn't write to page: %v", err)
 	}
 
 	return nil
@@ -179,13 +207,15 @@ func (f TaskManager) GetChangeSet(index uint64) (viewchange.ChangeSet, error) {
 		return cs, xerrors.Errorf("couldn't read page: %v", err)
 	}
 
-	pb, err := page.Read(changesetKey)
+	pb, err := page.Read(changeSetKey)
 	if err != nil {
-		return cs, nil
+		return cs, xerrors.Errorf("couldn't read from page: %v", err)
 	}
 
 	changesetpb, ok := pb.(*ChangeSet)
-	if !ok {
+	if !ok || index != changesetpb.GetIndex() {
+		// Either the change set is not defined, or it has been for a previous
+		// block we return an empty change set.
 		return cs, nil
 	}
 
@@ -194,12 +224,21 @@ func (f TaskManager) GetChangeSet(index uint64) (viewchange.ChangeSet, error) {
 	return cs, nil
 }
 
-// FromProto implements basic.TaskFactory.
+// FromProto implements basic.TaskFactory. It returns the server task associated
+// with the server task if appropriate, otherwise an error.
 func (f TaskManager) FromProto(in proto.Message) (basic.ServerTask, error) {
 	var pb *Task
 	switch msg := in.(type) {
 	case *Task:
 		pb = msg
+	case *any.Any:
+		pb = &Task{}
+		err := f.encoder.UnmarshalAny(msg, pb)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
+		}
+	default:
+		return nil, xerrors.Errorf("invalid message type '%T'", in)
 	}
 
 	task := serverTask{

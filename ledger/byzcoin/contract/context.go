@@ -18,7 +18,11 @@ type taskContext struct {
 func (ctx taskContext) GetArc(key []byte) (arc.AccessControl, error) {
 	value, err := ctx.page.Read(key)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't read value: %v", err)
+		return nil, xerrors.Errorf("couldn't read from page: %v", err)
+	}
+
+	if value == nil {
+		return nil, xerrors.Errorf("access does not exist")
 	}
 
 	access, err := ctx.arcFactory.FromProto(value)
@@ -34,7 +38,7 @@ func (ctx taskContext) GetArc(key []byte) (arc.AccessControl, error) {
 func (ctx taskContext) Read(key []byte) (*Instance, error) {
 	entry, err := ctx.page.Read(key)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't read the value: %v", err)
+		return nil, xerrors.Errorf("couldn't read from page: %v", err)
 	}
 
 	instance, ok := entry.(*Instance)

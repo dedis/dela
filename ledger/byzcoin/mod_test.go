@@ -73,7 +73,7 @@ func TestLedger_Basic(t *testing.T) {
 		t.Fatal("timeout 1")
 	}
 
-	roster, err := ledgers[5].(*Ledger).governance.GetAuthority(1)
+	roster, err := ledgers[2].(*Ledger).governance.GetAuthority(1)
 	require.NoError(t, err)
 	require.Equal(t, 19, roster.Len())
 
