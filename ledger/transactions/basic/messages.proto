@@ -8,5 +8,5 @@ message TransactionProto {
     uint64 nonce = 1;
     google.protobuf.Any identity = 2;
     google.protobuf.Any signature = 3;
-    google.protobuf.Any action = 4;
+    google.protobuf.Any task = 4;
 }

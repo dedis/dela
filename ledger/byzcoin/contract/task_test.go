@@ -15,26 +15,26 @@ import (
 	"golang.org/x/xerrors"
 )
 
-func TestSpawnAction_Pack(t *testing.T) {
-	action := SpawnAction{
+func TestSpawnTask_Pack(t *testing.T) {
+	task := SpawnTask{
 		ContractID: "deadbeef",
 		Argument:   &empty.Empty{},
 	}
 
-	pb, err := action.Pack(encoding.NewProtoEncoder())
+	pb, err := task.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
-	require.IsType(t, (*SpawnActionProto)(nil), pb)
+	require.IsType(t, (*SpawnTaskProto)(nil), pb)
 
-	actionpb := pb.(*SpawnActionProto)
-	require.Equal(t, action.ContractID, actionpb.GetContractID())
-	require.True(t, ptypes.Is(actionpb.GetArgument(), action.Argument))
+	taskpb := pb.(*SpawnTaskProto)
+	require.Equal(t, task.ContractID, taskpb.GetContractID())
+	require.True(t, ptypes.Is(taskpb.GetArgument(), task.Argument))
 
-	_, err = action.Pack(fake.BadMarshalAnyEncoder{})
+	_, err = task.Pack(fake.BadMarshalAnyEncoder{})
 	require.EqualError(t, err, "couldn't pack argument: fake error")
 }
 
-func TestSpawnAction_Fingerprint(t *testing.T) {
-	action := SpawnAction{
+func TestSpawnTask_Fingerprint(t *testing.T) {
+	task := SpawnTask{
 		ContractID: "deadbeef",
 		Argument:   &empty.Empty{},
 	}
@@ -42,37 +42,37 @@ func TestSpawnAction_Fingerprint(t *testing.T) {
 	buffer := new(bytes.Buffer)
 	encoder := encoding.NewProtoEncoder()
 
-	err := action.Fingerprint(buffer, encoder)
+	err := task.Fingerprint(buffer, encoder)
 	require.NoError(t, err)
 	require.Equal(t, "deadbeef{}", buffer.String())
 
-	err = action.Fingerprint(fake.NewBadHash(), encoder)
+	err = task.Fingerprint(fake.NewBadHash(), encoder)
 	require.EqualError(t, err, "couldn't write contract: fake error")
 
-	err = action.Fingerprint(buffer, fake.BadMarshalStableEncoder{})
+	err = task.Fingerprint(buffer, fake.BadMarshalStableEncoder{})
 	require.EqualError(t, err, "couldn't write argument: fake error")
 }
 
-func TestInvokeAction_Pack(t *testing.T) {
-	action := InvokeAction{
+func TestInvokeTask_Pack(t *testing.T) {
+	task := InvokeTask{
 		Key:      []byte{0x01},
 		Argument: &empty.Empty{},
 	}
 
-	pb, err := action.Pack(encoding.NewProtoEncoder())
+	pb, err := task.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
-	require.IsType(t, (*InvokeActionProto)(nil), pb)
+	require.IsType(t, (*InvokeTaskProto)(nil), pb)
 
-	actionpb := pb.(*InvokeActionProto)
-	require.Equal(t, action.Key, actionpb.GetKey())
-	require.True(t, ptypes.Is(actionpb.GetArgument(), action.Argument))
+	taskpb := pb.(*InvokeTaskProto)
+	require.Equal(t, task.Key, taskpb.GetKey())
+	require.True(t, ptypes.Is(taskpb.GetArgument(), task.Argument))
 
-	_, err = action.Pack(fake.BadMarshalAnyEncoder{})
+	_, err = task.Pack(fake.BadMarshalAnyEncoder{})
 	require.EqualError(t, err, "couldn't pack argument: fake error")
 }
 
-func TestInvokeAction_WriteTo(t *testing.T) {
-	action := InvokeAction{
+func TestInvokeTask_WriteTo(t *testing.T) {
+	task := InvokeTask{
 		Key:      []byte{0x01},
 		Argument: &empty.Empty{},
 	}
@@ -80,58 +80,58 @@ func TestInvokeAction_WriteTo(t *testing.T) {
 	buffer := new(bytes.Buffer)
 	encoder := encoding.NewProtoEncoder()
 
-	err := action.Fingerprint(buffer, encoder)
+	err := task.Fingerprint(buffer, encoder)
 	require.NoError(t, err)
 	require.Equal(t, "\x01{}", buffer.String())
 
-	err = action.Fingerprint(fake.NewBadHash(), encoder)
+	err = task.Fingerprint(fake.NewBadHash(), encoder)
 	require.EqualError(t, err, "couldn't write key: fake error")
 
-	err = action.Fingerprint(buffer, fake.BadMarshalStableEncoder{})
+	err = task.Fingerprint(buffer, fake.BadMarshalStableEncoder{})
 	require.EqualError(t, err, "couldn't write argument: fake error")
 }
 
-func TestDeleteAction_Pack(t *testing.T) {
-	action := DeleteAction{
+func TestDeleteTask_Pack(t *testing.T) {
+	task := DeleteTask{
 		Key: []byte{0x01},
 	}
 
-	pb, err := action.Pack(encoding.NewProtoEncoder())
+	pb, err := task.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
-	require.IsType(t, (*DeleteActionProto)(nil), pb)
+	require.IsType(t, (*DeleteTaskProto)(nil), pb)
 
-	actionpb := pb.(*DeleteActionProto)
-	require.Equal(t, action.Key, actionpb.GetKey())
+	taskpb := pb.(*DeleteTaskProto)
+	require.Equal(t, task.Key, taskpb.GetKey())
 }
 
-func TestDeleteAction_WriteTo(t *testing.T) {
-	action := DeleteAction{
+func TestDeleteTask_WriteTo(t *testing.T) {
+	task := DeleteTask{
 		Key: []byte{0x01},
 	}
 
 	buffer := new(bytes.Buffer)
 	encoder := encoding.NewProtoEncoder()
 
-	err := action.Fingerprint(buffer, encoder)
+	err := task.Fingerprint(buffer, encoder)
 	require.NoError(t, err)
 	require.Equal(t, "\x01", buffer.String())
 
-	err = action.Fingerprint(fake.NewBadHash(), encoder)
+	err = task.Fingerprint(fake.NewBadHash(), encoder)
 	require.EqualError(t, err, "couldn't write key: fake error")
 }
 
-func TestServerAction_Consume(t *testing.T) {
+func TestServerTask_Consume(t *testing.T) {
 	factory := &fakeAccessFactory{access: &fakeAccess{match: true}}
 	contracts := map[string]Contract{
 		"fake": fakeContract{},
 		"bad":  fakeContract{err: xerrors.New("oops")},
 	}
 
-	action := serverAction{
-		ClientAction: SpawnAction{ContractID: "fake"},
-		contracts:    contracts,
-		arcFactory:   factory,
-		encoder:      encoding.NewProtoEncoder(),
+	task := serverTask{
+		ClientTask: SpawnTask{ContractID: "fake"},
+		contracts:  contracts,
+		arcFactory: factory,
+		encoder:    encoding.NewProtoEncoder(),
 	}
 
 	page := fakePage{
@@ -143,98 +143,98 @@ func TestServerAction_Consume(t *testing.T) {
 		},
 	}
 
-	// 1. Consume a spawn action.
-	err := action.Consume(fakeContext{id: []byte("b")}, page)
+	// 1. Consume a spawn task.
+	err := task.Consume(fakeContext{id: []byte("b")}, page)
 	require.NoError(t, err)
 
-	err = action.Consume(fakeContext{id: []byte("a")}, page)
+	err = task.Consume(fakeContext{id: []byte("a")}, page)
 	require.EqualError(t, err, "instance already exists")
 
-	action.ClientAction = SpawnAction{ContractID: "unknown"}
-	err = action.Consume(fakeContext{}, page)
+	task.ClientTask = SpawnTask{ContractID: "unknown"}
+	err = task.Consume(fakeContext{}, page)
 	require.EqualError(t, err, "contract 'unknown' not found")
 
-	action.ClientAction = SpawnAction{ContractID: "bad"}
-	err = action.Consume(fakeContext{}, page)
+	task.ClientTask = SpawnTask{ContractID: "bad"}
+	err = task.Consume(fakeContext{}, page)
 	require.EqualError(t, err, "couldn't execute spawn: oops")
 
-	action.ClientAction = SpawnAction{ContractID: "fake"}
+	task.ClientTask = SpawnTask{ContractID: "fake"}
 	factory.err = xerrors.New("oops")
-	err = action.Consume(fakeContext{}, page)
+	err = task.Consume(fakeContext{}, page)
 	require.EqualError(t, err,
 		"no access: couldn't read access: couldn't decode access: oops")
 
 	factory.err = nil
-	action.encoder = fake.BadMarshalAnyEncoder{}
-	err = action.Consume(fakeContext{}, page)
+	task.encoder = fake.BadMarshalAnyEncoder{}
+	err = task.Consume(fakeContext{}, page)
 	require.EqualError(t, err, "couldn't pack value: fake error")
 
-	// 2. Consume an invoke transaction.
-	action.encoder = encoding.NewProtoEncoder()
-	action.ClientAction = InvokeAction{Key: []byte("b")}
+	// 2. Consume an invoke task.
+	task.encoder = encoding.NewProtoEncoder()
+	task.ClientTask = InvokeTask{Key: []byte("b")}
 
 	factory.access.calls = make([][]interface{}, 0)
-	err = action.Consume(fakeContext{}, page)
+	err = task.Consume(fakeContext{}, page)
 	require.NoError(t, err)
 	require.Len(t, factory.access.calls, 1)
 	require.Equal(t, []arc.Identity{fake.PublicKey{}}, factory.access.calls[0][0])
 	require.Equal(t, arc.Compile("fake", "invoke"), factory.access.calls[0][1])
 
-	action.ClientAction = InvokeAction{Key: []byte("c")}
-	err = action.Consume(fakeContext{}, page)
+	task.ClientTask = InvokeTask{Key: []byte("c")}
+	err = task.Consume(fakeContext{}, page)
 	require.EqualError(t, err,
 		"couldn't read the instance: couldn't read the value: not found")
 
-	action.ClientAction = InvokeAction{Key: []byte("z")}
-	err = action.Consume(fakeContext{}, page)
+	task.ClientTask = InvokeTask{Key: []byte("z")}
+	err = task.Consume(fakeContext{}, page)
 	require.EqualError(t, err, "contract 'unknown' not found")
 
-	action.ClientAction = InvokeAction{Key: []byte("b")}
+	task.ClientTask = InvokeTask{Key: []byte("b")}
 	factory.err = xerrors.New("oops")
-	err = action.Consume(fakeContext{}, page)
+	err = task.Consume(fakeContext{}, page)
 	require.EqualError(t, err,
 		"no access: couldn't read access: couldn't decode access: oops")
 
 	factory.err = nil
 	factory.access.match = false
-	err = action.Consume(fakeContext{}, page)
+	err = task.Consume(fakeContext{}, page)
 	require.EqualError(t, err,
 		"no access: fake.PublicKey is refused to 'fake:invoke' by fakeAccessControl: not authorized")
 
 	factory.access.match = true
-	action.ClientAction = InvokeAction{Key: []byte("y")}
-	err = action.Consume(fakeContext{}, page)
+	task.ClientTask = InvokeTask{Key: []byte("y")}
+	err = task.Consume(fakeContext{}, page)
 	require.EqualError(t, err, "couldn't invoke: oops")
 
-	action.ClientAction = InvokeAction{Key: []byte("a")}
-	action.encoder = fake.BadMarshalAnyEncoder{}
-	err = action.Consume(fakeContext{}, page)
+	task.ClientTask = InvokeTask{Key: []byte("a")}
+	task.encoder = fake.BadMarshalAnyEncoder{}
+	err = task.Consume(fakeContext{}, page)
 	require.EqualError(t, err, "couldn't pack value: fake error")
 
-	// 3. Consume a delete transaction.
-	action.ClientAction = DeleteAction{Key: []byte("a")}
+	// 3. Consume a delete task.
+	task.ClientTask = DeleteTask{Key: []byte("a")}
 
-	err = action.Consume(fakeContext{}, page)
+	err = task.Consume(fakeContext{}, page)
 	require.NoError(t, err)
 
-	action.ClientAction = DeleteAction{Key: []byte("c")}
-	err = action.Consume(fakeContext{}, page)
+	task.ClientTask = DeleteTask{Key: []byte("c")}
+	err = task.Consume(fakeContext{}, page)
 	require.EqualError(t, err,
 		"couldn't read the instance: couldn't read the value: not found")
 
-	// 4. Consume an invalid transaction.
+	// 4. Consume an invalid task.
 	page.err = xerrors.New("oops")
-	action.ClientAction = DeleteAction{Key: []byte("a")}
-	err = action.Consume(fakeContext{}, page)
+	task.ClientTask = DeleteTask{Key: []byte("a")}
+	err = task.Consume(fakeContext{}, page)
 	require.EqualError(t, err, "couldn't write instance to page: oops")
 
-	action.ClientAction = nil
-	err = action.Consume(fakeContext{}, page)
-	require.EqualError(t, err, "invalid action type '<nil>'")
+	task.ClientTask = nil
+	err = task.Consume(fakeContext{}, page)
+	require.EqualError(t, err, "invalid task type '<nil>'")
 }
 
-func TestActionFactory_Register(t *testing.T) {
-	factory := NewActionFactory()
+func TestTaskFactory_Register(t *testing.T) {
+	factory := NewTaskFactory()
 
 	factory.Register("a", fakeContract{})
 	factory.Register("b", fakeContract{})
@@ -244,29 +244,29 @@ func TestActionFactory_Register(t *testing.T) {
 	require.Len(t, factory.contracts, 2)
 }
 
-func TestActionFactory_FromProto(t *testing.T) {
-	factory := NewActionFactory()
+func TestTaskFactory_FromProto(t *testing.T) {
+	factory := NewTaskFactory()
 
-	spawnpb := &SpawnActionProto{ContractID: "A"}
-	action, err := factory.FromProto(spawnpb)
+	spawnpb := &SpawnTaskProto{ContractID: "A"}
+	task, err := factory.FromProto(spawnpb)
 	require.NoError(t, err)
-	require.NotNil(t, action)
+	require.NotNil(t, task)
 
 	spawnAny, err := ptypes.MarshalAny(spawnpb)
 	require.NoError(t, err)
-	action, err = factory.FromProto(spawnAny)
+	task, err = factory.FromProto(spawnAny)
 	require.NoError(t, err)
-	require.NotNil(t, action)
+	require.NotNil(t, task)
 
-	invokepb := &InvokeActionProto{Key: []byte{0x01}}
-	action, err = factory.FromProto(invokepb)
+	invokepb := &InvokeTaskProto{Key: []byte{0x01}}
+	task, err = factory.FromProto(invokepb)
 	require.NoError(t, err)
-	require.NotNil(t, action)
+	require.NotNil(t, task)
 
-	deletepb := &DeleteActionProto{Key: []byte{0x01}}
-	action, err = factory.FromProto(deletepb)
+	deletepb := &DeleteTaskProto{Key: []byte{0x01}}
+	task, err = factory.FromProto(deletepb)
 	require.NoError(t, err)
-	require.NotNil(t, action)
+	require.NotNil(t, task)
 
 	_, err = factory.FromProto(nil)
 	require.EqualError(t, err, "invalid message type '<nil>'")

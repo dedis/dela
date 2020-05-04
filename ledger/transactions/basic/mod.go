@@ -2,10 +2,9 @@
 // a nonce so that it can prevent replay attacks. Access control can also be
 // enforced from the identity of the transaction.
 //
-// The action defines how the transaction will be consumed and it follows the
-// same separation logic with a client and a server side. The client only
-// creates the action with its arguments and the server will decorate it to
-// consume it.
+// The task defines how the transaction will be consumed and it follows the same
+// separation logic with a client and a server side. The client only creates the
+// task with its arguments and the server will decorate it to consume it.
 package basic
 
 import (
@@ -26,10 +25,8 @@ import (
 
 //go:generate protoc -I ./ --go_out=./ ./messages.proto
 
-// TODO: rename action to task
-
-// ClientAction is used to create a transaction.
-type ClientAction interface {
+// ClientTask is a task inside a transaction.
+type ClientTask interface {
 	encoding.Packable
 	encoding.Fingerprinter
 }
@@ -43,21 +40,23 @@ type Context interface {
 	GetIdentity() arc.Identity
 }
 
-// ServerAction provides the primitives to consume a specialization of a
-// transaction.
-type ServerAction interface {
-	ClientAction
+// ServerTask is an extension of the client task that can be consumed to update
+// the state of an inventory.
+type ServerTask interface {
+	ClientTask
 
 	Consume(Context, inventory.WritablePage) error
 }
 
-// ActionFactory provide the primitives to instantiate an action from its
-// protobuf message.
-type ActionFactory interface {
-	FromProto(proto.Message) (ServerAction, error)
+// TaskFactory provide the primitives to instantiate a task from its protobuf
+// message.
+type TaskFactory interface {
+	FromProto(proto.Message) (ServerTask, error)
 }
 
-// transaction is an atomic execution.
+// transaction is an implementation of the client transaction that is using a
+// signature to determine the identity belonging to it. It also wraps a task
+// that will be executed.
 //
 // - implements transactions.ClientTransaction
 type transaction struct {
@@ -65,7 +64,7 @@ type transaction struct {
 	nonce     uint64
 	identity  crypto.PublicKey
 	signature crypto.Signature
-	action    ClientAction
+	task      ClientTask
 }
 
 // GetID implements transactions.ClientTransaction. It returns the unique
@@ -98,9 +97,9 @@ func (t transaction) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 		return nil, xerrors.Errorf("couldn't pack signature: %v", err)
 	}
 
-	pb.Action, err = enc.PackAny(t.action)
+	pb.Task, err = enc.PackAny(t.task)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack action: %v", err)
+		return nil, xerrors.Errorf("couldn't pack task: %v", err)
 	}
 
 	return pb, nil
@@ -127,9 +126,9 @@ func (t transaction) Fingerprint(w io.Writer, enc encoding.ProtoMarshaler) error
 		return xerrors.Errorf("couldn't write identity: %v", err)
 	}
 
-	err = t.action.Fingerprint(w, enc)
+	err = t.task.Fingerprint(w, enc)
 	if err != nil {
-		return xerrors.Errorf("couldn't write action: %v", err)
+		return xerrors.Errorf("couldn't write task: %v", err)
 	}
 
 	return nil
@@ -149,19 +148,19 @@ type serverTransaction struct {
 }
 
 // Consume implements transactions.ServerTransaction. It first insures the nonce
-// is correct and writes the new one into the page. It then consumes the action
-// of the transaction.
+// is correct and writes the new one into the page. It then consumes the task of
+// the transaction.
 func (t serverTransaction) Consume(page inventory.WritablePage) error {
 	// TODO: consume nonce
 
-	action, ok := t.action.(ServerAction)
+	task, ok := t.task.(ServerTask)
 	if !ok {
-		return xerrors.Errorf("action must implement 'basic.ServerAction'")
+		return xerrors.Errorf("task must implement 'basic.ServerTask'")
 	}
 
-	err := action.Consume(t, page)
+	err := task.Consume(t, page)
 	if err != nil {
-		return xerrors.Errorf("couldn't consume action: %v", err)
+		return xerrors.Errorf("couldn't consume task: %v", err)
 	}
 
 	return nil
@@ -175,29 +174,29 @@ type TransactionFactory struct {
 	hashFactory      crypto.HashFactory
 	publicKeyFactory crypto.PublicKeyFactory
 	signatureFactory crypto.SignatureFactory
-	actionFactory    ActionFactory
+	taskFactory      TaskFactory
 	encoder          encoding.ProtoMarshaler
 }
 
 // NewTransactionFactory returns a new instance of the transaction factory.
-func NewTransactionFactory(signer crypto.Signer, f ActionFactory) TransactionFactory {
+func NewTransactionFactory(signer crypto.Signer, f TaskFactory) TransactionFactory {
 	return TransactionFactory{
 		signer:           signer,
 		hashFactory:      crypto.NewSha256Factory(),
 		publicKeyFactory: common.NewPublicKeyFactory(),
 		signatureFactory: common.NewSignatureFactory(),
-		actionFactory:    f,
+		taskFactory:      f,
 		encoder:          encoding.NewProtoEncoder(),
 	}
 }
 
-// New returns a new transaction from the given action. The transaction will be
+// New returns a new transaction from the given task. The transaction will be
 // signed.
-func (f TransactionFactory) New(action ClientAction) (transactions.ClientTransaction, error) {
+func (f TransactionFactory) New(task ClientTask) (transactions.ClientTransaction, error) {
 	tx := transaction{
 		nonce:    0, // TODO: monotonic nonce
 		identity: f.signer.GetPublicKey(),
-		action:   action,
+		task:     task,
 	}
 
 	h := f.hashFactory.New()
@@ -234,15 +233,15 @@ func (f TransactionFactory) FromProto(in proto.Message) (transactions.ServerTran
 		return nil, xerrors.Errorf("invalid transaction type '%T'", in)
 	}
 
-	action, err := f.actionFactory.FromProto(pb.GetAction())
+	task, err := f.taskFactory.FromProto(pb.GetTask())
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't decode action: %v", err)
+		return nil, xerrors.Errorf("couldn't decode task: %v", err)
 	}
 
 	tx := serverTransaction{
 		transaction: transaction{
-			nonce:  pb.GetNonce(),
-			action: action,
+			nonce: pb.GetNonce(),
+			task:  task,
 		},
 	}
 

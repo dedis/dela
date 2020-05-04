@@ -31,7 +31,7 @@ type clientTask struct {
 
 // NewClientTask creates a new roster client task that can be used to create a
 // transaction.
-func NewClientTask(r []uint32) basic.ClientAction {
+func NewClientTask(r []uint32) basic.ClientTask {
 	return clientTask{
 		remove: r,
 	}
@@ -48,7 +48,7 @@ func (t clientTask) GetChangeSet() viewchange.ChangeSet {
 // Pack implements encoding.Packable. It returns the protobuf message for the
 // client task.
 func (t clientTask) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
-	pb := &ActionProto{
+	pb := &Task{
 		Remove: t.remove,
 	}
 
@@ -79,7 +79,7 @@ type serverTask struct {
 	rosterFactory viewchange.AuthorityFactory
 }
 
-// Consume implements basic.ServerAction. It executes the task and write the
+// Consume implements basic.ServerTask. It executes the task and write the
 // changes to the page.
 func (t serverTask) Consume(ctx basic.Context, page inventory.WritablePage) error {
 	// 1. Access rights control
@@ -133,7 +133,7 @@ type TaskManager struct {
 	rosterFactory viewchange.AuthorityFactory
 }
 
-// NewTaskManager returns a new instance of the action factory.
+// NewTaskManager returns a new instance of the task factory.
 func NewTaskManager(f viewchange.AuthorityFactory, i inventory.Inventory) TaskManager {
 	return TaskManager{
 		encoder:       encoding.NewProtoEncoder(),
@@ -194,20 +194,20 @@ func (f TaskManager) GetChangeSet(index uint64) (viewchange.ChangeSet, error) {
 	return cs, nil
 }
 
-// FromProto implements basic.ActionFactory.
-func (f TaskManager) FromProto(in proto.Message) (basic.ServerAction, error) {
-	var pb *ActionProto
+// FromProto implements basic.TaskFactory.
+func (f TaskManager) FromProto(in proto.Message) (basic.ServerTask, error) {
+	var pb *Task
 	switch msg := in.(type) {
-	case *ActionProto:
+	case *Task:
 		pb = msg
 	}
 
-	action := serverTask{
+	task := serverTask{
 		clientTask: clientTask{
 			remove: pb.Remove,
 		},
 		encoder:       f.encoder,
 		rosterFactory: f.rosterFactory,
 	}
-	return action, nil
+	return task, nil
 }

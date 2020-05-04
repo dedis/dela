@@ -10,7 +10,7 @@ message AccessProto {
     map<string, Expression> rules = 1;
 }
 
-message ActionProto {
+message Task {
     bytes key = 1;
     AccessProto access = 2;
 }

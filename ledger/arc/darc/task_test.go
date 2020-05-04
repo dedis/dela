@@ -14,25 +14,25 @@ import (
 	"golang.org/x/xerrors"
 )
 
-func TestAction_Pack(t *testing.T) {
-	action := darcAction{
+func TestClientTask_Pack(t *testing.T) {
+	task := clientTask{
 		key:    []byte{0x01},
 		access: NewAccess(),
 	}
 
-	pb, err := action.Pack(encoding.NewProtoEncoder())
+	pb, err := task.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
-	require.IsType(t, (*ActionProto)(nil), pb)
+	require.IsType(t, (*Task)(nil), pb)
 
-	actionpb := pb.(*ActionProto)
-	require.Equal(t, action.key, actionpb.GetKey())
+	taskpb := pb.(*Task)
+	require.Equal(t, task.key, taskpb.GetKey())
 
-	_, err = action.Pack(fake.BadPackEncoder{})
+	_, err = task.Pack(fake.BadPackEncoder{})
 	require.EqualError(t, err, "couldn't pack access: fake error")
 }
 
-func TestAction_Fingerprint(t *testing.T) {
-	action := darcAction{
+func TestClientTask_Fingerprint(t *testing.T) {
+	task := clientTask{
 		key: []byte{0x01},
 		access: Access{rules: map[string]expression{
 			"\x02": {matches: map[string]struct{}{"\x03": {}}},
@@ -41,78 +41,78 @@ func TestAction_Fingerprint(t *testing.T) {
 
 	buffer := new(bytes.Buffer)
 
-	err := action.Fingerprint(buffer, encoding.NewProtoEncoder())
+	err := task.Fingerprint(buffer, encoding.NewProtoEncoder())
 	require.NoError(t, err)
 	require.Equal(t, "\x01\x02\x03", buffer.String())
 
-	err = action.Fingerprint(fake.NewBadHash(), nil)
+	err = task.Fingerprint(fake.NewBadHash(), nil)
 	require.EqualError(t, err, "couldn't write key: fake error")
 
-	err = action.Fingerprint(fake.NewBadHashWithDelay(1), nil)
+	err = task.Fingerprint(fake.NewBadHashWithDelay(1), nil)
 	require.EqualError(t, err,
 		"couldn't fingerprint access: couldn't write key: fake error")
 }
 
-func TestServerAction_Consume(t *testing.T) {
+func TestServerTask_Consume(t *testing.T) {
 	access, err := NewAccess().Evolve(UpdateAccessRule, fakeIdentity{buffer: []byte("doggy")})
 	require.NoError(t, err)
 
-	action := serverAction{
+	task := serverTask{
 		encoder:     encoding.NewProtoEncoder(),
 		darcFactory: NewFactory(),
-		darcAction:  darcAction{key: []byte{0x01}, access: access},
+		clientTask:  clientTask{key: []byte{0x01}, access: access},
 	}
 
 	call := &fake.Call{}
-	err = action.Consume(fakeContext{}, fakePage{call: call})
+	err = task.Consume(fakeContext{}, fakePage{call: call})
 	require.NoError(t, err)
 	require.Equal(t, 1, call.Len())
 	// Key is provided so it's an update.
 	require.Equal(t, []byte{0x01}, call.Get(0, 0))
 
 	// No key thus it's a creation.
-	action.darcAction.key = nil
-	err = action.Consume(fakeContext{}, fakePage{call: call})
+	task.clientTask.key = nil
+	err = task.Consume(fakeContext{}, fakePage{call: call})
 	require.NoError(t, err)
 	require.Equal(t, 2, call.Len())
 	require.Equal(t, []byte{0x34}, call.Get(1, 0))
 
-	action.encoder = fake.BadPackEncoder{}
-	err = action.Consume(fakeContext{}, fakePage{})
+	task.encoder = fake.BadPackEncoder{}
+	err = task.Consume(fakeContext{}, fakePage{})
 	require.EqualError(t, err, "couldn't pack access: fake error")
 
-	action.encoder = encoding.NewProtoEncoder()
-	err = action.Consume(fakeContext{}, fakePage{err: xerrors.New("oops")})
+	task.encoder = encoding.NewProtoEncoder()
+	err = task.Consume(fakeContext{}, fakePage{err: xerrors.New("oops")})
 	require.EqualError(t, err, "couldn't write access: oops")
 
-	action.darcAction.key = []byte{0x01}
-	err = action.Consume(fakeContext{}, fakePage{err: xerrors.New("oops")})
+	task.clientTask.key = []byte{0x01}
+	err = task.Consume(fakeContext{}, fakePage{err: xerrors.New("oops")})
 	require.EqualError(t, err, "couldn't read value: oops")
 
-	action.darcFactory = badArcFactory{}
-	err = action.Consume(fakeContext{}, fakePage{})
+	task.darcFactory = badArcFactory{}
+	err = task.Consume(fakeContext{}, fakePage{})
 	require.EqualError(t, err, "couldn't decode access: oops")
 
-	action.darcFactory = NewFactory()
-	action.access.rules[UpdateAccessRule].matches["cat"] = struct{}{}
-	err = action.Consume(fakeContext{identity: []byte("cat")}, fakePage{})
+	task.darcFactory = NewFactory()
+	task.access.rules[UpdateAccessRule].matches["cat"] = struct{}{}
+	err = task.Consume(fakeContext{identity: []byte("cat")}, fakePage{})
 	require.EqualError(t, err,
 		"no access: couldn't match 'darc:update': couldn't match identity 'cat'")
 }
 
-func TestActionFactory_FromProto(t *testing.T) {
-	factory := NewActionFactory().(actionFactory)
+func TestTaskFactory_FromProto(t *testing.T) {
+	factory := NewTaskFactory().(taskFactory)
 
-	actionpb := &ActionProto{Key: []byte{0x02}, Access: &AccessProto{}}
-	action, err := factory.FromProto(actionpb)
+	taskpb := &Task{Key: []byte{0x02}, Access: &AccessProto{}}
+	task, err := factory.FromProto(taskpb)
 	require.NoError(t, err)
-	require.IsType(t, serverAction{}, action)
+	require.IsType(t, serverTask{}, task)
 
 	_, err = factory.FromProto(nil)
 	require.EqualError(t, err, "invalid message type '<nil>'")
 
 	factory.darcFactory = badArcFactory{}
-	_, err = factory.FromProto(&ActionProto{})
+	_, err = factory.FromProto(&Task{})
 	require.EqualError(t, err, "couldn't decode access: oops")
 }
 

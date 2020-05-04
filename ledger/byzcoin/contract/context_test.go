@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestActionContext_GetArc(t *testing.T) {
-	ctx := actionContext{
+func TestTaskContext_GetArc(t *testing.T) {
+	ctx := taskContext{
 		arcFactory: &fakeAccessFactory{access: &fakeAccess{}},
 		page: fakePage{
 			store: map[string]proto.Message{"a": &empty.Empty{}},
@@ -25,8 +25,8 @@ func TestActionContext_GetArc(t *testing.T) {
 	require.EqualError(t, err, "couldn't read value: not found")
 }
 
-func TestActionContext_Read(t *testing.T) {
-	ctx := actionContext{
+func TestTaskContext_Read(t *testing.T) {
+	ctx := taskContext{
 		page: fakePage{
 			store: map[string]proto.Message{
 				"a": &Instance{

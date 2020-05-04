@@ -10,9 +10,9 @@ import (
 func TestMessages(t *testing.T) {
 	messages := []proto.Message{
 		&Instance{},
-		&SpawnActionProto{},
-		&InvokeActionProto{},
-		&DeleteActionProto{},
+		&SpawnTaskProto{},
+		&InvokeTaskProto{},
+		&DeleteTaskProto{},
 	}
 
 	for _, m := range messages {

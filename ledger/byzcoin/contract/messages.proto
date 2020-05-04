@@ -12,16 +12,16 @@ message Instance {
     bytes accessControl = 5;
 }
 
-message SpawnActionProto {
+message SpawnTaskProto {
     string contractID = 1;
     google.protobuf.Any argument = 2;
 }
 
-message InvokeActionProto {
+message InvokeTaskProto {
     bytes key = 1;
     google.protobuf.Any argument = 2;
 }
 
-message DeleteActionProto {
+message DeleteTaskProto {
     bytes key = 1;
 }

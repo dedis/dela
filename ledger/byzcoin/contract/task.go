@@ -13,20 +13,20 @@ import (
 	"golang.org/x/xerrors"
 )
 
-// SpawnAction is a contract transaction action to create a new instance.
-type SpawnAction struct {
+// SpawnTask is a client task of a transaction to create a new instance.
+type SpawnTask struct {
 	ContractID string
 	Argument   proto.Message
 }
 
 // Pack implements encoding.Packable.
-func (act SpawnAction) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
+func (act SpawnTask) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	argument, err := enc.MarshalAny(act.Argument)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't pack argument: %v", err)
 	}
 
-	pb := &SpawnActionProto{
+	pb := &SpawnTaskProto{
 		ContractID: act.ContractID,
 		Argument:   argument,
 	}
@@ -35,7 +35,7 @@ func (act SpawnAction) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) 
 }
 
 // Fingerprint implements encoding.Fingerprinter.
-func (act SpawnAction) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
+func (act SpawnTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
 	_, err := w.Write([]byte(act.ContractID))
 	if err != nil {
 		return xerrors.Errorf("couldn't write contract: %v", err)
@@ -49,21 +49,21 @@ func (act SpawnAction) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error
 	return nil
 }
 
-// InvokeAction is a contract transaction action to update an existing instance
-// of the access control allows it.
-type InvokeAction struct {
+// InvokeTask is a client task of a transaction to update an existing instance
+// if the access rights control allows it.
+type InvokeTask struct {
 	Key      []byte
 	Argument proto.Message
 }
 
 // Pack implements encoding.Packable.
-func (act InvokeAction) Pack(e encoding.ProtoMarshaler) (proto.Message, error) {
+func (act InvokeTask) Pack(e encoding.ProtoMarshaler) (proto.Message, error) {
 	argument, err := e.MarshalAny(act.Argument)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't pack argument: %v", err)
 	}
 
-	pb := &InvokeActionProto{
+	pb := &InvokeTaskProto{
 		Key:      act.Key,
 		Argument: argument,
 	}
@@ -72,7 +72,7 @@ func (act InvokeAction) Pack(e encoding.ProtoMarshaler) (proto.Message, error) {
 }
 
 // Fingerprint implements encoding.Fingeprinter.
-func (act InvokeAction) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
+func (act InvokeTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
 	_, err := w.Write(act.Key)
 	if err != nil {
 		return xerrors.Errorf("couldn't write key: %v", err)
@@ -86,19 +86,19 @@ func (act InvokeAction) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) erro
 	return nil
 }
 
-// DeleteAction is a contract transaction action to mark an instance as deleted
+// DeleteTask is a client task of a transaction to mark an instance as deleted
 // so that it cannot be updated anymore.
-type DeleteAction struct {
+type DeleteTask struct {
 	Key []byte
 }
 
 // Pack implements encoding.Packable.
-func (a DeleteAction) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
-	return &DeleteActionProto{Key: a.Key}, nil
+func (a DeleteTask) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
+	return &DeleteTaskProto{Key: a.Key}, nil
 }
 
 // Fingerprint implements encoding.Fingerprinter.
-func (a DeleteAction) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
+func (a DeleteTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
 	_, err := w.Write(a.Key)
 	if err != nil {
 		return xerrors.Errorf("couldn't write key: %v", err)
@@ -107,15 +107,15 @@ func (a DeleteAction) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error 
 	return nil
 }
 
-type serverAction struct {
-	basic.ClientAction
+type serverTask struct {
+	basic.ClientTask
 	contracts  map[string]Contract
 	arcFactory arc.AccessControlFactory
 	encoder    encoding.ProtoMarshaler
 }
 
-func (act serverAction) Consume(ctx basic.Context, page inventory.WritablePage) error {
-	txCtx := actionContext{
+func (act serverTask) Consume(ctx basic.Context, page inventory.WritablePage) error {
+	txCtx := taskContext{
 		Context:    ctx,
 		arcFactory: act.arcFactory,
 		page:       page,
@@ -123,24 +123,24 @@ func (act serverAction) Consume(ctx basic.Context, page inventory.WritablePage) 
 
 	var instance *Instance
 	var err error
-	switch action := act.ClientAction.(type) {
-	case SpawnAction:
+	switch task := act.ClientTask.(type) {
+	case SpawnTask:
 		instance, err = act.consumeSpawn(SpawnContext{
-			Context:     txCtx,
-			SpawnAction: action,
+			Context:   txCtx,
+			SpawnTask: task,
 		})
-	case InvokeAction:
+	case InvokeTask:
 		instance, err = act.consumeInvoke(InvokeContext{
-			Context:      txCtx,
-			InvokeAction: action,
+			Context:    txCtx,
+			InvokeTask: task,
 		})
-	case DeleteAction:
+	case DeleteTask:
 		instance, err = act.consumeDelete(DeleteContext{
-			Context:      txCtx,
-			DeleteAction: action,
+			Context:    txCtx,
+			DeleteTask: task,
 		})
 	default:
-		return xerrors.Errorf("invalid action type '%T'", act.ClientAction)
+		return xerrors.Errorf("invalid task type '%T'", act.ClientTask)
 	}
 
 	if err != nil {
@@ -156,7 +156,7 @@ func (act serverAction) Consume(ctx basic.Context, page inventory.WritablePage) 
 	return nil
 }
 
-func (act serverAction) consumeSpawn(ctx SpawnContext) (*Instance, error) {
+func (act serverTask) consumeSpawn(ctx SpawnContext) (*Instance, error) {
 	_, err := ctx.Read(ctx.GetID())
 	if err == nil {
 		return nil, xerrors.New("instance already exists")
@@ -195,7 +195,7 @@ func (act serverAction) consumeSpawn(ctx SpawnContext) (*Instance, error) {
 	return instance, nil
 }
 
-func (act serverAction) consumeInvoke(ctx InvokeContext) (*Instance, error) {
+func (act serverTask) consumeInvoke(ctx InvokeContext) (*Instance, error) {
 	instance, err := ctx.Read(ctx.Key)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't read the instance: %v", err)
@@ -228,7 +228,7 @@ func (act serverAction) consumeInvoke(ctx InvokeContext) (*Instance, error) {
 	return instance, nil
 }
 
-func (act serverAction) consumeDelete(ctx DeleteContext) (*Instance, error) {
+func (act serverTask) consumeDelete(ctx DeleteContext) (*Instance, error) {
 	instance, err := ctx.Read(ctx.Key)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't read the instance: %v", err)
@@ -239,7 +239,7 @@ func (act serverAction) consumeDelete(ctx DeleteContext) (*Instance, error) {
 	return instance, nil
 }
 
-func (act serverAction) hasAccess(ctx Context, key []byte, rule string) error {
+func (act serverTask) hasAccess(ctx Context, key []byte, rule string) error {
 	access, err := ctx.GetArc(key)
 	if err != nil {
 		return xerrors.Errorf("couldn't read access: %v", err)
@@ -254,17 +254,17 @@ func (act serverAction) hasAccess(ctx Context, key []byte, rule string) error {
 	return nil
 }
 
-// ActionFactory is a factory to decode protobuf messages into contract actions
+// TaskFactory is a factory to decode protobuf messages into transaction tasks
 // and register static contracts.
-type ActionFactory struct {
+type TaskFactory struct {
 	contracts  map[string]Contract
 	arcFactory arc.AccessControlFactory
 	encoder    encoding.ProtoMarshaler
 }
 
-// NewActionFactory returns a new empty instance of the factory.
-func NewActionFactory() ActionFactory {
-	return ActionFactory{
+// NewTaskFactory returns a new empty instance of the factory.
+func NewTaskFactory() TaskFactory {
+	return TaskFactory{
 		contracts:  make(map[string]Contract),
 		arcFactory: common.NewAccessControlFactory(),
 		encoder:    encoding.NewProtoEncoder(),
@@ -273,13 +273,13 @@ func NewActionFactory() ActionFactory {
 
 // Register registers the contract using the name as the identifier. If an
 // identifier already exists, it will be overwritten.
-func (f ActionFactory) Register(name string, contract Contract) {
+func (f TaskFactory) Register(name string, contract Contract) {
 	f.contracts[name] = contract
 }
 
-// FromProto implements basic.ActionFactory. It returns the server action of a
+// FromProto implements basic.TaskFactory. It returns the server task of a
 // protobuf message when appropriate, otherwise an error.
-func (f ActionFactory) FromProto(in proto.Message) (basic.ServerAction, error) {
+func (f TaskFactory) FromProto(in proto.Message) (basic.ServerTask, error) {
 	inAny, ok := in.(*any.Any)
 	if ok {
 		var err error
@@ -289,30 +289,30 @@ func (f ActionFactory) FromProto(in proto.Message) (basic.ServerAction, error) {
 		}
 	}
 
-	action := serverAction{
+	task := serverTask{
 		contracts:  f.contracts,
 		arcFactory: f.arcFactory,
 		encoder:    f.encoder,
 	}
 
 	switch pb := in.(type) {
-	case *SpawnActionProto:
-		action.ClientAction = SpawnAction{
+	case *SpawnTaskProto:
+		task.ClientTask = SpawnTask{
 			ContractID: pb.GetContractID(),
 			Argument:   pb.GetArgument(),
 		}
-	case *InvokeActionProto:
-		action.ClientAction = InvokeAction{
+	case *InvokeTaskProto:
+		task.ClientTask = InvokeTask{
 			Key:      pb.GetKey(),
 			Argument: pb.GetArgument(),
 		}
-	case *DeleteActionProto:
-		action.ClientAction = DeleteAction{
+	case *DeleteTaskProto:
+		task.ClientTask = DeleteTask{
 			Key: pb.GetKey(),
 		}
 	default:
 		return nil, xerrors.Errorf("invalid message type '%T'", in)
 	}
 
-	return action, nil
+	return task, nil
 }

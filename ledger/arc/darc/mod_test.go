@@ -19,7 +19,7 @@ func TestMessages(t *testing.T) {
 	messages := []proto.Message{
 		&Expression{},
 		&AccessProto{},
-		&ActionProto{},
+		&Task{},
 	}
 
 	for _, m := range messages {

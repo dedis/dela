@@ -49,12 +49,12 @@ func TestTransaction_Pack(t *testing.T) {
 	tx := transaction{
 		identity:  fake.PublicKey{},
 		signature: fake.Signature{},
-		action:    fakeClientAction{},
+		task:      fakeClientTask{},
 	}
 
 	txpb, err := tx.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
-	require.NotNil(t, txpb.(*TransactionProto).GetAction())
+	require.NotNil(t, txpb.(*TransactionProto).GetTask())
 
 	_, err = tx.Pack(fake.BadPackAnyEncoder{})
 	require.EqualError(t, err, "couldn't pack identity: fake error")
@@ -63,14 +63,14 @@ func TestTransaction_Pack(t *testing.T) {
 	require.EqualError(t, err, "couldn't pack signature: fake error")
 
 	_, err = tx.Pack(fake.BadPackAnyEncoder{Counter: &fake.Counter{Value: 2}})
-	require.EqualError(t, err, "couldn't pack action: fake error")
+	require.EqualError(t, err, "couldn't pack task: fake error")
 }
 
 func TestTransaction_Fingerprint(t *testing.T) {
 	tx := transaction{
 		nonce:    0x0102030405060708,
 		identity: fake.PublicKey{},
-		action:   fakeClientAction{},
+		task:     fakeClientTask{},
 	}
 
 	buffer := new(bytes.Buffer)
@@ -90,9 +90,9 @@ func TestTransaction_Fingerprint(t *testing.T) {
 	require.EqualError(t, err, "couldn't marshal identity: fake error")
 
 	tx.identity = fake.PublicKey{}
-	tx.action = fakeClientAction{err: xerrors.New("oops")}
+	tx.task = fakeClientTask{err: xerrors.New("oops")}
 	err = tx.Fingerprint(buffer, nil)
-	require.EqualError(t, err, "couldn't write action: oops")
+	require.EqualError(t, err, "couldn't write task: oops")
 }
 
 func TestTransaction_String(t *testing.T) {
@@ -103,49 +103,49 @@ func TestTransaction_String(t *testing.T) {
 
 func TestServerTransaction_Consume(t *testing.T) {
 	tx := serverTransaction{
-		transaction: transaction{action: fakeSrvAction{}},
+		transaction: transaction{task: fakeSrvTask{}},
 	}
 
 	err := tx.Consume(nil)
 	require.NoError(t, err)
 
-	tx.transaction.action = fakeClientAction{}
+	tx.transaction.task = fakeClientTask{}
 	err = tx.Consume(nil)
-	require.EqualError(t, err, "action must implement 'basic.ServerAction'")
+	require.EqualError(t, err, "task must implement 'basic.ServerTask'")
 
-	tx.transaction.action = fakeSrvAction{err: xerrors.New("oops")}
+	tx.transaction.task = fakeSrvTask{err: xerrors.New("oops")}
 	err = tx.Consume(nil)
-	require.EqualError(t, err, "couldn't consume action: oops")
+	require.EqualError(t, err, "couldn't consume task: oops")
 }
 
 func TestTransactionFactory_New(t *testing.T) {
 	factory := NewTransactionFactory(bls.NewSigner(), nil)
 
-	clientTx, err := factory.New(fakeClientAction{})
+	clientTx, err := factory.New(fakeClientTask{})
 	require.NoError(t, err)
 	tx := clientTx.(transaction)
-	require.NotNil(t, tx.action)
+	require.NotNil(t, tx.task)
 	require.NotNil(t, tx.signature)
 
 	factory.hashFactory = fake.NewHashFactory(fake.NewBadHash())
-	_, err = factory.New(fakeClientAction{})
+	_, err = factory.New(fakeClientTask{})
 	require.EqualError(t, err, "couldn't compute hash: couldn't write nonce: fake error")
 
 	factory.hashFactory = fake.NewHashFactory(&fake.Hash{})
 	factory.signer = fake.NewBadSigner()
-	_, err = factory.New(fakeClientAction{})
+	_, err = factory.New(fakeClientTask{})
 	require.EqualError(t, err, "couldn't sign tx: fake error")
 }
 
 func TestTransactionFactory_FromProto(t *testing.T) {
-	factory := NewTransactionFactory(nil, fakeActionFactory{})
+	factory := NewTransactionFactory(nil, fakeTaskFactory{})
 	factory.publicKeyFactory = fake.PublicKeyFactory{}
 	factory.signatureFactory = fake.SignatureFactory{}
 
 	tx := transaction{
 		identity:  fake.PublicKey{},
 		signature: fake.Signature{},
-		action:    fakeSrvAction{},
+		task:      fakeSrvTask{},
 	}
 
 	txpb, err := tx.Pack(encoding.NewProtoEncoder())
@@ -165,11 +165,11 @@ func TestTransactionFactory_FromProto(t *testing.T) {
 	_, err = factory.FromProto(txany)
 	require.EqualError(t, err, "couldn't unmarshal input: fake error")
 
-	factory.actionFactory = fakeActionFactory{err: xerrors.New("oops")}
+	factory.taskFactory = fakeTaskFactory{err: xerrors.New("oops")}
 	_, err = factory.FromProto(txpb)
-	require.EqualError(t, err, "couldn't decode action: oops")
+	require.EqualError(t, err, "couldn't decode task: oops")
 
-	factory.actionFactory = fakeActionFactory{}
+	factory.taskFactory = fakeTaskFactory{}
 	factory.publicKeyFactory = fake.NewBadPublicKeyFactory()
 	_, err = factory.FromProto(txpb)
 	require.EqualError(t, err, "couldn't decode public key: fake error")
@@ -192,32 +192,32 @@ func TestTransactionFactory_FromProto(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-type fakeClientAction struct {
+type fakeClientTask struct {
 	err error
 }
 
-func (a fakeClientAction) Fingerprint(w io.Writer, enc encoding.ProtoMarshaler) error {
+func (a fakeClientTask) Fingerprint(w io.Writer, enc encoding.ProtoMarshaler) error {
 	w.Write([]byte{0xcc})
 	return a.err
 }
 
-func (a fakeClientAction) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
+func (a fakeClientTask) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 	return &empty.Empty{}, nil
 }
 
-type fakeSrvAction struct {
-	fakeClientAction
+type fakeSrvTask struct {
+	fakeClientTask
 	err error
 }
 
-func (a fakeSrvAction) Consume(Context, inventory.WritablePage) error {
+func (a fakeSrvTask) Consume(Context, inventory.WritablePage) error {
 	return a.err
 }
 
-type fakeActionFactory struct {
+type fakeTaskFactory struct {
 	err error
 }
 
-func (f fakeActionFactory) FromProto(proto.Message) (ServerAction, error) {
-	return fakeSrvAction{}, f.err
+func (f fakeTaskFactory) FromProto(proto.Message) (ServerTask, error) {
+	return fakeSrvTask{}, f.err
 }

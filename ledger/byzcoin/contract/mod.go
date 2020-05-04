@@ -1,4 +1,5 @@
-// Package contract is for static smart contracts.
+// Package contract is a smart contract abstraction that is using the
+// transaction tasks to define what a contract can execute and how.
 package contract
 
 import (

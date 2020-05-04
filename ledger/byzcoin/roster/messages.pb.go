@@ -108,39 +108,39 @@ func (m *ChangeSet) GetRemove() []uint32 {
 	return nil
 }
 
-type ActionProto struct {
+type Task struct {
 	Remove               []uint32 `protobuf:"varint,1,rep,packed,name=remove,proto3" json:"remove,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
 	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *ActionProto) Reset()         { *m = ActionProto{} }
-func (m *ActionProto) String() string { return proto.CompactTextString(m) }
-func (*ActionProto) ProtoMessage()    {}
-func (*ActionProto) Descriptor() ([]byte, []int) {
+func (m *Task) Reset()         { *m = Task{} }
+func (m *Task) String() string { return proto.CompactTextString(m) }
+func (*Task) ProtoMessage()    {}
+func (*Task) Descriptor() ([]byte, []int) {
 	return fileDescriptor_4dc296cbfe5ffcd5, []int{2}
 }
 
-func (m *ActionProto) XXX_Unmarshal(b []byte) error {
-	return xxx_messageInfo_ActionProto.Unmarshal(m, b)
+func (m *Task) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_Task.Unmarshal(m, b)
 }
-func (m *ActionProto) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	return xxx_messageInfo_ActionProto.Marshal(b, m, deterministic)
+func (m *Task) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_Task.Marshal(b, m, deterministic)
 }
-func (m *ActionProto) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_ActionProto.Merge(m, src)
+func (m *Task) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Task.Merge(m, src)
 }
-func (m *ActionProto) XXX_Size() int {
-	return xxx_messageInfo_ActionProto.Size(m)
+func (m *Task) XXX_Size() int {
+	return xxx_messageInfo_Task.Size(m)
 }
-func (m *ActionProto) XXX_DiscardUnknown() {
-	xxx_messageInfo_ActionProto.DiscardUnknown(m)
+func (m *Task) XXX_DiscardUnknown() {
+	xxx_messageInfo_Task.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_ActionProto proto.InternalMessageInfo
+var xxx_messageInfo_Task proto.InternalMessageInfo
 
-func (m *ActionProto) GetRemove() []uint32 {
+func (m *Task) GetRemove() []uint32 {
 	if m != nil {
 		return m.Remove
 	}
@@ -150,7 +150,7 @@ func (m *ActionProto) GetRemove() []uint32 {
 func init() {
 	proto.RegisterType((*Roster)(nil), "roster.Roster")
 	proto.RegisterType((*ChangeSet)(nil), "roster.ChangeSet")
-	proto.RegisterType((*ActionProto)(nil), "roster.ActionProto")
+	proto.RegisterType((*Task)(nil), "roster.Task")
 }
 
 func init() {
@@ -158,7 +158,7 @@ func init() {
 }
 
 var fileDescriptor_4dc296cbfe5ffcd5 = []byte{
-	// 182 bytes of a gzipped FileDescriptorProto
+	// 176 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0xe2, 0xcb, 0x4d, 0x2d, 0x2e,
 	0x4e, 0x4c, 0x4f, 0x2d, 0xd6, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0x62, 0x2b, 0xca, 0x2f, 0x2e,
 	0x49, 0x2d, 0x92, 0x92, 0x4c, 0xcf, 0xcf, 0x4f, 0xcf, 0x49, 0xd5, 0x07, 0x8b, 0x26, 0x95, 0xa6,
@@ -168,7 +168,6 @@ var fileDescriptor_4dc296cbfe5ffcd5 = []byte{
 	0x8b, 0x25, 0x98, 0x14, 0x98, 0x35, 0xb8, 0x8d, 0x44, 0xf4, 0x20, 0xe6, 0xea, 0xc1, 0xcc, 0xd5,
 	0x73, 0xcc, 0xab, 0x0c, 0x42, 0x52, 0xa7, 0xa4, 0xcc, 0xc5, 0xe9, 0x9c, 0x91, 0x98, 0x97, 0x9e,
 	0x1a, 0x9c, 0x5a, 0x22, 0x24, 0xc6, 0xc5, 0x56, 0x94, 0x9a, 0x9b, 0x5f, 0x96, 0x0a, 0x36, 0x9d,
-	0x37, 0x08, 0xca, 0x53, 0x52, 0xe5, 0xe2, 0x76, 0x4c, 0x2e, 0xc9, 0xcc, 0xcf, 0x0b, 0x00, 0x3b,
-	0x1a, 0x87, 0xb2, 0x24, 0x36, 0xb0, 0x2d, 0xc6, 0x80, 0x00, 0x00, 0x00, 0xff, 0xff, 0x39, 0x8d,
-	0x6d, 0x15, 0xe5, 0x00, 0x00, 0x00,
+	0x37, 0x08, 0xca, 0x53, 0x92, 0xe3, 0x62, 0x09, 0x49, 0x2c, 0xce, 0xc6, 0x25, 0x9f, 0xc4, 0x06,
+	0x36, 0xde, 0x18, 0x10, 0x00, 0x00, 0xff, 0xff, 0x9d, 0xb7, 0x9b, 0x4a, 0xde, 0x00, 0x00, 0x00,
 }

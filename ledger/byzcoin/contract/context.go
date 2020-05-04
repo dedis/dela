@@ -7,7 +7,7 @@ import (
 	"golang.org/x/xerrors"
 )
 
-type actionContext struct {
+type taskContext struct {
 	basic.Context
 	arcFactory arc.AccessControlFactory
 	page       inventory.Page
@@ -15,7 +15,7 @@ type actionContext struct {
 
 // GetArc implements Context. It returns the access control stored in the given
 // key if appropriate, otherwise an error.
-func (ctx actionContext) GetArc(key []byte) (arc.AccessControl, error) {
+func (ctx taskContext) GetArc(key []byte) (arc.AccessControl, error) {
 	value, err := ctx.page.Read(key)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't read value: %v", err)
@@ -31,7 +31,7 @@ func (ctx actionContext) GetArc(key []byte) (arc.AccessControl, error) {
 
 // Read implements Context. It returns the instance stored at the given key, or
 // an error if it does not find it.
-func (ctx actionContext) Read(key []byte) (*Instance, error) {
+func (ctx taskContext) Read(key []byte) (*Instance, error) {
 	entry, err := ctx.page.Read(key)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't read the value: %v", err)
@@ -50,18 +50,18 @@ func (ctx actionContext) Read(key []byte) (*Instance, error) {
 // transaction.
 type SpawnContext struct {
 	Context
-	SpawnAction
+	SpawnTask
 }
 
 // InvokeContext is the context provided to a smart contract execution of an
 // invoke transaction.
 type InvokeContext struct {
 	Context
-	InvokeAction
+	InvokeTask
 }
 
 // DeleteContext is the context to delete an instance.
 type DeleteContext struct {
 	Context
-	DeleteAction
+	DeleteTask
 }

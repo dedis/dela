@@ -16,34 +16,34 @@ const (
 	UpdateAccessRule = "darc:update"
 )
 
-// darcAction is a transaction action to create or update an access right
-// control.
-type darcAction struct {
+// clientTask is the client task of a transaction that will allow an authorized
+// identity to create or update a DARC.
+type clientTask struct {
 	key    []byte
 	access Access
 }
 
 // TODO: client factory
 
-// NewCreate returns a new action to create a DARC.
-func NewCreate(access Access) basic.ClientAction {
-	return darcAction{access: access}
+// NewCreate returns a new task to create a DARC.
+func NewCreate(access Access) basic.ClientTask {
+	return clientTask{access: access}
 }
 
-// NewUpdate returns a new action to update a DARC.
-func NewUpdate(key []byte, access Access) basic.ClientAction {
-	return darcAction{key: key, access: access}
+// NewUpdate returns a new task to update a DARC.
+func NewUpdate(key []byte, access Access) basic.ClientTask {
+	return clientTask{key: key, access: access}
 }
 
 // Pack implements encoding.Packable. It returns the protobuf message for the
-// action.
-func (act darcAction) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
+// task.
+func (act clientTask) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	access, err := enc.Pack(act.access)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't pack access: %v", err)
 	}
 
-	pb := &ActionProto{
+	pb := &Task{
 		Key:    act.key,
 		Access: access.(*AccessProto),
 	}
@@ -51,9 +51,9 @@ func (act darcAction) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	return pb, nil
 }
 
-// Fingerprint implements encoding.Fingerprinter. It serializes the DARC action
+// Fingerprint implements encoding.Fingerprinter. It serializes the client task
 // into the writer in a deterministic way.
-func (act darcAction) Fingerprint(w io.Writer, enc encoding.ProtoMarshaler) error {
+func (act clientTask) Fingerprint(w io.Writer, enc encoding.ProtoMarshaler) error {
 	_, err := w.Write(act.key)
 	if err != nil {
 		return xerrors.Errorf("couldn't write key: %v", err)
@@ -67,16 +67,16 @@ func (act darcAction) Fingerprint(w io.Writer, enc encoding.ProtoMarshaler) erro
 	return nil
 }
 
-// serverAction is the server-side action for DARCs.
-type serverAction struct {
+// serverTask is the server task for a DARC transaction.
+type serverTask struct {
+	clientTask
 	encoder     encoding.ProtoMarshaler
 	darcFactory arc.AccessControlFactory
-	darcAction
 }
 
-// Consume implements basic.ServerAction. It writes the DARC into the page if it
+// Consume implements basic.ServerTask. It writes the DARC into the page if it
 // is allowed to do so, otherwise it returns an error.
-func (act serverAction) Consume(ctx basic.Context, page inventory.WritablePage) error {
+func (act serverTask) Consume(ctx basic.Context, page inventory.WritablePage) error {
 	accesspb, err := act.encoder.Pack(act.access)
 	if err != nil {
 		return xerrors.Errorf("couldn't pack access: %v", err)
@@ -119,25 +119,25 @@ func (act serverAction) Consume(ctx basic.Context, page inventory.WritablePage) 
 	return nil
 }
 
-type actionFactory struct {
+type taskFactory struct {
 	encoder     encoding.ProtoMarshaler
 	darcFactory arc.AccessControlFactory
 }
 
-// NewActionFactory returns a new instance of the action factory.
-func NewActionFactory() basic.ActionFactory {
-	return actionFactory{
+// NewTaskFactory returns a new instance of the task factory.
+func NewTaskFactory() basic.TaskFactory {
+	return taskFactory{
 		encoder:     encoding.NewProtoEncoder(),
 		darcFactory: NewFactory(),
 	}
 }
 
-// FromProto implements basic.ActionFactory. It returns the server action of the
+// FromProto implements basic.TaskFactory. It returns the server task of the
 // protobuf message when approriate, otherwise an error.
-func (f actionFactory) FromProto(in proto.Message) (basic.ServerAction, error) {
-	var pb *ActionProto
+func (f taskFactory) FromProto(in proto.Message) (basic.ServerTask, error) {
+	var pb *Task
 	switch msg := in.(type) {
-	case *ActionProto:
+	case *Task:
 		pb = msg
 	default:
 		return nil, xerrors.Errorf("invalid message type '%T'", in)
@@ -148,10 +148,10 @@ func (f actionFactory) FromProto(in proto.Message) (basic.ServerAction, error) {
 		return nil, xerrors.Errorf("couldn't decode access: %v", err)
 	}
 
-	servAccess := serverAction{
+	servAccess := serverTask{
 		encoder:     f.encoder,
 		darcFactory: f.darcFactory,
-		darcAction: darcAction{
+		clientTask: clientTask{
 			key:    pb.GetKey(),
 			access: access.(Access),
 		},
