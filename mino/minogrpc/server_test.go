@@ -1225,6 +1225,8 @@ func (t testRingHandler) Stream(out mino.Sender, in mino.Receiver) error {
 		toAddr = t.neighbor
 	}
 
+	fmt.Println("received from", fromAddr, "sending to", toAddr)
+
 	errs := out.Send(dummyReturn, toAddr)
 	err, more := <-errs
 	if more {
@@ -1269,7 +1271,6 @@ func (t testDKGHandler) Stream(out mino.Sender, in mino.Receiver) error {
 		if addr.String() == t.addr.String() {
 			continue
 		}
-
 		errs := out.Send(&wrappers.StringValue{Value: "first"}, addr)
 		err, more := <-errs
 		if more {

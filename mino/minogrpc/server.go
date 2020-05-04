@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	fmt "fmt"
 	"io"
 	"math/big"
 	"net"
@@ -43,7 +44,7 @@ var (
 	// in a tree based communication, this parameter (H) defines the height of
 	// the tree. Based on this parameter and the total number of nodes N we can
 	// compute the number of direct connection D for each node with D = N^(1/H)
-	treeHeight = 3
+	treeHeight = 6
 )
 
 // Server represents the entity that accepts incoming requests and invoke the
@@ -174,6 +175,8 @@ func (rpc RPC) Stream(ctx context.Context,
 		fabric.Logger.Fatal().Msgf("failed to create routing: %v", err)
 	}
 
+	fmt.Println("tree topology:", routing.(*TreeRouting).root)
+
 	routingProto := &RoutingMsg{Type: "tree", Addrs: addrsStr}
 
 	anyRoutintg, err := rpc.encoder.MarshalAny(routingProto)
@@ -246,7 +249,7 @@ func (rpc RPC) Stream(ctx context.Context,
 		orchSender.participants[addr.String()] = stream
 
 		// Sending the routing info as first messages to our childs
-		stream.Send(&OverlayMsg{Message: anyRoutintg})
+		safeStream.Send(&OverlayMsg{Message: anyRoutintg})
 
 		// Listen on the clients streams and notify the orchestrator or relay
 		// messages
@@ -631,4 +634,28 @@ func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error)
 type overlayStream interface {
 	Send(*OverlayMsg) error
 	Recv() (*OverlayMsg, error)
+}
+
+type safeOverlayStream struct {
+	sendLock sync.Mutex
+	recvLock sync.Mutex
+	os       overlayStream
+}
+
+func newSafeOverlayStream(o overlayStream) *safeOverlayStream {
+	return &safeOverlayStream{
+		os: o,
+	}
+}
+
+func (os *safeOverlayStream) Send(msg *OverlayMsg) error {
+	// os.sendLock.Lock()
+	// defer os.sendLock.Unlock()
+	return os.os.Send(msg)
+}
+
+func (os *safeOverlayStream) Recv() (*OverlayMsg, error) {
+	// os.recvLock.Lock()
+	// defer os.recvLock.Unlock()
+	return os.os.Recv()
 }
