@@ -191,13 +191,13 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		sender.participants[addr.String()] = clientStream
 
 		// Sending the routing info as first messages to our childs
-		safeClientStream.Send(&OverlayMsg{Message: overlayMsg.Message})
+		clientStream.Send(&OverlayMsg{Message: overlayMsg.Message})
 
 		// Listen on the clients streams and notify the orchestrator or relay
 		// messages
 		go func(addr mino.Address) {
 			for {
-				err := listenStream(safeClientStream, &receiver, sender, addr)
+				err := listenStream(clientStream, &receiver, sender, addr)
 				if err == io.EOF {
 					return
 				}

@@ -249,7 +249,7 @@ func (rpc RPC) Stream(ctx context.Context,
 		orchSender.participants[addr.String()] = stream
 
 		// Sending the routing info as first messages to our childs
-		safeStream.Send(&OverlayMsg{Message: anyRoutintg})
+		stream.Send(&OverlayMsg{Message: anyRoutintg})
 
 		// Listen on the clients streams and notify the orchestrator or relay
 		// messages

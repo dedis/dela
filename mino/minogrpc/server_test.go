@@ -1225,8 +1225,6 @@ func (t testRingHandler) Stream(out mino.Sender, in mino.Receiver) error {
 		toAddr = t.neighbor
 	}
 
-	fmt.Println("received from", fromAddr, "sending to", toAddr)
-
 	errs := out.Send(dummyReturn, toAddr)
 	err, more := <-errs
 	if more {
