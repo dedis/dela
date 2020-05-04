@@ -51,6 +51,7 @@ type ProtoMarshaler interface {
 
 // Fingerprinter is an interface to perform fingerprinting on object.
 type Fingerprinter interface {
+	// Fingerprint writes itself to the writer in a deterministic way.
 	Fingerprint(io.Writer, ProtoMarshaler) error
 }
 

@@ -5,7 +5,7 @@ import (
 	"io"
 
 	"github.com/golang/protobuf/proto"
-	any "github.com/golang/protobuf/ptypes/any"
+	"github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/fabric/consensus/viewchange"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/ledger/inventory"
@@ -14,18 +14,19 @@ import (
 )
 
 const (
-	// AuthorityKey is the key used to store the roster.
-	AuthorityKey = "authority:value"
+	// RosterValueKey is the key used to store the roster.
+	RosterValueKey = "roster_value"
 
-	// ChangeSetKey is the key used to store the roster change set.
-	ChangeSetKey = "authority:changeset"
+	// RosterChangeSetKey is the key used to store the roster change set.
+	RosterChangeSetKey = "roster_changeset"
 
-	// ArcKey is the ke used to store the access rights control of the roster.
-	ArcKey = "authority:arc"
+	// RosterArcKey is the ke used to store the access rights control of the
+	// roster.
+	RosterArcKey = "roster_arc"
 )
 
-var authorityKey = []byte(AuthorityKey)
-var changeSetKey = []byte(ChangeSetKey)
+var rosterValueKey = []byte(RosterValueKey)
+var rosterChangeSetKey = []byte(RosterChangeSetKey)
 
 // clientTask is the client task implementation to update the roster of a
 // consensus using the transactions for access rights control.
@@ -90,7 +91,7 @@ func (t serverTask) Consume(ctx basic.Context, page inventory.WritablePage) erro
 	// TODO: implement
 
 	// 2. Update the roster stored in the inventory.
-	value, err := page.Read(authorityKey)
+	value, err := page.Read(rosterValueKey)
 	if err != nil {
 		return xerrors.Errorf("couldn't read roster: %v", err)
 	}
@@ -108,7 +109,7 @@ func (t serverTask) Consume(ctx basic.Context, page inventory.WritablePage) erro
 		return xerrors.Errorf("couldn't encode roster: %v", err)
 	}
 
-	err = page.Write(authorityKey, value)
+	err = page.Write(rosterValueKey, value)
 	if err != nil {
 		return xerrors.Errorf("couldn't write roster: %v", err)
 	}
@@ -123,7 +124,7 @@ func (t serverTask) Consume(ctx basic.Context, page inventory.WritablePage) erro
 }
 
 func (t serverTask) updateChangeSet(page inventory.WritablePage) error {
-	pb, err := page.Read(changeSetKey)
+	pb, err := page.Read(rosterChangeSetKey)
 	if err != nil {
 		return xerrors.Errorf("couldn't read from page: %v", err)
 	}
@@ -140,9 +141,10 @@ func (t serverTask) updateChangeSet(page inventory.WritablePage) error {
 	}
 
 	// Merge the change set.
+	// TODO: unique and sorted
 	changesetpb.Remove = append(changesetpb.Remove, t.remove...)
 
-	err = page.Write(changeSetKey, changesetpb)
+	err = page.Write(rosterChangeSetKey, changesetpb)
 	if err != nil {
 		return xerrors.Errorf("couldn't write to page: %v", err)
 	}
@@ -184,7 +186,7 @@ func (f TaskManager) GetAuthority(index uint64) (viewchange.EvolvableAuthority, 
 		return nil, xerrors.Errorf("couldn't read page: %v", err)
 	}
 
-	rosterpb, err := page.Read(authorityKey)
+	rosterpb, err := page.Read(rosterValueKey)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't read roster: %v", err)
 	}
@@ -207,7 +209,7 @@ func (f TaskManager) GetChangeSet(index uint64) (viewchange.ChangeSet, error) {
 		return cs, xerrors.Errorf("couldn't read page: %v", err)
 	}
 
-	pb, err := page.Read(changeSetKey)
+	pb, err := page.Read(rosterChangeSetKey)
 	if err != nil {
 		return cs, xerrors.Errorf("couldn't read from page: %v", err)
 	}

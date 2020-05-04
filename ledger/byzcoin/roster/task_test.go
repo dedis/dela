@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	proto "github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
@@ -54,14 +54,14 @@ func TestServerTask_Consume(t *testing.T) {
 	require.NoError(t, err)
 
 	values := map[string]proto.Message{
-		AuthorityKey: rosterpb,
+		RosterValueKey: rosterpb,
 		// Change set is not set yet.
 	}
 
 	err = task.Consume(nil, fakePage{values: values})
 	require.NoError(t, err)
 
-	changesetpb := values[ChangeSetKey]
+	changesetpb := values[RosterChangeSetKey]
 	require.NotNil(t, changesetpb)
 	require.Equal(t, uint64(5), changesetpb.(*ChangeSet).GetIndex())
 	require.Equal(t, []uint32{2}, changesetpb.(*ChangeSet).GetRemove())
@@ -70,7 +70,7 @@ func TestServerTask_Consume(t *testing.T) {
 	err = task.Consume(nil, fakePage{values: values})
 	require.NoError(t, err)
 
-	changesetpb = values[ChangeSetKey]
+	changesetpb = values[RosterChangeSetKey]
 	// TODO: unique and sorted
 	require.Equal(t, []uint32{2, 4, 2}, changesetpb.(*ChangeSet).GetRemove())
 
@@ -229,8 +229,8 @@ type fakeInventory struct {
 
 func (i fakeInventory) GetPage(uint64) (inventory.Page, error) {
 	values := map[string]proto.Message{
-		AuthorityKey: i.value,
-		ChangeSetKey: i.value,
+		RosterValueKey:     i.value,
+		RosterChangeSetKey: i.value,
 	}
 	return fakePage{values: values, errRead: i.errPage}, i.err
 }

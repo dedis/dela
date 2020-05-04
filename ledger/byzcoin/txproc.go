@@ -67,7 +67,7 @@ func (proc *txProcessor) Validate(index uint64, data proto.Message) error {
 
 func (proc *txProcessor) setup(payload *GenesisPayload) (inventory.Page, error) {
 	page, err := proc.inventory.Stage(func(page inventory.WritablePage) error {
-		err := page.Write(authorityKey, payload.Roster)
+		err := page.Write(rosterValueKey, payload.Roster)
 		if err != nil {
 			return xerrors.Errorf("couldn't write roster: %v", err)
 		}

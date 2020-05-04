@@ -31,11 +31,7 @@ const (
 	timeoutRoundTime = 1 * time.Minute
 )
 
-var (
-	// AuthorityKey is a reserved instance key for the roster of the chain. It
-	// may evolve after each block.
-	authorityKey = []byte(roster.AuthorityKey)
-)
+var rosterValueKey = []byte(roster.RosterValueKey)
 
 // Ledger is a distributed public ledger implemented by using a blockchain. Each
 // node is responsible for collecting transactions from clients and propose them

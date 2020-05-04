@@ -97,7 +97,7 @@ func TestServerTask_Consume(t *testing.T) {
 	task.access.rules[UpdateAccessRule].matches["cat"] = struct{}{}
 	err = task.Consume(fakeContext{identity: []byte("cat")}, fakePage{})
 	require.EqualError(t, err,
-		"no access: couldn't match 'darc:update': couldn't match identity 'cat'")
+		"no access: couldn't match 'darc_update': couldn't match identity 'cat'")
 }
 
 func TestTaskFactory_FromProto(t *testing.T) {

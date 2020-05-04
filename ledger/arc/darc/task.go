@@ -13,7 +13,7 @@ import (
 
 const (
 	// UpdateAccessRule is the rule to be defined in the DARC to update it.
-	UpdateAccessRule = "darc:update"
+	UpdateAccessRule = "darc_update"
 )
 
 // clientTask is the client task of a transaction that will allow an authorized
