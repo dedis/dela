@@ -8,26 +8,21 @@ import (
 
 	proto "github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/crypto/bls"
-	"go.dedis.ch/fabric/encoding"
 	internal "go.dedis.ch/fabric/internal/testing"
 	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/ledger"
 	"go.dedis.ch/fabric/ledger/arc/darc"
-	"go.dedis.ch/fabric/ledger/arc/darc/contract"
-	"go.dedis.ch/fabric/ledger/consumer"
-	"go.dedis.ch/fabric/ledger/consumer/smartcontract"
+	"go.dedis.ch/fabric/ledger/byzcoin/roster"
+	"go.dedis.ch/fabric/ledger/transactions/basic"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/minoch"
-	"golang.org/x/xerrors"
 )
 
 func TestMessages(t *testing.T) {
 	messages := []proto.Message{
 		&BlockPayload{},
-		&Roster{},
 		&GenesisPayload{},
 	}
 
@@ -60,10 +55,11 @@ func TestLedger_Basic(t *testing.T) {
 	defer cancel()
 	txs := ledgers[2].Watch(ctx)
 
-	txFactory := smartcontract.NewTransactionFactory(bls.NewSigner())
+	signer := bls.NewSigner()
+	txFactory := basic.NewTransactionFactory(signer, nil)
 
-	// Try to create a DARC.
-	tx, err := txFactory.New(contract.NewGenesisAction())
+	// Execute a roster change tx by removing one of the participants.
+	tx, err := txFactory.New(roster.NewClientTask([]uint32{15}))
 	require.NoError(t, err)
 
 	err = actors[1].AddTransaction(tx)
@@ -77,14 +73,34 @@ func TestLedger_Basic(t *testing.T) {
 		t.Fatal("timeout 1")
 	}
 
-	instance, err := ledgers[2].GetInstance(tx.GetID())
+	roster, err := ledgers[2].(*Ledger).governance.GetAuthority(1)
 	require.NoError(t, err)
-	require.Equal(t, tx.GetID(), instance.GetKey())
-	require.Equal(t, tx.GetID(), instance.GetArcID())
-	require.IsType(t, (*darc.AccessControlProto)(nil), instance.GetValue())
+	// The last participant over 20 should have been removed from the current
+	// chain roster.
+	require.Equal(t, 19, roster.Len())
+
+	// Try to create a DARC.
+	access := makeDarc(t, signer)
+	tx, err = txFactory.New(darc.NewCreate(access))
+	require.NoError(t, err)
+
+	err = actors[1].AddTransaction(tx)
+	require.NoError(t, err)
+
+	select {
+	case res := <-txs:
+		require.NotNil(t, res)
+		require.Equal(t, tx.GetID(), res.GetTransactionID())
+	case <-time.After(1 * time.Second):
+		t.Fatal("timeout 2")
+	}
+
+	value, err := ledgers[2].GetValue(tx.GetID())
+	require.NoError(t, err)
+	require.IsType(t, (*darc.AccessProto)(nil), value)
 
 	// Then update it.
-	tx, err = txFactory.New(contract.NewUpdateAction(tx.GetID()))
+	tx, err = txFactory.New(darc.NewUpdate(tx.GetID(), access))
 	require.NoError(t, err)
 
 	err = actors[0].AddTransaction(tx)
@@ -95,74 +111,8 @@ func TestLedger_Basic(t *testing.T) {
 		require.NotNil(t, res)
 		require.Equal(t, tx.GetID(), res.GetTransactionID())
 	case <-time.After(1 * time.Second):
-		t.Fatal("timeout 2")
+		t.Fatal("timeout 3")
 	}
-}
-
-func TestLedger_GetInstance(t *testing.T) {
-	ledger := &Ledger{
-		bc: fakeBlockchain{},
-		proc: &txProcessor{
-			inventory: fakeInventory{
-				page: &fakePage{},
-			},
-		},
-		consumer: fakeConsumer{},
-	}
-
-	instance, err := ledger.GetInstance([]byte{0xab})
-	require.NoError(t, err)
-	require.NotNil(t, instance)
-
-	ledger.bc = fakeBlockchain{err: xerrors.New("oops")}
-	_, err = ledger.GetInstance(nil)
-	require.EqualError(t, err, "couldn't read latest block: oops")
-
-	ledger.bc = fakeBlockchain{}
-	ledger.proc.inventory = fakeInventory{err: xerrors.New("oops")}
-	_, err = ledger.GetInstance(nil)
-	require.EqualError(t, err, "couldn't read the page: oops")
-
-	ledger.proc.inventory = fakeInventory{page: &fakePage{err: xerrors.New("oops")}}
-	_, err = ledger.GetInstance(nil)
-	require.EqualError(t, err, "couldn't read the instance: oops")
-
-	ledger.proc.inventory = fakeInventory{page: &fakePage{}}
-	ledger.consumer = fakeConsumer{errFactory: xerrors.New("oops")}
-	_, err = ledger.GetInstance(nil)
-	require.EqualError(t, err, "couldn't decode instance: oops")
-}
-
-func TestGovernance_GetAuthority(t *testing.T) {
-	factory := rosterFactory{
-		addressFactory: fake.AddressFactory{},
-		pubkeyFactory:  fake.PublicKeyFactory{},
-	}
-
-	roster := factory.New(fake.NewAuthority(3, fake.NewSigner))
-	rosterpb, err := roster.Pack(encoding.NewProtoEncoder())
-	require.NoError(t, err)
-
-	gov := governance{
-		rosterFactory: factory,
-		inventory:     fakeInventory{page: &fakePage{value: rosterpb}},
-	}
-
-	authority, err := gov.GetAuthority(3)
-	require.NoError(t, err)
-	require.Equal(t, 3, authority.Len())
-
-	gov.inventory = fakeInventory{err: xerrors.New("oops")}
-	_, err = gov.GetAuthority(3)
-	require.EqualError(t, err, "couldn't read page: oops")
-
-	gov.inventory = fakeInventory{page: &fakePage{err: xerrors.New("oops")}}
-	_, err = gov.GetAuthority(3)
-	require.EqualError(t, err, "couldn't read roster: oops")
-
-	gov.inventory = fakeInventory{page: &fakePage{}}
-	_, err = gov.GetAuthority(3)
-	require.EqualError(t, err, "couldn't decode roster: invalid message type '<nil>'")
 }
 
 // -----------------------------------------------------------------------------
@@ -183,7 +133,7 @@ func makeLedger(t *testing.T, n int) ([]ledger.Ledger, []ledger.Actor, crypto.Co
 	ledgers := make([]ledger.Ledger, n)
 	actors := make([]ledger.Actor, n)
 	for i, m := range minos {
-		ledger := NewLedger(m, ca.GetSigner(i), makeConsumer())
+		ledger := NewLedger(m, ca.GetSigner(i))
 		ledgers[i] = ledger
 
 		actor, err := ledger.Listen()
@@ -195,26 +145,10 @@ func makeLedger(t *testing.T, n int) ([]ledger.Ledger, []ledger.Actor, crypto.Co
 	return ledgers, actors, ca
 }
 
-func makeConsumer() consumer.Consumer {
-	c := smartcontract.NewConsumer()
-	contract.RegisterContract(c)
+func makeDarc(t *testing.T, signer crypto.Signer) darc.Access {
+	access := darc.NewAccess()
+	access, err := access.Evolve(darc.UpdateAccessRule, signer.GetPublicKey())
+	require.NoError(t, err)
 
-	return c
-}
-
-type fakeBlock struct {
-	blockchain.Block
-}
-
-func (b fakeBlock) GetIndex() uint64 {
-	return 0
-}
-
-type fakeBlockchain struct {
-	blockchain.Blockchain
-	err error
-}
-
-func (bc fakeBlockchain) GetBlock() (blockchain.Block, error) {
-	return fakeBlock{}, bc.err
+	return access
 }

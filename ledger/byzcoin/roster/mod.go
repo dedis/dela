@@ -1,4 +1,4 @@
-package byzcoin
+package roster
 
 import (
 	proto "github.com/golang/protobuf/proto"
@@ -9,6 +9,8 @@ import (
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
+
+//go:generate protoc -I ./ --go_out=./ ./messages.proto
 
 // iterator is a generic implementation of an iterator over a list of conodes.
 type iterator struct {
@@ -85,10 +87,30 @@ func (r roster) Take(updaters ...mino.FilterUpdater) mino.Players {
 }
 
 // Apply implements viewchange.EvolvableAuthority. It returns a new authority
-// after applying the change set.
-func (r roster) Apply(viewchange.ChangeSet) viewchange.EvolvableAuthority {
-	// TODO: implement
-	return r
+// after applying the change set. The removals must be sorted and unique or the
+// behaviour could be unexpected.
+func (r roster) Apply(changeset viewchange.ChangeSet) viewchange.EvolvableAuthority {
+	addrs := make([]mino.Address, r.Len())
+	pubkeys := make([]crypto.PublicKey, r.Len())
+
+	for i, addr := range r.addrs {
+		addrs[i] = addr
+		pubkeys[i] = r.pubkeys[i]
+	}
+
+	for _, i := range changeset.Remove {
+		if int(i) < len(addrs) {
+			addrs = append(addrs[:i], addrs[i+1:]...)
+			pubkeys = append(pubkeys[:i], pubkeys[i+1:]...)
+		}
+	}
+
+	roster := roster{
+		addrs:   addrs,
+		pubkeys: pubkeys,
+	}
+
+	return roster
 }
 
 // Len implements mino.Players. It returns the length of the roster.
@@ -149,19 +171,24 @@ func (r roster) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 }
 
 // rosterFactory provide functions to create and decode a roster.
+//
+// - implements viewchange.AuthorityFactory
 type rosterFactory struct {
 	addressFactory mino.AddressFactory
 	pubkeyFactory  crypto.PublicKeyFactory
 }
 
-func newRosterFactory(af mino.AddressFactory, pf crypto.PublicKeyFactory) rosterFactory {
+// NewRosterFactory creates a new instance of the authority factory.
+func NewRosterFactory(af mino.AddressFactory, pf crypto.PublicKeyFactory) viewchange.AuthorityFactory {
 	return rosterFactory{
 		addressFactory: af,
 		pubkeyFactory:  pf,
 	}
 }
 
-func (f rosterFactory) New(authority crypto.CollectiveAuthority) roster {
+// New implements viewchange.AuthorityFactory. It returns a new roster from the
+// given authority.
+func (f rosterFactory) New(authority crypto.CollectiveAuthority) viewchange.EvolvableAuthority {
 	addrs := make([]mino.Address, authority.Len())
 	pubkeys := make([]crypto.PublicKey, authority.Len())
 
@@ -180,6 +207,8 @@ func (f rosterFactory) New(authority crypto.CollectiveAuthority) roster {
 	return roster
 }
 
+// FromProto implements viewchange.AuthorityFactory. It returns the roster
+// associated with the message if appropriate, otherwise an error.
 func (f rosterFactory) FromProto(in proto.Message) (viewchange.EvolvableAuthority, error) {
 	var pb *Roster
 	switch msg := in.(type) {

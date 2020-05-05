@@ -30,16 +30,28 @@ type Call struct {
 
 // Get returns the nth call ith parameter.
 func (c *Call) Get(n, i int) interface{} {
+	if c == nil {
+		return nil
+	}
+
 	return c.calls[n][i]
 }
 
 // Len returns the number of calls.
 func (c *Call) Len() int {
+	if c == nil {
+		return 0
+	}
+
 	return len(c.calls)
 }
 
 // Add adds a call to the list.
 func (c *Call) Add(args ...interface{}) {
+	if c == nil {
+		return
+	}
+
 	c.calls = append(c.calls, args)
 }
 
@@ -123,6 +135,7 @@ func (i *PublicKeyIterator) GetNext() crypto.PublicKey {
 // CollectiveAuthority is a fake implementation of the cosi.CollectiveAuthority
 // interface.
 type CollectiveAuthority struct {
+	encoding.Packable
 	crypto.CollectiveAuthority
 	addrs   []mino.Address
 	signers []crypto.AggregateSigner
@@ -379,6 +392,11 @@ func (pk PublicKey) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 	return &empty.Empty{}, pk.err
 }
 
+// String implements fmt.Stringer.
+func (pk PublicKey) String() string {
+	return "fake.PublicKey"
+}
+
 // Signer is a fake implementation of the crypto.AggregateSigner interface.
 type Signer struct {
 	crypto.AggregateSigner
@@ -489,6 +507,24 @@ func (f VerifierFactory) FromAuthority(ca crypto.CollectiveAuthority) (crypto.Ve
 	return f.verifier, f.err
 }
 
+// Counter is a helper to delay errors or actions. It can be nil without panics.
+type Counter struct {
+	Value int
+}
+
+// Done returns true when the counter reached zero.
+func (c *Counter) Done() bool {
+	return c == nil || c.Value <= 0
+}
+
+// Decrease decrements the counter.
+func (c *Counter) Decrease() {
+	if c == nil {
+		return
+	}
+	c.Value--
+}
+
 // BadPackEncoder is a fake implementation of encoding.ProtoMarshaler.
 type BadPackEncoder struct {
 	encoding.ProtoEncoder
@@ -502,10 +538,15 @@ func (e BadPackEncoder) Pack(encoding.Packable) (proto.Message, error) {
 // BadPackAnyEncoder is a fake implementation of encoding.ProtoMarshaler.
 type BadPackAnyEncoder struct {
 	encoding.ProtoEncoder
+	Counter *Counter
 }
 
 // PackAny implements encoding.ProtoMarshaler.
 func (e BadPackAnyEncoder) PackAny(encoding.Packable) (*any.Any, error) {
+	defer e.Counter.Decrease()
+	if !e.Counter.Done() {
+		return &any.Any{}, nil
+	}
 	return nil, xerrors.New("fake error")
 }
 

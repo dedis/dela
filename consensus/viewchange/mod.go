@@ -1,8 +1,10 @@
 package viewchange
 
 import (
+	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/crypto"
+	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 )
 
@@ -35,6 +37,7 @@ type ChangeSet struct {
 // EvolvableAuthority is an extension of the collective authority to provide
 // primitives to append new players to it.
 type EvolvableAuthority interface {
+	encoding.Packable
 	crypto.CollectiveAuthority
 
 	// Apply must apply the change set to the collective authority. It should
@@ -42,9 +45,18 @@ type EvolvableAuthority interface {
 	Apply(ChangeSet) EvolvableAuthority
 }
 
+// AuthorityFactory is an interface to instantiate evolvable authorities.
+type AuthorityFactory interface {
+	New(crypto.CollectiveAuthority) EvolvableAuthority
+
+	FromProto(proto.Message) (EvolvableAuthority, error)
+}
+
 // Governance is an interface to get information about the collective authority
 // of a proposal.
 type Governance interface {
+	GetAuthorityFactory() AuthorityFactory
+
 	// GetAuthority must return the authority that governs the proposal at the
 	// given index. It will be used to sign the forward link to the next
 	// proposal.
@@ -52,5 +64,5 @@ type Governance interface {
 
 	// GetChangeSet must return the changes to the authority that will be
 	// applied for the proposal following the given index.
-	GetChangeSet(index uint64) ChangeSet
+	GetChangeSet(index uint64) (ChangeSet, error)
 }

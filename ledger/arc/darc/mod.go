@@ -2,6 +2,9 @@
 package darc
 
 import (
+	"io"
+	"sort"
+
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/fabric/encoding"
@@ -11,14 +14,6 @@ import (
 
 //go:generate protoc -I ./ --go_out=./ ./messages.proto
 
-// EvolvableAccessControl is an extension of the arc.AccessControl interface to
-// evolve the access control.
-type EvolvableAccessControl interface {
-	arc.AccessControl
-
-	Evolve(rule string, targets ...arc.Identity) (Access, error)
-}
-
 // Access is the DARC implementation of an Evolvable Access Control.
 //
 // - implements darc.EvolvableAccessControl
@@ -27,8 +22,8 @@ type Access struct {
 	rules map[string]expression
 }
 
-// newAccessControl returns a new empty instance of an access control.
-func newAccessControl() Access {
+// NewAccess returns a new empty instance of an access control.
+func NewAccess() Access {
 	return Access{
 		rules: make(map[string]expression),
 	}
@@ -66,12 +61,42 @@ func (ac Access) Match(rule string, targets ...arc.Identity) error {
 		return xerrors.Errorf("rule '%s' not found", rule)
 	}
 
-	return expr.Match(targets)
+	err := expr.Match(targets)
+	if err != nil {
+		return xerrors.Errorf("couldn't match '%s': %v", rule, err)
+	}
+
+	return nil
+}
+
+// Fingerprint implements encoding.Fingerprinter. It serializes the access to
+// the writer in a deterministic way.
+func (ac Access) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
+	keys := make(sort.StringSlice, 0, len(ac.rules))
+	for key := range ac.rules {
+		keys = append(keys, key)
+	}
+
+	sort.Sort(keys)
+
+	for _, key := range keys {
+		_, err := w.Write([]byte(key))
+		if err != nil {
+			return xerrors.Errorf("couldn't write key: %v", err)
+		}
+
+		err = ac.rules[key].Fingerprint(w, e)
+		if err != nil {
+			return xerrors.Errorf("couldn't fingerprint rule '%s': %v", key, err)
+		}
+	}
+
+	return nil
 }
 
 // Pack implements encoding.Packable.
 func (ac Access) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
-	pb := &AccessControlProto{
+	pb := &AccessProto{
 		Rules: make(map[string]*Expression),
 	}
 
@@ -112,21 +137,21 @@ func NewFactory() Factory {
 // FromProto implements arc.AccessControlFactory. It returns the access control
 // associated with the protobuf message.
 func (f Factory) FromProto(in proto.Message) (arc.AccessControl, error) {
-	var pb *AccessControlProto
+	var pb *AccessProto
 	switch msg := in.(type) {
 	case *any.Any:
-		pb = &AccessControlProto{}
+		pb = &AccessProto{}
 		err := f.encoder.UnmarshalAny(msg, pb)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
 		}
-	case *AccessControlProto:
+	case *AccessProto:
 		pb = msg
 	default:
 		return nil, xerrors.Errorf("invalid message type '%T'", in)
 	}
 
-	ac := newAccessControl()
+	ac := NewAccess()
 
 	for rule, exprpb := range pb.GetRules() {
 		expr := newExpression()

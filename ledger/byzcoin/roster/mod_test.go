@@ -1,13 +1,29 @@
-package byzcoin
+package roster
 
 import (
 	"testing"
 
+	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/fabric/consensus/viewchange"
+	"go.dedis.ch/fabric/crypto/bls"
 	"go.dedis.ch/fabric/encoding"
+	internal "go.dedis.ch/fabric/internal/testing"
 	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/mino"
 )
+
+func TestMessages(t *testing.T) {
+	messages := []proto.Message{
+		&Roster{},
+		&ChangeSet{},
+		&Task{},
+	}
+
+	for _, m := range messages {
+		internal.CoverProtoMessage(t, m)
+	}
+}
 
 func TestIterator_HasNext(t *testing.T) {
 	iter := &iterator{
@@ -43,7 +59,7 @@ func TestIterator_GetNext(t *testing.T) {
 }
 
 func TestAddressIterator_GetNext(t *testing.T) {
-	roster := rosterFactory{}.New(fake.NewAuthority(3, fake.NewSigner))
+	roster := rosterFactory{}.New(fake.NewAuthority(3, fake.NewSigner)).(roster)
 	iter := &addressIterator{
 		iterator: &iterator{
 			roster: &roster,
@@ -59,7 +75,7 @@ func TestAddressIterator_GetNext(t *testing.T) {
 }
 
 func TestPublicKeyIterator_GetNext(t *testing.T) {
-	roster := rosterFactory{}.New(fake.NewAuthority(3, fake.NewSigner))
+	roster := rosterFactory{}.New(fake.NewAuthority(3, fake.NewSigner)).(roster)
 	iter := &publicKeyIterator{
 		iterator: &iterator{
 			roster: &roster,
@@ -82,6 +98,13 @@ func TestRoster_Take(t *testing.T) {
 
 	roster2 = roster.Take(mino.RangeFilter(1, 3))
 	require.Equal(t, 2, roster2.Len())
+}
+
+func TestRoster_Apply(t *testing.T) {
+	roster := rosterFactory{}.New(fake.NewAuthority(3, fake.NewSigner))
+
+	roster2 := roster.Apply(viewchange.ChangeSet{Remove: []uint32{1, 3}})
+	require.Equal(t, roster.Len()-1, roster2.Len())
 }
 
 func TestRoster_Len(t *testing.T) {
@@ -107,8 +130,28 @@ func TestRoster_GetPublicKey(t *testing.T) {
 	require.Nil(t, pubkey)
 }
 
+func TestRoster_AddressIterator(t *testing.T) {
+	authority := fake.NewAuthority(3, fake.NewSigner)
+	roster := rosterFactory{}.New(authority)
+
+	iter := roster.AddressIterator()
+	for i := 0; iter.HasNext(); i++ {
+		require.Equal(t, authority.GetAddress(i), iter.GetNext())
+	}
+}
+
+func TestRoster_PublicKeyIterator(t *testing.T) {
+	authority := fake.NewAuthority(3, bls.NewSigner)
+	roster := rosterFactory{}.New(authority)
+
+	iter := roster.PublicKeyIterator()
+	for i := 0; iter.HasNext(); i++ {
+		require.Equal(t, authority.GetSigner(i).GetPublicKey(), iter.GetNext())
+	}
+}
+
 func TestRoster_Pack(t *testing.T) {
-	roster := rosterFactory{}.New(fake.NewAuthority(3, fake.NewSigner))
+	roster := rosterFactory{}.New(fake.NewAuthority(3, fake.NewSigner)).(roster)
 
 	rosterpb, err := roster.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
@@ -127,7 +170,7 @@ func TestRosterFactory_FromProto(t *testing.T) {
 	rosterpb, err := roster.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
 
-	factory := newRosterFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
+	factory := NewRosterFactory(fake.AddressFactory{}, fake.PublicKeyFactory{}).(rosterFactory)
 
 	decoded, err := factory.FromProto(rosterpb)
 	require.NoError(t, err)

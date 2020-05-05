@@ -3,7 +3,8 @@ package ledger
 import (
 	"context"
 
-	"go.dedis.ch/fabric/ledger/consumer"
+	"github.com/golang/protobuf/proto"
+	"go.dedis.ch/fabric/ledger/transactions"
 	"go.dedis.ch/fabric/mino"
 )
 
@@ -21,7 +22,7 @@ type Actor interface {
 
 	// AddTransaction spreads the transaction so that it will be included in the
 	// next blocks.
-	AddTransaction(tx consumer.Transaction) error
+	AddTransaction(tx transactions.ClientTransaction) error
 
 	// Close stops the ledger and cleans the states.
 	Close() error
@@ -37,10 +38,8 @@ type TransactionResult interface {
 type Ledger interface {
 	Listen() (Actor, error)
 
-	// GetInstance returns the instance of the key if it exists, otherwise an
-	// error.
-	// TODO: verifiable instance.
-	GetInstance(key []byte) (consumer.Instance, error)
+	// TODO: value + proof it exists in the inventory
+	GetValue(key []byte) (proto.Message, error)
 
 	// Watch populates the channel with new incoming transaction results.
 	Watch(ctx context.Context) <-chan TransactionResult

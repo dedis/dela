@@ -3,23 +3,25 @@ syntax = "proto3";
 package byzcoin;
 
 import "google/protobuf/any.proto";
+import "ledger/byzcoin/roster/messages.proto";
 
-message Roster {
-    repeated bytes addresses = 1;
-    repeated google.protobuf.Any publicKeys = 2;
-}
-
+// GenesisPayload is the payload of the very first block.
 message GenesisPayload {
-    Roster roster = 1;
-    bytes footprint = 2;
+    // Roster is the initial roster for the chain. It can then evolves through
+    // transactions.
+    roster.Roster roster = 1;
+
+    // Fingerprint is an integrity check of the final state of the inventory after
+    // applying the genesis payload.
+    bytes fingerprint = 2;
 }
 
 // BlockPayload is the message that will be stored in the blocks. It is composed
-// of the transactions and the footprint of the new inventory.
+// of the transactions and the fingerprint of the new inventory.
 message BlockPayload {
     repeated google.protobuf.Any transactions = 1;
 
-    // Footprint is an integrity check of the final state of the inventory after
+    // Fingerprint is an integrity check of the final state of the inventory after
     // applying the transactions.
-    bytes footprint = 2;
+    bytes fingerprint = 2;
 }

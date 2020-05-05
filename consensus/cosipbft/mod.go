@@ -136,7 +136,11 @@ func (a pbftActor) Propose(p consensus.Proposal) error {
 		return nil
 	}
 
-	changeset := a.governance.GetChangeSet(p.GetIndex() - 1)
+	changeset, err := a.governance.GetChangeSet(p.GetIndex() - 1)
+	if err != nil {
+		return xerrors.Errorf("couldn't get change set: %v", err)
+	}
+
 	changeset.Leader = leader
 
 	ctx := context.Background()
@@ -249,10 +253,15 @@ func (h handler) Hash(addr mino.Address, in proto.Message) (Digest, error) {
 				last.GetTo(), proposal.GetPreviousHash())
 		}
 
+		changeset, err := h.governance.GetChangeSet(proposal.GetIndex() - 1)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't get change set: %v", err)
+		}
+
 		forwardLink := forwardLink{
 			from:      proposal.GetPreviousHash(),
 			to:        proposal.GetHash(),
-			changeset: h.governance.GetChangeSet(proposal.GetIndex() - 1),
+			changeset: changeset,
 		}
 
 		leader := h.viewchange.Verify(proposal, authority)

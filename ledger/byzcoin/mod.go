@@ -15,25 +15,23 @@ import (
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/ledger"
-	"go.dedis.ch/fabric/ledger/consumer"
-	"go.dedis.ch/fabric/ledger/inventory"
+	"go.dedis.ch/fabric/ledger/byzcoin/roster"
+	"go.dedis.ch/fabric/ledger/inventory/mem"
+	"go.dedis.ch/fabric/ledger/transactions"
+	"go.dedis.ch/fabric/ledger/transactions/basic"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/gossip"
 	"golang.org/x/xerrors"
 )
 
-//go:generate protoc -I ./ --go_out=./ ./messages.proto
+//go:generate protoc -I ./ -I ../../. --go_out=Mledger/byzcoin/roster/messages.proto=go.dedis.ch/fabric/ledger/byzcoin/roster:. ./messages.proto
 
 const (
 	initialRoundTime = 50 * time.Millisecond
 	timeoutRoundTime = 1 * time.Minute
 )
 
-var (
-	// AuthorityKey is a reserved instance key for the roster of the chain. It
-	// may evolve after each block.
-	authorityKey = []byte{0x01}
-)
+var rosterValueKey = []byte(roster.RosterValueKey)
 
 // Ledger is a distributed public ledger implemented by using a blockchain. Each
 // node is responsible for collecting transactions from clients and propose them
@@ -48,66 +46,58 @@ type Ledger struct {
 	gossiper   gossip.Gossiper
 	bag        *txBag
 	proc       *txProcessor
-	governance governance
-	consumer   consumer.Consumer
+	governance viewchange.Governance
 	encoder    encoding.ProtoMarshaler
+	txFactory  transactions.TransactionFactory
 	closing    chan struct{}
 	initiated  chan error
 }
 
 // NewLedger creates a new Byzcoin ledger.
-func NewLedger(mino mino.Mino, signer crypto.AggregateSigner, consumer consumer.Consumer) *Ledger {
-	cosi := flatcosi.NewFlat(mino, signer)
+func NewLedger(m mino.Mino, signer crypto.AggregateSigner) *Ledger {
+	inventory := mem.NewInventory()
+	taskFactory, gov := newtaskFactory(m, signer, inventory)
+
+	txFactory := basic.NewTransactionFactory(signer, taskFactory)
 	decoder := func(pb proto.Message) (gossip.Rumor, error) {
-		return consumer.GetTransactionFactory().FromProto(pb)
+		return txFactory.FromProto(pb)
 	}
 
-	proc := newTxProcessor(consumer)
-	gov := governance{
-		inventory:     proc.inventory,
-		rosterFactory: newRosterFactory(mino.GetAddressFactory(), signer.GetPublicKeyFactory()),
-	}
-	consensus := cosipbft.NewCoSiPBFT(mino, cosi, gov)
+	consensus := cosipbft.NewCoSiPBFT(m, flatcosi.NewFlat(m, signer), gov)
 
 	return &Ledger{
-		addr:       mino.GetAddress(),
+		addr:       m.GetAddress(),
 		signer:     signer,
-		bc:         skipchain.NewSkipchain(mino, consensus),
-		gossiper:   gossip.NewFlat(mino, decoder),
+		bc:         skipchain.NewSkipchain(m, consensus),
+		gossiper:   gossip.NewFlat(m, decoder),
 		bag:        newTxBag(),
-		proc:       proc,
+		proc:       newTxProcessor(txFactory, inventory),
 		governance: gov,
-		consumer:   consumer,
 		encoder:    encoding.NewProtoEncoder(),
+		txFactory:  txFactory,
 		closing:    make(chan struct{}),
 		initiated:  make(chan error, 1),
 	}
 }
 
-// GetInstance implements ledger.Ledger. It returns the instance with the given
-// key as of the latest block.
-func (ldgr *Ledger) GetInstance(key []byte) (consumer.Instance, error) {
+// GetValue implements ledger.Ledger.
+func (ldgr *Ledger) GetValue(key []byte) (proto.Message, error) {
 	latest, err := ldgr.bc.GetBlock()
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't read latest block: %v", err)
+		return nil, err
 	}
 
 	page, err := ldgr.proc.inventory.GetPage(latest.GetIndex())
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't read the page: %v", err)
+		return nil, err
 	}
 
-	instancepb, err := page.Read(key)
+	value, err := page.Read(key)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't read the instance: %v", err)
+		return nil, err
 	}
 
-	instance, err := ldgr.consumer.GetInstanceFactory().FromProto(instancepb)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't decode instance: %v", err)
-	}
-
-	return instance, nil
+	return value, nil
 }
 
 // Listen implements ledger.Ledger. It starts to participate in the blockchain
@@ -173,7 +163,7 @@ func (ldgr *Ledger) gossipTxs() {
 
 			return
 		case rumor := <-ldgr.gossiper.Rumors():
-			tx, ok := rumor.(consumer.Transaction)
+			tx, ok := rumor.(transactions.ClientTransaction)
 			if ok {
 				ldgr.bag.Add(tx)
 			}
@@ -214,11 +204,9 @@ func (ldgr *Ledger) proposeBlocks(actor blockchain.Actor, players mino.Players) 
 				break
 			}
 
-			factory := ldgr.consumer.GetTransactionFactory()
-
 			txRes := make([]TransactionResult, len(payload.GetTransactions()))
 			for i, txProto := range payload.GetTransactions() {
-				tx, err := factory.FromProto(txProto)
+				tx, err := ldgr.txFactory.FromProto(txProto)
 				if err != nil {
 					fabric.Logger.Warn().Err(err).Msg("couldn't decode transaction")
 					return
@@ -263,7 +251,7 @@ func (ldgr *Ledger) proposeBlock(actor blockchain.Actor, players mino.Players) e
 
 // stagePayload creates a payload with the list of transactions by staging a new
 // snapshot to the inventory.
-func (ldgr *Ledger) stagePayload(txs []consumer.Transaction) (*BlockPayload, error) {
+func (ldgr *Ledger) stagePayload(txs []transactions.ClientTransaction) (*BlockPayload, error) {
 	fabric.Logger.Trace().
 		Str("addr", ldgr.addr.String()).
 		Msgf("staging payload with %d transactions", len(txs))
@@ -286,7 +274,7 @@ func (ldgr *Ledger) stagePayload(txs []consumer.Transaction) (*BlockPayload, err
 		return nil, xerrors.Errorf("couldn't process the txs: %v", err)
 	}
 
-	payload.Footprint = page.GetFootprint()
+	payload.Fingerprint = page.GetFingerprint()
 
 	return payload, nil
 }
@@ -308,10 +296,8 @@ func (ldgr *Ledger) Watch(ctx context.Context) <-chan ledger.TransactionResult {
 
 			payload, ok := block.GetPayload().(*BlockPayload)
 			if ok {
-				factory := ldgr.consumer.GetTransactionFactory()
-
 				for _, txProto := range payload.GetTransactions() {
-					tx, err := factory.FromProto(txProto)
+					tx, err := ldgr.txFactory.FromProto(txProto)
 					if err != nil {
 						fabric.Logger.Warn().Err(err).Msg("couldn't decode transaction")
 						return
@@ -351,19 +337,19 @@ func (a actorLedger) Setup(players mino.Players) error {
 		return xerrors.Errorf("players must implement '%T'", authority)
 	}
 
-	rosterpb, err := a.encoder.Pack(a.governance.rosterFactory.New(authority))
+	rosterpb, err := a.encoder.Pack(a.governance.GetAuthorityFactory().New(authority))
 	if err != nil {
 		return xerrors.Errorf("couldn't pack roster: %v", err)
 	}
 
-	payload := &GenesisPayload{Roster: rosterpb.(*Roster)}
+	payload := &GenesisPayload{Roster: rosterpb.(*roster.Roster)}
 
 	page, err := a.proc.setup(payload)
 	if err != nil {
 		return xerrors.Errorf("couldn't store genesis payload: %v", err)
 	}
 
-	payload.Footprint = page.GetFootprint()
+	payload.Fingerprint = page.GetFingerprint()
 
 	err = a.bcActor.InitChain(payload, authority)
 	if err != nil {
@@ -375,7 +361,7 @@ func (a actorLedger) Setup(players mino.Players) error {
 
 // AddTransaction implements ledger.Actor. It sends the transaction towards the
 // consensus layer.
-func (a actorLedger) AddTransaction(tx consumer.Transaction) error {
+func (a actorLedger) AddTransaction(tx transactions.ClientTransaction) error {
 	// The gossiper will propagate the transaction to other players but also to
 	// the transaction buffer of this player.
 	// TODO: gossiper should accept tx before it has started.
@@ -391,41 +377,4 @@ func (a actorLedger) Close() error {
 	close(a.closing)
 
 	return nil
-}
-
-// Governance is an implementation of viewchange.Governance so that the module
-// can act on the roster which is done through transactions.
-// TODO: implement the roster txs
-//
-// - implements viewchange.Governance
-type governance struct {
-	inventory     inventory.Inventory
-	rosterFactory rosterFactory
-}
-
-// GetAuthority implements viewchange.Governance. It returns the authority for
-// the given block index by reading the inventory page associated.
-func (gov governance) GetAuthority(index uint64) (viewchange.EvolvableAuthority, error) {
-	page, err := gov.inventory.GetPage(index)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't read page: %v", err)
-	}
-
-	rosterpb, err := page.Read(authorityKey)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't read roster: %v", err)
-	}
-
-	roster, err := gov.rosterFactory.FromProto(rosterpb)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't decode roster: %v", err)
-	}
-
-	return roster, nil
-}
-
-// GetChangeSet implements viewchange.Governance. It returns the change set for
-// that block by reading the transactions.
-func (gov governance) GetChangeSet(index uint64) viewchange.ChangeSet {
-	return viewchange.ChangeSet{}
 }

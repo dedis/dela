@@ -3,7 +3,7 @@ package byzcoin
 import (
 	"sync"
 
-	"go.dedis.ch/fabric/ledger/consumer"
+	"go.dedis.ch/fabric/ledger/transactions"
 )
 
 // Key is type used to differentiate the transactions in the bag.
@@ -13,21 +13,21 @@ type Key [32]byte
 // waiting to be included in a block.
 type txBag struct {
 	sync.Mutex
-	buffer map[Key]consumer.Transaction
+	buffer map[Key]transactions.ClientTransaction
 }
 
 func newTxBag() *txBag {
 	return &txBag{
-		buffer: make(map[Key]consumer.Transaction),
+		buffer: make(map[Key]transactions.ClientTransaction),
 	}
 }
 
 // GetAll returns a list of the transactions currently queued.
-func (q *txBag) GetAll() []consumer.Transaction {
+func (q *txBag) GetAll() []transactions.ClientTransaction {
 	q.Lock()
 	defer q.Unlock()
 
-	txs := make([]consumer.Transaction, 0, len(q.buffer))
+	txs := make([]transactions.ClientTransaction, 0, len(q.buffer))
 	for _, tx := range q.buffer {
 		txs = append(txs, tx)
 	}
@@ -36,7 +36,7 @@ func (q *txBag) GetAll() []consumer.Transaction {
 }
 
 // Add adds the transaction to the queue.
-func (q *txBag) Add(tx consumer.Transaction) {
+func (q *txBag) Add(tx transactions.ClientTransaction) {
 	key := Key{}
 	copy(key[:], tx.GetID())
 
