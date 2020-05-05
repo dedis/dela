@@ -41,10 +41,6 @@ var (
 	// defaultMinConnectTimeout is the minimum amount of time we are willing to
 	// wait for a grpc connection to complete
 	defaultMinConnectTimeout = 7 * time.Second
-	// in a tree based communication, this parameter (H) defines the height of
-	// the tree. Based on this parameter and the total number of nodes N we can
-	// compute the number of direct connection D for each node with D = N^(1/H)
-	treeHeight = 3
 )
 
 // Server represents the entity that accepts incoming requests and invoke the
