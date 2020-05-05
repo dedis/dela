@@ -520,7 +520,7 @@ type AddressFactory struct {
 
 // FromText implements mino.AddressFactory.
 func (f AddressFactory) FromText(text []byte) mino.Address {
-	if len(text) > 4 {
+	if len(text) >= 4 {
 		index := binary.LittleEndian.Uint32(text)
 		return Address{index: int(index)}
 	}
