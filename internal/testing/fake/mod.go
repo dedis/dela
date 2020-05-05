@@ -84,16 +84,24 @@ type AddressIterator struct {
 	index int
 }
 
+// NewAddressIterator returns a new address iterator
+func NewAddressIterator(addrs []mino.Address) AddressIterator {
+	return AddressIterator{
+		addrs: addrs,
+	}
+}
+
 // HasNext implements mino.AddressIterator.
 func (i *AddressIterator) HasNext() bool {
-	return i.index+1 < len(i.addrs)
+	return i.index < len(i.addrs)
 }
 
 // GetNext implements mino.AddressIterator.
 func (i *AddressIterator) GetNext() mino.Address {
 	if i.HasNext() {
+		res := i.addrs[i.index]
 		i.index++
-		return i.addrs[i.index]
+		return res
 	}
 	return nil
 }

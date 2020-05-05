@@ -17,13 +17,14 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
+	r "go.dedis.ch/fabric/mino/minogrpc/routing"
 	"golang.org/x/xerrors"
 )
 
 func Test_NewServer(t *testing.T) {
 	// Using an empty address should yield an error
 	addr := address{}
-	_, err := NewServer(addr, TreeRoutingFactory)
+	_, err := NewServer(addr, nil)
 	require.EqualError(t, err, "addr.String() should not give an empty string")
 }
 
@@ -45,7 +46,7 @@ func TestGetConnection(t *testing.T) {
 		id: "127.0.0.1:2000",
 	}
 
-	server, err := NewServer(addr, TreeRoutingFactory)
+	server, err := NewServer(addr, nil)
 	require.NoError(t, err)
 	server.StartServer()
 
@@ -64,7 +65,7 @@ func TestRPC_SingleSimple_Call(t *testing.T) {
 		id: identifier,
 	}
 
-	server, err := NewServer(addr, TreeRoutingFactory)
+	server, err := NewServer(addr, r.NewTreeRoutingFactory(1, addr, defaultAddressFactory))
 	require.NoError(t, err)
 	server.StartServer()
 
@@ -136,7 +137,7 @@ func TestRPC_ErrorsSimple_Call(t *testing.T) {
 		id: identifier,
 	}
 
-	server, err := NewServer(addr, TreeRoutingFactory)
+	server, err := NewServer(addr, r.NewTreeRoutingFactory(1, addr, defaultAddressFactory))
 	require.NoError(t, err)
 	server.StartServer()
 
@@ -206,7 +207,7 @@ func TestRPC_SingleModify_Call(t *testing.T) {
 		id: identifier,
 	}
 
-	server, err := NewServer(addr, TreeRoutingFactory)
+	server, err := NewServer(addr, r.NewTreeRoutingFactory(1, addr, defaultAddressFactory))
 	require.NoError(t, err)
 	server.StartServer()
 
@@ -259,7 +260,7 @@ func TestRPC_MultipleModify_Call(t *testing.T) {
 	addr1 := address{
 		id: identifier1,
 	}
-	server1, err := NewServer(addr1, TreeRoutingFactory)
+	server1, err := NewServer(addr1, r.NewTreeRoutingFactory(1, addr1, defaultAddressFactory))
 	require.NoError(t, err)
 	server1.StartServer()
 	peer1 := Peer{
@@ -272,7 +273,7 @@ func TestRPC_MultipleModify_Call(t *testing.T) {
 	addr2 := address{
 		id: identifier2,
 	}
-	server2, err := NewServer(addr2, TreeRoutingFactory)
+	server2, err := NewServer(addr2, r.NewTreeRoutingFactory(1, addr1, defaultAddressFactory))
 	require.NoError(t, err)
 	server2.StartServer()
 	peer2 := Peer{
@@ -285,7 +286,7 @@ func TestRPC_MultipleModify_Call(t *testing.T) {
 	addr3 := address{
 		id: identifier3,
 	}
-	server3, err := NewServer(addr3, TreeRoutingFactory)
+	server3, err := NewServer(addr3, r.NewTreeRoutingFactory(1, addr1, defaultAddressFactory))
 	require.NoError(t, err)
 	server3.StartServer()
 	peer3 := Peer{
@@ -399,7 +400,9 @@ func TestRPC_SingleSimple_Stream(t *testing.T) {
 		id: identifier,
 	}
 
-	server, err := NewServer(addr, TreeRoutingFactory)
+	factory := r.NewTreeRoutingFactory(10, &address{id: "orchestrator_addr"}, defaultAddressFactory)
+
+	server, err := NewServer(addr, factory)
 	require.NoError(t, err)
 	server.StartServer()
 
@@ -416,7 +419,7 @@ func TestRPC_SingleSimple_Stream(t *testing.T) {
 		handler:        handler,
 		srv:            server,
 		uri:            uri,
-		routingFactory: TreeRoutingFactory,
+		routingFactory: factory,
 	}
 
 	server.handlers[uri] = handler
@@ -448,11 +451,13 @@ func TestRPC_SingleSimple_Stream(t *testing.T) {
 
 // Use multiple nodes to use a stream that just sends back the same message.
 func TestRPC_MultipleSimple_Stream(t *testing.T) {
+	factory := r.NewTreeRoutingFactory(10, &address{id: "orchestrator_addr"}, defaultAddressFactory)
+
 	identifier1 := "127.0.0.1:2001"
 	addr1 := &address{
 		id: identifier1,
 	}
-	server1, err := NewServer(addr1, TreeRoutingFactory)
+	server1, err := NewServer(addr1, factory)
 	require.NoError(t, err)
 	server1.StartServer()
 	peer1 := Peer{
@@ -464,7 +469,7 @@ func TestRPC_MultipleSimple_Stream(t *testing.T) {
 	addr2 := &address{
 		id: identifier2,
 	}
-	server2, err := NewServer(addr2, TreeRoutingFactory)
+	server2, err := NewServer(addr2, factory)
 	require.NoError(t, err)
 	server2.StartServer()
 	peer2 := Peer{
@@ -476,7 +481,7 @@ func TestRPC_MultipleSimple_Stream(t *testing.T) {
 	addr3 := &address{
 		id: identifier3,
 	}
-	server3, err := NewServer(addr3, TreeRoutingFactory)
+	server3, err := NewServer(addr3, factory)
 	require.NoError(t, err)
 	require.NoError(t, err)
 	server3.StartServer()
@@ -508,7 +513,7 @@ func TestRPC_MultipleSimple_Stream(t *testing.T) {
 		handler:        handler,
 		srv:            server1,
 		uri:            uri,
-		routingFactory: TreeRoutingFactory,
+		routingFactory: factory,
 	}
 
 	// the handler must be registered on each server. Fron the client side, that
@@ -569,11 +574,13 @@ func TestRPC_MultipleSimple_Stream(t *testing.T) {
 
 // Use multiple nodes to use a stream that aggregates the dummyMessages
 func TestRPC_MultipleChange_Stream(t *testing.T) {
+	factory := r.NewTreeRoutingFactory(10, &address{id: "orchestrator_addr"}, defaultAddressFactory)
+
 	identifier1 := "127.0.0.1:2001"
 	addr1 := &address{
 		id: identifier1,
 	}
-	server1, err := NewServer(addr1, TreeRoutingFactory)
+	server1, err := NewServer(addr1, factory)
 	require.NoError(t, err)
 	server1.StartServer()
 	peer1 := Peer{
@@ -585,7 +592,7 @@ func TestRPC_MultipleChange_Stream(t *testing.T) {
 	addr2 := &address{
 		id: identifier2,
 	}
-	server2, err := NewServer(addr2, TreeRoutingFactory)
+	server2, err := NewServer(addr2, factory)
 	require.NoError(t, err)
 	server2.StartServer()
 	peer2 := Peer{
@@ -597,7 +604,7 @@ func TestRPC_MultipleChange_Stream(t *testing.T) {
 	addr3 := &address{
 		id: identifier3,
 	}
-	server3, err := NewServer(addr3, TreeRoutingFactory)
+	server3, err := NewServer(addr3, factory)
 	require.NoError(t, err)
 	server3.StartServer()
 	peer3 := Peer{
@@ -609,7 +616,7 @@ func TestRPC_MultipleChange_Stream(t *testing.T) {
 	addr4 := &address{
 		id: identifier4,
 	}
-	server4, err := NewServer(addr4, TreeRoutingFactory)
+	server4, err := NewServer(addr4, factory)
 	require.NoError(t, err)
 	server4.traffic.log = true
 	server4.StartServer()
@@ -646,7 +653,7 @@ func TestRPC_MultipleChange_Stream(t *testing.T) {
 		encoder:        encoding.NewProtoEncoder(),
 		srv:            server1,
 		uri:            uri,
-		routingFactory: TreeRoutingFactory,
+		routingFactory: factory,
 	}
 
 	// the handler must be registered on each server. Fron the client side, that
@@ -713,25 +720,22 @@ func TestRPC_MultipleChange_Stream(t *testing.T) {
 // Sends a message to 4 participants, but the server where the rpc is sent from
 // only knows itself and a second one.
 func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
-	oldTH := treeHeight
-	treeHeight = 4
-	defer func() {
-		treeHeight = oldTH
-	}()
 
-	identifier1, addr1, server1, peer1 := createServer(t, "127.0.0.1:2001")
-	identifier2, addr2, server2, peer2 := createServer(t, "127.0.0.1:2002")
-	identifier3, addr3, server3, peer3 := createServer(t, "127.0.0.1:2003")
-	identifier4, addr4, server4, peer4 := createServer(t, "127.0.0.1:2004")
-	identifier5, addr5, server5, peer5 := createServer(t, "127.0.0.1:2005")
-	identifier6, addr6, server6, peer6 := createServer(t, "127.0.0.1:2006")
-	identifier7, addr7, server7, peer7 := createServer(t, "127.0.0.1:2007")
-	identifier8, addr8, server8, peer8 := createServer(t, "127.0.0.1:2008")
-	identifier9, addr9, server9, peer9 := createServer(t, "127.0.0.1:2009")
+	factory := r.NewTreeRoutingFactory(4, &address{id: "orchestrator_addr"}, defaultAddressFactory)
+
+	identifier1, addr1, server1, peer1 := createServer(t, "127.0.0.1:2001", factory)
+	identifier2, addr2, server2, peer2 := createServer(t, "127.0.0.1:2002", factory)
+	identifier3, addr3, server3, peer3 := createServer(t, "127.0.0.1:2003", factory)
+	identifier4, addr4, server4, peer4 := createServer(t, "127.0.0.1:2004", factory)
+	identifier5, addr5, server5, peer5 := createServer(t, "127.0.0.1:2005", factory)
+	identifier6, addr6, server6, peer6 := createServer(t, "127.0.0.1:2006", factory)
+	identifier7, addr7, server7, peer7 := createServer(t, "127.0.0.1:2007", factory)
+	identifier8, addr8, server8, peer8 := createServer(t, "127.0.0.1:2008", factory)
+	identifier9, addr9, server9, peer9 := createServer(t, "127.0.0.1:2009", factory)
 
 	// Computed routing:
 	//
-	// Node[orchestrator_addr-index[-1]-lastIndex[8]](
+	// TreeRouting, Root: Node[orchestrator_addr-index[-1]-lastIndex[8]](
 	// 	Node[127.0.0.1:2006-index[0]-lastIndex[3]](
 	// 		Node[127.0.0.1:2007-index[1]-lastIndex[1]](
 	// 		)
@@ -775,7 +779,7 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 		handler:        handler1,
 		srv:            server1,
 		uri:            uri,
-		routingFactory: TreeRoutingFactory,
+		routingFactory: factory,
 	}
 
 	// the handler must be registered on each server. Fron the client side, that
@@ -858,12 +862,7 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 // participants
 func TestRPC_DKG_Stream(t *testing.T) {
 	rand.Seed(time.Now().UnixNano())
-
-	oldTH := treeHeight
-	treeHeight = 4
-	defer func() {
-		treeHeight = oldTH
-	}()
+	factory := r.NewTreeRoutingFactory(4, &address{id: "orchestrator_addr"}, defaultAddressFactory)
 
 	n := 5
 
@@ -874,11 +873,11 @@ func TestRPC_DKG_Stream(t *testing.T) {
 	traffics := make([]*traffic, n)
 
 	for i := 0; i < n; i++ {
-		identifiers[i], addrs[i], servers[i], peers[i] = createServer(t, fmt.Sprintf("127.0.0.1:200%d", i))
+		identifiers[i], addrs[i], servers[i], peers[i] = createServer(t, fmt.Sprintf("127.0.0.1:200%d", i), factory)
 	}
 
 	for i, server := range servers {
-		server.addNeighbour(servers...)
+		addNeighbours(server, servers...)
 		traffics[i] = server.traffic
 	}
 
@@ -916,7 +915,7 @@ func TestRPC_DKG_Stream(t *testing.T) {
 		handler:        handler1,
 		srv:            servers[1],
 		uri:            uri,
-		routingFactory: TreeRoutingFactory,
+		routingFactory: factory,
 	}
 
 	for i, server := range servers {
@@ -974,11 +973,8 @@ func TestRPC_DKG_Stream(t *testing.T) {
 }
 
 func TestSender_Send(t *testing.T) {
-	routing, err := TreeRoutingFactory.FromAddrs([]mino.Address{address{"0"}},
-		map[string]interface{}{
-			TreeRoutingOpts.Addr:       address{"0"},
-			TreeRoutingOpts.TreeHeight: 1,
-		})
+	factory := r.NewTreeRoutingFactory(1, address{"0"}, defaultAddressFactory)
+	routing, err := factory.FromIterator(&fakeAddressIterator{players: []mino.Address{address{"0"}}})
 	require.NoError(t, err)
 
 	sender := sender{
@@ -1332,12 +1328,12 @@ func (t testDKGHandler) Stream(out mino.Sender, in mino.Receiver) error {
 
 // Create server
 
-func createServer(t *testing.T, id string) (string, *address, *Server, Peer) {
+func createServer(t *testing.T, id string, factory r.Factory) (string, *address, *Server, Peer) {
 	identifier := id
 	addr := &address{
 		id: identifier,
 	}
-	server, err := NewServer(addr, TreeRoutingFactory)
+	server, err := NewServer(addr, factory)
 	require.NoError(t, err)
 	server.traffic.log = true
 	server.StartServer()
@@ -1350,8 +1346,17 @@ func createServer(t *testing.T, id string) (string, *address, *Server, Peer) {
 }
 
 // Sleep random
-
 func rsleep() {
 	n := rand.Intn(100) // n will be between 0 and 10
 	time.Sleep(time.Duration(n) * time.Millisecond)
+}
+
+// addNeighbours fills the neighbours map of the server
+func addNeighbours(srv *Server, servers ...*Server) {
+	for _, server := range servers {
+		srv.neighbours[server.addr.String()] = Peer{
+			Address:     server.listener.Addr().String(),
+			Certificate: server.cert.Leaf,
+		}
+	}
 }

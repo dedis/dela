@@ -9,12 +9,16 @@ import (
 
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/fabric/mino/minogrpc/routing"
 	"golang.org/x/xerrors"
 )
 
 //go:generate protoc -I ./ --go_out=plugins=grpc:./ ./overlay.proto
 
-var namespaceMatch = regexp.MustCompile("^[a-zA-Z0-9]+$")
+var (
+	namespaceMatch        = regexp.MustCompile("^[a-zA-Z0-9]+$")
+	defaultAddressFactory = addressFactory{}
+)
 
 // Minogrpc represents a grpc service restricted to a namespace
 type Minogrpc struct {
@@ -56,7 +60,7 @@ func (f addressFactory) FromText(text []byte) mino.Address {
 // with a port, something like 127.0.0.1:3333
 //
 // TODO: use a different type of argument for identifier, maybe net/url ?
-func NewMinogrpc(identifier string, rf RoutingFactory) (Minogrpc, error) {
+func NewMinogrpc(identifier string, rf routing.Factory) (Minogrpc, error) {
 
 	minoGrpc := Minogrpc{}
 
@@ -90,7 +94,7 @@ func NewMinogrpc(identifier string, rf RoutingFactory) (Minogrpc, error) {
 // GetAddressFactory implements Mino. It returns the address
 // factory.
 func (m Minogrpc) GetAddressFactory() mino.AddressFactory {
-	return addressFactory{}
+	return defaultAddressFactory
 }
 
 // GetAddress implements Mino. It returns the address of the server
@@ -138,11 +142,4 @@ func (m Minogrpc) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 	m.server.handlers[URI] = h
 
 	return rpc, nil
-}
-
-// AddNeighbours fills the neighbours map of the server
-func (m Minogrpc) AddNeighbours(minoGrpcs ...*Minogrpc) {
-	for _, minogrpc := range minoGrpcs {
-		m.server.addNeighbour(minogrpc.server)
-	}
 }

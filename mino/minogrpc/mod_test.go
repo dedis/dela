@@ -16,7 +16,6 @@ func TestMessages(t *testing.T) {
 	messages := []proto.Message{
 		&OverlayMsg{},
 		&Envelope{},
-		&RoutingMsg{},
 	}
 
 	for _, m := range messages {
@@ -28,7 +27,7 @@ func Test_NewMinogrpc(t *testing.T) {
 	// The happy path
 	id := "127.0.0.1:3333"
 
-	minoRPC, err := NewMinogrpc(id, TreeRoutingFactory)
+	minoRPC, err := NewMinogrpc(id, nil)
 	require.NoError(t, err)
 
 	require.Equal(t, id, minoRPC.GetAddress().String())
@@ -42,7 +41,7 @@ func Test_NewMinogrpc(t *testing.T) {
 	require.Equal(t, peer, minoRPC.server.neighbours[id])
 
 	// Giving an empty address
-	minoRPC, err = NewMinogrpc("", TreeRoutingFactory)
+	minoRPC, err = NewMinogrpc("", nil)
 	require.EqualError(t, err, "identifier can't be empty")
 }
 

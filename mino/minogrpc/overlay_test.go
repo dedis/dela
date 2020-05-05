@@ -15,6 +15,7 @@ import (
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/fabric/mino/minogrpc/routing"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -82,7 +83,7 @@ func TestOverlay_Stream(t *testing.T) {
 		encoder:        encoding.NewProtoEncoder(),
 		handlers:       make(map[string]mino.Handler),
 		addr:           address{},
-		routingFactory: TreeRoutingFactory,
+		routingFactory: routing.NewTreeRoutingFactory(1, address{}, defaultAddressFactory),
 	}
 
 	streamServer := testServerStream{
@@ -122,14 +123,14 @@ func TestOverlay_Stream(t *testing.T) {
 	// Now I set the right elements in the header but do not send the routing
 	// message as it is expected to have one first
 	err = overlayService.Stream(&streamServer)
-	require.EqualError(t, err, "failed to decode first routing message: couldn't unwrap '*any.Any' to '*minogrpc.RoutingMsg': mismatched message type: got \"google.protobuf.Empty\" want \"minogrpc.RoutingMsg\"")
+	require.EqualError(t, err, "failed to decode routing message: failed to unmarshal routing message: mismatched message type: got \"google.protobuf.Empty\" want \"routing.TreeRoutingProto\"")
 
 	// Now I set the right elements in the header and set a dummy encoder to
 	// ignore the decoding of routing message but use a handler that should
 	// raise an error
 	overlayService.encoder = goodEncoder{}
 	err = overlayService.Stream(&streamServer)
-	require.EqualError(t, err, "failed to call the stream handler: oops")
+	require.EqualError(t, err, "failed to decode routing message: failed to unmarshal routing message: mismatched message type: got \"google.protobuf.Empty\" want \"routing.TreeRoutingProto\"")
 
 	// Now we set our mock StreamServer to return an error on receive
 	streamServer.recvError = true
