@@ -119,7 +119,7 @@ func (inv *InMemoryInventory) Stage(f func(inventory.WritablePage) error) (inven
 	}
 
 	inv.Lock()
-	inv.stagingPages[page.footprint] = page
+	inv.stagingPages[page.fingerprint] = page
 	inv.Unlock()
 
 	return page, nil
@@ -147,23 +147,23 @@ func (inv *InMemoryInventory) computeHash(page *inMemoryPage) error {
 		}
 	}
 
-	page.footprint = Digest{}
-	copy(page.footprint[:], h.Sum(nil))
+	page.fingerprint = Digest{}
+	copy(page.fingerprint[:], h.Sum(nil))
 	return nil
 }
 
-// Commit stores the page with the given footprint permanently to the list of
+// Commit stores the page with the given fingerprint permanently to the list of
 // available versions.
-func (inv *InMemoryInventory) Commit(footprint []byte) error {
+func (inv *InMemoryInventory) Commit(fingerprint []byte) error {
 	inv.Lock()
 	defer inv.Unlock()
 
 	digest := Digest{}
-	copy(digest[:], footprint)
+	copy(digest[:], fingerprint)
 
 	page, ok := inv.stagingPages[digest]
 	if !ok {
-		return xerrors.Errorf("couldn't find page with footprint '%v'", digest)
+		return xerrors.Errorf("couldn't find page with fingerprint '%v'", digest)
 	}
 
 	inv.pages = append(inv.pages, page)
@@ -178,9 +178,9 @@ func (inv *InMemoryInventory) Commit(footprint []byte) error {
 // - implements inventory.Page
 // - implements inventory.WritablePage
 type inMemoryPage struct {
-	index     uint64
-	footprint Digest
-	entries   map[Digest]proto.Message
+	index       uint64
+	fingerprint Digest
+	entries     map[Digest]proto.Message
 }
 
 // GetIndex implements inventory.Page. It returns the index of the page from the
@@ -189,10 +189,10 @@ func (page inMemoryPage) GetIndex() uint64 {
 	return page.index
 }
 
-// GetFootprint implements inventory.Page. It returns the integrity footprint of
-// the page.
-func (page inMemoryPage) GetFootprint() []byte {
-	return page.footprint[:]
+// GetFingerprint implements inventory.Page. It returns the integrity
+// fingerprint of the page.
+func (page inMemoryPage) GetFingerprint() []byte {
+	return page.fingerprint[:]
 }
 
 // Read implements inventory.Page. It returns the instance associated with the

@@ -30,6 +30,8 @@ var rosterChangeSetKey = []byte(RosterChangeSetKey)
 
 // clientTask is the client task implementation to update the roster of a
 // consensus using the transactions for access rights control.
+//
+// - implements basic.ClientTask
 type clientTask struct {
 	remove []uint32
 }
@@ -78,6 +80,8 @@ func (t clientTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
 
 // serverTask is the extension of the client task to consume the task and update
 // the inventory page accordingly.
+//
+// - implements basic.ServerTask
 type serverTask struct {
 	clientTask
 	encoder       encoding.ProtoMarshaler

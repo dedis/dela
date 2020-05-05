@@ -274,7 +274,7 @@ func (ldgr *Ledger) stagePayload(txs []transactions.ClientTransaction) (*BlockPa
 		return nil, xerrors.Errorf("couldn't process the txs: %v", err)
 	}
 
-	payload.Footprint = page.GetFootprint()
+	payload.Fingerprint = page.GetFingerprint()
 
 	return payload, nil
 }
@@ -349,7 +349,7 @@ func (a actorLedger) Setup(players mino.Players) error {
 		return xerrors.Errorf("couldn't store genesis payload: %v", err)
 	}
 
-	payload.Footprint = page.GetFootprint()
+	payload.Fingerprint = page.GetFingerprint()
 
 	err = a.bcActor.InitChain(payload, authority)
 	if err != nil {

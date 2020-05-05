@@ -16,7 +16,7 @@ import (
 	"golang.org/x/xerrors"
 )
 
-// taskFactory is an task factory that can process several types of tasks.
+// taskFactory is a task factory that can process several types of tasks.
 //
 // - implements basic.TaskFactory
 type taskFactory struct {

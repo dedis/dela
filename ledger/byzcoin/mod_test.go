@@ -75,6 +75,8 @@ func TestLedger_Basic(t *testing.T) {
 
 	roster, err := ledgers[2].(*Ledger).governance.GetAuthority(1)
 	require.NoError(t, err)
+	// The last participant over 20 should have been removed from the current
+	// chain roster.
 	require.Equal(t, 19, roster.Len())
 
 	// Try to create a DARC.

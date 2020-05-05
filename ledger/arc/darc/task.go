@@ -18,6 +18,8 @@ const (
 
 // clientTask is the client task of a transaction that will allow an authorized
 // identity to create or update a DARC.
+//
+// - implements basic.ClientTask
 type clientTask struct {
 	key    []byte
 	access Access
@@ -68,6 +70,8 @@ func (act clientTask) Fingerprint(w io.Writer, enc encoding.ProtoMarshaler) erro
 }
 
 // serverTask is the server task for a DARC transaction.
+//
+// - implements basic.ServerTask
 type serverTask struct {
 	clientTask
 	encoder     encoding.ProtoMarshaler
@@ -119,6 +123,10 @@ func (act serverTask) Consume(ctx basic.Context, page inventory.WritablePage) er
 	return nil
 }
 
+// taskFactory is a factory to instantiate darc server tasks from protobuf
+// messages.
+//
+// - implements basic.TaskFactory
 type taskFactory struct {
 	encoder     encoding.ProtoMarshaler
 	darcFactory arc.AccessControlFactory

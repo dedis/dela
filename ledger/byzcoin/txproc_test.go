@@ -39,9 +39,9 @@ func TestTxProcessor_Validate(t *testing.T) {
 	err = proc.Validate(0, &GenesisPayload{})
 	require.EqualError(t, err, "index 0 expected but got 1")
 
-	proc.inventory = fakeInventory{footprint: []byte{0xab}}
-	err = proc.Validate(0, &BlockPayload{Footprint: []byte{0xcd}})
-	require.EqualError(t, err, "mismatch payload footprint '0xab' != '0xcd'")
+	proc.inventory = fakeInventory{fingerprint: []byte{0xab}}
+	err = proc.Validate(0, &BlockPayload{Fingerprint: []byte{0xcd}})
+	require.EqualError(t, err, "mismatch payload fingerprint '0xab' != '0xcd'")
 }
 
 func TestTxProcessor_Process(t *testing.T) {
@@ -69,7 +69,7 @@ func TestTxProcessor_Commit(t *testing.T) {
 	require.EqualError(t, err, "invalid message type '<nil>'")
 
 	proc.inventory = fakeInventory{err: xerrors.New("oops")}
-	err = proc.Commit(&BlockPayload{Footprint: []byte{0xab}})
+	err = proc.Commit(&BlockPayload{Fingerprint: []byte{0xab}})
 	require.EqualError(t, err, "couldn't commit to page '0xab': oops")
 }
 
@@ -78,19 +78,19 @@ func TestTxProcessor_Commit(t *testing.T) {
 
 type fakePage struct {
 	inventory.WritablePage
-	index     uint64
-	footprint []byte
-	err       error
-	value     proto.Message
-	calls     [][]interface{}
+	index       uint64
+	fingerprint []byte
+	err         error
+	value       proto.Message
+	calls       [][]interface{}
 }
 
 func (p *fakePage) GetIndex() uint64 {
 	return p.index
 }
 
-func (p *fakePage) GetFootprint() []byte {
-	return p.footprint
+func (p *fakePage) GetFingerprint() []byte {
+	return p.fingerprint
 }
 
 func (p *fakePage) Read([]byte) (proto.Message, error) {
@@ -104,11 +104,11 @@ func (p *fakePage) Write(key []byte, value proto.Message) error {
 
 type fakeInventory struct {
 	inventory.Inventory
-	index     uint64
-	footprint []byte
-	page      *fakePage
-	err       error
-	errPage   error
+	index       uint64
+	fingerprint []byte
+	page        *fakePage
+	err         error
+	errPage     error
 }
 
 func (inv fakeInventory) GetPage(index uint64) (inventory.Page, error) {
@@ -127,9 +127,9 @@ func (inv fakeInventory) GetStagingPage([]byte) inventory.Page {
 
 func (inv fakeInventory) Stage(f func(inventory.WritablePage) error) (inventory.Page, error) {
 	p := &fakePage{
-		index:     inv.index,
-		footprint: inv.footprint,
-		err:       inv.errPage,
+		index:       inv.index,
+		fingerprint: inv.fingerprint,
+		err:         inv.errPage,
 	}
 
 	err := f(p)

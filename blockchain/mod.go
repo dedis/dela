@@ -15,7 +15,7 @@ type Block interface {
 	// GetIndex returns the index since the genesis block.
 	GetIndex() uint64
 
-	// GetHash returns the footprint of the block.
+	// GetHash returns the fingerprint of the block.
 	GetHash() []byte
 
 	// GetPayload returns the payload of the block.

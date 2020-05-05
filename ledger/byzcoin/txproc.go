@@ -42,7 +42,7 @@ func (proc *txProcessor) Validate(index uint64, data proto.Message) error {
 		}
 	case *BlockPayload:
 		fabric.Logger.Trace().
-			Hex("footprint", payload.GetFootprint()).
+			Hex("fingerprint", payload.GetFingerprint()).
 			Msgf("validating block payload")
 
 		page, err := proc.process(payload)
@@ -54,9 +54,9 @@ func (proc *txProcessor) Validate(index uint64, data proto.Message) error {
 			return xerrors.Errorf("invalid index %d != %d", page.GetIndex(), index)
 		}
 
-		if !bytes.Equal(page.GetFootprint(), payload.GetFootprint()) {
-			return xerrors.Errorf("mismatch payload footprint '%#x' != '%#x'",
-				page.GetFootprint(), payload.GetFootprint())
+		if !bytes.Equal(page.GetFingerprint(), payload.GetFingerprint()) {
+			return xerrors.Errorf("mismatch payload fingerprint '%#x' != '%#x'",
+				page.GetFingerprint(), payload.GetFingerprint())
 		}
 	default:
 		return xerrors.Errorf("invalid message type '%T'", data)
@@ -82,7 +82,7 @@ func (proc *txProcessor) setup(payload *GenesisPayload) (inventory.Page, error) 
 }
 
 func (proc *txProcessor) process(payload *BlockPayload) (inventory.Page, error) {
-	page := proc.inventory.GetStagingPage(payload.GetFootprint())
+	page := proc.inventory.GetStagingPage(payload.GetFingerprint())
 	if page != nil {
 		// Page has already been processed previously.
 		return page, nil
@@ -109,7 +109,7 @@ func (proc *txProcessor) process(payload *BlockPayload) (inventory.Page, error) 
 		return nil, xerrors.Errorf("couldn't stage new page: %v", err)
 	}
 
-	fabric.Logger.Trace().Msgf("staging new inventory %#x", page.GetFootprint())
+	fabric.Logger.Trace().Msgf("staging new inventory %#x", page.GetFingerprint())
 	return page, err
 }
 
@@ -117,20 +117,20 @@ func (proc *txProcessor) process(payload *BlockPayload) (inventory.Page, error) 
 // payload as it should have previously been processed. It returns nil if the
 // commit is a success, otherwise an error.
 func (proc *txProcessor) Commit(data proto.Message) error {
-	var footprint []byte
+	var fingerprint []byte
 
 	switch payload := data.(type) {
 	case *GenesisPayload:
-		footprint = payload.GetFootprint()
+		fingerprint = payload.GetFingerprint()
 	case *BlockPayload:
-		footprint = payload.GetFootprint()
+		fingerprint = payload.GetFingerprint()
 	default:
 		return xerrors.Errorf("invalid message type '%T'", data)
 	}
 
-	err := proc.inventory.Commit(footprint)
+	err := proc.inventory.Commit(fingerprint)
 	if err != nil {
-		return xerrors.Errorf("couldn't commit to page '%#x': %v", footprint, err)
+		return xerrors.Errorf("couldn't commit to page '%#x': %v", fingerprint, err)
 	}
 
 	return nil

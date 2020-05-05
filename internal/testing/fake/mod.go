@@ -514,10 +514,7 @@ type Counter struct {
 
 // Done returns true when the counter reached zero.
 func (c *Counter) Done() bool {
-	if c == nil {
-		return true
-	}
-	return c.Value <= 0
+	return c == nil || c.Value <= 0
 }
 
 // Decrease decrements the counter.

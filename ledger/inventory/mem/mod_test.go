@@ -49,7 +49,7 @@ func TestInMemoryInventory_Stage(t *testing.T) {
 	require.Len(t, inv.stagingPages, 1)
 	require.Len(t, inv.pages, 0)
 
-	inv.pages = append(inv.pages, inv.stagingPages[page.(inMemoryPage).footprint])
+	inv.pages = append(inv.pages, inv.stagingPages[page.(inMemoryPage).fingerprint])
 	inv.stagingPages = make(map[Digest]inMemoryPage)
 	page, err = inv.Stage(func(page inventory.WritablePage) error {
 		value, err := page.Read([]byte{1})
@@ -66,7 +66,7 @@ func TestInMemoryInventory_Stage(t *testing.T) {
 	mempage := page.(inMemoryPage)
 	for i := 0; i < 10; i++ {
 		require.NoError(t, inv.computeHash(&mempage))
-		_, ok := inv.stagingPages[mempage.footprint]
+		_, ok := inv.stagingPages[mempage.fingerprint]
 		require.True(t, ok)
 	}
 
@@ -100,7 +100,7 @@ func TestInMemoryInventory_Commit(t *testing.T) {
 	require.NoError(t, err)
 
 	err = inv.Commit([]byte{1, 2, 3, 4})
-	require.EqualError(t, err, "couldn't find page with footprint '0x01020304'")
+	require.EqualError(t, err, "couldn't find page with fingerprint '0x01020304'")
 }
 
 func TestPage_GetIndex(t *testing.T) {
@@ -113,10 +113,10 @@ func TestPage_GetIndex(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestPage_GetFootprint(t *testing.T) {
-	f := func(footprint Digest) bool {
-		page := inMemoryPage{footprint: footprint}
-		return bytes.Equal(footprint[:], page.GetFootprint())
+func TestPage_GetFingerprint(t *testing.T) {
+	f := func(fingerprint Digest) bool {
+		page := inMemoryPage{fingerprint: fingerprint}
+		return bytes.Equal(fingerprint[:], page.GetFingerprint())
 	}
 
 	err := quick.Check(f, nil)

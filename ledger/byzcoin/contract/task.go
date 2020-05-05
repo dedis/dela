@@ -14,12 +14,15 @@ import (
 )
 
 // SpawnTask is a client task of a transaction to create a new instance.
+//
+// - implements basic.ClientTask
 type SpawnTask struct {
 	ContractID string
 	Argument   proto.Message
 }
 
-// Pack implements encoding.Packable.
+// Pack implements encoding.Packable. It returns the protobuf message of the
+// task.
 func (act SpawnTask) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	argument, err := enc.MarshalAny(act.Argument)
 	if err != nil {
@@ -34,7 +37,8 @@ func (act SpawnTask) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	return pb, nil
 }
 
-// Fingerprint implements encoding.Fingerprinter.
+// Fingerprint implements encoding.Fingerprinter. It serializes the task into
+// the writer in a deterministic way.
 func (act SpawnTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
 	_, err := w.Write([]byte(act.ContractID))
 	if err != nil {
@@ -51,12 +55,15 @@ func (act SpawnTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
 
 // InvokeTask is a client task of a transaction to update an existing instance
 // if the access rights control allows it.
+//
+// - implements basic.ClientTask
 type InvokeTask struct {
 	Key      []byte
 	Argument proto.Message
 }
 
-// Pack implements encoding.Packable.
+// Pack implements encoding.Packable. It returns the protobuf message of the
+// task.
 func (act InvokeTask) Pack(e encoding.ProtoMarshaler) (proto.Message, error) {
 	argument, err := e.MarshalAny(act.Argument)
 	if err != nil {
@@ -71,7 +78,8 @@ func (act InvokeTask) Pack(e encoding.ProtoMarshaler) (proto.Message, error) {
 	return pb, nil
 }
 
-// Fingerprint implements encoding.Fingeprinter.
+// Fingerprint implements encoding.Fingeprinter. It serializes the task into the
+// writer in a deterministic way.
 func (act InvokeTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
 	_, err := w.Write(act.Key)
 	if err != nil {
@@ -88,16 +96,20 @@ func (act InvokeTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error 
 
 // DeleteTask is a client task of a transaction to mark an instance as deleted
 // so that it cannot be updated anymore.
+//
+// - implements basic.ClientTask
 type DeleteTask struct {
 	Key []byte
 }
 
-// Pack implements encoding.Packable.
+// Pack implements encoding.Packable. It returns the protobuf message of the
+// task.
 func (a DeleteTask) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 	return &DeleteTaskProto{Key: a.Key}, nil
 }
 
-// Fingerprint implements encoding.Fingerprinter.
+// Fingerprint implements encoding.Fingerprinter. It serializes the task into
+// the writer in a deterministic way.
 func (a DeleteTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
 	_, err := w.Write(a.Key)
 	if err != nil {
@@ -107,6 +119,10 @@ func (a DeleteTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
 	return nil
 }
 
+// serverTask is a contract task that can be consumed to update an inventory
+// page.
+//
+// - implements basic.ServerTask
 type serverTask struct {
 	basic.ClientTask
 	contracts  map[string]Contract
@@ -114,6 +130,8 @@ type serverTask struct {
 	encoder    encoding.ProtoMarshaler
 }
 
+// Consume implements basic.ServerTask. It updates the page according to the
+// task definition.
 func (act serverTask) Consume(ctx basic.Context, page inventory.WritablePage) error {
 	txCtx := taskContext{
 		Context:    ctx,
@@ -256,6 +274,8 @@ func (act serverTask) hasAccess(ctx Context, key []byte, rule string) error {
 
 // TaskFactory is a factory to decode protobuf messages into transaction tasks
 // and register static contracts.
+//
+// - implements basic.TaskFactory
 type TaskFactory struct {
 	contracts  map[string]Contract
 	arcFactory arc.AccessControlFactory
