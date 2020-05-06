@@ -115,14 +115,15 @@ type PublicKeyIterator struct {
 
 // HasNext implements crypto.PublicKeyIterator.
 func (i *PublicKeyIterator) HasNext() bool {
-	return i.index+1 < len(i.signers)
+	return i.index < len(i.signers)
 }
 
 // GetNext implements crypto.PublicKeyIterator.
 func (i *PublicKeyIterator) GetNext() crypto.PublicKey {
 	if i.HasNext() {
+		res := i.signers[i.index]
 		i.index++
-		return i.signers[i.index].GetPublicKey()
+		return res.GetPublicKey()
 	}
 	return nil
 }
@@ -223,12 +224,12 @@ func (ca CollectiveAuthority) Len() int {
 
 // AddressIterator implements mino.Players.
 func (ca CollectiveAuthority) AddressIterator() mino.AddressIterator {
-	return &AddressIterator{addrs: ca.addrs, index: -1}
+	return &AddressIterator{addrs: ca.addrs}
 }
 
 // PublicKeyIterator implements cosi.CollectiveAuthority.
 func (ca CollectiveAuthority) PublicKeyIterator() crypto.PublicKeyIterator {
-	return &PublicKeyIterator{signers: ca.signers, index: -1}
+	return &PublicKeyIterator{signers: ca.signers}
 }
 
 // PublicKeyFactory is a fake implementation of a public key factory.
