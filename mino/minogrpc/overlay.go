@@ -4,6 +4,7 @@ import (
 	context "context"
 	"crypto/tls"
 	"io"
+	"time"
 
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/encoding"
@@ -134,13 +135,14 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		// address, which is registered in the list of participant.
 		// It is also used to indicate the "from" of the message in the case it
 		// doesn't relay but sends directly.
-		address:      address{rpcID},
-		participants: map[string]overlayStream{rpcID: stream},
-		name:         "remote RPC of " + o.addr.String(),
-		srvCert:      o.srvCert,
-		traffic:      o.traffic,
-		routing:      rting,
+		address: address{rpcID},
+		name:    "remote RPC of " + o.addr.String(),
+		srvCert: o.srvCert,
+		traffic: o.traffic,
+		routing: rting,
 	}
+
+	sender.participants.Store(rpcID, stream)
 
 	receiver := receiver{
 		encoder: o.encoder,
@@ -177,7 +179,7 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		newCtx := stream.Context()
 		newCtx = metadata.NewOutgoingContext(newCtx, header)
 
-		clientStream, err := cl.Stream(newCtx)
+		cs, err := cl.Stream(newCtx)
 		if err != nil {
 			err = xerrors.Errorf("failed to get stream for client '%s': %v",
 				addr.String(), err)
@@ -185,10 +187,14 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 			return err
 		}
 
-		sender.participants[addr.String()] = clientStream
+		clientStream := newSafeOverlayStream(cs)
+
+		sender.participants.Store(addr.String(), clientStream)
 
 		// Sending the routing info as first messages to our children
 		clientStream.Send(&OverlayMsg{Message: overlayMsg.Message})
+
+		time.Sleep(time.Millisecond * 300)
 
 		// Listen on the clients streams and notify the orchestrator or relay
 		// messages

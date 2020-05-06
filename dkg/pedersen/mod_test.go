@@ -13,11 +13,11 @@ import (
 )
 
 func TestStart(t *testing.T) {
-	n := 30
+	n := 10
 
 	addrFactory := minoch.AddressFactory{}
 
-	rootAddr := addrFactory.FromText([]byte("orchestrator_addr"))
+	rootAddr := addrFactory.FromText([]byte("127.0.0.1:2000"))
 
 	factory := routing.NewTreeRoutingFactory(4, rootAddr, addrFactory)
 
@@ -30,7 +30,7 @@ func TestStart(t *testing.T) {
 	pedersens := make([]*Pedersen, n)
 
 	for i := 0; i < n; i++ {
-		addrs[i] = addrFactory.FromText([]byte(fmt.Sprintf("127.0.0.1:200%d", i)))
+		addrs[i] = addrFactory.FromText([]byte(fmt.Sprintf("127.0.0.1:2%03d", i)))
 		privKeys[i] = suite.Scalar().Pick(suite.RandomStream())
 		pubKeys[i] = suite.Point().Mul(privKeys[i], nil)
 		minogrpc, err := minogrpc.NewMinogrpc(addrs[i].String(), factory)

@@ -47,16 +47,16 @@ func newTraffic(name string) *traffic {
 	}
 }
 
-func (t *traffic) logSend(to mino.Address, msg proto.Message, context string) {
-	t.addItem("send", to, msg, context)
+func (t *traffic) logSend(from, to mino.Address, msg proto.Message, context string) {
+	t.addItem("send", from, to, msg, context)
 }
 
-func (t *traffic) logRcv(from mino.Address, msg proto.Message, context string) {
-	t.addItem("received", from, msg, context)
+func (t *traffic) logRcv(from, to mino.Address, msg proto.Message, context string) {
+	t.addItem("received", from, to, msg, context)
 }
 
-func (t *traffic) logRcvRelay(from mino.Address, msg proto.Message, context string) {
-	t.addItem("received to relay", from, msg, context)
+func (t *traffic) logRcvRelay(from, to mino.Address, msg proto.Message, context string) {
+	t.addItem("received to relay", from, to, msg, context)
 }
 
 func (t traffic) Display(out io.Writer) {
@@ -68,7 +68,7 @@ func (t traffic) Display(out io.Writer) {
 	fmt.Fprint(out, eachLine.ReplaceAllString(buf.String(), "-$1"))
 }
 
-func (t *traffic) addItem(typeStr string, addr mino.Address, msg proto.Message,
+func (t *traffic) addItem(typeStr string, from, to mino.Address, msg proto.Message,
 	context string) {
 
 	if !t.log {
@@ -76,8 +76,12 @@ func (t *traffic) addItem(typeStr string, addr mino.Address, msg proto.Message,
 	}
 
 	newItem := item{
-		typeStr: typeStr, addr: addr, msg: msg,
-		context: context, counter: counter.IncrementAndGet()}
+		typeStr: typeStr,
+		from:    from,
+		to:      to,
+		msg:     msg,
+		context: context,
+		counter: counter.IncrementAndGet()}
 
 	if t.printLog {
 		fmt.Fprintf(os.Stdout, "\n> %s", t.name)
@@ -89,7 +93,8 @@ func (t *traffic) addItem(typeStr string, addr mino.Address, msg proto.Message,
 
 type item struct {
 	typeStr string
-	addr    mino.Address
+	from    mino.Address
+	to      mino.Address
 	msg     proto.Message
 	context string
 	counter int
@@ -98,7 +103,8 @@ type item struct {
 func (p item) Display(out io.Writer) {
 	fmt.Fprint(out, "- item:\n")
 	fmt.Fprintf(out, "-- typeStr: %s\n", p.typeStr)
-	fmt.Fprintf(out, "-- addr: %s\n", p.addr)
+	fmt.Fprintf(out, "-- from: %s\n", p.from)
+	fmt.Fprintf(out, "-- to: %s\n", p.to)
 	fmt.Fprintf(out, "-- msg: (type %T) %s\n", p.msg, p.msg)
 	overlayMsg, ok := p.msg.(*OverlayMsg)
 	if ok {
@@ -136,17 +142,17 @@ func GenerateGraphviz(out io.Writer, traffics ...*traffic) {
 				msgStr = fmt.Sprintf("%T", item.msg)
 			}
 			if item.typeStr == "send" {
-				fmt.Fprintf(out, "\"%s(%s)\" -> \"%s\" "+
+				fmt.Fprintf(out, "\"%s\" -> \"%s\" "+
 					"[ label = \"%d: %s\" color=\"blue\" ];\n",
-					traffic.name, item.context, item.addr, item.counter, msgStr)
+					item.from, item.to, item.counter, msgStr)
 			} else if item.typeStr == "received" {
-				fmt.Fprintf(out, "\"%s\" -> \"%s(%s)\" "+
+				fmt.Fprintf(out, "\"%s\" -> \"%s\" "+
 					"[ label = \"%d: %s\" color=\"grey\" ];\n",
-					item.addr, traffic.name, item.context, item.counter, msgStr)
+					item.from, item.to, item.counter, msgStr)
 			} else if item.typeStr == "received to relay" {
-				fmt.Fprintf(out, "\"%s\" -> \"%s(%s)\" "+
+				fmt.Fprintf(out, "\"%s\" -> \"%s\" "+
 					"[ label = \"%d: %s\" color=\"yellow\" ];\n",
-					item.addr, traffic.name, item.context, item.counter, msgStr)
+					item.from, item.to, item.counter, msgStr)
 			}
 		}
 	}

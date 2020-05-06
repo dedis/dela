@@ -3,7 +3,7 @@ package minogrpc
 import (
 	context "context"
 	"fmt"
-	"math/rand"
+	"os"
 	"sort"
 	"strings"
 	"testing"
@@ -400,7 +400,7 @@ func TestRPC_SingleSimple_Stream(t *testing.T) {
 		id: identifier,
 	}
 
-	factory := r.NewTreeRoutingFactory(10, &address{id: "orchestrator_addr"}, defaultAddressFactory)
+	factory := r.NewTreeRoutingFactory(10, &address{id: "127.0.0.1:2000"}, defaultAddressFactory)
 
 	server, err := NewServer(addr, factory)
 	require.NoError(t, err)
@@ -451,7 +451,7 @@ func TestRPC_SingleSimple_Stream(t *testing.T) {
 
 // Use multiple nodes to use a stream that just sends back the same message.
 func TestRPC_MultipleSimple_Stream(t *testing.T) {
-	factory := r.NewTreeRoutingFactory(10, &address{id: "orchestrator_addr"}, defaultAddressFactory)
+	factory := r.NewTreeRoutingFactory(10, &address{id: "127.0.0.1:2001"}, defaultAddressFactory)
 
 	identifier1 := "127.0.0.1:2001"
 	addr1 := &address{
@@ -492,19 +492,16 @@ func TestRPC_MultipleSimple_Stream(t *testing.T) {
 
 	// Computed routing:
 	//
-	// Node[orchestrator_addr-index[-1]-lastIndex[2]](
-	// 	Node[127.0.0.1:2001-index[0]-lastIndex[0]](
+	// TreeRouting, Root: Node[127.0.0.1:2001-index[0]-lastIndex[2]](
+	// 	Node[127.0.0.1:2003-index[1]-lastIndex[1]](
 	// 	)
-	// 	Node[127.0.0.1:2002-index[1]-lastIndex[2]](
-	// 		Node[127.0.0.1:2003-index[2]-lastIndex[2]](
-	// 		)
+	// 	Node[127.0.0.1:2002-index[2]-lastIndex[2]](
 	// 	)
 	// )
 
 	server1.neighbours[identifier1] = peer1
 	server1.neighbours[identifier2] = peer2
-
-	server2.neighbours[identifier3] = peer3
+	server1.neighbours[identifier3] = peer3
 
 	handler := testSameHandler{time.Millisecond * 900}
 	uri := "blabla"
@@ -574,7 +571,7 @@ func TestRPC_MultipleSimple_Stream(t *testing.T) {
 
 // Use multiple nodes to use a stream that aggregates the dummyMessages
 func TestRPC_MultipleChange_Stream(t *testing.T) {
-	factory := r.NewTreeRoutingFactory(10, &address{id: "orchestrator_addr"}, defaultAddressFactory)
+	factory := r.NewTreeRoutingFactory(10, &address{id: "127.0.0.1:2001"}, defaultAddressFactory)
 
 	identifier1 := "127.0.0.1:2001"
 	addr1 := &address{
@@ -627,26 +624,19 @@ func TestRPC_MultipleChange_Stream(t *testing.T) {
 
 	// Computed routing:
 	//
-	// Node[orchestrator_addr-index[-1]-lastIndex[3]](
-	// 	Node[127.0.0.1:2002-index[0]-lastIndex[1]](
-	// 		Node[127.0.0.1:2003-index[1]-lastIndex[1]](
-	// 		)
+	// TreeRouting, Root: Node[127.0.0.1:2001-index[0]-lastIndex[3]](
+	// 	Node[127.0.0.1:2003-index[1]-lastIndex[1]](
 	// 	)
 	// 	Node[127.0.0.1:2004-index[2]-lastIndex[3]](
-	// 		Node[127.0.0.1:2001-index[3]-lastIndex[3]](
+	// 		Node[127.0.0.1:2002-index[3]-lastIndex[3]](
 	// 		)
 	// 	)
 	// )
 	server1.neighbours[identifier1] = peer1
-	server1.neighbours[identifier2] = peer2
+	server1.neighbours[identifier3] = peer3
 	server1.neighbours[identifier4] = peer4
 
-	server2.neighbours[identifier2] = peer2
-	server2.neighbours[identifier3] = peer3
-
-	server3.neighbours[identifier3] = peer3
-
-	server4.neighbours[identifier1] = peer1
+	server4.neighbours[identifier2] = peer2
 
 	uri := "blabla"
 	rpc := RPC{
@@ -721,7 +711,7 @@ func TestRPC_MultipleChange_Stream(t *testing.T) {
 // only knows itself and a second one.
 func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 
-	factory := r.NewTreeRoutingFactory(4, &address{id: "orchestrator_addr"}, defaultAddressFactory)
+	factory := r.NewTreeRoutingFactory(4, &address{id: "127.0.0.1:2001"}, defaultAddressFactory)
 
 	identifier1, addr1, server1, peer1 := createServer(t, "127.0.0.1:2001", factory)
 	identifier2, addr2, server2, peer2 := createServer(t, "127.0.0.1:2002", factory)
@@ -735,42 +725,40 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 
 	// Computed routing:
 	//
-	// TreeRouting, Root: Node[orchestrator_addr-index[-1]-lastIndex[8]](
-	// 	Node[127.0.0.1:2006-index[0]-lastIndex[3]](
-	// 		Node[127.0.0.1:2007-index[1]-lastIndex[1]](
+	// TreeRouting, Root: Node[127.0.0.1:2001-index[0]-lastIndex[8]](
+	// 	Node[127.0.0.1:2004-index[1]-lastIndex[4]](
+	// 		Node[127.0.0.1:2003-index[2]-lastIndex[2]](
 	// 		)
-	// 		Node[127.0.0.1:2001-index[2]-lastIndex[3]](
-	// 			Node[127.0.0.1:2002-index[3]-lastIndex[3]](
+	// 		Node[127.0.0.1:2009-index[3]-lastIndex[4]](
+	// 			Node[127.0.0.1:2002-index[4]-lastIndex[4]](
 	// 			)
 	// 		)
 	// 	)
-	// 	Node[127.0.0.1:2003-index[4]-lastIndex[8]](
-	// 		Node[127.0.0.1:2005-index[5]-lastIndex[6]](
-	// 			Node[127.0.0.1:2004-index[6]-lastIndex[6]](
-	// 			)
+	// 	Node[127.0.0.1:2008-index[5]-lastIndex[8]](
+	// 		Node[127.0.0.1:2005-index[6]-lastIndex[6]](
 	// 		)
-	// 		Node[127.0.0.1:2008-index[7]-lastIndex[8]](
-	// 			Node[127.0.0.1:2009-index[8]-lastIndex[8]](
+	// 		Node[127.0.0.1:2006-index[7]-lastIndex[8]](
+	// 			Node[127.0.0.1:2007-index[8]-lastIndex[8]](
 	// 			)
 	// 		)
 	// 	)
 	// )
-	server1.neighbours[identifier2] = peer2
-	server1.neighbours[identifier6] = peer6 // because server1 is the
-	server1.neighbours[identifier3] = peer3 // orchestrator
+	server1.neighbours[identifier1] = peer1
+	server1.neighbours[identifier4] = peer4
+	server1.neighbours[identifier8] = peer8
 
-	server2.neighbours[identifier2] = peer2
-	server2.neighbours[identifier3] = peer3
+	server9.neighbours[identifier2] = peer2
 
 	server3.neighbours[identifier5] = peer5
 	server3.neighbours[identifier8] = peer8
 
-	server5.neighbours[identifier4] = peer4
+	server4.neighbours[identifier3] = peer3
+	server4.neighbours[identifier9] = peer9
 
 	server6.neighbours[identifier7] = peer7
-	server6.neighbours[identifier1] = peer1
 
-	server8.neighbours[identifier9] = peer9
+	server8.neighbours[identifier5] = peer5
+	server8.neighbours[identifier6] = peer6
 
 	uri := "blabla"
 	handler1 := testRingHandler{addrID: addr1, neighbor: addr2}
@@ -861,10 +849,9 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 // Sends a message to all participants, that then send a message to all
 // participants
 func TestRPC_DKG_Stream(t *testing.T) {
-	rand.Seed(time.Now().UnixNano())
-	factory := r.NewTreeRoutingFactory(4, &address{id: "orchestrator_addr"}, defaultAddressFactory)
+	factory := r.NewTreeRoutingFactory(1, &address{id: "127.0.0.1:2000"}, defaultAddressFactory)
 
-	n := 5
+	n := 1
 
 	identifiers := make([]string, n)
 	addrs := make([]mino.Address, n)
@@ -873,7 +860,7 @@ func TestRPC_DKG_Stream(t *testing.T) {
 	traffics := make([]*traffic, n)
 
 	for i := 0; i < n; i++ {
-		identifiers[i], addrs[i], servers[i], peers[i] = createServer(t, fmt.Sprintf("127.0.0.1:200%d", i), factory)
+		identifiers[i], addrs[i], servers[i], peers[i] = createServer(t, fmt.Sprintf("127.0.0.1:2%03d", i), factory)
 	}
 
 	for i, server := range servers {
@@ -881,9 +868,10 @@ func TestRPC_DKG_Stream(t *testing.T) {
 		traffics[i] = server.traffic
 	}
 
-	// defer func() {
-	// 	GenerateGraphviz(os.Stdout, traffics...)
-	// }()
+	defer func() {
+		f, _ := os.Create("/tmp/dat2.graph")
+		GenerateGraphviz(f, traffics...)
+	}()
 
 	// Computed routing with n=9:
 	//
@@ -909,11 +897,11 @@ func TestRPC_DKG_Stream(t *testing.T) {
 	// )
 
 	uri := "blabla"
-	handler1 := testDKGHandler{addr: addrs[1], addrs: addrs}
+	handler1 := testDKGHandler{addr: addrs[0], addrs: addrs}
 	rpc := RPC{
 		encoder:        encoding.NewProtoEncoder(),
 		handler:        handler1,
-		srv:            servers[1],
+		srv:            servers[0],
 		uri:            uri,
 		routingFactory: factory,
 	}
@@ -952,7 +940,7 @@ func TestRPC_DKG_Stream(t *testing.T) {
 		dummy, ok := msg.(*wrappers.StringValue)
 		require.True(t, ok)
 
-		require.Equal(t, dummy.Value, "finish")
+		require.Equal(t, "finish", dummy.Value)
 	}
 
 	// out := os.Stdout
@@ -978,9 +966,8 @@ func TestSender_Send(t *testing.T) {
 	require.NoError(t, err)
 
 	sender := sender{
-		encoder:      encoding.NewProtoEncoder(),
-		participants: make(map[string]overlayStream),
-		routing:      routing,
+		encoder: encoding.NewProtoEncoder(),
+		routing: routing,
 	}
 
 	// sending to an empty list should not yield an error
@@ -998,13 +985,12 @@ func TestSender_Send(t *testing.T) {
 	if !more {
 		t.Error("there should be an error")
 	}
-	require.EqualError(t, err, "sender '' failed to send to client '': failed to send a message to my child '', participant not found in 'map[]'")
+	require.EqualError(t, err, "sender '' failed to send to client '': failed to send a message to my child '', participant not found in '{{0 0} {<nil>} map[] 0}'")
 
 	// now I add the participant to the list, an error should be given since the
 	// message is nil
 	addr = address{id: "fake"}
 	sender.encoder = badMarshalAnyEncoder{}
-	sender.participants[addr.String()] = nil
 	errs = sender.Send(nil, addr)
 	err, more = <-errs
 	if !more {
@@ -1240,43 +1226,20 @@ type testDKGHandler struct {
 }
 
 func (t testDKGHandler) Stream(out mino.Sender, in mino.Receiver) error {
+	// We can't expect a strong packet order. For example a "first" message
+	// could arrive before the "start" one. Indeed a node could be slow to
+	// receive its "start" message while others already have and then have
+	// already sent their "first" messages, which could make a node receive a
+	// "first" message from this early server before it even received the
+	// "start" one from the root.
+	//
+	firstAddrs := make([]string, 0)
+	gotStart := false
+	var fromStart mino.Address
 
-	rsleep()
-
-	// This is the start message
-	fromAddr, msg, err := in.Recv(context.Background())
-	if err != nil {
-		return xerrors.Errorf("failed to receive first message: %v", err)
-	}
-
-	dummy, ok := msg.(*wrappers.StringValue)
-	if !ok {
-		return xerrors.Errorf("unexpeted first message: %T", msg)
-	}
-
-	if dummy.Value != "start" {
-		return xerrors.Errorf("expected start message, got '%s'", dummy.Value)
-	}
-
-	for _, addr := range t.addrs {
-
-		rsleep()
-
-		if addr.String() == t.addr.String() {
-			continue
-		}
-
-		errs := out.Send(&wrappers.StringValue{Value: "first"}, addr)
-		err, more := <-errs
-		if more {
-			return xerrors.Errorf("unexpected error while sending first: %v", err)
-		}
-	}
-
-	firstAddrs := make([]string, len(t.addrs)-1)
-	for i := 0; i < len(t.addrs)-1; i++ {
-
-		rsleep()
+	// we should receive the start message + the first messages from
+	// len(addrs)-1
+	for i := 0; i < len(t.addrs)-1+1; i++ {
 
 		from, msg, err := in.Recv(context.Background())
 		if err != nil {
@@ -1288,10 +1251,37 @@ func (t testDKGHandler) Stream(out mino.Sender, in mino.Receiver) error {
 			return xerrors.Errorf("unexpected second message: %T", msg)
 		}
 
-		if dummy.Value != "first" {
-			return xerrors.Errorf("%s expected first message, got '%s'", t.addr, dummy.Value)
+		switch dummy.Value {
+		case "start":
+			if gotStart {
+				return xerrors.Errorf("got a second start message from %s", from)
+			}
+
+			gotStart = true
+			fromStart = from
+
+			for _, addr := range t.addrs {
+				if addr.String() == t.addr.String() {
+					continue
+				}
+
+				errs := out.Send(&wrappers.StringValue{Value: "first"}, addr)
+				err, more := <-errs
+				if more {
+					return xerrors.Errorf("unexpected error while sending first: %v", err)
+				}
+			}
+
+		case "first":
+			firstAddrs = append(firstAddrs, from.String())
+		default:
+			return xerrors.Errorf("unexpected message: %s", dummy.Value)
 		}
-		firstAddrs[i] = from.String()
+
+	}
+
+	if !gotStart {
+		return xerrors.Errorf("received no start message")
 	}
 
 	// try to see if there is additional msg
@@ -1304,20 +1294,16 @@ func (t testDKGHandler) Stream(out mino.Sender, in mino.Receiver) error {
 
 	sort.Strings(firstAddrs)
 	for i, j := 0, 0; i < len(firstAddrs); j++ {
-		rsleep()
-
 		if t.addr.String() == t.addrs[j].String() {
 			continue
 		}
 		if firstAddrs[i] != t.addrs[j].String() {
-			return xerrors.Errorf("expected '%s' to equal '%s'", firstAddrs[i], t.addrs[j].String())
+			return xerrors.Errorf("expected '%s' to equal '%s'. Addresses:\n%v", firstAddrs[i], t.addrs[j].String(), firstAddrs)
 		}
 		i++
 	}
 
-	rsleep()
-
-	errs := out.Send(&wrappers.StringValue{Value: "finish"}, fromAddr)
+	errs := out.Send(&wrappers.StringValue{Value: "finish"}, fromStart)
 	err, more := <-errs
 	if more {
 		return xerrors.Errorf("unexpected error while sending finsh: %v", err)
@@ -1343,12 +1329,6 @@ func createServer(t *testing.T, id string, factory r.Factory) (string, *address,
 	}
 
 	return identifier, addr, server, peer
-}
-
-// Sleep random
-func rsleep() {
-	n := rand.Intn(100) // n will be between 0 and 10
-	time.Sleep(time.Duration(n) * time.Millisecond)
 }
 
 // addNeighbours fills the neighbours map of the server

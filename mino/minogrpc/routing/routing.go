@@ -48,7 +48,7 @@ type Routing interface {
 //
 // - implements Routing
 type TreeRouting struct {
-	root         *treeNode
+	Root         *treeNode
 	routingNodes map[string]*treeNode
 }
 
@@ -97,6 +97,9 @@ func (t TreeRoutingFactory) FromIterator(iterator mino.AddressIterator) (Routing
 	addrsBuf := make(addrsBuf, 0)
 	for iterator.HasNext() {
 		addr := iterator.GetNext()
+		if addr.String() == t.rootAddr.String() {
+			continue
+		}
 
 		addrBuf, err := addr.MarshalText()
 		if err != nil {
@@ -106,10 +109,10 @@ func (t TreeRoutingFactory) FromIterator(iterator mino.AddressIterator) (Routing
 		addrsBuf = append(addrsBuf, addrBuf)
 	}
 
-	if len(addrsBuf) == 0 {
-		return nil, xerrors.Errorf("there should be at least one address in " +
-			"the iterator")
-	}
+	// if len(addrsBuf) == 0 {
+	// 	return nil, xerrors.Errorf("there should be at least one address in " +
+	// 		"the iterator")
+	// }
 
 	sort.Stable(&addrsBuf)
 
@@ -149,7 +152,7 @@ func (t TreeRoutingFactory) FromIterator(iterator mino.AddressIterator) (Routing
 	// H = log_D N
 	d := int(math.Ceil(math.Pow(float64(len(addrs)), 1.0/float64(t.height))))
 
-	tree := buildTree(t.rootAddr, addrs, d, -1)
+	tree := buildTree(t.rootAddr, addrs, d, 0)
 
 	routingNodes := make(map[string]*treeNode)
 	routingNodes[t.rootAddr.String()] = tree
@@ -159,7 +162,7 @@ func (t TreeRoutingFactory) FromIterator(iterator mino.AddressIterator) (Routing
 
 	return &TreeRouting{
 		routingNodes: routingNodes,
-		root:         tree,
+		Root:         tree,
 	}, nil
 }
 
@@ -173,9 +176,9 @@ func (t TreeRoutingFactory) FromAny(m *any.Any) (Routing, error) {
 		return nil, xerrors.Errorf("failed to unmarshal routing message: %v", err)
 	}
 
-	if len(msg.Addrs) == 0 {
-		return nil, xerrors.Errorf("there should be at least one address")
-	}
+	// if len(msg.Addrs) == 0 {
+	// 	return nil, xerrors.Errorf("there should be at least one address")
+	// }
 
 	addrs := make([]mino.Address, len(msg.Addrs))
 	for i, addrBuf := range msg.Addrs {
@@ -230,7 +233,7 @@ func (t TreeRoutingFactory) FromAny(m *any.Any) (Routing, error) {
 	// H = log_D N
 	d := int(math.Ceil(math.Pow(float64(len(addrs)), 1.0/float64(t.height))))
 
-	tree := buildTree(t.rootAddr, addrs, d, -1)
+	tree := buildTree(t.rootAddr, addrs, d, 0)
 
 	routingNodes := make(map[string]*treeNode)
 	routingNodes[t.rootAddr.String()] = tree
@@ -240,7 +243,7 @@ func (t TreeRoutingFactory) FromAny(m *any.Any) (Routing, error) {
 
 	return &TreeRouting{
 		routingNodes: routingNodes,
-		root:         tree,
+		Root:         tree,
 	}, nil
 }
 
@@ -262,13 +265,14 @@ func (t TreeRoutingFactory) FromAny(m *any.Any) (Routing, error) {
 //
 // - implements Routing
 func (t TreeRouting) GetRoute(from, to mino.Address) (mino.Address, error) {
+
 	fromNode, ok := t.routingNodes[from.String()]
 	if !ok {
 		return nil, xerrors.Errorf("node with address '%s' not found",
 			from.String())
 	}
 
-	if fromNode.Addr != nil && fromNode.Addr.Equal(to) {
+	if fromNode.Addr != nil && fromNode.Addr.String() == to.String() {
 		return to, nil
 	}
 
@@ -312,8 +316,8 @@ func (t TreeRouting) Pack(encoder encoding.ProtoMarshaler) (proto.Message, error
 	addrs := make([][]byte, 0, len(t.routingNodes)-1)
 
 	for _, node := range t.routingNodes {
-		if node.Index == -1 {
-			// We must not include the root in the list of addresses
+		if node == t.Root {
+			// the root is specified in the factory
 			continue
 		}
 		addrBuf, err := node.Addr.MarshalText()
@@ -334,7 +338,7 @@ func (t TreeRouting) Pack(encoder encoding.ProtoMarshaler) (proto.Message, error
 // Display displays an extensive string representation of the tree
 func (t TreeRouting) Display(out io.Writer) {
 	fmt.Fprintf(out, "TreeRouting, Root: ")
-	t.root.Display(out)
+	t.Root.Display(out)
 }
 
 // buildTree builds the newtwork tree based on the list of addresses. The first
