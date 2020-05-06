@@ -11,6 +11,7 @@ import (
 	"io"
 	"math/big"
 	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -156,6 +157,8 @@ func (rpc RPC) Stream(ctx context.Context,
 		// TODO better handle this error
 		fabric.Logger.Fatal().Msgf("failed to create routing: %v", err)
 	}
+
+	rting.(*routing.TreeRouting).Display(os.Stdout)
 
 	// fmt.Print("server tree:")
 	// rting.(*routing.TreeRouting).Display(os.Stdout)
@@ -398,6 +401,15 @@ func (srv *Server) Serve() error {
 	}
 
 	return nil
+}
+
+func (srv *Server) addNeighbour(servers ...*Server) {
+	for _, server := range servers {
+		srv.neighbours[server.addr.String()] = Peer{
+			Address:     server.listener.Addr().String(),
+			Certificate: server.cert.Leaf,
+		}
+	}
 }
 
 // getConnection creates a gRPC connection from the server to the client.

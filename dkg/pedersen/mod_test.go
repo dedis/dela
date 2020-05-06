@@ -8,13 +8,18 @@ import (
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/minoch"
 	"go.dedis.ch/fabric/mino/minogrpc"
+	"go.dedis.ch/fabric/mino/minogrpc/routing"
 	"go.dedis.ch/kyber/v3"
 )
 
 func TestStart(t *testing.T) {
-	n := 20
+	n := 30
 
 	addrFactory := minoch.AddressFactory{}
+
+	rootAddr := addrFactory.FromText([]byte("orchestrator_addr"))
+
+	factory := routing.NewTreeRoutingFactory(4, rootAddr, addrFactory)
 
 	addrs := make([]mino.Address, n)
 	pubKeys := make([]kyber.Point, n)
@@ -28,7 +33,7 @@ func TestStart(t *testing.T) {
 		addrs[i] = addrFactory.FromText([]byte(fmt.Sprintf("127.0.0.1:200%d", i)))
 		privKeys[i] = suite.Scalar().Pick(suite.RandomStream())
 		pubKeys[i] = suite.Point().Mul(privKeys[i], nil)
-		minogrpc, err := minogrpc.NewMinogrpc(addrs[i].String(), minogrpc.TreeRoutingFactory)
+		minogrpc, err := minogrpc.NewMinogrpc(addrs[i].String(), factory)
 		require.NoError(t, err)
 		minos[i] = &minogrpc
 	}
