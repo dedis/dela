@@ -8,6 +8,7 @@ import (
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/fabric/mino/minogrpc/routing"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -29,7 +30,7 @@ type overlayService struct {
 	srvCert *tls.Certificate
 	// Used to record traffic activity
 	traffic        *traffic
-	routingFactory RoutingFactory
+	routingFactory routing.Factory
 }
 
 // Call is the implementation of the overlay.Call proto definition
@@ -114,26 +115,17 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		return xerrors.Errorf("failed to receive first routing message: %v", err)
 	}
 
-	routingMsg := &RoutingMsg{}
-	err = o.encoder.UnmarshalAny(overlayMsg.Message, routingMsg)
+	rting, err := o.routingFactory.FromAny(overlayMsg.Message)
 	if err != nil {
-		return xerrors.Errorf("failed to decode first routing message: %v", err)
+		return xerrors.Errorf("failed to decode routing message: %v", err)
 	}
 
-	addrs := make([]mino.Address, len(routingMsg.Addrs))
-	for i, addrStr := range routingMsg.Addrs {
-		addrs[i] = address{addrStr}
-	}
+	// fmt.Print(o.addr)
+	// rting.(*routing.TreeRouting).Display(os.Stdout)
 
-	routing, err := o.routingFactory.FromAddrs(addrs, map[string]interface{}{
-		TreeRoutingOpts.Addr: o.addr, "treeHeight": treeHeight,
-	})
-	if err != nil {
-		return xerrors.Errorf("failed to create routing struct: %v", err)
-	}
-
-	// For the moment this sender can only receive messages to itself
-	// TODO: find a way to know the other nodes.
+	// This sender acts as an orchestrator for the other nodes it creates a
+	// stream to. In a tree topology this means the orchestrator is the parent,
+	// and the created streams are the children.
 	sender := &sender{
 		encoder: o.encoder,
 		// This address is used when the client doesn't find the address it
@@ -147,7 +139,7 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		name:         "remote RPC of " + o.addr.String(),
 		srvCert:      o.srvCert,
 		traffic:      o.traffic,
-		routing:      routing,
+		routing:      rting,
 	}
 
 	receiver := receiver{
@@ -158,7 +150,12 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		traffic: o.traffic,
 	}
 
-	for _, addr := range routing.GetDirectLinks() {
+	addrs, err := rting.GetDirectLinks(o.addr)
+	if err != nil {
+		return xerrors.Errorf("failed to get direct links: %v", err)
+	}
+
+	for _, addr := range addrs {
 		peer, found := o.neighbour[addr.String()]
 		if !found {
 			err = xerrors.Errorf("failed to find routing peer '%s' from the "+
@@ -190,7 +187,7 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 
 		sender.participants[addr.String()] = clientStream
 
-		// Sending the routing info as first messages to our childs
+		// Sending the routing info as first messages to our children
 		clientStream.Send(&OverlayMsg{Message: overlayMsg.Message})
 
 		// Listen on the clients streams and notify the orchestrator or relay

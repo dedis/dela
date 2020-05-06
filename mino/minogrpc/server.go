@@ -8,7 +8,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	fmt "fmt"
 	"io"
 	"math/big"
 	"net"
@@ -20,6 +19,7 @@ import (
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/fabric/mino/minogrpc/routing"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
@@ -41,10 +41,6 @@ var (
 	// defaultMinConnectTimeout is the minimum amount of time we are willing to
 	// wait for a grpc connection to complete
 	defaultMinConnectTimeout = 7 * time.Second
-	// in a tree based communication, this parameter (H) defines the height of
-	// the tree. Based on this parameter and the total number of nodes N we can
-	// compute the number of direct connection D for each node with D = N^(1/H)
-	treeHeight = 6
 )
 
 // Server represents the entity that accepts incoming requests and invoke the
@@ -59,7 +55,7 @@ type Server struct {
 
 	// neighbours contains the certificate and details about known peers.
 	neighbours     map[string]Peer
-	routingFactory RoutingFactory
+	routingFactory routing.Factory
 
 	handlers map[string]mino.Handler
 
@@ -85,7 +81,7 @@ type RPC struct {
 	handler        mino.Handler
 	srv            *Server
 	uri            string
-	routingFactory RoutingFactory
+	routingFactory routing.Factory
 }
 
 // Call implements mino.RPC. It calls the RPC on each provided address.
@@ -155,32 +151,24 @@ func (rpc *RPC) Call(ctx context.Context, req proto.Message,
 func (rpc RPC) Stream(ctx context.Context,
 	players mino.Players) (in mino.Sender, out mino.Receiver) {
 
-	addrs := make([]mino.Address, 0, players.Len())
-	for players.AddressIterator().HasNext() {
-		addrs = append(addrs, players.AddressIterator().GetNext())
-	}
-	addrsStr := make([]string, len(addrs))
-	for i, addr := range addrs {
-		addrsStr[i] = addr.String()
-	}
-
-	// warning: this call will shuffle addrs
-
-	routing, err := rpc.routingFactory.FromAddrs(addrs, map[string]interface{}{
-		TreeRoutingOpts.Addr:       address{orchestratorAddr},
-		TreeRoutingOpts.TreeHeight: treeHeight,
-	})
+	rting, err := rpc.routingFactory.FromIterator(players.AddressIterator())
 	if err != nil {
 		// TODO better handle this error
 		fabric.Logger.Fatal().Msgf("failed to create routing: %v", err)
 	}
 
-	fmt.Println("tree topology:", routing.(*TreeRouting).root)
+	// fmt.Print("server tree:")
+	// rting.(*routing.TreeRouting).Display(os.Stdout)
 
-	routingProto := &RoutingMsg{Type: "tree", Addrs: addrsStr}
-
-	anyRoutintg, err := rpc.encoder.MarshalAny(routingProto)
+	routingProto, err := rting.Pack(rpc.encoder)
 	if err != nil {
+		// TODO better handle this error
+		fabric.Logger.Fatal().Msgf("failed to pack routing: %v", err)
+	}
+
+	anyRouting, err := rpc.encoder.MarshalAny(routingProto)
+	if err != nil {
+		// TODO better handle this error
 		fabric.Logger.Fatal().Msgf("failed to encode routing info: %v", err)
 	}
 
@@ -198,7 +186,7 @@ func (rpc RPC) Stream(ctx context.Context,
 		name:         "orchestrator",
 		srvCert:      rpc.srv.cert,
 		traffic:      rpc.srv.traffic,
-		routing:      routing,
+		routing:      rting,
 	}
 
 	orchRecv := receiver{
@@ -211,8 +199,14 @@ func (rpc RPC) Stream(ctx context.Context,
 		traffic: rpc.srv.traffic,
 	}
 
+	addrs, err := rting.GetDirectLinks(address{orchestratorAddr})
+	if err != nil {
+		// TODO better handle this error
+		fabric.Logger.Fatal().Msgf("failed to get direct links: %v", err)
+	}
+
 	// Creating a stream for each addr in our tree routing
-	for _, addr := range routing.GetDirectLinks() {
+	for _, addr := range addrs {
 
 		peer, ok := rpc.srv.neighbours[addr.String()]
 		if !ok {
@@ -248,8 +242,8 @@ func (rpc RPC) Stream(ctx context.Context,
 
 		orchSender.participants[addr.String()] = stream
 
-		// Sending the routing info as first messages to our childs
-		stream.Send(&OverlayMsg{Message: anyRoutintg})
+		// Sending the routing info as first messages to our children
+		stream.Send(&OverlayMsg{Message: anyRouting})
 
 		// Listen on the clients streams and notify the orchestrator or relay
 		// messages
@@ -334,7 +328,7 @@ func listenStream(stream overlayStream, orchRecv *receiver,
 }
 
 // NewServer sets up a new server
-func NewServer(addr mino.Address, rf RoutingFactory) (*Server, error) {
+func NewServer(addr mino.Address, rf routing.Factory) (*Server, error) {
 	if addr.String() == "" {
 		return nil, xerrors.New("addr.String() should not give an empty string")
 	}
@@ -404,15 +398,6 @@ func (srv *Server) Serve() error {
 	}
 
 	return nil
-}
-
-func (srv *Server) addNeighbour(servers ...*Server) {
-	for _, server := range servers {
-		srv.neighbours[server.addr.String()] = Peer{
-			Address:     server.listener.Addr().String(),
-			Certificate: server.cert.Leaf,
-		}
-	}
 }
 
 // getConnection creates a gRPC connection from the server to the client.
@@ -485,7 +470,7 @@ type sender struct {
 	name         string
 	srvCert      *tls.Certificate
 	traffic      *traffic
-	routing      Routing
+	routing      routing.Routing
 }
 
 // send implements mino.Sender.Send. This function sends the message
@@ -537,7 +522,7 @@ func (s *sender) sendSingle(msg proto.Message, from, to mino.Address) error {
 		return xerrors.Errorf("couldn't marshal message: %v", err)
 	}
 
-	routingTo, err := s.routing.GetRoute(to)
+	routingTo, err := s.routing.GetRoute(s.address, to)
 	if err != nil {
 		// If we can't get a route we send the message to the orchestrator. In a
 		// tree based communication this means sending the message to our
@@ -634,28 +619,4 @@ func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error)
 type overlayStream interface {
 	Send(*OverlayMsg) error
 	Recv() (*OverlayMsg, error)
-}
-
-type safeOverlayStream struct {
-	sendLock sync.Mutex
-	recvLock sync.Mutex
-	os       overlayStream
-}
-
-func newSafeOverlayStream(o overlayStream) *safeOverlayStream {
-	return &safeOverlayStream{
-		os: o,
-	}
-}
-
-func (os *safeOverlayStream) Send(msg *OverlayMsg) error {
-	// os.sendLock.Lock()
-	// defer os.sendLock.Unlock()
-	return os.os.Send(msg)
-}
-
-func (os *safeOverlayStream) Recv() (*OverlayMsg, error) {
-	// os.recvLock.Lock()
-	// defer os.recvLock.Unlock()
-	return os.os.Recv()
 }
