@@ -25,9 +25,12 @@ definitions of modular pieces that build a blockchain.
   of signature from multiple key pairs and it can be verified by the
   corresponding aggregate of public keys.
 
-- **footprint** - Footprint defines a digest commonly produced by a hash
+- **fingerprint** - Fingerprint defines a digest commonly produced by a hash
   algorithm that can be used to verify the integrity of some data. One example
   is the inventory page integrity to prove which instances are stored.
+
+- **governance** - Governance is a black box that gives the ability to act on
+  the participants of a consensus.
 
 - **instance** - An instance is the smallest unit of storage in a ledger. It is
   identified by a unique key and stores a generic piece of data.
@@ -63,3 +66,6 @@ definitions of modular pieces that build a blockchain.
 
 - **skipchain** - A skipchain is a specific implementation of the blockchain
   that is using collective signings to create shortcuts between blocks.
+
+- **task** - A task is an order of execution that is stored inside a
+  transaction. It will define how the transaction will update the inventory.

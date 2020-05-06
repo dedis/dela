@@ -1,12 +1,14 @@
 package mem
 
 import (
+	"bytes"
 	"fmt"
-	"hash"
+	"sort"
+	"sync"
 
-	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric/crypto"
+	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/ledger/inventory"
 	"golang.org/x/xerrors"
 )
@@ -22,11 +24,29 @@ func (d Digest) String() string {
 	return fmt.Sprintf("%#x", d[:4])
 }
 
+// DigestSlice is a sortable slice of digests. It allows to hash the inventory
+// page in a deterministic manner.
+type DigestSlice []Digest
+
+func (p DigestSlice) Len() int {
+	return len(p)
+}
+
+func (p DigestSlice) Less(i, j int) bool {
+	return bytes.Compare(p[i][:], p[j][:]) < 0
+}
+
+func (p DigestSlice) Swap(i, j int) {
+	p[i], p[j] = p[j], p[i]
+}
+
 // InMemoryInventory is an implementation of the inventory interface by using a
 // memory storage which means that it will not persist.
 //
 // - implements inventory.Inventory
 type InMemoryInventory struct {
+	sync.Mutex
+	encoder      encoding.ProtoMarshaler
 	hashFactory  crypto.HashFactory
 	pages        []inMemoryPage
 	stagingPages map[Digest]inMemoryPage
@@ -35,6 +55,7 @@ type InMemoryInventory struct {
 // NewInventory returns a new empty instance of the inventory.
 func NewInventory() *InMemoryInventory {
 	return &InMemoryInventory{
+		encoder:      encoding.NewProtoEncoder(),
 		hashFactory:  crypto.NewSha256Factory(),
 		pages:        []inMemoryPage{},
 		stagingPages: make(map[Digest]inMemoryPage),
@@ -44,6 +65,9 @@ func NewInventory() *InMemoryInventory {
 // GetPage implements inventory.Inventory. It returns the snapshot for the
 // version if it exists, otherwise an error.
 func (inv *InMemoryInventory) GetPage(index uint64) (inventory.Page, error) {
+	inv.Lock()
+	defer inv.Unlock()
+
 	i := int(index)
 	if i >= len(inv.pages) {
 		return inMemoryPage{}, xerrors.Errorf("invalid page (%d >= %d)", i, len(inv.pages))
@@ -55,6 +79,9 @@ func (inv *InMemoryInventory) GetPage(index uint64) (inventory.Page, error) {
 // GetStagingPage implements inventory.Inventory. It returns the staging page
 // that matches the root if any, otherwise nil.
 func (inv *InMemoryInventory) GetStagingPage(root []byte) inventory.Page {
+	inv.Lock()
+	defer inv.Unlock()
+
 	digest := Digest{}
 	copy(digest[:], root)
 
@@ -70,59 +97,77 @@ func (inv *InMemoryInventory) GetStagingPage(root []byte) inventory.Page {
 // new snapshot that is not yet committed to the available versions.
 func (inv *InMemoryInventory) Stage(f func(inventory.WritablePage) error) (inventory.Page, error) {
 	var page inMemoryPage
+	inv.Lock()
 	if len(inv.pages) > 0 {
 		// Clone the previous page of the inventory so that previous instances
 		// are carried over.
 		page = inv.pages[len(inv.pages)-1].clone()
 		page.index++
 	} else {
-		page.entries = make(map[Digest]inMemoryEntry)
+		page.entries = make(map[Digest]proto.Message)
 	}
+	inv.Unlock()
 
 	err := f(page)
 	if err != nil {
 		return page, xerrors.Errorf("couldn't fill new page: %v", err)
 	}
 
-	page.footprint, err = page.computeHash(inv.hashFactory)
+	err = inv.computeHash(&page)
 	if err != nil {
 		return page, xerrors.Errorf("couldn't compute page hash: %v", err)
 	}
 
-	inv.stagingPages[page.footprint] = page
+	inv.Lock()
+	inv.stagingPages[page.fingerprint] = page
+	inv.Unlock()
 
 	return page, nil
 }
 
-// Commit stores the page with the given footprint permanently to the list of
+func (inv *InMemoryInventory) computeHash(page *inMemoryPage) error {
+	h := inv.hashFactory.New()
+
+	keys := make(DigestSlice, 0, len(page.entries))
+	for key := range page.entries {
+		keys = append(keys, key)
+	}
+
+	sort.Sort(keys)
+
+	for _, key := range keys {
+		_, err := h.Write(key[:])
+		if err != nil {
+			return xerrors.Errorf("couldn't write key: %v", err)
+		}
+
+		err = inv.encoder.MarshalStable(h, page.entries[key])
+		if err != nil {
+			return xerrors.Errorf("couldn't marshal entry: %v", err)
+		}
+	}
+
+	page.fingerprint = Digest{}
+	copy(page.fingerprint[:], h.Sum(nil))
+	return nil
+}
+
+// Commit stores the page with the given fingerprint permanently to the list of
 // available versions.
-func (inv *InMemoryInventory) Commit(footprint []byte) error {
+func (inv *InMemoryInventory) Commit(fingerprint []byte) error {
+	inv.Lock()
+	defer inv.Unlock()
+
 	digest := Digest{}
-	copy(digest[:], footprint)
+	copy(digest[:], fingerprint)
 
 	page, ok := inv.stagingPages[digest]
 	if !ok {
-		return xerrors.Errorf("couldn't find page with footprint '%v'", digest)
+		return xerrors.Errorf("couldn't find page with fingerprint '%v'", digest)
 	}
 
 	inv.pages = append(inv.pages, page)
 	inv.stagingPages = make(map[Digest]inMemoryPage)
-
-	return nil
-}
-
-// inMemoryEntry is an instance stored in an in-memory inventory.
-type inMemoryEntry struct {
-	value proto.Message
-}
-
-func (i inMemoryEntry) hash(h hash.Hash) error {
-	// The JSON format is used to insure a deterministic hash.
-	m := &jsonpb.Marshaler{OrigName: true}
-	err := m.Marshal(h, i.value)
-	if err != nil {
-		return err
-	}
 
 	return nil
 }
@@ -133,9 +178,9 @@ func (i inMemoryEntry) hash(h hash.Hash) error {
 // - implements inventory.Page
 // - implements inventory.WritablePage
 type inMemoryPage struct {
-	index     uint64
-	footprint Digest
-	entries   map[Digest]inMemoryEntry
+	index       uint64
+	fingerprint Digest
+	entries     map[Digest]proto.Message
 }
 
 // GetIndex implements inventory.Page. It returns the index of the page from the
@@ -144,10 +189,10 @@ func (page inMemoryPage) GetIndex() uint64 {
 	return page.index
 }
 
-// GetFootprint implements inventory.Page. It returns the integrity footprint of
-// the page.
-func (page inMemoryPage) GetFootprint() []byte {
-	return page.footprint[:]
+// GetFingerprint implements inventory.Page. It returns the integrity
+// fingerprint of the page.
+func (page inMemoryPage) GetFingerprint() []byte {
+	return page.fingerprint[:]
 }
 
 // Read implements inventory.Page. It returns the instance associated with the
@@ -161,12 +206,7 @@ func (page inMemoryPage) Read(key []byte) (proto.Message, error) {
 	digest := Digest{}
 	copy(digest[:], key)
 
-	entry, ok := page.entries[digest]
-	if !ok {
-		return nil, xerrors.Errorf("instance with key '%#x' not found", key)
-	}
-
-	return entry.value, nil
+	return page.entries[digest], nil
 }
 
 // Write implements inventory.WritablePage. It updates the state of the page by
@@ -179,7 +219,7 @@ func (page inMemoryPage) Write(key []byte, value proto.Message) error {
 	digest := Digest{}
 	copy(digest[:], key)
 
-	page.entries[digest] = inMemoryEntry{value: value}
+	page.entries[digest] = value
 
 	return nil
 }
@@ -187,7 +227,7 @@ func (page inMemoryPage) Write(key []byte, value proto.Message) error {
 func (page inMemoryPage) clone() inMemoryPage {
 	clone := inMemoryPage{
 		index:   page.index,
-		entries: make(map[Digest]inMemoryEntry),
+		entries: make(map[Digest]proto.Message),
 	}
 
 	for k, v := range page.entries {
@@ -195,19 +235,4 @@ func (page inMemoryPage) clone() inMemoryPage {
 	}
 
 	return clone
-}
-
-func (page inMemoryPage) computeHash(factory crypto.HashFactory) (Digest, error) {
-	h := factory.New()
-
-	for _, entry := range page.entries {
-		err := entry.hash(h)
-		if err != nil {
-			return Digest{}, err
-		}
-	}
-
-	digest := Digest{}
-	copy(digest[:], h.Sum(nil))
-	return digest, nil
 }

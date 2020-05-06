@@ -1,10 +1,10 @@
 syntax = "proto3";
 
-package smartcontract;
+package contract;
 
 import "google/protobuf/any.proto";
 
-message InstanceProto {
+message Instance {
     bytes key = 1;
     google.protobuf.Any value = 2;
     string contractID = 3;
@@ -12,29 +12,16 @@ message InstanceProto {
     bytes accessControl = 5;
 }
 
-message Spawn {
+message SpawnTaskProto {
     string contractID = 1;
     google.protobuf.Any argument = 2;
 }
 
-message Invoke {
+message InvokeTaskProto {
     bytes key = 1;
     google.protobuf.Any argument = 2;
 }
 
-message Delete {
+message DeleteTaskProto {
     bytes key = 1;
-}
-
-message TransactionProto {
-    uint64 nonce = 1;
-
-    oneof action {
-        Spawn spawn = 2;
-        Invoke invoke = 3;
-        Delete delete = 4;
-    }
-
-    google.protobuf.Any identity = 5;
-    google.protobuf.Any signature = 6;
 }

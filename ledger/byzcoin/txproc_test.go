@@ -5,44 +5,47 @@ import (
 
 	proto "github.com/golang/protobuf/proto"
 	any "github.com/golang/protobuf/ptypes/any"
-	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/internal/testing/fake"
-	"go.dedis.ch/fabric/ledger/consumer"
 	"go.dedis.ch/fabric/ledger/inventory"
 	"golang.org/x/xerrors"
 )
 
 func TestTxProcessor_Validate(t *testing.T) {
-	proc := newTxProcessor(fakeConsumer{})
-	proc.inventory = fakeInventory{}
+	proc := newTxProcessor(nil, fakeInventory{})
 
 	err := proc.Validate(0, &BlockPayload{})
 	require.NoError(t, err)
 
+	err = proc.Validate(0, &GenesisPayload{})
+	require.NoError(t, err)
+
 	err = proc.Validate(0, nil)
-	require.EqualError(t, err,
-		"message type '<nil>' but expected '*byzcoin.BlockPayload'")
+	require.EqualError(t, err, "invalid message type '<nil>'")
 
 	proc.inventory = fakeInventory{err: xerrors.New("oops")}
 	err = proc.Validate(0, &BlockPayload{})
 	require.EqualError(t, err,
 		"couldn't stage the transactions: couldn't stage new page: oops")
 
+	proc.inventory = fakeInventory{errPage: xerrors.New("oops")}
+	err = proc.Validate(0, &GenesisPayload{})
+	require.EqualError(t, err,
+		"couldn't stage genesis: couldn't stage page: couldn't write roster: oops")
+
 	proc.inventory = fakeInventory{index: 1}
 	err = proc.Validate(0, &BlockPayload{})
 	require.EqualError(t, err, "invalid index 1 != 0")
 
-	proc.inventory = fakeInventory{footprint: []byte{0xab}}
-	err = proc.Validate(0, &BlockPayload{Footprint: []byte{0xcd}})
-	require.EqualError(t, err, "mismatch payload footprint '0xab' != '0xcd'")
+	err = proc.Validate(0, &GenesisPayload{})
+	require.EqualError(t, err, "index 0 expected but got 1")
+
+	proc.inventory = fakeInventory{fingerprint: []byte{0xab}}
+	err = proc.Validate(0, &BlockPayload{Fingerprint: []byte{0xcd}})
+	require.EqualError(t, err, "mismatch payload fingerprint '0xab' != '0xcd'")
 }
 
 func TestTxProcessor_Process(t *testing.T) {
-	proc := newTxProcessor(nil)
-	proc.inventory = fakeInventory{page: &fakePage{index: 999}}
-	proc.consumer = fakeConsumer{key: []byte{0xab}}
+	proc := newTxProcessor(nil, fakeInventory{page: &fakePage{index: 999}})
 
 	page, err := proc.process(&BlockPayload{})
 	require.NoError(t, err)
@@ -50,47 +53,23 @@ func TestTxProcessor_Process(t *testing.T) {
 
 	payload := &BlockPayload{Transactions: []*any.Any{{}}}
 
-	proc.inventory = fakeInventory{}
+	proc.inventory = fakeInventory{page: &fakePage{}}
 	page, err = proc.process(payload)
 	require.NoError(t, err)
-	require.Len(t, page.(*fakePage).calls, 1)
-	require.Equal(t, []byte{0xab}, page.(*fakePage).calls[0][0])
-
-	proc.consumer = fakeConsumer{errFactory: xerrors.New("oops")}
-	_, err = proc.process(payload)
-	require.EqualError(t, err,
-		"couldn't stage new page: couldn't decode tx: oops")
-
-	proc.consumer = fakeConsumer{err: xerrors.New("oops")}
-	_, err = proc.process(payload)
-	require.EqualError(t, err,
-		"couldn't stage new page: couldn't consume tx: oops")
-
-	proc.consumer = fakeConsumer{}
-	proc.encoder = fake.BadPackEncoder{}
-	_, err = proc.process(payload)
-	require.EqualError(t, err,
-		"couldn't stage new page: couldn't pack instance: fake error")
-
-	proc.encoder = encoding.NewProtoEncoder()
-	proc.inventory = fakeInventory{errPage: xerrors.New("oops")}
-	_, err = proc.process(payload)
-	require.EqualError(t, err,
-		"couldn't stage new page: couldn't write instances: oops")
+	require.NotNil(t, page)
 }
 
 func TestTxProcessor_Commit(t *testing.T) {
-	proc := newTxProcessor(nil)
-	proc.inventory = fakeInventory{}
+	proc := newTxProcessor(nil, fakeInventory{})
 
 	err := proc.Commit(&BlockPayload{})
 	require.NoError(t, err)
 
 	err = proc.Commit(nil)
-	require.EqualError(t, err, "message type '<nil>' but expected '*byzcoin.BlockPayload'")
+	require.EqualError(t, err, "invalid message type '<nil>'")
 
 	proc.inventory = fakeInventory{err: xerrors.New("oops")}
-	err = proc.Commit(&BlockPayload{Footprint: []byte{0xab}})
+	err = proc.Commit(&BlockPayload{Fingerprint: []byte{0xab}})
 	require.EqualError(t, err, "couldn't commit to page '0xab': oops")
 }
 
@@ -99,22 +78,23 @@ func TestTxProcessor_Commit(t *testing.T) {
 
 type fakePage struct {
 	inventory.WritablePage
-	index     uint64
-	footprint []byte
-	err       error
-	calls     [][]interface{}
+	index       uint64
+	fingerprint []byte
+	err         error
+	value       proto.Message
+	calls       [][]interface{}
 }
 
 func (p *fakePage) GetIndex() uint64 {
 	return p.index
 }
 
-func (p *fakePage) GetFootprint() []byte {
-	return p.footprint
+func (p *fakePage) GetFingerprint() []byte {
+	return p.fingerprint
 }
 
 func (p *fakePage) Read([]byte) (proto.Message, error) {
-	return &empty.Empty{}, p.err
+	return p.value, p.err
 }
 
 func (p *fakePage) Write(key []byte, value proto.Message) error {
@@ -124,11 +104,11 @@ func (p *fakePage) Write(key []byte, value proto.Message) error {
 
 type fakeInventory struct {
 	inventory.Inventory
-	index     uint64
-	footprint []byte
-	page      *fakePage
-	err       error
-	errPage   error
+	index       uint64
+	fingerprint []byte
+	page        *fakePage
+	err         error
+	errPage     error
 }
 
 func (inv fakeInventory) GetPage(index uint64) (inventory.Page, error) {
@@ -147,9 +127,9 @@ func (inv fakeInventory) GetStagingPage([]byte) inventory.Page {
 
 func (inv fakeInventory) Stage(f func(inventory.WritablePage) error) (inventory.Page, error) {
 	p := &fakePage{
-		index:     inv.index,
-		footprint: inv.footprint,
-		err:       inv.errPage,
+		index:       inv.index,
+		fingerprint: inv.fingerprint,
+		err:         inv.errPage,
 	}
 
 	err := f(p)
@@ -162,56 +142,4 @@ func (inv fakeInventory) Stage(f func(inventory.WritablePage) error) (inventory.
 
 func (inv fakeInventory) Commit([]byte) error {
 	return inv.err
-}
-
-type fakeTxFactory struct {
-	consumer.TransactionFactory
-	err error
-}
-
-func (f fakeTxFactory) FromProto(proto.Message) (consumer.Transaction, error) {
-	return nil, f.err
-}
-
-type fakeInstance struct {
-	consumer.Instance
-	key []byte
-	err error
-}
-
-func (i fakeInstance) GetKey() []byte {
-	return i.key
-}
-
-func (i fakeInstance) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
-	return &empty.Empty{}, i.err
-}
-
-type fakeInstanceFactory struct {
-	consumer.InstanceFactory
-	err error
-}
-
-func (f fakeInstanceFactory) FromProto(proto.Message) (consumer.Instance, error) {
-	return fakeInstance{}, f.err
-}
-
-type fakeConsumer struct {
-	consumer.Consumer
-	key         []byte
-	err         error
-	errFactory  error
-	errInstance error
-}
-
-func (c fakeConsumer) GetTransactionFactory() consumer.TransactionFactory {
-	return fakeTxFactory{err: c.errFactory}
-}
-
-func (c fakeConsumer) GetInstanceFactory() consumer.InstanceFactory {
-	return fakeInstanceFactory{err: c.errFactory}
-}
-
-func (c fakeConsumer) Consume(consumer.Context) (consumer.Instance, error) {
-	return fakeInstance{key: c.key, err: c.errInstance}, c.err
 }

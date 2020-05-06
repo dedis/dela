@@ -2,6 +2,7 @@ package gossip
 
 import (
 	"context"
+	"sync"
 
 	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric/encoding"
@@ -14,6 +15,7 @@ import (
 //
 // - implements gossip.Gossiper
 type Flat struct {
+	sync.RWMutex
 	mino    mino.Mino
 	players mino.Players
 	decoder Decoder
@@ -45,15 +47,19 @@ func (flat *Flat) Start(players mino.Players) error {
 		return xerrors.Errorf("couldn't create the rpc: %v", err)
 	}
 
+	flat.Lock()
 	flat.rpc = rpc
 	flat.players = players
+	flat.Unlock()
 
 	return nil
 }
 
 // Stop implements gossip.Gossiper. It stops the gossiper.
 func (flat *Flat) Stop() error {
+	flat.Lock()
 	flat.rpc = nil
+	flat.Unlock()
 
 	return nil
 }
@@ -61,6 +67,9 @@ func (flat *Flat) Stop() error {
 // Add implements gossip.Gossiper. It adds the rumor to the pool of rumors. It
 // will be spread to the players.
 func (flat *Flat) Add(rumor Rumor) error {
+	flat.RLock()
+	defer flat.RUnlock()
+
 	if flat.rpc == nil {
 		return xerrors.New("gossiper not started")
 	}

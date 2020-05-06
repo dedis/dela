@@ -16,6 +16,7 @@ import (
 	"github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/golang/protobuf/ptypes/wrappers"
+	"go.dedis.ch/fabric/consensus/viewchange"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
@@ -29,16 +30,28 @@ type Call struct {
 
 // Get returns the nth call ith parameter.
 func (c *Call) Get(n, i int) interface{} {
+	if c == nil {
+		return nil
+	}
+
 	return c.calls[n][i]
 }
 
 // Len returns the number of calls.
 func (c *Call) Len() int {
+	if c == nil {
+		return 0
+	}
+
 	return len(c.calls)
 }
 
 // Add adds a call to the list.
 func (c *Call) Add(args ...interface{}) {
+	if c == nil {
+		return
+	}
+
 	c.calls = append(c.calls, args)
 }
 
@@ -131,9 +144,12 @@ func (i *PublicKeyIterator) GetNext() crypto.PublicKey {
 // CollectiveAuthority is a fake implementation of the cosi.CollectiveAuthority
 // interface.
 type CollectiveAuthority struct {
+	encoding.Packable
 	crypto.CollectiveAuthority
 	addrs   []mino.Address
 	signers []crypto.AggregateSigner
+
+	Call *Call
 }
 
 // GenSigner is a function to generate a signer.
@@ -207,6 +223,7 @@ func (ca CollectiveAuthority) GetPublicKey(addr mino.Address) (crypto.PublicKey,
 func (ca CollectiveAuthority) Take(updaters ...mino.FilterUpdater) mino.Players {
 	filter := mino.ApplyFilters(updaters)
 	newCA := CollectiveAuthority{
+		Call:    ca.Call,
 		addrs:   make([]mino.Address, len(filter.Indices)),
 		signers: make([]crypto.AggregateSigner, len(filter.Indices)),
 	}
@@ -215,6 +232,46 @@ func (ca CollectiveAuthority) Take(updaters ...mino.FilterUpdater) mino.Players 
 		newCA.signers[i] = ca.signers[k]
 	}
 	return newCA
+}
+
+type signerWrapper struct {
+	crypto.AggregateSigner
+	pubkey crypto.PublicKey
+}
+
+func (s signerWrapper) GetPublicKey() crypto.PublicKey {
+	return s.pubkey
+}
+
+// Apply implements viewchange.EvolvableAuthority.
+func (ca CollectiveAuthority) Apply(cs viewchange.ChangeSet) viewchange.EvolvableAuthority {
+	if ca.Call != nil {
+		ca.Call.Add("apply", cs)
+	}
+
+	newAuthority := CollectiveAuthority{
+		Call:    ca.Call,
+		addrs:   make([]mino.Address, len(ca.addrs)),
+		signers: make([]crypto.AggregateSigner, len(ca.signers)),
+	}
+	for i := range ca.addrs {
+		newAuthority.addrs[i] = ca.addrs[i]
+		newAuthority.signers[i] = ca.signers[i]
+	}
+
+	for _, player := range cs.Add {
+		newAuthority.addrs = append(newAuthority.addrs, player.Address)
+		newAuthority.signers = append(newAuthority.signers, signerWrapper{
+			pubkey: player.PublicKey,
+		})
+	}
+
+	for _, i := range cs.Remove {
+		newAuthority.addrs = append(newAuthority.addrs[:i], newAuthority.addrs[i+1:]...)
+		newAuthority.signers = append(newAuthority.signers[:i], newAuthority.signers[i+1:]...)
+	}
+
+	return newAuthority
 }
 
 // Len implements mino.Players.
@@ -344,6 +401,11 @@ func (pk PublicKey) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 	return &empty.Empty{}, pk.err
 }
 
+// String implements fmt.Stringer.
+func (pk PublicKey) String() string {
+	return "fake.PublicKey"
+}
+
 // Signer is a fake implementation of the crypto.AggregateSigner interface.
 type Signer struct {
 	crypto.AggregateSigner
@@ -454,6 +516,24 @@ func (f VerifierFactory) FromAuthority(ca crypto.CollectiveAuthority) (crypto.Ve
 	return f.verifier, f.err
 }
 
+// Counter is a helper to delay errors or actions. It can be nil without panics.
+type Counter struct {
+	Value int
+}
+
+// Done returns true when the counter reached zero.
+func (c *Counter) Done() bool {
+	return c == nil || c.Value <= 0
+}
+
+// Decrease decrements the counter.
+func (c *Counter) Decrease() {
+	if c == nil {
+		return
+	}
+	c.Value--
+}
+
 // BadPackEncoder is a fake implementation of encoding.ProtoMarshaler.
 type BadPackEncoder struct {
 	encoding.ProtoEncoder
@@ -467,10 +547,15 @@ func (e BadPackEncoder) Pack(encoding.Packable) (proto.Message, error) {
 // BadPackAnyEncoder is a fake implementation of encoding.ProtoMarshaler.
 type BadPackAnyEncoder struct {
 	encoding.ProtoEncoder
+	Counter *Counter
 }
 
 // PackAny implements encoding.ProtoMarshaler.
 func (e BadPackAnyEncoder) PackAny(encoding.Packable) (*any.Any, error) {
+	defer e.Counter.Decrease()
+	if !e.Counter.Done() {
+		return &any.Any{}, nil
+	}
 	return nil, xerrors.New("fake error")
 }
 
@@ -589,6 +674,7 @@ type Hash struct {
 	hash.Hash
 	delay int
 	err   error
+	Call  *Call
 }
 
 // NewBadHash returns a fake hash that returns an error when appropriate.
@@ -602,7 +688,11 @@ func NewBadHashWithDelay(delay int) *Hash {
 	return &Hash{err: xerrors.New("fake error"), delay: delay}
 }
 
-func (h *Hash) Write([]byte) (int, error) {
+func (h *Hash) Write(in []byte) (int, error) {
+	if h.Call != nil {
+		h.Call.Add(in)
+	}
+
 	if h.delay > 0 {
 		h.delay--
 		return 0, nil

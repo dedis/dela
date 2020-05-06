@@ -54,7 +54,7 @@ func TestQSC_Basic(t *testing.T) {
 		actor := actors[j]
 		go func() {
 			for i := 0; i < k; i++ {
-				err := actor.Propose(newFakeProposal(), nil)
+				err := actor.Propose(newFakeProposal())
 				require.NoError(t, err)
 			}
 		}()

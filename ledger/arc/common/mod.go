@@ -28,7 +28,7 @@ func NewAccessControlFactory() *AccessControlFactory {
 		factories: make(map[reflect.Type]arc.AccessControlFactory),
 	}
 
-	factory.Register((*darc.AccessControlProto)(nil), darc.Factory{})
+	factory.Register((*darc.AccessProto)(nil), darc.Factory{})
 
 	return factory
 }
