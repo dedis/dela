@@ -49,6 +49,12 @@ type ProtoMarshaler interface {
 	UnmarshalDynamicAny(any *any.Any) (proto.Message, error)
 }
 
+// Fingerprinter is an interface to perform fingerprinting on object.
+type Fingerprinter interface {
+	// Fingerprint writes itself to the writer in a deterministic way.
+	Fingerprint(io.Writer, ProtoMarshaler) error
+}
+
 // ProtoEncoder is a default implementation of protobug encoding/decoding.
 type ProtoEncoder struct {
 	marshaler *jsonpb.Marshaler

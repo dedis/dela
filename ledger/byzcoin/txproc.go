@@ -5,11 +5,8 @@ import (
 
 	proto "github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/ledger/consumer"
-	"go.dedis.ch/fabric/ledger/consumer/smartcontract"
 	"go.dedis.ch/fabric/ledger/inventory"
-	"go.dedis.ch/fabric/ledger/inventory/mem"
+	"go.dedis.ch/fabric/ledger/transactions"
 	"golang.org/x/xerrors"
 )
 
@@ -18,16 +15,14 @@ import (
 //
 // - implements blockchain.PayloadProcessor
 type txProcessor struct {
-	encoder   encoding.ProtoMarshaler
 	inventory inventory.Inventory
-	consumer  consumer.Consumer
+	txFactory transactions.TransactionFactory
 }
 
-func newTxProcessor(c consumer.Consumer) *txProcessor {
+func newTxProcessor(f transactions.TransactionFactory, i inventory.Inventory) *txProcessor {
 	return &txProcessor{
-		encoder:   encoding.NewProtoEncoder(),
-		inventory: mem.NewInventory(),
-		consumer:  c,
+		inventory: i,
+		txFactory: f,
 	}
 }
 
@@ -35,61 +30,76 @@ func newTxProcessor(c consumer.Consumer) *txProcessor {
 // is a success. In that case, the payload has been staged in the inventory and
 // is waiting for a commit order.
 func (proc *txProcessor) Validate(index uint64, data proto.Message) error {
-	payload, ok := data.(*BlockPayload)
-	if !ok {
-		return xerrors.Errorf("message type '%T' but expected '%T'", data, payload)
-	}
+	switch payload := data.(type) {
+	case *GenesisPayload:
+		page, err := proc.setup(payload)
+		if err != nil {
+			return xerrors.Errorf("couldn't stage genesis: %v", err)
+		}
 
-	page, err := proc.process(payload)
-	if err != nil {
-		return xerrors.Errorf("couldn't stage the transactions: %v", err)
-	}
+		if page.GetIndex() != 0 {
+			return xerrors.Errorf("index 0 expected but got %d", page.GetIndex())
+		}
+	case *BlockPayload:
+		fabric.Logger.Trace().
+			Hex("fingerprint", payload.GetFingerprint()).
+			Msgf("validating block payload")
 
-	if page.GetIndex() != index {
-		return xerrors.Errorf("invalid index %d != %d", page.GetIndex(), index)
-	}
+		page, err := proc.process(payload)
+		if err != nil {
+			return xerrors.Errorf("couldn't stage the transactions: %v", err)
+		}
 
-	if !bytes.Equal(page.GetFootprint(), payload.GetFootprint()) {
-		return xerrors.Errorf("mismatch payload footprint '%#x' != '%#x'",
-			page.GetFootprint(), payload.GetFootprint())
+		if page.GetIndex() != index {
+			return xerrors.Errorf("invalid index %d != %d", page.GetIndex(), index)
+		}
+
+		if !bytes.Equal(page.GetFingerprint(), payload.GetFingerprint()) {
+			return xerrors.Errorf("mismatch payload fingerprint '%#x' != '%#x'",
+				page.GetFingerprint(), payload.GetFingerprint())
+		}
+	default:
+		return xerrors.Errorf("invalid message type '%T'", data)
 	}
 
 	return nil
 }
 
+func (proc *txProcessor) setup(payload *GenesisPayload) (inventory.Page, error) {
+	page, err := proc.inventory.Stage(func(page inventory.WritablePage) error {
+		err := page.Write(rosterValueKey, payload.Roster)
+		if err != nil {
+			return xerrors.Errorf("couldn't write roster: %v", err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't stage page: %v", err)
+	}
+
+	return page, nil
+}
+
 func (proc *txProcessor) process(payload *BlockPayload) (inventory.Page, error) {
-	page := proc.inventory.GetStagingPage(payload.GetFootprint())
+	page := proc.inventory.GetStagingPage(payload.GetFingerprint())
 	if page != nil {
 		// Page has already been processed previously.
 		return page, nil
 	}
 
 	page, err := proc.inventory.Stage(func(page inventory.WritablePage) error {
-		factory := proc.consumer.GetTransactionFactory()
-
 		for _, txpb := range payload.GetTransactions() {
-			tx, err := factory.FromProto(txpb)
+			tx, err := proc.txFactory.FromProto(txpb)
 			if err != nil {
 				return xerrors.Errorf("couldn't decode tx: %v", err)
 			}
 
 			fabric.Logger.Trace().Msgf("processing %v", tx)
 
-			ctx := smartcontract.NewContext(tx, page)
-
-			instance, err := proc.consumer.Consume(ctx)
+			err = tx.Consume(page)
 			if err != nil {
 				return xerrors.Errorf("couldn't consume tx: %v", err)
-			}
-
-			instancepb, err := proc.encoder.Pack(instance)
-			if err != nil {
-				return xerrors.Errorf("couldn't pack instance: %v", err)
-			}
-
-			err = page.Write(instance.GetKey(), instancepb)
-			if err != nil {
-				return xerrors.Errorf("couldn't write instances: %v", err)
 			}
 		}
 
@@ -99,7 +109,7 @@ func (proc *txProcessor) process(payload *BlockPayload) (inventory.Page, error) 
 		return nil, xerrors.Errorf("couldn't stage new page: %v", err)
 	}
 
-	fabric.Logger.Trace().Msgf("staging new inventory %#x", page.GetFootprint())
+	fabric.Logger.Trace().Msgf("staging new inventory %#x", page.GetFingerprint())
 	return page, err
 }
 
@@ -107,15 +117,20 @@ func (proc *txProcessor) process(payload *BlockPayload) (inventory.Page, error) 
 // payload as it should have previously been processed. It returns nil if the
 // commit is a success, otherwise an error.
 func (proc *txProcessor) Commit(data proto.Message) error {
-	payload, ok := data.(*BlockPayload)
-	if !ok {
-		return xerrors.Errorf("message type '%T' but expected '%T'", data, payload)
+	var fingerprint []byte
+
+	switch payload := data.(type) {
+	case *GenesisPayload:
+		fingerprint = payload.GetFingerprint()
+	case *BlockPayload:
+		fingerprint = payload.GetFingerprint()
+	default:
+		return xerrors.Errorf("invalid message type '%T'", data)
 	}
 
-	err := proc.inventory.Commit(payload.GetFootprint())
+	err := proc.inventory.Commit(fingerprint)
 	if err != nil {
-		return xerrors.Errorf("couldn't commit to page '%#x': %v",
-			payload.GetFootprint(), err)
+		return xerrors.Errorf("couldn't commit to page '%#x': %v", fingerprint, err)
 	}
 
 	return nil

@@ -48,9 +48,8 @@ type Routing interface {
 //
 // - implements Routing
 type TreeRouting struct {
-	Root         *treeNode
+	root         *treeNode
 	routingNodes map[string]*treeNode
-	mainOrchID   string
 }
 
 // NewTreeRouting ...
@@ -58,17 +57,29 @@ func NewTreeRouting(height int) *TreeRouting {
 	return &TreeRouting{}
 }
 
+// TreeRoutingOpts is the implementation of treeTreeRoutingOpts
+var TreeRoutingOpts = treeRoutingOpts{
+	// Addr is the address of the node, the value should be of type mino.Address
+	Addr: "addr",
+	// TreeHeight is the maximum tree height
+	TreeHeight: "treeHeight",
+}
+
+type treeRoutingOpts struct {
+	Addr       string
+	TreeHeight string
+}
+
 // TreeRoutingFactory defines the factory for tree routing
 type TreeRoutingFactory struct {
 	height      int
 	rootAddr    mino.Address
 	addrFactory mino.AddressFactory
-	mainOrchID  string
 }
 
-// NewTreeRoutingFactory returns a new treeRoutingFactory. The given rootAddr
-// must be a uniq address that should be in the list of participants. MainOrchID
-// is the uniq identifier of the orchestrator.
+// NewTreeRoutingFactory returns a new treeRoutingFactory. Warning: the given
+// rootAddr must be a uniq address that shouldn't be in the list of
+// participants.
 func NewTreeRoutingFactory(height int, rootAddr mino.Address,
 	addrFactory mino.AddressFactory) *TreeRoutingFactory {
 
@@ -86,9 +97,6 @@ func (t TreeRoutingFactory) FromIterator(iterator mino.AddressIterator) (Routing
 	addrsBuf := make(addrsBuf, 0)
 	for iterator.HasNext() {
 		addr := iterator.GetNext()
-		if addr.String() == t.rootAddr.String() {
-			continue
-		}
 
 		addrBuf, err := addr.MarshalText()
 		if err != nil {
@@ -98,10 +106,38 @@ func (t TreeRoutingFactory) FromIterator(iterator mino.AddressIterator) (Routing
 		addrsBuf = append(addrsBuf, addrBuf)
 	}
 
-	// if len(addrsBuf) == 0 {
-	// 	return nil, xerrors.Errorf("there should be at least one address in " +
-	// 		"the iterator")
-	// }
+	if len(addrsBuf) == 0 {
+		return nil, xerrors.Errorf("there should be at least one address in " +
+			"the iterator")
+	}
+
+	routing, err := t.fromAddrBuf(addrsBuf)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to build from addrsBuf: %v", err)
+	}
+
+	return routing, nil
+}
+
+// FromAny creates the network tree in a deterministic manner based on
+// the proto message encoded as any
+func (t TreeRoutingFactory) FromAny(m *any.Any) (Routing, error) {
+
+	msg := &TreeRoutingProto{}
+	err := ptypes.UnmarshalAny(m, msg)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to unmarshal routing message: %v", err)
+	}
+
+	routing, err := t.fromAddrBuf(msg.Addrs)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to build from addrsBuf: %v", err)
+	}
+
+	return routing, nil
+}
+
+func (t TreeRoutingFactory) fromAddrBuf(addrsBuf addrsBuf) (Routing, error) {
 
 	sort.Stable(&addrsBuf)
 
@@ -141,7 +177,7 @@ func (t TreeRoutingFactory) FromIterator(iterator mino.AddressIterator) (Routing
 	// H = log_D N
 	d := int(math.Ceil(math.Pow(float64(len(addrs)), 1.0/float64(t.height))))
 
-	tree := buildTree(t.rootAddr, addrs, d, 0)
+	tree := buildTree(t.rootAddr, addrs, d, -1)
 
 	routingNodes := make(map[string]*treeNode)
 	routingNodes[t.rootAddr.String()] = tree
@@ -151,88 +187,7 @@ func (t TreeRoutingFactory) FromIterator(iterator mino.AddressIterator) (Routing
 
 	return &TreeRouting{
 		routingNodes: routingNodes,
-		Root:         tree,
-	}, nil
-}
-
-// FromAny creates the network tree in a deterministic manner based on
-// the proto message encoded as any
-func (t TreeRoutingFactory) FromAny(m *any.Any) (Routing, error) {
-
-	msg := &TreeRoutingProto{}
-	err := ptypes.UnmarshalAny(m, msg)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to unmarshal routing message: %v", err)
-	}
-
-	// if len(msg.Addrs) == 0 {
-	// 	return nil, xerrors.Errorf("there should be at least one address")
-	// }
-
-	addrs := make([]mino.Address, len(msg.Addrs))
-	for i, addrBuf := range msg.Addrs {
-		addr := t.addrFactory.FromText(addrBuf)
-		addrs[i] = addr
-	}
-
-	addrsBuf := make(addrsBuf, len(addrs))
-	for i, addr := range addrs {
-		addrBuf, err := addr.MarshalText()
-		if err != nil {
-			return nil, xerrors.Errorf("failed to marshal addr '%s': %v", addr, err)
-		}
-
-		addrsBuf[i] = addrBuf
-	}
-
-	sort.Stable(&addrsBuf)
-
-	// We will use the hash of the addresses to set the random seed.
-	hash := sha256.New()
-	for _, addr := range addrsBuf {
-		_, err := hash.Write(addr)
-		if err != nil {
-			fabric.Logger.Fatal().Msgf("failed to write hash: %v", err)
-		}
-	}
-
-	seed := binary.LittleEndian.Uint64(hash.Sum(nil))
-
-	// We shuffle the list of addresses, which will then be used to create the
-	// network tree.
-	rand.Seed(int64(seed))
-	rand.Shuffle(len(addrsBuf), func(i, j int) {
-		addrsBuf[i], addrsBuf[j] = addrsBuf[j], addrsBuf[i]
-	})
-
-	for i, addrBuf := range addrsBuf {
-		addrs[i] = t.addrFactory.FromText(addrBuf)
-	}
-
-	// maximum number of direct connections each node can have. It is computed
-	// from the treeHeight and the total number of nodes. There are the
-	// following relations:
-	//
-	// N: total number of nodes
-	// D: number of direct connections wanted for each node
-	// H: height of the network tree
-	//
-	// N = D^H
-	// D = sqrt[H](N)
-	// H = log_D N
-	d := int(math.Ceil(math.Pow(float64(len(addrs)), 1.0/float64(t.height))))
-
-	tree := buildTree(t.rootAddr, addrs, d, 0)
-
-	routingNodes := make(map[string]*treeNode)
-	routingNodes[t.rootAddr.String()] = tree
-	tree.ForEach(func(n *treeNode) {
-		routingNodes[n.Addr.String()] = n
-	})
-
-	return &TreeRouting{
-		routingNodes: routingNodes,
-		Root:         tree,
+		root:         tree,
 	}, nil
 }
 
@@ -254,23 +209,13 @@ func (t TreeRoutingFactory) FromAny(m *any.Any) (Routing, error) {
 //
 // - implements Routing
 func (t TreeRouting) GetRoute(from, to mino.Address) (mino.Address, error) {
-
-	// This is the case the main orchestrator want to send a message. The main
-	// orchestrator is not a node by itself in the tree, but it has a connection
-	// to the root. This is why each time the main orchestrator wants to send a
-	// message we know we must relay it to the root. The main orchestrator
-	// represents the entry point of the RPC stream that the client created.
-	if from.String() == "orchestrator_addr" {
-		return t.Root.Addr, nil
-	}
-
 	fromNode, ok := t.routingNodes[from.String()]
 	if !ok {
 		return nil, xerrors.Errorf("node with address '%s' not found",
 			from.String())
 	}
 
-	if fromNode.Addr != nil && fromNode.Addr.String() == to.String() {
+	if fromNode.Addr != nil && fromNode.Addr.Equal(to) {
 		return to, nil
 	}
 
@@ -314,8 +259,8 @@ func (t TreeRouting) Pack(encoder encoding.ProtoMarshaler) (proto.Message, error
 	addrs := make([][]byte, 0, len(t.routingNodes)-1)
 
 	for _, node := range t.routingNodes {
-		if node == t.Root {
-			// the root is specified in the factory
+		if node.Index == -1 {
+			// We must not include the root in the list of addresses
 			continue
 		}
 		addrBuf, err := node.Addr.MarshalText()
@@ -336,7 +281,7 @@ func (t TreeRouting) Pack(encoder encoding.ProtoMarshaler) (proto.Message, error
 // Display displays an extensive string representation of the tree
 func (t TreeRouting) Display(out io.Writer) {
 	fmt.Fprintf(out, "TreeRouting, Root: ")
-	t.Root.Display(out)
+	t.root.Display(out)
 }
 
 // buildTree builds the newtwork tree based on the list of addresses. The first

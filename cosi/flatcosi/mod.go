@@ -44,19 +44,9 @@ func (cosi *Flat) GetSignatureFactory() crypto.SignatureFactory {
 	return cosi.signer.GetSignatureFactory()
 }
 
-// GetVerifier returns a verifier that can be used to verify signatures
-// from this collective authority.
-func (cosi *Flat) GetVerifier(ca crypto.CollectiveAuthority) (crypto.Verifier, error) {
-	if ca == nil {
-		return nil, xerrors.New("collective authority is nil")
-	}
-
-	verifier, err := cosi.signer.GetVerifierFactory().FromAuthority(ca)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't create verifier: %v", err)
-	}
-
-	return verifier, nil
+// GetVerifierFactory returns the verifier factory.
+func (cosi *Flat) GetVerifierFactory() crypto.VerifierFactory {
+	return cosi.signer.GetVerifierFactory()
 }
 
 // Listen creates an actor that starts an RPC called cosi and respond to signing

@@ -62,11 +62,6 @@ func (v *blockValidator) Validate(addr mino.Address,
 			genesis.hash, block.GenesisID)
 	}
 
-	err = v.viewchange.Verify(block)
-	if err != nil {
-		return nil, xerrors.Errorf("viewchange refused the block: %v", err)
-	}
-
 	err = v.validator.Validate(block.Index, block.Payload)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't validate the payload: %v", err)
@@ -108,11 +103,12 @@ func (v *blockValidator) Commit(id []byte) error {
 		return xerrors.Errorf("transaction aborted: %v", err)
 	}
 
+	fabric.Logger.Trace().Msgf("commit to block %v", block.hash)
+
 	// Notify every observer that we committed to a new block. This is blocking
 	// to allow atomic operations.
 	v.watcher.Notify(block)
 
-	fabric.Logger.Trace().Msgf("commit to block %v", block.hash)
 	v.queue.Clear()
 
 	return nil

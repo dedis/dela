@@ -7,17 +7,13 @@ package skipchain
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/rs/zerolog"
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/blockchain"
-	"go.dedis.ch/fabric/blockchain/viewchange"
 	"go.dedis.ch/fabric/consensus"
-	"go.dedis.ch/fabric/consensus/cosipbft"
-	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
@@ -38,41 +34,41 @@ const (
 // - implements blockchain.Blockchain
 // - implements fmt.Stringer
 type Skipchain struct {
-	logger     zerolog.Logger
-	mino       mino.Mino
-	cosi       cosi.CollectiveSigning
-	db         Database
-	consensus  consensus.Consensus
-	watcher    blockchain.Observable
-	viewchange viewchange.ViewChange
-	encoder    encoding.ProtoMarshaler
+	logger       zerolog.Logger
+	mino         mino.Mino
+	db           Database
+	consensus    consensus.Consensus
+	watcher      blockchain.Observable
+	encoder      encoding.ProtoMarshaler
+	blockFactory blockFactory
 }
 
 // NewSkipchain returns a new instance of Skipchain.
-func NewSkipchain(m mino.Mino, cosi cosi.CollectiveSigning) *Skipchain {
-	consensus := cosipbft.NewCoSiPBFT(m, cosi)
+func NewSkipchain(m mino.Mino, consensus consensus.Consensus) *Skipchain {
 	db := NewInMemoryDatabase()
+	encoder := encoding.NewProtoEncoder()
 
 	return &Skipchain{
 		logger:    fabric.Logger,
 		mino:      m,
-		cosi:      cosi,
 		db:        db,
 		consensus: consensus,
 		watcher:   blockchain.NewWatcher(),
-		encoder:   encoding.NewProtoEncoder(),
+		encoder:   encoder,
+		blockFactory: blockFactory{
+			encoder:     encoder,
+			consensus:   consensus,
+			hashFactory: crypto.NewSha256Factory(),
+		},
 	}
 }
 
 // Listen implements blockchain.Blockchain. It registers the RPC and starts the
 // consensus module.
 func (s *Skipchain) Listen(proc blockchain.PayloadProcessor) (blockchain.Actor, error) {
-	s.viewchange = viewchange.NewConstant(s.mino.GetAddress(), s)
-
 	actor := skipchainActor{
-		Skipchain:   s,
-		hashFactory: sha256Factory{},
-		rand:        crypto.CryptographicRandomGenerator{},
+		Skipchain: s,
+		rand:      crypto.CryptographicRandomGenerator{},
 	}
 
 	var err error
@@ -92,11 +88,7 @@ func (s *Skipchain) Listen(proc blockchain.PayloadProcessor) (blockchain.Actor, 
 // GetBlockFactory implements blockchain.Blockchain. It returns the block
 // factory for skipchains.
 func (s *Skipchain) GetBlockFactory() blockchain.BlockFactory {
-	return blockFactory{
-		Skipchain:   s,
-		encoder:     s.encoder,
-		hashFactory: sha256Factory{},
-	}
+	return s.blockFactory
 }
 
 // GetBlock implements blockchain.Blockchain. It returns the latest block.
@@ -151,31 +143,19 @@ func (s *Skipchain) Watch(ctx context.Context) <-chan blockchain.Block {
 	return ch
 }
 
-// String implements fmt.Stringer. It returns a simple representation of the
-// skipchain instance to easily identify it.
-func (s *Skipchain) String() string {
-	return fmt.Sprintf("skipchain@%v", s.mino.GetAddress())
-}
-
 // skipchainActor provides the primitives of a blockchain actor.
 //
 // - implements blockchain.Actor
 type skipchainActor struct {
 	*Skipchain
-	hashFactory crypto.HashFactory
-	rand        crypto.RandGenerator
-	consensus   consensus.Actor
-	rpc         mino.RPC
+	rand      crypto.RandGenerator
+	consensus consensus.Actor
+	rpc       mino.RPC
 }
 
 // InitChain implements blockchain.Actor. It creates a genesis block if none
 // exists and propagate it to the conodes.
 func (a skipchainActor) InitChain(data proto.Message, players mino.Players) error {
-	ca, ok := players.(crypto.CollectiveAuthority)
-	if !ok {
-		return xerrors.New("players must implement cosi.CollectiveAuthority")
-	}
-
 	_, err := a.db.Read(0)
 	if err == nil {
 		// Genesis block already exists.
@@ -186,15 +166,14 @@ func (a skipchainActor) InitChain(data proto.Message, players mino.Players) erro
 		return xerrors.Errorf("couldn't read the genesis block: %v", err)
 	}
 
-	conodes := newConodes(ca)
-	iter := conodes.AddressIterator()
+	iter := players.AddressIterator()
 
 	if iter.HasNext() && iter.GetNext().Equal(a.mino.GetAddress()) {
 		// Only the first player tries to create the genesis block and then
 		// propagates it to the other players.
 		// This is done only once for a new chain thus we can assume that the
 		// first one will be online at that moment.
-		err := a.newChain(data, conodes)
+		err := a.newChain(data, players)
 		if err != nil {
 			return xerrors.Errorf("couldn't init genesis block: %w", err)
 		}
@@ -203,7 +182,7 @@ func (a skipchainActor) InitChain(data proto.Message, players mino.Players) erro
 	return nil
 }
 
-func (a skipchainActor) newChain(data proto.Message, conodes Conodes) error {
+func (a skipchainActor) newChain(data proto.Message, conodes mino.Players) error {
 	randomBackLink := Digest{}
 	n, err := a.rand.Read(randomBackLink[:])
 	if err != nil {
@@ -213,16 +192,14 @@ func (a skipchainActor) newChain(data proto.Message, conodes Conodes) error {
 		return xerrors.Errorf("mismatch rand length %d != %d", n, len(randomBackLink))
 	}
 
-	genesis, err := newSkipBlock(
-		a.encoder,
-		a.hashFactory,
-		nil,
-		0,
-		conodes,
-		Digest{},
-		randomBackLink,
-		data,
-	)
+	genesis := SkipBlock{
+		Index:     0,
+		GenesisID: Digest{},
+		BackLink:  randomBackLink,
+		Payload:   data,
+	}
+
+	err = a.blockFactory.prepareBlock(&genesis)
 	if err != nil {
 		return xerrors.Errorf("couldn't create block: %v", err)
 	}
@@ -251,43 +228,17 @@ func (a skipchainActor) newChain(data proto.Message, conodes Conodes) error {
 // Store implements blockchain.Actor. It will append a new block to chain filled
 // with the data.
 func (a skipchainActor) Store(data proto.Message, players mino.Players) error {
-	factory := a.GetBlockFactory().(blockFactory)
-
-	ca, ok := players.(crypto.CollectiveAuthority)
-	if !ok {
-		return xerrors.Errorf("players must implement cosi.CollectiveAuthority")
-	}
-
 	previous, err := a.db.ReadLast()
 	if err != nil {
 		return xerrors.Errorf("couldn't read the latest block: %v", err)
 	}
 
-	block, err := factory.fromPrevious(previous, data)
+	block, err := a.blockFactory.fromPrevious(previous, data)
 	if err != nil {
 		return xerrors.Errorf("couldn't create next block: %v", err)
 	}
 
-	block.Conodes = newConodes(ca)
-
-	// Wait for the view change module green signal to go through the proposal.
-	// If the leader has failed and this node has to take over, we use the
-	// inherant property of CoSiPBFT to prove that 2f participants want the view
-	// change.
-	rotation, err := a.viewchange.Wait(block)
-	if err == nil {
-		// If the node is not the current leader and a rotation is necessary, it
-		// will be done.
-		block.Conodes = rotation.(Conodes)
-	} else {
-		a.logger.Debug().Msgf("%v refusing view change: %v", a, err)
-		// Not authorized to propose a block as the leader is moving
-		// forward so we drop the proposal. The upper layer is responsible to
-		// try again until the leader includes the data.
-		return nil
-	}
-
-	err = a.consensus.Propose(block, players)
+	err = a.consensus.Propose(block)
 	if err != nil {
 		return xerrors.Errorf("couldn't propose the block: %v", err)
 	}

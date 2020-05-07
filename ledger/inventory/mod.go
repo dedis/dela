@@ -8,11 +8,12 @@ type Page interface {
 	// inventory.
 	GetIndex() uint64
 
-	// GetFootprint returns the footprint of the page. It can be used to verify
-	// the integrity.
-	GetFootprint() []byte
+	// GetFingerprint returns the fingerprint of the page. It can be used to
+	// verify the integrity.
+	GetFingerprint() []byte
 
-	// Read returns the value stored at the given key.
+	// Read returns the value stored at the given key. If the key does not
+	// exist, it should return a nil value without error.
 	Read(key []byte) (proto.Message, error)
 }
 
@@ -40,5 +41,5 @@ type Inventory interface {
 	Stage(func(WritablePage) error) (Page, error)
 
 	// Commit commits the new version with the identifier.
-	Commit(footprint []byte) error
+	Commit(fingerprint []byte) error
 }

@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/consensus"
+	"go.dedis.ch/fabric/consensus/viewchange"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/internal/testing/fake"
@@ -12,37 +12,48 @@ import (
 )
 
 func TestQueue_New(t *testing.T) {
-	prop := fakeItem{from: []byte{0xaa}, hash: []byte{0xbb}}
+	prop := forwardLink{from: []byte{0xaa}, to: []byte{0xbb}}
 
-	queue := &queue{}
-	err := queue.New(prop)
+	authority := fake.NewAuthority(3, fake.NewSigner)
+
+	queue := &queue{cosi: &fakeCosi{}}
+	err := queue.New(prop, authority)
 	require.NoError(t, err)
 	require.Len(t, queue.items, 1)
 	require.Equal(t, prop.from, queue.items[0].from)
-	require.Equal(t, prop.hash, queue.items[0].to)
+	require.Equal(t, prop.to, queue.items[0].to)
 	require.NotNil(t, queue.items[0].verifier)
 
-	err = queue.New(fakeItem{from: []byte{0xbb}})
+	err = queue.New(forwardLink{from: []byte{0xbb}}, authority)
 	require.NoError(t, err)
 	require.Len(t, queue.items, 2)
-	require.Equal(t, prop.hash, queue.items[1].from)
+	require.Equal(t, prop.to, queue.items[1].from)
 
-	err = queue.New(prop)
+	err = queue.New(prop, authority)
 	require.EqualError(t, err, "proposal 'bb' already exists")
 
 	queue.locked = true
-	err = queue.New(prop)
+	err = queue.New(prop, authority)
 	require.EqualError(t, err, "queue is locked")
+
+	queue.locked = false
+	queue.cosi = &fakeCosi{verifierFactory: fake.NewBadVerifierFactory()}
+	prop.to = []byte{0xcc}
+	err = queue.New(prop, authority)
+	require.EqualError(t, err, "couldn't make verifier: fake error")
 }
 
 func TestQueue_LockProposal(t *testing.T) {
 	verifier := &fakeVerifier{}
 	queue := &queue{
+		encoder:     encoding.NewProtoEncoder(),
 		hashFactory: crypto.NewSha256Factory(),
 		items: []item{
 			{
-				from:     []byte{0xaa},
-				to:       []byte{0xbb},
+				forwardLink: forwardLink{
+					from: []byte{0xaa},
+					to:   []byte{0xbb},
+				},
 				verifier: verifier,
 			},
 		},
@@ -55,7 +66,7 @@ func TestQueue_LockProposal(t *testing.T) {
 	require.Len(t, verifier.calls, 1)
 
 	forwardLink := forwardLink{from: []byte{0xaa}, to: []byte{0xbb}}
-	hash, err := forwardLink.computeHash(sha256Factory{}.New())
+	hash, err := forwardLink.computeHash(sha256Factory{}.New(), encoding.NewProtoEncoder())
 	require.NoError(t, err)
 	require.Equal(t, hash, verifier.calls[0]["message"])
 
@@ -85,9 +96,12 @@ func TestQueue_Finalize(t *testing.T) {
 		encoder: encoding.NewProtoEncoder(),
 		items: []item{
 			{
-				from:     []byte{0xaa},
-				to:       []byte{0xbb},
-				prepare:  fake.Signature{},
+				forwardLink: forwardLink{
+					from:      []byte{0xaa},
+					to:        []byte{0xbb},
+					prepare:   fake.Signature{},
+					changeset: viewchange.ChangeSet{},
+				},
 				verifier: verifier,
 			},
 		},
@@ -104,18 +118,20 @@ func TestQueue_Finalize(t *testing.T) {
 	_, err = queue.Finalize([]byte{0xaa}, nil)
 	require.EqualError(t, err, "couldn't find proposal 'aa'")
 
-	queue.items = []item{{to: []byte{0xaa}}}
+	queue.items = []item{{forwardLink: forwardLink{to: []byte{0xaa}}}}
 	_, err = queue.Finalize([]byte{0xaa}, nil)
 	require.EqualError(t, err, "no signature for proposal 'aa'")
 
-	queue.items = []item{{to: []byte{0xaa}, prepare: fake.NewBadSignature()}}
+	queue.items[0].forwardLink = forwardLink{to: []byte{0xaa}, prepare: fake.NewBadSignature()}
 	_, err = queue.Finalize([]byte{0xaa}, fake.Signature{})
 	require.EqualError(t, err, "couldn't marshal the signature: fake error")
 
 	queue.items = []item{
 		{
-			to:       []byte{0xaa},
-			prepare:  fake.Signature{},
+			forwardLink: forwardLink{
+				to:      []byte{0xaa},
+				prepare: fake.Signature{},
+			},
 			verifier: &fakeVerifier{err: xerrors.New("oops")},
 		},
 	}
@@ -130,24 +146,6 @@ func TestQueue_Finalize(t *testing.T) {
 
 // -----------------------------------------------------------------------------
 // Utility functions
-
-type fakeItem struct {
-	consensus.Proposal
-	from []byte
-	hash []byte
-}
-
-func (i fakeItem) GetHash() []byte {
-	return i.hash
-}
-
-func (i fakeItem) GetPreviousHash() []byte {
-	return i.from
-}
-
-func (i fakeItem) GetVerifier() crypto.Verifier {
-	return &fakeVerifier{}
-}
 
 type fakeVerifier struct {
 	crypto.Verifier

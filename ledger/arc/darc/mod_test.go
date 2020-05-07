@@ -1,6 +1,7 @@
 package darc
 
 import (
+	"bytes"
 	"testing"
 
 	proto "github.com/golang/protobuf/proto"
@@ -17,7 +18,8 @@ import (
 func TestMessages(t *testing.T) {
 	messages := []proto.Message{
 		&Expression{},
-		&AccessControlProto{},
+		&AccessProto{},
+		&Task{},
 	}
 
 	for _, m := range messages {
@@ -26,7 +28,7 @@ func TestMessages(t *testing.T) {
 }
 
 func TestAccess_Evolve(t *testing.T) {
-	access := newAccessControl()
+	access := NewAccess()
 
 	idents := []arc.Identity{
 		fakeIdentity{buffer: []byte{0xaa}},
@@ -55,7 +57,7 @@ func TestAccess_Match(t *testing.T) {
 		fakeIdentity{buffer: []byte{0xbb}},
 	}
 
-	access, err := newAccessControl().Evolve("fake", idents...)
+	access, err := NewAccess().Evolve("fake", idents...)
 	require.NoError(t, err)
 
 	err = access.Match("fake", idents...)
@@ -66,6 +68,31 @@ func TestAccess_Match(t *testing.T) {
 
 	err = access.Match("unknown", idents...)
 	require.EqualError(t, err, "rule 'unknown' not found")
+
+	err = access.Match("fake", fakeIdentity{buffer: []byte{0xcc}})
+	require.EqualError(t, err,
+		"couldn't match 'fake': couldn't match identity '\xcc'")
+}
+
+func TestAccess_Fingerprint(t *testing.T) {
+	access := Access{
+		rules: map[string]expression{
+			"\x02": {matches: map[string]struct{}{"\x04": {}}},
+		},
+	}
+
+	buffer := new(bytes.Buffer)
+
+	err := access.Fingerprint(buffer, nil)
+	require.NoError(t, err)
+	require.Equal(t, "\x02\x04", buffer.String())
+
+	err = access.Fingerprint(fake.NewBadHash(), nil)
+	require.EqualError(t, err, "couldn't write key: fake error")
+
+	err = access.Fingerprint(fake.NewBadHashWithDelay(1), nil)
+	require.EqualError(t, err,
+		"couldn't fingerprint rule '\x02': couldn't write match: fake error")
 }
 
 func TestAccess_Pack(t *testing.T) {
@@ -74,14 +101,14 @@ func TestAccess_Pack(t *testing.T) {
 		fakeIdentity{buffer: []byte{0xbb}},
 	}
 
-	access, err := newAccessControl().Evolve("fake", idents...)
+	access, err := NewAccess().Evolve("fake", idents...)
 	require.NoError(t, err)
 
 	encoder := encoding.NewProtoEncoder()
 
 	pb, err := access.Pack(encoder)
 	require.NoError(t, err)
-	require.Len(t, pb.(*AccessControlProto).GetRules(), 1)
+	require.Len(t, pb.(*AccessProto).GetRules(), 1)
 
 	_, err = access.Pack(fake.BadPackEncoder{})
 	require.EqualError(t, err, "couldn't pack expression: fake error")
@@ -90,7 +117,7 @@ func TestAccess_Pack(t *testing.T) {
 func TestFactory_FromProto(t *testing.T) {
 	factory := NewFactory()
 
-	pb := &AccessControlProto{
+	pb := &AccessProto{
 		Rules: map[string]*Expression{
 			"fake": {
 				Matches: []string{"aa", "bb"},

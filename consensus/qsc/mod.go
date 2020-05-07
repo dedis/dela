@@ -196,7 +196,7 @@ type actor struct {
 
 // Propose implements consensus.Actor. It sends the proposal to the qsc loop. If
 // the actor has been closed, it will panic.
-func (a actor) Propose(proposal consensus.Proposal, players mino.Players) error {
+func (a actor) Propose(proposal consensus.Proposal) error {
 	a.ch <- proposal
 	return nil
 }

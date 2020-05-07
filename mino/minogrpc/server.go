@@ -400,15 +400,6 @@ func (srv *Server) Serve() error {
 	return nil
 }
 
-func (srv *Server) addNeighbour(servers ...*Server) {
-	for _, server := range servers {
-		srv.neighbours[server.addr.String()] = Peer{
-			Address:     server.listener.Addr().String(),
-			Certificate: server.cert.Leaf,
-		}
-	}
-}
-
 // getConnection creates a gRPC connection from the server to the client.
 func getConnection(addr string, peer Peer, cert tls.Certificate) (*grpc.ClientConn, error) {
 	if addr == "" {

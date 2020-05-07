@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	mino "go.dedis.ch/fabric/mino"
 )
@@ -16,11 +15,8 @@ type Block interface {
 	// GetIndex returns the index since the genesis block.
 	GetIndex() uint64
 
-	// GetHash returns the footprint of the block.
+	// GetHash returns the fingerprint of the block.
 	GetHash() []byte
-
-	// GetPlayers returns the participants involved in the block creation.
-	GetPlayers() mino.Players
 
 	// GetPayload returns the payload of the block.
 	GetPayload() proto.Message
@@ -30,8 +26,6 @@ type Block interface {
 // verified from the genesis block.
 type VerifiableBlock interface {
 	Block
-
-	Verify(crypto.Verifier) error
 }
 
 // BlockFactory provides primitives to create blocks from a untrusted source.

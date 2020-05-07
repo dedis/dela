@@ -8,6 +8,7 @@ import (
 	proto "github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/blockchain"
+	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/internal/testing/fake"
 	"golang.org/x/xerrors"
@@ -25,12 +26,13 @@ func TestBlockValidator_Validate(t *testing.T) {
 			validator: &fakePayloadProc{},
 			watcher:   &fakeWatcher{},
 			Skipchain: &Skipchain{
-				encoder:    encoding.NewProtoEncoder(),
-				viewchange: fakeViewChange{},
-				db:         &fakeDatabase{genesisID: block.GenesisID},
-				cosi:       fakeCosi{},
-				mino:       fake.Mino{},
-				consensus:  fakeConsensus{},
+				encoder: encoding.NewProtoEncoder(),
+				db:      &fakeDatabase{genesisID: block.GenesisID},
+				mino:    fake.Mino{},
+				blockFactory: blockFactory{
+					encoder:     encoding.NewProtoEncoder(),
+					hashFactory: crypto.NewSha256Factory(),
+				},
 			},
 		}
 		prop, err := v.Validate(fake.Address{}, packed)
@@ -52,11 +54,6 @@ func TestBlockValidator_Validate(t *testing.T) {
 			fmt.Sprintf("mismatch genesis hash '%v' != '%v'", Digest{}, block.GenesisID))
 
 		v.Skipchain.db = &fakeDatabase{genesisID: block.GenesisID}
-		v.Skipchain.viewchange = fakeViewChange{err: xerrors.New("oops")}
-		_, err = v.Validate(fake.Address{}, packed)
-		require.EqualError(t, err, "viewchange refused the block: oops")
-
-		v.Skipchain.viewchange = fakeViewChange{}
 		v.validator = &fakePayloadProc{errValidate: xerrors.New("oops")}
 		_, err = v.Validate(fake.Address{}, packed)
 		require.EqualError(t, err, "couldn't validate the payload: oops")
@@ -131,8 +128,7 @@ type fakeDatabase struct {
 }
 
 func (db *fakeDatabase) Read(index int64) (SkipBlock, error) {
-	conodes := Conodes{{addr: fake.Address{}}}
-	return SkipBlock{hash: db.genesisID, Conodes: conodes}, db.err
+	return SkipBlock{hash: db.genesisID}, db.err
 }
 
 func (db *fakeDatabase) Write(SkipBlock) error {

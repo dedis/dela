@@ -14,23 +14,6 @@ type Prepare struct {
 	digest   []byte
 }
 
-func newPrepareRequest(prop consensus.Proposal, f crypto.HashFactory) (Prepare, error) {
-	forwardLink := forwardLink{
-		from: prop.GetPreviousHash(),
-		to:   prop.GetHash(),
-	}
-
-	req := Prepare{proposal: prop}
-
-	var err error
-	req.digest, err = forwardLink.computeHash(f.New())
-	if err != nil {
-		return req, xerrors.Errorf("couldn't compute hash: %v", err)
-	}
-
-	return req, nil
-}
-
 // GetHash returns the hash of the prepare request that will be signed by the
 // collective authority.
 func (p Prepare) GetHash() []byte {
