@@ -1,7 +1,6 @@
 package routing
 
 import (
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -31,7 +30,7 @@ func TestNewTreeRouting(t *testing.T) {
 	treeRouting, ok := routing.(*TreeRouting)
 	require.True(t, ok)
 
-	treeRouting.Display(os.Stdout)
+	// treeRouting.Display(os.Stdout)
 
 	// Here is the deterministic tree that should be built:
 	//
