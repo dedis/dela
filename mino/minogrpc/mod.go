@@ -9,12 +9,16 @@ import (
 
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/fabric/mino/minogrpc/routing"
 	"golang.org/x/xerrors"
 )
 
 //go:generate protoc -I ./ --go_out=plugins=grpc:./ ./overlay.proto
 
-var namespaceMatch = regexp.MustCompile("^[a-zA-Z0-9]+$")
+var (
+	namespaceMatch        = regexp.MustCompile("^[a-zA-Z0-9]+$")
+	defaultAddressFactory = addressFactory{}
+)
 
 // Minogrpc represents a grpc service restricted to a namespace
 type Minogrpc struct {
@@ -52,12 +56,11 @@ func (f addressFactory) FromText(text []byte) mino.Address {
 	return address{id: string(text)}
 }
 
-// NewMinogrpc sets up the grpc and http servers. It does not start the
-// server. Identifier must be an address with a port, something like
-// 127.0.0.1:3333
+// NewMinogrpc sets up the grpc and http servers. Identifier must be an address
+// with a port, something like 127.0.0.1:3333
 //
 // TODO: use a different type of argument for identifier, maybe net/url ?
-func NewMinogrpc(identifier string) (Minogrpc, error) {
+func NewMinogrpc(identifier string, rf routing.Factory) (Minogrpc, error) {
 
 	minoGrpc := Minogrpc{}
 
@@ -69,7 +72,7 @@ func NewMinogrpc(identifier string) (Minogrpc, error) {
 		id: identifier,
 	}
 
-	server, err := CreateServer(addr)
+	server, err := NewServer(addr, rf)
 	if err != nil {
 		return minoGrpc, xerrors.Errorf("failed to create server: %v", err)
 	}
@@ -91,7 +94,7 @@ func NewMinogrpc(identifier string) (Minogrpc, error) {
 // GetAddressFactory implements Mino. It returns the address
 // factory.
 func (m Minogrpc) GetAddressFactory() mino.AddressFactory {
-	return addressFactory{}
+	return defaultAddressFactory
 }
 
 // GetAddress implements Mino. It returns the address of the server
@@ -129,10 +132,11 @@ func (m Minogrpc) MakeNamespace(namespace string) (mino.Mino, error) {
 func (m Minogrpc) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 	URI := fmt.Sprintf("%s/%s", m.namespace, name)
 	rpc := &RPC{
-		encoder: encoding.NewProtoEncoder(),
-		handler: h,
-		srv:     m.server,
-		uri:     URI,
+		encoder:        encoding.NewProtoEncoder(),
+		handler:        h,
+		srv:            m.server,
+		uri:            URI,
+		routingFactory: m.server.routingFactory,
 	}
 
 	m.server.handlers[URI] = h

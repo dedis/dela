@@ -27,7 +27,7 @@ func Test_NewMinogrpc(t *testing.T) {
 	// The happy path
 	id := "127.0.0.1:3333"
 
-	minoRPC, err := NewMinogrpc(id)
+	minoRPC, err := NewMinogrpc(id, nil)
 	require.NoError(t, err)
 
 	require.Equal(t, id, minoRPC.GetAddress().String())
@@ -41,7 +41,7 @@ func Test_NewMinogrpc(t *testing.T) {
 	require.Equal(t, peer, minoRPC.server.neighbours[id])
 
 	// Giving an empty address
-	minoRPC, err = NewMinogrpc("")
+	minoRPC, err = NewMinogrpc("", nil)
 	require.EqualError(t, err, "identifier can't be empty")
 }
 
@@ -164,7 +164,7 @@ func TestMinogrpc_GetAddressFactory(t *testing.T) {
 }
 
 func TestPlayers_AddressIterator(t *testing.T) {
-	players := fakePlayers{players: []address{{"test"}}}
+	players := fakePlayers{players: []mino.Address{address{"test"}}}
 	it := players.AddressIterator()
 	it2, ok := it.(*fakeAddressIterator)
 	require.True(t, ok)
@@ -175,9 +175,9 @@ func TestPlayers_AddressIterator(t *testing.T) {
 }
 
 func TestAddressIterator(t *testing.T) {
-	a := address{"test"}
+	a := &address{"test"}
 	it := fakeAddressIterator{
-		players: []address{a},
+		players: []mino.Address{a},
 	}
 
 	require.True(t, it.HasNext())
@@ -187,13 +187,13 @@ func TestAddressIterator(t *testing.T) {
 	require.False(t, it.HasNext())
 }
 
-// -----------------
+// -----------------------------------------------------------------------------
 // Utility functions
 
 // fakePlayers implements mino.Players{}
 type fakePlayers struct {
 	mino.Players
-	players  []address
+	players  []mino.Address
 	iterator *fakeAddressIterator
 }
 
@@ -212,7 +212,7 @@ func (p *fakePlayers) Len() int {
 
 // fakeAddressIterator implements mino.addressIterator{}
 type fakeAddressIterator struct {
-	players []address
+	players []mino.Address
 	cursor  int
 }
 

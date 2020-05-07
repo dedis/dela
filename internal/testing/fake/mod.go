@@ -97,16 +97,24 @@ type AddressIterator struct {
 	index int
 }
 
+// NewAddressIterator returns a new address iterator
+func NewAddressIterator(addrs []mino.Address) AddressIterator {
+	return AddressIterator{
+		addrs: addrs,
+	}
+}
+
 // HasNext implements mino.AddressIterator.
 func (i *AddressIterator) HasNext() bool {
-	return i.index+1 < len(i.addrs)
+	return i.index < len(i.addrs)
 }
 
 // GetNext implements mino.AddressIterator.
 func (i *AddressIterator) GetNext() mino.Address {
 	if i.HasNext() {
+		res := i.addrs[i.index]
 		i.index++
-		return i.addrs[i.index]
+		return res
 	}
 	return nil
 }
@@ -120,14 +128,15 @@ type PublicKeyIterator struct {
 
 // HasNext implements crypto.PublicKeyIterator.
 func (i *PublicKeyIterator) HasNext() bool {
-	return i.index+1 < len(i.signers)
+	return i.index < len(i.signers)
 }
 
 // GetNext implements crypto.PublicKeyIterator.
 func (i *PublicKeyIterator) GetNext() crypto.PublicKey {
 	if i.HasNext() {
+		res := i.signers[i.index]
 		i.index++
-		return i.signers[i.index].GetPublicKey()
+		return res.GetPublicKey()
 	}
 	return nil
 }
@@ -272,12 +281,12 @@ func (ca CollectiveAuthority) Len() int {
 
 // AddressIterator implements mino.Players.
 func (ca CollectiveAuthority) AddressIterator() mino.AddressIterator {
-	return &AddressIterator{addrs: ca.addrs, index: -1}
+	return &AddressIterator{addrs: ca.addrs}
 }
 
 // PublicKeyIterator implements cosi.CollectiveAuthority.
 func (ca CollectiveAuthority) PublicKeyIterator() crypto.PublicKeyIterator {
-	return &PublicKeyIterator{signers: ca.signers, index: -1}
+	return &PublicKeyIterator{signers: ca.signers}
 }
 
 // PublicKeyFactory is a fake implementation of a public key factory.
@@ -597,7 +606,7 @@ type AddressFactory struct {
 
 // FromText implements mino.AddressFactory.
 func (f AddressFactory) FromText(text []byte) mino.Address {
-	if len(text) > 4 {
+	if len(text) >= 4 {
 		index := binary.LittleEndian.Uint32(text)
 		return Address{index: int(index)}
 	}

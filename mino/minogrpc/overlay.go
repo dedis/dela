@@ -4,11 +4,11 @@ import (
 	context "context"
 	"crypto/tls"
 	"io"
-	"sync"
 
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/fabric/mino/minogrpc/routing"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -25,13 +25,12 @@ type overlayService struct {
 	// addressID of the sender.
 	addr address
 	// This map is used to create a new stream connection if possible
-	mesh map[string]Peer
-	// routing table from the server
-	routingTable map[string]string
+	neighbour map[string]Peer
 	// This certificate is used to create a new stream connection if possible
 	srvCert *tls.Certificate
 	// Used to record traffic activity
-	traffic *traffic
+	traffic        *traffic
+	routingFactory routing.Factory
 }
 
 // Call is the implementation of the overlay.Call proto definition
@@ -108,10 +107,25 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 			"of handlers, did you register it?", apiURI[0])
 	}
 
-	rpcID := "server_" + o.addr.String()
+	rpcID := o.addr.String()
 
-	// For the moment this sender can only receive messages to itself
-	// TODO: find a way to know the other nodes.
+	// Listen on the first message, which should be the routing infos
+	overlayMsg, err := stream.Recv()
+	if err != nil {
+		return xerrors.Errorf("failed to receive first routing message: %v", err)
+	}
+
+	rting, err := o.routingFactory.FromAny(overlayMsg.Message)
+	if err != nil {
+		return xerrors.Errorf("failed to decode routing message: %v", err)
+	}
+
+	// fmt.Print(o.addr)
+	// rting.(*routing.TreeRouting).Display(os.Stdout)
+
+	// This sender acts as an orchestrator for the other nodes it creates a
+	// stream to. In a tree topology this means the orchestrator is the parent,
+	// and the created streams are the children.
 	sender := &sender{
 		encoder: o.encoder,
 		// This address is used when the client doesn't find the address it
@@ -122,24 +136,34 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		// doesn't relay but sends directly.
 		address:      address{rpcID},
 		participants: map[string]overlayStream{rpcID: stream},
-		name:         "remote RPC",
-		mesh:         o.mesh,
+		name:         "remote RPC of " + o.addr.String(),
 		srvCert:      o.srvCert,
 		traffic:      o.traffic,
+		routing:      rting,
 	}
 
 	receiver := receiver{
 		encoder: o.encoder,
 		in:      make(chan *OverlayMsg),
 		errs:    make(chan error),
-		name:    "remote RPC",
+		name:    "remote RPC of " + o.addr.String(),
 		traffic: o.traffic,
 	}
 
-	var peerWait sync.WaitGroup
+	addrs, err := rting.GetDirectLinks(o.addr)
+	if err != nil {
+		return xerrors.Errorf("failed to get direct links: %v", err)
+	}
 
-	for _, peer := range o.mesh {
-		addr := address{peer.Address}
+	for _, addr := range addrs {
+		peer, found := o.neighbour[addr.String()]
+		if !found {
+			err = xerrors.Errorf("failed to find routing peer '%s' from the "+
+				"neighbours: %v", addr.String(), err)
+			fabric.Logger.Err(err).Send()
+			return err
+		}
+
 		clientConn, err := getConnection(addr.String(), peer, *o.srvCert)
 		if err != nil {
 			err = xerrors.Errorf("failed to get client conn for client '%s': %v",
@@ -150,23 +174,25 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		cl := NewOverlayClient(clientConn)
 
 		header := metadata.New(map[string]string{headerURIKey: apiURI[0]})
-		ctx = metadata.NewOutgoingContext(ctx, header)
+		newCtx := stream.Context()
+		newCtx = metadata.NewOutgoingContext(newCtx, header)
 
-		clientStream, err := cl.Stream(ctx)
-
+		clientStream, err := cl.Stream(newCtx)
 		if err != nil {
 			err = xerrors.Errorf("failed to get stream for client '%s': %v",
 				addr.String(), err)
 			fabric.Logger.Err(err).Send()
 			return err
 		}
+
 		sender.participants[addr.String()] = clientStream
+
+		// Sending the routing info as first messages to our children
+		clientStream.Send(&OverlayMsg{Message: overlayMsg.Message})
 
 		// Listen on the clients streams and notify the orchestrator or relay
 		// messages
-		peerWait.Add(1)
-		go func() {
-			defer peerWait.Done()
+		go func(addr mino.Address) {
 			for {
 				err := listenStream(clientStream, &receiver, sender, addr)
 				if err == io.EOF {
@@ -177,49 +203,45 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 					return
 				}
 				if err != nil {
-					err = xerrors.Errorf("failed to listen stream: %v", err)
+					err = xerrors.Errorf("failed to listen stream on child in "+
+						"overlay: %v", err)
 					fabric.Logger.Err(err).Send()
 					return
 				}
 			}
-		}()
-	}
-
-	// add the gateways based on the routing table
-	for k, v := range o.routingTable {
-		gateway, ok := sender.participants[v]
-		if !ok {
-			// TODO: handle this situation
-			fabric.Logger.Warn().Msg("fix static check until it's done")
-		}
-		sender.participants[k] = gateway
+		}(addr)
 	}
 
 	// listen on my own stream
 	go func() {
+
 		for {
 			err := listenStream(stream, &receiver, sender, o.addr)
 			if err == io.EOF {
+				<-ctx.Done()
 				return
 			}
 			status, ok := status.FromError(err)
 			if ok && err != nil && status.Code() == codes.Canceled {
+				<-ctx.Done()
 				return
 			}
 			if err != nil {
-				err = xerrors.Errorf("failed to listen stream: %v", err)
+				err = xerrors.Errorf("failed to listen stream in overlay: %v", err)
 				fabric.Logger.Err(err).Send()
+				<-ctx.Done()
 				return
 			}
 		}
 	}()
 
-	err := handler.Stream(sender, receiver)
+	err = handler.Stream(sender, receiver)
 	if err != nil {
 		return xerrors.Errorf("failed to call the stream handler: %v", err)
 	}
 
-	peerWait.Wait()
+	<-ctx.Done()
+
 	return nil
 
 }
