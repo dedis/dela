@@ -15,9 +15,13 @@ message Roster {
 message ChangeSet {
     uint64 index = 1;
     repeated uint32 remove = 2;
+    bytes addr = 3;
+    google.protobuf.Any publicKey = 4;
 }
 
 // Task is the message for a client task.
 message Task {
     repeated uint32 remove = 1;
+    bytes addr = 2;
+    google.protobuf.Any publicKey = 3;
 }

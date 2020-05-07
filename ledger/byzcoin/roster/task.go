@@ -8,9 +8,11 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/fabric/consensus/viewchange"
+	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/ledger/inventory"
 	"go.dedis.ch/fabric/ledger/transactions/basic"
+	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
 
@@ -35,19 +37,31 @@ var rosterChangeSetKey = []byte(RosterChangeSetKey)
 // - implements basic.ClientTask
 type clientTask struct {
 	remove []uint32
+	player *viewchange.Player
 }
 
-// NewClientTask creates a new roster client task that can be used to create a
-// transaction.
-func NewClientTask(r []uint32) basic.ClientTask {
+// NewRemove creates a new roster client task that will remove a player from the
+// roster.
+func NewRemove(r []uint32) basic.ClientTask {
 	return clientTask{
 		remove: r,
 	}
 }
 
+// NewAdd creates a new roster client task that will add a player to the roster.
+func NewAdd(addr mino.Address, pubkey crypto.PublicKey) basic.ClientTask {
+	player := viewchange.Player{
+		Address:   addr,
+		PublicKey: pubkey,
+	}
+
+	return clientTask{player: &player}
+}
+
 func (t clientTask) GetChangeSet() viewchange.ChangeSet {
 	changeset := viewchange.ChangeSet{
 		Remove: t.remove,
+		Add:    []viewchange.Player{*t.player},
 	}
 
 	return changeset
@@ -56,8 +70,20 @@ func (t clientTask) GetChangeSet() viewchange.ChangeSet {
 // Pack implements encoding.Packable. It returns the protobuf message for the
 // client task.
 func (t clientTask) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
+	addr, err := t.player.Address.MarshalText()
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't marshal address: %v", err)
+	}
+
+	pubkey, err := enc.PackAny(t.player.PublicKey)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't pack public key: %v", err)
+	}
+
 	pb := &Task{
-		Remove: t.remove,
+		Remove:    t.remove,
+		Addr:      addr,
+		PublicKey: pubkey,
 	}
 
 	return pb, nil
@@ -75,6 +101,8 @@ func (t clientTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
 	if err != nil {
 		return xerrors.Errorf("couldn't write remove indices: %v", err)
 	}
+
+	// TODO: add
 
 	return nil
 }
@@ -159,7 +187,13 @@ func (t serverTask) updateChangeSet(page inventory.WritablePage) error {
 		}
 	}
 
-	changesetpb.Remove = removals
+	taskpb, err := t.encoder.Pack(t)
+	if err != nil {
+		return err
+	}
+
+	changesetpb.Addr = taskpb.(*Task).GetAddr()
+	changesetpb.PublicKey = taskpb.(*Task).GetPublicKey()
 
 	err = page.Write(rosterChangeSetKey, changesetpb)
 	if err != nil {
@@ -240,6 +274,15 @@ func (f TaskManager) GetChangeSet(index uint64) (viewchange.ChangeSet, error) {
 
 	cs.Remove = changesetpb.GetRemove()
 
+	p, err := f.unpackPlayer(changesetpb.GetAddr(), changesetpb.GetPublicKey())
+	if err != nil {
+		return cs, err
+	}
+
+	if p != nil {
+		cs.Add = []viewchange.Player{*p}
+	}
+
 	return cs, nil
 }
 
@@ -260,12 +303,38 @@ func (f TaskManager) FromProto(in proto.Message) (basic.ServerTask, error) {
 		return nil, xerrors.Errorf("invalid message type '%T'", in)
 	}
 
+	player, err := f.unpackPlayer(pb.GetAddr(), pb.GetPublicKey())
+	if err != nil {
+		return nil, err
+	}
+
 	task := serverTask{
 		clientTask: clientTask{
 			remove: pb.Remove,
+			player: player,
 		},
 		encoder:       f.encoder,
 		rosterFactory: f.rosterFactory,
 	}
 	return task, nil
+}
+
+func (f TaskManager) unpackPlayer(addrpb []byte, pubkeypb proto.Message) (*viewchange.Player, error) {
+	if addrpb == nil || pubkeypb == nil {
+		return nil, nil
+	}
+
+	addr := f.rosterFactory.GetAddressFactory().FromText(addrpb)
+
+	pubkey, err := f.rosterFactory.GetPublicKeyFactory().FromProto(pubkeypb)
+	if err != nil {
+		return nil, err
+	}
+
+	player := viewchange.Player{
+		Address:   addr,
+		PublicKey: pubkey,
+	}
+
+	return &player, nil
 }

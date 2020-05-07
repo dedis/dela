@@ -14,7 +14,7 @@ import (
 	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/ledger"
 	"go.dedis.ch/fabric/ledger/arc/darc"
-	"go.dedis.ch/fabric/ledger/byzcoin/roster"
+	roster "go.dedis.ch/fabric/ledger/byzcoin/roster"
 	"go.dedis.ch/fabric/ledger/transactions/basic"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/minoch"
@@ -44,9 +44,11 @@ func TestLedger_Basic(t *testing.T) {
 		}
 	}()
 
-	require.NoError(t, actors[0].Setup(ca))
+	ro := ca.Take(mino.RangeFilter(0, 19))
 
-	for _, actor := range actors {
+	require.NoError(t, actors[0].Setup(ro))
+
+	for _, actor := range actors[:19] {
 		err := <-actor.HasStarted()
 		require.NoError(t, err)
 	}
@@ -58,8 +60,11 @@ func TestLedger_Basic(t *testing.T) {
 	signer := bls.NewSigner()
 	txFactory := basic.NewTransactionFactory(signer, nil)
 
+	addAddr := ledgers[19].(*Ledger).addr
+	addPk := ledgers[19].(*Ledger).signer.GetPublicKey()
+
 	// Execute a roster change tx by removing one of the participants.
-	tx, err := txFactory.New(roster.NewClientTask([]uint32{15}))
+	tx, err := txFactory.New(roster.NewAdd(addAddr, addPk))
 	require.NoError(t, err)
 
 	err = actors[1].AddTransaction(tx)
@@ -77,7 +82,7 @@ func TestLedger_Basic(t *testing.T) {
 	require.NoError(t, err)
 	// The last participant over 20 should have been removed from the current
 	// chain roster.
-	require.Equal(t, 19, roster.Len())
+	require.Equal(t, 20, roster.Len())
 
 	// Try to create a DARC.
 	access := makeDarc(t, signer)

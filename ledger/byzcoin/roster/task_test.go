@@ -15,14 +15,14 @@ import (
 )
 
 func TestClientTask_GetChangeSet(t *testing.T) {
-	task := NewClientTask([]uint32{1, 3, 4}).(clientTask)
+	task := NewRemove([]uint32{1, 3, 4}).(clientTask)
 
 	changeset := task.GetChangeSet()
 	require.Equal(t, []uint32{1, 3, 4}, changeset.Remove)
 }
 
 func TestClientTask_Pack(t *testing.T) {
-	task := NewClientTask([]uint32{1})
+	task := NewRemove([]uint32{1})
 
 	taskpb, err := task.Pack(nil)
 	require.NoError(t, err)
@@ -30,7 +30,7 @@ func TestClientTask_Pack(t *testing.T) {
 }
 
 func TestClientTask_Fingerprint(t *testing.T) {
-	task := NewClientTask([]uint32{0x02, 0x01, 0x03})
+	task := NewRemove([]uint32{0x02, 0x01, 0x03})
 
 	buffer := new(bytes.Buffer)
 

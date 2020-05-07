@@ -47,6 +47,10 @@ type EvolvableAuthority interface {
 
 // AuthorityFactory is an interface to instantiate evolvable authorities.
 type AuthorityFactory interface {
+	GetAddressFactory() mino.AddressFactory
+
+	GetPublicKeyFactory() crypto.PublicKeyFactory
+
 	New(crypto.CollectiveAuthority) EvolvableAuthority
 
 	FromProto(proto.Message) (EvolvableAuthority, error)

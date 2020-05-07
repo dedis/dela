@@ -105,6 +105,11 @@ func (r roster) Apply(changeset viewchange.ChangeSet) viewchange.EvolvableAuthor
 		}
 	}
 
+	for _, player := range changeset.Add {
+		addrs = append(addrs, player.Address)
+		pubkeys = append(pubkeys, player.PublicKey)
+	}
+
 	roster := roster{
 		addrs:   addrs,
 		pubkeys: pubkeys,
@@ -184,6 +189,14 @@ func NewRosterFactory(af mino.AddressFactory, pf crypto.PublicKeyFactory) viewch
 		addressFactory: af,
 		pubkeyFactory:  pf,
 	}
+}
+
+func (f rosterFactory) GetAddressFactory() mino.AddressFactory {
+	return f.addressFactory
+}
+
+func (f rosterFactory) GetPublicKeyFactory() crypto.PublicKeyFactory {
+	return f.pubkeyFactory
 }
 
 // New implements viewchange.AuthorityFactory. It returns a new roster from the
