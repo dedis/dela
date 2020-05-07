@@ -111,6 +111,34 @@ func (t TreeRoutingFactory) FromIterator(iterator mino.AddressIterator) (Routing
 			"the iterator")
 	}
 
+	routing, err := t.fromAddrBuf(addrsBuf)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to build from addrsBuf: %v", err)
+	}
+
+	return routing, nil
+}
+
+// FromAny creates the network tree in a deterministic manner based on
+// the proto message encoded as any
+func (t TreeRoutingFactory) FromAny(m *any.Any) (Routing, error) {
+
+	msg := &TreeRoutingProto{}
+	err := ptypes.UnmarshalAny(m, msg)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to unmarshal routing message: %v", err)
+	}
+
+	routing, err := t.fromAddrBuf(msg.Addrs)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to build from addrsBuf: %v", err)
+	}
+
+	return routing, nil
+}
+
+func (t TreeRoutingFactory) fromAddrBuf(addrsBuf addrsBuf) (Routing, error) {
+
 	sort.Stable(&addrsBuf)
 
 	// We will use the hash of the addresses to set the random seed.
@@ -137,87 +165,6 @@ func (t TreeRoutingFactory) FromIterator(iterator mino.AddressIterator) (Routing
 	}
 
 	// maximum number of direct connections each node can have. It is comupted
-	// from the treeHeight and the total number of nodes. There are the
-	// following relations:
-	//
-	// N: total number of nodes
-	// D: number of direct connections wanted for each node
-	// H: height of the network tree
-	//
-	// N = D^H
-	// D = sqrt[H](N)
-	// H = log_D N
-	d := int(math.Ceil(math.Pow(float64(len(addrs)), 1.0/float64(t.height))))
-
-	tree := buildTree(t.rootAddr, addrs, d, -1)
-
-	routingNodes := make(map[string]*treeNode)
-	routingNodes[t.rootAddr.String()] = tree
-	tree.ForEach(func(n *treeNode) {
-		routingNodes[n.Addr.String()] = n
-	})
-
-	return &TreeRouting{
-		routingNodes: routingNodes,
-		root:         tree,
-	}, nil
-}
-
-// FromAny creates the network tree in a deterministic manner based on
-// the proto message encoded as any
-func (t TreeRoutingFactory) FromAny(m *any.Any) (Routing, error) {
-
-	msg := &TreeRoutingProto{}
-	err := ptypes.UnmarshalAny(m, msg)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to unmarshal routing message: %v", err)
-	}
-
-	if len(msg.Addrs) == 0 {
-		return nil, xerrors.Errorf("there should be at least one address")
-	}
-
-	addrs := make([]mino.Address, len(msg.Addrs))
-	for i, addrBuf := range msg.Addrs {
-		addr := t.addrFactory.FromText(addrBuf)
-		addrs[i] = addr
-	}
-
-	addrsBuf := make(addrsBuf, len(addrs))
-	for i, addr := range addrs {
-		addrBuf, err := addr.MarshalText()
-		if err != nil {
-			return nil, xerrors.Errorf("failed to marshal addr '%s': %v", addr, err)
-		}
-
-		addrsBuf[i] = addrBuf
-	}
-
-	sort.Stable(&addrsBuf)
-
-	// We will use the hash of the addresses to set the random seed.
-	hash := sha256.New()
-	for _, addr := range addrsBuf {
-		_, err := hash.Write(addr)
-		if err != nil {
-			fabric.Logger.Fatal().Msgf("failed to write hash: %v", err)
-		}
-	}
-
-	seed := binary.LittleEndian.Uint64(hash.Sum(nil))
-
-	// We shuffle the list of addresses, which will then be used to create the
-	// network tree.
-	rand.Seed(int64(seed))
-	rand.Shuffle(len(addrsBuf), func(i, j int) {
-		addrsBuf[i], addrsBuf[j] = addrsBuf[j], addrsBuf[i]
-	})
-
-	for i, addrBuf := range addrsBuf {
-		addrs[i] = t.addrFactory.FromText(addrBuf)
-	}
-
-	// maximum number of direct connections each node can have. It is computed
 	// from the treeHeight and the total number of nodes. There are the
 	// following relations:
 	//
