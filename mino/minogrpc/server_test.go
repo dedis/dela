@@ -3,7 +3,6 @@ package minogrpc
 import (
 	context "context"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"testing"
@@ -783,6 +782,13 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 	server8.handlers[uri] = testRingHandler{addrID: addr8, neighbor: addr9}
 	server9.handlers[uri] = testRingHandler{addrID: addr9, neighbor: nil}
 
+	// defer func() {
+	// 	f, _ := os.Create("/tmp/dat3.dot")
+	// 	GenerateGraphviz(f, server1.traffic, server2.traffic, server3.traffic,
+	// 		server4.traffic, server5.traffic, server6.traffic, server7.traffic,
+	// 		server8.traffic, server9.traffic)
+	// }()
+
 	dummyMsg := &wrappers.StringValue{Value: "dummy_value"}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -849,9 +855,9 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 // Sends a message to all participants, that then send a message to all
 // participants
 func TestRPC_DKG_Stream(t *testing.T) {
-	factory := r.NewTreeRoutingFactory(1, &address{id: "127.0.0.1:2000"}, defaultAddressFactory)
+	factory := r.NewTreeRoutingFactory(5, &address{id: "127.0.0.1:2000"}, defaultAddressFactory)
 
-	n := 1
+	n := 10
 
 	identifiers := make([]string, n)
 	addrs := make([]mino.Address, n)
@@ -868,10 +874,11 @@ func TestRPC_DKG_Stream(t *testing.T) {
 		traffics[i] = server.traffic
 	}
 
-	defer func() {
-		f, _ := os.Create("/tmp/dat2.graph")
-		GenerateGraphviz(f, traffics...)
-	}()
+	// To generate a dot graph:
+	// defer func() {
+	// 	f, _ := os.Create("/tmp/dat2.dot")
+	// 	GenerateGraphviz(f, traffics...)
+	// }()
 
 	// Computed routing with n=9:
 	//
@@ -1004,7 +1011,7 @@ func TestReceiver_Recv(t *testing.T) {
 	receiver := receiver{
 		encoder: encoding.NewProtoEncoder(),
 		errs:    make(chan error, 1),
-		in:      make(chan *OverlayMsg, 1),
+		in:      make(chan *Envelope, 1),
 	}
 
 	// If there is a wrong message (nil), then it should output an error
@@ -1013,13 +1020,13 @@ func TestReceiver_Recv(t *testing.T) {
 	require.EqualError(t, err, "message is nil")
 
 	// now with a failing unmarshal of the envelope
-	msg := &OverlayMsg{
+	msg := &Envelope{
 		Message: nil,
 	}
 	receiver.encoder = badUnmarshalAnyEncoder{}
 	receiver.in <- msg
 	_, _, err = receiver.Recv(context.Background())
-	require.EqualError(t, err, "couldn't unmarshal envelope: oops")
+	require.EqualError(t, err, "failed to unmarshal enveloppe msg: message is nil")
 
 	// now with a failing unmarshal of the message
 	msg.Message, err = ptypes.MarshalAny(&Envelope{})
@@ -1027,7 +1034,7 @@ func TestReceiver_Recv(t *testing.T) {
 	receiver.encoder = badUnmarshalDynEncoder{}
 	receiver.in <- msg
 	_, _, err = receiver.Recv(context.Background())
-	require.EqualError(t, err, "couldn't unmarshal message: oops")
+	require.EqualError(t, err, "failed to unmarshal enveloppe msg: oops")
 }
 
 // -----------------------------------------------------------------------------

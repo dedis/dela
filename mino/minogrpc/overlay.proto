@@ -14,8 +14,8 @@ message Envelope {
 }
 
 service Overlay {
-    rpc Call(OverlayMsg) returns (OverlayMsg) {}
-    rpc Stream(stream OverlayMsg) returns (stream OverlayMsg) {}
+    rpc Call(Envelope) returns (Envelope) {}
+    rpc Stream(stream Envelope) returns (stream Envelope) {}
 }
 
 message OverlayMsg {

@@ -21,7 +21,7 @@ import (
 
 func TestOverlay_Call(t *testing.T) {
 	ctx := context.Background()
-	msg := &OverlayMsg{}
+	msg := &Envelope{}
 
 	overlayService := overlayService{
 		encoder:  encoding.NewProtoEncoder(),
@@ -158,7 +158,7 @@ func (t testServerStream) Context() context.Context {
 }
 
 // This is to mock Overlay_StreamServer.Recv()
-func (t testServerStream) Recv() (*OverlayMsg, error) {
+func (t testServerStream) Recv() (*Envelope, error) {
 	if t.recvError {
 		return nil, errors.New("oops from the server")
 	}
@@ -166,7 +166,7 @@ func (t testServerStream) Recv() (*OverlayMsg, error) {
 	if err != nil {
 		fabric.Logger.Fatal().Msg("unexpected nil in marshal: " + err.Error())
 	}
-	return &OverlayMsg{Message: anyMsg}, nil
+	return &Envelope{Message: anyMsg}, nil
 }
 
 // implements a handler interface that returns an error in call and stream

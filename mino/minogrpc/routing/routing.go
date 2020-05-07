@@ -50,6 +50,7 @@ type Routing interface {
 type TreeRouting struct {
 	Root         *treeNode
 	routingNodes map[string]*treeNode
+	mainOrchID   string
 }
 
 // NewTreeRouting ...
@@ -57,29 +58,17 @@ func NewTreeRouting(height int) *TreeRouting {
 	return &TreeRouting{}
 }
 
-// TreeRoutingOpts is the implementation of treeTreeRoutingOpts
-var TreeRoutingOpts = treeRoutingOpts{
-	// Addr is the address of the node, the value should be of type mino.Address
-	Addr: "addr",
-	// TreeHeight is the maximum tree height
-	TreeHeight: "treeHeight",
-}
-
-type treeRoutingOpts struct {
-	Addr       string
-	TreeHeight string
-}
-
 // TreeRoutingFactory defines the factory for tree routing
 type TreeRoutingFactory struct {
 	height      int
 	rootAddr    mino.Address
 	addrFactory mino.AddressFactory
+	mainOrchID  string
 }
 
-// NewTreeRoutingFactory returns a new treeRoutingFactory. Warning: the given
-// rootAddr must be a uniq address that shouldn't be in the list of
-// participants.
+// NewTreeRoutingFactory returns a new treeRoutingFactory. The given rootAddr
+// must be a uniq address that should be in the list of participants. MainOrchID
+// is the uniq identifier of the orchestrator.
 func NewTreeRoutingFactory(height int, rootAddr mino.Address,
 	addrFactory mino.AddressFactory) *TreeRoutingFactory {
 
@@ -265,6 +254,15 @@ func (t TreeRoutingFactory) FromAny(m *any.Any) (Routing, error) {
 //
 // - implements Routing
 func (t TreeRouting) GetRoute(from, to mino.Address) (mino.Address, error) {
+
+	// This is the case the main orchestrator want to send a message. The main
+	// orchestrator is not a node by itself in the tree, but it has a connection
+	// to the root. This is why each time the main orchestrator wants to send a
+	// message we know we must relay it to the root. The main orchestrator
+	// represents the entry point of the RPC stream that the client created.
+	if from.String() == "orchestrator_addr" {
+		return t.Root.Addr, nil
+	}
 
 	fromNode, ok := t.routingNodes[from.String()]
 	if !ok {

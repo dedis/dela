@@ -32,10 +32,12 @@ type overlayService struct {
 	// Used to record traffic activity
 	traffic        *traffic
 	routingFactory routing.Factory
+	// This is the address that contacted the node
+	rootAddr address
 }
 
 // Call is the implementation of the overlay.Call proto definition
-func (o overlayService) Call(ctx context.Context, msg *OverlayMsg) (*OverlayMsg, error) {
+func (o overlayService) Call(ctx context.Context, msg *Envelope) (*Envelope, error) {
 	// We fetch the uri that identifies the handler in the handlers map with the
 	// grpc metadata api. Using context.Value won't work.
 	headers, ok := metadata.FromIncomingContext(ctx)
@@ -79,7 +81,7 @@ func (o overlayService) Call(ctx context.Context, msg *OverlayMsg) (*OverlayMsg,
 		return nil, xerrors.Errorf("couldn't marshal result: %v", err)
 	}
 
-	return &OverlayMsg{Message: anyResult}, nil
+	return &Envelope{Message: anyResult}, nil
 }
 
 // Stream is the fonction used to perform mino.RPC.Stream() calls. It is called
@@ -111,15 +113,17 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 	rpcID := o.addr.String()
 
 	// Listen on the first message, which should be the routing infos
-	overlayMsg, err := stream.Recv()
+	enveloppe, err := stream.Recv()
 	if err != nil {
 		return xerrors.Errorf("failed to receive first routing message: %v", err)
 	}
 
-	rting, err := o.routingFactory.FromAny(overlayMsg.Message)
+	rting, err := o.routingFactory.FromAny(enveloppe.Message)
 	if err != nil {
 		return xerrors.Errorf("failed to decode routing message: %v", err)
 	}
+
+	o.rootAddr = address{enveloppe.PhysicalFrom}
 
 	// fmt.Print(o.addr)
 	// rting.(*routing.TreeRouting).Display(os.Stdout)
@@ -135,18 +139,19 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		// address, which is registered in the list of participant.
 		// It is also used to indicate the "from" of the message in the case it
 		// doesn't relay but sends directly.
-		address: address{rpcID},
-		name:    "remote RPC of " + o.addr.String(),
-		srvCert: o.srvCert,
-		traffic: o.traffic,
-		routing: rting,
+		address:  address{rpcID},
+		name:     "remote RPC of " + o.addr.String(),
+		srvCert:  o.srvCert,
+		traffic:  o.traffic,
+		routing:  rting,
+		rootAddr: address{enveloppe.PhysicalFrom},
 	}
 
 	sender.participants.Store(rpcID, stream)
 
 	receiver := receiver{
 		encoder: o.encoder,
-		in:      make(chan *OverlayMsg),
+		in:      make(chan *Envelope),
 		errs:    make(chan error),
 		name:    "remote RPC of " + o.addr.String(),
 		traffic: o.traffic,
@@ -192,7 +197,12 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		sender.participants.Store(addr.String(), clientStream)
 
 		// Sending the routing info as first messages to our children
-		clientStream.Send(&OverlayMsg{Message: overlayMsg.Message})
+		clientStream.Send(&Envelope{
+			From:         o.addr.String(),
+			PhysicalFrom: o.addr.String(),
+			To:           []string{addr.String()},
+			Message:      enveloppe.Message,
+		})
 
 		time.Sleep(time.Millisecond * 300)
 
@@ -219,10 +229,10 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 	}
 
 	// listen on my own stream
-	go func() {
+	go func(addr mino.Address) {
 
 		for {
-			err := listenStream(stream, &receiver, sender, o.addr)
+			err := listenStream(stream, &receiver, sender, addr)
 			if err == io.EOF {
 				<-ctx.Done()
 				return
@@ -239,7 +249,7 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 				return
 			}
 		}
-	}()
+	}(address{rpcID})
 
 	err = handler.Stream(sender, receiver)
 	if err != nil {
