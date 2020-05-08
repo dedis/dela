@@ -27,3 +27,12 @@ message VerifiableBlockProto {
 message PropagateGenesis {
     BlockProto genesis = 1;
 }
+
+message BlockRequest {
+    bytes from = 1;
+    bytes to = 2;
+}
+
+message BlockResponse {
+    BlockProto block = 1;
+}

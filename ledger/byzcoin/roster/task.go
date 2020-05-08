@@ -61,7 +61,10 @@ func NewAdd(addr mino.Address, pubkey crypto.PublicKey) basic.ClientTask {
 func (t clientTask) GetChangeSet() viewchange.ChangeSet {
 	changeset := viewchange.ChangeSet{
 		Remove: t.remove,
-		Add:    []viewchange.Player{*t.player},
+	}
+
+	if t.player != nil {
+		changeset.Add = []viewchange.Player{*t.player}
 	}
 
 	return changeset
@@ -70,20 +73,23 @@ func (t clientTask) GetChangeSet() viewchange.ChangeSet {
 // Pack implements encoding.Packable. It returns the protobuf message for the
 // client task.
 func (t clientTask) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
-	addr, err := t.player.Address.MarshalText()
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't marshal address: %v", err)
-	}
-
-	pubkey, err := enc.PackAny(t.player.PublicKey)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack public key: %v", err)
-	}
-
 	pb := &Task{
-		Remove:    t.remove,
-		Addr:      addr,
-		PublicKey: pubkey,
+		Remove: t.remove,
+	}
+
+	if t.player != nil {
+		addr, err := t.player.Address.MarshalText()
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't marshal address: %v", err)
+		}
+
+		pubkey, err := enc.PackAny(t.player.PublicKey)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't pack public key: %v", err)
+		}
+
+		pb.Addr = addr
+		pb.PublicKey = pubkey
 	}
 
 	return pb, nil
@@ -192,6 +198,7 @@ func (t serverTask) updateChangeSet(page inventory.WritablePage) error {
 		return err
 	}
 
+	changesetpb.Remove = removals
 	changesetpb.Addr = taskpb.(*Task).GetAddr()
 	changesetpb.PublicKey = taskpb.(*Task).GetPublicKey()
 

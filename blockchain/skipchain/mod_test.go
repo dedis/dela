@@ -1,14 +1,12 @@
 package skipchain
 
 import (
-	"bytes"
 	"context"
 	fmt "fmt"
 	"testing"
 
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/empty"
-	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/consensus"
@@ -30,6 +28,8 @@ func TestMessages(t *testing.T) {
 		&BlockProto{},
 		&VerifiableBlockProto{},
 		&PropagateGenesis{},
+		&BlockRequest{},
+		&BlockResponse{},
 	}
 
 	for _, m := range messages {
@@ -149,17 +149,17 @@ func TestSkipchain_Watch(t *testing.T) {
 
 func TestActor_InitChain(t *testing.T) {
 	actor := skipchainActor{
-		rand: crypto.CryptographicRandomGenerator{},
-		Skipchain: &Skipchain{
+		operations: &operations{
 			encoder: encoding.NewProtoEncoder(),
 			blockFactory: blockFactory{
 				encoder:     encoding.NewProtoEncoder(),
 				hashFactory: crypto.NewSha256Factory(),
 			},
-			mino: fake.Mino{},
+			addr: fake.NewAddress(0),
 			db:   &fakeDatabase{err: NewNoBlockError(0)},
+			rpc:  fakeRPC{},
 		},
-		rpc: fakeRPC{},
+		rand: crypto.CryptographicRandomGenerator{},
 	}
 
 	authority := fake.NewAuthority(3, fake.NewSigner)
@@ -172,28 +172,28 @@ func TestActor_InitChain(t *testing.T) {
 	require.EqualError(t, xerrors.Unwrap(err), "couldn't propagate: oops")
 
 	// No error so the genesis block exists already.
-	actor.Skipchain.db = &fakeDatabase{}
+	actor.db = &fakeDatabase{}
 	err = actor.InitChain(&empty.Empty{}, authority)
 	require.NoError(t, err)
 
 	// Unexpected database error
-	actor.Skipchain.db = &fakeDatabase{err: xerrors.New("oops")}
+	actor.db = &fakeDatabase{err: xerrors.New("oops")}
 	err = actor.InitChain(&empty.Empty{}, authority)
 	require.EqualError(t, err, "couldn't read the genesis block: oops")
 }
 
 func TestActor_NewChain(t *testing.T) {
 	actor := skipchainActor{
-		rand: crypto.CryptographicRandomGenerator{},
-		Skipchain: &Skipchain{
+		operations: &operations{
 			encoder: encoding.NewProtoEncoder(),
 			db:      &fakeDatabase{},
 			blockFactory: blockFactory{
 				encoder:     encoding.NewProtoEncoder(),
 				hashFactory: crypto.NewSha256Factory(),
 			},
+			rpc: fakeRPC{},
 		},
-		rpc: fakeRPC{},
+		rand: crypto.CryptographicRandomGenerator{},
 	}
 
 	authority := fake.NewAuthority(3, fake.NewSigner)
@@ -217,18 +217,16 @@ func TestActor_NewChain(t *testing.T) {
 }
 
 func TestActor_Store(t *testing.T) {
-	buffer := new(bytes.Buffer)
 	cons := &fakeConsensusActor{}
 	actor := skipchainActor{
-		Skipchain: &Skipchain{
+		operations: &operations{
 			encoder: encoding.NewProtoEncoder(),
 			blockFactory: blockFactory{
 				encoder:     encoding.NewProtoEncoder(),
 				hashFactory: crypto.NewSha256Factory(),
 			},
-			logger: zerolog.New(buffer),
-			mino:   fake.Mino{},
-			db:     &fakeDatabase{},
+			addr: fake.NewAddress(0),
+			db:   &fakeDatabase{},
 		},
 		consensus: cons,
 	}

@@ -83,8 +83,8 @@ func (c RPC) Call(ctx context.Context, req proto.Message,
 // Stream opens a stream. The caller is responsible for cancelling the context
 // to close the stream.
 func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, mino.Receiver) {
-	in := make(chan Envelope)
-	out := make(chan Envelope, 1)
+	in := make(chan Envelope, 100)
+	out := make(chan Envelope, 100)
 	errs := make(chan error, 1)
 
 	outs := make(map[string]receiver)
@@ -160,9 +160,9 @@ func (s sender) Send(msg proto.Message, addrs ...mino.Address) <-chan error {
 			to:      addrs,
 			message: a,
 		}
+		close(errs)
 	}()
 
-	close(errs)
 	return errs
 }
 

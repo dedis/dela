@@ -11,6 +11,7 @@ import (
 // blocks.
 type Queries interface {
 	Write(block SkipBlock) error
+	Contains(index uint64) bool
 	Read(index int64) (SkipBlock, error)
 	ReadLast() (SkipBlock, error)
 }
@@ -76,6 +77,12 @@ func (db *InMemoryDatabase) Write(block SkipBlock) error {
 	}
 
 	return nil
+}
+
+// Contains implements skipchain.Database. It returns true if the block is
+// stored in the database, otherwise false.
+func (db *InMemoryDatabase) Contains(index uint64) bool {
+	return index < uint64(len(db.blocks))
 }
 
 // Read implements skipchain.Database. It returns the block at the given index

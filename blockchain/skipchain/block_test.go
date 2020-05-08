@@ -148,8 +148,8 @@ func TestSkipBlock_HashUniqueness(t *testing.T) {
 }
 
 func TestSkipBlock_String(t *testing.T) {
-	block := SkipBlock{hash: Digest{1}}
-	require.Equal(t, block.String(), "Block[0100000000000000]")
+	block := SkipBlock{Index: 5, hash: Digest{1}}
+	require.Equal(t, block.String(), "Block[5:0100000000000000]")
 }
 
 func TestVerifiableBlock_Pack(t *testing.T) {

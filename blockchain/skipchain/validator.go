@@ -5,8 +5,6 @@ import (
 	"sync"
 
 	proto "github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric"
-	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
@@ -17,22 +15,13 @@ import (
 //
 // - implements consensus.Validator
 type blockValidator struct {
-	*Skipchain
-
-	validator blockchain.PayloadProcessor
-	queue     *blockQueue
-	watcher   blockchain.Observable
+	*operations
+	queue *blockQueue
 }
 
-func newBlockValidator(
-	s *Skipchain,
-	v blockchain.PayloadProcessor,
-	w blockchain.Observable,
-) *blockValidator {
+func newBlockValidator(ops *operations) *blockValidator {
 	return &blockValidator{
-		Skipchain: s,
-		validator: v,
-		watcher:   w,
+		operations: ops,
 		queue: &blockQueue{
 			buffer: make(map[Digest]SkipBlock),
 		},
@@ -45,11 +34,15 @@ func newBlockValidator(
 func (v *blockValidator) Validate(addr mino.Address,
 	pb proto.Message) (consensus.Proposal, error) {
 
-	factory := v.GetBlockFactory().(blockFactory)
-
-	block, err := factory.decodeBlock(pb)
+	block, err := v.blockFactory.decodeBlock(pb)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't decode block: %v", err)
+	}
+
+	// It makes sure that we know the whole chain up to the previous proposal.
+	err = v.catchUp(block, addr)
+	if err != nil {
+		return nil, err
 	}
 
 	genesis, err := v.db.Read(0)
@@ -62,7 +55,7 @@ func (v *blockValidator) Validate(addr mino.Address,
 			genesis.hash, block.GenesisID)
 	}
 
-	err = v.validator.Validate(block.Index, block.Payload)
+	err = v.processor.Validate(block.Index, block.Payload)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't validate the payload: %v", err)
 	}
@@ -83,31 +76,10 @@ func (v *blockValidator) Commit(id []byte) error {
 		return xerrors.Errorf("couldn't find block '%v'", digest)
 	}
 
-	err := v.db.Atomic(func(ops Queries) error {
-		err := ops.Write(block)
-		if err != nil {
-			return xerrors.Errorf("couldn't persist the block: %v", err)
-		}
-
-		err = v.validator.Commit(block.Payload)
-		if err != nil {
-			// If the upper layer fails to commit to the block, it won't be
-			// written so that the node keeps a stable state.
-			return xerrors.Errorf("couldn't commit the payload: %v", err)
-		}
-
-		return nil
-	})
-
+	err := v.commitBlock(block)
 	if err != nil {
-		return xerrors.Errorf("transaction aborted: %v", err)
+		return xerrors.Errorf("couldn't commit block: %v", err)
 	}
-
-	fabric.Logger.Trace().Msgf("commit to block %v", block.hash)
-
-	// Notify every observer that we committed to a new block. This is blocking
-	// to allow atomic operations.
-	v.watcher.Notify(block)
 
 	v.queue.Clear()
 
@@ -142,4 +114,40 @@ func (q *blockQueue) Clear() {
 	defer q.Unlock()
 
 	q.buffer = make(map[Digest]SkipBlock)
+}
+
+type addressIterator struct {
+	mino.AddressIterator
+	index int
+	addrs []mino.Address
+}
+
+func (it *addressIterator) HasNext() bool {
+	return it.index < len(it.addrs)
+}
+
+func (it *addressIterator) GetNext() mino.Address {
+	if it.HasNext() {
+		res := it.addrs[it.index]
+		it.index++
+		return res
+	}
+	return nil
+}
+
+type roster struct {
+	mino.Players
+	addrs []mino.Address
+}
+
+func newRoster(addrs ...mino.Address) roster {
+	return roster{addrs: addrs}
+}
+
+func (r roster) AddressIterator() mino.AddressIterator {
+	return &addressIterator{addrs: r.addrs}
+}
+
+func (r roster) Len() int {
+	return len(r.addrs)
 }
