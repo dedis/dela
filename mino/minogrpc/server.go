@@ -306,10 +306,6 @@ func listenStream(stream overlayStream, orchRecv *receiver,
 		if toSend == orchSender.address.String() {
 			orchRecv.in <- envelope
 		} else {
-			// orchRecv.traffic.logRcvRelay(address{envelope.From}, envelope,
-			// 	orchRecv.name)
-			fabric.Logger.Trace().Msgf("(orchestrator) relaying message from "+
-				"'%s' to '%s'", envelope.From, toSend)
 
 			msg, err := orchRecv.encoder.UnmarshalDynamicAny(envelope.Message)
 			if err != nil {
@@ -398,6 +394,15 @@ func (srv *Server) Serve() error {
 	}
 
 	return nil
+}
+
+func (srv *Server) addNeighbour(servers ...*Server) {
+	for _, server := range servers {
+		srv.neighbours[server.addr.String()] = Peer{
+			Address:     server.listener.Addr().String(),
+			Certificate: server.cert.Leaf,
+		}
+	}
 }
 
 // getConnection creates a gRPC connection from the server to the client.

@@ -158,12 +158,16 @@ func (t TreeRoutingFactory) fromAddrBuf(addrsBuf addrsBuf) (Routing, error) {
 	// D: number of direct connections wanted for each node
 	// H: height of the network tree
 	//
-	// N = D^H
-	// D = sqrt[H](N)
-	// H = log_D N
-	d := int(math.Ceil(math.Pow(float64(len(addrs)), 1.0/float64(t.height))))
+	// N = D^(H+1) - 1
+	// D = sqrt[H+1](N+1)
+	// H = log_D(N+1) - 1
+	// N := float64(len(addrs) + 1)
+	// d := int(math.Ceil(math.Pow(N+2.0, 1.0/float64(t.height+1))))
+	// fmt.Println("N =", N)
+	// fmt.Println("D =", d)
+	// fmt.Println("H =", t.height)
 
-	tree := buildTree(t.rootAddr, addrs, d, 0)
+	tree := buildTree(t.rootAddr, addrs, t.height, 0)
 
 	routingNodes := make(map[string]*treeNode)
 	routingNodes[t.rootAddr.String()] = tree
@@ -282,14 +286,33 @@ func (t TreeRouting) Display(out io.Writer) {
 
 // buildTree builds the newtwork tree based on the list of addresses. The first
 // call should have an index of 0.
-func buildTree(addr mino.Address, addrs []mino.Address, d int, index int) *treeNode {
+func buildTree(addr mino.Address, addrs []mino.Address, h, index int) *treeNode {
 	node := &treeNode{
 		Index:     index,
 		Addr:      addr,
 		LastIndex: index + len(addrs),
 	}
 
-	children := make([]*treeNode, 0, d)
+	children := make([]*treeNode, 0)
+
+	N := float64(len(addrs) + 1)
+	d := int(math.Round(math.Pow(N+1.0, 1.0/float64(h+1))))
+
+	// This is a check that with the computed number of neighbours there will be
+	// enought nodes to reach the given height. For example, if there is 6
+	// addresses in the list, H = 4, then D = 1.51, which will be rounded to 2.
+	// However, we can see that if we split the list in two, there will be 3
+	// addresses in each sub-list that will have to reach a height of H-1 = 3,
+	// which is impossible with 3 addresses. So this is why we decrement D.
+	if len(addrs)/d < h {
+		d = d - 1
+	}
+
+	// If we must build a height of 1 there is no other solutions than having
+	// all the addresses as children.
+	if h == 1 {
+		d = len(addrs)
+	}
 
 	// k is the total number of elements in a sub tree
 	//
@@ -299,21 +322,21 @@ func buildTree(addr mino.Address, addrs []mino.Address, d int, index int) *treeN
 	// a1 a2 a3 | a4 a5 a6 a7
 	// "a1" will be the root of the first part
 	// and "a4" the second one. We use k to delimit each part with k*i.
-	k := float64(len(addrs)) / float64(d)
+	k := float64(float64(len(addrs))) / float64(d)
 
 	if k == 0 {
 		children = []*treeNode{}
 	} else if k < 1 {
 		// This is the last level
 		for i := 0; i < len(addrs); i++ {
-			child := buildTree(addrs[i], []mino.Address{}, d, index+i+1)
+			child := buildTree(addrs[i], []mino.Address{}, h-1, index+i+1)
 			children = append(children, child)
 		}
 	} else {
 		for i := 0; i < d; i++ {
 			firstI := int(k * float64(i))
 			lastI := int(k*float64(i) + k)
-			child := buildTree(addrs[firstI], addrs[firstI+1:lastI], d,
+			child := buildTree(addrs[firstI], addrs[firstI+1:lastI], h-1,
 				1+index+firstI)
 			children = append(children, child)
 		}

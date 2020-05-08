@@ -15,11 +15,15 @@ import (
 func TestStart(t *testing.T) {
 	n := 10
 
+	// defer func() {
+	// 	minogrpc.SaveGraph("graph10.dot", true, false)
+	// }()
+
 	addrFactory := minoch.AddressFactory{}
 
 	rootAddr := addrFactory.FromText([]byte("127.0.0.1:2000"))
 
-	factory := routing.NewTreeRoutingFactory(4, rootAddr, addrFactory)
+	factory := routing.NewTreeRoutingFactory(7, rootAddr, addrFactory)
 
 	addrs := make([]mino.Address, n)
 	pubKeys := make([]kyber.Point, n)

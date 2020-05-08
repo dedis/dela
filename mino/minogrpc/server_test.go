@@ -879,6 +879,9 @@ func TestRPC_DKG_Stream(t *testing.T) {
 	// 	f, _ := os.Create("/tmp/dat2.dot")
 	// 	GenerateGraphviz(f, traffics...)
 	// }()
+	// defer func() {
+	// 	SaveGraph("/tmp/graph10.dot")
+	// }()
 
 	// Computed routing with n=9:
 	//

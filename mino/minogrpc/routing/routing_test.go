@@ -1,6 +1,8 @@
 package routing
 
 import (
+	"os"
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -107,15 +109,51 @@ func TestBuildNode(t *testing.T) {
 	}
 
 	node := buildTree(addr, addrs, 3, -1)
-	compareNode(t, node, -1, 7, "fake.Address[-1]", 3)
-	compareNode(t, node.Children[0], 0, 1, "fake.Address[0]", 1)
+	node.Display(os.Stdout)
+
+	// Node[fake.Address[-1]-index[-1]-lastIndex[7]](
+	// 	Node[fake.Address[0]-index[0]-lastIndex[3]](
+	// 		Node[fake.Address[1]-index[1]-lastIndex[1]](
+	// 		)
+	// 		Node[fake.Address[2]-index[2]-lastIndex[3]](
+	// 			Node[fake.Address[3]-index[3]-lastIndex[3]](
+	// 			)
+	// 		)
+	// 	)
+	// 	Node[fake.Address[4]-index[4]-lastIndex[7]](
+	// 		Node[fake.Address[5]-index[5]-lastIndex[5]](
+	// 		)
+	// 		Node[fake.Address[6]-index[6]-lastIndex[7]](
+	// 			Node[fake.Address[7]-index[7]-lastIndex[7]](
+	// 			)
+	// 		)
+	// 	)
+	// )
+
+	compareNode(t, node, -1, 7, "fake.Address[-1]", 2)
+	compareNode(t, node.Children[0], 0, 3, "fake.Address[0]", 2)
 	compareNode(t, node.Children[0].Children[0], 1, 1, "fake.Address[1]", 0)
-	compareNode(t, node.Children[1], 2, 4, "fake.Address[2]", 2)
-	compareNode(t, node.Children[1].Children[0], 3, 3, "fake.Address[3]", 0)
-	compareNode(t, node.Children[1].Children[1], 4, 4, "fake.Address[4]", 0)
-	compareNode(t, node.Children[2], 5, 7, "fake.Address[5]", 2)
-	compareNode(t, node.Children[2].Children[0], 6, 6, "fake.Address[6]", 0)
-	compareNode(t, node.Children[2].Children[1], 7, 7, "fake.Address[7]", 0)
+	compareNode(t, node.Children[0].Children[1], 2, 3, "fake.Address[2]", 1)
+	compareNode(t, node.Children[0].Children[1].Children[0], 3, 3, "fake.Address[3]", 0)
+	compareNode(t, node.Children[1], 4, 7, "fake.Address[4]", 2)
+	compareNode(t, node.Children[1].Children[0], 5, 5, "fake.Address[5]", 0)
+	compareNode(t, node.Children[1].Children[1], 6, 7, "fake.Address[6]", 1)
+	compareNode(t, node.Children[1].Children[1].Children[0], 7, 7, "fake.Address[7]", 0)
+}
+
+func TestTreeShap(t *testing.T) {
+	n := 100
+
+	addrs := make([]mino.Address, n)
+	for i := 0; i < n; i++ {
+		addrs[i] = fake.NewAddress(i)
+	}
+
+	for h := 1; h < n-1; h++ {
+		node := buildTree(addrs[0], addrs[1:], h, 0)
+		require.Equal(t, h, getHeight(node))
+	}
+
 }
 
 // -----------------------------------------------------------------------------
@@ -124,7 +162,21 @@ func TestBuildNode(t *testing.T) {
 func compareNode(t *testing.T, node *treeNode, index, lastIndex int, addrStr string,
 	numChilds int) {
 
-	require.Equal(t, index, node.Index)
-	require.Equal(t, addrStr, node.Addr.String())
-	require.Equal(t, numChilds, len(node.Children))
+	require.Equal(t, index, node.Index, "node index", addrStr)
+	require.Equal(t, addrStr, node.Addr.String(), "addr str", addrStr)
+	require.Equal(t, numChilds, len(node.Children), "numChilds", addrStr)
+}
+
+func getHeight(node *treeNode) int {
+	heights := make(sort.IntSlice, len(node.Children))
+	for i, child := range node.Children {
+		heights[i] = 1 + getHeight(child)
+	}
+
+	if len(heights) == 0 {
+		return 0
+	}
+
+	heights.Sort()
+	return heights[len(heights)-1]
 }
