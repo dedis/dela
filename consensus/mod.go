@@ -69,4 +69,6 @@ type Consensus interface {
 
 	// Listen starts to listen for consensus messages.
 	Listen(h Validator) (Actor, error)
+
+	Store(Chain) error
 }

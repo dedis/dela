@@ -4,9 +4,12 @@ import (
 	"encoding/binary"
 	"io"
 	"sort"
+	"sync"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
+	"go.dedis.ch/fabric/blockchain"
+	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/consensus/viewchange"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
@@ -20,16 +23,12 @@ const (
 	// RosterValueKey is the key used to store the roster.
 	RosterValueKey = "roster_value"
 
-	// RosterChangeSetKey is the key used to store the roster change set.
-	RosterChangeSetKey = "roster_changeset"
-
 	// RosterArcKey is the ke used to store the access rights control of the
 	// roster.
 	RosterArcKey = "roster_arc"
 )
 
 var rosterValueKey = []byte(RosterValueKey)
-var rosterChangeSetKey = []byte(RosterChangeSetKey)
 
 // clientTask is the client task implementation to update the roster of a
 // consensus using the transactions for access rights control.
@@ -59,8 +58,22 @@ func NewAdd(addr mino.Address, pubkey crypto.PublicKey) basic.ClientTask {
 }
 
 func (t clientTask) GetChangeSet() viewchange.ChangeSet {
+	removals := append([]uint32{}, t.remove...)
+	// Sort by ascending order in O(n*log(n)).
+	sort.Slice(removals, func(i, j int) bool { return removals[i] > removals[j] })
+	// Remove duplicates in O(n).
+	for i := 0; i < len(removals)-1; {
+		if removals[i] == removals[i+1] {
+			removals = append(removals[:i], removals[i+1:]...)
+		} else {
+			// Only moves to the next when all occurances of the same index are
+			// removed.
+			i++
+		}
+	}
+
 	changeset := viewchange.ChangeSet{
-		Remove: t.remove,
+		Remove: removals,
 	}
 
 	if t.player != nil {
@@ -121,6 +134,7 @@ type serverTask struct {
 	clientTask
 	encoder       encoding.ProtoMarshaler
 	rosterFactory viewchange.AuthorityFactory
+	bag           *changeSetBag
 }
 
 // Consume implements basic.ServerTask. It executes the task and write the
@@ -129,7 +143,14 @@ func (t serverTask) Consume(ctx basic.Context, page inventory.WritablePage) erro
 	// 1. Access rights control
 	// TODO: implement
 
-	// 2. Update the roster stored in the inventory.
+	// 2. Store the changeset so it can be read later on.
+	changeset := t.GetChangeSet()
+
+	page.Defer(func(fingerprint []byte) {
+		t.bag.Stage(page.GetIndex(), fingerprint, changeset)
+	})
+
+	// 3. Update the roster stored in the inventory.
 	value, err := page.Read(rosterValueKey)
 	if err != nil {
 		return xerrors.Errorf("couldn't read roster: %v", err)
@@ -140,7 +161,6 @@ func (t serverTask) Consume(ctx basic.Context, page inventory.WritablePage) erro
 		return xerrors.Errorf("couldn't decode roster: %v", err)
 	}
 
-	changeset := t.GetChangeSet()
 	roster = roster.Apply(changeset)
 
 	value, err = t.encoder.Pack(roster)
@@ -151,60 +171,6 @@ func (t serverTask) Consume(ctx basic.Context, page inventory.WritablePage) erro
 	err = page.Write(rosterValueKey, value)
 	if err != nil {
 		return xerrors.Errorf("couldn't write roster: %v", err)
-	}
-
-	// 3. Store the changeset so it can be read later on.
-	err = t.updateChangeSet(page)
-	if err != nil {
-		return xerrors.Errorf("couldn't update change set: %v", err)
-	}
-
-	return nil
-}
-
-func (t serverTask) updateChangeSet(page inventory.WritablePage) error {
-	pb, err := page.Read(rosterChangeSetKey)
-	if err != nil {
-		return xerrors.Errorf("couldn't read from page: %v", err)
-	}
-
-	changesetpb, ok := pb.(*ChangeSet)
-	if !ok || changesetpb.GetIndex() != page.GetIndex() {
-		// Initialize if nil or reset if the change set comes from a previous
-		// block.
-		changesetpb = &ChangeSet{
-			// Keep track of which index the change set is for as the inventory
-			// moves values from previous pages.
-			Index: page.GetIndex(),
-		}
-	}
-
-	removals := append(changesetpb.GetRemove(), t.remove...)
-	// Sort by ascending order in O(n*log(n)).
-	sort.Slice(removals, func(i, j int) bool { return removals[i] > removals[j] })
-	// Remove duplicates in O(n).
-	for i := 0; i < len(removals)-1; {
-		if removals[i] == removals[i+1] {
-			removals = append(removals[:i], removals[i+1:]...)
-		} else {
-			// Only moves to the next when all occurances of the same index are
-			// removed.
-			i++
-		}
-	}
-
-	taskpb, err := t.encoder.Pack(t)
-	if err != nil {
-		return err
-	}
-
-	changesetpb.Remove = removals
-	changesetpb.Addr = taskpb.(*Task).GetAddr()
-	changesetpb.PublicKey = taskpb.(*Task).GetPublicKey()
-
-	err = page.Write(rosterChangeSetKey, changesetpb)
-	if err != nil {
-		return xerrors.Errorf("couldn't write to page: %v", err)
 	}
 
 	return nil
@@ -219,6 +185,7 @@ type TaskManager struct {
 	encoder       encoding.ProtoMarshaler
 	inventory     inventory.Inventory
 	rosterFactory viewchange.AuthorityFactory
+	bag           *changeSetBag
 }
 
 // NewTaskManager returns a new instance of the task factory.
@@ -227,6 +194,7 @@ func NewTaskManager(f viewchange.AuthorityFactory, i inventory.Inventory) TaskMa
 		encoder:       encoding.NewProtoEncoder(),
 		inventory:     i,
 		rosterFactory: f,
+		bag:           &changeSetBag{},
 	}
 }
 
@@ -257,40 +225,27 @@ func (f TaskManager) GetAuthority(index uint64) (viewchange.EvolvableAuthority, 
 	return roster, nil
 }
 
+// Payload is a specific payload interface to differentiate the change sets.
+type Payload interface {
+	GetFingerprint() []byte
+}
+
 // GetChangeSet implements viewchange.Governance. It returns the change set for
 // that block by reading the transactions.
-func (f TaskManager) GetChangeSet(index uint64) (viewchange.ChangeSet, error) {
-	cs := viewchange.ChangeSet{}
-
-	page, err := f.inventory.GetPage(index)
-	if err != nil {
-		return cs, xerrors.Errorf("couldn't read page: %v", err)
+func (f TaskManager) GetChangeSet(prop consensus.Proposal) (viewchange.ChangeSet, error) {
+	block, ok := prop.(blockchain.Block)
+	if !ok {
+		return viewchange.ChangeSet{}, xerrors.New("")
 	}
 
-	pb, err := page.Read(rosterChangeSetKey)
-	if err != nil {
-		return cs, xerrors.Errorf("couldn't read from page: %v", err)
+	payload, ok := block.GetPayload().(Payload)
+	if !ok {
+		return viewchange.ChangeSet{}, xerrors.New("")
 	}
 
-	changesetpb, ok := pb.(*ChangeSet)
-	if !ok || index != changesetpb.GetIndex() {
-		// Either the change set is not defined, or it has been for a previous
-		// block we return an empty change set.
-		return cs, nil
-	}
+	fingerprint := payload.GetFingerprint()
 
-	cs.Remove = changesetpb.GetRemove()
-
-	p, err := f.unpackPlayer(changesetpb.GetAddr(), changesetpb.GetPublicKey())
-	if err != nil {
-		return cs, err
-	}
-
-	if p != nil {
-		cs.Add = []viewchange.Player{*p}
-	}
-
-	return cs, nil
+	return f.bag.Get(prop.GetIndex(), fingerprint), nil
 }
 
 // FromProto implements basic.TaskFactory. It returns the server task associated
@@ -322,6 +277,7 @@ func (f TaskManager) FromProto(in proto.Message) (basic.ServerTask, error) {
 		},
 		encoder:       f.encoder,
 		rosterFactory: f.rosterFactory,
+		bag:           f.bag,
 	}
 	return task, nil
 }
@@ -344,4 +300,40 @@ func (f TaskManager) unpackPlayer(addrpb []byte, pubkeypb proto.Message) (*viewc
 	}
 
 	return &player, nil
+}
+
+type changeSetBag struct {
+	sync.Mutex
+	index uint64
+	store map[[32]byte]viewchange.ChangeSet
+}
+
+func (bag *changeSetBag) Stage(index uint64, id []byte, cs viewchange.ChangeSet) {
+	bag.Lock()
+	defer bag.Unlock()
+
+	if bag.index != index {
+		// Reset previous staged change sets from the previous index.
+		bag.store = make(map[[32]byte]viewchange.ChangeSet)
+		bag.index = index
+	}
+
+	key := [32]byte{}
+	copy(key[:], id)
+
+	bag.store[key] = cs
+}
+
+func (bag *changeSetBag) Get(index uint64, fingerprint []byte) viewchange.ChangeSet {
+	bag.Lock()
+	defer bag.Unlock()
+
+	if bag.index != index {
+		return viewchange.ChangeSet{}
+	}
+
+	key := [32]byte{}
+	copy(key[:], fingerprint)
+
+	return bag.store[key]
 }

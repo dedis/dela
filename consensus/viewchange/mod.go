@@ -68,5 +68,5 @@ type Governance interface {
 
 	// GetChangeSet must return the changes to the authority that will be
 	// applied for the proposal following the given index.
-	GetChangeSet(index uint64) (ChangeSet, error)
+	GetChangeSet(consensus.Proposal) (ChangeSet, error)
 }

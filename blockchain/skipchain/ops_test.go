@@ -22,29 +22,24 @@ func TestOperations_InsertBlock(t *testing.T) {
 		watcher:   &fakeWatcher{},
 	}
 
-	base := SkipBlock{Index: 4, Payload: &empty.Empty{}}
-	basepb, err := base.Pack(encoding.NewProtoEncoder())
-	require.NoError(t, err)
+	block := SkipBlock{Index: 4}
 
-	block, err := ops.insertBlock(basepb)
+	err := ops.insertBlock(block)
 	require.NoError(t, err)
 	require.Equal(t, uint64(4), block.GetIndex())
 
-	_, err = ops.insertBlock(nil)
-	require.EqualError(t, err, "couldn't decode block: invalid message type '<nil>'")
-
 	ops.processor = &fakePayloadProc{errValidate: xerrors.New("oops")}
-	_, err = ops.insertBlock(basepb)
+	err = ops.insertBlock(block)
 	require.EqualError(t, err, "couldn't validate block: oops")
 
 	ops.processor = &fakePayloadProc{errCommit: xerrors.New("oops")}
-	_, err = ops.insertBlock(basepb)
+	err = ops.insertBlock(block)
 	require.EqualError(t, err, "tx failed: couldn't commit block: oops")
 }
 
 func TestOperations_CatchUp(t *testing.T) {
 	block := SkipBlock{
-		Index:   2,
+		Index:   0,
 		Payload: &empty.Empty{},
 	}
 	blockpb, err := block.Pack(encoding.NewProtoEncoder())
@@ -80,5 +75,5 @@ func TestOperations_CatchUp(t *testing.T) {
 	ops.rpc = fake.NewStreamRPC(fake.Receiver{Msg: &BlockResponse{}}, fake.Sender{})
 	err = ops.catchUp(SkipBlock{}, nil)
 	require.EqualError(t, err,
-		"couldn't store block: couldn't decode block: couldn't unmarshal payload: message is nil")
+		"couldn't decode block: couldn't unmarshal payload: message is nil")
 }

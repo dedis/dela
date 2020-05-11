@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"context"
 
-	proto "github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/blockchain"
+	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
@@ -20,26 +20,22 @@ type operations struct {
 	db           Database
 	rpc          mino.RPC
 	watcher      blockchain.Observable
+	consensus    consensus.Consensus
 }
 
-func (ops *operations) insertBlock(in proto.Message) (SkipBlock, error) {
-	block, err := ops.blockFactory.decodeBlock(in)
+func (ops *operations) insertBlock(block SkipBlock) error {
+	err := ops.processor.Validate(block.GetIndex(), block.GetPayload())
 	if err != nil {
-		return block, xerrors.Errorf("couldn't decode block: %v", err)
-	}
-
-	err = ops.processor.Validate(block.Index, block.GetPayload())
-	if err != nil {
-		return block, xerrors.Errorf("couldn't validate block: %v", err)
+		return xerrors.Errorf("couldn't validate block: %v", err)
 	}
 
 	err = ops.commitBlock(block)
 	if err != nil {
 		// No wrapping to avoid redundancy.
-		return block, err
+		return err
 	}
 
-	return block, nil
+	return nil
 }
 
 func (ops *operations) commitBlock(block SkipBlock) error {
@@ -96,7 +92,35 @@ func (ops *operations) catchUp(target SkipBlock, addr mino.Address) error {
 			return xerrors.Errorf("invalid response type '%T' != '%T'", msg, resp)
 		}
 
-		block, err := ops.insertBlock(resp.GetBlock())
+		block, err := ops.blockFactory.decodeBlock(resp.GetBlock())
+		if err != nil {
+			return xerrors.Errorf("couldn't decode block: %v", err)
+		}
+
+		if resp.GetChain() != nil {
+			factory, err := ops.consensus.GetChainFactory()
+			if err != nil {
+				return err
+			}
+
+			chain, err := factory.FromProto(resp.GetChain())
+			if err != nil {
+				return err
+			}
+
+			if !bytes.Equal(chain.GetLastHash(), block.GetHash()) {
+				return xerrors.Errorf("mismatch chain: hash '' != ''")
+			}
+
+			err = ops.consensus.Store(chain)
+			if err != nil {
+				return err
+			}
+		} else if block.GetIndex() != 0 {
+			return xerrors.New("missing chain to the block in the response")
+		}
+
+		err = ops.insertBlock(block)
 		if err != nil {
 			return xerrors.Errorf("couldn't store block: %v", err)
 		}

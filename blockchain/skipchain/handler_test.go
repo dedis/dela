@@ -52,10 +52,11 @@ func TestHandler_Process(t *testing.T) {
 	_, err = h.Process(req)
 	require.EqualError(t, err, "unknown message type '*empty.Empty'")
 
-	req.Message = &PropagateGenesis{}
+	proc.errValidate = xerrors.New("oops")
+	req.Message = &PropagateGenesis{Genesis: packed.(*BlockProto)}
 	_, err = h.Process(req)
 	require.EqualError(t, err,
-		"couldn't store genesis: couldn't decode block: couldn't unmarshal payload: message is nil")
+		"couldn't store genesis: couldn't validate block: oops")
 }
 
 func TestHandler_Stream(t *testing.T) {

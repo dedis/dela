@@ -1,20 +1,23 @@
 package byzcoin
 
 import (
+	"bytes"
 	"context"
-	fmt "fmt"
+	"fmt"
 	"testing"
 	"time"
 
-	proto "github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/crypto/bls"
+	"go.dedis.ch/fabric/encoding"
 	internal "go.dedis.ch/fabric/internal/testing"
 	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/ledger"
 	"go.dedis.ch/fabric/ledger/arc/darc"
-	roster "go.dedis.ch/fabric/ledger/byzcoin/roster"
+	"go.dedis.ch/fabric/ledger/byzcoin/roster"
+	"go.dedis.ch/fabric/ledger/transactions"
 	"go.dedis.ch/fabric/ledger/transactions/basic"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/minoch"
@@ -53,12 +56,16 @@ func TestLedger_Basic(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	txs := ledgers[2].Watch(ctx)
-
 	signer := bls.NewSigner()
 	txFactory := basic.NewTransactionFactory(signer, nil)
+
+	// Send a few transactions..
+	for i := 0; i < 2; i++ {
+		tx, err := txFactory.New(darc.NewCreate(makeDarc(t, signer)))
+		require.NoError(t, err)
+
+		sendTx(t, ledgers[1], actors[5], tx)
+	}
 
 	addAddr := ledgers[19].(*Ledger).addr
 	addPk := ledgers[19].(*Ledger).signer.GetPublicKey()
@@ -67,57 +74,28 @@ func TestLedger_Basic(t *testing.T) {
 	tx, err := txFactory.New(roster.NewAdd(addAddr, addPk))
 	require.NoError(t, err)
 
-	err = actors[1].AddTransaction(tx)
+	sendTx(t, ledgers[1], actors[1], tx)
+
+	err = <-actors[19].HasStarted()
 	require.NoError(t, err)
 
-	select {
-	case res := <-txs:
-		require.NotNil(t, res)
-		require.Equal(t, tx.GetID(), res.GetTransactionID())
-	case <-time.After(1 * time.Second):
-		t.Fatal("timeout 1")
+	// Send a few transactions..
+	for i := 0; i < 2; i++ {
+		tx, err := txFactory.New(darc.NewCreate(makeDarc(t, signer)))
+		require.NoError(t, err)
+
+		// 20th participant should now be setup.
+		sendTx(t, ledgers[19], actors[10], tx)
 	}
 
-	roster, err := ledgers[2].(*Ledger).governance.GetAuthority(1)
-	require.NoError(t, err)
-	// The last participant over 20 should have been removed from the current
-	// chain roster.
-	require.Equal(t, 20, roster.Len())
-
-	// Try to create a DARC.
-	access := makeDarc(t, signer)
-	tx, err = txFactory.New(darc.NewCreate(access))
+	latest, err := ledgers[0].(*Ledger).bc.GetVerifiableBlock()
 	require.NoError(t, err)
 
-	err = actors[1].AddTransaction(tx)
+	latestpb, err := latest.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
 
-	select {
-	case res := <-txs:
-		require.NotNil(t, res)
-		require.Equal(t, tx.GetID(), res.GetTransactionID())
-	case <-time.After(1 * time.Second):
-		t.Fatal("timeout 2")
-	}
-
-	value, err := ledgers[2].GetValue(tx.GetID())
+	_, err = ledgers[0].(*Ledger).bc.GetBlockFactory().FromVerifiable(latestpb)
 	require.NoError(t, err)
-	require.IsType(t, (*darc.AccessProto)(nil), value)
-
-	// Then update it.
-	tx, err = txFactory.New(darc.NewUpdate(tx.GetID(), access))
-	require.NoError(t, err)
-
-	err = actors[0].AddTransaction(tx)
-	require.NoError(t, err)
-
-	select {
-	case res := <-txs:
-		require.NotNil(t, res)
-		require.Equal(t, tx.GetID(), res.GetTransactionID())
-	case <-time.After(1 * time.Second):
-		t.Fatal("timeout 3")
-	}
 }
 
 // -----------------------------------------------------------------------------
@@ -156,4 +134,26 @@ func makeDarc(t *testing.T, signer crypto.Signer) darc.Access {
 	require.NoError(t, err)
 
 	return access
+}
+
+func sendTx(t *testing.T, ledger ledger.Ledger, actor ledger.Actor, tx transactions.ClientTransaction) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	txs := ledger.Watch(ctx)
+
+	err := actor.AddTransaction(tx)
+	require.NoError(t, err)
+
+	for {
+		select {
+		case res := <-txs:
+			require.NotNil(t, res)
+			if bytes.Equal(tx.GetID(), res.GetTransactionID()) {
+				return
+			}
+		case <-time.After(1 * time.Second):
+			t.Fatal("timeout when waiting for the transaction")
+		}
+	}
 }

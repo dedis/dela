@@ -15,11 +15,11 @@ import (
 
 func TestInMemoryInventory_GetPage(t *testing.T) {
 	inv := NewInventory()
-	inv.pages = []inMemoryPage{{}}
+	inv.pages = []*inMemoryPage{{}}
 
 	page, err := inv.GetPage(0)
 	require.NoError(t, err)
-	require.IsType(t, inMemoryPage{}, page)
+	require.IsType(t, (*inMemoryPage)(nil), page)
 
 	_, err = inv.GetPage(2)
 	require.EqualError(t, err, "invalid page (2 >= 1)")
@@ -27,7 +27,7 @@ func TestInMemoryInventory_GetPage(t *testing.T) {
 
 func TestInMemoryInventory_GetStagingPage(t *testing.T) {
 	inv := NewInventory()
-	inv.stagingPages[Digest{1}] = inMemoryPage{}
+	inv.stagingPages[Digest{1}] = &inMemoryPage{}
 
 	require.Nil(t, inv.GetStagingPage([]byte{2}))
 	require.NotNil(t, inv.GetStagingPage([]byte{1}))
@@ -49,8 +49,8 @@ func TestInMemoryInventory_Stage(t *testing.T) {
 	require.Len(t, inv.stagingPages, 1)
 	require.Len(t, inv.pages, 0)
 
-	inv.pages = append(inv.pages, inv.stagingPages[page.(inMemoryPage).fingerprint])
-	inv.stagingPages = make(map[Digest]inMemoryPage)
+	inv.pages = append(inv.pages, inv.stagingPages[page.(*inMemoryPage).fingerprint])
+	inv.stagingPages = make(map[Digest]*inMemoryPage)
 	page, err = inv.Stage(func(page inventory.WritablePage) error {
 		value, err := page.Read([]byte{1})
 		require.NoError(t, err)
@@ -63,9 +63,9 @@ func TestInMemoryInventory_Stage(t *testing.T) {
 	require.Len(t, inv.pages, 1)
 
 	// Check stability of the hash of the page.
-	mempage := page.(inMemoryPage)
+	mempage := page.(*inMemoryPage)
 	for i := 0; i < 10; i++ {
-		require.NoError(t, inv.computeHash(&mempage))
+		require.NoError(t, inv.computeHash(mempage))
 		_, ok := inv.stagingPages[mempage.fingerprint]
 		require.True(t, ok)
 	}
@@ -94,7 +94,7 @@ func TestInMemoryInventory_Stage(t *testing.T) {
 func TestInMemoryInventory_Commit(t *testing.T) {
 	digest := Digest{123}
 	inv := NewInventory()
-	inv.stagingPages[digest] = inMemoryPage{}
+	inv.stagingPages[digest] = &inMemoryPage{}
 
 	err := inv.Commit(digest[:])
 	require.NoError(t, err)

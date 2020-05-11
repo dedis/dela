@@ -29,7 +29,12 @@ func newHandler(ops *operations) handler {
 func (h handler) Process(req mino.Request) (proto.Message, error) {
 	switch in := req.Message.(type) {
 	case *PropagateGenesis:
-		_, err := h.insertBlock(in.GetGenesis())
+		genesis, err := h.blockFactory.decodeBlock(in.GetGenesis())
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't decode block: %v", err)
+		}
+
+		err = h.insertBlock(genesis)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't store genesis: %v", err)
 		}
@@ -65,7 +70,28 @@ func (h handler) Stream(out mino.Sender, in mino.Receiver) error {
 			return xerrors.Errorf("couldn't pack block: %v", err)
 		}
 
-		errs := out.Send(&BlockResponse{Block: blockpb.(*BlockProto)}, addr)
+		resp := &BlockResponse{
+			Block: blockpb.(*BlockProto),
+		}
+
+		if block.GetIndex() > 0 {
+			// In the case the genesis block needs to be sent, there is no chain
+			// to send alongside.
+
+			chain, err := h.consensus.GetChain(block.GetHash())
+			if err != nil {
+				return err
+			}
+
+			chainpb, err := h.encoder.PackAny(chain)
+			if err != nil {
+				return err
+			}
+
+			resp.Chain = chainpb
+		}
+
+		errs := out.Send(resp, addr)
 
 		err = <-errs
 		if err != nil {

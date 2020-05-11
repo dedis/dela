@@ -106,6 +106,33 @@ func (c *Consensus) Listen(v consensus.Validator) (consensus.Actor, error) {
 	return actor, nil
 }
 
+// Store implements consensus.Consensus. It stores the chain by following the
+// local one and completes it.
+func (c *Consensus) Store(chain consensus.Chain) error {
+	last, err := c.storage.ReadLast()
+	if err != nil {
+		return err
+	}
+
+	for _, link := range chain.(forwardLinkChain).links {
+		if last == nil || bytes.Equal(last.To, link.from[:]) {
+			linkpb, err := c.encoder.Pack(link)
+			if err != nil {
+				return err
+			}
+
+			err = c.storage.Store(linkpb.(*ForwardLinkProto))
+			if err != nil {
+				return err
+			}
+
+			last = nil
+		}
+	}
+
+	return nil
+}
+
 type pbftActor struct {
 	*Consensus
 	closing   chan struct{}
@@ -136,7 +163,7 @@ func (a pbftActor) Propose(p consensus.Proposal) error {
 		return nil
 	}
 
-	changeset, err := a.governance.GetChangeSet(p.GetIndex() - 1)
+	changeset, err := a.governance.GetChangeSet(p)
 	if err != nil {
 		return xerrors.Errorf("couldn't get change set: %v", err)
 	}
@@ -253,7 +280,7 @@ func (h handler) Hash(addr mino.Address, in proto.Message) (Digest, error) {
 				last.GetTo(), proposal.GetPreviousHash())
 		}
 
-		changeset, err := h.governance.GetChangeSet(proposal.GetIndex() - 1)
+		changeset, err := h.governance.GetChangeSet(proposal)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't get change set: %v", err)
 		}

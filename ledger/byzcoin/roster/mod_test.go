@@ -16,7 +16,6 @@ import (
 func TestMessages(t *testing.T) {
 	messages := []proto.Message{
 		&Roster{},
-		&ChangeSet{},
 		&Task{},
 	}
 

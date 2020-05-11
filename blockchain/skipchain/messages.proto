@@ -9,9 +9,9 @@ import "google/protobuf/any.proto";
 // the genesis block is missing.
 message BlockProto {
     uint64 index = 1;
-    bytes genesisID = 5;
-    bytes backlink = 6;
-    google.protobuf.Any payload = 7;
+    bytes genesisID = 2;
+    bytes backlink = 3;
+    google.protobuf.Any payload = 4;
 }
 
 // VerifiableBlockProto is the message that contains a verifiable block. It
@@ -35,4 +35,5 @@ message BlockRequest {
 
 message BlockResponse {
     BlockProto block = 1;
+    google.protobuf.Any chain = 2;
 }

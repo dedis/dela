@@ -358,6 +358,6 @@ func (gov fakeGovernance) GetAuthority(index uint64) (viewchange.EvolvableAuthor
 	return gov.authority, nil
 }
 
-func (gov fakeGovernance) GetChangeSet(uint64) (viewchange.ChangeSet, error) {
+func (gov fakeGovernance) GetChangeSet(consensus.Proposal) (viewchange.ChangeSet, error) {
 	return viewchange.ChangeSet{}, nil
 }
