@@ -107,23 +107,29 @@ func (c *Consensus) Listen(v consensus.Validator) (consensus.Actor, error) {
 }
 
 // Store implements consensus.Consensus. It stores the chain by following the
-// local one and completes it.
-func (c *Consensus) Store(chain consensus.Chain) error {
-	last, err := c.storage.ReadLast()
-	if err != nil {
-		return err
+// local one and completes it. It returns an error if a link is inconsistent
+// with the local storage.
+func (c *Consensus) Store(in consensus.Chain) error {
+	chain, ok := in.(forwardLinkChain)
+	if !ok {
+		return xerrors.Errorf("invalid message type '%T' != '%T'", in, chain)
 	}
 
-	for _, link := range chain.(forwardLinkChain).links {
+	last, err := c.storage.ReadLast()
+	if err != nil {
+		return xerrors.Errorf("couldn't read latest chain: %v", err)
+	}
+
+	for _, link := range chain.links {
 		if last == nil || bytes.Equal(last.To, link.from[:]) {
 			linkpb, err := c.encoder.Pack(link)
 			if err != nil {
-				return err
+				return xerrors.Errorf("couldn't pack link: %v", err)
 			}
 
 			err = c.storage.Store(linkpb.(*ForwardLinkProto))
 			if err != nil {
-				return err
+				return xerrors.Errorf("couldn't store link: %v", err)
 			}
 
 			last = nil

@@ -1,8 +1,10 @@
 package skipchain
 
 import (
+	fmt "fmt"
 	"testing"
 
+	"github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/crypto"
@@ -45,7 +47,13 @@ func TestOperations_CatchUp(t *testing.T) {
 	blockpb, err := block.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
 
-	rcv := fake.Receiver{Msg: &BlockResponse{Block: blockpb.(*BlockProto)}}
+	rcv := fake.Receiver{Msg: &BlockResponse{
+		Block: blockpb.(*BlockProto),
+		Chain: &any.Any{},
+	}}
+
+	hash, err := block.computeHash(crypto.NewSha256Factory(), encoding.NewProtoEncoder())
+	require.NoError(t, err)
 
 	ops := &operations{
 		blockFactory: blockFactory{
@@ -56,10 +64,8 @@ func TestOperations_CatchUp(t *testing.T) {
 		db:        &fakeDatabase{missing: true},
 		watcher:   &fakeWatcher{},
 		rpc:       fake.NewStreamRPC(rcv, fake.Sender{}),
+		consensus: fakeConsensus{hash: hash},
 	}
-
-	hash, err := block.computeHash(crypto.NewSha256Factory(), encoding.NewProtoEncoder())
-	require.NoError(t, err)
 
 	err = ops.catchUp(SkipBlock{BackLink: hash}, fake.NewAddress(0))
 	require.NoError(t, err)
@@ -76,4 +82,33 @@ func TestOperations_CatchUp(t *testing.T) {
 	err = ops.catchUp(SkipBlock{}, nil)
 	require.EqualError(t, err,
 		"couldn't decode block: couldn't unmarshal payload: message is nil")
+
+	ops.rpc = fake.NewStreamRPC(rcv, fake.Sender{})
+	ops.processor = &fakePayloadProc{errValidate: xerrors.New("oops")}
+	err = ops.catchUp(SkipBlock{}, nil)
+	require.EqualError(t, err, "couldn't store block: couldn't validate block: oops")
+
+	ops.rpc = fake.NewStreamRPC(rcv, fake.Sender{})
+	ops.consensus = fakeConsensus{errFactory: xerrors.New("oops")}
+	err = ops.catchUp(SkipBlock{}, nil)
+	require.EqualError(t, err, "couldn't get chain factory: oops")
+
+	ops.consensus = fakeConsensus{err: xerrors.New("oops")}
+	err = ops.catchUp(SkipBlock{}, nil)
+	require.EqualError(t, err, "couldn't decode chain: oops")
+
+	ops.consensus = fakeConsensus{hash: Digest{0x01}}
+	err = ops.catchUp(SkipBlock{}, nil)
+	require.EqualError(t, err, fmt.Sprintf("mismatch chain: hash '%x' != '%x'",
+		Digest{0x01}.Bytes(), hash.Bytes()))
+
+	ops.consensus = fakeConsensus{hash: hash, errStore: xerrors.New("oops")}
+	err = ops.catchUp(SkipBlock{}, nil)
+	require.EqualError(t, err, "couldn't store chain: oops")
+
+	blockpb.(*BlockProto).Index = 1
+	rcv2 := fake.Receiver{Msg: &BlockResponse{Block: blockpb.(*BlockProto)}}
+	ops.rpc = fake.NewStreamRPC(rcv2, fake.Sender{})
+	err = ops.catchUp(SkipBlock{}, nil)
+	require.EqualError(t, err, "missing chain to the block in the response")
 }

@@ -172,11 +172,38 @@ func TestConsensus_Listen(t *testing.T) {
 	require.True(t, xerrors.Is(err, fakeMino.err))
 }
 
-func checkSignatureValue(t *testing.T, pb *any.Any) {
-	var wrapper wrappers.BytesValue
-	err := ptypes.UnmarshalAny(pb, &wrapper)
+func TestConsensus_Store(t *testing.T) {
+	cons := &Consensus{
+		encoder: encoding.NewProtoEncoder(),
+		storage: newInMemoryStorage(),
+	}
+
+	links := []forwardLink{
+		{to: Digest{0x01}},
+		{from: Digest{0x01}},
+	}
+
+	err := cons.Store(forwardLinkChain{links: links})
 	require.NoError(t, err)
-	require.Equal(t, []byte{fake.SignatureByte}, wrapper.GetValue())
+
+	err = cons.Store(fakeChain{})
+	require.EqualError(t, err,
+		"invalid message type 'cosipbft.fakeChain' != 'cosipbft.forwardLinkChain'")
+
+	cons.storage = fakeStorage{}
+	err = cons.Store(forwardLinkChain{links: links})
+	require.EqualError(t, err, "couldn't read latest chain: oops")
+
+	cons.storage = newInMemoryStorage()
+	cons.encoder = fake.BadPackEncoder{}
+	err = cons.Store(forwardLinkChain{links: links})
+	require.EqualError(t, err, "couldn't pack link: fake error")
+
+	cons.encoder = encoding.NewProtoEncoder()
+	links[0].to = Digest{0x02}
+	err = cons.Store(forwardLinkChain{links: links})
+	require.EqualError(t, err,
+		"couldn't store link: mismatch forward link '02' != '01'")
 }
 
 func TestActor_Propose(t *testing.T) {
@@ -223,7 +250,7 @@ func TestActor_Propose(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestConsensus_ProposeFailures(t *testing.T) {
+func TestActor_Failures_Propose(t *testing.T) {
 	actor := &pbftActor{
 		Consensus: &Consensus{
 			encoder:     encoding.NewProtoEncoder(),
@@ -415,6 +442,13 @@ func TestRPCHandler_Process(t *testing.T) {
 
 // -----------------------------------------------------------------------------
 // Utility functions
+
+func checkSignatureValue(t *testing.T, pb *any.Any) {
+	var wrapper wrappers.BytesValue
+	err := ptypes.UnmarshalAny(pb, &wrapper)
+	require.NoError(t, err)
+	require.Equal(t, []byte{fake.SignatureByte}, wrapper.GetValue())
+}
 
 func makeConsensus(t *testing.T, n int,
 	p consensus.Proposal) ([]*Consensus, []consensus.Actor, fake.CollectiveAuthority) {
@@ -655,4 +689,8 @@ func (m *fakeMino) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 	m.name = name
 	m.h = h
 	return nil, m.err
+}
+
+type fakeChain struct {
+	consensus.Chain
 }

@@ -80,12 +80,13 @@ func (h handler) Stream(out mino.Sender, in mino.Receiver) error {
 
 			chain, err := h.consensus.GetChain(block.GetHash())
 			if err != nil {
-				return err
+				return xerrors.Errorf("couldn't get chain to block %d: %v",
+					block.GetIndex(), err)
 			}
 
 			chainpb, err := h.encoder.PackAny(chain)
 			if err != nil {
-				return err
+				return xerrors.Errorf("couldn't pack chain: %v", err)
 			}
 
 			resp.Chain = chainpb

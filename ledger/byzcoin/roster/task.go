@@ -233,19 +233,21 @@ type Payload interface {
 // GetChangeSet implements viewchange.Governance. It returns the change set for
 // that block by reading the transactions.
 func (f TaskManager) GetChangeSet(prop consensus.Proposal) (viewchange.ChangeSet, error) {
+	var changeset viewchange.ChangeSet
+
 	block, ok := prop.(blockchain.Block)
 	if !ok {
-		return viewchange.ChangeSet{}, xerrors.New("")
+		return changeset, xerrors.Errorf("proposal must implement blockchain.Block")
 	}
 
 	payload, ok := block.GetPayload().(Payload)
 	if !ok {
-		return viewchange.ChangeSet{}, xerrors.New("")
+		return changeset, xerrors.New("payload must implement roster.Payload")
 	}
 
-	fingerprint := payload.GetFingerprint()
+	changeset = f.bag.Get(prop.GetIndex(), payload.GetFingerprint())
 
-	return f.bag.Get(prop.GetIndex(), fingerprint), nil
+	return changeset, nil
 }
 
 // FromProto implements basic.TaskFactory. It returns the server task associated
@@ -267,6 +269,7 @@ func (f TaskManager) FromProto(in proto.Message) (basic.ServerTask, error) {
 
 	player, err := f.unpackPlayer(pb.GetAddr(), pb.GetPublicKey())
 	if err != nil {
+		// The error is not wrap to avoid redundancy with the private function.
 		return nil, err
 	}
 
@@ -282,7 +285,9 @@ func (f TaskManager) FromProto(in proto.Message) (basic.ServerTask, error) {
 	return task, nil
 }
 
-func (f TaskManager) unpackPlayer(addrpb []byte, pubkeypb proto.Message) (*viewchange.Player, error) {
+func (f TaskManager) unpackPlayer(addrpb []byte,
+	pubkeypb proto.Message) (*viewchange.Player, error) {
+
 	if addrpb == nil || pubkeypb == nil {
 		return nil, nil
 	}
@@ -291,7 +296,7 @@ func (f TaskManager) unpackPlayer(addrpb []byte, pubkeypb proto.Message) (*viewc
 
 	pubkey, err := f.rosterFactory.GetPublicKeyFactory().FromProto(pubkeypb)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't decode public key: %v", err)
 	}
 
 	player := viewchange.Player{

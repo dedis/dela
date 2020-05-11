@@ -345,6 +345,7 @@ type fakeConsensus struct {
 	err        error
 	errChain   error
 	errFactory error
+	errStore   error
 }
 
 func (c fakeConsensus) GetChainFactory() (consensus.ChainFactory, error) {
@@ -361,4 +362,8 @@ func (c fakeConsensus) GetChain(id []byte) (consensus.Chain, error) {
 
 func (c fakeConsensus) Listen(consensus.Validator) (consensus.Actor, error) {
 	return nil, c.err
+}
+
+func (c fakeConsensus) Store(consensus.Chain) error {
+	return c.errStore
 }

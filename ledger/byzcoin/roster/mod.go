@@ -191,10 +191,14 @@ func NewRosterFactory(af mino.AddressFactory, pf crypto.PublicKeyFactory) viewch
 	}
 }
 
+// GetAddressFactory implements viewchange.AuthorityFactory. It returns the
+// address factory.
 func (f rosterFactory) GetAddressFactory() mino.AddressFactory {
 	return f.addressFactory
 }
 
+// GetPublicKeyFactory implements viewchange.AuthorityFactory. It returns the
+// public key factory.
 func (f rosterFactory) GetPublicKeyFactory() crypto.PublicKeyFactory {
 	return f.pubkeyFactory
 }

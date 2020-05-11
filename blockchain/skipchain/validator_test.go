@@ -6,7 +6,6 @@ import (
 	"testing/quick"
 
 	proto "github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/crypto"
@@ -20,12 +19,13 @@ func TestBlockValidator_Validate(t *testing.T) {
 		packed, err := block.Pack(encoding.NewProtoEncoder())
 		require.NoError(t, err)
 
+		db := &fakeDatabase{blocks: []SkipBlock{{hash: block.GenesisID}}}
 		v := &blockValidator{
 			operations: &operations{
 				processor: &fakePayloadProc{},
 				watcher:   &fakeWatcher{},
 				encoder:   encoding.NewProtoEncoder(),
-				db:        &fakeDatabase{genesisID: block.GenesisID},
+				db:        db,
 				addr:      fake.NewAddress(0),
 				blockFactory: blockFactory{
 					encoder:     encoding.NewProtoEncoder(),
@@ -45,16 +45,17 @@ func TestBlockValidator_Validate(t *testing.T) {
 		_, err = v.Validate(fake.Address{}, nil)
 		require.EqualError(t, err, "couldn't decode block: invalid message type '<nil>'")
 
-		v.db = &fakeDatabase{err: xerrors.New("oops")}
+		db.err = xerrors.New("oops")
 		_, err = v.Validate(fake.Address{}, packed)
 		require.EqualError(t, err, "couldn't read genesis block: oops")
 
-		v.db = &fakeDatabase{genesisID: Digest{}}
+		db.err = nil
+		db.blocks = []SkipBlock{{}}
 		_, err = v.Validate(fake.Address{}, packed)
 		require.EqualError(t, err,
 			fmt.Sprintf("mismatch genesis hash '%v' != '%v'", Digest{}, block.GenesisID))
 
-		v.db = &fakeDatabase{genesisID: block.GenesisID}
+		db.blocks = []SkipBlock{{hash: block.GenesisID}}
 		v.processor = &fakePayloadProc{errValidate: xerrors.New("oops")}
 		_, err = v.Validate(fake.Address{}, packed)
 		require.EqualError(t, err, "couldn't validate the payload: oops")
@@ -118,10 +119,10 @@ func (v *fakePayloadProc) Commit(data proto.Message) error {
 
 type fakeDatabase struct {
 	Database
-	genesisID Digest
-	err       error
-	aborts    int
-	missing   bool
+	blocks  []SkipBlock
+	err     error
+	aborts  int
+	missing bool
 }
 
 func (db *fakeDatabase) Contains(index uint64) bool {
@@ -129,7 +130,7 @@ func (db *fakeDatabase) Contains(index uint64) bool {
 }
 
 func (db *fakeDatabase) Read(index int64) (SkipBlock, error) {
-	return SkipBlock{hash: db.genesisID, Payload: &empty.Empty{}}, db.err
+	return db.blocks[index], db.err
 }
 
 func (db *fakeDatabase) Write(SkipBlock) error {
@@ -137,7 +138,7 @@ func (db *fakeDatabase) Write(SkipBlock) error {
 }
 
 func (db *fakeDatabase) ReadLast() (SkipBlock, error) {
-	return SkipBlock{hash: db.genesisID}, db.err
+	return db.blocks[len(db.blocks)-1], db.err
 }
 
 func (db *fakeDatabase) Atomic(tx func(Queries) error) error {

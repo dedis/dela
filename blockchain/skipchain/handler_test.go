@@ -52,6 +52,11 @@ func TestHandler_Process(t *testing.T) {
 	_, err = h.Process(req)
 	require.EqualError(t, err, "unknown message type '*empty.Empty'")
 
+	req.Message = &PropagateGenesis{}
+	_, err = h.Process(req)
+	require.EqualError(t, err,
+		"couldn't decode block: couldn't unmarshal payload: message is nil")
+
 	proc.errValidate = xerrors.New("oops")
 	req.Message = &PropagateGenesis{Genesis: packed.(*BlockProto)}
 	_, err = h.Process(req)
@@ -60,10 +65,15 @@ func TestHandler_Process(t *testing.T) {
 }
 
 func TestHandler_Stream(t *testing.T) {
+	db := &fakeDatabase{blocks: []SkipBlock{
+		{Payload: &empty.Empty{}},
+		{hash: Digest{0x01}, Index: 1, Payload: &empty.Empty{}}},
+	}
 	h := handler{
 		operations: &operations{
-			encoder: encoding.NewProtoEncoder(),
-			db:      &fakeDatabase{genesisID: Digest{0x01}},
+			encoder:   encoding.NewProtoEncoder(),
+			db:        db,
+			consensus: fakeConsensus{},
 		},
 	}
 
@@ -73,7 +83,7 @@ func TestHandler_Stream(t *testing.T) {
 
 	err := h.Stream(sender, rcvr)
 	require.NoError(t, err)
-	require.Equal(t, 1, call.Len())
+	require.Equal(t, 2, call.Len())
 
 	err = h.Stream(sender, fakeReceiver{err: xerrors.New("oops")})
 	require.EqualError(t, err, "couldn't receive message: oops")
@@ -82,14 +92,24 @@ func TestHandler_Stream(t *testing.T) {
 	require.EqualError(t, err,
 		"invalid message type '<nil>' != '*skipchain.BlockRequest'")
 
-	h.db = &fakeDatabase{err: xerrors.New("oops")}
+	db.err = xerrors.New("oops")
 	err = h.Stream(sender, rcvr)
 	require.EqualError(t, err, "couldn't read block at index 0: oops")
 
-	h.db = &fakeDatabase{}
+	db.err = nil
 	h.encoder = fake.BadPackEncoder{}
 	err = h.Stream(sender, rcvr)
 	require.EqualError(t, err, "couldn't pack block: fake error")
+
+	h.encoder = encoding.NewProtoEncoder()
+	h.consensus = fakeConsensus{err: xerrors.New("oops")}
+	err = h.Stream(sender, rcvr)
+	require.EqualError(t, err, "couldn't get chain to block 1: oops")
+
+	h.consensus = fakeConsensus{}
+	h.encoder = fake.BadPackAnyEncoder{}
+	err = h.Stream(sender, rcvr)
+	require.EqualError(t, err, "couldn't pack chain: fake error")
 
 	h.encoder = encoding.NewProtoEncoder()
 	err = h.Stream(fakeSender{err: xerrors.New("oops")}, rcvr)

@@ -42,7 +42,7 @@ func (v *blockValidator) Validate(addr mino.Address,
 	// It makes sure that we know the whole chain up to the previous proposal.
 	err = v.catchUp(block, addr)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't catch up: %v", err)
 	}
 
 	genesis, err := v.db.Read(0)

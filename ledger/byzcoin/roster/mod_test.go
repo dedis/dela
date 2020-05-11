@@ -104,6 +104,9 @@ func TestRoster_Apply(t *testing.T) {
 
 	roster2 := roster.Apply(viewchange.ChangeSet{Remove: []uint32{3, 2, 0}})
 	require.Equal(t, roster.Len()-2, roster2.Len())
+
+	roster3 := roster2.Apply(viewchange.ChangeSet{Add: []viewchange.Player{{}}})
+	require.Equal(t, roster.Len()-1, roster3.Len())
 }
 
 func TestRoster_Len(t *testing.T) {
@@ -162,6 +165,22 @@ func TestRoster_Pack(t *testing.T) {
 
 	_, err = roster.Pack(fake.BadPackAnyEncoder{})
 	require.EqualError(t, err, "couldn't pack public key: fake error")
+}
+
+func TestRosterFactory_GetAddressFactory(t *testing.T) {
+	factory := rosterFactory{
+		addressFactory: fake.AddressFactory{},
+	}
+
+	require.NotNil(t, factory.GetAddressFactory())
+}
+
+func TestRosterFactory_GetPublicKeyFactory(t *testing.T) {
+	factory := rosterFactory{
+		pubkeyFactory: fake.PublicKeyFactory{},
+	}
+
+	require.NotNil(t, factory.GetPublicKeyFactory())
 }
 
 func TestRosterFactory_FromProto(t *testing.T) {

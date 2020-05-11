@@ -6,9 +6,11 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
+	any "github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/consensus"
+	"go.dedis.ch/fabric/consensus/viewchange"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/ledger/inventory"
@@ -20,6 +22,11 @@ func TestClientTask_GetChangeSet(t *testing.T) {
 
 	changeset := task.GetChangeSet()
 	require.Equal(t, []uint32{4, 3, 1}, changeset.Remove)
+
+	task = NewAdd(fake.NewAddress(0), fake.PublicKey{}).(clientTask)
+
+	changeset = task.GetChangeSet()
+	require.Len(t, changeset.Add, 1)
 }
 
 func TestClientTask_Pack(t *testing.T) {
@@ -28,6 +35,20 @@ func TestClientTask_Pack(t *testing.T) {
 	taskpb, err := task.Pack(nil)
 	require.NoError(t, err)
 	require.Equal(t, []uint32{1}, taskpb.(*Task).GetRemove())
+
+	task = NewAdd(fake.NewAddress(0), fake.PublicKey{})
+	taskpb, err = task.Pack(encoding.NewProtoEncoder())
+	require.NoError(t, err)
+	require.NotNil(t, taskpb.(*Task).GetAddr())
+	require.NotNil(t, taskpb.(*Task).GetPublicKey())
+
+	task = NewAdd(fake.NewBadAddress(), nil)
+	_, err = task.Pack(nil)
+	require.EqualError(t, err, "couldn't marshal address: fake error")
+
+	task = NewAdd(fake.NewAddress(0), fake.PublicKey{})
+	_, err = task.Pack(fake.BadPackAnyEncoder{})
+	require.EqualError(t, err, "couldn't pack public key: fake error")
 }
 
 func TestClientTask_Fingerprint(t *testing.T) {
@@ -57,11 +78,11 @@ func TestServerTask_Consume(t *testing.T) {
 
 	values := map[string]proto.Message{
 		RosterValueKey: rosterpb,
-		// Change set is not set yet.
 	}
 
 	err = task.Consume(nil, fakePage{values: values})
 	require.NoError(t, err)
+	require.Len(t, task.bag.store, 1)
 
 	err = task.Consume(nil, fakePage{errRead: xerrors.New("oops")})
 	require.EqualError(t, err, "couldn't read roster: oops")
@@ -112,15 +133,38 @@ func TestTaskManager_GetAuthority(t *testing.T) {
 }
 
 func TestTaskManager_GetChangeSet(t *testing.T) {
+	manager := NewTaskManager(nil, nil)
 
+	changeset, err := manager.GetChangeSet(fakeBlock{payload: fakePayload{}})
+	require.NoError(t, err)
+	require.Len(t, changeset.Remove, 0)
+
+	manager.bag.index = 1
+	manager.bag.store = map[[32]byte]viewchange.ChangeSet{
+		{0x12}: {Remove: []uint32{1}},
+	}
+	changeset, err = manager.GetChangeSet(fakeBlock{payload: fakePayload{}})
+	require.NoError(t, err)
+	require.Len(t, changeset.Remove, 1)
+
+	_, err = manager.GetChangeSet(fakeProposal{})
+	require.EqualError(t, err, "proposal must implement blockchain.Block")
+
+	_, err = manager.GetChangeSet(fakeBlock{payload: &empty.Empty{}})
+	require.EqualError(t, err, "payload must implement roster.Payload")
 }
 
 func TestTaskManager_FromProto(t *testing.T) {
-	manager := NewTaskManager(nil, nil)
+	factory := NewRosterFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
+	manager := NewTaskManager(factory, nil)
 
-	task, err := manager.FromProto(&Task{})
+	task, err := manager.FromProto(&Task{Addr: []byte{0x1}})
 	require.NoError(t, err)
 	require.NotNil(t, task)
+
+	task, err = manager.FromProto(&Task{Addr: []byte{}, PublicKey: &any.Any{}})
+	require.NoError(t, err)
+	require.NotNil(t, task.(serverTask).player)
 
 	taskAny, err := ptypes.MarshalAny(&Task{})
 	require.NoError(t, err)
@@ -135,6 +179,11 @@ func TestTaskManager_FromProto(t *testing.T) {
 	manager.encoder = fake.BadUnmarshalAnyEncoder{}
 	_, err = manager.FromProto(taskAny)
 	require.EqualError(t, err, "couldn't unmarshal message: fake error")
+
+	factory = NewRosterFactory(fake.AddressFactory{}, fake.NewBadPublicKeyFactory())
+	manager = NewTaskManager(factory, nil)
+	_, err = manager.FromProto(&Task{Addr: []byte{}, PublicKey: &any.Any{}})
+	require.EqualError(t, err, "couldn't decode public key: fake error")
 }
 
 // -----------------------------------------------------------------------------
@@ -175,7 +224,9 @@ func (p fakePage) Write(key []byte, value proto.Message) error {
 	return nil
 }
 
-func (p fakePage) Defer(fn func([]byte)) {}
+func (p fakePage) Defer(fn func([]byte)) {
+	fn([]byte{0x12})
+}
 
 type fakeInventory struct {
 	inventory.Inventory
@@ -189,6 +240,27 @@ func (i fakeInventory) GetPage(uint64) (inventory.Page, error) {
 		RosterValueKey: i.value,
 	}
 	return fakePage{values: values, errRead: i.errPage}, i.err
+}
+
+type fakePayload struct {
+	proto.Message
+}
+
+func (p fakePayload) GetFingerprint() []byte {
+	return []byte{0x12}
+}
+
+type fakeBlock struct {
+	consensus.Proposal
+	payload proto.Message
+}
+
+func (fakeBlock) GetIndex() uint64 {
+	return 1
+}
+
+func (b fakeBlock) GetPayload() proto.Message {
+	return b.payload
 }
 
 type fakeProposal struct {

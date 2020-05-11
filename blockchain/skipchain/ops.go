@@ -100,21 +100,22 @@ func (ops *operations) catchUp(target SkipBlock, addr mino.Address) error {
 		if resp.GetChain() != nil {
 			factory, err := ops.consensus.GetChainFactory()
 			if err != nil {
-				return err
+				return xerrors.Errorf("couldn't get chain factory: %v", err)
 			}
 
 			chain, err := factory.FromProto(resp.GetChain())
 			if err != nil {
-				return err
+				return xerrors.Errorf("couldn't decode chain: %v", err)
 			}
 
 			if !bytes.Equal(chain.GetLastHash(), block.GetHash()) {
-				return xerrors.Errorf("mismatch chain: hash '' != ''")
+				return xerrors.Errorf("mismatch chain: hash '%x' != '%x'",
+					chain.GetLastHash(), block.GetHash())
 			}
 
 			err = ops.consensus.Store(chain)
 			if err != nil {
-				return err
+				return xerrors.Errorf("couldn't store chain: %v", err)
 			}
 		} else if block.GetIndex() != 0 {
 			return xerrors.New("missing chain to the block in the response")
