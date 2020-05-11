@@ -17,7 +17,7 @@ import (
 
 var (
 	namespaceMatch        = regexp.MustCompile("^[a-zA-Z0-9]+$")
-	defaultAddressFactory = addressFactory{}
+	defaultAddressFactory = AddressFactory{}
 )
 
 // Minogrpc represents a grpc service restricted to a namespace
@@ -47,12 +47,12 @@ func (a address) String() string {
 	return a.id
 }
 
-// addressFactory implements mino.AddressFactory
-type addressFactory struct{}
+// AddressFactory implements mino.AddressFactory
+type AddressFactory struct{}
 
 // FromText implements mino.AddressFactory. It returns an instance of an
 // address from a byte slice.
-func (f addressFactory) FromText(text []byte) mino.Address {
+func (f AddressFactory) FromText(text []byte) mino.Address {
 	return address{id: string(text)}
 }
 

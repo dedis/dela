@@ -1,7 +1,6 @@
 package routing
 
 import (
-	"os"
 	"sort"
 	"testing"
 
@@ -36,20 +35,20 @@ func TestNewTreeRouting(t *testing.T) {
 
 	// Here is the deterministic tree that should be built:
 	//
-	// TreeRouting, Root: Node[fake.Address[-1]-index[-1]-lastIndex[7]](
-	// 	Node[fake.Address[2]-index[0]-lastIndex[3]](
-	// 		Node[fake.Address[4]-index[1]-lastIndex[1]](
-	// 		)
-	// 		Node[fake.Address[1]-index[2]-lastIndex[3]](
-	// 			Node[fake.Address[3]-index[3]-lastIndex[3]](
+	// TreeRouting, Root: Node[fake.Address[-1]-index[0]-lastIndex[8]](
+	// 	Node[fake.Address[2]-index[1]-lastIndex[4]](
+	// 		Node[fake.Address[4]-index[2]-lastIndex[4]](
+	// 			Node[fake.Address[1]-index[3]-lastIndex[3]](
+	// 			)
+	// 			Node[fake.Address[3]-index[4]-lastIndex[4]](
 	// 			)
 	// 		)
 	// 	)
-	// 	Node[fake.Address[7]-index[4]-lastIndex[7]](
-	// 		Node[fake.Address[6]-index[5]-lastIndex[5]](
-	// 		)
-	// 		Node[fake.Address[5]-index[6]-lastIndex[7]](
-	// 			Node[fake.Address[0]-index[7]-lastIndex[7]](
+	// 	Node[fake.Address[7]-index[5]-lastIndex[8]](
+	// 		Node[fake.Address[6]-index[6]-lastIndex[8]](
+	// 			Node[fake.Address[5]-index[7]-lastIndex[7]](
+	// 			)
+	// 			Node[fake.Address[0]-index[8]-lastIndex[8]](
 	// 			)
 	// 		)
 	// 	)
@@ -89,10 +88,10 @@ func TestNewTreeRouting(t *testing.T) {
 	require.Equal(t, addrs[6], res)
 	res, err = treeRouting.GetRoute(addrs[7], addrs[5])
 	require.NoError(t, err)
-	require.Equal(t, addrs[5], res)
+	require.Equal(t, addrs[6], res)
 	res, err = treeRouting.GetRoute(addrs[7], addrs[0])
 	require.NoError(t, err)
-	require.Equal(t, addrs[5], res)
+	require.Equal(t, addrs[6], res)
 }
 
 func TestBuildNode(t *testing.T) {
@@ -109,21 +108,21 @@ func TestBuildNode(t *testing.T) {
 	}
 
 	node := buildTree(addr, addrs, 3, -1)
-	node.Display(os.Stdout)
+	// node.Display(os.Stdout)
 
 	// Node[fake.Address[-1]-index[-1]-lastIndex[7]](
 	// 	Node[fake.Address[0]-index[0]-lastIndex[3]](
-	// 		Node[fake.Address[1]-index[1]-lastIndex[1]](
-	// 		)
-	// 		Node[fake.Address[2]-index[2]-lastIndex[3]](
+	// 		Node[fake.Address[1]-index[1]-lastIndex[3]](
+	// 			Node[fake.Address[2]-index[2]-lastIndex[2]](
+	// 			)
 	// 			Node[fake.Address[3]-index[3]-lastIndex[3]](
 	// 			)
 	// 		)
 	// 	)
 	// 	Node[fake.Address[4]-index[4]-lastIndex[7]](
-	// 		Node[fake.Address[5]-index[5]-lastIndex[5]](
-	// 		)
-	// 		Node[fake.Address[6]-index[6]-lastIndex[7]](
+	// 		Node[fake.Address[5]-index[5]-lastIndex[7]](
+	// 			Node[fake.Address[6]-index[6]-lastIndex[6]](
+	// 			)
 	// 			Node[fake.Address[7]-index[7]-lastIndex[7]](
 	// 			)
 	// 		)
@@ -131,17 +130,17 @@ func TestBuildNode(t *testing.T) {
 	// )
 
 	compareNode(t, node, -1, 7, "fake.Address[-1]", 2)
-	compareNode(t, node.Children[0], 0, 3, "fake.Address[0]", 2)
-	compareNode(t, node.Children[0].Children[0], 1, 1, "fake.Address[1]", 0)
-	compareNode(t, node.Children[0].Children[1], 2, 3, "fake.Address[2]", 1)
-	compareNode(t, node.Children[0].Children[1].Children[0], 3, 3, "fake.Address[3]", 0)
-	compareNode(t, node.Children[1], 4, 7, "fake.Address[4]", 2)
-	compareNode(t, node.Children[1].Children[0], 5, 5, "fake.Address[5]", 0)
-	compareNode(t, node.Children[1].Children[1], 6, 7, "fake.Address[6]", 1)
-	compareNode(t, node.Children[1].Children[1].Children[0], 7, 7, "fake.Address[7]", 0)
+	compareNode(t, node.Children[0], 0, 3, "fake.Address[0]", 1)
+	compareNode(t, node.Children[0].Children[0], 1, 3, "fake.Address[1]", 2)
+	compareNode(t, node.Children[0].Children[0].Children[0], 2, 2, "fake.Address[2]", 0)
+	compareNode(t, node.Children[0].Children[0].Children[1], 3, 3, "fake.Address[3]", 0)
+	compareNode(t, node.Children[1], 4, 7, "fake.Address[4]", 1)
+	compareNode(t, node.Children[1].Children[0], 5, 7, "fake.Address[5]", 2)
+	compareNode(t, node.Children[1].Children[0].Children[0], 6, 6, "fake.Address[6]", 0)
+	compareNode(t, node.Children[1].Children[0].Children[1], 7, 7, "fake.Address[7]", 0)
 }
 
-func TestTreeShap(t *testing.T) {
+func TestTreeShape(t *testing.T) {
 	n := 100
 
 	addrs := make([]mino.Address, n)
@@ -149,9 +148,15 @@ func TestTreeShap(t *testing.T) {
 		addrs[i] = fake.NewAddress(i)
 	}
 
-	for h := 1; h < n-1; h++ {
+	for h := 1; h < n+10; h++ {
 		node := buildTree(addrs[0], addrs[1:], h, 0)
-		require.Equal(t, h, getHeight(node))
+		// fmt.Println("h =", h)
+		// node.Display(os.Stdout)
+		expected := h
+		if expected >= n {
+			expected = n - 1
+		}
+		require.Equal(t, expected, getHeight(node))
 	}
 
 }

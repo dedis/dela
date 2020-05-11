@@ -287,6 +287,14 @@ func (t TreeRouting) Display(out io.Writer) {
 // buildTree builds the newtwork tree based on the list of addresses. The first
 // call should have an index of 0.
 func buildTree(addr mino.Address, addrs []mino.Address, h, index int) *treeNode {
+
+	// the height can not be higher than the total number of noder, ie. if there
+	// are 10 nodes, then the maximum height we can have is 9. Here len(addrs)
+	// represents the number of nodes - 1 because we must add the root addr.
+	if h > len(addrs) {
+		h = len(addrs)
+	}
+
 	node := &treeNode{
 		Index:     index,
 		Addr:      addr,

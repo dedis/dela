@@ -148,7 +148,7 @@ func TestAddress_String(t *testing.T) {
 
 func TestAddressFactory_FromText(t *testing.T) {
 	f := func(id string) bool {
-		factory := addressFactory{}
+		factory := AddressFactory{}
 		addr := factory.FromText([]byte(id))
 
 		return addr.(address).id == id
@@ -160,7 +160,7 @@ func TestAddressFactory_FromText(t *testing.T) {
 
 func TestMinogrpc_GetAddressFactory(t *testing.T) {
 	m := &Minogrpc{}
-	require.IsType(t, addressFactory{}, m.GetAddressFactory())
+	require.IsType(t, AddressFactory{}, m.GetAddressFactory())
 }
 
 func TestPlayers_AddressIterator(t *testing.T) {

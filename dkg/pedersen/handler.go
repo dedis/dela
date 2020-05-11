@@ -2,9 +2,7 @@ package pedersen
 
 import (
 	"context"
-	"fmt"
 	"sync"
-	"time"
 
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/mino"
@@ -34,7 +32,7 @@ type Handler struct {
 	privShare *share.PriShare
 }
 
-// NewHandler ...
+// NewHandler creates a new handler
 func NewHandler(pubKeys []kyber.Point, privKey kyber.Scalar,
 	af mino.AddressFactory, me mino.Address, suite suites.Suite) *Handler {
 
@@ -47,22 +45,30 @@ func NewHandler(pubKeys []kyber.Point, privKey kyber.Scalar,
 	}
 }
 
-// Stream ...
+// Stream implements mino.Handler. It allows one to stream messages in the
+// network.
 func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
+	// Note: one should never assume any synchronous properties on the messages.
+	// For example we can not expect to receive the start message from the
+	// initiator of the DKG protocol first because some node could have received
+	// this start message earlier than us, start their DKG work by sending
+	// messages to the other nodes, and then we might get their messages before
+	// the start message.
 
 	from, msg, err := in.Recv(context.Background())
 	if err != nil {
 		return xerrors.Errorf("failed to receive: %v", err)
 	}
 
-	// We expect a Start message or a decrypt request at first
+	// We expect a Start message or a decrypt request at first, but we might
+	// receive other messages in the meantime, like a Deal.
 	switch msg := msg.(type) {
 	case *Start:
 		err := h.start(msg, []*Deal{}, from, out, in)
 		if err != nil {
 			return xerrors.Errorf("failed to start: %v", err)
 		}
-	case *Decrypt:
+	case *DecryptRequest:
 		// TODO: check if started before
 		K := h.suite.Point()
 		err := K.UnmarshalBinary(msg.K)
@@ -105,8 +111,8 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 	case *Deal:
 		// This is a special case where a DKG started, some nodes received the
 		// start signal and started sending their deals but we have not yet
-		// received out start signal. In this case we will collect the Deals and
-		// wait for the start signal.
+		// received our start signal. In this case we will collect the Deals
+		// while waiting for the start signal.
 		deals := []*Deal{msg}
 		for {
 			from, msg, err := in.Recv(context.Background())
@@ -134,6 +140,9 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 	return nil
 }
 
+// start is called when the node has received its start message. Note that we
+// might have already received some deals from other nodes in the meantime. The
+// function handles the DKG work.
 func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 	out mino.Sender, in mino.Receiver) error {
 
@@ -200,7 +209,7 @@ func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 		numReceivedDeals++
 	}
 
-	// It there are N nodes, then N nodes first send (N-1) Deals. Then each node
+	// If there are N nodes, then N nodes first send (N-1) Deals. Then each node
 	// send a response to every other nodes. So the number of responses a node
 	// get is (N-1) * (N-1)
 	for numReceivedDeals < len(deals) {
@@ -276,8 +285,6 @@ func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 		}
 	}
 
-	fmt.Println(h.me, "is certified")
-
 	fabric.Logger.Trace().Msgf("%s is certified", h.me)
 
 	// 6. Send back the public DKG key
@@ -302,14 +309,10 @@ func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 	h.privShare = distrKey.PriShare()
 	h.Unlock()
 
-	// Here we should not exit too late in order to let others contact us
-	time.Sleep(5 * time.Second)
-
-	fmt.Println("EXIT handler", h.me)
-
 	return nil
 }
 
+// handleDeal process the Deal and send the responses to the other nodes.
 func (h *Handler) handleDeal(msg *Deal, from mino.Address, addrs []mino.Address,
 	out mino.Sender) error {
 

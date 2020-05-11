@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/fabric/dkg"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/minoch"
 	"go.dedis.ch/fabric/mino/minogrpc"
@@ -12,7 +13,7 @@ import (
 	"go.dedis.ch/kyber/v3"
 )
 
-func TestStart(t *testing.T) {
+func TestFactory(t *testing.T) {
 	n := 10
 
 	// defer func() {
@@ -23,50 +24,52 @@ func TestStart(t *testing.T) {
 
 	rootAddr := addrFactory.FromText([]byte("127.0.0.1:2000"))
 
-	factory := routing.NewTreeRoutingFactory(7, rootAddr, addrFactory)
+	treeFactory := routing.NewTreeRoutingFactory(3, rootAddr, addrFactory)
 
 	addrs := make([]mino.Address, n)
 	pubKeys := make([]kyber.Point, n)
 	privKeys := make([]kyber.Scalar, n)
-
-	// manager := minoch.NewManager()
 	minos := make([]*minogrpc.Minogrpc, n)
-	pedersens := make([]*Pedersen, n)
+	starters := make([]dkg.Starter, n)
 
 	for i := 0; i < n; i++ {
 		addrs[i] = addrFactory.FromText([]byte(fmt.Sprintf("127.0.0.1:2%03d", i)))
 		privKeys[i] = suite.Scalar().Pick(suite.RandomStream())
 		pubKeys[i] = suite.Point().Mul(privKeys[i], nil)
-		minogrpc, err := minogrpc.NewMinogrpc(addrs[i].String(), factory)
+		minogrpc, err := minogrpc.NewMinogrpc(addrs[i].String(), treeFactory)
 		require.NoError(t, err)
 		minos[i] = &minogrpc
 	}
 
-	for _, minogrpc := range minos {
+	for i, minogrpc := range minos {
 		minogrpc.AddNeighbours(minos...)
-	}
-
-	for i := 0; i < n; i++ {
-		pedersen, err := NewPedersen(pubKeys, privKeys[i], minos[i], addrs, suite)
+		dkgFactory := NewFactory(pubKeys, privKeys[i], minogrpc, suite)
+		starter, err := dkgFactory.New(pubKeys, privKeys[i], minos[i], suite)
 		require.NoError(t, err)
-		pedersens[i] = pedersen
-	}
 
-	players := &fakePlayers{
-		players: addrs,
+		starters[i] = starter
 	}
-
-	err := pedersens[0].Start(players, uint32(n))
-	require.NoError(t, err)
 
 	message := []byte("Hello world")
-	K, C, remainder, err := pedersens[0].Encrypt(message)
-	require.NoError(t, err)
-	require.Empty(t, remainder)
+	for i := 0; i < 3; i++ {
+		players := &fakePlayers{
+			players: addrs,
+		}
 
-	decryptedMessage, err := pedersens[0].Decrypt(K, C)
-	require.NoError(t, err)
-	fmt.Println("Here is the decrypted message:", string(decryptedMessage))
+		starter := starters[i]
+
+		dkg, err := starter.Start(players, uint32(n))
+		require.NoError(t, err)
+
+		K, C, remainder, err := dkg.Encrypt(message)
+		require.NoError(t, err)
+		require.Len(t, remainder, 0)
+
+		decrypted, err := dkg.Decrypt(K, C)
+		require.NoError(t, err)
+
+		require.Equal(t, message, decrypted)
+	}
 }
 
 // ----------------------------------------------------------------------------

@@ -22,7 +22,8 @@ var (
 	traffics      = []*traffic{}
 )
 
-// SaveGraph generate the graph file based on the saved traffics
+// SaveGraph generate the graph file based on the saved traffics. Be sure to set
+// MINO_LOG_PACKETS=true to save logs infos.
 func SaveGraph(path string, withSend, withRcv bool) {
 	fabric.Logger.Info().Msgf("Saving graph file to %s", path)
 	f, _ := os.Create(path)
