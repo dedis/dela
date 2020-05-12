@@ -34,7 +34,11 @@ type address struct {
 
 func (a address) Equal(other mino.Address) bool {
 	addr, ok := other.(address)
-	return ok && addr.id == a.id
+	if ok {
+		return ok && addr.id == a.id
+	}
+	addrPtr, ok := other.(*address)
+	return ok && addrPtr.id == a.id
 }
 
 // MarshalText implements mino.Address

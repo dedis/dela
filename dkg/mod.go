@@ -6,15 +6,15 @@ import (
 	"go.dedis.ch/kyber/v3/suites"
 )
 
-// Factory defines the factory of a DKG Starter
+// Factory defines the DKG Starter's factory
 type Factory interface {
 	New(pubKeys []kyber.Point, privKey kyber.Scalar, m mino.Mino,
 		suite suites.Suite) (Starter, error)
 }
 
-// Starter defines the primitives to start a DKG protocol
+// Starter defines the primitive to start a DKG protocol
 type Starter interface {
-	Start(players mino.Players, t uint32) (DKG, error)
+	Start(players mino.Players, threshold uint32) (DKG, error)
 }
 
 // DKG defines the primitives to use a DKG protocol

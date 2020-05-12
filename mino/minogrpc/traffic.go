@@ -14,13 +14,51 @@ import (
 	"go.dedis.ch/fabric/mino"
 )
 
+//
+// Traffic is a utility to save network informations. It can be useful for
+// debugging and to understand how the network works. Each server has an
+// instance of traffic but does not store logs by default. To do that you can
+// set MINO_LOG_PACKETS=true as varenv or directly the public attribute SaveLog.
+// You can also set MINO_PRINT_PACKETS=true in conjunction with MINO_LOG_PACKETS
+// to print the packets. It also has its corresponding PrintLog public
+// attribute.
+//
+// There is the possibility to save a graphviz representation of network
+// activity. The following snippet shows practical use of it:
+//
+// ```go
+// os.Setenv("MINO_LOG_PACKETS", "true")
+// defer func() {
+//     minogrpc.SaveGraph("graph.dot", true, false)
+// }()
+// ```
+//
+// Then you can generate of PDF with `dot -Tpdf graph.dot -o graph.pdf`
+//
+
 var (
 	eachLine      = regexp.MustCompile(`(?m)^(.+)$`)
 	globalCounter = atomicCounter{}
 	sendCounter   = &atomicCounter{}
 	recvCounter   = &atomicCounter{}
 	traffics      = []*traffic{}
+	// SaveLog indicates if log must be saved
+	SaveLog = false
+	// PrintLog indicates if log must be printed
+	PrintLog = false
 )
+
+func init() {
+	flag := os.Getenv("MINO_LOG_PACKETS")
+	if flag == "true" {
+		SaveLog = true
+	}
+
+	flag = os.Getenv("MINO_PRINT_PACKETS")
+	if flag == "true" {
+		PrintLog = true
+	}
+}
 
 // SaveGraph generate the graph file based on the saved traffics. Be sure to set
 // MINO_LOG_PACKETS=true to save logs infos.
@@ -32,31 +70,15 @@ func SaveGraph(path string, withSend, withRcv bool) {
 
 // traffic is used to keep track of packets traffic in a server
 type traffic struct {
-	name     string
-	items    []item
-	log      bool
-	printLog bool
+	name  string
+	items []item
 }
 
 func newTraffic(name string) *traffic {
-	log := false
-	printLog := false
-
-	flag := os.Getenv("MINO_LOG_PACKETS")
-	if flag == "true" {
-		log = true
-	}
-
-	flag = os.Getenv("MINO_PRINT_PACKETS")
-	if flag == "true" {
-		printLog = true
-	}
 
 	traffic := &traffic{
-		name:     name,
-		items:    make([]item, 0),
-		log:      log,
-		printLog: printLog,
+		name:  name,
+		items: make([]item, 0),
 	}
 
 	traffics = append(traffics, traffic)
@@ -84,7 +106,7 @@ func (t traffic) Display(out io.Writer) {
 func (t *traffic) addItem(typeStr string, from, to mino.Address, msg *Envelope,
 	context string) {
 
-	if !t.log {
+	if !SaveLog {
 		return
 	}
 
@@ -103,7 +125,7 @@ func (t *traffic) addItem(typeStr string, from, to mino.Address, msg *Envelope,
 		typeCounter:   counter.IncrementAndGet(),
 	}
 
-	if t.printLog {
+	if PrintLog {
 		fmt.Fprintf(os.Stdout, "\n> %s", t.name)
 		newItem.Display(os.Stdout)
 	}

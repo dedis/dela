@@ -30,11 +30,15 @@ import (
 )
 
 const (
+	// headerURIKey is the key used in rpc header to pass the handler URI
 	headerURIKey        = "apiuri"
 	certificateDuration = time.Hour * 24 * 180
-	// this string is used to identify the orchestrator. We use it as its
-	// address.
-	orchestratorAddr = "orchestrator_addr"
+	// OrchestratorID is used to identify the orchestrator. The orchestrator
+	// represents the entry point of a client call. It is the element that will
+	// dispatch the client messages to the nodes and return them to the client.
+	// In a tree Network topology, it is the element that talks to the root node
+	// and listen to it.
+	OrchestratorID = "root_orchestrator_id"
 )
 
 var (
@@ -180,9 +184,9 @@ func (rpc RPC) Stream(ctx context.Context,
 	orchSender := &sender{
 		encoder: rpc.encoder,
 		// This address can't be the server address because we must separate
-		// message sent to this server and the ones sent to the sender of this
-		// rpc.
-		address: address{orchestratorAddr},
+		// messages sent to this server from other nodes because of their
+		// handlers and the ones sent to the client that initiated the stream.
+		address: address{OrchestratorID},
 		// Participant should contain the stream connection of every child of
 		// this node
 		name:    "orchestrator",
@@ -190,7 +194,7 @@ func (rpc RPC) Stream(ctx context.Context,
 		traffic: rpc.srv.traffic,
 		routing: rting,
 		// Special case: this is the main orchestrator
-		rootAddr: address{orchestratorAddr},
+		rootAddr: address{OrchestratorID},
 	}
 
 	orchRecv := receiver{
@@ -203,15 +207,15 @@ func (rpc RPC) Stream(ctx context.Context,
 		traffic: rpc.srv.traffic,
 	}
 
-	// Get the root of the tree and creating a stream to it. We also send the
+	// Get the root of the tree and create a stream to it. We also send the
 	// routing message, which will trigger the build of the tree.
 	// TODO: think how the interface can be changed to allow getting the root
 	rootAddr := rting.(*routing.TreeRouting).Root.Addr
 
 	myPeer, ok := rpc.srv.neighbours[rootAddr.String()]
 	if !ok {
-		err := xerrors.Errorf("my addr '%s' not is our list of neighbours",
-			rpc.srv.addr.String())
+		err := xerrors.Errorf("my addr '%s' is not in our list of neighbours %v",
+			rpc.srv.addr.String(), rpc.srv.neighbours)
 		fabric.Logger.Fatal().Err(err).Send()
 	}
 
@@ -237,10 +241,11 @@ func (rpc RPC) Stream(ctx context.Context,
 
 	// Sending the routing info as first message. In a tree routing topology
 	// this means sending this message to the root of the tree, which will then
-	// create its direct children that will then do the same.
+	// create its direct children and send the routing message to them, then the
+	// children will do the same.
 	stream.Send(&Envelope{
-		From:         orchestratorAddr,
-		PhysicalFrom: orchestratorAddr,
+		From:         OrchestratorID,
+		PhysicalFrom: OrchestratorID,
 		To:           []string{rootAddr.String()},
 		Message:      anyRouting,
 	})
@@ -268,7 +273,7 @@ func (rpc RPC) Stream(ctx context.Context,
 				return
 			}
 		}
-	}(address{orchestratorAddr}, stream)
+	}(address{OrchestratorID}, stream)
 
 	return orchSender, orchRecv
 }
@@ -293,9 +298,10 @@ func listenStream(stream overlayStream, orchRecv *receiver,
 	}
 
 	// In fact the message is received by a client that is handled by an
-	// orchestrator. So when someone send a message to the client, it in fact
-	// want to reach the orchestrator that holds the client. This is why the
-	// "To" attribute is set to orchSender.address
+	// orchestrator. So when someone sends a message to the client, it in fact
+	// want to reach the orchestrator that holds the client (it is a "reply"
+	// from an RPC call initiated by the orchestrator). This is why the "To"
+	// attribute is set to orchSender.address
 	orchRecv.traffic.logRcv(address{envelope.PhysicalFrom}, orchSender.address,
 		envelope, orchRecv.name)
 
@@ -477,7 +483,8 @@ type sender struct {
 	traffic      *traffic
 	routing      routing.Routing
 
-	// this is the address of the orchestrator that own this client
+	// this is the address of the node orchestrator that owns (ie. created) this
+	// sender
 	rootAddr address
 }
 
@@ -537,7 +544,6 @@ func (s *sender) sendSingle(msg proto.Message, from, to mino.Address) error {
 		// parent.
 		routingTo = s.address
 	}
-	// fmt.Println("routing from", s.address, "to", to, "=", routingTo, "participants", s.participants)
 
 	logTo := routingTo
 	// This is the case we are responding to our stream, which replies to the
@@ -627,14 +633,15 @@ type overlayStream interface {
 	Recv() (*Envelope, error)
 }
 
+// safeResponse is used to wrap the return elements of a Recv()
 type safeResponse struct {
 	msg *Envelope
 	err error
 }
 
-// safeOverlayStream is a wrapper around overlayStream that guarantees the Send
-// and Recv are executed in a single go routine each, as not doing so could be a
-// problem for grpc.
+// safeOverlayStream is a wrapper around overlayStream that guarantees that the
+// Send and Recv functions are executed in a single go routine each, as
+// recomended by grpc.
 type safeOverlayStream struct {
 	sendMux       sync.Mutex
 	sendChan      chan *Envelope

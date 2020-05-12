@@ -83,7 +83,7 @@ func TestOverlay_Stream(t *testing.T) {
 		encoder:        encoding.NewProtoEncoder(),
 		handlers:       make(map[string]mino.Handler),
 		addr:           address{},
-		routingFactory: routing.NewTreeRoutingFactory(1, address{}, defaultAddressFactory),
+		routingFactory: routing.NewTreeRoutingFactory(1, address{}, defaultAddressFactory, OrchestratorID),
 	}
 
 	streamServer := testServerStream{

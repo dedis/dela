@@ -205,7 +205,8 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		})
 
 		// TODO: think how we can make all the node set the routing then start
-		// the stream
+		// the stream, because if we don't wait we might start sending messages
+		// to other nodes that are waiting for their routing message.
 		time.Sleep(time.Millisecond * 300)
 
 		// Listen on the clients streams and notify the orchestrator or relay

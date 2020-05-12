@@ -17,12 +17,12 @@ import (
 // Suite is the Kyber suite for Pedersen.
 var suite = suites.MustFind("Ed25519")
 
-// Handler represents the RPC executed on the nodes
+// Handler represents the RPC executed on each node
 //
 // - implements mino.Handler
 type Handler struct {
-	sync.RWMutex
 	mino.UnsupportedHandler
+	sync.RWMutex
 	af        mino.AddressFactory
 	dkg       *pedersen.DistKeyGenerator
 	pubKeys   []kyber.Point
@@ -45,8 +45,8 @@ func NewHandler(pubKeys []kyber.Point, privKey kyber.Scalar,
 	}
 }
 
-// Stream implements mino.Handler. It allows one to stream messages in the
-// network.
+// Stream implements mino.Handler. It allows one to stream messages to the
+// players.
 func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 	// Note: one should never assume any synchronous properties on the messages.
 	// For example we can not expect to receive the start message from the
@@ -63,11 +63,13 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 	// We expect a Start message or a decrypt request at first, but we might
 	// receive other messages in the meantime, like a Deal.
 	switch msg := msg.(type) {
+
 	case *Start:
 		err := h.start(msg, []*Deal{}, from, out, in)
 		if err != nil {
 			return xerrors.Errorf("failed to start: %v", err)
 		}
+
 	case *DecryptRequest:
 		// TODO: check if started before
 		K := h.suite.Point()
@@ -79,12 +81,13 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 		C := h.suite.Point()
 		err = C.UnmarshalBinary(msg.C)
 		if err != nil {
-			return xerrors.Errorf("failed tun unmarshal C: %v", err)
+			return xerrors.Errorf("failed to unmarshal C: %v", err)
 		}
 
 		h.RLock()
 		S := suite.Point().Mul(h.privShare.V, K)
 		h.RUnlock()
+
 		partial := suite.Point().Sub(C, S)
 
 		VBuf, err := partial.MarshalBinary()
@@ -119,6 +122,7 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 			if err != nil {
 				return xerrors.Errorf("failed to receive: %v", err)
 			}
+
 			switch msg := msg.(type) {
 			case *Start:
 				err := h.start(msg, deals, from, out, in)
@@ -134,15 +138,16 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 		}
 
 	default:
-		return xerrors.Errorf("expected Start message or decrypt request as "+
-			"first message, got: %T", msg)
+		return xerrors.Errorf("expected Start message, decrypt request or "+
+			"Deal as first message, got: %T", msg)
 	}
+
 	return nil
 }
 
 // start is called when the node has received its start message. Note that we
 // might have already received some deals from other nodes in the meantime. The
-// function handles the DKG work.
+// function handles the DKG creation protocol.
 func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 	out mino.Sender, in mino.Receiver) error {
 
@@ -152,6 +157,7 @@ func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 		if addr == nil {
 			return xerrors.Errorf("failed to unmarsahl address '%s'", addr)
 		}
+
 		addrs[i] = addr
 	}
 
@@ -168,8 +174,10 @@ func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 		return xerrors.Errorf("failed to compute the deals: %v", err)
 	}
 
+	// use a waitgroup to send all the deals asynchronously and wait
 	var wg sync.WaitGroup
 	wg.Add(len(deals))
+
 	for i, deal := range deals {
 		dealMsg := &Deal{
 			Index: deal.Index,
@@ -191,6 +199,7 @@ func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 			wg.Done()
 		}(errs)
 	}
+
 	wg.Wait()
 
 	fabric.Logger.Trace().Msgf("%s sent all its deals", h.me)
@@ -199,7 +208,7 @@ func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 
 	numReceivedDeals := 0
 
-	// Process the deals we received before the start
+	// Process the deals we received before the start message
 	for _, deal := range receivedDeals {
 		err = h.handleDeal(deal, from, addrs, out)
 		if err != nil {
@@ -211,7 +220,7 @@ func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 
 	// If there are N nodes, then N nodes first send (N-1) Deals. Then each node
 	// send a response to every other nodes. So the number of responses a node
-	// get is (N-1) * (N-1)
+	// get is (N-1) * (N-1), where (N-1) should equal len(deals).
 	for numReceivedDeals < len(deals) {
 		from, msg, err := in.Recv(context.Background())
 		if err != nil {
@@ -219,6 +228,7 @@ func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 		}
 
 		switch msg := msg.(type) {
+
 		case *Deal:
 			// 4. Process the Deal and Send the response to all the other nodes
 			err = h.handleDeal(msg, from, addrs, out)
@@ -227,6 +237,7 @@ func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 					"from %s: %v", h.me, from, err)
 			}
 			numReceivedDeals++
+
 		case *Response:
 			// 5. Processing responses
 			fabric.Logger.Trace().Msgf("%s received response from %s", h.me, from)
@@ -240,6 +251,7 @@ func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 				},
 			}
 			receivedResps = append(receivedResps, response)
+
 		default:
 			return xerrors.Errorf("undexpected message: %T", msg)
 		}
@@ -248,12 +260,13 @@ func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 	for _, response := range receivedResps {
 		_, err = h.dkg.ProcessResponse(response)
 		if err != nil {
-			fabric.Logger.Warn().Msgf("%s failed to process response from '%s': %v",
-				h.me, from, err)
+			fabric.Logger.Warn().Msgf("%s failed to process response "+
+				"from '%s': %v", h.me, from, err)
 		}
 	}
 
 	for !h.dkg.Certified() {
+
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		from, msg, err := in.Recv(ctx)
@@ -262,6 +275,7 @@ func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 		}
 
 		switch msg := msg.(type) {
+
 		case *Response:
 			// 5. Processing responses
 			fabric.Logger.Trace().Msgf("%s received response from %s", h.me, from)
@@ -277,9 +291,10 @@ func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 
 			_, err = h.dkg.ProcessResponse(response)
 			if err != nil {
-				fabric.Logger.Warn().Msgf("%s, failed to process response from '%s': %v",
-					h.me, from, err)
+				fabric.Logger.Warn().Msgf("%s, failed to process response "+
+					"from '%s': %v", h.me, from, err)
 			}
+
 		default:
 			return xerrors.Errorf("expected a response, got: %T", msg)
 		}
@@ -317,6 +332,7 @@ func (h *Handler) handleDeal(msg *Deal, from mino.Address, addrs []mino.Address,
 	out mino.Sender) error {
 
 	fabric.Logger.Trace().Msgf("%s received deal from %s", h.me, from)
+
 	deal := &pedersen.Deal{
 		Index: msg.Index,
 		Deal: &vss.EncryptedDeal{
@@ -344,8 +360,10 @@ func (h *Handler) handleDeal(msg *Deal, from mino.Address, addrs []mino.Address,
 		},
 	}
 
+	// we use a waitgroup to send the messages asynchronously and wait
 	var wg sync.WaitGroup
 	wg.Add(len(addrs))
+
 	for _, addr := range addrs {
 		if addr.Equal(h.me) {
 			wg.Done()

@@ -14,7 +14,6 @@ import (
 
 func TestMessages(t *testing.T) {
 	messages := []proto.Message{
-		&OverlayMsg{},
 		&Envelope{},
 	}
 
@@ -119,7 +118,6 @@ func TestAddress_Equal(t *testing.T) {
 	addr := address{id: "A"}
 	require.True(t, addr.Equal(addr))
 	require.False(t, addr.Equal(address{}))
-	require.False(t, addr.Equal(fakeAddress{}))
 }
 
 func TestAddress_MarshalText(t *testing.T) {
@@ -228,8 +226,4 @@ func (it *fakeAddressIterator) GetNext() mino.Address {
 	p := it.players[it.cursor]
 	it.cursor++
 	return p
-}
-
-type fakeAddress struct {
-	mino.Address
 }

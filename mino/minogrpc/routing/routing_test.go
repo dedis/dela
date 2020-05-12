@@ -21,7 +21,7 @@ func TestNewTreeRouting(t *testing.T) {
 		fake.NewAddress(6), fake.NewAddress(7),
 	}
 
-	factory := NewTreeRoutingFactory(h, root, fake.AddressFactory{})
+	factory := NewTreeRoutingFactory(h, root, fake.AddressFactory{}, "a_root_orchestrator_id")
 
 	iterator := fake.NewAddressIterator(addrs)
 

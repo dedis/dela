@@ -5,6 +5,7 @@ package routing;
 import "google/protobuf/any.proto";
 
 message TreeRoutingProto {
-    // Should be the MarshalText representation of each addr
+    // Should be the MarshalText representation of each addr, without the root
+    // addresse
     repeated bytes addrs = 1;
 }

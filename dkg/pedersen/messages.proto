@@ -4,9 +4,12 @@ package pedersen;
 
 import "google/protobuf/any.proto";
 
+// This is the message the initiator of the DKG protocol should send to all the
+// nodes.
 message Start {
     // threshold
     uint32 t = 1;
+    // the full list of addresses that will participate in the DKG
     repeated bytes addresses = 2;
 }
 
@@ -39,6 +42,8 @@ message Response {
     }
 }
 
+// This message should be sent by all the nodes to the initiator of the DKG when
+// the DKG setup is done.
 message StartDone {
     bytes pubKey = 1;
 }

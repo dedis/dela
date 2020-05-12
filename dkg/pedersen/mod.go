@@ -36,7 +36,7 @@ func NewFactory(pubKeys []kyber.Point, privKey kyber.Scalar, m mino.Mino,
 	}
 }
 
-// New implements dkg.DKG. It return a new Pedersen
+// New implements dkg.DKG. It return a new Pedersen Starter.
 func (f *Factory) New(pubKeys []kyber.Point, privKey kyber.Scalar,
 	m mino.Mino, suite suites.Suite) (dkg.Starter, error) {
 
@@ -92,7 +92,8 @@ func (s *starter) Start(players mino.Players, t uint32) (dkg.DKG, error) {
 	for i, addr := range addrs {
 		addrBuf, err := addr.MarshalText()
 		if err != nil {
-			return nil, xerrors.Errorf("failed to marsahl address '%s': %v", addr, err)
+			return nil, xerrors.Errorf("failed to marsahl address '%s': %v",
+				addr, err)
 		}
 		message.Addresses[i] = addrBuf
 	}
@@ -116,7 +117,7 @@ func (s *starter) Start(players mino.Players, t uint32) (dkg.DKG, error) {
 		doneMsg, ok := msg.(*StartDone)
 		if !ok {
 			return nil, xerrors.Errorf("expected to receive a Done message, but "+
-				"go the following: %v", msg)
+				"go the following: %T", msg)
 		}
 
 		pubKey := suite.Point()
@@ -127,6 +128,9 @@ func (s *starter) Start(players mino.Players, t uint32) (dkg.DKG, error) {
 
 		pubKeys[i] = pubKey
 
+		// this is a simple check that every node sends back the same DKG pub
+		// key.
+		// TODO: handle the situation where a pub key is not the same
 		if i != 0 && !pubKeys[i-1].Equal(pubKey) {
 			return nil, xerrors.Errorf("the public keys does not match: %v", pubKeys)
 		}
@@ -134,9 +138,9 @@ func (s *starter) Start(players mino.Players, t uint32) (dkg.DKG, error) {
 
 	return &Pedersen{
 		rpc:     s.rpc,
-		players: players,
 		PubKey:  pubKeys[0],
 		suite:   s.suite,
+		players: players,
 	}, nil
 }
 
@@ -150,37 +154,9 @@ type Pedersen struct {
 	players mino.Players
 }
 
-// newPedersen return a new Pedersen
-func newPedersen(pubKeys []kyber.Point, privKey kyber.Scalar,
-	m mino.Mino, suite suites.Suite) (*Pedersen, error) {
-
-	h := NewHandler(pubKeys, privKey, m.GetAddressFactory(), m.GetAddress(),
-		suite)
-
-	m, err := m.MakeNamespace("dkg")
-	if err != nil {
-		return nil, xerrors.Errorf("failed to create namespace: %v", err)
-	}
-
-	rpc, err := m.MakeRPC("pedersen", h)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to create RPC: %v", err)
-	}
-
-	return &Pedersen{
-		rpc:   rpc,
-		suite: suite,
-	}, nil
-}
-
-// Encrypt implements dkg.DKG. It uses DKG to encrypt a message.
+// Encrypt implements dkg.DKG. It uses the DKG public key to encrypt a message.
 func (p *Pedersen) Encrypt(message []byte) (K, C kyber.Point, remainder []byte,
 	err error) {
-
-	if p.PubKey == nil {
-		return nil, nil, []byte{}, xerrors.Errorf(
-			"pubkey is nil, did you call Start() first?")
-	}
 
 	// Embed the message (or as much of it as will fit) into a curve point.
 	M := p.suite.Point().Embed(message, random.New())
@@ -246,7 +222,7 @@ func (p *Pedersen) Decrypt(K, C kyber.Point) ([]byte, error) {
 		decryptReply, ok := message.(*DecryptReply)
 		if !ok {
 			return []byte{}, xerrors.Errorf("got unexpected reply, expected "+
-				"a decrypt reply but got: %v", message)
+				"a decrypt reply but got: %T", message)
 		}
 
 		V := p.suite.Point()
@@ -274,7 +250,8 @@ func (p *Pedersen) Decrypt(K, C kyber.Point) ([]byte, error) {
 	return decryptedMessage, nil
 }
 
-// Reshare implements dkg.DKG. It recreates the DKG.
+// Reshare implements dkg.DKG. It recreates the DKG with an updated list of
+// participants.
 // TODO: to do
 func (p *Pedersen) Reshare() error {
 	return nil

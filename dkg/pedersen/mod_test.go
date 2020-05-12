@@ -13,18 +13,14 @@ import (
 	"go.dedis.ch/kyber/v3"
 )
 
-func TestFactory(t *testing.T) {
+func TestPedersen_Scenario(t *testing.T) {
 	n := 10
-
-	// defer func() {
-	// 	minogrpc.SaveGraph("graph10.dot", true, false)
-	// }()
 
 	addrFactory := minoch.AddressFactory{}
 
 	rootAddr := addrFactory.FromText([]byte("127.0.0.1:2000"))
 
-	treeFactory := routing.NewTreeRoutingFactory(3, rootAddr, addrFactory)
+	treeFactory := routing.NewTreeRoutingFactory(3, rootAddr, addrFactory, minogrpc.OrchestratorID)
 
 	addrs := make([]mino.Address, n)
 	pubKeys := make([]kyber.Point, n)
@@ -51,6 +47,7 @@ func TestFactory(t *testing.T) {
 	}
 
 	message := []byte("Hello world")
+	// we try with the first 3 DKG Starters
 	for i := 0; i < 3; i++ {
 		players := &fakePlayers{
 			players: addrs,
@@ -75,13 +72,15 @@ func TestFactory(t *testing.T) {
 // ----------------------------------------------------------------------------
 // Utility functions
 
-// fakePlayers implements mino.Players{}
+// fakePlayers is a fake players
+//
+// - implements mino.Players
 type fakePlayers struct {
 	players  []mino.Address
 	iterator *fakeAddressIterator
 }
 
-// AddressIterator implements mino.Players.AddressIterator()
+// AddressIterator implements mino.Players
 func (p *fakePlayers) AddressIterator() mino.AddressIterator {
 	if p.iterator == nil {
 		p.iterator = &fakeAddressIterator{players: p.players}
@@ -94,7 +93,7 @@ func (p *fakePlayers) Len() int {
 	return len(p.players)
 }
 
-// Take ...
+// Take implements mino.Players
 func (p *fakePlayers) Take(filters ...mino.FilterUpdater) mino.Players {
 	f := mino.ApplyFilters(filters)
 	players := make([]mino.Address, len(p.players))
@@ -106,13 +105,15 @@ func (p *fakePlayers) Take(filters ...mino.FilterUpdater) mino.Players {
 	}
 }
 
-// fakeAddressIterator implements mino.addressIterator{}
+// fakeAddressIterator is a fake addressIterator
+//
+// - implements mino.addressIterator
 type fakeAddressIterator struct {
 	players []mino.Address
 	cursor  int
 }
 
-// HasNext implements mino.AddressIterator.HasNext()
+// HasNext implements mino.AddressIterator
 func (it *fakeAddressIterator) HasNext() bool {
 	return it.cursor < len(it.players)
 }
