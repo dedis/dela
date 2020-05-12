@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/fabric/blockchain"
+	"go.dedis.ch/fabric/consensus/viewchange"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/crypto/bls"
 	"go.dedis.ch/fabric/encoding"
@@ -20,7 +23,9 @@ import (
 	"go.dedis.ch/fabric/ledger/transactions"
 	"go.dedis.ch/fabric/ledger/transactions/basic"
 	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/fabric/mino/gossip"
 	"go.dedis.ch/fabric/mino/minoch"
+	"golang.org/x/xerrors"
 )
 
 func TestMessages(t *testing.T) {
@@ -70,7 +75,7 @@ func TestLedger_Basic(t *testing.T) {
 	addAddr := ledgers[19].(*Ledger).addr
 	addPk := ledgers[19].(*Ledger).signer.GetPublicKey()
 
-	// Execute a roster change tx by removing one of the participants.
+	// Execute a roster change tx by adding the remaining participant.
 	tx, err := txFactory.New(roster.NewAdd(addAddr, addPk))
 	require.NoError(t, err)
 
@@ -96,6 +101,123 @@ func TestLedger_Basic(t *testing.T) {
 
 	_, err = ledgers[0].(*Ledger).bc.GetBlockFactory().FromVerifiable(latestpb)
 	require.NoError(t, err)
+}
+
+func TestLedger_Listen(t *testing.T) {
+	ledger := &Ledger{
+		initiated:  make(chan error, 1),
+		closing:    make(chan struct{}),
+		bc:         fakeBlockchain{},
+		governance: fakeGovernance{},
+		gossiper:   fakeGossiper{},
+	}
+
+	actor, err := ledger.Listen()
+	<-ledger.initiated
+	require.NoError(t, err)
+	require.NotNil(t, actor)
+	require.NoError(t, actor.Close())
+
+	ledger.bc = fakeBlockchain{errListen: xerrors.New("oops")}
+	_, err = ledger.Listen()
+	require.EqualError(t, err, "couldn't start the blockchain: oops")
+
+	blocks := make(chan blockchain.Block, 1)
+	blocks <- fakeBlock{index: 1}
+	ledger.bc = fakeBlockchain{blocks: blocks, errBlock: xerrors.New("oops")}
+	ledger.initiated = make(chan error, 1)
+	_, err = ledger.Listen()
+	require.NoError(t, err)
+	err = <-ledger.initiated
+	require.EqualError(t, err, "expect genesis but got block 1")
+
+	ledger.bc = fakeBlockchain{}
+	ledger.governance = fakeGovernance{err: xerrors.New("oops")}
+	ledger.initiated = make(chan error, 1)
+	_, err = ledger.Listen()
+	require.NoError(t, err)
+	err = <-ledger.initiated
+	require.EqualError(t, err, "couldn't read chain roster: oops")
+
+	ledger.governance = fakeGovernance{}
+	ledger.gossiper = fakeGossiper{err: xerrors.New("oops")}
+	ledger.initiated = make(chan error, 1)
+	_, err = ledger.Listen()
+	require.NoError(t, err)
+	err = <-ledger.initiated
+	require.EqualError(t, err, "couldn't start the gossiper: oops")
+}
+
+func TestLedger_GossipTxs(t *testing.T) {
+	rumors := make(chan gossip.Rumor)
+
+	ledger := &Ledger{
+		closing:  make(chan struct{}),
+		bag:      newTxBag(),
+		gossiper: fakeGossiper{rumors: rumors, err: xerrors.New("oops")},
+	}
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		ledger.gossipTxs()
+		wg.Done()
+	}()
+
+	rumors <- fakeTx{id: []byte{0x01}}
+	rumors <- fakeTx{id: []byte{0x01}}
+	require.Len(t, ledger.bag.GetAll(), 1)
+	rumors <- fakeTx{id: []byte{0x02}}
+	rumors <- fakeTx{id: []byte{0x02}}
+	require.Len(t, ledger.bag.GetAll(), 2)
+
+	close(ledger.closing)
+	wg.Wait()
+}
+
+func TestActor_Setup(t *testing.T) {
+	actor := actorLedger{
+		Ledger: &Ledger{
+			encoder:    encoding.NewProtoEncoder(),
+			proc:       newTxProcessor(nil, fakeInventory{}),
+			governance: fakeGovernance{},
+		},
+		bcActor: fakeActor{},
+	}
+
+	err := actor.Setup(fake.NewAuthority(3, fake.NewSigner))
+	require.NoError(t, err)
+
+	err = actor.Setup(mino.NewAddresses())
+	require.EqualError(t, err, "players must implement 'crypto.CollectiveAuthority'")
+
+	actor.encoder = fake.BadPackEncoder{}
+	err = actor.Setup(fake.NewAuthority(3, fake.NewSigner))
+	require.EqualError(t, err, "couldn't pack roster: fake error")
+
+	actor.encoder = encoding.NewProtoEncoder()
+	actor.proc = newTxProcessor(nil, fakeInventory{err: xerrors.New("oops")})
+	err = actor.Setup(fake.NewAuthority(3, fake.NewSigner))
+	require.EqualError(t, err,
+		"couldn't store genesis payload: couldn't stage page: oops")
+
+	actor.proc = newTxProcessor(nil, fakeInventory{})
+	actor.bcActor = fakeActor{err: xerrors.New("oops")}
+	err = actor.Setup(fake.NewAuthority(3, fake.NewSigner))
+	require.EqualError(t, err, "couldn't initialize the chain: oops")
+}
+
+func TestActor_AddTransaction(t *testing.T) {
+	actor := &actorLedger{
+		Ledger: &Ledger{gossiper: fakeGossiper{}},
+	}
+
+	err := actor.AddTransaction(fakeTx{})
+	require.NoError(t, err)
+
+	actor.gossiper = fakeGossiper{err: xerrors.New("oops")}
+	err = actor.AddTransaction(fakeTx{})
+	require.EqualError(t, err, "couldn't propagate the tx: oops")
 }
 
 // -----------------------------------------------------------------------------
@@ -156,4 +278,80 @@ func sendTx(t *testing.T, ledger ledger.Ledger, actor ledger.Actor, tx transacti
 			t.Fatal("timeout when waiting for the transaction")
 		}
 	}
+}
+
+type fakeBlock struct {
+	blockchain.Block
+	index uint64
+}
+
+func (b fakeBlock) GetIndex() uint64 {
+	return b.index
+}
+
+func (b fakeBlock) GetHash() []byte {
+	return []byte{0x12}
+}
+
+type fakeBlockchain struct {
+	blockchain.Blockchain
+	blocks    chan blockchain.Block
+	errListen error
+	errBlock  error
+}
+
+func (bc fakeBlockchain) Listen(blockchain.PayloadProcessor) (blockchain.Actor, error) {
+	return nil, bc.errListen
+}
+
+func (bc fakeBlockchain) GetBlock() (blockchain.Block, error) {
+	return fakeBlock{}, bc.errBlock
+}
+
+func (bc fakeBlockchain) Watch(context.Context) <-chan blockchain.Block {
+	return bc.blocks
+}
+
+type fakeGovernance struct {
+	viewchange.Governance
+	err error
+}
+
+func (gov fakeGovernance) GetAuthorityFactory() viewchange.AuthorityFactory {
+	return roster.NewRosterFactory(nil, nil)
+}
+
+func (gov fakeGovernance) GetAuthority(index uint64) (viewchange.EvolvableAuthority, error) {
+	return fake.NewAuthority(3, fake.NewSigner), gov.err
+}
+
+type fakeGossiper struct {
+	gossip.Gossiper
+	rumors chan gossip.Rumor
+	err    error
+}
+
+func (g fakeGossiper) Add(gossip.Rumor) error {
+	return g.err
+}
+
+func (g fakeGossiper) Start(mino.Players) error {
+	return g.err
+}
+
+func (g fakeGossiper) Rumors() <-chan gossip.Rumor {
+	return g.rumors
+}
+
+func (g fakeGossiper) Stop() error {
+	return g.err
+}
+
+type fakeActor struct {
+	blockchain.Actor
+	err error
+}
+
+func (a fakeActor) InitChain(proto.Message, mino.Players) error {
+	return a.err
 }

@@ -67,6 +67,6 @@ type Governance interface {
 	GetAuthority(index uint64) (EvolvableAuthority, error)
 
 	// GetChangeSet must return the changes to the authority that will be
-	// applied for the proposal following the given index.
+	// applied for the proposal.
 	GetChangeSet(consensus.Proposal) (ChangeSet, error)
 }

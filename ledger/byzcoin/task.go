@@ -41,7 +41,8 @@ func newtaskFactory(m mino.Mino, signer crypto.Signer,
 	return f, gov
 }
 
-// Register registers the factory for the protobuf message.
+// Register registers the factory for the protobuf message. If a message has
+// already been registered, it will overwritten.
 func (f *taskFactory) Register(pb proto.Message, factory basic.TaskFactory) {
 	key := reflect.TypeOf(pb)
 	f.registry[key] = factory
@@ -55,7 +56,7 @@ func (f *taskFactory) FromProto(in proto.Message) (basic.ServerTask, error) {
 		var err error
 		in, err = f.encoder.UnmarshalDynamicAny(inAny)
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
 		}
 	}
 
@@ -67,7 +68,7 @@ func (f *taskFactory) FromProto(in proto.Message) (basic.ServerTask, error) {
 
 	task, err := factory.FromProto(in)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't decode task: %v", err)
 	}
 
 	return task, nil
