@@ -30,4 +30,4 @@ jobs:
     - name: Test
       run: |
         go test -covermode=count -coverprofile=coverage.out ./...
-        $GOPATH/bin/goveralls -service=travis-cli -coverprofile=coverage.out
+        $(go env GOPATH)/bin/goveralls -service=travis-cli -coverprofile=coverage.out
