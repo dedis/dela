@@ -67,6 +67,7 @@ func NewSkipchain(m mino.Mino, consensus consensus.Consensus) *Skipchain {
 // consensus module.
 func (s *Skipchain) Listen(proc blockchain.PayloadProcessor) (blockchain.Actor, error) {
 	ops := &operations{
+		logger:       fabric.Logger,
 		encoder:      s.encoder,
 		addr:         s.mino.GetAddress(),
 		processor:    proc,

@@ -60,6 +60,12 @@ func TestBlockValidator_Validate(t *testing.T) {
 		_, err = v.Validate(fake.Address{}, packed)
 		require.EqualError(t, err, "couldn't validate the payload: oops")
 
+		v.db = &fakeDatabase{missing: true}
+		v.rpc = fake.NewStreamRPC(fake.Receiver{}, fake.NewBadSender())
+		_, err = v.Validate(fake.Address{}, packed)
+		require.EqualError(t, err,
+			"couldn't catch up: couldn't send block request: fake error")
+
 		return true
 	}
 

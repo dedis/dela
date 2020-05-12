@@ -115,39 +115,3 @@ func (q *blockQueue) Clear() {
 
 	q.buffer = make(map[Digest]SkipBlock)
 }
-
-type addressIterator struct {
-	mino.AddressIterator
-	index int
-	addrs []mino.Address
-}
-
-func (it *addressIterator) HasNext() bool {
-	return it.index < len(it.addrs)
-}
-
-func (it *addressIterator) GetNext() mino.Address {
-	if it.HasNext() {
-		res := it.addrs[it.index]
-		it.index++
-		return res
-	}
-	return nil
-}
-
-type roster struct {
-	mino.Players
-	addrs []mino.Address
-}
-
-func newRoster(addrs ...mino.Address) roster {
-	return roster{addrs: addrs}
-}
-
-func (r roster) AddressIterator() mino.AddressIterator {
-	return &addressIterator{addrs: r.addrs}
-}
-
-func (r roster) Len() int {
-	return len(r.addrs)
-}

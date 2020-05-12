@@ -624,11 +624,18 @@ func (r Receiver) Recv(context.Context) (mino.Address, proto.Message, error) {
 // Sender is a fake RPC stream sender.
 type Sender struct {
 	mino.Sender
+	err error
+}
+
+// NewBadSender returns a sender that always returns an error.
+func NewBadSender() Sender {
+	return Sender{err: xerrors.New("fake error")}
 }
 
 // Send implements mino.Sender.
 func (s Sender) Send(proto.Message, ...mino.Address) <-chan error {
-	errs := make(chan error)
+	errs := make(chan error, 1)
+	errs <- s.err
 	close(errs)
 	return errs
 }

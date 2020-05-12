@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 
+	"github.com/rs/zerolog"
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/consensus"
@@ -13,6 +14,7 @@ import (
 )
 
 type operations struct {
+	logger       zerolog.Logger
 	encoder      encoding.ProtoMarshaler
 	addr         mino.Address
 	processor    blockchain.PayloadProcessor
@@ -72,14 +74,17 @@ func (ops *operations) catchUp(target SkipBlock, addr mino.Address) error {
 		return nil
 	}
 
-	fabric.Logger.Info().Msg("one or more blocks are missing: starting catch up")
+	ops.logger.Info().Msg("one or more blocks are missing: starting catch up")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	sender, rcver := ops.rpc.Stream(ctx, newRoster(addr))
+	sender, rcver := ops.rpc.Stream(ctx, mino.NewAddresses(addr))
 
-	sender.Send(&BlockRequest{To: target.GetPreviousHash()}, addr)
+	err := <-sender.Send(&BlockRequest{To: target.GetPreviousHash()}, addr)
+	if err != nil {
+		return xerrors.Errorf("couldn't send block request: %v", err)
+	}
 
 	for {
 		_, msg, err := rcver.Recv(ctx)

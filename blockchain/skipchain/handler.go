@@ -92,9 +92,7 @@ func (h handler) Stream(out mino.Sender, in mino.Receiver) error {
 			resp.Chain = chainpb
 		}
 
-		errs := out.Send(resp, addr)
-
-		err = <-errs
+		err = <-out.Send(resp, addr)
 		if err != nil {
 			return xerrors.Errorf("couldn't send block: %v", err)
 		}
