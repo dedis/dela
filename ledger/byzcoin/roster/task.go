@@ -121,7 +121,27 @@ func (t clientTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
 		return xerrors.Errorf("couldn't write remove indices: %v", err)
 	}
 
-	// TODO: add
+	if t.player != nil {
+		buffer, err = t.player.Address.MarshalText()
+		if err != nil {
+			return xerrors.Errorf("couldn't marshal address: %v", err)
+		}
+
+		_, err = w.Write(buffer)
+		if err != nil {
+			return xerrors.Errorf("couldn't write address: %v", err)
+		}
+
+		buffer, err = t.player.PublicKey.MarshalBinary()
+		if err != nil {
+			return xerrors.Errorf("couldn't marshal public key: %v", err)
+		}
+
+		_, err = w.Write(buffer)
+		if err != nil {
+			return xerrors.Errorf("couldn't write public key: %v", err)
+		}
+	}
 
 	return nil
 }
@@ -135,10 +155,12 @@ type serverTask struct {
 	encoder       encoding.ProtoMarshaler
 	rosterFactory viewchange.AuthorityFactory
 	bag           *changeSetBag
+	inventory     inventory.Inventory
 }
 
 // Consume implements basic.ServerTask. It executes the task and write the
-// changes to the page.
+// changes to the page. If multiple roster transactions are executed for the
+// same page, only the latest will be taken in account.
 func (t serverTask) Consume(ctx basic.Context, page inventory.WritablePage) error {
 	// 1. Access rights control
 	// TODO: implement
@@ -151,7 +173,12 @@ func (t serverTask) Consume(ctx basic.Context, page inventory.WritablePage) erro
 	})
 
 	// 3. Update the roster stored in the inventory.
-	value, err := page.Read(rosterValueKey)
+	prev, err := t.inventory.GetPage(page.GetIndex() - 1)
+	if err != nil {
+		return xerrors.Errorf("couldn't get previous page: %v", err)
+	}
+
+	value, err := prev.Read(rosterValueKey)
 	if err != nil {
 		return xerrors.Errorf("couldn't read roster: %v", err)
 	}
@@ -281,6 +308,7 @@ func (f TaskManager) FromProto(in proto.Message) (basic.ServerTask, error) {
 		encoder:       f.encoder,
 		rosterFactory: f.rosterFactory,
 		bag:           f.bag,
+		inventory:     f.inventory,
 	}
 	return task, nil
 }

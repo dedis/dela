@@ -52,6 +52,7 @@ func TestClientTask_Pack(t *testing.T) {
 }
 
 func TestClientTask_Fingerprint(t *testing.T) {
+	// Client task with indices to remove.
 	task := NewRemove([]uint32{0x02, 0x01, 0x03})
 
 	buffer := new(bytes.Buffer)
@@ -62,40 +63,67 @@ func TestClientTask_Fingerprint(t *testing.T) {
 
 	err = task.Fingerprint(fake.NewBadHash(), nil)
 	require.EqualError(t, err, "couldn't write remove indices: fake error")
+
+	// Client task with a player to add.
+	task = NewAdd(fake.NewAddress(5), fake.PublicKey{})
+
+	buffer = new(bytes.Buffer)
+
+	err = task.Fingerprint(buffer, nil)
+	require.NoError(t, err)
+	require.Equal(t, "\x05\x00\x00\x00\xdf", buffer.String())
+
+	err = task.Fingerprint(fake.NewBadHashWithDelay(1), nil)
+	require.EqualError(t, err, "couldn't write address: fake error")
+
+	err = task.Fingerprint(fake.NewBadHashWithDelay(2), nil)
+	require.EqualError(t, err, "couldn't write public key: fake error")
+
+	task = NewAdd(fake.NewBadAddress(), fake.PublicKey{})
+	err = task.Fingerprint(buffer, nil)
+	require.EqualError(t, err, "couldn't marshal address: fake error")
+
+	task = NewAdd(fake.NewAddress(0), fake.NewBadPublicKey())
+	err = task.Fingerprint(buffer, nil)
+	require.EqualError(t, err, "couldn't marshal public key: fake error")
 }
 
 func TestServerTask_Consume(t *testing.T) {
+	roster := rosterFactory{}.New(fake.NewAuthority(3, fake.NewSigner))
+	rosterpb, err := roster.Pack(encoding.NewProtoEncoder())
+	require.NoError(t, err)
+
 	task := serverTask{
 		clientTask:    clientTask{remove: []uint32{2}},
 		rosterFactory: NewRosterFactory(fake.AddressFactory{}, fake.PublicKeyFactory{}),
 		encoder:       encoding.NewProtoEncoder(),
 		bag:           &changeSetBag{},
+		inventory:     fakeInventory{value: rosterpb},
 	}
 
-	roster := task.rosterFactory.New(fake.NewAuthority(3, fake.NewSigner))
-	rosterpb, err := roster.Pack(task.encoder)
-	require.NoError(t, err)
-
-	values := map[string]proto.Message{
-		RosterValueKey: rosterpb,
-	}
-
-	err = task.Consume(nil, fakePage{values: values})
+	err = task.Consume(nil, fakePage{values: map[string]proto.Message{}})
 	require.NoError(t, err)
 	require.Len(t, task.bag.store, 1)
 
-	err = task.Consume(nil, fakePage{errRead: xerrors.New("oops")})
+	task.inventory = fakeInventory{err: xerrors.New("oops")}
+	err = task.Consume(nil, fakePage{})
+	require.EqualError(t, err, "couldn't get previous page: oops")
+
+	task.inventory = fakeInventory{errPage: xerrors.New("oops")}
+	err = task.Consume(nil, fakePage{})
 	require.EqualError(t, err, "couldn't read roster: oops")
 
-	err = task.Consume(nil, fakePage{values: map[string]proto.Message{}})
+	task.inventory = fakeInventory{value: nil}
+	err = task.Consume(nil, fakePage{})
 	require.EqualError(t, err, "couldn't decode roster: invalid message type '<nil>'")
 
+	task.inventory = fakeInventory{value: rosterpb}
 	task.encoder = fake.BadPackEncoder{}
-	err = task.Consume(nil, fakePage{values: values})
+	err = task.Consume(nil, fakePage{})
 	require.EqualError(t, err, "couldn't encode roster: fake error")
 
 	task.encoder = encoding.NewProtoEncoder()
-	err = task.Consume(nil, fakePage{values: values, errWrite: xerrors.New("oops")})
+	err = task.Consume(nil, fakePage{errWrite: xerrors.New("oops")})
 	require.EqualError(t, err, "couldn't write roster: oops")
 }
 
