@@ -17,7 +17,6 @@ import (
 //
 // - implements dkg.DKG
 type Pedersen struct {
-	pubKeys []kyber.Point
 	privKey kyber.Scalar
 	m       mino.Mino
 	suite   suites.Suite
@@ -80,6 +79,9 @@ func (s *Pedersen) Listen(players mino.Players, pubKeys []kyber.Point,
 		}
 
 		pubKeyBuf, err := pubKeys[i].MarshalBinary()
+		if err != nil {
+			return nil, xerrors.Errorf("failed to marshal pubKey: %v", err)
+		}
 
 		message.Addresses[i] = addrBuf
 		message.PubKeys[i] = pubKeyBuf

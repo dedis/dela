@@ -45,7 +45,7 @@ func Test_NewMinogrpc(t *testing.T) {
 	url, err = url.Parse(urlStr)
 	require.NoError(t, err)
 
-	minoRPC, err = NewMinogrpc(url, nil)
+	_, err = NewMinogrpc(url, nil)
 	require.EqualError(t, err, "host URL is invalid: empty host for 'example:3333'. Hint: the url must be created using an absolute path, like //127.0.0.1:3333")
 }
 

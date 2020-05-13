@@ -66,6 +66,7 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 
 	// We expect a Start message or a decrypt request at first, but we might
 	// receive other messages in the meantime, like a Deal.
+mainSwitch:
 	switch msg := msg.(type) {
 
 	case *Start:
@@ -80,6 +81,7 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 		// received our start signal. In this case we collect the Deals while
 		// waiting for the start signal.
 		deals = append(deals, msg)
+		goto mainSwitch
 
 	case *DecryptRequest:
 		// TODO: check if started before
