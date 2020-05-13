@@ -113,17 +113,17 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 	rpcID := o.addr.String()
 
 	// Listen on the first message, which should be the routing infos
-	enveloppe, err := stream.Recv()
+	envelope, err := stream.Recv()
 	if err != nil {
 		return xerrors.Errorf("failed to receive first routing message: %v", err)
 	}
 
-	rting, err := o.routingFactory.FromAny(enveloppe.Message)
+	rting, err := o.routingFactory.FromAny(envelope.Message)
 	if err != nil {
 		return xerrors.Errorf("failed to decode routing message: %v", err)
 	}
 
-	o.rootAddr = address{enveloppe.PhysicalFrom}
+	o.rootAddr = address{envelope.PhysicalFrom}
 
 	// fmt.Print(o.addr)
 	// rting.(*routing.TreeRouting).Display(os.Stdout)
@@ -135,16 +135,16 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 		encoder: o.encoder,
 		// This address is used when the client doesn't find the address it
 		// should send the message to in the list of participant. In that case
-		// it packs the message in an enveloppe and send it back to this
-		// address, which is registered in the list of participant.
-		// It is also used to indicate the "from" of the message in the case it
-		// doesn't relay but sends directly.
+		// it packs the message in an envelope and send it back to this address,
+		// which is registered in the list of participant. It is also used to
+		// indicate the "from" of the message in the case it doesn't relay but
+		// sends directly.
 		address:  address{rpcID},
 		name:     "remote RPC of " + o.addr.String(),
 		srvCert:  o.srvCert,
 		traffic:  o.traffic,
 		routing:  rting,
-		rootAddr: address{enveloppe.PhysicalFrom},
+		rootAddr: address{envelope.PhysicalFrom},
 	}
 
 	sender.participants.Store(rpcID, stream)
@@ -201,7 +201,7 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 			From:         o.addr.String(),
 			PhysicalFrom: o.addr.String(),
 			To:           []string{addr.String()},
-			Message:      enveloppe.Message,
+			Message:      envelope.Message,
 		})
 
 		// TODO: think how we can make all the node set the routing then start

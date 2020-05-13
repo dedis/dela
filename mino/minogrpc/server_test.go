@@ -1027,7 +1027,7 @@ func TestReceiver_Recv(t *testing.T) {
 	receiver.encoder = badUnmarshalAnyEncoder{}
 	receiver.in <- msg
 	_, _, err = receiver.Recv(context.Background())
-	require.EqualError(t, err, "failed to unmarshal enveloppe msg: message is nil")
+	require.EqualError(t, err, "failed to unmarshal envelope msg: message is nil")
 
 	// now with a failing unmarshal of the message
 	msg.Message, err = ptypes.MarshalAny(&Envelope{})
@@ -1035,7 +1035,7 @@ func TestReceiver_Recv(t *testing.T) {
 	receiver.encoder = badUnmarshalDynEncoder{}
 	receiver.in <- msg
 	_, _, err = receiver.Recv(context.Background())
-	require.EqualError(t, err, "failed to unmarshal enveloppe msg: oops")
+	require.EqualError(t, err, "failed to unmarshal envelope msg: oops")
 }
 
 // -----------------------------------------------------------------------------

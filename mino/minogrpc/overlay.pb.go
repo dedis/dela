@@ -28,10 +28,10 @@ const _ = proto.ProtoPackageIsVersion3 // please upgrade the proto package
 // Envelope is wrapper around a message and one or several recipients.
 type Envelope struct {
 	// This is the origin address of the message. For example if node A sends a
-	// message to Node C via Node B, then node C will receive an enveloppe with
+	// message to Node C via Node B, then node C will receive an envelope with
 	// "from = A" and "physicalFrom = B"
 	From string `protobuf:"bytes,1,opt,name=from,proto3" json:"from,omitempty"`
-	// This is the real address of the node that sent this enveloppe
+	// This is the real address of the node that sent this envelope
 	PhysicalFrom         string   `protobuf:"bytes,2,opt,name=physicalFrom,proto3" json:"physicalFrom,omitempty"`
 	To                   []string `protobuf:"bytes,3,rep,name=to,proto3" json:"to,omitempty"`
 	Message              *any.Any `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`

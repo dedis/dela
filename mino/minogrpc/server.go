@@ -283,7 +283,6 @@ func (rpc RPC) Stream(ctx context.Context,
 func listenStream(stream overlayStream, orchRecv *receiver,
 	orchSender *sender, addr mino.Address) error {
 
-	// This msg.Message should always be an enveloppe
 	envelope, err := stream.Recv()
 	if err == io.EOF {
 		return io.EOF
@@ -315,7 +314,7 @@ func listenStream(stream overlayStream, orchRecv *receiver,
 
 			msg, err := orchRecv.encoder.UnmarshalDynamicAny(envelope.Message)
 			if err != nil {
-				return xerrors.Errorf("failed to unmarshal enveloppe message: %v", err)
+				return xerrors.Errorf("failed to unmarshal envelope message: %v", err)
 			}
 
 			errChan := orchSender.sendWithFrom(msg,
@@ -593,12 +592,12 @@ type receiver struct {
 // Recv implements mino.receiver
 func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error) {
 	// TODO: close the channel
-	var enveloppe *Envelope
+	var envelope *Envelope
 	var err error
 	var ok bool
 
 	select {
-	case enveloppe, ok = <-r.in:
+	case envelope, ok = <-r.in:
 		if !ok {
 			return nil, nil, errors.New("time to end")
 		}
@@ -612,16 +611,16 @@ func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error)
 	}
 
 	// we check it to prevent a panic on msg.Message
-	if enveloppe == nil {
+	if envelope == nil {
 		return nil, nil, xerrors.New("message is nil")
 	}
 
-	msg, err := r.encoder.UnmarshalDynamicAny(enveloppe.Message)
+	msg, err := r.encoder.UnmarshalDynamicAny(envelope.Message)
 	if err != nil {
-		return nil, nil, xerrors.Errorf("failed to unmarshal enveloppe msg: %v", err)
+		return nil, nil, xerrors.Errorf("failed to unmarshal envelope msg: %v", err)
 	}
 
-	return address{id: enveloppe.From}, msg, nil
+	return address{id: envelope.From}, msg, nil
 }
 
 // This interface is used to have a common object between Overlay_StreamServer
