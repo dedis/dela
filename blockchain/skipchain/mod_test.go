@@ -1,14 +1,12 @@
 package skipchain
 
 import (
-	"bytes"
 	"context"
 	fmt "fmt"
 	"testing"
 
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/empty"
-	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/consensus"
@@ -30,6 +28,8 @@ func TestMessages(t *testing.T) {
 		&BlockProto{},
 		&VerifiableBlockProto{},
 		&PropagateGenesis{},
+		&BlockRequest{},
+		&BlockResponse{},
 	}
 
 	for _, m := range messages {
@@ -95,23 +95,23 @@ func TestSkipchain_Listen(t *testing.T) {
 
 func TestSkipchain_GetBlock(t *testing.T) {
 	digest := Digest{1, 2, 3}
-	s := &Skipchain{
-		db: &fakeDatabase{genesisID: digest},
-	}
+	db := &fakeDatabase{blocks: []SkipBlock{{hash: digest}}}
+	s := &Skipchain{db: db}
 
 	block, err := s.GetBlock()
 	require.NoError(t, err)
 	require.Equal(t, digest, block.(SkipBlock).hash)
 
-	s.db = &fakeDatabase{err: xerrors.New("oops")}
+	db.err = xerrors.New("oops")
 	_, err = s.GetBlock()
 	require.EqualError(t, err, "couldn't read the latest block: oops")
 }
 
 func TestSkipchain_GetVerifiableBlock(t *testing.T) {
 	digest := Digest{1, 2, 3}
+	db := &fakeDatabase{blocks: []SkipBlock{{hash: digest}}}
 	s := &Skipchain{
-		db:        &fakeDatabase{genesisID: digest},
+		db:        db,
 		consensus: fakeConsensus{},
 	}
 
@@ -120,11 +120,11 @@ func TestSkipchain_GetVerifiableBlock(t *testing.T) {
 	require.Equal(t, digest, block.(VerifiableBlock).hash)
 	require.NotNil(t, block.(VerifiableBlock).Chain)
 
-	s.db = &fakeDatabase{err: xerrors.New("oops")}
+	db.err = xerrors.New("oops")
 	_, err = s.GetVerifiableBlock()
 	require.EqualError(t, err, "couldn't read the latest block: oops")
 
-	s.db = &fakeDatabase{}
+	db.err = nil
 	s.consensus = fakeConsensus{err: xerrors.New("oops")}
 	_, err = s.GetVerifiableBlock()
 	require.EqualError(t, err, "couldn't read the chain: oops")
@@ -148,18 +148,19 @@ func TestSkipchain_Watch(t *testing.T) {
 }
 
 func TestActor_InitChain(t *testing.T) {
+	db := &fakeDatabase{blocks: []SkipBlock{{}}, err: NewNoBlockError(0)}
 	actor := skipchainActor{
-		rand: crypto.CryptographicRandomGenerator{},
-		Skipchain: &Skipchain{
+		operations: &operations{
 			encoder: encoding.NewProtoEncoder(),
 			blockFactory: blockFactory{
 				encoder:     encoding.NewProtoEncoder(),
 				hashFactory: crypto.NewSha256Factory(),
 			},
-			mino: fake.Mino{},
-			db:   &fakeDatabase{err: NewNoBlockError(0)},
+			addr: fake.NewAddress(0),
+			db:   db,
+			rpc:  fakeRPC{},
 		},
-		rpc: fakeRPC{},
+		rand: crypto.CryptographicRandomGenerator{},
 	}
 
 	authority := fake.NewAuthority(3, fake.NewSigner)
@@ -172,28 +173,28 @@ func TestActor_InitChain(t *testing.T) {
 	require.EqualError(t, xerrors.Unwrap(err), "couldn't propagate: oops")
 
 	// No error so the genesis block exists already.
-	actor.Skipchain.db = &fakeDatabase{}
+	db.err = nil
 	err = actor.InitChain(&empty.Empty{}, authority)
 	require.NoError(t, err)
 
 	// Unexpected database error
-	actor.Skipchain.db = &fakeDatabase{err: xerrors.New("oops")}
+	db.err = xerrors.New("oops")
 	err = actor.InitChain(&empty.Empty{}, authority)
 	require.EqualError(t, err, "couldn't read the genesis block: oops")
 }
 
 func TestActor_NewChain(t *testing.T) {
 	actor := skipchainActor{
-		rand: crypto.CryptographicRandomGenerator{},
-		Skipchain: &Skipchain{
+		operations: &operations{
 			encoder: encoding.NewProtoEncoder(),
 			db:      &fakeDatabase{},
 			blockFactory: blockFactory{
 				encoder:     encoding.NewProtoEncoder(),
 				hashFactory: crypto.NewSha256Factory(),
 			},
+			rpc: fakeRPC{},
 		},
-		rpc: fakeRPC{},
+		rand: crypto.CryptographicRandomGenerator{},
 	}
 
 	authority := fake.NewAuthority(3, fake.NewSigner)
@@ -217,18 +218,17 @@ func TestActor_NewChain(t *testing.T) {
 }
 
 func TestActor_Store(t *testing.T) {
-	buffer := new(bytes.Buffer)
 	cons := &fakeConsensusActor{}
+	db := &fakeDatabase{blocks: []SkipBlock{{}}}
 	actor := skipchainActor{
-		Skipchain: &Skipchain{
+		operations: &operations{
 			encoder: encoding.NewProtoEncoder(),
 			blockFactory: blockFactory{
 				encoder:     encoding.NewProtoEncoder(),
 				hashFactory: crypto.NewSha256Factory(),
 			},
-			logger: zerolog.New(buffer),
-			mino:   fake.Mino{},
-			db:     &fakeDatabase{},
+			addr: fake.NewAddress(0),
+			db:   db,
 		},
 		consensus: cons,
 	}
@@ -240,11 +240,11 @@ func TestActor_Store(t *testing.T) {
 	// Make sure the conodes rotate if the view change allows it.
 	require.NotNil(t, cons.prop)
 
-	actor.db = &fakeDatabase{err: xerrors.New("oops")}
+	db.err = xerrors.New("oops")
 	err = actor.Store(&empty.Empty{}, authority)
 	require.EqualError(t, err, "couldn't read the latest block: oops")
 
-	actor.db = &fakeDatabase{}
+	db.err = nil
 	actor.blockFactory.hashFactory = fake.NewHashFactory(fake.NewBadHash())
 	err = actor.Store(&empty.Empty{}, authority)
 	require.Contains(t, err.Error(), "couldn't create next block: ")
@@ -360,6 +360,6 @@ func (gov fakeGovernance) GetAuthority(index uint64) (viewchange.EvolvableAuthor
 	return gov.authority, nil
 }
 
-func (gov fakeGovernance) GetChangeSet(uint64) (viewchange.ChangeSet, error) {
+func (gov fakeGovernance) GetChangeSet(consensus.Proposal) (viewchange.ChangeSet, error) {
 	return viewchange.ChangeSet{}, nil
 }

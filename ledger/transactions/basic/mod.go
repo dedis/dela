@@ -11,6 +11,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math/rand"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
@@ -194,7 +195,7 @@ func NewTransactionFactory(signer crypto.Signer, f TaskFactory) TransactionFacto
 // signed.
 func (f TransactionFactory) New(task ClientTask) (transactions.ClientTransaction, error) {
 	tx := transaction{
-		nonce:    0, // TODO: monotonic nonce
+		nonce:    rand.Uint64(), // TODO: monotonic nonce
 		identity: f.signer.GetPublicKey(),
 		task:     task,
 	}

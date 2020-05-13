@@ -1,9 +1,10 @@
 package skipchain
 
 import (
+	"bytes"
+	"context"
+
 	proto "github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric"
-	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
@@ -14,15 +15,12 @@ import (
 // - implements mino.Handler
 type handler struct {
 	mino.UnsupportedHandler
-	*Skipchain
-
-	proc blockchain.PayloadProcessor
+	*operations
 }
 
-func newHandler(sc *Skipchain, proc blockchain.PayloadProcessor) handler {
+func newHandler(ops *operations) handler {
 	return handler{
-		Skipchain: sc,
-		proc:      proc,
+		operations: ops,
 	}
 }
 
@@ -33,36 +31,72 @@ func (h handler) Process(req mino.Request) (proto.Message, error) {
 	case *PropagateGenesis:
 		genesis, err := h.blockFactory.decodeBlock(in.GetGenesis())
 		if err != nil {
-			return nil, xerrors.Errorf("couldn't decode the block: %v", err)
+			return nil, xerrors.Errorf("couldn't decode block: %v", err)
 		}
 
-		err = h.proc.Validate(0, genesis.GetPayload())
+		err = h.insertBlock(genesis)
 		if err != nil {
-			return nil, xerrors.Errorf("couldn't validate genesis payload: %v", err)
+			return nil, xerrors.Errorf("couldn't store genesis: %v", err)
 		}
-
-		err = h.db.Atomic(func(ops Queries) error {
-			err = ops.Write(genesis)
-			if err != nil {
-				return xerrors.Errorf("couldn't write the block: %v", err)
-			}
-
-			err = h.proc.Commit(genesis.GetPayload())
-			if err != nil {
-				return xerrors.Errorf("couldn't commit genesis payload: %v", err)
-			}
-
-			return nil
-		})
-		if err != nil {
-			return nil, xerrors.Errorf("tx aborted: %v", err)
-		}
-
-		fabric.Logger.Trace().Msgf("new genesis block written: %v", genesis.hash)
-		h.watcher.Notify(genesis)
 
 		return nil, nil
 	default:
 		return nil, xerrors.Errorf("unknown message type '%T'", in)
 	}
+}
+
+// Stream implements mino.Handler. It handles block requests to help another
+// participant to catch up the latest chain.
+func (h handler) Stream(out mino.Sender, in mino.Receiver) error {
+	addr, msg, err := in.Recv(context.Background())
+	if err != nil {
+		return xerrors.Errorf("couldn't receive message: %v", err)
+	}
+
+	req, ok := msg.(*BlockRequest)
+	if !ok {
+		return xerrors.Errorf("invalid message type '%T' != '%T'", msg, req)
+	}
+
+	var block SkipBlock
+	for i := int64(0); !bytes.Equal(block.hash[:], req.To); i++ {
+		block, err = h.db.Read(i)
+		if err != nil {
+			return xerrors.Errorf("couldn't read block at index %d: %v", i, err)
+		}
+
+		blockpb, err := h.encoder.Pack(block)
+		if err != nil {
+			return xerrors.Errorf("couldn't pack block: %v", err)
+		}
+
+		resp := &BlockResponse{
+			Block: blockpb.(*BlockProto),
+		}
+
+		if block.GetIndex() > 0 {
+			// In the case the genesis block needs to be sent, there is no chain
+			// to send alongside.
+
+			chain, err := h.consensus.GetChain(block.GetHash())
+			if err != nil {
+				return xerrors.Errorf("couldn't get chain to block %d: %v",
+					block.GetIndex(), err)
+			}
+
+			chainpb, err := h.encoder.PackAny(chain)
+			if err != nil {
+				return xerrors.Errorf("couldn't pack chain: %v", err)
+			}
+
+			resp.Chain = chainpb
+		}
+
+		err = <-out.Send(resp, addr)
+		if err != nil {
+			return xerrors.Errorf("couldn't send block: %v", err)
+		}
+	}
+
+	return nil
 }

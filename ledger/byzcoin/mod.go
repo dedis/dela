@@ -80,26 +80,6 @@ func NewLedger(m mino.Mino, signer crypto.AggregateSigner) *Ledger {
 	}
 }
 
-// GetValue implements ledger.Ledger.
-func (ldgr *Ledger) GetValue(key []byte) (proto.Message, error) {
-	latest, err := ldgr.bc.GetBlock()
-	if err != nil {
-		return nil, err
-	}
-
-	page, err := ldgr.proc.inventory.GetPage(latest.GetIndex())
-	if err != nil {
-		return nil, err
-	}
-
-	value, err := page.Read(key)
-	if err != nil {
-		return nil, err
-	}
-
-	return value, nil
-}
-
 // Listen implements ledger.Ledger. It starts to participate in the blockchain
 // and returns an actor that can send transactions.
 func (ldgr *Ledger) Listen() (ledger.Actor, error) {
@@ -133,7 +113,7 @@ func (ldgr *Ledger) Listen() (ledger.Actor, error) {
 
 		authority, err := ldgr.governance.GetAuthority(genesis.GetIndex())
 		if err != nil {
-			ldgr.initiated <- xerrors.Errorf("couldn't read authority: %v", err)
+			ldgr.initiated <- xerrors.Errorf("couldn't read chain roster: %v", err)
 			return
 		}
 
@@ -149,7 +129,7 @@ func (ldgr *Ledger) Listen() (ledger.Actor, error) {
 		go ldgr.proposeBlocks(bcActor, authority)
 	}()
 
-	return newActor(ldgr, bcActor), err
+	return newActor(ldgr, bcActor), nil
 }
 
 func (ldgr *Ledger) gossipTxs() {
@@ -334,7 +314,7 @@ func (a actorLedger) HasStarted() <-chan error {
 func (a actorLedger) Setup(players mino.Players) error {
 	authority, ok := players.(crypto.CollectiveAuthority)
 	if !ok {
-		return xerrors.Errorf("players must implement '%T'", authority)
+		return xerrors.Errorf("players must implement 'crypto.CollectiveAuthority'")
 	}
 
 	rosterpb, err := a.encoder.Pack(a.governance.GetAuthorityFactory().New(authority))

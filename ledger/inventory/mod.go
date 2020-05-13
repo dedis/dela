@@ -23,6 +23,10 @@ type WritablePage interface {
 
 	// Write stores the value with the key as an identifier.
 	Write(key []byte, value proto.Message) error
+
+	// Defer allows to defer an execution after the fingerprint of the page has
+	// been calculated.
+	Defer(func(fingerprint []byte))
 }
 
 // Inventory is an abstraction of the state of the ledger at different point in
