@@ -5,8 +5,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/fabric/encoding"
+	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
@@ -16,21 +20,131 @@ func TestRPC_Call(t *testing.T) {
 
 	m1, err := NewMinoch(manager, "A")
 	require.NoError(t, err)
-	rpc1, err := m1.MakeRPC("test", testHandler{})
+	rpc1, err := m1.MakeRPC("test", fakeHandler{})
 	require.NoError(t, err)
 
 	m2, err := NewMinoch(manager, "B")
 	require.NoError(t, err)
-	_, err = m2.MakeRPC("test", testHandler{})
+	_, err = m2.MakeRPC("test", badHandler{})
+	require.NoError(t, err)
+
+	m3, err := NewMinoch(manager, "C")
 	require.NoError(t, err)
 
 	ctx := context.Background()
 
-	_, errs := rpc1.Call(ctx, &empty.Empty{}, fakePlayers{instances: []*Minoch{m2}})
+	addrs := mino.NewAddresses(m1.GetAddress())
+	resps, errs := rpc1.Call(ctx, &empty.Empty{}, addrs)
+
+	err = testWait(t, errs, resps)
+	// Message to self with a correct handler
+	require.NoError(t, err)
+
+	addrs = mino.NewAddresses(fake.NewAddress(99), m3.GetAddress())
+	resps, errs = rpc1.Call(ctx, &empty.Empty{}, addrs)
+
+	err = testWait(t, errs, resps)
+	// Message to the fake address.
+	require.EqualError(t, err,
+		"couldn't find peer: invalid address type 'fake.Address'")
+
+	err = testWait(t, errs, resps)
+	// Message to m3 that has not the handler registered.
+	require.EqualError(t, err, "unknown rpc /test")
+
+	addrs = mino.NewAddresses(m2.GetAddress())
+	resps, errs = rpc1.Call(ctx, &empty.Empty{}, addrs)
+
+	err = testWait(t, errs, resps)
+	// Message to m2 with a handler but no implementation.
+	require.EqualError(t, err, "couldn't process request: rpc is not supported")
+}
+
+func TestRPC_Stream(t *testing.T) {
+	manager := NewManager()
+
+	m, err := NewMinoch(manager, "A")
+	require.NoError(t, err)
+	rpc, err := m.MakeRPC("test", fakeStreamHandler{})
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sender, receiver := rpc.Stream(ctx, mino.NewAddresses(m.GetAddress()))
+
+	sender.Send(&empty.Empty{}, m.GetAddress())
+	_, _, err = receiver.Recv(context.Background())
+	require.NoError(t, err)
+
+	ctx, cancel2 := context.WithCancel(context.Background())
+	cancel2() // fake a timeout
+	_, _, err = receiver.Recv(ctx)
+	require.EqualError(t, err, "timeout")
+}
+
+func TestRPC_Failures_Stream(t *testing.T) {
+	manager := NewManager()
+
+	m, err := NewMinoch(manager, "A")
+	require.NoError(t, err)
+	rpc, err := m.MakeRPC("test", fakeBadStreamHandler{})
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	out, in := rpc.Stream(ctx, mino.NewAddresses(m.GetAddress()))
+	_, _, err = in.Recv(ctx)
+	require.EqualError(t, err, "couldn't process: oops")
+
+	errs := out.Send(nil)
+	err = testWait(t, errs, nil)
+	require.EqualError(t, err, "couldn't marshal message: message is nil")
+
+	_, in = rpc.Stream(ctx, mino.NewAddresses(fake.NewAddress(0)))
+	_, _, err = in.Recv(ctx)
+	require.EqualError(t, err,
+		"couldn't find peer: invalid address type 'fake.Address'")
+}
+
+func TestReceiver_Recv(t *testing.T) {
+	recv := receiver{
+		encoder: encoding.NewProtoEncoder(),
+		out:     make(chan Envelope, 1),
+		errs:    make(chan error),
+	}
+
+	msgAny, err := ptypes.MarshalAny(&empty.Empty{})
+	require.NoError(t, err)
+
+	recv.out <- Envelope{
+		from:    address{id: "A"},
+		message: msgAny,
+	}
+
+	from, msg, err := recv.Recv(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, address{id: "A"}, from)
+	require.NotNil(t, msg)
+
+	recv.encoder = fake.BadUnmarshalDynEncoder{}
+	recv.out <- Envelope{}
+	_, _, err = recv.Recv(context.Background())
+	require.EqualError(t, err, "couldn't unmarshal message: fake error")
+}
+
+// -----------------------------------------------------------------------------
+// Utility functions
+
+func testWait(t *testing.T, errs <-chan error, resps <-chan proto.Message) error {
 	select {
 	case <-time.After(50 * time.Millisecond):
 		t.Fatal("an error is expected")
-	case <-errs:
+		return nil
+	case <-resps:
+		return nil
+	case err := <-errs:
+		return err
 	}
 }
 
@@ -58,84 +172,4 @@ type fakeBadStreamHandler struct {
 
 func (h fakeBadStreamHandler) Stream(out mino.Sender, in mino.Receiver) error {
 	return xerrors.New("oops")
-}
-
-func TestRPC_Stream(t *testing.T) {
-	manager := NewManager()
-
-	m, err := NewMinoch(manager, "A")
-	require.NoError(t, err)
-	rpc, err := m.MakeRPC("test", fakeStreamHandler{})
-	require.NoError(t, err)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	sender, receiver := rpc.Stream(ctx, fakePlayers{instances: []*Minoch{m}})
-
-	sender.Send(&empty.Empty{}, m.GetAddress())
-	_, _, err = receiver.Recv(context.Background())
-	require.NoError(t, err)
-
-	ctx, cancel2 := context.WithCancel(context.Background())
-	cancel2() // fake a timeout
-	_, _, err = receiver.Recv(ctx)
-	require.Error(t, err)
-}
-
-func TestRPC_StreamFailures(t *testing.T) {
-	manager := NewManager()
-
-	m, err := NewMinoch(manager, "A")
-	require.NoError(t, err)
-	rpc, err := m.MakeRPC("test", fakeBadStreamHandler{})
-	require.NoError(t, err)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	out, in := rpc.Stream(ctx, fakePlayers{instances: []*Minoch{m}})
-	_, _, err = in.Recv(ctx)
-	require.Error(t, err)
-	errs := out.Send(nil)
-	select {
-	case _, ok := <-errs:
-		if !ok {
-			t.Error("expected an error")
-		}
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("timeout")
-	}
-}
-
-type fakeIterator struct {
-	instances []*Minoch
-	index     int
-}
-
-func (i *fakeIterator) HasNext() bool {
-	return i.index+1 < len(i.instances)
-}
-
-func (i *fakeIterator) GetNext() mino.Address {
-	if i.HasNext() {
-		i.index++
-		return i.instances[i.index].GetAddress()
-	}
-	return nil
-}
-
-type fakePlayers struct {
-	mino.Players
-	instances []*Minoch
-}
-
-func (m fakePlayers) AddressIterator() mino.AddressIterator {
-	return &fakeIterator{
-		index:     -1,
-		instances: m.instances,
-	}
-}
-
-func (m fakePlayers) Len() int {
-	return len(m.instances)
 }

@@ -67,7 +67,9 @@ type Receiver interface {
 // RPC is a representation of a remote procedure call that can call a single
 // distant procedure or multiple.
 type RPC interface {
-	// Call is a basic request to one or multiple distant peers.
+	// Call is a basic request to one or multiple distant peers. Only the
+	// responses channel will be close when all requests have been processed,
+	// either by success or after it filled the errors channel.
 	Call(ctx context.Context, req proto.Message,
 		players Players) (<-chan proto.Message, <-chan error)
 

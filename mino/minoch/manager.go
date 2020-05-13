@@ -21,38 +21,42 @@ func NewManager() *Manager {
 	}
 }
 
-func (m *Manager) get(addr mino.Address) *Minoch {
+func (m *Manager) get(a mino.Address) (*Minoch, error) {
 	m.Lock()
 	defer m.Unlock()
 
-	text, err := addr.MarshalText()
-	if err != nil {
-		return nil
+	addr, ok := a.(address)
+	if !ok {
+		return nil, xerrors.Errorf("invalid address type '%T'", a)
 	}
 
-	return m.instances[string(text)]
+	peer, ok := m.instances[addr.id]
+	if !ok {
+		return nil, xerrors.Errorf("address <%s> not found", addr.id)
+	}
+
+	return peer, nil
 }
 
-func (m *Manager) insert(inst *Minoch) error {
-	addr := inst.GetAddress().(address)
-	text, err := addr.MarshalText()
-	if err != nil {
-		return xerrors.Errorf("couldn't marshal address: %v", err)
+func (m *Manager) insert(inst mino.Mino) error {
+	instance, ok := inst.(*Minoch)
+	if !ok {
+		return xerrors.Errorf("invalid instance type '%T'", inst)
 	}
 
-	if string(text) == "" {
-		return xerrors.New("can't have an empty marshaled address")
+	if instance.identifier == "" {
+		return xerrors.New("cannot have an empty identifier")
 	}
 
 	m.Lock()
 	defer m.Unlock()
 
-	_, found := m.instances[string(text)]
+	_, found := m.instances[instance.identifier]
 	if found {
-		return xerrors.New("identifier already exists")
+		return xerrors.Errorf("identifier <%s> already exists", instance.identifier)
 	}
 
-	m.instances[string(text)] = inst
+	m.instances[instance.identifier] = instance
 
 	return nil
 }
