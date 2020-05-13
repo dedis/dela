@@ -613,11 +613,49 @@ func (f AddressFactory) FromText(text []byte) mino.Address {
 	return Address{}
 }
 
+// Receiver is a fake RPC stream receiver.
+type Receiver struct {
+	mino.Receiver
+	err error
+	Msg proto.Message
+}
+
+// NewBadReceiver returns a new receiver that returns an error.
+func NewBadReceiver() Receiver {
+	return Receiver{err: xerrors.New("fake error")}
+}
+
+// Recv implements mino.Receiver.
+func (r Receiver) Recv(context.Context) (mino.Address, proto.Message, error) {
+	return nil, r.Msg, r.err
+}
+
+// Sender is a fake RPC stream sender.
+type Sender struct {
+	mino.Sender
+	err error
+}
+
+// NewBadSender returns a sender that always returns an error.
+func NewBadSender() Sender {
+	return Sender{err: xerrors.New("fake error")}
+}
+
+// Send implements mino.Sender.
+func (s Sender) Send(proto.Message, ...mino.Address) <-chan error {
+	errs := make(chan error, 1)
+	errs <- s.err
+	close(errs)
+	return errs
+}
+
 // RPC is a fake implementation of mino.RPC.
 type RPC struct {
 	mino.RPC
-	Msgs chan proto.Message
-	Errs chan error
+	Msgs     chan proto.Message
+	Errs     chan error
+	receiver Receiver
+	sender   Sender
 }
 
 // NewRPC returns a fake rpc.
@@ -625,6 +663,16 @@ func NewRPC() RPC {
 	return RPC{
 		Msgs: make(chan proto.Message, 100),
 		Errs: make(chan error, 100),
+	}
+}
+
+// NewStreamRPC returns a fake rpc with specific stream options.
+func NewStreamRPC(r Receiver, s Sender) RPC {
+	return RPC{
+		Msgs:     make(chan proto.Message, 100),
+		Errs:     make(chan error, 100),
+		receiver: r,
+		sender:   s,
 	}
 }
 
@@ -641,6 +689,11 @@ func (rpc RPC) Call(ctx context.Context, m proto.Message,
 		close(rpc.Msgs)
 	}()
 	return rpc.Msgs, rpc.Errs
+}
+
+// Stream implements mino.RPC.
+func (rpc RPC) Stream(context.Context, mino.Players) (mino.Sender, mino.Receiver) {
+	return rpc.sender, rpc.receiver
 }
 
 // Mino is a fake implementation of mino.Mino.

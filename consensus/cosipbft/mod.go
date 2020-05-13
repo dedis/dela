@@ -106,6 +106,40 @@ func (c *Consensus) Listen(v consensus.Validator) (consensus.Actor, error) {
 	return actor, nil
 }
 
+// Store implements consensus.Consensus. It stores the chain by following the
+// local one and completes it. It returns an error if a link is inconsistent
+// with the local storage.
+func (c *Consensus) Store(in consensus.Chain) error {
+	chain, ok := in.(forwardLinkChain)
+	if !ok {
+		return xerrors.Errorf("invalid message type '%T' != '%T'", in, chain)
+	}
+
+	last, err := c.storage.ReadLast()
+	if err != nil {
+		return xerrors.Errorf("couldn't read latest chain: %v", err)
+	}
+
+	store := false
+	for _, link := range chain.links {
+		store = store || last == nil || bytes.Equal(last.To, link.from[:])
+
+		if store {
+			linkpb, err := c.encoder.Pack(link)
+			if err != nil {
+				return xerrors.Errorf("couldn't pack link: %v", err)
+			}
+
+			err = c.storage.Store(linkpb.(*ForwardLinkProto))
+			if err != nil {
+				return xerrors.Errorf("couldn't store link: %v", err)
+			}
+		}
+	}
+
+	return nil
+}
+
 type pbftActor struct {
 	*Consensus
 	closing   chan struct{}
@@ -136,7 +170,7 @@ func (a pbftActor) Propose(p consensus.Proposal) error {
 		return nil
 	}
 
-	changeset, err := a.governance.GetChangeSet(p.GetIndex() - 1)
+	changeset, err := a.governance.GetChangeSet(p)
 	if err != nil {
 		return xerrors.Errorf("couldn't get change set: %v", err)
 	}
@@ -253,7 +287,7 @@ func (h handler) Hash(addr mino.Address, in proto.Message) (Digest, error) {
 				last.GetTo(), proposal.GetPreviousHash())
 		}
 
-		changeset, err := h.governance.GetChangeSet(proposal.GetIndex() - 1)
+		changeset, err := h.governance.GetChangeSet(proposal)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't get change set: %v", err)
 		}

@@ -3,7 +3,6 @@ package ledger
 import (
 	"context"
 
-	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric/ledger/transactions"
 	"go.dedis.ch/fabric/mino"
 )
@@ -37,9 +36,6 @@ type TransactionResult interface {
 // transactions.
 type Ledger interface {
 	Listen() (Actor, error)
-
-	// TODO: value + proof it exists in the inventory
-	GetValue(key []byte) (proto.Message, error)
 
 	// Watch populates the channel with new incoming transaction results.
 	Watch(ctx context.Context) <-chan TransactionResult

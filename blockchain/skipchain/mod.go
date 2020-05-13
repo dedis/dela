@@ -66,20 +66,33 @@ func NewSkipchain(m mino.Mino, consensus consensus.Consensus) *Skipchain {
 // Listen implements blockchain.Blockchain. It registers the RPC and starts the
 // consensus module.
 func (s *Skipchain) Listen(proc blockchain.PayloadProcessor) (blockchain.Actor, error) {
-	actor := skipchainActor{
-		Skipchain: s,
-		rand:      crypto.CryptographicRandomGenerator{},
+	ops := &operations{
+		logger:       fabric.Logger,
+		encoder:      s.encoder,
+		addr:         s.mino.GetAddress(),
+		processor:    proc,
+		blockFactory: s.blockFactory,
+		db:           s.db,
+		watcher:      s.watcher,
+		consensus:    s.consensus,
 	}
 
-	var err error
-	actor.rpc, err = s.mino.MakeRPC("skipchain", newHandler(s, proc))
+	rpc, err := s.mino.MakeRPC("skipchain", newHandler(ops))
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't create the rpc: %v", err)
 	}
 
-	actor.consensus, err = s.consensus.Listen(newBlockValidator(s, proc, s.watcher))
+	ops.rpc = rpc
+
+	consensus, err := s.consensus.Listen(newBlockValidator(ops))
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't start the consensus: %v", err)
+	}
+
+	actor := skipchainActor{
+		operations: ops,
+		rand:       crypto.CryptographicRandomGenerator{},
+		consensus:  consensus,
 	}
 
 	return actor, nil
@@ -147,10 +160,9 @@ func (s *Skipchain) Watch(ctx context.Context) <-chan blockchain.Block {
 //
 // - implements blockchain.Actor
 type skipchainActor struct {
-	*Skipchain
+	*operations
 	rand      crypto.RandGenerator
 	consensus consensus.Actor
-	rpc       mino.RPC
 }
 
 // InitChain implements blockchain.Actor. It creates a genesis block if none
@@ -168,7 +180,7 @@ func (a skipchainActor) InitChain(data proto.Message, players mino.Players) erro
 
 	iter := players.AddressIterator()
 
-	if iter.HasNext() && iter.GetNext().Equal(a.mino.GetAddress()) {
+	if iter.HasNext() && iter.GetNext().Equal(a.addr) {
 		// Only the first player tries to create the genesis block and then
 		// propagates it to the other players.
 		// This is done only once for a new chain thus we can assume that the

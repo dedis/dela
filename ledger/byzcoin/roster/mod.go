@@ -87,8 +87,8 @@ func (r roster) Take(updaters ...mino.FilterUpdater) mino.Players {
 }
 
 // Apply implements viewchange.EvolvableAuthority. It returns a new authority
-// after applying the change set. The removals must be sorted and unique or the
-// behaviour could be unexpected.
+// after applying the change set. The removals must be sorted by descending
+// order and unique or the behaviour will be undefined.
 func (r roster) Apply(changeset viewchange.ChangeSet) viewchange.EvolvableAuthority {
 	addrs := make([]mino.Address, r.Len())
 	pubkeys := make([]crypto.PublicKey, r.Len())
@@ -103,6 +103,11 @@ func (r roster) Apply(changeset viewchange.ChangeSet) viewchange.EvolvableAuthor
 			addrs = append(addrs[:i], addrs[i+1:]...)
 			pubkeys = append(pubkeys[:i], pubkeys[i+1:]...)
 		}
+	}
+
+	for _, player := range changeset.Add {
+		addrs = append(addrs, player.Address)
+		pubkeys = append(pubkeys, player.PublicKey)
 	}
 
 	roster := roster{
@@ -184,6 +189,18 @@ func NewRosterFactory(af mino.AddressFactory, pf crypto.PublicKeyFactory) viewch
 		addressFactory: af,
 		pubkeyFactory:  pf,
 	}
+}
+
+// GetAddressFactory implements viewchange.AuthorityFactory. It returns the
+// address factory.
+func (f rosterFactory) GetAddressFactory() mino.AddressFactory {
+	return f.addressFactory
+}
+
+// GetPublicKeyFactory implements viewchange.AuthorityFactory. It returns the
+// public key factory.
+func (f rosterFactory) GetPublicKeyFactory() crypto.PublicKeyFactory {
+	return f.pubkeyFactory
 }
 
 // New implements viewchange.AuthorityFactory. It returns a new roster from the

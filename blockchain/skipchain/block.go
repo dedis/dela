@@ -93,7 +93,7 @@ func (b SkipBlock) Pack(encoder encoding.ProtoMarshaler) (proto.Message, error) 
 // String implements fmt.Stringer. It returns a string representation of the
 // block.
 func (b SkipBlock) String() string {
-	return fmt.Sprintf("Block[%v]", b.hash)
+	return fmt.Sprintf("Block[%d:%v]", b.Index, b.hash)
 }
 
 func (b SkipBlock) computeHash(factory crypto.HashFactory,

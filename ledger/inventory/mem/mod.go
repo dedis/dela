@@ -48,8 +48,8 @@ type InMemoryInventory struct {
 	sync.Mutex
 	encoder      encoding.ProtoMarshaler
 	hashFactory  crypto.HashFactory
-	pages        []inMemoryPage
-	stagingPages map[Digest]inMemoryPage
+	pages        []*inMemoryPage
+	stagingPages map[Digest]*inMemoryPage
 }
 
 // NewInventory returns a new empty instance of the inventory.
@@ -57,8 +57,8 @@ func NewInventory() *InMemoryInventory {
 	return &InMemoryInventory{
 		encoder:      encoding.NewProtoEncoder(),
 		hashFactory:  crypto.NewSha256Factory(),
-		pages:        []inMemoryPage{},
-		stagingPages: make(map[Digest]inMemoryPage),
+		pages:        []*inMemoryPage{},
+		stagingPages: make(map[Digest]*inMemoryPage),
 	}
 }
 
@@ -70,7 +70,7 @@ func (inv *InMemoryInventory) GetPage(index uint64) (inventory.Page, error) {
 
 	i := int(index)
 	if i >= len(inv.pages) {
-		return inMemoryPage{}, xerrors.Errorf("invalid page (%d >= %d)", i, len(inv.pages))
+		return nil, xerrors.Errorf("invalid page (%d >= %d)", i, len(inv.pages))
 	}
 
 	return inv.pages[i], nil
@@ -96,7 +96,7 @@ func (inv *InMemoryInventory) GetStagingPage(root []byte) inventory.Page {
 // Stage implements inventory.Inventory. It starts a new version. It returns the
 // new snapshot that is not yet committed to the available versions.
 func (inv *InMemoryInventory) Stage(f func(inventory.WritablePage) error) (inventory.Page, error) {
-	var page inMemoryPage
+	var page *inMemoryPage
 	inv.Lock()
 	if len(inv.pages) > 0 {
 		// Clone the previous page of the inventory so that previous instances
@@ -104,7 +104,9 @@ func (inv *InMemoryInventory) Stage(f func(inventory.WritablePage) error) (inven
 		page = inv.pages[len(inv.pages)-1].clone()
 		page.index++
 	} else {
-		page.entries = make(map[Digest]proto.Message)
+		page = &inMemoryPage{
+			entries: make(map[Digest]proto.Message),
+		}
 	}
 	inv.Unlock()
 
@@ -113,7 +115,7 @@ func (inv *InMemoryInventory) Stage(f func(inventory.WritablePage) error) (inven
 		return page, xerrors.Errorf("couldn't fill new page: %v", err)
 	}
 
-	err = inv.computeHash(&page)
+	err = inv.computeHash(page)
 	if err != nil {
 		return page, xerrors.Errorf("couldn't compute page hash: %v", err)
 	}
@@ -121,6 +123,10 @@ func (inv *InMemoryInventory) Stage(f func(inventory.WritablePage) error) (inven
 	inv.Lock()
 	inv.stagingPages[page.fingerprint] = page
 	inv.Unlock()
+
+	for _, fn := range page.defers {
+		fn(page.GetFingerprint())
+	}
 
 	return page, nil
 }
@@ -167,7 +173,7 @@ func (inv *InMemoryInventory) Commit(fingerprint []byte) error {
 	}
 
 	inv.pages = append(inv.pages, page)
-	inv.stagingPages = make(map[Digest]inMemoryPage)
+	inv.stagingPages = make(map[Digest]*inMemoryPage)
 
 	return nil
 }
@@ -180,24 +186,25 @@ func (inv *InMemoryInventory) Commit(fingerprint []byte) error {
 type inMemoryPage struct {
 	index       uint64
 	fingerprint Digest
+	defers      []func([]byte)
 	entries     map[Digest]proto.Message
 }
 
 // GetIndex implements inventory.Page. It returns the index of the page from the
 // beginning of the inventory.
-func (page inMemoryPage) GetIndex() uint64 {
+func (page *inMemoryPage) GetIndex() uint64 {
 	return page.index
 }
 
 // GetFingerprint implements inventory.Page. It returns the integrity
 // fingerprint of the page.
-func (page inMemoryPage) GetFingerprint() []byte {
+func (page *inMemoryPage) GetFingerprint() []byte {
 	return page.fingerprint[:]
 }
 
 // Read implements inventory.Page. It returns the instance associated with the
 // key if it exists, otherwise an error.
-func (page inMemoryPage) Read(key []byte) (proto.Message, error) {
+func (page *inMemoryPage) Read(key []byte) (proto.Message, error) {
 	if len(key) > digestLength {
 		return nil, xerrors.Errorf("key length (%d) is higher than %d",
 			len(key), digestLength)
@@ -211,7 +218,7 @@ func (page inMemoryPage) Read(key []byte) (proto.Message, error) {
 
 // Write implements inventory.WritablePage. It updates the state of the page by
 // adding or updating the instance.
-func (page inMemoryPage) Write(key []byte, value proto.Message) error {
+func (page *inMemoryPage) Write(key []byte, value proto.Message) error {
 	if len(key) > digestLength {
 		return xerrors.Errorf("key length (%d) is higher than %d", len(key), digestLength)
 	}
@@ -224,8 +231,12 @@ func (page inMemoryPage) Write(key []byte, value proto.Message) error {
 	return nil
 }
 
-func (page inMemoryPage) clone() inMemoryPage {
-	clone := inMemoryPage{
+func (page *inMemoryPage) Defer(fn func([]byte)) {
+	page.defers = append(page.defers, fn)
+}
+
+func (page *inMemoryPage) clone() *inMemoryPage {
+	clone := &inMemoryPage{
 		index:   page.index,
 		entries: make(map[Digest]proto.Message),
 	}
