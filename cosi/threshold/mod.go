@@ -37,6 +37,12 @@ func NewCoSi(m mino.Mino, signer crypto.AggregateSigner) *CoSi {
 	}
 }
 
+// GetSigner implements cosi.CollectiveSigning. It returns the signer of the
+// instance.
+func (c *CoSi) GetSigner() crypto.Signer {
+	return c.signer
+}
+
 // GetPublicKeyFactory implements cosi.CollectiveSigning. It returns the public
 // key factory.
 func (c *CoSi) GetPublicKeyFactory() crypto.PublicKeyFactory {

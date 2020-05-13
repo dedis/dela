@@ -10,8 +10,9 @@ import (
 
 // Prepare is the request sent at the beginning of the PBFT protocol.
 type Prepare struct {
-	proposal consensus.Proposal
-	digest   []byte
+	proposal  consensus.Proposal
+	digest    []byte
+	signature crypto.Signature
 }
 
 // GetHash returns the hash of the prepare request that will be signed by the
@@ -22,11 +23,19 @@ func (p Prepare) GetHash() []byte {
 
 // Pack returns the protobuf message, or an error.
 func (p Prepare) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
-	pb := &PrepareRequest{}
-	var err error
-	pb.Proposal, err = enc.PackAny(p.proposal)
+	proposal, err := enc.PackAny(p.proposal)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't pack proposal: %v", err)
+	}
+
+	signature, err := enc.PackAny(p.signature)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't pack signature: %v", err)
+	}
+
+	pb := &PrepareRequest{
+		Proposal:  proposal,
+		Signature: signature,
 	}
 
 	return pb, nil

@@ -215,6 +215,7 @@ func TestActor_Propose(t *testing.T) {
 			hashFactory: sha256Factory{},
 			governance:  fakeGovernance{},
 			viewchange:  fakeViewChange{},
+			cosi:        &fakeCosi{},
 		},
 		closing:   make(chan struct{}),
 		rpc:       rpc,
@@ -257,12 +258,17 @@ func TestActor_Failures_Propose(t *testing.T) {
 			hashFactory: sha256Factory{},
 			governance:  fakeGovernance{},
 			viewchange:  fakeViewChange{},
+			cosi:        &fakeCosi{},
 		},
 	}
 
 	actor.governance = fakeGovernance{err: xerrors.New("oops")}
 	err := actor.Propose(fakeProposal{})
 	require.EqualError(t, err, "couldn't read authority for index 0: oops")
+
+	actor.governance = fakeGovernance{errChangeSet: xerrors.New("oops")}
+	err = actor.Propose(fakeProposal{})
+	require.EqualError(t, err, "couldn't get change set: oops")
 
 	actor.governance = fakeGovernance{}
 	actor.hashFactory = fake.NewHashFactory(fake.NewBadHash())
@@ -272,6 +278,12 @@ func TestActor_Failures_Propose(t *testing.T) {
 		"couldn't create prepare request: couldn't compute hash: ")
 
 	actor.hashFactory = crypto.NewSha256Factory()
+	actor.cosi = &fakeCosi{signer: fake.NewBadSigner()}
+	err = actor.Propose(fakeProposal{})
+	require.EqualError(t, err,
+		"couldn't create prepare request: couldn't sign the request: fake error")
+
+	actor.cosi = &fakeCosi{}
 	actor.cosiActor = &fakeCosiActor{err: xerrors.New("oops")}
 	err = actor.Propose(fakeProposal{})
 	require.EqualError(t, err, "couldn't sign the proposal: oops")
@@ -307,14 +319,15 @@ func TestActor_Close(t *testing.T) {
 	require.False(t, ok)
 }
 
-func TestHandler_HashPrepare(t *testing.T) {
+func TestHandler_Prepare_Hash(t *testing.T) {
 	cons := &Consensus{
 		storage:     newInMemoryStorage(),
 		queue:       &queue{cosi: &fakeCosi{}},
 		hashFactory: crypto.NewSha256Factory(),
 		encoder:     encoding.NewProtoEncoder(),
-		governance:  fakeGovernance{},
+		governance:  fakeGovernance{authority: fake.NewAuthority(3, fake.NewSigner)},
 		viewchange:  fakeViewChange{leader: 2},
+		cosi:        &fakeCosi{},
 	}
 	h := handler{
 		validator: fakeValidator{proposal: fakeProposal{}},
@@ -356,6 +369,26 @@ func TestHandler_HashPrepare(t *testing.T) {
 	require.EqualError(t, err, "mismatch with previous link: aa != bb")
 
 	cons.storage = newInMemoryStorage()
+	cons.governance = fakeGovernance{errChangeSet: xerrors.New("oops")}
+	_, err = h.Hash(nil, &PrepareRequest{Proposal: empty})
+	require.EqualError(t, err, "couldn't get change set: oops")
+
+	cons.governance = fakeGovernance{authority: fake.NewAuthority(3, func() crypto.AggregateSigner {
+		return fake.NewSignerWithPublicKey(fake.NewBadPublicKey())
+	})}
+	_, err = h.Hash(nil, &PrepareRequest{Proposal: empty})
+	require.EqualError(t, err, "couldn't verify signature: fake error")
+
+	cons.governance = fakeGovernance{}
+	_, err = h.Hash(nil, &PrepareRequest{Proposal: empty})
+	require.EqualError(t, err, "unknown public key at index 2")
+
+	cons.governance = fakeGovernance{authority: fake.NewAuthority(3, fake.NewSigner)}
+	cons.cosi = &fakeCosi{signer: fake.NewSignerWithSignatureFactory(fake.NewBadSignatureFactory())}
+	_, err = h.Hash(nil, &PrepareRequest{Proposal: empty})
+	require.EqualError(t, err, "couldn't decode signature: fake error")
+
+	cons.cosi = &fakeCosi{}
 	cons.queue = &queue{locked: true}
 	_, err = h.Hash(nil, &PrepareRequest{Proposal: empty})
 	require.EqualError(t, err, "couldn't add to queue: queue is locked")
@@ -527,9 +560,10 @@ func (vc fakeViewChange) Verify(consensus.Proposal, crypto.CollectiveAuthority) 
 
 type fakeGovernance struct {
 	viewchange.Governance
-	authority fake.CollectiveAuthority
-	changeset viewchange.ChangeSet
-	err       error
+	authority    fake.CollectiveAuthority
+	changeset    viewchange.ChangeSet
+	err          error
+	errChangeSet error
 }
 
 func (gov fakeGovernance) GetAuthority(index uint64) (viewchange.EvolvableAuthority, error) {
@@ -537,7 +571,7 @@ func (gov fakeGovernance) GetAuthority(index uint64) (viewchange.EvolvableAuthor
 }
 
 func (gov fakeGovernance) GetChangeSet(consensus.Proposal) (viewchange.ChangeSet, error) {
-	return gov.changeset, nil
+	return gov.changeset, gov.errChangeSet
 }
 
 type fakeQueue struct {
@@ -603,6 +637,11 @@ type fakeCosi struct {
 	err             error
 	factory         fake.SignatureFactory
 	verifierFactory fake.VerifierFactory
+	signer          fake.Signer
+}
+
+func (cs *fakeCosi) GetSigner() crypto.Signer {
+	return cs.signer
 }
 
 func (cs *fakeCosi) GetPublicKeyFactory() crypto.PublicKeyFactory {

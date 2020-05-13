@@ -50,6 +50,12 @@ type publicKeyIterator struct {
 	*iterator
 }
 
+// Seek implements crypto.PublicKeyIterator. It moves the index to the given
+// value.
+func (i *publicKeyIterator) Seek(index int) {
+	i.index = index
+}
+
 // GetNext implements crypto.PublicKeyIterator. It returns the next public key.
 func (i *publicKeyIterator) GetNext() crypto.PublicKey {
 	if i.iterator.HasNext() {

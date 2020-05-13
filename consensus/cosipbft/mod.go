@@ -229,6 +229,15 @@ func (a pbftActor) newPrepareRequest(prop consensus.Proposal,
 
 	req := Prepare{proposal: prop}
 
+	// Sign the hash of the proposal to provide a proof the proposal comes from
+	// the legitimate leader.
+	sig, err := a.cosi.GetSigner().Sign(prop.GetHash())
+	if err != nil {
+		return req, xerrors.Errorf("couldn't sign the request: %v", err)
+	}
+
+	req.signature = sig
+
 	forwardLink := forwardLink{
 		from:      prop.GetPreviousHash(),
 		to:        prop.GetHash(),
@@ -299,7 +308,28 @@ func (h handler) Hash(addr mino.Address, in proto.Message) (Digest, error) {
 		}
 
 		leader := h.viewchange.Verify(proposal, authority)
-		// TODO: verify that the proposal comes from the leader after rotation.
+
+		// The identity of the leader must be insured to comply with the
+		// viewchange property. The Signature should be verified with the leader
+		// public key.
+		sig, err := h.cosi.GetSigner().GetSignatureFactory().FromProto(msg.GetSignature())
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't decode signature: %v", err)
+		}
+
+		iter := authority.PublicKeyIterator()
+		iter.Seek(int(leader))
+		if iter.HasNext() {
+			err := iter.GetNext().Verify(proposal.GetHash(), sig)
+			if err != nil {
+				return nil, xerrors.Errorf("couldn't verify signature: %v", err)
+			}
+		} else {
+			return nil, xerrors.Errorf("unknown public key at index %d", leader)
+		}
+
+		// In case it matches, we keep track of the previous leader for
+		// optimization.
 		forwardLink.changeset.Leader = leader
 
 		err = h.queue.New(forwardLink, authority)

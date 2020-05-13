@@ -31,6 +31,11 @@ func TestMessages(t *testing.T) {
 	}
 }
 
+func TestFlat_GetSigner(t *testing.T) {
+	flat := NewFlat(nil, fake.NewSigner())
+	require.NotNil(t, flat.GetSigner())
+}
+
 func TestFlat_GetPublicKeyFactory(t *testing.T) {
 	flat := NewFlat(nil, fake.NewSigner())
 	require.NotNil(t, flat.GetPublicKeyFactory())

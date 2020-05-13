@@ -73,6 +73,20 @@ func TestAddressIterator_GetNext(t *testing.T) {
 	require.Nil(t, iter.GetNext())
 }
 
+func TestPublicKeyIterator_Seek(t *testing.T) {
+	roster := rosterFactory{}.New(fake.NewAuthority(3, fake.NewSigner)).(roster)
+	iter := &publicKeyIterator{
+		iterator: &iterator{
+			roster: &roster,
+		},
+	}
+
+	iter.Seek(2)
+	require.True(t, iter.HasNext())
+	iter.Seek(3)
+	require.False(t, iter.HasNext())
+}
+
 func TestPublicKeyIterator_GetNext(t *testing.T) {
 	roster := rosterFactory{}.New(fake.NewAuthority(3, fake.NewSigner)).(roster)
 	iter := &publicKeyIterator{

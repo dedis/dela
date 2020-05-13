@@ -121,9 +121,13 @@ func (i *AddressIterator) GetNext() mino.Address {
 
 // PublicKeyIterator is a fake implementation of crypto.PublicKeyIterator.
 type PublicKeyIterator struct {
-	crypto.PublicKeyIterator
 	signers []crypto.AggregateSigner
 	index   int
+}
+
+// Seek implements crypto.PublicKeyIterator.
+func (i *PublicKeyIterator) Seek(index int) {
+	i.index = index
 }
 
 // HasNext implements crypto.PublicKeyIterator.
@@ -378,7 +382,10 @@ type PublicKey struct {
 // NewBadPublicKey returns a new fake public key that returns error when
 // appropriate.
 func NewBadPublicKey() PublicKey {
-	return PublicKey{err: xerrors.New("fake error")}
+	return PublicKey{
+		err:       xerrors.New("fake error"),
+		verifyErr: xerrors.New("fake error"),
+	}
 }
 
 // NewInvalidPublicKey returns a fake public key that never verifies.
@@ -409,6 +416,7 @@ func (pk PublicKey) String() string {
 // Signer is a fake implementation of the crypto.AggregateSigner interface.
 type Signer struct {
 	crypto.AggregateSigner
+	publicKey        PublicKey
 	signatureFactory SignatureFactory
 	verifierFactory  VerifierFactory
 	err              error
@@ -429,6 +437,12 @@ func NewSignerWithSignatureFactory(f SignatureFactory) Signer {
 // verifier factory.
 func NewSignerWithVerifierFactory(f VerifierFactory) Signer {
 	return Signer{verifierFactory: f}
+}
+
+// NewSignerWithPublicKey returns a new fake signer with the specific public
+// key.
+func NewSignerWithPublicKey(k PublicKey) Signer {
+	return Signer{publicKey: k}
 }
 
 // NewBadSigner returns a fake signer that will return an error when
@@ -454,7 +468,7 @@ func (s Signer) GetVerifierFactory() crypto.VerifierFactory {
 
 // GetPublicKey implements crypto.Signer.
 func (s Signer) GetPublicKey() crypto.PublicKey {
-	return PublicKey{}
+	return s.publicKey
 }
 
 // Sign implements crypto.Signer.
@@ -519,6 +533,13 @@ func (f VerifierFactory) FromAuthority(ca crypto.CollectiveAuthority) (crypto.Ve
 // Counter is a helper to delay errors or actions. It can be nil without panics.
 type Counter struct {
 	Value int
+}
+
+// NewCounter returns a new counter set to the given value.
+func NewCounter(value int) *Counter {
+	return &Counter{
+		Value: value,
+	}
 }
 
 // Done returns true when the counter reached zero.
