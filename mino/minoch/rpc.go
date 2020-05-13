@@ -7,8 +7,8 @@ import (
 	"sync"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/any"
+	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
@@ -23,6 +23,7 @@ type Envelope struct {
 // RPC is an implementation of the mino.RPC interface.
 type RPC struct {
 	manager *Manager
+	encoder encoding.ProtoMarshaler
 	addr    mino.Address
 	path    string
 	h       mino.Handler
@@ -40,7 +41,12 @@ func (c RPC) Call(ctx context.Context, req proto.Message,
 	wg.Add(players.Len())
 	iter := players.AddressIterator()
 	for iter.HasNext() {
-		peer := c.manager.get(iter.GetNext())
+		peer, err := c.manager.get(iter.GetNext())
+		if err != nil {
+			errs <- xerrors.Errorf("couldn't find peer: %v", err)
+			continue
+		}
+
 		cloneReq := proto.Clone(req)
 		go func(m *Minoch) {
 			defer wg.Done()
@@ -62,7 +68,7 @@ func (c RPC) Call(ctx context.Context, req proto.Message,
 
 				resp, err := rpc.h.Process(req)
 				if err != nil {
-					errs <- err
+					errs <- xerrors.Errorf("couldn't process request: %v", err)
 				}
 
 				if resp != nil {
@@ -92,26 +98,32 @@ func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, min
 	iter := memship.AddressIterator()
 	for iter.HasNext() {
 		addr := iter.GetNext()
-		ch := make(chan Envelope, 1)
-		outs[addr.String()] = receiver{out: ch}
 
-		peer := c.manager.get(addr)
+		peer, err := c.manager.get(addr)
+		if err != nil {
+			errs <- xerrors.Errorf("couldn't find peer: %v", err)
+			continue
+		}
+
+		ch := make(chan Envelope, 1)
+		outs[addr.String()] = receiver{encoder: c.encoder, out: ch}
 
 		go func(r receiver) {
 			s := sender{
-				addr: peer.GetAddress(),
-				in:   in,
+				addr:    peer.GetAddress(),
+				encoder: c.encoder,
+				in:      in,
 			}
 
 			err := peer.rpcs[c.path].h.Stream(s, r)
 			if err != nil {
-				errs <- err
+				errs <- xerrors.Errorf("couldn't process: %v", err)
 			}
 		}(outs[addr.String()])
 	}
 
-	orchSender := sender{addr: address{}, in: in}
-	orchRecv := receiver{out: out, errs: errs}
+	orchSender := sender{addr: address{}, encoder: c.encoder, in: in}
+	orchRecv := receiver{encoder: c.encoder, out: out, errs: errs}
 
 	go func() {
 		for {
@@ -140,16 +152,17 @@ func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, min
 }
 
 type sender struct {
-	addr mino.Address
-	in   chan Envelope
+	addr    mino.Address
+	encoder encoding.ProtoMarshaler
+	in      chan Envelope
 }
 
 func (s sender) Send(msg proto.Message, addrs ...mino.Address) <-chan error {
 	errs := make(chan error, int(math.Max(1, float64(len(addrs)))))
 
-	a, err := ptypes.MarshalAny(msg)
+	msgAny, err := s.encoder.MarshalAny(msg)
 	if err != nil {
-		errs <- err
+		errs <- xerrors.Errorf("couldn't marshal message: %v", err)
 		close(errs)
 		return errs
 	}
@@ -158,7 +171,7 @@ func (s sender) Send(msg proto.Message, addrs ...mino.Address) <-chan error {
 		s.in <- Envelope{
 			from:    s.addr.(address),
 			to:      addrs,
-			message: a,
+			message: msgAny,
 		}
 		close(errs)
 	}()
@@ -167,8 +180,9 @@ func (s sender) Send(msg proto.Message, addrs ...mino.Address) <-chan error {
 }
 
 type receiver struct {
-	out  chan Envelope
-	errs chan error
+	encoder encoding.ProtoMarshaler
+	out     chan Envelope
+	errs    chan error
 }
 
 func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error) {
@@ -178,13 +192,12 @@ func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error)
 			return nil, nil, io.EOF
 		}
 
-		var da ptypes.DynamicAny
-		err := ptypes.UnmarshalAny(env.message, &da)
+		msg, err := r.encoder.UnmarshalDynamicAny(env.message)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
 		}
 
-		return env.from, da.Message, nil
+		return env.from, msg, nil
 	case err := <-r.errs:
 		return nil, nil, err
 	case <-ctx.Done():

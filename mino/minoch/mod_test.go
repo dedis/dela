@@ -3,6 +3,8 @@ package minoch
 import (
 	"testing"
 
+	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/mino"
 )
@@ -60,11 +62,19 @@ func TestMinoch_MakeRPC(t *testing.T) {
 	m, err := NewMinoch(manager, "A")
 	require.NoError(t, err)
 
-	rpc, err := m.MakeRPC("rpc1", testHandler{})
+	rpc, err := m.MakeRPC("rpc1", badHandler{})
 	require.NoError(t, err)
 	require.NotNil(t, rpc)
 }
 
-type testHandler struct {
+type badHandler struct {
 	mino.UnsupportedHandler
+}
+
+type fakeHandler struct {
+	mino.UnsupportedHandler
+}
+
+func (h fakeHandler) Process(req mino.Request) (resp proto.Message, err error) {
+	return &empty.Empty{}, nil
 }

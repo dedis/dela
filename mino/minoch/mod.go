@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	m "go.dedis.ch/fabric"
+	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 )
 
@@ -15,6 +16,7 @@ import (
 type Minoch struct {
 	sync.Mutex
 	manager    *Manager
+	encoder    encoding.ProtoMarshaler
 	identifier string
 	path       string
 	rpcs       map[string]RPC
@@ -24,6 +26,7 @@ type Minoch struct {
 func NewMinoch(manager *Manager, identifier string) (*Minoch, error) {
 	inst := &Minoch{
 		manager:    manager,
+		encoder:    encoding.NewProtoEncoder(),
 		identifier: identifier,
 		path:       "",
 		rpcs:       make(map[string]RPC),
@@ -66,6 +69,7 @@ func (m *Minoch) MakeNamespace(path string) (mino.Mino, error) {
 func (m *Minoch) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 	rpc := RPC{
 		manager: m.manager,
+		encoder: m.encoder,
 		addr:    m.GetAddress(),
 		path:    fmt.Sprintf("%s/%s", m.path, name),
 		h:       h,
