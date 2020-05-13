@@ -11,6 +11,7 @@ import (
 	"go.dedis.ch/fabric/blockchain/skipchain"
 	"go.dedis.ch/fabric/consensus/cosipbft"
 	"go.dedis.ch/fabric/consensus/viewchange"
+	"go.dedis.ch/fabric/consensus/viewchange/rotating"
 	"go.dedis.ch/fabric/cosi/flatcosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
@@ -64,6 +65,8 @@ func NewLedger(m mino.Mino, signer crypto.AggregateSigner) *Ledger {
 	}
 
 	consensus := cosipbft.NewCoSiPBFT(m, flatcosi.NewFlat(m, signer), gov)
+	// Set a rotating view change for the collective signing.
+	consensus.ViewChange = rotating.NewViewChange(m.GetAddress())
 
 	return &Ledger{
 		addr:       m.GetAddress(),

@@ -35,6 +35,11 @@ type addressIterator struct {
 	*iterator
 }
 
+// Seek implements mino.AddressIterator.
+func (i *addressIterator) Seek(index int) {
+	i.index = index
+}
+
 // GetNext implements mino.AddressIterator. It returns the next address.
 func (i *addressIterator) GetNext() mino.Address {
 	if i.iterator.HasNext() {

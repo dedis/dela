@@ -214,7 +214,7 @@ func TestActor_Propose(t *testing.T) {
 			encoder:     encoding.NewProtoEncoder(),
 			hashFactory: sha256Factory{},
 			governance:  fakeGovernance{},
-			viewchange:  fakeViewChange{},
+			ViewChange:  fakeViewChange{},
 			cosi:        &fakeCosi{},
 		},
 		closing:   make(chan struct{}),
@@ -222,11 +222,11 @@ func TestActor_Propose(t *testing.T) {
 		cosiActor: cosiActor,
 	}
 
-	actor.viewchange = fakeViewChange{denied: true}
+	actor.ViewChange = fakeViewChange{denied: true}
 	err := actor.Propose(fakeProposal{})
 	require.NoError(t, err)
 
-	actor.viewchange = fakeViewChange{denied: false, leader: 2}
+	actor.ViewChange = fakeViewChange{denied: false, leader: 2}
 	err = actor.Propose(fakeProposal{hash: []byte{0xaa}})
 	require.NoError(t, err)
 	require.Len(t, cosiActor.calls, 2)
@@ -257,7 +257,7 @@ func TestActor_Failures_Propose(t *testing.T) {
 			encoder:     encoding.NewProtoEncoder(),
 			hashFactory: sha256Factory{},
 			governance:  fakeGovernance{},
-			viewchange:  fakeViewChange{},
+			ViewChange:  fakeViewChange{},
 			cosi:        &fakeCosi{},
 		},
 	}
@@ -326,7 +326,7 @@ func TestHandler_Prepare_Hash(t *testing.T) {
 		hashFactory: crypto.NewSha256Factory(),
 		encoder:     encoding.NewProtoEncoder(),
 		governance:  fakeGovernance{authority: fake.NewAuthority(3, fake.NewSigner)},
-		viewchange:  fakeViewChange{leader: 2},
+		ViewChange:  fakeViewChange{leader: 2},
 		cosi:        &fakeCosi{},
 	}
 	h := handler{

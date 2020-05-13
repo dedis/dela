@@ -43,8 +43,16 @@ func (ops *operations) insertBlock(block SkipBlock) error {
 }
 
 func (ops *operations) commitBlock(block SkipBlock) error {
+	already := false
+
 	err := ops.db.Atomic(func(tx Queries) error {
-		err := tx.Write(block)
+		_, err := tx.Read(int64(block.GetIndex()))
+		if err == nil {
+			already = true
+			return nil
+		}
+
+		err = tx.Write(block)
 		if err != nil {
 			return xerrors.Errorf("couldn't write block: %v", err)
 		}
@@ -56,6 +64,11 @@ func (ops *operations) commitBlock(block SkipBlock) error {
 
 		return nil
 	})
+
+	if already {
+		// Skip the notification as it has already been done.
+		return nil
+	}
 
 	if err != nil {
 		return xerrors.Errorf("tx failed: %v", err)
@@ -78,12 +91,27 @@ func (ops *operations) catchUp(target SkipBlock, addr mino.Address) error {
 
 	ops.logger.Info().Msg("one or more blocks are missing: starting catch up")
 
+	from := uint64(0)
+	if ops.db.Contains(0) {
+		last, err := ops.db.ReadLast()
+		if err != nil {
+			return err
+		}
+
+		from = last.GetIndex() + 1
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	sender, rcver := ops.rpc.Stream(ctx, mino.NewAddresses(addr))
 
-	err := <-sender.Send(&BlockRequest{To: target.GetPreviousHash()}, addr)
+	req := &BlockRequest{
+		From: from,
+		To:   target.GetIndex() - 1,
+	}
+
+	err := <-sender.Send(req, addr)
 	if err != nil {
 		return xerrors.Errorf("couldn't send block request: %v", err)
 	}

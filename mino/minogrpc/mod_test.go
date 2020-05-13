@@ -219,6 +219,10 @@ type fakeAddressIterator struct {
 	cursor  int
 }
 
+func (it *fakeAddressIterator) Seek(index int) {
+	it.cursor = index
+}
+
 // HasNext implements mino.AddressIterator.HasNext()
 func (it *fakeAddressIterator) HasNext() bool {
 	return it.cursor < len(it.players)

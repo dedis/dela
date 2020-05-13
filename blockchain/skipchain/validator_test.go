@@ -136,6 +136,9 @@ func (db *fakeDatabase) Contains(index uint64) bool {
 }
 
 func (db *fakeDatabase) Read(index int64) (SkipBlock, error) {
+	if index >= int64(len(db.blocks)) {
+		return SkipBlock{}, NewNoBlockError(index)
+	}
 	return db.blocks[index], db.err
 }
 

@@ -255,6 +255,7 @@ func (e *badMarshalAnyEncoder) MarshalAny(proto.Message) (*any.Any, error) {
 }
 
 type fakeIterator struct {
+	mino.AddressIterator
 	index int
 	addrs []mino.Address
 }

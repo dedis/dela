@@ -104,6 +104,11 @@ func NewAddressIterator(addrs []mino.Address) AddressIterator {
 	}
 }
 
+// Seek implements mino.AddressIterator.
+func (i *AddressIterator) Seek(index int) {
+	i.index = index
+}
+
 // HasNext implements mino.AddressIterator.
 func (i *AddressIterator) HasNext() bool {
 	return i.index < len(i.addrs)

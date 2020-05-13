@@ -34,7 +34,9 @@ type Consensus struct {
 	hashFactory  crypto.HashFactory
 	chainFactory consensus.ChainFactory
 	governance   viewchange.Governance
-	viewchange   viewchange.ViewChange
+
+	// ViewChange can be personalized after instantiation.
+	ViewChange viewchange.ViewChange
 }
 
 // NewCoSiPBFT returns a new instance.
@@ -48,7 +50,7 @@ func NewCoSiPBFT(mino mino.Mino, cosi cosi.CollectiveSigning, gov viewchange.Gov
 		hashFactory:  crypto.NewSha256Factory(),
 		chainFactory: newUnsecureChainFactory(cosi, mino),
 		governance:   gov,
-		viewchange:   constant.NewViewChange(mino.GetAddress()),
+		ViewChange:   constant.NewViewChange(mino.GetAddress()),
 	}
 
 	return c
@@ -161,7 +163,7 @@ func (a pbftActor) Propose(p consensus.Proposal) error {
 	// If the leader has failed and this node has to take over, we use the
 	// inherant property of CoSiPBFT to prove that 2f participants want the view
 	// change.
-	leader, ok := a.viewchange.Wait(p, authority)
+	leader, ok := a.ViewChange.Wait(p, authority)
 	if !ok {
 		fabric.Logger.Trace().Msg("proposal skipped by view change")
 		// Not authorized to propose a block as the leader is moving forward so
@@ -307,7 +309,7 @@ func (h handler) Hash(addr mino.Address, in proto.Message) (Digest, error) {
 			changeset: changeset,
 		}
 
-		leader := h.viewchange.Verify(proposal, authority)
+		leader := h.ViewChange.Verify(proposal, authority)
 
 		// The identity of the leader must be insured to comply with the
 		// viewchange property. The Signature should be verified with the leader

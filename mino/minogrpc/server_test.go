@@ -1090,6 +1090,10 @@ type fakeIterator struct {
 	index int
 }
 
+func (i *fakeIterator) Seek(index int) {
+	i.index = index
+}
+
 func (i *fakeIterator) HasNext() bool {
 	return i.index < len(i.addrs)
 }

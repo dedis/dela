@@ -29,8 +29,8 @@ message PropagateGenesis {
 }
 
 message BlockRequest {
-    bytes from = 1;
-    bytes to = 2;
+    uint64 from = 1;
+    uint64 to = 2;
 }
 
 message BlockResponse {
