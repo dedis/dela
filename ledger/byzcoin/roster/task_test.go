@@ -211,7 +211,8 @@ func TestTaskManager_FromProto(t *testing.T) {
 	factory = NewRosterFactory(fake.AddressFactory{}, fake.NewBadPublicKeyFactory())
 	manager = NewTaskManager(factory, nil)
 	_, err = manager.FromProto(&Task{Addr: []byte{}, PublicKey: &any.Any{}})
-	require.EqualError(t, err, "couldn't decode public key: fake error")
+	require.EqualError(t, err,
+		"couldn't unpack player: couldn't decode public key: fake error")
 }
 
 // -----------------------------------------------------------------------------

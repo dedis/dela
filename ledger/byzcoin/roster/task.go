@@ -66,7 +66,7 @@ func (t clientTask) GetChangeSet() viewchange.ChangeSet {
 		if removals[i] == removals[i+1] {
 			removals = append(removals[:i], removals[i+1:]...)
 		} else {
-			// Only moves to the next when all occurances of the same index are
+			// Only moves to the next when all occurences of the same index are
 			// removed.
 			i++
 		}
@@ -296,8 +296,7 @@ func (f TaskManager) FromProto(in proto.Message) (basic.ServerTask, error) {
 
 	player, err := f.unpackPlayer(pb.GetAddr(), pb.GetPublicKey())
 	if err != nil {
-		// The error is not wrap to avoid redundancy with the private function.
-		return nil, err
+		return nil, xerrors.Errorf("couldn't unpack player: %v", err)
 	}
 
 	task := serverTask{

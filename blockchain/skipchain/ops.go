@@ -13,6 +13,8 @@ import (
 	"golang.org/x/xerrors"
 )
 
+// operations implements helper functions that can be used by the handlers for
+// common operations.
 type operations struct {
 	logger       zerolog.Logger
 	encoder      encoding.ProtoMarshaler

@@ -120,8 +120,11 @@ func (c *Consensus) Store(in consensus.Chain) error {
 		return xerrors.Errorf("couldn't read latest chain: %v", err)
 	}
 
+	store := false
 	for _, link := range chain.links {
-		if last == nil || bytes.Equal(last.To, link.from[:]) {
+		store = store || last == nil || bytes.Equal(last.To, link.from[:])
+
+		if store {
 			linkpb, err := c.encoder.Pack(link)
 			if err != nil {
 				return xerrors.Errorf("couldn't pack link: %v", err)
@@ -131,8 +134,6 @@ func (c *Consensus) Store(in consensus.Chain) error {
 			if err != nil {
 				return xerrors.Errorf("couldn't store link: %v", err)
 			}
-
-			last = nil
 		}
 	}
 
