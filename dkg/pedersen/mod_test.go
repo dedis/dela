@@ -2,12 +2,12 @@ package pedersen
 
 import (
 	"fmt"
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/dkg"
 	"go.dedis.ch/fabric/mino"
-	"go.dedis.ch/fabric/mino/minoch"
 	"go.dedis.ch/fabric/mino/minogrpc"
 	"go.dedis.ch/fabric/mino/minogrpc/routing"
 	"go.dedis.ch/kyber/v3"
@@ -16,53 +16,63 @@ import (
 func TestPedersen_Scenario(t *testing.T) {
 	n := 10
 
-	addrFactory := minoch.AddressFactory{}
+	addrFactory := minogrpc.AddressFactory{}
 
 	rootAddr := addrFactory.FromText([]byte("127.0.0.1:2000"))
 
 	treeFactory := routing.NewTreeRoutingFactory(3, rootAddr, addrFactory, minogrpc.OrchestratorID)
 
-	addrs := make([]mino.Address, n)
 	pubKeys := make([]kyber.Point, n)
 	privKeys := make([]kyber.Scalar, n)
 	minos := make([]*minogrpc.Minogrpc, n)
-	starters := make([]dkg.Starter, n)
+	dkgs := make([]dkg.DKG, n)
+	urls := make([]*url.URL, n)
+	addrs := make([]mino.Address, n)
 
 	for i := 0; i < n; i++ {
-		addrs[i] = addrFactory.FromText([]byte(fmt.Sprintf("127.0.0.1:2%03d", i)))
+		url, err := url.Parse(fmt.Sprintf("//127.0.0.1:2%03d", i))
+		require.NoError(t, err)
+
 		privKeys[i] = suite.Scalar().Pick(suite.RandomStream())
 		pubKeys[i] = suite.Point().Mul(privKeys[i], nil)
-		minogrpc, err := minogrpc.NewMinogrpc(addrs[i].String(), treeFactory)
+
+		minogrpc, err := minogrpc.NewMinogrpc(url, treeFactory)
 		require.NoError(t, err)
-		minos[i] = &minogrpc
+
+		minos[i] = minogrpc
+		urls[i] = url
+		addrs[i] = minogrpc.GetAddress()
 	}
 
 	for i, minogrpc := range minos {
-		minogrpc.AddNeighbours(minos...)
-		dkgFactory := NewFactory(pubKeys, privKeys[i], minogrpc, suite)
-		starter, err := dkgFactory.New(pubKeys, privKeys[i], minos[i], suite)
+		for j, m := range minos {
+			err := minogrpc.AddCertificate(urls[j], m.GetPublicCertificate())
+			require.NoError(t, err)
+		}
+
+		dkg, err := NewPedersen(privKeys[i], minogrpc, suite)
 		require.NoError(t, err)
 
-		starters[i] = starter
+		dkgs[i] = dkg
 	}
 
 	message := []byte("Hello world")
-	// we try with the first 3 DKG Starters
+	// we try with the first 3 DKG Actors
 	for i := 0; i < 3; i++ {
 		players := &fakePlayers{
 			players: addrs,
 		}
 
-		starter := starters[i]
+		dkg := dkgs[i]
 
-		dkg, err := starter.Start(players, uint32(n))
+		actor, err := dkg.Listen(players, pubKeys, uint32(n))
 		require.NoError(t, err)
 
-		K, C, remainder, err := dkg.Encrypt(message)
+		K, C, remainder, err := actor.Encrypt(message)
 		require.NoError(t, err)
 		require.Len(t, remainder, 0)
 
-		decrypted, err := dkg.Decrypt(K, C)
+		decrypted, err := actor.Decrypt(K, C)
 		require.NoError(t, err)
 
 		require.Equal(t, message, decrypted)

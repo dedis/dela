@@ -27,7 +27,7 @@ import (
 // activity. The following snippet shows practical use of it:
 //
 // ```go
-// os.Setenv("MINO_LOG_PACKETS", "true")
+// minogrpc.SaveLog = true
 // defer func() {
 //     minogrpc.SaveGraph("graph.dot", true, false)
 // }()

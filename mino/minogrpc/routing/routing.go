@@ -61,7 +61,8 @@ type TreeRoutingFactory struct {
 	orchestratorID string
 }
 
-// NewTreeRoutingFactory returns a new treeRoutingFactory.
+// NewTreeRoutingFactory returns a new treeRoutingFactory. The rootAddr should
+// be comparable to the addresses that will be passed to build the tree.
 func NewTreeRoutingFactory(height int, rootAddr mino.Address,
 	addrFactory mino.AddressFactory, orchestratorID string) *TreeRoutingFactory {
 

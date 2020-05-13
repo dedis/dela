@@ -57,23 +57,15 @@ type Server struct {
 	listener  net.Listener
 	StartChan chan struct{}
 
-	// neighbours contains the certificate and details about known peers.
-	neighbours     map[string]Peer
+	// ndesCerts contains the public certificates of other known nodes. It
+	// contains elements of kind *x509.Certificate
+	nodesCerts *sync.Map
+
 	routingFactory routing.Factory
 
 	handlers map[string]mino.Handler
 
 	traffic *traffic
-}
-
-// Roster is a set of peers that will work together
-// to execute protocols.
-type Roster []Peer
-
-// Peer is a public identity for a given node.
-type Peer struct {
-	Address     string
-	Certificate *x509.Certificate
 }
 
 // RPC represents an RPC that has been registered by a client, which allows
@@ -110,16 +102,8 @@ func (rpc *RPC) Call(ctx context.Context, req proto.Message,
 		for iter.HasNext() {
 			addrStr := iter.GetNext().String()
 
-			peer, ok := rpc.srv.neighbours[addrStr]
-			if !ok {
-				err := xerrors.Errorf("addr '%s' not is our list of neighbours",
-					addrStr)
-				fabric.Logger.Err(err).Send()
-				errs <- err
-				continue
-			}
-
-			clientConn, err := getConnection(addrStr, peer, *rpc.srv.cert)
+			clientConn, err := getConnectionTo(address{addrStr}, rpc.srv.cert,
+				rpc.srv.nodesCerts)
 			if err != nil {
 				errs <- xerrors.Errorf("failed to get client conn for '%s': %v",
 					addrStr, err)
@@ -212,14 +196,8 @@ func (rpc RPC) Stream(ctx context.Context,
 	// TODO: think how the interface can be changed to allow getting the root
 	rootAddr := rting.(*routing.TreeRouting).Root.Addr
 
-	myPeer, ok := rpc.srv.neighbours[rootAddr.String()]
-	if !ok {
-		err := xerrors.Errorf("my addr '%s' is not in our list of neighbours %v",
-			rpc.srv.addr.String(), rpc.srv.neighbours)
-		fabric.Logger.Fatal().Err(err).Send()
-	}
-
-	myConn, err := getConnection(rootAddr.String(), myPeer, *rpc.srv.cert)
+	myConn, err := getConnectionTo(address{rootAddr.String()}, rpc.srv.cert,
+		rpc.srv.nodesCerts)
 	if err != nil {
 		fabric.Logger.Err(xerrors.Errorf("failed to get my conn: %v", err)).Send()
 	}
@@ -346,17 +324,17 @@ func NewServer(addr mino.Address, rf routing.Factory) (*Server, error) {
 		addr:           addr,
 		listener:       nil,
 		StartChan:      make(chan struct{}),
-		neighbours:     make(map[string]Peer),
 		handlers:       make(map[string]mino.Handler),
 		traffic:        newTraffic(addr.String()),
 		routingFactory: rf,
+		nodesCerts:     &sync.Map{},
 	}
 
 	RegisterOverlayServer(srv, &overlayService{
 		encoder:        encoding.NewProtoEncoder(),
 		handlers:       server.handlers,
 		addr:           address{addr.String()},
-		neighbour:      server.neighbours,
+		nodesCerts:     server.nodesCerts,
 		srvCert:        server.cert,
 		traffic:        server.traffic,
 		routingFactory: rf,
@@ -401,31 +379,37 @@ func (srv *Server) Serve() error {
 	return nil
 }
 
-func (srv *Server) addNeighbour(servers ...*Server) {
-	for _, server := range servers {
-		srv.neighbours[server.addr.String()] = Peer{
-			Address:     server.listener.Addr().String(),
-			Certificate: server.cert.Leaf,
-		}
-	}
+// AddCertificate populates the list of public know certificates of the server
+func (srv *Server) addCertificate(key string, cert *x509.Certificate) {
+	srv.nodesCerts.Store(key, cert)
 }
 
-// getConnection creates a gRPC connection from the server to the client.
-func getConnection(addr string, peer Peer, cert tls.Certificate) (*grpc.ClientConn, error) {
-	if addr == "" {
-		return nil, xerrors.New("empty address is not allowed")
+// getConnectionTo creates a gRPC connection from the server to the client.
+func getConnectionTo(addr address, srvCert *tls.Certificate,
+	nodesCerts *sync.Map) (*grpc.ClientConn, error) {
+
+	clientPubCertItf, found := nodesCerts.Load(addr.id)
+	if !found {
+		return nil, xerrors.Errorf("public certificate for '%s' not found in %v",
+			addr.id, nodesCerts)
+	}
+
+	clientPubCert, ok := clientPubCertItf.(*x509.Certificate)
+	if !ok {
+		fabric.Logger.Fatal().Msg("expected nodesCerts to contain an " +
+			"*x509.Certificate element")
 	}
 
 	pool := x509.NewCertPool()
-	pool.AddCert(peer.Certificate)
+	pool.AddCert(clientPubCert)
 
 	ta := credentials.NewTLS(&tls.Config{
-		Certificates: []tls.Certificate{cert},
+		Certificates: []tls.Certificate{*srvCert},
 		RootCAs:      pool,
 	})
 
 	// Connecting using TLS and the distant server certificate as the root.
-	conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(ta),
+	conn, err := grpc.Dial(addr.id, grpc.WithTransportCredentials(ta),
 		grpc.WithConnectParams(grpc.ConnectParams{
 			Backoff:           backoff.DefaultConfig,
 			MinConnectTimeout: defaultMinConnectTimeout,
@@ -474,8 +458,9 @@ func makeCertificate() (*tls.Certificate, error) {
 // sender implements mino.Sender
 type sender struct {
 	sync.Mutex
-	encoder      encoding.ProtoMarshaler
-	address      address
+	encoder encoding.ProtoMarshaler
+	address address
+	// participants should contain elements of type overlayStream
 	participants sync.Map
 	name         string
 	srvCert      *tls.Certificate
@@ -559,7 +544,7 @@ func (s *sender) sendSingle(msg proto.Message, from, to mino.Address) error {
 
 	player, ok := playerItf.(overlayStream)
 	if !ok {
-		fabric.Logger.Fatal().Msg("not ok")
+		fabric.Logger.Fatal().Msg("couldn't cast the player from the sync.Map")
 	}
 
 	envelope := &Envelope{

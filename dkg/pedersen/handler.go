@@ -3,6 +3,7 @@ package pedersen
 import (
 	"context"
 	"sync"
+	"time"
 
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/mino"
@@ -17,31 +18,32 @@ import (
 // Suite is the Kyber suite for Pedersen.
 var suite = suites.MustFind("Ed25519")
 
+// recvResponseTimeout is the maximum time a node will wait for a response
+const recvResponseTimeout = time.Second * 10
+
 // Handler represents the RPC executed on each node
 //
 // - implements mino.Handler
 type Handler struct {
 	mino.UnsupportedHandler
 	sync.RWMutex
-	af        mino.AddressFactory
-	dkg       *pedersen.DistKeyGenerator
-	pubKeys   []kyber.Point
-	privKey   kyber.Scalar
-	me        mino.Address
-	suite     suites.Suite
-	privShare *share.PriShare
+	addressFactory mino.AddressFactory
+	dkg            *pedersen.DistKeyGenerator
+	privKey        kyber.Scalar
+	me             mino.Address
+	suite          suites.Suite
+	privShare      *share.PriShare
 }
 
 // NewHandler creates a new handler
-func NewHandler(pubKeys []kyber.Point, privKey kyber.Scalar,
+func NewHandler(privKey kyber.Scalar,
 	af mino.AddressFactory, me mino.Address, suite suites.Suite) *Handler {
 
 	return &Handler{
-		af:      af,
-		pubKeys: pubKeys,
-		privKey: privKey,
-		me:      me,
-		suite:   suite,
+		addressFactory: af,
+		privKey:        privKey,
+		me:             me,
+		suite:          suite,
 	}
 }
 
@@ -60,15 +62,24 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 		return xerrors.Errorf("failed to receive: %v", err)
 	}
 
+	deals := []*Deal{}
+
 	// We expect a Start message or a decrypt request at first, but we might
 	// receive other messages in the meantime, like a Deal.
 	switch msg := msg.(type) {
 
 	case *Start:
-		err := h.start(msg, []*Deal{}, from, out, in)
+		err := h.start(msg, deals, from, out, in)
 		if err != nil {
 			return xerrors.Errorf("failed to start: %v", err)
 		}
+
+	case *Deal:
+		// This is a special case where a DKG started, some nodes received the
+		// start signal and started sending their deals but we have not yet
+		// received our start signal. In this case we collect the Deals while
+		// waiting for the start signal.
+		deals = append(deals, msg)
 
 	case *DecryptRequest:
 		// TODO: check if started before
@@ -105,36 +116,10 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 		h.RUnlock()
 
 		errs := out.Send(decryptReply, from)
-		err, more := <-errs
-		if more {
+		err = <-errs
+		if err != nil {
 			return xerrors.Errorf("got an error while sending the decrypt "+
 				"reply: %v", err)
-		}
-
-	case *Deal:
-		// This is a special case where a DKG started, some nodes received the
-		// start signal and started sending their deals but we have not yet
-		// received our start signal. In this case we will collect the Deals
-		// while waiting for the start signal.
-		deals := []*Deal{msg}
-		for {
-			from, msg, err := in.Recv(context.Background())
-			if err != nil {
-				return xerrors.Errorf("failed to receive: %v", err)
-			}
-
-			switch msg := msg.(type) {
-			case *Start:
-				err := h.start(msg, deals, from, out, in)
-				if err != nil {
-					return xerrors.Errorf("failed to start: %v", err)
-				}
-			case *Deal:
-				deals = append(deals, msg)
-			default:
-				return xerrors.Errorf("unexpected message, expected Deal or "+
-					"Start, got: %T", msg)
-			}
 		}
 
 	default:
@@ -151,18 +136,32 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 	out mino.Sender, in mino.Receiver) error {
 
+	if len(start.Addresses) != len(start.PubKeys) {
+		return xerrors.Errorf("there should be as many players as "+
+			"pubKey: %d := %d", len(start.Addresses), len(start.PubKeys))
+	}
+
 	addrs := make([]mino.Address, len(start.Addresses))
+	pubKeys := make([]kyber.Point, len(start.PubKeys))
+
 	for i, addrBuf := range start.Addresses {
-		addr := h.af.FromText(addrBuf)
+		addr := h.addressFactory.FromText(addrBuf)
 		if addr == nil {
 			return xerrors.Errorf("failed to unmarsahl address '%s'", addr)
 		}
 
+		pubkey := h.suite.Point()
+		err := pubkey.UnmarshalBinary(start.PubKeys[i])
+		if err != nil {
+			return xerrors.Errorf("failed to unmarshal pubkey: %v", err)
+		}
+
 		addrs[i] = addr
+		pubKeys[i] = pubkey
 	}
 
 	// 1. Create the DKG
-	d, err := pedersen.NewDistKeyGenerator(suite, h.privKey, h.pubKeys, int(start.T))
+	d, err := pedersen.NewDistKeyGenerator(suite, h.privKey, pubKeys, int(start.T))
 	if err != nil {
 		return xerrors.Errorf("failed to create new DKG: %v", err)
 	}
@@ -267,8 +266,10 @@ func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 
 	for !h.dkg.Certified() {
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(),
+			recvResponseTimeout)
 		defer cancel()
+
 		from, msg, err := in.Recv(ctx)
 		if err != nil {
 			return xerrors.Errorf("failed to receive after sending deals: %v", err)
@@ -315,8 +316,8 @@ func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 
 	done := &StartDone{PubKey: distrKeyBuf}
 	errs := out.Send(done, from)
-	err, more := <-errs
-	if more {
+	err = <-errs
+	if err != nil {
 		return xerrors.Errorf("got an error while sending pub key: %v", err)
 	}
 
@@ -360,27 +361,19 @@ func (h *Handler) handleDeal(msg *Deal, from mino.Address, addrs []mino.Address,
 		},
 	}
 
-	// we use a waitgroup to send the messages asynchronously and wait
-	var wg sync.WaitGroup
-	wg.Add(len(addrs))
-
 	for _, addr := range addrs {
 		if addr.Equal(h.me) {
-			wg.Done()
 			continue
 		}
 
 		errs := out.Send(respProto, addr)
-		go func(errs <-chan error) {
-			err, more := <-errs
-			if more {
-				fabric.Logger.Warn().Msgf("got an error while sending "+
-					"response: %v", err)
-			}
-			wg.Done()
-		}(errs)
+		err = <-errs
+		if err != nil {
+			fabric.Logger.Warn().Msgf("got an error while sending "+
+				"response: %v", err)
+		}
+
 	}
-	wg.Wait()
 
 	return nil
 }

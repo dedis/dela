@@ -2,6 +2,7 @@ package minogrpc
 
 import (
 	"bytes"
+	"net/url"
 	"testing"
 	"testing/quick"
 
@@ -24,24 +25,28 @@ func TestMessages(t *testing.T) {
 
 func Test_NewMinogrpc(t *testing.T) {
 	// The happy path
-	id := "127.0.0.1:3333"
-
-	minoRPC, err := NewMinogrpc(id, nil)
+	urlStr := "//127.0.0.1:3333"
+	url, err := url.Parse(urlStr)
 	require.NoError(t, err)
 
-	require.Equal(t, id, minoRPC.GetAddress().String())
+	minoRPC, err := NewMinogrpc(url, nil)
+	require.NoError(t, err)
+
+	require.Equal(t, "127.0.0.1:3333", minoRPC.GetAddress().String())
 	require.Equal(t, "", minoRPC.namespace)
 
-	peer := Peer{
-		Address:     id,
-		Certificate: minoRPC.server.cert.Leaf,
-	}
+	cert, found := minoRPC.server.nodesCerts.Load("127.0.0.1:3333")
+	require.True(t, found)
 
-	require.Equal(t, peer, minoRPC.server.neighbours[id])
+	require.Equal(t, minoRPC.server.cert.Leaf, cert)
 
-	// Giving an empty address
-	minoRPC, err = NewMinogrpc("", nil)
-	require.EqualError(t, err, "identifier can't be empty")
+	// Giving a wrong address, should be "//example:3333"
+	urlStr = "example:3333"
+	url, err = url.Parse(urlStr)
+	require.NoError(t, err)
+
+	minoRPC, err = NewMinogrpc(url, nil)
+	require.EqualError(t, err, "host URL is invalid: empty host for 'example:3333'. Hint: the url must be created using an absolute path, like //127.0.0.1:3333")
 }
 
 func Test_MakeNamespace(t *testing.T) {

@@ -40,22 +40,6 @@ func TestServer_Serve(t *testing.T) {
 	require.True(t, strings.HasPrefix(err.Error(), "failed to listen: listen tcp4: lookup blabla"))
 }
 
-func TestGetConnection(t *testing.T) {
-	addr := &address{
-		id: "127.0.0.1:2000",
-	}
-
-	server, err := NewServer(addr, nil)
-	require.NoError(t, err)
-	server.StartServer()
-
-	// An empty address should yield an error
-	_, err = getConnection("", Peer{}, *server.cert)
-	require.EqualError(t, err, "empty address is not allowed")
-
-	server.grpcSrv.GracefulStop()
-}
-
 // Use a single node to make a call that just sends back the same message.
 func TestRPC_SingleSimple_Call(t *testing.T) {
 	identifier := "127.0.0.1:2000"
@@ -68,11 +52,7 @@ func TestRPC_SingleSimple_Call(t *testing.T) {
 	require.NoError(t, err)
 	server.StartServer()
 
-	peer := Peer{
-		Address:     server.listener.Addr().String(),
-		Certificate: server.cert.Leaf,
-	}
-	server.neighbours[identifier] = peer
+	server.addCertificate(identifier, server.cert.Leaf)
 
 	handler := testSameHandler{time.Millisecond * 200}
 	uri := "blabla"
@@ -183,7 +163,7 @@ loop2:
 	for {
 		select {
 		case msgErr := <-errChan:
-			require.EqualError(t, msgErr, "addr '127.0.0.1:2000' not is our list of neighbours")
+			require.EqualError(t, msgErr, "failed to get client conn for '127.0.0.1:2000': public certificate for '127.0.0.1:2000' not found in &{{0 0} {<nil>} map[] 0}")
 			break loop2
 		case resp, ok := <-respChan:
 			if !ok {
@@ -210,11 +190,7 @@ func TestRPC_SingleModify_Call(t *testing.T) {
 	require.NoError(t, err)
 	server.StartServer()
 
-	peer := Peer{
-		Address:     server.listener.Addr().String(),
-		Certificate: server.cert.Leaf,
-	}
-	server.neighbours[identifier] = peer
+	server.addCertificate(identifier, server.cert.Leaf)
 
 	handler := testModifyHandler{}
 	uri := "blabla"
@@ -262,10 +238,6 @@ func TestRPC_MultipleModify_Call(t *testing.T) {
 	server1, err := NewServer(addr1, r.NewTreeRoutingFactory(1, addr1, defaultAddressFactory, OrchestratorID))
 	require.NoError(t, err)
 	server1.StartServer()
-	peer1 := Peer{
-		Address:     server1.listener.Addr().String(),
-		Certificate: server1.cert.Leaf,
-	}
 
 	// Server 2
 	identifier2 := "127.0.0.1:2002"
@@ -275,10 +247,6 @@ func TestRPC_MultipleModify_Call(t *testing.T) {
 	server2, err := NewServer(addr2, r.NewTreeRoutingFactory(1, addr1, defaultAddressFactory, OrchestratorID))
 	require.NoError(t, err)
 	server2.StartServer()
-	peer2 := Peer{
-		Address:     server2.listener.Addr().String(),
-		Certificate: server2.cert.Leaf,
-	}
 
 	// Server 3
 	identifier3 := "127.0.0.1:2003"
@@ -288,15 +256,11 @@ func TestRPC_MultipleModify_Call(t *testing.T) {
 	server3, err := NewServer(addr3, r.NewTreeRoutingFactory(1, addr1, defaultAddressFactory, OrchestratorID))
 	require.NoError(t, err)
 	server3.StartServer()
-	peer3 := Peer{
-		Address:     server3.listener.Addr().String(),
-		Certificate: server3.cert.Leaf,
-	}
 
 	// Update the list of peers for server1
-	server1.neighbours[identifier1] = peer1
-	server1.neighbours[identifier2] = peer2
-	server1.neighbours[identifier3] = peer3
+	server1.addCertificate(identifier1, server1.cert.Leaf)
+	server1.addCertificate(identifier2, server2.cert.Leaf)
+	server1.addCertificate(identifier3, server3.cert.Leaf)
 
 	// Set the handlers on each server
 	handler := testModifyHandler{}
@@ -405,11 +369,7 @@ func TestRPC_SingleSimple_Stream(t *testing.T) {
 	require.NoError(t, err)
 	server.StartServer()
 
-	peer := Peer{
-		Address:     server.listener.Addr().String(),
-		Certificate: server.cert.Leaf,
-	}
-	server.neighbours[identifier] = peer
+	server.addCertificate(identifier, server.cert.Leaf)
 
 	handler := testSameHandler{time.Millisecond * 200}
 	uri := "blabla"
@@ -459,10 +419,6 @@ func TestRPC_MultipleSimple_Stream(t *testing.T) {
 	server1, err := NewServer(addr1, factory)
 	require.NoError(t, err)
 	server1.StartServer()
-	peer1 := Peer{
-		Address:     server1.listener.Addr().String(),
-		Certificate: server1.cert.Leaf,
-	}
 
 	identifier2 := "127.0.0.1:2002"
 	addr2 := &address{
@@ -471,10 +427,6 @@ func TestRPC_MultipleSimple_Stream(t *testing.T) {
 	server2, err := NewServer(addr2, factory)
 	require.NoError(t, err)
 	server2.StartServer()
-	peer2 := Peer{
-		Address:     server2.listener.Addr().String(),
-		Certificate: server2.cert.Leaf,
-	}
 
 	identifier3 := "127.0.0.1:2003"
 	addr3 := &address{
@@ -484,10 +436,6 @@ func TestRPC_MultipleSimple_Stream(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, err)
 	server3.StartServer()
-	peer3 := Peer{
-		Address:     server3.listener.Addr().String(),
-		Certificate: server3.cert.Leaf,
-	}
 
 	// Computed routing:
 	//
@@ -498,9 +446,9 @@ func TestRPC_MultipleSimple_Stream(t *testing.T) {
 	// 	)
 	// )
 
-	server1.neighbours[identifier1] = peer1
-	server1.neighbours[identifier2] = peer2
-	server1.neighbours[identifier3] = peer3
+	server1.addCertificate(identifier1, server1.cert.Leaf)
+	server1.addCertificate(identifier3, server3.cert.Leaf)
+	server1.addCertificate(identifier2, server2.cert.Leaf)
 
 	handler := testSameHandler{time.Millisecond * 900}
 	uri := "blabla"
@@ -579,10 +527,6 @@ func TestRPC_MultipleChange_Stream(t *testing.T) {
 	server1, err := NewServer(addr1, factory)
 	require.NoError(t, err)
 	server1.StartServer()
-	peer1 := Peer{
-		Address:     server1.listener.Addr().String(),
-		Certificate: server1.cert.Leaf,
-	}
 
 	identifier2 := "127.0.0.1:2002"
 	addr2 := &address{
@@ -591,10 +535,6 @@ func TestRPC_MultipleChange_Stream(t *testing.T) {
 	server2, err := NewServer(addr2, factory)
 	require.NoError(t, err)
 	server2.StartServer()
-	peer2 := Peer{
-		Address:     server2.listener.Addr().String(),
-		Certificate: server2.cert.Leaf,
-	}
 
 	identifier3 := "127.0.0.1:2003"
 	addr3 := &address{
@@ -603,10 +543,6 @@ func TestRPC_MultipleChange_Stream(t *testing.T) {
 	server3, err := NewServer(addr3, factory)
 	require.NoError(t, err)
 	server3.StartServer()
-	peer3 := Peer{
-		Address:     server3.listener.Addr().String(),
-		Certificate: server3.cert.Leaf,
-	}
 
 	identifier4 := "127.0.0.1:2004"
 	addr4 := &address{
@@ -615,10 +551,6 @@ func TestRPC_MultipleChange_Stream(t *testing.T) {
 	server4, err := NewServer(addr4, factory)
 	require.NoError(t, err)
 	server4.StartServer()
-	peer4 := Peer{
-		Address:     server4.listener.Addr().String(),
-		Certificate: server4.cert.Leaf,
-	}
 
 	// Computed routing:
 	//
@@ -630,11 +562,11 @@ func TestRPC_MultipleChange_Stream(t *testing.T) {
 	// 		)
 	// 	)
 	// )
-	server1.neighbours[identifier1] = peer1
-	server1.neighbours[identifier3] = peer3
+	server1.addCertificate(identifier1, server1.cert.Leaf)
+	server1.addCertificate(identifier3, server3.cert.Leaf)
 
-	server3.neighbours[identifier4] = peer4
-	server3.neighbours[identifier2] = peer2
+	server3.addCertificate(identifier4, server4.cert.Leaf)
+	server3.addCertificate(identifier2, server2.cert.Leaf)
 
 	uri := "blabla"
 	rpc := RPC{
@@ -711,15 +643,15 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 
 	factory := r.NewTreeRoutingFactory(4, &address{id: "127.0.0.1:2001"}, defaultAddressFactory, OrchestratorID)
 
-	identifier1, addr1, server1, peer1 := createServer(t, "127.0.0.1:2001", factory)
-	identifier2, addr2, server2, peer2 := createServer(t, "127.0.0.1:2002", factory)
-	identifier3, addr3, server3, peer3 := createServer(t, "127.0.0.1:2003", factory)
-	identifier4, addr4, server4, peer4 := createServer(t, "127.0.0.1:2004", factory)
-	identifier5, addr5, server5, peer5 := createServer(t, "127.0.0.1:2005", factory)
-	identifier6, addr6, server6, peer6 := createServer(t, "127.0.0.1:2006", factory)
-	identifier7, addr7, server7, peer7 := createServer(t, "127.0.0.1:2007", factory)
-	identifier8, addr8, server8, peer8 := createServer(t, "127.0.0.1:2008", factory)
-	identifier9, addr9, server9, peer9 := createServer(t, "127.0.0.1:2009", factory)
+	identifier1, addr1, server1 := createServer(t, "127.0.0.1:2001", factory)
+	identifier2, addr2, server2 := createServer(t, "127.0.0.1:2002", factory)
+	identifier3, addr3, server3 := createServer(t, "127.0.0.1:2003", factory)
+	identifier4, addr4, server4 := createServer(t, "127.0.0.1:2004", factory)
+	identifier5, addr5, server5 := createServer(t, "127.0.0.1:2005", factory)
+	identifier6, addr6, server6 := createServer(t, "127.0.0.1:2006", factory)
+	identifier7, addr7, server7 := createServer(t, "127.0.0.1:2007", factory)
+	identifier8, addr8, server8 := createServer(t, "127.0.0.1:2008", factory)
+	identifier9, addr9, server9 := createServer(t, "127.0.0.1:2009", factory)
 
 	// Computed routing:
 	//
@@ -741,21 +673,21 @@ func TestRPC_MultipleRingMesh_Stream(t *testing.T) {
 	// 		)
 	// 	)
 	// )
-	server1.neighbours[identifier1] = peer1
-	server1.neighbours[identifier4] = peer4
-	server1.neighbours[identifier8] = peer8
+	server1.addCertificate(identifier1, server1.cert.Leaf)
+	server1.addCertificate(identifier4, server4.cert.Leaf)
+	server1.addCertificate(identifier8, server8.cert.Leaf)
 
-	server4.neighbours[identifier3] = peer3
+	server4.addCertificate(identifier3, server3.cert.Leaf)
 
-	server3.neighbours[identifier9] = peer9
+	server3.addCertificate(identifier9, server9.cert.Leaf)
 
-	server9.neighbours[identifier2] = peer2
+	server9.addCertificate(identifier2, server2.cert.Leaf)
 
-	server8.neighbours[identifier5] = peer5
+	server8.addCertificate(identifier5, server5.cert.Leaf)
 
-	server5.neighbours[identifier6] = peer6
+	server5.addCertificate(identifier6, server6.cert.Leaf)
 
-	server6.neighbours[identifier7] = peer7
+	server6.addCertificate(identifier7, server7.cert.Leaf)
 
 	uri := "blabla"
 	handler1 := testRingHandler{addrID: addr1, neighbor: addr2}
@@ -860,15 +792,16 @@ func TestRPC_DKG_Stream(t *testing.T) {
 	identifiers := make([]string, n)
 	addrs := make([]mino.Address, n)
 	servers := make([]*Server, n)
-	peers := make([]Peer, n)
 	traffics := make([]*traffic, n)
 
 	for i := 0; i < n; i++ {
-		identifiers[i], addrs[i], servers[i], peers[i] = createServer(t, fmt.Sprintf("127.0.0.1:2%03d", i), factory)
+		identifiers[i], addrs[i], servers[i] = createServer(t, fmt.Sprintf("127.0.0.1:2%03d", i), factory)
 	}
 
 	for i, server := range servers {
-		addNeighbours(server, servers...)
+		for j, srv := range servers {
+			server.addCertificate(addrs[j].String(), srv.cert.Leaf)
+		}
 		traffics[i] = server.traffic
 	}
 
@@ -1322,7 +1255,7 @@ func (t testDKGHandler) Stream(out mino.Sender, in mino.Receiver) error {
 
 // Create server
 
-func createServer(t *testing.T, id string, factory r.Factory) (string, *address, *Server, Peer) {
+func createServer(t *testing.T, id string, factory r.Factory) (string, *address, *Server) {
 	identifier := id
 	addr := &address{
 		id: identifier,
@@ -1331,20 +1264,6 @@ func createServer(t *testing.T, id string, factory r.Factory) (string, *address,
 	require.NoError(t, err)
 
 	server.StartServer()
-	peer := Peer{
-		Address:     server.listener.Addr().String(),
-		Certificate: server.cert.Leaf,
-	}
 
-	return identifier, addr, server, peer
-}
-
-// addNeighbours fills the neighbours map of the server
-func addNeighbours(srv *Server, servers ...*Server) {
-	for _, server := range servers {
-		srv.neighbours[server.addr.String()] = Peer{
-			Address:     server.listener.Addr().String(),
-			Certificate: server.cert.Leaf,
-		}
-	}
+	return identifier, addr, server
 }

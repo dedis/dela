@@ -11,6 +11,8 @@ message Start {
     uint32 t = 1;
     // the full list of addresses that will participate in the DKG
     repeated bytes addresses = 2;
+    // the corresponding kyber.Point pub keys of the addresses
+    repeated bytes pubKeys = 3;
 }
 
 // Matches the attributes defined in kyber dkg.Deal

@@ -4,7 +4,7 @@ import (
 	context "context"
 	"crypto/tls"
 	"io"
-	"time"
+	"sync"
 
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/encoding"
@@ -25,13 +25,19 @@ type overlayService struct {
 	// insighful information in the traffic history, as it is used to form the
 	// addressID of the sender.
 	addr address
-	// This map is used to create a new stream connection if possible
-	neighbour map[string]Peer
+
+	// ndesCerts contains the public certificates of other known nodes. It
+	// contains elements of kind *x509.Certificate
+	nodesCerts *sync.Map
+
 	// This certificate is used to create a new stream connection if possible
 	srvCert *tls.Certificate
+
 	// Used to record traffic activity
-	traffic        *traffic
+	traffic *traffic
+
 	routingFactory routing.Factory
+
 	// This is the address that contacted the node
 	rootAddr address
 }
@@ -163,15 +169,9 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 	}
 
 	for _, addr := range addrs {
-		peer, found := o.neighbour[addr.String()]
-		if !found {
-			err = xerrors.Errorf("failed to find routing peer '%s' from the "+
-				"neighbours: %v", addr.String(), err)
-			fabric.Logger.Err(err).Send()
-			return err
-		}
 
-		clientConn, err := getConnection(addr.String(), peer, *o.srvCert)
+		clientConn, err := getConnectionTo(address{addr.String()}, o.srvCert,
+			o.nodesCerts)
 		if err != nil {
 			err = xerrors.Errorf("failed to get client conn for client '%s': %v",
 				addr.String(), err)
@@ -203,11 +203,6 @@ func (o overlayService) Stream(stream Overlay_StreamServer) error {
 			To:           []string{addr.String()},
 			Message:      envelope.Message,
 		})
-
-		// TODO: think how we can make all the node set the routing then start
-		// the stream, because if we don't wait we might start sending messages
-		// to other nodes that are waiting for their routing message.
-		time.Sleep(time.Millisecond * 300)
 
 		// Listen on the clients streams and notify the orchestrator or relay
 		// messages

@@ -4,8 +4,11 @@
 package minogrpc
 
 import (
+	"crypto/x509"
 	fmt "fmt"
 	"regexp"
+
+	"net/url"
 
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
@@ -60,39 +63,32 @@ func (f AddressFactory) FromText(text []byte) mino.Address {
 	return address{id: string(text)}
 }
 
-// NewMinogrpc sets up the grpc and http servers. Identifier must be an address
-// with a port, something like 127.0.0.1:3333
-//
-// TODO: use a different type of argument for identifier, maybe net/url ?
-func NewMinogrpc(identifier string, rf routing.Factory) (Minogrpc, error) {
+// NewMinogrpc sets up the grpc and http servers. URL should
+func NewMinogrpc(serverURL *url.URL, rf routing.Factory) (*Minogrpc, error) {
 
-	minoGrpc := Minogrpc{}
-
-	if identifier == "" {
-		return minoGrpc, xerrors.New("identifier can't be empty")
+	if serverURL.Host == "" {
+		return nil, xerrors.Errorf("host URL is invalid: empty host for '%s'. "+
+			"Hint: the url must be created using an absolute path, "+
+			"like //127.0.0.1:3333", serverURL)
 	}
 
 	addr := address{
-		id: identifier,
+		id: serverURL.Host,
 	}
 
 	server, err := NewServer(addr, rf)
 	if err != nil {
-		return minoGrpc, xerrors.Errorf("failed to create server: %v", err)
+		return nil, xerrors.Errorf("failed to create server: %v", err)
 	}
+
+	server.nodesCerts.Store(serverURL.Host, server.cert.Leaf)
 
 	server.StartServer()
 
-	peer := Peer{
-		Address:     server.listener.Addr().String(),
-		Certificate: server.cert.Leaf,
-	}
-	server.neighbours[identifier] = peer
-
-	minoGrpc.server = server
-	minoGrpc.namespace = ""
-
-	return minoGrpc, err
+	return &Minogrpc{
+		server:    server,
+		namespace: "",
+	}, err
 }
 
 // GetAddressFactory implements Mino. It returns the address
@@ -148,9 +144,20 @@ func (m Minogrpc) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 	return rpc, nil
 }
 
-// AddNeighbours fills the neighbours map of the server
-func (m Minogrpc) AddNeighbours(minoGrpcs ...*Minogrpc) {
-	for _, minogrpc := range minoGrpcs {
-		m.server.addNeighbour(minogrpc.server)
+// AddCertificate populates the list of public know certificates of the server
+func (m Minogrpc) AddCertificate(u *url.URL, cert x509.Certificate) error {
+	if u.Host == "" {
+		return xerrors.Errorf("host URL is invalid: empty host for '%s'. "+
+			"Hint: the url must be created using an absolute path, "+
+			"like //127.0.0.1:3333", u)
 	}
+
+	m.server.addCertificate(u.Host, &cert)
+
+	return nil
+}
+
+// GetPublicCertificate returns the public certificate of the server
+func (m Minogrpc) GetPublicCertificate() x509.Certificate {
+	return *m.server.cert.Leaf
 }

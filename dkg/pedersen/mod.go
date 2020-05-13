@@ -13,34 +13,22 @@ import (
 
 //go:generate protoc -I ./ --go_out=plugins=grpc:./ ./messages.proto
 
-// Factory allows one to create a DKG Starter, which can be used to initialize a
-// new DKG protocol.
+// Pedersen allows one to initialise a new DKG protocol.
 //
-// - implements dkg.Factory
-type Factory struct {
+// - implements dkg.DKG
+type Pedersen struct {
 	pubKeys []kyber.Point
 	privKey kyber.Scalar
-	suite   suites.Suite
 	m       mino.Mino
+	suite   suites.Suite
+	rpc     mino.RPC
 }
 
-// NewFactory returns a new DKG Pedersen factory
-func NewFactory(pubKeys []kyber.Point, privKey kyber.Scalar, m mino.Mino,
-	suite suites.Suite) *Factory {
+// NewPedersen returns a new DKG Pedersen factory
+func NewPedersen(privKey kyber.Scalar, m mino.Mino,
+	suite suites.Suite) (*Pedersen, error) {
 
-	return &Factory{
-		pubKeys: pubKeys,
-		privKey: privKey,
-		suite:   suite,
-		m:       m,
-	}
-}
-
-// New implements dkg.DKG. It return a new Pedersen Starter.
-func (f *Factory) New(pubKeys []kyber.Point, privKey kyber.Scalar,
-	m mino.Mino, suite suites.Suite) (dkg.Starter, error) {
-
-	h := NewHandler(pubKeys, privKey, m.GetAddressFactory(), m.GetAddress(),
+	h := NewHandler(privKey, m.GetAddressFactory(), m.GetAddress(),
 		suite)
 
 	m, err := m.MakeNamespace("dkg")
@@ -53,28 +41,22 @@ func (f *Factory) New(pubKeys []kyber.Point, privKey kyber.Scalar,
 		return nil, xerrors.Errorf("failed to create RPC: %v", err)
 	}
 
-	return &starter{
-		pubKeys: pubKeys,
+	return &Pedersen{
 		privKey: privKey,
-		m:       m,
 		suite:   suite,
+		m:       m,
 		rpc:     rpc,
 	}, nil
 }
 
-// starter allows one to initialise a new DKG protocol.
-//
-// - implements dkg.Starter
-type starter struct {
-	pubKeys []kyber.Point
-	privKey kyber.Scalar
-	m       mino.Mino
-	suite   suites.Suite
-	rpc     mino.RPC
-}
+// Listen implements dkg.DKG. It allows one to start a new DKG protocol.
+func (s *Pedersen) Listen(players mino.Players, pubKeys []kyber.Point,
+	t uint32) (dkg.Actor, error) {
 
-// Start implements dkg.Starter. It allows one to initialize a new DKG protocol.
-func (s *starter) Start(players mino.Players, t uint32) (dkg.DKG, error) {
+	if players.Len() != len(pubKeys) {
+		return nil, xerrors.Errorf("there should be as many players as "+
+			"pubKey: %d := %d", players.Len, len(pubKeys))
+	}
 
 	newPlayers := players.Take(mino.RangeFilter(0, players.Len()))
 	sender, receiver := s.rpc.Stream(context.Background(), newPlayers)
@@ -87,6 +69,7 @@ func (s *starter) Start(players mino.Players, t uint32) (dkg.DKG, error) {
 	message := &Start{
 		T:         t,
 		Addresses: make([][]byte, len(addrs)),
+		PubKeys:   make([][]byte, len(addrs)),
 	}
 
 	for i, addr := range addrs {
@@ -95,7 +78,11 @@ func (s *starter) Start(players mino.Players, t uint32) (dkg.DKG, error) {
 			return nil, xerrors.Errorf("failed to marsahl address '%s': %v",
 				addr, err)
 		}
+
+		pubKeyBuf, err := pubKeys[i].MarshalBinary()
+
 		message.Addresses[i] = addrBuf
+		message.PubKeys[i] = pubKeyBuf
 	}
 
 	errs := sender.Send(message, addrs...)
@@ -104,7 +91,7 @@ func (s *starter) Start(players mino.Players, t uint32) (dkg.DKG, error) {
 		return nil, xerrors.Errorf("failed to send start: %v", err)
 	}
 
-	pubKeys := make([]kyber.Point, len(addrs))
+	dkgPubKeys := make([]kyber.Point, len(addrs))
 
 	for i := 0; i < len(addrs); i++ {
 
@@ -120,34 +107,34 @@ func (s *starter) Start(players mino.Players, t uint32) (dkg.DKG, error) {
 				"go the following: %T", msg)
 		}
 
-		pubKey := suite.Point()
-		err = pubKey.UnmarshalBinary(doneMsg.PubKey)
+		dkgPubKey := suite.Point()
+		err = dkgPubKey.UnmarshalBinary(doneMsg.PubKey)
 		if err != nil {
 			return nil, xerrors.Errorf("failed to unmarshal pubkey: %v", err)
 		}
 
-		pubKeys[i] = pubKey
+		dkgPubKeys[i] = dkgPubKey
 
 		// this is a simple check that every node sends back the same DKG pub
 		// key.
 		// TODO: handle the situation where a pub key is not the same
-		if i != 0 && !pubKeys[i-1].Equal(pubKey) {
-			return nil, xerrors.Errorf("the public keys does not match: %v", pubKeys)
+		if i != 0 && !dkgPubKeys[i-1].Equal(dkgPubKey) {
+			return nil, xerrors.Errorf("the public keys does not match: %v", dkgPubKeys)
 		}
 	}
 
-	return &Pedersen{
+	return &Actor{
 		rpc:     s.rpc,
-		PubKey:  pubKeys[0],
+		PubKey:  dkgPubKeys[0],
 		suite:   s.suite,
 		players: players,
 	}, nil
 }
 
-// Pedersen allows one to perform DKG operations like encrypt/decrypt a message
+// Actor allows one to perform DKG operations like encrypt/decrypt a message
 //
-// - implements dkg.DKG
-type Pedersen struct {
+// - implements dkg.Actor
+type Actor struct {
 	rpc     mino.RPC
 	PubKey  kyber.Point
 	suite   suites.Suite
@@ -155,7 +142,7 @@ type Pedersen struct {
 }
 
 // Encrypt implements dkg.DKG. It uses the DKG public key to encrypt a message.
-func (p *Pedersen) Encrypt(message []byte) (K, C kyber.Point, remainder []byte,
+func (p *Actor) Encrypt(message []byte) (K, C kyber.Point, remainder []byte,
 	err error) {
 
 	// Embed the message (or as much of it as will fit) into a curve point.
@@ -178,7 +165,7 @@ func (p *Pedersen) Encrypt(message []byte) (K, C kyber.Point, remainder []byte,
 // decrypt the  message.
 // TODO: perform a re-encryption instead of gathering the private shares, which
 // should never happen.
-func (p *Pedersen) Decrypt(K, C kyber.Point) ([]byte, error) {
+func (p *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 	if p.PubKey == nil {
 		return []byte{}, xerrors.Errorf(
 			"pubkey is nil, did you call Start() first?")
@@ -253,6 +240,6 @@ func (p *Pedersen) Decrypt(K, C kyber.Point) ([]byte, error) {
 // Reshare implements dkg.DKG. It recreates the DKG with an updated list of
 // participants.
 // TODO: to do
-func (p *Pedersen) Reshare() error {
+func (p *Actor) Reshare() error {
 	return nil
 }
