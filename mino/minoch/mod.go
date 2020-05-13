@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	m "go.dedis.ch/fabric"
+	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 )
@@ -37,7 +37,7 @@ func NewMinoch(manager *Manager, identifier string) (*Minoch, error) {
 		return nil, err
 	}
 
-	m.Logger.Trace().Msgf("New instance with identifier %s", identifier)
+	fabric.Logger.Trace().Msgf("New instance with identifier %s", identifier)
 
 	return inst, nil
 }
