@@ -1,15 +1,18 @@
 package cosipbft
 
 import (
+	"bytes"
 	"context"
 	fmt "fmt"
 	"testing"
+	"time"
 
 	proto "github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	any "github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/golang/protobuf/ptypes/wrappers"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/consensus/viewchange"
@@ -207,7 +210,7 @@ func TestConsensus_Store(t *testing.T) {
 }
 
 func TestActor_Propose(t *testing.T) {
-	rpc := &fakeRPC{close: true}
+	rpc := &fakeRPC{}
 	cosiActor := &fakeCosiActor{}
 	actor := &pbftActor{
 		Consensus: &Consensus{
@@ -245,7 +248,6 @@ func TestActor_Propose(t *testing.T) {
 	require.Equal(t, []byte{0xaa}, propagate.GetTo())
 	checkSignatureValue(t, propagate.GetCommit())
 
-	rpc.close = false
 	require.NoError(t, actor.Close())
 	err = actor.Propose(fakeProposal{})
 	require.NoError(t, err)
@@ -302,11 +304,15 @@ func TestActor_Failures_Propose(t *testing.T) {
 	err = actor.Propose(fakeProposal{})
 	require.EqualError(t, err, "couldn't pack signature: fake error")
 
+	buffer := new(bytes.Buffer)
 	actor.encoder = encoding.NewProtoEncoder()
-	actor.cosiActor = &fakeCosiActor{}
 	actor.rpc = &fakeRPC{err: xerrors.New("oops")}
+	actor.logger = zerolog.New(buffer)
 	err = actor.Propose(fakeProposal{})
-	require.EqualError(t, err, "couldn't propagate the link: oops")
+	require.NoError(t, err)
+	require.Equal(t,
+		"{\"level\":\"warn\",\"error\":\"oops\",\"message\":\"couldn't propagate the link\"}\n",
+		buffer.String())
 }
 
 func TestActor_Close(t *testing.T) {
@@ -697,18 +703,20 @@ type fakeRPC struct {
 
 	calls []map[string]interface{}
 	err   error
-	close bool
 }
 
 func (rpc *fakeRPC) Call(ctx context.Context, pb proto.Message,
 	memship mino.Players) (<-chan proto.Message, <-chan error) {
 
 	msgs := make(chan proto.Message)
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		close(msgs)
+	}()
+
 	errs := make(chan error, 1)
 	if rpc.err != nil {
 		errs <- rpc.err
-	} else if rpc.close {
-		close(msgs)
 	}
 	rpc.calls = append(rpc.calls, map[string]interface{}{
 		"message":    pb,

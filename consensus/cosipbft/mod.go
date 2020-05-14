@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/rs/zerolog"
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/consensus/viewchange"
@@ -26,6 +27,7 @@ const (
 
 // Consensus is the implementation of the consensus.Consensus interface.
 type Consensus struct {
+	logger       zerolog.Logger
 	storage      Storage
 	cosi         cosi.CollectiveSigning
 	mino         mino.Mino
@@ -42,6 +44,7 @@ type Consensus struct {
 // NewCoSiPBFT returns a new instance.
 func NewCoSiPBFT(mino mino.Mino, cosi cosi.CollectiveSigning, gov viewchange.Governance) *Consensus {
 	c := &Consensus{
+		logger:       fabric.Logger,
 		storage:      newInMemoryStorage(),
 		mino:         mino,
 		cosi:         cosi,
@@ -214,16 +217,18 @@ func (a pbftActor) Propose(p consensus.Proposal) error {
 	defer cancel()
 
 	resps, errs := a.rpc.Call(ctx, propagateReq, authority)
-	select {
-	case <-a.closing:
-		// Abort the RPC call.
-		cancel()
-	case <-resps:
-	case err := <-errs:
-		return xerrors.Errorf("couldn't propagate the link: %v", err)
+	for {
+		select {
+		case <-a.closing:
+			// Abort the RPC call.
+			cancel()
+			return nil
+		case <-resps:
+			return nil
+		case err := <-errs:
+			a.logger.Warn().Err(err).Msg("couldn't propagate the link")
+		}
 	}
-
-	return nil
 }
 
 func (a pbftActor) newPrepareRequest(prop consensus.Proposal,

@@ -3,6 +3,8 @@ package skipchain
 import (
 	"bytes"
 	"context"
+	"sync"
+	"time"
 
 	"github.com/rs/zerolog"
 	"go.dedis.ch/fabric"
@@ -12,6 +14,8 @@ import (
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 )
+
+const catchUpLeeway = 100 * time.Millisecond
 
 // operations implements helper functions that can be used by the handlers for
 // common operations.
@@ -25,6 +29,8 @@ type operations struct {
 	rpc          mino.RPC
 	watcher      blockchain.Observable
 	consensus    consensus.Consensus
+
+	catchUpLock sync.Mutex
 }
 
 func (ops *operations) insertBlock(block SkipBlock) error {
@@ -43,16 +49,8 @@ func (ops *operations) insertBlock(block SkipBlock) error {
 }
 
 func (ops *operations) commitBlock(block SkipBlock) error {
-	already := false
-
 	err := ops.db.Atomic(func(tx Queries) error {
-		_, err := tx.Read(int64(block.GetIndex()))
-		if err == nil {
-			already = true
-			return nil
-		}
-
-		err = tx.Write(block)
+		err := tx.Write(block)
 		if err != nil {
 			return xerrors.Errorf("couldn't write block: %v", err)
 		}
@@ -64,11 +62,6 @@ func (ops *operations) commitBlock(block SkipBlock) error {
 
 		return nil
 	})
-
-	if already {
-		// Skip the notification as it has already been done.
-		return nil
-	}
 
 	if err != nil {
 		return xerrors.Errorf("tx failed: %v", err)
@@ -82,6 +75,9 @@ func (ops *operations) commitBlock(block SkipBlock) error {
 }
 
 func (ops *operations) catchUp(target SkipBlock, addr mino.Address) error {
+	ops.catchUpLock.Lock()
+	defer ops.catchUpLock.Unlock()
+
 	// Target is the block to append to the chain so we check that blocks up to
 	// the previous one exist.
 	if ops.db.Contains(target.GetIndex() - 1) {
@@ -89,17 +85,26 @@ func (ops *operations) catchUp(target SkipBlock, addr mino.Address) error {
 		return nil
 	}
 
-	ops.logger.Info().Msg("one or more blocks are missing: starting catch up")
-
 	from := uint64(0)
 	if ops.db.Contains(0) {
 		last, err := ops.db.ReadLast()
 		if err != nil {
-			return err
+			return xerrors.Errorf("couldn't read last block: %v", err)
 		}
 
 		from = last.GetIndex() + 1
 	}
+
+	if target.GetIndex()-from <= 2 && ops.waitBlock(target.GetIndex()-1) {
+		// When only one block is missing, that probably means the propagation
+		// is not yet over, so it gives a chance to wait for it before starting
+		// the actual catch up.
+		return nil
+	}
+
+	ops.logger.Info().
+		Str("addr", ops.addr.String()).
+		Msg("one or more blocks are missing: starting catch up")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -164,5 +169,29 @@ func (ops *operations) catchUp(target SkipBlock, addr mino.Address) error {
 		if bytes.Equal(block.GetHash(), target.GetPreviousHash()) {
 			return nil
 		}
+	}
+}
+
+// waitBlock releases the catch up lock and wait for new blocks to be committed.
+// It will return true if the expected block index exists before the timeout.
+// Note: it expects the lock to be acquired and released later.
+func (ops *operations) waitBlock(index uint64) bool {
+	ops.catchUpLock.Unlock()
+	defer ops.catchUpLock.Lock()
+
+	observer := skipchainObserver{
+		ch: make(chan blockchain.Block, 1),
+	}
+
+	ops.watcher.Add(observer)
+	defer ops.watcher.Remove(observer)
+
+	select {
+	case block := <-observer.ch:
+		return block.GetIndex() == index
+	case <-time.After(catchUpLeeway):
+		// Even if the commit message could arrive later, the catch up procedure
+		// starts anyway.
+		return false
 	}
 }

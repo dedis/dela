@@ -274,7 +274,7 @@ func sendTx(t *testing.T, ledger ledger.Ledger, actor ledger.Actor, tx transacti
 			if bytes.Equal(tx.GetID(), res.GetTransactionID()) {
 				return
 			}
-		case <-time.After(1 * time.Second):
+		case <-time.After(5 * time.Second):
 			t.Fatal("timeout when waiting for the transaction")
 		}
 	}

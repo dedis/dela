@@ -17,10 +17,6 @@ import (
 type blockValidator struct {
 	*operations
 	queue *blockQueue
-
-	// When a catch is in progress, validations and commits should be delayed to
-	// let the system catches up to the latest known state.
-	catchUpLock sync.Mutex
 }
 
 func newBlockValidator(ops *operations) *blockValidator {
@@ -43,18 +39,11 @@ func (v *blockValidator) Validate(addr mino.Address,
 		return nil, xerrors.Errorf("couldn't decode block: %v", err)
 	}
 
-	v.catchUpLock.Lock()
-	once := sync.Once{}
-	defer once.Do(func() { v.catchUpLock.Unlock() })
-
 	// It makes sure that we know the whole chain up to the previous proposal.
 	err = v.catchUp(block, addr)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't catch up: %v", err)
 	}
-
-	// Override the defer to free the lock as soon as possible.
-	once.Do(func() { v.catchUpLock.Unlock() })
 
 	genesis, err := v.db.Read(0)
 	if err != nil {
@@ -79,6 +68,9 @@ func (v *blockValidator) Validate(addr mino.Address,
 // Commit implements consensus.Validator. It commits the block that matches the
 // identifier if it is present.
 func (v *blockValidator) Commit(id []byte) error {
+	// To minimize the catch up procedures, the lock is acquired so that it can
+	// process a new block before the catch up verifies what is the latest
+	// known.
 	v.catchUpLock.Lock()
 	defer v.catchUpLock.Unlock()
 
