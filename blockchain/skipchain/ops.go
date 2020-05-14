@@ -105,8 +105,6 @@ func (ops *operations) catchUp(target SkipBlock, addr mino.Address) error {
 		if ops.db.Contains(target.GetIndex() - 1) {
 			return nil
 		}
-
-		return nil
 	}
 
 	ops.logger.Info().

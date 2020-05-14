@@ -74,13 +74,20 @@ func TestOperations_CatchUp(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, call.Len())
 
-	// Catch up with only one block missing so it waits until timeout.
+	// Catch up with only one block missing so it waits until timeout but the
+	// block is committed right after the timeout.
+	go func() {
+		ops.catchUpLock.Lock()
+		ops.db = &fakeDatabase{blocks: []SkipBlock{{}, {}, {}}}
+		ops.catchUpLock.Unlock()
+	}()
 	err = ops.catchUp(SkipBlock{Index: 3, BackLink: hash}, fake.NewAddress(0))
 	require.NoError(t, err)
 	require.Equal(t, 2, call.Len())
 
 	// Catch up with only one block missing but it arrives during the catch up.
-	ops.watcher = &fakeWatcher{call: call, block: SkipBlock{Index: 2}}
+	ops.db = &fakeDatabase{blocks: []SkipBlock{{}}}
+	ops.watcher = &fakeWatcher{call: call, block: SkipBlock{}}
 	err = ops.catchUp(SkipBlock{Index: 3, BackLink: hash}, fake.NewAddress(0))
 	require.NoError(t, err)
 	require.Equal(t, 4, call.Len())

@@ -18,6 +18,10 @@ type iterator struct {
 	roster *roster
 }
 
+func (i *iterator) Seek(index int) {
+	i.index = index
+}
+
 func (i *iterator) HasNext() bool {
 	return i.index < i.roster.Len()
 }
@@ -35,11 +39,6 @@ type addressIterator struct {
 	*iterator
 }
 
-// Seek implements mino.AddressIterator.
-func (i *addressIterator) Seek(index int) {
-	i.index = index
-}
-
 // GetNext implements mino.AddressIterator. It returns the next address.
 func (i *addressIterator) GetNext() mino.Address {
 	if i.iterator.HasNext() {
@@ -53,12 +52,6 @@ func (i *addressIterator) GetNext() mino.Address {
 // - implements crypto.PublicKeyIterator
 type publicKeyIterator struct {
 	*iterator
-}
-
-// Seek implements crypto.PublicKeyIterator. It moves the index to the given
-// value.
-func (i *publicKeyIterator) Seek(index int) {
-	i.index = index
 }
 
 // GetNext implements crypto.PublicKeyIterator. It returns the next public key.
