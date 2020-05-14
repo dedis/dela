@@ -2,6 +2,7 @@ package byzcoin
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/golang/protobuf/proto"
@@ -51,6 +52,7 @@ type Ledger struct {
 	encoder    encoding.ProtoMarshaler
 	txFactory  transactions.TransactionFactory
 	closing    chan struct{}
+	closed     sync.WaitGroup
 	initiated  chan error
 }
 
@@ -126,6 +128,7 @@ func (ldgr *Ledger) Listen() (ledger.Actor, error) {
 			return
 		}
 
+		ldgr.closed.Add(2)
 		close(ldgr.initiated)
 
 		go ldgr.gossipTxs()
@@ -136,6 +139,8 @@ func (ldgr *Ledger) Listen() (ledger.Actor, error) {
 }
 
 func (ldgr *Ledger) gossipTxs() {
+	defer ldgr.closed.Done()
+
 	for {
 		select {
 		case <-ldgr.closing:
@@ -155,6 +160,8 @@ func (ldgr *Ledger) gossipTxs() {
 }
 
 func (ldgr *Ledger) proposeBlocks(actor blockchain.Actor, players mino.Players) {
+	defer ldgr.closed.Done()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
