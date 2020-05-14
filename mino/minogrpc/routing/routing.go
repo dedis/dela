@@ -48,55 +48,43 @@ type Routing interface {
 //
 // - implements Routing
 type TreeRouting struct {
-	root         *treeNode
-	routingNodes map[string]*treeNode
-}
-
-// NewTreeRouting ...
-func NewTreeRouting(height int) *TreeRouting {
-	return &TreeRouting{}
-}
-
-// TreeRoutingOpts is the implementation of treeTreeRoutingOpts
-var TreeRoutingOpts = treeRoutingOpts{
-	// Addr is the address of the node, the value should be of type mino.Address
-	Addr: "addr",
-	// TreeHeight is the maximum tree height
-	TreeHeight: "treeHeight",
-}
-
-type treeRoutingOpts struct {
-	Addr       string
-	TreeHeight string
+	Root           *treeNode
+	routingNodes   map[string]*treeNode
+	orchestratorID string
 }
 
 // TreeRoutingFactory defines the factory for tree routing
 type TreeRoutingFactory struct {
-	height      int
-	rootAddr    mino.Address
-	addrFactory mino.AddressFactory
+	height         int
+	rootAddr       mino.Address
+	addrFactory    mino.AddressFactory
+	orchestratorID string
 }
 
-// NewTreeRoutingFactory returns a new treeRoutingFactory. Warning: the given
-// rootAddr must be a uniq address that shouldn't be in the list of
-// participants.
+// NewTreeRoutingFactory returns a new treeRoutingFactory. The rootAddr should
+// be comparable to the addresses that will be passed to build the tree.
 func NewTreeRoutingFactory(height int, rootAddr mino.Address,
-	addrFactory mino.AddressFactory) *TreeRoutingFactory {
+	addrFactory mino.AddressFactory, orchestratorID string) *TreeRoutingFactory {
 
 	return &TreeRoutingFactory{
-		height:      height,
-		rootAddr:    rootAddr,
-		addrFactory: addrFactory,
+		height:         height,
+		rootAddr:       rootAddr,
+		addrFactory:    addrFactory,
+		orchestratorID: orchestratorID,
 	}
 }
 
 // FromIterator creates the network tree in a deterministic manner based on
-// the addresses.
+// the addresses. The root address is automatically exluded if present.
 func (t TreeRoutingFactory) FromIterator(iterator mino.AddressIterator) (Routing, error) {
 
 	addrsBuf := make(addrsBuf, 0)
 	for iterator.HasNext() {
 		addr := iterator.GetNext()
+
+		if addr.Equal(t.rootAddr) {
+			continue
+		}
 
 		addrBuf, err := addr.MarshalText()
 		if err != nil {
@@ -106,12 +94,7 @@ func (t TreeRoutingFactory) FromIterator(iterator mino.AddressIterator) (Routing
 		addrsBuf = append(addrsBuf, addrBuf)
 	}
 
-	if len(addrsBuf) == 0 {
-		return nil, xerrors.Errorf("there should be at least one address in " +
-			"the iterator")
-	}
-
-	routing, err := t.fromAddrBuf(addrsBuf)
+	routing, err := t.fromAddrBuf(addrsBuf, t.orchestratorID)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to build from addrsBuf: %v", err)
 	}
@@ -119,8 +102,9 @@ func (t TreeRoutingFactory) FromIterator(iterator mino.AddressIterator) (Routing
 	return routing, nil
 }
 
-// FromAny creates the network tree in a deterministic manner based on
-// the proto message encoded as any
+// FromAny creates the network tree in a deterministic manner based on the proto
+// message encoded as any. It must not contain the root address, which is the
+// case if the Pack() method has been used.
 func (t TreeRoutingFactory) FromAny(m *any.Any) (Routing, error) {
 
 	msg := &TreeRoutingProto{}
@@ -129,7 +113,7 @@ func (t TreeRoutingFactory) FromAny(m *any.Any) (Routing, error) {
 		return nil, xerrors.Errorf("failed to unmarshal routing message: %v", err)
 	}
 
-	routing, err := t.fromAddrBuf(msg.Addrs)
+	routing, err := t.fromAddrBuf(msg.Addrs, t.orchestratorID)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to build from addrsBuf: %v", err)
 	}
@@ -137,7 +121,8 @@ func (t TreeRoutingFactory) FromAny(m *any.Any) (Routing, error) {
 	return routing, nil
 }
 
-func (t TreeRoutingFactory) fromAddrBuf(addrsBuf addrsBuf) (Routing, error) {
+func (t TreeRoutingFactory) fromAddrBuf(addrsBuf addrsBuf,
+	orchestratorID string) (Routing, error) {
 
 	sort.Stable(&addrsBuf)
 
@@ -172,12 +157,13 @@ func (t TreeRoutingFactory) fromAddrBuf(addrsBuf addrsBuf) (Routing, error) {
 	// D: number of direct connections wanted for each node
 	// H: height of the network tree
 	//
-	// N = D^H
-	// D = sqrt[H](N)
-	// H = log_D N
-	d := int(math.Ceil(math.Pow(float64(len(addrs)), 1.0/float64(t.height))))
+	// N = D^(H+1) - 1
+	// D = sqrt[H+1](N+1)
+	// H = log_D(N+1) - 1
+	// N := float64(len(addrs) + 1)
+	// d := int(math.Ceil(math.Pow(N+2.0, 1.0/float64(t.height+1))))
 
-	tree := buildTree(t.rootAddr, addrs, d, -1)
+	tree := buildTree(t.rootAddr, addrs, t.height, 0)
 
 	routingNodes := make(map[string]*treeNode)
 	routingNodes[t.rootAddr.String()] = tree
@@ -186,8 +172,9 @@ func (t TreeRoutingFactory) fromAddrBuf(addrsBuf addrsBuf) (Routing, error) {
 	})
 
 	return &TreeRouting{
-		routingNodes: routingNodes,
-		root:         tree,
+		routingNodes:   routingNodes,
+		Root:           tree,
+		orchestratorID: t.orchestratorID,
 	}, nil
 }
 
@@ -209,6 +196,16 @@ func (t TreeRoutingFactory) fromAddrBuf(addrsBuf addrsBuf) (Routing, error) {
 //
 // - implements Routing
 func (t TreeRouting) GetRoute(from, to mino.Address) (mino.Address, error) {
+
+	// This is the case the main orchestrator want to send a message. The main
+	// orchestrator is not a node by itself in the tree, but it has a connection
+	// to the root. This is why each time the main orchestrator wants to send a
+	// message we know we must relay it to the root. The main orchestrator
+	// represents the entry point of the RPC stream that the client created.
+	if from.String() == t.orchestratorID {
+		return t.Root.Addr, nil
+	}
+
 	fromNode, ok := t.routingNodes[from.String()]
 	if !ok {
 		return nil, xerrors.Errorf("node with address '%s' not found",
@@ -252,17 +249,19 @@ func (t TreeRouting) GetDirectLinks(from mino.Address) ([]mino.Address, error) {
 	return res, nil
 }
 
-// Pack returns the children
+// Pack returns the tree routing proto, which is the list of addresses without
+// the root.
 //
 // - implements Routing
 func (t TreeRouting) Pack(encoder encoding.ProtoMarshaler) (proto.Message, error) {
 	addrs := make([][]byte, 0, len(t.routingNodes)-1)
 
 	for _, node := range t.routingNodes {
-		if node.Index == -1 {
-			// We must not include the root in the list of addresses
+		if node == t.Root {
+			// the root is specified in the factory so we don't keep it
 			continue
 		}
+
 		addrBuf, err := node.Addr.MarshalText()
 		if err != nil {
 			return nil, xerrors.Errorf("failed to marshal address: %v", err)
@@ -281,19 +280,46 @@ func (t TreeRouting) Pack(encoder encoding.ProtoMarshaler) (proto.Message, error
 // Display displays an extensive string representation of the tree
 func (t TreeRouting) Display(out io.Writer) {
 	fmt.Fprintf(out, "TreeRouting, Root: ")
-	t.root.Display(out)
+	t.Root.Display(out)
 }
 
 // buildTree builds the newtwork tree based on the list of addresses. The first
-// call should have an index of -1.
-func buildTree(addr mino.Address, addrs []mino.Address, d int, index int) *treeNode {
+// call should have an index of 0.
+func buildTree(addr mino.Address, addrs []mino.Address, h, index int) *treeNode {
+
+	// the height can not be higher than the total number of nodes, ie. if there
+	// are 10 nodes, then the maximum height we can have is 9. Here len(addrs)
+	// represents the number of nodes-1 because the root addr is not included.
+	if h > len(addrs) {
+		h = len(addrs)
+	}
+
 	node := &treeNode{
 		Index:     index,
 		Addr:      addr,
 		LastIndex: index + len(addrs),
 	}
 
-	children := make([]*treeNode, 0, d)
+	children := make([]*treeNode, 0)
+
+	N := float64(len(addrs) + 1)
+	d := int(math.Round(math.Pow(N+1.0, 1.0/float64(h+1))))
+
+	// This is a check that with the computed number of neighbours there will be
+	// enought nodes to reach the given height. For example, if there are 6
+	// addresses in the list, H = 4, then D = 1.51, which will be rounded to 2.
+	// However, we can see that if we split the list in two, there will be 3
+	// addresses in each sub-list that will have to reach a height of H-1 = 3,
+	// which is impossible with 3 addresses. So this is why we decrement D.
+	if len(addrs)/d < h {
+		d = d - 1
+	}
+
+	// If we must build a height of 1 there is no other solutions than having
+	// all the addresses as children.
+	if h == 1 {
+		d = len(addrs)
+	}
 
 	// k is the total number of elements in a sub tree
 	//
@@ -303,21 +329,21 @@ func buildTree(addr mino.Address, addrs []mino.Address, d int, index int) *treeN
 	// a1 a2 a3 | a4 a5 a6 a7
 	// "a1" will be the root of the first part
 	// and "a4" the second one. We use k to delimit each part with k*i.
-	k := float64(len(addrs)) / float64(d)
+	k := float64(float64(len(addrs))) / float64(d)
 
 	if k == 0 {
 		children = []*treeNode{}
 	} else if k < 1 {
 		// This is the last level
 		for i := 0; i < len(addrs); i++ {
-			child := buildTree(addrs[i], []mino.Address{}, d, index+i+1)
+			child := buildTree(addrs[i], []mino.Address{}, h-1, index+i+1)
 			children = append(children, child)
 		}
 	} else {
 		for i := 0; i < d; i++ {
 			firstI := int(k * float64(i))
 			lastI := int(k*float64(i) + k)
-			child := buildTree(addrs[firstI], addrs[firstI+1:lastI], d,
+			child := buildTree(addrs[firstI], addrs[firstI+1:lastI], h-1,
 				1+index+firstI)
 			children = append(children, child)
 		}

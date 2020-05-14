@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package pedersen;
+
+import "google/protobuf/any.proto";
+
+// This is the message the initiator of the DKG protocol should send to all the
+// nodes.
+message Start {
+    // threshold
+    uint32 t = 1;
+    // the full list of addresses that will participate in the DKG
+    repeated bytes addresses = 2;
+    // the corresponding kyber.Point pub keys of the addresses
+    repeated bytes pubKeys = 3;
+}
+
+// Matches the attributes defined in kyber dkg.Deal
+message Deal {
+    uint32 index = 1;
+    EncryptedDeal encryptedDeal = 2;
+    bytes signature = 3;
+
+    message EncryptedDeal {
+        bytes dhkey = 1;
+        bytes signature = 2;
+        bytes nonce = 3;
+        bytes cipher = 4;
+    }
+}
+
+// Matches the attributes defined in kyber pedersen.Response
+message Response {
+    // Index of the Dealer this response is for
+    uint32 index = 1;
+    Data response = 2;
+
+    message Data {
+        bytes sessionID = 1;
+        // Index of the verifier issuing this Response from the new set of nodes
+        uint32 index = 2;
+        bool status = 3;
+        bytes signature = 4;
+    }
+}
+
+// This message should be sent by all the nodes to the initiator of the DKG when
+// the DKG setup is done.
+message StartDone {
+    bytes pubKey = 1;
+}
+
+message DecryptRequest {
+    bytes K = 1;
+    bytes C = 2;
+}
+
+message DecryptReply {
+    bytes V = 1;
+    int64 I = 2;
+}

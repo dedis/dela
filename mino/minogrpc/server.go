@@ -30,11 +30,15 @@ import (
 )
 
 const (
+	// headerURIKey is the key used in rpc header to pass the handler URI
 	headerURIKey        = "apiuri"
 	certificateDuration = time.Hour * 24 * 180
-	// this string is used to identify the orchestrator. We use it as its
-	// address.
-	orchestratorAddr = "orchestrator_addr"
+	// OrchestratorID is used to identify the orchestrator. The orchestrator
+	// represents the entry point of a client call. It is the element that will
+	// dispatch the client messages to the nodes and return them to the client.
+	// In a tree Network topology, it is the element that talks to the root node
+	// and listen to it.
+	OrchestratorID = "root_orchestrator_id"
 )
 
 var (
@@ -53,23 +57,15 @@ type Server struct {
 	listener  net.Listener
 	StartChan chan struct{}
 
-	// neighbours contains the certificate and details about known peers.
-	neighbours     map[string]Peer
+	// ndesCerts contains the public certificates of other known nodes. It
+	// contains elements of kind *x509.Certificate
+	nodesCerts *sync.Map
+
 	routingFactory routing.Factory
 
 	handlers map[string]mino.Handler
 
 	traffic *traffic
-}
-
-// Roster is a set of peers that will work together
-// to execute protocols.
-type Roster []Peer
-
-// Peer is a public identity for a given node.
-type Peer struct {
-	Address     string
-	Certificate *x509.Certificate
 }
 
 // RPC represents an RPC that has been registered by a client, which allows
@@ -97,7 +93,7 @@ func (rpc *RPC) Call(ctx context.Context, req proto.Message,
 		return out, errs
 	}
 
-	sendMsg := &OverlayMsg{
+	sendMsg := &Envelope{
 		Message: m,
 	}
 
@@ -106,16 +102,8 @@ func (rpc *RPC) Call(ctx context.Context, req proto.Message,
 		for iter.HasNext() {
 			addrStr := iter.GetNext().String()
 
-			peer, ok := rpc.srv.neighbours[addrStr]
-			if !ok {
-				err := xerrors.Errorf("addr '%s' not is our list of neighbours",
-					addrStr)
-				fabric.Logger.Err(err).Send()
-				errs <- err
-				continue
-			}
-
-			clientConn, err := getConnection(addrStr, peer, *rpc.srv.cert)
+			clientConn, err := getConnectionTo(address{addrStr}, rpc.srv.cert,
+				rpc.srv.nodesCerts)
 			if err != nil {
 				errs <- xerrors.Errorf("failed to get client conn for '%s': %v",
 					addrStr, err)
@@ -179,14 +167,18 @@ func (rpc RPC) Stream(ctx context.Context,
 
 	orchSender := &sender{
 		encoder: rpc.encoder,
-		address: address{orchestratorAddr},
+		// This address can't be the server address because we must separate
+		// messages sent to this server from other nodes because of their
+		// handlers and the ones sent to the client that initiated the stream.
+		address: address{OrchestratorID},
 		// Participant should contain the stream connection of every child of
 		// this node
-		participants: make(map[string]overlayStream),
-		name:         "orchestrator",
-		srvCert:      rpc.srv.cert,
-		traffic:      rpc.srv.traffic,
-		routing:      rting,
+		name:    "orchestrator",
+		srvCert: rpc.srv.cert,
+		traffic: rpc.srv.traffic,
+		routing: rting,
+		// Special case: this is the main orchestrator
+		rootAddr: address{OrchestratorID},
 	}
 
 	orchRecv := receiver{
@@ -194,82 +186,72 @@ func (rpc RPC) Stream(ctx context.Context,
 		errs:    errs,
 		// it is okay to have a blocking chan here because every use of it is in
 		// a goroutine, where we don't mind if it blocks.
-		in:      make(chan *OverlayMsg),
+		in:      make(chan *Envelope),
 		name:    "orchestrator",
 		traffic: rpc.srv.traffic,
 	}
 
-	addrs, err := rting.GetDirectLinks(address{orchestratorAddr})
+	// Get the root of the tree and create a stream to it. We also send the
+	// routing message, which will trigger the build of the tree.
+	// TODO: think how the interface can be changed to allow getting the root
+	rootAddr := rting.(*routing.TreeRouting).Root.Addr
+
+	myConn, err := getConnectionTo(address{rootAddr.String()}, rpc.srv.cert,
+		rpc.srv.nodesCerts)
 	if err != nil {
-		// TODO better handle this error
-		fabric.Logger.Fatal().Msgf("failed to get direct links: %v", err)
+		fabric.Logger.Err(xerrors.Errorf("failed to get my conn: %v", err)).Send()
 	}
 
-	// Creating a stream for each addr in our tree routing
-	for _, addr := range addrs {
+	cl := NewOverlayClient(myConn)
+	header := metadata.New(map[string]string{headerURIKey: rpc.uri})
+	newCtx := metadata.NewOutgoingContext(ctx, header)
 
-		peer, ok := rpc.srv.neighbours[addr.String()]
-		if !ok {
-			err := xerrors.Errorf("addr '%s' not is our list of neighbours", addr)
-			fabric.Logger.Err(err).Send()
-			errs <- err
-			continue
-		}
+	s, err := cl.Stream(newCtx)
+	if err != nil {
+		err = xerrors.Errorf("failed to get stream for my client '%s': %v",
+			rpc.srv.addr.String(), err)
+		fabric.Logger.Err(err).Send()
+	}
 
-		clientConn, err := getConnection(addr.String(), peer, *rpc.srv.cert)
-		if err != nil {
-			// TODO: try another path (maybe use another node to relay that
-			// message)
-			err = xerrors.Errorf("failed to get client conn for client '%s': %v",
-				addr.String(), err)
-			fabric.Logger.Err(err).Send()
-			errs <- err
-			continue
-		}
-		cl := NewOverlayClient(clientConn)
+	stream := newSafeOverlayStream(s)
 
-		header := metadata.New(map[string]string{headerURIKey: rpc.uri})
-		newCtx := metadata.NewOutgoingContext(ctx, header)
+	orchSender.participants.Store(rootAddr.String(), stream)
 
-		stream, err := cl.Stream(newCtx)
-		if err != nil {
-			err = xerrors.Errorf("failed to get stream for client '%s': %v",
-				addr.String(), err)
-			fabric.Logger.Err(err).Send()
-			errs <- err
-			continue
-		}
+	// Sending the routing info as first message. In a tree routing topology
+	// this means sending this message to the root of the tree, which will then
+	// create its direct children and send the routing message to them, then the
+	// children will do the same.
+	stream.Send(&Envelope{
+		From:         OrchestratorID,
+		PhysicalFrom: OrchestratorID,
+		To:           []string{rootAddr.String()},
+		Message:      anyRouting,
+	})
 
-		orchSender.participants[addr.String()] = stream
-
-		// Sending the routing info as first messages to our children
-		stream.Send(&OverlayMsg{Message: anyRouting})
-
-		// Listen on the clients streams and notify the orchestrator or relay
-		// messages
-		go func(addr mino.Address) {
-			for {
-				addrCopy := address{addr.String()}
-				err := listenStream(stream, &orchRecv, orchSender, addrCopy)
-				if err == io.EOF {
-					<-ctx.Done()
-					return
-				}
-				status, ok := status.FromError(err)
-				if ok && err != nil && status.Code() == codes.Canceled {
-					<-ctx.Done()
-					return
-				}
-				if err != nil {
-					err = xerrors.Errorf("failed to listen stream: %v", err)
-					fabric.Logger.Err(err).Send()
-					errs <- err
-					<-ctx.Done()
-					return
-				}
+	// Listen on the clients streams and notify the orchestrator or relay
+	// messages
+	go func(addr mino.Address, stream overlayStream) {
+		for {
+			addrCopy := address{addr.String()}
+			err := listenStream(stream, &orchRecv, orchSender, addrCopy)
+			if err == io.EOF {
+				<-ctx.Done()
+				return
 			}
-		}(addr)
-	}
+			status, ok := status.FromError(err)
+			if ok && err != nil && status.Code() == codes.Canceled {
+				<-ctx.Done()
+				return
+			}
+			if err != nil {
+				err = xerrors.Errorf("failed to listen stream: %v", err)
+				fabric.Logger.Err(err).Send()
+				errs <- err
+				<-ctx.Done()
+				return
+			}
+		}
+	}(address{OrchestratorID}, stream)
 
 	return orchSender, orchRecv
 }
@@ -279,8 +261,7 @@ func (rpc RPC) Stream(ctx context.Context,
 func listenStream(stream overlayStream, orchRecv *receiver,
 	orchSender *sender, addr mino.Address) error {
 
-	// This msg.Message should always be an enveloppe
-	msg, err := stream.Recv()
+	envelope, err := stream.Recv()
 	if err == io.EOF {
 		return io.EOF
 	}
@@ -293,30 +274,28 @@ func listenStream(stream overlayStream, orchRecv *receiver,
 			"receive from RPC server: %v", addr.String(), err)
 	}
 
-	envelope := &Envelope{}
-	err = orchRecv.encoder.UnmarshalAny(msg.Message, envelope)
-	if err != nil {
-		return xerrors.Errorf("couldn't unmarshal envelope: %v", err)
-	}
-
-	message, err := orchRecv.encoder.UnmarshalDynamicAny(envelope.Message)
-	if err != nil {
-		return xerrors.Errorf("couldn't unmarshal message: %v", err)
-	}
+	// In fact the message is received by a client that is handled by an
+	// orchestrator. So when someone sends a message to the client, it in fact
+	// want to reach the orchestrator that holds the client (it is a "reply"
+	// from an RPC call initiated by the orchestrator). This is why the "To"
+	// attribute is set to orchSender.address
+	orchRecv.traffic.logRcv(address{envelope.PhysicalFrom}, orchSender.address,
+		envelope, orchRecv.name)
 
 	for _, toSend := range envelope.To {
 		// if we receive a message to the orchestrator then we notify the
 		// orchestrator receiver by filling orchRecv.in. If this is not the case
 		// we relay the message.
 		if toSend == orchSender.address.String() {
-			orchRecv.in <- msg
+			orchRecv.in <- envelope
 		} else {
-			orchRecv.traffic.logRcvRelay(address{envelope.From}, envelope,
-				orchRecv.name)
-			fabric.Logger.Trace().Msgf("(orchestrator) relaying message from "+
-				"'%s' to '%s'", envelope.From, toSend)
 
-			errChan := orchSender.sendWithFrom(message,
+			msg, err := orchRecv.encoder.UnmarshalDynamicAny(envelope.Message)
+			if err != nil {
+				return xerrors.Errorf("failed to unmarshal envelope message: %v", err)
+			}
+
+			errChan := orchSender.sendWithFrom(msg,
 				address{envelope.From}, address{toSend})
 			err, more := <-errChan
 			if more {
@@ -345,17 +324,17 @@ func NewServer(addr mino.Address, rf routing.Factory) (*Server, error) {
 		addr:           addr,
 		listener:       nil,
 		StartChan:      make(chan struct{}),
-		neighbours:     make(map[string]Peer),
 		handlers:       make(map[string]mino.Handler),
 		traffic:        newTraffic(addr.String()),
 		routingFactory: rf,
+		nodesCerts:     &sync.Map{},
 	}
 
 	RegisterOverlayServer(srv, &overlayService{
 		encoder:        encoding.NewProtoEncoder(),
 		handlers:       server.handlers,
 		addr:           address{addr.String()},
-		neighbour:      server.neighbours,
+		nodesCerts:     server.nodesCerts,
 		srvCert:        server.cert,
 		traffic:        server.traffic,
 		routingFactory: rf,
@@ -400,22 +379,37 @@ func (srv *Server) Serve() error {
 	return nil
 }
 
-// getConnection creates a gRPC connection from the server to the client.
-func getConnection(addr string, peer Peer, cert tls.Certificate) (*grpc.ClientConn, error) {
-	if addr == "" {
-		return nil, xerrors.New("empty address is not allowed")
+// AddCertificate populates the list of public know certificates of the server
+func (srv *Server) addCertificate(key string, cert *x509.Certificate) {
+	srv.nodesCerts.Store(key, cert)
+}
+
+// getConnectionTo creates a gRPC connection from the server to the client.
+func getConnectionTo(addr address, srvCert *tls.Certificate,
+	nodesCerts *sync.Map) (*grpc.ClientConn, error) {
+
+	clientPubCertItf, found := nodesCerts.Load(addr.id)
+	if !found {
+		return nil, xerrors.Errorf("public certificate for '%s' not found in %v",
+			addr.id, nodesCerts)
+	}
+
+	clientPubCert, ok := clientPubCertItf.(*x509.Certificate)
+	if !ok {
+		fabric.Logger.Fatal().Msg("expected nodesCerts to contain an " +
+			"*x509.Certificate element")
 	}
 
 	pool := x509.NewCertPool()
-	pool.AddCert(peer.Certificate)
+	pool.AddCert(clientPubCert)
 
 	ta := credentials.NewTLS(&tls.Config{
-		Certificates: []tls.Certificate{cert},
+		Certificates: []tls.Certificate{*srvCert},
 		RootCAs:      pool,
 	})
 
 	// Connecting using TLS and the distant server certificate as the root.
-	conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(ta),
+	conn, err := grpc.Dial(addr.id, grpc.WithTransportCredentials(ta),
 		grpc.WithConnectParams(grpc.ConnectParams{
 			Backoff:           backoff.DefaultConfig,
 			MinConnectTimeout: defaultMinConnectTimeout,
@@ -464,13 +458,18 @@ func makeCertificate() (*tls.Certificate, error) {
 // sender implements mino.Sender
 type sender struct {
 	sync.Mutex
-	encoder      encoding.ProtoMarshaler
-	address      address
-	participants map[string]overlayStream
+	encoder encoding.ProtoMarshaler
+	address address
+	// participants should contain elements of type overlayStream
+	participants sync.Map
 	name         string
 	srvCert      *tls.Certificate
 	traffic      *traffic
 	routing      routing.Routing
+
+	// this is the address of the node orchestrator that owns (ie. created) this
+	// sender
+	rootAddr address
 }
 
 // send implements mino.Sender.Send. This function sends the message
@@ -530,28 +529,33 @@ func (s *sender) sendSingle(msg proto.Message, from, to mino.Address) error {
 		routingTo = s.address
 	}
 
-	player, participantFound := s.participants[routingTo.String()]
+	logTo := routingTo
+	// This is the case we are responding to our stream, which replies to the
+	// orchestrator that created the stream.
+	if routingTo == s.address {
+		logTo = s.rootAddr
+	}
+
+	playerItf, participantFound := s.participants.Load(routingTo.String())
 	if !participantFound {
 		return xerrors.Errorf("failed to send a message to my child '%s', "+
 			"participant not found in '%v'", routingTo, s.participants)
 	}
 
+	player, ok := playerItf.(overlayStream)
+	if !ok {
+		fabric.Logger.Fatal().Msg("couldn't cast the player from the sync.Map")
+	}
+
 	envelope := &Envelope{
-		From:    from.String(),
-		To:      []string{to.String()},
-		Message: msgAny,
-	}
-	envelopeAny, err := s.encoder.MarshalAny(envelope)
-	if err != nil {
-		return xerrors.Errorf("couldn't marshal envelope: %v", err)
+		From:         from.String(),
+		PhysicalFrom: s.address.String(),
+		To:           []string{to.String()},
+		Message:      msgAny,
 	}
 
-	sendMsg := &OverlayMsg{
-		Message: envelopeAny,
-	}
-
-	s.traffic.logSend(to, sendMsg, s.name)
-	err = player.Send(sendMsg)
+	s.traffic.logSend(s.address, logTo, envelope, s.name)
+	err = player.Send(envelope)
 	if err == io.EOF {
 		return nil
 	} else if err != nil {
@@ -565,7 +569,7 @@ func (s *sender) sendSingle(msg proto.Message, from, to mino.Address) error {
 type receiver struct {
 	encoder encoding.ProtoMarshaler
 	errs    chan error
-	in      chan *OverlayMsg
+	in      chan *Envelope
 	name    string
 	traffic *traffic
 }
@@ -573,12 +577,12 @@ type receiver struct {
 // Recv implements mino.receiver
 func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error) {
 	// TODO: close the channel
-	var msg *OverlayMsg
+	var envelope *Envelope
 	var err error
 	var ok bool
 
 	select {
-	case msg, ok = <-r.in:
+	case envelope, ok = <-r.in:
 		if !ok {
 			return nil, nil, errors.New("time to end")
 		}
@@ -592,31 +596,77 @@ func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error)
 	}
 
 	// we check it to prevent a panic on msg.Message
-	if msg == nil {
+	if envelope == nil {
 		return nil, nil, xerrors.New("message is nil")
 	}
 
-	enveloppe := &Envelope{}
-	err = r.encoder.UnmarshalAny(msg.Message, enveloppe)
+	msg, err := r.encoder.UnmarshalDynamicAny(envelope.Message)
 	if err != nil {
-		return nil, nil, xerrors.Errorf("couldn't unmarshal envelope: %v", err)
+		return nil, nil, xerrors.Errorf("failed to unmarshal envelope msg: %v", err)
 	}
 
-	message, err := r.encoder.UnmarshalDynamicAny(enveloppe.Message)
-	if err != nil {
-		return nil, nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
-	}
-
-	r.traffic.logRcv(address{enveloppe.From}, message, r.name)
-
-	return address{id: enveloppe.From}, message, nil
+	return address{id: envelope.From}, msg, nil
 }
 
 // This interface is used to have a common object between Overlay_StreamServer
-// and Overlay_StreamClient. We need it because the orchastrator is setting
+// and Overlay_StreamClient. We need it because the orchestrator is setting
 // Overlay_StreamClient, while the RPC (in overlay.go) is setting an
 // Overlay_StreamServer
 type overlayStream interface {
-	Send(*OverlayMsg) error
-	Recv() (*OverlayMsg, error)
+	Send(*Envelope) error
+	Recv() (*Envelope, error)
+}
+
+// safeResponse is used to wrap the return elements of a Recv()
+type safeResponse struct {
+	msg *Envelope
+	err error
+}
+
+// safeOverlayStream is a wrapper around overlayStream that guarantees that the
+// Send and Recv functions are executed in a single go routine each, as
+// recomended by grpc.
+type safeOverlayStream struct {
+	sendMux       sync.Mutex
+	sendChan      chan *Envelope
+	sendErrorChan chan error
+	recvChan      chan *safeResponse
+}
+
+func newSafeOverlayStream(o overlayStream) *safeOverlayStream {
+	safe := &safeOverlayStream{
+		sendChan:      make(chan *Envelope),
+		sendErrorChan: make(chan error),
+		recvChan:      make(chan *safeResponse),
+	}
+
+	go func() {
+		for {
+			msg, err := o.Recv()
+			safe.recvChan <- &safeResponse{msg, err}
+		}
+	}()
+
+	go func() {
+		for {
+			msg := <-safe.sendChan
+			safe.sendErrorChan <- o.Send(msg)
+		}
+	}()
+
+	return safe
+}
+
+func (s *safeOverlayStream) Send(msg *Envelope) error {
+	s.sendMux.Lock()
+	s.sendChan <- msg
+	err := <-s.sendErrorChan
+	s.sendMux.Unlock()
+
+	return err
+}
+
+func (s *safeOverlayStream) Recv() (*Envelope, error) {
+	resp := <-s.recvChan
+	return resp.msg, resp.err
 }

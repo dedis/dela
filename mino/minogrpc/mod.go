@@ -4,8 +4,11 @@
 package minogrpc
 
 import (
+	"crypto/x509"
 	fmt "fmt"
 	"regexp"
+
+	"net/url"
 
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
@@ -17,7 +20,7 @@ import (
 
 var (
 	namespaceMatch        = regexp.MustCompile("^[a-zA-Z0-9]+$")
-	defaultAddressFactory = addressFactory{}
+	defaultAddressFactory = AddressFactory{}
 )
 
 // Minogrpc represents a grpc service restricted to a namespace
@@ -34,7 +37,11 @@ type address struct {
 
 func (a address) Equal(other mino.Address) bool {
 	addr, ok := other.(address)
-	return ok && addr.id == a.id
+	if ok {
+		return ok && addr.id == a.id
+	}
+	addrPtr, ok := other.(*address)
+	return ok && addrPtr.id == a.id
 }
 
 // MarshalText implements mino.Address
@@ -47,48 +54,41 @@ func (a address) String() string {
 	return a.id
 }
 
-// addressFactory implements mino.AddressFactory
-type addressFactory struct{}
+// AddressFactory implements mino.AddressFactory
+type AddressFactory struct{}
 
 // FromText implements mino.AddressFactory. It returns an instance of an
 // address from a byte slice.
-func (f addressFactory) FromText(text []byte) mino.Address {
+func (f AddressFactory) FromText(text []byte) mino.Address {
 	return address{id: string(text)}
 }
 
-// NewMinogrpc sets up the grpc and http servers. Identifier must be an address
-// with a port, something like 127.0.0.1:3333
-//
-// TODO: use a different type of argument for identifier, maybe net/url ?
-func NewMinogrpc(identifier string, rf routing.Factory) (Minogrpc, error) {
+// NewMinogrpc sets up the grpc and http servers. URL should
+func NewMinogrpc(serverURL *url.URL, rf routing.Factory) (*Minogrpc, error) {
 
-	minoGrpc := Minogrpc{}
-
-	if identifier == "" {
-		return minoGrpc, xerrors.New("identifier can't be empty")
+	if serverURL.Host == "" {
+		return nil, xerrors.Errorf("host URL is invalid: empty host for '%s'. "+
+			"Hint: the url must be created using an absolute path, "+
+			"like //127.0.0.1:3333", serverURL)
 	}
 
 	addr := address{
-		id: identifier,
+		id: serverURL.Host,
 	}
 
 	server, err := NewServer(addr, rf)
 	if err != nil {
-		return minoGrpc, xerrors.Errorf("failed to create server: %v", err)
+		return nil, xerrors.Errorf("failed to create server: %v", err)
 	}
+
+	server.nodesCerts.Store(serverURL.Host, server.cert.Leaf)
 
 	server.StartServer()
 
-	peer := Peer{
-		Address:     server.listener.Addr().String(),
-		Certificate: server.cert.Leaf,
-	}
-	server.neighbours[identifier] = peer
-
-	minoGrpc.server = server
-	minoGrpc.namespace = ""
-
-	return minoGrpc, err
+	return &Minogrpc{
+		server:    server,
+		namespace: "",
+	}, err
 }
 
 // GetAddressFactory implements Mino. It returns the address
@@ -142,4 +142,22 @@ func (m Minogrpc) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 	m.server.handlers[URI] = h
 
 	return rpc, nil
+}
+
+// AddCertificate populates the list of public know certificates of the server
+func (m Minogrpc) AddCertificate(u *url.URL, cert x509.Certificate) error {
+	if u.Host == "" {
+		return xerrors.Errorf("host URL is invalid: empty host for '%s'. "+
+			"Hint: the url must be created using an absolute path, "+
+			"like //127.0.0.1:3333", u)
+	}
+
+	m.server.addCertificate(u.Host, &cert)
+
+	return nil
+}
+
+// GetPublicCertificate returns the public certificate of the server
+func (m Minogrpc) GetPublicCertificate() x509.Certificate {
+	return *m.server.cert.Leaf
 }

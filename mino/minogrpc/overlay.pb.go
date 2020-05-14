@@ -27,9 +27,14 @@ const _ = proto.ProtoPackageIsVersion3 // please upgrade the proto package
 
 // Envelope is wrapper around a message and one or several recipients.
 type Envelope struct {
-	From                 string   `protobuf:"bytes,1,opt,name=from,proto3" json:"from,omitempty"`
-	To                   []string `protobuf:"bytes,2,rep,name=to,proto3" json:"to,omitempty"`
-	Message              *any.Any `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	// This is the origin address of the message. For example if node A sends a
+	// message to Node C via Node B, then node C will receive an envelope with
+	// "from = A" and "physicalFrom = B"
+	From string `protobuf:"bytes,1,opt,name=from,proto3" json:"from,omitempty"`
+	// This is the real address of the node that sent this envelope
+	PhysicalFrom         string   `protobuf:"bytes,2,opt,name=physicalFrom,proto3" json:"physicalFrom,omitempty"`
+	To                   []string `protobuf:"bytes,3,rep,name=to,proto3" json:"to,omitempty"`
+	Message              *any.Any `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
 	XXX_sizecache        int32    `json:"-"`
@@ -67,6 +72,13 @@ func (m *Envelope) GetFrom() string {
 	return ""
 }
 
+func (m *Envelope) GetPhysicalFrom() string {
+	if m != nil {
+		return m.PhysicalFrom
+	}
+	return ""
+}
+
 func (m *Envelope) GetTo() []string {
 	if m != nil {
 		return m.To
@@ -81,68 +93,28 @@ func (m *Envelope) GetMessage() *any.Any {
 	return nil
 }
 
-type OverlayMsg struct {
-	Message              *any.Any `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
-	XXX_NoUnkeyedLiteral struct{} `json:"-"`
-	XXX_unrecognized     []byte   `json:"-"`
-	XXX_sizecache        int32    `json:"-"`
-}
-
-func (m *OverlayMsg) Reset()         { *m = OverlayMsg{} }
-func (m *OverlayMsg) String() string { return proto.CompactTextString(m) }
-func (*OverlayMsg) ProtoMessage()    {}
-func (*OverlayMsg) Descriptor() ([]byte, []int) {
-	return fileDescriptor_61fc82527fbe24ad, []int{1}
-}
-
-func (m *OverlayMsg) XXX_Unmarshal(b []byte) error {
-	return xxx_messageInfo_OverlayMsg.Unmarshal(m, b)
-}
-func (m *OverlayMsg) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	return xxx_messageInfo_OverlayMsg.Marshal(b, m, deterministic)
-}
-func (m *OverlayMsg) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_OverlayMsg.Merge(m, src)
-}
-func (m *OverlayMsg) XXX_Size() int {
-	return xxx_messageInfo_OverlayMsg.Size(m)
-}
-func (m *OverlayMsg) XXX_DiscardUnknown() {
-	xxx_messageInfo_OverlayMsg.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_OverlayMsg proto.InternalMessageInfo
-
-func (m *OverlayMsg) GetMessage() *any.Any {
-	if m != nil {
-		return m.Message
-	}
-	return nil
-}
-
 func init() {
 	proto.RegisterType((*Envelope)(nil), "minogrpc.Envelope")
-	proto.RegisterType((*OverlayMsg)(nil), "minogrpc.OverlayMsg")
 }
 
 func init() { proto.RegisterFile("overlay.proto", fileDescriptor_61fc82527fbe24ad) }
 
 var fileDescriptor_61fc82527fbe24ad = []byte{
-	// 210 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0xe2, 0xcd, 0x2f, 0x4b, 0x2d,
-	0xca, 0x49, 0xac, 0xd4, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0xe2, 0xc8, 0xcd, 0xcc, 0xcb, 0x4f,
-	0x2f, 0x2a, 0x48, 0x96, 0x92, 0x4c, 0xcf, 0xcf, 0x4f, 0xcf, 0x49, 0xd5, 0x07, 0x8b, 0x27, 0x95,
-	0xa6, 0xe9, 0x27, 0xe6, 0x41, 0x15, 0x29, 0xc5, 0x71, 0x71, 0xb8, 0xe6, 0x95, 0xa5, 0xe6, 0xe4,
-	0x17, 0xa4, 0x0a, 0x09, 0x71, 0xb1, 0xa4, 0x15, 0xe5, 0xe7, 0x4a, 0x30, 0x2a, 0x30, 0x6a, 0x70,
-	0x06, 0x81, 0xd9, 0x42, 0x7c, 0x5c, 0x4c, 0x25, 0xf9, 0x12, 0x4c, 0x0a, 0xcc, 0x1a, 0x9c, 0x41,
-	0x4c, 0x25, 0xf9, 0x42, 0x7a, 0x5c, 0xec, 0xb9, 0xa9, 0xc5, 0xc5, 0x89, 0xe9, 0xa9, 0x12, 0xcc,
-	0x0a, 0x8c, 0x1a, 0xdc, 0x46, 0x22, 0x7a, 0x10, 0xc3, 0xf5, 0x60, 0x86, 0xeb, 0x39, 0xe6, 0x55,
-	0x06, 0xc1, 0x14, 0x29, 0xd9, 0x70, 0x71, 0xf9, 0x43, 0x5c, 0xe5, 0x5b, 0x9c, 0x8e, 0xac, 0x9b,
-	0x91, 0x08, 0xdd, 0x46, 0xd5, 0x5c, 0xec, 0x50, 0xdd, 0x42, 0x26, 0x5c, 0x2c, 0xce, 0x89, 0x39,
-	0x39, 0x42, 0x22, 0x7a, 0x30, 0x6f, 0xe9, 0x21, 0x0c, 0x96, 0xc2, 0x2a, 0xaa, 0xc4, 0x20, 0x64,
-	0xc5, 0xc5, 0x16, 0x5c, 0x52, 0x94, 0x9a, 0x98, 0x4b, 0x9a, 0x3e, 0x0d, 0x46, 0x03, 0xc6, 0x24,
-	0x36, 0xb0, 0x9b, 0x8c, 0x01, 0x01, 0x00, 0x00, 0xff, 0xff, 0x27, 0x44, 0xc9, 0x49, 0x57, 0x01,
-	0x00, 0x00,
+	// 215 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0xce, 0x3f, 0x4b, 0x04, 0x31,
+	0x10, 0x05, 0x70, 0xb3, 0xb7, 0xdc, 0x9f, 0xf1, 0x4f, 0x31, 0x58, 0xac, 0x57, 0x2d, 0x5b, 0xa5,
+	0xca, 0x1d, 0x27, 0xd8, 0x8b, 0x68, 0x2b, 0xac, 0x9f, 0x20, 0x77, 0xe4, 0xe2, 0x42, 0x92, 0x09,
+	0x49, 0x5c, 0xd8, 0xd6, 0x4f, 0x2e, 0x66, 0x4d, 0x21, 0x58, 0xd8, 0x0d, 0xef, 0xbd, 0x81, 0x1f,
+	0x5c, 0xd3, 0xa8, 0x82, 0x91, 0x93, 0xf0, 0x81, 0x12, 0xe1, 0xda, 0x0e, 0x8e, 0x74, 0xf0, 0xa7,
+	0xed, 0x9d, 0x26, 0xd2, 0x46, 0xed, 0x72, 0x7e, 0xfc, 0x38, 0xef, 0xa4, 0xfb, 0x19, 0x75, 0x9f,
+	0x0c, 0xd6, 0xcf, 0x6e, 0x54, 0x86, 0xbc, 0x42, 0x84, 0xfa, 0x1c, 0xc8, 0x36, 0xac, 0x65, 0x7c,
+	0xd3, 0xe7, 0x1b, 0x3b, 0xb8, 0xf2, 0xef, 0x53, 0x1c, 0x4e, 0xd2, 0xbc, 0x7c, 0x77, 0x55, 0xee,
+	0x7e, 0x65, 0x78, 0x03, 0x55, 0xa2, 0x66, 0xd1, 0x2e, 0xf8, 0xa6, 0xaf, 0x12, 0xa1, 0x80, 0x95,
+	0x55, 0x31, 0x4a, 0xad, 0x9a, 0xba, 0x65, 0xfc, 0xf2, 0x70, 0x2b, 0x66, 0x81, 0x28, 0x02, 0xf1,
+	0xe8, 0xa6, 0xbe, 0x8c, 0x0e, 0x11, 0x56, 0xaf, 0x33, 0x1d, 0xf7, 0x50, 0x3f, 0x49, 0x63, 0x10,
+	0x45, 0xd1, 0x8b, 0xc2, 0xdb, 0xfe, 0x91, 0x75, 0x17, 0xf8, 0x00, 0xcb, 0xb7, 0x14, 0x94, 0xb4,
+	0xff, 0xff, 0xe1, 0x6c, 0xcf, 0x8e, 0xcb, 0x6c, 0xb9, 0xff, 0x0a, 0x00, 0x00, 0xff, 0xff, 0x8f,
+	0xea, 0x9c, 0x08, 0x36, 0x01, 0x00, 0x00,
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -157,7 +129,7 @@ const _ = grpc.SupportPackageIsVersion4
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
 type OverlayClient interface {
-	Call(ctx context.Context, in *OverlayMsg, opts ...grpc.CallOption) (*OverlayMsg, error)
+	Call(ctx context.Context, in *Envelope, opts ...grpc.CallOption) (*Envelope, error)
 	Stream(ctx context.Context, opts ...grpc.CallOption) (Overlay_StreamClient, error)
 }
 
@@ -169,8 +141,8 @@ func NewOverlayClient(cc *grpc.ClientConn) OverlayClient {
 	return &overlayClient{cc}
 }
 
-func (c *overlayClient) Call(ctx context.Context, in *OverlayMsg, opts ...grpc.CallOption) (*OverlayMsg, error) {
-	out := new(OverlayMsg)
+func (c *overlayClient) Call(ctx context.Context, in *Envelope, opts ...grpc.CallOption) (*Envelope, error) {
+	out := new(Envelope)
 	err := c.cc.Invoke(ctx, "/minogrpc.Overlay/Call", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -188,8 +160,8 @@ func (c *overlayClient) Stream(ctx context.Context, opts ...grpc.CallOption) (Ov
 }
 
 type Overlay_StreamClient interface {
-	Send(*OverlayMsg) error
-	Recv() (*OverlayMsg, error)
+	Send(*Envelope) error
+	Recv() (*Envelope, error)
 	grpc.ClientStream
 }
 
@@ -197,12 +169,12 @@ type overlayStreamClient struct {
 	grpc.ClientStream
 }
 
-func (x *overlayStreamClient) Send(m *OverlayMsg) error {
+func (x *overlayStreamClient) Send(m *Envelope) error {
 	return x.ClientStream.SendMsg(m)
 }
 
-func (x *overlayStreamClient) Recv() (*OverlayMsg, error) {
-	m := new(OverlayMsg)
+func (x *overlayStreamClient) Recv() (*Envelope, error) {
+	m := new(Envelope)
 	if err := x.ClientStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
@@ -211,7 +183,7 @@ func (x *overlayStreamClient) Recv() (*OverlayMsg, error) {
 
 // OverlayServer is the server API for Overlay service.
 type OverlayServer interface {
-	Call(context.Context, *OverlayMsg) (*OverlayMsg, error)
+	Call(context.Context, *Envelope) (*Envelope, error)
 	Stream(Overlay_StreamServer) error
 }
 
@@ -219,7 +191,7 @@ type OverlayServer interface {
 type UnimplementedOverlayServer struct {
 }
 
-func (*UnimplementedOverlayServer) Call(ctx context.Context, req *OverlayMsg) (*OverlayMsg, error) {
+func (*UnimplementedOverlayServer) Call(ctx context.Context, req *Envelope) (*Envelope, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Call not implemented")
 }
 func (*UnimplementedOverlayServer) Stream(srv Overlay_StreamServer) error {
@@ -231,7 +203,7 @@ func RegisterOverlayServer(s *grpc.Server, srv OverlayServer) {
 }
 
 func _Overlay_Call_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(OverlayMsg)
+	in := new(Envelope)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -243,7 +215,7 @@ func _Overlay_Call_Handler(srv interface{}, ctx context.Context, dec func(interf
 		FullMethod: "/minogrpc.Overlay/Call",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(OverlayServer).Call(ctx, req.(*OverlayMsg))
+		return srv.(OverlayServer).Call(ctx, req.(*Envelope))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -253,8 +225,8 @@ func _Overlay_Stream_Handler(srv interface{}, stream grpc.ServerStream) error {
 }
 
 type Overlay_StreamServer interface {
-	Send(*OverlayMsg) error
-	Recv() (*OverlayMsg, error)
+	Send(*Envelope) error
+	Recv() (*Envelope, error)
 	grpc.ServerStream
 }
 
@@ -262,12 +234,12 @@ type overlayStreamServer struct {
 	grpc.ServerStream
 }
 
-func (x *overlayStreamServer) Send(m *OverlayMsg) error {
+func (x *overlayStreamServer) Send(m *Envelope) error {
 	return x.ServerStream.SendMsg(m)
 }
 
-func (x *overlayStreamServer) Recv() (*OverlayMsg, error) {
-	m := new(OverlayMsg)
+func (x *overlayStreamServer) Recv() (*Envelope, error) {
+	m := new(Envelope)
 	if err := x.ServerStream.RecvMsg(m); err != nil {
 		return nil, err
 	}

@@ -7,56 +7,91 @@ import (
 	"os"
 	"regexp"
 	"sync"
+	"time"
 
-	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric/encoding"
+	"github.com/golang/protobuf/ptypes"
+	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/mino"
 )
 
-var eachLine = regexp.MustCompile(`(?m)^(.+)$`)
+//
+// Traffic is a utility to save network informations. It can be useful for
+// debugging and to understand how the network works. Each server has an
+// instance of traffic but does not store logs by default. To do that you can
+// set MINO_LOG_PACKETS=true as varenv or directly the public attribute SaveLog.
+// You can also set MINO_PRINT_PACKETS=true in conjunction with MINO_LOG_PACKETS
+// to print the packets. It also has its corresponding PrintLog public
+// attribute.
+//
+// There is the possibility to save a graphviz representation of network
+// activity. The following snippet shows practical use of it:
+//
+// ```go
+// minogrpc.SaveLog = true
+// defer func() {
+//     minogrpc.SaveGraph("graph.dot", true, false)
+// }()
+// ```
+//
+// Then you can generate of PDF with `dot -Tpdf graph.dot -o graph.pdf`
+//
 
-var counter = atomicCounter{}
+var (
+	eachLine      = regexp.MustCompile(`(?m)^(.+)$`)
+	globalCounter = atomicCounter{}
+	sendCounter   = &atomicCounter{}
+	recvCounter   = &atomicCounter{}
+	traffics      = []*traffic{}
+	// SaveLog indicates if log must be saved
+	SaveLog = false
+	// PrintLog indicates if log must be printed
+	PrintLog = false
+)
 
-// traffic is used to keep track of packets traffic in a server
-type traffic struct {
-	name     string
-	items    []item
-	log      bool
-	printLog bool
-}
-
-func newTraffic(name string) *traffic {
-	log := false
-	printLog := false
-
+func init() {
 	flag := os.Getenv("MINO_LOG_PACKETS")
 	if flag == "true" {
-		log = true
+		SaveLog = true
 	}
 
 	flag = os.Getenv("MINO_PRINT_PACKETS")
 	if flag == "true" {
-		printLog = true
-	}
-
-	return &traffic{
-		name:     name,
-		items:    make([]item, 0),
-		log:      log,
-		printLog: printLog,
+		PrintLog = true
 	}
 }
 
-func (t *traffic) logSend(to mino.Address, msg proto.Message, context string) {
-	t.addItem("send", to, msg, context)
+// SaveGraph generate the graph file based on the saved traffics. Be sure to set
+// MINO_LOG_PACKETS=true to save logs infos.
+func SaveGraph(path string, withSend, withRcv bool) {
+	fabric.Logger.Info().Msgf("Saving graph file to %s", path)
+	f, _ := os.Create(path)
+	GenerateGraphviz(f, withSend, withRcv, traffics...)
 }
 
-func (t *traffic) logRcv(from mino.Address, msg proto.Message, context string) {
-	t.addItem("received", from, msg, context)
+// traffic is used to keep track of packets traffic in a server
+type traffic struct {
+	name  string
+	items []item
 }
 
-func (t *traffic) logRcvRelay(from mino.Address, msg proto.Message, context string) {
-	t.addItem("received to relay", from, msg, context)
+func newTraffic(name string) *traffic {
+
+	traffic := &traffic{
+		name:  name,
+		items: make([]item, 0),
+	}
+
+	traffics = append(traffics, traffic)
+
+	return traffic
+}
+
+func (t *traffic) logSend(from, to mino.Address, msg *Envelope, context string) {
+	t.addItem("send", from, to, msg, context)
+}
+
+func (t *traffic) logRcv(from, to mino.Address, msg *Envelope, context string) {
+	t.addItem("received", from, to, msg, context)
 }
 
 func (t traffic) Display(out io.Writer) {
@@ -68,18 +103,29 @@ func (t traffic) Display(out io.Writer) {
 	fmt.Fprint(out, eachLine.ReplaceAllString(buf.String(), "-$1"))
 }
 
-func (t *traffic) addItem(typeStr string, addr mino.Address, msg proto.Message,
+func (t *traffic) addItem(typeStr string, from, to mino.Address, msg *Envelope,
 	context string) {
 
-	if !t.log {
+	if !SaveLog {
 		return
 	}
 
-	newItem := item{
-		typeStr: typeStr, addr: addr, msg: msg,
-		context: context, counter: counter.IncrementAndGet()}
+	counter := sendCounter
+	if typeStr == "received" {
+		counter = recvCounter
+	}
 
-	if t.printLog {
+	newItem := item{
+		typeStr:       typeStr,
+		from:          from,
+		to:            to,
+		msg:           msg,
+		context:       context,
+		globalCounter: globalCounter.IncrementAndGet(),
+		typeCounter:   counter.IncrementAndGet(),
+	}
+
+	if PrintLog {
 		fmt.Fprintf(os.Stdout, "\n> %s", t.name)
 		newItem.Display(os.Stdout)
 	}
@@ -88,66 +134,73 @@ func (t *traffic) addItem(typeStr string, addr mino.Address, msg proto.Message,
 }
 
 type item struct {
-	typeStr string
-	addr    mino.Address
-	msg     proto.Message
-	context string
-	counter int
+	typeStr       string
+	from          mino.Address
+	to            mino.Address
+	msg           *Envelope
+	context       string
+	globalCounter int
+	typeCounter   int
 }
 
 func (p item) Display(out io.Writer) {
 	fmt.Fprint(out, "- item:\n")
 	fmt.Fprintf(out, "-- typeStr: %s\n", p.typeStr)
-	fmt.Fprintf(out, "-- addr: %s\n", p.addr)
+	fmt.Fprintf(out, "-- from: %s\n", p.from)
+	fmt.Fprintf(out, "-- to: %s\n", p.to)
 	fmt.Fprintf(out, "-- msg: (type %T) %s\n", p.msg, p.msg)
-	overlayMsg, ok := p.msg.(*OverlayMsg)
-	if ok {
-		envelope := &Envelope{}
-		err := encoding.NewProtoEncoder().UnmarshalAny(overlayMsg.Message, envelope)
-		if err == nil {
-			fmt.Fprintf(out, "--- %s\n", envelope)
-		}
-	}
+	fmt.Fprintf(out, "--- From: %s\n", p.msg.From)
+	fmt.Fprintf(out, "--- PhysicalFrom: %s\n", p.msg.PhysicalFrom)
+	fmt.Fprintf(out, "--- To: %v\n", p.msg.To)
 	fmt.Fprintf(out, "-- context: %s\n", p.context)
 }
 
-// GenerateGraphviz creates a graphviz representation
-func GenerateGraphviz(out io.Writer, traffics ...*traffic) {
+// GenerateGraphviz creates a graphviz representation. One can generate a
+// graphical representation with `dot -Tpdf graph.dot -o graph.pdf`
+func GenerateGraphviz(out io.Writer, withSend, withRcv bool, traffics ...*traffic) {
+
 	fmt.Fprintf(out, "digraph network_activity {\n")
+	fmt.Fprintf(out, "labelloc=\"t\";")
+	fmt.Fprintf(out, "label = <Network Diagram of %d nodes <font point-size='10'><br/>(generated %s)</font>>;", len(traffics), time.Now().Format("2 Jan 06 - 15:04:05"))
+	fmt.Fprintf(out, "graph [fontname = \"helvetica\"];")
+	fmt.Fprintf(out, "graph [fontname = \"helvetica\"];")
+	fmt.Fprintf(out, "node [fontname = \"helvetica\"];")
+	fmt.Fprintf(out, "edge [fontname = \"helvetica\"];")
+
 	for _, traffic := range traffics {
 		for _, item := range traffic.items {
-			var msgStr string
-			overlayMsg, okOverlay := item.msg.(*OverlayMsg)
-			envelope, okEnvelope := item.msg.(*Envelope)
-			if okOverlay {
-				envelope := &Envelope{}
-				err := encoding.NewProtoEncoder().UnmarshalAny(
-					overlayMsg.Message, envelope)
-				if err == nil {
-					msgStr = fmt.Sprintf("Envelope\\nfrom=%s\\nto=%v\\nmsg=%T",
-						envelope.From, envelope.To, envelope.Message)
-				} else {
-					msgStr = fmt.Sprintf("%T", overlayMsg.Message)
-				}
-			} else if okEnvelope {
-				msgStr = fmt.Sprintf("Envelope\\nfrom=%s\\nto=%v\\nmsg=%T",
-					envelope.From, envelope.To, envelope.Message)
-			} else {
-				msgStr = fmt.Sprintf("%T", item.msg)
+
+			if !withSend && item.typeStr == "send" {
+				continue
 			}
-			if item.typeStr == "send" {
-				fmt.Fprintf(out, "\"%s(%s)\" -> \"%s\" "+
-					"[ label = \"%d: %s\" color=\"blue\" ];\n",
-					traffic.name, item.context, item.addr, item.counter, msgStr)
-			} else if item.typeStr == "received" {
-				fmt.Fprintf(out, "\"%s\" -> \"%s(%s)\" "+
-					"[ label = \"%d: %s\" color=\"grey\" ];\n",
-					item.addr, traffic.name, item.context, item.counter, msgStr)
-			} else if item.typeStr == "received to relay" {
-				fmt.Fprintf(out, "\"%s\" -> \"%s(%s)\" "+
-					"[ label = \"%d: %s\" color=\"yellow\" ];\n",
-					item.addr, traffic.name, item.context, item.counter, msgStr)
+			if !withRcv && item.typeStr == "received" {
+				continue
 			}
+
+			msgType := fmt.Sprintf("%T", item.msg.Message)
+			var da ptypes.DynamicAny
+			err := ptypes.UnmarshalAny(item.msg.Message, &da)
+			if err == nil {
+				msgType = fmt.Sprintf("%T", da.Message)
+			}
+
+			color := "#4AB2FF"
+
+			if item.typeStr == "received" {
+				color = "#A8A8A8"
+			}
+
+			toStr := ""
+			for _, to := range item.msg.To {
+				toStr += fmt.Sprintf("to %s<br/>", to)
+			}
+
+			msgStr := fmt.Sprintf("<font point-size='10' color='#9C9C9C'>from %s<br/>%s%s</font>",
+				item.msg.From, toStr, msgType)
+
+			fmt.Fprintf(out, "\"%s\" -> \"%s\" "+
+				"[ label = < <font color='#303030'><b>%d</b> <font point-size='10'>(%d)</font></font><br/>%s> color=\"%s\" ];\n",
+				item.from, item.to, item.typeCounter, item.globalCounter, msgStr, color)
 		}
 	}
 	fmt.Fprintf(out, "}\n")
