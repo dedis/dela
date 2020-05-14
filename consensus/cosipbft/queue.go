@@ -16,6 +16,7 @@ type Queue interface {
 	New(fl forwardLink, authority crypto.CollectiveAuthority) error
 	LockProposal(to Digest, sig crypto.Signature) error
 	Finalize(to Digest, sig crypto.Signature) (*ForwardLinkProto, error)
+	Clear()
 }
 
 type item struct {
@@ -147,4 +148,11 @@ func (q *queue) Finalize(to Digest, sig crypto.Signature) (*ForwardLinkProto, er
 	q.items = nil
 
 	return packed.(*ForwardLinkProto), nil
+}
+
+func (q *queue) Clear() {
+	q.Lock()
+	q.locked = false
+	q.items = nil
+	q.Unlock()
 }

@@ -81,19 +81,19 @@ func TestOperations_CatchUp(t *testing.T) {
 		ops.db = &fakeDatabase{blocks: []SkipBlock{{}, {}, {}}}
 		ops.catchUpLock.Unlock()
 	}()
-	err = ops.catchUp(SkipBlock{Index: 3, BackLink: hash}, fake.NewAddress(0))
+	err = ops.catchUp(SkipBlock{Index: 2, BackLink: hash}, fake.NewAddress(0))
 	require.NoError(t, err)
 	require.Equal(t, 2, call.Len())
 
 	// Catch up with only one block missing but it arrives during the catch up.
 	ops.db = &fakeDatabase{blocks: []SkipBlock{{}}}
-	ops.watcher = &fakeWatcher{call: call, block: SkipBlock{}}
-	err = ops.catchUp(SkipBlock{Index: 3, BackLink: hash}, fake.NewAddress(0))
+	ops.watcher = &fakeWatcher{call: call, block: SkipBlock{Index: 1}}
+	err = ops.catchUp(SkipBlock{Index: 2, BackLink: hash}, fake.NewAddress(0))
 	require.NoError(t, err)
 	require.Equal(t, 4, call.Len())
 
 	ops.db = &fakeDatabase{blocks: []SkipBlock{{}}, err: xerrors.New("oops")}
-	err = ops.catchUp(SkipBlock{Index: 3}, nil)
+	err = ops.catchUp(SkipBlock{Index: 2}, nil)
 	require.EqualError(t, err, "couldn't read last block: oops")
 
 	ops.db = &fakeDatabase{blocks: []SkipBlock{{}}}

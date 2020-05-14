@@ -82,6 +82,9 @@ func (db *InMemoryDatabase) Write(block SkipBlock) error {
 // Contains implements skipchain.Database. It returns true if the block is
 // stored in the database, otherwise false.
 func (db *InMemoryDatabase) Contains(index uint64) bool {
+	db.Lock()
+	defer db.Unlock()
+
 	return index < uint64(len(db.blocks))
 }
 

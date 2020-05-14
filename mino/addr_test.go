@@ -6,6 +6,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestAddressIterator_Seek(t *testing.T) {
+	addrs := []Address{fakeAddr{}, fakeAddr{}}
+
+	iter := addressIterator{addrs: addrs}
+	iter.Seek(1)
+	require.NotNil(t, iter.GetNext())
+	require.Nil(t, iter.GetNext())
+}
+
 func TestAddressIterator_HasNext(t *testing.T) {
 	addrs := []Address{fakeAddr{}, fakeAddr{}}
 

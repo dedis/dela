@@ -139,6 +139,8 @@ func (c *Consensus) Store(in consensus.Chain) error {
 			if err != nil {
 				return xerrors.Errorf("couldn't store link: %v", err)
 			}
+
+			c.queue.Clear()
 		}
 	}
 

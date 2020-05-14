@@ -144,6 +144,17 @@ func TestQueue_Finalize(t *testing.T) {
 	require.EqualError(t, err, "couldn't pack forward link: fake error")
 }
 
+func TestQueue_Clear(t *testing.T) {
+	queue := &queue{
+		locked: true,
+		items:  []item{{}, {}},
+	}
+
+	queue.Clear()
+	require.False(t, queue.locked)
+	require.Empty(t, queue.items)
+}
+
 // -----------------------------------------------------------------------------
 // Utility functions
 

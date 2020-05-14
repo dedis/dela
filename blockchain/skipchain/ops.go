@@ -15,7 +15,7 @@ import (
 	"golang.org/x/xerrors"
 )
 
-const catchUpLeeway = 200 * time.Millisecond
+const catchUpLeeway = 100 * time.Millisecond
 
 // operations implements helper functions that can be used by the handlers for
 // common operations.
@@ -95,7 +95,7 @@ func (ops *operations) catchUp(target SkipBlock, addr mino.Address) error {
 		from = last.GetIndex() + 1
 	}
 
-	if target.GetIndex()-from <= 2 {
+	if target.GetIndex()-from <= 1 {
 		// When only one block is missing, that probably means the propagation
 		// is not yet over, so it gives a chance to wait for it before starting
 		// the actual catch up.
@@ -191,12 +191,16 @@ func (ops *operations) waitBlock(index uint64) {
 	ops.watcher.Add(observer)
 	defer ops.watcher.Remove(observer)
 
-	select {
-	case <-observer.ch:
-		return
-	case <-time.After(catchUpLeeway):
-		// Even if the commit message could arrive later, the catch up procedure
-		// starts anyway.
-		return
+	for {
+		select {
+		case block := <-observer.ch:
+			if block.GetIndex() == index {
+				return
+			}
+		case <-time.After(catchUpLeeway):
+			// Even if the commit message could arrive later, the catch up procedure
+			// starts anyway.
+			return
+		}
 	}
 }

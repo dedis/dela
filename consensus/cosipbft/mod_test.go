@@ -176,9 +176,11 @@ func TestConsensus_Listen(t *testing.T) {
 }
 
 func TestConsensus_Store(t *testing.T) {
+	call := &fake.Call{}
 	cons := &Consensus{
 		encoder: encoding.NewProtoEncoder(),
 		storage: newInMemoryStorage(),
+		queue:   fakeQueue{call: call},
 	}
 
 	links := []forwardLink{
@@ -188,6 +190,7 @@ func TestConsensus_Store(t *testing.T) {
 
 	err := cons.Store(forwardLinkChain{links: links})
 	require.NoError(t, err)
+	require.Equal(t, 2, call.Len())
 
 	err = cons.Store(fakeChain{})
 	require.EqualError(t, err,
@@ -582,7 +585,12 @@ func (gov fakeGovernance) GetChangeSet(consensus.Proposal) (viewchange.ChangeSet
 
 type fakeQueue struct {
 	Queue
-	err error
+	err  error
+	call *fake.Call
+}
+
+func (q fakeQueue) Clear() {
+	q.call.Add("clear")
 }
 
 func (q fakeQueue) Finalize(to Digest, commit crypto.Signature) (*ForwardLinkProto, error) {
