@@ -45,8 +45,8 @@ type PublicKeyIterator interface {
 	// is exhausted.
 	HasNext() bool
 
-	// GetNext returns the next public key only if a call to HasNext returns
-	// true.
+	// GetNext returns the next public key in case HasNext returns true,
+	// otherwise no assumption can be done.
 	GetNext() PublicKey
 }
 

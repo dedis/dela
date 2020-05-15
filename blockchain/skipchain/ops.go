@@ -177,9 +177,11 @@ func (ops *operations) catchUp(target SkipBlock, addr mino.Address) error {
 	}
 }
 
-// waitBlock releases the catch up lock and wait for new blocks to be committed.
-// It will return true if the expected block index exists before the timeout.
-// Note: it expects the lock to be acquired and released later.
+// waitBlock releases the catch up lock and wait for a block with the given
+// index to be committed. If it does not arrive after a given amount if time,
+// the catch up will start anyway.
+//
+// Note: it expects the lock to be acquired before and released later.
 func (ops *operations) waitBlock(index uint64) {
 	ops.catchUpLock.Unlock()
 	defer ops.catchUpLock.Lock()

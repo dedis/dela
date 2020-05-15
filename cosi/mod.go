@@ -38,7 +38,7 @@ type Actor interface {
 // message by members of a network.
 type CollectiveSigning interface {
 	// GetSigner returns the individual signer assigned to the instance. One
-	// should not used it to verify a collective signature but only for identity
+	// should not use it to verify a collective signature but only for identity
 	// verification.
 	GetSigner() crypto.Signer
 
