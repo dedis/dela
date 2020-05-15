@@ -123,6 +123,11 @@ type fakeAddressIterator struct {
 	cursor  int
 }
 
+// Seek implements mino.AddressIterator.
+func (it *fakeAddressIterator) Seek(index int) {
+	it.cursor = index
+}
+
 // HasNext implements mino.AddressIterator
 func (it *fakeAddressIterator) HasNext() bool {
 	return it.cursor < len(it.players)
