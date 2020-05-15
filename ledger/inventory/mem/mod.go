@@ -2,6 +2,7 @@ package mem
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"sort"
 	"sync"
@@ -133,6 +134,13 @@ func (inv *InMemoryInventory) Stage(f func(inventory.WritablePage) error) (inven
 
 func (inv *InMemoryInventory) computeHash(page *inMemoryPage) error {
 	h := inv.hashFactory.New()
+
+	buffer := make([]byte, 8)
+	binary.LittleEndian.PutUint64(buffer, page.index)
+	_, err := h.Write(buffer)
+	if err != nil {
+		return xerrors.Errorf("couldn't write index: %v", err)
+	}
 
 	keys := make(DigestSlice, 0, len(page.entries))
 	for key := range page.entries {

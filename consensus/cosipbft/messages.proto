@@ -41,6 +41,8 @@ message ChainProto {
 // PrepareRequest is the message sent to start a consensus for a proposal.
 message PrepareRequest {
     google.protobuf.Any proposal = 1;
+    // Signature proves the proposal comes from an expected identity.
+    google.protobuf.Any signature = 2;
 }
 
 // CommitRequest is the message sent to commit to a proposal.

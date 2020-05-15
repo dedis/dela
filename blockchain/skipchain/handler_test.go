@@ -77,7 +77,7 @@ func TestHandler_Stream(t *testing.T) {
 		},
 	}
 
-	rcvr := fakeReceiver{msg: &BlockRequest{To: Digest{0x01}.Bytes()}}
+	rcvr := fakeReceiver{msg: &BlockRequest{To: 1}}
 	call := &fake.Call{}
 	sender := fakeSender{call: call}
 

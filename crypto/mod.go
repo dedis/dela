@@ -38,7 +38,15 @@ type PublicKeyFactory interface {
 // PublicKeyIterator is an iterator over the list of public keys of a
 // collective authority.
 type PublicKeyIterator interface {
+	// Seek moves the iterator to a specific index.
+	Seek(int)
+
+	// HasNext returns true if a public key is available, false if the iterator
+	// is exhausted.
 	HasNext() bool
+
+	// GetNext returns the next public key in case HasNext returns true,
+	// otherwise no assumption can be done.
 	GetNext() PublicKey
 }
 

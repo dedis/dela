@@ -3,9 +3,9 @@ package skipchain
 import (
 	fmt "fmt"
 	"testing"
-	"testing/quick"
 
 	proto "github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/crypto"
@@ -15,62 +15,64 @@ import (
 )
 
 func TestBlockValidator_Validate(t *testing.T) {
-	f := func(block SkipBlock) bool {
-		packed, err := block.Pack(encoding.NewProtoEncoder())
-		require.NoError(t, err)
-
-		db := &fakeDatabase{blocks: []SkipBlock{{hash: block.GenesisID}}}
-		v := &blockValidator{
-			operations: &operations{
-				processor: &fakePayloadProc{},
-				watcher:   &fakeWatcher{},
-				encoder:   encoding.NewProtoEncoder(),
-				db:        db,
-				addr:      fake.NewAddress(0),
-				blockFactory: blockFactory{
-					encoder:     encoding.NewProtoEncoder(),
-					hashFactory: crypto.NewSha256Factory(),
-				},
-			},
-			queue: &blockQueue{
-				buffer: make(map[Digest]SkipBlock),
-			},
-		}
-		prop, err := v.Validate(fake.Address{}, packed)
-		require.NoError(t, err)
-		require.NotNil(t, prop)
-		require.Equal(t, block.GetHash(), prop.GetHash())
-		require.Equal(t, block.BackLink.Bytes(), prop.GetPreviousHash())
-
-		_, err = v.Validate(fake.Address{}, nil)
-		require.EqualError(t, err, "couldn't decode block: invalid message type '<nil>'")
-
-		db.err = xerrors.New("oops")
-		_, err = v.Validate(fake.Address{}, packed)
-		require.EqualError(t, err, "couldn't read genesis block: oops")
-
-		db.err = nil
-		db.blocks = []SkipBlock{{}}
-		_, err = v.Validate(fake.Address{}, packed)
-		require.EqualError(t, err,
-			fmt.Sprintf("mismatch genesis hash '%v' != '%v'", Digest{}, block.GenesisID))
-
-		db.blocks = []SkipBlock{{hash: block.GenesisID}}
-		v.processor = &fakePayloadProc{errValidate: xerrors.New("oops")}
-		_, err = v.Validate(fake.Address{}, packed)
-		require.EqualError(t, err, "couldn't validate the payload: oops")
-
-		v.db = &fakeDatabase{missing: true}
-		v.rpc = fake.NewStreamRPC(fake.Receiver{}, fake.NewBadSender())
-		_, err = v.Validate(fake.Address{}, packed)
-		require.EqualError(t, err,
-			"couldn't catch up: couldn't send block request: fake error")
-
-		return true
+	block := SkipBlock{
+		Index:     1,
+		GenesisID: Digest{0x01},
+		BackLink:  Digest{0x02},
+		Payload:   &empty.Empty{},
 	}
 
-	err := quick.Check(f, nil)
+	packed, err := block.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
+
+	db := &fakeDatabase{blocks: []SkipBlock{{hash: block.GenesisID}}}
+	v := &blockValidator{
+		operations: &operations{
+			processor: &fakePayloadProc{},
+			watcher:   &fakeWatcher{},
+			encoder:   encoding.NewProtoEncoder(),
+			db:        db,
+			addr:      fake.NewAddress(0),
+			blockFactory: blockFactory{
+				encoder:     encoding.NewProtoEncoder(),
+				hashFactory: crypto.NewSha256Factory(),
+			},
+		},
+		queue: &blockQueue{
+			buffer: make(map[Digest]SkipBlock),
+		},
+	}
+	prop, err := v.Validate(fake.Address{}, packed)
+	require.NoError(t, err)
+	require.NotNil(t, prop)
+	require.Equal(t, block.BackLink.Bytes(), prop.GetPreviousHash())
+	hash, err := block.computeHash(crypto.NewSha256Factory(), encoding.NewProtoEncoder())
+	require.NoError(t, err)
+	require.Equal(t, hash.Bytes(), prop.GetHash())
+
+	_, err = v.Validate(fake.Address{}, nil)
+	require.EqualError(t, err, "couldn't decode block: invalid message type '<nil>'")
+
+	db.err = xerrors.New("oops")
+	_, err = v.Validate(fake.Address{}, packed)
+	require.EqualError(t, err, "couldn't read genesis block: oops")
+
+	db.err = nil
+	db.blocks = []SkipBlock{{}}
+	_, err = v.Validate(fake.Address{}, packed)
+	require.EqualError(t, err,
+		fmt.Sprintf("mismatch genesis hash '%v' != '%v'", Digest{}, block.GenesisID))
+
+	db.blocks = []SkipBlock{{hash: block.GenesisID}}
+	v.processor = &fakePayloadProc{errValidate: xerrors.New("oops")}
+	_, err = v.Validate(fake.Address{}, packed)
+	require.EqualError(t, err, "couldn't validate the payload: oops")
+
+	packed.(*BlockProto).Index = 5
+	v.rpc = fake.NewStreamRPC(fake.Receiver{}, fake.NewBadSender())
+	_, err = v.Validate(fake.Address{}, packed)
+	require.EqualError(t, err,
+		"couldn't catch up: couldn't send block request: fake error")
 }
 
 func TestBlockValidator_Commit(t *testing.T) {
@@ -125,17 +127,19 @@ func (v *fakePayloadProc) Commit(data proto.Message) error {
 
 type fakeDatabase struct {
 	Database
-	blocks  []SkipBlock
-	err     error
-	aborts  int
-	missing bool
+	blocks []SkipBlock
+	err    error
+	aborts int
 }
 
 func (db *fakeDatabase) Contains(index uint64) bool {
-	return !db.missing
+	return index < uint64(len(db.blocks))
 }
 
 func (db *fakeDatabase) Read(index int64) (SkipBlock, error) {
+	if index >= int64(len(db.blocks)) {
+		return SkipBlock{}, NewNoBlockError(index)
+	}
 	return db.blocks[index], db.err
 }
 
@@ -159,6 +163,8 @@ type fakeWatcher struct {
 	blockchain.Observable
 	count    int
 	notified int
+	block    blockchain.Block
+	call     *fake.Call
 }
 
 func (w *fakeWatcher) Notify(event interface{}) {
@@ -166,9 +172,14 @@ func (w *fakeWatcher) Notify(event interface{}) {
 }
 
 func (w *fakeWatcher) Add(obs blockchain.Observer) {
+	w.call.Add(obs)
 	w.count++
+	if w.block != nil {
+		obs.NotifyCallback(w.block)
+	}
 }
 
 func (w *fakeWatcher) Remove(obs blockchain.Observer) {
+	w.call.Add(obs)
 	w.count--
 }

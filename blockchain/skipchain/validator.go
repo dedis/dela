@@ -68,6 +68,12 @@ func (v *blockValidator) Validate(addr mino.Address,
 // Commit implements consensus.Validator. It commits the block that matches the
 // identifier if it is present.
 func (v *blockValidator) Commit(id []byte) error {
+	// To minimize the catch up procedures, the lock is acquired so that it can
+	// process a new block before the catch up verifies what is the latest
+	// known.
+	v.catchUpLock.Lock()
+	defer v.catchUpLock.Unlock()
+
 	digest := Digest{}
 	copy(digest[:], id)
 

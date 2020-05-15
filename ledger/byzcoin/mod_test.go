@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"sync"
 	"testing"
 	"time"
 
@@ -113,14 +112,15 @@ func TestLedger_Listen(t *testing.T) {
 	}
 
 	actor, err := ledger.Listen()
-	<-ledger.initiated
 	require.NoError(t, err)
 	require.NotNil(t, actor)
 	require.NoError(t, actor.Close())
+	waitClose(ledger)
 
 	ledger.bc = fakeBlockchain{errListen: xerrors.New("oops")}
 	_, err = ledger.Listen()
 	require.EqualError(t, err, "couldn't start the blockchain: oops")
+	waitClose(ledger)
 
 	blocks := make(chan blockchain.Block, 1)
 	blocks <- fakeBlock{index: 1}
@@ -128,7 +128,7 @@ func TestLedger_Listen(t *testing.T) {
 	ledger.initiated = make(chan error, 1)
 	_, err = ledger.Listen()
 	require.NoError(t, err)
-	err = <-ledger.initiated
+	err = waitClose(ledger)
 	require.EqualError(t, err, "expect genesis but got block 1")
 
 	ledger.bc = fakeBlockchain{}
@@ -136,7 +136,7 @@ func TestLedger_Listen(t *testing.T) {
 	ledger.initiated = make(chan error, 1)
 	_, err = ledger.Listen()
 	require.NoError(t, err)
-	err = <-ledger.initiated
+	err = waitClose(ledger)
 	require.EqualError(t, err, "couldn't read chain roster: oops")
 
 	ledger.governance = fakeGovernance{}
@@ -144,7 +144,7 @@ func TestLedger_Listen(t *testing.T) {
 	ledger.initiated = make(chan error, 1)
 	_, err = ledger.Listen()
 	require.NoError(t, err)
-	err = <-ledger.initiated
+	err = waitClose(ledger)
 	require.EqualError(t, err, "couldn't start the gossiper: oops")
 }
 
@@ -157,11 +157,9 @@ func TestLedger_GossipTxs(t *testing.T) {
 		gossiper: fakeGossiper{rumors: rumors, err: xerrors.New("oops")},
 	}
 
-	wg := sync.WaitGroup{}
-	wg.Add(1)
+	ledger.closed.Add(1)
 	go func() {
 		ledger.gossipTxs()
-		wg.Done()
 	}()
 
 	rumors <- fakeTx{id: []byte{0x01}}
@@ -172,7 +170,7 @@ func TestLedger_GossipTxs(t *testing.T) {
 	require.Len(t, ledger.bag.GetAll(), 2)
 
 	close(ledger.closing)
-	wg.Wait()
+	ledger.closed.Wait()
 }
 
 func TestActor_Setup(t *testing.T) {
@@ -258,6 +256,12 @@ func makeDarc(t *testing.T, signer crypto.Signer) darc.Access {
 	return access
 }
 
+func waitClose(ledger *Ledger) error {
+	err := <-ledger.initiated
+	ledger.closed.Wait()
+	return err
+}
+
 func sendTx(t *testing.T, ledger ledger.Ledger, actor ledger.Actor, tx transactions.ClientTransaction) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -274,7 +278,7 @@ func sendTx(t *testing.T, ledger ledger.Ledger, actor ledger.Actor, tx transacti
 			if bytes.Equal(tx.GetID(), res.GetTransactionID()) {
 				return
 			}
-		case <-time.After(1 * time.Second):
+		case <-time.After(5 * time.Second):
 			t.Fatal("timeout when waiting for the transaction")
 		}
 	}

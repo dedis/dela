@@ -24,6 +24,18 @@ func TestMessages(t *testing.T) {
 	}
 }
 
+func TestIterator_Seek(t *testing.T) {
+	roster := rosterFactory{}.New(fake.NewAuthority(3, fake.NewSigner)).(roster)
+	iter := &iterator{
+		roster: &roster,
+	}
+
+	iter.Seek(2)
+	require.True(t, iter.HasNext())
+	iter.Seek(3)
+	require.False(t, iter.HasNext())
+}
+
 func TestIterator_HasNext(t *testing.T) {
 	iter := &iterator{
 		roster: &roster{addrs: make([]mino.Address, 3)},

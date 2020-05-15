@@ -37,6 +37,11 @@ type Actor interface {
 // CollectiveSigning is the interface that provides the primitives to sign a
 // message by members of a network.
 type CollectiveSigning interface {
+	// GetSigner returns the individual signer assigned to the instance. One
+	// should not use it to verify a collective signature but only for identity
+	// verification.
+	GetSigner() crypto.Signer
+
 	// GetPublicKeyFactory returns the public key factory.
 	GetPublicKeyFactory() crypto.PublicKeyFactory
 

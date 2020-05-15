@@ -8,6 +8,11 @@ type addressIterator struct {
 	addrs []Address
 }
 
+// Seek implements mino.AddressIterator.
+func (it *addressIterator) Seek(index int) {
+	it.index = index
+}
+
 // HasNext implements mino.AddressIterator. It returns true if there is an
 // address available.
 func (it *addressIterator) HasNext() bool {

@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/rs/zerolog"
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/consensus"
 	"go.dedis.ch/fabric/consensus/viewchange"
@@ -26,6 +27,7 @@ const (
 
 // Consensus is the implementation of the consensus.Consensus interface.
 type Consensus struct {
+	logger       zerolog.Logger
 	storage      Storage
 	cosi         cosi.CollectiveSigning
 	mino         mino.Mino
@@ -34,12 +36,15 @@ type Consensus struct {
 	hashFactory  crypto.HashFactory
 	chainFactory consensus.ChainFactory
 	governance   viewchange.Governance
-	viewchange   viewchange.ViewChange
+
+	// ViewChange can be personalized after instantiation.
+	ViewChange viewchange.ViewChange
 }
 
 // NewCoSiPBFT returns a new instance.
 func NewCoSiPBFT(mino mino.Mino, cosi cosi.CollectiveSigning, gov viewchange.Governance) *Consensus {
 	c := &Consensus{
+		logger:       fabric.Logger,
 		storage:      newInMemoryStorage(),
 		mino:         mino,
 		cosi:         cosi,
@@ -48,7 +53,7 @@ func NewCoSiPBFT(mino mino.Mino, cosi cosi.CollectiveSigning, gov viewchange.Gov
 		hashFactory:  crypto.NewSha256Factory(),
 		chainFactory: newUnsecureChainFactory(cosi, mino),
 		governance:   gov,
-		viewchange:   constant.NewViewChange(mino.GetAddress()),
+		ViewChange:   constant.NewViewChange(mino.GetAddress()),
 	}
 
 	return c
@@ -134,6 +139,8 @@ func (c *Consensus) Store(in consensus.Chain) error {
 			if err != nil {
 				return xerrors.Errorf("couldn't store link: %v", err)
 			}
+
+			c.queue.Clear()
 		}
 	}
 
@@ -161,7 +168,7 @@ func (a pbftActor) Propose(p consensus.Proposal) error {
 	// If the leader has failed and this node has to take over, we use the
 	// inherant property of CoSiPBFT to prove that 2f participants want the view
 	// change.
-	leader, ok := a.viewchange.Wait(p, authority)
+	leader, ok := a.ViewChange.Wait(p, authority)
 	if !ok {
 		fabric.Logger.Trace().Msg("proposal skipped by view change")
 		// Not authorized to propose a block as the leader is moving forward so
@@ -212,22 +219,33 @@ func (a pbftActor) Propose(p consensus.Proposal) error {
 	defer cancel()
 
 	resps, errs := a.rpc.Call(ctx, propagateReq, authority)
-	select {
-	case <-a.closing:
-		// Abort the RPC call.
-		cancel()
-	case <-resps:
-	case err := <-errs:
-		return xerrors.Errorf("couldn't propagate the link: %v", err)
+	for {
+		select {
+		case <-a.closing:
+			// Abort the RPC call.
+			cancel()
+			return nil
+		case <-resps:
+			return nil
+		case err := <-errs:
+			a.logger.Warn().Err(err).Msg("couldn't propagate the link")
+		}
 	}
-
-	return nil
 }
 
 func (a pbftActor) newPrepareRequest(prop consensus.Proposal,
 	cs viewchange.ChangeSet) (Prepare, error) {
 
 	req := Prepare{proposal: prop}
+
+	// Sign the hash of the proposal to provide a proof the proposal comes from
+	// the legitimate leader.
+	sig, err := a.cosi.GetSigner().Sign(prop.GetHash())
+	if err != nil {
+		return req, xerrors.Errorf("couldn't sign the request: %v", err)
+	}
+
+	req.signature = sig
 
 	forwardLink := forwardLink{
 		from:      prop.GetPreviousHash(),
@@ -298,8 +316,29 @@ func (h handler) Hash(addr mino.Address, in proto.Message) (Digest, error) {
 			changeset: changeset,
 		}
 
-		leader := h.viewchange.Verify(proposal, authority)
-		// TODO: verify that the proposal comes from the leader after rotation.
+		leader := h.ViewChange.Verify(proposal, authority)
+
+		// The identity of the leader must be insured to comply with the
+		// viewchange property. The Signature should be verified with the leader
+		// public key.
+		sig, err := h.cosi.GetSigner().GetSignatureFactory().FromProto(msg.GetSignature())
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't decode signature: %v", err)
+		}
+
+		iter := authority.PublicKeyIterator()
+		iter.Seek(int(leader))
+		if iter.HasNext() {
+			err := iter.GetNext().Verify(proposal.GetHash(), sig)
+			if err != nil {
+				return nil, xerrors.Errorf("couldn't verify signature: %v", err)
+			}
+		} else {
+			return nil, xerrors.Errorf("unknown public key at index %d", leader)
+		}
+
+		// In case it matches, we keep track of the previous leader for
+		// optimization.
 		forwardLink.changeset.Leader = leader
 
 		err = h.queue.New(forwardLink, authority)

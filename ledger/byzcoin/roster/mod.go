@@ -18,6 +18,10 @@ type iterator struct {
 	roster *roster
 }
 
+func (i *iterator) Seek(index int) {
+	i.index = index
+}
+
 func (i *iterator) HasNext() bool {
 	return i.index < i.roster.Len()
 }

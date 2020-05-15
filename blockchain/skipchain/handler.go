@@ -1,7 +1,6 @@
 package skipchain
 
 import (
-	"bytes"
 	"context"
 
 	proto "github.com/golang/protobuf/proto"
@@ -59,8 +58,8 @@ func (h handler) Stream(out mino.Sender, in mino.Receiver) error {
 	}
 
 	var block SkipBlock
-	for i := int64(0); !bytes.Equal(block.hash[:], req.To); i++ {
-		block, err = h.db.Read(i)
+	for i := req.From; i <= req.GetTo(); i++ {
+		block, err = h.db.Read(int64(i))
 		if err != nil {
 			return xerrors.Errorf("couldn't read block at index %d: %v", i, err)
 		}

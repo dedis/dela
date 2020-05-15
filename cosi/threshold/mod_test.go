@@ -62,6 +62,11 @@ func TestDefaultThreshold(t *testing.T) {
 	require.Equal(t, 5, defaultThreshold(5))
 }
 
+func TestCoSi_GetSigner(t *testing.T) {
+	c := &CoSi{signer: fake.NewSigner()}
+	require.NotNil(t, c.GetSigner())
+}
+
 func TestCoSi_GetPublicKeyFactory(t *testing.T) {
 	c := &CoSi{signer: fake.NewSigner()}
 	require.NotNil(t, c.GetPublicKeyFactory())

@@ -16,12 +16,21 @@ type Address interface {
 	encoding.TextMarshaler
 
 	Equal(other Address) bool
+
 	String() string
 }
 
 // AddressIterator is an iterator over the list of addresses of a membership.
 type AddressIterator interface {
+	// Seek moves the iterator to a specific index.
+	Seek(int)
+
+	// HasNext returns true if a address is available, false if the iterator is
+	// exhausted.
 	HasNext() bool
+
+	// GetNext returns the next address in case HasNext returns true, otherwise
+	// no assumption can be done.
 	GetNext() Address
 }
 

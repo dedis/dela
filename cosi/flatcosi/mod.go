@@ -34,6 +34,12 @@ func NewFlat(o mino.Mino, signer crypto.AggregateSigner) *Flat {
 	}
 }
 
+// GetSigner implements cosi.CollectiveSigning. It returns the signer of the
+// instance.
+func (cosi *Flat) GetSigner() crypto.Signer {
+	return cosi.signer
+}
+
 // GetPublicKeyFactory returns the public key factory.
 func (cosi *Flat) GetPublicKeyFactory() crypto.PublicKeyFactory {
 	return cosi.signer.GetPublicKeyFactory()

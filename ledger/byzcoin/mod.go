@@ -2,6 +2,7 @@ package byzcoin
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/golang/protobuf/proto"
@@ -11,6 +12,7 @@ import (
 	"go.dedis.ch/fabric/blockchain/skipchain"
 	"go.dedis.ch/fabric/consensus/cosipbft"
 	"go.dedis.ch/fabric/consensus/viewchange"
+	"go.dedis.ch/fabric/consensus/viewchange/rotating"
 	"go.dedis.ch/fabric/cosi/flatcosi"
 	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
@@ -50,6 +52,7 @@ type Ledger struct {
 	encoder    encoding.ProtoMarshaler
 	txFactory  transactions.TransactionFactory
 	closing    chan struct{}
+	closed     sync.WaitGroup
 	initiated  chan error
 }
 
@@ -64,6 +67,8 @@ func NewLedger(m mino.Mino, signer crypto.AggregateSigner) *Ledger {
 	}
 
 	consensus := cosipbft.NewCoSiPBFT(m, flatcosi.NewFlat(m, signer), gov)
+	// Set a rotating view change for the collective signing.
+	consensus.ViewChange = rotating.NewViewChange(m.GetAddress())
 
 	return &Ledger{
 		addr:       m.GetAddress(),
@@ -123,6 +128,7 @@ func (ldgr *Ledger) Listen() (ledger.Actor, error) {
 			return
 		}
 
+		ldgr.closed.Add(2)
 		close(ldgr.initiated)
 
 		go ldgr.gossipTxs()
@@ -133,6 +139,8 @@ func (ldgr *Ledger) Listen() (ledger.Actor, error) {
 }
 
 func (ldgr *Ledger) gossipTxs() {
+	defer ldgr.closed.Done()
+
 	for {
 		select {
 		case <-ldgr.closing:
@@ -152,6 +160,8 @@ func (ldgr *Ledger) gossipTxs() {
 }
 
 func (ldgr *Ledger) proposeBlocks(actor blockchain.Actor, players mino.Players) {
+	defer ldgr.closed.Done()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
