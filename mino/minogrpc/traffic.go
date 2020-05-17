@@ -149,8 +149,6 @@ func (p item) Display(out io.Writer) {
 	fmt.Fprintf(out, "-- from: %s\n", p.from)
 	fmt.Fprintf(out, "-- to: %s\n", p.to)
 	fmt.Fprintf(out, "-- msg: (type %T) %s\n", p.msg, p.msg)
-	fmt.Fprintf(out, "--- From: %s\n", p.msg.From)
-	fmt.Fprintf(out, "--- PhysicalFrom: %s\n", p.msg.PhysicalFrom)
 	fmt.Fprintf(out, "--- To: %v\n", p.msg.To)
 	fmt.Fprintf(out, "-- context: %s\n", p.context)
 }
@@ -179,7 +177,7 @@ func GenerateGraphviz(out io.Writer, withSend, withRcv bool, traffics ...*traffi
 
 			msgType := fmt.Sprintf("%T", item.msg.Message)
 			var da ptypes.DynamicAny
-			err := ptypes.UnmarshalAny(item.msg.Message, &da)
+			err := ptypes.UnmarshalAny(item.msg.Message.GetPayload(), &da)
 			if err == nil {
 				msgType = fmt.Sprintf("%T", da.Message)
 			}
@@ -196,7 +194,7 @@ func GenerateGraphviz(out io.Writer, withSend, withRcv bool, traffics ...*traffi
 			}
 
 			msgStr := fmt.Sprintf("<font point-size='10' color='#9C9C9C'>from %s<br/>%s%s</font>",
-				item.msg.From, toStr, msgType)
+				item.msg.GetTo(), toStr, msgType)
 
 			fmt.Fprintf(out, "\"%s\" -> \"%s\" "+
 				"[ label = < <font color='#303030'><b>%d</b> <font point-size='10'>(%d)</font></font><br/>%s> color=\"%s\" ];\n",

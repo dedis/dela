@@ -1,8 +1,6 @@
 package pedersen
 
 import (
-	"fmt"
-	"net/url"
 	"testing"
 
 	proto "github.com/golang/protobuf/proto"
@@ -33,39 +31,33 @@ func TestMessages(t *testing.T) {
 }
 
 func TestPedersen_Scenario(t *testing.T) {
-	n := 10
+	n := 5
 
 	addrFactory := minogrpc.AddressFactory{}
 
-	rootAddr := addrFactory.FromText([]byte("127.0.0.1:2000"))
-
-	treeFactory := routing.NewTreeRoutingFactory(3, rootAddr, addrFactory, minogrpc.OrchestratorID)
+	treeFactory := routing.NewTreeRoutingFactory(3, addrFactory)
 
 	pubKeys := make([]kyber.Point, n)
 	privKeys := make([]kyber.Scalar, n)
 	minos := make([]*minogrpc.Minogrpc, n)
 	dkgs := make([]dkg.DKG, n)
-	urls := make([]*url.URL, n)
 	addrs := make([]mino.Address, n)
 
 	for i := 0; i < n; i++ {
-		url, err := url.Parse(fmt.Sprintf("//127.0.0.1:2%03d", i))
-		require.NoError(t, err)
-
 		privKeys[i] = suite.Scalar().Pick(suite.RandomStream())
 		pubKeys[i] = suite.Point().Mul(privKeys[i], nil)
 
-		minogrpc, err := minogrpc.NewMinogrpc(url, treeFactory)
+		port := uint16(2000 + i)
+		minogrpc, err := minogrpc.NewMinogrpc("127.0.0.1", port, treeFactory)
 		require.NoError(t, err)
 
 		minos[i] = minogrpc
-		urls[i] = url
 		addrs[i] = minogrpc.GetAddress()
 	}
 
 	for i, minogrpc := range minos {
-		for j, m := range minos {
-			err := minogrpc.AddCertificate(urls[j], m.GetPublicCertificate())
+		for _, m := range minos {
+			err := minogrpc.AddCertificate(m.GetAddress(), m.GetCertificate())
 			require.NoError(t, err)
 		}
 

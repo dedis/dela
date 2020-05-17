@@ -10,7 +10,6 @@ import (
 )
 
 func TestNewTreeRouting(t *testing.T) {
-
 	h := 3
 
 	root := fake.NewAddress(-1)
@@ -21,11 +20,11 @@ func TestNewTreeRouting(t *testing.T) {
 		fake.NewAddress(6), fake.NewAddress(7),
 	}
 
-	factory := NewTreeRoutingFactory(h, root, fake.AddressFactory{}, "a_root_orchestrator_id")
+	factory := NewTreeRoutingFactory(h, fake.AddressFactory{})
 
 	iterator := fake.NewAddressIterator(addrs)
 
-	routing, err := factory.FromIterator(&iterator)
+	routing, err := factory.FromIterator(root, &iterator)
 	require.NoError(t, err)
 
 	treeRouting, ok := routing.(*TreeRouting)
@@ -54,43 +53,31 @@ func TestNewTreeRouting(t *testing.T) {
 	// 	)
 	// )
 
-	res, err := treeRouting.GetRoute(root, addrs[2])
-	require.NoError(t, err)
+	res := treeRouting.GetRoute(root, addrs[2])
 	require.Equal(t, addrs[2], res)
-	res, err = treeRouting.GetRoute(root, addrs[4])
-	require.NoError(t, err)
+	res = treeRouting.GetRoute(root, addrs[4])
 	require.Equal(t, addrs[2], res)
-	res, err = treeRouting.GetRoute(root, addrs[1])
-	require.NoError(t, err)
+	res = treeRouting.GetRoute(root, addrs[1])
 	require.Equal(t, addrs[2], res)
-	res, err = treeRouting.GetRoute(root, addrs[3])
-	require.NoError(t, err)
+	res = treeRouting.GetRoute(root, addrs[3])
 	require.Equal(t, addrs[2], res)
 
-	res, err = treeRouting.GetRoute(root, addrs[7])
-	require.NoError(t, err)
+	res = treeRouting.GetRoute(root, addrs[7])
 	require.Equal(t, addrs[7], res)
-	res, err = treeRouting.GetRoute(root, addrs[6])
-	require.NoError(t, err)
+	res = treeRouting.GetRoute(root, addrs[6])
 	require.Equal(t, addrs[7], res)
-	res, err = treeRouting.GetRoute(root, addrs[5])
-	require.NoError(t, err)
+	res = treeRouting.GetRoute(root, addrs[5])
 	require.Equal(t, addrs[7], res)
-	res, err = treeRouting.GetRoute(root, addrs[0])
-	require.NoError(t, err)
+	res = treeRouting.GetRoute(root, addrs[0])
 	require.Equal(t, addrs[7], res)
 
-	res, err = treeRouting.GetRoute(addrs[7], addrs[7])
-	require.NoError(t, err)
+	res = treeRouting.GetRoute(addrs[7], addrs[7])
 	require.Equal(t, addrs[7], res)
-	res, err = treeRouting.GetRoute(addrs[7], addrs[6])
-	require.NoError(t, err)
+	res = treeRouting.GetRoute(addrs[7], addrs[6])
 	require.Equal(t, addrs[6], res)
-	res, err = treeRouting.GetRoute(addrs[7], addrs[5])
-	require.NoError(t, err)
+	res = treeRouting.GetRoute(addrs[7], addrs[5])
 	require.Equal(t, addrs[6], res)
-	res, err = treeRouting.GetRoute(addrs[7], addrs[0])
-	require.NoError(t, err)
+	res = treeRouting.GetRoute(addrs[7], addrs[0])
 	require.Equal(t, addrs[6], res)
 }
 

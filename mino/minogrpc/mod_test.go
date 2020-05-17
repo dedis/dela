@@ -2,14 +2,13 @@ package minogrpc
 
 import (
 	"bytes"
-	"net/url"
 	"testing"
 	"testing/quick"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/encoding"
 	internal "go.dedis.ch/fabric/internal/testing"
+	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/mino"
 )
 
@@ -23,39 +22,29 @@ func TestMessages(t *testing.T) {
 	}
 }
 
-func Test_NewMinogrpc(t *testing.T) {
-	// The happy path
-	urlStr := "//127.0.0.1:3333"
-	url, err := url.Parse(urlStr)
+func TestMinogrpc_New(t *testing.T) {
+	m, err := NewMinogrpc("127.0.0.1", 3333, nil)
 	require.NoError(t, err)
 
-	minoRPC, err := NewMinogrpc(url, nil)
-	require.NoError(t, err)
+	require.Equal(t, "127.0.0.1:3333", m.GetAddress().String())
+	require.Equal(t, "", m.namespace)
 
-	require.Equal(t, "127.0.0.1:3333", minoRPC.GetAddress().String())
-	require.Equal(t, "", minoRPC.namespace)
-
-	cert, found := minoRPC.server.nodesCerts.Load("127.0.0.1:3333")
-	require.True(t, found)
-
-	require.Equal(t, minoRPC.server.cert.Leaf, cert)
+	cert := m.GetCertificate()
+	require.NotNil(t, cert)
 
 	// Giving a wrong address, should be "//example:3333"
-	urlStr = "example:3333"
-	url, err = url.Parse(urlStr)
-	require.NoError(t, err)
-
-	_, err = NewMinogrpc(url, nil)
-	require.EqualError(t, err, "host URL is invalid: empty host for 'example:3333'. Hint: the url must be created using an absolute path, like //127.0.0.1:3333")
+	_, err = NewMinogrpc("\\", 0, nil)
+	require.EqualError(t, err,
+		"couldn't parse url: parse \"//\\\\:0\": invalid character \"\\\\\" in host name")
 }
 
-func Test_MakeNamespace(t *testing.T) {
+func TestMinogrpc_MakeNamespace(t *testing.T) {
 	minoGrpc := Minogrpc{}
 	ns := "Test"
 	newMino, err := minoGrpc.MakeNamespace(ns)
 	require.NoError(t, err)
 
-	newMinoGrpc, ok := newMino.(Minogrpc)
+	newMinoGrpc, ok := newMino.(*Minogrpc)
 	require.True(t, ok)
 
 	require.Equal(t, ns, newMinoGrpc.namespace)
@@ -79,44 +68,36 @@ func Test_MakeNamespace(t *testing.T) {
 	require.EqualError(t, err, "a namespace should match [a-zA-Z0-9]+, but found 'test$'")
 }
 
-func Test_Address(t *testing.T) {
-	addr := address{
-		id: "test",
-	}
+func TestMinogrpc_GetAddress(t *testing.T) {
+	addr := fake.NewAddress(0)
 	minoGrpc := Minogrpc{
-		server: &Server{
-			addr: addr,
-		},
+		overlay: overlay{me: addr},
 	}
 
 	require.Equal(t, addr, minoGrpc.GetAddress())
 }
 
-func Test_MakeRPC(t *testing.T) {
-	minoGrpc := Minogrpc{}
-	minoGrpc.namespace = "namespace"
-	minoGrpc.server = &Server{
-		handlers: make(map[string]mino.Handler),
+func TestMinogrpc_MakeRPC(t *testing.T) {
+	minoGrpc := Minogrpc{
+		namespace: "namespace",
+		overlay:   overlay{},
+		handlers:  make(map[string]mino.Handler),
 	}
 
-	handler := testSameHandler{}
+	handler := mino.UnsupportedHandler{}
 
 	rpc, err := minoGrpc.MakeRPC("name", handler)
 	require.NoError(t, err)
 
 	expectedRPC := &RPC{
-		encoder: encoding.NewProtoEncoder(),
-		handler: handler,
-		srv:     minoGrpc.server,
+		overlay: overlay{},
 		uri:     "namespace/name",
 	}
 
-	h, ok := minoGrpc.server.handlers[expectedRPC.uri]
+	h, ok := minoGrpc.handlers[expectedRPC.uri]
 	require.True(t, ok)
 	require.Equal(t, handler, h)
-
 	require.Equal(t, expectedRPC, rpc)
-
 }
 
 func TestAddress_Equal(t *testing.T) {

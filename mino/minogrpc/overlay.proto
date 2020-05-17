@@ -4,19 +4,18 @@ package minogrpc;
 
 import "google/protobuf/any.proto";
 
+message Message {
+    bytes from = 1;
+    google.protobuf.Any payload = 2;
+}
+
 // Envelope is wrapper around a message and one or several recipients.
 message Envelope {
-    // This is the origin address of the message. For example if node A sends a
-    // message to Node C via Node B, then node C will receive an envelope with
-    // "from = A" and "physicalFrom = B"
-    string from = 1;
-    // This is the real address of the node that sent this envelope
-    string physicalFrom = 2;
-    repeated string to = 3;
-    google.protobuf.Any message = 4;
+    repeated bytes to = 1;
+    Message message = 2;
 }
 
 service Overlay {
-    rpc Call(Envelope) returns (Envelope) {}
-    rpc Stream(stream Envelope) returns (stream Envelope) {}
+    rpc Call(Message) returns (Message) {}
+    rpc Relay(stream Envelope) returns (stream Envelope) {}
 }
