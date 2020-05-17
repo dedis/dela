@@ -4,33 +4,44 @@ import (
 	context "context"
 	"sync"
 
-	proto "github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/minogrpc/routing"
+	"golang.org/x/xerrors"
 )
 
 type sender struct {
 	encoder        encoding.ProtoMarshaler
 	me             mino.Address
 	addressFactory mino.AddressFactory
-	rting          routing.Routing
 	clients        map[mino.Address]chan *Envelope
 	receiver       *receiver
 	traffic        *traffic
+
+	// Routing parameters to differentiate an orchestrator from a relay. The
+	// gateway will be used to route any messages and the routing will define
+	// proper routes.
+	rting   routing.Routing
+	gateway mino.Address
 }
 
 func (s sender) Send(msg proto.Message, addrs ...mino.Address) <-chan error {
+	errs := make(chan error, 1)
+	defer close(errs)
+
 	msgAny, err := s.encoder.MarshalAny(msg)
 	if err != nil {
-		panic(err)
+		errs <- xerrors.Errorf("couldn't marshal message: %v", err)
+		return errs
 	}
 
 	to := make([][]byte, len(addrs))
 	for i, addr := range addrs {
 		buffer, err := addr.MarshalText()
 		if err != nil {
-			panic(err)
+			errs <- xerrors.Errorf("couldn't marshal address: %v", err)
+			return errs
 		}
 
 		to[i] = buffer
@@ -46,23 +57,19 @@ func (s sender) Send(msg proto.Message, addrs ...mino.Address) <-chan error {
 	if s.me != nil {
 		buffer, err := s.me.MarshalText()
 		if err != nil {
-			panic(err)
+			errs <- xerrors.Errorf("couldn't marshal source address: %v", err)
+			return errs
 		}
 
 		env.Message.From = buffer
 	}
 
-	s.sendEnvelope(env)
-	errs := make(chan error, 1)
-	if err != nil {
-		errs <- err
-	}
-	close(errs)
+	s.sendEnvelope(env, errs)
 
 	return errs
 }
 
-func (s sender) sendEnvelope(envelope *Envelope) {
+func (s sender) sendEnvelope(envelope *Envelope, errs chan error) {
 	outs := map[mino.Address]*Envelope{}
 	for _, to := range envelope.GetTo() {
 		addr := s.addressFactory.FromText(to)
@@ -72,7 +79,12 @@ func (s sender) sendEnvelope(envelope *Envelope) {
 
 			s.receiver.appendMessage(envelope.GetMessage())
 		} else {
-			relay := s.rting.GetRoute(s.me, addr)
+			var relay mino.Address
+			if s.rting != nil {
+				relay = s.rting.GetRoute(s.me, addr)
+			} else if s.gateway != nil {
+				relay = s.gateway
+			}
 
 			env, ok := outs[relay]
 			if !ok {
@@ -87,7 +99,8 @@ func (s sender) sendEnvelope(envelope *Envelope) {
 	for relay, env := range outs {
 		ch := s.clients[relay]
 		if ch == nil {
-			panic("that's not possible")
+			errs <- xerrors.Errorf("inconsistent routing to <%v>", relay)
+			continue
 		}
 
 		s.traffic.logSend(s.me, relay, env, "")

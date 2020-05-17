@@ -4,7 +4,6 @@ import (
 	context "context"
 
 	proto "github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc/metadata"
@@ -26,7 +25,7 @@ func (rpc *RPC) Call(ctx context.Context, req proto.Message,
 	out := make(chan proto.Message, players.Len())
 	errs := make(chan error, players.Len())
 
-	m, err := ptypes.MarshalAny(req)
+	m, err := rpc.overlay.encoder.MarshalAny(req)
 	if err != nil {
 		errs <- xerrors.Errorf("failed to marshal msg to any: %v", err)
 		return out, errs
@@ -37,14 +36,15 @@ func (rpc *RPC) Call(ctx context.Context, req proto.Message,
 	go func() {
 		iter := players.AddressIterator()
 		for iter.HasNext() {
-			addrStr := iter.GetNext().String()
+			addr := iter.GetNext()
 
-			clientConn, err := rpc.overlay.getConnectionTo(address{addrStr})
+			clientConn, err := rpc.overlay.connFactory.FromAddress(addr)
 			if err != nil {
-				errs <- xerrors.Errorf("failed to get client conn for '%s': %v",
-					addrStr, err)
+				errs <- xerrors.Errorf("failed to get client conn for '%v': %v",
+					addr, err)
 				continue
 			}
+
 			cl := NewOverlayClient(clientConn)
 
 			header := metadata.New(map[string]string{headerURIKey: rpc.uri})
@@ -52,13 +52,13 @@ func (rpc *RPC) Call(ctx context.Context, req proto.Message,
 
 			callResp, err := cl.Call(newCtx, sendMsg)
 			if err != nil {
-				errs <- xerrors.Errorf("failed to call client '%s': %v", addrStr, err)
+				errs <- xerrors.Errorf("failed to call client '%s': %v", addr, err)
 				continue
 			}
 
 			resp, err := rpc.overlay.encoder.UnmarshalDynamicAny(callResp.GetPayload())
 			if err != nil {
-				errs <- xerrors.Errorf("couldn't unmarshal message: %v", err)
+				errs <- xerrors.Errorf("couldn't unmarshal payload: %v", err)
 				continue
 			}
 
@@ -71,18 +71,48 @@ func (rpc *RPC) Call(ctx context.Context, req proto.Message,
 	return out, errs
 }
 
-// Stream implements mino.RPC.
+// Stream implements mino.RPC. TODO: errors
 func (rpc RPC) Stream(ctx context.Context,
 	players mino.Players) (in mino.Sender, out mino.Receiver) {
 
-	rting, err := rpc.overlay.routingFactory.FromIterator(orchestratorAddress, players.AddressIterator())
+	root := newRootAddress()
+
+	rting, err := rpc.overlay.routingFactory.FromIterator(rpc.overlay.me, players.AddressIterator())
 	if err != nil {
 		panic(err)
 	}
 
 	header := metadata.New(map[string]string{headerURIKey: rpc.uri})
 
-	sender, receiver := rpc.overlay.setupRelays(header, nil, orchestratorAddress, rting)
+	receiver := receiver{
+		addressFactory: rpc.overlay.routingFactory.GetAddressFactory(),
+		encoder:        rpc.overlay.encoder,
+		errs:           make(chan error, 1),
+		queue: &NonBlockingQueue{
+			ch: make(chan *Message, 1),
+		},
+	}
+
+	gateway := rting.GetRoot()
+
+	sender := sender{
+		encoder:        rpc.overlay.encoder,
+		me:             root,
+		addressFactory: AddressFactory{},
+		gateway:        gateway,
+		clients:        map[mino.Address]chan *Envelope{},
+		receiver:       &receiver,
+		traffic:        rpc.overlay.traffic,
+	}
+
+	// The orchestrator opens a connection to the entry point of the routing map
+	// and it will relay the messages by this gateway by default. The entry
+	// point of the routing will have the orchestrator stream opens which will
+	// allow the messages to be routed back to the orchestrator.
+	err = rpc.overlay.setupRelay(gateway, &sender, header, rting)
+	if err != nil {
+		panic(err)
+	}
 
 	return sender, receiver
 }

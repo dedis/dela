@@ -34,6 +34,10 @@ type Factory interface {
 // Routing defines the functions needed to route messages
 type Routing interface {
 	encoding.Packable
+
+	// GetRoot should return the initiator of the routing map so that every
+	// message with no route will be routed back to it.
+	GetRoot() mino.Address
 	// GetRoute should return the gateway address for a corresponding addresse.
 	// In a tree communication it is typically the address of the child that
 	// contains the "to" address in its sub-tree.
@@ -109,7 +113,7 @@ func (t TreeRoutingFactory) FromAny(m *any.Any) (Routing, error) {
 		return nil, xerrors.Errorf("failed to unmarshal routing message: %v", err)
 	}
 
-	root := t.addrFactory.FromText(msg.Root)
+	root := t.addrFactory.FromText(msg.GetRoot())
 
 	routing, err := t.fromAddrBuf(root, msg.Addrs)
 	if err != nil {
@@ -216,6 +220,11 @@ func (t TreeRouting) GetRoute(from, to mino.Address) mino.Address {
 	}
 
 	return nil
+}
+
+// GetRoot implements routing.Routing. It returns the the root of the tree.
+func (t TreeRouting) GetRoot() mino.Address {
+	return t.Root.Addr
 }
 
 // GetDirectLinks returns the children

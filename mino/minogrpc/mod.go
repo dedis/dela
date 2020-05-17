@@ -25,29 +25,43 @@ var (
 	defaultAddressFactory = AddressFactory{}
 )
 
-// address implements mino.Address
-// TODO: improve to support internet addresses.
+type rootAddress struct{}
+
+func newRootAddress() rootAddress {
+	return rootAddress{}
+}
+
+func (a rootAddress) Equal(other mino.Address) bool {
+	addr, ok := other.(rootAddress)
+	return ok && a == addr
+}
+
+func (a rootAddress) MarshalText() ([]byte, error) {
+	return []byte{}, nil
+}
+
+func (a rootAddress) String() string {
+	return "Root"
+}
+
+// address implements mino.Address.
 type address struct {
-	id string
+	host string
 }
 
 func (a address) Equal(other mino.Address) bool {
 	addr, ok := other.(address)
-	if ok {
-		return ok && addr.id == a.id
-	}
-	addrPtr, ok := other.(*address)
-	return ok && addrPtr.id == a.id
+	return ok && addr == a
 }
 
 // MarshalText implements mino.Address
 func (a address) MarshalText() ([]byte, error) {
-	return []byte(a.id), nil
+	return []byte(a.host), nil
 }
 
 // String implements mino.Address
 func (a address) String() string {
-	return a.id
+	return string(a.host)
 }
 
 // AddressFactory implements mino.AddressFactory
@@ -56,11 +70,16 @@ type AddressFactory struct{}
 // FromText implements mino.AddressFactory. It returns an instance of an
 // address from a byte slice.
 func (f AddressFactory) FromText(text []byte) mino.Address {
-	return address{id: string(text)}
+	if len(text) == 0 {
+		return newRootAddress()
+	}
+
+	return address{host: string(text)}
 }
 
 // Minogrpc represents a grpc service restricted to a namespace
 type Minogrpc struct {
+	url       *url.URL
 	server    *grpc.Server
 	overlay   overlay
 	namespace string
@@ -74,7 +93,7 @@ func NewMinogrpc(path string, port uint16, rf routing.Factory) (*Minogrpc, error
 		return nil, xerrors.Errorf("couldn't parse url: %v", err)
 	}
 
-	me := address{id: url.Host}
+	me := address{host: url.Host}
 
 	o, err := newOverlay(me, rf)
 	if err != nil {
@@ -85,6 +104,7 @@ func NewMinogrpc(path string, port uint16, rf routing.Factory) (*Minogrpc, error
 	server := grpc.NewServer(grpc.Creds(creds))
 
 	m := &Minogrpc{
+		url:       url,
 		server:    server,
 		overlay:   o,
 		namespace: "",
@@ -129,7 +149,7 @@ func (m *Minogrpc) AddCertificate(addr mino.Address, cert *tls.Certificate) erro
 
 // Listen starts the server.
 func (m *Minogrpc) Listen() error {
-	lis, err := net.Listen("tcp4", m.GetAddress().String())
+	lis, err := net.Listen("tcp4", m.url.Host)
 	if err != nil {
 		return xerrors.Errorf("failed to listen: %v", err)
 	}

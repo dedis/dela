@@ -1,14 +1,11 @@
 package minogrpc
 
 import (
-	"bytes"
 	"testing"
-	"testing/quick"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	internal "go.dedis.ch/fabric/internal/testing"
-	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/mino"
 )
 
@@ -69,7 +66,7 @@ func TestMinogrpc_MakeNamespace(t *testing.T) {
 }
 
 func TestMinogrpc_GetAddress(t *testing.T) {
-	addr := fake.NewAddress(0)
+	addr := address{}
 	minoGrpc := Minogrpc{
 		overlay: overlay{me: addr},
 	}
@@ -101,119 +98,33 @@ func TestMinogrpc_MakeRPC(t *testing.T) {
 }
 
 func TestAddress_Equal(t *testing.T) {
-	addr := address{id: "A"}
+	addr := address{host: "127.0.0.1:2000"}
+
 	require.True(t, addr.Equal(addr))
 	require.False(t, addr.Equal(address{}))
 }
 
 func TestAddress_MarshalText(t *testing.T) {
-	f := func(id string) bool {
-		addr := address{id: id}
-		buffer, err := addr.MarshalText()
-		require.NoError(t, err)
-
-		return bytes.Equal([]byte(id), buffer)
-	}
-
-	err := quick.Check(f, nil)
+	addr := address{host: "127.0.0.1:2000"}
+	buffer, err := addr.MarshalText()
 	require.NoError(t, err)
+
+	require.Equal(t, []byte(addr.host), buffer)
 }
 
 func TestAddress_String(t *testing.T) {
-	f := func(id string) bool {
-		addr := address{id: id}
-
-		return id == addr.String()
-	}
-
-	err := quick.Check(f, nil)
-	require.NoError(t, err)
+	addr := address{host: "127.0.0.1:2000"}
+	require.Equal(t, addr.host, addr.String())
 }
 
 func TestAddressFactory_FromText(t *testing.T) {
-	f := func(id string) bool {
-		factory := AddressFactory{}
-		addr := factory.FromText([]byte(id))
+	factory := AddressFactory{}
+	addr := factory.FromText([]byte("127.0.0.1:2000"))
 
-		return addr.(address).id == id
-	}
-
-	err := quick.Check(f, nil)
-	require.NoError(t, err)
+	require.Equal(t, "127.0.0.1:2000", addr.(address).host)
 }
 
 func TestMinogrpc_GetAddressFactory(t *testing.T) {
 	m := &Minogrpc{}
 	require.IsType(t, AddressFactory{}, m.GetAddressFactory())
-}
-
-func TestPlayers_AddressIterator(t *testing.T) {
-	players := fakePlayers{players: []mino.Address{address{"test"}}}
-	it := players.AddressIterator()
-	it2, ok := it.(*fakeAddressIterator)
-	require.True(t, ok)
-
-	require.Equal(t, players.players, it2.players)
-
-	require.Equal(t, 1, players.Len())
-}
-
-func TestAddressIterator(t *testing.T) {
-	a := &address{"test"}
-	it := fakeAddressIterator{
-		players: []mino.Address{a},
-	}
-
-	require.True(t, it.HasNext())
-	addr := it.GetNext()
-	require.Equal(t, a, addr)
-
-	require.False(t, it.HasNext())
-}
-
-// -----------------------------------------------------------------------------
-// Utility functions
-
-// fakePlayers implements mino.Players{}
-type fakePlayers struct {
-	mino.Players
-	players  []mino.Address
-	iterator *fakeAddressIterator
-}
-
-// AddressIterator implements mino.Players.AddressIterator()
-func (p *fakePlayers) AddressIterator() mino.AddressIterator {
-	if p.iterator == nil {
-		p.iterator = &fakeAddressIterator{players: p.players}
-	}
-	return p.iterator
-}
-
-// Len() implements mino.Players.Len()
-func (p *fakePlayers) Len() int {
-	return len(p.players)
-}
-
-// fakeAddressIterator implements mino.addressIterator{}
-type fakeAddressIterator struct {
-	players []mino.Address
-	cursor  int
-}
-
-func (it *fakeAddressIterator) Seek(index int) {
-	it.cursor = index
-}
-
-// HasNext implements mino.AddressIterator.HasNext()
-func (it *fakeAddressIterator) HasNext() bool {
-	return it.cursor < len(it.players)
-}
-
-// GetNext implements mino.AddressIterator.GetNext(). It is the responsibility
-// of the caller to check there is still elements to get. Otherwise it may
-// crash.
-func (it *fakeAddressIterator) GetNext() mino.Address {
-	p := it.players[it.cursor]
-	it.cursor++
-	return p
 }
