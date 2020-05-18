@@ -105,11 +105,13 @@ func (rpc RPC) Stream(ctx context.Context,
 		traffic:        rpc.overlay.traffic,
 	}
 
+	relayCtx := metadata.NewOutgoingContext(ctx, header)
+
 	// The orchestrator opens a connection to the entry point of the routing map
 	// and it will relay the messages by this gateway by default. The entry
 	// point of the routing will have the orchestrator stream opens which will
 	// allow the messages to be routed back to the orchestrator.
-	err = rpc.overlay.setupRelay(gateway, &sender, &receiver, header, rting)
+	err = rpc.overlay.setupRelay(relayCtx, gateway, &sender, &receiver, rting)
 	if err != nil {
 		return nil, nil, xerrors.Errorf("couldn't setup relay: %v", err)
 	}

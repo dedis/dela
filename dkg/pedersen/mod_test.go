@@ -51,6 +51,8 @@ func TestPedersen_Scenario(t *testing.T) {
 		minogrpc, err := minogrpc.NewMinogrpc("127.0.0.1", port, treeFactory)
 		require.NoError(t, err)
 
+		defer minogrpc.GracefulClose()
+
 		minos[i] = minogrpc
 		addrs[i] = minogrpc.GetAddress()
 	}

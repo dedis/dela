@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/url"
 	"regexp"
+	"sync"
 
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/mino"
@@ -84,6 +85,7 @@ type Minogrpc struct {
 	overlay   overlay
 	namespace string
 	handlers  map[string]mino.Handler
+	closer    *sync.WaitGroup
 }
 
 // NewMinogrpc sets up the grpc and http servers. URL should
@@ -109,11 +111,16 @@ func NewMinogrpc(path string, port uint16, rf routing.Factory) (*Minogrpc, error
 		overlay:   o,
 		namespace: "",
 		handlers:  make(map[string]mino.Handler),
+		closer:    &sync.WaitGroup{},
 	}
+
+	// Counter needs to be above 1 for asynchronous call to Add.
+	m.closer.Add(1)
 
 	RegisterOverlayServer(server, overlayServer{
 		overlay:  o,
 		handlers: m.handlers,
+		closer:   m.closer,
 	})
 
 	err = m.Listen()
@@ -162,6 +169,15 @@ func (m *Minogrpc) Listen() error {
 	}()
 
 	return nil
+}
+
+// GracefulClose first stops the grpc server then waits for the remaining
+// handlers to close.
+func (m *Minogrpc) GracefulClose() {
+	m.server.GracefulStop()
+
+	m.closer.Done()
+	m.closer.Wait()
 }
 
 // MakeNamespace implements Mino. It creates a new Minogrpc

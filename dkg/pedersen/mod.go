@@ -58,7 +58,10 @@ func (s *Pedersen) Listen(players mino.Players, pubKeys []kyber.Point,
 	}
 
 	newPlayers := players.Take(mino.RangeFilter(0, players.Len()))
-	sender, receiver, err := s.rpc.Stream(context.Background(), newPlayers)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sender, receiver, err := s.rpc.Stream(ctx, newPlayers)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +190,10 @@ func (p *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 	}
 
 	players := p.players.Take(mino.RangeFilter(0, p.players.Len()))
-	sender, receiver, err := p.rpc.Stream(context.Background(), players)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sender, receiver, err := p.rpc.Stream(ctx, players)
 	if err != nil {
 		return nil, nil
 	}
@@ -208,7 +214,7 @@ func (p *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 	pubShares := make([]*share.PubShare, len(addrs))
 
 	for i := 0; i < len(addrs); i++ {
-		from, message, err := receiver.Recv(context.Background())
+		from, message, err := receiver.Recv(ctx)
 		if err != nil {
 			return []byte{}, xerrors.Errorf("failed to receive from '%s': %v",
 				from, err)

@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/minogrpc/routing"
@@ -39,6 +40,7 @@ type overlayServer struct {
 	overlay
 
 	handlers map[string]mino.Handler
+	closer   *sync.WaitGroup
 }
 
 // Call is the implementation of the overlay.Call proto definition
@@ -92,6 +94,9 @@ func (o overlayServer) Call(ctx context.Context, msg *Message) (*Message, error)
 }
 
 func (o overlayServer) Relay(stream Overlay_RelayServer) error {
+	o.closer.Add(1)
+	defer o.closer.Done()
+
 	// We fetch the uri that identifies the handler in the handlers map with the
 	// grpc metadata api. Using context.Value won't work.
 	ctx := stream.Context()
@@ -126,7 +131,9 @@ func (o overlayServer) Relay(stream Overlay_RelayServer) error {
 		return err
 	}
 
-	sender, receiver, err := o.setupRelays(headers, o.me, rting)
+	relayCtx := metadata.NewOutgoingContext(ctx, headers)
+
+	sender, receiver, err := o.setupRelays(relayCtx, o.me, rting)
 	if err != nil {
 		return xerrors.Errorf("couldn't setup relays: %v", err)
 	}
@@ -191,7 +198,9 @@ func (o overlay) GetCertificate() *tls.Certificate {
 	return cert.(*tls.Certificate)
 }
 
-func (o overlay) setupRelays(hd metadata.MD, senderAddr mino.Address, rting routing.Routing) (sender, receiver, error) {
+func (o overlay) setupRelays(ctx context.Context,
+	senderAddr mino.Address, rting routing.Routing) (sender, receiver, error) {
+
 	receiver := receiver{
 		addressFactory: o.routingFactory.GetAddressFactory(),
 		encoder:        o.encoder,
@@ -211,7 +220,12 @@ func (o overlay) setupRelays(hd metadata.MD, senderAddr mino.Address, rting rout
 	}
 
 	for _, link := range rting.GetDirectLinks(senderAddr) {
-		err := o.setupRelay(link, &sender, &receiver, hd, rting)
+		fabric.Logger.Trace().
+			Str("addr", o.me.String()).
+			Str("to", link.String()).
+			Msg("open relay")
+
+		err := o.setupRelay(ctx, link, &sender, &receiver, rting)
 		if err != nil {
 			return sender, receiver, xerrors.Errorf("couldn't setup relay to %v: %v", link, err)
 		}
@@ -220,15 +234,15 @@ func (o overlay) setupRelays(hd metadata.MD, senderAddr mino.Address, rting rout
 	return sender, receiver, nil
 }
 
-func (o overlay) setupRelay(relay mino.Address, sender *sender, receiver *receiver, hd metadata.MD, rting routing.Routing) error {
+func (o overlay) setupRelay(ctx context.Context, relay mino.Address,
+	sender *sender, receiver *receiver, rting routing.Routing) error {
+
 	conn, err := o.connFactory.FromAddress(relay)
 	if err != nil {
 		return xerrors.Errorf("couldn't decode relay address: %v", err)
 	}
 
 	cl := NewOverlayClient(conn)
-
-	ctx := metadata.NewOutgoingContext(context.Background(), hd)
 
 	client, err := cl.Relay(ctx)
 	if err != nil {
@@ -240,7 +254,10 @@ func (o overlay) setupRelay(relay mino.Address, sender *sender, receiver *receiv
 		return err
 	}
 
-	client.Send(&Envelope{Message: &Message{Payload: rtingAny}})
+	err = client.Send(&Envelope{Message: &Message{Payload: rtingAny}})
+	if err != nil {
+		return err
+	}
 
 	o.setupStream(client, sender, receiver, relay)
 
@@ -254,7 +271,11 @@ func (o overlay) setupStream(stream relayer, sender *sender, receiver *receiver,
 
 	go func() {
 		for {
-			md := <-ch
+			md, more := <-ch
+			if !more {
+				return
+			}
+
 			err := stream.Send(md.Envelope)
 			if err == io.EOF {
 				return
@@ -270,6 +291,8 @@ func (o overlay) setupStream(stream relayer, sender *sender, receiver *receiver,
 
 	// Relay listener for that connection.
 	go func() {
+		defer close(ch)
+
 		for {
 			envelope, err := stream.Recv()
 			if err == io.EOF {

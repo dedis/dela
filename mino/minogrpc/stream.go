@@ -124,7 +124,7 @@ func (s sender) sendEnvelope(envelope *Envelope, errs chan error) {
 
 // Queue is an interface to queue messages.
 type Queue interface {
-	Pop() *Message
+	Channel() <-chan *Message
 	Push(*Message)
 }
 
@@ -132,28 +132,18 @@ type Queue interface {
 // message will never hang.
 type NonBlockingQueue struct {
 	sync.Mutex
-	buffer []*Message
-	ch     chan *Message
+	buffer  []*Message
+	running bool
+	ch      chan *Message
 }
 
-// Pop implements minogrpc.Queue. It returns the oldest message of the queue or
-// wait for the next one.
-func (q *NonBlockingQueue) Pop() *Message {
-	q.Lock()
-
-	if len(q.buffer) > 0 {
-		res := q.buffer[0]
-		q.buffer = q.buffer[1:]
-		q.Unlock()
-		return res
-	}
-
-	q.Unlock()
-
-	return <-q.ch
+// Channel implements minogrpc.Queue. It returns the message channel.
+func (q *NonBlockingQueue) Channel() <-chan *Message {
+	return q.ch
 }
 
-// Push implements minogrpc.Queue. It appends the message to the queue.
+// Push implements minogrpc.Queue. It appends the message to the queue without
+// blocking.
 func (q *NonBlockingQueue) Push(msg *Message) {
 	select {
 	case q.ch <- msg:
@@ -161,7 +151,30 @@ func (q *NonBlockingQueue) Push(msg *Message) {
 	default:
 		q.Lock()
 		q.buffer = append(q.buffer, msg)
+
+		if !q.running {
+			q.running = true
+			go q.pushAndWait()
+		}
 		q.Unlock()
+	}
+}
+
+func (q *NonBlockingQueue) pushAndWait() {
+	for {
+		q.Lock()
+		if len(q.buffer) == 0 {
+			q.running = false
+			q.Unlock()
+			return
+		}
+
+		msg := q.buffer[0]
+		q.buffer = q.buffer[1:]
+		q.Unlock()
+
+		// Wait for the channel to be available to writings.
+		q.ch <- msg
 	}
 }
 
@@ -177,8 +190,15 @@ func (r receiver) appendMessage(msg *Message) {
 	r.queue.Push(msg)
 }
 
-func (r receiver) Recv(context.Context) (mino.Address, proto.Message, error) {
-	msg := r.queue.Pop()
+func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error) {
+	var msg *Message
+	select {
+	case msg = <-r.queue.Channel():
+	case err := <-r.errs:
+		return nil, nil, err
+	case <-ctx.Done():
+		return nil, nil, ctx.Err()
+	}
 
 	payload, err := r.encoder.UnmarshalDynamicAny(msg.GetPayload())
 	if err != nil {

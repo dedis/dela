@@ -103,7 +103,7 @@ func TestRPC_Failures_Stream(t *testing.T) {
 	err = testWait(t, errs, nil)
 	require.EqualError(t, err, "couldn't marshal message: message is nil")
 
-	_, in, err = rpc.Stream(ctx, mino.NewAddresses(fake.NewAddress(0)))
+	_, _, err = rpc.Stream(ctx, mino.NewAddresses(fake.NewAddress(0)))
 	require.EqualError(t, err,
 		"couldn't find peer: invalid address type 'fake.Address'")
 }
