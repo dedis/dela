@@ -10,6 +10,7 @@ import (
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/minogrpc/routing"
+	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 )
 
@@ -44,10 +45,21 @@ func TestRPC_Stream(t *testing.T) {
 		},
 	}
 
-	out, in := rpc.Stream(context.Background(), mino.NewAddresses(addrs...))
+	out, in, err := rpc.Stream(context.Background(), mino.NewAddresses(addrs...))
+	require.NoError(t, err)
 
 	out.Send(&empty.Empty{}, newRootAddress())
 	in.Recv(context.Background())
+
+	rpc.overlay.routingFactory = badRtingFactory{}
+	_, _, err = rpc.Stream(context.Background(), mino.NewAddresses())
+	require.EqualError(t, err, "couldn't generate routing: oops")
+
+	rpc.overlay.routingFactory = routing.NewTreeRoutingFactory(1, AddressFactory{})
+	rpc.overlay.connFactory = fakeConnFactory{err: xerrors.New("oops")}
+	_, _, err = rpc.Stream(context.Background(), mino.NewAddresses())
+	require.EqualError(t, err,
+		"couldn't setup relay: couldn't decode relay address: oops")
 }
 
 // -----------------------------------------------------------------------------
@@ -101,8 +113,17 @@ func (conn fakeConnection) NewStream(context.Context, *grpc.StreamDesc, string,
 
 type fakeConnFactory struct {
 	ConnectionFactory
+	err error
 }
 
 func (f fakeConnFactory) FromAddress(mino.Address) (grpc.ClientConnInterface, error) {
-	return fakeConnection{}, nil
+	return fakeConnection{}, f.err
+}
+
+type badRtingFactory struct {
+	routing.Factory
+}
+
+func (f badRtingFactory) FromIterator(mino.Address, mino.AddressIterator) (routing.Routing, error) {
+	return nil, xerrors.New("oops")
 }

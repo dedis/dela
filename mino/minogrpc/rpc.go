@@ -73,13 +73,13 @@ func (rpc *RPC) Call(ctx context.Context, req proto.Message,
 
 // Stream implements mino.RPC. TODO: errors
 func (rpc RPC) Stream(ctx context.Context,
-	players mino.Players) (in mino.Sender, out mino.Receiver) {
+	players mino.Players) (mino.Sender, mino.Receiver, error) {
 
 	root := newRootAddress()
 
 	rting, err := rpc.overlay.routingFactory.FromIterator(rpc.overlay.me, players.AddressIterator())
 	if err != nil {
-		panic(err)
+		return nil, nil, xerrors.Errorf("couldn't generate routing: %v", err)
 	}
 
 	header := metadata.New(map[string]string{headerURIKey: rpc.uri})
@@ -100,7 +100,7 @@ func (rpc RPC) Stream(ctx context.Context,
 		me:             root,
 		addressFactory: AddressFactory{},
 		gateway:        gateway,
-		clients:        map[mino.Address]chan *Envelope{},
+		clients:        map[mino.Address]chan OutContext{},
 		receiver:       &receiver,
 		traffic:        rpc.overlay.traffic,
 	}
@@ -109,10 +109,10 @@ func (rpc RPC) Stream(ctx context.Context,
 	// and it will relay the messages by this gateway by default. The entry
 	// point of the routing will have the orchestrator stream opens which will
 	// allow the messages to be routed back to the orchestrator.
-	err = rpc.overlay.setupRelay(gateway, &sender, header, rting)
+	err = rpc.overlay.setupRelay(gateway, &sender, &receiver, header, rting)
 	if err != nil {
-		panic(err)
+		return nil, nil, xerrors.Errorf("couldn't setup relay: %v", err)
 	}
 
-	return sender, receiver
+	return sender, receiver, nil
 }

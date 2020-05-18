@@ -84,7 +84,7 @@ type RPC interface {
 
 	// Stream is a persistent request that will be closed only when the
 	// orchestrator is done or an error occured.
-	Stream(ctx context.Context, players Players) (in Sender, out Receiver)
+	Stream(ctx context.Context, players Players) (Sender, Receiver, error)
 }
 
 // Handler is the interface to implement to create a public endpoint.

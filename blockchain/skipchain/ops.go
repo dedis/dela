@@ -114,14 +114,17 @@ func (ops *operations) catchUp(target SkipBlock, addr mino.Address) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	sender, rcver := ops.rpc.Stream(ctx, mino.NewAddresses(addr))
+	sender, rcver, err := ops.rpc.Stream(ctx, mino.NewAddresses(addr))
+	if err != nil {
+		return xerrors.Errorf("couldn't open stream: %v", err)
+	}
 
 	req := &BlockRequest{
 		From: from,
 		To:   target.GetIndex() - 1,
 	}
 
-	err := <-sender.Send(req, addr)
+	err = <-sender.Send(req, addr)
 	if err != nil {
 		return xerrors.Errorf("couldn't send block request: %v", err)
 	}

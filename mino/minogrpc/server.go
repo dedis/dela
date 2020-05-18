@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/minogrpc/routing"
@@ -132,7 +131,7 @@ func (o overlayServer) Relay(stream Overlay_RelayServer) error {
 		return xerrors.Errorf("couldn't setup relays: %v", err)
 	}
 
-	o.setupStream(stream, &sender, nil)
+	o.setupStream(stream, &sender, &receiver, nil)
 
 	err = handler.Stream(sender, receiver)
 	if err != nil {
@@ -206,13 +205,13 @@ func (o overlay) setupRelays(hd metadata.MD, senderAddr mino.Address, rting rout
 		me:             senderAddr,
 		addressFactory: AddressFactory{},
 		rting:          rting,
-		clients:        map[mino.Address]chan *Envelope{},
+		clients:        map[mino.Address]chan OutContext{},
 		receiver:       &receiver,
 		traffic:        o.traffic,
 	}
 
 	for _, link := range rting.GetDirectLinks(senderAddr) {
-		err := o.setupRelay(link, &sender, hd, rting)
+		err := o.setupRelay(link, &sender, &receiver, hd, rting)
 		if err != nil {
 			return sender, receiver, xerrors.Errorf("couldn't setup relay to %v: %v", link, err)
 		}
@@ -221,10 +220,10 @@ func (o overlay) setupRelays(hd metadata.MD, senderAddr mino.Address, rting rout
 	return sender, receiver, nil
 }
 
-func (o overlay) setupRelay(relay mino.Address, sender *sender, hd metadata.MD, rting routing.Routing) error {
+func (o overlay) setupRelay(relay mino.Address, sender *sender, receiver *receiver, hd metadata.MD, rting routing.Routing) error {
 	conn, err := o.connFactory.FromAddress(relay)
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't decode relay address: %v", err)
 	}
 
 	cl := NewOverlayClient(conn)
@@ -243,28 +242,29 @@ func (o overlay) setupRelay(relay mino.Address, sender *sender, hd metadata.MD, 
 
 	client.Send(&Envelope{Message: &Message{Payload: rtingAny}})
 
-	o.setupStream(client, sender, relay)
+	o.setupStream(client, sender, receiver, relay)
 
 	return nil
 }
 
-func (o overlay) setupStream(stream relayer, sender *sender, addr mino.Address) {
+func (o overlay) setupStream(stream relayer, sender *sender, receiver *receiver, addr mino.Address) {
 	// Relay sender for that connection.
-	ch := make(chan *Envelope)
+	ch := make(chan OutContext)
 	sender.clients[addr] = ch
 
 	go func() {
 		for {
-			env := <-ch
-			err := stream.Send(env)
+			md := <-ch
+			err := stream.Send(md.Envelope)
 			if err == io.EOF {
 				return
 			}
 
 			if err != nil {
-				fabric.Logger.Err(err).Send()
-				return
+				md.Done <- xerrors.Errorf("couldn't send: %v", err)
 			}
+
+			close(md.Done)
 		}
 	}()
 
@@ -277,10 +277,11 @@ func (o overlay) setupStream(stream relayer, sender *sender, addr mino.Address) 
 			}
 
 			if err != nil {
-				fabric.Logger.Err(err).Send()
+				receiver.errs <- xerrors.Errorf("couldn't receive on stream: %v", err)
 				return
 			}
 
+			// TODO: do something with errors when relaying message.
 			sender.sendEnvelope(envelope, nil)
 		}
 	}()

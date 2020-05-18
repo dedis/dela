@@ -58,7 +58,10 @@ func (s *Pedersen) Listen(players mino.Players, pubKeys []kyber.Point,
 	}
 
 	newPlayers := players.Take(mino.RangeFilter(0, players.Len()))
-	sender, receiver := s.rpc.Stream(context.Background(), newPlayers)
+	sender, receiver, err := s.rpc.Stream(context.Background(), newPlayers)
+	if err != nil {
+		return nil, err
+	}
 
 	addrs := make([]mino.Address, 0, players.Len())
 	for players.AddressIterator().HasNext() {
@@ -184,7 +187,10 @@ func (p *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 	}
 
 	players := p.players.Take(mino.RangeFilter(0, p.players.Len()))
-	sender, receiver := p.rpc.Stream(context.Background(), players)
+	sender, receiver, err := p.rpc.Stream(context.Background(), players)
+	if err != nil {
+		return nil, nil
+	}
 
 	players = p.players.Take(mino.RangeFilter(0, p.players.Len()))
 	addrs := make([]mino.Address, 0, players.Len())

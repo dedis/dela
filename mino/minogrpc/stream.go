@@ -11,11 +11,17 @@ import (
 	"golang.org/x/xerrors"
 )
 
+// OutContext is wrapper for an envelope and the error channel.
+type OutContext struct {
+	Envelope *Envelope
+	Done     chan error
+}
+
 type sender struct {
 	encoder        encoding.ProtoMarshaler
 	me             mino.Address
 	addressFactory mino.AddressFactory
-	clients        map[mino.Address]chan *Envelope
+	clients        map[mino.Address]chan OutContext
 	receiver       *receiver
 	traffic        *traffic
 
@@ -105,7 +111,14 @@ func (s sender) sendEnvelope(envelope *Envelope, errs chan error) {
 
 		s.traffic.logSend(s.me, relay, env, "")
 
-		ch <- env
+		done := make(chan error, 1)
+		ch <- OutContext{Envelope: env, Done: done}
+
+		// Wait for an potential error from grpc when sending the envelope.
+		err := <-done
+		if err != nil {
+			errs <- xerrors.Errorf("couldn't send to relay: %v", err)
+		}
 	}
 }
 

@@ -35,7 +35,10 @@ func (a thresholdActor) Sign(ctx context.Context,
 	innerCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	sender, rcvr := a.rpc.Stream(innerCtx, ca)
+	sender, rcvr, err := a.rpc.Stream(innerCtx, ca)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't open stream: %v", err)
+	}
 
 	req, err := a.encoder.Pack(msg)
 	if err != nil {
