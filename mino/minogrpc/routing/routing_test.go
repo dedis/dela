@@ -5,11 +5,46 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/internal/testing/fake"
 	"go.dedis.ch/fabric/mino"
 )
 
-func TestNewTreeRouting(t *testing.T) {
+func TestTreeRoutingFactory_GetAddressFactory(t *testing.T) {
+	factory := NewTreeRoutingFactory(3, fake.AddressFactory{})
+	require.NotNil(t, factory.GetAddressFactory())
+}
+
+func TestTreeRoutingFactory_FromIterator(t *testing.T) {
+	factory := NewTreeRoutingFactory(3, fake.AddressFactory{})
+
+	authority := fake.NewAuthority(10, fake.NewSigner)
+
+	routing, err := factory.FromIterator(fake.NewAddress(0), authority.AddressIterator())
+	require.NoError(t, err)
+	require.NotNil(t, routing)
+	// Root is in the iterator so we expect the length of the iterator.
+	require.Len(t, routing.(*TreeRouting).routingNodes, 10)
+
+	iter := fake.NewAddressIterator([]mino.Address{fake.NewBadAddress()})
+	_, err = factory.FromIterator(fake.NewAddress(1), iter)
+	require.EqualError(t, err, "failed to marshal addr 'fake.Address[0]': fake error")
+}
+
+func TestTreeRoutingFactory_FromAny(t *testing.T) {
+	factory := NewTreeRoutingFactory(3, fake.AddressFactory{})
+
+	rting, err := factory.FromIterator(fake.NewAddress(0), fake.NewAddressIterator(nil))
+	require.NoError(t, err)
+	rtingAny, err := encoding.NewProtoEncoder().PackAny(rting)
+	require.NoError(t, err)
+
+	res, err := factory.FromAny(rtingAny)
+	require.NoError(t, err)
+	require.Equal(t, rting, res)
+}
+
+func TestTreeRouting_GetRoute(t *testing.T) {
 	h := 3
 
 	root := fake.NewAddress(-1)
@@ -24,7 +59,7 @@ func TestNewTreeRouting(t *testing.T) {
 
 	iterator := fake.NewAddressIterator(addrs)
 
-	routing, err := factory.FromIterator(root, &iterator)
+	routing, err := factory.FromIterator(root, iterator)
 	require.NoError(t, err)
 
 	treeRouting, ok := routing.(*TreeRouting)

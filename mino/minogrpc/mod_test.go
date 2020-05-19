@@ -7,11 +7,13 @@ import (
 	"github.com/stretchr/testify/require"
 	internal "go.dedis.ch/fabric/internal/testing"
 	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/fabric/mino/minogrpc/routing"
 )
 
 func TestMessages(t *testing.T) {
 	messages := []proto.Message{
 		&Envelope{},
+		&Message{},
 	}
 
 	for _, m := range messages {
@@ -20,7 +22,7 @@ func TestMessages(t *testing.T) {
 }
 
 func TestMinogrpc_New(t *testing.T) {
-	m, err := NewMinogrpc("127.0.0.1", 3333, nil)
+	m, err := NewMinogrpc("127.0.0.1", 3333, routing.NewTreeRoutingFactory(1, AddressFactory{}))
 	require.NoError(t, err)
 
 	require.Equal(t, "127.0.0.1:3333", m.GetAddress().String())
@@ -33,6 +35,8 @@ func TestMinogrpc_New(t *testing.T) {
 	_, err = NewMinogrpc("\\", 0, nil)
 	require.EqualError(t, err,
 		"couldn't parse url: parse \"//\\\\:0\": invalid character \"\\\\\" in host name")
+
+	m.GracefulClose()
 }
 
 func TestMinogrpc_MakeNamespace(t *testing.T) {

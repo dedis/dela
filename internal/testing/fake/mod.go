@@ -98,8 +98,8 @@ type AddressIterator struct {
 }
 
 // NewAddressIterator returns a new address iterator
-func NewAddressIterator(addrs []mino.Address) AddressIterator {
-	return AddressIterator{
+func NewAddressIterator(addrs []mino.Address) *AddressIterator {
+	return &AddressIterator{
 		addrs: addrs,
 	}
 }

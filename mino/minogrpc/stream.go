@@ -53,9 +53,16 @@ func (s sender) Send(msg proto.Message, addrs ...mino.Address) <-chan error {
 		to[i] = buffer
 	}
 
+	from, err := s.me.MarshalText()
+	if err != nil {
+		errs <- xerrors.Errorf("couldn't marshal source address: %v", err)
+		return errs
+	}
+
 	env := &Envelope{
 		To: to,
 		Message: &Message{
+			From:    from,
 			Payload: msgAny,
 		},
 	}
@@ -81,13 +88,14 @@ func (s sender) sendEnvelope(envelope *Envelope, errs chan error) {
 		addr := s.addressFactory.FromText(to)
 
 		if s.me.Equal(addr) {
-			s.traffic.logRcv(nil, s.me, envelope, "")
-
 			s.receiver.appendMessage(envelope.GetMessage())
 		} else {
 			var relay mino.Address
 			if s.rting != nil {
 				relay = s.rting.GetRoute(s.me, addr)
+				if relay == nil {
+					relay = s.rting.GetParent(s.me)
+				}
 			} else if s.gateway != nil {
 				relay = s.gateway
 			}
@@ -109,8 +117,6 @@ func (s sender) sendEnvelope(envelope *Envelope, errs chan error) {
 			continue
 		}
 
-		s.traffic.logSend(s.me, relay, env, "")
-
 		done := make(chan error, 1)
 		ch <- OutContext{Envelope: env, Done: done}
 
@@ -120,6 +126,38 @@ func (s sender) sendEnvelope(envelope *Envelope, errs chan error) {
 			errs <- xerrors.Errorf("couldn't send to relay: %v", err)
 		}
 	}
+}
+
+type receiver struct {
+	encoder        encoding.ProtoMarshaler
+	addressFactory mino.AddressFactory
+	errs           chan error
+	queue          Queue
+}
+
+func (r receiver) appendMessage(msg *Message) {
+	// This *must* be non-blocking to avoid the relay to stall.
+	r.queue.Push(msg)
+}
+
+func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error) {
+	var msg *Message
+	select {
+	case msg = <-r.queue.Channel():
+	case err := <-r.errs:
+		return nil, nil, err
+	case <-ctx.Done():
+		return nil, nil, ctx.Err()
+	}
+
+	payload, err := r.encoder.UnmarshalDynamicAny(msg.GetPayload())
+	if err != nil {
+		return nil, nil, err
+	}
+
+	from := r.addressFactory.FromText(msg.GetFrom())
+
+	return from, payload, nil
 }
 
 // Queue is an interface to queue messages.
@@ -135,6 +173,12 @@ type NonBlockingQueue struct {
 	buffer  []*Message
 	running bool
 	ch      chan *Message
+}
+
+func newNonBlockingQueue() *NonBlockingQueue {
+	return &NonBlockingQueue{
+		ch: make(chan *Message, 1),
+	}
 }
 
 // Channel implements minogrpc.Queue. It returns the message channel.
@@ -176,36 +220,4 @@ func (q *NonBlockingQueue) pushAndWait() {
 		// Wait for the channel to be available to writings.
 		q.ch <- msg
 	}
-}
-
-type receiver struct {
-	encoder        encoding.ProtoMarshaler
-	addressFactory mino.AddressFactory
-	errs           chan error
-	queue          Queue
-}
-
-func (r receiver) appendMessage(msg *Message) {
-	// This *must* be non-blocking to avoid the relay to stall.
-	r.queue.Push(msg)
-}
-
-func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error) {
-	var msg *Message
-	select {
-	case msg = <-r.queue.Channel():
-	case err := <-r.errs:
-		return nil, nil, err
-	case <-ctx.Done():
-		return nil, nil, ctx.Err()
-	}
-
-	payload, err := r.encoder.UnmarshalDynamicAny(msg.GetPayload())
-	if err != nil {
-		return nil, nil, err
-	}
-
-	from := r.addressFactory.FromText(msg.GetFrom())
-
-	return from, payload, nil
 }

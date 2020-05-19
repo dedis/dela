@@ -23,8 +23,7 @@ const _ = proto.ProtoPackageIsVersion3 // please upgrade the proto package
 
 type TreeRoutingProto struct {
 	Root []byte `protobuf:"bytes,1,opt,name=root,proto3" json:"root,omitempty"`
-	// Should be the MarshalText representation of each addr, without the root
-	// addresse
+	// Should be the MarshalText representation of each addr.
 	Addrs                [][]byte `protobuf:"bytes,2,rep,name=addrs,proto3" json:"addrs,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`

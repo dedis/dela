@@ -1,3 +1,0 @@
-# TODO
-
-- [ ] Test traffic.go

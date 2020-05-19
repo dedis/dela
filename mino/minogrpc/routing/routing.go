@@ -14,7 +14,6 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/any"
-	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
@@ -38,10 +37,16 @@ type Routing interface {
 	// GetRoot should return the initiator of the routing map so that every
 	// message with no route will be routed back to it.
 	GetRoot() mino.Address
+
+	// GetParent returns the address of the responsible for contacting the given
+	// address.
+	GetParent(addr mino.Address) mino.Address
+
 	// GetRoute should return the gateway address for a corresponding addresse.
 	// In a tree communication it is typically the address of the child that
 	// contains the "to" address in its sub-tree.
 	GetRoute(from, to mino.Address) mino.Address
+
 	// GetDirectLinks return the direct links of the elements. In a tree routing
 	// this is typically the children of the node.
 	GetDirectLinks(from mino.Address) []mino.Address
@@ -57,7 +62,7 @@ type TreeRouting struct {
 	routingNodes map[mino.Address]*treeNode
 }
 
-// TreeRoutingFactory defines the factory for tree routing
+// TreeRoutingFactory defines the factory for tree routing.
 type TreeRoutingFactory struct {
 	height      int
 	addrFactory mino.AddressFactory
@@ -86,6 +91,10 @@ func (t TreeRoutingFactory) FromIterator(root mino.Address,
 	for iterator.HasNext() {
 		addr := iterator.GetNext()
 
+		if addr.Equal(root) {
+			continue
+		}
+
 		addrBuf, err := addr.MarshalText()
 		if err != nil {
 			return nil, xerrors.Errorf("failed to marshal addr '%s': %v", addr, err)
@@ -106,7 +115,6 @@ func (t TreeRoutingFactory) FromIterator(root mino.Address,
 // message encoded as any. It must not contain the root address, which is the
 // case if the Pack() method has been used.
 func (t TreeRoutingFactory) FromAny(m *any.Any) (Routing, error) {
-
 	msg := &TreeRoutingProto{}
 	err := ptypes.UnmarshalAny(m, msg)
 	if err != nil {
@@ -132,7 +140,7 @@ func (t TreeRoutingFactory) fromAddrBuf(root mino.Address, addrsBuf addrsBuf) (R
 	for _, addr := range addrsBuf {
 		_, err := hash.Write(addr)
 		if err != nil {
-			fabric.Logger.Fatal().Msgf("failed to write hash: %v", err)
+			return nil, xerrors.Errorf("failed to write hash: %v", err)
 		}
 	}
 
@@ -181,10 +189,11 @@ func (t TreeRoutingFactory) fromAddrBuf(root mino.Address, addrsBuf addrsBuf) (R
 	}, nil
 }
 
-// GetRoute returns the node that is able to relay the message (or correspond to
-// the address). We are able to easily know the route because each address has
-// an index corresponding to its node index on the tree that would comme from a
-// depth-first pre-order enumeration of the nodes. For example:
+// GetRoute implements routing.Routing. It returns the node that is able to
+// relay the message (or correspond to the address). We are able to easily know
+// the route because each address has an index corresponding to its node index
+// on the tree that would comme from a depth-first pre-order enumeration of the
+// nodes. For example:
 //         root
 //      /    |    \
 //     0     3     6
@@ -196,8 +205,6 @@ func (t TreeRoutingFactory) fromAddrBuf(root mino.Address, addrsBuf addrsBuf) (R
 // contact in order to reach node 4, it then checks the "index" and "indexLast"
 // for all its children, an see that for its child 3, 3 >= 4 <= 5, so the root
 // will send its message to node 3.
-//
-// - implements Routing
 func (t TreeRouting) GetRoute(from, to mino.Address) mino.Address {
 	fromNode, ok := t.routingNodes[from]
 	if !ok {
@@ -227,9 +234,29 @@ func (t TreeRouting) GetRoot() mino.Address {
 	return t.Root.Addr
 }
 
-// GetDirectLinks returns the children
-//
-// - implements Routing
+// GetParent implements routing.Routing. It returns the parent node of the given
+// address if it exists, otherwise it returns nil.
+func (t TreeRouting) GetParent(addr mino.Address) mino.Address {
+	if t.Root.Addr.Equal(addr) {
+		return nil
+	}
+
+	parent := t.Root.Addr
+	for {
+		next := t.GetRoute(parent, addr)
+		if next == nil {
+			return nil
+		}
+
+		if next.Equal(addr) {
+			return parent
+		}
+
+		parent = next
+	}
+}
+
+// GetDirectLinks implements routing.Routing.
 func (t TreeRouting) GetDirectLinks(from mino.Address) []mino.Address {
 	fromNode, ok := t.routingNodes[from]
 	if !ok {
@@ -244,30 +271,23 @@ func (t TreeRouting) GetDirectLinks(from mino.Address) []mino.Address {
 	return res
 }
 
-// Pack returns the tree routing proto, which is the list of addresses without
-// the root.
-//
-// - implements Routing
+// Pack implements encoding.Packable. It returns the tree routing proto, which
+// is the list of addresses without the root.
 func (t TreeRouting) Pack(encoder encoding.ProtoMarshaler) (proto.Message, error) {
-	addrs := make([][]byte, 0, len(t.routingNodes)-1)
+	addrs := make([][]byte, 0, len(t.routingNodes))
+	var root []byte
 
 	for _, node := range t.routingNodes {
-		if node == t.Root {
-			// the root is specified in the factory so we don't keep it
-			continue
-		}
-
 		addrBuf, err := node.Addr.MarshalText()
 		if err != nil {
 			return nil, xerrors.Errorf("failed to marshal address: %v", err)
 		}
 
-		addrs = append(addrs, addrBuf)
-	}
-
-	root, err := t.Root.Addr.MarshalText()
-	if err != nil {
-		return nil, err
+		if node == t.Root {
+			root = addrBuf
+		} else {
+			addrs = append(addrs, addrBuf)
+		}
 	}
 
 	msg := &TreeRoutingProto{
@@ -287,7 +307,6 @@ func (t TreeRouting) Display(out io.Writer) {
 // buildTree builds the newtwork tree based on the list of addresses. The first
 // call should have an index of 0.
 func buildTree(addr mino.Address, addrs []mino.Address, h, index int) *treeNode {
-
 	// the height can not be higher than the total number of nodes, ie. if there
 	// are 10 nodes, then the maximum height we can have is 9. Here len(addrs)
 	// represents the number of nodes-1 because the root addr is not included.

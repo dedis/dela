@@ -8,8 +8,10 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"io"
+	"io/ioutil"
 	"math/big"
 	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -52,19 +54,15 @@ func (o overlayServer) Call(ctx context.Context, msg *Message) (*Message, error)
 		return nil, xerrors.Errorf("header not found in provided context")
 	}
 
-	apiURI, ok := headers[headerURIKey]
-	if !ok {
-		return nil, xerrors.Errorf("%s not found in context header", headerURIKey)
-	}
-	if len(apiURI) != 1 {
-		return nil, xerrors.Errorf("unexpected number of elements in %s "+
-			"header. Expected 1, found %d", headerURIKey, len(apiURI))
+	apiURI := headers[headerURIKey]
+	if len(apiURI) == 0 {
+		return nil, xerrors.Errorf("'%s' not found in context header", headerURIKey)
 	}
 
+	// If several are provided, only the first one is taken in account.
 	handler, ok := o.handlers[apiURI[0]]
 	if !ok {
-		return nil, xerrors.Errorf("didn't find the '%s' handler in the map "+
-			"of handlers, did you register it?", apiURI[0])
+		return nil, xerrors.Errorf("handler '%s' is not registered", apiURI[0])
 	}
 
 	message, err := o.encoder.UnmarshalDynamicAny(msg.GetPayload())
@@ -81,8 +79,7 @@ func (o overlayServer) Call(ctx context.Context, msg *Message) (*Message, error)
 
 	result, err := handler.Process(req)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to call the Process function from "+
-			"the handler using the provided message: %v", err)
+		return nil, xerrors.Errorf("handler failed to process: %v", err)
 	}
 
 	anyResult, err := o.encoder.MarshalAny(result)
@@ -99,50 +96,36 @@ func (o overlayServer) Relay(stream Overlay_RelayServer) error {
 
 	// We fetch the uri that identifies the handler in the handlers map with the
 	// grpc metadata api. Using context.Value won't work.
-	ctx := stream.Context()
-	headers, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return xerrors.Errorf("header not found in provided context")
-	}
+	uri := uriFromContext(stream.Context())
 
-	apiURI, ok := headers[headerURIKey]
+	handler, ok := o.handlers[uri]
 	if !ok {
-		return xerrors.Errorf("%s not found in context header", headerURIKey)
-	}
-	if len(apiURI) != 1 {
-		return xerrors.Errorf("unexpected number of elements in apiuri "+
-			"header. Expected 1, found %d", len(apiURI))
-	}
-
-	handler, ok := o.handlers[apiURI[0]]
-	if !ok {
-		return xerrors.Errorf("didn't find the '%s' handler in the map "+
-			"of handlers, did you register it?", apiURI[0])
+		return xerrors.Errorf("handler '%s' is not registered", uri)
 	}
 
 	// Listen on the first message, which should be the routing infos
 	msg, err := stream.Recv()
 	if err != nil {
-		return xerrors.Errorf("failed to receive first routing message: %v", err)
+		return xerrors.Errorf("failed to receive routing message: %v", err)
 	}
 
 	rting, err := o.routingFactory.FromAny(msg.GetMessage().GetPayload())
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't decode routing: %v", err)
 	}
 
-	relayCtx := metadata.NewOutgoingContext(ctx, headers)
+	relayCtx := metadata.NewOutgoingContext(stream.Context(), metadata.Pairs(headerURIKey, uri))
 
 	sender, receiver, err := o.setupRelays(relayCtx, o.me, rting)
 	if err != nil {
 		return xerrors.Errorf("couldn't setup relays: %v", err)
 	}
 
-	o.setupStream(stream, &sender, &receiver, nil)
+	o.setupStream(stream, &sender, &receiver, rting.GetParent(o.me))
 
 	err = handler.Stream(sender, receiver)
 	if err != nil {
-		return err
+		return xerrors.Errorf("handler failed to process: %v", err)
 	}
 
 	// The participant is done but waits for the protocol to end.
@@ -152,6 +135,7 @@ func (o overlayServer) Relay(stream Overlay_RelayServer) error {
 }
 
 type relayer interface {
+	Context() context.Context
 	Send(*Envelope) error
 	Recv() (*Envelope, error)
 }
@@ -183,7 +167,13 @@ func newOverlay(me mino.Address, rf routing.Factory) (overlay, error) {
 			certs: certs,
 			me:    me,
 		},
-		traffic: newTraffic(me.String()),
+	}
+
+	switch os.Getenv("MINO_TRAFFIC") {
+	case "log":
+		o.traffic = newTraffic(me, rf.GetAddressFactory(), ioutil.Discard)
+	case "print":
+		o.traffic = newTraffic(me, rf.GetAddressFactory(), os.Stdout)
 	}
 
 	return o, nil
@@ -205,9 +195,7 @@ func (o overlay) setupRelays(ctx context.Context,
 		addressFactory: o.routingFactory.GetAddressFactory(),
 		encoder:        o.encoder,
 		errs:           make(chan error, 1),
-		queue: &NonBlockingQueue{
-			ch: make(chan *Message, 1),
-		},
+		queue:          newNonBlockingQueue(),
 	}
 	sender := sender{
 		encoder:        o.encoder,
@@ -278,13 +266,17 @@ func (o overlay) setupStream(stream relayer, sender *sender, receiver *receiver,
 
 			err := stream.Send(md.Envelope)
 			if err == io.EOF {
+				close(md.Done)
 				return
 			}
 
 			if err != nil {
 				md.Done <- xerrors.Errorf("couldn't send: %v", err)
+				close(md.Done)
+				return
 			}
 
+			o.traffic.logSend(stream.Context(), sender.me, addr, md.Envelope)
 			close(md.Done)
 		}
 	}()
@@ -304,7 +296,8 @@ func (o overlay) setupStream(stream relayer, sender *sender, receiver *receiver,
 				return
 			}
 
-			// TODO: do something with errors when relaying message.
+			o.traffic.logRcv(stream.Context(), addr, sender.me, envelope)
+
 			sender.sendEnvelope(envelope, nil)
 		}
 	}()
@@ -397,4 +390,18 @@ func (f DefaultConnectionFactory) FromAddress(addr mino.Address) (grpc.ClientCon
 	}
 
 	return conn, nil
+}
+
+func uriFromContext(ctx context.Context) string {
+	headers, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ""
+	}
+
+	apiURI := headers[headerURIKey]
+	if len(apiURI) == 0 {
+		return ""
+	}
+
+	return apiURI[0]
 }

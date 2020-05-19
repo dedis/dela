@@ -42,7 +42,7 @@ func (a rootAddress) MarshalText() ([]byte, error) {
 }
 
 func (a rootAddress) String() string {
-	return "Root"
+	return "Orchestrator"
 }
 
 // address implements mino.Address.

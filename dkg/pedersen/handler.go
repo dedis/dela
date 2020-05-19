@@ -2,7 +2,6 @@ package pedersen
 
 import (
 	"context"
-	fmt "fmt"
 	"sync"
 	"time"
 
@@ -239,7 +238,6 @@ func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 					"from %s: %v", h.me, from, err)
 			}
 			numReceivedDeals++
-			fmt.Printf("%v received %d/%d deals\n", h.me, numReceivedDeals, len(deals))
 
 		case *Response:
 			// 5. Processing responses

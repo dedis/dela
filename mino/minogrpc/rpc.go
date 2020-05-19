@@ -88,9 +88,7 @@ func (rpc RPC) Stream(ctx context.Context,
 		addressFactory: rpc.overlay.routingFactory.GetAddressFactory(),
 		encoder:        rpc.overlay.encoder,
 		errs:           make(chan error, 1),
-		queue: &NonBlockingQueue{
-			ch: make(chan *Message, 1),
-		},
+		queue:          newNonBlockingQueue(),
 	}
 
 	gateway := rting.GetRoot()

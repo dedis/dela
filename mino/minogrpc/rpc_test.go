@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/golang/protobuf/ptypes"
+	any "github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/encoding"
@@ -122,6 +123,10 @@ func (f fakeConnFactory) FromAddress(mino.Address) (grpc.ClientConnInterface, er
 
 type badRtingFactory struct {
 	routing.Factory
+}
+
+func (f badRtingFactory) FromAny(*any.Any) (routing.Routing, error) {
+	return nil, xerrors.New("oops")
 }
 
 func (f badRtingFactory) FromIterator(mino.Address, mino.AddressIterator) (routing.Routing, error) {
