@@ -170,6 +170,7 @@ type Queue interface {
 // message will never hang.
 type NonBlockingQueue struct {
 	sync.Mutex
+	working sync.WaitGroup
 	buffer  []*Message
 	running bool
 	ch      chan *Message
@@ -205,6 +206,9 @@ func (q *NonBlockingQueue) Push(msg *Message) {
 }
 
 func (q *NonBlockingQueue) pushAndWait() {
+	q.working.Add(1)
+	defer q.working.Done()
+
 	for {
 		q.Lock()
 		if len(q.buffer) == 0 {

@@ -65,7 +65,7 @@ func TestIntegration_Basic_Call(t *testing.T) {
 
 	select {
 	case <-resps:
-	case <-time.After(1 * time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for closure")
 	}
 

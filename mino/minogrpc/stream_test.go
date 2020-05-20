@@ -2,7 +2,6 @@ package minogrpc
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -23,7 +22,7 @@ func TestNonBlockingQueue_Push(t *testing.T) {
 		require.Equal(t, []byte{byte(i)}, msg.GetFrom())
 	}
 
-	time.Sleep(10 * time.Millisecond)
+	queue.working.Wait()
 
 	require.False(t, queue.running)
 	require.Len(t, queue.buffer, 0)

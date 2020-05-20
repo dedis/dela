@@ -116,7 +116,8 @@ type Minogrpc struct {
 	closing   chan error
 }
 
-// NewMinogrpc sets up the grpc and http servers. URL should
+// NewMinogrpc creates and starts a new instance. The path should be a
+// resolvable host.
 func NewMinogrpc(path string, port uint16, rf routing.Factory) (*Minogrpc, error) {
 	url, err := url.Parse(fmt.Sprintf("//%s:%d", path, port))
 	if err != nil {
