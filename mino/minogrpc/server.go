@@ -45,7 +45,8 @@ type overlayServer struct {
 	closer   *sync.WaitGroup
 }
 
-// Call is the implementation of the overlay.Call proto definition
+// Call implements minogrpc.OverlayClient. It processes the request with the
+// targeted handler if it exists, otherwise it returns an error.
 func (o overlayServer) Call(ctx context.Context, msg *Message) (*Message, error) {
 	// We fetch the uri that identifies the handler in the handlers map with the
 	// grpc metadata api. Using context.Value won't work.
@@ -90,6 +91,8 @@ func (o overlayServer) Call(ctx context.Context, msg *Message) (*Message, error)
 	return &Message{Payload: anyResult}, nil
 }
 
+// Relay implements minogrpc.OverlayClient. It opens streams according to the
+// routing and transmits the message according to their recipient.
 func (o overlayServer) Relay(stream Overlay_RelayServer) error {
 	o.closer.Add(1)
 	defer o.closer.Done()
@@ -179,13 +182,23 @@ func newOverlay(me mino.Address, rf routing.Factory) (overlay, error) {
 	return o, nil
 }
 
+// GetCertificate returns the certificate of the overlay.
 func (o overlay) GetCertificate() *tls.Certificate {
 	cert, found := o.certs.Load(o.me)
 	if !found {
-		return nil
+		// This should never and it will panic if it does as this will provoke
+		// several issues later on.
+		panic("certificate of the overlay must be populated")
 	}
 
 	return cert.(*tls.Certificate)
+}
+
+// AddCertificate populates the list of public know certificates of the server.
+func (o overlay) AddCertificate(addr mino.Address, cert *tls.Certificate) error {
+	o.certs.Store(addr, cert)
+
+	return nil
 }
 
 func (o overlay) setupRelays(ctx context.Context,
@@ -227,24 +240,24 @@ func (o overlay) setupRelay(ctx context.Context, relay mino.Address,
 
 	conn, err := o.connFactory.FromAddress(relay)
 	if err != nil {
-		return xerrors.Errorf("couldn't decode relay address: %v", err)
+		return xerrors.Errorf("couldn't open connection: %v", err)
 	}
 
 	cl := NewOverlayClient(conn)
 
 	client, err := cl.Relay(ctx)
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't open relay: %v", err)
 	}
 
 	rtingAny, err := sender.encoder.PackAny(rting)
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't pack routing: %v", err)
 	}
 
 	err = client.Send(&Envelope{Message: &Message{Payload: rtingAny}})
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't send routing: %v", err)
 	}
 
 	o.setupStream(client, sender, receiver, relay)
@@ -298,6 +311,7 @@ func (o overlay) setupStream(stream relayer, sender *sender, receiver *receiver,
 
 			o.traffic.logRcv(stream.Context(), addr, sender.me, envelope)
 
+			// TODO: do something with error
 			sender.sendEnvelope(envelope, nil)
 		}
 	}()
@@ -306,7 +320,7 @@ func (o overlay) setupStream(stream relayer, sender *sender, receiver *receiver,
 func makeCertificate() (*tls.Certificate, error) {
 	priv, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
 	if err != nil {
-		return nil, xerrors.Errorf("Couldn't generate the private key: %+v", err)
+		return nil, xerrors.Errorf("couldn't generate the private key: %+v", err)
 	}
 
 	tmpl := &x509.Certificate{
@@ -322,12 +336,12 @@ func makeCertificate() (*tls.Certificate, error) {
 
 	buf, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
 	if err != nil {
-		return nil, xerrors.Errorf("Couldn't create the certificate: %+v", err)
+		return nil, xerrors.Errorf("couldn't create the certificate: %+v", err)
 	}
 
 	cert, err := x509.ParseCertificate(buf)
 	if err != nil {
-		return nil, xerrors.Errorf("Couldn't parse the certificate: %+v", err)
+		return nil, xerrors.Errorf("couldn't parse the certificate: %+v", err)
 	}
 
 	return &tls.Certificate{
@@ -348,29 +362,36 @@ type DefaultConnectionFactory struct {
 	me    mino.Address
 }
 
-// FromAddress creates a gRPC connection from the server to the client.
+// FromAddress implements minogrpc.ConnectionFactory. It creates a gRPC
+// connection from the server to the client.
 func (f DefaultConnectionFactory) FromAddress(addr mino.Address) (grpc.ClientConnInterface, error) {
 	clientPubCertItf, found := f.certs.Load(addr)
 	if !found {
-		return nil, xerrors.Errorf("public certificate for '%v' not found in %v",
-			addr, f.certs)
+		return nil, xerrors.Errorf("certificate for '%v' not found", addr)
 	}
 
 	clientPubCert, ok := clientPubCertItf.(*tls.Certificate)
 	if !ok {
-		return nil, xerrors.Errorf("couldn't find server <%v> certificate", addr)
+		return nil, xerrors.Errorf("invalid certificate type '%T' for '%v'",
+			clientPubCertItf, addr)
 	}
 
 	pool := x509.NewCertPool()
 	pool.AddCert(clientPubCert.Leaf)
 
-	me, found := f.certs.Load(f.me)
+	meItf, found := f.certs.Load(f.me)
 	if !found {
-		return nil, xerrors.Errorf("couldn't find server <%v> certificate", f.me)
+		return nil, xerrors.Errorf("couldn't find server '%v' certificate", f.me)
+	}
+
+	me, ok := meItf.(*tls.Certificate)
+	if !ok {
+		return nil, xerrors.Errorf("invalid certificate type '%T' for '%v'",
+			meItf, f.me)
 	}
 
 	ta := credentials.NewTLS(&tls.Config{
-		Certificates: []tls.Certificate{*me.(*tls.Certificate)},
+		Certificates: []tls.Certificate{*me},
 		RootCAs:      pool,
 	})
 
@@ -380,13 +401,15 @@ func (f DefaultConnectionFactory) FromAddress(addr mino.Address) (grpc.ClientCon
 	}
 
 	// Connecting using TLS and the distant server certificate as the root.
-	conn, err := grpc.Dial(netAddr.host, grpc.WithTransportCredentials(ta),
+	conn, err := grpc.Dial(netAddr.GetDialAddress(),
+		grpc.WithTransportCredentials(ta),
 		grpc.WithConnectParams(grpc.ConnectParams{
 			Backoff:           backoff.DefaultConfig,
 			MinConnectTimeout: defaultMinConnectTimeout,
-		}))
+		}),
+	)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to create a dial connection: %v", err)
+		return nil, xerrors.Errorf("failed to dial: %v", err)
 	}
 
 	return conn, nil

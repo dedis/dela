@@ -2,6 +2,7 @@ package minogrpc
 
 import (
 	context "context"
+	"io"
 	"testing"
 
 	"github.com/golang/protobuf/ptypes"
@@ -60,7 +61,7 @@ func TestRPC_Stream(t *testing.T) {
 	rpc.overlay.connFactory = fakeConnFactory{err: xerrors.New("oops")}
 	_, _, err = rpc.Stream(context.Background(), mino.NewAddresses())
 	require.EqualError(t, err,
-		"couldn't setup relay: couldn't decode relay address: oops")
+		"couldn't setup relay: couldn't open connection: oops")
 }
 
 // -----------------------------------------------------------------------------
@@ -70,9 +71,14 @@ type fakeClientStream struct {
 	grpc.ClientStream
 	init *Envelope
 	ch   chan *Envelope
+	err  error
 }
 
 func (str *fakeClientStream) SendMsg(m interface{}) error {
+	if str.err != nil {
+		return str.err
+	}
+
 	if str.init == nil {
 		str.init = m.(*Envelope)
 		return nil
@@ -83,12 +89,19 @@ func (str *fakeClientStream) SendMsg(m interface{}) error {
 }
 
 func (str *fakeClientStream) RecvMsg(m interface{}) error {
-	*(m.(*Envelope)) = *<-str.ch
+	msg, more := <-str.ch
+	if !more {
+		return io.EOF
+	}
+
+	*(m.(*Envelope)) = *msg
 	return nil
 }
 
 type fakeConnection struct {
 	grpc.ClientConnInterface
+	err       error
+	errStream error
 }
 
 func (conn fakeConnection) Invoke(ctx context.Context, m string, arg interface{},
@@ -106,19 +119,33 @@ func (conn fakeConnection) Invoke(ctx context.Context, m string, arg interface{}
 	return nil
 }
 
-func (conn fakeConnection) NewStream(context.Context, *grpc.StreamDesc, string,
-	...grpc.CallOption) (grpc.ClientStream, error) {
+func (conn fakeConnection) NewStream(ctx context.Context, desc *grpc.StreamDesc,
+	m string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
 
-	return &fakeClientStream{ch: make(chan *Envelope, 1)}, nil
+	ch := make(chan *Envelope, 1)
+
+	go func() {
+		<-ctx.Done()
+		close(ch)
+	}()
+
+	return &fakeClientStream{ch: ch, err: conn.errStream}, conn.err
 }
 
 type fakeConnFactory struct {
 	ConnectionFactory
-	err error
+	err       error
+	errConn   error
+	errStream error
 }
 
 func (f fakeConnFactory) FromAddress(mino.Address) (grpc.ClientConnInterface, error) {
-	return fakeConnection{}, f.err
+	conn := fakeConnection{
+		err:       f.errConn,
+		errStream: f.errStream,
+	}
+
+	return conn, f.err
 }
 
 type badRtingFactory struct {

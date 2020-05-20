@@ -4,14 +4,12 @@
 package minogrpc
 
 import (
-	"crypto/tls"
 	fmt "fmt"
 	"net"
 	"net/url"
 	"regexp"
 	"sync"
 
-	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/minogrpc/routing"
 	"golang.org/x/xerrors"
@@ -21,48 +19,76 @@ import (
 
 //go:generate protoc -I ./ --go_out=plugins=grpc:./ ./overlay.proto
 
+const (
+	orchestratorDescription = "Orchestrator"
+)
+
 var (
 	namespaceMatch        = regexp.MustCompile("^[a-zA-Z0-9]+$")
 	defaultAddressFactory = AddressFactory{}
 )
 
+// rootAddress is the address of the orchestrator of a protocol. When Stream is
+// called, the caller takes this address so that participants now how to route
+// message to it.
+//
+// - implements mino.Address
 type rootAddress struct{}
 
 func newRootAddress() rootAddress {
 	return rootAddress{}
 }
 
+// Equal implements mino.Address. It returns true the other address is also a
+// root address.
 func (a rootAddress) Equal(other mino.Address) bool {
 	addr, ok := other.(rootAddress)
 	return ok && a == addr
 }
 
+// MarshalText implements mino.Address. It returns an empty buffer which is
+// always the root address.
 func (a rootAddress) MarshalText() ([]byte, error) {
 	return []byte{}, nil
 }
 
+// String implements fmt.Stringer. It returns a string representation of the
+// address.
 func (a rootAddress) String() string {
-	return "Orchestrator"
+	return orchestratorDescription
 }
 
-// address implements mino.Address.
+// address is a representation of the network address of a participant.
+//
+// - implements mino.Address
 type address struct {
 	host string
 }
 
+// GetDialAddress returns a string formatted to be understood by grpc.Dial()
+// functions.
+func (a address) GetDialAddress() string {
+	// TODO: check the DNS resolver thing.
+	return a.host
+}
+
+// Equal implements mino.Address. It returns true if both addresses points to
+// the same participant.
 func (a address) Equal(other mino.Address) bool {
 	addr, ok := other.(address)
 	return ok && addr == a
 }
 
-// MarshalText implements mino.Address
+// MarshalText implements mino.Address. It returns the text format of the
+// address that can later be deserialized.
 func (a address) MarshalText() ([]byte, error) {
 	return []byte(a.host), nil
 }
 
-// String implements mino.Address
+// String implements fmt.Stringer. It returns a string representation of the
+// address.
 func (a address) String() string {
-	return string(a.host)
+	return a.host
 }
 
 // AddressFactory implements mino.AddressFactory
@@ -80,12 +106,14 @@ func (f AddressFactory) FromText(text []byte) mino.Address {
 
 // Minogrpc represents a grpc service restricted to a namespace
 type Minogrpc struct {
+	overlay
 	url       *url.URL
 	server    *grpc.Server
-	overlay   overlay
 	namespace string
 	handlers  map[string]mino.Handler
+	started   chan struct{}
 	closer    *sync.WaitGroup
+	closing   chan error
 }
 
 // NewMinogrpc sets up the grpc and http servers. URL should
@@ -106,12 +134,14 @@ func NewMinogrpc(path string, port uint16, rf routing.Factory) (*Minogrpc, error
 	server := grpc.NewServer(grpc.Creds(creds))
 
 	m := &Minogrpc{
+		overlay:   o,
 		url:       url,
 		server:    server,
-		overlay:   o,
 		namespace: "",
 		handlers:  make(map[string]mino.Handler),
+		started:   make(chan struct{}),
 		closer:    &sync.WaitGroup{},
+		closing:   make(chan error, 1),
 	}
 
 	// Counter needs to be above 1 for asynchronous call to Add.
@@ -137,47 +167,58 @@ func (m *Minogrpc) GetAddressFactory() mino.AddressFactory {
 	return defaultAddressFactory
 }
 
-// GetAddress implements Mino. It returns the address of the server
+// GetAddress implements Mino. It returns the address of the server.
 func (m *Minogrpc) GetAddress() mino.Address {
 	return m.overlay.me
 }
 
-// GetCertificate returns the public certificate of the server
-func (m *Minogrpc) GetCertificate() *tls.Certificate {
-	return m.overlay.GetCertificate()
-}
-
-// AddCertificate populates the list of public know certificates of the server
-func (m *Minogrpc) AddCertificate(addr mino.Address, cert *tls.Certificate) error {
-	m.overlay.certs.Store(addr, cert)
-
-	return nil
-}
-
-// Listen starts the server.
+// Listen starts the server. It waits for the go routine to start before
+// returning.
 func (m *Minogrpc) Listen() error {
+	// TODO: bind 0.0.0.0:PORT => get port from address.
 	lis, err := net.Listen("tcp4", m.url.Host)
 	if err != nil {
 		return xerrors.Errorf("failed to listen: %v", err)
 	}
 
 	go func() {
-		err = m.server.Serve(lis)
+		close(m.started)
+
+		err := m.server.Serve(lis)
 		if err != nil {
-			fabric.Logger.Err(err).Send()
+			m.closing <- xerrors.Errorf("failed to serve: %v", err)
 		}
+
+		close(m.closing)
 	}()
+
+	// Force the go routine to be executed before returning which means the
+	// server has well started after that point.
+	<-m.started
 
 	return nil
 }
 
 // GracefulClose first stops the grpc server then waits for the remaining
 // handlers to close.
-func (m *Minogrpc) GracefulClose() {
+func (m *Minogrpc) GracefulClose() error {
+	select {
+	case <-m.started:
+	default:
+		return xerrors.New("server should be listening before trying to close")
+	}
+
 	m.server.GracefulStop()
 
 	m.closer.Done()
 	m.closer.Wait()
+
+	err := <-m.closing
+	if err != nil {
+		return xerrors.Errorf("failed to stop gracefully: %v", err)
+	}
+
+	return nil
 }
 
 // MakeNamespace implements Mino. It creates a new Minogrpc

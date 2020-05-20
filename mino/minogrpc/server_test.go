@@ -2,6 +2,7 @@ package minogrpc
 
 import (
 	"context"
+	"crypto/tls"
 	"sync"
 	"testing"
 	"time"
@@ -20,7 +21,7 @@ import (
 )
 
 func TestIntegration_BasicLifecycle_Stream(t *testing.T) {
-	mm, rpcs := makeInstances(t, 10)
+	mm, rpcs := makeInstances(t, 5)
 
 	authority := fake.NewAuthorityFromMino(fake.NewSigner, mm...)
 
@@ -48,7 +49,7 @@ func TestIntegration_BasicLifecycle_Stream(t *testing.T) {
 	for _, m := range mm {
 		// This makes sure that the relay handlers have been closed by the
 		// context.
-		m.(*Minogrpc).GracefulClose()
+		require.NoError(t, m.(*Minogrpc).GracefulClose())
 	}
 }
 
@@ -71,7 +72,7 @@ func TestIntegration_Basic_Call(t *testing.T) {
 	cancel()
 
 	for _, m := range mm {
-		m.(*Minogrpc).GracefulClose()
+		require.NoError(t, m.(*Minogrpc).GracefulClose())
 	}
 }
 
@@ -156,7 +157,7 @@ func TestOverlayServer_Relay(t *testing.T) {
 	err = overlay.Relay(fakeServerStream{ch: ch, ctx: inCtx})
 	require.NoError(t, err)
 
-	err = overlay.Relay(fakeServerStream{ctx: context.Background()})
+	err = overlay.Relay(fakeServerStream{ctx: ctx})
 	require.EqualError(t, err, "handler '' is not registered")
 
 	inCtx = metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "unknown"))
@@ -168,15 +169,95 @@ func TestOverlayServer_Relay(t *testing.T) {
 	require.EqualError(t, err, "failed to receive routing message: oops")
 
 	overlay.routingFactory = badRtingFactory{}
+	ch = make(chan *Envelope, 1)
 	ch <- &Envelope{Message: &Message{Payload: rtingAny}}
 	err = overlay.Relay(fakeServerStream{ch: ch, ctx: inCtx})
 	require.EqualError(t, err, "couldn't decode routing: oops")
 
 	overlay.routingFactory = routing.NewTreeRoutingFactory(3, AddressFactory{})
+	ch = make(chan *Envelope, 1)
 	ch <- &Envelope{Message: &Message{Payload: rtingAny}}
 	inCtx = metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "bad"))
 	err = overlay.Relay(fakeServerStream{ch: ch, ctx: inCtx})
 	require.EqualError(t, err, "handler failed to process: oops")
+}
+
+func TestOverlay_SetupRelays(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	authority := fake.NewAuthority(3, fake.NewSigner)
+
+	rtingFactory := routing.NewTreeRoutingFactory(1, fake.AddressFactory{})
+	rting, err := rtingFactory.FromIterator(fake.NewAddress(0), authority.AddressIterator())
+	require.NoError(t, err)
+
+	overlay := overlay{
+		me:             fake.NewAddress(0),
+		encoder:        encoding.NewProtoEncoder(),
+		routingFactory: rtingFactory,
+		connFactory:    fakeConnFactory{},
+	}
+
+	sender, _, err := overlay.setupRelays(ctx, fake.NewAddress(0), rting)
+	require.NoError(t, err)
+	require.Len(t, sender.clients, 2)
+
+	overlay.connFactory = fakeConnFactory{errConn: xerrors.New("oops")}
+	_, _, err = overlay.setupRelays(ctx, fake.NewAddress(0), rting)
+	require.EqualError(t, err,
+		"couldn't setup relay to fake.Address[1]: couldn't open relay: oops")
+
+	overlay.connFactory = fakeConnFactory{errStream: xerrors.New("oops")}
+	_, _, err = overlay.setupRelays(ctx, fake.NewAddress(0), rting)
+	require.EqualError(t, err,
+		"couldn't setup relay to fake.Address[1]: couldn't send routing: oops")
+
+	overlay.connFactory = fakeConnFactory{}
+	overlay.encoder = fake.BadPackAnyEncoder{}
+	_, _, err = overlay.setupRelays(ctx, fake.NewAddress(0), rting)
+	require.EqualError(t, err,
+		"couldn't setup relay to fake.Address[1]: couldn't pack routing: fake error")
+}
+
+func TestConnectionFactory_FromAddress(t *testing.T) {
+	dst, err := NewMinogrpc("127.0.0.1", 3334, nil)
+	require.NoError(t, err)
+
+	defer dst.GracefulClose()
+
+	factory := DefaultConnectionFactory{
+		certs: &sync.Map{},
+		me:    fake.NewAddress(0),
+	}
+
+	factory.certs.Store(factory.me, &tls.Certificate{})
+	factory.certs.Store(dst.GetAddress(), dst.GetCertificate())
+
+	conn, err := factory.FromAddress(dst.GetAddress())
+	require.NoError(t, err)
+	require.NotNil(t, conn)
+
+	conn.(*grpc.ClientConn).Close()
+
+	_, err = factory.FromAddress(fake.NewAddress(1))
+	require.EqualError(t, err, "certificate for 'fake.Address[1]' not found")
+
+	factory.certs.Store(fake.NewAddress(1), nil)
+	_, err = factory.FromAddress(fake.NewAddress(1))
+	require.EqualError(t, err, "invalid certificate type '<nil>' for 'fake.Address[1]'")
+
+	factory.certs.Delete(factory.me)
+	_, err = factory.FromAddress(dst.GetAddress())
+	require.EqualError(t, err, "couldn't find server 'fake.Address[0]' certificate")
+
+	factory.certs.Store(factory.me, nil)
+	_, err = factory.FromAddress(dst.GetAddress())
+	require.EqualError(t, err, "invalid certificate type '<nil>' for 'fake.Address[0]'")
+
+	factory.certs.Store(factory.me, dst.GetCertificate())
+	_, err = factory.FromAddress(factory.me)
+	require.EqualError(t, err, "invalid address type 'fake.Address'")
 }
 
 // -----------------------------------------------------------------------------
