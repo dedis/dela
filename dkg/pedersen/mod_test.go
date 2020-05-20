@@ -5,13 +5,32 @@ import (
 	"net/url"
 	"testing"
 
+	proto "github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/dkg"
+	internal "go.dedis.ch/fabric/internal/testing"
 	"go.dedis.ch/fabric/mino"
 	"go.dedis.ch/fabric/mino/minogrpc"
 	"go.dedis.ch/fabric/mino/minogrpc/routing"
 	"go.dedis.ch/kyber/v3"
 )
+
+func TestMessages(t *testing.T) {
+	messages := []proto.Message{
+		&Start{},
+		&Deal{},
+		&Deal_EncryptedDeal{},
+		&Response{},
+		&Response_Data{},
+		&StartDone{},
+		&DecryptRequest{},
+		&DecryptReply{},
+	}
+
+	for _, m := range messages {
+		internal.CoverProtoMessage(t, m)
+	}
+}
 
 func TestPedersen_Scenario(t *testing.T) {
 	n := 10
