@@ -1,7 +1,6 @@
 package flatcosi
 
 import (
-	"bytes"
 	"context"
 	"testing"
 
@@ -9,7 +8,6 @@ import (
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
-	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/fabric/cosi"
 	"go.dedis.ch/fabric/crypto"
@@ -80,9 +78,10 @@ func TestActor_Sign(t *testing.T) {
 
 	rpc.Msgs <- &SignatureResponse{Signature: sigAny}
 	rpc.Msgs <- &SignatureResponse{Signature: sigAny}
+	close(rpc.Msgs)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	defer cancel()
 
 	sig, err := actor.Sign(ctx, message, ca)
 	require.NoError(t, err)
@@ -121,73 +120,67 @@ func TestActor_SignWrongSignature(t *testing.T) {
 }
 
 func TestActor_RPCError_Sign(t *testing.T) {
-	buffer := new(bytes.Buffer)
 	message := fakeMessage{}
 	ca := fake.NewAuthority(1, fake.NewSigner)
 
 	rpc := fake.NewRPC()
 	actor := flatActor{
 		encoder: encoding.NewProtoEncoder(),
-		logger:  zerolog.New(buffer),
 		signer:  ca.GetSigner(0),
 		rpc:     rpc,
 	}
 
-	go func() {
-		rpc.Errs <- xerrors.New("oops")
-		close(rpc.Msgs)
-	}()
+	close(rpc.Msgs)
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	sig, err := actor.Sign(ctx, message, ca)
 	require.EqualError(t, err, "signature is nil")
 	require.Nil(t, sig)
-	require.Contains(t, buffer.String(), "error during collective signing")
 }
 
 func TestActor_Context_Sign(t *testing.T) {
-	buffer := new(bytes.Buffer)
 	message := fakeMessage{}
 	ca := fake.NewAuthority(1, fake.NewSigner)
+	rpc := fake.NewRPC()
 
 	actor := flatActor{
 		encoder: encoding.NewProtoEncoder(),
-		logger:  zerolog.New(buffer),
 		signer:  ca.GetSigner(0),
-		rpc:     fake.NewRPC(),
+		rpc:     rpc,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	defer cancel()
+
+	rpc.Errs <- xerrors.New("oops")
 
 	sig, err := actor.Sign(ctx, message, ca)
-	require.EqualError(t, err, "signature is nil")
+	require.EqualError(t, err, "one request has failed: oops")
 	require.Nil(t, sig)
-	require.Contains(t, buffer.String(), "error during collective signing")
 }
 
 func TestActor_SignProcessError(t *testing.T) {
-	buffer := new(bytes.Buffer)
 	message := fakeMessage{}
 	ca := fake.NewAuthority(1, fake.NewSigner)
 
 	rpc := fake.NewRPC()
 	actor := flatActor{
 		encoder: encoding.NewProtoEncoder(),
-		logger:  zerolog.New(buffer),
 		signer:  ca.GetSigner(0),
 		rpc:     rpc,
 	}
 
 	rpc.Msgs <- &empty.Empty{}
+	close(rpc.Msgs)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	defer cancel()
 
 	_, err := actor.Sign(ctx, message, ca)
-	require.EqualError(t, err, "signature is nil")
-	require.Contains(t, buffer.String(), "error when processing response")
+	require.EqualError(t, err,
+		"couldn't process response: response type is invalid: *empty.Empty")
 
 	actor.signer = fake.NewBadSigner()
 	_, err = actor.processResponse(&SignatureResponse{}, fake.Signature{})

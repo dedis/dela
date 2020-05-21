@@ -100,8 +100,8 @@ func (a flatActor) Sign(ctx context.Context, msg cosi.Message,
 	var agg crypto.Signature
 	for {
 		select {
-		case resp, ok := <-msgs:
-			if !ok {
+		case resp, more := <-msgs:
+			if !more {
 				if agg == nil {
 					return nil, xerrors.New("signature is nil")
 				}
@@ -116,13 +116,10 @@ func (a flatActor) Sign(ctx context.Context, msg cosi.Message,
 
 			agg, err = a.processResponse(resp, agg)
 			if err != nil {
-				// Keep the protocol going if an error occurred so that a bad
-				// player cannot intentionally stop the protocol.
-				a.logger.Err(err).Msg("error when processing response")
+				return nil, xerrors.Errorf("couldn't process response: %v", err)
 			}
 		case err := <-errs:
-			// Keep the protocol going if a request message fails to be transmitted.
-			a.logger.Err(err).Msg("error during collective signing")
+			return nil, xerrors.Errorf("one request has failed: %v", err)
 		}
 	}
 }

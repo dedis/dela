@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/proto"
-	any "github.com/golang/protobuf/ptypes/any"
+	"github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/blockchain"
 	"go.dedis.ch/fabric/blockchain/skipchain"
@@ -62,9 +62,6 @@ func NewLedger(m mino.Mino, signer crypto.AggregateSigner) *Ledger {
 	taskFactory, gov := newtaskFactory(m, signer, inventory)
 
 	txFactory := basic.NewTransactionFactory(signer, taskFactory)
-	decoder := func(pb proto.Message) (gossip.Rumor, error) {
-		return txFactory.FromProto(pb)
-	}
 
 	consensus := cosipbft.NewCoSiPBFT(m, flatcosi.NewFlat(m, signer), gov)
 	// Set a rotating view change for the collective signing.
@@ -74,7 +71,7 @@ func NewLedger(m mino.Mino, signer crypto.AggregateSigner) *Ledger {
 		addr:       m.GetAddress(),
 		signer:     signer,
 		bc:         skipchain.NewSkipchain(m, consensus),
-		gossiper:   gossip.NewFlat(m, decoder),
+		gossiper:   gossip.NewFlat(m, rumorFactory{txFactory: txFactory}),
 		bag:        newTxBag(),
 		proc:       newTxProcessor(txFactory, inventory),
 		governance: gov,
@@ -91,6 +88,11 @@ func (ldgr *Ledger) Listen() (ledger.Actor, error) {
 	bcActor, err := ldgr.bc.Listen(ldgr.proc)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't start the blockchain: %v", err)
+	}
+
+	gossipActor, err := ldgr.gossiper.Listen()
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't start gossip: %v", err)
 	}
 
 	go func() {
@@ -122,20 +124,17 @@ func (ldgr *Ledger) Listen() (ledger.Actor, error) {
 			return
 		}
 
-		err = ldgr.gossiper.Start(authority)
-		if err != nil {
-			ldgr.initiated <- xerrors.Errorf("couldn't start the gossiper: %v", err)
-			return
-		}
+		// This will start the gossiper with the initial roster.
+		gossipActor.SetPlayers(authority)
 
 		ldgr.closed.Add(2)
 		close(ldgr.initiated)
 
 		go ldgr.gossipTxs()
-		go ldgr.proposeBlocks(bcActor, authority)
+		go ldgr.proposeBlocks(bcActor, gossipActor, authority)
 	}()
 
-	return newActor(ldgr, bcActor), nil
+	return newActor(ldgr, bcActor, gossipActor), nil
 }
 
 func (ldgr *Ledger) gossipTxs() {
@@ -144,11 +143,6 @@ func (ldgr *Ledger) gossipTxs() {
 	for {
 		select {
 		case <-ldgr.closing:
-			err := ldgr.gossiper.Stop()
-			if err != nil {
-				fabric.Logger.Err(err).Msg("couldn't stop gossiper")
-			}
-
 			return
 		case rumor := <-ldgr.gossiper.Rumors():
 			tx, ok := rumor.(transactions.ClientTransaction)
@@ -159,7 +153,7 @@ func (ldgr *Ledger) gossipTxs() {
 	}
 }
 
-func (ldgr *Ledger) proposeBlocks(actor blockchain.Actor, players mino.Players) {
+func (ldgr *Ledger) proposeBlocks(actor blockchain.Actor, ga gossip.Actor, players mino.Players) {
 	defer ldgr.closed.Done()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -210,9 +204,18 @@ func (ldgr *Ledger) proposeBlocks(actor blockchain.Actor, players mino.Players) 
 
 			ldgr.bag.Remove(txRes...)
 
+			// Update the gossip list of participants with the roster block.
+			roster, err := ldgr.governance.GetAuthority(block.GetIndex())
+			if err != nil {
+				fabric.Logger.Err(err).Msg("couldn't read block roster")
+			} else {
+				ga.SetPlayers(roster)
+			}
+
 			// This is executed in a different go routine so that the gathering
 			// of transactions can keep on while the block is created.
-			err := ldgr.proposeBlock(actor, players)
+			// TODO: this should be delayed to allow several blocks to be notified.
+			err = ldgr.proposeBlock(actor, players)
 			if err != nil {
 				fabric.Logger.Err(err).Msg("couldn't propose new block")
 			}
@@ -307,13 +310,15 @@ func (ldgr *Ledger) Watch(ctx context.Context) <-chan ledger.TransactionResult {
 
 type actorLedger struct {
 	*Ledger
-	bcActor blockchain.Actor
+	bcActor     blockchain.Actor
+	gossipActor gossip.Actor
 }
 
-func newActor(l *Ledger, a blockchain.Actor) actorLedger {
+func newActor(l *Ledger, a blockchain.Actor, ga gossip.Actor) actorLedger {
 	return actorLedger{
-		Ledger:  l,
-		bcActor: a,
+		Ledger:      l,
+		bcActor:     a,
+		gossipActor: ga,
 	}
 }
 
@@ -354,8 +359,7 @@ func (a actorLedger) Setup(players mino.Players) error {
 func (a actorLedger) AddTransaction(tx transactions.ClientTransaction) error {
 	// The gossiper will propagate the transaction to other players but also to
 	// the transaction buffer of this player.
-	// TODO: gossiper should accept tx before it has started.
-	err := a.gossiper.Add(tx)
+	err := a.gossipActor.Add(tx)
 	if err != nil {
 		return xerrors.Errorf("couldn't propagate the tx: %v", err)
 	}
@@ -366,5 +370,18 @@ func (a actorLedger) AddTransaction(tx transactions.ClientTransaction) error {
 func (a actorLedger) Close() error {
 	close(a.closing)
 
+	err := a.gossipActor.Close()
+	if err != nil {
+		return xerrors.Errorf("couldn't stop gossiper: %v", err)
+	}
+
 	return nil
+}
+
+type rumorFactory struct {
+	txFactory transactions.TransactionFactory
+}
+
+func (f rumorFactory) FromProto(msg proto.Message) (gossip.Rumor, error) {
+	return f.txFactory.FromProto(msg)
 }
