@@ -685,41 +685,38 @@ type RPC struct {
 }
 
 // NewRPC returns a fake rpc.
-func NewRPC() RPC {
-	return RPC{
-		Msgs: make(chan proto.Message, 100),
-		Errs: make(chan error, 100),
-	}
+func NewRPC() *RPC {
+	rpc := &RPC{}
+	rpc.Reset()
+	return rpc
 }
 
 // NewStreamRPC returns a fake rpc with specific stream options.
-func NewStreamRPC(r Receiver, s Sender) RPC {
-	return RPC{
-		Msgs:     make(chan proto.Message, 100),
-		Errs:     make(chan error, 100),
+func NewStreamRPC(r Receiver, s Sender) *RPC {
+	rpc := &RPC{
 		receiver: r,
 		sender:   s,
 	}
+	rpc.Reset()
+	return rpc
 }
 
 // Call implements mino.RPC.
-func (rpc RPC) Call(ctx context.Context, m proto.Message,
+func (rpc *RPC) Call(ctx context.Context, m proto.Message,
 	p mino.Players) (<-chan proto.Message, <-chan error) {
 
-	go func() {
-		<-ctx.Done()
-		err := ctx.Err()
-		if err != nil {
-			rpc.Errs <- err
-		}
-		close(rpc.Msgs)
-	}()
 	return rpc.Msgs, rpc.Errs
 }
 
 // Stream implements mino.RPC.
-func (rpc RPC) Stream(context.Context, mino.Players) (mino.Sender, mino.Receiver) {
+func (rpc *RPC) Stream(context.Context, mino.Players) (mino.Sender, mino.Receiver) {
 	return rpc.sender, rpc.receiver
+}
+
+// Reset resets the channels.
+func (rpc *RPC) Reset() {
+	rpc.Msgs = make(chan proto.Message, 100)
+	rpc.Errs = make(chan error, 100)
 }
 
 // Mino is a fake implementation of mino.Mino.

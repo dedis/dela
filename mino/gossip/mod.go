@@ -13,17 +13,38 @@ import (
 type Rumor interface {
 	encoding.Packable
 
+	// GetID returns the unique identifier of the rumor.
 	GetID() []byte
 }
 
-// Decoder is a function that decodes a message into a rumor implementation.
-type Decoder = func(proto.Message) (Rumor, error)
+// RumorFactory is a factory to instantiate a rumor from its protobuf message.
+type RumorFactory interface {
+	// FromProto returns the rumor associated with the protobuf message.
+	FromProto(proto.Message) (Rumor, error)
+}
+
+// Actor is an actor that can send rumor to a gossip network.
+type Actor interface {
+	// SetPlayers should change the list of participants that the actor should
+	// send rumors to. It is up to the implementation to send to only a subset.
+	SetPlayers(mino.Players)
+
+	// Add should add the rumor in the set of rumors that must be spread to the
+	// participants.
+	Add(rumor Rumor) error
+
+	// Close should clean any resource used by the actor.
+	Close() error
+}
 
 // Gossiper is an abstraction of a message passing protocol that uses internally
 // a gossip protocol.
 type Gossiper interface {
-	Add(rumor Rumor) error
+	GetRumorFactory() RumorFactory
+
+	// Rumors should return a channel populated with the new rumors.
 	Rumors() <-chan Rumor
-	Start(players mino.Players) error
-	Stop() error
+
+	// Listen should start to listen for rumors and returns a gossip actor.
+	Listen() (Actor, error)
 }

@@ -141,11 +141,8 @@ func TestLedger_Listen(t *testing.T) {
 
 	ledger.governance = fakeGovernance{}
 	ledger.gossiper = fakeGossiper{err: xerrors.New("oops")}
-	ledger.initiated = make(chan error, 1)
 	_, err = ledger.Listen()
-	require.NoError(t, err)
-	err = waitClose(ledger)
-	require.EqualError(t, err, "couldn't start the gossiper: oops")
+	require.EqualError(t, err, "couldn't start gossip: oops")
 }
 
 func TestLedger_GossipTxs(t *testing.T) {
@@ -207,15 +204,32 @@ func TestActor_Setup(t *testing.T) {
 
 func TestActor_AddTransaction(t *testing.T) {
 	actor := &actorLedger{
-		Ledger: &Ledger{gossiper: fakeGossiper{}},
+		gossipActor: fakeGossipActor{},
 	}
 
 	err := actor.AddTransaction(fakeTx{})
 	require.NoError(t, err)
 
-	actor.gossiper = fakeGossiper{err: xerrors.New("oops")}
+	actor.gossipActor = fakeGossipActor{err: xerrors.New("oops")}
 	err = actor.AddTransaction(fakeTx{})
 	require.EqualError(t, err, "couldn't propagate the tx: oops")
+}
+
+func TestActor_Close(t *testing.T) {
+	actor := &actorLedger{
+		Ledger: &Ledger{
+			closing: make(chan struct{}),
+		},
+		gossipActor: fakeGossipActor{},
+	}
+
+	err := actor.Close()
+	require.NoError(t, err)
+
+	actor.closing = make(chan struct{})
+	actor.gossipActor = fakeGossipActor{err: xerrors.New("oops")}
+	err = actor.Close()
+	require.EqualError(t, err, "couldn't stop gossiper: oops")
 }
 
 // -----------------------------------------------------------------------------
@@ -329,26 +343,32 @@ func (gov fakeGovernance) GetAuthority(index uint64) (viewchange.EvolvableAuthor
 	return fake.NewAuthority(3, fake.NewSigner), gov.err
 }
 
+type fakeGossipActor struct {
+	err error
+}
+
+func (a fakeGossipActor) SetPlayers(mino.Players) {}
+
+func (a fakeGossipActor) Add(gossip.Rumor) error {
+	return a.err
+}
+
+func (a fakeGossipActor) Close() error {
+	return a.err
+}
+
 type fakeGossiper struct {
 	gossip.Gossiper
 	rumors chan gossip.Rumor
 	err    error
 }
 
-func (g fakeGossiper) Add(gossip.Rumor) error {
-	return g.err
-}
-
-func (g fakeGossiper) Start(mino.Players) error {
-	return g.err
+func (g fakeGossiper) Listen() (gossip.Actor, error) {
+	return fakeGossipActor{}, g.err
 }
 
 func (g fakeGossiper) Rumors() <-chan gossip.Rumor {
 	return g.rumors
-}
-
-func (g fakeGossiper) Stop() error {
-	return g.err
 }
 
 type fakeActor struct {
