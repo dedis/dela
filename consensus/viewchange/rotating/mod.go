@@ -1,3 +1,5 @@
+// Package rotating implements a rotating view change based on the proposal
+// index so that the leader changes after every round.
 package rotating
 
 import (
@@ -14,12 +16,14 @@ type ViewChange struct {
 	addr mino.Address
 }
 
-// NewViewChange returns a new instance of the view change.
+// NewViewChange returns a new instance of the rotating view change.
 func NewViewChange(addr mino.Address) ViewChange {
 	return ViewChange{addr: addr}
 }
 
-// Wait implements viewchange.ViewChange.
+// Wait implements viewchange.ViewChange. It calculates the next leader index
+// from the authority length and returns true if the local participant is the
+// leader.
 func (vc ViewChange) Wait(prop consensus.Proposal, authority crypto.CollectiveAuthority) (uint32, bool) {
 	leader := int(prop.GetIndex()) % authority.Len()
 
@@ -32,7 +36,8 @@ func (vc ViewChange) Wait(prop consensus.Proposal, authority crypto.CollectiveAu
 	return uint32(leader), false
 }
 
-// Verify implements viewchange.ViewChange.
+// Verify implements viewchange.ViewChange. It calculates the leader for the
+// given proposal from the authority length.
 func (vc ViewChange) Verify(prop consensus.Proposal, authority crypto.CollectiveAuthority) uint32 {
 	leader := int(prop.GetIndex()) % authority.Len()
 
