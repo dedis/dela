@@ -21,6 +21,7 @@ import (
 
 const (
 	orchestratorDescription = "Orchestrator"
+	orchestratorCode        = "\ue000"
 )
 
 var (
@@ -49,7 +50,7 @@ func (a rootAddress) Equal(other mino.Address) bool {
 // MarshalText implements mino.Address. It returns a buffer that uses the
 // private area of Unicode to define the root.
 func (a rootAddress) MarshalText() ([]byte, error) {
-	return []byte("\ue000"), nil
+	return []byte(orchestratorCode), nil
 }
 
 // String implements fmt.Stringer. It returns a string representation of the
@@ -97,7 +98,7 @@ type AddressFactory struct{}
 // FromText implements mino.AddressFactory. It returns an instance of an
 // address from a byte slice.
 func (f AddressFactory) FromText(text []byte) mino.Address {
-	if string(text) == "\ue000" {
+	if string(text) == orchestratorCode {
 		return newRootAddress()
 	}
 
@@ -106,7 +107,7 @@ func (f AddressFactory) FromText(text []byte) mino.Address {
 
 // Minogrpc represents a grpc service restricted to a namespace
 //
-// implements mino.Mino
+// - implements mino.Mino
 type Minogrpc struct {
 	overlay
 	url       *url.URL
