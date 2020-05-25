@@ -29,7 +29,7 @@ var (
 )
 
 // rootAddress is the address of the orchestrator of a protocol. When Stream is
-// called, the caller takes this address so that participants now how to route
+// called, the caller takes this address so that participants know how to route
 // message to it.
 //
 // - implements mino.Address
@@ -39,17 +39,17 @@ func newRootAddress() rootAddress {
 	return rootAddress{}
 }
 
-// Equal implements mino.Address. It returns true the other address is also a
+// Equal implements mino.Address. It returns true if the other address is also a
 // root address.
 func (a rootAddress) Equal(other mino.Address) bool {
 	addr, ok := other.(rootAddress)
 	return ok && a == addr
 }
 
-// MarshalText implements mino.Address. It returns an empty buffer which is
-// always the root address.
+// MarshalText implements mino.Address. It returns a buffer that uses the
+// private area of Unicode to define the root.
 func (a rootAddress) MarshalText() ([]byte, error) {
-	return []byte{}, nil
+	return []byte("\ue000"), nil
 }
 
 // String implements fmt.Stringer. It returns a string representation of the
@@ -97,7 +97,7 @@ type AddressFactory struct{}
 // FromText implements mino.AddressFactory. It returns an instance of an
 // address from a byte slice.
 func (f AddressFactory) FromText(text []byte) mino.Address {
-	if len(text) == 0 {
+	if string(text) == "\ue000" {
 		return newRootAddress()
 	}
 
@@ -105,6 +105,8 @@ func (f AddressFactory) FromText(text []byte) mino.Address {
 }
 
 // Minogrpc represents a grpc service restricted to a namespace
+//
+// implements mino.Mino
 type Minogrpc struct {
 	overlay
 	url       *url.URL
@@ -145,7 +147,7 @@ func NewMinogrpc(path string, port uint16, rf routing.Factory) (*Minogrpc, error
 		closing:   make(chan error, 1),
 	}
 
-	// Counter needs to be above 1 for asynchronous call to Add.
+	// Counter needs to be >=1 for asynchronous call to Add.
 	m.closer.Add(1)
 
 	RegisterOverlayServer(server, overlayServer{

@@ -238,7 +238,7 @@ func (t TreeRouting) GetRoute(from, to mino.Address) mino.Address {
 	return nil
 }
 
-// GetRoot implements routing.Routing. It returns the the root of the tree.
+// GetRoot implements routing.Routing. It returns the root of the tree.
 func (t TreeRouting) GetRoot() mino.Address {
 	return t.Root.Addr
 }

@@ -67,15 +67,13 @@ func (s sender) Send(msg proto.Message, addrs ...mino.Address) <-chan error {
 		},
 	}
 
-	if s.me != nil {
-		buffer, err := s.me.MarshalText()
-		if err != nil {
-			errs <- xerrors.Errorf("couldn't marshal source address: %v", err)
-			return errs
-		}
-
-		env.Message.From = buffer
+	buffer, err := s.me.MarshalText()
+	if err != nil {
+		errs <- xerrors.Errorf("couldn't marshal source address: %v", err)
+		return errs
 	}
+
+	env.Message.From = buffer
 
 	s.sendEnvelope(env, errs)
 
@@ -195,6 +193,7 @@ func (q *NonBlockingQueue) Push(msg *Message) {
 		// Message went through !
 	default:
 		q.Lock()
+		// TODO: memory control
 		q.buffer = append(q.buffer, msg)
 
 		if !q.running {

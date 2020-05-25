@@ -50,20 +50,12 @@ type overlayServer struct {
 func (o overlayServer) Call(ctx context.Context, msg *Message) (*Message, error) {
 	// We fetch the uri that identifies the handler in the handlers map with the
 	// grpc metadata api. Using context.Value won't work.
-	headers, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return nil, xerrors.Errorf("header not found in provided context")
-	}
-
-	apiURI := headers[headerURIKey]
-	if len(apiURI) == 0 {
-		return nil, xerrors.Errorf("'%s' not found in context header", headerURIKey)
-	}
+	uri := uriFromContext(ctx)
 
 	// If several are provided, only the first one is taken in account.
-	handler, ok := o.handlers[apiURI[0]]
+	handler, ok := o.handlers[uri]
 	if !ok {
-		return nil, xerrors.Errorf("handler '%s' is not registered", apiURI[0])
+		return nil, xerrors.Errorf("handler '%s' is not registered", uri)
 	}
 
 	message, err := o.encoder.UnmarshalDynamicAny(msg.GetPayload())
@@ -91,9 +83,9 @@ func (o overlayServer) Call(ctx context.Context, msg *Message) (*Message, error)
 	return &Message{Payload: anyResult}, nil
 }
 
-// Relay implements minogrpc.OverlayClient. It opens streams according to the
+// Stream implements minogrpc.OverlayClient. It opens streams according to the
 // routing and transmits the message according to their recipient.
-func (o overlayServer) Relay(stream Overlay_RelayServer) error {
+func (o overlayServer) Stream(stream Overlay_StreamServer) error {
 	o.closer.Add(1)
 	defer o.closer.Done()
 
@@ -186,8 +178,8 @@ func newOverlay(me mino.Address, rf routing.Factory) (overlay, error) {
 func (o overlay) GetCertificate() *tls.Certificate {
 	cert, found := o.certs.Load(o.me)
 	if !found {
-		// This should never and it will panic if it does as this will provoke
-		// several issues later on.
+		// This should never happen and it will panic if it does as this will
+		// provoke several issues later on.
 		panic("certificate of the overlay must be populated")
 	}
 
@@ -245,7 +237,7 @@ func (o overlay) setupRelay(ctx context.Context, relay mino.Address,
 
 	cl := NewOverlayClient(conn)
 
-	client, err := cl.Relay(ctx)
+	client, err := cl.Stream(ctx)
 	if err != nil {
 		return xerrors.Errorf("couldn't open relay: %v", err)
 	}
@@ -265,7 +257,9 @@ func (o overlay) setupRelay(ctx context.Context, relay mino.Address,
 	return nil
 }
 
-func (o overlay) setupStream(stream relayer, sender *sender, receiver *receiver, addr mino.Address) {
+func (o overlay) setupStream(stream relayer, sender *sender, receiver *receiver,
+	addr mino.Address) {
+
 	// Relay sender for that connection.
 	ch := make(chan OutContext)
 	sender.clients[addr] = ch

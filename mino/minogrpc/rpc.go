@@ -77,7 +77,8 @@ func (rpc RPC) Stream(ctx context.Context,
 
 	root := newRootAddress()
 
-	rting, err := rpc.overlay.routingFactory.FromIterator(rpc.overlay.me, players.AddressIterator())
+	rting, err := rpc.overlay.routingFactory.FromIterator(rpc.overlay.me,
+		players.AddressIterator())
 	if err != nil {
 		return nil, nil, xerrors.Errorf("couldn't generate routing: %v", err)
 	}

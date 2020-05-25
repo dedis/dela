@@ -36,7 +36,7 @@ func TestRootAddress_MarshalText(t *testing.T) {
 	root := newRootAddress()
 	text, err := root.MarshalText()
 	require.NoError(t, err)
-	require.Equal(t, []byte{}, text)
+	require.Equal(t, "\ue000", string(text))
 }
 
 func TestRootAddress_String(t *testing.T) {

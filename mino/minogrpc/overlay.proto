@@ -17,5 +17,5 @@ message Envelope {
 
 service Overlay {
     rpc Call(Message) returns (Message) {}
-    rpc Relay(stream Envelope) returns (stream Envelope) {}
+    rpc Stream(stream Envelope) returns (stream Envelope) {}
 }

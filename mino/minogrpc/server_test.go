@@ -99,14 +99,7 @@ func TestOverlayServer_Call(t *testing.T) {
 	require.NotNil(t, resp)
 	require.True(t, ptypes.Is(resp.GetPayload(), (*empty.Empty)(nil)))
 
-	_, err = overlay.Call(context.Background(), nil)
-	require.EqualError(t, err, "header not found in provided context")
-
-	badCtx := metadata.NewIncomingContext(context.Background(), metadata.MD{})
-	_, err = overlay.Call(badCtx, nil)
-	require.EqualError(t, err, "'apiuri' not found in context header")
-
-	badCtx = metadata.NewIncomingContext(context.Background(), metadata.New(
+	badCtx := metadata.NewIncomingContext(context.Background(), metadata.New(
 		map[string]string{headerURIKey: "unknown"},
 	))
 	_, err = overlay.Call(badCtx, nil)
@@ -128,7 +121,7 @@ func TestOverlayServer_Call(t *testing.T) {
 	require.EqualError(t, err, "couldn't marshal result: fake error")
 }
 
-func TestOverlayServer_Relay(t *testing.T) {
+func TestOverlayServer_Stream(t *testing.T) {
 	overlay := overlayServer{
 		overlay: overlay{
 			routingFactory: routing.NewTreeRoutingFactory(3, AddressFactory{}),
@@ -154,31 +147,31 @@ func TestOverlayServer_Relay(t *testing.T) {
 
 	inCtx := metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "test"))
 
-	err = overlay.Relay(fakeServerStream{ch: ch, ctx: inCtx})
+	err = overlay.Stream(fakeServerStream{ch: ch, ctx: inCtx})
 	require.NoError(t, err)
 
-	err = overlay.Relay(fakeServerStream{ctx: ctx})
+	err = overlay.Stream(fakeServerStream{ctx: ctx})
 	require.EqualError(t, err, "handler '' is not registered")
 
 	inCtx = metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "unknown"))
-	err = overlay.Relay(fakeServerStream{ctx: inCtx})
+	err = overlay.Stream(fakeServerStream{ctx: inCtx})
 	require.EqualError(t, err, "handler 'unknown' is not registered")
 
 	inCtx = metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "test"))
-	err = overlay.Relay(fakeServerStream{ctx: inCtx, err: xerrors.New("oops")})
+	err = overlay.Stream(fakeServerStream{ctx: inCtx, err: xerrors.New("oops")})
 	require.EqualError(t, err, "failed to receive routing message: oops")
 
 	overlay.routingFactory = badRtingFactory{}
 	ch = make(chan *Envelope, 1)
 	ch <- &Envelope{Message: &Message{Payload: rtingAny}}
-	err = overlay.Relay(fakeServerStream{ch: ch, ctx: inCtx})
+	err = overlay.Stream(fakeServerStream{ch: ch, ctx: inCtx})
 	require.EqualError(t, err, "couldn't decode routing: oops")
 
 	overlay.routingFactory = routing.NewTreeRoutingFactory(3, AddressFactory{})
 	ch = make(chan *Envelope, 1)
 	ch <- &Envelope{Message: &Message{Payload: rtingAny}}
 	inCtx = metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "bad"))
-	err = overlay.Relay(fakeServerStream{ch: ch, ctx: inCtx})
+	err = overlay.Stream(fakeServerStream{ch: ch, ctx: inCtx})
 	require.EqualError(t, err, "handler failed to process: oops")
 }
 
