@@ -88,7 +88,7 @@ func (c RPC) Call(ctx context.Context, req proto.Message,
 
 // Stream opens a stream. The caller is responsible for cancelling the context
 // to close the stream.
-func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, mino.Receiver) {
+func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, mino.Receiver, error) {
 	in := make(chan Envelope, 100)
 	out := make(chan Envelope, 100)
 	errs := make(chan error, 1)
@@ -101,8 +101,7 @@ func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, min
 
 		peer, err := c.manager.get(addr)
 		if err != nil {
-			errs <- xerrors.Errorf("couldn't find peer: %v", err)
-			continue
+			return nil, nil, xerrors.Errorf("couldn't find peer: %v", err)
 		}
 
 		ch := make(chan Envelope, 1)
@@ -117,6 +116,7 @@ func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, min
 
 			err := peer.rpcs[c.path].h.Stream(s, r)
 			if err != nil {
+				// TODO:
 				errs <- xerrors.Errorf("couldn't process: %v", err)
 			}
 		}(outs[addr.String()])
@@ -148,7 +148,7 @@ func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, min
 		}
 	}()
 
-	return orchSender, orchRecv
+	return orchSender, orchRecv, nil
 }
 
 type sender struct {

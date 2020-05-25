@@ -2,19 +2,17 @@ package routing
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"io"
-	math "math"
+	"math"
 	"math/rand"
 	"regexp"
 	"sort"
 
-	proto "github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
+	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
-	"go.dedis.ch/fabric"
+	"go.dedis.ch/fabric/crypto"
 	"go.dedis.ch/fabric/encoding"
 	"go.dedis.ch/fabric/mino"
 	"golang.org/x/xerrors"
@@ -26,63 +24,71 @@ var eachLine = regexp.MustCompile(`(?m)^(.+)$`)
 
 // Factory defines the primitive to create a Routing
 type Factory interface {
-	FromIterator(mino.AddressIterator) (Routing, error)
+	GetAddressFactory() mino.AddressFactory
+	FromIterator(root mino.Address, iter mino.AddressIterator) (Routing, error)
 	FromAny(*any.Any) (Routing, error)
 }
 
 // Routing defines the functions needed to route messages
 type Routing interface {
 	encoding.Packable
+
+	// GetRoot should return the initiator of the routing map so that every
+	// message with no route will be routed back to it.
+	GetRoot() mino.Address
+
+	// GetParent returns the address of the responsible for contacting the given
+	// address.
+	GetParent(addr mino.Address) mino.Address
+
 	// GetRoute should return the gateway address for a corresponding addresse.
 	// In a tree communication it is typically the address of the child that
 	// contains the "to" address in its sub-tree.
-	GetRoute(from, to mino.Address) (gateway mino.Address, err error)
+	GetRoute(from, to mino.Address) mino.Address
+
 	// GetDirectLinks return the direct links of the elements. In a tree routing
 	// this is typically the children of the node.
-	GetDirectLinks(from mino.Address) ([]mino.Address, error)
+	GetDirectLinks(from mino.Address) []mino.Address
 }
 
-// TreeRouting holds the routing tree of a network. It allows each node of the
-// tree to know which child it should contact in order to relay a message that
-// is in it sub-tree.
+// TreeRoutingFactory defines the factory for tree routing.
 //
-// - implements Routing
-type TreeRouting struct {
-	Root           *treeNode
-	routingNodes   map[string]*treeNode
-	orchestratorID string
-}
-
-// TreeRoutingFactory defines the factory for tree routing
+// - implements routing.Factory
 type TreeRoutingFactory struct {
-	height         int
-	rootAddr       mino.Address
-	addrFactory    mino.AddressFactory
-	orchestratorID string
+	height      int
+	encoder     encoding.ProtoMarshaler
+	addrFactory mino.AddressFactory
+	hashFactory crypto.HashFactory
 }
 
 // NewTreeRoutingFactory returns a new treeRoutingFactory. The rootAddr should
 // be comparable to the addresses that will be passed to build the tree.
-func NewTreeRoutingFactory(height int, rootAddr mino.Address,
-	addrFactory mino.AddressFactory, orchestratorID string) *TreeRoutingFactory {
-
+func NewTreeRoutingFactory(height int, addrFactory mino.AddressFactory) *TreeRoutingFactory {
 	return &TreeRoutingFactory{
-		height:         height,
-		rootAddr:       rootAddr,
-		addrFactory:    addrFactory,
-		orchestratorID: orchestratorID,
+		height:      height,
+		encoder:     encoding.NewProtoEncoder(),
+		addrFactory: addrFactory,
+		hashFactory: crypto.NewSha256Factory(),
 	}
 }
 
-// FromIterator creates the network tree in a deterministic manner based on
-// the addresses. The root address is automatically exluded if present.
-func (t TreeRoutingFactory) FromIterator(iterator mino.AddressIterator) (Routing, error) {
+// GetAddressFactory implements routing.Factory. It returns the address factory
+// for this routing.
+func (t TreeRoutingFactory) GetAddressFactory() mino.AddressFactory {
+	return t.addrFactory
+}
+
+// FromIterator implements routing.Factory. It creates the network tree in a
+// deterministic manner based on the addresses. The root address is
+// automatically exluded if present.
+func (t TreeRoutingFactory) FromIterator(root mino.Address,
+	iterator mino.AddressIterator) (Routing, error) {
 
 	addrsBuf := make(addrsBuf, 0)
 	for iterator.HasNext() {
 		addr := iterator.GetNext()
 
-		if addr.Equal(t.rootAddr) {
+		if addr.Equal(root) {
 			continue
 		}
 
@@ -94,44 +100,45 @@ func (t TreeRoutingFactory) FromIterator(iterator mino.AddressIterator) (Routing
 		addrsBuf = append(addrsBuf, addrBuf)
 	}
 
-	routing, err := t.fromAddrBuf(addrsBuf, t.orchestratorID)
+	routing, err := t.fromAddrBuf(root, addrsBuf)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to build from addrsBuf: %v", err)
+		return nil, xerrors.Errorf("failed to build routing: %v", err)
 	}
 
 	return routing, nil
 }
 
-// FromAny creates the network tree in a deterministic manner based on the proto
-// message encoded as any. It must not contain the root address, which is the
-// case if the Pack() method has been used.
+// FromAny implements routing.Factory. It creates the network tree in a
+// deterministic manner based on the proto message encoded as any. It must not
+// contain the root address, which is the case if the Pack() method has been
+// used.
 func (t TreeRoutingFactory) FromAny(m *any.Any) (Routing, error) {
-
 	msg := &TreeRoutingProto{}
-	err := ptypes.UnmarshalAny(m, msg)
+	err := t.encoder.UnmarshalAny(m, msg)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to unmarshal routing message: %v", err)
 	}
 
-	routing, err := t.fromAddrBuf(msg.Addrs, t.orchestratorID)
+	root := t.addrFactory.FromText(msg.GetRoot())
+
+	routing, err := t.fromAddrBuf(root, msg.Addrs)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to build from addrsBuf: %v", err)
+		return nil, xerrors.Errorf("failed to build routing: %v", err)
 	}
 
 	return routing, nil
 }
 
-func (t TreeRoutingFactory) fromAddrBuf(addrsBuf addrsBuf,
-	orchestratorID string) (Routing, error) {
+func (t TreeRoutingFactory) fromAddrBuf(root mino.Address, addrsBuf addrsBuf) (Routing, error) {
 
 	sort.Stable(&addrsBuf)
 
 	// We will use the hash of the addresses to set the random seed.
-	hash := sha256.New()
+	hash := t.hashFactory.New()
 	for _, addr := range addrsBuf {
 		_, err := hash.Write(addr)
 		if err != nil {
-			fabric.Logger.Fatal().Msgf("failed to write hash: %v", err)
+			return nil, xerrors.Errorf("failed to write hash: %v", err)
 		}
 	}
 
@@ -163,25 +170,38 @@ func (t TreeRoutingFactory) fromAddrBuf(addrsBuf addrsBuf,
 	// N := float64(len(addrs) + 1)
 	// d := int(math.Ceil(math.Pow(N+2.0, 1.0/float64(t.height+1))))
 
-	tree := buildTree(t.rootAddr, addrs, t.height, 0)
+	tree := buildTree(root, addrs, t.height, 0)
 
-	routingNodes := make(map[string]*treeNode)
-	routingNodes[t.rootAddr.String()] = tree
+	routingNodes := make(map[mino.Address]*treeNode)
+	routingNodes[root] = tree
+
 	tree.ForEach(func(n *treeNode) {
-		routingNodes[n.Addr.String()] = n
+		if !n.Addr.Equal(root) {
+			routingNodes[n.Addr] = n
+		}
 	})
 
 	return &TreeRouting{
-		routingNodes:   routingNodes,
-		Root:           tree,
-		orchestratorID: t.orchestratorID,
+		routingNodes: routingNodes,
+		Root:         tree,
 	}, nil
 }
 
-// GetRoute returns the node that is able to relay the message (or correspond to
-// the address). We are able to easily know the route because each address has
-// an index corresponding to its node index on the tree that would comme from a
-// depth-first pre-order enumeration of the nodes. For example:
+// TreeRouting holds the routing tree of a network. It allows each node of the
+// tree to know which child it should contact in order to relay a message that
+// is in it sub-tree.
+//
+// - implements routing.Routing
+type TreeRouting struct {
+	Root         *treeNode
+	routingNodes map[mino.Address]*treeNode
+}
+
+// GetRoute implements routing.Routing. It returns the node that is able to
+// relay the message (or correspond to the address). We are able to easily know
+// the route because each address has an index corresponding to its node index
+// on the tree that would comme from a depth-first pre-order enumeration of the
+// nodes. For example:
 //         root
 //      /    |    \
 //     0     3     6
@@ -192,53 +212,65 @@ func (t TreeRoutingFactory) fromAddrBuf(addrsBuf addrsBuf,
 // 3 and lastIndex = 5. Now if the root wants to know which of its children to
 // contact in order to reach node 4, it then checks the "index" and "indexLast"
 // for all its children, an see that for its child 3, 3 >= 4 <= 5, so the root
-// will send its message to node 3.
-//
-// - implements Routing
-func (t TreeRouting) GetRoute(from, to mino.Address) (mino.Address, error) {
-
-	// This is the case the main orchestrator want to send a message. The main
-	// orchestrator is not a node by itself in the tree, but it has a connection
-	// to the root. This is why each time the main orchestrator wants to send a
-	// message we know we must relay it to the root. The main orchestrator
-	// represents the entry point of the RPC stream that the client created.
-	if from.String() == t.orchestratorID {
-		return t.Root.Addr, nil
-	}
-
-	fromNode, ok := t.routingNodes[from.String()]
+// will send its message to node 3. If there is no route to the node, it will
+// return nil.
+func (t TreeRouting) GetRoute(from, to mino.Address) mino.Address {
+	fromNode, ok := t.routingNodes[from]
 	if !ok {
-		return nil, xerrors.Errorf("node with address '%s' not found",
-			from.String())
+		return nil
 	}
 
 	if fromNode.Addr != nil && fromNode.Addr.Equal(to) {
-		return to, nil
+		return to
 	}
 
-	target, ok := t.routingNodes[to.String()]
-	if !ok || target == nil {
-		return nil, xerrors.Errorf("failed to find node '%s' in routingNode map",
-			to.String())
+	target := t.routingNodes[to]
+	if target == nil {
+		return nil
 	}
 
 	for _, c := range fromNode.Children {
 		if target.Index >= c.Index && target.Index <= c.LastIndex {
-			return c.Addr, nil
+			return c.Addr
 		}
 	}
 
-	return nil, xerrors.Errorf("didn't find any route")
+	return nil
 }
 
-// GetDirectLinks returns the children
-//
-// - implements Routing
-func (t TreeRouting) GetDirectLinks(from mino.Address) ([]mino.Address, error) {
-	fromNode, ok := t.routingNodes[from.String()]
+// GetRoot implements routing.Routing. It returns the root of the tree.
+func (t TreeRouting) GetRoot() mino.Address {
+	return t.Root.Addr
+}
+
+// GetParent implements routing.Routing. It returns the parent node of the given
+// address if it exists, otherwise it returns nil.
+func (t TreeRouting) GetParent(addr mino.Address) mino.Address {
+	if t.Root.Addr.Equal(addr) {
+		return nil
+	}
+
+	parent := t.Root.Addr
+	for {
+		next := t.GetRoute(parent, addr)
+		if next == nil {
+			return nil
+		}
+
+		if next.Equal(addr) {
+			return parent
+		}
+
+		parent = next
+	}
+}
+
+// GetDirectLinks implements routing.Routing. It returns the addresses the node
+// is responsible to route messages to.
+func (t TreeRouting) GetDirectLinks(from mino.Address) []mino.Address {
+	fromNode, ok := t.routingNodes[from]
 	if !ok {
-		return nil, xerrors.Errorf("node with address '%s' not found",
-			from.String())
+		return nil
 	}
 
 	res := make([]mino.Address, len(fromNode.Children))
@@ -246,31 +278,30 @@ func (t TreeRouting) GetDirectLinks(from mino.Address) ([]mino.Address, error) {
 		res[i] = c.Addr
 	}
 
-	return res, nil
+	return res
 }
 
-// Pack returns the tree routing proto, which is the list of addresses without
-// the root.
-//
-// - implements Routing
+// Pack implements encoding.Packable. It returns the tree routing proto, which
+// is the list of addresses without the root.
 func (t TreeRouting) Pack(encoder encoding.ProtoMarshaler) (proto.Message, error) {
-	addrs := make([][]byte, 0, len(t.routingNodes)-1)
+	addrs := make([][]byte, 0, len(t.routingNodes))
+	var root []byte
 
 	for _, node := range t.routingNodes {
-		if node == t.Root {
-			// the root is specified in the factory so we don't keep it
-			continue
-		}
-
 		addrBuf, err := node.Addr.MarshalText()
 		if err != nil {
 			return nil, xerrors.Errorf("failed to marshal address: %v", err)
 		}
 
-		addrs = append(addrs, addrBuf)
+		if node == t.Root {
+			root = addrBuf
+		} else {
+			addrs = append(addrs, addrBuf)
+		}
 	}
 
 	msg := &TreeRoutingProto{
+		Root:  root,
 		Addrs: addrs,
 	}
 
@@ -286,7 +317,6 @@ func (t TreeRouting) Display(out io.Writer) {
 // buildTree builds the newtwork tree based on the list of addresses. The first
 // call should have an index of 0.
 func buildTree(addr mino.Address, addrs []mino.Address, h, index int) *treeNode {
-
 	// the height can not be higher than the total number of nodes, ie. if there
 	// are 10 nodes, then the maximum height we can have is 9. Here len(addrs)
 	// represents the number of nodes-1 because the root addr is not included.

@@ -70,7 +70,8 @@ func TestRPC_Stream(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	sender, receiver := rpc.Stream(ctx, mino.NewAddresses(m.GetAddress()))
+	sender, receiver, err := rpc.Stream(ctx, mino.NewAddresses(m.GetAddress()))
+	require.NoError(t, err)
 
 	sender.Send(&empty.Empty{}, m.GetAddress())
 	_, _, err = receiver.Recv(context.Background())
@@ -93,7 +94,8 @@ func TestRPC_Failures_Stream(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	out, in := rpc.Stream(ctx, mino.NewAddresses(m.GetAddress()))
+	out, in, err := rpc.Stream(ctx, mino.NewAddresses(m.GetAddress()))
+	require.NoError(t, err)
 	_, _, err = in.Recv(ctx)
 	require.EqualError(t, err, "couldn't process: oops")
 
@@ -101,8 +103,7 @@ func TestRPC_Failures_Stream(t *testing.T) {
 	err = testWait(t, errs, nil)
 	require.EqualError(t, err, "couldn't marshal message: message is nil")
 
-	_, in = rpc.Stream(ctx, mino.NewAddresses(fake.NewAddress(0)))
-	_, _, err = in.Recv(ctx)
+	_, _, err = rpc.Stream(ctx, mino.NewAddresses(fake.NewAddress(0)))
 	require.EqualError(t, err,
 		"couldn't find peer: invalid address type 'fake.Address'")
 }

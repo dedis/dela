@@ -267,7 +267,6 @@ func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 	}
 
 	for !h.dkg.Certified() {
-
 		ctx, cancel := context.WithTimeout(context.Background(),
 			recvResponseTimeout)
 		defer cancel()

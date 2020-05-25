@@ -2,6 +2,7 @@ package minogrpc
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -10,28 +11,23 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/ptypes"
-	"go.dedis.ch/fabric"
 	"go.dedis.ch/fabric/mino"
+	"google.golang.org/grpc/metadata"
 )
 
 //
 // Traffic is a utility to save network informations. It can be useful for
 // debugging and to understand how the network works. Each server has an
 // instance of traffic but does not store logs by default. To do that you can
-// set MINO_LOG_PACKETS=true as varenv or directly the public attribute SaveLog.
-// You can also set MINO_PRINT_PACKETS=true in conjunction with MINO_LOG_PACKETS
-// to print the packets. It also has its corresponding PrintLog public
-// attribute.
+// set MINO_TRAFFIC=log as varenv. You can also set MINO_TRAFFIC=print to print
+// the packets.
 //
 // There is the possibility to save a graphviz representation of network
 // activity. The following snippet shows practical use of it:
 //
-// ```go
-// minogrpc.SaveLog = true
-// defer func() {
+// ```go minogrpc.SaveLog = true defer func() {
 //     minogrpc.SaveGraph("graph.dot", true, false)
-// }()
-// ```
+// }() ```
 //
 // Then you can generate of PDF with `dot -Tpdf graph.dot -o graph.pdf`
 //
@@ -41,57 +37,43 @@ var (
 	globalCounter = atomicCounter{}
 	sendCounter   = &atomicCounter{}
 	recvCounter   = &atomicCounter{}
-	traffics      = []*traffic{}
-	// SaveLog indicates if log must be saved
-	SaveLog = false
-	// PrintLog indicates if log must be printed
-	PrintLog = false
 )
-
-func init() {
-	flag := os.Getenv("MINO_LOG_PACKETS")
-	if flag == "true" {
-		SaveLog = true
-	}
-
-	flag = os.Getenv("MINO_PRINT_PACKETS")
-	if flag == "true" {
-		PrintLog = true
-	}
-}
-
-// SaveGraph generate the graph file based on the saved traffics. Be sure to set
-// MINO_LOG_PACKETS=true to save logs infos.
-func SaveGraph(path string, withSend, withRcv bool) {
-	fabric.Logger.Info().Msgf("Saving graph file to %s", path)
-	f, _ := os.Create(path)
-	GenerateGraphviz(f, withSend, withRcv, traffics...)
-}
 
 // traffic is used to keep track of packets traffic in a server
 type traffic struct {
-	name  string
-	items []item
+	me             mino.Address
+	addressFactory mino.AddressFactory
+	items          []item
+	out            io.Writer
 }
 
-func newTraffic(name string) *traffic {
-
+func newTraffic(me mino.Address, af mino.AddressFactory, out io.Writer) *traffic {
 	traffic := &traffic{
-		name:  name,
-		items: make([]item, 0),
+		me:             me,
+		addressFactory: af,
+		items:          make([]item, 0),
+		out:            out,
 	}
-
-	traffics = append(traffics, traffic)
 
 	return traffic
 }
 
-func (t *traffic) logSend(from, to mino.Address, msg *Envelope, context string) {
-	t.addItem("send", from, to, msg, context)
+func (t *traffic) Save(path string, withSend, withRcv bool) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+
+	GenerateGraphviz(f, withSend, withRcv, t)
+	return nil
 }
 
-func (t *traffic) logRcv(from, to mino.Address, msg *Envelope, context string) {
-	t.addItem("received", from, to, msg, context)
+func (t *traffic) logSend(ctx context.Context, from, to mino.Address, msg *Envelope) {
+	t.addItem(ctx, from, to, "send", msg)
+}
+
+func (t *traffic) logRcv(ctx context.Context, from, to mino.Address, msg *Envelope) {
+	t.addItem(ctx, from, to, "received", msg)
 }
 
 func (t traffic) Display(out io.Writer) {
@@ -103,34 +85,60 @@ func (t traffic) Display(out io.Writer) {
 	fmt.Fprint(out, eachLine.ReplaceAllString(buf.String(), "-$1"))
 }
 
-func (t *traffic) addItem(typeStr string, from, to mino.Address, msg *Envelope,
-	context string) {
+func (t *traffic) addItem(ctx context.Context,
+	from, to mino.Address, typeStr string, msg *Envelope) {
 
-	if !SaveLog {
+	if t == nil {
 		return
 	}
 
-	counter := sendCounter
-	if typeStr == "received" {
-		counter = recvCounter
+	if to == nil {
+		to = newRootAddress()
+	}
+
+	if from == nil {
+		from = newRootAddress()
 	}
 
 	newItem := item{
 		typeStr:       typeStr,
-		from:          from,
-		to:            to,
 		msg:           msg,
-		context:       context,
+		context:       t.getContext(ctx),
 		globalCounter: globalCounter.IncrementAndGet(),
-		typeCounter:   counter.IncrementAndGet(),
 	}
 
-	if PrintLog {
-		fmt.Fprintf(os.Stdout, "\n> %s", t.name)
-		newItem.Display(os.Stdout)
+	switch typeStr {
+	case "received":
+		newItem.from = from
+		newItem.to = to
+		newItem.typeCounter = recvCounter.IncrementAndGet()
+	case "send":
+		newItem.from = from
+		newItem.to = to
+		newItem.typeCounter = sendCounter.IncrementAndGet()
 	}
+
+	fmt.Fprintf(t.out, "\n> %v", t.me)
+	newItem.Display(t.out)
 
 	t.items = append(t.items, newItem)
+}
+
+func (t *traffic) getContext(ctx context.Context) string {
+	headers, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		headers, ok = metadata.FromOutgoingContext(ctx)
+		if !ok {
+			return ""
+		}
+	}
+
+	values := headers.Get(headerURIKey)
+	if len(values) == 0 {
+		return ""
+	}
+
+	return values[0]
 }
 
 type item struct {
@@ -146,11 +154,9 @@ type item struct {
 func (p item) Display(out io.Writer) {
 	fmt.Fprint(out, "- item:\n")
 	fmt.Fprintf(out, "-- typeStr: %s\n", p.typeStr)
-	fmt.Fprintf(out, "-- from: %s\n", p.from)
-	fmt.Fprintf(out, "-- to: %s\n", p.to)
+	fmt.Fprintf(out, "-- from: %v\n", p.from)
+	fmt.Fprintf(out, "-- to: %v\n", p.to)
 	fmt.Fprintf(out, "-- msg: (type %T) %s\n", p.msg, p.msg)
-	fmt.Fprintf(out, "--- From: %s\n", p.msg.From)
-	fmt.Fprintf(out, "--- PhysicalFrom: %s\n", p.msg.PhysicalFrom)
 	fmt.Fprintf(out, "--- To: %v\n", p.msg.To)
 	fmt.Fprintf(out, "-- context: %s\n", p.context)
 }
@@ -179,7 +185,7 @@ func GenerateGraphviz(out io.Writer, withSend, withRcv bool, traffics ...*traffi
 
 			msgType := fmt.Sprintf("%T", item.msg.Message)
 			var da ptypes.DynamicAny
-			err := ptypes.UnmarshalAny(item.msg.Message, &da)
+			err := ptypes.UnmarshalAny(item.msg.Message.GetPayload(), &da)
 			if err == nil {
 				msgType = fmt.Sprintf("%T", da.Message)
 			}
@@ -192,13 +198,16 @@ func GenerateGraphviz(out io.Writer, withSend, withRcv bool, traffics ...*traffi
 
 			toStr := ""
 			for _, to := range item.msg.To {
-				toStr += fmt.Sprintf("to %s<br/>", to)
+				addr := traffic.addressFactory.FromText(to)
+				toStr += fmt.Sprintf("to \"%v\"<br/>", addr)
 			}
 
-			msgStr := fmt.Sprintf("<font point-size='10' color='#9C9C9C'>from %s<br/>%s%s</font>",
-				item.msg.From, toStr, msgType)
+			from := traffic.addressFactory.FromText(item.msg.GetMessage().From)
 
-			fmt.Fprintf(out, "\"%s\" -> \"%s\" "+
+			msgStr := fmt.Sprintf("<font point-size='10' color='#9C9C9C'>from \"%v\"<br/>%s%s</font>",
+				from, toStr, msgType)
+
+			fmt.Fprintf(out, "\"%v\" -> \"%v\" "+
 				"[ label = < <font color='#303030'><b>%d</b> <font point-size='10'>(%d)</font></font><br/>%s> color=\"%s\" ];\n",
 				item.from, item.to, item.typeCounter, item.globalCounter, msgStr, color)
 		}

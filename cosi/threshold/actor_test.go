@@ -66,6 +66,10 @@ func TestActor_Sign(t *testing.T) {
 	actor.signer = fake.NewSigner()
 	err = actor.merge(&Signature{}, &empty.Empty{}, 0, fake.NewInvalidPublicKey(), fakeMessage{})
 	require.EqualError(t, err, "couldn't verify: fake error")
+
+	actor.rpc = fake.NewBadStreamRPC()
+	_, err = actor.Sign(ctx, fakeMessage{}, ca)
+	require.EqualError(t, err, "couldn't open stream: fake error")
 }
 
 // -----------------------------------------------------------------------------
@@ -118,6 +122,6 @@ type fakeRPC struct {
 	receiver *fakeReceiver
 }
 
-func (rpc fakeRPC) Stream(context.Context, mino.Players) (mino.Sender, mino.Receiver) {
-	return rpc.sender, rpc.receiver
+func (rpc fakeRPC) Stream(context.Context, mino.Players) (mino.Sender, mino.Receiver, error) {
+	return rpc.sender, rpc.receiver, nil
 }

@@ -97,6 +97,10 @@ func TestOperations_CatchUp(t *testing.T) {
 	require.EqualError(t, err, "couldn't read last block: oops")
 
 	ops.db = &fakeDatabase{blocks: []SkipBlock{{}}}
+	ops.rpc = fake.NewBadStreamRPC()
+	err = ops.catchUp(block, nil)
+	require.EqualError(t, err, "couldn't open stream: fake error")
+
 	ops.rpc = fake.NewStreamRPC(fake.NewBadReceiver(), fake.Sender{})
 	err = ops.catchUp(block, nil)
 	require.EqualError(t, err, "couldn't receive message: fake error")

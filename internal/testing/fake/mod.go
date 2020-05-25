@@ -98,8 +98,8 @@ type AddressIterator struct {
 }
 
 // NewAddressIterator returns a new address iterator
-func NewAddressIterator(addrs []mino.Address) AddressIterator {
-	return AddressIterator{
+func NewAddressIterator(addrs []mino.Address) *AddressIterator {
+	return &AddressIterator{
 		addrs: addrs,
 	}
 }
@@ -682,6 +682,7 @@ type RPC struct {
 	Errs     chan error
 	receiver Receiver
 	sender   Sender
+	err      error
 }
 
 // NewRPC returns a fake rpc.
@@ -701,6 +702,15 @@ func NewStreamRPC(r Receiver, s Sender) *RPC {
 	return rpc
 }
 
+// NewBadStreamRPC returns a fake rpc that returns an error when calling Stream.
+func NewBadStreamRPC() *RPC {
+	return &RPC{
+		Msgs: make(chan proto.Message, 100),
+		Errs: make(chan error, 100),
+		err:  xerrors.New("fake error"),
+	}
+}
+
 // Call implements mino.RPC.
 func (rpc *RPC) Call(ctx context.Context, m proto.Message,
 	p mino.Players) (<-chan proto.Message, <-chan error) {
@@ -709,8 +719,8 @@ func (rpc *RPC) Call(ctx context.Context, m proto.Message,
 }
 
 // Stream implements mino.RPC.
-func (rpc *RPC) Stream(context.Context, mino.Players) (mino.Sender, mino.Receiver) {
-	return rpc.sender, rpc.receiver
+func (rpc *RPC) Stream(context.Context, mino.Players) (mino.Sender, mino.Receiver, error) {
+	return rpc.sender, rpc.receiver, rpc.err
 }
 
 // Reset resets the channels.

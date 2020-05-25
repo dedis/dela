@@ -1,21 +1,23 @@
 package minogrpc
 
 import (
-	"bytes"
 	"net/url"
+	"sync"
 	"testing"
-	"testing/quick"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/encoding"
 	internal "go.dedis.ch/fabric/internal/testing"
 	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/fabric/mino/minogrpc/routing"
+	"golang.org/x/xerrors"
+	"google.golang.org/grpc"
 )
 
 func TestMessages(t *testing.T) {
 	messages := []proto.Message{
 		&Envelope{},
+		&Message{},
 	}
 
 	for _, m := range messages {
@@ -23,39 +25,122 @@ func TestMessages(t *testing.T) {
 	}
 }
 
-func Test_NewMinogrpc(t *testing.T) {
-	// The happy path
-	urlStr := "//127.0.0.1:3333"
-	url, err := url.Parse(urlStr)
-	require.NoError(t, err)
-
-	minoRPC, err := NewMinogrpc(url, nil)
-	require.NoError(t, err)
-
-	require.Equal(t, "127.0.0.1:3333", minoRPC.GetAddress().String())
-	require.Equal(t, "", minoRPC.namespace)
-
-	cert, found := minoRPC.server.nodesCerts.Load("127.0.0.1:3333")
-	require.True(t, found)
-
-	require.Equal(t, minoRPC.server.cert.Leaf, cert)
-
-	// Giving a wrong address, should be "//example:3333"
-	urlStr = "example:3333"
-	url, err = url.Parse(urlStr)
-	require.NoError(t, err)
-
-	_, err = NewMinogrpc(url, nil)
-	require.EqualError(t, err, "host URL is invalid: empty host for 'example:3333'. Hint: the url must be created using an absolute path, like //127.0.0.1:3333")
+func TestRootAddress_Equal(t *testing.T) {
+	root := newRootAddress()
+	require.True(t, root.Equal(newRootAddress()))
+	require.True(t, root.Equal(root))
+	require.False(t, root.Equal(address{}))
 }
 
-func Test_MakeNamespace(t *testing.T) {
+func TestRootAddress_MarshalText(t *testing.T) {
+	root := newRootAddress()
+	text, err := root.MarshalText()
+	require.NoError(t, err)
+	require.Equal(t, "\ue000", string(text))
+}
+
+func TestRootAddress_String(t *testing.T) {
+	root := newRootAddress()
+	require.Equal(t, orchestratorDescription, root.String())
+}
+
+func TestAddress_Equal(t *testing.T) {
+	addr := address{host: "127.0.0.1:2000"}
+
+	require.True(t, addr.Equal(addr))
+	require.False(t, addr.Equal(address{}))
+}
+
+func TestAddress_MarshalText(t *testing.T) {
+	addr := address{host: "127.0.0.1:2000"}
+	buffer, err := addr.MarshalText()
+	require.NoError(t, err)
+
+	require.Equal(t, []byte(addr.host), buffer)
+}
+
+func TestAddress_String(t *testing.T) {
+	addr := address{host: "127.0.0.1:2000"}
+	require.Equal(t, addr.host, addr.String())
+}
+
+func TestAddressFactory_FromText(t *testing.T) {
+	factory := AddressFactory{}
+	addr := factory.FromText([]byte("127.0.0.1:2000"))
+
+	require.Equal(t, "127.0.0.1:2000", addr.(address).host)
+}
+
+func TestMinogrpc_New(t *testing.T) {
+	m, err := NewMinogrpc("127.0.0.1", 3333, routing.NewTreeRoutingFactory(1, AddressFactory{}))
+	require.NoError(t, err)
+
+	require.Equal(t, "127.0.0.1:3333", m.GetAddress().String())
+	require.Equal(t, "", m.namespace)
+
+	cert := m.GetCertificate()
+	require.NotNil(t, cert)
+
+	require.NoError(t, m.GracefulClose())
+
+	// Giving a wrong address, should be "//example:3333"
+	_, err = NewMinogrpc("\\", 0, nil)
+	require.EqualError(t, err,
+		"couldn't parse url: parse \"//\\\\:0\": invalid character \"\\\\\" in host name")
+
+	_, err = NewMinogrpc("127.0.0.1", 1, routing.NewTreeRoutingFactory(1, AddressFactory{}))
+	require.EqualError(t, err,
+		"couldn't start the server: failed to listen: listen tcp4 127.0.0.1:1: bind: permission denied")
+}
+
+func TestMinogrpc_GetAddressFactory(t *testing.T) {
+	m := &Minogrpc{}
+	require.IsType(t, AddressFactory{}, m.GetAddressFactory())
+}
+
+func TestMinogrpc_GetAddress(t *testing.T) {
+	addr := address{}
+	minoGrpc := Minogrpc{
+		overlay: overlay{me: addr},
+	}
+
+	require.Equal(t, addr, minoGrpc.GetAddress())
+}
+
+func TestMinogrpc_GracefulClose(t *testing.T) {
+	m, err := NewMinogrpc("127.0.0.1", 0, routing.NewTreeRoutingFactory(1, AddressFactory{}))
+	require.NoError(t, err)
+
+	require.NoError(t, m.GracefulClose())
+
+	// Closing when the server has not started.
+	m = &Minogrpc{started: make(chan struct{})}
+	err = m.GracefulClose()
+	require.EqualError(t, err, "server should be listening before trying to close")
+
+	// gRPC failed to stop gracefully.
+	m = &Minogrpc{
+		url:     &url.URL{Host: "127.0.0.1:0"},
+		server:  grpc.NewServer(),
+		started: make(chan struct{}),
+		closer:  &sync.WaitGroup{},
+		closing: make(chan error, 1),
+	}
+	m.closer.Add(1)
+	close(m.started)
+	m.closing <- xerrors.New("oops")
+
+	err = m.GracefulClose()
+	require.EqualError(t, err, "failed to stop gracefully: oops")
+}
+
+func TestMinogrpc_MakeNamespace(t *testing.T) {
 	minoGrpc := Minogrpc{}
 	ns := "Test"
 	newMino, err := minoGrpc.MakeNamespace(ns)
 	require.NoError(t, err)
 
-	newMinoGrpc, ok := newMino.(Minogrpc)
+	newMinoGrpc, ok := newMino.(*Minogrpc)
 	require.True(t, ok)
 
 	require.Equal(t, ns, newMinoGrpc.namespace)
@@ -79,160 +164,25 @@ func Test_MakeNamespace(t *testing.T) {
 	require.EqualError(t, err, "a namespace should match [a-zA-Z0-9]+, but found 'test$'")
 }
 
-func Test_Address(t *testing.T) {
-	addr := address{
-		id: "test",
-	}
+func TestMinogrpc_MakeRPC(t *testing.T) {
 	minoGrpc := Minogrpc{
-		server: &Server{
-			addr: addr,
-		},
+		namespace: "namespace",
+		overlay:   overlay{},
+		handlers:  make(map[string]mino.Handler),
 	}
 
-	require.Equal(t, addr, minoGrpc.GetAddress())
-}
-
-func Test_MakeRPC(t *testing.T) {
-	minoGrpc := Minogrpc{}
-	minoGrpc.namespace = "namespace"
-	minoGrpc.server = &Server{
-		handlers: make(map[string]mino.Handler),
-	}
-
-	handler := testSameHandler{}
+	handler := mino.UnsupportedHandler{}
 
 	rpc, err := minoGrpc.MakeRPC("name", handler)
 	require.NoError(t, err)
 
 	expectedRPC := &RPC{
-		encoder: encoding.NewProtoEncoder(),
-		handler: handler,
-		srv:     minoGrpc.server,
+		overlay: overlay{},
 		uri:     "namespace/name",
 	}
 
-	h, ok := minoGrpc.server.handlers[expectedRPC.uri]
+	h, ok := minoGrpc.handlers[expectedRPC.uri]
 	require.True(t, ok)
 	require.Equal(t, handler, h)
-
 	require.Equal(t, expectedRPC, rpc)
-
-}
-
-func TestAddress_Equal(t *testing.T) {
-	addr := address{id: "A"}
-	require.True(t, addr.Equal(addr))
-	require.False(t, addr.Equal(address{}))
-}
-
-func TestAddress_MarshalText(t *testing.T) {
-	f := func(id string) bool {
-		addr := address{id: id}
-		buffer, err := addr.MarshalText()
-		require.NoError(t, err)
-
-		return bytes.Equal([]byte(id), buffer)
-	}
-
-	err := quick.Check(f, nil)
-	require.NoError(t, err)
-}
-
-func TestAddress_String(t *testing.T) {
-	f := func(id string) bool {
-		addr := address{id: id}
-
-		return id == addr.String()
-	}
-
-	err := quick.Check(f, nil)
-	require.NoError(t, err)
-}
-
-func TestAddressFactory_FromText(t *testing.T) {
-	f := func(id string) bool {
-		factory := AddressFactory{}
-		addr := factory.FromText([]byte(id))
-
-		return addr.(address).id == id
-	}
-
-	err := quick.Check(f, nil)
-	require.NoError(t, err)
-}
-
-func TestMinogrpc_GetAddressFactory(t *testing.T) {
-	m := &Minogrpc{}
-	require.IsType(t, AddressFactory{}, m.GetAddressFactory())
-}
-
-func TestPlayers_AddressIterator(t *testing.T) {
-	players := fakePlayers{players: []mino.Address{address{"test"}}}
-	it := players.AddressIterator()
-	it2, ok := it.(*fakeAddressIterator)
-	require.True(t, ok)
-
-	require.Equal(t, players.players, it2.players)
-
-	require.Equal(t, 1, players.Len())
-}
-
-func TestAddressIterator(t *testing.T) {
-	a := &address{"test"}
-	it := fakeAddressIterator{
-		players: []mino.Address{a},
-	}
-
-	require.True(t, it.HasNext())
-	addr := it.GetNext()
-	require.Equal(t, a, addr)
-
-	require.False(t, it.HasNext())
-}
-
-// -----------------------------------------------------------------------------
-// Utility functions
-
-// fakePlayers implements mino.Players{}
-type fakePlayers struct {
-	mino.Players
-	players  []mino.Address
-	iterator *fakeAddressIterator
-}
-
-// AddressIterator implements mino.Players.AddressIterator()
-func (p *fakePlayers) AddressIterator() mino.AddressIterator {
-	if p.iterator == nil {
-		p.iterator = &fakeAddressIterator{players: p.players}
-	}
-	return p.iterator
-}
-
-// Len() implements mino.Players.Len()
-func (p *fakePlayers) Len() int {
-	return len(p.players)
-}
-
-// fakeAddressIterator implements mino.addressIterator{}
-type fakeAddressIterator struct {
-	players []mino.Address
-	cursor  int
-}
-
-func (it *fakeAddressIterator) Seek(index int) {
-	it.cursor = index
-}
-
-// HasNext implements mino.AddressIterator.HasNext()
-func (it *fakeAddressIterator) HasNext() bool {
-	return it.cursor < len(it.players)
-}
-
-// GetNext implements mino.AddressIterator.GetNext(). It is the responsibility
-// of the caller to check there is still elements to get. Otherwise it may
-// crash.
-func (it *fakeAddressIterator) GetNext() mino.Address {
-	p := it.players[it.cursor]
-	it.cursor++
-	return p
 }
