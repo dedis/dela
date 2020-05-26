@@ -1,0 +1,21 @@
+# this config define the core elements of Dela to get a meaningful graph.
+modname: go.dedis.ch/fabric
+includes:
+    - go.dedis.ch/fabric/*
+excludes:
+    - go.dedis.ch/fabric/encoding*
+    - go.dedis.ch/fabric/crypto*
+    - go.dedis.ch/fabric/mino*
+    - go.dedis.ch/fabric$
+    - go.dedis.ch/fabric/dkg*
+    - go.dedis.ch/fabric/internal*
+interfaces:
+    - blockchain
+    - consensus
+    - cosi
+    - dkg
+    - ledger
+    - ledger/arc
+    - ledger/transactions
+    - ledger/inventory
+    - mino
