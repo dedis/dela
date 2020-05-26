@@ -168,6 +168,10 @@ func run(c *cli.Context) error {
 
 	// parseFile will be called recusively on each file and folder
 	parseFile := func(path string, f os.FileInfo, err error) error {
+		if err != nil {
+			return xerrors.Errorf("got an error while walking: %v", err)
+		}
+
 		// we exclude the dir, non-go files and test files
 		if f.IsDir() || !strings.HasSuffix(f.Name(), ".go") ||
 			strings.HasSuffix(f.Name(), "_test.go") {
@@ -204,9 +208,7 @@ func run(c *cli.Context) error {
 			// in the case the package imports a package from the same module,
 			// we want to keep only the "relative" name. From
 			// "go.dedis.ch/fabric/mino/minogrpc" we want only "mino/minogrpc".
-			if strings.HasPrefix(importPath, config.Modname) {
-				importPath = importPath[len(config.Modname):]
-			}
+			importPath = strings.TrimPrefix(importPath, config.Modname)
 
 			if links[packagePath[len(config.Modname):]] == nil {
 				links[packagePath[len(config.Modname):]] = make(map[string]bool)
