@@ -1,8 +1,8 @@
 package pedersen
 
 import (
-	"go.dedis.ch/fabric/dkg"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela/dkg"
+	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/share"
 	"go.dedis.ch/kyber/v3/suites"

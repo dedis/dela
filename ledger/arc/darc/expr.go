@@ -5,8 +5,8 @@ import (
 	"sort"
 
 	proto "github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/ledger/arc"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/ledger/arc"
 	"golang.org/x/xerrors"
 )
 

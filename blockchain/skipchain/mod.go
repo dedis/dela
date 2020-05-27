@@ -11,12 +11,12 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/rs/zerolog"
-	"go.dedis.ch/fabric"
-	"go.dedis.ch/fabric/blockchain"
-	"go.dedis.ch/fabric/consensus"
-	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/blockchain"
+	"go.dedis.ch/dela/consensus"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
 )
 
@@ -49,7 +49,7 @@ func NewSkipchain(m mino.Mino, consensus consensus.Consensus) *Skipchain {
 	encoder := encoding.NewProtoEncoder()
 
 	return &Skipchain{
-		logger:    fabric.Logger,
+		logger:    dela.Logger,
 		mino:      m,
 		db:        db,
 		consensus: consensus,
@@ -67,7 +67,7 @@ func NewSkipchain(m mino.Mino, consensus consensus.Consensus) *Skipchain {
 // consensus module.
 func (s *Skipchain) Listen(proc blockchain.PayloadProcessor) (blockchain.Actor, error) {
 	ops := &operations{
-		logger:       fabric.Logger,
+		logger:       dela.Logger,
 		encoder:      s.encoder,
 		addr:         s.mino.GetAddress(),
 		processor:    proc,
@@ -271,7 +271,7 @@ type skipchainObserver struct {
 func (o skipchainObserver) NotifyCallback(event interface{}) {
 	block, ok := event.(SkipBlock)
 	if !ok {
-		fabric.Logger.Warn().Msgf("got invalid event '%T'", event)
+		dela.Logger.Warn().Msgf("got invalid event '%T'", event)
 		return
 	}
 

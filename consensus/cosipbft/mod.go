@@ -8,14 +8,14 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/rs/zerolog"
-	"go.dedis.ch/fabric"
-	"go.dedis.ch/fabric/consensus"
-	"go.dedis.ch/fabric/consensus/viewchange"
-	"go.dedis.ch/fabric/consensus/viewchange/constant"
-	"go.dedis.ch/fabric/cosi"
-	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/consensus"
+	"go.dedis.ch/dela/consensus/viewchange"
+	"go.dedis.ch/dela/consensus/viewchange/constant"
+	"go.dedis.ch/dela/cosi"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
 )
 
@@ -44,7 +44,7 @@ type Consensus struct {
 // NewCoSiPBFT returns a new instance.
 func NewCoSiPBFT(mino mino.Mino, cosi cosi.CollectiveSigning, gov viewchange.Governance) *Consensus {
 	c := &Consensus{
-		logger:       fabric.Logger,
+		logger:       dela.Logger,
 		storage:      newInMemoryStorage(),
 		mino:         mino,
 		cosi:         cosi,
@@ -170,7 +170,7 @@ func (a pbftActor) Propose(p consensus.Proposal) error {
 	// change.
 	leader, ok := a.ViewChange.Wait(p, authority)
 	if !ok {
-		fabric.Logger.Trace().Msg("proposal skipped by view change")
+		dela.Logger.Trace().Msg("proposal skipped by view change")
 		// Not authorized to propose a block as the leader is moving forward so
 		// we drop the proposal. The upper layer is responsible for trying again
 		// until the leader includes the data.

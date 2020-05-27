@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/ledger/transactions"
+	"go.dedis.ch/dela/ledger/transactions"
 )
 
 func TestTxQueue_GetAll(t *testing.T) {

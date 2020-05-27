@@ -1,12 +1,10 @@
 ![Infography](assets/infograph.png)
 
-# Modulus
+# Dela
 
-Modulus is a set of modules definition and their implementations. We choose this
-name for this project because it captures well the idea of providing a modular
-framework that allows one to either use a module's implementation or define its
-own. Fabric is not about a particular blockchain implementation, it's about the
-definitions of modular pieces that build a blockchain.
+Dela stands for Dedis Ledger Architecture. The goal of the framework is to
+provide a set of modules that will work together to run a distributed ledger, or
+only a part of it.
 
 ## Terminologies
 

@@ -7,7 +7,7 @@ import (
 	fmt "fmt"
 	proto "github.com/golang/protobuf/proto"
 	any "github.com/golang/protobuf/ptypes/any"
-	roster "go.dedis.ch/fabric/ledger/byzcoin/roster"
+	roster "go.dedis.ch/dela/ledger/byzcoin/roster"
 	math "math"
 )
 

@@ -4,9 +4,9 @@ import (
 	"context"
 
 	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/mino"
 )
 
 // Hashable is the interface to implement to validate an incoming message for a

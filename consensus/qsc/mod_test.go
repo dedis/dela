@@ -10,10 +10,10 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/consensus"
-	internal "go.dedis.ch/fabric/internal/testing"
-	"go.dedis.ch/fabric/mino"
-	"go.dedis.ch/fabric/mino/minoch"
+	"go.dedis.ch/dela/consensus"
+	internal "go.dedis.ch/dela/internal/testing"
+	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/minoch"
 	"golang.org/x/xerrors"
 )
 

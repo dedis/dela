@@ -5,14 +5,14 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
-	"go.dedis.ch/fabric/consensus/viewchange"
-	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/ledger/arc/darc"
-	"go.dedis.ch/fabric/ledger/byzcoin/roster"
-	"go.dedis.ch/fabric/ledger/inventory"
-	"go.dedis.ch/fabric/ledger/transactions/basic"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela/consensus/viewchange"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/ledger/arc/darc"
+	"go.dedis.ch/dela/ledger/byzcoin/roster"
+	"go.dedis.ch/dela/ledger/inventory"
+	"go.dedis.ch/dela/ledger/transactions/basic"
+	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
 )
 

@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/internal/testing/fake"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/internal/testing/fake"
 )
 
 func TestPrepare_Pack(t *testing.T) {

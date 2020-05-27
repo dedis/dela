@@ -1,7 +1,7 @@
 package dkg
 
 import (
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/kyber/v3"
 )
 

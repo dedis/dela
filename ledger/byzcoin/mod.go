@@ -7,26 +7,26 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
-	"go.dedis.ch/fabric"
-	"go.dedis.ch/fabric/blockchain"
-	"go.dedis.ch/fabric/blockchain/skipchain"
-	"go.dedis.ch/fabric/consensus/cosipbft"
-	"go.dedis.ch/fabric/consensus/viewchange"
-	"go.dedis.ch/fabric/consensus/viewchange/rotating"
-	"go.dedis.ch/fabric/cosi/flatcosi"
-	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/ledger"
-	"go.dedis.ch/fabric/ledger/byzcoin/roster"
-	"go.dedis.ch/fabric/ledger/inventory/mem"
-	"go.dedis.ch/fabric/ledger/transactions"
-	"go.dedis.ch/fabric/ledger/transactions/basic"
-	"go.dedis.ch/fabric/mino"
-	"go.dedis.ch/fabric/mino/gossip"
+	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/blockchain"
+	"go.dedis.ch/dela/blockchain/skipchain"
+	"go.dedis.ch/dela/consensus/cosipbft"
+	"go.dedis.ch/dela/consensus/viewchange"
+	"go.dedis.ch/dela/consensus/viewchange/rotating"
+	"go.dedis.ch/dela/cosi/flatcosi"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/ledger"
+	"go.dedis.ch/dela/ledger/byzcoin/roster"
+	"go.dedis.ch/dela/ledger/inventory/mem"
+	"go.dedis.ch/dela/ledger/transactions"
+	"go.dedis.ch/dela/ledger/transactions/basic"
+	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/gossip"
 	"golang.org/x/xerrors"
 )
 
-//go:generate protoc -I ./ -I ../../. --go_out=Mledger/byzcoin/roster/messages.proto=go.dedis.ch/fabric/ledger/byzcoin/roster:. ./messages.proto
+//go:generate protoc -I ./ -I ../../. --go_out=Mledger/byzcoin/roster/messages.proto=go.dedis.ch/dela/ledger/byzcoin/roster:. ./messages.proto
 
 const (
 	initialRoundTime = 50 * time.Millisecond
@@ -114,7 +114,7 @@ func (ldgr *Ledger) Listen() (ledger.Actor, error) {
 			}
 		}
 
-		fabric.Logger.Trace().
+		dela.Logger.Trace().
 			Hex("hash", genesis.GetHash()).
 			Msg("received genesis block")
 
@@ -176,14 +176,14 @@ func (ldgr *Ledger) proposeBlocks(actor blockchain.Actor, ga gossip.Actor, playe
 			// many players offline for a while).
 			err := ldgr.proposeBlock(actor, players)
 			if err != nil {
-				fabric.Logger.Err(err).Msg("couldn't propose new block")
+				dela.Logger.Err(err).Msg("couldn't propose new block")
 			}
 
 			roundTimeout = time.After(timeoutRoundTime)
 		case block := <-blocks:
 			payload, ok := block.GetPayload().(*BlockPayload)
 			if !ok {
-				fabric.Logger.Warn().Msgf("found invalid payload type '%T' != '%T'",
+				dela.Logger.Warn().Msgf("found invalid payload type '%T' != '%T'",
 					block.GetPayload(), payload)
 				break
 			}
@@ -192,7 +192,7 @@ func (ldgr *Ledger) proposeBlocks(actor blockchain.Actor, ga gossip.Actor, playe
 			for i, txProto := range payload.GetTransactions() {
 				tx, err := ldgr.txFactory.FromProto(txProto)
 				if err != nil {
-					fabric.Logger.Warn().Err(err).Msg("couldn't decode transaction")
+					dela.Logger.Warn().Err(err).Msg("couldn't decode transaction")
 					return
 				}
 
@@ -207,7 +207,7 @@ func (ldgr *Ledger) proposeBlocks(actor blockchain.Actor, ga gossip.Actor, playe
 			// Update the gossip list of participants with the roster block.
 			roster, err := ldgr.governance.GetAuthority(block.GetIndex())
 			if err != nil {
-				fabric.Logger.Err(err).Msg("couldn't read block roster")
+				dela.Logger.Err(err).Msg("couldn't read block roster")
 			} else {
 				ga.SetPlayers(roster)
 			}
@@ -217,7 +217,7 @@ func (ldgr *Ledger) proposeBlocks(actor blockchain.Actor, ga gossip.Actor, playe
 			// TODO: this should be delayed to allow several blocks to be notified.
 			err = ldgr.proposeBlock(actor, players)
 			if err != nil {
-				fabric.Logger.Err(err).Msg("couldn't propose new block")
+				dela.Logger.Err(err).Msg("couldn't propose new block")
 			}
 
 			roundTimeout = time.After(timeoutRoundTime)
@@ -245,7 +245,7 @@ func (ldgr *Ledger) proposeBlock(actor blockchain.Actor, players mino.Players) e
 // stagePayload creates a payload with the list of transactions by staging a new
 // snapshot to the inventory.
 func (ldgr *Ledger) stagePayload(txs []transactions.ClientTransaction) (*BlockPayload, error) {
-	fabric.Logger.Trace().
+	dela.Logger.Trace().
 		Str("addr", ldgr.addr.String()).
 		Msgf("staging payload with %d transactions", len(txs))
 
@@ -283,7 +283,7 @@ func (ldgr *Ledger) Watch(ctx context.Context) <-chan ledger.TransactionResult {
 		for {
 			block, ok := <-blocks
 			if !ok {
-				fabric.Logger.Trace().Msg("watcher is closing")
+				dela.Logger.Trace().Msg("watcher is closing")
 				return
 			}
 
@@ -292,7 +292,7 @@ func (ldgr *Ledger) Watch(ctx context.Context) <-chan ledger.TransactionResult {
 				for _, txProto := range payload.GetTransactions() {
 					tx, err := ldgr.txFactory.FromProto(txProto)
 					if err != nil {
-						fabric.Logger.Warn().Err(err).Msg("couldn't decode transaction")
+						dela.Logger.Warn().Err(err).Msg("couldn't decode transaction")
 						return
 					}
 

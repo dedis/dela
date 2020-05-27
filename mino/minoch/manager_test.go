@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/internal/testing/fake"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/mino"
 )
 
 func TestManager_Get(t *testing.T) {

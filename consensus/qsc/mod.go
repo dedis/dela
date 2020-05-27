@@ -10,10 +10,10 @@ import (
 	"math/rand"
 	"time"
 
-	"go.dedis.ch/fabric"
-	"go.dedis.ch/fabric/consensus"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/consensus"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/mino"
 	"golang.org/x/net/context"
 	"golang.org/x/xerrors"
 )
@@ -75,7 +75,7 @@ func (c *Consensus) Listen(val consensus.Validator) (consensus.Actor, error) {
 			var proposal consensus.Proposal
 			select {
 			case <-c.closing:
-				fabric.Logger.Trace().Msg("closing")
+				dela.Logger.Trace().Msg("closing")
 				close(c.stopped)
 				return
 			case proposal = <-c.ch:
@@ -104,7 +104,7 @@ func (c *Consensus) Listen(val consensus.Validator) (consensus.Actor, error) {
 				case <-c.closing:
 				default:
 					// Only log if the consensus has not been closed properly.
-					fabric.Logger.Err(err).Msg("failed to execute a time step")
+					dela.Logger.Err(err).Msg("failed to execute a time step")
 				}
 			}
 

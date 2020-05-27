@@ -4,10 +4,10 @@ import (
 	"io"
 
 	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/ledger/arc"
-	"go.dedis.ch/fabric/ledger/inventory"
-	"go.dedis.ch/fabric/ledger/transactions/basic"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/ledger/arc"
+	"go.dedis.ch/dela/ledger/inventory"
+	"go.dedis.ch/dela/ledger/transactions/basic"
 	"golang.org/x/xerrors"
 )
 

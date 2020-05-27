@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"sync"
 
-	"go.dedis.ch/fabric/cosi"
-	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/encoding"
+	"go.dedis.ch/dela/cosi"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/encoding"
 	"golang.org/x/xerrors"
 )
 

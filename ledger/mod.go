@@ -3,8 +3,8 @@ package ledger
 import (
 	"context"
 
-	"go.dedis.ch/fabric/ledger/transactions"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela/ledger/transactions"
+	"go.dedis.ch/dela/mino"
 )
 
 // Actor provides the primitives to send transactions to the public ledger.

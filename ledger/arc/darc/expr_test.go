@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/internal/testing/fake"
-	"go.dedis.ch/fabric/ledger/arc"
+	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/ledger/arc"
 	"golang.org/x/xerrors"
 )
 

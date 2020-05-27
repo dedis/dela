@@ -6,7 +6,7 @@ import (
 	proto "github.com/golang/protobuf/proto"
 	any "github.com/golang/protobuf/ptypes/any"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/ledger/inventory"
+	"go.dedis.ch/dela/ledger/inventory"
 	"golang.org/x/xerrors"
 )
 

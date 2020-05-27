@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric/encoding"
-	mino "go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela/encoding"
+	mino "go.dedis.ch/dela/mino"
 )
 
 // Block is the interface of the unit of storage in the blockchain

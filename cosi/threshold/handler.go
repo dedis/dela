@@ -4,9 +4,9 @@ import (
 	"context"
 	"io"
 
-	"go.dedis.ch/fabric"
-	"go.dedis.ch/fabric/cosi"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/cosi"
+	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
 )
 
@@ -35,7 +35,7 @@ func (h thresholdHandler) Stream(out mino.Sender, in mino.Receiver) error {
 			return nil
 		}
 		if err != nil {
-			fabric.Logger.Warn().Err(err).Send()
+			dela.Logger.Warn().Err(err).Send()
 		}
 	}
 }

@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/internal/testing/fake"
+	"go.dedis.ch/dela/internal/testing/fake"
 )
 
 func TestConstant_Wait(t *testing.T) {

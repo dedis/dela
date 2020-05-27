@@ -3,9 +3,9 @@
 package rotating
 
 import (
-	"go.dedis.ch/fabric/consensus"
-	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela/consensus"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/mino"
 )
 
 // ViewChange is an implementation of the view change interface that will rotate

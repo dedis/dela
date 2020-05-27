@@ -10,8 +10,8 @@ import (
 	"regexp"
 	"sync"
 
-	"go.dedis.ch/fabric/mino"
-	"go.dedis.ch/fabric/mino/minogrpc/routing"
+	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/minogrpc/routing"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
