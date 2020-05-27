@@ -4,18 +4,25 @@ import (
 	"net/url"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	internal "go.dedis.ch/dela/internal/testing"
+	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/routing"
+	"go.dedis.ch/dela/mino/minogrpc/tokens"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 )
 
 func TestMessages(t *testing.T) {
 	messages := []proto.Message{
+		&Certificate{},
+		&CertificateAck{},
+		&JoinRequest{},
+		&JoinResponse{},
 		&Envelope{},
 		&Message{},
 	}
@@ -100,11 +107,20 @@ func TestMinogrpc_GetAddressFactory(t *testing.T) {
 
 func TestMinogrpc_GetAddress(t *testing.T) {
 	addr := address{}
-	minoGrpc := Minogrpc{
+	minoGrpc := &Minogrpc{
 		overlay: overlay{me: addr},
 	}
 
 	require.Equal(t, addr, minoGrpc.GetAddress())
+}
+
+func TestMinogrpc_Token(t *testing.T) {
+	minoGrpc := &Minogrpc{
+		overlay: overlay{tokens: tokens.NewInMemoryHolder()},
+	}
+
+	token := minoGrpc.Token(time.Minute)
+	require.True(t, minoGrpc.tokens.Verify(token))
 }
 
 func TestMinogrpc_GracefulClose(t *testing.T) {
@@ -185,4 +201,12 @@ func TestMinogrpc_MakeRPC(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, handler, h)
 	require.Equal(t, expectedRPC, rpc)
+}
+
+func TestMinogrpc_String(t *testing.T) {
+	minoGrpc := &Minogrpc{
+		overlay: overlay{me: fake.NewAddress(0)},
+	}
+
+	require.Equal(t, "fake.Address[0]", minoGrpc.String())
 }

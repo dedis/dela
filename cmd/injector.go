@@ -10,6 +10,11 @@ type reflectInjector struct {
 	mapper map[reflect.Type]interface{}
 }
 
+// NewInjector returns a empty injector.
+func NewInjector() Injector {
+	return newReflectInjector()
+}
+
 func newReflectInjector() *reflectInjector {
 	return &reflectInjector{
 		mapper: make(map[reflect.Type]interface{}),
@@ -29,7 +34,7 @@ func (inj *reflectInjector) Resolve(v interface{}) error {
 		}
 	}
 
-	return xerrors.Errorf("couldn't find dependency for '%v'", rv.Elem().Kind())
+	return xerrors.Errorf("couldn't find dependency for '%v'", rv.Elem().Type())
 }
 
 func (inj *reflectInjector) Inject(v interface{}) {

@@ -4,8 +4,7 @@
 package minogrpc
 
 import (
-	"crypto/rand"
-	"encoding/base64"
+	"crypto/tls"
 	fmt "fmt"
 	"net"
 	"net/url"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/routing"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
@@ -108,9 +108,24 @@ func (f AddressFactory) FromText(text []byte) mino.Address {
 	return address{host: string(text)}
 }
 
+// Joinable is an extension of the mino.Mino interface to allow distant servers
+// to join a network of participants.
+type Joinable interface {
+	mino.Mino
+
+	GetCertificate() *tls.Certificate
+
+	GetCertificateStore() certs.Storage
+
+	Token(expiration time.Duration) string
+
+	Join(addr, token string, digest []byte) error
+}
+
 // Minogrpc represents a grpc service restricted to a namespace
 //
 // - implements mino.Mino
+// - implements fmt.Stringer
 type Minogrpc struct {
 	overlay
 	url       *url.URL
@@ -275,46 +290,8 @@ func (m *Minogrpc) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 	return rpc, nil
 }
 
+// String implements fmt.Stringer. It prints a short description of the
+// instance.
 func (m *Minogrpc) String() string {
 	return fmt.Sprintf("%v", m.overlay.me)
-}
-
-// TokenHolder stores access token
-type TokenHolder struct {
-	sync.Mutex
-	tokens map[string]time.Time
-}
-
-// NewTokenHolder creates a new empty token holder.
-func NewTokenHolder() *TokenHolder {
-	return &TokenHolder{
-		tokens: make(map[string]time.Time),
-	}
-}
-
-// Generate generates a token that will expire after a given amount of time.
-func (holder *TokenHolder) Generate(expiration time.Duration) string {
-	buffer := make([]byte, 16)
-	rand.Read(buffer)
-
-	str := base64.StdEncoding.EncodeToString(buffer)
-
-	holder.Lock()
-	holder.tokens[str] = time.Now().Add(expiration)
-	holder.Unlock()
-
-	return str
-}
-
-// Verify returns true if the token is valid.
-func (holder *TokenHolder) Verify(token string) bool {
-	holder.Lock()
-	defer holder.Unlock()
-
-	deadline, ok := holder.tokens[token]
-	if !ok {
-		return false
-	}
-
-	return deadline.After(time.Now())
 }

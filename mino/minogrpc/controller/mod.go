@@ -1,21 +1,18 @@
 package controller
 
 import (
-	"crypto/tls"
-	"encoding/base64"
-	"encoding/json"
-	"fmt"
 	"math/rand"
 	"time"
 
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cmd"
-	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc"
 	"go.dedis.ch/dela/mino/minogrpc/routing"
-	"golang.org/x/xerrors"
 )
 
+// Minimal is a controller with the minimum set of commands.
+//
+// - implements cmd.Controller
 type minimal struct{}
 
 // NewMinimal returns a new controller to start an instance of Minogrpc.
@@ -23,6 +20,7 @@ func NewMinimal() cmd.Controller {
 	return minimal{}
 }
 
+// Build implements cmd.Controller. It builds the commands of the controller.
 func (m minimal) Build(builder cmd.Builder) {
 	cli := builder.Command("minogrpc")
 
@@ -63,6 +61,8 @@ func (m minimal) Build(builder cmd.Builder) {
 		Action(joinAction{})
 }
 
+// Run implements cmd.Controller. It starts the minogrpc instance and inject it
+// in the dependency resolver.
 func (m minimal) Run(inj cmd.Injector) error {
 	rf := routing.NewTreeRoutingFactory(3, minogrpc.AddressFactory{})
 
@@ -76,125 +76,6 @@ func (m minimal) Run(inj cmd.Injector) error {
 	inj.Inject(o)
 
 	dela.Logger.Info().Msgf("%v is running", o)
-
-	return nil
-}
-
-type certAction struct{}
-
-func (a certAction) Prepare(ctx cmd.Context) ([]byte, error) {
-	return nil, nil
-}
-
-func (a certAction) Execute(req cmd.Request) error {
-	var m *minogrpc.Minogrpc
-	err := req.Injector.Resolve(&m)
-	if err != nil {
-		return xerrors.Errorf("couldn't inject: %v", err)
-	}
-
-	m.GetCertificateStore().Range(func(addr mino.Address, cert *tls.Certificate) bool {
-		fmt.Fprintf(req.Out, "Address: %v Certificate: %v\n", addr, cert.Leaf.NotAfter)
-		return true
-	})
-
-	return nil
-}
-
-type tokenRequest struct {
-	Expiration time.Duration
-}
-
-type tokenAction struct{}
-
-func (a tokenAction) Prepare(ctx cmd.Context) ([]byte, error) {
-	req := tokenRequest{
-		Expiration: ctx.Duration("expiration"),
-	}
-
-	buffer, err := json.Marshal(req)
-	if err != nil {
-		return nil, err
-	}
-
-	return buffer, nil
-}
-
-func (a tokenAction) Execute(req cmd.Request) error {
-	dec := json.NewDecoder(req.In)
-
-	input := tokenRequest{}
-	err := dec.Decode(&input)
-	if err != nil {
-		return err
-	}
-
-	var m *minogrpc.Minogrpc
-	err = req.Injector.Resolve(&m)
-	if err != nil {
-		return xerrors.Errorf("couldn't inject: %v", err)
-	}
-
-	token := m.Token(input.Expiration)
-
-	digest, err := m.GetCertificateStore().Hash(m.GetCertificate())
-	if err != nil {
-		return err
-	}
-
-	fmt.Fprintf(req.Out, "--token %s --cert-hash %s\n",
-		token, base64.StdEncoding.EncodeToString(digest))
-
-	return nil
-}
-
-type joinRequest struct {
-	Token    string
-	Addr     string
-	CertHash string
-}
-
-type joinAction struct{}
-
-func (a joinAction) Prepare(ctx cmd.Context) ([]byte, error) {
-	req := joinRequest{
-		Token:    ctx.String("token"),
-		Addr:     ctx.String("address"),
-		CertHash: ctx.String("cert-hash"),
-	}
-
-	buffer, err := json.Marshal(req)
-	if err != nil {
-		return nil, err
-	}
-
-	return buffer, nil
-}
-
-func (a joinAction) Execute(req cmd.Request) error {
-	dec := json.NewDecoder(req.In)
-
-	var input joinRequest
-	err := dec.Decode(&input)
-	if err != nil {
-		return err
-	}
-
-	var m *minogrpc.Minogrpc
-	err = req.Injector.Resolve(&m)
-	if err != nil {
-		return err
-	}
-
-	cert, err := base64.StdEncoding.DecodeString(input.CertHash)
-	if err != nil {
-		return err
-	}
-
-	err = m.Join(input.Addr, input.Token, cert)
-	if err != nil {
-		return err
-	}
 
 	return nil
 }

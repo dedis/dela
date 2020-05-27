@@ -7,15 +7,25 @@ package fake
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/binary"
 	"fmt"
 	"hash"
 	"io"
+	"math/big"
+	"net"
+	"testing"
+	"time"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/golang/protobuf/ptypes/wrappers"
+	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/encoding"
@@ -804,4 +814,38 @@ func NewHashFactory(h *Hash) HashFactory {
 // New implements crypto.HashFactory.
 func (f HashFactory) New() hash.Hash {
 	return f.hash
+}
+
+// MakeCertificate generates a valid certificate for the localhost address and
+// for an hour.
+func MakeCertificate(t *testing.T, n int) *tls.Certificate {
+	priv, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
+	require.NoError(t, err)
+
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+	}
+
+	buf, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
+	require.NoError(t, err)
+
+	cert, err := x509.ParseCertificate(buf)
+	require.NoError(t, err)
+
+	chain := make([][]byte, n)
+	for i := range chain {
+		chain[i] = buf
+	}
+
+	return &tls.Certificate{
+		Certificate: chain,
+		PrivateKey:  priv,
+		Leaf:        cert,
+	}
 }
