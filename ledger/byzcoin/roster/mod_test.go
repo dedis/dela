@@ -5,12 +5,12 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/consensus/viewchange"
-	"go.dedis.ch/fabric/crypto/bls"
-	"go.dedis.ch/fabric/encoding"
-	internal "go.dedis.ch/fabric/internal/testing"
-	"go.dedis.ch/fabric/internal/testing/fake"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela/consensus/viewchange"
+	"go.dedis.ch/dela/crypto/bls"
+	"go.dedis.ch/dela/encoding"
+	internal "go.dedis.ch/dela/internal/testing"
+	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/mino"
 )
 
 func TestMessages(t *testing.T) {

@@ -9,9 +9,9 @@ import (
 	any "github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/mino"
-	"go.dedis.ch/fabric/mino/minogrpc/routing"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/minogrpc/routing"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 )

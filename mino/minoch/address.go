@@ -1,6 +1,6 @@
 package minoch
 
-import "go.dedis.ch/fabric/mino"
+import "go.dedis.ch/dela/mino"
 
 // Address is the representation of an identifier for minoch.
 type address struct {

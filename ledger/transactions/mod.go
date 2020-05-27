@@ -2,8 +2,8 @@ package transactions
 
 import (
 	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/ledger/inventory"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/ledger/inventory"
 )
 
 // ClientTransaction is a transaction created by a client that will be sent to

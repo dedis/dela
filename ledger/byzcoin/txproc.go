@@ -4,9 +4,9 @@ import (
 	"bytes"
 
 	proto "github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric"
-	"go.dedis.ch/fabric/ledger/inventory"
-	"go.dedis.ch/fabric/ledger/transactions"
+	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/ledger/inventory"
+	"go.dedis.ch/dela/ledger/transactions"
 	"golang.org/x/xerrors"
 )
 
@@ -41,7 +41,7 @@ func (proc *txProcessor) Validate(index uint64, data proto.Message) error {
 			return xerrors.Errorf("index 0 expected but got %d", page.GetIndex())
 		}
 	case *BlockPayload:
-		fabric.Logger.Trace().
+		dela.Logger.Trace().
 			Hex("fingerprint", payload.GetFingerprint()).
 			Msgf("validating block payload")
 
@@ -95,7 +95,7 @@ func (proc *txProcessor) process(payload *BlockPayload) (inventory.Page, error) 
 				return xerrors.Errorf("couldn't decode tx: %v", err)
 			}
 
-			fabric.Logger.Trace().Msgf("processing %v", tx)
+			dela.Logger.Trace().Msgf("processing %v", tx)
 
 			err = tx.Consume(page)
 			if err != nil {
@@ -109,7 +109,7 @@ func (proc *txProcessor) process(payload *BlockPayload) (inventory.Page, error) 
 		return nil, xerrors.Errorf("couldn't stage new page: %v", err)
 	}
 
-	fabric.Logger.Trace().Msgf("staging new inventory %#x", page.GetFingerprint())
+	dela.Logger.Trace().Msgf("staging new inventory %#x", page.GetFingerprint())
 	return page, err
 }
 

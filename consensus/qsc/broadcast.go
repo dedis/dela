@@ -5,9 +5,9 @@ import (
 
 	proto "github.com/golang/protobuf/proto"
 	"github.com/rs/zerolog"
-	"go.dedis.ch/fabric"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
 )
 
@@ -114,7 +114,7 @@ func newTLCR(name string, node int64, mino mino.Mino, players mino.Players) (*bT
 	}
 
 	tlcr := &bTLCR{
-		logger:   fabric.Logger,
+		logger:   dela.Logger,
 		node:     node,
 		timeStep: 0,
 		rpc:      rpc,
@@ -265,7 +265,7 @@ func (b *bTLCB) execute(ctx context.Context, message proto.Message) (*View, erro
 		return nil, err
 	}
 
-	fabric.Logger.Trace().Msgf("%d going through prepare broadcast", b.node)
+	dela.Logger.Trace().Msgf("%d going through prepare broadcast", b.node)
 	prepareSet, err := b.b1.execute(ctx, m)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't broadcast: %v", err)
@@ -276,7 +276,7 @@ func (b *bTLCB) execute(ctx context.Context, message proto.Message) (*View, erro
 		return nil, err
 	}
 
-	fabric.Logger.Trace().Msgf("%d going through commit broadcast", b.node)
+	dela.Logger.Trace().Msgf("%d going through commit broadcast", b.node)
 	commitSet, err := b.b2.execute(ctx, m2)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't broadcast: %v", err)

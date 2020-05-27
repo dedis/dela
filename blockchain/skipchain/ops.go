@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
-	"go.dedis.ch/fabric"
-	"go.dedis.ch/fabric/blockchain"
-	"go.dedis.ch/fabric/consensus"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/blockchain"
+	"go.dedis.ch/dela/consensus"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
 )
 
@@ -67,7 +67,7 @@ func (ops *operations) commitBlock(block SkipBlock) error {
 		return xerrors.Errorf("tx failed: %v", err)
 	}
 
-	fabric.Logger.Trace().Msgf("new block written: %v", block)
+	dela.Logger.Trace().Msgf("new block written: %v", block)
 
 	ops.watcher.Notify(block)
 

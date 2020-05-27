@@ -7,9 +7,9 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
-	internal "go.dedis.ch/fabric/internal/testing"
-	"go.dedis.ch/fabric/mino"
-	"go.dedis.ch/fabric/mino/minogrpc/routing"
+	internal "go.dedis.ch/dela/internal/testing"
+	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/minogrpc/routing"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 )

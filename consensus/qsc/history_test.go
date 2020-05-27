@@ -9,7 +9,7 @@ import (
 	"github.com/golang/protobuf/ptypes"
 	any "github.com/golang/protobuf/ptypes/any"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/encoding"
+	"go.dedis.ch/dela/encoding"
 	"golang.org/x/xerrors"
 )
 

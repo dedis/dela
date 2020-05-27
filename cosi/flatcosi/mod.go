@@ -5,11 +5,11 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/rs/zerolog"
-	"go.dedis.ch/fabric"
-	"go.dedis.ch/fabric/cosi"
-	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/cosi"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
 )
 
@@ -59,7 +59,7 @@ func (cosi *Flat) GetVerifierFactory() crypto.VerifierFactory {
 // requests. The actor can also be used to sign a message.
 func (cosi *Flat) Listen(h cosi.Hashable) (cosi.Actor, error) {
 	actor := flatActor{
-		logger:  fabric.Logger,
+		logger:  dela.Logger,
 		signer:  cosi.signer,
 		encoder: encoding.NewProtoEncoder(),
 	}

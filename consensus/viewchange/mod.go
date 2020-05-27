@@ -2,10 +2,10 @@ package viewchange
 
 import (
 	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric/consensus"
-	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela/consensus"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/mino"
 )
 
 // ViewChange provides primitives to verify if a participant is allowed to

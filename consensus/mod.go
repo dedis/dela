@@ -2,8 +2,8 @@ package consensus
 
 import (
 	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/mino"
 )
 
 // Proposal is the interface that the proposed data must implement to be

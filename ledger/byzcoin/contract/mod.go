@@ -4,8 +4,8 @@ package contract
 
 import (
 	proto "github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric/ledger/arc"
-	"go.dedis.ch/fabric/ledger/transactions/basic"
+	"go.dedis.ch/dela/ledger/arc"
+	"go.dedis.ch/dela/ledger/transactions/basic"
 )
 
 //go:generate protoc -I ./ --go_out=./ ./messages.proto

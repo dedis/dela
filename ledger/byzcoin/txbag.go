@@ -3,7 +3,7 @@ package byzcoin
 import (
 	"sync"
 
-	"go.dedis.ch/fabric/ledger/transactions"
+	"go.dedis.ch/dela/ledger/transactions"
 )
 
 // Key is type used to differentiate the transactions in the bag.

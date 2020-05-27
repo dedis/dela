@@ -8,10 +8,10 @@ import (
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/internal/testing/fake"
-	"go.dedis.ch/fabric/ledger/arc"
-	"go.dedis.ch/fabric/ledger/inventory"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/ledger/arc"
+	"go.dedis.ch/dela/ledger/inventory"
 	"golang.org/x/xerrors"
 )
 

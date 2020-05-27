@@ -6,8 +6,8 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
-	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/encoding"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/pairing"
 	"go.dedis.ch/kyber/v3/sign/bls"

@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric/encoding"
+	"go.dedis.ch/dela/encoding"
 )
 
 // Identity is an abstraction to uniquely identify a signer.

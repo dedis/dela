@@ -5,8 +5,8 @@ import (
 	"sync"
 
 	proto "github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric/consensus"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela/consensus"
+	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
 )
 

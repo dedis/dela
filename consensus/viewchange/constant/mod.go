@@ -1,9 +1,9 @@
 package constant
 
 import (
-	"go.dedis.ch/fabric/consensus"
-	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela/consensus"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/mino"
 )
 
 // ViewChange is a naive implementation of the view change that will

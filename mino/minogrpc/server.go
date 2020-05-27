@@ -15,10 +15,10 @@ import (
 	"sync"
 	"time"
 
-	"go.dedis.ch/fabric"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/mino"
-	"go.dedis.ch/fabric/mino/minogrpc/routing"
+	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/minogrpc/routing"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
@@ -213,7 +213,7 @@ func (o overlay) setupRelays(ctx context.Context,
 	}
 
 	for _, link := range rting.GetDirectLinks(senderAddr) {
-		fabric.Logger.Trace().
+		dela.Logger.Trace().
 			Str("addr", o.me.String()).
 			Str("to", link.String()).
 			Msg("open relay")

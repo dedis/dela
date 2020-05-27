@@ -6,10 +6,10 @@ import (
 	fmt "fmt"
 
 	proto "github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric/blockchain"
-	"go.dedis.ch/fabric/consensus"
-	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/encoding"
+	"go.dedis.ch/dela/blockchain"
+	"go.dedis.ch/dela/consensus"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/encoding"
 	"golang.org/x/xerrors"
 )
 

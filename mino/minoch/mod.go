@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"sync"
 
-	"go.dedis.ch/fabric"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/mino"
 )
 
 // Minoch is an implementation of the Mino interface using channels. Each
@@ -37,7 +37,7 @@ func NewMinoch(manager *Manager, identifier string) (*Minoch, error) {
 		return nil, err
 	}
 
-	fabric.Logger.Trace().Msgf("New instance with identifier %s", identifier)
+	dela.Logger.Trace().Msgf("New instance with identifier %s", identifier)
 
 	return inst, nil
 }

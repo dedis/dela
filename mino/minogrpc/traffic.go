@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/ptypes"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela/mino"
 	"google.golang.org/grpc/metadata"
 )
 

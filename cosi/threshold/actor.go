@@ -4,10 +4,10 @@ import (
 	"context"
 
 	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric"
-	"go.dedis.ch/fabric/cosi"
-	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/cosi"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
 )
 
@@ -67,7 +67,7 @@ func (a thresholdActor) Sign(ctx context.Context,
 		if index >= 0 {
 			err = a.merge(signature, resp, index, pubkey, msg)
 			if err != nil {
-				fabric.Logger.Warn().Err(err).Send()
+				dela.Logger.Warn().Err(err).Send()
 			} else {
 				count++
 			}
@@ -82,11 +82,11 @@ func (a thresholdActor) Sign(ctx context.Context,
 func (a thresholdActor) waitResp(errs <-chan error, maxErrs int, cancel func()) {
 	errCount := 0
 	for err := range errs {
-		fabric.Logger.Warn().Err(err).Send()
+		dela.Logger.Warn().Err(err).Send()
 		errCount++
 
 		if errCount > maxErrs {
-			fabric.Logger.Warn().Msg("aborting collective signing due to too many errors")
+			dela.Logger.Warn().Msg("aborting collective signing due to too many errors")
 			cancel()
 			return
 		}

@@ -4,8 +4,8 @@ import (
 	"hash"
 
 	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/mino"
 )
 
 // HashFactory is an interface to produce a hash digest.

@@ -8,9 +8,9 @@ import (
 	"sync"
 
 	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/ledger/inventory"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/ledger/inventory"
 	"golang.org/x/xerrors"
 )
 

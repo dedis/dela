@@ -6,7 +6,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela/mino"
 )
 
 func TestMinoch_New(t *testing.T) {

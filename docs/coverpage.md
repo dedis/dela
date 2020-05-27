@@ -1,13 +1,13 @@
-# Modulus
+# Dela
 
-> Modular Distributed Ledger System
+> Dedis Ledger Architecture
 
 <p style="text-align:center"><img width="100px" src="assets/modulus.png"/></p>
 
 <p style="text-align:center">
-    <a href="https://travis-ci.org/dedis/fabric"><img src="https://travis-ci.org/dedis/fabric.svg?branch=master"></a>
-    <a href='https://coveralls.io/github/dedis/fabric?branch=master'><img src='https://coveralls.io/repos/github/dedis/fabric/badge.svg?branch=master' alt='Coverage Status' /></a>
-    <a href="https://goreportcard.com/report/github.com/dedis/fabric"><img src="https://goreportcard.com/badge/github.com/dedis/fabric"></a>
+    <a href="https://travis-ci.org/dedis/dela"><img src="https://travis-ci.org/dedis/dela.svg?branch=master"></a>
+    <a href='https://coveralls.io/github/dedis/dela?branch=master'><img src='https://coveralls.io/repos/github/dedis/dela/badge.svg?branch=master' alt='Coverage Status' /></a>
+    <a href="https://goreportcard.com/report/github.com/dedis/dela"><img src="https://goreportcard.com/badge/github.com/dedis/dela"></a>
 </p>
 
 - A set of modular abstractions to perform DL operations
