@@ -220,7 +220,7 @@ func TestConnectionFactory_FromAddress(t *testing.T) {
 	defer dst.GracefulClose()
 
 	factory := DefaultConnectionFactory{
-		certs: &sync.Map{},
+		certs: NewInMemoryCertStore(),
 		me:    fake.NewAddress(0),
 	}
 
@@ -236,17 +236,9 @@ func TestConnectionFactory_FromAddress(t *testing.T) {
 	_, err = factory.FromAddress(fake.NewAddress(1))
 	require.EqualError(t, err, "certificate for 'fake.Address[1]' not found")
 
-	factory.certs.Store(fake.NewAddress(1), nil)
-	_, err = factory.FromAddress(fake.NewAddress(1))
-	require.EqualError(t, err, "invalid certificate type '<nil>' for 'fake.Address[1]'")
-
 	factory.certs.Delete(factory.me)
 	_, err = factory.FromAddress(dst.GetAddress())
 	require.EqualError(t, err, "couldn't find server 'fake.Address[0]' certificate")
-
-	factory.certs.Store(factory.me, nil)
-	_, err = factory.FromAddress(dst.GetAddress())
-	require.EqualError(t, err, "invalid certificate type '<nil>' for 'fake.Address[0]'")
 
 	factory.certs.Store(factory.me, dst.GetCertificate())
 	_, err = factory.FromAddress(factory.me)
@@ -273,8 +265,8 @@ func makeInstances(t *testing.T, n int) ([]mino.Mino, []mino.RPC) {
 		for _, k := range mm[:i] {
 			km := k.(*Minogrpc)
 
-			m.AddCertificate(k.GetAddress(), km.GetCertificate())
-			km.AddCertificate(m.GetAddress(), m.GetCertificate())
+			m.GetCertificateStore().Store(k.GetAddress(), km.GetCertificate())
+			km.GetCertificateStore().Store(m.GetAddress(), m.GetCertificate())
 		}
 	}
 

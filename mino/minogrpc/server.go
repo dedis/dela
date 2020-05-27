@@ -1,12 +1,15 @@
 package minogrpc
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"io"
 	"io/ioutil"
 	"math/big"
@@ -43,6 +46,78 @@ type overlayServer struct {
 
 	handlers map[string]mino.Handler
 	closer   *sync.WaitGroup
+}
+
+func (o overlayServer) Join(ctx context.Context, req *JoinRequest) (*JoinResponse, error) {
+	// 1. Check validity of the token.
+	if !o.tokens.Verify(req.Token) {
+		return nil, xerrors.New("token is invalid")
+	}
+
+	from := o.routingFactory.GetAddressFactory().FromText(req.Certificate.GetAddress())
+
+	leaf, err := x509.ParseCertificate(req.Certificate.GetValue())
+	if err != nil {
+		return nil, err
+	}
+
+	cert := &tls.Certificate{Leaf: leaf}
+
+	// 2. Share certificates to current participants.
+	peers := make([]*Certificate, 0)
+	res := make(chan error, 1)
+
+	o.certs.Range(func(addr mino.Address, cert *tls.Certificate) bool {
+		text, err := addr.MarshalText()
+		if err != nil {
+			return false
+		}
+
+		msg := &Certificate{Address: text, Value: req.GetCertificate().GetValue()}
+
+		peers = append(peers, msg)
+
+		go func() {
+			conn, err := o.connFactory.FromAddress(addr)
+			if err != nil {
+				res <- err
+				return
+			}
+
+			client := NewOverlayClient(conn)
+
+			_, err = client.Share(ctx, msg)
+			if err != nil {
+				res <- err
+				return
+			}
+
+			res <- nil
+		}()
+
+		return true
+	})
+
+	ack := 0
+	for ack < len(peers) {
+		err := <-res
+		if err != nil {
+			return nil, err
+		}
+
+		ack++
+	}
+
+	o.certs.Store(from, cert)
+
+	// 3. Return the set of known certificates.
+	return &JoinResponse{Peers: peers}, nil
+}
+
+func (o overlayServer) Share(ctx context.Context, msg *Certificate) (*CertificateAck, error) {
+	// TODO: store and verify
+
+	return &CertificateAck{}, nil
 }
 
 // Call implements minogrpc.OverlayClient. It processes the request with the
@@ -138,7 +213,8 @@ type relayer interface {
 type overlay struct {
 	encoder        encoding.ProtoMarshaler
 	me             mino.Address
-	certs          *sync.Map
+	certs          CertificateStore
+	tokens         *TokenHolder
 	routingFactory routing.Factory
 	connFactory    ConnectionFactory
 	traffic        *traffic
@@ -150,12 +226,13 @@ func newOverlay(me mino.Address, rf routing.Factory) (overlay, error) {
 		return overlay{}, xerrors.Errorf("failed to make certificate: %v", err)
 	}
 
-	certs := &sync.Map{}
+	certs := NewInMemoryCertStore()
 	certs.Store(me, cert)
 
 	o := overlay{
 		encoder:        encoding.NewProtoEncoder(),
 		me:             me,
+		tokens:         NewTokenHolder(),
 		certs:          certs,
 		routingFactory: rf,
 		connFactory: DefaultConnectionFactory{
@@ -176,19 +253,72 @@ func newOverlay(me mino.Address, rf routing.Factory) (overlay, error) {
 
 // GetCertificate returns the certificate of the overlay.
 func (o overlay) GetCertificate() *tls.Certificate {
-	cert, found := o.certs.Load(o.me)
-	if !found {
+	me := o.certs.Load(o.me)
+	if me == nil {
 		// This should never happen and it will panic if it does as this will
 		// provoke several issues later on.
 		panic("certificate of the overlay must be populated")
 	}
 
-	return cert.(*tls.Certificate)
+	return me
 }
 
-// AddCertificate populates the list of public know certificates of the server.
-func (o overlay) AddCertificate(addr mino.Address, cert *tls.Certificate) error {
-	o.certs.Store(addr, cert)
+// AddCertificateStore returns the certificate store.
+func (o overlay) GetCertificateStore() CertificateStore {
+	return o.certs
+}
+
+// Join sends a join request to a distant node with token generated beforehands
+// by the later.
+func (o overlay) Join(addr, token string, certHash []byte) error {
+	meCert := o.GetCertificate()
+
+	meAddr, err := o.me.MarshalText()
+	if err != nil {
+		return err
+	}
+
+	target := o.routingFactory.GetAddressFactory().FromText([]byte(addr))
+
+	// Fetch the certificate of the node we want to join. The hash is used to
+	// ensure that we get the right certificate.
+	err = o.certs.Fetch(target, certHash)
+	if err != nil {
+		return err
+	}
+
+	conn, err := o.connFactory.FromAddress(target)
+	if err != nil {
+		return err
+	}
+
+	client := NewOverlayClient(conn)
+
+	req := &JoinRequest{
+		Token: token,
+		Certificate: &Certificate{
+			Address: meAddr,
+			Value:   meCert.Leaf.Raw,
+		},
+	}
+
+	resp, err := client.Join(context.Background(), req)
+	if err != nil {
+		return err
+	}
+
+	// Update the certificate store with the response from the node we just
+	// joined. That will allow the node to communicate with the network.
+	for _, raw := range resp.Peers {
+		from := o.routingFactory.GetAddressFactory().FromText(raw.GetAddress())
+
+		leaf, err := x509.ParseCertificate(raw.GetValue())
+		if err != nil {
+			return xerrors.Errorf("couldn't parse certificate: %v", err)
+		}
+
+		o.certs.Store(from, &tls.Certificate{Leaf: leaf})
+	}
 
 	return nil
 }
@@ -318,7 +448,11 @@ func makeCertificate() (*tls.Certificate, error) {
 	}
 
 	tmpl := &x509.Certificate{
+		Subject: pkix.Name{
+			CommonName: "127.0.0.1",
+		},
 		SerialNumber: big.NewInt(1),
+		DNSNames:     []string{},
 		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
 		NotBefore:    time.Now(),
 		NotAfter:     time.Now().Add(certificateDuration),
@@ -352,36 +486,24 @@ type ConnectionFactory interface {
 
 // DefaultConnectionFactory creates connection for grpc usages.
 type DefaultConnectionFactory struct {
-	certs *sync.Map
+	certs CertificateStore
 	me    mino.Address
 }
 
 // FromAddress implements minogrpc.ConnectionFactory. It creates a gRPC
 // connection from the server to the client.
 func (f DefaultConnectionFactory) FromAddress(addr mino.Address) (grpc.ClientConnInterface, error) {
-	clientPubCertItf, found := f.certs.Load(addr)
-	if !found {
+	clientPubCert := f.certs.Load(addr)
+	if clientPubCert == nil {
 		return nil, xerrors.Errorf("certificate for '%v' not found", addr)
-	}
-
-	clientPubCert, ok := clientPubCertItf.(*tls.Certificate)
-	if !ok {
-		return nil, xerrors.Errorf("invalid certificate type '%T' for '%v'",
-			clientPubCertItf, addr)
 	}
 
 	pool := x509.NewCertPool()
 	pool.AddCert(clientPubCert.Leaf)
 
-	meItf, found := f.certs.Load(f.me)
-	if !found {
+	me := f.certs.Load(f.me)
+	if me == nil {
 		return nil, xerrors.Errorf("couldn't find server '%v' certificate", f.me)
-	}
-
-	me, ok := meItf.(*tls.Certificate)
-	if !ok {
-		return nil, xerrors.Errorf("invalid certificate type '%T' for '%v'",
-			meItf, f.me)
 	}
 
 	ta := credentials.NewTLS(&tls.Config{
@@ -407,6 +529,117 @@ func (f DefaultConnectionFactory) FromAddress(addr mino.Address) (grpc.ClientCon
 	}
 
 	return conn, nil
+}
+
+// CertificateStore is an interface to manage the certificates of a server.
+type CertificateStore interface {
+	Store(mino.Address, *tls.Certificate)
+	Load(mino.Address) *tls.Certificate
+	Delete(mino.Address)
+	Range(func(addr mino.Address, cert *tls.Certificate) bool)
+	Fetch(mino.Address, []byte) error
+	Hash(*tls.Certificate) ([]byte, error)
+}
+
+// InMemoryCertStore is a certificate store that keeps the certificates in
+// memory only which means it does not persist.
+type InMemoryCertStore struct {
+	certs *sync.Map
+}
+
+// NewInMemoryCertStore creates a new empty certificate store.
+func NewInMemoryCertStore() *InMemoryCertStore {
+	return &InMemoryCertStore{
+		certs: &sync.Map{},
+	}
+}
+
+// Store implements minogrpc.Store.
+func (s *InMemoryCertStore) Store(addr mino.Address, cert *tls.Certificate) {
+	s.certs.Store(addr, cert)
+}
+
+// Load implements minogrpc.CertificateStore.
+func (s *InMemoryCertStore) Load(addr mino.Address) *tls.Certificate {
+	val, found := s.certs.Load(addr)
+	if !found {
+		return nil
+	}
+	return val.(*tls.Certificate)
+}
+
+// Delete implements minogrpc.CertificateStore.
+func (s *InMemoryCertStore) Delete(addr mino.Address) {
+	s.certs.Delete(addr)
+}
+
+// Range implements minogrpc.CertificateStore.
+func (s *InMemoryCertStore) Range(fn func(addr mino.Address, cert *tls.Certificate) bool) {
+	s.certs.Range(func(key, value interface{}) bool {
+		return fn(key.(mino.Address), value.(*tls.Certificate))
+	})
+}
+
+// Fetch implements minogrpc.CertificateStore.
+func (s *InMemoryCertStore) Fetch(addr mino.Address, hash []byte) error {
+	netAddr, ok := addr.(address)
+	if !ok {
+		return xerrors.Errorf("invalid address type '%T'", addr)
+	}
+
+	certCh := make(chan *tls.Certificate)
+
+	ta := credentials.NewTLS(&tls.Config{
+		InsecureSkipVerify: true,
+		VerifyPeerCertificate: func(raw [][]byte, chains [][]*x509.Certificate) error {
+			defer close(certCh)
+
+			if len(raw) > 0 {
+				leaf, err := x509.ParseCertificate(raw[0])
+				if err != nil {
+					return err
+				}
+
+				certCh <- &tls.Certificate{Leaf: leaf}
+			}
+			return nil
+		},
+	})
+
+	// This connection will be used to fetch the certificate of the server and
+	// to verify that it matches the expected hash.
+	conn, err := grpc.Dial(netAddr.GetDialAddress(), grpc.WithTransportCredentials(ta))
+	if err != nil {
+		return xerrors.Errorf("failed to dial: %v", err)
+	}
+
+	cert := <-certCh
+	conn.Close()
+
+	if cert == nil {
+		return xerrors.Errorf("failed to get cert")
+	}
+
+	digest, err := s.Hash(cert)
+	if err != nil {
+		return err
+	}
+
+	if !bytes.Equal(digest, hash) {
+		return xerrors.Errorf("invalid check sum")
+	}
+
+	s.certs.Store(addr, cert)
+
+	return nil
+}
+
+// Hash implements minogrpc.CertificateStore.
+func (s *InMemoryCertStore) Hash(cert *tls.Certificate) ([]byte, error) {
+	h := sha256.New()
+	h.Write(cert.Leaf.Raw)
+
+	return h.Sum(nil), nil
 }
 
 func uriFromContext(ctx context.Context) string {

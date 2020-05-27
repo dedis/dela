@@ -13,7 +13,7 @@ import (
 	"syscall"
 
 	"github.com/urfave/cli/v2"
-	"go.dedis.ch/fabric"
+	"go.dedis.ch/dela"
 	"golang.org/x/xerrors"
 )
 
@@ -92,7 +92,7 @@ func (a cliApp) Run(arguments []string) error {
 
 			<-a.sigs
 
-			fabric.Logger.Trace().Msg("daemon has been stopped")
+			dela.Logger.Trace().Msg("daemon has been stopped")
 
 			return nil
 		},
@@ -195,7 +195,7 @@ func (d *socketDaemon) Listen() error {
 				select {
 				case <-d.closing:
 				default:
-					fabric.Logger.Err(err).Send()
+					dela.Logger.Err(err).Send()
 				}
 				return
 			}
@@ -240,7 +240,7 @@ func (d *socketDaemon) handleConn(conn net.Conn) {
 }
 
 func (d *socketDaemon) sendError(conn net.Conn, err error) {
-	fmt.Fprintf(conn, "[ERROR] %v", err)
+	fmt.Fprintf(conn, "[ERROR] %v\n", err)
 }
 
 // Close implements cmd.Daemon. It closes the daemon and waits for the go

@@ -4,11 +4,14 @@
 package minogrpc
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	fmt "fmt"
 	"net"
 	"net/url"
 	"regexp"
 	"sync"
+	"time"
 
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/routing"
@@ -176,6 +179,12 @@ func (m *Minogrpc) GetAddress() mino.Address {
 	return m.overlay.me
 }
 
+// Token generates and returns a new token that will be valid for the given
+// amount of time.
+func (m *Minogrpc) Token(expiration time.Duration) string {
+	return m.tokens.Generate(expiration)
+}
+
 // Listen starts the server. It waits for the go routine to start before
 // returning.
 func (m *Minogrpc) Listen() error {
@@ -264,4 +273,48 @@ func (m *Minogrpc) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 	m.handlers[uri] = h
 
 	return rpc, nil
+}
+
+func (m *Minogrpc) String() string {
+	return fmt.Sprintf("%v", m.overlay.me)
+}
+
+// TokenHolder stores access token
+type TokenHolder struct {
+	sync.Mutex
+	tokens map[string]time.Time
+}
+
+// NewTokenHolder creates a new empty token holder.
+func NewTokenHolder() *TokenHolder {
+	return &TokenHolder{
+		tokens: make(map[string]time.Time),
+	}
+}
+
+// Generate generates a token that will expire after a given amount of time.
+func (holder *TokenHolder) Generate(expiration time.Duration) string {
+	buffer := make([]byte, 16)
+	rand.Read(buffer)
+
+	str := base64.StdEncoding.EncodeToString(buffer)
+
+	holder.Lock()
+	holder.tokens[str] = time.Now().Add(expiration)
+	holder.Unlock()
+
+	return str
+}
+
+// Verify returns true if the token is valid.
+func (holder *TokenHolder) Verify(token string) bool {
+	holder.Lock()
+	defer holder.Unlock()
+
+	deadline, ok := holder.tokens[token]
+	if !ok {
+		return false
+	}
+
+	return deadline.After(time.Now())
 }

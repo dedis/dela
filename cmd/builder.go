@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/binary"
+	"fmt"
 
 	"github.com/urfave/cli/v2"
 	"golang.org/x/xerrors"
@@ -29,7 +30,7 @@ func (b *cliBuilder) buildCommands(in []*cliCommand) []*cli.Command {
 		return nil
 	}
 
-	commands := make([]*cli.Command, len(b.commands))
+	commands := make([]*cli.Command, len(in))
 	for i, command := range in {
 		cmd := &cli.Command{
 			Name:  command.name,
@@ -94,6 +95,8 @@ func (b *cliBuilder) buildFlags(in []Flag) []cli.Flag {
 				Required: flag.Required,
 				Value:    flag.Value,
 			}
+		default:
+			panic(fmt.Sprintf("flag type '%T' not supported", input))
 		}
 	}
 

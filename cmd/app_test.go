@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/internal/testing/fake"
+	"go.dedis.ch/dela/internal/testing/fake"
 	"golang.org/x/xerrors"
 )
 
@@ -102,12 +102,12 @@ func TestSocketDaemon_Listen(t *testing.T) {
 	out.Reset()
 	err = client.Send([]byte{0x1})
 	require.NoError(t, err)
-	require.Equal(t, "[ERROR] command error: oops", out.String())
+	require.Equal(t, "[ERROR] command error: oops\n", out.String())
 
 	out.Reset()
 	err = client.Send([]byte{0x2})
 	require.NoError(t, err)
-	require.Equal(t, "[ERROR] unknown command '2'", out.String())
+	require.Equal(t, "[ERROR] unknown command '2'\n", out.String())
 
 	daemon.socketpath = "/deadbeef/test.sock"
 	err = daemon.Listen()

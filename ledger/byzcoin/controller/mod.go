@@ -1,12 +1,12 @@
 package controller
 
 import (
-	"go.dedis.ch/fabric"
-	"go.dedis.ch/fabric/cmd"
-	"go.dedis.ch/fabric/crypto/bls"
-	"go.dedis.ch/fabric/ledger"
-	"go.dedis.ch/fabric/ledger/byzcoin"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/cmd"
+	"go.dedis.ch/dela/crypto/bls"
+	"go.dedis.ch/dela/ledger"
+	"go.dedis.ch/dela/ledger/byzcoin"
+	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
 )
 
@@ -53,7 +53,7 @@ func (a setupAction) Prepare(ctx cmd.Context) ([]byte, error) {
 }
 
 func (a setupAction) Execute(req cmd.Request) error {
-	fabric.Logger.Info().Msg("Consume an incoming message")
+	dela.Logger.Info().Msg("Consume an incoming message")
 
 	var actor ledger.Actor
 

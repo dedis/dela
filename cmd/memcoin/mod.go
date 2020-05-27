@@ -4,9 +4,9 @@ package main
 import (
 	"os"
 
-	"go.dedis.ch/fabric/cmd"
-	byzcoin "go.dedis.ch/fabric/ledger/byzcoin/controller"
-	mino "go.dedis.ch/fabric/mino/minogrpc/controller"
+	"go.dedis.ch/dela/cmd"
+	byzcoin "go.dedis.ch/dela/ledger/byzcoin/controller"
+	mino "go.dedis.ch/dela/mino/minogrpc/controller"
 )
 
 func main() {
