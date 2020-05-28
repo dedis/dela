@@ -58,7 +58,7 @@ asked ourself the same and came out with the following core ingredients:
 - Secondly, we need a **consensus** module, which describes how a set of
   entities can interact to agree on something. Most of the time it comes to the
   form of a zero/low trust interaction protocol. For example, in a teaching
-  class, a common consensus used is that the first to raise its hand can speak
+  class, a common consensus is that the first to raise its hand can speak
   and propose a solution. The consensus is the core part of a distributed ledger
   that makes the agreement on a state possible.
 - Then, we need a **ledger** module, which offers the mean to keep track of
