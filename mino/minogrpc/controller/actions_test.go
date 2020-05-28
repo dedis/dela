@@ -167,6 +167,7 @@ type fakeContext struct {
 	cmd.Context
 	duration time.Duration
 	str      string
+	num      int
 }
 
 func (ctx fakeContext) Duration(string) time.Duration {
@@ -175,4 +176,8 @@ func (ctx fakeContext) Duration(string) time.Duration {
 
 func (ctx fakeContext) String(string) string {
 	return ctx.str
+}
+
+func (ctx fakeContext) Int(string) int {
+	return ctx.num
 }

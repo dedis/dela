@@ -1,13 +1,13 @@
 package controller
 
 import (
-	"math/rand"
 	"time"
 
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cmd"
 	"go.dedis.ch/dela/mino/minogrpc"
 	"go.dedis.ch/dela/mino/minogrpc/routing"
+	"golang.org/x/xerrors"
 )
 
 // Minimal is a controller with the minimum set of commands.
@@ -22,7 +22,16 @@ func NewMinimal() cmd.Controller {
 
 // Build implements cmd.Controller. It builds the commands of the controller.
 func (m minimal) Build(builder cmd.Builder) {
-	cli := builder.Command("minogrpc")
+	builder.Start(
+		cmd.IntFlag{
+			Name:  "port",
+			Usage: "set the port to listen on",
+			Value: 2000,
+		},
+	)
+
+	cli := builder.Command("minogrpc").
+		Description("Network overlay administration")
 
 	cli.Command("certificates").
 		Description("list the certificates of the server").
@@ -63,14 +72,17 @@ func (m minimal) Build(builder cmd.Builder) {
 
 // Run implements cmd.Controller. It starts the minogrpc instance and inject it
 // in the dependency resolver.
-func (m minimal) Run(inj cmd.Injector) error {
+func (m minimal) Run(ctx cmd.Context, inj cmd.Injector) error {
 	rf := routing.NewTreeRoutingFactory(3, minogrpc.AddressFactory{})
 
-	rand.Seed(time.Now().Unix())
+	port := ctx.Int("port")
+	if port < 0 || port > 65535 {
+		return xerrors.Errorf("invalid port value %d", port)
+	}
 
-	o, err := minogrpc.NewMinogrpc("127.0.0.1", 2000+uint16(rand.Int31n(100)), rf)
+	o, err := minogrpc.NewMinogrpc("127.0.0.1", uint16(port), rf)
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't make overlay: %v", err)
 	}
 
 	inj.Inject(o)

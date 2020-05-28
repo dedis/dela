@@ -26,7 +26,7 @@ func (m minimal) Build(builder cmd.Builder) {
 		Action(setupAction{})
 }
 
-func (m minimal) Run(inj cmd.Injector) error {
+func (m minimal) Run(ctx cmd.Context, inj cmd.Injector) error {
 	var no mino.Mino
 	err := inj.Resolve(&no)
 	if err != nil {

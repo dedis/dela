@@ -12,10 +12,6 @@ type reflectInjector struct {
 
 // NewInjector returns a empty injector.
 func NewInjector() Injector {
-	return newReflectInjector()
-}
-
-func newReflectInjector() *reflectInjector {
 	return &reflectInjector{
 		mapper: make(map[reflect.Type]interface{}),
 	}

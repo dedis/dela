@@ -7,7 +7,7 @@ import (
 )
 
 func TestReflectInjector_Resolve(t *testing.T) {
-	inj := newReflectInjector()
+	inj := NewInjector()
 
 	inj.Inject("abc")
 

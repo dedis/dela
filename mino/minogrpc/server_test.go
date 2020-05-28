@@ -129,6 +129,29 @@ func TestOverlayServer_Join(t *testing.T) {
 		"failed to share certificate: couldn't call share: oops")
 }
 
+func TestOverlayServer_Share(t *testing.T) {
+	overlay := overlayServer{
+		overlay: overlay{
+			certs:          certs.NewInMemoryStore(),
+			routingFactory: routing.NewTreeRoutingFactory(3, AddressFactory{}),
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cert := fake.MakeCertificate(t, 1)
+
+	resp, err := overlay.Share(ctx, &Certificate{Value: cert.Leaf.Raw})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.NotNil(t, overlay.certs.Load(address{}))
+
+	_, err = overlay.Share(ctx, &Certificate{})
+	require.EqualError(t, err,
+		"couldn't parse certificate: asn1: syntax error: sequence truncated")
+}
+
 func TestOverlayServer_Call(t *testing.T) {
 	overlay := overlayServer{
 		overlay: overlay{

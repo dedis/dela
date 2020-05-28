@@ -25,3 +25,14 @@ type DurationFlag struct {
 
 // Flag implements cmd.Flag.
 func (flag DurationFlag) Flag() {}
+
+// IntFlag is a definition of a command flag expected to be parsed as a integer.
+type IntFlag struct {
+	Name     string
+	Usage    string
+	Required bool
+	Value    int
+}
+
+// Flag implements cmd.Flag.
+func (flag IntFlag) Flag() {}

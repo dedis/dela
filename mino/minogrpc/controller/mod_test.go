@@ -15,7 +15,7 @@ func TestMinimal_Build(t *testing.T) {
 	call := &fake.Call{}
 	minimal.Build(fakeCommandBuilder{call: call})
 
-	require.Equal(t, 12, call.Len())
+	require.Equal(t, 13, call.Len())
 }
 
 func TestMinimal_Run(t *testing.T) {
@@ -23,14 +23,16 @@ func TestMinimal_Run(t *testing.T) {
 
 	injector := cmd.NewInjector()
 
-	err := minimal.Run(injector)
+	err := minimal.Run(fakeContext{}, injector)
 	require.NoError(t, err)
 
 	var m *minogrpc.Minogrpc
 	err = injector.Resolve(&m)
 	require.NoError(t, err)
-
 	require.NoError(t, m.GracefulClose())
+
+	err = minimal.Run(fakeContext{num: 100000}, injector)
+	require.EqualError(t, err, "invalid port value 100000")
 }
 
 // -----------------------------------------------------------------------------
@@ -38,6 +40,10 @@ func TestMinimal_Run(t *testing.T) {
 
 type fakeCommandBuilder struct {
 	call *fake.Call
+}
+
+func (b fakeCommandBuilder) Start(...cmd.Flag) cmd.Builder {
+	return b
 }
 
 func (b fakeCommandBuilder) Command(name string) cmd.CommandBuilder {

@@ -44,7 +44,7 @@ type Controller interface {
 	Build(Builder)
 
 	// Run starts the components of the controller and populates the injector.
-	Run(Injector) error
+	Run(Context, Injector) error
 }
 
 // Request is a context to handle commands sent to the daemon.
@@ -59,6 +59,7 @@ type Context interface {
 	String(name string) string
 	Duration(name string) time.Duration
 	Path(name string) string
+	Int(name string) int
 }
 
 // Action is the definition of a command.
@@ -74,6 +75,8 @@ type Action interface {
 type Builder interface {
 	// Command populates a new command.
 	Command(name string) CommandBuilder
+
+	Start(...Flag) Builder
 }
 
 // Flag is a identifier for the definition of the flags.

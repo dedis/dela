@@ -16,18 +16,18 @@ import (
 func TestApp_Run(t *testing.T) {
 	app := NewApp(fakeController{}).(cliApp)
 
-	app.sigs <- syscall.SIGTERM
+	app.builder.sigs <- syscall.SIGTERM
 	args := []string{"testapp", "--socket", "/tmp/dela/daemon.sock", "start"}
 
 	err := app.Run(args)
 	require.NoError(t, err)
 
-	app.daemonFactory = fakeFactory{err: xerrors.New("oops")}
+	app.builder.daemonFactory = fakeFactory{err: xerrors.New("oops")}
 	err = app.Run(args)
 	require.EqualError(t, err,
 		"failed to execute the command: couldn't make daemon: oops")
 
-	app.daemonFactory = fakeFactory{errDaemon: xerrors.New("oops")}
+	app.builder.daemonFactory = fakeFactory{errDaemon: xerrors.New("oops")}
 	err = app.Run(args)
 	require.EqualError(t, err,
 		"failed to execute the command: couldn't start the daemon: oops")
@@ -174,7 +174,7 @@ type fakeController struct {
 
 func (c fakeController) Build(Builder) {}
 
-func (c fakeController) Run(Injector) error {
+func (c fakeController) Run(Context, Injector) error {
 	return c.err
 }
 

@@ -3,8 +3,12 @@ package cmd
 import (
 	"encoding/binary"
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/urfave/cli/v2"
+	"go.dedis.ch/dela"
 	"golang.org/x/xerrors"
 )
 
@@ -12,6 +16,9 @@ type cliBuilder struct {
 	daemonFactory DaemonFactory
 	injector      Injector
 	actions       *actionMap
+	sigs          chan os.Signal
+	controllers   []Controller
+	startFlags    []Flag
 	commands      []*cliCommand
 }
 
@@ -21,8 +28,56 @@ func (b *cliBuilder) Command(name string) CommandBuilder {
 	return cb
 }
 
+func (b *cliBuilder) Start(flags ...Flag) Builder {
+	b.startFlags = append(b.startFlags, flags...)
+	return b
+}
+
 func (b *cliBuilder) build() []*cli.Command {
-	return b.buildCommands(b.commands)
+	for _, controller := range b.controllers {
+		controller.Build(b)
+	}
+
+	commands := b.buildCommands(b.commands)
+
+	commands = append(commands, &cli.Command{
+		Name:   "start",
+		Usage:  "start the daemon",
+		Flags:  b.buildFlags(b.startFlags),
+		Action: b.start,
+	})
+
+	return commands
+}
+
+func (b *cliBuilder) start(c *cli.Context) error {
+	daemon, err := b.daemonFactory.DaemonFromContext(c)
+	if err != nil {
+		return xerrors.Errorf("couldn't make daemon: %v", err)
+	}
+
+	err = daemon.Listen()
+	if err != nil {
+		return xerrors.Errorf("couldn't start the daemon: %v", err)
+	}
+
+	defer daemon.Close()
+
+	for _, controller := range b.controllers {
+		err = controller.Run(c, b.injector)
+		if err != nil {
+			return xerrors.Errorf("couldn't run the controller: %v", err)
+		}
+	}
+
+	signal.Notify(b.sigs, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(b.sigs)
+
+	<-b.sigs
+
+	dela.Logger.Trace().Msg("daemon has been stopped")
+
+	return nil
 }
 
 func (b *cliBuilder) buildCommands(in []*cliCommand) []*cli.Command {
@@ -90,6 +145,13 @@ func (b *cliBuilder) buildFlags(in []Flag) []cli.Flag {
 			}
 		case DurationFlag:
 			flags[i] = &cli.DurationFlag{
+				Name:     flag.Name,
+				Usage:    flag.Usage,
+				Required: flag.Required,
+				Value:    flag.Value,
+			}
+		case IntFlag:
+			flags[i] = &cli.IntFlag{
 				Name:     flag.Name,
 				Usage:    flag.Usage,
 				Required: flag.Required,

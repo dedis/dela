@@ -6,11 +6,9 @@ import (
 	"io"
 	"net"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"reflect"
 	"sync"
-	"syscall"
 
 	"github.com/urfave/cli/v2"
 	"go.dedis.ch/dela"
@@ -18,11 +16,7 @@ import (
 )
 
 type cliApp struct {
-	daemonFactory DaemonFactory
-	controllers   []Controller
-	injector      Injector
-	builder       *cliBuilder
-	sigs          chan os.Signal
+	builder *cliBuilder
 }
 
 // NewApp returns an new application. It registers the controllers and their
@@ -42,61 +36,20 @@ func NewApp(ctrls ...Controller) Application {
 	}
 
 	return cliApp{
-		daemonFactory: factory,
-		controllers:   ctrls,
-		injector:      injector,
 		builder: &cliBuilder{
 			injector:      injector,
 			actions:       actions,
 			daemonFactory: factory,
+			sigs:          make(chan os.Signal, 1),
+			controllers:   ctrls,
 		},
-		sigs: make(chan os.Signal, 1),
 	}
 }
 
 // Run implements cmd.Application. It runs the CLI and consequently the command
 // provided in the arguments.
 func (a cliApp) Run(arguments []string) error {
-	for _, controller := range a.controllers {
-		controller.Build(a.builder)
-	}
-
 	commands := a.builder.build()
-
-	commands = append(commands, &cli.Command{
-		Name:  "start",
-		Usage: "start the daemon",
-		Flags: []cli.Flag{},
-		Action: func(c *cli.Context) error {
-			daemon, err := a.daemonFactory.DaemonFromContext(c)
-			if err != nil {
-				return xerrors.Errorf("couldn't make daemon: %v", err)
-			}
-
-			err = daemon.Listen()
-			if err != nil {
-				return xerrors.Errorf("couldn't start the daemon: %v", err)
-			}
-
-			defer daemon.Close()
-
-			for _, controller := range a.controllers {
-				err = controller.Run(a.injector)
-				if err != nil {
-					return xerrors.Errorf("couldn't run the controller: %v", err)
-				}
-			}
-
-			signal.Notify(a.sigs, syscall.SIGINT, syscall.SIGTERM)
-			defer signal.Stop(a.sigs)
-
-			<-a.sigs
-
-			dela.Logger.Trace().Msg("daemon has been stopped")
-
-			return nil
-		},
-	})
 
 	app := &cli.App{
 		Name:  "Dela",
@@ -195,7 +148,7 @@ func (d *socketDaemon) Listen() error {
 				select {
 				case <-d.closing:
 				default:
-					dela.Logger.Err(err).Send()
+					dela.Logger.Err(err).Msg("daemon closed unexpectedly")
 				}
 				return
 			}

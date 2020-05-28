@@ -16,6 +16,13 @@ func TestCliBuilder_Command(t *testing.T) {
 	require.Len(t, builder.commands, 1)
 }
 
+func TestCliBuilder_Start(t *testing.T) {
+	builder := &cliBuilder{}
+
+	builder.Start(StringFlag{}, IntFlag{})
+	require.Len(t, builder.startFlags, 2)
+}
+
 func TestCliBuilder_Build(t *testing.T) {
 	builder := &cliBuilder{
 		actions:       &actionMap{},
@@ -28,13 +35,13 @@ func TestCliBuilder_Build(t *testing.T) {
 		Flags(StringFlag{Name: "string-flag"}).
 		Command("subtest").
 		Description("subtest description").
-		Flags(DurationFlag{})
+		Flags(DurationFlag{}, IntFlag{})
 
 	builder.Command("bad").
 		Action(fakeAction{err: xerrors.New("oops")})
 
 	commands := builder.build()
-	require.Len(t, commands, 2)
+	require.Len(t, commands, 3)
 
 	err := commands[0].Action(&cli.Context{})
 	require.NoError(t, err)
@@ -49,4 +56,22 @@ func TestCliBuilder_Build(t *testing.T) {
 	builder.daemonFactory = fakeFactory{errClient: xerrors.New("oops")}
 	err = commands[0].Action(&cli.Context{})
 	require.EqualError(t, err, "couldn't send action: oops")
+}
+
+func TestCliBuilder_UnknownType_BuildFlags(t *testing.T) {
+	defer func() {
+		r := recover()
+		require.Equal(t, "flag type '<nil>' not supported", r)
+	}()
+
+	builder := &cliBuilder{}
+	builder.Start((Flag)(nil))
+
+	builder.buildFlags(builder.startFlags)
+}
+
+func TestFlags(t *testing.T) {
+	StringFlag{}.Flag()
+	DurationFlag{}.Flag()
+	IntFlag{}.Flag()
 }

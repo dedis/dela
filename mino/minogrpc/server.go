@@ -109,7 +109,17 @@ func (o overlayServer) Join(ctx context.Context, req *JoinRequest) (*JoinRespons
 }
 
 func (o overlayServer) Share(ctx context.Context, msg *Certificate) (*CertificateAck, error) {
-	// TODO: store and verify
+	// TODO: verify the validity of the certificate by connecting to the distant
+	// node by that requires a protection against malicious share.
+
+	from := o.routingFactory.GetAddressFactory().FromText(msg.GetAddress())
+
+	cert, err := x509.ParseCertificate(msg.GetValue())
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't parse certificate: %v", err)
+	}
+
+	o.certs.Store(from, &tls.Certificate{Leaf: cert})
 
 	return &CertificateAck{}, nil
 }
