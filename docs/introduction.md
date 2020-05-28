@@ -61,7 +61,7 @@ asked ourself the same and came out with the following core ingredients:
   class, a common consensus is that the first to raise its hand can speak
   and propose a solution. The consensus is the core part of a distributed ledger
   that makes the agreement on a state possible.
-- Then, we need a **ledger** module, which offers the mean to keep track of
+- Then, we need a **ledger** module, which keeps track of
   events and decisions that occur among the entities. In real life we easily
   keep track of elements by using a pen and paper. The ledger abstraction is the
   main entry point that provides the end-user operations. The ledger module
