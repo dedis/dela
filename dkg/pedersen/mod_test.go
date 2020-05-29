@@ -59,8 +59,7 @@ func TestPedersen_Scenario(t *testing.T) {
 
 	for i, minogrpc := range minos {
 		for _, m := range minos {
-			err := minogrpc.AddCertificate(m.GetAddress(), m.GetCertificate())
-			require.NoError(t, err)
+			minogrpc.GetCertificateStore().Store(m.GetAddress(), m.GetCertificate())
 		}
 
 		dkg, err := NewPedersen(privKeys[i], minogrpc, suite)

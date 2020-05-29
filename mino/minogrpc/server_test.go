@@ -3,6 +3,7 @@ package minogrpc
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"sync"
 	"testing"
 	"time"
@@ -14,7 +15,9 @@ import (
 	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/routing"
+	"go.dedis.ch/dela/mino/minogrpc/tokens"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -74,6 +77,79 @@ func TestIntegration_Basic_Call(t *testing.T) {
 	for _, m := range mm {
 		require.NoError(t, m.(*Minogrpc).GracefulClose())
 	}
+}
+
+func TestOverlayServer_Join(t *testing.T) {
+	overlay := overlayServer{
+		overlay: overlay{
+			tokens:         fakeTokens{},
+			certs:          certs.NewInMemoryStore(),
+			routingFactory: routing.NewTreeRoutingFactory(3, AddressFactory{}),
+			connFactory:    fakeConnFactory{},
+		},
+	}
+
+	cert, err := makeCertificate()
+	require.NoError(t, err)
+
+	overlay.certs.Store(fake.NewAddress(0), cert)
+
+	ctx := context.Background()
+	req := &JoinRequest{
+		Token: "abc",
+		Certificate: &Certificate{
+			Address: []byte{},
+			Value:   cert.Leaf.Raw,
+		},
+	}
+
+	resp, err := overlay.Join(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	overlay.tokens = fakeTokens{invalid: true}
+	_, err = overlay.Join(ctx, req)
+	require.EqualError(t, err, "token 'abc' is invalid")
+
+	overlay.tokens = fakeTokens{}
+	overlay.certs.Store(fake.NewBadAddress(), cert)
+	_, err = overlay.Join(ctx, req)
+	require.EqualError(t, err, "couldn't marshal address: fake error")
+
+	overlay.certs = certs.NewInMemoryStore()
+	overlay.certs.Store(fake.NewAddress(0), cert)
+	overlay.connFactory = fakeConnFactory{err: xerrors.New("oops")}
+	_, err = overlay.Join(ctx, req)
+	require.EqualError(t, err,
+		"failed to share certificate: couldn't open connection: oops")
+
+	overlay.connFactory = fakeConnFactory{errConn: xerrors.New("oops")}
+	_, err = overlay.Join(ctx, req)
+	require.EqualError(t, err,
+		"failed to share certificate: couldn't call share: oops")
+}
+
+func TestOverlayServer_Share(t *testing.T) {
+	overlay := overlayServer{
+		overlay: overlay{
+			certs:          certs.NewInMemoryStore(),
+			routingFactory: routing.NewTreeRoutingFactory(3, AddressFactory{}),
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cert := fake.MakeCertificate(t, 1)
+
+	resp, err := overlay.Share(ctx, &Certificate{Value: cert.Leaf.Raw})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.NotNil(t, overlay.certs.Load(address{}))
+
+	_, err = overlay.Share(ctx, &Certificate{})
+	require.EqualError(t, err,
+		"couldn't parse certificate: asn1: syntax error: sequence truncated")
 }
 
 func TestOverlayServer_Call(t *testing.T) {
@@ -175,6 +251,51 @@ func TestOverlayServer_Stream(t *testing.T) {
 	require.EqualError(t, err, "handler failed to process: oops")
 }
 
+func TestOverlay_Join(t *testing.T) {
+	cert, err := makeCertificate()
+	require.NoError(t, err)
+
+	overlay := overlay{
+		me:             fake.NewAddress(0),
+		certs:          fakeCerts{},
+		routingFactory: routing.NewTreeRoutingFactory(3, AddressFactory{}),
+		connFactory: fakeConnFactory{
+			resp: JoinResponse{Peers: []*Certificate{{Value: cert.Leaf.Raw}}},
+		},
+	}
+
+	err = overlay.Join("", "", nil)
+	require.NoError(t, err)
+
+	overlay.routingFactory = routing.NewTreeRoutingFactory(3, fake.AddressFactory{})
+	err = overlay.Join("", "", nil)
+	require.EqualError(t, err, "invalid address type 'fake.Address'")
+
+	overlay.routingFactory = routing.NewTreeRoutingFactory(3, AddressFactory{})
+	overlay.me = fake.NewBadAddress()
+	err = overlay.Join("", "", nil)
+	require.EqualError(t, err, "couldn't marshal own address: fake error")
+
+	overlay.me = fake.NewAddress(0)
+	overlay.certs = fakeCerts{err: xerrors.New("oops")}
+	err = overlay.Join("", "", nil)
+	require.EqualError(t, err, "couldn't fetch distant certificate: oops")
+
+	overlay.certs = fakeCerts{}
+	overlay.connFactory = fakeConnFactory{err: xerrors.New("oops")}
+	err = overlay.Join("", "", nil)
+	require.EqualError(t, err, "couldn't open connection: oops")
+
+	overlay.connFactory = fakeConnFactory{resp: JoinResponse{}, errConn: xerrors.New("oops")}
+	err = overlay.Join("", "", nil)
+	require.EqualError(t, err, "couldn't call join: oops")
+
+	overlay.connFactory = fakeConnFactory{resp: JoinResponse{Peers: []*Certificate{{}}}}
+	err = overlay.Join("", "", nil)
+	require.EqualError(t, err,
+		"couldn't parse certificate: asn1: syntax error: sequence truncated")
+}
+
 func TestOverlay_SetupRelays(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -220,7 +341,7 @@ func TestConnectionFactory_FromAddress(t *testing.T) {
 	defer dst.GracefulClose()
 
 	factory := DefaultConnectionFactory{
-		certs: &sync.Map{},
+		certs: certs.NewInMemoryStore(),
 		me:    fake.NewAddress(0),
 	}
 
@@ -236,17 +357,9 @@ func TestConnectionFactory_FromAddress(t *testing.T) {
 	_, err = factory.FromAddress(fake.NewAddress(1))
 	require.EqualError(t, err, "certificate for 'fake.Address[1]' not found")
 
-	factory.certs.Store(fake.NewAddress(1), nil)
-	_, err = factory.FromAddress(fake.NewAddress(1))
-	require.EqualError(t, err, "invalid certificate type '<nil>' for 'fake.Address[1]'")
-
 	factory.certs.Delete(factory.me)
 	_, err = factory.FromAddress(dst.GetAddress())
 	require.EqualError(t, err, "couldn't find server 'fake.Address[0]' certificate")
-
-	factory.certs.Store(factory.me, nil)
-	_, err = factory.FromAddress(dst.GetAddress())
-	require.EqualError(t, err, "invalid certificate type '<nil>' for 'fake.Address[0]'")
 
 	factory.certs.Store(factory.me, dst.GetCertificate())
 	_, err = factory.FromAddress(factory.me)
@@ -273,8 +386,8 @@ func makeInstances(t *testing.T, n int) ([]mino.Mino, []mino.RPC) {
 		for _, k := range mm[:i] {
 			km := k.(*Minogrpc)
 
-			m.AddCertificate(k.GetAddress(), km.GetCertificate())
-			km.AddCertificate(m.GetAddress(), m.GetCertificate())
+			m.GetCertificateStore().Store(k.GetAddress(), km.GetCertificate())
+			km.GetCertificateStore().Store(m.GetAddress(), m.GetCertificate())
 		}
 	}
 
@@ -338,4 +451,30 @@ func (s fakeServerStream) Recv() (*Envelope, error) {
 
 	env := <-s.ch
 	return env, nil
+}
+
+type fakeTokens struct {
+	tokens.Holder
+	invalid bool
+}
+
+func (t fakeTokens) Verify(string) bool {
+	return !t.invalid
+}
+
+type fakeCerts struct {
+	certs.Storage
+	err error
+}
+
+func (s fakeCerts) Store(mino.Address, *tls.Certificate) {
+
+}
+
+func (s fakeCerts) Load(mino.Address) *tls.Certificate {
+	return &tls.Certificate{Leaf: &x509.Certificate{Raw: []byte{0x89}}}
+}
+
+func (s fakeCerts) Fetch(certs.Dialable, []byte) error {
+	return s.err
 }

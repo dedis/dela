@@ -4,13 +4,16 @@
 package minogrpc
 
 import (
+	"crypto/tls"
 	fmt "fmt"
 	"net"
 	"net/url"
 	"regexp"
 	"sync"
+	"time"
 
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/routing"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
@@ -21,6 +24,7 @@ import (
 
 const (
 	orchestratorDescription = "Orchestrator"
+	orchestratorCode        = "\ue000"
 )
 
 var (
@@ -49,7 +53,7 @@ func (a rootAddress) Equal(other mino.Address) bool {
 // MarshalText implements mino.Address. It returns a buffer that uses the
 // private area of Unicode to define the root.
 func (a rootAddress) MarshalText() ([]byte, error) {
-	return []byte("\ue000"), nil
+	return []byte(orchestratorCode), nil
 }
 
 // String implements fmt.Stringer. It returns a string representation of the
@@ -97,16 +101,31 @@ type AddressFactory struct{}
 // FromText implements mino.AddressFactory. It returns an instance of an
 // address from a byte slice.
 func (f AddressFactory) FromText(text []byte) mino.Address {
-	if string(text) == "\ue000" {
+	if string(text) == orchestratorCode {
 		return newRootAddress()
 	}
 
 	return address{host: string(text)}
 }
 
+// Joinable is an extension of the mino.Mino interface to allow distant servers
+// to join a network of participants.
+type Joinable interface {
+	mino.Mino
+
+	GetCertificate() *tls.Certificate
+
+	GetCertificateStore() certs.Storage
+
+	GenerateToken(expiration time.Duration) string
+
+	Join(addr, token string, digest []byte) error
+}
+
 // Minogrpc represents a grpc service restricted to a namespace
 //
-// implements mino.Mino
+// - implements mino.Mino
+// - implements fmt.Stringer
 type Minogrpc struct {
 	overlay
 	url       *url.URL
@@ -173,6 +192,12 @@ func (m *Minogrpc) GetAddressFactory() mino.AddressFactory {
 // GetAddress implements Mino. It returns the address of the server.
 func (m *Minogrpc) GetAddress() mino.Address {
 	return m.overlay.me
+}
+
+// GenerateToken generates and returns a new token that will be valid for the
+// given amount of time.
+func (m *Minogrpc) GenerateToken(expiration time.Duration) string {
+	return m.tokens.Generate(expiration)
 }
 
 // Listen starts the server. It waits for the go routine to start before
@@ -263,4 +288,10 @@ func (m *Minogrpc) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 	m.handlers[uri] = h
 
 	return rpc, nil
+}
+
+// String implements fmt.Stringer. It prints a short description of the
+// instance.
+func (m *Minogrpc) String() string {
+	return fmt.Sprintf("%v", m.overlay.me)
 }
