@@ -71,7 +71,7 @@ func (o overlayServer) Join(ctx context.Context, req *JoinRequest) (*JoinRespons
 
 		msg := &Certificate{Address: text, Value: cert}
 
-		// Prepare the list of send back to the new node.
+		// Prepare the list of known certificates to send back to the new node.
 		peers = append(peers, msg)
 
 		// Share the new node certificate with existing peers.
@@ -110,7 +110,7 @@ func (o overlayServer) Join(ctx context.Context, req *JoinRequest) (*JoinRespons
 
 func (o overlayServer) Share(ctx context.Context, msg *Certificate) (*CertificateAck, error) {
 	// TODO: verify the validity of the certificate by connecting to the distant
-	// node by that requires a protection against malicious share.
+	// node but that requires a protection against malicious share.
 
 	from := o.routingFactory.GetAddressFactory().FromText(msg.GetAddress())
 
@@ -461,7 +461,6 @@ func makeCertificate() (*tls.Certificate, error) {
 
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
-		DNSNames:     []string{},
 		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
 		NotBefore:    time.Now(),
 		NotAfter:     time.Now().Add(certificateDuration),

@@ -1,4 +1,4 @@
-package cmd
+package node
 
 import (
 	"encoding/binary"
@@ -7,79 +7,22 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sync"
 
-	"github.com/urfave/cli/v2"
 	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/cli"
 	"golang.org/x/xerrors"
 )
 
-type cliApp struct {
-	builder *cliBuilder
-}
-
-// NewApp returns an new application. It registers the controllers and their
-// commands so that they can be executed through the CLI.
-//
-// - implements cmd.Application
-func NewApp(ctrls ...Controller) Application {
-	injector := &reflectInjector{
-		mapper: make(map[reflect.Type]interface{}),
-	}
-
-	actions := &actionMap{}
-
-	factory := socketFactory{
-		injector: injector,
-		actions:  actions,
-	}
-
-	return cliApp{
-		builder: &cliBuilder{
-			injector:      injector,
-			actions:       actions,
-			daemonFactory: factory,
-			sigs:          make(chan os.Signal, 1),
-			controllers:   ctrls,
-		},
-	}
-}
-
-// Run implements cmd.Application. It runs the CLI and consequently the command
-// provided in the arguments.
-func (a cliApp) Run(arguments []string) error {
-	commands := a.builder.build()
-
-	app := &cli.App{
-		Name:  "Dela",
-		Usage: "Dedis Ledger Architecture",
-		Flags: []cli.Flag{
-			&cli.PathFlag{
-				Name:  "socket",
-				Usage: "path to the daemon socket",
-			},
-		},
-		Commands: commands,
-	}
-
-	err := app.Run(arguments)
-	if err != nil {
-		return xerrors.Errorf("failed to execute the command: %v", err)
-	}
-
-	return nil
-}
-
 // SocketClient opens a connection to a unix socket daemon to send commands.
 //
-// - implements cmd.Client
+// - implements node.Client
 type socketClient struct {
 	socketpath string
 	out        io.Writer
 }
 
-// Send implements cmd.Client. It opens a connection and sends the data to the
+// Send implements node.Client. It opens a connection and sends the data to the
 // daemon. It writes the result of the command to the output.
 func (c socketClient) Send(data []byte) error {
 	conn, err := net.Dial("unix", c.socketpath)
@@ -103,10 +46,10 @@ func (c socketClient) Send(data []byte) error {
 }
 
 // SocketDaemon is a daemon using UNIX socket. This allows the permissions to be
-// manage by the filesystem. A user must have read/write access to send a
+// managed by the filesystem. A user must have read/write access to send a
 // command to the daemon.
 //
-// - implements cmd.Daemon
+// - implements node.Daemon
 type socketDaemon struct {
 	sync.WaitGroup
 	socketpath string
@@ -115,7 +58,7 @@ type socketDaemon struct {
 	closing    chan struct{}
 }
 
-// Listen implements cmd.Daemon. It starts the daemon by creating the unix
+// Listen implements node.Daemon. It starts the daemon by creating the unix
 // socket file to the path.
 func (d *socketDaemon) Listen() error {
 	dir, _ := filepath.Split(d.socketpath)
@@ -163,6 +106,7 @@ func (d *socketDaemon) Listen() error {
 func (d *socketDaemon) handleConn(conn net.Conn) {
 	defer conn.Close()
 
+	// Read the first two bytes that will be converted into the action ID.
 	buffer := make([]byte, 2)
 
 	_, err := conn.Read(buffer)
@@ -179,7 +123,7 @@ func (d *socketDaemon) handleConn(conn net.Conn) {
 		return
 	}
 
-	actx := Request{
+	actx := Context{
 		Injector: d.injector,
 		In:       conn,
 		Out:      conn,
@@ -196,7 +140,7 @@ func (d *socketDaemon) sendError(conn net.Conn, err error) {
 	fmt.Fprintf(conn, "[ERROR] %v\n", err)
 }
 
-// Close implements cmd.Daemon. It closes the daemon and waits for the go
+// Close implements node.Daemon. It closes the daemon and waits for the go
 // routines to close.
 func (d *socketDaemon) Close() error {
 	close(d.closing)
@@ -208,15 +152,15 @@ func (d *socketDaemon) Close() error {
 // SocketFactory provides primitives to create a daemon and clients from a CLI
 // context.
 //
-// - implements cmd.DaemonFactory
+// - implements node.DaemonFactory
 type socketFactory struct {
 	injector Injector
 	actions  *actionMap
 }
 
-// ClientFromContext implements cmd.DaemonFactory. It creates a client based on
+// ClientFromContext implements node.DaemonFactory. It creates a client based on
 // the flags of the context.
-func (f socketFactory) ClientFromContext(ctx Context) (Client, error) {
+func (f socketFactory) ClientFromContext(ctx cli.Flags) (Client, error) {
 	client := socketClient{
 		socketpath: f.getSocketPath(ctx),
 		out:        os.Stdout,
@@ -225,9 +169,9 @@ func (f socketFactory) ClientFromContext(ctx Context) (Client, error) {
 	return client, nil
 }
 
-// DaemonFromContext implements cmd.DaemonFactory. It creates a daemon based on
+// DaemonFromContext implements node.DaemonFactory. It creates a daemon based on
 // the flags of the context.
-func (f socketFactory) DaemonFromContext(ctx Context) (Daemon, error) {
+func (f socketFactory) DaemonFromContext(ctx cli.Flags) (Daemon, error) {
 	daemon := &socketDaemon{
 		socketpath: f.getSocketPath(ctx),
 		injector:   f.injector,
@@ -238,7 +182,7 @@ func (f socketFactory) DaemonFromContext(ctx Context) (Daemon, error) {
 	return daemon, nil
 }
 
-func (f socketFactory) getSocketPath(ctx Context) string {
+func (f socketFactory) getSocketPath(ctx cli.Flags) string {
 	path := ctx.Path("socket")
 	if path == "" {
 		homeDir, err := os.UserHomeDir()
@@ -250,22 +194,4 @@ func (f socketFactory) getSocketPath(ctx Context) string {
 	}
 
 	return path
-}
-
-// ActionMap stores actions and assigns a unique index to each.
-type actionMap struct {
-	list []Action
-}
-
-func (m *actionMap) Set(a Action) uint16 {
-	m.list = append(m.list, a)
-	return uint16(len(m.list) - 1)
-}
-
-func (m *actionMap) Get(index uint16) Action {
-	if int(index) >= len(m.list) {
-		return nil
-	}
-
-	return m.list[index]
 }

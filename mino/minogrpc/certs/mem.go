@@ -11,7 +11,7 @@ import (
 )
 
 // InMemoryStore is a certificate store that keeps the certificates in
-// memory only which means it does not persist.
+// memory only, which means it does not persist.
 //
 // - implements certs.Store
 type InMemoryStore struct {
@@ -69,13 +69,13 @@ func (s *InMemoryStore) Fetch(addr Dialable, hash []byte) error {
 		return xerrors.Errorf("failed to dial: %v", err)
 	}
 
+	conn.Close()
+
 	peers := conn.ConnectionState().PeerCertificates
 	// Server certificate should be self-signed and thus a chain of length 1.
 	if len(peers) != 1 {
 		return xerrors.Errorf("expect exactly one certificate but found %d", len(peers))
 	}
-
-	conn.Close()
 
 	cert := &tls.Certificate{Leaf: peers[0]}
 

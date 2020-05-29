@@ -4,7 +4,7 @@ package minogrpc;
 
 import "google/protobuf/any.proto";
 
-// Certificate is wrapper around a x509 raw certificate and its address.
+// Certificate is a wrapper around a x509 raw certificate and its address.
 message Certificate {
     bytes address = 1;
     bytes value = 2;
@@ -39,11 +39,12 @@ message Envelope {
 }
 
 service Overlay {
-    // Join handles join request from a unknown node. It accepts to share the
+    // Join handles join request from an unknown node. It accepts to share the
     // certificates if the token is valid.
     rpc Join(JoinRequest) returns (JoinResponse) {}
 
-    // Share handle a certificate share from another participant of the network.
+    // Share handles a certificate share from another participant of the
+    // network.
     rpc Share(Certificate) returns (CertificateAck) {}
 
     rpc Call(Message) returns (Message) {}

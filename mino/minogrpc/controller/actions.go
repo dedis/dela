@@ -7,7 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"go.dedis.ch/dela/cmd"
+	"go.dedis.ch/dela/cli"
+	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc"
 	"golang.org/x/xerrors"
@@ -15,17 +16,17 @@ import (
 
 // CertAction is an action to list the certificates known by the server.
 //
-// - implements cmd.Action
+// - implements node.ActionTemplate
 type certAction struct{}
 
-// Prepare implements cmd.Action. It does nothing.
-func (a certAction) Prepare(ctx cmd.Context) ([]byte, error) {
+// Prepare implements node.ActionTemplate. It does nothing.
+func (a certAction) GenerateRequest(ctx cli.Flags) ([]byte, error) {
 	return nil, nil
 }
 
-// Execute implements cmd.Action. It prints the list of certificates known by
-// the server with the address associated and the expiration date.
-func (a certAction) Execute(req cmd.Request) error {
+// Execute implements node.ActionTemplate. It prints the list of certificates
+// known by the server with the address associated and the expiration date.
+func (a certAction) Execute(req node.Context) error {
 	var m minogrpc.Joinable
 
 	err := req.Injector.Resolve(&m)
@@ -48,12 +49,12 @@ type tokenRequest struct {
 // TokenAction is an action to generate a token that will be valid for another
 // server to join the network of participants.
 //
-// - implements cmd.Action
+// - implements node.ActionTemplate
 type tokenAction struct{}
 
-// Prepare implements cmd.Action. It marshals the token request with the
-// expiration time.
-func (a tokenAction) Prepare(ctx cmd.Context) ([]byte, error) {
+// Prepare implements node.ActionTemplate. It marshals the token request with
+// the expiration time.
+func (a tokenAction) GenerateRequest(ctx cli.Flags) ([]byte, error) {
 	req := tokenRequest{
 		Expiration: ctx.Duration("expiration"),
 	}
@@ -66,9 +67,9 @@ func (a tokenAction) Prepare(ctx cmd.Context) ([]byte, error) {
 	return buffer, nil
 }
 
-// Execute implements cmd.Action. It generates a token that will be valid for
-// the amount of time given in the request.
-func (a tokenAction) Execute(req cmd.Request) error {
+// Execute implements node.ActionTemplate. It generates a token that will be
+// valid for the amount of time given in the request.
+func (a tokenAction) Execute(req node.Context) error {
 	dec := json.NewDecoder(req.In)
 
 	input := tokenRequest{}
@@ -83,7 +84,7 @@ func (a tokenAction) Execute(req cmd.Request) error {
 		return xerrors.Errorf("couldn't resolve: %v", err)
 	}
 
-	token := m.Token(input.Expiration)
+	token := m.GenerateToken(input.Expiration)
 
 	digest, err := m.GetCertificateStore().Hash(m.GetCertificate())
 	if err != nil {
@@ -102,9 +103,15 @@ type joinRequest struct {
 	CertHash string
 }
 
+// JoinAction is an action to join a network of participants by providing a
+// valid token and the certificate hash.
+//
+// - implements node.ActionTemplate
 type joinAction struct{}
 
-func (a joinAction) Prepare(ctx cmd.Context) ([]byte, error) {
+// Prepare implements node.ActionTemplate. It returns the join request
+// containing the token, the address and the certificate hash.
+func (a joinAction) GenerateRequest(ctx cli.Flags) ([]byte, error) {
 	req := joinRequest{
 		Token:    ctx.String("token"),
 		Addr:     ctx.String("address"),
@@ -119,7 +126,9 @@ func (a joinAction) Prepare(ctx cmd.Context) ([]byte, error) {
 	return buffer, nil
 }
 
-func (a joinAction) Execute(req cmd.Request) error {
+// Execute implements node.ActionTemplate. It parses the request and send the
+// join request to the distant node.
+func (a joinAction) Execute(req node.Context) error {
 	dec := json.NewDecoder(req.In)
 
 	var input joinRequest

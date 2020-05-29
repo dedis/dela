@@ -117,7 +117,7 @@ type Joinable interface {
 
 	GetCertificateStore() certs.Storage
 
-	Token(expiration time.Duration) string
+	GenerateToken(expiration time.Duration) string
 
 	Join(addr, token string, digest []byte) error
 }
@@ -194,9 +194,9 @@ func (m *Minogrpc) GetAddress() mino.Address {
 	return m.overlay.me
 }
 
-// Token generates and returns a new token that will be valid for the given
-// amount of time.
-func (m *Minogrpc) Token(expiration time.Duration) string {
+// GenerateToken generates and returns a new token that will be valid for the
+// given amount of time.
+func (m *Minogrpc) GenerateToken(expiration time.Duration) string {
 	return m.tokens.Generate(expiration)
 }
 

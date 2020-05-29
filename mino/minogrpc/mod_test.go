@@ -119,7 +119,7 @@ func TestMinogrpc_Token(t *testing.T) {
 		overlay: overlay{tokens: tokens.NewInMemoryHolder()},
 	}
 
-	token := minoGrpc.Token(time.Minute)
+	token := minoGrpc.GenerateToken(time.Minute)
 	require.True(t, minoGrpc.tokens.Verify(token))
 }
 

@@ -1,5 +1,5 @@
-// Package tokens defines a token holder to generate and validate access tokens.
-// and provides an implementation in-memory.
+// Package tokens defines a token holder to generate and validate access tokens
+// and provides an in-memory implementation.
 package tokens
 
 import (

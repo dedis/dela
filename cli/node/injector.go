@@ -1,4 +1,4 @@
-package cmd
+package node
 
 import (
 	"reflect"
@@ -6,6 +6,10 @@ import (
 	"golang.org/x/xerrors"
 )
 
+// ReflectInjector is a dependency injector that uses reflection to resolve
+// specific interfaces.
+//
+// - implements node.Injector
 type reflectInjector struct {
 	mapper map[reflect.Type]interface{}
 }
@@ -17,6 +21,8 @@ func NewInjector() Injector {
 	}
 }
 
+// Resolve implements node.Injector. It populates the given interface with the
+// first compatible dependency.
 func (inj *reflectInjector) Resolve(v interface{}) error {
 	rv := reflect.ValueOf(v)
 	if rv.Kind() != reflect.Ptr {
@@ -33,6 +39,8 @@ func (inj *reflectInjector) Resolve(v interface{}) error {
 	return xerrors.Errorf("couldn't find dependency for '%v'", rv.Elem().Type())
 }
 
+// Inject implements node.Injector. It injects the dependency to be available
+// later on.
 func (inj *reflectInjector) Inject(v interface{}) {
 	key := reflect.TypeOf(v)
 	inj.mapper[key] = v

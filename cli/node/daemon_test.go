@@ -1,4 +1,4 @@
-package cmd
+package node
 
 import (
 	"bytes"
@@ -9,34 +9,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"golang.org/x/xerrors"
 )
-
-func TestApp_Run(t *testing.T) {
-	app := NewApp(fakeController{}).(cliApp)
-
-	app.builder.sigs <- syscall.SIGTERM
-	args := []string{"testapp", "--socket", "/tmp/dela/daemon.sock", "start"}
-
-	err := app.Run(args)
-	require.NoError(t, err)
-
-	app.builder.daemonFactory = fakeFactory{err: xerrors.New("oops")}
-	err = app.Run(args)
-	require.EqualError(t, err,
-		"failed to execute the command: couldn't make daemon: oops")
-
-	app.builder.daemonFactory = fakeFactory{errDaemon: xerrors.New("oops")}
-	err = app.Run(args)
-	require.EqualError(t, err,
-		"failed to execute the command: couldn't start the daemon: oops")
-
-	app = NewApp(fakeController{err: xerrors.New("oops")}).(cliApp)
-	err = app.Run(args)
-	require.EqualError(t, err,
-		"failed to execute the command: couldn't run the controller: oops")
-}
 
 func TestSocketClient_Send(t *testing.T) {
 	path := filepath.Join(os.TempDir(), "daemon.sock")
@@ -168,13 +144,13 @@ func listen(t *testing.T, path string, quick bool) {
 	}()
 }
 
-type fakeController struct {
+type fakeInitializer struct {
 	err error
 }
 
-func (c fakeController) Build(Builder) {}
+func (c fakeInitializer) SetCommands(Builder) {}
 
-func (c fakeController) Run(Context, Injector) error {
+func (c fakeInitializer) Inject(cli.Flags, Injector) error {
 	return c.err
 }
 
@@ -202,24 +178,23 @@ type fakeFactory struct {
 	errDaemon error
 }
 
-func (f fakeFactory) ClientFromContext(Context) (Client, error) {
+func (f fakeFactory) ClientFromContext(cli.Flags) (Client, error) {
 	return fakeClient{err: f.errClient}, f.err
 }
 
-func (f fakeFactory) DaemonFromContext(Context) (Daemon, error) {
+func (f fakeFactory) DaemonFromContext(cli.Flags) (Daemon, error) {
 	return fakeDaemon{err: f.errDaemon}, f.err
 }
 
 type fakeAction struct {
-	Action
 	err error
 }
 
-func (a fakeAction) Prepare(Context) ([]byte, error) {
+func (a fakeAction) GenerateRequest(cli.Flags) ([]byte, error) {
 	return []byte{}, a.err
 }
 
-func (a fakeAction) Execute(req Request) error {
+func (a fakeAction) Execute(req Context) error {
 	if a.err != nil {
 		return a.err
 	}
@@ -229,7 +204,7 @@ func (a fakeAction) Execute(req Request) error {
 }
 
 type fakeContext struct {
-	Context
+	cli.Flags
 	path string
 }
 

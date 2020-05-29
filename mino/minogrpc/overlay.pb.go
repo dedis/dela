@@ -25,7 +25,7 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.ProtoPackageIsVersion3 // please upgrade the proto package
 
-// Certificate is wrapper around a x509 raw certificate and its address.
+// Certificate is a wrapper around a x509 raw certificate and its address.
 type Certificate struct {
 	Address              []byte   `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
 	Value                []byte   `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
@@ -343,10 +343,11 @@ const _ = grpc.SupportPackageIsVersion6
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
 type OverlayClient interface {
-	// Join handles join request from a unknown node. It accepts to share the
+	// Join handles join request from an unknown node. It accepts to share the
 	// certificates if the token is valid.
 	Join(ctx context.Context, in *JoinRequest, opts ...grpc.CallOption) (*JoinResponse, error)
-	// Share handle a certificate share from another participant of the network.
+	// Share handles a certificate share from another participant of the
+	// network.
 	Share(ctx context.Context, in *Certificate, opts ...grpc.CallOption) (*CertificateAck, error)
 	Call(ctx context.Context, in *Message, opts ...grpc.CallOption) (*Message, error)
 	Stream(ctx context.Context, opts ...grpc.CallOption) (Overlay_StreamClient, error)
@@ -420,10 +421,11 @@ func (x *overlayStreamClient) Recv() (*Envelope, error) {
 
 // OverlayServer is the server API for Overlay service.
 type OverlayServer interface {
-	// Join handles join request from a unknown node. It accepts to share the
+	// Join handles join request from an unknown node. It accepts to share the
 	// certificates if the token is valid.
 	Join(context.Context, *JoinRequest) (*JoinResponse, error)
-	// Share handle a certificate share from another participant of the network.
+	// Share handles a certificate share from another participant of the
+	// network.
 	Share(context.Context, *Certificate) (*CertificateAck, error)
 	Call(context.Context, *Message) (*Message, error)
 	Stream(Overlay_StreamServer) error

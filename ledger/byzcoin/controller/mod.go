@@ -2,7 +2,8 @@ package controller
 
 import (
 	"go.dedis.ch/dela"
-	"go.dedis.ch/dela/cmd"
+	"go.dedis.ch/dela/cli"
+	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/ledger"
 	"go.dedis.ch/dela/ledger/byzcoin"
@@ -10,27 +11,33 @@ import (
 	"golang.org/x/xerrors"
 )
 
+// Minimal is a minimal initializer for Byzcoin. It allows one to setup a
+// ledger.
+//
+// - implements node.Initializer
 type minimal struct{}
 
-// NewMinimal creates a new controller for Byzcoin with minimal options.
-func NewMinimal() cmd.Controller {
+// NewMinimal creates a new initializer for Byzcoin with minimal options.
+func NewMinimal() node.Initializer {
 	return minimal{}
 }
 
-func (m minimal) Build(builder cmd.Builder) {
-	cli := builder.Command("byzcoin").
-		Description("Set of commands to administrate the ledger.")
+// Build implements node.Initializer.
+func (m minimal) SetCommands(builder node.Builder) {
+	cb := builder.SetCommand("byzcoin")
+	cb.SetDescription("Set of commands to administrate the ledger.")
 
-	cli.Command("setup").
-		Description("setup a new ledger").
-		Action(setupAction{})
+	sub := cb.SetSubCommand("setup")
+	sub.SetDescription("setup a new ledger")
+	sub.SetAction(builder.MakeAction(setupAction{}))
 }
 
-func (m minimal) Run(ctx cmd.Context, inj cmd.Injector) error {
+// Run implements node.Initializer.
+func (m minimal) Inject(ctx cli.Flags, inj node.Injector) error {
 	var no mino.Mino
 	err := inj.Resolve(&no)
 	if err != nil {
-		return xerrors.Errorf("failed to inject: %v", err)
+		return xerrors.Errorf("failed to resolve: %v", err)
 	}
 
 	ldgr := byzcoin.NewLedger(no, bls.NewSigner())
@@ -46,20 +53,29 @@ func (m minimal) Run(ctx cmd.Context, inj cmd.Injector) error {
 	return nil
 }
 
+// SetupAction is an action to setup a ledger from a list of addresses.
+//
+// - implements node.ActionTemplate
 type setupAction struct{}
 
-func (a setupAction) Prepare(ctx cmd.Context) ([]byte, error) {
+func (a setupAction) Do(flags cli.Flags) error {
+	return nil
+}
+
+// Prepare implements node.ActionTemplate.
+func (a setupAction) GenerateRequest(ctx cli.Flags) ([]byte, error) {
 	return nil, nil
 }
 
-func (a setupAction) Execute(req cmd.Request) error {
+// Execute implements node.ActionTemplate.
+func (a setupAction) Execute(req node.Context) error {
 	dela.Logger.Info().Msg("Consume an incoming message")
 
 	var actor ledger.Actor
 
 	err := req.Injector.Resolve(actor)
 	if err != nil {
-		return xerrors.Errorf("failed to inject: %v", err)
+		return xerrors.Errorf("failed to resolve: %v", err)
 	}
 
 	// TODO: setup from a list of addresses only

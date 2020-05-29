@@ -4,13 +4,15 @@ package main
 import (
 	"os"
 
-	"go.dedis.ch/dela/cmd"
+	"go.dedis.ch/dela/cli/node"
 	byzcoin "go.dedis.ch/dela/ledger/byzcoin/controller"
 	mino "go.dedis.ch/dela/mino/minogrpc/controller"
 )
 
 func main() {
-	app := cmd.NewApp(mino.NewMinimal(), byzcoin.NewMinimal())
+	builder := node.NewBuilder(mino.NewMinimal(), byzcoin.NewMinimal())
+
+	app := builder.Build()
 
 	err := app.Run(os.Args)
 	if err != nil {

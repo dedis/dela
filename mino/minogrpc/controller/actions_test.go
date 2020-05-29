@@ -9,7 +9,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/cmd"
+	"go.dedis.ch/dela/cli"
+	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino/minogrpc"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
@@ -18,7 +19,7 @@ import (
 
 func TestCertAction_Prepare(t *testing.T) {
 	action := certAction{}
-	buffer, err := action.Prepare(nil)
+	buffer, err := action.GenerateRequest(nil)
 	require.NoError(t, err)
 	require.Nil(t, buffer)
 }
@@ -27,9 +28,9 @@ func TestCertAction_Execute(t *testing.T) {
 	action := certAction{}
 
 	out := new(bytes.Buffer)
-	req := cmd.Request{
+	req := node.Context{
 		Out:      out,
-		Injector: cmd.NewInjector(),
+		Injector: node.NewInjector(),
 	}
 
 	cert := fake.MakeCertificate(t, 1)
@@ -44,7 +45,7 @@ func TestCertAction_Execute(t *testing.T) {
 	expected := fmt.Sprintf("Address: fake.Address[0] Certificate: %v\n", cert.Leaf.NotAfter)
 	require.Equal(t, expected, out.String())
 
-	req.Injector = cmd.NewInjector()
+	req.Injector = node.NewInjector()
 	err = action.Execute(req)
 	require.EqualError(t, err,
 		"couldn't resolve: couldn't find dependency for 'minogrpc.Joinable'")
@@ -53,7 +54,7 @@ func TestCertAction_Execute(t *testing.T) {
 func TestTokenAction_Prepare(t *testing.T) {
 	action := tokenAction{}
 
-	buffer, err := action.Prepare(fakeContext{duration: time.Millisecond})
+	buffer, err := action.GenerateRequest(fakeContext{duration: time.Millisecond})
 	require.NoError(t, err)
 	require.Equal(t, "{\"Expiration\":1000000}", string(buffer))
 }
@@ -62,10 +63,10 @@ func TestTokenAction_Execute(t *testing.T) {
 	action := tokenAction{}
 
 	out := new(bytes.Buffer)
-	req := cmd.Request{
+	req := node.Context{
 		Out:      out,
 		In:       bytes.NewBufferString("{\"Expiration\":1000000}"),
-		Injector: cmd.NewInjector(),
+		Injector: node.NewInjector(),
 	}
 
 	cert := fake.MakeCertificate(t, 1)
@@ -90,7 +91,7 @@ func TestTokenAction_Execute(t *testing.T) {
 	require.EqualError(t, err, "couldn't decode input: EOF")
 
 	req.In = bytes.NewBufferString("{}")
-	req.Injector = cmd.NewInjector()
+	req.Injector = node.NewInjector()
 	err = action.Execute(req)
 	require.EqualError(t, err,
 		"couldn't resolve: couldn't find dependency for 'minogrpc.Joinable'")
@@ -99,7 +100,7 @@ func TestTokenAction_Execute(t *testing.T) {
 func TestJoinAction_Prepare(t *testing.T) {
 	action := joinAction{}
 
-	buffer, err := action.Prepare(fakeContext{str: "a"})
+	buffer, err := action.GenerateRequest(fakeContext{str: "a"})
 	require.NoError(t, err)
 	require.Equal(t, "{\"Token\":\"a\",\"Addr\":\"a\",\"CertHash\":\"a\"}", string(buffer))
 }
@@ -107,9 +108,9 @@ func TestJoinAction_Prepare(t *testing.T) {
 func TestJoinAction_Execute(t *testing.T) {
 	action := joinAction{}
 
-	req := cmd.Request{
+	req := node.Context{
 		In:       bytes.NewBufferString("{\"CertHash\":\"YQ==\"}"),
-		Injector: cmd.NewInjector(),
+		Injector: node.NewInjector(),
 	}
 
 	req.Injector.Inject(fakeJoinable{})
@@ -132,7 +133,7 @@ func TestJoinAction_Execute(t *testing.T) {
 	require.EqualError(t, err, "couldn't join: oops")
 
 	req.In = bytes.NewBufferString("{}")
-	req.Injector = cmd.NewInjector()
+	req.Injector = node.NewInjector()
 	err = action.Execute(req)
 	require.EqualError(t, err,
 		"couldn't resolve: couldn't find dependency for 'minogrpc.Joinable'")
@@ -155,7 +156,7 @@ func (j fakeJoinable) GetCertificateStore() certs.Storage {
 	return j.certs
 }
 
-func (j fakeJoinable) Token(time.Duration) string {
+func (j fakeJoinable) GenerateToken(time.Duration) string {
 	return "abc"
 }
 
@@ -164,7 +165,7 @@ func (j fakeJoinable) Join(string, string, []byte) error {
 }
 
 type fakeContext struct {
-	cmd.Context
+	cli.Flags
 	duration time.Duration
 	str      string
 	num      int

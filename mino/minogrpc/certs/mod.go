@@ -29,7 +29,8 @@ type Storage interface {
 	// Delete removes all the certificates associated with the address.
 	Delete(mino.Address)
 
-	// Range iterates over the certificates hold by the store.
+	// Range iterates over the certificates held by the store. If the callback
+	// returns false, range stops the iteration.
 	Range(func(addr mino.Address, cert *tls.Certificate) bool)
 
 	// Fetch calls the address to fetch its certificate and verifies the
