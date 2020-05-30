@@ -50,7 +50,7 @@ func TestHandler_Process(t *testing.T) {
 
 	req.Message = &empty.Empty{}
 	_, err = h.Process(req)
-	require.EqualError(t, err, "unknown message type '*empty.Empty'")
+	require.EqualError(t, err, "unknown message type '*emptypb.Empty'")
 
 	req.Message = &PropagateGenesis{}
 	_, err = h.Process(req)

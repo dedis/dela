@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 
+	protov1 "github.com/golang/protobuf/proto"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 	"google.golang.org/protobuf/proto"
@@ -94,7 +95,7 @@ func (e pbEncoder) Wrap(m interface{}) ([]byte, error) {
 		Value: value,
 	}
 
-	buffer, err := proto.Marshal(pb)
+	buffer, err := proto.Marshal(protov1.MessageV2(pb))
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +105,7 @@ func (e pbEncoder) Wrap(m interface{}) ([]byte, error) {
 
 func (e pbEncoder) Unwrap(buffer []byte) (interface{}, error) {
 	pb := &Wrapper{}
-	err := proto.Unmarshal(buffer, pb)
+	err := proto.Unmarshal(buffer, protov1.MessageV2(pb))
 	if err != nil {
 		return nil, err
 	}
@@ -114,12 +115,12 @@ func (e pbEncoder) Unwrap(buffer []byte) (interface{}, error) {
 		return nil, xerrors.Errorf("unknown message <%s>", pb.Type)
 	}
 
-	err = e.Decode(buffer, m)
+	err = e.Decode(pb.Value, m)
 	if err != nil {
 		return nil, err
 	}
 
-	return nil, nil
+	return m, nil
 }
 
 func (e pbEncoder) getOrSet(m interface{}) (proto.Message, error) {
@@ -157,7 +158,7 @@ func (e pbEncoder) setMsgDescription(typ reflect.Type) (protoreflect.MessageType
 
 	fileDesc := &descriptorpb.FileDescriptorProto{
 		Name:        str2ptr("messages.proto"),
-		Package:     str2ptr(pkgName(typ)), // TODO: fix
+		Package:     str2ptr(pkgName(typ)),
 		MessageType: []*descriptorpb.DescriptorProto{msgDesc},
 		Syntax:      str2ptr("proto3"),
 	}

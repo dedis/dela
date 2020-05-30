@@ -1,7 +1,6 @@
 package pb
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -34,8 +33,10 @@ func TestPbEncoder_Wrap(t *testing.T) {
 	buffer, err := encoder.Wrap(TestMessage{Str: "Hello World!"})
 	require.NoError(t, err)
 
-	ret, err := encoder.Unwrap(buffer)
+	retItf, err := encoder.Unwrap(buffer)
 	require.NoError(t, err)
 
-	fmt.Printf("%+v\n", ret)
+	ret, ok := retItf.(*TestMessage)
+	require.True(t, ok)
+	require.Equal(t, "Hello World!", ret.Str)
 }

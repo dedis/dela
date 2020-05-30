@@ -216,7 +216,7 @@ func TestBlockFactory_DecodeBlock(t *testing.T) {
 		require.Equal(t, block, newBlock)
 
 		_, err = factory.decodeBlock(&empty.Empty{})
-		require.EqualError(t, err, "invalid message type '*empty.Empty'")
+		require.EqualError(t, err, "invalid message type '*emptypb.Empty'")
 
 		factory.encoder = fake.BadUnmarshalDynEncoder{}
 		_, err = factory.decodeBlock(&BlockProto{})
@@ -250,7 +250,7 @@ func TestBlockFactory_FromVerifiable(t *testing.T) {
 		require.NotNil(t, b)
 
 		_, err = factory.FromVerifiable(&empty.Empty{})
-		require.EqualError(t, err, "invalid message type '*empty.Empty'")
+		require.EqualError(t, err, "invalid message type '*emptypb.Empty'")
 
 		factory.hashFactory = fake.NewHashFactory(fake.NewBadHash())
 		_, err = factory.FromVerifiable(pb)

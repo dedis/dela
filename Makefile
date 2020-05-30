@@ -6,7 +6,9 @@ lint:
 	# Coding style static check.
 	@go get -v honnef.co/go/tools/cmd/staticcheck
 	@go mod tidy
-	staticcheck ./...
+
+	# Ignore deprecation until protobuf messages are cleared.
+	staticcheck -checks=inherit,-SA1019 ./...
 
 vet:
 	@echo "⚠️ Warning: the following only works with go >= 1.14" && \

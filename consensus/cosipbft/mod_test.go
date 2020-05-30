@@ -344,7 +344,7 @@ func TestHandler_Prepare_Hash(t *testing.T) {
 	}
 
 	_, err := h.Hash(nil, &empty.Empty{})
-	require.EqualError(t, err, "message type not supported: *empty.Empty")
+	require.EqualError(t, err, "message type not supported: *emptypb.Empty")
 
 	empty, err := ptypes.MarshalAny(&empty.Empty{})
 	require.NoError(t, err)
@@ -454,7 +454,7 @@ func TestRPCHandler_Process(t *testing.T) {
 	}
 
 	resp, err := h.Process(mino.Request{Message: &empty.Empty{}})
-	require.EqualError(t, err, "message type not supported: *empty.Empty")
+	require.EqualError(t, err, "message type not supported: *emptypb.Empty")
 	require.Nil(t, resp)
 
 	req := mino.Request{Message: &PropagateRequest{}}

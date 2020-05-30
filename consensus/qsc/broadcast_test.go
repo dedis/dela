@@ -61,7 +61,7 @@ func TestHandlerTLCR_Process(t *testing.T) {
 	require.Nil(t, resp)
 
 	_, err = h.Process(mino.Request{Message: &empty.Empty{}})
-	require.EqualError(t, err, "invalid message type '*empty.Empty'")
+	require.EqualError(t, err, "invalid message type '*emptypb.Empty'")
 }
 
 func TestTLCR_Execute(t *testing.T) {
@@ -130,7 +130,7 @@ func TestTLCR_CatchUp(t *testing.T) {
 	bc.rpc = fakeRPC{msg: &empty.Empty{}}
 	err = bc.catchUp(ctx, m1, m2)
 	require.EqualError(t, xerrors.Unwrap(err),
-		"got message type '*empty.Empty' but expected '*qsc.MessageSet'")
+		"got message type '*emptypb.Empty' but expected '*qsc.MessageSet'")
 	require.Equal(t, m2, <-ch)
 
 	bc.rpc = fakeRPC{err: xerrors.New("oops")}

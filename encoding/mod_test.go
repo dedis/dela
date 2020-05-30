@@ -99,7 +99,7 @@ func TestProtoEncoder_UnmarshalAny(t *testing.T) {
 
 	err = enc.UnmarshalAny(&any.Any{}, msg)
 	require.EqualError(t, err,
-		"couldn't unwrap '*any.Any' to '*wrappers.UInt64Value': message type url \"\" is invalid")
+		"couldn't unwrap '*anypb.Any' to '*wrapperspb.UInt64Value': message type url \"\" is invalid")
 }
 
 func TestProtoEncoder_UnmarshalDynamicAny(t *testing.T) {

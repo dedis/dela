@@ -36,7 +36,7 @@ func TestPublicKeyFactory_FromProto(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = factory.FromProto(&wrappers.StringValue{})
-	require.EqualError(t, err, "couldn't find factory for '*wrappers.StringValue'")
+	require.EqualError(t, err, "couldn't find factory for '*wrapperspb.StringValue'")
 
 	factory.encoder = fake.BadUnmarshalDynEncoder{}
 	_, err = factory.FromProto(pbany)
@@ -69,7 +69,7 @@ func TestSignatureFactory_FromProto(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = factory.FromProto(&wrappers.BoolValue{})
-	require.EqualError(t, err, "couldn't find factory for '*wrappers.BoolValue'")
+	require.EqualError(t, err, "couldn't find factory for '*wrapperspb.BoolValue'")
 
 	factory.encoder = fake.BadUnmarshalDynEncoder{}
 	_, err = factory.FromProto(sigany)
