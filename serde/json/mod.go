@@ -24,7 +24,7 @@ func (e jsonEncoder) Decode(buffer []byte, m interface{}) error {
 	return json.Unmarshal(buffer, m)
 }
 
-func (e jsonEncoder) Wrap(m interface{}) ([]byte, error) {
+func (e jsonEncoder) Wrap(m interface{}) (serde.Raw, error) {
 	buffer, err := json.Marshal(m)
 	if err != nil {
 		return nil, err
@@ -45,19 +45,19 @@ func (e jsonEncoder) Wrap(m interface{}) ([]byte, error) {
 	return msgBuffer, nil
 }
 
-func (e jsonEncoder) Unwrap(buffer []byte) (interface{}, error) {
-	msg := jsonWrapper{}
-	err := json.Unmarshal(buffer, &msg)
+func (e jsonEncoder) Unwrap(m serde.Raw) (interface{}, error) {
+	wrapper := jsonWrapper{}
+	err := json.Unmarshal(m, &wrapper)
 	if err != nil {
 		return nil, err
 	}
 
-	value, found := serde.New(msg.Type)
+	value, found := serde.New(wrapper.Type)
 	if !found {
 		return nil, xerrors.New("oops")
 	}
 
-	err = json.Unmarshal(msg.Value, value)
+	err = json.Unmarshal(wrapper.Value, value)
 	if err != nil {
 		return nil, err
 	}
@@ -65,15 +65,6 @@ func (e jsonEncoder) Unwrap(buffer []byte) (interface{}, error) {
 	return value, nil
 }
 
-func (e jsonEncoder) Raw(m interface{}) (serde.RawMessage, error) {
-	buffer, err := e.Wrap(m)
-	if err != nil {
-		return nil, err
-	}
-
-	return serde.RawMessage(buffer), nil
-}
-
-func (e jsonEncoder) Unraw(r serde.RawMessage) (interface{}, error) {
-	return e.Unwrap(r)
+func (e jsonEncoder) MessageOf(p serde.Packable) (interface{}, error) {
+	return p.Pack(e)
 }

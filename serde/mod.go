@@ -4,21 +4,27 @@ package serde
 
 import "golang.org/x/xerrors"
 
-// RawMessage is an interface to define raw messages inside another message.
-type RawMessage []byte
+// Raw is an interface to define raw messages inside another message.
+type Raw []byte
 
 // MarshalJSON implements json.Marshaler.
-func (raw RawMessage) MarshalJSON() ([]byte, error) {
-	return raw, nil
+func (m Raw) MarshalJSON() ([]byte, error) {
+	return m, nil
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
-func (raw *RawMessage) UnmarshalJSON(data []byte) error {
-	if raw == nil {
+func (m *Raw) UnmarshalJSON(data []byte) error {
+	if m == nil {
 		return xerrors.New("oops")
 	}
-	*raw = append((*raw)[0:0], data...)
+	*m = append((*m)[0:0], data...)
 	return nil
+}
+
+// Packable is an interface to define how an object should pack itself to a
+// network message.
+type Packable interface {
+	Pack(Encoder) (interface{}, error)
 }
 
 // Encoder is an interface to serialize and deserialize messages. It offers an
@@ -35,15 +41,12 @@ type Encoder interface {
 	// Wrap takes a message and returns its serialized form as a buffer. It has
 	// the particularity to be unwrapped without providing an implementation of
 	// the message. A message must be registered to be correctly unwrapped.
-	Wrap(m interface{}) ([]byte, error)
+	Wrap(m interface{}) (Raw, error)
 
 	// Unwrap takes a buffer and returns the message deserialized, or an error
 	// if it cannot. The message must be registered to be unwrapped.
-	Unwrap(buffer []byte) (interface{}, error)
+	Unwrap(m Raw) (interface{}, error)
 
-	// Raw produces the RawMessage for a given message.
-	Raw(m interface{}) (RawMessage, error)
-
-	// Unraw takes a RawMessage and returns the message deserialized.
-	Unraw(r RawMessage) (interface{}, error)
+	// MessageOf returns the network message of the packable object.
+	MessageOf(Packable) (interface{}, error)
 }

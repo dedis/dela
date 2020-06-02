@@ -39,7 +39,7 @@ func (e gobEncoder) Decode(data []byte, m interface{}) error {
 	return nil
 }
 
-func (e gobEncoder) Wrap(m interface{}) ([]byte, error) {
+func (e gobEncoder) Wrap(m interface{}) (serde.Raw, error) {
 	buffer, err := e.Encode(m)
 	if err != nil {
 		return nil, err
@@ -58,9 +58,9 @@ func (e gobEncoder) Wrap(m interface{}) ([]byte, error) {
 	return msgBuffer, nil
 }
 
-func (e gobEncoder) Unwrap(buffer []byte) (interface{}, error) {
+func (e gobEncoder) Unwrap(raw serde.Raw) (interface{}, error) {
 	msg := gobWrapper{}
-	err := e.Decode(buffer, &msg)
+	err := e.Decode(raw, &msg)
 	if err != nil {
 		return nil, err
 	}
@@ -78,15 +78,6 @@ func (e gobEncoder) Unwrap(buffer []byte) (interface{}, error) {
 	return value, nil
 }
 
-func (e gobEncoder) Raw(m interface{}) (serde.RawMessage, error) {
-	buffer, err := e.Wrap(m)
-	if err != nil {
-		return nil, err
-	}
-
-	return serde.RawMessage(buffer), nil
-}
-
-func (e gobEncoder) Unraw(r serde.RawMessage) (interface{}, error) {
-	return e.Unwrap(r)
+func (e gobEncoder) MessageOf(p serde.Packable) (interface{}, error) {
+	return p.Pack(e)
 }

@@ -35,8 +35,9 @@ func NewMessageRegistry() *MessageRegistry {
 
 func (reg *MessageRegistry) Register(m interface{}) {
 	key := reg.KeyOf(m)
-	dela.Logger.Info().Msgf("message <%s> registered", key)
 	reg.mapper[key] = reflect.TypeOf(m)
+
+	dela.Logger.Trace().Msgf("message <%s> registered", key)
 }
 
 func (reg *MessageRegistry) KeyOf(m interface{}) string {
