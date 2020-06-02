@@ -1,4 +1,4 @@
-# Serde
+# Serde strawman I
 
 Serde is a serialization/deserialization abstraction. It has the purpose to
 provide a simple API to encode or decode messages without the concern of the
@@ -97,3 +97,38 @@ type BlockFactory interface {
 
 - Check when registering the message that types are supported, or support
   anything and tries the best when decoding ?
+
+## Serde strawman II
+
+```go
+package serde
+
+type Message interface { // Visitor
+    VisitJSON() (interface{}, error)
+    VisitGob() (interface{}, error)
+    VisitProto() (interface{}, error)
+}
+
+type Factory interface {
+    // TBD: input parameters to allow decoding
+    VisitJSON() (Message, error)
+    VisitGob() (Message, error)
+    VisitProto() (Message, error)
+}
+
+type Encoder interface {
+    Encode(Message) ([]byte, error) // Accept
+    Wrap(Message) ([]byte, error) // Accept with serde wrapper
+
+    Decode([]byte, Factory) (Message, error)
+    Unwrap([]byte) (Message, error)
+}
+```
+
+```go
+type Block interface{
+    serde.Message
+
+    GetIndex() uint64
+}
+```
