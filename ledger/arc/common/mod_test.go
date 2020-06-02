@@ -38,7 +38,7 @@ func TestAccessControlFactory_FromProto(t *testing.T) {
 	require.NotNil(t, access)
 
 	_, err = factory.FromProto(&wrappers.BoolValue{})
-	require.EqualError(t, err, "couldn't find factory for '*wrapperspb.BoolValue'")
+	require.EqualError(t, err, "couldn't find factory for '*wrappers.BoolValue'")
 
 	factory.encoder = fake.BadUnmarshalDynEncoder{}
 	_, err = factory.FromProto(pbAny)

@@ -13,13 +13,46 @@ type gobWrapper struct {
 	Value []byte
 }
 
-type gobEncoder struct{}
+type gobDeserializer struct {
+	data []byte
+}
 
-func (e gobEncoder) Encode(m interface{}) ([]byte, error) {
+func (d gobDeserializer) Deserialize(m interface{}) error {
+	dec := gob.NewDecoder(bytes.NewBuffer(d.data))
+	return dec.Decode(m)
+}
+
+// Serializer is a gob serializer.
+//
+// - implement serde.Serializer
+type Serializer struct {
+	store serde.Store
+}
+
+// NewSerializer returns a gob serializer.
+func NewSerializer() serde.Serializer {
+	return Serializer{
+		store: serde.NewStore(),
+	}
+}
+
+// GetStore implements serde.Serializer. It returns the factory store.
+func (e Serializer) GetStore() serde.Store {
+	return e.store
+}
+
+// Serialize implements serde.Serializer. It serializes the message using the
+// gob format.
+func (e Serializer) Serialize(m serde.Message) ([]byte, error) {
 	buffer := new(bytes.Buffer)
 
+	itf, err := m.VisitGob()
+	if err != nil {
+		return nil, err
+	}
+
 	enc := gob.NewEncoder(buffer)
-	err := enc.Encode(m)
+	err = enc.Encode(itf)
 	if err != nil {
 		return nil, err
 	}
@@ -27,57 +60,60 @@ func (e gobEncoder) Encode(m interface{}) ([]byte, error) {
 	return buffer.Bytes(), nil
 }
 
-func (e gobEncoder) Decode(data []byte, m interface{}) error {
-	buffer := bytes.NewBuffer(data)
-
-	enc := gob.NewDecoder(buffer)
-	err := enc.Decode(m)
+// Deserialize implements serde.Serializer. It returns the message deserialized
+// from the data.
+func (e Serializer) Deserialize(data []byte, f serde.Factory) (serde.Message, error) {
+	m, err := f.VisitGob(gobDeserializer{data: data})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	return m, nil
 }
 
-func (e gobEncoder) Wrap(m interface{}) (serde.Raw, error) {
-	buffer, err := e.Encode(m)
+// Wrap implements serde.Serializer. It wraps the message so that a distant peer
+// can deserialize it by looking the factory.
+func (e Serializer) Wrap(m serde.Message) ([]byte, error) {
+	buffer, err := e.Serialize(m)
 	if err != nil {
 		return nil, err
 	}
 
 	msg := gobWrapper{
-		Type:  serde.KeyOf(m),
+		Type:  e.store.KeyOf(m),
 		Value: buffer,
 	}
 
-	msgBuffer, err := e.Encode(msg)
+	msgBuffer := new(bytes.Buffer)
+	enc := gob.NewEncoder(msgBuffer)
+	err = enc.Encode(msg)
 	if err != nil {
 		return nil, err
 	}
 
-	return msgBuffer, nil
+	return msgBuffer.Bytes(), nil
 }
 
-func (e gobEncoder) Unwrap(raw serde.Raw) (interface{}, error) {
-	msg := gobWrapper{}
-	err := e.Decode(raw, &msg)
+// Unwrap implements serde.Serializer. It unwraps a message from its serialized
+// data. The factory of the message must be registered beforehands.
+func (e Serializer) Unwrap(raw []byte) (serde.Message, error) {
+	wrapper := gobWrapper{}
+
+	dec := gob.NewDecoder(bytes.NewBuffer(raw))
+	err := dec.Decode(&wrapper)
 	if err != nil {
 		return nil, err
 	}
 
-	value, found := serde.New(msg.Type)
-	if !found {
+	factory := e.store.Get(wrapper.Type)
+	if factory == nil {
 		return nil, xerrors.New("oops")
 	}
 
-	err = e.Decode(msg.Value, value)
+	m, err := factory.VisitGob(gobDeserializer{data: wrapper.Value})
 	if err != nil {
 		return nil, err
 	}
 
-	return value, nil
-}
-
-func (e gobEncoder) MessageOf(p serde.Packable) (interface{}, error) {
-	return p.Pack(e)
+	return m, nil
 }

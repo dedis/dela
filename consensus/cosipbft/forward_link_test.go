@@ -204,7 +204,7 @@ func TestChainFactory_FromProto(t *testing.T) {
 	require.NotNil(t, chain)
 
 	_, err = factory.FromProto(&empty.Empty{})
-	require.EqualError(t, err, "message type not supported: *emptypb.Empty")
+	require.EqualError(t, err, "message type not supported: *empty.Empty")
 
 	chainpb.Links[0].Prepare = &any.Any{}
 	factory.signatureFactory = fake.NewBadSignatureFactory()
@@ -258,7 +258,7 @@ func TestChainFactory_DecodeForwardLink(t *testing.T) {
 	require.NotNil(t, chain)
 
 	_, err = factory.decodeForwardLink(&empty.Empty{})
-	require.EqualError(t, err, "unknown message type: *emptypb.Empty")
+	require.EqualError(t, err, "unknown message type: *empty.Empty")
 
 	factory.pubkeyFactory = fake.NewBadPublicKeyFactory()
 	_, err = factory.decodeForwardLink(forwardLink)

@@ -109,11 +109,15 @@ type Message interface { // Visitor
     VisitProto() (interface{}, error)
 }
 
+type Deserializer interface {
+    Decode([]byte, interface{}) error
+}
+
 type Factory interface {
     // TBD: input parameters to allow decoding
-    VisitJSON() (Message, error)
-    VisitGob() (Message, error)
-    VisitProto() (Message, error)
+    VisitJSON(d Deserializer, buffer []byte) (Message, error)
+    VisitGob(d Deserializer, buffer []byte) (Message, error)
+    VisitProto(d Deserializer, buffer []byte) (Message, error)
 }
 
 type Encoder interface {

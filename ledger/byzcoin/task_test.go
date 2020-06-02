@@ -49,7 +49,7 @@ func TestTaskFactory_FromProto(t *testing.T) {
 	require.EqualError(t, err, "couldn't unmarshal message: fake error")
 
 	_, err = factory.FromProto(&wrappers.BoolValue{})
-	require.EqualError(t, err, "unknown task type '*wrapperspb.BoolValue'")
+	require.EqualError(t, err, "unknown task type '*wrappers.BoolValue'")
 
 	factory.Register(&empty.Empty{}, fakeTaskFactory{err: xerrors.New("oops")})
 	_, err = factory.FromProto(&empty.Empty{})

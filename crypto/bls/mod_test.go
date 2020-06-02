@@ -168,7 +168,7 @@ func TestPublicKeyFactory_FromProto(t *testing.T) {
 	require.True(t, signer.GetPublicKey().Equal(pubkey))
 
 	_, err = factory.FromProto(&empty.Empty{})
-	require.EqualError(t, err, "invalid public key type '*emptypb.Empty'")
+	require.EqualError(t, err, "invalid public key type '*empty.Empty'")
 
 	factory.encoder = fake.BadUnmarshalAnyEncoder{}
 	_, err = factory.FromProto(packedAny)
@@ -199,7 +199,7 @@ func TestSignatureFactory_FromProto(t *testing.T) {
 	require.True(t, sig.Equal(decoded))
 
 	_, err = factory.FromProto(&empty.Empty{})
-	require.EqualError(t, err, "invalid signature type '*emptypb.Empty'")
+	require.EqualError(t, err, "invalid signature type '*empty.Empty'")
 
 	factory.encoder = fake.BadUnmarshalAnyEncoder{}
 	_, err = factory.FromProto(packedAny)

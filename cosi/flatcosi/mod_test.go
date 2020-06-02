@@ -180,7 +180,7 @@ func TestActor_SignProcessError(t *testing.T) {
 
 	_, err := actor.Sign(ctx, message, ca)
 	require.EqualError(t, err,
-		"couldn't process response: response type is invalid: *emptypb.Empty")
+		"couldn't process response: response type is invalid: *empty.Empty")
 
 	actor.signer = fake.NewBadSigner()
 	_, err = actor.processResponse(&SignatureResponse{}, fake.Signature{})

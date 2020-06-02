@@ -54,7 +54,7 @@ func TestTaskContext_Read(t *testing.T) {
 
 	_, err = ctx.Read([]byte("b"))
 	require.EqualError(t, err,
-		"invalid message type '*emptypb.Empty' != '*contract.Instance'")
+		"invalid message type '*empty.Empty' != '*contract.Instance'")
 
 	ctx.page = fakePage{errRead: xerrors.New("oops")}
 	_, err = ctx.Read(nil)

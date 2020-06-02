@@ -26,7 +26,7 @@ func TestHandler_Process(t *testing.T) {
 	require.NoError(t, err)
 
 	resp, err := h.Process(mino.Request{Message: &empty.Empty{}})
-	require.EqualError(t, err, "invalid message type: *emptypb.Empty")
+	require.EqualError(t, err, "invalid message type: *empty.Empty")
 	require.Nil(t, resp)
 
 	h.encoder = fake.BadUnmarshalDynEncoder{}

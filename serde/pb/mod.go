@@ -1,101 +1,59 @@
 package pb
 
 import (
-	"fmt"
-	"net/url"
-	"reflect"
-	"strings"
-
-	protov1 "github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/reflect/protodesc"
-	"google.golang.org/protobuf/reflect/protoreflect"
-	"google.golang.org/protobuf/reflect/protoregistry"
-	"google.golang.org/protobuf/types/descriptorpb"
-	"google.golang.org/protobuf/types/dynamicpb"
 )
 
 //go:generate protoc -I ./ --go_out=./ ./wrapper.proto
 
-type pbEncoder struct {
-	registry *protoregistry.Types
+type protoDeserializer struct {
+	data []byte
 }
 
-func newEncoder() pbEncoder {
-	return pbEncoder{
-		registry: new(protoregistry.Types),
-	}
-}
-
-func (e pbEncoder) Encode(m interface{}) ([]byte, error) {
+func (d protoDeserializer) Deserialize(m interface{}) error {
 	pb, ok := m.(proto.Message)
-	if ok {
-		return proto.Marshal(pb)
+	if !ok {
+		return xerrors.New("proto message expected")
 	}
 
-	pb, err := e.getOrSet(m)
+	return proto.Unmarshal(d.data, pb)
+}
+
+// Serializer is a protobuf serializer.
+//
+// - implement serde.Serializer
+type Serializer struct {
+	store serde.Store
+}
+
+// NewSerializer returns a new protobuf serializer.
+func NewSerializer() serde.Serializer {
+	return Serializer{
+		store: serde.NewStore(),
+	}
+}
+
+// GetStore implements serde.Serializer. It returns the factory store.
+func (e Serializer) GetStore() serde.Store {
+	return e.store
+}
+
+// Serialize implements serde.Serializer. It returns the bytes for the message
+// implementation using protobuf.
+func (e Serializer) Serialize(m serde.Message) ([]byte, error) {
+	itf, err := m.VisitProto()
 	if err != nil {
 		return nil, err
 	}
 
-	value := reflect.ValueOf(m)
-
-	fields := pb.ProtoReflect().Type().Descriptor().Fields()
-	for i := 0; i < fields.Len(); i++ {
-		field := fields.Get(i)
-
-		val := value.FieldByName(string(field.Name())).Interface()
-
-		pb.ProtoReflect().Set(field, protoreflect.ValueOf(val))
+	pb, ok := itf.(proto.Message)
+	if !ok {
+		return nil, xerrors.New("visitor should return a proto message")
 	}
 
-	return proto.Marshal(pb)
-}
-
-func (e pbEncoder) Decode(buffer []byte, m interface{}) error {
-	pb, ok := m.(proto.Message)
-	if ok {
-		return proto.Unmarshal(buffer, pb)
-	}
-
-	pb, err := e.getOrSet(m)
-	if err != nil {
-		return err
-	}
-
-	err = proto.Unmarshal(buffer, pb)
-	if err != nil {
-		return err
-	}
-
-	value := reflect.ValueOf(m).Elem()
-	fields := pb.ProtoReflect().Type().Descriptor().Fields()
-
-	for i := 0; i < fields.Len(); i++ {
-		field := fields.Get(i)
-
-		val := pb.ProtoReflect().Get(field).Interface()
-
-		value.FieldByName(string(field.Name())).Set(reflect.ValueOf(val))
-	}
-
-	return nil
-}
-
-func (e pbEncoder) Wrap(m interface{}) ([]byte, error) {
-	value, err := e.Encode(m)
-	if err != nil {
-		return nil, err
-	}
-
-	pb := &Wrapper{
-		Type:  serde.KeyOf(m),
-		Value: value,
-	}
-
-	buffer, err := proto.Marshal(protov1.MessageV2(pb))
+	buffer, err := proto.Marshal(pb)
 	if err != nil {
 		return nil, err
 	}
@@ -103,19 +61,10 @@ func (e pbEncoder) Wrap(m interface{}) ([]byte, error) {
 	return buffer, nil
 }
 
-func (e pbEncoder) Unwrap(buffer []byte) (interface{}, error) {
-	pb := &Wrapper{}
-	err := proto.Unmarshal(buffer, protov1.MessageV2(pb))
-	if err != nil {
-		return nil, err
-	}
-
-	m, ok := serde.New(pb.Type)
-	if !ok {
-		return nil, xerrors.Errorf("unknown message <%s>", pb.Type)
-	}
-
-	err = e.Decode(pb.Value, m)
+// Deserialize implements serde.Serializer. It returns the message associated to
+// the bytes using protobuf.
+func (e Serializer) Deserialize(buffer []byte, f serde.Factory) (serde.Message, error) {
+	m, err := f.VisitProto(protoDeserializer{data: buffer})
 	if err != nil {
 		return nil, err
 	}
@@ -123,91 +72,55 @@ func (e pbEncoder) Unwrap(buffer []byte) (interface{}, error) {
 	return m, nil
 }
 
-func (e pbEncoder) getOrSet(m interface{}) (proto.Message, error) {
-	typ := reflect.TypeOf(m)
-	if typ.Kind() == reflect.Ptr {
-		typ = typ.Elem()
-	}
-
-	desc, err := e.registry.FindMessageByName(type2name(typ))
-	if err != nil {
-		// Description is missing so let's fill it.
-		desc, err = e.setMsgDescription(typ)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return dynamicpb.NewMessage(desc.Descriptor()), nil
-}
-
-func (e pbEncoder) setMsgDescription(typ reflect.Type) (protoreflect.MessageType, error) {
-	msgDesc := &descriptorpb.DescriptorProto{
-		Name:  str2ptr(typ.Name()),
-		Field: make([]*descriptorpb.FieldDescriptorProto, 0, typ.NumField()),
-	}
-
-	for i := 0; i < typ.NumField(); i++ {
-		field := typ.Field(i)
-		msgDesc.Field = append(msgDesc.Field, &descriptorpb.FieldDescriptorProto{
-			Name:   str2ptr(field.Name),
-			Number: int2ptr(int32(i + 1)),
-			Type:   fieldType(field),
-		})
-	}
-
-	fileDesc := &descriptorpb.FileDescriptorProto{
-		Name:        str2ptr("messages.proto"),
-		Package:     str2ptr(pkgName(typ)),
-		MessageType: []*descriptorpb.DescriptorProto{msgDesc},
-		Syntax:      str2ptr("proto3"),
-	}
-
-	file, err := protodesc.NewFile(fileDesc, nil)
+// Wrap implements serde.Serializer. It returns the bytes of a wrapped message
+// that a distant party can deserialize by looking up the factory.
+func (e Serializer) Wrap(m serde.Message) ([]byte, error) {
+	itf, err := m.VisitProto()
 	if err != nil {
 		return nil, err
 	}
 
-	msg := dynamicpb.NewMessageType(file.Messages().Get(0))
+	pb, ok := itf.(proto.Message)
+	if !ok {
+		return nil, xerrors.New("proto message expected")
+	}
 
-	err = e.registry.RegisterMessage(msg)
+	value, err := proto.Marshal(pb)
 	if err != nil {
 		return nil, err
 	}
 
-	return msg, nil
-}
+	wrapper := &Wrapper{
+		Type:  e.store.KeyOf(m),
+		Value: value,
+	}
 
-func type2name(typ reflect.Type) protoreflect.FullName {
-	return protoreflect.FullName(fmt.Sprintf("%s.%s", pkgName(typ), typ.Name()))
-}
-
-func pkgName(typ reflect.Type) string {
-	url, err := url.Parse("//" + typ.PkgPath())
+	buffer, err := proto.Marshal(wrapper)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	return strings.ReplaceAll(url.RequestURI()[1:], "/", ".")
+	return buffer, nil
 }
 
-func str2ptr(v string) *string {
-	return &v
-}
-
-func int2ptr(v int32) *int32 {
-	return &v
-}
-
-func fieldType(typ reflect.StructField) *descriptorpb.FieldDescriptorProto_Type {
-	var fieldType descriptorpb.FieldDescriptorProto_Type
-
-	switch typ.Type.Kind() {
-	case reflect.String:
-		fieldType = descriptorpb.FieldDescriptorProto_TYPE_STRING
-	default:
-		panic("nope")
+// Unwrap implements serde.Serializer. It returns the message implementation of
+// the incoming bytes by looking the factory to use to instantiate.
+func (e Serializer) Unwrap(buffer []byte) (serde.Message, error) {
+	wrapper := &Wrapper{}
+	err := proto.Unmarshal(buffer, wrapper)
+	if err != nil {
+		return nil, err
 	}
 
-	return &fieldType
+	factory := e.store.Get(wrapper.Type)
+	if factory == nil {
+		return nil, xerrors.Errorf("unknown message <%s>", wrapper.Type)
+	}
+
+	m, err := factory.VisitProto(protoDeserializer{data: wrapper.GetValue()})
+	if err != nil {
+		return nil, err
+	}
+
+	return m, nil
 }

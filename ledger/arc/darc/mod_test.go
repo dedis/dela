@@ -136,7 +136,7 @@ func TestFactory_FromProto(t *testing.T) {
 	require.NotNil(t, access)
 
 	_, err = factory.FromProto(&empty.Empty{})
-	require.EqualError(t, err, "invalid message type '*emptypb.Empty'")
+	require.EqualError(t, err, "invalid message type '*empty.Empty'")
 
 	factory.encoder = fake.BadUnmarshalAnyEncoder{}
 	_, err = factory.FromProto(pbAny)

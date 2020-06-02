@@ -1,52 +1,57 @@
 // Package serde defines the primitives to serialize and deserialize (serde)
 // network messages.
+//
+// The format can be chosen among three options:
+// - JSON
+// - Gob
+// - Protobuf
 package serde
 
-import "golang.org/x/xerrors"
+// Message is the interface a data model should implemented to be serialized and
+// deserialized.
+type Message interface {
+	VisitJSON() (interface{}, error)
 
-// Raw is an interface to define raw messages inside another message.
-type Raw []byte
+	VisitGob() (interface{}, error)
 
-// MarshalJSON implements json.Marshaler.
-func (m Raw) MarshalJSON() ([]byte, error) {
-	return m, nil
+	VisitProto() (interface{}, error)
 }
 
-// UnmarshalJSON implements json.Unmarshaler.
-func (m *Raw) UnmarshalJSON(data []byte) error {
-	if m == nil {
-		return xerrors.New("oops")
-	}
-	*m = append((*m)[0:0], data...)
-	return nil
+// Deserializer is the interface provided to a factory to deserialze raw
+// messages.
+type Deserializer interface {
+	Deserialize(interface{}) error
 }
 
-// Packable is an interface to define how an object should pack itself to a
-// network message.
-type Packable interface {
-	Pack(Encoder) (interface{}, error)
+// Factory is the interface to implement to instantiate a data model from the
+// raw message.
+type Factory interface {
+	VisitJSON(Deserializer) (Message, error)
+
+	VisitGob(Deserializer) (Message, error)
+
+	VisitProto(Deserializer) (Message, error)
 }
 
-// Encoder is an interface to serialize and deserialize messages. It offers an
-// API to automatically detect the type of a message.
-type Encoder interface {
-	// Encode takes a messages and returns its serialized form as a buffer. An
-	// error is returned if the serialization fails.
-	Encode(m interface{}) ([]byte, error)
+// Store registers the factory of a given message implementation.
+type Store interface {
+	Get(key string) Factory
 
-	// Decode takes a buffer and a message. It deserializes the buffer into the
-	// message and returns an error if it fails.
-	Decode(buffer []byte, m interface{}) error
+	Add(m Message, f Factory) error
 
-	// Wrap takes a message and returns its serialized form as a buffer. It has
-	// the particularity to be unwrapped without providing an implementation of
-	// the message. A message must be registered to be correctly unwrapped.
-	Wrap(m interface{}) (Raw, error)
+	KeyOf(m Message) string
+}
 
-	// Unwrap takes a buffer and returns the message deserialized, or an error
-	// if it cannot. The message must be registered to be unwrapped.
-	Unwrap(m Raw) (interface{}, error)
+// Serializer is an interface that provides promitives to serialize and
+// deserialize a data model.
+type Serializer interface {
+	GetStore() Store
 
-	// MessageOf returns the network message of the packable object.
-	MessageOf(Packable) (interface{}, error)
+	Serialize(Message) ([]byte, error)
+
+	Wrap(Message) ([]byte, error)
+
+	Deserialize([]byte, Factory) (Message, error)
+
+	Unwrap([]byte) (Message, error)
 }

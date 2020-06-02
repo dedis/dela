@@ -202,7 +202,7 @@ func TestTaskManager_FromProto(t *testing.T) {
 	require.NotNil(t, task)
 
 	_, err = manager.FromProto(&empty.Empty{})
-	require.EqualError(t, err, "invalid message type '*emptypb.Empty'")
+	require.EqualError(t, err, "invalid message type '*empty.Empty'")
 
 	manager.encoder = fake.BadUnmarshalAnyEncoder{}
 	_, err = manager.FromProto(taskAny)

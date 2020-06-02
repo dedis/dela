@@ -13,24 +13,63 @@ type jsonWrapper struct {
 	Value json.RawMessage
 }
 
-// JsonEncoder is an encoder using JSON as the underlying format.
-type jsonEncoder struct{}
-
-func (e jsonEncoder) Encode(m interface{}) ([]byte, error) {
-	return json.Marshal(m)
+type jsonDeserializer struct {
+	data []byte
 }
 
-func (e jsonEncoder) Decode(buffer []byte, m interface{}) error {
-	return json.Unmarshal(buffer, m)
+func (d jsonDeserializer) Deserialize(m interface{}) error {
+	return json.Unmarshal(d.data, m)
 }
 
-func (e jsonEncoder) Wrap(m interface{}) (serde.Raw, error) {
-	buffer, err := json.Marshal(m)
+// Serializer is an encoder using JSON as the underlying format.
+type Serializer struct {
+	store serde.Store
+}
+
+// NewSerializer returns a new JSON serializer.
+func NewSerializer() serde.Serializer {
+	return Serializer{
+		store: serde.NewStore(),
+	}
+}
+
+// GetStore implements serde.Serializer.
+func (e Serializer) GetStore() serde.Store {
+	return e.store
+}
+
+// Serialize implements serde.Serializer.
+func (e Serializer) Serialize(m serde.Message) ([]byte, error) {
+	itf, err := m.VisitJSON()
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(itf)
+}
+
+// Deserialize implements serde.Deserialize.
+func (e Serializer) Deserialize(buffer []byte, f serde.Factory) (serde.Message, error) {
+	m, err := f.VisitJSON(jsonDeserializer{data: buffer})
 	if err != nil {
 		return nil, err
 	}
 
-	typ := serde.KeyOf(m)
+	return m, nil
+}
+
+// Wrap implements serde.Wrap.
+func (e Serializer) Wrap(m serde.Message) ([]byte, error) {
+	itf, err := m.VisitJSON()
+	if err != nil {
+		return nil, err
+	}
+
+	buffer, err := json.Marshal(itf)
+	if err != nil {
+		return nil, err
+	}
+
+	typ := e.store.KeyOf(m)
 
 	msg := jsonWrapper{
 		Type:  typ,
@@ -45,26 +84,23 @@ func (e jsonEncoder) Wrap(m interface{}) (serde.Raw, error) {
 	return msgBuffer, nil
 }
 
-func (e jsonEncoder) Unwrap(m serde.Raw) (interface{}, error) {
+// Unwrap implements serde.Serializer.
+func (e Serializer) Unwrap(data []byte) (serde.Message, error) {
 	wrapper := jsonWrapper{}
-	err := json.Unmarshal(m, &wrapper)
+	err := json.Unmarshal(data, &wrapper)
 	if err != nil {
 		return nil, err
 	}
 
-	value, found := serde.New(wrapper.Type)
-	if !found {
+	factory := e.store.Get(wrapper.Type)
+	if factory == nil {
 		return nil, xerrors.New("oops")
 	}
 
-	err = json.Unmarshal(wrapper.Value, value)
+	m, err := factory.VisitJSON(jsonDeserializer{data: wrapper.Value})
 	if err != nil {
 		return nil, err
 	}
 
-	return value, nil
-}
-
-func (e jsonEncoder) MessageOf(p serde.Packable) (interface{}, error) {
-	return p.Pack(e)
+	return m, nil
 }
