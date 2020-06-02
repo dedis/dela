@@ -1,11 +1,26 @@
 package encoder
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/serde"
+	"golang.org/x/xerrors"
 )
+
+func TestFactoryInput_Feed(t *testing.T) {
+	input := factoryInput{
+		data: []byte("{}"),
+	}
+
+	ret := struct{}{}
+	err := input.Feed(&ret)
+	require.NoError(t, err)
+
+	err = input.Feed(nil)
+	require.EqualError(t, err, "couldn't unmarshal: json: Unmarshal(nil)")
+}
 
 func TestJsonEncoder_Serialize(t *testing.T) {
 	s := NewSerializer()
@@ -18,6 +33,13 @@ func TestJsonEncoder_Serialize(t *testing.T) {
 	buffer, err := s.Serialize(dm)
 	require.NoError(t, err)
 	require.Equal(t, "{\"Index\":42,\"Value\":\"Hello World!\"}", string(buffer))
+
+	_, err = s.Serialize(badMessage{err: xerrors.New("oops")})
+	require.EqualError(t, err, "couldn't visit message: oops")
+
+	_, err = s.Serialize(badMessage{})
+	require.EqualError(t, err,
+		"couldn't encode: json: error calling MarshalJSON for type encoder.badJSON: oops")
 }
 
 func TestSerializer_Deserialize(t *testing.T) {
@@ -28,30 +50,9 @@ func TestSerializer_Deserialize(t *testing.T) {
 	m, err := s.Deserialize(buffer, blockFactory{})
 	require.NoError(t, err)
 	require.Equal(t, block{Value: "Hello World!", Index: 42}, m)
-}
 
-func TestSerializer_Wrap(t *testing.T) {
-	s := NewSerializer()
-
-	b := block{
-		Index: 0,
-		Value: "deadbeef",
-	}
-
-	buffer, err := s.Wrap(b)
-	require.NoError(t, err)
-	require.Equal(t, "{\"Type\":\"go.dedis.ch/dela/serde/json.block\",\"Value\":{\"Index\":0,\"Value\":\"deadbeef\"}}", string(buffer))
-}
-
-func TestSerializer_Unwrap(t *testing.T) {
-	s := NewSerializer()
-	require.NoError(t, s.GetStore().Add(block{}, blockFactory{}))
-
-	buffer := []byte("{\"Type\":\"go.dedis.ch/dela/serde/json.block\",\"Value\":{\"Index\":0,\"Value\":\"deadbeef\"}}")
-
-	m, err := s.Unwrap(buffer)
-	require.NoError(t, err)
-	require.Equal(t, block{Index: 0, Value: "deadbeef"}, m)
+	_, err = s.Deserialize(buffer, badFactory{})
+	require.EqualError(t, err, "couldn't visit factory: oops")
 }
 
 // -----------------------------------------------------------------------------
@@ -82,9 +83,9 @@ type blockFactory struct {
 	serde.UnimplementedFactory
 }
 
-func (f blockFactory) VisitJSON(d serde.Deserializer) (serde.Message, error) {
+func (f blockFactory) VisitJSON(input serde.FactoryInput) (serde.Message, error) {
 	m := blockMessage{}
-	err := d.Deserialize(&m)
+	err := input.Feed(&m)
 	if err != nil {
 		return nil, err
 	}
@@ -95,4 +96,30 @@ func (f blockFactory) VisitJSON(d serde.Deserializer) (serde.Message, error) {
 	}
 
 	return t, nil
+}
+
+type badJSON struct {
+	json.Marshaler
+}
+
+func (j badJSON) MarshalJSON() ([]byte, error) {
+	return nil, xerrors.New("oops")
+}
+
+type badMessage struct {
+	serde.UnimplementedMessage
+
+	err error
+}
+
+func (m badMessage) VisitJSON() (interface{}, error) {
+	return badJSON{}, m.err
+}
+
+type badFactory struct {
+	serde.UnimplementedFactory
+}
+
+func (m badFactory) VisitJSON(serde.FactoryInput) (serde.Message, error) {
+	return nil, xerrors.New("oops")
 }

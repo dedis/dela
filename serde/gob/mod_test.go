@@ -7,7 +7,23 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/serde"
+	"golang.org/x/xerrors"
 )
+
+func TestFactoryInput_Feed(t *testing.T) {
+	data := marshal(t, blockMessage{})
+
+	input := factoryInput{data: data}
+
+	ret := blockMessage{}
+	err := input.Feed(&ret)
+	require.NoError(t, err)
+	require.Equal(t, blockMessage{}, ret)
+
+	input = factoryInput{}
+	err = input.Feed(&ret)
+	require.EqualError(t, err, "couldn't decode to interface: EOF")
+}
 
 func TestSerializer_Serialize(t *testing.T) {
 	s := NewSerializer()
@@ -25,6 +41,12 @@ func TestSerializer_Serialize(t *testing.T) {
 	err = dec.Decode(&ret)
 	require.NoError(t, err)
 	require.Equal(t, blockMessage{Index: b.Index, Value: b.Value}, ret)
+
+	_, err = s.Serialize(badMessage{err: xerrors.New("oops")})
+	require.EqualError(t, err, "couldn't visit message: oops")
+
+	_, err = s.Serialize(badMessage{})
+	require.EqualError(t, err, "couldn't encode: gob: cannot encode nil value")
 }
 
 func TestSerializer_Deserialize(t *testing.T) {
@@ -39,48 +61,9 @@ func TestSerializer_Deserialize(t *testing.T) {
 	m, err := s.Deserialize(out.Bytes(), blockFactory{})
 	require.NoError(t, err)
 	require.Equal(t, block{Index: b.Index, Value: b.Value}, m)
-}
 
-func TestSerializer_Wrap(t *testing.T) {
-	s := NewSerializer()
-
-	b := block{Index: 42, Value: "Hello World!"}
-
-	buffer, err := s.Wrap(b)
-	require.NoError(t, err)
-
-	dec := gob.NewDecoder(bytes.NewBuffer(buffer))
-	wrapper := gobWrapper{}
-	err = dec.Decode(&wrapper)
-	require.NoError(t, err)
-
-	require.Equal(t, "go.dedis.ch/dela/serde/gob.block", wrapper.Type)
-
-	dec = gob.NewDecoder(bytes.NewBuffer(wrapper.Value))
-	m := blockMessage{}
-	err = dec.Decode(&m)
-	require.NoError(t, err)
-	require.Equal(t, blockMessage{Index: b.Index, Value: b.Value}, m)
-}
-
-func TestSerializer_Unwrap(t *testing.T) {
-	s := NewSerializer()
-	require.NoError(t, s.GetStore().Add(block{}, blockFactory{}))
-
-	b := block{
-		Index: 42,
-		Value: "Hello World!",
-	}
-
-	value := marshal(t, blockMessage{Index: b.Index, Value: b.Value})
-	wrapper := marshal(t, gobWrapper{
-		Type:  s.GetStore().KeyOf(b),
-		Value: value,
-	})
-
-	m, err := s.Unwrap(wrapper)
-	require.NoError(t, err)
-	require.Equal(t, b, m)
+	_, err = s.Deserialize(out.Bytes(), badFactory{})
+	require.EqualError(t, err, "couldn't visit factory: oops")
 }
 
 // -----------------------------------------------------------------------------
@@ -120,9 +103,9 @@ type blockFactory struct {
 	serde.UnimplementedFactory
 }
 
-func (f blockFactory) VisitGob(d serde.Deserializer) (serde.Message, error) {
+func (f blockFactory) VisitGob(input serde.FactoryInput) (serde.Message, error) {
 	m := blockMessage{}
-	err := d.Deserialize(&m)
+	err := input.Feed(&m)
 	if err != nil {
 		return nil, err
 	}
@@ -133,4 +116,22 @@ func (f blockFactory) VisitGob(d serde.Deserializer) (serde.Message, error) {
 	}
 
 	return t, nil
+}
+
+type badMessage struct {
+	serde.UnimplementedMessage
+
+	err error
+}
+
+func (m badMessage) VisitGob() (interface{}, error) {
+	return nil, m.err
+}
+
+type badFactory struct {
+	serde.UnimplementedFactory
+}
+
+func (m badFactory) VisitGob(serde.FactoryInput) (serde.Message, error) {
+	return nil, xerrors.New("oops")
 }

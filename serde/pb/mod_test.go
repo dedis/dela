@@ -36,45 +36,6 @@ func TestSerializer_Deserialize(t *testing.T) {
 	require.Equal(t, b, m)
 }
 
-func TestSerializer_Wrap(t *testing.T) {
-	s := NewSerializer()
-
-	b := block{Value: "Hello World!"}
-
-	buffer, err := s.Wrap(b)
-	require.NoError(t, err)
-
-	wrapper := &Wrapper{}
-	err = proto.Unmarshal(buffer, wrapper)
-	require.NoError(t, err)
-	require.Equal(t, s.GetStore().KeyOf(b), wrapper.GetType())
-
-	value := &wrappers.StringValue{}
-	err = proto.Unmarshal(wrapper.GetValue(), value)
-	require.NoError(t, err)
-	require.Equal(t, b, block{Value: value.GetValue()})
-}
-
-func TestDeserializer_Unwrap(t *testing.T) {
-	s := NewSerializer()
-	require.NoError(t, s.GetStore().Add(block{}, blockFactory{}))
-
-	b := block{Value: "Hello World!"}
-
-	value, err := proto.Marshal(&wrappers.StringValue{Value: b.Value})
-	require.NoError(t, err)
-
-	buffer, err := proto.Marshal(&Wrapper{
-		Type:  s.GetStore().KeyOf(b),
-		Value: value,
-	})
-	require.NoError(t, err)
-
-	m, err := s.Unwrap(buffer)
-	require.NoError(t, err)
-	require.Equal(t, b, m)
-}
-
 // -----------------------------------------------------------------------------
 // Utility functions
 
@@ -94,9 +55,9 @@ type blockFactory struct {
 	serde.UnimplementedFactory
 }
 
-func (f blockFactory) VisitProto(d serde.Deserializer) (serde.Message, error) {
+func (f blockFactory) VisitProto(input serde.FactoryInput) (serde.Message, error) {
 	m := &wrappers.StringValue{}
-	err := d.Deserialize(m)
+	err := input.Feed(m)
 	if err != nil {
 		return nil, err
 	}

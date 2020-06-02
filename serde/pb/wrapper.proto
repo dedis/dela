@@ -1,8 +1,0 @@
-syntax = "proto3";
-
-package pb;
-
-message Wrapper {
-    string type = 1;
-    bytes value = 2;
-}

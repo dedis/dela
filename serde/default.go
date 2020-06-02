@@ -36,16 +36,16 @@ func (m UnimplementedMessage) VisitProto() (interface{}, error) {
 type UnimplementedFactory struct{}
 
 // VisitJSON implements serde.Factory. It returns an error.
-func (m UnimplementedFactory) VisitJSON(Deserializer) (Message, error) {
+func (m UnimplementedFactory) VisitJSON(FactoryInput) (Message, error) {
 	return nil, xerrors.New(notImplementedErr)
 }
 
 // VisitGob implements serde.Factory. It returns an error.
-func (m UnimplementedFactory) VisitGob(Deserializer) (Message, error) {
+func (m UnimplementedFactory) VisitGob(FactoryInput) (Message, error) {
 	return nil, xerrors.New(notImplementedErr)
 }
 
 // VisitProto implements serde.Factory. It returns an error.
-func (m UnimplementedFactory) VisitProto(Deserializer) (Message, error) {
+func (m UnimplementedFactory) VisitProto(FactoryInput) (Message, error) {
 	return nil, xerrors.New(notImplementedErr)
 }

@@ -7,99 +7,52 @@ import (
 	"golang.org/x/xerrors"
 )
 
-// jsonWrapper is the wrapper to allow a message to decode by itself.
-type jsonWrapper struct {
-	Type  string
-	Value json.RawMessage
-}
-
-type jsonDeserializer struct {
+// FactoryInput is an implementation of the factory input.
+//
+// - implement serde.FactoryInput
+type factoryInput struct {
 	data []byte
 }
 
-func (d jsonDeserializer) Deserialize(m interface{}) error {
-	return json.Unmarshal(d.data, m)
+// Feed implements serde.FactoryInput. It decodes the data into the given
+// interface.
+func (d factoryInput) Feed(m interface{}) error {
+	err := json.Unmarshal(d.data, m)
+	if err != nil {
+		return xerrors.Errorf("couldn't unmarshal: %v", err)
+	}
+
+	return nil
 }
 
 // Serializer is an encoder using JSON as the underlying format.
-type Serializer struct {
-	store serde.Store
-}
+type Serializer struct{}
 
 // NewSerializer returns a new JSON serializer.
 func NewSerializer() serde.Serializer {
-	return Serializer{
-		store: serde.NewStore(),
-	}
-}
-
-// GetStore implements serde.Serializer.
-func (e Serializer) GetStore() serde.Store {
-	return e.store
+	return Serializer{}
 }
 
 // Serialize implements serde.Serializer.
 func (e Serializer) Serialize(m serde.Message) ([]byte, error) {
 	itf, err := m.VisitJSON()
 	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(itf)
-}
-
-// Deserialize implements serde.Deserialize.
-func (e Serializer) Deserialize(buffer []byte, f serde.Factory) (serde.Message, error) {
-	m, err := f.VisitJSON(jsonDeserializer{data: buffer})
-	if err != nil {
-		return nil, err
-	}
-
-	return m, nil
-}
-
-// Wrap implements serde.Wrap.
-func (e Serializer) Wrap(m serde.Message) ([]byte, error) {
-	itf, err := m.VisitJSON()
-	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't visit message: %v", err)
 	}
 
 	buffer, err := json.Marshal(itf)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't encode: %v", err)
 	}
 
-	typ := e.store.KeyOf(m)
-
-	msg := jsonWrapper{
-		Type:  typ,
-		Value: buffer,
-	}
-
-	msgBuffer, err := json.Marshal(msg)
-	if err != nil {
-		return nil, err
-	}
-
-	return msgBuffer, nil
+	return buffer, nil
 }
 
-// Unwrap implements serde.Serializer.
-func (e Serializer) Unwrap(data []byte) (serde.Message, error) {
-	wrapper := jsonWrapper{}
-	err := json.Unmarshal(data, &wrapper)
+// Deserialize implements serde.Deserialize.
+func (e Serializer) Deserialize(buffer []byte, f serde.Factory) (serde.Message, error) {
+	m, err := f.VisitJSON(factoryInput{data: buffer})
 	if err != nil {
-		return nil, err
-	}
-
-	factory := e.store.Get(wrapper.Type)
-	if factory == nil {
-		return nil, xerrors.New("oops")
-	}
-
-	m, err := factory.VisitJSON(jsonDeserializer{data: wrapper.Value})
-	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't visit factory: %v", err)
 	}
 
 	return m, nil

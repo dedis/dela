@@ -6,13 +6,16 @@ import (
 	"golang.org/x/xerrors"
 )
 
-//go:generate protoc -I ./ --go_out=./ ./wrapper.proto
-
-type protoDeserializer struct {
+// FactoryInput is an implementation of the factory input.
+//
+// - implement serde.FactoryInput
+type factoryInput struct {
 	data []byte
 }
 
-func (d protoDeserializer) Deserialize(m interface{}) error {
+// Feed implements serde.FactoryInput. It decodes the data into the given
+// interface.
+func (d factoryInput) Feed(m interface{}) error {
 	pb, ok := m.(proto.Message)
 	if !ok {
 		return xerrors.New("proto message expected")
@@ -24,20 +27,11 @@ func (d protoDeserializer) Deserialize(m interface{}) error {
 // Serializer is a protobuf serializer.
 //
 // - implement serde.Serializer
-type Serializer struct {
-	store serde.Store
-}
+type Serializer struct{}
 
 // NewSerializer returns a new protobuf serializer.
 func NewSerializer() serde.Serializer {
-	return Serializer{
-		store: serde.NewStore(),
-	}
-}
-
-// GetStore implements serde.Serializer. It returns the factory store.
-func (e Serializer) GetStore() serde.Store {
-	return e.store
+	return Serializer{}
 }
 
 // Serialize implements serde.Serializer. It returns the bytes for the message
@@ -64,60 +58,7 @@ func (e Serializer) Serialize(m serde.Message) ([]byte, error) {
 // Deserialize implements serde.Serializer. It returns the message associated to
 // the bytes using protobuf.
 func (e Serializer) Deserialize(buffer []byte, f serde.Factory) (serde.Message, error) {
-	m, err := f.VisitProto(protoDeserializer{data: buffer})
-	if err != nil {
-		return nil, err
-	}
-
-	return m, nil
-}
-
-// Wrap implements serde.Serializer. It returns the bytes of a wrapped message
-// that a distant party can deserialize by looking up the factory.
-func (e Serializer) Wrap(m serde.Message) ([]byte, error) {
-	itf, err := m.VisitProto()
-	if err != nil {
-		return nil, err
-	}
-
-	pb, ok := itf.(proto.Message)
-	if !ok {
-		return nil, xerrors.New("proto message expected")
-	}
-
-	value, err := proto.Marshal(pb)
-	if err != nil {
-		return nil, err
-	}
-
-	wrapper := &Wrapper{
-		Type:  e.store.KeyOf(m),
-		Value: value,
-	}
-
-	buffer, err := proto.Marshal(wrapper)
-	if err != nil {
-		return nil, err
-	}
-
-	return buffer, nil
-}
-
-// Unwrap implements serde.Serializer. It returns the message implementation of
-// the incoming bytes by looking the factory to use to instantiate.
-func (e Serializer) Unwrap(buffer []byte) (serde.Message, error) {
-	wrapper := &Wrapper{}
-	err := proto.Unmarshal(buffer, wrapper)
-	if err != nil {
-		return nil, err
-	}
-
-	factory := e.store.Get(wrapper.Type)
-	if factory == nil {
-		return nil, xerrors.Errorf("unknown message <%s>", wrapper.Type)
-	}
-
-	m, err := factory.VisitProto(protoDeserializer{data: wrapper.GetValue()})
+	m, err := f.VisitProto(factoryInput{data: buffer})
 	if err != nil {
 		return nil, err
 	}
