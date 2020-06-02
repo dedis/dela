@@ -18,10 +18,15 @@ type factoryInput struct {
 func (d factoryInput) Feed(m interface{}) error {
 	pb, ok := m.(proto.Message)
 	if !ok {
-		return xerrors.New("proto message expected")
+		return xerrors.Errorf("invalid message type '%T'", m)
 	}
 
-	return proto.Unmarshal(d.data, pb)
+	err := proto.Unmarshal(d.data, pb)
+	if err != nil {
+		return xerrors.Errorf("couldn't unmarshal: %v", err)
+	}
+
+	return nil
 }
 
 // Serializer is a protobuf serializer.
@@ -39,17 +44,17 @@ func NewSerializer() serde.Serializer {
 func (e Serializer) Serialize(m serde.Message) ([]byte, error) {
 	itf, err := m.VisitProto()
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't visit message: %v", err)
 	}
 
 	pb, ok := itf.(proto.Message)
 	if !ok {
-		return nil, xerrors.New("visitor should return a proto message")
+		return nil, xerrors.New("visit should return a proto message")
 	}
 
 	buffer, err := proto.Marshal(pb)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't marshal: %v", err)
 	}
 
 	return buffer, nil
@@ -60,7 +65,7 @@ func (e Serializer) Serialize(m serde.Message) ([]byte, error) {
 func (e Serializer) Deserialize(buffer []byte, f serde.Factory) (serde.Message, error) {
 	m, err := f.VisitProto(factoryInput{data: buffer})
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't visit factory: %v", err)
 	}
 
 	return m, nil

@@ -14,27 +14,30 @@ the data model should implement this interface. It will provide the information
 about the message structure for every supported encoding.
 
 ```go
-type block struct {
-    // Provides a default implementation for non-supported encodings.
-    serde.UnimplementedMessage
-}
-
-type (b block) VisitJSON() (interface{}, error) {
-    // toJSON populates the a block message compatible with the JSON format.
-    return b.toJSON(), nil
-}
-```
-
-Serializing a message implementation will produce the byte slice to be
-transmitted over the communication channel.
-
-```go
 package jtypes
 
 type BlockMessage {
     Index uint64
 }
 ```
+
+```go
+package blockchain
+
+type block struct {
+    // Provides a default implementation for non-supported encodings.
+    serde.UnimplementedMessage
+
+    index uint64
+}
+
+type (b block) VisitJSON() (interface{}, error) {
+    return BlockMessage{Index: block.index}, nil
+}
+```
+
+Serializing a message implementation will produce the byte slice to be
+transmitted over the communication channel.
 
 ```go
 package blockchain
@@ -57,14 +60,13 @@ type blockFactory struct{
     serde.UnimplementedFactory
 }
 
-func (f blockFactory) VisitJSON(d serde.Deserializer) (serde.Message, error) {
+func (f blockFactory) VisitJSON(input serde.Deserializer) (serde.Message, error) {
     m := jtypes.BlockMessage{}
-    err := d.Deserialize(&m)
+    err := input.Feed(&m)
     if err != nil {
         // do..
     }
 
-    // fromJSON populates the block with the json message.
     return block{index: m.Index}, nil
 }
 
