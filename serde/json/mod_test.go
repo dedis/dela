@@ -1,4 +1,4 @@
-package encoder
+package json
 
 import (
 	"encoding/json"
@@ -39,7 +39,7 @@ func TestJsonEncoder_Serialize(t *testing.T) {
 
 	_, err = s.Serialize(badMessage{})
 	require.EqualError(t, err,
-		"couldn't encode: json: error calling MarshalJSON for type encoder.badJSON: oops")
+		"couldn't encode: json: error calling MarshalJSON for type json.badJSON: oops")
 }
 
 func TestSerializer_Deserialize(t *testing.T) {

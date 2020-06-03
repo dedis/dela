@@ -1,4 +1,8 @@
-package encoder
+// Package json implements a JSON serializer. Please refer to the official
+// documentation to learn about the specificity of the format.
+//
+// https://golang.org/pkg/encoding/json/
+package json
 
 import (
 	"encoding/json"

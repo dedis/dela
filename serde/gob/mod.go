@@ -1,3 +1,7 @@
+// Package gob implements a serializer that uses the gob format. Please refer to
+// the official documentation to learn about the specificity of the format.
+//
+// https://golang.org/pkg/encoding/gob/
 package gob
 
 import (

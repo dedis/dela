@@ -1,4 +1,8 @@
-package pb
+// Package protobuf implements a Protobuf serializer. Please refer to the
+// official documentation to learn about the specificity of the format.
+//
+// https://pkg.go.dev/github.com/golang/protobuf
+package protobuf
 
 import (
 	"github.com/golang/protobuf/proto"
