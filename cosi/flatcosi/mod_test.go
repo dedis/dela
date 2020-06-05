@@ -9,7 +9,6 @@ import (
 	"github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/encoding"
@@ -52,14 +51,14 @@ func TestFlat_GetVerifierFactory(t *testing.T) {
 func TestFlat_Listen(t *testing.T) {
 	flat := NewFlat(fake.Mino{}, bls.NewSigner())
 
-	a, err := flat.Listen(fakeHasher{})
+	a, err := flat.Listen(fakeReactor{})
 	require.NoError(t, err)
 	actor := a.(flatActor)
 	require.NotNil(t, actor.signer)
 	require.NotNil(t, actor.rpc)
 
 	flat.mino = fake.NewBadMino()
-	_, err = flat.Listen(fakeHasher{})
+	_, err = flat.Listen(fakeReactor{})
 	require.EqualError(t, err, "couldn't make the rpc: fake error")
 }
 
@@ -72,9 +71,10 @@ func TestActor_Sign(t *testing.T) {
 		encoder: encoding.NewProtoEncoder(),
 		signer:  fake.NewSigner(),
 		rpc:     rpc,
+		reactor: fakeReactor{},
 	}
 
-	sigAny := makePackedSignature(t, actor.signer, message.GetHash())
+	sigAny := makePackedSignature(t, actor.signer, []byte{0xab})
 
 	rpc.Msgs <- &SignatureResponse{Signature: sigAny}
 	rpc.Msgs <- &SignatureResponse{Signature: sigAny}
@@ -106,6 +106,7 @@ func TestActor_SignWrongSignature(t *testing.T) {
 		encoder: encoding.NewProtoEncoder(),
 		signer:  ca.GetSigner(0),
 		rpc:     rpc,
+		reactor: fakeReactor{},
 	}
 
 	sigAny := makePackedSignature(t, ca.GetSigner(0), []byte{0xef})
@@ -128,6 +129,7 @@ func TestActor_RPCError_Sign(t *testing.T) {
 		encoder: encoding.NewProtoEncoder(),
 		signer:  ca.GetSigner(0),
 		rpc:     rpc,
+		reactor: fakeReactor{},
 	}
 
 	close(rpc.Msgs)
@@ -149,6 +151,7 @@ func TestActor_Context_Sign(t *testing.T) {
 		encoder: encoding.NewProtoEncoder(),
 		signer:  ca.GetSigner(0),
 		rpc:     rpc,
+		reactor: fakeReactor{},
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -170,6 +173,7 @@ func TestActor_SignProcessError(t *testing.T) {
 		encoder: encoding.NewProtoEncoder(),
 		signer:  ca.GetSigner(0),
 		rpc:     rpc,
+		reactor: fakeReactor{},
 	}
 
 	rpc.Msgs <- &empty.Empty{}
@@ -208,12 +212,7 @@ func makePackedSignature(t *testing.T, signer crypto.Signer, message []byte) *an
 }
 
 type fakeMessage struct {
-	cosi.Message
 	err error
-}
-
-func (m fakeMessage) GetHash() []byte {
-	return []byte{0xab}
 }
 
 func (m fakeMessage) Pack(encoding.ProtoMarshaler) (proto.Message, error) {

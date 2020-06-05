@@ -237,13 +237,12 @@ func TestActor_Propose(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, cosiActor.calls, 2)
 
-	prepare := cosiActor.calls[0]["message"].(*PrepareRequest)
+	prepare := cosiActor.calls[0]["message"].(Prepare)
 	require.NotNil(t, prepare)
 
-	commit := cosiActor.calls[1]["message"].(*CommitRequest)
+	commit := cosiActor.calls[1]["message"].(Commit)
 	require.NotNil(t, commit)
-	require.Equal(t, []byte{0xaa}, commit.GetTo())
-	checkSignatureValue(t, commit.GetPrepare())
+	require.Equal(t, []byte{0xaa}, commit.to)
 
 	require.Len(t, rpc.calls, 1)
 	propagate := rpc.calls[0]["message"].(*PropagateRequest)
@@ -276,13 +275,6 @@ func TestActor_Failures_Propose(t *testing.T) {
 	require.EqualError(t, err, "couldn't get change set: oops")
 
 	actor.governance = fakeGovernance{}
-	actor.hashFactory = fake.NewHashFactory(fake.NewBadHash())
-	err = actor.Propose(fakeProposal{})
-	require.Error(t, err)
-	require.Contains(t, err.Error(),
-		"couldn't create prepare request: couldn't compute hash: ")
-
-	actor.hashFactory = crypto.NewSha256Factory()
 	actor.cosi = &fakeCosi{signer: fake.NewBadSigner()}
 	err = actor.Propose(fakeProposal{})
 	require.EqualError(t, err,
@@ -292,11 +284,6 @@ func TestActor_Failures_Propose(t *testing.T) {
 	actor.cosiActor = &fakeCosiActor{err: xerrors.New("oops")}
 	err = actor.Propose(fakeProposal{})
 	require.EqualError(t, err, "couldn't sign the proposal: oops")
-
-	actor.cosiActor = &badCosiActor{}
-	err = actor.Propose(fakeProposal{})
-	require.EqualError(t, xerrors.Unwrap(err),
-		"couldn't marshal prepare signature: fake error")
 
 	actor.cosiActor = &fakeCosiActor{err: xerrors.New("oops"), delay: 1}
 	err = actor.Propose(fakeProposal{})
@@ -343,68 +330,68 @@ func TestHandler_Prepare_Hash(t *testing.T) {
 		Consensus: cons,
 	}
 
-	_, err := h.Hash(nil, &empty.Empty{})
+	_, err := h.Invoke(nil, &empty.Empty{})
 	require.EqualError(t, err, "message type not supported: *empty.Empty")
 
 	empty, err := ptypes.MarshalAny(&empty.Empty{})
 	require.NoError(t, err)
 
-	buffer, err := h.Hash(nil, &PrepareRequest{Proposal: empty})
+	buffer, err := h.Invoke(nil, &PrepareRequest{Proposal: empty})
 	require.NoError(t, err)
 	require.NotEmpty(t, buffer)
 
 	cons.encoder = fake.BadUnmarshalDynEncoder{}
-	_, err = h.Hash(nil, &PrepareRequest{})
+	_, err = h.Invoke(nil, &PrepareRequest{})
 	require.EqualError(t, err, "couldn't unmarshal proposal: fake error")
 
 	cons.encoder = encoding.NewProtoEncoder()
 	h.validator = fakeValidator{err: xerrors.New("oops")}
-	_, err = h.Hash(nil, &PrepareRequest{Proposal: empty})
+	_, err = h.Invoke(nil, &PrepareRequest{Proposal: empty})
 	require.EqualError(t, err, "couldn't validate the proposal: oops")
 
 	h.validator = fakeValidator{proposal: fakeProposal{previous: []byte{0xbb}}}
 	h.governance = fakeGovernance{err: xerrors.New("oops")}
-	_, err = h.Hash(nil, &PrepareRequest{Proposal: empty})
+	_, err = h.Invoke(nil, &PrepareRequest{Proposal: empty})
 	require.EqualError(t, err, "couldn't read authority: oops")
 
 	h.governance = fakeGovernance{}
 	cons.storage = fakeStorage{}
-	_, err = h.Hash(nil, &PrepareRequest{Proposal: empty})
+	_, err = h.Invoke(nil, &PrepareRequest{Proposal: empty})
 	require.EqualError(t, err, "couldn't read last: oops")
 
 	cons.storage = newInMemoryStorage()
 	cons.storage.Store(&ForwardLinkProto{To: []byte{0xaa}})
-	_, err = h.Hash(nil, &PrepareRequest{Proposal: empty})
+	_, err = h.Invoke(nil, &PrepareRequest{Proposal: empty})
 	require.EqualError(t, err, "mismatch with previous link: aa != bb")
 
 	cons.storage = newInMemoryStorage()
 	cons.governance = fakeGovernance{errChangeSet: xerrors.New("oops")}
-	_, err = h.Hash(nil, &PrepareRequest{Proposal: empty})
+	_, err = h.Invoke(nil, &PrepareRequest{Proposal: empty})
 	require.EqualError(t, err, "couldn't get change set: oops")
 
 	cons.governance = fakeGovernance{authority: fake.NewAuthority(3, func() crypto.AggregateSigner {
 		return fake.NewSignerWithPublicKey(fake.NewBadPublicKey())
 	})}
-	_, err = h.Hash(nil, &PrepareRequest{Proposal: empty})
+	_, err = h.Invoke(nil, &PrepareRequest{Proposal: empty})
 	require.EqualError(t, err, "couldn't verify signature: fake error")
 
 	cons.governance = fakeGovernance{}
-	_, err = h.Hash(nil, &PrepareRequest{Proposal: empty})
+	_, err = h.Invoke(nil, &PrepareRequest{Proposal: empty})
 	require.EqualError(t, err, "unknown public key at index 2")
 
 	cons.governance = fakeGovernance{authority: fake.NewAuthority(3, fake.NewSigner)}
 	cons.cosi = &fakeCosi{signer: fake.NewSignerWithSignatureFactory(fake.NewBadSignatureFactory())}
-	_, err = h.Hash(nil, &PrepareRequest{Proposal: empty})
+	_, err = h.Invoke(nil, &PrepareRequest{Proposal: empty})
 	require.EqualError(t, err, "couldn't decode signature: fake error")
 
 	cons.cosi = &fakeCosi{}
 	cons.queue = &queue{locked: true}
-	_, err = h.Hash(nil, &PrepareRequest{Proposal: empty})
+	_, err = h.Invoke(nil, &PrepareRequest{Proposal: empty})
 	require.EqualError(t, err, "couldn't add to queue: queue is locked")
 
 	cons.queue = &queue{cosi: &fakeCosi{}}
 	cons.hashFactory = fake.NewHashFactory(fake.NewBadHash())
-	_, err = h.Hash(nil, &PrepareRequest{Proposal: empty})
+	_, err = h.Invoke(nil, &PrepareRequest{Proposal: empty})
 	require.EqualError(t, err,
 		"couldn't compute hash: couldn't write 'from': fake error")
 }
@@ -425,21 +412,21 @@ func TestHandler_HashCommit(t *testing.T) {
 	err := h.Consensus.queue.New(forwardLink{to: []byte{0xaa}}, authority)
 	require.NoError(t, err)
 
-	buffer, err := h.Hash(nil, &CommitRequest{To: []byte{0xaa}})
+	buffer, err := h.Invoke(nil, &CommitRequest{To: []byte{0xaa}})
 	require.NoError(t, err)
 	require.Equal(t, []byte{fake.SignatureByte}, buffer)
 
 	h.cosi = &fakeCosi{factory: fake.NewBadSignatureFactory()}
-	_, err = h.Hash(nil, &CommitRequest{})
+	_, err = h.Invoke(nil, &CommitRequest{})
 	require.EqualError(t, err, "couldn't decode prepare signature: fake error")
 
 	h.cosi = &fakeCosi{}
 	queue.locked = false
-	_, err = h.Hash(nil, &CommitRequest{To: []byte("unknown")})
+	_, err = h.Invoke(nil, &CommitRequest{To: []byte("unknown")})
 	require.EqualError(t, err, "couldn't update signature: couldn't find proposal '756e6b6e6f776e'")
 
 	h.cosi = &fakeCosi{factory: fake.NewSignatureFactory(fake.NewBadSignature())}
-	_, err = h.Hash(nil, &CommitRequest{To: []byte{0xaa}})
+	_, err = h.Invoke(nil, &CommitRequest{To: []byte{0xaa}})
 	require.EqualError(t, err, "couldn't marshal the signature: fake error")
 }
 
@@ -526,7 +513,7 @@ type badCosiActor struct {
 	delay int
 }
 
-func (cs *badCosiActor) Sign(ctx context.Context, pb cosi.Message,
+func (cs *badCosiActor) Sign(ctx context.Context, pb encoding.Packable,
 	ca crypto.CollectiveAuthority) (crypto.Signature, error) {
 
 	if cs.delay > 0 {
@@ -647,7 +634,7 @@ func (v fakeValidator) Commit(id []byte) error {
 
 type fakeCosi struct {
 	cosi.CollectiveSigning
-	handler         cosi.Hashable
+	handler         cosi.Reactor
 	err             error
 	factory         fake.SignatureFactory
 	verifierFactory fake.VerifierFactory
@@ -670,7 +657,7 @@ func (cs *fakeCosi) GetVerifierFactory() crypto.VerifierFactory {
 	return cs.verifierFactory
 }
 
-func (cs *fakeCosi) Listen(h cosi.Hashable) (cosi.Actor, error) {
+func (cs *fakeCosi) Listen(h cosi.Reactor) (cosi.Actor, error) {
 	cs.handler = h
 	return nil, cs.err
 }
@@ -682,19 +669,14 @@ type fakeCosiActor struct {
 	err   error
 }
 
-func (a *fakeCosiActor) Sign(ctx context.Context, msg cosi.Message,
+func (a *fakeCosiActor) Sign(ctx context.Context, msg encoding.Packable,
 	ca crypto.CollectiveAuthority) (crypto.Signature, error) {
-
-	packed, err := msg.Pack(encoding.NewProtoEncoder())
-	if err != nil {
-		return nil, err
-	}
 
 	// Increase the counter each time a test sign a message.
 	a.count++
 	// Store the call parameters so that they can be verified in the test.
 	a.calls = append(a.calls, map[string]interface{}{
-		"message": packed,
+		"message": msg,
 		"signers": ca,
 	})
 	if a.err != nil {

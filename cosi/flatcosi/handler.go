@@ -12,14 +12,14 @@ import (
 type handler struct {
 	mino.UnsupportedHandler
 	signer  crypto.Signer
-	hasher  cosi.Hashable
+	reactor cosi.Reactor
 	encoder encoding.ProtoMarshaler
 }
 
-func newHandler(s crypto.Signer, h cosi.Hashable) handler {
+func newHandler(s crypto.Signer, r cosi.Reactor) handler {
 	return handler{
 		signer:  s,
-		hasher:  h,
+		reactor: r,
 		encoder: encoding.NewProtoEncoder(),
 	}
 }
@@ -32,7 +32,7 @@ func (h handler) Process(req mino.Request) (proto.Message, error) {
 			return nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
 		}
 
-		buf, err := h.hasher.Hash(req.Address, data)
+		buf, err := h.reactor.Invoke(req.Address, data)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't hash message: %v", err)
 		}

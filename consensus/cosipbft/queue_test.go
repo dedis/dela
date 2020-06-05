@@ -29,9 +29,6 @@ func TestQueue_New(t *testing.T) {
 	require.Len(t, queue.items, 2)
 	require.Equal(t, prop.to, queue.items[1].from)
 
-	err = queue.New(prop, authority)
-	require.EqualError(t, err, "proposal 'bb' already exists")
-
 	queue.locked = true
 	err = queue.New(prop, authority)
 	require.EqualError(t, err, "queue is locked")
@@ -56,6 +53,10 @@ func TestQueue_LockProposal(t *testing.T) {
 				},
 				verifier: verifier,
 			},
+			{
+				forwardLink: forwardLink{to: []byte{0xcc}},
+				verifier:    verifier,
+			},
 		},
 	}
 
@@ -76,17 +77,17 @@ func TestQueue_LockProposal(t *testing.T) {
 
 	queue.locked = false
 	queue.hashFactory = fake.NewHashFactory(fake.NewBadHash())
-	err = queue.LockProposal([]byte{0xbb}, fake.Signature{})
+	err = queue.LockProposal([]byte{0xcc}, fake.Signature{})
 	require.EqualError(t, err,
 		"couldn't hash proposal: couldn't write 'from': fake error")
 
 	queue.hashFactory = crypto.NewSha256Factory()
 	verifier.err = xerrors.New("oops")
-	err = queue.LockProposal([]byte{0xbb}, fake.Signature{})
+	err = queue.LockProposal([]byte{0xcc}, fake.Signature{})
 	require.EqualError(t, err, "couldn't verify signature: oops")
 
 	queue.locked = true
-	err = queue.LockProposal([]byte{0xbb}, nil)
+	err = queue.LockProposal([]byte{0xcc}, nil)
 	require.EqualError(t, err, "queue is locked")
 }
 

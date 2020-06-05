@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes/any"
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/consensus"
@@ -197,10 +198,7 @@ func (a pbftActor) Propose(p consensus.Proposal) error {
 		return xerrors.Errorf("couldn't sign the proposal: %v", err)
 	}
 
-	commitReq, err := newCommitRequest(p.GetHash(), sig)
-	if err != nil {
-		return xerrors.Errorf("couldn't create commit request: %w", err)
-	}
+	commitReq := newCommitRequest(p.GetHash(), sig)
 
 	// 2. Commit phase.
 	sig, err = a.cosiActor.Sign(ctx, commitReq, authority)
@@ -247,19 +245,6 @@ func (a pbftActor) newPrepareRequest(prop consensus.Proposal,
 
 	req.signature = sig
 
-	forwardLink := forwardLink{
-		from:      prop.GetPreviousHash(),
-		to:        prop.GetHash(),
-		changeset: cs,
-	}
-
-	digest, err := forwardLink.computeHash(a.hashFactory.New(), a.encoder)
-	if err != nil {
-		return req, xerrors.Errorf("couldn't compute hash: %v", err)
-	}
-
-	req.digest = digest
-
 	return req, nil
 }
 
@@ -275,7 +260,13 @@ type handler struct {
 	validator consensus.Validator
 }
 
-func (h handler) Hash(addr mino.Address, in proto.Message) (Digest, error) {
+func (h handler) Invoke(addr mino.Address, in proto.Message) (Digest, error) {
+	w, ok := in.(*any.Any)
+	if ok {
+		// TODO: remove after serde migration
+		in, _ = h.encoder.UnmarshalDynamicAny(w)
+	}
+
 	switch msg := in.(type) {
 	case *PrepareRequest:
 		proposalpb, err := h.encoder.UnmarshalDynamicAny(msg.GetProposal())

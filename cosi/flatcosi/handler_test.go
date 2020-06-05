@@ -8,7 +8,6 @@ import (
 	any "github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/internal/testing/fake"
@@ -17,7 +16,7 @@ import (
 )
 
 func TestHandler_Process(t *testing.T) {
-	h := newHandler(bls.NewSigner(), fakeHasher{})
+	h := newHandler(bls.NewSigner(), fakeReactor{})
 	req := mino.Request{
 		Message: &SignatureRequest{Message: makeMessage(t)},
 	}
@@ -38,11 +37,11 @@ func TestHandler_Process(t *testing.T) {
 	require.EqualError(t, err, "couldn't pack signature: fake error")
 
 	h.encoder = encoding.NewProtoEncoder()
-	h.hasher = fakeHasher{err: xerrors.New("oops")}
+	h.reactor = fakeReactor{err: xerrors.New("oops")}
 	_, err = h.Process(req)
 	require.EqualError(t, err, "couldn't hash message: oops")
 
-	h.hasher = fakeHasher{}
+	h.reactor = fakeReactor{}
 	h.signer = fake.NewBadSigner()
 	_, err = h.Process(req)
 	require.EqualError(t, err, "couldn't sign: fake error")
@@ -51,12 +50,11 @@ func TestHandler_Process(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-type fakeHasher struct {
-	cosi.Hashable
+type fakeReactor struct {
 	err error
 }
 
-func (h fakeHasher) Hash(mino.Address, proto.Message) ([]byte, error) {
+func (h fakeReactor) Invoke(mino.Address, proto.Message) ([]byte, error) {
 	return []byte{0xab}, h.err
 }
 

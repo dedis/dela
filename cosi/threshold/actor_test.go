@@ -32,6 +32,7 @@ func TestActor_Sign(t *testing.T) {
 				},
 			},
 		},
+		reactor: fakeReactor{},
 	}
 
 	ctx := context.Background()
@@ -64,7 +65,7 @@ func TestActor_Sign(t *testing.T) {
 	require.EqualError(t, err, "couldn't decode signature: fake error")
 
 	actor.signer = fake.NewSigner()
-	err = actor.merge(&Signature{}, &empty.Empty{}, 0, fake.NewInvalidPublicKey(), fakeMessage{})
+	err = actor.merge(&Signature{}, &empty.Empty{}, 0, fake.NewInvalidPublicKey(), []byte{})
 	require.EqualError(t, err, "couldn't verify: fake error")
 
 	actor.rpc = fake.NewBadStreamRPC()

@@ -9,21 +9,10 @@ import (
 	"go.dedis.ch/dela/mino"
 )
 
-// Hashable is the interface to implement to validate an incoming message for a
-// collective signing. It will return the hash that will be signed.
-type Hashable interface {
-	// Hash is provided with the message and the address of the sender and it
+type Reactor interface {
+	// Invoke is provided with the message and the address of the sender and it
 	// should return the unique hash for this message.
-	Hash(addr mino.Address, in proto.Message) ([]byte, error)
-}
-
-// Message is the type of input that can be provided to a collective signing
-// protocol.
-type Message interface {
-	encoding.Packable
-
-	// GetHash returns the unique hash of the message.
-	GetHash() []byte
+	Invoke(addr mino.Address, in proto.Message) ([]byte, error)
 }
 
 // Actor is the listener of a collective signing instance. It provides a
@@ -31,7 +20,8 @@ type Message interface {
 type Actor interface {
 	// Sign collects the signature of the collective authority and creates an
 	// aggregated signature.
-	Sign(ctx context.Context, msg Message, ca crypto.CollectiveAuthority) (crypto.Signature, error)
+	Sign(ctx context.Context, msg encoding.Packable,
+		ca crypto.CollectiveAuthority) (crypto.Signature, error)
 }
 
 // CollectiveSigning is the interface that provides the primitives to sign a
@@ -53,5 +43,5 @@ type CollectiveSigning interface {
 	GetVerifierFactory() crypto.VerifierFactory
 
 	// Listen starts the collective signing so that it will answer to requests.
-	Listen(Hashable) (Actor, error)
+	Listen(Reactor) (Actor, error)
 }

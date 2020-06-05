@@ -7,6 +7,7 @@ import (
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
 )
@@ -17,20 +18,15 @@ import (
 // - implements cosi.Actor
 type thresholdActor struct {
 	*CoSi
-	rpc mino.RPC
-}
-
-func newActor(c *CoSi, rpc mino.RPC) thresholdActor {
-	return thresholdActor{
-		CoSi: c,
-		rpc:  rpc,
-	}
+	me      mino.Address
+	rpc     mino.RPC
+	reactor cosi.Reactor
 }
 
 // Sign implements cosi.Actor. It returns the collective signature from the
 // collective authority, or an error if it failed.
-func (a thresholdActor) Sign(ctx context.Context,
-	msg cosi.Message, ca crypto.CollectiveAuthority) (crypto.Signature, error) {
+func (a thresholdActor) Sign(ctx context.Context, msg encoding.Packable,
+	ca crypto.CollectiveAuthority) (crypto.Signature, error) {
 
 	innerCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -43,6 +39,11 @@ func (a thresholdActor) Sign(ctx context.Context,
 	req, err := a.encoder.Pack(msg)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't pack message: %v", err)
+	}
+
+	digest, err := a.reactor.Invoke(a.me, req)
+	if err != nil {
+		return nil, err
 	}
 
 	// The aggregated signature needs to include at least a threshold number of
@@ -65,7 +66,7 @@ func (a thresholdActor) Sign(ctx context.Context,
 
 		pubkey, index := ca.GetPublicKey(addr)
 		if index >= 0 {
-			err = a.merge(signature, resp, index, pubkey, msg)
+			err = a.merge(signature, resp, index, pubkey, digest)
 			if err != nil {
 				dela.Logger.Warn().Err(err).Send()
 			} else {
@@ -108,14 +109,14 @@ func (a thresholdActor) waitCtx(inner, upper context.Context, cancel func()) {
 }
 
 func (a thresholdActor) merge(signature *Signature, resp proto.Message,
-	index int, pubkey crypto.PublicKey, msg cosi.Message) error {
+	index int, pubkey crypto.PublicKey, digest []byte) error {
 
 	sig, err := a.signer.GetSignatureFactory().FromProto(resp)
 	if err != nil {
 		return xerrors.Errorf("couldn't decode signature: %v", err)
 	}
 
-	err = pubkey.Verify(msg.GetHash(), sig)
+	err = pubkey.Verify(digest, sig)
 	if err != nil {
 		return xerrors.Errorf("couldn't verify: %v", err)
 	}

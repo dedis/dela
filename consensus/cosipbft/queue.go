@@ -62,7 +62,9 @@ func (q *queue) New(fl forwardLink, authority crypto.CollectiveAuthority) error 
 
 	_, _, ok := q.getItem(fl.to)
 	if ok {
-		return xerrors.Errorf("proposal '%x' already exists", fl.to)
+		// Duplicate are ignored without triggering an error as the exact same
+		// digest means they are exactly the same.
+		return nil
 	}
 
 	verifier, err := q.cosi.GetVerifierFactory().FromAuthority(authority)
@@ -83,13 +85,18 @@ func (q *queue) LockProposal(to Digest, sig crypto.Signature) error {
 	q.Lock()
 	defer q.Unlock()
 
-	if q.locked {
-		return xerrors.New("queue is locked")
-	}
-
 	item, index, ok := q.getItem(to)
 	if !ok {
 		return xerrors.Errorf("couldn't find proposal '%x'", to)
+	}
+
+	if item.prepare != nil {
+		// Signature already populated so a commit has already been received.
+		return nil
+	}
+
+	if q.locked {
+		return xerrors.New("queue is locked")
 	}
 
 	forwardLink := item
