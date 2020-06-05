@@ -10,7 +10,7 @@ const (
 // which returns error to each function. It should be embedded to any message
 // implementation.
 //
-// - implement serde.Message
+// - implements serde.Message
 type UnimplementedMessage struct{}
 
 // VisitJSON implements serde.Message. It returns an error.
@@ -32,7 +32,7 @@ func (m UnimplementedMessage) VisitProto() (interface{}, error) {
 // where each function returns an error. It should be embedded to any factory
 // implementation.
 //
-// - implement serde.Factory
+// - implements serde.Factory
 type UnimplementedFactory struct{}
 
 // VisitJSON implements serde.Factory. It returns an error.

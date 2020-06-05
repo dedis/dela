@@ -13,7 +13,7 @@ import (
 
 // FactoryInput is an implementation of the factory input.
 //
-// - implement serde.FactoryInput
+// - implements serde.FactoryInput
 type factoryInput struct {
 	data []byte
 }
@@ -30,6 +30,8 @@ func (d factoryInput) Feed(m interface{}) error {
 }
 
 // Serializer is an encoder using JSON as the underlying format.
+//
+// - implements serde.Serializer
 type Serializer struct{}
 
 // NewSerializer returns a new JSON serializer.

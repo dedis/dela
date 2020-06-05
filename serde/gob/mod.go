@@ -14,7 +14,7 @@ import (
 
 // FactoryInput is an implementation of the factory input.
 //
-// - implement serde.FactoryInput
+// - implements serde.FactoryInput
 type factoryInput struct {
 	data []byte
 }
@@ -33,7 +33,7 @@ func (d factoryInput) Feed(m interface{}) error {
 
 // Serializer is a gob serializer.
 //
-// - implement serde.Serializer
+// - implements serde.Serializer
 type Serializer struct{}
 
 // NewSerializer returns a gob serializer.
