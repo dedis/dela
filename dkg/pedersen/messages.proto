@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package pedersen;
 
-import "google/protobuf/any.proto";
-
 // This is the message the initiator of the DKG protocol should send to all the
 // nodes.
 message Start {

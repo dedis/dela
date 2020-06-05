@@ -1,3 +1,5 @@
+// Package encoding is deprecated and will progressively be removed. See package
+// encoder.
 package encoding
 
 import (
