@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	proto "github.com/golang/protobuf/proto"
-	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
 )
@@ -31,8 +30,8 @@ func newBlockValidator(ops *operations) *blockValidator {
 // Validate implements consensus.Validator. It decodes the message into a block
 // and validates its integrity. It returns the block if it is correct, otherwise
 // the error.
-func (v *blockValidator) Validate(addr mino.Address,
-	pb proto.Message) (consensus.Proposal, error) {
+func (v *blockValidator) InvokeValidate(addr mino.Address,
+	pb proto.Message) ([]byte, error) {
 
 	block, err := v.blockFactory.decodeBlock(pb)
 	if err != nil {
@@ -55,19 +54,19 @@ func (v *blockValidator) Validate(addr mino.Address,
 			genesis.hash, block.GenesisID)
 	}
 
-	err = v.processor.Validate(block.Index, block.Payload)
+	err = v.processor.Validate(addr, block.Payload)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't validate the payload: %v", err)
 	}
 
 	v.queue.Add(block)
 
-	return block, nil
+	return block.GetHash(), nil
 }
 
 // Commit implements consensus.Validator. It commits the block that matches the
 // identifier if it is present.
-func (v *blockValidator) Commit(id []byte) error {
+func (v *blockValidator) InvokeCommit(id []byte) error {
 	// To minimize the catch up procedures, the lock is acquired so that it can
 	// process a new block before the catch up verifies what is the latest
 	// known.

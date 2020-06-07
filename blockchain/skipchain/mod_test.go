@@ -186,6 +186,7 @@ func TestActor_InitChain(t *testing.T) {
 func TestActor_NewChain(t *testing.T) {
 	actor := skipchainActor{
 		operations: &operations{
+			addr:    fake.NewAddress(0),
 			encoder: encoding.NewProtoEncoder(),
 			db:      &fakeDatabase{},
 			blockFactory: blockFactory{
@@ -226,6 +227,7 @@ func TestActor_Store(t *testing.T) {
 			blockFactory: blockFactory{
 				encoder:     encoding.NewProtoEncoder(),
 				hashFactory: crypto.NewSha256Factory(),
+				mino:        fake.Mino{},
 			},
 			addr: fake.NewAddress(0),
 			db:   db,
@@ -273,7 +275,7 @@ func TestObserver_NotifyCallback(t *testing.T) {
 
 type testValidator struct{}
 
-func (v testValidator) Validate(index uint64, payload proto.Message) error {
+func (v testValidator) Validate(mino.Address, proto.Message) error {
 	return nil
 }
 
@@ -297,7 +299,7 @@ func makeSkipchain(t *testing.T, n int) (crypto.CollectiveAuthority, []*Skipchai
 	actors := make([]blockchain.Actor, n)
 	for i := 0; i < n; i++ {
 		cosi := threshold.NewCoSi(mm[i], authority.GetSigner(i))
-		cons := cosipbft.NewCoSiPBFT(mm[i], cosi, fakeGovernance{authority: authority})
+		cons := cosipbft.NewCoSiPBFT(mm[i], cosi, fakeViewChange{authority: authority})
 		skipchains[i] = NewSkipchain(mm[i], cons)
 
 		actor, err := skipchains[i].Listen(testValidator{})
@@ -331,10 +333,10 @@ func (rpc fakeRPC) Call(context.Context, proto.Message,
 type fakeConsensusActor struct {
 	consensus.Actor
 	err  error
-	prop consensus.Proposal
+	prop proto.Message
 }
 
-func (a *fakeConsensusActor) Propose(prop consensus.Proposal) error {
+func (a *fakeConsensusActor) Propose(prop proto.Message) error {
 	a.prop = prop
 	return a.err
 }
@@ -351,15 +353,20 @@ func (rand fakeRandGenerator) Read(buffer []byte) (int, error) {
 	return len(buffer), rand.err
 }
 
-type fakeGovernance struct {
-	viewchange.Governance
+type fakeViewChange struct {
+	viewchange.ViewChange
+
 	authority fake.CollectiveAuthority
 }
 
-func (gov fakeGovernance) GetAuthority(index uint64) (viewchange.EvolvableAuthority, error) {
-	return gov.authority, nil
+func (vc fakeViewChange) GetAuthority() (viewchange.Authority, error) {
+	return vc.authority, nil
 }
 
-func (gov fakeGovernance) GetChangeSet(consensus.Proposal) (viewchange.ChangeSet, error) {
-	return viewchange.ChangeSet{}, nil
+func (vc fakeViewChange) Wait() bool {
+	return true
+}
+
+func (vc fakeViewChange) Verify(mino.Address) (viewchange.Authority, viewchange.Authority, error) {
+	return vc.authority, vc.authority, nil
 }

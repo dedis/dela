@@ -63,6 +63,11 @@ func NewInventory() *InMemoryInventory {
 	}
 }
 
+// Len implements inventory.Inventory.
+func (inv *InMemoryInventory) Len() uint64 {
+	return uint64(len(inv.pages))
+}
+
 // GetPage implements inventory.Inventory. It returns the snapshot for the
 // version if it exists, otherwise an error.
 func (inv *InMemoryInventory) GetPage(index uint64) (inventory.Page, error) {
@@ -184,6 +189,18 @@ func (inv *InMemoryInventory) Commit(fingerprint []byte) error {
 	inv.stagingPages = make(map[Digest]*inMemoryPage)
 
 	return nil
+}
+
+// Range implements inventory.Inventory.
+func (inv *InMemoryInventory) Range(fn func(inventory.Page) bool) {
+	inv.Lock()
+	defer inv.Unlock()
+
+	for _, page := range inv.stagingPages {
+		if !fn(page) {
+			return
+		}
+	}
 }
 
 // inMemoryPage is an implementation of the Page interface for an inventory. It

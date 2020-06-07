@@ -34,7 +34,7 @@ type operations struct {
 }
 
 func (ops *operations) insertBlock(block SkipBlock) error {
-	err := ops.processor.Validate(block.GetIndex(), block.GetPayload())
+	err := ops.processor.Validate(block.Origin, block.GetPayload())
 	if err != nil {
 		return xerrors.Errorf("couldn't validate block: %v", err)
 	}

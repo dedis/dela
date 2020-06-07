@@ -122,7 +122,10 @@ func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, min
 		}(outs[addr.String()])
 	}
 
-	orchSender := sender{addr: address{}, encoder: c.encoder, in: in}
+	orchAddr := c.addr.(address)
+	orchAddr.orchestrator = true
+
+	orchSender := sender{addr: orchAddr, encoder: c.encoder, in: in}
 	orchRecv := receiver{encoder: c.encoder, out: out, errs: errs}
 
 	go func() {
@@ -138,7 +141,7 @@ func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, min
 				return
 			case env := <-in:
 				for _, to := range env.to {
-					if to.String() == "" {
+					if to.(address).orchestrator {
 						orchRecv.out <- env
 					} else {
 						outs[to.String()].out <- env

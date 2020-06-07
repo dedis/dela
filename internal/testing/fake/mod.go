@@ -263,7 +263,7 @@ func (s signerWrapper) GetPublicKey() crypto.PublicKey {
 }
 
 // Apply implements viewchange.EvolvableAuthority.
-func (ca CollectiveAuthority) Apply(cs viewchange.ChangeSet) viewchange.EvolvableAuthority {
+func (ca CollectiveAuthority) Apply(cs viewchange.ChangeSet) viewchange.Authority {
 	if ca.Call != nil {
 		ca.Call.Add("apply", cs)
 	}
@@ -291,6 +291,11 @@ func (ca CollectiveAuthority) Apply(cs viewchange.ChangeSet) viewchange.Evolvabl
 	}
 
 	return newAuthority
+}
+
+// Diff implements viewchange.Authority.
+func (ca CollectiveAuthority) Diff(viewchange.Authority) viewchange.ChangeSet {
+	return viewchange.ChangeSet{}
 }
 
 // Len implements mino.Players.

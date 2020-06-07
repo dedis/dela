@@ -12,12 +12,12 @@ import (
 	"go.dedis.ch/dela/blockchain/skipchain"
 	"go.dedis.ch/dela/consensus/cosipbft"
 	"go.dedis.ch/dela/consensus/viewchange"
-	"go.dedis.ch/dela/consensus/viewchange/rotating"
+	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/cosi/flatcosi"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/ledger"
-	"go.dedis.ch/dela/ledger/byzcoin/roster"
+	"go.dedis.ch/dela/ledger/byzcoin/memship"
 	"go.dedis.ch/dela/ledger/inventory/mem"
 	"go.dedis.ch/dela/ledger/transactions"
 	"go.dedis.ch/dela/ledger/transactions/basic"
@@ -26,14 +26,18 @@ import (
 	"golang.org/x/xerrors"
 )
 
-//go:generate protoc -I ./ -I ../../. --go_out=Mledger/byzcoin/roster/messages.proto=go.dedis.ch/dela/ledger/byzcoin/roster:. ./messages.proto
+//go:generate protoc -I ./ -I ../../. --go_out=Mconsensus/viewchange/roster/messages.proto=go.dedis.ch/dela/consensus/viewchange/roster:. ./messages.proto
 
 const (
 	initialRoundTime = 50 * time.Millisecond
 	timeoutRoundTime = 1 * time.Minute
 )
 
-var rosterValueKey = []byte(roster.RosterValueKey)
+var (
+	rosterValueKey = []byte(memship.RosterValueKey)
+
+	rosterLeaderKey = []byte(memship.RosterLeaderKey)
+)
 
 // Ledger is a distributed public ledger implemented by using a blockchain. Each
 // node is responsible for collecting transactions from clients and propose them
@@ -48,7 +52,7 @@ type Ledger struct {
 	gossiper   gossip.Gossiper
 	bag        *txBag
 	proc       *txProcessor
-	governance viewchange.Governance
+	viewchange viewchange.ViewChange
 	encoder    encoding.ProtoMarshaler
 	txFactory  transactions.TransactionFactory
 	closing    chan struct{}
@@ -59,13 +63,11 @@ type Ledger struct {
 // NewLedger creates a new Byzcoin ledger.
 func NewLedger(m mino.Mino, signer crypto.AggregateSigner) *Ledger {
 	inventory := mem.NewInventory()
-	taskFactory, gov := newtaskFactory(m, signer, inventory)
+	taskFactory, vc := newtaskFactory(m, signer, inventory)
 
 	txFactory := basic.NewTransactionFactory(signer, taskFactory)
 
-	consensus := cosipbft.NewCoSiPBFT(m, flatcosi.NewFlat(m, signer), gov)
-	// Set a rotating view change for the collective signing.
-	consensus.ViewChange = rotating.NewViewChange(m.GetAddress())
+	consensus := cosipbft.NewCoSiPBFT(m, flatcosi.NewFlat(m, signer), vc)
 
 	return &Ledger{
 		addr:       m.GetAddress(),
@@ -74,7 +76,7 @@ func NewLedger(m mino.Mino, signer crypto.AggregateSigner) *Ledger {
 		gossiper:   gossip.NewFlat(m, rumorFactory{txFactory: txFactory}),
 		bag:        newTxBag(),
 		proc:       newTxProcessor(txFactory, inventory),
-		governance: gov,
+		viewchange: vc,
 		encoder:    encoding.NewProtoEncoder(),
 		txFactory:  txFactory,
 		closing:    make(chan struct{}),
@@ -118,7 +120,7 @@ func (ldgr *Ledger) Listen() (ledger.Actor, error) {
 			Hex("hash", genesis.GetHash()).
 			Msg("received genesis block")
 
-		authority, err := ldgr.governance.GetAuthority(genesis.GetIndex())
+		authority, err := ldgr.viewchange.GetAuthority()
 		if err != nil {
 			ldgr.initiated <- xerrors.Errorf("couldn't read chain roster: %v", err)
 			return
@@ -205,7 +207,7 @@ func (ldgr *Ledger) proposeBlocks(actor blockchain.Actor, ga gossip.Actor, playe
 			ldgr.bag.Remove(txRes...)
 
 			// Update the gossip list of participants with the roster block.
-			roster, err := ldgr.governance.GetAuthority(block.GetIndex())
+			roster, err := ldgr.viewchange.GetAuthority()
 			if err != nil {
 				dela.Logger.Err(err).Msg("couldn't read block roster")
 			} else {
@@ -262,7 +264,7 @@ func (ldgr *Ledger) stagePayload(txs []transactions.ClientTransaction) (*BlockPa
 		payload.Transactions[i] = txpb
 	}
 
-	page, err := ldgr.proc.process(payload)
+	page, err := ldgr.proc.process(ldgr.addr, payload)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't process the txs: %v", err)
 	}
@@ -332,7 +334,7 @@ func (a actorLedger) Setup(players mino.Players) error {
 		return xerrors.Errorf("players must implement 'crypto.CollectiveAuthority'")
 	}
 
-	rosterpb, err := a.encoder.Pack(a.governance.GetAuthorityFactory().New(authority))
+	rosterpb, err := a.encoder.Pack(roster.New(authority))
 	if err != nil {
 		return xerrors.Errorf("couldn't pack roster: %v", err)
 	}

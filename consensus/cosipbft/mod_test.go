@@ -45,16 +45,16 @@ func TestMessages(t *testing.T) {
 }
 
 func TestConsensus_Basic(t *testing.T) {
-	prop := &fakeProposal{hash: []byte{0xbb}, previous: []byte{0xaa}}
-	cons, actors, authority := makeConsensus(t, 3, prop)
+	reactor := &fakeReactor{digest: []byte{0xbb}}
+	cons, actors, authority := makeConsensus(t, 3, reactor)
 
 	initial := authority.Take(mino.RangeFilter(0, 2)).(fake.CollectiveAuthority)
 	for _, c := range cons {
-		c.governance = fakeGovernance{authority: initial}
+		c.viewchange = fakeViewChange{authority: initial}
 	}
 
 	// 1. Send a fake proposal with the initial authority.
-	err := actors[0].Propose(prop)
+	err := actors[0].Propose(&empty.Empty{})
 	require.NoError(t, err)
 
 	// 2. Send another fake proposal but with a changeset to add the missing
@@ -64,40 +64,37 @@ func TestConsensus_Basic(t *testing.T) {
 		PublicKey: authority.GetSigner(2).GetPublicKey(),
 	}}}
 	for _, c := range cons {
-		c.governance = fakeGovernance{authority: initial, changeset: changeset}
+		c.viewchange = fakeViewChange{authority: initial, changeset: changeset}
 	}
-	prop.hash = []byte{0xcc}
-	prop.previous = []byte{0xbb}
-	err = actors[0].Propose(prop)
+	reactor.digest = []byte{0xcc}
+	err = actors[0].Propose(&empty.Empty{})
 	require.NoError(t, err)
 
 	// 3. Send another fake proposal but with a changeset to remove the player.
 	changeset = viewchange.ChangeSet{Remove: []uint32{2}}
 	for _, c := range cons {
-		c.governance = fakeGovernance{authority: authority, changeset: changeset}
+		c.viewchange = fakeViewChange{authority: authority, changeset: changeset}
 	}
-	prop.hash = []byte{0xdd}
-	prop.previous = []byte{0xcc}
-	err = actors[0].Propose(prop)
+	reactor.digest = []byte{0xdd}
+	err = actors[0].Propose(&empty.Empty{})
 	require.NoError(t, err)
 
 	// 4. Send a final fake proposal with the initial authority.
 	for _, c := range cons {
-		c.governance = fakeGovernance{authority: initial}
+		c.viewchange = fakeViewChange{authority: initial}
 	}
-	prop.hash = []byte{0xee}
-	prop.previous = []byte{0xdd}
-	err = actors[0].Propose(prop)
+	reactor.digest = []byte{0xee}
+	err = actors[0].Propose(&empty.Empty{})
 	require.NoError(t, err)
 
-	chain, err := cons[0].GetChain(prop.GetHash())
+	chain, err := cons[0].GetChain([]byte{0xee})
 	require.NoError(t, err)
 	require.Len(t, chain.(forwardLinkChain).links, 4)
 
 	chainpb, err := chain.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
 
-	cons[0].governance = fakeGovernance{authority: initial}
+	cons[0].viewchange = fakeViewChange{authority: initial}
 	factory, err := cons[0].GetChainFactory()
 	require.NoError(t, err)
 
@@ -111,14 +108,14 @@ func TestConsensus_GetChainFactory(t *testing.T) {
 	cons := &Consensus{
 		mino:       fake.Mino{},
 		cosi:       &fakeCosi{},
-		governance: fakeGovernance{},
+		viewchange: fakeViewChange{},
 	}
 
 	factory, err := cons.GetChainFactory()
 	require.NoError(t, err)
 	require.NotNil(t, factory)
 
-	cons.governance = fakeGovernance{err: xerrors.New("oops")}
+	cons.viewchange = fakeViewChange{err: xerrors.New("oops")}
 	_, err = cons.GetChainFactory()
 	require.EqualError(t, err, "couldn't get genesis authority: oops")
 }
@@ -153,7 +150,7 @@ func TestConsensus_Listen(t *testing.T) {
 		mino: fakeMino,
 	}
 
-	actor, err := cons.Listen(fakeValidator{})
+	actor, err := cons.Listen(fakeReactor{})
 	require.NoError(t, err)
 	require.NotNil(t, actor)
 	require.IsType(t, handler{}, fakeCosi.handler)
@@ -164,13 +161,13 @@ func TestConsensus_Listen(t *testing.T) {
 	require.EqualError(t, err, "validator is nil")
 
 	fakeCosi.err = xerrors.New("cosi error")
-	_, err = cons.Listen(fakeValidator{})
+	_, err = cons.Listen(fakeReactor{})
 	require.Error(t, err)
 	require.True(t, xerrors.Is(err, fakeCosi.err))
 
 	fakeCosi.err = nil
 	fakeMino.err = xerrors.New("rpc error")
-	_, err = cons.Listen(fakeValidator{})
+	_, err = cons.Listen(fakeReactor{})
 	require.Error(t, err)
 	require.True(t, xerrors.Is(err, fakeMino.err))
 }
@@ -219,21 +216,22 @@ func TestActor_Propose(t *testing.T) {
 		Consensus: &Consensus{
 			encoder:     encoding.NewProtoEncoder(),
 			hashFactory: sha256Factory{},
-			governance:  fakeGovernance{},
-			ViewChange:  fakeViewChange{},
+			viewchange:  fakeViewChange{},
 			cosi:        &fakeCosi{},
+			mino:        fake.Mino{},
 		},
 		closing:   make(chan struct{}),
 		rpc:       rpc,
 		cosiActor: cosiActor,
+		reactor:   fakeReactor{digest: []byte{0xaa}},
 	}
 
-	actor.ViewChange = fakeViewChange{denied: true}
-	err := actor.Propose(fakeProposal{})
+	actor.viewchange = fakeViewChange{denied: true}
+	err := actor.Propose(&empty.Empty{})
 	require.NoError(t, err)
 
-	actor.ViewChange = fakeViewChange{denied: false, leader: 2}
-	err = actor.Propose(fakeProposal{hash: []byte{0xaa}})
+	actor.viewchange = fakeViewChange{denied: false}
+	err = actor.Propose(&empty.Empty{})
 	require.NoError(t, err)
 	require.Len(t, cosiActor.calls, 2)
 
@@ -251,7 +249,7 @@ func TestActor_Propose(t *testing.T) {
 	checkSignatureValue(t, propagate.GetCommit())
 
 	require.NoError(t, actor.Close())
-	err = actor.Propose(fakeProposal{})
+	err = actor.Propose(&empty.Empty{})
 	require.NoError(t, err)
 }
 
@@ -260,45 +258,42 @@ func TestActor_Failures_Propose(t *testing.T) {
 		Consensus: &Consensus{
 			encoder:     encoding.NewProtoEncoder(),
 			hashFactory: sha256Factory{},
-			governance:  fakeGovernance{},
-			ViewChange:  fakeViewChange{},
+			viewchange:  fakeViewChange{},
 			cosi:        &fakeCosi{},
+			mino:        fake.Mino{},
 		},
+		reactor: fakeReactor{digest: []byte{0xa, 0xb}},
 	}
 
-	actor.governance = fakeGovernance{err: xerrors.New("oops")}
-	err := actor.Propose(fakeProposal{})
-	require.EqualError(t, err, "couldn't read authority for index 0: oops")
+	actor.viewchange = fakeViewChange{err: xerrors.New("oops")}
+	err := actor.Propose(&empty.Empty{})
+	require.EqualError(t, err, "couldn't read authority for id 0x0a0b: oops")
 
-	actor.governance = fakeGovernance{errChangeSet: xerrors.New("oops")}
-	err = actor.Propose(fakeProposal{})
-	require.EqualError(t, err, "couldn't get change set: oops")
-
-	actor.governance = fakeGovernance{}
+	actor.viewchange = fakeViewChange{}
 	actor.cosi = &fakeCosi{signer: fake.NewBadSigner()}
-	err = actor.Propose(fakeProposal{})
+	err = actor.Propose(&empty.Empty{})
 	require.EqualError(t, err,
 		"couldn't create prepare request: couldn't sign the request: fake error")
 
 	actor.cosi = &fakeCosi{}
 	actor.cosiActor = &fakeCosiActor{err: xerrors.New("oops")}
-	err = actor.Propose(fakeProposal{})
+	err = actor.Propose(&empty.Empty{})
 	require.EqualError(t, err, "couldn't sign the proposal: oops")
 
 	actor.cosiActor = &fakeCosiActor{err: xerrors.New("oops"), delay: 1}
-	err = actor.Propose(fakeProposal{})
+	err = actor.Propose(&empty.Empty{})
 	require.EqualError(t, err, "couldn't sign the commit: oops")
 
 	actor.cosiActor = &fakeCosiActor{}
 	actor.encoder = fake.BadPackAnyEncoder{ProtoEncoder: encoding.NewProtoEncoder()}
-	err = actor.Propose(fakeProposal{})
+	err = actor.Propose(&empty.Empty{})
 	require.EqualError(t, err, "couldn't pack signature: fake error")
 
 	buffer := new(bytes.Buffer)
 	actor.encoder = encoding.NewProtoEncoder()
 	actor.rpc = &fakeRPC{err: xerrors.New("oops")}
 	actor.logger = zerolog.New(buffer)
-	err = actor.Propose(fakeProposal{})
+	err = actor.Propose(&empty.Empty{})
 	require.NoError(t, err)
 	require.Equal(t,
 		"{\"level\":\"warn\",\"error\":\"oops\",\"message\":\"couldn't propagate the link\"}\n",
@@ -321,12 +316,11 @@ func TestHandler_Prepare_Hash(t *testing.T) {
 		queue:       &queue{cosi: &fakeCosi{}},
 		hashFactory: crypto.NewSha256Factory(),
 		encoder:     encoding.NewProtoEncoder(),
-		governance:  fakeGovernance{authority: fake.NewAuthority(3, fake.NewSigner)},
-		ViewChange:  fakeViewChange{leader: 2},
+		viewchange:  fakeViewChange{authority: fake.NewAuthority(3, fake.NewSigner)},
 		cosi:        &fakeCosi{},
 	}
 	h := handler{
-		validator: fakeValidator{proposal: fakeProposal{}},
+		reactor:   fakeReactor{},
 		Consensus: cons,
 	}
 
@@ -336,7 +330,7 @@ func TestHandler_Prepare_Hash(t *testing.T) {
 	empty, err := ptypes.MarshalAny(&empty.Empty{})
 	require.NoError(t, err)
 
-	buffer, err := h.Invoke(nil, &PrepareRequest{Proposal: empty})
+	buffer, err := h.Invoke(fake.NewAddress(0), &PrepareRequest{Proposal: empty})
 	require.NoError(t, err)
 	require.NotEmpty(t, buffer)
 
@@ -345,53 +339,36 @@ func TestHandler_Prepare_Hash(t *testing.T) {
 	require.EqualError(t, err, "couldn't unmarshal proposal: fake error")
 
 	cons.encoder = encoding.NewProtoEncoder()
-	h.validator = fakeValidator{err: xerrors.New("oops")}
+	h.reactor = fakeReactor{err: xerrors.New("oops")}
 	_, err = h.Invoke(nil, &PrepareRequest{Proposal: empty})
 	require.EqualError(t, err, "couldn't validate the proposal: oops")
 
-	h.validator = fakeValidator{proposal: fakeProposal{previous: []byte{0xbb}}}
-	h.governance = fakeGovernance{err: xerrors.New("oops")}
+	h.reactor = fakeReactor{}
+	h.viewchange = fakeViewChange{err: xerrors.New("oops")}
 	_, err = h.Invoke(nil, &PrepareRequest{Proposal: empty})
-	require.EqualError(t, err, "couldn't read authority: oops")
+	require.EqualError(t, err, "couldn't verify: oops")
 
-	h.governance = fakeGovernance{}
+	h.viewchange = fakeViewChange{authority: fake.NewAuthority(3, fake.NewSigner)}
 	cons.storage = fakeStorage{}
 	_, err = h.Invoke(nil, &PrepareRequest{Proposal: empty})
 	require.EqualError(t, err, "couldn't read last: oops")
 
 	cons.storage = newInMemoryStorage()
-	cons.storage.Store(&ForwardLinkProto{To: []byte{0xaa}})
-	_, err = h.Invoke(nil, &PrepareRequest{Proposal: empty})
-	require.EqualError(t, err, "mismatch with previous link: aa != bb")
-
-	cons.storage = newInMemoryStorage()
-	cons.governance = fakeGovernance{errChangeSet: xerrors.New("oops")}
-	_, err = h.Invoke(nil, &PrepareRequest{Proposal: empty})
-	require.EqualError(t, err, "couldn't get change set: oops")
-
-	cons.governance = fakeGovernance{authority: fake.NewAuthority(3, func() crypto.AggregateSigner {
+	cons.viewchange = fakeViewChange{authority: fake.NewAuthority(3, func() crypto.AggregateSigner {
 		return fake.NewSignerWithPublicKey(fake.NewBadPublicKey())
 	})}
-	_, err = h.Invoke(nil, &PrepareRequest{Proposal: empty})
+	_, err = h.Invoke(fake.NewAddress(0), &PrepareRequest{Proposal: empty})
 	require.EqualError(t, err, "couldn't verify signature: fake error")
 
-	cons.governance = fakeGovernance{}
-	_, err = h.Invoke(nil, &PrepareRequest{Proposal: empty})
-	require.EqualError(t, err, "unknown public key at index 2")
-
-	cons.governance = fakeGovernance{authority: fake.NewAuthority(3, fake.NewSigner)}
-	cons.cosi = &fakeCosi{signer: fake.NewSignerWithSignatureFactory(fake.NewBadSignatureFactory())}
-	_, err = h.Invoke(nil, &PrepareRequest{Proposal: empty})
-	require.EqualError(t, err, "couldn't decode signature: fake error")
-
+	cons.viewchange = fakeViewChange{authority: fake.NewAuthority(3, fake.NewSigner)}
 	cons.cosi = &fakeCosi{}
 	cons.queue = &queue{locked: true}
-	_, err = h.Invoke(nil, &PrepareRequest{Proposal: empty})
+	_, err = h.Invoke(fake.NewAddress(0), &PrepareRequest{Proposal: empty})
 	require.EqualError(t, err, "couldn't add to queue: queue is locked")
 
 	cons.queue = &queue{cosi: &fakeCosi{}}
 	cons.hashFactory = fake.NewHashFactory(fake.NewBadHash())
-	_, err = h.Invoke(nil, &PrepareRequest{Proposal: empty})
+	_, err = h.Invoke(fake.NewAddress(0), &PrepareRequest{Proposal: empty})
 	require.EqualError(t, err,
 		"couldn't compute hash: couldn't write 'from': fake error")
 }
@@ -432,7 +409,7 @@ func TestHandler_HashCommit(t *testing.T) {
 
 func TestRPCHandler_Process(t *testing.T) {
 	h := rpcHandler{
-		validator: fakeValidator{},
+		reactor: fakeReactor{},
 		Consensus: &Consensus{
 			storage: newInMemoryStorage(),
 			queue:   fakeQueue{},
@@ -464,7 +441,7 @@ func TestRPCHandler_Process(t *testing.T) {
 	require.EqualError(t, err, "couldn't write forward link: oops")
 
 	h.Consensus.storage = newInMemoryStorage()
-	h.validator = fakeValidator{err: xerrors.New("oops")}
+	h.reactor = fakeReactor{err: xerrors.New("oops")}
 	_, err = h.Process(req)
 	require.EqualError(t, err, "couldn't commit: oops")
 }
@@ -480,7 +457,7 @@ func checkSignatureValue(t *testing.T, pb *any.Any) {
 }
 
 func makeConsensus(t *testing.T, n int,
-	p consensus.Proposal) ([]*Consensus, []consensus.Actor, fake.CollectiveAuthority) {
+	r consensus.Reactor) ([]*Consensus, []consensus.Actor, fake.CollectiveAuthority) {
 
 	manager := minoch.NewManager()
 
@@ -498,7 +475,7 @@ func makeConsensus(t *testing.T, n int,
 		cosi := flatcosi.NewFlat(m, ca.GetSigner(i))
 
 		c := NewCoSiPBFT(m, cosi, nil)
-		actor, err := c.Listen(fakeValidator{proposal: p})
+		actor, err := c.Listen(r)
 		require.NoError(t, err)
 
 		cons[i] = c
@@ -541,33 +518,22 @@ func (s fakeStorage) ReadLast() (*ForwardLinkProto, error) {
 }
 
 type fakeViewChange struct {
-	viewchange.ViewChange
-	leader uint32
-	denied bool
+	authority fake.CollectiveAuthority
+	changeset viewchange.ChangeSet
+	denied    bool
+	err       error
 }
 
-func (vc fakeViewChange) Wait(consensus.Proposal, crypto.CollectiveAuthority) (uint32, bool) {
-	return vc.leader, !vc.denied
+func (vc fakeViewChange) GetAuthority() (viewchange.Authority, error) {
+	return vc.authority, vc.err
 }
 
-func (vc fakeViewChange) Verify(consensus.Proposal, crypto.CollectiveAuthority) uint32 {
-	return vc.leader
+func (vc fakeViewChange) Wait() bool {
+	return !vc.denied
 }
 
-type fakeGovernance struct {
-	viewchange.Governance
-	authority    fake.CollectiveAuthority
-	changeset    viewchange.ChangeSet
-	err          error
-	errChangeSet error
-}
-
-func (gov fakeGovernance) GetAuthority(index uint64) (viewchange.EvolvableAuthority, error) {
-	return gov.authority, gov.err
-}
-
-func (gov fakeGovernance) GetChangeSet(consensus.Proposal) (viewchange.ChangeSet, error) {
-	return gov.changeset, gov.errChangeSet
+func (vc fakeViewChange) Verify(mino.Address) (viewchange.Authority, viewchange.Authority, error) {
+	return vc.authority, vc.authority, vc.err
 }
 
 type fakeQueue struct {
@@ -590,45 +556,16 @@ func (f badChainFactory) FromProto(proto.Message) (consensus.Chain, error) {
 	return nil, xerrors.New("oops")
 }
 
-type fakeProposal struct {
-	consensus.Proposal
-	hash     []byte
-	previous []byte
-	err      error
+type fakeReactor struct {
+	digest []byte
+	err    error
 }
 
-func (p fakeProposal) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
-	return &empty.Empty{}, p.err
+func (v fakeReactor) InvokeValidate(addr mino.Address, msg proto.Message) ([]byte, error) {
+	return v.digest, v.err
 }
 
-func (p fakeProposal) GetIndex() uint64 {
-	return 1
-}
-
-func (p fakeProposal) GetHash() []byte {
-	return p.hash
-}
-
-func (p fakeProposal) GetPreviousHash() []byte {
-	return p.previous
-}
-
-func (p fakeProposal) GetVerifier() crypto.Verifier {
-	return &fakeVerifier{}
-}
-
-type fakeValidator struct {
-	err      error
-	proposal consensus.Proposal
-}
-
-func (v fakeValidator) Validate(addr mino.Address,
-	msg proto.Message) (consensus.Proposal, error) {
-
-	return v.proposal, v.err
-}
-
-func (v fakeValidator) Commit(id []byte) error {
+func (v fakeReactor) InvokeCommit(id []byte) error {
 	return v.err
 }
 

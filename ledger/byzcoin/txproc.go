@@ -4,9 +4,11 @@ import (
 	"bytes"
 
 	proto "github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes/wrappers"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions"
+	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
 )
 
@@ -29,7 +31,7 @@ func newTxProcessor(f transactions.TransactionFactory, i inventory.Inventory) *t
 // Validate implements blockchain.PayloadProcessor. It returns if the validation
 // is a success. In that case, the payload has been staged in the inventory and
 // is waiting for a commit order.
-func (proc *txProcessor) Validate(index uint64, data proto.Message) error {
+func (proc *txProcessor) Validate(from mino.Address, data proto.Message) error {
 	switch payload := data.(type) {
 	case *GenesisPayload:
 		page, err := proc.setup(payload)
@@ -45,13 +47,9 @@ func (proc *txProcessor) Validate(index uint64, data proto.Message) error {
 			Hex("fingerprint", payload.GetFingerprint()).
 			Msgf("validating block payload")
 
-		page, err := proc.process(payload)
+		page, err := proc.process(from, payload)
 		if err != nil {
 			return xerrors.Errorf("couldn't stage the transactions: %v", err)
-		}
-
-		if page.GetIndex() != index {
-			return xerrors.Errorf("invalid index %d != %d", page.GetIndex(), index)
 		}
 
 		if !bytes.Equal(page.GetFingerprint(), payload.GetFingerprint()) {
@@ -81,14 +79,26 @@ func (proc *txProcessor) setup(payload *GenesisPayload) (inventory.Page, error) 
 	return page, nil
 }
 
-func (proc *txProcessor) process(payload *BlockPayload) (inventory.Page, error) {
+func (proc *txProcessor) process(from mino.Address, payload *BlockPayload) (inventory.Page, error) {
 	page := proc.inventory.GetStagingPage(payload.GetFingerprint())
 	if page != nil {
 		// Page has already been processed previously.
 		return page, nil
 	}
 
-	page, err := proc.inventory.Stage(func(page inventory.WritablePage) error {
+	leader, err := from.MarshalText()
+	if err != nil {
+		return nil, err
+	}
+
+	page, err = proc.inventory.Stage(func(page inventory.WritablePage) error {
+		err := page.Write(rosterLeaderKey, &wrappers.BytesValue{
+			Value: leader,
+		})
+		if err != nil {
+			return err
+		}
+
 		for _, txpb := range payload.GetTransactions() {
 			tx, err := proc.txFactory.FromProto(txpb)
 			if err != nil {

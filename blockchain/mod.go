@@ -38,7 +38,7 @@ type BlockFactory interface {
 type PayloadProcessor interface {
 	// Validate should return nil if the payload of the block at the given index
 	// passes the validation.
-	Validate(index uint64, payload proto.Message) error
+	Validate(addr mino.Address, payload proto.Message) error
 
 	// Commit should process the data and perform any operation required when
 	// new data is stored on the chain.

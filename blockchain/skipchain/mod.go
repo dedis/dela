@@ -59,6 +59,7 @@ func NewSkipchain(m mino.Mino, consensus consensus.Consensus) *Skipchain {
 			encoder:     encoder,
 			consensus:   consensus,
 			hashFactory: crypto.NewSha256Factory(),
+			mino:        m,
 		},
 	}
 }
@@ -205,6 +206,7 @@ func (a skipchainActor) newChain(data proto.Message, conodes mino.Players) error
 	}
 
 	genesis := SkipBlock{
+		Origin:    a.addr,
 		Index:     0,
 		GenesisID: Digest{},
 		BackLink:  randomBackLink,
@@ -250,7 +252,12 @@ func (a skipchainActor) Store(data proto.Message, players mino.Players) error {
 		return xerrors.Errorf("couldn't create next block: %v", err)
 	}
 
-	err = a.consensus.Propose(block)
+	blockpb, err := a.encoder.Pack(block)
+	if err != nil {
+		return err
+	}
+
+	err = a.consensus.Propose(blockpb)
 	if err != nil {
 		return xerrors.Errorf("couldn't propose the block: %v", err)
 	}

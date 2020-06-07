@@ -18,7 +18,7 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger"
 	"go.dedis.ch/dela/ledger/arc/darc"
-	"go.dedis.ch/dela/ledger/byzcoin/roster"
+	"go.dedis.ch/dela/ledger/byzcoin/memship"
 	"go.dedis.ch/dela/ledger/transactions"
 	"go.dedis.ch/dela/ledger/transactions/basic"
 	"go.dedis.ch/dela/mino"
@@ -75,7 +75,7 @@ func TestLedger_Basic(t *testing.T) {
 	addPk := ledgers[19].(*Ledger).signer.GetPublicKey()
 
 	// Execute a roster change tx by adding the remaining participant.
-	tx, err := txFactory.New(roster.NewAdd(addAddr, addPk))
+	tx, err := txFactory.New(memship.NewAdd(addAddr, addPk))
 	require.NoError(t, err)
 
 	sendTx(t, ledgers[1], actors[1], tx)
@@ -107,7 +107,7 @@ func TestLedger_Listen(t *testing.T) {
 		initiated:  make(chan error, 1),
 		closing:    make(chan struct{}),
 		bc:         fakeBlockchain{},
-		governance: fakeGovernance{},
+		viewchange: fakeViewChange{},
 		gossiper:   fakeGossiper{},
 	}
 
@@ -132,14 +132,14 @@ func TestLedger_Listen(t *testing.T) {
 	require.EqualError(t, err, "expect genesis but got block 1")
 
 	ledger.bc = fakeBlockchain{}
-	ledger.governance = fakeGovernance{err: xerrors.New("oops")}
+	ledger.viewchange = fakeViewChange{err: xerrors.New("oops")}
 	ledger.initiated = make(chan error, 1)
 	_, err = ledger.Listen()
 	require.NoError(t, err)
 	err = waitClose(ledger)
 	require.EqualError(t, err, "couldn't read chain roster: oops")
 
-	ledger.governance = fakeGovernance{}
+	ledger.viewchange = fakeViewChange{}
 	ledger.gossiper = fakeGossiper{err: xerrors.New("oops")}
 	_, err = ledger.Listen()
 	require.EqualError(t, err, "couldn't start gossip: oops")
@@ -175,7 +175,7 @@ func TestActor_Setup(t *testing.T) {
 		Ledger: &Ledger{
 			encoder:    encoding.NewProtoEncoder(),
 			proc:       newTxProcessor(nil, fakeInventory{}),
-			governance: fakeGovernance{},
+			viewchange: fakeViewChange{},
 		},
 		bcActor: fakeActor{},
 	}
@@ -330,16 +330,12 @@ func (bc fakeBlockchain) Watch(context.Context) <-chan blockchain.Block {
 	return bc.blocks
 }
 
-type fakeGovernance struct {
-	viewchange.Governance
+type fakeViewChange struct {
+	viewchange.ViewChange
 	err error
 }
 
-func (gov fakeGovernance) GetAuthorityFactory() viewchange.AuthorityFactory {
-	return roster.NewRosterFactory(nil, nil)
-}
-
-func (gov fakeGovernance) GetAuthority(index uint64) (viewchange.EvolvableAuthority, error) {
+func (gov fakeViewChange) GetAuthority() (viewchange.Authority, error) {
 	return fake.NewAuthority(3, fake.NewSigner), gov.err
 }
 

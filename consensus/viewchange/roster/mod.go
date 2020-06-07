@@ -69,8 +69,29 @@ func (i *publicKeyIterator) GetNext() crypto.PublicKey {
 // - implements mino.Players
 // - implements encoding.Packable
 type roster struct {
+	leader  int
 	addrs   []mino.Address
 	pubkeys []crypto.PublicKey
+}
+
+// New returns a viewchange roster from a collective authority.
+func New(authority crypto.CollectiveAuthority) viewchange.Authority {
+	addrs := make([]mino.Address, authority.Len())
+	pubkeys := make([]crypto.PublicKey, authority.Len())
+
+	addrIter := authority.AddressIterator()
+	pubkeyIter := authority.PublicKeyIterator()
+	for i := 0; addrIter.HasNext() && pubkeyIter.HasNext(); i++ {
+		addrs[i] = addrIter.GetNext()
+		pubkeys[i] = pubkeyIter.GetNext()
+	}
+
+	roster := roster{
+		addrs:   addrs,
+		pubkeys: pubkeys,
+	}
+
+	return roster
 }
 
 // Take implements mino.Players. It returns a subset of the roster according to
@@ -93,7 +114,7 @@ func (r roster) Take(updaters ...mino.FilterUpdater) mino.Players {
 // Apply implements viewchange.EvolvableAuthority. It returns a new authority
 // after applying the change set. The removals must be sorted by descending
 // order and unique or the behaviour will be undefined.
-func (r roster) Apply(changeset viewchange.ChangeSet) viewchange.EvolvableAuthority {
+func (r roster) Apply(changeset viewchange.ChangeSet) viewchange.Authority {
 	addrs := make([]mino.Address, r.Len())
 	pubkeys := make([]crypto.PublicKey, r.Len())
 
@@ -120,6 +141,10 @@ func (r roster) Apply(changeset viewchange.ChangeSet) viewchange.EvolvableAuthor
 	}
 
 	return roster
+}
+
+func (r roster) Diff(viewchange.Authority) viewchange.ChangeSet {
+	return viewchange.ChangeSet{}
 }
 
 // Len implements mino.Players. It returns the length of the roster.
@@ -179,17 +204,21 @@ func (r roster) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	return pb, nil
 }
 
-// rosterFactory provide functions to create and decode a roster.
-//
-// - implements viewchange.AuthorityFactory
-type rosterFactory struct {
+// Factory provide functions to create and decode a roster.
+type Factory interface {
+	GetAddressFactory() mino.AddressFactory
+	GetPublicKeyFactory() crypto.PublicKeyFactory
+	FromProto(proto.Message) (viewchange.Authority, error)
+}
+
+type defaultFactory struct {
 	addressFactory mino.AddressFactory
 	pubkeyFactory  crypto.PublicKeyFactory
 }
 
 // NewRosterFactory creates a new instance of the authority factory.
-func NewRosterFactory(af mino.AddressFactory, pf crypto.PublicKeyFactory) viewchange.AuthorityFactory {
-	return rosterFactory{
+func NewRosterFactory(af mino.AddressFactory, pf crypto.PublicKeyFactory) Factory {
+	return defaultFactory{
 		addressFactory: af,
 		pubkeyFactory:  pf,
 	}
@@ -197,40 +226,19 @@ func NewRosterFactory(af mino.AddressFactory, pf crypto.PublicKeyFactory) viewch
 
 // GetAddressFactory implements viewchange.AuthorityFactory. It returns the
 // address factory.
-func (f rosterFactory) GetAddressFactory() mino.AddressFactory {
+func (f defaultFactory) GetAddressFactory() mino.AddressFactory {
 	return f.addressFactory
 }
 
 // GetPublicKeyFactory implements viewchange.AuthorityFactory. It returns the
 // public key factory.
-func (f rosterFactory) GetPublicKeyFactory() crypto.PublicKeyFactory {
+func (f defaultFactory) GetPublicKeyFactory() crypto.PublicKeyFactory {
 	return f.pubkeyFactory
-}
-
-// New implements viewchange.AuthorityFactory. It returns a new roster from the
-// given authority.
-func (f rosterFactory) New(authority crypto.CollectiveAuthority) viewchange.EvolvableAuthority {
-	addrs := make([]mino.Address, authority.Len())
-	pubkeys := make([]crypto.PublicKey, authority.Len())
-
-	addrIter := authority.AddressIterator()
-	pubkeyIter := authority.PublicKeyIterator()
-	for i := 0; addrIter.HasNext() && pubkeyIter.HasNext(); i++ {
-		addrs[i] = addrIter.GetNext()
-		pubkeys[i] = pubkeyIter.GetNext()
-	}
-
-	roster := roster{
-		addrs:   addrs,
-		pubkeys: pubkeys,
-	}
-
-	return roster
 }
 
 // FromProto implements viewchange.AuthorityFactory. It returns the roster
 // associated with the message if appropriate, otherwise an error.
-func (f rosterFactory) FromProto(in proto.Message) (viewchange.EvolvableAuthority, error) {
+func (f defaultFactory) FromProto(in proto.Message) (viewchange.Authority, error) {
 	var pb *Roster
 	switch msg := in.(type) {
 	case *Roster:

@@ -9,7 +9,7 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/ledger/arc/darc"
-	"go.dedis.ch/dela/ledger/byzcoin/roster"
+	"go.dedis.ch/dela/ledger/byzcoin/memship"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions/basic"
 	"go.dedis.ch/dela/mino"
@@ -25,20 +25,19 @@ type taskFactory struct {
 }
 
 func newtaskFactory(m mino.Mino, signer crypto.Signer,
-	i inventory.Inventory) (*taskFactory, viewchange.Governance) {
+	i inventory.Inventory) (*taskFactory, viewchange.ViewChange) {
 
 	f := &taskFactory{
 		encoder:  encoding.NewProtoEncoder(),
 		registry: make(map[reflect.Type]basic.TaskFactory),
 	}
 
-	rosterFactory := roster.NewRosterFactory(m.GetAddressFactory(), signer.GetPublicKeyFactory())
-	gov := roster.NewTaskManager(rosterFactory, i)
+	vc := memship.NewTaskManager(i, m, signer)
 
 	f.Register((*darc.Task)(nil), darc.NewTaskFactory())
-	f.Register((*roster.Task)(nil), gov)
+	f.Register((*memship.Task)(nil), vc)
 
-	return f, gov
+	return f, vc
 }
 
 // Register registers the factory for the protobuf message. If a message has

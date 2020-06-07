@@ -2,7 +2,6 @@ package cosipbft
 
 import (
 	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/encoding"
 	"golang.org/x/xerrors"
@@ -10,13 +9,13 @@ import (
 
 // Prepare is the request sent at the beginning of the PBFT protocol.
 type Prepare struct {
-	proposal  consensus.Proposal
+	message   proto.Message
 	signature crypto.Signature
 }
 
 // Pack returns the protobuf message, or an error.
 func (p Prepare) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
-	proposal, err := enc.PackAny(p.proposal)
+	proposal, err := enc.MarshalAny(p.message)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't pack proposal: %v", err)
 	}

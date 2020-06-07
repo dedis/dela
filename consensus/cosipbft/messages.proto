@@ -17,9 +17,8 @@ message Player {
 // the next proposal. Leader does not affect the authority but can be used by
 // the viewchange to decide on the next leader.
 message ChangeSet {
-    uint32 leader = 1;
-    repeated uint32 remove = 2;
-    repeated Player add = 3;
+    repeated uint32 remove = 1;
+    repeated Player add = 2;
 }
 
 // ForwardLinkProto is the message representing a forward link between two

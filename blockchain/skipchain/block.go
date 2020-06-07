@@ -10,6 +10,7 @@ import (
 	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
 )
 
@@ -34,6 +35,9 @@ func (d Digest) String() string {
 // - implements fmt.Stringer
 type SkipBlock struct {
 	hash Digest
+
+	// Origin is the address of the block creator.
+	Origin mino.Address
 
 	// Index is the block index since the genesis block.
 	Index uint64
@@ -80,7 +84,13 @@ func (b SkipBlock) Pack(encoder encoding.ProtoMarshaler) (proto.Message, error) 
 		return nil, xerrors.Errorf("couldn't marshal the payload: %v", err)
 	}
 
+	origin, err := b.Origin.MarshalText()
+	if err != nil {
+		return nil, err
+	}
+
 	blockproto := &BlockProto{
+		Origin:    origin,
 		Index:     b.Index,
 		GenesisID: b.GenesisID.Bytes(),
 		Backlink:  b.BackLink.Bytes(),
@@ -108,6 +118,20 @@ func (b SkipBlock) computeHash(factory crypto.HashFactory,
 		return Digest{}, xerrors.Errorf("couldn't write index: %v", err)
 	}
 
+	if b.Origin == nil {
+		return Digest{}, xerrors.New("missing block origin")
+	}
+
+	buffer, err = b.Origin.MarshalText()
+	if err != nil {
+		return Digest{}, xerrors.Errorf("couldn't marshal origin: %v", err)
+	}
+
+	_, err = h.Write(buffer)
+	if err != nil {
+		return Digest{}, xerrors.Errorf("couldn't write origin: %v", err)
+	}
+
 	_, err = h.Write(b.GenesisID.Bytes())
 	if err != nil {
 		return Digest{}, xerrors.Errorf("couldn't write genesis hash: %v", err)
@@ -117,7 +141,7 @@ func (b SkipBlock) computeHash(factory crypto.HashFactory,
 		return Digest{}, xerrors.Errorf("couldn't write backlink: %v", err)
 	}
 
-	if b.Payload != nil {
+	if proto.Size(b.Payload) > 0 {
 		err := enc.MarshalStable(h, b.Payload)
 		if err != nil {
 			return Digest{}, xerrors.Errorf("couldn't write payload: %v", err)
@@ -167,6 +191,7 @@ type blockFactory struct {
 	encoder     encoding.ProtoMarshaler
 	hashFactory crypto.HashFactory
 	consensus   consensus.Consensus
+	mino        mino.Mino
 }
 
 func (f blockFactory) prepareBlock(block *SkipBlock) error {
@@ -189,6 +214,7 @@ func (f blockFactory) fromPrevious(prev SkipBlock, data proto.Message) (SkipBloc
 	}
 
 	block := SkipBlock{
+		Origin:    f.mino.GetAddress(),
 		Index:     prev.Index + 1,
 		GenesisID: genesisID,
 		BackLink:  prev.hash,
@@ -221,6 +247,7 @@ func (f blockFactory) decodeBlock(src proto.Message) (SkipBlock, error) {
 	copy(genesisID[:], in.GetGenesisID())
 
 	block := SkipBlock{
+		Origin:    f.mino.GetAddressFactory().FromText(in.Origin),
 		Index:     in.GetIndex(),
 		GenesisID: genesisID,
 		BackLink:  backLink,
@@ -261,7 +288,8 @@ func (f blockFactory) FromVerifiable(src proto.Message) (blockchain.Block, error
 
 	// Only the link between the chain and the block needs to be verified.
 	if !bytes.Equal(chain.GetLastHash(), block.hash[:]) {
-		return nil, xerrors.Errorf("mismatch hashes: %#x != %#x", chain.GetLastHash(), block.hash)
+		return nil, xerrors.Errorf("mismatch hashes: %#x != %#x",
+			chain.GetLastHash(), block.GetHash())
 	}
 
 	return block, nil

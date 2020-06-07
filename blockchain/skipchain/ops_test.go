@@ -18,6 +18,7 @@ func TestOperations_InsertBlock(t *testing.T) {
 		blockFactory: blockFactory{
 			encoder:     encoding.NewProtoEncoder(),
 			hashFactory: crypto.NewSha256Factory(),
+			mino:        fake.Mino{},
 		},
 		processor: &fakePayloadProc{},
 		db:        &fakeDatabase{},
@@ -41,6 +42,7 @@ func TestOperations_InsertBlock(t *testing.T) {
 
 func TestOperations_CatchUp(t *testing.T) {
 	block := SkipBlock{
+		Origin:  fake.NewAddress(0),
 		Index:   5,
 		Payload: &empty.Empty{},
 	}
@@ -61,6 +63,7 @@ func TestOperations_CatchUp(t *testing.T) {
 		blockFactory: blockFactory{
 			encoder:     encoding.NewProtoEncoder(),
 			hashFactory: crypto.NewSha256Factory(),
+			mino:        fake.Mino{},
 		},
 		processor: &fakePayloadProc{},
 		db:        &fakeDatabase{blocks: []SkipBlock{{}}},

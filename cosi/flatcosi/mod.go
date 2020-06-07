@@ -60,6 +60,7 @@ func (cosi *Flat) GetVerifierFactory() crypto.VerifierFactory {
 func (cosi *Flat) Listen(r cosi.Reactor) (cosi.Actor, error) {
 	actor := flatActor{
 		logger:  dela.Logger,
+		me:      cosi.mino.GetAddress(),
 		signer:  cosi.signer,
 		encoder: encoding.NewProtoEncoder(),
 		reactor: r,
@@ -77,6 +78,7 @@ func (cosi *Flat) Listen(r cosi.Reactor) (cosi.Actor, error) {
 
 type flatActor struct {
 	logger  zerolog.Logger
+	me      mino.Address
 	rpc     mino.RPC
 	signer  crypto.AggregateSigner
 	encoder encoding.ProtoMarshaler
@@ -99,7 +101,7 @@ func (a flatActor) Sign(ctx context.Context, msg encoding.Packable,
 
 	msgs, errs := a.rpc.Call(ctx, &SignatureRequest{Message: data}, ca)
 
-	digest, err := a.reactor.Invoke(nil, data)
+	digest, err := a.reactor.Invoke(a.me, data)
 	if err != nil {
 		return nil, err
 	}

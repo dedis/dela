@@ -1,16 +1,17 @@
-package roster
+package memship
 
 import (
+	"bytes"
 	"encoding/binary"
 	"io"
 	"sort"
-	"sync"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
-	"go.dedis.ch/dela/blockchain"
-	"go.dedis.ch/dela/consensus"
+	"github.com/golang/protobuf/ptypes/wrappers"
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/consensus/viewchange"
+	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/ledger/inventory"
@@ -19,6 +20,8 @@ import (
 	"golang.org/x/xerrors"
 )
 
+//go:generate protoc -I ./ --go_out=./ ./messages.proto
+
 const (
 	// RosterValueKey is the key used to store the roster.
 	RosterValueKey = "roster_value"
@@ -26,9 +29,16 @@ const (
 	// RosterArcKey is the ke used to store the access rights control of the
 	// roster.
 	RosterArcKey = "roster_arc"
+
+	// RosterLeaderKey is the key where the leader is stored.
+	RosterLeaderKey = "roster_leader"
 )
 
-var rosterValueKey = []byte(RosterValueKey)
+var (
+	rosterValueKey = []byte(RosterValueKey)
+
+	rosterLeaderKey = []byte(RosterLeaderKey)
+)
 
 // clientTask is the client task implementation to update the roster of a
 // consensus using the transactions for access rights control.
@@ -153,8 +163,7 @@ func (t clientTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
 type serverTask struct {
 	clientTask
 	encoder       encoding.ProtoMarshaler
-	rosterFactory viewchange.AuthorityFactory
-	bag           *changeSetBag
+	rosterFactory roster.Factory
 	inventory     inventory.Inventory
 }
 
@@ -165,14 +174,7 @@ func (t serverTask) Consume(ctx basic.Context, page inventory.WritablePage) erro
 	// 1. Access rights control
 	// TODO: implement
 
-	// 2. Store the changeset so it can be read later on.
-	changeset := t.GetChangeSet()
-
-	page.Defer(func(fingerprint []byte) {
-		t.bag.Stage(page.GetIndex(), fingerprint, changeset)
-	})
-
-	// 3. Update the roster stored in the inventory.
+	// 2. Update the roster stored in the inventory.
 	prev, err := t.inventory.GetPage(page.GetIndex() - 1)
 	if err != nil {
 		return xerrors.Errorf("couldn't get previous page: %v", err)
@@ -188,7 +190,7 @@ func (t serverTask) Consume(ctx basic.Context, page inventory.WritablePage) erro
 		return xerrors.Errorf("couldn't decode roster: %v", err)
 	}
 
-	roster = roster.Apply(changeset)
+	roster = roster.Apply(t.GetChangeSet())
 
 	value, err = t.encoder.Pack(roster)
 	if err != nil {
@@ -209,39 +211,42 @@ func (t serverTask) Consume(ctx basic.Context, page inventory.WritablePage) erro
 // - implements basic.TaskManager
 // - implements viewchange.Governance
 type TaskManager struct {
+	me            mino.Address
 	encoder       encoding.ProtoMarshaler
 	inventory     inventory.Inventory
-	rosterFactory viewchange.AuthorityFactory
-	bag           *changeSetBag
+	rosterFactory roster.Factory
 }
 
 // NewTaskManager returns a new instance of the task factory.
-func NewTaskManager(f viewchange.AuthorityFactory, i inventory.Inventory) TaskManager {
+func NewTaskManager(i inventory.Inventory, m mino.Mino, s crypto.Signer) TaskManager {
 	return TaskManager{
+		me:            m.GetAddress(),
 		encoder:       encoding.NewProtoEncoder(),
 		inventory:     i,
-		rosterFactory: f,
-		bag:           &changeSetBag{},
+		rosterFactory: roster.NewRosterFactory(m.GetAddressFactory(), s.GetPublicKeyFactory()),
 	}
 }
 
-// GetAuthorityFactory implements viewchange.AuthorityFactory. It returns the
-// authority factory.
-func (f TaskManager) GetAuthorityFactory() viewchange.AuthorityFactory {
-	return f.rosterFactory
-}
-
-// GetAuthority implements viewchange.Governance. It returns the authority for
-// the given block index by reading the inventory page associated.
-func (f TaskManager) GetAuthority(index uint64) (viewchange.EvolvableAuthority, error) {
-	page, err := f.inventory.GetPage(index)
+// GetAuthority implements viewchange.ViewChange. It returns the current
+// authority based of the last page of the inventory.
+func (f TaskManager) GetAuthority() (viewchange.Authority, error) {
+	page, err := f.inventory.GetPage(f.inventory.Len() - 1)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't read page: %v", err)
 	}
 
-	rosterpb, err := page.Read(rosterValueKey)
+	roster, err := f.readAuthority(page)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't read roster: %v", err)
+	}
+
+	return roster, nil
+}
+
+func (f TaskManager) readAuthority(page inventory.Page) (viewchange.Authority, error) {
+	rosterpb, err := page.Read(rosterValueKey)
+	if err != nil {
+		return nil, xerrors.Errorf("reading entry: %v", err)
 	}
 
 	roster, err := f.rosterFactory.FromProto(rosterpb)
@@ -252,29 +257,64 @@ func (f TaskManager) GetAuthority(index uint64) (viewchange.EvolvableAuthority, 
 	return roster, nil
 }
 
-// Payload is a specific payload interface to differentiate the change sets.
-type Payload interface {
-	GetFingerprint() []byte
+// Wait implements viewchange.ViewChange. It returns true if the node is the
+// leader for the current authority.
+func (f TaskManager) Wait() bool {
+	curr, err := f.GetAuthority()
+	if err != nil {
+		return false
+	}
+
+	iter := curr.AddressIterator()
+	return iter.HasNext() && iter.GetNext().Equal(f.me)
 }
 
-// GetChangeSet implements viewchange.Governance. It returns the change set for
-// that block by reading the transactions.
-func (f TaskManager) GetChangeSet(prop consensus.Proposal) (viewchange.ChangeSet, error) {
-	var changeset viewchange.ChangeSet
-
-	block, ok := prop.(blockchain.Block)
-	if !ok {
-		return changeset, xerrors.Errorf("proposal must implement blockchain.Block")
+// Verify implements viewchange.ViewChange. It returns the previous authority
+// for the latest page and the current proposed authority. If the given address
+// is not the leader, it will return an error.
+func (f TaskManager) Verify(from mino.Address) (viewchange.Authority, viewchange.Authority, error) {
+	curr, err := f.GetAuthority()
+	if err != nil {
+		return nil, nil, err
 	}
 
-	payload, ok := block.GetPayload().(Payload)
-	if !ok {
-		return changeset, xerrors.New("payload must implement roster.Payload")
+	iter := curr.AddressIterator()
+	if !iter.HasNext() || !iter.GetNext().Equal(from) {
+		return nil, nil, xerrors.New("mismatch leader")
 	}
 
-	changeset = f.bag.Get(prop.GetIndex(), payload.GetFingerprint())
+	leader, err := from.MarshalText()
+	if err != nil {
+		return nil, nil, err
+	}
 
-	return changeset, nil
+	var staged inventory.Page
+
+	f.inventory.Range(func(p inventory.Page) bool {
+		value, err := p.Read(rosterLeaderKey)
+		if err != nil {
+			dela.Logger.Warn().Err(err).Msg("roster leader not in page")
+			return true
+		}
+
+		if bytes.Equal(value.(*wrappers.BytesValue).Value, leader) {
+			staged = p
+			return false
+		}
+
+		return true
+	})
+
+	if staged != nil {
+		next, err := f.readAuthority(staged)
+		if err != nil {
+			return nil, nil, xerrors.Errorf("couldn't read next authority: %v", err)
+		}
+
+		return curr, next, nil
+	}
+
+	return curr, curr, nil
 }
 
 // FromProto implements basic.TaskFactory. It returns the server task associated
@@ -306,7 +346,6 @@ func (f TaskManager) FromProto(in proto.Message) (basic.ServerTask, error) {
 		},
 		encoder:       f.encoder,
 		rosterFactory: f.rosterFactory,
-		bag:           f.bag,
 		inventory:     f.inventory,
 	}
 	return task, nil
@@ -332,40 +371,4 @@ func (f TaskManager) unpackPlayer(addrpb []byte,
 	}
 
 	return &player, nil
-}
-
-type changeSetBag struct {
-	sync.Mutex
-	index uint64
-	store map[[32]byte]viewchange.ChangeSet
-}
-
-func (bag *changeSetBag) Stage(index uint64, id []byte, cs viewchange.ChangeSet) {
-	bag.Lock()
-	defer bag.Unlock()
-
-	if bag.index != index {
-		// Reset previous staged change sets from the previous index.
-		bag.store = make(map[[32]byte]viewchange.ChangeSet)
-		bag.index = index
-	}
-
-	key := [32]byte{}
-	copy(key[:], id)
-
-	bag.store[key] = cs
-}
-
-func (bag *changeSetBag) Get(index uint64, fingerprint []byte) viewchange.ChangeSet {
-	bag.Lock()
-	defer bag.Unlock()
-
-	if bag.index != index {
-		return viewchange.ChangeSet{}
-	}
-
-	key := [32]byte{}
-	copy(key[:], fingerprint)
-
-	return bag.store[key]
 }

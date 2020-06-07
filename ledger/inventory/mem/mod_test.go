@@ -52,7 +52,6 @@ func TestInMemoryInventory_Stage(t *testing.T) {
 	inv.pages = append(inv.pages, inv.stagingPages[page.(*inMemoryPage).fingerprint])
 	inv.stagingPages = make(map[Digest]*inMemoryPage)
 	page, err = inv.Stage(func(page inventory.WritablePage) error {
-		page.Defer(func([]byte) {})
 		value, err := page.Read([]byte{1})
 		require.NoError(t, err)
 		require.True(t, value.(*wrappers.BoolValue).Value)
