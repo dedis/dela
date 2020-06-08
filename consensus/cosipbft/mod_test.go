@@ -46,12 +46,7 @@ func TestMessages(t *testing.T) {
 
 func TestConsensus_Basic(t *testing.T) {
 	reactor := &fakeReactor{digest: []byte{0xbb}}
-	cons, actors, authority := makeConsensus(t, 3, reactor)
-
-	initial := authority.Take(mino.RangeFilter(0, 2)).(fake.CollectiveAuthority)
-	for _, c := range cons {
-		c.viewchange = fakeViewChange{curr: initial, next: initial}
-	}
+	cons, actors := makeConsensus(t, 3, reactor)
 
 	// 1. Send a fake proposal with the initial authority.
 	err := actors[0].Propose(&empty.Empty{})
@@ -59,34 +54,16 @@ func TestConsensus_Basic(t *testing.T) {
 
 	// 2. Send another fake proposal but with a changeset to add the missing
 	// player.
-	for _, c := range cons {
-		c.viewchange = fakeViewChange{
-			curr: initial,
-			next: authority,
-		}
-	}
 	reactor.digest = []byte{0xcc}
 	err = actors[0].Propose(&empty.Empty{})
 	require.NoError(t, err)
 
 	// 3. Send another fake proposal but with a changeset to remove the player.
-	for _, c := range cons {
-		c.viewchange = fakeViewChange{
-			curr: authority,
-			next: initial,
-		}
-	}
 	reactor.digest = []byte{0xdd}
 	err = actors[0].Propose(&empty.Empty{})
 	require.NoError(t, err)
 
 	// 4. Send a final fake proposal with the initial authority.
-	for _, c := range cons {
-		c.viewchange = fakeViewChange{
-			curr: initial,
-			next: initial,
-		}
-	}
 	reactor.digest = []byte{0xee}
 	err = actors[0].Propose(&empty.Empty{})
 	require.NoError(t, err)
@@ -282,8 +259,7 @@ func TestHandler_Prepare_Hash(t *testing.T) {
 		hashFactory: crypto.NewSha256Factory(),
 		encoder:     encoding.NewProtoEncoder(),
 		viewchange: fakeViewChange{
-			curr: authority,
-			next: authority,
+			authority: authority,
 		},
 		cosi:         &fakeCosi{},
 		chainFactory: newUnsecureChainFactory(&fakeCosi{}, fake.Mino{}),
@@ -325,13 +301,13 @@ func TestHandler_Prepare_Hash(t *testing.T) {
 	_, err = h.Invoke(nil, req)
 	require.EqualError(t, err, "couldn't verify: oops")
 
-	cons.viewchange = fakeViewChange{curr: fake.NewAuthority(3, func() crypto.AggregateSigner {
+	cons.viewchange = fakeViewChange{authority: fake.NewAuthority(3, func() crypto.AggregateSigner {
 		return fake.NewSignerWithPublicKey(fake.NewBadPublicKey())
 	})}
 	_, err = h.Invoke(fake.NewAddress(0), req)
 	require.EqualError(t, err, "couldn't verify signature: fake error")
 
-	cons.viewchange = fakeViewChange{curr: authority, next: authority}
+	cons.viewchange = fakeViewChange{authority: authority}
 	cons.cosi = &fakeCosi{}
 	cons.queue = &queue{locked: true}
 	_, err = h.Invoke(fake.NewAddress(0), req)
@@ -382,9 +358,10 @@ func TestRPCHandler_Process(t *testing.T) {
 	h := rpcHandler{
 		reactor: fakeReactor{},
 		Consensus: &Consensus{
-			storage: newInMemoryStorage(),
-			queue:   fakeQueue{},
-			cosi:    &fakeCosi{},
+			storage:    newInMemoryStorage(),
+			queue:      fakeQueue{},
+			cosi:       &fakeCosi{},
+			viewchange: fakeViewChange{},
 		},
 	}
 
@@ -427,8 +404,7 @@ func checkSignatureValue(t *testing.T, pb *any.Any) {
 	require.Equal(t, []byte{fake.SignatureByte}, wrapper.GetValue())
 }
 
-func makeConsensus(t *testing.T, n int,
-	r consensus.Reactor) ([]*Consensus, []consensus.Actor, fake.CollectiveAuthority) {
+func makeConsensus(t *testing.T, n int, r consensus.Reactor) ([]*Consensus, []consensus.Actor) {
 
 	manager := minoch.NewManager()
 
@@ -446,6 +422,8 @@ func makeConsensus(t *testing.T, n int,
 		cosi := flatcosi.NewFlat(m, ca.GetSigner(i))
 
 		c := NewCoSiPBFT(m, cosi, nil)
+		c.viewchange = fakeViewChange{authority: ca, filter: 2}
+
 		actor, err := c.Listen(r)
 		require.NoError(t, err)
 
@@ -453,13 +431,17 @@ func makeConsensus(t *testing.T, n int,
 		actors[i] = actor
 	}
 
-	return cons, actors, ca
+	return cons, actors
 }
 
 type badStorage struct {
 	Storage
 	errStore error
 	errRead  error
+}
+
+func (s badStorage) Len() uint64 {
+	return 0
 }
 
 func (s badStorage) Store(forwardLink) error {
@@ -475,26 +457,32 @@ func (s badStorage) ReadChain(id Digest) (consensus.Chain, error) {
 }
 
 type fakeViewChange struct {
-	curr   fake.CollectiveAuthority
-	next   fake.CollectiveAuthority
-	denied bool
-	err    error
+	authority fake.CollectiveAuthority
+	filter    int
+	denied    bool
+	err       error
 }
 
-func (vc fakeViewChange) GetGenesis() (viewchange.Authority, error) {
-	return vc.curr, vc.err
-}
+func (vc fakeViewChange) GetAuthority(index uint64) (viewchange.Authority, error) {
+	if index != 1 && vc.filter > 0 {
+		// Only first two elements for any proposal other than the second.
+		return vc.authority.Take(mino.RangeFilter(0, vc.filter)).(viewchange.Authority), vc.err
+	}
 
-func (vc fakeViewChange) GetAuthority() (viewchange.Authority, error) {
-	return vc.curr, vc.err
+	return vc.authority, vc.err
 }
 
 func (vc fakeViewChange) Wait() bool {
 	return !vc.denied
 }
 
-func (vc fakeViewChange) Verify(mino.Address) (viewchange.Authority, viewchange.Authority, error) {
-	return vc.curr, vc.next, vc.err
+func (vc fakeViewChange) Verify(addr mino.Address, index uint64) (viewchange.Authority, error) {
+	if index != 1 && vc.filter > 0 {
+		// Only first two elements for any proposal other than the second.
+		return vc.authority.Take(mino.RangeFilter(0, vc.filter)).(viewchange.Authority), vc.err
+	}
+
+	return vc.authority, vc.err
 }
 
 type fakeQueue struct {
@@ -514,6 +502,10 @@ func (q fakeQueue) Finalize(to Digest, commit crypto.Signature) (*forwardLink, e
 type fakeReactor struct {
 	digest []byte
 	err    error
+}
+
+func (v fakeReactor) InvokeGenesis() ([]byte, error) {
+	return v.digest, v.err
 }
 
 func (v fakeReactor) InvokeValidate(addr mino.Address, msg proto.Message) ([]byte, error) {

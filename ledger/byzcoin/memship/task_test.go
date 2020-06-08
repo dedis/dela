@@ -131,22 +131,22 @@ func TestTaskManager_GetAuthority(t *testing.T) {
 		rosterFactory: fakeRosterFactory{},
 	}
 
-	authority, err := manager.GetAuthority()
+	authority, err := manager.GetAuthority(0)
 	require.NoError(t, err)
 	require.Equal(t, 3, authority.Len())
 
 	manager.inventory = fakeInventory{err: xerrors.New("oops")}
-	_, err = manager.GetAuthority()
+	_, err = manager.GetAuthority(1)
 	require.EqualError(t, err, "couldn't read page: oops")
 
 	manager.inventory = fakeInventory{errPage: xerrors.New("oops")}
-	_, err = manager.GetAuthority()
-	require.EqualError(t, err, "couldn't read roster: reading entry: oops")
+	_, err = manager.GetAuthority(1)
+	require.EqualError(t, err, "couldn't read entry: oops")
 
 	manager.inventory = fakeInventory{}
 	manager.rosterFactory = fakeRosterFactory{err: xerrors.New("oops")}
-	_, err = manager.GetAuthority()
-	require.EqualError(t, err, "couldn't read roster: couldn't decode roster: oops")
+	_, err = manager.GetAuthority(1)
+	require.EqualError(t, err, "couldn't decode roster: oops")
 }
 
 func TestTaskManager_FromProto(t *testing.T) {

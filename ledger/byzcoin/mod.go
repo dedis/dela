@@ -35,8 +35,6 @@ const (
 
 var (
 	rosterValueKey = []byte(memship.RosterValueKey)
-
-	rosterLeaderKey = []byte(memship.RosterLeaderKey)
 )
 
 // Ledger is a distributed public ledger implemented by using a blockchain. Each
@@ -120,7 +118,7 @@ func (ldgr *Ledger) Listen() (ledger.Actor, error) {
 			Hex("hash", genesis.GetHash()).
 			Msg("received genesis block")
 
-		authority, err := ldgr.viewchange.GetAuthority()
+		authority, err := ldgr.viewchange.GetAuthority(0)
 		if err != nil {
 			ldgr.initiated <- xerrors.Errorf("couldn't read chain roster: %v", err)
 			return
@@ -207,7 +205,7 @@ func (ldgr *Ledger) proposeBlocks(actor blockchain.Actor, ga gossip.Actor, playe
 			ldgr.bag.Remove(txRes...)
 
 			// Update the gossip list of participants with the roster block.
-			roster, err := ldgr.viewchange.GetAuthority()
+			roster, err := ldgr.viewchange.GetAuthority(block.GetIndex())
 			if err != nil {
 				dela.Logger.Err(err).Msg("couldn't read block roster")
 			} else {

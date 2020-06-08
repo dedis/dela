@@ -359,11 +359,7 @@ type fakeViewChange struct {
 	authority fake.CollectiveAuthority
 }
 
-func (vc fakeViewChange) GetGenesis() (viewchange.Authority, error) {
-	return vc.authority, nil
-}
-
-func (vc fakeViewChange) GetAuthority() (viewchange.Authority, error) {
+func (vc fakeViewChange) GetAuthority(index uint64) (viewchange.Authority, error) {
 	return vc.authority, nil
 }
 
@@ -371,6 +367,6 @@ func (vc fakeViewChange) Wait() bool {
 	return true
 }
 
-func (vc fakeViewChange) Verify(mino.Address) (viewchange.Authority, viewchange.Authority, error) {
-	return vc.authority, vc.authority, nil
+func (vc fakeViewChange) Verify(mino.Address, uint64) (viewchange.Authority, error) {
+	return vc.authority, nil
 }

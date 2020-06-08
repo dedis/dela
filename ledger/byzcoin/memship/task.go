@@ -1,15 +1,12 @@
 package memship
 
 import (
-	"bytes"
 	"encoding/binary"
 	"io"
 	"sort"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
-	"github.com/golang/protobuf/ptypes/wrappers"
-	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/crypto"
@@ -29,15 +26,10 @@ const (
 	// RosterArcKey is the ke used to store the access rights control of the
 	// roster.
 	RosterArcKey = "roster_arc"
-
-	// RosterLeaderKey is the key where the leader is stored.
-	RosterLeaderKey = "roster_leader"
 )
 
 var (
 	rosterValueKey = []byte(RosterValueKey)
-
-	rosterLeaderKey = []byte(RosterLeaderKey)
 )
 
 // clientTask is the client task implementation to update the roster of a
@@ -227,41 +219,17 @@ func NewTaskManager(i inventory.Inventory, m mino.Mino, s crypto.Signer) TaskMan
 	}
 }
 
-// GetGenesis implements viewchange.ViewChange.
-func (f TaskManager) GetGenesis() (viewchange.Authority, error) {
-	page, err := f.inventory.GetPage(0)
-	if err != nil {
-		return nil, err
-	}
-
-	roster, err := f.readAuthority(page)
-	if err != nil {
-		return nil, err
-	}
-
-	return roster, nil
-}
-
 // GetAuthority implements viewchange.ViewChange. It returns the current
 // authority based of the last page of the inventory.
-func (f TaskManager) GetAuthority() (viewchange.Authority, error) {
-	page, err := f.inventory.GetPage(f.inventory.Len() - 1)
+func (f TaskManager) GetAuthority(index uint64) (viewchange.Authority, error) {
+	page, err := f.inventory.GetPage(index)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't read page: %v", err)
 	}
 
-	roster, err := f.readAuthority(page)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't read roster: %v", err)
-	}
-
-	return roster, nil
-}
-
-func (f TaskManager) readAuthority(page inventory.Page) (viewchange.Authority, error) {
 	rosterpb, err := page.Read(rosterValueKey)
 	if err != nil {
-		return nil, xerrors.Errorf("reading entry: %v", err)
+		return nil, xerrors.Errorf("couldn't read entry: %v", err)
 	}
 
 	roster, err := f.rosterFactory.FromProto(rosterpb)
@@ -275,7 +243,7 @@ func (f TaskManager) readAuthority(page inventory.Page) (viewchange.Authority, e
 // Wait implements viewchange.ViewChange. It returns true if the node is the
 // leader for the current authority.
 func (f TaskManager) Wait() bool {
-	curr, err := f.GetAuthority()
+	curr, err := f.GetAuthority(f.inventory.Len() - 1)
 	if err != nil {
 		return false
 	}
@@ -287,49 +255,18 @@ func (f TaskManager) Wait() bool {
 // Verify implements viewchange.ViewChange. It returns the previous authority
 // for the latest page and the current proposed authority. If the given address
 // is not the leader, it will return an error.
-func (f TaskManager) Verify(from mino.Address) (viewchange.Authority, viewchange.Authority, error) {
-	curr, err := f.GetAuthority()
+func (f TaskManager) Verify(from mino.Address, index uint64) (viewchange.Authority, error) {
+	curr, err := f.GetAuthority(f.inventory.Len() - 1)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	iter := curr.AddressIterator()
 	if !iter.HasNext() || !iter.GetNext().Equal(from) {
-		return nil, nil, xerrors.New("mismatch leader")
+		return nil, xerrors.New("mismatch leader")
 	}
 
-	leader, err := from.MarshalText()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	var staged inventory.Page
-
-	f.inventory.Range(func(p inventory.Page) bool {
-		value, err := p.Read(rosterLeaderKey)
-		if err != nil {
-			dela.Logger.Warn().Err(err).Msg("roster leader not in page")
-			return true
-		}
-
-		if bytes.Equal(value.(*wrappers.BytesValue).Value, leader) {
-			staged = p
-			return false
-		}
-
-		return true
-	})
-
-	if staged != nil {
-		next, err := f.readAuthority(staged)
-		if err != nil {
-			return nil, nil, xerrors.Errorf("couldn't read next authority: %v", err)
-		}
-
-		return curr, next, nil
-	}
-
-	return curr, curr, nil
+	return curr, nil
 }
 
 // FromProto implements basic.TaskFactory. It returns the server task associated

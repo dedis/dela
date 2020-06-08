@@ -113,38 +113,15 @@ func TestForwardLink_Hash(t *testing.T) {
 	fl.changeset.Add = []viewchange.Player{{Address: fake.NewAddress(4), PublicKey: fake.PublicKey{}}}
 	_, err = fl.computeHash(h, encoding.NewProtoEncoder())
 	require.NoError(t, err)
-	require.Equal(t, 4, call.Len())
+	require.Equal(t, 2, call.Len())
 	require.Equal(t, []byte{0xaa}, call.Get(0, 0))
 	require.Equal(t, []byte{0xbb}, call.Get(1, 0))
-	require.Equal(t, []byte{4, 0, 0, 0, 0xdf}, call.Get(2, 0))
-	require.Equal(t, []byte{1, 0, 0, 0, 3, 0, 0, 0}, call.Get(3, 0))
 
 	_, err = fl.computeHash(fake.NewBadHash(), encoding.NewProtoEncoder())
 	require.EqualError(t, err, "couldn't write 'from': fake error")
 
 	_, err = fl.computeHash(fake.NewBadHashWithDelay(1), encoding.NewProtoEncoder())
 	require.EqualError(t, err, "couldn't write 'to': fake error")
-
-	fl.changeset.Add = []viewchange.Player{{Address: fake.NewBadAddress()}}
-	_, err = fl.computeHash(&fake.Hash{}, encoding.NewProtoEncoder())
-	require.EqualError(t, err, "couldn't marshal address: fake error")
-
-	fl.changeset.Add = []viewchange.Player{{
-		Address:   fake.NewAddress(0),
-		PublicKey: fake.NewBadPublicKey(),
-	}}
-	_, err = fl.computeHash(&fake.Hash{}, encoding.NewProtoEncoder())
-	require.EqualError(t, err, "couldn't marshal public key: fake error")
-
-	fl.changeset.Add = []viewchange.Player{{
-		Address:   fake.NewAddress(0),
-		PublicKey: fake.PublicKey{},
-	}}
-	_, err = fl.computeHash(fake.NewBadHashWithDelay(2), encoding.NewProtoEncoder())
-	require.EqualError(t, err, "couldn't write player: fake error")
-
-	_, err = fl.computeHash(fake.NewBadHashWithDelay(3), encoding.NewProtoEncoder())
-	require.EqualError(t, err, "couldn't write integers: fake error")
 }
 
 func TestChain_GetLast(t *testing.T) {

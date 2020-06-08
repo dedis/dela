@@ -7,6 +7,8 @@ import (
 )
 
 type Reactor interface {
+	InvokeGenesis() ([]byte, error)
+
 	InvokeValidate(mino.Address, proto.Message) ([]byte, error)
 
 	InvokeCommit(id []byte) error

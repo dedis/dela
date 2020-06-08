@@ -3,7 +3,6 @@ package cosipbft
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/binary"
 	"hash"
 
 	"github.com/golang/protobuf/proto"
@@ -140,36 +139,6 @@ func (fl forwardLink) computeHash(h hash.Hash, enc encoding.ProtoMarshaler) ([]b
 	_, err = h.Write(fl.to)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't write 'to': %v", err)
-	}
-
-	for _, player := range fl.changeset.Add {
-		addr, err := player.Address.MarshalText()
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't marshal address: %v", err)
-		}
-
-		pubkey, err := player.PublicKey.MarshalBinary()
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't marshal public key: %v", err)
-		}
-
-		_, err = h.Write(append(addr, pubkey...))
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't write player: %v", err)
-		}
-	}
-
-	// This buffer will store all the encoded integers where each one is using 4
-	// bytes: leader index + removal indices.
-	buffer := make([]byte, 4*len(fl.changeset.Remove))
-
-	for i, index := range fl.changeset.Remove {
-		binary.LittleEndian.PutUint32(buffer[i*4:], index)
-	}
-
-	_, err = h.Write(buffer)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't write integers: %v", err)
 	}
 
 	return h.Sum(nil), nil

@@ -10,6 +10,7 @@ import (
 
 // Storage is the interface that defines the forward link storage.
 type Storage interface {
+	Len() uint64
 	Store(forwardLink) error
 	StoreChain(consensus.Chain) error
 	ReadChain(to Digest) (consensus.Chain, error)
@@ -22,6 +23,10 @@ type inMemoryStorage struct {
 
 func newInMemoryStorage() *inMemoryStorage {
 	return &inMemoryStorage{}
+}
+
+func (s *inMemoryStorage) Len() uint64 {
+	return uint64(len(s.links))
 }
 
 // Store appends the forward link to the storage if it matches the previous.

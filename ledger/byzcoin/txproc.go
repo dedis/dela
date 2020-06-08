@@ -4,7 +4,6 @@ import (
 	"bytes"
 
 	proto "github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/wrappers"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions"
@@ -86,19 +85,7 @@ func (proc *txProcessor) process(from mino.Address, payload *BlockPayload) (inve
 		return page, nil
 	}
 
-	leader, err := from.MarshalText()
-	if err != nil {
-		return nil, err
-	}
-
-	page, err = proc.inventory.Stage(func(page inventory.WritablePage) error {
-		err := page.Write(rosterLeaderKey, &wrappers.BytesValue{
-			Value: leader,
-		})
-		if err != nil {
-			return err
-		}
-
+	page, err := proc.inventory.Stage(func(page inventory.WritablePage) error {
 		for _, txpb := range payload.GetTransactions() {
 			tx, err := proc.txFactory.FromProto(txpb)
 			if err != nil {

@@ -11,16 +11,17 @@ import (
 // and the others as backups when it is failing. The index returned announces
 // who is allowed to be the leader.
 type ViewChange interface {
-	GetGenesis() (Authority, error)
-
-	GetAuthority() (Authority, error)
+	// GetAuthority returns the authority at the given index.
+	// TODO: use the proposal ID if we move the blockchain module to be a plugin
+	// of the ledger.
+	GetAuthority(index uint64) (Authority, error)
 
 	// Wait returns true if the participant is allowed to proceed with the
 	// proposal. It also returns the participant index if true.
 	Wait() bool
 
 	// Verify returns the leader index for that proposal.
-	Verify(from mino.Address) (prev Authority, curr Authority, err error)
+	Verify(from mino.Address, index uint64) (Authority, error)
 }
 
 // Player is a tuple of an address and its public key.

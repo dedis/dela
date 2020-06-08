@@ -3,9 +3,9 @@ package skipchain
 import (
 	"bytes"
 	"encoding/binary"
-	fmt "fmt"
+	"fmt"
 
-	proto "github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/crypto"

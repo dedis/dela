@@ -27,6 +27,15 @@ func newBlockValidator(ops *operations) *blockValidator {
 	}
 }
 
+func (v *blockValidator) InvokeGenesis() ([]byte, error) {
+	genesis, err := v.db.Read(0)
+	if err != nil {
+		return nil, err
+	}
+
+	return genesis.GetHash(), nil
+}
+
 // Validate implements consensus.Validator. It decodes the message into a block
 // and validates its integrity. It returns the block if it is correct, otherwise
 // the error.

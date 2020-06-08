@@ -335,7 +335,7 @@ type fakeViewChange struct {
 	err error
 }
 
-func (gov fakeViewChange) GetAuthority() (viewchange.Authority, error) {
+func (gov fakeViewChange) GetAuthority(index uint64) (viewchange.Authority, error) {
 	return fake.NewAuthority(3, fake.NewSigner), gov.err
 }
 

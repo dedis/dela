@@ -56,7 +56,7 @@ func NewCoSiPBFT(mino mino.Mino, cosi cosi.CollectiveSigning, vc viewchange.View
 
 // GetChainFactory returns the chain factory.
 func (c *Consensus) GetChainFactory() (consensus.ChainFactory, error) {
-	authority, err := c.viewchange.GetGenesis()
+	authority, err := c.viewchange.GetAuthority(0)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't get genesis authority: %v", err)
 	}
@@ -137,7 +137,7 @@ func (a pbftActor) Propose(p proto.Message) error {
 		return xerrors.Errorf("couldn't create prepare request: %v", err)
 	}
 
-	authority, err := a.viewchange.GetAuthority()
+	authority, err := a.viewchange.GetAuthority(a.storage.Len())
 	if err != nil {
 		return xerrors.Errorf("couldn't read authority for id %#x: %v", digest, err)
 	}
@@ -249,15 +249,23 @@ func (h handler) Invoke(addr mino.Address, in proto.Message) (Digest, error) {
 			return nil, xerrors.Errorf("couldn't validate the proposal: %v", err)
 		}
 
-		currAuthority, nextAuthority, err := h.viewchange.Verify(addr)
+		authority, err := h.viewchange.Verify(addr, h.storage.Len())
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't verify: %v", err)
 		}
 
 		forwardLink := forwardLink{
-			from:      chain.GetTo(),
-			to:        digest,
-			changeset: currAuthority.Diff(nextAuthority),
+			from: chain.GetTo(),
+			to:   digest,
+		}
+
+		if len(forwardLink.from) == 0 {
+			genesis, err := h.reactor.InvokeGenesis()
+			if err != nil {
+				return nil, err
+			}
+
+			forwardLink.from = genesis
 		}
 
 		hash, err := forwardLink.computeHash(h.hashFactory.New(), h.encoder)
@@ -275,7 +283,7 @@ func (h handler) Invoke(addr mino.Address, in proto.Message) (Digest, error) {
 			return nil, xerrors.Errorf("couldn't decode signature: %v", err)
 		}
 
-		pubkey, _ := currAuthority.GetPublicKey(addr)
+		pubkey, _ := authority.GetPublicKey(addr)
 		if pubkey == nil {
 			return nil, xerrors.Errorf("couldn't find public key for <%v>", addr)
 		}
@@ -285,7 +293,7 @@ func (h handler) Invoke(addr mino.Address, in proto.Message) (Digest, error) {
 			return nil, xerrors.Errorf("couldn't verify signature: %v", err)
 		}
 
-		err = h.queue.New(forwardLink, currAuthority)
+		err = h.queue.New(forwardLink, authority)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't add to queue: %v", err)
 		}
@@ -328,6 +336,8 @@ func (h rpcHandler) Process(req mino.Request) (proto.Message, error) {
 		return nil, xerrors.Errorf("message type not supported: %T", req.Message)
 	}
 
+	// 1. Verify the commit signature to make sure a threshold of nodes have
+	// agreed to commit to this proposal (and thus not another one).
 	commit, err := h.cosi.GetSignatureFactory().FromProto(msg.GetCommit())
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't decode commit signature: %v", err)
@@ -338,15 +348,36 @@ func (h rpcHandler) Process(req mino.Request) (proto.Message, error) {
 		return nil, xerrors.Errorf("couldn't finalize: %v", err)
 	}
 
-	err = h.storage.Store(*forwardLink)
+	// 2. Get the current authority that might evolve after applying the
+	// proposal.
+	index := h.storage.Len()
+	curr, err := h.viewchange.GetAuthority(index)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't write forward link: %v", err)
+		return nil, err
 	}
 
-	// Apply the proposal to caller.
+	// 3. Apply the proposal to caller. This should persist any change related
+	// to the proposal and the system should move to the next state.
 	err = h.reactor.InvokeCommit(forwardLink.to)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't commit: %v", err)
+	}
+
+	// 4. Retrieve the change set of the authority for this forward link by
+	// making a diff of the new authority value. This may be empty.
+	next, err := h.viewchange.GetAuthority(index + 1)
+	if err != nil {
+		return nil, err
+	}
+
+	forwardLink.changeset = curr.Diff(next)
+	// TODO: check no more than f = (n-1)/2 changes, probably
+
+	// 5. Persist the link.
+	// TODO: what if that fails ?
+	err = h.storage.Store(*forwardLink)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't write forward link: %v", err)
 	}
 
 	return nil, nil

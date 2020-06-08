@@ -39,12 +39,12 @@ func (vc ViewChange) Wait() bool {
 }
 
 // Verify implements viewchange.ViewChange. It always return 0 as the leader.
-func (vc ViewChange) Verify(from mino.Address) (viewchange.Authority, viewchange.Authority, error) {
+func (vc ViewChange) Verify(from mino.Address, index uint64) (viewchange.Authority, error) {
 
 	iter := vc.authority.AddressIterator()
 	if !iter.HasNext() || !iter.GetNext().Equal(from) {
-		return nil, nil, xerrors.Errorf("%v is not the leader", from)
+		return nil, xerrors.Errorf("%v is not the leader", from)
 	}
 
-	return vc.authority, vc.authority, nil
+	return vc.authority, nil
 }

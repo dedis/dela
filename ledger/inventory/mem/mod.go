@@ -74,6 +74,8 @@ func (inv *InMemoryInventory) GetPage(index uint64) (inventory.Page, error) {
 	inv.Lock()
 	defer inv.Unlock()
 
+	println(index)
+
 	i := int(index)
 	if i >= len(inv.pages) {
 		return nil, xerrors.Errorf("invalid page (%d >= %d)", i, len(inv.pages))

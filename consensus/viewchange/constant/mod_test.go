@@ -22,8 +22,7 @@ func TestConstant_Wait(t *testing.T) {
 func TestConstant_Verify(t *testing.T) {
 	vc := NewViewChange(fake.NewAddress(0), fake.NewAuthority(3, fake.NewSigner))
 
-	prev, curr, err := vc.Verify(fake.NewAddress(0))
+	curr, err := vc.Verify(fake.NewAddress(0), 0)
 	require.NoError(t, err)
-	require.Equal(t, 3, prev.Len())
 	require.Equal(t, 3, curr.Len())
 }
