@@ -95,6 +95,11 @@ func TestActor_Sign(t *testing.T) {
 	actor.signer = fake.NewSignerWithVerifierFactory(fake.NewBadVerifierFactory())
 	_, err = actor.Sign(ctx, message, ca)
 	require.EqualError(t, err, "couldn't make verifier: fake error")
+
+	actor.signer = fake.NewSigner()
+	actor.reactor = fakeReactor{err: xerrors.New("oops")}
+	_, err = actor.Sign(ctx, message, ca)
+	require.EqualError(t, err, "couldn't react to message: oops")
 }
 
 func TestActor_SignWrongSignature(t *testing.T) {

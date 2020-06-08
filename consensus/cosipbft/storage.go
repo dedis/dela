@@ -29,7 +29,8 @@ func (s *inMemoryStorage) Len() uint64 {
 	return uint64(len(s.links))
 }
 
-// Store appends the forward link to the storage if it matches the previous.
+// Store implements Storage. It appends the forward link to the storage if it
+// matches the previous.
 func (s *inMemoryStorage) Store(link forwardLink) error {
 	s.Lock()
 	defer s.Unlock()
@@ -50,10 +51,12 @@ func (s *inMemoryStorage) Store(link forwardLink) error {
 	return nil
 }
 
+// StoreChain implements Storage. It updates the local chain if the given one is
+// consistent.
 func (s *inMemoryStorage) StoreChain(in consensus.Chain) error {
 	chain, ok := in.(forwardLinkChain)
 	if !ok {
-		return xerrors.New("invalid chain type")
+		return xerrors.Errorf("invalid chain type '%T'", in)
 	}
 
 	s.Lock()
@@ -61,13 +64,20 @@ func (s *inMemoryStorage) StoreChain(in consensus.Chain) error {
 
 	for i, link := range chain.links {
 		if i < len(s.links) {
-			if !bytes.Equal(link.from, s.links[i].from) || !bytes.Equal(link.to, s.links[i].to) {
-				return xerrors.New("chain is inconsistent")
+			if !bytes.Equal(link.from, s.links[i].from) {
+				return xerrors.Errorf("mismatch link %d: from '%#x' != '%#x'",
+					i, link.from, s.links[i].from)
+			}
+
+			if !bytes.Equal(link.to, s.links[i].to) {
+				return xerrors.Errorf("mismatch link %d: to '%#x' != '%#x'",
+					i, link.to, s.links[i].to)
 			}
 		} else if len(s.links) > 0 {
 			last := s.links[len(s.links)-1]
 			if !bytes.Equal(last.to, link.from) {
-				return xerrors.New("chain is inconsistent")
+				return xerrors.Errorf("couldn't append link: '%#x' != '%#x'",
+					last.to, link.from)
 			}
 
 			s.links = append(s.links, link)
@@ -79,8 +89,9 @@ func (s *inMemoryStorage) StoreChain(in consensus.Chain) error {
 	return nil
 }
 
-// ReadChain returns the list of forward links to the id. It returns an error if
-// the target is never reached.
+// ReadChain implements Storage. It returns the list of forward links to the id.
+// It returns an error if the target is never reached. If the id is nil, it will
+// return the whole chain.
 func (s *inMemoryStorage) ReadChain(id Digest) (consensus.Chain, error) {
 	s.Lock()
 	defer s.Unlock()

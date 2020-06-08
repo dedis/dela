@@ -12,10 +12,21 @@ import (
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/encoding"
+	internal "go.dedis.ch/dela/internal/testing"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/inventory"
 	"golang.org/x/xerrors"
 )
+
+func TestMessages(t *testing.T) {
+	messages := []proto.Message{
+		&Task{},
+	}
+
+	for _, m := range messages {
+		internal.CoverProtoMessage(t, m)
+	}
+}
 
 func TestClientTask_GetChangeSet(t *testing.T) {
 	task := NewRemove([]uint32{1, 3, 1, 3, 4}).(clientTask)
@@ -149,6 +160,43 @@ func TestTaskManager_GetAuthority(t *testing.T) {
 	require.EqualError(t, err, "couldn't decode roster: oops")
 }
 
+func TestTaskManager_Wait(t *testing.T) {
+	manager := TaskManager{
+		me:            fake.NewAddress(0),
+		inventory:     fakeInventory{},
+		rosterFactory: fakeRosterFactory{},
+	}
+
+	allowed := manager.Wait()
+	require.True(t, allowed)
+
+	manager.me = fake.NewAddress(1)
+	allowed = manager.Wait()
+	require.False(t, allowed)
+
+	manager.inventory = fakeInventory{err: xerrors.New("oops")}
+	allowed = manager.Wait()
+	require.False(t, allowed)
+}
+
+func TestTaskManager_Verify(t *testing.T) {
+	manager := TaskManager{
+		inventory:     fakeInventory{},
+		rosterFactory: fakeRosterFactory{},
+	}
+
+	authority, err := manager.Verify(fake.NewAddress(0), 0)
+	require.NoError(t, err)
+	require.Equal(t, 3, authority.Len())
+
+	_, err = manager.Verify(fake.NewAddress(1), 0)
+	require.EqualError(t, err, "<fake.Address[1]> is not the leader")
+
+	manager.inventory = fakeInventory{err: xerrors.New("oops")}
+	_, err = manager.Verify(fake.NewAddress(0), 0)
+	require.EqualError(t, err, "couldn't get authority: couldn't read page: oops")
+}
+
 func TestTaskManager_FromProto(t *testing.T) {
 	manager := NewTaskManager(fakeInventory{value: &empty.Empty{}}, fake.Mino{}, fake.Signer{})
 
@@ -247,5 +295,5 @@ type fakeRosterFactory struct {
 }
 
 func (f fakeRosterFactory) FromProto(proto.Message) (viewchange.Authority, error) {
-	return fake.NewAuthority(3, fake.NewSigner), f.err
+	return roster.New(fake.NewAuthority(3, fake.NewSigner)), f.err
 }

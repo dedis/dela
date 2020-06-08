@@ -14,7 +14,27 @@ import (
 	"golang.org/x/xerrors"
 )
 
-func TestBlockValidator_Validate(t *testing.T) {
+func TestReactor_InvokeGenesis(t *testing.T) {
+	expected := Digest{1}
+	r := &reactor{
+		operations: &operations{
+			db: &fakeDatabase{
+				blocks: []SkipBlock{{hash: expected}, {hash: Digest{2}}},
+			},
+		},
+	}
+
+	digest, err := r.InvokeGenesis()
+	require.NoError(t, err)
+	require.Equal(t, expected[:], digest)
+
+	r.db = &fakeDatabase{}
+	_, err = r.InvokeGenesis()
+	require.EqualError(t, err,
+		"couldn't read genesis block: block at index 0 not found")
+}
+
+func TestReactor_InvokeValidate(t *testing.T) {
 	block := SkipBlock{
 		Index:     1,
 		GenesisID: Digest{0x01},
@@ -26,7 +46,7 @@ func TestBlockValidator_Validate(t *testing.T) {
 	require.NoError(t, err)
 
 	db := &fakeDatabase{blocks: []SkipBlock{{hash: block.GenesisID}}}
-	v := &blockValidator{
+	r := &reactor{
 		operations: &operations{
 			processor: &fakePayloadProc{},
 			watcher:   &fakeWatcher{},
@@ -36,47 +56,46 @@ func TestBlockValidator_Validate(t *testing.T) {
 			blockFactory: blockFactory{
 				encoder:     encoding.NewProtoEncoder(),
 				hashFactory: crypto.NewSha256Factory(),
-				mino:        fake.Mino{},
 			},
 		},
 		queue: &blockQueue{
 			buffer: make(map[Digest]SkipBlock),
 		},
 	}
-	digest, err := v.InvokeValidate(fake.Address{}, packed)
+	digest, err := r.InvokeValidate(fake.Address{}, packed)
 	require.NoError(t, err)
 	hash, err := block.computeHash(crypto.NewSha256Factory(), encoding.NewProtoEncoder())
 	require.NoError(t, err)
 	require.Equal(t, hash.Bytes(), digest)
 
-	_, err = v.InvokeValidate(fake.Address{}, nil)
+	_, err = r.InvokeValidate(fake.Address{}, nil)
 	require.EqualError(t, err, "couldn't decode block: invalid message type '<nil>'")
 
 	db.err = xerrors.New("oops")
-	_, err = v.InvokeValidate(fake.Address{}, packed)
+	_, err = r.InvokeValidate(fake.Address{}, packed)
 	require.EqualError(t, err, "couldn't read genesis block: oops")
 
 	db.err = nil
 	db.blocks = []SkipBlock{{}}
-	_, err = v.InvokeValidate(fake.Address{}, packed)
+	_, err = r.InvokeValidate(fake.Address{}, packed)
 	require.EqualError(t, err,
 		fmt.Sprintf("mismatch genesis hash '%v' != '%v'", Digest{}, block.GenesisID))
 
 	db.blocks = []SkipBlock{{hash: block.GenesisID}}
-	v.processor = &fakePayloadProc{errValidate: xerrors.New("oops")}
-	_, err = v.InvokeValidate(fake.Address{}, packed)
+	r.processor = &fakePayloadProc{errValidate: xerrors.New("oops")}
+	_, err = r.InvokeValidate(fake.Address{}, packed)
 	require.EqualError(t, err, "couldn't validate the payload: oops")
 
 	packed.(*BlockProto).Index = 5
-	v.rpc = fake.NewStreamRPC(fake.Receiver{}, fake.NewBadSender())
-	_, err = v.InvokeValidate(fake.Address{}, packed)
+	r.rpc = fake.NewStreamRPC(fake.Receiver{}, fake.NewBadSender())
+	_, err = r.InvokeValidate(fake.Address{}, packed)
 	require.EqualError(t, err,
 		"couldn't catch up: couldn't send block request: fake error")
 }
 
-func TestBlockValidator_Commit(t *testing.T) {
+func TestReactor_InvokeCommit(t *testing.T) {
 	watcher := &fakeWatcher{}
-	v := &blockValidator{
+	v := &reactor{
 		operations: &operations{
 			processor: &fakePayloadProc{},
 			watcher:   watcher,

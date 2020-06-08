@@ -9,6 +9,7 @@ import (
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/consensus/viewchange"
+	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"golang.org/x/xerrors"
@@ -159,17 +160,12 @@ func TestChainFactory_FromProto(t *testing.T) {
 		},
 	}
 
-	call := &fake.Call{}
-	authority := fake.NewAuthority(3, fake.NewSigner)
-	authority.Call = call
+	authority := roster.New(fake.NewAuthority(3, fake.NewSigner))
 
 	factory := newChainFactory(&fakeCosi{}, fake.Mino{}, authority)
 	chain, err := factory.FromProto(chainpb)
 	require.NoError(t, err)
 	require.NotNil(t, chain)
-	require.Equal(t, 2, call.Len())
-	require.Equal(t, viewchange.ChangeSet{}, call.Get(0, 1))
-	require.Equal(t, viewchange.ChangeSet{}, call.Get(1, 1))
 
 	chainany, err := ptypes.MarshalAny(chainpb)
 	require.NoError(t, err)

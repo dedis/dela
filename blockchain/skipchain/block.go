@@ -10,7 +10,6 @@ import (
 	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/encoding"
-	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
 )
 
@@ -168,7 +167,6 @@ type blockFactory struct {
 	encoder     encoding.ProtoMarshaler
 	hashFactory crypto.HashFactory
 	consensus   consensus.Consensus
-	mino        mino.Mino
 }
 
 func (f blockFactory) prepareBlock(block *SkipBlock) error {

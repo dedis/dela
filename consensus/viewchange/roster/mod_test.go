@@ -120,6 +120,27 @@ func TestRoster_Apply(t *testing.T) {
 	require.Equal(t, roster.Len()-1, roster3.Len())
 }
 
+func TestRoster_Diff(t *testing.T) {
+	roster1 := New(fake.NewAuthority(3, fake.NewSigner))
+
+	roster2 := New(fake.NewAuthority(4, fake.NewSigner))
+	diff := roster1.Diff(roster2)
+	require.Len(t, diff.Add, 1)
+
+	roster3 := New(fake.NewAuthority(2, fake.NewSigner))
+	diff = roster1.Diff(roster3)
+	require.Len(t, diff.Remove, 1)
+
+	roster4 := New(fake.NewAuthority(3, fake.NewSigner)).(roster)
+	roster4.addrs[1] = fake.NewAddress(5)
+	diff = roster1.Diff(roster4)
+	require.Equal(t, []uint32{1, 2}, diff.Remove)
+	require.Len(t, diff.Add, 2)
+
+	diff = roster1.Diff((viewchange.Authority)(nil))
+	require.Equal(t, viewchange.ChangeSet{}, diff)
+}
+
 func TestRoster_Len(t *testing.T) {
 	roster := New(fake.NewAuthority(3, fake.NewSigner))
 	require.Equal(t, 3, roster.Len())

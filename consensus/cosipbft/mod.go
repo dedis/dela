@@ -129,7 +129,7 @@ func (a pbftActor) Propose(p proto.Message) error {
 
 	digest, err := a.reactor.InvokeValidate(a.mino.GetAddress(), p)
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't validate proposal: %v", err)
 	}
 
 	prepareReq, err := a.newPrepareRequest(p, digest)
@@ -186,7 +186,7 @@ func (a pbftActor) Propose(p proto.Message) error {
 func (a pbftActor) newPrepareRequest(msg proto.Message, digest []byte) (Prepare, error) {
 	chain, err := a.storage.ReadChain(nil)
 	if err != nil {
-		return Prepare{}, err
+		return Prepare{}, xerrors.Errorf("couldn't read chain: %v", err)
 	}
 
 	// Sign the hash of the proposal to provide a proof the proposal comes from
@@ -229,7 +229,7 @@ func (h handler) Invoke(addr mino.Address, in proto.Message) (Digest, error) {
 	case *PrepareRequest:
 		chain, err := h.chainFactory.FromProto(msg.Chain)
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("couldn't decode chain: %v", err)
 		}
 
 		err = h.storage.StoreChain(chain)
@@ -262,7 +262,7 @@ func (h handler) Invoke(addr mino.Address, in proto.Message) (Digest, error) {
 		if len(forwardLink.from) == 0 {
 			genesis, err := h.reactor.InvokeGenesis()
 			if err != nil {
-				return nil, err
+				return nil, xerrors.Errorf("couldn't get genesis id: %v", err)
 			}
 
 			forwardLink.from = genesis
@@ -353,7 +353,7 @@ func (h rpcHandler) Process(req mino.Request) (proto.Message, error) {
 	index := h.storage.Len()
 	curr, err := h.viewchange.GetAuthority(index)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't get authority: %v", err)
 	}
 
 	// 3. Apply the proposal to caller. This should persist any change related
@@ -367,7 +367,7 @@ func (h rpcHandler) Process(req mino.Request) (proto.Message, error) {
 	// making a diff of the new authority value. This may be empty.
 	next, err := h.viewchange.GetAuthority(index + 1)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't get new authority: %v", err)
 	}
 
 	forwardLink.changeset = curr.Diff(next)

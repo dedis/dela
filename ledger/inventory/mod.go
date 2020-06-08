@@ -45,8 +45,4 @@ type Inventory interface {
 
 	// Commit commits the new version with the identifier.
 	Commit(fingerprint []byte) error
-
-	// Range iterates over the staging pages until the end of the function
-	// returns false.
-	Range(func(Page) bool)
 }

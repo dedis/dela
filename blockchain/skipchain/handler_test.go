@@ -23,7 +23,6 @@ func TestHandler_Process(t *testing.T) {
 		blockFactory: blockFactory{
 			encoder:     encoding.NewProtoEncoder(),
 			hashFactory: crypto.NewSha256Factory(),
-			mino:        fake.Mino{},
 		},
 		db:      &fakeDatabase{},
 		watcher: watcher,

@@ -9,17 +9,18 @@ import (
 	"golang.org/x/xerrors"
 )
 
-// blockValidator is a validator for incoming protobuf messages to decode them
-// into a skipblock and for commit queued blocks when appropriate.
+// reactor is following the reactor design pattern to implement a consensus
+// reactor. It reacts to event coming from the consensus module and returns the
+// expected data.
 //
-// - implements consensus.Validator
-type blockValidator struct {
+// - implements consensus.Reactor
+type reactor struct {
 	*operations
 	queue *blockQueue
 }
 
-func newBlockValidator(ops *operations) *blockValidator {
-	return &blockValidator{
+func newReactor(ops *operations) *reactor {
+	return &reactor{
 		operations: ops,
 		queue: &blockQueue{
 			buffer: make(map[Digest]SkipBlock),
@@ -27,20 +28,21 @@ func newBlockValidator(ops *operations) *blockValidator {
 	}
 }
 
-func (v *blockValidator) InvokeGenesis() ([]byte, error) {
+// InvokeGenesis implements consensus.Reactor. It returns the hash of the
+// genesis block.
+func (v *reactor) InvokeGenesis() ([]byte, error) {
 	genesis, err := v.db.Read(0)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't read genesis block: %v", err)
 	}
 
 	return genesis.GetHash(), nil
 }
 
-// Validate implements consensus.Validator. It decodes the message into a block
-// and validates its integrity. It returns the block if it is correct, otherwise
-// the error.
-func (v *blockValidator) InvokeValidate(addr mino.Address,
-	pb proto.Message) ([]byte, error) {
+// InvokeValidate implements consensus.Reactor. It decodes the message into a
+// block and validates its integrity. It returns the block if it is correct,
+// otherwise the error.
+func (v *reactor) InvokeValidate(addr mino.Address, pb proto.Message) ([]byte, error) {
 
 	block, err := v.blockFactory.decodeBlock(pb)
 	if err != nil {
@@ -73,9 +75,9 @@ func (v *blockValidator) InvokeValidate(addr mino.Address,
 	return block.GetHash(), nil
 }
 
-// Commit implements consensus.Validator. It commits the block that matches the
-// identifier if it is present.
-func (v *blockValidator) InvokeCommit(id []byte) error {
+// InvokeCommit implements consensus.Reactor. It commits the block that matches
+// the identifier if it is present.
+func (v *reactor) InvokeCommit(id []byte) error {
 	// To minimize the catch up procedures, the lock is acquired so that it can
 	// process a new block before the catch up verifies what is the latest
 	// known.

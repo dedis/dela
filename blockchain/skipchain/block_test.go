@@ -183,7 +183,6 @@ func TestBlockFactory_FromPrevious(t *testing.T) {
 		factory := blockFactory{
 			encoder:     encoding.NewProtoEncoder(),
 			hashFactory: crypto.NewSha256Factory(),
-			mino:        fake.Mino{},
 		}
 
 		block, err := factory.fromPrevious(prev, &empty.Empty{})
@@ -209,7 +208,6 @@ func TestBlockFactory_DecodeBlock(t *testing.T) {
 		factory := blockFactory{
 			encoder:     encoding.NewProtoEncoder(),
 			hashFactory: crypto.NewSha256Factory(),
-			mino:        fake.Mino{},
 		}
 
 		packed, err := block.Pack(encoding.NewProtoEncoder())
@@ -239,7 +237,6 @@ func TestBlockFactory_FromVerifiable(t *testing.T) {
 			encoder:     encoding.NewProtoEncoder(),
 			hashFactory: crypto.NewSha256Factory(),
 			consensus:   fakeConsensus{hash: block.hash},
-			mino:        fake.Mino{},
 		}
 
 		packed, err := block.Pack(encoding.NewProtoEncoder())

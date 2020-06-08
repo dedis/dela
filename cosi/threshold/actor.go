@@ -43,7 +43,7 @@ func (a thresholdActor) Sign(ctx context.Context, msg encoding.Packable,
 
 	digest, err := a.reactor.Invoke(a.me, req)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't react to message: %v", err)
 	}
 
 	// The aggregated signature needs to include at least a threshold number of

@@ -63,7 +63,7 @@ func NewInventory() *InMemoryInventory {
 	}
 }
 
-// Len implements inventory.Inventory.
+// Len implements inventory.Inventory. It returns the length of the inventory.
 func (inv *InMemoryInventory) Len() uint64 {
 	return uint64(len(inv.pages))
 }
@@ -73,8 +73,6 @@ func (inv *InMemoryInventory) Len() uint64 {
 func (inv *InMemoryInventory) GetPage(index uint64) (inventory.Page, error) {
 	inv.Lock()
 	defer inv.Unlock()
-
-	println(index)
 
 	i := int(index)
 	if i >= len(inv.pages) {
@@ -131,10 +129,6 @@ func (inv *InMemoryInventory) Stage(f func(inventory.WritablePage) error) (inven
 	inv.Lock()
 	inv.stagingPages[page.fingerprint] = page
 	inv.Unlock()
-
-	for _, fn := range page.defers {
-		fn(page.GetFingerprint())
-	}
 
 	return page, nil
 }
@@ -193,18 +187,6 @@ func (inv *InMemoryInventory) Commit(fingerprint []byte) error {
 	return nil
 }
 
-// Range implements inventory.Inventory.
-func (inv *InMemoryInventory) Range(fn func(inventory.Page) bool) {
-	inv.Lock()
-	defer inv.Unlock()
-
-	for _, page := range inv.stagingPages {
-		if !fn(page) {
-			return
-		}
-	}
-}
-
 // inMemoryPage is an implementation of the Page interface for an inventory. It
 // holds in memory the instances that have been created up to that index.
 //
@@ -213,7 +195,6 @@ func (inv *InMemoryInventory) Range(fn func(inventory.Page) bool) {
 type inMemoryPage struct {
 	index       uint64
 	fingerprint Digest
-	defers      []func([]byte)
 	entries     map[Digest]proto.Message
 }
 
@@ -256,10 +237,6 @@ func (page *inMemoryPage) Write(key []byte, value proto.Message) error {
 	page.entries[digest] = value
 
 	return nil
-}
-
-func (page *inMemoryPage) Defer(fn func([]byte)) {
-	page.defers = append(page.defers, fn)
 }
 
 func (page *inMemoryPage) clone() *inMemoryPage {

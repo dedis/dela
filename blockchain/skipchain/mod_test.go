@@ -11,7 +11,7 @@ import (
 	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/consensus/cosipbft"
-	"go.dedis.ch/dela/consensus/viewchange"
+	"go.dedis.ch/dela/consensus/viewchange/constant"
 	"go.dedis.ch/dela/cosi/threshold"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
@@ -227,7 +227,6 @@ func TestActor_Store(t *testing.T) {
 			blockFactory: blockFactory{
 				encoder:     encoding.NewProtoEncoder(),
 				hashFactory: crypto.NewSha256Factory(),
-				mino:        fake.Mino{},
 			},
 			addr: fake.NewAddress(0),
 			db:   db,
@@ -252,6 +251,11 @@ func TestActor_Store(t *testing.T) {
 	require.Contains(t, err.Error(), "couldn't create next block: ")
 
 	actor.blockFactory.hashFactory = crypto.NewSha256Factory()
+	actor.encoder = fake.BadPackEncoder{}
+	err = actor.Store(&empty.Empty{}, authority)
+	require.EqualError(t, err, "couldn't pack block: fake error")
+
+	actor.encoder = encoding.NewProtoEncoder()
 	actor.consensus = &fakeConsensusActor{err: xerrors.New("oops")}
 	err = actor.Store(&empty.Empty{}, authority)
 	require.EqualError(t, err, "couldn't propose the block: oops")
@@ -297,9 +301,10 @@ func makeSkipchain(t *testing.T, n int) (crypto.CollectiveAuthority, []*Skipchai
 
 	skipchains := make([]*Skipchain, n)
 	actors := make([]blockchain.Actor, n)
-	for i := 0; i < n; i++ {
+	for i, m := range mm {
 		cosi := threshold.NewCoSi(mm[i], authority.GetSigner(i))
-		cons := cosipbft.NewCoSiPBFT(mm[i], cosi, fakeViewChange{authority: authority})
+		vc := constant.NewViewChange(m.GetAddress(), authority)
+		cons := cosipbft.NewCoSiPBFT(mm[i], cosi, vc)
 		skipchains[i] = NewSkipchain(mm[i], cons)
 
 		actor, err := skipchains[i].Listen(testValidator{})
@@ -351,22 +356,4 @@ func (rand fakeRandGenerator) Read(buffer []byte) (int, error) {
 		return 0, nil
 	}
 	return len(buffer), rand.err
-}
-
-type fakeViewChange struct {
-	viewchange.ViewChange
-
-	authority fake.CollectiveAuthority
-}
-
-func (vc fakeViewChange) GetAuthority(index uint64) (viewchange.Authority, error) {
-	return vc.authority, nil
-}
-
-func (vc fakeViewChange) Wait() bool {
-	return true
-}
-
-func (vc fakeViewChange) Verify(mino.Address, uint64) (viewchange.Authority, error) {
-	return vc.authority, nil
 }

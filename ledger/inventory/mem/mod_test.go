@@ -13,6 +13,14 @@ import (
 	"golang.org/x/xerrors"
 )
 
+func TestInMemoryInventory_Len(t *testing.T) {
+	inv := NewInventory()
+	require.Equal(t, uint64(0), inv.Len())
+
+	inv.pages = []*inMemoryPage{{}}
+	require.Equal(t, uint64(1), inv.Len())
+}
+
 func TestInMemoryInventory_GetPage(t *testing.T) {
 	inv := NewInventory()
 	inv.pages = []*inMemoryPage{{}}

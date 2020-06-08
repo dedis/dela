@@ -109,8 +109,11 @@ func TestQSC_ExecuteRound(t *testing.T) {
 
 	ctx := context.Background()
 
+	err := qsc.executeRound(ctx, &empty.Empty{}, badReactor{})
+	require.EqualError(t, err, "couldn't validate proposal: oops")
+
 	bc.err = xerrors.New("oops")
-	err := qsc.executeRound(ctx, &empty.Empty{}, &fakeReactor{})
+	err = qsc.executeRound(ctx, &empty.Empty{}, &fakeReactor{})
 	require.EqualError(t, err, "couldn't broadcast: oops")
 
 	bc.delay = 1

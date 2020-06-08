@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/consensus/viewchange"
+	roster "go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/encoding"
@@ -336,7 +337,7 @@ type fakeViewChange struct {
 }
 
 func (gov fakeViewChange) GetAuthority(index uint64) (viewchange.Authority, error) {
-	return fake.NewAuthority(3, fake.NewSigner), gov.err
+	return roster.New(fake.NewAuthority(3, fake.NewSigner)), gov.err
 }
 
 type fakeGossipActor struct {

@@ -45,7 +45,12 @@ func TestActor_Sign(t *testing.T) {
 	_, err = actor.Sign(ctx, fakeMessage{}, ca)
 	require.EqualError(t, err, "couldn't pack message: fake error")
 
-	actor.CoSi.encoder = encoding.NewProtoEncoder()
+	actor.encoder = encoding.NewProtoEncoder()
+	actor.reactor = fakeReactor{err: xerrors.New("oops")}
+	_, err = actor.Sign(ctx, fakeMessage{}, ca)
+	require.EqualError(t, err, "couldn't react to message: oops")
+
+	actor.reactor = fakeReactor{}
 	actor.rpc = fakeRPC{receiver: &fakeReceiver{}}
 	_, err = actor.Sign(ctx, fakeMessage{}, ca)
 	require.EqualError(t, err, "couldn't receive more messages: EOF")

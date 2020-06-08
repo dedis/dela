@@ -65,7 +65,7 @@ func (i *publicKeyIterator) GetNext() crypto.PublicKey {
 // roster contains a list of participants with their addresses and public keys.
 //
 // - implements crypto.CollectiveAuthority
-// - implements viewchange.EvolvableAuthority
+// - implements viewchange.Authority
 // - implements mino.Players
 // - implements encoding.Packable
 type roster struct {
@@ -110,9 +110,9 @@ func (r roster) Take(updaters ...mino.FilterUpdater) mino.Players {
 	return newRoster
 }
 
-// Apply implements viewchange.EvolvableAuthority. It returns a new authority
-// after applying the change set. The removals must be sorted by descending
-// order and unique or the behaviour will be undefined.
+// Apply implements viewchange.Authority. It returns a new authority after
+// applying the change set. The removals must be sorted by descending order and
+// unique or the behaviour will be undefined.
 func (r roster) Apply(changeset viewchange.ChangeSet) viewchange.Authority {
 	addrs := make([]mino.Address, r.Len())
 	pubkeys := make([]crypto.PublicKey, r.Len())
@@ -142,6 +142,8 @@ func (r roster) Apply(changeset viewchange.ChangeSet) viewchange.Authority {
 	return roster
 }
 
+// Diff implements viewchange.Authority. It returns the change set that must be
+// applied to the current authority to get the given one.
 func (r roster) Diff(o viewchange.Authority) viewchange.ChangeSet {
 	changeset := viewchange.ChangeSet{}
 

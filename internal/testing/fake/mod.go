@@ -26,7 +26,6 @@ import (
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
@@ -251,77 +250,6 @@ func (ca CollectiveAuthority) Take(updaters ...mino.FilterUpdater) mino.Players 
 		newCA.signers[i] = ca.signers[k]
 	}
 	return newCA
-}
-
-type signerWrapper struct {
-	crypto.AggregateSigner
-	pubkey crypto.PublicKey
-}
-
-func (s signerWrapper) GetPublicKey() crypto.PublicKey {
-	return s.pubkey
-}
-
-// Apply implements viewchange.EvolvableAuthority.
-func (ca CollectiveAuthority) Apply(cs viewchange.ChangeSet) viewchange.Authority {
-	if ca.Call != nil {
-		ca.Call.Add("apply", cs)
-	}
-
-	newAuthority := CollectiveAuthority{
-		Call:    ca.Call,
-		addrs:   make([]mino.Address, len(ca.addrs)),
-		signers: make([]crypto.AggregateSigner, len(ca.signers)),
-	}
-	for i := range ca.addrs {
-		newAuthority.addrs[i] = ca.addrs[i]
-		newAuthority.signers[i] = ca.signers[i]
-	}
-
-	for _, player := range cs.Add {
-		newAuthority.addrs = append(newAuthority.addrs, player.Address)
-		newAuthority.signers = append(newAuthority.signers, signerWrapper{
-			pubkey: player.PublicKey,
-		})
-	}
-
-	for _, i := range cs.Remove {
-		newAuthority.addrs = append(newAuthority.addrs[:i], newAuthority.addrs[i+1:]...)
-		newAuthority.signers = append(newAuthority.signers[:i], newAuthority.signers[i+1:]...)
-	}
-
-	return newAuthority
-}
-
-// Diff implements viewchange.Authority.
-func (ca CollectiveAuthority) Diff(o viewchange.Authority) viewchange.ChangeSet {
-	other := o.(CollectiveAuthority)
-
-	changeset := viewchange.ChangeSet{}
-	i := 0
-	k := 0
-	for i < len(ca.addrs) || k < len(other.addrs) {
-		if i < len(ca.addrs) && k < len(other.addrs) {
-			if ca.addrs[i].Equal(other.addrs[k]) {
-				i++
-				k++
-			} else {
-				changeset.Remove = append(changeset.Remove, uint32(i))
-				i++
-			}
-		} else if i < len(ca.addrs) {
-			changeset.Remove = append(changeset.Remove, uint32(i))
-			i++
-		} else {
-			changeset.Add = append(changeset.Add, viewchange.Player{
-				Address:   other.addrs[k],
-				PublicKey: other.signers[k].GetPublicKey(),
-			})
-			k++
-		}
-	}
-
-	return changeset
 }
 
 // Len implements mino.Players.

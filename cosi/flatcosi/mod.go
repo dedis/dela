@@ -103,7 +103,7 @@ func (a flatActor) Sign(ctx context.Context, msg encoding.Packable,
 
 	digest, err := a.reactor.Invoke(a.me, data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't react to message: %v", err)
 	}
 
 	var agg crypto.Signature

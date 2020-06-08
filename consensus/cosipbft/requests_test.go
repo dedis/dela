@@ -25,6 +25,9 @@ func TestPrepare_Pack(t *testing.T) {
 
 	_, err = req.Pack(fake.BadPackAnyEncoder{})
 	require.EqualError(t, err, "couldn't pack signature: fake error")
+
+	_, err = req.Pack(fake.BadPackAnyEncoder{Counter: fake.NewCounter(1)})
+	require.EqualError(t, err, "couldn't pack chain: fake error")
 }
 
 func TestCommit_Pack(t *testing.T) {

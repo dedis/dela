@@ -8,8 +8,8 @@ import (
 	"golang.org/x/xerrors"
 )
 
-// ViewChange is a naive implementation of the view change that will
-// simply keep the same leader all the time.
+// ViewChange is a naive implementation of the view change that will simply keep
+// the same leader all the time and never change the authority.
 //
 // - implements viewchange.ViewChange
 type ViewChange struct {
@@ -25,8 +25,9 @@ func NewViewChange(addr mino.Address, authority crypto.CollectiveAuthority) View
 	}
 }
 
-// GetAuthority implements viewchange.ViewChange.
-func (vc ViewChange) GetAuthority() (viewchange.Authority, error) {
+// GetAuthority implements viewchange.ViewChange. It always returns the genesis
+// authority independently from the index.
+func (vc ViewChange) GetAuthority(index uint64) (viewchange.Authority, error) {
 	return vc.authority, nil
 }
 
@@ -38,12 +39,14 @@ func (vc ViewChange) Wait() bool {
 	return leader.Equal(vc.me)
 }
 
-// Verify implements viewchange.ViewChange. It always return 0 as the leader.
+// Verify implements viewchange.ViewChange. It will return an error if the
+// address is not the first of the authority and it will always return the
+// genesis authority.
 func (vc ViewChange) Verify(from mino.Address, index uint64) (viewchange.Authority, error) {
 
 	iter := vc.authority.AddressIterator()
 	if !iter.HasNext() || !iter.GetNext().Equal(from) {
-		return nil, xerrors.Errorf("%v is not the leader", from)
+		return nil, xerrors.Errorf("<%v> is not the leader", from)
 	}
 
 	return vc.authority, nil

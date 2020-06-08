@@ -129,9 +129,10 @@ func (c *Consensus) executeRound(
 	}
 
 	if prop != nil {
+		// TODO: address
 		digest, err := val.InvokeValidate(nil, prop)
 		if err != nil {
-			return err
+			return xerrors.Errorf("couldn't validate proposal: %v", err)
 		}
 
 		e.hash = digest

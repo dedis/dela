@@ -29,7 +29,7 @@ func (p Prepare) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 
 	chain, err := enc.PackAny(p.chain)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't pack chain: %v", err)
 	}
 
 	pb := &PrepareRequest{

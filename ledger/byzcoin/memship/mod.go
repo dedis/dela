@@ -256,14 +256,14 @@ func (f TaskManager) Wait() bool {
 // for the latest page and the current proposed authority. If the given address
 // is not the leader, it will return an error.
 func (f TaskManager) Verify(from mino.Address, index uint64) (viewchange.Authority, error) {
-	curr, err := f.GetAuthority(f.inventory.Len() - 1)
+	curr, err := f.GetAuthority(index)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't get authority: %v", err)
 	}
 
 	iter := curr.AddressIterator()
 	if !iter.HasNext() || !iter.GetNext().Equal(from) {
-		return nil, xerrors.New("mismatch leader")
+		return nil, xerrors.Errorf("<%v> is not the leader", from)
 	}
 
 	return curr, nil
