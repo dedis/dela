@@ -15,7 +15,7 @@ import (
 type Queue interface {
 	New(fl forwardLink, authority crypto.CollectiveAuthority) error
 	LockProposal(to Digest, sig crypto.Signature) error
-	Finalize(to Digest, sig crypto.Signature) (*ForwardLinkProto, error)
+	Finalize(to Digest, sig crypto.Signature) (*forwardLink, error)
 	Clear()
 }
 
@@ -119,7 +119,7 @@ func (q *queue) LockProposal(to Digest, sig crypto.Signature) error {
 }
 
 // Finalize verifies the commit signature and clear the queue.
-func (q *queue) Finalize(to Digest, sig crypto.Signature) (*ForwardLinkProto, error) {
+func (q *queue) Finalize(to Digest, sig crypto.Signature) (*forwardLink, error) {
 	q.Lock()
 	defer q.Unlock()
 
@@ -132,7 +132,7 @@ func (q *queue) Finalize(to Digest, sig crypto.Signature) (*ForwardLinkProto, er
 		return nil, xerrors.Errorf("no signature for proposal '%x'", to)
 	}
 
-	forwardLink := item
+	forwardLink := item.forwardLink
 	forwardLink.commit = sig
 
 	// Make sure the commit signature is a valid one before committing.
@@ -146,15 +146,10 @@ func (q *queue) Finalize(to Digest, sig crypto.Signature) (*ForwardLinkProto, er
 		return nil, xerrors.Errorf("couldn't verify signature: %v", err)
 	}
 
-	packed, err := q.encoder.Pack(forwardLink)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack forward link: %v", err)
-	}
-
 	q.locked = false
 	q.items = nil
 
-	return packed.(*ForwardLinkProto), nil
+	return &forwardLink, nil
 }
 
 func (q *queue) Clear() {

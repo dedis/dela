@@ -11,6 +11,8 @@ import (
 // and the others as backups when it is failing. The index returned announces
 // who is allowed to be the leader.
 type ViewChange interface {
+	GetGenesis() (Authority, error)
+
 	GetAuthority() (Authority, error)
 
 	// Wait returns true if the participant is allowed to proceed with the

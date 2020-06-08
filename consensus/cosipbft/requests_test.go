@@ -13,6 +13,7 @@ func TestPrepare_Pack(t *testing.T) {
 	req := Prepare{
 		message:   &empty.Empty{},
 		signature: fake.Signature{},
+		chain:     forwardLinkChain{},
 	}
 
 	reqpb, err := req.Pack(encoding.NewProtoEncoder())

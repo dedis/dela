@@ -227,6 +227,21 @@ func NewTaskManager(i inventory.Inventory, m mino.Mino, s crypto.Signer) TaskMan
 	}
 }
 
+// GetGenesis implements viewchange.ViewChange.
+func (f TaskManager) GetGenesis() (viewchange.Authority, error) {
+	page, err := f.inventory.GetPage(0)
+	if err != nil {
+		return nil, err
+	}
+
+	roster, err := f.readAuthority(page)
+	if err != nil {
+		return nil, err
+	}
+
+	return roster, nil
+}
+
 // GetAuthority implements viewchange.ViewChange. It returns the current
 // authority based of the last page of the inventory.
 func (f TaskManager) GetAuthority() (viewchange.Authority, error) {

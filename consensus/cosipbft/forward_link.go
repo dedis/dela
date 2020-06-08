@@ -181,7 +181,7 @@ type forwardLinkChain struct {
 
 // GetLastHash implements consensus.Chain. It returns the last hash of the
 // chain.
-func (c forwardLinkChain) GetLastHash() []byte {
+func (c forwardLinkChain) GetTo() []byte {
 	if len(c.links) == 0 {
 		return nil
 	}

@@ -16,8 +16,7 @@ type Reactor interface {
 type Chain interface {
 	encoding.Packable
 
-	// GetLastHash returns the last proposal hash of the chain.
-	GetLastHash() []byte
+	GetTo() []byte
 }
 
 // ChainFactory is a factory to decodes chain from protobuf messages.
@@ -47,7 +46,4 @@ type Consensus interface {
 
 	// Listen starts to listen for consensus messages.
 	Listen(Reactor) (Actor, error)
-
-	// Store updates the local chain and return an error if they don't match.
-	Store(Chain) error
 }

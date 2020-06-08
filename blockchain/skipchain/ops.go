@@ -9,7 +9,6 @@ import (
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/blockchain"
-	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
@@ -28,7 +27,6 @@ type operations struct {
 	db           Database
 	rpc          mino.RPC
 	watcher      blockchain.Observable
-	consensus    consensus.Consensus
 
 	catchUpLock sync.Mutex
 }
@@ -143,30 +141,6 @@ func (ops *operations) catchUp(target SkipBlock, addr mino.Address) error {
 		block, err := ops.blockFactory.decodeBlock(resp.GetBlock())
 		if err != nil {
 			return xerrors.Errorf("couldn't decode block: %v", err)
-		}
-
-		if resp.GetChain() != nil {
-			factory, err := ops.consensus.GetChainFactory()
-			if err != nil {
-				return xerrors.Errorf("couldn't get chain factory: %v", err)
-			}
-
-			chain, err := factory.FromProto(resp.GetChain())
-			if err != nil {
-				return xerrors.Errorf("couldn't decode chain: %v", err)
-			}
-
-			if !bytes.Equal(chain.GetLastHash(), block.GetHash()) {
-				return xerrors.Errorf("mismatch chain: hash '%x' != '%x'",
-					chain.GetLastHash(), block.GetHash())
-			}
-
-			err = ops.consensus.Store(chain)
-			if err != nil {
-				return xerrors.Errorf("couldn't store chain: %v", err)
-			}
-		} else if block.GetIndex() != 0 {
-			return xerrors.New("missing chain to the block in the response")
 		}
 
 		err = ops.insertBlock(block)

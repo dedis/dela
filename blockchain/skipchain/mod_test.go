@@ -359,6 +359,10 @@ type fakeViewChange struct {
 	authority fake.CollectiveAuthority
 }
 
+func (vc fakeViewChange) GetGenesis() (viewchange.Authority, error) {
+	return vc.authority, nil
+}
+
 func (vc fakeViewChange) GetAuthority() (viewchange.Authority, error) {
 	return vc.authority, nil
 }

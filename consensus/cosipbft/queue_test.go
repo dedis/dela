@@ -138,11 +138,6 @@ func TestQueue_Finalize(t *testing.T) {
 	}
 	_, err = queue.Finalize([]byte{0xaa}, fake.Signature{})
 	require.EqualError(t, err, "couldn't verify signature: oops")
-
-	queue.items[0].verifier = &fakeVerifier{}
-	queue.encoder = fake.BadPackEncoder{}
-	_, err = queue.Finalize([]byte{0xaa}, fake.NewBadSignature())
-	require.EqualError(t, err, "couldn't pack forward link: fake error")
 }
 
 func TestQueue_Clear(t *testing.T) {

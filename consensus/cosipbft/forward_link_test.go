@@ -147,17 +147,16 @@ func TestForwardLink_Hash(t *testing.T) {
 	require.EqualError(t, err, "couldn't write integers: fake error")
 }
 
-func TestChain_GetLastHash(t *testing.T) {
+func TestChain_GetLast(t *testing.T) {
 	chain := forwardLinkChain{}
-	require.Nil(t, chain.GetLastHash())
+	require.Nil(t, chain.GetTo())
 
 	hash := Digest{1, 2, 3}
 	chain = forwardLinkChain{
 		links: []forwardLink{{}, {to: hash}},
 	}
 
-	last := chain.GetLastHash()
-	require.Equal(t, hash, last)
+	require.Equal(t, hash, chain.GetTo())
 }
 
 func TestChain_Pack(t *testing.T) {

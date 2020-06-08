@@ -73,24 +73,6 @@ func (h handler) Stream(out mino.Sender, in mino.Receiver) error {
 			Block: blockpb.(*BlockProto),
 		}
 
-		if block.GetIndex() > 0 {
-			// In the case the genesis block needs to be sent, there is no chain
-			// to send alongside.
-
-			chain, err := h.consensus.GetChain(block.GetHash())
-			if err != nil {
-				return xerrors.Errorf("couldn't get chain to block %d: %v",
-					block.GetIndex(), err)
-			}
-
-			chainpb, err := h.encoder.PackAny(chain)
-			if err != nil {
-				return xerrors.Errorf("couldn't pack chain: %v", err)
-			}
-
-			resp.Chain = chainpb
-		}
-
 		err = <-out.Send(resp, addr)
 		if err != nil {
 			return xerrors.Errorf("couldn't send block: %v", err)

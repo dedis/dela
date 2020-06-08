@@ -2,6 +2,7 @@ package cosipbft
 
 import (
 	"github.com/golang/protobuf/proto"
+	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/encoding"
 	"golang.org/x/xerrors"
@@ -11,6 +12,7 @@ import (
 type Prepare struct {
 	message   proto.Message
 	signature crypto.Signature
+	chain     consensus.Chain
 }
 
 // Pack returns the protobuf message, or an error.
@@ -25,9 +27,15 @@ func (p Prepare) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 		return nil, xerrors.Errorf("couldn't pack signature: %v", err)
 	}
 
+	chain, err := enc.PackAny(p.chain)
+	if err != nil {
+		return nil, err
+	}
+
 	pb := &PrepareRequest{
 		Proposal:  proposal,
 		Signature: signature,
+		Chain:     chain,
 	}
 
 	return pb, nil

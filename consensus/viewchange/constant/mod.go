@@ -35,11 +35,7 @@ func (vc ViewChange) GetAuthority() (viewchange.Authority, error) {
 func (vc ViewChange) Wait() bool {
 	leader := vc.authority.AddressIterator().GetNext()
 
-	if leader.Equal(vc.me) {
-		return true
-	}
-
-	return false
+	return leader.Equal(vc.me)
 }
 
 // Verify implements viewchange.ViewChange. It always return 0 as the leader.

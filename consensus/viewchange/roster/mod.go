@@ -69,7 +69,6 @@ func (i *publicKeyIterator) GetNext() crypto.PublicKey {
 // - implements mino.Players
 // - implements encoding.Packable
 type roster struct {
-	leader  int
 	addrs   []mino.Address
 	pubkeys []crypto.PublicKey
 }
@@ -143,8 +142,38 @@ func (r roster) Apply(changeset viewchange.ChangeSet) viewchange.Authority {
 	return roster
 }
 
-func (r roster) Diff(viewchange.Authority) viewchange.ChangeSet {
-	return viewchange.ChangeSet{}
+func (r roster) Diff(o viewchange.Authority) viewchange.ChangeSet {
+	changeset := viewchange.ChangeSet{}
+
+	other, ok := o.(roster)
+	if !ok {
+		return changeset
+	}
+
+	i := 0
+	k := 0
+	for i < len(r.addrs) || k < len(other.addrs) {
+		if i < len(r.addrs) && k < len(other.addrs) {
+			if r.addrs[i].Equal(other.addrs[k]) {
+				i++
+				k++
+			} else {
+				changeset.Remove = append(changeset.Remove, uint32(i))
+				i++
+			}
+		} else if i < len(r.addrs) {
+			changeset.Remove = append(changeset.Remove, uint32(i))
+			i++
+		} else {
+			changeset.Add = append(changeset.Add, viewchange.Player{
+				Address:   other.addrs[k],
+				PublicKey: other.pubkeys[k],
+			})
+			k++
+		}
+	}
+
+	return changeset
 }
 
 // Len implements mino.Players. It returns the length of the roster.

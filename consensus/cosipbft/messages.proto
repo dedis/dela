@@ -42,6 +42,7 @@ message PrepareRequest {
     google.protobuf.Any proposal = 1;
     // Signature proves the proposal comes from an expected identity.
     google.protobuf.Any signature = 2;
+    google.protobuf.Any chain = 3;
 }
 
 // CommitRequest is the message sent to commit to a proposal.

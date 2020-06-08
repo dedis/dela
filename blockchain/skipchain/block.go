@@ -287,9 +287,9 @@ func (f blockFactory) FromVerifiable(src proto.Message) (blockchain.Block, error
 	}
 
 	// Only the link between the chain and the block needs to be verified.
-	if !bytes.Equal(chain.GetLastHash(), block.hash[:]) {
+	if !bytes.Equal(chain.GetTo(), block.hash[:]) {
 		return nil, xerrors.Errorf("mismatch hashes: %#x != %#x",
-			chain.GetLastHash(), block.GetHash())
+			chain.GetTo(), block.GetHash())
 	}
 
 	return block, nil

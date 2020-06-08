@@ -75,7 +75,6 @@ func (s *Skipchain) Listen(proc blockchain.PayloadProcessor) (blockchain.Actor, 
 		blockFactory: s.blockFactory,
 		db:           s.db,
 		watcher:      s.watcher,
-		consensus:    s.consensus,
 	}
 
 	rpc, err := s.mino.MakeRPC("skipchain", newHandler(ops))

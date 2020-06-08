@@ -328,7 +328,7 @@ func (c fakeChain) Verify(crypto.Verifier) error {
 	return c.err
 }
 
-func (c fakeChain) GetLastHash() []byte {
+func (c fakeChain) GetTo() []byte {
 	return c.hash.Bytes()
 }
 

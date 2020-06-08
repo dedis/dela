@@ -294,8 +294,34 @@ func (ca CollectiveAuthority) Apply(cs viewchange.ChangeSet) viewchange.Authorit
 }
 
 // Diff implements viewchange.Authority.
-func (ca CollectiveAuthority) Diff(viewchange.Authority) viewchange.ChangeSet {
-	return viewchange.ChangeSet{}
+func (ca CollectiveAuthority) Diff(o viewchange.Authority) viewchange.ChangeSet {
+	other := o.(CollectiveAuthority)
+
+	changeset := viewchange.ChangeSet{}
+	i := 0
+	k := 0
+	for i < len(ca.addrs) || k < len(other.addrs) {
+		if i < len(ca.addrs) && k < len(other.addrs) {
+			if ca.addrs[i].Equal(other.addrs[k]) {
+				i++
+				k++
+			} else {
+				changeset.Remove = append(changeset.Remove, uint32(i))
+				i++
+			}
+		} else if i < len(ca.addrs) {
+			changeset.Remove = append(changeset.Remove, uint32(i))
+			i++
+		} else {
+			changeset.Add = append(changeset.Add, viewchange.Player{
+				Address:   other.addrs[k],
+				PublicKey: other.signers[k].GetPublicKey(),
+			})
+			k++
+		}
+	}
+
+	return changeset
 }
 
 // Len implements mino.Players.

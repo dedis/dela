@@ -3,7 +3,6 @@
 package cosipbft
 
 import (
-	"bytes"
 	"context"
 
 	"github.com/golang/protobuf/proto"
@@ -57,7 +56,7 @@ func NewCoSiPBFT(mino mino.Mino, cosi cosi.CollectiveSigning, vc viewchange.View
 
 // GetChainFactory returns the chain factory.
 func (c *Consensus) GetChainFactory() (consensus.ChainFactory, error) {
-	authority, err := c.viewchange.GetAuthority()
+	authority, err := c.viewchange.GetGenesis()
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't get genesis authority: %v", err)
 	}
@@ -67,15 +66,9 @@ func (c *Consensus) GetChainFactory() (consensus.ChainFactory, error) {
 
 // GetChain returns a valid chain to the given identifier.
 func (c *Consensus) GetChain(to Digest) (consensus.Chain, error) {
-	stored, err := c.storage.ReadChain(to)
+	chain, err := c.storage.ReadChain(to)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't read the chain: %v", err)
-	}
-
-	// The chain stored has already been verified so we can skip that step.
-	chain, err := c.chainFactory.FromProto(&ChainProto{Links: stored})
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't decode chain: %v", err)
 	}
 
 	return chain, nil
@@ -107,42 +100,6 @@ func (c *Consensus) Listen(r consensus.Reactor) (consensus.Actor, error) {
 	}
 
 	return actor, nil
-}
-
-// Store implements consensus.Consensus. It stores the chain by following the
-// local one and completes it. It returns an error if a link is inconsistent
-// with the local storage.
-func (c *Consensus) Store(in consensus.Chain) error {
-	chain, ok := in.(forwardLinkChain)
-	if !ok {
-		return xerrors.Errorf("invalid message type '%T' != '%T'", in, chain)
-	}
-
-	last, err := c.storage.ReadLast()
-	if err != nil {
-		return xerrors.Errorf("couldn't read latest chain: %v", err)
-	}
-
-	store := false
-	for _, link := range chain.links {
-		store = store || last == nil || bytes.Equal(last.To, link.from[:])
-
-		if store {
-			linkpb, err := c.encoder.Pack(link)
-			if err != nil {
-				return xerrors.Errorf("couldn't pack link: %v", err)
-			}
-
-			err = c.storage.Store(linkpb.(*ForwardLinkProto))
-			if err != nil {
-				return xerrors.Errorf("couldn't store link: %v", err)
-			}
-
-			c.queue.Clear()
-		}
-	}
-
-	return nil
 }
 
 type pbftActor struct {
@@ -227,18 +184,23 @@ func (a pbftActor) Propose(p proto.Message) error {
 }
 
 func (a pbftActor) newPrepareRequest(msg proto.Message, digest []byte) (Prepare, error) {
-	req := Prepare{
-		message: msg,
+	chain, err := a.storage.ReadChain(nil)
+	if err != nil {
+		return Prepare{}, err
 	}
 
 	// Sign the hash of the proposal to provide a proof the proposal comes from
 	// the legitimate leader.
 	sig, err := a.cosi.GetSigner().Sign(digest)
 	if err != nil {
-		return req, xerrors.Errorf("couldn't sign the request: %v", err)
+		return Prepare{}, xerrors.Errorf("couldn't sign the request: %v", err)
 	}
 
-	req.signature = sig
+	req := Prepare{
+		message:   msg,
+		signature: sig,
+		chain:     chain,
+	}
 
 	return req, nil
 }
@@ -265,6 +227,16 @@ func (h handler) Invoke(addr mino.Address, in proto.Message) (Digest, error) {
 
 	switch msg := in.(type) {
 	case *PrepareRequest:
+		chain, err := h.chainFactory.FromProto(msg.Chain)
+		if err != nil {
+			return nil, err
+		}
+
+		err = h.storage.StoreChain(chain)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't store previous chain: %v", err)
+		}
+
 		proposalpb, err := h.encoder.UnmarshalDynamicAny(msg.GetProposal())
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't unmarshal proposal: %v", err)
@@ -277,29 +249,23 @@ func (h handler) Invoke(addr mino.Address, in proto.Message) (Digest, error) {
 			return nil, xerrors.Errorf("couldn't validate the proposal: %v", err)
 		}
 
-		prevAuthority, authority, err := h.viewchange.Verify(addr)
+		currAuthority, nextAuthority, err := h.viewchange.Verify(addr)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't verify: %v", err)
 		}
 
-		last, err := h.storage.ReadLast()
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't read last: %v", err)
-		}
-
-		var origin []byte
-		if last != nil {
-			origin = last.To
-		} else {
-			// TODO: get from
-			origin = []byte{42}
-		}
-
 		forwardLink := forwardLink{
-			from:      origin,
+			from:      chain.GetTo(),
 			to:        digest,
-			changeset: authority.Diff(prevAuthority),
+			changeset: currAuthority.Diff(nextAuthority),
 		}
+
+		hash, err := forwardLink.computeHash(h.hashFactory.New(), h.encoder)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't compute hash: %v", err)
+		}
+
+		forwardLink.hash = hash
 
 		// The identity of the leader must be insured to comply with the
 		// viewchange property. The Signature should be verified with the leader
@@ -309,7 +275,7 @@ func (h handler) Invoke(addr mino.Address, in proto.Message) (Digest, error) {
 			return nil, xerrors.Errorf("couldn't decode signature: %v", err)
 		}
 
-		pubkey, _ := authority.GetPublicKey(addr)
+		pubkey, _ := currAuthority.GetPublicKey(addr)
 		if pubkey == nil {
 			return nil, xerrors.Errorf("couldn't find public key for <%v>", addr)
 		}
@@ -319,14 +285,9 @@ func (h handler) Invoke(addr mino.Address, in proto.Message) (Digest, error) {
 			return nil, xerrors.Errorf("couldn't verify signature: %v", err)
 		}
 
-		err = h.queue.New(forwardLink, authority)
+		err = h.queue.New(forwardLink, currAuthority)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't add to queue: %v", err)
-		}
-
-		hash, err := forwardLink.computeHash(h.hashFactory.New(), h.encoder)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't compute hash: %v", err)
 		}
 
 		// Finally, if the proposal is correct, the hash that will be signed
@@ -377,13 +338,13 @@ func (h rpcHandler) Process(req mino.Request) (proto.Message, error) {
 		return nil, xerrors.Errorf("couldn't finalize: %v", err)
 	}
 
-	err = h.storage.Store(forwardLink)
+	err = h.storage.Store(*forwardLink)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't write forward link: %v", err)
 	}
 
 	// Apply the proposal to caller.
-	err = h.reactor.InvokeCommit(forwardLink.GetTo())
+	err = h.reactor.InvokeCommit(forwardLink.to)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't commit: %v", err)
 	}
