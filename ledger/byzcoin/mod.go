@@ -262,7 +262,7 @@ func (ldgr *Ledger) stagePayload(txs []transactions.ClientTransaction) (*BlockPa
 		payload.Transactions[i] = txpb
 	}
 
-	page, err := ldgr.proc.process(ldgr.addr, payload)
+	page, err := ldgr.proc.process(payload)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't process the txs: %v", err)
 	}

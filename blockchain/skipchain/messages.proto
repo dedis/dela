@@ -8,11 +8,10 @@ import "google/protobuf/any.proto";
 // block. It is not sufficient to prove the block integrity as the chain from
 // the genesis block is missing.
 message BlockProto {
-    bytes origin = 1;
-    uint64 index = 2;
-    bytes genesisID = 3;
-    bytes backlink = 4;
-    google.protobuf.Any payload = 5;
+    uint64 index = 1;
+    bytes genesisID = 2;
+    bytes backlink = 3;
+    google.protobuf.Any payload = 4;
 }
 
 // VerifiableBlockProto is the message that contains a verifiable block. It

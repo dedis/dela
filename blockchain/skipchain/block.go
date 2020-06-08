@@ -36,9 +36,6 @@ func (d Digest) String() string {
 type SkipBlock struct {
 	hash Digest
 
-	// Origin is the address of the block creator.
-	Origin mino.Address
-
 	// Index is the block index since the genesis block.
 	Index uint64
 
@@ -84,13 +81,7 @@ func (b SkipBlock) Pack(encoder encoding.ProtoMarshaler) (proto.Message, error) 
 		return nil, xerrors.Errorf("couldn't marshal the payload: %v", err)
 	}
 
-	origin, err := b.Origin.MarshalText()
-	if err != nil {
-		return nil, err
-	}
-
 	blockproto := &BlockProto{
-		Origin:    origin,
 		Index:     b.Index,
 		GenesisID: b.GenesisID.Bytes(),
 		Backlink:  b.BackLink.Bytes(),
@@ -116,20 +107,6 @@ func (b SkipBlock) computeHash(factory crypto.HashFactory,
 	_, err := h.Write(buffer)
 	if err != nil {
 		return Digest{}, xerrors.Errorf("couldn't write index: %v", err)
-	}
-
-	if b.Origin == nil {
-		return Digest{}, xerrors.New("missing block origin")
-	}
-
-	buffer, err = b.Origin.MarshalText()
-	if err != nil {
-		return Digest{}, xerrors.Errorf("couldn't marshal origin: %v", err)
-	}
-
-	_, err = h.Write(buffer)
-	if err != nil {
-		return Digest{}, xerrors.Errorf("couldn't write origin: %v", err)
 	}
 
 	_, err = h.Write(b.GenesisID.Bytes())
@@ -214,7 +191,6 @@ func (f blockFactory) fromPrevious(prev SkipBlock, data proto.Message) (SkipBloc
 	}
 
 	block := SkipBlock{
-		Origin:    f.mino.GetAddress(),
 		Index:     prev.Index + 1,
 		GenesisID: genesisID,
 		BackLink:  prev.hash,
@@ -247,7 +223,6 @@ func (f blockFactory) decodeBlock(src proto.Message) (SkipBlock, error) {
 	copy(genesisID[:], in.GetGenesisID())
 
 	block := SkipBlock{
-		Origin:    f.mino.GetAddressFactory().FromText(in.Origin),
 		Index:     in.GetIndex(),
 		GenesisID: genesisID,
 		BackLink:  backLink,

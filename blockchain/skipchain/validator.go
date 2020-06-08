@@ -63,7 +63,7 @@ func (v *blockValidator) InvokeValidate(addr mino.Address,
 			genesis.hash, block.GenesisID)
 	}
 
-	err = v.processor.Validate(addr, block.Payload)
+	err = v.processor.Validate(block.Payload)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't validate the payload: %v", err)
 	}

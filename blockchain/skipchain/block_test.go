@@ -85,7 +85,6 @@ func TestSkipBlock_Pack(t *testing.T) {
 
 func TestSkipBlock_Hash(t *testing.T) {
 	block := SkipBlock{
-		Origin:  fake.NewAddress(0),
 		Payload: &wrappers.StringValue{Value: "something"},
 	}
 
@@ -94,13 +93,13 @@ func TestSkipBlock_Hash(t *testing.T) {
 	_, err := block.computeHash(fake.NewHashFactory(fake.NewBadHashWithDelay(0)), enc)
 	require.EqualError(t, err, "couldn't write index: fake error")
 
-	_, err = block.computeHash(fake.NewHashFactory(fake.NewBadHashWithDelay(2)), enc)
+	_, err = block.computeHash(fake.NewHashFactory(fake.NewBadHashWithDelay(1)), enc)
 	require.EqualError(t, err, "couldn't write genesis hash: fake error")
 
-	_, err = block.computeHash(fake.NewHashFactory(fake.NewBadHashWithDelay(3)), enc)
+	_, err = block.computeHash(fake.NewHashFactory(fake.NewBadHashWithDelay(2)), enc)
 	require.EqualError(t, err, "couldn't write backlink: fake error")
 
-	_, err = block.computeHash(fake.NewHashFactory(fake.NewBadHashWithDelay(4)), enc)
+	_, err = block.computeHash(fake.NewHashFactory(fake.NewBadHashWithDelay(3)), enc)
 	require.EqualError(t, err,
 		"couldn't write payload: stable serialization failed: fake error")
 }
@@ -112,7 +111,6 @@ func TestSkipBlock_HashUniqueness(t *testing.T) {
 	// different from the zero of the type.
 
 	block := SkipBlock{
-		Origin:    fake.NewAddress(42),
 		Index:     1,
 		GenesisID: Digest{1},
 		BackLink:  Digest{1},
@@ -305,7 +303,6 @@ func (s SkipBlock) Generate(rand *rand.Rand, size int) reflect.Value {
 	rand.Read(backLink[:])
 
 	block := SkipBlock{
-		Origin:    fake.NewAddress(42),
 		Index:     randomUint64(rand),
 		GenesisID: genesisID,
 		BackLink:  backLink,

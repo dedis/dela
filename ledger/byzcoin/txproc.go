@@ -7,7 +7,6 @@ import (
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions"
-	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
 )
 
@@ -30,7 +29,7 @@ func newTxProcessor(f transactions.TransactionFactory, i inventory.Inventory) *t
 // Validate implements blockchain.PayloadProcessor. It returns if the validation
 // is a success. In that case, the payload has been staged in the inventory and
 // is waiting for a commit order.
-func (proc *txProcessor) Validate(from mino.Address, data proto.Message) error {
+func (proc *txProcessor) Validate(data proto.Message) error {
 	switch payload := data.(type) {
 	case *GenesisPayload:
 		page, err := proc.setup(payload)
@@ -46,7 +45,7 @@ func (proc *txProcessor) Validate(from mino.Address, data proto.Message) error {
 			Hex("fingerprint", payload.GetFingerprint()).
 			Msgf("validating block payload")
 
-		page, err := proc.process(from, payload)
+		page, err := proc.process(payload)
 		if err != nil {
 			return xerrors.Errorf("couldn't stage the transactions: %v", err)
 		}
@@ -78,7 +77,7 @@ func (proc *txProcessor) setup(payload *GenesisPayload) (inventory.Page, error) 
 	return page, nil
 }
 
-func (proc *txProcessor) process(from mino.Address, payload *BlockPayload) (inventory.Page, error) {
+func (proc *txProcessor) process(payload *BlockPayload) (inventory.Page, error) {
 	page := proc.inventory.GetStagingPage(payload.GetFingerprint())
 	if page != nil {
 		// Page has already been processed previously.

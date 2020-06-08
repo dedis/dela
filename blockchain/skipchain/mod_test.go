@@ -275,7 +275,7 @@ func TestObserver_NotifyCallback(t *testing.T) {
 
 type testValidator struct{}
 
-func (v testValidator) Validate(mino.Address, proto.Message) error {
+func (v testValidator) Validate(proto.Message) error {
 	return nil
 }
 

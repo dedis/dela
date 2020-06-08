@@ -41,7 +41,6 @@ func TestOperations_InsertBlock(t *testing.T) {
 
 func TestOperations_CatchUp(t *testing.T) {
 	block := SkipBlock{
-		Origin:  fake.NewAddress(0),
 		Index:   5,
 		Payload: &empty.Empty{},
 	}

@@ -11,13 +11,11 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
 )
 
 func TestBlockValidator_Validate(t *testing.T) {
 	block := SkipBlock{
-		Origin:    fake.NewAddress(0),
 		Index:     1,
 		GenesisID: Digest{0x01},
 		BackLink:  Digest{0x02},
@@ -116,8 +114,8 @@ type fakePayloadProc struct {
 	errCommit   error
 }
 
-func (v *fakePayloadProc) Validate(addr mino.Address, data proto.Message) error {
-	v.calls = append(v.calls, []interface{}{addr, data})
+func (v *fakePayloadProc) Validate(data proto.Message) error {
+	v.calls = append(v.calls, []interface{}{data})
 	return v.errValidate
 }
 

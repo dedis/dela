@@ -6,54 +6,52 @@ import (
 	proto "github.com/golang/protobuf/proto"
 	any "github.com/golang/protobuf/ptypes/any"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/inventory"
 	"golang.org/x/xerrors"
 )
 
 func TestTxProcessor_Validate(t *testing.T) {
 	proc := newTxProcessor(nil, fakeInventory{})
-	addr := fake.NewAddress(0)
 
-	err := proc.Validate(addr, &BlockPayload{})
+	err := proc.Validate(&BlockPayload{})
 	require.NoError(t, err)
 
-	err = proc.Validate(addr, &GenesisPayload{})
+	err = proc.Validate(&GenesisPayload{})
 	require.NoError(t, err)
 
-	err = proc.Validate(addr, nil)
+	err = proc.Validate(nil)
 	require.EqualError(t, err, "invalid message type '<nil>'")
 
 	proc.inventory = fakeInventory{err: xerrors.New("oops")}
-	err = proc.Validate(addr, &BlockPayload{})
+	err = proc.Validate(&BlockPayload{})
 	require.EqualError(t, err,
 		"couldn't stage the transactions: couldn't stage new page: oops")
 
 	proc.inventory = fakeInventory{errPage: xerrors.New("oops")}
-	err = proc.Validate(addr, &GenesisPayload{})
+	err = proc.Validate(&GenesisPayload{})
 	require.EqualError(t, err,
 		"couldn't stage genesis: couldn't stage page: couldn't write roster: oops")
 
 	proc.inventory = fakeInventory{index: 1}
-	err = proc.Validate(addr, &GenesisPayload{})
+	err = proc.Validate(&GenesisPayload{})
 	require.EqualError(t, err, "index 0 expected but got 1")
 
 	proc.inventory = fakeInventory{fingerprint: []byte{0xab}}
-	err = proc.Validate(addr, &BlockPayload{Fingerprint: []byte{0xcd}})
+	err = proc.Validate(&BlockPayload{Fingerprint: []byte{0xcd}})
 	require.EqualError(t, err, "mismatch payload fingerprint '0xab' != '0xcd'")
 }
 
 func TestTxProcessor_Process(t *testing.T) {
 	proc := newTxProcessor(nil, fakeInventory{page: &fakePage{index: 999}})
 
-	page, err := proc.process(fake.NewAddress(0), &BlockPayload{})
+	page, err := proc.process(&BlockPayload{})
 	require.NoError(t, err)
 	require.Equal(t, uint64(999), page.GetIndex())
 
 	payload := &BlockPayload{Transactions: []*any.Any{{}}}
 
 	proc.inventory = fakeInventory{page: &fakePage{}}
-	page, err = proc.process(fake.NewAddress(0), payload)
+	page, err = proc.process(payload)
 	require.NoError(t, err)
 	require.NotNil(t, page)
 }

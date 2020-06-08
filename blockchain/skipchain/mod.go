@@ -205,7 +205,6 @@ func (a skipchainActor) newChain(data proto.Message, conodes mino.Players) error
 	}
 
 	genesis := SkipBlock{
-		Origin:    a.addr,
 		Index:     0,
 		GenesisID: Digest{},
 		BackLink:  randomBackLink,

@@ -30,7 +30,6 @@ func TestHandler_Process(t *testing.T) {
 	})
 
 	genesis := SkipBlock{
-		Origin:  fake.NewAddress(0),
 		Index:   0,
 		Payload: &wrappers.BoolValue{Value: true},
 	}
@@ -45,8 +44,7 @@ func TestHandler_Process(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, resp)
 	require.Len(t, proc.calls, 2)
-	require.Equal(t, fake.NewAddress(0), proc.calls[0][0])
-	require.True(t, proto.Equal(genesis.Payload, proc.calls[0][1].(proto.Message)))
+	require.True(t, proto.Equal(genesis.Payload, proc.calls[0][0].(proto.Message)))
 	require.True(t, proto.Equal(genesis.Payload, proc.calls[1][0].(proto.Message)))
 	require.Equal(t, 1, watcher.notified)
 
@@ -68,8 +66,8 @@ func TestHandler_Process(t *testing.T) {
 
 func TestHandler_Stream(t *testing.T) {
 	db := &fakeDatabase{blocks: []SkipBlock{
-		{Origin: fake.NewAddress(0), Payload: &empty.Empty{}},
-		{hash: Digest{0x01}, Origin: fake.NewAddress(0), Index: 1, Payload: &empty.Empty{}}},
+		{Payload: &empty.Empty{}},
+		{hash: Digest{0x01}, Index: 1, Payload: &empty.Empty{}}},
 	}
 	h := handler{
 		operations: &operations{
