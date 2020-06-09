@@ -206,13 +206,13 @@ func (f publicKeyFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error
 	m := json.PublicKey{}
 	err := in.Feed(&m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't deserialize data: %v", err)
 	}
 
 	point := suite.Point()
 	err = point.UnmarshalBinary(m.Data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't unmarshal point: %v", err)
 	}
 
 	return publicKey{point: point}, nil
@@ -260,7 +260,7 @@ func (f signatureFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error
 	m := json.Signature{}
 	err := in.Feed(&m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't deserialize data: %v", err)
 	}
 
 	return signature{data: m.Data}, nil

@@ -42,6 +42,9 @@ func TestJsonEncoder_Serialize(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "{\"Index\":42,\"Value\":\"Hello World!\"}", string(buffer))
 
+	_, err = s.Serialize(nil)
+	require.EqualError(t, err, "message is nil")
+
 	_, err = s.Serialize(badMessage{err: xerrors.New("oops")})
 	require.EqualError(t, err,
 		"couldn't serialize 'json.badMessage' to json: oops")

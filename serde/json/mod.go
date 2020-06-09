@@ -31,7 +31,7 @@ func (d factoryInput) GetSerializer() serde.Serializer {
 func (d factoryInput) Feed(m interface{}) error {
 	err := json.Unmarshal(d.data, m)
 	if err != nil {
-		return xerrors.Errorf("couldn't unmarshal: %v", err)
+		return xerrors.Errorf("couldn't unmarshal: %w", err)
 	}
 
 	return nil
@@ -49,9 +49,13 @@ func NewSerializer() serde.Serializer {
 
 // Serialize implements serde.Serializer.
 func (e Serializer) Serialize(m serde.Message) ([]byte, error) {
+	if m == nil {
+		return nil, xerrors.New("message is nil")
+	}
+
 	itf, err := m.VisitJSON(e)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't serialize '%T' to json: %v", m, err)
+		return nil, xerrors.Errorf("couldn't serialize '%T' to json: %w", m, err)
 	}
 
 	buffer, err := json.Marshal(itf)
@@ -66,7 +70,7 @@ func (e Serializer) Serialize(m serde.Message) ([]byte, error) {
 func (e Serializer) Deserialize(buffer []byte, f serde.Factory, o interface{}) error {
 	m, err := f.VisitJSON(factoryInput{data: buffer, serde: e})
 	if err != nil {
-		return xerrors.Errorf("couldn't deserialize from json with '%T': %v", f, err)
+		return xerrors.Errorf("couldn't deserialize from json with '%T': %w", f, err)
 	}
 
 	err = serdereflect.AssignTo(m, o)

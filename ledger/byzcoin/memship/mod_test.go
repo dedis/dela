@@ -14,7 +14,10 @@ import (
 	"go.dedis.ch/dela/encoding"
 	internal "go.dedis.ch/dela/internal/testing"
 	"go.dedis.ch/dela/internal/testing/fake"
+	types "go.dedis.ch/dela/ledger/byzcoin/memship/json"
 	"go.dedis.ch/dela/ledger/inventory"
+	"go.dedis.ch/dela/ledger/transactions/basic"
+	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
 
@@ -60,6 +63,28 @@ func TestClientTask_Pack(t *testing.T) {
 	task = NewAdd(fake.NewAddress(0), fake.PublicKey{})
 	_, err = task.Pack(fake.BadPackAnyEncoder{})
 	require.EqualError(t, err, "couldn't pack public key: fake error")
+}
+
+func TestClientTask_VisitJSON(t *testing.T) {
+	task := NewRemove([]uint32{2, 4})
+	ser := json.NewSerializer()
+
+	data, err := ser.Serialize(task)
+	require.NoError(t, err)
+	require.Equal(t, `{"Remove":[2,4],"Address":null,"PublicKey":null}`, string(data))
+
+	task = NewAdd(fake.NewAddress(0), fake.PublicKey{})
+	data, err = ser.Serialize(task)
+	require.NoError(t, err)
+	require.Equal(t, `{"Remove":null,"Address":"AAAAAA==","PublicKey":{}}`, string(data))
+
+	task = clientTask{player: &viewchange.Player{Address: fake.NewBadAddress()}}
+	_, err = task.VisitJSON(ser)
+	require.EqualError(t, err, "couldn't marshal address: fake error")
+
+	task = clientTask{player: &viewchange.Player{Address: fake.NewAddress(0)}}
+	_, err = task.VisitJSON(fake.NewBadSerializer())
+	require.EqualError(t, err, "couldn't serialize public key: fake error")
 }
 
 func TestClientTask_Fingerprint(t *testing.T) {
@@ -226,6 +251,31 @@ func TestTaskManager_FromProto(t *testing.T) {
 	_, err = manager.FromProto(&Task{Addr: []byte{}, PublicKey: &any.Any{}})
 	require.EqualError(t, err,
 		"couldn't unpack player: couldn't decode public key: fake error")
+}
+
+func TestTaskManager_VisitJSON(t *testing.T) {
+	manager := NewTaskManager(nil, fake.Mino{}, fake.NewSigner())
+	ser := json.NewSerializer()
+
+	var task serverTask
+	err := ser.Deserialize([]byte(`{"Address":"AAAAAA==","PublicKey":{}}`), manager, &task)
+	require.NoError(t, err)
+	require.NotNil(t, task.player)
+
+	_, err = manager.VisitJSON(fake.NewBadFactoryInput())
+	require.EqualError(t, err, "couldn't deserialize task: fake error")
+
+	input := fake.FactoryInput{
+		Message: types.Task{Address: []byte{}, PublicKey: []byte{}},
+		Serde:   fake.NewBadSerializer(),
+	}
+	_, err = manager.VisitJSON(input)
+	require.EqualError(t, err, "couldn't deserialize public key: fake error")
+}
+
+func TestRegister(t *testing.T) {
+	factory := basic.NewTransactionFactory(fake.NewSigner())
+	Register(factory, NewTaskManager(nil, fake.Mino{}, fake.NewSigner()))
 }
 
 // -----------------------------------------------------------------------------

@@ -35,6 +35,7 @@ type PublicKey interface {
 // PublicKeyFactory is a factory to create public keys.
 type PublicKeyFactory interface {
 	serde.Factory
+
 	FromProto(src proto.Message) (PublicKey, error)
 }
 
@@ -65,6 +66,7 @@ type Signature interface {
 // SignatureFactory is a factory to create BLS signature.
 type SignatureFactory interface {
 	serde.Factory
+
 	FromProto(src proto.Message) (Signature, error)
 }
 

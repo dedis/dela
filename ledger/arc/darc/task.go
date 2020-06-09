@@ -61,7 +61,7 @@ func (act clientTask) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 func (act clientTask) VisitJSON(ser serde.Serializer) (interface{}, error) {
 	access, err := ser.Serialize(act.access)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't serialize access: %v", err)
 	}
 
 	m := json.ClientTask{
@@ -189,17 +189,18 @@ func (f taskFactory) FromProto(in proto.Message) (basic.ServerTask, error) {
 	return servAccess, nil
 }
 
+// VisitJSON implements serde.Factory. It deserializes the server task.
 func (f taskFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
 	m := json.ClientTask{}
 	err := in.Feed(&m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't deserialize task: %v", err)
 	}
 
 	var access Access
 	err = in.GetSerializer().Deserialize(m.Access, f.darcFactory, &access)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't deserialize access: %v", err)
 	}
 
 	task := serverTask{

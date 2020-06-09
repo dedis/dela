@@ -20,6 +20,7 @@ import (
 // PublicKeyFactory is a public key factory for commonly known algorithms.
 //
 // - implements crypto.PublicKeyFactory
+// - implements serde.Factory
 type PublicKeyFactory struct {
 	serde.UnimplementedFactory
 
@@ -42,7 +43,8 @@ func NewPublicKeyFactory() PublicKeyFactory {
 	return factory
 }
 
-// RegisterAlgorithm registers the factory for the algorithm.
+// RegisterAlgorithm registers the factory for the algorithm. It will override
+// an already existing key.
 func (f PublicKeyFactory) RegisterAlgorithm(algo string, factory serde.Factory) {
 	f.factories[algo] = factory
 }
@@ -82,7 +84,7 @@ func (f PublicKeyFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error
 	algo := json.Algorithm{}
 	err := in.Feed(&algo)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't deserialize algorithm: %v", err)
 	}
 
 	factory := f.factories[algo.Name]
@@ -156,12 +158,12 @@ func (f SignatureFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error
 	algo := json.Algorithm{}
 	err := in.Feed(&algo)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't deserialize algorithm: %v", err)
 	}
 
 	factory := f.factories[algo.Name]
 	if factory == nil {
-		return nil, xerrors.Errorf("missing factory for '%s' algorithm", algo.Name)
+		return nil, xerrors.Errorf("unknown algorithm '%s'", algo.Name)
 	}
 
 	return factory.VisitJSON(in)

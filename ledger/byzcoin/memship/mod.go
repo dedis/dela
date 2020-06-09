@@ -124,12 +124,12 @@ func (t clientTask) VisitJSON(ser serde.Serializer) (interface{}, error) {
 	if t.player != nil {
 		addr, err := t.player.Address.MarshalText()
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("couldn't marshal address: %v", err)
 		}
 
 		pubkey, err := ser.Serialize(t.player.PublicKey)
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("couldn't serialize public key: %v", err)
 		}
 
 		m.Address = addr
@@ -362,7 +362,7 @@ func (f TaskManager) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
 	m := json.Task{}
 	err := in.Feed(&m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't deserialize task: %v", err)
 	}
 
 	task := serverTask{
@@ -380,7 +380,7 @@ func (f TaskManager) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
 		var pubkey crypto.PublicKey
 		err = in.GetSerializer().Deserialize(m.PublicKey, f.rosterFactory.GetPublicKeyFactory(), &pubkey)
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("couldn't deserialize public key: %v", err)
 		}
 
 		task.clientTask.player = &viewchange.Player{

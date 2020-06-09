@@ -197,7 +197,7 @@ func (f Factory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
 	m := json.Access{}
 	err := in.Feed(&m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't deserialize access: %v", err)
 	}
 
 	rules := make(map[string]expression)

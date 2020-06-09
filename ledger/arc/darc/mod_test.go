@@ -12,6 +12,7 @@ import (
 	internal "go.dedis.ch/dela/internal/testing"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/arc"
+	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
 
@@ -114,6 +115,18 @@ func TestAccess_Pack(t *testing.T) {
 	require.EqualError(t, err, "couldn't pack expression: fake error")
 }
 
+func TestAccess_VisitJSON(t *testing.T) {
+	access := Access{rules: map[string]expression{
+		"A": {matches: map[string]struct{}{"C": {}}},
+		"B": {},
+	}}
+
+	ser := json.NewSerializer()
+	data, err := ser.Serialize(access)
+	require.NoError(t, err)
+	require.Equal(t, `{"Rules":{"A":["C"],"B":[]}}`, string(data))
+}
+
 func TestFactory_FromProto(t *testing.T) {
 	factory := NewFactory()
 
@@ -141,4 +154,22 @@ func TestFactory_FromProto(t *testing.T) {
 	factory.encoder = fake.BadUnmarshalAnyEncoder{}
 	_, err = factory.FromProto(pbAny)
 	require.EqualError(t, err, "couldn't unmarshal message: fake error")
+}
+
+func TestFactory_VisitJSON(t *testing.T) {
+	factory := NewFactory()
+
+	ser := json.NewSerializer()
+
+	var access Access
+	err := ser.Deserialize([]byte(`{"Rules":{"A":["B"],"C":[]}}`), factory, &access)
+	require.NoError(t, err)
+	expected := Access{rules: map[string]expression{
+		"A": {matches: map[string]struct{}{"B": {}}},
+		"C": {matches: map[string]struct{}{}},
+	}}
+	require.Equal(t, expected, access)
+
+	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
+	require.EqualError(t, err, "couldn't deserialize access: fake error")
 }

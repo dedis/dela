@@ -121,17 +121,17 @@ func (t transaction) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 func (t transaction) VisitJSON(ser serde.Serializer) (interface{}, error) {
 	identity, err := ser.Serialize(t.identity)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't serialize identity: %v", err)
 	}
 
 	signature, err := ser.Serialize(t.signature)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't serialize signature: %v", err)
 	}
 
 	task, err := ser.Serialize(t.task)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't serialize task: %v", err)
 	}
 
 	m := json.Transaction{
@@ -289,7 +289,7 @@ func (f TransactionFactory) FromProto(in proto.Message) (transactions.ServerTran
 
 	msg, err := f.encoder.UnmarshalDynamicAny(pb.GetTask())
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't unmarshal any: %v", err)
 	}
 
 	task, err := factory.FromProto(msg)
@@ -318,43 +318,45 @@ func (f TransactionFactory) VisitJSON(in serde.FactoryInput) (serde.Message, err
 	m := json.Transaction{}
 	err := in.Feed(&m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't deserialize transaction: %v", err)
 	}
 
 	var identity crypto.PublicKey
 	err = in.GetSerializer().Deserialize(m.Identity, f.publicKeyFactory, &identity)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't deserialize identity: %v", err)
 	}
 
 	var signature crypto.Signature
 	err = in.GetSerializer().Deserialize(m.Signature, f.signatureFactory, &signature)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't deserialize signature: %v", err)
 	}
 
 	factory := f.registry[m.Task.Type]
 	if factory == nil {
-		return nil, xerrors.Errorf("missing factory for type '%s'", m.Task.Type)
+		return nil, xerrors.Errorf("unknown factory for type '%s'", m.Task.Type)
 	}
 
 	var task ServerTask
 	err = in.GetSerializer().Deserialize(m.Task.Value, factory, &task)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't deserialize task: %v", err)
 	}
 
-	tx := transaction{
-		nonce:     m.Nonce,
-		identity:  identity,
-		signature: signature,
-		task:      task,
+	tx := serverTransaction{
+		transaction: transaction{
+			nonce:     m.Nonce,
+			identity:  identity,
+			signature: signature,
+			task:      task,
+		},
 	}
 
 	h := f.hashFactory.New()
 	err = tx.Fingerprint(h, f.encoder)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't fingerprint: %v", err)
 	}
 
 	tx.hash = h.Sum(nil)
