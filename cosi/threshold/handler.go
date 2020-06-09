@@ -16,13 +16,13 @@ type thresholdHandler struct {
 	*CoSi
 	mino.UnsupportedHandler
 
-	hasher cosi.Hashable
+	reactor cosi.Reactor
 }
 
-func newHandler(c *CoSi, hasher cosi.Hashable) thresholdHandler {
+func newHandler(c *CoSi, hasher cosi.Reactor) thresholdHandler {
 	return thresholdHandler{
-		CoSi:   c,
-		hasher: hasher,
+		CoSi:    c,
+		reactor: hasher,
 	}
 }
 
@@ -51,7 +51,7 @@ func (h thresholdHandler) processRequest(sender mino.Sender, rcvr mino.Receiver)
 		return xerrors.Errorf("failed to receive: %v", err)
 	}
 
-	buffer, err := h.hasher.Hash(addr, resp)
+	buffer, err := h.reactor.Invoke(addr, resp)
 	if err != nil {
 		return xerrors.Errorf("couldn't hash message: %v", err)
 	}

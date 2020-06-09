@@ -36,9 +36,9 @@ type BlockFactory interface {
 // PayloadProcessor is the interface to implement to validate the generic
 // payload stored in the block.
 type PayloadProcessor interface {
-	// Validate should return nil if the payload of the block at the given index
-	// passes the validation.
-	Validate(index uint64, payload proto.Message) error
+	// Validate should return nil if the payload of the block passes the
+	// validation.
+	Validate(payload proto.Message) error
 
 	// Commit should process the data and perform any operation required when
 	// new data is stored on the chain.

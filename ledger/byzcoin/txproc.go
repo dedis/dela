@@ -29,7 +29,7 @@ func newTxProcessor(f transactions.TransactionFactory, i inventory.Inventory) *t
 // Validate implements blockchain.PayloadProcessor. It returns if the validation
 // is a success. In that case, the payload has been staged in the inventory and
 // is waiting for a commit order.
-func (proc *txProcessor) Validate(index uint64, data proto.Message) error {
+func (proc *txProcessor) Validate(data proto.Message) error {
 	switch payload := data.(type) {
 	case *GenesisPayload:
 		page, err := proc.setup(payload)
@@ -48,10 +48,6 @@ func (proc *txProcessor) Validate(index uint64, data proto.Message) error {
 		page, err := proc.process(payload)
 		if err != nil {
 			return xerrors.Errorf("couldn't stage the transactions: %v", err)
-		}
-
-		if page.GetIndex() != index {
-			return xerrors.Errorf("invalid index %d != %d", page.GetIndex(), index)
 		}
 
 		if !bytes.Equal(page.GetFingerprint(), payload.GetFingerprint()) {

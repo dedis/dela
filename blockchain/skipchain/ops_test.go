@@ -1,7 +1,6 @@
 package skipchain
 
 import (
-	fmt "fmt"
 	"testing"
 
 	"github.com/golang/protobuf/ptypes/any"
@@ -66,7 +65,6 @@ func TestOperations_CatchUp(t *testing.T) {
 		db:        &fakeDatabase{blocks: []SkipBlock{{}}},
 		watcher:   &fakeWatcher{call: call},
 		rpc:       fake.NewStreamRPC(rcv, fake.Sender{}),
-		consensus: fakeConsensus{hash: hash},
 	}
 
 	// Normal catch up with more than one block missing.
@@ -118,28 +116,4 @@ func TestOperations_CatchUp(t *testing.T) {
 	ops.processor = &fakePayloadProc{errValidate: xerrors.New("oops")}
 	err = ops.catchUp(block, nil)
 	require.EqualError(t, err, "couldn't store block: couldn't validate block: oops")
-
-	ops.rpc = fake.NewStreamRPC(rcv, fake.Sender{})
-	ops.consensus = fakeConsensus{errFactory: xerrors.New("oops")}
-	err = ops.catchUp(block, nil)
-	require.EqualError(t, err, "couldn't get chain factory: oops")
-
-	ops.consensus = fakeConsensus{err: xerrors.New("oops")}
-	err = ops.catchUp(block, nil)
-	require.EqualError(t, err, "couldn't decode chain: oops")
-
-	ops.consensus = fakeConsensus{hash: Digest{0x01}}
-	err = ops.catchUp(block, nil)
-	require.EqualError(t, err, fmt.Sprintf("mismatch chain: hash '%x' != '%x'",
-		Digest{0x01}.Bytes(), hash.Bytes()))
-
-	ops.consensus = fakeConsensus{hash: hash, errStore: xerrors.New("oops")}
-	err = ops.catchUp(block, nil)
-	require.EqualError(t, err, "couldn't store chain: oops")
-
-	blockpb.(*BlockProto).Index = 1
-	rcv2 := fake.Receiver{Msg: &BlockResponse{Block: blockpb.(*BlockProto)}}
-	ops.rpc = fake.NewStreamRPC(rcv2, fake.Sender{})
-	err = ops.catchUp(block, nil)
-	require.EqualError(t, err, "missing chain to the block in the response")
 }

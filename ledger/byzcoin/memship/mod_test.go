@@ -1,4 +1,4 @@
-package roster
+package memship
 
 import (
 	"bytes"
@@ -9,13 +9,24 @@ import (
 	any "github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/consensus/viewchange"
+	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/encoding"
+	internal "go.dedis.ch/dela/internal/testing"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/inventory"
 	"golang.org/x/xerrors"
 )
+
+func TestMessages(t *testing.T) {
+	messages := []proto.Message{
+		&Task{},
+	}
+
+	for _, m := range messages {
+		internal.CoverProtoMessage(t, m)
+	}
+}
 
 func TestClientTask_GetChangeSet(t *testing.T) {
 	task := NewRemove([]uint32{1, 3, 1, 3, 4}).(clientTask)
@@ -89,21 +100,19 @@ func TestClientTask_Fingerprint(t *testing.T) {
 }
 
 func TestServerTask_Consume(t *testing.T) {
-	roster := rosterFactory{}.New(fake.NewAuthority(3, fake.NewSigner))
-	rosterpb, err := roster.Pack(encoding.NewProtoEncoder())
+	r := roster.New(fake.NewAuthority(3, fake.NewSigner))
+	rosterpb, err := r.Pack(encoding.NewProtoEncoder())
 	require.NoError(t, err)
 
 	task := serverTask{
 		clientTask:    clientTask{remove: []uint32{2}},
-		rosterFactory: NewRosterFactory(fake.AddressFactory{}, fake.PublicKeyFactory{}),
+		rosterFactory: roster.NewRosterFactory(fake.AddressFactory{}, fake.PublicKeyFactory{}),
 		encoder:       encoding.NewProtoEncoder(),
-		bag:           &changeSetBag{},
 		inventory:     fakeInventory{value: rosterpb},
 	}
 
 	err = task.Consume(nil, fakePage{values: map[string]proto.Message{}})
 	require.NoError(t, err)
-	require.Len(t, task.bag.store, 1)
 
 	task.inventory = fakeInventory{err: xerrors.New("oops")}
 	err = task.Consume(nil, fakePage{})
@@ -127,64 +136,69 @@ func TestServerTask_Consume(t *testing.T) {
 	require.EqualError(t, err, "couldn't write roster: oops")
 }
 
-func TestTaskManager_GetAuthorityFactory(t *testing.T) {
-	factory := NewRosterFactory(nil, nil)
-	manager := NewTaskManager(factory, nil)
-
-	require.NotNil(t, manager.GetAuthorityFactory())
-}
-
 func TestTaskManager_GetAuthority(t *testing.T) {
-	factory := NewRosterFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
+	manager := TaskManager{
+		inventory:     fakeInventory{},
+		rosterFactory: fakeRosterFactory{},
+	}
 
-	roster := factory.New(fake.NewAuthority(3, fake.NewSigner))
-	rosterpb, err := roster.Pack(encoding.NewProtoEncoder())
-	require.NoError(t, err)
-
-	manager := NewTaskManager(factory, fakeInventory{value: rosterpb})
-
-	authority, err := manager.GetAuthority(3)
+	authority, err := manager.GetAuthority(0)
 	require.NoError(t, err)
 	require.Equal(t, 3, authority.Len())
 
 	manager.inventory = fakeInventory{err: xerrors.New("oops")}
-	_, err = manager.GetAuthority(3)
+	_, err = manager.GetAuthority(1)
 	require.EqualError(t, err, "couldn't read page: oops")
 
 	manager.inventory = fakeInventory{errPage: xerrors.New("oops")}
-	_, err = manager.GetAuthority(3)
-	require.EqualError(t, err, "couldn't read roster: oops")
+	_, err = manager.GetAuthority(1)
+	require.EqualError(t, err, "couldn't read entry: oops")
 
 	manager.inventory = fakeInventory{}
-	_, err = manager.GetAuthority(3)
-	require.EqualError(t, err, "couldn't decode roster: invalid message type '<nil>'")
+	manager.rosterFactory = fakeRosterFactory{err: xerrors.New("oops")}
+	_, err = manager.GetAuthority(1)
+	require.EqualError(t, err, "couldn't decode roster: oops")
 }
 
-func TestTaskManager_GetChangeSet(t *testing.T) {
-	manager := NewTaskManager(nil, nil)
-
-	changeset, err := manager.GetChangeSet(fakeBlock{payload: fakePayload{}})
-	require.NoError(t, err)
-	require.Len(t, changeset.Remove, 0)
-
-	manager.bag.index = 1
-	manager.bag.store = map[[32]byte]viewchange.ChangeSet{
-		{0x12}: {Remove: []uint32{1}},
+func TestTaskManager_Wait(t *testing.T) {
+	manager := TaskManager{
+		me:            fake.NewAddress(0),
+		inventory:     fakeInventory{},
+		rosterFactory: fakeRosterFactory{},
 	}
-	changeset, err = manager.GetChangeSet(fakeBlock{payload: fakePayload{}})
+
+	allowed := manager.Wait()
+	require.True(t, allowed)
+
+	manager.me = fake.NewAddress(1)
+	allowed = manager.Wait()
+	require.False(t, allowed)
+
+	manager.inventory = fakeInventory{err: xerrors.New("oops")}
+	allowed = manager.Wait()
+	require.False(t, allowed)
+}
+
+func TestTaskManager_Verify(t *testing.T) {
+	manager := TaskManager{
+		inventory:     fakeInventory{},
+		rosterFactory: fakeRosterFactory{},
+	}
+
+	authority, err := manager.Verify(fake.NewAddress(0), 0)
 	require.NoError(t, err)
-	require.Len(t, changeset.Remove, 1)
+	require.Equal(t, 3, authority.Len())
 
-	_, err = manager.GetChangeSet(fakeProposal{})
-	require.EqualError(t, err, "proposal must implement blockchain.Block")
+	_, err = manager.Verify(fake.NewAddress(1), 0)
+	require.EqualError(t, err, "<fake.Address[1]> is not the leader")
 
-	_, err = manager.GetChangeSet(fakeBlock{payload: &empty.Empty{}})
-	require.EqualError(t, err, "payload must implement roster.Payload")
+	manager.inventory = fakeInventory{err: xerrors.New("oops")}
+	_, err = manager.Verify(fake.NewAddress(0), 0)
+	require.EqualError(t, err, "couldn't get authority: couldn't read page: oops")
 }
 
 func TestTaskManager_FromProto(t *testing.T) {
-	factory := NewRosterFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
-	manager := NewTaskManager(factory, nil)
+	manager := NewTaskManager(fakeInventory{value: &empty.Empty{}}, fake.Mino{}, fake.Signer{})
 
 	task, err := manager.FromProto(&Task{Addr: []byte{0x1}})
 	require.NoError(t, err)
@@ -208,8 +222,7 @@ func TestTaskManager_FromProto(t *testing.T) {
 	_, err = manager.FromProto(taskAny)
 	require.EqualError(t, err, "couldn't unmarshal message: fake error")
 
-	factory = NewRosterFactory(fake.AddressFactory{}, fake.NewBadPublicKeyFactory())
-	manager = NewTaskManager(factory, nil)
+	manager.rosterFactory = roster.NewRosterFactory(fake.AddressFactory{}, fake.NewBadPublicKeyFactory())
 	_, err = manager.FromProto(&Task{Addr: []byte{}, PublicKey: &any.Any{}})
 	require.EqualError(t, err,
 		"couldn't unpack player: couldn't decode public key: fake error")
@@ -264,6 +277,10 @@ type fakeInventory struct {
 	errPage error
 }
 
+func (i fakeInventory) Len() uint64 {
+	return 1
+}
+
 func (i fakeInventory) GetPage(uint64) (inventory.Page, error) {
 	values := map[string]proto.Message{
 		RosterValueKey: i.value,
@@ -271,27 +288,12 @@ func (i fakeInventory) GetPage(uint64) (inventory.Page, error) {
 	return fakePage{values: values, errRead: i.errPage}, i.err
 }
 
-type fakePayload struct {
-	proto.Message
+type fakeRosterFactory struct {
+	roster.Factory
+
+	err error
 }
 
-func (p fakePayload) GetFingerprint() []byte {
-	return []byte{0x12}
-}
-
-type fakeBlock struct {
-	consensus.Proposal
-	payload proto.Message
-}
-
-func (fakeBlock) GetIndex() uint64 {
-	return 1
-}
-
-func (b fakeBlock) GetPayload() proto.Message {
-	return b.payload
-}
-
-type fakeProposal struct {
-	consensus.Proposal
+func (f fakeRosterFactory) FromProto(proto.Message) (viewchange.Authority, error) {
+	return roster.New(fake.NewAuthority(3, fake.NewSigner)), f.err
 }

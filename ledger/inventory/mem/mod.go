@@ -63,6 +63,11 @@ func NewInventory() *InMemoryInventory {
 	}
 }
 
+// Len implements inventory.Inventory. It returns the length of the inventory.
+func (inv *InMemoryInventory) Len() uint64 {
+	return uint64(len(inv.pages))
+}
+
 // GetPage implements inventory.Inventory. It returns the snapshot for the
 // version if it exists, otherwise an error.
 func (inv *InMemoryInventory) GetPage(index uint64) (inventory.Page, error) {
@@ -124,10 +129,6 @@ func (inv *InMemoryInventory) Stage(f func(inventory.WritablePage) error) (inven
 	inv.Lock()
 	inv.stagingPages[page.fingerprint] = page
 	inv.Unlock()
-
-	for _, fn := range page.defers {
-		fn(page.GetFingerprint())
-	}
 
 	return page, nil
 }
@@ -194,7 +195,6 @@ func (inv *InMemoryInventory) Commit(fingerprint []byte) error {
 type inMemoryPage struct {
 	index       uint64
 	fingerprint Digest
-	defers      []func([]byte)
 	entries     map[Digest]proto.Message
 }
 
@@ -237,10 +237,6 @@ func (page *inMemoryPage) Write(key []byte, value proto.Message) error {
 	page.entries[digest] = value
 
 	return nil
-}
-
-func (page *inMemoryPage) Defer(fn func([]byte)) {
-	page.defers = append(page.defers, fn)
 }
 
 func (page *inMemoryPage) clone() *inMemoryPage {

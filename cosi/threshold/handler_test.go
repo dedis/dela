@@ -13,7 +13,7 @@ import (
 func TestThresholdHandler_Stream(t *testing.T) {
 	handler := newHandler(
 		&CoSi{signer: fake.NewSigner(), encoder: encoding.NewProtoEncoder()},
-		fakeHashable{},
+		fakeReactor{},
 	)
 
 	rcvr := &fakeReceiver{resps: makeResponse()}
@@ -26,13 +26,13 @@ func TestThresholdHandler_Stream(t *testing.T) {
 	err = handler.processRequest(sender, rcvr)
 	require.EqualError(t, err, "failed to receive: oops")
 
-	handler.hasher = fakeHashable{err: xerrors.New("oops")}
+	handler.reactor = fakeReactor{err: xerrors.New("oops")}
 	rcvr.err = nil
 	rcvr.resps = makeResponse()
 	err = handler.processRequest(sender, rcvr)
 	require.EqualError(t, err, "couldn't hash message: oops")
 
-	handler.hasher = fakeHashable{}
+	handler.reactor = fakeReactor{}
 	handler.signer = fake.NewBadSigner()
 	rcvr.resps = makeResponse()
 	err = handler.processRequest(sender, rcvr)

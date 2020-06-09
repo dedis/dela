@@ -13,6 +13,14 @@ import (
 	"golang.org/x/xerrors"
 )
 
+func TestInMemoryInventory_Len(t *testing.T) {
+	inv := NewInventory()
+	require.Equal(t, uint64(0), inv.Len())
+
+	inv.pages = []*inMemoryPage{{}}
+	require.Equal(t, uint64(1), inv.Len())
+}
+
 func TestInMemoryInventory_GetPage(t *testing.T) {
 	inv := NewInventory()
 	inv.pages = []*inMemoryPage{{}}
@@ -52,7 +60,6 @@ func TestInMemoryInventory_Stage(t *testing.T) {
 	inv.pages = append(inv.pages, inv.stagingPages[page.(*inMemoryPage).fingerprint])
 	inv.stagingPages = make(map[Digest]*inMemoryPage)
 	page, err = inv.Stage(func(page inventory.WritablePage) error {
-		page.Defer(func([]byte) {})
 		value, err := page.Read([]byte{1})
 		require.NoError(t, err)
 		require.True(t, value.(*wrappers.BoolValue).Value)

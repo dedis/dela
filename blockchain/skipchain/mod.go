@@ -74,7 +74,6 @@ func (s *Skipchain) Listen(proc blockchain.PayloadProcessor) (blockchain.Actor, 
 		blockFactory: s.blockFactory,
 		db:           s.db,
 		watcher:      s.watcher,
-		consensus:    s.consensus,
 	}
 
 	rpc, err := s.mino.MakeRPC("skipchain", newHandler(ops))
@@ -84,7 +83,7 @@ func (s *Skipchain) Listen(proc blockchain.PayloadProcessor) (blockchain.Actor, 
 
 	ops.rpc = rpc
 
-	consensus, err := s.consensus.Listen(newBlockValidator(ops))
+	consensus, err := s.consensus.Listen(newReactor(ops))
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't start the consensus: %v", err)
 	}
@@ -250,7 +249,12 @@ func (a skipchainActor) Store(data proto.Message, players mino.Players) error {
 		return xerrors.Errorf("couldn't create next block: %v", err)
 	}
 
-	err = a.consensus.Propose(block)
+	blockpb, err := a.encoder.Pack(block)
+	if err != nil {
+		return xerrors.Errorf("couldn't pack block: %v", err)
+	}
+
+	err = a.consensus.Propose(blockpb)
 	if err != nil {
 		return xerrors.Errorf("couldn't propose the block: %v", err)
 	}

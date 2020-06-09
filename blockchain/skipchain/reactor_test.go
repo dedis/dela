@@ -14,7 +14,27 @@ import (
 	"golang.org/x/xerrors"
 )
 
-func TestBlockValidator_Validate(t *testing.T) {
+func TestReactor_InvokeGenesis(t *testing.T) {
+	expected := Digest{1}
+	r := &reactor{
+		operations: &operations{
+			db: &fakeDatabase{
+				blocks: []SkipBlock{{hash: expected}, {hash: Digest{2}}},
+			},
+		},
+	}
+
+	digest, err := r.InvokeGenesis()
+	require.NoError(t, err)
+	require.Equal(t, expected[:], digest)
+
+	r.db = &fakeDatabase{}
+	_, err = r.InvokeGenesis()
+	require.EqualError(t, err,
+		"couldn't read genesis block: block at index 0 not found")
+}
+
+func TestReactor_InvokeValidate(t *testing.T) {
 	block := SkipBlock{
 		Index:     1,
 		GenesisID: Digest{0x01},
@@ -26,7 +46,7 @@ func TestBlockValidator_Validate(t *testing.T) {
 	require.NoError(t, err)
 
 	db := &fakeDatabase{blocks: []SkipBlock{{hash: block.GenesisID}}}
-	v := &blockValidator{
+	r := &reactor{
 		operations: &operations{
 			processor: &fakePayloadProc{},
 			watcher:   &fakeWatcher{},
@@ -42,42 +62,40 @@ func TestBlockValidator_Validate(t *testing.T) {
 			buffer: make(map[Digest]SkipBlock),
 		},
 	}
-	prop, err := v.Validate(fake.Address{}, packed)
+	digest, err := r.InvokeValidate(fake.Address{}, packed)
 	require.NoError(t, err)
-	require.NotNil(t, prop)
-	require.Equal(t, block.BackLink.Bytes(), prop.GetPreviousHash())
 	hash, err := block.computeHash(crypto.NewSha256Factory(), encoding.NewProtoEncoder())
 	require.NoError(t, err)
-	require.Equal(t, hash.Bytes(), prop.GetHash())
+	require.Equal(t, hash.Bytes(), digest)
 
-	_, err = v.Validate(fake.Address{}, nil)
+	_, err = r.InvokeValidate(fake.Address{}, nil)
 	require.EqualError(t, err, "couldn't decode block: invalid message type '<nil>'")
 
 	db.err = xerrors.New("oops")
-	_, err = v.Validate(fake.Address{}, packed)
+	_, err = r.InvokeValidate(fake.Address{}, packed)
 	require.EqualError(t, err, "couldn't read genesis block: oops")
 
 	db.err = nil
 	db.blocks = []SkipBlock{{}}
-	_, err = v.Validate(fake.Address{}, packed)
+	_, err = r.InvokeValidate(fake.Address{}, packed)
 	require.EqualError(t, err,
 		fmt.Sprintf("mismatch genesis hash '%v' != '%v'", Digest{}, block.GenesisID))
 
 	db.blocks = []SkipBlock{{hash: block.GenesisID}}
-	v.processor = &fakePayloadProc{errValidate: xerrors.New("oops")}
-	_, err = v.Validate(fake.Address{}, packed)
+	r.processor = &fakePayloadProc{errValidate: xerrors.New("oops")}
+	_, err = r.InvokeValidate(fake.Address{}, packed)
 	require.EqualError(t, err, "couldn't validate the payload: oops")
 
 	packed.(*BlockProto).Index = 5
-	v.rpc = fake.NewStreamRPC(fake.Receiver{}, fake.NewBadSender())
-	_, err = v.Validate(fake.Address{}, packed)
+	r.rpc = fake.NewStreamRPC(fake.Receiver{}, fake.NewBadSender())
+	_, err = r.InvokeValidate(fake.Address{}, packed)
 	require.EqualError(t, err,
 		"couldn't catch up: couldn't send block request: fake error")
 }
 
-func TestBlockValidator_Commit(t *testing.T) {
+func TestReactor_InvokeCommit(t *testing.T) {
 	watcher := &fakeWatcher{}
-	v := &blockValidator{
+	v := &reactor{
 		operations: &operations{
 			processor: &fakePayloadProc{},
 			watcher:   watcher,
@@ -88,19 +106,19 @@ func TestBlockValidator_Commit(t *testing.T) {
 
 	v.queue.Add(SkipBlock{hash: Digest{1, 2, 3}})
 	v.queue.Add(SkipBlock{hash: Digest{1, 3}})
-	err := v.Commit(Digest{1, 2, 3}.Bytes())
+	err := v.InvokeCommit(Digest{1, 2, 3}.Bytes())
 	require.NoError(t, err)
 	require.Len(t, v.queue.buffer, 0)
 	require.Equal(t, 1, watcher.notified)
 
-	err = v.Commit([]byte{0xaa})
+	err = v.InvokeCommit([]byte{0xaa})
 	require.Equal(t, 0, v.db.(*fakeDatabase).aborts)
 	require.EqualError(t, err,
 		fmt.Sprintf("couldn't find block '%v'", Digest{0xaa}))
 
 	v.queue.Add(SkipBlock{hash: Digest{1, 2, 3}})
 	v.db = &fakeDatabase{err: xerrors.New("oops")}
-	err = v.Commit(Digest{1, 2, 3}.Bytes())
+	err = v.InvokeCommit(Digest{1, 2, 3}.Bytes())
 	require.EqualError(t, err, "couldn't commit block: tx failed: couldn't write block: oops")
 	require.Equal(t, 1, v.db.(*fakeDatabase).aborts)
 }
@@ -115,8 +133,8 @@ type fakePayloadProc struct {
 	errCommit   error
 }
 
-func (v *fakePayloadProc) Validate(index uint64, data proto.Message) error {
-	v.calls = append(v.calls, []interface{}{index, data})
+func (v *fakePayloadProc) Validate(data proto.Message) error {
+	v.calls = append(v.calls, []interface{}{data})
 	return v.errValidate
 }
 

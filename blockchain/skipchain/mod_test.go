@@ -11,7 +11,7 @@ import (
 	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/consensus/cosipbft"
-	"go.dedis.ch/dela/consensus/viewchange"
+	"go.dedis.ch/dela/consensus/viewchange/constant"
 	"go.dedis.ch/dela/cosi/threshold"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
@@ -186,6 +186,7 @@ func TestActor_InitChain(t *testing.T) {
 func TestActor_NewChain(t *testing.T) {
 	actor := skipchainActor{
 		operations: &operations{
+			addr:    fake.NewAddress(0),
 			encoder: encoding.NewProtoEncoder(),
 			db:      &fakeDatabase{},
 			blockFactory: blockFactory{
@@ -250,6 +251,11 @@ func TestActor_Store(t *testing.T) {
 	require.Contains(t, err.Error(), "couldn't create next block: ")
 
 	actor.blockFactory.hashFactory = crypto.NewSha256Factory()
+	actor.encoder = fake.BadPackEncoder{}
+	err = actor.Store(&empty.Empty{}, authority)
+	require.EqualError(t, err, "couldn't pack block: fake error")
+
+	actor.encoder = encoding.NewProtoEncoder()
 	actor.consensus = &fakeConsensusActor{err: xerrors.New("oops")}
 	err = actor.Store(&empty.Empty{}, authority)
 	require.EqualError(t, err, "couldn't propose the block: oops")
@@ -273,7 +279,7 @@ func TestObserver_NotifyCallback(t *testing.T) {
 
 type testValidator struct{}
 
-func (v testValidator) Validate(index uint64, payload proto.Message) error {
+func (v testValidator) Validate(proto.Message) error {
 	return nil
 }
 
@@ -295,9 +301,10 @@ func makeSkipchain(t *testing.T, n int) (crypto.CollectiveAuthority, []*Skipchai
 
 	skipchains := make([]*Skipchain, n)
 	actors := make([]blockchain.Actor, n)
-	for i := 0; i < n; i++ {
+	for i, m := range mm {
 		cosi := threshold.NewCoSi(mm[i], authority.GetSigner(i))
-		cons := cosipbft.NewCoSiPBFT(mm[i], cosi, fakeGovernance{authority: authority})
+		vc := constant.NewViewChange(m.GetAddress(), authority)
+		cons := cosipbft.NewCoSiPBFT(mm[i], cosi, vc)
 		skipchains[i] = NewSkipchain(mm[i], cons)
 
 		actor, err := skipchains[i].Listen(testValidator{})
@@ -331,10 +338,10 @@ func (rpc fakeRPC) Call(context.Context, proto.Message,
 type fakeConsensusActor struct {
 	consensus.Actor
 	err  error
-	prop consensus.Proposal
+	prop proto.Message
 }
 
-func (a *fakeConsensusActor) Propose(prop consensus.Proposal) error {
+func (a *fakeConsensusActor) Propose(prop proto.Message) error {
 	a.prop = prop
 	return a.err
 }
@@ -349,17 +356,4 @@ func (rand fakeRandGenerator) Read(buffer []byte) (int, error) {
 		return 0, nil
 	}
 	return len(buffer), rand.err
-}
-
-type fakeGovernance struct {
-	viewchange.Governance
-	authority fake.CollectiveAuthority
-}
-
-func (gov fakeGovernance) GetAuthority(index uint64) (viewchange.EvolvableAuthority, error) {
-	return gov.authority, nil
-}
-
-func (gov fakeGovernance) GetChangeSet(consensus.Proposal) (viewchange.ChangeSet, error) {
-	return viewchange.ChangeSet{}, nil
 }

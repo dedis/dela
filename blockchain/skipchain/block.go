@@ -3,9 +3,9 @@ package skipchain
 import (
 	"bytes"
 	"encoding/binary"
-	fmt "fmt"
+	"fmt"
 
-	proto "github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/crypto"
@@ -117,7 +117,7 @@ func (b SkipBlock) computeHash(factory crypto.HashFactory,
 		return Digest{}, xerrors.Errorf("couldn't write backlink: %v", err)
 	}
 
-	if b.Payload != nil {
+	if proto.Size(b.Payload) > 0 {
 		err := enc.MarshalStable(h, b.Payload)
 		if err != nil {
 			return Digest{}, xerrors.Errorf("couldn't write payload: %v", err)
@@ -260,8 +260,9 @@ func (f blockFactory) FromVerifiable(src proto.Message) (blockchain.Block, error
 	}
 
 	// Only the link between the chain and the block needs to be verified.
-	if !bytes.Equal(chain.GetLastHash(), block.hash[:]) {
-		return nil, xerrors.Errorf("mismatch hashes: %#x != %#x", chain.GetLastHash(), block.hash)
+	if !bytes.Equal(chain.GetTo(), block.hash[:]) {
+		return nil, xerrors.Errorf("mismatch hashes: %#x != %#x",
+			chain.GetTo(), block.GetHash())
 	}
 
 	return block, nil

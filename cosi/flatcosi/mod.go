@@ -57,14 +57,16 @@ func (cosi *Flat) GetVerifierFactory() crypto.VerifierFactory {
 
 // Listen creates an actor that starts an RPC called cosi and respond to signing
 // requests. The actor can also be used to sign a message.
-func (cosi *Flat) Listen(h cosi.Hashable) (cosi.Actor, error) {
+func (cosi *Flat) Listen(r cosi.Reactor) (cosi.Actor, error) {
 	actor := flatActor{
 		logger:  dela.Logger,
+		me:      cosi.mino.GetAddress(),
 		signer:  cosi.signer,
 		encoder: encoding.NewProtoEncoder(),
+		reactor: r,
 	}
 
-	rpc, err := cosi.mino.MakeRPC(rpcName, newHandler(cosi.signer, h))
+	rpc, err := cosi.mino.MakeRPC(rpcName, newHandler(cosi.signer, r))
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't make the rpc: %v", err)
 	}
@@ -76,13 +78,15 @@ func (cosi *Flat) Listen(h cosi.Hashable) (cosi.Actor, error) {
 
 type flatActor struct {
 	logger  zerolog.Logger
+	me      mino.Address
 	rpc     mino.RPC
 	signer  crypto.AggregateSigner
 	encoder encoding.ProtoMarshaler
+	reactor cosi.Reactor
 }
 
 // Sign returns the collective signature of the block.
-func (a flatActor) Sign(ctx context.Context, msg cosi.Message,
+func (a flatActor) Sign(ctx context.Context, msg encoding.Packable,
 	ca crypto.CollectiveAuthority) (crypto.Signature, error) {
 
 	data, err := a.encoder.PackAny(msg)
@@ -97,6 +101,11 @@ func (a flatActor) Sign(ctx context.Context, msg cosi.Message,
 
 	msgs, errs := a.rpc.Call(ctx, &SignatureRequest{Message: data}, ca)
 
+	digest, err := a.reactor.Invoke(a.me, data)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't react to message: %v", err)
+	}
+
 	var agg crypto.Signature
 	for {
 		select {
@@ -106,7 +115,7 @@ func (a flatActor) Sign(ctx context.Context, msg cosi.Message,
 					return nil, xerrors.New("signature is nil")
 				}
 
-				err = verifier.Verify(msg.GetHash(), agg)
+				err = verifier.Verify(digest, agg)
 				if err != nil {
 					return nil, xerrors.Errorf("couldn't verify the aggregation: %v", err)
 				}

@@ -3,7 +3,6 @@ package cosipbft
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/binary"
 	"hash"
 
 	"github.com/golang/protobuf/proto"
@@ -97,7 +96,6 @@ func (fl forwardLink) packChangeSet(enc encoding.ProtoMarshaler) (*ChangeSet, er
 	}
 
 	pb := &ChangeSet{
-		Leader: fl.changeset.Leader,
 		Remove: fl.changeset.Remove,
 		Add:    add,
 	}
@@ -143,37 +141,6 @@ func (fl forwardLink) computeHash(h hash.Hash, enc encoding.ProtoMarshaler) ([]b
 		return nil, xerrors.Errorf("couldn't write 'to': %v", err)
 	}
 
-	for _, player := range fl.changeset.Add {
-		addr, err := player.Address.MarshalText()
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't marshal address: %v", err)
-		}
-
-		pubkey, err := player.PublicKey.MarshalBinary()
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't marshal public key: %v", err)
-		}
-
-		_, err = h.Write(append(addr, pubkey...))
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't write player: %v", err)
-		}
-	}
-
-	// This buffer will store all the encoded integers where each one is using 4
-	// bytes: leader index + removal indices.
-	buffer := make([]byte, 4+(4*len(fl.changeset.Remove)))
-	binary.LittleEndian.PutUint32(buffer, fl.changeset.Leader)
-
-	for i, index := range fl.changeset.Remove {
-		binary.LittleEndian.PutUint32(buffer[(i+1)*4:], index)
-	}
-
-	_, err = h.Write(buffer)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't write integers: %v", err)
-	}
-
 	return h.Sum(nil), nil
 }
 
@@ -183,7 +150,7 @@ type forwardLinkChain struct {
 
 // GetLastHash implements consensus.Chain. It returns the last hash of the
 // chain.
-func (c forwardLinkChain) GetLastHash() []byte {
+func (c forwardLinkChain) GetTo() []byte {
 	if len(c.links) == 0 {
 		return nil
 	}
@@ -298,7 +265,6 @@ func (f *unsecureChainFactory) decodeChangeSet(in *ChangeSet) (viewchange.Change
 	}
 
 	changeset := viewchange.ChangeSet{
-		Leader: in.GetLeader(),
 		Remove: in.GetRemove(),
 		Add:    add,
 	}
@@ -360,14 +326,14 @@ func (f *unsecureChainFactory) FromProto(pb proto.Message) (consensus.Chain, err
 // for forward links.
 type chainFactory struct {
 	*unsecureChainFactory
-	authority viewchange.EvolvableAuthority
+	authority viewchange.Authority
 }
 
 // newChainFactory returns a new instance of a seal factory that will create
 // forward links for appropriate protobuf messages and return an error
 // otherwise.
 func newChainFactory(cosi cosi.CollectiveSigning, m mino.Mino,
-	authority viewchange.EvolvableAuthority) *chainFactory {
+	authority viewchange.Authority) *chainFactory {
 
 	return &chainFactory{
 		unsecureChainFactory: newUnsecureChainFactory(cosi, m),

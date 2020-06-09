@@ -32,6 +32,7 @@ func TestActor_Sign(t *testing.T) {
 				},
 			},
 		},
+		reactor: fakeReactor{},
 	}
 
 	ctx := context.Background()
@@ -44,7 +45,12 @@ func TestActor_Sign(t *testing.T) {
 	_, err = actor.Sign(ctx, fakeMessage{}, ca)
 	require.EqualError(t, err, "couldn't pack message: fake error")
 
-	actor.CoSi.encoder = encoding.NewProtoEncoder()
+	actor.encoder = encoding.NewProtoEncoder()
+	actor.reactor = fakeReactor{err: xerrors.New("oops")}
+	_, err = actor.Sign(ctx, fakeMessage{}, ca)
+	require.EqualError(t, err, "couldn't react to message: oops")
+
+	actor.reactor = fakeReactor{}
 	actor.rpc = fakeRPC{receiver: &fakeReceiver{}}
 	_, err = actor.Sign(ctx, fakeMessage{}, ca)
 	require.EqualError(t, err, "couldn't receive more messages: EOF")
@@ -64,7 +70,7 @@ func TestActor_Sign(t *testing.T) {
 	require.EqualError(t, err, "couldn't decode signature: fake error")
 
 	actor.signer = fake.NewSigner()
-	err = actor.merge(&Signature{}, &empty.Empty{}, 0, fake.NewInvalidPublicKey(), fakeMessage{})
+	err = actor.merge(&Signature{}, &empty.Empty{}, 0, fake.NewInvalidPublicKey(), []byte{})
 	require.EqualError(t, err, "couldn't verify: fake error")
 
 	actor.rpc = fake.NewBadStreamRPC()

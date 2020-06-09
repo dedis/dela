@@ -17,9 +17,8 @@ message Player {
 // the next proposal. Leader does not affect the authority but can be used by
 // the viewchange to decide on the next leader.
 message ChangeSet {
-    uint32 leader = 1;
-    repeated uint32 remove = 2;
-    repeated Player add = 3;
+    repeated uint32 remove = 1;
+    repeated Player add = 2;
 }
 
 // ForwardLinkProto is the message representing a forward link between two
@@ -43,6 +42,7 @@ message PrepareRequest {
     google.protobuf.Any proposal = 1;
     // Signature proves the proposal comes from an expected identity.
     google.protobuf.Any signature = 2;
+    google.protobuf.Any chain = 3;
 }
 
 // CommitRequest is the message sent to commit to a proposal.

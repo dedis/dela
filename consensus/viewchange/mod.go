@@ -1,8 +1,6 @@
 package viewchange
 
 import (
-	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
@@ -13,12 +11,17 @@ import (
 // and the others as backups when it is failing. The index returned announces
 // who is allowed to be the leader.
 type ViewChange interface {
-	// Wait returns true if the participant is allowed to proceed with the
-	// proposal. It also returns the participant index if true.
-	Wait(consensus.Proposal, crypto.CollectiveAuthority) (uint32, bool)
+	// GetAuthority returns the authority at the given index.
+	// TODO: use the proposal ID if we move the blockchain module to be a plugin
+	// of the ledger.
+	GetAuthority(index uint64) (Authority, error)
 
-	// Verify returns the leader index for that proposal.
-	Verify(consensus.Proposal, crypto.CollectiveAuthority) uint32
+	// Wait returns true if the node is the leader for the next proposal.
+	Wait() bool
+
+	// Verify returns the authority for the proposal if the address is the
+	// correct leader.
+	Verify(from mino.Address, index uint64) (Authority, error)
 }
 
 // Player is a tuple of an address and its public key.
@@ -31,42 +34,18 @@ type Player struct {
 type ChangeSet struct {
 	Remove []uint32
 	Add    []Player
-	Leader uint32
 }
 
-// EvolvableAuthority is an extension of the collective authority to provide
+// Authority is an extension of the collective authority to provide
 // primitives to append new players to it.
-type EvolvableAuthority interface {
+type Authority interface {
 	encoding.Packable
 	crypto.CollectiveAuthority
 
 	// Apply must apply the change set to the collective authority. It should
 	// first remove, then add the new players.
-	Apply(ChangeSet) EvolvableAuthority
-}
+	Apply(ChangeSet) Authority
 
-// AuthorityFactory is an interface to instantiate evolvable authorities.
-type AuthorityFactory interface {
-	GetAddressFactory() mino.AddressFactory
-
-	GetPublicKeyFactory() crypto.PublicKeyFactory
-
-	New(crypto.CollectiveAuthority) EvolvableAuthority
-
-	FromProto(proto.Message) (EvolvableAuthority, error)
-}
-
-// Governance is an interface to get information about the collective authority
-// of a proposal.
-type Governance interface {
-	GetAuthorityFactory() AuthorityFactory
-
-	// GetAuthority must return the authority that governs the proposal at the
-	// given index. It will be used to sign the forward link to the next
-	// proposal.
-	GetAuthority(index uint64) (EvolvableAuthority, error)
-
-	// GetChangeSet must return the changes to the authority that will be
-	// applied for the proposal.
-	GetChangeSet(consensus.Proposal) (ChangeSet, error)
+	// Diff should return the change set to apply to get the given authority.
+	Diff(Authority) ChangeSet
 }

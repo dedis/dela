@@ -43,8 +43,7 @@ func TestHandler_Process(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, resp)
 	require.Len(t, proc.calls, 2)
-	require.Equal(t, uint64(0), proc.calls[0][0])
-	require.True(t, proto.Equal(genesis.Payload, proc.calls[0][1].(proto.Message)))
+	require.True(t, proto.Equal(genesis.Payload, proc.calls[0][0].(proto.Message)))
 	require.True(t, proto.Equal(genesis.Payload, proc.calls[1][0].(proto.Message)))
 	require.Equal(t, 1, watcher.notified)
 
@@ -71,9 +70,8 @@ func TestHandler_Stream(t *testing.T) {
 	}
 	h := handler{
 		operations: &operations{
-			encoder:   encoding.NewProtoEncoder(),
-			db:        db,
-			consensus: fakeConsensus{},
+			encoder: encoding.NewProtoEncoder(),
+			db:      db,
 		},
 	}
 
@@ -100,16 +98,6 @@ func TestHandler_Stream(t *testing.T) {
 	h.encoder = fake.BadPackEncoder{}
 	err = h.Stream(sender, rcvr)
 	require.EqualError(t, err, "couldn't pack block: fake error")
-
-	h.encoder = encoding.NewProtoEncoder()
-	h.consensus = fakeConsensus{err: xerrors.New("oops")}
-	err = h.Stream(sender, rcvr)
-	require.EqualError(t, err, "couldn't get chain to block 1: oops")
-
-	h.consensus = fakeConsensus{}
-	h.encoder = fake.BadPackAnyEncoder{}
-	err = h.Stream(sender, rcvr)
-	require.EqualError(t, err, "couldn't pack chain: fake error")
 
 	h.encoder = encoding.NewProtoEncoder()
 	err = h.Stream(fakeSender{err: xerrors.New("oops")}, rcvr)

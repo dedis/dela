@@ -3,7 +3,7 @@ syntax = "proto3";
 package byzcoin;
 
 import "google/protobuf/any.proto";
-import "ledger/byzcoin/roster/messages.proto";
+import "consensus/viewchange/roster/messages.proto";
 
 // GenesisPayload is the payload of the very first block.
 message GenesisPayload {

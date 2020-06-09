@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"time"
 
+	proto "github.com/golang/protobuf/proto"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/encoding"
@@ -29,7 +30,7 @@ const (
 // Consensus is an abstraction to send proposals to a network of nodes that will
 // decide to include them in the common state.
 type Consensus struct {
-	ch               chan consensus.Proposal
+	ch               chan proto.Message
 	closing          chan struct{}
 	stopped          chan struct{}
 	history          history
@@ -45,7 +46,7 @@ func NewQSC(node int64, mino mino.Mino, players mino.Players) (*Consensus, error
 	}
 
 	return &Consensus{
-		ch:        make(chan consensus.Proposal),
+		ch:        make(chan proto.Message),
 		closing:   make(chan struct{}),
 		stopped:   make(chan struct{}),
 		history:   make(history, 0),
@@ -69,10 +70,10 @@ func (c *Consensus) GetChain(id []byte) (consensus.Chain, error) {
 
 // Listen implements consensus.Consensus. It returns the actor that provides the
 // primitives to send proposals to a network of nodes.
-func (c *Consensus) Listen(val consensus.Validator) (consensus.Actor, error) {
+func (c *Consensus) Listen(r consensus.Reactor) (consensus.Actor, error) {
 	go func() {
 		for {
-			var proposal consensus.Proposal
+			var proposal proto.Message
 			select {
 			case <-c.closing:
 				dela.Logger.Trace().Msg("closing")
@@ -98,7 +99,7 @@ func (c *Consensus) Listen(val consensus.Validator) (consensus.Actor, error) {
 				}
 			}()
 
-			err := c.executeRound(ctx, proposal, val)
+			err := c.executeRound(ctx, proposal, r)
 			if err != nil {
 				select {
 				case <-c.closing:
@@ -117,8 +118,8 @@ func (c *Consensus) Listen(val consensus.Validator) (consensus.Actor, error) {
 
 func (c *Consensus) executeRound(
 	ctx context.Context,
-	prop consensus.Proposal,
-	val consensus.Validator,
+	prop proto.Message,
+	val consensus.Reactor,
 ) error {
 	// 1. Choose the message and the random value. The new epoch will be
 	// appended to the current history.
@@ -128,7 +129,13 @@ func (c *Consensus) executeRound(
 	}
 
 	if prop != nil {
-		e.hash = prop.GetHash()
+		// TODO: address
+		digest, err := val.InvokeValidate(nil, prop)
+		if err != nil {
+			return xerrors.Errorf("couldn't validate proposal: %v", err)
+		}
+
+		e.hash = digest
 	}
 
 	newHistory := make(history, len(c.history), len(c.history)+1)
@@ -176,7 +183,7 @@ func (c *Consensus) executeRound(
 		// it to the others.
 		last, ok := c.history.getLast()
 		if ok {
-			err := val.Commit(last.hash)
+			err := val.InvokeCommit(last.hash)
 			if err != nil {
 				return xerrors.Errorf("couldn't commit: %v", err)
 			}
@@ -190,13 +197,13 @@ func (c *Consensus) executeRound(
 //
 // - implements consensus.Actor
 type actor struct {
-	ch      chan consensus.Proposal
+	ch      chan proto.Message
 	closing chan struct{}
 }
 
 // Propose implements consensus.Actor. It sends the proposal to the qsc loop. If
 // the actor has been closed, it will panic.
-func (a actor) Propose(proposal consensus.Proposal) error {
+func (a actor) Propose(proposal proto.Message) error {
 	a.ch <- proposal
 	return nil
 }

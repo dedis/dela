@@ -85,7 +85,7 @@ func TestSkipBlock_Pack(t *testing.T) {
 
 func TestSkipBlock_Hash(t *testing.T) {
 	block := SkipBlock{
-		Payload: &empty.Empty{},
+		Payload: &wrappers.StringValue{Value: "something"},
 	}
 
 	enc := encoding.NewProtoEncoder()
@@ -134,7 +134,9 @@ func TestSkipBlock_HashUniqueness(t *testing.T) {
 
 		fieldName := value.Elem().Type().Field(i).Name
 
-		field.Set(reflect.Zero(value.Elem().Field(i).Type()))
+		fieldValue := reflect.ValueOf(value.Elem().Field(i).Interface())
+
+		field.Set(reflect.Zero(fieldValue.Type()))
 		newBlock := value.Interface()
 
 		hash, err := newBlock.(*SkipBlock).computeHash(crypto.NewSha256Factory(), enc)
@@ -269,7 +271,7 @@ func TestBlockFactory_FromVerifiable(t *testing.T) {
 		factory.consensus = fakeConsensus{hash: Digest{}}
 		_, err = factory.FromVerifiable(pb)
 		require.EqualError(t, err,
-			fmt.Sprintf("mismatch hashes: %#x != %#x", [32]byte{}, block.hash))
+			fmt.Sprintf("mismatch hashes: %#x != %#x", [32]byte{}, block.GetHash()))
 
 		return true
 	}
@@ -320,7 +322,7 @@ func (c fakeChain) Verify(crypto.Verifier) error {
 	return c.err
 }
 
-func (c fakeChain) GetLastHash() []byte {
+func (c fakeChain) GetTo() []byte {
 	return c.hash.Bytes()
 }
 
@@ -360,7 +362,7 @@ func (c fakeConsensus) GetChain(id []byte) (consensus.Chain, error) {
 	return fakeChain{}, c.err
 }
 
-func (c fakeConsensus) Listen(consensus.Validator) (consensus.Actor, error) {
+func (c fakeConsensus) Listen(consensus.Reactor) (consensus.Actor, error) {
 	return nil, c.err
 }
 
