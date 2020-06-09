@@ -16,11 +16,11 @@ type ViewChange interface {
 	// of the ledger.
 	GetAuthority(index uint64) (Authority, error)
 
-	// Wait returns true if the participant is allowed to proceed with the
-	// proposal. It also returns the participant index if true.
+	// Wait returns true if the node is the leader for the next proposal.
 	Wait() bool
 
-	// Verify returns the leader index for that proposal.
+	// Verify returns the authority for the proposal if the address is the
+	// correct leader.
 	Verify(from mino.Address, index uint64) (Authority, error)
 }
 
