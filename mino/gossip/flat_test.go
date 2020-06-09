@@ -3,31 +3,13 @@ package gossip
 import (
 	"testing"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
-	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/encoding"
-	internal "go.dedis.ch/dela/internal/testing"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
-
-func TestMessages(t *testing.T) {
-	messages := []proto.Message{
-		&RumorProto{},
-	}
-
-	for _, m := range messages {
-		internal.CoverProtoMessage(t, m)
-	}
-}
-
-func TestFlat_GetRumorFactory(t *testing.T) {
-	gossiper := NewFlat(nil, fakeRumorFactory{})
-	require.NotNil(t, gossiper.GetRumorFactory())
-}
 
 func TestFlat_Listen(t *testing.T) {
 	gossiper := NewFlat(fake.Mino{}, nil)
@@ -59,7 +41,6 @@ func TestActor_SetPlayers(t *testing.T) {
 func TestActor_Add(t *testing.T) {
 	rpc := fake.NewRPC()
 	actor := &flatActor{
-		encoder: encoding.NewProtoEncoder(),
 		rpc:     rpc,
 		players: fake.NewAuthority(3, fake.NewSigner),
 	}
@@ -69,11 +50,6 @@ func TestActor_Add(t *testing.T) {
 	err := actor.Add(fakeRumor{})
 	require.NoError(t, err)
 
-	actor.encoder = fake.BadPackAnyEncoder{}
-	err = actor.Add(fakeRumor{})
-	require.EqualError(t, err, "couldn't pack rumor: fake error")
-
-	actor.encoder = encoding.NewProtoEncoder()
 	rpc = fake.NewRPC()
 	actor.rpc = rpc
 	rpc.Errs <- xerrors.New("oops")
@@ -100,46 +76,38 @@ func TestHandler_Process(t *testing.T) {
 			rumorFactory: fakeRumorFactory{},
 			ch:           make(chan Rumor, 1),
 		},
-		encoder: encoding.NewProtoEncoder(),
 	}
 
-	emptyAny, err := ptypes.MarshalAny(&empty.Empty{})
-	require.NoError(t, err)
-	msg := &RumorProto{Message: emptyAny}
-
-	resp, err := h.Process(mino.Request{Message: msg})
+	resp, err := h.Process(mino.Request{Message: tmp.ProtoOf(fakeRumor{})})
 	require.NoError(t, err)
 	require.Nil(t, resp)
 
-	_, err = h.Process(mino.Request{})
-	require.EqualError(t, err, "invalid message type '<nil>'")
-
-	h.encoder = fake.BadUnmarshalDynEncoder{}
-	_, err = h.Process(mino.Request{Message: msg})
-	require.EqualError(t, err, "couldn't pack rumor: fake error")
-
-	h.encoder = encoding.NewProtoEncoder()
-	h.rumorFactory = fakeRumorFactory{err: xerrors.New("oops")}
-	_, err = h.Process(mino.Request{Message: msg})
-	require.EqualError(t, err, "couldn't decode rumor: oops")
+	h.rumorFactory = fake.MessageFactory{}
+	_, err = h.Process(mino.Request{Message: tmp.ProtoOf(fake.Message{})})
+	require.EqualError(t, err, "unexpected rumor of type 'fake.Message'")
 }
 
 // -----------------------------------------------------------------------------
 // Utility functions
 
 type fakeRumorFactory struct {
-	RumorFactory
+	serde.UnimplementedFactory
+
 	err error
 }
 
-func (f fakeRumorFactory) FromProto(proto.Message) (Rumor, error) {
-	return fakeRumor{}, f.err
+func (r fakeRumorFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
+	return fakeRumor{}, nil
 }
 
 type fakeRumor struct {
-	Rumor
+	serde.UnimplementedMessage
 }
 
-func (r fakeRumor) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
-	return &empty.Empty{}, nil
+func (r fakeRumor) GetID() []byte {
+	return []byte{0xa}
+}
+
+func (r fakeRumor) VisitJSON() (interface{}, error) {
+	return struct{}{}, nil
 }

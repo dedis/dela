@@ -5,7 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/blockchain"
@@ -71,7 +70,7 @@ func NewLedger(m mino.Mino, signer crypto.AggregateSigner) *Ledger {
 		addr:       m.GetAddress(),
 		signer:     signer,
 		bc:         skipchain.NewSkipchain(m, consensus),
-		gossiper:   gossip.NewFlat(m, rumorFactory{txFactory: txFactory}),
+		gossiper:   gossip.NewFlat(m, txFactory),
 		bag:        newTxBag(),
 		proc:       newTxProcessor(txFactory, inventory),
 		viewchange: vc,
@@ -376,12 +375,4 @@ func (a actorLedger) Close() error {
 	}
 
 	return nil
-}
-
-type rumorFactory struct {
-	txFactory transactions.TransactionFactory
-}
-
-func (f rumorFactory) FromProto(msg proto.Message) (gossip.Rumor, error) {
-	return f.txFactory.FromProto(msg)
 }

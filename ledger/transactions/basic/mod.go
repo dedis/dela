@@ -21,6 +21,7 @@ import (
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -171,6 +172,8 @@ func (t serverTransaction) Consume(page inventory.WritablePage) error {
 //
 // - implements ledger.TransactionFactory
 type TransactionFactory struct {
+	serde.UnimplementedFactory
+
 	signer           crypto.Signer
 	hashFactory      crypto.HashFactory
 	publicKeyFactory crypto.PublicKeyFactory

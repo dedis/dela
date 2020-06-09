@@ -43,7 +43,7 @@ func NewSerializer() serde.Serializer {
 func (e Serializer) Serialize(m serde.Message) ([]byte, error) {
 	itf, err := m.VisitJSON()
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't visit message: %v", err)
+		return nil, xerrors.Errorf("couldn't serialize '%T' to json: %v", m, err)
 	}
 
 	buffer, err := json.Marshal(itf)
@@ -58,7 +58,7 @@ func (e Serializer) Serialize(m serde.Message) ([]byte, error) {
 func (e Serializer) Deserialize(buffer []byte, f serde.Factory) (serde.Message, error) {
 	m, err := f.VisitJSON(factoryInput{data: buffer})
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't visit factory: %v", err)
+		return nil, xerrors.Errorf("couldn't deserialize from json with '%T': %v", f, err)
 	}
 
 	return m, nil

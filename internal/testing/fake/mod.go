@@ -29,6 +29,7 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -807,4 +808,20 @@ func MakeCertificate(t *testing.T, n int) *tls.Certificate {
 		PrivateKey:  priv,
 		Leaf:        cert,
 	}
+}
+
+type Message struct {
+	serde.UnimplementedMessage
+}
+
+func (m Message) VisitJSON() (interface{}, error) {
+	return struct{}{}, nil
+}
+
+type MessageFactory struct {
+	serde.UnimplementedFactory
+}
+
+func (f MessageFactory) VisitJSON(serde.FactoryInput) (serde.Message, error) {
+	return Message{}, nil
 }
