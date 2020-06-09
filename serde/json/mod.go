@@ -7,6 +7,7 @@ package json
 import (
 	"encoding/json"
 
+	"go.dedis.ch/dela/internal/serdereflect"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
@@ -15,7 +16,14 @@ import (
 //
 // - implements serde.FactoryInput
 type factoryInput struct {
-	data []byte
+	serde serde.Serializer
+	data  []byte
+}
+
+// GetSerializer implements serde.FactoryInput. It returns the serializer of the
+// context.
+func (d factoryInput) GetSerializer() serde.Serializer {
+	return d.serde
 }
 
 // Feed implements serde.FactoryInput. It decodes the data into the given
@@ -41,7 +49,7 @@ func NewSerializer() serde.Serializer {
 
 // Serialize implements serde.Serializer.
 func (e Serializer) Serialize(m serde.Message) ([]byte, error) {
-	itf, err := m.VisitJSON()
+	itf, err := m.VisitJSON(e)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't serialize '%T' to json: %v", m, err)
 	}
@@ -55,11 +63,16 @@ func (e Serializer) Serialize(m serde.Message) ([]byte, error) {
 }
 
 // Deserialize implements serde.Deserialize.
-func (e Serializer) Deserialize(buffer []byte, f serde.Factory) (serde.Message, error) {
-	m, err := f.VisitJSON(factoryInput{data: buffer})
+func (e Serializer) Deserialize(buffer []byte, f serde.Factory, o interface{}) error {
+	m, err := f.VisitJSON(factoryInput{data: buffer, serde: e})
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize from json with '%T': %v", f, err)
+		return xerrors.Errorf("couldn't deserialize from json with '%T': %v", f, err)
 	}
 
-	return m, nil
+	err = serdereflect.AssignTo(m, o)
+	if err != nil {
+		return xerrors.Errorf("couldn't assign: %v", err)
+	}
+
+	return nil
 }

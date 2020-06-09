@@ -9,4 +9,5 @@ message TransactionProto {
     google.protobuf.Any identity = 2;
     google.protobuf.Any signature = 3;
     google.protobuf.Any task = 4;
+    string type = 5;
 }

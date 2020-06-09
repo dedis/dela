@@ -26,7 +26,8 @@ func ProtoOf(m serde.Message) proto.Message {
 func FromProto(pb proto.Message, f serde.Factory) serde.Message {
 	data := pb.(*wrappers.BytesValue).Value
 
-	m, err := serializer.Deserialize(data, f)
+	var m serde.Message
+	err := serializer.Deserialize(data, f, &m)
 	if err != nil {
 		panic(err)
 	}

@@ -92,8 +92,6 @@ func TestHandler_Process(t *testing.T) {
 
 type fakeRumorFactory struct {
 	serde.UnimplementedFactory
-
-	err error
 }
 
 func (r fakeRumorFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
@@ -108,6 +106,6 @@ func (r fakeRumor) GetID() []byte {
 	return []byte{0xa}
 }
 
-func (r fakeRumor) VisitJSON() (interface{}, error) {
+func (r fakeRumor) VisitJSON(serde.Serializer) (interface{}, error) {
 	return struct{}{}, nil
 }

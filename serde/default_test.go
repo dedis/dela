@@ -9,11 +9,11 @@ import (
 func TestUnimplemented_Message(t *testing.T) {
 	var m Message = UnimplementedMessage{}
 
-	_, err := m.VisitGob()
+	_, err := m.VisitGob(nil)
 	require.EqualError(t, err, notImplementedErr)
-	_, err = m.VisitJSON()
+	_, err = m.VisitJSON(nil)
 	require.EqualError(t, err, notImplementedErr)
-	_, err = m.VisitProto()
+	_, err = m.VisitProto(nil)
 	require.EqualError(t, err, notImplementedErr)
 }
 

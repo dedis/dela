@@ -10,6 +10,14 @@ import (
 	"golang.org/x/xerrors"
 )
 
+func TestFactoryInput_GetSerializer(t *testing.T) {
+	input := factoryInput{
+		serde: NewSerializer(),
+	}
+
+	require.NotNil(t, input.GetSerializer())
+}
+
 func TestFactoryInput_Feed(t *testing.T) {
 	data := marshal(t, blockMessage{})
 
@@ -58,12 +66,16 @@ func TestSerializer_Deserialize(t *testing.T) {
 	err := enc.Encode(b)
 	require.NoError(t, err)
 
-	m, err := s.Deserialize(out.Bytes(), blockFactory{})
+	var m block
+	err = s.Deserialize(out.Bytes(), blockFactory{}, &m)
 	require.NoError(t, err)
 	require.Equal(t, block{Index: b.Index, Value: b.Value}, m)
 
-	_, err = s.Deserialize(out.Bytes(), badFactory{})
+	err = s.Deserialize(out.Bytes(), badFactory{}, &m)
 	require.EqualError(t, err, "couldn't visit factory: oops")
+
+	err = s.Deserialize(out.Bytes(), blockFactory{}, nil)
+	require.EqualError(t, err, "couldn't assign: expect a pointer")
 }
 
 // -----------------------------------------------------------------------------
@@ -90,7 +102,7 @@ type block struct {
 	Value string
 }
 
-func (m block) VisitGob() (interface{}, error) {
+func (m block) VisitGob(serde.Serializer) (interface{}, error) {
 	t := blockMessage{
 		Value: m.Value,
 		Index: m.Index,
@@ -124,7 +136,7 @@ type badMessage struct {
 	err error
 }
 
-func (m badMessage) VisitGob() (interface{}, error) {
+func (m badMessage) VisitGob(serde.Serializer) (interface{}, error) {
 	return nil, m.err
 }
 

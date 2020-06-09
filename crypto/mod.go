@@ -6,6 +6,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
 )
 
 // HashFactory is an interface to produce a hash digest.
@@ -24,6 +25,7 @@ type PublicKey interface {
 	encoding.Packable
 	encoding.BinaryMarshaler
 	encoding.TextMarshaler
+	serde.Message
 
 	Verify(msg []byte, signature Signature) error
 
@@ -32,6 +34,7 @@ type PublicKey interface {
 
 // PublicKeyFactory is a factory to create public keys.
 type PublicKeyFactory interface {
+	serde.Factory
 	FromProto(src proto.Message) (PublicKey, error)
 }
 
@@ -54,12 +57,14 @@ type PublicKeyIterator interface {
 type Signature interface {
 	encoding.Packable
 	encoding.BinaryMarshaler
+	serde.Message
 
 	Equal(other Signature) bool
 }
 
 // SignatureFactory is a factory to create BLS signature.
 type SignatureFactory interface {
+	serde.Factory
 	FromProto(src proto.Message) (Signature, error)
 }
 

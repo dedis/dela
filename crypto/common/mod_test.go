@@ -13,13 +13,13 @@ import (
 func TestPublicKeyFactory_Register(t *testing.T) {
 	factory := NewPublicKeyFactory()
 
-	length := len(factory.factories)
+	length := len(factory.deprecated)
 
 	factory.Register(&empty.Empty{}, fake.PublicKeyFactory{})
-	require.Len(t, factory.factories, length+1)
+	require.Len(t, factory.deprecated, length+1)
 
 	factory.Register(&empty.Empty{}, fake.PublicKeyFactory{})
-	require.Len(t, factory.factories, length+1)
+	require.Len(t, factory.deprecated, length+1)
 }
 
 func TestPublicKeyFactory_FromProto(t *testing.T) {
@@ -46,13 +46,13 @@ func TestPublicKeyFactory_FromProto(t *testing.T) {
 func TestSignatureFactory_Register(t *testing.T) {
 	factory := NewSignatureFactory()
 
-	length := len(factory.factories)
+	length := len(factory.deprecated)
 
 	factory.Register(&empty.Empty{}, fake.SignatureFactory{})
-	require.Len(t, factory.factories, length+1)
+	require.Len(t, factory.deprecated, length+1)
 
 	factory.Register(&empty.Empty{}, fake.SignatureFactory{})
-	require.Len(t, factory.factories, length+1)
+	require.Len(t, factory.deprecated, length+1)
 }
 
 func TestSignatureFactory_FromProto(t *testing.T) {

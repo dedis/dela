@@ -15,6 +15,7 @@ import (
 	internal "go.dedis.ch/dela/internal/testing"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/inventory"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -96,9 +97,12 @@ func TestTransaction_Fingerprint(t *testing.T) {
 }
 
 func TestTransaction_String(t *testing.T) {
-	tx := transaction{identity: fake.PublicKey{}}
+	tx := transaction{
+		hash:     []byte{0xab},
+		identity: fake.PublicKey{},
+	}
 
-	require.Equal(t, "Transaction[fake.PublicKey]", tx.String())
+	require.Equal(t, "Transaction[ab]@fake.PublicKey", tx.String())
 }
 
 func TestServerTransaction_Consume(t *testing.T) {
@@ -119,7 +123,7 @@ func TestServerTransaction_Consume(t *testing.T) {
 }
 
 func TestTransactionFactory_New(t *testing.T) {
-	factory := NewTransactionFactory(bls.NewSigner(), nil)
+	factory := NewTransactionFactory(bls.NewSigner())
 
 	clientTx, err := factory.New(fakeClientTask{})
 	require.NoError(t, err)
@@ -138,9 +142,10 @@ func TestTransactionFactory_New(t *testing.T) {
 }
 
 func TestTransactionFactory_FromProto(t *testing.T) {
-	factory := NewTransactionFactory(nil, fakeTaskFactory{})
+	factory := NewTransactionFactory(nil)
 	factory.publicKeyFactory = fake.PublicKeyFactory{}
 	factory.signatureFactory = fake.SignatureFactory{}
+	factory.Register(fakeSrvTask{}, fakeTaskFactory{})
 
 	tx := transaction{
 		identity:  fake.PublicKey{},
@@ -165,15 +170,6 @@ func TestTransactionFactory_FromProto(t *testing.T) {
 	_, err = factory.FromProto(txany)
 	require.EqualError(t, err, "couldn't unmarshal input: fake error")
 
-	factory.taskFactory = fakeTaskFactory{err: xerrors.New("oops")}
-	_, err = factory.FromProto(txpb)
-	require.EqualError(t, err, "couldn't decode task: oops")
-
-	factory.taskFactory = fakeTaskFactory{}
-	factory.publicKeyFactory = fake.NewBadPublicKeyFactory()
-	_, err = factory.FromProto(txpb)
-	require.EqualError(t, err, "couldn't decode public key: fake error")
-
 	factory.publicKeyFactory = fake.NewPublicKeyFactory(fake.NewInvalidPublicKey())
 	_, err = factory.FromProto(txpb)
 	require.EqualError(t, err, "signature does not match tx: fake error")
@@ -193,6 +189,8 @@ func TestTransactionFactory_FromProto(t *testing.T) {
 // Utility functions
 
 type fakeClientTask struct {
+	serde.UnimplementedMessage
+
 	err error
 }
 
@@ -215,6 +213,8 @@ func (a fakeSrvTask) Consume(Context, inventory.WritablePage) error {
 }
 
 type fakeTaskFactory struct {
+	serde.UnimplementedFactory
+
 	err error
 }
 

@@ -814,7 +814,7 @@ type Message struct {
 	serde.UnimplementedMessage
 }
 
-func (m Message) VisitJSON() (interface{}, error) {
+func (m Message) VisitJSON(serde.Serializer) (interface{}, error) {
 	return struct{}{}, nil
 }
 

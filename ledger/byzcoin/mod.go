@@ -16,6 +16,7 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/ledger"
+	"go.dedis.ch/dela/ledger/arc/darc"
 	"go.dedis.ch/dela/ledger/byzcoin/memship"
 	"go.dedis.ch/dela/ledger/inventory/mem"
 	"go.dedis.ch/dela/ledger/transactions"
@@ -60,9 +61,11 @@ type Ledger struct {
 // NewLedger creates a new Byzcoin ledger.
 func NewLedger(m mino.Mino, signer crypto.AggregateSigner) *Ledger {
 	inventory := mem.NewInventory()
-	taskFactory, vc := newtaskFactory(m, signer, inventory)
 
-	txFactory := basic.NewTransactionFactory(signer, taskFactory)
+	vc := memship.NewTaskManager(inventory, m, signer)
+	txFactory := basic.NewTransactionFactory(signer)
+	memship.Register(txFactory, vc)
+	darc.Register(txFactory, darc.NewTaskFactory())
 
 	consensus := cosipbft.NewCoSiPBFT(m, flatcosi.NewFlat(m, signer), vc)
 

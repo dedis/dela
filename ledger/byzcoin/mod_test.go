@@ -62,7 +62,7 @@ func TestLedger_Basic(t *testing.T) {
 	}
 
 	signer := bls.NewSigner()
-	txFactory := basic.NewTransactionFactory(signer, nil)
+	txFactory := basic.NewTransactionFactory(signer)
 
 	// Send a few transactions..
 	for i := 0; i < 2; i++ {

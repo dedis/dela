@@ -9,6 +9,14 @@ import (
 	"golang.org/x/xerrors"
 )
 
+func TestFactoryInput_GetSerializer(t *testing.T) {
+	input := factoryInput{
+		serde: NewSerializer(),
+	}
+
+	require.NotNil(t, input.GetSerializer())
+}
+
 func TestFactoryInput_Feed(t *testing.T) {
 	input := factoryInput{
 		data: []byte("{}"),
@@ -35,7 +43,8 @@ func TestJsonEncoder_Serialize(t *testing.T) {
 	require.Equal(t, "{\"Index\":42,\"Value\":\"Hello World!\"}", string(buffer))
 
 	_, err = s.Serialize(badMessage{err: xerrors.New("oops")})
-	require.EqualError(t, err, "couldn't visit message: oops")
+	require.EqualError(t, err,
+		"couldn't serialize 'json.badMessage' to json: oops")
 
 	_, err = s.Serialize(badMessage{})
 	require.EqualError(t, err,
@@ -47,12 +56,17 @@ func TestSerializer_Deserialize(t *testing.T) {
 
 	buffer := []byte("{\"Value\":\"Hello World!\",\"Index\":42}")
 
-	m, err := s.Deserialize(buffer, blockFactory{})
+	var m block
+	err := s.Deserialize(buffer, blockFactory{}, &m)
 	require.NoError(t, err)
 	require.Equal(t, block{Value: "Hello World!", Index: 42}, m)
 
-	_, err = s.Deserialize(buffer, badFactory{})
-	require.EqualError(t, err, "couldn't visit factory: oops")
+	err = s.Deserialize(buffer, badFactory{}, &m)
+	require.EqualError(t, err,
+		"couldn't deserialize from json with 'json.badFactory': oops")
+
+	err = s.Deserialize(buffer, blockFactory{}, nil)
+	require.EqualError(t, err, "couldn't assign: expect a pointer")
 }
 
 // -----------------------------------------------------------------------------
@@ -70,7 +84,7 @@ type block struct {
 	Value string
 }
 
-func (m block) VisitJSON() (interface{}, error) {
+func (m block) VisitJSON(serde.Serializer) (interface{}, error) {
 	t := blockMessage{
 		Value: m.Value,
 		Index: m.Index,
@@ -112,7 +126,7 @@ type badMessage struct {
 	err error
 }
 
-func (m badMessage) VisitJSON() (interface{}, error) {
+func (m badMessage) VisitJSON(serde.Serializer) (interface{}, error) {
 	return badJSON{}, m.err
 }
 

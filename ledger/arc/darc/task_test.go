@@ -71,7 +71,7 @@ func TestServerTask_Consume(t *testing.T) {
 	require.Equal(t, []byte{0x01}, call.Get(0, 0))
 
 	// No key thus it's a creation.
-	task.clientTask.key = nil
+	task.key = nil
 	err = task.Consume(fakeContext{}, fakePage{call: call})
 	require.NoError(t, err)
 	require.Equal(t, 2, call.Len())
@@ -85,7 +85,7 @@ func TestServerTask_Consume(t *testing.T) {
 	err = task.Consume(fakeContext{}, fakePage{err: xerrors.New("oops")})
 	require.EqualError(t, err, "couldn't write access: oops")
 
-	task.clientTask.key = []byte{0x01}
+	task.key = []byte{0x01}
 	err = task.Consume(fakeContext{}, fakePage{err: xerrors.New("oops")})
 	require.EqualError(t, err, "couldn't read value: oops")
 
