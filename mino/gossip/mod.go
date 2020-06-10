@@ -1,26 +1,17 @@
 package gossip
 
 import (
-	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
 )
-
-//go:generate protoc -I ./ --go_out=./ ./messages.proto
 
 // Rumor is the message that must be gossiped through the network. It is using
 // the identifier as a unique way to differentiate all the rumors.
 type Rumor interface {
-	encoding.Packable
+	serde.Message
 
 	// GetID returns the unique identifier of the rumor.
 	GetID() []byte
-}
-
-// RumorFactory is a factory to instantiate a rumor from its protobuf message.
-type RumorFactory interface {
-	// FromProto returns the rumor associated with the protobuf message.
-	FromProto(proto.Message) (Rumor, error)
 }
 
 // Actor is an actor that can send rumor to a gossip network.
@@ -40,8 +31,6 @@ type Actor interface {
 // Gossiper is an abstraction of a message passing protocol that uses internally
 // a gossip protocol.
 type Gossiper interface {
-	GetRumorFactory() RumorFactory
-
 	// Rumors should return a channel populated with the new rumors.
 	Rumors() <-chan Rumor
 

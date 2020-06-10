@@ -11,6 +11,7 @@ import (
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions/basic"
+	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
 
@@ -29,6 +30,22 @@ func TestClientTask_Pack(t *testing.T) {
 
 	_, err = task.Pack(fake.BadPackEncoder{})
 	require.EqualError(t, err, "couldn't pack access: fake error")
+}
+
+func TestClientTask_VisitJSON(t *testing.T) {
+	task := clientTask{
+		key:    []byte{0x1},
+		access: NewAccess(),
+	}
+
+	ser := json.NewSerializer()
+
+	data, err := ser.Serialize(task)
+	require.NoError(t, err)
+	require.Equal(t, `{"Key":"AQ==","Access":{"Rules":{}}}`, string(data))
+
+	_, err = task.VisitJSON(fake.NewBadSerializer())
+	require.EqualError(t, err, "couldn't serialize access: fake error")
 }
 
 func TestClientTask_Fingerprint(t *testing.T) {
@@ -71,7 +88,7 @@ func TestServerTask_Consume(t *testing.T) {
 	require.Equal(t, []byte{0x01}, call.Get(0, 0))
 
 	// No key thus it's a creation.
-	task.clientTask.key = nil
+	task.key = nil
 	err = task.Consume(fakeContext{}, fakePage{call: call})
 	require.NoError(t, err)
 	require.Equal(t, 2, call.Len())
@@ -85,7 +102,7 @@ func TestServerTask_Consume(t *testing.T) {
 	err = task.Consume(fakeContext{}, fakePage{err: xerrors.New("oops")})
 	require.EqualError(t, err, "couldn't write access: oops")
 
-	task.clientTask.key = []byte{0x01}
+	task.key = []byte{0x01}
 	err = task.Consume(fakeContext{}, fakePage{err: xerrors.New("oops")})
 	require.EqualError(t, err, "couldn't read value: oops")
 
@@ -114,6 +131,28 @@ func TestTaskFactory_FromProto(t *testing.T) {
 	factory.darcFactory = badArcFactory{}
 	_, err = factory.FromProto(&Task{})
 	require.EqualError(t, err, "couldn't decode access: oops")
+}
+
+func TestTaskFactory_VisitJSON(t *testing.T) {
+	factory := NewTaskFactory()
+
+	ser := json.NewSerializer()
+
+	var task serverTask
+	err := ser.Deserialize([]byte(`{"Key":"AQ==","Access":{}}`), factory, &task)
+	require.NoError(t, err)
+	require.Equal(t, clientTask{key: []byte{0x1}, access: NewAccess()}, task.clientTask)
+
+	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
+	require.EqualError(t, err, "couldn't deserialize task: fake error")
+
+	_, err = factory.VisitJSON(fake.FactoryInput{Serde: fake.NewBadSerializer()})
+	require.EqualError(t, err, "couldn't deserialize access: fake error")
+}
+
+func TestRegister(t *testing.T) {
+	factory := basic.NewTransactionFactory(fake.NewSigner())
+	Register(factory, NewTaskFactory())
 }
 
 // -----------------------------------------------------------------------------

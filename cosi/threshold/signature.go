@@ -8,6 +8,7 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -24,6 +25,8 @@ const (
 //
 // - implements crypto.Signature
 type Signature struct {
+	serde.UnimplementedMessage
+
 	agg  crypto.Signature
 	mask []byte
 }
@@ -127,6 +130,8 @@ func (s *Signature) Equal(o crypto.Signature) bool {
 }
 
 type signatureFactory struct {
+	serde.UnimplementedFactory
+
 	encoder    encoding.ProtoMarshaler
 	sigFactory crypto.SignatureFactory
 }

@@ -11,6 +11,14 @@ import (
 	"golang.org/x/xerrors"
 )
 
+func TestFactoryInput_GetSerializer(t *testing.T) {
+	input := factoryInput{
+		serde: NewSerializer(),
+	}
+
+	require.NotNil(t, input.GetSerializer())
+}
+
 func TestFactoryInput_Feed(t *testing.T) {
 	input := factoryInput{
 		data: []byte{},
@@ -61,12 +69,16 @@ func TestSerializer_Deserialize(t *testing.T) {
 	buffer, err := proto.Marshal(&wrappers.StringValue{Value: b.Value})
 	require.NoError(t, err)
 
-	m, err := s.Deserialize(buffer, blockFactory{})
+	var m block
+	err = s.Deserialize(buffer, blockFactory{}, &m)
 	require.NoError(t, err)
 	require.Equal(t, b, m)
 
-	_, err = s.Deserialize(buffer, badFactory{})
+	err = s.Deserialize(buffer, badFactory{}, &m)
 	require.EqualError(t, err, "couldn't visit factory: oops")
+
+	err = s.Deserialize(buffer, blockFactory{}, nil)
+	require.EqualError(t, err, "couldn't assign: expect a pointer")
 }
 
 // -----------------------------------------------------------------------------
@@ -78,7 +90,7 @@ type block struct {
 	Value string
 }
 
-func (m block) VisitProto() (interface{}, error) {
+func (m block) VisitProto(serde.Serializer) (interface{}, error) {
 	t := &wrappers.StringValue{Value: m.Value}
 
 	return t, nil
@@ -109,7 +121,7 @@ type badMessage struct {
 	err error
 }
 
-func (m badMessage) VisitProto() (interface{}, error) {
+func (m badMessage) VisitProto(serde.Serializer) (interface{}, error) {
 	return m.msg, m.err
 }
 

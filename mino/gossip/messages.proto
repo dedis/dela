@@ -1,9 +1,0 @@
-syntax = "proto3";
-
-package gossip;
-
-import "google/protobuf/any.proto";
-
-message RumorProto {
-    google.protobuf.Any message = 1;
-}

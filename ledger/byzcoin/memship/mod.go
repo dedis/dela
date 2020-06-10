@@ -11,9 +11,11 @@ import (
 	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/ledger/byzcoin/memship/json"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions/basic"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -35,8 +37,10 @@ var (
 // clientTask is the client task implementation to update the roster of a
 // consensus using the transactions for access rights control.
 //
-// - implements basic.ClientTask
+// - implements basic.clientTask
 type clientTask struct {
+	serde.UnimplementedMessage
+
 	remove []uint32
 	player *viewchange.Player
 }
@@ -108,6 +112,31 @@ func (t clientTask) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	}
 
 	return pb, nil
+}
+
+// VisitJSON implements serde.Message. It serializes the client task in JSON
+// format.
+func (t clientTask) VisitJSON(ser serde.Serializer) (interface{}, error) {
+	m := json.Task{
+		Remove: t.remove,
+	}
+
+	if t.player != nil {
+		addr, err := t.player.Address.MarshalText()
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't marshal address: %v", err)
+		}
+
+		pubkey, err := ser.Serialize(t.player.PublicKey)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't serialize public key: %v", err)
+		}
+
+		m.Address = addr
+		m.PublicKey = pubkey
+	}
+
+	return m, nil
 }
 
 // Fingerprint implements encoding.Fingerprinter. It serializes the client task
@@ -203,6 +232,8 @@ func (t serverTask) Consume(ctx basic.Context, page inventory.WritablePage) erro
 // - implements basic.TaskManager
 // - implements viewchange.Governance
 type TaskManager struct {
+	serde.UnimplementedFactory
+
 	me            mino.Address
 	encoder       encoding.ProtoMarshaler
 	inventory     inventory.Inventory
@@ -323,4 +354,46 @@ func (f TaskManager) unpackPlayer(addrpb []byte,
 	}
 
 	return &player, nil
+}
+
+// VisitJSON implements serde.Factory. It deserializes the client task in JSON
+// format into a server task.
+func (f TaskManager) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
+	m := json.Task{}
+	err := in.Feed(&m)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't deserialize task: %v", err)
+	}
+
+	task := serverTask{
+		clientTask: clientTask{
+			remove: m.Remove,
+		},
+		encoder:       f.encoder,
+		rosterFactory: f.rosterFactory,
+		inventory:     f.inventory,
+	}
+
+	if m.Address != nil && m.PublicKey != nil {
+		addr := f.rosterFactory.GetAddressFactory().FromText(m.Address)
+
+		var pubkey crypto.PublicKey
+		err = in.GetSerializer().Deserialize(m.PublicKey, f.rosterFactory.GetPublicKeyFactory(), &pubkey)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't deserialize public key: %v", err)
+		}
+
+		task.clientTask.player = &viewchange.Player{
+			Address:   addr,
+			PublicKey: pubkey,
+		}
+	}
+
+	return task, nil
+}
+
+// Register registers the task messages.
+func Register(r basic.TransactionFactory, f basic.TaskFactory) {
+	r.Register(clientTask{}, f)
+	r.Register(serverTask{}, f)
 }

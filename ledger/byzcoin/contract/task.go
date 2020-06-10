@@ -10,6 +10,7 @@ import (
 	"go.dedis.ch/dela/ledger/arc/common"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions/basic"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -17,6 +18,8 @@ import (
 //
 // - implements basic.ClientTask
 type SpawnTask struct {
+	serde.UnimplementedMessage
+
 	ContractID string
 	Argument   proto.Message
 }
@@ -58,6 +61,8 @@ func (act SpawnTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
 //
 // - implements basic.ClientTask
 type InvokeTask struct {
+	serde.UnimplementedMessage
+
 	Key      []byte
 	Argument proto.Message
 }
@@ -99,6 +104,8 @@ func (act InvokeTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error 
 //
 // - implements basic.ClientTask
 type DeleteTask struct {
+	serde.UnimplementedMessage
+
 	Key []byte
 }
 

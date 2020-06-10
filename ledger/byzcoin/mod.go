@@ -5,7 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/blockchain"
@@ -17,6 +16,7 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/ledger"
+	"go.dedis.ch/dela/ledger/arc/darc"
 	"go.dedis.ch/dela/ledger/byzcoin/memship"
 	"go.dedis.ch/dela/ledger/inventory/mem"
 	"go.dedis.ch/dela/ledger/transactions"
@@ -61,9 +61,11 @@ type Ledger struct {
 // NewLedger creates a new Byzcoin ledger.
 func NewLedger(m mino.Mino, signer crypto.AggregateSigner) *Ledger {
 	inventory := mem.NewInventory()
-	taskFactory, vc := newtaskFactory(m, signer, inventory)
 
-	txFactory := basic.NewTransactionFactory(signer, taskFactory)
+	vc := memship.NewTaskManager(inventory, m, signer)
+	txFactory := basic.NewTransactionFactory(signer)
+	memship.Register(txFactory, vc)
+	darc.Register(txFactory, darc.NewTaskFactory())
 
 	consensus := cosipbft.NewCoSiPBFT(m, flatcosi.NewFlat(m, signer), vc)
 
@@ -71,7 +73,7 @@ func NewLedger(m mino.Mino, signer crypto.AggregateSigner) *Ledger {
 		addr:       m.GetAddress(),
 		signer:     signer,
 		bc:         skipchain.NewSkipchain(m, consensus),
-		gossiper:   gossip.NewFlat(m, rumorFactory{txFactory: txFactory}),
+		gossiper:   gossip.NewFlat(m, txFactory),
 		bag:        newTxBag(),
 		proc:       newTxProcessor(txFactory, inventory),
 		viewchange: vc,
@@ -376,12 +378,4 @@ func (a actorLedger) Close() error {
 	}
 
 	return nil
-}
-
-type rumorFactory struct {
-	txFactory transactions.TransactionFactory
-}
-
-func (f rumorFactory) FromProto(msg proto.Message) (gossip.Rumor, error) {
-	return f.txFactory.FromProto(msg)
 }

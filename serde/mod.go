@@ -11,18 +11,21 @@ package serde
 // deserialized.
 type Message interface {
 	// VisitJSON should return a JSON data structure to encode.
-	VisitJSON() (interface{}, error)
+	VisitJSON(Serializer) (interface{}, error)
 
 	// VisitGob should return a gob data structure to encode.
-	VisitGob() (interface{}, error)
+	VisitGob(Serializer) (interface{}, error)
 
 	// VisitProto should return a protobuf message to encode.
-	VisitProto() (interface{}, error)
+	VisitProto(Serializer) (interface{}, error)
 }
 
 // FactoryInput is the input provided to the factory when visiting. The input
 // can be fed to an compatible interface to deserialize it.
 type FactoryInput interface {
+	// GetSerializer returns the serializer of the context.
+	GetSerializer() Serializer
+
 	// Feed writes the input into the given interface.
 	Feed(interface{}) error
 }
@@ -51,5 +54,5 @@ type Serializer interface {
 
 	// Deserialization takes the byte slice and the factory to instantiate the
 	// message implementation.
-	Deserialize([]byte, Factory) (Message, error)
+	Deserialize([]byte, Factory, interface{}) error
 }

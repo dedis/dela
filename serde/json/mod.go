@@ -7,6 +7,7 @@ package json
 import (
 	"encoding/json"
 
+	"go.dedis.ch/dela/internal/serdereflect"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
@@ -15,7 +16,14 @@ import (
 //
 // - implements serde.FactoryInput
 type factoryInput struct {
-	data []byte
+	serde serde.Serializer
+	data  []byte
+}
+
+// GetSerializer implements serde.FactoryInput. It returns the serializer of the
+// context.
+func (d factoryInput) GetSerializer() serde.Serializer {
+	return d.serde
 }
 
 // Feed implements serde.FactoryInput. It decodes the data into the given
@@ -23,7 +31,7 @@ type factoryInput struct {
 func (d factoryInput) Feed(m interface{}) error {
 	err := json.Unmarshal(d.data, m)
 	if err != nil {
-		return xerrors.Errorf("couldn't unmarshal: %v", err)
+		return xerrors.Errorf("couldn't unmarshal: %w", err)
 	}
 
 	return nil
@@ -41,9 +49,13 @@ func NewSerializer() serde.Serializer {
 
 // Serialize implements serde.Serializer.
 func (e Serializer) Serialize(m serde.Message) ([]byte, error) {
-	itf, err := m.VisitJSON()
+	if m == nil {
+		return nil, xerrors.New("message is nil")
+	}
+
+	itf, err := m.VisitJSON(e)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't visit message: %v", err)
+		return nil, xerrors.Errorf("couldn't serialize '%T' to json: %w", m, err)
 	}
 
 	buffer, err := json.Marshal(itf)
@@ -55,11 +67,16 @@ func (e Serializer) Serialize(m serde.Message) ([]byte, error) {
 }
 
 // Deserialize implements serde.Deserialize.
-func (e Serializer) Deserialize(buffer []byte, f serde.Factory) (serde.Message, error) {
-	m, err := f.VisitJSON(factoryInput{data: buffer})
+func (e Serializer) Deserialize(buffer []byte, f serde.Factory, o interface{}) error {
+	m, err := f.VisitJSON(factoryInput{data: buffer, serde: e})
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't visit factory: %v", err)
+		return xerrors.Errorf("couldn't deserialize from json with '%T': %w", f, err)
 	}
 
-	return m, nil
+	err = serdereflect.AssignTo(m, o)
+	if err != nil {
+		return xerrors.Errorf("couldn't assign: %v", err)
+	}
+
+	return nil
 }

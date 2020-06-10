@@ -6,6 +6,7 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/serde"
 )
 
 // Identity is an abstraction to uniquely identify a signer.
@@ -25,6 +26,8 @@ type AccessControl interface {
 // AccessControlFactory is an abstraction to decode access controls from
 // protobuf messages.
 type AccessControlFactory interface {
+	serde.Factory
+
 	FromProto(proto.Message) (AccessControl, error)
 }
 

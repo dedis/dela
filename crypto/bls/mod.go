@@ -7,7 +7,9 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/crypto/common/json"
 	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/pairing"
 	"go.dedis.ch/kyber/v3/sign/bls"
@@ -17,12 +19,19 @@ import (
 
 //go:generate protoc -I ./ --go_out=./ ./messages.proto
 
+const (
+	// Algorithm is the name of the curve used for the BLS signature.
+	Algorithm = "CURVE-BN256"
+)
+
 var (
 	suite = pairing.NewSuiteBn256()
 )
 
 // publicKey can be provided to verify a BLS signature.
 type publicKey struct {
+	serde.UnimplementedMessage
+
 	point kyber.Point
 }
 
@@ -41,6 +50,22 @@ func (pk publicKey) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 	}
 
 	return &PublicKeyProto{Data: buffer}, nil
+}
+
+// VisitJSON implements serde.Message. It returns the JSON message for the
+// public key.
+func (pk publicKey) VisitJSON(serde.Serializer) (interface{}, error) {
+	buffer, err := pk.point.MarshalBinary()
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't marshal point: %v", err)
+	}
+
+	m := json.PublicKey{
+		Algorithm: json.Algorithm{Name: Algorithm},
+		Data:      buffer,
+	}
+
+	return m, nil
 }
 
 // Verify implements crypto.PublicKey. It returns nil if the signature matches
@@ -96,6 +121,8 @@ func (pk publicKey) String() string {
 // signature is a proof of the integrity of a single message associated with a
 // unique public key.
 type signature struct {
+	serde.UnimplementedMessage
+
 	data []byte
 }
 
@@ -111,6 +138,17 @@ func (sig signature) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 	return &SignatureProto{Data: sig.data}, nil
 }
 
+// VisitJSON implements serde.Message. It returns the JSON message for the
+// signature.
+func (sig signature) VisitJSON(serde.Serializer) (interface{}, error) {
+	m := json.Signature{
+		Algorithm: json.Algorithm{Name: Algorithm},
+		Data:      sig.data,
+	}
+
+	return m, nil
+}
+
 // Equal implements crypto.PublicKey.
 func (sig signature) Equal(other crypto.Signature) bool {
 	otherSig, ok := other.(signature)
@@ -123,6 +161,7 @@ func (sig signature) Equal(other crypto.Signature) bool {
 
 // publicKeyFactory creates BLS compatible public key from protobuf messages.
 type publicKeyFactory struct {
+	serde.UnimplementedFactory
 	encoder encoding.ProtoMarshaler
 }
 
@@ -161,9 +200,28 @@ func (f publicKeyFactory) FromProto(src proto.Message) (crypto.PublicKey, error)
 	return publicKey{point: point}, nil
 }
 
+// VisitJSON implements serde.Factory. It deserializes the public key in JSON
+// format.
+func (f publicKeyFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
+	m := json.PublicKey{}
+	err := in.Feed(&m)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't deserialize data: %v", err)
+	}
+
+	point := suite.Point()
+	err = point.UnmarshalBinary(m.Data)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't unmarshal point: %v", err)
+	}
+
+	return publicKey{point: point}, nil
+}
+
 // signatureFactory provides functions to create BLS signatures from protobuf
 // messages.
 type signatureFactory struct {
+	serde.UnimplementedFactory
 	encoder encoding.ProtoMarshaler
 }
 
@@ -194,6 +252,18 @@ func (f signatureFactory) FromProto(src proto.Message) (crypto.Signature, error)
 	}
 
 	return signature{data: pb.GetData()}, nil
+}
+
+// VisitJSON implements serde.Factory. It deserializes the signature in JSON
+// format.
+func (f signatureFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
+	m := json.Signature{}
+	err := in.Feed(&m)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't deserialize data: %v", err)
+	}
+
+	return signature{data: m.Data}, nil
 }
 
 // verifier provides primitives to verify a BLS signature of a unique message.

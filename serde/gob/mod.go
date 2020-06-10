@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"encoding/gob"
 
+	"go.dedis.ch/dela/internal/serdereflect"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
@@ -16,7 +17,14 @@ import (
 //
 // - implements serde.FactoryInput
 type factoryInput struct {
-	data []byte
+	serde serde.Serializer
+	data  []byte
+}
+
+// GetSerializer implements serde.FactoryInput. It returns the serializer of the
+// context.
+func (d factoryInput) GetSerializer() serde.Serializer {
+	return d.serde
 }
 
 // Feed implements serde.FactoryInput. It decodes the data into the given
@@ -44,7 +52,7 @@ func NewSerializer() serde.Serializer {
 // Serialize implements serde.Serializer. It serializes the message using the
 // gob format.
 func (e Serializer) Serialize(m serde.Message) ([]byte, error) {
-	itf, err := m.VisitGob()
+	itf, err := m.VisitGob(e)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't visit message: %v", err)
 	}
@@ -62,11 +70,16 @@ func (e Serializer) Serialize(m serde.Message) ([]byte, error) {
 
 // Deserialize implements serde.Serializer. It returns the message deserialized
 // from the data.
-func (e Serializer) Deserialize(data []byte, f serde.Factory) (serde.Message, error) {
+func (e Serializer) Deserialize(data []byte, f serde.Factory, o interface{}) error {
 	m, err := f.VisitGob(factoryInput{data: data})
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't visit factory: %v", err)
+		return xerrors.Errorf("couldn't visit factory: %v", err)
 	}
 
-	return m, nil
+	err = serdereflect.AssignTo(m, o)
+	if err != nil {
+		return xerrors.Errorf("couldn't assign: %v", err)
+	}
+
+	return nil
 }

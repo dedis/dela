@@ -14,17 +14,17 @@ const (
 type UnimplementedMessage struct{}
 
 // VisitJSON implements serde.Message. It returns an error.
-func (m UnimplementedMessage) VisitJSON() (interface{}, error) {
+func (m UnimplementedMessage) VisitJSON(Serializer) (interface{}, error) {
 	return nil, xerrors.New(notImplementedErr)
 }
 
 // VisitGob implements serde.Message. It returns an error.
-func (m UnimplementedMessage) VisitGob() (interface{}, error) {
+func (m UnimplementedMessage) VisitGob(Serializer) (interface{}, error) {
 	return nil, xerrors.New(notImplementedErr)
 }
 
 // VisitProto implements serde.Message. It returns an error.
-func (m UnimplementedMessage) VisitProto() (interface{}, error) {
+func (m UnimplementedMessage) VisitProto(Serializer) (interface{}, error) {
 	return nil, xerrors.New(notImplementedErr)
 }
 
