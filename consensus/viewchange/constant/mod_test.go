@@ -10,7 +10,7 @@ import (
 
 func TestConstant_GetAuthority(t *testing.T) {
 	authority := roster.New(fake.NewAuthority(3, fake.NewSigner))
-	vc := NewViewChange(fake.NewAddress(0), authority)
+	vc := NewViewChange(fake.NewAddress(0), authority, fake.MessageFactory{})
 
 	ret, err := vc.GetAuthority(0)
 	require.NoError(t, err)
@@ -23,18 +23,18 @@ func TestConstant_GetAuthority(t *testing.T) {
 
 func TestConstant_Wait(t *testing.T) {
 	authority := fake.NewAuthority(3, fake.NewSigner)
-	vc := NewViewChange(fake.NewAddress(0), authority)
+	vc := NewViewChange(fake.NewAddress(0), authority, fake.MessageFactory{})
 
 	allowed := vc.Wait()
 	require.True(t, allowed)
 
-	vc = NewViewChange(fake.NewAddress(1), authority)
+	vc = NewViewChange(fake.NewAddress(1), authority, fake.MessageFactory{})
 	allowed = vc.Wait()
 	require.False(t, allowed)
 }
 
 func TestConstant_Verify(t *testing.T) {
-	vc := NewViewChange(fake.NewAddress(0), fake.NewAuthority(3, fake.NewSigner))
+	vc := NewViewChange(fake.NewAddress(0), fake.NewAuthority(3, fake.NewSigner), fake.MessageFactory{})
 
 	curr, err := vc.Verify(fake.NewAddress(0), 0)
 	require.NoError(t, err)

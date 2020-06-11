@@ -7,8 +7,9 @@ import (
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -25,7 +26,7 @@ type thresholdActor struct {
 
 // Sign implements cosi.Actor. It returns the collective signature from the
 // collective authority, or an error if it failed.
-func (a thresholdActor) Sign(ctx context.Context, msg encoding.Packable,
+func (a thresholdActor) Sign(ctx context.Context, msg serde.Message,
 	ca crypto.CollectiveAuthority) (crypto.Signature, error) {
 
 	innerCtx, cancel := context.WithCancel(context.Background())
@@ -36,12 +37,7 @@ func (a thresholdActor) Sign(ctx context.Context, msg encoding.Packable,
 		return nil, xerrors.Errorf("couldn't open stream: %v", err)
 	}
 
-	req, err := a.encoder.Pack(msg)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack message: %v", err)
-	}
-
-	digest, err := a.reactor.Invoke(a.me, req)
+	digest, err := a.reactor.Invoke(a.me, msg)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't react to message: %v", err)
 	}
@@ -50,7 +46,7 @@ func (a thresholdActor) Sign(ctx context.Context, msg encoding.Packable,
 	// signatures.
 	thres := a.Threshold(ca.Len())
 
-	errs := sender.Send(req, iter2slice(ca)...)
+	errs := sender.Send(tmp.ProtoOf(msg), iter2slice(ca)...)
 
 	go a.waitResp(errs, ca.Len()-thres, cancel)
 

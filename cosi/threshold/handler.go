@@ -7,6 +7,7 @@ import (
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -51,7 +52,9 @@ func (h thresholdHandler) processRequest(sender mino.Sender, rcvr mino.Receiver)
 		return xerrors.Errorf("failed to receive: %v", err)
 	}
 
-	buffer, err := h.reactor.Invoke(addr, resp)
+	in := tmp.FromProto(resp, h.reactor)
+
+	buffer, err := h.reactor.Invoke(addr, in)
 	if err != nil {
 		return xerrors.Errorf("couldn't hash message: %v", err)
 	}

@@ -3,6 +3,8 @@ package tmp
 
 import (
 	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes"
+	"github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/json"
@@ -33,4 +35,34 @@ func FromProto(pb proto.Message, f serde.Factory) serde.Message {
 	}
 
 	return m
+}
+
+func MarshalProto(m proto.Message) []byte {
+	container, err := ptypes.MarshalAny(m)
+	if err != nil {
+		panic(err)
+	}
+
+	data, err := proto.Marshal(container)
+	if err != nil {
+		panic(err)
+	}
+
+	return data
+}
+
+func UnmarshalProto(data []byte) proto.Message {
+	var container any.Any
+	err := proto.Unmarshal(data, &container)
+	if err != nil {
+		panic(err)
+	}
+
+	var m ptypes.DynamicAny
+	err = ptypes.UnmarshalAny(&container, &m)
+	if err != nil {
+		panic(err)
+	}
+
+	return m.Message
 }

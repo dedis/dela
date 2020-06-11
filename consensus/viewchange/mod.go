@@ -4,6 +4,7 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
 )
 
 // ViewChange provides primitives to verify if a participant is allowed to
@@ -11,6 +12,8 @@ import (
 // and the others as backups when it is failing. The index returned announces
 // who is allowed to be the leader.
 type ViewChange interface {
+	GetChangeSetFactory() serde.Factory
+
 	// GetAuthority returns the authority at the given index.
 	// TODO: use the proposal ID if we move the blockchain module to be a plugin
 	// of the ledger.
@@ -24,21 +27,16 @@ type ViewChange interface {
 	Verify(from mino.Address, index uint64) (Authority, error)
 }
 
-// Player is a tuple of an address and its public key.
-type Player struct {
-	Address   mino.Address
-	PublicKey crypto.PublicKey
-}
-
-// ChangeSet is a combination of changes of a collective authority.
-type ChangeSet struct {
-	Remove []uint32
-	Add    []Player
+// ChangeSet is the return of a diff between two authorities.
+type ChangeSet interface {
+	serde.Message
 }
 
 // Authority is an extension of the collective authority to provide
 // primitives to append new players to it.
 type Authority interface {
+	serde.Message
+	serde.Fingerprinter
 	encoding.Packable
 	crypto.CollectiveAuthority
 

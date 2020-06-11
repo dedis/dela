@@ -1,37 +1,32 @@
 package consensus
 
 import (
-	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
 )
 
 type Reactor interface {
+	serde.Factory
+
 	InvokeGenesis() ([]byte, error)
 
-	InvokeValidate(mino.Address, proto.Message) ([]byte, error)
+	InvokeValidate(mino.Address, serde.Message) ([]byte, error)
 
 	InvokeCommit(id []byte) error
 }
 
 // Chain is a verifiable lock between proposals.
 type Chain interface {
-	encoding.Packable
+	serde.Message
 
 	GetTo() []byte
-}
-
-// ChainFactory is a factory to decodes chain from protobuf messages.
-type ChainFactory interface {
-	// FromProto returns the instance of the chain decoded from the message.
-	FromProto(pb proto.Message) (Chain, error)
 }
 
 // Actor is the primitive to send proposals to a consensus implementation.
 type Actor interface {
 	// Propose performs the consensus algorithm. The list of participants is
 	// left to the implementation.
-	Propose(proto.Message) error
+	Propose(serde.Message) error
 
 	// Close must clean the resources of the actor.
 	Close() error
@@ -40,8 +35,7 @@ type Actor interface {
 // Consensus is an interface that provides primitives to propose data to a set
 // of participants. They will validate the proposal according to the validator.
 type Consensus interface {
-	// GetChainFactory returns the chain factory.
-	GetChainFactory() (ChainFactory, error)
+	GetChainFactory() serde.Factory
 
 	// GetChain returns a valid chain to the given identifier.
 	GetChain(to []byte) (Chain, error)

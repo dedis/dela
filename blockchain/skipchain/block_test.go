@@ -9,8 +9,7 @@ import (
 	"testing"
 	"testing/quick"
 
-	proto "github.com/golang/protobuf/proto"
-	any "github.com/golang/protobuf/ptypes/any"
+	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/golang/protobuf/ptypes/wrappers"
 	"github.com/stretchr/testify/require"
@@ -18,7 +17,7 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"golang.org/x/xerrors"
+	"go.dedis.ch/dela/serde"
 )
 
 func TestDigest_Bytes(t *testing.T) {
@@ -168,7 +167,7 @@ func TestVerifiableBlock_Pack(t *testing.T) {
 		_, err = vb.Pack(fake.BadPackEncoder{})
 		require.EqualError(t, err, "couldn't pack block: fake error")
 
-		_, err = vb.Pack(fake.BadPackAnyEncoder{})
+		_, err = vb.Pack(fake.BadMarshalAnyEncoder{})
 		require.EqualError(t, err, "couldn't pack chain: fake error")
 
 		return true
@@ -242,9 +241,12 @@ func TestBlockFactory_FromVerifiable(t *testing.T) {
 		packed, err := block.Pack(encoding.NewProtoEncoder())
 		require.NoError(t, err)
 
+		e, err := ptypes.MarshalAny(&wrappers.BytesValue{})
+		require.NoError(t, err)
+
 		pb := &VerifiableBlockProto{
 			Block: packed.(*BlockProto),
-			Chain: &any.Any{},
+			Chain: e,
 		}
 
 		b, err := factory.FromVerifiable(pb)
@@ -260,14 +262,6 @@ func TestBlockFactory_FromVerifiable(t *testing.T) {
 		require.Contains(t, err.Error(), "couldn't decode the block: ")
 
 		factory.hashFactory = crypto.NewSha256Factory()
-		factory.consensus = fakeConsensus{errFactory: xerrors.New("oops")}
-		_, err = factory.FromVerifiable(pb)
-		require.EqualError(t, err, "couldn't get the chain factory: oops")
-
-		factory.consensus = fakeConsensus{err: xerrors.New("oops")}
-		_, err = factory.FromVerifiable(pb)
-		require.EqualError(t, err, "couldn't decode the chain: oops")
-
 		factory.consensus = fakeConsensus{hash: Digest{}}
 		_, err = factory.FromVerifiable(pb)
 		require.EqualError(t, err,
@@ -326,36 +320,28 @@ func (c fakeChain) GetTo() []byte {
 	return c.hash.Bytes()
 }
 
-func (c fakeChain) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
-	return &empty.Empty{}, c.err
+func (c fakeChain) VisitJSON(serde.Serializer) (interface{}, error) {
+	return struct{}{}, c.err
 }
 
 type fakeChainFactory struct {
-	consensus.ChainFactory
-	hash     Digest
-	err      error
-	errChain error
+	serde.UnimplementedFactory
+	hash Digest
 }
 
-func (f fakeChainFactory) FromProto(proto.Message) (consensus.Chain, error) {
-	return fakeChain{hash: f.hash, err: f.errChain}, f.err
+func (f fakeChainFactory) VisitJSON(serde.FactoryInput) (serde.Message, error) {
+	return fakeChain{hash: f.hash}, nil
 }
 
 type fakeConsensus struct {
 	consensus.Consensus
-	hash       Digest
-	err        error
-	errChain   error
-	errFactory error
-	errStore   error
+	hash     Digest
+	err      error
+	errStore error
 }
 
-func (c fakeConsensus) GetChainFactory() (consensus.ChainFactory, error) {
-	return fakeChainFactory{
-		hash:     c.hash,
-		err:      c.err,
-		errChain: c.errChain,
-	}, c.errFactory
+func (c fakeConsensus) GetChainFactory() serde.Factory {
+	return fakeChainFactory{hash: c.hash}
 }
 
 func (c fakeConsensus) GetChain(id []byte) (consensus.Chain, error) {

@@ -3,10 +3,10 @@ package threshold
 import (
 	"testing"
 
-	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -55,5 +55,5 @@ func TestThresholdHandler_Stream(t *testing.T) {
 // Utility functions
 
 func makeResponse() [][]interface{} {
-	return [][]interface{}{{fake.Address{}, &empty.Empty{}}}
+	return [][]interface{}{{fake.Address{}, tmp.ProtoOf(fake.Message{})}}
 }

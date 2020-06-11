@@ -10,11 +10,11 @@ import (
 	"math/rand"
 	"time"
 
-	proto "github.com/golang/protobuf/proto"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/net/context"
 	"golang.org/x/xerrors"
 )
@@ -30,7 +30,7 @@ const (
 // Consensus is an abstraction to send proposals to a network of nodes that will
 // decide to include them in the common state.
 type Consensus struct {
-	ch               chan proto.Message
+	ch               chan serde.Message
 	closing          chan struct{}
 	stopped          chan struct{}
 	history          history
@@ -46,7 +46,7 @@ func NewQSC(node int64, mino mino.Mino, players mino.Players) (*Consensus, error
 	}
 
 	return &Consensus{
-		ch:        make(chan proto.Message),
+		ch:        make(chan serde.Message),
 		closing:   make(chan struct{}),
 		stopped:   make(chan struct{}),
 		history:   make(history, 0),
@@ -58,7 +58,7 @@ func NewQSC(node int64, mino mino.Mino, players mino.Players) (*Consensus, error
 }
 
 // GetChainFactory implements consensus.Consensus. It returns the chain factory.
-func (c *Consensus) GetChainFactory() consensus.ChainFactory {
+func (c *Consensus) GetChainFactory() serde.Factory {
 	return nil
 }
 
@@ -73,7 +73,7 @@ func (c *Consensus) GetChain(id []byte) (consensus.Chain, error) {
 func (c *Consensus) Listen(r consensus.Reactor) (consensus.Actor, error) {
 	go func() {
 		for {
-			var proposal proto.Message
+			var proposal serde.Message
 			select {
 			case <-c.closing:
 				dela.Logger.Trace().Msg("closing")
@@ -118,7 +118,7 @@ func (c *Consensus) Listen(r consensus.Reactor) (consensus.Actor, error) {
 
 func (c *Consensus) executeRound(
 	ctx context.Context,
-	prop proto.Message,
+	prop serde.Message,
 	val consensus.Reactor,
 ) error {
 	// 1. Choose the message and the random value. The new epoch will be
@@ -197,13 +197,13 @@ func (c *Consensus) executeRound(
 //
 // - implements consensus.Actor
 type actor struct {
-	ch      chan proto.Message
+	ch      chan serde.Message
 	closing chan struct{}
 }
 
 // Propose implements consensus.Actor. It sends the proposal to the qsc loop. If
 // the actor has been closed, it will panic.
-func (a actor) Propose(proposal proto.Message) error {
+func (a actor) Propose(proposal serde.Message) error {
 	a.ch <- proposal
 	return nil
 }

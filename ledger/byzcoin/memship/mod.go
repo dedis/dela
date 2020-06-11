@@ -1,9 +1,7 @@
 package memship
 
 import (
-	"encoding/binary"
 	"io"
-	"sort"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
@@ -41,75 +39,23 @@ var (
 type clientTask struct {
 	serde.UnimplementedMessage
 
-	remove []uint32
-	player *viewchange.Player
+	authority viewchange.Authority
 }
 
-// NewRemove creates a new roster client task that will remove a player from the
-// roster.
-func NewRemove(r []uint32) basic.ClientTask {
-	return clientTask{
-		remove: r,
-	}
-}
-
-// NewAdd creates a new roster client task that will add a player to the roster.
-func NewAdd(addr mino.Address, pubkey crypto.PublicKey) basic.ClientTask {
-	player := viewchange.Player{
-		Address:   addr,
-		PublicKey: pubkey,
-	}
-
-	return clientTask{player: &player}
-}
-
-func (t clientTask) GetChangeSet() viewchange.ChangeSet {
-	removals := append([]uint32{}, t.remove...)
-	// Sort by ascending order in O(n*log(n)).
-	sort.Slice(removals, func(i, j int) bool { return removals[i] > removals[j] })
-	// Remove duplicates in O(n).
-	for i := 0; i < len(removals)-1; {
-		if removals[i] == removals[i+1] {
-			removals = append(removals[:i], removals[i+1:]...)
-		} else {
-			// Only moves to the next when all occurences of the same index are
-			// removed.
-			i++
-		}
-	}
-
-	changeset := viewchange.ChangeSet{
-		Remove: removals,
-	}
-
-	if t.player != nil {
-		changeset.Add = []viewchange.Player{*t.player}
-	}
-
-	return changeset
+// NewTask returns a new client task to update the authority.
+func NewTask(authority crypto.CollectiveAuthority) basic.ClientTask {
+	return clientTask{authority: roster.New(authority)}
 }
 
 // Pack implements encoding.Packable. It returns the protobuf message for the
 // client task.
 func (t clientTask) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
-	pb := &Task{
-		Remove: t.remove,
+	authority, err := enc.PackAny(t.authority)
+	if err != nil {
+		return nil, err
 	}
 
-	if t.player != nil {
-		addr, err := t.player.Address.MarshalText()
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't marshal address: %v", err)
-		}
-
-		pubkey, err := enc.PackAny(t.player.PublicKey)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't pack public key: %v", err)
-		}
-
-		pb.Addr = addr
-		pb.PublicKey = pubkey
-	}
+	pb := &Task{Authority: authority}
 
 	return pb, nil
 }
@@ -117,23 +63,13 @@ func (t clientTask) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 // VisitJSON implements serde.Message. It serializes the client task in JSON
 // format.
 func (t clientTask) VisitJSON(ser serde.Serializer) (interface{}, error) {
-	m := json.Task{
-		Remove: t.remove,
+	authority, err := ser.Serialize(t.authority)
+	if err != nil {
+		return nil, err
 	}
 
-	if t.player != nil {
-		addr, err := t.player.Address.MarshalText()
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't marshal address: %v", err)
-		}
-
-		pubkey, err := ser.Serialize(t.player.PublicKey)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't serialize public key: %v", err)
-		}
-
-		m.Address = addr
-		m.PublicKey = pubkey
+	m := json.Task{
+		Authority: authority,
 	}
 
 	return m, nil
@@ -142,36 +78,9 @@ func (t clientTask) VisitJSON(ser serde.Serializer) (interface{}, error) {
 // Fingerprint implements encoding.Fingerprinter. It serializes the client task
 // to the writer in a deterministic way.
 func (t clientTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
-	buffer := make([]byte, 4*len(t.remove))
-	for i, index := range t.remove {
-		binary.LittleEndian.PutUint32(buffer[i*4:], index)
-	}
-
-	_, err := w.Write(buffer)
+	err := t.authority.Fingerprint(w)
 	if err != nil {
-		return xerrors.Errorf("couldn't write remove indices: %v", err)
-	}
-
-	if t.player != nil {
-		buffer, err = t.player.Address.MarshalText()
-		if err != nil {
-			return xerrors.Errorf("couldn't marshal address: %v", err)
-		}
-
-		_, err = w.Write(buffer)
-		if err != nil {
-			return xerrors.Errorf("couldn't write address: %v", err)
-		}
-
-		buffer, err = t.player.PublicKey.MarshalBinary()
-		if err != nil {
-			return xerrors.Errorf("couldn't marshal public key: %v", err)
-		}
-
-		_, err = w.Write(buffer)
-		if err != nil {
-			return xerrors.Errorf("couldn't write public key: %v", err)
-		}
+		return err
 	}
 
 	return nil
@@ -196,24 +105,7 @@ func (t serverTask) Consume(ctx basic.Context, page inventory.WritablePage) erro
 	// TODO: implement
 
 	// 2. Update the roster stored in the inventory.
-	prev, err := t.inventory.GetPage(page.GetIndex() - 1)
-	if err != nil {
-		return xerrors.Errorf("couldn't get previous page: %v", err)
-	}
-
-	value, err := prev.Read(rosterValueKey)
-	if err != nil {
-		return xerrors.Errorf("couldn't read roster: %v", err)
-	}
-
-	roster, err := t.rosterFactory.FromProto(value)
-	if err != nil {
-		return xerrors.Errorf("couldn't decode roster: %v", err)
-	}
-
-	roster = roster.Apply(t.GetChangeSet())
-
-	value, err = t.encoder.Pack(roster)
+	value, err := t.encoder.Pack(roster.New(t.authority))
 	if err != nil {
 		return xerrors.Errorf("couldn't encode roster: %v", err)
 	}
@@ -238,6 +130,7 @@ type TaskManager struct {
 	encoder       encoding.ProtoMarshaler
 	inventory     inventory.Inventory
 	rosterFactory roster.Factory
+	csFactory     serde.Factory
 }
 
 // NewTaskManager returns a new instance of the task factory.
@@ -247,7 +140,13 @@ func NewTaskManager(i inventory.Inventory, m mino.Mino, s crypto.Signer) TaskMan
 		encoder:       encoding.NewProtoEncoder(),
 		inventory:     i,
 		rosterFactory: roster.NewRosterFactory(m.GetAddressFactory(), s.GetPublicKeyFactory()),
+		csFactory:     roster.NewChangeSetFactory(m.GetAddressFactory(), s.GetPublicKeyFactory()),
 	}
+}
+
+// GetChangeSetFactory implements viewchange.ViewChange.
+func (f TaskManager) GetChangeSetFactory() serde.Factory {
+	return f.csFactory
 }
 
 // GetAuthority implements viewchange.ViewChange. It returns the current
@@ -317,43 +216,20 @@ func (f TaskManager) FromProto(in proto.Message) (basic.ServerTask, error) {
 		return nil, xerrors.Errorf("invalid message type '%T'", in)
 	}
 
-	player, err := f.unpackPlayer(pb.GetAddr(), pb.GetPublicKey())
+	roster, err := f.rosterFactory.FromProto(pb.GetAuthority())
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't unpack player: %v", err)
 	}
 
 	task := serverTask{
 		clientTask: clientTask{
-			remove: pb.Remove,
-			player: player,
+			authority: roster,
 		},
 		encoder:       f.encoder,
 		rosterFactory: f.rosterFactory,
 		inventory:     f.inventory,
 	}
 	return task, nil
-}
-
-func (f TaskManager) unpackPlayer(addrpb []byte,
-	pubkeypb proto.Message) (*viewchange.Player, error) {
-
-	if addrpb == nil || pubkeypb == nil {
-		return nil, nil
-	}
-
-	addr := f.rosterFactory.GetAddressFactory().FromText(addrpb)
-
-	pubkey, err := f.rosterFactory.GetPublicKeyFactory().FromProto(pubkeypb)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't decode public key: %v", err)
-	}
-
-	player := viewchange.Player{
-		Address:   addr,
-		PublicKey: pubkey,
-	}
-
-	return &player, nil
 }
 
 // VisitJSON implements serde.Factory. It deserializes the client task in JSON
@@ -365,28 +241,19 @@ func (f TaskManager) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
 		return nil, xerrors.Errorf("couldn't deserialize task: %v", err)
 	}
 
+	var roster viewchange.Authority
+	err = in.GetSerializer().Deserialize(m.Authority, f.rosterFactory, &roster)
+	if err != nil {
+		return nil, err
+	}
+
 	task := serverTask{
 		clientTask: clientTask{
-			remove: m.Remove,
+			authority: roster,
 		},
 		encoder:       f.encoder,
 		rosterFactory: f.rosterFactory,
 		inventory:     f.inventory,
-	}
-
-	if m.Address != nil && m.PublicKey != nil {
-		addr := f.rosterFactory.GetAddressFactory().FromText(m.Address)
-
-		var pubkey crypto.PublicKey
-		err = in.GetSerializer().Deserialize(m.PublicKey, f.rosterFactory.GetPublicKeyFactory(), &pubkey)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't deserialize public key: %v", err)
-		}
-
-		task.clientTask.player = &viewchange.Player{
-			Address:   addr,
-			PublicKey: pubkey,
-		}
 	}
 
 	return task, nil

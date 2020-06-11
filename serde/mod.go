@@ -7,6 +7,8 @@
 // - Protobuf
 package serde
 
+import "io"
+
 // Message is the interface a data model should implemented to be serialized and
 // deserialized.
 type Message interface {
@@ -55,4 +57,8 @@ type Serializer interface {
 	// Deserialization takes the byte slice and the factory to instantiate the
 	// message implementation.
 	Deserialize([]byte, Factory, interface{}) error
+}
+
+type Fingerprinter interface {
+	Fingerprint(io.Writer) error
 }

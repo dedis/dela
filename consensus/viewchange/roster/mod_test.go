@@ -113,10 +113,10 @@ func TestRoster_Take(t *testing.T) {
 func TestRoster_Apply(t *testing.T) {
 	roster := New(fake.NewAuthority(3, fake.NewSigner))
 
-	roster2 := roster.Apply(viewchange.ChangeSet{Remove: []uint32{3, 2, 0}})
+	roster2 := roster.Apply(ChangeSet{Remove: []uint32{3, 2, 0}})
 	require.Equal(t, roster.Len()-2, roster2.Len())
 
-	roster3 := roster2.Apply(viewchange.ChangeSet{Add: []viewchange.Player{{}}})
+	roster3 := roster2.Apply(ChangeSet{Add: []Player{{}}})
 	require.Equal(t, roster.Len()-1, roster3.Len())
 }
 
@@ -124,21 +124,21 @@ func TestRoster_Diff(t *testing.T) {
 	roster1 := New(fake.NewAuthority(3, fake.NewSigner))
 
 	roster2 := New(fake.NewAuthority(4, fake.NewSigner))
-	diff := roster1.Diff(roster2)
+	diff := roster1.Diff(roster2).(ChangeSet)
 	require.Len(t, diff.Add, 1)
 
 	roster3 := New(fake.NewAuthority(2, fake.NewSigner))
-	diff = roster1.Diff(roster3)
+	diff = roster1.Diff(roster3).(ChangeSet)
 	require.Len(t, diff.Remove, 1)
 
 	roster4 := New(fake.NewAuthority(3, fake.NewSigner)).(roster)
 	roster4.addrs[1] = fake.NewAddress(5)
-	diff = roster1.Diff(roster4)
+	diff = roster1.Diff(roster4).(ChangeSet)
 	require.Equal(t, []uint32{1, 2}, diff.Remove)
 	require.Len(t, diff.Add, 2)
 
-	diff = roster1.Diff((viewchange.Authority)(nil))
-	require.Equal(t, viewchange.ChangeSet{}, diff)
+	diff = roster1.Diff((viewchange.Authority)(nil)).(ChangeSet)
+	require.Equal(t, ChangeSet{}, diff)
 }
 
 func TestRoster_Len(t *testing.T) {

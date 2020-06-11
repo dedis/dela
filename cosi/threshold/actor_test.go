@@ -37,32 +37,27 @@ func TestActor_Sign(t *testing.T) {
 
 	ctx := context.Background()
 
-	sig, err := actor.Sign(ctx, fakeMessage{}, ca)
+	sig, err := actor.Sign(ctx, fake.Message{}, ca)
 	require.NoError(t, err)
 	require.NotNil(t, sig)
 
-	actor.CoSi.encoder = fake.BadPackEncoder{}
-	_, err = actor.Sign(ctx, fakeMessage{}, ca)
-	require.EqualError(t, err, "couldn't pack message: fake error")
-
-	actor.encoder = encoding.NewProtoEncoder()
 	actor.reactor = fakeReactor{err: xerrors.New("oops")}
-	_, err = actor.Sign(ctx, fakeMessage{}, ca)
+	_, err = actor.Sign(ctx, fake.Message{}, ca)
 	require.EqualError(t, err, "couldn't react to message: oops")
 
 	actor.reactor = fakeReactor{}
 	actor.rpc = fakeRPC{receiver: &fakeReceiver{}}
-	_, err = actor.Sign(ctx, fakeMessage{}, ca)
+	_, err = actor.Sign(ctx, fake.Message{}, ca)
 	require.EqualError(t, err, "couldn't receive more messages: EOF")
 
 	actor.rpc = fakeRPC{receiver: &fakeReceiver{blocking: true}}
 	doneCtx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err = actor.Sign(doneCtx, fakeMessage{}, ca)
+	_, err = actor.Sign(doneCtx, fake.Message{}, ca)
 	require.EqualError(t, err, "couldn't receive more messages: context canceled")
 
 	actor.rpc = fakeRPC{sender: fakeSender{numErr: 2}, receiver: &fakeReceiver{blocking: true}}
-	_, err = actor.Sign(ctx, fakeMessage{}, ca)
+	_, err = actor.Sign(ctx, fake.Message{}, ca)
 	require.EqualError(t, err, "couldn't receive more messages: context canceled")
 
 	actor.signer = fake.NewSignerWithSignatureFactory(fake.NewBadSignatureFactory())
@@ -74,7 +69,7 @@ func TestActor_Sign(t *testing.T) {
 	require.EqualError(t, err, "couldn't verify: fake error")
 
 	actor.rpc = fake.NewBadStreamRPC()
-	_, err = actor.Sign(ctx, fakeMessage{}, ca)
+	_, err = actor.Sign(ctx, fake.Message{}, ca)
 	require.EqualError(t, err, "couldn't open stream: fake error")
 }
 

@@ -72,11 +72,8 @@ func TestLedger_Basic(t *testing.T) {
 		sendTx(t, ledgers[1], actors[5], tx)
 	}
 
-	addAddr := ledgers[19].(*Ledger).addr
-	addPk := ledgers[19].(*Ledger).signer.GetPublicKey()
-
 	// Execute a roster change tx by adding the remaining participant.
-	tx, err := txFactory.New(memship.NewAdd(addAddr, addPk))
+	tx, err := txFactory.New(memship.NewTask(ca))
 	require.NoError(t, err)
 
 	sendTx(t, ledgers[1], actors[1], tx)

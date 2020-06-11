@@ -68,6 +68,10 @@ func (e Serializer) Serialize(m serde.Message) ([]byte, error) {
 
 // Deserialize implements serde.Deserialize.
 func (e Serializer) Deserialize(buffer []byte, f serde.Factory, o interface{}) error {
+	if f == nil {
+		return xerrors.New("factory is nil")
+	}
+
 	m, err := f.VisitJSON(factoryInput{data: buffer, serde: e})
 	if err != nil {
 		return xerrors.Errorf("couldn't deserialize from json with '%T': %w", f, err)

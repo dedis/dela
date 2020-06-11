@@ -12,7 +12,8 @@ import (
 	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/consensus/cosipbft"
 	"go.dedis.ch/dela/consensus/viewchange/constant"
-	"go.dedis.ch/dela/cosi/threshold"
+	"go.dedis.ch/dela/consensus/viewchange/roster"
+	"go.dedis.ch/dela/cosi/flatcosi"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/encoding"
@@ -20,6 +21,7 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minoch"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -246,16 +248,6 @@ func TestActor_Store(t *testing.T) {
 	require.EqualError(t, err, "couldn't read the latest block: oops")
 
 	db.err = nil
-	actor.blockFactory.hashFactory = fake.NewHashFactory(fake.NewBadHash())
-	err = actor.Store(&empty.Empty{}, authority)
-	require.Contains(t, err.Error(), "couldn't create next block: ")
-
-	actor.blockFactory.hashFactory = crypto.NewSha256Factory()
-	actor.encoder = fake.BadPackEncoder{}
-	err = actor.Store(&empty.Empty{}, authority)
-	require.EqualError(t, err, "couldn't pack block: fake error")
-
-	actor.encoder = encoding.NewProtoEncoder()
 	actor.consensus = &fakeConsensusActor{err: xerrors.New("oops")}
 	err = actor.Store(&empty.Empty{}, authority)
 	require.EqualError(t, err, "couldn't propose the block: oops")
@@ -302,8 +294,10 @@ func makeSkipchain(t *testing.T, n int) (crypto.CollectiveAuthority, []*Skipchai
 	skipchains := make([]*Skipchain, n)
 	actors := make([]blockchain.Actor, n)
 	for i, m := range mm {
-		cosi := threshold.NewCoSi(mm[i], authority.GetSigner(i))
-		vc := constant.NewViewChange(m.GetAddress(), authority)
+		cosi := flatcosi.NewFlat(mm[i], authority.GetSigner(i))
+		vc := constant.NewViewChange(m.GetAddress(), authority,
+			roster.NewChangeSetFactory(m.GetAddressFactory(), cosi.GetPublicKeyFactory()))
+
 		cons := cosipbft.NewCoSiPBFT(mm[i], cosi, vc)
 		skipchains[i] = NewSkipchain(mm[i], cons)
 
@@ -338,10 +332,10 @@ func (rpc fakeRPC) Call(context.Context, proto.Message,
 type fakeConsensusActor struct {
 	consensus.Actor
 	err  error
-	prop proto.Message
+	prop serde.Message
 }
 
-func (a *fakeConsensusActor) Propose(prop proto.Message) error {
+func (a *fakeConsensusActor) Propose(prop serde.Message) error {
 	a.prop = prop
 	return a.err
 }

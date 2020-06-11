@@ -4,9 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"golang.org/x/xerrors"
 )
@@ -43,7 +41,6 @@ func TestQueue_New(t *testing.T) {
 func TestQueue_LockProposal(t *testing.T) {
 	verifier := &fakeVerifier{}
 	queue := &queue{
-		encoder:     encoding.NewProtoEncoder(),
 		hashFactory: crypto.NewSha256Factory(),
 		items: []item{
 			{
@@ -67,7 +64,7 @@ func TestQueue_LockProposal(t *testing.T) {
 	require.Len(t, verifier.calls, 1)
 
 	forwardLink := forwardLink{from: []byte{0xaa}, to: []byte{0xbb}}
-	hash, err := forwardLink.computeHash(sha256Factory{}.New(), encoding.NewProtoEncoder())
+	hash, err := forwardLink.computeHash(crypto.NewSha256Factory().New())
 	require.NoError(t, err)
 	require.Equal(t, hash, verifier.calls[0]["message"])
 
@@ -94,14 +91,13 @@ func TestQueue_LockProposal(t *testing.T) {
 func TestQueue_Finalize(t *testing.T) {
 	verifier := &fakeVerifier{}
 	queue := &queue{
-		encoder: encoding.NewProtoEncoder(),
 		items: []item{
 			{
 				forwardLink: forwardLink{
 					from:      []byte{0xaa},
 					to:        []byte{0xbb},
 					prepare:   fake.Signature{},
-					changeset: viewchange.ChangeSet{},
+					changeset: fake.Message{},
 				},
 				verifier: verifier,
 			},

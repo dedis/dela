@@ -10,6 +10,7 @@ import (
 	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -151,7 +152,7 @@ func (vb VerifiableBlock) Pack(enc encoding.ProtoMarshaler) (proto.Message, erro
 		Block: block.(*BlockProto),
 	}
 
-	packed.Chain, err = enc.PackAny(vb.Chain)
+	packed.Chain, err = enc.MarshalAny(tmp.ProtoOf(vb.Chain))
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't pack chain: %v", err)
 	}
@@ -248,16 +249,12 @@ func (f blockFactory) FromVerifiable(src proto.Message) (blockchain.Block, error
 		return nil, xerrors.Errorf("couldn't decode the block: %v", err)
 	}
 
-	chainFactory, err := f.consensus.GetChainFactory()
+	chainpb, err := f.encoder.UnmarshalDynamicAny(in.GetChain())
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't get the chain factory: %v", err)
+		return nil, err
 	}
 
-	// Integrity of the chain is verified during decoding.
-	chain, err := chainFactory.FromProto(in.GetChain())
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't decode the chain: %v", err)
-	}
+	chain := tmp.FromProto(chainpb, f.consensus.GetChainFactory()).(consensus.Chain)
 
 	// Only the link between the chain and the block needs to be verified.
 	if !bytes.Equal(chain.GetTo(), block.hash[:]) {
