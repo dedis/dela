@@ -64,6 +64,9 @@ func TestSerializer_Deserialize(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, block{Value: "Hello World!", Index: 42}, m)
 
+	err = s.Deserialize(buffer, nil, &m)
+	require.EqualError(t, err, "factory is nil")
+
 	err = s.Deserialize(buffer, badFactory{}, &m)
 	require.EqualError(t, err,
 		"couldn't deserialize from json with 'json.badFactory': oops")

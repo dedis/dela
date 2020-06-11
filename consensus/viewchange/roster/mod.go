@@ -99,18 +99,28 @@ func New(authority crypto.CollectiveAuthority) viewchange.Authority {
 	return roster
 }
 
+// Fingerprint implements serde.Fingerprinter. It marshals the roster and writes
+// the result in the given writer.
 func (r roster) Fingerprint(w io.Writer) error {
-	// TODO: implement
-
-	for _, addr := range r.addrs {
+	for i, addr := range r.addrs {
 		data, err := addr.MarshalText()
 		if err != nil {
-			return err
+			return xerrors.Errorf("couldn't marshal address: %v", err)
 		}
 
 		_, err = w.Write(data)
 		if err != nil {
-			return err
+			return xerrors.Errorf("couldn't write address: %v", err)
+		}
+
+		data, err = r.pubkeys[i].MarshalBinary()
+		if err != nil {
+			return xerrors.Errorf("couldn't marshal public key: %v", err)
+		}
+
+		_, err = w.Write(data)
+		if err != nil {
+			return xerrors.Errorf("couldn't write public key: %v", err)
 		}
 	}
 
@@ -264,18 +274,20 @@ func (r roster) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	return pb, nil
 }
 
+// VisitJSON implements serde.Message. It serializes the roster in a JSON
+// message.
 func (r roster) VisitJSON(ser serde.Serializer) (interface{}, error) {
 	players := make([]json.Player, r.Len())
 
 	for i := range r.addrs {
 		addr, err := r.addrs[i].MarshalText()
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("couldn't marshal address: %v", err)
 		}
 
 		pubkey, err := ser.Serialize(r.pubkeys[i])
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("couldn't serialize public key: %v", err)
 		}
 
 		players[i] = json.Player{
@@ -290,6 +302,8 @@ func (r roster) VisitJSON(ser serde.Serializer) (interface{}, error) {
 }
 
 // Factory provide functions to create and decode a roster.
+//
+// - implements serde.Factory
 type Factory interface {
 	serde.Factory
 
@@ -338,7 +352,7 @@ func (f defaultFactory) FromProto(in proto.Message) (viewchange.Authority, error
 		pb = &Roster{}
 		err := f.encoder.UnmarshalAny(msg, pb)
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("couldn't unmarshal roster: %v", err)
 		}
 	default:
 		return nil, xerrors.Errorf("invalid message type '%T'", in)
@@ -371,11 +385,13 @@ func (f defaultFactory) FromProto(in proto.Message) (viewchange.Authority, error
 	return roster, nil
 }
 
+// VisitJSON implements serde.Factory. It deserializes the roster in JSON
+// format.
 func (f defaultFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
 	m := json.Roster{}
 	err := in.Feed(&m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't deserialize roster: %v", err)
 	}
 
 	addrs := make([]mino.Address, len(m))
@@ -387,7 +403,7 @@ func (f defaultFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) 
 		var pubkey crypto.PublicKey
 		err = in.GetSerializer().Deserialize(raw.PublicKey, f.pubkeyFactory, &pubkey)
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("couldn't deserialize public key: %v", err)
 		}
 
 		pubkeys[i] = pubkey

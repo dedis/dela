@@ -52,7 +52,7 @@ func NewTask(authority crypto.CollectiveAuthority) basic.ClientTask {
 func (t clientTask) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	authority, err := enc.PackAny(t.authority)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't pack authority: %v", err)
 	}
 
 	pb := &Task{Authority: authority}
@@ -65,7 +65,7 @@ func (t clientTask) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 func (t clientTask) VisitJSON(ser serde.Serializer) (interface{}, error) {
 	authority, err := ser.Serialize(t.authority)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't serialize authority: %v", err)
 	}
 
 	m := json.Task{
@@ -80,7 +80,7 @@ func (t clientTask) VisitJSON(ser serde.Serializer) (interface{}, error) {
 func (t clientTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
 	err := t.authority.Fingerprint(w)
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't fingerprint authority: %v", err)
 	}
 
 	return nil
@@ -92,9 +92,7 @@ func (t clientTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
 // - implements basic.ServerTask
 type serverTask struct {
 	clientTask
-	encoder       encoding.ProtoMarshaler
-	rosterFactory roster.Factory
-	inventory     inventory.Inventory
+	encoder encoding.ProtoMarshaler
 }
 
 // Consume implements basic.ServerTask. It executes the task and write the
@@ -225,10 +223,9 @@ func (f TaskManager) FromProto(in proto.Message) (basic.ServerTask, error) {
 		clientTask: clientTask{
 			authority: roster,
 		},
-		encoder:       f.encoder,
-		rosterFactory: f.rosterFactory,
-		inventory:     f.inventory,
+		encoder: f.encoder,
 	}
+
 	return task, nil
 }
 
@@ -244,16 +241,14 @@ func (f TaskManager) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
 	var roster viewchange.Authority
 	err = in.GetSerializer().Deserialize(m.Authority, f.rosterFactory, &roster)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't deserialize roster: %v", err)
 	}
 
 	task := serverTask{
 		clientTask: clientTask{
 			authority: roster,
 		},
-		encoder:       f.encoder,
-		rosterFactory: f.rosterFactory,
-		inventory:     f.inventory,
+		encoder: f.encoder,
 	}
 
 	return task, nil

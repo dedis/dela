@@ -64,6 +64,11 @@ func TestOperations_CatchUp(t *testing.T) {
 		rpc:       fake.NewStreamRPC(rcv, fake.Sender{}),
 	}
 
+	// No catch up for the genesis block.
+	err = ops.catchUp(0, fake.NewAddress(0))
+	require.NoError(t, err)
+	require.Equal(t, 0, call.Len())
+
 	// Normal catch up with more than one block missing.
 	err = ops.catchUp(5, fake.NewAddress(0))
 	require.NoError(t, err)

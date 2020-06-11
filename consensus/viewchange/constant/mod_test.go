@@ -8,6 +8,12 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 )
 
+func TestConstant_GetChangeSetFactory(t *testing.T) {
+	authority := roster.New(fake.NewAuthority(3, fake.NewSigner))
+	vc := NewViewChange(fake.NewAddress(0), authority, fake.MessageFactory{})
+	require.NotNil(t, vc.GetChangeSetFactory())
+}
+
 func TestConstant_GetAuthority(t *testing.T) {
 	authority := roster.New(fake.NewAuthority(3, fake.NewSigner))
 	vc := NewViewChange(fake.NewAddress(0), authority, fake.MessageFactory{})

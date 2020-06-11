@@ -68,6 +68,16 @@ func TestConsensus_Basic(t *testing.T) {
 	require.Equal(t, chain.GetTo(), chain2.GetTo())
 }
 
+func TestConsensus_GetChainFactory(t *testing.T) {
+	cons := &Consensus{
+		cosi:       &fakeCosi{},
+		mino:       fake.Mino{},
+		viewchange: fakeViewChange{},
+	}
+
+	require.NotNil(t, cons.GetChainFactory())
+}
+
 func TestConsensus_GetChain(t *testing.T) {
 	cons := &Consensus{
 		storage: newInMemoryStorage(),
@@ -353,9 +363,13 @@ func TestRPCHandler_Process(t *testing.T) {
 	require.EqualError(t, err, "couldn't finalize: oops")
 
 	h.queue = fakeQueue{}
-	h.viewchange = fakeViewChange{err: xerrors.New("oops")}
+	h.viewchange = fakeViewChange{err: xerrors.New("oops"), filter: 1}
 	_, err = h.Process(req)
 	require.EqualError(t, err, "couldn't get authority: oops")
+
+	h.viewchange = fakeViewChange{err: xerrors.New("oops"), filter: 2}
+	_, err = h.Process(req)
+	require.EqualError(t, err, "couldn't get new authority: oops")
 
 	h.viewchange = fakeViewChange{}
 	h.storage = badStorage{errStore: xerrors.New("oops")}
@@ -439,13 +453,17 @@ func (vc fakeViewChange) GetChangeSetFactory() serde.Factory {
 }
 
 func (vc fakeViewChange) GetAuthority(index uint64) (viewchange.Authority, error) {
+	if int(index) == vc.filter && vc.err != nil {
+		return nil, vc.err
+	}
+
 	if index != 1 && vc.filter > 0 {
 		filtered := vc.authority.Take(mino.RangeFilter(0, vc.filter)).(crypto.CollectiveAuthority)
 		// Only first two elements for any proposal other than the second.
 		return roster.New(filtered), vc.err
 	}
 
-	return roster.New(vc.authority), vc.err
+	return roster.New(vc.authority), nil
 }
 
 func (vc fakeViewChange) Wait() bool {

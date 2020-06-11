@@ -46,7 +46,7 @@ func (v *reactor) InvokeGenesis() ([]byte, error) {
 func (v *reactor) InvokeValidate(addr mino.Address, pb serde.Message) ([]byte, error) {
 	blueprint, ok := pb.(Blueprint)
 	if !ok {
-		return nil, xerrors.New("invalid blueprint type")
+		return nil, xerrors.Errorf("invalid message type '%T'", pb)
 	}
 
 	// It makes sure that we know the whole chain up to the previous proposal.
@@ -74,7 +74,7 @@ func (v *reactor) InvokeValidate(addr mino.Address, pb serde.Message) ([]byte, e
 
 	hash, err := block.computeHash(v.blockFactory.hashFactory, v.encoder)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't compute hash: %v", err)
 	}
 
 	block.hash = hash

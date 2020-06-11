@@ -177,31 +177,6 @@ func TestVerifiableBlock_Pack(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestBlockFactory_FromPrevious(t *testing.T) {
-	f := func(prev SkipBlock) bool {
-		factory := blockFactory{
-			encoder:     encoding.NewProtoEncoder(),
-			hashFactory: crypto.NewSha256Factory(),
-		}
-
-		block, err := factory.fromPrevious(prev, &empty.Empty{})
-		require.NoError(t, err)
-		require.Equal(t, prev.Index+1, block.Index)
-		require.Equal(t, prev.GenesisID, block.GenesisID)
-		require.Equal(t, prev.GetHash(), block.BackLink.Bytes())
-
-		factory.hashFactory = fake.NewHashFactory(fake.NewBadHash())
-		_, err = factory.fromPrevious(prev, nil)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "couldn't make block: ")
-
-		return true
-	}
-
-	err := quick.Check(f, nil)
-	require.NoError(t, err)
-}
-
 func TestBlockFactory_DecodeBlock(t *testing.T) {
 	f := func(block SkipBlock) bool {
 		factory := blockFactory{
@@ -262,6 +237,9 @@ func TestBlockFactory_FromVerifiable(t *testing.T) {
 		require.Contains(t, err.Error(), "couldn't decode the block: ")
 
 		factory.hashFactory = crypto.NewSha256Factory()
+		_, err = factory.FromVerifiable(&VerifiableBlockProto{Block: pb.Block})
+		require.EqualError(t, err, "couldn't unmarshal chain: message is nil")
+
 		factory.consensus = fakeConsensus{hash: Digest{}}
 		_, err = factory.FromVerifiable(pb)
 		require.EqualError(t, err,

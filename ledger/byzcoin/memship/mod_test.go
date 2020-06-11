@@ -1,16 +1,22 @@
 package memship
 
 import (
+	"bytes"
+	"io"
 	"testing"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes"
+	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/consensus/viewchange/roster"
+	"go.dedis.ch/dela/encoding"
 	internal "go.dedis.ch/dela/internal/testing"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions/basic"
+	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
 
@@ -22,6 +28,70 @@ func TestMessages(t *testing.T) {
 	for _, m := range messages {
 		internal.CoverProtoMessage(t, m)
 	}
+}
+
+func TestTask_Pack(t *testing.T) {
+	task := NewTask(fake.NewAuthority(3, fake.NewSigner))
+
+	pb, err := task.Pack(encoding.NewProtoEncoder())
+	require.NoError(t, err)
+	require.IsType(t, (*Task)(nil), pb)
+
+	_, err = task.Pack(fake.BadPackAnyEncoder{})
+	require.EqualError(t, err, "couldn't pack authority: fake error")
+}
+
+func TestTask_VisitJSON(t *testing.T) {
+	task := NewTask(fake.NewAuthority(1, fake.NewSigner))
+
+	ser := json.NewSerializer()
+
+	data, err := ser.Serialize(task)
+	require.NoError(t, err)
+	require.Regexp(t, `{"Authority":\[{"Address":"[^"]+","PublicKey":{}}\]}`, string(data))
+
+	_, err = task.VisitJSON(fake.NewBadSerializer())
+	require.EqualError(t, err, "couldn't serialize authority: fake error")
+}
+
+func TestTask_Fingerprint(t *testing.T) {
+	task := NewTask(fake.NewAuthority(1, fake.NewSigner)).(clientTask)
+
+	out := new(bytes.Buffer)
+	err := task.Fingerprint(out, nil)
+	require.NoError(t, err)
+
+	task.authority = badAuthority{}
+	err = task.Fingerprint(out, nil)
+	require.EqualError(t, err, "couldn't fingerprint authority: oops")
+}
+
+func TestTask_Consume(t *testing.T) {
+	task := serverTask{
+		clientTask: clientTask{
+			authority: roster.New(fake.NewAuthority(3, fake.NewSigner)),
+		},
+		encoder: encoding.NewProtoEncoder(),
+	}
+
+	page := fakePage{values: make(map[string]proto.Message)}
+
+	err := task.Consume(nil, page)
+	require.NoError(t, err)
+
+	task.encoder = fake.BadPackEncoder{}
+	err = task.Consume(nil, page)
+	require.EqualError(t, err, "couldn't encode roster: fake error")
+
+	task.encoder = encoding.NewProtoEncoder()
+	page.errWrite = xerrors.New("oops")
+	err = task.Consume(nil, page)
+	require.EqualError(t, err, "couldn't write roster: oops")
+}
+
+func TestTaskManager_GetChangeSetFactory(t *testing.T) {
+	manager := TaskManager{csFactory: fake.MessageFactory{}}
+	require.NotNil(t, manager.GetChangeSetFactory())
 }
 
 func TestTaskManager_GetAuthority(t *testing.T) {
@@ -83,6 +153,44 @@ func TestTaskManager_Verify(t *testing.T) {
 	manager.inventory = fakeInventory{err: xerrors.New("oops")}
 	_, err = manager.Verify(fake.NewAddress(0), 0)
 	require.EqualError(t, err, "couldn't get authority: couldn't read page: oops")
+}
+
+func TestTaskManager_FromProto(t *testing.T) {
+	factory := NewTaskManager(fakeInventory{}, fake.Mino{}, fake.NewSigner())
+
+	roster := roster.New(fake.NewAuthority(3, fake.NewSigner))
+	rosterpb, err := encoding.NewProtoEncoder().PackAny(roster)
+	require.NoError(t, err)
+
+	taskany, err := ptypes.MarshalAny(&Task{Authority: rosterpb})
+	require.NoError(t, err)
+
+	task, err := factory.FromProto(&Task{Authority: rosterpb})
+	require.NoError(t, err)
+	require.NotNil(t, task)
+
+	task, err = factory.FromProto(taskany)
+	require.NoError(t, err)
+	require.NotNil(t, task)
+
+	_, err = factory.FromProto(&empty.Empty{})
+	require.EqualError(t, err, "invalid message type '*empty.Empty'")
+}
+
+func TestTaskManager_VisitJSON(t *testing.T) {
+	factory := NewTaskManager(fakeInventory{}, fake.Mino{}, fake.NewSigner())
+
+	ser := json.NewSerializer()
+
+	var task serverTask
+	err := ser.Deserialize([]byte(`{"Authority":[{}]}`), factory, &task)
+	require.NoError(t, err)
+
+	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
+	require.EqualError(t, err, "couldn't deserialize task: fake error")
+
+	_, err = factory.VisitJSON(fake.FactoryInput{Serde: fake.NewBadSerializer()})
+	require.EqualError(t, err, "couldn't deserialize roster: fake error")
 }
 
 func TestRegister(t *testing.T) {
@@ -158,4 +266,12 @@ type fakeRosterFactory struct {
 
 func (f fakeRosterFactory) FromProto(proto.Message) (viewchange.Authority, error) {
 	return roster.New(fake.NewAuthority(3, fake.NewSigner)), f.err
+}
+
+type badAuthority struct {
+	viewchange.Authority
+}
+
+func (a badAuthority) Fingerprint(io.Writer) error {
+	return xerrors.New("oops")
 }

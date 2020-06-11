@@ -64,6 +64,9 @@ func TestReactor_InvokeValidate(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, uint64(1), block.Index)
 
+	_, err = r.InvokeValidate(fake.Address{}, fake.Message{})
+	require.EqualError(t, err, "invalid message type 'fake.Message'")
+
 	db.err = xerrors.New("oops")
 	_, err = r.InvokeValidate(fake.Address{}, req)
 	require.EqualError(t, err, "couldn't read genesis block: oops")
@@ -73,6 +76,12 @@ func TestReactor_InvokeValidate(t *testing.T) {
 	r.processor = &fakePayloadProc{errValidate: xerrors.New("oops")}
 	_, err = r.InvokeValidate(fake.Address{}, req)
 	require.EqualError(t, err, "couldn't validate the payload: oops")
+
+	r.processor = &fakePayloadProc{}
+	r.blockFactory.hashFactory = fake.NewHashFactory(fake.NewBadHash())
+	_, err = r.InvokeValidate(fake.Address{}, req)
+	require.EqualError(t, err,
+		"couldn't compute hash: couldn't write index: fake error")
 
 	req.index = 5
 	r.rpc = fake.NewStreamRPC(fake.Receiver{}, fake.NewBadSender())

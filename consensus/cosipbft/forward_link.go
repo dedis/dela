@@ -18,7 +18,11 @@ type Digest = []byte
 
 // forwardLink is the cryptographic primitive to ensure a block is a successor
 // of a previous one.
+//
+// - implements serde.Message
 type forwardLink struct {
+	serde.UnimplementedMessage
+
 	hash Digest
 	from Digest
 	to   Digest
@@ -52,7 +56,9 @@ func (fl forwardLink) Verify(v crypto.Verifier) error {
 	return nil
 }
 
-func (fl forwardLink) toJSON(ser serde.Serializer) (interface{}, error) {
+// VisitJSON implements serde.Message. It serializes the forward link in JSON
+// format.
+func (fl forwardLink) VisitJSON(ser serde.Serializer) (interface{}, error) {
 	var changeset []byte
 	var err error
 	if fl.changeset != nil {
@@ -64,12 +70,12 @@ func (fl forwardLink) toJSON(ser serde.Serializer) (interface{}, error) {
 
 	prepare, err := ser.Serialize(fl.prepare)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack prepare signature: %v", err)
+		return nil, xerrors.Errorf("couldn't serialize prepare signature: %v", err)
 	}
 
 	commit, err := ser.Serialize(fl.commit)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack commit signature: %v", err)
+		return nil, xerrors.Errorf("couldn't serialize commit signature: %v", err)
 	}
 
 	m := json.ForwardLink{
@@ -96,6 +102,11 @@ func (fl forwardLink) computeHash(h hash.Hash) ([]byte, error) {
 	return h.Sum(nil), nil
 }
 
+// ForwardLinkChain is a chain of forward links that can prove the correctness
+// of a proposal.
+//
+// - implements consensus.Chain
+// - implements serde.Message
 type forwardLinkChain struct {
 	serde.UnimplementedMessage
 
@@ -116,9 +127,9 @@ func (c forwardLinkChain) GetTo() []byte {
 func (c forwardLinkChain) VisitJSON(ser serde.Serializer) (interface{}, error) {
 	links := make([]json.ForwardLink, len(c.links))
 	for i, link := range c.links {
-		packed, err := link.toJSON(ser)
+		packed, err := link.VisitJSON(ser)
 		if err != nil {
-			return nil, xerrors.Errorf("couldn't pack forward link: %v", err)
+			return nil, xerrors.Errorf("couldn't serialize link: %v", err)
 		}
 
 		links[i] = packed.(json.ForwardLink)
@@ -129,6 +140,8 @@ func (c forwardLinkChain) VisitJSON(ser serde.Serializer) (interface{}, error) {
 
 // chainFactory is an implementation of the chainFactory interface
 // for forward links.
+//
+// - implements serde.Factory
 type chainFactory struct {
 	serde.UnimplementedFactory
 
@@ -152,12 +165,13 @@ func newChainFactory(cosi cosi.CollectiveSigning, m mino.Mino, vc viewchange.Vie
 	}
 }
 
-// VisitJSON implements serde.Factory.
-func (f *chainFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
+// VisitJSON implements serde.Factory. It deserializes the chain in JSON format.
+// The integrity of the chain is verified from the genesis authority.
+func (f chainFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
 	m := json.Chain{}
 	err := in.Feed(&m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't deserialize chain: %v", err)
 	}
 
 	links := make([]forwardLink, len(m))
@@ -165,19 +179,19 @@ func (f *chainFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
 		var prepare crypto.Signature
 		err = in.GetSerializer().Deserialize(link.Prepare, f.sigFactory, &prepare)
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("couldn't deserialize prepare: %v", err)
 		}
 
 		var commit crypto.Signature
 		err = in.GetSerializer().Deserialize(link.Commit, f.sigFactory, &commit)
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("couldn't deserialize commit: %v", err)
 		}
 
 		var changeset viewchange.ChangeSet
 		err = in.GetSerializer().Deserialize(link.ChangeSet, f.csFactory, &changeset)
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("couldn't deserialize change set: %v", err)
 		}
 
 		links[i] = forwardLink{
@@ -191,7 +205,7 @@ func (f *chainFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
 		h := f.hashFactory.New()
 		hash, err := links[i].computeHash(h)
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("couldn't compute hash: %v", err)
 		}
 
 		links[i].hash = hash
@@ -207,7 +221,7 @@ func (f *chainFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
 	return chain, nil
 }
 
-func (f *chainFactory) verify(chain forwardLinkChain) error {
+func (f chainFactory) verify(chain forwardLinkChain) error {
 	if len(chain.links) == 0 {
 		return nil
 	}

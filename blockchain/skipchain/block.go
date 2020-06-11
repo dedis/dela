@@ -181,29 +181,6 @@ func (f blockFactory) prepareBlock(block *SkipBlock) error {
 	return nil
 }
 
-func (f blockFactory) fromPrevious(prev SkipBlock, data proto.Message) (SkipBlock, error) {
-	var genesisID Digest
-	if prev.Index == 0 {
-		genesisID = prev.hash
-	} else {
-		genesisID = prev.GenesisID
-	}
-
-	block := SkipBlock{
-		Index:     prev.Index + 1,
-		GenesisID: genesisID,
-		BackLink:  prev.hash,
-		Payload:   data,
-	}
-
-	err := f.prepareBlock(&block)
-	if err != nil {
-		return block, xerrors.Errorf("couldn't make block: %w", err)
-	}
-
-	return block, nil
-}
-
 func (f blockFactory) decodeBlock(src proto.Message) (SkipBlock, error) {
 	in, ok := src.(*BlockProto)
 	if !ok {
@@ -251,7 +228,7 @@ func (f blockFactory) FromVerifiable(src proto.Message) (blockchain.Block, error
 
 	chainpb, err := f.encoder.UnmarshalDynamicAny(in.GetChain())
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't unmarshal chain: %v", err)
 	}
 
 	chain := tmp.FromProto(chainpb, f.consensus.GetChainFactory()).(consensus.Chain)
