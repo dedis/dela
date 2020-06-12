@@ -52,7 +52,7 @@ func TestTxQueue_Remove(t *testing.T) {
 // Utility functions
 
 type fakeTx struct {
-	transactions.ClientTransaction
+	transactions.ServerTransaction
 	id []byte
 }
 

@@ -47,19 +47,6 @@ func NewTask(authority crypto.CollectiveAuthority) basic.ClientTask {
 	return clientTask{authority: roster.New(authority)}
 }
 
-// Pack implements encoding.Packable. It returns the protobuf message for the
-// client task.
-func (t clientTask) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
-	authority, err := enc.PackAny(t.authority)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack authority: %v", err)
-	}
-
-	pb := &Task{Authority: authority}
-
-	return pb, nil
-}
-
 // VisitJSON implements serde.Message. It serializes the client task in JSON
 // format.
 func (t clientTask) VisitJSON(ser serde.Serializer) (interface{}, error) {
@@ -103,12 +90,7 @@ func (t serverTask) Consume(ctx basic.Context, page inventory.WritablePage) erro
 	// TODO: implement
 
 	// 2. Update the roster stored in the inventory.
-	value, err := t.encoder.Pack(roster.New(t.authority))
-	if err != nil {
-		return xerrors.Errorf("couldn't encode roster: %v", err)
-	}
-
-	err = page.Write(rosterValueKey, value)
+	err := page.Write(rosterValueKey, t.authority)
 	if err != nil {
 		return xerrors.Errorf("couldn't write roster: %v", err)
 	}
@@ -155,17 +137,17 @@ func (f TaskManager) GetAuthority(index uint64) (viewchange.Authority, error) {
 		return nil, xerrors.Errorf("couldn't read page: %v", err)
 	}
 
-	rosterpb, err := page.Read(rosterValueKey)
+	value, err := page.Read(rosterValueKey)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't read entry: %v", err)
 	}
 
-	roster, err := f.rosterFactory.FromProto(rosterpb)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't decode roster: %v", err)
+	authority, ok := value.(viewchange.Authority)
+	if !ok {
+		return nil, xerrors.Errorf("invalid message type '%T'", value)
 	}
 
-	return roster, nil
+	return roster.New(authority), nil
 }
 
 // Wait implements viewchange.ViewChange. It returns true if the node is the

@@ -8,7 +8,6 @@ import (
 	"testing/quick"
 
 	proto "github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/crypto/bls"
@@ -47,27 +46,6 @@ func TestTransaction_GetIdentity(t *testing.T) {
 	tx := transaction{identity: fake.PublicKey{}}
 
 	require.NotNil(t, tx.GetIdentity())
-}
-
-func TestTransaction_Pack(t *testing.T) {
-	tx := transaction{
-		identity:  fake.PublicKey{},
-		signature: fake.Signature{},
-		task:      fakeClientTask{},
-	}
-
-	txpb, err := tx.Pack(encoding.NewProtoEncoder())
-	require.NoError(t, err)
-	require.NotNil(t, txpb.(*TransactionProto).GetTask())
-
-	_, err = tx.Pack(fake.BadPackAnyEncoder{})
-	require.EqualError(t, err, "couldn't pack identity: fake error")
-
-	_, err = tx.Pack(fake.BadPackAnyEncoder{Counter: &fake.Counter{Value: 1}})
-	require.EqualError(t, err, "couldn't pack signature: fake error")
-
-	_, err = tx.Pack(fake.BadPackAnyEncoder{Counter: &fake.Counter{Value: 2}})
-	require.EqualError(t, err, "couldn't pack task: fake error")
 }
 
 func TestTransaction_VisitJSON(t *testing.T) {
@@ -167,50 +145,6 @@ func TestTransactionFactory_New(t *testing.T) {
 	factory.signer = fake.NewBadSigner()
 	_, err = factory.New(fakeClientTask{})
 	require.EqualError(t, err, "couldn't sign tx: fake error")
-}
-
-func TestTransactionFactory_FromProto(t *testing.T) {
-	factory := NewTransactionFactory(nil)
-	factory.publicKeyFactory = fake.PublicKeyFactory{}
-	factory.signatureFactory = fake.SignatureFactory{}
-	factory.Register(fakeSrvTask{}, fakeTaskFactory{})
-
-	tx := transaction{
-		identity:  fake.PublicKey{},
-		signature: fake.Signature{},
-		task:      fakeSrvTask{},
-	}
-
-	txpb, err := tx.Pack(encoding.NewProtoEncoder())
-	require.NoError(t, err)
-	_, err = factory.FromProto(txpb)
-	require.NoError(t, err)
-
-	txany, err := ptypes.MarshalAny(txpb)
-	require.NoError(t, err)
-	_, err = factory.FromProto(txany)
-	require.NoError(t, err)
-
-	_, err = factory.FromProto(nil)
-	require.EqualError(t, err, "invalid transaction type '<nil>'")
-
-	factory.encoder = fake.BadUnmarshalAnyEncoder{}
-	_, err = factory.FromProto(txany)
-	require.EqualError(t, err, "couldn't unmarshal input: fake error")
-
-	factory.publicKeyFactory = fake.NewPublicKeyFactory(fake.NewInvalidPublicKey())
-	_, err = factory.FromProto(txpb)
-	require.EqualError(t, err, "signature does not match tx: fake error")
-
-	factory.publicKeyFactory = fake.PublicKeyFactory{}
-	factory.signatureFactory = fake.NewBadSignatureFactory()
-	_, err = factory.FromProto(txpb)
-	require.EqualError(t, err, "couldn't decode signature: fake error")
-
-	factory.signatureFactory = fake.SignatureFactory{}
-	factory.hashFactory = fake.NewHashFactory(fake.NewBadHash())
-	_, err = factory.FromProto(txpb)
-	require.EqualError(t, err, "couldn't compute hash: couldn't write nonce: fake error")
 }
 
 func TestTransactionFactory_VisitJSON(t *testing.T) {

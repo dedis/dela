@@ -31,7 +31,6 @@ import (
 
 // ClientTask is a task inside a transaction.
 type ClientTask interface {
-	encoding.Packable
 	encoding.Fingerprinter
 	serde.Message
 }
@@ -86,34 +85,6 @@ func (t transaction) GetID() []byte {
 // transaction.
 func (t transaction) GetIdentity() arc.Identity {
 	return t.identity
-}
-
-// Pack implements encoding.Packable. It returns the protobuf message of the
-// transaction.
-func (t transaction) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
-	pb := &TransactionProto{
-		Nonce: t.nonce,
-	}
-
-	var err error
-	pb.Identity, err = enc.PackAny(t.identity)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack identity: %v", err)
-	}
-
-	pb.Signature, err = enc.PackAny(t.signature)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack signature: %v", err)
-	}
-
-	pb.Task, err = enc.PackAny(t.task)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack task: %v", err)
-	}
-
-	pb.Type = keyOf(t.task)
-
-	return pb, nil
 }
 
 // VisitJSON implements serde.Message. It returns the JSON message for this

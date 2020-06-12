@@ -3,52 +3,31 @@ package byzcoin
 import (
 	"testing"
 
-	proto "github.com/golang/protobuf/proto"
-	any "github.com/golang/protobuf/ptypes/any"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/ledger/inventory"
+	"go.dedis.ch/dela/ledger/transactions"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
 func TestTxProcessor_Validate(t *testing.T) {
-	proc := newTxProcessor(nil, fakeInventory{})
+	proc := newTxProcessor(MessageFactory{}, fakeInventory{})
 
-	err := proc.Validate(&BlockPayload{})
+	_, err := proc.InvokeValidate(Blueprint{})
 	require.NoError(t, err)
 
-	err = proc.Validate(&GenesisPayload{})
-	require.NoError(t, err)
-
-	err = proc.Validate(nil)
+	_, err = proc.InvokeValidate(nil)
 	require.EqualError(t, err, "invalid message type '<nil>'")
-
-	proc.inventory = fakeInventory{err: xerrors.New("oops")}
-	err = proc.Validate(&BlockPayload{})
-	require.EqualError(t, err,
-		"couldn't stage the transactions: couldn't stage new page: oops")
-
-	proc.inventory = fakeInventory{errPage: xerrors.New("oops")}
-	err = proc.Validate(&GenesisPayload{})
-	require.EqualError(t, err,
-		"couldn't stage genesis: couldn't stage page: couldn't write roster: oops")
-
-	proc.inventory = fakeInventory{index: 1}
-	err = proc.Validate(&GenesisPayload{})
-	require.EqualError(t, err, "index 0 expected but got 1")
-
-	proc.inventory = fakeInventory{fingerprint: []byte{0xab}}
-	err = proc.Validate(&BlockPayload{Fingerprint: []byte{0xcd}})
-	require.EqualError(t, err, "mismatch payload fingerprint '0xab' != '0xcd'")
 }
 
 func TestTxProcessor_Process(t *testing.T) {
-	proc := newTxProcessor(nil, fakeInventory{page: &fakePage{index: 999}})
+	proc := newTxProcessor(MessageFactory{}, fakeInventory{page: &fakePage{index: 999}})
 
-	page, err := proc.process(&BlockPayload{})
+	page, err := proc.process(BlockPayload{})
 	require.NoError(t, err)
 	require.Equal(t, uint64(999), page.GetIndex())
 
-	payload := &BlockPayload{Transactions: []*any.Any{{}}}
+	payload := BlockPayload{transactions: []transactions.ServerTransaction{}}
 
 	proc.inventory = fakeInventory{page: &fakePage{}}
 	page, err = proc.process(payload)
@@ -57,16 +36,19 @@ func TestTxProcessor_Process(t *testing.T) {
 }
 
 func TestTxProcessor_Commit(t *testing.T) {
-	proc := newTxProcessor(nil, fakeInventory{})
+	proc := newTxProcessor(MessageFactory{}, fakeInventory{})
 
-	err := proc.Commit(&BlockPayload{})
+	err := proc.InvokeCommit(BlockPayload{})
 	require.NoError(t, err)
 
-	err = proc.Commit(nil)
+	err = proc.InvokeCommit(nil)
 	require.EqualError(t, err, "invalid message type '<nil>'")
 
-	proc.inventory = fakeInventory{err: xerrors.New("oops")}
-	err = proc.Commit(&BlockPayload{Fingerprint: []byte{0xab}})
+	proc.inventory = fakeInventory{
+		errCommit: xerrors.New("oops"),
+		page:      &fakePage{fingerprint: []byte{0xab}},
+	}
+	err = proc.InvokeCommit(BlockPayload{root: []byte{0xab}})
 	require.EqualError(t, err, "couldn't commit to page '0xab': oops")
 }
 
@@ -78,7 +60,7 @@ type fakePage struct {
 	index       uint64
 	fingerprint []byte
 	err         error
-	value       proto.Message
+	value       serde.Message
 	calls       [][]interface{}
 }
 
@@ -90,11 +72,11 @@ func (p *fakePage) GetFingerprint() []byte {
 	return p.fingerprint
 }
 
-func (p *fakePage) Read([]byte) (proto.Message, error) {
+func (p *fakePage) Read([]byte) (serde.Message, error) {
 	return p.value, p.err
 }
 
-func (p *fakePage) Write(key []byte, value proto.Message) error {
+func (p *fakePage) Write(key []byte, value serde.Message) error {
 	p.calls = append(p.calls, []interface{}{key, value})
 	return p.err
 }
@@ -106,6 +88,7 @@ type fakeInventory struct {
 	page        *fakePage
 	err         error
 	errPage     error
+	errCommit   error
 }
 
 func (inv fakeInventory) GetPage(index uint64) (inventory.Page, error) {
@@ -138,5 +121,5 @@ func (inv fakeInventory) Stage(f func(inventory.WritablePage) error) (inventory.
 }
 
 func (inv fakeInventory) Commit([]byte) error {
-	return inv.err
+	return inv.errCommit
 }

@@ -2,7 +2,6 @@ package transactions
 
 import (
 	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/serde"
 )
@@ -10,9 +9,6 @@ import (
 // ClientTransaction is a transaction created by a client that will be sent to
 // the network.
 type ClientTransaction interface {
-	// TODO: remove
-	encoding.Packable
-
 	serde.Message
 
 	// GetID returns a unique identifier for the transaction.

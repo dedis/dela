@@ -100,12 +100,7 @@ type serverTask struct {
 // Consume implements basic.ServerTask. It writes the DARC into the page if it
 // is allowed to do so, otherwise it returns an error.
 func (act serverTask) Consume(ctx basic.Context, page inventory.WritablePage) error {
-	accesspb, err := act.encoder.Pack(act.access)
-	if err != nil {
-		return xerrors.Errorf("couldn't pack access: %v", err)
-	}
-
-	err = act.access.Match(UpdateAccessRule, ctx.GetIdentity())
+	err := act.access.Match(UpdateAccessRule, ctx.GetIdentity())
 	if err != nil {
 		// This prevents to update the arc so that no one is allowed to update
 		// it in the future.
@@ -123,9 +118,9 @@ func (act serverTask) Consume(ctx basic.Context, page inventory.WritablePage) er
 			return xerrors.Errorf("couldn't read value: %v", err)
 		}
 
-		access, err := act.darcFactory.FromProto(value)
-		if err != nil {
-			return xerrors.Errorf("couldn't decode access: %v", err)
+		access, ok := value.(Access)
+		if !ok {
+			return xerrors.New("invalid message type")
 		}
 
 		err = access.Match(UpdateAccessRule, ctx.GetIdentity())
@@ -134,7 +129,7 @@ func (act serverTask) Consume(ctx basic.Context, page inventory.WritablePage) er
 		}
 	}
 
-	err = page.Write(key, accesspb)
+	err = page.Write(key, act.access)
 	if err != nil {
 		return xerrors.Errorf("couldn't write access: %v", err)
 	}

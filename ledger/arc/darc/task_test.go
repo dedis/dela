@@ -11,6 +11,7 @@ import (
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions/basic"
+	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
@@ -94,11 +95,6 @@ func TestServerTask_Consume(t *testing.T) {
 	require.Equal(t, 2, call.Len())
 	require.Equal(t, []byte{0x34}, call.Get(1, 0))
 
-	task.encoder = fake.BadPackEncoder{}
-	err = task.Consume(fakeContext{}, fakePage{})
-	require.EqualError(t, err, "couldn't pack access: fake error")
-
-	task.encoder = encoding.NewProtoEncoder()
 	err = task.Consume(fakeContext{}, fakePage{err: xerrors.New("oops")})
 	require.EqualError(t, err, "couldn't write access: oops")
 
@@ -106,11 +102,6 @@ func TestServerTask_Consume(t *testing.T) {
 	err = task.Consume(fakeContext{}, fakePage{err: xerrors.New("oops")})
 	require.EqualError(t, err, "couldn't read value: oops")
 
-	task.darcFactory = badArcFactory{}
-	err = task.Consume(fakeContext{}, fakePage{})
-	require.EqualError(t, err, "couldn't decode access: oops")
-
-	task.darcFactory = NewFactory()
 	task.access.rules[UpdateAccessRule].matches["cat"] = struct{}{}
 	err = task.Consume(fakeContext{identity: []byte("cat")}, fakePage{})
 	require.EqualError(t, err,
@@ -158,9 +149,9 @@ func TestRegister(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-var testAccess = &AccessProto{
-	Rules: map[string]*Expression{
-		UpdateAccessRule: {Matches: []string{"doggy"}},
+var testAccess = Access{
+	rules: map[string]expression{
+		UpdateAccessRule: {matches: map[string]struct{}{"doggy": {}}},
 	},
 }
 
@@ -186,11 +177,11 @@ type fakePage struct {
 	err  error
 }
 
-func (page fakePage) Read(key []byte) (proto.Message, error) {
+func (page fakePage) Read(key []byte) (serde.Message, error) {
 	return testAccess, page.err
 }
 
-func (page fakePage) Write(key []byte, value proto.Message) error {
+func (page fakePage) Write(key []byte, value serde.Message) error {
 	page.call.Add(key, value)
 
 	return page.err

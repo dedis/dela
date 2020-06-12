@@ -3,27 +3,22 @@ package contract
 import (
 	"testing"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/any"
-	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
 func TestTaskContext_GetArc(t *testing.T) {
 	ctx := taskContext{
-		arcFactory: &fakeAccessFactory{access: &fakeAccess{}},
 		page: fakePage{
-			store: map[string]proto.Message{"a": &empty.Empty{}},
+			store: map[string]serde.Message{"a": &fakeAccess{}},
 		},
 	}
 
 	arc, err := ctx.GetArc([]byte("a"))
 	require.NoError(t, err)
 	require.NotNil(t, arc)
-
-	_, err = ctx.GetArc(nil)
-	require.EqualError(t, err, "access does not exist")
 
 	ctx.page = fakePage{errRead: xerrors.New("oops")}
 	_, err = ctx.GetArc(nil)
@@ -33,19 +28,19 @@ func TestTaskContext_GetArc(t *testing.T) {
 func TestTaskContext_Read(t *testing.T) {
 	ctx := taskContext{
 		page: fakePage{
-			store: map[string]proto.Message{
+			store: map[string]serde.Message{
 				"a": &Instance{
 					ContractID: "abc",
-					Value:      &any.Any{},
+					Value:      fake.Message{},
 				},
-				"b": &empty.Empty{},
+				"b": fake.Message{},
 			},
 		},
 	}
 
 	instance, err := ctx.Read([]byte("a"))
 	require.NoError(t, err)
-	require.Equal(t, "abc", instance.GetContractID())
+	require.Equal(t, "abc", instance.ContractID)
 	require.NotNil(t, instance.Value)
 
 	_, err = ctx.Read(nil)
@@ -54,7 +49,7 @@ func TestTaskContext_Read(t *testing.T) {
 
 	_, err = ctx.Read([]byte("b"))
 	require.EqualError(t, err,
-		"invalid message type '*empty.Empty' != '*contract.Instance'")
+		"invalid message type 'fake.Message' != '*contract.Instance'")
 
 	ctx.page = fakePage{errRead: xerrors.New("oops")}
 	_, err = ctx.Read(nil)
