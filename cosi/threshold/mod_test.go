@@ -5,14 +5,13 @@ import (
 	"testing"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/wrappers"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/crypto/bls"
-	"go.dedis.ch/dela/encoding"
 	internal "go.dedis.ch/dela/internal/testing"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minoch"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -47,7 +46,7 @@ func TestCoSi_Basic(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	sig, err := actor.Sign(ctx, fakeMessage{}, ca)
+	sig, err := actor.Sign(ctx, fake.Message{}, ca)
 	require.NoError(t, err)
 	require.NotNil(t, sig)
 
@@ -92,17 +91,11 @@ func TestCoSi_Listen(t *testing.T) {
 // Utility functions
 
 type fakeReactor struct {
+	fake.MessageFactory
+
 	err error
 }
 
-func (h fakeReactor) Invoke(addr mino.Address, in proto.Message) ([]byte, error) {
+func (h fakeReactor) Invoke(addr mino.Address, in serde.Message) ([]byte, error) {
 	return []byte{0xff}, h.err
-}
-
-type fakeMessage struct {
-	encoding.Packable
-}
-
-func (m fakeMessage) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
-	return &wrappers.StringValue{Value: "abc"}, nil
 }

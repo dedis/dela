@@ -10,6 +10,7 @@ import (
 	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -151,7 +152,7 @@ func (vb VerifiableBlock) Pack(enc encoding.ProtoMarshaler) (proto.Message, erro
 		Block: block.(*BlockProto),
 	}
 
-	packed.Chain, err = enc.PackAny(vb.Chain)
+	packed.Chain, err = enc.MarshalAny(tmp.ProtoOf(vb.Chain))
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't pack chain: %v", err)
 	}
@@ -178,29 +179,6 @@ func (f blockFactory) prepareBlock(block *SkipBlock) error {
 	block.hash = hash
 
 	return nil
-}
-
-func (f blockFactory) fromPrevious(prev SkipBlock, data proto.Message) (SkipBlock, error) {
-	var genesisID Digest
-	if prev.Index == 0 {
-		genesisID = prev.hash
-	} else {
-		genesisID = prev.GenesisID
-	}
-
-	block := SkipBlock{
-		Index:     prev.Index + 1,
-		GenesisID: genesisID,
-		BackLink:  prev.hash,
-		Payload:   data,
-	}
-
-	err := f.prepareBlock(&block)
-	if err != nil {
-		return block, xerrors.Errorf("couldn't make block: %w", err)
-	}
-
-	return block, nil
 }
 
 func (f blockFactory) decodeBlock(src proto.Message) (SkipBlock, error) {
@@ -248,16 +226,12 @@ func (f blockFactory) FromVerifiable(src proto.Message) (blockchain.Block, error
 		return nil, xerrors.Errorf("couldn't decode the block: %v", err)
 	}
 
-	chainFactory, err := f.consensus.GetChainFactory()
+	chainpb, err := f.encoder.UnmarshalDynamicAny(in.GetChain())
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't get the chain factory: %v", err)
+		return nil, xerrors.Errorf("couldn't unmarshal chain: %v", err)
 	}
 
-	// Integrity of the chain is verified during decoding.
-	chain, err := chainFactory.FromProto(in.GetChain())
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't decode the chain: %v", err)
-	}
+	chain := tmp.FromProto(chainpb, f.consensus.GetChainFactory()).(consensus.Chain)
 
 	// Only the link between the chain and the block needs to be verified.
 	if !bytes.Equal(chain.GetTo(), block.hash[:]) {

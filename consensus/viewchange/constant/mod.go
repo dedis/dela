@@ -5,6 +5,7 @@ import (
 	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -15,14 +16,21 @@ import (
 type ViewChange struct {
 	me        mino.Address
 	authority viewchange.Authority
+	csFactory serde.Factory
 }
 
 // NewViewChange returns a new instance of a view change.
-func NewViewChange(addr mino.Address, authority crypto.CollectiveAuthority) ViewChange {
+func NewViewChange(addr mino.Address, authority crypto.CollectiveAuthority, f serde.Factory) ViewChange {
 	return ViewChange{
 		me:        addr,
 		authority: roster.New(authority),
+		csFactory: f,
 	}
+}
+
+// GetChangeSetFactory implements viewchange.ViewChange.
+func (vc ViewChange) GetChangeSetFactory() serde.Factory {
+	return vc.csFactory
 }
 
 // GetAuthority implements viewchange.ViewChange. It always returns the genesis

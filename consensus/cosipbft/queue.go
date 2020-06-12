@@ -6,7 +6,6 @@ import (
 
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/encoding"
 	"golang.org/x/xerrors"
 )
 
@@ -30,7 +29,6 @@ type queue struct {
 	hashFactory crypto.HashFactory
 	cosi        cosi.CollectiveSigning
 	items       []item
-	encoder     encoding.ProtoMarshaler
 }
 
 func newQueue(cosi cosi.CollectiveSigning) *queue {
@@ -38,7 +36,6 @@ func newQueue(cosi cosi.CollectiveSigning) *queue {
 		locked:      false,
 		hashFactory: crypto.NewSha256Factory(),
 		cosi:        cosi,
-		encoder:     encoding.NewProtoEncoder(),
 	}
 }
 
@@ -102,7 +99,7 @@ func (q *queue) LockProposal(to Digest, sig crypto.Signature) error {
 	forwardLink := item
 	forwardLink.prepare = sig
 
-	hash, err := forwardLink.computeHash(q.hashFactory.New(), q.encoder)
+	hash, err := forwardLink.computeHash(q.hashFactory.New())
 	if err != nil {
 		return xerrors.Errorf("couldn't hash proposal: %v", err)
 	}

@@ -1,11 +1,10 @@
 package skipchain
 
 import (
-	"bytes"
 	"sync"
 
-	proto "github.com/golang/protobuf/proto"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -15,7 +14,9 @@ import (
 //
 // - implements consensus.Reactor
 type reactor struct {
+	BlueprintFactory
 	*operations
+
 	queue *blockQueue
 }
 
@@ -42,15 +43,14 @@ func (v *reactor) InvokeGenesis() ([]byte, error) {
 // InvokeValidate implements consensus.Reactor. It decodes the message into a
 // block and validates its integrity. It returns the block if it is correct,
 // otherwise the error.
-func (v *reactor) InvokeValidate(addr mino.Address, pb proto.Message) ([]byte, error) {
-
-	block, err := v.blockFactory.decodeBlock(pb)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't decode block: %v", err)
+func (v *reactor) InvokeValidate(addr mino.Address, pb serde.Message) ([]byte, error) {
+	blueprint, ok := pb.(Blueprint)
+	if !ok {
+		return nil, xerrors.Errorf("invalid message type '%T'", pb)
 	}
 
 	// It makes sure that we know the whole chain up to the previous proposal.
-	err = v.catchUp(block, addr)
+	err := v.catchUp(blueprint.index, addr)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't catch up: %v", err)
 	}
@@ -60,15 +60,24 @@ func (v *reactor) InvokeValidate(addr mino.Address, pb proto.Message) ([]byte, e
 		return nil, xerrors.Errorf("couldn't read genesis block: %v", err)
 	}
 
-	if !bytes.Equal(genesis.GetHash(), block.GenesisID.Bytes()) {
-		return nil, xerrors.Errorf("mismatch genesis hash '%v' != '%v'",
-			genesis.hash, block.GenesisID)
-	}
-
-	err = v.processor.Validate(block.Payload)
+	err = v.processor.Validate(blueprint.payload)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't validate the payload: %v", err)
 	}
+
+	block := SkipBlock{
+		Index:     blueprint.index,
+		GenesisID: genesis.hash,
+		BackLink:  blueprint.previous,
+		Payload:   blueprint.payload,
+	}
+
+	hash, err := block.computeHash(v.blockFactory.hashFactory, v.encoder)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't compute hash: %v", err)
+	}
+
+	block.hash = hash
 
 	v.queue.Add(block)
 

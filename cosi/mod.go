@@ -3,16 +3,18 @@ package cosi
 import (
 	"context"
 
-	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
 )
 
+// Reactor is an event handler that demultiplex the events.
 type Reactor interface {
+	serde.Factory
+
 	// Invoke is provided with the message and the address of the sender and it
 	// should return the unique hash for this message.
-	Invoke(addr mino.Address, in proto.Message) ([]byte, error)
+	Invoke(addr mino.Address, in serde.Message) ([]byte, error)
 }
 
 // Actor is the listener of a collective signing instance. It provides a
@@ -20,7 +22,7 @@ type Reactor interface {
 type Actor interface {
 	// Sign collects the signature of the collective authority and creates an
 	// aggregated signature.
-	Sign(ctx context.Context, msg encoding.Packable,
+	Sign(ctx context.Context, msg serde.Message,
 		ca crypto.CollectiveAuthority) (crypto.Signature, error)
 }
 

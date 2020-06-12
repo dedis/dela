@@ -1,7 +1,6 @@
 package skipchain
 
 import (
-	"bytes"
 	"context"
 	"sync"
 	"time"
@@ -72,13 +71,17 @@ func (ops *operations) commitBlock(block SkipBlock) error {
 	return nil
 }
 
-func (ops *operations) catchUp(target SkipBlock, addr mino.Address) error {
+func (ops *operations) catchUp(index uint64, addr mino.Address) error {
 	ops.catchUpLock.Lock()
 	defer ops.catchUpLock.Unlock()
 
+	if index == 0 {
+		return nil
+	}
+
 	// Target is the block to append to the chain so we check that blocks up to
 	// the previous one exist.
-	if ops.db.Contains(target.GetIndex() - 1) {
+	if ops.db.Contains(index - 1) {
 		// Nothing to catch up.
 		return nil
 	}
@@ -93,14 +96,14 @@ func (ops *operations) catchUp(target SkipBlock, addr mino.Address) error {
 		from = last.GetIndex() + 1
 	}
 
-	if target.GetIndex()-from <= 1 {
+	if index-from <= 1 {
 		// When only one block is missing, that probably means the propagation
 		// is not yet over, so it gives a chance to wait for it before starting
 		// the actual catch up.
-		ops.waitBlock(target.GetIndex() - 1)
+		ops.waitBlock(index - 1)
 
 		// Check again after the lock is acquired again.
-		if ops.db.Contains(target.GetIndex() - 1) {
+		if ops.db.Contains(index - 1) {
 			return nil
 		}
 	}
@@ -119,7 +122,7 @@ func (ops *operations) catchUp(target SkipBlock, addr mino.Address) error {
 
 	req := &BlockRequest{
 		From: from,
-		To:   target.GetIndex() - 1,
+		To:   index - 1,
 	}
 
 	err = <-sender.Send(req, addr)
@@ -148,7 +151,7 @@ func (ops *operations) catchUp(target SkipBlock, addr mino.Address) error {
 			return xerrors.Errorf("couldn't store block: %v", err)
 		}
 
-		if bytes.Equal(block.GetHash(), target.GetPreviousHash()) {
+		if block.GetIndex() >= index-1 {
 			return nil
 		}
 	}

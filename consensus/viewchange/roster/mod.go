@@ -1,12 +1,17 @@
 package roster
 
 import (
+	"io"
+
 	proto "github.com/golang/protobuf/proto"
 	any "github.com/golang/protobuf/ptypes/any"
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/consensus/viewchange"
+	"go.dedis.ch/dela/consensus/viewchange/roster/json"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -69,6 +74,8 @@ func (i *publicKeyIterator) GetNext() crypto.PublicKey {
 // - implements mino.Players
 // - implements encoding.Packable
 type roster struct {
+	serde.UnimplementedMessage
+
 	addrs   []mino.Address
 	pubkeys []crypto.PublicKey
 }
@@ -93,6 +100,34 @@ func New(authority crypto.CollectiveAuthority) viewchange.Authority {
 	return roster
 }
 
+// Fingerprint implements serde.Fingerprinter. It marshals the roster and writes
+// the result in the given writer.
+func (r roster) Fingerprint(w io.Writer) error {
+	for i, addr := range r.addrs {
+		data, err := addr.MarshalText()
+		if err != nil {
+			return xerrors.Errorf("couldn't marshal address: %v", err)
+		}
+
+		_, err = w.Write(data)
+		if err != nil {
+			return xerrors.Errorf("couldn't write address: %v", err)
+		}
+
+		data, err = r.pubkeys[i].MarshalBinary()
+		if err != nil {
+			return xerrors.Errorf("couldn't marshal public key: %v", err)
+		}
+
+		_, err = w.Write(data)
+		if err != nil {
+			return xerrors.Errorf("couldn't write public key: %v", err)
+		}
+	}
+
+	return nil
+}
+
 // Take implements mino.Players. It returns a subset of the roster according to
 // the filter.
 func (r roster) Take(updaters ...mino.FilterUpdater) mino.Players {
@@ -113,7 +148,13 @@ func (r roster) Take(updaters ...mino.FilterUpdater) mino.Players {
 // Apply implements viewchange.Authority. It returns a new authority after
 // applying the change set. The removals must be sorted by descending order and
 // unique or the behaviour will be undefined.
-func (r roster) Apply(changeset viewchange.ChangeSet) viewchange.Authority {
+func (r roster) Apply(in viewchange.ChangeSet) viewchange.Authority {
+	changeset, ok := in.(ChangeSet)
+	if !ok {
+		dela.Logger.Warn().Msgf("Change set '%T' is not supported. Ignoring.", in)
+		return r
+	}
+
 	addrs := make([]mino.Address, r.Len())
 	pubkeys := make([]crypto.PublicKey, r.Len())
 
@@ -145,7 +186,7 @@ func (r roster) Apply(changeset viewchange.ChangeSet) viewchange.Authority {
 // Diff implements viewchange.Authority. It returns the change set that must be
 // applied to the current authority to get the given one.
 func (r roster) Diff(o viewchange.Authority) viewchange.ChangeSet {
-	changeset := viewchange.ChangeSet{}
+	changeset := ChangeSet{}
 
 	other, ok := o.(roster)
 	if !ok {
@@ -167,7 +208,7 @@ func (r roster) Diff(o viewchange.Authority) viewchange.ChangeSet {
 			changeset.Remove = append(changeset.Remove, uint32(i))
 			i++
 		} else {
-			changeset.Add = append(changeset.Add, viewchange.Player{
+			changeset.Add = append(changeset.Add, Player{
 				Address:   other.addrs[k],
 				PublicKey: other.pubkeys[k],
 			})
@@ -235,14 +276,48 @@ func (r roster) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	return pb, nil
 }
 
+// VisitJSON implements serde.Message. It serializes the roster in a JSON
+// message.
+func (r roster) VisitJSON(ser serde.Serializer) (interface{}, error) {
+	players := make([]json.Player, r.Len())
+
+	for i := range r.addrs {
+		addr, err := r.addrs[i].MarshalText()
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't marshal address: %v", err)
+		}
+
+		pubkey, err := ser.Serialize(r.pubkeys[i])
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't serialize public key: %v", err)
+		}
+
+		players[i] = json.Player{
+			Address:   addr,
+			PublicKey: pubkey,
+		}
+	}
+
+	m := json.Roster(players)
+
+	return m, nil
+}
+
 // Factory provide functions to create and decode a roster.
+//
+// - implements serde.Factory
 type Factory interface {
+	serde.Factory
+
 	GetAddressFactory() mino.AddressFactory
 	GetPublicKeyFactory() crypto.PublicKeyFactory
 	FromProto(proto.Message) (viewchange.Authority, error)
 }
 
 type defaultFactory struct {
+	serde.UnimplementedFactory
+
+	encoder        encoding.ProtoMarshaler
 	addressFactory mino.AddressFactory
 	pubkeyFactory  crypto.PublicKeyFactory
 }
@@ -250,6 +325,7 @@ type defaultFactory struct {
 // NewRosterFactory creates a new instance of the authority factory.
 func NewRosterFactory(af mino.AddressFactory, pf crypto.PublicKeyFactory) Factory {
 	return defaultFactory{
+		encoder:        encoding.NewProtoEncoder(),
 		addressFactory: af,
 		pubkeyFactory:  pf,
 	}
@@ -274,6 +350,12 @@ func (f defaultFactory) FromProto(in proto.Message) (viewchange.Authority, error
 	switch msg := in.(type) {
 	case *Roster:
 		pb = msg
+	case *any.Any:
+		pb = &Roster{}
+		err := f.encoder.UnmarshalAny(msg, pb)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't unmarshal roster: %v", err)
+		}
 	default:
 		return nil, xerrors.Errorf("invalid message type '%T'", in)
 	}
@@ -292,6 +374,38 @@ func (f defaultFactory) FromProto(in proto.Message) (viewchange.Authority, error
 		pubkey, err := f.pubkeyFactory.FromProto(pb.GetPublicKeys()[i])
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't decode public key: %v", err)
+		}
+
+		pubkeys[i] = pubkey
+	}
+
+	roster := roster{
+		addrs:   addrs,
+		pubkeys: pubkeys,
+	}
+
+	return roster, nil
+}
+
+// VisitJSON implements serde.Factory. It deserializes the roster in JSON
+// format.
+func (f defaultFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
+	m := json.Roster{}
+	err := in.Feed(&m)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't deserialize roster: %v", err)
+	}
+
+	addrs := make([]mino.Address, len(m))
+	pubkeys := make([]crypto.PublicKey, len(m))
+
+	for i, player := range m {
+		addrs[i] = f.addressFactory.FromText(player.Address)
+
+		var pubkey crypto.PublicKey
+		err = in.GetSerializer().Deserialize(player.PublicKey, f.pubkeyFactory, &pubkey)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't deserialize public key: %v", err)
 		}
 
 		pubkeys[i] = pubkey

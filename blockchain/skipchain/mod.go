@@ -244,17 +244,13 @@ func (a skipchainActor) Store(data proto.Message, players mino.Players) error {
 		return xerrors.Errorf("couldn't read the latest block: %v", err)
 	}
 
-	block, err := a.blockFactory.fromPrevious(previous, data)
-	if err != nil {
-		return xerrors.Errorf("couldn't create next block: %v", err)
+	blueprint := Blueprint{
+		index:    previous.Index + 1,
+		previous: previous.hash,
+		payload:  data,
 	}
 
-	blockpb, err := a.encoder.Pack(block)
-	if err != nil {
-		return xerrors.Errorf("couldn't pack block: %v", err)
-	}
-
-	err = a.consensus.Propose(blockpb)
+	err = a.consensus.Propose(blueprint)
 	if err != nil {
 		return xerrors.Errorf("couldn't propose the block: %v", err)
 	}

@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	proto "github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/crypto"
@@ -35,17 +34,7 @@ func TestReactor_InvokeGenesis(t *testing.T) {
 }
 
 func TestReactor_InvokeValidate(t *testing.T) {
-	block := SkipBlock{
-		Index:     1,
-		GenesisID: Digest{0x01},
-		BackLink:  Digest{0x02},
-		Payload:   &empty.Empty{},
-	}
-
-	packed, err := block.Pack(encoding.NewProtoEncoder())
-	require.NoError(t, err)
-
-	db := &fakeDatabase{blocks: []SkipBlock{{hash: block.GenesisID}}}
+	db := &fakeDatabase{blocks: []SkipBlock{{}}}
 	r := &reactor{
 		operations: &operations{
 			processor: &fakePayloadProc{},
@@ -62,33 +51,41 @@ func TestReactor_InvokeValidate(t *testing.T) {
 			buffer: make(map[Digest]SkipBlock),
 		},
 	}
-	digest, err := r.InvokeValidate(fake.Address{}, packed)
-	require.NoError(t, err)
-	hash, err := block.computeHash(crypto.NewSha256Factory(), encoding.NewProtoEncoder())
-	require.NoError(t, err)
-	require.Equal(t, hash.Bytes(), digest)
 
-	_, err = r.InvokeValidate(fake.Address{}, nil)
-	require.EqualError(t, err, "couldn't decode block: invalid message type '<nil>'")
+	req := Blueprint{
+		index: 1,
+	}
+
+	hash, err := r.InvokeValidate(fake.Address{}, req)
+	require.NoError(t, err)
+	digest := Digest{}
+	copy(digest[:], hash)
+	block, ok := r.queue.Get(digest)
+	require.True(t, ok)
+	require.Equal(t, uint64(1), block.Index)
+
+	_, err = r.InvokeValidate(fake.Address{}, fake.Message{})
+	require.EqualError(t, err, "invalid message type 'fake.Message'")
 
 	db.err = xerrors.New("oops")
-	_, err = r.InvokeValidate(fake.Address{}, packed)
+	_, err = r.InvokeValidate(fake.Address{}, req)
 	require.EqualError(t, err, "couldn't read genesis block: oops")
 
 	db.err = nil
 	db.blocks = []SkipBlock{{}}
-	_, err = r.InvokeValidate(fake.Address{}, packed)
-	require.EqualError(t, err,
-		fmt.Sprintf("mismatch genesis hash '%v' != '%v'", Digest{}, block.GenesisID))
-
-	db.blocks = []SkipBlock{{hash: block.GenesisID}}
 	r.processor = &fakePayloadProc{errValidate: xerrors.New("oops")}
-	_, err = r.InvokeValidate(fake.Address{}, packed)
+	_, err = r.InvokeValidate(fake.Address{}, req)
 	require.EqualError(t, err, "couldn't validate the payload: oops")
 
-	packed.(*BlockProto).Index = 5
+	r.processor = &fakePayloadProc{}
+	r.blockFactory.hashFactory = fake.NewHashFactory(fake.NewBadHash())
+	_, err = r.InvokeValidate(fake.Address{}, req)
+	require.EqualError(t, err,
+		"couldn't compute hash: couldn't write index: fake error")
+
+	req.index = 5
 	r.rpc = fake.NewStreamRPC(fake.Receiver{}, fake.NewBadSender())
-	_, err = r.InvokeValidate(fake.Address{}, packed)
+	_, err = r.InvokeValidate(fake.Address{}, req)
 	require.EqualError(t, err,
 		"couldn't catch up: couldn't send block request: fake error")
 }

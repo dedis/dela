@@ -8,12 +8,13 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/consensus"
 	internal "go.dedis.ch/dela/internal/testing"
+	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minoch"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -54,7 +55,7 @@ func TestQSC_Basic(t *testing.T) {
 		actor := actors[j]
 		go func() {
 			for i := 0; i < k; i++ {
-				err := actor.Propose(&empty.Empty{})
+				err := actor.Propose(fake.Message{})
 				require.NoError(t, err)
 			}
 		}()
@@ -109,34 +110,34 @@ func TestQSC_ExecuteRound(t *testing.T) {
 
 	ctx := context.Background()
 
-	err := qsc.executeRound(ctx, &empty.Empty{}, badReactor{})
+	err := qsc.executeRound(ctx, fake.Message{}, badReactor{})
 	require.EqualError(t, err, "couldn't validate proposal: oops")
 
 	bc.err = xerrors.New("oops")
-	err = qsc.executeRound(ctx, &empty.Empty{}, &fakeReactor{})
+	err = qsc.executeRound(ctx, fake.Message{}, &fakeReactor{})
 	require.EqualError(t, err, "couldn't broadcast: oops")
 
 	bc.delay = 1
 	factory.err = xerrors.New("oops")
-	err = qsc.executeRound(ctx, &empty.Empty{}, &fakeReactor{})
+	err = qsc.executeRound(ctx, fake.Message{}, &fakeReactor{})
 	require.EqualError(t, err, "couldn't decode broadcasted set: oops")
 
 	bc.delay = 1
 	factory.delay = 1
-	err = qsc.executeRound(ctx, &empty.Empty{}, &fakeReactor{})
+	err = qsc.executeRound(ctx, fake.Message{}, &fakeReactor{})
 	require.EqualError(t, err, "couldn't broadcast: oops")
 
 	bc.err = nil
 	factory.delay = 1
-	err = qsc.executeRound(ctx, &empty.Empty{}, &fakeReactor{})
+	err = qsc.executeRound(ctx, fake.Message{}, &fakeReactor{})
 	require.EqualError(t, err, "couldn't decode received set: oops")
 
 	factory.delay = 2
-	err = qsc.executeRound(ctx, &empty.Empty{}, &fakeReactor{})
+	err = qsc.executeRound(ctx, fake.Message{}, &fakeReactor{})
 	require.EqualError(t, err, "couldn't decode broadcasted set: oops")
 
 	factory.delay = 3
-	err = qsc.executeRound(ctx, &empty.Empty{}, &fakeReactor{})
+	err = qsc.executeRound(ctx, fake.Message{}, &fakeReactor{})
 	require.EqualError(t, err, "couldn't decode received set: oops")
 
 	factory.err = nil
@@ -173,9 +174,7 @@ type fakeReactor struct {
 	wg    sync.WaitGroup
 }
 
-func (v *fakeReactor) InvokeValidate(addr mino.Address,
-	pb proto.Message) ([]byte, error) {
-
+func (v *fakeReactor) InvokeValidate(addr mino.Address, pb serde.Message) ([]byte, error) {
 	return []byte{0xac}, nil
 }
 
@@ -191,7 +190,7 @@ type badReactor struct {
 	consensus.Reactor
 }
 
-func (v badReactor) InvokeValidate(mino.Address, proto.Message) ([]byte, error) {
+func (v badReactor) InvokeValidate(mino.Address, serde.Message) ([]byte, error) {
 	return nil, xerrors.New("oops")
 }
 

@@ -3,13 +3,14 @@ package flatcosi
 import (
 	"context"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -86,22 +87,21 @@ type flatActor struct {
 }
 
 // Sign returns the collective signature of the block.
-func (a flatActor) Sign(ctx context.Context, msg encoding.Packable,
+func (a flatActor) Sign(ctx context.Context, msg serde.Message,
 	ca crypto.CollectiveAuthority) (crypto.Signature, error) {
-
-	data, err := a.encoder.PackAny(msg)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack message: %v", err)
-	}
 
 	verifier, err := a.signer.GetVerifierFactory().FromAuthority(ca)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't make verifier: %v", err)
 	}
 
-	msgs, errs := a.rpc.Call(ctx, &SignatureRequest{Message: data}, ca)
+	req := SignatureRequest{
+		message: msg,
+	}
 
-	digest, err := a.reactor.Invoke(a.me, data)
+	msgs, errs := a.rpc.Call(ctx, tmp.ProtoOf(req), ca)
+
+	digest, err := a.reactor.Invoke(a.me, msg)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't react to message: %v", err)
 	}
@@ -123,7 +123,9 @@ func (a flatActor) Sign(ctx context.Context, msg encoding.Packable,
 				return agg, nil
 			}
 
-			agg, err = a.processResponse(resp, agg)
+			in := tmp.FromProto(resp, newResponseFactory(a.signer.GetSignatureFactory()))
+
+			agg, err = a.processResponse(in, agg)
 			if err != nil {
 				return nil, xerrors.Errorf("couldn't process response: %v", err)
 			}
@@ -133,21 +135,18 @@ func (a flatActor) Sign(ctx context.Context, msg encoding.Packable,
 	}
 }
 
-func (a flatActor) processResponse(resp proto.Message, agg crypto.Signature) (crypto.Signature, error) {
-	reply, ok := resp.(*SignatureResponse)
+func (a flatActor) processResponse(resp serde.Message, agg crypto.Signature) (crypto.Signature, error) {
+	reply, ok := resp.(SignatureResponse)
 	if !ok {
-		return nil, xerrors.Errorf("response type is invalid: %T", resp)
+		return nil, xerrors.Errorf("invalid response type '%T'", resp)
 	}
 
-	sig, err := a.signer.GetSignatureFactory().FromProto(reply.GetSignature())
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't decode signature: %v", err)
-	}
+	var err error
 
 	if agg == nil {
-		agg = sig
+		agg = reply.signature
 	} else {
-		agg, err = a.signer.Aggregate(agg, sig)
+		agg, err = a.signer.Aggregate(agg, reply.signature)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't aggregate: %v", err)
 		}

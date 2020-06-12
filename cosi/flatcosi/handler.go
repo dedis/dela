@@ -4,8 +4,9 @@ import (
 	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -13,26 +14,23 @@ type handler struct {
 	mino.UnsupportedHandler
 	signer  crypto.Signer
 	reactor cosi.Reactor
-	encoder encoding.ProtoMarshaler
+	factory serde.Factory
 }
 
 func newHandler(s crypto.Signer, r cosi.Reactor) handler {
 	return handler{
 		signer:  s,
 		reactor: r,
-		encoder: encoding.NewProtoEncoder(),
+		factory: newRequestFactory(r),
 	}
 }
 
 func (h handler) Process(req mino.Request) (proto.Message, error) {
-	switch msg := req.Message.(type) {
-	case *SignatureRequest:
-		data, err := h.encoder.UnmarshalDynamicAny(msg.Message)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
-		}
+	in := tmp.FromProto(req.Message, h.factory)
 
-		buf, err := h.reactor.Invoke(req.Address, data)
+	switch msg := in.(type) {
+	case SignatureRequest:
+		buf, err := h.reactor.Invoke(req.Address, msg.message)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't hash message: %v", err)
 		}
@@ -42,14 +40,12 @@ func (h handler) Process(req mino.Request) (proto.Message, error) {
 			return nil, xerrors.Errorf("couldn't sign: %v", err)
 		}
 
-		resp := &SignatureResponse{}
-		resp.Signature, err = h.encoder.PackAny(sig)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't pack signature: %v", err)
+		resp := SignatureResponse{
+			signature: sig,
 		}
 
-		return resp, nil
+		return tmp.ProtoOf(resp), nil
 	default:
-		return nil, xerrors.Errorf("invalid message type: %T", msg)
+		return nil, xerrors.Errorf("invalid message type '%T'", msg)
 	}
 }
