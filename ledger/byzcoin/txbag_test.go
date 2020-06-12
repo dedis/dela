@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/ledger/transactions"
+	"go.dedis.ch/dela/serde"
 )
 
 func TestTxQueue_GetAll(t *testing.T) {
@@ -58,4 +59,8 @@ type fakeTx struct {
 
 func (tx fakeTx) GetID() []byte {
 	return tx.id
+}
+
+func (tx fakeTx) VisitJSON(serde.Serializer) (interface{}, error) {
+	return struct{}{}, nil
 }

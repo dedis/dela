@@ -15,7 +15,6 @@ import (
 	"reflect"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/common"
 	"go.dedis.ch/dela/encoding"
@@ -235,54 +234,6 @@ func (f TransactionFactory) New(task ClientTask) (transactions.ClientTransaction
 	return tx, nil
 }
 
-// FromProto implements ledger.TransactionFactory. It returns a new transaction
-// built from the protobuf message.
-func (f TransactionFactory) FromProto(in proto.Message) (transactions.ServerTransaction, error) {
-	var pb *TransactionProto
-
-	switch msg := in.(type) {
-	case *any.Any:
-		pb = &TransactionProto{}
-		err := f.encoder.UnmarshalAny(msg, pb)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't unmarshal input: %v", err)
-		}
-	case *TransactionProto:
-		pb = msg
-	default:
-		return nil, xerrors.Errorf("invalid transaction type '%T'", in)
-	}
-
-	factory := f.registry[pb.Type]
-	if factory == nil {
-		return nil, xerrors.Errorf("missing factory for type '%s'", pb.Type)
-	}
-
-	msg, err := f.encoder.UnmarshalDynamicAny(pb.GetTask())
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't unmarshal any: %v", err)
-	}
-
-	task, err := factory.FromProto(msg)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't decode task: %v", err)
-	}
-
-	tx := serverTransaction{
-		transaction: transaction{
-			nonce: pb.GetNonce(),
-			task:  task,
-		},
-	}
-
-	err = f.fillIdentity(&tx, pb)
-	if err != nil {
-		return nil, err
-	}
-
-	return tx, nil
-}
-
 // VisitJSON implements serde.Factory. It returns the transaction associated
 // with the input if appropriate, otherwise it returns an error.
 func (f TransactionFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
@@ -338,36 +289,6 @@ func (f TransactionFactory) VisitJSON(in serde.FactoryInput) (serde.Message, err
 	}
 
 	return tx, nil
-}
-
-func (f TransactionFactory) fillIdentity(tx *serverTransaction, pb *TransactionProto) error {
-	identity, err := f.publicKeyFactory.FromProto(pb.GetIdentity())
-	if err != nil {
-		return xerrors.Errorf("couldn't decode public key: %v", err)
-	}
-
-	signature, err := f.signatureFactory.FromProto(pb.GetSignature())
-	if err != nil {
-		return xerrors.Errorf("couldn't decode signature: %v", err)
-	}
-
-	tx.identity = identity
-	tx.signature = signature
-
-	h := f.hashFactory.New()
-	err = tx.Fingerprint(h, f.encoder)
-	if err != nil {
-		return xerrors.Errorf("couldn't compute hash: %v", err)
-	}
-
-	tx.hash = h.Sum(nil)
-
-	err = tx.identity.Verify(tx.hash, tx.signature)
-	if err != nil {
-		return xerrors.Errorf("signature does not match tx: %v", err)
-	}
-
-	return nil
 }
 
 func keyOf(m serde.Message) string {

@@ -1,7 +1,6 @@
 package transactions
 
 import (
-	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/serde"
 )
@@ -21,14 +20,4 @@ type ServerTransaction interface {
 	ClientTransaction
 
 	Consume(inventory.WritablePage) error
-}
-
-// TransactionFactory is a factory to create new transactions or decode from
-// network messages.
-type TransactionFactory interface {
-	serde.Factory
-
-	// FromProto returns the transaction from the protobuf message.
-	// TODO: remove
-	FromProto(pb proto.Message) (ServerTransaction, error)
 }

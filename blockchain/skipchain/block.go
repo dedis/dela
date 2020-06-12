@@ -63,12 +63,6 @@ func (b SkipBlock) GetHash() []byte {
 	return b.hash[:]
 }
 
-// GetPreviousHash implements consensus.Proposal. It returns the previous block
-// digest.
-func (b SkipBlock) GetPreviousHash() []byte {
-	return b.BackLink.Bytes()
-}
-
 // GetPayload implements blockchain.Block. It returns the block payload.
 func (b SkipBlock) GetPayload() blockchain.Payload {
 	return b.Payload
@@ -178,13 +172,13 @@ func (f BlockFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
 	m := json.SkipBlock{}
 	err := in.Feed(&m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't deserialize message: %v", err)
 	}
 
 	var payload blockchain.Payload
 	err = in.GetSerializer().Deserialize(m.Payload, f.payloadFactory, &payload)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't deserialize payload: %v", err)
 	}
 
 	block := SkipBlock{
@@ -198,7 +192,7 @@ func (f BlockFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
 	h := f.hashFactory.New()
 	err = block.Fingerprint(h)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't fingerprint block: %v", err)
 	}
 
 	copy(block.hash[:], h.Sum(nil))
@@ -206,6 +200,10 @@ func (f BlockFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
 	return block, nil
 }
 
+// VerifiableFactory is a message factory to deserialize verifiable block
+// messages.
+//
+// - implements serde.Factory
 type VerifiableFactory struct {
 	serde.UnimplementedFactory
 
@@ -213,6 +211,7 @@ type VerifiableFactory struct {
 	chainFactory serde.Factory
 }
 
+// NewVerifiableFactory returns a new verifiable block factory.
 func NewVerifiableFactory(b, c serde.Factory) VerifiableFactory {
 	return VerifiableFactory{
 		blockFactory: b,
@@ -220,11 +219,13 @@ func NewVerifiableFactory(b, c serde.Factory) VerifiableFactory {
 	}
 }
 
+// VisitJSON implements serde.Factory. It deserializes the verifiable block
+// message in JSON format.
 func (f VerifiableFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
 	m := json.VerifiableBlock{}
 	err := in.Feed(&m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't deserialize message: %v", err)
 	}
 
 	var chain consensus.Chain

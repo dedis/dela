@@ -22,7 +22,7 @@ type Blueprint struct {
 func (b Blueprint) VisitJSON(ser serde.Serializer) (interface{}, error) {
 	payload, err := ser.Serialize(b.data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't serialize payload: %v", err)
 	}
 
 	m := json.Blueprint{
@@ -58,7 +58,7 @@ func (f BlueprintFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error
 	var data serde.Message
 	err = in.GetSerializer().Deserialize(m.Payload, f.factory, &data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't deserialize payload: %v", err)
 	}
 
 	b := Blueprint{
@@ -71,6 +71,8 @@ func (f BlueprintFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error
 }
 
 // PropagateGenesis is the message sent to share the genesis block.
+//
+// - implements serde.Message
 type PropagateGenesis struct {
 	serde.UnimplementedMessage
 
@@ -82,7 +84,7 @@ type PropagateGenesis struct {
 func (p PropagateGenesis) VisitJSON(ser serde.Serializer) (interface{}, error) {
 	block, err := ser.Serialize(p.genesis)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't serialize genesis: %v", err)
 	}
 
 	m := json.PropagateGenesis{
@@ -92,23 +94,28 @@ func (p PropagateGenesis) VisitJSON(ser serde.Serializer) (interface{}, error) {
 	return m, nil
 }
 
+// PropagateFactory is a message factory for the genesis propagation message.
+//
+// - implements serde.Factory
 type propagateFactory struct {
 	serde.UnimplementedFactory
 
 	blockFactory serde.Factory
 }
 
+// VisitJSON implements serde.Factory. It deserializes the propagation message
+// in JSON format.
 func (f propagateFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
 	m := json.PropagateGenesis{}
 	err := in.Feed(&m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't deserialize message: %v", err)
 	}
 
 	var genesis SkipBlock
 	err = in.GetSerializer().Deserialize(m.Genesis, f.blockFactory, &genesis)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't deserialize genesis: %v", err)
 	}
 
 	p := PropagateGenesis{
@@ -119,6 +126,8 @@ func (f propagateFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error
 }
 
 // BlockRequest is the message sent to request a block.
+//
+// - implements serde.Message
 type BlockRequest struct {
 	serde.UnimplementedMessage
 
@@ -137,15 +146,20 @@ func (req BlockRequest) VisitJSON(ser serde.Serializer) (interface{}, error) {
 	return m, nil
 }
 
+// RequestFactory is a message factory to deserialize block request messages.
+//
+// - implements serde.Factory
 type requestFactory struct {
 	serde.UnimplementedFactory
 }
 
+// VisitJSON implements serde.Factory. It deserializes the block request message
+// in JSON format.
 func (f requestFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
 	m := json.BlockRequest{}
 	err := in.Feed(&m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't deserialize message: %v", err)
 	}
 
 	req := BlockRequest{
@@ -157,6 +171,8 @@ func (f requestFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) 
 }
 
 // BlockResponse is the response to a block request.
+//
+// - implements serde.Message
 type BlockResponse struct {
 	serde.UnimplementedMessage
 
@@ -168,7 +184,7 @@ type BlockResponse struct {
 func (resp BlockResponse) VisitJSON(ser serde.Serializer) (interface{}, error) {
 	block, err := ser.Serialize(resp.block)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't serialize block: %v", err)
 	}
 
 	m := json.BlockResponse{
@@ -178,23 +194,29 @@ func (resp BlockResponse) VisitJSON(ser serde.Serializer) (interface{}, error) {
 	return m, nil
 }
 
+// ResponseFactory is a message factory to deserialize the block response
+// messages.
+//
+// - implements serde.Factory
 type responseFactory struct {
 	serde.UnimplementedFactory
 
 	blockFactory serde.Factory
 }
 
+// VisitJSON implements serde.Factory. It deserializes the block response
+// message in JSON format.
 func (f responseFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
 	m := json.BlockResponse{}
 	err := in.Feed(&m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't deserialize message: %v", err)
 	}
 
 	var block SkipBlock
 	err = in.GetSerializer().Deserialize(m.Block, f.blockFactory, &block)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't deserialize block: %v", err)
 	}
 
 	resp := BlockResponse{

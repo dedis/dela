@@ -73,6 +73,9 @@ func TestSkipBlock_VisitJSON(t *testing.T) {
 	data, err := ser.Serialize(block)
 	require.NoError(t, err)
 	require.Regexp(t, `{"Index":5,"GenesisID":"[^"]+","Backlink":"[^"]+","Payload":{}}`, string(data))
+
+	_, err = block.VisitJSON(fake.NewBadSerializer())
+	require.EqualError(t, err, "couldn't serialize payload: fake error")
 }
 
 func TestSkipBlock_Fingerprint(t *testing.T) {
@@ -171,6 +174,52 @@ func TestVerifiableBlock_VisitJSON(t *testing.T) {
 	require.NoError(t, err)
 	expected := `{"Block":{"Index":0,"GenesisID":"[^"]+","Backlink":"[^"]+","Payload":{}},"Chain":{}}`
 	require.Regexp(t, expected, string(data))
+
+	_, err = vb.VisitJSON(fake.NewBadSerializer())
+	require.EqualError(t, err, "couldn't serialize block: fake error")
+
+	_, err = vb.VisitJSON(fake.NewBadSerializerWithDelay(1))
+	require.EqualError(t, err, "couldn't serialize chain: fake error")
+}
+
+func TestBlockFactory_VisitJSON(t *testing.T) {
+	factory := NewBlockFactory(fake.MessageFactory{})
+
+	ser := json.NewSerializer()
+
+	var block SkipBlock
+	err := ser.Deserialize([]byte(`{}`), factory, &block)
+	require.NoError(t, err)
+
+	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
+	require.EqualError(t, err, "couldn't deserialize message: fake error")
+
+	_, err = factory.VisitJSON(fake.FactoryInput{Serde: fake.NewBadSerializer()})
+	require.EqualError(t, err, "couldn't deserialize payload: fake error")
+
+	factory.hashFactory = fake.NewHashFactory(fake.NewBadHash())
+	err = ser.Deserialize([]byte(`{}`), factory, &block)
+	require.EqualError(t, xerrors.Unwrap(err),
+		"couldn't fingerprint block: couldn't write index: fake error")
+}
+
+func TestVerifiableFactory_VisitJSON(t *testing.T) {
+	factory := NewVerifiableFactory(NewBlockFactory(fake.MessageFactory{}), fakeChainFactory{})
+
+	ser := json.NewSerializer()
+
+	var block VerifiableBlock
+	err := ser.Deserialize([]byte(`{"Block":{}}`), factory, &block)
+	require.NoError(t, err)
+
+	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
+	require.EqualError(t, err, "couldn't deserialize message: fake error")
+
+	_, err = factory.VisitJSON(fake.FactoryInput{Serde: fake.NewBadSerializer()})
+	require.EqualError(t, err, "couldn't deserialize chain: fake error")
+
+	_, err = factory.VisitJSON(fake.FactoryInput{Serde: fake.NewBadSerializerWithDelay(1)})
+	require.EqualError(t, err, "couldn't deserialize block: fake error")
 }
 
 // -----------------------------------------------------------------------------

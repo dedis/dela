@@ -13,7 +13,6 @@ import (
 	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger"
 	"go.dedis.ch/dela/ledger/arc/darc"
@@ -163,7 +162,6 @@ func TestActor_Setup(t *testing.T) {
 
 	actor := actorLedger{
 		Ledger: &Ledger{
-			encoder:    encoding.NewProtoEncoder(),
 			proc:       newTxProcessor(f, fakeInventory{}),
 			viewchange: fakeViewChange{},
 		},

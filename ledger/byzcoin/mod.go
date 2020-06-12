@@ -13,7 +13,6 @@ import (
 	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/cosi/flatcosi"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/ledger"
 	"go.dedis.ch/dela/ledger/arc/darc"
 	"go.dedis.ch/dela/ledger/byzcoin/memship"
@@ -22,10 +21,9 @@ import (
 	"go.dedis.ch/dela/ledger/transactions/basic"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/gossip"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
-
-//go:generate protoc -I ./ -I ../../. --go_out=Mconsensus/viewchange/roster/messages.proto=go.dedis.ch/dela/consensus/viewchange/roster:. ./messages.proto
 
 const (
 	initialRoundTime = 50 * time.Millisecond
@@ -50,8 +48,7 @@ type Ledger struct {
 	bag        *txBag
 	proc       *txProcessor
 	viewchange viewchange.ViewChange
-	encoder    encoding.ProtoMarshaler
-	txFactory  transactions.TransactionFactory
+	txFactory  serde.Factory
 	closing    chan struct{}
 	closed     sync.WaitGroup
 	initiated  chan error
@@ -81,7 +78,6 @@ func NewLedger(m mino.Mino, signer crypto.AggregateSigner) *Ledger {
 		bag:        newTxBag(),
 		proc:       newTxProcessor(msgFactory, inventory),
 		viewchange: vc,
-		encoder:    encoding.NewProtoEncoder(),
 		txFactory:  txFactory,
 		closing:    make(chan struct{}),
 		initiated:  make(chan error, 1),
