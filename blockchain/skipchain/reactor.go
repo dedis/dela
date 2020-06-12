@@ -22,6 +22,9 @@ type reactor struct {
 
 func newReactor(ops *operations) *reactor {
 	return &reactor{
+		BlueprintFactory: BlueprintFactory{
+			factory: ops.reactor,
+		},
 		operations: ops,
 		queue: &blockQueue{
 			buffer: make(map[Digest]SkipBlock),
@@ -60,7 +63,7 @@ func (v *reactor) InvokeValidate(addr mino.Address, pb serde.Message) ([]byte, e
 		return nil, xerrors.Errorf("couldn't read genesis block: %v", err)
 	}
 
-	err = v.processor.Validate(blueprint.payload)
+	payload, err := v.reactor.InvokeValidate(blueprint.data)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't validate the payload: %v", err)
 	}
@@ -69,15 +72,16 @@ func (v *reactor) InvokeValidate(addr mino.Address, pb serde.Message) ([]byte, e
 		Index:     blueprint.index,
 		GenesisID: genesis.hash,
 		BackLink:  blueprint.previous,
-		Payload:   blueprint.payload,
+		Payload:   payload,
 	}
 
-	hash, err := block.computeHash(v.blockFactory.hashFactory, v.encoder)
+	h := v.blockFactory.hashFactory.New()
+	err = block.Fingerprint(h)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't compute hash: %v", err)
 	}
 
-	block.hash = hash
+	copy(block.hash[:], h.Sum(nil))
 
 	v.queue.Add(block)
 

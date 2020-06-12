@@ -4,12 +4,11 @@ import (
 	fmt "fmt"
 	"testing"
 
-	proto "github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/blockchain"
-	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -37,15 +36,12 @@ func TestReactor_InvokeValidate(t *testing.T) {
 	db := &fakeDatabase{blocks: []SkipBlock{{}}}
 	r := &reactor{
 		operations: &operations{
-			processor: &fakePayloadProc{},
-			watcher:   &fakeWatcher{},
-			encoder:   encoding.NewProtoEncoder(),
-			db:        db,
-			addr:      fake.NewAddress(0),
-			blockFactory: blockFactory{
-				encoder:     encoding.NewProtoEncoder(),
-				hashFactory: crypto.NewSha256Factory(),
-			},
+			reactor:      &fakeReactor{},
+			watcher:      &fakeWatcher{},
+			encoder:      encoding.NewProtoEncoder(),
+			db:           db,
+			addr:         fake.NewAddress(0),
+			blockFactory: NewBlockFactory(fake.MessageFactory{}),
 		},
 		queue: &blockQueue{
 			buffer: make(map[Digest]SkipBlock),
@@ -54,6 +50,7 @@ func TestReactor_InvokeValidate(t *testing.T) {
 
 	req := Blueprint{
 		index: 1,
+		data:  fake.Message{},
 	}
 
 	hash, err := r.InvokeValidate(fake.Address{}, req)
@@ -73,11 +70,11 @@ func TestReactor_InvokeValidate(t *testing.T) {
 
 	db.err = nil
 	db.blocks = []SkipBlock{{}}
-	r.processor = &fakePayloadProc{errValidate: xerrors.New("oops")}
+	r.reactor = &fakeReactor{errValidate: xerrors.New("oops")}
 	_, err = r.InvokeValidate(fake.Address{}, req)
 	require.EqualError(t, err, "couldn't validate the payload: oops")
 
-	r.processor = &fakePayloadProc{}
+	r.reactor = &fakeReactor{}
 	r.blockFactory.hashFactory = fake.NewHashFactory(fake.NewBadHash())
 	_, err = r.InvokeValidate(fake.Address{}, req)
 	require.EqualError(t, err,
@@ -94,9 +91,9 @@ func TestReactor_InvokeCommit(t *testing.T) {
 	watcher := &fakeWatcher{}
 	v := &reactor{
 		operations: &operations{
-			processor: &fakePayloadProc{},
-			watcher:   watcher,
-			db:        &fakeDatabase{},
+			reactor: &fakeReactor{},
+			watcher: watcher,
+			db:      &fakeDatabase{},
 		},
 		queue: &blockQueue{buffer: make(map[Digest]SkipBlock)},
 	}
@@ -123,20 +120,21 @@ func TestReactor_InvokeCommit(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-type fakePayloadProc struct {
-	blockchain.PayloadProcessor
+type fakeReactor struct {
+	blockchain.Reactor
+
 	calls       [][]interface{}
 	errValidate error
 	errCommit   error
 }
 
-func (v *fakePayloadProc) Validate(data proto.Message) error {
+func (v *fakeReactor) InvokeValidate(data serde.Message) (blockchain.Payload, error) {
 	v.calls = append(v.calls, []interface{}{data})
-	return v.errValidate
+	return fake.Message{}, v.errValidate
 }
 
-func (v *fakePayloadProc) Commit(data proto.Message) error {
-	v.calls = append(v.calls, []interface{}{data})
+func (v *fakeReactor) InvokeCommit(p blockchain.Payload) error {
+	v.calls = append(v.calls, []interface{}{p})
 	return v.errCommit
 }
 
