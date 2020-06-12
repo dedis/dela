@@ -5,6 +5,7 @@ import (
 
 	proto "github.com/golang/protobuf/proto"
 	any "github.com/golang/protobuf/ptypes/any"
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/consensus/viewchange/roster/json"
 	"go.dedis.ch/dela/crypto"
@@ -150,6 +151,7 @@ func (r roster) Take(updaters ...mino.FilterUpdater) mino.Players {
 func (r roster) Apply(in viewchange.ChangeSet) viewchange.Authority {
 	changeset, ok := in.(ChangeSet)
 	if !ok {
+		dela.Logger.Warn().Msgf("Change set '%T' is not supported. Ignoring.", in)
 		return r
 	}
 
@@ -397,11 +399,11 @@ func (f defaultFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) 
 	addrs := make([]mino.Address, len(m))
 	pubkeys := make([]crypto.PublicKey, len(m))
 
-	for i, raw := range m {
-		addrs[i] = f.addressFactory.FromText(raw.Address)
+	for i, player := range m {
+		addrs[i] = f.addressFactory.FromText(player.Address)
 
 		var pubkey crypto.PublicKey
-		err = in.GetSerializer().Deserialize(raw.PublicKey, f.pubkeyFactory, &pubkey)
+		err = in.GetSerializer().Deserialize(player.PublicKey, f.pubkeyFactory, &pubkey)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't deserialize public key: %v", err)
 		}
