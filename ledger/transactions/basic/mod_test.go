@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/encoding"
-	internal "go.dedis.ch/dela/internal/testing"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/inventory"
 	types "go.dedis.ch/dela/ledger/transactions/basic/json"
@@ -20,16 +19,6 @@ import (
 	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
-
-func TestMessages(t *testing.T) {
-	messages := []proto.Message{
-		&TransactionProto{},
-	}
-
-	for _, m := range messages {
-		internal.CoverProtoMessage(t, m)
-	}
-}
 
 func TestTransaction_GetID(t *testing.T) {
 	f := func(buffer []byte) bool {
@@ -82,23 +71,23 @@ func TestTransaction_Fingerprint(t *testing.T) {
 
 	buffer := new(bytes.Buffer)
 
-	err := tx.Fingerprint(buffer, nil)
+	err := tx.Fingerprint(buffer)
 	require.NoError(t, err)
 	require.Equal(t, "\x08\x07\x06\x05\x04\x03\x02\x01\xdf\xcc", buffer.String())
 
-	err = tx.Fingerprint(fake.NewBadHash(), nil)
+	err = tx.Fingerprint(fake.NewBadHash())
 	require.EqualError(t, err, "couldn't write nonce: fake error")
 
-	err = tx.Fingerprint(fake.NewBadHashWithDelay(1), nil)
+	err = tx.Fingerprint(fake.NewBadHashWithDelay(1))
 	require.EqualError(t, err, "couldn't write identity: fake error")
 
 	tx.identity = fake.NewBadPublicKey()
-	err = tx.Fingerprint(buffer, nil)
+	err = tx.Fingerprint(buffer)
 	require.EqualError(t, err, "couldn't marshal identity: fake error")
 
 	tx.identity = fake.PublicKey{}
 	tx.task = fakeClientTask{err: xerrors.New("oops")}
-	err = tx.Fingerprint(buffer, nil)
+	err = tx.Fingerprint(buffer)
 	require.EqualError(t, err, "couldn't write task: oops")
 }
 
@@ -198,7 +187,7 @@ type fakeClientTask struct {
 	err error
 }
 
-func (a fakeClientTask) Fingerprint(w io.Writer, enc encoding.ProtoMarshaler) error {
+func (a fakeClientTask) Fingerprint(w io.Writer) error {
 	w.Write([]byte{0xcc})
 	return a.err
 }

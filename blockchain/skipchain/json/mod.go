@@ -23,15 +23,18 @@ type VerifiableBlock struct {
 	Chain json.RawMessage
 }
 
+// PropagateGenesis the the JSON message to share a genesis block.
 type PropagateGenesis struct {
 	Genesis json.RawMessage
 }
 
+// BlockRequest is the JSON message to request a chain of blocks.
 type BlockRequest struct {
 	From uint64
 	To   uint64
 }
 
+// BlockResponse is the response of a block request.
 type BlockResponse struct {
 	Block json.RawMessage
 }

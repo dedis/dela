@@ -129,5 +129,5 @@ func (proc *txProcessor) process(payload BlockPayload) (inventory.Page, error) {
 
 	dela.Logger.Trace().Msgf("staging new inventory %#x", page.GetFingerprint())
 
-	return page, err
+	return page, nil
 }

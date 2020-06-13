@@ -84,14 +84,14 @@ func TestAccess_Fingerprint(t *testing.T) {
 
 	buffer := new(bytes.Buffer)
 
-	err := access.Fingerprint(buffer, nil)
+	err := access.Fingerprint(buffer)
 	require.NoError(t, err)
 	require.Equal(t, "\x02\x04", buffer.String())
 
-	err = access.Fingerprint(fake.NewBadHash(), nil)
+	err = access.Fingerprint(fake.NewBadHash())
 	require.EqualError(t, err, "couldn't write key: fake error")
 
-	err = access.Fingerprint(fake.NewBadHashWithDelay(1), nil)
+	err = access.Fingerprint(fake.NewBadHashWithDelay(1))
 	require.EqualError(t, err,
 		"couldn't fingerprint rule '\x02': couldn't write match: fake error")
 }

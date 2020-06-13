@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions"
 	"go.dedis.ch/dela/serde"
 )
@@ -54,7 +55,8 @@ func TestTxQueue_Remove(t *testing.T) {
 
 type fakeTx struct {
 	transactions.ServerTransaction
-	id []byte
+	id  []byte
+	err error
 }
 
 func (tx fakeTx) GetID() []byte {
@@ -63,4 +65,8 @@ func (tx fakeTx) GetID() []byte {
 
 func (tx fakeTx) VisitJSON(serde.Serializer) (interface{}, error) {
 	return struct{}{}, nil
+}
+
+func (tx fakeTx) Consume(inventory.WritablePage) error {
+	return tx.err
 }

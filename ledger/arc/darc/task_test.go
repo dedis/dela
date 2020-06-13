@@ -59,14 +59,14 @@ func TestClientTask_Fingerprint(t *testing.T) {
 
 	buffer := new(bytes.Buffer)
 
-	err := task.Fingerprint(buffer, encoding.NewProtoEncoder())
+	err := task.Fingerprint(buffer)
 	require.NoError(t, err)
 	require.Equal(t, "\x01\x02\x03", buffer.String())
 
-	err = task.Fingerprint(fake.NewBadHash(), nil)
+	err = task.Fingerprint(fake.NewBadHash())
 	require.EqualError(t, err, "couldn't write key: fake error")
 
-	err = task.Fingerprint(fake.NewBadHashWithDelay(1), nil)
+	err = task.Fingerprint(fake.NewBadHashWithDelay(1))
 	require.EqualError(t, err,
 		"couldn't fingerprint access: couldn't write key: fake error")
 }
@@ -101,6 +101,9 @@ func TestServerTask_Consume(t *testing.T) {
 	task.key = []byte{0x01}
 	err = task.Consume(fakeContext{}, fakePage{err: xerrors.New("oops")})
 	require.EqualError(t, err, "couldn't read value: oops")
+
+	err = task.Consume(fakeContext{}, badPage{})
+	require.EqualError(t, err, "invalid message type 'fake.Message'")
 
 	task.access.rules[UpdateAccessRule].matches["cat"] = struct{}{}
 	err = task.Consume(fakeContext{identity: []byte("cat")}, fakePage{})
@@ -185,6 +188,14 @@ func (page fakePage) Write(key []byte, value serde.Message) error {
 	page.call.Add(key, value)
 
 	return page.err
+}
+
+type badPage struct {
+	inventory.WritablePage
+}
+
+func (page badPage) Read([]byte) (serde.Message, error) {
+	return fake.Message{}, nil
 }
 
 type badArcFactory struct {

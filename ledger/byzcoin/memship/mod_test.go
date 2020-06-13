@@ -48,11 +48,11 @@ func TestTask_Fingerprint(t *testing.T) {
 	task := NewTask(fake.NewAuthority(1, fake.NewSigner)).(clientTask)
 
 	out := new(bytes.Buffer)
-	err := task.Fingerprint(out, nil)
+	err := task.Fingerprint(out)
 	require.NoError(t, err)
 
 	task.authority = badAuthority{}
-	err = task.Fingerprint(out, nil)
+	err = task.Fingerprint(out)
 	require.EqualError(t, err, "couldn't fingerprint authority: oops")
 }
 

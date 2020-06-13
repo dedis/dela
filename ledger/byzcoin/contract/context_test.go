@@ -12,13 +12,19 @@ import (
 func TestTaskContext_GetArc(t *testing.T) {
 	ctx := taskContext{
 		page: fakePage{
-			store: map[string]serde.Message{"a": &fakeAccess{}},
+			store: map[string]serde.Message{
+				"a": &fakeAccess{},
+				"b": fake.Message{},
+			},
 		},
 	}
 
 	arc, err := ctx.GetArc([]byte("a"))
 	require.NoError(t, err)
 	require.NotNil(t, arc)
+
+	_, err = ctx.GetArc([]byte("b"))
+	require.EqualError(t, err, "invalid value type 'fake.Message'")
 
 	ctx.page = fakePage{errRead: xerrors.New("oops")}
 	_, err = ctx.GetArc(nil)

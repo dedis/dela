@@ -17,7 +17,6 @@ import (
 	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/common"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions"
@@ -30,8 +29,8 @@ import (
 
 // ClientTask is a task inside a transaction.
 type ClientTask interface {
-	encoding.Fingerprinter
 	serde.Message
+	serde.Fingerprinter
 }
 
 // Context is the context provided to a server transaction when consumed.
@@ -119,7 +118,7 @@ func (t transaction) VisitJSON(ser serde.Serializer) (interface{}, error) {
 
 // Fingerprint implements encoding.Fingerprinter. It serializes the transaction
 // into the writer in a deterministic way.
-func (t transaction) Fingerprint(w io.Writer, enc encoding.ProtoMarshaler) error {
+func (t transaction) Fingerprint(w io.Writer) error {
 	buffer := make([]byte, 8)
 	binary.LittleEndian.PutUint64(buffer[:], t.nonce)
 
@@ -138,7 +137,7 @@ func (t transaction) Fingerprint(w io.Writer, enc encoding.ProtoMarshaler) error
 		return xerrors.Errorf("couldn't write identity: %v", err)
 	}
 
-	err = t.task.Fingerprint(w, enc)
+	err = t.task.Fingerprint(w)
 	if err != nil {
 		return xerrors.Errorf("couldn't write task: %v", err)
 	}
@@ -189,7 +188,6 @@ type TransactionFactory struct {
 	publicKeyFactory crypto.PublicKeyFactory
 	signatureFactory crypto.SignatureFactory
 	registry         map[string]TaskFactory
-	encoder          encoding.ProtoMarshaler
 }
 
 // NewTransactionFactory returns a new instance of the transaction factory.
@@ -200,7 +198,6 @@ func NewTransactionFactory(signer crypto.Signer) TransactionFactory {
 		publicKeyFactory: common.NewPublicKeyFactory(),
 		signatureFactory: common.NewSignatureFactory(),
 		registry:         make(map[string]TaskFactory),
-		encoder:          encoding.NewProtoEncoder(),
 	}
 }
 
@@ -219,7 +216,7 @@ func (f TransactionFactory) New(task ClientTask) (transactions.ClientTransaction
 	}
 
 	h := f.hashFactory.New()
-	err := tx.Fingerprint(h, f.encoder)
+	err := tx.Fingerprint(h)
 	if err != nil {
 		return tx, xerrors.Errorf("couldn't compute hash: %v", err)
 	}
@@ -276,7 +273,7 @@ func (f TransactionFactory) VisitJSON(in serde.FactoryInput) (serde.Message, err
 	}
 
 	h := f.hashFactory.New()
-	err = tx.Fingerprint(h, f.encoder)
+	err = tx.Fingerprint(h)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't fingerprint: %v", err)
 	}

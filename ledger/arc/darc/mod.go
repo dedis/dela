@@ -75,7 +75,7 @@ func (ac Access) Match(rule string, targets ...arc.Identity) error {
 
 // Fingerprint implements encoding.Fingerprinter. It serializes the access to
 // the writer in a deterministic way.
-func (ac Access) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
+func (ac Access) Fingerprint(w io.Writer) error {
 	keys := make(sort.StringSlice, 0, len(ac.rules))
 	for key := range ac.rules {
 		keys = append(keys, key)
@@ -89,7 +89,7 @@ func (ac Access) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
 			return xerrors.Errorf("couldn't write key: %v", err)
 		}
 
-		err = ac.rules[key].Fingerprint(w, e)
+		err = ac.rules[key].Fingerprint(w)
 		if err != nil {
 			return xerrors.Errorf("couldn't fingerprint rule '%s': %v", key, err)
 		}

@@ -74,13 +74,13 @@ func (act clientTask) VisitJSON(ser serde.Serializer) (interface{}, error) {
 
 // Fingerprint implements encoding.Fingerprinter. It serializes the client task
 // into the writer in a deterministic way.
-func (act clientTask) Fingerprint(w io.Writer, enc encoding.ProtoMarshaler) error {
+func (act clientTask) Fingerprint(w io.Writer) error {
 	_, err := w.Write(act.key)
 	if err != nil {
 		return xerrors.Errorf("couldn't write key: %v", err)
 	}
 
-	err = act.access.Fingerprint(w, enc)
+	err = act.access.Fingerprint(w)
 	if err != nil {
 		return xerrors.Errorf("couldn't fingerprint access: %v", err)
 	}
@@ -120,7 +120,7 @@ func (act serverTask) Consume(ctx basic.Context, page inventory.WritablePage) er
 
 		access, ok := value.(Access)
 		if !ok {
-			return xerrors.New("invalid message type")
+			return xerrors.Errorf("invalid message type '%T'", value)
 		}
 
 		err = access.Match(UpdateAccessRule, ctx.GetIdentity())

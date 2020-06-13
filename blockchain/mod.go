@@ -7,6 +7,7 @@ import (
 	"go.dedis.ch/dela/serde"
 )
 
+// Payload is the interface to implement to store data in a block.
 type Payload interface {
 	serde.Message
 	serde.Fingerprinter
@@ -32,6 +33,7 @@ type VerifiableBlock interface {
 	Block
 }
 
+// Reactor is the interface to implement to react to blockchain events.
 type Reactor interface {
 	serde.Factory
 
@@ -43,8 +45,7 @@ type Reactor interface {
 // Actor is a primitive created by the blockchain to propose new blocks.
 type Actor interface {
 	// Setup initializes a new chain by creating the genesis block with the
-	// given data stored as the payload and the given players to be the roster
-	// of the genesis block.
+	// given payload and players to be the roster of the genesis block.
 	Setup(data Payload, players mino.Players) error
 
 	// Store stores any representation of a data structure into a new block.

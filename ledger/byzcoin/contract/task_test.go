@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/ledger/inventory"
@@ -17,56 +15,53 @@ import (
 func TestSpawnTask_Fingerprint(t *testing.T) {
 	task := SpawnTask{
 		ContractID: "deadbeef",
-		Argument:   &empty.Empty{},
+		Argument:   map[string]string{"A": "B"},
 	}
 
 	buffer := new(bytes.Buffer)
-	encoder := encoding.NewProtoEncoder()
 
-	err := task.Fingerprint(buffer, encoder)
+	err := task.Fingerprint(buffer)
 	require.NoError(t, err)
-	require.Equal(t, "deadbeef{}", buffer.String())
+	require.Equal(t, "deadbeefA:B", buffer.String())
 
-	err = task.Fingerprint(fake.NewBadHash(), encoder)
+	err = task.Fingerprint(fake.NewBadHash())
 	require.EqualError(t, err, "couldn't write contract: fake error")
 
-	err = task.Fingerprint(buffer, fake.BadMarshalStableEncoder{})
+	err = task.Fingerprint(fake.NewBadHashWithDelay(1))
 	require.EqualError(t, err, "couldn't write argument: fake error")
 }
 
-func TestInvokeTask_WriteTo(t *testing.T) {
+func TestInvokeTask_Fingerprint(t *testing.T) {
 	task := InvokeTask{
 		Key:      []byte{0x01},
-		Argument: &empty.Empty{},
+		Argument: map[string]string{"A": "B"},
 	}
 
 	buffer := new(bytes.Buffer)
-	encoder := encoding.NewProtoEncoder()
 
-	err := task.Fingerprint(buffer, encoder)
+	err := task.Fingerprint(buffer)
 	require.NoError(t, err)
-	require.Equal(t, "\x01{}", buffer.String())
+	require.Equal(t, "\x01A:B", buffer.String())
 
-	err = task.Fingerprint(fake.NewBadHash(), encoder)
+	err = task.Fingerprint(fake.NewBadHash())
 	require.EqualError(t, err, "couldn't write key: fake error")
 
-	err = task.Fingerprint(buffer, fake.BadMarshalStableEncoder{})
+	err = task.Fingerprint(fake.NewBadHashWithDelay(1))
 	require.EqualError(t, err, "couldn't write argument: fake error")
 }
 
-func TestDeleteTask_WriteTo(t *testing.T) {
+func TestDeleteTask_Fingerprint(t *testing.T) {
 	task := DeleteTask{
 		Key: []byte{0x01},
 	}
 
 	buffer := new(bytes.Buffer)
-	encoder := encoding.NewProtoEncoder()
 
-	err := task.Fingerprint(buffer, encoder)
+	err := task.Fingerprint(buffer)
 	require.NoError(t, err)
 	require.Equal(t, "\x01", buffer.String())
 
-	err = task.Fingerprint(fake.NewBadHash(), encoder)
+	err = task.Fingerprint(fake.NewBadHash())
 	require.EqualError(t, err, "couldn't write key: fake error")
 }
 
@@ -79,7 +74,6 @@ func TestServerTask_Consume(t *testing.T) {
 	task := serverTask{
 		ClientTask: SpawnTask{ContractID: "fake"},
 		contracts:  contracts,
-		encoder:    encoding.NewProtoEncoder(),
 	}
 
 	page := fakePage{
@@ -107,7 +101,6 @@ func TestServerTask_Consume(t *testing.T) {
 	require.EqualError(t, err, "couldn't execute spawn: oops")
 
 	// 2. Consume an invoke task.
-	task.encoder = encoding.NewProtoEncoder()
 	task.ClientTask = InvokeTask{Key: []byte("b")}
 
 	err = task.Consume(fakeContext{}, page)
@@ -223,7 +216,6 @@ func (ctx fakeContext) GetIdentity() arc.Identity {
 
 type fakeAccess struct {
 	serde.UnimplementedMessage
-	arc.AccessControl
 
 	match bool
 	calls [][]interface{}

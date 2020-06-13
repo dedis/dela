@@ -64,7 +64,7 @@ func (t clientTask) VisitJSON(ser serde.Serializer) (interface{}, error) {
 
 // Fingerprint implements encoding.Fingerprinter. It serializes the client task
 // to the writer in a deterministic way.
-func (t clientTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
+func (t clientTask) Fingerprint(w io.Writer) error {
 	err := t.authority.Fingerprint(w)
 	if err != nil {
 		return xerrors.Errorf("couldn't fingerprint authority: %v", err)

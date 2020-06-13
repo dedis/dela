@@ -1,9 +1,9 @@
 package contract
 
 import (
+	"fmt"
 	"io"
 
-	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/ledger/arc/common"
@@ -20,20 +20,22 @@ type SpawnTask struct {
 	serde.UnimplementedMessage
 
 	ContractID string
-	Argument   proto.Message
+	Argument   map[string]string
 }
 
 // Fingerprint implements encoding.Fingerprinter. It serializes the task into
 // the writer in a deterministic way.
-func (act SpawnTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
+func (act SpawnTask) Fingerprint(w io.Writer) error {
 	_, err := w.Write([]byte(act.ContractID))
 	if err != nil {
 		return xerrors.Errorf("couldn't write contract: %v", err)
 	}
 
-	err = e.MarshalStable(w, act.Argument)
-	if err != nil {
-		return xerrors.Errorf("couldn't write argument: %v", err)
+	for k, v := range act.Argument {
+		_, err = w.Write([]byte(fmt.Sprintf("%s:%s", k, v)))
+		if err != nil {
+			return xerrors.Errorf("couldn't write argument: %v", err)
+		}
 	}
 
 	return nil
@@ -47,20 +49,22 @@ type InvokeTask struct {
 	serde.UnimplementedMessage
 
 	Key      []byte
-	Argument proto.Message
+	Argument map[string]string
 }
 
 // Fingerprint implements encoding.Fingeprinter. It serializes the task into the
 // writer in a deterministic way.
-func (act InvokeTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
+func (act InvokeTask) Fingerprint(w io.Writer) error {
 	_, err := w.Write(act.Key)
 	if err != nil {
 		return xerrors.Errorf("couldn't write key: %v", err)
 	}
 
-	err = e.MarshalStable(w, act.Argument)
-	if err != nil {
-		return xerrors.Errorf("couldn't write argument: %v", err)
+	for k, v := range act.Argument {
+		_, err = w.Write([]byte(fmt.Sprintf("%s:%s", k, v)))
+		if err != nil {
+			return xerrors.Errorf("couldn't write argument: %v", err)
+		}
 	}
 
 	return nil
@@ -78,7 +82,7 @@ type DeleteTask struct {
 
 // Fingerprint implements encoding.Fingerprinter. It serializes the task into
 // the writer in a deterministic way.
-func (a DeleteTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
+func (a DeleteTask) Fingerprint(w io.Writer) error {
 	_, err := w.Write(a.Key)
 	if err != nil {
 		return xerrors.Errorf("couldn't write key: %v", err)
@@ -94,7 +98,6 @@ func (a DeleteTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
 type serverTask struct {
 	basic.ClientTask
 	contracts map[string]Contract
-	encoder   encoding.ProtoMarshaler
 }
 
 // Consume implements basic.ServerTask. It updates the page according to the

@@ -18,6 +18,13 @@ func TestTxProcessor_Validate(t *testing.T) {
 
 	_, err = proc.InvokeValidate(nil)
 	require.EqualError(t, err, "invalid message type '<nil>'")
+
+	blueprint := Blueprint{transactions: []transactions.ServerTransaction{
+		fakeTx{err: xerrors.New("oops")},
+	}}
+	_, err = proc.InvokeValidate(blueprint)
+	require.EqualError(t, err,
+		"couldn't stage the transactions: couldn't stage new page: couldn't consume tx: oops")
 }
 
 func TestTxProcessor_Process(t *testing.T) {
@@ -50,6 +57,15 @@ func TestTxProcessor_Commit(t *testing.T) {
 	}
 	err = proc.InvokeCommit(BlockPayload{root: []byte{0xab}})
 	require.EqualError(t, err, "couldn't commit to page '0xab': oops")
+
+	proc.inventory = fakeInventory{errPage: xerrors.New("oops")}
+	err = proc.InvokeCommit(GenesisPayload{})
+	require.EqualError(t, err,
+		"couldn't stage genesis: couldn't stage page: couldn't write roster: oops")
+
+	proc.inventory = fakeInventory{index: 1}
+	err = proc.InvokeCommit(GenesisPayload{})
+	require.EqualError(t, err, "index 0 expected but got 1")
 }
 
 // -----------------------------------------------------------------------------
