@@ -1,16 +1,15 @@
 package skipchain
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
+	"io"
 
-	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/dela/blockchain"
+	"go.dedis.ch/dela/blockchain/skipchain/json"
 	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/encoding"
-	"go.dedis.ch/dela/serde/tmp"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -34,6 +33,8 @@ func (d Digest) String() string {
 // - implements consensus.Proposal
 // - implements fmt.Stringer
 type SkipBlock struct {
+	serde.UnimplementedMessage
+
 	hash Digest
 
 	// Index is the block index since the genesis block.
@@ -48,7 +49,7 @@ type SkipBlock struct {
 
 	// Payload is the data stored in the block. It representation is independant
 	// from the skipchain module.
-	Payload proto.Message
+	Payload blockchain.Payload
 }
 
 // GetIndex returns the index of the block since the genesis block.
@@ -62,33 +63,26 @@ func (b SkipBlock) GetHash() []byte {
 	return b.hash[:]
 }
 
-// GetPreviousHash implements consensus.Proposal. It returns the previous block
-// digest.
-func (b SkipBlock) GetPreviousHash() []byte {
-	return b.BackLink.Bytes()
-}
-
 // GetPayload implements blockchain.Block. It returns the block payload.
-func (b SkipBlock) GetPayload() proto.Message {
+func (b SkipBlock) GetPayload() blockchain.Payload {
 	return b.Payload
 }
 
-// Pack implements encoding.Packable. It returns the protobuf message for a
-// block.
-func (b SkipBlock) Pack(encoder encoding.ProtoMarshaler) (proto.Message, error) {
-	payloadAny, err := encoder.MarshalAny(b.Payload)
+// VisitJSON implements serde.Message. It serializes the block in JSON format.
+func (b SkipBlock) VisitJSON(ser serde.Serializer) (interface{}, error) {
+	payload, err := ser.Serialize(b.Payload)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't marshal the payload: %v", err)
+		return nil, xerrors.Errorf("couldn't serialize payload: %v", err)
 	}
 
-	blockproto := &BlockProto{
+	m := json.SkipBlock{
 		Index:     b.Index,
 		GenesisID: b.GenesisID.Bytes(),
 		Backlink:  b.BackLink.Bytes(),
-		Payload:   payloadAny,
+		Payload:   payload,
 	}
 
-	return blockproto, nil
+	return m, nil
 }
 
 // String implements fmt.Stringer. It returns a string representation of the
@@ -97,38 +91,30 @@ func (b SkipBlock) String() string {
 	return fmt.Sprintf("Block[%d:%v]", b.Index, b.hash)
 }
 
-func (b SkipBlock) computeHash(factory crypto.HashFactory,
-	enc encoding.ProtoMarshaler) (Digest, error) {
-
-	h := factory.New()
-
-	buffer := make([]byte, 20)
-	binary.LittleEndian.PutUint64(buffer[0:8], b.Index)
-	_, err := h.Write(buffer)
+// Fingerprint implements serde.Fingerprinter.
+func (b SkipBlock) Fingerprint(w io.Writer) error {
+	buffer := make([]byte, 8)
+	binary.LittleEndian.PutUint64(buffer, b.Index)
+	_, err := w.Write(buffer)
 	if err != nil {
-		return Digest{}, xerrors.Errorf("couldn't write index: %v", err)
+		return xerrors.Errorf("couldn't write index: %v", err)
 	}
 
-	_, err = h.Write(b.GenesisID.Bytes())
+	_, err = w.Write(b.GenesisID.Bytes())
 	if err != nil {
-		return Digest{}, xerrors.Errorf("couldn't write genesis hash: %v", err)
+		return xerrors.Errorf("couldn't write genesis hash: %v", err)
 	}
-	_, err = h.Write(b.BackLink.Bytes())
+	_, err = w.Write(b.BackLink.Bytes())
 	if err != nil {
-		return Digest{}, xerrors.Errorf("couldn't write backlink: %v", err)
+		return xerrors.Errorf("couldn't write backlink: %v", err)
 	}
 
-	if proto.Size(b.Payload) > 0 {
-		err := enc.MarshalStable(h, b.Payload)
-		if err != nil {
-			return Digest{}, xerrors.Errorf("couldn't write payload: %v", err)
-		}
+	err = b.Payload.Fingerprint(w)
+	if err != nil {
+		return xerrors.Errorf("couldn't fingerprint payload: %v", err)
 	}
 
-	digest := Digest{}
-	copy(digest[:], h.Sum(nil))
-
-	return digest, nil
+	return nil
 }
 
 // VerifiableBlock is a block combined with a consensus chain that can be
@@ -140,104 +126,124 @@ type VerifiableBlock struct {
 	Chain consensus.Chain
 }
 
-// Pack implements encoding.Packable. It returns the protobuf message for a
-// verifiable block.
-func (vb VerifiableBlock) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
-	block, err := enc.Pack(vb.SkipBlock)
+// VisitJSON implements serde.Message. It serializes the verifiable block in
+// JSON format.
+func (vb VerifiableBlock) VisitJSON(ser serde.Serializer) (interface{}, error) {
+	block, err := ser.Serialize(vb.SkipBlock)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack block: %v", err)
+		return nil, xerrors.Errorf("couldn't serialize block: %v", err)
 	}
 
-	packed := &VerifiableBlockProto{
-		Block: block.(*BlockProto),
-	}
-
-	packed.Chain, err = enc.MarshalAny(tmp.ProtoOf(vb.Chain))
+	chain, err := ser.Serialize(vb.Chain)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack chain: %v", err)
+		return nil, xerrors.Errorf("couldn't serialize chain: %v", err)
 	}
 
-	return packed, nil
+	m := json.VerifiableBlock{
+		Block: block,
+		Chain: chain,
+	}
+
+	return m, nil
 }
 
-// blockFactory is responsible for the instantiation of the block and related
+// BlockFactory is responsible for the instantiation of the block and related
 // data structures like the forward links and the proves.
 //
 // - implements blockchain.BlockFactory
-type blockFactory struct {
-	encoder     encoding.ProtoMarshaler
-	hashFactory crypto.HashFactory
-	consensus   consensus.Consensus
+type BlockFactory struct {
+	serde.UnimplementedFactory
+
+	hashFactory    crypto.HashFactory
+	payloadFactory serde.Factory
 }
 
-func (f blockFactory) prepareBlock(block *SkipBlock) error {
-	hash, err := block.computeHash(f.hashFactory, f.encoder)
-	if err != nil {
-		return xerrors.Errorf("couldn't hash the block: %w", err)
+// NewBlockFactory returns a new block factory that will use the factory for the
+// payload.
+func NewBlockFactory(f serde.Factory) BlockFactory {
+	return BlockFactory{
+		hashFactory:    crypto.NewSha256Factory(),
+		payloadFactory: f,
 	}
-
-	block.hash = hash
-
-	return nil
 }
 
-func (f blockFactory) decodeBlock(src proto.Message) (SkipBlock, error) {
-	in, ok := src.(*BlockProto)
-	if !ok {
-		return SkipBlock{}, xerrors.Errorf("invalid message type '%T'", src)
-	}
-
-	payload, err := f.encoder.UnmarshalDynamicAny(in.GetPayload())
+// VisitJSON implements serde.Message. It deserializes a block in JSON format.
+func (f BlockFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
+	m := json.SkipBlock{}
+	err := in.Feed(&m)
 	if err != nil {
-		return SkipBlock{}, xerrors.Errorf("couldn't unmarshal payload: %v", err)
+		return nil, xerrors.Errorf("couldn't deserialize message: %v", err)
 	}
 
-	backLink := Digest{}
-	copy(backLink[:], in.GetBacklink())
-
-	genesisID := Digest{}
-	copy(genesisID[:], in.GetGenesisID())
+	var payload blockchain.Payload
+	err = in.GetSerializer().Deserialize(m.Payload, f.payloadFactory, &payload)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't deserialize payload: %v", err)
+	}
 
 	block := SkipBlock{
-		Index:     in.GetIndex(),
-		GenesisID: genesisID,
-		BackLink:  backLink,
-		Payload:   payload,
+		Index:   m.Index,
+		Payload: payload,
 	}
 
-	err = f.prepareBlock(&block)
+	copy(block.GenesisID[:], m.GenesisID)
+	copy(block.BackLink[:], m.Backlink)
+
+	h := f.hashFactory.New()
+	err = block.Fingerprint(h)
 	if err != nil {
-		return block, xerrors.Errorf("couldn't prepare block: %v", err)
+		return nil, xerrors.Errorf("couldn't fingerprint block: %v", err)
 	}
+
+	copy(block.hash[:], h.Sum(nil))
 
 	return block, nil
 }
 
-// FromVerifiable implements blockchain.BlockFactory. It returns the block if
-// the integrity of the message is verified.
-func (f blockFactory) FromVerifiable(src proto.Message) (blockchain.Block, error) {
-	in, ok := src.(*VerifiableBlockProto)
-	if !ok {
-		return nil, xerrors.Errorf("invalid message type '%T'", src)
-	}
+// VerifiableFactory is a message factory to deserialize verifiable block
+// messages.
+//
+// - implements serde.Factory
+type VerifiableFactory struct {
+	serde.UnimplementedFactory
 
-	block, err := f.decodeBlock(in.GetBlock())
+	blockFactory serde.Factory
+	chainFactory serde.Factory
+}
+
+// NewVerifiableFactory returns a new verifiable block factory.
+func NewVerifiableFactory(b, c serde.Factory) VerifiableFactory {
+	return VerifiableFactory{
+		blockFactory: b,
+		chainFactory: c,
+	}
+}
+
+// VisitJSON implements serde.Factory. It deserializes the verifiable block
+// message in JSON format.
+func (f VerifiableFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
+	m := json.VerifiableBlock{}
+	err := in.Feed(&m)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't decode the block: %v", err)
+		return nil, xerrors.Errorf("couldn't deserialize message: %v", err)
 	}
 
-	chainpb, err := f.encoder.UnmarshalDynamicAny(in.GetChain())
+	var chain consensus.Chain
+	err = in.GetSerializer().Deserialize(m.Chain, f.chainFactory, &chain)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't unmarshal chain: %v", err)
+		return nil, xerrors.Errorf("couldn't deserialize chain: %v", err)
 	}
 
-	chain := tmp.FromProto(chainpb, f.consensus.GetChainFactory()).(consensus.Chain)
-
-	// Only the link between the chain and the block needs to be verified.
-	if !bytes.Equal(chain.GetTo(), block.hash[:]) {
-		return nil, xerrors.Errorf("mismatch hashes: %#x != %#x",
-			chain.GetTo(), block.GetHash())
+	var block SkipBlock
+	err = in.GetSerializer().Deserialize(m.Block, f.blockFactory, &block)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't deserialize block: %v", err)
 	}
 
-	return block, nil
+	vb := VerifiableBlock{
+		SkipBlock: block,
+		Chain:     chain,
+	}
+
+	return vb, nil
 }

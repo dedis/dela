@@ -3,8 +3,10 @@ package skipchain
 import (
 	"context"
 
-	proto "github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -15,25 +17,27 @@ import (
 type handler struct {
 	mino.UnsupportedHandler
 	*operations
+
+	requestFactory   serde.Factory
+	propagateFactory serde.Factory
 }
 
 func newHandler(ops *operations) handler {
 	return handler{
-		operations: ops,
+		operations:       ops,
+		requestFactory:   requestFactory{},
+		propagateFactory: propagateFactory{blockFactory: ops.blockFactory},
 	}
 }
 
 // Process implements mino.Handler. It handles genesis block propagation
 // messages only and return an error for any other type.
 func (h handler) Process(req mino.Request) (proto.Message, error) {
-	switch in := req.Message.(type) {
-	case *PropagateGenesis:
-		genesis, err := h.blockFactory.decodeBlock(in.GetGenesis())
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't decode block: %v", err)
-		}
+	in := tmp.FromProto(req.Message, h.propagateFactory)
 
-		err = h.insertBlock(genesis)
+	switch msg := in.(type) {
+	case PropagateGenesis:
+		err := h.commitBlock(msg.genesis)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't store genesis: %v", err)
 		}
@@ -52,28 +56,24 @@ func (h handler) Stream(out mino.Sender, in mino.Receiver) error {
 		return xerrors.Errorf("couldn't receive message: %v", err)
 	}
 
-	req, ok := msg.(*BlockRequest)
+	m := tmp.FromProto(msg, h.requestFactory)
+
+	req, ok := m.(BlockRequest)
 	if !ok {
-		return xerrors.Errorf("invalid message type '%T' != '%T'", msg, req)
+		return xerrors.Errorf("invalid message type '%T' != '%T'", m, req)
 	}
 
-	var block SkipBlock
-	for i := req.From; i <= req.GetTo(); i++ {
-		block, err = h.db.Read(int64(i))
+	for i := req.from; i <= req.to; i++ {
+		block, err := h.db.Read(int64(i))
 		if err != nil {
 			return xerrors.Errorf("couldn't read block at index %d: %v", i, err)
 		}
 
-		blockpb, err := h.encoder.Pack(block)
-		if err != nil {
-			return xerrors.Errorf("couldn't pack block: %v", err)
+		resp := BlockResponse{
+			block: block,
 		}
 
-		resp := &BlockResponse{
-			Block: blockpb.(*BlockProto),
-		}
-
-		err = <-out.Send(resp, addr)
+		err = <-out.Send(tmp.ProtoOf(resp), addr)
 		if err != nil {
 			return xerrors.Errorf("couldn't send block: %v", err)
 		}

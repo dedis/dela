@@ -9,8 +9,7 @@ import (
 
 type taskContext struct {
 	basic.Context
-	arcFactory arc.AccessControlFactory
-	page       inventory.Page
+	page inventory.Page
 }
 
 // GetArc implements Context. It returns the access control stored in the given
@@ -21,13 +20,9 @@ func (ctx taskContext) GetArc(key []byte) (arc.AccessControl, error) {
 		return nil, xerrors.Errorf("couldn't read from page: %v", err)
 	}
 
-	if value == nil {
-		return nil, xerrors.Errorf("access does not exist")
-	}
-
-	access, err := ctx.arcFactory.FromProto(value)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't decode access: %v", err)
+	access, ok := value.(arc.AccessControl)
+	if !ok {
+		return nil, xerrors.Errorf("invalid value type '%T'", value)
 	}
 
 	return access, nil

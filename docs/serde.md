@@ -50,8 +50,9 @@ if err != nil {
 ```
 
 When a distant party receives the byte slice, it will decode using a factory.
-The factory interface is similar to the message except that it provides the
-correct interface to decode and then instantiate the message implementation.
+The factory interface is similar to the message except that it populates the
+given interface using the given factory. It is convenient for type assertion as
+it will return an error if the interface is not compatible.
 
 ```go
 package blockchain
@@ -71,10 +72,9 @@ func (f blockFactory) VisitJSON(input serde.Deserializer) (serde.Message, error)
 }
 
 ser := json.NewSerializer()
-m, err := ser.Deserialize(data, blockFactory{})
+var res block
+err := ser.Deserialize(data, blockFactory{}, &res)
 if err != nil {
     // do..
 }
-
-block := m.(block)
 ```

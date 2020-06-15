@@ -10,6 +10,8 @@ import (
 	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -18,31 +20,17 @@ const catchUpLeeway = 100 * time.Millisecond
 // operations implements helper functions that can be used by the handlers for
 // common operations.
 type operations struct {
-	logger       zerolog.Logger
-	encoder      encoding.ProtoMarshaler
-	addr         mino.Address
-	processor    blockchain.PayloadProcessor
-	blockFactory blockFactory
-	db           Database
-	rpc          mino.RPC
-	watcher      blockchain.Observable
+	logger          zerolog.Logger
+	encoder         encoding.ProtoMarshaler
+	addr            mino.Address
+	blockFactory    BlockFactory
+	responseFactory serde.Factory
+	db              Database
+	rpc             mino.RPC
+	watcher         blockchain.Observable
+	reactor         blockchain.Reactor
 
 	catchUpLock sync.Mutex
-}
-
-func (ops *operations) insertBlock(block SkipBlock) error {
-	err := ops.processor.Validate(block.GetPayload())
-	if err != nil {
-		return xerrors.Errorf("couldn't validate block: %v", err)
-	}
-
-	err = ops.commitBlock(block)
-	if err != nil {
-		// No wrapping to avoid redundancy.
-		return err
-	}
-
-	return nil
 }
 
 func (ops *operations) commitBlock(block SkipBlock) error {
@@ -52,7 +40,7 @@ func (ops *operations) commitBlock(block SkipBlock) error {
 			return xerrors.Errorf("couldn't write block: %v", err)
 		}
 
-		err = ops.processor.Commit(block.GetPayload())
+		err = ops.reactor.InvokeCommit(block.GetPayload())
 		if err != nil {
 			return xerrors.Errorf("couldn't commit block: %v", err)
 		}
@@ -120,12 +108,12 @@ func (ops *operations) catchUp(index uint64, addr mino.Address) error {
 		return xerrors.Errorf("couldn't open stream: %v", err)
 	}
 
-	req := &BlockRequest{
-		From: from,
-		To:   index - 1,
+	req := BlockRequest{
+		from: from,
+		to:   index - 1,
 	}
 
-	err = <-sender.Send(req, addr)
+	err = <-sender.Send(tmp.ProtoOf(req), addr)
 	if err != nil {
 		return xerrors.Errorf("couldn't send block request: %v", err)
 	}
@@ -136,22 +124,19 @@ func (ops *operations) catchUp(index uint64, addr mino.Address) error {
 			return xerrors.Errorf("couldn't receive message: %v", err)
 		}
 
-		resp, ok := msg.(*BlockResponse)
+		in := tmp.FromProto(msg, ops.responseFactory)
+
+		resp, ok := in.(BlockResponse)
 		if !ok {
-			return xerrors.Errorf("invalid response type '%T' != '%T'", msg, resp)
+			return xerrors.Errorf("invalid response type '%T' != '%T'", in, resp)
 		}
 
-		block, err := ops.blockFactory.decodeBlock(resp.GetBlock())
-		if err != nil {
-			return xerrors.Errorf("couldn't decode block: %v", err)
-		}
-
-		err = ops.insertBlock(block)
+		err = ops.commitBlock(resp.block)
 		if err != nil {
 			return xerrors.Errorf("couldn't store block: %v", err)
 		}
 
-		if block.GetIndex() >= index-1 {
+		if resp.block.GetIndex() >= index-1 {
 			return nil
 		}
 	}

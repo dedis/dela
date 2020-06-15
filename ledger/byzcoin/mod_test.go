@@ -7,15 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/consensus/viewchange"
-	roster "go.dedis.ch/dela/consensus/viewchange/roster"
+	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
-	"go.dedis.ch/dela/encoding"
-	internal "go.dedis.ch/dela/internal/testing"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger"
 	"go.dedis.ch/dela/ledger/arc/darc"
@@ -27,17 +24,6 @@ import (
 	"go.dedis.ch/dela/mino/minoch"
 	"golang.org/x/xerrors"
 )
-
-func TestMessages(t *testing.T) {
-	messages := []proto.Message{
-		&BlockPayload{},
-		&GenesisPayload{},
-	}
-
-	for _, m := range messages {
-		internal.CoverProtoMessage(t, m)
-	}
-}
 
 // This test checks the basic behaviour of a Byzcoin ledger. The module should
 // do the following steps without errors:
@@ -90,14 +76,14 @@ func TestLedger_Basic(t *testing.T) {
 		sendTx(t, ledgers[19], actors[10], tx)
 	}
 
-	latest, err := ledgers[0].(*Ledger).bc.GetVerifiableBlock()
-	require.NoError(t, err)
+	// latest, err := ledgers[0].(*Ledger).bc.GetVerifiableBlock()
+	// require.NoError(t, err)
 
-	latestpb, err := latest.Pack(encoding.NewProtoEncoder())
-	require.NoError(t, err)
+	// latestpb, err := latest.Pack(encoding.NewProtoEncoder())
+	// require.NoError(t, err)
 
-	_, err = ledgers[0].(*Ledger).bc.GetBlockFactory().FromVerifiable(latestpb)
-	require.NoError(t, err)
+	// _, err = ledgers[0].(*Ledger).bc.GetBlockFactory().FromVerifiable(latestpb)
+	// require.NoError(t, err)
 }
 
 func TestLedger_Listen(t *testing.T) {
@@ -169,10 +155,14 @@ func TestLedger_GossipTxs(t *testing.T) {
 }
 
 func TestActor_Setup(t *testing.T) {
+	f := MessageFactory{
+		rosterFactory: fake.MessageFactory{},
+		txFactory:     fake.MessageFactory{},
+	}
+
 	actor := actorLedger{
 		Ledger: &Ledger{
-			encoder:    encoding.NewProtoEncoder(),
-			proc:       newTxProcessor(nil, fakeInventory{}),
+			proc:       newTxProcessor(f, fakeInventory{}),
 			viewchange: fakeViewChange{},
 		},
 		bcActor: fakeActor{},
@@ -184,17 +174,12 @@ func TestActor_Setup(t *testing.T) {
 	err = actor.Setup(mino.NewAddresses())
 	require.EqualError(t, err, "players must implement 'crypto.CollectiveAuthority'")
 
-	actor.encoder = fake.BadPackEncoder{}
-	err = actor.Setup(fake.NewAuthority(3, fake.NewSigner))
-	require.EqualError(t, err, "couldn't pack roster: fake error")
-
-	actor.encoder = encoding.NewProtoEncoder()
-	actor.proc = newTxProcessor(nil, fakeInventory{err: xerrors.New("oops")})
+	actor.proc = newTxProcessor(f, fakeInventory{err: xerrors.New("oops")})
 	err = actor.Setup(fake.NewAuthority(3, fake.NewSigner))
 	require.EqualError(t, err,
 		"couldn't store genesis payload: couldn't stage page: oops")
 
-	actor.proc = newTxProcessor(nil, fakeInventory{})
+	actor.proc = newTxProcessor(f, fakeInventory{})
 	actor.bcActor = fakeActor{err: xerrors.New("oops")}
 	err = actor.Setup(fake.NewAuthority(3, fake.NewSigner))
 	require.EqualError(t, err, "couldn't initialize the chain: oops")
@@ -316,7 +301,7 @@ type fakeBlockchain struct {
 	errBlock  error
 }
 
-func (bc fakeBlockchain) Listen(blockchain.PayloadProcessor) (blockchain.Actor, error) {
+func (bc fakeBlockchain) Listen(blockchain.Reactor) (blockchain.Actor, error) {
 	return nil, bc.errListen
 }
 
@@ -370,6 +355,6 @@ type fakeActor struct {
 	err error
 }
 
-func (a fakeActor) InitChain(proto.Message, mino.Players) error {
+func (a fakeActor) Setup(blockchain.Payload, mino.Players) error {
 	return a.err
 }

@@ -16,6 +16,7 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions/basic"
+	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
@@ -28,17 +29,6 @@ func TestMessages(t *testing.T) {
 	for _, m := range messages {
 		internal.CoverProtoMessage(t, m)
 	}
-}
-
-func TestTask_Pack(t *testing.T) {
-	task := NewTask(fake.NewAuthority(3, fake.NewSigner))
-
-	pb, err := task.Pack(encoding.NewProtoEncoder())
-	require.NoError(t, err)
-	require.IsType(t, (*Task)(nil), pb)
-
-	_, err = task.Pack(fake.BadPackAnyEncoder{})
-	require.EqualError(t, err, "couldn't pack authority: fake error")
 }
 
 func TestTask_VisitJSON(t *testing.T) {
@@ -58,11 +48,11 @@ func TestTask_Fingerprint(t *testing.T) {
 	task := NewTask(fake.NewAuthority(1, fake.NewSigner)).(clientTask)
 
 	out := new(bytes.Buffer)
-	err := task.Fingerprint(out, nil)
+	err := task.Fingerprint(out)
 	require.NoError(t, err)
 
 	task.authority = badAuthority{}
-	err = task.Fingerprint(out, nil)
+	err = task.Fingerprint(out)
 	require.EqualError(t, err, "couldn't fingerprint authority: oops")
 }
 
@@ -74,16 +64,11 @@ func TestTask_Consume(t *testing.T) {
 		encoder: encoding.NewProtoEncoder(),
 	}
 
-	page := fakePage{values: make(map[string]proto.Message)}
+	page := fakePage{values: make(map[string]serde.Message)}
 
 	err := task.Consume(nil, page)
 	require.NoError(t, err)
 
-	task.encoder = fake.BadPackEncoder{}
-	err = task.Consume(nil, page)
-	require.EqualError(t, err, "couldn't encode roster: fake error")
-
-	task.encoder = encoding.NewProtoEncoder()
 	page.errWrite = xerrors.New("oops")
 	err = task.Consume(nil, page)
 	require.EqualError(t, err, "couldn't write roster: oops")
@@ -96,7 +81,9 @@ func TestTaskManager_GetChangeSetFactory(t *testing.T) {
 
 func TestTaskManager_GetAuthority(t *testing.T) {
 	manager := TaskManager{
-		inventory:     fakeInventory{},
+		inventory: fakeInventory{
+			value: roster.New(fake.NewAuthority(3, fake.NewSigner)),
+		},
 		rosterFactory: fakeRosterFactory{},
 	}
 
@@ -111,17 +98,14 @@ func TestTaskManager_GetAuthority(t *testing.T) {
 	manager.inventory = fakeInventory{errPage: xerrors.New("oops")}
 	_, err = manager.GetAuthority(1)
 	require.EqualError(t, err, "couldn't read entry: oops")
-
-	manager.inventory = fakeInventory{}
-	manager.rosterFactory = fakeRosterFactory{err: xerrors.New("oops")}
-	_, err = manager.GetAuthority(1)
-	require.EqualError(t, err, "couldn't decode roster: oops")
 }
 
 func TestTaskManager_Wait(t *testing.T) {
 	manager := TaskManager{
-		me:            fake.NewAddress(0),
-		inventory:     fakeInventory{},
+		me: fake.NewAddress(0),
+		inventory: fakeInventory{
+			value: roster.New(fake.NewAuthority(3, fake.NewSigner)),
+		},
 		rosterFactory: fakeRosterFactory{},
 	}
 
@@ -139,7 +123,9 @@ func TestTaskManager_Wait(t *testing.T) {
 
 func TestTaskManager_Verify(t *testing.T) {
 	manager := TaskManager{
-		inventory:     fakeInventory{},
+		inventory: fakeInventory{
+			value: roster.New(fake.NewAuthority(3, fake.NewSigner)),
+		},
 		rosterFactory: fakeRosterFactory{},
 	}
 
@@ -203,7 +189,7 @@ func TestRegister(t *testing.T) {
 
 type fakePage struct {
 	inventory.WritablePage
-	values   map[string]proto.Message
+	values   map[string]serde.Message
 	errRead  error
 	errWrite error
 	counter  *fake.Counter
@@ -213,7 +199,7 @@ func (p fakePage) GetIndex() uint64 {
 	return 5
 }
 
-func (p fakePage) Read(key []byte) (proto.Message, error) {
+func (p fakePage) Read(key []byte) (serde.Message, error) {
 	if p.errRead != nil {
 		defer p.counter.Decrease()
 		if p.counter.Done() {
@@ -224,7 +210,7 @@ func (p fakePage) Read(key []byte) (proto.Message, error) {
 	return p.values[string(key)], nil
 }
 
-func (p fakePage) Write(key []byte, value proto.Message) error {
+func (p fakePage) Write(key []byte, value serde.Message) error {
 	if p.errWrite != nil {
 		defer p.counter.Decrease()
 		if p.counter.Done() {
@@ -242,7 +228,7 @@ func (p fakePage) Defer(fn func([]byte)) {
 
 type fakeInventory struct {
 	inventory.Inventory
-	value   proto.Message
+	value   serde.Message
 	err     error
 	errPage error
 }
@@ -252,7 +238,7 @@ func (i fakeInventory) Len() uint64 {
 }
 
 func (i fakeInventory) GetPage(uint64) (inventory.Page, error) {
-	values := map[string]proto.Message{
+	values := map[string]serde.Message{
 		RosterValueKey: i.value,
 	}
 	return fakePage{values: values, errRead: i.errPage}, i.err

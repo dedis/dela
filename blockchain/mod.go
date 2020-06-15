@@ -3,14 +3,19 @@ package blockchain
 import (
 	"context"
 
-	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/dela/encoding"
-	mino "go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
 )
+
+// Payload is the interface to implement to store data in a block.
+type Payload interface {
+	serde.Message
+	serde.Fingerprinter
+}
 
 // Block is the interface of the unit of storage in the blockchain
 type Block interface {
-	encoding.Packable
+	serde.Message
 
 	// GetIndex returns the index since the genesis block.
 	GetIndex() uint64
@@ -19,7 +24,7 @@ type Block interface {
 	GetHash() []byte
 
 	// GetPayload returns the payload of the block.
-	GetPayload() proto.Message
+	GetPayload() Payload
 }
 
 // VerifiableBlock is an extension of a block so that its integrity can be
@@ -28,44 +33,32 @@ type VerifiableBlock interface {
 	Block
 }
 
-// BlockFactory provides primitives to create blocks from a untrusted source.
-type BlockFactory interface {
-	FromVerifiable(src proto.Message) (Block, error)
-}
+// Reactor is the interface to implement to react to blockchain events.
+type Reactor interface {
+	serde.Factory
 
-// PayloadProcessor is the interface to implement to validate the generic
-// payload stored in the block.
-type PayloadProcessor interface {
-	// Validate should return nil if the payload of the block passes the
-	// validation.
-	Validate(payload proto.Message) error
+	InvokeValidate(data serde.Message) (Payload, error)
 
-	// Commit should process the data and perform any operation required when
-	// new data is stored on the chain.
-	Commit(payload proto.Message) error
+	InvokeCommit(payload Payload) error
 }
 
 // Actor is a primitive created by the blockchain to propose new blocks.
 type Actor interface {
-	// InitChain initializes a new chain by creating the genesis block with the
-	// given data stored as the payload and the given players to be the roster
-	// of the genesis block.
-	InitChain(data proto.Message, players mino.Players) error
+	// Setup initializes a new chain by creating the genesis block with the
+	// given payload and players to be the roster of the genesis block.
+	Setup(data Payload, players mino.Players) error
 
 	// Store stores any representation of a data structure into a new block.
 	// The implementation is responsible for any validations required.
-	Store(data proto.Message, players mino.Players) error
+	Store(data serde.Message, players mino.Players) error
 }
 
 // Blockchain is the interface that provides the primitives to interact with the
 // blockchain.
 type Blockchain interface {
-	// GetBlockFactory returns the block factory.
-	GetBlockFactory() BlockFactory
-
 	// Listen starts to listen for messages and returns the actor that the
 	// client can use to propose new blocks.
-	Listen(validator PayloadProcessor) (Actor, error)
+	Listen(Reactor) (Actor, error)
 
 	// GetBlock returns the latest block.
 	GetBlock() (Block, error)

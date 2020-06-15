@@ -4,78 +4,67 @@ import (
 	"context"
 	"testing"
 
-	proto "github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/empty"
-	"github.com/golang/protobuf/ptypes/wrappers"
+	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
 func TestHandler_Process(t *testing.T) {
-	proc := &fakePayloadProc{}
+	reactor := &fakeReactor{}
 	watcher := &fakeWatcher{}
 	h := newHandler(&operations{
-		processor: proc,
-		blockFactory: blockFactory{
-			encoder:     encoding.NewProtoEncoder(),
-			hashFactory: crypto.NewSha256Factory(),
-		},
-		db:      &fakeDatabase{},
-		watcher: watcher,
+		blockFactory: NewBlockFactory(fake.MessageFactory{}),
+		db:           &fakeDatabase{},
+		watcher:      watcher,
+		reactor:      reactor,
 	})
 
 	genesis := SkipBlock{
 		Index:   0,
-		Payload: &wrappers.BoolValue{Value: true},
+		Payload: fake.Message{},
 	}
 
-	packed, err := genesis.Pack(encoding.NewProtoEncoder())
-	require.NoError(t, err)
-
 	req := mino.Request{
-		Message: &PropagateGenesis{Genesis: packed.(*BlockProto)},
+		Message: tmp.ProtoOf(PropagateGenesis{genesis: genesis}),
 	}
 	resp, err := h.Process(req)
 	require.NoError(t, err)
 	require.Nil(t, resp)
-	require.Len(t, proc.calls, 2)
-	require.True(t, proto.Equal(genesis.Payload, proc.calls[0][0].(proto.Message)))
-	require.True(t, proto.Equal(genesis.Payload, proc.calls[1][0].(proto.Message)))
+	require.Len(t, reactor.calls, 1)
+	require.Equal(t, genesis.Payload, reactor.calls[0][0])
 	require.Equal(t, 1, watcher.notified)
 
-	req.Message = &empty.Empty{}
+	h.propagateFactory = fake.MessageFactory{}
+	req.Message = tmp.ProtoOf(fake.Message{})
 	_, err = h.Process(req)
-	require.EqualError(t, err, "unknown message type '*empty.Empty'")
+	require.EqualError(t, err, "unknown message type 'fake.Message'")
 
-	req.Message = &PropagateGenesis{}
+	h.propagateFactory = propagateFactory{blockFactory: NewBlockFactory(fake.MessageFactory{})}
+	reactor.errCommit = xerrors.New("oops")
+	req.Message = tmp.ProtoOf(PropagateGenesis{genesis: genesis})
 	_, err = h.Process(req)
 	require.EqualError(t, err,
-		"couldn't decode block: couldn't unmarshal payload: message is nil")
-
-	proc.errValidate = xerrors.New("oops")
-	req.Message = &PropagateGenesis{Genesis: packed.(*BlockProto)}
-	_, err = h.Process(req)
-	require.EqualError(t, err,
-		"couldn't store genesis: couldn't validate block: oops")
+		"couldn't store genesis: tx failed: couldn't commit block: oops")
 }
 
 func TestHandler_Stream(t *testing.T) {
 	db := &fakeDatabase{blocks: []SkipBlock{
-		{Payload: &empty.Empty{}},
-		{hash: Digest{0x01}, Index: 1, Payload: &empty.Empty{}}},
+		{Payload: fake.Message{}},
+		{hash: Digest{0x01}, Index: 1, Payload: fake.Message{}}},
 	}
 	h := handler{
 		operations: &operations{
 			encoder: encoding.NewProtoEncoder(),
 			db:      db,
 		},
+		requestFactory: requestFactory{},
 	}
 
-	rcvr := fakeReceiver{msg: &BlockRequest{To: 1}}
+	rcvr := fakeReceiver{msg: tmp.ProtoOf(BlockRequest{to: 1})}
 	call := &fake.Call{}
 	sender := fakeSender{call: call}
 
@@ -86,20 +75,17 @@ func TestHandler_Stream(t *testing.T) {
 	err = h.Stream(sender, fakeReceiver{err: xerrors.New("oops")})
 	require.EqualError(t, err, "couldn't receive message: oops")
 
-	err = h.Stream(sender, fakeReceiver{msg: nil})
+	h.requestFactory = fake.MessageFactory{}
+	err = h.Stream(sender, fakeReceiver{msg: tmp.ProtoOf(fake.Message{})})
 	require.EqualError(t, err,
-		"invalid message type '<nil>' != '*skipchain.BlockRequest'")
+		"invalid message type 'fake.Message' != 'skipchain.BlockRequest'")
 
+	h.requestFactory = requestFactory{}
 	db.err = xerrors.New("oops")
 	err = h.Stream(sender, rcvr)
 	require.EqualError(t, err, "couldn't read block at index 0: oops")
 
 	db.err = nil
-	h.encoder = fake.BadPackEncoder{}
-	err = h.Stream(sender, rcvr)
-	require.EqualError(t, err, "couldn't pack block: fake error")
-
-	h.encoder = encoding.NewProtoEncoder()
 	err = h.Stream(fakeSender{err: xerrors.New("oops")}, rcvr)
 	require.EqualError(t, err, "couldn't send block: oops")
 }

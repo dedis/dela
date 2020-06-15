@@ -834,6 +834,14 @@ func MakeCertificate(t *testing.T, n int) *tls.Certificate {
 // Message is a fake implementation if a serde message.
 type Message struct {
 	serde.UnimplementedMessage
+
+	Digest []byte
+}
+
+// Fingerprint implements serde.Fingerprinter.
+func (m Message) Fingerprint(w io.Writer) error {
+	w.Write(m.Digest)
+	return nil
 }
 
 // VisitJSON implements serde.Message.

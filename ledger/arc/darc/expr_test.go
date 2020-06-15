@@ -61,11 +61,11 @@ func TestExpression_Fingerprint(t *testing.T) {
 
 	buffer := new(bytes.Buffer)
 
-	err := expr.Fingerprint(buffer, nil)
+	err := expr.Fingerprint(buffer)
 	require.NoError(t, err)
 	require.Equal(t, "\x01\x03", buffer.String())
 
-	err = expr.Fingerprint(fake.NewBadHash(), nil)
+	err = expr.Fingerprint(fake.NewBadHash())
 	require.EqualError(t, err, "couldn't write match: fake error")
 }
 

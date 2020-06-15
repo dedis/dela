@@ -5,7 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/blockchain/skipchain"
@@ -14,7 +13,6 @@ import (
 	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/cosi/flatcosi"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/ledger"
 	"go.dedis.ch/dela/ledger/arc/darc"
 	"go.dedis.ch/dela/ledger/byzcoin/memship"
@@ -23,10 +21,9 @@ import (
 	"go.dedis.ch/dela/ledger/transactions/basic"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/gossip"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
-
-//go:generate protoc -I ./ -I ../../. --go_out=Mconsensus/viewchange/roster/messages.proto=go.dedis.ch/dela/consensus/viewchange/roster:. ./messages.proto
 
 const (
 	initialRoundTime = 50 * time.Millisecond
@@ -51,8 +48,7 @@ type Ledger struct {
 	bag        *txBag
 	proc       *txProcessor
 	viewchange viewchange.ViewChange
-	encoder    encoding.ProtoMarshaler
-	txFactory  transactions.TransactionFactory
+	txFactory  serde.Factory
 	closing    chan struct{}
 	closed     sync.WaitGroup
 	initiated  chan error
@@ -69,15 +65,19 @@ func NewLedger(m mino.Mino, signer crypto.AggregateSigner) *Ledger {
 
 	consensus := cosipbft.NewCoSiPBFT(m, flatcosi.NewFlat(m, signer), vc)
 
+	msgFactory := MessageFactory{
+		txFactory:     txFactory,
+		rosterFactory: roster.NewRosterFactory(m.GetAddressFactory(), signer.GetPublicKeyFactory()),
+	}
+
 	return &Ledger{
 		addr:       m.GetAddress(),
 		signer:     signer,
 		bc:         skipchain.NewSkipchain(m, consensus),
 		gossiper:   gossip.NewFlat(m, txFactory),
 		bag:        newTxBag(),
-		proc:       newTxProcessor(txFactory, inventory),
+		proc:       newTxProcessor(msgFactory, inventory),
 		viewchange: vc,
-		encoder:    encoding.NewProtoEncoder(),
 		txFactory:  txFactory,
 		closing:    make(chan struct{}),
 		initiated:  make(chan error, 1),
@@ -149,7 +149,7 @@ func (ldgr *Ledger) gossipTxs() {
 		case rumor := <-ldgr.gossiper.Rumors():
 			tx, ok := rumor.(transactions.ClientTransaction)
 			if ok {
-				ldgr.bag.Add(tx)
+				ldgr.bag.Add(tx.(transactions.ServerTransaction))
 			}
 		}
 	}
@@ -183,21 +183,15 @@ func (ldgr *Ledger) proposeBlocks(actor blockchain.Actor, ga gossip.Actor, playe
 
 			roundTimeout = time.After(timeoutRoundTime)
 		case block := <-blocks:
-			payload, ok := block.GetPayload().(*BlockPayload)
+			payload, ok := block.GetPayload().(BlockPayload)
 			if !ok {
 				dela.Logger.Warn().Msgf("found invalid payload type '%T' != '%T'",
 					block.GetPayload(), payload)
 				break
 			}
 
-			txRes := make([]TransactionResult, len(payload.GetTransactions()))
-			for i, txProto := range payload.GetTransactions() {
-				tx, err := ldgr.txFactory.FromProto(txProto)
-				if err != nil {
-					dela.Logger.Warn().Err(err).Msg("couldn't decode transaction")
-					return
-				}
-
+			txRes := make([]TransactionResult, len(payload.transactions))
+			for i, tx := range payload.transactions {
 				txRes[i] = TransactionResult{
 					txID:     tx.GetID(),
 					Accepted: true,
@@ -228,50 +222,19 @@ func (ldgr *Ledger) proposeBlocks(actor blockchain.Actor, ga gossip.Actor, playe
 }
 
 func (ldgr *Ledger) proposeBlock(actor blockchain.Actor, players mino.Players) error {
-	payload, err := ldgr.stagePayload(ldgr.bag.GetAll())
-	if err != nil {
-		return xerrors.Errorf("couldn't make the payload: %v", err)
+	blueprint := Blueprint{
+		transactions: ldgr.bag.GetAll(),
 	}
 
 	// Each instance proposes a payload based on the received
 	// transactions but it depends on the blockchain implementation
 	// if it will be accepted.
-	err = actor.Store(payload, players)
+	err := actor.Store(blueprint, players)
 	if err != nil {
 		return xerrors.Errorf("couldn't send the payload: %v", err)
 	}
 
 	return nil
-}
-
-// stagePayload creates a payload with the list of transactions by staging a new
-// snapshot to the inventory.
-func (ldgr *Ledger) stagePayload(txs []transactions.ClientTransaction) (*BlockPayload, error) {
-	dela.Logger.Trace().
-		Str("addr", ldgr.addr.String()).
-		Msgf("staging payload with %d transactions", len(txs))
-
-	payload := &BlockPayload{
-		Transactions: make([]*any.Any, len(txs)),
-	}
-
-	for i, tx := range txs {
-		txpb, err := ldgr.encoder.PackAny(tx)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't pack tx: %v", err)
-		}
-
-		payload.Transactions[i] = txpb
-	}
-
-	page, err := ldgr.proc.process(payload)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't process the txs: %v", err)
-	}
-
-	payload.Fingerprint = page.GetFingerprint()
-
-	return payload, nil
 }
 
 // Watch implements ledger.Ledger. It listens for new transactions and returns
@@ -289,15 +252,9 @@ func (ldgr *Ledger) Watch(ctx context.Context) <-chan ledger.TransactionResult {
 				return
 			}
 
-			payload, ok := block.GetPayload().(*BlockPayload)
+			payload, ok := block.GetPayload().(BlockPayload)
 			if ok {
-				for _, txProto := range payload.GetTransactions() {
-					tx, err := ldgr.txFactory.FromProto(txProto)
-					if err != nil {
-						dela.Logger.Warn().Err(err).Msg("couldn't decode transaction")
-						return
-					}
-
+				for _, tx := range payload.transactions {
 					results <- TransactionResult{
 						txID:     tx.GetID(),
 						Accepted: true,
@@ -334,21 +291,16 @@ func (a actorLedger) Setup(players mino.Players) error {
 		return xerrors.Errorf("players must implement 'crypto.CollectiveAuthority'")
 	}
 
-	rosterpb, err := a.encoder.Pack(roster.New(authority))
-	if err != nil {
-		return xerrors.Errorf("couldn't pack roster: %v", err)
-	}
-
-	payload := &GenesisPayload{Roster: rosterpb.(*roster.Roster)}
+	payload := GenesisPayload{roster: roster.New(authority)}
 
 	page, err := a.proc.setup(payload)
 	if err != nil {
 		return xerrors.Errorf("couldn't store genesis payload: %v", err)
 	}
 
-	payload.Fingerprint = page.GetFingerprint()
+	payload.root = page.GetFingerprint()
 
-	err = a.bcActor.InitChain(payload, authority)
+	err = a.bcActor.Setup(payload, authority)
 	if err != nil {
 		return xerrors.Errorf("couldn't initialize the chain: %v", err)
 	}

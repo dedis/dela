@@ -4,124 +4,68 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
-	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/ledger/inventory"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
-
-func TestSpawnTask_Pack(t *testing.T) {
-	task := SpawnTask{
-		ContractID: "deadbeef",
-		Argument:   &empty.Empty{},
-	}
-
-	pb, err := task.Pack(encoding.NewProtoEncoder())
-	require.NoError(t, err)
-	require.IsType(t, (*SpawnTaskProto)(nil), pb)
-
-	taskpb := pb.(*SpawnTaskProto)
-	require.Equal(t, task.ContractID, taskpb.GetContractID())
-	require.True(t, ptypes.Is(taskpb.GetArgument(), task.Argument))
-
-	_, err = task.Pack(fake.BadMarshalAnyEncoder{})
-	require.EqualError(t, err, "couldn't pack argument: fake error")
-}
 
 func TestSpawnTask_Fingerprint(t *testing.T) {
 	task := SpawnTask{
 		ContractID: "deadbeef",
-		Argument:   &empty.Empty{},
+		Argument:   map[string]string{"A": "B"},
 	}
 
 	buffer := new(bytes.Buffer)
-	encoder := encoding.NewProtoEncoder()
 
-	err := task.Fingerprint(buffer, encoder)
+	err := task.Fingerprint(buffer)
 	require.NoError(t, err)
-	require.Equal(t, "deadbeef{}", buffer.String())
+	require.Equal(t, "deadbeefA:B", buffer.String())
 
-	err = task.Fingerprint(fake.NewBadHash(), encoder)
+	err = task.Fingerprint(fake.NewBadHash())
 	require.EqualError(t, err, "couldn't write contract: fake error")
 
-	err = task.Fingerprint(buffer, fake.BadMarshalStableEncoder{})
+	err = task.Fingerprint(fake.NewBadHashWithDelay(1))
 	require.EqualError(t, err, "couldn't write argument: fake error")
 }
 
-func TestInvokeTask_Pack(t *testing.T) {
+func TestInvokeTask_Fingerprint(t *testing.T) {
 	task := InvokeTask{
 		Key:      []byte{0x01},
-		Argument: &empty.Empty{},
-	}
-
-	pb, err := task.Pack(encoding.NewProtoEncoder())
-	require.NoError(t, err)
-	require.IsType(t, (*InvokeTaskProto)(nil), pb)
-
-	taskpb := pb.(*InvokeTaskProto)
-	require.Equal(t, task.Key, taskpb.GetKey())
-	require.True(t, ptypes.Is(taskpb.GetArgument(), task.Argument))
-
-	_, err = task.Pack(fake.BadMarshalAnyEncoder{})
-	require.EqualError(t, err, "couldn't pack argument: fake error")
-}
-
-func TestInvokeTask_WriteTo(t *testing.T) {
-	task := InvokeTask{
-		Key:      []byte{0x01},
-		Argument: &empty.Empty{},
+		Argument: map[string]string{"A": "B"},
 	}
 
 	buffer := new(bytes.Buffer)
-	encoder := encoding.NewProtoEncoder()
 
-	err := task.Fingerprint(buffer, encoder)
+	err := task.Fingerprint(buffer)
 	require.NoError(t, err)
-	require.Equal(t, "\x01{}", buffer.String())
+	require.Equal(t, "\x01A:B", buffer.String())
 
-	err = task.Fingerprint(fake.NewBadHash(), encoder)
+	err = task.Fingerprint(fake.NewBadHash())
 	require.EqualError(t, err, "couldn't write key: fake error")
 
-	err = task.Fingerprint(buffer, fake.BadMarshalStableEncoder{})
+	err = task.Fingerprint(fake.NewBadHashWithDelay(1))
 	require.EqualError(t, err, "couldn't write argument: fake error")
 }
 
-func TestDeleteTask_Pack(t *testing.T) {
-	task := DeleteTask{
-		Key: []byte{0x01},
-	}
-
-	pb, err := task.Pack(encoding.NewProtoEncoder())
-	require.NoError(t, err)
-	require.IsType(t, (*DeleteTaskProto)(nil), pb)
-
-	taskpb := pb.(*DeleteTaskProto)
-	require.Equal(t, task.Key, taskpb.GetKey())
-}
-
-func TestDeleteTask_WriteTo(t *testing.T) {
+func TestDeleteTask_Fingerprint(t *testing.T) {
 	task := DeleteTask{
 		Key: []byte{0x01},
 	}
 
 	buffer := new(bytes.Buffer)
-	encoder := encoding.NewProtoEncoder()
 
-	err := task.Fingerprint(buffer, encoder)
+	err := task.Fingerprint(buffer)
 	require.NoError(t, err)
 	require.Equal(t, "\x01", buffer.String())
 
-	err = task.Fingerprint(fake.NewBadHash(), encoder)
+	err = task.Fingerprint(fake.NewBadHash())
 	require.EqualError(t, err, "couldn't write key: fake error")
 }
 
 func TestServerTask_Consume(t *testing.T) {
-	factory := &fakeAccessFactory{access: &fakeAccess{match: true}}
 	contracts := map[string]Contract{
 		"fake": fakeContract{},
 		"bad":  fakeContract{err: xerrors.New("oops")},
@@ -130,16 +74,14 @@ func TestServerTask_Consume(t *testing.T) {
 	task := serverTask{
 		ClientTask: SpawnTask{ContractID: "fake"},
 		contracts:  contracts,
-		arcFactory: factory,
-		encoder:    encoding.NewProtoEncoder(),
 	}
 
 	page := fakePage{
-		store: map[string]proto.Message{
+		store: map[string]serde.Message{
 			"a":   makeInstance(t),
 			"y":   &Instance{ContractID: "bad", AccessControl: []byte("arc")},
 			"z":   &Instance{ContractID: "unknown", AccessControl: []byte("arc")},
-			"arc": &empty.Empty{},
+			"arc": &fakeAccess{match: true},
 		},
 	}
 
@@ -158,27 +100,11 @@ func TestServerTask_Consume(t *testing.T) {
 	err = task.Consume(fakeContext{}, page)
 	require.EqualError(t, err, "couldn't execute spawn: oops")
 
-	task.ClientTask = SpawnTask{ContractID: "fake"}
-	factory.err = xerrors.New("oops")
-	err = task.Consume(fakeContext{}, page)
-	require.EqualError(t, err,
-		"no access: couldn't read access: couldn't decode access: oops")
-
-	factory.err = nil
-	task.encoder = fake.BadMarshalAnyEncoder{}
-	err = task.Consume(fakeContext{}, page)
-	require.EqualError(t, err, "couldn't pack value: fake error")
-
 	// 2. Consume an invoke task.
-	task.encoder = encoding.NewProtoEncoder()
 	task.ClientTask = InvokeTask{Key: []byte("b")}
 
-	factory.access.calls = make([][]interface{}, 0)
 	err = task.Consume(fakeContext{}, page)
 	require.NoError(t, err)
-	require.Len(t, factory.access.calls, 1)
-	require.Equal(t, []arc.Identity{fake.PublicKey{}}, factory.access.calls[0][0])
-	require.Equal(t, arc.Compile("fake", "invoke"), factory.access.calls[0][1])
 
 	task.ClientTask = InvokeTask{Key: []byte("c")}
 	err = task.Consume(fakeContext{}, page)
@@ -190,26 +116,15 @@ func TestServerTask_Consume(t *testing.T) {
 	require.EqualError(t, err, "contract 'unknown' not found")
 
 	task.ClientTask = InvokeTask{Key: []byte("b")}
-	factory.err = xerrors.New("oops")
-	err = task.Consume(fakeContext{}, page)
-	require.EqualError(t, err,
-		"no access: couldn't read access: couldn't decode access: oops")
-
-	factory.err = nil
-	factory.access.match = false
+	page.store["arc"] = &fakeAccess{match: false}
 	err = task.Consume(fakeContext{}, page)
 	require.EqualError(t, err,
 		"no access: fake.PublicKey is refused to 'fake:invoke' by fakeAccessControl: not authorized")
 
-	factory.access.match = true
+	page.store["arc"] = &fakeAccess{match: true}
 	task.ClientTask = InvokeTask{Key: []byte("y")}
 	err = task.Consume(fakeContext{}, page)
 	require.EqualError(t, err, "couldn't invoke: oops")
-
-	task.ClientTask = InvokeTask{Key: []byte("a")}
-	task.encoder = fake.BadMarshalAnyEncoder{}
-	err = task.Consume(fakeContext{}, page)
-	require.EqualError(t, err, "couldn't pack value: fake error")
 
 	// 3. Consume a delete task.
 	task.ClientTask = DeleteTask{Key: []byte("a")}
@@ -244,50 +159,15 @@ func TestTaskFactory_Register(t *testing.T) {
 	require.Len(t, factory.contracts, 2)
 }
 
-func TestTaskFactory_FromProto(t *testing.T) {
-	factory := NewTaskFactory()
-
-	spawnpb := &SpawnTaskProto{ContractID: "A"}
-	task, err := factory.FromProto(spawnpb)
-	require.NoError(t, err)
-	require.NotNil(t, task)
-
-	spawnAny, err := ptypes.MarshalAny(spawnpb)
-	require.NoError(t, err)
-	task, err = factory.FromProto(spawnAny)
-	require.NoError(t, err)
-	require.NotNil(t, task)
-
-	invokepb := &InvokeTaskProto{Key: []byte{0x01}}
-	task, err = factory.FromProto(invokepb)
-	require.NoError(t, err)
-	require.NotNil(t, task)
-
-	deletepb := &DeleteTaskProto{Key: []byte{0x01}}
-	task, err = factory.FromProto(deletepb)
-	require.NoError(t, err)
-	require.NotNil(t, task)
-
-	_, err = factory.FromProto(nil)
-	require.EqualError(t, err, "invalid message type '<nil>'")
-
-	factory.encoder = fake.BadUnmarshalDynEncoder{}
-	_, err = factory.FromProto(spawnAny)
-	require.EqualError(t, err, "couldn't unmarshal message: fake error")
-}
-
 // -----------------------------------------------------------------------------
 // Utility functions
 
 func makeInstance(t *testing.T) *Instance {
-	value, err := ptypes.MarshalAny(&empty.Empty{})
-	require.NoError(t, err)
-
 	return &Instance{
 		ContractID:    "fake",
 		AccessControl: []byte("arc"),
 		Deleted:       false,
-		Value:         value,
+		Value:         fake.Message{},
 	}
 }
 
@@ -296,28 +176,28 @@ type fakeContract struct {
 	err error
 }
 
-func (c fakeContract) Spawn(ctx SpawnContext) (proto.Message, []byte, error) {
+func (c fakeContract) Spawn(ctx SpawnContext) (serde.Message, []byte, error) {
 	ctx.Read([]byte{0xab})
-	return &empty.Empty{}, []byte("arc"), c.err
+	return fake.Message{}, []byte("arc"), c.err
 }
 
-func (c fakeContract) Invoke(ctx InvokeContext) (proto.Message, error) {
+func (c fakeContract) Invoke(ctx InvokeContext) (serde.Message, error) {
 	ctx.Read([]byte{0xab})
-	return &empty.Empty{}, c.err
+	return fake.Message{}, c.err
 }
 
 type fakePage struct {
 	inventory.WritablePage
-	store    map[string]proto.Message
+	store    map[string]serde.Message
 	errRead  error
 	errWrite error
 }
 
-func (page fakePage) Read(key []byte) (proto.Message, error) {
+func (page fakePage) Read(key []byte) (serde.Message, error) {
 	return page.store[string(key)], page.errRead
 }
 
-func (page fakePage) Write(key []byte, value proto.Message) error {
+func (page fakePage) Write(key []byte, value serde.Message) error {
 	page.store[string(key)] = value
 	return page.errWrite
 }
@@ -335,7 +215,8 @@ func (ctx fakeContext) GetIdentity() arc.Identity {
 }
 
 type fakeAccess struct {
-	arc.AccessControl
+	serde.UnimplementedMessage
+
 	match bool
 	calls [][]interface{}
 }
@@ -350,14 +231,4 @@ func (ac *fakeAccess) Match(rule string, idents ...arc.Identity) error {
 
 func (ac *fakeAccess) String() string {
 	return "fakeAccessControl"
-}
-
-type fakeAccessFactory struct {
-	arc.AccessControlFactory
-	access *fakeAccess
-	err    error
-}
-
-func (f *fakeAccessFactory) FromProto(proto.Message) (arc.AccessControl, error) {
-	return f.access, f.err
 }
