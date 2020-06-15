@@ -2,18 +2,14 @@ package cosipbft
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/binary"
 	"hash"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/any"
-	"go.dedis.ch/fabric/consensus"
-	"go.dedis.ch/fabric/consensus/viewchange"
-	"go.dedis.ch/fabric/cosi"
-	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela/consensus/cosipbft/json"
+	"go.dedis.ch/dela/consensus/viewchange"
+	"go.dedis.ch/dela/cosi"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -22,7 +18,11 @@ type Digest = []byte
 
 // forwardLink is the cryptographic primitive to ensure a block is a successor
 // of a previous one.
+//
+// - implements serde.Message
 type forwardLink struct {
+	serde.UnimplementedMessage
+
 	hash Digest
 	from Digest
 	to   Digest
@@ -56,30 +56,29 @@ func (fl forwardLink) Verify(v crypto.Verifier) error {
 	return nil
 }
 
-// Pack returns the protobuf message of the forward link.
-func (fl forwardLink) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
-	changeset, err := fl.packChangeSet(enc)
+// VisitJSON implements serde.Message. It serializes the forward link in JSON
+// format.
+func (fl forwardLink) VisitJSON(ser serde.Serializer) (interface{}, error) {
+	var changeset []byte
+	var err error
+	if fl.changeset != nil {
+		changeset, err = ser.Serialize(fl.changeset)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't serialize changeset: %v", err)
+		}
+	}
+
+	prepare, err := ser.Serialize(fl.prepare)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack changeset: %v", err)
+		return nil, xerrors.Errorf("couldn't serialize prepare signature: %v", err)
 	}
 
-	var prepare *any.Any
-	if fl.prepare != nil {
-		prepare, err = enc.PackAny(fl.prepare)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't pack prepare signature: %v", err)
-		}
+	commit, err := ser.Serialize(fl.commit)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't serialize commit signature: %v", err)
 	}
 
-	var commit *any.Any
-	if fl.commit != nil {
-		commit, err = enc.PackAny(fl.commit)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't pack commit signature: %v", err)
-		}
-	}
-
-	pb := &ForwardLinkProto{
+	m := json.ForwardLink{
 		From:      fl.from,
 		To:        fl.to,
 		Prepare:   prepare,
@@ -87,53 +86,10 @@ func (fl forwardLink) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 		ChangeSet: changeset,
 	}
 
-	return pb, nil
+	return m, nil
 }
 
-func (fl forwardLink) packChangeSet(enc encoding.ProtoMarshaler) (*ChangeSet, error) {
-	add, err := fl.packPlayers(fl.changeset.Add, enc)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack players: %v", err)
-	}
-
-	pb := &ChangeSet{
-		Leader: fl.changeset.Leader,
-		Remove: fl.changeset.Remove,
-		Add:    add,
-	}
-
-	return pb, nil
-}
-
-func (fl forwardLink) packPlayers(in []viewchange.Player,
-	enc encoding.ProtoMarshaler) ([]*Player, error) {
-
-	if len(in) == 0 {
-		// Save some bytes in the message with a nil array.
-		return nil, nil
-	}
-
-	players := make([]*Player, len(in))
-	for i, player := range in {
-		addr, err := player.Address.MarshalText()
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't marshal address: %v", err)
-		}
-
-		pubkey, err := enc.PackAny(player.PublicKey)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't pack public key: %v", err)
-		}
-
-		players[i] = &Player{
-			Address:   addr,
-			PublicKey: pubkey,
-		}
-	}
-	return players, nil
-}
-
-func (fl forwardLink) computeHash(h hash.Hash, enc encoding.ProtoMarshaler) ([]byte, error) {
+func (fl forwardLink) computeHash(h hash.Hash) ([]byte, error) {
 	_, err := h.Write(fl.from)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't write 'from': %v", err)
@@ -143,47 +99,23 @@ func (fl forwardLink) computeHash(h hash.Hash, enc encoding.ProtoMarshaler) ([]b
 		return nil, xerrors.Errorf("couldn't write 'to': %v", err)
 	}
 
-	for _, player := range fl.changeset.Add {
-		addr, err := player.Address.MarshalText()
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't marshal address: %v", err)
-		}
-
-		pubkey, err := player.PublicKey.MarshalBinary()
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't marshal public key: %v", err)
-		}
-
-		_, err = h.Write(append(addr, pubkey...))
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't write player: %v", err)
-		}
-	}
-
-	// This buffer will store all the encoded integers where each one is using 4
-	// bytes: leader index + removal indices.
-	buffer := make([]byte, 4+(4*len(fl.changeset.Remove)))
-	binary.LittleEndian.PutUint32(buffer, fl.changeset.Leader)
-
-	for i, index := range fl.changeset.Remove {
-		binary.LittleEndian.PutUint32(buffer[(i+1)*4:], index)
-	}
-
-	_, err = h.Write(buffer)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't write integers: %v", err)
-	}
-
 	return h.Sum(nil), nil
 }
 
+// ForwardLinkChain is a chain of forward links that can prove the correctness
+// of a proposal.
+//
+// - implements consensus.Chain
+// - implements serde.Message
 type forwardLinkChain struct {
+	serde.UnimplementedMessage
+
 	links []forwardLink
 }
 
 // GetLastHash implements consensus.Chain. It returns the last hash of the
 // chain.
-func (c forwardLinkChain) GetLastHash() []byte {
+func (c forwardLinkChain) GetTo() []byte {
 	if len(c.links) == 0 {
 		return nil
 	}
@@ -191,200 +123,97 @@ func (c forwardLinkChain) GetLastHash() []byte {
 	return c.links[len(c.links)-1].to
 }
 
-// Pack returs the protobuf message for the chain.
-func (c forwardLinkChain) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
-	pb := &ChainProto{
-		Links: make([]*ForwardLinkProto, len(c.links)),
-	}
-
+// VisitJSON implements serde.Message. It serializes the chain in JSON format.
+func (c forwardLinkChain) VisitJSON(ser serde.Serializer) (interface{}, error) {
+	links := make([]json.ForwardLink, len(c.links))
 	for i, link := range c.links {
-		packed, err := enc.Pack(link)
+		packed, err := link.VisitJSON(ser)
 		if err != nil {
-			return nil, xerrors.Errorf("couldn't pack forward link: %v", err)
+			return nil, xerrors.Errorf("couldn't serialize link: %v", err)
 		}
 
-		pb.Links[i] = packed.(*ForwardLinkProto)
+		links[i] = packed.(json.ForwardLink)
 	}
 
-	return pb, nil
-}
-
-type sha256Factory struct{}
-
-func (f sha256Factory) New() hash.Hash {
-	return sha256.New()
-}
-
-type unsecureChainFactory struct {
-	addrFactory      mino.AddressFactory
-	pubkeyFactory    crypto.PublicKeyFactory
-	signatureFactory crypto.SignatureFactory
-	verifierFactory  crypto.VerifierFactory
-	hashFactory      crypto.HashFactory
-	encoder          encoding.ProtoMarshaler
-}
-
-func newUnsecureChainFactory(cosi cosi.CollectiveSigning, m mino.Mino) *unsecureChainFactory {
-	return &unsecureChainFactory{
-		addrFactory:      m.GetAddressFactory(),
-		pubkeyFactory:    cosi.GetPublicKeyFactory(),
-		signatureFactory: cosi.GetSignatureFactory(),
-		verifierFactory:  cosi.GetVerifierFactory(),
-		hashFactory:      sha256Factory{},
-		encoder:          encoding.NewProtoEncoder(),
-	}
-}
-
-func (f *unsecureChainFactory) decodeForwardLink(pb proto.Message) (forwardLink, error) {
-	var fl forwardLink
-	var src *ForwardLinkProto
-	switch msg := pb.(type) {
-	case *any.Any:
-		src = &ForwardLinkProto{}
-
-		err := f.encoder.UnmarshalAny(msg, src)
-		if err != nil {
-			return fl, xerrors.Errorf("couldn't unmarshal forward link: %v", err)
-		}
-	case *ForwardLinkProto:
-		src = msg
-	default:
-		return fl, xerrors.Errorf("unknown message type: %T", msg)
-	}
-
-	changeset, err := f.decodeChangeSet(src.GetChangeSet())
-	if err != nil {
-		return fl, xerrors.Errorf("couldn't decode changeset: %v", err)
-	}
-
-	fl = forwardLink{
-		from:      src.GetFrom(),
-		to:        src.GetTo(),
-		changeset: changeset,
-	}
-
-	if src.GetPrepare() != nil {
-		sig, err := f.signatureFactory.FromProto(src.GetPrepare())
-		if err != nil {
-			return fl, xerrors.Errorf("couldn't decode prepare signature: %v", err)
-		}
-
-		fl.prepare = sig
-	}
-
-	if src.GetCommit() != nil {
-		sig, err := f.signatureFactory.FromProto(src.GetCommit())
-		if err != nil {
-			return fl, xerrors.Errorf("couldn't decode commit signature: %v", err)
-		}
-
-		fl.commit = sig
-	}
-
-	hash, err := fl.computeHash(f.hashFactory.New(), f.encoder)
-	if err != nil {
-		return fl, xerrors.Errorf("couldn't hash the forward link: %v", err)
-	}
-
-	fl.hash = hash
-
-	return fl, nil
-}
-
-func (f *unsecureChainFactory) decodeChangeSet(in *ChangeSet) (viewchange.ChangeSet, error) {
-	add, err := f.decodeAdd(in.GetAdd())
-	if err != nil {
-		return viewchange.ChangeSet{}, xerrors.Errorf("couldn't decode add: %v", err)
-	}
-
-	changeset := viewchange.ChangeSet{
-		Leader: in.GetLeader(),
-		Remove: in.GetRemove(),
-		Add:    add,
-	}
-
-	return changeset, nil
-}
-
-func (f *unsecureChainFactory) decodeAdd(in []*Player) ([]viewchange.Player, error) {
-	if len(in) == 0 {
-		return nil, nil
-	}
-
-	players := make([]viewchange.Player, len(in))
-	for i, player := range in {
-		addr := f.addrFactory.FromText(player.GetAddress())
-		pubkey, err := f.pubkeyFactory.FromProto(player.GetPublicKey())
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't decode public key: %v", err)
-		}
-
-		players[i] = viewchange.Player{
-			Address:   addr,
-			PublicKey: pubkey,
-		}
-	}
-	return players, nil
-}
-
-func (f *unsecureChainFactory) FromProto(pb proto.Message) (consensus.Chain, error) {
-	var msg *ChainProto
-	switch in := pb.(type) {
-	case *any.Any:
-		msg = &ChainProto{}
-
-		err := f.encoder.UnmarshalAny(in, msg)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
-		}
-	case *ChainProto:
-		msg = in
-	default:
-		return nil, xerrors.Errorf("message type not supported: %T", in)
-	}
-
-	links := make([]forwardLink, len(msg.GetLinks()))
-	for i, plink := range msg.GetLinks() {
-		link, err := f.decodeForwardLink(plink)
-		if err != nil {
-			return nil, err
-		}
-
-		links[i] = link
-	}
-
-	return forwardLinkChain{links: links}, nil
+	return json.Chain(links), nil
 }
 
 // chainFactory is an implementation of the chainFactory interface
 // for forward links.
+//
+// - implements serde.Factory
 type chainFactory struct {
-	*unsecureChainFactory
-	authority viewchange.EvolvableAuthority
+	serde.UnimplementedFactory
+
+	sigFactory      serde.Factory
+	csFactory       serde.Factory
+	hashFactory     crypto.HashFactory
+	viewchange      viewchange.ViewChange
+	verifierFactory crypto.VerifierFactory
 }
 
 // newChainFactory returns a new instance of a seal factory that will create
 // forward links for appropriate protobuf messages and return an error
 // otherwise.
-func newChainFactory(cosi cosi.CollectiveSigning, m mino.Mino,
-	authority viewchange.EvolvableAuthority) *chainFactory {
-
+func newChainFactory(cosi cosi.CollectiveSigning, m mino.Mino, vc viewchange.ViewChange) *chainFactory {
 	return &chainFactory{
-		unsecureChainFactory: newUnsecureChainFactory(cosi, m),
-		authority:            authority,
+		sigFactory:      cosi.GetSignatureFactory(),
+		csFactory:       vc.GetChangeSetFactory(),
+		hashFactory:     crypto.NewSha256Factory(),
+		viewchange:      vc,
+		verifierFactory: cosi.GetVerifierFactory(),
 	}
 }
 
-// FromProto returns a chain from a protobuf message.
-func (f *chainFactory) FromProto(pb proto.Message) (consensus.Chain, error) {
-	chain, err := f.unsecureChainFactory.FromProto(pb)
+// VisitJSON implements serde.Factory. It deserializes the chain in JSON format.
+// The integrity of the chain is verified from the genesis authority.
+func (f chainFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
+	m := json.Chain{}
+	err := in.Feed(&m)
 	if err != nil {
-		// No wrapping to avoid redundancy in the error message. It will point
-		// anyway to a meaningful line.
-		return nil, err
+		return nil, xerrors.Errorf("couldn't deserialize chain: %v", err)
 	}
 
-	err = f.verify(chain.(forwardLinkChain))
+	links := make([]forwardLink, len(m))
+	for i, link := range m {
+		var prepare crypto.Signature
+		err = in.GetSerializer().Deserialize(link.Prepare, f.sigFactory, &prepare)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't deserialize prepare: %v", err)
+		}
+
+		var commit crypto.Signature
+		err = in.GetSerializer().Deserialize(link.Commit, f.sigFactory, &commit)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't deserialize commit: %v", err)
+		}
+
+		var changeset viewchange.ChangeSet
+		err = in.GetSerializer().Deserialize(link.ChangeSet, f.csFactory, &changeset)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't deserialize change set: %v", err)
+		}
+
+		links[i] = forwardLink{
+			from:      link.From,
+			to:        link.To,
+			prepare:   prepare,
+			commit:    commit,
+			changeset: changeset,
+		}
+
+		h := f.hashFactory.New()
+		hash, err := links[i].computeHash(h)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't compute hash: %v", err)
+		}
+
+		links[i].hash = hash
+	}
+
+	chain := forwardLinkChain{links: links}
+
+	err = f.verify(chain)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't verify the chain: %v", err)
 	}
@@ -392,12 +221,16 @@ func (f *chainFactory) FromProto(pb proto.Message) (consensus.Chain, error) {
 	return chain, nil
 }
 
-func (f *chainFactory) verify(chain forwardLinkChain) error {
+func (f chainFactory) verify(chain forwardLinkChain) error {
 	if len(chain.links) == 0 {
-		return xerrors.New("chain is empty")
+		return nil
 	}
 
-	authority := f.authority
+	authority, err := f.viewchange.GetAuthority(0)
+	if err != nil {
+		// TODO: what to do if no genesis ? (newcomer)
+		return nil
+	}
 
 	lastIndex := len(chain.links) - 1
 	for i, link := range chain.links {

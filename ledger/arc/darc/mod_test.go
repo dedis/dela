@@ -8,10 +8,11 @@ import (
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/encoding"
-	internal "go.dedis.ch/fabric/internal/testing"
-	"go.dedis.ch/fabric/internal/testing/fake"
-	"go.dedis.ch/fabric/ledger/arc"
+	"go.dedis.ch/dela/encoding"
+	internal "go.dedis.ch/dela/internal/testing"
+	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/ledger/arc"
+	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
 
@@ -83,14 +84,14 @@ func TestAccess_Fingerprint(t *testing.T) {
 
 	buffer := new(bytes.Buffer)
 
-	err := access.Fingerprint(buffer, nil)
+	err := access.Fingerprint(buffer)
 	require.NoError(t, err)
 	require.Equal(t, "\x02\x04", buffer.String())
 
-	err = access.Fingerprint(fake.NewBadHash(), nil)
+	err = access.Fingerprint(fake.NewBadHash())
 	require.EqualError(t, err, "couldn't write key: fake error")
 
-	err = access.Fingerprint(fake.NewBadHashWithDelay(1), nil)
+	err = access.Fingerprint(fake.NewBadHashWithDelay(1))
 	require.EqualError(t, err,
 		"couldn't fingerprint rule '\x02': couldn't write match: fake error")
 }
@@ -112,6 +113,18 @@ func TestAccess_Pack(t *testing.T) {
 
 	_, err = access.Pack(fake.BadPackEncoder{})
 	require.EqualError(t, err, "couldn't pack expression: fake error")
+}
+
+func TestAccess_VisitJSON(t *testing.T) {
+	access := Access{rules: map[string]expression{
+		"A": {matches: map[string]struct{}{"C": {}}},
+		"B": {},
+	}}
+
+	ser := json.NewSerializer()
+	data, err := ser.Serialize(access)
+	require.NoError(t, err)
+	require.Equal(t, `{"Rules":{"A":["C"],"B":[]}}`, string(data))
 }
 
 func TestFactory_FromProto(t *testing.T) {
@@ -141,4 +154,22 @@ func TestFactory_FromProto(t *testing.T) {
 	factory.encoder = fake.BadUnmarshalAnyEncoder{}
 	_, err = factory.FromProto(pbAny)
 	require.EqualError(t, err, "couldn't unmarshal message: fake error")
+}
+
+func TestFactory_VisitJSON(t *testing.T) {
+	factory := NewFactory()
+
+	ser := json.NewSerializer()
+
+	var access Access
+	err := ser.Deserialize([]byte(`{"Rules":{"A":["B"],"C":[]}}`), factory, &access)
+	require.NoError(t, err)
+	expected := Access{rules: map[string]expression{
+		"A": {matches: map[string]struct{}{"B": {}}},
+		"C": {matches: map[string]struct{}{}},
+	}}
+	require.Equal(t, expected, access)
+
+	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
+	require.EqualError(t, err, "couldn't deserialize access: fake error")
 }

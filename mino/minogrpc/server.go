@@ -15,10 +15,12 @@ import (
 	"sync"
 	"time"
 
-	"go.dedis.ch/fabric"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/mino"
-	"go.dedis.ch/fabric/mino/minogrpc/routing"
+	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/minogrpc/certs"
+	"go.dedis.ch/dela/mino/minogrpc/routing"
+	"go.dedis.ch/dela/mino/minogrpc/tokens"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
@@ -43,6 +45,83 @@ type overlayServer struct {
 
 	handlers map[string]mino.Handler
 	closer   *sync.WaitGroup
+}
+
+func (o overlayServer) Join(ctx context.Context, req *JoinRequest) (*JoinResponse, error) {
+	// 1. Check validity of the token.
+	if !o.tokens.Verify(req.Token) {
+		return nil, xerrors.Errorf("token '%s' is invalid", req.Token)
+	}
+
+	// 2. Share certificates to current participants.
+	list := make(map[mino.Address][]byte)
+	o.certs.Range(func(addr mino.Address, cert *tls.Certificate) bool {
+		list[addr] = cert.Leaf.Raw
+		return true
+	})
+
+	peers := make([]*Certificate, 0, len(list))
+	res := make(chan error, 1)
+
+	for to, cert := range list {
+		text, err := to.MarshalText()
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't marshal address: %v", err)
+		}
+
+		msg := &Certificate{Address: text, Value: cert}
+
+		// Prepare the list of known certificates to send back to the new node.
+		peers = append(peers, msg)
+
+		// Share the new node certificate with existing peers.
+		go func(to mino.Address) {
+			conn, err := o.connFactory.FromAddress(to)
+			if err != nil {
+				res <- xerrors.Errorf("couldn't open connection: %v", err)
+				return
+			}
+
+			client := NewOverlayClient(conn)
+
+			_, err = client.Share(ctx, req.GetCertificate())
+			if err != nil {
+				res <- xerrors.Errorf("couldn't call share: %v", err)
+				return
+			}
+
+			res <- nil
+		}(to)
+	}
+
+	ack := 0
+	for ack < len(peers) {
+		err := <-res
+		if err != nil {
+			return nil, xerrors.Errorf("failed to share certificate: %v", err)
+		}
+
+		ack++
+	}
+
+	// 3. Return the set of known certificates.
+	return &JoinResponse{Peers: peers}, nil
+}
+
+func (o overlayServer) Share(ctx context.Context, msg *Certificate) (*CertificateAck, error) {
+	// TODO: verify the validity of the certificate by connecting to the distant
+	// node but that requires a protection against malicious share.
+
+	from := o.routingFactory.GetAddressFactory().FromText(msg.GetAddress())
+
+	cert, err := x509.ParseCertificate(msg.GetValue())
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't parse certificate: %v", err)
+	}
+
+	o.certs.Store(from, &tls.Certificate{Leaf: cert})
+
+	return &CertificateAck{}, nil
 }
 
 // Call implements minogrpc.OverlayClient. It processes the request with the
@@ -138,7 +217,8 @@ type relayer interface {
 type overlay struct {
 	encoder        encoding.ProtoMarshaler
 	me             mino.Address
-	certs          *sync.Map
+	certs          certs.Storage
+	tokens         tokens.Holder
 	routingFactory routing.Factory
 	connFactory    ConnectionFactory
 	traffic        *traffic
@@ -150,12 +230,13 @@ func newOverlay(me mino.Address, rf routing.Factory) (overlay, error) {
 		return overlay{}, xerrors.Errorf("failed to make certificate: %v", err)
 	}
 
-	certs := &sync.Map{}
+	certs := certs.NewInMemoryStore()
 	certs.Store(me, cert)
 
 	o := overlay{
 		encoder:        encoding.NewProtoEncoder(),
 		me:             me,
+		tokens:         tokens.NewInMemoryHolder(),
 		certs:          certs,
 		routingFactory: rf,
 		connFactory: DefaultConnectionFactory{
@@ -176,19 +257,80 @@ func newOverlay(me mino.Address, rf routing.Factory) (overlay, error) {
 
 // GetCertificate returns the certificate of the overlay.
 func (o overlay) GetCertificate() *tls.Certificate {
-	cert, found := o.certs.Load(o.me)
-	if !found {
+	me := o.certs.Load(o.me)
+	if me == nil {
 		// This should never happen and it will panic if it does as this will
 		// provoke several issues later on.
 		panic("certificate of the overlay must be populated")
 	}
 
-	return cert.(*tls.Certificate)
+	return me
 }
 
-// AddCertificate populates the list of public know certificates of the server.
-func (o overlay) AddCertificate(addr mino.Address, cert *tls.Certificate) error {
-	o.certs.Store(addr, cert)
+// AddCertificateStore returns the certificate store.
+func (o overlay) GetCertificateStore() certs.Storage {
+	return o.certs
+}
+
+// Join sends a join request to a distant node with token generated beforehands
+// by the later.
+func (o overlay) Join(addr, token string, certHash []byte) error {
+	target := o.routingFactory.GetAddressFactory().FromText([]byte(addr))
+
+	netAddr, ok := target.(certs.Dialable)
+	if !ok {
+		return xerrors.Errorf("invalid address type '%T'", target)
+	}
+
+	meCert := o.GetCertificate()
+
+	meAddr, err := o.me.MarshalText()
+	if err != nil {
+		return xerrors.Errorf("couldn't marshal own address: %v", err)
+	}
+
+	// Fetch the certificate of the node we want to join. The hash is used to
+	// ensure that we get the right certificate.
+	err = o.certs.Fetch(netAddr, certHash)
+	if err != nil {
+		return xerrors.Errorf("couldn't fetch distant certificate: %v", err)
+	}
+
+	conn, err := o.connFactory.FromAddress(target)
+	if err != nil {
+		return xerrors.Errorf("couldn't open connection: %v", err)
+	}
+
+	client := NewOverlayClient(conn)
+
+	req := &JoinRequest{
+		Token: token,
+		Certificate: &Certificate{
+			Address: meAddr,
+			Value:   meCert.Leaf.Raw,
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	resp, err := client.Join(ctx, req)
+	if err != nil {
+		return xerrors.Errorf("couldn't call join: %v", err)
+	}
+
+	// Update the certificate store with the response from the node we just
+	// joined. That will allow the node to communicate with the network.
+	for _, raw := range resp.Peers {
+		from := o.routingFactory.GetAddressFactory().FromText(raw.GetAddress())
+
+		leaf, err := x509.ParseCertificate(raw.GetValue())
+		if err != nil {
+			return xerrors.Errorf("couldn't parse certificate: %v", err)
+		}
+
+		o.certs.Store(from, &tls.Certificate{Leaf: leaf})
+	}
 
 	return nil
 }
@@ -213,7 +355,7 @@ func (o overlay) setupRelays(ctx context.Context,
 	}
 
 	for _, link := range rting.GetDirectLinks(senderAddr) {
-		fabric.Logger.Trace().
+		dela.Logger.Trace().
 			Str("addr", o.me.String()).
 			Str("to", link.String()).
 			Msg("open relay")
@@ -352,36 +494,24 @@ type ConnectionFactory interface {
 
 // DefaultConnectionFactory creates connection for grpc usages.
 type DefaultConnectionFactory struct {
-	certs *sync.Map
+	certs certs.Storage
 	me    mino.Address
 }
 
 // FromAddress implements minogrpc.ConnectionFactory. It creates a gRPC
 // connection from the server to the client.
 func (f DefaultConnectionFactory) FromAddress(addr mino.Address) (grpc.ClientConnInterface, error) {
-	clientPubCertItf, found := f.certs.Load(addr)
-	if !found {
+	clientPubCert := f.certs.Load(addr)
+	if clientPubCert == nil {
 		return nil, xerrors.Errorf("certificate for '%v' not found", addr)
-	}
-
-	clientPubCert, ok := clientPubCertItf.(*tls.Certificate)
-	if !ok {
-		return nil, xerrors.Errorf("invalid certificate type '%T' for '%v'",
-			clientPubCertItf, addr)
 	}
 
 	pool := x509.NewCertPool()
 	pool.AddCert(clientPubCert.Leaf)
 
-	meItf, found := f.certs.Load(f.me)
-	if !found {
+	me := f.certs.Load(f.me)
+	if me == nil {
 		return nil, xerrors.Errorf("couldn't find server '%v' certificate", f.me)
-	}
-
-	me, ok := meItf.(*tls.Certificate)
-	if !ok {
-		return nil, xerrors.Errorf("invalid certificate type '%T' for '%v'",
-			meItf, f.me)
 	}
 
 	ta := credentials.NewTLS(&tls.Config{

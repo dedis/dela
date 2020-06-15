@@ -5,13 +5,20 @@ import (
 	"testing"
 	"testing/quick"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/wrappers"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/internal/testing/fake"
-	"go.dedis.ch/fabric/ledger/inventory"
+	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/ledger/inventory"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
+
+func TestInMemoryInventory_Len(t *testing.T) {
+	inv := NewInventory()
+	require.Equal(t, uint64(0), inv.Len())
+
+	inv.pages = []*inMemoryPage{{}}
+	require.Equal(t, uint64(1), inv.Len())
+}
 
 func TestInMemoryInventory_GetPage(t *testing.T) {
 	inv := NewInventory()
@@ -37,7 +44,7 @@ func TestInMemoryInventory_Stage(t *testing.T) {
 	inv := NewInventory()
 	inv.pages = nil
 
-	value := &wrappers.BoolValue{Value: true}
+	value := fake.Message{}
 
 	page, err := inv.Stage(func(page inventory.WritablePage) error {
 		require.NoError(t, page.Write([]byte{1}, value))
@@ -52,10 +59,9 @@ func TestInMemoryInventory_Stage(t *testing.T) {
 	inv.pages = append(inv.pages, inv.stagingPages[page.(*inMemoryPage).fingerprint])
 	inv.stagingPages = make(map[Digest]*inMemoryPage)
 	page, err = inv.Stage(func(page inventory.WritablePage) error {
-		page.Defer(func([]byte) {})
 		value, err := page.Read([]byte{1})
 		require.NoError(t, err)
-		require.True(t, value.(*wrappers.BoolValue).Value)
+		require.IsType(t, fake.Message{}, value)
 		return nil
 	})
 	require.NoError(t, err)
@@ -87,7 +93,7 @@ func TestInMemoryInventory_Stage(t *testing.T) {
 		"couldn't compute page hash: couldn't write key: fake error")
 
 	inv.hashFactory = fake.NewHashFactory(&fake.Hash{})
-	inv.encoder = fake.BadMarshalStableEncoder{}
+	inv.serializer = fake.NewBadSerializer()
 	_, err = inv.Stage(func(inventory.WritablePage) error { return nil })
 	require.EqualError(t, err,
 		"couldn't compute page hash: couldn't marshal entry: fake error")
@@ -127,15 +133,15 @@ func TestPage_GetFingerprint(t *testing.T) {
 
 func TestPage_Read(t *testing.T) {
 	page := inMemoryPage{
-		entries: map[Digest]proto.Message{
-			{1}: &wrappers.StringValue{Value: "1"},
-			{2}: &wrappers.StringValue{Value: "2"},
+		entries: map[Digest]serde.Message{
+			{1}: fake.Message{},
+			{2}: fake.Message{},
 		},
 	}
 
 	value, err := page.Read([]byte{1})
 	require.NoError(t, err)
-	require.Equal(t, "1", value.(*wrappers.StringValue).Value)
+	require.IsType(t, fake.Message{}, value)
 
 	value, err = page.Read([]byte{3})
 	require.NoError(t, err)
@@ -148,10 +154,10 @@ func TestPage_Read(t *testing.T) {
 
 func TestPage_Write(t *testing.T) {
 	page := inMemoryPage{
-		entries: make(map[Digest]proto.Message),
+		entries: make(map[Digest]serde.Message),
 	}
 
-	value := &wrappers.BoolValue{Value: true}
+	value := fake.Message{}
 
 	err := page.Write([]byte{1}, value)
 	require.NoError(t, err)

@@ -4,10 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/consensus/viewchange"
-	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/internal/testing/fake"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/internal/testing/fake"
 	"golang.org/x/xerrors"
 )
 
@@ -29,9 +27,6 @@ func TestQueue_New(t *testing.T) {
 	require.Len(t, queue.items, 2)
 	require.Equal(t, prop.to, queue.items[1].from)
 
-	err = queue.New(prop, authority)
-	require.EqualError(t, err, "proposal 'bb' already exists")
-
 	queue.locked = true
 	err = queue.New(prop, authority)
 	require.EqualError(t, err, "queue is locked")
@@ -46,7 +41,6 @@ func TestQueue_New(t *testing.T) {
 func TestQueue_LockProposal(t *testing.T) {
 	verifier := &fakeVerifier{}
 	queue := &queue{
-		encoder:     encoding.NewProtoEncoder(),
 		hashFactory: crypto.NewSha256Factory(),
 		items: []item{
 			{
@@ -55,6 +49,10 @@ func TestQueue_LockProposal(t *testing.T) {
 					to:   []byte{0xbb},
 				},
 				verifier: verifier,
+			},
+			{
+				forwardLink: forwardLink{to: []byte{0xcc}},
+				verifier:    verifier,
 			},
 		},
 	}
@@ -66,7 +64,7 @@ func TestQueue_LockProposal(t *testing.T) {
 	require.Len(t, verifier.calls, 1)
 
 	forwardLink := forwardLink{from: []byte{0xaa}, to: []byte{0xbb}}
-	hash, err := forwardLink.computeHash(sha256Factory{}.New(), encoding.NewProtoEncoder())
+	hash, err := forwardLink.computeHash(crypto.NewSha256Factory().New())
 	require.NoError(t, err)
 	require.Equal(t, hash, verifier.calls[0]["message"])
 
@@ -76,31 +74,30 @@ func TestQueue_LockProposal(t *testing.T) {
 
 	queue.locked = false
 	queue.hashFactory = fake.NewHashFactory(fake.NewBadHash())
-	err = queue.LockProposal([]byte{0xbb}, fake.Signature{})
+	err = queue.LockProposal([]byte{0xcc}, fake.Signature{})
 	require.EqualError(t, err,
 		"couldn't hash proposal: couldn't write 'from': fake error")
 
 	queue.hashFactory = crypto.NewSha256Factory()
 	verifier.err = xerrors.New("oops")
-	err = queue.LockProposal([]byte{0xbb}, fake.Signature{})
+	err = queue.LockProposal([]byte{0xcc}, fake.Signature{})
 	require.EqualError(t, err, "couldn't verify signature: oops")
 
 	queue.locked = true
-	err = queue.LockProposal([]byte{0xbb}, nil)
+	err = queue.LockProposal([]byte{0xcc}, nil)
 	require.EqualError(t, err, "queue is locked")
 }
 
 func TestQueue_Finalize(t *testing.T) {
 	verifier := &fakeVerifier{}
 	queue := &queue{
-		encoder: encoding.NewProtoEncoder(),
 		items: []item{
 			{
 				forwardLink: forwardLink{
 					from:      []byte{0xaa},
 					to:        []byte{0xbb},
 					prepare:   fake.Signature{},
-					changeset: viewchange.ChangeSet{},
+					changeset: fake.Message{},
 				},
 				verifier: verifier,
 			},
@@ -137,11 +134,6 @@ func TestQueue_Finalize(t *testing.T) {
 	}
 	_, err = queue.Finalize([]byte{0xaa}, fake.Signature{})
 	require.EqualError(t, err, "couldn't verify signature: oops")
-
-	queue.items[0].verifier = &fakeVerifier{}
-	queue.encoder = fake.BadPackEncoder{}
-	_, err = queue.Finalize([]byte{0xaa}, fake.NewBadSignature())
-	require.EqualError(t, err, "couldn't pack forward link: fake error")
 }
 
 func TestQueue_Clear(t *testing.T) {

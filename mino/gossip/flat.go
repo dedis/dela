@@ -6,8 +6,9 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -22,34 +23,23 @@ const (
 type Flat struct {
 	sync.RWMutex
 	mino         mino.Mino
-	rumorFactory RumorFactory
+	rumorFactory serde.Factory
 	ch           chan Rumor
-	encoder      encoding.ProtoMarshaler
 }
 
 // NewFlat creates a new instance of a flat gossip protocol.
-func NewFlat(m mino.Mino, f RumorFactory) *Flat {
+func NewFlat(m mino.Mino, f serde.Factory) *Flat {
 	return &Flat{
 		mino:         m,
 		rumorFactory: f,
-		encoder:      encoding.NewProtoEncoder(),
 		ch:           make(chan Rumor, 100),
 	}
-}
-
-// GetRumorFactory implements gossip.Gossiper. It returns the rumor factory of
-// the gossiper.
-func (flat *Flat) GetRumorFactory() RumorFactory {
-	return flat.rumorFactory
 }
 
 // Listen implements gossip.Gossiper. It creates the RPC and starts to listen
 // for incoming rumors while spreading its own ones.
 func (flat *Flat) Listen() (Actor, error) {
-	h := handler{
-		Flat:    flat,
-		encoder: encoding.NewProtoEncoder(),
-	}
+	h := handler{Flat: flat}
 
 	rpc, err := flat.mino.MakeRPC("flatgossip", h)
 	if err != nil {
@@ -57,8 +47,7 @@ func (flat *Flat) Listen() (Actor, error) {
 	}
 
 	actor := &flatActor{
-		encoder: flat.encoder,
-		rpc:     rpc,
+		rpc: rpc,
 	}
 
 	return actor, nil
@@ -72,7 +61,7 @@ func (flat *Flat) Rumors() <-chan Rumor {
 
 type flatActor struct {
 	sync.Mutex
-	encoder encoding.ProtoMarshaler
+
 	rpc     mino.RPC
 	players mino.Players
 }
@@ -97,17 +86,10 @@ func (a *flatActor) Add(rumor Rumor) error {
 		return nil
 	}
 
-	rumorpb, err := a.encoder.PackAny(rumor)
-	if err != nil {
-		return xerrors.Errorf("couldn't pack rumor: %v", err)
-	}
-
-	req := &RumorProto{Message: rumorpb}
-
 	ctx, cancel := context.WithTimeout(context.Background(), rumorTimeout)
 	defer cancel()
 
-	resps, errs := a.rpc.Call(ctx, req, players)
+	resps, errs := a.rpc.Call(ctx, tmp.ProtoOf(rumor), players)
 	for {
 		select {
 		case _, more := <-resps:
@@ -129,30 +111,25 @@ func (a *flatActor) Close() error {
 	return nil
 }
 
+// Handler processes the messages coming from the gossip network.
+//
+// - implements mino.Handler
 type handler struct {
 	*Flat
 	mino.UnsupportedHandler
-
-	encoder encoding.ProtoMarshaler
 }
 
+// Process implements mino.Handler. It notifies the new rumor if appropriate and
+// does not return anything.
 func (h handler) Process(req mino.Request) (proto.Message, error) {
-	switch msg := req.Message.(type) {
-	case *RumorProto:
-		message, err := h.encoder.UnmarshalDynamicAny(msg.GetMessage())
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't pack rumor: %v", err)
-		}
+	m := tmp.FromProto(req.Message, h.rumorFactory)
 
-		rumor, err := h.rumorFactory.FromProto(message)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't decode rumor: %v", err)
-		}
-
-		h.ch <- rumor
-
-		return nil, nil
-	default:
-		return nil, xerrors.Errorf("invalid message type '%T'", req.Message)
+	rumor, ok := m.(Rumor)
+	if !ok {
+		return nil, xerrors.Errorf("unexpected rumor of type '%T'", m)
 	}
+
+	h.ch <- rumor
+
+	return nil, nil
 }

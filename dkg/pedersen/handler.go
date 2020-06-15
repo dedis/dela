@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"go.dedis.ch/fabric"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/share"
 	pedersen "go.dedis.ch/kyber/v3/share/dkg/pedersen"
@@ -195,7 +195,7 @@ func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 		go func(errs <-chan error) {
 			err, more := <-errs
 			if more {
-				fabric.Logger.Warn().Msgf("got an error while sending deal: %v", err)
+				dela.Logger.Warn().Msgf("got an error while sending deal: %v", err)
 			}
 			wg.Done()
 		}(errs)
@@ -203,7 +203,7 @@ func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 
 	wg.Wait()
 
-	fabric.Logger.Trace().Msgf("%s sent all its deals", h.me)
+	dela.Logger.Trace().Msgf("%s sent all its deals", h.me)
 
 	receivedResps := make([]*pedersen.Response, 0)
 
@@ -213,7 +213,7 @@ func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 	for _, deal := range receivedDeals {
 		err = h.handleDeal(deal, from, addrs, out)
 		if err != nil {
-			fabric.Logger.Warn().Msgf("%s failed to handle received deal "+
+			dela.Logger.Warn().Msgf("%s failed to handle received deal "+
 				"from %s: %v", h.me, from, err)
 		}
 		numReceivedDeals++
@@ -234,14 +234,14 @@ func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 			// 4. Process the Deal and Send the response to all the other nodes
 			err = h.handleDeal(msg, from, addrs, out)
 			if err != nil {
-				fabric.Logger.Warn().Msgf("%s failed to handle received deal "+
+				dela.Logger.Warn().Msgf("%s failed to handle received deal "+
 					"from %s: %v", h.me, from, err)
 			}
 			numReceivedDeals++
 
 		case *Response:
 			// 5. Processing responses
-			fabric.Logger.Trace().Msgf("%s received response from %s", h.me, from)
+			dela.Logger.Trace().Msgf("%s received response from %s", h.me, from)
 			response := &pedersen.Response{
 				Index: msg.Index,
 				Response: &vss.Response{
@@ -261,7 +261,7 @@ func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 	for _, response := range receivedResps {
 		_, err = h.dkg.ProcessResponse(response)
 		if err != nil {
-			fabric.Logger.Warn().Msgf("%s failed to process response "+
+			dela.Logger.Warn().Msgf("%s failed to process response "+
 				"from '%s': %v", h.me, from, err)
 		}
 	}
@@ -280,7 +280,7 @@ func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 
 		case *Response:
 			// 5. Processing responses
-			fabric.Logger.Trace().Msgf("%s received response from %s", h.me, from)
+			dela.Logger.Trace().Msgf("%s received response from %s", h.me, from)
 			response := &pedersen.Response{
 				Index: msg.Index,
 				Response: &vss.Response{
@@ -293,7 +293,7 @@ func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 
 			_, err = h.dkg.ProcessResponse(response)
 			if err != nil {
-				fabric.Logger.Warn().Msgf("%s, failed to process response "+
+				dela.Logger.Warn().Msgf("%s, failed to process response "+
 					"from '%s': %v", h.me, from, err)
 			}
 
@@ -302,7 +302,7 @@ func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 		}
 	}
 
-	fabric.Logger.Trace().Msgf("%s is certified", h.me)
+	dela.Logger.Trace().Msgf("%s is certified", h.me)
 
 	// 6. Send back the public DKG key
 	distrKey, err := h.dkg.DistKeyShare()
@@ -333,7 +333,7 @@ func (h *Handler) start(start *Start, receivedDeals []*Deal, from mino.Address,
 func (h *Handler) handleDeal(msg *Deal, from mino.Address, addrs []mino.Address,
 	out mino.Sender) error {
 
-	fabric.Logger.Trace().Msgf("%s received deal from %s", h.me, from)
+	dela.Logger.Trace().Msgf("%s received deal from %s", h.me, from)
 
 	deal := &pedersen.Deal{
 		Index: msg.Index,
@@ -370,7 +370,7 @@ func (h *Handler) handleDeal(msg *Deal, from mino.Address, addrs []mino.Address,
 		errs := out.Send(respProto, addr)
 		err = <-errs
 		if err != nil {
-			fabric.Logger.Warn().Msgf("got an error while sending "+
+			dela.Logger.Warn().Msgf("got an error while sending "+
 				"response: %v", err)
 		}
 

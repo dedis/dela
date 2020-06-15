@@ -5,11 +5,11 @@ import (
 
 	proto "github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/dkg"
-	internal "go.dedis.ch/fabric/internal/testing"
-	"go.dedis.ch/fabric/mino"
-	"go.dedis.ch/fabric/mino/minogrpc"
-	"go.dedis.ch/fabric/mino/minogrpc/routing"
+	"go.dedis.ch/dela/dkg"
+	internal "go.dedis.ch/dela/internal/testing"
+	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/minogrpc"
+	"go.dedis.ch/dela/mino/minogrpc/routing"
 	"go.dedis.ch/kyber/v3"
 )
 
@@ -59,8 +59,7 @@ func TestPedersen_Scenario(t *testing.T) {
 
 	for i, minogrpc := range minos {
 		for _, m := range minos {
-			err := minogrpc.AddCertificate(m.GetAddress(), m.GetCertificate())
-			require.NoError(t, err)
+			minogrpc.GetCertificateStore().Store(m.GetAddress(), m.GetCertificate())
 		}
 
 		dkg, err := NewPedersen(privKeys[i], minogrpc, suite)

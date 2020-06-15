@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package routing;
 
-import "google/protobuf/any.proto";
-
 message TreeRoutingProto {
     bytes root = 1;
     // Should be the MarshalText representation of each addr.

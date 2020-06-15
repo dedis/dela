@@ -7,10 +7,10 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/ledger/inventory"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/ledger/inventory"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
 
@@ -47,7 +47,7 @@ func (p DigestSlice) Swap(i, j int) {
 // - implements inventory.Inventory
 type InMemoryInventory struct {
 	sync.Mutex
-	encoder      encoding.ProtoMarshaler
+	serializer   serde.Serializer
 	hashFactory  crypto.HashFactory
 	pages        []*inMemoryPage
 	stagingPages map[Digest]*inMemoryPage
@@ -56,11 +56,16 @@ type InMemoryInventory struct {
 // NewInventory returns a new empty instance of the inventory.
 func NewInventory() *InMemoryInventory {
 	return &InMemoryInventory{
-		encoder:      encoding.NewProtoEncoder(),
+		serializer:   json.NewSerializer(),
 		hashFactory:  crypto.NewSha256Factory(),
 		pages:        []*inMemoryPage{},
 		stagingPages: make(map[Digest]*inMemoryPage),
 	}
+}
+
+// Len implements inventory.Inventory. It returns the length of the inventory.
+func (inv *InMemoryInventory) Len() uint64 {
+	return uint64(len(inv.pages))
 }
 
 // GetPage implements inventory.Inventory. It returns the snapshot for the
@@ -106,7 +111,7 @@ func (inv *InMemoryInventory) Stage(f func(inventory.WritablePage) error) (inven
 		page.index++
 	} else {
 		page = &inMemoryPage{
-			entries: make(map[Digest]proto.Message),
+			entries: make(map[Digest]serde.Message),
 		}
 	}
 	inv.Unlock()
@@ -124,10 +129,6 @@ func (inv *InMemoryInventory) Stage(f func(inventory.WritablePage) error) (inven
 	inv.Lock()
 	inv.stagingPages[page.fingerprint] = page
 	inv.Unlock()
-
-	for _, fn := range page.defers {
-		fn(page.GetFingerprint())
-	}
 
 	return page, nil
 }
@@ -155,9 +156,14 @@ func (inv *InMemoryInventory) computeHash(page *inMemoryPage) error {
 			return xerrors.Errorf("couldn't write key: %v", err)
 		}
 
-		err = inv.encoder.MarshalStable(h, page.entries[key])
+		data, err := inv.serializer.Serialize(page.entries[key])
 		if err != nil {
 			return xerrors.Errorf("couldn't marshal entry: %v", err)
+		}
+
+		_, err = h.Write(data)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -194,8 +200,7 @@ func (inv *InMemoryInventory) Commit(fingerprint []byte) error {
 type inMemoryPage struct {
 	index       uint64
 	fingerprint Digest
-	defers      []func([]byte)
-	entries     map[Digest]proto.Message
+	entries     map[Digest]serde.Message
 }
 
 // GetIndex implements inventory.Page. It returns the index of the page from the
@@ -212,7 +217,7 @@ func (page *inMemoryPage) GetFingerprint() []byte {
 
 // Read implements inventory.Page. It returns the instance associated with the
 // key if it exists, otherwise an error.
-func (page *inMemoryPage) Read(key []byte) (proto.Message, error) {
+func (page *inMemoryPage) Read(key []byte) (serde.Message, error) {
 	if len(key) > digestLength {
 		return nil, xerrors.Errorf("key length (%d) is higher than %d",
 			len(key), digestLength)
@@ -226,7 +231,7 @@ func (page *inMemoryPage) Read(key []byte) (proto.Message, error) {
 
 // Write implements inventory.WritablePage. It updates the state of the page by
 // adding or updating the instance.
-func (page *inMemoryPage) Write(key []byte, value proto.Message) error {
+func (page *inMemoryPage) Write(key []byte, value serde.Message) error {
 	if len(key) > digestLength {
 		return xerrors.Errorf("key length (%d) is higher than %d", len(key), digestLength)
 	}
@@ -239,14 +244,10 @@ func (page *inMemoryPage) Write(key []byte, value proto.Message) error {
 	return nil
 }
 
-func (page *inMemoryPage) Defer(fn func([]byte)) {
-	page.defers = append(page.defers, fn)
-}
-
 func (page *inMemoryPage) clone() *inMemoryPage {
 	clone := &inMemoryPage{
 		index:   page.index,
-		entries: make(map[Digest]proto.Message),
+		entries: make(map[Digest]serde.Message),
 	}
 
 	for k, v := range page.entries {

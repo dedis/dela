@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package memship;
+
+import "google/protobuf/any.proto";
+
+// Task is the message for a client task.
+message Task {
+    google.protobuf.Any authority = 1;
+}

@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	proto "github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric/encoding"
+	"go.dedis.ch/dela/encoding"
 	"golang.org/x/xerrors"
 )
 

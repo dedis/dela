@@ -1,6 +1,6 @@
 package inventory
 
-import "github.com/golang/protobuf/proto"
+import "go.dedis.ch/dela/serde"
 
 // Page represents the state of the inventory at some point in time.
 type Page interface {
@@ -14,7 +14,7 @@ type Page interface {
 
 	// Read returns the value stored at the given key. If the key does not
 	// exist, it should return a nil value without error.
-	Read(key []byte) (proto.Message, error)
+	Read(key []byte) (serde.Message, error)
 }
 
 // WritablePage is an upgradable snapshot that can be committed later on.
@@ -22,16 +22,15 @@ type WritablePage interface {
 	Page
 
 	// Write stores the value with the key as an identifier.
-	Write(key []byte, value proto.Message) error
-
-	// Defer allows to defer an execution after the fingerprint of the page has
-	// been calculated.
-	Defer(func(fingerprint []byte))
+	Write(key []byte, value serde.Message) error
 }
 
 // Inventory is an abstraction of the state of the ledger at different point in
 // time. It can be modified using a two-phase commit procedure.
 type Inventory interface {
+	// Len returns the length of the inventory.
+	Len() uint64
+
 	// GetPage returns a snapshot of the state of the inventory at the block
 	// with the given index.
 	GetPage(index uint64) (Page, error)

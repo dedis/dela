@@ -1,10 +1,9 @@
-module go.dedis.ch/fabric
+module go.dedis.ch/dela
 
 go 1.13
 
 require (
 	github.com/golang/protobuf v1.3.4
-	github.com/google/go-cmp v0.4.0 // indirect
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/rs/zerolog v1.18.0
 	github.com/stretchr/testify v1.5.1

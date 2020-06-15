@@ -8,9 +8,9 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/internal/testing/fake"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
 )
 
@@ -32,31 +32,32 @@ func TestActor_Sign(t *testing.T) {
 				},
 			},
 		},
+		reactor: fakeReactor{},
 	}
 
 	ctx := context.Background()
 
-	sig, err := actor.Sign(ctx, fakeMessage{}, ca)
+	sig, err := actor.Sign(ctx, fake.Message{}, ca)
 	require.NoError(t, err)
 	require.NotNil(t, sig)
 
-	actor.CoSi.encoder = fake.BadPackEncoder{}
-	_, err = actor.Sign(ctx, fakeMessage{}, ca)
-	require.EqualError(t, err, "couldn't pack message: fake error")
+	actor.reactor = fakeReactor{err: xerrors.New("oops")}
+	_, err = actor.Sign(ctx, fake.Message{}, ca)
+	require.EqualError(t, err, "couldn't react to message: oops")
 
-	actor.CoSi.encoder = encoding.NewProtoEncoder()
+	actor.reactor = fakeReactor{}
 	actor.rpc = fakeRPC{receiver: &fakeReceiver{}}
-	_, err = actor.Sign(ctx, fakeMessage{}, ca)
+	_, err = actor.Sign(ctx, fake.Message{}, ca)
 	require.EqualError(t, err, "couldn't receive more messages: EOF")
 
 	actor.rpc = fakeRPC{receiver: &fakeReceiver{blocking: true}}
 	doneCtx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err = actor.Sign(doneCtx, fakeMessage{}, ca)
+	_, err = actor.Sign(doneCtx, fake.Message{}, ca)
 	require.EqualError(t, err, "couldn't receive more messages: context canceled")
 
 	actor.rpc = fakeRPC{sender: fakeSender{numErr: 2}, receiver: &fakeReceiver{blocking: true}}
-	_, err = actor.Sign(ctx, fakeMessage{}, ca)
+	_, err = actor.Sign(ctx, fake.Message{}, ca)
 	require.EqualError(t, err, "couldn't receive more messages: context canceled")
 
 	actor.signer = fake.NewSignerWithSignatureFactory(fake.NewBadSignatureFactory())
@@ -64,11 +65,11 @@ func TestActor_Sign(t *testing.T) {
 	require.EqualError(t, err, "couldn't decode signature: fake error")
 
 	actor.signer = fake.NewSigner()
-	err = actor.merge(&Signature{}, &empty.Empty{}, 0, fake.NewInvalidPublicKey(), fakeMessage{})
+	err = actor.merge(&Signature{}, &empty.Empty{}, 0, fake.NewInvalidPublicKey(), []byte{})
 	require.EqualError(t, err, "couldn't verify: fake error")
 
 	actor.rpc = fake.NewBadStreamRPC()
-	_, err = actor.Sign(ctx, fakeMessage{}, ca)
+	_, err = actor.Sign(ctx, fake.Message{}, ca)
 	require.EqualError(t, err, "couldn't open stream: fake error")
 }
 

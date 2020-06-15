@@ -4,7 +4,7 @@ import (
 	context "context"
 
 	proto "github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc/metadata"
 )

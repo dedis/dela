@@ -5,8 +5,8 @@ import (
 	"sort"
 
 	proto "github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/ledger/arc"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/ledger/arc"
 	"golang.org/x/xerrors"
 )
 
@@ -61,7 +61,7 @@ func (expr expression) Match(targets []arc.Identity) error {
 
 // Fingerprint implements encoding.Fingerprinter. It serializes the expression
 // into the writer in a deterministic way.
-func (expr expression) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
+func (expr expression) Fingerprint(w io.Writer) error {
 	matches := make(sort.StringSlice, 0, len(expr.matches))
 	for key := range expr.matches {
 		matches = append(matches, key)

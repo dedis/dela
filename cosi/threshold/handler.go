@@ -4,9 +4,10 @@ import (
 	"context"
 	"io"
 
-	"go.dedis.ch/fabric"
-	"go.dedis.ch/fabric/cosi"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/cosi"
+	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -16,13 +17,13 @@ type thresholdHandler struct {
 	*CoSi
 	mino.UnsupportedHandler
 
-	hasher cosi.Hashable
+	reactor cosi.Reactor
 }
 
-func newHandler(c *CoSi, hasher cosi.Hashable) thresholdHandler {
+func newHandler(c *CoSi, hasher cosi.Reactor) thresholdHandler {
 	return thresholdHandler{
-		CoSi:   c,
-		hasher: hasher,
+		CoSi:    c,
+		reactor: hasher,
 	}
 }
 
@@ -35,7 +36,7 @@ func (h thresholdHandler) Stream(out mino.Sender, in mino.Receiver) error {
 			return nil
 		}
 		if err != nil {
-			fabric.Logger.Warn().Err(err).Send()
+			dela.Logger.Warn().Err(err).Send()
 		}
 	}
 }
@@ -51,7 +52,9 @@ func (h thresholdHandler) processRequest(sender mino.Sender, rcvr mino.Receiver)
 		return xerrors.Errorf("failed to receive: %v", err)
 	}
 
-	buffer, err := h.hasher.Hash(addr, resp)
+	in := tmp.FromProto(resp, h.reactor)
+
+	buffer, err := h.reactor.Invoke(addr, in)
 	if err != nil {
 		return xerrors.Errorf("couldn't hash message: %v", err)
 	}

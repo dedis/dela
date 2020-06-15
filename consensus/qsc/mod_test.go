@@ -2,7 +2,6 @@ package qsc
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
 	"sync"
 	"testing"
@@ -10,10 +9,12 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/consensus"
-	internal "go.dedis.ch/fabric/internal/testing"
-	"go.dedis.ch/fabric/mino"
-	"go.dedis.ch/fabric/mino/minoch"
+	"go.dedis.ch/dela/consensus"
+	internal "go.dedis.ch/dela/internal/testing"
+	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/minoch"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -38,9 +39,9 @@ func TestQSC_Basic(t *testing.T) {
 
 	cons := makeQSC(t, n)
 	actors := make([]consensus.Actor, n)
-	validators := make([]*fakeValidator, n)
+	validators := make([]*fakeReactor, n)
 	for i, c := range cons {
-		val := &fakeValidator{count: 0, max: k}
+		val := &fakeReactor{count: 0, max: k}
 		val.wg.Add(1)
 		validators[i] = val
 
@@ -54,7 +55,7 @@ func TestQSC_Basic(t *testing.T) {
 		actor := actors[j]
 		go func() {
 			for i := 0; i < k; i++ {
-				err := actor.Propose(newFakeProposal())
+				err := actor.Propose(fake.Message{})
 				require.NoError(t, err)
 			}
 		}()
@@ -109,35 +110,38 @@ func TestQSC_ExecuteRound(t *testing.T) {
 
 	ctx := context.Background()
 
+	err := qsc.executeRound(ctx, fake.Message{}, badReactor{})
+	require.EqualError(t, err, "couldn't validate proposal: oops")
+
 	bc.err = xerrors.New("oops")
-	err := qsc.executeRound(ctx, fakeProposal{}, &fakeValidator{})
+	err = qsc.executeRound(ctx, fake.Message{}, &fakeReactor{})
 	require.EqualError(t, err, "couldn't broadcast: oops")
 
 	bc.delay = 1
 	factory.err = xerrors.New("oops")
-	err = qsc.executeRound(ctx, fakeProposal{}, &fakeValidator{})
+	err = qsc.executeRound(ctx, fake.Message{}, &fakeReactor{})
 	require.EqualError(t, err, "couldn't decode broadcasted set: oops")
 
 	bc.delay = 1
 	factory.delay = 1
-	err = qsc.executeRound(ctx, fakeProposal{}, &fakeValidator{})
+	err = qsc.executeRound(ctx, fake.Message{}, &fakeReactor{})
 	require.EqualError(t, err, "couldn't broadcast: oops")
 
 	bc.err = nil
 	factory.delay = 1
-	err = qsc.executeRound(ctx, fakeProposal{}, &fakeValidator{})
+	err = qsc.executeRound(ctx, fake.Message{}, &fakeReactor{})
 	require.EqualError(t, err, "couldn't decode received set: oops")
 
 	factory.delay = 2
-	err = qsc.executeRound(ctx, fakeProposal{}, &fakeValidator{})
+	err = qsc.executeRound(ctx, fake.Message{}, &fakeReactor{})
 	require.EqualError(t, err, "couldn't decode broadcasted set: oops")
 
 	factory.delay = 3
-	err = qsc.executeRound(ctx, fakeProposal{}, &fakeValidator{})
+	err = qsc.executeRound(ctx, fake.Message{}, &fakeReactor{})
 	require.EqualError(t, err, "couldn't decode received set: oops")
 
 	factory.err = nil
-	err = qsc.executeRound(ctx, fakeProposal{}, badValidator{})
+	err = qsc.executeRound(ctx, nil, badReactor{})
 	require.EqualError(t, err, "couldn't commit: oops")
 }
 
@@ -163,20 +167,18 @@ func makeQSC(t *testing.T, n int) []*Consensus {
 	return cons
 }
 
-type fakeValidator struct {
-	consensus.Validator
+type fakeReactor struct {
+	consensus.Reactor
 	count int
 	max   int
 	wg    sync.WaitGroup
 }
 
-func (v *fakeValidator) Validate(addr mino.Address,
-	pb proto.Message) (consensus.Proposal, error) {
-
-	return nil, nil
+func (v *fakeReactor) InvokeValidate(addr mino.Address, pb serde.Message) ([]byte, error) {
+	return []byte{0xac}, nil
 }
 
-func (v *fakeValidator) Commit(id []byte) error {
+func (v *fakeReactor) InvokeCommit(id []byte) error {
 	v.count++
 	if v.count == v.max {
 		v.wg.Done()
@@ -184,27 +186,16 @@ func (v *fakeValidator) Commit(id []byte) error {
 	return nil
 }
 
-type badValidator struct {
-	consensus.Validator
+type badReactor struct {
+	consensus.Reactor
 }
 
-func (v badValidator) Commit([]byte) error {
+func (v badReactor) InvokeValidate(mino.Address, serde.Message) ([]byte, error) {
+	return nil, xerrors.New("oops")
+}
+
+func (v badReactor) InvokeCommit([]byte) error {
 	return xerrors.New("oops")
-}
-
-type fakeProposal struct {
-	consensus.Proposal
-	hash []byte
-}
-
-func newFakeProposal() fakeProposal {
-	buffer := make([]byte, 32)
-	rand.Read(buffer)
-	return fakeProposal{hash: buffer}
-}
-
-func (p fakeProposal) GetHash() []byte {
-	return p.hash
 }
 
 type fakeBroadcast struct {

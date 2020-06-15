@@ -4,9 +4,8 @@ import (
 	"bytes"
 	"sync"
 
-	"go.dedis.ch/fabric/cosi"
-	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/encoding"
+	"go.dedis.ch/dela/cosi"
+	"go.dedis.ch/dela/crypto"
 	"golang.org/x/xerrors"
 )
 
@@ -15,7 +14,7 @@ import (
 type Queue interface {
 	New(fl forwardLink, authority crypto.CollectiveAuthority) error
 	LockProposal(to Digest, sig crypto.Signature) error
-	Finalize(to Digest, sig crypto.Signature) (*ForwardLinkProto, error)
+	Finalize(to Digest, sig crypto.Signature) (*forwardLink, error)
 	Clear()
 }
 
@@ -30,7 +29,6 @@ type queue struct {
 	hashFactory crypto.HashFactory
 	cosi        cosi.CollectiveSigning
 	items       []item
-	encoder     encoding.ProtoMarshaler
 }
 
 func newQueue(cosi cosi.CollectiveSigning) *queue {
@@ -38,7 +36,6 @@ func newQueue(cosi cosi.CollectiveSigning) *queue {
 		locked:      false,
 		hashFactory: crypto.NewSha256Factory(),
 		cosi:        cosi,
-		encoder:     encoding.NewProtoEncoder(),
 	}
 }
 
@@ -62,7 +59,9 @@ func (q *queue) New(fl forwardLink, authority crypto.CollectiveAuthority) error 
 
 	_, _, ok := q.getItem(fl.to)
 	if ok {
-		return xerrors.Errorf("proposal '%x' already exists", fl.to)
+		// Duplicate are ignored without triggering an error as the exact same
+		// digest means they are exactly the same.
+		return nil
 	}
 
 	verifier, err := q.cosi.GetVerifierFactory().FromAuthority(authority)
@@ -83,19 +82,24 @@ func (q *queue) LockProposal(to Digest, sig crypto.Signature) error {
 	q.Lock()
 	defer q.Unlock()
 
-	if q.locked {
-		return xerrors.New("queue is locked")
-	}
-
 	item, index, ok := q.getItem(to)
 	if !ok {
 		return xerrors.Errorf("couldn't find proposal '%x'", to)
 	}
 
+	if item.prepare != nil {
+		// Signature already populated so a commit has already been received.
+		return nil
+	}
+
+	if q.locked {
+		return xerrors.New("queue is locked")
+	}
+
 	forwardLink := item
 	forwardLink.prepare = sig
 
-	hash, err := forwardLink.computeHash(q.hashFactory.New(), q.encoder)
+	hash, err := forwardLink.computeHash(q.hashFactory.New())
 	if err != nil {
 		return xerrors.Errorf("couldn't hash proposal: %v", err)
 	}
@@ -112,7 +116,7 @@ func (q *queue) LockProposal(to Digest, sig crypto.Signature) error {
 }
 
 // Finalize verifies the commit signature and clear the queue.
-func (q *queue) Finalize(to Digest, sig crypto.Signature) (*ForwardLinkProto, error) {
+func (q *queue) Finalize(to Digest, sig crypto.Signature) (*forwardLink, error) {
 	q.Lock()
 	defer q.Unlock()
 
@@ -125,7 +129,7 @@ func (q *queue) Finalize(to Digest, sig crypto.Signature) (*ForwardLinkProto, er
 		return nil, xerrors.Errorf("no signature for proposal '%x'", to)
 	}
 
-	forwardLink := item
+	forwardLink := item.forwardLink
 	forwardLink.commit = sig
 
 	// Make sure the commit signature is a valid one before committing.
@@ -139,15 +143,10 @@ func (q *queue) Finalize(to Digest, sig crypto.Signature) (*ForwardLinkProto, er
 		return nil, xerrors.Errorf("couldn't verify signature: %v", err)
 	}
 
-	packed, err := q.encoder.Pack(forwardLink)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack forward link: %v", err)
-	}
-
 	q.locked = false
 	q.items = nil
 
-	return packed.(*ForwardLinkProto), nil
+	return &forwardLink, nil
 }
 
 func (q *queue) Clear() {

@@ -9,14 +9,15 @@ import (
 	"context"
 	"time"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/rs/zerolog"
-	"go.dedis.ch/fabric"
-	"go.dedis.ch/fabric/blockchain"
-	"go.dedis.ch/fabric/consensus"
-	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/blockchain"
+	"go.dedis.ch/dela/consensus"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -34,13 +35,12 @@ const (
 // - implements blockchain.Blockchain
 // - implements fmt.Stringer
 type Skipchain struct {
-	logger       zerolog.Logger
-	mino         mino.Mino
-	db           Database
-	consensus    consensus.Consensus
-	watcher      blockchain.Observable
-	encoder      encoding.ProtoMarshaler
-	blockFactory blockFactory
+	logger    zerolog.Logger
+	mino      mino.Mino
+	db        Database
+	consensus consensus.Consensus
+	watcher   blockchain.Observable
+	encoder   encoding.ProtoMarshaler
 }
 
 // NewSkipchain returns a new instance of Skipchain.
@@ -49,32 +49,32 @@ func NewSkipchain(m mino.Mino, consensus consensus.Consensus) *Skipchain {
 	encoder := encoding.NewProtoEncoder()
 
 	return &Skipchain{
-		logger:    fabric.Logger,
+		logger:    dela.Logger,
 		mino:      m,
 		db:        db,
 		consensus: consensus,
 		watcher:   blockchain.NewWatcher(),
 		encoder:   encoder,
-		blockFactory: blockFactory{
-			encoder:     encoder,
-			consensus:   consensus,
-			hashFactory: crypto.NewSha256Factory(),
-		},
 	}
 }
 
 // Listen implements blockchain.Blockchain. It registers the RPC and starts the
 // consensus module.
-func (s *Skipchain) Listen(proc blockchain.PayloadProcessor) (blockchain.Actor, error) {
+func (s *Skipchain) Listen(r blockchain.Reactor) (blockchain.Actor, error) {
+	blockFactory := BlockFactory{
+		hashFactory:    crypto.NewSha256Factory(),
+		payloadFactory: r,
+	}
+
 	ops := &operations{
-		logger:       fabric.Logger,
-		encoder:      s.encoder,
-		addr:         s.mino.GetAddress(),
-		processor:    proc,
-		blockFactory: s.blockFactory,
-		db:           s.db,
-		watcher:      s.watcher,
-		consensus:    s.consensus,
+		logger:          dela.Logger,
+		encoder:         s.encoder,
+		addr:            s.mino.GetAddress(),
+		reactor:         r,
+		blockFactory:    blockFactory,
+		responseFactory: responseFactory{blockFactory: blockFactory},
+		db:              s.db,
+		watcher:         s.watcher,
 	}
 
 	rpc, err := s.mino.MakeRPC("skipchain", newHandler(ops))
@@ -84,7 +84,7 @@ func (s *Skipchain) Listen(proc blockchain.PayloadProcessor) (blockchain.Actor, 
 
 	ops.rpc = rpc
 
-	consensus, err := s.consensus.Listen(newBlockValidator(ops))
+	consensus, err := s.consensus.Listen(newReactor(ops))
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't start the consensus: %v", err)
 	}
@@ -96,12 +96,6 @@ func (s *Skipchain) Listen(proc blockchain.PayloadProcessor) (blockchain.Actor, 
 	}
 
 	return actor, nil
-}
-
-// GetBlockFactory implements blockchain.Blockchain. It returns the block
-// factory for skipchains.
-func (s *Skipchain) GetBlockFactory() blockchain.BlockFactory {
-	return s.blockFactory
 }
 
 // GetBlock implements blockchain.Blockchain. It returns the latest block.
@@ -167,7 +161,7 @@ type skipchainActor struct {
 
 // InitChain implements blockchain.Actor. It creates a genesis block if none
 // exists and propagate it to the conodes.
-func (a skipchainActor) InitChain(data proto.Message, players mino.Players) error {
+func (a skipchainActor) Setup(data blockchain.Payload, players mino.Players) error {
 	_, err := a.db.Read(0)
 	if err == nil {
 		// Genesis block already exists.
@@ -194,7 +188,7 @@ func (a skipchainActor) InitChain(data proto.Message, players mino.Players) erro
 	return nil
 }
 
-func (a skipchainActor) newChain(data proto.Message, conodes mino.Players) error {
+func (a skipchainActor) newChain(data blockchain.Payload, conodes mino.Players) error {
 	randomBackLink := Digest{}
 	n, err := a.rand.Read(randomBackLink[:])
 	if err != nil {
@@ -211,24 +205,20 @@ func (a skipchainActor) newChain(data proto.Message, conodes mino.Players) error
 		Payload:   data,
 	}
 
-	err = a.blockFactory.prepareBlock(&genesis)
+	h := a.blockFactory.hashFactory.New()
+	err = genesis.Fingerprint(h)
 	if err != nil {
 		return xerrors.Errorf("couldn't create block: %v", err)
 	}
 
-	packed, err := a.encoder.Pack(genesis)
-	if err != nil {
-		return xerrors.Errorf("couldn't pack genesis: %v", err)
-	}
+	copy(genesis.hash[:], h.Sum(nil))
 
-	msg := &PropagateGenesis{
-		Genesis: packed.(*BlockProto),
-	}
+	msg := &PropagateGenesis{genesis: genesis}
 
 	ctx, cancel := context.WithTimeout(context.Background(), defaultPropogationTimeout)
 	defer cancel()
 
-	closing, errs := a.rpc.Call(ctx, msg, conodes)
+	closing, errs := a.rpc.Call(ctx, tmp.ProtoOf(msg), conodes)
 	select {
 	case <-closing:
 		return nil
@@ -239,18 +229,19 @@ func (a skipchainActor) newChain(data proto.Message, conodes mino.Players) error
 
 // Store implements blockchain.Actor. It will append a new block to chain filled
 // with the data.
-func (a skipchainActor) Store(data proto.Message, players mino.Players) error {
+func (a skipchainActor) Store(data serde.Message, players mino.Players) error {
 	previous, err := a.db.ReadLast()
 	if err != nil {
 		return xerrors.Errorf("couldn't read the latest block: %v", err)
 	}
 
-	block, err := a.blockFactory.fromPrevious(previous, data)
-	if err != nil {
-		return xerrors.Errorf("couldn't create next block: %v", err)
+	blueprint := Blueprint{
+		index:    previous.Index + 1,
+		previous: previous.hash,
+		data:     data,
 	}
 
-	err = a.consensus.Propose(block)
+	err = a.consensus.Propose(blueprint)
 	if err != nil {
 		return xerrors.Errorf("couldn't propose the block: %v", err)
 	}
@@ -271,7 +262,7 @@ type skipchainObserver struct {
 func (o skipchainObserver) NotifyCallback(event interface{}) {
 	block, ok := event.(SkipBlock)
 	if !ok {
-		fabric.Logger.Warn().Msgf("got invalid event '%T'", event)
+		dela.Logger.Warn().Msgf("got invalid event '%T'", event)
 		return
 	}
 

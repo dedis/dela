@@ -4,20 +4,18 @@ import (
 	"bytes"
 	"encoding/binary"
 	fmt "fmt"
+	"io"
 	"math/rand"
 	"reflect"
 	"testing"
 	"testing/quick"
 
-	proto "github.com/golang/protobuf/proto"
-	any "github.com/golang/protobuf/ptypes/any"
-	"github.com/golang/protobuf/ptypes/empty"
-	"github.com/golang/protobuf/ptypes/wrappers"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/consensus"
-	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/internal/testing/fake"
+	"go.dedis.ch/dela/consensus"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
 
@@ -62,46 +60,50 @@ func TestSkipBlock_GetHash(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestSkipBlock_Pack(t *testing.T) {
-	f := func(block SkipBlock) bool {
-		packed, err := block.Pack(encoding.NewProtoEncoder())
-		require.NoError(t, err)
-
-		pblock := packed.(*BlockProto)
-
-		require.Equal(t, block.Index, pblock.Index)
-		require.Equal(t, block.BackLink.Bytes(), pblock.GetBacklink())
-		require.Equal(t, block.GenesisID.Bytes(), pblock.GetGenesisID())
-
-		_, err = block.Pack(fake.BadMarshalAnyEncoder{})
-		require.EqualError(t, err, "couldn't marshal the payload: fake error")
-
-		return true
+func TestSkipBlock_VisitJSON(t *testing.T) {
+	block := SkipBlock{
+		Index:     5,
+		GenesisID: Digest{1},
+		BackLink:  Digest{2},
+		Payload:   fake.Message{},
 	}
 
-	err := quick.Check(f, nil)
+	ser := json.NewSerializer()
+
+	data, err := ser.Serialize(block)
 	require.NoError(t, err)
+	require.Regexp(t, `{"Index":5,"GenesisID":"[^"]+","Backlink":"[^"]+","Payload":{}}`, string(data))
+
+	_, err = block.VisitJSON(fake.NewBadSerializer())
+	require.EqualError(t, err, "couldn't serialize payload: fake error")
 }
 
-func TestSkipBlock_Hash(t *testing.T) {
+func TestSkipBlock_Fingerprint(t *testing.T) {
 	block := SkipBlock{
-		Payload: &empty.Empty{},
+		Index:     1,
+		GenesisID: Digest{2},
+		BackLink:  Digest{3},
+		Payload:   fake.Message{Digest: []byte{1, 2}},
 	}
 
-	enc := encoding.NewProtoEncoder()
+	out := new(bytes.Buffer)
+	err := block.Fingerprint(out)
+	require.NoError(t, err)
+	// Digest length = 8 + 32 + 32 + 2
+	require.Equal(t, 74, out.Len())
 
-	_, err := block.computeHash(fake.NewHashFactory(fake.NewBadHashWithDelay(0)), enc)
+	err = block.Fingerprint(fake.NewBadHashWithDelay(0))
 	require.EqualError(t, err, "couldn't write index: fake error")
 
-	_, err = block.computeHash(fake.NewHashFactory(fake.NewBadHashWithDelay(1)), enc)
+	err = block.Fingerprint(fake.NewBadHashWithDelay(1))
 	require.EqualError(t, err, "couldn't write genesis hash: fake error")
 
-	_, err = block.computeHash(fake.NewHashFactory(fake.NewBadHashWithDelay(2)), enc)
+	err = block.Fingerprint(fake.NewBadHashWithDelay(2))
 	require.EqualError(t, err, "couldn't write backlink: fake error")
 
-	_, err = block.computeHash(fake.NewHashFactory(fake.NewBadHashWithDelay(3)), enc)
-	require.EqualError(t, err,
-		"couldn't write payload: stable serialization failed: fake error")
+	block.Payload = badPayload{}
+	err = block.Fingerprint(fake.NewBadHashWithDelay(3))
+	require.EqualError(t, err, "couldn't fingerprint payload: oops")
 }
 
 func TestSkipBlock_HashUniqueness(t *testing.T) {
@@ -114,31 +116,37 @@ func TestSkipBlock_HashUniqueness(t *testing.T) {
 		Index:     1,
 		GenesisID: Digest{1},
 		BackLink:  Digest{1},
-		Payload:   &wrappers.StringValue{Value: "deadbeef"},
+		Payload:   fake.Message{Digest: []byte{1}},
 	}
 
-	enc := encoding.NewProtoEncoder()
-
-	prevHash, err := block.computeHash(crypto.NewSha256Factory(), enc)
+	h := crypto.NewSha256Factory().New()
+	err := block.Fingerprint(h)
 	require.NoError(t, err)
+
+	prevHash := h.Sum(nil)
 
 	value := reflect.ValueOf(&block)
 
 	for i := 0; i < value.Elem().NumField(); i++ {
 		field := value.Elem().Field(i)
 
-		if !field.CanSet() {
+		fieldName := value.Elem().Type().Field(i).Name
+
+		if !field.CanSet() || fieldName == "UnimplementedMessage" {
 			// ignore private fields.
 			continue
 		}
 
-		fieldName := value.Elem().Type().Field(i).Name
+		fieldValue := reflect.ValueOf(value.Elem().Field(i).Interface())
 
-		field.Set(reflect.Zero(value.Elem().Field(i).Type()))
+		field.Set(reflect.Zero(fieldValue.Type()))
 		newBlock := value.Interface()
 
-		hash, err := newBlock.(*SkipBlock).computeHash(crypto.NewSha256Factory(), enc)
+		h := crypto.NewSha256Factory().New()
+		err := newBlock.(*SkipBlock).Fingerprint(h)
 		require.NoError(t, err)
+
+		hash := h.Sum(nil)
 
 		errMsg := fmt.Sprintf("field %#v produced same hash", fieldName)
 		require.NotEqual(t, prevHash, hash, errMsg)
@@ -152,130 +160,66 @@ func TestSkipBlock_String(t *testing.T) {
 	require.Equal(t, block.String(), "Block[5:0100000000000000]")
 }
 
-func TestVerifiableBlock_Pack(t *testing.T) {
-	f := func(block SkipBlock) bool {
-		vb := VerifiableBlock{
-			SkipBlock: block,
-			Chain:     fakeChain{},
-		}
-
-		packed, err := vb.Pack(encoding.NewProtoEncoder())
-		require.NoError(t, err)
-		require.IsType(t, (*VerifiableBlockProto)(nil), packed)
-
-		_, err = vb.Pack(fake.BadPackEncoder{})
-		require.EqualError(t, err, "couldn't pack block: fake error")
-
-		_, err = vb.Pack(fake.BadPackAnyEncoder{})
-		require.EqualError(t, err, "couldn't pack chain: fake error")
-
-		return true
+func TestVerifiableBlock_VisitJSON(t *testing.T) {
+	vb := VerifiableBlock{
+		SkipBlock: SkipBlock{
+			Payload: fake.Message{},
+		},
+		Chain: fakeChain{},
 	}
 
-	err := quick.Check(f, nil)
+	ser := json.NewSerializer()
+
+	data, err := ser.Serialize(vb)
 	require.NoError(t, err)
+	expected := `{"Block":{"Index":0,"GenesisID":"[^"]+","Backlink":"[^"]+","Payload":{}},"Chain":{}}`
+	require.Regexp(t, expected, string(data))
+
+	_, err = vb.VisitJSON(fake.NewBadSerializer())
+	require.EqualError(t, err, "couldn't serialize block: fake error")
+
+	_, err = vb.VisitJSON(fake.NewBadSerializerWithDelay(1))
+	require.EqualError(t, err, "couldn't serialize chain: fake error")
 }
 
-func TestBlockFactory_FromPrevious(t *testing.T) {
-	f := func(prev SkipBlock) bool {
-		factory := blockFactory{
-			encoder:     encoding.NewProtoEncoder(),
-			hashFactory: crypto.NewSha256Factory(),
-		}
+func TestBlockFactory_VisitJSON(t *testing.T) {
+	factory := NewBlockFactory(fake.MessageFactory{})
 
-		block, err := factory.fromPrevious(prev, &empty.Empty{})
-		require.NoError(t, err)
-		require.Equal(t, prev.Index+1, block.Index)
-		require.Equal(t, prev.GenesisID, block.GenesisID)
-		require.Equal(t, prev.GetHash(), block.BackLink.Bytes())
+	ser := json.NewSerializer()
 
-		factory.hashFactory = fake.NewHashFactory(fake.NewBadHash())
-		_, err = factory.fromPrevious(prev, nil)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "couldn't make block: ")
-
-		return true
-	}
-
-	err := quick.Check(f, nil)
+	var block SkipBlock
+	err := ser.Deserialize([]byte(`{}`), factory, &block)
 	require.NoError(t, err)
+
+	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
+	require.EqualError(t, err, "couldn't deserialize message: fake error")
+
+	_, err = factory.VisitJSON(fake.FactoryInput{Serde: fake.NewBadSerializer()})
+	require.EqualError(t, err, "couldn't deserialize payload: fake error")
+
+	factory.hashFactory = fake.NewHashFactory(fake.NewBadHash())
+	err = ser.Deserialize([]byte(`{}`), factory, &block)
+	require.EqualError(t, xerrors.Unwrap(err),
+		"couldn't fingerprint block: couldn't write index: fake error")
 }
 
-func TestBlockFactory_DecodeBlock(t *testing.T) {
-	f := func(block SkipBlock) bool {
-		factory := blockFactory{
-			encoder:     encoding.NewProtoEncoder(),
-			hashFactory: crypto.NewSha256Factory(),
-		}
+func TestVerifiableFactory_VisitJSON(t *testing.T) {
+	factory := NewVerifiableFactory(NewBlockFactory(fake.MessageFactory{}), fakeChainFactory{})
 
-		packed, err := block.Pack(encoding.NewProtoEncoder())
-		require.NoError(t, err)
+	ser := json.NewSerializer()
 
-		newBlock, err := factory.decodeBlock(packed.(*BlockProto))
-		require.NoError(t, err)
-		require.Equal(t, block, newBlock)
-
-		_, err = factory.decodeBlock(&empty.Empty{})
-		require.EqualError(t, err, "invalid message type '*empty.Empty'")
-
-		factory.encoder = fake.BadUnmarshalDynEncoder{}
-		_, err = factory.decodeBlock(&BlockProto{})
-		require.EqualError(t, err, "couldn't unmarshal payload: fake error")
-
-		return true
-	}
-
-	err := quick.Check(f, nil)
+	var block VerifiableBlock
+	err := ser.Deserialize([]byte(`{"Block":{}}`), factory, &block)
 	require.NoError(t, err)
-}
 
-func TestBlockFactory_FromVerifiable(t *testing.T) {
-	f := func(block SkipBlock) bool {
-		factory := blockFactory{
-			encoder:     encoding.NewProtoEncoder(),
-			hashFactory: crypto.NewSha256Factory(),
-			consensus:   fakeConsensus{hash: block.hash},
-		}
+	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
+	require.EqualError(t, err, "couldn't deserialize message: fake error")
 
-		packed, err := block.Pack(encoding.NewProtoEncoder())
-		require.NoError(t, err)
+	_, err = factory.VisitJSON(fake.FactoryInput{Serde: fake.NewBadSerializer()})
+	require.EqualError(t, err, "couldn't deserialize chain: fake error")
 
-		pb := &VerifiableBlockProto{
-			Block: packed.(*BlockProto),
-			Chain: &any.Any{},
-		}
-
-		b, err := factory.FromVerifiable(pb)
-		require.NoError(t, err)
-		require.NotNil(t, b)
-
-		_, err = factory.FromVerifiable(&empty.Empty{})
-		require.EqualError(t, err, "invalid message type '*empty.Empty'")
-
-		factory.hashFactory = fake.NewHashFactory(fake.NewBadHash())
-		_, err = factory.FromVerifiable(pb)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "couldn't decode the block: ")
-
-		factory.hashFactory = crypto.NewSha256Factory()
-		factory.consensus = fakeConsensus{errFactory: xerrors.New("oops")}
-		_, err = factory.FromVerifiable(pb)
-		require.EqualError(t, err, "couldn't get the chain factory: oops")
-
-		factory.consensus = fakeConsensus{err: xerrors.New("oops")}
-		_, err = factory.FromVerifiable(pb)
-		require.EqualError(t, err, "couldn't decode the chain: oops")
-
-		factory.consensus = fakeConsensus{hash: Digest{}}
-		_, err = factory.FromVerifiable(pb)
-		require.EqualError(t, err,
-			fmt.Sprintf("mismatch hashes: %#x != %#x", [32]byte{}, block.hash))
-
-		return true
-	}
-
-	err := quick.Check(f, nil)
-	require.NoError(t, err)
+	_, err = factory.VisitJSON(fake.FactoryInput{Serde: fake.NewBadSerializerWithDelay(1)})
+	require.EqualError(t, err, "couldn't deserialize block: fake error")
 }
 
 // -----------------------------------------------------------------------------
@@ -301,11 +245,12 @@ func (s SkipBlock) Generate(rand *rand.Rand, size int) reflect.Value {
 		Index:     randomUint64(rand),
 		GenesisID: genesisID,
 		BackLink:  backLink,
-		Payload:   &empty.Empty{},
+		Payload:   fake.Message{},
 	}
 
-	hash, _ := block.computeHash(crypto.NewSha256Factory(), encoding.NewProtoEncoder())
-	block.hash = hash
+	h := crypto.NewSha256Factory().New()
+	block.Fingerprint(h)
+	copy(block.hash[:], h.Sum(nil))
 
 	return reflect.ValueOf(block)
 }
@@ -320,50 +265,50 @@ func (c fakeChain) Verify(crypto.Verifier) error {
 	return c.err
 }
 
-func (c fakeChain) GetLastHash() []byte {
+func (c fakeChain) GetTo() []byte {
 	return c.hash.Bytes()
 }
 
-func (c fakeChain) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
-	return &empty.Empty{}, c.err
+func (c fakeChain) VisitJSON(serde.Serializer) (interface{}, error) {
+	return struct{}{}, c.err
 }
 
 type fakeChainFactory struct {
-	consensus.ChainFactory
-	hash     Digest
-	err      error
-	errChain error
+	serde.UnimplementedFactory
+	hash Digest
 }
 
-func (f fakeChainFactory) FromProto(proto.Message) (consensus.Chain, error) {
-	return fakeChain{hash: f.hash, err: f.errChain}, f.err
+func (f fakeChainFactory) VisitJSON(serde.FactoryInput) (serde.Message, error) {
+	return fakeChain{hash: f.hash}, nil
 }
 
 type fakeConsensus struct {
 	consensus.Consensus
-	hash       Digest
-	err        error
-	errChain   error
-	errFactory error
-	errStore   error
+	hash     Digest
+	err      error
+	errStore error
 }
 
-func (c fakeConsensus) GetChainFactory() (consensus.ChainFactory, error) {
-	return fakeChainFactory{
-		hash:     c.hash,
-		err:      c.err,
-		errChain: c.errChain,
-	}, c.errFactory
+func (c fakeConsensus) GetChainFactory() serde.Factory {
+	return fakeChainFactory{hash: c.hash}
 }
 
 func (c fakeConsensus) GetChain(id []byte) (consensus.Chain, error) {
 	return fakeChain{}, c.err
 }
 
-func (c fakeConsensus) Listen(consensus.Validator) (consensus.Actor, error) {
+func (c fakeConsensus) Listen(consensus.Reactor) (consensus.Actor, error) {
 	return nil, c.err
 }
 
 func (c fakeConsensus) Store(consensus.Chain) error {
 	return c.errStore
+}
+
+type badPayload struct {
+	serde.UnimplementedMessage
+}
+
+func (p badPayload) Fingerprint(io.Writer) error {
+	return xerrors.New("oops")
 }

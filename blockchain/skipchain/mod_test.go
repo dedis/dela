@@ -6,45 +6,32 @@ import (
 	"testing"
 
 	proto "github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/blockchain"
-	"go.dedis.ch/fabric/consensus"
-	"go.dedis.ch/fabric/consensus/cosipbft"
-	"go.dedis.ch/fabric/consensus/viewchange"
-	"go.dedis.ch/fabric/cosi/threshold"
-	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/crypto/bls"
-	"go.dedis.ch/fabric/encoding"
-	internal "go.dedis.ch/fabric/internal/testing"
-	"go.dedis.ch/fabric/internal/testing/fake"
-	"go.dedis.ch/fabric/mino"
-	"go.dedis.ch/fabric/mino/minoch"
+	"go.dedis.ch/dela/blockchain"
+	"go.dedis.ch/dela/consensus"
+	"go.dedis.ch/dela/consensus/cosipbft"
+	"go.dedis.ch/dela/consensus/viewchange/constant"
+	"go.dedis.ch/dela/consensus/viewchange/roster"
+	"go.dedis.ch/dela/cosi/flatcosi"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/crypto/bls"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/minoch"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
-
-func TestMessages(t *testing.T) {
-	messages := []proto.Message{
-		&BlockProto{},
-		&VerifiableBlockProto{},
-		&PropagateGenesis{},
-		&BlockRequest{},
-		&BlockResponse{},
-	}
-
-	for _, m := range messages {
-		internal.CoverProtoMessage(t, m)
-	}
-}
 
 func TestSkipchain_Basic(t *testing.T) {
 	n := 5
 
 	authority, skipchains, actors := makeSkipchain(t, 3)
 
-	err := actors[0].InitChain(&empty.Empty{}, authority)
+	err := actors[0].Setup(fake.Message{}, authority)
 	require.NoError(t, err)
-	err = actors[1].InitChain(&empty.Empty{}, authority)
+	err = actors[1].Setup(fake.Message{}, authority)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -52,7 +39,7 @@ func TestSkipchain_Basic(t *testing.T) {
 	blocks := skipchains[2].Watch(ctx)
 
 	for i := 0; i < n; i++ {
-		err = actors[0].Store(&empty.Empty{}, authority)
+		err = actors[0].Store(fake.Message{}, authority)
 		require.NoError(t, err)
 
 		event := <-blocks
@@ -62,14 +49,20 @@ func TestSkipchain_Basic(t *testing.T) {
 		chain, err := skipchains[2].GetVerifiableBlock()
 		require.NoError(t, err)
 
-		packed, err := chain.Pack(skipchains[2].encoder)
+		ser := json.NewSerializer()
+
+		data, err := ser.Serialize(chain)
 		require.NoError(t, err)
 
-		block, err := skipchains[2].GetBlockFactory().FromVerifiable(packed)
+		factory := NewVerifiableFactory(NewBlockFactory(fake.MessageFactory{}),
+			skipchains[0].consensus.GetChainFactory())
+
+		var block VerifiableBlock
+		err = ser.Deserialize(data, factory, &block)
 		require.NoError(t, err)
 		require.NotNil(t, block)
-		require.Equal(t, uint64(i+1), block.(SkipBlock).Index)
-		require.Equal(t, event, block)
+		require.Equal(t, uint64(i+1), block.Index)
+		require.Equal(t, event, block.SkipBlock)
 	}
 }
 
@@ -147,13 +140,12 @@ func TestSkipchain_Watch(t *testing.T) {
 	require.Equal(t, 0, w.count)
 }
 
-func TestActor_InitChain(t *testing.T) {
+func TestActor_Setup(t *testing.T) {
 	db := &fakeDatabase{blocks: []SkipBlock{{}}, err: NewNoBlockError(0)}
 	actor := skipchainActor{
 		operations: &operations{
 			encoder: encoding.NewProtoEncoder(),
-			blockFactory: blockFactory{
-				encoder:     encoding.NewProtoEncoder(),
+			blockFactory: BlockFactory{
 				hashFactory: crypto.NewSha256Factory(),
 			},
 			addr: fake.NewAddress(0),
@@ -165,31 +157,31 @@ func TestActor_InitChain(t *testing.T) {
 
 	authority := fake.NewAuthority(3, fake.NewSigner)
 
-	err := actor.InitChain(&empty.Empty{}, authority)
+	err := actor.Setup(fake.Message{}, authority)
 	require.NoError(t, err)
 
 	actor.rpc = fakeRPC{err: xerrors.New("oops")}
-	err = actor.InitChain(&empty.Empty{}, authority)
+	err = actor.Setup(fake.Message{}, authority)
 	require.EqualError(t, xerrors.Unwrap(err), "couldn't propagate: oops")
 
 	// No error so the genesis block exists already.
 	db.err = nil
-	err = actor.InitChain(&empty.Empty{}, authority)
+	err = actor.Setup(fake.Message{}, authority)
 	require.NoError(t, err)
 
 	// Unexpected database error
 	db.err = xerrors.New("oops")
-	err = actor.InitChain(&empty.Empty{}, authority)
+	err = actor.Setup(fake.Message{}, authority)
 	require.EqualError(t, err, "couldn't read the genesis block: oops")
 }
 
 func TestActor_NewChain(t *testing.T) {
 	actor := skipchainActor{
 		operations: &operations{
+			addr:    fake.NewAddress(0),
 			encoder: encoding.NewProtoEncoder(),
 			db:      &fakeDatabase{},
-			blockFactory: blockFactory{
-				encoder:     encoding.NewProtoEncoder(),
+			blockFactory: BlockFactory{
 				hashFactory: crypto.NewSha256Factory(),
 			},
 			rpc: fakeRPC{},
@@ -200,20 +192,16 @@ func TestActor_NewChain(t *testing.T) {
 	authority := fake.NewAuthority(3, fake.NewSigner)
 
 	actor.rand = fakeRandGenerator{err: xerrors.New("oops")}
-	err := actor.newChain(&empty.Empty{}, authority)
+	err := actor.newChain(fake.Message{}, authority)
 	require.EqualError(t, err, "couldn't generate backlink: oops")
 
 	actor.rand = fakeRandGenerator{noSize: true}
-	err = actor.newChain(&empty.Empty{}, authority)
+	err = actor.newChain(fake.Message{}, authority)
 	require.EqualError(t, err, "mismatch rand length 0 != 32")
 
 	actor.rand = crypto.CryptographicRandomGenerator{}
-	actor.encoder = fake.BadPackEncoder{}
-	err = actor.newChain(&empty.Empty{}, authority)
-	require.EqualError(t, err, "couldn't pack genesis: fake error")
-
 	actor.blockFactory.hashFactory = fake.NewHashFactory(fake.NewBadHash())
-	err = actor.newChain(&empty.Empty{}, authority)
+	err = actor.newChain(fake.Message{}, authority)
 	require.Contains(t, err.Error(), "couldn't create block: ")
 }
 
@@ -223,8 +211,7 @@ func TestActor_Store(t *testing.T) {
 	actor := skipchainActor{
 		operations: &operations{
 			encoder: encoding.NewProtoEncoder(),
-			blockFactory: blockFactory{
-				encoder:     encoding.NewProtoEncoder(),
+			blockFactory: BlockFactory{
 				hashFactory: crypto.NewSha256Factory(),
 			},
 			addr: fake.NewAddress(0),
@@ -235,23 +222,18 @@ func TestActor_Store(t *testing.T) {
 
 	authority := fake.NewAuthority(3, fake.NewSigner)
 
-	err := actor.Store(&empty.Empty{}, authority)
+	err := actor.Store(fake.Message{}, authority)
 	require.NoError(t, err)
 	// Make sure the conodes rotate if the view change allows it.
 	require.NotNil(t, cons.prop)
 
 	db.err = xerrors.New("oops")
-	err = actor.Store(&empty.Empty{}, authority)
+	err = actor.Store(fake.Message{}, authority)
 	require.EqualError(t, err, "couldn't read the latest block: oops")
 
 	db.err = nil
-	actor.blockFactory.hashFactory = fake.NewHashFactory(fake.NewBadHash())
-	err = actor.Store(&empty.Empty{}, authority)
-	require.Contains(t, err.Error(), "couldn't create next block: ")
-
-	actor.blockFactory.hashFactory = crypto.NewSha256Factory()
 	actor.consensus = &fakeConsensusActor{err: xerrors.New("oops")}
-	err = actor.Store(&empty.Empty{}, authority)
+	err = actor.Store(fake.Message{}, authority)
 	require.EqualError(t, err, "couldn't propose the block: oops")
 }
 
@@ -271,13 +253,15 @@ func TestObserver_NotifyCallback(t *testing.T) {
 // -----------------
 // Utility functions
 
-type testValidator struct{}
-
-func (v testValidator) Validate(index uint64, payload proto.Message) error {
-	return nil
+type testReactor struct {
+	fake.MessageFactory
 }
 
-func (v testValidator) Commit(payload proto.Message) error {
+func (v testReactor) InvokeValidate(serde.Message) (blockchain.Payload, error) {
+	return fake.Message{}, nil
+}
+
+func (v testReactor) InvokeCommit(blockchain.Payload) error {
 	return nil
 }
 
@@ -295,12 +279,15 @@ func makeSkipchain(t *testing.T, n int) (crypto.CollectiveAuthority, []*Skipchai
 
 	skipchains := make([]*Skipchain, n)
 	actors := make([]blockchain.Actor, n)
-	for i := 0; i < n; i++ {
-		cosi := threshold.NewCoSi(mm[i], authority.GetSigner(i))
-		cons := cosipbft.NewCoSiPBFT(mm[i], cosi, fakeGovernance{authority: authority})
+	for i, m := range mm {
+		cosi := flatcosi.NewFlat(mm[i], authority.GetSigner(i))
+		vc := constant.NewViewChange(m.GetAddress(), authority,
+			roster.NewChangeSetFactory(m.GetAddressFactory(), cosi.GetPublicKeyFactory()))
+
+		cons := cosipbft.NewCoSiPBFT(mm[i], cosi, vc)
 		skipchains[i] = NewSkipchain(mm[i], cons)
 
-		actor, err := skipchains[i].Listen(testValidator{})
+		actor, err := skipchains[i].Listen(testReactor{})
 		require.NoError(t, err)
 
 		actors[i] = actor
@@ -331,10 +318,10 @@ func (rpc fakeRPC) Call(context.Context, proto.Message,
 type fakeConsensusActor struct {
 	consensus.Actor
 	err  error
-	prop consensus.Proposal
+	prop serde.Message
 }
 
-func (a *fakeConsensusActor) Propose(prop consensus.Proposal) error {
+func (a *fakeConsensusActor) Propose(prop serde.Message) error {
 	a.prop = prop
 	return a.err
 }
@@ -349,17 +336,4 @@ func (rand fakeRandGenerator) Read(buffer []byte) (int, error) {
 		return 0, nil
 	}
 	return len(buffer), rand.err
-}
-
-type fakeGovernance struct {
-	viewchange.Governance
-	authority fake.CollectiveAuthority
-}
-
-func (gov fakeGovernance) GetAuthority(index uint64) (viewchange.EvolvableAuthority, error) {
-	return gov.authority, nil
-}
-
-func (gov fakeGovernance) GetChangeSet(consensus.Proposal) (viewchange.ChangeSet, error) {
-	return viewchange.ChangeSet{}, nil
 }

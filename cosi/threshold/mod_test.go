@@ -5,15 +5,13 @@ import (
 	"testing"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/wrappers"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/cosi"
-	"go.dedis.ch/fabric/crypto/bls"
-	"go.dedis.ch/fabric/encoding"
-	internal "go.dedis.ch/fabric/internal/testing"
-	"go.dedis.ch/fabric/internal/testing/fake"
-	"go.dedis.ch/fabric/mino"
-	"go.dedis.ch/fabric/mino/minoch"
+	"go.dedis.ch/dela/crypto/bls"
+	internal "go.dedis.ch/dela/internal/testing"
+	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/minoch"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -40,15 +38,15 @@ func TestCoSi_Basic(t *testing.T) {
 	c1 := NewCoSi(m1, ca.GetSigner(0))
 	c1.Threshold = func(n int) int { return n - 1 }
 
-	actor, err := c1.Listen(fakeHashable{})
+	actor, err := c1.Listen(fakeReactor{})
 	require.NoError(t, err)
 
 	c2 := NewCoSi(m2, ca.GetSigner(1))
-	_, err = c2.Listen(fakeHashable{err: xerrors.New("oops")})
+	_, err = c2.Listen(fakeReactor{err: xerrors.New("oops")})
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	sig, err := actor.Sign(ctx, fakeMessage{}, ca)
+	sig, err := actor.Sign(ctx, fake.Message{}, ca)
 	require.NoError(t, err)
 	require.NotNil(t, sig)
 
@@ -80,35 +78,24 @@ func TestCoSi_GetSignatureFactory(t *testing.T) {
 func TestCoSi_Listen(t *testing.T) {
 	c := &CoSi{mino: fake.Mino{}}
 
-	actor, err := c.Listen(fakeHashable{})
+	actor, err := c.Listen(fakeReactor{})
 	require.NoError(t, err)
 	require.NotNil(t, actor)
 
 	c.mino = fake.NewBadMino()
-	_, err = c.Listen(fakeHashable{})
+	_, err = c.Listen(fakeReactor{})
 	require.EqualError(t, err, "couldn't make rpc: fake error")
 }
 
 // -----------------------------------------------------------------------------
 // Utility functions
 
-type fakeHashable struct {
-	cosi.Hashable
+type fakeReactor struct {
+	fake.MessageFactory
+
 	err error
 }
 
-func (h fakeHashable) Hash(addr mino.Address, in proto.Message) ([]byte, error) {
+func (h fakeReactor) Invoke(addr mino.Address, in serde.Message) ([]byte, error) {
 	return []byte{0xff}, h.err
-}
-
-type fakeMessage struct {
-	cosi.Message
-}
-
-func (m fakeMessage) GetHash() []byte {
-	return []byte{0xff}
-}
-
-func (m fakeMessage) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
-	return &wrappers.StringValue{Value: "abc"}, nil
 }

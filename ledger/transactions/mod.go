@@ -1,15 +1,14 @@
 package transactions
 
 import (
-	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/ledger/inventory"
+	"go.dedis.ch/dela/ledger/inventory"
+	"go.dedis.ch/dela/serde"
 )
 
 // ClientTransaction is a transaction created by a client that will be sent to
 // the network.
 type ClientTransaction interface {
-	encoding.Packable
+	serde.Message
 
 	// GetID returns a unique identifier for the transaction.
 	GetID() []byte
@@ -21,11 +20,4 @@ type ServerTransaction interface {
 	ClientTransaction
 
 	Consume(inventory.WritablePage) error
-}
-
-// TransactionFactory is a factory to create new transactions or decode from
-// network messages.
-type TransactionFactory interface {
-	// FromProto returns the transaction from the protobuf message.
-	FromProto(pb proto.Message) (ServerTransaction, error)
 }

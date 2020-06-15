@@ -5,35 +5,34 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/any"
-	"go.dedis.ch/fabric"
-	"go.dedis.ch/fabric/blockchain"
-	"go.dedis.ch/fabric/blockchain/skipchain"
-	"go.dedis.ch/fabric/consensus/cosipbft"
-	"go.dedis.ch/fabric/consensus/viewchange"
-	"go.dedis.ch/fabric/consensus/viewchange/rotating"
-	"go.dedis.ch/fabric/cosi/flatcosi"
-	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/ledger"
-	"go.dedis.ch/fabric/ledger/byzcoin/roster"
-	"go.dedis.ch/fabric/ledger/inventory/mem"
-	"go.dedis.ch/fabric/ledger/transactions"
-	"go.dedis.ch/fabric/ledger/transactions/basic"
-	"go.dedis.ch/fabric/mino"
-	"go.dedis.ch/fabric/mino/gossip"
+	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/blockchain"
+	"go.dedis.ch/dela/blockchain/skipchain"
+	"go.dedis.ch/dela/consensus/cosipbft"
+	"go.dedis.ch/dela/consensus/viewchange"
+	"go.dedis.ch/dela/consensus/viewchange/roster"
+	"go.dedis.ch/dela/cosi/flatcosi"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/ledger"
+	"go.dedis.ch/dela/ledger/arc/darc"
+	"go.dedis.ch/dela/ledger/byzcoin/memship"
+	"go.dedis.ch/dela/ledger/inventory/mem"
+	"go.dedis.ch/dela/ledger/transactions"
+	"go.dedis.ch/dela/ledger/transactions/basic"
+	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/gossip"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
-
-//go:generate protoc -I ./ -I ../../. --go_out=Mledger/byzcoin/roster/messages.proto=go.dedis.ch/fabric/ledger/byzcoin/roster:. ./messages.proto
 
 const (
 	initialRoundTime = 50 * time.Millisecond
 	timeoutRoundTime = 1 * time.Minute
 )
 
-var rosterValueKey = []byte(roster.RosterValueKey)
+var (
+	rosterValueKey = []byte(memship.RosterValueKey)
+)
 
 // Ledger is a distributed public ledger implemented by using a blockchain. Each
 // node is responsible for collecting transactions from clients and propose them
@@ -48,9 +47,8 @@ type Ledger struct {
 	gossiper   gossip.Gossiper
 	bag        *txBag
 	proc       *txProcessor
-	governance viewchange.Governance
-	encoder    encoding.ProtoMarshaler
-	txFactory  transactions.TransactionFactory
+	viewchange viewchange.ViewChange
+	txFactory  serde.Factory
 	closing    chan struct{}
 	closed     sync.WaitGroup
 	initiated  chan error
@@ -59,23 +57,27 @@ type Ledger struct {
 // NewLedger creates a new Byzcoin ledger.
 func NewLedger(m mino.Mino, signer crypto.AggregateSigner) *Ledger {
 	inventory := mem.NewInventory()
-	taskFactory, gov := newtaskFactory(m, signer, inventory)
 
-	txFactory := basic.NewTransactionFactory(signer, taskFactory)
+	vc := memship.NewTaskManager(inventory, m, signer)
+	txFactory := basic.NewTransactionFactory(signer)
+	memship.Register(txFactory, vc)
+	darc.Register(txFactory, darc.NewTaskFactory())
 
-	consensus := cosipbft.NewCoSiPBFT(m, flatcosi.NewFlat(m, signer), gov)
-	// Set a rotating view change for the collective signing.
-	consensus.ViewChange = rotating.NewViewChange(m.GetAddress())
+	consensus := cosipbft.NewCoSiPBFT(m, flatcosi.NewFlat(m, signer), vc)
+
+	msgFactory := MessageFactory{
+		txFactory:     txFactory,
+		rosterFactory: roster.NewRosterFactory(m.GetAddressFactory(), signer.GetPublicKeyFactory()),
+	}
 
 	return &Ledger{
 		addr:       m.GetAddress(),
 		signer:     signer,
 		bc:         skipchain.NewSkipchain(m, consensus),
-		gossiper:   gossip.NewFlat(m, rumorFactory{txFactory: txFactory}),
+		gossiper:   gossip.NewFlat(m, txFactory),
 		bag:        newTxBag(),
-		proc:       newTxProcessor(txFactory, inventory),
-		governance: gov,
-		encoder:    encoding.NewProtoEncoder(),
+		proc:       newTxProcessor(msgFactory, inventory),
+		viewchange: vc,
 		txFactory:  txFactory,
 		closing:    make(chan struct{}),
 		initiated:  make(chan error, 1),
@@ -114,11 +116,11 @@ func (ldgr *Ledger) Listen() (ledger.Actor, error) {
 			}
 		}
 
-		fabric.Logger.Trace().
+		dela.Logger.Trace().
 			Hex("hash", genesis.GetHash()).
 			Msg("received genesis block")
 
-		authority, err := ldgr.governance.GetAuthority(genesis.GetIndex())
+		authority, err := ldgr.viewchange.GetAuthority(0)
 		if err != nil {
 			ldgr.initiated <- xerrors.Errorf("couldn't read chain roster: %v", err)
 			return
@@ -147,7 +149,7 @@ func (ldgr *Ledger) gossipTxs() {
 		case rumor := <-ldgr.gossiper.Rumors():
 			tx, ok := rumor.(transactions.ClientTransaction)
 			if ok {
-				ldgr.bag.Add(tx)
+				ldgr.bag.Add(tx.(transactions.ServerTransaction))
 			}
 		}
 	}
@@ -176,26 +178,20 @@ func (ldgr *Ledger) proposeBlocks(actor blockchain.Actor, ga gossip.Actor, playe
 			// many players offline for a while).
 			err := ldgr.proposeBlock(actor, players)
 			if err != nil {
-				fabric.Logger.Err(err).Msg("couldn't propose new block")
+				dela.Logger.Err(err).Msg("couldn't propose new block")
 			}
 
 			roundTimeout = time.After(timeoutRoundTime)
 		case block := <-blocks:
-			payload, ok := block.GetPayload().(*BlockPayload)
+			payload, ok := block.GetPayload().(BlockPayload)
 			if !ok {
-				fabric.Logger.Warn().Msgf("found invalid payload type '%T' != '%T'",
+				dela.Logger.Warn().Msgf("found invalid payload type '%T' != '%T'",
 					block.GetPayload(), payload)
 				break
 			}
 
-			txRes := make([]TransactionResult, len(payload.GetTransactions()))
-			for i, txProto := range payload.GetTransactions() {
-				tx, err := ldgr.txFactory.FromProto(txProto)
-				if err != nil {
-					fabric.Logger.Warn().Err(err).Msg("couldn't decode transaction")
-					return
-				}
-
+			txRes := make([]TransactionResult, len(payload.transactions))
+			for i, tx := range payload.transactions {
 				txRes[i] = TransactionResult{
 					txID:     tx.GetID(),
 					Accepted: true,
@@ -205,9 +201,9 @@ func (ldgr *Ledger) proposeBlocks(actor blockchain.Actor, ga gossip.Actor, playe
 			ldgr.bag.Remove(txRes...)
 
 			// Update the gossip list of participants with the roster block.
-			roster, err := ldgr.governance.GetAuthority(block.GetIndex())
+			roster, err := ldgr.viewchange.GetAuthority(block.GetIndex())
 			if err != nil {
-				fabric.Logger.Err(err).Msg("couldn't read block roster")
+				dela.Logger.Err(err).Msg("couldn't read block roster")
 			} else {
 				ga.SetPlayers(roster)
 			}
@@ -217,7 +213,7 @@ func (ldgr *Ledger) proposeBlocks(actor blockchain.Actor, ga gossip.Actor, playe
 			// TODO: this should be delayed to allow several blocks to be notified.
 			err = ldgr.proposeBlock(actor, players)
 			if err != nil {
-				fabric.Logger.Err(err).Msg("couldn't propose new block")
+				dela.Logger.Err(err).Msg("couldn't propose new block")
 			}
 
 			roundTimeout = time.After(timeoutRoundTime)
@@ -226,50 +222,19 @@ func (ldgr *Ledger) proposeBlocks(actor blockchain.Actor, ga gossip.Actor, playe
 }
 
 func (ldgr *Ledger) proposeBlock(actor blockchain.Actor, players mino.Players) error {
-	payload, err := ldgr.stagePayload(ldgr.bag.GetAll())
-	if err != nil {
-		return xerrors.Errorf("couldn't make the payload: %v", err)
+	blueprint := Blueprint{
+		transactions: ldgr.bag.GetAll(),
 	}
 
 	// Each instance proposes a payload based on the received
 	// transactions but it depends on the blockchain implementation
 	// if it will be accepted.
-	err = actor.Store(payload, players)
+	err := actor.Store(blueprint, players)
 	if err != nil {
 		return xerrors.Errorf("couldn't send the payload: %v", err)
 	}
 
 	return nil
-}
-
-// stagePayload creates a payload with the list of transactions by staging a new
-// snapshot to the inventory.
-func (ldgr *Ledger) stagePayload(txs []transactions.ClientTransaction) (*BlockPayload, error) {
-	fabric.Logger.Trace().
-		Str("addr", ldgr.addr.String()).
-		Msgf("staging payload with %d transactions", len(txs))
-
-	payload := &BlockPayload{
-		Transactions: make([]*any.Any, len(txs)),
-	}
-
-	for i, tx := range txs {
-		txpb, err := ldgr.encoder.PackAny(tx)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't pack tx: %v", err)
-		}
-
-		payload.Transactions[i] = txpb
-	}
-
-	page, err := ldgr.proc.process(payload)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't process the txs: %v", err)
-	}
-
-	payload.Fingerprint = page.GetFingerprint()
-
-	return payload, nil
 }
 
 // Watch implements ledger.Ledger. It listens for new transactions and returns
@@ -283,19 +248,13 @@ func (ldgr *Ledger) Watch(ctx context.Context) <-chan ledger.TransactionResult {
 		for {
 			block, ok := <-blocks
 			if !ok {
-				fabric.Logger.Trace().Msg("watcher is closing")
+				dela.Logger.Trace().Msg("watcher is closing")
 				return
 			}
 
-			payload, ok := block.GetPayload().(*BlockPayload)
+			payload, ok := block.GetPayload().(BlockPayload)
 			if ok {
-				for _, txProto := range payload.GetTransactions() {
-					tx, err := ldgr.txFactory.FromProto(txProto)
-					if err != nil {
-						fabric.Logger.Warn().Err(err).Msg("couldn't decode transaction")
-						return
-					}
-
+				for _, tx := range payload.transactions {
 					results <- TransactionResult{
 						txID:     tx.GetID(),
 						Accepted: true,
@@ -332,21 +291,16 @@ func (a actorLedger) Setup(players mino.Players) error {
 		return xerrors.Errorf("players must implement 'crypto.CollectiveAuthority'")
 	}
 
-	rosterpb, err := a.encoder.Pack(a.governance.GetAuthorityFactory().New(authority))
-	if err != nil {
-		return xerrors.Errorf("couldn't pack roster: %v", err)
-	}
-
-	payload := &GenesisPayload{Roster: rosterpb.(*roster.Roster)}
+	payload := GenesisPayload{roster: roster.New(authority)}
 
 	page, err := a.proc.setup(payload)
 	if err != nil {
 		return xerrors.Errorf("couldn't store genesis payload: %v", err)
 	}
 
-	payload.Fingerprint = page.GetFingerprint()
+	payload.root = page.GetFingerprint()
 
-	err = a.bcActor.InitChain(payload, authority)
+	err = a.bcActor.Setup(payload, authority)
 	if err != nil {
 		return xerrors.Errorf("couldn't initialize the chain: %v", err)
 	}
@@ -376,12 +330,4 @@ func (a actorLedger) Close() error {
 	}
 
 	return nil
-}
-
-type rumorFactory struct {
-	txFactory transactions.TransactionFactory
-}
-
-func (f rumorFactory) FromProto(msg proto.Message) (gossip.Rumor, error) {
-	return f.txFactory.FromProto(msg)
 }

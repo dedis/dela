@@ -12,15 +12,16 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"reflect"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/any"
-	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/crypto/common"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/ledger/arc"
-	"go.dedis.ch/fabric/ledger/inventory"
-	"go.dedis.ch/fabric/ledger/transactions"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/crypto/common"
+	"go.dedis.ch/dela/ledger/arc"
+	"go.dedis.ch/dela/ledger/inventory"
+	"go.dedis.ch/dela/ledger/transactions"
+	"go.dedis.ch/dela/ledger/transactions/basic/json"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -28,8 +29,8 @@ import (
 
 // ClientTask is a task inside a transaction.
 type ClientTask interface {
-	encoding.Packable
-	encoding.Fingerprinter
+	serde.Message
+	serde.Fingerprinter
 }
 
 // Context is the context provided to a server transaction when consumed.
@@ -52,6 +53,8 @@ type ServerTask interface {
 // TaskFactory provide the primitives to instantiate a task from its protobuf
 // message.
 type TaskFactory interface {
+	serde.Factory
+
 	FromProto(proto.Message) (ServerTask, error)
 }
 
@@ -61,6 +64,8 @@ type TaskFactory interface {
 //
 // - implements transactions.ClientTransaction
 type transaction struct {
+	serde.UnimplementedMessage
+
 	hash      []byte
 	nonce     uint64
 	identity  crypto.PublicKey
@@ -80,35 +85,40 @@ func (t transaction) GetIdentity() arc.Identity {
 	return t.identity
 }
 
-// Pack implements encoding.Packable. It returns the protobuf message of the
+// VisitJSON implements serde.Message. It returns the JSON message for this
 // transaction.
-func (t transaction) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
-	pb := &TransactionProto{
-		Nonce: t.nonce,
-	}
-
-	var err error
-	pb.Identity, err = enc.PackAny(t.identity)
+func (t transaction) VisitJSON(ser serde.Serializer) (interface{}, error) {
+	identity, err := ser.Serialize(t.identity)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack identity: %v", err)
+		return nil, xerrors.Errorf("couldn't serialize identity: %v", err)
 	}
 
-	pb.Signature, err = enc.PackAny(t.signature)
+	signature, err := ser.Serialize(t.signature)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack signature: %v", err)
+		return nil, xerrors.Errorf("couldn't serialize signature: %v", err)
 	}
 
-	pb.Task, err = enc.PackAny(t.task)
+	task, err := ser.Serialize(t.task)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack task: %v", err)
+		return nil, xerrors.Errorf("couldn't serialize task: %v", err)
 	}
 
-	return pb, nil
+	m := json.Transaction{
+		Nonce:     t.nonce,
+		Identity:  identity,
+		Signature: signature,
+		Task: json.Task{
+			Type:  keyOf(t.task),
+			Value: task,
+		},
+	}
+
+	return m, nil
 }
 
 // Fingerprint implements encoding.Fingerprinter. It serializes the transaction
 // into the writer in a deterministic way.
-func (t transaction) Fingerprint(w io.Writer, enc encoding.ProtoMarshaler) error {
+func (t transaction) Fingerprint(w io.Writer) error {
 	buffer := make([]byte, 8)
 	binary.LittleEndian.PutUint64(buffer[:], t.nonce)
 
@@ -127,7 +137,7 @@ func (t transaction) Fingerprint(w io.Writer, enc encoding.ProtoMarshaler) error
 		return xerrors.Errorf("couldn't write identity: %v", err)
 	}
 
-	err = t.task.Fingerprint(w, enc)
+	err = t.task.Fingerprint(w)
 	if err != nil {
 		return xerrors.Errorf("couldn't write task: %v", err)
 	}
@@ -138,7 +148,7 @@ func (t transaction) Fingerprint(w io.Writer, enc encoding.ProtoMarshaler) error
 // String implements fmt.Stringer. It returns a string representation of the
 // transaction.
 func (t transaction) String() string {
-	return fmt.Sprintf("Transaction[%v]", t.identity)
+	return fmt.Sprintf("Transaction[%x]@%v", t.hash, t.identity)
 }
 
 // serverTransaction is an extension of the transaction that can be consumed.
@@ -171,24 +181,29 @@ func (t serverTransaction) Consume(page inventory.WritablePage) error {
 //
 // - implements ledger.TransactionFactory
 type TransactionFactory struct {
+	serde.UnimplementedFactory
+
 	signer           crypto.Signer
 	hashFactory      crypto.HashFactory
 	publicKeyFactory crypto.PublicKeyFactory
 	signatureFactory crypto.SignatureFactory
-	taskFactory      TaskFactory
-	encoder          encoding.ProtoMarshaler
+	registry         map[string]TaskFactory
 }
 
 // NewTransactionFactory returns a new instance of the transaction factory.
-func NewTransactionFactory(signer crypto.Signer, f TaskFactory) TransactionFactory {
+func NewTransactionFactory(signer crypto.Signer) TransactionFactory {
 	return TransactionFactory{
 		signer:           signer,
 		hashFactory:      crypto.NewSha256Factory(),
 		publicKeyFactory: common.NewPublicKeyFactory(),
 		signatureFactory: common.NewSignatureFactory(),
-		taskFactory:      f,
-		encoder:          encoding.NewProtoEncoder(),
+		registry:         make(map[string]TaskFactory),
 	}
+}
+
+// Register registers the message to use the given factory to deserialize.
+func (f TransactionFactory) Register(m serde.Message, factory TaskFactory) {
+	f.registry[keyOf(m)] = factory
 }
 
 // New returns a new transaction from the given task. The transaction will be
@@ -201,7 +216,7 @@ func (f TransactionFactory) New(task ClientTask) (transactions.ClientTransaction
 	}
 
 	h := f.hashFactory.New()
-	err := tx.Fingerprint(h, f.encoder)
+	err := tx.Fingerprint(h)
 	if err != nil {
 		return tx, xerrors.Errorf("couldn't compute hash: %v", err)
 	}
@@ -216,70 +231,64 @@ func (f TransactionFactory) New(task ClientTask) (transactions.ClientTransaction
 	return tx, nil
 }
 
-// FromProto implements ledger.TransactionFactory. It returns a new transaction
-// built from the protobuf message.
-func (f TransactionFactory) FromProto(in proto.Message) (transactions.ServerTransaction, error) {
-	var pb *TransactionProto
-
-	switch msg := in.(type) {
-	case *any.Any:
-		pb = &TransactionProto{}
-		err := f.encoder.UnmarshalAny(msg, pb)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't unmarshal input: %v", err)
-		}
-	case *TransactionProto:
-		pb = msg
-	default:
-		return nil, xerrors.Errorf("invalid transaction type '%T'", in)
+// VisitJSON implements serde.Factory. It returns the transaction associated
+// with the input if appropriate, otherwise it returns an error.
+func (f TransactionFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
+	m := json.Transaction{}
+	err := in.Feed(&m)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't deserialize transaction: %v", err)
 	}
 
-	task, err := f.taskFactory.FromProto(pb.GetTask())
+	var identity crypto.PublicKey
+	err = in.GetSerializer().Deserialize(m.Identity, f.publicKeyFactory, &identity)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't decode task: %v", err)
+		return nil, xerrors.Errorf("couldn't deserialize identity: %v", err)
+	}
+
+	var signature crypto.Signature
+	err = in.GetSerializer().Deserialize(m.Signature, f.signatureFactory, &signature)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't deserialize signature: %v", err)
+	}
+
+	factory := f.registry[m.Task.Type]
+	if factory == nil {
+		return nil, xerrors.Errorf("unknown factory for type '%s'", m.Task.Type)
+	}
+
+	var task ServerTask
+	err = in.GetSerializer().Deserialize(m.Task.Value, factory, &task)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't deserialize task: %v", err)
 	}
 
 	tx := serverTransaction{
 		transaction: transaction{
-			nonce: pb.GetNonce(),
-			task:  task,
+			nonce:     m.Nonce,
+			identity:  identity,
+			signature: signature,
+			task:      task,
 		},
 	}
 
-	err = f.fillIdentity(&tx, pb)
+	h := f.hashFactory.New()
+	err = tx.Fingerprint(h)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't fingerprint: %v", err)
+	}
+
+	tx.hash = h.Sum(nil)
+
+	err = identity.Verify(tx.hash, signature)
+	if err != nil {
+		return nil, xerrors.Errorf("signature does not match tx: %v", err)
 	}
 
 	return tx, nil
 }
 
-func (f TransactionFactory) fillIdentity(tx *serverTransaction, pb *TransactionProto) error {
-	identity, err := f.publicKeyFactory.FromProto(pb.GetIdentity())
-	if err != nil {
-		return xerrors.Errorf("couldn't decode public key: %v", err)
-	}
-
-	signature, err := f.signatureFactory.FromProto(pb.GetSignature())
-	if err != nil {
-		return xerrors.Errorf("couldn't decode signature: %v", err)
-	}
-
-	tx.identity = identity
-	tx.signature = signature
-
-	h := f.hashFactory.New()
-	err = tx.Fingerprint(h, f.encoder)
-	if err != nil {
-		return xerrors.Errorf("couldn't compute hash: %v", err)
-	}
-
-	tx.hash = h.Sum(nil)
-
-	err = tx.identity.Verify(tx.hash, tx.signature)
-	if err != nil {
-		return xerrors.Errorf("signature does not match tx: %v", err)
-	}
-
-	return nil
+func keyOf(m serde.Message) string {
+	typ := reflect.TypeOf(m)
+	return fmt.Sprintf("%s.%s", typ.PkgPath(), typ.Name())
 }

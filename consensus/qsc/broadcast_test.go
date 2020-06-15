@@ -13,9 +13,9 @@ import (
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/mino"
-	"go.dedis.ch/fabric/mino/minoch"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/minoch"
 	"golang.org/x/xerrors"
 )
 

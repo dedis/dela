@@ -1,17 +1,17 @@
 package skipchain
 
 import (
-	"bytes"
 	"context"
 	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
-	"go.dedis.ch/fabric"
-	"go.dedis.ch/fabric/blockchain"
-	"go.dedis.ch/fabric/consensus"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/blockchain"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -20,32 +20,17 @@ const catchUpLeeway = 100 * time.Millisecond
 // operations implements helper functions that can be used by the handlers for
 // common operations.
 type operations struct {
-	logger       zerolog.Logger
-	encoder      encoding.ProtoMarshaler
-	addr         mino.Address
-	processor    blockchain.PayloadProcessor
-	blockFactory blockFactory
-	db           Database
-	rpc          mino.RPC
-	watcher      blockchain.Observable
-	consensus    consensus.Consensus
+	logger          zerolog.Logger
+	encoder         encoding.ProtoMarshaler
+	addr            mino.Address
+	blockFactory    BlockFactory
+	responseFactory serde.Factory
+	db              Database
+	rpc             mino.RPC
+	watcher         blockchain.Observable
+	reactor         blockchain.Reactor
 
 	catchUpLock sync.Mutex
-}
-
-func (ops *operations) insertBlock(block SkipBlock) error {
-	err := ops.processor.Validate(block.GetIndex(), block.GetPayload())
-	if err != nil {
-		return xerrors.Errorf("couldn't validate block: %v", err)
-	}
-
-	err = ops.commitBlock(block)
-	if err != nil {
-		// No wrapping to avoid redundancy.
-		return err
-	}
-
-	return nil
 }
 
 func (ops *operations) commitBlock(block SkipBlock) error {
@@ -55,7 +40,7 @@ func (ops *operations) commitBlock(block SkipBlock) error {
 			return xerrors.Errorf("couldn't write block: %v", err)
 		}
 
-		err = ops.processor.Commit(block.GetPayload())
+		err = ops.reactor.InvokeCommit(block.GetPayload())
 		if err != nil {
 			return xerrors.Errorf("couldn't commit block: %v", err)
 		}
@@ -67,20 +52,24 @@ func (ops *operations) commitBlock(block SkipBlock) error {
 		return xerrors.Errorf("tx failed: %v", err)
 	}
 
-	fabric.Logger.Trace().Msgf("new block written: %v", block)
+	dela.Logger.Trace().Msgf("new block written: %v", block)
 
 	ops.watcher.Notify(block)
 
 	return nil
 }
 
-func (ops *operations) catchUp(target SkipBlock, addr mino.Address) error {
+func (ops *operations) catchUp(index uint64, addr mino.Address) error {
 	ops.catchUpLock.Lock()
 	defer ops.catchUpLock.Unlock()
 
+	if index == 0 {
+		return nil
+	}
+
 	// Target is the block to append to the chain so we check that blocks up to
 	// the previous one exist.
-	if ops.db.Contains(target.GetIndex() - 1) {
+	if ops.db.Contains(index - 1) {
 		// Nothing to catch up.
 		return nil
 	}
@@ -95,14 +84,14 @@ func (ops *operations) catchUp(target SkipBlock, addr mino.Address) error {
 		from = last.GetIndex() + 1
 	}
 
-	if target.GetIndex()-from <= 1 {
+	if index-from <= 1 {
 		// When only one block is missing, that probably means the propagation
 		// is not yet over, so it gives a chance to wait for it before starting
 		// the actual catch up.
-		ops.waitBlock(target.GetIndex() - 1)
+		ops.waitBlock(index - 1)
 
 		// Check again after the lock is acquired again.
-		if ops.db.Contains(target.GetIndex() - 1) {
+		if ops.db.Contains(index - 1) {
 			return nil
 		}
 	}
@@ -119,12 +108,12 @@ func (ops *operations) catchUp(target SkipBlock, addr mino.Address) error {
 		return xerrors.Errorf("couldn't open stream: %v", err)
 	}
 
-	req := &BlockRequest{
-		From: from,
-		To:   target.GetIndex() - 1,
+	req := BlockRequest{
+		from: from,
+		to:   index - 1,
 	}
 
-	err = <-sender.Send(req, addr)
+	err = <-sender.Send(tmp.ProtoOf(req), addr)
 	if err != nil {
 		return xerrors.Errorf("couldn't send block request: %v", err)
 	}
@@ -135,46 +124,19 @@ func (ops *operations) catchUp(target SkipBlock, addr mino.Address) error {
 			return xerrors.Errorf("couldn't receive message: %v", err)
 		}
 
-		resp, ok := msg.(*BlockResponse)
+		in := tmp.FromProto(msg, ops.responseFactory)
+
+		resp, ok := in.(BlockResponse)
 		if !ok {
-			return xerrors.Errorf("invalid response type '%T' != '%T'", msg, resp)
+			return xerrors.Errorf("invalid response type '%T' != '%T'", in, resp)
 		}
 
-		block, err := ops.blockFactory.decodeBlock(resp.GetBlock())
-		if err != nil {
-			return xerrors.Errorf("couldn't decode block: %v", err)
-		}
-
-		if resp.GetChain() != nil {
-			factory, err := ops.consensus.GetChainFactory()
-			if err != nil {
-				return xerrors.Errorf("couldn't get chain factory: %v", err)
-			}
-
-			chain, err := factory.FromProto(resp.GetChain())
-			if err != nil {
-				return xerrors.Errorf("couldn't decode chain: %v", err)
-			}
-
-			if !bytes.Equal(chain.GetLastHash(), block.GetHash()) {
-				return xerrors.Errorf("mismatch chain: hash '%x' != '%x'",
-					chain.GetLastHash(), block.GetHash())
-			}
-
-			err = ops.consensus.Store(chain)
-			if err != nil {
-				return xerrors.Errorf("couldn't store chain: %v", err)
-			}
-		} else if block.GetIndex() != 0 {
-			return xerrors.New("missing chain to the block in the response")
-		}
-
-		err = ops.insertBlock(block)
+		err = ops.commitBlock(resp.block)
 		if err != nil {
 			return xerrors.Errorf("couldn't store block: %v", err)
 		}
 
-		if bytes.Equal(block.GetHash(), target.GetPreviousHash()) {
+		if resp.block.GetIndex() >= index-1 {
 			return nil
 		}
 	}

@@ -7,19 +7,30 @@ package fake
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/binary"
 	"fmt"
 	"hash"
 	"io"
+	"math/big"
+	"net"
+	"reflect"
+	"testing"
+	"time"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/golang/protobuf/ptypes/wrappers"
-	"go.dedis.ch/fabric/consensus/viewchange"
-	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/mino"
+	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -243,46 +254,6 @@ func (ca CollectiveAuthority) Take(updaters ...mino.FilterUpdater) mino.Players 
 	return newCA
 }
 
-type signerWrapper struct {
-	crypto.AggregateSigner
-	pubkey crypto.PublicKey
-}
-
-func (s signerWrapper) GetPublicKey() crypto.PublicKey {
-	return s.pubkey
-}
-
-// Apply implements viewchange.EvolvableAuthority.
-func (ca CollectiveAuthority) Apply(cs viewchange.ChangeSet) viewchange.EvolvableAuthority {
-	if ca.Call != nil {
-		ca.Call.Add("apply", cs)
-	}
-
-	newAuthority := CollectiveAuthority{
-		Call:    ca.Call,
-		addrs:   make([]mino.Address, len(ca.addrs)),
-		signers: make([]crypto.AggregateSigner, len(ca.signers)),
-	}
-	for i := range ca.addrs {
-		newAuthority.addrs[i] = ca.addrs[i]
-		newAuthority.signers[i] = ca.signers[i]
-	}
-
-	for _, player := range cs.Add {
-		newAuthority.addrs = append(newAuthority.addrs, player.Address)
-		newAuthority.signers = append(newAuthority.signers, signerWrapper{
-			pubkey: player.PublicKey,
-		})
-	}
-
-	for _, i := range cs.Remove {
-		newAuthority.addrs = append(newAuthority.addrs[:i], newAuthority.addrs[i+1:]...)
-		newAuthority.signers = append(newAuthority.signers[:i], newAuthority.signers[i+1:]...)
-	}
-
-	return newAuthority
-}
-
 // Len implements mino.Players.
 func (ca CollectiveAuthority) Len() int {
 	return len(ca.signers)
@@ -324,6 +295,11 @@ func (f PublicKeyFactory) FromProto(proto.Message) (crypto.PublicKey, error) {
 	return f.pubkey, f.err
 }
 
+// VisitJSON implements serde.Factory.
+func (f PublicKeyFactory) VisitJSON(serde.FactoryInput) (serde.Message, error) {
+	return f.pubkey, f.err
+}
+
 // SignatureByte is the byte returned when marshaling a fake signature.
 const SignatureByte = 0xfe
 
@@ -347,6 +323,11 @@ func (s Signature) Equal(o crypto.Signature) bool {
 // Pack implements encoding.Packable.
 func (s Signature) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 	return &wrappers.BytesValue{Value: []byte{SignatureByte}}, s.err
+}
+
+// VisitJSON implements serde.Message.
+func (s Signature) VisitJSON(serde.Serializer) (interface{}, error) {
+	return struct{}{}, s.err
 }
 
 // MarshalBinary implements crypto.Signature.
@@ -374,6 +355,11 @@ func NewBadSignatureFactory() SignatureFactory {
 
 // FromProto implements crypto.SignatureFactory.
 func (f SignatureFactory) FromProto(proto.Message) (crypto.Signature, error) {
+	return f.signature, f.err
+}
+
+// VisitJSON implements serde.Factory.
+func (f SignatureFactory) VisitJSON(serde.FactoryInput) (serde.Message, error) {
 	return f.signature, f.err
 }
 
@@ -411,6 +397,11 @@ func (pk PublicKey) MarshalBinary() ([]byte, error) {
 // Pack implements encoding.Packable.
 func (pk PublicKey) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
 	return &empty.Empty{}, pk.err
+}
+
+// VisitJSON implements serde.Message.
+func (pk PublicKey) VisitJSON(serde.Serializer) (interface{}, error) {
+	return struct{}{}, pk.err
 }
 
 // String implements fmt.Stringer.
@@ -804,4 +795,131 @@ func NewHashFactory(h *Hash) HashFactory {
 // New implements crypto.HashFactory.
 func (f HashFactory) New() hash.Hash {
 	return f.hash
+}
+
+// MakeCertificate generates a valid certificate for the localhost address and
+// for an hour.
+func MakeCertificate(t *testing.T, n int) *tls.Certificate {
+	priv, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
+	require.NoError(t, err)
+
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+	}
+
+	buf, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
+	require.NoError(t, err)
+
+	cert, err := x509.ParseCertificate(buf)
+	require.NoError(t, err)
+
+	chain := make([][]byte, n)
+	for i := range chain {
+		chain[i] = buf
+	}
+
+	return &tls.Certificate{
+		Certificate: chain,
+		PrivateKey:  priv,
+		Leaf:        cert,
+	}
+}
+
+// Message is a fake implementation if a serde message.
+type Message struct {
+	serde.UnimplementedMessage
+
+	Digest []byte
+}
+
+// Fingerprint implements serde.Fingerprinter.
+func (m Message) Fingerprint(w io.Writer) error {
+	w.Write(m.Digest)
+	return nil
+}
+
+// VisitJSON implements serde.Message.
+func (m Message) VisitJSON(serde.Serializer) (interface{}, error) {
+	return struct{}{}, nil
+}
+
+// MessageFactory is a fake implementation of a serde factory.
+type MessageFactory struct {
+	serde.UnimplementedFactory
+}
+
+// VisitJSON implements serde.Message.
+func (f MessageFactory) VisitJSON(serde.FactoryInput) (serde.Message, error) {
+	return Message{}, nil
+}
+
+// FactoryInput is a fake implemetation of a factory input.
+type FactoryInput struct {
+	Serde   Serializer
+	Message interface{}
+	err     error
+}
+
+// NewBadFactoryInput returns a fake factory input that will return an error
+// when appropriate.
+func NewBadFactoryInput() FactoryInput {
+	return FactoryInput{err: xerrors.New("fake error")}
+}
+
+// GetSerializer implements serde.FactoryInput.
+func (in FactoryInput) GetSerializer() serde.Serializer {
+	return in.Serde
+}
+
+// Feed implements serde.FactoryInput.
+func (in FactoryInput) Feed(o interface{}) error {
+	if in.Message != nil {
+		reflect.ValueOf(o).Elem().Set(reflect.ValueOf(in.Message))
+	}
+	return in.err
+}
+
+// Serializer is a fake implementation of a serde serializer.
+type Serializer struct {
+	Count *Counter
+	err   error
+}
+
+// NewBadSerializer returns a fake serializer that will return an error when
+// appropriate.
+func NewBadSerializer() Serializer {
+	return Serializer{err: xerrors.New("fake error")}
+}
+
+// NewBadSerializerWithDelay returns a fake serializer that will return an error
+// after a given amount of function calls.
+func NewBadSerializerWithDelay(delay int) Serializer {
+	return Serializer{
+		Count: &Counter{Value: delay},
+		err:   xerrors.New("fake error"),
+	}
+}
+
+// Serialize implements serde.Serializer.
+func (e Serializer) Serialize(serde.Message) ([]byte, error) {
+	if !e.Count.Done() {
+		e.Count.Decrease()
+		return nil, nil
+	}
+	return nil, e.err
+}
+
+// Deserialize implements serde.Serializer.
+func (e Serializer) Deserialize([]byte, serde.Factory, interface{}) error {
+	if !e.Count.Done() {
+		e.Count.Decrease()
+		return nil
+	}
+	return e.err
 }

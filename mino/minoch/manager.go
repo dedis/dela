@@ -3,7 +3,7 @@ package minoch
 import (
 	"sync"
 
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
 )
 

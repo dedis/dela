@@ -7,8 +7,10 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/ledger/arc"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/ledger/arc"
+	"go.dedis.ch/dela/ledger/arc/darc/json"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -19,6 +21,8 @@ import (
 // - implements darc.EvolvableAccessControl
 // - implements encoding.Packable
 type Access struct {
+	serde.UnimplementedMessage
+
 	rules map[string]expression
 }
 
@@ -71,7 +75,7 @@ func (ac Access) Match(rule string, targets ...arc.Identity) error {
 
 // Fingerprint implements encoding.Fingerprinter. It serializes the access to
 // the writer in a deterministic way.
-func (ac Access) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
+func (ac Access) Fingerprint(w io.Writer) error {
 	keys := make(sort.StringSlice, 0, len(ac.rules))
 	for key := range ac.rules {
 		keys = append(keys, key)
@@ -85,7 +89,7 @@ func (ac Access) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
 			return xerrors.Errorf("couldn't write key: %v", err)
 		}
 
-		err = ac.rules[key].Fingerprint(w, e)
+		err = ac.rules[key].Fingerprint(w)
 		if err != nil {
 			return xerrors.Errorf("couldn't fingerprint rule '%s': %v", key, err)
 		}
@@ -112,6 +116,26 @@ func (ac Access) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
 	return pb, nil
 }
 
+// VisitJSON implements serde.Message. It returns the JSON message for the
+// access.
+func (ac Access) VisitJSON(serde.Serializer) (interface{}, error) {
+	rules := make(map[string][]string)
+	for key, expr := range ac.rules {
+		matches := make([]string, 0, len(expr.matches))
+		for m := range expr.matches {
+			matches = append(matches, m)
+		}
+
+		rules[key] = matches
+	}
+
+	m := json.Access{
+		Rules: rules,
+	}
+
+	return m, nil
+}
+
 // Clone returns a deep copy of the access control.
 func (ac Access) Clone() Access {
 	access := Access{rules: make(map[string]expression)}
@@ -124,6 +148,8 @@ func (ac Access) Clone() Access {
 
 // Factory is the implementation of an access control factory for DARCs.
 type Factory struct {
+	serde.UnimplementedFactory
+
 	encoder encoding.ProtoMarshaler
 }
 
@@ -163,4 +189,26 @@ func (f Factory) FromProto(in proto.Message) (arc.AccessControl, error) {
 	}
 
 	return ac, nil
+}
+
+// VisitJSON implements serde.Factory. It deserializes the access control in
+// JSON format.
+func (f Factory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
+	m := json.Access{}
+	err := in.Feed(&m)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't deserialize access: %v", err)
+	}
+
+	rules := make(map[string]expression)
+	for rule, matches := range m.Rules {
+		expr := expression{matches: make(map[string]struct{})}
+		for _, m := range matches {
+			expr.matches[m] = struct{}{}
+		}
+
+		rules[rule] = expr
+	}
+
+	return Access{rules: rules}, nil
 }

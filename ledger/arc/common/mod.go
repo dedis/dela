@@ -5,9 +5,10 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/ledger/arc"
-	"go.dedis.ch/fabric/ledger/arc/darc"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/ledger/arc"
+	"go.dedis.ch/dela/ledger/arc/darc"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -16,6 +17,8 @@ import (
 //
 // - implements arc.AccessControlFactory
 type AccessControlFactory struct {
+	serde.UnimplementedFactory
+
 	encoder   encoding.ProtoMarshaler
 	factories map[reflect.Type]arc.AccessControlFactory
 }

@@ -2,6 +2,7 @@ package bls
 
 import (
 	"bytes"
+	fmt "fmt"
 	"testing"
 	"testing/quick"
 
@@ -9,9 +10,10 @@ import (
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/crypto"
-	internal "go.dedis.ch/fabric/internal/testing"
-	"go.dedis.ch/fabric/internal/testing/fake"
+	"go.dedis.ch/dela/crypto"
+	internal "go.dedis.ch/dela/internal/testing"
+	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/serde/json"
 	"go.dedis.ch/kyber/v3"
 	"golang.org/x/xerrors"
 )
@@ -53,6 +55,19 @@ func TestPublicKey_Pack(t *testing.T) {
 
 	pubkey := publicKey{point: badPoint{}}
 	_, err = pubkey.Pack(nil)
+	require.EqualError(t, err, "couldn't marshal point: oops")
+}
+
+func TestPublicKey_VisitJSON(t *testing.T) {
+	signer := NewSigner()
+
+	ser := json.NewSerializer()
+
+	data, err := ser.Serialize(signer.GetPublicKey())
+	require.NoError(t, err)
+	require.Contains(t, string(data), fmt.Sprintf(`{"Name":"%s","Data":`, Algorithm))
+
+	_, err = publicKey{point: badPoint{}}.VisitJSON(ser)
 	require.EqualError(t, err, "couldn't marshal point: oops")
 }
 
@@ -132,6 +147,15 @@ func TestSignature_Pack(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestSignature_VisitJSON(t *testing.T) {
+	sig := signature{data: []byte("deadbeef")}
+
+	ser := json.NewSerializer()
+	data, err := ser.Serialize(sig)
+	require.NoError(t, err)
+	require.Contains(t, string(data), fmt.Sprintf(`{"Name":"%s","Data":`, Algorithm))
+}
+
 func TestSignature_Equal(t *testing.T) {
 	f := func(data []byte) bool {
 		sig := signature{data: data}
@@ -179,6 +203,28 @@ func TestPublicKeyFactory_FromProto(t *testing.T) {
 	require.Contains(t, err.Error(), "failed to unmarshal point: ")
 }
 
+func TestPublicKeyFactory_VisitJSON(t *testing.T) {
+	factory := NewPublicKeyFactory()
+
+	signer := NewSigner()
+	ser := json.NewSerializer()
+
+	data, err := ser.Serialize(signer.GetPublicKey())
+	require.NoError(t, err)
+
+	var pubkey crypto.PublicKey
+	err = ser.Deserialize(data, factory, &pubkey)
+	require.NoError(t, err)
+	require.True(t, signer.GetPublicKey().Equal(pubkey))
+
+	err = ser.Deserialize([]byte(`{"Data":[]}`), factory, &pubkey)
+	require.EqualError(t, xerrors.Unwrap(err),
+		"couldn't unmarshal point: bn256.G2: not enough data")
+
+	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
+	require.EqualError(t, err, "couldn't deserialize data: fake error")
+}
+
 func TestSignatureFactory_FromProto(t *testing.T) {
 	factory := NewSignatureFactory().(signatureFactory)
 
@@ -204,6 +250,20 @@ func TestSignatureFactory_FromProto(t *testing.T) {
 	factory.encoder = fake.BadUnmarshalAnyEncoder{}
 	_, err = factory.FromProto(packedAny)
 	require.EqualError(t, err, "couldn't unmarshal message: fake error")
+}
+
+func TestSignatureFactory_VisitJSON(t *testing.T) {
+	factory := NewSignatureFactory()
+
+	ser := json.NewSerializer()
+
+	var sig crypto.Signature
+	err := ser.Deserialize([]byte(`{"Data":"QQ=="}`), factory, &sig)
+	require.NoError(t, err)
+	require.Equal(t, signature{data: []byte("A")}, sig)
+
+	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
+	require.EqualError(t, err, "couldn't deserialize data: fake error")
 }
 
 func TestVerifier_Verify(t *testing.T) {

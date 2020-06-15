@@ -10,10 +10,11 @@ import (
 	"math/rand"
 	"time"
 
-	"go.dedis.ch/fabric"
-	"go.dedis.ch/fabric/consensus"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/consensus"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/net/context"
 	"golang.org/x/xerrors"
 )
@@ -29,7 +30,7 @@ const (
 // Consensus is an abstraction to send proposals to a network of nodes that will
 // decide to include them in the common state.
 type Consensus struct {
-	ch               chan consensus.Proposal
+	ch               chan serde.Message
 	closing          chan struct{}
 	stopped          chan struct{}
 	history          history
@@ -45,7 +46,7 @@ func NewQSC(node int64, mino mino.Mino, players mino.Players) (*Consensus, error
 	}
 
 	return &Consensus{
-		ch:        make(chan consensus.Proposal),
+		ch:        make(chan serde.Message),
 		closing:   make(chan struct{}),
 		stopped:   make(chan struct{}),
 		history:   make(history, 0),
@@ -57,7 +58,7 @@ func NewQSC(node int64, mino mino.Mino, players mino.Players) (*Consensus, error
 }
 
 // GetChainFactory implements consensus.Consensus. It returns the chain factory.
-func (c *Consensus) GetChainFactory() consensus.ChainFactory {
+func (c *Consensus) GetChainFactory() serde.Factory {
 	return nil
 }
 
@@ -69,13 +70,13 @@ func (c *Consensus) GetChain(id []byte) (consensus.Chain, error) {
 
 // Listen implements consensus.Consensus. It returns the actor that provides the
 // primitives to send proposals to a network of nodes.
-func (c *Consensus) Listen(val consensus.Validator) (consensus.Actor, error) {
+func (c *Consensus) Listen(r consensus.Reactor) (consensus.Actor, error) {
 	go func() {
 		for {
-			var proposal consensus.Proposal
+			var proposal serde.Message
 			select {
 			case <-c.closing:
-				fabric.Logger.Trace().Msg("closing")
+				dela.Logger.Trace().Msg("closing")
 				close(c.stopped)
 				return
 			case proposal = <-c.ch:
@@ -98,13 +99,13 @@ func (c *Consensus) Listen(val consensus.Validator) (consensus.Actor, error) {
 				}
 			}()
 
-			err := c.executeRound(ctx, proposal, val)
+			err := c.executeRound(ctx, proposal, r)
 			if err != nil {
 				select {
 				case <-c.closing:
 				default:
 					// Only log if the consensus has not been closed properly.
-					fabric.Logger.Err(err).Msg("failed to execute a time step")
+					dela.Logger.Err(err).Msg("failed to execute a time step")
 				}
 			}
 
@@ -117,8 +118,8 @@ func (c *Consensus) Listen(val consensus.Validator) (consensus.Actor, error) {
 
 func (c *Consensus) executeRound(
 	ctx context.Context,
-	prop consensus.Proposal,
-	val consensus.Validator,
+	prop serde.Message,
+	val consensus.Reactor,
 ) error {
 	// 1. Choose the message and the random value. The new epoch will be
 	// appended to the current history.
@@ -128,7 +129,13 @@ func (c *Consensus) executeRound(
 	}
 
 	if prop != nil {
-		e.hash = prop.GetHash()
+		// TODO: address
+		digest, err := val.InvokeValidate(nil, prop)
+		if err != nil {
+			return xerrors.Errorf("couldn't validate proposal: %v", err)
+		}
+
+		e.hash = digest
 	}
 
 	newHistory := make(history, len(c.history), len(c.history)+1)
@@ -176,7 +183,7 @@ func (c *Consensus) executeRound(
 		// it to the others.
 		last, ok := c.history.getLast()
 		if ok {
-			err := val.Commit(last.hash)
+			err := val.InvokeCommit(last.hash)
 			if err != nil {
 				return xerrors.Errorf("couldn't commit: %v", err)
 			}
@@ -190,13 +197,13 @@ func (c *Consensus) executeRound(
 //
 // - implements consensus.Actor
 type actor struct {
-	ch      chan consensus.Proposal
+	ch      chan serde.Message
 	closing chan struct{}
 }
 
 // Propose implements consensus.Actor. It sends the proposal to the qsc loop. If
 // the actor has been closed, it will panic.
-func (a actor) Propose(proposal consensus.Proposal) error {
+func (a actor) Propose(proposal serde.Message) error {
 	a.ch <- proposal
 	return nil
 }

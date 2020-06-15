@@ -1,10 +1,10 @@
 package threshold
 
 import (
-	"go.dedis.ch/fabric/cosi"
-	"go.dedis.ch/fabric/crypto"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/mino"
+	"go.dedis.ch/dela/cosi"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
 )
 
@@ -65,11 +65,18 @@ func (c *CoSi) GetVerifierFactory() crypto.VerifierFactory {
 }
 
 // Listen implements cosi.CollectiveSigning.
-func (c *CoSi) Listen(h cosi.Hashable) (cosi.Actor, error) {
-	rpc, err := c.mino.MakeRPC("cosi", newHandler(c, h))
+func (c *CoSi) Listen(r cosi.Reactor) (cosi.Actor, error) {
+	rpc, err := c.mino.MakeRPC("cosi", newHandler(c, r))
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't make rpc: %v", err)
 	}
 
-	return newActor(c, rpc), nil
+	actor := thresholdActor{
+		CoSi:    c,
+		me:      c.mino.GetAddress(),
+		rpc:     rpc,
+		reactor: r,
+	}
+
+	return actor, nil
 }

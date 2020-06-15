@@ -1,15 +1,15 @@
 package contract
 
 import (
+	"fmt"
 	"io"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/any"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/ledger/arc"
-	"go.dedis.ch/fabric/ledger/arc/common"
-	"go.dedis.ch/fabric/ledger/inventory"
-	"go.dedis.ch/fabric/ledger/transactions/basic"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/ledger/arc"
+	"go.dedis.ch/dela/ledger/arc/common"
+	"go.dedis.ch/dela/ledger/inventory"
+	"go.dedis.ch/dela/ledger/transactions/basic"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -17,37 +17,25 @@ import (
 //
 // - implements basic.ClientTask
 type SpawnTask struct {
+	serde.UnimplementedMessage
+
 	ContractID string
-	Argument   proto.Message
-}
-
-// Pack implements encoding.Packable. It returns the protobuf message of the
-// task.
-func (act SpawnTask) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
-	argument, err := enc.MarshalAny(act.Argument)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack argument: %v", err)
-	}
-
-	pb := &SpawnTaskProto{
-		ContractID: act.ContractID,
-		Argument:   argument,
-	}
-
-	return pb, nil
+	Argument   map[string]string
 }
 
 // Fingerprint implements encoding.Fingerprinter. It serializes the task into
 // the writer in a deterministic way.
-func (act SpawnTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
+func (act SpawnTask) Fingerprint(w io.Writer) error {
 	_, err := w.Write([]byte(act.ContractID))
 	if err != nil {
 		return xerrors.Errorf("couldn't write contract: %v", err)
 	}
 
-	err = e.MarshalStable(w, act.Argument)
-	if err != nil {
-		return xerrors.Errorf("couldn't write argument: %v", err)
+	for k, v := range act.Argument {
+		_, err = w.Write([]byte(fmt.Sprintf("%s:%s", k, v)))
+		if err != nil {
+			return xerrors.Errorf("couldn't write argument: %v", err)
+		}
 	}
 
 	return nil
@@ -58,37 +46,25 @@ func (act SpawnTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
 //
 // - implements basic.ClientTask
 type InvokeTask struct {
+	serde.UnimplementedMessage
+
 	Key      []byte
-	Argument proto.Message
-}
-
-// Pack implements encoding.Packable. It returns the protobuf message of the
-// task.
-func (act InvokeTask) Pack(e encoding.ProtoMarshaler) (proto.Message, error) {
-	argument, err := e.MarshalAny(act.Argument)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack argument: %v", err)
-	}
-
-	pb := &InvokeTaskProto{
-		Key:      act.Key,
-		Argument: argument,
-	}
-
-	return pb, nil
+	Argument map[string]string
 }
 
 // Fingerprint implements encoding.Fingeprinter. It serializes the task into the
 // writer in a deterministic way.
-func (act InvokeTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
+func (act InvokeTask) Fingerprint(w io.Writer) error {
 	_, err := w.Write(act.Key)
 	if err != nil {
 		return xerrors.Errorf("couldn't write key: %v", err)
 	}
 
-	err = e.MarshalStable(w, act.Argument)
-	if err != nil {
-		return xerrors.Errorf("couldn't write argument: %v", err)
+	for k, v := range act.Argument {
+		_, err = w.Write([]byte(fmt.Sprintf("%s:%s", k, v)))
+		if err != nil {
+			return xerrors.Errorf("couldn't write argument: %v", err)
+		}
 	}
 
 	return nil
@@ -99,18 +75,14 @@ func (act InvokeTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error 
 //
 // - implements basic.ClientTask
 type DeleteTask struct {
-	Key []byte
-}
+	serde.UnimplementedMessage
 
-// Pack implements encoding.Packable. It returns the protobuf message of the
-// task.
-func (a DeleteTask) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
-	return &DeleteTaskProto{Key: a.Key}, nil
+	Key []byte
 }
 
 // Fingerprint implements encoding.Fingerprinter. It serializes the task into
 // the writer in a deterministic way.
-func (a DeleteTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
+func (a DeleteTask) Fingerprint(w io.Writer) error {
 	_, err := w.Write(a.Key)
 	if err != nil {
 		return xerrors.Errorf("couldn't write key: %v", err)
@@ -125,18 +97,15 @@ func (a DeleteTask) Fingerprint(w io.Writer, e encoding.ProtoMarshaler) error {
 // - implements basic.ServerTask
 type serverTask struct {
 	basic.ClientTask
-	contracts  map[string]Contract
-	arcFactory arc.AccessControlFactory
-	encoder    encoding.ProtoMarshaler
+	contracts map[string]Contract
 }
 
 // Consume implements basic.ServerTask. It updates the page according to the
 // task definition.
 func (act serverTask) Consume(ctx basic.Context, page inventory.WritablePage) error {
 	txCtx := taskContext{
-		Context:    ctx,
-		arcFactory: act.arcFactory,
-		page:       page,
+		Context: ctx,
+		page:    page,
 	}
 
 	var instance *Instance
@@ -197,17 +166,12 @@ func (act serverTask) consumeSpawn(ctx SpawnContext) (*Instance, error) {
 		return nil, xerrors.Errorf("no access: %v", err)
 	}
 
-	valueAny, err := act.encoder.MarshalAny(value)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack value: %v", err)
-	}
-
 	instance := &Instance{
 		Key:           ctx.GetID(),
 		AccessControl: arcid,
 		ContractID:    ctx.ContractID,
 		Deleted:       false,
-		Value:         valueAny,
+		Value:         value,
 	}
 
 	return instance, nil
@@ -219,16 +183,16 @@ func (act serverTask) consumeInvoke(ctx InvokeContext) (*Instance, error) {
 		return nil, xerrors.Errorf("couldn't read the instance: %v", err)
 	}
 
-	rule := arc.Compile(instance.GetContractID(), "invoke")
+	rule := arc.Compile(instance.ContractID, "invoke")
 
-	err = act.hasAccess(ctx, instance.GetAccessControl(), rule)
+	err = act.hasAccess(ctx, instance.AccessControl, rule)
 	if err != nil {
 		return nil, xerrors.Errorf("no access: %v", err)
 	}
 
-	exec := act.contracts[instance.GetContractID()]
+	exec := act.contracts[instance.ContractID]
 	if exec == nil {
-		return nil, xerrors.Errorf("contract '%s' not found", instance.GetContractID())
+		return nil, xerrors.Errorf("contract '%s' not found", instance.ContractID)
 	}
 
 	value, err := exec.Invoke(ctx)
@@ -236,12 +200,7 @@ func (act serverTask) consumeInvoke(ctx InvokeContext) (*Instance, error) {
 		return nil, xerrors.Errorf("couldn't invoke: %v", err)
 	}
 
-	valueAny, err := act.encoder.MarshalAny(value)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack value: %v", err)
-	}
-
-	instance.Value = valueAny
+	instance.Value = value
 
 	return instance, nil
 }
@@ -295,44 +254,4 @@ func NewTaskFactory() TaskFactory {
 // identifier already exists, it will be overwritten.
 func (f TaskFactory) Register(name string, contract Contract) {
 	f.contracts[name] = contract
-}
-
-// FromProto implements basic.TaskFactory. It returns the server task of a
-// protobuf message when appropriate, otherwise an error.
-func (f TaskFactory) FromProto(in proto.Message) (basic.ServerTask, error) {
-	inAny, ok := in.(*any.Any)
-	if ok {
-		var err error
-		in, err = f.encoder.UnmarshalDynamicAny(inAny)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
-		}
-	}
-
-	task := serverTask{
-		contracts:  f.contracts,
-		arcFactory: f.arcFactory,
-		encoder:    f.encoder,
-	}
-
-	switch pb := in.(type) {
-	case *SpawnTaskProto:
-		task.ClientTask = SpawnTask{
-			ContractID: pb.GetContractID(),
-			Argument:   pb.GetArgument(),
-		}
-	case *InvokeTaskProto:
-		task.ClientTask = InvokeTask{
-			Key:      pb.GetKey(),
-			Argument: pb.GetArgument(),
-		}
-	case *DeleteTaskProto:
-		task.ClientTask = DeleteTask{
-			Key: pb.GetKey(),
-		}
-	default:
-		return nil, xerrors.Errorf("invalid message type '%T'", in)
-	}
-
-	return task, nil
 }

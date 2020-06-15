@@ -9,9 +9,9 @@ import (
 	any "github.com/golang/protobuf/ptypes/any"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/fabric/encoding"
-	"go.dedis.ch/fabric/mino"
-	"go.dedis.ch/fabric/mino/minogrpc/routing"
+	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/minogrpc/routing"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 )
@@ -100,6 +100,7 @@ func (str *fakeClientStream) RecvMsg(m interface{}) error {
 
 type fakeConnection struct {
 	grpc.ClientConnInterface
+	resp      interface{}
 	err       error
 	errStream error
 }
@@ -107,16 +108,22 @@ type fakeConnection struct {
 func (conn fakeConnection) Invoke(ctx context.Context, m string, arg interface{},
 	resp interface{}, opts ...grpc.CallOption) error {
 
-	emptyAny, err := ptypes.MarshalAny(&empty.Empty{})
-	if err != nil {
-		return err
+	switch msg := resp.(type) {
+	case *Message:
+		emptyAny, err := ptypes.MarshalAny(&empty.Empty{})
+		if err != nil {
+			return err
+		}
+
+		*msg = Message{
+			Payload: emptyAny,
+		}
+	case *JoinResponse:
+		*msg = conn.resp.(JoinResponse)
+	default:
 	}
 
-	*(resp.(*Message)) = Message{
-		Payload: emptyAny,
-	}
-
-	return nil
+	return conn.err
 }
 
 func (conn fakeConnection) NewStream(ctx context.Context, desc *grpc.StreamDesc,
@@ -134,6 +141,7 @@ func (conn fakeConnection) NewStream(ctx context.Context, desc *grpc.StreamDesc,
 
 type fakeConnFactory struct {
 	ConnectionFactory
+	resp      interface{}
 	err       error
 	errConn   error
 	errStream error
@@ -141,6 +149,7 @@ type fakeConnFactory struct {
 
 func (f fakeConnFactory) FromAddress(mino.Address) (grpc.ClientConnInterface, error) {
 	conn := fakeConnection{
+		resp:      f.resp,
 		err:       f.errConn,
 		errStream: f.errStream,
 	}
