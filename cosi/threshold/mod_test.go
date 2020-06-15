@@ -4,26 +4,14 @@ import (
 	"context"
 	"testing"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/crypto/bls"
-	internal "go.dedis.ch/dela/internal/testing"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minoch"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
-
-func TestMessages(t *testing.T) {
-	messages := []proto.Message{
-		&SignatureProto{},
-	}
-
-	for _, m := range messages {
-		internal.CoverProtoMessage(t, m)
-	}
-}
 
 func TestCoSi_Basic(t *testing.T) {
 	manager := minoch.NewManager()

@@ -5,8 +5,8 @@ import (
 	fmt "fmt"
 	"strings"
 
-	proto "github.com/golang/protobuf/proto"
-	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/consensus/qsc/json"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -15,19 +15,10 @@ import (
 //
 // - implements encoding.Packable
 type epoch struct {
+	serde.UnimplementedMessage
+
 	hash   []byte
 	random int64
-}
-
-// Pack implements encoding.Packable. It returns the protobuf message for an
-// epoch.
-func (e epoch) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
-	pb := &Epoch{
-		Random: e.random,
-		Hash:   e.hash,
-	}
-
-	return pb, nil
 }
 
 // Equal returns true when the other epoch is the same as the current one.
@@ -46,24 +37,28 @@ func (e epoch) Equal(other epoch) bool {
 //
 // - implements encoding.Packable
 // - implements fmt.Stringer
-type history []epoch
+type history struct {
+	serde.UnimplementedMessage
+
+	epochs []epoch
+}
 
 func (h history) getLast() (epoch, bool) {
-	if len(h) == 0 {
+	if len(h.epochs) == 0 {
 		return epoch{}, false
 	}
 
-	return h[len(h)-1], true
+	return h.epochs[len(h.epochs)-1], true
 }
 
 // Equal returns true when both histories are equal, false otherwise.
 func (h history) Equal(other history) bool {
-	if len(h) != len(other) {
+	if len(h.epochs) != len(other.epochs) {
 		return false
 	}
 
-	for i, e := range h {
-		if !e.Equal(other[i]) {
+	for i, e := range h.epochs {
+		if !e.Equal(other.epochs[i]) {
 			return false
 		}
 	}
@@ -71,37 +66,57 @@ func (h history) Equal(other history) bool {
 	return true
 }
 
-// Pack implements encoding.Packable. It returns the protobuf message for an
-// history.
-func (h history) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
-	pb := &History{
-		Epochs: make([]*Epoch, len(h)),
-	}
-
-	for i, epoch := range h {
-		packed, err := enc.Pack(epoch)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't pack epoch: %v", err)
+func (h history) VisitJSON(serde.Serializer) (interface{}, error) {
+	epochs := make([]json.Epoch, len(h.epochs))
+	for i, epoch := range h.epochs {
+		epochs[i] = json.Epoch{
+			Hash:   epoch.hash,
+			Random: epoch.random,
 		}
-
-		pb.Epochs[i] = packed.(*Epoch)
 	}
 
-	return pb, nil
+	return json.History(epochs), nil
 }
 
 // String implements fmt.Stringer. It returns a string representation of the
 // history.
 func (h history) String() string {
-	epochs := make([]string, len(h))
-	for i, e := range h {
+	epochs := make([]string, len(h.epochs))
+	for i, e := range h.epochs {
 		if len(e.hash) >= 2 {
 			epochs[i] = fmt.Sprintf("%x", e.hash)[:4]
 		} else {
 			epochs[i] = "nil"
 		}
 	}
-	return fmt.Sprintf("History[%d]{%s}", len(h), strings.Join(epochs, ","))
+	return fmt.Sprintf("History[%d]{%s}", len(h.epochs), strings.Join(epochs, ","))
+}
+
+// HistoryFactory is a message factory to decode histories.
+//
+// - implements serde.Factory
+type HistoryFactory struct {
+	serde.UnimplementedFactory
+}
+
+// VisitJSON implements serde.Factory. It deserializes the history in JSON
+// format.
+func (f HistoryFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
+	m := json.History{}
+	err := in.Feed(&m)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't deserialize message: %v", err)
+	}
+
+	epochs := make([]epoch, len(m))
+	for i, e := range m {
+		epochs[i] = epoch{
+			hash:   e.Hash,
+			random: e.Random,
+		}
+	}
+
+	return history{epochs: epochs}, nil
 }
 
 type histories []history
@@ -122,7 +137,7 @@ func (hists histories) getBest() history {
 
 	if best == -1 {
 		// It happens if the histories are all empty.
-		return nil
+		return history{}
 	}
 
 	return hists[best]
@@ -172,31 +187,25 @@ func (hists histories) isUniqueBest(h history) bool {
 }
 
 type historiesFactory interface {
-	FromMessageSet(set map[int64]*Message) (histories, error)
+	FromMessageSet(set map[int64]Message) (histories, error)
 }
 
-type defaultHistoriesFactory struct {
-	encoder encoding.ProtoMarshaler
-}
+type defaultHistoriesFactory struct{}
 
-func (f defaultHistoriesFactory) FromMessageSet(set map[int64]*Message) (histories, error) {
+func (f defaultHistoriesFactory) FromMessageSet(set map[int64]Message) (histories, error) {
 	hists := make(histories, 0, len(set))
 	for _, msg := range set {
-		hist := &History{}
-		err := f.encoder.UnmarshalAny(msg.GetValue(), hist)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't unmarshal history: %v", err)
-		}
+		hist := msg.value.(history)
 
-		epochs := make([]epoch, len(hist.GetEpochs()))
-		for j, e := range hist.GetEpochs() {
+		epochs := make([]epoch, len(hist.epochs))
+		for j, e := range hist.epochs {
 			epochs[j] = epoch{
-				random: e.GetRandom(),
-				hash:   e.GetHash(),
+				random: e.random,
+				hash:   e.hash,
 			}
 		}
 
-		hists = append(hists, history(epochs))
+		hists = append(hists, history{epochs: epochs})
 	}
 
 	return hists, nil

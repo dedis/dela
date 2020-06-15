@@ -7,7 +7,6 @@ import (
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/tmp"
@@ -42,12 +41,12 @@ func (cosi *Flat) GetSigner() crypto.Signer {
 }
 
 // GetPublicKeyFactory returns the public key factory.
-func (cosi *Flat) GetPublicKeyFactory() crypto.PublicKeyFactory {
+func (cosi *Flat) GetPublicKeyFactory() serde.Factory {
 	return cosi.signer.GetPublicKeyFactory()
 }
 
 // GetSignatureFactory returns the signature factory.
-func (cosi *Flat) GetSignatureFactory() crypto.SignatureFactory {
+func (cosi *Flat) GetSignatureFactory() serde.Factory {
 	return cosi.signer.GetSignatureFactory()
 }
 
@@ -63,7 +62,6 @@ func (cosi *Flat) Listen(r cosi.Reactor) (cosi.Actor, error) {
 		logger:  dela.Logger,
 		me:      cosi.mino.GetAddress(),
 		signer:  cosi.signer,
-		encoder: encoding.NewProtoEncoder(),
 		reactor: r,
 	}
 
@@ -82,7 +80,6 @@ type flatActor struct {
 	me      mino.Address
 	rpc     mino.RPC
 	signer  crypto.AggregateSigner
-	encoder encoding.ProtoMarshaler
 	reactor cosi.Reactor
 }
 

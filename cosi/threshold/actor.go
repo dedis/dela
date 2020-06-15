@@ -3,7 +3,6 @@ package threshold
 import (
 	"context"
 
-	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto"
@@ -62,7 +61,9 @@ func (a thresholdActor) Sign(ctx context.Context, msg serde.Message,
 
 		pubkey, index := ca.GetPublicKey(addr)
 		if index >= 0 {
-			err = a.merge(signature, resp, index, pubkey, digest)
+			m := tmp.FromProto(resp, a.signer.GetSignatureFactory())
+
+			err = a.merge(signature, m, index, pubkey, digest)
 			if err != nil {
 				dela.Logger.Warn().Err(err).Send()
 			} else {
@@ -104,15 +105,15 @@ func (a thresholdActor) waitCtx(inner, upper context.Context, cancel func()) {
 	}
 }
 
-func (a thresholdActor) merge(signature *Signature, resp proto.Message,
+func (a thresholdActor) merge(signature *Signature, resp serde.Message,
 	index int, pubkey crypto.PublicKey, digest []byte) error {
 
-	sig, err := a.signer.GetSignatureFactory().FromProto(resp)
-	if err != nil {
-		return xerrors.Errorf("couldn't decode signature: %v", err)
+	sig, ok := resp.(crypto.Signature)
+	if !ok {
+		return xerrors.Errorf("invalid message type '%T'", resp)
 	}
 
-	err = pubkey.Verify(digest, sig)
+	err := pubkey.Verify(digest, sig)
 	if err != nil {
 		return xerrors.Errorf("couldn't verify: %v", err)
 	}

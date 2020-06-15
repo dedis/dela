@@ -1,33 +1,17 @@
 package bls
 
 import (
-	"bytes"
-	fmt "fmt"
+	"fmt"
 	"testing"
 	"testing/quick"
 
-	proto "github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
-	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/crypto"
-	internal "go.dedis.ch/dela/internal/testing"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde/json"
 	"go.dedis.ch/kyber/v3"
 	"golang.org/x/xerrors"
 )
-
-func TestMessages(t *testing.T) {
-	messages := []proto.Message{
-		&PublicKeyProto{},
-		&SignatureProto{},
-	}
-
-	for _, m := range messages {
-		internal.CoverProtoMessage(t, m)
-	}
-}
 
 func TestPublicKey_MarshalBinary(t *testing.T) {
 	signer := NewSigner()
@@ -35,27 +19,6 @@ func TestPublicKey_MarshalBinary(t *testing.T) {
 	buffer, err := signer.GetPublicKey().MarshalBinary()
 	require.NoError(t, err)
 	require.NotEmpty(t, buffer)
-}
-
-func TestPublicKey_Pack(t *testing.T) {
-	f := func() bool {
-		signer := NewSigner()
-		packed, err := signer.GetPublicKey().Pack(nil)
-		require.NoError(t, err)
-
-		pubkey, err := signer.GetPublicKeyFactory().FromProto(packed)
-		require.NoError(t, err)
-		require.True(t, pubkey.Equal(signer.GetPublicKey()))
-
-		return true
-	}
-
-	err := quick.Check(f, nil)
-	require.NoError(t, err)
-
-	pubkey := publicKey{point: badPoint{}}
-	_, err = pubkey.Pack(nil)
-	require.EqualError(t, err, "couldn't marshal point: oops")
 }
 
 func TestPublicKey_VisitJSON(t *testing.T) {
@@ -131,22 +94,6 @@ func TestSignature_MarshalBinary(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestSignature_Pack(t *testing.T) {
-	f := func(data []byte) bool {
-		sig := signature{data: data}
-		packed, err := sig.Pack(nil)
-		require.NoError(t, err)
-
-		pb, ok := packed.(*SignatureProto)
-		require.True(t, ok)
-
-		return bytes.Equal(data, pb.GetData())
-	}
-
-	err := quick.Check(f, nil)
-	require.NoError(t, err)
-}
-
 func TestSignature_VisitJSON(t *testing.T) {
 	sig := signature{data: []byte("deadbeef")}
 
@@ -173,36 +120,6 @@ func TestSignature_Equal(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestPublicKeyFactory_FromProto(t *testing.T) {
-	factory := NewPublicKeyFactory().(publicKeyFactory)
-
-	signer := NewSigner()
-	packed, err := signer.GetPublicKey().Pack(nil)
-	require.NoError(t, err)
-
-	pubkey, err := factory.FromProto(packed)
-	require.NoError(t, err)
-	require.True(t, signer.GetPublicKey().Equal(pubkey))
-
-	packedAny, err := ptypes.MarshalAny(packed)
-	require.NoError(t, err)
-
-	pubkey, err = factory.FromProto(packedAny)
-	require.NoError(t, err)
-	require.True(t, signer.GetPublicKey().Equal(pubkey))
-
-	_, err = factory.FromProto(&empty.Empty{})
-	require.EqualError(t, err, "invalid public key type '*empty.Empty'")
-
-	factory.encoder = fake.BadUnmarshalAnyEncoder{}
-	_, err = factory.FromProto(packedAny)
-	require.EqualError(t, err, "couldn't unmarshal message: fake error")
-
-	_, err = factory.FromProto(&PublicKeyProto{Data: []byte{}})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to unmarshal point: ")
-}
-
 func TestPublicKeyFactory_VisitJSON(t *testing.T) {
 	factory := NewPublicKeyFactory()
 
@@ -223,33 +140,6 @@ func TestPublicKeyFactory_VisitJSON(t *testing.T) {
 
 	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
 	require.EqualError(t, err, "couldn't deserialize data: fake error")
-}
-
-func TestSignatureFactory_FromProto(t *testing.T) {
-	factory := NewSignatureFactory().(signatureFactory)
-
-	signer := NewSigner()
-	sig, err := signer.Sign([]byte{1})
-	require.NoError(t, err)
-	packed, err := sig.Pack(nil)
-	require.NoError(t, err)
-
-	decoded, err := factory.FromProto(packed)
-	require.NoError(t, err)
-	require.True(t, sig.Equal(decoded))
-
-	packedAny, err := ptypes.MarshalAny(packed)
-	require.NoError(t, err)
-	decoded, err = factory.FromProto(packedAny)
-	require.NoError(t, err)
-	require.True(t, sig.Equal(decoded))
-
-	_, err = factory.FromProto(&empty.Empty{})
-	require.EqualError(t, err, "invalid signature type '*empty.Empty'")
-
-	factory.encoder = fake.BadUnmarshalAnyEncoder{}
-	_, err = factory.FromProto(packedAny)
-	require.EqualError(t, err, "couldn't unmarshal message: fake error")
 }
 
 func TestSignatureFactory_VisitJSON(t *testing.T) {

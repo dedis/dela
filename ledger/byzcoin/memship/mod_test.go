@@ -6,12 +6,9 @@ import (
 	"testing"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
-	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/consensus/viewchange/roster"
-	"go.dedis.ch/dela/encoding"
 	internal "go.dedis.ch/dela/internal/testing"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/inventory"
@@ -61,7 +58,6 @@ func TestTask_Consume(t *testing.T) {
 		clientTask: clientTask{
 			authority: roster.New(fake.NewAuthority(3, fake.NewSigner)),
 		},
-		encoder: encoding.NewProtoEncoder(),
 	}
 
 	page := fakePage{values: make(map[string]serde.Message)}
@@ -139,28 +135,6 @@ func TestTaskManager_Verify(t *testing.T) {
 	manager.inventory = fakeInventory{err: xerrors.New("oops")}
 	_, err = manager.Verify(fake.NewAddress(0), 0)
 	require.EqualError(t, err, "couldn't get authority: couldn't read page: oops")
-}
-
-func TestTaskManager_FromProto(t *testing.T) {
-	factory := NewTaskManager(fakeInventory{}, fake.Mino{}, fake.NewSigner())
-
-	roster := roster.New(fake.NewAuthority(3, fake.NewSigner))
-	rosterpb, err := encoding.NewProtoEncoder().PackAny(roster)
-	require.NoError(t, err)
-
-	taskany, err := ptypes.MarshalAny(&Task{Authority: rosterpb})
-	require.NoError(t, err)
-
-	task, err := factory.FromProto(&Task{Authority: rosterpb})
-	require.NoError(t, err)
-	require.NotNil(t, task)
-
-	task, err = factory.FromProto(taskany)
-	require.NoError(t, err)
-	require.NotNil(t, task)
-
-	_, err = factory.FromProto(&empty.Empty{})
-	require.EqualError(t, err, "invalid message type '*empty.Empty'")
 }
 
 func TestTaskManager_VisitJSON(t *testing.T) {
@@ -245,13 +219,7 @@ func (i fakeInventory) GetPage(uint64) (inventory.Page, error) {
 }
 
 type fakeRosterFactory struct {
-	roster.Factory
-
-	err error
-}
-
-func (f fakeRosterFactory) FromProto(proto.Message) (viewchange.Authority, error) {
-	return roster.New(fake.NewAuthority(3, fake.NewSigner)), f.err
+	serde.UnimplementedFactory
 }
 
 type badAuthority struct {

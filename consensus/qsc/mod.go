@@ -12,7 +12,6 @@ import (
 
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/consensus"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/net/context"
@@ -40,20 +39,18 @@ type Consensus struct {
 
 // NewQSC returns a new instance of QSC.
 func NewQSC(node int64, mino mino.Mino, players mino.Players) (*Consensus, error) {
-	bc, err := newBroadcast(node, mino, players)
+	bc, err := newBroadcast(node, mino, players, HistoryFactory{})
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't create broadcast: %v", err)
 	}
 
 	return &Consensus{
-		ch:        make(chan serde.Message),
-		closing:   make(chan struct{}),
-		stopped:   make(chan struct{}),
-		history:   make(history, 0),
-		broadcast: bc,
-		historiesFactory: defaultHistoriesFactory{
-			encoder: encoding.NewProtoEncoder(),
-		},
+		ch:               make(chan serde.Message),
+		closing:          make(chan struct{}),
+		stopped:          make(chan struct{}),
+		history:          history{},
+		broadcast:        bc,
+		historiesFactory: defaultHistoriesFactory{},
 	}, nil
 }
 
@@ -138,9 +135,9 @@ func (c *Consensus) executeRound(
 		e.hash = digest
 	}
 
-	newHistory := make(history, len(c.history), len(c.history)+1)
-	copy(newHistory, c.history)
-	newHistory = append(newHistory, e)
+	newHistory := history{
+		epochs: append(append([]epoch{}, c.history.epochs...), e),
+	}
 
 	// 2. Broadcast our history to the network and get back messages
 	// from this time step.
@@ -150,7 +147,7 @@ func (c *Consensus) executeRound(
 	}
 
 	// 3. Get the best history from the received messages.
-	Bp, err := c.historiesFactory.FromMessageSet(prepareSet.GetBroadcasted())
+	Bp, err := c.historiesFactory.FromMessageSet(prepareSet.broadcasted)
 	if err != nil {
 		return xerrors.Errorf("couldn't decode broadcasted set: %v", err)
 	}
@@ -162,18 +159,18 @@ func (c *Consensus) executeRound(
 	}
 
 	// 5. Get the best history from the second broadcast.
-	Rpp, err := c.historiesFactory.FromMessageSet(commitSet.GetReceived())
+	Rpp, err := c.historiesFactory.FromMessageSet(commitSet.received)
 	if err != nil {
 		return xerrors.Errorf("couldn't decode received set: %v", err)
 	}
 	c.history = Rpp.getBest()
 
 	// 6. Verify that the best history is present and unique.
-	broadcasted, err := c.historiesFactory.FromMessageSet(commitSet.GetBroadcasted())
+	broadcasted, err := c.historiesFactory.FromMessageSet(commitSet.broadcasted)
 	if err != nil {
 		return xerrors.Errorf("couldn't decode broadcasted set: %v", err)
 	}
-	received, err := c.historiesFactory.FromMessageSet(prepareSet.GetReceived())
+	received, err := c.historiesFactory.FromMessageSet(prepareSet.received)
 	if err != nil {
 		return xerrors.Errorf("couldn't decode received set: %v", err)
 	}

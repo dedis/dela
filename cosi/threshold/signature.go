@@ -3,10 +3,8 @@ package threshold
 import (
 	"bytes"
 
-	"github.com/golang/protobuf/proto"
-	any "github.com/golang/protobuf/ptypes/any"
+	"go.dedis.ch/dela/cosi/threshold/json"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
@@ -96,19 +94,20 @@ func (s *Signature) setBit(index int) {
 	s.mask[i] |= 1 << uint(index&mask)
 }
 
-// Pack implements encoding.Packable.
-func (s *Signature) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
-	agg, err := enc.PackAny(s.agg)
+// VisitJSON implements serde.Message. It serializes the signature into JSON
+// format.
+func (s *Signature) VisitJSON(ser serde.Serializer) (interface{}, error) {
+	agg, err := ser.Serialize(s.agg)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack signature: %v", err)
+		return nil, xerrors.Errorf("couldn't serialize aggregate: %v", err)
 	}
 
-	pb := &SignatureProto{
-		Mask:        s.mask,
-		Aggregation: agg,
+	m := json.Signature{
+		Mask:      s.mask,
+		Aggregate: agg,
 	}
 
-	return pb, nil
+	return m, nil
 }
 
 // MarshalBinary implements encoding.BinaryMarshaler.
@@ -132,38 +131,30 @@ func (s *Signature) Equal(o crypto.Signature) bool {
 type signatureFactory struct {
 	serde.UnimplementedFactory
 
-	encoder    encoding.ProtoMarshaler
-	sigFactory crypto.SignatureFactory
+	sigFactory serde.Factory
 }
 
-// FromProto implements crypto.SignatureFactory. It returns the threshold
-// signature associated with the message.
-func (f signatureFactory) FromProto(in proto.Message) (crypto.Signature, error) {
-	var pb *SignatureProto
-	switch msg := in.(type) {
-	case *any.Any:
-		pb = &SignatureProto{}
-		err := f.encoder.UnmarshalAny(msg, pb)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
-		}
-	case *SignatureProto:
-		pb = msg
-	default:
-		return nil, xerrors.Errorf("invalid signature type '%T'", in)
-	}
-
-	agg, err := f.sigFactory.FromProto(pb.GetAggregation())
+// VisitJSON implements serde.Factory. It deserializes the signature in JSON
+// format.
+func (f signatureFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
+	m := json.Signature{}
+	err := in.Feed(&m)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't decode aggregation: %v", err)
+		return nil, xerrors.Errorf("couldn't deserialize message: %v", err)
 	}
 
-	signature := &Signature{
-		mask: pb.GetMask(),
+	var agg crypto.Signature
+	err = in.GetSerializer().Deserialize(m.Aggregate, f.sigFactory, &agg)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't deserialize signature: %v", err)
+	}
+
+	s := &Signature{
+		mask: m.Mask,
 		agg:  agg,
 	}
 
-	return signature, nil
+	return s, nil
 }
 
 // Verifier is a threshold verifier which can verify threshold signatures by

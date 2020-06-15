@@ -7,10 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/consensus"
-	internal "go.dedis.ch/dela/internal/testing"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minoch"
@@ -18,24 +16,9 @@ import (
 	"golang.org/x/xerrors"
 )
 
-func TestMessages(t *testing.T) {
-	messages := []proto.Message{
-		&Message{},
-		&MessageSet{},
-		&View{},
-		&RequestMessageSet{},
-		&Epoch{},
-		&History{},
-	}
-
-	for _, m := range messages {
-		internal.CoverProtoMessage(t, m)
-	}
-}
-
 func TestQSC_Basic(t *testing.T) {
 	n := 5
-	k := 100
+	k := 10
 
 	cons := makeQSC(t, n)
 	actors := make([]consensus.Actor, n)
@@ -70,7 +53,7 @@ func TestQSC_Basic(t *testing.T) {
 	}
 
 	require.Equal(t, cons[0].history, cons[1].history)
-	require.GreaterOrEqual(t, len(cons[0].history), k)
+	require.GreaterOrEqual(t, len(cons[0].history.epochs), k)
 }
 
 func TestQSC_Listen(t *testing.T) {
@@ -145,7 +128,7 @@ func TestQSC_ExecuteRound(t *testing.T) {
 	require.EqualError(t, err, "couldn't commit: oops")
 }
 
-// -----------------
+// -----------------------------------------------------------------------------
 // Utility functions
 
 func makeQSC(t *testing.T, n int) []*Consensus {
@@ -206,17 +189,17 @@ type fakeBroadcast struct {
 	waiting chan struct{}
 }
 
-func (b *fakeBroadcast) send(ctx context.Context, h history) (*View, error) {
+func (b *fakeBroadcast) send(ctx context.Context, h history) (View, error) {
 	if b.wait {
 		close(b.waiting)
 		<-ctx.Done()
-		return nil, ctx.Err()
+		return View{}, ctx.Err()
 	}
 	if b.delay == 0 {
-		return nil, b.err
+		return View{}, b.err
 	}
 	b.delay--
-	return nil, nil
+	return View{}, nil
 }
 
 type fakeFactory struct {
@@ -225,12 +208,12 @@ type fakeFactory struct {
 	delay int
 }
 
-func (f *fakeFactory) FromMessageSet(map[int64]*Message) (histories, error) {
+func (f *fakeFactory) FromMessageSet(map[int64]Message) (histories, error) {
 	if f.delay == 0 && f.err != nil {
 		return nil, f.err
 	}
 	f.delay--
 
-	h := history{{random: 1}}
+	h := history{epochs: []epoch{{random: 1}}}
 	return histories{h}, nil
 }

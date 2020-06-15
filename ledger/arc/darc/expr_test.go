@@ -69,20 +69,6 @@ func TestExpression_Fingerprint(t *testing.T) {
 	require.EqualError(t, err, "couldn't write match: fake error")
 }
 
-func TestExpression_Pack(t *testing.T) {
-	idents := []arc.Identity{
-		fakeIdentity{buffer: []byte{0xaa}},
-		fakeIdentity{buffer: []byte{0xbb}},
-	}
-
-	expr, err := newExpression().Evolve(idents)
-	require.NoError(t, err)
-
-	pb, err := expr.Pack(nil)
-	require.NoError(t, err)
-	require.Len(t, pb.(*Expression).GetMatches(), 2)
-}
-
 // -----------------------------------------------------------------------------
 // Utility functions
 

@@ -6,7 +6,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/crypto/bls"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
@@ -52,7 +51,6 @@ func TestActor_Sign(t *testing.T) {
 
 	rpc := fake.NewRPC()
 	actor := flatActor{
-		encoder: encoding.NewProtoEncoder(),
 		signer:  fake.NewSigner(),
 		rpc:     rpc,
 		reactor: fakeReactor{},
@@ -85,7 +83,6 @@ func TestActor_SignWrongSignature(t *testing.T) {
 
 	rpc := fake.NewRPC()
 	actor := flatActor{
-		encoder: encoding.NewProtoEncoder(),
 		signer:  ca.GetSigner(0),
 		rpc:     rpc,
 		reactor: fakeReactor{},
@@ -107,7 +104,6 @@ func TestActor_RPCError_Sign(t *testing.T) {
 
 	rpc := fake.NewRPC()
 	actor := flatActor{
-		encoder: encoding.NewProtoEncoder(),
 		signer:  ca.GetSigner(0),
 		rpc:     rpc,
 		reactor: fakeReactor{},
@@ -129,7 +125,6 @@ func TestActor_Context_Sign(t *testing.T) {
 	rpc := fake.NewRPC()
 
 	actor := flatActor{
-		encoder: encoding.NewProtoEncoder(),
 		signer:  ca.GetSigner(0),
 		rpc:     rpc,
 		reactor: fakeReactor{},
@@ -149,7 +144,6 @@ func TestActor_SignProcessError(t *testing.T) {
 	ca := fake.NewAuthority(1, fake.NewSigner)
 
 	actor := flatActor{
-		encoder: encoding.NewProtoEncoder(),
 		signer:  ca.GetSigner(0),
 		reactor: fakeReactor{},
 	}

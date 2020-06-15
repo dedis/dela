@@ -6,7 +6,6 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde/tmp"
@@ -58,8 +57,7 @@ func TestHandler_Stream(t *testing.T) {
 	}
 	h := handler{
 		operations: &operations{
-			encoder: encoding.NewProtoEncoder(),
-			db:      db,
+			db: db,
 		},
 		requestFactory: requestFactory{},
 	}

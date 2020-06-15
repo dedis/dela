@@ -4,9 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/ledger/arc"
-	"go.dedis.ch/dela/ledger/arc/common"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions/basic"
 	"go.dedis.ch/dela/serde"
@@ -237,16 +235,14 @@ func (act serverTask) hasAccess(ctx Context, key []byte, rule string) error {
 // - implements basic.TaskFactory
 type TaskFactory struct {
 	contracts  map[string]Contract
-	arcFactory arc.AccessControlFactory
-	encoder    encoding.ProtoMarshaler
+	arcFactory serde.Factory
 }
 
 // NewTaskFactory returns a new empty instance of the factory.
 func NewTaskFactory() TaskFactory {
 	return TaskFactory{
 		contracts:  make(map[string]Contract),
-		arcFactory: common.NewAccessControlFactory(),
-		encoder:    encoding.NewProtoEncoder(),
+		arcFactory: serde.UnimplementedFactory{},
 	}
 }
 

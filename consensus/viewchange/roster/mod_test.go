@@ -4,28 +4,14 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/consensus/viewchange"
 	types "go.dedis.ch/dela/consensus/viewchange/roster/json"
 	"go.dedis.ch/dela/crypto/bls"
-	"go.dedis.ch/dela/encoding"
-	internal "go.dedis.ch/dela/internal/testing"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde/json"
 )
-
-func TestMessages(t *testing.T) {
-	messages := []proto.Message{
-		&Roster{},
-	}
-
-	for _, m := range messages {
-		internal.CoverProtoMessage(t, m)
-	}
-}
 
 func TestIterator_Seek(t *testing.T) {
 	roster := New(fake.NewAuthority(3, fake.NewSigner)).(roster)
@@ -214,21 +200,6 @@ func TestRoster_PublicKeyIterator(t *testing.T) {
 	}
 }
 
-func TestRoster_Pack(t *testing.T) {
-	roster := New(fake.NewAuthority(3, fake.NewSigner)).(roster)
-
-	rosterpb, err := roster.Pack(encoding.NewProtoEncoder())
-	require.NoError(t, err)
-	require.NotNil(t, rosterpb)
-
-	roster.addrs[1] = fake.NewBadAddress()
-	_, err = roster.Pack(encoding.NewProtoEncoder())
-	require.EqualError(t, err, "couldn't marshal address: fake error")
-
-	_, err = roster.Pack(fake.BadPackAnyEncoder{})
-	require.EqualError(t, err, "couldn't pack public key: fake error")
-}
-
 func TestRoster_VisitJSON(t *testing.T) {
 	roster := New(fake.NewAuthority(1, fake.NewSigner)).(roster)
 
@@ -245,50 +216,6 @@ func TestRoster_VisitJSON(t *testing.T) {
 	roster.addrs[0] = fake.NewAddress(0)
 	_, err = roster.VisitJSON(fake.NewBadSerializer())
 	require.EqualError(t, err, "couldn't serialize public key: fake error")
-}
-
-func TestRosterFactory_GetAddressFactory(t *testing.T) {
-	factory := defaultFactory{
-		addressFactory: fake.AddressFactory{},
-	}
-
-	require.NotNil(t, factory.GetAddressFactory())
-}
-
-func TestRosterFactory_GetPublicKeyFactory(t *testing.T) {
-	factory := defaultFactory{
-		pubkeyFactory: fake.PublicKeyFactory{},
-	}
-
-	require.NotNil(t, factory.GetPublicKeyFactory())
-}
-
-func TestRosterFactory_FromProto(t *testing.T) {
-	roster := New(fake.NewAuthority(3, fake.NewSigner))
-	rosterpb, err := roster.Pack(encoding.NewProtoEncoder())
-	require.NoError(t, err)
-
-	rosterany, err := ptypes.MarshalAny(rosterpb)
-	require.NoError(t, err)
-
-	factory := NewRosterFactory(fake.AddressFactory{}, fake.PublicKeyFactory{}).(defaultFactory)
-
-	decoded, err := factory.FromProto(rosterpb)
-	require.NoError(t, err)
-	require.Equal(t, roster.Len(), decoded.Len())
-
-	_, err = factory.FromProto(rosterany)
-	require.NoError(t, err)
-
-	_, err = factory.FromProto(nil)
-	require.EqualError(t, err, "invalid message type '<nil>'")
-
-	_, err = factory.FromProto(&Roster{Addresses: [][]byte{{}}})
-	require.EqualError(t, err, "mismatch array length 1 != 0")
-
-	factory.pubkeyFactory = fake.NewBadPublicKeyFactory()
-	_, err = factory.FromProto(rosterpb)
-	require.EqualError(t, err, "couldn't decode public key: fake error")
 }
 
 func TestRosterFactory_VisitJSON(t *testing.T) {

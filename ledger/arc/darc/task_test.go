@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/ledger/inventory"
@@ -15,23 +13,6 @@ import (
 	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
-
-func TestClientTask_Pack(t *testing.T) {
-	task := clientTask{
-		key:    []byte{0x01},
-		access: NewAccess(),
-	}
-
-	pb, err := task.Pack(encoding.NewProtoEncoder())
-	require.NoError(t, err)
-	require.IsType(t, (*Task)(nil), pb)
-
-	taskpb := pb.(*Task)
-	require.Equal(t, task.key, taskpb.GetKey())
-
-	_, err = task.Pack(fake.BadPackEncoder{})
-	require.EqualError(t, err, "couldn't pack access: fake error")
-}
 
 func TestClientTask_VisitJSON(t *testing.T) {
 	task := clientTask{
@@ -76,7 +57,6 @@ func TestServerTask_Consume(t *testing.T) {
 	require.NoError(t, err)
 
 	task := serverTask{
-		encoder:     encoding.NewProtoEncoder(),
 		darcFactory: NewFactory(),
 		clientTask:  clientTask{key: []byte{0x01}, access: access},
 	}
@@ -109,22 +89,6 @@ func TestServerTask_Consume(t *testing.T) {
 	err = task.Consume(fakeContext{identity: []byte("cat")}, fakePage{})
 	require.EqualError(t, err,
 		"no access: couldn't match 'darc_update': couldn't match identity 'cat'")
-}
-
-func TestTaskFactory_FromProto(t *testing.T) {
-	factory := NewTaskFactory().(taskFactory)
-
-	taskpb := &Task{Key: []byte{0x02}, Access: &AccessProto{}}
-	task, err := factory.FromProto(taskpb)
-	require.NoError(t, err)
-	require.IsType(t, serverTask{}, task)
-
-	_, err = factory.FromProto(nil)
-	require.EqualError(t, err, "invalid message type '<nil>'")
-
-	factory.darcFactory = badArcFactory{}
-	_, err = factory.FromProto(&Task{})
-	require.EqualError(t, err, "couldn't decode access: oops")
 }
 
 func TestTaskFactory_VisitJSON(t *testing.T) {
@@ -196,12 +160,4 @@ type badPage struct {
 
 func (page badPage) Read([]byte) (serde.Message, error) {
 	return fake.Message{}, nil
-}
-
-type badArcFactory struct {
-	arc.AccessControlFactory
-}
-
-func (f badArcFactory) FromProto(proto.Message) (arc.AccessControl, error) {
-	return nil, xerrors.New("oops")
 }

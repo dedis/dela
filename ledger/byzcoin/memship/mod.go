@@ -3,12 +3,9 @@ package memship
 import (
 	"io"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/ledger/byzcoin/memship/json"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions/basic"
@@ -79,7 +76,6 @@ func (t clientTask) Fingerprint(w io.Writer) error {
 // - implements basic.ServerTask
 type serverTask struct {
 	clientTask
-	encoder encoding.ProtoMarshaler
 }
 
 // Consume implements basic.ServerTask. It executes the task and write the
@@ -107,9 +103,8 @@ type TaskManager struct {
 	serde.UnimplementedFactory
 
 	me            mino.Address
-	encoder       encoding.ProtoMarshaler
 	inventory     inventory.Inventory
-	rosterFactory roster.Factory
+	rosterFactory serde.Factory
 	csFactory     serde.Factory
 }
 
@@ -117,7 +112,6 @@ type TaskManager struct {
 func NewTaskManager(i inventory.Inventory, m mino.Mino, s crypto.Signer) TaskManager {
 	return TaskManager{
 		me:            m.GetAddress(),
-		encoder:       encoding.NewProtoEncoder(),
 		inventory:     i,
 		rosterFactory: roster.NewRosterFactory(m.GetAddressFactory(), s.GetPublicKeyFactory()),
 		csFactory:     roster.NewChangeSetFactory(m.GetAddressFactory(), s.GetPublicKeyFactory()),
@@ -179,38 +173,6 @@ func (f TaskManager) Verify(from mino.Address, index uint64) (viewchange.Authori
 	return curr, nil
 }
 
-// FromProto implements basic.TaskFactory. It returns the server task associated
-// with the server task if appropriate, otherwise an error.
-func (f TaskManager) FromProto(in proto.Message) (basic.ServerTask, error) {
-	var pb *Task
-	switch msg := in.(type) {
-	case *Task:
-		pb = msg
-	case *any.Any:
-		pb = &Task{}
-		err := f.encoder.UnmarshalAny(msg, pb)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
-		}
-	default:
-		return nil, xerrors.Errorf("invalid message type '%T'", in)
-	}
-
-	roster, err := f.rosterFactory.FromProto(pb.GetAuthority())
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't unpack player: %v", err)
-	}
-
-	task := serverTask{
-		clientTask: clientTask{
-			authority: roster,
-		},
-		encoder: f.encoder,
-	}
-
-	return task, nil
-}
-
 // VisitJSON implements serde.Factory. It deserializes the client task in JSON
 // format into a server task.
 func (f TaskManager) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
@@ -230,14 +192,13 @@ func (f TaskManager) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
 		clientTask: clientTask{
 			authority: roster,
 		},
-		encoder: f.encoder,
 	}
 
 	return task, nil
 }
 
 // Register registers the task messages.
-func Register(r basic.TransactionFactory, f basic.TaskFactory) {
+func Register(r basic.TransactionFactory, f serde.Factory) {
 	r.Register(clientTask{}, f)
 	r.Register(serverTask{}, f)
 }

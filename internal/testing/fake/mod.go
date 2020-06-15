@@ -24,8 +24,6 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/any"
-	"github.com/golang/protobuf/ptypes/empty"
-	"github.com/golang/protobuf/ptypes/wrappers"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/encoding"
@@ -164,7 +162,6 @@ func (i *PublicKeyIterator) GetNext() crypto.PublicKey {
 // CollectiveAuthority is a fake implementation of the cosi.CollectiveAuthority
 // interface.
 type CollectiveAuthority struct {
-	encoding.Packable
 	crypto.CollectiveAuthority
 	addrs   []mino.Address
 	signers []crypto.AggregateSigner
@@ -271,7 +268,8 @@ func (ca CollectiveAuthority) PublicKeyIterator() crypto.PublicKeyIterator {
 
 // PublicKeyFactory is a fake implementation of a public key factory.
 type PublicKeyFactory struct {
-	crypto.PublicKeyFactory
+	serde.UnimplementedFactory
+
 	pubkey PublicKey
 	err    error
 }
@@ -288,11 +286,6 @@ func NewPublicKeyFactory(pubkey PublicKey) PublicKeyFactory {
 // error when appropriate.
 func NewBadPublicKeyFactory() PublicKeyFactory {
 	return PublicKeyFactory{err: xerrors.New("fake error")}
-}
-
-// FromProto implements crypto.PublicKeyFactory.
-func (f PublicKeyFactory) FromProto(proto.Message) (crypto.PublicKey, error) {
-	return f.pubkey, f.err
 }
 
 // VisitJSON implements serde.Factory.
@@ -320,11 +313,6 @@ func (s Signature) Equal(o crypto.Signature) bool {
 	return ok
 }
 
-// Pack implements encoding.Packable.
-func (s Signature) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
-	return &wrappers.BytesValue{Value: []byte{SignatureByte}}, s.err
-}
-
 // VisitJSON implements serde.Message.
 func (s Signature) VisitJSON(serde.Serializer) (interface{}, error) {
 	return struct{}{}, s.err
@@ -337,7 +325,8 @@ func (s Signature) MarshalBinary() ([]byte, error) {
 
 // SignatureFactory is a fake implementation of the signature factory.
 type SignatureFactory struct {
-	crypto.SignatureFactory
+	serde.UnimplementedFactory
+
 	signature Signature
 	err       error
 }
@@ -351,11 +340,6 @@ func NewSignatureFactory(s Signature) SignatureFactory {
 // when appropriate.
 func NewBadSignatureFactory() SignatureFactory {
 	return SignatureFactory{err: xerrors.New("fake error")}
-}
-
-// FromProto implements crypto.SignatureFactory.
-func (f SignatureFactory) FromProto(proto.Message) (crypto.Signature, error) {
-	return f.signature, f.err
 }
 
 // VisitJSON implements serde.Factory.
@@ -392,11 +376,6 @@ func (pk PublicKey) Verify([]byte, crypto.Signature) error {
 // MarshalBinary implements encoding.BinaryMarshaler.
 func (pk PublicKey) MarshalBinary() ([]byte, error) {
 	return []byte{0xdf}, pk.err
-}
-
-// Pack implements encoding.Packable.
-func (pk PublicKey) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
-	return &empty.Empty{}, pk.err
 }
 
 // VisitJSON implements serde.Message.
@@ -448,12 +427,12 @@ func NewBadSigner() Signer {
 }
 
 // GetPublicKeyFactory implements crypto.Signer.
-func (s Signer) GetPublicKeyFactory() crypto.PublicKeyFactory {
+func (s Signer) GetPublicKeyFactory() serde.Factory {
 	return PublicKeyFactory{}
 }
 
 // GetSignatureFactory implements crypto.Signer.
-func (s Signer) GetSignatureFactory() crypto.SignatureFactory {
+func (s Signer) GetSignatureFactory() serde.Factory {
 	return s.signatureFactory
 }
 
@@ -604,16 +583,6 @@ type BadUnmarshalDynEncoder struct {
 // UnmarshalDynamicAny implements encoding.ProtoMarshaler.
 func (e BadUnmarshalDynEncoder) UnmarshalDynamicAny(*any.Any) (proto.Message, error) {
 	return nil, xerrors.New("fake error")
-}
-
-// BadMarshalStableEncoder is a fake implementation of encoding.ProtoMarshaler.
-type BadMarshalStableEncoder struct {
-	encoding.ProtoEncoder
-}
-
-// MarshalStable implements encoding.ProtoMarshaler.
-func (e BadMarshalStableEncoder) MarshalStable(io.Writer, proto.Message) error {
-	return xerrors.New("fake error")
 }
 
 // AddressFactory is a fake implementation of mino.AddressFactory.

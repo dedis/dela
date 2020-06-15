@@ -14,7 +14,6 @@ import (
 	"math/rand"
 	"reflect"
 
-	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/common"
 	"go.dedis.ch/dela/ledger/arc"
@@ -48,14 +47,6 @@ type ServerTask interface {
 	ClientTask
 
 	Consume(Context, inventory.WritablePage) error
-}
-
-// TaskFactory provide the primitives to instantiate a task from its protobuf
-// message.
-type TaskFactory interface {
-	serde.Factory
-
-	FromProto(proto.Message) (ServerTask, error)
 }
 
 // transaction is an implementation of the client transaction that is using a
@@ -185,9 +176,9 @@ type TransactionFactory struct {
 
 	signer           crypto.Signer
 	hashFactory      crypto.HashFactory
-	publicKeyFactory crypto.PublicKeyFactory
-	signatureFactory crypto.SignatureFactory
-	registry         map[string]TaskFactory
+	publicKeyFactory serde.Factory
+	signatureFactory serde.Factory
+	registry         map[string]serde.Factory
 }
 
 // NewTransactionFactory returns a new instance of the transaction factory.
@@ -197,12 +188,12 @@ func NewTransactionFactory(signer crypto.Signer) TransactionFactory {
 		hashFactory:      crypto.NewSha256Factory(),
 		publicKeyFactory: common.NewPublicKeyFactory(),
 		signatureFactory: common.NewSignatureFactory(),
-		registry:         make(map[string]TaskFactory),
+		registry:         make(map[string]serde.Factory),
 	}
 }
 
 // Register registers the message to use the given factory to deserialize.
-func (f TransactionFactory) Register(m serde.Message, factory TaskFactory) {
+func (f TransactionFactory) Register(m serde.Message, factory serde.Factory) {
 	f.registry[keyOf(m)] = factory
 }
 

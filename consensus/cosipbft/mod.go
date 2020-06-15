@@ -12,7 +12,6 @@ import (
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/tmp"
@@ -32,7 +31,6 @@ type Consensus struct {
 	cosi        cosi.CollectiveSigning
 	mino        mino.Mino
 	queue       Queue
-	encoder     encoding.ProtoMarshaler
 	hashFactory crypto.HashFactory
 	viewchange  viewchange.ViewChange
 }
@@ -45,7 +43,6 @@ func NewCoSiPBFT(mino mino.Mino, cosi cosi.CollectiveSigning, vc viewchange.View
 		mino:        mino,
 		cosi:        cosi,
 		queue:       newQueue(cosi),
-		encoder:     encoding.NewProtoEncoder(),
 		hashFactory: crypto.NewSha256Factory(),
 		viewchange:  vc,
 	}

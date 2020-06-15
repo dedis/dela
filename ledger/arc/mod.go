@@ -5,7 +5,6 @@ import (
 	"encoding"
 	"strings"
 
-	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/dela/serde"
 )
 
@@ -21,14 +20,6 @@ type AccessControl interface {
 	serde.Message
 
 	Match(rule string, idents ...Identity) error
-}
-
-// AccessControlFactory is an abstraction to decode access controls from
-// protobuf messages.
-type AccessControlFactory interface {
-	serde.Factory
-
-	FromProto(proto.Message) (AccessControl, error)
 }
 
 // Compile returns a compacted rule from the string segments.

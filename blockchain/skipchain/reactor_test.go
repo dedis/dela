@@ -6,7 +6,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/blockchain"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
@@ -38,7 +37,6 @@ func TestReactor_InvokeValidate(t *testing.T) {
 		operations: &operations{
 			reactor:      &fakeReactor{},
 			watcher:      &fakeWatcher{},
-			encoder:      encoding.NewProtoEncoder(),
 			db:           db,
 			addr:         fake.NewAddress(0),
 			blockFactory: NewBlockFactory(fake.MessageFactory{}),

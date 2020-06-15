@@ -2,10 +2,10 @@ package skipchain
 
 import (
 	"context"
-	fmt "fmt"
+	"fmt"
 	"testing"
 
-	proto "github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/consensus"
@@ -15,7 +15,6 @@ import (
 	"go.dedis.ch/dela/cosi/flatcosi"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minoch"
@@ -144,7 +143,6 @@ func TestActor_Setup(t *testing.T) {
 	db := &fakeDatabase{blocks: []SkipBlock{{}}, err: NewNoBlockError(0)}
 	actor := skipchainActor{
 		operations: &operations{
-			encoder: encoding.NewProtoEncoder(),
 			blockFactory: BlockFactory{
 				hashFactory: crypto.NewSha256Factory(),
 			},
@@ -178,9 +176,8 @@ func TestActor_Setup(t *testing.T) {
 func TestActor_NewChain(t *testing.T) {
 	actor := skipchainActor{
 		operations: &operations{
-			addr:    fake.NewAddress(0),
-			encoder: encoding.NewProtoEncoder(),
-			db:      &fakeDatabase{},
+			addr: fake.NewAddress(0),
+			db:   &fakeDatabase{},
 			blockFactory: BlockFactory{
 				hashFactory: crypto.NewSha256Factory(),
 			},
@@ -210,7 +207,6 @@ func TestActor_Store(t *testing.T) {
 	db := &fakeDatabase{blocks: []SkipBlock{{}}}
 	actor := skipchainActor{
 		operations: &operations{
-			encoder: encoding.NewProtoEncoder(),
 			blockFactory: BlockFactory{
 				hashFactory: crypto.NewSha256Factory(),
 			},
