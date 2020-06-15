@@ -11,7 +11,7 @@ import (
 // txProcessor provides primitives to pre-process transactions and commit their
 // payload later on.
 //
-// - implements blockchain.PayloadProcessor
+// - implements blockchain.Reactor
 type txProcessor struct {
 	MessageFactory
 
@@ -25,9 +25,9 @@ func newTxProcessor(f MessageFactory, i inventory.Inventory) *txProcessor {
 	}
 }
 
-// Validate implements blockchain.PayloadProcessor. It returns if the validation
-// is a success. In that case, the payload has been staged in the inventory and
-// is waiting for a commit order.
+// InvokeValidate implements blockchain.Reactor. It returns the payload if the
+// validation is a success. In that case, the payload has been staged in the
+// inventory and is waiting for a commit order.
 func (proc *txProcessor) InvokeValidate(data serde.Message) (blockchain.Payload, error) {
 	blueprint, ok := data.(Blueprint)
 	if !ok {
@@ -49,9 +49,9 @@ func (proc *txProcessor) InvokeValidate(data serde.Message) (blockchain.Payload,
 	return payload, nil
 }
 
-// Commit implements blockchain.PayloadProcessor. It tries to commit to the
-// payload as it should have previously been processed. It returns nil if the
-// commit is a success, otherwise an error.
+// InvokeCommit implements blockchain.Reactor. It tries to commit to the payload
+// as it should have previously been processed. It returns nil if the commit is
+// a success, otherwise an error.
 func (proc *txProcessor) InvokeCommit(p blockchain.Payload) error {
 	var root []byte
 

@@ -95,7 +95,7 @@ type BlockPayload struct {
 	root         []byte
 }
 
-// Fingerprint implements serde.Fingerprinter. It write a deterministic binary
+// Fingerprint implements serde.Fingerprinter. It writes a deterministic binary
 // representation of the payload.
 func (p BlockPayload) Fingerprint(w io.Writer) error {
 	_, err := w.Write(p.root)
