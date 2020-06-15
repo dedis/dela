@@ -8,8 +8,6 @@ import (
 	"go.dedis.ch/dela/serde"
 )
 
-//go:generate protoc -I ./ --go_out=./ ./messages.proto
-
 // Context is provided during a transaction execution.
 type Context interface {
 	basic.Context

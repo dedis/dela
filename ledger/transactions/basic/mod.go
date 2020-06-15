@@ -24,8 +24,6 @@ import (
 	"golang.org/x/xerrors"
 )
 
-//go:generate protoc -I ./ --go_out=./ ./messages.proto
-
 // ClientTask is a task inside a transaction.
 type ClientTask interface {
 	serde.Message

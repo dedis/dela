@@ -18,8 +18,6 @@ import (
 	"golang.org/x/xerrors"
 )
 
-//go:generate protoc -I ./ --go_out=./ ./messages.proto
-
 const (
 	// EpochTimeout is the maximum amount of time given to an epoch to end
 	// before the request is aborted.

@@ -14,8 +14,6 @@ import (
 	"golang.org/x/xerrors"
 )
 
-//go:generate protoc -I ./ --go_out=./ ./messages.proto
-
 const (
 	// Algorithm is the name of the curve used for the BLS signature.
 	Algorithm = "CURVE-BN256"

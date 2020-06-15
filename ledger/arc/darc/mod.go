@@ -11,8 +11,6 @@ import (
 	"golang.org/x/xerrors"
 )
 
-//go:generate protoc -I ./ --go_out=./ ./messages.proto
-
 // Access is the DARC implementation of an Evolvable Access Control.
 //
 // - implements darc.EvolvableAccessControl

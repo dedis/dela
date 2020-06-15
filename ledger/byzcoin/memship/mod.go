@@ -14,8 +14,6 @@ import (
 	"golang.org/x/xerrors"
 )
 
-//go:generate protoc -I ./ --go_out=./ ./messages.proto
-
 const (
 	// RosterValueKey is the key used to store the roster.
 	RosterValueKey = "roster_value"

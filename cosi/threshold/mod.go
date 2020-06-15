@@ -8,8 +8,6 @@ import (
 	"golang.org/x/xerrors"
 )
 
-//go:generate protoc -I ./ --go_out=./ ./messages.proto
-
 // Threshold is a function that returns the threshold to reach for a given n.
 type Threshold func(int) int
 

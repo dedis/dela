@@ -18,8 +18,6 @@ import (
 	"golang.org/x/xerrors"
 )
 
-//go:generate protoc -I ./ --go_out=./ ./messages.proto
-
 const (
 	rpcName = "cosipbft"
 )

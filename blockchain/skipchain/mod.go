@@ -20,8 +20,6 @@ import (
 	"golang.org/x/xerrors"
 )
 
-//go:generate protoc -I ./ --go_out=./ ./messages.proto
-
 const (
 	// defaultPropagationTimeout is the default maximum amount of time given to
 	// a propagation to reach every player.

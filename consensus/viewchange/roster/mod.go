@@ -12,8 +12,6 @@ import (
 	"golang.org/x/xerrors"
 )
 
-//go:generate protoc -I ./ --go_out=./ ./messages.proto
-
 // iterator is a generic implementation of an iterator over a list of conodes.
 type iterator struct {
 	index  int
