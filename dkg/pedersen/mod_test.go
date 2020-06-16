@@ -43,29 +43,47 @@ func TestPedersen_Scenario(t *testing.T) {
 			minogrpc.GetCertificateStore().Store(m.GetAddress(), m.GetCertificate())
 		}
 
-		dkg, err := NewPedersen(privKeys[i], minogrpc)
-		require.NoError(t, err)
+		dkg := NewPedersen(privKeys[i], minogrpc)
 
 		dkgs[i] = dkg
 	}
 
 	message := []byte("Hello world")
-	// we try with the first 3 DKG Actors
-	for i := 0; i < 3; i++ {
-		players := &fakePlayers{
-			players: addrs,
-		}
-
-		dkg := dkgs[i]
-
-		actor, err := dkg.Listen(players, pubKeys, n)
+	actors := make([]dkg.Actor, n)
+	for i := 0; i < n; i++ {
+		actor, err := dkgs[i].Listen()
 		require.NoError(t, err)
 
-		K, C, remainder, err := actor.Encrypt(message)
+		actors[i] = actor
+	}
+
+	players := &fakePlayers{players: addrs}
+
+	// trying to call a decrpyt/encrypt before a setup
+	_, _, _, err := actors[0].Encrypt(message)
+	require.EqualError(t, err, "startRes is nil, did you call setup() first?")
+	_, err = actors[0].Decrypt(players, nil, nil)
+	require.EqualError(t, err, "startRes is nil, did you call setup() first?")
+
+	// Do a setup on one of the actor
+	// wrong lenght of pubKeys
+	err = actors[0].Setup(players, pubKeys[1:], n)
+	require.EqualError(t, err, "there should be as many players as pubKey: 5 := 4")
+
+	err = actors[0].Setup(players, pubKeys, n)
+	require.NoError(t, err)
+
+	err = actors[0].Setup(players, pubKeys, n)
+	require.EqualError(t, err, "startRes is not nil, only one setup call is allowed")
+
+	// every node should be able to encrypt/decrypt
+	for i := 0; i < n; i++ {
+		K, C, remainder, err := actors[i].Encrypt(message)
 		require.NoError(t, err)
 		require.Len(t, remainder, 0)
 
-		decrypted, err := actor.Decrypt(K, C)
+		players = &fakePlayers{players: addrs}
+		decrypted, err := actors[i].Decrypt(players, K, C)
 		require.NoError(t, err)
 
 		require.Equal(t, message, decrypted)

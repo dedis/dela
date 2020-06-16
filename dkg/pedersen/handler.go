@@ -19,6 +19,12 @@ import (
 // recvResponseTimeout is the maximum time a node will wait for a response
 const recvResponseTimeout = time.Second * 10
 
+// startResult holds the result of the DKG initialization, which is needed by an
+// actor to perform the Encrypt/Decrypt.
+type startResult struct {
+	distrKey kyber.Point
+}
+
 // Handler represents the RPC executed on each node
 //
 // - implements mino.Handler
@@ -30,14 +36,16 @@ type Handler struct {
 	me        mino.Address
 	privShare *share.PriShare
 	factory   serde.Factory
+	startRes  *startResult
 }
 
 // NewHandler creates a new handler
 func NewHandler(privKey kyber.Scalar, me mino.Address, f serde.Factory) *Handler {
 	return &Handler{
-		privKey: privKey,
-		me:      me,
-		factory: f,
+		privKey:  privKey,
+		me:       me,
+		factory:  f,
+		startRes: &startResult{},
 	}
 }
 
@@ -283,6 +291,7 @@ func (h *Handler) start(start Start, receivedDeals []Deal, from mino.Address,
 
 	h.Lock()
 	h.privShare = distrKey.PriShare()
+	h.startRes.distrKey = distrKey.Public()
 	h.Unlock()
 
 	return nil
