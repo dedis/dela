@@ -4,8 +4,6 @@ import (
 	"io"
 	"sort"
 
-	proto "github.com/golang/protobuf/proto"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/ledger/arc"
 	"golang.org/x/xerrors"
 )
@@ -77,20 +75,6 @@ func (expr expression) Fingerprint(w io.Writer) error {
 	}
 
 	return nil
-}
-
-// Pack implements encoding.Packable. It returns the protobuf message for the
-// expression.
-func (expr expression) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
-	pb := &Expression{
-		Matches: make([]string, 0, len(expr.matches)),
-	}
-
-	for match := range expr.matches {
-		pb.Matches = append(pb.Matches, match)
-	}
-
-	return pb, nil
 }
 
 // Clone returns a deep copy of the expression.

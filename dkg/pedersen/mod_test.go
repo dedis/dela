@@ -3,32 +3,13 @@ package pedersen
 import (
 	"testing"
 
-	proto "github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/dkg"
-	internal "go.dedis.ch/dela/internal/testing"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc"
 	"go.dedis.ch/dela/mino/minogrpc/routing"
 	"go.dedis.ch/kyber/v3"
 )
-
-func TestMessages(t *testing.T) {
-	messages := []proto.Message{
-		&Start{},
-		&Deal{},
-		&Deal_EncryptedDeal{},
-		&Response{},
-		&Response_Data{},
-		&StartDone{},
-		&DecryptRequest{},
-		&DecryptReply{},
-	}
-
-	for _, m := range messages {
-		internal.CoverProtoMessage(t, m)
-	}
-}
 
 func TestPedersen_Scenario(t *testing.T) {
 	n := 5
@@ -62,7 +43,7 @@ func TestPedersen_Scenario(t *testing.T) {
 			minogrpc.GetCertificateStore().Store(m.GetAddress(), m.GetCertificate())
 		}
 
-		dkg, err := NewPedersen(privKeys[i], minogrpc, suite)
+		dkg, err := NewPedersen(privKeys[i], minogrpc)
 		require.NoError(t, err)
 
 		dkgs[i] = dkg
@@ -77,7 +58,7 @@ func TestPedersen_Scenario(t *testing.T) {
 
 		dkg := dkgs[i]
 
-		actor, err := dkg.Listen(players, pubKeys, uint32(n))
+		actor, err := dkg.Listen(players, pubKeys, n)
 		require.NoError(t, err)
 
 		K, C, remainder, err := actor.Encrypt(message)

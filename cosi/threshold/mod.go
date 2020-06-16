@@ -3,12 +3,10 @@ package threshold
 import (
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
-
-//go:generate protoc -I ./ --go_out=./ ./messages.proto
 
 // Threshold is a function that returns the threshold to reach for a given n.
 type Threshold func(int) int
@@ -20,9 +18,8 @@ func defaultThreshold(n int) int {
 // CoSi is an implementation of the cosi.CollectiveSigning interface that is
 // using streams to parallelize the work.
 type CoSi struct {
-	encoder encoding.ProtoMarshaler
-	mino    mino.Mino
-	signer  crypto.AggregateSigner
+	mino   mino.Mino
+	signer crypto.AggregateSigner
 
 	Threshold Threshold
 }
@@ -30,7 +27,6 @@ type CoSi struct {
 // NewCoSi returns a new instance.
 func NewCoSi(m mino.Mino, signer crypto.AggregateSigner) *CoSi {
 	return &CoSi{
-		encoder:   encoding.NewProtoEncoder(),
 		mino:      m,
 		signer:    signer,
 		Threshold: defaultThreshold,
@@ -45,15 +41,14 @@ func (c *CoSi) GetSigner() crypto.Signer {
 
 // GetPublicKeyFactory implements cosi.CollectiveSigning. It returns the public
 // key factory.
-func (c *CoSi) GetPublicKeyFactory() crypto.PublicKeyFactory {
+func (c *CoSi) GetPublicKeyFactory() serde.Factory {
 	return c.signer.GetPublicKeyFactory()
 }
 
 // GetSignatureFactory implements cosi.CollectiveSigning. It returns the
 // signature factory.
-func (c *CoSi) GetSignatureFactory() crypto.SignatureFactory {
+func (c *CoSi) GetSignatureFactory() serde.Factory {
 	return signatureFactory{
-		encoder:    c.encoder,
 		sigFactory: c.signer.GetSignatureFactory(),
 	}
 }

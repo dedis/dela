@@ -8,7 +8,6 @@ import (
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/blockchain"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/tmp"
@@ -21,7 +20,6 @@ const catchUpLeeway = 100 * time.Millisecond
 // common operations.
 type operations struct {
 	logger          zerolog.Logger
-	encoder         encoding.ProtoMarshaler
 	addr            mino.Address
 	blockFactory    BlockFactory
 	responseFactory serde.Factory

@@ -4,29 +4,12 @@ import (
 	"bytes"
 	"testing"
 
-	proto "github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
-	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/encoding"
-	internal "go.dedis.ch/dela/internal/testing"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
-
-func TestMessages(t *testing.T) {
-	messages := []proto.Message{
-		&Expression{},
-		&AccessProto{},
-		&Task{},
-	}
-
-	for _, m := range messages {
-		internal.CoverProtoMessage(t, m)
-	}
-}
 
 func TestAccess_Evolve(t *testing.T) {
 	access := NewAccess()
@@ -96,25 +79,6 @@ func TestAccess_Fingerprint(t *testing.T) {
 		"couldn't fingerprint rule '\x02': couldn't write match: fake error")
 }
 
-func TestAccess_Pack(t *testing.T) {
-	idents := []arc.Identity{
-		fakeIdentity{buffer: []byte{0xaa}},
-		fakeIdentity{buffer: []byte{0xbb}},
-	}
-
-	access, err := NewAccess().Evolve("fake", idents...)
-	require.NoError(t, err)
-
-	encoder := encoding.NewProtoEncoder()
-
-	pb, err := access.Pack(encoder)
-	require.NoError(t, err)
-	require.Len(t, pb.(*AccessProto).GetRules(), 1)
-
-	_, err = access.Pack(fake.BadPackEncoder{})
-	require.EqualError(t, err, "couldn't pack expression: fake error")
-}
-
 func TestAccess_VisitJSON(t *testing.T) {
 	access := Access{rules: map[string]expression{
 		"A": {matches: map[string]struct{}{"C": {}}},
@@ -125,35 +89,6 @@ func TestAccess_VisitJSON(t *testing.T) {
 	data, err := ser.Serialize(access)
 	require.NoError(t, err)
 	require.Equal(t, `{"Rules":{"A":["C"],"B":[]}}`, string(data))
-}
-
-func TestFactory_FromProto(t *testing.T) {
-	factory := NewFactory()
-
-	pb := &AccessProto{
-		Rules: map[string]*Expression{
-			"fake": {
-				Matches: []string{"aa", "bb"},
-			},
-		},
-	}
-
-	access, err := factory.FromProto(pb)
-	require.NoError(t, err)
-	require.NotNil(t, access)
-
-	pbAny, err := ptypes.MarshalAny(pb)
-	require.NoError(t, err)
-	access, err = factory.FromProto(pbAny)
-	require.NoError(t, err)
-	require.NotNil(t, access)
-
-	_, err = factory.FromProto(&empty.Empty{})
-	require.EqualError(t, err, "invalid message type '*empty.Empty'")
-
-	factory.encoder = fake.BadUnmarshalAnyEncoder{}
-	_, err = factory.FromProto(pbAny)
-	require.EqualError(t, err, "couldn't unmarshal message: fake error")
 }
 
 func TestFactory_VisitJSON(t *testing.T) {

@@ -3,19 +3,18 @@ package qsc
 import (
 	"bytes"
 	"context"
-	fmt "fmt"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
 
 	proto "github.com/golang/protobuf/proto"
-	any "github.com/golang/protobuf/ptypes/any"
-	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minoch"
+	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -28,8 +27,13 @@ func TestTLCR_Basic(t *testing.T) {
 	wg.Add(n)
 	for _, bc := range bcs {
 		go func(bc *bTLCR) {
+			msg := Message{
+				node:  bc.node,
+				value: Proposal{value: fake.Message{}},
+			}
+
 			for i := 0; i < k; i++ {
-				bc.execute(context.Background(), &Message{Node: bc.node})
+				bc.execute(context.Background(), msg)
 			}
 			wg.Done()
 		}(bc)
@@ -41,32 +45,33 @@ func TestTLCR_Basic(t *testing.T) {
 }
 
 func TestHandlerTLCR_Process(t *testing.T) {
-	ch := make(chan *MessageSet, 1)
+	ch := make(chan MessageSet, 1)
 	h := hTLCR{
 		ch: ch,
 		store: &storage{
-			previous: &MessageSet{
-				TimeStep: 1,
+			previous: MessageSet{
+				timeStep: 1,
 			},
 		},
+		factory: RequestFactory{mFactory: fake.MessageFactory{}},
 	}
 
-	resp, err := h.Process(mino.Request{Message: &MessageSet{}})
+	resp, err := h.Process(mino.Request{Message: tmp.ProtoOf(MessageSet{})})
 	require.NoError(t, err)
 	require.Nil(t, resp)
 	require.NotNil(t, <-ch)
 
-	resp, err = h.Process(mino.Request{Message: &RequestMessageSet{TimeStep: 0}})
+	resp, err = h.Process(mino.Request{Message: tmp.ProtoOf(RequestMessageSet{timeStep: 0})})
 	require.NoError(t, err)
 	require.Nil(t, resp)
 
-	_, err = h.Process(mino.Request{Message: &empty.Empty{}})
-	require.EqualError(t, err, "invalid message type '*empty.Empty'")
+	_, err = h.Process(mino.Request{Message: tmp.ProtoOf(Proposal{value: fake.Message{}})})
+	require.EqualError(t, err, "invalid message type 'fake.Message'")
 }
 
 func TestTLCR_Execute(t *testing.T) {
 	buffer := new(bytes.Buffer)
-	ch := make(chan *MessageSet, 1)
+	ch := make(chan MessageSet, 1)
 	bc := &bTLCR{
 		logger:  zerolog.New(buffer),
 		rpc:     fakeRPC{},
@@ -75,17 +80,17 @@ func TestTLCR_Execute(t *testing.T) {
 		store:   &storage{},
 	}
 
-	ch <- &MessageSet{
-		Messages: map[int64]*Message{1: {}},
-		TimeStep: 0,
+	ch <- MessageSet{
+		messages: map[int64]Message{1: {}},
+		timeStep: 0,
 	}
 
 	view, err := bc.execute(context.Background())
 	require.NoError(t, err)
 	require.NotNil(t, view)
 	require.Equal(t, uint64(1), bc.timeStep)
-	require.Equal(t, bc.store.previous.GetMessages(), view.GetReceived())
-	require.Len(t, view.GetBroadcasted(), 0)
+	require.Equal(t, bc.store.previous.messages, view.received)
+	require.Len(t, view.broadcasted, 0)
 
 	bc.rpc = fakeRPC{err: xerrors.New("oops")}
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
@@ -96,41 +101,42 @@ func TestTLCR_Execute(t *testing.T) {
 }
 
 func TestTLCR_Merge(t *testing.T) {
-	m1 := &MessageSet{Messages: map[int64]*Message{1: {}, 2: {}}}
-	m2 := &MessageSet{Messages: map[int64]*Message{2: {}, 3: {}}}
+	m1 := MessageSet{messages: map[int64]Message{1: {}, 2: {}}}
+	m2 := MessageSet{messages: map[int64]Message{2: {}, 3: {}}}
 
 	bc := &bTLCR{}
 	bc.merge(m1, m2)
-	require.Len(t, m1.GetMessages(), 3)
+	require.Len(t, m1.messages, 3)
 }
 
 func TestTLCR_CatchUp(t *testing.T) {
-	ch := make(chan *MessageSet, 1)
+	ch := make(chan MessageSet, 1)
 	bc := &bTLCR{
 		ch:       ch,
 		timeStep: 0,
 		rpc:      fakeRPC{},
 		players:  fakeSinglePlayer{},
+		factory:  RequestFactory{mFactory: fake.MessageFactory{}},
 	}
 
 	ctx := context.Background()
 
-	m1 := &MessageSet{Messages: map[int64]*Message{1: {}}}
-	m2 := &MessageSet{Node: 2}
+	m1 := MessageSet{messages: map[int64]Message{1: {}}}
+	m2 := MessageSet{node: 2}
 	err := bc.catchUp(ctx, m1, m2)
 	require.NoError(t, err)
 	require.Equal(t, m2, <-ch)
 
-	m2.TimeStep = 1
-	bc.rpc = fakeRPC{msg: &MessageSet{Messages: map[int64]*Message{2: {}}}}
+	m2.timeStep = 1
+	bc.rpc = fakeRPC{msg: tmp.ProtoOf(MessageSet{messages: map[int64]Message{2: {value: Proposal{value: fake.Message{}}}}})}
 	err = bc.catchUp(ctx, m1, m2)
 	require.NoError(t, err)
 	require.Equal(t, m2, <-ch)
 
-	bc.rpc = fakeRPC{msg: &empty.Empty{}}
+	bc.rpc = fakeRPC{msg: tmp.ProtoOf(Proposal{value: fake.Message{}})}
 	err = bc.catchUp(ctx, m1, m2)
 	require.EqualError(t, xerrors.Unwrap(err),
-		"got message type '*empty.Empty' but expected '*qsc.MessageSet'")
+		"got message type 'fake.Message' but expected 'qsc.MessageSet'")
 	require.Equal(t, m2, <-ch)
 
 	bc.rpc = fakeRPC{err: xerrors.New("oops")}
@@ -156,13 +162,13 @@ func TestTLCB_Basic(t *testing.T) {
 	for _, bc := range bcs {
 		go func(bc *bTLCB) {
 			defer wg.Done()
-			var view *View
+			var view View
 			var err error
 			for i := 0; i < k; i++ {
-				view, err = bc.execute(context.Background(), &empty.Empty{})
+				view, err = bc.execute(context.Background(), fake.Message{})
 				require.NoError(t, err)
-				require.Len(t, view.GetBroadcasted(), n)
-				require.Len(t, view.GetReceived(), n)
+				require.Len(t, view.broadcasted, n)
+				require.Len(t, view.received, n)
 			}
 		}(bc)
 	}
@@ -172,32 +178,22 @@ func TestTLCB_Basic(t *testing.T) {
 
 func TestTLCB_Execute(t *testing.T) {
 	bc := &bTLCB{
-		encoder: encoding.NewProtoEncoder(),
-		b1:      fakeTLCR{},
-		b2:      fakeTLCR{},
+		b1: fakeTLCR{},
+		b2: fakeTLCR{},
 	}
 
-	view, err := bc.execute(context.Background(), &empty.Empty{})
+	view, err := bc.execute(context.Background(), fake.Message{})
 	require.NoError(t, err)
 	require.NotNil(t, view)
 
 	bc.b1 = fakeTLCR{err: xerrors.New("oops")}
-	_, err = bc.execute(context.Background(), &empty.Empty{})
+	_, err = bc.execute(context.Background(), fake.Message{})
 	require.EqualError(t, err, "couldn't broadcast: oops")
 
 	bc.b1 = fakeTLCR{}
 	bc.b2 = fakeTLCR{err: xerrors.New("oops")}
-	_, err = bc.execute(context.Background(), &empty.Empty{})
+	_, err = bc.execute(context.Background(), fake.Message{})
 	require.EqualError(t, err, "couldn't broadcast: oops")
-
-	bc.b2 = fakeTLCR{}
-	bc.encoder = &badMarshalAnyEncoder{}
-	_, err = bc.execute(context.Background(), &empty.Empty{})
-	require.EqualError(t, err, "couldn't marshal message: oops")
-
-	bc.encoder = &badMarshalAnyEncoder{delay: 1}
-	_, err = bc.execute(context.Background(), &empty.Empty{})
-	require.EqualError(t, err, "couldn't marshal message: oops")
 }
 
 func makeTLCR(t *testing.T, n int) []*bTLCR {
@@ -210,7 +206,7 @@ func makeTLCR(t *testing.T, n int) []*bTLCR {
 
 		players.addrs = append(players.addrs, m.GetAddress())
 
-		bc, err := newTLCR("tlcr", int64(i), m, players)
+		bc, err := newTLCR("tlcr", int64(i), m, players, fake.MessageFactory{})
 		require.NoError(t, err)
 
 		bcs[i] = bc
@@ -229,7 +225,7 @@ func makeTLCB(t *testing.T, n int) []*bTLCB {
 
 		players.addrs = append(players.addrs, m.GetAddress())
 
-		bc, err := newTLCB(int64(i), m, players)
+		bc, err := newTLCB(int64(i), m, players, fake.MessageFactory{})
 		require.NoError(t, err)
 
 		bcs[i] = bc
@@ -240,19 +236,6 @@ func makeTLCB(t *testing.T, n int) []*bTLCB {
 
 // -----------------
 // Utility functions
-
-type badMarshalAnyEncoder struct {
-	encoding.ProtoEncoder
-	delay int
-}
-
-func (e *badMarshalAnyEncoder) MarshalAny(proto.Message) (*any.Any, error) {
-	if e.delay == 0 {
-		return nil, xerrors.New("oops")
-	}
-	e.delay--
-	return nil, nil
-}
 
 type fakeIterator struct {
 	mino.AddressIterator
@@ -333,6 +316,6 @@ type fakeTLCR struct {
 	err error
 }
 
-func (b fakeTLCR) execute(context.Context, ...*Message) (*View, error) {
-	return nil, b.err
+func (b fakeTLCR) execute(context.Context, ...Message) (View, error) {
+	return View{}, b.err
 }

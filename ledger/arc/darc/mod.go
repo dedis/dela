@@ -5,16 +5,11 @@ import (
 	"io"
 	"sort"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/any"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/ledger/arc/darc/json"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
-
-//go:generate protoc -I ./ --go_out=./ ./messages.proto
 
 // Access is the DARC implementation of an Evolvable Access Control.
 //
@@ -98,24 +93,6 @@ func (ac Access) Fingerprint(w io.Writer) error {
 	return nil
 }
 
-// Pack implements encoding.Packable.
-func (ac Access) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
-	pb := &AccessProto{
-		Rules: make(map[string]*Expression),
-	}
-
-	for rule, expr := range ac.rules {
-		exprpb, err := enc.Pack(expr)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't pack expression: %v", err)
-		}
-
-		pb.Rules[rule] = exprpb.(*Expression)
-	}
-
-	return pb, nil
-}
-
 // VisitJSON implements serde.Message. It returns the JSON message for the
 // access.
 func (ac Access) VisitJSON(serde.Serializer) (interface{}, error) {
@@ -149,46 +126,11 @@ func (ac Access) Clone() Access {
 // Factory is the implementation of an access control factory for DARCs.
 type Factory struct {
 	serde.UnimplementedFactory
-
-	encoder encoding.ProtoMarshaler
 }
 
 // NewFactory returns a new instance of the factory.
 func NewFactory() Factory {
-	return Factory{
-		encoder: encoding.NewProtoEncoder(),
-	}
-}
-
-// FromProto implements arc.AccessControlFactory. It returns the access control
-// associated with the protobuf message.
-func (f Factory) FromProto(in proto.Message) (arc.AccessControl, error) {
-	var pb *AccessProto
-	switch msg := in.(type) {
-	case *any.Any:
-		pb = &AccessProto{}
-		err := f.encoder.UnmarshalAny(msg, pb)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
-		}
-	case *AccessProto:
-		pb = msg
-	default:
-		return nil, xerrors.Errorf("invalid message type '%T'", in)
-	}
-
-	ac := NewAccess()
-
-	for rule, exprpb := range pb.GetRules() {
-		expr := newExpression()
-		for _, match := range exprpb.GetMatches() {
-			expr.matches[match] = struct{}{}
-		}
-
-		ac.rules[rule] = expr
-	}
-
-	return ac, nil
+	return Factory{}
 }
 
 // VisitJSON implements serde.Factory. It deserializes the access control in

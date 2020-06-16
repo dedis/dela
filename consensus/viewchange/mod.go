@@ -2,7 +2,6 @@ package viewchange
 
 import (
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 )
@@ -37,7 +36,6 @@ type ChangeSet interface {
 type Authority interface {
 	serde.Message
 	serde.Fingerprinter
-	encoding.Packable
 	crypto.CollectiveAuthority
 
 	// Apply must apply the change set to the collective authority. It should

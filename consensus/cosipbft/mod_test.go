@@ -17,7 +17,6 @@ import (
 	"go.dedis.ch/dela/cosi/flatcosi"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minoch"
@@ -131,7 +130,6 @@ func TestActor_Propose(t *testing.T) {
 	cosiActor := &fakeCosiActor{}
 	actor := &pbftActor{
 		Consensus: &Consensus{
-			encoder:     encoding.NewProtoEncoder(),
 			hashFactory: crypto.NewSha256Factory(),
 			viewchange:  fakeViewChange{},
 			cosi:        &fakeCosi{},
@@ -174,7 +172,6 @@ func TestActor_Propose(t *testing.T) {
 func TestActor_Failures_Propose(t *testing.T) {
 	actor := &pbftActor{
 		Consensus: &Consensus{
-			encoder:     encoding.NewProtoEncoder(),
 			hashFactory: crypto.NewSha256Factory(),
 			viewchange:  fakeViewChange{},
 			cosi:        &fakeCosi{},
@@ -216,7 +213,6 @@ func TestActor_Failures_Propose(t *testing.T) {
 
 	actor.cosiActor = &fakeCosiActor{}
 	buffer := new(bytes.Buffer)
-	actor.encoder = encoding.NewProtoEncoder()
 	actor.rpc = &fakeRPC{err: xerrors.New("oops")}
 	actor.logger = zerolog.New(buffer)
 	err = actor.Propose(fake.Message{})
@@ -242,7 +238,6 @@ func TestHandler_Prepare_Invoke(t *testing.T) {
 		storage:     newInMemoryStorage(),
 		queue:       &queue{cosi: &fakeCosi{}},
 		hashFactory: crypto.NewSha256Factory(),
-		encoder:     encoding.NewProtoEncoder(),
 		viewchange:  fakeViewChange{authority: authority},
 		cosi:        &fakeCosi{},
 	}
@@ -527,11 +522,11 @@ func (cs *fakeCosi) GetSigner() crypto.Signer {
 	return cs.signer
 }
 
-func (cs *fakeCosi) GetPublicKeyFactory() crypto.PublicKeyFactory {
+func (cs *fakeCosi) GetPublicKeyFactory() serde.Factory {
 	return fake.PublicKeyFactory{}
 }
 
-func (cs *fakeCosi) GetSignatureFactory() crypto.SignatureFactory {
+func (cs *fakeCosi) GetSignatureFactory() serde.Factory {
 	return cs.factory
 }
 

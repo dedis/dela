@@ -6,11 +6,10 @@ import (
 	"testing"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -19,16 +18,15 @@ func TestActor_Sign(t *testing.T) {
 
 	actor := thresholdActor{
 		CoSi: &CoSi{
-			encoder:   encoding.NewProtoEncoder(),
 			signer:    ca.GetSigner(0),
 			Threshold: func(n int) int { return n - 1 },
 		},
 		rpc: fakeRPC{
 			receiver: &fakeReceiver{
 				resps: [][]interface{}{
-					{ca.GetAddress(0), &empty.Empty{}},
-					{ca.GetAddress(0), &empty.Empty{}},
-					{ca.GetAddress(1), &empty.Empty{}},
+					{ca.GetAddress(0), tmp.ProtoOf(fake.Message{})},
+					{ca.GetAddress(0), tmp.ProtoOf(fake.Message{})},
+					{ca.GetAddress(1), tmp.ProtoOf(fake.Message{})},
 				},
 			},
 		},
@@ -60,12 +58,8 @@ func TestActor_Sign(t *testing.T) {
 	_, err = actor.Sign(ctx, fake.Message{}, ca)
 	require.EqualError(t, err, "couldn't receive more messages: context canceled")
 
-	actor.signer = fake.NewSignerWithSignatureFactory(fake.NewBadSignatureFactory())
-	err = actor.merge(&Signature{}, &empty.Empty{}, 0, nil, nil)
-	require.EqualError(t, err, "couldn't decode signature: fake error")
-
 	actor.signer = fake.NewSigner()
-	err = actor.merge(&Signature{}, &empty.Empty{}, 0, fake.NewInvalidPublicKey(), []byte{})
+	err = actor.merge(&Signature{}, fake.Signature{}, 0, fake.NewInvalidPublicKey(), []byte{})
 	require.EqualError(t, err, "couldn't verify: fake error")
 
 	actor.rpc = fake.NewBadStreamRPC()

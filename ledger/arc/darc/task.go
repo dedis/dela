@@ -3,9 +3,6 @@ package darc
 import (
 	"io"
 
-	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/dela/encoding"
-	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/ledger/arc/darc/json"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions/basic"
@@ -39,22 +36,6 @@ func NewCreate(access Access) basic.ClientTask {
 // NewUpdate returns a new task to update a DARC.
 func NewUpdate(key []byte, access Access) basic.ClientTask {
 	return clientTask{key: key, access: access}
-}
-
-// Pack implements encoding.Packable. It returns the protobuf message for the
-// task.
-func (act clientTask) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
-	access, err := enc.Pack(act.access)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't pack access: %v", err)
-	}
-
-	pb := &Task{
-		Key:    act.key,
-		Access: access.(*AccessProto),
-	}
-
-	return pb, nil
 }
 
 // VisitJSON implements serde.Message. It returns the JSON message for the task.
@@ -93,8 +74,7 @@ func (act clientTask) Fingerprint(w io.Writer) error {
 // - implements basic.ServerTask
 type serverTask struct {
 	clientTask
-	encoder     encoding.ProtoMarshaler
-	darcFactory arc.AccessControlFactory
+	darcFactory serde.Factory
 }
 
 // Consume implements basic.ServerTask. It writes the DARC into the page if it
@@ -144,44 +124,14 @@ func (act serverTask) Consume(ctx basic.Context, page inventory.WritablePage) er
 type taskFactory struct {
 	serde.UnimplementedFactory
 
-	encoder     encoding.ProtoMarshaler
-	darcFactory arc.AccessControlFactory
+	darcFactory serde.Factory
 }
 
 // NewTaskFactory returns a new instance of the task factory.
-func NewTaskFactory() basic.TaskFactory {
+func NewTaskFactory() serde.Factory {
 	return taskFactory{
-		encoder:     encoding.NewProtoEncoder(),
 		darcFactory: NewFactory(),
 	}
-}
-
-// FromProto implements basic.TaskFactory. It returns the server task of the
-// protobuf message when approriate, otherwise an error.
-func (f taskFactory) FromProto(in proto.Message) (basic.ServerTask, error) {
-	var pb *Task
-	switch msg := in.(type) {
-	case *Task:
-		pb = msg
-	default:
-		return nil, xerrors.Errorf("invalid message type '%T'", in)
-	}
-
-	access, err := f.darcFactory.FromProto(pb.GetAccess())
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't decode access: %v", err)
-	}
-
-	servAccess := serverTask{
-		encoder:     f.encoder,
-		darcFactory: f.darcFactory,
-		clientTask: clientTask{
-			key:    pb.GetKey(),
-			access: access.(Access),
-		},
-	}
-
-	return servAccess, nil
 }
 
 // VisitJSON implements serde.Factory. It deserializes the server task.
@@ -199,7 +149,6 @@ func (f taskFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
 	}
 
 	task := serverTask{
-		encoder:     f.encoder,
 		darcFactory: f.darcFactory,
 		clientTask: clientTask{
 			key:    m.Key,
@@ -211,7 +160,7 @@ func (f taskFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
 }
 
 // Register registers the task messages to the transaction factory.
-func Register(r basic.TransactionFactory, f basic.TaskFactory) {
+func Register(r basic.TransactionFactory, f serde.Factory) {
 	r.Register(clientTask{}, f)
 	r.Register(serverTask{}, f)
 }

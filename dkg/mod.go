@@ -7,8 +7,7 @@ import (
 
 // DKG defines the primitive to start a DKG protocol
 type DKG interface {
-	Listen(players mino.Players, pubKeys []kyber.Point,
-		threshold uint32) (Actor, error)
+	Listen(players mino.Players, pubKeys []kyber.Point, threshold int) (Actor, error)
 }
 
 // Actor defines the primitives to use a DKG protocol

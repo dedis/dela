@@ -3,7 +3,7 @@ package skipchain
 import (
 	"bytes"
 	"encoding/binary"
-	fmt "fmt"
+	"fmt"
 	"io"
 	"math/rand"
 	"reflect"

@@ -2,16 +2,13 @@ package basic
 
 import (
 	"bytes"
-	fmt "fmt"
+	"fmt"
 	"io"
 	"testing"
 	"testing/quick"
 
-	proto "github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/crypto/bls"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/inventory"
 	types "go.dedis.ch/dela/ledger/transactions/basic/json"
@@ -192,10 +189,6 @@ func (a fakeClientTask) Fingerprint(w io.Writer) error {
 	return a.err
 }
 
-func (a fakeClientTask) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
-	return &empty.Empty{}, nil
-}
-
 func (a fakeClientTask) VisitJSON(serde.Serializer) (interface{}, error) {
 	return struct{}{}, nil
 }
@@ -211,12 +204,6 @@ func (a fakeSrvTask) Consume(Context, inventory.WritablePage) error {
 
 type fakeTaskFactory struct {
 	serde.UnimplementedFactory
-
-	err error
-}
-
-func (f fakeTaskFactory) FromProto(proto.Message) (ServerTask, error) {
-	return fakeSrvTask{}, f.err
 }
 
 func (f fakeTaskFactory) VisitJSON(serde.FactoryInput) (serde.Message, error) {

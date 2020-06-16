@@ -3,11 +3,10 @@ package threshold
 import (
 	"testing"
 
-	"github.com/golang/protobuf/ptypes"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde/json"
 )
 
 func TestSignature_HasBit(t *testing.T) {
@@ -59,19 +58,20 @@ func TestSignature_SetBit(t *testing.T) {
 	require.Equal(t, sig.mask[1], uint8(3))
 }
 
-func TestSignature_Pack(t *testing.T) {
+func TestSignature_VisitJSON(t *testing.T) {
 	sig := &Signature{
 		agg:  fake.Signature{},
-		mask: []byte{0xff},
+		mask: []byte{0xab},
 	}
 
-	pb, err := sig.Pack(encoding.NewProtoEncoder())
-	require.NoError(t, err)
-	require.NotNil(t, pb)
-	require.Equal(t, []byte{0xff}, pb.(*SignatureProto).GetMask())
+	ser := json.NewSerializer()
 
-	_, err = sig.Pack(fake.BadPackAnyEncoder{})
-	require.EqualError(t, err, "couldn't pack signature: fake error")
+	data, err := ser.Serialize(sig)
+	require.NoError(t, err)
+	require.Equal(t, `{"Mask":"qw==","Aggregate":{}}`, string(data))
+
+	_, err = sig.VisitJSON(fake.NewBadSerializer())
+	require.EqualError(t, err, "couldn't serialize aggregate: fake error")
 }
 
 func TestSignature_MarshalBinary(t *testing.T) {
@@ -99,34 +99,21 @@ func TestSignature_Equal(t *testing.T) {
 	require.False(t, sig.Equal(nil))
 }
 
-func TestSignatureFactory_FromProto(t *testing.T) {
-	factory := signatureFactory{
-		encoder:    encoding.NewProtoEncoder(),
-		sigFactory: fake.SignatureFactory{},
-	}
+func TestSignatureFactory_VisitJSON(t *testing.T) {
+	factory := signatureFactory{sigFactory: fake.SignatureFactory{}}
 
-	pb := &SignatureProto{}
-	pbAny, err := ptypes.MarshalAny(pb)
+	ser := json.NewSerializer()
+
+	var sig *Signature
+	err := ser.Deserialize([]byte(`{"Mask":[1],"Aggregate":{}}`), factory, &sig)
 	require.NoError(t, err)
+	require.Equal(t, []byte{1}, sig.mask)
 
-	sig, err := factory.FromProto(pb)
-	require.NoError(t, err)
-	require.NotNil(t, sig)
+	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
+	require.EqualError(t, err, "couldn't deserialize message: fake error")
 
-	sig, err = factory.FromProto(pbAny)
-	require.NoError(t, err)
-	require.NotNil(t, sig)
-
-	_, err = factory.FromProto(nil)
-	require.EqualError(t, err, "invalid signature type '<nil>'")
-
-	factory.sigFactory = fake.NewBadSignatureFactory()
-	_, err = factory.FromProto(pb)
-	require.EqualError(t, err, "couldn't decode aggregation: fake error")
-
-	factory.encoder = fake.BadUnmarshalAnyEncoder{}
-	_, err = factory.FromProto(pbAny)
-	require.EqualError(t, err, "couldn't unmarshal message: fake error")
+	_, err = factory.VisitJSON(fake.FactoryInput{Serde: fake.NewBadSerializer()})
+	require.EqualError(t, err, "couldn't deserialize signature: fake error")
 }
 
 func TestVerifier_Verify(t *testing.T) {

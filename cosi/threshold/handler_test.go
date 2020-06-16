@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
@@ -12,7 +11,7 @@ import (
 
 func TestThresholdHandler_Stream(t *testing.T) {
 	handler := newHandler(
-		&CoSi{signer: fake.NewSigner(), encoder: encoding.NewProtoEncoder()},
+		&CoSi{signer: fake.NewSigner()},
 		fakeReactor{},
 	)
 
@@ -39,12 +38,6 @@ func TestThresholdHandler_Stream(t *testing.T) {
 	require.EqualError(t, err, "couldn't sign: fake error")
 
 	handler.signer = fake.NewSigner()
-	handler.encoder = fake.BadPackEncoder{}
-	rcvr.resps = makeResponse()
-	err = handler.processRequest(sender, rcvr)
-	require.EqualError(t, err, "couldn't pack signature: fake error")
-
-	handler.encoder = encoding.NewProtoEncoder()
 	sender = fakeSender{numErr: 1}
 	rcvr.resps = makeResponse()
 	err = handler.Stream(sender, rcvr)

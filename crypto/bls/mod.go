@@ -2,13 +2,10 @@ package bls
 
 import (
 	"bytes"
-	fmt "fmt"
+	"fmt"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/common/json"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/pairing"
@@ -16,8 +13,6 @@ import (
 	"go.dedis.ch/kyber/v3/util/key"
 	"golang.org/x/xerrors"
 )
-
-//go:generate protoc -I ./ --go_out=./ ./messages.proto
 
 const (
 	// Algorithm is the name of the curve used for the BLS signature.
@@ -39,17 +34,6 @@ type publicKey struct {
 // bytes representing the public key.
 func (pk publicKey) MarshalBinary() ([]byte, error) {
 	return pk.point.MarshalBinary()
-}
-
-// Pack implements encoding.Packable. It returns the protobuf message
-// representing the public key.
-func (pk publicKey) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
-	buffer, err := pk.point.MarshalBinary()
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't marshal point: %v", err)
-	}
-
-	return &PublicKeyProto{Data: buffer}, nil
 }
 
 // VisitJSON implements serde.Message. It returns the JSON message for the
@@ -132,12 +116,6 @@ func (sig signature) MarshalBinary() ([]byte, error) {
 	return sig.data, nil
 }
 
-// Pack implements encoding.Packable. It returns  the protobuf message
-// representing the signature.
-func (sig signature) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
-	return &SignatureProto{Data: sig.data}, nil
-}
-
 // VisitJSON implements serde.Message. It returns the JSON message for the
 // signature.
 func (sig signature) VisitJSON(serde.Serializer) (interface{}, error) {
@@ -162,42 +140,11 @@ func (sig signature) Equal(other crypto.Signature) bool {
 // publicKeyFactory creates BLS compatible public key from protobuf messages.
 type publicKeyFactory struct {
 	serde.UnimplementedFactory
-	encoder encoding.ProtoMarshaler
 }
 
 // NewPublicKeyFactory returns a new instance of the factory.
-func NewPublicKeyFactory() crypto.PublicKeyFactory {
-	return publicKeyFactory{
-		encoder: encoding.NewProtoEncoder(),
-	}
-}
-
-// FromProto implements crypto.PublicKeyFactory. It creates a public key from
-// its protobuf representation.
-func (f publicKeyFactory) FromProto(src proto.Message) (crypto.PublicKey, error) {
-	var pb *PublicKeyProto
-
-	switch msg := src.(type) {
-	case *PublicKeyProto:
-		pb = msg
-	case *any.Any:
-		pb = &PublicKeyProto{}
-
-		err := f.encoder.UnmarshalAny(msg, pb)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
-		}
-	default:
-		return nil, xerrors.Errorf("invalid public key type '%T'", src)
-	}
-
-	point := suite.Point()
-	err := point.UnmarshalBinary(pb.GetData())
-	if err != nil {
-		return nil, xerrors.Errorf("failed to unmarshal point: %v", err)
-	}
-
-	return publicKey{point: point}, nil
+func NewPublicKeyFactory() serde.Factory {
+	return publicKeyFactory{}
 }
 
 // VisitJSON implements serde.Factory. It deserializes the public key in JSON
@@ -222,36 +169,11 @@ func (f publicKeyFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error
 // messages.
 type signatureFactory struct {
 	serde.UnimplementedFactory
-	encoder encoding.ProtoMarshaler
 }
 
 // NewSignatureFactory returns a new instance of the factory.
-func NewSignatureFactory() crypto.SignatureFactory {
-	return signatureFactory{
-		encoder: encoding.NewProtoEncoder(),
-	}
-}
-
-// FromProto implements crypto.SignatureFactory. It creates a BLS signature from
-// its protobuf representation.
-func (f signatureFactory) FromProto(src proto.Message) (crypto.Signature, error) {
-	var pb *SignatureProto
-
-	switch msg := src.(type) {
-	case *SignatureProto:
-		pb = msg
-	case *any.Any:
-		pb = &SignatureProto{}
-
-		err := f.encoder.UnmarshalAny(msg, pb)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
-		}
-	default:
-		return nil, xerrors.Errorf("invalid signature type '%T'", src)
-	}
-
-	return signature{data: pb.GetData()}, nil
+func NewSignatureFactory() serde.Factory {
+	return signatureFactory{}
 }
 
 // VisitJSON implements serde.Factory. It deserializes the signature in JSON
@@ -351,18 +273,14 @@ func (s signer) GetVerifierFactory() crypto.VerifierFactory {
 
 // GetPublicKeyFactory implements crypto.Signer. It returns the public key
 // factory for BLS signatures.
-func (s signer) GetPublicKeyFactory() crypto.PublicKeyFactory {
-	return publicKeyFactory{
-		encoder: encoding.NewProtoEncoder(),
-	}
+func (s signer) GetPublicKeyFactory() serde.Factory {
+	return publicKeyFactory{}
 }
 
 // GetSignatureFactory implements crypto.Signer. It returns the signature
 // factory for BLS signatures.
-func (s signer) GetSignatureFactory() crypto.SignatureFactory {
-	return signatureFactory{
-		encoder: encoding.NewProtoEncoder(),
-	}
+func (s signer) GetSignatureFactory() serde.Factory {
+	return signatureFactory{}
 }
 
 // GetPublicKey implements crypto.Signer. It returns the public key of the

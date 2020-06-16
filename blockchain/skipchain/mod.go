@@ -14,14 +14,11 @@ import (
 	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
-
-//go:generate protoc -I ./ --go_out=./ ./messages.proto
 
 const (
 	// defaultPropagationTimeout is the default maximum amount of time given to
@@ -40,13 +37,11 @@ type Skipchain struct {
 	db        Database
 	consensus consensus.Consensus
 	watcher   blockchain.Observable
-	encoder   encoding.ProtoMarshaler
 }
 
 // NewSkipchain returns a new instance of Skipchain.
 func NewSkipchain(m mino.Mino, consensus consensus.Consensus) *Skipchain {
 	db := NewInMemoryDatabase()
-	encoder := encoding.NewProtoEncoder()
 
 	return &Skipchain{
 		logger:    dela.Logger,
@@ -54,7 +49,6 @@ func NewSkipchain(m mino.Mino, consensus consensus.Consensus) *Skipchain {
 		db:        db,
 		consensus: consensus,
 		watcher:   blockchain.NewWatcher(),
-		encoder:   encoder,
 	}
 }
 
@@ -68,7 +62,6 @@ func (s *Skipchain) Listen(r blockchain.Reactor) (blockchain.Actor, error) {
 
 	ops := &operations{
 		logger:          dela.Logger,
-		encoder:         s.encoder,
 		addr:            s.mino.GetAddress(),
 		reactor:         r,
 		blockFactory:    blockFactory,

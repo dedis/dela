@@ -64,12 +64,7 @@ func (h thresholdHandler) processRequest(sender mino.Sender, rcvr mino.Receiver)
 		return xerrors.Errorf("couldn't sign: %v", err)
 	}
 
-	signaturepb, err := h.encoder.Pack(signature)
-	if err != nil {
-		return xerrors.Errorf("couldn't pack signature: %v", err)
-	}
-
-	errs := sender.Send(signaturepb, addr)
+	errs := sender.Send(tmp.ProtoOf(signature), addr)
 	err, more := <-errs
 	if more {
 		return xerrors.Errorf("couldn't send the response: %v", err)

@@ -3,19 +3,14 @@ package roster
 import (
 	"io"
 
-	proto "github.com/golang/protobuf/proto"
-	any "github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/consensus/viewchange/roster/json"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
-
-//go:generate protoc -I ./ --go_out=./ ./messages.proto
 
 // iterator is a generic implementation of an iterator over a list of conodes.
 type iterator struct {
@@ -249,33 +244,6 @@ func (r roster) PublicKeyIterator() crypto.PublicKeyIterator {
 	return &publicKeyIterator{iterator: &iterator{roster: &r}}
 }
 
-// Pack implements encoding.Packable. It returns the protobuf message for the
-// roster.
-func (r roster) Pack(enc encoding.ProtoMarshaler) (proto.Message, error) {
-	addrs := make([][]byte, r.Len())
-	pubkeys := make([]*any.Any, r.Len())
-
-	var err error
-	for i, addr := range r.addrs {
-		addrs[i], err = addr.MarshalText()
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't marshal address: %v", err)
-		}
-
-		pubkeys[i], err = enc.PackAny(r.pubkeys[i])
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't pack public key: %v", err)
-		}
-	}
-
-	pb := &Roster{
-		Addresses:  addrs,
-		PublicKeys: pubkeys,
-	}
-
-	return pb, nil
-}
-
 // VisitJSON implements serde.Message. It serializes the roster in a JSON
 // message.
 func (r roster) VisitJSON(ser serde.Serializer) (interface{}, error) {
@@ -303,88 +271,19 @@ func (r roster) VisitJSON(ser serde.Serializer) (interface{}, error) {
 	return m, nil
 }
 
-// Factory provide functions to create and decode a roster.
-//
-// - implements serde.Factory
-type Factory interface {
-	serde.Factory
-
-	GetAddressFactory() mino.AddressFactory
-	GetPublicKeyFactory() crypto.PublicKeyFactory
-	FromProto(proto.Message) (viewchange.Authority, error)
-}
-
 type defaultFactory struct {
 	serde.UnimplementedFactory
 
-	encoder        encoding.ProtoMarshaler
 	addressFactory mino.AddressFactory
-	pubkeyFactory  crypto.PublicKeyFactory
+	pubkeyFactory  serde.Factory
 }
 
 // NewRosterFactory creates a new instance of the authority factory.
-func NewRosterFactory(af mino.AddressFactory, pf crypto.PublicKeyFactory) Factory {
+func NewRosterFactory(af mino.AddressFactory, pf serde.Factory) serde.Factory {
 	return defaultFactory{
-		encoder:        encoding.NewProtoEncoder(),
 		addressFactory: af,
 		pubkeyFactory:  pf,
 	}
-}
-
-// GetAddressFactory implements viewchange.AuthorityFactory. It returns the
-// address factory.
-func (f defaultFactory) GetAddressFactory() mino.AddressFactory {
-	return f.addressFactory
-}
-
-// GetPublicKeyFactory implements viewchange.AuthorityFactory. It returns the
-// public key factory.
-func (f defaultFactory) GetPublicKeyFactory() crypto.PublicKeyFactory {
-	return f.pubkeyFactory
-}
-
-// FromProto implements viewchange.AuthorityFactory. It returns the roster
-// associated with the message if appropriate, otherwise an error.
-func (f defaultFactory) FromProto(in proto.Message) (viewchange.Authority, error) {
-	var pb *Roster
-	switch msg := in.(type) {
-	case *Roster:
-		pb = msg
-	case *any.Any:
-		pb = &Roster{}
-		err := f.encoder.UnmarshalAny(msg, pb)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't unmarshal roster: %v", err)
-		}
-	default:
-		return nil, xerrors.Errorf("invalid message type '%T'", in)
-	}
-
-	if len(pb.Addresses) != len(pb.PublicKeys) {
-		return nil, xerrors.Errorf("mismatch array length %d != %d",
-			len(pb.Addresses), len(pb.PublicKeys))
-	}
-
-	addrs := make([]mino.Address, len(pb.Addresses))
-	pubkeys := make([]crypto.PublicKey, len(pb.PublicKeys))
-
-	for i, addrpb := range pb.GetAddresses() {
-		addrs[i] = f.addressFactory.FromText(addrpb)
-
-		pubkey, err := f.pubkeyFactory.FromProto(pb.GetPublicKeys()[i])
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't decode public key: %v", err)
-		}
-
-		pubkeys[i] = pubkey
-	}
-
-	roster := roster{
-		addrs:   addrs,
-		pubkeys: pubkeys,
-	}
-
-	return roster, nil
 }
 
 // VisitJSON implements serde.Factory. It deserializes the roster in JSON
