@@ -5,10 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
-	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -41,7 +39,7 @@ func NewFlat(m mino.Mino, f serde.Factory) *Flat {
 func (flat *Flat) Listen() (Actor, error) {
 	h := handler{Flat: flat}
 
-	rpc, err := flat.mino.MakeRPC("flatgossip", h)
+	rpc, err := flat.mino.MakeRPC("flatgossip", h, flat.rumorFactory)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't create the rpc: %v", err)
 	}
@@ -89,7 +87,7 @@ func (a *flatActor) Add(rumor Rumor) error {
 	ctx, cancel := context.WithTimeout(context.Background(), rumorTimeout)
 	defer cancel()
 
-	resps, errs := a.rpc.Call(ctx, tmp.ProtoOf(rumor), players)
+	resps, errs := a.rpc.Call(ctx, rumor, players)
 	for {
 		select {
 		case _, more := <-resps:
@@ -121,12 +119,10 @@ type handler struct {
 
 // Process implements mino.Handler. It notifies the new rumor if appropriate and
 // does not return anything.
-func (h handler) Process(req mino.Request) (proto.Message, error) {
-	m := tmp.FromProto(req.Message, h.rumorFactory)
-
-	rumor, ok := m.(Rumor)
+func (h handler) Process(req mino.Request) (serde.Message, error) {
+	rumor, ok := req.Message.(Rumor)
 	if !ok {
-		return nil, xerrors.Errorf("unexpected rumor of type '%T'", m)
+		return nil, xerrors.Errorf("unexpected rumor of type '%T'", req.Message)
 	}
 
 	h.ch <- rumor

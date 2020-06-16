@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -48,5 +48,5 @@ func TestThresholdHandler_Stream(t *testing.T) {
 // Utility functions
 
 func makeResponse() [][]interface{} {
-	return [][]interface{}{{fake.Address{}, tmp.ProtoOf(fake.Message{})}}
+	return [][]interface{}{{fake.Address{}, cosi.SignatureRequest{Value: fake.Message{}}}}
 }

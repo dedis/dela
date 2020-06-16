@@ -5,23 +5,10 @@ import (
 	"sort"
 	"testing"
 
-	proto "github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/encoding"
-	internal "go.dedis.ch/dela/internal/testing"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 )
-
-func TestMessages(t *testing.T) {
-	messages := []proto.Message{
-		&TreeRoutingProto{},
-	}
-
-	for _, m := range messages {
-		internal.CoverProtoMessage(t, m)
-	}
-}
 
 func TestTreeRoutingFactory_GetAddressFactory(t *testing.T) {
 	factory := NewTreeRoutingFactory(3, fake.AddressFactory{})
@@ -41,35 +28,11 @@ func TestTreeRoutingFactory_FromIterator(t *testing.T) {
 
 	iter := fake.NewAddressIterator([]mino.Address{fake.NewBadAddress()})
 	_, err = factory.FromIterator(fake.NewAddress(1), iter)
-	require.EqualError(t, err, "failed to marshal addr 'fake.Address[0]': fake error")
+	require.EqualError(t, err,
+		"failed to marshal addr 'fake.Address[0]': fake error")
 
 	factory.hashFactory = fake.NewHashFactory(fake.NewBadHash())
 	_, err = factory.FromIterator(fake.NewAddress(0), authority.AddressIterator())
-	require.EqualError(t, err,
-		"failed to build routing: failed to write hash: fake error")
-}
-
-func TestTreeRoutingFactory_FromAny(t *testing.T) {
-	factory := NewTreeRoutingFactory(3, fake.AddressFactory{})
-
-	iter := mino.NewAddresses(fake.NewAddress(1)).AddressIterator()
-	rting, err := factory.FromIterator(fake.NewAddress(0), iter)
-	require.NoError(t, err)
-	rtingAny, err := encoding.NewProtoEncoder().PackAny(rting)
-	require.NoError(t, err)
-
-	res, err := factory.FromAny(rtingAny)
-	require.NoError(t, err)
-	require.Equal(t, rting, res)
-
-	factory.encoder = fake.BadUnmarshalAnyEncoder{}
-	_, err = factory.FromAny(rtingAny)
-	require.EqualError(t, err,
-		"failed to unmarshal routing message: fake error")
-
-	factory.encoder = encoding.NewProtoEncoder()
-	factory.hashFactory = fake.NewHashFactory(fake.NewBadHash())
-	_, err = factory.FromAny(rtingAny)
 	require.EqualError(t, err,
 		"failed to build routing: failed to write hash: fake error")
 }
@@ -242,28 +205,6 @@ func TestTreeRouting_GetDirectLinks(t *testing.T) {
 
 	require.Len(t, treeRouting.GetDirectLinks(authority.GetAddress(9)), 0)
 	require.Len(t, treeRouting.GetDirectLinks(fake.NewAddress(999)), 0)
-}
-
-func TestTreeRouting_Pack(t *testing.T) {
-	n := 10
-
-	authority := fake.NewAuthority(n, fake.NewSigner)
-	factory := NewTreeRoutingFactory(3, fake.AddressFactory{})
-
-	treeRouting, err := factory.FromIterator(authority.GetAddress(0), authority.AddressIterator())
-	require.NoError(t, err)
-
-	pb, err := treeRouting.Pack(encoding.NewProtoEncoder())
-	require.NoError(t, err)
-	require.NotNil(t, pb)
-	require.NotEmpty(t, pb.(*TreeRoutingProto).GetRoot())
-	require.Len(t, pb.(*TreeRoutingProto).GetAddrs(), n-1)
-
-	treeRouting = &TreeRouting{routingNodes: map[mino.Address]*treeNode{
-		fake.NewBadAddress(): {Addr: fake.NewBadAddress()},
-	}}
-	_, err = treeRouting.Pack(encoding.NewProtoEncoder())
-	require.EqualError(t, err, "failed to marshal address: fake error")
 }
 
 func TestTreeRouting_Display(t *testing.T) {

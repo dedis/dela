@@ -8,7 +8,6 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
-	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -45,7 +44,11 @@ func (a thresholdActor) Sign(ctx context.Context, msg serde.Message,
 	// signatures.
 	thres := a.Threshold(ca.Len())
 
-	errs := sender.Send(tmp.ProtoOf(msg), iter2slice(ca)...)
+	req := cosi.SignatureRequest{
+		Value: msg,
+	}
+
+	errs := sender.Send(req, iter2slice(ca)...)
 
 	go a.waitResp(errs, ca.Len()-thres, cancel)
 
@@ -61,9 +64,7 @@ func (a thresholdActor) Sign(ctx context.Context, msg serde.Message,
 
 		pubkey, index := ca.GetPublicKey(addr)
 		if index >= 0 {
-			m := tmp.FromProto(resp, a.signer.GetSignatureFactory())
-
-			err = a.merge(signature, m, index, pubkey, digest)
+			err = a.merge(signature, resp, index, pubkey, digest)
 			if err != nil {
 				dela.Logger.Warn().Err(err).Send()
 			} else {
@@ -105,20 +106,20 @@ func (a thresholdActor) waitCtx(inner, upper context.Context, cancel func()) {
 	}
 }
 
-func (a thresholdActor) merge(signature *Signature, resp serde.Message,
+func (a thresholdActor) merge(signature *Signature, m serde.Message,
 	index int, pubkey crypto.PublicKey, digest []byte) error {
 
-	sig, ok := resp.(crypto.Signature)
+	resp, ok := m.(cosi.SignatureResponse)
 	if !ok {
-		return xerrors.Errorf("invalid message type '%T'", resp)
+		return xerrors.Errorf("invalid message type '%T'", m)
 	}
 
-	err := pubkey.Verify(digest, sig)
+	err := pubkey.Verify(digest, resp.Signature)
 	if err != nil {
 		return xerrors.Errorf("couldn't verify: %v", err)
 	}
 
-	err = signature.Merge(a.signer, index, sig)
+	err = signature.Merge(a.signer, index, resp.Signature)
 	if err != nil {
 		return xerrors.Errorf("couldn't merge signature: %v", err)
 	}

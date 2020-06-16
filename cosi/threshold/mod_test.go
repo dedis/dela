@@ -64,7 +64,10 @@ func TestCoSi_GetSignatureFactory(t *testing.T) {
 }
 
 func TestCoSi_Listen(t *testing.T) {
-	c := &CoSi{mino: fake.Mino{}}
+	c := &CoSi{
+		mino:   fake.Mino{},
+		signer: fake.NewSigner(),
+	}
 
 	actor, err := c.Listen(fakeReactor{})
 	require.NoError(t, err)

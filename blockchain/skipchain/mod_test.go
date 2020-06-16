@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/consensus"
@@ -297,14 +296,14 @@ type fakeRPC struct {
 	err error
 }
 
-func (rpc fakeRPC) Call(context.Context, proto.Message,
-	mino.Players) (<-chan proto.Message, <-chan error) {
+func (rpc fakeRPC) Call(context.Context, serde.Message,
+	mino.Players) (<-chan serde.Message, <-chan error) {
 
 	errs := make(chan error, 1)
 	if rpc.err != nil {
 		errs <- rpc.err
 	}
-	msgs := make(chan proto.Message)
+	msgs := make(chan serde.Message)
 	if rpc.err == nil {
 		close(msgs)
 	}

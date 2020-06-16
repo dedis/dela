@@ -10,7 +10,6 @@ import (
 	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
-	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -111,7 +110,7 @@ func (ops *operations) catchUp(index uint64, addr mino.Address) error {
 		to:   index - 1,
 	}
 
-	err = <-sender.Send(tmp.ProtoOf(req), addr)
+	err = <-sender.Send(req, addr)
 	if err != nil {
 		return xerrors.Errorf("couldn't send block request: %v", err)
 	}
@@ -122,11 +121,9 @@ func (ops *operations) catchUp(index uint64, addr mino.Address) error {
 			return xerrors.Errorf("couldn't receive message: %v", err)
 		}
 
-		in := tmp.FromProto(msg, ops.responseFactory)
-
-		resp, ok := in.(BlockResponse)
+		resp, ok := msg.(BlockResponse)
 		if !ok {
-			return xerrors.Errorf("invalid response type '%T' != '%T'", in, resp)
+			return xerrors.Errorf("invalid response type '%T' != '%T'", msg, resp)
 		}
 
 		err = ops.commitBlock(resp.block)

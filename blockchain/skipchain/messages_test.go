@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	types "go.dedis.ch/dela/blockchain/skipchain/json"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde/json"
 )
@@ -62,24 +63,6 @@ func TestPropagateGenesis_VisitJSON(t *testing.T) {
 	require.EqualError(t, err, "couldn't serialize genesis: fake error")
 }
 
-func TestPropagateFactory_VisitJSON(t *testing.T) {
-	factory := propagateFactory{
-		blockFactory: NewBlockFactory(fake.MessageFactory{}),
-	}
-
-	ser := json.NewSerializer()
-
-	var msg PropagateGenesis
-	err := ser.Deserialize([]byte(`{"Genesis":{}}`), factory, &msg)
-	require.NoError(t, err)
-
-	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
-	require.EqualError(t, err, "couldn't deserialize message: fake error")
-
-	_, err = factory.VisitJSON(fake.FactoryInput{Serde: fake.NewBadSerializer()})
-	require.EqualError(t, err, "couldn't deserialize genesis: fake error")
-}
-
 func TestBlockRequest_VisitJSON(t *testing.T) {
 	req := BlockRequest{from: 1, to: 5}
 
@@ -87,20 +70,7 @@ func TestBlockRequest_VisitJSON(t *testing.T) {
 
 	data, err := ser.Serialize(req)
 	require.NoError(t, err)
-	require.Equal(t, `{"From":1,"To":5}`, string(data))
-}
-
-func TestRequestFactory_VisitJSON(t *testing.T) {
-	factory := requestFactory{}
-
-	ser := json.NewSerializer()
-
-	var req BlockRequest
-	err := ser.Deserialize([]byte(`{}`), factory, &req)
-	require.NoError(t, err)
-
-	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
-	require.EqualError(t, err, "couldn't deserialize message: fake error")
+	require.Equal(t, `{"Request":{"From":1,"To":5}}`, string(data))
 }
 
 func TestBlockResponse_VisitJSON(t *testing.T) {
@@ -119,20 +89,37 @@ func TestBlockResponse_VisitJSON(t *testing.T) {
 	require.EqualError(t, err, "couldn't serialize block: fake error")
 }
 
-func TestResponseFactory_VisitJSON(t *testing.T) {
-	factory := responseFactory{
+func TestMessageFactory_VisitJSON(t *testing.T) {
+	factory := MessageFactory{
 		blockFactory: NewBlockFactory(fake.MessageFactory{}),
 	}
 
 	ser := json.NewSerializer()
 
-	var resp BlockResponse
-	err := ser.Deserialize([]byte(`{"Block":{}}`), factory, &resp)
+	var msg PropagateGenesis
+	err := ser.Deserialize([]byte(`{"Propagate":{"Genesis":{}}}`), factory, &msg)
 	require.NoError(t, err)
+
+	input := fake.FactoryInput{
+		Serde:   fake.NewBadSerializer(),
+		Message: types.Message{Propagate: &types.PropagateGenesis{}},
+	}
+
+	_, err = factory.VisitJSON(input)
+	require.EqualError(t, err, "couldn't deserialize genesis: fake error")
+
+	var req BlockRequest
+	err = ser.Deserialize([]byte(`{"Request":{}}`), factory, &req)
+	require.NoError(t, err)
+
+	var resp BlockResponse
+	err = ser.Deserialize([]byte(`{"Response":{"Block":{}}}`), factory, &resp)
+	require.NoError(t, err)
+
+	input.Message = types.Message{Response: &types.BlockResponse{}}
+	_, err = factory.VisitJSON(input)
+	require.EqualError(t, err, "couldn't deserialize block: fake error")
 
 	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
 	require.EqualError(t, err, "couldn't deserialize message: fake error")
-
-	_, err = factory.VisitJSON(fake.FactoryInput{Serde: fake.NewBadSerializer()})
-	require.EqualError(t, err, "couldn't deserialize block: fake error")
 }

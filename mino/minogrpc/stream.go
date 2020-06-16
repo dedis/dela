@@ -4,10 +4,9 @@ import (
 	context "context"
 	"sync"
 
-	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/routing"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -18,9 +17,9 @@ type OutContext struct {
 }
 
 type sender struct {
-	encoder        encoding.ProtoMarshaler
 	me             mino.Address
 	addressFactory mino.AddressFactory
+	serializer     serde.Serializer
 	clients        map[mino.Address]chan OutContext
 	receiver       *receiver
 	traffic        *traffic
@@ -32,11 +31,11 @@ type sender struct {
 	gateway mino.Address
 }
 
-func (s sender) Send(msg proto.Message, addrs ...mino.Address) <-chan error {
+func (s sender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 	errs := make(chan error, 1)
 	defer close(errs)
 
-	msgAny, err := s.encoder.MarshalAny(msg)
+	data, err := s.serializer.Serialize(msg)
 	if err != nil {
 		errs <- xerrors.Errorf("couldn't marshal message: %v", err)
 		return errs
@@ -63,7 +62,7 @@ func (s sender) Send(msg proto.Message, addrs ...mino.Address) <-chan error {
 		To: to,
 		Message: &Message{
 			From:    from,
-			Payload: msgAny,
+			Payload: data,
 		},
 	}
 
@@ -127,7 +126,8 @@ func (s sender) sendEnvelope(envelope *Envelope, errs chan error) {
 }
 
 type receiver struct {
-	encoder        encoding.ProtoMarshaler
+	serializer     serde.Serializer
+	factory        serde.Factory
 	addressFactory mino.AddressFactory
 	errs           chan error
 	queue          Queue
@@ -138,7 +138,7 @@ func (r receiver) appendMessage(msg *Message) {
 	r.queue.Push(msg)
 }
 
-func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error) {
+func (r receiver) Recv(ctx context.Context) (mino.Address, serde.Message, error) {
 	var msg *Message
 	select {
 	case msg = <-r.queue.Channel():
@@ -148,7 +148,8 @@ func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error)
 		return nil, nil, ctx.Err()
 	}
 
-	payload, err := r.encoder.UnmarshalDynamicAny(msg.GetPayload())
+	var payload serde.Message
+	err := r.serializer.Deserialize(msg.GetPayload(), r.factory, &payload)
 	if err != nil {
 		return nil, nil, err
 	}

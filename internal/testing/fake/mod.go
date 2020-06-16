@@ -603,7 +603,7 @@ func (f AddressFactory) FromText(text []byte) mino.Address {
 type Receiver struct {
 	mino.Receiver
 	err error
-	Msg proto.Message
+	Msg serde.Message
 }
 
 // NewBadReceiver returns a new receiver that returns an error.
@@ -612,7 +612,7 @@ func NewBadReceiver() Receiver {
 }
 
 // Recv implements mino.Receiver.
-func (r Receiver) Recv(context.Context) (mino.Address, proto.Message, error) {
+func (r Receiver) Recv(context.Context) (mino.Address, serde.Message, error) {
 	return nil, r.Msg, r.err
 }
 
@@ -628,7 +628,7 @@ func NewBadSender() Sender {
 }
 
 // Send implements mino.Sender.
-func (s Sender) Send(proto.Message, ...mino.Address) <-chan error {
+func (s Sender) Send(serde.Message, ...mino.Address) <-chan error {
 	errs := make(chan error, 1)
 	errs <- s.err
 	close(errs)
@@ -638,7 +638,7 @@ func (s Sender) Send(proto.Message, ...mino.Address) <-chan error {
 // RPC is a fake implementation of mino.RPC.
 type RPC struct {
 	mino.RPC
-	Msgs     chan proto.Message
+	Msgs     chan serde.Message
 	Errs     chan error
 	receiver Receiver
 	sender   Sender
@@ -665,15 +665,15 @@ func NewStreamRPC(r Receiver, s Sender) *RPC {
 // NewBadStreamRPC returns a fake rpc that returns an error when calling Stream.
 func NewBadStreamRPC() *RPC {
 	return &RPC{
-		Msgs: make(chan proto.Message, 100),
+		Msgs: make(chan serde.Message, 100),
 		Errs: make(chan error, 100),
 		err:  xerrors.New("fake error"),
 	}
 }
 
 // Call implements mino.RPC.
-func (rpc *RPC) Call(ctx context.Context, m proto.Message,
-	p mino.Players) (<-chan proto.Message, <-chan error) {
+func (rpc *RPC) Call(ctx context.Context, m serde.Message,
+	p mino.Players) (<-chan serde.Message, <-chan error) {
 
 	return rpc.Msgs, rpc.Errs
 }
@@ -685,7 +685,7 @@ func (rpc *RPC) Stream(context.Context, mino.Players) (mino.Sender, mino.Receive
 
 // Reset resets the channels.
 func (rpc *RPC) Reset() {
-	rpc.Msgs = make(chan proto.Message, 100)
+	rpc.Msgs = make(chan serde.Message, 100)
 	rpc.Errs = make(chan error, 100)
 }
 
@@ -711,7 +711,7 @@ func (m Mino) GetAddressFactory() mino.AddressFactory {
 }
 
 // MakeRPC implements mino.Mino.
-func (m Mino) MakeRPC(string, mino.Handler) (mino.RPC, error) {
+func (m Mino) MakeRPC(string, mino.Handler, serde.Factory) (mino.RPC, error) {
 	return NewRPC(), m.err
 }
 

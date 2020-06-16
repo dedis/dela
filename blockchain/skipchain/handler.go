@@ -3,10 +3,8 @@ package skipchain
 import (
 	"context"
 
-	"github.com/golang/protobuf/proto"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
-	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -17,25 +15,18 @@ import (
 type handler struct {
 	mino.UnsupportedHandler
 	*operations
-
-	requestFactory   serde.Factory
-	propagateFactory serde.Factory
 }
 
 func newHandler(ops *operations) handler {
 	return handler{
-		operations:       ops,
-		requestFactory:   requestFactory{},
-		propagateFactory: propagateFactory{blockFactory: ops.blockFactory},
+		operations: ops,
 	}
 }
 
 // Process implements mino.Handler. It handles genesis block propagation
 // messages only and return an error for any other type.
-func (h handler) Process(req mino.Request) (proto.Message, error) {
-	in := tmp.FromProto(req.Message, h.propagateFactory)
-
-	switch msg := in.(type) {
+func (h handler) Process(req mino.Request) (serde.Message, error) {
+	switch msg := req.Message.(type) {
 	case PropagateGenesis:
 		err := h.commitBlock(msg.genesis)
 		if err != nil {
@@ -44,7 +35,7 @@ func (h handler) Process(req mino.Request) (proto.Message, error) {
 
 		return nil, nil
 	default:
-		return nil, xerrors.Errorf("unknown message type '%T'", in)
+		return nil, xerrors.Errorf("unknown message type '%T'", req.Message)
 	}
 }
 
@@ -56,11 +47,9 @@ func (h handler) Stream(out mino.Sender, in mino.Receiver) error {
 		return xerrors.Errorf("couldn't receive message: %v", err)
 	}
 
-	m := tmp.FromProto(msg, h.requestFactory)
-
-	req, ok := m.(BlockRequest)
+	req, ok := msg.(BlockRequest)
 	if !ok {
-		return xerrors.Errorf("invalid message type '%T' != '%T'", m, req)
+		return xerrors.Errorf("invalid message type '%T' != '%T'", msg, req)
 	}
 
 	for i := req.from; i <= req.to; i++ {
@@ -73,7 +62,7 @@ func (h handler) Stream(out mino.Sender, in mino.Receiver) error {
 			block: block,
 		}
 
-		err = <-out.Send(tmp.ProtoOf(resp), addr)
+		err = <-out.Send(resp, addr)
 		if err != nil {
 			return xerrors.Errorf("couldn't send block: %v", err)
 		}

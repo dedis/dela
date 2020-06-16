@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -56,8 +56,8 @@ func TestActor_Sign(t *testing.T) {
 		reactor: fakeReactor{},
 	}
 
-	rpc.Msgs <- tmp.ProtoOf(SignatureResponse{signature: fake.Signature{}})
-	rpc.Msgs <- tmp.ProtoOf(SignatureResponse{signature: fake.Signature{}})
+	rpc.Msgs <- cosi.SignatureResponse{Signature: fake.Signature{}}
+	rpc.Msgs <- cosi.SignatureResponse{Signature: fake.Signature{}}
 	close(rpc.Msgs)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -79,23 +79,22 @@ func TestActor_Sign(t *testing.T) {
 
 func TestActor_SignWrongSignature(t *testing.T) {
 	message := fake.Message{}
-	ca := fake.NewAuthority(1, bls.NewSigner)
+	ca := fake.NewAuthority(1, fake.NewSigner)
 
 	rpc := fake.NewRPC()
 	actor := flatActor{
-		signer:  ca.GetSigner(0),
+		signer:  fake.NewSignerWithVerifierFactory(fake.NewVerifierFactory(fake.NewBadVerifier())),
 		rpc:     rpc,
 		reactor: fakeReactor{},
 	}
 
-	rpc.Msgs <- tmp.ProtoOf(SignatureResponse{signature: fake.Signature{}})
+	rpc.Msgs <- cosi.SignatureResponse{Signature: fake.Signature{}}
 	close(rpc.Msgs)
 
 	ctx := context.Background()
 
 	_, err := actor.Sign(ctx, message, ca)
-	require.EqualError(t, err,
-		"couldn't verify the aggregation: bn256.G1: not enough data")
+	require.EqualError(t, err, "couldn't verify the aggregation: fake error")
 }
 
 func TestActor_RPCError_Sign(t *testing.T) {
@@ -152,6 +151,6 @@ func TestActor_SignProcessError(t *testing.T) {
 	require.EqualError(t, err, "invalid response type 'fake.Message'")
 
 	actor.signer = fake.NewBadSigner()
-	_, err = actor.processResponse(SignatureResponse{}, fake.Signature{})
+	_, err = actor.processResponse(cosi.SignatureResponse{}, fake.Signature{})
 	require.EqualError(t, err, "couldn't aggregate: fake error")
 }

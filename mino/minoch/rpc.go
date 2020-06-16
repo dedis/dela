@@ -6,10 +6,8 @@ import (
 	"math"
 	"sync"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/any"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -17,25 +15,33 @@ import (
 type Envelope struct {
 	to      []mino.Address
 	from    address
-	message *any.Any
+	message []byte
 }
 
 // RPC is an implementation of the mino.RPC interface.
 type RPC struct {
-	manager *Manager
-	encoder encoding.ProtoMarshaler
-	addr    mino.Address
-	path    string
-	h       mino.Handler
+	manager    *Manager
+	addr       mino.Address
+	path       string
+	h          mino.Handler
+	serializer serde.Serializer
+	factory    serde.Factory
 }
 
 // Call sends the message to all participants and gather their reply. The
 // context in the scope of channel communication as there is no blocking I/O.
-func (c RPC) Call(ctx context.Context, req proto.Message,
-	players mino.Players) (<-chan proto.Message, <-chan error) {
+func (c RPC) Call(ctx context.Context, req serde.Message,
+	players mino.Players) (<-chan serde.Message, <-chan error) {
 
-	out := make(chan proto.Message, players.Len())
+	out := make(chan serde.Message, players.Len())
 	errs := make(chan error, players.Len())
+
+	data, err := c.serializer.Serialize(req)
+	if err != nil {
+		errs <- xerrors.Errorf("couldn't serialize: %v", err)
+		close(out)
+		return out, errs
+	}
 
 	wg := sync.WaitGroup{}
 	wg.Add(players.Len())
@@ -47,33 +53,37 @@ func (c RPC) Call(ctx context.Context, req proto.Message,
 			continue
 		}
 
-		cloneReq := proto.Clone(req)
 		go func(m *Minoch) {
 			defer wg.Done()
 
-			if m != nil {
-				req := mino.Request{
-					Address: c.addr,
-					Message: cloneReq,
-				}
+			var msg serde.Message
+			err := c.serializer.Deserialize(data, c.factory, &msg)
+			if err != nil {
+				errs <- xerrors.Errorf("couldn't deserialize: %v", err)
+				return
+			}
 
-				m.Lock()
-				rpc, ok := m.rpcs[c.path]
-				m.Unlock()
+			req := mino.Request{
+				Address: c.addr,
+				Message: msg,
+			}
 
-				if !ok {
-					errs <- xerrors.Errorf("unknown rpc %s", c.path)
-					return
-				}
+			m.Lock()
+			rpc, ok := m.rpcs[c.path]
+			m.Unlock()
 
-				resp, err := rpc.h.Process(req)
-				if err != nil {
-					errs <- xerrors.Errorf("couldn't process request: %v", err)
-				}
+			if !ok {
+				errs <- xerrors.Errorf("unknown rpc %s", c.path)
+				return
+			}
 
-				if resp != nil {
-					out <- proto.Clone(resp)
-				}
+			resp, err := rpc.h.Process(req)
+			if err != nil {
+				errs <- xerrors.Errorf("couldn't process request: %v", err)
+			}
+
+			if resp != nil {
+				out <- resp
 			}
 		}(peer)
 	}
@@ -105,13 +115,17 @@ func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, min
 		}
 
 		ch := make(chan Envelope, 1)
-		outs[addr.String()] = receiver{encoder: c.encoder, out: ch}
+		outs[addr.String()] = receiver{
+			out:        ch,
+			serializer: c.serializer,
+			factory:    c.factory,
+		}
 
 		go func(r receiver) {
 			s := sender{
-				addr:    peer.GetAddress(),
-				encoder: c.encoder,
-				in:      in,
+				addr:       peer.GetAddress(),
+				in:         in,
+				serializer: c.serializer,
 			}
 
 			err := peer.rpcs[c.path].h.Stream(s, r)
@@ -125,8 +139,18 @@ func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, min
 	orchAddr := c.addr.(address)
 	orchAddr.orchestrator = true
 
-	orchSender := sender{addr: orchAddr, encoder: c.encoder, in: in}
-	orchRecv := receiver{encoder: c.encoder, out: out, errs: errs}
+	orchSender := sender{
+		addr:       orchAddr,
+		in:         in,
+		serializer: c.serializer,
+	}
+
+	orchRecv := receiver{
+		out:        out,
+		errs:       errs,
+		serializer: c.serializer,
+		factory:    c.factory,
+	}
 
 	go func() {
 		for {
@@ -155,15 +179,15 @@ func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, min
 }
 
 type sender struct {
-	addr    mino.Address
-	encoder encoding.ProtoMarshaler
-	in      chan Envelope
+	addr       mino.Address
+	in         chan Envelope
+	serializer serde.Serializer
 }
 
-func (s sender) Send(msg proto.Message, addrs ...mino.Address) <-chan error {
+func (s sender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 	errs := make(chan error, int(math.Max(1, float64(len(addrs)))))
 
-	msgAny, err := s.encoder.MarshalAny(msg)
+	data, err := s.serializer.Serialize(msg)
 	if err != nil {
 		errs <- xerrors.Errorf("couldn't marshal message: %v", err)
 		close(errs)
@@ -174,7 +198,7 @@ func (s sender) Send(msg proto.Message, addrs ...mino.Address) <-chan error {
 		s.in <- Envelope{
 			from:    s.addr.(address),
 			to:      addrs,
-			message: msgAny,
+			message: data,
 		}
 		close(errs)
 	}()
@@ -183,21 +207,23 @@ func (s sender) Send(msg proto.Message, addrs ...mino.Address) <-chan error {
 }
 
 type receiver struct {
-	encoder encoding.ProtoMarshaler
-	out     chan Envelope
-	errs    chan error
+	out        chan Envelope
+	errs       chan error
+	serializer serde.Serializer
+	factory    serde.Factory
 }
 
-func (r receiver) Recv(ctx context.Context) (mino.Address, proto.Message, error) {
+func (r receiver) Recv(ctx context.Context) (mino.Address, serde.Message, error) {
 	select {
 	case env, ok := <-r.out:
 		if !ok {
 			return nil, nil, io.EOF
 		}
 
-		msg, err := r.encoder.UnmarshalDynamicAny(env.message)
+		var msg serde.Message
+		err := r.serializer.Deserialize(env.message, r.factory, &msg)
 		if err != nil {
-			return nil, nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
+			return nil, nil, xerrors.Errorf("couldn't deserialize: %v", err)
 		}
 
 		return env.from, msg, nil
