@@ -35,7 +35,7 @@ func (e epoch) Equal(other epoch) bool {
 
 // history is an ordered list of epochs, or a list of QSC time steps.
 //
-// - implements encoding.Packable
+// - implements serde.Message
 // - implements fmt.Stringer
 type history struct {
 	serde.UnimplementedMessage
@@ -66,6 +66,7 @@ func (h history) Equal(other history) bool {
 	return true
 }
 
+// VisitJSON implements serde.Message. It serializes the history in JSON format.
 func (h history) VisitJSON(serde.Serializer) (interface{}, error) {
 	epochs := make([]json.Epoch, len(h.epochs))
 	for i, epoch := range h.epochs {
