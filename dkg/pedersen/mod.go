@@ -134,7 +134,8 @@ func (a *Actor) Setup(players mino.Players, pubKeys []kyber.Point, threshold int
 	return nil
 }
 
-// Encrypt implements dkg.Actor. It uses the DKG public key to encrypt a message.
+// Encrypt implements dkg.Actor. It uses the DKG public key to encrypt a
+// message.
 func (a *Actor) Encrypt(message []byte) (K, C kyber.Point, remainder []byte,
 	err error) {
 
