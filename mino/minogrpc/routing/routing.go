@@ -11,7 +11,6 @@ import (
 	"sort"
 
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/routing/json"
 	"go.dedis.ch/dela/serde"
@@ -60,7 +59,6 @@ type TreeRoutingFactory struct {
 	serde.UnimplementedFactory
 
 	height      int
-	encoder     encoding.ProtoMarshaler
 	addrFactory mino.AddressFactory
 	hashFactory crypto.HashFactory
 }
@@ -70,7 +68,6 @@ type TreeRoutingFactory struct {
 func NewTreeRoutingFactory(height int, addrFactory mino.AddressFactory) *TreeRoutingFactory {
 	return &TreeRoutingFactory{
 		height:      height,
-		encoder:     encoding.NewProtoEncoder(),
 		addrFactory: addrFactory,
 		hashFactory: crypto.NewSha256Factory(),
 	}
@@ -112,12 +109,13 @@ func (t TreeRoutingFactory) FromIterator(root mino.Address,
 	return routing, nil
 }
 
-// VisitJSON implements serde.Factory.
+// VisitJSON implements serde.Factory. It deserializes the tree routing in JSON
+// format.
 func (t TreeRoutingFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
 	m := json.TreeRouting{}
 	err := in.Feed(&m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't deserialize message: %v", err)
 	}
 
 	root := t.addrFactory.FromText(m.Root)

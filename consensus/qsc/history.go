@@ -13,7 +13,7 @@ import (
 // epoch is a part of an history. In other words, it represents a time step in
 // the QSC algorithm.
 //
-// - implements encoding.Packable
+// - implements serde.Message
 type epoch struct {
 	serde.UnimplementedMessage
 

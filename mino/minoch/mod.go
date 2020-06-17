@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"go.dedis.ch/dela"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/json"
@@ -18,7 +17,6 @@ import (
 type Minoch struct {
 	sync.Mutex
 	manager    *Manager
-	encoder    encoding.ProtoMarshaler
 	identifier string
 	path       string
 	rpcs       map[string]RPC
@@ -29,7 +27,6 @@ type Minoch struct {
 func NewMinoch(manager *Manager, identifier string) (*Minoch, error) {
 	inst := &Minoch{
 		manager:    manager,
-		encoder:    encoding.NewProtoEncoder(),
 		identifier: identifier,
 		path:       "",
 		rpcs:       make(map[string]RPC),

@@ -8,6 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde/json"
+	"golang.org/x/xerrors"
 )
 
 func TestTreeRoutingFactory_GetAddressFactory(t *testing.T) {
@@ -35,6 +37,19 @@ func TestTreeRoutingFactory_FromIterator(t *testing.T) {
 	_, err = factory.FromIterator(fake.NewAddress(0), authority.AddressIterator())
 	require.EqualError(t, err,
 		"failed to build routing: failed to write hash: fake error")
+}
+
+func TestTreeRoutingFactory_VisitJSON(t *testing.T) {
+	factory := NewTreeRoutingFactory(3, fake.AddressFactory{})
+
+	ser := json.NewSerializer()
+
+	var rting *TreeRouting
+	err := ser.Deserialize([]byte(`{"Addresses":[[]]}`), factory, &rting)
+	require.NoError(t, err)
+
+	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
+	require.EqualError(t, err, "couldn't deserialize message: fake error")
 }
 
 func TestTreeRouting_GetRoute(t *testing.T) {
@@ -205,6 +220,26 @@ func TestTreeRouting_GetDirectLinks(t *testing.T) {
 
 	require.Len(t, treeRouting.GetDirectLinks(authority.GetAddress(9)), 0)
 	require.Len(t, treeRouting.GetDirectLinks(fake.NewAddress(999)), 0)
+}
+
+func TestTreeRouting_VisitJSON(t *testing.T) {
+	authority := fake.NewAuthority(2, fake.NewSigner)
+	factory := NewTreeRoutingFactory(1, fake.AddressFactory{})
+
+	treeRouting, err := factory.FromIterator(authority.GetAddress(0), authority.AddressIterator())
+	require.NoError(t, err)
+
+	ser := json.NewSerializer()
+
+	data, err := ser.Serialize(treeRouting)
+	require.NoError(t, err)
+	require.Regexp(t, `{"Root":"[^"]+","Addresses":\["[^"]+"\]}`, string(data))
+
+	treeRouting, err = factory.FromIterator(fake.NewBadAddress(), authority.AddressIterator())
+	require.NoError(t, err)
+
+	_, err = ser.Serialize(treeRouting)
+	require.EqualError(t, xerrors.Unwrap(err), "failed to marshal address: fake error")
 }
 
 func TestTreeRouting_Display(t *testing.T) {

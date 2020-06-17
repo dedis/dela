@@ -22,11 +22,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/any"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
@@ -528,61 +525,6 @@ func (c *Counter) Decrease() {
 		return
 	}
 	c.Value--
-}
-
-// BadPackEncoder is a fake implementation of encoding.ProtoMarshaler.
-type BadPackEncoder struct {
-	encoding.ProtoEncoder
-}
-
-// Pack implements encoding.ProtoMarshaler.
-func (e BadPackEncoder) Pack(encoding.Packable) (proto.Message, error) {
-	return nil, xerrors.New("fake error")
-}
-
-// BadPackAnyEncoder is a fake implementation of encoding.ProtoMarshaler.
-type BadPackAnyEncoder struct {
-	encoding.ProtoEncoder
-	Counter *Counter
-}
-
-// PackAny implements encoding.ProtoMarshaler.
-func (e BadPackAnyEncoder) PackAny(encoding.Packable) (*any.Any, error) {
-	defer e.Counter.Decrease()
-	if !e.Counter.Done() {
-		return &any.Any{}, nil
-	}
-	return nil, xerrors.New("fake error")
-}
-
-// BadMarshalAnyEncoder is a fake implementation of encoding.ProtoMarshaler.
-type BadMarshalAnyEncoder struct {
-	encoding.ProtoEncoder
-}
-
-// MarshalAny implements encoding.ProtoMarshaler.
-func (e BadMarshalAnyEncoder) MarshalAny(proto.Message) (*any.Any, error) {
-	return nil, xerrors.New("fake error")
-}
-
-// BadUnmarshalAnyEncoder is a fake implementation of encoding.ProtoMarshaler.
-type BadUnmarshalAnyEncoder struct {
-	encoding.ProtoEncoder
-}
-
-// UnmarshalAny implements encoding.ProtoMarshaler.
-func (e BadUnmarshalAnyEncoder) UnmarshalAny(*any.Any, proto.Message) error {
-	return xerrors.New("fake error")
-}
-
-// BadUnmarshalDynEncoder is a fake implementation of encoding.ProtoMarshaler.
-type BadUnmarshalDynEncoder struct {
-	encoding.ProtoEncoder
-}
-
-// UnmarshalDynamicAny implements encoding.ProtoMarshaler.
-func (e BadUnmarshalDynEncoder) UnmarshalDynamicAny(*any.Any) (proto.Message, error) {
-	return nil, xerrors.New("fake error")
 }
 
 // AddressFactory is a fake implementation of mino.AddressFactory.
