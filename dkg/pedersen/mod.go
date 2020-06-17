@@ -62,7 +62,7 @@ func (s *Pedersen) Listen() (dkg.Actor, error) {
 type Actor struct {
 	rpc      mino.RPC
 	factory  serde.Factory
-	startRes *startResult
+	startRes *state
 }
 
 // Setup implement dkg.Actor. It initializes the DKG.
@@ -73,8 +73,8 @@ func (a *Actor) Setup(players mino.Players, pubKeys []kyber.Point, threshold int
 			"pubKey: %d := %d", players.Len(), len(pubKeys))
 	}
 
-	if a.startRes.distrKey != nil {
-		return xerrors.Errorf("startRes is not nil, only one setup call is allowed")
+	if a.startRes.Done() {
+		return xerrors.Errorf("startRes is already done, only one setup call is allowed")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -139,9 +139,9 @@ func (a *Actor) Setup(players mino.Players, pubKeys []kyber.Point, threshold int
 func (a *Actor) Encrypt(message []byte) (K, C kyber.Point, remainder []byte,
 	err error) {
 
-	if a.startRes.distrKey == nil {
-		return nil, nil, nil, xerrors.Errorf("startRes is nil, did you call " +
-			"setup() first?")
+	if !a.startRes.Done() {
+		return nil, nil, nil, xerrors.Errorf("you must first initialize DKG. " +
+			"Did you call setup() first?")
 	}
 
 	// Embed the message (or as much of it as will fit) into a curve point.
@@ -152,10 +152,10 @@ func (a *Actor) Encrypt(message []byte) (K, C kyber.Point, remainder []byte,
 	}
 	remainder = message[max:]
 	// ElGamal-encrypt the point to produce ciphertext (K,C).
-	k := suite.Scalar().Pick(random.New())         // ephemeral private key
-	K = suite.Point().Mul(k, nil)                  // ephemeral DH public key
-	S := suite.Point().Mul(k, a.startRes.distrKey) // ephemeral DH shared secret
-	C = S.Add(S, M)                                // message blinded with secret
+	k := suite.Scalar().Pick(random.New())             // ephemeral private key
+	K = suite.Point().Mul(k, nil)                      // ephemeral DH public key
+	S := suite.Point().Mul(k, a.startRes.GetDistKey()) // ephemeral DH shared secret
+	C = S.Add(S, M)                                    // message blinded with secret
 
 	return K, C, remainder, nil
 }
@@ -164,12 +164,14 @@ func (a *Actor) Encrypt(message []byte) (K, C kyber.Point, remainder []byte,
 // decrypt the  message.
 // TODO: perform a re-encryption instead of gathering the private shares, which
 // should never happen.
-func (a *Actor) Decrypt(players mino.Players, K, C kyber.Point) ([]byte, error) {
+func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 
-	if a.startRes.distrKey == nil {
-		return nil, xerrors.Errorf("startRes is nil, did you call " +
-			"setup() first?")
+	if !a.startRes.Done() {
+		return nil, xerrors.Errorf("you must first initialize DKG. " +
+			"Did you call setup() first?")
 	}
+
+	players := mino.NewAddresses(a.startRes.GetParticipants()...)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -179,10 +181,12 @@ func (a *Actor) Decrypt(players mino.Players, K, C kyber.Point) ([]byte, error) 
 		return nil, nil
 	}
 
-	players.AddressIterator().Seek(0)
+	players = mino.NewAddresses(a.startRes.GetParticipants()...)
+	iterator := players.AddressIterator()
+
 	addrs := make([]mino.Address, 0, players.Len())
-	for players.AddressIterator().HasNext() {
-		addrs = append(addrs, players.AddressIterator().GetNext())
+	for iterator.HasNext() {
+		addrs = append(addrs, iterator.GetNext())
 	}
 
 	message := DecryptRequest{

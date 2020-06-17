@@ -19,10 +19,31 @@ import (
 // recvResponseTimeout is the maximum time a node will wait for a response
 const recvResponseTimeout = time.Second * 10
 
-// startResult holds the result of the DKG initialization, which is needed by an
-// actor to perform the Encrypt/Decrypt.
-type startResult struct {
-	distrKey kyber.Point
+// state is a struct contained in a handler that allows an actor to read the
+// state of that handler. The actor should only use the getter functions to read
+// the attributes.
+type state struct {
+	sync.Mutex
+	distrKey     kyber.Point
+	participants []mino.Address
+}
+
+func (s *state) Done() bool {
+	s.Lock()
+	defer s.Unlock()
+	return s.distrKey != nil && s.participants != nil
+}
+
+func (s *state) GetDistKey() kyber.Point {
+	s.Lock()
+	defer s.Unlock()
+	return s.distrKey
+}
+
+func (s *state) GetParticipants() []mino.Address {
+	s.Lock()
+	defer s.Unlock()
+	return s.participants
 }
 
 // Handler represents the RPC executed on each node
@@ -36,7 +57,7 @@ type Handler struct {
 	me        mino.Address
 	privShare *share.PriShare
 	factory   serde.Factory
-	startRes  *startResult
+	startRes  *state
 }
 
 // NewHandler creates a new handler
@@ -45,7 +66,7 @@ func NewHandler(privKey kyber.Scalar, me mino.Address, f serde.Factory) *Handler
 		privKey:  privKey,
 		me:       me,
 		factory:  f,
-		startRes: &startResult{},
+		startRes: &state{},
 	}
 }
 
@@ -291,8 +312,12 @@ func (h *Handler) start(start Start, receivedDeals []Deal, from mino.Address,
 
 	h.Lock()
 	h.privShare = distrKey.PriShare()
-	h.startRes.distrKey = distrKey.Public()
 	h.Unlock()
+
+	h.startRes.Lock()
+	h.startRes.distrKey = distrKey.Public()
+	h.startRes.participants = start.addresses
+	h.startRes.Unlock()
 
 	return nil
 }

@@ -61,9 +61,9 @@ func TestPedersen_Scenario(t *testing.T) {
 
 	// trying to call a decrpyt/encrypt before a setup
 	_, _, _, err := actors[0].Encrypt(message)
-	require.EqualError(t, err, "startRes is nil, did you call setup() first?")
-	_, err = actors[0].Decrypt(players, nil, nil)
-	require.EqualError(t, err, "startRes is nil, did you call setup() first?")
+	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")
+	_, err = actors[0].Decrypt(nil, nil)
+	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")
 
 	// Do a setup on one of the actor
 	// wrong lenght of pubKeys
@@ -74,7 +74,7 @@ func TestPedersen_Scenario(t *testing.T) {
 	require.NoError(t, err)
 
 	err = actors[0].Setup(players, pubKeys, n)
-	require.EqualError(t, err, "startRes is not nil, only one setup call is allowed")
+	require.EqualError(t, err, "startRes is already done, only one setup call is allowed")
 
 	// every node should be able to encrypt/decrypt
 	for i := 0; i < n; i++ {
@@ -82,8 +82,7 @@ func TestPedersen_Scenario(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, remainder, 0)
 
-		players = &fakePlayers{players: addrs}
-		decrypted, err := actors[i].Decrypt(players, K, C)
+		decrypted, err := actors[i].Decrypt(K, C)
 		require.NoError(t, err)
 
 		require.Equal(t, message, decrypted)

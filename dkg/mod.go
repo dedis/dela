@@ -20,7 +20,7 @@ type Actor interface {
 	Setup(players mino.Players, pubKeys []kyber.Point, threshold int) error
 
 	Encrypt(message []byte) (K, C kyber.Point, remainder []byte, err error)
-	Decrypt(players mino.Players, K, C kyber.Point) ([]byte, error)
+	Decrypt(K, C kyber.Point) ([]byte, error)
 
 	Reshare() error
 }
