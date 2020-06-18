@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"testing"
 
@@ -43,8 +44,12 @@ func TestSocketClient_Send(t *testing.T) {
 	listen(t, path, true)
 	in := make([]byte, 256*1000) // fill the buffer
 	err = client.Send(in)
-	require.EqualError(t, err,
-		"couldn't write to daemon: write unix @->/tmp/daemon.sock: write: broken pipe")
+	require.NotNil(t, err)
+
+	if runtime.GOOS == "linux" {
+		require.EqualError(t, err,
+			"couldn't write to daemon: write unix @->/tmp/daemon.sock: write: broken pipe")
+	}
 }
 
 func TestSocketDaemon_Listen(t *testing.T) {

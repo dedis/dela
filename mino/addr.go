@@ -22,12 +22,9 @@ func (it *addressIterator) HasNext() bool {
 // GetNext implements mino.AddressIterator. It returns the address at the
 // current index and moves the iterator to the next address.
 func (it *addressIterator) GetNext() Address {
-	if it.HasNext() {
-		res := it.addrs[it.index]
-		it.index++
-		return res
-	}
-	return nil
+	res := it.addrs[it.index]
+	it.index++
+	return res
 }
 
 // roster is an implementation of the mino.Players interface. It provides helper
