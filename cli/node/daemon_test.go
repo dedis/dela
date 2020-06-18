@@ -42,6 +42,11 @@ func TestSocketClient_Send(t *testing.T) {
 	err = client.Send([]byte("deadbeef"))
 	require.EqualError(t, err, "couldn't read output: fake error")
 
+	// Windows only allows opening one socket per address, this is why we use
+	// another one.
+	path = filepath.Join(os.TempDir(), "daemon2.sock")
+	client.socketpath = path
+
 	listen(t, path, true)
 	in := make([]byte, 256*1000) // fill the buffer
 	err = client.Send(in)

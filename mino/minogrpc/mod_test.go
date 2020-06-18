@@ -98,9 +98,11 @@ func TestMinogrpc_New(t *testing.T) {
 	_, err = NewMinogrpc("123.4.5.6", 1, routing.NewTreeRoutingFactory(1, AddressFactory{}))
 	require.NotNil(t, err)
 	// Funny enought, macos would output:
-	//   couldn't start the server: failed to listen: listen tcp4 123.4.5.6:1: bind: can't assign requested address
+	//   couldn't start the server: failed to listen: listen tcp4 123.4.5.6:1:
+	//     bind: can't assign requested address
 	// While linux outpus:
-	//   couldn't start the server: failed to listen: listen tcp4 123.4.5.6:1: bind: cannot assign requested address
+	//   couldn't start the server: failed to listen: listen tcp4 123.4.5.6:1:
+	//     bind: cannot assign requested address
 	require.Regexp(t, regexp.MustCompile("^couldn't start the server: failed to listen: listen tcp4 123.4.5.6:1:"), err)
 }
 
