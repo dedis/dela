@@ -54,7 +54,7 @@ func TestSocketClient_Send(t *testing.T) {
 
 	if runtime.GOOS == "linux" {
 		require.EqualError(t, err,
-			"couldn't write to daemon: write unix @->/tmp/daemon.sock: write: broken pipe")
+			"couldn't write to daemon: write unix @->/tmp/daemon2.sock: write: broken pipe")
 	}
 }
 
