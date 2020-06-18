@@ -8,7 +8,7 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/ledger/inventory"
-	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serdeng"
 	"golang.org/x/xerrors"
 )
 
@@ -77,7 +77,7 @@ func TestServerTask_Consume(t *testing.T) {
 	}
 
 	page := fakePage{
-		store: map[string]serde.Message{
+		store: map[string]serdeng.Message{
 			"a":   makeInstance(t),
 			"y":   &Instance{ContractID: "bad", AccessControl: []byte("arc")},
 			"z":   &Instance{ContractID: "unknown", AccessControl: []byte("arc")},
@@ -176,28 +176,28 @@ type fakeContract struct {
 	err error
 }
 
-func (c fakeContract) Spawn(ctx SpawnContext) (serde.Message, []byte, error) {
+func (c fakeContract) Spawn(ctx SpawnContext) (serdeng.Message, []byte, error) {
 	ctx.Read([]byte{0xab})
 	return fake.Message{}, []byte("arc"), c.err
 }
 
-func (c fakeContract) Invoke(ctx InvokeContext) (serde.Message, error) {
+func (c fakeContract) Invoke(ctx InvokeContext) (serdeng.Message, error) {
 	ctx.Read([]byte{0xab})
 	return fake.Message{}, c.err
 }
 
 type fakePage struct {
 	inventory.WritablePage
-	store    map[string]serde.Message
+	store    map[string]serdeng.Message
 	errRead  error
 	errWrite error
 }
 
-func (page fakePage) Read(key []byte) (serde.Message, error) {
+func (page fakePage) Read(key []byte) (serdeng.Message, error) {
 	return page.store[string(key)], page.errRead
 }
 
-func (page fakePage) Write(key []byte, value serde.Message) error {
+func (page fakePage) Write(key []byte, value serdeng.Message) error {
 	page.store[string(key)] = value
 	return page.errWrite
 }
@@ -215,7 +215,7 @@ func (ctx fakeContext) GetIdentity() arc.Identity {
 }
 
 type fakeAccess struct {
-	serde.UnimplementedMessage
+	serdeng.Message
 
 	match bool
 	calls [][]interface{}

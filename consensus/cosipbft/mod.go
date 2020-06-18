@@ -8,11 +8,12 @@ import (
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/consensus"
+	"go.dedis.ch/dela/consensus/cosipbft/types"
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serdeng"
 	"golang.org/x/xerrors"
 )
 
@@ -23,10 +24,10 @@ const (
 // Consensus is the implementation of the consensus.Consensus interface.
 type Consensus struct {
 	logger      zerolog.Logger
-	storage     Storage
+	storage     types.Storage
 	cosi        cosi.CollectiveSigning
 	mino        mino.Mino
-	queue       Queue
+	queue       types.Queue
 	hashFactory crypto.HashFactory
 	viewchange  viewchange.ViewChange
 }
@@ -35,10 +36,10 @@ type Consensus struct {
 func NewCoSiPBFT(mino mino.Mino, cosi cosi.CollectiveSigning, vc viewchange.ViewChange) *Consensus {
 	c := &Consensus{
 		logger:      dela.Logger,
-		storage:     newInMemoryStorage(),
+		storage:     types.NewInMemoryStorage(),
 		mino:        mino,
 		cosi:        cosi,
-		queue:       newQueue(cosi),
+		queue:       types.NewQueue(cosi.GetVerifierFactory()),
 		hashFactory: crypto.NewSha256Factory(),
 		viewchange:  vc,
 	}
@@ -47,12 +48,14 @@ func NewCoSiPBFT(mino mino.Mino, cosi cosi.CollectiveSigning, vc viewchange.View
 }
 
 // GetChainFactory implements consensus.Consensus.
-func (c *Consensus) GetChainFactory() serde.Factory {
-	return newChainFactory(c.cosi, c.mino, c.viewchange)
+func (c *Consensus) GetChainFactory() consensus.ChainFactory {
+	return types.NewChainFactory(
+		types.WithCoSi(c.cosi),
+		types.WithViewChange(c.viewchange))
 }
 
 // GetChain returns a valid chain to the given identifier.
-func (c *Consensus) GetChain(to Digest) (consensus.Chain, error) {
+func (c *Consensus) GetChain(to types.Digest) (consensus.Chain, error) {
 	chain, err := c.storage.ReadChain(to)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't read the chain: %v", err)
@@ -68,15 +71,16 @@ func (c *Consensus) Listen(r consensus.Reactor) (consensus.Actor, error) {
 		return nil, xerrors.New("validator is nil")
 	}
 
+	factory := types.NewRequestFactory(
+		r,
+		c.cosi.GetSigner().GetSignatureFactory(),
+		c.cosi.GetSignatureFactory(),
+		types.NewChainFactory(types.WithCoSi(c.cosi), types.WithViewChange(c.viewchange)))
+
 	reactor := reactor{
-		Consensus: c,
-		requestFactory: requestFactory{
-			msgFactory:   r,
-			sigFactory:   c.cosi.GetSigner().GetSignatureFactory(),
-			cosiFactory:  c.cosi.GetSignatureFactory(),
-			chainFactory: newChainFactory(c.cosi, c.mino, c.viewchange),
-		},
-		reactor: r,
+		Consensus:      c,
+		RequestFactory: factory,
+		reactor:        r,
 	}
 
 	cosiActor, err := c.cosi.Listen(reactor)
@@ -88,8 +92,6 @@ func (c *Consensus) Listen(r consensus.Reactor) (consensus.Actor, error) {
 		Consensus: c,
 		reactor:   r,
 	}
-
-	factory := propagateFactory{sigFactory: c.cosi.GetSignatureFactory()}
 
 	rpc, err := c.mino.MakeRPC(rpcName, handler, factory)
 	if err != nil {
@@ -118,7 +120,7 @@ type pbftActor struct {
 // Propose implements consensus.Actor. It takes the proposal and send it to the
 // participants of the consensus. It returns nil if the consensus is reached and
 // the participant are committed to it, otherwise it returns the refusal reason.
-func (a pbftActor) Propose(p serde.Message) error {
+func (a pbftActor) Propose(p serdeng.Message) error {
 	// Wait for the view change module green signal to go through the proposal.
 	// If the leader has failed and this node has to take over, we use the
 	// inherant property of CoSiPBFT to prove that 2f participants want the view
@@ -155,7 +157,7 @@ func (a pbftActor) Propose(p serde.Message) error {
 		return xerrors.Errorf("couldn't sign the proposal: %v", err)
 	}
 
-	commitReq := newCommitRequest(digest, sig)
+	commitReq := types.NewCommit(digest, sig)
 
 	// 2. Commit phase.
 	sig, err = a.cosiActor.Sign(ctx, commitReq, authority)
@@ -164,10 +166,7 @@ func (a pbftActor) Propose(p serde.Message) error {
 	}
 
 	// 3. Propagate the final commit signature.
-	propagateReq := Propagate{
-		to:     digest,
-		commit: sig,
-	}
+	propagateReq := types.NewPropagate(digest, sig)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -187,24 +186,20 @@ func (a pbftActor) Propose(p serde.Message) error {
 	}
 }
 
-func (a pbftActor) newPrepareRequest(msg serde.Message, digest []byte) (Prepare, error) {
+func (a pbftActor) newPrepareRequest(msg serdeng.Message, digest []byte) (types.Prepare, error) {
 	chain, err := a.storage.ReadChain(nil)
 	if err != nil {
-		return Prepare{}, xerrors.Errorf("couldn't read chain: %v", err)
+		return types.Prepare{}, xerrors.Errorf("couldn't read chain: %v", err)
 	}
 
 	// Sign the hash of the proposal to provide a proof the proposal comes from
 	// the legitimate leader.
 	sig, err := a.cosi.GetSigner().Sign(digest)
 	if err != nil {
-		return Prepare{}, xerrors.Errorf("couldn't sign the request: %v", err)
+		return types.Prepare{}, xerrors.Errorf("couldn't sign the request: %v", err)
 	}
 
-	req := Prepare{
-		message:   msg,
-		signature: sig,
-		chain:     chain,
-	}
+	req := types.NewPrepare(msg, sig, chain)
 
 	return req, nil
 }
@@ -217,23 +212,23 @@ func (a pbftActor) Close() error {
 }
 
 type reactor struct {
-	requestFactory
+	types.RequestFactory
 	*Consensus
 
 	reactor consensus.Reactor
 }
 
-func (h reactor) Invoke(addr mino.Address, in serde.Message) (Digest, error) {
+func (h reactor) Invoke(addr mino.Address, in serdeng.Message) (types.Digest, error) {
 	switch msg := in.(type) {
-	case Prepare:
-		err := h.storage.StoreChain(msg.chain)
+	case types.Prepare:
+		err := h.storage.StoreChain(msg.GetChain())
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't store previous chain: %v", err)
 		}
 
 		// The proposal first needs to be validated by the caller of the module
 		// to insure the generic data is valid.
-		digest, err := h.reactor.InvokeValidate(addr, msg.message)
+		digest, err := h.reactor.InvokeValidate(addr, msg.GetMessage())
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't validate the proposal: %v", err)
 		}
@@ -243,26 +238,21 @@ func (h reactor) Invoke(addr mino.Address, in serde.Message) (Digest, error) {
 			return nil, xerrors.Errorf("couldn't verify: %v", err)
 		}
 
-		forwardLink := forwardLink{
-			from: msg.chain.GetTo(),
-			to:   digest,
-		}
+		from := msg.GetChain().GetTo()
 
-		if len(forwardLink.from) == 0 {
+		if len(from) == 0 {
 			genesis, err := h.reactor.InvokeGenesis()
 			if err != nil {
 				return nil, xerrors.Errorf("couldn't get genesis id: %v", err)
 			}
 
-			forwardLink.from = genesis
+			from = genesis
 		}
 
-		hash, err := forwardLink.computeHash(h.hashFactory.New())
+		forwardLink, err := types.NewForwardLink(from, digest)
 		if err != nil {
-			return nil, xerrors.Errorf("couldn't compute hash: %v", err)
+			return nil, xerrors.Errorf("couldn't create link: %v", err)
 		}
-
-		forwardLink.hash = hash
 
 		// The identity of the leader must be insured to comply with the
 		// viewchange property. The Signature should be verified with the leader
@@ -272,7 +262,7 @@ func (h reactor) Invoke(addr mino.Address, in serde.Message) (Digest, error) {
 			return nil, xerrors.Errorf("couldn't find public key for <%v>", addr)
 		}
 
-		err = pubkey.Verify(digest, msg.signature)
+		err = pubkey.Verify(digest, msg.GetSignature())
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't verify signature: %v", err)
 		}
@@ -284,14 +274,14 @@ func (h reactor) Invoke(addr mino.Address, in serde.Message) (Digest, error) {
 
 		// Finally, if the proposal is correct, the hash that will be signed
 		// by cosi is returned.
-		return hash, nil
-	case Commit:
-		err := h.queue.LockProposal(msg.to, msg.prepare)
+		return forwardLink.GetFingerprint(), nil
+	case types.Commit:
+		err := h.queue.LockProposal(msg.GetTo(), msg.GetPrepare())
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't update signature: %v", err)
 		}
 
-		buffer, err := msg.prepare.MarshalBinary()
+		buffer, err := msg.GetPrepare().MarshalBinary()
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't marshal the signature: %v", err)
 		}
@@ -309,15 +299,15 @@ type rpcHandler struct {
 	reactor consensus.Reactor
 }
 
-func (h rpcHandler) Process(req mino.Request) (serde.Message, error) {
-	msg, ok := req.Message.(Propagate)
+func (h rpcHandler) Process(req mino.Request) (serdeng.Message, error) {
+	msg, ok := req.Message.(types.Propagate)
 	if !ok {
 		return nil, xerrors.Errorf("message type not supported '%T'", req.Message)
 	}
 
 	// 1. Verify the commit signature to make sure a threshold of nodes have
 	// agreed to commit to this proposal (and thus not another one).
-	forwardLink, err := h.queue.Finalize(msg.to, msg.commit)
+	forwardLink, err := h.queue.Finalize(msg.GetTo(), msg.GetCommit())
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't finalize: %v", err)
 	}
@@ -332,7 +322,7 @@ func (h rpcHandler) Process(req mino.Request) (serde.Message, error) {
 
 	// 3. Apply the proposal to caller. This should persist any change related
 	// to the proposal and the system should move to the next state.
-	err = h.reactor.InvokeCommit(forwardLink.to)
+	err = h.reactor.InvokeCommit(forwardLink.GetTo())
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't commit: %v", err)
 	}
@@ -344,12 +334,17 @@ func (h rpcHandler) Process(req mino.Request) (serde.Message, error) {
 		return nil, xerrors.Errorf("couldn't get new authority: %v", err)
 	}
 
-	forwardLink.changeset = curr.Diff(next)
+	final, err := types.NewForwardLink(
+		forwardLink.GetFrom(), forwardLink.GetTo(),
+		types.WithPrepare(forwardLink.GetPrepareSignature()),
+		types.WithCommit(forwardLink.GetCommitSignature()),
+		types.WithChangeSet(curr.Diff(next)),
+	)
 	// TODO: check no more than f = (n-1)/2 changes, probably
 
 	// 5. Persist the link.
 	// TODO: what if that fails ?
-	err = h.storage.Store(*forwardLink)
+	err = h.storage.Store(final)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't write forward link: %v", err)
 	}

@@ -20,7 +20,7 @@ import (
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/routing"
 	"go.dedis.ch/dela/mino/minogrpc/tokens"
-	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serdeng"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
@@ -137,8 +137,7 @@ func (o overlayServer) Call(ctx context.Context, msg *Message) (*Message, error)
 		return nil, xerrors.Errorf("handler '%s' is not registered", uri)
 	}
 
-	var message serde.Message
-	err := o.serializer.Deserialize(msg.GetPayload(), endpoint.Factory, &message)
+	message, err := endpoint.Factory.Deserialize(o.context, msg.GetPayload())
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't deserialize message: %v", err)
 	}
@@ -155,7 +154,7 @@ func (o overlayServer) Call(ctx context.Context, msg *Message) (*Message, error)
 		return nil, xerrors.Errorf("handler failed to process: %v", err)
 	}
 
-	res, err := o.serializer.Serialize(result)
+	res, err := result.Serialize(o.context)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't serialize result: %v", err)
 	}
@@ -184,8 +183,7 @@ func (o overlayServer) Stream(stream Overlay_StreamServer) error {
 		return xerrors.Errorf("failed to receive routing message: %v", err)
 	}
 
-	var rting routing.Routing
-	err = o.serializer.Deserialize(msg.GetMessage().GetPayload(), o.routingFactory, &rting)
+	rting, err := o.routingFactory.RoutingOf(o.context, msg.GetMessage().GetPayload())
 	if err != nil {
 		return xerrors.Errorf("couldn't deserialize routing: %v", err)
 	}
@@ -217,7 +215,7 @@ type relayer interface {
 }
 
 type overlay struct {
-	serializer     serde.Serializer
+	context        serdeng.Context
 	me             mino.Address
 	certs          certs.Storage
 	tokens         tokens.Holder
@@ -226,7 +224,7 @@ type overlay struct {
 	traffic        *traffic
 }
 
-func newOverlay(me mino.Address, rf routing.Factory, s serde.Serializer) (overlay, error) {
+func newOverlay(me mino.Address, rf routing.Factory, ctx serdeng.Context) (overlay, error) {
 
 	cert, err := makeCertificate()
 	if err != nil {
@@ -237,7 +235,7 @@ func newOverlay(me mino.Address, rf routing.Factory, s serde.Serializer) (overla
 	certs.Store(me, cert)
 
 	o := overlay{
-		serializer:     s,
+		context:        ctx,
 		me:             me,
 		tokens:         tokens.NewInMemoryHolder(),
 		certs:          certs,
@@ -339,10 +337,10 @@ func (o overlay) Join(addr, token string, certHash []byte) error {
 }
 
 func (o overlay) setupRelays(ctx context.Context, senderAddr mino.Address,
-	rting routing.Routing, f serde.Factory) (sender, receiver, error) {
+	rting routing.Routing, f serdeng.Factory) (sender, receiver, error) {
 
 	receiver := receiver{
-		serializer:     o.serializer,
+		context:        o.context,
 		factory:        f,
 		addressFactory: o.routingFactory.GetAddressFactory(),
 		errs:           make(chan error, 1),
@@ -350,7 +348,7 @@ func (o overlay) setupRelays(ctx context.Context, senderAddr mino.Address,
 	}
 	sender := sender{
 		me:             senderAddr,
-		serializer:     o.serializer,
+		context:        o.context,
 		addressFactory: AddressFactory{},
 		rting:          rting,
 		clients:        map[mino.Address]chan OutContext{},
@@ -388,7 +386,7 @@ func (o overlay) setupRelay(ctx context.Context, relay mino.Address,
 		return xerrors.Errorf("couldn't open relay: %v", err)
 	}
 
-	data, err := o.serializer.Serialize(rting)
+	data, err := rting.Serialize(o.context)
 	if err != nil {
 		return xerrors.Errorf("couldn't pack routing: %v", err)
 	}

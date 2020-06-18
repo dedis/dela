@@ -6,26 +6,59 @@ import (
 	"sort"
 
 	"go.dedis.ch/dela/ledger/arc"
-	"go.dedis.ch/dela/ledger/arc/darc/json"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serdeng/registry"
 	"golang.org/x/xerrors"
 )
+
+var accessFormats = registry.NewSimpleRegistry()
+
+func RegisterAccessFormat(c serdeng.Codec, f serdeng.Format) {
+	accessFormats.Register(c, f)
+}
 
 // Access is the DARC implementation of an Evolvable Access Control.
 //
 // - implements darc.EvolvableAccessControl
 // - implements encoding.Packable
 type Access struct {
-	serde.UnimplementedMessage
+	rules map[string]Expression
+}
 
-	rules map[string]expression
+type AccessOption func(*Access)
+
+func WithRule(rule string, matches []string) AccessOption {
+	return func(a *Access) {
+		mapper := make(map[string]struct{})
+		for _, match := range matches {
+			mapper[match] = struct{}{}
+		}
+
+		a.rules[rule] = Expression{matches: mapper}
+	}
 }
 
 // NewAccess returns a new empty instance of an access control.
-func NewAccess() Access {
-	return Access{
-		rules: make(map[string]expression),
+func NewAccess(opts ...AccessOption) Access {
+	a := Access{
+		rules: make(map[string]Expression),
 	}
+
+	for _, opt := range opts {
+		opt(&a)
+	}
+
+	return a
+}
+
+func (ac Access) GetRules() map[string]Expression {
+	rules := make(map[string]Expression)
+	for k, v := range ac.rules {
+		rules[k] = v
+	}
+
+	return rules
 }
 
 // Evolve implements darc.EvolvableAccessControl. It updates the rule with the
@@ -93,29 +126,21 @@ func (ac Access) Fingerprint(w io.Writer) error {
 	return nil
 }
 
-// VisitJSON implements serde.Message. It returns the JSON message for the
-// access.
-func (ac Access) VisitJSON(serde.Serializer) (interface{}, error) {
-	rules := make(map[string][]string)
-	for key, expr := range ac.rules {
-		matches := make([]string, 0, len(expr.matches))
-		for m := range expr.matches {
-			matches = append(matches, m)
-		}
+// Serialize implements serde.Message.
+func (ac Access) Serialize(ctx serdeng.Context) ([]byte, error) {
+	format := accessFormats.Get(ctx.GetName())
 
-		rules[key] = matches
+	data, err := format.Encode(ctx, ac)
+	if err != nil {
+		return nil, err
 	}
 
-	m := json.Access{
-		Rules: rules,
-	}
-
-	return m, nil
+	return data, nil
 }
 
 // Clone returns a deep copy of the access control.
 func (ac Access) Clone() Access {
-	access := Access{rules: make(map[string]expression)}
+	access := Access{rules: make(map[string]Expression)}
 	for rule, expr := range ac.rules {
 		access.rules[rule] = expr.Clone()
 	}
@@ -133,24 +158,14 @@ func NewFactory() Factory {
 	return Factory{}
 }
 
-// VisitJSON implements serde.Factory. It deserializes the access control in
-// JSON format.
-func (f Factory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
-	m := json.Access{}
-	err := in.Feed(&m)
+// Deserialize implements serde.Factory.
+func (f Factory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+	format := accessFormats.Get(ctx.GetName())
+
+	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize access: %v", err)
+		return nil, err
 	}
 
-	rules := make(map[string]expression)
-	for rule, matches := range m.Rules {
-		expr := expression{matches: make(map[string]struct{})}
-		for _, m := range matches {
-			expr.matches[m] = struct{}{}
-		}
-
-		rules[rule] = expr
-	}
-
-	return Access{rules: rules}, nil
+	return msg, nil
 }

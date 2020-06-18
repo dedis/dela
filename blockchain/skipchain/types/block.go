@@ -1,4 +1,4 @@
-package skipchain
+package types
 
 import (
 	"encoding/binary"
@@ -6,12 +6,25 @@ import (
 	"io"
 
 	"go.dedis.ch/dela/blockchain"
-	"go.dedis.ch/dela/blockchain/skipchain/json"
 	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serdeng/registry"
 	"golang.org/x/xerrors"
 )
+
+var (
+	blockFormats      = registry.NewSimpleRegistry()
+	verifiableFormats = registry.NewSimpleRegistry()
+)
+
+func RegisterBlockFormat(c serdeng.Codec, f serdeng.Format) {
+	blockFormats.Register(c, f)
+}
+
+func RegisterVerifiableBlockFormats(c serdeng.Codec, f serdeng.Format) {
+	verifiableFormats.Register(c, f)
+}
 
 // Digest is an alias of a slice of bytes that represents the digest of a block.
 type Digest [32]byte
@@ -26,6 +39,16 @@ func (d Digest) String() string {
 	return fmt.Sprintf("%x", d[:])[:16]
 }
 
+type emptyPayload struct{}
+
+func (p emptyPayload) Serialize(serdeng.Context) ([]byte, error) {
+	return nil, nil
+}
+
+func (p emptyPayload) Fingerprint(io.Writer) error {
+	return nil
+}
+
 // SkipBlock is a representation of the data held by a block. It contains the
 // information to build a skipchain.
 //
@@ -33,8 +56,6 @@ func (d Digest) String() string {
 // - implements consensus.Proposal
 // - implements fmt.Stringer
 type SkipBlock struct {
-	serde.UnimplementedMessage
-
 	hash Digest
 
 	// Index is the block index since the genesis block.
@@ -50,6 +71,67 @@ type SkipBlock struct {
 	// Payload is the data stored in the block. It representation is independant
 	// from the skipchain module.
 	Payload blockchain.Payload
+}
+
+type skipBlockTemplate struct {
+	SkipBlock
+
+	hashFactory crypto.HashFactory
+}
+
+type SkipBlockOption func(*skipBlockTemplate)
+
+func WithIndex(index uint64) SkipBlockOption {
+	return func(tmpl *skipBlockTemplate) {
+		tmpl.Index = index
+	}
+}
+
+func WithGenesisID(id []byte) SkipBlockOption {
+	return func(tmpl *skipBlockTemplate) {
+		copy(tmpl.GenesisID[:], id)
+	}
+}
+
+func WithBackLink(id []byte) SkipBlockOption {
+	return func(tmpl *skipBlockTemplate) {
+		copy(tmpl.BackLink[:], id)
+	}
+}
+
+func WithPayload(payload blockchain.Payload) SkipBlockOption {
+	return func(tmpl *skipBlockTemplate) {
+		tmpl.Payload = payload
+	}
+}
+
+func WithHashFactory(f crypto.HashFactory) SkipBlockOption {
+	return func(tmpl *skipBlockTemplate) {
+		tmpl.hashFactory = f
+	}
+}
+
+func NewSkipBlock(opts ...SkipBlockOption) (SkipBlock, error) {
+	tmpl := skipBlockTemplate{
+		SkipBlock: SkipBlock{
+			Payload: emptyPayload{},
+		},
+		hashFactory: crypto.NewSha256Factory(),
+	}
+
+	for _, opt := range opts {
+		opt(&tmpl)
+	}
+
+	h := tmpl.hashFactory.New()
+	err := tmpl.Fingerprint(h)
+	if err != nil {
+		return tmpl.SkipBlock, err
+	}
+
+	copy(tmpl.hash[:], h.Sum(nil))
+
+	return tmpl.SkipBlock, nil
 }
 
 // GetIndex returns the index of the block since the genesis block.
@@ -68,21 +150,16 @@ func (b SkipBlock) GetPayload() blockchain.Payload {
 	return b.Payload
 }
 
-// VisitJSON implements serde.Message. It serializes the block in JSON format.
-func (b SkipBlock) VisitJSON(ser serde.Serializer) (interface{}, error) {
-	payload, err := ser.Serialize(b.Payload)
+// Serialize implements serde.Message.
+func (b SkipBlock) Serialize(ctx serdeng.Context) ([]byte, error) {
+	format := blockFormats.Get(ctx.GetName())
+
+	data, err := format.Encode(ctx, b)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't serialize payload: %v", err)
+		return nil, err
 	}
 
-	m := json.SkipBlock{
-		Index:     b.Index,
-		GenesisID: b.GenesisID.Bytes(),
-		Backlink:  b.BackLink.Bytes(),
-		Payload:   payload,
-	}
-
-	return m, nil
+	return data, nil
 }
 
 // String implements fmt.Stringer. It returns a string representation of the
@@ -126,124 +203,80 @@ type VerifiableBlock struct {
 	Chain consensus.Chain
 }
 
-// VisitJSON implements serde.Message. It serializes the verifiable block in
-// JSON format.
-func (vb VerifiableBlock) VisitJSON(ser serde.Serializer) (interface{}, error) {
-	block, err := ser.Serialize(vb.SkipBlock)
+// Serialize implements serde.Message.
+func (vb VerifiableBlock) Serialize(ctx serdeng.Context) ([]byte, error) {
+	format := verifiableFormats.Get(ctx.GetName())
+
+	data, err := format.Encode(ctx, vb)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't serialize block: %v", err)
+		return nil, err
 	}
 
-	chain, err := ser.Serialize(vb.Chain)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't serialize chain: %v", err)
-	}
-
-	m := json.VerifiableBlock{
-		Block: block,
-		Chain: chain,
-	}
-
-	return m, nil
+	return data, nil
 }
+
+type PayloadKey struct{}
 
 // BlockFactory is responsible for the instantiation of the block and related
 // data structures like the forward links and the proves.
 //
 // - implements blockchain.BlockFactory
 type BlockFactory struct {
-	serde.UnimplementedFactory
-
-	hashFactory    crypto.HashFactory
-	payloadFactory serde.Factory
+	payloadFactory serdeng.Factory
 }
 
 // NewBlockFactory returns a new block factory that will use the factory for the
 // payload.
-func NewBlockFactory(f serde.Factory) BlockFactory {
+func NewBlockFactory(f serdeng.Factory) BlockFactory {
 	return BlockFactory{
-		hashFactory:    crypto.NewSha256Factory(),
 		payloadFactory: f,
 	}
 }
 
-// VisitJSON implements serde.Message. It deserializes a block in JSON format.
-func (f BlockFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
-	m := json.SkipBlock{}
-	err := in.Feed(&m)
+// Deserialize implements serde.Message.
+func (f BlockFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+	format := blockFormats.Get(ctx.GetName())
+
+	ctx = serdeng.WithFactory(ctx, PayloadKey{}, f.payloadFactory)
+
+	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize message: %v", err)
+		return nil, err
 	}
 
-	var payload blockchain.Payload
-	err = in.GetSerializer().Deserialize(m.Payload, f.payloadFactory, &payload)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize payload: %v", err)
-	}
-
-	block := SkipBlock{
-		Index:   m.Index,
-		Payload: payload,
-	}
-
-	copy(block.GenesisID[:], m.GenesisID)
-	copy(block.BackLink[:], m.Backlink)
-
-	h := f.hashFactory.New()
-	err = block.Fingerprint(h)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't fingerprint block: %v", err)
-	}
-
-	copy(block.hash[:], h.Sum(nil))
-
-	return block, nil
+	return msg, nil
 }
+
+type ChainKey struct{}
 
 // VerifiableFactory is a message factory to deserialize verifiable block
 // messages.
 //
 // - implements serde.Factory
 type VerifiableFactory struct {
-	serde.UnimplementedFactory
-
-	blockFactory serde.Factory
-	chainFactory serde.Factory
+	payloadFactory serdeng.Factory
+	chainFactory   consensus.ChainFactory
 }
 
 // NewVerifiableFactory returns a new verifiable block factory.
-func NewVerifiableFactory(b, c serde.Factory) VerifiableFactory {
+func NewVerifiableFactory(cf consensus.ChainFactory, pf serdeng.Factory) VerifiableFactory {
 	return VerifiableFactory{
-		blockFactory: b,
-		chainFactory: c,
+		payloadFactory: pf,
+		chainFactory:   cf,
 	}
 }
 
-// VisitJSON implements serde.Factory. It deserializes the verifiable block
-// message in JSON format.
-func (f VerifiableFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
-	m := json.VerifiableBlock{}
-	err := in.Feed(&m)
+// Deserialize implements serde.Factory.
+func (f VerifiableFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+	format := verifiableFormats.Get(ctx.GetName())
+
+	ctx = serdeng.WithFactory(ctx, PayloadKey{}, f.payloadFactory)
+	ctx = serdeng.WithFactory(ctx, ChainKey{}, f.chainFactory)
+
+	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize message: %v", err)
+		return nil, err
 	}
 
-	var chain consensus.Chain
-	err = in.GetSerializer().Deserialize(m.Chain, f.chainFactory, &chain)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize chain: %v", err)
-	}
-
-	var block SkipBlock
-	err = in.GetSerializer().Deserialize(m.Block, f.blockFactory, &block)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize block: %v", err)
-	}
-
-	vb := VerifiableBlock{
-		SkipBlock: block,
-		Chain:     chain,
-	}
-
-	return vb, nil
+	return msg, nil
 }

@@ -4,7 +4,6 @@ import (
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -41,15 +40,15 @@ func (c *CoSi) GetSigner() crypto.Signer {
 
 // GetPublicKeyFactory implements cosi.CollectiveSigning. It returns the public
 // key factory.
-func (c *CoSi) GetPublicKeyFactory() serde.Factory {
+func (c *CoSi) GetPublicKeyFactory() crypto.PublicKeyFactory {
 	return c.signer.GetPublicKeyFactory()
 }
 
 // GetSignatureFactory implements cosi.CollectiveSigning. It returns the
 // signature factory.
-func (c *CoSi) GetSignatureFactory() serde.Factory {
-	return signatureFactory{
-		sigFactory: c.signer.GetSignatureFactory(),
+func (c *CoSi) GetSignatureFactory() crypto.SignatureFactory {
+	return SignatureFactory{
+		aggFactory: c.signer.GetSignatureFactory(),
 	}
 }
 

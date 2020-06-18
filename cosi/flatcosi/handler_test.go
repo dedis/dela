@@ -9,6 +9,7 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serdeng"
 )
 
 func TestHandler_Process(t *testing.T) {
@@ -38,10 +39,10 @@ type fakeReactor struct {
 	err error
 }
 
-func (h fakeReactor) Invoke(mino.Address, serde.Message) ([]byte, error) {
+func (h fakeReactor) Invoke(mino.Address, serdeng.Message) ([]byte, error) {
 	return []byte{0xab}, h.err
 }
 
-func (h fakeReactor) VisitJSON(serde.FactoryInput) (serde.Message, error) {
-	return fake.Message{}, nil
+func (h fakeReactor) Deserialize(serdeng.Context, []byte) (serdeng.Message, error) {
+	return fake.Message{}, h.err
 }

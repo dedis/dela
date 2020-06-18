@@ -9,7 +9,7 @@ import (
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serdeng"
 	"golang.org/x/xerrors"
 )
 
@@ -76,7 +76,7 @@ type fakeSender struct {
 	numErr int
 }
 
-func (s fakeSender) Send(serde.Message, ...mino.Address) <-chan error {
+func (s fakeSender) Send(serdeng.Message, ...mino.Address) <-chan error {
 	ch := make(chan error, s.numErr)
 	for i := 0; i < s.numErr; i++ {
 		ch <- xerrors.New("oops")
@@ -93,7 +93,7 @@ type fakeReceiver struct {
 	err      error
 }
 
-func (r *fakeReceiver) Recv(ctx context.Context) (mino.Address, serde.Message, error) {
+func (r *fakeReceiver) Recv(ctx context.Context) (mino.Address, serdeng.Message, error) {
 	if r.blocking {
 		<-ctx.Done()
 		return nil, nil, ctx.Err()
@@ -109,7 +109,7 @@ func (r *fakeReceiver) Recv(ctx context.Context) (mino.Address, serde.Message, e
 
 	next := r.resps[0]
 	r.resps = r.resps[1:]
-	return next[0].(mino.Address), next[1].(serde.Message), nil
+	return next[0].(mino.Address), next[1].(serdeng.Message), nil
 }
 
 type fakeRPC struct {

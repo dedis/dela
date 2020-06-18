@@ -5,19 +5,19 @@ import (
 	"encoding"
 	"strings"
 
-	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serdeng"
 )
 
 // Identity is an abstraction to uniquely identify a signer.
 type Identity interface {
-	serde.Message
+	serdeng.Message
 	encoding.TextMarshaler
 }
 
 // AccessControl is an abstraction to verify if an identity has access to a
 // specific rule.
 type AccessControl interface {
-	serde.Message
+	serdeng.Message
 
 	Match(rule string, idents ...Identity) error
 }

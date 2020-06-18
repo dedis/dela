@@ -9,31 +9,14 @@ import (
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions/basic"
-	"go.dedis.ch/dela/serde"
-	"go.dedis.ch/dela/serde/json"
+	"go.dedis.ch/dela/serdeng"
 	"golang.org/x/xerrors"
 )
 
-func TestClientTask_VisitJSON(t *testing.T) {
-	task := clientTask{
-		key:    []byte{0x1},
-		access: NewAccess(),
-	}
-
-	ser := json.NewSerializer()
-
-	data, err := ser.Serialize(task)
-	require.NoError(t, err)
-	require.Equal(t, `{"Key":"AQ==","Access":{"Rules":{}}}`, string(data))
-
-	_, err = task.VisitJSON(fake.NewBadSerializer())
-	require.EqualError(t, err, "couldn't serialize access: fake error")
-}
-
 func TestClientTask_Fingerprint(t *testing.T) {
-	task := clientTask{
+	task := ClientTask{
 		key: []byte{0x01},
-		access: Access{rules: map[string]expression{
+		access: Access{rules: map[string]Expression{
 			"\x02": {matches: map[string]struct{}{"\x03": {}}},
 		}},
 	}
@@ -56,9 +39,8 @@ func TestServerTask_Consume(t *testing.T) {
 	access, err := NewAccess().Evolve(UpdateAccessRule, fakeIdentity{buffer: []byte("doggy")})
 	require.NoError(t, err)
 
-	task := serverTask{
-		darcFactory: NewFactory(),
-		clientTask:  clientTask{key: []byte{0x01}, access: access},
+	task := ServerTask{
+		ClientTask: ClientTask{key: []byte{0x01}, access: access},
 	}
 
 	call := &fake.Call{}
@@ -91,23 +73,6 @@ func TestServerTask_Consume(t *testing.T) {
 		"no access: couldn't match 'darc_update': couldn't match identity 'cat'")
 }
 
-func TestTaskFactory_VisitJSON(t *testing.T) {
-	factory := NewTaskFactory()
-
-	ser := json.NewSerializer()
-
-	var task serverTask
-	err := ser.Deserialize([]byte(`{"Key":"AQ==","Access":{}}`), factory, &task)
-	require.NoError(t, err)
-	require.Equal(t, clientTask{key: []byte{0x1}, access: NewAccess()}, task.clientTask)
-
-	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
-	require.EqualError(t, err, "couldn't deserialize task: fake error")
-
-	_, err = factory.VisitJSON(fake.FactoryInput{Serde: fake.NewBadSerializer()})
-	require.EqualError(t, err, "couldn't deserialize access: fake error")
-}
-
 func TestRegister(t *testing.T) {
 	factory := basic.NewTransactionFactory(fake.NewSigner())
 	Register(factory, NewTaskFactory())
@@ -117,7 +82,7 @@ func TestRegister(t *testing.T) {
 // Utility functions
 
 var testAccess = Access{
-	rules: map[string]expression{
+	rules: map[string]Expression{
 		UpdateAccessRule: {matches: map[string]struct{}{"doggy": {}}},
 	},
 }
@@ -144,11 +109,11 @@ type fakePage struct {
 	err  error
 }
 
-func (page fakePage) Read(key []byte) (serde.Message, error) {
+func (page fakePage) Read(key []byte) (serdeng.Message, error) {
 	return testAccess, page.err
 }
 
-func (page fakePage) Write(key []byte, value serde.Message) error {
+func (page fakePage) Write(key []byte, value serdeng.Message) error {
 	page.call.Add(key, value)
 
 	return page.err
@@ -158,6 +123,6 @@ type badPage struct {
 	inventory.WritablePage
 }
 
-func (page badPage) Read([]byte) (serde.Message, error) {
+func (page badPage) Read([]byte) (serdeng.Message, error) {
 	return fake.Message{}, nil
 }

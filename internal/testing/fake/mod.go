@@ -13,19 +13,19 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"hash"
 	"io"
 	"math/big"
 	"net"
-	"reflect"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serdeng"
 	"golang.org/x/xerrors"
 )
 
@@ -265,8 +265,6 @@ func (ca CollectiveAuthority) PublicKeyIterator() crypto.PublicKeyIterator {
 
 // PublicKeyFactory is a fake implementation of a public key factory.
 type PublicKeyFactory struct {
-	serde.UnimplementedFactory
-
 	pubkey PublicKey
 	err    error
 }
@@ -285,8 +283,13 @@ func NewBadPublicKeyFactory() PublicKeyFactory {
 	return PublicKeyFactory{err: xerrors.New("fake error")}
 }
 
-// VisitJSON implements serde.Factory.
-func (f PublicKeyFactory) VisitJSON(serde.FactoryInput) (serde.Message, error) {
+// Deserialize implements serde.Factory.
+func (f PublicKeyFactory) Deserialize(serdeng.Context, []byte) (serdeng.Message, error) {
+	return f.pubkey, f.err
+}
+
+// PublicKeyOf implements crypto.PublicKeyFactory.
+func (f PublicKeyFactory) PublicKeyOf(serdeng.Context, []byte) (crypto.PublicKey, error) {
 	return f.pubkey, f.err
 }
 
@@ -310,9 +313,9 @@ func (s Signature) Equal(o crypto.Signature) bool {
 	return ok
 }
 
-// VisitJSON implements serde.Message.
-func (s Signature) VisitJSON(serde.Serializer) (interface{}, error) {
-	return struct{}{}, s.err
+// Serialize implements serde.Message.
+func (s Signature) Serialize(serdeng.Context) ([]byte, error) {
+	return []byte("{}"), s.err
 }
 
 // MarshalBinary implements crypto.Signature.
@@ -322,8 +325,7 @@ func (s Signature) MarshalBinary() ([]byte, error) {
 
 // SignatureFactory is a fake implementation of the signature factory.
 type SignatureFactory struct {
-	serde.UnimplementedFactory
-
+	Counter   *Counter
 	signature Signature
 	err       error
 }
@@ -336,11 +338,29 @@ func NewSignatureFactory(s Signature) SignatureFactory {
 // NewBadSignatureFactory returns a signature factory that will return an error
 // when appropriate.
 func NewBadSignatureFactory() SignatureFactory {
-	return SignatureFactory{err: xerrors.New("fake error")}
+	return SignatureFactory{
+		err: xerrors.New("fake error"),
+	}
 }
 
-// VisitJSON implements serde.Factory.
-func (f SignatureFactory) VisitJSON(serde.FactoryInput) (serde.Message, error) {
+func NewBadSignatureFactoryWithDelay(value int) SignatureFactory {
+	return SignatureFactory{
+		err:     xerrors.New("fake error"),
+		Counter: &Counter{Value: value},
+	}
+}
+
+// Deserialize implements serde.Factory.
+func (f SignatureFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+	return f.SignatureOf(ctx, data)
+}
+
+// SignatureOf implements crypto.SignatureFactory.
+func (f SignatureFactory) SignatureOf(serdeng.Context, []byte) (crypto.Signature, error) {
+	if !f.Counter.Done() {
+		f.Counter.Decrease()
+		return f.signature, nil
+	}
 	return f.signature, f.err
 }
 
@@ -375,9 +395,9 @@ func (pk PublicKey) MarshalBinary() ([]byte, error) {
 	return []byte{0xdf}, pk.err
 }
 
-// VisitJSON implements serde.Message.
-func (pk PublicKey) VisitJSON(serde.Serializer) (interface{}, error) {
-	return struct{}{}, pk.err
+// Serialize implements serde.Message.
+func (pk PublicKey) Serialize(serdeng.Context) ([]byte, error) {
+	return []byte(`{}`), pk.err
 }
 
 // String implements fmt.Stringer.
@@ -424,12 +444,12 @@ func NewBadSigner() Signer {
 }
 
 // GetPublicKeyFactory implements crypto.Signer.
-func (s Signer) GetPublicKeyFactory() serde.Factory {
+func (s Signer) GetPublicKeyFactory() crypto.PublicKeyFactory {
 	return PublicKeyFactory{}
 }
 
 // GetSignatureFactory implements crypto.Signer.
-func (s Signer) GetSignatureFactory() serde.Factory {
+func (s Signer) GetSignatureFactory() crypto.SignatureFactory {
 	return s.signatureFactory
 }
 
@@ -542,7 +562,7 @@ func (f AddressFactory) FromText(text []byte) mino.Address {
 }
 
 // NewReceiver returns a new receiver
-func NewReceiver(Msg ...serde.Message) Receiver {
+func NewReceiver(Msg ...serdeng.Message) Receiver {
 	return Receiver{
 		Msg: Msg,
 	}
@@ -553,7 +573,7 @@ func NewReceiver(Msg ...serde.Message) Receiver {
 type Receiver struct {
 	mino.Receiver
 	err   error
-	Msg   []serde.Message
+	Msg   []serdeng.Message
 	index int
 }
 
@@ -563,7 +583,7 @@ func NewBadReceiver() Receiver {
 }
 
 // Recv implements mino.Receiver.
-func (r *Receiver) Recv(context.Context) (mino.Address, serde.Message, error) {
+func (r *Receiver) Recv(context.Context) (mino.Address, serdeng.Message, error) {
 	if r.Msg == nil {
 		return nil, nil, r.err
 	}
@@ -591,7 +611,7 @@ func NewBadSender() Sender {
 }
 
 // Send implements mino.Sender.
-func (s Sender) Send(serde.Message, ...mino.Address) <-chan error {
+func (s Sender) Send(serdeng.Message, ...mino.Address) <-chan error {
 	errs := make(chan error, 1)
 	errs <- s.err
 	close(errs)
@@ -601,7 +621,7 @@ func (s Sender) Send(serde.Message, ...mino.Address) <-chan error {
 // RPC is a fake implementation of mino.RPC.
 type RPC struct {
 	mino.RPC
-	Msgs     chan serde.Message
+	Msgs     chan serdeng.Message
 	Errs     chan error
 	receiver *Receiver
 	sender   Sender
@@ -628,15 +648,15 @@ func NewStreamRPC(r Receiver, s Sender) *RPC {
 // NewBadStreamRPC returns a fake rpc that returns an error when calling Stream.
 func NewBadStreamRPC() *RPC {
 	return &RPC{
-		Msgs: make(chan serde.Message, 100),
+		Msgs: make(chan serdeng.Message, 100),
 		Errs: make(chan error, 100),
 		err:  xerrors.New("fake error"),
 	}
 }
 
 // Call implements mino.RPC.
-func (rpc *RPC) Call(ctx context.Context, m serde.Message,
-	p mino.Players) (<-chan serde.Message, <-chan error) {
+func (rpc *RPC) Call(ctx context.Context, m serdeng.Message,
+	p mino.Players) (<-chan serdeng.Message, <-chan error) {
 
 	return rpc.Msgs, rpc.Errs
 }
@@ -648,7 +668,7 @@ func (rpc *RPC) Stream(context.Context, mino.Players) (mino.Sender, mino.Receive
 
 // Reset resets the channels.
 func (rpc *RPC) Reset() {
-	rpc.Msgs = make(chan serde.Message, 100)
+	rpc.Msgs = make(chan serdeng.Message, 100)
 	rpc.Errs = make(chan error, 100)
 }
 
@@ -674,7 +694,7 @@ func (m Mino) GetAddressFactory() mino.AddressFactory {
 }
 
 // MakeRPC implements mino.Mino.
-func (m Mino) MakeRPC(string, mino.Handler, serde.Factory) (mino.RPC, error) {
+func (m Mino) MakeRPC(string, mino.Handler, serdeng.Factory) (mino.RPC, error) {
 	return NewRPC(), m.err
 }
 
@@ -765,8 +785,6 @@ func MakeCertificate(t *testing.T, n int) *tls.Certificate {
 
 // Message is a fake implementation if a serde message.
 type Message struct {
-	serde.UnimplementedMessage
-
 	Digest []byte
 }
 
@@ -776,82 +794,89 @@ func (m Message) Fingerprint(w io.Writer) error {
 	return nil
 }
 
-// VisitJSON implements serde.Message.
-func (m Message) VisitJSON(serde.Serializer) (interface{}, error) {
-	return struct{}{}, nil
+// Serialize implements serde.Message.
+func (m Message) Serialize(ctx serdeng.Context) ([]byte, error) {
+	return ctx.Marshal(struct{}{})
 }
 
 // MessageFactory is a fake implementation of a serde factory.
 type MessageFactory struct {
-	serde.UnimplementedFactory
+	err error
 }
 
-// VisitJSON implements serde.Message.
-func (f MessageFactory) VisitJSON(serde.FactoryInput) (serde.Message, error) {
-	return Message{}, nil
-}
-
-// FactoryInput is a fake implemetation of a factory input.
-type FactoryInput struct {
-	Serde   Serializer
-	Message interface{}
-	err     error
-}
-
-// NewBadFactoryInput returns a fake factory input that will return an error
-// when appropriate.
-func NewBadFactoryInput() FactoryInput {
-	return FactoryInput{err: xerrors.New("fake error")}
-}
-
-// GetSerializer implements serde.FactoryInput.
-func (in FactoryInput) GetSerializer() serde.Serializer {
-	return in.Serde
-}
-
-// Feed implements serde.FactoryInput.
-func (in FactoryInput) Feed(o interface{}) error {
-	if in.Message != nil {
-		reflect.ValueOf(o).Elem().Set(reflect.ValueOf(in.Message))
+func NewBadMessageFactory() MessageFactory {
+	return MessageFactory{
+		err: xerrors.New("fake error"),
 	}
-	return in.err
 }
 
-// Serializer is a fake implementation of a serde serializer.
-type Serializer struct {
+// Deserialize implements serde.Factory.
+func (f MessageFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+	return Message{}, f.err
+}
+
+type Format struct {
+	err error
+}
+
+func NewBadFormat() Format {
+	return Format{err: xerrors.New("fake error")}
+}
+
+func (f Format) Encode(serdeng.Context, serdeng.Message) ([]byte, error) {
+	return []byte{}, f.err
+}
+
+func (f Format) Decode(serdeng.Context, []byte) (serdeng.Message, error) {
+	return Message{}, f.err
+}
+
+type ContextEngine struct {
 	Count *Counter
 	err   error
 }
 
-// NewBadSerializer returns a fake serializer that will return an error when
-// appropriate.
-func NewBadSerializer() Serializer {
-	return Serializer{err: xerrors.New("fake error")}
+func NewBadContext() serdeng.Context {
+	return serdeng.NewContext(ContextEngine{
+		err: xerrors.New("fake error"),
+	})
 }
 
-// NewBadSerializerWithDelay returns a fake serializer that will return an error
-// after a given amount of function calls.
-func NewBadSerializerWithDelay(delay int) Serializer {
-	return Serializer{
+func NewBadContextWithDelay(delay int) serdeng.Context {
+	return serdeng.NewContext(ContextEngine{
 		Count: &Counter{Value: delay},
 		err:   xerrors.New("fake error"),
-	}
+	})
 }
 
-// Serialize implements serde.Serializer.
-func (e Serializer) Serialize(serde.Message) ([]byte, error) {
-	if !e.Count.Done() {
-		e.Count.Decrease()
-		return nil, nil
-	}
-	return nil, e.err
+func (ctx ContextEngine) GetName() serdeng.Codec {
+	return serdeng.CodecJSON
 }
 
-// Deserialize implements serde.Serializer.
-func (e Serializer) Deserialize([]byte, serde.Factory, interface{}) error {
-	if !e.Count.Done() {
-		e.Count.Decrease()
+func (ctx ContextEngine) Marshal(m interface{}) ([]byte, error) {
+	data, err := json.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+
+	if !ctx.Count.Done() {
+		ctx.Count.Decrease()
+		return data, nil
+	}
+
+	return data, ctx.err
+}
+
+func (ctx ContextEngine) Unmarshal(data []byte, m interface{}) error {
+	err := json.Unmarshal(data, m)
+	if err != nil {
+		return err
+	}
+
+	if !ctx.Count.Done() {
+		ctx.Count.Decrease()
 		return nil
 	}
-	return e.err
+
+	return ctx.err
 }

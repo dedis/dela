@@ -1,4 +1,4 @@
-package cosipbft
+package types
 
 import (
 	"testing"
@@ -8,28 +8,28 @@ import (
 )
 
 func TestStorage_Store(t *testing.T) {
-	storage := newInMemoryStorage()
+	storage := NewInMemoryStorage().(*inMemoryStorage)
 
-	err := storage.Store(forwardLink{
+	err := storage.Store(ForwardLink{
 		from: []byte{0xaa},
 		to:   []byte{0xbb},
 	})
 	require.NoError(t, err)
 	require.Len(t, storage.links, 1)
 
-	err = storage.Store(forwardLink{
+	err = storage.Store(ForwardLink{
 		from: []byte{0xbb},
 		to:   []byte{0xcc},
 	})
 	require.NoError(t, err)
 	require.Len(t, storage.links, 2)
 
-	err = storage.Store(forwardLink{from: []byte{0xff}})
+	err = storage.Store(ForwardLink{from: []byte{0xff}})
 	require.EqualError(t, err, "mismatch forward link 'cc' != 'ff'")
 }
 
 func TestStorage_StoreChain(t *testing.T) {
-	storage := newInMemoryStorage()
+	storage := NewInMemoryStorage()
 
 	err := storage.StoreChain(makeChain(0xa, 0xb))
 	require.NoError(t, err)
@@ -53,19 +53,19 @@ func TestStorage_StoreChain(t *testing.T) {
 }
 
 func TestStorage_ReadChain(t *testing.T) {
-	storage := newInMemoryStorage()
-	storage.links = []forwardLink{
+	storage := NewInMemoryStorage().(*inMemoryStorage)
+	storage.links = []ForwardLink{
 		{to: []byte{0xaa}},
 		{to: []byte{0xbb}},
 	}
 
 	chain, err := storage.ReadChain([]byte{0xaa})
 	require.NoError(t, err)
-	require.Len(t, chain.(forwardLinkChain).links, 1)
+	require.Len(t, chain.(Chain).links, 1)
 
 	chain, err = storage.ReadChain([]byte{0xbb})
 	require.NoError(t, err)
-	require.Len(t, chain.(forwardLinkChain).links, 2)
+	require.Len(t, chain.(Chain).links, 2)
 
 	_, err = storage.ReadChain([]byte{0xcc})
 	require.EqualError(t, err, "id 'cc' not found")
@@ -74,12 +74,12 @@ func TestStorage_ReadChain(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-func makeChain(digests ...byte) forwardLinkChain {
-	links := make([]forwardLink, len(digests)-1)
+func makeChain(digests ...byte) Chain {
+	links := make([]ForwardLink, len(digests)-1)
 	for i := range links {
 		links[i].from = []byte{digests[i]}
 		links[i].to = []byte{digests[i+1]}
 	}
 
-	return forwardLinkChain{links: links}
+	return Chain{links: links}
 }

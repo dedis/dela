@@ -1,107 +1,110 @@
 package cosi
 
 import (
-	"go.dedis.ch/dela/cosi/json"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serdeng/registry"
 	"golang.org/x/xerrors"
 )
+
+var formats = registry.NewSimpleRegistry()
+
+// Register registers the format for the given format name.
+func Register(name serdeng.Codec, f serdeng.Format) {
+	formats.Register(name, f)
+}
 
 // SignatureRequest is the message sent to require a signature from the other
 // participants.
 //
 // - implements serde.Message
 type SignatureRequest struct {
-	serde.UnimplementedMessage
-
-	Value serde.Message
+	Value serdeng.Message
 }
 
-// VisitJSON implements serde.Message. It serializes the request in JSON format.
-func (req SignatureRequest) VisitJSON(ser serde.Serializer) (interface{}, error) {
-	msg, err := ser.Serialize(req.Value)
+// Serialize implements serde.Message. It serializes the message in the format
+// supported by the context.
+func (req SignatureRequest) Serialize(ctx serdeng.Context) ([]byte, error) {
+	format := formats.Get(ctx.GetName())
+	if format == nil {
+		return nil, xerrors.Errorf("format '%s' is not supported", ctx.GetName())
+	}
+
+	data, err := format.Encode(ctx, req)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't serialize message: %v", err)
+		return nil, xerrors.Errorf("format failed to encode: %v", err)
 	}
 
-	m := json.Request{
-		Value: msg,
-	}
-
-	return json.Message{Request: &m}, nil
+	return data, nil
 }
 
 // SignatureResponse is the message sent by the participants.
 //
 // - implements serde.Message
 type SignatureResponse struct {
-	serde.UnimplementedMessage
-
 	Signature crypto.Signature
 }
 
-// VisitJSON implements serde.Message. It serializes the response in JSON
-// format.
-func (resp SignatureResponse) VisitJSON(ser serde.Serializer) (interface{}, error) {
-	sig, err := ser.Serialize(resp.Signature)
+// Serialize implements serde.Message. It serializes the message in the format
+// supported by the context.
+func (resp SignatureResponse) Serialize(ctx serdeng.Context) ([]byte, error) {
+	format := formats.Get(ctx.GetName())
+	if format == nil {
+		return nil, xerrors.Errorf("format '%s' is not supported", ctx.GetName())
+	}
+
+	data, err := format.Encode(ctx, resp)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't serialize signature: %v", err)
+		return nil, xerrors.Errorf("format failed to encode: %v", err)
 	}
 
-	m := json.Response{
-		Signature: sig,
-	}
-
-	return json.Message{Response: &m}, nil
+	return data, nil
 }
+
+type MsgKey struct{}
+type SigKey struct{}
 
 // MessageFactory is the message factory for the flat collective signing RPC.
 //
 // - implements serde.Factory
 type MessageFactory struct {
-	serde.UnimplementedFactory
-
-	msgFactory serde.Factory
-	sigFactory serde.Factory
+	msgFactory serdeng.Factory
+	sigFactory crypto.SignatureFactory
 }
 
 // NewMessageFactory returns a new message factory that uses the message and
 // signature factories.
-func NewMessageFactory(msg, sig serde.Factory) serde.Factory {
+func NewMessageFactory(msg serdeng.Factory, sig crypto.SignatureFactory) MessageFactory {
 	return MessageFactory{
 		msgFactory: msg,
 		sigFactory: sig,
 	}
 }
 
-// VisitJSON implements serde.Message. It deserializes the request or response
-// message in JSON format.
-func (f MessageFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
-	m := json.Message{}
-	err := in.Feed(&m)
+// GetMessageFactory returns the message factory.
+func (f MessageFactory) GetMessageFactory() serdeng.Factory {
+	return f.msgFactory
+}
+
+// GetSignatureFactory returns the signature factory.
+func (f MessageFactory) GetSignatureFactory() crypto.SignatureFactory {
+	return f.sigFactory
+}
+
+// Deserialize implements serde.Factory.
+func (f MessageFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+	format := formats.Get(ctx.GetName())
+	if format == nil {
+		return nil, xerrors.Errorf("format '%s' is not supported", ctx.GetName())
+	}
+
+	ctx = serdeng.WithFactory(ctx, MsgKey{}, f.msgFactory)
+	ctx = serdeng.WithFactory(ctx, SigKey{}, f.sigFactory)
+
+	m, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize message: %v", err)
+		return nil, xerrors.Errorf("format failed to decode: %v", err)
 	}
 
-	if m.Request != nil {
-		var value serde.Message
-		err = in.GetSerializer().Deserialize(m.Request.Value, f.msgFactory, &value)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't deserialize value: %v", err)
-		}
-
-		return SignatureRequest{Value: value}, nil
-	}
-
-	if m.Response != nil {
-		var sig crypto.Signature
-		err = in.GetSerializer().Deserialize(m.Response.Signature, f.sigFactory, &sig)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't deserialize signature: %v", err)
-		}
-
-		return SignatureResponse{Signature: sig}, nil
-	}
-
-	return nil, xerrors.New("message is empty")
+	return m, nil
 }

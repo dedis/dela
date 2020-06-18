@@ -5,7 +5,7 @@ package contract
 import (
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/ledger/transactions/basic"
-	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serdeng"
 )
 
 // Context is provided during a transaction execution.
@@ -22,8 +22,8 @@ type Context interface {
 type Contract interface {
 	// Spawn is called to create a new instance. It returns the initial value of
 	// the new instance and its access rights control (arc) ID.
-	Spawn(ctx SpawnContext) (serde.Message, []byte, error)
+	Spawn(ctx SpawnContext) (serdeng.Message, []byte, error)
 
 	// Invoke is called to update an existing instance.
-	Invoke(ctx InvokeContext) (serde.Message, error)
+	Invoke(ctx InvokeContext) (serdeng.Message, error)
 }

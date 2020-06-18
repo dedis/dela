@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serdeng"
 	"golang.org/x/xerrors"
 )
 
@@ -21,12 +21,12 @@ const (
 type Flat struct {
 	sync.RWMutex
 	mino         mino.Mino
-	rumorFactory serde.Factory
+	rumorFactory serdeng.Factory
 	ch           chan Rumor
 }
 
 // NewFlat creates a new instance of a flat gossip protocol.
-func NewFlat(m mino.Mino, f serde.Factory) *Flat {
+func NewFlat(m mino.Mino, f serdeng.Factory) *Flat {
 	return &Flat{
 		mino:         m,
 		rumorFactory: f,
@@ -119,7 +119,7 @@ type handler struct {
 
 // Process implements mino.Handler. It notifies the new rumor if appropriate and
 // does not return anything.
-func (h handler) Process(req mino.Request) (serde.Message, error) {
+func (h handler) Process(req mino.Request) (serdeng.Message, error) {
 	rumor, ok := req.Message.(Rumor)
 	if !ok {
 		return nil, xerrors.Errorf("unexpected rumor of type '%T'", req.Message)

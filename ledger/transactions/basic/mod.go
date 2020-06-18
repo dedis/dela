@@ -19,15 +19,22 @@ import (
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions"
-	"go.dedis.ch/dela/ledger/transactions/basic/json"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serdeng/registry"
 	"golang.org/x/xerrors"
 )
 
+var txFormats = registry.NewSimpleRegistry()
+
+func RegisterTxFormat(c serdeng.Codec, f serdeng.Format) {
+	txFormats.Register(c, f)
+}
+
 // ClientTask is a task inside a transaction.
 type ClientTask interface {
-	serde.Message
-	serde.Fingerprinter
+	serdeng.Message
+	serdeng.Fingerprinter
 }
 
 // Context is the context provided to a server transaction when consumed.
@@ -47,14 +54,12 @@ type ServerTask interface {
 	Consume(Context, inventory.WritablePage) error
 }
 
-// transaction is an implementation of the client transaction that is using a
+// ClientTransaction is an implementation of the client ClientTransaction that is using a
 // signature to determine the identity belonging to it. It also wraps a task
 // that will be executed.
 //
 // - implements transactions.ClientTransaction
-type transaction struct {
-	serde.UnimplementedMessage
-
+type ClientTransaction struct {
 	hash      []byte
 	nonce     uint64
 	identity  crypto.PublicKey
@@ -64,50 +69,43 @@ type transaction struct {
 
 // GetID implements transactions.ClientTransaction. It returns the unique
 // identifier of the transaction.
-func (t transaction) GetID() []byte {
+func (t ClientTransaction) GetID() []byte {
 	return t.hash[:]
+}
+
+func (t ClientTransaction) GetNonce() uint64 {
+	return t.nonce
 }
 
 // GetIdentity implements basic.Context. It returns the identity who signed the
 // transaction.
-func (t transaction) GetIdentity() arc.Identity {
+func (t ClientTransaction) GetIdentity() arc.Identity {
 	return t.identity
 }
 
-// VisitJSON implements serde.Message. It returns the JSON message for this
-// transaction.
-func (t transaction) VisitJSON(ser serde.Serializer) (interface{}, error) {
-	identity, err := ser.Serialize(t.identity)
+func (t ClientTransaction) GetSignature() crypto.Signature {
+	return t.signature
+}
+
+func (t ClientTransaction) GetTask() ClientTask {
+	return t.task
+}
+
+// Serialize implements serde.Message.
+func (t ClientTransaction) Serialize(ctx serdeng.Context) ([]byte, error) {
+	format := txFormats.Get(ctx.GetName())
+
+	data, err := format.Encode(ctx, t)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't serialize identity: %v", err)
+		return nil, xerrors.Errorf("couldn't encode tx: %v", err)
 	}
 
-	signature, err := ser.Serialize(t.signature)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't serialize signature: %v", err)
-	}
-
-	task, err := ser.Serialize(t.task)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't serialize task: %v", err)
-	}
-
-	m := json.Transaction{
-		Nonce:     t.nonce,
-		Identity:  identity,
-		Signature: signature,
-		Task: json.Task{
-			Type:  keyOf(t.task),
-			Value: task,
-		},
-	}
-
-	return m, nil
+	return data, nil
 }
 
 // Fingerprint implements encoding.Fingerprinter. It serializes the transaction
 // into the writer in a deterministic way.
-func (t transaction) Fingerprint(w io.Writer) error {
+func (t ClientTransaction) Fingerprint(w io.Writer) error {
 	buffer := make([]byte, 8)
 	binary.LittleEndian.PutUint64(buffer[:], t.nonce)
 
@@ -136,21 +134,87 @@ func (t transaction) Fingerprint(w io.Writer) error {
 
 // String implements fmt.Stringer. It returns a string representation of the
 // transaction.
-func (t transaction) String() string {
+func (t ClientTransaction) String() string {
 	return fmt.Sprintf("Transaction[%x]@%v", t.hash, t.identity)
 }
 
-// serverTransaction is an extension of the transaction that can be consumed.
+// ServerTransaction is an extension of the transaction that can be consumed.
 //
 // - implements transactions.ServerTransaction
-type serverTransaction struct {
-	transaction
+type ServerTransaction struct {
+	ClientTransaction
+}
+
+type serverTransactionTemplate struct {
+	ClientTransaction
+	hashFactory crypto.HashFactory
+}
+
+type ServerTransactionOption func(*serverTransactionTemplate)
+
+func WithNonce(nonce uint64) ServerTransactionOption {
+	return func(tmpl *serverTransactionTemplate) {
+		tmpl.nonce = nonce
+	}
+}
+
+func WithIdentity(ident crypto.PublicKey, sig crypto.Signature) ServerTransactionOption {
+	return func(tmpl *serverTransactionTemplate) {
+		tmpl.identity = ident
+		tmpl.signature = sig
+	}
+}
+
+func WithTask(task ServerTask) ServerTransactionOption {
+	return func(tmpl *serverTransactionTemplate) {
+		tmpl.task = task
+	}
+}
+
+func WithHashFactory(f crypto.HashFactory) ServerTransactionOption {
+	return func(tmpl *serverTransactionTemplate) {
+		tmpl.hashFactory = f
+	}
+}
+
+func WithNoFingerprint() ServerTransactionOption {
+	return func(tmpl *serverTransactionTemplate) {
+		tmpl.hashFactory = nil
+	}
+}
+
+func NewServerTransaction(opts ...ServerTransactionOption) (ServerTransaction, error) {
+	tmpl := serverTransactionTemplate{
+		hashFactory: crypto.NewSha256Factory(),
+	}
+
+	for _, opt := range opts {
+		opt(&tmpl)
+	}
+
+	tx := ServerTransaction{
+		ClientTransaction: tmpl.ClientTransaction,
+	}
+
+	if tmpl.hashFactory == nil {
+		return tx, nil
+	}
+
+	h := tmpl.hashFactory.New()
+	err := tmpl.Fingerprint(h)
+	if err != nil {
+		return tx, err
+	}
+
+	tx.hash = h.Sum(nil)
+
+	return tx, nil
 }
 
 // Consume implements transactions.ServerTransaction. It first insures the nonce
 // is correct and writes the new one into the page. It then consumes the task of
 // the transaction.
-func (t serverTransaction) Consume(page inventory.WritablePage) error {
+func (t ServerTransaction) Consume(page inventory.WritablePage) error {
 	// TODO: consume nonce
 
 	task, ok := t.task.(ServerTask)
@@ -160,10 +224,19 @@ func (t serverTransaction) Consume(page inventory.WritablePage) error {
 
 	err := task.Consume(t, page)
 	if err != nil {
-		return xerrors.Errorf("couldn't consume task: %v", err)
+		return xerrors.Errorf("couldn't consume task '%T': %v", task, err)
 	}
 
 	return nil
+}
+
+type IdentityKey struct{}
+type SignatureKey struct{}
+type TaskKey struct{}
+
+func KeyOf(m serdeng.Message) string {
+	typ := reflect.TypeOf(m)
+	return fmt.Sprintf("%s.%s", typ.PkgPath(), typ.Name())
 }
 
 // TransactionFactory is an implementation of a Byzcoin transaction factory.
@@ -174,9 +247,9 @@ type TransactionFactory struct {
 
 	signer           crypto.Signer
 	hashFactory      crypto.HashFactory
-	publicKeyFactory serde.Factory
-	signatureFactory serde.Factory
-	registry         map[string]serde.Factory
+	publicKeyFactory crypto.PublicKeyFactory
+	signatureFactory crypto.SignatureFactory
+	registry         map[string]serdeng.Factory
 }
 
 // NewTransactionFactory returns a new instance of the transaction factory.
@@ -186,19 +259,23 @@ func NewTransactionFactory(signer crypto.Signer) TransactionFactory {
 		hashFactory:      crypto.NewSha256Factory(),
 		publicKeyFactory: common.NewPublicKeyFactory(),
 		signatureFactory: common.NewSignatureFactory(),
-		registry:         make(map[string]serde.Factory),
+		registry:         make(map[string]serdeng.Factory),
 	}
 }
 
 // Register registers the message to use the given factory to deserialize.
-func (f TransactionFactory) Register(m serde.Message, factory serde.Factory) {
-	f.registry[keyOf(m)] = factory
+func (f TransactionFactory) Register(m serdeng.Message, factory serdeng.Factory) {
+	f.registry[KeyOf(m)] = factory
+}
+
+func (f TransactionFactory) Get(key string) serdeng.Factory {
+	return f.registry[key]
 }
 
 // New returns a new transaction from the given task. The transaction will be
 // signed.
 func (f TransactionFactory) New(task ClientTask) (transactions.ClientTransaction, error) {
-	tx := transaction{
+	tx := ClientTransaction{
 		nonce:    rand.Uint64(), // TODO: monotonic nonce
 		identity: f.signer.GetPublicKey(),
 		task:     task,
@@ -220,56 +297,25 @@ func (f TransactionFactory) New(task ClientTask) (transactions.ClientTransaction
 	return tx, nil
 }
 
-// VisitJSON implements serde.Factory. It returns the transaction associated
-// with the input if appropriate, otherwise it returns an error.
-func (f TransactionFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
-	m := json.Transaction{}
-	err := in.Feed(&m)
+// Deserialize implements serde.Factory.
+func (f TransactionFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+	format := txFormats.Get(ctx.GetName())
+
+	ctx = serdeng.WithFactory(ctx, IdentityKey{}, f.publicKeyFactory)
+	ctx = serdeng.WithFactory(ctx, SignatureKey{}, f.signatureFactory)
+	ctx = serdeng.WithFactory(ctx, TaskKey{}, f)
+
+	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize transaction: %v", err)
+		return nil, err
 	}
 
-	var identity crypto.PublicKey
-	err = in.GetSerializer().Deserialize(m.Identity, f.publicKeyFactory, &identity)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize identity: %v", err)
+	tx, ok := msg.(ServerTransaction)
+	if !ok {
+		return nil, xerrors.Errorf("invalid tx type '%T'", msg)
 	}
 
-	var signature crypto.Signature
-	err = in.GetSerializer().Deserialize(m.Signature, f.signatureFactory, &signature)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize signature: %v", err)
-	}
-
-	factory := f.registry[m.Task.Type]
-	if factory == nil {
-		return nil, xerrors.Errorf("unknown factory for type '%s'", m.Task.Type)
-	}
-
-	var task ServerTask
-	err = in.GetSerializer().Deserialize(m.Task.Value, factory, &task)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize task: %v", err)
-	}
-
-	tx := serverTransaction{
-		transaction: transaction{
-			nonce:     m.Nonce,
-			identity:  identity,
-			signature: signature,
-			task:      task,
-		},
-	}
-
-	h := f.hashFactory.New()
-	err = tx.Fingerprint(h)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't fingerprint: %v", err)
-	}
-
-	tx.hash = h.Sum(nil)
-
-	err = identity.Verify(tx.hash, signature)
+	err = tx.identity.Verify(tx.hash, tx.signature)
 	if err != nil {
 		return nil, xerrors.Errorf("signature does not match tx: %v", err)
 	}
@@ -277,7 +323,11 @@ func (f TransactionFactory) VisitJSON(in serde.FactoryInput) (serde.Message, err
 	return tx, nil
 }
 
-func keyOf(m serde.Message) string {
-	typ := reflect.TypeOf(m)
-	return fmt.Sprintf("%s.%s", typ.PkgPath(), typ.Name())
+func (f TransactionFactory) TxOf(ctx serdeng.Context, data []byte) (transactions.ServerTransaction, error) {
+	msg, err := f.Deserialize(ctx, data)
+	if err != nil {
+		return nil, err
+	}
+
+	return msg.(ServerTransaction), nil
 }

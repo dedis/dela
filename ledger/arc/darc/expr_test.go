@@ -54,7 +54,7 @@ func TestExpression_Match(t *testing.T) {
 }
 
 func TestExpression_Fingerprint(t *testing.T) {
-	expr := expression{matches: map[string]struct{}{
+	expr := Expression{matches: map[string]struct{}{
 		"\x01": {},
 		"\x03": {},
 	}}

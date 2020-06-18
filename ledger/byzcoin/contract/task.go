@@ -8,6 +8,7 @@ import (
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions/basic"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serdeng"
 	"golang.org/x/xerrors"
 )
 
@@ -15,8 +16,6 @@ import (
 //
 // - implements basic.ClientTask
 type SpawnTask struct {
-	serde.UnimplementedMessage
-
 	ContractID string
 	Argument   map[string]string
 }
@@ -39,13 +38,15 @@ func (act SpawnTask) Fingerprint(w io.Writer) error {
 	return nil
 }
 
+func (t SpawnTask) Serialize(serdeng.Context) ([]byte, error) {
+	return nil, xerrors.New("not implemented")
+}
+
 // InvokeTask is a client task of a transaction to update an existing instance
 // if the access rights control allows it.
 //
 // - implements basic.ClientTask
 type InvokeTask struct {
-	serde.UnimplementedMessage
-
 	Key      []byte
 	Argument map[string]string
 }
@@ -68,13 +69,15 @@ func (act InvokeTask) Fingerprint(w io.Writer) error {
 	return nil
 }
 
+func (t InvokeTask) Serialize(serdeng.Context) ([]byte, error) {
+	return nil, xerrors.New("not implemented")
+}
+
 // DeleteTask is a client task of a transaction to mark an instance as deleted
 // so that it cannot be updated anymore.
 //
 // - implements basic.ClientTask
 type DeleteTask struct {
-	serde.UnimplementedMessage
-
 	Key []byte
 }
 
@@ -89,12 +92,17 @@ func (a DeleteTask) Fingerprint(w io.Writer) error {
 	return nil
 }
 
+func (t DeleteTask) Serialize(serdeng.Context) ([]byte, error) {
+	return nil, xerrors.New("not implemented")
+}
+
 // serverTask is a contract task that can be consumed to update an inventory
 // page.
 //
 // - implements basic.ServerTask
 type serverTask struct {
 	basic.ClientTask
+
 	contracts map[string]Contract
 }
 

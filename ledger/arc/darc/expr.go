@@ -8,23 +8,32 @@ import (
 	"golang.org/x/xerrors"
 )
 
-// expression is an abstraction of a list of identities allowed for a given
+// Expression is an abstraction of a list of identities allowed for a given
 // rule.
 //
 // - implements encoding.Packable
-type expression struct {
+type Expression struct {
 	matches map[string]struct{}
 }
 
-func newExpression() expression {
-	return expression{
+func newExpression() Expression {
+	return Expression{
 		matches: make(map[string]struct{}),
 	}
 }
 
+func (expr Expression) GetMatches() []string {
+	matches := make([]string, 0, len(expr.matches))
+	for match := range expr.matches {
+		matches = append(matches, match)
+	}
+
+	return matches
+}
+
 // Evolve returns a new expression with the targets added in the list of
 // authorized identities.
-func (expr expression) Evolve(targets []arc.Identity) (expression, error) {
+func (expr Expression) Evolve(targets []arc.Identity) (Expression, error) {
 	e := expr.Clone()
 
 	for _, target := range targets {
@@ -41,7 +50,7 @@ func (expr expression) Evolve(targets []arc.Identity) (expression, error) {
 
 // Match returns nil if all the targets are allowed for the rule, otherwise it
 // returns the reason why it failed.
-func (expr expression) Match(targets []arc.Identity) error {
+func (expr Expression) Match(targets []arc.Identity) error {
 	for _, target := range targets {
 		text, err := target.MarshalText()
 		if err != nil {
@@ -59,7 +68,7 @@ func (expr expression) Match(targets []arc.Identity) error {
 
 // Fingerprint implements encoding.Fingerprinter. It serializes the expression
 // into the writer in a deterministic way.
-func (expr expression) Fingerprint(w io.Writer) error {
+func (expr Expression) Fingerprint(w io.Writer) error {
 	matches := make(sort.StringSlice, 0, len(expr.matches))
 	for key := range expr.matches {
 		matches = append(matches, key)
@@ -78,7 +87,7 @@ func (expr expression) Fingerprint(w io.Writer) error {
 }
 
 // Clone returns a deep copy of the expression.
-func (expr expression) Clone() expression {
+func (expr Expression) Clone() Expression {
 	e := newExpression()
 	for match := range expr.matches {
 		e.matches[match] = struct{}{}

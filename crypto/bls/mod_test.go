@@ -1,14 +1,12 @@
 package bls
 
 import (
-	"fmt"
 	"testing"
 	"testing/quick"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"go.dedis.ch/dela/serde/json"
 	"go.dedis.ch/kyber/v3"
 	"golang.org/x/xerrors"
 )
@@ -19,19 +17,6 @@ func TestPublicKey_MarshalBinary(t *testing.T) {
 	buffer, err := signer.GetPublicKey().MarshalBinary()
 	require.NoError(t, err)
 	require.NotEmpty(t, buffer)
-}
-
-func TestPublicKey_VisitJSON(t *testing.T) {
-	signer := NewSigner()
-
-	ser := json.NewSerializer()
-
-	data, err := ser.Serialize(signer.GetPublicKey())
-	require.NoError(t, err)
-	require.Contains(t, string(data), fmt.Sprintf(`{"Name":"%s","Data":`, Algorithm))
-
-	_, err = publicKey{point: badPoint{}}.VisitJSON(ser)
-	require.EqualError(t, err, "couldn't marshal point: oops")
 }
 
 func TestPublicKey_Verify(t *testing.T) {
@@ -65,24 +50,24 @@ func TestPublicKey_MarshalText(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(text), "bls:")
 
-	pk := publicKey{point: badPoint{}}
+	pk := PublicKey{point: badPoint{}}
 	_, err = pk.MarshalText()
 	require.EqualError(t, err, "couldn't marshal: oops")
 }
 
 func TestPublicKey_String(t *testing.T) {
 	signer := NewSigner()
-	str := signer.GetPublicKey().(publicKey).String()
+	str := signer.GetPublicKey().(PublicKey).String()
 	require.Contains(t, str, "bls:")
 
-	pk := publicKey{point: badPoint{}}
+	pk := PublicKey{point: badPoint{}}
 	str = pk.String()
 	require.Equal(t, "bls:malformed_point", str)
 }
 
 func TestSignature_MarshalBinary(t *testing.T) {
 	f := func(data []byte) bool {
-		sig := signature{data: data}
+		sig := Signature{data: data}
 		buffer, err := sig.MarshalBinary()
 		require.NoError(t, err)
 		require.Equal(t, data, buffer)
@@ -94,22 +79,13 @@ func TestSignature_MarshalBinary(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestSignature_VisitJSON(t *testing.T) {
-	sig := signature{data: []byte("deadbeef")}
-
-	ser := json.NewSerializer()
-	data, err := ser.Serialize(sig)
-	require.NoError(t, err)
-	require.Contains(t, string(data), fmt.Sprintf(`{"Name":"%s","Data":`, Algorithm))
-}
-
 func TestSignature_Equal(t *testing.T) {
 	f := func(data []byte) bool {
-		sig := signature{data: data}
-		require.True(t, sig.Equal(signature{data: data}))
+		sig := Signature{data: data}
+		require.True(t, sig.Equal(Signature{data: data}))
 
 		buffer := append(append([]byte{}, data...), 0xaa)
-		require.False(t, sig.Equal(signature{data: buffer}))
+		require.False(t, sig.Equal(Signature{data: buffer}))
 
 		require.False(t, sig.Equal(fake.Signature{}))
 
@@ -120,42 +96,6 @@ func TestSignature_Equal(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestPublicKeyFactory_VisitJSON(t *testing.T) {
-	factory := NewPublicKeyFactory()
-
-	signer := NewSigner()
-	ser := json.NewSerializer()
-
-	data, err := ser.Serialize(signer.GetPublicKey())
-	require.NoError(t, err)
-
-	var pubkey crypto.PublicKey
-	err = ser.Deserialize(data, factory, &pubkey)
-	require.NoError(t, err)
-	require.True(t, signer.GetPublicKey().Equal(pubkey))
-
-	err = ser.Deserialize([]byte(`{"Data":[]}`), factory, &pubkey)
-	require.EqualError(t, xerrors.Unwrap(err),
-		"couldn't unmarshal point: bn256.G2: not enough data")
-
-	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
-	require.EqualError(t, err, "couldn't deserialize data: fake error")
-}
-
-func TestSignatureFactory_VisitJSON(t *testing.T) {
-	factory := NewSignatureFactory()
-
-	ser := json.NewSerializer()
-
-	var sig crypto.Signature
-	err := ser.Deserialize([]byte(`{"Data":"QQ=="}`), factory, &sig)
-	require.NoError(t, err)
-	require.Equal(t, signature{data: []byte("A")}, sig)
-
-	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
-	require.EqualError(t, err, "couldn't deserialize data: fake error")
-}
-
 func TestVerifier_Verify(t *testing.T) {
 	f := func(msg []byte) bool {
 		signer := NewSigner()
@@ -163,7 +103,7 @@ func TestVerifier_Verify(t *testing.T) {
 		require.NoError(t, err)
 
 		verifier := newVerifier(
-			[]kyber.Point{signer.GetPublicKey().(publicKey).point},
+			[]kyber.Point{signer.GetPublicKey().(PublicKey).point},
 		)
 		err = verifier.Verify(msg, sig)
 		require.NoError(t, err)
@@ -198,7 +138,7 @@ func TestVerifierFactory_FromAuthority(t *testing.T) {
 func TestVerifierFactory_FromArray(t *testing.T) {
 	factory := verifierFactory{}
 
-	verifier, err := factory.FromArray([]crypto.PublicKey{publicKey{}})
+	verifier, err := factory.FromArray([]crypto.PublicKey{PublicKey{}})
 	require.NoError(t, err)
 	require.Len(t, verifier.(blsVerifier).points, 1)
 

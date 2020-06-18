@@ -6,7 +6,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde/json"
 )
 
 func TestSignature_HasBit(t *testing.T) {
@@ -58,22 +57,6 @@ func TestSignature_SetBit(t *testing.T) {
 	require.Equal(t, sig.mask[1], uint8(3))
 }
 
-func TestSignature_VisitJSON(t *testing.T) {
-	sig := &Signature{
-		agg:  fake.Signature{},
-		mask: []byte{0xab},
-	}
-
-	ser := json.NewSerializer()
-
-	data, err := ser.Serialize(sig)
-	require.NoError(t, err)
-	require.Equal(t, `{"Mask":"qw==","Aggregate":{}}`, string(data))
-
-	_, err = sig.VisitJSON(fake.NewBadSerializer())
-	require.EqualError(t, err, "couldn't serialize aggregate: fake error")
-}
-
 func TestSignature_MarshalBinary(t *testing.T) {
 	sig := &Signature{
 		agg:  fake.Signature{},
@@ -97,23 +80,6 @@ func TestSignature_Equal(t *testing.T) {
 
 	require.True(t, sig.Equal(sig))
 	require.False(t, sig.Equal(nil))
-}
-
-func TestSignatureFactory_VisitJSON(t *testing.T) {
-	factory := signatureFactory{sigFactory: fake.SignatureFactory{}}
-
-	ser := json.NewSerializer()
-
-	var sig *Signature
-	err := ser.Deserialize([]byte(`{"Mask":[1],"Aggregate":{}}`), factory, &sig)
-	require.NoError(t, err)
-	require.Equal(t, []byte{1}, sig.mask)
-
-	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
-	require.EqualError(t, err, "couldn't deserialize message: fake error")
-
-	_, err = factory.VisitJSON(fake.FactoryInput{Serde: fake.NewBadSerializer()})
-	require.EqualError(t, err, "couldn't deserialize signature: fake error")
 }
 
 func TestVerifier_Verify(t *testing.T) {

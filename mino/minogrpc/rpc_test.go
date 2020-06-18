@@ -9,8 +9,8 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/routing"
-	"go.dedis.ch/dela/serde"
-	"go.dedis.ch/dela/serde/json"
+	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serdeng/json"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 )
@@ -20,7 +20,7 @@ func TestRPC_Call(t *testing.T) {
 		factory: fake.MessageFactory{},
 		overlay: overlay{
 			connFactory: fakeConnFactory{},
-			serializer:  json.NewSerializer(),
+			context:     json.NewContext(),
 		},
 	}
 
@@ -43,8 +43,9 @@ func TestRPC_Stream(t *testing.T) {
 			me:             addrs[0],
 			routingFactory: routing.NewTreeRoutingFactory(1, AddressFactory{}),
 			connFactory:    fakeConnFactory{},
-			serializer:     json.NewSerializer(),
+			context:        json.NewContext(),
 		},
+		factory: fake.MessageFactory{},
 	}
 
 	out, in, err := rpc.Stream(context.Background(), mino.NewAddresses(addrs...))
@@ -54,12 +55,12 @@ func TestRPC_Stream(t *testing.T) {
 	in.Recv(context.Background())
 
 	rpc.overlay.routingFactory = badRtingFactory{}
-	_, _, err = rpc.Stream(context.Background(), mino.NewAddresses())
+	_, _, err = rpc.Stream(context.Background(), mino.NewAddresses(fake.NewBadAddress()))
 	require.EqualError(t, err, "couldn't generate routing: oops")
 
 	rpc.overlay.routingFactory = routing.NewTreeRoutingFactory(1, AddressFactory{})
 	rpc.overlay.connFactory = fakeConnFactory{err: xerrors.New("oops")}
-	_, _, err = rpc.Stream(context.Background(), mino.NewAddresses())
+	_, _, err = rpc.Stream(context.Background(), mino.NewAddresses(addrs...))
 	require.EqualError(t, err,
 		"couldn't setup relay: couldn't open connection: oops")
 }
@@ -156,7 +157,11 @@ type badRtingFactory struct {
 	routing.Factory
 }
 
-func (f badRtingFactory) VisitJSON(serde.FactoryInput) (serde.Message, error) {
+func (f badRtingFactory) Make(mino.Address, mino.Players) (routing.Routing, error) {
+	return nil, xerrors.New("oops")
+}
+
+func (f badRtingFactory) RoutingOf(serdeng.Context, []byte) (routing.Routing, error) {
 	return nil, xerrors.New("oops")
 }
 

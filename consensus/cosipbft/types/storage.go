@@ -1,4 +1,4 @@
-package cosipbft
+package types
 
 import (
 	"bytes"
@@ -11,17 +11,17 @@ import (
 // Storage is the interface that defines the forward link storage.
 type Storage interface {
 	Len() uint64
-	Store(forwardLink) error
+	Store(ForwardLink) error
 	StoreChain(consensus.Chain) error
 	ReadChain(to Digest) (consensus.Chain, error)
 }
 
 type inMemoryStorage struct {
 	sync.Mutex
-	links []forwardLink
+	links []ForwardLink
 }
 
-func newInMemoryStorage() *inMemoryStorage {
+func NewInMemoryStorage() Storage {
 	return &inMemoryStorage{}
 }
 
@@ -31,7 +31,7 @@ func (s *inMemoryStorage) Len() uint64 {
 
 // Store implements Storage. It appends the forward link to the storage if it
 // matches the previous.
-func (s *inMemoryStorage) Store(link forwardLink) error {
+func (s *inMemoryStorage) Store(link ForwardLink) error {
 	s.Lock()
 	defer s.Unlock()
 
@@ -54,7 +54,7 @@ func (s *inMemoryStorage) Store(link forwardLink) error {
 // StoreChain implements Storage. It updates the local chain if the given one is
 // consistent.
 func (s *inMemoryStorage) StoreChain(in consensus.Chain) error {
-	chain, ok := in.(forwardLinkChain)
+	chain, ok := in.(Chain)
 	if !ok {
 		return xerrors.Errorf("invalid chain type '%T'", in)
 	}
@@ -96,11 +96,11 @@ func (s *inMemoryStorage) ReadChain(id Digest) (consensus.Chain, error) {
 	s.Lock()
 	defer s.Unlock()
 
-	links := make([]forwardLink, 0)
+	links := make([]ForwardLink, 0)
 	for _, link := range s.links {
 		links = append(links, link)
 		if bytes.Equal(link.to, id) {
-			return forwardLinkChain{links: links}, nil
+			return Chain{links: links}, nil
 		}
 	}
 
@@ -108,5 +108,5 @@ func (s *inMemoryStorage) ReadChain(id Digest) (consensus.Chain, error) {
 		return nil, xerrors.Errorf("id '%x' not found", id)
 	}
 
-	return forwardLinkChain{links: links}, nil
+	return Chain{links: links}, nil
 }

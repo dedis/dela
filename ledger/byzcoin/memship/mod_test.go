@@ -11,26 +11,12 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions/basic"
-	"go.dedis.ch/dela/serde"
-	"go.dedis.ch/dela/serde/json"
+	"go.dedis.ch/dela/serdeng"
 	"golang.org/x/xerrors"
 )
 
-func TestTask_VisitJSON(t *testing.T) {
-	task := NewTask(fake.NewAuthority(1, fake.NewSigner))
-
-	ser := json.NewSerializer()
-
-	data, err := ser.Serialize(task)
-	require.NoError(t, err)
-	require.Regexp(t, `{"Authority":\[{"Address":"[^"]+","PublicKey":{}}\]}`, string(data))
-
-	_, err = task.VisitJSON(fake.NewBadSerializer())
-	require.EqualError(t, err, "couldn't serialize authority: fake error")
-}
-
 func TestTask_Fingerprint(t *testing.T) {
-	task := NewTask(fake.NewAuthority(1, fake.NewSigner)).(clientTask)
+	task := NewTask(fake.NewAuthority(1, fake.NewSigner)).(ClientTask)
 
 	out := new(bytes.Buffer)
 	err := task.Fingerprint(out)
@@ -42,13 +28,9 @@ func TestTask_Fingerprint(t *testing.T) {
 }
 
 func TestTask_Consume(t *testing.T) {
-	task := serverTask{
-		clientTask: clientTask{
-			authority: roster.New(fake.NewAuthority(3, fake.NewSigner)),
-		},
-	}
+	task := NewServerTask(roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner)))
 
-	page := fakePage{values: make(map[string]serde.Message)}
+	page := fakePage{values: make(map[string]serdeng.Message)}
 
 	err := task.Consume(nil, page)
 	require.NoError(t, err)
@@ -59,14 +41,14 @@ func TestTask_Consume(t *testing.T) {
 }
 
 func TestTaskManager_GetChangeSetFactory(t *testing.T) {
-	manager := TaskManager{csFactory: fake.MessageFactory{}}
+	manager := TaskManager{csFactory: fakeChangeSetFactory{}}
 	require.NotNil(t, manager.GetChangeSetFactory())
 }
 
 func TestTaskManager_GetAuthority(t *testing.T) {
 	manager := TaskManager{
 		inventory: fakeInventory{
-			value: roster.New(fake.NewAuthority(3, fake.NewSigner)),
+			value: roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner)),
 		},
 		rosterFactory: fakeRosterFactory{},
 	}
@@ -88,7 +70,7 @@ func TestTaskManager_Wait(t *testing.T) {
 	manager := TaskManager{
 		me: fake.NewAddress(0),
 		inventory: fakeInventory{
-			value: roster.New(fake.NewAuthority(3, fake.NewSigner)),
+			value: roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner)),
 		},
 		rosterFactory: fakeRosterFactory{},
 	}
@@ -108,7 +90,7 @@ func TestTaskManager_Wait(t *testing.T) {
 func TestTaskManager_Verify(t *testing.T) {
 	manager := TaskManager{
 		inventory: fakeInventory{
-			value: roster.New(fake.NewAuthority(3, fake.NewSigner)),
+			value: roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner)),
 		},
 		rosterFactory: fakeRosterFactory{},
 	}
@@ -125,22 +107,6 @@ func TestTaskManager_Verify(t *testing.T) {
 	require.EqualError(t, err, "couldn't get authority: couldn't read page: oops")
 }
 
-func TestTaskManager_VisitJSON(t *testing.T) {
-	factory := NewTaskManager(fakeInventory{}, fake.Mino{}, fake.NewSigner())
-
-	ser := json.NewSerializer()
-
-	var task serverTask
-	err := ser.Deserialize([]byte(`{"Authority":[{}]}`), factory, &task)
-	require.NoError(t, err)
-
-	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
-	require.EqualError(t, err, "couldn't deserialize task: fake error")
-
-	_, err = factory.VisitJSON(fake.FactoryInput{Serde: fake.NewBadSerializer()})
-	require.EqualError(t, err, "couldn't deserialize roster: fake error")
-}
-
 func TestRegister(t *testing.T) {
 	factory := basic.NewTransactionFactory(fake.NewSigner())
 	Register(factory, NewTaskManager(nil, fake.Mino{}, fake.NewSigner()))
@@ -151,7 +117,7 @@ func TestRegister(t *testing.T) {
 
 type fakePage struct {
 	inventory.WritablePage
-	values   map[string]serde.Message
+	values   map[string]serdeng.Message
 	errRead  error
 	errWrite error
 	counter  *fake.Counter
@@ -161,7 +127,7 @@ func (p fakePage) GetIndex() uint64 {
 	return 5
 }
 
-func (p fakePage) Read(key []byte) (serde.Message, error) {
+func (p fakePage) Read(key []byte) (serdeng.Message, error) {
 	if p.errRead != nil {
 		defer p.counter.Decrease()
 		if p.counter.Done() {
@@ -172,7 +138,7 @@ func (p fakePage) Read(key []byte) (serde.Message, error) {
 	return p.values[string(key)], nil
 }
 
-func (p fakePage) Write(key []byte, value serde.Message) error {
+func (p fakePage) Write(key []byte, value serdeng.Message) error {
 	if p.errWrite != nil {
 		defer p.counter.Decrease()
 		if p.counter.Done() {
@@ -190,7 +156,7 @@ func (p fakePage) Defer(fn func([]byte)) {
 
 type fakeInventory struct {
 	inventory.Inventory
-	value   serde.Message
+	value   serdeng.Message
 	err     error
 	errPage error
 }
@@ -200,14 +166,18 @@ func (i fakeInventory) Len() uint64 {
 }
 
 func (i fakeInventory) GetPage(uint64) (inventory.Page, error) {
-	values := map[string]serde.Message{
+	values := map[string]serdeng.Message{
 		RosterValueKey: i.value,
 	}
 	return fakePage{values: values, errRead: i.errPage}, i.err
 }
 
 type fakeRosterFactory struct {
-	serde.UnimplementedFactory
+	viewchange.AuthorityFactory
+}
+
+type fakeChangeSetFactory struct {
+	viewchange.ChangeSetFactory
 }
 
 type badAuthority struct {

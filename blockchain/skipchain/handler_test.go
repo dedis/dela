@@ -5,9 +5,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/blockchain/skipchain/types"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serdeng"
 	"golang.org/x/xerrors"
 )
 
@@ -15,19 +16,15 @@ func TestHandler_Process(t *testing.T) {
 	reactor := &fakeReactor{}
 	watcher := &fakeWatcher{}
 	h := newHandler(&operations{
-		blockFactory: NewBlockFactory(fake.MessageFactory{}),
-		db:           &fakeDatabase{},
-		watcher:      watcher,
-		reactor:      reactor,
+		db:      &fakeDatabase{},
+		watcher: watcher,
+		reactor: reactor,
 	})
 
-	genesis := SkipBlock{
-		Index:   0,
-		Payload: fake.Message{},
-	}
+	genesis := makeBlock(t, types.WithIndex(0))
 
 	req := mino.Request{
-		Message: PropagateGenesis{genesis: genesis},
+		Message: types.NewPropagateGenesis(genesis),
 	}
 	resp, err := h.Process(req)
 	require.NoError(t, err)
@@ -41,24 +38,24 @@ func TestHandler_Process(t *testing.T) {
 	require.EqualError(t, err, "unknown message type 'fake.Message'")
 
 	reactor.errCommit = xerrors.New("oops")
-	req.Message = PropagateGenesis{genesis: genesis}
+	req.Message = types.NewPropagateGenesis(genesis)
 	_, err = h.Process(req)
 	require.EqualError(t, err,
 		"couldn't store genesis: tx failed: couldn't commit block: oops")
 }
 
 func TestHandler_Stream(t *testing.T) {
-	db := &fakeDatabase{blocks: []SkipBlock{
-		{Payload: fake.Message{}},
-		{hash: Digest{0x01}, Index: 1, Payload: fake.Message{}}},
-	}
+	db := &fakeDatabase{blocks: []types.SkipBlock{
+		makeBlock(t),
+		makeBlock(t, types.WithIndex(1)),
+	}}
 	h := handler{
 		operations: &operations{
 			db: db,
 		},
 	}
 
-	rcvr := fakeReceiver{msg: BlockRequest{to: 1}}
+	rcvr := fakeReceiver{msg: types.NewBlockRequest(0, 1)}
 	call := &fake.Call{}
 	sender := fakeSender{call: call}
 
@@ -71,7 +68,7 @@ func TestHandler_Stream(t *testing.T) {
 
 	err = h.Stream(sender, fakeReceiver{msg: fake.Message{}})
 	require.EqualError(t, err,
-		"invalid message type 'fake.Message' != 'skipchain.BlockRequest'")
+		"invalid message type 'fake.Message' != 'types.BlockRequest'")
 
 	db.err = xerrors.New("oops")
 	err = h.Stream(sender, rcvr)
@@ -87,11 +84,11 @@ func TestHandler_Stream(t *testing.T) {
 
 type fakeReceiver struct {
 	mino.Receiver
-	msg serde.Message
+	msg serdeng.Message
 	err error
 }
 
-func (rcvr fakeReceiver) Recv(context.Context) (mino.Address, serde.Message, error) {
+func (rcvr fakeReceiver) Recv(context.Context) (mino.Address, serdeng.Message, error) {
 	return nil, rcvr.msg, rcvr.err
 }
 
@@ -101,7 +98,7 @@ type fakeSender struct {
 	err  error
 }
 
-func (s fakeSender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
+func (s fakeSender) Send(msg serdeng.Message, addrs ...mino.Address) <-chan error {
 	s.call.Add(msg, addrs)
 	errs := make(chan error, 1)
 	errs <- s.err

@@ -4,7 +4,7 @@ import (
 	context "context"
 
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serdeng"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc/metadata"
 )
@@ -16,17 +16,17 @@ import (
 type RPC struct {
 	overlay overlay
 	uri     string
-	factory serde.Factory
+	factory serdeng.Factory
 }
 
 // Call implements mino.RPC. It calls the RPC on each provided address.
-func (rpc *RPC) Call(ctx context.Context, req serde.Message,
-	players mino.Players) (<-chan serde.Message, <-chan error) {
+func (rpc *RPC) Call(ctx context.Context, req serdeng.Message,
+	players mino.Players) (<-chan serdeng.Message, <-chan error) {
 
-	out := make(chan serde.Message, players.Len())
+	out := make(chan serdeng.Message, players.Len())
 	errs := make(chan error, players.Len())
 
-	data, err := rpc.overlay.serializer.Serialize(req)
+	data, err := req.Serialize(rpc.overlay.context)
 	if err != nil {
 		errs <- xerrors.Errorf("failed to marshal msg to any: %v", err)
 		return out, errs
@@ -57,8 +57,7 @@ func (rpc *RPC) Call(ctx context.Context, req serde.Message,
 				continue
 			}
 
-			var resp serde.Message
-			err = rpc.overlay.serializer.Deserialize(callResp.GetPayload(), rpc.factory, &resp)
+			resp, err := rpc.factory.Deserialize(rpc.overlay.context, callResp.GetPayload())
 			if err != nil {
 				errs <- xerrors.Errorf("couldn't unmarshal payload: %v", err)
 				continue
@@ -79,8 +78,7 @@ func (rpc RPC) Stream(ctx context.Context,
 
 	root := newRootAddress()
 
-	rting, err := rpc.overlay.routingFactory.FromIterator(rpc.overlay.me,
-		players.AddressIterator())
+	rting, err := rpc.overlay.routingFactory.Make(rpc.overlay.me, players)
 	if err != nil {
 		return nil, nil, xerrors.Errorf("couldn't generate routing: %v", err)
 	}
@@ -88,7 +86,7 @@ func (rpc RPC) Stream(ctx context.Context,
 	header := metadata.New(map[string]string{headerURIKey: rpc.uri})
 
 	receiver := receiver{
-		serializer:     rpc.overlay.serializer,
+		context:        rpc.overlay.context,
 		factory:        rpc.factory,
 		addressFactory: rpc.overlay.routingFactory.GetAddressFactory(),
 		errs:           make(chan error, 1),
@@ -99,7 +97,7 @@ func (rpc RPC) Stream(ctx context.Context,
 
 	sender := sender{
 		me:             root,
-		serializer:     rpc.overlay.serializer,
+		context:        rpc.overlay.context,
 		addressFactory: AddressFactory{},
 		gateway:        gateway,
 		clients:        map[mino.Address]chan OutContext{},

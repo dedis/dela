@@ -2,6 +2,7 @@ package pedersen
 
 import (
 	"go.dedis.ch/dela/dkg"
+	"go.dedis.ch/dela/dkg/pedersen/types"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/kyber/v3"
@@ -90,11 +91,15 @@ func (a *Actor) Setup(players mino.Players, pubKeys []kyber.Point, threshold int
 		addrs = append(addrs, players.AddressIterator().GetNext())
 	}
 
+<<<<<<< HEAD
 	message := Start{
 		t:         threshold,
 		addresses: addrs,
 		pubkeys:   pubKeys,
 	}
+=======
+	message := types.NewStart(t, addrs, pubKeys)
+>>>>>>> Serde: allow external implementation of formats
 
 	errs := sender.Send(message, addrs...)
 	err = <-errs
@@ -112,19 +117,24 @@ func (a *Actor) Setup(players mino.Players, pubKeys []kyber.Point, threshold int
 				"receiving: %v", addr, err)
 		}
 
-		doneMsg, ok := msg.(StartDone)
+		doneMsg, ok := msg.(types.StartDone)
 		if !ok {
 			return xerrors.Errorf("expected to receive a Done message, but "+
 				"go the following: %T", msg)
 		}
 
-		dkgPubKeys[i] = doneMsg.pubkey
+		dkgPubKeys[i] = doneMsg.GetPublicKey()
 
 		// this is a simple check that every node sends back the same DKG pub
 		// key.
 		// TODO: handle the situation where a pub key is not the same
+<<<<<<< HEAD
 		if i != 0 && !dkgPubKeys[i-1].Equal(doneMsg.pubkey) {
 			return xerrors.Errorf("the public keys does not match: %v", dkgPubKeys)
+=======
+		if i != 0 && !dkgPubKeys[i-1].Equal(doneMsg.GetPublicKey()) {
+			return nil, xerrors.Errorf("the public keys does not match: %v", dkgPubKeys)
+>>>>>>> Serde: allow external implementation of formats
 		}
 	}
 
@@ -186,10 +196,7 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 		addrs = append(addrs, iterator.GetNext())
 	}
 
-	message := DecryptRequest{
-		K: K,
-		C: C,
-	}
+	message := types.NewDecryptRequest(K, C)
 
 	sender.Send(message, addrs...)
 
@@ -202,7 +209,7 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 				from, err)
 		}
 
-		decryptReply, ok := message.(DecryptReply)
+		decryptReply, ok := message.(types.DecryptReply)
 		if !ok {
 			return []byte{}, xerrors.Errorf("got unexpected reply, expected "+
 				"a decrypt reply but got: %T", message)

@@ -3,15 +3,26 @@ package viewchange
 import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serdeng"
 )
+
+// ChangeSet is the return of a diff between two authorities.
+type ChangeSet interface {
+	serdeng.Message
+}
+
+type ChangeSetFactory interface {
+	serdeng.Factory
+
+	ChangeSetOf(serdeng.Context, []byte) (ChangeSet, error)
+}
 
 // ViewChange provides primitives to verify if a participant is allowed to
 // propose a block as the leader. Some consensus need a single node to propose
 // and the others as backups when it is failing. The index returned announces
 // who is allowed to be the leader.
 type ViewChange interface {
-	GetChangeSetFactory() serde.Factory
+	GetChangeSetFactory() ChangeSetFactory
 
 	// GetAuthority returns the authority at the given index.
 	// TODO: use the proposal ID if we move the blockchain module to be a plugin
@@ -26,16 +37,11 @@ type ViewChange interface {
 	Verify(from mino.Address, index uint64) (Authority, error)
 }
 
-// ChangeSet is the return of a diff between two authorities.
-type ChangeSet interface {
-	serde.Message
-}
-
 // Authority is an extension of the collective authority to provide
 // primitives to append new players to it.
 type Authority interface {
-	serde.Message
-	serde.Fingerprinter
+	serdeng.Message
+	serdeng.Fingerprinter
 	crypto.CollectiveAuthority
 
 	// Apply must apply the change set to the collective authority. It should
@@ -44,4 +50,10 @@ type Authority interface {
 
 	// Diff should return the change set to apply to get the given authority.
 	Diff(Authority) ChangeSet
+}
+
+type AuthorityFactory interface {
+	serdeng.Factory
+
+	AuthorityOf(serdeng.Context, []byte) (Authority, error)
 }

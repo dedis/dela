@@ -1,6 +1,9 @@
 package minoch
 
-import "go.dedis.ch/dela/mino"
+import (
+	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serdeng"
+)
 
 // Address is the representation of an identifier for minoch.
 type address struct {
@@ -25,7 +28,9 @@ func (a address) String() string {
 }
 
 // AddressFactory is an implementation of the factory interface.
-type AddressFactory struct{}
+type AddressFactory struct {
+	serdeng.Factory
+}
 
 // FromText returns an instance of an address from a byte slice.
 func (f AddressFactory) FromText(text []byte) mino.Address {

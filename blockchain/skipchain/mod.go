@@ -12,10 +12,11 @@ import (
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/blockchain"
+	"go.dedis.ch/dela/blockchain/skipchain/types"
 	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serdeng"
 	"golang.org/x/xerrors"
 )
 
@@ -54,23 +55,15 @@ func NewSkipchain(m mino.Mino, consensus consensus.Consensus) *Skipchain {
 // Listen implements blockchain.Blockchain. It registers the RPC and starts the
 // consensus module.
 func (s *Skipchain) Listen(r blockchain.Reactor) (blockchain.Actor, error) {
-	blockFactory := BlockFactory{
-		hashFactory:    crypto.NewSha256Factory(),
-		payloadFactory: r,
-	}
-
 	ops := &operations{
-		logger:       dela.Logger,
-		addr:         s.mino.GetAddress(),
-		reactor:      r,
-		blockFactory: blockFactory,
-		db:           s.db,
-		watcher:      s.watcher,
+		logger:  dela.Logger,
+		addr:    s.mino.GetAddress(),
+		reactor: r,
+		db:      s.db,
+		watcher: s.watcher,
 	}
 
-	factory := MessageFactory{blockFactory: blockFactory}
-
-	rpc, err := s.mino.MakeRPC("skipchain", newHandler(ops), factory)
+	rpc, err := s.mino.MakeRPC("skipchain", newHandler(ops), types.NewMessageFactory(r))
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't create the rpc: %v", err)
 	}
@@ -115,7 +108,7 @@ func (s *Skipchain) GetVerifiableBlock() (blockchain.VerifiableBlock, error) {
 		return nil, xerrors.Errorf("couldn't read the chain: %v", err)
 	}
 
-	vb := VerifiableBlock{
+	vb := types.VerifiableBlock{
 		SkipBlock: block,
 		Chain:     chain,
 	}
@@ -148,8 +141,9 @@ func (s *Skipchain) Watch(ctx context.Context) <-chan blockchain.Block {
 // - implements blockchain.Actor
 type skipchainActor struct {
 	*operations
-	rand      crypto.RandGenerator
-	consensus consensus.Actor
+	rand        crypto.RandGenerator
+	hashFactory crypto.HashFactory
+	consensus   consensus.Actor
 }
 
 // InitChain implements blockchain.Actor. It creates a genesis block if none
@@ -182,8 +176,8 @@ func (a skipchainActor) Setup(data blockchain.Payload, players mino.Players) err
 }
 
 func (a skipchainActor) newChain(data blockchain.Payload, conodes mino.Players) error {
-	randomBackLink := Digest{}
-	n, err := a.rand.Read(randomBackLink[:])
+	randomBackLink := make([]byte, 32)
+	n, err := a.rand.Read(randomBackLink)
 	if err != nil {
 		return xerrors.Errorf("couldn't generate backlink: %v", err)
 	}
@@ -191,22 +185,23 @@ func (a skipchainActor) newChain(data blockchain.Payload, conodes mino.Players) 
 		return xerrors.Errorf("mismatch rand length %d != %d", n, len(randomBackLink))
 	}
 
-	genesis := SkipBlock{
-		Index:     0,
-		GenesisID: Digest{},
-		BackLink:  randomBackLink,
-		Payload:   data,
+	opts := []types.SkipBlockOption{
+		types.WithIndex(0),
+		types.WithBackLink(randomBackLink),
+		types.WithPayload(data),
 	}
 
-	h := a.blockFactory.hashFactory.New()
-	err = genesis.Fingerprint(h)
+	if a.hashFactory != nil {
+		opts = append(opts, types.WithHashFactory(a.hashFactory))
+	}
+
+	genesis, err := types.NewSkipBlock(opts...)
+
 	if err != nil {
-		return xerrors.Errorf("couldn't create block: %v", err)
+		return xerrors.Errorf("couldn't create genesis: %v", err)
 	}
 
-	copy(genesis.hash[:], h.Sum(nil))
-
-	msg := &PropagateGenesis{genesis: genesis}
+	msg := types.NewPropagateGenesis(genesis)
 
 	ctx, cancel := context.WithTimeout(context.Background(), defaultPropogationTimeout)
 	defer cancel()
@@ -222,17 +217,13 @@ func (a skipchainActor) newChain(data blockchain.Payload, conodes mino.Players) 
 
 // Store implements blockchain.Actor. It will append a new block to chain filled
 // with the data.
-func (a skipchainActor) Store(data serde.Message, players mino.Players) error {
+func (a skipchainActor) Store(data serdeng.Message, players mino.Players) error {
 	previous, err := a.db.ReadLast()
 	if err != nil {
 		return xerrors.Errorf("couldn't read the latest block: %v", err)
 	}
 
-	blueprint := Blueprint{
-		index:    previous.Index + 1,
-		previous: previous.hash,
-		data:     data,
-	}
+	blueprint := types.NewBlueprint(previous.Index+1, previous.GetHash(), data)
 
 	err = a.consensus.Propose(blueprint)
 	if err != nil {
@@ -253,7 +244,7 @@ type skipchainObserver struct {
 // NotifyCallback implements blockchain.Observer. It sends the event to the
 // channel if the type is correct, otherwise it issues a warning.
 func (o skipchainObserver) NotifyCallback(event interface{}) {
-	block, ok := event.(SkipBlock)
+	block, ok := event.(types.SkipBlock)
 	if !ok {
 		dela.Logger.Warn().Msgf("got invalid event '%T'", event)
 		return

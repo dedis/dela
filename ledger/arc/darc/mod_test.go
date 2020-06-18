@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/arc"
-	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
 
@@ -60,7 +59,7 @@ func TestAccess_Match(t *testing.T) {
 
 func TestAccess_Fingerprint(t *testing.T) {
 	access := Access{
-		rules: map[string]expression{
+		rules: map[string]Expression{
 			"\x02": {matches: map[string]struct{}{"\x04": {}}},
 		},
 	}
@@ -77,34 +76,4 @@ func TestAccess_Fingerprint(t *testing.T) {
 	err = access.Fingerprint(fake.NewBadHashWithDelay(1))
 	require.EqualError(t, err,
 		"couldn't fingerprint rule '\x02': couldn't write match: fake error")
-}
-
-func TestAccess_VisitJSON(t *testing.T) {
-	access := Access{rules: map[string]expression{
-		"A": {matches: map[string]struct{}{"C": {}}},
-		"B": {},
-	}}
-
-	ser := json.NewSerializer()
-	data, err := ser.Serialize(access)
-	require.NoError(t, err)
-	require.Equal(t, `{"Rules":{"A":["C"],"B":[]}}`, string(data))
-}
-
-func TestFactory_VisitJSON(t *testing.T) {
-	factory := NewFactory()
-
-	ser := json.NewSerializer()
-
-	var access Access
-	err := ser.Deserialize([]byte(`{"Rules":{"A":["B"],"C":[]}}`), factory, &access)
-	require.NoError(t, err)
-	expected := Access{rules: map[string]expression{
-		"A": {matches: map[string]struct{}{"B": {}}},
-		"C": {matches: map[string]struct{}{}},
-	}}
-	require.Equal(t, expected, access)
-
-	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
-	require.EqualError(t, err, "couldn't deserialize access: fake error")
 }

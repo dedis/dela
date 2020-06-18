@@ -1,5 +1,15 @@
 package json
 
+import (
+	"go.dedis.ch/dela/crypto/common"
+	"go.dedis.ch/dela/serdeng"
+	"golang.org/x/xerrors"
+)
+
+func init() {
+	common.Register(serdeng.CodecJSON, format{})
+}
+
 // Algorithm is a common JSON message to identify which algorithm is used in a
 // message.
 type Algorithm struct {
@@ -18,4 +28,22 @@ type PublicKey struct {
 type Signature struct {
 	Algorithm
 	Data []byte
+}
+
+type format struct{}
+
+func (f format) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, error) {
+	return nil, xerrors.New("not implemented")
+}
+
+func (f format) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+	m := Algorithm{}
+	err := ctx.Unmarshal(data, &m)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't deserialize algorithm: %v", err)
+	}
+
+	alg := common.NewAlgorithm(m.Name)
+
+	return alg, nil
 }

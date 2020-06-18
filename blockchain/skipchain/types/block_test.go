@@ -1,4 +1,4 @@
-package skipchain
+package types
 
 import (
 	"bytes"
@@ -11,11 +11,9 @@ import (
 	"testing/quick"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/consensus"
+	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"go.dedis.ch/dela/serde"
-	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
 
@@ -58,24 +56,6 @@ func TestSkipBlock_GetHash(t *testing.T) {
 
 	err := quick.Check(f, nil)
 	require.NoError(t, err)
-}
-
-func TestSkipBlock_VisitJSON(t *testing.T) {
-	block := SkipBlock{
-		Index:     5,
-		GenesisID: Digest{1},
-		BackLink:  Digest{2},
-		Payload:   fake.Message{},
-	}
-
-	ser := json.NewSerializer()
-
-	data, err := ser.Serialize(block)
-	require.NoError(t, err)
-	require.Regexp(t, `{"Index":5,"GenesisID":"[^"]+","Backlink":"[^"]+","Payload":{}}`, string(data))
-
-	_, err = block.VisitJSON(fake.NewBadSerializer())
-	require.EqualError(t, err, "couldn't serialize payload: fake error")
 }
 
 func TestSkipBlock_Fingerprint(t *testing.T) {
@@ -160,68 +140,6 @@ func TestSkipBlock_String(t *testing.T) {
 	require.Equal(t, block.String(), "Block[5:0100000000000000]")
 }
 
-func TestVerifiableBlock_VisitJSON(t *testing.T) {
-	vb := VerifiableBlock{
-		SkipBlock: SkipBlock{
-			Payload: fake.Message{},
-		},
-		Chain: fakeChain{},
-	}
-
-	ser := json.NewSerializer()
-
-	data, err := ser.Serialize(vb)
-	require.NoError(t, err)
-	expected := `{"Block":{"Index":0,"GenesisID":"[^"]+","Backlink":"[^"]+","Payload":{}},"Chain":{}}`
-	require.Regexp(t, expected, string(data))
-
-	_, err = vb.VisitJSON(fake.NewBadSerializer())
-	require.EqualError(t, err, "couldn't serialize block: fake error")
-
-	_, err = vb.VisitJSON(fake.NewBadSerializerWithDelay(1))
-	require.EqualError(t, err, "couldn't serialize chain: fake error")
-}
-
-func TestBlockFactory_VisitJSON(t *testing.T) {
-	factory := NewBlockFactory(fake.MessageFactory{})
-
-	ser := json.NewSerializer()
-
-	var block SkipBlock
-	err := ser.Deserialize([]byte(`{}`), factory, &block)
-	require.NoError(t, err)
-
-	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
-	require.EqualError(t, err, "couldn't deserialize message: fake error")
-
-	_, err = factory.VisitJSON(fake.FactoryInput{Serde: fake.NewBadSerializer()})
-	require.EqualError(t, err, "couldn't deserialize payload: fake error")
-
-	factory.hashFactory = fake.NewHashFactory(fake.NewBadHash())
-	err = ser.Deserialize([]byte(`{}`), factory, &block)
-	require.EqualError(t, xerrors.Unwrap(err),
-		"couldn't fingerprint block: couldn't write index: fake error")
-}
-
-func TestVerifiableFactory_VisitJSON(t *testing.T) {
-	factory := NewVerifiableFactory(NewBlockFactory(fake.MessageFactory{}), fakeChainFactory{})
-
-	ser := json.NewSerializer()
-
-	var block VerifiableBlock
-	err := ser.Deserialize([]byte(`{"Block":{}}`), factory, &block)
-	require.NoError(t, err)
-
-	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
-	require.EqualError(t, err, "couldn't deserialize message: fake error")
-
-	_, err = factory.VisitJSON(fake.FactoryInput{Serde: fake.NewBadSerializer()})
-	require.EqualError(t, err, "couldn't deserialize chain: fake error")
-
-	_, err = factory.VisitJSON(fake.FactoryInput{Serde: fake.NewBadSerializerWithDelay(1)})
-	require.EqualError(t, err, "couldn't deserialize block: fake error")
-}
-
 // -----------------------------------------------------------------------------
 // Utility functions
 
@@ -255,58 +173,8 @@ func (s SkipBlock) Generate(rand *rand.Rand, size int) reflect.Value {
 	return reflect.ValueOf(block)
 }
 
-type fakeChain struct {
-	consensus.Chain
-	hash Digest
-	err  error
-}
-
-func (c fakeChain) Verify(crypto.Verifier) error {
-	return c.err
-}
-
-func (c fakeChain) GetTo() []byte {
-	return c.hash.Bytes()
-}
-
-func (c fakeChain) VisitJSON(serde.Serializer) (interface{}, error) {
-	return struct{}{}, c.err
-}
-
-type fakeChainFactory struct {
-	serde.UnimplementedFactory
-	hash Digest
-}
-
-func (f fakeChainFactory) VisitJSON(serde.FactoryInput) (serde.Message, error) {
-	return fakeChain{hash: f.hash}, nil
-}
-
-type fakeConsensus struct {
-	consensus.Consensus
-	hash     Digest
-	err      error
-	errStore error
-}
-
-func (c fakeConsensus) GetChainFactory() serde.Factory {
-	return fakeChainFactory{hash: c.hash}
-}
-
-func (c fakeConsensus) GetChain(id []byte) (consensus.Chain, error) {
-	return fakeChain{}, c.err
-}
-
-func (c fakeConsensus) Listen(consensus.Reactor) (consensus.Actor, error) {
-	return nil, c.err
-}
-
-func (c fakeConsensus) Store(consensus.Chain) error {
-	return c.errStore
-}
-
 type badPayload struct {
-	serde.UnimplementedMessage
+	blockchain.Payload
 }
 
 func (p badPayload) Fingerprint(io.Writer) error {

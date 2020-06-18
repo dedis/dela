@@ -15,8 +15,8 @@ import (
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/routing"
-	"go.dedis.ch/dela/serde"
-	"go.dedis.ch/dela/serde/json"
+	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serdeng/json"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -98,7 +98,9 @@ func (a address) String() string {
 }
 
 // AddressFactory implements mino.AddressFactory
-type AddressFactory struct{}
+type AddressFactory struct {
+	serdeng.Factory
+}
 
 // FromText implements mino.AddressFactory. It returns an instance of an
 // address from a byte slice.
@@ -127,7 +129,7 @@ type Joinable interface {
 // Endpoint defines the requirement of an endpoint.
 type Endpoint struct {
 	Handler mino.Handler
-	Factory serde.Factory
+	Factory serdeng.Factory
 }
 
 // Minogrpc represents a grpc service restricted to a namespace
@@ -155,7 +157,7 @@ func NewMinogrpc(path string, port uint16, rf routing.Factory) (*Minogrpc, error
 
 	me := address{host: url.Host}
 
-	o, err := newOverlay(me, rf, json.NewSerializer())
+	o, err := newOverlay(me, rf, json.NewContext())
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't make overlay: %v", err)
 	}
@@ -286,7 +288,7 @@ func (m *Minogrpc) MakeNamespace(namespace string) (mino.Mino, error) {
 // MakeRPC implements Mino. It registers the handler using a uniq URI of
 // form "namespace/name". It returns a struct that allows client to call the
 // RPC.
-func (m *Minogrpc) MakeRPC(name string, h mino.Handler, f serde.Factory) (mino.RPC, error) {
+func (m *Minogrpc) MakeRPC(name string, h mino.Handler, f serdeng.Factory) (mino.RPC, error) {
 	rpc := &RPC{
 		uri:     fmt.Sprintf("%s/%s", m.namespace, name),
 		overlay: m.overlay,

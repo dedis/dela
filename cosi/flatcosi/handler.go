@@ -4,7 +4,7 @@ import (
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serdeng"
 	"golang.org/x/xerrors"
 )
 
@@ -21,7 +21,7 @@ func newHandler(s crypto.Signer, r cosi.Reactor) handler {
 	}
 }
 
-func (h handler) Process(req mino.Request) (serde.Message, error) {
+func (h handler) Process(req mino.Request) (serdeng.Message, error) {
 	switch msg := req.Message.(type) {
 	case cosi.SignatureRequest:
 		buf, err := h.reactor.Invoke(req.Address, msg.Value)

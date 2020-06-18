@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serdeng"
 )
 
 func TestMinoch_New(t *testing.T) {
@@ -75,6 +75,6 @@ type fakeHandler struct {
 	mino.UnsupportedHandler
 }
 
-func (h fakeHandler) Process(req mino.Request) (resp serde.Message, err error) {
+func (h fakeHandler) Process(req mino.Request) (resp serdeng.Message, err error) {
 	return fake.Message{}, nil
 }

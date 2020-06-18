@@ -2,13 +2,13 @@ package transactions
 
 import (
 	"go.dedis.ch/dela/ledger/inventory"
-	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serdeng"
 )
 
 // ClientTransaction is a transaction created by a client that will be sent to
 // the network.
 type ClientTransaction interface {
-	serde.Message
+	serdeng.Message
 
 	// GetID returns a unique identifier for the transaction.
 	GetID() []byte
@@ -20,4 +20,10 @@ type ServerTransaction interface {
 	ClientTransaction
 
 	Consume(inventory.WritablePage) error
+}
+
+type TxFactory interface {
+	serdeng.Factory
+
+	TxOf(serdeng.Context, []byte) (ServerTransaction, error)
 }

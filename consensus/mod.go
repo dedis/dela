@@ -2,31 +2,37 @@ package consensus
 
 import (
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serdeng"
 )
 
 type Reactor interface {
-	serde.Factory
+	serdeng.Factory
 
 	InvokeGenesis() ([]byte, error)
 
-	InvokeValidate(mino.Address, serde.Message) ([]byte, error)
+	InvokeValidate(mino.Address, serdeng.Message) ([]byte, error)
 
 	InvokeCommit(id []byte) error
 }
 
 // Chain is a verifiable lock between proposals.
 type Chain interface {
-	serde.Message
+	serdeng.Message
 
 	GetTo() []byte
+}
+
+type ChainFactory interface {
+	serdeng.Factory
+
+	ChainOf(serdeng.Context, []byte) (Chain, error)
 }
 
 // Actor is the primitive to send proposals to a consensus implementation.
 type Actor interface {
 	// Propose performs the consensus algorithm. The list of participants is
 	// left to the implementation.
-	Propose(serde.Message) error
+	Propose(serdeng.Message) error
 
 	// Close must clean the resources of the actor.
 	Close() error
@@ -35,7 +41,7 @@ type Actor interface {
 // Consensus is an interface that provides primitives to propose data to a set
 // of participants. They will validate the proposal according to the validator.
 type Consensus interface {
-	GetChainFactory() serde.Factory
+	GetChainFactory() ChainFactory
 
 	// GetChain returns a valid chain to the given identifier.
 	GetChain(to []byte) (Chain, error)

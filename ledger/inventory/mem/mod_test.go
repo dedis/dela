@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/inventory"
-	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serdeng"
 	"golang.org/x/xerrors"
 )
 
@@ -93,7 +93,7 @@ func TestInMemoryInventory_Stage(t *testing.T) {
 		"couldn't compute page hash: couldn't write key: fake error")
 
 	inv.hashFactory = fake.NewHashFactory(&fake.Hash{})
-	inv.serializer = fake.NewBadSerializer()
+	inv.context = fake.NewBadContext()
 	_, err = inv.Stage(func(inventory.WritablePage) error { return nil })
 	require.EqualError(t, err,
 		"couldn't compute page hash: couldn't marshal entry: fake error")
@@ -133,7 +133,7 @@ func TestPage_GetFingerprint(t *testing.T) {
 
 func TestPage_Read(t *testing.T) {
 	page := inMemoryPage{
-		entries: map[Digest]serde.Message{
+		entries: map[Digest]serdeng.Message{
 			{1}: fake.Message{},
 			{2}: fake.Message{},
 		},
@@ -154,7 +154,7 @@ func TestPage_Read(t *testing.T) {
 
 func TestPage_Write(t *testing.T) {
 	page := inMemoryPage{
-		entries: make(map[Digest]serde.Message),
+		entries: make(map[Digest]serdeng.Message),
 	}
 
 	value := fake.Message{}

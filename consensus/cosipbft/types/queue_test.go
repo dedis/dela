@@ -1,4 +1,4 @@
-package cosipbft
+package types
 
 import (
 	"testing"
@@ -10,11 +10,11 @@ import (
 )
 
 func TestQueue_New(t *testing.T) {
-	prop := forwardLink{from: []byte{0xaa}, to: []byte{0xbb}}
+	prop := ForwardLink{from: []byte{0xaa}, to: []byte{0xbb}}
 
 	authority := fake.NewAuthority(3, fake.NewSigner)
 
-	queue := &queue{cosi: &fakeCosi{}}
+	queue := &queue{verifierFac: fake.VerifierFactory{}}
 	err := queue.New(prop, authority)
 	require.NoError(t, err)
 	require.Len(t, queue.items, 1)
@@ -22,7 +22,7 @@ func TestQueue_New(t *testing.T) {
 	require.Equal(t, prop.to, queue.items[0].to)
 	require.NotNil(t, queue.items[0].verifier)
 
-	err = queue.New(forwardLink{from: []byte{0xbb}}, authority)
+	err = queue.New(ForwardLink{from: []byte{0xbb}}, authority)
 	require.NoError(t, err)
 	require.Len(t, queue.items, 2)
 	require.Equal(t, prop.to, queue.items[1].from)
@@ -32,7 +32,7 @@ func TestQueue_New(t *testing.T) {
 	require.EqualError(t, err, "queue is locked")
 
 	queue.locked = false
-	queue.cosi = &fakeCosi{verifierFactory: fake.NewBadVerifierFactory()}
+	queue.verifierFac = fake.NewBadVerifierFactory()
 	prop.to = []byte{0xcc}
 	err = queue.New(prop, authority)
 	require.EqualError(t, err, "couldn't make verifier: fake error")
@@ -44,14 +44,14 @@ func TestQueue_LockProposal(t *testing.T) {
 		hashFactory: crypto.NewSha256Factory(),
 		items: []item{
 			{
-				forwardLink: forwardLink{
+				ForwardLink: ForwardLink{
 					from: []byte{0xaa},
 					to:   []byte{0xbb},
 				},
 				verifier: verifier,
 			},
 			{
-				forwardLink: forwardLink{to: []byte{0xcc}},
+				ForwardLink: ForwardLink{to: []byte{0xcc}},
 				verifier:    verifier,
 			},
 		},
@@ -63,10 +63,11 @@ func TestQueue_LockProposal(t *testing.T) {
 	require.True(t, queue.locked)
 	require.Len(t, verifier.calls, 1)
 
-	forwardLink := forwardLink{from: []byte{0xaa}, to: []byte{0xbb}}
-	hash, err := forwardLink.computeHash(crypto.NewSha256Factory().New())
+	forwardLink := ForwardLink{from: []byte{0xaa}, to: []byte{0xbb}}
+	h := crypto.NewSha256Factory().New()
+	err = forwardLink.Fingerprint(h)
 	require.NoError(t, err)
-	require.Equal(t, hash, verifier.calls[0]["message"])
+	require.Equal(t, h.Sum(nil), verifier.calls[0]["message"])
 
 	queue.locked = false
 	err = queue.LockProposal([]byte{0xaa}, nil)
@@ -93,7 +94,7 @@ func TestQueue_Finalize(t *testing.T) {
 	queue := &queue{
 		items: []item{
 			{
-				forwardLink: forwardLink{
+				ForwardLink: ForwardLink{
 					from:      []byte{0xaa},
 					to:        []byte{0xbb},
 					prepare:   fake.Signature{},
@@ -115,17 +116,17 @@ func TestQueue_Finalize(t *testing.T) {
 	_, err = queue.Finalize([]byte{0xaa}, nil)
 	require.EqualError(t, err, "couldn't find proposal 'aa'")
 
-	queue.items = []item{{forwardLink: forwardLink{to: []byte{0xaa}}}}
+	queue.items = []item{{ForwardLink: ForwardLink{to: []byte{0xaa}}}}
 	_, err = queue.Finalize([]byte{0xaa}, nil)
 	require.EqualError(t, err, "no signature for proposal 'aa'")
 
-	queue.items[0].forwardLink = forwardLink{to: []byte{0xaa}, prepare: fake.NewBadSignature()}
+	queue.items[0].ForwardLink = ForwardLink{to: []byte{0xaa}, prepare: fake.NewBadSignature()}
 	_, err = queue.Finalize([]byte{0xaa}, fake.Signature{})
 	require.EqualError(t, err, "couldn't marshal the signature: fake error")
 
 	queue.items = []item{
 		{
-			forwardLink: forwardLink{
+			ForwardLink: ForwardLink{
 				to:      []byte{0xaa},
 				prepare: fake.Signature{},
 			},

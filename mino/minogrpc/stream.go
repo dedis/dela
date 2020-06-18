@@ -6,7 +6,7 @@ import (
 
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/routing"
-	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serdeng"
 	"golang.org/x/xerrors"
 )
 
@@ -19,7 +19,7 @@ type OutContext struct {
 type sender struct {
 	me             mino.Address
 	addressFactory mino.AddressFactory
-	serializer     serde.Serializer
+	context        serdeng.Context
 	clients        map[mino.Address]chan OutContext
 	receiver       *receiver
 	traffic        *traffic
@@ -31,11 +31,11 @@ type sender struct {
 	gateway mino.Address
 }
 
-func (s sender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
+func (s sender) Send(msg serdeng.Message, addrs ...mino.Address) <-chan error {
 	errs := make(chan error, 1)
 	defer close(errs)
 
-	data, err := s.serializer.Serialize(msg)
+	data, err := msg.Serialize(s.context)
 	if err != nil {
 		errs <- xerrors.Errorf("couldn't marshal message: %v", err)
 		return errs
@@ -126,8 +126,8 @@ func (s sender) sendEnvelope(envelope *Envelope, errs chan error) {
 }
 
 type receiver struct {
-	serializer     serde.Serializer
-	factory        serde.Factory
+	context        serdeng.Context
+	factory        serdeng.Factory
 	addressFactory mino.AddressFactory
 	errs           chan error
 	queue          Queue
@@ -138,7 +138,7 @@ func (r receiver) appendMessage(msg *Message) {
 	r.queue.Push(msg)
 }
 
-func (r receiver) Recv(ctx context.Context) (mino.Address, serde.Message, error) {
+func (r receiver) Recv(ctx context.Context) (mino.Address, serdeng.Message, error) {
 	var msg *Message
 	select {
 	case msg = <-r.queue.Channel():
@@ -148,8 +148,7 @@ func (r receiver) Recv(ctx context.Context) (mino.Address, serde.Message, error)
 		return nil, nil, ctx.Err()
 	}
 
-	var payload serde.Message
-	err := r.serializer.Deserialize(msg.GetPayload(), r.factory, &payload)
+	payload, err := r.factory.Deserialize(r.context, msg.GetPayload())
 	if err != nil {
 		return nil, nil, err
 	}

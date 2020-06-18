@@ -8,7 +8,7 @@ import (
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serdeng"
 	"golang.org/x/xerrors"
 )
 
@@ -38,12 +38,12 @@ func (flat *Flat) GetSigner() crypto.Signer {
 }
 
 // GetPublicKeyFactory returns the public key factory.
-func (flat *Flat) GetPublicKeyFactory() serde.Factory {
+func (flat *Flat) GetPublicKeyFactory() crypto.PublicKeyFactory {
 	return flat.signer.GetPublicKeyFactory()
 }
 
 // GetSignatureFactory returns the signature factory.
-func (flat *Flat) GetSignatureFactory() serde.Factory {
+func (flat *Flat) GetSignatureFactory() crypto.SignatureFactory {
 	return flat.signer.GetSignatureFactory()
 }
 
@@ -83,7 +83,7 @@ type flatActor struct {
 }
 
 // Sign returns the collective signature of the block.
-func (a flatActor) Sign(ctx context.Context, msg serde.Message,
+func (a flatActor) Sign(ctx context.Context, msg serdeng.Message,
 	ca crypto.CollectiveAuthority) (crypto.Signature, error) {
 
 	verifier, err := a.signer.GetVerifierFactory().FromAuthority(ca)
@@ -129,7 +129,7 @@ func (a flatActor) Sign(ctx context.Context, msg serde.Message,
 	}
 }
 
-func (a flatActor) processResponse(resp serde.Message, agg crypto.Signature) (crypto.Signature, error) {
+func (a flatActor) processResponse(resp serdeng.Message, agg crypto.Signature) (crypto.Signature, error) {
 	reply, ok := resp.(cosi.SignatureResponse)
 	if !ok {
 		return nil, xerrors.Errorf("invalid response type '%T'", resp)

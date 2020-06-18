@@ -8,8 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde"
-	"go.dedis.ch/dela/serde/json"
+	"go.dedis.ch/dela/serdeng"
 	"golang.org/x/xerrors"
 )
 
@@ -86,6 +85,8 @@ func TestRPC_Failures_Stream(t *testing.T) {
 
 	m, err := NewMinoch(manager, "A")
 	require.NoError(t, err)
+
+	m.context = fake.NewBadContext()
 	rpc, err := m.MakeRPC("test", fakeBadStreamHandler{}, fake.MessageFactory{})
 	require.NoError(t, err)
 
@@ -97,10 +98,11 @@ func TestRPC_Failures_Stream(t *testing.T) {
 	_, _, err = in.Recv(ctx)
 	require.EqualError(t, err, "couldn't process: oops")
 
-	errs := out.Send(nil)
+	errs := out.Send(fake.Message{})
 	err = testWait(t, errs, nil)
-	require.EqualError(t, err, "couldn't marshal message: message is nil")
+	require.EqualError(t, err, "couldn't marshal message: fake error")
 
+	m.context = serdeng.NewContext(fake.ContextEngine{})
 	_, _, err = rpc.Stream(ctx, mino.NewAddresses(fake.NewAddress(0)))
 	require.EqualError(t, err,
 		"couldn't find peer: invalid address type 'fake.Address'")
@@ -108,10 +110,10 @@ func TestRPC_Failures_Stream(t *testing.T) {
 
 func TestReceiver_Recv(t *testing.T) {
 	recv := receiver{
-		out:        make(chan Envelope, 1),
-		errs:       make(chan error),
-		serializer: json.NewSerializer(),
-		factory:    fake.MessageFactory{},
+		out:     make(chan Envelope, 1),
+		errs:    make(chan error),
+		context: serdeng.NewContext(fake.ContextEngine{}),
+		factory: fake.MessageFactory{},
 	}
 
 	recv.out <- Envelope{
@@ -124,7 +126,7 @@ func TestReceiver_Recv(t *testing.T) {
 	require.Equal(t, address{id: "A"}, from)
 	require.NotNil(t, msg)
 
-	recv.serializer = fake.NewBadSerializer()
+	recv.factory = fake.NewBadMessageFactory()
 	recv.out <- Envelope{}
 	_, _, err = recv.Recv(context.Background())
 	require.EqualError(t, err, "couldn't deserialize: fake error")
@@ -133,7 +135,7 @@ func TestReceiver_Recv(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-func testWait(t *testing.T, errs <-chan error, resps <-chan serde.Message) error {
+func testWait(t *testing.T, errs <-chan error, resps <-chan serdeng.Message) error {
 	select {
 	case <-time.After(50 * time.Millisecond):
 		t.Fatal("an error is expected")

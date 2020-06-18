@@ -2,7 +2,6 @@ package basic
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"testing"
 	"testing/quick"
@@ -11,15 +10,14 @@ import (
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/inventory"
-	types "go.dedis.ch/dela/ledger/transactions/basic/json"
 	"go.dedis.ch/dela/serde"
-	"go.dedis.ch/dela/serde/json"
+	"go.dedis.ch/dela/serdeng"
 	"golang.org/x/xerrors"
 )
 
 func TestTransaction_GetID(t *testing.T) {
 	f := func(buffer []byte) bool {
-		tx := transaction{hash: buffer}
+		tx := ClientTransaction{hash: buffer}
 
 		return bytes.Equal(buffer[:], tx.GetID())
 	}
@@ -29,38 +27,13 @@ func TestTransaction_GetID(t *testing.T) {
 }
 
 func TestTransaction_GetIdentity(t *testing.T) {
-	tx := transaction{identity: fake.PublicKey{}}
+	tx := ClientTransaction{identity: fake.PublicKey{}}
 
 	require.NotNil(t, tx.GetIdentity())
 }
 
-func TestTransaction_VisitJSON(t *testing.T) {
-	tx := transaction{
-		identity:  fake.PublicKey{},
-		signature: fake.Signature{},
-		task:      fakeClientTask{},
-	}
-
-	ser := json.NewSerializer()
-
-	data, err := ser.Serialize(tx)
-	require.NoError(t, err)
-	expected := fmt.Sprintf(`{"Nonce":0,"Identity":{},"Signature":{},"Task":{"Type":"%s","Value":{}}}`,
-		"go.dedis.ch/dela/ledger/transactions/basic.fakeClientTask")
-	require.Equal(t, expected, string(data))
-
-	_, err = tx.VisitJSON(fake.NewBadSerializer())
-	require.EqualError(t, err, "couldn't serialize identity: fake error")
-
-	_, err = tx.VisitJSON(fake.NewBadSerializerWithDelay(1))
-	require.EqualError(t, err, "couldn't serialize signature: fake error")
-
-	_, err = tx.VisitJSON(fake.NewBadSerializerWithDelay(2))
-	require.EqualError(t, err, "couldn't serialize task: fake error")
-}
-
 func TestTransaction_Fingerprint(t *testing.T) {
-	tx := transaction{
+	tx := ClientTransaction{
 		nonce:    0x0102030405060708,
 		identity: fake.PublicKey{},
 		task:     fakeClientTask{},
@@ -89,7 +62,7 @@ func TestTransaction_Fingerprint(t *testing.T) {
 }
 
 func TestTransaction_String(t *testing.T) {
-	tx := transaction{
+	tx := ClientTransaction{
 		hash:     []byte{0xab},
 		identity: fake.PublicKey{},
 	}
@@ -98,20 +71,20 @@ func TestTransaction_String(t *testing.T) {
 }
 
 func TestServerTransaction_Consume(t *testing.T) {
-	tx := serverTransaction{
-		transaction: transaction{task: fakeSrvTask{}},
+	tx := ServerTransaction{
+		ClientTransaction: ClientTransaction{task: fakeSrvTask{}},
 	}
 
 	err := tx.Consume(nil)
 	require.NoError(t, err)
 
-	tx.transaction.task = fakeClientTask{}
+	tx.task = fakeClientTask{}
 	err = tx.Consume(nil)
 	require.EqualError(t, err, "task must implement 'basic.ServerTask'")
 
-	tx.transaction.task = fakeSrvTask{err: xerrors.New("oops")}
+	tx.task = fakeSrvTask{err: xerrors.New("oops")}
 	err = tx.Consume(nil)
-	require.EqualError(t, err, "couldn't consume task: oops")
+	require.EqualError(t, err, "couldn't consume task 'basic.fakeSrvTask': oops")
 }
 
 func TestTransactionFactory_New(t *testing.T) {
@@ -119,7 +92,7 @@ func TestTransactionFactory_New(t *testing.T) {
 
 	clientTx, err := factory.New(fakeClientTask{})
 	require.NoError(t, err)
-	tx := clientTx.(transaction)
+	tx := clientTx.(ClientTransaction)
 	require.NotNil(t, tx.task)
 	require.NotNil(t, tx.signature)
 
@@ -131,48 +104,6 @@ func TestTransactionFactory_New(t *testing.T) {
 	factory.signer = fake.NewBadSigner()
 	_, err = factory.New(fakeClientTask{})
 	require.EqualError(t, err, "couldn't sign tx: fake error")
-}
-
-func TestTransactionFactory_VisitJSON(t *testing.T) {
-	factory := NewTransactionFactory(nil)
-	factory.publicKeyFactory = fake.PublicKeyFactory{}
-	factory.signatureFactory = fake.SignatureFactory{}
-	factory.registry["fake"] = fakeTaskFactory{}
-
-	ser := json.NewSerializer()
-
-	var tx serverTransaction
-	err := ser.Deserialize([]byte(`{"Task":{"Type":"fake"}}`), factory, &tx)
-	require.NoError(t, err)
-
-	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
-	require.EqualError(t, err, "couldn't deserialize transaction: fake error")
-
-	_, err = factory.VisitJSON(fake.FactoryInput{Serde: fake.NewBadSerializer()})
-	require.EqualError(t, err, "couldn't deserialize identity: fake error")
-
-	_, err = factory.VisitJSON(fake.FactoryInput{Serde: fake.NewBadSerializerWithDelay(1)})
-	require.EqualError(t, err, "couldn't deserialize signature: fake error")
-
-	err = ser.Deserialize([]byte(`{"Task":{"Type":"unknown"}}`), factory, &tx)
-	require.EqualError(t, xerrors.Unwrap(err), "unknown factory for type 'unknown'")
-
-	input := fake.FactoryInput{
-		Serde:   fake.NewBadSerializerWithDelay(2),
-		Message: types.Transaction{Task: types.Task{Type: "fake"}},
-	}
-	_, err = factory.VisitJSON(input)
-	require.EqualError(t, err, "couldn't deserialize task: fake error")
-
-	input.Serde = fake.Serializer{}
-	factory.hashFactory = fake.NewHashFactory(fake.NewBadHash())
-	_, err = factory.VisitJSON(input)
-	require.EqualError(t, err, "couldn't fingerprint: couldn't write nonce: fake error")
-
-	factory.hashFactory = fake.NewHashFactory(&fake.Hash{})
-	factory.publicKeyFactory = fake.NewPublicKeyFactory(fake.NewInvalidPublicKey())
-	err = ser.Deserialize([]byte(`{"Task":{"Type":"fake"}}`), factory, &tx)
-	require.EqualError(t, xerrors.Unwrap(err), "signature does not match tx: fake error")
 }
 
 // -----------------------------------------------------------------------------
@@ -189,8 +120,8 @@ func (a fakeClientTask) Fingerprint(w io.Writer) error {
 	return a.err
 }
 
-func (a fakeClientTask) VisitJSON(serde.Serializer) (interface{}, error) {
-	return struct{}{}, nil
+func (a fakeClientTask) Serialize(serdeng.Context) ([]byte, error) {
+	return nil, nil
 }
 
 type fakeSrvTask struct {
