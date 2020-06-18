@@ -9,7 +9,6 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
-	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -34,36 +33,38 @@ func NewFlat(o mino.Mino, signer crypto.AggregateSigner) *Flat {
 
 // GetSigner implements cosi.CollectiveSigning. It returns the signer of the
 // instance.
-func (cosi *Flat) GetSigner() crypto.Signer {
-	return cosi.signer
+func (flat *Flat) GetSigner() crypto.Signer {
+	return flat.signer
 }
 
 // GetPublicKeyFactory returns the public key factory.
-func (cosi *Flat) GetPublicKeyFactory() serde.Factory {
-	return cosi.signer.GetPublicKeyFactory()
+func (flat *Flat) GetPublicKeyFactory() serde.Factory {
+	return flat.signer.GetPublicKeyFactory()
 }
 
 // GetSignatureFactory returns the signature factory.
-func (cosi *Flat) GetSignatureFactory() serde.Factory {
-	return cosi.signer.GetSignatureFactory()
+func (flat *Flat) GetSignatureFactory() serde.Factory {
+	return flat.signer.GetSignatureFactory()
 }
 
 // GetVerifierFactory returns the verifier factory.
-func (cosi *Flat) GetVerifierFactory() crypto.VerifierFactory {
-	return cosi.signer.GetVerifierFactory()
+func (flat *Flat) GetVerifierFactory() crypto.VerifierFactory {
+	return flat.signer.GetVerifierFactory()
 }
 
 // Listen creates an actor that starts an RPC called cosi and respond to signing
 // requests. The actor can also be used to sign a message.
-func (cosi *Flat) Listen(r cosi.Reactor) (cosi.Actor, error) {
+func (flat *Flat) Listen(r cosi.Reactor) (cosi.Actor, error) {
 	actor := flatActor{
 		logger:  dela.Logger,
-		me:      cosi.mino.GetAddress(),
-		signer:  cosi.signer,
+		me:      flat.mino.GetAddress(),
+		signer:  flat.signer,
 		reactor: r,
 	}
 
-	rpc, err := cosi.mino.MakeRPC(rpcName, newHandler(cosi.signer, r))
+	factory := cosi.NewMessageFactory(r, flat.signer.GetSignatureFactory())
+
+	rpc, err := flat.mino.MakeRPC(rpcName, newHandler(flat.signer, r), factory)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't make the rpc: %v", err)
 	}
@@ -90,11 +91,11 @@ func (a flatActor) Sign(ctx context.Context, msg serde.Message,
 		return nil, xerrors.Errorf("couldn't make verifier: %v", err)
 	}
 
-	req := SignatureRequest{
-		message: msg,
+	req := cosi.SignatureRequest{
+		Value: msg,
 	}
 
-	msgs, errs := a.rpc.Call(ctx, tmp.ProtoOf(req), ca)
+	msgs, errs := a.rpc.Call(ctx, req, ca)
 
 	digest, err := a.reactor.Invoke(a.me, msg)
 	if err != nil {
@@ -118,9 +119,7 @@ func (a flatActor) Sign(ctx context.Context, msg serde.Message,
 				return agg, nil
 			}
 
-			in := tmp.FromProto(resp, newResponseFactory(a.signer.GetSignatureFactory()))
-
-			agg, err = a.processResponse(in, agg)
+			agg, err = a.processResponse(resp, agg)
 			if err != nil {
 				return nil, xerrors.Errorf("couldn't process response: %v", err)
 			}
@@ -131,7 +130,7 @@ func (a flatActor) Sign(ctx context.Context, msg serde.Message,
 }
 
 func (a flatActor) processResponse(resp serde.Message, agg crypto.Signature) (crypto.Signature, error) {
-	reply, ok := resp.(SignatureResponse)
+	reply, ok := resp.(cosi.SignatureResponse)
 	if !ok {
 		return nil, xerrors.Errorf("invalid response type '%T'", resp)
 	}
@@ -139,9 +138,9 @@ func (a flatActor) processResponse(resp serde.Message, agg crypto.Signature) (cr
 	var err error
 
 	if agg == nil {
-		agg = reply.signature
+		agg = reply.Signature
 	} else {
-		agg, err = a.signer.Aggregate(agg, reply.signature)
+		agg, err = a.signer.Aggregate(agg, reply.Signature)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't aggregate: %v", err)
 		}

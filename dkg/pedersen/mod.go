@@ -3,8 +3,6 @@ package pedersen
 import (
 	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde"
-	"go.dedis.ch/dela/serde/tmp"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/share"
 	"go.dedis.ch/kyber/v3/suites"
@@ -23,7 +21,6 @@ type Pedersen struct {
 	privKey kyber.Scalar
 	mino    mino.Mino
 	rpc     mino.RPC
-	factory serde.Factory
 }
 
 // NewPedersen returns a new DKG Pedersen factory
@@ -38,7 +35,7 @@ func NewPedersen(privKey kyber.Scalar, m mino.Mino) (*Pedersen, error) {
 	h := NewHandler(privKey, m.GetAddress(), factory)
 
 	// TODO: should be done only in the Listen func.
-	rpc, err := m.MakeRPC("pedersen", h)
+	rpc, err := m.MakeRPC("pedersen", h, factory)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create RPC: %v", err)
 	}
@@ -47,7 +44,6 @@ func NewPedersen(privKey kyber.Scalar, m mino.Mino) (*Pedersen, error) {
 		privKey: privKey,
 		mino:    m,
 		rpc:     rpc,
-		factory: factory,
 	}, nil
 }
 
@@ -78,7 +74,7 @@ func (s *Pedersen) Listen(players mino.Players, pubKeys []kyber.Point, t int) (d
 		pubkeys:   pubKeys,
 	}
 
-	errs := sender.Send(tmp.ProtoOf(message), addrs...)
+	errs := sender.Send(message, addrs...)
 	err, more := <-errs
 	if more {
 		return nil, xerrors.Errorf("failed to send start: %v", err)
@@ -94,9 +90,7 @@ func (s *Pedersen) Listen(players mino.Players, pubKeys []kyber.Point, t int) (d
 				"receiving: %v", addr, err)
 		}
 
-		resp := tmp.FromProto(msg, s.factory)
-
-		doneMsg, ok := resp.(StartDone)
+		doneMsg, ok := msg.(StartDone)
 		if !ok {
 			return nil, xerrors.Errorf("expected to receive a Done message, but "+
 				"go the following: %T", msg)
@@ -117,7 +111,6 @@ func (s *Pedersen) Listen(players mino.Players, pubKeys []kyber.Point, t int) (d
 		rpc:     s.rpc,
 		PubKey:  dkgPubKeys[0],
 		players: players,
-		factory: s.factory,
 	}
 
 	return actor, nil
@@ -130,7 +123,6 @@ type Actor struct {
 	rpc     mino.RPC
 	PubKey  kyber.Point
 	players mino.Players
-	factory serde.Factory
 }
 
 // Encrypt implements dkg.DKG. It uses the DKG public key to encrypt a message.
@@ -182,7 +174,7 @@ func (p *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 		C: C,
 	}
 
-	sender.Send(tmp.ProtoOf(message), addrs...)
+	sender.Send(message, addrs...)
 
 	pubShares := make([]*share.PubShare, len(addrs))
 
@@ -193,9 +185,7 @@ func (p *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 				from, err)
 		}
 
-		resp := tmp.FromProto(message, p.factory)
-
-		decryptReply, ok := resp.(DecryptReply)
+		decryptReply, ok := message.(DecryptReply)
 		if !ok {
 			return []byte{}, xerrors.Errorf("got unexpected reply, expected "+
 				"a decrypt reply but got: %T", message)

@@ -8,16 +8,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
-	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/routing"
 	"go.dedis.ch/dela/mino/minogrpc/tokens"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -37,13 +35,13 @@ func TestIntegration_BasicLifecycle_Stream(t *testing.T) {
 	iter := authority.AddressIterator()
 	for iter.HasNext() {
 		to := iter.GetNext()
-		err := <-sender.Send(&empty.Empty{}, to)
+		err := <-sender.Send(fake.Message{}, to)
 		require.NoError(t, err)
 
 		from, msg, err := recv.Recv(context.Background())
 		require.NoError(t, err)
 		require.Equal(t, to, from)
-		require.IsType(t, (*empty.Empty)(nil), msg)
+		require.IsType(t, fake.Message{}, msg)
 	}
 
 	// Start the shutdown procedure.
@@ -64,7 +62,7 @@ func TestIntegration_Basic_Call(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	resps, _ := rpcs[0].Call(ctx, &empty.Empty{}, authority)
+	resps, _ := rpcs[0].Call(ctx, fake.Message{}, authority)
 
 	select {
 	case <-resps:
@@ -155,25 +153,22 @@ func TestOverlayServer_Share(t *testing.T) {
 func TestOverlayServer_Call(t *testing.T) {
 	overlay := overlayServer{
 		overlay: overlay{
-			encoder:        encoding.NewProtoEncoder(),
 			routingFactory: routing.NewTreeRoutingFactory(3, AddressFactory{}),
+			serializer:     json.NewSerializer(),
 		},
-		handlers: map[string]mino.Handler{
-			"test": testCallHandler{},
-			"bad":  mino.UnsupportedHandler{},
+		endpoints: map[string]Endpoint{
+			"test": {Handler: testCallHandler{}, Factory: fake.MessageFactory{}},
+			"bad":  {Handler: mino.UnsupportedHandler{}, Factory: fake.MessageFactory{}},
 		},
 	}
 
 	md := metadata.New(map[string]string{headerURIKey: "test"})
 	ctx := metadata.NewIncomingContext(context.Background(), md)
 
-	emptyAny, err := ptypes.MarshalAny(&empty.Empty{})
-	require.NoError(t, err)
-
-	resp, err := overlay.Call(ctx, &Message{Payload: emptyAny})
+	resp, err := overlay.Call(ctx, &Message{Payload: []byte(`{}`)})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
-	require.True(t, ptypes.Is(resp.GetPayload(), (*empty.Empty)(nil)))
+	require.Equal(t, []byte(`{}`), resp.GetPayload())
 
 	badCtx := metadata.NewIncomingContext(context.Background(), metadata.New(
 		map[string]string{headerURIKey: "unknown"},
@@ -181,42 +176,43 @@ func TestOverlayServer_Call(t *testing.T) {
 	_, err = overlay.Call(badCtx, nil)
 	require.EqualError(t, err, "handler 'unknown' is not registered")
 
-	overlay.encoder = fake.BadUnmarshalDynEncoder{}
-	_, err = overlay.Call(ctx, &Message{Payload: emptyAny})
-	require.EqualError(t, err, "couldn't unmarshal message: fake error")
+	overlay.serializer = fake.NewBadSerializer()
+	_, err = overlay.Call(ctx, &Message{Payload: []byte(``)})
+	require.EqualError(t, err, "couldn't deserialize message: fake error")
 
+	overlay.serializer = json.NewSerializer()
 	badCtx = metadata.NewIncomingContext(context.Background(), metadata.New(
 		map[string]string{headerURIKey: "bad"},
 	))
-	overlay.encoder = encoding.NewProtoEncoder()
-	_, err = overlay.Call(badCtx, &Message{Payload: emptyAny})
+	_, err = overlay.Call(badCtx, &Message{Payload: []byte(``)})
 	require.EqualError(t, err, "handler failed to process: rpc is not supported")
 
-	overlay.encoder = fake.BadMarshalAnyEncoder{}
-	_, err = overlay.Call(ctx, &Message{Payload: emptyAny})
-	require.EqualError(t, err, "couldn't marshal result: fake error")
+	overlay.serializer = fake.NewBadSerializerWithDelay(1)
+	_, err = overlay.Call(ctx, &Message{Payload: []byte(``)})
+	require.EqualError(t, err, "couldn't serialize result: fake error")
 }
 
 func TestOverlayServer_Stream(t *testing.T) {
 	overlay := overlayServer{
 		overlay: overlay{
 			routingFactory: routing.NewTreeRoutingFactory(3, AddressFactory{}),
+			serializer:     json.NewSerializer(),
 		},
 		closer: &sync.WaitGroup{},
-		handlers: map[string]mino.Handler{
-			"test": testStreamHandler{skip: true},
-			"bad":  testStreamHandler{skip: true, err: xerrors.New("oops")},
+		endpoints: map[string]Endpoint{
+			"test": {Handler: testStreamHandler{skip: true}},
+			"bad":  {Handler: testStreamHandler{skip: true, err: xerrors.New("oops")}},
 		},
 	}
 
 	rting, err := overlay.routingFactory.FromIterator(address{"A"}, mino.NewAddresses().AddressIterator())
 	require.NoError(t, err)
 
-	rtingAny, err := encoding.NewProtoEncoder().PackAny(rting)
+	data, err := json.NewSerializer().Serialize(rting)
 	require.NoError(t, err)
 
 	ch := make(chan *Envelope, 1)
-	ch <- &Envelope{Message: &Message{Payload: rtingAny}}
+	ch <- &Envelope{Message: &Message{Payload: data}}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -238,14 +234,16 @@ func TestOverlayServer_Stream(t *testing.T) {
 	require.EqualError(t, err, "failed to receive routing message: oops")
 
 	overlay.routingFactory = badRtingFactory{}
+	overlay.serializer = fake.NewBadSerializer()
 	ch = make(chan *Envelope, 1)
-	ch <- &Envelope{Message: &Message{Payload: rtingAny}}
+	ch <- &Envelope{Message: &Message{Payload: data}}
 	err = overlay.Stream(fakeServerStream{ch: ch, ctx: inCtx})
-	require.EqualError(t, err, "couldn't decode routing: oops")
+	require.EqualError(t, err, "couldn't deserialize routing: fake error")
 
+	overlay.serializer = json.NewSerializer()
 	overlay.routingFactory = routing.NewTreeRoutingFactory(3, AddressFactory{})
 	ch = make(chan *Envelope, 1)
-	ch <- &Envelope{Message: &Message{Payload: rtingAny}}
+	ch <- &Envelope{Message: &Message{Payload: data}}
 	inCtx = metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "bad"))
 	err = overlay.Stream(fakeServerStream{ch: ch, ctx: inCtx})
 	require.EqualError(t, err, "handler failed to process: oops")
@@ -308,28 +306,28 @@ func TestOverlay_SetupRelays(t *testing.T) {
 
 	overlay := overlay{
 		me:             fake.NewAddress(0),
-		encoder:        encoding.NewProtoEncoder(),
 		routingFactory: rtingFactory,
 		connFactory:    fakeConnFactory{},
+		serializer:     json.NewSerializer(),
 	}
 
-	sender, _, err := overlay.setupRelays(ctx, fake.NewAddress(0), rting)
+	sender, _, err := overlay.setupRelays(ctx, fake.NewAddress(0), rting, fake.MessageFactory{})
 	require.NoError(t, err)
 	require.Len(t, sender.clients, 2)
 
 	overlay.connFactory = fakeConnFactory{errConn: xerrors.New("oops")}
-	_, _, err = overlay.setupRelays(ctx, fake.NewAddress(0), rting)
+	_, _, err = overlay.setupRelays(ctx, fake.NewAddress(0), rting, fake.MessageFactory{})
 	require.EqualError(t, err,
 		"couldn't setup relay to fake.Address[1]: couldn't open relay: oops")
 
 	overlay.connFactory = fakeConnFactory{errStream: xerrors.New("oops")}
-	_, _, err = overlay.setupRelays(ctx, fake.NewAddress(0), rting)
+	_, _, err = overlay.setupRelays(ctx, fake.NewAddress(0), rting, fake.MessageFactory{})
 	require.EqualError(t, err,
 		"couldn't setup relay to fake.Address[1]: couldn't send routing: oops")
 
 	overlay.connFactory = fakeConnFactory{}
-	overlay.encoder = fake.BadPackAnyEncoder{}
-	_, _, err = overlay.setupRelays(ctx, fake.NewAddress(0), rting)
+	overlay.serializer = fake.NewBadSerializer()
+	_, _, err = overlay.setupRelays(ctx, fake.NewAddress(0), rting, fake.MessageFactory{})
 	require.EqualError(t, err,
 		"couldn't setup relay to fake.Address[1]: couldn't pack routing: fake error")
 }
@@ -377,7 +375,7 @@ func makeInstances(t *testing.T, n int) ([]mino.Mino, []mino.RPC) {
 		m, err := NewMinogrpc("127.0.0.1", 3000+uint16(i), rtingFactory)
 		require.NoError(t, err)
 
-		rpc, err := m.MakeRPC("test", testStreamHandler{})
+		rpc, err := m.MakeRPC("test", testStreamHandler{}, fake.MessageFactory{})
 		require.NoError(t, err)
 
 		mm[i] = m
@@ -424,7 +422,7 @@ type testCallHandler struct {
 	mino.UnsupportedHandler
 }
 
-func (h testCallHandler) Process(req mino.Request) (proto.Message, error) {
+func (h testCallHandler) Process(req mino.Request) (serde.Message, error) {
 	return req.Message, nil
 }
 

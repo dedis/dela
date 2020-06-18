@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	proto "github.com/golang/protobuf/proto"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/consensus"
@@ -22,7 +21,6 @@ import (
 	"go.dedis.ch/dela/mino/minoch"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/json"
-	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -159,8 +157,7 @@ func TestActor_Propose(t *testing.T) {
 	require.Equal(t, []byte{0xaa}, commit.to)
 
 	require.Len(t, rpc.calls, 1)
-	factory := propagateFactory{sigFactory: fake.SignatureFactory{}}
-	propagate := tmp.FromProto(rpc.calls[0]["message"].(proto.Message), factory).(Propagate)
+	propagate := rpc.calls[0]["message"].(Propagate)
 	require.NotNil(t, propagate)
 	require.Equal(t, []byte{0xaa}, propagate.to)
 
@@ -340,19 +337,16 @@ func TestRPCHandler_Process(t *testing.T) {
 			cosi:       &fakeCosi{},
 			viewchange: fakeViewChange{},
 		},
-		factory: propagateFactory{sigFactory: fake.SignatureFactory{}},
 	}
 
-	req := mino.Request{Message: tmp.ProtoOf(fake.Message{})}
+	req := mino.Request{Message: Propagate{}}
 	resp, err := h.Process(req)
 	require.NoError(t, err)
 	require.Nil(t, resp)
 
-	h.factory = fake.MessageFactory{}
-	_, err = h.Process(mino.Request{Message: tmp.ProtoOf(fake.Message{})})
+	_, err = h.Process(mino.Request{Message: fake.Message{}})
 	require.EqualError(t, err, "message type not supported 'fake.Message'")
 
-	h.factory = propagateFactory{sigFactory: fake.SignatureFactory{}}
 	h.queue = fakeQueue{err: xerrors.New("oops")}
 	_, err = h.Process(req)
 	require.EqualError(t, err, "couldn't finalize: oops")
@@ -572,10 +566,10 @@ type fakeRPC struct {
 	err   error
 }
 
-func (rpc *fakeRPC) Call(ctx context.Context, pb proto.Message,
-	memship mino.Players) (<-chan proto.Message, <-chan error) {
+func (rpc *fakeRPC) Call(ctx context.Context, pb serde.Message,
+	memship mino.Players) (<-chan serde.Message, <-chan error) {
 
-	msgs := make(chan proto.Message)
+	msgs := make(chan serde.Message)
 	go func() {
 		time.Sleep(10 * time.Millisecond)
 		close(msgs)
@@ -599,7 +593,7 @@ type fakeMino struct {
 	err  error
 }
 
-func (m *fakeMino) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
+func (m *fakeMino) MakeRPC(name string, h mino.Handler, f serde.Factory) (mino.RPC, error) {
 	m.name = name
 	m.h = h
 	return nil, m.err

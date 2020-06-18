@@ -5,7 +5,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -15,17 +14,16 @@ func TestOperations_CatchUp(t *testing.T) {
 		Payload: fake.Message{},
 	}
 
-	rcv := fake.Receiver{Msg: tmp.ProtoOf(BlockResponse{block: block})}
+	rcv := fake.Receiver{Msg: BlockResponse{block: block}}
 
 	call := &fake.Call{}
 	ops := &operations{
-		addr:            fake.NewAddress(0),
-		blockFactory:    NewBlockFactory(fake.MessageFactory{}),
-		responseFactory: responseFactory{blockFactory: NewBlockFactory(fake.MessageFactory{})},
-		reactor:         &fakeReactor{},
-		db:              &fakeDatabase{blocks: []SkipBlock{{}}},
-		watcher:         &fakeWatcher{call: call},
-		rpc:             fake.NewStreamRPC(rcv, fake.Sender{}),
+		addr:         fake.NewAddress(0),
+		blockFactory: NewBlockFactory(fake.MessageFactory{}),
+		reactor:      &fakeReactor{},
+		db:           &fakeDatabase{blocks: []SkipBlock{{}}},
+		watcher:      &fakeWatcher{call: call},
+		rpc:          fake.NewStreamRPC(rcv, fake.Sender{}),
 	}
 
 	// No catch up for the genesis block.
@@ -76,7 +74,7 @@ func TestOperations_CatchUp(t *testing.T) {
 		"couldn't store block: tx failed: couldn't commit block: oops")
 
 	ops.responseFactory = fake.MessageFactory{}
-	ops.rpc = fake.NewStreamRPC(fake.Receiver{Msg: tmp.ProtoOf(fake.Message{})}, fake.Sender{})
+	ops.rpc = fake.NewStreamRPC(fake.Receiver{Msg: fake.Message{}}, fake.Sender{})
 	err = ops.catchUp(5, nil)
 	require.EqualError(t, err, "invalid response type 'fake.Message' != 'skipchain.BlockResponse'")
 }

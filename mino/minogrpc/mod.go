@@ -5,7 +5,7 @@ package minogrpc
 
 import (
 	"crypto/tls"
-	fmt "fmt"
+	"fmt"
 	"net"
 	"net/url"
 	"regexp"
@@ -15,6 +15,8 @@ import (
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/routing"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -122,6 +124,12 @@ type Joinable interface {
 	Join(addr, token string, digest []byte) error
 }
 
+// Endpoint defines the requirement of an endpoint.
+type Endpoint struct {
+	Handler mino.Handler
+	Factory serde.Factory
+}
+
 // Minogrpc represents a grpc service restricted to a namespace
 //
 // - implements mino.Mino
@@ -131,7 +139,7 @@ type Minogrpc struct {
 	url       *url.URL
 	server    *grpc.Server
 	namespace string
-	handlers  map[string]mino.Handler
+	endpoints map[string]Endpoint
 	started   chan struct{}
 	closer    *sync.WaitGroup
 	closing   chan error
@@ -147,7 +155,7 @@ func NewMinogrpc(path string, port uint16, rf routing.Factory) (*Minogrpc, error
 
 	me := address{host: url.Host}
 
-	o, err := newOverlay(me, rf)
+	o, err := newOverlay(me, rf, json.NewSerializer())
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't make overlay: %v", err)
 	}
@@ -160,7 +168,7 @@ func NewMinogrpc(path string, port uint16, rf routing.Factory) (*Minogrpc, error
 		url:       url,
 		server:    server,
 		namespace: "",
-		handlers:  make(map[string]mino.Handler),
+		endpoints: make(map[string]Endpoint),
 		started:   make(chan struct{}),
 		closer:    &sync.WaitGroup{},
 		closing:   make(chan error, 1),
@@ -170,9 +178,9 @@ func NewMinogrpc(path string, port uint16, rf routing.Factory) (*Minogrpc, error
 	m.closer.Add(1)
 
 	RegisterOverlayServer(server, overlayServer{
-		overlay:  o,
-		handlers: m.handlers,
-		closer:   m.closer,
+		overlay:   o,
+		endpoints: m.endpoints,
+		closer:    m.closer,
 	})
 
 	err = m.Listen()
@@ -270,7 +278,7 @@ func (m *Minogrpc) MakeNamespace(namespace string) (mino.Mino, error) {
 		server:    m.server,
 		overlay:   m.overlay,
 		namespace: namespace,
-		handlers:  m.handlers,
+		endpoints: m.endpoints,
 	}
 	return newM, nil
 }
@@ -278,14 +286,18 @@ func (m *Minogrpc) MakeNamespace(namespace string) (mino.Mino, error) {
 // MakeRPC implements Mino. It registers the handler using a uniq URI of
 // form "namespace/name". It returns a struct that allows client to call the
 // RPC.
-func (m *Minogrpc) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
+func (m *Minogrpc) MakeRPC(name string, h mino.Handler, f serde.Factory) (mino.RPC, error) {
 	rpc := &RPC{
 		uri:     fmt.Sprintf("%s/%s", m.namespace, name),
 		overlay: m.overlay,
+		factory: f,
 	}
 
 	uri := fmt.Sprintf("%s/%s", m.namespace, name)
-	m.handlers[uri] = h
+	m.endpoints[uri] = Endpoint{
+		Handler: h,
+		Factory: f,
+	}
 
 	return rpc, nil
 }

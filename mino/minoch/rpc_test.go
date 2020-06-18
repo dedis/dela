@@ -5,13 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
-	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
 
@@ -20,12 +18,12 @@ func TestRPC_Call(t *testing.T) {
 
 	m1, err := NewMinoch(manager, "A")
 	require.NoError(t, err)
-	rpc1, err := m1.MakeRPC("test", fakeHandler{})
+	rpc1, err := m1.MakeRPC("test", fakeHandler{}, fake.MessageFactory{})
 	require.NoError(t, err)
 
 	m2, err := NewMinoch(manager, "B")
 	require.NoError(t, err)
-	_, err = m2.MakeRPC("test", badHandler{})
+	_, err = m2.MakeRPC("test", badHandler{}, fake.MessageFactory{})
 	require.NoError(t, err)
 
 	m3, err := NewMinoch(manager, "C")
@@ -34,14 +32,14 @@ func TestRPC_Call(t *testing.T) {
 	ctx := context.Background()
 
 	addrs := mino.NewAddresses(m1.GetAddress())
-	resps, errs := rpc1.Call(ctx, &empty.Empty{}, addrs)
+	resps, errs := rpc1.Call(ctx, fake.Message{}, addrs)
 
 	err = testWait(t, errs, resps)
 	// Message to self with a correct handler
 	require.NoError(t, err)
 
 	addrs = mino.NewAddresses(fake.NewAddress(99), m3.GetAddress())
-	resps, errs = rpc1.Call(ctx, &empty.Empty{}, addrs)
+	resps, errs = rpc1.Call(ctx, fake.Message{}, addrs)
 
 	err = testWait(t, errs, resps)
 	// Message to the fake address.
@@ -53,7 +51,7 @@ func TestRPC_Call(t *testing.T) {
 	require.EqualError(t, err, "unknown rpc /test")
 
 	addrs = mino.NewAddresses(m2.GetAddress())
-	resps, errs = rpc1.Call(ctx, &empty.Empty{}, addrs)
+	resps, errs = rpc1.Call(ctx, fake.Message{}, addrs)
 
 	err = testWait(t, errs, resps)
 	// Message to m2 with a handler but no implementation.
@@ -65,7 +63,7 @@ func TestRPC_Stream(t *testing.T) {
 
 	m, err := NewMinoch(manager, "A")
 	require.NoError(t, err)
-	rpc, err := m.MakeRPC("test", fakeStreamHandler{})
+	rpc, err := m.MakeRPC("test", fakeStreamHandler{}, fake.MessageFactory{})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -73,7 +71,7 @@ func TestRPC_Stream(t *testing.T) {
 	sender, receiver, err := rpc.Stream(ctx, mino.NewAddresses(m.GetAddress()))
 	require.NoError(t, err)
 
-	sender.Send(&empty.Empty{}, m.GetAddress())
+	sender.Send(fake.Message{}, m.GetAddress())
 	_, _, err = receiver.Recv(context.Background())
 	require.NoError(t, err)
 
@@ -88,7 +86,7 @@ func TestRPC_Failures_Stream(t *testing.T) {
 
 	m, err := NewMinoch(manager, "A")
 	require.NoError(t, err)
-	rpc, err := m.MakeRPC("test", fakeBadStreamHandler{})
+	rpc, err := m.MakeRPC("test", fakeBadStreamHandler{}, fake.MessageFactory{})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -110,17 +108,15 @@ func TestRPC_Failures_Stream(t *testing.T) {
 
 func TestReceiver_Recv(t *testing.T) {
 	recv := receiver{
-		encoder: encoding.NewProtoEncoder(),
-		out:     make(chan Envelope, 1),
-		errs:    make(chan error),
+		out:        make(chan Envelope, 1),
+		errs:       make(chan error),
+		serializer: json.NewSerializer(),
+		factory:    fake.MessageFactory{},
 	}
-
-	msgAny, err := ptypes.MarshalAny(&empty.Empty{})
-	require.NoError(t, err)
 
 	recv.out <- Envelope{
 		from:    address{id: "A"},
-		message: msgAny,
+		message: []byte(`{}`),
 	}
 
 	from, msg, err := recv.Recv(context.Background())
@@ -128,16 +124,16 @@ func TestReceiver_Recv(t *testing.T) {
 	require.Equal(t, address{id: "A"}, from)
 	require.NotNil(t, msg)
 
-	recv.encoder = fake.BadUnmarshalDynEncoder{}
+	recv.serializer = fake.NewBadSerializer()
 	recv.out <- Envelope{}
 	_, _, err = recv.Recv(context.Background())
-	require.EqualError(t, err, "couldn't unmarshal message: fake error")
+	require.EqualError(t, err, "couldn't deserialize: fake error")
 }
 
 // -----------------------------------------------------------------------------
 // Utility functions
 
-func testWait(t *testing.T, errs <-chan error, resps <-chan proto.Message) error {
+func testWait(t *testing.T, errs <-chan error, resps <-chan serde.Message) error {
 	select {
 	case <-time.After(50 * time.Millisecond):
 		t.Fatal("an error is expected")
