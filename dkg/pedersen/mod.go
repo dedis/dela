@@ -21,7 +21,6 @@ var suite = suites.MustFind("Ed25519")
 type Pedersen struct {
 	privKey kyber.Scalar
 	mino    mino.Mino
-	rpc     mino.RPC
 	factory serde.Factory
 }
 
