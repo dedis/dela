@@ -96,12 +96,14 @@ func TestSocketDaemon_Listen(t *testing.T) {
 	require.NotNil(t, err)
 	// on the testing env the message can be different with a readonly error
 	// instead of a permission denied, thus we check only the first part.
-	require.Regexp(t, regexp.MustCompile("^couldn't make path: mkdir /deadbeef/:"), err)
+	require.Regexp(t,
+		regexp.MustCompile("^couldn't make path: mkdir /deadbeef/:"), err)
 
 	daemon.socketpath = "/test.sock"
 	err = daemon.Listen()
-	require.EqualError(t, err,
-		"couldn't bind socket: listen unix /test.sock: bind: permission denied")
+	require.NotNil(t, err)
+	require.Regexp(t,
+		regexp.MustCompile("^couldn't bind socket: listen unix /test.sock: bind:"), err)
 }
 
 func TestSocketFactory_ClientFromContext(t *testing.T) {
