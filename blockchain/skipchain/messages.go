@@ -139,12 +139,17 @@ func (resp BlockResponse) VisitJSON(ser serde.Serializer) (interface{}, error) {
 	return json.Message{Response: &m}, nil
 }
 
+// MessageFactory is a message factory for the skipchain messages.
+//
+// - implements serde.Factory
 type MessageFactory struct {
 	serde.UnimplementedFactory
 
 	blockFactory serde.Factory
 }
 
+// VisitJSON implements serde.Factory. It deserializes the messages in JSON
+// format.
 func (f MessageFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
 	m := json.Message{}
 	err := in.Feed(&m)
