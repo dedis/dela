@@ -46,6 +46,13 @@ func (s *state) GetParticipants() []mino.Address {
 	return s.participants
 }
 
+func (s *state) Fill(participants []mino.Address, distrKey kyber.Point) {
+	s.Lock()
+	defer s.Unlock()
+	s.participants = participants
+	s.distrKey = distrKey
+}
+
 // Handler represents the RPC executed on each node
 //
 // - implements mino.Handler
@@ -314,10 +321,7 @@ func (h *Handler) start(start Start, receivedDeals []Deal, from mino.Address,
 	h.privShare = distrKey.PriShare()
 	h.Unlock()
 
-	h.startRes.Lock()
-	h.startRes.distrKey = distrKey.Public()
-	h.startRes.participants = start.addresses
-	h.startRes.Unlock()
+	h.startRes.Fill(start.addresses, distrKey.Public())
 
 	return nil
 }
