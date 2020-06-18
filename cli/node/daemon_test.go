@@ -91,6 +91,12 @@ func TestSocketDaemon_Listen(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "[ERROR] unknown command '2'\n", out.String())
 
+	// the rest is not concerned by windows that actually allows the creation of
+	// root files and folders
+	if runtime.GOOS == "windows" {
+		t.Skip()
+	}
+
 	daemon.socketpath = "/deadbeef/test.sock"
 	err = daemon.Listen()
 	require.NotNil(t, err)
@@ -118,8 +124,13 @@ func TestSocketFactory_ClientFromContext(t *testing.T) {
 	require.Equal(t, filepath.Join(homeDir, ".dela", "daemon.sock"),
 		client.(socketClient).socketpath)
 
-	require.NoError(t, syscall.Unsetenv("HOME"))
-	defer syscall.Setenv("HOME", homeDir)
+	if runtime.GOOS == "windows" {
+		require.NoError(t, syscall.Unsetenv("USERPROFILE"))
+		defer syscall.Setenv("USERPROFILE", homeDir)
+	} else {
+		require.NoError(t, syscall.Unsetenv("HOME"))
+		defer syscall.Setenv("HOME", homeDir)
+	}
 
 	client, err = factory.ClientFromContext(fakeContext{})
 	require.NoError(t, err)
