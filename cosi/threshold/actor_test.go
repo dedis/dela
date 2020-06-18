@@ -5,11 +5,11 @@ import (
 	"io"
 	"testing"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde/tmp"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -24,9 +24,9 @@ func TestActor_Sign(t *testing.T) {
 		rpc: fakeRPC{
 			receiver: &fakeReceiver{
 				resps: [][]interface{}{
-					{ca.GetAddress(0), tmp.ProtoOf(fake.Message{})},
-					{ca.GetAddress(0), tmp.ProtoOf(fake.Message{})},
-					{ca.GetAddress(1), tmp.ProtoOf(fake.Message{})},
+					{ca.GetAddress(0), cosi.SignatureResponse{Signature: fake.Signature{}}},
+					{ca.GetAddress(0), cosi.SignatureResponse{Signature: fake.Signature{}}},
+					{ca.GetAddress(1), cosi.SignatureResponse{Signature: fake.Signature{}}},
 				},
 			},
 		},
@@ -59,7 +59,8 @@ func TestActor_Sign(t *testing.T) {
 	require.EqualError(t, err, "couldn't receive more messages: context canceled")
 
 	actor.signer = fake.NewSigner()
-	err = actor.merge(&Signature{}, fake.Signature{}, 0, fake.NewInvalidPublicKey(), []byte{})
+	resp := cosi.SignatureResponse{Signature: fake.Signature{}}
+	err = actor.merge(&Signature{}, resp, 0, fake.NewInvalidPublicKey(), []byte{})
 	require.EqualError(t, err, "couldn't verify: fake error")
 
 	actor.rpc = fake.NewBadStreamRPC()
@@ -75,7 +76,7 @@ type fakeSender struct {
 	numErr int
 }
 
-func (s fakeSender) Send(proto.Message, ...mino.Address) <-chan error {
+func (s fakeSender) Send(serde.Message, ...mino.Address) <-chan error {
 	ch := make(chan error, s.numErr)
 	for i := 0; i < s.numErr; i++ {
 		ch <- xerrors.New("oops")
@@ -92,7 +93,7 @@ type fakeReceiver struct {
 	err      error
 }
 
-func (r *fakeReceiver) Recv(ctx context.Context) (mino.Address, proto.Message, error) {
+func (r *fakeReceiver) Recv(ctx context.Context) (mino.Address, serde.Message, error) {
 	if r.blocking {
 		<-ctx.Done()
 		return nil, nil, ctx.Err()
@@ -108,7 +109,7 @@ func (r *fakeReceiver) Recv(ctx context.Context) (mino.Address, proto.Message, e
 
 	next := r.resps[0]
 	r.resps = r.resps[1:]
-	return next[0].(mino.Address), next[1].(proto.Message), nil
+	return next[0].(mino.Address), next[1].(serde.Message), nil
 }
 
 type fakeRPC struct {

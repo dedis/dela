@@ -91,38 +91,7 @@ func (p PropagateGenesis) VisitJSON(ser serde.Serializer) (interface{}, error) {
 		Genesis: block,
 	}
 
-	return m, nil
-}
-
-// PropagateFactory is a message factory for the genesis propagation message.
-//
-// - implements serde.Factory
-type propagateFactory struct {
-	serde.UnimplementedFactory
-
-	blockFactory serde.Factory
-}
-
-// VisitJSON implements serde.Factory. It deserializes the propagation message
-// in JSON format.
-func (f propagateFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
-	m := json.PropagateGenesis{}
-	err := in.Feed(&m)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize message: %v", err)
-	}
-
-	var genesis SkipBlock
-	err = in.GetSerializer().Deserialize(m.Genesis, f.blockFactory, &genesis)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize genesis: %v", err)
-	}
-
-	p := PropagateGenesis{
-		genesis: genesis,
-	}
-
-	return p, nil
+	return json.Message{Propagate: &m}, nil
 }
 
 // BlockRequest is the message sent to request a block.
@@ -143,31 +112,7 @@ func (req BlockRequest) VisitJSON(ser serde.Serializer) (interface{}, error) {
 		To:   req.to,
 	}
 
-	return m, nil
-}
-
-// RequestFactory is a message factory to deserialize block request messages.
-//
-// - implements serde.Factory
-type requestFactory struct {
-	serde.UnimplementedFactory
-}
-
-// VisitJSON implements serde.Factory. It deserializes the block request message
-// in JSON format.
-func (f requestFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
-	m := json.BlockRequest{}
-	err := in.Feed(&m)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize message: %v", err)
-	}
-
-	req := BlockRequest{
-		from: m.From,
-		to:   m.To,
-	}
-
-	return req, nil
+	return json.Message{Request: &m}, nil
 }
 
 // BlockResponse is the response to a block request.
@@ -191,37 +136,63 @@ func (resp BlockResponse) VisitJSON(ser serde.Serializer) (interface{}, error) {
 		Block: block,
 	}
 
-	return m, nil
+	return json.Message{Response: &m}, nil
 }
 
-// ResponseFactory is a message factory to deserialize the block response
-// messages.
+// MessageFactory is a message factory for the skipchain messages.
 //
 // - implements serde.Factory
-type responseFactory struct {
+type MessageFactory struct {
 	serde.UnimplementedFactory
 
 	blockFactory serde.Factory
 }
 
-// VisitJSON implements serde.Factory. It deserializes the block response
-// message in JSON format.
-func (f responseFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
-	m := json.BlockResponse{}
+// VisitJSON implements serde.Factory. It deserializes the messages in JSON
+// format.
+func (f MessageFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
+	m := json.Message{}
 	err := in.Feed(&m)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't deserialize message: %v", err)
 	}
 
-	var block SkipBlock
-	err = in.GetSerializer().Deserialize(m.Block, f.blockFactory, &block)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize block: %v", err)
+	if m.Propagate != nil {
+		var genesis SkipBlock
+		err = in.GetSerializer().Deserialize(m.Propagate.Genesis, f.blockFactory, &genesis)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't deserialize genesis: %v", err)
+		}
+
+		p := PropagateGenesis{
+			genesis: genesis,
+		}
+
+		return p, nil
 	}
 
-	resp := BlockResponse{
-		block: block,
+	if m.Request != nil {
+		req := BlockRequest{
+			from: m.Request.From,
+			to:   m.Request.To,
+		}
+
+		return req, nil
 	}
 
-	return resp, nil
+	if m.Response != nil {
+		var block SkipBlock
+		err = in.GetSerializer().Deserialize(m.Response.Block, f.blockFactory, &block)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't deserialize block: %v", err)
+		}
+
+		resp := BlockResponse{
+			block: block,
+		}
+
+		return resp, nil
+	}
+
+	return nil, xerrors.New("message is empty")
 }

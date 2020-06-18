@@ -16,7 +16,6 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
-	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -61,16 +60,17 @@ func (s *Skipchain) Listen(r blockchain.Reactor) (blockchain.Actor, error) {
 	}
 
 	ops := &operations{
-		logger:          dela.Logger,
-		addr:            s.mino.GetAddress(),
-		reactor:         r,
-		blockFactory:    blockFactory,
-		responseFactory: responseFactory{blockFactory: blockFactory},
-		db:              s.db,
-		watcher:         s.watcher,
+		logger:       dela.Logger,
+		addr:         s.mino.GetAddress(),
+		reactor:      r,
+		blockFactory: blockFactory,
+		db:           s.db,
+		watcher:      s.watcher,
 	}
 
-	rpc, err := s.mino.MakeRPC("skipchain", newHandler(ops))
+	factory := MessageFactory{blockFactory: blockFactory}
+
+	rpc, err := s.mino.MakeRPC("skipchain", newHandler(ops), factory)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't create the rpc: %v", err)
 	}
@@ -211,7 +211,7 @@ func (a skipchainActor) newChain(data blockchain.Payload, conodes mino.Players) 
 	ctx, cancel := context.WithTimeout(context.Background(), defaultPropogationTimeout)
 	defer cancel()
 
-	closing, errs := a.rpc.Call(ctx, tmp.ProtoOf(msg), conodes)
+	closing, errs := a.rpc.Call(ctx, msg, conodes)
 	select {
 	case <-closing:
 		return nil

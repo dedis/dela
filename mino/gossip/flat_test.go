@@ -7,7 +7,6 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
-	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -78,12 +77,12 @@ func TestHandler_Process(t *testing.T) {
 		},
 	}
 
-	resp, err := h.Process(mino.Request{Message: tmp.ProtoOf(fakeRumor{})})
+	resp, err := h.Process(mino.Request{Message: fakeRumor{}})
 	require.NoError(t, err)
 	require.Nil(t, resp)
 
 	h.rumorFactory = fake.MessageFactory{}
-	_, err = h.Process(mino.Request{Message: tmp.ProtoOf(fake.Message{})})
+	_, err = h.Process(mino.Request{Message: fake.Message{}})
 	require.EqualError(t, err, "unexpected rumor of type 'fake.Message'")
 }
 

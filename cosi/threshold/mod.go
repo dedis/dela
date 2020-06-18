@@ -61,7 +61,9 @@ func (c *CoSi) GetVerifierFactory() crypto.VerifierFactory {
 
 // Listen implements cosi.CollectiveSigning.
 func (c *CoSi) Listen(r cosi.Reactor) (cosi.Actor, error) {
-	rpc, err := c.mino.MakeRPC("cosi", newHandler(c, r))
+	factory := cosi.NewMessageFactory(r, c.signer.GetSignatureFactory())
+
+	rpc, err := c.mino.MakeRPC("cosi", newHandler(c, r), factory)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't make rpc: %v", err)
 	}

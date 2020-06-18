@@ -10,11 +10,10 @@ import (
 	"regexp"
 	"sort"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/minogrpc/routing/json"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -24,14 +23,16 @@ var eachLine = regexp.MustCompile(`(?m)^(.+)$`)
 
 // Factory defines the primitive to create a Routing
 type Factory interface {
+	serde.Factory
+
 	GetAddressFactory() mino.AddressFactory
+
 	FromIterator(root mino.Address, iter mino.AddressIterator) (Routing, error)
-	FromAny(*any.Any) (Routing, error)
 }
 
 // Routing defines the functions needed to route messages
 type Routing interface {
-	encoding.Packable
+	serde.Message
 
 	// GetRoot should return the initiator of the routing map so that every
 	// message with no route will be routed back to it.
@@ -55,8 +56,9 @@ type Routing interface {
 //
 // - implements routing.Factory
 type TreeRoutingFactory struct {
+	serde.UnimplementedFactory
+
 	height      int
-	encoder     encoding.ProtoMarshaler
 	addrFactory mino.AddressFactory
 	hashFactory crypto.HashFactory
 }
@@ -66,7 +68,6 @@ type TreeRoutingFactory struct {
 func NewTreeRoutingFactory(height int, addrFactory mino.AddressFactory) *TreeRoutingFactory {
 	return &TreeRoutingFactory{
 		height:      height,
-		encoder:     encoding.NewProtoEncoder(),
 		addrFactory: addrFactory,
 		hashFactory: crypto.NewSha256Factory(),
 	}
@@ -108,25 +109,23 @@ func (t TreeRoutingFactory) FromIterator(root mino.Address,
 	return routing, nil
 }
 
-// FromAny implements routing.Factory. It creates the network tree in a
-// deterministic manner based on the proto message encoded as any. It must not
-// contain the root address, which is the case if the Pack() method has been
-// used.
-func (t TreeRoutingFactory) FromAny(m *any.Any) (Routing, error) {
-	msg := &TreeRoutingProto{}
-	err := t.encoder.UnmarshalAny(m, msg)
+// VisitJSON implements serde.Factory. It deserializes the tree routing in JSON
+// format.
+func (t TreeRoutingFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
+	m := json.TreeRouting{}
+	err := in.Feed(&m)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to unmarshal routing message: %v", err)
+		return nil, xerrors.Errorf("couldn't deserialize message: %v", err)
 	}
 
-	root := t.addrFactory.FromText(msg.GetRoot())
+	root := t.addrFactory.FromText(m.Root)
 
-	routing, err := t.fromAddrBuf(root, msg.Addrs)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to build routing: %v", err)
+	addrs := make(addrsBuf, len(m.Addresses))
+	for i, addr := range m.Addresses {
+		addrs[i] = addr
 	}
 
-	return routing, nil
+	return t.fromAddrBuf(root, addrs)
 }
 
 func (t TreeRoutingFactory) fromAddrBuf(root mino.Address, addrsBuf addrsBuf) (Routing, error) {
@@ -193,6 +192,8 @@ func (t TreeRoutingFactory) fromAddrBuf(root mino.Address, addrsBuf addrsBuf) (R
 //
 // - implements routing.Routing
 type TreeRouting struct {
+	serde.UnimplementedMessage
+
 	Root         *treeNode
 	routingNodes map[mino.Address]*treeNode
 }
@@ -281,10 +282,9 @@ func (t TreeRouting) GetDirectLinks(from mino.Address) []mino.Address {
 	return res
 }
 
-// Pack implements encoding.Packable. It returns the tree routing proto, which
-// is the list of addresses without the root.
-func (t TreeRouting) Pack(encoder encoding.ProtoMarshaler) (proto.Message, error) {
-	addrs := make([][]byte, 0, len(t.routingNodes))
+// VisitJSON implements serde.Message.
+func (t TreeRouting) VisitJSON(serde.Serializer) (interface{}, error) {
+	addrs := make([]json.Address, 0, len(t.routingNodes))
 	var root []byte
 
 	for _, node := range t.routingNodes {
@@ -300,12 +300,12 @@ func (t TreeRouting) Pack(encoder encoding.ProtoMarshaler) (proto.Message, error
 		}
 	}
 
-	msg := &TreeRoutingProto{
-		Root:  root,
-		Addrs: addrs,
+	m := json.TreeRouting{
+		Root:      root,
+		Addresses: addrs,
 	}
 
-	return msg, nil
+	return m, nil
 }
 
 // Display displays an extensive string representation of the tree

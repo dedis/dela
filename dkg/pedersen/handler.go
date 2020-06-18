@@ -8,7 +8,6 @@ import (
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
-	"go.dedis.ch/dela/serde/tmp"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/share"
 	pedersen "go.dedis.ch/kyber/v3/share/dkg/pedersen"
@@ -95,11 +94,9 @@ mainSwitch:
 		return xerrors.Errorf("failed to receive: %v", err)
 	}
 
-	req := tmp.FromProto(msg, h.factory)
-
 	// We expect a Start message or a decrypt request at first, but we might
 	// receive other messages in the meantime, like a Deal.
-	switch msg := req.(type) {
+	switch msg := msg.(type) {
 
 	case Start:
 		err := h.start(msg, deals, from, out, in)
@@ -132,7 +129,7 @@ mainSwitch:
 		}
 		h.RUnlock()
 
-		errs := out.Send(tmp.ProtoOf(decryptReply), from)
+		errs := out.Send(decryptReply, from)
 		err = <-errs
 		if err != nil {
 			return xerrors.Errorf("got an error while sending the decrypt "+
@@ -187,7 +184,7 @@ func (h *Handler) start(start Start, receivedDeals []Deal, from mino.Address,
 			signature: deal.Signature,
 		}
 
-		errs := out.Send(tmp.ProtoOf(dealMsg), start.addresses[i])
+		errs := out.Send(dealMsg, start.addresses[i])
 		go func(errs <-chan error) {
 			err, more := <-errs
 			if more {
@@ -224,9 +221,7 @@ func (h *Handler) start(start Start, receivedDeals []Deal, from mino.Address,
 			return xerrors.Errorf("failed to receive after sending deals: %v", err)
 		}
 
-		resp := tmp.FromProto(msg, h.factory)
-
-		switch msg := resp.(type) {
+		switch msg := msg.(type) {
 
 		case Deal:
 			// 4. Process the Deal and Send the response to all the other nodes
@@ -274,9 +269,7 @@ func (h *Handler) start(start Start, receivedDeals []Deal, from mino.Address,
 			return xerrors.Errorf("failed to receive after sending deals: %v", err)
 		}
 
-		resp := tmp.FromProto(msg, h.factory)
-
-		switch msg := resp.(type) {
+		switch msg := msg.(type) {
 
 		case Response:
 			// 5. Processing responses
@@ -311,7 +304,7 @@ func (h *Handler) start(start Start, receivedDeals []Deal, from mino.Address,
 	}
 
 	done := StartDone{pubkey: distrKey.Public()}
-	errs := out.Send(tmp.ProtoOf(done), from)
+	errs := out.Send(done, from)
 	err = <-errs
 	if err != nil {
 		return xerrors.Errorf("got an error while sending pub key: %v", err)
@@ -364,7 +357,7 @@ func (h *Handler) handleDeal(msg Deal, from mino.Address, addrs []mino.Address,
 			continue
 		}
 
-		errs := out.Send(tmp.ProtoOf(resp), addr)
+		errs := out.Send(resp, addr)
 		err = <-errs
 		if err != nil {
 			dela.Logger.Warn().Msgf("got an error while sending "+

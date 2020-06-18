@@ -4,11 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde/tmp"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -28,7 +27,7 @@ func TestHandler_Process(t *testing.T) {
 	}
 
 	req := mino.Request{
-		Message: tmp.ProtoOf(PropagateGenesis{genesis: genesis}),
+		Message: PropagateGenesis{genesis: genesis},
 	}
 	resp, err := h.Process(req)
 	require.NoError(t, err)
@@ -37,14 +36,12 @@ func TestHandler_Process(t *testing.T) {
 	require.Equal(t, genesis.Payload, reactor.calls[0][0])
 	require.Equal(t, 1, watcher.notified)
 
-	h.propagateFactory = fake.MessageFactory{}
-	req.Message = tmp.ProtoOf(fake.Message{})
+	req.Message = fake.Message{}
 	_, err = h.Process(req)
 	require.EqualError(t, err, "unknown message type 'fake.Message'")
 
-	h.propagateFactory = propagateFactory{blockFactory: NewBlockFactory(fake.MessageFactory{})}
 	reactor.errCommit = xerrors.New("oops")
-	req.Message = tmp.ProtoOf(PropagateGenesis{genesis: genesis})
+	req.Message = PropagateGenesis{genesis: genesis}
 	_, err = h.Process(req)
 	require.EqualError(t, err,
 		"couldn't store genesis: tx failed: couldn't commit block: oops")
@@ -59,10 +56,9 @@ func TestHandler_Stream(t *testing.T) {
 		operations: &operations{
 			db: db,
 		},
-		requestFactory: requestFactory{},
 	}
 
-	rcvr := fakeReceiver{msg: tmp.ProtoOf(BlockRequest{to: 1})}
+	rcvr := fakeReceiver{msg: BlockRequest{to: 1}}
 	call := &fake.Call{}
 	sender := fakeSender{call: call}
 
@@ -73,12 +69,10 @@ func TestHandler_Stream(t *testing.T) {
 	err = h.Stream(sender, fakeReceiver{err: xerrors.New("oops")})
 	require.EqualError(t, err, "couldn't receive message: oops")
 
-	h.requestFactory = fake.MessageFactory{}
-	err = h.Stream(sender, fakeReceiver{msg: tmp.ProtoOf(fake.Message{})})
+	err = h.Stream(sender, fakeReceiver{msg: fake.Message{}})
 	require.EqualError(t, err,
 		"invalid message type 'fake.Message' != 'skipchain.BlockRequest'")
 
-	h.requestFactory = requestFactory{}
 	db.err = xerrors.New("oops")
 	err = h.Stream(sender, rcvr)
 	require.EqualError(t, err, "couldn't read block at index 0: oops")
@@ -93,11 +87,11 @@ func TestHandler_Stream(t *testing.T) {
 
 type fakeReceiver struct {
 	mino.Receiver
-	msg proto.Message
+	msg serde.Message
 	err error
 }
 
-func (rcvr fakeReceiver) Recv(context.Context) (mino.Address, proto.Message, error) {
+func (rcvr fakeReceiver) Recv(context.Context) (mino.Address, serde.Message, error) {
 	return nil, rcvr.msg, rcvr.err
 }
 
@@ -107,7 +101,7 @@ type fakeSender struct {
 	err  error
 }
 
-func (s fakeSender) Send(msg proto.Message, addrs ...mino.Address) <-chan error {
+func (s fakeSender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 	s.call.Add(msg, addrs)
 	errs := make(chan error, 1)
 	errs <- s.err

@@ -3,8 +3,8 @@ package minogrpc
 import (
 	context "context"
 
-	proto "github.com/golang/protobuf/proto"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc/metadata"
 )
@@ -16,22 +16,23 @@ import (
 type RPC struct {
 	overlay overlay
 	uri     string
+	factory serde.Factory
 }
 
 // Call implements mino.RPC. It calls the RPC on each provided address.
-func (rpc *RPC) Call(ctx context.Context, req proto.Message,
-	players mino.Players) (<-chan proto.Message, <-chan error) {
+func (rpc *RPC) Call(ctx context.Context, req serde.Message,
+	players mino.Players) (<-chan serde.Message, <-chan error) {
 
-	out := make(chan proto.Message, players.Len())
+	out := make(chan serde.Message, players.Len())
 	errs := make(chan error, players.Len())
 
-	m, err := rpc.overlay.encoder.MarshalAny(req)
+	data, err := rpc.overlay.serializer.Serialize(req)
 	if err != nil {
 		errs <- xerrors.Errorf("failed to marshal msg to any: %v", err)
 		return out, errs
 	}
 
-	sendMsg := &Message{Payload: m}
+	sendMsg := &Message{Payload: data}
 
 	go func() {
 		iter := players.AddressIterator()
@@ -56,7 +57,8 @@ func (rpc *RPC) Call(ctx context.Context, req proto.Message,
 				continue
 			}
 
-			resp, err := rpc.overlay.encoder.UnmarshalDynamicAny(callResp.GetPayload())
+			var resp serde.Message
+			err = rpc.overlay.serializer.Deserialize(callResp.GetPayload(), rpc.factory, &resp)
 			if err != nil {
 				errs <- xerrors.Errorf("couldn't unmarshal payload: %v", err)
 				continue
@@ -86,8 +88,9 @@ func (rpc RPC) Stream(ctx context.Context,
 	header := metadata.New(map[string]string{headerURIKey: rpc.uri})
 
 	receiver := receiver{
+		serializer:     rpc.overlay.serializer,
+		factory:        rpc.factory,
 		addressFactory: rpc.overlay.routingFactory.GetAddressFactory(),
-		encoder:        rpc.overlay.encoder,
 		errs:           make(chan error, 1),
 		queue:          newNonBlockingQueue(),
 	}
@@ -95,8 +98,8 @@ func (rpc RPC) Stream(ctx context.Context,
 	gateway := rting.GetRoot()
 
 	sender := sender{
-		encoder:        rpc.overlay.encoder,
 		me:             root,
+		serializer:     rpc.overlay.serializer,
 		addressFactory: AddressFactory{},
 		gateway:        gateway,
 		clients:        map[mino.Address]chan OutContext{},

@@ -4,7 +4,6 @@ import (
 	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
-	"go.dedis.ch/dela/serde/tmp"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/share"
 	"go.dedis.ch/kyber/v3/suites"
@@ -22,6 +21,7 @@ var suite = suites.MustFind("Ed25519")
 type Pedersen struct {
 	privKey kyber.Scalar
 	mino    mino.Mino
+	rpc     mino.RPC
 	factory serde.Factory
 }
 
@@ -42,7 +42,7 @@ func (s *Pedersen) Listen() (dkg.Actor, error) {
 
 	h := NewHandler(s.privKey, s.mino.GetAddress(), s.factory)
 
-	rpc, err := s.mino.MakeRPC("dkg", h)
+	rpc, err := s.mino.MakeRPC("dkg", h, s.factory)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create RPC: %v", err)
 	}
@@ -97,7 +97,7 @@ func (a *Actor) Setup(players mino.Players, pubKeys []kyber.Point, threshold int
 		pubkeys:   pubKeys,
 	}
 
-	errs := sender.Send(tmp.ProtoOf(message), addrs...)
+	errs := sender.Send(message, addrs...)
 	err, more := <-errs
 	if more {
 		return xerrors.Errorf("failed to send start: %v", err)
@@ -113,9 +113,7 @@ func (a *Actor) Setup(players mino.Players, pubKeys []kyber.Point, threshold int
 				"receiving: %v", addr, err)
 		}
 
-		resp := tmp.FromProto(msg, a.factory)
-
-		doneMsg, ok := resp.(StartDone)
+		doneMsg, ok := msg.(StartDone)
 		if !ok {
 			return xerrors.Errorf("expected to receive a Done message, but "+
 				"go the following: %T", msg)
@@ -194,7 +192,7 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 		C: C,
 	}
 
-	sender.Send(tmp.ProtoOf(message), addrs...)
+	sender.Send(message, addrs...)
 
 	pubShares := make([]*share.PubShare, len(addrs))
 
@@ -205,9 +203,7 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 				from, err)
 		}
 
-		resp := tmp.FromProto(message, a.factory)
-
-		decryptReply, ok := resp.(DecryptReply)
+		decryptReply, ok := message.(DecryptReply)
 		if !ok {
 			return []byte{}, xerrors.Errorf("got unexpected reply, expected "+
 				"a decrypt reply but got: %T", message)

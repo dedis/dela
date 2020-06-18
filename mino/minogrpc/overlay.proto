@@ -29,7 +29,7 @@ message JoinResponse {
 // payload.
 message Message {
     bytes from = 1;
-    google.protobuf.Any payload = 2;
+    bytes payload = 2;
 }
 
 // Envelope is wrapper around a message and one or several recipients.

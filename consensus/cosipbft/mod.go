@@ -5,7 +5,6 @@ package cosipbft
 import (
 	"context"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/consensus"
@@ -14,7 +13,6 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
-	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -89,12 +87,11 @@ func (c *Consensus) Listen(r consensus.Reactor) (consensus.Actor, error) {
 	handler := rpcHandler{
 		Consensus: c,
 		reactor:   r,
-		factory: propagateFactory{
-			sigFactory: c.cosi.GetSignatureFactory(),
-		},
 	}
 
-	rpc, err := c.mino.MakeRPC(rpcName, handler)
+	factory := propagateFactory{sigFactory: c.cosi.GetSignatureFactory()}
+
+	rpc, err := c.mino.MakeRPC(rpcName, handler, factory)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't create the rpc: %w", err)
 	}
@@ -175,7 +172,7 @@ func (a pbftActor) Propose(p serde.Message) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	resps, errs := a.rpc.Call(ctx, tmp.ProtoOf(propagateReq), authority)
+	resps, errs := a.rpc.Call(ctx, propagateReq, authority)
 	for {
 		select {
 		case <-a.closing:
@@ -310,15 +307,12 @@ type rpcHandler struct {
 	mino.UnsupportedHandler
 
 	reactor consensus.Reactor
-	factory serde.Factory
 }
 
-func (h rpcHandler) Process(req mino.Request) (proto.Message, error) {
-	in := tmp.FromProto(req.Message, h.factory)
-
-	msg, ok := in.(Propagate)
+func (h rpcHandler) Process(req mino.Request) (serde.Message, error) {
+	msg, ok := req.Message.(Propagate)
 	if !ok {
-		return nil, xerrors.Errorf("message type not supported '%T'", in)
+		return nil, xerrors.Errorf("message type not supported '%T'", req.Message)
 	}
 
 	// 1. Verify the commit signature to make sure a threshold of nodes have

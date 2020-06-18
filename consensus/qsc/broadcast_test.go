@@ -8,13 +8,12 @@ import (
 	"testing"
 	"time"
 
-	proto "github.com/golang/protobuf/proto"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minoch"
-	"go.dedis.ch/dela/serde/tmp"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -53,19 +52,18 @@ func TestHandlerTLCR_Process(t *testing.T) {
 				timeStep: 1,
 			},
 		},
-		factory: RequestFactory{mFactory: fake.MessageFactory{}},
 	}
 
-	resp, err := h.Process(mino.Request{Message: tmp.ProtoOf(MessageSet{})})
+	resp, err := h.Process(mino.Request{Message: MessageSet{}})
 	require.NoError(t, err)
 	require.Nil(t, resp)
 	require.NotNil(t, <-ch)
 
-	resp, err = h.Process(mino.Request{Message: tmp.ProtoOf(RequestMessageSet{timeStep: 0})})
+	resp, err = h.Process(mino.Request{Message: RequestMessageSet{timeStep: 0}})
 	require.NoError(t, err)
 	require.Nil(t, resp)
 
-	_, err = h.Process(mino.Request{Message: tmp.ProtoOf(Proposal{value: fake.Message{}})})
+	_, err = h.Process(mino.Request{Message: fake.Message{}})
 	require.EqualError(t, err, "invalid message type 'fake.Message'")
 }
 
@@ -116,7 +114,6 @@ func TestTLCR_CatchUp(t *testing.T) {
 		timeStep: 0,
 		rpc:      fakeRPC{},
 		players:  fakeSinglePlayer{},
-		factory:  RequestFactory{mFactory: fake.MessageFactory{}},
 	}
 
 	ctx := context.Background()
@@ -128,12 +125,18 @@ func TestTLCR_CatchUp(t *testing.T) {
 	require.Equal(t, m2, <-ch)
 
 	m2.timeStep = 1
-	bc.rpc = fakeRPC{msg: tmp.ProtoOf(MessageSet{messages: map[int64]Message{2: {value: Proposal{value: fake.Message{}}}}})}
+	bc.rpc = fakeRPC{
+		msg: MessageSet{
+			messages: map[int64]Message{
+				2: {value: Proposal{value: fake.Message{}}},
+			},
+		},
+	}
 	err = bc.catchUp(ctx, m1, m2)
 	require.NoError(t, err)
 	require.Equal(t, m2, <-ch)
 
-	bc.rpc = fakeRPC{msg: tmp.ProtoOf(Proposal{value: fake.Message{}})}
+	bc.rpc = fakeRPC{msg: fake.Message{}}
 	err = bc.catchUp(ctx, m1, m2)
 	require.EqualError(t, xerrors.Unwrap(err),
 		"got message type 'fake.Message' but expected 'qsc.MessageSet'")
@@ -291,18 +294,18 @@ func (p fakeSinglePlayer) Take(...mino.FilterUpdater) mino.Players {
 type fakeRPC struct {
 	mino.RPC
 	err    error
-	msg    proto.Message
+	msg    serde.Message
 	closed bool
 }
 
-func (rpc fakeRPC) Call(ctx context.Context, pb proto.Message,
-	players mino.Players) (<-chan proto.Message, <-chan error) {
+func (rpc fakeRPC) Call(ctx context.Context, pb serde.Message,
+	players mino.Players) (<-chan serde.Message, <-chan error) {
 
 	errs := make(chan error, 1)
 	if rpc.err != nil {
 		errs <- rpc.err
 	}
-	msgs := make(chan proto.Message, 1)
+	msgs := make(chan serde.Message, 1)
 	if rpc.msg != nil {
 		msgs <- rpc.msg
 	}

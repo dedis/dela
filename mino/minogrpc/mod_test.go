@@ -184,22 +184,23 @@ func TestMinogrpc_MakeRPC(t *testing.T) {
 	minoGrpc := Minogrpc{
 		namespace: "namespace",
 		overlay:   overlay{},
-		handlers:  make(map[string]mino.Handler),
+		endpoints: make(map[string]Endpoint),
 	}
 
 	handler := mino.UnsupportedHandler{}
 
-	rpc, err := minoGrpc.MakeRPC("name", handler)
+	rpc, err := minoGrpc.MakeRPC("name", handler, fake.MessageFactory{})
 	require.NoError(t, err)
 
 	expectedRPC := &RPC{
+		factory: fake.MessageFactory{},
 		overlay: overlay{},
 		uri:     "namespace/name",
 	}
 
-	h, ok := minoGrpc.handlers[expectedRPC.uri]
+	endpoint, ok := minoGrpc.endpoints[expectedRPC.uri]
 	require.True(t, ok)
-	require.Equal(t, handler, h)
+	require.Equal(t, handler, endpoint.Handler)
 	require.Equal(t, expectedRPC, rpc)
 }
 

@@ -38,3 +38,9 @@ type BlockRequest struct {
 type BlockResponse struct {
 	Block json.RawMessage
 }
+
+type Message struct {
+	Propagate *PropagateGenesis `json:",omitempty"`
+	Request   *BlockRequest     `json:",omitempty"`
+	Response  *BlockResponse    `json:",omitempty"`
+}

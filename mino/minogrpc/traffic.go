@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/protobuf/ptypes"
 	"go.dedis.ch/dela/mino"
 	"google.golang.org/grpc/metadata"
 )
@@ -183,13 +182,6 @@ func GenerateGraphviz(out io.Writer, withSend, withRcv bool, traffics ...*traffi
 				continue
 			}
 
-			msgType := fmt.Sprintf("%T", item.msg.Message)
-			var da ptypes.DynamicAny
-			err := ptypes.UnmarshalAny(item.msg.Message.GetPayload(), &da)
-			if err == nil {
-				msgType = fmt.Sprintf("%T", da.Message)
-			}
-
 			color := "#4AB2FF"
 
 			if item.typeStr == "received" {
@@ -204,8 +196,8 @@ func GenerateGraphviz(out io.Writer, withSend, withRcv bool, traffics ...*traffi
 
 			from := traffic.addressFactory.FromText(item.msg.GetMessage().From)
 
-			msgStr := fmt.Sprintf("<font point-size='10' color='#9C9C9C'>from \"%v\"<br/>%s%s</font>",
-				from, toStr, msgType)
+			msgStr := fmt.Sprintf("<font point-size='10' color='#9C9C9C'>from \"%v\"<br/>%s</font>",
+				from, toStr)
 
 			fmt.Fprintf(out, "\"%v\" -> \"%v\" "+
 				"[ label = < <font color='#303030'><b>%d</b> <font point-size='10'>(%d)</font></font><br/>%s> color=\"%s\" ];\n",

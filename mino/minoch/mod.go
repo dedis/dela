@@ -7,8 +7,9 @@ import (
 	"sync"
 
 	"go.dedis.ch/dela"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/json"
 )
 
 // Minoch is an implementation of the Mino interface using channels. Each
@@ -16,20 +17,20 @@ import (
 type Minoch struct {
 	sync.Mutex
 	manager    *Manager
-	encoder    encoding.ProtoMarshaler
 	identifier string
 	path       string
 	rpcs       map[string]RPC
+	serializer serde.Serializer
 }
 
 // NewMinoch creates a new instance of a local Mino instance.
 func NewMinoch(manager *Manager, identifier string) (*Minoch, error) {
 	inst := &Minoch{
 		manager:    manager,
-		encoder:    encoding.NewProtoEncoder(),
 		identifier: identifier,
 		path:       "",
 		rpcs:       make(map[string]RPC),
+		serializer: json.NewSerializer(),
 	}
 
 	err := manager.insert(inst)
@@ -66,13 +67,14 @@ func (m *Minoch) MakeNamespace(path string) (mino.Mino, error) {
 }
 
 // MakeRPC creates an RPC that can send to and receive from the unique path.
-func (m *Minoch) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
+func (m *Minoch) MakeRPC(name string, h mino.Handler, f serde.Factory) (mino.RPC, error) {
 	rpc := RPC{
-		manager: m.manager,
-		encoder: m.encoder,
-		addr:    m.GetAddress(),
-		path:    fmt.Sprintf("%s/%s", m.path, name),
-		h:       h,
+		manager:    m.manager,
+		addr:       m.GetAddress(),
+		path:       fmt.Sprintf("%s/%s", m.path, name),
+		h:          h,
+		serializer: m.serializer,
+		factory:    f,
 	}
 
 	m.Lock()

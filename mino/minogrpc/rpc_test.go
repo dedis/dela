@@ -5,28 +5,28 @@ import (
 	"io"
 	"testing"
 
-	"github.com/golang/protobuf/ptypes"
-	any "github.com/golang/protobuf/ptypes/any"
-	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/routing"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 )
 
 func TestRPC_Call(t *testing.T) {
 	rpc := &RPC{
+		factory: fake.MessageFactory{},
 		overlay: overlay{
-			encoder:     encoding.NewProtoEncoder(),
 			connFactory: fakeConnFactory{},
+			serializer:  json.NewSerializer(),
 		},
 	}
 
 	addrs := []mino.Address{address{"A"}, address{"B"}}
 
-	msgs, errs := rpc.Call(context.Background(), &empty.Empty{}, mino.NewAddresses(addrs...))
+	msgs, errs := rpc.Call(context.Background(), fake.Message{}, mino.NewAddresses(addrs...))
 	select {
 	case err := <-errs:
 		t.Fatal(err)
@@ -40,17 +40,17 @@ func TestRPC_Stream(t *testing.T) {
 
 	rpc := &RPC{
 		overlay: overlay{
-			encoder:        encoding.NewProtoEncoder(),
 			me:             addrs[0],
 			routingFactory: routing.NewTreeRoutingFactory(1, AddressFactory{}),
 			connFactory:    fakeConnFactory{},
+			serializer:     json.NewSerializer(),
 		},
 	}
 
 	out, in, err := rpc.Stream(context.Background(), mino.NewAddresses(addrs...))
 	require.NoError(t, err)
 
-	out.Send(&empty.Empty{}, newRootAddress())
+	out.Send(fake.Message{}, newRootAddress())
 	in.Recv(context.Background())
 
 	rpc.overlay.routingFactory = badRtingFactory{}
@@ -110,13 +110,8 @@ func (conn fakeConnection) Invoke(ctx context.Context, m string, arg interface{}
 
 	switch msg := resp.(type) {
 	case *Message:
-		emptyAny, err := ptypes.MarshalAny(&empty.Empty{})
-		if err != nil {
-			return err
-		}
-
 		*msg = Message{
-			Payload: emptyAny,
+			Payload: []byte(`{}`),
 		}
 	case *JoinResponse:
 		*msg = conn.resp.(JoinResponse)
@@ -161,7 +156,7 @@ type badRtingFactory struct {
 	routing.Factory
 }
 
-func (f badRtingFactory) FromAny(*any.Any) (routing.Routing, error) {
+func (f badRtingFactory) VisitJSON(serde.FactoryInput) (serde.Message, error) {
 	return nil, xerrors.New("oops")
 }
 
