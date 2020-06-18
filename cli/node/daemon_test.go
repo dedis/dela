@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"syscall"
 	"testing"
@@ -92,8 +93,10 @@ func TestSocketDaemon_Listen(t *testing.T) {
 
 	daemon.socketpath = "/deadbeef/test.sock"
 	err = daemon.Listen()
-	require.EqualError(t, err,
-		"couldn't make path: mkdir /deadbeef/: permission denied")
+	require.NotNil(t, err)
+	// on the testing env the message can be different with a readonly error
+	// instead of a permission denied, thus we check only the first part.
+	require.Regexp(t, regexp.MustCompile("^couldn't make path: mkdir /deadbeef/:"), err)
 
 	daemon.socketpath = "/test.sock"
 	err = daemon.Listen()
