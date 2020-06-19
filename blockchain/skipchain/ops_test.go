@@ -14,7 +14,7 @@ func TestOperations_CatchUp(t *testing.T) {
 		Payload: fake.Message{},
 	}
 
-	rcv := fake.Receiver{Msg: BlockResponse{block: block}}
+	rcv := fake.NewReceiver(BlockResponse{block: block})
 
 	call := &fake.Call{}
 	ops := &operations{
@@ -74,7 +74,7 @@ func TestOperations_CatchUp(t *testing.T) {
 		"couldn't store block: tx failed: couldn't commit block: oops")
 
 	ops.responseFactory = fake.MessageFactory{}
-	ops.rpc = fake.NewStreamRPC(fake.Receiver{Msg: fake.Message{}}, fake.Sender{})
+	ops.rpc = fake.NewStreamRPC(fake.NewReceiver(fake.Message{}), fake.Sender{})
 	err = ops.catchUp(5, nil)
 	require.EqualError(t, err, "invalid response type 'fake.Message' != 'skipchain.BlockResponse'")
 }
