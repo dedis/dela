@@ -90,14 +90,20 @@ func TestMinogrpc_New(t *testing.T) {
 
 	require.NoError(t, m.GracefulClose())
 
-	// Giving a wrong address, should be "//example:3333"
 	_, err = NewMinogrpc("\\", 0, nil)
 	require.EqualError(t, err,
 		"couldn't parse url: parse \"//\\\\:0\": invalid character \"\\\\\" in host name")
 
-	_, err = NewMinogrpc("127.0.0.1", 1, routing.NewTreeRoutingFactory(1, AddressFactory{}))
-	require.EqualError(t, err,
-		"couldn't start the server: failed to listen: listen tcp4 127.0.0.1:1: bind: permission denied")
+	_, err = NewMinogrpc("123.4.5.6", 1, routing.NewTreeRoutingFactory(1, AddressFactory{}))
+	require.Error(t, err)
+	// Funny enought, macos would output:
+	//   couldn't start the server: failed to listen: listen tcp4 123.4.5.6:1:
+	//     bind: can't assign requested address
+	// While linux outpus:
+	//   couldn't start the server: failed to listen: listen tcp4 123.4.5.6:1:
+	//     bind: cannot assign requested address
+	require.Regexp(t, "^couldn't start the server: failed to listen: listen "+
+		"tcp4 123.4.5.6:1:", err)
 }
 
 func TestMinogrpc_GetAddressFactory(t *testing.T) {

@@ -41,14 +41,19 @@ func TestSocketClient_Send(t *testing.T) {
 	err = client.Send([]byte("deadbeef"))
 	require.EqualError(t, err, "couldn't read output: fake error")
 
+	// Windows only allows opening one socket per address, this is why we use
+	// another one.
+	path = filepath.Join(os.TempDir(), "daemon2.sock")
+	client.socketpath = path
+
 	listen(t, path, true)
 	in := make([]byte, 256*1000) // fill the buffer
 	err = client.Send(in)
-	require.NotNil(t, err)
+	require.Error(t, err)
 
 	if runtime.GOOS == "linux" {
 		require.EqualError(t, err,
-			"couldn't write to daemon: write unix @->/tmp/daemon.sock: write: broken pipe")
+			"couldn't write to daemon: write unix @->/tmp/daemon2.sock: write: broken pipe")
 	}
 }
 
@@ -90,15 +95,23 @@ func TestSocketDaemon_Listen(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "[ERROR] unknown command '2'\n", out.String())
 
+	// the rest is not concerned by windows that actually allows the creation of
+	// root files and folders
+	if runtime.GOOS == "windows" {
+		t.Skip()
+	}
+
 	daemon.socketpath = "/deadbeef/test.sock"
 	err = daemon.Listen()
-	require.EqualError(t, err,
-		"couldn't make path: mkdir /deadbeef/: permission denied")
+	require.Error(t, err)
+	// on the testing env the message can be different with a readonly error
+	// instead of a permission denied, thus we check only the first part.
+	require.Regexp(t, "^couldn't make path: mkdir /deadbeef/:", err)
 
 	daemon.socketpath = "/test.sock"
 	err = daemon.Listen()
-	require.EqualError(t, err,
-		"couldn't bind socket: listen unix /test.sock: bind: permission denied")
+	require.Error(t, err)
+	require.Regexp(t, "^couldn't bind socket: listen unix /test.sock: bind:", err)
 }
 
 func TestSocketFactory_ClientFromContext(t *testing.T) {
@@ -113,8 +126,13 @@ func TestSocketFactory_ClientFromContext(t *testing.T) {
 	require.Equal(t, filepath.Join(homeDir, ".dela", "daemon.sock"),
 		client.(socketClient).socketpath)
 
-	require.NoError(t, syscall.Unsetenv("HOME"))
-	defer syscall.Setenv("HOME", homeDir)
+	if runtime.GOOS == "windows" {
+		require.NoError(t, syscall.Unsetenv("USERPROFILE"))
+		defer syscall.Setenv("USERPROFILE", homeDir)
+	} else {
+		require.NoError(t, syscall.Unsetenv("HOME"))
+		defer syscall.Setenv("HOME", homeDir)
+	}
 
 	client, err = factory.ClientFromContext(fakeContext{})
 	require.NoError(t, err)
