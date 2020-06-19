@@ -2,7 +2,6 @@ package minogrpc
 
 import (
 	"net/url"
-	"regexp"
 	"sync"
 	"testing"
 	"time"
@@ -96,14 +95,15 @@ func TestMinogrpc_New(t *testing.T) {
 		"couldn't parse url: parse \"//\\\\:0\": invalid character \"\\\\\" in host name")
 
 	_, err = NewMinogrpc("123.4.5.6", 1, routing.NewTreeRoutingFactory(1, AddressFactory{}))
-	require.NotNil(t, err)
+	require.Error(t, err)
 	// Funny enought, macos would output:
 	//   couldn't start the server: failed to listen: listen tcp4 123.4.5.6:1:
 	//     bind: can't assign requested address
 	// While linux outpus:
 	//   couldn't start the server: failed to listen: listen tcp4 123.4.5.6:1:
 	//     bind: cannot assign requested address
-	require.Regexp(t, regexp.MustCompile("^couldn't start the server: failed to listen: listen tcp4 123.4.5.6:1:"), err)
+	require.Regexp(t, "^couldn't start the server: failed to listen: listen "+
+		"tcp4 123.4.5.6:1:", err)
 }
 
 func TestMinogrpc_GetAddressFactory(t *testing.T) {

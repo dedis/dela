@@ -5,7 +5,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"syscall"
 	"testing"
@@ -50,7 +49,7 @@ func TestSocketClient_Send(t *testing.T) {
 	listen(t, path, true)
 	in := make([]byte, 256*1000) // fill the buffer
 	err = client.Send(in)
-	require.NotNil(t, err)
+	require.Error(t, err)
 
 	if runtime.GOOS == "linux" {
 		require.EqualError(t, err,
@@ -104,17 +103,15 @@ func TestSocketDaemon_Listen(t *testing.T) {
 
 	daemon.socketpath = "/deadbeef/test.sock"
 	err = daemon.Listen()
-	require.NotNil(t, err)
+	require.Error(t, err)
 	// on the testing env the message can be different with a readonly error
 	// instead of a permission denied, thus we check only the first part.
-	require.Regexp(t,
-		regexp.MustCompile("^couldn't make path: mkdir /deadbeef/:"), err)
+	require.Regexp(t, "^couldn't make path: mkdir /deadbeef/:", err)
 
 	daemon.socketpath = "/test.sock"
 	err = daemon.Listen()
-	require.NotNil(t, err)
-	require.Regexp(t,
-		regexp.MustCompile("^couldn't bind socket: listen unix /test.sock: bind:"), err)
+	require.Error(t, err)
+	require.Regexp(t, "^couldn't bind socket: listen unix /test.sock: bind:", err)
 }
 
 func TestSocketFactory_ClientFromContext(t *testing.T) {
