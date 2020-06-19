@@ -1,7 +1,6 @@
 package pedersen
 
 import (
-	"regexp"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -67,7 +66,7 @@ func TestPedersen_Setup(t *testing.T) {
 		fake.NewAddress(0), fake.NewAddress(1)}},
 		[]kyber.Point{suite.Point(), suite.Point()}, 1)
 	require.Error(t, err)
-	require.Regexp(t, regexp.MustCompile("^the public keys does not match:"), err)
+	require.Regexp(t, "^the public keys does not match:", err)
 }
 
 func TestPedersen_Decrypt(t *testing.T) {
