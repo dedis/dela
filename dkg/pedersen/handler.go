@@ -113,7 +113,11 @@ mainSwitch:
 		goto mainSwitch
 
 	case DecryptRequest:
-		// TODO: check if started before
+		if !h.startRes.Done() {
+			return xerrors.Errorf("you must first initialize DKG. Did you " +
+				"call setup() first?")
+		}
+
 		h.RLock()
 		S := suite.Point().Mul(h.privShare.V, msg.K)
 		h.RUnlock()
@@ -251,11 +255,23 @@ func (h *Handler) start(start Start, receivedDeals []Deal, from mino.Address,
 		}
 	}
 
-	for _, response := range receivedResps {
-		_, err = h.dkg.ProcessResponse(response)
+	pubKey, err := h.certify(receivedResps, out, in, from)
+	if err != nil {
+		return xerrors.Errorf("failed to certify: %v", err)
+	}
+
+	h.startRes.Fill(start.addresses, pubKey)
+
+	return nil
+}
+
+func (h *Handler) certify(resps []*pedersen.Response, out mino.Sender,
+	in mino.Receiver, from mino.Address) (kyber.Point, error) {
+
+	for _, response := range resps {
+		_, err := h.dkg.ProcessResponse(response)
 		if err != nil {
-			dela.Logger.Warn().Msgf("%s failed to process response "+
-				"from '%s': %v", h.me, from, err)
+			dela.Logger.Warn().Msgf("%s failed to process response: %v", h.me, err)
 		}
 	}
 
@@ -266,7 +282,7 @@ func (h *Handler) start(start Start, receivedDeals []Deal, from mino.Address,
 
 		from, msg, err := in.Recv(ctx)
 		if err != nil {
-			return xerrors.Errorf("failed to receive after sending deals: %v", err)
+			return nil, xerrors.Errorf("failed to receive after sending deals: %v", err)
 		}
 
 		switch msg := msg.(type) {
@@ -291,7 +307,7 @@ func (h *Handler) start(start Start, receivedDeals []Deal, from mino.Address,
 			}
 
 		default:
-			return xerrors.Errorf("expected a response, got: %T", msg)
+			return nil, xerrors.Errorf("expected a response, got: %T", msg)
 		}
 	}
 
@@ -300,23 +316,22 @@ func (h *Handler) start(start Start, receivedDeals []Deal, from mino.Address,
 	// 6. Send back the public DKG key
 	distrKey, err := h.dkg.DistKeyShare()
 	if err != nil {
-		return xerrors.Errorf("failed to get distr key: %v", err)
+		return nil, xerrors.Errorf("failed to get distr key: %v", err)
 	}
 
 	done := StartDone{pubkey: distrKey.Public()}
+
 	errs := out.Send(done, from)
 	err = <-errs
 	if err != nil {
-		return xerrors.Errorf("got an error while sending pub key: %v", err)
+		return nil, xerrors.Errorf("got an error while sending pub key: %v", err)
 	}
 
 	h.Lock()
 	h.privShare = distrKey.PriShare()
 	h.Unlock()
 
-	h.startRes.Fill(start.addresses, distrKey.Public())
-
-	return nil
+	return distrKey.Public(), nil
 }
 
 // handleDeal process the Deal and send the responses to the other nodes.

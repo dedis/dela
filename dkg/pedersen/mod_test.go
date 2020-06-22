@@ -5,11 +5,109 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/dkg"
+	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc"
 	"go.dedis.ch/dela/mino/minogrpc/routing"
+	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/kyber/v3"
 )
+
+func TestPedersen_Listen(t *testing.T) {
+	pedersen := NewPedersen(suite.Scalar(), fake.NewBadMino())
+	_, err := pedersen.Listen()
+	require.EqualError(t, err, "failed to create RPC: fake error")
+
+	pedersen = NewPedersen(suite.Scalar(), fake.Mino{})
+	actor, err := pedersen.Listen()
+	require.NoError(t, err)
+
+	require.NotNil(t, actor)
+}
+
+func TestPedersen_Setup(t *testing.T) {
+	actor := Actor{
+		rpc:      fake.NewBadStreamRPC(),
+		startRes: &state{},
+	}
+
+	err := actor.Setup(&fakePlayers{}, []kyber.Point{}, 0)
+	require.EqualError(t, err, "failed to stream: fake error")
+
+	rpc := fake.NewStreamRPC(fake.Receiver{}, fake.NewBadSender())
+	actor.rpc = rpc
+
+	err = actor.Setup(&fakePlayers{}, []kyber.Point{}, 0)
+	require.EqualError(t, err, "failed to send start: fake error")
+
+	rpc = fake.NewStreamRPC(fake.NewBadReceiver(), fake.Sender{})
+	actor.rpc = rpc
+
+	err = actor.Setup(&fakePlayers{players: []mino.Address{fake.NewAddress(0)}},
+		[]kyber.Point{suite.Point()}, 1)
+	require.EqualError(t, err, "got an error from '%!s(<nil>)' while receiving: fake error")
+
+	rpc = fake.NewStreamRPC(fake.Receiver{}, fake.Sender{})
+	actor.rpc = rpc
+
+	err = actor.Setup(&fakePlayers{players: []mino.Address{fake.NewAddress(0)}},
+		[]kyber.Point{suite.Point()}, 1)
+	require.EqualError(t, err, "expected to receive a Done message, but go the following: <nil>")
+
+	rpc = fake.NewStreamRPC(fake.Receiver{
+		Msg: []serde.Message{
+			StartDone{pubkey: suite.Point()},
+			StartDone{pubkey: suite.Point().Pick(suite.RandomStream())},
+		},
+	}, fake.Sender{})
+	actor.rpc = rpc
+
+	err = actor.Setup(&fakePlayers{players: []mino.Address{
+		fake.NewAddress(0), fake.NewAddress(1)}},
+		[]kyber.Point{suite.Point(), suite.Point()}, 1)
+	require.Error(t, err)
+	require.Regexp(t, "^the public keys does not match:", err)
+}
+
+func TestPedersen_Decrypt(t *testing.T) {
+	actor := Actor{
+		rpc:      fake.NewBadStreamRPC(),
+		startRes: &state{participants: []mino.Address{fake.NewAddress(0)}, distrKey: suite.Point()},
+	}
+
+	_, err := actor.Decrypt(suite.Point(), suite.Point())
+	require.NoError(t, err)
+
+	rpc := fake.NewStreamRPC(fake.NewBadReceiver(), fake.NewBadSender())
+	actor.rpc = rpc
+
+	_, err = actor.Decrypt(suite.Point(), suite.Point())
+	require.EqualError(t, err, "failed to receive from '%!s(<nil>)': fake error")
+
+	rpc = fake.NewStreamRPC(fake.Receiver{}, fake.Sender{})
+	actor.rpc = rpc
+
+	_, err = actor.Decrypt(suite.Point(), suite.Point())
+	require.EqualError(t, err, "got unexpected reply, expected a decrypt reply but got: <nil>")
+
+	rpc = fake.NewStreamRPC(fake.NewReceiver(DecryptReply{I: -1, V: suite.Point()}), fake.Sender{})
+	actor.rpc = rpc
+
+	_, err = actor.Decrypt(suite.Point(), suite.Point())
+	require.EqualError(t, err, "failed to recover commit: share: not enough "+
+		"good public shares to reconstruct secret commitment")
+
+	rpc = fake.NewStreamRPC(fake.NewReceiver(DecryptReply{I: 1, V: suite.Point()}), fake.Sender{})
+	actor.rpc = rpc
+
+	_, err = actor.Decrypt(suite.Point(), suite.Point())
+	require.NoError(t, err)
+}
+
+func TestPedersen_Reshare(t *testing.T) {
+	actor := Actor{}
+	actor.Reshare()
+}
 
 func TestPedersen_Scenario(t *testing.T) {
 	n := 5
@@ -89,7 +187,7 @@ func TestPedersen_Scenario(t *testing.T) {
 	}
 }
 
-// ----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 // Utility functions
 
 // fakePlayers is a fake players

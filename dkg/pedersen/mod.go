@@ -97,8 +97,8 @@ func (a *Actor) Setup(players mino.Players, pubKeys []kyber.Point, threshold int
 	}
 
 	errs := sender.Send(message, addrs...)
-	err, more := <-errs
-	if more {
+	err = <-errs
+	if err != nil {
 		return xerrors.Errorf("failed to send start: %v", err)
 	}
 
