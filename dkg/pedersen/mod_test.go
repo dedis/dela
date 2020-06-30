@@ -32,26 +32,26 @@ func TestPedersen_Setup(t *testing.T) {
 		startRes: &state{},
 	}
 
-	err := actor.Setup(&fakePlayers{}, []kyber.Point{}, 0)
+	_, err := actor.Setup(&fakePlayers{}, []kyber.Point{}, 0)
 	require.EqualError(t, err, "failed to stream: fake error")
 
 	rpc := fake.NewStreamRPC(fake.Receiver{}, fake.NewBadSender())
 	actor.rpc = rpc
 
-	err = actor.Setup(&fakePlayers{}, []kyber.Point{}, 0)
+	_, err = actor.Setup(&fakePlayers{}, []kyber.Point{}, 0)
 	require.EqualError(t, err, "failed to send start: fake error")
 
 	rpc = fake.NewStreamRPC(fake.NewBadReceiver(), fake.Sender{})
 	actor.rpc = rpc
 
-	err = actor.Setup(&fakePlayers{players: []mino.Address{fake.NewAddress(0)}},
+	_, err = actor.Setup(&fakePlayers{players: []mino.Address{fake.NewAddress(0)}},
 		[]kyber.Point{suite.Point()}, 1)
 	require.EqualError(t, err, "got an error from '%!s(<nil>)' while receiving: fake error")
 
 	rpc = fake.NewStreamRPC(fake.Receiver{}, fake.Sender{})
 	actor.rpc = rpc
 
-	err = actor.Setup(&fakePlayers{players: []mino.Address{fake.NewAddress(0)}},
+	_, err = actor.Setup(&fakePlayers{players: []mino.Address{fake.NewAddress(0)}},
 		[]kyber.Point{suite.Point()}, 1)
 	require.EqualError(t, err, "expected to receive a Done message, but go the following: <nil>")
 
@@ -63,7 +63,7 @@ func TestPedersen_Setup(t *testing.T) {
 	}, fake.Sender{})
 	actor.rpc = rpc
 
-	err = actor.Setup(&fakePlayers{players: []mino.Address{
+	_, err = actor.Setup(&fakePlayers{players: []mino.Address{
 		fake.NewAddress(0), fake.NewAddress(1)}},
 		[]kyber.Point{suite.Point(), suite.Point()}, 1)
 	require.Error(t, err)
@@ -166,13 +166,13 @@ func TestPedersen_Scenario(t *testing.T) {
 
 	// Do a setup on one of the actor
 	// wrong lenght of pubKeys
-	err = actors[0].Setup(players, pubKeys[1:], n)
+	_, err = actors[0].Setup(players, pubKeys[1:], n)
 	require.EqualError(t, err, "there should be as many players as pubKey: 5 := 4")
 
-	err = actors[0].Setup(players, pubKeys, n)
+	_, err = actors[0].Setup(players, pubKeys, n)
 	require.NoError(t, err)
 
-	err = actors[0].Setup(players, pubKeys, n)
+	_, err = actors[0].Setup(players, pubKeys, n)
 	require.EqualError(t, err, "startRes is already done, only one setup call is allowed")
 
 	// every node should be able to encrypt/decrypt

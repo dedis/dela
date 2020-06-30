@@ -65,15 +65,15 @@ type Actor struct {
 }
 
 // Setup implement dkg.Actor. It initializes the DKG.
-func (a *Actor) Setup(players mino.Players, pubKeys []kyber.Point, threshold int) error {
+func (a *Actor) Setup(players mino.Players, pubKeys []kyber.Point, threshold int) (kyber.Point, error) {
 
 	if players.Len() != len(pubKeys) {
-		return xerrors.Errorf("there should be as many players as "+
+		return nil, xerrors.Errorf("there should be as many players as "+
 			"pubKey: %d := %d", players.Len(), len(pubKeys))
 	}
 
 	if a.startRes.Done() {
-		return xerrors.Errorf("startRes is already done, only one setup call is allowed")
+		return nil, xerrors.Errorf("startRes is already done, only one setup call is allowed")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -81,7 +81,7 @@ func (a *Actor) Setup(players mino.Players, pubKeys []kyber.Point, threshold int
 
 	sender, receiver, err := a.rpc.Stream(ctx, players)
 	if err != nil {
-		return xerrors.Errorf("failed to stream: %v", err)
+		return nil, xerrors.Errorf("failed to stream: %v", err)
 	}
 
 	players.AddressIterator().Seek(0)
@@ -95,7 +95,7 @@ func (a *Actor) Setup(players mino.Players, pubKeys []kyber.Point, threshold int
 	errs := sender.Send(message, addrs...)
 	err = <-errs
 	if err != nil {
-		return xerrors.Errorf("failed to send start: %v", err)
+		return nil, xerrors.Errorf("failed to send start: %v", err)
 	}
 
 	dkgPubKeys := make([]kyber.Point, len(addrs))
@@ -104,13 +104,13 @@ func (a *Actor) Setup(players mino.Players, pubKeys []kyber.Point, threshold int
 
 		addr, msg, err := receiver.Recv(context.Background())
 		if err != nil {
-			return xerrors.Errorf("got an error from '%s' while "+
+			return nil, xerrors.Errorf("got an error from '%s' while "+
 				"receiving: %v", addr, err)
 		}
 
 		doneMsg, ok := msg.(types.StartDone)
 		if !ok {
-			return xerrors.Errorf("expected to receive a Done message, but "+
+			return nil, xerrors.Errorf("expected to receive a Done message, but "+
 				"go the following: %T", msg)
 		}
 
@@ -120,11 +120,11 @@ func (a *Actor) Setup(players mino.Players, pubKeys []kyber.Point, threshold int
 		// key.
 		// TODO: handle the situation where a pub key is not the same
 		if i != 0 && !dkgPubKeys[i-1].Equal(doneMsg.GetPublicKey()) {
-			return xerrors.Errorf("the public keys does not match: %v", dkgPubKeys)
+			return nil, xerrors.Errorf("the public keys does not match: %v", dkgPubKeys)
 		}
 	}
 
-	return nil
+	return dkgPubKeys[0], nil
 }
 
 // Encrypt implements dkg.Actor. It uses the DKG public key to encrypt a
