@@ -34,7 +34,6 @@ func NewCalypso(dkg dkg.DKG) *Calypso {
 type Calypso struct {
 	dkg      dkg.DKG
 	dkgActor dkg.Actor
-	pubKey   kyber.Point
 	storage  storage.KeyValue
 }
 
@@ -112,6 +111,9 @@ func (c *Calypso) Read(id []byte, r darc.Request) ([]byte, error) {
 
 	var messageJSON encryptedJSON
 	err = json.Unmarshal(messageBuf, &messageJSON)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to unmarshal JSON message: %v", err)
+	}
 
 	darcBuf, err := c.storage.Read(messageJSON.DarcKey)
 	if err != nil {
