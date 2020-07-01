@@ -1,7 +1,7 @@
 package lottery
 
 import (
-	"go.dedis.ch/cothority/v3/darc"
+	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/kyber/v3"
 )
 
@@ -10,8 +10,9 @@ import (
 // authorization layer.
 type Secret interface {
 	Setup() (pubKey kyber.Point, err error)
-	Write(message EncryptedMessage, d *darc.Darc) (ID []byte, err error)
-	Read(id []byte, r darc.Request) (msg []byte, err error)
+	Write(message EncryptedMessage, ac arc.AccessControl) (ID []byte, err error)
+	Read(ID []byte, idents ...arc.Identity) (msg []byte, err error)
+	UpdateAccess(ID []byte, ident arc.Identity, ac arc.AccessControl) error
 }
 
 // Policy defines an interface to check the authorization of an action

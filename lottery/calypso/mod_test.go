@@ -4,9 +4,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/cothority/v3/darc"
-	"go.dedis.ch/cothority/v3/darc/expression"
 	"go.dedis.ch/dela/dkg"
+	"go.dedis.ch/dela/ledger/arc"
+	"go.dedis.ch/dela/ledger/arc/darc"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/util/random"
@@ -24,21 +24,30 @@ func TestMain(t *testing.T) {
 	require.NoError(t, err)
 
 	// DARC stuff
-	owner := darc.NewSignerEd25519(nil, nil)
-	rules := darc.InitRules([]darc.Identity{owner.Identity()}, []darc.Identity{})
-
-	d := darc.NewDarc(rules, []byte("example darc"))
-	expr := expression.InitAndExpr(owner.Identity().String())
-	action := darc.Action("custom_action")
-	d.Rules.AddRule(action, expr)
-	r, err := darc.InitAndSignRequest(d.GetBaseID(), action, []byte("example request"), owner)
+	ownerID := fakeIdentity{buffer: []byte("owner")}
+	foreignID := fakeIdentity{buffer: []byte("foreigner")}
+	d := darc.NewAccess()
+	d, err = d.Evolve(ArcRuleUpdate, ownerID)
+	require.NoError(t, err)
+	d, err = d.Evolve(ArcRuleRead, ownerID)
 	require.NoError(t, err)
 
 	encrypted := NewEncryptedMessage(K, C)
 	id, err := calypso.Write(encrypted, d)
 	require.NoError(t, err)
 
-	decrypted, err := calypso.Read(id, *r)
+	// Trying to read with the foreignID, which isn't allowed yet
+	idents := []arc.Identity{foreignID}
+	_, err = calypso.Read(id, idents...)
+	require.EqualError(t, err, "darc verification failed: couldn't match 'calypso_read': couldn't match identity 'foreigner'")
+
+	// update the acess to allow the foreignID to read
+	d, err = d.Evolve(ArcRuleRead, ownerID, foreignID)
+	err = calypso.UpdateAccess(id, ownerID, d)
+	require.NoError(t, err)
+
+	// now the foreignID whould be able to read
+	decrypted, err := calypso.Read(id, idents...)
 	require.NoError(t, err)
 
 	require.Equal(t, message, decrypted)
@@ -173,4 +182,22 @@ func (it *fakeAddressIterator) GetNext() mino.Address {
 	p := it.players[it.cursor]
 	it.cursor++
 	return p
+}
+
+//
+// arc.Identity
+//
+
+type fakeIdentity struct {
+	arc.Identity
+	buffer []byte
+	err    error
+}
+
+func (i fakeIdentity) MarshalText() ([]byte, error) {
+	return i.buffer, i.err
+}
+
+func (i fakeIdentity) String() string {
+	return string(i.buffer)
 }

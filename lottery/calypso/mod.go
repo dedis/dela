@@ -4,8 +4,12 @@ import (
 	"crypto/rand"
 	"encoding/json"
 
-	"go.dedis.ch/cothority/v3/darc"
+	"go.dedis.ch/dela/serde"
+	serdej "go.dedis.ch/dela/serde/json"
+
 	"go.dedis.ch/dela/dkg"
+	"go.dedis.ch/dela/ledger/arc"
+	"go.dedis.ch/dela/ledger/arc/darc"
 	"go.dedis.ch/dela/lottery"
 	"go.dedis.ch/dela/lottery/storage"
 	"go.dedis.ch/dela/lottery/storage/inmemory"
@@ -15,7 +19,15 @@ import (
 	"golang.org/x/xerrors"
 )
 
-const keySize = 32
+const (
+	keySize = 32
+
+	// ArcRuleUpdate defines the rule to update the arc. This rule must be set
+	// at the write creation to allow the arc to be latter updated.
+	ArcRuleUpdate = "calypso_update"
+	// ArcRuleRead defines the arc rule to read a value
+	ArcRuleRead = "calypso_read"
+)
 
 // Suite is the Kyber suite for Pedersen.
 var suite = suites.MustFind("Ed25519")
@@ -23,8 +35,9 @@ var suite = suites.MustFind("Ed25519")
 // NewCalypso creates a new Calypso
 func NewCalypso(dkg dkg.DKG) *Calypso {
 	return &Calypso{
-		dkg:     dkg,
-		storage: inmemory.NewInMemory(),
+		dkg:        dkg,
+		storage:    inmemory.NewInMemory(),
+		serializer: serdej.NewSerializer(),
 	}
 }
 
@@ -32,9 +45,10 @@ func NewCalypso(dkg dkg.DKG) *Calypso {
 //
 // implements lottery.Secret
 type Calypso struct {
-	dkg      dkg.DKG
-	dkgActor dkg.Actor
-	storage  storage.KeyValue
+	dkg        dkg.DKG
+	dkgActor   dkg.Actor
+	storage    storage.KeyValue
+	serializer serde.Serializer
 }
 
 // Setup implements lottery.Secret
@@ -57,7 +71,7 @@ func (c *Calypso) Setup(players mino.Players, pubKeys []kyber.Point,
 }
 
 // Write implements lottery.Secret
-func (c *Calypso) Write(message lottery.EncryptedMessage, d *darc.Darc) ([]byte, error) {
+func (c *Calypso) Write(message lottery.EncryptedMessage, ac arc.AccessControl) ([]byte, error) {
 	key := make([]byte, keySize)
 	_, err := rand.Read(key)
 	if err != nil {
@@ -80,7 +94,7 @@ func (c *Calypso) Write(message lottery.EncryptedMessage, d *darc.Darc) ([]byte,
 		return nil, xerrors.Errorf("failed to marshal C: %v", err)
 	}
 
-	darcBuf, err := d.ToProto()
+	acBuf, err := c.serializer.Serialize(ac)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to encode darc: %v", err)
 	}
@@ -97,35 +111,19 @@ func (c *Calypso) Write(message lottery.EncryptedMessage, d *darc.Darc) ([]byte,
 	}
 
 	c.storage.Store(key, messageBuf)
-	c.storage.Store(darcKey, darcBuf)
+	c.storage.Store(darcKey, acBuf)
 
 	return key, nil
 }
 
 // Read implements lottery.Secret
-func (c *Calypso) Read(id []byte, r darc.Request) ([]byte, error) {
-	messageBuf, err := c.storage.Read(id)
+func (c *Calypso) Read(id []byte, idents ...arc.Identity) ([]byte, error) {
+	messageJSON, ac, err := c.getRead(id)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to read message: %v", err)
+		return nil, xerrors.Errorf("failed to get read: %v", err)
 	}
 
-	var messageJSON encryptedJSON
-	err = json.Unmarshal(messageBuf, &messageJSON)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to unmarshal JSON message: %v", err)
-	}
-
-	darcBuf, err := c.storage.Read(messageJSON.DarcKey)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to read darcBuf: %v", err)
-	}
-
-	d, err := darc.NewFromProtobuf(darcBuf)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to unmarshal darc: %v", err)
-	}
-
-	err = r.Verify(d)
+	err = ac.Match(ArcRuleRead, idents...)
 	if err != nil {
 		return nil, xerrors.Errorf("darc verification failed: %v", err)
 	}
@@ -148,6 +146,56 @@ func (c *Calypso) Read(id []byte, r darc.Request) ([]byte, error) {
 	}
 
 	return msg, nil
+}
+
+// UpdateAccess sets a new arc for a given ID
+func (c *Calypso) UpdateAccess(id []byte, ident arc.Identity, newAc arc.AccessControl) error {
+
+	messageJSON, ac, err := c.getRead(id)
+	if err != nil {
+		return xerrors.Errorf("failed to get read: %v", err)
+	}
+
+	err = ac.Match(ArcRuleUpdate, ident)
+	if err != nil {
+		return xerrors.Errorf("darc verification failed: %v", err)
+	}
+
+	acBuf, err := c.serializer.Serialize(newAc)
+	if err != nil {
+		return xerrors.Errorf("failed to encode darc: %v", err)
+	}
+
+	c.storage.Store(messageJSON.DarcKey, acBuf)
+
+	return nil
+}
+
+// getRead extract the read information from the storage
+func (c *Calypso) getRead(id []byte) (*encryptedJSON, arc.AccessControl, error) {
+	messageBuf, err := c.storage.Read(id)
+	if err != nil {
+		return nil, nil, xerrors.Errorf("failed to read message: %v", err)
+	}
+
+	var messageJSON encryptedJSON
+	err = json.Unmarshal(messageBuf, &messageJSON)
+	if err != nil {
+		return nil, nil, xerrors.Errorf("failed to unmarshal JSON message: %v", err)
+	}
+
+	acBuf, err := c.storage.Read(messageJSON.DarcKey)
+	if err != nil {
+		return nil, nil, xerrors.Errorf("failed to read darcBuf: %v", err)
+	}
+
+	var ac arc.AccessControl
+	err = c.serializer.Deserialize(acBuf, darc.NewFactory(), &ac)
+	if err != nil {
+		return nil, nil, xerrors.Errorf("failed to unmarshal darc: %v", err)
+	}
+
+	return &messageJSON, ac, nil
 }
 
 // NewEncryptedMessage creates a new EncryptedMessage
