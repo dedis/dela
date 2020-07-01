@@ -2,12 +2,12 @@ package json
 
 import (
 	"go.dedis.ch/dela/crypto/common"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
 func init() {
-	common.Register(serdeng.CodecJSON, format{})
+	common.Register(serde.CodecJSON, format{})
 }
 
 // Algorithm is a common JSON message to identify which algorithm is used in a
@@ -32,11 +32,11 @@ type Signature struct {
 
 type format struct{}
 
-func (f format) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, error) {
+func (f format) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	return nil, xerrors.New("not implemented")
 }
 
-func (f format) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f format) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Algorithm{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {

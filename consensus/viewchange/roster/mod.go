@@ -7,14 +7,14 @@ import (
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
-	"go.dedis.ch/dela/serdeng/registry"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
 )
 
 var rosterFormats = registry.NewSimpleRegistry()
 
-func RegisterRoster(c serdeng.Codec, f serdeng.Format) {
+func RegisterRoster(c serde.Codec, f serde.Format) {
 	rosterFormats.Register(c, f)
 }
 
@@ -250,7 +250,7 @@ func (r Roster) PublicKeyIterator() crypto.PublicKeyIterator {
 }
 
 // Serialize implements serde.Message.
-func (r Roster) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (r Roster) Serialize(ctx serde.Context) ([]byte, error) {
 	format := rosterFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, r)
@@ -275,11 +275,11 @@ func NewRosterFactory(af mino.AddressFactory, pf crypto.PublicKeyFactory) Roster
 }
 
 // Deserialize implements serde.Factory.
-func (f RosterFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f RosterFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := rosterFormats.Get(ctx.GetName())
 
-	ctx = serdeng.WithFactory(ctx, PubKey{}, f.pubkeyFactory)
-	ctx = serdeng.WithFactory(ctx, AddrKey{}, f.addrFactory)
+	ctx = serde.WithFactory(ctx, PubKey{}, f.pubkeyFactory)
+	ctx = serde.WithFactory(ctx, AddrKey{}, f.addrFactory)
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
@@ -289,7 +289,7 @@ func (f RosterFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Me
 	return msg, nil
 }
 
-func (f RosterFactory) AuthorityOf(ctx serdeng.Context, data []byte) (viewchange.Authority, error) {
+func (f RosterFactory) AuthorityOf(ctx serde.Context, data []byte) (viewchange.Authority, error) {
 	msg, err := f.Deserialize(ctx, data)
 	if err != nil {
 		return nil, err

@@ -1,13 +1,13 @@
 package types
 
 import (
-	"go.dedis.ch/dela/serdeng"
-	"go.dedis.ch/dela/serdeng/registry"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/registry"
 )
 
 var requestFormats = registry.NewSimpleRegistry()
 
-func RegisterRequestFormat(c serdeng.Codec, f serdeng.Format) {
+func RegisterRequestFormat(c serde.Codec, f serde.Format) {
 	requestFormats.Register(c, f)
 }
 
@@ -16,21 +16,21 @@ func RegisterRequestFormat(c serdeng.Codec, f serdeng.Format) {
 //
 // - implements serde.Message
 type Proposal struct {
-	value serdeng.Message
+	value serde.Message
 }
 
-func NewProposal(value serdeng.Message) Proposal {
+func NewProposal(value serde.Message) Proposal {
 	return Proposal{
 		value: value,
 	}
 }
 
-func (p Proposal) GetValue() serdeng.Message {
+func (p Proposal) GetValue() serde.Message {
 	return p.value
 }
 
 // Serialize implements serde.Message.
-func (p Proposal) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (p Proposal) Serialize(ctx serde.Context) ([]byte, error) {
 	format := requestFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, p)
@@ -46,10 +46,10 @@ func (p Proposal) Serialize(ctx serdeng.Context) ([]byte, error) {
 // - implements serde.Message
 type Message struct {
 	node  int64
-	value serdeng.Message
+	value serde.Message
 }
 
-func NewMessage(node int64, value serdeng.Message) Message {
+func NewMessage(node int64, value serde.Message) Message {
 	return Message{
 		node:  node,
 		value: value,
@@ -60,7 +60,7 @@ func (m Message) GetNode() int64 {
 	return m.node
 }
 
-func (m Message) GetValue() serdeng.Message {
+func (m Message) GetValue() serde.Message {
 	return m.value
 }
 
@@ -134,7 +134,7 @@ func (mset MessageSet) Merge(other MessageSet) MessageSet {
 }
 
 // Serialize implements serde.Message.
-func (mset MessageSet) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (mset MessageSet) Serialize(ctx serde.Context) ([]byte, error) {
 	format := requestFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, mset)
@@ -169,7 +169,7 @@ func (req RequestMessageSet) GetNodes() []int64 {
 }
 
 // Serialize implements serde.Message.
-func (req RequestMessageSet) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (req RequestMessageSet) Serialize(ctx serde.Context) ([]byte, error) {
 	format := requestFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, req)
@@ -186,20 +186,20 @@ type MsgKey struct{}
 //
 // - implements serde.Factory
 type RequestFactory struct {
-	mFactory serdeng.Factory
+	mFactory serde.Factory
 }
 
-func NewRequestFactory(f serdeng.Factory) RequestFactory {
+func NewRequestFactory(f serde.Factory) RequestFactory {
 	return RequestFactory{
 		mFactory: f,
 	}
 }
 
 // Deserialize implements serde.Factory.
-func (f RequestFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f RequestFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := requestFormats.Get(ctx.GetName())
 
-	ctx = serdeng.WithFactory(ctx, MsgKey{}, f.mFactory)
+	ctx = serde.WithFactory(ctx, MsgKey{}, f.mFactory)
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {

@@ -9,8 +9,8 @@ import (
 
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/ledger/inventory"
-	"go.dedis.ch/dela/serdeng"
-	"go.dedis.ch/dela/serdeng/json"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
 
@@ -47,7 +47,7 @@ func (p DigestSlice) Swap(i, j int) {
 // - implements inventory.Inventory
 type InMemoryInventory struct {
 	sync.Mutex
-	context      serdeng.Context
+	context      serde.Context
 	hashFactory  crypto.HashFactory
 	pages        []*inMemoryPage
 	stagingPages map[Digest]*inMemoryPage
@@ -111,7 +111,7 @@ func (inv *InMemoryInventory) Stage(f func(inventory.WritablePage) error) (inven
 		page.index++
 	} else {
 		page = &inMemoryPage{
-			entries: make(map[Digest]serdeng.Message),
+			entries: make(map[Digest]serde.Message),
 		}
 	}
 	inv.Unlock()
@@ -200,7 +200,7 @@ func (inv *InMemoryInventory) Commit(fingerprint []byte) error {
 type inMemoryPage struct {
 	index       uint64
 	fingerprint Digest
-	entries     map[Digest]serdeng.Message
+	entries     map[Digest]serde.Message
 }
 
 // GetIndex implements inventory.Page. It returns the index of the page from the
@@ -217,7 +217,7 @@ func (page *inMemoryPage) GetFingerprint() []byte {
 
 // Read implements inventory.Page. It returns the instance associated with the
 // key if it exists, otherwise an error.
-func (page *inMemoryPage) Read(key []byte) (serdeng.Message, error) {
+func (page *inMemoryPage) Read(key []byte) (serde.Message, error) {
 	if len(key) > digestLength {
 		return nil, xerrors.Errorf("key length (%d) is higher than %d",
 			len(key), digestLength)
@@ -231,7 +231,7 @@ func (page *inMemoryPage) Read(key []byte) (serdeng.Message, error) {
 
 // Write implements inventory.WritablePage. It updates the state of the page by
 // adding or updating the instance.
-func (page *inMemoryPage) Write(key []byte, value serdeng.Message) error {
+func (page *inMemoryPage) Write(key []byte, value serde.Message) error {
 	if len(key) > digestLength {
 		return xerrors.Errorf("key length (%d) is higher than %d", len(key), digestLength)
 	}
@@ -247,7 +247,7 @@ func (page *inMemoryPage) Write(key []byte, value serdeng.Message) error {
 func (page *inMemoryPage) clone() *inMemoryPage {
 	clone := &inMemoryPage{
 		index:   page.index,
-		entries: make(map[Digest]serdeng.Message),
+		entries: make(map[Digest]serde.Message),
 	}
 
 	for k, v := range page.entries {

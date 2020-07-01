@@ -5,12 +5,12 @@ import (
 
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
 func init() {
-	cosi.Register(serdeng.CodecJSON, format{})
+	cosi.Register(serde.CodecJSON, format{})
 }
 
 // Request is the JSON message sent to request signature.
@@ -32,7 +32,7 @@ type Message struct {
 
 type format struct{}
 
-func (f format) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, error) {
+func (f format) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	m := Message{}
 
 	switch message := msg.(type) {
@@ -59,7 +59,7 @@ func (f format) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, error)
 	return ctx.Marshal(m)
 }
 
-func (f format) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f format) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Message{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {

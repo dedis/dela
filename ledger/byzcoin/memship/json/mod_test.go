@@ -7,7 +7,7 @@ import (
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/byzcoin/memship"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -15,7 +15,7 @@ func TestTask_VisitJSON(t *testing.T) {
 	task := memship.NewServerTask(fakeAuthority{})
 
 	format := taskFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, task)
 	require.NoError(t, err)
@@ -28,8 +28,8 @@ func TestTask_VisitJSON(t *testing.T) {
 
 func TestTaskManager_VisitJSON(t *testing.T) {
 	format := taskFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
-	ctx = serdeng.WithFactory(ctx, memship.RosterKey{}, fakeAuthorityFactory{})
+	ctx := serde.NewContext(fake.ContextEngine{})
+	ctx = serde.WithFactory(ctx, memship.RosterKey{}, fakeAuthorityFactory{})
 
 	task, err := format.Decode(ctx, []byte(`{"Authority":[{}]}`))
 	require.NoError(t, err)
@@ -38,7 +38,7 @@ func TestTaskManager_VisitJSON(t *testing.T) {
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{"Authority":[{}]}`))
 	require.EqualError(t, err, "couldn't deserialize task: fake error")
 
-	badCtx := serdeng.WithFactory(ctx, memship.RosterKey{}, fakeAuthorityFactory{err: xerrors.New("oops")})
+	badCtx := serde.WithFactory(ctx, memship.RosterKey{}, fakeAuthorityFactory{err: xerrors.New("oops")})
 	_, err = format.Decode(badCtx, []byte(`{"Authority":[{}]}`))
 	require.EqualError(t, err, "couldn't deserialize roster: oops")
 }
@@ -52,7 +52,7 @@ type fakeAuthority struct {
 	err error
 }
 
-func (f fakeAuthority) Serialize(serdeng.Context) ([]byte, error) {
+func (f fakeAuthority) Serialize(serde.Context) ([]byte, error) {
 	return []byte(`{}`), f.err
 }
 
@@ -62,6 +62,6 @@ type fakeAuthorityFactory struct {
 	err error
 }
 
-func (f fakeAuthorityFactory) AuthorityOf(serdeng.Context, []byte) (viewchange.Authority, error) {
+func (f fakeAuthorityFactory) AuthorityOf(serde.Context, []byte) (viewchange.Authority, error) {
 	return fakeAuthority{}, f.err
 }

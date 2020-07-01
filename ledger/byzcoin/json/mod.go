@@ -6,12 +6,12 @@ import (
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/ledger/byzcoin/types"
 	"go.dedis.ch/dela/ledger/transactions"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
 func init() {
-	types.RegisterMessageFormat(serdeng.CodecJSON, messageFormat{})
+	types.RegisterMessageFormat(serde.CodecJSON, messageFormat{})
 }
 
 // GenesisPayload is the JSON message of a genesis payload.
@@ -43,7 +43,7 @@ type Message struct {
 
 type messageFormat struct{}
 
-func (f messageFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, error) {
+func (f messageFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	var m Message
 
 	switch in := msg.(type) {
@@ -102,7 +102,7 @@ func (f messageFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte,
 	return data, nil
 }
 
-func (f messageFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f messageFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Message{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {
@@ -143,7 +143,7 @@ func (f messageFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message
 	return nil, xerrors.New("message is empty")
 }
 
-func decodeRoster(ctx serdeng.Context, data []byte) (viewchange.Authority, error) {
+func decodeRoster(ctx serde.Context, data []byte) (viewchange.Authority, error) {
 	factory := ctx.GetFactory(types.RosterKey{})
 
 	fac, ok := factory.(viewchange.AuthorityFactory)
@@ -159,7 +159,7 @@ func decodeRoster(ctx serdeng.Context, data []byte) (viewchange.Authority, error
 	return authority, nil
 }
 
-func decodeTxs(ctx serdeng.Context, raws Transactions) ([]transactions.ServerTransaction, error) {
+func decodeTxs(ctx serde.Context, raws Transactions) ([]transactions.ServerTransaction, error) {
 	factory := ctx.GetFactory(types.TxKey{})
 
 	fac, ok := factory.(transactions.TxFactory)

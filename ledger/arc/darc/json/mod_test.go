@@ -6,14 +6,14 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/arc/darc"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 )
 
 func TestAccessFormat_Encode(t *testing.T) {
 	access := darc.NewAccess(darc.WithRule("A", []string{"C"}), darc.WithRule("B", nil))
 
 	format := accessFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, access)
 	require.NoError(t, err)
@@ -22,7 +22,7 @@ func TestAccessFormat_Encode(t *testing.T) {
 
 func TestAccessFormat_Decode(t *testing.T) {
 	format := accessFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	access, err := format.Decode(ctx, []byte(`{"Rules":{"A":["B"],"C":[]}}`))
 	require.NoError(t, err)
@@ -37,7 +37,7 @@ func TestTaskFormat_Encode(t *testing.T) {
 	task := darc.NewServerTask([]byte{1}, darc.NewAccess())
 
 	format := newTaskFormat()
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, task)
 	require.NoError(t, err)
@@ -50,7 +50,7 @@ func TestTaskFormat_Encode(t *testing.T) {
 
 func TestTaskFormat_Decode(t *testing.T) {
 	format := newTaskFormat()
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	task, err := format.Decode(ctx, []byte(`{"Key":"AQ==","Access":{}}`))
 	require.NoError(t, err)

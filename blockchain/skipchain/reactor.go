@@ -3,7 +3,7 @@ package skipchain
 import (
 	"go.dedis.ch/dela/blockchain/skipchain/types"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -41,7 +41,7 @@ func (v *reactor) InvokeGenesis() ([]byte, error) {
 // InvokeValidate implements consensus.Reactor. It decodes the message into a
 // block and validates its integrity. It returns the block if it is correct,
 // otherwise the error.
-func (v *reactor) InvokeValidate(addr mino.Address, pb serdeng.Message) ([]byte, error) {
+func (v *reactor) InvokeValidate(addr mino.Address, pb serde.Message) ([]byte, error) {
 	blueprint, ok := pb.(types.Blueprint)
 	if !ok {
 		return nil, xerrors.Errorf("invalid message type '%T'", pb)

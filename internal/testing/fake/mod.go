@@ -25,7 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -284,12 +284,12 @@ func NewBadPublicKeyFactory() PublicKeyFactory {
 }
 
 // Deserialize implements serde.Factory.
-func (f PublicKeyFactory) Deserialize(serdeng.Context, []byte) (serdeng.Message, error) {
+func (f PublicKeyFactory) Deserialize(serde.Context, []byte) (serde.Message, error) {
 	return f.pubkey, f.err
 }
 
 // PublicKeyOf implements crypto.PublicKeyFactory.
-func (f PublicKeyFactory) PublicKeyOf(serdeng.Context, []byte) (crypto.PublicKey, error) {
+func (f PublicKeyFactory) PublicKeyOf(serde.Context, []byte) (crypto.PublicKey, error) {
 	return f.pubkey, f.err
 }
 
@@ -314,7 +314,7 @@ func (s Signature) Equal(o crypto.Signature) bool {
 }
 
 // Serialize implements serde.Message.
-func (s Signature) Serialize(serdeng.Context) ([]byte, error) {
+func (s Signature) Serialize(serde.Context) ([]byte, error) {
 	return []byte("{}"), s.err
 }
 
@@ -351,12 +351,12 @@ func NewBadSignatureFactoryWithDelay(value int) SignatureFactory {
 }
 
 // Deserialize implements serde.Factory.
-func (f SignatureFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f SignatureFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	return f.SignatureOf(ctx, data)
 }
 
 // SignatureOf implements crypto.SignatureFactory.
-func (f SignatureFactory) SignatureOf(serdeng.Context, []byte) (crypto.Signature, error) {
+func (f SignatureFactory) SignatureOf(serde.Context, []byte) (crypto.Signature, error) {
 	if !f.Counter.Done() {
 		f.Counter.Decrease()
 		return f.signature, nil
@@ -396,7 +396,7 @@ func (pk PublicKey) MarshalBinary() ([]byte, error) {
 }
 
 // Serialize implements serde.Message.
-func (pk PublicKey) Serialize(serdeng.Context) ([]byte, error) {
+func (pk PublicKey) Serialize(serde.Context) ([]byte, error) {
 	return []byte(`{}`), pk.err
 }
 
@@ -562,7 +562,7 @@ func (f AddressFactory) FromText(text []byte) mino.Address {
 }
 
 // NewReceiver returns a new receiver
-func NewReceiver(Msg ...serdeng.Message) Receiver {
+func NewReceiver(Msg ...serde.Message) Receiver {
 	return Receiver{
 		Msg: Msg,
 	}
@@ -573,7 +573,7 @@ func NewReceiver(Msg ...serdeng.Message) Receiver {
 type Receiver struct {
 	mino.Receiver
 	err   error
-	Msg   []serdeng.Message
+	Msg   []serde.Message
 	index int
 }
 
@@ -583,7 +583,7 @@ func NewBadReceiver() Receiver {
 }
 
 // Recv implements mino.Receiver.
-func (r *Receiver) Recv(context.Context) (mino.Address, serdeng.Message, error) {
+func (r *Receiver) Recv(context.Context) (mino.Address, serde.Message, error) {
 	if r.Msg == nil {
 		return nil, nil, r.err
 	}
@@ -611,7 +611,7 @@ func NewBadSender() Sender {
 }
 
 // Send implements mino.Sender.
-func (s Sender) Send(serdeng.Message, ...mino.Address) <-chan error {
+func (s Sender) Send(serde.Message, ...mino.Address) <-chan error {
 	errs := make(chan error, 1)
 	errs <- s.err
 	close(errs)
@@ -621,7 +621,7 @@ func (s Sender) Send(serdeng.Message, ...mino.Address) <-chan error {
 // RPC is a fake implementation of mino.RPC.
 type RPC struct {
 	mino.RPC
-	Msgs     chan serdeng.Message
+	Msgs     chan serde.Message
 	Errs     chan error
 	receiver *Receiver
 	sender   Sender
@@ -648,15 +648,15 @@ func NewStreamRPC(r Receiver, s Sender) *RPC {
 // NewBadStreamRPC returns a fake rpc that returns an error when calling Stream.
 func NewBadStreamRPC() *RPC {
 	return &RPC{
-		Msgs: make(chan serdeng.Message, 100),
+		Msgs: make(chan serde.Message, 100),
 		Errs: make(chan error, 100),
 		err:  xerrors.New("fake error"),
 	}
 }
 
 // Call implements mino.RPC.
-func (rpc *RPC) Call(ctx context.Context, m serdeng.Message,
-	p mino.Players) (<-chan serdeng.Message, <-chan error) {
+func (rpc *RPC) Call(ctx context.Context, m serde.Message,
+	p mino.Players) (<-chan serde.Message, <-chan error) {
 
 	return rpc.Msgs, rpc.Errs
 }
@@ -668,7 +668,7 @@ func (rpc *RPC) Stream(context.Context, mino.Players) (mino.Sender, mino.Receive
 
 // Reset resets the channels.
 func (rpc *RPC) Reset() {
-	rpc.Msgs = make(chan serdeng.Message, 100)
+	rpc.Msgs = make(chan serde.Message, 100)
 	rpc.Errs = make(chan error, 100)
 }
 
@@ -694,7 +694,7 @@ func (m Mino) GetAddressFactory() mino.AddressFactory {
 }
 
 // MakeRPC implements mino.Mino.
-func (m Mino) MakeRPC(string, mino.Handler, serdeng.Factory) (mino.RPC, error) {
+func (m Mino) MakeRPC(string, mino.Handler, serde.Factory) (mino.RPC, error) {
 	return NewRPC(), m.err
 }
 
@@ -795,7 +795,7 @@ func (m Message) Fingerprint(w io.Writer) error {
 }
 
 // Serialize implements serde.Message.
-func (m Message) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (m Message) Serialize(ctx serde.Context) ([]byte, error) {
 	return ctx.Marshal(struct{}{})
 }
 
@@ -811,7 +811,7 @@ func NewBadMessageFactory() MessageFactory {
 }
 
 // Deserialize implements serde.Factory.
-func (f MessageFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f MessageFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	return Message{}, f.err
 }
 
@@ -823,11 +823,11 @@ func NewBadFormat() Format {
 	return Format{err: xerrors.New("fake error")}
 }
 
-func (f Format) Encode(serdeng.Context, serdeng.Message) ([]byte, error) {
+func (f Format) Encode(serde.Context, serde.Message) ([]byte, error) {
 	return []byte{}, f.err
 }
 
-func (f Format) Decode(serdeng.Context, []byte) (serdeng.Message, error) {
+func (f Format) Decode(serde.Context, []byte) (serde.Message, error) {
 	return Message{}, f.err
 }
 
@@ -836,21 +836,21 @@ type ContextEngine struct {
 	err   error
 }
 
-func NewBadContext() serdeng.Context {
-	return serdeng.NewContext(ContextEngine{
+func NewBadContext() serde.Context {
+	return serde.NewContext(ContextEngine{
 		err: xerrors.New("fake error"),
 	})
 }
 
-func NewBadContextWithDelay(delay int) serdeng.Context {
-	return serdeng.NewContext(ContextEngine{
+func NewBadContextWithDelay(delay int) serde.Context {
+	return serde.NewContext(ContextEngine{
 		Count: &Counter{Value: delay},
 		err:   xerrors.New("fake error"),
 	})
 }
 
-func (ctx ContextEngine) GetName() serdeng.Codec {
-	return serdeng.CodecJSON
+func (ctx ContextEngine) GetName() serde.Codec {
+	return serde.CodecJSON
 }
 
 func (ctx ContextEngine) Marshal(m interface{}) ([]byte, error) {

@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/serdeng"
-	"go.dedis.ch/dela/serdeng/registry"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/registry"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/pairing"
 	"go.dedis.ch/kyber/v3/sign/bls"
@@ -26,11 +26,11 @@ var (
 	sigFormats    = registry.NewSimpleRegistry()
 )
 
-func RegisterPublicKey(c serdeng.Codec, f serdeng.Format) {
+func RegisterPublicKey(c serde.Codec, f serde.Format) {
 	pubkeyFormats.Register(c, f)
 }
 
-func RegisterSignature(c serdeng.Codec, f serdeng.Format) {
+func RegisterSignature(c serde.Codec, f serde.Format) {
 	sigFormats.Register(c, f)
 }
 
@@ -62,7 +62,7 @@ func (pk PublicKey) MarshalBinary() ([]byte, error) {
 }
 
 // Serialize implements serde.Message.
-func (pk PublicKey) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (pk PublicKey) Serialize(ctx serde.Context) ([]byte, error) {
 	format := pubkeyFormats.Get(ctx.GetName())
 	if format == nil {
 		return nil, xerrors.New("invalid format")
@@ -145,7 +145,7 @@ func (sig Signature) MarshalBinary() ([]byte, error) {
 }
 
 // Serialize implements serde.Message.
-func (sig Signature) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (sig Signature) Serialize(ctx serde.Context) ([]byte, error) {
 	format := sigFormats.Get(ctx.GetName())
 	if format == nil {
 		return nil, xerrors.New("invalid format")
@@ -178,7 +178,7 @@ func NewPublicKeyFactory() crypto.PublicKeyFactory {
 }
 
 // Deserialize implements serde.Factory.
-func (f publicKeyFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f publicKeyFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := pubkeyFormats.Get(ctx.GetName())
 	if format == nil {
 		return nil, xerrors.New("invalid format")
@@ -192,7 +192,7 @@ func (f publicKeyFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng
 	return m, nil
 }
 
-func (f publicKeyFactory) PublicKeyOf(ctx serdeng.Context, data []byte) (crypto.PublicKey, error) {
+func (f publicKeyFactory) PublicKeyOf(ctx serde.Context, data []byte) (crypto.PublicKey, error) {
 	m, err := f.Deserialize(ctx, data)
 	if err != nil {
 		return nil, err
@@ -216,7 +216,7 @@ func NewSignatureFactory() crypto.SignatureFactory {
 }
 
 // Deserialize implements serde.Factory.
-func (f signatureFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f signatureFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := sigFormats.Get(ctx.GetName())
 	if format == nil {
 		return nil, xerrors.New("invalid format")
@@ -230,7 +230,7 @@ func (f signatureFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng
 	return m, nil
 }
 
-func (f signatureFactory) SignatureOf(ctx serdeng.Context, data []byte) (crypto.Signature, error) {
+func (f signatureFactory) SignatureOf(ctx serde.Context, data []byte) (crypto.Signature, error) {
 	m, err := f.Deserialize(ctx, data)
 	if err != nil {
 		return nil, err

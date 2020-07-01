@@ -7,19 +7,19 @@ package common
 import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
-	"go.dedis.ch/dela/serdeng"
-	"go.dedis.ch/dela/serdeng/registry"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
 )
 
 var formats = registry.NewSimpleRegistry()
 
-func Register(c serdeng.Codec, f serdeng.Format) {
+func Register(c serde.Codec, f serde.Format) {
 	formats.Register(c, f)
 }
 
 type Algorithm struct {
-	serdeng.Message
+	serde.Message
 
 	name string
 }
@@ -54,7 +54,7 @@ func (f PublicKeyFactory) RegisterAlgorithm(algo string, factory crypto.PublicKe
 }
 
 // Deserialize implements serde.Factory.
-func (f PublicKeyFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f PublicKeyFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := formats.Get(ctx.GetName())
 
 	m, err := format.Decode(ctx, data)
@@ -75,7 +75,7 @@ func (f PublicKeyFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng
 	return factory.PublicKeyOf(ctx, data)
 }
 
-func (f PublicKeyFactory) PublicKeyOf(ctx serdeng.Context, data []byte) (crypto.PublicKey, error) {
+func (f PublicKeyFactory) PublicKeyOf(ctx serde.Context, data []byte) (crypto.PublicKey, error) {
 	msg, err := f.Deserialize(ctx, data)
 	if err != nil {
 		return nil, err
@@ -106,7 +106,7 @@ func (f SignatureFactory) RegisterAlgorithm(name string, factory crypto.Signatur
 }
 
 // Deserialize implements serde.Factory.
-func (f SignatureFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f SignatureFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := formats.Get(ctx.GetName())
 
 	m, err := format.Decode(ctx, data)
@@ -127,7 +127,7 @@ func (f SignatureFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng
 	return factory.SignatureOf(ctx, data)
 }
 
-func (f SignatureFactory) SignatureOf(ctx serdeng.Context, data []byte) (crypto.Signature, error) {
+func (f SignatureFactory) SignatureOf(ctx serde.Context, data []byte) (crypto.Signature, error) {
 	msg, err := f.Deserialize(ctx, data)
 	if err != nil {
 		return nil, err

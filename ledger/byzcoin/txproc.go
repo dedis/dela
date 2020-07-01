@@ -6,7 +6,7 @@ import (
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/ledger/byzcoin/types"
 	"go.dedis.ch/dela/ledger/inventory"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -30,7 +30,7 @@ func newTxProcessor(f types.MessageFactory, i inventory.Inventory) *txProcessor 
 // InvokeValidate implements blockchain.Reactor. It returns the payload if the
 // validation is a success. In that case, the payload has been staged in the
 // inventory and is waiting for a commit order.
-func (proc *txProcessor) InvokeValidate(data serdeng.Message) (blockchain.Payload, error) {
+func (proc *txProcessor) InvokeValidate(data serde.Message) (blockchain.Payload, error) {
 	blueprint, ok := data.(types.Blueprint)
 	if !ok {
 		return nil, xerrors.Errorf("invalid message type '%T'", data)

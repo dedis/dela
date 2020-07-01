@@ -18,8 +18,8 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minoch"
-	"go.dedis.ch/dela/serdeng"
-	"go.dedis.ch/dela/serdeng/json"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
 
@@ -242,7 +242,7 @@ type testReactor struct {
 	fake.MessageFactory
 }
 
-func (v testReactor) InvokeValidate(serdeng.Message) (blockchain.Payload, error) {
+func (v testReactor) InvokeValidate(serde.Message) (blockchain.Payload, error) {
 	return fake.Message{}, nil
 }
 
@@ -286,14 +286,14 @@ type fakeRPC struct {
 	err error
 }
 
-func (rpc fakeRPC) Call(context.Context, serdeng.Message,
-	mino.Players) (<-chan serdeng.Message, <-chan error) {
+func (rpc fakeRPC) Call(context.Context, serde.Message,
+	mino.Players) (<-chan serde.Message, <-chan error) {
 
 	errs := make(chan error, 1)
 	if rpc.err != nil {
 		errs <- rpc.err
 	}
-	msgs := make(chan serdeng.Message)
+	msgs := make(chan serde.Message)
 	if rpc.err == nil {
 		close(msgs)
 	}
@@ -303,10 +303,10 @@ func (rpc fakeRPC) Call(context.Context, serdeng.Message,
 type fakeConsensusActor struct {
 	consensus.Actor
 	err  error
-	prop serdeng.Message
+	prop serde.Message
 }
 
-func (a *fakeConsensusActor) Propose(prop serdeng.Message) error {
+func (a *fakeConsensusActor) Propose(prop serde.Message) error {
 	a.prop = prop
 	return a.err
 }

@@ -5,7 +5,7 @@ import (
 
 	"go.dedis.ch/dela/blockchain/skipchain/types"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -26,7 +26,7 @@ func newHandler(ops *operations) handler {
 
 // Process implements mino.Handler. It handles genesis block propagation
 // messages only and return an error for any other type.
-func (h handler) Process(req mino.Request) (serdeng.Message, error) {
+func (h handler) Process(req mino.Request) (serde.Message, error) {
 	switch msg := req.Message.(type) {
 	case types.PropagateGenesis:
 		err := h.commitBlock(msg.GetGenesis())

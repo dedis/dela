@@ -8,7 +8,7 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 )
 
 func TestChangeSetFormat_Encode(t *testing.T) {
@@ -23,7 +23,7 @@ func TestChangeSetFormat_Encode(t *testing.T) {
 	}
 
 	format := changeSetFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, changeset)
 	require.NoError(t, err)
@@ -41,9 +41,9 @@ func TestChangeSetFormat_Encode(t *testing.T) {
 
 func TestChangeSetFormat_Decode(t *testing.T) {
 	format := changeSetFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
-	ctx = serdeng.WithFactory(ctx, roster.AddrKey{}, fake.AddressFactory{})
-	ctx = serdeng.WithFactory(ctx, roster.PubKey{}, fake.PublicKeyFactory{})
+	ctx := serde.NewContext(fake.ContextEngine{})
+	ctx = serde.WithFactory(ctx, roster.AddrKey{}, fake.AddressFactory{})
+	ctx = serde.WithFactory(ctx, roster.PubKey{}, fake.PublicKeyFactory{})
 
 	cset, err := format.Decode(ctx, []byte(`{"Add":[{}]}`))
 	require.NoError(t, err)
@@ -53,7 +53,7 @@ func TestChangeSetFormat_Decode(t *testing.T) {
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
 	require.EqualError(t, err, "couldn't deserialize change set: fake error")
 
-	badCtx := serdeng.WithFactory(ctx, roster.PubKey{}, fake.NewBadPublicKeyFactory())
+	badCtx := serde.WithFactory(ctx, roster.PubKey{}, fake.NewBadPublicKeyFactory())
 	_, err = format.Decode(badCtx, []byte(`{"Add":[{}]}`))
 	require.EqualError(t, err, "couldn't deserialize public key: fake error")
 }
@@ -62,7 +62,7 @@ func TestRosterFormat_Encode(t *testing.T) {
 	ro := roster.FromAuthority(fake.NewAuthority(1, fake.NewSigner))
 
 	format := rosterFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, ro)
 	require.NoError(t, err)
@@ -79,9 +79,9 @@ func TestRosterFormat_Encode(t *testing.T) {
 
 func TestRosterFormat_Decode(t *testing.T) {
 	format := rosterFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
-	ctx = serdeng.WithFactory(ctx, roster.AddrKey{}, fake.AddressFactory{})
-	ctx = serdeng.WithFactory(ctx, roster.PubKey{}, fake.PublicKeyFactory{})
+	ctx := serde.NewContext(fake.ContextEngine{})
+	ctx = serde.WithFactory(ctx, roster.AddrKey{}, fake.AddressFactory{})
+	ctx = serde.WithFactory(ctx, roster.PubKey{}, fake.PublicKeyFactory{})
 
 	ro, err := format.Decode(ctx, []byte(`[{}]`))
 	require.NoError(t, err)
@@ -90,7 +90,7 @@ func TestRosterFormat_Decode(t *testing.T) {
 	_, err = format.Decode(fake.NewBadContext(), []byte(`[]`))
 	require.EqualError(t, err, "couldn't deserialize roster: fake error")
 
-	badCtx := serdeng.WithFactory(ctx, roster.PubKey{}, fake.NewBadPublicKeyFactory())
+	badCtx := serde.WithFactory(ctx, roster.PubKey{}, fake.NewBadPublicKeyFactory())
 	_, err = format.Decode(badCtx, []byte(`[{}]`))
 	require.EqualError(t, err, "couldn't deserialize public key: fake error")
 }

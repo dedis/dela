@@ -3,18 +3,18 @@ package json
 import (
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/crypto/common/json"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
 func init() {
-	bls.RegisterPublicKey(serdeng.CodecJSON, pubkeyFormat{})
-	bls.RegisterSignature(serdeng.CodecJSON, sigFormat{})
+	bls.RegisterPublicKey(serde.CodecJSON, pubkeyFormat{})
+	bls.RegisterSignature(serde.CodecJSON, sigFormat{})
 }
 
 type pubkeyFormat struct{}
 
-func (f pubkeyFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, error) {
+func (f pubkeyFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	pubkey, ok := msg.(bls.PublicKey)
 	if !ok {
 		return nil, xerrors.New("invalid bls public key")
@@ -38,7 +38,7 @@ func (f pubkeyFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, 
 	return data, nil
 }
 
-func (f pubkeyFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f pubkeyFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := json.PublicKey{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {
@@ -55,7 +55,7 @@ func (f pubkeyFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message,
 
 type sigFormat struct{}
 
-func (f sigFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, error) {
+func (f sigFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	sig, ok := msg.(bls.Signature)
 	if !ok {
 		return nil, xerrors.New("invalid signature")
@@ -78,7 +78,7 @@ func (f sigFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, err
 	return data, nil
 }
 
-func (f sigFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f sigFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := json.Signature{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {

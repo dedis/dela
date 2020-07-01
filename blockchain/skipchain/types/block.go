@@ -8,8 +8,8 @@ import (
 	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/serdeng"
-	"go.dedis.ch/dela/serdeng/registry"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
 )
 
@@ -18,11 +18,11 @@ var (
 	verifiableFormats = registry.NewSimpleRegistry()
 )
 
-func RegisterBlockFormat(c serdeng.Codec, f serdeng.Format) {
+func RegisterBlockFormat(c serde.Codec, f serde.Format) {
 	blockFormats.Register(c, f)
 }
 
-func RegisterVerifiableBlockFormats(c serdeng.Codec, f serdeng.Format) {
+func RegisterVerifiableBlockFormats(c serde.Codec, f serde.Format) {
 	verifiableFormats.Register(c, f)
 }
 
@@ -41,7 +41,7 @@ func (d Digest) String() string {
 
 type emptyPayload struct{}
 
-func (p emptyPayload) Serialize(serdeng.Context) ([]byte, error) {
+func (p emptyPayload) Serialize(serde.Context) ([]byte, error) {
 	return nil, nil
 }
 
@@ -151,7 +151,7 @@ func (b SkipBlock) GetPayload() blockchain.Payload {
 }
 
 // Serialize implements serde.Message.
-func (b SkipBlock) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (b SkipBlock) Serialize(ctx serde.Context) ([]byte, error) {
 	format := blockFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, b)
@@ -204,7 +204,7 @@ type VerifiableBlock struct {
 }
 
 // Serialize implements serde.Message.
-func (vb VerifiableBlock) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (vb VerifiableBlock) Serialize(ctx serde.Context) ([]byte, error) {
 	format := verifiableFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, vb)
@@ -222,22 +222,22 @@ type PayloadKey struct{}
 //
 // - implements blockchain.BlockFactory
 type BlockFactory struct {
-	payloadFactory serdeng.Factory
+	payloadFactory serde.Factory
 }
 
 // NewBlockFactory returns a new block factory that will use the factory for the
 // payload.
-func NewBlockFactory(f serdeng.Factory) BlockFactory {
+func NewBlockFactory(f serde.Factory) BlockFactory {
 	return BlockFactory{
 		payloadFactory: f,
 	}
 }
 
 // Deserialize implements serde.Message.
-func (f BlockFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f BlockFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := blockFormats.Get(ctx.GetName())
 
-	ctx = serdeng.WithFactory(ctx, PayloadKey{}, f.payloadFactory)
+	ctx = serde.WithFactory(ctx, PayloadKey{}, f.payloadFactory)
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
@@ -254,12 +254,12 @@ type ChainKey struct{}
 //
 // - implements serde.Factory
 type VerifiableFactory struct {
-	payloadFactory serdeng.Factory
+	payloadFactory serde.Factory
 	chainFactory   consensus.ChainFactory
 }
 
 // NewVerifiableFactory returns a new verifiable block factory.
-func NewVerifiableFactory(cf consensus.ChainFactory, pf serdeng.Factory) VerifiableFactory {
+func NewVerifiableFactory(cf consensus.ChainFactory, pf serde.Factory) VerifiableFactory {
 	return VerifiableFactory{
 		payloadFactory: pf,
 		chainFactory:   cf,
@@ -267,11 +267,11 @@ func NewVerifiableFactory(cf consensus.ChainFactory, pf serdeng.Factory) Verifia
 }
 
 // Deserialize implements serde.Factory.
-func (f VerifiableFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f VerifiableFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := verifiableFormats.Get(ctx.GetName())
 
-	ctx = serdeng.WithFactory(ctx, PayloadKey{}, f.payloadFactory)
-	ctx = serdeng.WithFactory(ctx, ChainKey{}, f.chainFactory)
+	ctx = serde.WithFactory(ctx, PayloadKey{}, f.payloadFactory)
+	ctx = serde.WithFactory(ctx, ChainKey{}, f.chainFactory)
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {

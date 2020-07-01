@@ -5,14 +5,14 @@ import (
 
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/ledger/transactions"
-	"go.dedis.ch/dela/serdeng"
-	"go.dedis.ch/dela/serdeng/registry"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
 )
 
 var msgFormats = registry.NewSimpleRegistry()
 
-func RegisterMessageFormat(c serdeng.Codec, f serdeng.Format) {
+func RegisterMessageFormat(c serde.Codec, f serde.Format) {
 	msgFormats.Register(c, f)
 }
 
@@ -35,7 +35,7 @@ func (b Blueprint) GetTransactions() []transactions.ServerTransaction {
 }
 
 // Serialize implements serde.Message.
-func (b Blueprint) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (b Blueprint) Serialize(ctx serde.Context) ([]byte, error) {
 	format := msgFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, b)
@@ -87,7 +87,7 @@ func (p GenesisPayload) Fingerprint(w io.Writer) error {
 }
 
 // Serialize implements serde.Message.
-func (p GenesisPayload) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (p GenesisPayload) Serialize(ctx serde.Context) ([]byte, error) {
 	format := msgFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, p)
@@ -137,7 +137,7 @@ func (p BlockPayload) Fingerprint(w io.Writer) error {
 }
 
 // Serialize implements serde.Message.
-func (p BlockPayload) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (p BlockPayload) Serialize(ctx serde.Context) ([]byte, error) {
 	format := msgFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, p)
@@ -168,11 +168,11 @@ func NewMessageFactory(rf viewchange.AuthorityFactory, tf transactions.TxFactory
 }
 
 // Deserialize implements serde.Factory.
-func (f MessageFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f MessageFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := msgFormats.Get(ctx.GetName())
 
-	ctx = serdeng.WithFactory(ctx, RosterKey{}, f.rosterFactory)
-	ctx = serdeng.WithFactory(ctx, TxKey{}, f.txFactory)
+	ctx = serde.WithFactory(ctx, RosterKey{}, f.rosterFactory)
+	ctx = serde.WithFactory(ctx, TxKey{}, f.txFactory)
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {

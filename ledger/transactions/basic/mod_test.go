@@ -10,7 +10,7 @@ import (
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/inventory"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -117,7 +117,7 @@ func (a fakeClientTask) Fingerprint(w io.Writer) error {
 	return a.err
 }
 
-func (a fakeClientTask) Serialize(serdeng.Context) ([]byte, error) {
+func (a fakeClientTask) Serialize(serde.Context) ([]byte, error) {
 	return nil, nil
 }
 

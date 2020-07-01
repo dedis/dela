@@ -13,7 +13,7 @@ import (
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -120,7 +120,7 @@ type pbftActor struct {
 // Propose implements consensus.Actor. It takes the proposal and send it to the
 // participants of the consensus. It returns nil if the consensus is reached and
 // the participant are committed to it, otherwise it returns the refusal reason.
-func (a pbftActor) Propose(p serdeng.Message) error {
+func (a pbftActor) Propose(p serde.Message) error {
 	// Wait for the view change module green signal to go through the proposal.
 	// If the leader has failed and this node has to take over, we use the
 	// inherant property of CoSiPBFT to prove that 2f participants want the view
@@ -186,7 +186,7 @@ func (a pbftActor) Propose(p serdeng.Message) error {
 	}
 }
 
-func (a pbftActor) newPrepareRequest(msg serdeng.Message, digest []byte) (types.Prepare, error) {
+func (a pbftActor) newPrepareRequest(msg serde.Message, digest []byte) (types.Prepare, error) {
 	chain, err := a.storage.ReadChain(nil)
 	if err != nil {
 		return types.Prepare{}, xerrors.Errorf("couldn't read chain: %v", err)
@@ -218,7 +218,7 @@ type reactor struct {
 	reactor consensus.Reactor
 }
 
-func (h reactor) Invoke(addr mino.Address, in serdeng.Message) (types.Digest, error) {
+func (h reactor) Invoke(addr mino.Address, in serde.Message) (types.Digest, error) {
 	switch msg := in.(type) {
 	case types.Prepare:
 		err := h.storage.StoreChain(msg.GetChain())
@@ -299,7 +299,7 @@ type rpcHandler struct {
 	reactor consensus.Reactor
 }
 
-func (h rpcHandler) Process(req mino.Request) (serdeng.Message, error) {
+func (h rpcHandler) Process(req mino.Request) (serde.Message, error) {
 	msg, ok := req.Message.(types.Propagate)
 	if !ok {
 		return nil, xerrors.Errorf("message type not supported '%T'", req.Message)

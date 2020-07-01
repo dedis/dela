@@ -5,8 +5,8 @@ import (
 
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
-	"go.dedis.ch/dela/serdeng/registry"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
 )
 
@@ -22,7 +22,7 @@ var formats = registry.NewSimpleRegistry()
 
 // Register saves the format to be used when serializing/deserializing signature
 // messages for the given codec.
-func Register(c serdeng.Codec, f serdeng.Format) {
+func Register(c serde.Codec, f serde.Format) {
 	formats.Register(c, f)
 }
 
@@ -121,7 +121,7 @@ func (s *Signature) setBit(index int) {
 
 // Serialize implements serde.Message. It serializes the signature into JSON
 // format.
-func (s *Signature) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (s *Signature) Serialize(ctx serde.Context) ([]byte, error) {
 	format := formats.Get(ctx.GetName())
 	if format == nil {
 		return nil, xerrors.Errorf("unknown format")
@@ -171,18 +171,18 @@ func (f SignatureFactory) GetAggregateFactory() crypto.SignatureFactory {
 
 // Deserialize implements serde.Factory. It deserializes the signature in JSON
 // format.
-func (f SignatureFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f SignatureFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	return f.SignatureOf(ctx, data)
 }
 
 // SignatureOf implements crypto.SignatureFactory.
-func (f SignatureFactory) SignatureOf(ctx serdeng.Context, data []byte) (crypto.Signature, error) {
+func (f SignatureFactory) SignatureOf(ctx serde.Context, data []byte) (crypto.Signature, error) {
 	format := formats.Get(ctx.GetName())
 	if format == nil {
 		return nil, xerrors.Errorf("unknown format")
 	}
 
-	ctx = serdeng.WithFactory(ctx, AggKey{}, f.aggFactory)
+	ctx = serde.WithFactory(ctx, AggKey{}, f.aggFactory)
 
 	m, err := format.Decode(ctx, data)
 	if err != nil {

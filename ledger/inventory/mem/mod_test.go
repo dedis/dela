@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/inventory"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -133,7 +133,7 @@ func TestPage_GetFingerprint(t *testing.T) {
 
 func TestPage_Read(t *testing.T) {
 	page := inMemoryPage{
-		entries: map[Digest]serdeng.Message{
+		entries: map[Digest]serde.Message{
 			{1}: fake.Message{},
 			{2}: fake.Message{},
 		},
@@ -154,7 +154,7 @@ func TestPage_Read(t *testing.T) {
 
 func TestPage_Write(t *testing.T) {
 	page := inMemoryPage{
-		entries: make(map[Digest]serdeng.Message),
+		entries: make(map[Digest]serde.Message),
 	}
 
 	value := fake.Message{}

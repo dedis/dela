@@ -19,21 +19,21 @@ import (
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions"
-	"go.dedis.ch/dela/serdeng"
-	"go.dedis.ch/dela/serdeng/registry"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
 )
 
 var txFormats = registry.NewSimpleRegistry()
 
-func RegisterTxFormat(c serdeng.Codec, f serdeng.Format) {
+func RegisterTxFormat(c serde.Codec, f serde.Format) {
 	txFormats.Register(c, f)
 }
 
 // ClientTask is a task inside a transaction.
 type ClientTask interface {
-	serdeng.Message
-	serdeng.Fingerprinter
+	serde.Message
+	serde.Fingerprinter
 }
 
 // Context is the context provided to a server transaction when consumed.
@@ -91,7 +91,7 @@ func (t ClientTransaction) GetTask() ClientTask {
 }
 
 // Serialize implements serde.Message.
-func (t ClientTransaction) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (t ClientTransaction) Serialize(ctx serde.Context) ([]byte, error) {
 	format := txFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, t)
@@ -233,7 +233,7 @@ type IdentityKey struct{}
 type SignatureKey struct{}
 type TaskKey struct{}
 
-func KeyOf(m serdeng.Message) string {
+func KeyOf(m serde.Message) string {
 	typ := reflect.TypeOf(m)
 	return fmt.Sprintf("%s.%s", typ.PkgPath(), typ.Name())
 }
@@ -246,7 +246,7 @@ type TransactionFactory struct {
 	hashFactory      crypto.HashFactory
 	publicKeyFactory crypto.PublicKeyFactory
 	signatureFactory crypto.SignatureFactory
-	registry         map[string]serdeng.Factory
+	registry         map[string]serde.Factory
 }
 
 // NewTransactionFactory returns a new instance of the transaction factory.
@@ -256,16 +256,16 @@ func NewTransactionFactory(signer crypto.Signer) TransactionFactory {
 		hashFactory:      crypto.NewSha256Factory(),
 		publicKeyFactory: common.NewPublicKeyFactory(),
 		signatureFactory: common.NewSignatureFactory(),
-		registry:         make(map[string]serdeng.Factory),
+		registry:         make(map[string]serde.Factory),
 	}
 }
 
 // Register registers the message to use the given factory to deserialize.
-func (f TransactionFactory) Register(m serdeng.Message, factory serdeng.Factory) {
+func (f TransactionFactory) Register(m serde.Message, factory serde.Factory) {
 	f.registry[KeyOf(m)] = factory
 }
 
-func (f TransactionFactory) Get(key string) serdeng.Factory {
+func (f TransactionFactory) Get(key string) serde.Factory {
 	return f.registry[key]
 }
 
@@ -295,12 +295,12 @@ func (f TransactionFactory) New(task ClientTask) (transactions.ClientTransaction
 }
 
 // Deserialize implements serde.Factory.
-func (f TransactionFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f TransactionFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := txFormats.Get(ctx.GetName())
 
-	ctx = serdeng.WithFactory(ctx, IdentityKey{}, f.publicKeyFactory)
-	ctx = serdeng.WithFactory(ctx, SignatureKey{}, f.signatureFactory)
-	ctx = serdeng.WithFactory(ctx, TaskKey{}, f)
+	ctx = serde.WithFactory(ctx, IdentityKey{}, f.publicKeyFactory)
+	ctx = serde.WithFactory(ctx, SignatureKey{}, f.signatureFactory)
+	ctx = serde.WithFactory(ctx, TaskKey{}, f)
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
@@ -320,7 +320,7 @@ func (f TransactionFactory) Deserialize(ctx serdeng.Context, data []byte) (serde
 	return tx, nil
 }
 
-func (f TransactionFactory) TxOf(ctx serdeng.Context, data []byte) (transactions.ServerTransaction, error) {
+func (f TransactionFactory) TxOf(ctx serde.Context, data []byte) (transactions.ServerTransaction, error) {
 	msg, err := f.Deserialize(ctx, data)
 	if err != nil {
 		return nil, err

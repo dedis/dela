@@ -14,7 +14,7 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minoch"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -282,18 +282,18 @@ func (p fakeSinglePlayer) Take(...mino.FilterUpdater) mino.Players {
 type fakeRPC struct {
 	mino.RPC
 	err    error
-	msg    serdeng.Message
+	msg    serde.Message
 	closed bool
 }
 
-func (rpc fakeRPC) Call(ctx context.Context, pb serdeng.Message,
-	players mino.Players) (<-chan serdeng.Message, <-chan error) {
+func (rpc fakeRPC) Call(ctx context.Context, pb serde.Message,
+	players mino.Players) (<-chan serde.Message, <-chan error) {
 
 	errs := make(chan error, 1)
 	if rpc.err != nil {
 		errs <- rpc.err
 	}
-	msgs := make(chan serdeng.Message, 1)
+	msgs := make(chan serde.Message, 1)
 	if rpc.msg != nil {
 		msgs <- rpc.msg
 	}

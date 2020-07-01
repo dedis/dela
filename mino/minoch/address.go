@@ -2,7 +2,7 @@ package minoch
 
 import (
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 )
 
 // Address is the representation of an identifier for minoch.
@@ -29,7 +29,7 @@ func (a address) String() string {
 
 // AddressFactory is an implementation of the factory interface.
 type AddressFactory struct {
-	serdeng.Factory
+	serde.Factory
 }
 
 // FromText returns an instance of an address from a byte slice.

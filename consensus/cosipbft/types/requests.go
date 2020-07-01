@@ -3,13 +3,13 @@ package types
 import (
 	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/serdeng"
-	"go.dedis.ch/dela/serdeng/registry"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/registry"
 )
 
 var requestFormats = registry.NewSimpleRegistry()
 
-func RegisterRequestFormat(c serdeng.Codec, f serdeng.Format) {
+func RegisterRequestFormat(c serde.Codec, f serde.Format) {
 	requestFormats.Register(c, f)
 }
 
@@ -17,12 +17,12 @@ func RegisterRequestFormat(c serdeng.Codec, f serdeng.Format) {
 //
 // - implements serde.Message
 type Prepare struct {
-	message   serdeng.Message
+	message   serde.Message
 	signature crypto.Signature
 	chain     consensus.Chain
 }
 
-func NewPrepare(msg serdeng.Message, sig crypto.Signature, chain consensus.Chain) Prepare {
+func NewPrepare(msg serde.Message, sig crypto.Signature, chain consensus.Chain) Prepare {
 	return Prepare{
 		message:   msg,
 		signature: sig,
@@ -30,7 +30,7 @@ func NewPrepare(msg serdeng.Message, sig crypto.Signature, chain consensus.Chain
 	}
 }
 
-func (p Prepare) GetMessage() serdeng.Message {
+func (p Prepare) GetMessage() serde.Message {
 	return p.message
 }
 
@@ -43,7 +43,7 @@ func (p Prepare) GetChain() consensus.Chain {
 }
 
 // Serialize implements serde.Messsage.
-func (p Prepare) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (p Prepare) Serialize(ctx serde.Context) ([]byte, error) {
 	format := requestFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, p)
@@ -80,7 +80,7 @@ func (c Commit) GetPrepare() crypto.Signature {
 }
 
 // Serialize implements serde.Message.
-func (c Commit) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (c Commit) Serialize(ctx serde.Context) ([]byte, error) {
 	format := requestFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, c)
@@ -115,7 +115,7 @@ func (p Propagate) GetCommit() crypto.Signature {
 }
 
 // Serialize implements serde.Message.
-func (p Propagate) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (p Propagate) Serialize(ctx serde.Context) ([]byte, error) {
 	format := requestFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, p)
@@ -135,13 +135,13 @@ type ChainKey struct{}
 //
 // - implements serde.Factory
 type RequestFactory struct {
-	msgFactory   serdeng.Factory
+	msgFactory   serde.Factory
 	sigFactory   crypto.SignatureFactory
 	cosiFactory  crypto.SignatureFactory
 	chainFactory consensus.ChainFactory
 }
 
-func NewRequestFactory(mf serdeng.Factory, sf, cosf crypto.SignatureFactory, cf consensus.ChainFactory) RequestFactory {
+func NewRequestFactory(mf serde.Factory, sf, cosf crypto.SignatureFactory, cf consensus.ChainFactory) RequestFactory {
 	return RequestFactory{
 		msgFactory:   mf,
 		sigFactory:   sf,
@@ -150,7 +150,7 @@ func NewRequestFactory(mf serdeng.Factory, sf, cosf crypto.SignatureFactory, cf 
 	}
 }
 
-func (f RequestFactory) GetMessageFactory() serdeng.Factory {
+func (f RequestFactory) GetMessageFactory() serde.Factory {
 	return f.msgFactory
 }
 
@@ -167,13 +167,13 @@ func (f RequestFactory) GetChainFactory() consensus.ChainFactory {
 }
 
 // Deserialize implements serde.Factory.
-func (f RequestFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f RequestFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := requestFormats.Get(ctx.GetName())
 
-	ctx = serdeng.WithFactory(ctx, MsgKey{}, f.msgFactory)
-	ctx = serdeng.WithFactory(ctx, SigKey{}, f.sigFactory)
-	ctx = serdeng.WithFactory(ctx, CoSigKey{}, f.cosiFactory)
-	ctx = serdeng.WithFactory(ctx, ChainKey{}, f.chainFactory)
+	ctx = serde.WithFactory(ctx, MsgKey{}, f.msgFactory)
+	ctx = serde.WithFactory(ctx, SigKey{}, f.sigFactory)
+	ctx = serde.WithFactory(ctx, CoSigKey{}, f.cosiFactory)
+	ctx = serde.WithFactory(ctx, ChainKey{}, f.chainFactory)
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {

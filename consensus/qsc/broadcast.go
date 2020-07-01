@@ -7,7 +7,7 @@ import (
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/consensus/qsc/types"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -54,7 +54,7 @@ type broadcastTCLB struct {
 // newBroadcast returns a TSB primitive that is using TLCB for the underlying
 // implementation.
 // TODO: implement TLCWR
-func newBroadcast(node int64, mino mino.Mino, players mino.Players, f serdeng.Factory) (broadcastTCLB, error) {
+func newBroadcast(node int64, mino mino.Mino, players mino.Players, f serde.Factory) (broadcastTCLB, error) {
 	bc := broadcastTCLB{}
 
 	tlcb, err := newTLCB(node, mino, players, f)
@@ -85,7 +85,7 @@ type hTLCR struct {
 // Process implements mino.Handler. It handles two cases: (1) A message set sent
 // from a player that must be processed. (2) A message set request that returns
 // the list of messages missing to the distant player.
-func (h hTLCR) Process(req mino.Request) (serdeng.Message, error) {
+func (h hTLCR) Process(req mino.Request) (serde.Message, error) {
 	switch msg := req.Message.(type) {
 	case types.MessageSet:
 		h.ch <- msg
@@ -119,7 +119,7 @@ type bTLCR struct {
 	ch chan types.MessageSet
 }
 
-func newTLCR(name string, node int64, mino mino.Mino, players mino.Players, f serdeng.Factory) (*bTLCR, error) {
+func newTLCR(name string, node int64, mino mino.Mino, players mino.Players, f serde.Factory) (*bTLCR, error) {
 	// TODO: improve to have a buffer per node with limited size.
 	handler := hTLCR{
 		ch:    make(chan types.MessageSet, 1000),
@@ -240,7 +240,7 @@ type bTLCB struct {
 	b2              tlcr
 }
 
-func newTLCB(node int64, mino mino.Mino, players mino.Players, f serdeng.Factory) (*bTLCB, error) {
+func newTLCB(node int64, mino mino.Mino, players mino.Players, f serde.Factory) (*bTLCB, error) {
 	b1, err := newTLCR("tlcr-prepare", node, mino, players, f)
 	if err != nil {
 		return nil, err
@@ -258,7 +258,7 @@ func newTLCB(node int64, mino mino.Mino, players mino.Players, f serdeng.Factory
 	}, nil
 }
 
-func (b *bTLCB) execute(ctx context.Context, value serdeng.Message) (View, error) {
+func (b *bTLCB) execute(ctx context.Context, value serde.Message) (View, error) {
 	m := types.NewMessage(b.node, value)
 
 	dela.Logger.Trace().Msgf("%d going through prepare broadcast", b.node)

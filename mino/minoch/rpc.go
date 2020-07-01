@@ -7,8 +7,8 @@ import (
 	"sync"
 
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
-	"go.dedis.ch/dela/serdeng/json"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
 
@@ -25,16 +25,16 @@ type RPC struct {
 	addr    mino.Address
 	path    string
 	h       mino.Handler
-	context serdeng.Context
-	factory serdeng.Factory
+	context serde.Context
+	factory serde.Factory
 }
 
 // Call sends the message to all participants and gather their reply. The
 // context in the scope of channel communication as there is no blocking I/O.
-func (c RPC) Call(ctx context.Context, req serdeng.Message,
-	players mino.Players) (<-chan serdeng.Message, <-chan error) {
+func (c RPC) Call(ctx context.Context, req serde.Message,
+	players mino.Players) (<-chan serde.Message, <-chan error) {
 
-	out := make(chan serdeng.Message, players.Len())
+	out := make(chan serde.Message, players.Len())
 	errs := make(chan error, players.Len())
 
 	data, err := req.Serialize(json.NewContext())
@@ -182,10 +182,10 @@ func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, min
 type sender struct {
 	addr    mino.Address
 	in      chan Envelope
-	context serdeng.Context
+	context serde.Context
 }
 
-func (s sender) Send(msg serdeng.Message, addrs ...mino.Address) <-chan error {
+func (s sender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 	errs := make(chan error, int(math.Max(1, float64(len(addrs)))))
 
 	data, err := msg.Serialize(s.context)
@@ -210,11 +210,11 @@ func (s sender) Send(msg serdeng.Message, addrs ...mino.Address) <-chan error {
 type receiver struct {
 	out     chan Envelope
 	errs    chan error
-	context serdeng.Context
-	factory serdeng.Factory
+	context serde.Context
+	factory serde.Factory
 }
 
-func (r receiver) Recv(ctx context.Context) (mino.Address, serdeng.Message, error) {
+func (r receiver) Recv(ctx context.Context) (mino.Address, serde.Message, error) {
 	select {
 	case env, ok := <-r.out:
 		if !ok {

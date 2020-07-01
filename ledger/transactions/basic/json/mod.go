@@ -6,12 +6,12 @@ import (
 
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/ledger/transactions/basic"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
 func init() {
-	basic.RegisterTxFormat(serdeng.CodecJSON, txFormat{})
+	basic.RegisterTxFormat(serde.CodecJSON, txFormat{})
 }
 
 // Task is a container of a task with its type and the raw value to deserialize.
@@ -34,7 +34,7 @@ type txFormat struct {
 	hashFactory crypto.HashFactory
 }
 
-func (f txFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, error) {
+func (f txFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	var tx basic.ClientTransaction
 	switch in := msg.(type) {
 	case basic.ClientTransaction:
@@ -78,7 +78,7 @@ func (f txFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, erro
 	return data, nil
 }
 
-func (f txFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f txFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Transaction{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {
@@ -118,7 +118,7 @@ func (f txFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, err
 	return tx, nil
 }
 
-func decodeIdentity(ctx serdeng.Context, data []byte) (crypto.PublicKey, error) {
+func decodeIdentity(ctx serde.Context, data []byte) (crypto.PublicKey, error) {
 	factory := ctx.GetFactory(basic.IdentityKey{})
 
 	fac, ok := factory.(crypto.PublicKeyFactory)
@@ -134,7 +134,7 @@ func decodeIdentity(ctx serdeng.Context, data []byte) (crypto.PublicKey, error) 
 	return pubkey, nil
 }
 
-func decodeSignature(ctx serdeng.Context, data []byte) (crypto.Signature, error) {
+func decodeSignature(ctx serde.Context, data []byte) (crypto.Signature, error) {
 	factory := ctx.GetFactory(basic.SignatureKey{})
 
 	fac, ok := factory.(crypto.SignatureFactory)
@@ -150,7 +150,7 @@ func decodeSignature(ctx serdeng.Context, data []byte) (crypto.Signature, error)
 	return sig, nil
 }
 
-func decodeTask(ctx serdeng.Context, key string, data []byte) (basic.ServerTask, error) {
+func decodeTask(ctx serde.Context, key string, data []byte) (basic.ServerTask, error) {
 	factory := ctx.GetFactory(basic.TaskKey{})
 
 	fac, ok := factory.(basic.TransactionFactory)

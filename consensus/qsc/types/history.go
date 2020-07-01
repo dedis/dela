@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"strings"
 
-	"go.dedis.ch/dela/serdeng"
-	"go.dedis.ch/dela/serdeng/registry"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/registry"
 )
 
 var historyFormats = registry.NewSimpleRegistry()
 
-func RegisterHistoryFormat(c serdeng.Codec, f serdeng.Format) {
+func RegisterHistoryFormat(c serde.Codec, f serde.Format) {
 	historyFormats.Register(c, f)
 }
 
@@ -91,7 +91,7 @@ func (h History) Equal(other History) bool {
 }
 
 // Serialize implements serde.Message.
-func (h History) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (h History) Serialize(ctx serde.Context) ([]byte, error) {
 	format := historyFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, h)
@@ -122,7 +122,7 @@ func (h History) String() string {
 type HistoryFactory struct{}
 
 // Deserialize implements serde.Factory.
-func (f HistoryFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f HistoryFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := historyFormats.Get(ctx.GetName())
 
 	msg, err := format.Decode(ctx, data)

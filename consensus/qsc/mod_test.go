@@ -13,7 +13,7 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minoch"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -128,7 +128,7 @@ type fakeReactor struct {
 	wg    sync.WaitGroup
 }
 
-func (v *fakeReactor) InvokeValidate(addr mino.Address, pb serdeng.Message) ([]byte, error) {
+func (v *fakeReactor) InvokeValidate(addr mino.Address, pb serde.Message) ([]byte, error) {
 	return []byte{0xac}, nil
 }
 
@@ -144,7 +144,7 @@ type badReactor struct {
 	consensus.Reactor
 }
 
-func (v badReactor) InvokeValidate(mino.Address, serdeng.Message) ([]byte, error) {
+func (v badReactor) InvokeValidate(mino.Address, serde.Message) ([]byte, error) {
 	return nil, xerrors.New("oops")
 }
 

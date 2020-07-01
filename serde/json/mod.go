@@ -16,18 +16,18 @@ import (
 	_ "go.dedis.ch/dela/ledger/byzcoin/memship/json"
 	_ "go.dedis.ch/dela/ledger/transactions/basic/json"
 	_ "go.dedis.ch/dela/mino/minogrpc/routing/json"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 )
 
 type jsonEngine struct{}
 
 // NewContext returns a JSON context.
-func NewContext() serdeng.Context {
-	return serdeng.NewContext(jsonEngine{})
+func NewContext() serde.Context {
+	return serde.NewContext(jsonEngine{})
 }
 
-func (ctx jsonEngine) GetName() serdeng.Codec {
-	return serdeng.CodecJSON
+func (ctx jsonEngine) GetName() serde.Codec {
+	return serde.CodecJSON
 }
 
 func (ctx jsonEngine) Marshal(m interface{}) ([]byte, error) {

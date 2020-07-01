@@ -7,15 +7,15 @@ import (
 	"go.dedis.ch/dela/blockchain/skipchain/types"
 	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
 func init() {
-	types.RegisterBlockFormat(serdeng.CodecJSON, blockFormat{})
-	types.RegisterVerifiableBlockFormats(serdeng.CodecJSON, newVerifiableFormat())
-	types.RegisterBlueprintFormats(serdeng.CodecJSON, blueprintFormat{})
-	types.RegisterRequestFormats(serdeng.CodecJSON, newRequestFormat())
+	types.RegisterBlockFormat(serde.CodecJSON, blockFormat{})
+	types.RegisterVerifiableBlockFormats(serde.CodecJSON, newVerifiableFormat())
+	types.RegisterBlueprintFormats(serde.CodecJSON, blueprintFormat{})
+	types.RegisterRequestFormats(serde.CodecJSON, newRequestFormat())
 }
 
 // Blueprint is a JSON message to send a proposal.
@@ -65,7 +65,7 @@ type blockFormat struct {
 	hashFactory crypto.HashFactory
 }
 
-func (f blockFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, error) {
+func (f blockFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	block, ok := msg.(types.SkipBlock)
 	if !ok {
 		return nil, xerrors.New("invalid block message")
@@ -91,7 +91,7 @@ func (f blockFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, e
 	return data, nil
 }
 
-func (f blockFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f blockFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := SkipBlock{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {
@@ -135,7 +135,7 @@ func (f blockFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, 
 }
 
 type verifiableFormat struct {
-	blockFormat serdeng.Format
+	blockFormat serde.Format
 }
 
 func newVerifiableFormat() verifiableFormat {
@@ -144,7 +144,7 @@ func newVerifiableFormat() verifiableFormat {
 	}
 }
 
-func (f verifiableFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, error) {
+func (f verifiableFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	vb, ok := msg.(types.VerifiableBlock)
 	if !ok {
 		return nil, xerrors.New("invalid block message")
@@ -173,7 +173,7 @@ func (f verifiableFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]by
 	return data, nil
 }
 
-func (f verifiableFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f verifiableFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := VerifiableBlock{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {
@@ -198,7 +198,7 @@ func (f verifiableFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Mess
 	return vb, nil
 }
 
-func decodeChain(ctx serdeng.Context, data []byte) (consensus.Chain, error) {
+func decodeChain(ctx serde.Context, data []byte) (consensus.Chain, error) {
 	factory := ctx.GetFactory(types.ChainKey{})
 
 	fac, ok := factory.(consensus.ChainFactory)
@@ -214,7 +214,7 @@ func decodeChain(ctx serdeng.Context, data []byte) (consensus.Chain, error) {
 	return chain, nil
 }
 
-func (f verifiableFormat) decodeBlock(ctx serdeng.Context, data []byte) (types.SkipBlock, error) {
+func (f verifiableFormat) decodeBlock(ctx serde.Context, data []byte) (types.SkipBlock, error) {
 	msg, err := f.blockFormat.Decode(ctx, data)
 	if err != nil {
 		return types.SkipBlock{}, err
@@ -225,7 +225,7 @@ func (f verifiableFormat) decodeBlock(ctx serdeng.Context, data []byte) (types.S
 
 type blueprintFormat struct{}
 
-func (f blueprintFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, error) {
+func (f blueprintFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	bp, ok := msg.(types.Blueprint)
 	if !ok {
 		return nil, xerrors.New("invalid blueprint message")
@@ -250,7 +250,7 @@ func (f blueprintFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byt
 	return data, nil
 }
 
-func (f blueprintFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f blueprintFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Blueprint{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {
@@ -273,7 +273,7 @@ func (f blueprintFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Messa
 }
 
 type requestFormat struct {
-	blockFormat serdeng.Format
+	blockFormat serde.Format
 }
 
 func newRequestFormat() requestFormat {
@@ -282,7 +282,7 @@ func newRequestFormat() requestFormat {
 	}
 }
 
-func (f requestFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, error) {
+func (f requestFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	var req Message
 
 	switch in := msg.(type) {
@@ -327,7 +327,7 @@ func (f requestFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte,
 	return data, nil
 }
 
-func (f requestFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f requestFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Message{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {

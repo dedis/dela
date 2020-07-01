@@ -3,18 +3,18 @@ package viewchange
 import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 )
 
 // ChangeSet is the return of a diff between two authorities.
 type ChangeSet interface {
-	serdeng.Message
+	serde.Message
 }
 
 type ChangeSetFactory interface {
-	serdeng.Factory
+	serde.Factory
 
-	ChangeSetOf(serdeng.Context, []byte) (ChangeSet, error)
+	ChangeSetOf(serde.Context, []byte) (ChangeSet, error)
 }
 
 // ViewChange provides primitives to verify if a participant is allowed to
@@ -40,8 +40,8 @@ type ViewChange interface {
 // Authority is an extension of the collective authority to provide
 // primitives to append new players to it.
 type Authority interface {
-	serdeng.Message
-	serdeng.Fingerprinter
+	serde.Message
+	serde.Fingerprinter
 	crypto.CollectiveAuthority
 
 	// Apply must apply the change set to the collective authority. It should
@@ -53,7 +53,7 @@ type Authority interface {
 }
 
 type AuthorityFactory interface {
-	serdeng.Factory
+	serde.Factory
 
-	AuthorityOf(serdeng.Context, []byte) (Authority, error)
+	AuthorityOf(serde.Context, []byte) (Authority, error)
 }

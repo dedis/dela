@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/transactions/basic"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -18,7 +18,7 @@ func TestTxFormat_Encode(t *testing.T) {
 		basic.WithTask(fakeServerTask{}))
 
 	format := txFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, tx)
 	require.NoError(t, err)
@@ -48,10 +48,10 @@ func TestTransactionFactory_VisitJSON(t *testing.T) {
 	factory.Register(fakeServerTask{}, fakeTaskFactory{})
 
 	format := txFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
-	ctx = serdeng.WithFactory(ctx, basic.IdentityKey{}, fake.PublicKeyFactory{})
-	ctx = serdeng.WithFactory(ctx, basic.SignatureKey{}, fake.SignatureFactory{})
-	ctx = serdeng.WithFactory(ctx, basic.TaskKey{}, factory)
+	ctx := serde.NewContext(fake.ContextEngine{})
+	ctx = serde.WithFactory(ctx, basic.IdentityKey{}, fake.PublicKeyFactory{})
+	ctx = serde.WithFactory(ctx, basic.SignatureKey{}, fake.SignatureFactory{})
+	ctx = serde.WithFactory(ctx, basic.TaskKey{}, factory)
 
 	key := basic.KeyOf(fakeServerTask{})
 
@@ -67,11 +67,11 @@ func TestTransactionFactory_VisitJSON(t *testing.T) {
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
 	require.EqualError(t, err, "couldn't deserialize transaction: fake error")
 
-	badCtx := serdeng.WithFactory(ctx, basic.IdentityKey{}, fake.NewBadPublicKeyFactory())
+	badCtx := serde.WithFactory(ctx, basic.IdentityKey{}, fake.NewBadPublicKeyFactory())
 	_, err = format.Decode(badCtx, []byte(`{}`))
 	require.EqualError(t, err, "couldn't deserialize identity: fake error")
 
-	badCtx = serdeng.WithFactory(ctx, basic.SignatureKey{}, fake.NewBadSignatureFactory())
+	badCtx = serde.WithFactory(ctx, basic.SignatureKey{}, fake.NewBadSignatureFactory())
 	_, err = format.Decode(badCtx, []byte(`{}`))
 	require.EqualError(t, err, "couldn't deserialize signature: fake error")
 
@@ -104,7 +104,7 @@ type fakeServerTask struct {
 	err error
 }
 
-func (t fakeServerTask) Serialize(serdeng.Context) ([]byte, error) {
+func (t fakeServerTask) Serialize(serde.Context) ([]byte, error) {
 	return nil, t.err
 }
 
@@ -116,6 +116,6 @@ type fakeTaskFactory struct {
 	err error
 }
 
-func (f fakeTaskFactory) Deserialize(serdeng.Context, []byte) (serdeng.Message, error) {
+func (f fakeTaskFactory) Deserialize(serde.Context, []byte) (serde.Message, error) {
 	return fakeServerTask{}, f.err
 }

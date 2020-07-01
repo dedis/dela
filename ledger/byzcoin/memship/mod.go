@@ -9,8 +9,8 @@ import (
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions/basic"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
-	"go.dedis.ch/dela/serdeng/registry"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
 )
 
@@ -29,7 +29,7 @@ var (
 	taskFormats = registry.NewSimpleRegistry()
 )
 
-func RegisterTaskFormat(c serdeng.Codec, f serdeng.Format) {
+func RegisterTaskFormat(c serde.Codec, f serde.Format) {
 	taskFormats.Register(c, f)
 }
 
@@ -51,7 +51,7 @@ func (t ClientTask) GetAuthority() viewchange.Authority {
 }
 
 // Serialize implements serde.Message.
-func (t ClientTask) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (t ClientTask) Serialize(ctx serde.Context) ([]byte, error) {
 	format := taskFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, t)
@@ -185,10 +185,10 @@ func (f TaskManager) Verify(from mino.Address, index uint64) (viewchange.Authori
 }
 
 // Deserialize implements serde.Factory.
-func (f TaskManager) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f TaskManager) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := taskFormats.Get(ctx.GetName())
 
-	ctx = serdeng.WithFactory(ctx, RosterKey{}, f.rosterFactory)
+	ctx = serde.WithFactory(ctx, RosterKey{}, f.rosterFactory)
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
@@ -199,7 +199,7 @@ func (f TaskManager) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Mess
 }
 
 // Register registers the task messages.
-func Register(r basic.TransactionFactory, f serdeng.Factory) {
+func Register(r basic.TransactionFactory, f serde.Factory) {
 	r.Register(ClientTask{}, f)
 	r.Register(ServerTask{}, f)
 }

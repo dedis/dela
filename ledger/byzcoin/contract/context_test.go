@@ -5,14 +5,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
 func TestTaskContext_GetArc(t *testing.T) {
 	ctx := taskContext{
 		page: fakePage{
-			store: map[string]serdeng.Message{
+			store: map[string]serde.Message{
 				"a": &fakeAccess{},
 				"b": fake.Message{},
 			},
@@ -34,7 +34,7 @@ func TestTaskContext_GetArc(t *testing.T) {
 func TestTaskContext_Read(t *testing.T) {
 	ctx := taskContext{
 		page: fakePage{
-			store: map[string]serdeng.Message{
+			store: map[string]serde.Message{
 				"a": &Instance{
 					ContractID: "abc",
 					Value:      fake.Message{},

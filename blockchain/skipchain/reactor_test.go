@@ -8,7 +8,7 @@ import (
 	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/blockchain/skipchain/types"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -118,7 +118,7 @@ type fakeReactor struct {
 	errCommit   error
 }
 
-func (v *fakeReactor) InvokeValidate(data serdeng.Message) (blockchain.Payload, error) {
+func (v *fakeReactor) InvokeValidate(data serde.Message) (blockchain.Payload, error) {
 	v.calls = append(v.calls, []interface{}{data})
 	return fake.Message{}, v.errValidate
 }

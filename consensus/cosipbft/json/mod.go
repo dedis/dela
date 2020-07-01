@@ -7,14 +7,14 @@ import (
 	"go.dedis.ch/dela/consensus/cosipbft/types"
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
 func init() {
-	types.RegisterForwardLinkFormat(serdeng.CodecJSON, linkFormat{})
-	types.RegisterChainFormat(serdeng.CodecJSON, chainFormat{})
-	types.RegisterRequestFormat(serdeng.CodecJSON, messageFormat{})
+	types.RegisterForwardLinkFormat(serde.CodecJSON, linkFormat{})
+	types.RegisterChainFormat(serde.CodecJSON, chainFormat{})
+	types.RegisterRequestFormat(serde.CodecJSON, messageFormat{})
 }
 
 // ForwardLink is the JSON message for a forward link.
@@ -61,7 +61,7 @@ type Request struct {
 
 type linkFormat struct{}
 
-func (f linkFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, error) {
+func (f linkFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	link, ok := msg.(types.ForwardLink)
 	if !ok {
 		return nil, xerrors.New("invalid link message")
@@ -80,7 +80,7 @@ func (f linkFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, er
 	return data, nil
 }
 
-func (f linkFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f linkFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := ForwardLink{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {
@@ -95,7 +95,7 @@ func (f linkFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, e
 	return *link, nil
 }
 
-func (f linkFormat) toJSON(ctx serdeng.Context, link types.ForwardLink) (*ForwardLink, error) {
+func (f linkFormat) toJSON(ctx serde.Context, link types.ForwardLink) (*ForwardLink, error) {
 	var changeset json.RawMessage
 	var err error
 	if link.GetChangeSet() != nil {
@@ -126,7 +126,7 @@ func (f linkFormat) toJSON(ctx serdeng.Context, link types.ForwardLink) (*Forwar
 	return m, nil
 }
 
-func (f linkFormat) fromJSON(ctx serdeng.Context, m ForwardLink) (*types.ForwardLink, error) {
+func (f linkFormat) fromJSON(ctx serde.Context, m ForwardLink) (*types.ForwardLink, error) {
 	sf, ok := ctx.GetFactory(types.CoSigKey{}).(crypto.SignatureFactory)
 	if !ok {
 		return nil, xerrors.New("invalid factory")
@@ -168,7 +168,7 @@ func (f linkFormat) fromJSON(ctx serdeng.Context, m ForwardLink) (*types.Forward
 
 type chainFormat struct{}
 
-func (f chainFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, error) {
+func (f chainFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	chain, ok := msg.(types.Chain)
 	if !ok {
 		return nil, xerrors.New("invalid chain message")
@@ -196,7 +196,7 @@ func (f chainFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, e
 	return data, nil
 }
 
-func (f chainFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f chainFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Chain{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {
@@ -220,7 +220,7 @@ func (f chainFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, 
 
 type messageFormat struct{}
 
-func (f messageFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, error) {
+func (f messageFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	var req Request
 
 	switch in := msg.(type) {
@@ -283,7 +283,7 @@ func (f messageFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte,
 	return data, nil
 }
 
-func (f messageFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f messageFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Request{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {
@@ -336,13 +336,13 @@ func (f messageFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message
 	return nil, xerrors.New("message is empty")
 }
 
-func decodeMessage(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func decodeMessage(ctx serde.Context, data []byte) (serde.Message, error) {
 	factory := ctx.GetFactory(types.MsgKey{})
 
 	return factory.Deserialize(ctx, data)
 }
 
-func decodeSignature(ctx serdeng.Context, data []byte) (crypto.Signature, error) {
+func decodeSignature(ctx serde.Context, data []byte) (crypto.Signature, error) {
 	factory := ctx.GetFactory(types.SigKey{})
 
 	sf, ok := factory.(crypto.SignatureFactory)
@@ -353,7 +353,7 @@ func decodeSignature(ctx serdeng.Context, data []byte) (crypto.Signature, error)
 	return sf.SignatureOf(ctx, data)
 }
 
-func decodeChain(ctx serdeng.Context, data []byte) (consensus.Chain, error) {
+func decodeChain(ctx serde.Context, data []byte) (consensus.Chain, error) {
 	factory := ctx.GetFactory(types.ChainKey{})
 
 	cf, ok := factory.(consensus.ChainFactory)
@@ -364,7 +364,7 @@ func decodeChain(ctx serdeng.Context, data []byte) (consensus.Chain, error) {
 	return cf.ChainOf(ctx, data)
 }
 
-func decodeCoSignature(ctx serdeng.Context, data []byte) (crypto.Signature, error) {
+func decodeCoSignature(ctx serde.Context, data []byte) (crypto.Signature, error) {
 	factory := ctx.GetFactory(types.CoSigKey{})
 
 	sf, ok := factory.(crypto.SignatureFactory)

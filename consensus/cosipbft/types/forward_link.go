@@ -8,8 +8,8 @@ import (
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/serdeng"
-	"go.dedis.ch/dela/serdeng/registry"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
 )
 
@@ -18,11 +18,11 @@ var (
 	chainFormats = registry.NewSimpleRegistry()
 )
 
-func RegisterForwardLinkFormat(c serdeng.Codec, f serdeng.Format) {
+func RegisterForwardLinkFormat(c serde.Codec, f serde.Format) {
 	linkFormats.Register(c, f)
 }
 
-func RegisterChainFormat(c serdeng.Codec, f serdeng.Format) {
+func RegisterChainFormat(c serde.Codec, f serde.Format) {
 	chainFormats.Register(c, f)
 }
 
@@ -147,7 +147,7 @@ func (fl ForwardLink) Verify(v crypto.Verifier) error {
 }
 
 // Serialize implements serde.Message.
-func (fl ForwardLink) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (fl ForwardLink) Serialize(ctx serde.Context) ([]byte, error) {
 	format := linkFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, fl)
@@ -201,7 +201,7 @@ func (c Chain) GetTo() []byte {
 }
 
 // Serialize implements serde.Message.
-func (c Chain) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (c Chain) Serialize(ctx serde.Context) ([]byte, error) {
 	format := chainFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, c)
@@ -277,11 +277,11 @@ func (f ChainFactory) GetChangeSetFactory() viewchange.ChangeSetFactory {
 }
 
 // Deserialize implements serde.Factory.
-func (f ChainFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f ChainFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := chainFormats.Get(ctx.GetName())
 
-	ctx = serdeng.WithFactory(ctx, CoSigKey{}, f.sigFactory)
-	ctx = serdeng.WithFactory(ctx, ChangeSetKey{}, f.csFactory)
+	ctx = serde.WithFactory(ctx, CoSigKey{}, f.sigFactory)
+	ctx = serde.WithFactory(ctx, ChangeSetKey{}, f.csFactory)
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
@@ -301,7 +301,7 @@ func (f ChainFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Mes
 	return chain, nil
 }
 
-func (f ChainFactory) ChainOf(ctx serdeng.Context, data []byte) (consensus.Chain, error) {
+func (f ChainFactory) ChainOf(ctx serde.Context, data []byte) (consensus.Chain, error) {
 	chain, err := f.Deserialize(ctx, data)
 	if err != nil {
 		return nil, err

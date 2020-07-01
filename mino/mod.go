@@ -8,7 +8,7 @@ import (
 	"encoding"
 	"errors"
 
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 )
 
 // Address is a representation of a node's address.
@@ -54,7 +54,7 @@ type Sender interface {
 	// will be populated with errors coming from the network layer if the
 	// message cannot be sent. The channel must be closed after the message has
 	// been/failed to be sent.
-	Send(msg serdeng.Message, addrs ...Address) <-chan error
+	Send(msg serde.Message, addrs ...Address) <-chan error
 }
 
 // Request is a wrapper around the context of a message received from a player
@@ -64,13 +64,13 @@ type Request struct {
 	// Address is the address of the sender of the request.
 	Address Address
 	// Message is the message of the request.
-	Message serdeng.Message
+	Message serde.Message
 }
 
 // Receiver is an interface to provide primitives to receive messages from
 // recipients.
 type Receiver interface {
-	Recv(context.Context) (Address, serdeng.Message, error)
+	Recv(context.Context) (Address, serde.Message, error)
 }
 
 // RPC is a representation of a remote procedure call that can call a single
@@ -79,8 +79,8 @@ type RPC interface {
 	// Call is a basic request to one or multiple distant peers. Only the
 	// responses channel will be close when all requests have been processed,
 	// either by success or after it filled the errors channel.
-	Call(ctx context.Context, req serdeng.Message,
-		players Players) (<-chan serdeng.Message, <-chan error)
+	Call(ctx context.Context, req serde.Message,
+		players Players) (<-chan serde.Message, <-chan error)
 
 	// Stream is a persistent request that will be closed only when the
 	// orchestrator is done or an error occured.
@@ -91,7 +91,7 @@ type RPC interface {
 type Handler interface {
 	// Process handles a single request by producing the response according to
 	// the request message.
-	Process(req Request) (resp serdeng.Message, err error)
+	Process(req Request) (resp serde.Message, err error)
 
 	// Stream is a handler for a stream request. It will open a stream with the
 	// participants.
@@ -103,7 +103,7 @@ type Handler interface {
 type UnsupportedHandler struct{}
 
 // Process is the default implementation for a handler. It will return an error.
-func (h UnsupportedHandler) Process(req Request) (serdeng.Message, error) {
+func (h UnsupportedHandler) Process(req Request) (serde.Message, error) {
 	return nil, errors.New("rpc is not supported")
 }
 
@@ -114,7 +114,7 @@ func (h UnsupportedHandler) Stream(in Sender, out Receiver) error {
 
 // AddressFactory is the factory to decode addresses.
 type AddressFactory interface {
-	serdeng.Factory
+	serde.Factory
 
 	FromText(text []byte) Address
 }
@@ -134,5 +134,5 @@ type Mino interface {
 	// MakeRPC creates an RPC that can send to and receive from a uniq URI which
 	// is computed with URI = (namespace || name)
 	// The namespace is known by the minion instance.
-	MakeRPC(name string, h Handler, f serdeng.Factory) (RPC, error)
+	MakeRPC(name string, h Handler, f serde.Factory) (RPC, error)
 }

@@ -5,12 +5,12 @@ import (
 
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/ledger/byzcoin/memship"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
 func init() {
-	memship.RegisterTaskFormat(serdeng.CodecJSON, taskFormat{})
+	memship.RegisterTaskFormat(serde.CodecJSON, taskFormat{})
 }
 
 // Task is the JSON message for the client task.
@@ -20,7 +20,7 @@ type Task struct {
 
 type taskFormat struct{}
 
-func (f taskFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, error) {
+func (f taskFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	var task memship.ClientTask
 	switch in := msg.(type) {
 	case memship.ClientTask:
@@ -48,7 +48,7 @@ func (f taskFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, er
 	return data, nil
 }
 
-func (f taskFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f taskFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Task{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {

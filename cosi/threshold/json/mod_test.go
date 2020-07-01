@@ -6,8 +6,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/cosi/threshold"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"go.dedis.ch/dela/serdeng"
-	"go.dedis.ch/dela/serdeng/json"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/json"
 )
 
 func TestFormat_Encode(t *testing.T) {
@@ -26,7 +26,7 @@ func TestFormat_Encode(t *testing.T) {
 
 func TestFormat_Decode(t *testing.T) {
 	format := format{}
-	ctx := serdeng.WithFactory(json.NewContext(), threshold.AggKey{}, fake.SignatureFactory{})
+	ctx := serde.WithFactory(json.NewContext(), threshold.AggKey{}, fake.SignatureFactory{})
 
 	sig, err := format.Decode(ctx, []byte(`{"Mask":[1],"Aggregate":{}}`))
 	require.NoError(t, err)
@@ -35,7 +35,7 @@ func TestFormat_Decode(t *testing.T) {
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
 	require.EqualError(t, err, "couldn't unmarshal message: fake error")
 
-	ctx = serdeng.WithFactory(ctx, threshold.AggKey{}, fake.NewBadSignatureFactory())
+	ctx = serde.WithFactory(ctx, threshold.AggKey{}, fake.NewBadSignatureFactory())
 	_, err = format.Decode(ctx, []byte(`{}`))
 	require.EqualError(t, err, "couldn't deserialize signature: fake error")
 }

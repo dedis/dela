@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -91,7 +91,7 @@ func TestHandler_Process(t *testing.T) {
 
 type fakeRumorFactory struct{}
 
-func (r fakeRumorFactory) Deserialize(serdeng.Context, []byte) (serdeng.Message, error) {
+func (r fakeRumorFactory) Deserialize(serde.Context, []byte) (serde.Message, error) {
 	return fakeRumor{}, nil
 }
 
@@ -101,6 +101,6 @@ func (r fakeRumor) GetID() []byte {
 	return []byte{0xa}
 }
 
-func (r fakeRumor) Serialize(serdeng.Context) ([]byte, error) {
+func (r fakeRumor) Serialize(serde.Context) ([]byte, error) {
 	return []byte("{}"), nil
 }

@@ -6,14 +6,14 @@ import (
 	"sort"
 
 	"go.dedis.ch/dela/ledger/arc"
-	"go.dedis.ch/dela/serdeng"
-	"go.dedis.ch/dela/serdeng/registry"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
 )
 
 var accessFormats = registry.NewSimpleRegistry()
 
-func RegisterAccessFormat(c serdeng.Codec, f serdeng.Format) {
+func RegisterAccessFormat(c serde.Codec, f serde.Format) {
 	accessFormats.Register(c, f)
 }
 
@@ -126,7 +126,7 @@ func (ac Access) Fingerprint(w io.Writer) error {
 }
 
 // Serialize implements serde.Message.
-func (ac Access) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (ac Access) Serialize(ctx serde.Context) ([]byte, error) {
 	format := accessFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, ac)
@@ -156,7 +156,7 @@ func NewFactory() Factory {
 }
 
 // Deserialize implements serde.Factory.
-func (f Factory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f Factory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := accessFormats.Get(ctx.GetName())
 
 	msg, err := format.Decode(ctx, data)

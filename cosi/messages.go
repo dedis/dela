@@ -2,15 +2,15 @@ package cosi
 
 import (
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/serdeng"
-	"go.dedis.ch/dela/serdeng/registry"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
 )
 
 var formats = registry.NewSimpleRegistry()
 
 // Register registers the format for the given format name.
-func Register(name serdeng.Codec, f serdeng.Format) {
+func Register(name serde.Codec, f serde.Format) {
 	formats.Register(name, f)
 }
 
@@ -19,12 +19,12 @@ func Register(name serdeng.Codec, f serdeng.Format) {
 //
 // - implements serde.Message
 type SignatureRequest struct {
-	Value serdeng.Message
+	Value serde.Message
 }
 
 // Serialize implements serde.Message. It serializes the message in the format
 // supported by the context.
-func (req SignatureRequest) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (req SignatureRequest) Serialize(ctx serde.Context) ([]byte, error) {
 	format := formats.Get(ctx.GetName())
 	if format == nil {
 		return nil, xerrors.Errorf("format '%s' is not supported", ctx.GetName())
@@ -47,7 +47,7 @@ type SignatureResponse struct {
 
 // Serialize implements serde.Message. It serializes the message in the format
 // supported by the context.
-func (resp SignatureResponse) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (resp SignatureResponse) Serialize(ctx serde.Context) ([]byte, error) {
 	format := formats.Get(ctx.GetName())
 	if format == nil {
 		return nil, xerrors.Errorf("format '%s' is not supported", ctx.GetName())
@@ -68,13 +68,13 @@ type SigKey struct{}
 //
 // - implements serde.Factory
 type MessageFactory struct {
-	msgFactory serdeng.Factory
+	msgFactory serde.Factory
 	sigFactory crypto.SignatureFactory
 }
 
 // NewMessageFactory returns a new message factory that uses the message and
 // signature factories.
-func NewMessageFactory(msg serdeng.Factory, sig crypto.SignatureFactory) MessageFactory {
+func NewMessageFactory(msg serde.Factory, sig crypto.SignatureFactory) MessageFactory {
 	return MessageFactory{
 		msgFactory: msg,
 		sigFactory: sig,
@@ -82,7 +82,7 @@ func NewMessageFactory(msg serdeng.Factory, sig crypto.SignatureFactory) Message
 }
 
 // GetMessageFactory returns the message factory.
-func (f MessageFactory) GetMessageFactory() serdeng.Factory {
+func (f MessageFactory) GetMessageFactory() serde.Factory {
 	return f.msgFactory
 }
 
@@ -92,14 +92,14 @@ func (f MessageFactory) GetSignatureFactory() crypto.SignatureFactory {
 }
 
 // Deserialize implements serde.Factory.
-func (f MessageFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f MessageFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := formats.Get(ctx.GetName())
 	if format == nil {
 		return nil, xerrors.Errorf("format '%s' is not supported", ctx.GetName())
 	}
 
-	ctx = serdeng.WithFactory(ctx, MsgKey{}, f.msgFactory)
-	ctx = serdeng.WithFactory(ctx, SigKey{}, f.sigFactory)
+	ctx = serde.WithFactory(ctx, MsgKey{}, f.msgFactory)
+	ctx = serde.WithFactory(ctx, SigKey{}, f.sigFactory)
 
 	m, err := format.Decode(ctx, data)
 	if err != nil {

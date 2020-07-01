@@ -1,4 +1,4 @@
-package serdeng
+package serde
 
 type ContextEngine interface {
 	GetName() Codec

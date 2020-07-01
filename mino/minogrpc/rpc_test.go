@@ -9,8 +9,8 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/routing"
-	"go.dedis.ch/dela/serdeng"
-	"go.dedis.ch/dela/serdeng/json"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 )
@@ -161,7 +161,7 @@ func (f badRtingFactory) Make(mino.Address, mino.Players) (routing.Routing, erro
 	return nil, xerrors.New("oops")
 }
 
-func (f badRtingFactory) RoutingOf(serdeng.Context, []byte) (routing.Routing, error) {
+func (f badRtingFactory) RoutingOf(serde.Context, []byte) (routing.Routing, error) {
 	return nil, xerrors.New("oops")
 }
 

@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -102,7 +102,7 @@ func TestRPC_Failures_Stream(t *testing.T) {
 	err = testWait(t, errs, nil)
 	require.EqualError(t, err, "couldn't marshal message: fake error")
 
-	m.context = serdeng.NewContext(fake.ContextEngine{})
+	m.context = serde.NewContext(fake.ContextEngine{})
 	_, _, err = rpc.Stream(ctx, mino.NewAddresses(fake.NewAddress(0)))
 	require.EqualError(t, err,
 		"couldn't find peer: invalid address type 'fake.Address'")
@@ -112,7 +112,7 @@ func TestReceiver_Recv(t *testing.T) {
 	recv := receiver{
 		out:     make(chan Envelope, 1),
 		errs:    make(chan error),
-		context: serdeng.NewContext(fake.ContextEngine{}),
+		context: serde.NewContext(fake.ContextEngine{}),
 		factory: fake.MessageFactory{},
 	}
 
@@ -135,7 +135,7 @@ func TestReceiver_Recv(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-func testWait(t *testing.T, errs <-chan error, resps <-chan serdeng.Message) error {
+func testWait(t *testing.T, errs <-chan error, resps <-chan serde.Message) error {
 	select {
 	case <-time.After(50 * time.Millisecond):
 		t.Fatal("an error is expected")

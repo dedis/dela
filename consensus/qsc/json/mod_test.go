@@ -6,14 +6,14 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/consensus/qsc/types"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 )
 
 func TestHistoryFormat_Encode(t *testing.T) {
 	hist := types.NewHistory(types.NewEpoch([]byte{0xa}, 10))
 
 	format := historyFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, hist)
 	require.NoError(t, err)
@@ -22,7 +22,7 @@ func TestHistoryFormat_Encode(t *testing.T) {
 
 func TestHistoryFactory_VisitJSON(t *testing.T) {
 	format := historyFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	hist, err := format.Decode(ctx, []byte(`[{},{}]`))
 	require.NoError(t, err)
@@ -36,7 +36,7 @@ func TestRequestFormat_Proposal_Encode(t *testing.T) {
 	p := types.NewProposal(fake.Message{})
 
 	format := requestFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, p)
 	require.NoError(t, err)
@@ -50,7 +50,7 @@ func TestRequestFormat_MessageSet_Encode(t *testing.T) {
 	mset := types.NewMessageSet(4, 999, types.NewMessage(1, fake.Message{}))
 
 	format := requestFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, mset)
 	require.NoError(t, err)
@@ -65,8 +65,8 @@ func TestRequestFormat_MessageSet_Encode(t *testing.T) {
 
 func TestRequestFormat_Decode(t *testing.T) {
 	format := requestFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
-	ctx = serdeng.WithFactory(ctx, types.MsgKey{}, fake.MessageFactory{})
+	ctx := serde.NewContext(fake.ContextEngine{})
+	ctx = serde.WithFactory(ctx, types.MsgKey{}, fake.MessageFactory{})
 
 	mset, err := format.Decode(ctx, []byte(`{"MessageSet":{}}`))
 	require.NoError(t, err)
@@ -83,7 +83,7 @@ func TestRequestFormat_Decode(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, fake.Message{}, prop)
 
-	badCtx := serdeng.WithFactory(ctx, types.MsgKey{}, fake.NewBadMessageFactory())
+	badCtx := serde.WithFactory(ctx, types.MsgKey{}, fake.NewBadMessageFactory())
 	_, err = format.Decode(badCtx, []byte(`{"Proposal":{}}`))
 	require.EqualError(t, err, "couldn't deserialize value: fake error")
 

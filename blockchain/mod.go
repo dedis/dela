@@ -4,18 +4,18 @@ import (
 	"context"
 
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 )
 
 // Payload is the interface to implement to store data in a block.
 type Payload interface {
-	serdeng.Message
-	serdeng.Fingerprinter
+	serde.Message
+	serde.Fingerprinter
 }
 
 // Block is the interface of the unit of storage in the blockchain
 type Block interface {
-	serdeng.Message
+	serde.Message
 
 	// GetIndex returns the index since the genesis block.
 	GetIndex() uint64
@@ -35,9 +35,9 @@ type VerifiableBlock interface {
 
 // Reactor is the interface to implement to react to blockchain events.
 type Reactor interface {
-	serdeng.Factory
+	serde.Factory
 
-	InvokeValidate(data serdeng.Message) (Payload, error)
+	InvokeValidate(data serde.Message) (Payload, error)
 
 	InvokeCommit(payload Payload) error
 }
@@ -50,7 +50,7 @@ type Actor interface {
 
 	// Store stores any representation of a data structure into a new block.
 	// The implementation is responsible for any validations required.
-	Store(data serdeng.Message, players mino.Players) error
+	Store(data serde.Message, players mino.Players) error
 }
 
 // Blockchain is the interface that provides the primitives to interact with the

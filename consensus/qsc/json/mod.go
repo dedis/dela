@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 
 	"go.dedis.ch/dela/consensus/qsc/types"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
 func init() {
-	types.RegisterHistoryFormat(serdeng.CodecJSON, historyFormat{})
-	types.RegisterRequestFormat(serdeng.CodecJSON, requestFormat{})
+	types.RegisterHistoryFormat(serde.CodecJSON, historyFormat{})
+	types.RegisterRequestFormat(serde.CodecJSON, requestFormat{})
 }
 
 type Epoch struct {
@@ -51,7 +51,7 @@ type Request struct {
 
 type historyFormat struct{}
 
-func (f historyFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, error) {
+func (f historyFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	hist, ok := msg.(types.History)
 	if !ok {
 		return nil, xerrors.Errorf("invalid history of type '%T'", msg)
@@ -75,7 +75,7 @@ func (f historyFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte,
 	return data, nil
 }
 
-func (f historyFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f historyFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := History{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {
@@ -92,7 +92,7 @@ func (f historyFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message
 
 type requestFormat struct{}
 
-func (f requestFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, error) {
+func (f requestFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	var req Request
 
 	switch in := msg.(type) {
@@ -144,7 +144,7 @@ func (f requestFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte,
 	return data, nil
 }
 
-func (f requestFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f requestFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Request{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {
@@ -188,7 +188,7 @@ func (f requestFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message
 	return nil, xerrors.New("message is empty")
 }
 
-func (f requestFormat) encodeMessage(ctx serdeng.Context, msg types.Message) (Message, error) {
+func (f requestFormat) encodeMessage(ctx serde.Context, msg types.Message) (Message, error) {
 	var data []byte
 	var err error
 

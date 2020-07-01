@@ -3,12 +3,12 @@ package json
 import (
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/routing"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
 func init() {
-	routing.Register(serdeng.CodecJSON, format{})
+	routing.Register(serde.CodecJSON, format{})
 }
 
 // Address is the JSON format of an address.
@@ -26,7 +26,7 @@ type TreeRouting struct {
 type format struct{}
 
 // Encode implements serde.Format. It serializes the given routing in JSON.
-func (f format) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, error) {
+func (f format) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	rting, ok := msg.(routing.TreeRouting)
 	if !ok {
 		return nil, xerrors.New("invalid routing")
@@ -63,7 +63,7 @@ func (f format) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, error)
 	return data, nil
 }
 
-func (f format) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f format) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := TreeRouting{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {

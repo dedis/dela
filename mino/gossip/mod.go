@@ -2,13 +2,13 @@ package gossip
 
 import (
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 )
 
 // Rumor is the message that must be gossiped through the network. It is using
 // the identifier as a unique way to differentiate all the rumors.
 type Rumor interface {
-	serdeng.Message
+	serde.Message
 
 	// GetID returns the unique identifier of the rumor.
 	GetID() []byte

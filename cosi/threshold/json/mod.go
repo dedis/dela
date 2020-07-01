@@ -5,12 +5,12 @@ import (
 
 	"go.dedis.ch/dela/cosi/threshold"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
 func init() {
-	threshold.Register(serdeng.CodecJSON, format{})
+	threshold.Register(serde.CodecJSON, format{})
 }
 
 // Signature is the JSON message for the signature.
@@ -21,7 +21,7 @@ type Signature struct {
 
 type format struct{}
 
-func (f format) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, error) {
+func (f format) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	sig, ok := msg.(*threshold.Signature)
 	if !ok {
 		return nil, xerrors.Errorf("invalid message type")
@@ -45,7 +45,7 @@ func (f format) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, error)
 	return data, nil
 }
 
-func (f format) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f format) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Signature{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {

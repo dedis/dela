@@ -5,16 +5,16 @@ import (
 
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 )
 
 // Reactor is an event handler that demultiplex the events.
 type Reactor interface {
-	serdeng.Factory
+	serde.Factory
 
 	// Invoke is provided with the message and the address of the sender and it
 	// should return the unique hash for this message.
-	Invoke(addr mino.Address, in serdeng.Message) ([]byte, error)
+	Invoke(addr mino.Address, in serde.Message) ([]byte, error)
 }
 
 // Actor is the listener of a collective signing instance. It provides a
@@ -22,7 +22,7 @@ type Reactor interface {
 type Actor interface {
 	// Sign collects the signature of the collective authority and creates an
 	// aggregated signature.
-	Sign(ctx context.Context, msg serdeng.Message,
+	Sign(ctx context.Context, msg serde.Message,
 		ca crypto.CollectiveAuthority) (crypto.Signature, error)
 }
 

@@ -9,7 +9,7 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minoch"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -87,6 +87,6 @@ type fakeReactor struct {
 	err error
 }
 
-func (h fakeReactor) Invoke(addr mino.Address, in serdeng.Message) ([]byte, error) {
+func (h fakeReactor) Invoke(addr mino.Address, in serde.Message) ([]byte, error) {
 	return []byte{0xff}, h.err
 }

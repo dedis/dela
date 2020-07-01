@@ -12,8 +12,8 @@ import (
 
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
-	"go.dedis.ch/dela/serdeng/registry"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
 )
 
@@ -21,24 +21,24 @@ var eachLine = regexp.MustCompile(`(?m)^(.+)$`)
 
 var formats = registry.NewSimpleRegistry()
 
-func Register(c serdeng.Codec, f serdeng.Format) {
+func Register(c serde.Codec, f serde.Format) {
 	formats.Register(c, f)
 }
 
 // Factory defines the primitive to create a Routing
 type Factory interface {
-	serdeng.Factory
+	serde.Factory
 
 	GetAddressFactory() mino.AddressFactory
 
 	Make(root mino.Address, players mino.Players) (Routing, error)
 
-	RoutingOf(serdeng.Context, []byte) (Routing, error)
+	RoutingOf(serde.Context, []byte) (Routing, error)
 }
 
 // Routing defines the functions needed to route messages
 type Routing interface {
-	serdeng.Message
+	serde.Message
 
 	// GetRoot should return the initiator of the routing map so that every
 	// message with no route will be routed back to it.
@@ -90,13 +90,13 @@ func (t TreeRoutingFactory) Make(r mino.Address, p mino.Players) (Routing, error
 }
 
 // Deserialize implements serde.Factory.
-func (t TreeRoutingFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (t TreeRoutingFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := formats.Get(ctx.GetName())
 	if format == nil {
 		return nil, xerrors.New("unknown format")
 	}
 
-	ctx = serdeng.WithFactory(ctx, AddrKey{}, t.addrFactory)
+	ctx = serde.WithFactory(ctx, AddrKey{}, t.addrFactory)
 
 	rting, err := format.Decode(ctx, data)
 	if err != nil {
@@ -106,7 +106,7 @@ func (t TreeRoutingFactory) Deserialize(ctx serdeng.Context, data []byte) (serde
 	return rting, nil
 }
 
-func (t TreeRoutingFactory) RoutingOf(ctx serdeng.Context, data []byte) (Routing, error) {
+func (t TreeRoutingFactory) RoutingOf(ctx serde.Context, data []byte) (Routing, error) {
 	m, err := t.Deserialize(ctx, data)
 	if err != nil {
 		return nil, err
@@ -348,7 +348,7 @@ func (t TreeRouting) GetDirectLinks(from mino.Address) []mino.Address {
 }
 
 // Serialize implements serde.Message.
-func (t TreeRouting) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (t TreeRouting) Serialize(ctx serde.Context) ([]byte, error) {
 	format := formats.Get(ctx.GetName())
 	if format == nil {
 		return nil, xerrors.New("unknown format")

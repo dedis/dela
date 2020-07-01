@@ -4,7 +4,7 @@ import (
 	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/dkg/pedersen/types"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/share"
 	"go.dedis.ch/kyber/v3/suites"
@@ -22,7 +22,7 @@ var suite = suites.MustFind("Ed25519")
 type Pedersen struct {
 	privKey kyber.Scalar
 	mino    mino.Mino
-	factory serdeng.Factory
+	factory serde.Factory
 }
 
 // NewPedersen returns a new DKG Pedersen factory
@@ -60,7 +60,7 @@ func (s *Pedersen) Listen() (dkg.Actor, error) {
 // - implements dkg.Actor
 type Actor struct {
 	rpc      mino.RPC
-	factory  serdeng.Factory
+	factory  serde.Factory
 	startRes *state
 }
 

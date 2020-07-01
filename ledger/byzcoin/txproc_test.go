@@ -7,7 +7,7 @@ import (
 	"go.dedis.ch/dela/ledger/byzcoin/types"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -77,7 +77,7 @@ type fakePage struct {
 	index       uint64
 	fingerprint []byte
 	err         error
-	value       serdeng.Message
+	value       serde.Message
 	calls       [][]interface{}
 }
 
@@ -89,11 +89,11 @@ func (p *fakePage) GetFingerprint() []byte {
 	return p.fingerprint
 }
 
-func (p *fakePage) Read([]byte) (serdeng.Message, error) {
+func (p *fakePage) Read([]byte) (serde.Message, error) {
 	return p.value, p.err
 }
 
-func (p *fakePage) Write(key []byte, value serdeng.Message) error {
+func (p *fakePage) Write(key []byte, value serde.Message) error {
 	p.calls = append(p.calls, []interface{}{key, value})
 	return p.err
 }

@@ -9,7 +9,7 @@ import (
 	"go.dedis.ch/dela/blockchain/skipchain/types"
 	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -21,7 +21,7 @@ func TestBlockFormat_Encode(t *testing.T) {
 		types.WithPayload(fake.Message{}))
 
 	format := blockFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, block)
 	require.NoError(t, err)
@@ -34,8 +34,8 @@ func TestBlockFormat_Encode(t *testing.T) {
 
 func TestBlockFormat_Decode(t *testing.T) {
 	format := blockFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
-	ctx = serdeng.WithFactory(ctx, types.PayloadKey{}, fake.MessageFactory{})
+	ctx := serde.NewContext(fake.ContextEngine{})
+	ctx = serde.WithFactory(ctx, types.PayloadKey{}, fake.MessageFactory{})
 
 	block, err := format.Decode(ctx, []byte(`{}`))
 	require.NoError(t, err)
@@ -44,7 +44,7 @@ func TestBlockFormat_Decode(t *testing.T) {
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
 	require.EqualError(t, err, "couldn't deserialize message: fake error")
 
-	badCtx := serdeng.WithFactory(ctx, types.PayloadKey{}, fake.NewBadMessageFactory())
+	badCtx := serde.WithFactory(ctx, types.PayloadKey{}, fake.NewBadMessageFactory())
 	_, err = format.Decode(badCtx, []byte(`{}`))
 	require.EqualError(t, err, "couldn't deserialize payload: fake error")
 
@@ -61,7 +61,7 @@ func TestVerifiableFormat_Encode(t *testing.T) {
 	}
 
 	format := newVerifiableFormat()
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, vb)
 	require.NoError(t, err)
@@ -79,9 +79,9 @@ func TestVerifiableFormat_Encode(t *testing.T) {
 
 func TestVerifiableFormat_Decode(t *testing.T) {
 	format := newVerifiableFormat()
-	ctx := serdeng.NewContext(fake.ContextEngine{})
-	ctx = serdeng.WithFactory(ctx, types.ChainKey{}, fakeChainFactory{})
-	ctx = serdeng.WithFactory(ctx, types.PayloadKey{}, fake.MessageFactory{})
+	ctx := serde.NewContext(fake.ContextEngine{})
+	ctx = serde.WithFactory(ctx, types.ChainKey{}, fakeChainFactory{})
+	ctx = serde.WithFactory(ctx, types.PayloadKey{}, fake.MessageFactory{})
 
 	block, err := format.Decode(ctx, []byte(`{"Block":{}}`))
 	require.NoError(t, err)
@@ -94,11 +94,11 @@ func TestVerifiableFormat_Decode(t *testing.T) {
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{"Block":{}}`))
 	require.EqualError(t, err, "couldn't deserialize message: fake error")
 
-	badCtx := serdeng.WithFactory(ctx, types.ChainKey{}, fakeChainFactory{err: xerrors.New("oops")})
+	badCtx := serde.WithFactory(ctx, types.ChainKey{}, fakeChainFactory{err: xerrors.New("oops")})
 	_, err = format.Decode(badCtx, []byte(`{"Block":{}}`))
 	require.EqualError(t, err, "couldn't deserialize chain: oops")
 
-	badCtx = serdeng.WithFactory(ctx, types.PayloadKey{}, fake.NewBadMessageFactory())
+	badCtx = serde.WithFactory(ctx, types.PayloadKey{}, fake.NewBadMessageFactory())
 	_, err = format.Decode(badCtx, []byte(`{"Block":{}}`))
 	require.EqualError(t, err,
 		"couldn't deserialize block: couldn't deserialize payload: fake error")
@@ -108,7 +108,7 @@ func TestBlueprintFormat_Encode(t *testing.T) {
 	blueprint := types.NewBlueprint(5, []byte{1, 2, 3}, fake.Message{})
 
 	format := blueprintFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, blueprint)
 	require.NoError(t, err)
@@ -120,8 +120,8 @@ func TestBlueprintFormat_Encode(t *testing.T) {
 
 func TestBlueprintFormat_Decode(t *testing.T) {
 	format := blueprintFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
-	ctx = serdeng.WithFactory(ctx, types.DataKey{}, fake.MessageFactory{})
+	ctx := serde.NewContext(fake.ContextEngine{})
+	ctx = serde.WithFactory(ctx, types.DataKey{}, fake.MessageFactory{})
 
 	expected := types.NewBlueprint(1, []byte{2}, fake.Message{})
 	data, err := format.Encode(ctx, expected)
@@ -134,7 +134,7 @@ func TestBlueprintFormat_Decode(t *testing.T) {
 	_, err = format.Decode(fake.NewBadContext(), data)
 	require.EqualError(t, err, "couldn't deserialize blueprint: fake error")
 
-	badCtx := serdeng.WithFactory(ctx, types.DataKey{}, fake.NewBadMessageFactory())
+	badCtx := serde.WithFactory(ctx, types.DataKey{}, fake.NewBadMessageFactory())
 	_, err = format.Decode(badCtx, data)
 	require.EqualError(t, err, "couldn't deserialize payload: fake error")
 }
@@ -143,7 +143,7 @@ func TestRequestFormat_Propagate_Encode(t *testing.T) {
 	p := types.NewPropagateGenesis(makeBlock(t))
 
 	format := newRequestFormat()
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, p)
 	require.NoError(t, err)
@@ -159,7 +159,7 @@ func TestRequestFormat_BlockRequest_Encode(t *testing.T) {
 	req := types.NewBlockRequest(1, 5)
 
 	format := newRequestFormat()
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, req)
 	require.NoError(t, err)
@@ -170,7 +170,7 @@ func TestRequestFormat_BlockResponse_Encode(t *testing.T) {
 	resp := types.NewBlockResponse(makeBlock(t))
 
 	format := newRequestFormat()
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, resp)
 	require.NoError(t, err)
@@ -184,15 +184,15 @@ func TestRequestFormat_BlockResponse_Encode(t *testing.T) {
 
 func TestRequestFormat_Decode(t *testing.T) {
 	format := newRequestFormat()
-	ctx := serdeng.NewContext(fake.ContextEngine{})
-	ctx = serdeng.WithFactory(ctx, types.PayloadKey{}, fake.MessageFactory{})
+	ctx := serde.NewContext(fake.ContextEngine{})
+	ctx = serde.WithFactory(ctx, types.PayloadKey{}, fake.MessageFactory{})
 
 	msg, err := format.Decode(ctx, []byte(`{"Propagate":{"Genesis":{}}}`))
 	require.NoError(t, err)
 	expected := types.NewPropagateGenesis(makeBlock(t, types.WithPayload(fake.Message{})))
 	require.Equal(t, expected, msg)
 
-	badCtx := serdeng.WithFactory(ctx, types.PayloadKey{}, fake.NewBadMessageFactory())
+	badCtx := serde.WithFactory(ctx, types.PayloadKey{}, fake.NewBadMessageFactory())
 	_, err = format.Decode(badCtx, []byte(`{"Propagate":{"Genesis":{}}}`))
 	require.EqualError(t, err,
 		"couldn't deserialize genesis: couldn't deserialize payload: fake error")
@@ -228,7 +228,7 @@ type fakePayload struct {
 	err error
 }
 
-func (p fakePayload) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (p fakePayload) Serialize(ctx serde.Context) ([]byte, error) {
 	return ctx.Marshal(struct{}{})
 }
 
@@ -242,7 +242,7 @@ type fakeChain struct {
 	err error
 }
 
-func (c fakeChain) Serialize(serdeng.Context) ([]byte, error) {
+func (c fakeChain) Serialize(serde.Context) ([]byte, error) {
 	return nil, c.err
 }
 
@@ -252,16 +252,16 @@ type fakeChainFactory struct {
 	err error
 }
 
-func (f fakeChainFactory) ChainOf(serdeng.Context, []byte) (consensus.Chain, error) {
+func (f fakeChainFactory) ChainOf(serde.Context, []byte) (consensus.Chain, error) {
 	return fakeChain{}, f.err
 }
 
 type badFormat struct{}
 
-func (f badFormat) Encode(serdeng.Context, serdeng.Message) ([]byte, error) {
+func (f badFormat) Encode(serde.Context, serde.Message) ([]byte, error) {
 	return nil, xerrors.New("oops")
 }
 
-func (f badFormat) Decode(serdeng.Context, []byte) (serdeng.Message, error) {
+func (f badFormat) Decode(serde.Context, []byte) (serde.Message, error) {
 	return nil, xerrors.New("oops")
 }

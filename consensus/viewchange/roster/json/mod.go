@@ -6,13 +6,13 @@ import (
 	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
 func init() {
-	roster.RegisterChangeSet(serdeng.CodecJSON, changeSetFormat{})
-	roster.RegisterRoster(serdeng.CodecJSON, rosterFormat{})
+	roster.RegisterChangeSet(serde.CodecJSON, changeSetFormat{})
+	roster.RegisterRoster(serde.CodecJSON, rosterFormat{})
 }
 
 // Player is a JSON message that contains the address and the public key of a
@@ -36,7 +36,7 @@ type Roster []Player
 
 type changeSetFormat struct{}
 
-func (f changeSetFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, error) {
+func (f changeSetFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	cset, ok := msg.(roster.ChangeSet)
 	if !ok {
 		return nil, xerrors.Errorf("invalid change set of type '%T'", msg)
@@ -73,7 +73,7 @@ func (f changeSetFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byt
 	return data, nil
 }
 
-func (f changeSetFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f changeSetFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := ChangeSet{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {
@@ -122,7 +122,7 @@ func (f changeSetFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Messa
 
 type rosterFormat struct{}
 
-func (f rosterFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, error) {
+func (f rosterFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	roster, ok := msg.(roster.Roster)
 	if !ok {
 		return nil, xerrors.Errorf("invalid roster of type '%T'", msg)
@@ -159,7 +159,7 @@ func (f rosterFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, 
 	return data, nil
 }
 
-func (f rosterFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f rosterFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Roster{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {

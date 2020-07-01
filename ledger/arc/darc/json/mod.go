@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 
 	"go.dedis.ch/dela/ledger/arc/darc"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
 func init() {
-	darc.RegisterAccessFormat(serdeng.CodecJSON, accessFormat{})
-	darc.RegisterTaskFormat(serdeng.CodecJSON, newTaskFormat())
+	darc.RegisterAccessFormat(serde.CodecJSON, accessFormat{})
+	darc.RegisterTaskFormat(serde.CodecJSON, newTaskFormat())
 }
 
 // Access is the JSON message for a distributed access control.
@@ -26,7 +26,7 @@ type ClientTask struct {
 
 type accessFormat struct{}
 
-func (f accessFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, error) {
+func (f accessFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	access, ok := msg.(darc.Access)
 	if !ok {
 		return nil, xerrors.New("invalid access")
@@ -49,7 +49,7 @@ func (f accessFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, 
 	return data, nil
 }
 
-func (f accessFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f accessFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Access{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {
@@ -67,7 +67,7 @@ func (f accessFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message,
 }
 
 type taskFormat struct {
-	accessFormat serdeng.Format
+	accessFormat serde.Format
 }
 
 func newTaskFormat() taskFormat {
@@ -76,7 +76,7 @@ func newTaskFormat() taskFormat {
 	}
 }
 
-func (f taskFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, error) {
+func (f taskFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	var act darc.ClientTask
 	switch in := msg.(type) {
 	case darc.ClientTask:
@@ -105,7 +105,7 @@ func (f taskFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, er
 	return data, nil
 }
 
-func (f taskFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f taskFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := ClientTask{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {

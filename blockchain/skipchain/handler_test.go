@@ -8,7 +8,7 @@ import (
 	"go.dedis.ch/dela/blockchain/skipchain/types"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -84,11 +84,11 @@ func TestHandler_Stream(t *testing.T) {
 
 type fakeReceiver struct {
 	mino.Receiver
-	msg serdeng.Message
+	msg serde.Message
 	err error
 }
 
-func (rcvr fakeReceiver) Recv(context.Context) (mino.Address, serdeng.Message, error) {
+func (rcvr fakeReceiver) Recv(context.Context) (mino.Address, serde.Message, error) {
 	return nil, rcvr.msg, rcvr.err
 }
 
@@ -98,7 +98,7 @@ type fakeSender struct {
 	err  error
 }
 
-func (s fakeSender) Send(msg serdeng.Message, addrs ...mino.Address) <-chan error {
+func (s fakeSender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 	s.call.Add(msg, addrs)
 	errs := make(chan error, 1)
 	errs <- s.err

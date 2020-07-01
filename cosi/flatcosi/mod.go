@@ -8,7 +8,7 @@ import (
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -83,7 +83,7 @@ type flatActor struct {
 }
 
 // Sign returns the collective signature of the block.
-func (a flatActor) Sign(ctx context.Context, msg serdeng.Message,
+func (a flatActor) Sign(ctx context.Context, msg serde.Message,
 	ca crypto.CollectiveAuthority) (crypto.Signature, error) {
 
 	verifier, err := a.signer.GetVerifierFactory().FromAuthority(ca)
@@ -129,7 +129,7 @@ func (a flatActor) Sign(ctx context.Context, msg serdeng.Message,
 	}
 }
 
-func (a flatActor) processResponse(resp serdeng.Message, agg crypto.Signature) (crypto.Signature, error) {
+func (a flatActor) processResponse(resp serde.Message, agg crypto.Signature) (crypto.Signature, error) {
 	reply, ok := resp.(cosi.SignatureResponse)
 	if !ok {
 		return nil, xerrors.Errorf("invalid response type '%T'", resp)

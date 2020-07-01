@@ -7,7 +7,7 @@ import (
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions/basic"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -37,7 +37,7 @@ func (act SpawnTask) Fingerprint(w io.Writer) error {
 	return nil
 }
 
-func (t SpawnTask) Serialize(serdeng.Context) ([]byte, error) {
+func (t SpawnTask) Serialize(serde.Context) ([]byte, error) {
 	return nil, xerrors.New("not implemented")
 }
 
@@ -68,7 +68,7 @@ func (act InvokeTask) Fingerprint(w io.Writer) error {
 	return nil
 }
 
-func (t InvokeTask) Serialize(serdeng.Context) ([]byte, error) {
+func (t InvokeTask) Serialize(serde.Context) ([]byte, error) {
 	return nil, xerrors.New("not implemented")
 }
 
@@ -91,7 +91,7 @@ func (a DeleteTask) Fingerprint(w io.Writer) error {
 	return nil
 }
 
-func (t DeleteTask) Serialize(serdeng.Context) ([]byte, error) {
+func (t DeleteTask) Serialize(serde.Context) ([]byte, error) {
 	return nil, xerrors.New("not implemented")
 }
 

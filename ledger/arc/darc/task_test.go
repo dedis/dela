@@ -9,7 +9,7 @@ import (
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions/basic"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -109,11 +109,11 @@ type fakePage struct {
 	err  error
 }
 
-func (page fakePage) Read(key []byte) (serdeng.Message, error) {
+func (page fakePage) Read(key []byte) (serde.Message, error) {
 	return testAccess, page.err
 }
 
-func (page fakePage) Write(key []byte, value serdeng.Message) error {
+func (page fakePage) Write(key []byte, value serde.Message) error {
 	page.call.Add(key, value)
 
 	return page.err
@@ -123,6 +123,6 @@ type badPage struct {
 	inventory.WritablePage
 }
 
-func (page badPage) Read([]byte) (serdeng.Message, error) {
+func (page badPage) Read([]byte) (serde.Message, error) {
 	return fake.Message{}, nil
 }

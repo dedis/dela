@@ -6,7 +6,7 @@ import (
 
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/routing"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -19,7 +19,7 @@ type OutContext struct {
 type sender struct {
 	me             mino.Address
 	addressFactory mino.AddressFactory
-	context        serdeng.Context
+	context        serde.Context
 	clients        map[mino.Address]chan OutContext
 	receiver       *receiver
 	traffic        *traffic
@@ -31,7 +31,7 @@ type sender struct {
 	gateway mino.Address
 }
 
-func (s sender) Send(msg serdeng.Message, addrs ...mino.Address) <-chan error {
+func (s sender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 	errs := make(chan error, 1)
 	defer close(errs)
 
@@ -126,8 +126,8 @@ func (s sender) sendEnvelope(envelope *Envelope, errs chan error) {
 }
 
 type receiver struct {
-	context        serdeng.Context
-	factory        serdeng.Factory
+	context        serde.Context
+	factory        serde.Factory
 	addressFactory mino.AddressFactory
 	errs           chan error
 	queue          Queue
@@ -138,7 +138,7 @@ func (r receiver) appendMessage(msg *Message) {
 	r.queue.Push(msg)
 }
 
-func (r receiver) Recv(ctx context.Context) (mino.Address, serdeng.Message, error) {
+func (r receiver) Recv(ctx context.Context) (mino.Address, serde.Message, error) {
 	var msg *Message
 	select {
 	case msg = <-r.queue.Channel():

@@ -20,7 +20,7 @@ import (
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/routing"
 	"go.dedis.ch/dela/mino/minogrpc/tokens"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
@@ -215,7 +215,7 @@ type relayer interface {
 }
 
 type overlay struct {
-	context        serdeng.Context
+	context        serde.Context
 	me             mino.Address
 	certs          certs.Storage
 	tokens         tokens.Holder
@@ -224,7 +224,7 @@ type overlay struct {
 	traffic        *traffic
 }
 
-func newOverlay(me mino.Address, rf routing.Factory, ctx serdeng.Context) (overlay, error) {
+func newOverlay(me mino.Address, rf routing.Factory, ctx serde.Context) (overlay, error) {
 
 	cert, err := makeCertificate()
 	if err != nil {
@@ -337,7 +337,7 @@ func (o overlay) Join(addr, token string, certHash []byte) error {
 }
 
 func (o overlay) setupRelays(ctx context.Context, senderAddr mino.Address,
-	rting routing.Routing, f serdeng.Factory) (sender, receiver, error) {
+	rting routing.Routing, f serde.Factory) (sender, receiver, error) {
 
 	receiver := receiver{
 		context:        o.context,

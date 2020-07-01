@@ -8,7 +8,7 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/byzcoin/types"
 	"go.dedis.ch/dela/ledger/transactions"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -16,7 +16,7 @@ func TestBlueprint_VisitJSON(t *testing.T) {
 	blueprint := types.NewBlueprint(makeTxs(nil))
 
 	format := messageFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, blueprint)
 	require.NoError(t, err)
@@ -32,7 +32,7 @@ func TestGenesisPayload_VisitJSON(t *testing.T) {
 	payload := types.NewGenesisPayload([]byte{2}, fakeAuthority{})
 
 	format := messageFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, payload)
 	require.NoError(t, err)
@@ -48,7 +48,7 @@ func TestBlockPayload_VisitJSON(t *testing.T) {
 	payload := types.NewBlockPayload([]byte{4}, makeTxs(nil))
 
 	format := messageFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, payload)
 	require.NoError(t, err)
@@ -62,16 +62,16 @@ func TestBlockPayload_VisitJSON(t *testing.T) {
 
 func TestMessageFactory_VisitJSON(t *testing.T) {
 	format := messageFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
-	ctx = serdeng.WithFactory(ctx, types.RosterKey{}, fakeAuthorityFactory{})
-	ctx = serdeng.WithFactory(ctx, types.TxKey{}, fakeTxFactory{})
+	ctx := serde.NewContext(fake.ContextEngine{})
+	ctx = serde.WithFactory(ctx, types.RosterKey{}, fakeAuthorityFactory{})
+	ctx = serde.WithFactory(ctx, types.TxKey{}, fakeTxFactory{})
 
 	// Blueprint message.
 	blueprint, err := format.Decode(ctx, []byte(`{"Blueprint":{"Transactions":[{}]}}`))
 	require.NoError(t, err)
 	require.Equal(t, types.NewBlueprint(makeTxs(nil)), blueprint)
 
-	badCtx := serdeng.WithFactory(ctx, types.TxKey{}, fakeTxFactory{err: xerrors.New("oops")})
+	badCtx := serde.WithFactory(ctx, types.TxKey{}, fakeTxFactory{err: xerrors.New("oops")})
 	_, err = format.Decode(badCtx, []byte(`{"Blueprint":{"Transactions":[{}]}}`))
 	require.EqualError(t, err,
 		"couldn't deserialize blueprint: couldn't deserialize tx: oops")
@@ -90,7 +90,7 @@ func TestMessageFactory_VisitJSON(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, types.NewGenesisPayload([]byte{2}, fakeAuthority{}), genesis)
 
-	badCtx = serdeng.WithFactory(ctx, types.RosterKey{}, fakeAuthorityFactory{err: xerrors.New("oops")})
+	badCtx = serde.WithFactory(ctx, types.RosterKey{}, fakeAuthorityFactory{err: xerrors.New("oops")})
 	_, err = format.Decode(badCtx, []byte(`{"GenesisPayload":{"Roster":[]}}`))
 	require.EqualError(t, err, "couldn't deserialize roster: oops")
 
@@ -116,7 +116,7 @@ type fakeTx struct {
 	err error
 }
 
-func (tx fakeTx) Serialize(serdeng.Context) ([]byte, error) {
+func (tx fakeTx) Serialize(serde.Context) ([]byte, error) {
 	return []byte(`{}`), tx.err
 }
 
@@ -126,7 +126,7 @@ type fakeAuthority struct {
 	err error
 }
 
-func (a fakeAuthority) Serialize(serdeng.Context) ([]byte, error) {
+func (a fakeAuthority) Serialize(serde.Context) ([]byte, error) {
 	return []byte(`{}`), a.err
 }
 
@@ -136,7 +136,7 @@ type fakeAuthorityFactory struct {
 	err error
 }
 
-func (f fakeAuthorityFactory) AuthorityOf(serdeng.Context, []byte) (viewchange.Authority, error) {
+func (f fakeAuthorityFactory) AuthorityOf(serde.Context, []byte) (viewchange.Authority, error) {
 	return fakeAuthority{}, f.err
 }
 
@@ -145,6 +145,6 @@ type fakeTxFactory struct {
 	err error
 }
 
-func (f fakeTxFactory) TxOf(serdeng.Context, []byte) (transactions.ServerTransaction, error) {
+func (f fakeTxFactory) TxOf(serde.Context, []byte) (transactions.ServerTransaction, error) {
 	return fakeTx{}, f.err
 }

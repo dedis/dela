@@ -8,7 +8,7 @@ import (
 	"go.dedis.ch/dela/consensus/cosipbft/types"
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -16,7 +16,7 @@ func TestLinkFormat_Encode(t *testing.T) {
 	fl := makeFL(t)
 
 	format := linkFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, fl)
 	require.NoError(t, err)
@@ -38,23 +38,23 @@ func TestLinkFormat_Encode(t *testing.T) {
 
 func TestLinkFormat_Decode(t *testing.T) {
 	format := linkFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
-	ctx = serdeng.WithFactory(ctx, types.CoSigKey{}, fake.SignatureFactory{})
-	ctx = serdeng.WithFactory(ctx, types.ChangeSetKey{}, fakeChangeSetFactory{})
+	ctx := serde.NewContext(fake.ContextEngine{})
+	ctx = serde.WithFactory(ctx, types.CoSigKey{}, fake.SignatureFactory{})
+	ctx = serde.WithFactory(ctx, types.ChangeSetKey{}, fakeChangeSetFactory{})
 
 	msg, err := format.Decode(ctx, []byte(`{"From":"AQ==","To":"Ag=="}`))
 	require.NoError(t, err)
 	require.Equal(t, makeFL(t), msg)
 
-	badCtx := serdeng.WithFactory(ctx, types.CoSigKey{}, fake.NewBadSignatureFactory())
+	badCtx := serde.WithFactory(ctx, types.CoSigKey{}, fake.NewBadSignatureFactory())
 	_, err = format.Decode(badCtx, []byte(`{}`))
 	require.EqualError(t, err, "couldn't deserialize prepare: fake error")
 
-	badCtx = serdeng.WithFactory(ctx, types.CoSigKey{}, fake.NewBadSignatureFactoryWithDelay(1))
+	badCtx = serde.WithFactory(ctx, types.CoSigKey{}, fake.NewBadSignatureFactoryWithDelay(1))
 	_, err = format.Decode(badCtx, []byte(`{}`))
 	require.EqualError(t, err, "couldn't deserialize commit: fake error")
 
-	badCtx = serdeng.WithFactory(ctx,
+	badCtx = serde.WithFactory(ctx,
 		types.ChangeSetKey{}, fakeChangeSetFactory{err: xerrors.New("oops")})
 
 	_, err = format.Decode(badCtx, []byte(`{}`))
@@ -65,7 +65,7 @@ func TestChainFormat_Encode(t *testing.T) {
 	chain := types.NewChain(makeFL(t))
 
 	format := chainFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, chain)
 	require.NoError(t, err)
@@ -82,9 +82,9 @@ func TestChainFormat_Decode(t *testing.T) {
 	expected := types.NewChain(makeFL(t), makeFL(t))
 
 	format := chainFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
-	ctx = serdeng.WithFactory(ctx, types.CoSigKey{}, fake.SignatureFactory{})
-	ctx = serdeng.WithFactory(ctx, types.ChangeSetKey{}, fakeChangeSetFactory{})
+	ctx := serde.NewContext(fake.ContextEngine{})
+	ctx = serde.WithFactory(ctx, types.CoSigKey{}, fake.SignatureFactory{})
+	ctx = serde.WithFactory(ctx, types.ChangeSetKey{}, fakeChangeSetFactory{})
 
 	data, err := format.Encode(ctx, expected)
 	require.NoError(t, err)
@@ -101,7 +101,7 @@ func TestMessageFormat_Prepare_Encode(t *testing.T) {
 	prepare := types.NewPrepare(fake.Message{}, fake.Signature{}, types.NewChain())
 
 	format := messageFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, prepare)
 	require.NoError(t, err)
@@ -124,7 +124,7 @@ func TestMessageFormat_Commit_Encode(t *testing.T) {
 	commit := types.NewCommit([]byte{1}, fake.Signature{})
 
 	format := messageFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, commit)
 	require.NoError(t, err)
@@ -139,7 +139,7 @@ func TestMessageFormat_Propagate_Encode(t *testing.T) {
 	propagate := types.NewPropagate([]byte{1}, fake.Signature{})
 
 	format := messageFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, propagate)
 	require.NoError(t, err)
@@ -152,12 +152,12 @@ func TestMessageFormat_Propagate_Encode(t *testing.T) {
 
 func TestMessageFormat_Decode(t *testing.T) {
 	format := messageFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
-	ctx = serdeng.WithFactory(ctx, types.MsgKey{}, fake.MessageFactory{})
-	ctx = serdeng.WithFactory(ctx, types.SigKey{}, fake.SignatureFactory{})
-	ctx = serdeng.WithFactory(ctx, types.CoSigKey{}, fake.SignatureFactory{})
-	ctx = serdeng.WithFactory(ctx, types.ChangeSetKey{}, fakeChangeSetFactory{})
-	ctx = serdeng.WithFactory(ctx, types.ChainKey{}, types.NewChainFactory())
+	ctx := serde.NewContext(fake.ContextEngine{})
+	ctx = serde.WithFactory(ctx, types.MsgKey{}, fake.MessageFactory{})
+	ctx = serde.WithFactory(ctx, types.SigKey{}, fake.SignatureFactory{})
+	ctx = serde.WithFactory(ctx, types.CoSigKey{}, fake.SignatureFactory{})
+	ctx = serde.WithFactory(ctx, types.ChangeSetKey{}, fakeChangeSetFactory{})
+	ctx = serde.WithFactory(ctx, types.ChainKey{}, types.NewChainFactory())
 
 	request, err := format.Decode(ctx, []byte(`{"Prepare":{"Chain":[]}}`))
 	require.NoError(t, err)
@@ -170,19 +170,19 @@ func TestMessageFormat_Decode(t *testing.T) {
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
 	require.EqualError(t, err, "couldn't unmarshal request: fake error")
 
-	badCtx := serdeng.WithFactory(ctx, types.MsgKey{}, fake.NewBadMessageFactory())
+	badCtx := serde.WithFactory(ctx, types.MsgKey{}, fake.NewBadMessageFactory())
 	_, err = format.Decode(badCtx, []byte(`{"Prepare":{}}`))
 	require.EqualError(t, err, "couldn't deserialize message: fake error")
 
-	badCtx = serdeng.WithFactory(ctx, types.SigKey{}, fake.NewBadSignatureFactory())
+	badCtx = serde.WithFactory(ctx, types.SigKey{}, fake.NewBadSignatureFactory())
 	_, err = format.Decode(badCtx, []byte(`{"Prepare":{}}`))
 	require.EqualError(t, err, "couldn't deserialize signature: fake error")
 
-	badCtx = serdeng.WithFactory(ctx, types.ChainKey{}, badChainFactory{})
+	badCtx = serde.WithFactory(ctx, types.ChainKey{}, badChainFactory{})
 	_, err = format.Decode(badCtx, []byte(`{"Prepare":{}}`))
 	require.EqualError(t, err, "couldn't deserialize chain: oops")
 
-	badCtx = serdeng.WithFactory(ctx, types.CoSigKey{}, fake.NewBadSignatureFactory())
+	badCtx = serde.WithFactory(ctx, types.CoSigKey{}, fake.NewBadSignatureFactory())
 	_, err = format.Decode(badCtx, []byte(`{"Commit":{}}`))
 	require.EqualError(t, err, "couldn't deserialize commit: fake error")
 
@@ -211,7 +211,7 @@ type fakeChangeSet struct {
 	err error
 }
 
-func (cs fakeChangeSet) Serialize(serdeng.Context) ([]byte, error) {
+func (cs fakeChangeSet) Serialize(serde.Context) ([]byte, error) {
 	return []byte(`{}`), cs.err
 }
 
@@ -220,7 +220,7 @@ type fakeChangeSetFactory struct {
 	err error
 }
 
-func (f fakeChangeSetFactory) ChangeSetOf(serdeng.Context, []byte) (viewchange.ChangeSet, error) {
+func (f fakeChangeSetFactory) ChangeSetOf(serde.Context, []byte) (viewchange.ChangeSet, error) {
 	return fakeChangeSet{}, f.err
 }
 
@@ -228,7 +228,7 @@ type badChain struct {
 	consensus.Chain
 }
 
-func (c badChain) Serialize(serdeng.Context) ([]byte, error) {
+func (c badChain) Serialize(serde.Context) ([]byte, error) {
 	return nil, xerrors.New("oops")
 }
 
@@ -236,6 +236,6 @@ type badChainFactory struct {
 	consensus.ChainFactory
 }
 
-func (f badChainFactory) ChainOf(serdeng.Context, []byte) (consensus.Chain, error) {
+func (f badChainFactory) ChainOf(serde.Context, []byte) (consensus.Chain, error) {
 	return nil, xerrors.New("oops")
 }

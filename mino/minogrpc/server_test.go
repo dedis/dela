@@ -14,8 +14,8 @@ import (
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/routing"
 	"go.dedis.ch/dela/mino/minogrpc/tokens"
-	"go.dedis.ch/dela/serdeng"
-	"go.dedis.ch/dela/serdeng/json"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -424,7 +424,7 @@ type testCallHandler struct {
 	mino.UnsupportedHandler
 }
 
-func (h testCallHandler) Process(req mino.Request) (serdeng.Message, error) {
+func (h testCallHandler) Process(req mino.Request) (serde.Message, error) {
 	return req.Message, nil
 }
 

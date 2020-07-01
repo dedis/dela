@@ -1,8 +1,8 @@
 package types
 
 import (
-	"go.dedis.ch/dela/serdeng"
-	"go.dedis.ch/dela/serdeng/registry"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/registry"
 )
 
 var (
@@ -10,11 +10,11 @@ var (
 	requestFormats = registry.NewSimpleRegistry()
 )
 
-func RegisterBlueprintFormats(c serdeng.Codec, f serdeng.Format) {
+func RegisterBlueprintFormats(c serde.Codec, f serde.Format) {
 	bpFormats.Register(c, f)
 }
 
-func RegisterRequestFormats(c serdeng.Codec, f serdeng.Format) {
+func RegisterRequestFormats(c serde.Codec, f serde.Format) {
 	requestFormats.Register(c, f)
 }
 
@@ -24,10 +24,10 @@ func RegisterRequestFormats(c serdeng.Codec, f serdeng.Format) {
 type Blueprint struct {
 	index    uint64
 	previous Digest
-	data     serdeng.Message
+	data     serde.Message
 }
 
-func NewBlueprint(index uint64, previous []byte, data serdeng.Message) Blueprint {
+func NewBlueprint(index uint64, previous []byte, data serde.Message) Blueprint {
 	bp := Blueprint{
 		index: index,
 		data:  data,
@@ -46,12 +46,12 @@ func (b Blueprint) GetPrevious() []byte {
 	return b.previous[:]
 }
 
-func (b Blueprint) GetData() serdeng.Message {
+func (b Blueprint) GetData() serde.Message {
 	return b.data
 }
 
 // Serialize implements serde.Message.
-func (b Blueprint) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (b Blueprint) Serialize(ctx serde.Context) ([]byte, error) {
 	format := bpFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, b)
@@ -68,20 +68,20 @@ type DataKey struct{}
 //
 // - implements serde.Factory
 type BlueprintFactory struct {
-	factory serdeng.Factory
+	factory serde.Factory
 }
 
-func NewBlueprintFactory(f serdeng.Factory) BlueprintFactory {
+func NewBlueprintFactory(f serde.Factory) BlueprintFactory {
 	return BlueprintFactory{
 		factory: f,
 	}
 }
 
 // Deserialize implements serde.Factory.
-func (f BlueprintFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f BlueprintFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := bpFormats.Get(ctx.GetName())
 
-	ctx = serdeng.WithFactory(ctx, DataKey{}, f.factory)
+	ctx = serde.WithFactory(ctx, DataKey{}, f.factory)
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
@@ -109,7 +109,7 @@ func (p PropagateGenesis) GetGenesis() SkipBlock {
 }
 
 // Serialize implements serde.Message.
-func (p PropagateGenesis) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (p PropagateGenesis) Serialize(ctx serde.Context) ([]byte, error) {
 	format := requestFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, p)
@@ -144,7 +144,7 @@ func (req BlockRequest) GetTo() uint64 {
 }
 
 // Serialize implements serde.Message.
-func (req BlockRequest) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (req BlockRequest) Serialize(ctx serde.Context) ([]byte, error) {
 	format := requestFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, req)
@@ -173,7 +173,7 @@ func (resp BlockResponse) GetBlock() SkipBlock {
 }
 
 // Serialize implements serde.Message.
-func (resp BlockResponse) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (resp BlockResponse) Serialize(ctx serde.Context) ([]byte, error) {
 	format := requestFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, resp)
@@ -185,19 +185,19 @@ func (resp BlockResponse) Serialize(ctx serdeng.Context) ([]byte, error) {
 }
 
 type MessageFactory struct {
-	payloadFactory serdeng.Factory
+	payloadFactory serde.Factory
 }
 
-func NewMessageFactory(pf serdeng.Factory) MessageFactory {
+func NewMessageFactory(pf serde.Factory) MessageFactory {
 	return MessageFactory{
 		payloadFactory: pf,
 	}
 }
 
-func (f MessageFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f MessageFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := requestFormats.Get(ctx.GetName())
 
-	ctx = serdeng.WithFactory(ctx, PayloadKey{}, f.payloadFactory)
+	ctx = serde.WithFactory(ctx, PayloadKey{}, f.payloadFactory)
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {

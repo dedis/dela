@@ -10,7 +10,7 @@ import (
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc"
 	"go.dedis.ch/dela/mino/minogrpc/routing"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/kyber/v3"
 )
 
@@ -56,7 +56,7 @@ func TestPedersen_Setup(t *testing.T) {
 	require.EqualError(t, err, "expected to receive a Done message, but go the following: <nil>")
 
 	rpc = fake.NewStreamRPC(fake.Receiver{
-		Msg: []serdeng.Message{
+		Msg: []serde.Message{
 			types.NewStartDone(suite.Point()),
 			types.NewStartDone(suite.Point().Pick(suite.RandomStream())),
 		},

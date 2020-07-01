@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/kyber/v3"
 	"golang.org/x/xerrors"
 )
@@ -15,7 +15,7 @@ import (
 func TestPubkeyFormat_Encode(t *testing.T) {
 	signer := bls.NewSigner()
 	format := pubkeyFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, signer.GetPublicKey())
 	require.NoError(t, err)
@@ -28,7 +28,7 @@ func TestPubkeyFormat_Encode(t *testing.T) {
 func TestPubkeyFormat_Decode(t *testing.T) {
 	signer := bls.NewSigner()
 	format := pubkeyFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := signer.GetPublicKey().Serialize(ctx)
 	require.NoError(t, err)
@@ -48,7 +48,7 @@ func TestPubkeyFormat_Decode(t *testing.T) {
 func TestSigFormat_Encode(t *testing.T) {
 	sig := bls.NewSignature([]byte("deadbeef"))
 	format := sigFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, sig)
 	require.NoError(t, err)
@@ -57,7 +57,7 @@ func TestSigFormat_Encode(t *testing.T) {
 
 func TestSigFormat_Decode(t *testing.T) {
 	format := sigFormat{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	sig, err := format.Decode(ctx, []byte(`{"Data":"QQ=="}`))
 	require.NoError(t, err)

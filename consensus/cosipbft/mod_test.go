@@ -20,7 +20,7 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minoch"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -52,7 +52,7 @@ func TestConsensus_Basic(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, chain.(types.Chain).GetLinks(), 4)
 
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 	data, err := chain.Serialize(ctx)
 	require.NoError(t, err)
 
@@ -492,7 +492,7 @@ func (v fakeReactor) InvokeGenesis() ([]byte, error) {
 	return v.digest, v.errGenesis
 }
 
-func (v fakeReactor) InvokeValidate(addr mino.Address, msg serdeng.Message) ([]byte, error) {
+func (v fakeReactor) InvokeValidate(addr mino.Address, msg serde.Message) ([]byte, error) {
 	return v.digest, v.err
 }
 
@@ -537,7 +537,7 @@ type fakeCosiActor struct {
 	err   error
 }
 
-func (a *fakeCosiActor) Sign(ctx context.Context, msg serdeng.Message,
+func (a *fakeCosiActor) Sign(ctx context.Context, msg serde.Message,
 	ca crypto.CollectiveAuthority) (crypto.Signature, error) {
 
 	// Increase the counter each time a test sign a message.
@@ -563,10 +563,10 @@ type fakeRPC struct {
 	err   error
 }
 
-func (rpc *fakeRPC) Call(ctx context.Context, pb serdeng.Message,
-	memship mino.Players) (<-chan serdeng.Message, <-chan error) {
+func (rpc *fakeRPC) Call(ctx context.Context, pb serde.Message,
+	memship mino.Players) (<-chan serde.Message, <-chan error) {
 
-	msgs := make(chan serdeng.Message)
+	msgs := make(chan serde.Message)
 	go func() {
 		time.Sleep(10 * time.Millisecond)
 		close(msgs)
@@ -590,7 +590,7 @@ type fakeMino struct {
 	err  error
 }
 
-func (m *fakeMino) MakeRPC(name string, h mino.Handler, f serdeng.Factory) (mino.RPC, error) {
+func (m *fakeMino) MakeRPC(name string, h mino.Handler, f serde.Factory) (mino.RPC, error) {
 	m.name = name
 	m.h = h
 	return nil, m.err

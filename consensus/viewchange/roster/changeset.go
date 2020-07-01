@@ -4,14 +4,14 @@ import (
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
-	"go.dedis.ch/dela/serdeng/registry"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
 )
 
 var csetFormats = registry.NewSimpleRegistry()
 
-func RegisterChangeSet(c serdeng.Codec, f serdeng.Format) {
+func RegisterChangeSet(c serde.Codec, f serde.Format) {
 	csetFormats.Register(c, f)
 }
 
@@ -30,7 +30,7 @@ type ChangeSet struct {
 }
 
 // Serialize implements serde.Message.
-func (set ChangeSet) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (set ChangeSet) Serialize(ctx serde.Context) ([]byte, error) {
 	format := csetFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, set)
@@ -61,11 +61,11 @@ func NewChangeSetFactory(af mino.AddressFactory, pkf crypto.PublicKeyFactory) Ch
 }
 
 // Deserialize implements serde.Factory.
-func (f ChangeSetFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f ChangeSetFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := csetFormats.Get(ctx.GetName())
 
-	ctx = serdeng.WithFactory(ctx, PubKey{}, f.pubkeyFactory)
-	ctx = serdeng.WithFactory(ctx, AddrKey{}, f.addrFactory)
+	ctx = serde.WithFactory(ctx, PubKey{}, f.pubkeyFactory)
+	ctx = serde.WithFactory(ctx, AddrKey{}, f.addrFactory)
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
@@ -75,7 +75,7 @@ func (f ChangeSetFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng
 	return msg, nil
 }
 
-func (f ChangeSetFactory) ChangeSetOf(ctx serdeng.Context, data []byte) (viewchange.ChangeSet, error) {
+func (f ChangeSetFactory) ChangeSetOf(ctx serde.Context, data []byte) (viewchange.ChangeSet, error) {
 	msg, err := f.Deserialize(ctx, data)
 	if err != nil {
 		return nil, err

@@ -5,7 +5,7 @@ import (
 	"hash"
 
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 )
 
 // HashFactory is an interface to produce a hash digest.
@@ -23,7 +23,7 @@ type RandGenerator interface {
 type PublicKey interface {
 	encoding.BinaryMarshaler
 	encoding.TextMarshaler
-	serdeng.Message
+	serde.Message
 
 	Verify(msg []byte, signature Signature) error
 
@@ -32,9 +32,9 @@ type PublicKey interface {
 
 // PublicKeyFactory is a factory to decode public keys.
 type PublicKeyFactory interface {
-	serdeng.Factory
+	serde.Factory
 
-	PublicKeyOf(serdeng.Context, []byte) (PublicKey, error)
+	PublicKeyOf(serde.Context, []byte) (PublicKey, error)
 }
 
 // PublicKeyIterator is an iterator over the list of public keys of a
@@ -55,16 +55,16 @@ type PublicKeyIterator interface {
 // Signature is a verifiable element for a unique message.
 type Signature interface {
 	encoding.BinaryMarshaler
-	serdeng.Message
+	serde.Message
 
 	Equal(other Signature) bool
 }
 
 // SignatureFactory is a factory to decode signatures.
 type SignatureFactory interface {
-	serdeng.Factory
+	serde.Factory
 
-	SignatureOf(serdeng.Context, []byte) (Signature, error)
+	SignatureOf(serde.Context, []byte) (Signature, error)
 }
 
 // Verifier provides the primitive to verify a signature w.r.t. a message.

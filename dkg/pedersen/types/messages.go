@@ -2,14 +2,14 @@ package types
 
 import (
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
-	"go.dedis.ch/dela/serdeng/registry"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/registry"
 	"go.dedis.ch/kyber/v3"
 )
 
 var msgFormats = registry.NewSimpleRegistry()
 
-func RegisterMessageFormat(c serdeng.Codec, f serdeng.Format) {
+func RegisterMessageFormat(c serde.Codec, f serde.Format) {
 	msgFormats.Register(c, f)
 }
 
@@ -47,7 +47,7 @@ func (s Start) GetPublicKeys() []kyber.Point {
 }
 
 // Serialize implements serde.Message.
-func (s Start) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (s Start) Serialize(ctx serde.Context) ([]byte, error) {
 	format := msgFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, s)
@@ -123,7 +123,7 @@ func (d Deal) GetEncryptedDeal() EncryptedDeal {
 }
 
 // Serialize implements serde.Message.
-func (d Deal) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (d Deal) Serialize(ctx serde.Context) ([]byte, error) {
 	format := msgFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, d)
@@ -194,7 +194,7 @@ func (r Response) GetResponse() DealerResponse {
 }
 
 // Serialize implements serde.Message.
-func (r Response) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (r Response) Serialize(ctx serde.Context) ([]byte, error) {
 	format := msgFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, r)
@@ -224,7 +224,7 @@ func (s StartDone) GetPublicKey() kyber.Point {
 }
 
 // Serialize implements serde.Message.
-func (s StartDone) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (s StartDone) Serialize(ctx serde.Context) ([]byte, error) {
 	format := msgFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, s)
@@ -259,7 +259,7 @@ func (req DecryptRequest) GetC() kyber.Point {
 }
 
 // Serialize implements serde.Message.
-func (req DecryptRequest) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (req DecryptRequest) Serialize(ctx serde.Context) ([]byte, error) {
 	format := msgFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, req)
@@ -294,7 +294,7 @@ func (resp DecryptReply) GetI() int64 {
 }
 
 // Serialize implements serde.Message.
-func (resp DecryptReply) Serialize(ctx serdeng.Context) ([]byte, error) {
+func (resp DecryptReply) Serialize(ctx serde.Context) ([]byte, error) {
 	format := msgFormats.Get(ctx.GetName())
 
 	data, err := format.Encode(ctx, resp)
@@ -322,10 +322,10 @@ func NewMessageFactory(f mino.AddressFactory) MessageFactory {
 }
 
 // Deserialize implements serde.Factory.
-func (f MessageFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f MessageFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := msgFormats.Get(ctx.GetName())
 
-	ctx = serdeng.WithFactory(ctx, AddrKey{}, f.addrFactory)
+	ctx = serde.WithFactory(ctx, AddrKey{}, f.addrFactory)
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {

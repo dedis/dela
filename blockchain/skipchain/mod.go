@@ -16,7 +16,7 @@ import (
 	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -217,7 +217,7 @@ func (a skipchainActor) newChain(data blockchain.Payload, conodes mino.Players) 
 
 // Store implements blockchain.Actor. It will append a new block to chain filled
 // with the data.
-func (a skipchainActor) Store(data serdeng.Message, players mino.Players) error {
+func (a skipchainActor) Store(data serde.Message, players mino.Players) error {
 	previous, err := a.db.ReadLast()
 	if err != nil {
 		return xerrors.Errorf("couldn't read the latest block: %v", err)

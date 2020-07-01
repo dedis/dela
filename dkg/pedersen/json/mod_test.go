@@ -8,7 +8,7 @@ import (
 	"go.dedis.ch/dela/dkg/pedersen/types"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/suites"
 	"golang.org/x/xerrors"
@@ -20,7 +20,7 @@ func TestMessageFormat_Start_Encode(t *testing.T) {
 	start := types.NewStart(1, nil, nil)
 
 	format := newMsgFormat()
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, start)
 	require.NoError(t, err)
@@ -40,7 +40,7 @@ func TestMessageFormat_StartDone_Encode(t *testing.T) {
 	done := types.NewStartDone(suite.Point())
 
 	format := newMsgFormat()
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, done)
 	require.NoError(t, err)
@@ -55,7 +55,7 @@ func TestMessageFormat_DecryptRequest_Encode(t *testing.T) {
 	req := types.NewDecryptRequest(suite.Point(), suite.Point())
 
 	format := newMsgFormat()
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, req)
 	require.NoError(t, err)
@@ -75,7 +75,7 @@ func TestMessageFormat_DecryptReply_Encode(t *testing.T) {
 	resp := types.NewDecryptReply(5, suite.Point())
 
 	format := newMsgFormat()
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, resp)
 	require.NoError(t, err)
@@ -88,8 +88,8 @@ func TestMessageFormat_DecryptReply_Encode(t *testing.T) {
 
 func TestMessageFormat_Decode(t *testing.T) {
 	format := newMsgFormat()
-	ctx := serdeng.NewContext(fake.ContextEngine{})
-	ctx = serdeng.WithFactory(ctx, types.AddrKey{}, fake.AddressFactory{})
+	ctx := serde.NewContext(fake.ContextEngine{})
+	ctx = serde.WithFactory(ctx, types.AddrKey{}, fake.AddressFactory{})
 
 	start, err := format.Decode(ctx, []byte(`{"Start":{}}`))
 	require.NoError(t, err)

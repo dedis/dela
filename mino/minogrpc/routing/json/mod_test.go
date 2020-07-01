@@ -6,14 +6,14 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino/minogrpc/routing"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 )
 
 func TestFormat_Decode(t *testing.T) {
 	format := format{}
 
-	ctx := serdeng.NewContext(fake.ContextEngine{})
-	ctx = serdeng.WithFactory(ctx, routing.AddrKey{}, fake.AddressFactory{})
+	ctx := serde.NewContext(fake.ContextEngine{})
+	ctx = serde.WithFactory(ctx, routing.AddrKey{}, fake.AddressFactory{})
 
 	rting, err := format.Decode(ctx, []byte(`{"Addresses":[[]]}`))
 	require.NoError(t, err)
@@ -30,7 +30,7 @@ func TestFormat_Encode(t *testing.T) {
 	require.NoError(t, err)
 
 	format := format{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, treeRouting)
 	require.NoError(t, err)

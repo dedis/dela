@@ -3,14 +3,14 @@ package json
 import (
 	"go.dedis.ch/dela/dkg/pedersen/types"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/suites"
 	"golang.org/x/xerrors"
 )
 
 func init() {
-	types.RegisterMessageFormat(serdeng.CodecJSON, newMsgFormat())
+	types.RegisterMessageFormat(serde.CodecJSON, newMsgFormat())
 }
 
 type Address []byte
@@ -81,7 +81,7 @@ func newMsgFormat() msgFormat {
 	}
 }
 
-func (f msgFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, error) {
+func (f msgFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	var m Message
 
 	switch in := msg.(type) {
@@ -188,7 +188,7 @@ func (f msgFormat) Encode(ctx serdeng.Context, msg serdeng.Message) ([]byte, err
 	return data, nil
 }
 
-func (f msgFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, error) {
+func (f msgFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Message{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {
@@ -273,7 +273,7 @@ func (f msgFormat) Decode(ctx serdeng.Context, data []byte) (serdeng.Message, er
 	return nil, xerrors.New("message is empty")
 }
 
-func (f msgFormat) decodeStart(ctx serdeng.Context, start *Start) (serdeng.Message, error) {
+func (f msgFormat) decodeStart(ctx serde.Context, start *Start) (serde.Message, error) {
 	factory := ctx.GetFactory(types.AddrKey{})
 
 	fac, ok := factory.(mino.AddressFactory)

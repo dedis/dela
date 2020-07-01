@@ -8,8 +8,8 @@ import (
 
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
-	"go.dedis.ch/dela/serdeng/json"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/json"
 )
 
 // Minoch is an implementation of the Mino interface using channels. Each
@@ -20,7 +20,7 @@ type Minoch struct {
 	identifier string
 	path       string
 	rpcs       map[string]RPC
-	context    serdeng.Context
+	context    serde.Context
 }
 
 // NewMinoch creates a new instance of a local Mino instance.
@@ -67,7 +67,7 @@ func (m *Minoch) MakeNamespace(path string) (mino.Mino, error) {
 }
 
 // MakeRPC creates an RPC that can send to and receive from the unique path.
-func (m *Minoch) MakeRPC(name string, h mino.Handler, f serdeng.Factory) (mino.RPC, error) {
+func (m *Minoch) MakeRPC(name string, h mino.Handler, f serde.Factory) (mino.RPC, error) {
 	rpc := RPC{
 		manager: m.manager,
 		addr:    m.GetAddress(),

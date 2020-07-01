@@ -7,7 +7,7 @@ import (
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -24,7 +24,7 @@ type thresholdActor struct {
 
 // Sign implements cosi.Actor. It returns the collective signature from the
 // collective authority, or an error if it failed.
-func (a thresholdActor) Sign(ctx context.Context, msg serdeng.Message,
+func (a thresholdActor) Sign(ctx context.Context, msg serde.Message,
 	ca crypto.CollectiveAuthority) (crypto.Signature, error) {
 
 	innerCtx, cancel := context.WithCancel(context.Background())
@@ -106,7 +106,7 @@ func (a thresholdActor) waitCtx(inner, upper context.Context, cancel func()) {
 	}
 }
 
-func (a thresholdActor) merge(signature *Signature, m serdeng.Message,
+func (a thresholdActor) merge(signature *Signature, m serde.Message,
 	index int, pubkey crypto.PublicKey, digest []byte) error {
 
 	resp, ok := m.(cosi.SignatureResponse)

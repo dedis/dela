@@ -6,12 +6,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/crypto/common"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 )
 
 func TestFormat_Decode(t *testing.T) {
 	format := format{}
-	ctx := serdeng.NewContext(fake.ContextEngine{})
+	ctx := serde.NewContext(fake.ContextEngine{})
 
 	pubkey, err := format.Decode(ctx, []byte(`{"Name": "fake","Data":[]}`))
 	require.NoError(t, err)

@@ -4,7 +4,7 @@ import (
 	context "context"
 
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc/metadata"
 )
@@ -16,14 +16,14 @@ import (
 type RPC struct {
 	overlay overlay
 	uri     string
-	factory serdeng.Factory
+	factory serde.Factory
 }
 
 // Call implements mino.RPC. It calls the RPC on each provided address.
-func (rpc *RPC) Call(ctx context.Context, req serdeng.Message,
-	players mino.Players) (<-chan serdeng.Message, <-chan error) {
+func (rpc *RPC) Call(ctx context.Context, req serde.Message,
+	players mino.Players) (<-chan serde.Message, <-chan error) {
 
-	out := make(chan serdeng.Message, players.Len())
+	out := make(chan serde.Message, players.Len())
 	errs := make(chan error, players.Len())
 
 	data, err := req.Serialize(rpc.overlay.context)

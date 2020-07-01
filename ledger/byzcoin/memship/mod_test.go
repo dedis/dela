@@ -11,7 +11,7 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions/basic"
-	"go.dedis.ch/dela/serdeng"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -30,7 +30,7 @@ func TestTask_Fingerprint(t *testing.T) {
 func TestTask_Consume(t *testing.T) {
 	task := NewServerTask(roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner)))
 
-	page := fakePage{values: make(map[string]serdeng.Message)}
+	page := fakePage{values: make(map[string]serde.Message)}
 
 	err := task.Consume(nil, page)
 	require.NoError(t, err)
@@ -117,7 +117,7 @@ func TestRegister(t *testing.T) {
 
 type fakePage struct {
 	inventory.WritablePage
-	values   map[string]serdeng.Message
+	values   map[string]serde.Message
 	errRead  error
 	errWrite error
 	counter  *fake.Counter
@@ -127,7 +127,7 @@ func (p fakePage) GetIndex() uint64 {
 	return 5
 }
 
-func (p fakePage) Read(key []byte) (serdeng.Message, error) {
+func (p fakePage) Read(key []byte) (serde.Message, error) {
 	if p.errRead != nil {
 		defer p.counter.Decrease()
 		if p.counter.Done() {
@@ -138,7 +138,7 @@ func (p fakePage) Read(key []byte) (serdeng.Message, error) {
 	return p.values[string(key)], nil
 }
 
-func (p fakePage) Write(key []byte, value serdeng.Message) error {
+func (p fakePage) Write(key []byte, value serde.Message) error {
 	if p.errWrite != nil {
 		defer p.counter.Decrease()
 		if p.counter.Done() {
@@ -156,7 +156,7 @@ func (p fakePage) Defer(fn func([]byte)) {
 
 type fakeInventory struct {
 	inventory.Inventory
-	value   serdeng.Message
+	value   serde.Message
 	err     error
 	errPage error
 }
@@ -166,7 +166,7 @@ func (i fakeInventory) Len() uint64 {
 }
 
 func (i fakeInventory) GetPage(uint64) (inventory.Page, error) {
-	values := map[string]serdeng.Message{
+	values := map[string]serde.Message{
 		RosterValueKey: i.value,
 	}
 	return fakePage{values: values, errRead: i.errPage}, i.err
