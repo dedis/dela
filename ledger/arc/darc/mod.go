@@ -13,7 +13,7 @@ import (
 
 var accessFormats = registry.NewSimpleRegistry()
 
-func RegisterAccessFormat(c serde.Codec, f serde.Format) {
+func RegisterAccessFormat(c serde.Format, f serde.FormatEngine) {
 	accessFormats.Register(c, f)
 }
 
@@ -127,7 +127,7 @@ func (ac Access) Fingerprint(w io.Writer) error {
 
 // Serialize implements serde.Message.
 func (ac Access) Serialize(ctx serde.Context) ([]byte, error) {
-	format := accessFormats.Get(ctx.GetName())
+	format := accessFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, ac)
 	if err != nil {
@@ -157,7 +157,7 @@ func NewFactory() Factory {
 
 // Deserialize implements serde.Factory.
 func (f Factory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	format := accessFormats.Get(ctx.GetName())
+	format := accessFormats.Get(ctx.GetFormat())
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {

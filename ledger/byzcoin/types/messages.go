@@ -12,7 +12,7 @@ import (
 
 var msgFormats = registry.NewSimpleRegistry()
 
-func RegisterMessageFormat(c serde.Codec, f serde.Format) {
+func RegisterMessageFormat(c serde.Format, f serde.FormatEngine) {
 	msgFormats.Register(c, f)
 }
 
@@ -36,7 +36,7 @@ func (b Blueprint) GetTransactions() []transactions.ServerTransaction {
 
 // Serialize implements serde.Message.
 func (b Blueprint) Serialize(ctx serde.Context) ([]byte, error) {
-	format := msgFormats.Get(ctx.GetName())
+	format := msgFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, b)
 	if err != nil {
@@ -88,7 +88,7 @@ func (p GenesisPayload) Fingerprint(w io.Writer) error {
 
 // Serialize implements serde.Message.
 func (p GenesisPayload) Serialize(ctx serde.Context) ([]byte, error) {
-	format := msgFormats.Get(ctx.GetName())
+	format := msgFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, p)
 	if err != nil {
@@ -138,7 +138,7 @@ func (p BlockPayload) Fingerprint(w io.Writer) error {
 
 // Serialize implements serde.Message.
 func (p BlockPayload) Serialize(ctx serde.Context) ([]byte, error) {
-	format := msgFormats.Get(ctx.GetName())
+	format := msgFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, p)
 	if err != nil {
@@ -169,7 +169,7 @@ func NewMessageFactory(rf viewchange.AuthorityFactory, tf transactions.TxFactory
 
 // Deserialize implements serde.Factory.
 func (f MessageFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	format := msgFormats.Get(ctx.GetName())
+	format := msgFormats.Get(ctx.GetFormat())
 
 	ctx = serde.WithFactory(ctx, RosterKey{}, f.rosterFactory)
 	ctx = serde.WithFactory(ctx, TxKey{}, f.txFactory)

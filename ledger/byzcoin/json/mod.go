@@ -11,7 +11,7 @@ import (
 )
 
 func init() {
-	types.RegisterMessageFormat(serde.CodecJSON, messageFormat{})
+	types.RegisterMessageFormat(serde.FormatJSON, messageFormat{})
 }
 
 // GenesisPayload is the JSON message of a genesis payload.

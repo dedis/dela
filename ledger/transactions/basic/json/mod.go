@@ -11,7 +11,7 @@ import (
 )
 
 func init() {
-	basic.RegisterTxFormat(serde.CodecJSON, txFormat{})
+	basic.RegisterTxFormat(serde.FormatJSON, txFormat{})
 }
 
 // Task is a container of a task with its type and the raw value to deserialize.

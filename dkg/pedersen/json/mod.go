@@ -10,7 +10,7 @@ import (
 )
 
 func init() {
-	types.RegisterMessageFormat(serde.CodecJSON, newMsgFormat())
+	types.RegisterMessageFormat(serde.FormatJSON, newMsgFormat())
 }
 
 type Address []byte

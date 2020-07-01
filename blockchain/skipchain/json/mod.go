@@ -12,10 +12,10 @@ import (
 )
 
 func init() {
-	types.RegisterBlockFormat(serde.CodecJSON, blockFormat{})
-	types.RegisterVerifiableBlockFormats(serde.CodecJSON, newVerifiableFormat())
-	types.RegisterBlueprintFormats(serde.CodecJSON, blueprintFormat{})
-	types.RegisterRequestFormats(serde.CodecJSON, newRequestFormat())
+	types.RegisterBlockFormat(serde.FormatJSON, blockFormat{})
+	types.RegisterVerifiableBlockFormats(serde.FormatJSON, newVerifiableFormat())
+	types.RegisterBlueprintFormats(serde.FormatJSON, blueprintFormat{})
+	types.RegisterRequestFormats(serde.FormatJSON, newRequestFormat())
 }
 
 // Blueprint is a JSON message to send a proposal.
@@ -135,7 +135,7 @@ func (f blockFormat) Decode(ctx serde.Context, data []byte) (serde.Message, erro
 }
 
 type verifiableFormat struct {
-	blockFormat serde.Format
+	blockFormat serde.FormatEngine
 }
 
 func newVerifiableFormat() verifiableFormat {
@@ -273,7 +273,7 @@ func (f blueprintFormat) Decode(ctx serde.Context, data []byte) (serde.Message, 
 }
 
 type requestFormat struct {
-	blockFormat serde.Format
+	blockFormat serde.FormatEngine
 }
 
 func newRequestFormat() requestFormat {

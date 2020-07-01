@@ -7,7 +7,7 @@ import (
 )
 
 func init() {
-	common.Register(serde.CodecJSON, format{})
+	common.Register(serde.FormatJSON, format{})
 }
 
 // Algorithm is a common JSON message to identify which algorithm is used in a

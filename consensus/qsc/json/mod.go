@@ -9,8 +9,8 @@ import (
 )
 
 func init() {
-	types.RegisterHistoryFormat(serde.CodecJSON, historyFormat{})
-	types.RegisterRequestFormat(serde.CodecJSON, requestFormat{})
+	types.RegisterHistoryFormat(serde.FormatJSON, historyFormat{})
+	types.RegisterRequestFormat(serde.FormatJSON, requestFormat{})
 }
 
 type Epoch struct {

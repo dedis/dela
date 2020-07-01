@@ -849,8 +849,8 @@ func NewBadContextWithDelay(delay int) serde.Context {
 	})
 }
 
-func (ctx ContextEngine) GetName() serde.Codec {
-	return serde.CodecJSON
+func (ctx ContextEngine) GetFormat() serde.Format {
+	return serde.FormatJSON
 }
 
 func (ctx ContextEngine) Marshal(m interface{}) ([]byte, error) {

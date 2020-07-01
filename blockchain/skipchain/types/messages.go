@@ -10,11 +10,11 @@ var (
 	requestFormats = registry.NewSimpleRegistry()
 )
 
-func RegisterBlueprintFormats(c serde.Codec, f serde.Format) {
+func RegisterBlueprintFormats(c serde.Format, f serde.FormatEngine) {
 	bpFormats.Register(c, f)
 }
 
-func RegisterRequestFormats(c serde.Codec, f serde.Format) {
+func RegisterRequestFormats(c serde.Format, f serde.FormatEngine) {
 	requestFormats.Register(c, f)
 }
 
@@ -52,7 +52,7 @@ func (b Blueprint) GetData() serde.Message {
 
 // Serialize implements serde.Message.
 func (b Blueprint) Serialize(ctx serde.Context) ([]byte, error) {
-	format := bpFormats.Get(ctx.GetName())
+	format := bpFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, b)
 	if err != nil {
@@ -79,7 +79,7 @@ func NewBlueprintFactory(f serde.Factory) BlueprintFactory {
 
 // Deserialize implements serde.Factory.
 func (f BlueprintFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	format := bpFormats.Get(ctx.GetName())
+	format := bpFormats.Get(ctx.GetFormat())
 
 	ctx = serde.WithFactory(ctx, DataKey{}, f.factory)
 
@@ -110,7 +110,7 @@ func (p PropagateGenesis) GetGenesis() SkipBlock {
 
 // Serialize implements serde.Message.
 func (p PropagateGenesis) Serialize(ctx serde.Context) ([]byte, error) {
-	format := requestFormats.Get(ctx.GetName())
+	format := requestFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, p)
 	if err != nil {
@@ -145,7 +145,7 @@ func (req BlockRequest) GetTo() uint64 {
 
 // Serialize implements serde.Message.
 func (req BlockRequest) Serialize(ctx serde.Context) ([]byte, error) {
-	format := requestFormats.Get(ctx.GetName())
+	format := requestFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, req)
 	if err != nil {
@@ -174,7 +174,7 @@ func (resp BlockResponse) GetBlock() SkipBlock {
 
 // Serialize implements serde.Message.
 func (resp BlockResponse) Serialize(ctx serde.Context) ([]byte, error) {
-	format := requestFormats.Get(ctx.GetName())
+	format := requestFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, resp)
 	if err != nil {
@@ -195,7 +195,7 @@ func NewMessageFactory(pf serde.Factory) MessageFactory {
 }
 
 func (f MessageFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	format := requestFormats.Get(ctx.GetName())
+	format := requestFormats.Get(ctx.GetFormat())
 
 	ctx = serde.WithFactory(ctx, PayloadKey{}, f.payloadFactory)
 

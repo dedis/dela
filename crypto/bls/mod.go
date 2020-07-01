@@ -26,11 +26,11 @@ var (
 	sigFormats    = registry.NewSimpleRegistry()
 )
 
-func RegisterPublicKey(c serde.Codec, f serde.Format) {
+func RegisterPublicKey(c serde.Format, f serde.FormatEngine) {
 	pubkeyFormats.Register(c, f)
 }
 
-func RegisterSignature(c serde.Codec, f serde.Format) {
+func RegisterSignature(c serde.Format, f serde.FormatEngine) {
 	sigFormats.Register(c, f)
 }
 
@@ -63,7 +63,7 @@ func (pk PublicKey) MarshalBinary() ([]byte, error) {
 
 // Serialize implements serde.Message.
 func (pk PublicKey) Serialize(ctx serde.Context) ([]byte, error) {
-	format := pubkeyFormats.Get(ctx.GetName())
+	format := pubkeyFormats.Get(ctx.GetFormat())
 	if format == nil {
 		return nil, xerrors.New("invalid format")
 	}
@@ -146,7 +146,7 @@ func (sig Signature) MarshalBinary() ([]byte, error) {
 
 // Serialize implements serde.Message.
 func (sig Signature) Serialize(ctx serde.Context) ([]byte, error) {
-	format := sigFormats.Get(ctx.GetName())
+	format := sigFormats.Get(ctx.GetFormat())
 	if format == nil {
 		return nil, xerrors.New("invalid format")
 	}
@@ -179,7 +179,7 @@ func NewPublicKeyFactory() crypto.PublicKeyFactory {
 
 // Deserialize implements serde.Factory.
 func (f publicKeyFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	format := pubkeyFormats.Get(ctx.GetName())
+	format := pubkeyFormats.Get(ctx.GetFormat())
 	if format == nil {
 		return nil, xerrors.New("invalid format")
 	}
@@ -217,7 +217,7 @@ func NewSignatureFactory() crypto.SignatureFactory {
 
 // Deserialize implements serde.Factory.
 func (f signatureFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	format := sigFormats.Get(ctx.GetName())
+	format := sigFormats.Get(ctx.GetFormat())
 	if format == nil {
 		return nil, xerrors.New("invalid format")
 	}

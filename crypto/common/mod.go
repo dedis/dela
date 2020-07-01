@@ -14,7 +14,7 @@ import (
 
 var formats = registry.NewSimpleRegistry()
 
-func Register(c serde.Codec, f serde.Format) {
+func Register(c serde.Format, f serde.FormatEngine) {
 	formats.Register(c, f)
 }
 
@@ -55,7 +55,7 @@ func (f PublicKeyFactory) RegisterAlgorithm(algo string, factory crypto.PublicKe
 
 // Deserialize implements serde.Factory.
 func (f PublicKeyFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	format := formats.Get(ctx.GetName())
+	format := formats.Get(ctx.GetFormat())
 
 	m, err := format.Decode(ctx, data)
 	if err != nil {
@@ -107,7 +107,7 @@ func (f SignatureFactory) RegisterAlgorithm(name string, factory crypto.Signatur
 
 // Deserialize implements serde.Factory.
 func (f SignatureFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	format := formats.Get(ctx.GetName())
+	format := formats.Get(ctx.GetFormat())
 
 	m, err := format.Decode(ctx, data)
 	if err != nil {

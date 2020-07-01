@@ -22,7 +22,7 @@ var formats = registry.NewSimpleRegistry()
 
 // Register saves the format to be used when serializing/deserializing signature
 // messages for the given codec.
-func Register(c serde.Codec, f serde.Format) {
+func Register(c serde.Format, f serde.FormatEngine) {
 	formats.Register(c, f)
 }
 
@@ -122,7 +122,7 @@ func (s *Signature) setBit(index int) {
 // Serialize implements serde.Message. It serializes the signature into JSON
 // format.
 func (s *Signature) Serialize(ctx serde.Context) ([]byte, error) {
-	format := formats.Get(ctx.GetName())
+	format := formats.Get(ctx.GetFormat())
 	if format == nil {
 		return nil, xerrors.Errorf("unknown format")
 	}
@@ -177,7 +177,7 @@ func (f SignatureFactory) Deserialize(ctx serde.Context, data []byte) (serde.Mes
 
 // SignatureOf implements crypto.SignatureFactory.
 func (f SignatureFactory) SignatureOf(ctx serde.Context, data []byte) (crypto.Signature, error) {
-	format := formats.Get(ctx.GetName())
+	format := formats.Get(ctx.GetFormat())
 	if format == nil {
 		return nil, xerrors.Errorf("unknown format")
 	}

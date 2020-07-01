@@ -11,7 +11,7 @@ import (
 
 var historyFormats = registry.NewSimpleRegistry()
 
-func RegisterHistoryFormat(c serde.Codec, f serde.Format) {
+func RegisterHistoryFormat(c serde.Format, f serde.FormatEngine) {
 	historyFormats.Register(c, f)
 }
 
@@ -92,7 +92,7 @@ func (h History) Equal(other History) bool {
 
 // Serialize implements serde.Message.
 func (h History) Serialize(ctx serde.Context) ([]byte, error) {
-	format := historyFormats.Get(ctx.GetName())
+	format := historyFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, h)
 	if err != nil {
@@ -123,7 +123,7 @@ type HistoryFactory struct{}
 
 // Deserialize implements serde.Factory.
 func (f HistoryFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	format := historyFormats.Get(ctx.GetName())
+	format := historyFormats.Get(ctx.GetFormat())
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {

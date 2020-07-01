@@ -10,7 +10,7 @@ import (
 )
 
 func init() {
-	memship.RegisterTaskFormat(serde.CodecJSON, taskFormat{})
+	memship.RegisterTaskFormat(serde.FormatJSON, taskFormat{})
 }
 
 // Task is the JSON message for the client task.

@@ -17,7 +17,7 @@ const (
 
 var taskFormats = registry.NewSimpleRegistry()
 
-func RegisterTaskFormat(c serde.Codec, f serde.Format) {
+func RegisterTaskFormat(c serde.Format, f serde.FormatEngine) {
 	taskFormats.Register(c, f)
 }
 
@@ -50,7 +50,7 @@ func (t ClientTask) GetAccess() Access {
 
 // Serialize implements serde.Message.
 func (act ClientTask) Serialize(ctx serde.Context) ([]byte, error) {
-	format := taskFormats.Get(ctx.GetName())
+	format := taskFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, act)
 	if err != nil {
@@ -145,7 +145,7 @@ func NewTaskFactory() serde.Factory {
 
 // Deserialize implements serde.Factory.
 func (f taskFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	format := taskFormats.Get(ctx.GetName())
+	format := taskFormats.Get(ctx.GetFormat())
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {

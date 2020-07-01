@@ -9,7 +9,7 @@ import (
 
 var requestFormats = registry.NewSimpleRegistry()
 
-func RegisterRequestFormat(c serde.Codec, f serde.Format) {
+func RegisterRequestFormat(c serde.Format, f serde.FormatEngine) {
 	requestFormats.Register(c, f)
 }
 
@@ -44,7 +44,7 @@ func (p Prepare) GetChain() consensus.Chain {
 
 // Serialize implements serde.Messsage.
 func (p Prepare) Serialize(ctx serde.Context) ([]byte, error) {
-	format := requestFormats.Get(ctx.GetName())
+	format := requestFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, p)
 	if err != nil {
@@ -81,7 +81,7 @@ func (c Commit) GetPrepare() crypto.Signature {
 
 // Serialize implements serde.Message.
 func (c Commit) Serialize(ctx serde.Context) ([]byte, error) {
-	format := requestFormats.Get(ctx.GetName())
+	format := requestFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, c)
 	if err != nil {
@@ -116,7 +116,7 @@ func (p Propagate) GetCommit() crypto.Signature {
 
 // Serialize implements serde.Message.
 func (p Propagate) Serialize(ctx serde.Context) ([]byte, error) {
-	format := requestFormats.Get(ctx.GetName())
+	format := requestFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, p)
 	if err != nil {
@@ -168,7 +168,7 @@ func (f RequestFactory) GetChainFactory() consensus.ChainFactory {
 
 // Deserialize implements serde.Factory.
 func (f RequestFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	format := requestFormats.Get(ctx.GetName())
+	format := requestFormats.Get(ctx.GetFormat())
 
 	ctx = serde.WithFactory(ctx, MsgKey{}, f.msgFactory)
 	ctx = serde.WithFactory(ctx, SigKey{}, f.sigFactory)

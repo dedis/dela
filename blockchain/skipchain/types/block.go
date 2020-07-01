@@ -18,11 +18,11 @@ var (
 	verifiableFormats = registry.NewSimpleRegistry()
 )
 
-func RegisterBlockFormat(c serde.Codec, f serde.Format) {
+func RegisterBlockFormat(c serde.Format, f serde.FormatEngine) {
 	blockFormats.Register(c, f)
 }
 
-func RegisterVerifiableBlockFormats(c serde.Codec, f serde.Format) {
+func RegisterVerifiableBlockFormats(c serde.Format, f serde.FormatEngine) {
 	verifiableFormats.Register(c, f)
 }
 
@@ -152,7 +152,7 @@ func (b SkipBlock) GetPayload() blockchain.Payload {
 
 // Serialize implements serde.Message.
 func (b SkipBlock) Serialize(ctx serde.Context) ([]byte, error) {
-	format := blockFormats.Get(ctx.GetName())
+	format := blockFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, b)
 	if err != nil {
@@ -205,7 +205,7 @@ type VerifiableBlock struct {
 
 // Serialize implements serde.Message.
 func (vb VerifiableBlock) Serialize(ctx serde.Context) ([]byte, error) {
-	format := verifiableFormats.Get(ctx.GetName())
+	format := verifiableFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, vb)
 	if err != nil {
@@ -235,7 +235,7 @@ func NewBlockFactory(f serde.Factory) BlockFactory {
 
 // Deserialize implements serde.Message.
 func (f BlockFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	format := blockFormats.Get(ctx.GetName())
+	format := blockFormats.Get(ctx.GetFormat())
 
 	ctx = serde.WithFactory(ctx, PayloadKey{}, f.payloadFactory)
 
@@ -268,7 +268,7 @@ func NewVerifiableFactory(cf consensus.ChainFactory, pf serde.Factory) Verifiabl
 
 // Deserialize implements serde.Factory.
 func (f VerifiableFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	format := verifiableFormats.Get(ctx.GetName())
+	format := verifiableFormats.Get(ctx.GetFormat())
 
 	ctx = serde.WithFactory(ctx, PayloadKey{}, f.payloadFactory)
 	ctx = serde.WithFactory(ctx, ChainKey{}, f.chainFactory)

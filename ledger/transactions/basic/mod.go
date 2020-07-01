@@ -26,7 +26,7 @@ import (
 
 var txFormats = registry.NewSimpleRegistry()
 
-func RegisterTxFormat(c serde.Codec, f serde.Format) {
+func RegisterTxFormat(c serde.Format, f serde.FormatEngine) {
 	txFormats.Register(c, f)
 }
 
@@ -92,7 +92,7 @@ func (t ClientTransaction) GetTask() ClientTask {
 
 // Serialize implements serde.Message.
 func (t ClientTransaction) Serialize(ctx serde.Context) ([]byte, error) {
-	format := txFormats.Get(ctx.GetName())
+	format := txFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, t)
 	if err != nil {
@@ -296,7 +296,7 @@ func (f TransactionFactory) New(task ClientTask) (transactions.ClientTransaction
 
 // Deserialize implements serde.Factory.
 func (f TransactionFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	format := txFormats.Get(ctx.GetName())
+	format := txFormats.Get(ctx.GetFormat())
 
 	ctx = serde.WithFactory(ctx, IdentityKey{}, f.publicKeyFactory)
 	ctx = serde.WithFactory(ctx, SignatureKey{}, f.signatureFactory)

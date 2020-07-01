@@ -10,7 +10,7 @@ import (
 var formats = registry.NewSimpleRegistry()
 
 // Register registers the format for the given format name.
-func Register(name serde.Codec, f serde.Format) {
+func Register(name serde.Format, f serde.FormatEngine) {
 	formats.Register(name, f)
 }
 
@@ -25,9 +25,9 @@ type SignatureRequest struct {
 // Serialize implements serde.Message. It serializes the message in the format
 // supported by the context.
 func (req SignatureRequest) Serialize(ctx serde.Context) ([]byte, error) {
-	format := formats.Get(ctx.GetName())
+	format := formats.Get(ctx.GetFormat())
 	if format == nil {
-		return nil, xerrors.Errorf("format '%s' is not supported", ctx.GetName())
+		return nil, xerrors.Errorf("format '%s' is not supported", ctx.GetFormat())
 	}
 
 	data, err := format.Encode(ctx, req)
@@ -48,9 +48,9 @@ type SignatureResponse struct {
 // Serialize implements serde.Message. It serializes the message in the format
 // supported by the context.
 func (resp SignatureResponse) Serialize(ctx serde.Context) ([]byte, error) {
-	format := formats.Get(ctx.GetName())
+	format := formats.Get(ctx.GetFormat())
 	if format == nil {
-		return nil, xerrors.Errorf("format '%s' is not supported", ctx.GetName())
+		return nil, xerrors.Errorf("format '%s' is not supported", ctx.GetFormat())
 	}
 
 	data, err := format.Encode(ctx, resp)
@@ -93,9 +93,9 @@ func (f MessageFactory) GetSignatureFactory() crypto.SignatureFactory {
 
 // Deserialize implements serde.Factory.
 func (f MessageFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	format := formats.Get(ctx.GetName())
+	format := formats.Get(ctx.GetFormat())
 	if format == nil {
-		return nil, xerrors.Errorf("format '%s' is not supported", ctx.GetName())
+		return nil, xerrors.Errorf("format '%s' is not supported", ctx.GetFormat())
 	}
 
 	ctx = serde.WithFactory(ctx, MsgKey{}, f.msgFactory)

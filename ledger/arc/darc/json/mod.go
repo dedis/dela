@@ -9,8 +9,8 @@ import (
 )
 
 func init() {
-	darc.RegisterAccessFormat(serde.CodecJSON, accessFormat{})
-	darc.RegisterTaskFormat(serde.CodecJSON, newTaskFormat())
+	darc.RegisterAccessFormat(serde.FormatJSON, accessFormat{})
+	darc.RegisterTaskFormat(serde.FormatJSON, newTaskFormat())
 }
 
 // Access is the JSON message for a distributed access control.
@@ -67,7 +67,7 @@ func (f accessFormat) Decode(ctx serde.Context, data []byte) (serde.Message, err
 }
 
 type taskFormat struct {
-	accessFormat serde.Format
+	accessFormat serde.FormatEngine
 }
 
 func newTaskFormat() taskFormat {

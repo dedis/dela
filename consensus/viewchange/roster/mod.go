@@ -14,7 +14,7 @@ import (
 
 var rosterFormats = registry.NewSimpleRegistry()
 
-func RegisterRoster(c serde.Codec, f serde.Format) {
+func RegisterRoster(c serde.Format, f serde.FormatEngine) {
 	rosterFormats.Register(c, f)
 }
 
@@ -251,7 +251,7 @@ func (r Roster) PublicKeyIterator() crypto.PublicKeyIterator {
 
 // Serialize implements serde.Message.
 func (r Roster) Serialize(ctx serde.Context) ([]byte, error) {
-	format := rosterFormats.Get(ctx.GetName())
+	format := rosterFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, r)
 	if err != nil {
@@ -276,7 +276,7 @@ func NewRosterFactory(af mino.AddressFactory, pf crypto.PublicKeyFactory) Roster
 
 // Deserialize implements serde.Factory.
 func (f RosterFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	format := rosterFormats.Get(ctx.GetName())
+	format := rosterFormats.Get(ctx.GetFormat())
 
 	ctx = serde.WithFactory(ctx, PubKey{}, f.pubkeyFactory)
 	ctx = serde.WithFactory(ctx, AddrKey{}, f.addrFactory)

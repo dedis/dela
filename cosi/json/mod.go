@@ -10,7 +10,7 @@ import (
 )
 
 func init() {
-	cosi.Register(serde.CodecJSON, format{})
+	cosi.Register(serde.FormatJSON, format{})
 }
 
 // Request is the JSON message sent to request signature.

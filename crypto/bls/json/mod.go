@@ -8,8 +8,8 @@ import (
 )
 
 func init() {
-	bls.RegisterPublicKey(serde.CodecJSON, pubkeyFormat{})
-	bls.RegisterSignature(serde.CodecJSON, sigFormat{})
+	bls.RegisterPublicKey(serde.FormatJSON, pubkeyFormat{})
+	bls.RegisterSignature(serde.FormatJSON, sigFormat{})
 }
 
 type pubkeyFormat struct{}

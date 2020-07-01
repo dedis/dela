@@ -11,7 +11,7 @@ import (
 
 var csetFormats = registry.NewSimpleRegistry()
 
-func RegisterChangeSet(c serde.Codec, f serde.Format) {
+func RegisterChangeSet(c serde.Format, f serde.FormatEngine) {
 	csetFormats.Register(c, f)
 }
 
@@ -31,7 +31,7 @@ type ChangeSet struct {
 
 // Serialize implements serde.Message.
 func (set ChangeSet) Serialize(ctx serde.Context) ([]byte, error) {
-	format := csetFormats.Get(ctx.GetName())
+	format := csetFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, set)
 	if err != nil {
@@ -62,7 +62,7 @@ func NewChangeSetFactory(af mino.AddressFactory, pkf crypto.PublicKeyFactory) Ch
 
 // Deserialize implements serde.Factory.
 func (f ChangeSetFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	format := csetFormats.Get(ctx.GetName())
+	format := csetFormats.Get(ctx.GetFormat())
 
 	ctx = serde.WithFactory(ctx, PubKey{}, f.pubkeyFactory)
 	ctx = serde.WithFactory(ctx, AddrKey{}, f.addrFactory)

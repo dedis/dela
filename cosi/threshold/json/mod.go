@@ -10,7 +10,7 @@ import (
 )
 
 func init() {
-	threshold.Register(serde.CodecJSON, format{})
+	threshold.Register(serde.FormatJSON, format{})
 }
 
 // Signature is the JSON message for the signature.

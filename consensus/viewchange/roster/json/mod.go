@@ -11,8 +11,8 @@ import (
 )
 
 func init() {
-	roster.RegisterChangeSet(serde.CodecJSON, changeSetFormat{})
-	roster.RegisterRoster(serde.CodecJSON, rosterFormat{})
+	roster.RegisterChangeSet(serde.FormatJSON, changeSetFormat{})
+	roster.RegisterRoster(serde.FormatJSON, rosterFormat{})
 }
 
 // Player is a JSON message that contains the address and the public key of a

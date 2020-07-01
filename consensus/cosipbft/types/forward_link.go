@@ -18,11 +18,11 @@ var (
 	chainFormats = registry.NewSimpleRegistry()
 )
 
-func RegisterForwardLinkFormat(c serde.Codec, f serde.Format) {
+func RegisterForwardLinkFormat(c serde.Format, f serde.FormatEngine) {
 	linkFormats.Register(c, f)
 }
 
-func RegisterChainFormat(c serde.Codec, f serde.Format) {
+func RegisterChainFormat(c serde.Format, f serde.FormatEngine) {
 	chainFormats.Register(c, f)
 }
 
@@ -148,7 +148,7 @@ func (fl ForwardLink) Verify(v crypto.Verifier) error {
 
 // Serialize implements serde.Message.
 func (fl ForwardLink) Serialize(ctx serde.Context) ([]byte, error) {
-	format := linkFormats.Get(ctx.GetName())
+	format := linkFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, fl)
 	if err != nil {
@@ -202,7 +202,7 @@ func (c Chain) GetTo() []byte {
 
 // Serialize implements serde.Message.
 func (c Chain) Serialize(ctx serde.Context) ([]byte, error) {
-	format := chainFormats.Get(ctx.GetName())
+	format := chainFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, c)
 	if err != nil {
@@ -278,7 +278,7 @@ func (f ChainFactory) GetChangeSetFactory() viewchange.ChangeSetFactory {
 
 // Deserialize implements serde.Factory.
 func (f ChainFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	format := chainFormats.Get(ctx.GetName())
+	format := chainFormats.Get(ctx.GetFormat())
 
 	ctx = serde.WithFactory(ctx, CoSigKey{}, f.sigFactory)
 	ctx = serde.WithFactory(ctx, ChangeSetKey{}, f.csFactory)

@@ -29,7 +29,7 @@ var (
 	taskFormats = registry.NewSimpleRegistry()
 )
 
-func RegisterTaskFormat(c serde.Codec, f serde.Format) {
+func RegisterTaskFormat(c serde.Format, f serde.FormatEngine) {
 	taskFormats.Register(c, f)
 }
 
@@ -52,7 +52,7 @@ func (t ClientTask) GetAuthority() viewchange.Authority {
 
 // Serialize implements serde.Message.
 func (t ClientTask) Serialize(ctx serde.Context) ([]byte, error) {
-	format := taskFormats.Get(ctx.GetName())
+	format := taskFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, t)
 	if err != nil {
@@ -186,7 +186,7 @@ func (f TaskManager) Verify(from mino.Address, index uint64) (viewchange.Authori
 
 // Deserialize implements serde.Factory.
 func (f TaskManager) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	format := taskFormats.Get(ctx.GetName())
+	format := taskFormats.Get(ctx.GetFormat())
 
 	ctx = serde.WithFactory(ctx, RosterKey{}, f.rosterFactory)
 

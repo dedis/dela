@@ -21,7 +21,7 @@ var eachLine = regexp.MustCompile(`(?m)^(.+)$`)
 
 var formats = registry.NewSimpleRegistry()
 
-func Register(c serde.Codec, f serde.Format) {
+func Register(c serde.Format, f serde.FormatEngine) {
 	formats.Register(c, f)
 }
 
@@ -91,7 +91,7 @@ func (t TreeRoutingFactory) Make(r mino.Address, p mino.Players) (Routing, error
 
 // Deserialize implements serde.Factory.
 func (t TreeRoutingFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	format := formats.Get(ctx.GetName())
+	format := formats.Get(ctx.GetFormat())
 	if format == nil {
 		return nil, xerrors.New("unknown format")
 	}
@@ -349,7 +349,7 @@ func (t TreeRouting) GetDirectLinks(from mino.Address) []mino.Address {
 
 // Serialize implements serde.Message.
 func (t TreeRouting) Serialize(ctx serde.Context) ([]byte, error) {
-	format := formats.Get(ctx.GetName())
+	format := formats.Get(ctx.GetFormat())
 	if format == nil {
 		return nil, xerrors.New("unknown format")
 	}

@@ -7,7 +7,7 @@ import (
 
 var requestFormats = registry.NewSimpleRegistry()
 
-func RegisterRequestFormat(c serde.Codec, f serde.Format) {
+func RegisterRequestFormat(c serde.Format, f serde.FormatEngine) {
 	requestFormats.Register(c, f)
 }
 
@@ -31,7 +31,7 @@ func (p Proposal) GetValue() serde.Message {
 
 // Serialize implements serde.Message.
 func (p Proposal) Serialize(ctx serde.Context) ([]byte, error) {
-	format := requestFormats.Get(ctx.GetName())
+	format := requestFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, p)
 	if err != nil {
@@ -135,7 +135,7 @@ func (mset MessageSet) Merge(other MessageSet) MessageSet {
 
 // Serialize implements serde.Message.
 func (mset MessageSet) Serialize(ctx serde.Context) ([]byte, error) {
-	format := requestFormats.Get(ctx.GetName())
+	format := requestFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, mset)
 	if err != nil {
@@ -170,7 +170,7 @@ func (req RequestMessageSet) GetNodes() []int64 {
 
 // Serialize implements serde.Message.
 func (req RequestMessageSet) Serialize(ctx serde.Context) ([]byte, error) {
-	format := requestFormats.Get(ctx.GetName())
+	format := requestFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, req)
 	if err != nil {
@@ -197,7 +197,7 @@ func NewRequestFactory(f serde.Factory) RequestFactory {
 
 // Deserialize implements serde.Factory.
 func (f RequestFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	format := requestFormats.Get(ctx.GetName())
+	format := requestFormats.Get(ctx.GetFormat())
 
 	ctx = serde.WithFactory(ctx, MsgKey{}, f.mFactory)
 

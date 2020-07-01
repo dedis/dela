@@ -8,7 +8,7 @@ import (
 )
 
 func init() {
-	routing.Register(serde.CodecJSON, format{})
+	routing.Register(serde.FormatJSON, format{})
 }
 
 // Address is the JSON format of an address.

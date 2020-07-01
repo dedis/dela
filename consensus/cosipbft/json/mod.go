@@ -12,9 +12,9 @@ import (
 )
 
 func init() {
-	types.RegisterForwardLinkFormat(serde.CodecJSON, linkFormat{})
-	types.RegisterChainFormat(serde.CodecJSON, chainFormat{})
-	types.RegisterRequestFormat(serde.CodecJSON, messageFormat{})
+	types.RegisterForwardLinkFormat(serde.FormatJSON, linkFormat{})
+	types.RegisterChainFormat(serde.FormatJSON, chainFormat{})
+	types.RegisterRequestFormat(serde.FormatJSON, messageFormat{})
 }
 
 // ForwardLink is the JSON message for a forward link.
