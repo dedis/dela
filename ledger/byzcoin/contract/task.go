@@ -7,7 +7,6 @@ import (
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions/basic"
-	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serdeng"
 	"golang.org/x/xerrors"
 )
@@ -242,15 +241,13 @@ func (act serverTask) hasAccess(ctx Context, key []byte, rule string) error {
 //
 // - implements basic.TaskFactory
 type TaskFactory struct {
-	contracts  map[string]Contract
-	arcFactory serde.Factory
+	contracts map[string]Contract
 }
 
 // NewTaskFactory returns a new empty instance of the factory.
 func NewTaskFactory() TaskFactory {
 	return TaskFactory{
-		contracts:  make(map[string]Contract),
-		arcFactory: serde.UnimplementedFactory{},
+		contracts: make(map[string]Contract),
 	}
 }
 

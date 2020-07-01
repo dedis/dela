@@ -10,7 +10,6 @@ import (
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/inventory"
-	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serdeng"
 	"golang.org/x/xerrors"
 )
@@ -110,8 +109,6 @@ func TestTransactionFactory_New(t *testing.T) {
 // Utility functions
 
 type fakeClientTask struct {
-	serde.UnimplementedMessage
-
 	err error
 }
 
@@ -133,10 +130,4 @@ func (a fakeSrvTask) Consume(Context, inventory.WritablePage) error {
 	return a.err
 }
 
-type fakeTaskFactory struct {
-	serde.UnimplementedFactory
-}
-
-func (f fakeTaskFactory) VisitJSON(serde.FactoryInput) (serde.Message, error) {
-	return fakeSrvTask{}, nil
-}
+type fakeTaskFactory struct{}

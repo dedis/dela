@@ -1,7 +1,6 @@
 package types
 
 import (
-	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serdeng"
 	"go.dedis.ch/dela/serdeng/registry"
 )
@@ -187,8 +186,6 @@ type MsgKey struct{}
 //
 // - implements serde.Factory
 type RequestFactory struct {
-	serde.UnimplementedFactory
-
 	mFactory serdeng.Factory
 }
 

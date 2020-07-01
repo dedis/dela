@@ -8,7 +8,6 @@ import (
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/dkg/pedersen/types"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/share"
 	pedersen "go.dedis.ch/kyber/v3/share/dkg/pedersen"
@@ -63,16 +62,14 @@ type Handler struct {
 	privKey   kyber.Scalar
 	me        mino.Address
 	privShare *share.PriShare
-	factory   serde.Factory
 	startRes  *state
 }
 
 // NewHandler creates a new handler
-func NewHandler(privKey kyber.Scalar, me mino.Address, f serde.Factory) *Handler {
+func NewHandler(privKey kyber.Scalar, me mino.Address) *Handler {
 	return &Handler{
 		privKey:  privKey,
 		me:       me,
-		factory:  f,
 		startRes: &state{},
 	}
 }
@@ -262,7 +259,7 @@ func (h *Handler) start(start types.Start, receivedDeals []types.Deal, from mino
 		return xerrors.Errorf("failed to certify: %v", err)
 	}
 
-	h.startRes.Fill(start.addresses, pubKey)
+	h.startRes.Fill(start.GetAddresses(), pubKey)
 
 	return nil
 }

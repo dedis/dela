@@ -22,7 +22,6 @@ import (
 	"go.dedis.ch/dela/ledger/transactions/basic"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/gossip"
-	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -49,7 +48,6 @@ type Ledger struct {
 	bag        *txBag
 	proc       *txProcessor
 	viewchange viewchange.ViewChange
-	txFactory  serde.Factory
 	closing    chan struct{}
 	closed     sync.WaitGroup
 	initiated  chan error
@@ -79,7 +77,6 @@ func NewLedger(m mino.Mino, signer crypto.AggregateSigner) *Ledger {
 		bag:        newTxBag(),
 		proc:       newTxProcessor(msgFactory, inventory),
 		viewchange: vc,
-		txFactory:  txFactory,
 		closing:    make(chan struct{}),
 		initiated:  make(chan error, 1),
 	}

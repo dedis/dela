@@ -5,11 +5,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/dkg"
+	"go.dedis.ch/dela/dkg/pedersen/types"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc"
 	"go.dedis.ch/dela/mino/minogrpc/routing"
-	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serdeng"
 	"go.dedis.ch/kyber/v3"
 )
 
@@ -55,9 +56,9 @@ func TestPedersen_Setup(t *testing.T) {
 	require.EqualError(t, err, "expected to receive a Done message, but go the following: <nil>")
 
 	rpc = fake.NewStreamRPC(fake.Receiver{
-		Msg: []serde.Message{
-			StartDone{pubkey: suite.Point()},
-			StartDone{pubkey: suite.Point().Pick(suite.RandomStream())},
+		Msg: []serdeng.Message{
+			types.NewStartDone(suite.Point()),
+			types.NewStartDone(suite.Point().Pick(suite.RandomStream())),
 		},
 	}, fake.Sender{})
 	actor.rpc = rpc
@@ -90,14 +91,14 @@ func TestPedersen_Decrypt(t *testing.T) {
 	_, err = actor.Decrypt(suite.Point(), suite.Point())
 	require.EqualError(t, err, "got unexpected reply, expected a decrypt reply but got: <nil>")
 
-	rpc = fake.NewStreamRPC(fake.NewReceiver(DecryptReply{I: -1, V: suite.Point()}), fake.Sender{})
+	rpc = fake.NewStreamRPC(fake.NewReceiver(types.DecryptReply{I: -1, V: suite.Point()}), fake.Sender{})
 	actor.rpc = rpc
 
 	_, err = actor.Decrypt(suite.Point(), suite.Point())
 	require.EqualError(t, err, "failed to recover commit: share: not enough "+
 		"good public shares to reconstruct secret commitment")
 
-	rpc = fake.NewStreamRPC(fake.NewReceiver(DecryptReply{I: 1, V: suite.Point()}), fake.Sender{})
+	rpc = fake.NewStreamRPC(fake.NewReceiver(types.DecryptReply{I: 1, V: suite.Point()}), fake.Sender{})
 	actor.rpc = rpc
 
 	_, err = actor.Decrypt(suite.Point(), suite.Point())

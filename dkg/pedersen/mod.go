@@ -4,7 +4,7 @@ import (
 	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/dkg/pedersen/types"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serdeng"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/share"
 	"go.dedis.ch/kyber/v3/suites"
@@ -22,12 +22,12 @@ var suite = suites.MustFind("Ed25519")
 type Pedersen struct {
 	privKey kyber.Scalar
 	mino    mino.Mino
-	factory serde.Factory
+	factory serdeng.Factory
 }
 
 // NewPedersen returns a new DKG Pedersen factory
 func NewPedersen(privKey kyber.Scalar, m mino.Mino) *Pedersen {
-	factory := NewMessageFactory(suite, m.GetAddressFactory())
+	factory := types.NewMessageFactory(m.GetAddressFactory())
 
 	return &Pedersen{
 		privKey: privKey,
@@ -39,8 +39,7 @@ func NewPedersen(privKey kyber.Scalar, m mino.Mino) *Pedersen {
 // Listen implements dkg.DKG. It must be called on each node that participates
 // in the DKG. Creates the RPC.
 func (s *Pedersen) Listen() (dkg.Actor, error) {
-
-	h := NewHandler(s.privKey, s.mino.GetAddress(), s.factory)
+	h := NewHandler(s.privKey, s.mino.GetAddress())
 
 	rpc, err := s.mino.MakeRPC("dkg", h, s.factory)
 	if err != nil {
@@ -61,7 +60,7 @@ func (s *Pedersen) Listen() (dkg.Actor, error) {
 // - implements dkg.Actor
 type Actor struct {
 	rpc      mino.RPC
-	factory  serde.Factory
+	factory  serdeng.Factory
 	startRes *state
 }
 
@@ -91,15 +90,7 @@ func (a *Actor) Setup(players mino.Players, pubKeys []kyber.Point, threshold int
 		addrs = append(addrs, players.AddressIterator().GetNext())
 	}
 
-<<<<<<< HEAD
-	message := Start{
-		t:         threshold,
-		addresses: addrs,
-		pubkeys:   pubKeys,
-	}
-=======
-	message := types.NewStart(t, addrs, pubKeys)
->>>>>>> Serde: allow external implementation of formats
+	message := types.NewStart(threshold, addrs, pubKeys)
 
 	errs := sender.Send(message, addrs...)
 	err = <-errs
@@ -128,13 +119,8 @@ func (a *Actor) Setup(players mino.Players, pubKeys []kyber.Point, threshold int
 		// this is a simple check that every node sends back the same DKG pub
 		// key.
 		// TODO: handle the situation where a pub key is not the same
-<<<<<<< HEAD
-		if i != 0 && !dkgPubKeys[i-1].Equal(doneMsg.pubkey) {
-			return xerrors.Errorf("the public keys does not match: %v", dkgPubKeys)
-=======
 		if i != 0 && !dkgPubKeys[i-1].Equal(doneMsg.GetPublicKey()) {
-			return nil, xerrors.Errorf("the public keys does not match: %v", dkgPubKeys)
->>>>>>> Serde: allow external implementation of formats
+			return xerrors.Errorf("the public keys does not match: %v", dkgPubKeys)
 		}
 	}
 

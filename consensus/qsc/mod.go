@@ -14,7 +14,6 @@ import (
 	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/consensus/qsc/types"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serdeng"
 	"golang.org/x/net/context"
 	"golang.org/x/xerrors"
@@ -50,11 +49,6 @@ func NewQSC(node int64, mino mino.Mino, players mino.Players) (*Consensus, error
 		history:   types.History{},
 		broadcast: bc,
 	}, nil
-}
-
-// GetChainFactory implements consensus.Consensus. It returns the chain factory.
-func (c *Consensus) GetChainFactory() serde.Factory {
-	return nil
 }
 
 // GetChain implements consensus.Consensus. It returns the chain that can prove

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serdeng"
 	"go.dedis.ch/dela/serdeng/registry"
 )
@@ -120,9 +119,7 @@ func (h History) String() string {
 // HistoryFactory is a message factory to decode histories.
 //
 // - implements serde.Factory
-type HistoryFactory struct {
-	serde.UnimplementedFactory
-}
+type HistoryFactory struct{}
 
 // Deserialize implements serde.Factory.
 func (f HistoryFactory) Deserialize(ctx serdeng.Context, data []byte) (serdeng.Message, error) {

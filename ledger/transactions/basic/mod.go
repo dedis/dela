@@ -19,7 +19,6 @@ import (
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions"
-	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serdeng"
 	"go.dedis.ch/dela/serdeng/registry"
 	"golang.org/x/xerrors"
@@ -243,8 +242,6 @@ func KeyOf(m serdeng.Message) string {
 //
 // - implements ledger.TransactionFactory
 type TransactionFactory struct {
-	serde.UnimplementedFactory
-
 	signer           crypto.Signer
 	hashFactory      crypto.HashFactory
 	publicKeyFactory crypto.PublicKeyFactory

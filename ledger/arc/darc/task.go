@@ -5,7 +5,6 @@ import (
 
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions/basic"
-	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serdeng"
 	"go.dedis.ch/dela/serdeng/registry"
 	"golang.org/x/xerrors"
@@ -137,15 +136,11 @@ func (act ServerTask) Consume(ctx basic.Context, page inventory.WritablePage) er
 // messages.
 //
 // - implements basic.TaskFactory
-type taskFactory struct {
-	darcFactory serde.Factory
-}
+type taskFactory struct{}
 
 // NewTaskFactory returns a new instance of the task factory.
 func NewTaskFactory() serdeng.Factory {
-	return taskFactory{
-		darcFactory: NewFactory(),
-	}
+	return taskFactory{}
 }
 
 // Deserialize implements serde.Factory.

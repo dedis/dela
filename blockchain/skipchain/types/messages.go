@@ -1,7 +1,6 @@
 package types
 
 import (
-	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serdeng"
 	"go.dedis.ch/dela/serdeng/registry"
 )
@@ -69,8 +68,6 @@ type DataKey struct{}
 //
 // - implements serde.Factory
 type BlueprintFactory struct {
-	serde.UnimplementedFactory
-
 	factory serdeng.Factory
 }
 
@@ -127,8 +124,6 @@ func (p PropagateGenesis) Serialize(ctx serdeng.Context) ([]byte, error) {
 //
 // - implements serde.Message
 type BlockRequest struct {
-	serde.UnimplementedMessage
-
 	from uint64
 	to   uint64
 }
@@ -164,8 +159,6 @@ func (req BlockRequest) Serialize(ctx serdeng.Context) ([]byte, error) {
 //
 // - implements serde.Message
 type BlockResponse struct {
-	serde.UnimplementedMessage
-
 	block SkipBlock
 }
 

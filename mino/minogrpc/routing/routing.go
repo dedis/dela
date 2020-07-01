@@ -12,7 +12,6 @@ import (
 
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serdeng"
 	"go.dedis.ch/dela/serdeng/registry"
 	"golang.org/x/xerrors"
@@ -65,8 +64,6 @@ type AddrKey struct{}
 //
 // - implements routing.Factory
 type TreeRoutingFactory struct {
-	serde.UnimplementedFactory
-
 	height      int
 	addrFactory mino.AddressFactory
 	hashFactory crypto.HashFactory
@@ -129,8 +126,6 @@ func (t TreeRoutingFactory) RoutingOf(ctx serdeng.Context, data []byte) (Routing
 //
 // - implements routing.Routing
 type TreeRouting struct {
-	serde.UnimplementedMessage
-
 	Root         *treeNode
 	routingNodes map[mino.Address]*treeNode
 }

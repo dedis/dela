@@ -7,7 +7,6 @@ package common
 import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
-	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serdeng"
 	"go.dedis.ch/dela/serdeng/registry"
 	"golang.org/x/xerrors"
@@ -87,8 +86,6 @@ func (f PublicKeyFactory) PublicKeyOf(ctx serdeng.Context, data []byte) (crypto.
 
 // SignatureFactory is a factory for commonly known algorithms.
 type SignatureFactory struct {
-	serde.UnimplementedFactory
-
 	factories map[string]crypto.SignatureFactory
 }
 

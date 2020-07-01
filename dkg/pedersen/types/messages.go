@@ -2,7 +2,6 @@ package types
 
 import (
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serdeng"
 	"go.dedis.ch/dela/serdeng/registry"
 	"go.dedis.ch/kyber/v3"
@@ -275,8 +274,6 @@ func (req DecryptRequest) Serialize(ctx serdeng.Context) ([]byte, error) {
 //
 // - implements serde.Message
 type DecryptReply struct {
-	serde.UnimplementedMessage
-
 	V kyber.Point
 	I int64
 }
@@ -314,8 +311,6 @@ type AddrKey struct{}
 //
 // - implements serde.Factory
 type MessageFactory struct {
-	serde.UnimplementedFactory
-
 	addrFactory mino.AddressFactory
 }
 

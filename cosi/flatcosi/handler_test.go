@@ -8,7 +8,6 @@ import (
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serdeng"
 )
 
@@ -34,8 +33,6 @@ func TestHandler_Process(t *testing.T) {
 // Utility functions
 
 type fakeReactor struct {
-	serde.UnimplementedFactory
-
 	err error
 }
 

@@ -9,7 +9,6 @@ import (
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions/basic"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serdeng"
 	"go.dedis.ch/dela/serdeng/registry"
 	"golang.org/x/xerrors"
@@ -114,8 +113,6 @@ type RosterKey struct{}
 // - implements basic.TaskManager
 // - implements viewchange.Governance
 type TaskManager struct {
-	serde.UnimplementedFactory
-
 	me            mino.Address
 	inventory     inventory.Inventory
 	rosterFactory viewchange.AuthorityFactory

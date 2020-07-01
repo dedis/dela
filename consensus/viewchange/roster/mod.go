@@ -7,7 +7,6 @@ import (
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serdeng"
 	"go.dedis.ch/dela/serdeng/registry"
 	"golang.org/x/xerrors"
@@ -74,10 +73,7 @@ func (i *publicKeyIterator) GetNext() crypto.PublicKey {
 // - implements crypto.CollectiveAuthority
 // - implements viewchange.Authority
 // - implements mino.Players
-// - implements encoding.Packable
 type Roster struct {
-	serde.UnimplementedMessage
-
 	addrs   []mino.Address
 	pubkeys []crypto.PublicKey
 }
@@ -266,8 +262,6 @@ func (r Roster) Serialize(ctx serdeng.Context) ([]byte, error) {
 }
 
 type RosterFactory struct {
-	serde.UnimplementedFactory
-
 	addrFactory   mino.AddressFactory
 	pubkeyFactory crypto.PublicKeyFactory
 }

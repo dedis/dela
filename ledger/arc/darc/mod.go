@@ -6,7 +6,6 @@ import (
 	"sort"
 
 	"go.dedis.ch/dela/ledger/arc"
-	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serdeng"
 	"go.dedis.ch/dela/serdeng/registry"
 	"golang.org/x/xerrors"
@@ -149,9 +148,7 @@ func (ac Access) Clone() Access {
 }
 
 // Factory is the implementation of an access control factory for DARCs.
-type Factory struct {
-	serde.UnimplementedFactory
-}
+type Factory struct{}
 
 // NewFactory returns a new instance of the factory.
 func NewFactory() Factory {

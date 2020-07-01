@@ -3,7 +3,6 @@ package types
 import (
 	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serdeng"
 	"go.dedis.ch/dela/serdeng/registry"
 )
@@ -59,8 +58,6 @@ func (p Prepare) Serialize(ctx serdeng.Context) ([]byte, error) {
 //
 // - implements serde.Message
 type Commit struct {
-	serde.UnimplementedMessage
-
 	to      Digest
 	prepare crypto.Signature
 }
@@ -98,8 +95,6 @@ func (c Commit) Serialize(ctx serdeng.Context) ([]byte, error) {
 //
 // -  implements serde.Message
 type Propagate struct {
-	serde.UnimplementedMessage
-
 	to     []byte
 	commit crypto.Signature
 }
