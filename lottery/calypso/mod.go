@@ -148,7 +148,8 @@ func (c *Calypso) Read(id []byte, idents ...arc.Identity) ([]byte, error) {
 	return msg, nil
 }
 
-// UpdateAccess sets a new arc for a given ID
+// UpdateAccess implements lottery.Secret. It sets a new arc for a given ID,
+// provided the current arc allows the given ident to do so.
 func (c *Calypso) UpdateAccess(id []byte, ident arc.Identity, newAc arc.AccessControl) error {
 
 	messageJSON, ac, err := c.getRead(id)

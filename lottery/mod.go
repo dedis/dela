@@ -15,16 +15,6 @@ type Secret interface {
 	UpdateAccess(ID []byte, ident arc.Identity, ac arc.AccessControl) error
 }
 
-// Policy defines an interface to check the authorization of an action
-type Policy interface {
-	Match() error
-}
-
-// Approval defines an interface to describe a granted authorization
-type Approval interface {
-	GetIdentities() [][]byte
-}
-
 // EncryptedMessage wraps the K, C arguments needed to decrypt a message. K is
 // the ephemeral DH public key and C the blinded secret.
 type EncryptedMessage interface {
