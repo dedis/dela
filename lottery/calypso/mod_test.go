@@ -43,6 +43,7 @@ func TestMain(t *testing.T) {
 
 	// update the acess to allow the foreignID to read
 	d, err = d.Evolve(ArcRuleRead, ownerID, foreignID)
+	require.NoError(t, err)
 	err = calypso.UpdateAccess(id, ownerID, d)
 	require.NoError(t, err)
 
