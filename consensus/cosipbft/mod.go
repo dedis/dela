@@ -340,6 +340,11 @@ func (h rpcHandler) Process(req mino.Request) (serde.Message, error) {
 		types.WithCommit(forwardLink.GetCommitSignature()),
 		types.WithChangeSet(curr.Diff(next)),
 	)
+
+	if err != nil {
+		return nil, err
+	}
+
 	// TODO: check no more than f = (n-1)/2 changes, probably
 
 	// 5. Persist the link.

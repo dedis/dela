@@ -129,5 +129,3 @@ type fakeSrvTask struct {
 func (a fakeSrvTask) Consume(Context, inventory.WritablePage) error {
 	return a.err
 }
-
-type fakeTaskFactory struct{}

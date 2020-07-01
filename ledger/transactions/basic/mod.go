@@ -53,9 +53,9 @@ type ServerTask interface {
 	Consume(Context, inventory.WritablePage) error
 }
 
-// ClientTransaction is an implementation of the client ClientTransaction that is using a
-// signature to determine the identity belonging to it. It also wraps a task
-// that will be executed.
+// ClientTransaction is an implementation of the client ClientTransaction that
+// is using a signature to determine the identity belonging to it. It also wraps
+// a task that will be executed.
 //
 // - implements transactions.ClientTransaction
 type ClientTransaction struct {
