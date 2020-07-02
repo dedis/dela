@@ -12,20 +12,41 @@ import (
 	"golang.org/x/xerrors"
 )
 
-var formats = registry.NewSimpleRegistry()
+var algFormats = registry.NewSimpleRegistry()
 
-func Register(c serde.Format, f serde.FormatEngine) {
-	formats.Register(c, f)
+// RegisterAlgorithmFormat registers the engine for the provided format.
+func RegisterAlgorithmFormat(c serde.Format, f serde.FormatEngine) {
+	algFormats.Register(c, f)
 }
 
+// Algorithm contains information about a signature algorithm.
+//
+// - implements serde.Message
 type Algorithm struct {
-	serde.Message
-
 	name string
 }
 
+// NewAlgorithm returns a new algorithm from the provided name.
 func NewAlgorithm(name string) Algorithm {
 	return Algorithm{name: name}
+}
+
+// GetName returns the name of the algorithm.
+func (alg Algorithm) GetName() string {
+	return alg.name
+}
+
+// Serialize implements serde.Message. It looks up the format and returns the
+// serialized data of the algorithm.
+func (alg Algorithm) Serialize(ctx serde.Context) ([]byte, error) {
+	format := algFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, alg)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't encode algorithm: %v", err)
+	}
+
+	return data, nil
 }
 
 // PublicKeyFactory is a public key factory for commonly known algorithms.
@@ -53,18 +74,19 @@ func (f PublicKeyFactory) RegisterAlgorithm(algo string, factory crypto.PublicKe
 	f.factories[algo] = factory
 }
 
-// Deserialize implements serde.Factory.
+// Deserialize implements serde.Factory. It looks up the format and returns the
+// public key of the data if appropriate, otherwise an error.
 func (f PublicKeyFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	format := formats.Get(ctx.GetFormat())
+	format := algFormats.Get(ctx.GetFormat())
 
 	m, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't decode algorithm: %v", err)
 	}
 
 	alg, ok := m.(Algorithm)
 	if !ok {
-		return nil, xerrors.New("invalid algorithm")
+		return nil, xerrors.Errorf("invalid message of type '%T'", m)
 	}
 
 	factory := f.factories[alg.name]
@@ -75,6 +97,8 @@ func (f PublicKeyFactory) Deserialize(ctx serde.Context, data []byte) (serde.Mes
 	return factory.PublicKeyOf(ctx, data)
 }
 
+// PublicKeyOf implements crypto.PublicKeyFactory. It returns the public key of
+// the data if appropriate, otherwise an error.
 func (f PublicKeyFactory) PublicKeyOf(ctx serde.Context, data []byte) (crypto.PublicKey, error) {
 	msg, err := f.Deserialize(ctx, data)
 	if err != nil {
@@ -105,18 +129,19 @@ func (f SignatureFactory) RegisterAlgorithm(name string, factory crypto.Signatur
 	f.factories[name] = factory
 }
 
-// Deserialize implements serde.Factory.
+// Deserialize implements serde.Factory. It looks up the format and returns the
+// signature of the data if appropriate, otherwise an error.
 func (f SignatureFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	format := formats.Get(ctx.GetFormat())
+	format := algFormats.Get(ctx.GetFormat())
 
 	m, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't decode algorithm: %v", err)
 	}
 
 	alg, ok := m.(Algorithm)
 	if !ok {
-		return nil, xerrors.New("invalid algorithm")
+		return nil, xerrors.Errorf("invalid message of type '%T'", m)
 	}
 
 	factory := f.factories[alg.name]
@@ -127,6 +152,8 @@ func (f SignatureFactory) Deserialize(ctx serde.Context, data []byte) (serde.Mes
 	return factory.SignatureOf(ctx, data)
 }
 
+// SignatureOf implements crypto.SignatureFactory. It returns the signature of
+// the data if appropriate, otherwise an error.
 func (f SignatureFactory) SignatureOf(ctx serde.Context, data []byte) (crypto.Signature, error) {
 	msg, err := f.Deserialize(ctx, data)
 	if err != nil {

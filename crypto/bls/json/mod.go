@@ -8,16 +8,22 @@ import (
 )
 
 func init() {
-	bls.RegisterPublicKey(serde.FormatJSON, pubkeyFormat{})
-	bls.RegisterSignature(serde.FormatJSON, sigFormat{})
+	bls.RegisterPublicKeyFormat(serde.FormatJSON, pubkeyFormat{})
+	bls.RegisterSignatureFormat(serde.FormatJSON, sigFormat{})
 }
 
+// PubkeyFormat is the engine to encode and decode BLS-BN256 public keys in JSON
+// format.
+//
+// - implements serde.FormatEngine
 type pubkeyFormat struct{}
 
+// Encode implements serde.FormatEngine. It serialized the public key message in
+// JSON if appropriate, otherwise it returns an error.
 func (f pubkeyFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	pubkey, ok := msg.(bls.PublicKey)
 	if !ok {
-		return nil, xerrors.New("invalid bls public key")
+		return nil, xerrors.Errorf("unsupported message of type '%T'", msg)
 	}
 
 	buffer, err := pubkey.MarshalBinary()
@@ -32,12 +38,14 @@ func (f pubkeyFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, erro
 
 	data, err := ctx.Marshal(m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't marshal: %v", err)
 	}
 
 	return data, nil
 }
 
+// Decode implements serde.FormatEngine. It populates the public key with JSON
+// data if appropriate, otherwise it returns an error.
 func (f pubkeyFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := json.PublicKey{}
 	err := ctx.Unmarshal(data, &m)
@@ -53,12 +61,18 @@ func (f pubkeyFormat) Decode(ctx serde.Context, data []byte) (serde.Message, err
 	return pubkey, nil
 }
 
+// SigFormat is the engine to encode and decode signature messages in JSON
+// format.
+//
+// - implements serde.FormatEngine
 type sigFormat struct{}
 
+// Encode implements serde.FormatEngine. It returns the serialized data of the
+// signature message if appropriate, otherwise an error.
 func (f sigFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	sig, ok := msg.(bls.Signature)
 	if !ok {
-		return nil, xerrors.New("invalid signature")
+		return nil, xerrors.Errorf("unsupported message of type '%T'", msg)
 	}
 
 	// The BLS signature cannot return an error so it is ignored.
@@ -72,12 +86,14 @@ func (f sigFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) 
 
 	data, err := ctx.Marshal(m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't marshal: %v", err)
 	}
 
 	return data, nil
 }
 
+// Decode implements serde.FormatEngine. It populates the signature with the
+// JSON data if appropriate, otherwise it returns an error.
 func (f sigFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := json.Signature{}
 	err := ctx.Unmarshal(data, &m)

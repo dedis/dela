@@ -10,6 +10,14 @@ import (
 	"golang.org/x/xerrors"
 )
 
+func TestExpression_GetMatches(t *testing.T) {
+	expr := Expression{
+		matches: map[string]struct{}{"A": {}, "B": {}},
+	}
+
+	require.Len(t, expr.GetMatches(), 2)
+}
+
 func TestExpression_Evolve(t *testing.T) {
 	expr := newExpression()
 

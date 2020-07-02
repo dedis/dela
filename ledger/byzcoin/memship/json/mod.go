@@ -18,8 +18,13 @@ type Task struct {
 	Authority json.RawMessage
 }
 
+// TaskFormat is the engine to encode and decode tasks in JSON format.
+//
+// - implements serde.FormatEngine
 type taskFormat struct{}
 
+// Encode implements serde.FormatEngine. It returns the JSON representation of
+// the task.
 func (f taskFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	var task memship.ClientTask
 	switch in := msg.(type) {
@@ -28,7 +33,7 @@ func (f taskFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error)
 	case memship.ServerTask:
 		task = in.ClientTask
 	default:
-		return nil, xerrors.Errorf("invalid task")
+		return nil, xerrors.Errorf("unsupported message of type '%T'", msg)
 	}
 
 	authority, err := task.GetAuthority().Serialize(ctx)
@@ -42,12 +47,14 @@ func (f taskFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error)
 
 	data, err := ctx.Marshal(m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't marshal: %v", err)
 	}
 
 	return data, nil
 }
 
+// Decode implements serde.FormatEngine. It populates the task from the data in
+// JSON format if appropriate, otherwise returns an error.
 func (f taskFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Task{}
 	err := ctx.Unmarshal(data, &m)
@@ -59,7 +66,7 @@ func (f taskFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error
 
 	fac, ok := factory.(viewchange.AuthorityFactory)
 	if !ok {
-		return nil, xerrors.Errorf("invalid factory")
+		return nil, xerrors.Errorf("invalid factory of type '%T'", factory)
 	}
 
 	roster, err := fac.AuthorityOf(ctx, m.Authority)

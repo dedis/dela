@@ -313,25 +313,26 @@ func TestOverlay_SetupRelays(t *testing.T) {
 		context:        json.NewContext(),
 	}
 
-	sender, _, err := overlay.setupRelays(ctx, fake.NewAddress(0), rting, fake.MessageFactory{})
+	fac := fake.MessageFactory{}
+
+	sender, _, err := overlay.setupRelays(ctx, fake.NewAddress(0), rting, fac)
 	require.NoError(t, err)
 	require.Len(t, sender.clients, 2)
 
 	overlay.connFactory = fakeConnFactory{errConn: xerrors.New("oops")}
-	_, _, err = overlay.setupRelays(ctx, fake.NewAddress(0), rting, fake.MessageFactory{})
+	_, _, err = overlay.setupRelays(ctx, fake.NewAddress(0), rting, fac)
 	require.EqualError(t, err,
 		"couldn't setup relay to fake.Address[1]: couldn't open relay: oops")
 
 	overlay.connFactory = fakeConnFactory{errStream: xerrors.New("oops")}
-	_, _, err = overlay.setupRelays(ctx, fake.NewAddress(0), rting, fake.MessageFactory{})
+	_, _, err = overlay.setupRelays(ctx, fake.NewAddress(0), rting, fac)
 	require.EqualError(t, err,
 		"couldn't setup relay to fake.Address[1]: couldn't send routing: oops")
 
 	overlay.connFactory = fakeConnFactory{}
-	overlay.context = fake.NewBadContext()
-	_, _, err = overlay.setupRelays(ctx, fake.NewAddress(0), rting, fake.MessageFactory{})
+	_, _, err = overlay.setupRelays(ctx, fake.NewAddress(0), badRting{Routing: rting}, fac)
 	require.EqualError(t, err,
-		"couldn't setup relay to fake.Address[1]: couldn't pack routing: fake error")
+		"couldn't setup relay to fake.Address[1]: couldn't pack routing: oops")
 }
 
 func TestConnectionFactory_FromAddress(t *testing.T) {
@@ -477,4 +478,12 @@ func (s fakeCerts) Load(mino.Address) *tls.Certificate {
 
 func (s fakeCerts) Fetch(certs.Dialable, []byte) error {
 	return s.err
+}
+
+type badRting struct {
+	routing.Routing
+}
+
+func (r badRting) Serialize(serde.Context) ([]byte, error) {
+	return nil, xerrors.New("oops")
 }

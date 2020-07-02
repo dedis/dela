@@ -7,9 +7,32 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/kyber/v3"
 	"golang.org/x/xerrors"
 )
+
+func init() {
+	RegisterPublicKeyFormat(fake.GoodFormat, fake.Format{Msg: PublicKey{}})
+	RegisterPublicKeyFormat(serde.Format("BAD_TYPE"), fake.Format{Msg: fake.Message{}})
+	RegisterPublicKeyFormat(fake.BadFormat, fake.NewBadFormat())
+	RegisterSignatureFormat(fake.GoodFormat, fake.Format{Msg: Signature{}})
+	RegisterSignatureFormat(serde.Format("BAD_TYPE"), fake.Format{Msg: fake.Message{}})
+	RegisterSignatureFormat(fake.BadFormat, fake.NewBadFormat())
+}
+
+func TestPublicKey_New(t *testing.T) {
+	signer := NewSigner()
+	data, err := signer.GetPublicKey().MarshalBinary()
+	require.NoError(t, err)
+
+	pk, err := NewPublicKey(data)
+	require.NoError(t, err)
+	require.True(t, signer.GetPublicKey().Equal(pk))
+
+	_, err = NewPublicKey(nil)
+	require.Error(t, err)
+}
 
 func TestPublicKey_MarshalBinary(t *testing.T) {
 	signer := NewSigner()
@@ -17,6 +40,17 @@ func TestPublicKey_MarshalBinary(t *testing.T) {
 	buffer, err := signer.GetPublicKey().MarshalBinary()
 	require.NoError(t, err)
 	require.NotEmpty(t, buffer)
+}
+
+func TestPublicKey_Serialize(t *testing.T) {
+	pubkey := NewPublicKeyFromPoint(nil)
+
+	data, err := pubkey.Serialize(fake.NewContext())
+	require.NoError(t, err)
+	require.Equal(t, "fake format", string(data))
+
+	_, err = pubkey.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, "couldn't encode public key: fake error")
 }
 
 func TestPublicKey_Verify(t *testing.T) {
@@ -65,9 +99,34 @@ func TestPublicKey_String(t *testing.T) {
 	require.Equal(t, "bls:malformed_point", str)
 }
 
+func TestPublicKeyFactory_Deserialize(t *testing.T) {
+	factory := NewPublicKeyFactory()
+
+	msg, err := factory.Deserialize(fake.NewContext(), nil)
+	require.NoError(t, err)
+	require.Equal(t, PublicKey{}, msg)
+
+	_, err = factory.Deserialize(fake.NewBadContext(), nil)
+	require.EqualError(t, err, "couldn't decode public key: fake error")
+}
+
+func TestPublicKeyFactory_PublicKeyOf(t *testing.T) {
+	factory := NewPublicKeyFactory()
+
+	pk, err := factory.PublicKeyOf(fake.NewContext(), nil)
+	require.NoError(t, err)
+	require.Equal(t, PublicKey{}, pk)
+
+	_, err = factory.PublicKeyOf(fake.NewBadContext(), nil)
+	require.EqualError(t, err, "couldn't decode public key: fake error")
+
+	_, err = factory.PublicKeyOf(fake.NewContextWithFormat(serde.Format("BAD_TYPE")), nil)
+	require.EqualError(t, err, "invalid public key of type 'fake.Message'")
+}
+
 func TestSignature_MarshalBinary(t *testing.T) {
 	f := func(data []byte) bool {
-		sig := Signature{data: data}
+		sig := NewSignature(data)
 		buffer, err := sig.MarshalBinary()
 		require.NoError(t, err)
 		require.Equal(t, data, buffer)
@@ -77,6 +136,17 @@ func TestSignature_MarshalBinary(t *testing.T) {
 
 	err := quick.Check(f, nil)
 	require.NoError(t, err)
+}
+
+func TestSignature_Serialize(t *testing.T) {
+	sig := Signature{}
+
+	data, err := sig.Serialize(fake.NewContext())
+	require.NoError(t, err)
+	require.Equal(t, "fake format", string(data))
+
+	_, err = sig.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, "couldn't encode signature: fake error")
 }
 
 func TestSignature_Equal(t *testing.T) {
@@ -94,6 +164,31 @@ func TestSignature_Equal(t *testing.T) {
 
 	err := quick.Check(f, nil)
 	require.NoError(t, err)
+}
+
+func TestSignatureFactory_Deserialize(t *testing.T) {
+	factory := NewSignatureFactory()
+
+	msg, err := factory.Deserialize(fake.NewContext(), nil)
+	require.NoError(t, err)
+	require.Equal(t, Signature{}, msg)
+
+	_, err = factory.Deserialize(fake.NewBadContext(), nil)
+	require.EqualError(t, err, "couldn't decode signature: fake error")
+}
+
+func TestSignatureFactory_SignatureOf(t *testing.T) {
+	factory := NewSignatureFactory()
+
+	sig, err := factory.SignatureOf(fake.NewContext(), nil)
+	require.NoError(t, err)
+	require.Equal(t, Signature{}, sig)
+
+	_, err = factory.SignatureOf(fake.NewBadContext(), nil)
+	require.EqualError(t, err, "couldn't decode signature: fake error")
+
+	_, err = factory.SignatureOf(fake.NewContextWithFormat(serde.Format("BAD_TYPE")), nil)
+	require.EqualError(t, err, "invalid signature of type 'fake.Message'")
 }
 
 func TestVerifier_Verify(t *testing.T) {

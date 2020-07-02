@@ -14,6 +14,7 @@ type Instance struct {
 	AccessControl []byte
 }
 
+// Serialize implements serde.Message.
 func (i *Instance) Serialize(serde.Context) ([]byte, error) {
 	return nil, xerrors.New("not implemented")
 }

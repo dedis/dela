@@ -41,8 +41,14 @@ type Message struct {
 	BlockPayload   *BlockPayload   `json:",omitempty"`
 }
 
+// MessageFormat is the engine to encode and decode blueprint and payload
+// messages in JSON format.
+//
+// - implements serde.FormatEngine
 type messageFormat struct{}
 
+// Encode implements serde.FormatEngine. It returns the serialized message in
+// JSON format.
 func (f messageFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	var m Message
 
@@ -92,16 +98,20 @@ func (f messageFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, err
 		}
 
 		m = Message{BlockPayload: &p}
+	default:
+		return nil, xerrors.Errorf("unsupported message of type '%T'", msg)
 	}
 
 	data, err := ctx.Marshal(m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't marshal: %v", err)
 	}
 
 	return data, nil
 }
 
+// Decode implements serde.FormatEngine. It deserialized the message from the
+// data in JSON format.
 func (f messageFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Message{}
 	err := ctx.Unmarshal(data, &m)
@@ -148,7 +158,7 @@ func decodeRoster(ctx serde.Context, data []byte) (viewchange.Authority, error) 
 
 	fac, ok := factory.(viewchange.AuthorityFactory)
 	if !ok {
-		return nil, xerrors.New("invalid factory")
+		return nil, xerrors.Errorf("invalid factory of type '%T'", factory)
 	}
 
 	authority, err := fac.AuthorityOf(ctx, data)
@@ -164,7 +174,7 @@ func decodeTxs(ctx serde.Context, raws Transactions) ([]transactions.ServerTrans
 
 	fac, ok := factory.(transactions.TxFactory)
 	if !ok {
-		return nil, xerrors.New("invalid factory")
+		return nil, xerrors.Errorf("invalid factory of type '%T'", factory)
 	}
 
 	txs := make([]transactions.ServerTransaction, len(raws))

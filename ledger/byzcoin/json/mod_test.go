@@ -12,7 +12,7 @@ import (
 	"golang.org/x/xerrors"
 )
 
-func TestBlueprint_VisitJSON(t *testing.T) {
+func TestMessageFormat_Blueprint_Encode(t *testing.T) {
 	blueprint := types.NewBlueprint(makeTxs(nil))
 
 	format := messageFormat{}
@@ -23,12 +23,18 @@ func TestBlueprint_VisitJSON(t *testing.T) {
 	expected := `{"Blueprint":{"Transactions":[{}]}}`
 	require.Equal(t, expected, string(data))
 
+	_, err = format.Encode(ctx, fake.Message{})
+	require.EqualError(t, err, "unsupported message of type 'fake.Message'")
+
+	_, err = format.Encode(fake.NewBadContext(), blueprint)
+	require.EqualError(t, err, "couldn't marshal: fake error")
+
 	blueprint = types.NewBlueprint(makeTxs(xerrors.New("oops")))
 	_, err = format.Encode(ctx, blueprint)
 	require.EqualError(t, err, "couldn't serialize tx: oops")
 }
 
-func TestGenesisPayload_VisitJSON(t *testing.T) {
+func TestMessageFormat_GenesisPayload_Encode(t *testing.T) {
 	payload := types.NewGenesisPayload([]byte{2}, fakeAuthority{})
 
 	format := messageFormat{}
@@ -44,7 +50,7 @@ func TestGenesisPayload_VisitJSON(t *testing.T) {
 	require.EqualError(t, err, "couldn't serialize roster: oops")
 }
 
-func TestBlockPayload_VisitJSON(t *testing.T) {
+func TestMessageFormat_BlockPayload_Encode(t *testing.T) {
 	payload := types.NewBlockPayload([]byte{4}, makeTxs(nil))
 
 	format := messageFormat{}
@@ -60,7 +66,7 @@ func TestBlockPayload_VisitJSON(t *testing.T) {
 	require.EqualError(t, err, "couldn't serialize tx: oops")
 }
 
-func TestMessageFactory_VisitJSON(t *testing.T) {
+func TestMessageFormat_Decode(t *testing.T) {
 	format := messageFormat{}
 	ctx := serde.NewContext(fake.ContextEngine{})
 	ctx = serde.WithFactory(ctx, types.RosterKey{}, fakeAuthorityFactory{})
@@ -85,6 +91,10 @@ func TestMessageFactory_VisitJSON(t *testing.T) {
 	require.EqualError(t, err,
 		"couldn't deserialize payload: couldn't deserialize tx: oops")
 
+	badCtx = serde.WithFactory(ctx, types.TxKey{}, nil)
+	_, err = format.Decode(badCtx, []byte(`{"BlockPayload":{}}`))
+	require.EqualError(t, err, "couldn't deserialize payload: invalid factory of type '<nil>'")
+
 	// GenesisPayload message.
 	genesis, err := format.Decode(ctx, []byte(`{"GenesisPayload":{"Roster":{},"Root":[2]}}`))
 	require.NoError(t, err)
@@ -93,6 +103,10 @@ func TestMessageFactory_VisitJSON(t *testing.T) {
 	badCtx = serde.WithFactory(ctx, types.RosterKey{}, fakeAuthorityFactory{err: xerrors.New("oops")})
 	_, err = format.Decode(badCtx, []byte(`{"GenesisPayload":{"Roster":[]}}`))
 	require.EqualError(t, err, "couldn't deserialize roster: oops")
+
+	badCtx = serde.WithFactory(ctx, types.RosterKey{}, nil)
+	_, err = format.Decode(badCtx, []byte(`{"GenesisPayload":{}}`))
+	require.EqualError(t, err, "couldn't deserialize roster: invalid factory of type '<nil>'")
 
 	// Common.
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))

@@ -12,6 +12,7 @@ import (
 
 var msgFormats = registry.NewSimpleRegistry()
 
+// RegisterMessageFormat registers the engine for the provided format.
 func RegisterMessageFormat(c serde.Format, f serde.FormatEngine) {
 	msgFormats.Register(c, f)
 }
@@ -24,23 +25,26 @@ type Blueprint struct {
 	txs []transactions.ServerTransaction
 }
 
+// NewBlueprint creates a new blueprint message from the list of transactions.
 func NewBlueprint(txs []transactions.ServerTransaction) Blueprint {
 	return Blueprint{
 		txs: txs,
 	}
 }
 
+// GetTransactions returns the list of transactions for the blueprint.
 func (b Blueprint) GetTransactions() []transactions.ServerTransaction {
 	return append([]transactions.ServerTransaction{}, b.txs...)
 }
 
-// Serialize implements serde.Message.
+// Serialize implements serde.Message. It looks up the format and returns the
+// serialized data for the blueprint.
 func (b Blueprint) Serialize(ctx serde.Context) ([]byte, error) {
 	format := msgFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, b)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't encode blueprint: %v", err)
 	}
 
 	return data, nil
@@ -56,6 +60,7 @@ type GenesisPayload struct {
 	root   []byte
 }
 
+// NewGenesisPayload creates a new payload from the root and the roster.
 func NewGenesisPayload(root []byte, roster viewchange.Authority) GenesisPayload {
 	return GenesisPayload{
 		root:   root,
@@ -63,10 +68,12 @@ func NewGenesisPayload(root []byte, roster viewchange.Authority) GenesisPayload 
 	}
 }
 
+// GetRoot returns the root that is associated with an inventory page.
 func (p GenesisPayload) GetRoot() []byte {
 	return append([]byte{}, p.root...)
 }
 
+// GetRoster returns the initial roster of a chain.
 func (p GenesisPayload) GetRoster() viewchange.Authority {
 	return p.roster
 }
@@ -86,13 +93,14 @@ func (p GenesisPayload) Fingerprint(w io.Writer) error {
 	return nil
 }
 
-// Serialize implements serde.Message.
+// Serialize implements serde.Message. It looks up the format and returns the
+// serialized data for the payload.
 func (p GenesisPayload) Serialize(ctx serde.Context) ([]byte, error) {
 	format := msgFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, p)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't encode payload: %v", err)
 	}
 
 	return data, nil
@@ -108,6 +116,8 @@ type BlockPayload struct {
 	root []byte
 }
 
+// NewBlockPayload returns a new block payload from the root and the list of
+// transactions.
 func NewBlockPayload(root []byte, txs []transactions.ServerTransaction) BlockPayload {
 	return BlockPayload{
 		root: root,
@@ -115,10 +125,12 @@ func NewBlockPayload(root []byte, txs []transactions.ServerTransaction) BlockPay
 	}
 }
 
+// GetRoot returns the root associated with an inventory page.
 func (p BlockPayload) GetRoot() []byte {
 	return append([]byte{}, p.root...)
 }
 
+// GetTransactions return the list of transactions for the block payload.
 func (p BlockPayload) GetTransactions() []transactions.ServerTransaction {
 	return append([]transactions.ServerTransaction{}, p.txs...)
 }
@@ -142,13 +154,16 @@ func (p BlockPayload) Serialize(ctx serde.Context) ([]byte, error) {
 
 	data, err := format.Encode(ctx, p)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't encode payload: %v", err)
 	}
 
 	return data, nil
 }
 
+// RosterKey is the key of a roster factory.
 type RosterKey struct{}
+
+// TxKey is the key of a transaction factory.
 type TxKey struct{}
 
 // MessageFactory is a message factory to deserialize the blueprint and payload
@@ -160,6 +175,7 @@ type MessageFactory struct {
 	txFactory     transactions.TxFactory
 }
 
+// NewMessageFactory returns a new message factory.
 func NewMessageFactory(rf viewchange.AuthorityFactory, tf transactions.TxFactory) MessageFactory {
 	return MessageFactory{
 		rosterFactory: rf,
@@ -176,7 +192,7 @@ func (f MessageFactory) Deserialize(ctx serde.Context, data []byte) (serde.Messa
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't decode message: %v", err)
 	}
 
 	return msg, nil

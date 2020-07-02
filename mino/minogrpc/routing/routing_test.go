@@ -8,24 +8,78 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
 )
+
+func init() {
+	Register(fake.GoodFormat, fake.Format{Msg: TreeRouting{}})
+	Register(serde.Format("invalid"), fake.Format{})
+	Register(fake.BadFormat, fake.NewBadFormat())
+}
 
 func TestTreeRoutingFactory_GetAddressFactory(t *testing.T) {
 	factory := NewTreeRoutingFactory(3, fake.AddressFactory{})
 	require.NotNil(t, factory.GetAddressFactory())
 }
 
-func TestTreeRouting_New(t *testing.T) {
+func TestTreeRoutingFactory_Make(t *testing.T) {
+	factory := NewTreeRoutingFactory(3, fake.AddressFactory{})
 	authority := fake.NewAuthority(10, fake.NewSigner)
 
-	routing, err := NewTreeRouting(authority)
+	routing, err := factory.Make(authority.GetAddress(0), authority)
 	require.NoError(t, err)
 	require.NotNil(t, routing)
 	// Root is in the iterator so we expect the length of the iterator.
 	require.Len(t, routing.(TreeRouting).routingNodes, 10)
+}
+
+func TestTreeRoutingFactory_Deserialize(t *testing.T) {
+	factory := NewTreeRoutingFactory(3, fake.AddressFactory{})
+
+	ctx := fake.NewContext()
+
+	msg, err := factory.Deserialize(ctx, nil)
+	require.NoError(t, err)
+	require.IsType(t, TreeRouting{}, msg)
+
+	_, err = factory.Deserialize(fake.NewBadContext(), nil)
+	require.EqualError(t, err, "couldn't decode routing: fake error")
+}
+
+func TestTreeRoutingFactory_RoutingOf(t *testing.T) {
+	factory := NewTreeRoutingFactory(3, fake.AddressFactory{})
+
+	ctx := fake.NewContext()
+
+	rting, err := factory.RoutingOf(ctx, nil)
+	require.NoError(t, err)
+	require.IsType(t, TreeRouting{}, rting)
+
+	_, err = factory.RoutingOf(fake.NewBadContext(), nil)
+	require.EqualError(t, err, "couldn't decode routing: fake error")
+
+	_, err = factory.RoutingOf(fake.NewContextWithFormat("invalid"), nil)
+	require.EqualError(t, err, "invalid routing of type '<nil>'")
+}
+
+func TestTreeRouting_New(t *testing.T) {
+	authority := fake.NewAuthority(10, fake.NewSigner)
+
+	_, err := NewTreeRouting(mino.NewAddresses(fake.NewBadAddress()))
+	require.EqualError(t, err, "failed to marshal address: fake error")
 
 	_, err = NewTreeRouting(authority, WithHashFactory(fake.NewHashFactory(fake.NewBadHash())))
 	require.EqualError(t, err, "failed to write address: fake error")
+}
+
+func TestTreeRouting_GetAddresses(t *testing.T) {
+	authority := fake.NewAuthority(5, fake.NewSigner)
+
+	rting, err := NewTreeRouting(authority)
+	require.NoError(t, err)
+
+	addrs := rting.(TreeRouting).GetAddresses()
+	require.Len(t, addrs, 5)
 }
 
 func TestTreeRouting_GetRoute(t *testing.T) {
@@ -191,6 +245,20 @@ func TestTreeRouting_GetDirectLinks(t *testing.T) {
 	require.Len(t, treeRouting.GetDirectLinks(fake.NewAddress(999)), 0)
 }
 
+func TestTreeRouting_Serialize(t *testing.T) {
+	authority := fake.NewAuthority(3, fake.NewSigner)
+
+	treeRouting, err := NewTreeRouting(authority)
+	require.NoError(t, err)
+
+	data, err := treeRouting.Serialize(fake.NewContext())
+	require.NoError(t, err)
+	require.Equal(t, "fake format", string(data))
+
+	_, err = treeRouting.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, "couldn't encode routing: fake error")
+}
+
 func TestTreeRouting_Display(t *testing.T) {
 	authority := fake.NewAuthority(3, fake.NewSigner)
 
@@ -275,6 +343,16 @@ func TestTreeShape(t *testing.T) {
 		require.Equal(t, expected, getHeight(node))
 	}
 
+}
+
+func TestAddresses_Sort(t *testing.T) {
+	addrs := Addresses{
+		buffers: [][]byte{[]byte("B"), []byte("A")},
+		addrs:   []mino.Address{fake.NewAddress(1), fake.NewAddress(0)},
+	}
+
+	sort.Sort(addrs)
+	require.Equal(t, fake.NewAddress(0), addrs.addrs[0])
 }
 
 // -----------------------------------------------------------------------------

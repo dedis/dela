@@ -16,7 +16,7 @@ import (
 
 const (
 	// Algorithm is the name of the curve used for the BLS signature.
-	Algorithm = "CURVE-BN256"
+	Algorithm = "BLS-CURVE-BN256"
 )
 
 var (
@@ -26,11 +26,13 @@ var (
 	sigFormats    = registry.NewSimpleRegistry()
 )
 
-func RegisterPublicKey(c serde.Format, f serde.FormatEngine) {
+// RegisterPublicKeyFormat registers the engine for the provided format.
+func RegisterPublicKeyFormat(c serde.Format, f serde.FormatEngine) {
 	pubkeyFormats.Register(c, f)
 }
 
-func RegisterSignature(c serde.Format, f serde.FormatEngine) {
+// RegisterSignatureFormat registers the engine for the provided format.
+func RegisterSignatureFormat(c serde.Format, f serde.FormatEngine) {
 	sigFormats.Register(c, f)
 }
 
@@ -39,6 +41,8 @@ type PublicKey struct {
 	point kyber.Point
 }
 
+// NewPublicKey creates a new public key by unmarshaling the data into BN256
+// point.
 func NewPublicKey(data []byte) (PublicKey, error) {
 	point := suite.Point()
 	err := point.UnmarshalBinary(data)
@@ -49,6 +53,7 @@ func NewPublicKey(data []byte) (PublicKey, error) {
 	return PublicKey{point: point}, nil
 }
 
+// NewPublicKeyFromPoint creates a new public key from an existing point.
 func NewPublicKeyFromPoint(point kyber.Point) PublicKey {
 	return PublicKey{
 		point: point,
@@ -64,13 +69,10 @@ func (pk PublicKey) MarshalBinary() ([]byte, error) {
 // Serialize implements serde.Message.
 func (pk PublicKey) Serialize(ctx serde.Context) ([]byte, error) {
 	format := pubkeyFormats.Get(ctx.GetFormat())
-	if format == nil {
-		return nil, xerrors.New("invalid format")
-	}
 
 	data, err := format.Encode(ctx, pk)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't encode public key: %v", err)
 	}
 
 	return data, nil
@@ -132,6 +134,7 @@ type Signature struct {
 	data []byte
 }
 
+// NewSignature creates a new signature from the provided data.
 func NewSignature(data []byte) Signature {
 	return Signature{
 		data: data,
@@ -147,13 +150,10 @@ func (sig Signature) MarshalBinary() ([]byte, error) {
 // Serialize implements serde.Message.
 func (sig Signature) Serialize(ctx serde.Context) ([]byte, error) {
 	format := sigFormats.Get(ctx.GetFormat())
-	if format == nil {
-		return nil, xerrors.New("invalid format")
-	}
 
 	data, err := format.Encode(ctx, sig)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't encode signature: %v", err)
 	}
 
 	return data, nil
@@ -170,6 +170,9 @@ func (sig Signature) Equal(other crypto.Signature) bool {
 }
 
 // publicKeyFactory creates BLS compatible public key from protobuf messages.
+//
+// - serde.Factory
+// - crypto.PublicKeyFactory
 type publicKeyFactory struct{}
 
 // NewPublicKeyFactory returns a new instance of the factory.
@@ -177,21 +180,21 @@ func NewPublicKeyFactory() crypto.PublicKeyFactory {
 	return publicKeyFactory{}
 }
 
-// Deserialize implements serde.Factory.
+// Deserialize implements serde.Factory. It looks up the format and returns the
+// deserialized public key.
 func (f publicKeyFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := pubkeyFormats.Get(ctx.GetFormat())
-	if format == nil {
-		return nil, xerrors.New("invalid format")
-	}
 
 	m, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't decode public key: %v", err)
 	}
 
 	return m, nil
 }
 
+// PublicKeyOf implements crypto.PublicKeyFactory. It returns the public key
+// deserialized from the data.
 func (f publicKeyFactory) PublicKeyOf(ctx serde.Context, data []byte) (crypto.PublicKey, error) {
 	m, err := f.Deserialize(ctx, data)
 	if err != nil {
@@ -200,7 +203,7 @@ func (f publicKeyFactory) PublicKeyOf(ctx serde.Context, data []byte) (crypto.Pu
 
 	pubkey, ok := m.(crypto.PublicKey)
 	if !ok {
-		return nil, xerrors.New("invalid public key")
+		return nil, xerrors.Errorf("invalid public key of type '%T'", m)
 	}
 
 	return pubkey, nil
@@ -215,21 +218,21 @@ func NewSignatureFactory() crypto.SignatureFactory {
 	return signatureFactory{}
 }
 
-// Deserialize implements serde.Factory.
+// Deserialize implements serde.Factory. It looks up the format and returns the
+// message of the data if appropriate, otherwise an error.
 func (f signatureFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := sigFormats.Get(ctx.GetFormat())
-	if format == nil {
-		return nil, xerrors.New("invalid format")
-	}
 
 	m, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't decode signature: %v", err)
 	}
 
 	return m, nil
 }
 
+// SignatureOf implements crypto.SignatureFactory. It populates the signature
+// with the data if appropriate, otherwise it returns an error.
 func (f signatureFactory) SignatureOf(ctx serde.Context, data []byte) (crypto.Signature, error) {
 	m, err := f.Deserialize(ctx, data)
 	if err != nil {
@@ -238,7 +241,7 @@ func (f signatureFactory) SignatureOf(ctx serde.Context, data []byte) (crypto.Si
 
 	sig, ok := m.(Signature)
 	if !ok {
-		return nil, xerrors.New("invalid signature")
+		return nil, xerrors.Errorf("invalid signature of type '%T'", m)
 	}
 
 	return sig, nil

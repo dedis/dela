@@ -8,7 +8,7 @@ import (
 )
 
 func init() {
-	routing.Register(serde.FormatJSON, format{})
+	routing.Register(serde.FormatJSON, newRtingFormat())
 }
 
 // Address is the JSON format of an address.
@@ -20,16 +20,25 @@ type TreeRouting struct {
 	Addresses []Address
 }
 
-// Format is the implementation of the JSON format for a tree routing.
+// RtingFormat is the implementation of the JSON rtingFormat for a tree routing.
 //
-// - implements serde.Format
-type format struct{}
+// - implements serde.FormatEngine
+type rtingFormat struct {
+	height int
+}
 
-// Encode implements serde.Format. It serializes the given routing in JSON.
-func (f format) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
+func newRtingFormat() rtingFormat {
+	return rtingFormat{
+		height: 3,
+	}
+}
+
+// Encode implements serde.FormatEngine. It serializes the given routing in
+// JSON.
+func (f rtingFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	rting, ok := msg.(routing.TreeRouting)
 	if !ok {
-		return nil, xerrors.New("invalid routing")
+		return nil, xerrors.Errorf("found '%T' but expected '%T'", msg, rting)
 	}
 
 	addrs := rting.GetAddresses()
@@ -57,13 +66,15 @@ func (f format) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 
 	data, err := ctx.Marshal(m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't marshal to JSON: %v", err)
 	}
 
 	return data, nil
 }
 
-func (f format) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
+// Decode implements serde.FormatEngine. It populates the routing associated
+// with the data if appropriate, otherwise it returns an error.
+func (f rtingFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := TreeRouting{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {
@@ -74,7 +85,7 @@ func (f format) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 
 	fac, ok := factory.(mino.AddressFactory)
 	if !ok {
-		return nil, xerrors.Errorf("invalid address factory of type '%T'", factory)
+		return nil, xerrors.Errorf("found factory '%T'", factory)
 	}
 
 	addrs := make([]mino.Address, len(m.Addresses))
@@ -82,9 +93,14 @@ func (f format) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 		addrs[i] = fac.FromText(addr)
 	}
 
-	rting, err := routing.NewTreeRouting(mino.NewAddresses(addrs...), routing.WithRootAt(m.Root))
+	opts := []routing.TreeRoutingOption{
+		routing.WithRootAt(m.Root),
+		routing.WithHeight(f.height),
+	}
+
+	rting, err := routing.NewTreeRouting(mino.NewAddresses(addrs...), opts...)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't create tree routing: %v", err)
 	}
 
 	return rting, nil

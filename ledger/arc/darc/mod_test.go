@@ -10,6 +10,24 @@ import (
 	"golang.org/x/xerrors"
 )
 
+func init() {
+	RegisterAccessFormat(fake.GoodFormat, fake.Format{Msg: Access{}})
+	RegisterAccessFormat(fake.BadFormat, fake.NewBadFormat())
+}
+
+func TestAccess_WithRule(t *testing.T) {
+	access := NewAccess(WithRule("A", []string{"B", "C"}))
+
+	require.Len(t, access.rules, 1)
+	require.Len(t, access.rules["A"].matches, 2)
+}
+
+func TestAccess_GetRules(t *testing.T) {
+	access := NewAccess(WithRule("A", nil), WithRule("B", nil))
+
+	require.Len(t, access.GetRules(), 2)
+}
+
 func TestAccess_Evolve(t *testing.T) {
 	access := NewAccess()
 
@@ -76,4 +94,26 @@ func TestAccess_Fingerprint(t *testing.T) {
 	err = access.Fingerprint(fake.NewBadHashWithDelay(1))
 	require.EqualError(t, err,
 		"couldn't fingerprint rule '\x02': couldn't write match: fake error")
+}
+
+func TestAccess_Serialize(t *testing.T) {
+	access := NewAccess()
+
+	data, err := access.Serialize(fake.NewContext())
+	require.NoError(t, err)
+	require.Equal(t, "fake format", string(data))
+
+	_, err = access.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, "couldn't encode access: fake error")
+}
+
+func TestFactory_Deserialize(t *testing.T) {
+	factory := NewFactory()
+
+	msg, err := factory.Deserialize(fake.NewContext(), nil)
+	require.NoError(t, err)
+	require.IsType(t, Access{}, msg)
+
+	_, err = factory.Deserialize(fake.NewBadContext(), nil)
+	require.EqualError(t, err, "couldn't decode access: fake error")
 }

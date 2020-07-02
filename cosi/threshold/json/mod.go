@@ -10,7 +10,7 @@ import (
 )
 
 func init() {
-	threshold.Register(serde.FormatJSON, format{})
+	threshold.RegisterSignatureFormat(serde.FormatJSON, sigFormat{})
 }
 
 // Signature is the JSON message for the signature.
@@ -19,12 +19,12 @@ type Signature struct {
 	Aggregate json.RawMessage
 }
 
-type format struct{}
+type sigFormat struct{}
 
-func (f format) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
+func (f sigFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	sig, ok := msg.(*threshold.Signature)
 	if !ok {
-		return nil, xerrors.Errorf("invalid message type")
+		return nil, xerrors.Errorf("unsupported message of type '%T'", msg)
 	}
 
 	agg, err := sig.GetAggregate().Serialize(ctx)
@@ -39,25 +39,27 @@ func (f format) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 
 	data, err := ctx.Marshal(m)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't marshal message: %v", err)
+		return nil, xerrors.Errorf("couldn't marshal: %v", err)
 	}
 
 	return data, nil
 }
 
-func (f format) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
+func (f sigFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Signature{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
 	}
 
-	factory, ok := ctx.GetFactory(threshold.AggKey{}).(crypto.SignatureFactory)
+	factory := ctx.GetFactory(threshold.AggKey{})
+
+	fac, ok := factory.(crypto.SignatureFactory)
 	if !ok {
-		return nil, xerrors.Errorf("invalid factory")
+		return nil, xerrors.Errorf("invalid factory of type '%T'", factory)
 	}
 
-	agg, err := factory.SignatureOf(ctx, m.Aggregate)
+	agg, err := fac.SignatureOf(ctx, m.Aggregate)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't deserialize signature: %v", err)
 	}

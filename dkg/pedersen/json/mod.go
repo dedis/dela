@@ -71,6 +71,9 @@ type Message struct {
 	DecryptReply   *DecryptReply   `json:",omitempty"`
 }
 
+// MsgFormat is the engine to encode and decode dkg messages in JSON format.
+//
+// - implements serde.FormatEngine
 type msgFormat struct {
 	suite suites.Suite
 }
@@ -81,6 +84,8 @@ func newMsgFormat() msgFormat {
 	}
 }
 
+// Encode implements serde.FormatEngine. It returns the serialized data for the
+// message in JSON format.
 func (f msgFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	var m Message
 
@@ -178,16 +183,20 @@ func (f msgFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) 
 		}
 
 		m = Message{DecryptReply: &resp}
+	default:
+		return nil, xerrors.Errorf("unsupported message of type '%T'", msg)
 	}
 
 	data, err := ctx.Marshal(m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't marshal: %v", err)
 	}
 
 	return data, nil
 }
 
+// Decode implements serde.FormatEngine. It populates the message from the JSON
+// data if appropriate, otherwise it returns an error.
 func (f msgFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Message{}
 	err := ctx.Unmarshal(data, &m)
@@ -278,7 +287,7 @@ func (f msgFormat) decodeStart(ctx serde.Context, start *Start) (serde.Message, 
 
 	fac, ok := factory.(mino.AddressFactory)
 	if !ok {
-		return nil, xerrors.New("invalid factory")
+		return nil, xerrors.Errorf("invalid factory of type '%T'", factory)
 	}
 
 	addrs := make([]mino.Address, len(start.Addresses))

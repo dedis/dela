@@ -24,12 +24,18 @@ type ClientTask struct {
 	Access json.RawMessage
 }
 
+// AccessFormat is the engine to encode and decode access messages in JSON
+// format.
+//
+// - implements serde.FormatEngine
 type accessFormat struct{}
 
+// Encode implements serde.FormatEngine. It returns the JSON representation of
+// the access message if appropriate, otherwise an error.
 func (f accessFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	access, ok := msg.(darc.Access)
 	if !ok {
-		return nil, xerrors.New("invalid access")
+		return nil, xerrors.Errorf("unsupported message of type '%T'", msg)
 	}
 
 	rules := make(map[string][]string)
@@ -43,12 +49,14 @@ func (f accessFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, erro
 
 	data, err := ctx.Marshal(m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't marshal: %v", err)
 	}
 
 	return data, nil
 }
 
+// Decode implements serde.FormatEngine. It returns the message of the JSON data
+// if appropritate, otherwise it returns an error.
 func (f accessFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Access{}
 	err := ctx.Unmarshal(data, &m)
@@ -66,6 +74,9 @@ func (f accessFormat) Decode(ctx serde.Context, data []byte) (serde.Message, err
 	return access, nil
 }
 
+// TaskFormat is an engine to encode and decode task messages in JSON format.
+//
+// - implements serde.FormatEngine
 type taskFormat struct {
 	accessFormat serde.FormatEngine
 }
@@ -76,6 +87,8 @@ func newTaskFormat() taskFormat {
 	}
 }
 
+// Encode implements serde.FormatEngine. It returns the JSON data of the task
+// message if appropriate, otherwise an error.
 func (f taskFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	var act darc.ClientTask
 	switch in := msg.(type) {
@@ -84,7 +97,7 @@ func (f taskFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error)
 	case darc.ServerTask:
 		act = in.ClientTask
 	default:
-		return nil, xerrors.New("invalid client task")
+		return nil, xerrors.Errorf("unsupported message of type '%T'", msg)
 	}
 
 	access, err := f.accessFormat.Encode(ctx, act.GetAccess())
@@ -99,12 +112,14 @@ func (f taskFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error)
 
 	data, err := ctx.Marshal(m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't marshal: %v", err)
 	}
 
 	return data, nil
 }
 
+// Decode implements serde.FormatEngine. It returns the task message of the JSON
+// data if appropriate, otherwise an error.
 func (f taskFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := ClientTask{}
 	err := ctx.Unmarshal(data, &m)

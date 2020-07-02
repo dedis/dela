@@ -61,6 +61,13 @@ func (c *Call) Add(args ...interface{}) {
 	c.calls = append(c.calls, args)
 }
 
+// Clear clears the array of calls.
+func (c *Call) Clear() {
+	if c != nil {
+		c.calls = nil
+	}
+}
+
 // Address is a fake implementation of mino.Address
 type Address struct {
 	mino.Address
@@ -815,42 +822,66 @@ func (f MessageFactory) Deserialize(ctx serde.Context, data []byte) (serde.Messa
 	return Message{}, f.err
 }
 
+const (
+	GoodFormat = serde.Format("FakeGood")
+	BadFormat  = serde.Format("FakeBad")
+)
+
 type Format struct {
-	err error
+	err  error
+	Msg  serde.Message
+	Call *Call
 }
 
 func NewBadFormat() Format {
 	return Format{err: xerrors.New("fake error")}
 }
 
-func (f Format) Encode(serde.Context, serde.Message) ([]byte, error) {
-	return []byte{}, f.err
+func (f Format) Encode(ctx serde.Context, m serde.Message) ([]byte, error) {
+	f.Call.Add(ctx, m)
+	return []byte("fake format"), f.err
 }
 
-func (f Format) Decode(serde.Context, []byte) (serde.Message, error) {
-	return Message{}, f.err
+func (f Format) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
+	f.Call.Add(ctx, data)
+	return f.Msg, f.err
 }
 
 type ContextEngine struct {
-	Count *Counter
-	err   error
+	Count  *Counter
+	format serde.Format
+	err    error
+}
+
+func NewContext() serde.Context {
+	return serde.NewContext(ContextEngine{
+		format: GoodFormat,
+	})
+}
+
+func NewContextWithFormat(f serde.Format) serde.Context {
+	return serde.NewContext(ContextEngine{
+		format: f,
+	})
 }
 
 func NewBadContext() serde.Context {
 	return serde.NewContext(ContextEngine{
-		err: xerrors.New("fake error"),
+		format: BadFormat,
+		err:    xerrors.New("fake error"),
 	})
 }
 
 func NewBadContextWithDelay(delay int) serde.Context {
 	return serde.NewContext(ContextEngine{
-		Count: &Counter{Value: delay},
-		err:   xerrors.New("fake error"),
+		Count:  &Counter{Value: delay},
+		format: BadFormat,
+		err:    xerrors.New("fake error"),
 	})
 }
 
 func (ctx ContextEngine) GetFormat() serde.Format {
-	return serde.FormatJSON
+	return ctx.format
 }
 
 func (ctx ContextEngine) Marshal(m interface{}) ([]byte, error) {

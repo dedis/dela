@@ -70,7 +70,7 @@ func TestQSC_Listen(t *testing.T) {
 
 	select {
 	case <-bc.waiting:
-	case <-time.After(10 * time.Millisecond):
+	case <-time.After(100 * time.Millisecond):
 		t.Fatal("timeout")
 	}
 	require.NoError(t, actor.Close())

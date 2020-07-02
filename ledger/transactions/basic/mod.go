@@ -26,6 +26,7 @@ import (
 
 var txFormats = registry.NewSimpleRegistry()
 
+// RegisterTxFormat registers the engine for the provided format.
 func RegisterTxFormat(c serde.Format, f serde.FormatEngine) {
 	txFormats.Register(c, f)
 }
@@ -72,6 +73,7 @@ func (t ClientTransaction) GetID() []byte {
 	return t.hash[:]
 }
 
+// GetNonce returns the nonce of the transaction.
 func (t ClientTransaction) GetNonce() uint64 {
 	return t.nonce
 }
@@ -82,10 +84,13 @@ func (t ClientTransaction) GetIdentity() arc.Identity {
 	return t.identity
 }
 
+// GetSignature returns the signature transaction that will prove the
+// authenticity of the identity.
 func (t ClientTransaction) GetSignature() crypto.Signature {
 	return t.signature
 }
 
+// GetTask returns the task of the transaction.
 func (t ClientTransaction) GetTask() ClientTask {
 	return t.task
 }
@@ -149,14 +154,18 @@ type serverTransactionTemplate struct {
 	hashFactory crypto.HashFactory
 }
 
+// ServerTransactionOption is the type of an option when creating a new server
+// transaction.
 type ServerTransactionOption func(*serverTransactionTemplate)
 
+// WithNonce is an option to set the nonce of the transaction.
 func WithNonce(nonce uint64) ServerTransactionOption {
 	return func(tmpl *serverTransactionTemplate) {
 		tmpl.nonce = nonce
 	}
 }
 
+// WithIdentity is an option to set the identity of the transaction.
 func WithIdentity(ident crypto.PublicKey, sig crypto.Signature) ServerTransactionOption {
 	return func(tmpl *serverTransactionTemplate) {
 		tmpl.identity = ident
@@ -164,24 +173,30 @@ func WithIdentity(ident crypto.PublicKey, sig crypto.Signature) ServerTransactio
 	}
 }
 
+// WithTask is an option to set the task of a transaction.
 func WithTask(task ServerTask) ServerTransactionOption {
 	return func(tmpl *serverTransactionTemplate) {
 		tmpl.task = task
 	}
 }
 
+// WithHashFactory is an option to set the hash factory to generate the
+// fingerprint of the transaction.
 func WithHashFactory(f crypto.HashFactory) ServerTransactionOption {
 	return func(tmpl *serverTransactionTemplate) {
 		tmpl.hashFactory = f
 	}
 }
 
+// WithNoFingerprint is an option to disable the calculation of the fingerprint
+// when instantiating the transaction. This is mostly useful for testing.
 func WithNoFingerprint() ServerTransactionOption {
 	return func(tmpl *serverTransactionTemplate) {
 		tmpl.hashFactory = nil
 	}
 }
 
+// NewServerTransaction creates a new server transaction.
 func NewServerTransaction(opts ...ServerTransactionOption) (ServerTransaction, error) {
 	tmpl := serverTransactionTemplate{
 		hashFactory: crypto.NewSha256Factory(),
@@ -196,13 +211,24 @@ func NewServerTransaction(opts ...ServerTransactionOption) (ServerTransaction, e
 	}
 
 	if tmpl.hashFactory == nil {
+		// No hash factory means the fingerprint should be skipped. In that case
+		// there is no verification of the integrity of the tx.
 		return tx, nil
+	}
+
+	// Before going to fingerprint, some fields are necessary.
+	if tmpl.task == nil {
+		return tx, xerrors.New("task is nil")
+	}
+
+	if tmpl.identity == nil {
+		return tx, xerrors.New("identity is nil")
 	}
 
 	h := tmpl.hashFactory.New()
 	err := tmpl.Fingerprint(h)
 	if err != nil {
-		return tx, err
+		return tx, xerrors.Errorf("couldn't fingerprint tx: %v", err)
 	}
 
 	tx.hash = h.Sum(nil)
@@ -229,10 +255,16 @@ func (t ServerTransaction) Consume(page inventory.WritablePage) error {
 	return nil
 }
 
+// IdentityKey is the key of an identity factory.
 type IdentityKey struct{}
+
+// SignatureKey is the key of a signature factory.
 type SignatureKey struct{}
+
+// TaskKey is the key of a task factory.
 type TaskKey struct{}
 
+// KeyOf returns the unique string for a message.
 func KeyOf(m serde.Message) string {
 	typ := reflect.TypeOf(m)
 	return fmt.Sprintf("%s.%s", typ.PkgPath(), typ.Name())
@@ -240,7 +272,8 @@ func KeyOf(m serde.Message) string {
 
 // TransactionFactory is an implementation of a Byzcoin transaction factory.
 //
-// - implements ledger.TransactionFactory
+// - implements ledger.TxFactory
+// - implements serde.Factory
 type TransactionFactory struct {
 	signer           crypto.Signer
 	hashFactory      crypto.HashFactory
@@ -265,6 +298,7 @@ func (f TransactionFactory) Register(m serde.Message, factory serde.Factory) {
 	f.registry[KeyOf(m)] = factory
 }
 
+// Get returns the factory of the provided key or nil.
 func (f TransactionFactory) Get(key string) serde.Factory {
 	return f.registry[key]
 }
@@ -294,7 +328,9 @@ func (f TransactionFactory) New(task ClientTask) (transactions.ClientTransaction
 	return tx, nil
 }
 
-// Deserialize implements serde.Factory.
+// Deserialize implements serde.Factory. It looks up the format for the provided
+// context and returns the message associated with the data if appropriate,
+// otherwise it returns an error.
 func (f TransactionFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := txFormats.Get(ctx.GetFormat())
 
@@ -304,7 +340,7 @@ func (f TransactionFactory) Deserialize(ctx serde.Context, data []byte) (serde.M
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't decode tx: %v", err)
 	}
 
 	tx, ok := msg.(ServerTransaction)
@@ -320,6 +356,8 @@ func (f TransactionFactory) Deserialize(ctx serde.Context, data []byte) (serde.M
 	return tx, nil
 }
 
+// TxOf implements transactions.TxFactory. It deserializes the message and cast
+// it to a transaction type.
 func (f TransactionFactory) TxOf(ctx serde.Context, data []byte) (transactions.ServerTransaction, error) {
 	msg, err := f.Deserialize(ctx, data)
 	if err != nil {

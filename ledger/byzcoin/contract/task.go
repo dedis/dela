@@ -37,7 +37,8 @@ func (act SpawnTask) Fingerprint(w io.Writer) error {
 	return nil
 }
 
-func (t SpawnTask) Serialize(serde.Context) ([]byte, error) {
+// Serialize implements serde.Message.
+func (act SpawnTask) Serialize(serde.Context) ([]byte, error) {
 	return nil, xerrors.New("not implemented")
 }
 
@@ -68,7 +69,8 @@ func (act InvokeTask) Fingerprint(w io.Writer) error {
 	return nil
 }
 
-func (t InvokeTask) Serialize(serde.Context) ([]byte, error) {
+// Serialize implements serde.Message.
+func (act InvokeTask) Serialize(serde.Context) ([]byte, error) {
 	return nil, xerrors.New("not implemented")
 }
 
@@ -82,8 +84,8 @@ type DeleteTask struct {
 
 // Fingerprint implements encoding.Fingerprinter. It serializes the task into
 // the writer in a deterministic way.
-func (a DeleteTask) Fingerprint(w io.Writer) error {
-	_, err := w.Write(a.Key)
+func (act DeleteTask) Fingerprint(w io.Writer) error {
+	_, err := w.Write(act.Key)
 	if err != nil {
 		return xerrors.Errorf("couldn't write key: %v", err)
 	}
@@ -91,7 +93,8 @@ func (a DeleteTask) Fingerprint(w io.Writer) error {
 	return nil
 }
 
-func (t DeleteTask) Serialize(serde.Context) ([]byte, error) {
+// Serialize implements serde.Message.
+func (act DeleteTask) Serialize(serde.Context) ([]byte, error) {
 	return nil, xerrors.New("not implemented")
 }
 

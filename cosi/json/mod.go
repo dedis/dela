@@ -10,7 +10,7 @@ import (
 )
 
 func init() {
-	cosi.Register(serde.FormatJSON, format{})
+	cosi.RegisterMessageFormat(serde.FormatJSON, msgFormat{})
 }
 
 // Request is the JSON message sent to request signature.
@@ -30,9 +30,15 @@ type Message struct {
 	Response *Response `json:",omitempty"`
 }
 
-type format struct{}
+// MsgFormat is the engine to encode and decode collective signing messages in
+// JSON format.
+//
+// - implements serde.FormatEngine
+type msgFormat struct{}
 
-func (f format) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
+// Decode implements serde.FormatEngine. It returns the serialized data of a
+// message in JSON format.
+func (f msgFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	m := Message{}
 
 	switch message := msg.(type) {
@@ -56,20 +62,27 @@ func (f format) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 		}
 	}
 
-	return ctx.Marshal(m)
+	data, err := ctx.Marshal(m)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't marshal: %v", err)
+	}
+
+	return data, nil
 }
 
-func (f format) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
+// Decode implements serde.FormatEngine. It populates the message with the JSON
+// data if appropriate, otherwise it returns an error.
+func (f msgFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Message{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
 	}
 
 	if m.Request != nil {
 		factory := ctx.GetFactory(cosi.MsgKey{})
 		if factory == nil {
-			return nil, xerrors.Errorf("factory is nil")
+			return nil, xerrors.New("factory is nil")
 		}
 
 		value, err := factory.Deserialize(ctx, m.Request.Value)
@@ -96,5 +109,5 @@ func (f format) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 		return cosi.SignatureResponse{Signature: sig}, nil
 	}
 
-	return cosi.SignatureResponse{}, nil
+	return nil, xerrors.Errorf("message is empty")
 }

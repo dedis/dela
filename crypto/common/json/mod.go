@@ -7,7 +7,7 @@ import (
 )
 
 func init() {
-	common.Register(serde.FormatJSON, format{})
+	common.RegisterAlgorithmFormat(serde.FormatJSON, algoFormat{})
 }
 
 // Algorithm is a common JSON message to identify which algorithm is used in a
@@ -30,13 +30,34 @@ type Signature struct {
 	Data []byte
 }
 
-type format struct{}
+// AlgoFormat is the engine to encode and decode algorithm data in JSON format.
+//
+// - implements serde.FormatEngine
+type algoFormat struct{}
 
-func (f format) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
-	return nil, xerrors.New("not implemented")
+// Encode implements serde.FormatEngine. It returns the JSON representation of
+// an algorithm message.
+func (f algoFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
+	algo, ok := msg.(common.Algorithm)
+	if !ok {
+		return nil, xerrors.Errorf("unsupported message of type '%T'", msg)
+	}
+
+	m := Algorithm{
+		Name: algo.GetName(),
+	}
+
+	data, err := ctx.Marshal(m)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't marshal: %v", err)
+	}
+
+	return data, nil
 }
 
-func (f format) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
+// Decode implements serde.FormatEngine. It populates the algorithm message from
+// the JSON data if appropriate, otherwise it returns an error.
+func (f algoFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Algorithm{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {

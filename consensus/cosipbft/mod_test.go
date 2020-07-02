@@ -52,7 +52,7 @@ func TestConsensus_Basic(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, chain.(types.Chain).GetLinks(), 4)
 
-	ctx := serde.NewContext(fake.ContextEngine{})
+	ctx := fake.NewContextWithFormat(serde.FormatJSON)
 	data, err := chain.Serialize(ctx)
 	require.NoError(t, err)
 

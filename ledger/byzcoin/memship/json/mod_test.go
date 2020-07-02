@@ -11,7 +11,7 @@ import (
 	"golang.org/x/xerrors"
 )
 
-func TestTask_VisitJSON(t *testing.T) {
+func TestTaskFormat_Encode(t *testing.T) {
 	task := memship.NewServerTask(fakeAuthority{})
 
 	format := taskFormat{}
@@ -21,12 +21,21 @@ func TestTask_VisitJSON(t *testing.T) {
 	require.NoError(t, err)
 	require.Regexp(t, `{"Authority":{}}`, string(data))
 
+	_, err = format.Encode(ctx, task.ClientTask)
+	require.NoError(t, err)
+
+	_, err = format.Encode(ctx, fake.Message{})
+	require.EqualError(t, err, "unsupported message of type 'fake.Message'")
+
+	_, err = format.Encode(fake.NewBadContext(), task)
+	require.EqualError(t, err, "couldn't marshal: fake error")
+
 	task = memship.NewServerTask(fakeAuthority{err: xerrors.New("oops")})
 	_, err = format.Encode(ctx, task)
 	require.EqualError(t, err, "couldn't serialize authority: oops")
 }
 
-func TestTaskManager_VisitJSON(t *testing.T) {
+func TestTaskFormat_Decode(t *testing.T) {
 	format := taskFormat{}
 	ctx := serde.NewContext(fake.ContextEngine{})
 	ctx = serde.WithFactory(ctx, memship.RosterKey{}, fakeAuthorityFactory{})
@@ -41,6 +50,10 @@ func TestTaskManager_VisitJSON(t *testing.T) {
 	badCtx := serde.WithFactory(ctx, memship.RosterKey{}, fakeAuthorityFactory{err: xerrors.New("oops")})
 	_, err = format.Decode(badCtx, []byte(`{"Authority":[{}]}`))
 	require.EqualError(t, err, "couldn't deserialize roster: oops")
+
+	badCtx = serde.WithFactory(ctx, memship.RosterKey{}, nil)
+	_, err = format.Decode(badCtx, []byte(`{}`))
+	require.EqualError(t, err, "invalid factory of type '<nil>'")
 }
 
 // -----------------------------------------------------------------------------

@@ -15,20 +15,26 @@ import (
 func TestPubkeyFormat_Encode(t *testing.T) {
 	signer := bls.NewSigner()
 	format := pubkeyFormat{}
-	ctx := serde.NewContext(fake.ContextEngine{})
+	ctx := fake.NewContextWithFormat(serde.FormatJSON)
 
 	data, err := format.Encode(ctx, signer.GetPublicKey())
 	require.NoError(t, err)
 	require.Contains(t, string(data), fmt.Sprintf(`{"Name":"%s","Data":`, bls.Algorithm))
 
+	_, err = format.Encode(ctx, fake.Message{})
+	require.EqualError(t, err, "unsupported message of type 'fake.Message'")
+
 	_, err = format.Encode(ctx, bls.NewPublicKeyFromPoint(badPoint{}))
 	require.EqualError(t, err, "couldn't marshal point: oops")
+
+	_, err = format.Encode(fake.NewBadContext(), signer.GetPublicKey())
+	require.EqualError(t, err, "couldn't marshal: fake error")
 }
 
 func TestPubkeyFormat_Decode(t *testing.T) {
 	signer := bls.NewSigner()
 	format := pubkeyFormat{}
-	ctx := serde.NewContext(fake.ContextEngine{})
+	ctx := fake.NewContextWithFormat(serde.FormatJSON)
 
 	data, err := signer.GetPublicKey().Serialize(ctx)
 	require.NoError(t, err)
@@ -48,11 +54,17 @@ func TestPubkeyFormat_Decode(t *testing.T) {
 func TestSigFormat_Encode(t *testing.T) {
 	sig := bls.NewSignature([]byte("deadbeef"))
 	format := sigFormat{}
-	ctx := serde.NewContext(fake.ContextEngine{})
+	ctx := fake.NewContextWithFormat(serde.FormatJSON)
 
 	data, err := format.Encode(ctx, sig)
 	require.NoError(t, err)
 	require.Contains(t, string(data), fmt.Sprintf(`{"Name":"%s","Data":`, bls.Algorithm))
+
+	_, err = format.Encode(ctx, fake.Message{})
+	require.EqualError(t, err, "unsupported message of type 'fake.Message'")
+
+	_, err = format.Encode(fake.NewBadContext(), sig)
+	require.EqualError(t, err, "couldn't marshal: fake error")
 }
 
 func TestSigFormat_Decode(t *testing.T) {

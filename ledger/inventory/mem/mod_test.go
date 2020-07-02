@@ -92,6 +92,11 @@ func TestInMemoryInventory_Stage(t *testing.T) {
 	require.EqualError(t, err,
 		"couldn't compute page hash: couldn't write key: fake error")
 
+	inv.hashFactory = fake.NewHashFactory(fake.NewBadHashWithDelay(2))
+	_, err = inv.Stage(func(inventory.WritablePage) error { return nil })
+	require.EqualError(t, err,
+		"couldn't compute page hash: couldn't write value: fake error")
+
 	inv.hashFactory = fake.NewHashFactory(&fake.Hash{})
 	inv.context = fake.NewBadContext()
 	_, err = inv.Stage(func(inventory.WritablePage) error { return nil })

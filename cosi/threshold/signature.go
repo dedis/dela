@@ -22,7 +22,7 @@ var formats = registry.NewSimpleRegistry()
 
 // Register saves the format to be used when serializing/deserializing signature
 // messages for the given codec.
-func Register(c serde.Format, f serde.FormatEngine) {
+func RegisterSignatureFormat(c serde.Format, f serde.FormatEngine) {
 	formats.Register(c, f)
 }
 
@@ -123,9 +123,6 @@ func (s *Signature) setBit(index int) {
 // format.
 func (s *Signature) Serialize(ctx serde.Context) ([]byte, error) {
 	format := formats.Get(ctx.GetFormat())
-	if format == nil {
-		return nil, xerrors.Errorf("unknown format")
-	}
 
 	data, err := format.Encode(ctx, s)
 	if err != nil {
@@ -153,20 +150,22 @@ func (s *Signature) Equal(o crypto.Signature) bool {
 	return ok && other.agg.Equal(s.agg) && bytes.Equal(s.mask, other.mask)
 }
 
+// AggKey is the key for the aggregate signature factory.
 type AggKey struct{}
 
+// SignatureFactory is the factory to deserialize collective signature.
+//
+// - implements crypto.SignatureFactory
+// - implements serde.Factory
 type SignatureFactory struct {
 	aggFactory crypto.SignatureFactory
 }
 
+// NewSignatureFactory returns a new signature factory.
 func NewSignatureFactory(f crypto.SignatureFactory) SignatureFactory {
 	return SignatureFactory{
 		aggFactory: f,
 	}
-}
-
-func (f SignatureFactory) GetAggregateFactory() crypto.SignatureFactory {
-	return f.aggFactory
 }
 
 // Deserialize implements serde.Factory. It deserializes the signature in JSON
@@ -178,9 +177,6 @@ func (f SignatureFactory) Deserialize(ctx serde.Context, data []byte) (serde.Mes
 // SignatureOf implements crypto.SignatureFactory.
 func (f SignatureFactory) SignatureOf(ctx serde.Context, data []byte) (crypto.Signature, error) {
 	format := formats.Get(ctx.GetFormat())
-	if format == nil {
-		return nil, xerrors.Errorf("unknown format")
-	}
 
 	ctx = serde.WithFactory(ctx, AggKey{}, f.aggFactory)
 
@@ -191,7 +187,7 @@ func (f SignatureFactory) SignatureOf(ctx serde.Context, data []byte) (crypto.Si
 
 	sig, ok := m.(*Signature)
 	if !ok {
-		return nil, xerrors.Errorf("invalid signature")
+		return nil, xerrors.Errorf("invalid signature of type '%T'", m)
 	}
 
 	return sig, nil

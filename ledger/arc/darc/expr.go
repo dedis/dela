@@ -22,6 +22,7 @@ func newExpression() Expression {
 	}
 }
 
+// GetMatches returns the list of possible matches for an expression.
 func (expr Expression) GetMatches() []string {
 	matches := make([]string, 0, len(expr.matches))
 	for match := range expr.matches {

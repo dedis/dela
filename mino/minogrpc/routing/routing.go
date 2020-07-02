@@ -21,6 +21,7 @@ var eachLine = regexp.MustCompile(`(?m)^(.+)$`)
 
 var formats = registry.NewSimpleRegistry()
 
+// Register stores the format engine.
 func Register(c serde.Format, f serde.FormatEngine) {
 	formats.Register(c, f)
 }
@@ -58,6 +59,7 @@ type Routing interface {
 	GetDirectLinks(from mino.Address) []mino.Address
 }
 
+// AddrKey is the key to look up the address factory.
 type AddrKey struct{}
 
 // TreeRoutingFactory defines the factory for tree routing.
@@ -85,27 +87,29 @@ func (t TreeRoutingFactory) GetAddressFactory() mino.AddressFactory {
 	return t.addrFactory
 }
 
+// Make creates a new tree routing from a list of addresses and a given root
+// address.
 func (t TreeRoutingFactory) Make(r mino.Address, p mino.Players) (Routing, error) {
 	return NewTreeRouting(p, WithRoot(r), WithHeight(t.height))
 }
 
-// Deserialize implements serde.Factory.
+// Deserialize implements serde.Factory. It looks up the format and returns the
+// message deserialized from the data.
 func (t TreeRoutingFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := formats.Get(ctx.GetFormat())
-	if format == nil {
-		return nil, xerrors.New("unknown format")
-	}
 
 	ctx = serde.WithFactory(ctx, AddrKey{}, t.addrFactory)
 
 	rting, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't decode routing: %v", err)
 	}
 
 	return rting, nil
 }
 
+// RoutingOf implements routing.Factory. It returns the routing associated with
+// the data if appropriate, otherwise an error.
 func (t TreeRoutingFactory) RoutingOf(ctx serde.Context, data []byte) (Routing, error) {
 	m, err := t.Deserialize(ctx, data)
 	if err != nil {
@@ -114,7 +118,7 @@ func (t TreeRoutingFactory) RoutingOf(ctx serde.Context, data []byte) (Routing, 
 
 	rting, ok := m.(Routing)
 	if !ok {
-		return nil, xerrors.New("invalid routing")
+		return nil, xerrors.Errorf("invalid routing of type '%T'", m)
 	}
 
 	return rting, nil
@@ -139,32 +143,40 @@ type treeRoutingTemplate struct {
 	hashFactory crypto.HashFactory
 }
 
+// TreeRoutingOption is the option type to create a new tree routing.
 type TreeRoutingOption func(*treeRoutingTemplate)
 
+// WithRootAt is an option to set the index of the root address.
 func WithRootAt(index int) TreeRoutingOption {
 	return func(tmpl *treeRoutingTemplate) {
 		tmpl.rootIndex = index
 	}
 }
 
+// WithRoot is an option to explicitly set the root address. The address must be
+// in the authority.
 func WithRoot(addr mino.Address) TreeRoutingOption {
 	return func(tmpl *treeRoutingTemplate) {
 		tmpl.root = addr
 	}
 }
 
+// WithHeight is an option to set the maximum height of the tree.
 func WithHeight(height int) TreeRoutingOption {
 	return func(tmpl *treeRoutingTemplate) {
 		tmpl.height = height
 	}
 }
 
+// WithHashFactory is an option to use a different hash factory.
 func WithHashFactory(f crypto.HashFactory) TreeRoutingOption {
 	return func(tmpl *treeRoutingTemplate) {
 		tmpl.hashFactory = f
 	}
 }
 
+// NewTreeRouting returns a new tree routing that contains exactly the
+// authority.
 func NewTreeRouting(players mino.Players, opts ...TreeRoutingOption) (Routing, error) {
 	tmpl := treeRoutingTemplate{
 		rootIndex:   0,
@@ -193,6 +205,10 @@ func NewTreeRouting(players mino.Players, opts ...TreeRoutingOption) (Routing, e
 		}
 
 		addrsBuf[i] = buf
+	}
+
+	if tmpl.rootIndex < 0 || tmpl.rootIndex >= len(addrs) {
+		return nil, xerrors.Errorf("invalid root index %d", tmpl.rootIndex)
 	}
 
 	// Extract the root before the shuffle. We don't do it so that it is
@@ -254,6 +270,7 @@ func NewTreeRouting(players mino.Players, opts ...TreeRoutingOption) (Routing, e
 	return rting, nil
 }
 
+// GetAddresses returns the set of addresses of the tree routing as an array.
 func (t TreeRouting) GetAddresses() []mino.Address {
 	addrs := make([]mino.Address, 0, len(t.routingNodes))
 	for addr := range t.routingNodes {
@@ -350,13 +367,10 @@ func (t TreeRouting) GetDirectLinks(from mino.Address) []mino.Address {
 // Serialize implements serde.Message.
 func (t TreeRouting) Serialize(ctx serde.Context) ([]byte, error) {
 	format := formats.Get(ctx.GetFormat())
-	if format == nil {
-		return nil, xerrors.New("unknown format")
-	}
 
 	data, err := format.Encode(ctx, t)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't encode routing: %v", err)
 	}
 
 	return data, nil
@@ -469,6 +483,8 @@ func (n *treeNode) ForEach(f func(n *treeNode)) {
 	}
 }
 
+// Addresses is a sortable structure for both addresses and their binary
+// representation.
 type Addresses struct {
 	buffers [][]byte
 	addrs   []mino.Address

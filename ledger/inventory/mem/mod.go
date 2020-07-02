@@ -163,7 +163,7 @@ func (inv *InMemoryInventory) computeHash(page *inMemoryPage) error {
 
 		_, err = h.Write(data)
 		if err != nil {
-			return err
+			return xerrors.Errorf("couldn't write value: %v", err)
 		}
 	}
 

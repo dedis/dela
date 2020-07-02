@@ -15,7 +15,31 @@ import (
 	"golang.org/x/xerrors"
 )
 
-func TestTask_Fingerprint(t *testing.T) {
+var testCalls = &fake.Call{}
+
+func init() {
+	RegisterTaskFormat(fake.GoodFormat, fake.Format{Msg: ServerTask{}, Call: testCalls})
+	RegisterTaskFormat(fake.BadFormat, fake.NewBadFormat())
+}
+
+func TestClientTask_GetAuthority(t *testing.T) {
+	task := NewTask(fake.NewAuthority(3, fake.NewSigner)).(ClientTask)
+
+	require.Equal(t, 3, task.GetAuthority().Len())
+}
+
+func TestClientTask_Serialize(t *testing.T) {
+	task := NewTask(fake.NewAuthority(1, fake.NewSigner))
+
+	data, err := task.Serialize(fake.NewContext())
+	require.NoError(t, err)
+	require.Equal(t, "fake format", string(data))
+
+	_, err = task.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, "couldn't encode task: fake error")
+}
+
+func TestClientTask_Fingerprint(t *testing.T) {
 	task := NewTask(fake.NewAuthority(1, fake.NewSigner)).(ClientTask)
 
 	out := new(bytes.Buffer)
@@ -27,7 +51,7 @@ func TestTask_Fingerprint(t *testing.T) {
 	require.EqualError(t, err, "couldn't fingerprint authority: oops")
 }
 
-func TestTask_Consume(t *testing.T) {
+func TestServerTask_Consume(t *testing.T) {
 	task := NewServerTask(roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner)))
 
 	page := fakePage{values: make(map[string]serde.Message)}
@@ -64,6 +88,10 @@ func TestTaskManager_GetAuthority(t *testing.T) {
 	manager.inventory = fakeInventory{errPage: xerrors.New("oops")}
 	_, err = manager.GetAuthority(1)
 	require.EqualError(t, err, "couldn't read entry: oops")
+
+	manager.inventory = fakeInventory{value: fake.Message{}}
+	_, err = manager.GetAuthority(1)
+	require.EqualError(t, err, "invalid message type 'fake.Message'")
 }
 
 func TestTaskManager_Wait(t *testing.T) {
@@ -105,6 +133,23 @@ func TestTaskManager_Verify(t *testing.T) {
 	manager.inventory = fakeInventory{err: xerrors.New("oops")}
 	_, err = manager.Verify(fake.NewAddress(0), 0)
 	require.EqualError(t, err, "couldn't get authority: couldn't read page: oops")
+}
+
+func TestTaskManager_Deserialize(t *testing.T) {
+	manager := NewTaskManager(fakeInventory{}, fake.Mino{}, fake.NewSigner())
+
+	testCalls.Clear()
+
+	msg, err := manager.Deserialize(fake.NewContext(), nil)
+	require.NoError(t, err)
+	require.IsType(t, ServerTask{}, msg)
+
+	require.Equal(t, 1, testCalls.Len())
+	ctx := testCalls.Get(0, 0).(serde.Context)
+	require.NotNil(t, ctx.GetFactory(RosterKey{}))
+
+	_, err = manager.Deserialize(fake.NewBadContext(), nil)
+	require.EqualError(t, err, "couldn't decode task: fake error")
 }
 
 func TestRegister(t *testing.T) {

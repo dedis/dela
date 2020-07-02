@@ -30,10 +30,15 @@ type Transaction struct {
 	Task      Task
 }
 
+// TxFormat is the format engine to encode and decode transactions.
+//
+// - implements serde.FormatEngine
 type txFormat struct {
 	hashFactory crypto.HashFactory
 }
 
+// Encode implements serde.FormatEngine. It encodes the transaction to its JSON
+// representation.
 func (f txFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	var tx basic.ClientTransaction
 	switch in := msg.(type) {
@@ -42,7 +47,7 @@ func (f txFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	case basic.ServerTransaction:
 		tx = in.ClientTransaction
 	default:
-		return nil, xerrors.New("invalid tx")
+		return nil, xerrors.Errorf("unsupported tx type '%T'", msg)
 	}
 
 	identity, err := tx.GetIdentity().Serialize(ctx)
@@ -72,12 +77,14 @@ func (f txFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 
 	data, err := ctx.Marshal(m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't marshal: %v", err)
 	}
 
 	return data, nil
 }
 
+// Decode implements serde.FormatEngine. It decodes the transaction from its
+// JSON representation.
 func (f txFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Transaction{}
 	err := ctx.Unmarshal(data, &m)
@@ -123,7 +130,7 @@ func decodeIdentity(ctx serde.Context, data []byte) (crypto.PublicKey, error) {
 
 	fac, ok := factory.(crypto.PublicKeyFactory)
 	if !ok {
-		return nil, xerrors.New("invalid factory")
+		return nil, xerrors.Errorf("invalid factory of type '%T'", factory)
 	}
 
 	pubkey, err := fac.PublicKeyOf(ctx, data)
@@ -139,7 +146,7 @@ func decodeSignature(ctx serde.Context, data []byte) (crypto.Signature, error) {
 
 	fac, ok := factory.(crypto.SignatureFactory)
 	if !ok {
-		return nil, xerrors.New("invalid factory")
+		return nil, xerrors.Errorf("invalid factory of type '%T'", factory)
 	}
 
 	sig, err := fac.SignatureOf(ctx, data)
@@ -155,12 +162,12 @@ func decodeTask(ctx serde.Context, key string, data []byte) (basic.ServerTask, e
 
 	fac, ok := factory.(basic.TransactionFactory)
 	if !ok {
-		return nil, xerrors.New("invalid factory")
+		return nil, xerrors.Errorf("invalid factory of type '%T'", factory)
 	}
 
 	taskFac := fac.Get(key)
 	if taskFac == nil {
-		return nil, xerrors.Errorf("factory '%s' not found", key)
+		return nil, xerrors.Errorf("task factory for '%s' not found", key)
 	}
 
 	task, err := taskFac.Deserialize(ctx, data)

@@ -13,6 +13,34 @@ import (
 	"golang.org/x/xerrors"
 )
 
+func init() {
+	RegisterTaskFormat(fake.GoodFormat, fake.Format{Msg: ServerTask{}})
+	RegisterTaskFormat(fake.BadFormat, fake.NewBadFormat())
+}
+
+func TestClientTask_GetKey(t *testing.T) {
+	task := NewUpdate([]byte{1}, NewAccess())
+
+	require.Equal(t, []byte{1}, task.GetKey())
+}
+
+func TestClientTask_GetAccess(t *testing.T) {
+	task := NewCreate(NewAccess())
+
+	require.IsType(t, NewAccess(), task.GetAccess())
+}
+
+func TestClientTask_Serialize(t *testing.T) {
+	task := NewCreate(NewAccess())
+
+	data, err := task.Serialize(fake.NewContext())
+	require.NoError(t, err)
+	require.Equal(t, "fake format", string(data))
+
+	_, err = task.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, "couldn't encode task: fake error")
+}
+
 func TestClientTask_Fingerprint(t *testing.T) {
 	task := ClientTask{
 		key: []byte{0x01},
@@ -39,9 +67,7 @@ func TestServerTask_Consume(t *testing.T) {
 	access, err := NewAccess().Evolve(UpdateAccessRule, fakeIdentity{buffer: []byte("doggy")})
 	require.NoError(t, err)
 
-	task := ServerTask{
-		ClientTask: ClientTask{key: []byte{0x01}, access: access},
-	}
+	task := NewServerTask([]byte{1}, access)
 
 	call := &fake.Call{}
 	err = task.Consume(fakeContext{}, fakePage{call: call})
@@ -71,6 +97,21 @@ func TestServerTask_Consume(t *testing.T) {
 	err = task.Consume(fakeContext{identity: []byte("cat")}, fakePage{})
 	require.EqualError(t, err,
 		"no access: couldn't match 'darc_update': couldn't match identity 'cat'")
+
+	task.access = NewAccess()
+	err = task.Consume(fakeContext{}, fakePage{})
+	require.EqualError(t, err, "transaction identity should be allowed to update")
+}
+
+func TestTaskFactory_Deserialize(t *testing.T) {
+	factory := NewTaskFactory()
+
+	msg, err := factory.Deserialize(fake.NewContext(), nil)
+	require.NoError(t, err)
+	require.IsType(t, ServerTask{}, msg)
+
+	_, err = factory.Deserialize(fake.NewBadContext(), nil)
+	require.EqualError(t, err, "couldn't decode task: fake error")
 }
 
 func TestRegister(t *testing.T) {

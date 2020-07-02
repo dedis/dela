@@ -16,7 +16,7 @@ func TestLinkFormat_Encode(t *testing.T) {
 	fl := makeFL(t)
 
 	format := linkFormat{}
-	ctx := serde.NewContext(fake.ContextEngine{})
+	ctx := fake.NewContextWithFormat(serde.FormatJSON)
 
 	data, err := format.Encode(ctx, fl)
 	require.NoError(t, err)
@@ -38,7 +38,7 @@ func TestLinkFormat_Encode(t *testing.T) {
 
 func TestLinkFormat_Decode(t *testing.T) {
 	format := linkFormat{}
-	ctx := serde.NewContext(fake.ContextEngine{})
+	ctx := fake.NewContextWithFormat(serde.FormatJSON)
 	ctx = serde.WithFactory(ctx, types.CoSigKey{}, fake.SignatureFactory{})
 	ctx = serde.WithFactory(ctx, types.ChangeSetKey{}, fakeChangeSetFactory{})
 
@@ -65,7 +65,7 @@ func TestChainFormat_Encode(t *testing.T) {
 	chain := types.NewChain(makeFL(t))
 
 	format := chainFormat{}
-	ctx := serde.NewContext(fake.ContextEngine{})
+	ctx := fake.NewContextWithFormat(serde.FormatJSON)
 
 	data, err := format.Encode(ctx, chain)
 	require.NoError(t, err)
@@ -82,7 +82,7 @@ func TestChainFormat_Decode(t *testing.T) {
 	expected := types.NewChain(makeFL(t), makeFL(t))
 
 	format := chainFormat{}
-	ctx := serde.NewContext(fake.ContextEngine{})
+	ctx := fake.NewContextWithFormat(serde.FormatJSON)
 	ctx = serde.WithFactory(ctx, types.CoSigKey{}, fake.SignatureFactory{})
 	ctx = serde.WithFactory(ctx, types.ChangeSetKey{}, fakeChangeSetFactory{})
 
@@ -101,7 +101,7 @@ func TestMessageFormat_Prepare_Encode(t *testing.T) {
 	prepare := types.NewPrepare(fake.Message{}, fake.Signature{}, types.NewChain())
 
 	format := messageFormat{}
-	ctx := serde.NewContext(fake.ContextEngine{})
+	ctx := fake.NewContextWithFormat(serde.FormatJSON)
 
 	data, err := format.Encode(ctx, prepare)
 	require.NoError(t, err)
@@ -124,7 +124,7 @@ func TestMessageFormat_Commit_Encode(t *testing.T) {
 	commit := types.NewCommit([]byte{1}, fake.Signature{})
 
 	format := messageFormat{}
-	ctx := serde.NewContext(fake.ContextEngine{})
+	ctx := fake.NewContextWithFormat(serde.FormatJSON)
 
 	data, err := format.Encode(ctx, commit)
 	require.NoError(t, err)
@@ -139,7 +139,7 @@ func TestMessageFormat_Propagate_Encode(t *testing.T) {
 	propagate := types.NewPropagate([]byte{1}, fake.Signature{})
 
 	format := messageFormat{}
-	ctx := serde.NewContext(fake.ContextEngine{})
+	ctx := fake.NewContextWithFormat(serde.FormatJSON)
 
 	data, err := format.Encode(ctx, propagate)
 	require.NoError(t, err)
@@ -152,7 +152,7 @@ func TestMessageFormat_Propagate_Encode(t *testing.T) {
 
 func TestMessageFormat_Decode(t *testing.T) {
 	format := messageFormat{}
-	ctx := serde.NewContext(fake.ContextEngine{})
+	ctx := fake.NewContextWithFormat(serde.FormatJSON)
 	ctx = serde.WithFactory(ctx, types.MsgKey{}, fake.MessageFactory{})
 	ctx = serde.WithFactory(ctx, types.SigKey{}, fake.SignatureFactory{})
 	ctx = serde.WithFactory(ctx, types.CoSigKey{}, fake.SignatureFactory{})

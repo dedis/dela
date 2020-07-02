@@ -13,6 +13,7 @@ import (
 
 var accessFormats = registry.NewSimpleRegistry()
 
+// RegisterAccessFormat register the gine for the provided format.
 func RegisterAccessFormat(c serde.Format, f serde.FormatEngine) {
 	accessFormats.Register(c, f)
 }
@@ -25,8 +26,10 @@ type Access struct {
 	rules map[string]Expression
 }
 
+// AccessOption is the type of an option to create an access control.
 type AccessOption func(*Access)
 
+// WithRule is an option to set a rule to a new access control.
 func WithRule(rule string, matches []string) AccessOption {
 	return func(a *Access) {
 		mapper := make(map[string]struct{})
@@ -51,6 +54,7 @@ func NewAccess(opts ...AccessOption) Access {
 	return a
 }
 
+// GetRules returns the list of rules of an access control.
 func (ac Access) GetRules() map[string]Expression {
 	rules := make(map[string]Expression)
 	for k, v := range ac.rules {
@@ -125,13 +129,14 @@ func (ac Access) Fingerprint(w io.Writer) error {
 	return nil
 }
 
-// Serialize implements serde.Message.
+// Serialize implements serde.Message. It looks up the format and returns the
+// serialized data for the access.
 func (ac Access) Serialize(ctx serde.Context) ([]byte, error) {
 	format := accessFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, ac)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't encode access: %v", err)
 	}
 
 	return data, nil
@@ -161,7 +166,7 @@ func (f Factory) Deserialize(ctx serde.Context, data []byte) (serde.Message, err
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't decode access: %v", err)
 	}
 
 	return msg, nil

@@ -29,6 +29,7 @@ var (
 	taskFormats = registry.NewSimpleRegistry()
 )
 
+// RegisterTaskFormat registers the engine for the provided format.
 func RegisterTaskFormat(c serde.Format, f serde.FormatEngine) {
 	taskFormats.Register(c, f)
 }
@@ -46,17 +47,19 @@ func NewTask(authority crypto.CollectiveAuthority) basic.ClientTask {
 	return ClientTask{authority: roster.FromAuthority(authority)}
 }
 
+// GetAuthority returns the authority for this task.
 func (t ClientTask) GetAuthority() viewchange.Authority {
 	return t.authority
 }
 
-// Serialize implements serde.Message.
+// Serialize implements serde.Message. It looks up the format and returns the
+// serialized data for this task.
 func (t ClientTask) Serialize(ctx serde.Context) ([]byte, error) {
 	format := taskFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, t)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't encode task: %v", err)
 	}
 
 	return data, nil
@@ -81,6 +84,7 @@ type ServerTask struct {
 	ClientTask
 }
 
+// NewServerTask returns a new server task from the authority.
 func NewServerTask(authority viewchange.Authority) ServerTask {
 	return ServerTask{
 		ClientTask: ClientTask{
@@ -105,13 +109,14 @@ func (t ServerTask) Consume(ctx basic.Context, page inventory.WritablePage) erro
 	return nil
 }
 
+// RosterKey is the key for an authority factory.
 type RosterKey struct{}
 
 // TaskManager manages the roster tasks by providing a factory and a governance
 // implementation.
 //
-// - implements basic.TaskManager
-// - implements viewchange.Governance
+// - implements viewchange.ViewChange
+// - implements serde.Factory
 type TaskManager struct {
 	me            mino.Address
 	inventory     inventory.Inventory
@@ -184,7 +189,8 @@ func (f TaskManager) Verify(from mino.Address, index uint64) (viewchange.Authori
 	return curr, nil
 }
 
-// Deserialize implements serde.Factory.
+// Deserialize implements serde.Factory. It looks up the format and returns the
+// task deserialized from the data.
 func (f TaskManager) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := taskFormats.Get(ctx.GetFormat())
 
@@ -192,7 +198,7 @@ func (f TaskManager) Deserialize(ctx serde.Context, data []byte) (serde.Message,
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't decode task: %v", err)
 	}
 
 	return msg, nil

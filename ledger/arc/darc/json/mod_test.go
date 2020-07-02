@@ -18,6 +18,12 @@ func TestAccessFormat_Encode(t *testing.T) {
 	data, err := format.Encode(ctx, access)
 	require.NoError(t, err)
 	require.Equal(t, `{"Rules":{"A":["C"],"B":[]}}`, string(data))
+
+	_, err = format.Encode(ctx, fake.Message{})
+	require.EqualError(t, err, "unsupported message of type 'fake.Message'")
+
+	_, err = format.Encode(fake.NewBadContext(), access)
+	require.EqualError(t, err, "couldn't marshal: fake error")
 }
 
 func TestAccessFormat_Decode(t *testing.T) {
@@ -42,6 +48,15 @@ func TestTaskFormat_Encode(t *testing.T) {
 	data, err := format.Encode(ctx, task)
 	require.NoError(t, err)
 	require.Equal(t, `{"Key":"AQ==","Access":{"Rules":{}}}`, string(data))
+
+	_, err = format.Encode(ctx, task.ClientTask)
+	require.NoError(t, err)
+
+	_, err = format.Encode(ctx, fake.Message{})
+	require.EqualError(t, err, "unsupported message of type 'fake.Message'")
+
+	_, err = format.Encode(fake.NewBadContextWithDelay(1), task)
+	require.EqualError(t, err, "couldn't marshal: fake error")
 
 	format.accessFormat = fake.NewBadFormat()
 	_, err = format.Encode(ctx, task)
