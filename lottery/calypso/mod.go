@@ -51,21 +51,48 @@ type Calypso struct {
 	serializer serde.Serializer
 }
 
+// Listen implements lottery.Secret
+func (c *Calypso) Listen() error {
+	if c.dkgActor != nil {
+		return xerrors.Errorf("listen has already been called")
+	}
+
+	actor, err := c.dkg.Listen()
+	if err != nil {
+		return xerrors.Errorf("failed to listen dkg: %v", err)
+	}
+
+	c.dkgActor = actor
+
+	return nil
+}
+
 // Setup implements lottery.Secret
 func (c *Calypso) Setup(ca crypto.CollectiveAuthority,
 	threshold int) (pubKey kyber.Point, err error) {
 
-	actor, err := c.dkg.Listen()
-	if err != nil {
-		return nil, xerrors.Errorf("failed to listen dkg: %v", err)
+	if c.dkgActor == nil {
+		return nil, xerrors.Errorf("dkg actor is nil, did you call Listen() first?")
 	}
 
-	pubKey, err = actor.Setup(ca, threshold)
+	pubKey, err = c.dkgActor.Setup(ca, threshold)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to setup dkg: %v", err)
 	}
 
-	c.dkgActor = actor
+	return pubKey, nil
+}
+
+// GetPublicKey implements lottery.Secret
+func (c *Calypso) GetPublicKey() (kyber.Point, error) {
+	if c.dkgActor == nil {
+		return nil, xerrors.Errorf("listen has not already been called")
+	}
+
+	pubKey, err := c.dkgActor.GetPublicKey()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to get the DKG public key: %v", err)
+	}
 
 	return pubKey, nil
 }
@@ -76,12 +103,6 @@ func (c *Calypso) Write(message lottery.EncryptedMessage, ac arc.AccessControl) 
 	_, err := rand.Read(key)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to generate random key: %v", err)
-	}
-
-	darcKey := make([]byte, keySize)
-	_, err = rand.Read(darcKey)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to generate random darcKey: %v", err)
 	}
 
 	kBuf, err := message.GetK().MarshalBinary()
@@ -100,9 +121,9 @@ func (c *Calypso) Write(message lottery.EncryptedMessage, ac arc.AccessControl) 
 	}
 
 	messageJSON := encryptedJSON{
-		K:       kBuf,
-		C:       cBuf,
-		DarcKey: darcKey,
+		K:             kBuf,
+		C:             cBuf,
+		AccessControl: acBuf,
 	}
 
 	messageBuf, err := json.Marshal(messageJSON)
@@ -111,7 +132,6 @@ func (c *Calypso) Write(message lottery.EncryptedMessage, ac arc.AccessControl) 
 	}
 
 	c.storage.Store(key, messageBuf)
-	c.storage.Store(darcKey, acBuf)
 
 	return key, nil
 }
@@ -167,7 +187,14 @@ func (c *Calypso) UpdateAccess(id []byte, ident arc.Identity, newAc arc.AccessCo
 		return xerrors.Errorf("failed to encode darc: %v", err)
 	}
 
-	c.storage.Store(messageJSON.DarcKey, acBuf)
+	messageJSON.AccessControl = acBuf
+
+	messageBuf, err := json.Marshal(messageJSON)
+	if err != nil {
+		return xerrors.Errorf("failed to marshal message: %v", err)
+	}
+
+	c.storage.Store(id, messageBuf)
 
 	return nil
 }
@@ -185,13 +212,8 @@ func (c *Calypso) getRead(id []byte) (*encryptedJSON, arc.AccessControl, error) 
 		return nil, nil, xerrors.Errorf("failed to unmarshal JSON message: %v", err)
 	}
 
-	acBuf, err := c.storage.Read(messageJSON.DarcKey)
-	if err != nil {
-		return nil, nil, xerrors.Errorf("failed to read darcBuf: %v", err)
-	}
-
 	var ac arc.AccessControl
-	err = c.serializer.Deserialize(acBuf, darc.NewFactory(), &ac)
+	err = c.serializer.Deserialize(messageJSON.AccessControl, darc.NewFactory(), &ac)
 	if err != nil {
 		return nil, nil, xerrors.Errorf("failed to unmarshal darc: %v", err)
 	}
@@ -232,7 +254,7 @@ func (e EncryptedMessage) GetC() kyber.Point {
 // the DarcKey is the key at which the darc controlling this encrypted message
 // is stored.
 type encryptedJSON struct {
-	K       []byte
-	C       []byte
-	DarcKey []byte
+	K             []byte
+	C             []byte
+	AccessControl json.RawMessage
 }

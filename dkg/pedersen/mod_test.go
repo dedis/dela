@@ -77,6 +77,19 @@ func TestPedersen_Setup(t *testing.T) {
 	require.Regexp(t, "^the public keys does not match:", err)
 }
 
+func TestPedersen_GetPublicKey(t *testing.T) {
+	actor := Actor{
+		startRes: &state{},
+	}
+
+	_, err := actor.GetPublicKey()
+	require.EqualError(t, err, "DKG has not been initialized")
+
+	actor.startRes = &state{participants: []mino.Address{fake.NewAddress(0)}, distrKey: suite.Point()}
+	_, err = actor.GetPublicKey()
+	require.NoError(t, err)
+}
+
 func TestPedersen_Decrypt(t *testing.T) {
 	actor := Actor{
 		rpc:      fake.NewBadStreamRPC(),

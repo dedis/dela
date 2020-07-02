@@ -139,6 +139,15 @@ func (a *Actor) Setup(co crypto.CollectiveAuthority, threshold int) (kyber.Point
 	return dkgPubKeys[0], nil
 }
 
+// GetPublicKey implements dkg.Actor
+func (a *Actor) GetPublicKey() (kyber.Point, error) {
+	if !a.startRes.Done() {
+		return nil, xerrors.Errorf("DKG has not been initialized")
+	}
+
+	return a.startRes.GetDistKey(), nil
+}
+
 // Encrypt implements dkg.Actor. It uses the DKG public key to encrypt a
 // message.
 func (a *Actor) Encrypt(message []byte) (K, C kyber.Point, remainder []byte,

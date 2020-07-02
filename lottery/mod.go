@@ -10,7 +10,16 @@ import (
 // Calypso it is mainly a wrapper arround DKG that provides a storage and
 // authorization layer.
 type Secret interface {
-	Setup() (ca crypto.CollectiveAuthority, err error)
+	// Listen should be called by each node to participate in the lottery
+	Listen() error
+
+	// Setup must be called only ONCE by one of the node to setup the lottery
+	Setup(ca crypto.CollectiveAuthority, threshold int) (pubKey kyber.Point, err error)
+
+	// GetPublicKey returns the collective public key. Returns an error if the
+	// setup has not been done.
+	GetPublicKey() (kyber.Point, error)
+
 	Write(message EncryptedMessage, ac arc.AccessControl) (ID []byte, err error)
 	Read(ID []byte, idents ...arc.Identity) (msg []byte, err error)
 	UpdateAccess(ID []byte, ident arc.Identity, ac arc.AccessControl) error

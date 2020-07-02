@@ -19,6 +19,10 @@ type Actor interface {
 	// each node. Each node represented by a player must first execute Listen().
 	Setup(co crypto.CollectiveAuthority, threshold int) (pubKey kyber.Point, err error)
 
+	// GetPublicKey returns the collective public key. Returns an error it the
+	// setup has not been done.
+	GetPublicKey() (kyber.Point, error)
+
 	Encrypt(message []byte) (K, C kyber.Point, remainder []byte, err error)
 	Decrypt(K, C kyber.Point) ([]byte, error)
 

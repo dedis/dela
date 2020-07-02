@@ -20,6 +20,9 @@ func TestMain(t *testing.T) {
 
 	ca := fake.NewAuthority(0, ed25519.NewSigner)
 
+	err := calypso.Listen()
+	require.NoError(t, err)
+
 	pubKey, err := calypso.Setup(ca, 0)
 	require.NoError(t, err)
 
@@ -101,6 +104,10 @@ func (f *fakeActor) Setup(ca crypto.CollectiveAuthority, threshold int) (kyber.P
 	f.pubKey = pubKey
 
 	return pubKey, nil
+}
+
+func (f *fakeActor) GetPublicKey() (kyber.Point, error) {
+	return f.pubKey, nil
 }
 
 func (f fakeActor) Encrypt(message []byte) (K, C kyber.Point, remainder []byte, err error) {
