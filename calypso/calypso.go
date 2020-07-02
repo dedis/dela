@@ -6,13 +6,12 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/serde"
 
+	"go.dedis.ch/dela/calypso/json"
+	"go.dedis.ch/dela/calypso/storage"
+	"go.dedis.ch/dela/calypso/storage/inmemory"
 	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/ledger/arc/darc"
-	"go.dedis.ch/dela/lottery"
-	"go.dedis.ch/dela/lottery/calypso/json"
-	"go.dedis.ch/dela/lottery/storage"
-	"go.dedis.ch/dela/lottery/storage/inmemory"
 	serdej "go.dedis.ch/dela/serde/json"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/suites"
@@ -20,8 +19,6 @@ import (
 )
 
 const (
-	keySize = 32
-
 	// ArcRuleUpdate defines the rule to update the arc. This rule must be set
 	// at the write creation to allow the arc to be latter updated.
 	ArcRuleUpdate = "calypso_update"
@@ -33,24 +30,24 @@ const (
 var suite = suites.MustFind("Ed25519")
 
 // NewCalypso creates a new Calypso
-func NewCalypso(dkg dkg.DKG) *Calypso {
-	return &Calypso{
+func NewCalypso(dkg dkg.DKG) *Caly {
+	return &Caly{
 		dkg:     dkg,
 		storage: inmemory.NewInMemory(),
 	}
 }
 
-// Calypso is a wrapper around DKG to provide a storage and authorization layer
+// Caly is a wrapper around DKG to provide a storage and authorization layer
 //
-// implements lottery.Secret
-type Calypso struct {
+// implements calypso.Secret
+type Caly struct {
 	dkg      dkg.DKG
 	dkgActor dkg.Actor
 	storage  storage.KeyValue
 }
 
-// Listen implements lottery.Secret
-func (c *Calypso) Listen() error {
+// Listen implements calypso.Secret
+func (c *Caly) Listen() error {
 	if c.dkgActor != nil {
 		return xerrors.Errorf("listen has already been called")
 	}
@@ -65,8 +62,8 @@ func (c *Calypso) Listen() error {
 	return nil
 }
 
-// Setup implements lottery.Secret
-func (c *Calypso) Setup(ca crypto.CollectiveAuthority,
+// Setup implements calypso.Secret
+func (c *Caly) Setup(ca crypto.CollectiveAuthority,
 	threshold int) (pubKey kyber.Point, err error) {
 
 	if c.dkgActor == nil {
@@ -81,8 +78,8 @@ func (c *Calypso) Setup(ca crypto.CollectiveAuthority,
 	return pubKey, nil
 }
 
-// GetPublicKey implements lottery.Secret
-func (c *Calypso) GetPublicKey() (kyber.Point, error) {
+// GetPublicKey implements calypso.Secret
+func (c *Caly) GetPublicKey() (kyber.Point, error) {
 	if c.dkgActor == nil {
 		return nil, xerrors.Errorf("listen has not already been called")
 	}
@@ -95,8 +92,8 @@ func (c *Calypso) GetPublicKey() (kyber.Point, error) {
 	return pubKey, nil
 }
 
-// Write implements lottery.Secret
-func (c *Calypso) Write(em lottery.EncryptedMessage,
+// Write implements calypso.Secret
+func (c *Caly) Write(em EncryptedMessage,
 	ac arc.AccessControl) ([]byte, error) {
 
 	var buf bytes.Buffer
@@ -124,8 +121,8 @@ func (c *Calypso) Write(em lottery.EncryptedMessage,
 	return key, nil
 }
 
-// Read implements lottery.Secret
-func (c *Calypso) Read(id []byte, idents ...arc.Identity) ([]byte, error) {
+// Read implements calypso.Secret
+func (c *Caly) Read(id []byte, idents ...arc.Identity) ([]byte, error) {
 	record, err := c.getRead(id)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to get read: %v", err)
@@ -144,9 +141,9 @@ func (c *Calypso) Read(id []byte, idents ...arc.Identity) ([]byte, error) {
 	return msg, nil
 }
 
-// UpdateAccess implements lottery.Secret. It sets a new arc for a given ID,
+// UpdateAccess implements calypso.Secret. It sets a new arc for a given ID,
 // provided the current arc allows the given ident to do so.
-func (c *Calypso) UpdateAccess(id []byte, ident arc.Identity,
+func (c *Caly) UpdateAccess(id []byte, ident arc.Identity,
 	newAc arc.AccessControl) error {
 
 	record, err := c.getRead(id)
@@ -167,7 +164,7 @@ func (c *Calypso) UpdateAccess(id []byte, ident arc.Identity,
 }
 
 // getRead extract the read information from the storage
-func (c *Calypso) getRead(id []byte) (*record, error) {
+func (c *Caly) getRead(id []byte) (*record, error) {
 	buf, err := c.storage.Read(id)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to read message: %v", err)

@@ -16,14 +16,14 @@ import (
 )
 
 func TestMain(t *testing.T) {
-	calypso := NewCalypso(fakeDKG{})
+	c := NewCalypso(fakeDKG{})
 
 	ca := fake.NewAuthority(0, ed25519.NewSigner)
 
-	err := calypso.Listen()
+	err := c.Listen()
 	require.NoError(t, err)
 
-	pubKey, err := calypso.Setup(ca, 0)
+	pubKey, err := c.Setup(ca, 0)
 	require.NoError(t, err)
 
 	message := []byte("Hello, world")
@@ -40,22 +40,22 @@ func TestMain(t *testing.T) {
 	require.NoError(t, err)
 
 	encrypted := fakeEncryptedMessage{K: K, C: C}
-	id, err := calypso.Write(encrypted, d)
+	id, err := c.Write(encrypted, d)
 	require.NoError(t, err)
 
 	// Trying to read with the foreignID, which isn't allowed yet
 	idents := []arc.Identity{foreignID}
-	_, err = calypso.Read(id, idents...)
+	_, err = c.Read(id, idents...)
 	require.EqualError(t, err, "darc verification failed: couldn't match 'calypso_read': couldn't match identity 'foreigner'")
 
 	// update the acess to allow the foreignID to read
 	d, err = d.Evolve(ArcRuleRead, ownerID, foreignID)
 	require.NoError(t, err)
-	err = calypso.UpdateAccess(id, ownerID, d)
+	err = c.UpdateAccess(id, ownerID, d)
 	require.NoError(t, err)
 
 	// now the foreignID whould be able to read
-	decrypted, err := calypso.Read(id, idents...)
+	decrypted, err := c.Read(id, idents...)
 	require.NoError(t, err)
 
 	require.Equal(t, message, decrypted)

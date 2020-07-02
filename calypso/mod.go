@@ -1,4 +1,4 @@
-package lottery
+package calypso
 
 import (
 	"go.dedis.ch/dela/crypto"
@@ -6,14 +6,14 @@ import (
 	"go.dedis.ch/kyber/v3"
 )
 
-// Secret defines the primitives to run a Calypso-like app. In the case of
-// Calypso it is mainly a wrapper arround DKG that provides a storage and
-// authorization layer.
-type Secret interface {
-	// Listen should be called by each node to participate in the lottery
+// Calypso defines the primitives to run a Calypso app. It is mainly a wrapper
+// arround DKG that provides a storage and authorization layer.
+type Calypso interface {
+	// Listen should be called by each node to participate in the secret sharing
 	Listen() error
 
-	// Setup must be called only ONCE by one of the node to setup the lottery
+	// Setup must be called only ONCE by one of the node to setup the secret
+	// sharing
 	Setup(ca crypto.CollectiveAuthority, threshold int) (pubKey kyber.Point, err error)
 
 	// GetPublicKey returns the collective public key. Returns an error if the
