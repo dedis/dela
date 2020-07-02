@@ -26,7 +26,8 @@ type Secret interface {
 }
 
 // EncryptedMessage wraps the K, C arguments needed to decrypt a message. K is
-// the ephemeral DH public key and C the blinded secret.
+// the ephemeral DH public key and C the blinded secret. The combination of (K,
+// C) should always be uniq, as it is used to compute the storage key.
 type EncryptedMessage interface {
 	GetK() kyber.Point
 	GetC() kyber.Point

@@ -1,7 +1,7 @@
 package calypso
 
 import (
-	"crypto/rand"
+	"bytes"
 
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/serde"
@@ -99,11 +99,19 @@ func (c *Calypso) GetPublicKey() (kyber.Point, error) {
 func (c *Calypso) Write(em lottery.EncryptedMessage,
 	ac arc.AccessControl) ([]byte, error) {
 
-	key := make([]byte, keySize)
-	_, err := rand.Read(key)
+	var buf bytes.Buffer
+
+	_, err := em.GetK().MarshalTo(&buf)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to generate random key: %v", err)
+		return nil, xerrors.Errorf("failed to marshal K: %v", err)
 	}
+
+	_, err = em.GetC().MarshalTo(&buf)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to marshal C: %v", err)
+	}
+
+	key := crypto.NewSha256Factory().New().Sum(buf.Bytes())
 
 	record := record{
 		K:  em.GetK(),
