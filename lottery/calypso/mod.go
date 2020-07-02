@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 
+	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/serde"
 	serdej "go.dedis.ch/dela/serde/json"
 
@@ -13,7 +14,6 @@ import (
 	"go.dedis.ch/dela/lottery"
 	"go.dedis.ch/dela/lottery/storage"
 	"go.dedis.ch/dela/lottery/storage/inmemory"
-	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/suites"
 	"golang.org/x/xerrors"
@@ -52,7 +52,7 @@ type Calypso struct {
 }
 
 // Setup implements lottery.Secret
-func (c *Calypso) Setup(players mino.Players, pubKeys []kyber.Point,
+func (c *Calypso) Setup(ca crypto.CollectiveAuthority,
 	threshold int) (pubKey kyber.Point, err error) {
 
 	actor, err := c.dkg.Listen()
@@ -60,7 +60,7 @@ func (c *Calypso) Setup(players mino.Players, pubKeys []kyber.Point,
 		return nil, xerrors.Errorf("failed to listen dkg: %v", err)
 	}
 
-	pubKey, err = actor.Setup(players, pubKeys, threshold)
+	pubKey, err = actor.Setup(ca, threshold)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to setup dkg: %v", err)
 	}

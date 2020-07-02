@@ -129,18 +129,22 @@ func (i *AddressIterator) HasNext() bool {
 
 // GetNext implements mino.AddressIterator.
 func (i *AddressIterator) GetNext() mino.Address {
-	if i.HasNext() {
-		res := i.addrs[i.index]
-		i.index++
-		return res
-	}
-	return nil
+	res := i.addrs[i.index]
+	i.index++
+	return res
 }
 
 // PublicKeyIterator is a fake implementation of crypto.PublicKeyIterator.
 type PublicKeyIterator struct {
 	signers []crypto.AggregateSigner
 	index   int
+}
+
+// NewPublicKeyIterator returns a new address iterator
+func NewPublicKeyIterator(signers []crypto.AggregateSigner) *PublicKeyIterator {
+	return &PublicKeyIterator{
+		signers: signers,
+	}
 }
 
 // Seek implements crypto.PublicKeyIterator.
@@ -170,7 +174,8 @@ type CollectiveAuthority struct {
 	addrs   []mino.Address
 	signers []crypto.AggregateSigner
 
-	Call *Call
+	Call           *Call
+	PubkeyNotFound bool
 }
 
 // GenSigner is a function to generate a signer.
@@ -232,6 +237,10 @@ func (ca CollectiveAuthority) GetSigner(index int) crypto.AggregateSigner {
 
 // GetPublicKey implements cosi.CollectiveAuthority.
 func (ca CollectiveAuthority) GetPublicKey(addr mino.Address) (crypto.PublicKey, int) {
+	if ca.PubkeyNotFound {
+		return nil, -1
+	}
+
 	for i, address := range ca.addrs {
 		if address.Equal(addr) {
 			return ca.signers[i].GetPublicKey(), i

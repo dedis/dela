@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/crypto/ed25519"
 	"go.dedis.ch/dela/dkg"
+	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/ledger/arc/darc"
-	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/util/random"
 	"golang.org/x/xerrors"
@@ -16,7 +18,9 @@ import (
 func TestMain(t *testing.T) {
 	calypso := NewCalypso(fakeDKG{})
 
-	pubKey, err := calypso.Setup(&fakePlayers{}, []kyber.Point{}, 0)
+	ca := fake.NewAuthority(0, ed25519.NewSigner)
+
+	pubKey, err := calypso.Setup(ca, 0)
 	require.NoError(t, err)
 
 	message := []byte("Hello, world")
@@ -90,7 +94,7 @@ type fakeActor struct {
 	pubKey  kyber.Point
 }
 
-func (f *fakeActor) Setup(players mino.Players, pubKeys []kyber.Point, threshold int) (kyber.Point, error) {
+func (f *fakeActor) Setup(ca crypto.CollectiveAuthority, threshold int) (kyber.Point, error) {
 	privKey := suite.Scalar().Pick(suite.RandomStream())
 	pubKey := suite.Point().Mul(privKey, nil)
 	f.privKey = privKey
@@ -121,68 +125,6 @@ func (f fakeActor) Decrypt(K, C kyber.Point) ([]byte, error) {
 
 func (f fakeActor) Reshare() error {
 	return nil
-}
-
-//
-// Players
-//
-
-type fakePlayers struct {
-	players  []mino.Address
-	iterator *fakeAddressIterator
-}
-
-// AddressIterator implements mino.Players
-func (p *fakePlayers) AddressIterator() mino.AddressIterator {
-	if p.iterator == nil {
-		p.iterator = &fakeAddressIterator{players: p.players}
-	}
-	return p.iterator
-}
-
-// Len() implements mino.Players.Len()
-func (p *fakePlayers) Len() int {
-	return len(p.players)
-}
-
-// Take implements mino.Players
-func (p *fakePlayers) Take(filters ...mino.FilterUpdater) mino.Players {
-	f := mino.ApplyFilters(filters)
-	players := make([]mino.Address, len(p.players))
-	for i, k := range f.Indices {
-		players[i] = p.players[k]
-	}
-	return &fakePlayers{
-		players: players,
-	}
-}
-
-//
-// AddressIterator
-//
-
-type fakeAddressIterator struct {
-	players []mino.Address
-	cursor  int
-}
-
-// Seek implements mino.AddressIterator.
-func (it *fakeAddressIterator) Seek(index int) {
-	it.cursor = index
-}
-
-// HasNext implements mino.AddressIterator
-func (it *fakeAddressIterator) HasNext() bool {
-	return it.cursor < len(it.players)
-}
-
-// GetNext implements mino.AddressIterator.GetNext(). It is the responsibility
-// of the caller to check there is still elements to get. Otherwise it may
-// crash.
-func (it *fakeAddressIterator) GetNext() mino.Address {
-	p := it.players[it.cursor]
-	it.cursor++
-	return p
 }
 
 //

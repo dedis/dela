@@ -1,6 +1,7 @@
 package lottery
 
 import (
+	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/kyber/v3"
 )
@@ -9,7 +10,7 @@ import (
 // Calypso it is mainly a wrapper arround DKG that provides a storage and
 // authorization layer.
 type Secret interface {
-	Setup() (pubKey kyber.Point, err error)
+	Setup() (ca crypto.CollectiveAuthority, err error)
 	Write(message EncryptedMessage, ac arc.AccessControl) (ID []byte, err error)
 	Read(ID []byte, idents ...arc.Identity) (msg []byte, err error)
 	UpdateAccess(ID []byte, ident arc.Identity, ac arc.AccessControl) error

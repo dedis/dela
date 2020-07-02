@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/crypto/ed25519"
 	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/dkg/pedersen/types"
 	"go.dedis.ch/dela/internal/testing/fake"
@@ -32,27 +34,34 @@ func TestPedersen_Setup(t *testing.T) {
 		startRes: &state{},
 	}
 
-	_, err := actor.Setup(&fakePlayers{}, []kyber.Point{}, 0)
+	fakeAuthority := fake.NewAuthority(1, fake.NewSigner)
+
+	_, err := actor.Setup(fakeAuthority, 0)
 	require.EqualError(t, err, "failed to stream: fake error")
 
 	rpc := fake.NewStreamRPC(fake.Receiver{}, fake.NewBadSender())
 	actor.rpc = rpc
 
-	_, err = actor.Setup(&fakePlayers{}, []kyber.Point{}, 0)
-	require.EqualError(t, err, "failed to send start: fake error")
+	fakeAuthority.PubkeyNotFound = true
+	_, err = actor.Setup(fakeAuthority, 0)
+	require.EqualError(t, err, "pubkey not found for 'fake.Address[0]'")
+
+	fakeAuthority.PubkeyNotFound = false
+	_, err = actor.Setup(fakeAuthority, 0)
+	require.EqualError(t, err, "expected ed25519.PublicKey, got 'fake.PublicKey'")
 
 	rpc = fake.NewStreamRPC(fake.NewBadReceiver(), fake.Sender{})
 	actor.rpc = rpc
 
-	_, err = actor.Setup(&fakePlayers{players: []mino.Address{fake.NewAddress(0)}},
-		[]kyber.Point{suite.Point()}, 1)
+	fakeAuthority = fake.NewAuthority(2, ed25519.NewSigner)
+
+	_, err = actor.Setup(fakeAuthority, 1)
 	require.EqualError(t, err, "got an error from '%!s(<nil>)' while receiving: fake error")
 
 	rpc = fake.NewStreamRPC(fake.Receiver{}, fake.Sender{})
 	actor.rpc = rpc
 
-	_, err = actor.Setup(&fakePlayers{players: []mino.Address{fake.NewAddress(0)}},
-		[]kyber.Point{suite.Point()}, 1)
+	_, err = actor.Setup(fakeAuthority, 1)
 	require.EqualError(t, err, "expected to receive a Done message, but go the following: <nil>")
 
 	rpc = fake.NewStreamRPC(fake.Receiver{
@@ -63,9 +72,7 @@ func TestPedersen_Setup(t *testing.T) {
 	}, fake.Sender{})
 	actor.rpc = rpc
 
-	_, err = actor.Setup(&fakePlayers{players: []mino.Address{
-		fake.NewAddress(0), fake.NewAddress(1)}},
-		[]kyber.Point{suite.Point(), suite.Point()}, 1)
+	_, err = actor.Setup(fakeAuthority, 1)
 	require.Error(t, err)
 	require.Regexp(t, "^the public keys does not match:", err)
 }
@@ -117,15 +124,12 @@ func TestPedersen_Scenario(t *testing.T) {
 
 	treeFactory := routing.NewTreeRoutingFactory(3, addrFactory)
 
-	pubKeys := make([]kyber.Point, n)
-	privKeys := make([]kyber.Scalar, n)
-	minos := make([]*minogrpc.Minogrpc, n)
+	privKeys := make([]kyber.Scalar, 0, n)
+	minos := make([]mino.Mino, n)
 	dkgs := make([]dkg.DKG, n)
 	addrs := make([]mino.Address, n)
 
 	for i := 0; i < n; i++ {
-		privKeys[i] = suite.Scalar().Pick(suite.RandomStream())
-		pubKeys[i] = suite.Point().Mul(privKeys[i], nil)
 
 		port := uint16(2000 + i)
 		minogrpc, err := minogrpc.NewMinogrpc("127.0.0.1", port, treeFactory)
@@ -137,12 +141,21 @@ func TestPedersen_Scenario(t *testing.T) {
 		addrs[i] = minogrpc.GetAddress()
 	}
 
-	for i, minogrpc := range minos {
+	fakeAuthority := NewAuthority(addrs, ed25519.NewSigner)
+	iter := fakeAuthority.AddressIterator()
+	for iter.HasNext() {
+		addr := iter.GetNext()
+		privKey := fakeAuthority.GetPrivateKey(addr)
+		require.NotNil(t, privKey)
+		privKeys = append(privKeys, privKey)
+	}
+
+	for i, mino := range minos {
 		for _, m := range minos {
-			minogrpc.GetCertificateStore().Store(m.GetAddress(), m.GetCertificate())
+			mino.(*minogrpc.Minogrpc).GetCertificateStore().Store(m.GetAddress(), m.(*minogrpc.Minogrpc).GetCertificate())
 		}
 
-		dkg := NewPedersen(privKeys[i], minogrpc)
+		dkg := NewPedersen(privKeys[i], mino.(*minogrpc.Minogrpc))
 
 		dkgs[i] = dkg
 	}
@@ -156,23 +169,16 @@ func TestPedersen_Scenario(t *testing.T) {
 		actors[i] = actor
 	}
 
-	players := &fakePlayers{players: addrs}
-
 	// trying to call a decrpyt/encrypt before a setup
 	_, _, _, err := actors[0].Encrypt(message)
 	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")
 	_, err = actors[0].Decrypt(nil, nil)
 	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")
 
-	// Do a setup on one of the actor
-	// wrong lenght of pubKeys
-	_, err = actors[0].Setup(players, pubKeys[1:], n)
-	require.EqualError(t, err, "there should be as many players as pubKey: 5 := 4")
-
-	_, err = actors[0].Setup(players, pubKeys, n)
+	_, err = actors[0].Setup(fakeAuthority, n)
 	require.NoError(t, err)
 
-	_, err = actors[0].Setup(players, pubKeys, n)
+	_, err = actors[0].Setup(fakeAuthority, n)
 	require.EqualError(t, err, "startRes is already done, only one setup call is allowed")
 
 	// every node should be able to encrypt/decrypt
@@ -191,62 +197,62 @@ func TestPedersen_Scenario(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-// fakePlayers is a fake players
 //
-// - implements mino.Players
-type fakePlayers struct {
-	players  []mino.Address
-	iterator *fakeAddressIterator
-}
-
-// AddressIterator implements mino.Players
-func (p *fakePlayers) AddressIterator() mino.AddressIterator {
-	if p.iterator == nil {
-		p.iterator = &fakeAddressIterator{players: p.players}
-	}
-	return p.iterator
-}
-
-// Len() implements mino.Players.Len()
-func (p *fakePlayers) Len() int {
-	return len(p.players)
-}
-
-// Take implements mino.Players
-func (p *fakePlayers) Take(filters ...mino.FilterUpdater) mino.Players {
-	f := mino.ApplyFilters(filters)
-	players := make([]mino.Address, len(p.players))
-	for i, k := range f.Indices {
-		players[i] = p.players[k]
-	}
-	return &fakePlayers{
-		players: players,
-	}
-}
-
-// fakeAddressIterator is a fake addressIterator
+// Collective authority
 //
-// - implements mino.addressIterator
-type fakeAddressIterator struct {
-	players []mino.Address
-	cursor  int
+
+// CollectiveAuthority is a fake implementation of the cosi.CollectiveAuthority
+// interface.
+type CollectiveAuthority struct {
+	crypto.CollectiveAuthority
+	addrs   []mino.Address
+	signers []crypto.AggregateSigner
 }
 
-// Seek implements mino.AddressIterator.
-func (it *fakeAddressIterator) Seek(index int) {
-	it.cursor = index
+// GenSigner is a function to generate a signer.
+type GenSigner func() crypto.AggregateSigner
+
+// NewAuthority returns a new collective authority of n members with new signers
+// generated by g.
+func NewAuthority(addrs []mino.Address, g GenSigner) CollectiveAuthority {
+	signers := make([]crypto.AggregateSigner, len(addrs))
+	for i := range signers {
+		signers[i] = g()
+	}
+
+	return CollectiveAuthority{
+		signers: signers,
+		addrs:   addrs,
+	}
 }
 
-// HasNext implements mino.AddressIterator
-func (it *fakeAddressIterator) HasNext() bool {
-	return it.cursor < len(it.players)
+// GetPublicKey implements cosi.CollectiveAuthority.
+func (ca CollectiveAuthority) GetPublicKey(addr mino.Address) (crypto.PublicKey, int) {
+
+	for i, address := range ca.addrs {
+		if address.Equal(addr) {
+			return ca.signers[i].GetPublicKey(), i
+		}
+	}
+	return nil, -1
 }
 
-// GetNext implements mino.AddressIterator.GetNext(). It is the responsibility
-// of the caller to check there is still elements to get. Otherwise it may
-// crash.
-func (it *fakeAddressIterator) GetNext() mino.Address {
-	p := it.players[it.cursor]
-	it.cursor++
-	return p
+// GetPrivateKey is a special function needed for DKG
+func (ca CollectiveAuthority) GetPrivateKey(addr mino.Address) kyber.Scalar {
+	for i, address := range ca.addrs {
+		if address.Equal(addr) {
+			return (ca.signers[i]).(ed25519.Signer).GetPrivateKey()
+		}
+	}
+	return nil
+}
+
+// Len implements mino.Players.
+func (ca CollectiveAuthority) Len() int {
+	return len(ca.signers)
+}
+
+// AddressIterator implements mino.Players.
+func (ca CollectiveAuthority) AddressIterator() mino.AddressIterator {
+	return fake.NewAddressIterator(ca.addrs)
 }

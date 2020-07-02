@@ -101,7 +101,7 @@ type CollectiveAuthority interface {
 	mino.Players
 
 	// GetPublicKey returns the public key and its index of the corresponding
-	// address if any matches.
+	// address if any matches. An index < 0 means no correspondance found.
 	GetPublicKey(addr mino.Address) (PublicKey, int)
 
 	// PublicKeyIterator creates an public key iterator that iterates over the

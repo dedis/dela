@@ -1,6 +1,9 @@
 package pedersen
 
 import (
+	"go.dedis.ch/dela/crypto/ed25519"
+
+	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/dkg/pedersen/types"
 	"go.dedis.ch/dela/mino"
@@ -65,12 +68,7 @@ type Actor struct {
 }
 
 // Setup implement dkg.Actor. It initializes the DKG.
-func (a *Actor) Setup(players mino.Players, pubKeys []kyber.Point, threshold int) (kyber.Point, error) {
-
-	if players.Len() != len(pubKeys) {
-		return nil, xerrors.Errorf("there should be as many players as "+
-			"pubKey: %d := %d", players.Len(), len(pubKeys))
-	}
+func (a *Actor) Setup(co crypto.CollectiveAuthority, threshold int) (kyber.Point, error) {
 
 	if a.startRes.Done() {
 		return nil, xerrors.Errorf("startRes is already done, only one setup call is allowed")
@@ -79,18 +77,32 @@ func (a *Actor) Setup(players mino.Players, pubKeys []kyber.Point, threshold int
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	sender, receiver, err := a.rpc.Stream(ctx, players)
+	sender, receiver, err := a.rpc.Stream(ctx, co)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to stream: %v", err)
 	}
 
-	players.AddressIterator().Seek(0)
-	addrs := make([]mino.Address, 0, players.Len())
-	for players.AddressIterator().HasNext() {
-		addrs = append(addrs, players.AddressIterator().GetNext())
+	co.AddressIterator().Seek(0)
+	addrs := make([]mino.Address, 0, co.Len())
+	pubkeys := make([]kyber.Point, 0, co.Len())
+	iter := co.AddressIterator()
+	for iter.HasNext() {
+		addr := iter.GetNext()
+		addrs = append(addrs, addr)
+		pubkey, index := co.GetPublicKey(addr)
+		if index < 0 {
+			return nil, xerrors.Errorf("pubkey not found for '%s'", addr)
+		}
+
+		edKey, ok := pubkey.(ed25519.PublicKey)
+		if !ok {
+			return nil, xerrors.Errorf("expected ed25519.PublicKey, got '%T'", pubkey)
+		}
+
+		pubkeys = append(pubkeys, edKey.GetPoint())
 	}
 
-	message := types.NewStart(threshold, addrs, pubKeys)
+	message := types.NewStart(threshold, addrs, pubkeys)
 
 	errs := sender.Send(message, addrs...)
 	err = <-errs
