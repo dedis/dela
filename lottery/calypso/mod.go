@@ -2,18 +2,18 @@ package calypso
 
 import (
 	"crypto/rand"
-	"encoding/json"
 
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/serde"
-	serdej "go.dedis.ch/dela/serde/json"
 
 	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/ledger/arc/darc"
 	"go.dedis.ch/dela/lottery"
+	"go.dedis.ch/dela/lottery/calypso/json"
 	"go.dedis.ch/dela/lottery/storage"
 	"go.dedis.ch/dela/lottery/storage/inmemory"
+	serdej "go.dedis.ch/dela/serde/json"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/suites"
 	"golang.org/x/xerrors"
@@ -35,9 +35,8 @@ var suite = suites.MustFind("Ed25519")
 // NewCalypso creates a new Calypso
 func NewCalypso(dkg dkg.DKG) *Calypso {
 	return &Calypso{
-		dkg:        dkg,
-		storage:    inmemory.NewInMemory(),
-		serializer: serdej.NewSerializer(),
+		dkg:     dkg,
+		storage: inmemory.NewInMemory(),
 	}
 }
 
@@ -45,10 +44,9 @@ func NewCalypso(dkg dkg.DKG) *Calypso {
 //
 // implements lottery.Secret
 type Calypso struct {
-	dkg        dkg.DKG
-	dkgActor   dkg.Actor
-	storage    storage.KeyValue
-	serializer serde.Serializer
+	dkg      dkg.DKG
+	dkgActor dkg.Actor
+	storage  storage.KeyValue
 }
 
 // Listen implements lottery.Secret
@@ -98,69 +96,39 @@ func (c *Calypso) GetPublicKey() (kyber.Point, error) {
 }
 
 // Write implements lottery.Secret
-func (c *Calypso) Write(message lottery.EncryptedMessage, ac arc.AccessControl) ([]byte, error) {
+func (c *Calypso) Write(em lottery.EncryptedMessage,
+	ac arc.AccessControl) ([]byte, error) {
+
 	key := make([]byte, keySize)
 	_, err := rand.Read(key)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to generate random key: %v", err)
 	}
 
-	kBuf, err := message.GetK().MarshalBinary()
-	if err != nil {
-		return nil, xerrors.Errorf("failed to marshal K: %v", err)
+	record := record{
+		K:  em.GetK(),
+		C:  em.GetC(),
+		AC: ac,
 	}
 
-	cBuf, err := message.GetC().MarshalBinary()
-	if err != nil {
-		return nil, xerrors.Errorf("failed to marshal C: %v", err)
-	}
-
-	acBuf, err := c.serializer.Serialize(ac)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to encode darc: %v", err)
-	}
-
-	messageJSON := encryptedJSON{
-		K:             kBuf,
-		C:             cBuf,
-		AccessControl: acBuf,
-	}
-
-	messageBuf, err := json.Marshal(messageJSON)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to marshal message: %v", err)
-	}
-
-	c.storage.Store(key, messageBuf)
+	c.storage.Store(key, record)
 
 	return key, nil
 }
 
 // Read implements lottery.Secret
 func (c *Calypso) Read(id []byte, idents ...arc.Identity) ([]byte, error) {
-	messageJSON, ac, err := c.getRead(id)
+	record, err := c.getRead(id)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to get read: %v", err)
 	}
 
-	err = ac.Match(ArcRuleRead, idents...)
+	err = record.AC.Match(ArcRuleRead, idents...)
 	if err != nil {
 		return nil, xerrors.Errorf("darc verification failed: %v", err)
 	}
 
-	k := suite.Point()
-	err = k.UnmarshalBinary(messageJSON.K)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to unmarshal k: %v", err)
-	}
-
-	cp := suite.Point() // 'c' is already used...
-	err = cp.UnmarshalBinary(messageJSON.C)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to unmarshal c: %v", err)
-	}
-
-	msg, err := c.dkgActor.Decrypt(k, cp)
+	msg, err := c.dkgActor.Decrypt(record.K, record.C)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to decrypt with dkg: %v", err)
 	}
@@ -170,91 +138,122 @@ func (c *Calypso) Read(id []byte, idents ...arc.Identity) ([]byte, error) {
 
 // UpdateAccess implements lottery.Secret. It sets a new arc for a given ID,
 // provided the current arc allows the given ident to do so.
-func (c *Calypso) UpdateAccess(id []byte, ident arc.Identity, newAc arc.AccessControl) error {
+func (c *Calypso) UpdateAccess(id []byte, ident arc.Identity,
+	newAc arc.AccessControl) error {
 
-	messageJSON, ac, err := c.getRead(id)
+	record, err := c.getRead(id)
 	if err != nil {
 		return xerrors.Errorf("failed to get read: %v", err)
 	}
 
-	err = ac.Match(ArcRuleUpdate, ident)
+	err = record.AC.Match(ArcRuleUpdate, ident)
 	if err != nil {
 		return xerrors.Errorf("darc verification failed: %v", err)
 	}
 
-	acBuf, err := c.serializer.Serialize(newAc)
-	if err != nil {
-		return xerrors.Errorf("failed to encode darc: %v", err)
-	}
+	record.AC = newAc
 
-	messageJSON.AccessControl = acBuf
-
-	messageBuf, err := json.Marshal(messageJSON)
-	if err != nil {
-		return xerrors.Errorf("failed to marshal message: %v", err)
-	}
-
-	c.storage.Store(id, messageBuf)
+	c.storage.Store(id, record)
 
 	return nil
 }
 
 // getRead extract the read information from the storage
-func (c *Calypso) getRead(id []byte) (*encryptedJSON, arc.AccessControl, error) {
-	messageBuf, err := c.storage.Read(id)
+func (c *Calypso) getRead(id []byte) (*record, error) {
+	buf, err := c.storage.Read(id)
 	if err != nil {
-		return nil, nil, xerrors.Errorf("failed to read message: %v", err)
+		return nil, xerrors.Errorf("failed to read message: %v", err)
 	}
 
-	var messageJSON encryptedJSON
-	err = json.Unmarshal(messageBuf, &messageJSON)
+	var record record
+	err = serdej.NewSerializer().Deserialize(buf, NewRecordFactory(), &record)
 	if err != nil {
-		return nil, nil, xerrors.Errorf("failed to unmarshal JSON message: %v", err)
+		return nil, xerrors.Errorf("failed to unmarshal JSON message: %v", err)
+	}
+
+	return &record, nil
+}
+
+// record defines what is stored in the db, which is the secrect and its
+// corresponding access control
+type record struct {
+	serde.UnimplementedMessage
+
+	K  kyber.Point
+	C  kyber.Point
+	AC arc.AccessControl
+}
+
+// VisitJSON implements serde.Message. It returns the JSON message for the
+// record.
+func (w record) VisitJSON(ser serde.Serializer) (interface{}, error) {
+	acBuf, err := ser.Serialize(w.AC)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to serialize the access control: %v", err)
+	}
+
+	kBuf, err := w.K.MarshalBinary()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to marshal K: %v", err)
+	}
+
+	cBuf, err := w.C.MarshalBinary()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to marshal C: %v", err)
+	}
+
+	return json.Record{
+		K:  kBuf,
+		C:  cBuf,
+		AC: acBuf,
+	}, nil
+}
+
+// recordFactory is a factory to instantiate a record from its encoded form
+//
+// - implements serde.Factory
+type recordFactory struct {
+	serde.UnimplementedFactory
+
+	darcFactory serde.Factory
+}
+
+// NewRecordFactory returns a new instance of the record factory.
+func NewRecordFactory() serde.Factory {
+	return recordFactory{
+		darcFactory: darc.NewFactory(),
+	}
+}
+
+// VisitJSON implements serde.Factory. It deserializes the record.
+func (f recordFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
+	m := json.Record{}
+	err := in.Feed(&m)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't deserialize task: %v", err)
 	}
 
 	var ac arc.AccessControl
-	err = c.serializer.Deserialize(messageJSON.AccessControl, darc.NewFactory(), &ac)
+	err = in.GetSerializer().Deserialize(m.AC, f.darcFactory, &ac)
 	if err != nil {
-		return nil, nil, xerrors.Errorf("failed to unmarshal darc: %v", err)
+		return nil, xerrors.Errorf("failed to deserialize the access control: %v", err)
 	}
 
-	return &messageJSON, ac, nil
-}
-
-// NewEncryptedMessage creates a new EncryptedMessage
-func NewEncryptedMessage(K, C kyber.Point) EncryptedMessage {
-	return EncryptedMessage{
-		k: K,
-		c: C,
+	K := suite.Point()
+	err = K.UnmarshalBinary(m.K)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to unmarshal K: %v", err)
 	}
-}
 
-// EncryptedMessage defines an encrypted message
-//
-// implements lottery.EncryptedMessage
-type EncryptedMessage struct {
-	k kyber.Point
-	c kyber.Point
-}
+	C := suite.Point()
+	err = C.UnmarshalBinary(m.C)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to unmarshal C: %v", err)
+	}
 
-// GetK implements lottery.EncryptedMessage. It returns the ephemeral DH public
-// key
-func (e EncryptedMessage) GetK() kyber.Point {
-	return e.k
-}
-
-// GetC implements lottery.EncryptedMessage. It returns the message blinded with
-// secret
-func (e EncryptedMessage) GetC() kyber.Point {
-	return e.c
-}
-
-// encryptedJSON is used to marshal a lottery.Encrypted message. The k and c
-// should be the marshalled binairy representation of the k,c kyber.Point, and
-// the DarcKey is the key at which the darc controlling this encrypted message
-// is stored.
-type encryptedJSON struct {
-	K             []byte
-	C             []byte
-	AccessControl json.RawMessage
+	return record{
+		K:  K,
+		C:  C,
+		AC: ac,
+	}, nil
 }

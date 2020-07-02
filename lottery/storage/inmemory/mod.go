@@ -1,11 +1,16 @@
 package inmemory
 
-import "golang.org/x/xerrors"
+import (
+	"go.dedis.ch/dela/serde"
+	serdej "go.dedis.ch/dela/serde/json"
+	"golang.org/x/xerrors"
+)
 
 // NewInMemory returns a new in memory database
 func NewInMemory() *InMemory {
 	return &InMemory{
-		database: make(map[string][]byte),
+		database:   make(map[string][]byte),
+		serializer: serdej.NewSerializer(),
 	}
 }
 
@@ -13,12 +18,19 @@ func NewInMemory() *InMemory {
 //
 // implements storage.KeyValue
 type InMemory struct {
-	database map[string][]byte
+	database   map[string][]byte
+	serializer serde.Serializer
 }
 
 // Store implements storage.KeyValue
-func (i *InMemory) Store(key, value []byte) error {
-	i.database[string(key)] = value
+func (i *InMemory) Store(key []byte, value serde.Message) error {
+	buf, err := i.serializer.Serialize(value)
+	if err != nil {
+		return xerrors.Errorf("failed to serialize: %v", err)
+	}
+
+	i.database[string(key)] = buf
+
 	return nil
 }
 

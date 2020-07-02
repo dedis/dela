@@ -39,7 +39,7 @@ func TestMain(t *testing.T) {
 	d, err = d.Evolve(ArcRuleRead, ownerID)
 	require.NoError(t, err)
 
-	encrypted := NewEncryptedMessage(K, C)
+	encrypted := fakeEncryptedMessage{K: K, C: C}
 	id, err := calypso.Write(encrypted, d)
 	require.NoError(t, err)
 
@@ -150,4 +150,21 @@ func (i fakeIdentity) MarshalText() ([]byte, error) {
 
 func (i fakeIdentity) String() string {
 	return string(i.buffer)
+}
+
+//
+// Encrypted message
+//
+
+type fakeEncryptedMessage struct {
+	K kyber.Point
+	C kyber.Point
+}
+
+func (f fakeEncryptedMessage) GetK() kyber.Point {
+	return f.K
+}
+
+func (f fakeEncryptedMessage) GetC() kyber.Point {
+	return f.C
 }
