@@ -1,10 +1,12 @@
 package skipchain
 
 import (
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/blockchain/skipchain/types"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -90,8 +92,18 @@ func TestInMemoryDatabase_Atomic(t *testing.T) {
 // Utility functions
 
 func makeBlock(t *testing.T, opts ...types.SkipBlockOption) types.SkipBlock {
-	block, err := types.NewSkipBlock(opts...)
+	block, err := types.NewSkipBlock(fakePayload{}, opts...)
 	require.NoError(t, err)
 
 	return block
+}
+
+type fakePayload struct{}
+
+func (pl fakePayload) Serialize(serde.Context) ([]byte, error) {
+	return []byte(`{}`), nil
+}
+
+func (pl fakePayload) Fingerprint(io.Writer) error {
+	return nil
 }

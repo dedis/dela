@@ -50,8 +50,10 @@ func NewCoSiPBFT(mino mino.Mino, cosi cosi.CollectiveSigning, vc viewchange.View
 // GetChainFactory implements consensus.Consensus.
 func (c *Consensus) GetChainFactory() consensus.ChainFactory {
 	return types.NewChainFactory(
-		types.WithCoSi(c.cosi),
-		types.WithViewChange(c.viewchange))
+		c.cosi.GetSignatureFactory(),
+		c.viewchange.GetChangeSetFactory(),
+		c.viewchange,
+		c.cosi.GetVerifierFactory())
 }
 
 // GetChain returns a valid chain to the given identifier.
@@ -75,7 +77,7 @@ func (c *Consensus) Listen(r consensus.Reactor) (consensus.Actor, error) {
 		r,
 		c.cosi.GetSigner().GetSignatureFactory(),
 		c.cosi.GetSignatureFactory(),
-		types.NewChainFactory(types.WithCoSi(c.cosi), types.WithViewChange(c.viewchange)))
+		c.GetChainFactory())
 
 	reactor := reactor{
 		Consensus:      c,

@@ -11,8 +11,8 @@ import (
 )
 
 func init() {
-	roster.RegisterChangeSet(serde.FormatJSON, changeSetFormat{})
-	roster.RegisterRoster(serde.FormatJSON, rosterFormat{})
+	roster.RegisterChangeSetFormat(serde.FormatJSON, changeSetFormat{})
+	roster.RegisterRosterFormat(serde.FormatJSON, rosterFormat{})
 }
 
 // Player is a JSON message that contains the address and the public key of a
@@ -34,12 +34,18 @@ type Address []byte
 // Roster is a JSON message for a roster.
 type Roster []Player
 
+// ChangeSetFormat is the engine to encode and decode change set messages in
+// JSON format.
+//
+// - implements serde.FormatEngine
 type changeSetFormat struct{}
 
+// Encode implements serde.FormatEngine. It returns the data serialized for the
+// change set message if appropriate, otherwise an error.
 func (f changeSetFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	cset, ok := msg.(roster.ChangeSet)
 	if !ok {
-		return nil, xerrors.Errorf("invalid change set of type '%T'", msg)
+		return nil, xerrors.Errorf("unsupported message of type '%T'", msg)
 	}
 
 	add := make([]Player, len(cset.Add))
@@ -67,12 +73,14 @@ func (f changeSetFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, e
 
 	data, err := ctx.Marshal(m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't marshal: %v", err)
 	}
 
 	return data, nil
 }
 
+// Decode implements serde.FormatEngine. It populates the message with the JSON
+// data if appropriate, otherwise it returns an error.
 func (f changeSetFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := ChangeSet{}
 	err := ctx.Unmarshal(data, &m)
@@ -80,14 +88,18 @@ func (f changeSetFormat) Decode(ctx serde.Context, data []byte) (serde.Message, 
 		return nil, xerrors.Errorf("couldn't deserialize change set: %v", err)
 	}
 
-	pkFac, ok := ctx.GetFactory(roster.PubKey{}).(crypto.PublicKeyFactory)
+	factory := ctx.GetFactory(roster.PubKeyFac{})
+
+	pkFac, ok := factory.(crypto.PublicKeyFactory)
 	if !ok {
-		return nil, xerrors.Errorf("invalid public key factory")
+		return nil, xerrors.Errorf("invalid public key factory of type '%T'", factory)
 	}
 
-	addrFac, ok := ctx.GetFactory(roster.AddrKey{}).(mino.AddressFactory)
+	factory = ctx.GetFactory(roster.AddrKeyFac{})
+
+	addrFac, ok := factory.(mino.AddressFactory)
 	if !ok {
-		return nil, xerrors.Errorf("invalid address factory")
+		return nil, xerrors.Errorf("invalid address factory of type '%T'", factory)
 	}
 
 	if len(m.Add) == 0 {
@@ -120,12 +132,18 @@ func (f changeSetFormat) Decode(ctx serde.Context, data []byte) (serde.Message, 
 	return set, nil
 }
 
+// RosterFormat is the engine to encode and decode roster messages in JSON
+// format.
+//
+// - implements serde.FormatEngine
 type rosterFormat struct{}
 
+// Encode implements serde.FormatEngine. It returns the data serialized for the
+// roster message if appropriate, otherwise an error.
 func (f rosterFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	roster, ok := msg.(roster.Roster)
 	if !ok {
-		return nil, xerrors.Errorf("invalid roster of type '%T'", msg)
+		return nil, xerrors.Errorf("unsupported message of type '%T'", msg)
 	}
 
 	players := make([]Player, roster.Len())
@@ -153,12 +171,14 @@ func (f rosterFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, erro
 
 	data, err := ctx.Marshal(m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't marshal: %v", err)
 	}
 
 	return data, nil
 }
 
+// Decode implements serde.FormatEngine. It populates the roster with the JSON
+// data if appropriate, otherwise it returns an error.
 func (f rosterFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Roster{}
 	err := ctx.Unmarshal(data, &m)
@@ -166,14 +186,18 @@ func (f rosterFormat) Decode(ctx serde.Context, data []byte) (serde.Message, err
 		return nil, xerrors.Errorf("couldn't deserialize roster: %v", err)
 	}
 
-	pkFac, ok := ctx.GetFactory(roster.PubKey{}).(crypto.PublicKeyFactory)
+	factory := ctx.GetFactory(roster.PubKeyFac{})
+
+	pkFac, ok := factory.(crypto.PublicKeyFactory)
 	if !ok {
-		return nil, xerrors.Errorf("invalid public key factory")
+		return nil, xerrors.Errorf("invalid public key factory of type '%T'", factory)
 	}
 
-	addrFac, ok := ctx.GetFactory(roster.AddrKey{}).(mino.AddressFactory)
+	factory = ctx.GetFactory(roster.AddrKeyFac{})
+
+	addrFac, ok := factory.(mino.AddressFactory)
 	if !ok {
-		return nil, xerrors.Errorf("invalid address factory")
+		return nil, xerrors.Errorf("invalid address factory of type '%T'", factory)
 	}
 
 	addrs := make([]mino.Address, len(m))

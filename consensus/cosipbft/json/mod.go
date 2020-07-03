@@ -14,7 +14,7 @@ import (
 func init() {
 	types.RegisterForwardLinkFormat(serde.FormatJSON, linkFormat{})
 	types.RegisterChainFormat(serde.FormatJSON, chainFormat{})
-	types.RegisterRequestFormat(serde.FormatJSON, messageFormat{})
+	types.RegisterRequestFormat(serde.FormatJSON, requestFormat{})
 }
 
 // ForwardLink is the JSON message for a forward link.
@@ -59,12 +59,18 @@ type Request struct {
 	Propagate *PropagateRequest `json:",omitempty"`
 }
 
+// LinkFormat is the engine to encode and decode forward link messages in JSON
+// format.
+//
+// - implements serde.FormatEngine
 type linkFormat struct{}
 
+// Encode implements serde.FormatEngine. It returns the serialized data in JSON
+// format for the link message if appropriate, otherwise an error.
 func (f linkFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	link, ok := msg.(types.ForwardLink)
 	if !ok {
-		return nil, xerrors.New("invalid link message")
+		return nil, xerrors.Errorf("unsupported message of type '%T'", msg)
 	}
 
 	m, err := f.toJSON(ctx, link)
@@ -74,17 +80,19 @@ func (f linkFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error)
 
 	data, err := ctx.Marshal(m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't marshal: %v", err)
 	}
 
 	return data, nil
 }
 
+// Decode implements serde.FormatEngine. It populates the forward link for the
+// JSON data if appropriate, otherwise it returns an error.
 func (f linkFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := ForwardLink{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't unmarshal link: %v", err)
 	}
 
 	link, err := f.fromJSON(ctx, m)
@@ -127,9 +135,11 @@ func (f linkFormat) toJSON(ctx serde.Context, link types.ForwardLink) (*ForwardL
 }
 
 func (f linkFormat) fromJSON(ctx serde.Context, m ForwardLink) (*types.ForwardLink, error) {
-	sf, ok := ctx.GetFactory(types.CoSigKey{}).(crypto.SignatureFactory)
+	factory := ctx.GetFactory(types.CoSigKeyFac{})
+
+	sf, ok := factory.(crypto.SignatureFactory)
 	if !ok {
-		return nil, xerrors.New("invalid factory")
+		return nil, xerrors.Errorf("invalid signature factory of type '%T'", factory)
 	}
 
 	prepare, err := sf.SignatureOf(ctx, m.Prepare)
@@ -142,9 +152,11 @@ func (f linkFormat) fromJSON(ctx serde.Context, m ForwardLink) (*types.ForwardLi
 		return nil, xerrors.Errorf("couldn't deserialize commit: %v", err)
 	}
 
-	csf, ok := ctx.GetFactory(types.ChangeSetKey{}).(viewchange.ChangeSetFactory)
+	factory = ctx.GetFactory(types.ChangeSetKeyFac{})
+
+	csf, ok := factory.(viewchange.ChangeSetFactory)
 	if !ok {
-		return nil, xerrors.New("invalid factory")
+		return nil, xerrors.Errorf("invalid change set factory of type '%T'", factory)
 	}
 
 	changeset, err := csf.ChangeSetOf(ctx, m.ChangeSet)
@@ -160,18 +172,23 @@ func (f linkFormat) fromJSON(ctx serde.Context, m ForwardLink) (*types.ForwardLi
 
 	link, err := types.NewForwardLink(m.From, m.To, opts...)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't create forward link: %v", err)
 	}
 
 	return &link, nil
 }
 
+// ChainFormat is the engine to encode and decode chain messages in JSON format.
+//
+// - implements serde.FormatEngine
 type chainFormat struct{}
 
+// Encode implements serde.FormatEngine. It returns the serialized data in JSON
+// format for the chain message if appropriate, otherwise an error.
 func (f chainFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	chain, ok := msg.(types.Chain)
 	if !ok {
-		return nil, xerrors.New("invalid chain message")
+		return nil, xerrors.Errorf("unsupported message of type '%T'", msg)
 	}
 
 	linkFormat := linkFormat{}
@@ -190,12 +207,14 @@ func (f chainFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error
 
 	data, err := ctx.Marshal(m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't marshal: %v", err)
 	}
 
 	return data, nil
 }
 
+// Decode implements serde.FormatEngine. It populates the chain for the JSON
+// data if appropriate, otherwise it returns an error.
 func (f chainFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Chain{}
 	err := ctx.Unmarshal(data, &m)
@@ -218,9 +237,15 @@ func (f chainFormat) Decode(ctx serde.Context, data []byte) (serde.Message, erro
 	return types.NewChain(links...), nil
 }
 
-type messageFormat struct{}
+// RequestFormat is the engine to encode and decode request messages in JSON
+// format.
+//
+// - implements serde.FormatEngine
+type requestFormat struct{}
 
-func (f messageFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
+// Encode implements serde.FormatEngine. It returns the serialized data in JSON
+// format for the request message if appropriate, otherwise an error.
+func (f requestFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	var req Request
 
 	switch in := msg.(type) {
@@ -272,18 +297,20 @@ func (f messageFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, err
 
 		req = Request{Propagate: &m}
 	default:
-		return nil, xerrors.New("invalid message type")
+		return nil, xerrors.Errorf("unsupported message of type '%T'", msg)
 	}
 
 	data, err := ctx.Marshal(req)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't marshal: %v", err)
 	}
 
 	return data, nil
 }
 
-func (f messageFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
+// Decode implements serde.FormatEngine. It populates the request for the JSON
+// data if appropriate, otherwise it returns an error.
+func (f requestFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Request{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {
@@ -325,7 +352,7 @@ func (f messageFormat) Decode(ctx serde.Context, data []byte) (serde.Message, er
 	if m.Propagate != nil {
 		commit, err := decodeCoSignature(ctx, m.Propagate.Commit)
 		if err != nil {
-			return nil, xerrors.Errorf("couldn't deserialize commit: %v", err)
+			return nil, xerrors.Errorf("couldn't deserialize propagate: %v", err)
 		}
 
 		p := types.NewPropagate(m.Propagate.To, commit)
@@ -337,39 +364,39 @@ func (f messageFormat) Decode(ctx serde.Context, data []byte) (serde.Message, er
 }
 
 func decodeMessage(ctx serde.Context, data []byte) (serde.Message, error) {
-	factory := ctx.GetFactory(types.MsgKey{})
+	factory := ctx.GetFactory(types.MsgKeyFac{})
 
 	return factory.Deserialize(ctx, data)
 }
 
 func decodeSignature(ctx serde.Context, data []byte) (crypto.Signature, error) {
-	factory := ctx.GetFactory(types.SigKey{})
+	factory := ctx.GetFactory(types.SigKeyFac{})
 
 	sf, ok := factory.(crypto.SignatureFactory)
 	if !ok {
-		return nil, xerrors.New("invalid signature factory")
+		return nil, xerrors.Errorf("invalid factory of type '%T'", factory)
 	}
 
 	return sf.SignatureOf(ctx, data)
 }
 
 func decodeChain(ctx serde.Context, data []byte) (consensus.Chain, error) {
-	factory := ctx.GetFactory(types.ChainKey{})
+	factory := ctx.GetFactory(types.ChainKeyFac{})
 
 	cf, ok := factory.(consensus.ChainFactory)
 	if !ok {
-		return nil, xerrors.New("invalid chain factory")
+		return nil, xerrors.Errorf("invalid factory of type '%T'", factory)
 	}
 
 	return cf.ChainOf(ctx, data)
 }
 
 func decodeCoSignature(ctx serde.Context, data []byte) (crypto.Signature, error) {
-	factory := ctx.GetFactory(types.CoSigKey{})
+	factory := ctx.GetFactory(types.CoSigKeyFac{})
 
 	sf, ok := factory.(crypto.SignatureFactory)
 	if !ok {
-		return nil, xerrors.New("invalid signature factory")
+		return nil, xerrors.Errorf("invalid factory of type '%T'", factory)
 	}
 
 	return sf.SignatureOf(ctx, data)

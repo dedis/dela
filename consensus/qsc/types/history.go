@@ -7,10 +7,12 @@ import (
 
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/registry"
+	"golang.org/x/xerrors"
 )
 
 var historyFormats = registry.NewSimpleRegistry()
 
+// RegisterHistoryFormat registers the engine for the provided format.
 func RegisterHistoryFormat(c serde.Format, f serde.FormatEngine) {
 	historyFormats.Register(c, f)
 }
@@ -22,6 +24,7 @@ type Epoch struct {
 	random int64
 }
 
+// NewEpoch creates a new epoch with the hash and the random value.
 func NewEpoch(hash []byte, random int64) Epoch {
 	return Epoch{
 		hash:   hash,
@@ -29,10 +32,12 @@ func NewEpoch(hash []byte, random int64) Epoch {
 	}
 }
 
+// GetHash returns the hash for this epoch.
 func (e Epoch) GetHash() []byte {
 	return append([]byte{}, e.hash...)
 }
 
+// GetRandom returns the random value for this epoch.
 func (e Epoch) GetRandom() int64 {
 	return e.random
 }
@@ -57,16 +62,19 @@ type History struct {
 	epochs []Epoch
 }
 
+// NewHistory creates an history from a list of epochs.
 func NewHistory(epochs ...Epoch) History {
 	return History{
 		epochs: epochs,
 	}
 }
 
+// GetEpochs returns the list of epochs.
 func (h History) GetEpochs() []Epoch {
 	return append([]Epoch{}, h.epochs...)
 }
 
+// GetLast returns the last epoch.
 func (h History) GetLast() (Epoch, bool) {
 	if len(h.epochs) == 0 {
 		return Epoch{}, false
@@ -90,13 +98,14 @@ func (h History) Equal(other History) bool {
 	return true
 }
 
-// Serialize implements serde.Message.
+// Serialize implements serde.Message. It looks up the format and returns the
+// serialized data if appropriate, otherwise an error.
 func (h History) Serialize(ctx serde.Context) ([]byte, error) {
 	format := historyFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, h)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't encode history: %v", err)
 	}
 
 	return data, nil
@@ -121,20 +130,23 @@ func (h History) String() string {
 // - implements serde.Factory
 type HistoryFactory struct{}
 
-// Deserialize implements serde.Factory.
+// Deserialize implements serde.Factory. It looks up the format and returns the
+// history of the data if appropriate, otherwise an error.
 func (f HistoryFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := historyFormats.Get(ctx.GetFormat())
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't decode history: %v", err)
 	}
 
 	return msg, nil
 }
 
+// Histories is a list of history.
 type Histories []History
 
+// NewHistories creates a new set of histories mapped by node index.
 func NewHistories(set map[int64]Message) Histories {
 	hists := make(Histories, 0, len(set))
 	for _, msg := range set {

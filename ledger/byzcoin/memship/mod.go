@@ -129,7 +129,7 @@ func NewTaskManager(i inventory.Inventory, m mino.Mino, s crypto.Signer) TaskMan
 	return TaskManager{
 		me:            m.GetAddress(),
 		inventory:     i,
-		rosterFactory: roster.NewRosterFactory(m.GetAddressFactory(), s.GetPublicKeyFactory()),
+		rosterFactory: roster.NewFactory(m.GetAddressFactory(), s.GetPublicKeyFactory()),
 		csFactory:     roster.NewChangeSetFactory(m.GetAddressFactory(), s.GetPublicKeyFactory()),
 	}
 }

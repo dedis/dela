@@ -2,6 +2,7 @@ package types
 
 import "sync"
 
+// Queue is the interface to implement to store a block waiting to be committed.
 type Queue interface {
 	Len() int
 	Get(id []byte) (SkipBlock, bool)
@@ -9,26 +10,27 @@ type Queue interface {
 	Clear()
 }
 
-type blockQueue struct {
+type simpleQueue struct {
 	sync.Mutex
 
 	buffer map[Digest]SkipBlock
 }
 
+// NewQueue creates a new empty queue.
 func NewQueue() Queue {
-	return &blockQueue{
+	return &simpleQueue{
 		buffer: make(map[Digest]SkipBlock),
 	}
 }
 
-func (q *blockQueue) Len() int {
+func (q *simpleQueue) Len() int {
 	q.Lock()
 	defer q.Unlock()
 
 	return len(q.buffer)
 }
 
-func (q *blockQueue) Get(id []byte) (SkipBlock, bool) {
+func (q *simpleQueue) Get(id []byte) (SkipBlock, bool) {
 	q.Lock()
 	defer q.Unlock()
 
@@ -39,7 +41,7 @@ func (q *blockQueue) Get(id []byte) (SkipBlock, bool) {
 	return block, ok
 }
 
-func (q *blockQueue) Add(block SkipBlock) {
+func (q *simpleQueue) Add(block SkipBlock) {
 	q.Lock()
 	defer q.Unlock()
 
@@ -48,7 +50,7 @@ func (q *blockQueue) Add(block SkipBlock) {
 	q.buffer[block.hash] = block
 }
 
-func (q *blockQueue) Clear() {
+func (q *simpleQueue) Clear() {
 	q.Lock()
 	defer q.Unlock()
 

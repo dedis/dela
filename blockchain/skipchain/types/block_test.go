@@ -12,10 +12,18 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/blockchain"
+	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"golang.org/x/xerrors"
 )
+
+func init() {
+	RegisterBlockFormat(fake.GoodFormat, fake.Format{Msg: SkipBlock{}})
+	RegisterBlockFormat(fake.BadFormat, fake.NewBadFormat())
+	RegisterVerifiableBlockFormats(fake.GoodFormat, fake.Format{Msg: VerifiableBlock{}})
+	RegisterVerifiableBlockFormats(fake.BadFormat, fake.NewBadFormat())
+}
 
 func TestDigest_Bytes(t *testing.T) {
 	f := func(buffer [32]byte) bool {
@@ -39,9 +47,16 @@ func TestDigest_String(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestSkipBlock_GetIndex(t *testing.T) {
-	f := func(index uint64) bool {
-		block := SkipBlock{Index: index}
+func TestSkipBlock_Getters(t *testing.T) {
+	f := func(index uint64, genesis, back [32]byte) bool {
+		block, err := NewSkipBlock(fake.Message{},
+			WithIndex(index), WithGenesisID(genesis[:]), WithBackLink(back[:]))
+
+		require.NoError(t, err)
+		require.Equal(t, genesis[:], block.GetGenesisID())
+		require.Equal(t, back[:], block.GetBackLink())
+		require.Equal(t, fake.Message{}, block.GetPayload())
+
 		return index == block.GetIndex()
 	}
 
@@ -49,13 +64,24 @@ func TestSkipBlock_GetIndex(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestSkipBlock_GetHash(t *testing.T) {
-	f := func(block SkipBlock) bool {
-		return bytes.Equal(block.GetHash(), block.hash.Bytes())
-	}
-
-	err := quick.Check(f, nil)
+func TestSkipBlock_WithHashFactory(t *testing.T) {
+	block, err := NewSkipBlock(fake.Message{}, WithHashFactory(crypto.NewSha256Factory()))
 	require.NoError(t, err)
+	require.Len(t, block.GetHash(), 32)
+
+	_, err = NewSkipBlock(fake.Message{}, WithHashFactory(fake.NewHashFactory(fake.NewBadHash())))
+	require.EqualError(t, err, "couldn't fingerprint: couldn't write index: fake error")
+}
+
+func TestSkipBlock_Serialize(t *testing.T) {
+	block := SkipBlock{}
+
+	data, err := block.Serialize(fake.NewContext())
+	require.NoError(t, err)
+	require.Equal(t, "fake format", string(data))
+
+	_, err = block.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, "couldn't encode block: fake error")
 }
 
 func TestSkipBlock_Fingerprint(t *testing.T) {
@@ -140,6 +166,39 @@ func TestSkipBlock_String(t *testing.T) {
 	require.Equal(t, block.String(), "Block[5:0100000000000000]")
 }
 
+func TestVerifiableBlock_Serialize(t *testing.T) {
+	block := VerifiableBlock{}
+
+	data, err := block.Serialize(fake.NewContext())
+	require.NoError(t, err)
+	require.Equal(t, "fake format", string(data))
+
+	_, err = block.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, "couldn't encode block: fake error")
+}
+
+func TestBlockFactory_Deserialize(t *testing.T) {
+	factory := NewBlockFactory(fake.MessageFactory{})
+
+	msg, err := factory.Deserialize(fake.NewContext(), nil)
+	require.NoError(t, err)
+	require.Equal(t, SkipBlock{}, msg)
+
+	_, err = factory.Deserialize(fake.NewBadContext(), nil)
+	require.EqualError(t, err, "couldn't decode block: fake error")
+}
+
+func TestVerifiableBlockFactory_Deserialize(t *testing.T) {
+	factory := NewVerifiableFactory(fakeChainFactory{}, fake.MessageFactory{})
+
+	msg, err := factory.Deserialize(fake.NewContext(), nil)
+	require.NoError(t, err)
+	require.Equal(t, VerifiableBlock{}, msg)
+
+	_, err = factory.Deserialize(fake.NewBadContext(), nil)
+	require.EqualError(t, err, "couldn't decode block: fake error")
+}
+
 // -----------------------------------------------------------------------------
 // Utility functions
 
@@ -179,4 +238,8 @@ type badPayload struct {
 
 func (p badPayload) Fingerprint(io.Writer) error {
 	return xerrors.New("oops")
+}
+
+type fakeChainFactory struct {
+	consensus.ChainFactory
 }

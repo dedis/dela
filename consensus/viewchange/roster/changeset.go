@@ -11,7 +11,8 @@ import (
 
 var csetFormats = registry.NewSimpleRegistry()
 
-func RegisterChangeSet(c serde.Format, f serde.FormatEngine) {
+// RegisterChangeSetFormat registers the engine for the provided format.
+func RegisterChangeSetFormat(c serde.Format, f serde.FormatEngine) {
 	csetFormats.Register(c, f)
 }
 
@@ -35,17 +36,21 @@ func (set ChangeSet) Serialize(ctx serde.Context) ([]byte, error) {
 
 	data, err := format.Encode(ctx, set)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't encode change set: %v", err)
 	}
 
 	return data, nil
 }
 
-type PubKey struct{}
-type AddrKey struct{}
+// PubKeyFac is the key for the public key factory.
+type PubKeyFac struct{}
+
+// AddrKeyFac is the key for the address factory.
+type AddrKeyFac struct{}
 
 // ChangeSetFactory is a message factory to deserialize a change set.
 //
+// - viewchange.ChangeSetFactory
 // - implements serde.Factory
 type ChangeSetFactory struct {
 	addrFactory   mino.AddressFactory
@@ -60,30 +65,28 @@ func NewChangeSetFactory(af mino.AddressFactory, pkf crypto.PublicKeyFactory) Ch
 	}
 }
 
-// Deserialize implements serde.Factory.
+// Deserialize implements serde.Factory. It returns the change set from the data
+// if appropriate, otherwise an error.
 func (f ChangeSetFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+	return f.ChangeSetOf(ctx, data)
+}
+
+// ChangeSetOf implements viewchange.ChangeSetFactory. It returns the change set
+// from the data if appropriate, otherwise an error.
+func (f ChangeSetFactory) ChangeSetOf(ctx serde.Context, data []byte) (viewchange.ChangeSet, error) {
 	format := csetFormats.Get(ctx.GetFormat())
 
-	ctx = serde.WithFactory(ctx, PubKey{}, f.pubkeyFactory)
-	ctx = serde.WithFactory(ctx, AddrKey{}, f.addrFactory)
+	ctx = serde.WithFactory(ctx, PubKeyFac{}, f.pubkeyFactory)
+	ctx = serde.WithFactory(ctx, AddrKeyFac{}, f.addrFactory)
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, err
-	}
-
-	return msg, nil
-}
-
-func (f ChangeSetFactory) ChangeSetOf(ctx serde.Context, data []byte) (viewchange.ChangeSet, error) {
-	msg, err := f.Deserialize(ctx, data)
-	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't decode change set: %v", err)
 	}
 
 	cset, ok := msg.(ChangeSet)
 	if !ok {
-		return nil, xerrors.New("invalid change set")
+		return nil, xerrors.Errorf("invalid message of type '%T'", msg)
 	}
 
 	return cset, nil

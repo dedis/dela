@@ -30,6 +30,7 @@ type queue struct {
 	items       []item
 }
 
+// NewQueue creates a new empty queue.
 func NewQueue(fac crypto.VerifierFactory) Queue {
 	return &queue{
 		locked:      false,

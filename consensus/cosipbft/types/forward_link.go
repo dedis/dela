@@ -6,7 +6,6 @@ import (
 
 	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/consensus/viewchange"
-	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/registry"
@@ -18,10 +17,12 @@ var (
 	chainFormats = registry.NewSimpleRegistry()
 )
 
+// RegisterForwardLinkFormat registers the engine for the provided format.
 func RegisterForwardLinkFormat(c serde.Format, f serde.FormatEngine) {
 	linkFormats.Register(c, f)
 }
 
+// RegisterChainFormat registers the engine for the provided format.
 func RegisterChainFormat(c serde.Format, f serde.FormatEngine) {
 	chainFormats.Register(c, f)
 }
@@ -47,39 +48,47 @@ type ForwardLink struct {
 	changeset viewchange.ChangeSet
 }
 
-type ForwardLinkTemplate struct {
+type forwardLinkTemplate struct {
 	ForwardLink
 	factory crypto.HashFactory
 }
 
-type ForwardLinkOption func(*ForwardLinkTemplate)
+// ForwardLinkOption is an option to set a forward link value when creating one.
+type ForwardLinkOption func(*forwardLinkTemplate)
 
+// WithPrepare is an option to set the prepare phase signature.
 func WithPrepare(s crypto.Signature) ForwardLinkOption {
-	return func(link *ForwardLinkTemplate) {
+	return func(link *forwardLinkTemplate) {
 		link.prepare = s
 	}
 }
 
+// WithCommit is an option to set the commit phase signature.
 func WithCommit(s crypto.Signature) ForwardLinkOption {
-	return func(link *ForwardLinkTemplate) {
+	return func(link *forwardLinkTemplate) {
 		link.commit = s
 	}
 }
 
+// WithChangeSet is an option to set the change set.
 func WithChangeSet(cs viewchange.ChangeSet) ForwardLinkOption {
-	return func(link *ForwardLinkTemplate) {
+	return func(link *forwardLinkTemplate) {
 		link.changeset = cs
 	}
 }
 
+// WithHashFactory is an option to use a different hash factory that the default
+// SHA-256 one.
 func WithHashFactory(f crypto.HashFactory) ForwardLinkOption {
-	return func(link *ForwardLinkTemplate) {
+	return func(link *forwardLinkTemplate) {
 		link.factory = f
 	}
 }
 
+// NewForwardLink creates a new forward link between from and to using the
+// options to set particular values.
 func NewForwardLink(from, to Digest, opts ...ForwardLinkOption) (ForwardLink, error) {
-	tmpl := &ForwardLinkTemplate{
+	tmpl := &forwardLinkTemplate{
 		ForwardLink: ForwardLink{
 			from: from,
 			to:   to,
@@ -94,7 +103,7 @@ func NewForwardLink(from, to Digest, opts ...ForwardLinkOption) (ForwardLink, er
 	h := tmpl.factory.New()
 	err := tmpl.Fingerprint(h)
 	if err != nil {
-		return ForwardLink{}, err
+		return ForwardLink{}, xerrors.Errorf("couldn't fingerprint: %v", err)
 	}
 
 	tmpl.hash = h.Sum(nil)
@@ -102,26 +111,32 @@ func NewForwardLink(from, to Digest, opts ...ForwardLinkOption) (ForwardLink, er
 	return tmpl.ForwardLink, nil
 }
 
+// GetFrom returns the identifier the forward link is pointing at.
 func (fl ForwardLink) GetFrom() []byte {
 	return append([]byte{}, fl.from...)
 }
 
+// GetTo returns the identifier the forward link is pointing at.
 func (fl ForwardLink) GetTo() []byte {
 	return append([]byte{}, fl.to...)
 }
 
+// GetFingerprint returns the fingerprint of the forward link.
 func (fl ForwardLink) GetFingerprint() []byte {
 	return fl.hash
 }
 
+// GetPrepareSignature returns the prepare phase signature.
 func (fl ForwardLink) GetPrepareSignature() crypto.Signature {
 	return fl.prepare
 }
 
+// GetCommitSignature returns the commit phase signature.
 func (fl ForwardLink) GetCommitSignature() crypto.Signature {
 	return fl.commit
 }
 
+// GetChangeSet returns the change set.
 func (fl ForwardLink) GetChangeSet() viewchange.ChangeSet {
 	return fl.changeset
 }
@@ -158,6 +173,8 @@ func (fl ForwardLink) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
+// Fingerprint deterministacally writes a binary representation of the forward
+// link into the writer.
 func (fl ForwardLink) Fingerprint(w io.Writer) error {
 	_, err := w.Write(fl.from)
 	if err != nil {
@@ -179,14 +196,17 @@ type Chain struct {
 	links []ForwardLink
 }
 
+// NewChain creates a new chain of forward links
 func NewChain(links ...ForwardLink) Chain {
 	return Chain{links: links}
 }
 
+// Len returns the length of the chain.
 func (c Chain) Len() int {
 	return len(c.links)
 }
 
+// GetLinks returns the ordered list of forward links.
 func (c Chain) GetLinks() []ForwardLink {
 	return append([]ForwardLink{}, c.links...)
 }
@@ -212,11 +232,13 @@ func (c Chain) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
-type ChangeSetKey struct{}
+// ChangeSetKeyFac is the key of the change set factory.
+type ChangeSetKeyFac struct{}
 
 // ChainFactory is an implementation of the chainFactory interface for forward
 // links.
 //
+// - implements consensus.ChainFactory
 // - implements serde.Factory
 type ChainFactory struct {
 	sigFactory      crypto.SignatureFactory
@@ -225,72 +247,42 @@ type ChainFactory struct {
 	verifierFactory crypto.VerifierFactory
 }
 
-type ChainFactoryOption func(*ChainFactory)
+// NewChainFactory creates a new chain factory.
+func NewChainFactory(
+	sf crypto.SignatureFactory,
+	csf viewchange.ChangeSetFactory,
+	vc viewchange.ViewChange,
+	vf crypto.VerifierFactory) ChainFactory {
 
-func WithCoSi(c cosi.CollectiveSigning) ChainFactoryOption {
-	return func(f *ChainFactory) {
-		f.sigFactory = c.GetSignatureFactory()
-		f.verifierFactory = c.GetVerifierFactory()
+	return ChainFactory{
+		sigFactory:      sf,
+		csFactory:       csf,
+		viewchange:      vc,
+		verifierFactory: vf,
 	}
-}
-
-func WithViewChange(vc viewchange.ViewChange) ChainFactoryOption {
-	return func(f *ChainFactory) {
-		f.viewchange = vc
-		f.csFactory = vc.GetChangeSetFactory()
-	}
-}
-
-func WithSignatureFactory(sf crypto.SignatureFactory) ChainFactoryOption {
-	return func(f *ChainFactory) {
-		f.sigFactory = sf
-	}
-}
-
-func WithChangeSetFactory(csf viewchange.ChangeSetFactory) ChainFactoryOption {
-	return func(f *ChainFactory) {
-		f.csFactory = csf
-	}
-}
-
-// NewChainFactory returns a new instance of a seal factory that will create
-// forward links for appropriate protobuf messages and return an error
-// otherwise.
-func NewChainFactory(opts ...ChainFactoryOption) ChainFactory {
-	f := ChainFactory{}
-
-	for _, opt := range opts {
-		opt(&f)
-	}
-
-	// TODO: check missing component
-
-	return f
-}
-
-func (f ChainFactory) GetSignatureFactory() crypto.SignatureFactory {
-	return f.sigFactory
-}
-
-func (f ChainFactory) GetChangeSetFactory() viewchange.ChangeSetFactory {
-	return f.csFactory
 }
 
 // Deserialize implements serde.Factory.
 func (f ChainFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+	return f.ChainOf(ctx, data)
+}
+
+// ChainOf implements consensus.ChainFactory. It looks up the format and
+// populates the chain if appropriate, otherwise it returns an error.
+func (f ChainFactory) ChainOf(ctx serde.Context, data []byte) (consensus.Chain, error) {
 	format := chainFormats.Get(ctx.GetFormat())
 
-	ctx = serde.WithFactory(ctx, CoSigKey{}, f.sigFactory)
-	ctx = serde.WithFactory(ctx, ChangeSetKey{}, f.csFactory)
+	ctx = serde.WithFactory(ctx, CoSigKeyFac{}, f.sigFactory)
+	ctx = serde.WithFactory(ctx, ChangeSetKeyFac{}, f.csFactory)
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't decode chain: %v", err)
 	}
 
 	chain, ok := msg.(Chain)
 	if !ok {
-		return nil, xerrors.New("invalid chain")
+		return nil, xerrors.Errorf("invalid message of type '%T'", msg)
 	}
 
 	err = f.verify(chain)
@@ -301,15 +293,6 @@ func (f ChainFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message
 	return chain, nil
 }
 
-func (f ChainFactory) ChainOf(ctx serde.Context, data []byte) (consensus.Chain, error) {
-	chain, err := f.Deserialize(ctx, data)
-	if err != nil {
-		return nil, err
-	}
-
-	return chain.(consensus.Chain), nil
-}
-
 func (f ChainFactory) verify(chain Chain) error {
 	if len(chain.links) == 0 {
 		return nil
@@ -317,7 +300,7 @@ func (f ChainFactory) verify(chain Chain) error {
 
 	authority, err := f.viewchange.GetAuthority(0)
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't get authority: %v", err)
 	}
 
 	lastIndex := len(chain.links) - 1

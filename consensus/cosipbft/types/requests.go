@@ -5,10 +5,12 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/registry"
+	"golang.org/x/xerrors"
 )
 
 var requestFormats = registry.NewSimpleRegistry()
 
+// RegisterRequestFormat registers the engine for the provided format.
 func RegisterRequestFormat(c serde.Format, f serde.FormatEngine) {
 	requestFormats.Register(c, f)
 }
@@ -22,6 +24,7 @@ type Prepare struct {
 	chain     consensus.Chain
 }
 
+// NewPrepare creates a new prepare request.
 func NewPrepare(msg serde.Message, sig crypto.Signature, chain consensus.Chain) Prepare {
 	return Prepare{
 		message:   msg,
@@ -30,14 +33,17 @@ func NewPrepare(msg serde.Message, sig crypto.Signature, chain consensus.Chain) 
 	}
 }
 
+// GetMessage returns the message.
 func (p Prepare) GetMessage() serde.Message {
 	return p.message
 }
 
+// GetSignature returns the signature.
 func (p Prepare) GetSignature() crypto.Signature {
 	return p.signature
 }
 
+// GetChain returns the chain.
 func (p Prepare) GetChain() consensus.Chain {
 	return p.chain
 }
@@ -48,7 +54,7 @@ func (p Prepare) Serialize(ctx serde.Context) ([]byte, error) {
 
 	data, err := format.Encode(ctx, p)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't encode prepare: %v", err)
 	}
 
 	return data, nil
@@ -62,6 +68,7 @@ type Commit struct {
 	prepare crypto.Signature
 }
 
+// NewCommit creates a new commit request.
 func NewCommit(to []byte, prepare crypto.Signature) Commit {
 	commit := Commit{
 		to:      to,
@@ -71,10 +78,12 @@ func NewCommit(to []byte, prepare crypto.Signature) Commit {
 	return commit
 }
 
+// GetTo returns the identifier for this commit.
 func (c Commit) GetTo() []byte {
 	return append([]byte{}, c.to...)
 }
 
+// GetPrepare returns the prepare phase signature.
 func (c Commit) GetPrepare() crypto.Signature {
 	return c.prepare
 }
@@ -85,7 +94,7 @@ func (c Commit) Serialize(ctx serde.Context) ([]byte, error) {
 
 	data, err := format.Encode(ctx, c)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't encode commit: %v", err)
 	}
 
 	return data, nil
@@ -99,6 +108,7 @@ type Propagate struct {
 	commit crypto.Signature
 }
 
+// NewPropagate creates a new propagate request.
 func NewPropagate(to []byte, commit crypto.Signature) Propagate {
 	return Propagate{
 		to:     to,
@@ -106,10 +116,12 @@ func NewPropagate(to []byte, commit crypto.Signature) Propagate {
 	}
 }
 
+// GetTo returns the identifier for this request.
 func (p Propagate) GetTo() []byte {
 	return append([]byte{}, p.to...)
 }
 
+// GetCommit returns the commit phase signature.
 func (p Propagate) GetCommit() crypto.Signature {
 	return p.commit
 }
@@ -120,16 +132,23 @@ func (p Propagate) Serialize(ctx serde.Context) ([]byte, error) {
 
 	data, err := format.Encode(ctx, p)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't encode propagate: %v", err)
 	}
 
 	return data, nil
 }
 
-type MsgKey struct{}
-type SigKey struct{}
-type CoSigKey struct{}
-type ChainKey struct{}
+// MsgKeyFac is the key for the message factory.
+type MsgKeyFac struct{}
+
+// SigKeyFac is the key for the signature factory.
+type SigKeyFac struct{}
+
+// CoSigKeyFac is the key for the collective signature factory.
+type CoSigKeyFac struct{}
+
+// ChainKeyFac is the key for the chain factory.
+type ChainKeyFac struct{}
 
 // RequestFactory is the factory to deserialize prepare and commit messages.
 //
@@ -141,7 +160,12 @@ type RequestFactory struct {
 	chainFactory consensus.ChainFactory
 }
 
-func NewRequestFactory(mf serde.Factory, sf, cosf crypto.SignatureFactory, cf consensus.ChainFactory) RequestFactory {
+// NewRequestFactory creates a new request factory.
+func NewRequestFactory(
+	mf serde.Factory,
+	sf, cosf crypto.SignatureFactory,
+	cf consensus.ChainFactory) RequestFactory {
+
 	return RequestFactory{
 		msgFactory:   mf,
 		sigFactory:   sf,
@@ -150,34 +174,18 @@ func NewRequestFactory(mf serde.Factory, sf, cosf crypto.SignatureFactory, cf co
 	}
 }
 
-func (f RequestFactory) GetMessageFactory() serde.Factory {
-	return f.msgFactory
-}
-
-func (f RequestFactory) GetSignatureFactory() crypto.SignatureFactory {
-	return f.sigFactory
-}
-
-func (f RequestFactory) GetCoSignatureFactory() crypto.SignatureFactory {
-	return f.cosiFactory
-}
-
-func (f RequestFactory) GetChainFactory() consensus.ChainFactory {
-	return f.chainFactory
-}
-
 // Deserialize implements serde.Factory.
 func (f RequestFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := requestFormats.Get(ctx.GetFormat())
 
-	ctx = serde.WithFactory(ctx, MsgKey{}, f.msgFactory)
-	ctx = serde.WithFactory(ctx, SigKey{}, f.sigFactory)
-	ctx = serde.WithFactory(ctx, CoSigKey{}, f.cosiFactory)
-	ctx = serde.WithFactory(ctx, ChainKey{}, f.chainFactory)
+	ctx = serde.WithFactory(ctx, MsgKeyFac{}, f.msgFactory)
+	ctx = serde.WithFactory(ctx, SigKeyFac{}, f.sigFactory)
+	ctx = serde.WithFactory(ctx, CoSigKeyFac{}, f.cosiFactory)
+	ctx = serde.WithFactory(ctx, ChainKeyFac{}, f.chainFactory)
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't decode request: %v", err)
 	}
 
 	return msg, nil

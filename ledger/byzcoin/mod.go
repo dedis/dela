@@ -65,7 +65,7 @@ func NewLedger(m mino.Mino, signer crypto.AggregateSigner) *Ledger {
 	consensus := cosipbft.NewCoSiPBFT(m, flatcosi.NewFlat(m, signer), vc)
 
 	msgFactory := types.NewMessageFactory(
-		roster.NewRosterFactory(m.GetAddressFactory(), signer.GetPublicKeyFactory()),
+		roster.NewFactory(m.GetAddressFactory(), signer.GetPublicKeyFactory()),
 		txFactory,
 	)
 

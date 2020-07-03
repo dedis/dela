@@ -1,12 +1,30 @@
 package types
 
 import (
+	"bytes"
 	"math/rand"
 	"testing"
 	"testing/quick"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/internal/testing/fake"
 )
+
+func init() {
+	RegisterHistoryFormat(fake.GoodFormat, fake.Format{Msg: History{}})
+	RegisterHistoryFormat(fake.BadFormat, fake.NewBadFormat())
+}
+
+func TestEpoch_Getters(t *testing.T) {
+	f := func(hash []byte, random int64) bool {
+		epoch := NewEpoch(hash, random)
+
+		return bytes.Equal(hash, epoch.GetHash()) && random == epoch.GetRandom()
+	}
+
+	err := quick.Check(f, nil)
+	require.NoError(t, err)
+}
 
 func TestEpoch_Equal(t *testing.T) {
 	f := func(hash []byte, random int64) bool {
@@ -29,6 +47,12 @@ func TestEpoch_Equal(t *testing.T) {
 
 	err := quick.Check(f, nil)
 	require.NoError(t, err)
+}
+
+func TestHistory_GetEpochs(t *testing.T) {
+	h := NewHistory(NewEpoch(nil, 0), NewEpoch(nil, 1))
+
+	require.Len(t, h.GetEpochs(), 2)
 }
 
 func TestHistory_GetLast(t *testing.T) {
@@ -56,6 +80,17 @@ func TestHistory_Equal(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestHistory_Serialize(t *testing.T) {
+	h := History{}
+
+	data, err := h.Serialize(fake.NewContext())
+	require.NoError(t, err)
+	require.Equal(t, "fake format", string(data))
+
+	_, err = h.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, "couldn't encode history: fake error")
+}
+
 func TestHistory_String(t *testing.T) {
 	h := History{}
 	require.Equal(t, "History[0]{}", h.String())
@@ -65,6 +100,17 @@ func TestHistory_String(t *testing.T) {
 
 	h = History{epochs: []Epoch{{hash: []byte{0xaa, 0xbb}}}}
 	require.Equal(t, "History[1]{aabb}", h.String())
+}
+
+func TestHistoryFactory_Deserialize(t *testing.T) {
+	factory := HistoryFactory{}
+
+	msg, err := factory.Deserialize(fake.NewContext(), nil)
+	require.NoError(t, err)
+	require.Equal(t, History{}, msg)
+
+	_, err = factory.Deserialize(fake.NewBadContext(), nil)
+	require.EqualError(t, err, "couldn't decode history: fake error")
 }
 
 func TestHistories_GetBest(t *testing.T) {

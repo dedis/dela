@@ -21,6 +21,7 @@ type inMemoryStorage struct {
 	links []ForwardLink
 }
 
+// NewInMemoryStorage creates a new empty in-memory storage.
 func NewInMemoryStorage() Storage {
 	return &inMemoryStorage{}
 }

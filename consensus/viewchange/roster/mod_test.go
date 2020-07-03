@@ -9,7 +9,14 @@ import (
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
 )
+
+func init() {
+	RegisterRosterFormat(fake.GoodFormat, fake.Format{Msg: Roster{}})
+	RegisterRosterFormat(serde.Format("BAD_TYPE"), fake.Format{Msg: fake.Message{}})
+	RegisterRosterFormat(fake.BadFormat, fake.NewBadFormat())
+}
 
 func TestIterator_Seek(t *testing.T) {
 	roster := FromAuthority(fake.NewAuthority(3, fake.NewSigner))
@@ -196,4 +203,29 @@ func TestRoster_PublicKeyIterator(t *testing.T) {
 	for i := 0; iter.HasNext(); i++ {
 		require.Equal(t, authority.GetSigner(i).GetPublicKey(), iter.GetNext())
 	}
+}
+
+func TestRoster_Serialize(t *testing.T) {
+	roster := Roster{}
+
+	data, err := roster.Serialize(fake.NewContext())
+	require.NoError(t, err)
+	require.Equal(t, "fake format", string(data))
+
+	_, err = roster.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, "couldn't encode roster: fake error")
+}
+
+func TestFactory_Deserialize(t *testing.T) {
+	factory := NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
+
+	msg, err := factory.Deserialize(fake.NewContext(), nil)
+	require.NoError(t, err)
+	require.Equal(t, Roster{}, msg)
+
+	_, err = factory.Deserialize(fake.NewBadContext(), nil)
+	require.EqualError(t, err, "couldn't decode roster: fake error")
+
+	_, err = factory.Deserialize(fake.NewContextWithFormat(serde.Format("BAD_TYPE")), nil)
+	require.EqualError(t, err, "invalid message of type 'fake.Message'")
 }

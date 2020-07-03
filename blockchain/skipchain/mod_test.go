@@ -191,7 +191,7 @@ func TestActor_NewChain(t *testing.T) {
 	actor.hashFactory = fake.NewHashFactory(fake.NewBadHash())
 	err = actor.newChain(fake.Message{}, authority)
 	require.EqualError(t, err,
-		"couldn't create genesis: couldn't write index: fake error")
+		"couldn't create genesis: couldn't fingerprint: couldn't write index: fake error")
 }
 
 func TestActor_Store(t *testing.T) {

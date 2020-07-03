@@ -18,10 +18,12 @@ var (
 	verifiableFormats = registry.NewSimpleRegistry()
 )
 
+// RegisterBlockFormat registers the engine for the provided format.
 func RegisterBlockFormat(c serde.Format, f serde.FormatEngine) {
 	blockFormats.Register(c, f)
 }
 
+// RegisterVerifiableBlockFormats registers the engine for the provided format.
 func RegisterVerifiableBlockFormats(c serde.Format, f serde.FormatEngine) {
 	verifiableFormats.Register(c, f)
 }
@@ -37,16 +39,6 @@ func (d Digest) Bytes() []byte {
 // String returns the short string representation of the digest.
 func (d Digest) String() string {
 	return fmt.Sprintf("%x", d[:])[:16]
-}
-
-type emptyPayload struct{}
-
-func (p emptyPayload) Serialize(serde.Context) ([]byte, error) {
-	return nil, nil
-}
-
-func (p emptyPayload) Fingerprint(io.Writer) error {
-	return nil
 }
 
 // SkipBlock is a representation of the data held by a block. It contains the
@@ -79,42 +71,44 @@ type skipBlockTemplate struct {
 	hashFactory crypto.HashFactory
 }
 
+// SkipBlockOption is the type of the options to set fields of a block when
+// creating one.
 type SkipBlockOption func(*skipBlockTemplate)
 
+// WithIndex is the option to set the index.
 func WithIndex(index uint64) SkipBlockOption {
 	return func(tmpl *skipBlockTemplate) {
 		tmpl.Index = index
 	}
 }
 
+// WithGenesisID is the option to set the genesis ID.
 func WithGenesisID(id []byte) SkipBlockOption {
 	return func(tmpl *skipBlockTemplate) {
 		copy(tmpl.GenesisID[:], id)
 	}
 }
 
+// WithBackLink is the option to set a back link.
 func WithBackLink(id []byte) SkipBlockOption {
 	return func(tmpl *skipBlockTemplate) {
 		copy(tmpl.BackLink[:], id)
 	}
 }
 
-func WithPayload(payload blockchain.Payload) SkipBlockOption {
-	return func(tmpl *skipBlockTemplate) {
-		tmpl.Payload = payload
-	}
-}
-
+// WithHashFactory is the option to set a different hash factory than the
+// default SHA-256 one.
 func WithHashFactory(f crypto.HashFactory) SkipBlockOption {
 	return func(tmpl *skipBlockTemplate) {
 		tmpl.hashFactory = f
 	}
 }
 
-func NewSkipBlock(opts ...SkipBlockOption) (SkipBlock, error) {
+// NewSkipBlock creates a new skipblock from the options.
+func NewSkipBlock(pl blockchain.Payload, opts ...SkipBlockOption) (SkipBlock, error) {
 	tmpl := skipBlockTemplate{
 		SkipBlock: SkipBlock{
-			Payload: emptyPayload{},
+			Payload: pl,
 		},
 		hashFactory: crypto.NewSha256Factory(),
 	}
@@ -126,7 +120,7 @@ func NewSkipBlock(opts ...SkipBlockOption) (SkipBlock, error) {
 	h := tmpl.hashFactory.New()
 	err := tmpl.Fingerprint(h)
 	if err != nil {
-		return tmpl.SkipBlock, err
+		return tmpl.SkipBlock, xerrors.Errorf("couldn't fingerprint: %v", err)
 	}
 
 	copy(tmpl.hash[:], h.Sum(nil))
@@ -137,6 +131,16 @@ func NewSkipBlock(opts ...SkipBlockOption) (SkipBlock, error) {
 // GetIndex returns the index of the block since the genesis block.
 func (b SkipBlock) GetIndex() uint64 {
 	return b.Index
+}
+
+// GetGenesisID returns the genesis ID.
+func (b SkipBlock) GetGenesisID() []byte {
+	return append([]byte{}, b.GenesisID[:]...)
+}
+
+// GetBackLink returns the back link.
+func (b SkipBlock) GetBackLink() []byte {
+	return append([]byte{}, b.BackLink[:]...)
 }
 
 // GetHash implements blockchain.Block and consensus.Proposal. It returns the
@@ -156,7 +160,7 @@ func (b SkipBlock) Serialize(ctx serde.Context) ([]byte, error) {
 
 	data, err := format.Encode(ctx, b)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't encode block: %v", err)
 	}
 
 	return data, nil
@@ -209,13 +213,14 @@ func (vb VerifiableBlock) Serialize(ctx serde.Context) ([]byte, error) {
 
 	data, err := format.Encode(ctx, vb)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't encode block: %v", err)
 	}
 
 	return data, nil
 }
 
-type PayloadKey struct{}
+// PayloadKeyFac is the key of the payload factory.
+type PayloadKeyFac struct{}
 
 // BlockFactory is responsible for the instantiation of the block and related
 // data structures like the forward links and the proves.
@@ -237,17 +242,18 @@ func NewBlockFactory(f serde.Factory) BlockFactory {
 func (f BlockFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := blockFormats.Get(ctx.GetFormat())
 
-	ctx = serde.WithFactory(ctx, PayloadKey{}, f.payloadFactory)
+	ctx = serde.WithFactory(ctx, PayloadKeyFac{}, f.payloadFactory)
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't decode block: %v", err)
 	}
 
 	return msg, nil
 }
 
-type ChainKey struct{}
+// ChainKeyFac is the key of the chain factory.
+type ChainKeyFac struct{}
 
 // VerifiableFactory is a message factory to deserialize verifiable block
 // messages.
@@ -270,12 +276,12 @@ func NewVerifiableFactory(cf consensus.ChainFactory, pf serde.Factory) Verifiabl
 func (f VerifiableFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := verifiableFormats.Get(ctx.GetFormat())
 
-	ctx = serde.WithFactory(ctx, PayloadKey{}, f.payloadFactory)
-	ctx = serde.WithFactory(ctx, ChainKey{}, f.chainFactory)
+	ctx = serde.WithFactory(ctx, PayloadKeyFac{}, f.payloadFactory)
+	ctx = serde.WithFactory(ctx, ChainKeyFac{}, f.chainFactory)
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't decode block: %v", err)
 	}
 
 	return msg, nil

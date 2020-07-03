@@ -3,10 +3,12 @@ package types
 import (
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/registry"
+	"golang.org/x/xerrors"
 )
 
 var requestFormats = registry.NewSimpleRegistry()
 
+// RegisterRequestFormat registers the engine for the provided format.
 func RegisterRequestFormat(c serde.Format, f serde.FormatEngine) {
 	requestFormats.Register(c, f)
 }
@@ -19,12 +21,14 @@ type Proposal struct {
 	value serde.Message
 }
 
+// NewProposal creates a new proposal message.
 func NewProposal(value serde.Message) Proposal {
 	return Proposal{
 		value: value,
 	}
 }
 
+// GetValue returns the value of the proposal message.
 func (p Proposal) GetValue() serde.Message {
 	return p.value
 }
@@ -35,7 +39,7 @@ func (p Proposal) Serialize(ctx serde.Context) ([]byte, error) {
 
 	data, err := format.Encode(ctx, p)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't encode proposal: %v", err)
 	}
 
 	return data, nil
@@ -49,6 +53,7 @@ type Message struct {
 	value serde.Message
 }
 
+// NewMessage creates a new message for the node and the value.
 func NewMessage(node int64, value serde.Message) Message {
 	return Message{
 		node:  node,
@@ -56,10 +61,12 @@ func NewMessage(node int64, value serde.Message) Message {
 	}
 }
 
+// GetNode returns the node index.
 func (m Message) GetNode() int64 {
 	return m.node
 }
 
+// GetValue returns the value wrapped by the message.
 func (m Message) GetValue() serde.Message {
 	return m.value
 }
@@ -73,6 +80,7 @@ type MessageSet struct {
 	node     int64
 }
 
+// NewMessageSet creates a new set of messages.
 func NewMessageSet(node int64, step uint64, msgs ...Message) MessageSet {
 	messages := make(map[int64]Message)
 	for _, msg := range msgs {
@@ -86,6 +94,7 @@ func NewMessageSet(node int64, step uint64, msgs ...Message) MessageSet {
 	}
 }
 
+// GetMessages returns the list of messages.
 func (mset MessageSet) GetMessages() []Message {
 	messages := make([]Message, 0, len(mset.messages))
 	for _, msg := range mset.messages {
@@ -95,14 +104,17 @@ func (mset MessageSet) GetMessages() []Message {
 	return messages
 }
 
+// GetTimeStep returns the time step.
 func (mset MessageSet) GetTimeStep() uint64 {
 	return mset.timeStep
 }
 
+// GetNode returns the node index.
 func (mset MessageSet) GetNode() int64 {
 	return mset.node
 }
 
+// Reduce returns a new message set with the messages of the provided nodes.
 func (mset MessageSet) Reduce(nodes []int64) MessageSet {
 	messages := make(map[int64]Message)
 	for _, key := range nodes {
@@ -116,6 +128,7 @@ func (mset MessageSet) Reduce(nodes []int64) MessageSet {
 	}
 }
 
+// Merge merges the two message sets.
 func (mset MessageSet) Merge(other MessageSet) MessageSet {
 	messages := make(map[int64]Message)
 
@@ -139,7 +152,7 @@ func (mset MessageSet) Serialize(ctx serde.Context) ([]byte, error) {
 
 	data, err := format.Encode(ctx, mset)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't encode message set: %v", err)
 	}
 
 	return data, nil
@@ -153,6 +166,7 @@ type RequestMessageSet struct {
 	nodes    []int64
 }
 
+// NewRequestMessageSet creates a new request message set message.
 func NewRequestMessageSet(step uint64, nodes []int64) RequestMessageSet {
 	return RequestMessageSet{
 		timeStep: step,
@@ -160,10 +174,12 @@ func NewRequestMessageSet(step uint64, nodes []int64) RequestMessageSet {
 	}
 }
 
+// GetTimeStep returns the time step.
 func (req RequestMessageSet) GetTimeStep() uint64 {
 	return req.timeStep
 }
 
+// GetNodes returns the list of node indices.
 func (req RequestMessageSet) GetNodes() []int64 {
 	return append([]int64{}, req.nodes...)
 }
@@ -174,13 +190,14 @@ func (req RequestMessageSet) Serialize(ctx serde.Context) ([]byte, error) {
 
 	data, err := format.Encode(ctx, req)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't encode request: %v", err)
 	}
 
 	return data, nil
 }
 
-type MsgKey struct{}
+// MsgKeyFac is the key of the message factory.
+type MsgKeyFac struct{}
 
 // RequestFactory is a message factory.
 //
@@ -189,6 +206,7 @@ type RequestFactory struct {
 	mFactory serde.Factory
 }
 
+// NewRequestFactory creates a new request message factory.
 func NewRequestFactory(f serde.Factory) RequestFactory {
 	return RequestFactory{
 		mFactory: f,
@@ -199,11 +217,11 @@ func NewRequestFactory(f serde.Factory) RequestFactory {
 func (f RequestFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := requestFormats.Get(ctx.GetFormat())
 
-	ctx = serde.WithFactory(ctx, MsgKey{}, f.mFactory)
+	ctx = serde.WithFactory(ctx, MsgKeyFac{}, f.mFactory)
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't decode request: %v", err)
 	}
 
 	return msg, nil

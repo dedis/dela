@@ -13,11 +13,13 @@ func init() {
 	types.RegisterRequestFormat(serde.FormatJSON, requestFormat{})
 }
 
+// Epoch is a part of an history associated with a hash and a random value.
 type Epoch struct {
 	Hash   []byte
 	Random int64
 }
 
+// History is an ordered list of epochs.
 type History []Epoch
 
 // Message is the JSON message for messages sent by nodes for a round.
@@ -26,6 +28,7 @@ type Message struct {
 	Value json.RawMessage
 }
 
+// Proposal is a wrapper around a value proposed by the client.
 type Proposal struct {
 	Value json.RawMessage
 }
@@ -37,6 +40,7 @@ type MessageSet struct {
 	Messages map[int64]Message
 }
 
+// RequestMessageSet is a message to request a message set.
 type RequestMessageSet struct {
 	TimeStep uint64
 	Nodes    []int64
@@ -44,17 +48,23 @@ type RequestMessageSet struct {
 
 // Request is a container for JSON messages.
 type Request struct {
-	MessageSet        *MessageSet
-	RequestMessageSet *RequestMessageSet
-	Proposal          *Proposal
+	MessageSet        *MessageSet        `json:",omitempty"`
+	RequestMessageSet *RequestMessageSet `json:",omitempty"`
+	Proposal          *Proposal          `json:",omitempty"`
 }
 
+// HistoryFormat is the engine to encode and decode history messages in JSON
+// format.
+//
+// - implements serde.FormatEngine
 type historyFormat struct{}
 
+// Encode implements serde.FormatEngine. It returns the serialized data of the
+// history message if appropriate, otherwise an error.
 func (f historyFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	hist, ok := msg.(types.History)
 	if !ok {
-		return nil, xerrors.Errorf("invalid history of type '%T'", msg)
+		return nil, xerrors.Errorf("unsupported message of type '%T'", msg)
 	}
 
 	epochs := make([]Epoch, len(hist.GetEpochs()))
@@ -69,12 +79,14 @@ func (f historyFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, err
 
 	data, err := ctx.Marshal(m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't marshal: %v", err)
 	}
 
 	return data, nil
 }
 
+// Decode implements serde.FormatEngine. It populates the history for the JSON
+// data if appropriate, otherwise it returns an error.
 func (f historyFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := History{}
 	err := ctx.Unmarshal(data, &m)
@@ -90,8 +102,14 @@ func (f historyFormat) Decode(ctx serde.Context, data []byte) (serde.Message, er
 	return types.NewHistory(epochs...), nil
 }
 
+// RequestFormat is the engine to encode and decode request messages in JSON
+// format.
+//
+// - implements serde.FormatEngine
 type requestFormat struct{}
 
+// Encode implements serde.FormatEngine. It returns the serialized data of the
+// request message if appropriate, otherwise an error.
 func (f requestFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	var req Request
 
@@ -133,17 +151,19 @@ func (f requestFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, err
 
 		req = Request{RequestMessageSet: &m}
 	default:
-		return nil, xerrors.New("message is empty")
+		return nil, xerrors.Errorf("unsupported message of type '%T'", msg)
 	}
 
 	data, err := ctx.Marshal(req)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't marshal: %v", err)
 	}
 
 	return data, nil
 }
 
+// Decode implements serde.FormatEngine. It populates the request message with
+// the JSON data if appropriate, otherwise it returns an error.
 func (f requestFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Request{}
 	err := ctx.Unmarshal(data, &m)
@@ -175,7 +195,7 @@ func (f requestFormat) Decode(ctx serde.Context, data []byte) (serde.Message, er
 	}
 
 	if m.Proposal != nil {
-		factory := ctx.GetFactory(types.MsgKey{})
+		factory := ctx.GetFactory(types.MsgKeyFac{})
 
 		value, err := factory.Deserialize(ctx, m.Proposal.Value)
 		if err != nil {

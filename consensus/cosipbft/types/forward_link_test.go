@@ -3,13 +3,60 @@ package types
 import (
 	"bytes"
 	"testing"
+	"testing/quick"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/consensus/viewchange/roster"
+	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
+
+func init() {
+	RegisterForwardLinkFormat(fake.GoodFormat, fake.Format{Msg: ForwardLink{}})
+	RegisterForwardLinkFormat(fake.BadFormat, fake.NewBadFormat())
+	RegisterChainFormat(fake.GoodFormat, fake.Format{
+		Msg: NewChain(ForwardLink{prepare: fake.Signature{}, commit: fake.Signature{}}),
+	})
+	RegisterChainFormat(serde.Format("BAD_TYPE"), fake.Format{Msg: fake.Message{}})
+	RegisterChainFormat(fake.BadFormat, fake.NewBadFormat())
+}
+
+func TestForwardLink_Getters(t *testing.T) {
+	f := func(from, to []byte) bool {
+		fl, err := NewForwardLink(from, to, WithHashFactory(crypto.NewSha256Factory()))
+		require.NoError(t, err)
+		require.Len(t, fl.GetFingerprint(), 32)
+
+		return bytes.Equal(from, fl.GetFrom()) && bytes.Equal(to, fl.GetTo())
+	}
+
+	err := quick.Check(f, nil)
+	require.NoError(t, err)
+}
+
+func TestForwardLink_GetPrepareSignature(t *testing.T) {
+	fl, err := NewForwardLink(nil, nil, WithPrepare(fake.Signature{}))
+	require.NoError(t, err)
+
+	require.Equal(t, fake.Signature{}, fl.GetPrepareSignature())
+}
+
+func TestForwardLink_GetCommitSignature(t *testing.T) {
+	fl, err := NewForwardLink(nil, nil, WithCommit(fake.Signature{}))
+	require.NoError(t, err)
+
+	require.Equal(t, fake.Signature{}, fl.GetCommitSignature())
+}
+
+func TestForwardLink_GetChangeSet(t *testing.T) {
+	fl, err := NewForwardLink(nil, nil, WithChangeSet(roster.ChangeSet{}))
+	require.NoError(t, err)
+
+	require.Equal(t, roster.ChangeSet{}, fl.GetChangeSet())
+}
 
 func TestForwardLink_Verify(t *testing.T) {
 	fl := ForwardLink{
@@ -39,7 +86,18 @@ func TestForwardLink_Verify(t *testing.T) {
 	require.EqualError(t, err, "couldn't marshal the signature: fake error")
 }
 
-func TestForwardLink_Hash(t *testing.T) {
+func TestForwardLink_Serialize(t *testing.T) {
+	fl := ForwardLink{}
+
+	data, err := fl.Serialize(fake.NewContext())
+	require.NoError(t, err)
+	require.Equal(t, "fake format", string(data))
+
+	_, err = fl.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, "couldn't encode link: fake error")
+}
+
+func TestForwardLink_Fingerprint(t *testing.T) {
 	fl := ForwardLink{
 		from: []byte{0xaa},
 		to:   []byte{0xbb},
@@ -57,6 +115,18 @@ func TestForwardLink_Hash(t *testing.T) {
 	require.EqualError(t, err, "couldn't write 'to': fake error")
 }
 
+func TestChain_Len(t *testing.T) {
+	chain := NewChain(ForwardLink{}, ForwardLink{})
+
+	require.Equal(t, 2, chain.Len())
+}
+
+func TestChain_GetLinks(t *testing.T) {
+	chain := NewChain(ForwardLink{}, ForwardLink{})
+
+	require.Len(t, chain.GetLinks(), 2)
+}
+
 func TestChain_GetTo(t *testing.T) {
 	chain := Chain{}
 	require.Nil(t, chain.GetTo())
@@ -72,6 +142,39 @@ func TestChain_GetTo(t *testing.T) {
 	require.Equal(t, hash, chain.GetTo())
 }
 
+func TestChain_Serialize(t *testing.T) {
+	chain := Chain{}
+
+	data, err := chain.Serialize(fake.NewContext())
+	require.NoError(t, err)
+	require.Equal(t, "fake format", string(data))
+
+	_, err = chain.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, "couldn't encode chain: fake error")
+}
+
+func TestChainFactory_Deserialize(t *testing.T) {
+	factory := NewChainFactory(
+		fake.SignatureFactory{},
+		nil,
+		fakeViewChange{},
+		fake.VerifierFactory{})
+
+	msg, err := factory.Deserialize(fake.NewContext(), nil)
+	require.NoError(t, err)
+	require.IsType(t, Chain{}, msg)
+
+	_, err = factory.Deserialize(fake.NewBadContext(), nil)
+	require.EqualError(t, err, "couldn't decode chain: fake error")
+
+	_, err = factory.Deserialize(fake.NewContextWithFormat(serde.Format("BAD_TYPE")), nil)
+	require.EqualError(t, err, "invalid message of type 'fake.Message'")
+
+	factory.viewchange = fakeViewChange{err: xerrors.New("oops")}
+	_, err = factory.Deserialize(fake.NewContext(), nil)
+	require.EqualError(t, err, "couldn't verify the chain: couldn't get authority: oops")
+}
+
 func TestChainFactory_Verify(t *testing.T) {
 	factory := ChainFactory{
 		verifierFactory: fake.VerifierFactory{},
@@ -83,6 +186,8 @@ func TestChainFactory_Verify(t *testing.T) {
 	// Empty chain is verified all the time.
 	err := factory.verify(chain)
 	require.NoError(t, err)
+
+	require.NoError(t, factory.verify(NewChain()))
 
 	factory.verifierFactory = fake.NewVerifierFactory(fake.NewBadVerifier())
 	err = factory.verify(chain)
@@ -103,8 +208,10 @@ func TestChainFactory_Verify(t *testing.T) {
 
 type fakeViewChange struct {
 	viewchange.ViewChange
+
+	err error
 }
 
 func (vc fakeViewChange) GetAuthority(uint64) (viewchange.Authority, error) {
-	return roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner)), nil
+	return roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner)), vc.err
 }

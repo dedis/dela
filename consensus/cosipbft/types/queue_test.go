@@ -14,9 +14,12 @@ func TestQueue_New(t *testing.T) {
 
 	authority := fake.NewAuthority(3, fake.NewSigner)
 
-	queue := &queue{verifierFac: fake.VerifierFactory{}}
+	queue := NewQueue(fake.VerifierFactory{}).(*queue)
 	err := queue.New(prop, authority)
 	require.NoError(t, err)
+	err = queue.New(prop, authority)
+	require.NoError(t, err)
+
 	require.Len(t, queue.items, 1)
 	require.Equal(t, prop.from, queue.items[0].from)
 	require.Equal(t, prop.to, queue.items[0].to)
@@ -59,6 +62,9 @@ func TestQueue_LockProposal(t *testing.T) {
 
 	err := queue.LockProposal([]byte{0xbb}, fake.Signature{})
 	require.NoError(t, err)
+	err = queue.LockProposal([]byte{0xbb}, fake.Signature{})
+	require.NoError(t, err)
+
 	require.NotNil(t, queue.items[0].prepare)
 	require.True(t, queue.locked)
 	require.Len(t, verifier.calls, 1)

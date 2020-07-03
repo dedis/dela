@@ -56,7 +56,7 @@ func TestConsensus_Basic(t *testing.T) {
 	data, err := chain.Serialize(ctx)
 	require.NoError(t, err)
 
-	factory := types.NewChainFactory(types.WithCoSi(cons[0].cosi), types.WithViewChange(cons[0].viewchange))
+	factory := cons[0].GetChainFactory()
 
 	// Make sure the chain can be verified with the roster changes.
 	chain2, err := factory.ChainOf(ctx, data)

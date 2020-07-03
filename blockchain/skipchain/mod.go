@@ -63,7 +63,7 @@ func (s *Skipchain) Listen(r blockchain.Reactor) (blockchain.Actor, error) {
 		watcher: s.watcher,
 	}
 
-	rpc, err := s.mino.MakeRPC("skipchain", newHandler(ops), types.NewMessageFactory(r))
+	rpc, err := s.mino.MakeRPC("skipchain", newHandler(ops), types.NewRequestFactory(r))
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't create the rpc: %v", err)
 	}
@@ -188,14 +188,13 @@ func (a skipchainActor) newChain(data blockchain.Payload, conodes mino.Players) 
 	opts := []types.SkipBlockOption{
 		types.WithIndex(0),
 		types.WithBackLink(randomBackLink),
-		types.WithPayload(data),
 	}
 
 	if a.hashFactory != nil {
 		opts = append(opts, types.WithHashFactory(a.hashFactory))
 	}
 
-	genesis, err := types.NewSkipBlock(opts...)
+	genesis, err := types.NewSkipBlock(data, opts...)
 
 	if err != nil {
 		return xerrors.Errorf("couldn't create genesis: %v", err)

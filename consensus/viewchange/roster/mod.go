@@ -14,7 +14,8 @@ import (
 
 var rosterFormats = registry.NewSimpleRegistry()
 
-func RegisterRoster(c serde.Format, f serde.FormatEngine) {
+// RegisterRosterFormat registers the engine for the provided format.
+func RegisterRosterFormat(c serde.Format, f serde.FormatEngine) {
 	rosterFormats.Register(c, f)
 }
 
@@ -78,6 +79,7 @@ type Roster struct {
 	pubkeys []crypto.PublicKey
 }
 
+// New creates a new roster from the list of addresses and public keys.
 func New(addrs []mino.Address, pubkeys []crypto.PublicKey) Roster {
 	return Roster{
 		addrs:   addrs,
@@ -255,49 +257,51 @@ func (r Roster) Serialize(ctx serde.Context) ([]byte, error) {
 
 	data, err := format.Encode(ctx, r)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't encode roster: %v", err)
 	}
 
 	return data, nil
 }
 
-type RosterFactory struct {
+// Factory is a factory to deserialize roster.
+//
+// - implements viewchange.AuthorityFactory
+// - implements serde.Factory
+type Factory struct {
 	addrFactory   mino.AddressFactory
 	pubkeyFactory crypto.PublicKeyFactory
 }
 
-// NewRosterFactory creates a new instance of the authority factory.
-func NewRosterFactory(af mino.AddressFactory, pf crypto.PublicKeyFactory) RosterFactory {
-	return RosterFactory{
+// NewFactory creates a new instance of the authority factory.
+func NewFactory(af mino.AddressFactory, pf crypto.PublicKeyFactory) Factory {
+	return Factory{
 		addrFactory:   af,
 		pubkeyFactory: pf,
 	}
 }
 
-// Deserialize implements serde.Factory.
-func (f RosterFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+// Deserialize implements serde.Factory.  It returns the roster
+// from the data if appropriate, otherwise an error.
+func (f Factory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+	return f.AuthorityOf(ctx, data)
+}
+
+// AuthorityOf implements viewchange.AuthorityFactory. It returns the roster
+// from the data if appropriate, otherwise an error.
+func (f Factory) AuthorityOf(ctx serde.Context, data []byte) (viewchange.Authority, error) {
 	format := rosterFormats.Get(ctx.GetFormat())
 
-	ctx = serde.WithFactory(ctx, PubKey{}, f.pubkeyFactory)
-	ctx = serde.WithFactory(ctx, AddrKey{}, f.addrFactory)
+	ctx = serde.WithFactory(ctx, PubKeyFac{}, f.pubkeyFactory)
+	ctx = serde.WithFactory(ctx, AddrKeyFac{}, f.addrFactory)
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, err
-	}
-
-	return msg, nil
-}
-
-func (f RosterFactory) AuthorityOf(ctx serde.Context, data []byte) (viewchange.Authority, error) {
-	msg, err := f.Deserialize(ctx, data)
-	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't decode roster: %v", err)
 	}
 
 	roster, ok := msg.(Roster)
 	if !ok {
-		return nil, xerrors.Errorf("invalid roster")
+		return nil, xerrors.Errorf("invalid message of type '%T'", msg)
 	}
 
 	return roster, nil

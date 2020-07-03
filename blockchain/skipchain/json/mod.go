@@ -14,8 +14,8 @@ import (
 func init() {
 	types.RegisterBlockFormat(serde.FormatJSON, blockFormat{})
 	types.RegisterVerifiableBlockFormats(serde.FormatJSON, newVerifiableFormat())
-	types.RegisterBlueprintFormats(serde.FormatJSON, blueprintFormat{})
-	types.RegisterRequestFormats(serde.FormatJSON, newRequestFormat())
+	types.RegisterBlueprintFormat(serde.FormatJSON, blueprintFormat{})
+	types.RegisterRequestFormat(serde.FormatJSON, newRequestFormat())
 }
 
 // Blueprint is a JSON message to send a proposal.
@@ -55,20 +55,26 @@ type BlockResponse struct {
 	Block json.RawMessage
 }
 
-type Message struct {
+// Request is the container of the request messages.
+type Request struct {
 	Propagate *PropagateGenesis `json:",omitempty"`
 	Request   *BlockRequest     `json:",omitempty"`
 	Response  *BlockResponse    `json:",omitempty"`
 }
 
+// BlockFormat is the engine to encode and decode block messages in JSON format.
+//
+// - implements serde.FormatEngine
 type blockFormat struct {
 	hashFactory crypto.HashFactory
 }
 
+// Encode implements serde.FormatEngine. It returns the serialized block if
+// appropriate, otherwise an error.
 func (f blockFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	block, ok := msg.(types.SkipBlock)
 	if !ok {
-		return nil, xerrors.New("invalid block message")
+		return nil, xerrors.Errorf("unsupported message of type '%T'", msg)
 	}
 
 	payload, err := block.Payload.Serialize(ctx)
@@ -77,7 +83,7 @@ func (f blockFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error
 	}
 
 	m := SkipBlock{
-		Index:     block.Index,
+		Index:     block.GetIndex(),
 		GenesisID: block.GenesisID.Bytes(),
 		Backlink:  block.BackLink.Bytes(),
 		Payload:   payload,
@@ -85,12 +91,14 @@ func (f blockFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error
 
 	data, err := ctx.Marshal(m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't marshal: %v", err)
 	}
 
 	return data, nil
 }
 
+// Decode implements serde.FormatEngine. It populates the block of the JSON data
+// if appropriate, otherwise it returns an error.
 func (f blockFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := SkipBlock{}
 	err := ctx.Unmarshal(data, &m)
@@ -98,7 +106,7 @@ func (f blockFormat) Decode(ctx serde.Context, data []byte) (serde.Message, erro
 		return nil, xerrors.Errorf("couldn't deserialize message: %v", err)
 	}
 
-	factory := ctx.GetFactory(types.PayloadKey{})
+	factory := ctx.GetFactory(types.PayloadKeyFac{})
 	if factory == nil {
 		return nil, xerrors.New("payload factory is missing")
 	}
@@ -117,7 +125,6 @@ func (f blockFormat) Decode(ctx serde.Context, data []byte) (serde.Message, erro
 		types.WithIndex(m.Index),
 		types.WithGenesisID(m.GenesisID),
 		types.WithBackLink(m.Backlink),
-		types.WithPayload(payload),
 	}
 
 	if f.hashFactory != nil {
@@ -125,7 +132,7 @@ func (f blockFormat) Decode(ctx serde.Context, data []byte) (serde.Message, erro
 		opts = append(opts, types.WithHashFactory(f.hashFactory))
 	}
 
-	block, err := types.NewSkipBlock(opts...)
+	block, err := types.NewSkipBlock(payload, opts...)
 
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't create block: %v", err)
@@ -134,6 +141,10 @@ func (f blockFormat) Decode(ctx serde.Context, data []byte) (serde.Message, erro
 	return block, nil
 }
 
+// VerifiableFormat is the engine to encode and decode verifiable block messages
+// in JSON format.
+//
+// - implements serde.FormatEngine
 type verifiableFormat struct {
 	blockFormat serde.FormatEngine
 }
@@ -144,10 +155,12 @@ func newVerifiableFormat() verifiableFormat {
 	}
 }
 
+// Encode implements serde.FormatEngine. It returns the serialized block if
+// appropriate, otherwise an error.
 func (f verifiableFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	vb, ok := msg.(types.VerifiableBlock)
 	if !ok {
-		return nil, xerrors.New("invalid block message")
+		return nil, xerrors.Errorf("unsupported message of type '%T'", msg)
 	}
 
 	block, err := f.blockFormat.Encode(ctx, vb.SkipBlock)
@@ -167,12 +180,14 @@ func (f verifiableFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, 
 
 	data, err := ctx.Marshal(m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't marshal: %v", err)
 	}
 
 	return data, nil
 }
 
+// Decode implements serde.FormatEngine. It populates the block for the JSON
+// data if appropriate, otherwise it returns an error.
 func (f verifiableFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := VerifiableBlock{}
 	err := ctx.Unmarshal(data, &m)
@@ -182,16 +197,16 @@ func (f verifiableFormat) Decode(ctx serde.Context, data []byte) (serde.Message,
 
 	chain, err := decodeChain(ctx, m.Chain)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize chain: %v", err)
+		return nil, err
 	}
 
-	block, err := f.decodeBlock(ctx, m.Block)
+	block, err := f.blockFormat.Decode(ctx, m.Block)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize block: %v", err)
+		return types.SkipBlock{}, xerrors.Errorf("couldn't deserialize block: %v", err)
 	}
 
 	vb := types.VerifiableBlock{
-		SkipBlock: block,
+		SkipBlock: block.(types.SkipBlock),
 		Chain:     chain,
 	}
 
@@ -199,36 +214,33 @@ func (f verifiableFormat) Decode(ctx serde.Context, data []byte) (serde.Message,
 }
 
 func decodeChain(ctx serde.Context, data []byte) (consensus.Chain, error) {
-	factory := ctx.GetFactory(types.ChainKey{})
+	factory := ctx.GetFactory(types.ChainKeyFac{})
 
 	fac, ok := factory.(consensus.ChainFactory)
 	if !ok {
-		return nil, xerrors.Errorf("invalid factory of type '%T'", factory)
+		return nil, xerrors.Errorf("invalid chain factory of type '%T'", factory)
 	}
 
 	chain, err := fac.ChainOf(ctx, data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't deserialize chain: %v", err)
 	}
 
 	return chain, nil
 }
 
-func (f verifiableFormat) decodeBlock(ctx serde.Context, data []byte) (types.SkipBlock, error) {
-	msg, err := f.blockFormat.Decode(ctx, data)
-	if err != nil {
-		return types.SkipBlock{}, err
-	}
-
-	return msg.(types.SkipBlock), nil
-}
-
+// BlueprintFormat is the engine to encode and decode blueprint messages in JSON
+// format.
+//
+// - implements serde.FormatEngine
 type blueprintFormat struct{}
 
+// Encode implements serde.FormatEngine. It returns the serialized blueprint if
+// appropriate, otherwise an error.
 func (f blueprintFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	bp, ok := msg.(types.Blueprint)
 	if !ok {
-		return nil, xerrors.New("invalid blueprint message")
+		return nil, xerrors.Errorf("unsupported message of type '%T'", msg)
 	}
 
 	payload, err := bp.GetData().Serialize(ctx)
@@ -244,12 +256,14 @@ func (f blueprintFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, e
 
 	data, err := ctx.Marshal(m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't marshal: %v", err)
 	}
 
 	return data, nil
 }
 
+// Decode implements serde.FormatEngine. It populates the blueprint for the JSON
+// data if appropriate, otherwise it returns an error.
 func (f blueprintFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Blueprint{}
 	err := ctx.Unmarshal(data, &m)
@@ -257,7 +271,7 @@ func (f blueprintFormat) Decode(ctx serde.Context, data []byte) (serde.Message, 
 		return nil, xerrors.Errorf("couldn't deserialize blueprint: %v", err)
 	}
 
-	factory := ctx.GetFactory(types.DataKey{})
+	factory := ctx.GetFactory(types.DataKeyFac{})
 	if factory == nil {
 		return nil, xerrors.New("missing data factory")
 	}
@@ -272,6 +286,10 @@ func (f blueprintFormat) Decode(ctx serde.Context, data []byte) (serde.Message, 
 	return b, nil
 }
 
+// RequestFormat is the engine to encode and decode request messages in JSON
+// format.
+//
+// - implements serde.FormatEngine
 type requestFormat struct {
 	blockFormat serde.FormatEngine
 }
@@ -282,8 +300,10 @@ func newRequestFormat() requestFormat {
 	}
 }
 
+// Encode implements serde.FormatEngine. It returns the serialized request if
+// appropriate, otherwise an error.
 func (f requestFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
-	var req Message
+	var req Request
 
 	switch in := msg.(type) {
 	case types.PropagateGenesis:
@@ -296,14 +316,14 @@ func (f requestFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, err
 			Genesis: block,
 		}
 
-		req = Message{Propagate: &m}
+		req = Request{Propagate: &m}
 	case types.BlockRequest:
 		m := BlockRequest{
 			From: in.GetFrom(),
 			To:   in.GetTo(),
 		}
 
-		req = Message{Request: &m}
+		req = Request{Request: &m}
 	case types.BlockResponse:
 		block, err := f.blockFormat.Encode(ctx, in.GetBlock())
 		if err != nil {
@@ -314,21 +334,23 @@ func (f requestFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, err
 			Block: block,
 		}
 
-		req = Message{Response: &m}
+		req = Request{Response: &m}
 	default:
-		return nil, xerrors.New("invalid message")
+		return nil, xerrors.Errorf("unsupported message of type '%T'", msg)
 	}
 
 	data, err := ctx.Marshal(req)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't marshal: %v", err)
 	}
 
 	return data, nil
 }
 
+// Decode implements serde.FormatEngine. It populates the request for the JSON
+// data if appropriate, otherwise it returns an error.
 func (f requestFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
-	m := Message{}
+	m := Request{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't deserialize message: %v", err)

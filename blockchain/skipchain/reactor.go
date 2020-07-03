@@ -63,11 +63,10 @@ func (v *reactor) InvokeValidate(addr mino.Address, pb serde.Message) ([]byte, e
 		return nil, xerrors.Errorf("couldn't validate the payload: %v", err)
 	}
 
-	block, err := types.NewSkipBlock(
+	block, err := types.NewSkipBlock(payload,
 		types.WithIndex(blueprint.GetIndex()),
 		types.WithGenesisID(genesis.GetHash()),
-		types.WithBackLink(blueprint.GetPrevious()),
-		types.WithPayload(payload))
+		types.WithBackLink(blueprint.GetPrevious()))
 
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't compute hash: %v", err)

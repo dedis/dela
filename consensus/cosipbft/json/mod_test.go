@@ -23,6 +23,12 @@ func TestLinkFormat_Encode(t *testing.T) {
 	expected := `{"From":"AQ==","To":"Ag==","Prepare":{},"Commit":{},"ChangeSet":{}}`
 	require.Equal(t, expected, string(data))
 
+	_, err = format.Encode(ctx, fake.Message{})
+	require.EqualError(t, err, "unsupported message of type 'fake.Message'")
+
+	_, err = format.Encode(fake.NewBadContext(), fl)
+	require.EqualError(t, err, "couldn't marshal: fake error")
+
 	fl = makeFL(t, types.WithChangeSet(fakeChangeSet{err: xerrors.New("oops")}))
 	_, err = format.Encode(ctx, fl)
 	require.EqualError(t, err, "couldn't serialize changeset: oops")
@@ -39,26 +45,37 @@ func TestLinkFormat_Encode(t *testing.T) {
 func TestLinkFormat_Decode(t *testing.T) {
 	format := linkFormat{}
 	ctx := fake.NewContextWithFormat(serde.FormatJSON)
-	ctx = serde.WithFactory(ctx, types.CoSigKey{}, fake.SignatureFactory{})
-	ctx = serde.WithFactory(ctx, types.ChangeSetKey{}, fakeChangeSetFactory{})
+	ctx = serde.WithFactory(ctx, types.CoSigKeyFac{}, fake.SignatureFactory{})
+	ctx = serde.WithFactory(ctx, types.ChangeSetKeyFac{}, fakeChangeSetFactory{})
 
 	msg, err := format.Decode(ctx, []byte(`{"From":"AQ==","To":"Ag=="}`))
 	require.NoError(t, err)
 	require.Equal(t, makeFL(t), msg)
 
-	badCtx := serde.WithFactory(ctx, types.CoSigKey{}, fake.NewBadSignatureFactory())
+	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
+	require.EqualError(t, err, "couldn't unmarshal link: fake error")
+
+	badCtx := serde.WithFactory(ctx, types.CoSigKeyFac{}, fake.NewBadSignatureFactory())
 	_, err = format.Decode(badCtx, []byte(`{}`))
 	require.EqualError(t, err, "couldn't deserialize prepare: fake error")
 
-	badCtx = serde.WithFactory(ctx, types.CoSigKey{}, fake.NewBadSignatureFactoryWithDelay(1))
+	badCtx = serde.WithFactory(ctx, types.CoSigKeyFac{}, fake.NewBadSignatureFactoryWithDelay(1))
 	_, err = format.Decode(badCtx, []byte(`{}`))
 	require.EqualError(t, err, "couldn't deserialize commit: fake error")
 
+	badCtx = serde.WithFactory(ctx, types.CoSigKeyFac{}, nil)
+	_, err = format.Decode(badCtx, []byte(`{}`))
+	require.EqualError(t, err, "invalid signature factory of type '<nil>'")
+
 	badCtx = serde.WithFactory(ctx,
-		types.ChangeSetKey{}, fakeChangeSetFactory{err: xerrors.New("oops")})
+		types.ChangeSetKeyFac{}, fakeChangeSetFactory{err: xerrors.New("oops")})
 
 	_, err = format.Decode(badCtx, []byte(`{}`))
 	require.EqualError(t, err, "couldn't deserialize change set: oops")
+
+	badCtx = serde.WithFactory(ctx, types.ChangeSetKeyFac{}, nil)
+	_, err = format.Decode(badCtx, []byte(`{}`))
+	require.EqualError(t, err, "invalid change set factory of type '<nil>'")
 }
 
 func TestChainFormat_Encode(t *testing.T) {
@@ -72,6 +89,12 @@ func TestChainFormat_Encode(t *testing.T) {
 	expected := `[{"From":"AQ==","To":"Ag==","Prepare":{},"Commit":{},"ChangeSet":{}}]`
 	require.Equal(t, expected, string(data))
 
+	_, err = format.Encode(ctx, fake.Message{})
+	require.EqualError(t, err, "unsupported message of type 'fake.Message'")
+
+	_, err = format.Encode(fake.NewBadContext(), chain)
+	require.EqualError(t, err, "couldn't marshal: fake error")
+
 	chain = types.NewChain(makeFL(t, types.WithPrepare(fake.NewBadSignature())))
 	_, err = format.Encode(ctx, chain)
 	require.EqualError(t, err,
@@ -83,8 +106,8 @@ func TestChainFormat_Decode(t *testing.T) {
 
 	format := chainFormat{}
 	ctx := fake.NewContextWithFormat(serde.FormatJSON)
-	ctx = serde.WithFactory(ctx, types.CoSigKey{}, fake.SignatureFactory{})
-	ctx = serde.WithFactory(ctx, types.ChangeSetKey{}, fakeChangeSetFactory{})
+	ctx = serde.WithFactory(ctx, types.CoSigKeyFac{}, fake.SignatureFactory{})
+	ctx = serde.WithFactory(ctx, types.ChangeSetKeyFac{}, fakeChangeSetFactory{})
 
 	data, err := format.Encode(ctx, expected)
 	require.NoError(t, err)
@@ -100,7 +123,7 @@ func TestChainFormat_Decode(t *testing.T) {
 func TestMessageFormat_Prepare_Encode(t *testing.T) {
 	prepare := types.NewPrepare(fake.Message{}, fake.Signature{}, types.NewChain())
 
-	format := messageFormat{}
+	format := requestFormat{}
 	ctx := fake.NewContextWithFormat(serde.FormatJSON)
 
 	data, err := format.Encode(ctx, prepare)
@@ -123,12 +146,18 @@ func TestMessageFormat_Prepare_Encode(t *testing.T) {
 func TestMessageFormat_Commit_Encode(t *testing.T) {
 	commit := types.NewCommit([]byte{1}, fake.Signature{})
 
-	format := messageFormat{}
+	format := requestFormat{}
 	ctx := fake.NewContextWithFormat(serde.FormatJSON)
 
 	data, err := format.Encode(ctx, commit)
 	require.NoError(t, err)
 	require.Equal(t, `{"Commit":{"To":"AQ==","Prepare":{}}}`, string(data))
+
+	_, err = format.Encode(fake.NewContext(), fake.Message{})
+	require.EqualError(t, err, "unsupported message of type 'fake.Message'")
+
+	_, err = format.Encode(fake.NewBadContext(), commit)
+	require.EqualError(t, err, "couldn't marshal: fake error")
 
 	commit = types.NewCommit([]byte{1}, fake.NewBadSignature())
 	_, err = format.Encode(ctx, commit)
@@ -138,7 +167,7 @@ func TestMessageFormat_Commit_Encode(t *testing.T) {
 func TestMessageFormat_Propagate_Encode(t *testing.T) {
 	propagate := types.NewPropagate([]byte{1}, fake.Signature{})
 
-	format := messageFormat{}
+	format := requestFormat{}
 	ctx := fake.NewContextWithFormat(serde.FormatJSON)
 
 	data, err := format.Encode(ctx, propagate)
@@ -151,13 +180,13 @@ func TestMessageFormat_Propagate_Encode(t *testing.T) {
 }
 
 func TestMessageFormat_Decode(t *testing.T) {
-	format := messageFormat{}
+	format := requestFormat{}
 	ctx := fake.NewContextWithFormat(serde.FormatJSON)
-	ctx = serde.WithFactory(ctx, types.MsgKey{}, fake.MessageFactory{})
-	ctx = serde.WithFactory(ctx, types.SigKey{}, fake.SignatureFactory{})
-	ctx = serde.WithFactory(ctx, types.CoSigKey{}, fake.SignatureFactory{})
-	ctx = serde.WithFactory(ctx, types.ChangeSetKey{}, fakeChangeSetFactory{})
-	ctx = serde.WithFactory(ctx, types.ChainKey{}, types.NewChainFactory())
+	ctx = serde.WithFactory(ctx, types.MsgKeyFac{}, fake.MessageFactory{})
+	ctx = serde.WithFactory(ctx, types.SigKeyFac{}, fake.SignatureFactory{})
+	ctx = serde.WithFactory(ctx, types.CoSigKeyFac{}, fake.SignatureFactory{})
+	ctx = serde.WithFactory(ctx, types.ChangeSetKeyFac{}, fakeChangeSetFactory{})
+	ctx = serde.WithFactory(ctx, types.ChainKeyFac{}, types.ChainFactory{})
 
 	request, err := format.Decode(ctx, []byte(`{"Prepare":{"Chain":[]}}`))
 	require.NoError(t, err)
@@ -167,24 +196,43 @@ func TestMessageFormat_Decode(t *testing.T) {
 	require.NoError(t, err)
 	require.IsType(t, types.Commit{}, request)
 
+	request, err = format.Decode(ctx, []byte(`{"Propagate":{}}`))
+	require.NoError(t, err)
+	require.IsType(t, types.Propagate{}, request)
+
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
 	require.EqualError(t, err, "couldn't unmarshal request: fake error")
 
-	badCtx := serde.WithFactory(ctx, types.MsgKey{}, fake.NewBadMessageFactory())
+	badCtx := serde.WithFactory(ctx, types.MsgKeyFac{}, fake.NewBadMessageFactory())
 	_, err = format.Decode(badCtx, []byte(`{"Prepare":{}}`))
 	require.EqualError(t, err, "couldn't deserialize message: fake error")
 
-	badCtx = serde.WithFactory(ctx, types.SigKey{}, fake.NewBadSignatureFactory())
+	badCtx = serde.WithFactory(ctx, types.SigKeyFac{}, fake.NewBadSignatureFactory())
 	_, err = format.Decode(badCtx, []byte(`{"Prepare":{}}`))
 	require.EqualError(t, err, "couldn't deserialize signature: fake error")
 
-	badCtx = serde.WithFactory(ctx, types.ChainKey{}, badChainFactory{})
+	badCtx = serde.WithFactory(ctx, types.SigKeyFac{}, nil)
+	_, err = format.Decode(badCtx, []byte(`{"Prepare":{}}`))
+	require.EqualError(t, err, "couldn't deserialize signature: invalid factory of type '<nil>'")
+
+	badCtx = serde.WithFactory(ctx, types.ChainKeyFac{}, badChainFactory{})
 	_, err = format.Decode(badCtx, []byte(`{"Prepare":{}}`))
 	require.EqualError(t, err, "couldn't deserialize chain: oops")
 
-	badCtx = serde.WithFactory(ctx, types.CoSigKey{}, fake.NewBadSignatureFactory())
+	badCtx = serde.WithFactory(ctx, types.ChainKeyFac{}, nil)
+	_, err = format.Decode(badCtx, []byte(`{"Prepare":{}}`))
+	require.EqualError(t, err, "couldn't deserialize chain: invalid factory of type '<nil>'")
+
+	badCtx = serde.WithFactory(ctx, types.CoSigKeyFac{}, fake.NewBadSignatureFactory())
 	_, err = format.Decode(badCtx, []byte(`{"Commit":{}}`))
 	require.EqualError(t, err, "couldn't deserialize commit: fake error")
+
+	_, err = format.Decode(badCtx, []byte(`{"Propagate":{}}`))
+	require.EqualError(t, err, "couldn't deserialize propagate: fake error")
+
+	badCtx = serde.WithFactory(ctx, types.CoSigKeyFac{}, nil)
+	_, err = format.Decode(badCtx, []byte(`{"Commit":{}}`))
+	require.EqualError(t, err, "couldn't deserialize commit: invalid factory of type '<nil>'")
 
 	_, err = format.Decode(ctx, []byte(`{}`))
 	require.EqualError(t, err, "message is empty")
