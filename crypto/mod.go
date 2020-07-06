@@ -104,7 +104,7 @@ type CollectiveAuthority interface {
 	// address if any matches. An index < 0 means no correspondance found.
 	GetPublicKey(addr mino.Address) (PublicKey, int)
 
-	// PublicKeyIterator creates an public key iterator that iterates over the
-	// list of public keys.
+	// PublicKeyIterator creates a public key iterator that iterates over the
+	// list of public keys and is consistent with the address iterator.
 	PublicKeyIterator() PublicKeyIterator
 }

@@ -12,7 +12,6 @@ import (
 	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/ledger/arc/darc"
-	serdej "go.dedis.ch/dela/serde/json"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/suites"
 	"golang.org/x/xerrors"
@@ -29,57 +28,36 @@ const (
 // Suite is the Kyber suite for Pedersen.
 var suite = suites.MustFind("Ed25519")
 
-// NewCalypso creates a new Calypso
-func NewCalypso(dkg dkg.DKG) *Caly {
-	return &Caly{
-		dkg:     dkg,
-		storage: inmemory.NewInMemory(),
+// newCalypso creates a new Calypso
+func newCalypso(actor dkg.Actor) *caly {
+	return &caly{
+		dkgActor: actor,
+		storage:  inmemory.NewInMemory(),
 	}
 }
 
-// Caly is a wrapper around DKG to provide a storage and authorization layer
+// caly is a wrapper around DKG that provides a private storage
 //
-// implements calypso.Secret
-type Caly struct {
-	dkg      dkg.DKG
+// implements calypso.PrivateStorage
+type caly struct {
 	dkgActor dkg.Actor
 	storage  storage.KeyValue
 }
 
-// Listen implements calypso.Secret
-func (c *Caly) Listen() error {
-	if c.dkgActor != nil {
-		return xerrors.Errorf("listen has already been called")
-	}
-
-	actor, err := c.dkg.Listen()
-	if err != nil {
-		return xerrors.Errorf("failed to listen dkg: %v", err)
-	}
-
-	c.dkgActor = actor
-
-	return nil
-}
-
-// Setup implements calypso.Secret
-func (c *Caly) Setup(ca crypto.CollectiveAuthority,
+// Setup implements calypso.PrivateStorage
+func (c *caly) Setup(ca crypto.CollectiveAuthority,
 	threshold int) (pubKey kyber.Point, err error) {
-
-	if c.dkgActor == nil {
-		return nil, xerrors.Errorf("dkg actor is nil, did you call Listen() first?")
-	}
 
 	pubKey, err = c.dkgActor.Setup(ca, threshold)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to setup dkg: %v", err)
+		return nil, xerrors.Errorf("failed to setup: %v", err)
 	}
 
 	return pubKey, nil
 }
 
-// GetPublicKey implements calypso.Secret
-func (c *Caly) GetPublicKey() (kyber.Point, error) {
+// GetPublicKey implements calypso.PrivateStorage
+func (c *caly) GetPublicKey() (kyber.Point, error) {
 	if c.dkgActor == nil {
 		return nil, xerrors.Errorf("listen has not already been called")
 	}
@@ -92,8 +70,8 @@ func (c *Caly) GetPublicKey() (kyber.Point, error) {
 	return pubKey, nil
 }
 
-// Write implements calypso.Secret
-func (c *Caly) Write(em EncryptedMessage,
+// Write implements calypso.PrivateStorage
+func (c *caly) Write(em EncryptedMessage,
 	ac arc.AccessControl) ([]byte, error) {
 
 	var buf bytes.Buffer
@@ -108,9 +86,15 @@ func (c *Caly) Write(em EncryptedMessage,
 		return nil, xerrors.Errorf("failed to marshal C: %v", err)
 	}
 
-	key := crypto.NewSha256Factory().New().Sum(buf.Bytes())
+	hash := crypto.NewSha256Factory().New()
+	_, err = hash.Write(buf.Bytes())
+	if err != nil {
+		return nil, xerrors.Errorf("failed to compute hash: %v", err)
+	}
 
-	record := record{
+	key := hash.Sum(nil)
+
+	record := &record{
 		K:  em.GetK(),
 		C:  em.GetC(),
 		AC: ac,
@@ -121,8 +105,8 @@ func (c *Caly) Write(em EncryptedMessage,
 	return key, nil
 }
 
-// Read implements calypso.Secret
-func (c *Caly) Read(id []byte, idents ...arc.Identity) ([]byte, error) {
+// Read implements calypso.PrivateStorage
+func (c *caly) Read(id []byte, idents ...arc.Identity) ([]byte, error) {
 	record, err := c.getRead(id)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to get read: %v", err)
@@ -141,9 +125,9 @@ func (c *Caly) Read(id []byte, idents ...arc.Identity) ([]byte, error) {
 	return msg, nil
 }
 
-// UpdateAccess implements calypso.Secret. It sets a new arc for a given ID,
-// provided the current arc allows the given ident to do so.
-func (c *Caly) UpdateAccess(id []byte, ident arc.Identity,
+// UpdateAccess implements calypso.PrivateStorage. It sets a new arc for a given
+// ID, provided the current arc allows the given ident to do so.
+func (c *caly) UpdateAccess(id []byte, ident arc.Identity,
 	newAc arc.AccessControl) error {
 
 	record, err := c.getRead(id)
@@ -164,19 +148,18 @@ func (c *Caly) UpdateAccess(id []byte, ident arc.Identity,
 }
 
 // getRead extract the read information from the storage
-func (c *Caly) getRead(id []byte) (*record, error) {
-	buf, err := c.storage.Read(id)
+func (c *caly) getRead(id []byte) (*record, error) {
+	message, err := c.storage.Read(id)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to read message: %v", err)
 	}
 
-	var record record
-	err = serdej.NewSerializer().Deserialize(buf, NewRecordFactory(), &record)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to unmarshal JSON message: %v", err)
+	record, ok := message.(*record)
+	if !ok {
+		return nil, xerrors.Errorf("expected to find '%T' but found '%T'", *record, message)
 	}
 
-	return &record, nil
+	return record, nil
 }
 
 // record defines what is stored in the db, which is the secrect and its

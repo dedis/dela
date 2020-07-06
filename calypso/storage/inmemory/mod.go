@@ -9,7 +9,7 @@ import (
 // NewInMemory returns a new in memory database
 func NewInMemory() *InMemory {
 	return &InMemory{
-		database:   make(map[string][]byte),
+		database:   make(map[string]serde.Message),
 		serializer: serdej.NewSerializer(),
 	}
 }
@@ -18,24 +18,19 @@ func NewInMemory() *InMemory {
 //
 // implements storage.KeyValue
 type InMemory struct {
-	database   map[string][]byte
+	database   map[string]serde.Message
 	serializer serde.Serializer
 }
 
 // Store implements storage.KeyValue
 func (i *InMemory) Store(key []byte, value serde.Message) error {
-	buf, err := i.serializer.Serialize(value)
-	if err != nil {
-		return xerrors.Errorf("failed to serialize: %v", err)
-	}
-
-	i.database[string(key)] = buf
+	i.database[string(key)] = value
 
 	return nil
 }
 
 // Read implements storage.Read
-func (i *InMemory) Read(key []byte) ([]byte, error) {
+func (i *InMemory) Read(key []byte) (serde.Message, error) {
 	res, found := i.database[string(key)]
 	if !found {
 		return nil, xerrors.New("key not found")

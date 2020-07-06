@@ -42,11 +42,6 @@ func TestPedersen_Setup(t *testing.T) {
 	rpc := fake.NewStreamRPC(fake.Receiver{}, fake.NewBadSender())
 	actor.rpc = rpc
 
-	fakeAuthority.PubkeyNotFound = true
-	_, err = actor.Setup(fakeAuthority, 0)
-	require.EqualError(t, err, "pubkey not found for 'fake.Address[0]'")
-
-	fakeAuthority.PubkeyNotFound = false
 	_, err = actor.Setup(fakeAuthority, 0)
 	require.EqualError(t, err, "expected ed25519.PublicKey, got 'fake.PublicKey'")
 
@@ -268,4 +263,8 @@ func (ca CollectiveAuthority) Len() int {
 // AddressIterator implements mino.Players.
 func (ca CollectiveAuthority) AddressIterator() mino.AddressIterator {
 	return fake.NewAddressIterator(ca.addrs)
+}
+
+func (ca CollectiveAuthority) PublicKeyIterator() crypto.PublicKeyIterator {
+	return fake.NewPublicKeyIterator(ca.signers)
 }

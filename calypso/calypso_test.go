@@ -6,7 +6,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/ed25519"
-	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/ledger/arc/darc"
@@ -16,12 +15,9 @@ import (
 )
 
 func TestMain(t *testing.T) {
-	c := NewCalypso(fakeDKG{})
+	c := newCalypso(&fakeActor{})
 
 	ca := fake.NewAuthority(0, ed25519.NewSigner)
-
-	err := c.Listen()
-	require.NoError(t, err)
 
 	pubKey, err := c.Setup(ca, 0)
 	require.NoError(t, err)
@@ -82,15 +78,8 @@ func encrypt(pubKey kyber.Point, message []byte) (K, C kyber.Point, err error) {
 }
 
 //
-// DKG
+// DKG actor
 //
-
-type fakeDKG struct {
-}
-
-func (f fakeDKG) Listen() (dkg.Actor, error) {
-	return &fakeActor{}, nil
-}
 
 type fakeActor struct {
 	privKey kyber.Scalar

@@ -6,12 +6,9 @@ import (
 	"go.dedis.ch/kyber/v3"
 )
 
-// Calypso defines the primitives to run a Calypso app. It is mainly a wrapper
-// arround DKG that provides a storage and authorization layer.
-type Calypso interface {
-	// Listen should be called by each node to participate in the secret sharing
-	Listen() error
-
+// PrivateStorage defines the primitives to run a Calypso-like app. It is mainly
+// a wrapper arround DKG that provides a storage and authorization layer.
+type PrivateStorage interface {
 	// Setup must be called only ONCE by one of the node to setup the secret
 	// sharing
 	Setup(ca crypto.CollectiveAuthority, threshold int) (pubKey kyber.Point, err error)

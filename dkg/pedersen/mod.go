@@ -82,18 +82,16 @@ func (a *Actor) Setup(co crypto.CollectiveAuthority, threshold int) (kyber.Point
 		return nil, xerrors.Errorf("failed to stream: %v", err)
 	}
 
-	co.AddressIterator().Seek(0)
 	addrs := make([]mino.Address, 0, co.Len())
 	pubkeys := make([]kyber.Point, 0, co.Len())
-	iter := co.AddressIterator()
-	for iter.HasNext() {
-		addr := iter.GetNext()
-		addrs = append(addrs, addr)
-		pubkey, index := co.GetPublicKey(addr)
-		if index < 0 {
-			return nil, xerrors.Errorf("pubkey not found for '%s'", addr)
-		}
 
+	addrIter := co.AddressIterator()
+	pubkeyIter := co.PublicKeyIterator()
+
+	for addrIter.HasNext() && pubkeyIter.HasNext() {
+		addrs = append(addrs, addrIter.GetNext())
+
+		pubkey := pubkeyIter.GetNext()
 		edKey, ok := pubkey.(ed25519.PublicKey)
 		if !ok {
 			return nil, xerrors.Errorf("expected ed25519.PublicKey, got '%T'", pubkey)
