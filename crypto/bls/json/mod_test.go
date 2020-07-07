@@ -13,7 +13,7 @@ import (
 )
 
 func TestPubkeyFormat_Encode(t *testing.T) {
-	signer := bls.NewSigner()
+	signer := bls.Generate()
 	format := pubkeyFormat{}
 	ctx := fake.NewContextWithFormat(serde.FormatJSON)
 
@@ -32,7 +32,7 @@ func TestPubkeyFormat_Encode(t *testing.T) {
 }
 
 func TestPubkeyFormat_Decode(t *testing.T) {
-	signer := bls.NewSigner()
+	signer := bls.Generate()
 	format := pubkeyFormat{}
 	ctx := fake.NewContextWithFormat(serde.FormatJSON)
 

@@ -6,28 +6,29 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/cosi"
+	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"golang.org/x/xerrors"
 )
 
 func TestFlat_GetSigner(t *testing.T) {
-	flat := NewFlat(nil, fake.NewSigner())
+	flat := NewFlat(nil, fake.NewAggregateSigner())
 	require.NotNil(t, flat.GetSigner())
 }
 
 func TestFlat_GetPublicKeyFactory(t *testing.T) {
-	flat := NewFlat(nil, fake.NewSigner())
+	flat := NewFlat(nil, fake.NewAggregateSigner())
 	require.NotNil(t, flat.GetPublicKeyFactory())
 }
 
 func TestFlat_GetSignatureFactory(t *testing.T) {
-	flat := NewFlat(nil, fake.NewSigner())
+	flat := NewFlat(nil, fake.NewAggregateSigner())
 	require.NotNil(t, flat.GetSignatureFactory())
 }
 
 func TestFlat_GetVerifierFactory(t *testing.T) {
-	flat := NewFlat(nil, fake.NewSigner())
+	flat := NewFlat(nil, fake.NewAggregateSigner())
 	require.NotNil(t, flat.GetVerifierFactory())
 }
 
@@ -51,7 +52,7 @@ func TestActor_Sign(t *testing.T) {
 
 	rpc := fake.NewRPC()
 	actor := flatActor{
-		signer:  fake.NewSigner(),
+		signer:  fake.NewAggregateSigner(),
 		rpc:     rpc,
 		reactor: fakeReactor{},
 	}
@@ -71,7 +72,7 @@ func TestActor_Sign(t *testing.T) {
 	_, err = actor.Sign(ctx, message, ca)
 	require.EqualError(t, err, "couldn't make verifier: fake error")
 
-	actor.signer = fake.NewSigner()
+	actor.signer = fake.NewAggregateSigner()
 	actor.reactor = fakeReactor{err: xerrors.New("oops")}
 	_, err = actor.Sign(ctx, message, ca)
 	require.EqualError(t, err, "couldn't react to message: oops")
@@ -103,7 +104,7 @@ func TestActor_RPCError_Sign(t *testing.T) {
 
 	rpc := fake.NewRPC()
 	actor := flatActor{
-		signer:  ca.GetSigner(0),
+		signer:  ca.GetSigner(0).(crypto.AggregateSigner),
 		rpc:     rpc,
 		reactor: fakeReactor{},
 	}
@@ -124,7 +125,7 @@ func TestActor_Context_Sign(t *testing.T) {
 	rpc := fake.NewRPC()
 
 	actor := flatActor{
-		signer:  ca.GetSigner(0),
+		signer:  ca.GetSigner(0).(crypto.AggregateSigner),
 		rpc:     rpc,
 		reactor: fakeReactor{},
 	}
@@ -143,7 +144,7 @@ func TestActor_SignProcessError(t *testing.T) {
 	ca := fake.NewAuthority(1, fake.NewSigner)
 
 	actor := flatActor{
-		signer:  ca.GetSigner(0),
+		signer:  ca.GetSigner(0).(crypto.AggregateSigner),
 		reactor: fakeReactor{},
 	}
 

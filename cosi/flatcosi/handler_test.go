@@ -12,7 +12,7 @@ import (
 )
 
 func TestHandler_Process(t *testing.T) {
-	h := newHandler(bls.NewSigner(), fakeReactor{})
+	h := newHandler(bls.Generate(), fakeReactor{})
 	req := mino.Request{
 		Message: cosi.SignatureRequest{Value: fake.Message{}},
 	}

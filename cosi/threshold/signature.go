@@ -20,8 +20,8 @@ const (
 
 var formats = registry.NewSimpleRegistry()
 
-// Register saves the format to be used when serializing/deserializing signature
-// messages for the given codec.
+// RegisterSignatureFormat saves the format to be used when
+// serializing/deserializing signature messages for the given codec.
 func RegisterSignatureFormat(c serde.Format, f serde.FormatEngine) {
 	formats.Register(c, f)
 }

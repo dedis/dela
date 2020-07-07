@@ -196,7 +196,7 @@ func TestRoster_AddressIterator(t *testing.T) {
 }
 
 func TestRoster_PublicKeyIterator(t *testing.T) {
-	authority := fake.NewAuthority(3, bls.NewSigner)
+	authority := fake.NewAuthority(3, bls.Generate)
 	roster := FromAuthority(authority)
 
 	iter := roster.PublicKeyIterator()

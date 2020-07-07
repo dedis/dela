@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/cosi"
+	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
@@ -18,7 +19,7 @@ func TestActor_Sign(t *testing.T) {
 
 	actor := thresholdActor{
 		CoSi: &CoSi{
-			signer:    ca.GetSigner(0),
+			signer:    ca.GetSigner(0).(crypto.AggregateSigner),
 			Threshold: func(n int) int { return n - 1 },
 		},
 		rpc: fakeRPC{
@@ -58,7 +59,7 @@ func TestActor_Sign(t *testing.T) {
 	_, err = actor.Sign(ctx, fake.Message{}, ca)
 	require.EqualError(t, err, "couldn't receive more messages: context canceled")
 
-	actor.signer = fake.NewSigner()
+	actor.signer = fake.NewAggregateSigner()
 	resp := cosi.SignatureResponse{Signature: fake.Signature{}}
 	err = actor.merge(&Signature{}, resp, 0, fake.NewInvalidPublicKey(), []byte{})
 	require.EqualError(t, err, "couldn't verify: fake error")

@@ -260,12 +260,12 @@ func makeSkipchain(t *testing.T, n int) (crypto.CollectiveAuthority, []*Skipchai
 		mm[i] = m
 	}
 
-	authority := fake.NewAuthorityFromMino(bls.NewSigner, mm...)
+	authority := fake.NewAuthorityFromMino(bls.Generate, mm...)
 
 	skipchains := make([]*Skipchain, n)
 	actors := make([]blockchain.Actor, n)
 	for i, m := range mm {
-		cosi := flatcosi.NewFlat(mm[i], authority.GetSigner(i))
+		cosi := flatcosi.NewFlat(mm[i], authority.GetSigner(i).(crypto.AggregateSigner))
 		vc := constant.NewViewChange(m.GetAddress(), authority,
 			roster.NewChangeSetFactory(m.GetAddressFactory(), cosi.GetPublicKeyFactory()))
 

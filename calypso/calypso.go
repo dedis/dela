@@ -5,8 +5,8 @@ import (
 
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/registry"
 
-	"go.dedis.ch/dela/calypso/json"
 	"go.dedis.ch/dela/calypso/storage"
 	"go.dedis.ch/dela/calypso/storage/inmemory"
 	"go.dedis.ch/dela/dkg"
@@ -28,12 +28,11 @@ const (
 // Suite is the Kyber suite for Pedersen.
 var suite = suites.MustFind("Ed25519")
 
-// newCalypso creates a new Calypso
-func newCalypso(actor dkg.Actor) *caly {
-	return &caly{
-		dkgActor: actor,
-		storage:  inmemory.NewInMemory(),
-	}
+var recordFormats = registry.NewSimpleRegistry()
+
+// RegisterRecordFormats registers the engine for the provided format.
+func RegisterRecordFormats(format serde.Format, engine serde.FormatEngine) {
+	recordFormats.Register(format, engine)
 }
 
 // caly is a wrapper around DKG that provides a private storage
@@ -42,6 +41,14 @@ func newCalypso(actor dkg.Actor) *caly {
 type caly struct {
 	dkgActor dkg.Actor
 	storage  storage.KeyValue
+}
+
+// newCalypso creates a new Calypso
+func newCalypso(actor dkg.Actor) *caly {
+	return &caly{
+		dkgActor: actor,
+		storage:  inmemory.NewInMemory(),
+	}
 }
 
 // Setup implements calypso.PrivateStorage
@@ -94,10 +101,10 @@ func (c *caly) Write(em EncryptedMessage,
 
 	key := hash.Sum(nil)
 
-	record := &record{
-		K:  em.GetK(),
-		C:  em.GetC(),
-		AC: ac,
+	record := Record{
+		k:      em.GetK(),
+		c:      em.GetC(),
+		access: ac,
 	}
 
 	c.storage.Store(key, record)
@@ -112,12 +119,12 @@ func (c *caly) Read(id []byte, idents ...arc.Identity) ([]byte, error) {
 		return nil, xerrors.Errorf("failed to get read: %v", err)
 	}
 
-	err = record.AC.Match(ArcRuleRead, idents...)
+	err = record.access.Match(ArcRuleRead, idents...)
 	if err != nil {
 		return nil, xerrors.Errorf("darc verification failed: %v", err)
 	}
 
-	msg, err := c.dkgActor.Decrypt(record.K, record.C)
+	msg, err := c.dkgActor.Decrypt(record.k, record.c)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to decrypt with dkg: %v", err)
 	}
@@ -135,12 +142,12 @@ func (c *caly) UpdateAccess(id []byte, ident arc.Identity,
 		return xerrors.Errorf("failed to get read: %v", err)
 	}
 
-	err = record.AC.Match(ArcRuleUpdate, ident)
+	err = record.access.Match(ArcRuleUpdate, ident)
 	if err != nil {
 		return xerrors.Errorf("darc verification failed: %v", err)
 	}
 
-	record.AC = newAc
+	record.access = newAc
 
 	c.storage.Store(id, record)
 
@@ -148,62 +155,72 @@ func (c *caly) UpdateAccess(id []byte, ident arc.Identity,
 }
 
 // getRead extract the read information from the storage
-func (c *caly) getRead(id []byte) (*record, error) {
+func (c *caly) getRead(id []byte) (Record, error) {
 	message, err := c.storage.Read(id)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to read message: %v", err)
+		return Record{}, xerrors.Errorf("failed to read message: %v", err)
 	}
 
-	record, ok := message.(*record)
+	record, ok := message.(Record)
 	if !ok {
-		return nil, xerrors.Errorf("expected to find '%T' but found '%T'", *record, message)
+		return Record{}, xerrors.Errorf("expected to find '%T' but found '%T'", record, message)
 	}
 
 	return record, nil
 }
 
-// record defines what is stored in the db, which is the secrect and its
+// Record defines what is stored in the db, which is the secrect and its
 // corresponding access control
-type record struct {
-	serde.UnimplementedMessage
-
-	K  kyber.Point
-	C  kyber.Point
-	AC arc.AccessControl
+type Record struct {
+	k      kyber.Point
+	c      kyber.Point
+	access arc.AccessControl
 }
 
-// VisitJSON implements serde.Message. It returns the JSON message for the
-// record.
-func (w record) VisitJSON(ser serde.Serializer) (interface{}, error) {
-	acBuf, err := ser.Serialize(w.AC)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to serialize the access control: %v", err)
+// NewRecord creates a new record from the points and the access control.
+func NewRecord(K, C kyber.Point, access arc.AccessControl) Record {
+	return Record{
+		k:      K,
+		c:      C,
+		access: access,
 	}
-
-	kBuf, err := w.K.MarshalBinary()
-	if err != nil {
-		return nil, xerrors.Errorf("failed to marshal K: %v", err)
-	}
-
-	cBuf, err := w.C.MarshalBinary()
-	if err != nil {
-		return nil, xerrors.Errorf("failed to marshal C: %v", err)
-	}
-
-	return json.Record{
-		K:  kBuf,
-		C:  cBuf,
-		AC: acBuf,
-	}, nil
 }
+
+// GetK returns K.
+func (r Record) GetK() kyber.Point {
+	return r.k
+}
+
+// GetC returns C.
+func (r Record) GetC() kyber.Point {
+	return r.c
+}
+
+// GetAccess returns the access control for this record.
+func (r Record) GetAccess() arc.AccessControl {
+	return r.access
+}
+
+// Serialize implements serde.Message.
+func (r Record) Serialize(ctx serde.Context) ([]byte, error) {
+	format := recordFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+
+	return data, nil
+}
+
+// AccessKeyFac is the key to the access control factory.
+type AccessKeyFac struct{}
 
 // recordFactory is a factory to instantiate a record from its encoded form
 //
 // - implements serde.Factory
 type recordFactory struct {
-	serde.UnimplementedFactory
-
-	darcFactory serde.Factory
+	darcFactory arc.AccessControlFactory
 }
 
 // NewRecordFactory returns a new instance of the record factory.
@@ -214,34 +231,13 @@ func NewRecordFactory() serde.Factory {
 }
 
 // VisitJSON implements serde.Factory. It deserializes the record.
-func (f recordFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
-	m := json.Record{}
-	err := in.Feed(&m)
+func (f recordFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+	format := recordFormats.Get(ctx.GetFormat())
+
+	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize task: %v", err)
+		return nil, err
 	}
 
-	var ac arc.AccessControl
-	err = in.GetSerializer().Deserialize(m.AC, f.darcFactory, &ac)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to deserialize the access control: %v", err)
-	}
-
-	K := suite.Point()
-	err = K.UnmarshalBinary(m.K)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to unmarshal K: %v", err)
-	}
-
-	C := suite.Point()
-	err = C.UnmarshalBinary(m.C)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to unmarshal C: %v", err)
-	}
-
-	return record{
-		K:  K,
-		C:  C,
-		AC: ac,
-	}, nil
+	return msg, nil
 }

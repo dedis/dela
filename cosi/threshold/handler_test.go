@@ -11,7 +11,7 @@ import (
 
 func TestThresholdHandler_Stream(t *testing.T) {
 	handler := newHandler(
-		&CoSi{signer: fake.NewSigner()},
+		&CoSi{signer: fake.NewAggregateSigner()},
 		fakeReactor{},
 	)
 
@@ -37,7 +37,7 @@ func TestThresholdHandler_Stream(t *testing.T) {
 	err = handler.processRequest(sender, rcvr)
 	require.EqualError(t, err, "couldn't sign: fake error")
 
-	handler.signer = fake.NewSigner()
+	handler.signer = fake.NewAggregateSigner()
 	sender = fakeSender{numErr: 1}
 	rcvr.resps = makeResponse()
 	err = handler.Stream(sender, rcvr)

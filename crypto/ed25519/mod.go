@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/crypto/common/json"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/registry"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/sign/schnorr"
 	"go.dedis.ch/kyber/v3/suites"
@@ -21,13 +21,40 @@ const (
 
 var (
 	suite = suites.MustFind("Ed25519")
+
+	pubkeyFormats = registry.NewSimpleRegistry()
+
+	sigFormats = registry.NewSimpleRegistry()
 )
+
+// RegisterPublicKeyFormat register the engine for the provided format.
+func RegisterPublicKeyFormat(format serde.Format, engine serde.FormatEngine) {
+	pubkeyFormats.Register(format, engine)
+}
+
+// RegisterSignatureFormat register the engine for the provided format.
+func RegisterSignatureFormat(format serde.Format, engine serde.FormatEngine) {
+	sigFormats.Register(format, engine)
+}
 
 // PublicKey can be provided to verify a schnorr signature.
 type PublicKey struct {
-	serde.UnimplementedMessage
-
 	point kyber.Point
+}
+
+// NewPublicKey returns a new public key from the data.
+func NewPublicKey(data []byte) (PublicKey, error) {
+	point := suite.Point()
+	err := point.UnmarshalBinary(data)
+	if err != nil {
+		return PublicKey{}, xerrors.Errorf("couldn't unmarshal point: %v", err)
+	}
+
+	pk := PublicKey{
+		point: point,
+	}
+
+	return pk, nil
 }
 
 // MarshalBinary implements encoding.BinaryMarshaler. It produces a slice of
@@ -36,26 +63,23 @@ func (pk PublicKey) MarshalBinary() ([]byte, error) {
 	return pk.point.MarshalBinary()
 }
 
-// VisitJSON implements serde.Message. It returns the JSON message for the
+// Serialize implements serde.Message. It returns the serialized data of the
 // public key.
-func (pk PublicKey) VisitJSON(serde.Serializer) (interface{}, error) {
-	buffer, err := pk.point.MarshalBinary()
+func (pk PublicKey) Serialize(ctx serde.Context) ([]byte, error) {
+	format := pubkeyFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, pk)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't marshal point: %v", err)
+		return nil, xerrors.Errorf("couldn't encode public key: %v", err)
 	}
 
-	m := json.PublicKey{
-		Algorithm: json.Algorithm{Name: Algorithm},
-		Data:      buffer,
-	}
-
-	return m, nil
+	return data, nil
 }
 
 // Verify implements crypto.PublicKey. It returns nil if the signature matches
 // the message with this public key.
 func (pk PublicKey) Verify(msg []byte, sig crypto.Signature) error {
-	signature, ok := sig.(signature)
+	signature, ok := sig.(Signature)
 	if !ok {
 		return xerrors.Errorf("invalid signature type '%T'", sig)
 	}
@@ -107,34 +131,41 @@ func (pk PublicKey) String() string {
 	return string(buffer)[:4+16]
 }
 
-// signature is a proof of the integrity of a single message associated with a
+// Signature is a proof of the integrity of a single message associated with a
 // unique public key.
-type signature struct {
-	serde.UnimplementedMessage
-
+type Signature struct {
 	data []byte
+}
+
+// NewSignature returns a new signature from the data.
+func NewSignature(data []byte) Signature {
+	return Signature{
+		data: data,
+	}
 }
 
 // MarshalBinary implements encoding.BinaryMarshaler. It returns a slice of
 // bytes representing the signature.
-func (sig signature) MarshalBinary() ([]byte, error) {
+func (sig Signature) MarshalBinary() ([]byte, error) {
 	return sig.data, nil
 }
 
-// VisitJSON implements serde.Message. It returns the JSON message for the
+// Serialize implements serde.Message. It returns the serialized data of the
 // signature.
-func (sig signature) VisitJSON(serde.Serializer) (interface{}, error) {
-	m := json.Signature{
-		Algorithm: json.Algorithm{Name: Algorithm},
-		Data:      sig.data,
+func (sig Signature) Serialize(ctx serde.Context) ([]byte, error) {
+	format := sigFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, sig)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't encode signature: %v", err)
 	}
 
-	return m, nil
+	return data, nil
 }
 
 // Equal implements crypto.PublicKey.
-func (sig signature) Equal(other crypto.Signature) bool {
-	otherSig, ok := other.(signature)
+func (sig Signature) Equal(other crypto.Signature) bool {
+	otherSig, ok := other.(Signature)
 	if !ok {
 		return false
 	}
@@ -144,54 +175,72 @@ func (sig signature) Equal(other crypto.Signature) bool {
 
 // publicKeyFactory creates schnorr compatible public key from protobuf
 // messages.
-type publicKeyFactory struct {
-	serde.UnimplementedFactory
-}
+//
+// - implements crypto.PublicKeyFactory
+// - implements serde.Factory
+type publicKeyFactory struct{}
 
 // NewPublicKeyFactory returns a new instance of the factory.
 func NewPublicKeyFactory() serde.Factory {
 	return publicKeyFactory{}
 }
 
-// VisitJSON implements serde.Factory. It deserializes the public key in JSON
-// format.
-func (f publicKeyFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
-	m := json.PublicKey{}
-	err := in.Feed(&m)
+// Deserialize implements serde.Factory. It returns the public key deserialized
+// if appropriate, otherwise an error.
+func (f publicKeyFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+	return f.PublicKeyOf(ctx, data)
+}
+
+// PublicKeyOf implements crypto.PublicKeyFactory. It returns the public key
+// deserialized if appropriate, otherwise an error.
+func (f publicKeyFactory) PublicKeyOf(ctx serde.Context, data []byte) (crypto.PublicKey, error) {
+	format := pubkeyFormats.Get(ctx.GetFormat())
+
+	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize data: %v", err)
+		return nil, xerrors.Errorf("couldn't decode public key: %v", err)
 	}
 
-	point := suite.Point()
-	err = point.UnmarshalBinary(m.Data)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't unmarshal point: %v", err)
+	pubkey, ok := msg.(PublicKey)
+	if !ok {
+		return nil, xerrors.Errorf("invalid public key of type '%T'", msg)
 	}
 
-	return PublicKey{point: point}, nil
+	return pubkey, nil
 }
 
 // signatureFactory provides functions to create schnorr signatures from
 // protobuf messages.
-type signatureFactory struct {
-	serde.UnimplementedFactory
-}
+//
+// - implements crypto.SignatureFactory
+// - implements serde.Factory
+type signatureFactory struct{}
 
 // NewSignatureFactory returns a new instance of the factory.
 func NewSignatureFactory() serde.Factory {
 	return signatureFactory{}
 }
 
-// VisitJSON implements serde.Factory. It deserializes the signature in JSON
-// format.
-func (f signatureFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
-	m := json.Signature{}
-	err := in.Feed(&m)
+// Deserialize implements serde.Factory.
+func (f signatureFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+	return f.SignatureOf(ctx, data)
+}
+
+// SignatureOf implements crypto.SignatureFactory.
+func (f signatureFactory) SignatureOf(ctx serde.Context, data []byte) (crypto.Signature, error) {
+	format := sigFormats.Get(ctx.GetFormat())
+
+	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize data: %v", err)
+		return nil, xerrors.Errorf("couldn't decode signature: %v", err)
 	}
 
-	return signature{data: m.Data}, nil
+	signature, ok := msg.(Signature)
+	if !ok {
+		return nil, xerrors.Errorf("invalid signature of type '%T'", msg)
+	}
+
+	return signature, nil
 }
 
 // verifier provides primitives to verify a schnorr signature of a unique
@@ -234,9 +283,8 @@ type Signer struct {
 	keyPair *key.Pair
 }
 
-// NewSigner returns a new random schnorr signer that do NOT support
-// aggregation.
-func NewSigner() crypto.AggregateSigner {
+// NewSigner returns a new random schnorr signer.
+func NewSigner() crypto.Signer {
 	kp := key.NewKeyPair(suite)
 	return Signer{
 		keyPair: kp,
@@ -251,13 +299,13 @@ func (s Signer) GetVerifierFactory() crypto.VerifierFactory {
 
 // GetPublicKeyFactory implements crypto.Signer. It returns the public key
 // factory for schnorr signatures.
-func (s Signer) GetPublicKeyFactory() serde.Factory {
+func (s Signer) GetPublicKeyFactory() crypto.PublicKeyFactory {
 	return publicKeyFactory{}
 }
 
 // GetSignatureFactory implements crypto.Signer. It returns the signature
 // factory for schnorr signatures.
-func (s Signer) GetSignatureFactory() serde.Factory {
+func (s Signer) GetSignatureFactory() crypto.SignatureFactory {
 	return signatureFactory{}
 }
 
@@ -280,7 +328,7 @@ func (s Signer) Sign(msg []byte) (crypto.Signature, error) {
 		return nil, xerrors.Errorf("couldn't make schnorr signature: %v", err)
 	}
 
-	return signature{data: sig}, nil
+	return Signature{data: sig}, nil
 }
 
 // Aggregate implements crypto.Signer. It aggregates the signatures into a

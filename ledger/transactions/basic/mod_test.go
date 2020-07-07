@@ -179,7 +179,7 @@ func TestServerTransaction_Consume(t *testing.T) {
 }
 
 func TestTransactionFactory_New(t *testing.T) {
-	factory := NewTransactionFactory(bls.NewSigner())
+	factory := NewTransactionFactory(bls.Generate())
 
 	clientTx, err := factory.New(fakeClientTask{})
 	require.NoError(t, err)
