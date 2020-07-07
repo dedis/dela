@@ -31,28 +31,29 @@ func TestRPC_Call(t *testing.T) {
 	ctx := context.Background()
 
 	addrs := mino.NewAddresses(m1.GetAddress())
-	resps, errs := rpc1.Call(ctx, fake.Message{}, addrs)
+	resps, err := rpc1.Call(ctx, fake.Message{}, addrs)
+	require.NoError(t, err)
 
-	err = testWait(t, errs, resps)
+	err = testWait(t, resps, nil)
 	// Message to self with a correct handler
 	require.NoError(t, err)
 
-	addrs = mino.NewAddresses(fake.NewAddress(99), m3.GetAddress())
-	resps, errs = rpc1.Call(ctx, fake.Message{}, addrs)
-
-	err = testWait(t, errs, resps)
-	// Message to the fake address.
+	addrs = mino.NewAddresses(fake.NewAddress(99))
+	_, err = rpc1.Call(ctx, fake.Message{}, addrs)
 	require.EqualError(t, err,
 		"couldn't find peer: invalid address type 'fake.Address'")
 
-	err = testWait(t, errs, resps)
+	resps, err = rpc1.Call(ctx, fake.Message{}, mino.NewAddresses(m3.GetAddress()))
+	require.NoError(t, err)
+	err = testWait(t, resps, nil)
 	// Message to m3 that has not the handler registered.
 	require.EqualError(t, err, "unknown rpc /test")
 
 	addrs = mino.NewAddresses(m2.GetAddress())
-	resps, errs = rpc1.Call(ctx, fake.Message{}, addrs)
+	resps, err = rpc1.Call(ctx, fake.Message{}, addrs)
+	require.NoError(t, err)
 
-	err = testWait(t, errs, resps)
+	err = testWait(t, resps, nil)
 	// Message to m2 with a handler but no implementation.
 	require.EqualError(t, err, "couldn't process request: rpc is not supported")
 }
@@ -99,7 +100,7 @@ func TestRPC_Failures_Stream(t *testing.T) {
 	require.EqualError(t, err, "couldn't process: oops")
 
 	errs := out.Send(fake.Message{})
-	err = testWait(t, errs, nil)
+	err = testWait(t, nil, errs)
 	require.EqualError(t, err, "couldn't marshal message: fake error")
 
 	m.context = serde.NewContext(fake.ContextEngine{})
@@ -135,13 +136,19 @@ func TestReceiver_Recv(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-func testWait(t *testing.T, errs <-chan error, resps <-chan serde.Message) error {
+func testWait(t *testing.T, resps <-chan mino.Response, errs <-chan error) error {
 	select {
 	case <-time.After(50 * time.Millisecond):
 		t.Fatal("an error is expected")
 		return nil
-	case <-resps:
-		return nil
+	case resp, more := <-resps:
+		if !more {
+			return nil
+		}
+
+		_, err := resp.GetMessageOrError()
+
+		return err
 	case err := <-errs:
 		return err
 	}

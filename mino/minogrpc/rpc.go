@@ -2,6 +2,7 @@ package minogrpc
 
 import (
 	context "context"
+	"sync"
 
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
@@ -20,30 +21,37 @@ type RPC struct {
 }
 
 // Call implements mino.RPC. It calls the RPC on each provided address.
-func (rpc *RPC) Call(ctx context.Context, req serde.Message,
-	players mino.Players) (<-chan serde.Message, <-chan error) {
-
-	out := make(chan serde.Message, players.Len())
-	errs := make(chan error, players.Len())
+func (rpc *RPC) Call(ctx context.Context,
+	req serde.Message, players mino.Players) (<-chan mino.Response, error) {
 
 	data, err := req.Serialize(rpc.overlay.context)
 	if err != nil {
-		errs <- xerrors.Errorf("failed to marshal msg to any: %v", err)
-		return out, errs
+		return nil, xerrors.Errorf("failed to marshal msg to any: %v", err)
 	}
 
 	sendMsg := &Message{Payload: data}
 
-	go func() {
-		iter := players.AddressIterator()
-		for iter.HasNext() {
-			addr := iter.GetNext()
+	out := make(chan mino.Response, players.Len())
+
+	wg := sync.WaitGroup{}
+	wg.Add(players.Len())
+
+	iter := players.AddressIterator()
+	for iter.HasNext() {
+		addr := iter.GetNext()
+
+		go func() {
+			defer wg.Done()
 
 			clientConn, err := rpc.overlay.connFactory.FromAddress(addr)
 			if err != nil {
-				errs <- xerrors.Errorf("failed to get client conn for '%v': %v",
-					addr, err)
-				continue
+				resp := mino.NewResponseWithError(
+					addr,
+					xerrors.Errorf("failed to get client conn: %v", err),
+				)
+
+				out <- resp
+				return
 			}
 
 			cl := NewOverlayClient(clientConn)
@@ -53,23 +61,36 @@ func (rpc *RPC) Call(ctx context.Context, req serde.Message,
 
 			callResp, err := cl.Call(newCtx, sendMsg)
 			if err != nil {
-				errs <- xerrors.Errorf("failed to call client '%s': %v", addr, err)
-				continue
+				resp := mino.NewResponseWithError(
+					addr,
+					xerrors.Errorf("failed to call client: %v", err),
+				)
+
+				out <- resp
+				return
 			}
 
 			resp, err := rpc.factory.Deserialize(rpc.overlay.context, callResp.GetPayload())
 			if err != nil {
-				errs <- xerrors.Errorf("couldn't unmarshal payload: %v", err)
-				continue
+				resp := mino.NewResponseWithError(
+					addr,
+					xerrors.Errorf("couldn't unmarshal payload: %v", err),
+				)
+
+				out <- resp
+				return
 			}
 
-			out <- resp
-		}
+			out <- mino.NewResponse(addr, resp)
+		}()
+	}
 
+	go func() {
+		wg.Wait()
 		close(out)
 	}()
 
-	return out, errs
+	return out, nil
 }
 
 // Stream implements mino.RPC. TODO: errors

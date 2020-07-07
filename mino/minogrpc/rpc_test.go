@@ -26,13 +26,17 @@ func TestRPC_Call(t *testing.T) {
 
 	addrs := []mino.Address{address{"A"}, address{"B"}}
 
-	msgs, errs := rpc.Call(context.Background(), fake.Message{}, mino.NewAddresses(addrs...))
-	select {
-	case err := <-errs:
-		t.Fatal(err)
-	case msg := <-msgs:
+	msgs, err := rpc.Call(context.Background(), fake.Message{}, mino.NewAddresses(addrs...))
+	require.NoError(t, err)
+
+	for i := 0; i < 2; i++ {
+		msg, more := <-msgs
+		require.True(t, more)
 		require.NotNil(t, msg)
 	}
+
+	_, more := <-msgs
+	require.False(t, more)
 }
 
 func TestRPC_Stream(t *testing.T) {

@@ -9,6 +9,7 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
+	"golang.org/x/xerrors"
 )
 
 func TestHandler_Process(t *testing.T) {
@@ -24,6 +25,11 @@ func TestHandler_Process(t *testing.T) {
 	require.EqualError(t, err, "invalid message type 'fake.Message'")
 	require.Nil(t, resp)
 
+	h.reactor = fakeReactor{err: xerrors.New("oops")}
+	_, err = h.Process(req)
+	require.EqualError(t, err, "couldn't hash message: oops")
+
+	h.reactor = fakeReactor{}
 	h.signer = fake.NewBadSigner()
 	_, err = h.Process(req)
 	require.EqualError(t, err, "couldn't sign: fake error")

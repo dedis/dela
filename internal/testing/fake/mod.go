@@ -642,8 +642,8 @@ func (s Sender) Send(serde.Message, ...mino.Address) <-chan error {
 // RPC is a fake implementation of mino.RPC.
 type RPC struct {
 	mino.RPC
-	Msgs     chan serde.Message
-	Errs     chan error
+	Calls    *Call
+	msgs     chan mino.Response
 	receiver *Receiver
 	sender   Sender
 	err      error
@@ -666,31 +666,47 @@ func NewStreamRPC(r Receiver, s Sender) *RPC {
 	return rpc
 }
 
-// NewBadStreamRPC returns a fake rpc that returns an error when calling Stream.
-func NewBadStreamRPC() *RPC {
-	return &RPC{
-		Msgs: make(chan serde.Message, 100),
-		Errs: make(chan error, 100),
-		err:  xerrors.New("fake error"),
+// NewBadRPC returns a fake rpc that returns an error when appropriate.
+func NewBadRPC() *RPC {
+	rpc := &RPC{
+		err: xerrors.New("fake error"),
 	}
+	rpc.Reset()
+	return rpc
+}
+
+func (rpc *RPC) SendResponse(from mino.Address, msg serde.Message) {
+	rpc.msgs <- mino.NewResponse(from, msg)
+}
+
+func (rpc *RPC) SendResponseWithError(from mino.Address, err error) {
+	rpc.msgs <- mino.NewResponseWithError(from, err)
+}
+
+func (rpc *RPC) Done() {
+	close(rpc.msgs)
 }
 
 // Call implements mino.RPC.
-func (rpc *RPC) Call(ctx context.Context, m serde.Message,
-	p mino.Players) (<-chan serde.Message, <-chan error) {
+func (rpc *RPC) Call(ctx context.Context,
+	m serde.Message, p mino.Players) (<-chan mino.Response, error) {
 
-	return rpc.Msgs, rpc.Errs
+	rpc.Calls.Add(ctx, m, p)
+
+	return rpc.msgs, rpc.err
 }
 
 // Stream implements mino.RPC.
-func (rpc *RPC) Stream(context.Context, mino.Players) (mino.Sender, mino.Receiver, error) {
+func (rpc *RPC) Stream(ctx context.Context, p mino.Players) (mino.Sender, mino.Receiver, error) {
+	rpc.Calls.Add(ctx, p)
+
 	return rpc.sender, rpc.receiver, rpc.err
 }
 
 // Reset resets the channels.
 func (rpc *RPC) Reset() {
-	rpc.Msgs = make(chan serde.Message, 100)
-	rpc.Errs = make(chan error, 100)
+	rpc.Calls = &Call{}
+	rpc.msgs = make(chan mino.Response, 100)
 }
 
 // Mino is a fake implementation of mino.Mino.

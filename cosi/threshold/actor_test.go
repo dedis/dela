@@ -64,7 +64,7 @@ func TestActor_Sign(t *testing.T) {
 	err = actor.merge(&Signature{}, resp, 0, fake.NewInvalidPublicKey(), []byte{})
 	require.EqualError(t, err, "couldn't verify: fake error")
 
-	actor.rpc = fake.NewBadStreamRPC()
+	actor.rpc = fake.NewBadRPC()
 	_, err = actor.Sign(ctx, fake.Message{}, ca)
 	require.EqualError(t, err, "couldn't open stream: fake error")
 }

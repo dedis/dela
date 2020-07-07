@@ -57,6 +57,12 @@ type Sender interface {
 	Send(msg serde.Message, addrs ...Address) <-chan error
 }
 
+// Receiver is an interface to provide primitives to receive messages from
+// recipients.
+type Receiver interface {
+	Recv(context.Context) (Address, serde.Message, error)
+}
+
 // Request is a wrapper around the context of a message received from a player
 // and that needs to be processed by the node. It provides some useful
 // information about the network layer.
@@ -67,20 +73,27 @@ type Request struct {
 	Message serde.Message
 }
 
-// Receiver is an interface to provide primitives to receive messages from
-// recipients.
-type Receiver interface {
-	Recv(context.Context) (Address, serde.Message, error)
+// Response is a interface that Mino implementations should comply with. The
+// response can either contain a message, or an error if something wrong
+// happened.
+type Response interface {
+	// GetFrom returns the address of the source of the reply.
+	GetFrom() Address
+
+	// GetMessageOrError returns the message, or an error if something wrong
+	// happened.
+	GetMessageOrError() (serde.Message, error)
 }
 
 // RPC is a representation of a remote procedure call that can call a single
 // distant procedure or multiple.
 type RPC interface {
-	// Call is a basic request to one or multiple distant peers. Only the
-	// responses channel will be close when all requests have been processed,
-	// either by success or after it filled the errors channel.
-	Call(ctx context.Context, req serde.Message,
-		players Players) (<-chan serde.Message, <-chan error)
+	// Call is a basic request to one or multiple distant peers. It directly
+	// contacts all the players and thus expect a reasonable number of peers.
+	//
+	// The response channel must be closed after every request ended in a
+	// result, either a reply or an error.
+	Call(ctx context.Context, req serde.Message, players Players) (<-chan Response, error)
 
 	// Stream is a persistent request that will be closed only when the
 	// orchestrator is done or an error occured.

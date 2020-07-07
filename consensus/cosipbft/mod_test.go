@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
@@ -93,10 +92,9 @@ func TestConsensus_GetChain(t *testing.T) {
 
 func TestConsensus_Listen(t *testing.T) {
 	fakeCosi := &fakeCosi{}
-	fakeMino := &fakeMino{}
 	cons := &Consensus{
 		cosi:       fakeCosi,
-		mino:       fakeMino,
+		mino:       fake.Mino{},
 		viewchange: fakeViewChange{},
 	}
 
@@ -104,8 +102,6 @@ func TestConsensus_Listen(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, actor)
 	require.IsType(t, reactor{}, fakeCosi.handler)
-	require.IsType(t, rpcHandler{}, fakeMino.h)
-	require.Equal(t, rpcName, fakeMino.name)
 
 	_, err = cons.Listen(nil)
 	require.EqualError(t, err, "validator is nil")
@@ -116,14 +112,14 @@ func TestConsensus_Listen(t *testing.T) {
 	require.True(t, xerrors.Is(err, fakeCosi.err))
 
 	fakeCosi.err = nil
-	fakeMino.err = xerrors.New("rpc error")
+	cons.mino = fake.NewBadMino()
 	_, err = cons.Listen(fakeReactor{})
-	require.Error(t, err)
-	require.True(t, xerrors.Is(err, fakeMino.err))
+	require.EqualError(t, err, "couldn't create the rpc: fake error")
 }
 
 func TestActor_Propose(t *testing.T) {
-	rpc := &fakeRPC{}
+	rpc := fake.NewRPC()
+	rpc.Done()
 	cosiActor := &fakeCosiActor{}
 	actor := &pbftActor{
 		Consensus: &Consensus{
@@ -155,8 +151,8 @@ func TestActor_Propose(t *testing.T) {
 	require.NotNil(t, commit)
 	require.Equal(t, []byte{0xaa}, commit.GetTo())
 
-	require.Len(t, rpc.calls, 1)
-	propagate := rpc.calls[0]["message"].(types.Propagate)
+	require.Equal(t, 1, rpc.Calls.Len())
+	propagate := rpc.Calls.Get(0, 1).(types.Propagate)
 	require.NotNil(t, propagate)
 	require.Equal(t, []byte{0xaa}, propagate.GetTo())
 
@@ -209,13 +205,20 @@ func TestActor_Failures_Propose(t *testing.T) {
 
 	actor.cosiActor = &fakeCosiActor{}
 	buffer := new(bytes.Buffer)
-	actor.rpc = &fakeRPC{err: xerrors.New("oops")}
+	rpc := fake.NewRPC()
+	rpc.SendResponseWithError(nil, xerrors.New("oops"))
+	rpc.Done()
+	actor.rpc = rpc
 	actor.logger = zerolog.New(buffer)
 	err = actor.Propose(fake.Message{})
 	require.NoError(t, err)
 	require.Equal(t,
 		"{\"level\":\"warn\",\"error\":\"oops\",\"message\":\"couldn't propagate the link\"}\n",
 		buffer.String())
+
+	actor.rpc = fake.NewBadRPC()
+	err = actor.Propose(fake.Message{})
+	require.EqualError(t, err, "call aborted: fake error")
 }
 
 func TestActor_Close(t *testing.T) {
@@ -554,44 +557,4 @@ func (a *fakeCosiActor) Sign(ctx context.Context, msg serde.Message,
 		a.delay--
 	}
 	return fake.Signature{}, nil
-}
-
-type fakeRPC struct {
-	mino.RPC
-
-	calls []map[string]interface{}
-	err   error
-}
-
-func (rpc *fakeRPC) Call(ctx context.Context, pb serde.Message,
-	memship mino.Players) (<-chan serde.Message, <-chan error) {
-
-	msgs := make(chan serde.Message)
-	go func() {
-		time.Sleep(10 * time.Millisecond)
-		close(msgs)
-	}()
-
-	errs := make(chan error, 1)
-	if rpc.err != nil {
-		errs <- rpc.err
-	}
-	rpc.calls = append(rpc.calls, map[string]interface{}{
-		"message":    pb,
-		"membership": memship,
-	})
-	return msgs, errs
-}
-
-type fakeMino struct {
-	mino.Mino
-	name string
-	h    mino.Handler
-	err  error
-}
-
-func (m *fakeMino) MakeRPC(name string, h mino.Handler, f serde.Factory) (mino.RPC, error) {
-	m.name = name
-	m.h = h
-	return nil, m.err
 }

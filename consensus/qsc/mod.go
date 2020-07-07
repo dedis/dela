@@ -51,12 +51,6 @@ func NewQSC(node int64, mino mino.Mino, players mino.Players) (*Consensus, error
 	}, nil
 }
 
-// GetChain implements consensus.Consensus. It returns the chain that can prove
-// the integrity of the proposal with the given identifier.
-func (c *Consensus) GetChain(id []byte) (consensus.Chain, error) {
-	return nil, nil
-}
-
 // Listen implements consensus.Consensus. It returns the actor that provides the
 // primitives to send proposals to a network of nodes.
 func (c *Consensus) Listen(r consensus.Reactor) (consensus.Actor, error) {
