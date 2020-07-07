@@ -48,7 +48,7 @@ func TestLedger_Basic(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	signer := bls.NewSigner()
+	signer := bls.Generate()
 	txFactory := basic.NewTransactionFactory(signer)
 
 	// Send a few transactions..
@@ -227,11 +227,11 @@ func makeLedger(t *testing.T, n int) ([]ledger.Ledger, []ledger.Actor, crypto.Co
 		minos[i] = m
 	}
 
-	ca := fake.NewAuthorityFromMino(bls.NewSigner, minos...)
+	ca := fake.NewAuthorityFromMino(bls.Generate, minos...)
 	ledgers := make([]ledger.Ledger, n)
 	actors := make([]ledger.Actor, n)
 	for i, m := range minos {
-		ledger := NewLedger(m, ca.GetSigner(i))
+		ledger := NewLedger(m, ca.GetSigner(i).(crypto.AggregateSigner))
 		ledgers[i] = ledger
 
 		actor, err := ledger.Listen()

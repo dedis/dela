@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
@@ -22,14 +23,14 @@ func TestCoSi_Basic(t *testing.T) {
 	m2, err := minoch.NewMinoch(manager, "B")
 	require.NoError(t, err)
 
-	ca := fake.NewAuthorityFromMino(bls.NewSigner, m1, m2)
-	c1 := NewCoSi(m1, ca.GetSigner(0))
+	ca := fake.NewAuthorityFromMino(bls.Generate, m1, m2)
+	c1 := NewCoSi(m1, ca.GetSigner(0).(crypto.AggregateSigner))
 	c1.Threshold = func(n int) int { return n - 1 }
 
 	actor, err := c1.Listen(fakeReactor{})
 	require.NoError(t, err)
 
-	c2 := NewCoSi(m2, ca.GetSigner(1))
+	c2 := NewCoSi(m2, ca.GetSigner(1).(crypto.AggregateSigner))
 	_, err = c2.Listen(fakeReactor{err: xerrors.New("oops")})
 	require.NoError(t, err)
 
@@ -49,24 +50,24 @@ func TestDefaultThreshold(t *testing.T) {
 }
 
 func TestCoSi_GetSigner(t *testing.T) {
-	c := &CoSi{signer: fake.NewSigner()}
+	c := &CoSi{signer: fake.NewAggregateSigner()}
 	require.NotNil(t, c.GetSigner())
 }
 
 func TestCoSi_GetPublicKeyFactory(t *testing.T) {
-	c := &CoSi{signer: fake.NewSigner()}
+	c := &CoSi{signer: fake.NewAggregateSigner()}
 	require.NotNil(t, c.GetPublicKeyFactory())
 }
 
 func TestCoSi_GetSignatureFactory(t *testing.T) {
-	c := &CoSi{signer: fake.NewSigner()}
+	c := &CoSi{signer: fake.NewAggregateSigner()}
 	require.NotNil(t, c.GetSignatureFactory())
 }
 
 func TestCoSi_Listen(t *testing.T) {
 	c := &CoSi{
 		mino:   fake.Mino{},
-		signer: fake.NewSigner(),
+		signer: fake.NewAggregateSigner(),
 	}
 
 	actor, err := c.Listen(fakeReactor{})

@@ -269,7 +269,7 @@ func TestHandler_Prepare_Invoke(t *testing.T) {
 	_, err = h.Invoke(nil, req)
 	require.EqualError(t, err, "couldn't verify: oops")
 
-	cons.viewchange = fakeViewChange{authority: fake.NewAuthority(3, func() crypto.AggregateSigner {
+	cons.viewchange = fakeViewChange{authority: fake.NewAuthority(3, func() crypto.Signer {
 		return fake.NewSignerWithPublicKey(fake.NewBadPublicKey())
 	})}
 	_, err = h.Invoke(fake.NewAddress(0), req)
@@ -378,11 +378,11 @@ func makeConsensus(t *testing.T, n int, r consensus.Reactor) ([]*Consensus, []co
 		mm[i] = m
 	}
 
-	ca := fake.NewAuthorityFromMino(bls.NewSigner, mm...)
+	ca := fake.NewAuthorityFromMino(bls.Generate, mm...)
 	cons := make([]*Consensus, n)
 	actors := make([]consensus.Actor, n)
 	for i, m := range mm {
-		cosi := flatcosi.NewFlat(m, ca.GetSigner(i))
+		cosi := flatcosi.NewFlat(m, ca.GetSigner(i).(crypto.AggregateSigner))
 
 		c := NewCoSiPBFT(m, cosi, fakeViewChange{
 			authority: ca,

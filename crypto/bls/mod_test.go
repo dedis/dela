@@ -22,7 +22,7 @@ func init() {
 }
 
 func TestPublicKey_New(t *testing.T) {
-	signer := NewSigner()
+	signer := Generate()
 	data, err := signer.GetPublicKey().MarshalBinary()
 	require.NoError(t, err)
 
@@ -35,7 +35,7 @@ func TestPublicKey_New(t *testing.T) {
 }
 
 func TestPublicKey_MarshalBinary(t *testing.T) {
-	signer := NewSigner()
+	signer := Generate()
 
 	buffer, err := signer.GetPublicKey().MarshalBinary()
 	require.NoError(t, err)
@@ -55,7 +55,7 @@ func TestPublicKey_Serialize(t *testing.T) {
 
 func TestPublicKey_Verify(t *testing.T) {
 	msg := []byte("deadbeef")
-	signer := NewSigner()
+	signer := Generate()
 	sig, err := signer.Sign(msg)
 	require.NoError(t, err)
 
@@ -70,8 +70,8 @@ func TestPublicKey_Verify(t *testing.T) {
 }
 
 func TestPublicKey_Equal(t *testing.T) {
-	signerA := NewSigner()
-	signerB := NewSigner()
+	signerA := Generate()
+	signerB := Generate()
 	require.True(t, signerA.GetPublicKey().Equal(signerA.GetPublicKey()))
 	require.True(t, signerB.GetPublicKey().Equal(signerB.GetPublicKey()))
 	require.False(t, signerA.GetPublicKey().Equal(signerB.GetPublicKey()))
@@ -79,7 +79,7 @@ func TestPublicKey_Equal(t *testing.T) {
 }
 
 func TestPublicKey_MarshalText(t *testing.T) {
-	signer := NewSigner()
+	signer := Generate()
 	text, err := signer.GetPublicKey().MarshalText()
 	require.NoError(t, err)
 	require.Contains(t, string(text), "bls:")
@@ -90,7 +90,7 @@ func TestPublicKey_MarshalText(t *testing.T) {
 }
 
 func TestPublicKey_String(t *testing.T) {
-	signer := NewSigner()
+	signer := Generate()
 	str := signer.GetPublicKey().(PublicKey).String()
 	require.Contains(t, str, "bls:")
 
@@ -193,7 +193,7 @@ func TestSignatureFactory_SignatureOf(t *testing.T) {
 
 func TestVerifier_Verify(t *testing.T) {
 	f := func(msg []byte) bool {
-		signer := NewSigner()
+		signer := Generate()
 		sig, err := signer.Sign(msg)
 		require.NoError(t, err)
 
@@ -216,7 +216,7 @@ func TestVerifier_Verify(t *testing.T) {
 func TestVerifierFactory_FromAuthority(t *testing.T) {
 	factory := verifierFactory{}
 
-	verifier, err := factory.FromAuthority(fake.NewAuthority(2, NewSigner))
+	verifier, err := factory.FromAuthority(fake.NewAuthority(2, Generate))
 	require.NoError(t, err)
 	require.IsType(t, blsVerifier{}, verifier)
 	require.Len(t, verifier.(blsVerifier).points, 2)
@@ -254,7 +254,7 @@ func TestSigner_GetVerifierFactory(t *testing.T) {
 }
 
 func TestSigner_GetPublicKeyFactory(t *testing.T) {
-	signer := NewSigner()
+	signer := Generate()
 
 	factory := signer.GetPublicKeyFactory()
 	require.NotNil(t, factory)
@@ -262,7 +262,7 @@ func TestSigner_GetPublicKeyFactory(t *testing.T) {
 }
 
 func TestSigner_GetSignatureFactory(t *testing.T) {
-	signer := NewSigner()
+	signer := Generate()
 
 	factory := signer.GetSignatureFactory()
 	require.NotNil(t, factory)
@@ -295,7 +295,7 @@ func TestSigner_Aggregate(t *testing.T) {
 		signatures := make([]crypto.Signature, N)
 		pubkeys := make([]crypto.PublicKey, N)
 		for i := 0; i < N; i++ {
-			signer := NewSigner()
+			signer := Generate()
 			pubkeys[i] = signer.GetPublicKey()
 			sig, err := signer.Sign(msg)
 			require.NoError(t, err)

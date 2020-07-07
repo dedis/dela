@@ -316,8 +316,13 @@ type signer struct {
 	keyPair *key.Pair
 }
 
-// NewSigner returns a new random BLS signer that supports aggregation.
+// NewSigner generates and returns a new random signer.
 func NewSigner() crypto.AggregateSigner {
+	return Generate().(crypto.AggregateSigner)
+}
+
+// Generate returns a new random BLS signer that supports aggregation.
+func Generate() crypto.Signer {
 	kp := key.NewKeyPair(suite)
 	return signer{
 		keyPair: kp,

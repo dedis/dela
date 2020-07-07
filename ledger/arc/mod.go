@@ -22,6 +22,12 @@ type AccessControl interface {
 	Match(rule string, idents ...Identity) error
 }
 
+type AccessControlFactory interface {
+	serde.Factory
+
+	AccessOf(serde.Context, []byte) (AccessControl, error)
+}
+
 // Compile returns a compacted rule from the string segments.
 func Compile(segments ...string) string {
 	return strings.Join(segments, ":")

@@ -46,14 +46,14 @@ func TestSignature_GetIndices(t *testing.T) {
 func TestSignature_Merge(t *testing.T) {
 	sig := &Signature{}
 
-	err := sig.Merge(fake.NewSigner(), 2, fake.Signature{})
+	err := sig.Merge(fake.NewAggregateSigner(), 2, fake.Signature{})
 	require.NoError(t, err)
 	require.NotNil(t, sig.agg)
 
-	err = sig.Merge(fake.NewSigner(), 1, fake.Signature{})
+	err = sig.Merge(fake.NewAggregateSigner(), 1, fake.Signature{})
 	require.NoError(t, err)
 
-	err = sig.Merge(fake.NewSigner(), 1, fake.Signature{})
+	err = sig.Merge(fake.NewAggregateSigner(), 1, fake.Signature{})
 	require.EqualError(t, err, "index 1 already merged")
 
 	err = sig.Merge(fake.NewBadSigner(), 0, fake.Signature{})

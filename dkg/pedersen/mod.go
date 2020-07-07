@@ -1,6 +1,9 @@
 package pedersen
 
 import (
+	"go.dedis.ch/dela/crypto/ed25519"
+
+	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/dkg/pedersen/types"
 	"go.dedis.ch/dela/mino"
@@ -65,37 +68,44 @@ type Actor struct {
 }
 
 // Setup implement dkg.Actor. It initializes the DKG.
-func (a *Actor) Setup(players mino.Players, pubKeys []kyber.Point, threshold int) error {
-
-	if players.Len() != len(pubKeys) {
-		return xerrors.Errorf("there should be as many players as "+
-			"pubKey: %d := %d", players.Len(), len(pubKeys))
-	}
+func (a *Actor) Setup(co crypto.CollectiveAuthority, threshold int) (kyber.Point, error) {
 
 	if a.startRes.Done() {
-		return xerrors.Errorf("startRes is already done, only one setup call is allowed")
+		return nil, xerrors.Errorf("startRes is already done, only one setup call is allowed")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	sender, receiver, err := a.rpc.Stream(ctx, players)
+	sender, receiver, err := a.rpc.Stream(ctx, co)
 	if err != nil {
-		return xerrors.Errorf("failed to stream: %v", err)
+		return nil, xerrors.Errorf("failed to stream: %v", err)
 	}
 
-	players.AddressIterator().Seek(0)
-	addrs := make([]mino.Address, 0, players.Len())
-	for players.AddressIterator().HasNext() {
-		addrs = append(addrs, players.AddressIterator().GetNext())
+	addrs := make([]mino.Address, 0, co.Len())
+	pubkeys := make([]kyber.Point, 0, co.Len())
+
+	addrIter := co.AddressIterator()
+	pubkeyIter := co.PublicKeyIterator()
+
+	for addrIter.HasNext() && pubkeyIter.HasNext() {
+		addrs = append(addrs, addrIter.GetNext())
+
+		pubkey := pubkeyIter.GetNext()
+		edKey, ok := pubkey.(ed25519.PublicKey)
+		if !ok {
+			return nil, xerrors.Errorf("expected ed25519.PublicKey, got '%T'", pubkey)
+		}
+
+		pubkeys = append(pubkeys, edKey.GetPoint())
 	}
 
-	message := types.NewStart(threshold, addrs, pubKeys)
+	message := types.NewStart(threshold, addrs, pubkeys)
 
 	errs := sender.Send(message, addrs...)
 	err = <-errs
 	if err != nil {
-		return xerrors.Errorf("failed to send start: %v", err)
+		return nil, xerrors.Errorf("failed to send start: %v", err)
 	}
 
 	dkgPubKeys := make([]kyber.Point, len(addrs))
@@ -104,13 +114,13 @@ func (a *Actor) Setup(players mino.Players, pubKeys []kyber.Point, threshold int
 
 		addr, msg, err := receiver.Recv(context.Background())
 		if err != nil {
-			return xerrors.Errorf("got an error from '%s' while "+
+			return nil, xerrors.Errorf("got an error from '%s' while "+
 				"receiving: %v", addr, err)
 		}
 
 		doneMsg, ok := msg.(types.StartDone)
 		if !ok {
-			return xerrors.Errorf("expected to receive a Done message, but "+
+			return nil, xerrors.Errorf("expected to receive a Done message, but "+
 				"go the following: %T", msg)
 		}
 
@@ -120,11 +130,20 @@ func (a *Actor) Setup(players mino.Players, pubKeys []kyber.Point, threshold int
 		// key.
 		// TODO: handle the situation where a pub key is not the same
 		if i != 0 && !dkgPubKeys[i-1].Equal(doneMsg.GetPublicKey()) {
-			return xerrors.Errorf("the public keys does not match: %v", dkgPubKeys)
+			return nil, xerrors.Errorf("the public keys does not match: %v", dkgPubKeys)
 		}
 	}
 
-	return nil
+	return dkgPubKeys[0], nil
+}
+
+// GetPublicKey implements dkg.Actor
+func (a *Actor) GetPublicKey() (kyber.Point, error) {
+	if !a.startRes.Done() {
+		return nil, xerrors.Errorf("DKG has not been initialized")
+	}
+
+	return a.startRes.GetDistKey(), nil
 }
 
 // Encrypt implements dkg.Actor. It uses the DKG public key to encrypt a

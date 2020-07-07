@@ -80,7 +80,6 @@ type VerifierFactory interface {
 
 // Signer provides the primitives to sign and verify signatures.
 type Signer interface {
-	GetVerifierFactory() VerifierFactory
 	GetPublicKeyFactory() PublicKeyFactory
 	GetSignatureFactory() SignatureFactory
 	GetPublicKey() PublicKey
@@ -92,6 +91,8 @@ type Signer interface {
 type AggregateSigner interface {
 	Signer
 
+	GetVerifierFactory() VerifierFactory
+
 	Aggregate(signatures ...Signature) (Signature, error)
 }
 
@@ -101,10 +102,10 @@ type CollectiveAuthority interface {
 	mino.Players
 
 	// GetPublicKey returns the public key and its index of the corresponding
-	// address if any matches.
+	// address if any matches. An index < 0 means no correspondance found.
 	GetPublicKey(addr mino.Address) (PublicKey, int)
 
-	// PublicKeyIterator creates an public key iterator that iterates over the
-	// list of public keys.
+	// PublicKeyIterator creates a public key iterator that iterates over the
+	// list of public keys and is consistent with the address iterator.
 	PublicKeyIterator() PublicKeyIterator
 }
