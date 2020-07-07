@@ -64,7 +64,7 @@ func (b Blueprint) Serialize(ctx serde.Context) ([]byte, error) {
 
 	data, err := format.Encode(ctx, b)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't encode blueprint: fake error")
+		return nil, xerrors.Errorf("couldn't encode blueprint: %v", err)
 	}
 
 	return data, nil
@@ -217,7 +217,7 @@ func NewRequestFactory(pf serde.Factory) RequestFactory {
 	}
 }
 
-// Deserialize implements serde.Factory. It looks uup the format and populates
+// Deserialize implements serde.Factory. It looks up the format and populates
 // the message with the data if appropriate, otherwise it returns an error.
 func (f RequestFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := requestFormats.Get(ctx.GetFormat())

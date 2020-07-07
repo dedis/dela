@@ -4,7 +4,7 @@ package json
 import (
 	"encoding/json"
 
-	// Static registration of the JSON formats. By having there here, it ensures
+	// Static registration of the JSON formats. By having them here, it ensures
 	// that an import of the JSON context engine will import the definitions.
 	_ "go.dedis.ch/dela/blockchain/skipchain/json"
 	_ "go.dedis.ch/dela/consensus/cosipbft/json"
@@ -23,7 +23,7 @@ import (
 
 // JSONEngine is a context engine to marshal and unmarshal in JSON format.
 //
-// - implements serde.FormatEngine
+// - implements serde.ContextEngine
 type jsonEngine struct{}
 
 // NewContext returns a JSON context.

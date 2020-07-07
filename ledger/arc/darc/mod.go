@@ -13,7 +13,7 @@ import (
 
 var accessFormats = registry.NewSimpleRegistry()
 
-// RegisterAccessFormat register the gine for the provided format.
+// RegisterAccessFormat registers the engine for the provided format.
 func RegisterAccessFormat(c serde.Format, f serde.FormatEngine) {
 	accessFormats.Register(c, f)
 }
@@ -26,7 +26,7 @@ type Access struct {
 	rules map[string]Expression
 }
 
-// AccessOption is the type of an option to create an access control.
+// AccessOption is the option type to create an access control.
 type AccessOption func(*Access)
 
 // WithRule is an option to set a rule to a new access control.

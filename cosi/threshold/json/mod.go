@@ -19,8 +19,14 @@ type Signature struct {
 	Aggregate json.RawMessage
 }
 
+// SigFormat is the engine to encode and decode collective signature messages in
+// JSON format.
+//
+// - implements serde.FormatEngine
 type sigFormat struct{}
 
+// Encode implements serde.FormatEngine. It returns the serialized data of the
+// signature message if appropriate, otherwise an error.
 func (f sigFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	sig, ok := msg.(*threshold.Signature)
 	if !ok {
@@ -45,6 +51,8 @@ func (f sigFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) 
 	return data, nil
 }
 
+// Decode implements serde.FormatEngine. It populates the signature of the JSON
+// data if appropriate, otherwise it returns an error.
 func (f sigFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Signature{}
 	err := ctx.Unmarshal(data, &m)

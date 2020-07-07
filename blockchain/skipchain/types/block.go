@@ -135,12 +135,12 @@ func (b SkipBlock) GetIndex() uint64 {
 
 // GetGenesisID returns the genesis ID.
 func (b SkipBlock) GetGenesisID() []byte {
-	return append([]byte{}, b.GenesisID[:]...)
+	return b.GenesisID[:]
 }
 
 // GetBackLink returns the back link.
 func (b SkipBlock) GetBackLink() []byte {
-	return append([]byte{}, b.BackLink[:]...)
+	return b.BackLink[:]
 }
 
 // GetHash implements blockchain.Block and consensus.Proposal. It returns the

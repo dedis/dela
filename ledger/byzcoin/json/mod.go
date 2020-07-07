@@ -110,7 +110,7 @@ func (f messageFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, err
 	return data, nil
 }
 
-// Decode implements serde.FormatEngine. It deserialized the message from the
+// Decode implements serde.FormatEngine. It deserializes the message from the
 // data in JSON format.
 func (f messageFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := Message{}

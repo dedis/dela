@@ -126,7 +126,7 @@ func (t TreeRoutingFactory) RoutingOf(ctx serde.Context, data []byte) (Routing, 
 
 // TreeRouting holds the routing tree of a network. It allows each node of the
 // tree to know which child it should contact in order to relay a message that
-// is in it sub-tree.
+// is in its sub-tree.
 //
 // - implements routing.Routing
 type TreeRouting struct {
@@ -211,8 +211,7 @@ func NewTreeRouting(players mino.Players, opts ...TreeRoutingOption) (Routing, e
 		return nil, xerrors.Errorf("invalid root index %d", tmpl.rootIndex)
 	}
 
-	// Extract the root before the shuffle. We don't do it so that it is
-	// included in the seed generation.
+	// TODO: include root in hash calculation.
 	root := addrs[tmpl.rootIndex]
 	addrs = append(addrs[:tmpl.rootIndex], addrs[tmpl.rootIndex+1:]...)
 	addrsBuf = append(addrsBuf[:tmpl.rootIndex], addrsBuf[tmpl.rootIndex+1:]...)

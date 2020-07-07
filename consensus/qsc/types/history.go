@@ -168,7 +168,7 @@ func NewHistories(set map[int64]Message) Histories {
 
 // GetBest returns the best history in the set. The best history is defined such
 // that the random value of the latest epoch is the highest for every last epoch
-// in the histories. It returns nil if not history is found.
+// in the histories. It returns nil if no history is found.
 func (hists Histories) GetBest() History {
 	best := -1
 	random := int64(0)
