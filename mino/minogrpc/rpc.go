@@ -29,7 +29,15 @@ func (rpc *RPC) Call(ctx context.Context,
 		return nil, xerrors.Errorf("failed to marshal msg to any: %v", err)
 	}
 
-	sendMsg := &Message{Payload: data}
+	from, err := rpc.overlay.me.MarshalText()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to marshal address: %v", err)
+	}
+
+	sendMsg := &Message{
+		From:    from,
+		Payload: data,
+	}
 
 	out := make(chan mino.Response, players.Len())
 

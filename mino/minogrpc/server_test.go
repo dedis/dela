@@ -22,7 +22,7 @@ import (
 )
 
 func TestIntegration_BasicLifecycle_Stream(t *testing.T) {
-	mm, rpcs := makeInstances(t, 5)
+	mm, rpcs := makeInstances(t, 5, nil)
 
 	authority := fake.NewAuthorityFromMino(fake.NewSigner, mm...)
 
@@ -55,25 +55,42 @@ func TestIntegration_BasicLifecycle_Stream(t *testing.T) {
 }
 
 func TestIntegration_Basic_Call(t *testing.T) {
-	mm, rpcs := makeInstances(t, 10)
+	call := &fake.Call{}
+	mm, rpcs := makeInstances(t, 10, call)
 
 	authority := fake.NewAuthorityFromMino(fake.NewSigner, mm...)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	resps, _ := rpcs[0].Call(ctx, fake.Message{}, authority)
+	resps, err := rpcs[0].Call(ctx, fake.Message{}, authority)
+	require.NoError(t, err)
 
-	select {
-	case <-resps:
-	case <-time.After(5 * time.Second):
-		t.Fatal("timeout waiting for closure")
-	}
+	for {
+		select {
+		case resp, more := <-resps:
+			if !more {
+				for _, m := range mm {
+					require.NoError(t, m.(*Minogrpc).GracefulClose())
+				}
 
-	cancel()
+				// Verify the parameter of the Process handler.
+				require.Equal(t, 10, call.Len())
+				for i := 0; i < 10; i++ {
+					req := call.Get(i, 0).(mino.Request)
+					require.Equal(t, mm[0].GetAddress(), req.Address)
+				}
 
-	for _, m := range mm {
-		require.NoError(t, m.(*Minogrpc).GracefulClose())
+				return
+			}
+
+			msg, err := resp.GetMessageOrError()
+			require.NoError(t, err)
+			require.Equal(t, fake.Message{}, msg)
+
+		case <-time.After(5 * time.Second):
+			t.Fatal("timeout waiting for closure")
+		}
 	}
 }
 
@@ -157,9 +174,9 @@ func TestOverlayServer_Call(t *testing.T) {
 			context:        json.NewContext(),
 		},
 		endpoints: map[string]Endpoint{
-			"test": {Handler: testCallHandler{}, Factory: fake.MessageFactory{}},
+			"test": {Handler: testHandler{}, Factory: fake.MessageFactory{}},
 			"bad":  {Handler: mino.UnsupportedHandler{}, Factory: fake.MessageFactory{}},
-			"bad2": {Handler: testCallHandler{}, Factory: fake.NewBadMessageFactory()},
+			"bad2": {Handler: testHandler{}, Factory: fake.NewBadMessageFactory()},
 		},
 	}
 
@@ -202,8 +219,8 @@ func TestOverlayServer_Stream(t *testing.T) {
 		},
 		closer: &sync.WaitGroup{},
 		endpoints: map[string]Endpoint{
-			"test": {Handler: testStreamHandler{skip: true}},
-			"bad":  {Handler: testStreamHandler{skip: true, err: xerrors.New("oops")}},
+			"test": {Handler: testHandler{skip: true}},
+			"bad":  {Handler: testHandler{skip: true, err: xerrors.New("oops")}},
 		},
 	}
 
@@ -370,7 +387,7 @@ func TestConnectionFactory_FromAddress(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-func makeInstances(t *testing.T, n int) ([]mino.Mino, []mino.RPC) {
+func makeInstances(t *testing.T, n int, call *fake.Call) ([]mino.Mino, []mino.RPC) {
 	rtingFactory := routing.NewTreeRoutingFactory(2, AddressFactory{})
 	mm := make([]mino.Mino, n)
 	rpcs := make([]mino.RPC, n)
@@ -378,7 +395,7 @@ func makeInstances(t *testing.T, n int) ([]mino.Mino, []mino.RPC) {
 		m, err := NewMinogrpc("127.0.0.1", 3000+uint16(i), rtingFactory)
 		require.NoError(t, err)
 
-		rpc, err := m.MakeRPC("test", testStreamHandler{}, fake.MessageFactory{})
+		rpc, err := m.MakeRPC("test", testHandler{call: call}, fake.MessageFactory{})
 		require.NoError(t, err)
 
 		mm[i] = m
@@ -395,15 +412,16 @@ func makeInstances(t *testing.T, n int) ([]mino.Mino, []mino.RPC) {
 	return mm, rpcs
 }
 
-type testStreamHandler struct {
+type testHandler struct {
 	mino.UnsupportedHandler
+	call *fake.Call
 	skip bool
 	err  error
 }
 
 // Stream implements mino.Handler. It implements a simple receiver that will
 // return the message received and close.
-func (h testStreamHandler) Stream(out mino.Sender, in mino.Receiver) error {
+func (h testHandler) Stream(out mino.Sender, in mino.Receiver) error {
 	if h.skip {
 		return h.err
 	}
@@ -421,11 +439,9 @@ func (h testStreamHandler) Stream(out mino.Sender, in mino.Receiver) error {
 	return nil
 }
 
-type testCallHandler struct {
-	mino.UnsupportedHandler
-}
+func (h testHandler) Process(req mino.Request) (serde.Message, error) {
+	h.call.Add(req)
 
-func (h testCallHandler) Process(req mino.Request) (serde.Message, error) {
 	return req.Message, nil
 }
 

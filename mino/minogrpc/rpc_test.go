@@ -19,6 +19,7 @@ func TestRPC_Call(t *testing.T) {
 	rpc := &RPC{
 		factory: fake.MessageFactory{},
 		overlay: overlay{
+			me:          fake.NewAddress(1),
 			connFactory: fakeConnFactory{},
 			context:     json.NewContext(),
 		},
@@ -33,6 +34,11 @@ func TestRPC_Call(t *testing.T) {
 		msg, more := <-msgs
 		require.True(t, more)
 		require.NotNil(t, msg)
+
+		reply, err := msg.GetMessageOrError()
+		require.NoError(t, err)
+		require.Equal(t, fake.Message{}, reply)
+		require.True(t, msg.GetFrom().Equal(address{"A"}) || msg.GetFrom().Equal(address{"B"}))
 	}
 
 	_, more := <-msgs

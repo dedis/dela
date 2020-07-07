@@ -19,6 +19,7 @@ import (
 	"io"
 	"math/big"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -31,6 +32,7 @@ import (
 
 // Call is a tool to keep track of a function calls.
 type Call struct {
+	sync.Mutex
 	calls [][]interface{}
 }
 
@@ -39,6 +41,9 @@ func (c *Call) Get(n, i int) interface{} {
 	if c == nil {
 		return nil
 	}
+
+	c.Lock()
+	defer c.Unlock()
 
 	return c.calls[n][i]
 }
@@ -49,6 +54,9 @@ func (c *Call) Len() int {
 		return 0
 	}
 
+	c.Lock()
+	defer c.Unlock()
+
 	return len(c.calls)
 }
 
@@ -58,13 +66,18 @@ func (c *Call) Add(args ...interface{}) {
 		return
 	}
 
+	c.Lock()
+	defer c.Unlock()
+
 	c.calls = append(c.calls, args)
 }
 
 // Clear clears the array of calls.
 func (c *Call) Clear() {
 	if c != nil {
+		c.Lock()
 		c.calls = nil
+		c.Unlock()
 	}
 }
 
