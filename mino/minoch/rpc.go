@@ -52,7 +52,7 @@ func (c RPC) Call(ctx context.Context,
 	for iter.HasNext() {
 		peer, err := c.manager.get(iter.GetNext())
 		if err != nil {
-			// Abort everything is a peer is missing.
+			// Abort everything if a peer is missing.
 			return nil, xerrors.Errorf("couldn't find peer: %v", err)
 		}
 
