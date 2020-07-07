@@ -1,6 +1,8 @@
 package inventory
 
-import "go.dedis.ch/dela/serde"
+import (
+	"go.dedis.ch/dela/serde"
+)
 
 // Page represents the state of the inventory at some point in time.
 type Page interface {

@@ -17,6 +17,7 @@ import (
 	"go.dedis.ch/dela/ledger"
 	"go.dedis.ch/dela/ledger/arc/darc"
 	"go.dedis.ch/dela/ledger/byzcoin/memship"
+	"go.dedis.ch/dela/ledger/byzcoin/types"
 	"go.dedis.ch/dela/ledger/transactions"
 	"go.dedis.ch/dela/ledger/transactions/basic"
 	"go.dedis.ch/dela/mino"
@@ -155,10 +156,7 @@ func TestLedger_GossipTxs(t *testing.T) {
 }
 
 func TestActor_Setup(t *testing.T) {
-	f := MessageFactory{
-		rosterFactory: fake.MessageFactory{},
-		txFactory:     fake.MessageFactory{},
-	}
+	f := types.NewMessageFactory(nil, nil)
 
 	actor := actorLedger{
 		Ledger: &Ledger{
@@ -319,7 +317,7 @@ type fakeViewChange struct {
 }
 
 func (gov fakeViewChange) GetAuthority(index uint64) (viewchange.Authority, error) {
-	return roster.New(fake.NewAuthority(3, fake.NewSigner)), gov.err
+	return roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner)), gov.err
 }
 
 type fakeGossipActor struct {

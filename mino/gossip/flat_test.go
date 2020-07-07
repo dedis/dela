@@ -89,22 +89,18 @@ func TestHandler_Process(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-type fakeRumorFactory struct {
-	serde.UnimplementedFactory
-}
+type fakeRumorFactory struct{}
 
-func (r fakeRumorFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
+func (r fakeRumorFactory) Deserialize(serde.Context, []byte) (serde.Message, error) {
 	return fakeRumor{}, nil
 }
 
-type fakeRumor struct {
-	serde.UnimplementedMessage
-}
+type fakeRumor struct{}
 
 func (r fakeRumor) GetID() []byte {
 	return []byte{0xa}
 }
 
-func (r fakeRumor) VisitJSON(serde.Serializer) (interface{}, error) {
-	return struct{}{}, nil
+func (r fakeRumor) Serialize(serde.Context) ([]byte, error) {
+	return []byte("{}"), nil
 }

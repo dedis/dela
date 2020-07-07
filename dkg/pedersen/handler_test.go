@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/dkg/pedersen/types"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/kyber/v3"
@@ -18,19 +19,14 @@ func TestHandler_Stream(t *testing.T) {
 	err := h.Stream(fake.Sender{}, &receiver)
 	require.EqualError(t, err, "failed to receive: fake error")
 
-	receiver = fake.NewReceiver(Start{})
-	err = h.Stream(fake.Sender{}, &receiver)
-	require.EqualError(t, err, "failed to start: failed to create new DKG: "+
-		"dkg: can't run with empty node list")
-
-	receiver = fake.NewReceiver(Deal{}, DecryptRequest{})
+	receiver = fake.NewReceiver(types.Deal{}, types.DecryptRequest{})
 	err = h.Stream(fake.Sender{}, &receiver)
 	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")
 
 	h.startRes.distrKey = suite.Point()
 	h.startRes.participants = []mino.Address{fake.NewAddress(0)}
 	h.privShare = &share.PriShare{I: 0, V: suite.Scalar()}
-	receiver = fake.NewReceiver(DecryptRequest{C: suite.Point()})
+	receiver = fake.NewReceiver(types.DecryptRequest{C: suite.Point()})
 	err = h.Stream(fake.NewBadSender(), &receiver)
 	require.EqualError(t, err, "got an error while sending the decrypt reply: fake error")
 
@@ -47,31 +43,32 @@ func TestHandler_Start(t *testing.T) {
 		startRes: &state{},
 		privKey:  privKey,
 	}
-	start := Start{
-		addresses: []mino.Address{fake.NewAddress(0)},
-		pubkeys:   []kyber.Point{},
-	}
-	err := h.start(start, []Deal{}, nil, nil, nil)
+	start := types.NewStart(
+		0,
+		[]mino.Address{fake.NewAddress(0)},
+		[]kyber.Point{},
+	)
+	err := h.start(start, []types.Deal{}, nil, nil, nil)
 	require.EqualError(t, err, "there should be as many players as pubKey: 1 := 0")
 
-	start = Start{
-		addresses: []mino.Address{fake.NewAddress(0), fake.NewAddress(1)},
-		pubkeys:   []kyber.Point{pubKey, suite.Point()},
-		t:         2,
-	}
+	start = types.NewStart(
+		2,
+		[]mino.Address{fake.NewAddress(0), fake.NewAddress(1)},
+		[]kyber.Point{pubKey, suite.Point()},
+	)
 	receiver := fake.NewBadReceiver()
-	err = h.start(start, []Deal{}, nil, fake.Sender{}, &receiver)
+	err = h.start(start, []types.Deal{}, nil, fake.Sender{}, &receiver)
 	require.EqualError(t, err, "failed to receive after sending deals: fake error")
 
-	receiver = fake.NewReceiver(Deal{}, nil)
-	err = h.start(start, []Deal{}, nil, fake.Sender{}, &receiver)
+	receiver = fake.NewReceiver(types.Deal{}, nil)
+	err = h.start(start, []types.Deal{}, nil, fake.Sender{}, &receiver)
 	require.EqualError(t, err, "failed to certify: expected a response, got: <nil>")
 
-	err = h.start(start, []Deal{}, nil, fake.Sender{}, &fake.Receiver{})
+	err = h.start(start, []types.Deal{}, nil, fake.Sender{}, &fake.Receiver{})
 	require.EqualError(t, err, "undexpected message: <nil>")
 
 	// We check when there is already something in the slice if Deals
-	err = h.start(start, []Deal{{}}, nil, fake.NewBadSender(), &fake.Receiver{})
+	err = h.start(start, []types.Deal{{}}, nil, fake.NewBadSender(), &fake.Receiver{})
 	require.EqualError(t, err, "failed to certify: expected a response, got: <nil>")
 }
 
@@ -119,16 +116,16 @@ func TestHandler_HandleDeal(t *testing.T) {
 		deal = d
 	}
 
-	dealMsg := Deal{
-		index: deal.Index,
-		encryptedDeal: EncryptedDeal{
-			dhkey:     deal.Deal.DHKey,
-			signature: deal.Deal.Signature,
-			nonce:     deal.Deal.Nonce,
-			cipher:    deal.Deal.Cipher,
-		},
-		signature: deal.Signature,
-	}
+	dealMsg := types.NewDeal(
+		deal.Index,
+		deal.Signature,
+		types.NewEncryptedDeal(
+			deal.Deal.DHKey,
+			deal.Deal.Signature,
+			deal.Deal.Nonce,
+			deal.Deal.Cipher,
+		),
+	)
 
 	h := Handler{
 		dkg: dkg1,

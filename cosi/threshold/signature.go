@@ -3,10 +3,10 @@ package threshold
 import (
 	"bytes"
 
-	"go.dedis.ch/dela/cosi/threshold/json"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
 )
 
@@ -18,15 +18,40 @@ const (
 	mask = 0x7
 )
 
+var formats = registry.NewSimpleRegistry()
+
+// Register saves the format to be used when serializing/deserializing signature
+// messages for the given codec.
+func RegisterSignatureFormat(c serde.Format, f serde.FormatEngine) {
+	formats.Register(c, f)
+}
+
 // Signature is a threshold signature which includes an aggregated signature and
 // the mask of signers from the associated collective authority.
 //
 // - implements crypto.Signature
 type Signature struct {
-	serde.UnimplementedMessage
-
 	agg  crypto.Signature
 	mask []byte
+}
+
+// NewSignature returns a new thresholded signature.
+func NewSignature(agg crypto.Signature, mask []byte) *Signature {
+	return &Signature{
+		agg:  agg,
+		mask: mask,
+	}
+}
+
+// GetAggregate returns the aggregate of the signature which corresponds to the
+// addition of the public keys enabled in the mask.
+func (s *Signature) GetAggregate() crypto.Signature {
+	return s.agg
+}
+
+// GetMask returns a bit mask of which public key is enabled.
+func (s *Signature) GetMask() []byte {
+	return append([]byte{}, s.mask...)
 }
 
 // HasBit returns true when the bit at the given index is set to 1.
@@ -94,20 +119,17 @@ func (s *Signature) setBit(index int) {
 	s.mask[i] |= 1 << uint(index&mask)
 }
 
-// VisitJSON implements serde.Message. It serializes the signature into JSON
+// Serialize implements serde.Message. It serializes the signature into JSON
 // format.
-func (s *Signature) VisitJSON(ser serde.Serializer) (interface{}, error) {
-	agg, err := ser.Serialize(s.agg)
+func (s *Signature) Serialize(ctx serde.Context) ([]byte, error) {
+	format := formats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, s)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't serialize aggregate: %v", err)
+		return nil, xerrors.Errorf("couldn't encode signature: %v", err)
 	}
 
-	m := json.Signature{
-		Mask:      s.mask,
-		Aggregate: agg,
-	}
-
-	return m, nil
+	return data, nil
 }
 
 // MarshalBinary implements encoding.BinaryMarshaler.
@@ -128,33 +150,47 @@ func (s *Signature) Equal(o crypto.Signature) bool {
 	return ok && other.agg.Equal(s.agg) && bytes.Equal(s.mask, other.mask)
 }
 
-type signatureFactory struct {
-	serde.UnimplementedFactory
+// AggKey is the key for the aggregate signature factory.
+type AggKey struct{}
 
-	sigFactory serde.Factory
+// SignatureFactory is the factory to deserialize collective signature.
+//
+// - implements crypto.SignatureFactory
+// - implements serde.Factory
+type SignatureFactory struct {
+	aggFactory crypto.SignatureFactory
 }
 
-// VisitJSON implements serde.Factory. It deserializes the signature in JSON
+// NewSignatureFactory returns a new signature factory.
+func NewSignatureFactory(f crypto.SignatureFactory) SignatureFactory {
+	return SignatureFactory{
+		aggFactory: f,
+	}
+}
+
+// Deserialize implements serde.Factory. It deserializes the signature in JSON
 // format.
-func (f signatureFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
-	m := json.Signature{}
-	err := in.Feed(&m)
+func (f SignatureFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+	return f.SignatureOf(ctx, data)
+}
+
+// SignatureOf implements crypto.SignatureFactory.
+func (f SignatureFactory) SignatureOf(ctx serde.Context, data []byte) (crypto.Signature, error) {
+	format := formats.Get(ctx.GetFormat())
+
+	ctx = serde.WithFactory(ctx, AggKey{}, f.aggFactory)
+
+	m, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize message: %v", err)
+		return nil, xerrors.Errorf("couldn't decode signature: %v", err)
 	}
 
-	var agg crypto.Signature
-	err = in.GetSerializer().Deserialize(m.Aggregate, f.sigFactory, &agg)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize signature: %v", err)
+	sig, ok := m.(*Signature)
+	if !ok {
+		return nil, xerrors.Errorf("invalid signature of type '%T'", m)
 	}
 
-	s := &Signature{
-		mask: m.Mask,
-		agg:  agg,
-	}
-
-	return s, nil
+	return sig, nil
 }
 
 // Verifier is a threshold verifier which can verify threshold signatures by

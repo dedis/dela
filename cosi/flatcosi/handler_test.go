@@ -33,8 +33,6 @@ func TestHandler_Process(t *testing.T) {
 // Utility functions
 
 type fakeReactor struct {
-	serde.UnimplementedFactory
-
 	err error
 }
 
@@ -42,6 +40,6 @@ func (h fakeReactor) Invoke(mino.Address, serde.Message) ([]byte, error) {
 	return []byte{0xab}, h.err
 }
 
-func (h fakeReactor) VisitJSON(serde.FactoryInput) (serde.Message, error) {
-	return fake.Message{}, nil
+func (h fakeReactor) Deserialize(serde.Context, []byte) (serde.Message, error) {
+	return fake.Message{}, h.err
 }

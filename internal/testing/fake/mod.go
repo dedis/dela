@@ -13,12 +13,12 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"hash"
 	"io"
 	"math/big"
 	"net"
-	"reflect"
 	"testing"
 	"time"
 
@@ -59,6 +59,13 @@ func (c *Call) Add(args ...interface{}) {
 	}
 
 	c.calls = append(c.calls, args)
+}
+
+// Clear clears the array of calls.
+func (c *Call) Clear() {
+	if c != nil {
+		c.calls = nil
+	}
 }
 
 // Address is a fake implementation of mino.Address
@@ -265,8 +272,6 @@ func (ca CollectiveAuthority) PublicKeyIterator() crypto.PublicKeyIterator {
 
 // PublicKeyFactory is a fake implementation of a public key factory.
 type PublicKeyFactory struct {
-	serde.UnimplementedFactory
-
 	pubkey PublicKey
 	err    error
 }
@@ -285,8 +290,13 @@ func NewBadPublicKeyFactory() PublicKeyFactory {
 	return PublicKeyFactory{err: xerrors.New("fake error")}
 }
 
-// VisitJSON implements serde.Factory.
-func (f PublicKeyFactory) VisitJSON(serde.FactoryInput) (serde.Message, error) {
+// Deserialize implements serde.Factory.
+func (f PublicKeyFactory) Deserialize(serde.Context, []byte) (serde.Message, error) {
+	return f.pubkey, f.err
+}
+
+// PublicKeyOf implements crypto.PublicKeyFactory.
+func (f PublicKeyFactory) PublicKeyOf(serde.Context, []byte) (crypto.PublicKey, error) {
 	return f.pubkey, f.err
 }
 
@@ -310,9 +320,9 @@ func (s Signature) Equal(o crypto.Signature) bool {
 	return ok
 }
 
-// VisitJSON implements serde.Message.
-func (s Signature) VisitJSON(serde.Serializer) (interface{}, error) {
-	return struct{}{}, s.err
+// Serialize implements serde.Message.
+func (s Signature) Serialize(serde.Context) ([]byte, error) {
+	return []byte("{}"), s.err
 }
 
 // MarshalBinary implements crypto.Signature.
@@ -322,8 +332,7 @@ func (s Signature) MarshalBinary() ([]byte, error) {
 
 // SignatureFactory is a fake implementation of the signature factory.
 type SignatureFactory struct {
-	serde.UnimplementedFactory
-
+	Counter   *Counter
 	signature Signature
 	err       error
 }
@@ -336,11 +345,29 @@ func NewSignatureFactory(s Signature) SignatureFactory {
 // NewBadSignatureFactory returns a signature factory that will return an error
 // when appropriate.
 func NewBadSignatureFactory() SignatureFactory {
-	return SignatureFactory{err: xerrors.New("fake error")}
+	return SignatureFactory{
+		err: xerrors.New("fake error"),
+	}
 }
 
-// VisitJSON implements serde.Factory.
-func (f SignatureFactory) VisitJSON(serde.FactoryInput) (serde.Message, error) {
+func NewBadSignatureFactoryWithDelay(value int) SignatureFactory {
+	return SignatureFactory{
+		err:     xerrors.New("fake error"),
+		Counter: &Counter{Value: value},
+	}
+}
+
+// Deserialize implements serde.Factory.
+func (f SignatureFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+	return f.SignatureOf(ctx, data)
+}
+
+// SignatureOf implements crypto.SignatureFactory.
+func (f SignatureFactory) SignatureOf(serde.Context, []byte) (crypto.Signature, error) {
+	if !f.Counter.Done() {
+		f.Counter.Decrease()
+		return f.signature, nil
+	}
 	return f.signature, f.err
 }
 
@@ -375,9 +402,9 @@ func (pk PublicKey) MarshalBinary() ([]byte, error) {
 	return []byte{0xdf}, pk.err
 }
 
-// VisitJSON implements serde.Message.
-func (pk PublicKey) VisitJSON(serde.Serializer) (interface{}, error) {
-	return struct{}{}, pk.err
+// Serialize implements serde.Message.
+func (pk PublicKey) Serialize(serde.Context) ([]byte, error) {
+	return []byte(`{}`), pk.err
 }
 
 // String implements fmt.Stringer.
@@ -424,12 +451,12 @@ func NewBadSigner() Signer {
 }
 
 // GetPublicKeyFactory implements crypto.Signer.
-func (s Signer) GetPublicKeyFactory() serde.Factory {
+func (s Signer) GetPublicKeyFactory() crypto.PublicKeyFactory {
 	return PublicKeyFactory{}
 }
 
 // GetSignatureFactory implements crypto.Signer.
-func (s Signer) GetSignatureFactory() serde.Factory {
+func (s Signer) GetSignatureFactory() crypto.SignatureFactory {
 	return s.signatureFactory
 }
 
@@ -765,8 +792,6 @@ func MakeCertificate(t *testing.T, n int) *tls.Certificate {
 
 // Message is a fake implementation if a serde message.
 type Message struct {
-	serde.UnimplementedMessage
-
 	Digest []byte
 }
 
@@ -776,82 +801,113 @@ func (m Message) Fingerprint(w io.Writer) error {
 	return nil
 }
 
-// VisitJSON implements serde.Message.
-func (m Message) VisitJSON(serde.Serializer) (interface{}, error) {
-	return struct{}{}, nil
+// Serialize implements serde.Message.
+func (m Message) Serialize(ctx serde.Context) ([]byte, error) {
+	return ctx.Marshal(struct{}{})
 }
 
 // MessageFactory is a fake implementation of a serde factory.
 type MessageFactory struct {
-	serde.UnimplementedFactory
+	err error
 }
 
-// VisitJSON implements serde.Message.
-func (f MessageFactory) VisitJSON(serde.FactoryInput) (serde.Message, error) {
-	return Message{}, nil
-}
-
-// FactoryInput is a fake implemetation of a factory input.
-type FactoryInput struct {
-	Serde   Serializer
-	Message interface{}
-	err     error
-}
-
-// NewBadFactoryInput returns a fake factory input that will return an error
-// when appropriate.
-func NewBadFactoryInput() FactoryInput {
-	return FactoryInput{err: xerrors.New("fake error")}
-}
-
-// GetSerializer implements serde.FactoryInput.
-func (in FactoryInput) GetSerializer() serde.Serializer {
-	return in.Serde
-}
-
-// Feed implements serde.FactoryInput.
-func (in FactoryInput) Feed(o interface{}) error {
-	if in.Message != nil {
-		reflect.ValueOf(o).Elem().Set(reflect.ValueOf(in.Message))
-	}
-	return in.err
-}
-
-// Serializer is a fake implementation of a serde serializer.
-type Serializer struct {
-	Count *Counter
-	err   error
-}
-
-// NewBadSerializer returns a fake serializer that will return an error when
-// appropriate.
-func NewBadSerializer() Serializer {
-	return Serializer{err: xerrors.New("fake error")}
-}
-
-// NewBadSerializerWithDelay returns a fake serializer that will return an error
-// after a given amount of function calls.
-func NewBadSerializerWithDelay(delay int) Serializer {
-	return Serializer{
-		Count: &Counter{Value: delay},
-		err:   xerrors.New("fake error"),
+func NewBadMessageFactory() MessageFactory {
+	return MessageFactory{
+		err: xerrors.New("fake error"),
 	}
 }
 
-// Serialize implements serde.Serializer.
-func (e Serializer) Serialize(serde.Message) ([]byte, error) {
-	if !e.Count.Done() {
-		e.Count.Decrease()
-		return nil, nil
-	}
-	return nil, e.err
+// Deserialize implements serde.Factory.
+func (f MessageFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+	return Message{}, f.err
 }
 
-// Deserialize implements serde.Serializer.
-func (e Serializer) Deserialize([]byte, serde.Factory, interface{}) error {
-	if !e.Count.Done() {
-		e.Count.Decrease()
+const (
+	GoodFormat = serde.Format("FakeGood")
+	BadFormat  = serde.Format("FakeBad")
+)
+
+type Format struct {
+	err  error
+	Msg  serde.Message
+	Call *Call
+}
+
+func NewBadFormat() Format {
+	return Format{err: xerrors.New("fake error")}
+}
+
+func (f Format) Encode(ctx serde.Context, m serde.Message) ([]byte, error) {
+	f.Call.Add(ctx, m)
+	return []byte("fake format"), f.err
+}
+
+func (f Format) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
+	f.Call.Add(ctx, data)
+	return f.Msg, f.err
+}
+
+type ContextEngine struct {
+	Count  *Counter
+	format serde.Format
+	err    error
+}
+
+func NewContext() serde.Context {
+	return serde.NewContext(ContextEngine{
+		format: GoodFormat,
+	})
+}
+
+func NewContextWithFormat(f serde.Format) serde.Context {
+	return serde.NewContext(ContextEngine{
+		format: f,
+	})
+}
+
+func NewBadContext() serde.Context {
+	return serde.NewContext(ContextEngine{
+		format: BadFormat,
+		err:    xerrors.New("fake error"),
+	})
+}
+
+func NewBadContextWithDelay(delay int) serde.Context {
+	return serde.NewContext(ContextEngine{
+		Count:  &Counter{Value: delay},
+		format: BadFormat,
+		err:    xerrors.New("fake error"),
+	})
+}
+
+func (ctx ContextEngine) GetFormat() serde.Format {
+	return ctx.format
+}
+
+func (ctx ContextEngine) Marshal(m interface{}) ([]byte, error) {
+	data, err := json.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+
+	if !ctx.Count.Done() {
+		ctx.Count.Decrease()
+		return data, nil
+	}
+
+	return data, ctx.err
+}
+
+func (ctx ContextEngine) Unmarshal(data []byte, m interface{}) error {
+	err := json.Unmarshal(data, m)
+	if err != nil {
+		return err
+	}
+
+	if !ctx.Count.Done() {
+		ctx.Count.Decrease()
 		return nil
 	}
-	return e.err
+
+	return ctx.err
 }

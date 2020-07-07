@@ -4,67 +4,53 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	types "go.dedis.ch/dela/cosi/json"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"go.dedis.ch/dela/serde/json"
+	"go.dedis.ch/dela/serde"
 )
 
-func TestSignatureRequest_VisitJSON(t *testing.T) {
-	req := SignatureRequest{
-		Value: fake.Message{},
-	}
+var testCalls = &fake.Call{}
 
-	ser := json.NewSerializer()
-
-	data, err := ser.Serialize(req)
-	require.NoError(t, err)
-	require.Equal(t, `{"Request":{"Value":{}}}`, string(data))
-
-	_, err = req.VisitJSON(fake.NewBadSerializer())
-	require.EqualError(t, err, "couldn't serialize message: fake error")
+func init() {
+	RegisterMessageFormat(fake.GoodFormat, fake.Format{Msg: SignatureRequest{}, Call: testCalls})
+	RegisterMessageFormat(fake.BadFormat, fake.NewBadFormat())
 }
 
-func TestSignatureResponse_VisitJSON(t *testing.T) {
-	resp := SignatureResponse{
-		Signature: fake.Signature{},
-	}
+func TestSignatureRequest(t *testing.T) {
+	req := SignatureRequest{}
 
-	ser := json.NewSerializer()
-
-	data, err := ser.Serialize(resp)
+	data, err := req.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, `{"Response":{"Signature":{}}}`, string(data))
+	require.Equal(t, "fake format", string(data))
 
-	_, err = resp.VisitJSON(fake.NewBadSerializer())
-	require.EqualError(t, err, "couldn't serialize signature: fake error")
+	_, err = req.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, "couldn't encode request: fake error")
 }
 
-func TestMessageFactory_VisitJSON(t *testing.T) {
+func TestSignatureResponse(t *testing.T) {
+	resp := SignatureResponse{}
+
+	data, err := resp.Serialize(fake.NewContext())
+	require.NoError(t, err)
+	require.Equal(t, "fake format", string(data))
+
+	_, err = resp.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, "couldn't encode response: fake error")
+}
+
+func TestMessageFactory_Deserialize(t *testing.T) {
 	factory := NewMessageFactory(fake.MessageFactory{}, fake.SignatureFactory{})
 
-	ser := json.NewSerializer()
+	testCalls.Clear()
 
-	_, err := factory.VisitJSON(fake.NewBadFactoryInput())
-	require.EqualError(t, err, "couldn't deserialize message: fake error")
-
-	// Request message.
-	var req SignatureRequest
-	err = ser.Deserialize([]byte(`{"Request":{}}`), factory, &req)
+	msg, err := factory.Deserialize(fake.NewContext(), nil)
 	require.NoError(t, err)
+	require.Equal(t, SignatureRequest{}, msg)
 
-	input := fake.FactoryInput{
-		Serde:   fake.NewBadSerializer(),
-		Message: types.Message{Request: &types.Request{}},
-	}
-	_, err = factory.VisitJSON(input)
-	require.EqualError(t, err, "couldn't deserialize value: fake error")
+	require.Equal(t, 1, testCalls.Len())
+	ctx := testCalls.Get(0, 0).(serde.Context)
+	require.Equal(t, fake.MessageFactory{}, ctx.GetFactory(MsgKey{}))
+	require.Equal(t, fake.SignatureFactory{}, ctx.GetFactory(SigKey{}))
 
-	// Response message.
-	var resp SignatureResponse
-	err = ser.Deserialize([]byte(`{"Response":{}}`), factory, &resp)
-	require.NoError(t, err)
-
-	input.Message = types.Message{Response: &types.Response{}}
-	_, err = factory.VisitJSON(input)
-	require.EqualError(t, err, "couldn't deserialize signature: fake error")
+	_, err = factory.Deserialize(fake.NewBadContext(), nil)
+	require.EqualError(t, err, "couldn't decode message: fake error")
 }

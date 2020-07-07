@@ -38,12 +38,12 @@ func (flat *Flat) GetSigner() crypto.Signer {
 }
 
 // GetPublicKeyFactory returns the public key factory.
-func (flat *Flat) GetPublicKeyFactory() serde.Factory {
+func (flat *Flat) GetPublicKeyFactory() crypto.PublicKeyFactory {
 	return flat.signer.GetPublicKeyFactory()
 }
 
 // GetSignatureFactory returns the signature factory.
-func (flat *Flat) GetSignatureFactory() serde.Factory {
+func (flat *Flat) GetSignatureFactory() crypto.SignatureFactory {
 	return flat.signer.GetSignatureFactory()
 }
 

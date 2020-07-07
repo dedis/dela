@@ -3,6 +3,7 @@ package skipchain
 import (
 	"context"
 
+	"go.dedis.ch/dela/blockchain/skipchain/types"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
@@ -27,8 +28,8 @@ func newHandler(ops *operations) handler {
 // messages only and return an error for any other type.
 func (h handler) Process(req mino.Request) (serde.Message, error) {
 	switch msg := req.Message.(type) {
-	case PropagateGenesis:
-		err := h.commitBlock(msg.genesis)
+	case types.PropagateGenesis:
+		err := h.commitBlock(msg.GetGenesis())
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't store genesis: %v", err)
 		}
@@ -47,20 +48,18 @@ func (h handler) Stream(out mino.Sender, in mino.Receiver) error {
 		return xerrors.Errorf("couldn't receive message: %v", err)
 	}
 
-	req, ok := msg.(BlockRequest)
+	req, ok := msg.(types.BlockRequest)
 	if !ok {
 		return xerrors.Errorf("invalid message type '%T' != '%T'", msg, req)
 	}
 
-	for i := req.from; i <= req.to; i++ {
+	for i := req.GetFrom(); i <= req.GetTo(); i++ {
 		block, err := h.db.Read(int64(i))
 		if err != nil {
 			return xerrors.Errorf("couldn't read block at index %d: %v", i, err)
 		}
 
-		resp := BlockResponse{
-			block: block,
-		}
+		resp := types.NewBlockResponse(block)
 
 		err = <-out.Send(resp, addr)
 		if err != nil {

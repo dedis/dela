@@ -35,10 +35,10 @@ type CollectiveSigning interface {
 	GetSigner() crypto.Signer
 
 	// GetPublicKeyFactory returns the public key factory.
-	GetPublicKeyFactory() serde.Factory
+	GetPublicKeyFactory() crypto.PublicKeyFactory
 
 	// GetSignatureFactory returns the signature factory.
-	GetSignatureFactory() serde.Factory
+	GetSignatureFactory() crypto.SignatureFactory
 
 	// GetVerifierFactory returns a factory that can create a verifier to check
 	// the validity of a signature.

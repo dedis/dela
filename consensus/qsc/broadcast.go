@@ -5,6 +5,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/consensus/qsc/types"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
@@ -13,17 +14,35 @@ import (
 // storage is a shared storage object between the handler and the
 // implementation.
 type storage struct {
-	previous MessageSet
+	previous types.MessageSet
 }
 
 // View defines a round result with received and broadcasted messages.
 type View struct {
-	received    map[int64]Message
-	broadcasted map[int64]Message
+	received    map[int64]types.Message
+	broadcasted map[int64]types.Message
+}
+
+func NewReceiveView(msgs []types.Message) View {
+	received := make(map[int64]types.Message)
+	for _, msg := range msgs {
+		received[msg.GetNode()] = msg
+	}
+
+	return View{received: received}
+}
+
+func (v View) GetReceived() []types.Message {
+	msgs := make([]types.Message, 0, len(v.received))
+	for _, msg := range v.received {
+		msgs = append(msgs, msg)
+	}
+
+	return msgs
 }
 
 type broadcast interface {
-	send(context.Context, history) (View, error)
+	send(context.Context, types.History) (View, error)
 }
 
 // broadcastTCLB implements the Threshold Synchronous Broadcast primitive
@@ -49,7 +68,7 @@ func newBroadcast(node int64, mino mino.Mino, players mino.Players, f serde.Fact
 
 // send broadcasts the history for the current time step and move to the next
 // one.
-func (b broadcastTCLB) send(ctx context.Context, h history) (View, error) {
+func (b broadcastTCLB) send(ctx context.Context, h types.History) (View, error) {
 	return b.execute(ctx, h)
 }
 
@@ -59,7 +78,7 @@ func (b broadcastTCLB) send(ctx context.Context, h history) (View, error) {
 type hTLCR struct {
 	mino.UnsupportedHandler
 
-	ch    chan MessageSet
+	ch    chan types.MessageSet
 	store *storage
 }
 
@@ -68,20 +87,15 @@ type hTLCR struct {
 // the list of messages missing to the distant player.
 func (h hTLCR) Process(req mino.Request) (serde.Message, error) {
 	switch msg := req.Message.(type) {
-	case MessageSet:
+	case types.MessageSet:
 		h.ch <- msg
 		return nil, nil
-	case RequestMessageSet:
-		if msg.timeStep != h.store.previous.timeStep {
+	case types.RequestMessageSet:
+		if msg.GetTimeStep() != h.store.previous.GetTimeStep() {
 			return nil, nil
 		}
 
-		resp := h.store.previous
-		resp.messages = make(map[int64]Message)
-
-		for _, node := range msg.nodes {
-			resp.messages[node] = h.store.previous.messages[node]
-		}
+		resp := h.store.previous.Reduce(msg.GetNodes())
 
 		return resp, nil
 	default:
@@ -90,7 +104,7 @@ func (h hTLCR) Process(req mino.Request) (serde.Message, error) {
 }
 
 type tlcr interface {
-	execute(context.Context, ...Message) (View, error)
+	execute(context.Context, ...types.Message) (View, error)
 }
 
 // bTLCR implements the TLCR primitive from the QSC paper.
@@ -102,17 +116,17 @@ type bTLCR struct {
 	rpc      mino.RPC
 	store    *storage
 	// Mino handler impl should redirect the messages to this channel..
-	ch chan MessageSet
+	ch chan types.MessageSet
 }
 
 func newTLCR(name string, node int64, mino mino.Mino, players mino.Players, f serde.Factory) (*bTLCR, error) {
 	// TODO: improve to have a buffer per node with limited size.
 	handler := hTLCR{
-		ch:    make(chan MessageSet, 1000),
+		ch:    make(chan types.MessageSet, 1000),
 		store: &storage{},
 	}
 
-	rpc, err := mino.MakeRPC(name, handler, RequestFactory{mFactory: f})
+	rpc, err := mino.MakeRPC(name, handler, types.NewRequestFactory(f))
 	if err != nil {
 		return nil, err
 	}
@@ -130,25 +144,18 @@ func newTLCR(name string, node int64, mino mino.Mino, players mino.Players, f se
 	return tlcr, nil
 }
 
-func (b *bTLCR) execute(ctx context.Context, messages ...Message) (View, error) {
-	ms := MessageSet{
-		messages: make(map[int64]Message),
-		timeStep: b.timeStep,
-		node:     b.node,
-	}
-	for _, msg := range messages {
-		ms.messages[msg.node] = msg
-	}
+func (b *bTLCR) execute(ctx context.Context, messages ...types.Message) (View, error) {
+	ms := types.NewMessageSet(b.node, b.timeStep, messages...)
 
 	_, errs := b.rpc.Call(ctx, ms, b.players)
 
-	for len(ms.messages) < b.players.Len() {
+	for len(ms.GetMessages()) < b.players.Len() {
 		select {
 		case err := <-errs:
 			b.logger.Err(err).Msg("couldn't broadcast to everyone")
 		case req := <-b.ch:
-			if req.timeStep == b.timeStep {
-				b.merge(ms, req)
+			if req.GetTimeStep() == b.timeStep {
+				ms = ms.Merge(req)
 			} else {
 				err := b.catchUp(ctx, ms, req)
 				if err != nil {
@@ -165,74 +172,64 @@ func (b *bTLCR) execute(ctx context.Context, messages ...Message) (View, error) 
 
 	b.store.previous = ms
 
-	return View{received: ms.messages}, nil
-}
-
-// merge merges messages from received into current.
-func (b *bTLCR) merge(current, received MessageSet) {
-	for k, v := range received.messages {
-		current.messages[k] = v
-	}
+	return NewReceiveView(ms.GetMessages()), nil
 }
 
 // catchUp analyses the messageSet 'received' compared to 'current' and tries to
 // catch up if possible, otherwise it delays the processing by inserting the
 // message at the end of the queue.
-func (b *bTLCR) catchUp(ctx context.Context, current, received MessageSet) error {
+func (b *bTLCR) catchUp(ctx context.Context, current, received types.MessageSet) error {
 	// Reinserts the messageSet in the queue so that it can be processed at the
 	// right time.
 	b.ch <- received
 
-	if received.timeStep == b.timeStep+1 {
+	if received.GetTimeStep() == b.timeStep+1 {
 		// The messageSet is only one step further than the current time step so
 		// we can use the previous messageSet to catch up and move forward.
 		b.logger.Trace().Msgf("%d requesting previous message set for time step %d", b.node, b.timeStep)
 
-		req := RequestMessageSet{
-			timeStep: b.timeStep,
-			nodes:    make([]int64, 0, len(current.messages)),
-		}
+		nodes := make([]int64, 0, len(current.GetMessages()))
 
 		// It sends the messages that it already has so that the distant
 		// player can send back the missing ones.
-		for node := range current.messages {
-			req.nodes = append(req.nodes, node)
+		for _, msg := range current.GetMessages() {
+			nodes = append(nodes, msg.GetNode())
 		}
 
-		previous, err := b.requestPreviousSet(ctx, int(received.node), req)
+		req := types.NewRequestMessageSet(b.timeStep, nodes)
+
+		previous, err := b.requestPreviousSet(ctx, int(received.GetNode()), req)
 		if err != nil {
 			return xerrors.Errorf("couldn't fetch previous message set: %w", err)
 		}
 
-		b.logger.Trace().Msgf("filling missing %d messages", len(previous.messages))
+		b.logger.Trace().Msgf("filling missing %d messages", len(previous.GetMessages()))
 
-		for k, v := range previous.messages {
-			current.messages[k] = v
-		}
+		current = previous.Merge(current)
 	}
 
 	return nil
 }
 
 func (b *bTLCR) requestPreviousSet(ctx context.Context, node int,
-	req RequestMessageSet) (MessageSet, error) {
+	req types.RequestMessageSet) (types.MessageSet, error) {
 
 	resps, errs := b.rpc.Call(ctx, req, b.players.Take(mino.IndexFilter(node)))
 	select {
 	case resp, ok := <-resps:
 		if !ok {
-			return MessageSet{}, xerrors.New("couldn't get a reply")
+			return types.MessageSet{}, xerrors.New("couldn't get a reply")
 		}
 
-		ms, ok := resp.(MessageSet)
+		ms, ok := resp.(types.MessageSet)
 		if !ok {
-			return MessageSet{}, xerrors.Errorf("got message type '%T' but expected '%T'",
+			return types.MessageSet{}, xerrors.Errorf("got message type '%T' but expected '%T'",
 				resp, ms)
 		}
 
 		return ms, nil
 	case err := <-errs:
-		return MessageSet{}, xerrors.Errorf("couldn't reach the node: %v", err)
+		return types.MessageSet{}, xerrors.Errorf("couldn't reach the node: %v", err)
 	}
 }
 
@@ -262,10 +259,7 @@ func newTLCB(node int64, mino mino.Mino, players mino.Players, f serde.Factory) 
 }
 
 func (b *bTLCB) execute(ctx context.Context, value serde.Message) (View, error) {
-	m := Message{
-		node:  b.node,
-		value: value,
-	}
+	m := types.NewMessage(b.node, value)
 
 	dela.Logger.Trace().Msgf("%d going through prepare broadcast", b.node)
 	prepareSet, err := b.b1.execute(ctx, m)
@@ -273,10 +267,9 @@ func (b *bTLCB) execute(ctx context.Context, value serde.Message) (View, error) 
 		return View{}, xerrors.Errorf("couldn't broadcast: %v", err)
 	}
 
-	m2 := Message{
-		node:  b.node,
-		value: MessageSet{messages: prepareSet.received},
-	}
+	mset := types.NewMessageSet(b.node, 0, prepareSet.GetReceived()...)
+
+	m2 := types.NewMessage(b.node, mset)
 
 	dela.Logger.Trace().Msgf("%d going through commit broadcast", b.node)
 	commitSet, err := b.b2.execute(ctx, m2)
@@ -294,8 +287,8 @@ func (b *bTLCB) execute(ctx context.Context, value serde.Message) (View, error) 
 
 func (b *bTLCB) merge(prepare, commit View) (View, error) {
 	ret := View{
-		received:    make(map[int64]Message),
-		broadcasted: make(map[int64]Message),
+		received:    make(map[int64]types.Message),
+		broadcasted: make(map[int64]types.Message),
 	}
 
 	for node, msg := range prepare.received {
@@ -304,9 +297,11 @@ func (b *bTLCB) merge(prepare, commit View) (View, error) {
 
 	counter := make(map[int64]int)
 	for _, msg := range commit.received {
-		mset := msg.value.(MessageSet)
+		mset := msg.GetValue().(types.MessageSet)
 
-		for node, msg := range mset.messages {
+		for _, msg := range mset.GetMessages() {
+			node := msg.GetNode()
+
 			// Populate the received set anyway.
 			ret.received[node] = msg
 			// The broadcasted set is filled and later on cleaned according to

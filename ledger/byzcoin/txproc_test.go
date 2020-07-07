@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/ledger/byzcoin/types"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions"
 	"go.dedis.ch/dela/serde"
@@ -11,30 +12,30 @@ import (
 )
 
 func TestTxProcessor_Validate(t *testing.T) {
-	proc := newTxProcessor(MessageFactory{}, fakeInventory{})
+	proc := newTxProcessor(types.MessageFactory{}, fakeInventory{})
 
-	_, err := proc.InvokeValidate(Blueprint{})
+	_, err := proc.InvokeValidate(types.Blueprint{})
 	require.NoError(t, err)
 
 	_, err = proc.InvokeValidate(nil)
 	require.EqualError(t, err, "invalid message type '<nil>'")
 
-	blueprint := Blueprint{transactions: []transactions.ServerTransaction{
+	blueprint := types.NewBlueprint([]transactions.ServerTransaction{
 		fakeTx{err: xerrors.New("oops")},
-	}}
+	})
 	_, err = proc.InvokeValidate(blueprint)
 	require.EqualError(t, err,
 		"couldn't stage the transactions: couldn't stage new page: couldn't consume tx: oops")
 }
 
 func TestTxProcessor_Process(t *testing.T) {
-	proc := newTxProcessor(MessageFactory{}, fakeInventory{page: &fakePage{index: 999}})
+	proc := newTxProcessor(types.MessageFactory{}, fakeInventory{page: &fakePage{index: 999}})
 
-	page, err := proc.process(BlockPayload{})
+	page, err := proc.process(types.BlockPayload{})
 	require.NoError(t, err)
 	require.Equal(t, uint64(999), page.GetIndex())
 
-	payload := BlockPayload{transactions: []transactions.ServerTransaction{}}
+	payload := types.NewBlockPayload(nil, nil)
 
 	proc.inventory = fakeInventory{page: &fakePage{}}
 	page, err = proc.process(payload)
@@ -43,9 +44,9 @@ func TestTxProcessor_Process(t *testing.T) {
 }
 
 func TestTxProcessor_Commit(t *testing.T) {
-	proc := newTxProcessor(MessageFactory{}, fakeInventory{})
+	proc := newTxProcessor(types.MessageFactory{}, fakeInventory{})
 
-	err := proc.InvokeCommit(BlockPayload{})
+	err := proc.InvokeCommit(types.BlockPayload{})
 	require.NoError(t, err)
 
 	err = proc.InvokeCommit(nil)
@@ -55,16 +56,16 @@ func TestTxProcessor_Commit(t *testing.T) {
 		errCommit: xerrors.New("oops"),
 		page:      &fakePage{fingerprint: []byte{0xab}},
 	}
-	err = proc.InvokeCommit(BlockPayload{root: []byte{0xab}})
+	err = proc.InvokeCommit(types.NewBlockPayload([]byte{0xab}, nil))
 	require.EqualError(t, err, "couldn't commit to page '0xab': oops")
 
 	proc.inventory = fakeInventory{errPage: xerrors.New("oops")}
-	err = proc.InvokeCommit(GenesisPayload{})
+	err = proc.InvokeCommit(types.GenesisPayload{})
 	require.EqualError(t, err,
 		"couldn't stage genesis: couldn't stage page: couldn't write roster: oops")
 
 	proc.inventory = fakeInventory{index: 1}
-	err = proc.InvokeCommit(GenesisPayload{})
+	err = proc.InvokeCommit(types.GenesisPayload{})
 	require.EqualError(t, err, "index 0 expected but got 1")
 }
 

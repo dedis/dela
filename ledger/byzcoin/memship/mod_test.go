@@ -12,25 +12,35 @@ import (
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions/basic"
 	"go.dedis.ch/dela/serde"
-	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
 
-func TestTask_VisitJSON(t *testing.T) {
-	task := NewTask(fake.NewAuthority(1, fake.NewSigner))
+var testCalls = &fake.Call{}
 
-	ser := json.NewSerializer()
-
-	data, err := ser.Serialize(task)
-	require.NoError(t, err)
-	require.Regexp(t, `{"Authority":\[{"Address":"[^"]+","PublicKey":{}}\]}`, string(data))
-
-	_, err = task.VisitJSON(fake.NewBadSerializer())
-	require.EqualError(t, err, "couldn't serialize authority: fake error")
+func init() {
+	RegisterTaskFormat(fake.GoodFormat, fake.Format{Msg: ServerTask{}, Call: testCalls})
+	RegisterTaskFormat(fake.BadFormat, fake.NewBadFormat())
 }
 
-func TestTask_Fingerprint(t *testing.T) {
-	task := NewTask(fake.NewAuthority(1, fake.NewSigner)).(clientTask)
+func TestClientTask_GetAuthority(t *testing.T) {
+	task := NewTask(fake.NewAuthority(3, fake.NewSigner)).(ClientTask)
+
+	require.Equal(t, 3, task.GetAuthority().Len())
+}
+
+func TestClientTask_Serialize(t *testing.T) {
+	task := NewTask(fake.NewAuthority(1, fake.NewSigner))
+
+	data, err := task.Serialize(fake.NewContext())
+	require.NoError(t, err)
+	require.Equal(t, "fake format", string(data))
+
+	_, err = task.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, "couldn't encode task: fake error")
+}
+
+func TestClientTask_Fingerprint(t *testing.T) {
+	task := NewTask(fake.NewAuthority(1, fake.NewSigner)).(ClientTask)
 
 	out := new(bytes.Buffer)
 	err := task.Fingerprint(out)
@@ -41,12 +51,8 @@ func TestTask_Fingerprint(t *testing.T) {
 	require.EqualError(t, err, "couldn't fingerprint authority: oops")
 }
 
-func TestTask_Consume(t *testing.T) {
-	task := serverTask{
-		clientTask: clientTask{
-			authority: roster.New(fake.NewAuthority(3, fake.NewSigner)),
-		},
-	}
+func TestServerTask_Consume(t *testing.T) {
+	task := NewServerTask(roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner)))
 
 	page := fakePage{values: make(map[string]serde.Message)}
 
@@ -59,14 +65,14 @@ func TestTask_Consume(t *testing.T) {
 }
 
 func TestTaskManager_GetChangeSetFactory(t *testing.T) {
-	manager := TaskManager{csFactory: fake.MessageFactory{}}
+	manager := TaskManager{csFactory: fakeChangeSetFactory{}}
 	require.NotNil(t, manager.GetChangeSetFactory())
 }
 
 func TestTaskManager_GetAuthority(t *testing.T) {
 	manager := TaskManager{
 		inventory: fakeInventory{
-			value: roster.New(fake.NewAuthority(3, fake.NewSigner)),
+			value: roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner)),
 		},
 		rosterFactory: fakeRosterFactory{},
 	}
@@ -82,13 +88,17 @@ func TestTaskManager_GetAuthority(t *testing.T) {
 	manager.inventory = fakeInventory{errPage: xerrors.New("oops")}
 	_, err = manager.GetAuthority(1)
 	require.EqualError(t, err, "couldn't read entry: oops")
+
+	manager.inventory = fakeInventory{value: fake.Message{}}
+	_, err = manager.GetAuthority(1)
+	require.EqualError(t, err, "invalid message type 'fake.Message'")
 }
 
 func TestTaskManager_Wait(t *testing.T) {
 	manager := TaskManager{
 		me: fake.NewAddress(0),
 		inventory: fakeInventory{
-			value: roster.New(fake.NewAuthority(3, fake.NewSigner)),
+			value: roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner)),
 		},
 		rosterFactory: fakeRosterFactory{},
 	}
@@ -108,7 +118,7 @@ func TestTaskManager_Wait(t *testing.T) {
 func TestTaskManager_Verify(t *testing.T) {
 	manager := TaskManager{
 		inventory: fakeInventory{
-			value: roster.New(fake.NewAuthority(3, fake.NewSigner)),
+			value: roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner)),
 		},
 		rosterFactory: fakeRosterFactory{},
 	}
@@ -125,20 +135,21 @@ func TestTaskManager_Verify(t *testing.T) {
 	require.EqualError(t, err, "couldn't get authority: couldn't read page: oops")
 }
 
-func TestTaskManager_VisitJSON(t *testing.T) {
-	factory := NewTaskManager(fakeInventory{}, fake.Mino{}, fake.NewSigner())
+func TestTaskManager_Deserialize(t *testing.T) {
+	manager := NewTaskManager(fakeInventory{}, fake.Mino{}, fake.NewSigner())
 
-	ser := json.NewSerializer()
+	testCalls.Clear()
 
-	var task serverTask
-	err := ser.Deserialize([]byte(`{"Authority":[{}]}`), factory, &task)
+	msg, err := manager.Deserialize(fake.NewContext(), nil)
 	require.NoError(t, err)
+	require.IsType(t, ServerTask{}, msg)
 
-	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
-	require.EqualError(t, err, "couldn't deserialize task: fake error")
+	require.Equal(t, 1, testCalls.Len())
+	ctx := testCalls.Get(0, 0).(serde.Context)
+	require.NotNil(t, ctx.GetFactory(RosterKey{}))
 
-	_, err = factory.VisitJSON(fake.FactoryInput{Serde: fake.NewBadSerializer()})
-	require.EqualError(t, err, "couldn't deserialize roster: fake error")
+	_, err = manager.Deserialize(fake.NewBadContext(), nil)
+	require.EqualError(t, err, "couldn't decode task: fake error")
 }
 
 func TestRegister(t *testing.T) {
@@ -207,7 +218,11 @@ func (i fakeInventory) GetPage(uint64) (inventory.Page, error) {
 }
 
 type fakeRosterFactory struct {
-	serde.UnimplementedFactory
+	viewchange.AuthorityFactory
+}
+
+type fakeChangeSetFactory struct {
+	viewchange.ChangeSetFactory
 }
 
 type badAuthority struct {

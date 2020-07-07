@@ -3,6 +3,8 @@ package byzcoin
 import (
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/blockchain"
+	"go.dedis.ch/dela/consensus/viewchange"
+	"go.dedis.ch/dela/ledger/byzcoin/types"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
@@ -13,12 +15,12 @@ import (
 //
 // - implements blockchain.Reactor
 type txProcessor struct {
-	MessageFactory
+	types.MessageFactory
 
 	inventory inventory.Inventory
 }
 
-func newTxProcessor(f MessageFactory, i inventory.Inventory) *txProcessor {
+func newTxProcessor(f types.MessageFactory, i inventory.Inventory) *txProcessor {
 	return &txProcessor{
 		MessageFactory: f,
 		inventory:      i,
@@ -29,22 +31,19 @@ func newTxProcessor(f MessageFactory, i inventory.Inventory) *txProcessor {
 // validation is a success. In that case, the payload has been staged in the
 // inventory and is waiting for a commit order.
 func (proc *txProcessor) InvokeValidate(data serde.Message) (blockchain.Payload, error) {
-	blueprint, ok := data.(Blueprint)
+	blueprint, ok := data.(types.Blueprint)
 	if !ok {
 		return nil, xerrors.Errorf("invalid message type '%T'", data)
 	}
 
-	payload := BlockPayload{
-		transactions: blueprint.transactions,
-		root:         nil,
-	}
+	payload := types.NewBlockPayload(nil, blueprint.GetTransactions())
 
 	page, err := proc.process(payload)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't stage the transactions: %v", err)
 	}
 
-	payload.root = page.GetFingerprint()
+	payload = types.NewBlockPayload(page.GetFingerprint(), payload.GetTransactions())
 
 	return payload, nil
 }
@@ -56,8 +55,8 @@ func (proc *txProcessor) InvokeCommit(p blockchain.Payload) error {
 	var root []byte
 
 	switch payload := p.(type) {
-	case GenesisPayload:
-		page, err := proc.setup(payload)
+	case types.GenesisPayload:
+		page, err := proc.setup(payload.GetRoster())
 		if err != nil {
 			return xerrors.Errorf("couldn't stage genesis: %v", err)
 		}
@@ -66,14 +65,14 @@ func (proc *txProcessor) InvokeCommit(p blockchain.Payload) error {
 			return xerrors.Errorf("index 0 expected but got %d", page.GetIndex())
 		}
 
-		root = payload.root
-	case BlockPayload:
+		root = payload.GetRoot()
+	case types.BlockPayload:
 		_, err := proc.process(payload)
 		if err != nil {
 			return xerrors.Errorf("couldn't process: %v", err)
 		}
 
-		root = payload.root
+		root = payload.GetRoot()
 	default:
 		return xerrors.Errorf("invalid message type '%T'", p)
 	}
@@ -88,9 +87,9 @@ func (proc *txProcessor) InvokeCommit(p blockchain.Payload) error {
 	return nil
 }
 
-func (proc *txProcessor) setup(payload GenesisPayload) (inventory.Page, error) {
+func (proc *txProcessor) setup(roster viewchange.Authority) (inventory.Page, error) {
 	page, err := proc.inventory.Stage(func(page inventory.WritablePage) error {
-		err := page.Write(rosterValueKey, payload.roster)
+		err := page.Write(rosterValueKey, roster)
 		if err != nil {
 			return xerrors.Errorf("couldn't write roster: %v", err)
 		}
@@ -104,15 +103,15 @@ func (proc *txProcessor) setup(payload GenesisPayload) (inventory.Page, error) {
 	return page, nil
 }
 
-func (proc *txProcessor) process(payload BlockPayload) (inventory.Page, error) {
-	page := proc.inventory.GetStagingPage(payload.root)
+func (proc *txProcessor) process(payload types.BlockPayload) (inventory.Page, error) {
+	page := proc.inventory.GetStagingPage(payload.GetRoot())
 	if page != nil {
 		// Page has already been processed previously.
 		return page, nil
 	}
 
 	page, err := proc.inventory.Stage(func(page inventory.WritablePage) error {
-		for _, tx := range payload.transactions {
+		for _, tx := range payload.GetTransactions() {
 			dela.Logger.Trace().Msgf("processing %v", tx)
 
 			err := tx.Consume(page)

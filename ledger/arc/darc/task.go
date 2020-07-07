@@ -3,10 +3,10 @@ package darc
 import (
 	"io"
 
-	"go.dedis.ch/dela/ledger/arc/darc/json"
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions/basic"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
 )
 
@@ -15,53 +15,64 @@ const (
 	UpdateAccessRule = "darc_update"
 )
 
+var taskFormats = registry.NewSimpleRegistry()
+
+// RegisterTaskFormat register the engine for the provided format.
+func RegisterTaskFormat(c serde.Format, f serde.FormatEngine) {
+	taskFormats.Register(c, f)
+}
+
 // ClientTask is the client task of a transaction that will allow an authorized
 // identity to create or update a DARC.
 //
 // - implements basic.ClientTask
-type clientTask struct {
-	serde.UnimplementedMessage
-
+type ClientTask struct {
 	key    []byte
 	access Access
 }
 
-// TODO: client factory
-
 // NewCreate returns a new task to create a DARC.
-func NewCreate(access Access) basic.ClientTask {
-	return clientTask{access: access}
+func NewCreate(access Access) ClientTask {
+	return ClientTask{access: access}
 }
 
 // NewUpdate returns a new task to update a DARC.
-func NewUpdate(key []byte, access Access) basic.ClientTask {
-	return clientTask{key: key, access: access}
+func NewUpdate(key []byte, access Access) ClientTask {
+	return ClientTask{key: key, access: access}
 }
 
-// VisitJSON implements serde.Message. It returns the JSON message for the task.
-func (act clientTask) VisitJSON(ser serde.Serializer) (interface{}, error) {
-	access, err := ser.Serialize(act.access)
+// GetKey returns the key of the access control.
+func (t ClientTask) GetKey() []byte {
+	return append([]byte{}, t.key...)
+}
+
+// GetAccess returns the access control of the task.
+func (t ClientTask) GetAccess() Access {
+	return t.access
+}
+
+// Serialize implements serde.Message. It looks up the format and returns the
+// serialized data of the task.
+func (t ClientTask) Serialize(ctx serde.Context) ([]byte, error) {
+	format := taskFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, t)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't serialize access: %v", err)
+		return nil, xerrors.Errorf("couldn't encode task: %v", err)
 	}
 
-	m := json.ClientTask{
-		Key:    act.key,
-		Access: access,
-	}
-
-	return m, nil
+	return data, nil
 }
 
 // Fingerprint implements encoding.Fingerprinter. It serializes the client task
 // into the writer in a deterministic way.
-func (act clientTask) Fingerprint(w io.Writer) error {
-	_, err := w.Write(act.key)
+func (t ClientTask) Fingerprint(w io.Writer) error {
+	_, err := w.Write(t.key)
 	if err != nil {
 		return xerrors.Errorf("couldn't write key: %v", err)
 	}
 
-	err = act.access.Fingerprint(w)
+	err = t.access.Fingerprint(w)
 	if err != nil {
 		return xerrors.Errorf("couldn't fingerprint access: %v", err)
 	}
@@ -69,26 +80,36 @@ func (act clientTask) Fingerprint(w io.Writer) error {
 	return nil
 }
 
-// serverTask is the server task for a DARC transaction.
+// ServerTask is the server task for a DARC transaction.
 //
 // - implements basic.ServerTask
-type serverTask struct {
-	clientTask
-	darcFactory serde.Factory
+type ServerTask struct {
+	ClientTask
+}
+
+// NewServerTask creates a new server task with the key and the acces control
+// provided.
+func NewServerTask(key []byte, access Access) ServerTask {
+	return ServerTask{
+		ClientTask: ClientTask{
+			key:    key,
+			access: access,
+		},
+	}
 }
 
 // Consume implements basic.ServerTask. It writes the DARC into the page if it
 // is allowed to do so, otherwise it returns an error.
-func (act serverTask) Consume(ctx basic.Context, page inventory.WritablePage) error {
-	err := act.access.Match(UpdateAccessRule, ctx.GetIdentity())
+func (t ServerTask) Consume(ctx basic.Context, page inventory.WritablePage) error {
+	err := t.access.Match(UpdateAccessRule, ctx.GetIdentity())
 	if err != nil {
 		// This prevents to update the arc so that no one is allowed to update
 		// it in the future.
 		return xerrors.New("transaction identity should be allowed to update")
 	}
 
-	key := act.key
-	if key == nil {
+	key := t.key
+	if len(key) == 0 {
 		// No key defined means a creation request then we use the transaction
 		// ID as a unique key for the DARC.
 		key = ctx.GetID()
@@ -109,7 +130,7 @@ func (act serverTask) Consume(ctx basic.Context, page inventory.WritablePage) er
 		}
 	}
 
-	err = page.Write(key, act.access)
+	err = page.Write(key, t.access)
 	if err != nil {
 		return xerrors.Errorf("couldn't write access: %v", err)
 	}
@@ -121,46 +142,28 @@ func (act serverTask) Consume(ctx basic.Context, page inventory.WritablePage) er
 // messages.
 //
 // - implements basic.TaskFactory
-type taskFactory struct {
-	serde.UnimplementedFactory
-
-	darcFactory serde.Factory
-}
+type taskFactory struct{}
 
 // NewTaskFactory returns a new instance of the task factory.
 func NewTaskFactory() serde.Factory {
-	return taskFactory{
-		darcFactory: NewFactory(),
-	}
+	return taskFactory{}
 }
 
-// VisitJSON implements serde.Factory. It deserializes the server task.
-func (f taskFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
-	m := json.ClientTask{}
-	err := in.Feed(&m)
+// Deserialize implements serde.Factory. It looks up the format and returns the
+// message deserialized from the data.
+func (f taskFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+	format := taskFormats.Get(ctx.GetFormat())
+
+	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize task: %v", err)
+		return nil, xerrors.Errorf("couldn't decode task: %v", err)
 	}
 
-	var access Access
-	err = in.GetSerializer().Deserialize(m.Access, f.darcFactory, &access)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize access: %v", err)
-	}
-
-	task := serverTask{
-		darcFactory: f.darcFactory,
-		clientTask: clientTask{
-			key:    m.Key,
-			access: access,
-		},
-	}
-
-	return task, nil
+	return msg, nil
 }
 
 // Register registers the task messages to the transaction factory.
 func Register(r basic.TransactionFactory, f serde.Factory) {
-	r.Register(clientTask{}, f)
-	r.Register(serverTask{}, f)
+	r.Register(ClientTask{}, f)
+	r.Register(ServerTask{}, f)
 }

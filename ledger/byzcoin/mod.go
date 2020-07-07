@@ -16,12 +16,12 @@ import (
 	"go.dedis.ch/dela/ledger"
 	"go.dedis.ch/dela/ledger/arc/darc"
 	"go.dedis.ch/dela/ledger/byzcoin/memship"
+	"go.dedis.ch/dela/ledger/byzcoin/types"
 	"go.dedis.ch/dela/ledger/inventory/mem"
 	"go.dedis.ch/dela/ledger/transactions"
 	"go.dedis.ch/dela/ledger/transactions/basic"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/gossip"
-	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -48,7 +48,6 @@ type Ledger struct {
 	bag        *txBag
 	proc       *txProcessor
 	viewchange viewchange.ViewChange
-	txFactory  serde.Factory
 	closing    chan struct{}
 	closed     sync.WaitGroup
 	initiated  chan error
@@ -65,10 +64,10 @@ func NewLedger(m mino.Mino, signer crypto.AggregateSigner) *Ledger {
 
 	consensus := cosipbft.NewCoSiPBFT(m, flatcosi.NewFlat(m, signer), vc)
 
-	msgFactory := MessageFactory{
-		txFactory:     txFactory,
-		rosterFactory: roster.NewRosterFactory(m.GetAddressFactory(), signer.GetPublicKeyFactory()),
-	}
+	msgFactory := types.NewMessageFactory(
+		roster.NewFactory(m.GetAddressFactory(), signer.GetPublicKeyFactory()),
+		txFactory,
+	)
 
 	return &Ledger{
 		addr:       m.GetAddress(),
@@ -78,7 +77,6 @@ func NewLedger(m mino.Mino, signer crypto.AggregateSigner) *Ledger {
 		bag:        newTxBag(),
 		proc:       newTxProcessor(msgFactory, inventory),
 		viewchange: vc,
-		txFactory:  txFactory,
 		closing:    make(chan struct{}),
 		initiated:  make(chan error, 1),
 	}
@@ -183,15 +181,17 @@ func (ldgr *Ledger) proposeBlocks(actor blockchain.Actor, ga gossip.Actor, playe
 
 			roundTimeout = time.After(timeoutRoundTime)
 		case block := <-blocks:
-			payload, ok := block.GetPayload().(BlockPayload)
+			payload, ok := block.GetPayload().(types.BlockPayload)
 			if !ok {
 				dela.Logger.Warn().Msgf("found invalid payload type '%T' != '%T'",
 					block.GetPayload(), payload)
 				break
 			}
 
-			txRes := make([]TransactionResult, len(payload.transactions))
-			for i, tx := range payload.transactions {
+			txs := payload.GetTransactions()
+
+			txRes := make([]TransactionResult, len(txs))
+			for i, tx := range txs {
 				txRes[i] = TransactionResult{
 					txID:     tx.GetID(),
 					Accepted: true,
@@ -222,9 +222,7 @@ func (ldgr *Ledger) proposeBlocks(actor blockchain.Actor, ga gossip.Actor, playe
 }
 
 func (ldgr *Ledger) proposeBlock(actor blockchain.Actor, players mino.Players) error {
-	blueprint := Blueprint{
-		transactions: ldgr.bag.GetAll(),
-	}
+	blueprint := types.NewBlueprint(ldgr.bag.GetAll())
 
 	// Each instance proposes a payload based on the received
 	// transactions but it depends on the blockchain implementation
@@ -252,9 +250,9 @@ func (ldgr *Ledger) Watch(ctx context.Context) <-chan ledger.TransactionResult {
 				return
 			}
 
-			payload, ok := block.GetPayload().(BlockPayload)
+			payload, ok := block.GetPayload().(types.BlockPayload)
 			if ok {
-				for _, tx := range payload.transactions {
+				for _, tx := range payload.GetTransactions() {
 					results <- TransactionResult{
 						txID:     tx.GetID(),
 						Accepted: true,
@@ -291,14 +289,14 @@ func (a actorLedger) Setup(players mino.Players) error {
 		return xerrors.Errorf("players must implement 'crypto.CollectiveAuthority'")
 	}
 
-	payload := GenesisPayload{roster: roster.New(authority)}
+	roster := roster.FromAuthority(authority)
 
-	page, err := a.proc.setup(payload)
+	page, err := a.proc.setup(roster)
 	if err != nil {
 		return xerrors.Errorf("couldn't store genesis payload: %v", err)
 	}
 
-	payload.root = page.GetFingerprint()
+	payload := types.NewGenesisPayload(page.GetFingerprint(), roster)
 
 	err = a.bcActor.Setup(payload, authority)
 	if err != nil {

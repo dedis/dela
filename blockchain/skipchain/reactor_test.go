@@ -6,24 +6,25 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/blockchain"
+	"go.dedis.ch/dela/blockchain/skipchain/types"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
 func TestReactor_InvokeGenesis(t *testing.T) {
-	expected := Digest{1}
+	expected := makeBlock(t, types.WithIndex(1))
 	r := &reactor{
 		operations: &operations{
 			db: &fakeDatabase{
-				blocks: []SkipBlock{{hash: expected}, {hash: Digest{2}}},
+				blocks: []types.SkipBlock{expected, makeBlock(t, types.WithIndex(2))},
 			},
 		},
 	}
 
 	digest, err := r.InvokeGenesis()
 	require.NoError(t, err)
-	require.Equal(t, expected[:], digest)
+	require.Equal(t, expected.GetHash(), digest)
 
 	r.db = &fakeDatabase{}
 	_, err = r.InvokeGenesis()
@@ -32,30 +33,23 @@ func TestReactor_InvokeGenesis(t *testing.T) {
 }
 
 func TestReactor_InvokeValidate(t *testing.T) {
-	db := &fakeDatabase{blocks: []SkipBlock{{}}}
+	db := &fakeDatabase{blocks: []types.SkipBlock{{}}}
 	r := &reactor{
 		operations: &operations{
-			reactor:      &fakeReactor{},
-			watcher:      &fakeWatcher{},
-			db:           db,
-			addr:         fake.NewAddress(0),
-			blockFactory: NewBlockFactory(fake.MessageFactory{}),
+			reactor: &fakeReactor{},
+			watcher: &fakeWatcher{},
+			db:      db,
+			addr:    fake.NewAddress(0),
 		},
-		queue: &blockQueue{
-			buffer: make(map[Digest]SkipBlock),
-		},
+		queue: types.NewQueue(),
 	}
 
-	req := Blueprint{
-		index: 1,
-		data:  fake.Message{},
-	}
+	req := types.NewBlueprint(1, nil, fake.Message{})
 
 	hash, err := r.InvokeValidate(fake.Address{}, req)
 	require.NoError(t, err)
-	digest := Digest{}
-	copy(digest[:], hash)
-	block, ok := r.queue.Get(digest)
+
+	block, ok := r.queue.Get(hash)
 	require.True(t, ok)
 	require.Equal(t, uint64(1), block.Index)
 
@@ -67,18 +61,13 @@ func TestReactor_InvokeValidate(t *testing.T) {
 	require.EqualError(t, err, "couldn't read genesis block: oops")
 
 	db.err = nil
-	db.blocks = []SkipBlock{{}}
+	db.blocks = []types.SkipBlock{{}}
 	r.reactor = &fakeReactor{errValidate: xerrors.New("oops")}
 	_, err = r.InvokeValidate(fake.Address{}, req)
 	require.EqualError(t, err, "couldn't validate the payload: oops")
 
 	r.reactor = &fakeReactor{}
-	r.blockFactory.hashFactory = fake.NewHashFactory(fake.NewBadHash())
-	_, err = r.InvokeValidate(fake.Address{}, req)
-	require.EqualError(t, err,
-		"couldn't compute hash: couldn't write index: fake error")
-
-	req.index = 5
+	req = types.NewBlueprint(5, nil, nil)
 	r.rpc = fake.NewStreamRPC(fake.Receiver{}, fake.NewBadSender())
 	_, err = r.InvokeValidate(fake.Address{}, req)
 	require.EqualError(t, err,
@@ -93,24 +82,27 @@ func TestReactor_InvokeCommit(t *testing.T) {
 			watcher: watcher,
 			db:      &fakeDatabase{},
 		},
-		queue: &blockQueue{buffer: make(map[Digest]SkipBlock)},
+		queue: types.NewQueue(),
 	}
 
-	v.queue.Add(SkipBlock{hash: Digest{1, 2, 3}})
-	v.queue.Add(SkipBlock{hash: Digest{1, 3}})
-	err := v.InvokeCommit(Digest{1, 2, 3}.Bytes())
+	block1 := makeBlock(t, types.WithIndex(0))
+	block2 := makeBlock(t, types.WithIndex(1))
+
+	v.queue.Add(block1)
+	v.queue.Add(block2)
+	err := v.InvokeCommit(block1.GetHash())
 	require.NoError(t, err)
-	require.Len(t, v.queue.buffer, 0)
+	require.Equal(t, 0, v.queue.Len())
 	require.Equal(t, 1, watcher.notified)
 
 	err = v.InvokeCommit([]byte{0xaa})
 	require.Equal(t, 0, v.db.(*fakeDatabase).aborts)
 	require.EqualError(t, err,
-		fmt.Sprintf("couldn't find block '%v'", Digest{0xaa}))
+		fmt.Sprintf("couldn't find block %#x", []byte{0xaa}))
 
-	v.queue.Add(SkipBlock{hash: Digest{1, 2, 3}})
+	v.queue.Add(block1)
 	v.db = &fakeDatabase{err: xerrors.New("oops")}
-	err = v.InvokeCommit(Digest{1, 2, 3}.Bytes())
+	err = v.InvokeCommit(block1.GetHash())
 	require.EqualError(t, err, "couldn't commit block: tx failed: couldn't write block: oops")
 	require.Equal(t, 1, v.db.(*fakeDatabase).aborts)
 }
@@ -138,7 +130,7 @@ func (v *fakeReactor) InvokeCommit(p blockchain.Payload) error {
 
 type fakeDatabase struct {
 	Database
-	blocks []SkipBlock
+	blocks []types.SkipBlock
 	err    error
 	aborts int
 }
@@ -147,18 +139,18 @@ func (db *fakeDatabase) Contains(index uint64) bool {
 	return index < uint64(len(db.blocks))
 }
 
-func (db *fakeDatabase) Read(index int64) (SkipBlock, error) {
+func (db *fakeDatabase) Read(index int64) (types.SkipBlock, error) {
 	if index >= int64(len(db.blocks)) {
-		return SkipBlock{}, NewNoBlockError(index)
+		return types.SkipBlock{}, NewNoBlockError(index)
 	}
 	return db.blocks[index], db.err
 }
 
-func (db *fakeDatabase) Write(SkipBlock) error {
+func (db *fakeDatabase) Write(types.SkipBlock) error {
 	return db.err
 }
 
-func (db *fakeDatabase) ReadLast() (SkipBlock, error) {
+func (db *fakeDatabase) ReadLast() (types.SkipBlock, error) {
 	return db.blocks[len(db.blocks)-1], db.err
 }
 

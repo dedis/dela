@@ -21,3 +21,9 @@ type ServerTransaction interface {
 
 	Consume(inventory.WritablePage) error
 }
+
+type TxFactory interface {
+	serde.Factory
+
+	TxOf(serde.Context, []byte) (ServerTransaction, error)
+}

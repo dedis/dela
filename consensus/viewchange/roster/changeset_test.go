@@ -4,54 +4,37 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	types "go.dedis.ch/dela/consensus/viewchange/roster/json"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"go.dedis.ch/dela/serde/json"
+	"go.dedis.ch/dela/serde"
 )
 
-func TestChangeSet_VisitJSON(t *testing.T) {
-	changeset := ChangeSet{
-		Remove: []uint32{42},
-		Add: []Player{
-			{
-				Address:   fake.NewAddress(2),
-				PublicKey: fake.PublicKey{},
-			},
-		},
-	}
-
-	ser := json.NewSerializer()
-
-	data, err := ser.Serialize(changeset)
-	require.NoError(t, err)
-	expected := `{"Remove":[42],"Add":[{"Address":"AgAAAA==","PublicKey":{}}]}`
-	require.Equal(t, expected, string(data))
-
-	_, err = changeset.VisitJSON(fake.NewBadSerializer())
-	require.EqualError(t, err, "couldn't serialize public key: fake error")
-
-	changeset.Add[0].Address = fake.NewBadAddress()
-	_, err = changeset.VisitJSON(ser)
-	require.EqualError(t, err, "couldn't serialize address: fake error")
+func init() {
+	RegisterChangeSetFormat(fake.GoodFormat, fake.Format{Msg: ChangeSet{}})
+	RegisterChangeSetFormat(serde.Format("BAD_TYPE"), fake.Format{Msg: fake.Message{}})
+	RegisterChangeSetFormat(fake.BadFormat, fake.NewBadFormat())
 }
 
-func TestChangeSetFactory_VisitJSON(t *testing.T) {
+func TestChangeSet_Serialize(t *testing.T) {
+	cset := ChangeSet{}
+
+	data, err := cset.Serialize(fake.NewContext())
+	require.NoError(t, err)
+	require.Equal(t, "fake format", string(data))
+
+	_, err = cset.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, "couldn't encode change set: fake error")
+}
+
+func TestChangeSetFactory_Deserialize(t *testing.T) {
 	factory := NewChangeSetFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 
-	ser := json.NewSerializer()
-
-	var changeset ChangeSet
-	err := ser.Deserialize([]byte(`{"Add":[{}]}`), factory, &changeset)
+	msg, err := factory.Deserialize(fake.NewContext(), nil)
 	require.NoError(t, err)
-	require.Len(t, changeset.Add, 1)
+	require.Equal(t, ChangeSet{}, msg)
 
-	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
-	require.EqualError(t, err, "couldn't deserialize change set: fake error")
+	_, err = factory.Deserialize(fake.NewBadContext(), nil)
+	require.EqualError(t, err, "couldn't decode change set: fake error")
 
-	input := fake.FactoryInput{
-		Serde:   fake.NewBadSerializer(),
-		Message: types.ChangeSet{Add: []types.Player{{}}},
-	}
-	_, err = factory.VisitJSON(input)
-	require.EqualError(t, err, "couldn't deserialize public key: fake error")
+	_, err = factory.Deserialize(fake.NewContextWithFormat(serde.Format("BAD_TYPE")), nil)
+	require.EqualError(t, err, "invalid message of type 'fake.Message'")
 }

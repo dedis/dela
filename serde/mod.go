@@ -1,64 +1,40 @@
-// Package serde defines the primitives to serialize and deserialize (serde)
-// network messages.
-//
-// The format can be chosen among three options:
-// - JSON
-// - Gob
-// - Protobuf
+// Package serde defines the serialization and deserialization mechanisms.
 package serde
 
 import "io"
 
-// Message is the interface a data model should implemented to be serialized and
-// deserialized.
+// Format is the identifier type of a format implementation.
+type Format string
+
+const (
+	// FormatJSON is the identifier for JSON formats.
+	FormatJSON Format = "JSON"
+)
+
+// Message is the interface that a message must implement.
 type Message interface {
-	// VisitJSON should return a JSON data structure to encode.
-	VisitJSON(Serializer) (interface{}, error)
-
-	// VisitGob should return a gob data structure to encode.
-	VisitGob(Serializer) (interface{}, error)
-
-	// VisitProto should return a protobuf message to encode.
-	VisitProto(Serializer) (interface{}, error)
+	// Serialize serializes the object by complying to the context format.
+	Serialize(ctx Context) ([]byte, error)
 }
 
-// FactoryInput is the input provided to the factory when visiting. The input
-// can be fed to an compatible interface to deserialize it.
-type FactoryInput interface {
-	// GetSerializer returns the serializer of the context.
-	GetSerializer() Serializer
-
-	// Feed writes the input into the given interface.
-	Feed(interface{}) error
-}
-
-// Factory is the interface to implement to instantiate a data model from the
-// raw message.
+// Factory is the interface that a message factory must implement.
 type Factory interface {
-	// VisitJSON should return the message implementation of the JSON-encoded
-	// input.
-	VisitJSON(FactoryInput) (Message, error)
-
-	// VisitGob should return the message implementation of the gob-encoded
-	// input.
-	VisitGob(FactoryInput) (Message, error)
-
-	// VisitProto should return the message implementation of the
-	// protobuf-encoded input.
-	VisitProto(FactoryInput) (Message, error)
+	// Deserialize deserializes the message instantiated from the data.
+	Deserialize(ctx Context, data []byte) (Message, error)
 }
 
-// Serializer is an interface that provides promitives to serialize and
-// deserialize a data model.
-type Serializer interface {
-	// Serialize takes a message and returns the byte slice after serialization.
-	Serialize(Message) ([]byte, error)
+// FormatEngine is the interface that a format implementation must implement.
+type FormatEngine interface {
+	// Encode marshals the message according to the format definition.
+	Encode(ctx Context, message Message) ([]byte, error)
 
-	// Deserialization takes the byte slice and the factory to instantiate the
-	// message implementation.
-	Deserialize([]byte, Factory, interface{}) error
+	// Decode unmarshal a message according to the format definition.
+	Decode(ctx Context, data []byte) (Message, error)
 }
 
+// Fingerprinter is an interface to fingerprint an object.
 type Fingerprinter interface {
-	Fingerprint(io.Writer) error
+	// Fingerprint writes a deterministic binary representation of the object
+	// into the writer.
+	Fingerprint(writer io.Writer) error
 }

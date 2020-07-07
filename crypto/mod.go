@@ -30,6 +30,13 @@ type PublicKey interface {
 	Equal(other PublicKey) bool
 }
 
+// PublicKeyFactory is a factory to decode public keys.
+type PublicKeyFactory interface {
+	serde.Factory
+
+	PublicKeyOf(serde.Context, []byte) (PublicKey, error)
+}
+
 // PublicKeyIterator is an iterator over the list of public keys of a
 // collective authority.
 type PublicKeyIterator interface {
@@ -53,6 +60,13 @@ type Signature interface {
 	Equal(other Signature) bool
 }
 
+// SignatureFactory is a factory to decode signatures.
+type SignatureFactory interface {
+	serde.Factory
+
+	SignatureOf(serde.Context, []byte) (Signature, error)
+}
+
 // Verifier provides the primitive to verify a signature w.r.t. a message.
 type Verifier interface {
 	Verify(msg []byte, signature Signature) error
@@ -67,8 +81,8 @@ type VerifierFactory interface {
 // Signer provides the primitives to sign and verify signatures.
 type Signer interface {
 	GetVerifierFactory() VerifierFactory
-	GetPublicKeyFactory() serde.Factory
-	GetSignatureFactory() serde.Factory
+	GetPublicKeyFactory() PublicKeyFactory
+	GetSignatureFactory() SignatureFactory
 	GetPublicKey() PublicKey
 	Sign(msg []byte) (Signature, error)
 }

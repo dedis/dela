@@ -12,6 +12,7 @@ import (
 
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/consensus"
+	"go.dedis.ch/dela/consensus/qsc/types"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/net/context"
@@ -27,34 +28,27 @@ const (
 // Consensus is an abstraction to send proposals to a network of nodes that will
 // decide to include them in the common state.
 type Consensus struct {
-	ch               chan serde.Message
-	closing          chan struct{}
-	stopped          chan struct{}
-	history          history
-	broadcast        broadcast
-	historiesFactory historiesFactory
+	ch        chan serde.Message
+	closing   chan struct{}
+	stopped   chan struct{}
+	history   types.History
+	broadcast broadcast
 }
 
 // NewQSC returns a new instance of QSC.
 func NewQSC(node int64, mino mino.Mino, players mino.Players) (*Consensus, error) {
-	bc, err := newBroadcast(node, mino, players, HistoryFactory{})
+	bc, err := newBroadcast(node, mino, players, types.HistoryFactory{})
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't create broadcast: %v", err)
 	}
 
 	return &Consensus{
-		ch:               make(chan serde.Message),
-		closing:          make(chan struct{}),
-		stopped:          make(chan struct{}),
-		history:          history{},
-		broadcast:        bc,
-		historiesFactory: defaultHistoriesFactory{},
+		ch:        make(chan serde.Message),
+		closing:   make(chan struct{}),
+		stopped:   make(chan struct{}),
+		history:   types.History{},
+		broadcast: bc,
 	}, nil
-}
-
-// GetChainFactory implements consensus.Consensus. It returns the chain factory.
-func (c *Consensus) GetChainFactory() serde.Factory {
-	return nil
 }
 
 // GetChain implements consensus.Consensus. It returns the chain that can prove
@@ -118,11 +112,11 @@ func (c *Consensus) executeRound(
 ) error {
 	// 1. Choose the message and the random value. The new epoch will be
 	// appended to the current history.
-	e := epoch{
-		// TODO: ask about randomness
-		random: rand.Int63(),
-	}
 
+	// TODO: ask about randomness
+	num := rand.Int63()
+
+	var hash []byte
 	if prop != nil {
 		// TODO: address
 		digest, err := val.InvokeValidate(nil, prop)
@@ -130,12 +124,10 @@ func (c *Consensus) executeRound(
 			return xerrors.Errorf("couldn't validate proposal: %v", err)
 		}
 
-		e.hash = digest
+		hash = digest
 	}
 
-	newHistory := history{
-		epochs: append(append([]epoch{}, c.history.epochs...), e),
-	}
+	newHistory := types.NewHistory(append(c.history.GetEpochs(), types.NewEpoch(hash, num))...)
 
 	// 2. Broadcast our history to the network and get back messages
 	// from this time step.
@@ -145,40 +137,28 @@ func (c *Consensus) executeRound(
 	}
 
 	// 3. Get the best history from the received messages.
-	Bp, err := c.historiesFactory.FromMessageSet(prepareSet.broadcasted)
-	if err != nil {
-		return xerrors.Errorf("couldn't decode broadcasted set: %v", err)
-	}
+	Bp := types.NewHistories(prepareSet.broadcasted)
 
 	// 4. Broadcast what we received in step 3.
-	commitSet, err := c.broadcast.send(ctx, Bp.getBest())
+	commitSet, err := c.broadcast.send(ctx, Bp.GetBest())
 	if err != nil {
 		return xerrors.Errorf("couldn't broadcast: %v", err)
 	}
 
 	// 5. Get the best history from the second broadcast.
-	Rpp, err := c.historiesFactory.FromMessageSet(commitSet.received)
-	if err != nil {
-		return xerrors.Errorf("couldn't decode received set: %v", err)
-	}
-	c.history = Rpp.getBest()
+	Rpp := types.NewHistories(commitSet.received)
+	c.history = Rpp.GetBest()
 
 	// 6. Verify that the best history is present and unique.
-	broadcasted, err := c.historiesFactory.FromMessageSet(commitSet.broadcasted)
-	if err != nil {
-		return xerrors.Errorf("couldn't decode broadcasted set: %v", err)
-	}
-	received, err := c.historiesFactory.FromMessageSet(prepareSet.received)
-	if err != nil {
-		return xerrors.Errorf("couldn't decode received set: %v", err)
-	}
+	broadcasted := types.NewHistories(commitSet.broadcasted)
+	received := types.NewHistories(prepareSet.received)
 
-	if broadcasted.contains(c.history) && received.isUniqueBest(c.history) {
+	if broadcasted.Contains(c.history) && received.IsUniqueBest(c.history) {
 		// TODO: node responsible for the best proposal should broadcast
 		// it to the others.
-		last, ok := c.history.getLast()
+		last, ok := c.history.GetLast()
 		if ok {
-			err := val.InvokeCommit(last.hash)
+			err := val.InvokeCommit(last.GetHash())
 			if err != nil {
 				return xerrors.Errorf("couldn't commit: %v", err)
 			}

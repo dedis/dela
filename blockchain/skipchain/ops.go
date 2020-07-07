@@ -8,8 +8,8 @@ import (
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/blockchain"
+	"go.dedis.ch/dela/blockchain/skipchain/types"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -18,19 +18,17 @@ const catchUpLeeway = 100 * time.Millisecond
 // operations implements helper functions that can be used by the handlers for
 // common operations.
 type operations struct {
-	logger          zerolog.Logger
-	addr            mino.Address
-	blockFactory    BlockFactory
-	responseFactory serde.Factory
-	db              Database
-	rpc             mino.RPC
-	watcher         blockchain.Observable
-	reactor         blockchain.Reactor
+	logger  zerolog.Logger
+	addr    mino.Address
+	db      Database
+	rpc     mino.RPC
+	watcher blockchain.Observable
+	reactor blockchain.Reactor
 
 	catchUpLock sync.Mutex
 }
 
-func (ops *operations) commitBlock(block SkipBlock) error {
+func (ops *operations) commitBlock(block types.SkipBlock) error {
 	err := ops.db.Atomic(func(tx Queries) error {
 		err := tx.Write(block)
 		if err != nil {
@@ -105,10 +103,7 @@ func (ops *operations) catchUp(index uint64, addr mino.Address) error {
 		return xerrors.Errorf("couldn't open stream: %v", err)
 	}
 
-	req := BlockRequest{
-		from: from,
-		to:   index - 1,
-	}
+	req := types.NewBlockRequest(from, index-1)
 
 	err = <-sender.Send(req, addr)
 	if err != nil {
@@ -121,17 +116,17 @@ func (ops *operations) catchUp(index uint64, addr mino.Address) error {
 			return xerrors.Errorf("couldn't receive message: %v", err)
 		}
 
-		resp, ok := msg.(BlockResponse)
+		resp, ok := msg.(types.BlockResponse)
 		if !ok {
 			return xerrors.Errorf("invalid response type '%T' != '%T'", msg, resp)
 		}
 
-		err = ops.commitBlock(resp.block)
+		err = ops.commitBlock(resp.GetBlock())
 		if err != nil {
 			return xerrors.Errorf("couldn't store block: %v", err)
 		}
 
-		if resp.block.GetIndex() >= index-1 {
+		if resp.GetBlock().GetIndex() >= index-1 {
 			return nil
 		}
 	}

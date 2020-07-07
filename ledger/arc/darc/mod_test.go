@@ -7,9 +7,26 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/arc"
-	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
+
+func init() {
+	RegisterAccessFormat(fake.GoodFormat, fake.Format{Msg: Access{}})
+	RegisterAccessFormat(fake.BadFormat, fake.NewBadFormat())
+}
+
+func TestAccess_WithRule(t *testing.T) {
+	access := NewAccess(WithRule("A", []string{"B", "C"}))
+
+	require.Len(t, access.rules, 1)
+	require.Len(t, access.rules["A"].matches, 2)
+}
+
+func TestAccess_GetRules(t *testing.T) {
+	access := NewAccess(WithRule("A", nil), WithRule("B", nil))
+
+	require.Len(t, access.GetRules(), 2)
+}
 
 func TestAccess_Evolve(t *testing.T) {
 	access := NewAccess()
@@ -60,7 +77,7 @@ func TestAccess_Match(t *testing.T) {
 
 func TestAccess_Fingerprint(t *testing.T) {
 	access := Access{
-		rules: map[string]expression{
+		rules: map[string]Expression{
 			"\x02": {matches: map[string]struct{}{"\x04": {}}},
 		},
 	}
@@ -79,32 +96,24 @@ func TestAccess_Fingerprint(t *testing.T) {
 		"couldn't fingerprint rule '\x02': couldn't write match: fake error")
 }
 
-func TestAccess_VisitJSON(t *testing.T) {
-	access := Access{rules: map[string]expression{
-		"A": {matches: map[string]struct{}{"C": {}}},
-		"B": {},
-	}}
+func TestAccess_Serialize(t *testing.T) {
+	access := NewAccess()
 
-	ser := json.NewSerializer()
-	data, err := ser.Serialize(access)
+	data, err := access.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, `{"Rules":{"A":["C"],"B":[]}}`, string(data))
+	require.Equal(t, "fake format", string(data))
+
+	_, err = access.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, "couldn't encode access: fake error")
 }
 
-func TestFactory_VisitJSON(t *testing.T) {
+func TestFactory_Deserialize(t *testing.T) {
 	factory := NewFactory()
 
-	ser := json.NewSerializer()
-
-	var access Access
-	err := ser.Deserialize([]byte(`{"Rules":{"A":["B"],"C":[]}}`), factory, &access)
+	msg, err := factory.Deserialize(fake.NewContext(), nil)
 	require.NoError(t, err)
-	expected := Access{rules: map[string]expression{
-		"A": {matches: map[string]struct{}{"B": {}}},
-		"C": {matches: map[string]struct{}{}},
-	}}
-	require.Equal(t, expected, access)
+	require.IsType(t, Access{}, msg)
 
-	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
-	require.EqualError(t, err, "couldn't deserialize access: fake error")
+	_, err = factory.Deserialize(fake.NewBadContext(), nil)
+	require.EqualError(t, err, "couldn't decode access: fake error")
 }

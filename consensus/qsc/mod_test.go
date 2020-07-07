@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/consensus"
+	"go.dedis.ch/dela/consensus/qsc/types"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minoch"
@@ -53,16 +54,15 @@ func TestQSC_Basic(t *testing.T) {
 	}
 
 	require.Equal(t, cons[0].history, cons[1].history)
-	require.GreaterOrEqual(t, len(cons[0].history.epochs), k)
+	require.GreaterOrEqual(t, len(cons[0].history.GetEpochs()), k)
 }
 
 func TestQSC_Listen(t *testing.T) {
 	bc := &fakeBroadcast{wait: true, waiting: make(chan struct{})}
 	qsc := &Consensus{
-		closing:          make(chan struct{}),
-		stopped:          make(chan struct{}),
-		broadcast:        bc,
-		historiesFactory: &fakeFactory{},
+		closing:   make(chan struct{}),
+		stopped:   make(chan struct{}),
+		broadcast: bc,
 	}
 
 	actor, err := qsc.Listen(nil)
@@ -70,7 +70,7 @@ func TestQSC_Listen(t *testing.T) {
 
 	select {
 	case <-bc.waiting:
-	case <-time.After(10 * time.Millisecond):
+	case <-time.After(100 * time.Millisecond):
 		t.Fatal("timeout")
 	}
 	require.NoError(t, actor.Close())
@@ -85,10 +85,8 @@ func TestQSC_Listen(t *testing.T) {
 
 func TestQSC_ExecuteRound(t *testing.T) {
 	bc := &fakeBroadcast{}
-	factory := &fakeFactory{}
 	qsc := &Consensus{
-		broadcast:        bc,
-		historiesFactory: factory,
+		broadcast: bc,
 	}
 
 	ctx := context.Background()
@@ -99,33 +97,6 @@ func TestQSC_ExecuteRound(t *testing.T) {
 	bc.err = xerrors.New("oops")
 	err = qsc.executeRound(ctx, fake.Message{}, &fakeReactor{})
 	require.EqualError(t, err, "couldn't broadcast: oops")
-
-	bc.delay = 1
-	factory.err = xerrors.New("oops")
-	err = qsc.executeRound(ctx, fake.Message{}, &fakeReactor{})
-	require.EqualError(t, err, "couldn't decode broadcasted set: oops")
-
-	bc.delay = 1
-	factory.delay = 1
-	err = qsc.executeRound(ctx, fake.Message{}, &fakeReactor{})
-	require.EqualError(t, err, "couldn't broadcast: oops")
-
-	bc.err = nil
-	factory.delay = 1
-	err = qsc.executeRound(ctx, fake.Message{}, &fakeReactor{})
-	require.EqualError(t, err, "couldn't decode received set: oops")
-
-	factory.delay = 2
-	err = qsc.executeRound(ctx, fake.Message{}, &fakeReactor{})
-	require.EqualError(t, err, "couldn't decode broadcasted set: oops")
-
-	factory.delay = 3
-	err = qsc.executeRound(ctx, fake.Message{}, &fakeReactor{})
-	require.EqualError(t, err, "couldn't decode received set: oops")
-
-	factory.err = nil
-	err = qsc.executeRound(ctx, nil, badReactor{})
-	require.EqualError(t, err, "couldn't commit: oops")
 }
 
 // -----------------------------------------------------------------------------
@@ -189,7 +160,7 @@ type fakeBroadcast struct {
 	waiting chan struct{}
 }
 
-func (b *fakeBroadcast) send(ctx context.Context, h history) (View, error) {
+func (b *fakeBroadcast) send(ctx context.Context, h types.History) (View, error) {
 	if b.wait {
 		close(b.waiting)
 		<-ctx.Done()
@@ -200,20 +171,4 @@ func (b *fakeBroadcast) send(ctx context.Context, h history) (View, error) {
 	}
 	b.delay--
 	return View{}, nil
-}
-
-type fakeFactory struct {
-	historiesFactory
-	err   error
-	delay int
-}
-
-func (f *fakeFactory) FromMessageSet(map[int64]Message) (histories, error) {
-	if f.delay == 0 && f.err != nil {
-		return nil, f.err
-	}
-	f.delay--
-
-	h := history{epochs: []epoch{{random: 1}}}
-	return histories{h}, nil
 }

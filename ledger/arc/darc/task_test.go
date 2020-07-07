@@ -10,30 +10,41 @@ import (
 	"go.dedis.ch/dela/ledger/inventory"
 	"go.dedis.ch/dela/ledger/transactions/basic"
 	"go.dedis.ch/dela/serde"
-	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
 
-func TestClientTask_VisitJSON(t *testing.T) {
-	task := clientTask{
-		key:    []byte{0x1},
-		access: NewAccess(),
-	}
+func init() {
+	RegisterTaskFormat(fake.GoodFormat, fake.Format{Msg: ServerTask{}})
+	RegisterTaskFormat(fake.BadFormat, fake.NewBadFormat())
+}
 
-	ser := json.NewSerializer()
+func TestClientTask_GetKey(t *testing.T) {
+	task := NewUpdate([]byte{1}, NewAccess())
 
-	data, err := ser.Serialize(task)
+	require.Equal(t, []byte{1}, task.GetKey())
+}
+
+func TestClientTask_GetAccess(t *testing.T) {
+	task := NewCreate(NewAccess())
+
+	require.IsType(t, NewAccess(), task.GetAccess())
+}
+
+func TestClientTask_Serialize(t *testing.T) {
+	task := NewCreate(NewAccess())
+
+	data, err := task.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, `{"Key":"AQ==","Access":{"Rules":{}}}`, string(data))
+	require.Equal(t, "fake format", string(data))
 
-	_, err = task.VisitJSON(fake.NewBadSerializer())
-	require.EqualError(t, err, "couldn't serialize access: fake error")
+	_, err = task.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, "couldn't encode task: fake error")
 }
 
 func TestClientTask_Fingerprint(t *testing.T) {
-	task := clientTask{
+	task := ClientTask{
 		key: []byte{0x01},
-		access: Access{rules: map[string]expression{
+		access: Access{rules: map[string]Expression{
 			"\x02": {matches: map[string]struct{}{"\x03": {}}},
 		}},
 	}
@@ -56,10 +67,7 @@ func TestServerTask_Consume(t *testing.T) {
 	access, err := NewAccess().Evolve(UpdateAccessRule, fakeIdentity{buffer: []byte("doggy")})
 	require.NoError(t, err)
 
-	task := serverTask{
-		darcFactory: NewFactory(),
-		clientTask:  clientTask{key: []byte{0x01}, access: access},
-	}
+	task := NewServerTask([]byte{1}, access)
 
 	call := &fake.Call{}
 	err = task.Consume(fakeContext{}, fakePage{call: call})
@@ -89,23 +97,21 @@ func TestServerTask_Consume(t *testing.T) {
 	err = task.Consume(fakeContext{identity: []byte("cat")}, fakePage{})
 	require.EqualError(t, err,
 		"no access: couldn't match 'darc_update': couldn't match identity 'cat'")
+
+	task.access = NewAccess()
+	err = task.Consume(fakeContext{}, fakePage{})
+	require.EqualError(t, err, "transaction identity should be allowed to update")
 }
 
-func TestTaskFactory_VisitJSON(t *testing.T) {
+func TestTaskFactory_Deserialize(t *testing.T) {
 	factory := NewTaskFactory()
 
-	ser := json.NewSerializer()
-
-	var task serverTask
-	err := ser.Deserialize([]byte(`{"Key":"AQ==","Access":{}}`), factory, &task)
+	msg, err := factory.Deserialize(fake.NewContext(), nil)
 	require.NoError(t, err)
-	require.Equal(t, clientTask{key: []byte{0x1}, access: NewAccess()}, task.clientTask)
+	require.IsType(t, ServerTask{}, msg)
 
-	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
-	require.EqualError(t, err, "couldn't deserialize task: fake error")
-
-	_, err = factory.VisitJSON(fake.FactoryInput{Serde: fake.NewBadSerializer()})
-	require.EqualError(t, err, "couldn't deserialize access: fake error")
+	_, err = factory.Deserialize(fake.NewBadContext(), nil)
+	require.EqualError(t, err, "couldn't decode task: fake error")
 }
 
 func TestRegister(t *testing.T) {
@@ -117,7 +123,7 @@ func TestRegister(t *testing.T) {
 // Utility functions
 
 var testAccess = Access{
-	rules: map[string]expression{
+	rules: map[string]Expression{
 		UpdateAccessRule: {matches: map[string]struct{}{"doggy": {}}},
 	},
 }

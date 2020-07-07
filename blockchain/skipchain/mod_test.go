@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/blockchain"
+	"go.dedis.ch/dela/blockchain/skipchain/types"
 	"go.dedis.ch/dela/consensus"
 	"go.dedis.ch/dela/consensus/cosipbft"
 	"go.dedis.ch/dela/consensus/viewchange/constant"
@@ -42,25 +43,22 @@ func TestSkipchain_Basic(t *testing.T) {
 
 		event := <-blocks
 		require.NotNil(t, event)
-		require.IsType(t, SkipBlock{}, event)
+		require.IsType(t, types.SkipBlock{}, event)
 
-		chain, err := skipchains[2].GetVerifiableBlock()
+		vb, err := skipchains[2].GetVerifiableBlock()
 		require.NoError(t, err)
 
-		ser := json.NewSerializer()
+		ctx := json.NewContext()
 
-		data, err := ser.Serialize(chain)
+		data, err := vb.Serialize(ctx)
 		require.NoError(t, err)
 
-		factory := NewVerifiableFactory(NewBlockFactory(fake.MessageFactory{}),
-			skipchains[0].consensus.GetChainFactory())
+		factory := types.NewVerifiableFactory(skipchains[0].consensus.GetChainFactory(), fake.MessageFactory{})
 
-		var block VerifiableBlock
-		err = ser.Deserialize(data, factory, &block)
+		block, err := factory.Deserialize(ctx, data)
 		require.NoError(t, err)
 		require.NotNil(t, block)
-		require.Equal(t, uint64(i+1), block.Index)
-		require.Equal(t, event, block.SkipBlock)
+		require.Equal(t, vb, block)
 	}
 }
 
@@ -85,13 +83,13 @@ func TestSkipchain_Listen(t *testing.T) {
 }
 
 func TestSkipchain_GetBlock(t *testing.T) {
-	digest := Digest{1, 2, 3}
-	db := &fakeDatabase{blocks: []SkipBlock{{hash: digest}}}
+	expected := makeBlock(t)
+	db := &fakeDatabase{blocks: []types.SkipBlock{expected}}
 	s := &Skipchain{db: db}
 
 	block, err := s.GetBlock()
 	require.NoError(t, err)
-	require.Equal(t, digest, block.(SkipBlock).hash)
+	require.Equal(t, expected, block)
 
 	db.err = xerrors.New("oops")
 	_, err = s.GetBlock()
@@ -99,8 +97,8 @@ func TestSkipchain_GetBlock(t *testing.T) {
 }
 
 func TestSkipchain_GetVerifiableBlock(t *testing.T) {
-	digest := Digest{1, 2, 3}
-	db := &fakeDatabase{blocks: []SkipBlock{{hash: digest}}}
+	expected := makeBlock(t)
+	db := &fakeDatabase{blocks: []types.SkipBlock{expected}}
 	s := &Skipchain{
 		db:        db,
 		consensus: fakeConsensus{},
@@ -108,8 +106,8 @@ func TestSkipchain_GetVerifiableBlock(t *testing.T) {
 
 	block, err := s.GetVerifiableBlock()
 	require.NoError(t, err)
-	require.Equal(t, digest, block.(VerifiableBlock).hash)
-	require.NotNil(t, block.(VerifiableBlock).Chain)
+	require.Equal(t, expected, block.(types.VerifiableBlock).SkipBlock)
+	require.NotNil(t, block.(types.VerifiableBlock).Chain)
 
 	db.err = xerrors.New("oops")
 	_, err = s.GetVerifiableBlock()
@@ -139,12 +137,9 @@ func TestSkipchain_Watch(t *testing.T) {
 }
 
 func TestActor_Setup(t *testing.T) {
-	db := &fakeDatabase{blocks: []SkipBlock{{}}, err: NewNoBlockError(0)}
+	db := &fakeDatabase{blocks: []types.SkipBlock{{}}, err: NewNoBlockError(0)}
 	actor := skipchainActor{
 		operations: &operations{
-			blockFactory: BlockFactory{
-				hashFactory: crypto.NewSha256Factory(),
-			},
 			addr: fake.NewAddress(0),
 			db:   db,
 			rpc:  fakeRPC{},
@@ -177,10 +172,7 @@ func TestActor_NewChain(t *testing.T) {
 		operations: &operations{
 			addr: fake.NewAddress(0),
 			db:   &fakeDatabase{},
-			blockFactory: BlockFactory{
-				hashFactory: crypto.NewSha256Factory(),
-			},
-			rpc: fakeRPC{},
+			rpc:  fakeRPC{},
 		},
 		rand: crypto.CryptographicRandomGenerator{},
 	}
@@ -196,19 +188,17 @@ func TestActor_NewChain(t *testing.T) {
 	require.EqualError(t, err, "mismatch rand length 0 != 32")
 
 	actor.rand = crypto.CryptographicRandomGenerator{}
-	actor.blockFactory.hashFactory = fake.NewHashFactory(fake.NewBadHash())
+	actor.hashFactory = fake.NewHashFactory(fake.NewBadHash())
 	err = actor.newChain(fake.Message{}, authority)
-	require.Contains(t, err.Error(), "couldn't create block: ")
+	require.EqualError(t, err,
+		"couldn't create genesis: couldn't fingerprint: couldn't write index: fake error")
 }
 
 func TestActor_Store(t *testing.T) {
 	cons := &fakeConsensusActor{}
-	db := &fakeDatabase{blocks: []SkipBlock{{}}}
+	db := &fakeDatabase{blocks: []types.SkipBlock{{}}}
 	actor := skipchainActor{
 		operations: &operations{
-			blockFactory: BlockFactory{
-				hashFactory: crypto.NewSha256Factory(),
-			},
 			addr: fake.NewAddress(0),
 			db:   db,
 		},
@@ -240,9 +230,9 @@ func TestObserver_NotifyCallback(t *testing.T) {
 	obs.NotifyCallback(struct{}{})
 	require.Len(t, obs.ch, 0)
 
-	obs.NotifyCallback(SkipBlock{Index: 1})
+	obs.NotifyCallback(makeBlock(t, types.WithIndex(1)))
 	block := <-obs.ch
-	require.Equal(t, uint64(1), block.(SkipBlock).Index)
+	require.Equal(t, uint64(1), block.GetIndex())
 }
 
 // -----------------
@@ -331,4 +321,22 @@ func (rand fakeRandGenerator) Read(buffer []byte) (int, error) {
 		return 0, nil
 	}
 	return len(buffer), rand.err
+}
+
+type fakeChain struct {
+	consensus.Chain
+}
+
+type fakeConsensus struct {
+	consensus.Consensus
+
+	err error
+}
+
+func (c fakeConsensus) GetChain(to []byte) (consensus.Chain, error) {
+	return fakeChain{}, c.err
+}
+
+func (c fakeConsensus) Listen(consensus.Reactor) (consensus.Actor, error) {
+	return nil, c.err
 }

@@ -4,16 +4,17 @@ import (
 	fmt "fmt"
 	"sync"
 
+	"go.dedis.ch/dela/blockchain/skipchain/types"
 	"golang.org/x/xerrors"
 )
 
 // Queries is an interface to provide high-level queries to store and read
 // blocks.
 type Queries interface {
-	Write(block SkipBlock) error
+	Write(block types.SkipBlock) error
 	Contains(index uint64) bool
-	Read(index int64) (SkipBlock, error)
-	ReadLast() (SkipBlock, error)
+	Read(index int64) (types.SkipBlock, error)
+	ReadLast() (types.SkipBlock, error)
 }
 
 // Database is an interface that provides the primitives to read and write
@@ -53,18 +54,18 @@ func (err NoBlockError) Is(other error) bool {
 // - implements skipchain.Database
 type InMemoryDatabase struct {
 	sync.Mutex
-	blocks []SkipBlock
+	blocks []types.SkipBlock
 }
 
 // NewInMemoryDatabase creates a new in-memory storage for blocks.
 func NewInMemoryDatabase() *InMemoryDatabase {
 	return &InMemoryDatabase{
-		blocks: make([]SkipBlock, 0),
+		blocks: make([]types.SkipBlock, 0),
 	}
 }
 
 // Write implements skipchain.Database. It writes the block to the storage.
-func (db *InMemoryDatabase) Write(block SkipBlock) error {
+func (db *InMemoryDatabase) Write(block types.SkipBlock) error {
 	db.Lock()
 	defer db.Unlock()
 
@@ -90,7 +91,7 @@ func (db *InMemoryDatabase) Contains(index uint64) bool {
 
 // Read implements skipchain.Database. It returns the block at the given index
 // if it exists, otherwise an error.
-func (db *InMemoryDatabase) Read(index int64) (SkipBlock, error) {
+func (db *InMemoryDatabase) Read(index int64) (types.SkipBlock, error) {
 	db.Lock()
 	defer db.Unlock()
 
@@ -98,17 +99,17 @@ func (db *InMemoryDatabase) Read(index int64) (SkipBlock, error) {
 		return db.blocks[index], nil
 	}
 
-	return SkipBlock{}, NewNoBlockError(index)
+	return types.SkipBlock{}, NewNoBlockError(index)
 }
 
 // ReadLast implements skipchain.Database. It reads the last known block of the
 // chain.
-func (db *InMemoryDatabase) ReadLast() (SkipBlock, error) {
+func (db *InMemoryDatabase) ReadLast() (types.SkipBlock, error) {
 	db.Lock()
 	defer db.Unlock()
 
 	if len(db.blocks) == 0 {
-		return SkipBlock{}, xerrors.New("database is empty")
+		return types.SkipBlock{}, xerrors.New("database is empty")
 	}
 
 	return db.blocks[len(db.blocks)-1], nil
@@ -135,7 +136,7 @@ func (db *InMemoryDatabase) Atomic(tx func(Queries) error) error {
 
 // clone returns a deep copy of the in-memory database.
 func (db *InMemoryDatabase) clone() *InMemoryDatabase {
-	blocks := make([]SkipBlock, len(db.blocks))
+	blocks := make([]types.SkipBlock, len(db.blocks))
 	copy(blocks, db.blocks)
 
 	return &InMemoryDatabase{

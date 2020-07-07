@@ -1,8 +1,7 @@
 package skipchain
 
 import (
-	"sync"
-
+	"go.dedis.ch/dela/blockchain/skipchain/types"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
@@ -14,21 +13,17 @@ import (
 //
 // - implements consensus.Reactor
 type reactor struct {
-	BlueprintFactory
+	types.BlueprintFactory
 	*operations
 
-	queue *blockQueue
+	queue types.Queue
 }
 
 func newReactor(ops *operations) *reactor {
 	return &reactor{
-		BlueprintFactory: BlueprintFactory{
-			factory: ops.reactor,
-		},
-		operations: ops,
-		queue: &blockQueue{
-			buffer: make(map[Digest]SkipBlock),
-		},
+		BlueprintFactory: types.NewBlueprintFactory(ops.reactor),
+		operations:       ops,
+		queue:            types.NewQueue(),
 	}
 }
 
@@ -47,13 +42,13 @@ func (v *reactor) InvokeGenesis() ([]byte, error) {
 // block and validates its integrity. It returns the block if it is correct,
 // otherwise the error.
 func (v *reactor) InvokeValidate(addr mino.Address, pb serde.Message) ([]byte, error) {
-	blueprint, ok := pb.(Blueprint)
+	blueprint, ok := pb.(types.Blueprint)
 	if !ok {
 		return nil, xerrors.Errorf("invalid message type '%T'", pb)
 	}
 
 	// It makes sure that we know the whole chain up to the previous proposal.
-	err := v.catchUp(blueprint.index, addr)
+	err := v.catchUp(blueprint.GetIndex(), addr)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't catch up: %v", err)
 	}
@@ -63,25 +58,19 @@ func (v *reactor) InvokeValidate(addr mino.Address, pb serde.Message) ([]byte, e
 		return nil, xerrors.Errorf("couldn't read genesis block: %v", err)
 	}
 
-	payload, err := v.reactor.InvokeValidate(blueprint.data)
+	payload, err := v.reactor.InvokeValidate(blueprint.GetData())
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't validate the payload: %v", err)
 	}
 
-	block := SkipBlock{
-		Index:     blueprint.index,
-		GenesisID: genesis.hash,
-		BackLink:  blueprint.previous,
-		Payload:   payload,
-	}
+	block, err := types.NewSkipBlock(payload,
+		types.WithIndex(blueprint.GetIndex()),
+		types.WithGenesisID(genesis.GetHash()),
+		types.WithBackLink(blueprint.GetPrevious()))
 
-	h := v.blockFactory.hashFactory.New()
-	err = block.Fingerprint(h)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't compute hash: %v", err)
 	}
-
-	copy(block.hash[:], h.Sum(nil))
 
 	v.queue.Add(block)
 
@@ -97,12 +86,9 @@ func (v *reactor) InvokeCommit(id []byte) error {
 	v.catchUpLock.Lock()
 	defer v.catchUpLock.Unlock()
 
-	digest := Digest{}
-	copy(digest[:], id)
-
-	block, ok := v.queue.Get(digest)
+	block, ok := v.queue.Get(id)
 	if !ok {
-		return xerrors.Errorf("couldn't find block '%v'", digest)
+		return xerrors.Errorf("couldn't find block %#x", id)
 	}
 
 	err := v.commitBlock(block)
@@ -113,34 +99,4 @@ func (v *reactor) InvokeCommit(id []byte) error {
 	v.queue.Clear()
 
 	return nil
-}
-
-type blockQueue struct {
-	sync.Mutex
-
-	buffer map[Digest]SkipBlock
-}
-
-func (q *blockQueue) Get(id Digest) (SkipBlock, bool) {
-	q.Lock()
-	defer q.Unlock()
-
-	block, ok := q.buffer[id]
-	return block, ok
-}
-
-func (q *blockQueue) Add(block SkipBlock) {
-	q.Lock()
-	defer q.Unlock()
-
-	// As the block is indexed by the hash, it does not matter if it overrides
-	// an already existing one.
-	q.buffer[block.hash] = block
-}
-
-func (q *blockQueue) Clear() {
-	q.Lock()
-	defer q.Unlock()
-
-	q.buffer = make(map[Digest]SkipBlock)
 }

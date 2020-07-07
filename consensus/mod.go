@@ -22,6 +22,12 @@ type Chain interface {
 	GetTo() []byte
 }
 
+type ChainFactory interface {
+	serde.Factory
+
+	ChainOf(serde.Context, []byte) (Chain, error)
+}
+
 // Actor is the primitive to send proposals to a consensus implementation.
 type Actor interface {
 	// Propose performs the consensus algorithm. The list of participants is
@@ -35,7 +41,7 @@ type Actor interface {
 // Consensus is an interface that provides primitives to propose data to a set
 // of participants. They will validate the proposal according to the validator.
 type Consensus interface {
-	GetChainFactory() serde.Factory
+	GetChainFactory() ChainFactory
 
 	// GetChain returns a valid chain to the given identifier.
 	GetChain(to []byte) (Chain, error)

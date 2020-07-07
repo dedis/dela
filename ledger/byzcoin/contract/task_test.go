@@ -215,7 +215,7 @@ func (ctx fakeContext) GetIdentity() arc.Identity {
 }
 
 type fakeAccess struct {
-	serde.UnimplementedMessage
+	serde.Message
 
 	match bool
 	calls [][]interface{}

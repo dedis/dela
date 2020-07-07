@@ -98,7 +98,9 @@ func (a address) String() string {
 }
 
 // AddressFactory implements mino.AddressFactory
-type AddressFactory struct{}
+type AddressFactory struct {
+	serde.Factory
+}
 
 // FromText implements mino.AddressFactory. It returns an instance of an
 // address from a byte slice.
@@ -155,7 +157,7 @@ func NewMinogrpc(path string, port uint16, rf routing.Factory) (*Minogrpc, error
 
 	me := address{host: url.Host}
 
-	o, err := newOverlay(me, rf, json.NewSerializer())
+	o, err := newOverlay(me, rf, json.NewContext())
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't make overlay: %v", err)
 	}

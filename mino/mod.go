@@ -114,6 +114,8 @@ func (h UnsupportedHandler) Stream(in Sender, out Receiver) error {
 
 // AddressFactory is the factory to decode addresses.
 type AddressFactory interface {
+	serde.Factory
+
 	FromText(text []byte) Address
 }
 

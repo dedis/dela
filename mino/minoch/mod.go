@@ -20,7 +20,7 @@ type Minoch struct {
 	identifier string
 	path       string
 	rpcs       map[string]RPC
-	serializer serde.Serializer
+	context    serde.Context
 }
 
 // NewMinoch creates a new instance of a local Mino instance.
@@ -30,7 +30,7 @@ func NewMinoch(manager *Manager, identifier string) (*Minoch, error) {
 		identifier: identifier,
 		path:       "",
 		rpcs:       make(map[string]RPC),
-		serializer: json.NewSerializer(),
+		context:    json.NewContext(),
 	}
 
 	err := manager.insert(inst)
@@ -69,12 +69,12 @@ func (m *Minoch) MakeNamespace(path string) (mino.Mino, error) {
 // MakeRPC creates an RPC that can send to and receive from the unique path.
 func (m *Minoch) MakeRPC(name string, h mino.Handler, f serde.Factory) (mino.RPC, error) {
 	rpc := RPC{
-		manager:    m.manager,
-		addr:       m.GetAddress(),
-		path:       fmt.Sprintf("%s/%s", m.path, name),
-		h:          h,
-		serializer: m.serializer,
-		factory:    f,
+		manager: m.manager,
+		addr:    m.GetAddress(),
+		path:    fmt.Sprintf("%s/%s", m.path, name),
+		h:       h,
+		context: m.context,
+		factory: f,
 	}
 
 	m.Lock()

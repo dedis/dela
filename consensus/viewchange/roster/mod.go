@@ -5,17 +5,24 @@ import (
 
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/consensus/viewchange"
-	"go.dedis.ch/dela/consensus/viewchange/roster/json"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
 )
+
+var rosterFormats = registry.NewSimpleRegistry()
+
+// RegisterRosterFormat registers the engine for the provided format.
+func RegisterRosterFormat(c serde.Format, f serde.FormatEngine) {
+	rosterFormats.Register(c, f)
+}
 
 // iterator is a generic implementation of an iterator over a list of conodes.
 type iterator struct {
 	index  int
-	roster *roster
+	roster *Roster
 }
 
 func (i *iterator) Seek(index int) {
@@ -62,21 +69,26 @@ func (i *publicKeyIterator) GetNext() crypto.PublicKey {
 	return nil
 }
 
-// roster contains a list of participants with their addresses and public keys.
+// Roster contains a list of participants with their addresses and public keys.
 //
 // - implements crypto.CollectiveAuthority
 // - implements viewchange.Authority
 // - implements mino.Players
-// - implements encoding.Packable
-type roster struct {
-	serde.UnimplementedMessage
-
+type Roster struct {
 	addrs   []mino.Address
 	pubkeys []crypto.PublicKey
 }
 
-// New returns a viewchange roster from a collective authority.
-func New(authority crypto.CollectiveAuthority) viewchange.Authority {
+// New creates a new roster from the list of addresses and public keys.
+func New(addrs []mino.Address, pubkeys []crypto.PublicKey) Roster {
+	return Roster{
+		addrs:   addrs,
+		pubkeys: pubkeys,
+	}
+}
+
+// FromAuthority returns a viewchange roster from a collective authority.
+func FromAuthority(authority crypto.CollectiveAuthority) Roster {
 	addrs := make([]mino.Address, authority.Len())
 	pubkeys := make([]crypto.PublicKey, authority.Len())
 
@@ -87,17 +99,12 @@ func New(authority crypto.CollectiveAuthority) viewchange.Authority {
 		pubkeys[i] = pubkeyIter.GetNext()
 	}
 
-	roster := roster{
-		addrs:   addrs,
-		pubkeys: pubkeys,
-	}
-
-	return roster
+	return New(addrs, pubkeys)
 }
 
 // Fingerprint implements serde.Fingerprinter. It marshals the roster and writes
 // the result in the given writer.
-func (r roster) Fingerprint(w io.Writer) error {
+func (r Roster) Fingerprint(w io.Writer) error {
 	for i, addr := range r.addrs {
 		data, err := addr.MarshalText()
 		if err != nil {
@@ -125,9 +132,9 @@ func (r roster) Fingerprint(w io.Writer) error {
 
 // Take implements mino.Players. It returns a subset of the roster according to
 // the filter.
-func (r roster) Take(updaters ...mino.FilterUpdater) mino.Players {
+func (r Roster) Take(updaters ...mino.FilterUpdater) mino.Players {
 	filter := mino.ApplyFilters(updaters)
-	newRoster := roster{
+	newRoster := Roster{
 		addrs:   make([]mino.Address, len(filter.Indices)),
 		pubkeys: make([]crypto.PublicKey, len(filter.Indices)),
 	}
@@ -143,7 +150,7 @@ func (r roster) Take(updaters ...mino.FilterUpdater) mino.Players {
 // Apply implements viewchange.Authority. It returns a new authority after
 // applying the change set. The removals must be sorted by descending order and
 // unique or the behaviour will be undefined.
-func (r roster) Apply(in viewchange.ChangeSet) viewchange.Authority {
+func (r Roster) Apply(in viewchange.ChangeSet) viewchange.Authority {
 	changeset, ok := in.(ChangeSet)
 	if !ok {
 		dela.Logger.Warn().Msgf("Change set '%T' is not supported. Ignoring.", in)
@@ -170,7 +177,7 @@ func (r roster) Apply(in viewchange.ChangeSet) viewchange.Authority {
 		pubkeys = append(pubkeys, player.PublicKey)
 	}
 
-	roster := roster{
+	roster := Roster{
 		addrs:   addrs,
 		pubkeys: pubkeys,
 	}
@@ -180,10 +187,10 @@ func (r roster) Apply(in viewchange.ChangeSet) viewchange.Authority {
 
 // Diff implements viewchange.Authority. It returns the change set that must be
 // applied to the current authority to get the given one.
-func (r roster) Diff(o viewchange.Authority) viewchange.ChangeSet {
+func (r Roster) Diff(o viewchange.Authority) viewchange.ChangeSet {
 	changeset := ChangeSet{}
 
-	other, ok := o.(roster)
+	other, ok := o.(Roster)
 	if !ok {
 		return changeset
 	}
@@ -215,14 +222,14 @@ func (r roster) Diff(o viewchange.Authority) viewchange.ChangeSet {
 }
 
 // Len implements mino.Players. It returns the length of the roster.
-func (r roster) Len() int {
+func (r Roster) Len() int {
 	return len(r.addrs)
 }
 
 // GetPublicKey implements crypto.CollectiveAuthority. It returns the public key
 // of the address if it exists, nil otherwise. The second return is the index of
 // the public key in the roster.
-func (r roster) GetPublicKey(target mino.Address) (crypto.PublicKey, int) {
+func (r Roster) GetPublicKey(target mino.Address) (crypto.PublicKey, int) {
 	for i, addr := range r.addrs {
 		if addr.Equal(target) {
 			return r.pubkeys[i], i
@@ -234,85 +241,67 @@ func (r roster) GetPublicKey(target mino.Address) (crypto.PublicKey, int) {
 
 // AddressIterator implements mino.Players. It returns an iterator of the
 // addresses of the roster in a deterministic order.
-func (r roster) AddressIterator() mino.AddressIterator {
+func (r Roster) AddressIterator() mino.AddressIterator {
 	return &addressIterator{iterator: &iterator{roster: &r}}
 }
 
 // PublicKeyIterator implements crypto.CollectiveAuthority. It returns an
 // iterator of the public keys of the roster in a deterministic order.
-func (r roster) PublicKeyIterator() crypto.PublicKeyIterator {
+func (r Roster) PublicKeyIterator() crypto.PublicKeyIterator {
 	return &publicKeyIterator{iterator: &iterator{roster: &r}}
 }
 
-// VisitJSON implements serde.Message. It serializes the roster in a JSON
-// message.
-func (r roster) VisitJSON(ser serde.Serializer) (interface{}, error) {
-	players := make([]json.Player, r.Len())
+// Serialize implements serde.Message.
+func (r Roster) Serialize(ctx serde.Context) ([]byte, error) {
+	format := rosterFormats.Get(ctx.GetFormat())
 
-	for i := range r.addrs {
-		addr, err := r.addrs[i].MarshalText()
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't marshal address: %v", err)
-		}
-
-		pubkey, err := ser.Serialize(r.pubkeys[i])
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't serialize public key: %v", err)
-		}
-
-		players[i] = json.Player{
-			Address:   addr,
-			PublicKey: pubkey,
-		}
-	}
-
-	m := json.Roster(players)
-
-	return m, nil
-}
-
-type defaultFactory struct {
-	serde.UnimplementedFactory
-
-	addressFactory mino.AddressFactory
-	pubkeyFactory  serde.Factory
-}
-
-// NewRosterFactory creates a new instance of the authority factory.
-func NewRosterFactory(af mino.AddressFactory, pf serde.Factory) serde.Factory {
-	return defaultFactory{
-		addressFactory: af,
-		pubkeyFactory:  pf,
-	}
-}
-
-// VisitJSON implements serde.Factory. It deserializes the roster in JSON
-// format.
-func (f defaultFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
-	m := json.Roster{}
-	err := in.Feed(&m)
+	data, err := format.Encode(ctx, r)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize roster: %v", err)
+		return nil, xerrors.Errorf("couldn't encode roster: %v", err)
 	}
 
-	addrs := make([]mino.Address, len(m))
-	pubkeys := make([]crypto.PublicKey, len(m))
+	return data, nil
+}
 
-	for i, player := range m {
-		addrs[i] = f.addressFactory.FromText(player.Address)
+// Factory is a factory to deserialize roster.
+//
+// - implements viewchange.AuthorityFactory
+// - implements serde.Factory
+type Factory struct {
+	addrFactory   mino.AddressFactory
+	pubkeyFactory crypto.PublicKeyFactory
+}
 
-		var pubkey crypto.PublicKey
-		err = in.GetSerializer().Deserialize(player.PublicKey, f.pubkeyFactory, &pubkey)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't deserialize public key: %v", err)
-		}
+// NewFactory creates a new instance of the authority factory.
+func NewFactory(af mino.AddressFactory, pf crypto.PublicKeyFactory) Factory {
+	return Factory{
+		addrFactory:   af,
+		pubkeyFactory: pf,
+	}
+}
 
-		pubkeys[i] = pubkey
+// Deserialize implements serde.Factory.  It returns the roster
+// from the data if appropriate, otherwise an error.
+func (f Factory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+	return f.AuthorityOf(ctx, data)
+}
+
+// AuthorityOf implements viewchange.AuthorityFactory. It returns the roster
+// from the data if appropriate, otherwise an error.
+func (f Factory) AuthorityOf(ctx serde.Context, data []byte) (viewchange.Authority, error) {
+	format := rosterFormats.Get(ctx.GetFormat())
+
+	ctx = serde.WithFactory(ctx, PubKeyFac{}, f.pubkeyFactory)
+	ctx = serde.WithFactory(ctx, AddrKeyFac{}, f.addrFactory)
+
+	msg, err := format.Decode(ctx, data)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't decode roster: %v", err)
 	}
 
-	roster := roster{
-		addrs:   addrs,
-		pubkeys: pubkeys,
+	roster, ok := msg.(Roster)
+	if !ok {
+		return nil, xerrors.Errorf("invalid message of type '%T'", msg)
 	}
 
 	return roster, nil

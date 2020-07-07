@@ -1,107 +1,94 @@
 package cosi
 
 import (
-	"go.dedis.ch/dela/cosi/json"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
 )
+
+var msgFormats = registry.NewSimpleRegistry()
+
+// RegisterMessageFormat registers the format for the given format name.
+func RegisterMessageFormat(name serde.Format, f serde.FormatEngine) {
+	msgFormats.Register(name, f)
+}
 
 // SignatureRequest is the message sent to require a signature from the other
 // participants.
 //
 // - implements serde.Message
 type SignatureRequest struct {
-	serde.UnimplementedMessage
-
 	Value serde.Message
 }
 
-// VisitJSON implements serde.Message. It serializes the request in JSON format.
-func (req SignatureRequest) VisitJSON(ser serde.Serializer) (interface{}, error) {
-	msg, err := ser.Serialize(req.Value)
+// Serialize implements serde.Message. It looks up the format and returns the
+// serialized data if appropriate, otherwise an error.
+func (req SignatureRequest) Serialize(ctx serde.Context) ([]byte, error) {
+	format := msgFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, req)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't serialize message: %v", err)
+		return nil, xerrors.Errorf("couldn't encode request: %v", err)
 	}
 
-	m := json.Request{
-		Value: msg,
-	}
-
-	return json.Message{Request: &m}, nil
+	return data, nil
 }
 
 // SignatureResponse is the message sent by the participants.
 //
 // - implements serde.Message
 type SignatureResponse struct {
-	serde.UnimplementedMessage
-
 	Signature crypto.Signature
 }
 
-// VisitJSON implements serde.Message. It serializes the response in JSON
-// format.
-func (resp SignatureResponse) VisitJSON(ser serde.Serializer) (interface{}, error) {
-	sig, err := ser.Serialize(resp.Signature)
+// Serialize implements serde.Message. It looks up the format and returns the
+// serialized data if appropriate, otherwise an error.
+func (resp SignatureResponse) Serialize(ctx serde.Context) ([]byte, error) {
+	format := msgFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, resp)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't serialize signature: %v", err)
+		return nil, xerrors.Errorf("couldn't encode response: %v", err)
 	}
 
-	m := json.Response{
-		Signature: sig,
-	}
-
-	return json.Message{Response: &m}, nil
+	return data, nil
 }
+
+// MsgKey is the key of the message factory.
+type MsgKey struct{}
+
+// SigKey is the key of the signature factory.
+type SigKey struct{}
 
 // MessageFactory is the message factory for the flat collective signing RPC.
 //
 // - implements serde.Factory
 type MessageFactory struct {
-	serde.UnimplementedFactory
-
 	msgFactory serde.Factory
-	sigFactory serde.Factory
+	sigFactory crypto.SignatureFactory
 }
 
 // NewMessageFactory returns a new message factory that uses the message and
 // signature factories.
-func NewMessageFactory(msg, sig serde.Factory) serde.Factory {
+func NewMessageFactory(msg serde.Factory, sig crypto.SignatureFactory) MessageFactory {
 	return MessageFactory{
 		msgFactory: msg,
 		sigFactory: sig,
 	}
 }
 
-// VisitJSON implements serde.Message. It deserializes the request or response
-// message in JSON format.
-func (f MessageFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
-	m := json.Message{}
-	err := in.Feed(&m)
+// Deserialize implements serde.Factory.
+func (f MessageFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+	format := msgFormats.Get(ctx.GetFormat())
+
+	ctx = serde.WithFactory(ctx, MsgKey{}, f.msgFactory)
+	ctx = serde.WithFactory(ctx, SigKey{}, f.sigFactory)
+
+	m, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize message: %v", err)
+		return nil, xerrors.Errorf("couldn't decode message: %v", err)
 	}
 
-	if m.Request != nil {
-		var value serde.Message
-		err = in.GetSerializer().Deserialize(m.Request.Value, f.msgFactory, &value)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't deserialize value: %v", err)
-		}
-
-		return SignatureRequest{Value: value}, nil
-	}
-
-	if m.Response != nil {
-		var sig crypto.Signature
-		err = in.GetSerializer().Deserialize(m.Response.Signature, f.sigFactory, &sig)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't deserialize signature: %v", err)
-		}
-
-		return SignatureResponse{Signature: sig}, nil
-	}
-
-	return nil, xerrors.New("message is empty")
+	return m, nil
 }

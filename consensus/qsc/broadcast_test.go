@@ -10,6 +10,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/consensus/qsc/types"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minoch"
@@ -26,10 +27,7 @@ func TestTLCR_Basic(t *testing.T) {
 	wg.Add(n)
 	for _, bc := range bcs {
 		go func(bc *bTLCR) {
-			msg := Message{
-				node:  bc.node,
-				value: Proposal{value: fake.Message{}},
-			}
+			msg := types.NewMessage(bc.node, types.NewProposal(fake.Message{}))
 
 			for i := 0; i < k; i++ {
 				bc.execute(context.Background(), msg)
@@ -44,22 +42,20 @@ func TestTLCR_Basic(t *testing.T) {
 }
 
 func TestHandlerTLCR_Process(t *testing.T) {
-	ch := make(chan MessageSet, 1)
+	ch := make(chan types.MessageSet, 1)
 	h := hTLCR{
 		ch: ch,
 		store: &storage{
-			previous: MessageSet{
-				timeStep: 1,
-			},
+			previous: types.NewMessageSet(0, 1),
 		},
 	}
 
-	resp, err := h.Process(mino.Request{Message: MessageSet{}})
+	resp, err := h.Process(mino.Request{Message: types.NewMessageSet(0, 0)})
 	require.NoError(t, err)
 	require.Nil(t, resp)
 	require.NotNil(t, <-ch)
 
-	resp, err = h.Process(mino.Request{Message: RequestMessageSet{timeStep: 0}})
+	resp, err = h.Process(mino.Request{Message: types.NewRequestMessageSet(0, nil)})
 	require.NoError(t, err)
 	require.Nil(t, resp)
 
@@ -69,7 +65,7 @@ func TestHandlerTLCR_Process(t *testing.T) {
 
 func TestTLCR_Execute(t *testing.T) {
 	buffer := new(bytes.Buffer)
-	ch := make(chan MessageSet, 1)
+	ch := make(chan types.MessageSet, 1)
 	bc := &bTLCR{
 		logger:  zerolog.New(buffer),
 		rpc:     fakeRPC{},
@@ -78,16 +74,13 @@ func TestTLCR_Execute(t *testing.T) {
 		store:   &storage{},
 	}
 
-	ch <- MessageSet{
-		messages: map[int64]Message{1: {}},
-		timeStep: 0,
-	}
+	ch <- types.NewMessageSet(0, 0, types.NewMessage(0, fake.Message{}))
 
 	view, err := bc.execute(context.Background())
 	require.NoError(t, err)
 	require.NotNil(t, view)
 	require.Equal(t, uint64(1), bc.timeStep)
-	require.Equal(t, bc.store.previous.messages, view.received)
+	require.Equal(t, bc.store.previous.GetMessages(), view.GetReceived())
 	require.Len(t, view.broadcasted, 0)
 
 	bc.rpc = fakeRPC{err: xerrors.New("oops")}
@@ -99,16 +92,15 @@ func TestTLCR_Execute(t *testing.T) {
 }
 
 func TestTLCR_Merge(t *testing.T) {
-	m1 := MessageSet{messages: map[int64]Message{1: {}, 2: {}}}
-	m2 := MessageSet{messages: map[int64]Message{2: {}, 3: {}}}
+	m1 := types.NewMessageSet(0, 0, types.NewMessage(1, nil), types.NewMessage(2, nil))
+	m2 := types.NewMessageSet(0, 0, types.NewMessage(2, nil), types.NewMessage(3, nil))
 
-	bc := &bTLCR{}
-	bc.merge(m1, m2)
-	require.Len(t, m1.messages, 3)
+	m3 := m1.Merge(m2)
+	require.Len(t, m3.GetMessages(), 3)
 }
 
 func TestTLCR_CatchUp(t *testing.T) {
-	ch := make(chan MessageSet, 1)
+	ch := make(chan types.MessageSet, 1)
 	bc := &bTLCR{
 		ch:       ch,
 		timeStep: 0,
@@ -118,19 +110,15 @@ func TestTLCR_CatchUp(t *testing.T) {
 
 	ctx := context.Background()
 
-	m1 := MessageSet{messages: map[int64]Message{1: {}}}
-	m2 := MessageSet{node: 2}
+	m1 := types.NewMessageSet(0, 0, types.NewMessage(1, nil))
+	m2 := types.NewMessageSet(2, 0)
 	err := bc.catchUp(ctx, m1, m2)
 	require.NoError(t, err)
 	require.Equal(t, m2, <-ch)
 
-	m2.timeStep = 1
+	m2 = types.NewMessageSet(2, 1)
 	bc.rpc = fakeRPC{
-		msg: MessageSet{
-			messages: map[int64]Message{
-				2: {value: Proposal{value: fake.Message{}}},
-			},
-		},
+		msg: types.NewMessageSet(0, 0, types.NewMessage(2, fake.Message{})),
 	}
 	err = bc.catchUp(ctx, m1, m2)
 	require.NoError(t, err)
@@ -139,7 +127,7 @@ func TestTLCR_CatchUp(t *testing.T) {
 	bc.rpc = fakeRPC{msg: fake.Message{}}
 	err = bc.catchUp(ctx, m1, m2)
 	require.EqualError(t, xerrors.Unwrap(err),
-		"got message type 'fake.Message' but expected 'qsc.MessageSet'")
+		"got message type 'fake.Message' but expected 'types.MessageSet'")
 	require.Equal(t, m2, <-ch)
 
 	bc.rpc = fakeRPC{err: xerrors.New("oops")}
@@ -319,6 +307,6 @@ type fakeTLCR struct {
 	err error
 }
 
-func (b fakeTLCR) execute(context.Context, ...Message) (View, error) {
+func (b fakeTLCR) execute(context.Context, ...types.Message) (View, error) {
 	return View{}, b.err
 }

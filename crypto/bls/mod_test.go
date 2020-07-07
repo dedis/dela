@@ -1,17 +1,38 @@
 package bls
 
 import (
-	"fmt"
 	"testing"
 	"testing/quick"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"go.dedis.ch/dela/serde/json"
+	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/kyber/v3"
 	"golang.org/x/xerrors"
 )
+
+func init() {
+	RegisterPublicKeyFormat(fake.GoodFormat, fake.Format{Msg: PublicKey{}})
+	RegisterPublicKeyFormat(serde.Format("BAD_TYPE"), fake.Format{Msg: fake.Message{}})
+	RegisterPublicKeyFormat(fake.BadFormat, fake.NewBadFormat())
+	RegisterSignatureFormat(fake.GoodFormat, fake.Format{Msg: Signature{}})
+	RegisterSignatureFormat(serde.Format("BAD_TYPE"), fake.Format{Msg: fake.Message{}})
+	RegisterSignatureFormat(fake.BadFormat, fake.NewBadFormat())
+}
+
+func TestPublicKey_New(t *testing.T) {
+	signer := NewSigner()
+	data, err := signer.GetPublicKey().MarshalBinary()
+	require.NoError(t, err)
+
+	pk, err := NewPublicKey(data)
+	require.NoError(t, err)
+	require.True(t, signer.GetPublicKey().Equal(pk))
+
+	_, err = NewPublicKey(nil)
+	require.Error(t, err)
+}
 
 func TestPublicKey_MarshalBinary(t *testing.T) {
 	signer := NewSigner()
@@ -21,17 +42,15 @@ func TestPublicKey_MarshalBinary(t *testing.T) {
 	require.NotEmpty(t, buffer)
 }
 
-func TestPublicKey_VisitJSON(t *testing.T) {
-	signer := NewSigner()
+func TestPublicKey_Serialize(t *testing.T) {
+	pubkey := NewPublicKeyFromPoint(nil)
 
-	ser := json.NewSerializer()
-
-	data, err := ser.Serialize(signer.GetPublicKey())
+	data, err := pubkey.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Contains(t, string(data), fmt.Sprintf(`{"Name":"%s","Data":`, Algorithm))
+	require.Equal(t, "fake format", string(data))
 
-	_, err = publicKey{point: badPoint{}}.VisitJSON(ser)
-	require.EqualError(t, err, "couldn't marshal point: oops")
+	_, err = pubkey.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, "couldn't encode public key: fake error")
 }
 
 func TestPublicKey_Verify(t *testing.T) {
@@ -65,24 +84,49 @@ func TestPublicKey_MarshalText(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(text), "bls:")
 
-	pk := publicKey{point: badPoint{}}
+	pk := PublicKey{point: badPoint{}}
 	_, err = pk.MarshalText()
 	require.EqualError(t, err, "couldn't marshal: oops")
 }
 
 func TestPublicKey_String(t *testing.T) {
 	signer := NewSigner()
-	str := signer.GetPublicKey().(publicKey).String()
+	str := signer.GetPublicKey().(PublicKey).String()
 	require.Contains(t, str, "bls:")
 
-	pk := publicKey{point: badPoint{}}
+	pk := PublicKey{point: badPoint{}}
 	str = pk.String()
 	require.Equal(t, "bls:malformed_point", str)
 }
 
+func TestPublicKeyFactory_Deserialize(t *testing.T) {
+	factory := NewPublicKeyFactory()
+
+	msg, err := factory.Deserialize(fake.NewContext(), nil)
+	require.NoError(t, err)
+	require.Equal(t, PublicKey{}, msg)
+
+	_, err = factory.Deserialize(fake.NewBadContext(), nil)
+	require.EqualError(t, err, "couldn't decode public key: fake error")
+}
+
+func TestPublicKeyFactory_PublicKeyOf(t *testing.T) {
+	factory := NewPublicKeyFactory()
+
+	pk, err := factory.PublicKeyOf(fake.NewContext(), nil)
+	require.NoError(t, err)
+	require.Equal(t, PublicKey{}, pk)
+
+	_, err = factory.PublicKeyOf(fake.NewBadContext(), nil)
+	require.EqualError(t, err, "couldn't decode public key: fake error")
+
+	_, err = factory.PublicKeyOf(fake.NewContextWithFormat(serde.Format("BAD_TYPE")), nil)
+	require.EqualError(t, err, "invalid public key of type 'fake.Message'")
+}
+
 func TestSignature_MarshalBinary(t *testing.T) {
 	f := func(data []byte) bool {
-		sig := signature{data: data}
+		sig := NewSignature(data)
 		buffer, err := sig.MarshalBinary()
 		require.NoError(t, err)
 		require.Equal(t, data, buffer)
@@ -94,22 +138,24 @@ func TestSignature_MarshalBinary(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestSignature_VisitJSON(t *testing.T) {
-	sig := signature{data: []byte("deadbeef")}
+func TestSignature_Serialize(t *testing.T) {
+	sig := Signature{}
 
-	ser := json.NewSerializer()
-	data, err := ser.Serialize(sig)
+	data, err := sig.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Contains(t, string(data), fmt.Sprintf(`{"Name":"%s","Data":`, Algorithm))
+	require.Equal(t, "fake format", string(data))
+
+	_, err = sig.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, "couldn't encode signature: fake error")
 }
 
 func TestSignature_Equal(t *testing.T) {
 	f := func(data []byte) bool {
-		sig := signature{data: data}
-		require.True(t, sig.Equal(signature{data: data}))
+		sig := Signature{data: data}
+		require.True(t, sig.Equal(Signature{data: data}))
 
 		buffer := append(append([]byte{}, data...), 0xaa)
-		require.False(t, sig.Equal(signature{data: buffer}))
+		require.False(t, sig.Equal(Signature{data: buffer}))
 
 		require.False(t, sig.Equal(fake.Signature{}))
 
@@ -120,40 +166,29 @@ func TestSignature_Equal(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestPublicKeyFactory_VisitJSON(t *testing.T) {
-	factory := NewPublicKeyFactory()
-
-	signer := NewSigner()
-	ser := json.NewSerializer()
-
-	data, err := ser.Serialize(signer.GetPublicKey())
-	require.NoError(t, err)
-
-	var pubkey crypto.PublicKey
-	err = ser.Deserialize(data, factory, &pubkey)
-	require.NoError(t, err)
-	require.True(t, signer.GetPublicKey().Equal(pubkey))
-
-	err = ser.Deserialize([]byte(`{"Data":[]}`), factory, &pubkey)
-	require.EqualError(t, xerrors.Unwrap(err),
-		"couldn't unmarshal point: bn256.G2: not enough data")
-
-	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
-	require.EqualError(t, err, "couldn't deserialize data: fake error")
-}
-
-func TestSignatureFactory_VisitJSON(t *testing.T) {
+func TestSignatureFactory_Deserialize(t *testing.T) {
 	factory := NewSignatureFactory()
 
-	ser := json.NewSerializer()
-
-	var sig crypto.Signature
-	err := ser.Deserialize([]byte(`{"Data":"QQ=="}`), factory, &sig)
+	msg, err := factory.Deserialize(fake.NewContext(), nil)
 	require.NoError(t, err)
-	require.Equal(t, signature{data: []byte("A")}, sig)
+	require.Equal(t, Signature{}, msg)
 
-	_, err = factory.VisitJSON(fake.NewBadFactoryInput())
-	require.EqualError(t, err, "couldn't deserialize data: fake error")
+	_, err = factory.Deserialize(fake.NewBadContext(), nil)
+	require.EqualError(t, err, "couldn't decode signature: fake error")
+}
+
+func TestSignatureFactory_SignatureOf(t *testing.T) {
+	factory := NewSignatureFactory()
+
+	sig, err := factory.SignatureOf(fake.NewContext(), nil)
+	require.NoError(t, err)
+	require.Equal(t, Signature{}, sig)
+
+	_, err = factory.SignatureOf(fake.NewBadContext(), nil)
+	require.EqualError(t, err, "couldn't decode signature: fake error")
+
+	_, err = factory.SignatureOf(fake.NewContextWithFormat(serde.Format("BAD_TYPE")), nil)
+	require.EqualError(t, err, "invalid signature of type 'fake.Message'")
 }
 
 func TestVerifier_Verify(t *testing.T) {
@@ -163,7 +198,7 @@ func TestVerifier_Verify(t *testing.T) {
 		require.NoError(t, err)
 
 		verifier := newVerifier(
-			[]kyber.Point{signer.GetPublicKey().(publicKey).point},
+			[]kyber.Point{signer.GetPublicKey().(PublicKey).point},
 		)
 		err = verifier.Verify(msg, sig)
 		require.NoError(t, err)
@@ -198,7 +233,7 @@ func TestVerifierFactory_FromAuthority(t *testing.T) {
 func TestVerifierFactory_FromArray(t *testing.T) {
 	factory := verifierFactory{}
 
-	verifier, err := factory.FromArray([]crypto.PublicKey{publicKey{}})
+	verifier, err := factory.FromArray([]crypto.PublicKey{PublicKey{}})
 	require.NoError(t, err)
 	require.Len(t, verifier.(blsVerifier).points, 1)
 

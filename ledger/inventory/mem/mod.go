@@ -47,7 +47,7 @@ func (p DigestSlice) Swap(i, j int) {
 // - implements inventory.Inventory
 type InMemoryInventory struct {
 	sync.Mutex
-	serializer   serde.Serializer
+	context      serde.Context
 	hashFactory  crypto.HashFactory
 	pages        []*inMemoryPage
 	stagingPages map[Digest]*inMemoryPage
@@ -56,7 +56,7 @@ type InMemoryInventory struct {
 // NewInventory returns a new empty instance of the inventory.
 func NewInventory() *InMemoryInventory {
 	return &InMemoryInventory{
-		serializer:   json.NewSerializer(),
+		context:      json.NewContext(),
 		hashFactory:  crypto.NewSha256Factory(),
 		pages:        []*inMemoryPage{},
 		stagingPages: make(map[Digest]*inMemoryPage),
@@ -156,14 +156,14 @@ func (inv *InMemoryInventory) computeHash(page *inMemoryPage) error {
 			return xerrors.Errorf("couldn't write key: %v", err)
 		}
 
-		data, err := inv.serializer.Serialize(page.entries[key])
+		data, err := page.entries[key].Serialize(inv.context)
 		if err != nil {
 			return xerrors.Errorf("couldn't marshal entry: %v", err)
 		}
 
 		_, err = h.Write(data)
 		if err != nil {
-			return err
+			return xerrors.Errorf("couldn't write value: %v", err)
 		}
 	}
 
