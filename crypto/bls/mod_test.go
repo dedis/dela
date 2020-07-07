@@ -246,7 +246,7 @@ func TestVerifierFactory_FromArray(t *testing.T) {
 }
 
 func TestSigner_GetVerifierFactory(t *testing.T) {
-	signer := Generate()
+	signer := NewSigner()
 
 	factory := signer.GetVerifierFactory()
 	require.NotNil(t, factory)
@@ -270,7 +270,7 @@ func TestSigner_GetSignatureFactory(t *testing.T) {
 }
 
 func TestSigner_Sign(t *testing.T) {
-	signer := Generate()
+	signer := NewSigner()
 	f := func(msg []byte) bool {
 		sig, err := signer.Sign(msg)
 		require.NoError(t, err)

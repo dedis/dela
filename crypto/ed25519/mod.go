@@ -243,39 +243,6 @@ func (f signatureFactory) SignatureOf(ctx serde.Context, data []byte) (crypto.Si
 	return signature, nil
 }
 
-// verifier provides primitives to verify a schnorr signature of a unique
-// message.
-// type schnorrVerifier struct {
-// 	points []kyber.Point
-// }
-
-// NewVerifier returns a new verifier that can verify schnorr signatures.
-// func newVerifier(points []kyber.Point) crypto.Verifier {
-// 	return schnorrVerifier{points: points}
-// }
-
-// Verify implements crypto.Verifier. It returns nil if the signature matches
-// the message, or an error otherwise.
-// func (v schnorrVerifier) Verify(msg []byte, sig crypto.Signature) error {
-// 	return xerrors.New("not implemented")
-// }
-
-type verifierFactory struct{}
-
-// FromIterator implements crypto.VerifierFactory. It returns a verifier that
-// will verify the signatures collectively signed by all the signers associated
-// with the public keys.
-func (v verifierFactory) FromAuthority(ca crypto.CollectiveAuthority) (crypto.Verifier, error) {
-	return nil, xerrors.New("not implemented")
-}
-
-// FromArray implements crypto.VerifierFactory. It returns a verifier that will
-// verify the signatures collectively signed by all the signers associated with
-// the public keys.
-func (v verifierFactory) FromArray(publicKeys []crypto.PublicKey) (crypto.Verifier, error) {
-	return nil, xerrors.New("not implemented")
-}
-
 // Signer implements a schnorr signer
 //
 // - implements crypto.Signer
@@ -289,12 +256,6 @@ func NewSigner() crypto.Signer {
 	return Signer{
 		keyPair: kp,
 	}
-}
-
-// GetVerifierFactory implements crypto.Signer. It returns the verifier factory
-// for schnorr signatures.
-func (s Signer) GetVerifierFactory() crypto.VerifierFactory {
-	return verifierFactory{}
 }
 
 // GetPublicKeyFactory implements crypto.Signer. It returns the public key
@@ -329,10 +290,4 @@ func (s Signer) Sign(msg []byte) (crypto.Signature, error) {
 	}
 
 	return Signature{data: sig}, nil
-}
-
-// Aggregate implements crypto.Signer. It aggregates the signatures into a
-// single one that can be verifier with the aggregated public key associated.
-func (s Signer) Aggregate(signatures ...crypto.Signature) (crypto.Signature, error) {
-	return nil, xerrors.New("not implemented")
 }

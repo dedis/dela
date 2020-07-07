@@ -80,7 +80,6 @@ type VerifierFactory interface {
 
 // Signer provides the primitives to sign and verify signatures.
 type Signer interface {
-	GetVerifierFactory() VerifierFactory
 	GetPublicKeyFactory() PublicKeyFactory
 	GetSignatureFactory() SignatureFactory
 	GetPublicKey() PublicKey
@@ -91,6 +90,8 @@ type Signer interface {
 // also includes a primitive to aggregate signatures into one.
 type AggregateSigner interface {
 	Signer
+
+	GetVerifierFactory() VerifierFactory
 
 	Aggregate(signatures ...Signature) (Signature, error)
 }
