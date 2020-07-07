@@ -1,4 +1,14 @@
 // Package serde defines the serialization and deserialization mechanisms.
+//
+// Example of a JSON serialization and deserialization:
+//
+// 	ctx := json.NewContext()
+// 	data, err := msg.Serialize(ctx)
+// 	checkError(err)
+//
+// 	msg, err := factory.Deserialize(ctx, data)
+// 	checkError(err)
+//
 package serde
 
 import "io"
