@@ -205,12 +205,21 @@ func (a skipchainActor) newChain(data blockchain.Payload, conodes mino.Players) 
 	ctx, cancel := context.WithTimeout(context.Background(), defaultPropogationTimeout)
 	defer cancel()
 
-	closing, errs := a.rpc.Call(ctx, msg, conodes)
-	select {
-	case <-closing:
-		return nil
-	case err := <-errs:
-		return xerrors.Errorf("couldn't propagate: %v", err)
+	resps, err := a.rpc.Call(ctx, msg, conodes)
+	if err != nil {
+		return xerrors.Errorf("call aborted: %v", err)
+	}
+
+	for {
+		resp, more := <-resps
+		if !more {
+			return nil
+		}
+
+		_, err = resp.GetMessageOrError()
+		if err != nil {
+			return xerrors.Errorf("couldn't propagate: %v", err)
+		}
 	}
 }
 

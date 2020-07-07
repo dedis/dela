@@ -95,7 +95,10 @@ func (a flatActor) Sign(ctx context.Context, msg serde.Message,
 		Value: msg,
 	}
 
-	msgs, errs := a.rpc.Call(ctx, req, ca)
+	msgs, err := a.rpc.Call(ctx, req, ca)
+	if err != nil {
+		return nil, xerrors.Errorf("call aborted: %v", err)
+	}
 
 	digest, err := a.reactor.Invoke(a.me, msg)
 	if err != nil {
@@ -104,27 +107,28 @@ func (a flatActor) Sign(ctx context.Context, msg serde.Message,
 
 	var agg crypto.Signature
 	for {
-		select {
-		case resp, more := <-msgs:
-			if !more {
-				if agg == nil {
-					return nil, xerrors.New("signature is nil")
-				}
-
-				err = verifier.Verify(digest, agg)
-				if err != nil {
-					return nil, xerrors.Errorf("couldn't verify the aggregation: %v", err)
-				}
-
-				return agg, nil
+		resp, more := <-msgs
+		if !more {
+			if agg == nil {
+				return nil, xerrors.New("signature is nil")
 			}
 
-			agg, err = a.processResponse(resp, agg)
+			err = verifier.Verify(digest, agg)
 			if err != nil {
-				return nil, xerrors.Errorf("couldn't process response: %v", err)
+				return nil, xerrors.Errorf("couldn't verify the aggregation: %v", err)
 			}
-		case err := <-errs:
+
+			return agg, nil
+		}
+
+		reply, err := resp.GetMessageOrError()
+		if err != nil {
 			return nil, xerrors.Errorf("one request has failed: %v", err)
+		}
+
+		agg, err = a.processResponse(reply, agg)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't process response: %v", err)
 		}
 	}
 }

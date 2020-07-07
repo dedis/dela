@@ -57,9 +57,9 @@ func TestActor_Sign(t *testing.T) {
 		reactor: fakeReactor{},
 	}
 
-	rpc.Msgs <- cosi.SignatureResponse{Signature: fake.Signature{}}
-	rpc.Msgs <- cosi.SignatureResponse{Signature: fake.Signature{}}
-	close(rpc.Msgs)
+	rpc.SendResponse(nil, cosi.SignatureResponse{Signature: fake.Signature{}})
+	rpc.SendResponse(nil, cosi.SignatureResponse{Signature: fake.Signature{}})
+	rpc.Done()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -68,6 +68,11 @@ func TestActor_Sign(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, sig)
 
+	actor.rpc = fake.NewBadRPC()
+	_, err = actor.Sign(ctx, message, ca)
+	require.EqualError(t, err, "call aborted: fake error")
+
+	actor.rpc = rpc
 	actor.signer = fake.NewSignerWithVerifierFactory(fake.NewBadVerifierFactory())
 	_, err = actor.Sign(ctx, message, ca)
 	require.EqualError(t, err, "couldn't make verifier: fake error")
@@ -89,8 +94,8 @@ func TestActor_SignWrongSignature(t *testing.T) {
 		reactor: fakeReactor{},
 	}
 
-	rpc.Msgs <- cosi.SignatureResponse{Signature: fake.Signature{}}
-	close(rpc.Msgs)
+	rpc.SendResponse(nil, cosi.SignatureResponse{Signature: fake.Signature{}})
+	rpc.Done()
 
 	ctx := context.Background()
 
@@ -109,7 +114,7 @@ func TestActor_RPCError_Sign(t *testing.T) {
 		reactor: fakeReactor{},
 	}
 
-	close(rpc.Msgs)
+	rpc.Done()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -133,7 +138,8 @@ func TestActor_Context_Sign(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	rpc.Errs <- xerrors.New("oops")
+	rpc.SendResponseWithError(nil, xerrors.New("oops"))
+	rpc.Done()
 
 	sig, err := actor.Sign(ctx, message, ca)
 	require.EqualError(t, err, "one request has failed: oops")
@@ -143,13 +149,18 @@ func TestActor_Context_Sign(t *testing.T) {
 func TestActor_SignProcessError(t *testing.T) {
 	ca := fake.NewAuthority(1, fake.NewSigner)
 
+	rpc := fake.NewRPC()
 	actor := flatActor{
 		signer:  ca.GetSigner(0).(crypto.AggregateSigner),
 		reactor: fakeReactor{},
+		rpc:     rpc,
 	}
 
-	_, err := actor.processResponse(fake.Message{}, nil)
-	require.EqualError(t, err, "invalid response type 'fake.Message'")
+	rpc.SendResponse(nil, fake.Message{})
+	rpc.Done()
+	_, err := actor.Sign(context.Background(), fake.Message{}, ca)
+	require.EqualError(t, err,
+		"couldn't process response: invalid response type 'fake.Message'")
 
 	actor.signer = fake.NewBadSigner()
 	_, err = actor.processResponse(cosi.SignatureResponse{}, fake.Signature{})

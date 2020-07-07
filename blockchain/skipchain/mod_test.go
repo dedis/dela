@@ -138,21 +138,25 @@ func TestSkipchain_Watch(t *testing.T) {
 
 func TestActor_Setup(t *testing.T) {
 	db := &fakeDatabase{blocks: []types.SkipBlock{{}}, err: NewNoBlockError(0)}
+	rpc := fake.NewRPC()
 	actor := skipchainActor{
 		operations: &operations{
 			addr: fake.NewAddress(0),
 			db:   db,
-			rpc:  fakeRPC{},
+			rpc:  rpc,
 		},
 		rand: crypto.CryptographicRandomGenerator{},
 	}
 
 	authority := fake.NewAuthority(3, fake.NewSigner)
 
+	rpc.Done()
 	err := actor.Setup(fake.Message{}, authority)
 	require.NoError(t, err)
 
-	actor.rpc = fakeRPC{err: xerrors.New("oops")}
+	rpc.Reset()
+	rpc.SendResponseWithError(nil, xerrors.New("oops"))
+	rpc.Done()
 	err = actor.Setup(fake.Message{}, authority)
 	require.EqualError(t, xerrors.Unwrap(err), "couldn't propagate: oops")
 
@@ -168,11 +172,12 @@ func TestActor_Setup(t *testing.T) {
 }
 
 func TestActor_NewChain(t *testing.T) {
+	rpc := fake.NewRPC()
 	actor := skipchainActor{
 		operations: &operations{
 			addr: fake.NewAddress(0),
 			db:   &fakeDatabase{},
-			rpc:  fakeRPC{},
+			rpc:  rpc,
 		},
 		rand: crypto.CryptographicRandomGenerator{},
 	}
@@ -192,6 +197,11 @@ func TestActor_NewChain(t *testing.T) {
 	err = actor.newChain(fake.Message{}, authority)
 	require.EqualError(t, err,
 		"couldn't create genesis: couldn't fingerprint: couldn't write index: fake error")
+
+	actor.hashFactory = crypto.NewSha256Factory()
+	actor.rpc = fake.NewBadRPC()
+	err = actor.newChain(fake.Message{}, authority)
+	require.EqualError(t, err, "call aborted: fake error")
 }
 
 func TestActor_Store(t *testing.T) {
@@ -279,25 +289,6 @@ func makeSkipchain(t *testing.T, n int) (crypto.CollectiveAuthority, []*Skipchai
 	}
 
 	return authority, skipchains, actors
-}
-
-type fakeRPC struct {
-	mino.RPC
-	err error
-}
-
-func (rpc fakeRPC) Call(context.Context, serde.Message,
-	mino.Players) (<-chan serde.Message, <-chan error) {
-
-	errs := make(chan error, 1)
-	if rpc.err != nil {
-		errs <- rpc.err
-	}
-	msgs := make(chan serde.Message)
-	if rpc.err == nil {
-		close(msgs)
-	}
-	return msgs, errs
 }
 
 type fakeConsensusActor struct {

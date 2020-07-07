@@ -44,14 +44,15 @@ func TestActor_Add(t *testing.T) {
 		players: fake.NewAuthority(3, fake.NewSigner),
 	}
 
-	close(rpc.Msgs)
-
+	rpc.Done()
 	err := actor.Add(fakeRumor{})
 	require.NoError(t, err)
 
 	rpc = fake.NewRPC()
 	actor.rpc = rpc
-	rpc.Errs <- xerrors.New("oops")
+	rpc.SendResponseWithError(nil, xerrors.New("oops"))
+	rpc.Done()
+
 	err = actor.Add(fakeRumor{})
 	require.EqualError(t, err, "couldn't send the rumor: oops")
 

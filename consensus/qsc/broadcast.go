@@ -23,6 +23,7 @@ type View struct {
 	broadcasted map[int64]types.Message
 }
 
+// NewReceiveView creates a new view from the message set.
 func NewReceiveView(msgs []types.Message) View {
 	received := make(map[int64]types.Message)
 	for _, msg := range msgs {
@@ -32,6 +33,7 @@ func NewReceiveView(msgs []types.Message) View {
 	return View{received: received}
 }
 
+// GetReceived returns the list of received messages for this view.
 func (v View) GetReceived() []types.Message {
 	msgs := make([]types.Message, 0, len(v.received))
 	for _, msg := range v.received {
@@ -147,12 +149,23 @@ func newTLCR(name string, node int64, mino mino.Mino, players mino.Players, f se
 func (b *bTLCR) execute(ctx context.Context, messages ...types.Message) (View, error) {
 	ms := types.NewMessageSet(b.node, b.timeStep, messages...)
 
-	_, errs := b.rpc.Call(ctx, ms, b.players)
+	resps, err := b.rpc.Call(ctx, ms, b.players)
+	if err != nil {
+		return View{}, xerrors.Errorf("call aborted: %v", err)
+	}
 
 	for len(ms.GetMessages()) < b.players.Len() {
 		select {
-		case err := <-errs:
-			b.logger.Err(err).Msg("couldn't broadcast to everyone")
+		case resp, more := <-resps:
+			if !more {
+				resps = nil
+				continue
+			}
+
+			_, err = resp.GetMessageOrError()
+			if err != nil {
+				b.logger.Err(err).Msg("couldn't broadcast to everyone")
+			}
 		case req := <-b.ch:
 			if req.GetTimeStep() == b.timeStep {
 				ms = ms.Merge(req)
@@ -214,23 +227,28 @@ func (b *bTLCR) catchUp(ctx context.Context, current, received types.MessageSet)
 func (b *bTLCR) requestPreviousSet(ctx context.Context, node int,
 	req types.RequestMessageSet) (types.MessageSet, error) {
 
-	resps, errs := b.rpc.Call(ctx, req, b.players.Take(mino.IndexFilter(node)))
-	select {
-	case resp, ok := <-resps:
-		if !ok {
-			return types.MessageSet{}, xerrors.New("couldn't get a reply")
-		}
+	resps, err := b.rpc.Call(ctx, req, b.players.Take(mino.IndexFilter(node)))
+	if err != nil {
+		return types.MessageSet{}, xerrors.Errorf("call aborted: %v", err)
+	}
 
-		ms, ok := resp.(types.MessageSet)
-		if !ok {
-			return types.MessageSet{}, xerrors.Errorf("got message type '%T' but expected '%T'",
-				resp, ms)
-		}
+	resp, more := <-resps
+	if !more {
+		return types.MessageSet{}, xerrors.New("couldn't get a reply")
+	}
 
-		return ms, nil
-	case err := <-errs:
+	reply, err := resp.GetMessageOrError()
+	if err != nil {
 		return types.MessageSet{}, xerrors.Errorf("couldn't reach the node: %v", err)
 	}
+
+	ms, ok := reply.(types.MessageSet)
+	if !ok {
+		return types.MessageSet{}, xerrors.Errorf("got message type '%T' but expected '%T'",
+			reply, ms)
+	}
+
+	return ms, nil
 }
 
 type bTLCB struct {

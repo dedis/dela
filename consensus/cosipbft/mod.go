@@ -173,17 +173,26 @@ func (a pbftActor) Propose(p serde.Message) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	resps, errs := a.rpc.Call(ctx, propagateReq, authority)
+	resps, err := a.rpc.Call(ctx, propagateReq, authority)
+	if err != nil {
+		return xerrors.Errorf("call aborted: %v", err)
+	}
+
 	for {
 		select {
 		case <-a.closing:
 			// Abort the RPC call.
 			cancel()
 			return nil
-		case <-resps:
-			return nil
-		case err := <-errs:
-			a.logger.Warn().Err(err).Msg("couldn't propagate the link")
+		case resp, more := <-resps:
+			if !more {
+				return nil
+			}
+
+			_, err = resp.GetMessageOrError()
+			if err != nil {
+				a.logger.Warn().Err(err).Msg("couldn't propagate the link")
+			}
 		}
 	}
 }

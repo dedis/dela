@@ -30,37 +30,45 @@ type RPC struct {
 }
 
 // Call sends the message to all participants and gather their reply. The
-// context in the scope of channel communication as there is no blocking I/O.
-func (c RPC) Call(ctx context.Context, req serde.Message,
-	players mino.Players) (<-chan serde.Message, <-chan error) {
-
-	out := make(chan serde.Message, players.Len())
-	errs := make(chan error, players.Len())
+// context is ignored in the scope of channel communication as there is no
+// blocking I/O. The response channel will receive n responses for n players and
+// be closed eventually.
+func (c RPC) Call(ctx context.Context,
+	req serde.Message, players mino.Players) (<-chan mino.Response, error) {
 
 	data, err := req.Serialize(json.NewContext())
 
 	if err != nil {
-		errs <- xerrors.Errorf("couldn't serialize: %v", err)
-		close(out)
-		return out, errs
+		return nil, xerrors.Errorf("couldn't serialize: %v", err)
 	}
+
+	out := make(chan mino.Response, players.Len())
 
 	wg := sync.WaitGroup{}
 	wg.Add(players.Len())
+
 	iter := players.AddressIterator()
+
 	for iter.HasNext() {
 		peer, err := c.manager.get(iter.GetNext())
 		if err != nil {
-			errs <- xerrors.Errorf("couldn't find peer: %v", err)
-			continue
+			// Abort everything is a peer is missing.
+			return nil, xerrors.Errorf("couldn't find peer: %v", err)
 		}
 
 		go func(m *Minoch) {
 			defer wg.Done()
 
+			from := peer.GetAddress()
+
 			msg, err := c.factory.Deserialize(json.NewContext(), data)
 			if err != nil {
-				errs <- xerrors.Errorf("couldn't deserialize: %v", err)
+				resp := mino.NewResponseWithError(
+					from,
+					xerrors.Errorf("couldn't deserialize: %v", err),
+				)
+
+				out <- resp
 				return
 			}
 
@@ -74,27 +82,37 @@ func (c RPC) Call(ctx context.Context, req serde.Message,
 			m.Unlock()
 
 			if !ok {
-				errs <- xerrors.Errorf("unknown rpc %s", c.path)
+				resp := mino.NewResponseWithError(
+					from,
+					xerrors.Errorf("unknown rpc %s", c.path),
+				)
+
+				out <- resp
 				return
 			}
 
 			resp, err := rpc.h.Process(req)
 			if err != nil {
-				errs <- xerrors.Errorf("couldn't process request: %v", err)
+				resp := mino.NewResponseWithError(
+					from,
+					xerrors.Errorf("couldn't process request: %v", err),
+				)
+
+				out <- resp
+				return
 			}
 
-			if resp != nil {
-				out <- resp
-			}
+			out <- mino.NewResponse(from, resp)
 		}(peer)
 	}
 
+	// Only wait if all the requests have been correctly started.
 	go func() {
 		wg.Wait()
 		close(out)
 	}()
 
-	return out, errs
+	return out, nil
 }
 
 // Stream opens a stream. The caller is responsible for cancelling the context

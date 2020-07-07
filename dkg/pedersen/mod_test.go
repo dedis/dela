@@ -30,7 +30,7 @@ func TestPedersen_Listen(t *testing.T) {
 
 func TestPedersen_Setup(t *testing.T) {
 	actor := Actor{
-		rpc:      fake.NewBadStreamRPC(),
+		rpc:      fake.NewBadRPC(),
 		startRes: &state{},
 	}
 
@@ -87,7 +87,7 @@ func TestPedersen_GetPublicKey(t *testing.T) {
 
 func TestPedersen_Decrypt(t *testing.T) {
 	actor := Actor{
-		rpc:      fake.NewBadStreamRPC(),
+		rpc:      fake.NewBadRPC(),
 		startRes: &state{participants: []mino.Address{fake.NewAddress(0)}, distrKey: suite.Point()},
 	}
 

@@ -14,7 +14,6 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minoch"
-	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -66,9 +65,10 @@ func TestHandlerTLCR_Process(t *testing.T) {
 func TestTLCR_Execute(t *testing.T) {
 	buffer := new(bytes.Buffer)
 	ch := make(chan types.MessageSet, 1)
+	rpc := fake.NewRPC()
 	bc := &bTLCR{
 		logger:  zerolog.New(buffer),
-		rpc:     fakeRPC{},
+		rpc:     rpc,
 		ch:      ch,
 		players: fakeSinglePlayer{},
 		store:   &storage{},
@@ -83,12 +83,17 @@ func TestTLCR_Execute(t *testing.T) {
 	require.Equal(t, bc.store.previous.GetMessages(), view.GetReceived())
 	require.Len(t, view.broadcasted, 0)
 
-	bc.rpc = fakeRPC{err: xerrors.New("oops")}
+	rpc.SendResponseWithError(nil, xerrors.New("oops"))
+	rpc.Done()
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 	_, err = bc.execute(ctx)
 	require.EqualError(t, err, "context deadline exceeded")
 	require.Contains(t, buffer.String(), "oops")
+
+	bc.rpc = fake.NewBadRPC()
+	_, err = bc.execute(ctx)
+	require.EqualError(t, err, "call aborted: fake error")
 }
 
 func TestTLCR_Merge(t *testing.T) {
@@ -101,10 +106,11 @@ func TestTLCR_Merge(t *testing.T) {
 
 func TestTLCR_CatchUp(t *testing.T) {
 	ch := make(chan types.MessageSet, 1)
+	rpc := fake.NewRPC()
 	bc := &bTLCR{
 		ch:       ch,
 		timeStep: 0,
-		rpc:      fakeRPC{},
+		rpc:      rpc,
 		players:  fakeSinglePlayer{},
 	}
 
@@ -117,30 +123,33 @@ func TestTLCR_CatchUp(t *testing.T) {
 	require.Equal(t, m2, <-ch)
 
 	m2 = types.NewMessageSet(2, 1)
-	bc.rpc = fakeRPC{
-		msg: types.NewMessageSet(0, 0, types.NewMessage(2, fake.Message{})),
-	}
+	rpc.SendResponse(nil, types.NewMessageSet(0, 0, types.NewMessage(2, fake.Message{})))
 	err = bc.catchUp(ctx, m1, m2)
 	require.NoError(t, err)
 	require.Equal(t, m2, <-ch)
 
-	bc.rpc = fakeRPC{msg: fake.Message{}}
+	rpc.SendResponse(nil, fake.Message{})
 	err = bc.catchUp(ctx, m1, m2)
 	require.EqualError(t, xerrors.Unwrap(err),
 		"got message type 'fake.Message' but expected 'types.MessageSet'")
 	require.Equal(t, m2, <-ch)
 
-	bc.rpc = fakeRPC{err: xerrors.New("oops")}
+	rpc.SendResponseWithError(nil, xerrors.New("oops"))
 	err = bc.catchUp(ctx, m1, m2)
 	require.EqualError(t, err,
 		"couldn't fetch previous message set: couldn't reach the node: oops")
 	require.Equal(t, m2, <-ch)
 
-	bc.rpc = fakeRPC{closed: true}
+	rpc.Done()
 	err = bc.catchUp(ctx, m1, m2)
 	require.EqualError(t, err,
 		"couldn't fetch previous message set: couldn't get a reply")
 	require.Equal(t, m2, <-ch)
+
+	bc.rpc = fake.NewBadRPC()
+	err = bc.catchUp(ctx, m1, m2)
+	require.EqualError(t, err,
+		"couldn't fetch previous message set: call aborted: fake error")
 }
 
 func TestTLCB_Basic(t *testing.T) {
@@ -277,30 +286,6 @@ func (p fakeSinglePlayer) Len() int {
 
 func (p fakeSinglePlayer) Take(...mino.FilterUpdater) mino.Players {
 	return fakeSinglePlayer{}
-}
-
-type fakeRPC struct {
-	mino.RPC
-	err    error
-	msg    serde.Message
-	closed bool
-}
-
-func (rpc fakeRPC) Call(ctx context.Context, pb serde.Message,
-	players mino.Players) (<-chan serde.Message, <-chan error) {
-
-	errs := make(chan error, 1)
-	if rpc.err != nil {
-		errs <- rpc.err
-	}
-	msgs := make(chan serde.Message, 1)
-	if rpc.msg != nil {
-		msgs <- rpc.msg
-	}
-	if rpc.closed {
-		close(msgs)
-	}
-	return msgs, errs
 }
 
 type fakeTLCR struct {

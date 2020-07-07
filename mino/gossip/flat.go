@@ -87,14 +87,19 @@ func (a *flatActor) Add(rumor Rumor) error {
 	ctx, cancel := context.WithTimeout(context.Background(), rumorTimeout)
 	defer cancel()
 
-	resps, errs := a.rpc.Call(ctx, rumor, players)
+	resps, err := a.rpc.Call(ctx, rumor, players)
+	if err != nil {
+		return xerrors.Errorf("couldn't call peers: %v", err)
+	}
+
 	for {
-		select {
-		case _, more := <-resps:
-			if !more {
-				return nil
-			}
-		case err := <-errs:
+		resp, more := <-resps
+		if !more {
+			return nil
+		}
+
+		_, err := resp.GetMessageOrError()
+		if err != nil {
 			return xerrors.Errorf("couldn't send the rumor: %v", err)
 		}
 	}
