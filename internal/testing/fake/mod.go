@@ -25,6 +25,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
@@ -953,4 +954,65 @@ func (ctx ContextEngine) Unmarshal(data []byte, m interface{}) error {
 	}
 
 	return ctx.err
+}
+
+// NewAccessControl creates a new access control
+func NewAccessControl() arc.AccessControl {
+	return AccessControl{}
+}
+
+// NewBadAccessControl creates a new access control that return an error when
+// serialized
+func NewBadAccessControl() arc.AccessControl {
+	return AccessControl{
+		err: xerrors.New("fake error"),
+	}
+}
+
+// AccessControl is an access control
+//
+// - implements ard.AccessControl
+type AccessControl struct {
+	serde.Message
+	err error
+}
+
+// Match implements arc.AccessControl
+func (fac AccessControl) Match(rule string, idents ...arc.Identity) error {
+	return nil
+}
+
+// Serialize implements serde.Message.
+func (fac AccessControl) Serialize(serde.Context) ([]byte, error) {
+	return []byte("{}"), fac.err
+}
+
+// NewAccessControlFactory returns a new access control factory
+func NewAccessControlFactory() serde.Factory {
+	return AccessControlFactory{}
+}
+
+// NewBadAccessControlFactory returns a new bad access control factory
+func NewBadAccessControlFactory() serde.Factory {
+	return AccessControlFactory{
+		err: xerrors.New("fake error"),
+	}
+}
+
+// AccessControlFactory is a fake factory for access control
+//
+// - implements arc.AccessControlFactory
+// - implements serde.Factory
+type AccessControlFactory struct {
+	err error
+}
+
+// Deserialize implements serde.Factory.
+func (f AccessControlFactory) Deserialize(serde.Context, []byte) (serde.Message, error) {
+	return NewAccessControl(), f.err
+}
+
+// AccessOf implements arc.AccessControlFactory
+func (f AccessControlFactory) AccessOf(serde.Context, []byte) (arc.AccessControl, error) {
+	return NewAccessControl(), f.err
 }
