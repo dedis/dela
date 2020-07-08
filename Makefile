@@ -13,7 +13,7 @@ vet:
 	go install ./internal/mcheck && \
 	go vet -vettool=`go env GOPATH`/bin/mcheck -commentLen -ifInit ./...
 
-# target to run all the possible checks; its a good habit to run it before
+# target to run all the possible checks; it's a good habit to run it before
 # pushing code
 check: lint vet
 	go test ./...
