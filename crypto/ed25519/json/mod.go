@@ -46,7 +46,7 @@ func (f pubkeyFormat) Decode(ctx serde.Context, data []byte) (serde.Message, err
 		return nil, xerrors.Errorf("couldn't unmarshal public key: %v", err)
 	}
 
-	pubkey, err := ed25519.NewPublicKey(data)
+	pubkey, err := ed25519.NewPublicKey(m.Data)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't create public key: %v", err)
 	}
