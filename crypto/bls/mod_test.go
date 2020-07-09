@@ -82,7 +82,7 @@ func TestPublicKey_MarshalText(t *testing.T) {
 	signer := Generate()
 	text, err := signer.GetPublicKey().MarshalText()
 	require.NoError(t, err)
-	require.Contains(t, string(text), "bls:")
+	require.Regexp(t, "^bls:", string(text))
 
 	pk := PublicKey{point: badPoint{}}
 	_, err = pk.MarshalText()

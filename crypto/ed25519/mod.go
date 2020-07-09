@@ -57,6 +57,13 @@ func NewPublicKey(data []byte) (PublicKey, error) {
 	return pk, nil
 }
 
+// NewPublicKeyFromPoint creates a new public key from an existing point.
+func NewPublicKeyFromPoint(point kyber.Point) PublicKey {
+	return PublicKey{
+		point: point,
+	}
+}
+
 // MarshalBinary implements encoding.BinaryMarshaler. It produces a slice of
 // bytes representing the public key.
 func (pk PublicKey) MarshalBinary() ([]byte, error) {
@@ -128,7 +135,7 @@ func (pk PublicKey) String() string {
 	}
 
 	// Output only the prefix and 16 characters of the buffer in hexadecimal.
-	return string(buffer)[:4+16]
+	return string(buffer)[:8+16]
 }
 
 // Signature is a proof of the integrity of a single message associated with a
@@ -181,7 +188,7 @@ func (sig Signature) Equal(other crypto.Signature) bool {
 type publicKeyFactory struct{}
 
 // NewPublicKeyFactory returns a new instance of the factory.
-func NewPublicKeyFactory() serde.Factory {
+func NewPublicKeyFactory() crypto.PublicKeyFactory {
 	return publicKeyFactory{}
 }
 
@@ -217,7 +224,7 @@ func (f publicKeyFactory) PublicKeyOf(ctx serde.Context, data []byte) (crypto.Pu
 type signatureFactory struct{}
 
 // NewSignatureFactory returns a new instance of the factory.
-func NewSignatureFactory() serde.Factory {
+func NewSignatureFactory() crypto.SignatureFactory {
 	return signatureFactory{}
 }
 
