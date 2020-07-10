@@ -35,24 +35,24 @@ func RegisterRecordFormats(format serde.Format, engine serde.FormatEngine) {
 	recordFormats.Register(format, engine)
 }
 
-// caly is a wrapper around DKG that provides a private storage
+// Caly is a wrapper around DKG that provides a private storage
 //
 // implements calypso.PrivateStorage
-type caly struct {
+type Caly struct {
 	dkgActor dkg.Actor
 	storage  storage.KeyValue
 }
 
-// newCalypso creates a new Calypso
-func newCalypso(actor dkg.Actor) *caly {
-	return &caly{
+// NewCalypso creates a new Calypso
+func NewCalypso(actor dkg.Actor) *Caly {
+	return &Caly{
 		dkgActor: actor,
 		storage:  inmemory.NewInMemory(),
 	}
 }
 
 // Setup implements calypso.PrivateStorage
-func (c *caly) Setup(ca crypto.CollectiveAuthority,
+func (c *Caly) Setup(ca crypto.CollectiveAuthority,
 	threshold int) (pubKey kyber.Point, err error) {
 
 	pubKey, err = c.dkgActor.Setup(ca, threshold)
@@ -64,7 +64,7 @@ func (c *caly) Setup(ca crypto.CollectiveAuthority,
 }
 
 // GetPublicKey implements calypso.PrivateStorage
-func (c *caly) GetPublicKey() (kyber.Point, error) {
+func (c *Caly) GetPublicKey() (kyber.Point, error) {
 	if c.dkgActor == nil {
 		return nil, xerrors.Errorf("listen has not already been called")
 	}
@@ -78,7 +78,7 @@ func (c *caly) GetPublicKey() (kyber.Point, error) {
 }
 
 // Write implements calypso.PrivateStorage
-func (c *caly) Write(em EncryptedMessage,
+func (c *Caly) Write(em EncryptedMessage,
 	ac arc.AccessControl) ([]byte, error) {
 
 	var buf bytes.Buffer
@@ -113,7 +113,7 @@ func (c *caly) Write(em EncryptedMessage,
 }
 
 // Read implements calypso.PrivateStorage
-func (c *caly) Read(id []byte, idents ...arc.Identity) ([]byte, error) {
+func (c *Caly) Read(id []byte, idents ...arc.Identity) ([]byte, error) {
 	record, err := c.getRead(id)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to get read: %v", err)
@@ -134,7 +134,7 @@ func (c *caly) Read(id []byte, idents ...arc.Identity) ([]byte, error) {
 
 // UpdateAccess implements calypso.PrivateStorage. It sets a new arc for a given
 // ID, provided the current arc allows the given ident to do so.
-func (c *caly) UpdateAccess(id []byte, ident arc.Identity,
+func (c *Caly) UpdateAccess(id []byte, ident arc.Identity,
 	newAc arc.AccessControl) error {
 
 	record, err := c.getRead(id)
@@ -155,7 +155,7 @@ func (c *caly) UpdateAccess(id []byte, ident arc.Identity,
 }
 
 // getRead extract the read information from the storage
-func (c *caly) getRead(id []byte) (Record, error) {
+func (c *Caly) getRead(id []byte) (Record, error) {
 	message, err := c.storage.Read(id)
 	if err != nil {
 		return Record{}, xerrors.Errorf("failed to read message: %v", err)

@@ -52,8 +52,8 @@ type Builder interface {
 	MakeAction(ActionTemplate) cli.Action
 }
 
-// ActionTemplate is an extension of the cli.ActionTemplate interface to allow
-// an action to send a request to the daemon.
+// ActionTemplate is an extension of the cli.Action interface to allow an action
+// to send a request to the daemon.
 type ActionTemplate interface {
 	// Prepare returns the bytes to be sent to the daemon.
 	// TODO: improve after encoding changes

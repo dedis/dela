@@ -15,7 +15,7 @@ import (
 )
 
 func TestMain(t *testing.T) {
-	c := newCalypso(&fakeActor{})
+	c := NewCalypso(&fakeActor{})
 
 	ca := fake.NewAuthority(0, ed25519.NewSigner)
 

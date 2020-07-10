@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"fmt"
+
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
@@ -35,9 +37,10 @@ func (m minimal) SetCommands(builder node.Builder) {
 // Run implements node.Initializer.
 func (m minimal) Inject(ctx cli.Flags, inj node.Injector) error {
 	var no mino.Mino
+	fmt.Println("asking for:", &no)
 	err := inj.Resolve(&no)
 	if err != nil {
-		return xerrors.Errorf("failed to resolve: %v", err)
+		return xerrors.Errorf("failed to resolve mino: %v", err)
 	}
 
 	ldgr := byzcoin.NewLedger(no, bls.NewSigner())
@@ -57,10 +60,6 @@ func (m minimal) Inject(ctx cli.Flags, inj node.Injector) error {
 //
 // - implements node.ActionTemplate
 type setupAction struct{}
-
-func (a setupAction) Do(flags cli.Flags) error {
-	return nil
-}
 
 // Prepare implements node.ActionTemplate.
 func (a setupAction) GenerateRequest(ctx cli.Flags) ([]byte, error) {

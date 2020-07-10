@@ -38,6 +38,8 @@ func RegisterSignatureFormat(format serde.Format, engine serde.FormatEngine) {
 }
 
 // PublicKey can be provided to verify a schnorr signature.
+//
+// - implements crypto.PublicKey
 type PublicKey struct {
 	point kyber.Point
 }
