@@ -1,4 +1,7 @@
 // Package main implements a ledger based on in-memory components.
+//
+//
+//
 package main
 
 import (
@@ -8,12 +11,18 @@ import (
 	"go.dedis.ch/dela/cli/node"
 	pedersen "go.dedis.ch/dela/dkg/pedersen/controller"
 	byzcoin "go.dedis.ch/dela/ledger/byzcoin/controller"
+	httpclient "go.dedis.ch/dela/mino/httpclient/controller"
 	mino "go.dedis.ch/dela/mino/minogrpc/controller"
 )
 
 func main() {
-	builder := node.NewBuilder(mino.NewMinimal(), byzcoin.NewMinimal(),
-		pedersen.NewMinimal(), calypso.NewMinimal())
+	builder := node.NewBuilder(
+		httpclient.NewMinimal(),
+		mino.NewMinimal(),
+		byzcoin.NewMinimal(),
+		pedersen.NewMinimal(),
+		calypso.NewMinimal(),
+	)
 
 	app := builder.Build()
 

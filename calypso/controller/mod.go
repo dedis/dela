@@ -13,6 +13,7 @@ import (
 	"go.dedis.ch/dela/crypto/ed25519"
 	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/httpclient"
 	"golang.org/x/xerrors"
 )
 
@@ -78,6 +79,14 @@ func (m minimal) Inject(ctx cli.Flags, inj node.Injector) error {
 	caly := calypso.NewCalypso(actor)
 
 	inj.Inject(caly)
+
+	var httpclient httpclient.Httpclient
+	err = inj.Resolve(&httpclient)
+	if err != nil {
+		return xerrors.Errorf("failed to resolve httpclient: %v", err)
+	}
+
+	httpclient.RegisterHandler("/GetPublicKey", getPublicKeyHandler(caly))
 
 	return nil
 }
