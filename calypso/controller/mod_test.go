@@ -334,37 +334,6 @@ func (dkg fakeDKG) Listen() (dkg.Actor, error) {
 	return nil, nil
 }
 
-// fakeActor is a fake DKG actor
-//
-// implements dkg.Actor
-type fakeActor struct {
-}
-
-// Setup implements dkg.Actor
-func (a fakeActor) Setup(co crypto.CollectiveAuthority, threshold int) (pubKey kyber.Point, err error) {
-	panic("not implemented") // TODO: Implement
-}
-
-// GetPublicKey implements dkg.Actor
-func (a fakeActor) GetPublicKey() (kyber.Point, error) {
-	panic("not implemented") // TODO: Implement
-}
-
-// Encrypt implements dkg.Actor
-func (a fakeActor) Encrypt(message []byte) (K kyber.Point, C kyber.Point, remainder []byte, err error) {
-	panic("not implemented") // TODO: Implement
-}
-
-// Decrypt implements dkg.Actor
-func (a fakeActor) Decrypt(K kyber.Point, C kyber.Point) ([]byte, error) {
-	panic("not implemented") // TODO: Implement
-}
-
-// Reshare implements dkg.Actor
-func (a fakeActor) Reshare() error {
-	panic("not implemented") // TODO: Implement
-}
-
 // fakeFormatter is a formatter using json
 //
 // - implements formatterI

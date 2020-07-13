@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/calypso"
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/dkg/pedersen"
 	"go.dedis.ch/dela/internal/testing/fake"
@@ -45,10 +44,9 @@ func newBadInjector() node.Injector {
 //
 // - implements node.Injector
 type fakeInjector struct {
-	isBad          bool
-	mino           mino.Mino
-	privateStorage calypso.PrivateStorage
-	history        []interface{}
+	isBad   bool
+	mino    mino.Mino
+	history []interface{}
 }
 
 // Resolve implements node.Injector
