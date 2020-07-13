@@ -4,6 +4,7 @@ import (
 	"io"
 
 	"go.dedis.ch/dela/core/tap"
+	"go.dedis.ch/dela/core/validation"
 	"golang.org/x/xerrors"
 )
 
@@ -14,10 +15,30 @@ type TransactionResult struct {
 	accepted bool
 }
 
+// GetTransaction implements validation.TransactionResult.
+func (res TransactionResult) GetTransaction() tap.Transaction {
+	return res.tx
+}
+
+// GetStatus implements validation.TransactionResult.
+func (res TransactionResult) GetStatus() (bool, string) {
+	return res.accepted, ""
+}
+
 // Data is the validated data of a standard validation.
 type Data struct {
 	root []byte
 	txs  []TransactionResult
+}
+
+// GetTransactionResults implements validation.Data.
+func (d Data) GetTransactionResults() []validation.TransactionResult {
+	res := make([]validation.TransactionResult, len(d.txs))
+	for i, r := range d.txs {
+		res[i] = r
+	}
+
+	return res
 }
 
 // Fingerprint writes a deterministic binary representation of the validated

@@ -4,18 +4,18 @@ import (
 	"context"
 
 	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/tap"
 	"go.dedis.ch/dela/core/tap/pool"
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/crypto"
-	"golang.org/x/xerrors"
 )
 
 type epoch struct {
 	block Block
-	trie  store.Trie
+	store store.Store
 }
 
 // Service is an ordering service powered by a Proof-of-Work consensus
@@ -25,21 +25,23 @@ type epoch struct {
 type Service struct {
 	pool        pool.Pool
 	validation  validation.Service
-	ch          <-chan Block
 	epochs      []epoch
 	hashFactory crypto.HashFactory
 	difficulty  int
+	watcher     blockchain.Observable
+	closing     chan struct{}
 }
 
 // NewService creates a new service.
-func NewService(pool pool.Pool, val validation.Service) Service {
+func NewService(pool pool.Pool, val validation.Service, trie store.Store) Service {
 	return Service{
 		pool:        pool,
 		validation:  val,
-		ch:          make(<-chan Block),
-		epochs:      make([]epoch, 0),
+		epochs:      []epoch{{store: trie}},
 		hashFactory: crypto.NewSha256Factory(),
 		difficulty:  1,
+		watcher:     blockchain.NewWatcher(),
+		closing:     make(chan struct{}),
 	}
 }
 
@@ -48,58 +50,85 @@ func (s Service) Listen() error {
 	// TODO: listen for incoming mined blocks.
 
 	go func() {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
 		// This is the main loop to create a block. It will wait for
 		// transactions at first and then try to create a new block. If another
 		// peer successfully finds a correct block, it will abort and restart.
 		for {
-			ctx, cancel := context.WithCancel(context.Background())
-
 			txs := s.waitTxs(ctx)
 
-			var e epoch
 			select {
-			case block := <-s.ch:
-				trie, err := s.validateBlock(block)
-				if err != nil {
-					dela.Logger.Err(err).Msg("invalid block")
-				}
-
-				// Stop any work in progress to create a new block.
-				cancel()
-
-				e.block = block
-				e.trie = trie
+			case <-s.closing:
+				return
 			case res := <-s.createBlock(ctx, txs):
 				if res.err != nil {
+					// Something went wrong when creating the block. The main
+					// loop is stopped as this is a critical error.
 					dela.Logger.Err(res.err).Msg("failed to prepare block")
-					continue
+					return
 				}
 
-				e.block = res.block
-				e.trie = res.trie
-			}
+				s.epochs = append(s.epochs, epoch{
+					block: res.block,
+					store: res.trie,
+				})
 
-			s.epochs = append(s.epochs, e)
+				for _, txres := range res.block.data.GetTransactionResults() {
+					err := s.pool.Remove(txres.GetTransaction())
+					if err != nil {
+						dela.Logger.Warn().Err(err).Msg("tx not in pool")
+					}
+				}
+
+				s.watcher.Notify(ordering.Event{Index: res.block.index})
+
+				dela.Logger.Info().Uint64("index", res.block.index).Msg("block append")
+			}
 		}
 	}()
 
 	return nil
 }
 
-// GetBlock implements ordering.Service. It returns the block at the given index
-// if it exists.
-func (s Service) GetBlock(index uint64) (ordering.Block, error) {
-	idx := int(index)
-	if idx >= len(s.epochs) {
-		return nil, xerrors.Errorf("unknown block at index '%d'", index)
+// Close implements ordering.Service.
+func (s Service) Close() error {
+	close(s.closing)
+	return nil
+}
+
+// GetProof implements ordering.Service.
+func (s Service) GetProof(key []byte) (ordering.Proof, error) {
+	last := s.epochs[len(s.epochs)-1]
+
+	share, err := last.store.GetShare(key)
+	if err != nil {
+		return nil, err
 	}
 
-	return s.epochs[index].block, nil
+	pr := Proof{
+		blocks: make([]Block, len(s.epochs)),
+		key:    key,
+		share:  share,
+	}
+
+	return pr, nil
 }
 
 // Watch implements ordering.Service.
 func (s Service) Watch(ctx context.Context) <-chan ordering.Event {
-	return nil
+	events := make(chan ordering.Event, 1)
+
+	obs := observer{events: events}
+	s.watcher.Add(obs)
+
+	go func() {
+		<-ctx.Done()
+		s.watcher.Remove(obs)
+	}()
+
+	return events
 }
 
 // waitTxs is a procedure to wait for transactions from the pool. It will wait
@@ -127,29 +156,27 @@ func (s Service) waitTxs(ctx context.Context) []tap.Transaction {
 	}
 }
 
-type result struct {
+type blockResult struct {
 	block Block
-	trie  store.Trie
+	trie  store.Store
 	err   error
 }
 
-func (s Service) createBlock(ctx context.Context, txs []tap.Transaction) <-chan result {
-	ch := make(chan result, 1)
+func (s Service) createBlock(ctx context.Context, txs []tap.Transaction) <-chan blockResult {
+	ch := make(chan blockResult, 1)
 
 	latestEpoch := s.epochs[len(s.epochs)-1]
 
 	go func() {
-		var finalBlock Block
+		var block Block
 
-		newTrie, err := latestEpoch.trie.Stage(func(rwt store.ReadWriteTrie) error {
+		newTrie, err := latestEpoch.store.Stage(func(rwt store.ReadWriteTrie) error {
 			data, err := s.validation.Validate(rwt, txs)
 			if err != nil {
 				return err
 			}
 
-			block := NewBlock(uint64(len(s.epochs)), 0, data)
-
-			finalBlock, err = block.Prepare(ctx, s.hashFactory, s.difficulty)
+			block, err = NewBlock(ctx, data, WithIndex(uint64(len(s.epochs))))
 			if err != nil {
 				return err
 			}
@@ -157,16 +184,14 @@ func (s Service) createBlock(ctx context.Context, txs []tap.Transaction) <-chan 
 			return nil
 		})
 
-		ch <- result{
-			block: finalBlock,
+		// The result will contain either a valid block and trie, or the error
+		// that prevent the creation.
+		ch <- blockResult{
+			block: block,
 			trie:  newTrie,
 			err:   err,
 		}
 	}()
 
 	return ch
-}
-
-func (s Service) validateBlock(b Block) (store.Trie, error) {
-	return nil, nil
 }

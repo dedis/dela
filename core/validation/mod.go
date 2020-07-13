@@ -8,9 +8,17 @@ import (
 	"go.dedis.ch/dela/serde"
 )
 
+type TransactionResult interface {
+	GetTransaction() tap.Transaction
+
+	GetStatus() (bool, string)
+}
+
 // Data is the result of a validation.
 type Data interface {
 	serde.Fingerprinter
+
+	GetTransactionResults() []TransactionResult
 }
 
 // Service is the validation service that will process a batch of transactions

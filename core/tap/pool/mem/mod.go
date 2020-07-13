@@ -3,6 +3,7 @@ package mem
 import (
 	"context"
 
+	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/core/tap"
 	"go.dedis.ch/dela/core/tap/pool"
 	"golang.org/x/xerrors"
@@ -20,13 +21,17 @@ type Key [KeyMaxLength]byte
 //
 // - implements pool.Pool
 type Pool struct {
-	txs map[Key]tap.Transaction
+	history map[Key]struct{}
+	txs     map[Key]tap.Transaction
+	watcher blockchain.Observable
 }
 
 // NewPool creates a new service.
 func NewPool() Pool {
 	return Pool{
-		txs: make(map[Key]tap.Transaction),
+		history: make(map[Key]struct{}),
+		txs:     make(map[Key]tap.Transaction),
+		watcher: blockchain.NewWatcher(),
 	}
 }
 
@@ -46,7 +51,36 @@ func (s Pool) Add(tx tap.Transaction) error {
 	key := Key{}
 	copy(key[:], id)
 
+	_, found := s.history[key]
+	if found {
+		return xerrors.Errorf("tx %#x already exists", key)
+	}
+
 	s.txs[key] = tx
+
+	s.watcher.Notify(pool.Event{Len: len(s.txs)})
+
+	return nil
+}
+
+// Remove implements pool.Pool. It removes the transaction from the pool if it
+// exists, otherwise it returns an error.
+func (s Pool) Remove(tx tap.Transaction) error {
+	key := Key{}
+	copy(key[:], tx.GetID())
+
+	_, found := s.txs[key]
+	if !found {
+		return xerrors.Errorf("transaction %#x not found", key[:])
+	}
+
+	delete(s.txs, key)
+
+	// Keep an history of transactions to prevent duplicates to be indefinitely
+	// added to the pool.
+	s.history[key] = struct{}{}
+
+	s.watcher.Notify(pool.Event{Len: len(s.txs)})
 
 	return nil
 }
@@ -64,5 +98,23 @@ func (s Pool) GetAll() []tap.Transaction {
 
 // Watch implements pool.Pool.
 func (s Pool) Watch(ctx context.Context) <-chan pool.Event {
-	return nil
+	ch := make(chan pool.Event, 1)
+
+	obs := observer{ch: ch}
+	s.watcher.Add(obs)
+
+	go func() {
+		<-ctx.Done()
+		s.watcher.Remove(obs)
+	}()
+
+	return ch
+}
+
+type observer struct {
+	ch chan pool.Event
+}
+
+func (obs observer) NotifyCallback(evt interface{}) {
+	obs.ch <- evt.(pool.Event)
 }

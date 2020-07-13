@@ -10,9 +10,9 @@ package ordering
 
 import "context"
 
-// Block is the result of an ordering round.
-type Block interface {
-	GetIndex() uint64
+type Proof interface {
+	GetKey() []byte
+	GetValue() []byte
 }
 
 type Event struct {
@@ -26,7 +26,9 @@ type Service interface {
 	// contact the node.
 	Listen() error
 
-	GetBlock(index uint64) (Block, error)
+	Close() error
+
+	GetProof(key []byte) (Proof, error)
 
 	Watch(ctx context.Context) <-chan Event
 }

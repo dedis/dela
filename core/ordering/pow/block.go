@@ -2,7 +2,9 @@ package pow
 
 import (
 	"context"
+	"encoding"
 	"encoding/binary"
+	"math/big"
 
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/crypto"
@@ -15,15 +17,52 @@ type Block struct {
 	index uint64
 	nonce uint64
 	data  validation.Data
+	hash  []byte
+}
+
+type blockTemplate struct {
+	Block
+
+	hashFactory crypto.HashFactory
+	difficulty  int
+}
+
+// BlockOption is the type of options to create a block.
+type BlockOption func(*blockTemplate)
+
+// WithIndex is an option to set the block index.
+func WithIndex(index uint64) BlockOption {
+	return func(b *blockTemplate) {
+		b.index = index
+	}
+}
+
+// WithNonce is an option to set the nonce of a block.
+func WithNonce(nonce uint64) BlockOption {
+	return func(b *blockTemplate) {
+		b.nonce = nonce
+	}
 }
 
 // NewBlock creates a new block.
-func NewBlock(index uint64, nonce uint64, data validation.Data) Block {
-	return Block{
-		index: index,
-		nonce: nonce,
-		data:  data,
+func NewBlock(ctx context.Context, data validation.Data, opts ...BlockOption) (Block, error) {
+	tmpl := blockTemplate{
+		Block: Block{
+			data: data,
+		},
+		hashFactory: crypto.NewSha256Factory(),
 	}
+
+	for _, opt := range opts {
+		opt(&tmpl)
+	}
+
+	err := tmpl.Block.prepare(ctx, tmpl.hashFactory, tmpl.difficulty)
+	if err != nil {
+		return tmpl.Block, err
+	}
+
+	return tmpl.Block, nil
 }
 
 // GetIndex implements ordering.Block. It returns the index of the block.
@@ -33,53 +72,73 @@ func (b Block) GetIndex() uint64 {
 
 // Prepare is the actual proof of work on the block. It will find the nonce to
 // match the difficulty level.
-func (b Block) Prepare(ctx context.Context, fac crypto.HashFactory, diff int) (Block, error) {
+func (b *Block) prepare(ctx context.Context, fac crypto.HashFactory, diff int) error {
 	h := fac.New()
 
-	indexBuf := make([]byte, 8)
-	binary.LittleEndian.PutUint64(indexBuf, b.index)
-	_, err := h.Write(indexBuf)
+	buffer := make([]byte, 8)
+	binary.LittleEndian.PutUint64(buffer, b.index)
+	_, err := h.Write(buffer)
 	if err != nil {
-		return b, xerrors.Errorf("failed to write index: %v", err)
+		return xerrors.Errorf("failed to write index: %v", err)
 	}
 
 	err = b.data.Fingerprint(h)
 	if err != nil {
-		return b, xerrors.Errorf("failed to fingerprint data: %v", err)
+		return xerrors.Errorf("failed to fingerprint data: %v", err)
+	}
+
+	// The state before writing the nonce is saved so it does not need to be
+	// computed all the time.
+	inter, err := h.(encoding.BinaryMarshaler).MarshalBinary()
+	if err != nil {
+		return err
 	}
 
 	var res []byte
+	target := new(big.Int)
+	target.SetBit(target, 256-diff, 1)
 
-	for !checkHash(res, diff) {
+	nonce := b.nonce
+	digest := fac.New()
+
+	for !checkHash(res, target) {
 		// Allow the proof of work to be aborted at any time if the context is
 		// cancelled earlier.
 		if ctx.Err() != nil {
-			return b, xerrors.Errorf("context error: %v", err)
+			return xerrors.Errorf("context error: %v", ctx.Err())
 		}
 
 		// Copy h to get the state before the nonce is written.
-		try := h
-
-		b.nonce++
-
-		nonceBuf := make([]byte, 8)
-		binary.LittleEndian.PutUint64(nonceBuf, b.nonce)
-
-		_, err = try.Write(nonceBuf)
+		err := digest.(encoding.BinaryUnmarshaler).UnmarshalBinary(inter)
 		if err != nil {
-			return b, xerrors.Errorf("failed to write nonce: %v", err)
+			return err
 		}
 
-		res = try.Sum(nil)
+		nonce++
+
+		binary.LittleEndian.PutUint64(buffer, nonce)
+
+		_, err = digest.Write(buffer)
+		if err != nil {
+			return xerrors.Errorf("failed to write nonce: %v", err)
+		}
+
+		res = digest.Sum(nil)
 	}
 
-	block := NewBlock(b.index, b.nonce, b.data)
+	b.nonce = nonce
+	b.hash = res
 
-	return block, nil
+	return nil
 }
 
-func checkHash(hash []byte, diff int) bool {
-	n := binary.LittleEndian.Uint64(hash)
+func checkHash(hash []byte, limit *big.Int) bool {
+	if len(hash) == 0 {
+		return false
+	}
 
-	return n < (^uint64(0) >> diff)
+	value := new(big.Int)
+	value.SetBytes(hash)
+
+	return value.Cmp(limit) == -1
 }

@@ -10,9 +10,12 @@ import (
 type Transaction interface {
 	serde.Fingerprinter
 
+	// GetID returns the unique identifier for the transaction.
 	GetID() []byte
 
+	// GetIdentity returns the identity that created the transaction.
 	GetIdentity() arc.Identity
 
+	// GetArg is a getter for the arguments of the transaction.
 	GetArg(key string) []byte
 }

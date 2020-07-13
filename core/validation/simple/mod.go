@@ -40,8 +40,13 @@ func (s Service) Validate(trie store.ReadWriteTrie, txs []tap.Transaction) (vali
 		}
 	}
 
+	root, err := trie.ComputeRoot()
+	if err != nil {
+		return nil, err
+	}
+
 	data := Data{
-		root: trie.ComputeRoot(),
+		root: root,
 		txs:  results,
 	}
 
