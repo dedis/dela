@@ -13,7 +13,6 @@ import (
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/ledger/arc/darc"
 	"go.dedis.ch/kyber/v3"
-	"go.dedis.ch/kyber/v3/suites"
 	"golang.org/x/xerrors"
 )
 
@@ -24,9 +23,6 @@ const (
 	// ArcRuleRead defines the arc rule to read a value
 	ArcRuleRead = "calypso_read"
 )
-
-// Suite is the Kyber suite for Pedersen.
-var suite = suites.MustFind("Ed25519")
 
 var recordFormats = registry.NewSimpleRegistry()
 

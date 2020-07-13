@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/ed25519"
+	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/ledger/arc/darc"
@@ -62,17 +63,17 @@ func TestMain(t *testing.T) {
 
 func encrypt(pubKey kyber.Point, message []byte) (K, C kyber.Point, err error) {
 	// Embed the message (or as much of it as will fit) into a curve point.
-	M := suite.Point().Embed(message, random.New())
-	max := suite.Point().EmbedLen()
+	M := dkg.Suite.Point().Embed(message, random.New())
+	max := dkg.Suite.Point().EmbedLen()
 	if len(message) > max {
 		return nil, nil, xerrors.Errorf("message too long")
 	}
 
 	// ElGamal-encrypt the point to produce ciphertext (K,C).
-	k := suite.Scalar().Pick(random.New()) // ephemeral private key
-	K = suite.Point().Mul(k, nil)          // ephemeral DH public key
-	S := suite.Point().Mul(k, pubKey)      // ephemeral DH shared secret
-	C = S.Add(S, M)                        // message blinded with secret
+	k := dkg.Suite.Scalar().Pick(random.New()) // ephemeral private key
+	K = dkg.Suite.Point().Mul(k, nil)          // ephemeral DH public key
+	S := dkg.Suite.Point().Mul(k, pubKey)      // ephemeral DH shared secret
+	C = S.Add(S, M)                            // message blinded with secret
 
 	return K, C, nil
 }
@@ -87,8 +88,8 @@ type fakeActor struct {
 }
 
 func (f *fakeActor) Setup(ca crypto.CollectiveAuthority, threshold int) (kyber.Point, error) {
-	privKey := suite.Scalar().Pick(suite.RandomStream())
-	pubKey := suite.Point().Mul(privKey, nil)
+	privKey := dkg.Suite.Scalar().Pick(dkg.Suite.RandomStream())
+	pubKey := dkg.Suite.Point().Mul(privKey, nil)
 	f.privKey = privKey
 	f.pubKey = pubKey
 
@@ -109,9 +110,9 @@ func (f fakeActor) Encrypt(message []byte) (K, C kyber.Point, remainder []byte, 
 }
 
 func (f fakeActor) Decrypt(K, C kyber.Point) ([]byte, error) {
-	S := suite.Point().Mul(f.privKey, K) // regenerate shared secret
-	M := suite.Point().Sub(C, S)         // use to un-blind the message
-	message, err := M.Data()             // extract the embedded data
+	S := dkg.Suite.Point().Mul(f.privKey, K) // regenerate shared secret
+	M := dkg.Suite.Point().Sub(C, S)         // use to un-blind the message
+	message, err := M.Data()                 // extract the embedded data
 	if err != nil {
 		return nil, xerrors.Errorf("failed to extract embedded data: %v", err)
 	}

@@ -10,14 +10,10 @@ import (
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/share"
-	"go.dedis.ch/kyber/v3/suites"
 	"go.dedis.ch/kyber/v3/util/random"
 	"golang.org/x/net/context"
 	"golang.org/x/xerrors"
 )
-
-// Suite is the Kyber suite for Pedersen.
-var suite = suites.MustFind("Ed25519")
 
 // Pedersen allows one to initialise a new DKG protocol.
 //
@@ -157,17 +153,17 @@ func (a *Actor) Encrypt(message []byte) (K, C kyber.Point, remainder []byte,
 	}
 
 	// Embed the message (or as much of it as will fit) into a curve point.
-	M := suite.Point().Embed(message, random.New())
-	max := suite.Point().EmbedLen()
+	M := dkg.Suite.Point().Embed(message, random.New())
+	max := dkg.Suite.Point().EmbedLen()
 	if max > len(message) {
 		max = len(message)
 	}
 	remainder = message[max:]
 	// ElGamal-encrypt the point to produce ciphertext (K,C).
-	k := suite.Scalar().Pick(random.New())             // ephemeral private key
-	K = suite.Point().Mul(k, nil)                      // ephemeral DH public key
-	S := suite.Point().Mul(k, a.startRes.GetDistKey()) // ephemeral DH shared secret
-	C = S.Add(S, M)                                    // message blinded with secret
+	k := dkg.Suite.Scalar().Pick(random.New())             // ephemeral private key
+	K = dkg.Suite.Point().Mul(k, nil)                      // ephemeral DH public key
+	S := dkg.Suite.Point().Mul(k, a.startRes.GetDistKey()) // ephemeral DH shared secret
+	C = S.Add(S, M)                                        // message blinded with secret
 
 	return K, C, remainder, nil
 }
@@ -226,7 +222,7 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 		}
 	}
 
-	res, err := share.RecoverCommit(suite, pubShares, len(addrs), len(addrs))
+	res, err := share.RecoverCommit(dkg.Suite, pubShares, len(addrs), len(addrs))
 	if err != nil {
 		return []byte{}, xerrors.Errorf("failed to recover commit: %v", err)
 	}

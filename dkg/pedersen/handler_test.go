@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/dkg/pedersen/types"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
@@ -23,10 +24,10 @@ func TestHandler_Stream(t *testing.T) {
 	err = h.Stream(fake.Sender{}, &receiver)
 	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")
 
-	h.startRes.distrKey = suite.Point()
+	h.startRes.distrKey = dkg.Suite.Point()
 	h.startRes.participants = []mino.Address{fake.NewAddress(0)}
-	h.privShare = &share.PriShare{I: 0, V: suite.Scalar()}
-	receiver = fake.NewReceiver(types.DecryptRequest{C: suite.Point()})
+	h.privShare = &share.PriShare{I: 0, V: dkg.Suite.Scalar()}
+	receiver = fake.NewReceiver(types.DecryptRequest{C: dkg.Suite.Point()})
 	err = h.Stream(fake.NewBadSender(), &receiver)
 	require.EqualError(t, err, "got an error while sending the decrypt reply: fake error")
 
@@ -36,8 +37,8 @@ func TestHandler_Stream(t *testing.T) {
 }
 
 func TestHandler_Start(t *testing.T) {
-	privKey := suite.Scalar().Pick(suite.RandomStream())
-	pubKey := suite.Point().Mul(privKey, nil)
+	privKey := dkg.Suite.Scalar().Pick(dkg.Suite.RandomStream())
+	pubKey := dkg.Suite.Point().Mul(privKey, nil)
 
 	h := Handler{
 		startRes: &state{},
@@ -54,7 +55,7 @@ func TestHandler_Start(t *testing.T) {
 	start = types.NewStart(
 		2,
 		[]mino.Address{fake.NewAddress(0), fake.NewAddress(1)},
-		[]kyber.Point{pubKey, suite.Point()},
+		[]kyber.Point{pubKey, dkg.Suite.Point()},
 	)
 	receiver := fake.NewBadReceiver()
 	err = h.start(start, []types.Deal{}, nil, fake.Sender{}, &receiver)
@@ -73,10 +74,10 @@ func TestHandler_Start(t *testing.T) {
 }
 
 func TestHandler_Certify(t *testing.T) {
-	privKey := suite.Scalar().Pick(suite.RandomStream())
-	pubKey := suite.Point().Mul(privKey, nil)
+	privKey := dkg.Suite.Scalar().Pick(dkg.Suite.RandomStream())
+	pubKey := dkg.Suite.Point().Mul(privKey, nil)
 
-	dkg, err := pedersen.NewDistKeyGenerator(suite, privKey, []kyber.Point{pubKey, suite.Point()}, 2)
+	dkg, err := pedersen.NewDistKeyGenerator(dkg.Suite, privKey, []kyber.Point{pubKey, dkg.Suite.Point()}, 2)
 	require.NoError(t, err)
 
 	h := Handler{
@@ -96,15 +97,15 @@ func TestHandler_Certify(t *testing.T) {
 }
 
 func TestHandler_HandleDeal(t *testing.T) {
-	privKey1 := suite.Scalar().Pick(suite.RandomStream())
-	pubKey1 := suite.Point().Mul(privKey1, nil)
-	privKey2 := suite.Scalar().Pick(suite.RandomStream())
-	pubKey2 := suite.Point().Mul(privKey2, nil)
+	privKey1 := dkg.Suite.Scalar().Pick(dkg.Suite.RandomStream())
+	pubKey1 := dkg.Suite.Point().Mul(privKey1, nil)
+	privKey2 := dkg.Suite.Scalar().Pick(dkg.Suite.RandomStream())
+	pubKey2 := dkg.Suite.Point().Mul(privKey2, nil)
 
-	dkg1, err := pedersen.NewDistKeyGenerator(suite, privKey1, []kyber.Point{pubKey1, pubKey2}, 2)
+	dkg1, err := pedersen.NewDistKeyGenerator(dkg.Suite, privKey1, []kyber.Point{pubKey1, pubKey2}, 2)
 	require.NoError(t, err)
 
-	dkg2, err := pedersen.NewDistKeyGenerator(suite, privKey2, []kyber.Point{pubKey1, pubKey2}, 2)
+	dkg2, err := pedersen.NewDistKeyGenerator(dkg.Suite, privKey2, []kyber.Point{pubKey1, pubKey2}, 2)
 	require.NoError(t, err)
 
 	deals, err := dkg2.Deals()
@@ -138,15 +139,15 @@ func TestHandler_HandleDeal(t *testing.T) {
 // Utility functions
 
 func getCertified(t *testing.T) *pedersen.DistKeyGenerator {
-	privKey1 := suite.Scalar().Pick(suite.RandomStream())
-	pubKey1 := suite.Point().Mul(privKey1, nil)
+	privKey1 := dkg.Suite.Scalar().Pick(dkg.Suite.RandomStream())
+	pubKey1 := dkg.Suite.Point().Mul(privKey1, nil)
 
-	privKey2 := suite.Scalar().Pick(suite.RandomStream())
-	pubKey2 := suite.Point().Mul(privKey2, nil)
+	privKey2 := dkg.Suite.Scalar().Pick(dkg.Suite.RandomStream())
+	pubKey2 := dkg.Suite.Point().Mul(privKey2, nil)
 
-	dkg1, err := pedersen.NewDistKeyGenerator(suite, privKey1, []kyber.Point{pubKey1, pubKey2}, 2)
+	dkg1, err := pedersen.NewDistKeyGenerator(dkg.Suite, privKey1, []kyber.Point{pubKey1, pubKey2}, 2)
 	require.NoError(t, err)
-	dkg2, err := pedersen.NewDistKeyGenerator(suite, privKey2, []kyber.Point{pubKey1, pubKey2}, 2)
+	dkg2, err := pedersen.NewDistKeyGenerator(dkg.Suite, privKey2, []kyber.Point{pubKey1, pubKey2}, 2)
 	require.NoError(t, err)
 
 	deals1, err := dkg1.Deals()

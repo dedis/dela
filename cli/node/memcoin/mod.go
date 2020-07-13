@@ -6,13 +6,14 @@ import (
 
 	calypso "go.dedis.ch/dela/calypso/controller"
 	"go.dedis.ch/dela/cli/node"
+	pedersen "go.dedis.ch/dela/dkg/pedersen/controller"
 	byzcoin "go.dedis.ch/dela/ledger/byzcoin/controller"
 	mino "go.dedis.ch/dela/mino/minogrpc/controller"
 )
 
 func main() {
 	builder := node.NewBuilder(mino.NewMinimal(), byzcoin.NewMinimal(),
-		calypso.NewMinimal())
+		pedersen.NewMinimal(), calypso.NewMinimal())
 
 	app := builder.Build()
 

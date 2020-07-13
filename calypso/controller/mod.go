@@ -4,20 +4,21 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 
 	"go.dedis.ch/dela/calypso"
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/crypto/ed25519"
-	"go.dedis.ch/dela/dkg/pedersen"
+	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/kyber/v3/suites"
 	"golang.org/x/xerrors"
 )
 
-// Suite is the Kyber suite for Pedersen.
-var suite = suites.MustFind("Ed25519")
+// formatter defines how messages are marshalled/unmarshalled for the deamon.
+// Using this variable allows us to gain flexibility for the tests.
+var formatter formatterI = jsonFormatter{}
 
 // NewMinimal returns a new minimal initializer
 func NewMinimal() node.Initializer {
@@ -63,16 +64,11 @@ func (m minimal) SetCommands(builder node.Builder) {
 // and then use it to create the Calypso, which is then injected as a
 // dependency. We will need this dependency in the setup phase.
 func (m minimal) Inject(ctx cli.Flags, inj node.Injector) error {
-	var no mino.Mino
-	err := inj.Resolve(&no)
+	var dkg dkg.DKG
+	err := inj.Resolve(&dkg)
 	if err != nil {
-		return xerrors.Errorf("failed to resolve mino: %v", err)
+		return xerrors.Errorf("failed to resolve dkg: %v", err)
 	}
-
-	privkey := suite.Scalar().Pick(suite.RandomStream())
-	pubkey := suite.Point().Mul(privkey, nil)
-
-	dkg := pedersen.NewPedersen(privkey, no)
 
 	actor, err := dkg.Listen()
 	if err != nil {
@@ -80,15 +76,6 @@ func (m minimal) Inject(ctx cli.Flags, inj node.Injector) error {
 	}
 
 	caly := calypso.NewCalypso(actor)
-
-	pubkeyBuf, err := pubkey.MarshalBinary()
-	if err != nil {
-		return xerrors.Errorf("failed to encode pubkey: %v", err)
-	}
-
-	pubkeyHex := hex.EncodeToString(pubkeyBuf)
-
-	fmt.Printf("The Calypso hex pub key is: %s\n", pubkeyHex)
 
 	inj.Inject(caly)
 
@@ -114,6 +101,9 @@ func (a setupAction) GenerateRequest(ctx cli.Flags) ([]byte, error) {
 	}
 
 	threshold := ctx.Int("threshold")
+	if threshold == 0 || threshold < 0 {
+		return nil, xerrors.Errorf("threshold wrong or not provided: %d", threshold)
+	}
 
 	req := executeRequest{
 		Threshold: threshold,
@@ -127,7 +117,7 @@ func (a setupAction) GenerateRequest(ctx cli.Flags) ([]byte, error) {
 			len(req.Pubkeys), len(req.Addrs), req)
 	}
 
-	buffer, err := json.Marshal(req)
+	buffer, err := formatter.Marshal(req)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to marshal the request: %v", err)
 	}
@@ -135,6 +125,7 @@ func (a setupAction) GenerateRequest(ctx cli.Flags) ([]byte, error) {
 	return buffer, nil
 }
 
+// Execute implements node.ActionTemplate
 func (a setupAction) Execute(req node.Context) error {
 	var no mino.Mino
 	err := req.Injector.Resolve(&no)
@@ -148,10 +139,8 @@ func (a setupAction) Execute(req node.Context) error {
 		return xerrors.Errorf("failed to resolve calypso: %v", err)
 	}
 
-	dec := json.NewDecoder(req.In)
-
 	input := executeRequest{}
-	err = dec.Decode(&input)
+	err = formatter.Decode(&input, req.In)
 	if err != nil {
 		return xerrors.Errorf("failed to get the request: %v", err)
 	}
@@ -159,7 +148,7 @@ func (a setupAction) Execute(req node.Context) error {
 	pubkeys := make([]ed25519.PublicKey, len(input.Pubkeys))
 	addrs := make([]mino.Address, len(input.Addrs))
 	for i, keyHex := range input.Pubkeys {
-		point := suite.Point()
+		point := dkg.Suite.Point()
 
 		keyBuf, err := hex.DecodeString(keyHex)
 		if err != nil {
@@ -191,7 +180,7 @@ func (a setupAction) Execute(req node.Context) error {
 	}
 
 	fmt.Printf("Calypso has been successfully setup. "+
-		"Here is the Calypso pub key: %s\n", hex.EncodeToString(pubkeyBuf))
+		"Here is the Calypso shared pub key: %s\n", hex.EncodeToString(pubkeyBuf))
 
 	return nil
 }
@@ -202,4 +191,28 @@ type executeRequest struct {
 	// public keys encoded as hex strings
 	Pubkeys []string
 	Addrs   []string
+}
+
+// formatterI is an interface that defines the primitives needed to pass
+// messages to the deamon
+type formatterI interface {
+	Marshal(interface{}) ([]byte, error)
+	Decode(interface{}, io.Reader) error
+}
+
+// jsonFormatter is a formatter using json
+//
+// - implements formatterI
+type jsonFormatter struct {
+}
+
+// Marshal implements formatterI
+func (f jsonFormatter) Marshal(i interface{}) ([]byte, error) {
+	return json.Marshal(i)
+}
+
+// Decode implements formatterI
+func (f jsonFormatter) Decode(i interface{}, reader io.Reader) error {
+	dec := json.NewDecoder(reader)
+	return dec.Decode(i)
 }
