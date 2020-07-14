@@ -29,7 +29,7 @@ func main() {
 		mino.NewMinimal(),
 		byzcoin.NewMinimal(),
 		pedersen.NewMinimal(),
-		// calypso.NewMinimal("../../../calypso/controller"),
+		// calypso.NewMinimal(),
 	)
 
 	app := builder.Build()
