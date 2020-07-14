@@ -17,11 +17,11 @@ import (
 )
 
 func TestPedersen_Listen(t *testing.T) {
-	pedersen := NewPedersen(suite.Scalar(), fake.NewBadMino())
+	pedersen := NewPedersen(dkg.Suite.Scalar(), fake.NewBadMino())
 	_, err := pedersen.Listen()
 	require.EqualError(t, err, "failed to create RPC: fake error")
 
-	pedersen = NewPedersen(suite.Scalar(), fake.Mino{})
+	pedersen = NewPedersen(dkg.Suite.Scalar(), fake.Mino{})
 	actor, err := pedersen.Listen()
 	require.NoError(t, err)
 
@@ -61,8 +61,8 @@ func TestPedersen_Setup(t *testing.T) {
 
 	rpc = fake.NewStreamRPC(fake.Receiver{
 		Msg: []serde.Message{
-			types.NewStartDone(suite.Point()),
-			types.NewStartDone(suite.Point().Pick(suite.RandomStream())),
+			types.NewStartDone(dkg.Suite.Point()),
+			types.NewStartDone(dkg.Suite.Point().Pick(dkg.Suite.RandomStream())),
 		},
 	}, fake.Sender{})
 	actor.rpc = rpc
@@ -80,7 +80,7 @@ func TestPedersen_GetPublicKey(t *testing.T) {
 	_, err := actor.GetPublicKey()
 	require.EqualError(t, err, "DKG has not been initialized")
 
-	actor.startRes = &state{participants: []mino.Address{fake.NewAddress(0)}, distrKey: suite.Point()}
+	actor.startRes = &state{participants: []mino.Address{fake.NewAddress(0)}, distrKey: dkg.Suite.Point()}
 	_, err = actor.GetPublicKey()
 	require.NoError(t, err)
 }
@@ -88,35 +88,35 @@ func TestPedersen_GetPublicKey(t *testing.T) {
 func TestPedersen_Decrypt(t *testing.T) {
 	actor := Actor{
 		rpc:      fake.NewBadRPC(),
-		startRes: &state{participants: []mino.Address{fake.NewAddress(0)}, distrKey: suite.Point()},
+		startRes: &state{participants: []mino.Address{fake.NewAddress(0)}, distrKey: dkg.Suite.Point()},
 	}
 
-	_, err := actor.Decrypt(suite.Point(), suite.Point())
+	_, err := actor.Decrypt(dkg.Suite.Point(), dkg.Suite.Point())
 	require.NoError(t, err)
 
 	rpc := fake.NewStreamRPC(fake.NewBadReceiver(), fake.NewBadSender())
 	actor.rpc = rpc
 
-	_, err = actor.Decrypt(suite.Point(), suite.Point())
+	_, err = actor.Decrypt(dkg.Suite.Point(), dkg.Suite.Point())
 	require.EqualError(t, err, "failed to receive from '%!s(<nil>)': fake error")
 
 	rpc = fake.NewStreamRPC(fake.Receiver{}, fake.Sender{})
 	actor.rpc = rpc
 
-	_, err = actor.Decrypt(suite.Point(), suite.Point())
+	_, err = actor.Decrypt(dkg.Suite.Point(), dkg.Suite.Point())
 	require.EqualError(t, err, "got unexpected reply, expected a decrypt reply but got: <nil>")
 
-	rpc = fake.NewStreamRPC(fake.NewReceiver(types.DecryptReply{I: -1, V: suite.Point()}), fake.Sender{})
+	rpc = fake.NewStreamRPC(fake.NewReceiver(types.DecryptReply{I: -1, V: dkg.Suite.Point()}), fake.Sender{})
 	actor.rpc = rpc
 
-	_, err = actor.Decrypt(suite.Point(), suite.Point())
+	_, err = actor.Decrypt(dkg.Suite.Point(), dkg.Suite.Point())
 	require.EqualError(t, err, "failed to recover commit: share: not enough "+
 		"good public shares to reconstruct secret commitment")
 
-	rpc = fake.NewStreamRPC(fake.NewReceiver(types.DecryptReply{I: 1, V: suite.Point()}), fake.Sender{})
+	rpc = fake.NewStreamRPC(fake.NewReceiver(types.DecryptReply{I: 1, V: dkg.Suite.Point()}), fake.Sender{})
 	actor.rpc = rpc
 
-	_, err = actor.Decrypt(suite.Point(), suite.Point())
+	_, err = actor.Decrypt(dkg.Suite.Point(), dkg.Suite.Point())
 	require.NoError(t, err)
 }
 
