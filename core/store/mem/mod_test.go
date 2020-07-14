@@ -63,6 +63,22 @@ func TestTrie_GetRoot(t *testing.T) {
 	require.Equal(t, []byte{1}, trie.GetRoot())
 }
 
+func TestTrie_GetShare(t *testing.T) {
+	trie := NewTrie()
+	trie.store["B"] = item{value: []byte{1}}
+	trie.root = []byte{3}
+
+	share, err := trie.GetShare([]byte("A"))
+	require.NoError(t, err)
+	require.Nil(t, share.GetValue())
+
+	share, err = trie.GetShare([]byte("B"))
+	require.NoError(t, err)
+	require.Equal(t, []byte("B"), share.GetKey())
+	require.Equal(t, []byte{1}, share.GetValue())
+	require.Equal(t, []byte{3}, share.GetRoot())
+}
+
 func TestTrie_Fingerprint(t *testing.T) {
 	trie := NewTrie()
 	trie.store["A"] = item{value: []byte{1}}

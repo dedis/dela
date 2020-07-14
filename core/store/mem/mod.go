@@ -52,11 +52,8 @@ func (t *Trie) Get(key []byte) ([]byte, error) {
 		return nil, nil
 	}
 
-	val, err := t.parent.Get(key)
-	if err != nil {
-		// The error is wrapped to avoid big recursive errors.
-		return nil, err
-	}
+	// No error for the memory store, it's either a nil or a non-nil value.
+	val, _ := t.parent.Get(key)
 
 	return val, nil
 }
@@ -89,10 +86,8 @@ func (t *Trie) GetRoot() []byte {
 
 // GetShare implements store.Store.
 func (t *Trie) GetShare(key []byte) (store.Share, error) {
-	value, err := t.Get(key)
-	if err != nil {
-		return nil, err
-	}
+	// In-memory store does not trigger any error.
+	value, _ := t.Get(key)
 
 	return newShare(key, value, t.root), nil
 }

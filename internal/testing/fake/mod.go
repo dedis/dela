@@ -779,9 +779,32 @@ func (h *Hash) Write(in []byte) (int, error) {
 	return 0, h.err
 }
 
+// Size implements hash.Hash.
+func (h *Hash) Size() int {
+	return 32
+}
+
 // Sum implements hash.Hash.
 func (h *Hash) Sum([]byte) []byte {
-	return []byte{}
+	return make([]byte, 32)
+}
+
+// MarshalBinary implements encoding.BinaryMarshaler.
+func (h *Hash) MarshalBinary() ([]byte, error) {
+	if h.delay > 0 {
+		h.delay--
+		return []byte{}, nil
+	}
+	return []byte{}, h.err
+}
+
+// UnmarshalBinary implements encodi8ng.BinaryUnmarshaler.
+func (h *Hash) UnmarshalBinary([]byte) error {
+	if h.delay > 0 {
+		h.delay--
+		return nil
+	}
+	return h.err
 }
 
 // HashFactory is a fake implementation of crypto.HashFactory.

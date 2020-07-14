@@ -1,7 +1,13 @@
+// Package pow implements a Proof-of-Work ordering service. This implementation
+// very naive and only support one single node. It demonstrates a permissionless
+// blockchain.
+//
+// TODO: later improve or remove
 package pow
 
 import (
 	"context"
+	"sync"
 
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/blockchain"
@@ -11,6 +17,7 @@ import (
 	"go.dedis.ch/dela/core/tap/pool"
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/crypto"
+	"golang.org/x/xerrors"
 )
 
 type epoch struct {
@@ -27,9 +34,10 @@ type Service struct {
 	validation  validation.Service
 	epochs      []epoch
 	hashFactory crypto.HashFactory
-	difficulty  int
+	difficulty  uint
 	watcher     blockchain.Observable
 	closing     chan struct{}
+	closed      sync.WaitGroup
 }
 
 // NewService creates a new service.
@@ -41,15 +49,22 @@ func NewService(pool pool.Pool, val validation.Service, trie store.Store) *Servi
 		hashFactory: crypto.NewSha256Factory(),
 		difficulty:  1,
 		watcher:     blockchain.NewWatcher(),
-		closing:     make(chan struct{}),
 	}
 }
 
 // Listen implements ordering.Service.
 func (s *Service) Listen() error {
-	// TODO: listen for incoming mined blocks.
+	if s.closing != nil {
+		return xerrors.New("service already started")
+	}
+
+	s.closing = make(chan struct{})
+	s.closed = sync.WaitGroup{}
+	s.closed.Add(1)
 
 	go func() {
+		defer s.closed.Done()
+
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -57,34 +72,23 @@ func (s *Service) Listen() error {
 		// transactions at first and then try to create a new block. If another
 		// peer successfully finds a correct block, it will abort and restart.
 		for {
-			txs := s.waitTxs(ctx)
+			errCh := make(chan error, 1)
+			go func() {
+				errCh <- s.createBlock(ctx)
+			}()
 
 			select {
 			case <-s.closing:
+				// This will cancel the context thus stopping the go routine.
 				return
-			case res := <-s.createBlock(ctx, txs):
-				if res.err != nil {
+			case err := <-errCh:
+				if err != nil {
 					// Something went wrong when creating the block. The main
 					// loop is stopped as this is a critical error.
-					dela.Logger.Err(res.err).Msg("failed to prepare block")
+					dela.Logger.Err(err).Msg("failed to create block")
 					return
 				}
 
-				s.epochs = append(s.epochs, epoch{
-					block: res.block,
-					store: res.trie,
-				})
-
-				for _, txres := range res.block.data.GetTransactionResults() {
-					err := s.pool.Remove(txres.GetTransaction())
-					if err != nil {
-						dela.Logger.Warn().Err(err).Msg("tx not in pool")
-					}
-				}
-
-				s.watcher.Notify(ordering.Event{Index: res.block.index})
-
-				dela.Logger.Info().Uint64("index", res.block.index).Msg("block append")
 			}
 		}
 	}()
@@ -94,7 +98,15 @@ func (s *Service) Listen() error {
 
 // Close implements ordering.Service.
 func (s *Service) Close() error {
+	if s.closing == nil {
+		return xerrors.New("service not started")
+	}
+
 	close(s.closing)
+	s.closed.Wait()
+
+	s.closing = nil
+
 	return nil
 }
 
@@ -104,7 +116,7 @@ func (s *Service) GetProof(key []byte) (ordering.Proof, error) {
 
 	share, err := last.store.GetShare(key)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't read share: %v", err)
 	}
 
 	blocks := make([]Block, len(s.epochs))
@@ -114,7 +126,7 @@ func (s *Service) GetProof(key []byte) (ordering.Proof, error) {
 
 	pr, err := NewProof(blocks, share)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't create proof: %v", err)
 	}
 
 	return pr, nil
@@ -135,14 +147,66 @@ func (s *Service) Watch(ctx context.Context) <-chan ordering.Event {
 	return events
 }
 
+func (s *Service) createBlock(ctx context.Context) error {
+	// Wait for at least one transaction before creating a block.
+	txs := s.waitTxs(ctx)
+	if ctx.Err() != nil {
+		// Context is closed so we don't proceed in the block creation.
+		return nil
+	}
+
+	latestEpoch := s.epochs[len(s.epochs)-1]
+
+	var data validation.Data
+	newTrie, err := latestEpoch.store.Stage(func(rwt store.ReadWriteTrie) error {
+		var err error
+		data, err = s.validation.Validate(rwt, txs)
+		if err != nil {
+			return xerrors.Errorf("failed to validate: %v", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return xerrors.Errorf("couldn't stage store: %v", err)
+	}
+
+	block, err := NewBlock(
+		ctx,
+		data,
+		WithIndex(uint64(len(s.epochs))),
+		WithRoot(newTrie.GetRoot()),
+		WithDifficulty(s.difficulty),
+	)
+	if err != nil {
+		return xerrors.Errorf("couldn't create block: %v", err)
+	}
+
+	s.epochs = append(s.epochs, epoch{
+		block: block,
+		store: newTrie,
+	})
+
+	for _, txres := range block.data.GetTransactionResults() {
+		s.pool.Remove(txres.GetTransaction())
+	}
+
+	s.watcher.Notify(ordering.Event{Index: block.index})
+
+	dela.Logger.Trace().Uint64("index", block.index).Msg("block append")
+
+	return nil
+}
+
 // waitTxs is a procedure to wait for transactions from the pool. It will wait
 // the provided minimum amount of time before waiting for at least one
 // transaction.
 func (s *Service) waitTxs(ctx context.Context) []tap.Transaction {
-	ctx, cancel := context.WithCancel(ctx)
+	watchCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	evts := s.pool.Watch(ctx)
+	evts := s.pool.Watch(watchCtx)
 
 	if s.pool.Len() > 0 {
 		return s.pool.GetAll()
@@ -158,47 +222,4 @@ func (s *Service) waitTxs(ctx context.Context) []tap.Transaction {
 			}
 		}
 	}
-}
-
-type blockResult struct {
-	block Block
-	trie  store.Store
-	err   error
-}
-
-func (s *Service) createBlock(ctx context.Context, txs []tap.Transaction) <-chan blockResult {
-	ch := make(chan blockResult, 1)
-
-	latestEpoch := s.epochs[len(s.epochs)-1]
-
-	go func() {
-		var data validation.Data
-
-		newTrie, err := latestEpoch.store.Stage(func(rwt store.ReadWriteTrie) error {
-			var err error
-			data, err = s.validation.Validate(rwt, txs)
-			if err != nil {
-				return err
-			}
-
-			return nil
-		})
-
-		if err != nil {
-			ch <- blockResult{err: err}
-			return
-		}
-
-		block, err := NewBlock(ctx, data, WithIndex(uint64(len(s.epochs))), WithRoot(newTrie.GetRoot()))
-
-		// The result will contain either a valid block and trie, or the error
-		// that prevent the creation.
-		ch <- blockResult{
-			block: block,
-			trie:  newTrie,
-			err:   err,
-		}
-	}()
-
-	return ch
 }

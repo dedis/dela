@@ -11,6 +11,9 @@ import (
 	"golang.org/x/xerrors"
 )
 
+// Difficulty is the default difficulty.
+const Difficulty = 1
+
 // Block is a representation of a batch of transactions for a Proof-of-Work
 // consensus. Each block has a fingerprint as a proof of correctness.
 type Block struct {
@@ -25,7 +28,7 @@ type blockTemplate struct {
 	Block
 
 	hashFactory crypto.HashFactory
-	difficulty  int
+	difficulty  uint
 }
 
 // BlockOption is the type of options to create a block.
@@ -33,22 +36,30 @@ type BlockOption func(*blockTemplate)
 
 // WithIndex is an option to set the block index.
 func WithIndex(index uint64) BlockOption {
-	return func(b *blockTemplate) {
-		b.index = index
+	return func(tmpl *blockTemplate) {
+		tmpl.index = index
 	}
 }
 
 // WithNonce is an option to set the nonce of a block.
 func WithNonce(nonce uint64) BlockOption {
-	return func(b *blockTemplate) {
-		b.nonce = nonce
+	return func(tmpl *blockTemplate) {
+		tmpl.nonce = nonce
+		tmpl.difficulty = 0
 	}
 }
 
 // WithRoot is an option to set the root of a block.
 func WithRoot(root []byte) BlockOption {
-	return func(b *blockTemplate) {
-		b.root = root
+	return func(tmpl *blockTemplate) {
+		tmpl.root = root
+	}
+}
+
+// WithDifficulty is an option to set the difficulty of the proof of work.
+func WithDifficulty(diff uint) BlockOption {
+	return func(tmpl *blockTemplate) {
+		tmpl.difficulty = diff
 	}
 }
 
@@ -59,6 +70,7 @@ func NewBlock(ctx context.Context, data validation.Data, opts ...BlockOption) (B
 			data: data,
 		},
 		hashFactory: crypto.NewSha256Factory(),
+		difficulty:  Difficulty,
 	}
 
 	for _, opt := range opts {
@@ -67,20 +79,15 @@ func NewBlock(ctx context.Context, data validation.Data, opts ...BlockOption) (B
 
 	err := tmpl.Block.prepare(ctx, tmpl.hashFactory, tmpl.difficulty)
 	if err != nil {
-		return tmpl.Block, err
+		return tmpl.Block, xerrors.Errorf("couldn't prepare block: %v", err)
 	}
 
 	return tmpl.Block, nil
 }
 
-// GetIndex implements ordering.Block. It returns the index of the block.
-func (b Block) GetIndex() uint64 {
-	return b.index
-}
-
 // Prepare is the actual proof of work on the block. It will find the nonce to
 // match the difficulty level.
-func (b *Block) prepare(ctx context.Context, fac crypto.HashFactory, diff int) error {
+func (b *Block) prepare(ctx context.Context, fac crypto.HashFactory, diff uint) error {
 	h := fac.New()
 
 	buffer := make([]byte, 8)
@@ -104,17 +111,19 @@ func (b *Block) prepare(ctx context.Context, fac crypto.HashFactory, diff int) e
 	// computed all the time.
 	inter, err := h.(encoding.BinaryMarshaler).MarshalBinary()
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't marshal digest: %v", err)
 	}
 
-	var res []byte
+	bitstring := make([]byte, h.Size())
+	for i := range bitstring {
+		bitstring[i] = 0xff
+	}
+
 	target := new(big.Int)
-	target.SetBit(target, 256-diff, 1)
+	target.SetBytes(bitstring)
+	target.Rsh(target, diff)
 
-	nonce := b.nonce
-	digest := fac.New()
-
-	for !checkHash(res, target) {
+	for {
 		// Allow the proof of work to be aborted at any time if the context is
 		// cancelled earlier.
 		if ctx.Err() != nil {
@@ -122,34 +131,30 @@ func (b *Block) prepare(ctx context.Context, fac crypto.HashFactory, diff int) e
 		}
 
 		// Copy h to get the state before the nonce is written.
-		err := digest.(encoding.BinaryUnmarshaler).UnmarshalBinary(inter)
+		err := h.(encoding.BinaryUnmarshaler).UnmarshalBinary(inter)
 		if err != nil {
-			return err
+			return xerrors.Errorf("couldn't unmarshal digest: %v", err)
 		}
 
-		nonce++
-
-		binary.LittleEndian.PutUint64(buffer, nonce)
-
-		_, err = digest.Write(buffer)
+		binary.LittleEndian.PutUint64(buffer, b.nonce)
+		_, err = h.Write(buffer)
 		if err != nil {
 			return xerrors.Errorf("failed to write nonce: %v", err)
 		}
 
-		res = digest.Sum(nil)
+		res := h.Sum(nil)
+		// If no difficulty is set, the provided nonce defines the hash,
+		// otherwise it looks for a hash that matches the difficulty.
+		if diff == 0 || matchDifficulty(res, target) {
+			b.hash = res
+			return nil
+		}
+
+		b.nonce++
 	}
-
-	b.nonce = nonce
-	b.hash = res
-
-	return nil
 }
 
-func checkHash(hash []byte, limit *big.Int) bool {
-	if len(hash) == 0 {
-		return false
-	}
-
+func matchDifficulty(hash []byte, limit *big.Int) bool {
 	value := new(big.Int)
 	value.SetBytes(hash)
 

@@ -12,12 +12,14 @@ import (
 	"go.dedis.ch/dela/core/tap"
 	txn "go.dedis.ch/dela/core/tap/anon"
 	pool "go.dedis.ch/dela/core/tap/pool/mem"
-	validation "go.dedis.ch/dela/core/validation/simple"
+	"go.dedis.ch/dela/core/validation"
+	val "go.dedis.ch/dela/core/validation/simple"
+	"golang.org/x/xerrors"
 )
 
 func TestService_Basic(t *testing.T) {
 	pool := pool.NewPool()
-	srvc := NewService(pool, validation.NewService(baremetal.NewExecution(testExec{})), trie.NewTrie())
+	srvc := NewService(pool, val.NewService(baremetal.NewExecution(testExec{})), trie.NewTrie())
 
 	// 1. Start the ordering service.
 	require.NoError(t, srvc.Listen())
@@ -48,6 +50,49 @@ func TestService_Basic(t *testing.T) {
 	require.Equal(t, uint64(2), evt.Index)
 }
 
+func TestService_Listen(t *testing.T) {
+	pool := pool.NewPool()
+	srvc := NewService(pool, val.NewService(baremetal.NewExecution(testExec{})), trie.NewTrie())
+
+	err := srvc.Listen()
+	require.NoError(t, err)
+
+	err = srvc.Listen()
+	require.EqualError(t, err, "service already started")
+
+	err = srvc.Close()
+	require.NoError(t, err)
+
+	err = srvc.Close()
+	require.EqualError(t, err, "service not started")
+
+	pool.Add(makeTx(t, 0))
+	srvc = NewService(pool, badValidation{}, trie.NewTrie())
+	err = srvc.Listen()
+	require.NoError(t, err)
+
+	srvc.closed.Wait()
+}
+
+func TestService_GetProof(t *testing.T) {
+	srvc := &Service{
+		epochs: []epoch{{store: trie.NewTrie()}},
+	}
+
+	pr, err := srvc.GetProof([]byte("A"))
+	require.NoError(t, err)
+	require.Equal(t, []byte("A"), pr.GetKey())
+
+	srvc.epochs[0].block.root = []byte{1}
+	_, err = srvc.GetProof([]byte("A"))
+	require.EqualError(t, err,
+		"couldn't create proof: mismatch block and share store root 0x01 != ")
+
+	srvc.epochs[0].store = badStore{}
+	_, err = srvc.GetProof([]byte("A"))
+	require.EqualError(t, err, "couldn't read share: oops")
+}
+
 // -----------------------------------------------------------------------------
 // Utility functions
 
@@ -74,4 +119,18 @@ func (e testExec) Execute(tx tap.Transaction, store store.ReadWriteTrie) (execut
 	}
 
 	return execution.Result{Accepted: true}, nil
+}
+
+type badValidation struct{}
+
+func (v badValidation) Validate(store.ReadWriteTrie, []tap.Transaction) (validation.Data, error) {
+	return nil, xerrors.New("oops")
+}
+
+type badStore struct {
+	store.Store
+}
+
+func (s badStore) GetShare([]byte) (store.Share, error) {
+	return nil, xerrors.New("oops")
 }
