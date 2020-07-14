@@ -5,7 +5,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/core/execution/bmexec"
+	"go.dedis.ch/dela/core/execution"
+	"go.dedis.ch/dela/core/execution/baremetal"
+	"go.dedis.ch/dela/core/store"
 	trie "go.dedis.ch/dela/core/store/mem"
 	"go.dedis.ch/dela/core/tap"
 	txn "go.dedis.ch/dela/core/tap/anon"
@@ -15,7 +17,7 @@ import (
 
 func TestService_Basic(t *testing.T) {
 	pool := pool.NewPool()
-	srvc := NewService(pool, validation.NewService(bmexec.NewExecution()), trie.NewTrie())
+	srvc := NewService(pool, validation.NewService(baremetal.NewExecution(testExec{})), trie.NewTrie())
 
 	// 1. Start the ordering service.
 	require.NoError(t, srvc.Listen())
@@ -34,6 +36,10 @@ func TestService_Basic(t *testing.T) {
 	evt := <-evts
 	require.Equal(t, uint64(1), evt.Index)
 
+	pr, err := srvc.GetProof([]byte("ping"))
+	require.NoError(t, err)
+	require.Equal(t, []byte("pong"), pr.GetValue())
+
 	// 4. Send another transaction to the pool. This time it should creates a
 	// block appended to the previous one.
 	require.NoError(t, pool.Add(makeTx(t, 1)))
@@ -46,8 +52,26 @@ func TestService_Basic(t *testing.T) {
 // Utility functions
 
 func makeTx(t *testing.T, nonce uint64) tap.Transaction {
-	tx, err := txn.NewTransaction(nonce)
+	tx, err := txn.NewTransaction(nonce, txn.WithArg("key", []byte("ping")), txn.WithArg("value", []byte("pong")))
 	require.NoError(t, err)
 
 	return tx
+}
+
+type testExec struct{}
+
+func (e testExec) Execute(tx tap.Transaction, store store.ReadWriteTrie) (execution.Result, error) {
+	key := tx.GetArg("key")
+	value := tx.GetArg("value")
+
+	if len(key) == 0 || len(value) == 0 {
+		return execution.Result{Accepted: false, Message: "key or value is nil"}, nil
+	}
+
+	err := store.Set(key, value)
+	if err != nil {
+		return execution.Result{}, err
+	}
+
+	return execution.Result{Accepted: true}, nil
 }

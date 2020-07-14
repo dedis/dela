@@ -16,6 +16,7 @@ import (
 type Block struct {
 	index uint64
 	nonce uint64
+	root  []byte
 	data  validation.Data
 	hash  []byte
 }
@@ -41,6 +42,13 @@ func WithIndex(index uint64) BlockOption {
 func WithNonce(nonce uint64) BlockOption {
 	return func(b *blockTemplate) {
 		b.nonce = nonce
+	}
+}
+
+// WithRoot is an option to set the root of a block.
+func WithRoot(root []byte) BlockOption {
+	return func(b *blockTemplate) {
+		b.root = root
 	}
 }
 
@@ -80,6 +88,11 @@ func (b *Block) prepare(ctx context.Context, fac crypto.HashFactory, diff int) e
 	_, err := h.Write(buffer)
 	if err != nil {
 		return xerrors.Errorf("failed to write index: %v", err)
+	}
+
+	_, err = h.Write(b.root)
+	if err != nil {
+		return xerrors.Errorf("failed to write root: %v", err)
 	}
 
 	err = b.data.Fingerprint(h)

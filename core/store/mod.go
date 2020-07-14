@@ -17,16 +17,19 @@ type Writer interface {
 type ReadWriteTrie interface {
 	Reader
 	Writer
-
-	ComputeRoot() ([]byte, error)
 }
 
-// Share is a part of the store that has a partial computation of the root and
-// it can be completed to verify that a piece of data exists in the store.
+// Share is a part of the store that has a partial computation of the root so
+// that it can be calculated from the key/value pair to ensure the integrity.
 type Share interface {
+	// GetKey returns the key of the share.
+	GetKey() []byte
+
+	// GetValue returns the value of the share, or nil if it is not set.
 	GetValue() []byte
 
-	ComputeRoot(key []byte) ([]byte, error)
+	// GetRoot returns the store root calculated from the key.
+	GetRoot() []byte
 }
 
 // Store is a representation of the storage at a given point in time.
@@ -41,5 +44,7 @@ type Store interface {
 	// with the missing data to compute the final root that should match.
 	GetShare(key []byte) (Share, error)
 
+	// Stage must create a writable trie from the current one that will be
+	// pasto the callback then return it.
 	Stage(func(ReadWriteTrie) error) (Store, error)
 }

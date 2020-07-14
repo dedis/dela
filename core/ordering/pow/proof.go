@@ -1,6 +1,11 @@
 package pow
 
-import "go.dedis.ch/dela/core/store"
+import (
+	"bytes"
+
+	"go.dedis.ch/dela/core/store"
+	"golang.org/x/xerrors"
+)
 
 // Proof is a proof that the chain of blocks has or has not the key in the
 // store. If the key exists, the proof also contains the value.
@@ -8,13 +13,31 @@ import "go.dedis.ch/dela/core/store"
 // - implements ordering.Proof
 type Proof struct {
 	blocks []Block
-	key    []byte
 	share  store.Share
+}
+
+// NewProof creates a new valid proof.
+func NewProof(blocks []Block, share store.Share) (Proof, error) {
+	pr := Proof{
+		blocks: blocks,
+		share:  share,
+	}
+
+	if len(blocks) == 0 {
+		return pr, xerrors.New("empty list of blocks")
+	}
+
+	last := blocks[len(blocks)-1]
+	if !bytes.Equal(last.root, share.GetRoot()) {
+		return pr, xerrors.Errorf("mismatch block and share store root %#x != %#x", last.root, share.GetRoot())
+	}
+
+	return pr, nil
 }
 
 // GetKey implements ordering.Proof.
 func (p Proof) GetKey() []byte {
-	return p.key
+	return p.share.GetKey()
 }
 
 // GetValue implements ordering.Proof.

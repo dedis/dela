@@ -1,6 +1,8 @@
 package mem
 
 import (
+	"io"
+
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/crypto"
 	"golang.org/x/xerrors"
@@ -19,7 +21,6 @@ type item struct {
 type Trie struct {
 	parent      *Trie
 	root        []byte
-	dirty       bool
 	store       map[string]item
 	hashFactory crypto.HashFactory
 }
@@ -28,7 +29,6 @@ type Trie struct {
 func NewTrie() *Trie {
 	return &Trie{
 		parent:      nil,
-		dirty:       true,
 		store:       make(map[string]item),
 		hashFactory: crypto.NewSha256Factory(),
 	}
@@ -36,21 +36,20 @@ func NewTrie() *Trie {
 
 // Get implements store.Reader. It returns the value associated with the key if
 // it exists by first checking the current store then recursively checking the
-// parent up to the root. If nothing is found, it returns an error.
+// parent up to the root.
 func (t *Trie) Get(key []byte) ([]byte, error) {
-	str := string(key)
-
-	item, found := t.store[str]
+	item, found := t.store[string(key)]
 	if found {
 		if item.deleted {
-			return nil, xerrors.Errorf("item %#x not found", key)
+			// Item is explicitly deleted so we skip recursive look up.
+			return nil, nil
 		}
 
 		return item.value, nil
 	}
 
 	if t.parent == nil {
-		return nil, xerrors.Errorf("item %#x not found", key)
+		return nil, nil
 	}
 
 	val, err := t.parent.Get(key)
@@ -68,8 +67,6 @@ func (t *Trie) Set(key, value []byte) error {
 		value: value,
 	}
 
-	t.dirty = true
-
 	return nil
 }
 
@@ -82,8 +79,6 @@ func (t *Trie) Delete(key []byte) error {
 		deleted: true,
 	}
 
-	t.dirty = true
-
 	return nil
 }
 
@@ -94,16 +89,22 @@ func (t *Trie) GetRoot() []byte {
 
 // GetShare implements store.Store.
 func (t *Trie) GetShare(key []byte) (store.Share, error) {
-	return nil, nil
+	value, err := t.Get(key)
+	if err != nil {
+		return nil, err
+	}
+
+	return newShare(key, value, t.root), nil
 }
 
-// ComputeRoot implements store.ReadWriteTrie.
-func (t *Trie) ComputeRoot() ([]byte, error) {
-	h := t.hashFactory.New()
-
-	_, err := h.Write(t.parent.root)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't write parent root: %v", err)
+// Fingerprint implements serde.Fingerprinter. It deterministically writes a
+// binary representation of the trie.
+func (t *Trie) Fingerprint(w io.Writer) error {
+	if t.parent != nil {
+		_, err := w.Write(t.parent.root)
+		if err != nil {
+			return xerrors.Errorf("couldn't write parent root: %v", err)
+		}
 	}
 
 	for key, value := range t.store {
@@ -111,38 +112,37 @@ func (t *Trie) ComputeRoot() ([]byte, error) {
 			continue
 		}
 
-		_, err = h.Write([]byte(key))
+		_, err := w.Write([]byte(key))
 		if err != nil {
-			return nil, xerrors.Errorf("couldn't write key: %v", err)
+			return xerrors.Errorf("couldn't write key: %v", err)
 		}
 
-		_, err = h.Write(value.value)
+		_, err = w.Write(value.value)
 		if err != nil {
-			return nil, xerrors.Errorf("couldn't write value: %v", err)
+			return xerrors.Errorf("couldn't write value: %v", err)
 		}
 	}
 
-	t.root = h.Sum(nil)
-	t.dirty = false
-
-	return t.root, nil
+	return nil
 }
 
-// Stage implements store.Trie.
+// Stage implements store.Trie. It executes the callback over a child of the
+// current trie and return the trie with the root calculated.
 func (t *Trie) Stage(fn func(store.ReadWriteTrie) error) (store.Store, error) {
 	trie := t.makeChild()
 
 	err := fn(trie)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("callback failed: %v", err)
 	}
 
-	if trie.dirty {
-		_, err = trie.ComputeRoot()
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't compute root: %v", err)
-		}
+	h := t.hashFactory.New()
+	err = trie.Fingerprint(h)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't compute root: %v", err)
 	}
+
+	trie.root = h.Sum(nil)
 
 	return trie, nil
 }
@@ -150,6 +150,7 @@ func (t *Trie) Stage(fn func(store.ReadWriteTrie) error) (store.Store, error) {
 func (t *Trie) makeChild() *Trie {
 	clone := NewTrie()
 	clone.parent = t
+	clone.hashFactory = t.hashFactory
 
 	return clone
 }

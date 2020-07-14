@@ -33,8 +33,8 @@ type Service struct {
 }
 
 // NewService creates a new service.
-func NewService(pool pool.Pool, val validation.Service, trie store.Store) Service {
-	return Service{
+func NewService(pool pool.Pool, val validation.Service, trie store.Store) *Service {
+	return &Service{
 		pool:        pool,
 		validation:  val,
 		epochs:      []epoch{{store: trie}},
@@ -46,7 +46,7 @@ func NewService(pool pool.Pool, val validation.Service, trie store.Store) Servic
 }
 
 // Listen implements ordering.Service.
-func (s Service) Listen() error {
+func (s *Service) Listen() error {
 	// TODO: listen for incoming mined blocks.
 
 	go func() {
@@ -93,13 +93,13 @@ func (s Service) Listen() error {
 }
 
 // Close implements ordering.Service.
-func (s Service) Close() error {
+func (s *Service) Close() error {
 	close(s.closing)
 	return nil
 }
 
 // GetProof implements ordering.Service.
-func (s Service) GetProof(key []byte) (ordering.Proof, error) {
+func (s *Service) GetProof(key []byte) (ordering.Proof, error) {
 	last := s.epochs[len(s.epochs)-1]
 
 	share, err := last.store.GetShare(key)
@@ -107,17 +107,21 @@ func (s Service) GetProof(key []byte) (ordering.Proof, error) {
 		return nil, err
 	}
 
-	pr := Proof{
-		blocks: make([]Block, len(s.epochs)),
-		key:    key,
-		share:  share,
+	blocks := make([]Block, len(s.epochs))
+	for i, epoch := range s.epochs {
+		blocks[i] = epoch.block
+	}
+
+	pr, err := NewProof(blocks, share)
+	if err != nil {
+		return nil, err
 	}
 
 	return pr, nil
 }
 
 // Watch implements ordering.Service.
-func (s Service) Watch(ctx context.Context) <-chan ordering.Event {
+func (s *Service) Watch(ctx context.Context) <-chan ordering.Event {
 	events := make(chan ordering.Event, 1)
 
 	obs := observer{events: events}
@@ -134,7 +138,7 @@ func (s Service) Watch(ctx context.Context) <-chan ordering.Event {
 // waitTxs is a procedure to wait for transactions from the pool. It will wait
 // the provided minimum amount of time before waiting for at least one
 // transaction.
-func (s Service) waitTxs(ctx context.Context) []tap.Transaction {
+func (s *Service) waitTxs(ctx context.Context) []tap.Transaction {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -162,27 +166,30 @@ type blockResult struct {
 	err   error
 }
 
-func (s Service) createBlock(ctx context.Context, txs []tap.Transaction) <-chan blockResult {
+func (s *Service) createBlock(ctx context.Context, txs []tap.Transaction) <-chan blockResult {
 	ch := make(chan blockResult, 1)
 
 	latestEpoch := s.epochs[len(s.epochs)-1]
 
 	go func() {
-		var block Block
+		var data validation.Data
 
 		newTrie, err := latestEpoch.store.Stage(func(rwt store.ReadWriteTrie) error {
-			data, err := s.validation.Validate(rwt, txs)
-			if err != nil {
-				return err
-			}
-
-			block, err = NewBlock(ctx, data, WithIndex(uint64(len(s.epochs))))
+			var err error
+			data, err = s.validation.Validate(rwt, txs)
 			if err != nil {
 				return err
 			}
 
 			return nil
 		})
+
+		if err != nil {
+			ch <- blockResult{err: err}
+			return
+		}
+
+		block, err := NewBlock(ctx, data, WithIndex(uint64(len(s.epochs))), WithRoot(newTrie.GetRoot()))
 
 		// The result will contain either a valid block and trie, or the error
 		// that prevent the creation.

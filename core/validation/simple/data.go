@@ -13,6 +13,17 @@ import (
 type TransactionResult struct {
 	tx       tap.Transaction
 	accepted bool
+	reason   string
+}
+
+// NewTransactionResult creates a new transaction result for the provided
+// transaction.
+func NewTransactionResult(tx tap.Transaction) TransactionResult {
+	return TransactionResult{
+		tx:       tx,
+		accepted: true,
+		reason:   "",
+	}
 }
 
 // GetTransaction implements validation.TransactionResult.
@@ -22,13 +33,12 @@ func (res TransactionResult) GetTransaction() tap.Transaction {
 
 // GetStatus implements validation.TransactionResult.
 func (res TransactionResult) GetStatus() (bool, string) {
-	return res.accepted, ""
+	return res.accepted, res.reason
 }
 
 // Data is the validated data of a standard validation.
 type Data struct {
-	root []byte
-	txs  []TransactionResult
+	txs []TransactionResult
 }
 
 // GetTransactionResults implements validation.Data.
@@ -44,19 +54,14 @@ func (d Data) GetTransactionResults() []validation.TransactionResult {
 // Fingerprint writes a deterministic binary representation of the validated
 // data.
 func (d Data) Fingerprint(w io.Writer) error {
-	_, err := w.Write(d.root)
-	if err != nil {
-		return xerrors.Errorf("couldn't write root: %v", err)
-	}
-
-	for _, tx := range d.txs {
-		err = tx.tx.Fingerprint(w)
+	for _, res := range d.txs {
+		err := res.tx.Fingerprint(w)
 		if err != nil {
 			return xerrors.Errorf("couldn't fingerprint tx: %v", err)
 		}
 
 		bit := []byte{0}
-		if tx.accepted {
+		if res.accepted {
 			bit[0] = 1
 		}
 
