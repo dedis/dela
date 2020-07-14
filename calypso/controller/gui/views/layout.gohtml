@@ -1,0 +1,47 @@
+{{define "layout"}}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+
+    <link rel="stylesheet" href="/assets/stylesheets/base.css">
+
+    <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+    <link rel="icon" href="/favicon.ico" type="image/x-icon">
+
+    {{ template "headContent" .}}
+
+    <title>{{ template "title" .}}</title>
+  </head>
+  <body>
+    <div class="header">
+      <div class="container">
+        <div class="title">
+          <a href="/"><h1>Calypso lottery</h1></a>
+        </div>
+        <div class="links">
+          <a href="/pubkey">GetPublicKey</a>
+          <a href="/encrypt">Encrypt a secret</a>
+          <a href="/write">Write a secret</a>
+          <a href="/read">Get a secret</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="container">
+      {{ template "content" .}}
+    </div>
+
+    <div class="footer">
+      <div class="container">
+        Calypso lottery - for fun only - <a href="https://github.com/dedis/dela">Github</a>
+      </div>
+    </div>
+
+  </body>
+</html>
+<!-- Can be redifined in the pages. We do it here to avoir a "not defined" error -->
+{{end}}
+{{define "headContent"}}{{end}}

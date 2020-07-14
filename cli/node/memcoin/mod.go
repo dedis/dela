@@ -1,5 +1,13 @@
 // Package main implements a ledger based on in-memory components.
 //
+//  go run mod.go start
+//  go run mod.go --socket ~/Desktop/2001.socket start --port 2001\
+//    --clientaddr :8081
+//  go run mod.go minogrpc token
+//  go run mod.go --socket ~/Desktop/2001.socket minogrpc join\
+//    --address 127.0.0.1:2000 --token XX --cert-hash XX
+//  go run mod.go calypso setup --pubkeys XX,XX\
+//    --addrs 127.0.0.1:2000,127.0.0.1:2001 --threshold 2
 //
 //
 package main
@@ -21,7 +29,7 @@ func main() {
 		mino.NewMinimal(),
 		byzcoin.NewMinimal(),
 		pedersen.NewMinimal(),
-		calypso.NewMinimal(),
+		calypso.NewMinimal("../../../calypso/controller"),
 	)
 
 	app := builder.Build()

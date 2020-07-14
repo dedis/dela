@@ -1,0 +1,28 @@
+{{ define "title" }}{{.Title}}{{ end }}
+
+{{ define "content" }}
+
+<h2>Encrypt a secret</h2>
+
+<p>Enter the message and the hex encoded public key</p>
+
+<form action="/encrypt" method="post" >
+
+    {{ if .PostMessage }}
+        <pre class="postmessage">{{ .PostMessage }}</pre>
+        <br/>
+    {{ end }}
+
+    <div class="row">
+        <label for="message">Message</label>
+        <input placeholder="hello world" id="message" required type="text" name="message"/>
+    </div>
+    <div class="row">
+        <label for="pubkey">Public key<br/><span class="hint">(in hex format)</span></label>
+        <input placeholder="aef123..." id="pubkey" required type="text" pattern="[a-fA-F0-9]+" name="pubkey"/>
+    </div>
+
+    <input type="submit" value="Encrypt secret" />
+</form>
+
+{{ end }}

@@ -22,9 +22,9 @@ const (
 // client side requests
 type Httpclient interface {
 	// Start starts the http server. This call is assumed to be blocking
-	Start() error
+	Start()
 
-	// RegisterHandler register a new handler
+	// RegisterHandler registers a new handler
 	RegisterHandler(path string, handler func(http.ResponseWriter, *http.Request)) error
 }
 
@@ -60,7 +60,7 @@ type Client struct {
 }
 
 // Start implements Httpclient
-func (s Client) Start() error {
+func (s Client) Start() {
 	s.logger.Println("Client server is starting...")
 
 	done := make(chan bool)
@@ -75,7 +75,8 @@ func (s Client) Start() error {
 		defer cancel()
 
 		s.server.SetKeepAlivesEnabled(false)
-		if err := s.server.Shutdown(ctx); err != nil {
+		err := s.server.Shutdown(ctx)
+		if err != nil {
 			s.logger.Fatalf("Could not gracefully shutdown the server: %v\n", err)
 		}
 		close(done)
@@ -89,14 +90,13 @@ func (s Client) Start() error {
 	}
 
 	s.logger.Println("Server is ready to handle requests at", lu)
-	if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	err := s.server.ListenAndServe()
+	if err != nil && err != http.ErrServerClosed {
 		s.logger.Fatalf("Could not listen on %s: %v\n", s.listenAddr, err)
 	}
 
 	<-done
 	s.logger.Println("Server stopped")
-
-	return nil
 }
 
 // RegisterHandler implements Httpclient

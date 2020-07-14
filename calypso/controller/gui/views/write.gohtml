@@ -1,0 +1,36 @@
+{{ define "title" }}{{.Title}}{{ end }}
+
+{{ define "content" }}
+
+<h2>Write (save) a secret</h2>
+
+<p>Enter the encrypted message and the access control infos</p>
+
+<form action="/write" method="post" >
+
+    {{ if .PostMessage }}
+        <pre class="postmessage">{{ .PostMessage }}</pre>
+        <br/>
+    {{ end }}
+
+    <div class="row">
+        <label for="k">K <span class="hint">(in hex format)</span></label>
+        <input placeholder="aef123..." id="k" required type="text" pattern="[a-fA-F0-9]+" name="k"/>
+    </div>
+    <div class="row">
+        <label for="c">C <span class="hint">(in hex format)</span></label>
+        <input placeholder="aef123..." id="c" required type="text" pattern="[a-fA-F0-9]+" name="c"/>
+    </div>
+    <div class="row">
+        <label for="adminID">Admin identity</label>
+        <input placeholder="XXX" id="adminID" required type="text" name="adminID"/>
+    </div>
+    <div class="row">
+        <label for="readID">Read identity</label>
+        <input placeholder="XXX" id="readID" type="text" name="readID"/>
+    </div>
+
+    <input type="submit" value="Save secret" />
+</form>
+
+{{ end }}

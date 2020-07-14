@@ -1,0 +1,11 @@
+{{ define "title" }}{{.Title}}{{ end }}
+
+{{ define "content" }}
+
+<h2>Whoops: error</h2>
+
+<p>Code: {{ .Code }}</p>
+
+<code>{{ .Message }}</code>
+
+{{ end }}

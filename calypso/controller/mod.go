@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
+	"path/filepath"
 	"strings"
 
 	"go.dedis.ch/dela/calypso"
+	guictrl "go.dedis.ch/dela/calypso/controller/gui/controllers"
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/crypto/ed25519"
@@ -21,15 +24,20 @@ import (
 // Using this variable allows us to gain flexibility for the tests.
 var formatter formatterI = jsonFormatter{}
 
-// NewMinimal returns a new minimal initializer
-func NewMinimal() node.Initializer {
-	return minimal{}
+// NewMinimal returns a new minimal initializer. Path should be the path from
+// the builder to the current folder.
+func NewMinimal(path string) node.Initializer {
+	return minimal{path: path}
 }
 
 // minimal is an initializer with the minimum set of commands
 //
 // - implements node.Initializer
-type minimal struct{}
+type minimal struct {
+	// path is the path from the builder to this current /controller folder. We
+	// need it to load the html files that render the html client GUI.
+	path string
+}
 
 // SetCommands implements node.Initializer
 func (m minimal) SetCommands(builder node.Builder) {
@@ -86,9 +94,23 @@ func (m minimal) Inject(ctx cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("failed to resolve httpclient: %v", err)
 	}
 
-	httpclient.RegisterHandler("/GetPublicKey", getPublicKeyHandler(caly))
+	ctrl := guictrl.NewCtrl(m.path, caly)
+
+	fs := http.FileServer(http.Dir(filepath.Join(m.path, "gui/assets")))
+	httpclient.RegisterHandler("/assets/", tofunc(http.StripPrefix("/assets/", fs)))
+	httpclient.RegisterHandler("/", ctrl.HomeHandler())
+	httpclient.RegisterHandler("/pubkey", ctrl.PubkeyHandler())
+	httpclient.RegisterHandler("/encrypt", ctrl.EncryptHandler())
+	httpclient.RegisterHandler("/write", ctrl.WriteHandler())
+	httpclient.RegisterHandler("/read", ctrl.ReadHandler())
 
 	return nil
+}
+
+func tofunc(h http.Handler) http.HandlerFunc {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.ServeHTTP(w, r)
+	})
 }
 
 // setupAction is an action to setup Calypso. This action pefrms the DKG key

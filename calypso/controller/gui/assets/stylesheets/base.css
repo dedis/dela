@@ -1,0 +1,152 @@
+/* 
+    Taken from https://github.com/nkcr/dummy-blockchain
+    Licensed under the GNU General Public License v3.0
+*/
+
+@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500;1,600;1,700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap");
+
+html {
+    height: 100%;
+}
+
+body {
+    font-family: "Montserrat", sans-serif;
+    background: #fffff5;
+    background-image: url("../images/noise-bg.png");
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+body > .header {
+    background: rgb(157, 136, 179);
+    background: linear-gradient(0deg, rgba(157, 136, 179, 1) 0%, rgba(174, 150, 199, 1) 100%);
+}
+
+body > .header > .container {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 30px;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+body > .header > .container > .title > a {
+    color: #fffff5;
+    text-decoration: none;
+    font-family: "Montserrat", sans-serif;
+}
+
+body > .header > .container > .links {
+    padding: 0 0 0 40px;
+    flex: 1;
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+body > .header > .container > .links > a {
+    padding: 10px;
+    margin: 3px 0;
+    background: rgba(255, 255, 255, 0.082);
+    color: #fffff5;
+    text-decoration: none;
+    font-family: "Montserrat", sans-serif;
+    font-size: 12px;
+}
+
+body > .header > .container > .links > a:hover {
+    background: rgba(255, 255, 255, 0.182);
+}
+
+body > .container {
+    width: 100%;
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 30px;
+}
+
+body > .footer {
+    background: rgb(157, 136, 179);
+    background: linear-gradient(180deg, rgba(157, 136, 179, 1) 0%, rgba(174, 150, 199, 1) 100%);
+    margin-top: auto;
+    color: #fffff5;
+    font-size: 13px;
+    font-weight: lighter;
+}
+
+body > .footer > .container {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 30px;
+}
+
+body > .footer > .container a {
+    color: inherit;
+    text-decoration: none;
+    border-bottom: dashed 1px #fffff5;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+.flash {
+    background: #dbf0ff;
+    margin: 20px 0;
+    border: 3px solid #bde4ff;
+    max-width: 980px;
+    margin: 0 auto 20px auto;
+    padding: 10px 15px;
+}
+
+form {
+    padding: 30px 0;
+}
+
+form > .row {
+    display: flex;
+    padding: 5px 0;
+    align-items: center;
+}
+
+form > .row > *:first-child {
+    width: 120px;
+}
+
+form > .row .hint {
+    font-size: 12px;
+    margin-top: -10px;
+}
+
+form > .row > *:nth-child(2) {
+}
+
+input[type="text"],
+input[type="number"] {
+    padding: 5px;
+    width: 200px;
+}
+
+input[type="submit"] {
+    margin: 10px 0 5px 0;
+    padding: 10px 20px;
+    background: #b3a1a1;
+    background: rgb(179, 161, 161);
+    background: linear-gradient(0deg, rgba(179, 161, 161, 1) 0%, rgba(212, 189, 189, 1) 100%);
+    text-transform: uppercase;
+    border: none;
+    border-radius: 5px;
+    color: #fffff5;
+}
+
+input[type="submit"]:hover {
+    cursor: pointer;
+    background: rgb(115, 104, 104);
+    background: linear-gradient(0deg, rgba(115, 104, 104, 1) 0%, rgba(157, 140, 140, 1) 100%);
+}

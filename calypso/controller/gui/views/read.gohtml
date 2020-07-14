@@ -1,0 +1,28 @@
+{{ define "title" }}{{.Title}}{{ end }}
+
+{{ define "content" }}
+
+<h2>Read a secret</h2>
+
+<p>Enter the message ID and the access control infos</p>
+
+<form action="/read" method="post" >
+
+    {{ if .PostMessage }}
+        <pre class="postmessage">{{ .PostMessage }}</pre>
+        <br/>
+    {{ end }}
+
+    <div class="row">
+        <label for="msgID">ID <span class="hint">(in hex format)</span></label>
+        <input placeholder="aef123..." id="msgID" required type="text" pattern="[a-fA-F0-9]+" name="msgID"/>
+    </div>
+    <div class="row">
+        <label for="identity">Identity</label>
+        <input placeholder="XXX" id="identity" required type="text" name="identity"/>
+    </div>
+
+    <input type="submit" value="Read secret" />
+</form>
+
+{{ end }}

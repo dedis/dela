@@ -3,6 +3,7 @@ package controller
 import (
 	"encoding/json"
 	"io"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -16,29 +17,34 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/httpclient"
 	"go.dedis.ch/kyber/v3"
 	"golang.org/x/xerrors"
 )
 
 func TestMinimal_Build(t *testing.T) {
-	minimal := NewMinimal()
+	minimal := NewMinimal("")
 	minimal.SetCommands(fakeBuilder{})
 }
 
 func TestMinimal_Inject(t *testing.T) {
 	minimal := minimal{}
-	inj := newInjector(fakeDKG{})
+	inj := newInjector(fakeDKG{}, fakeHttpclient{})
+
 	err := minimal.Inject(fakeFlags{}, inj)
 	require.NoError(t, err)
 
 	require.Len(t, inj.(*fakeInjector).history, 1)
 	require.IsType(t, &calypso.Caly{}, inj.(*fakeInjector).history[0])
 
+	err = minimal.Inject(fakeFlags{}, newInjector(fakeDKG{}, nil))
+	require.EqualError(t, err, "failed to resolve httpclient: oops")
+
+	err = minimal.Inject(fakeFlags{}, newInjector(fakeDKG{isBad: true}, nil))
+	require.EqualError(t, err, "failed to listen dkg: oops")
+
 	err = minimal.Inject(fakeFlags{}, newBadInjector())
 	require.EqualError(t, err, "failed to resolve dkg: oops")
-
-	err = minimal.Inject(fakeFlags{}, newInjector(fakeDKG{isBad: true}))
-	require.EqualError(t, err, "failed to listen dkg: oops")
 }
 
 func TestSetupAction_GenerateRequest(t *testing.T) {
@@ -232,9 +238,10 @@ func (b fakeCommandBuilder) SetSubCommand(name string) cli.CommandBuilder {
 }
 
 // newInjector is used to test the inject function, which requires an interface
-func newInjector(dkg dkg.DKG) node.Injector {
+func newInjector(dkg dkg.DKG, httpclient httpclient.Httpclient) node.Injector {
 	return &fakeInjector{
-		dkg: dkg,
+		dkg:        dkg,
+		httpclient: httpclient,
 	}
 }
 
@@ -252,6 +259,7 @@ type fakeInjector struct {
 	dkg            dkg.DKG
 	mino           mino.Mino
 	privateStorage calypso.PrivateStorage
+	httpclient     httpclient.Httpclient
 	history        []interface{}
 }
 
@@ -274,6 +282,11 @@ func (i fakeInjector) Resolve(el interface{}) error {
 			return xerrors.New("oops")
 		}
 		*msg = i.privateStorage
+	case *httpclient.Httpclient:
+		if i.httpclient == nil {
+			return xerrors.New("oops")
+		}
+		*msg = i.httpclient
 	default:
 		return xerrors.Errorf("unkown message '%T", msg)
 	}
@@ -416,4 +429,19 @@ type badPoint struct {
 // MarshalBinary implements kyber.Point
 func (badPoint) MarshalBinary() ([]byte, error) {
 	return nil, xerrors.Errorf("oops")
+}
+
+// fakeHttpclient is a fake http client
+//
+// - implements httpclient.Httpclient
+type fakeHttpclient struct {
+}
+
+// Start implements httpclient.Httpclient
+func (h fakeHttpclient) Start() {
+}
+
+// RegisterHandler implements httpclient.Httpclient
+func (h fakeHttpclient) RegisterHandler(path string, handler func(http.ResponseWriter, *http.Request)) error {
+	return nil
 }
