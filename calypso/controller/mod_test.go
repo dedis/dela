@@ -35,7 +35,7 @@ func TestMinimal_Inject(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Len(t, inj.(*fakeInjector).history, 1)
-	require.IsType(t, &calypso.Caly{}, inj.(*fakeInjector).history[0])
+	require.IsType(t, &calypso.Calypso{}, inj.(*fakeInjector).history[0])
 
 	err = minimal.Inject(fakeFlags{}, newInjector(fakeDKG{}, nil))
 	require.EqualError(t, err, "failed to resolve httpclient: oops")

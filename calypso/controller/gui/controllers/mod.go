@@ -7,7 +7,7 @@ import (
 )
 
 // NewCtrl creates a new Ctrl
-func NewCtrl(path string, caly *calypso.Caly) *Ctrl {
+func NewCtrl(path string, caly *calypso.Calypso) *Ctrl {
 	return &Ctrl{
 		path: path,
 		caly: caly,
@@ -18,7 +18,7 @@ func NewCtrl(path string, caly *calypso.Caly) *Ctrl {
 // data to all the controllers.
 type Ctrl struct {
 	path string
-	caly *calypso.Caly
+	caly *calypso.Calypso
 }
 
 // abs is a utility to compute the absolute file path
