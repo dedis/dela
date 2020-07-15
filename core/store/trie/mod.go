@@ -5,9 +5,9 @@ package trie
 
 import "go.dedis.ch/dela/core/store"
 
-// Share is a part of the store that has a partial computation of the root so
-// that it can be calculated from the key/value pair to ensure the integrity.
-type Share interface {
+// Path is a path along the tree to a key and its value, or none if the key is
+// not set.
+type Path interface {
 	// GetKey returns the key of the share.
 	GetKey() []byte
 
@@ -27,10 +27,9 @@ type Trie interface {
 	// GetRoot returns the root hash of this trie.
 	GetRoot() []byte
 
-	// GetShare returns a share of the store that will allow one to verify the
-	// integrity of a piece of data. It can be ensured by completing the share
-	// with the missing data to compute the final root that should match.
-	GetShare(key []byte) (Share, error)
+	// GetPath returns a path to a key and its value in the tree. It can be use
+	// as a proof of inclusion or a proof of absence in the contraray.
+	GetPath(key []byte) (Path, error)
 
 	// Stage must create a writable trie from the current one that will be
 	// passed to the callback then return it.

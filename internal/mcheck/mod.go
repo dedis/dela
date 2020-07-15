@@ -52,6 +52,9 @@ fileLoop:
 				if isFirst && strings.HasPrefix(c.Text, "// Code generated") {
 					continue fileLoop
 				}
+				if strings.HasPrefix(c.Text, "// https://") {
+					continue
+				}
 				// in case of /* */ comment there might be multiple lines
 				lines := strings.Split(c.Text, "\n")
 				for _, line := range lines {

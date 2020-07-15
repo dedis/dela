@@ -132,6 +132,6 @@ type badTrie struct {
 	trie.Trie
 }
 
-func (s badTrie) GetShare([]byte) (trie.Share, error) {
+func (s badTrie) GetPath([]byte) (trie.Path, error) {
 	return nil, xerrors.New("oops")
 }

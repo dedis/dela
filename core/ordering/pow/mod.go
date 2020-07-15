@@ -115,7 +115,7 @@ func (s *Service) Stop() error {
 func (s *Service) GetProof(key []byte) (ordering.Proof, error) {
 	last := s.epochs[len(s.epochs)-1]
 
-	share, err := last.store.GetShare(key)
+	path, err := last.store.GetPath(key)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't read share: %v", err)
 	}
@@ -125,7 +125,7 @@ func (s *Service) GetProof(key []byte) (ordering.Proof, error) {
 		blocks[i] = epoch.block
 	}
 
-	pr, err := NewProof(blocks, share)
+	pr, err := NewProof(blocks, path)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't create proof: %v", err)
 	}
