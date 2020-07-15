@@ -10,6 +10,8 @@ import (
 
 // TransactionResult is the result of a transaction processing. It contains the
 // transaction and its state of success.
+//
+// - implements validation.TransactionResult
 type TransactionResult struct {
 	tx       tap.Transaction
 	accepted bool
@@ -26,22 +28,26 @@ func NewTransactionResult(tx tap.Transaction) TransactionResult {
 	}
 }
 
-// GetTransaction implements validation.TransactionResult.
+// GetTransaction implements validation.TransactionResult. It returns the
+// transaction associated to the result.
 func (res TransactionResult) GetTransaction() tap.Transaction {
 	return res.tx
 }
 
-// GetStatus implements validation.TransactionResult.
+// GetStatus implements validation.TransactionResult. It returns true if the
+// transaction has been accepted, otherwise false with the reason.
 func (res TransactionResult) GetStatus() (bool, string) {
 	return res.accepted, res.reason
 }
 
 // Data is the validated data of a standard validation.
+//
+// - implements validation.Data
 type Data struct {
 	txs []TransactionResult
 }
 
-// GetTransactionResults implements validation.Data.
+// GetTransactionResults implements validation.Data. It returns the results.
 func (d Data) GetTransactionResults() []validation.TransactionResult {
 	res := make([]validation.TransactionResult, len(d.txs))
 	for i, r := range d.txs {
@@ -51,8 +57,8 @@ func (d Data) GetTransactionResults() []validation.TransactionResult {
 	return res
 }
 
-// Fingerprint writes a deterministic binary representation of the validated
-// data.
+// Fingerprint implements serde.Fingerprinter. It writes a deterministic binary
+// representation of the validated data.
 func (d Data) Fingerprint(w io.Writer) error {
 	for _, res := range d.txs {
 		err := res.tx.Fingerprint(w)

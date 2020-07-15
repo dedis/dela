@@ -4,6 +4,7 @@ import (
 	"io"
 
 	"go.dedis.ch/dela/core/store"
+	"go.dedis.ch/dela/core/store/trie"
 	"go.dedis.ch/dela/crypto"
 	"golang.org/x/xerrors"
 )
@@ -13,9 +14,11 @@ type item struct {
 	deleted bool
 }
 
-// Trie is an in-memory implementation of a store. It saves the updates in an
+// Trie is an in-memory implementation of a trie. It saves the updates in an
 // internal store and only keep the updates of the current trie. When reading,
 // it'll look up by following the parent trie if the key is not found.
+//
+// - implements trie.Trie
 //
 // TODO: merkle trie + share
 type Trie struct {
@@ -34,9 +37,9 @@ func NewTrie() *Trie {
 	}
 }
 
-// Get implements store.Reader. It returns the value associated with the key if
-// it exists by first checking the current store then recursively checking the
-// parent up to the root.
+// Get implements store.Readable. It returns the value associated with the key
+// if it exists by first checking the current store then recursively checking
+// the parent up to the root.
 func (t *Trie) Get(key []byte) ([]byte, error) {
 	item, found := t.store[string(key)]
 	if found {
@@ -58,7 +61,7 @@ func (t *Trie) Get(key []byte) ([]byte, error) {
 	return val, nil
 }
 
-// Set implements store.Writer. It writes the value to the store.
+// Set implements store.Writable. It writes the value to the store.
 func (t *Trie) Set(key, value []byte) error {
 	t.store[string(key)] = item{
 		value: value,
@@ -67,7 +70,7 @@ func (t *Trie) Set(key, value []byte) error {
 	return nil
 }
 
-// Delete implements store.Writer. It removes a key from the store and flag it
+// Delete implements store.Writable. It removes a key from the store and flag it
 // as deleted.
 func (t *Trie) Delete(key []byte) error {
 	// Even if the item does not exist, it must be flagged so that a parent
@@ -79,13 +82,14 @@ func (t *Trie) Delete(key []byte) error {
 	return nil
 }
 
-// GetRoot implements store.Trie.
+// GetRoot implements trie.Trie. It returns the root hash of the trie.
 func (t *Trie) GetRoot() []byte {
 	return t.root
 }
 
-// GetShare implements store.Store.
-func (t *Trie) GetShare(key []byte) (store.Share, error) {
+// GetShare implements trie.Trie. It reads the key and prepare a share that will
+// prove if the key is set, or not.
+func (t *Trie) GetShare(key []byte) (trie.Share, error) {
 	// In-memory store does not trigger any error.
 	value, _ := t.Get(key)
 
@@ -121,9 +125,9 @@ func (t *Trie) Fingerprint(w io.Writer) error {
 	return nil
 }
 
-// Stage implements store.Trie. It executes the callback over a child of the
+// Stage implements trie.Trie. It executes the callback over a child of the
 // current trie and return the trie with the root calculated.
-func (t *Trie) Stage(fn func(store.ReadWriteTrie) error) (store.Store, error) {
+func (t *Trie) Stage(fn func(store.Snapshot) error) (trie.Trie, error) {
 	trie := t.makeChild()
 
 	err := fn(trie)

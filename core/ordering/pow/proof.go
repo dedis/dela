@@ -3,7 +3,7 @@ package pow
 import (
 	"bytes"
 
-	"go.dedis.ch/dela/core/store"
+	"go.dedis.ch/dela/core/store/trie"
 	"golang.org/x/xerrors"
 )
 
@@ -13,11 +13,11 @@ import (
 // - implements ordering.Proof
 type Proof struct {
 	blocks []Block
-	share  store.Share
+	share  trie.Share
 }
 
 // NewProof creates a new valid proof.
-func NewProof(blocks []Block, share store.Share) (Proof, error) {
+func NewProof(blocks []Block, share trie.Share) (Proof, error) {
 	pr := Proof{
 		blocks: blocks,
 		share:  share,

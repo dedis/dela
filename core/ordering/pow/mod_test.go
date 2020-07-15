@@ -8,7 +8,8 @@ import (
 	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/execution/baremetal"
 	"go.dedis.ch/dela/core/store"
-	trie "go.dedis.ch/dela/core/store/mem"
+	"go.dedis.ch/dela/core/store/trie"
+	"go.dedis.ch/dela/core/store/trie/mem"
 	"go.dedis.ch/dela/core/tap"
 	txn "go.dedis.ch/dela/core/tap/anon"
 	pool "go.dedis.ch/dela/core/tap/pool/mem"
@@ -19,7 +20,7 @@ import (
 
 func TestService_Basic(t *testing.T) {
 	pool := pool.NewPool()
-	srvc := NewService(pool, val.NewService(baremetal.NewExecution(testExec{})), trie.NewTrie())
+	srvc := NewService(pool, val.NewService(baremetal.NewExecution(testExec{})), mem.NewTrie())
 
 	// 1. Start the ordering service.
 	require.NoError(t, srvc.Listen())
@@ -52,7 +53,7 @@ func TestService_Basic(t *testing.T) {
 
 func TestService_Listen(t *testing.T) {
 	pool := pool.NewPool()
-	srvc := NewService(pool, val.NewService(baremetal.NewExecution(testExec{})), trie.NewTrie())
+	srvc := NewService(pool, val.NewService(baremetal.NewExecution(testExec{})), mem.NewTrie())
 
 	err := srvc.Listen()
 	require.NoError(t, err)
@@ -67,7 +68,7 @@ func TestService_Listen(t *testing.T) {
 	require.EqualError(t, err, "service not started")
 
 	pool.Add(makeTx(t, 0))
-	srvc = NewService(pool, badValidation{}, trie.NewTrie())
+	srvc = NewService(pool, badValidation{}, mem.NewTrie())
 	err = srvc.Listen()
 	require.NoError(t, err)
 
@@ -76,7 +77,7 @@ func TestService_Listen(t *testing.T) {
 
 func TestService_GetProof(t *testing.T) {
 	srvc := &Service{
-		epochs: []epoch{{store: trie.NewTrie()}},
+		epochs: []epoch{{store: mem.NewTrie()}},
 	}
 
 	pr, err := srvc.GetProof([]byte("A"))
@@ -88,7 +89,7 @@ func TestService_GetProof(t *testing.T) {
 	require.EqualError(t, err,
 		"couldn't create proof: mismatch block and share store root 0x01 != ")
 
-	srvc.epochs[0].store = badStore{}
+	srvc.epochs[0].store = badTrie{}
 	_, err = srvc.GetProof([]byte("A"))
 	require.EqualError(t, err, "couldn't read share: oops")
 }
@@ -105,7 +106,7 @@ func makeTx(t *testing.T, nonce uint64) tap.Transaction {
 
 type testExec struct{}
 
-func (e testExec) Execute(tx tap.Transaction, store store.ReadWriteTrie) (execution.Result, error) {
+func (e testExec) Execute(tx tap.Transaction, store store.Snapshot) (execution.Result, error) {
 	key := tx.GetArg("key")
 	value := tx.GetArg("value")
 
@@ -123,14 +124,14 @@ func (e testExec) Execute(tx tap.Transaction, store store.ReadWriteTrie) (execut
 
 type badValidation struct{}
 
-func (v badValidation) Validate(store.ReadWriteTrie, []tap.Transaction) (validation.Data, error) {
+func (v badValidation) Validate(store.Snapshot, []tap.Transaction) (validation.Data, error) {
 	return nil, xerrors.New("oops")
 }
 
-type badStore struct {
-	store.Store
+type badTrie struct {
+	trie.Trie
 }
 
-func (s badStore) GetShare([]byte) (store.Share, error) {
+func (s badTrie) GetShare([]byte) (trie.Share, error) {
 	return nil, xerrors.New("oops")
 }

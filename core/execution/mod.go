@@ -20,5 +20,5 @@ type Result struct {
 type Service interface {
 	// Execute must apply the transaction to the trie and return the result of
 	// it.
-	Execute(tx tap.Transaction, trie store.ReadWriteTrie) (Result, error)
+	Execute(tx tap.Transaction, snap store.Snapshot) (Result, error)
 }

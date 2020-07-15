@@ -10,11 +10,16 @@ package ordering
 
 import "context"
 
+// Proof contains the value of a specific key.
 type Proof interface {
+	// GetKey returns the key of the proof.
 	GetKey() []byte
+
+	// GetValue returns the value of the key.
 	GetValue() []byte
 }
 
+// Event describes the current state of the service after an update.
 type Event struct {
 	Index uint64
 }
@@ -26,9 +31,13 @@ type Service interface {
 	// contact the node.
 	Listen() error
 
+	// Close closes the service.
 	Close() error
 
+	// GetProof must return a proof of the value of the provided key.
 	GetProof(key []byte) (Proof, error)
 
+	// Watch returns channel populated with events when transactions are
+	// accepted.
 	Watch(ctx context.Context) <-chan Event
 }

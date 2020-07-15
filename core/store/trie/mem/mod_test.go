@@ -104,7 +104,7 @@ func TestTrie_Fingerprint(t *testing.T) {
 func TestTrie_Stage(t *testing.T) {
 	trie := NewTrie()
 
-	next, err := trie.Stage(func(rwt store.ReadWriteTrie) error {
+	next, err := trie.Stage(func(rwt store.Snapshot) error {
 		require.NoError(t, rwt.Set([]byte("A"), []byte{1}))
 		require.NoError(t, rwt.Set([]byte("B"), []byte{2}))
 		return nil
@@ -115,13 +115,13 @@ func TestTrie_Stage(t *testing.T) {
 	require.Len(t, next.GetRoot(), 32)
 	require.Len(t, next.(*Trie).store, 2)
 
-	_, err = trie.Stage(func(store.ReadWriteTrie) error {
+	_, err = trie.Stage(func(store.Snapshot) error {
 		return xerrors.New("oops")
 	})
 	require.EqualError(t, err, "callback failed: oops")
 
 	trie.hashFactory = fake.NewHashFactory(fake.NewBadHash())
-	_, err = trie.Stage(func(rwt store.ReadWriteTrie) error { return nil })
+	_, err = trie.Stage(func(rwt store.Snapshot) error { return nil })
 	require.EqualError(t, err,
 		"couldn't compute root: couldn't write parent root: fake error")
 }

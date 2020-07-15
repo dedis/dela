@@ -29,6 +29,6 @@ type fakeExec struct {
 	err error
 }
 
-func (e fakeExec) Execute(tap.Transaction, store.ReadWriteTrie) (execution.Result, error) {
+func (e fakeExec) Execute(tap.Transaction, store.Snapshot) (execution.Result, error) {
 	return execution.Result{}, e.err
 }

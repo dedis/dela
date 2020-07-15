@@ -68,22 +68,24 @@ func NewTransaction(nonce uint64, opts ...TransactionOption) (Transaction, error
 	return tmpl.Transaction, nil
 }
 
-// GetID implements tap.Transaction.
+// GetID implements tap.Transaction. It returns the ID of the transaction.
 func (t Transaction) GetID() []byte {
 	return t.hash
 }
 
-// GetIdentity implements tap.Transaction.
+// GetIdentity implements tap.Transaction. It returns nil.
 func (t Transaction) GetIdentity() arc.Identity {
 	return nil
 }
 
-// GetArg implements tap.Transaction.
+// GetArg implements tap.Transaction. It returns the value of the argument if it
+// is set, otherwise nil.
 func (t Transaction) GetArg(key string) []byte {
 	return t.args[key]
 }
 
-// Fingerprint implements serde.Fingerprint.
+// Fingerprint implements serde.Fingerprinter. It writes a deteministic binary
+// representation of the transaction.
 func (t Transaction) Fingerprint(w io.Writer) error {
 	buffer := make([]byte, 8)
 	binary.LittleEndian.PutUint64(buffer, t.nonce)

@@ -11,6 +11,8 @@ import (
 // applications have complete access to the trie and can directly update it.
 //
 // - implements execution.Service
+//
+// TODO: extend to allow registration of other specialized bare-metal services.
 type BareMetal struct {
 	exec execution.Service
 }
@@ -25,8 +27,8 @@ func NewExecution(exec execution.Service) BareMetal {
 
 // Execute implements execution.Service. It uses the executor to process the
 // incoming transaction and return the result.
-func (bm BareMetal) Execute(tx tap.Transaction, trie store.ReadWriteTrie) (execution.Result, error) {
-	res, err := bm.exec.Execute(tx, trie)
+func (bm BareMetal) Execute(tx tap.Transaction, snap store.Snapshot) (execution.Result, error) {
+	res, err := bm.exec.Execute(tx, snap)
 	if err != nil {
 		return res, xerrors.Errorf("failed to execute: %v", err)
 	}

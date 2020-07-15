@@ -1,3 +1,4 @@
+// Package simple implements a simple validation service.
 package simple
 
 import (
@@ -9,8 +10,9 @@ import (
 )
 
 // Service is a standard validation service that will process the batch and
-// update a trie accordingly. This trie will have a root to identify the
-// validated data.
+// update the snapshot accordingly.
+//
+// - implements validation.Service
 type Service struct {
 	execution execution.Service
 }
@@ -22,13 +24,13 @@ func NewService(exec execution.Service) Service {
 	}
 }
 
-// Validate implements validation.Service. It validates the list of transactions
-// and return the validated data.
-func (s Service) Validate(trie store.ReadWriteTrie, txs []tap.Transaction) (validation.Data, error) {
+// Validate implements validation.Service. It processes the list of transactions
+// while updating the snapshot then returns a bundle of the transaction results.
+func (s Service) Validate(store store.Snapshot, txs []tap.Transaction) (validation.Data, error) {
 	results := make([]TransactionResult, len(txs))
 
 	for i, tx := range txs {
-		res, err := s.execution.Execute(tx, trie)
+		res, err := s.execution.Execute(tx, store)
 		if err != nil {
 			// This is a critical error unrelated to the transaction itself.
 			return nil, xerrors.Errorf("failed to execute tx: %v", err)

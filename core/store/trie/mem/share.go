@@ -7,6 +7,8 @@ type share struct {
 	root  []byte
 }
 
+// TODO: constructor should calculate the root so that the deserialization does
+// not use the root.
 func newShare(key, value, root []byte) share {
 	return share{
 		key:   key,

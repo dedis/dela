@@ -56,7 +56,9 @@ func WithRoot(root []byte) BlockOption {
 	}
 }
 
-// WithDifficulty is an option to set the difficulty of the proof of work.
+// WithDifficulty is an option to set the difficulty of the proof of work. If
+// the difficulty is set to 0, the hash will be calculated according to the
+// current nonce.
 func WithDifficulty(diff uint) BlockOption {
 	return func(tmpl *blockTemplate) {
 		tmpl.difficulty = diff
