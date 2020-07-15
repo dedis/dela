@@ -3,11 +3,7 @@ package dkg
 import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/kyber/v3"
-	"go.dedis.ch/kyber/v3/suites"
 )
-
-// Suite is the Kyber suite for Pedersen.
-var Suite = suites.MustFind("Ed25519")
 
 // DKG defines the primitive to start a DKG protocol
 type DKG interface {

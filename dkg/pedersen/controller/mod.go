@@ -6,7 +6,6 @@ import (
 
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
-	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/dkg/pedersen"
 	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
@@ -35,10 +34,7 @@ func (m minimal) Inject(ctx cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("failed to resolve mino: %v", err)
 	}
 
-	privkey := dkg.Suite.Scalar().Pick(dkg.Suite.RandomStream())
-	pubkey := dkg.Suite.Point().Mul(privkey, nil)
-
-	dkg := pedersen.NewPedersen(privkey, no)
+	dkg, pubkey := pedersen.NewPedersen(no)
 
 	inj.Inject(dkg)
 

@@ -5,17 +5,20 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/dkg/pedersen/types"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/kyber/v3"
+	"go.dedis.ch/kyber/v3/suites"
 	"golang.org/x/xerrors"
 )
 
+// suite is the Kyber suite for Pedersen.
+var suite = suites.MustFind("Ed25519")
+
 func TestMessageFormat_Start_Encode(t *testing.T) {
-	start := types.NewStart(1, []mino.Address{fake.NewAddress(0)}, []kyber.Point{dkg.Suite.Point()})
+	start := types.NewStart(1, []mino.Address{fake.NewAddress(0)}, []kyber.Point{suite.Point()})
 
 	format := newMsgFormat()
 	ctx := serde.NewContext(fake.ContextEngine{})
@@ -65,7 +68,7 @@ func TestMessageFormat_Response_Encode(t *testing.T) {
 }
 
 func TestMessageFormat_StartDone_Encode(t *testing.T) {
-	done := types.NewStartDone(dkg.Suite.Point())
+	done := types.NewStartDone(suite.Point())
 
 	format := newMsgFormat()
 	ctx := serde.NewContext(fake.ContextEngine{})
@@ -80,7 +83,7 @@ func TestMessageFormat_StartDone_Encode(t *testing.T) {
 }
 
 func TestMessageFormat_DecryptRequest_Encode(t *testing.T) {
-	req := types.NewDecryptRequest(dkg.Suite.Point(), dkg.Suite.Point())
+	req := types.NewDecryptRequest(suite.Point(), suite.Point())
 
 	format := newMsgFormat()
 	ctx := serde.NewContext(fake.ContextEngine{})
@@ -93,14 +96,14 @@ func TestMessageFormat_DecryptRequest_Encode(t *testing.T) {
 	_, err = format.Encode(ctx, req)
 	require.EqualError(t, err, "couldn't marshal K: oops")
 
-	req.K = dkg.Suite.Point()
+	req.K = suite.Point()
 	req.C = badPoint{}
 	_, err = format.Encode(ctx, req)
 	require.EqualError(t, err, "couldn't marshal C: oops")
 }
 
 func TestMessageFormat_DecryptReply_Encode(t *testing.T) {
-	resp := types.NewDecryptReply(5, dkg.Suite.Point())
+	resp := types.NewDecryptReply(5, suite.Point())
 
 	format := newMsgFormat()
 	ctx := serde.NewContext(fake.ContextEngine{})
@@ -123,7 +126,7 @@ func TestMessageFormat_Decode(t *testing.T) {
 	expected := types.NewStart(
 		5,
 		[]mino.Address{fake.NewAddress(0)},
-		[]kyber.Point{dkg.Suite.Point()},
+		[]kyber.Point{suite.Point()},
 	)
 
 	data, err := format.Encode(ctx, expected)

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"go.dedis.ch/dela"
-	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/dkg/pedersen/types"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/kyber/v3"
@@ -119,10 +118,10 @@ mainSwitch:
 
 		// TODO: check if started before
 		h.RLock()
-		S := dkg.Suite.Point().Mul(h.privShare.V, msg.K)
+		S := suite.Point().Mul(h.privShare.V, msg.K)
 		h.RUnlock()
 
-		partial := dkg.Suite.Point().Sub(msg.C, S)
+		partial := suite.Point().Sub(msg.C, S)
 
 		h.RLock()
 		decryptReply := types.NewDecryptReply(
@@ -160,7 +159,7 @@ func (h *Handler) start(start types.Start, receivedDeals []types.Deal, from mino
 	}
 
 	// 1. Create the DKG
-	d, err := pedersen.NewDistKeyGenerator(dkg.Suite, h.privKey, start.GetPublicKeys(), start.GetThreshold())
+	d, err := pedersen.NewDistKeyGenerator(suite, h.privKey, start.GetPublicKeys(), start.GetThreshold())
 	if err != nil {
 		return xerrors.Errorf("failed to create new DKG: %v", err)
 	}

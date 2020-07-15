@@ -1,9 +1,12 @@
 package controller
 
 import (
+	"os"
+	"os/signal"
+
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
-	"go.dedis.ch/dela/mino/httpclient"
+	"go.dedis.ch/dela/mino/proxy/http"
 )
 
 const defaultAddr = "127.0.0.1:8080"
@@ -14,7 +17,7 @@ func NewMinimal() node.Initializer {
 }
 
 // minimal is an initializer with the minimum set of commands. Indeed it only
-// creates and injects a new httpclient
+// creates and injects a new client proxy
 //
 // - implements node.Initializer
 type minimal struct{}
@@ -29,17 +32,24 @@ func (m minimal) SetCommands(builder node.Builder) {
 	})
 }
 
-// Inject implements node.Initializer. It creates, starts, and registers an
-// httpclient.
+// Inject implements node.Initializer. It creates, starts, and registers a
+// client proxy.
 func (m minimal) Inject(ctx cli.Flags, inj node.Injector) error {
 
 	addr := ctx.String("clientaddr")
 
-	httpclient := httpclient.NewClient(addr)
+	proxyhttp := http.NewHTTP(addr)
 
-	inj.Inject(httpclient)
+	inj.Inject(proxyhttp)
 
-	go httpclient.Start()
+	go proxyhttp.Listen()
+
+	go func() {
+		quit := make(chan os.Signal, 1)
+		signal.Notify(quit, os.Interrupt)
+		<-quit
+		proxyhttp.Stop()
+	}()
 
 	return nil
 }

@@ -19,13 +19,13 @@ import (
 	"go.dedis.ch/dela/cli/node"
 	pedersen "go.dedis.ch/dela/dkg/pedersen/controller"
 	byzcoin "go.dedis.ch/dela/ledger/byzcoin/controller"
-	httpclient "go.dedis.ch/dela/mino/httpclient/controller"
 	mino "go.dedis.ch/dela/mino/minogrpc/controller"
+	proxyhttp "go.dedis.ch/dela/mino/proxy/http/controller"
 )
 
 func main() {
 	builder := node.NewBuilder(
-		httpclient.NewMinimal(),
+		proxyhttp.NewMinimal(),
 		mino.NewMinimal(),
 		byzcoin.NewMinimal(),
 		pedersen.NewMinimal(),
