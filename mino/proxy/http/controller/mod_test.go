@@ -28,7 +28,7 @@ func TestMinimal_Inject(t *testing.T) {
 	inj := newInjector()
 	err := minimal.Inject(fakeFlags{
 		Strings: map[string]string{
-			"addrs": "127.0.0.1:2000",
+			"clientaddr": "127.0.0.1:2000",
 		},
 	}, inj)
 	require.NoError(t, err)
