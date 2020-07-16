@@ -28,7 +28,10 @@ func TestMinimal_Inject(t *testing.T) {
 	inj := newInjector()
 	err := minimal.Inject(fakeFlags{
 		Strings: map[string]string{
-			"clientaddr": "127.0.0.1:2000",
+			// we use a different port here because the server runing from the
+			// previous test might not be fully stop at the time this test
+			// starts.
+			"clientaddr": "127.0.0.1:2001",
 		},
 	}, inj)
 	require.NoError(t, err)
