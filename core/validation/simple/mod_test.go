@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/store"
-	trie "go.dedis.ch/dela/core/store/trie/mem"
+	merkle "go.dedis.ch/dela/core/store/hashtree/mem"
 	"go.dedis.ch/dela/core/tap"
 	"go.dedis.ch/dela/core/tap/anon"
 	"golang.org/x/xerrors"
@@ -15,7 +15,7 @@ import (
 func TestService_Validate(t *testing.T) {
 	srvc := NewService(fakeExec{})
 
-	trie := trie.NewTrie()
+	trie := merkle.NewMerkleTree()
 
 	data, err := srvc.Validate(trie, []tap.Transaction{makeTx(t)})
 	require.NoError(t, err)

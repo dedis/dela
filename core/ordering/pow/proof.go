@@ -3,7 +3,7 @@ package pow
 import (
 	"bytes"
 
-	"go.dedis.ch/dela/core/store/trie"
+	"go.dedis.ch/dela/core/store/hashtree"
 	"golang.org/x/xerrors"
 )
 
@@ -13,11 +13,11 @@ import (
 // - implements ordering.Proof
 type Proof struct {
 	blocks []Block
-	path   trie.Path
+	path   hashtree.Path
 }
 
 // NewProof creates a new valid proof.
-func NewProof(blocks []Block, path trie.Path) (Proof, error) {
+func NewProof(blocks []Block, path hashtree.Path) (Proof, error) {
 	pr := Proof{
 		blocks: blocks,
 		path:   path,

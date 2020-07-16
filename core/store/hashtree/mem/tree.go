@@ -1,7 +1,3 @@
-// Package mem defines a merkle binary prefix tree that is implementing the
-// CONIKS paper.
-//
-// https://www.usenix.org/system/files/conference/usenixsecurity15/sec15-paper-melara.pdf
 package mem
 
 import (

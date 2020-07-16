@@ -1,32 +1,36 @@
+// Package mem implements the hash tree interface by following the merkle binary
+// prefix tree described in:
+//
+// https://www.usenix.org/system/files/conference/usenixsecurity15/sec15-paper-melara.pdf
 package mem
 
 import (
 	"go.dedis.ch/dela/core/store"
-	"go.dedis.ch/dela/core/store/trie"
+	"go.dedis.ch/dela/core/store/hashtree"
 	"go.dedis.ch/dela/crypto"
 	"golang.org/x/xerrors"
 )
 
-// Trie is an in-memory implementation of a trie. It saves the updates in an
-// internal store and only keeps the updates of the current trie. When reading,
-// it'll look up by following the parent trie if the key is not found.
+// MerkleTree is an in-memory implementation of a trie. It saves the updates in
+// an internal store and only keep the updates of the current trie. When
+// reading, it'll look up by following the parent trie if the key is not found.
 //
 // - implements trie.Trie
-type Trie struct {
+type MerkleTree struct {
 	tree        *Tree
 	hashFactory crypto.HashFactory
 }
 
-// NewTrie creates a new in-memory trie.
-func NewTrie() *Trie {
-	return &Trie{
+// NewMerkleTree creates a new in-memory trie.
+func NewMerkleTree() *MerkleTree {
+	return &MerkleTree{
 		tree:        NewTree(32),
 		hashFactory: crypto.NewSha256Factory(),
 	}
 }
 
 // Get implements store.Readable.
-func (t *Trie) Get(key []byte) ([]byte, error) {
+func (t *MerkleTree) Get(key []byte) ([]byte, error) {
 	value, err := t.tree.Search(key, nil)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't search key: %v", err)
@@ -36,7 +40,7 @@ func (t *Trie) Get(key []byte) ([]byte, error) {
 }
 
 // Set implements store.Writable.
-func (t *Trie) Set(key, value []byte) error {
+func (t *MerkleTree) Set(key, value []byte) error {
 	err := t.tree.Insert(key, value)
 	if err != nil {
 		return xerrors.Errorf("couldn't insert pair: %v", err)
@@ -46,7 +50,7 @@ func (t *Trie) Set(key, value []byte) error {
 }
 
 // Delete implements store.Writable.
-func (t *Trie) Delete(key []byte) error {
+func (t *MerkleTree) Delete(key []byte) error {
 	err := t.tree.Delete(key)
 	if err != nil {
 		return xerrors.Errorf("couldn't delete key: %v", err)
@@ -56,12 +60,12 @@ func (t *Trie) Delete(key []byte) error {
 }
 
 // GetRoot implements trie.Trie.
-func (t *Trie) GetRoot() []byte {
+func (t *MerkleTree) GetRoot() []byte {
 	return t.tree.root.GetHash()
 }
 
 // GetPath implements trie.Trie.
-func (t *Trie) GetPath(key []byte) (trie.Path, error) {
+func (t *MerkleTree) GetPath(key []byte) (hashtree.Path, error) {
 	path := newPath(key)
 
 	_, err := t.tree.Search(key, &path)
@@ -74,7 +78,7 @@ func (t *Trie) GetPath(key []byte) (trie.Path, error) {
 
 // Stage implements trie.Trie. It executes the callback over a child of the
 // current trie and return the trie with the root calculated.
-func (t *Trie) Stage(fn func(store.Snapshot) error) (trie.Trie, error) {
+func (t *MerkleTree) Stage(fn func(store.Snapshot) error) (hashtree.Tree, error) {
 	trie := t.clone()
 
 	err := fn(trie)
@@ -90,8 +94,8 @@ func (t *Trie) Stage(fn func(store.Snapshot) error) (trie.Trie, error) {
 	return trie, nil
 }
 
-func (t *Trie) clone() *Trie {
-	return &Trie{
+func (t *MerkleTree) clone() *MerkleTree {
+	return &MerkleTree{
 		tree:        t.tree.Clone(),
 		hashFactory: t.hashFactory,
 	}
