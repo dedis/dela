@@ -7,7 +7,6 @@ import (
 	// Static registration of the JSON formats. By having them here, it ensures
 	// that an import of the JSON context engine will import the definitions.
 	_ "go.dedis.ch/dela/blockchain/skipchain/json"
-	_ "go.dedis.ch/dela/calypso/json"
 	_ "go.dedis.ch/dela/consensus/cosipbft/json"
 	_ "go.dedis.ch/dela/consensus/qsc/json"
 	_ "go.dedis.ch/dela/consensus/viewchange/roster/json"

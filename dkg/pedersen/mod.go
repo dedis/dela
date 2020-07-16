@@ -16,7 +16,7 @@ import (
 	"golang.org/x/xerrors"
 )
 
-// Suite is the Kyber suite for Pedersen.
+// suite is the Kyber suite for Pedersen.
 var suite = suites.MustFind("Ed25519")
 
 // Pedersen allows one to initialise a new DKG protocol.
@@ -29,14 +29,17 @@ type Pedersen struct {
 }
 
 // NewPedersen returns a new DKG Pedersen factory
-func NewPedersen(privKey kyber.Scalar, m mino.Mino) *Pedersen {
+func NewPedersen(m mino.Mino) (*Pedersen, kyber.Point) {
 	factory := types.NewMessageFactory(m.GetAddressFactory())
 
+	privkey := suite.Scalar().Pick(suite.RandomStream())
+	pubkey := suite.Point().Mul(privkey, nil)
+
 	return &Pedersen{
-		privKey: privKey,
+		privKey: privkey,
 		mino:    m,
 		factory: factory,
-	}
+	}, pubkey
 }
 
 // Listen implements dkg.DKG. It must be called on each node that participates

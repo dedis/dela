@@ -37,7 +37,7 @@ func (m minimal) Inject(ctx cli.Flags, inj node.Injector) error {
 	var no mino.Mino
 	err := inj.Resolve(&no)
 	if err != nil {
-		return xerrors.Errorf("failed to resolve: %v", err)
+		return xerrors.Errorf("failed to resolve mino: %v", err)
 	}
 
 	ldgr := byzcoin.NewLedger(no, bls.NewSigner())
@@ -57,10 +57,6 @@ func (m minimal) Inject(ctx cli.Flags, inj node.Injector) error {
 //
 // - implements node.ActionTemplate
 type setupAction struct{}
-
-func (a setupAction) Do(flags cli.Flags) error {
-	return nil
-}
 
 // Prepare implements node.ActionTemplate.
 func (a setupAction) GenerateRequest(ctx cli.Flags) ([]byte, error) {

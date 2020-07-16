@@ -29,6 +29,10 @@ func (inj *reflectInjector) Resolve(v interface{}) error {
 		return xerrors.New("expect a pointer")
 	}
 
+	if !rv.Elem().IsValid() {
+		return xerrors.Errorf("reflect value '%v' is invalid", rv)
+	}
+
 	for typ, value := range inj.mapper {
 		if typ.AssignableTo(rv.Elem().Type()) {
 			rv.Elem().Set(reflect.ValueOf(value))

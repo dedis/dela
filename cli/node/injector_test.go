@@ -20,6 +20,9 @@ func TestReflectInjector_Resolve(t *testing.T) {
 	err = inj.Resolve(&dep2)
 	require.EqualError(t, err, "couldn't find dependency for 'uint64'")
 
+	err = inj.Resolve((*interface{})(nil))
+	require.EqualError(t, err, "reflect value '<nil>' is invalid")
+
 	err = inj.Resolve(dep2)
 	require.EqualError(t, err, "expect a pointer")
 }

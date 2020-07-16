@@ -14,6 +14,7 @@ import (
 	"golang.org/x/xerrors"
 )
 
+// suite is the Kyber suite for Pedersen.
 var suite = suites.MustFind("Ed25519")
 
 func TestMessageFormat_Start_Encode(t *testing.T) {
