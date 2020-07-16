@@ -31,13 +31,13 @@ type Service interface {
 	// contact the node.
 	Listen() error
 
-	// Close closes the service.
-	Close() error
+	// Stop closes the service.
+	Stop() error
 
 	// GetProof must return a proof of the value at the provided key.
 	GetProof(key []byte) (Proof, error)
 
-	// Watch returns channel populated with events when transactions are
+	// Watch returns a channel populated with events when transactions are
 	// accepted.
 	Watch(ctx context.Context) <-chan Event
 }

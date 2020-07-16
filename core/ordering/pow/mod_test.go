@@ -24,7 +24,7 @@ func TestService_Basic(t *testing.T) {
 
 	// 1. Start the ordering service.
 	require.NoError(t, srvc.Listen())
-	defer srvc.Close()
+	defer srvc.Stop()
 
 	// 2. Watch for new events before sending a transaction.
 	ctx, cancel := context.WithCancel(context.Background())
@@ -61,10 +61,10 @@ func TestService_Listen(t *testing.T) {
 	err = srvc.Listen()
 	require.EqualError(t, err, "service already started")
 
-	err = srvc.Close()
+	err = srvc.Stop()
 	require.NoError(t, err)
 
-	err = srvc.Close()
+	err = srvc.Stop()
 	require.EqualError(t, err, "service not started")
 
 	pool.Add(makeTx(t, 0))

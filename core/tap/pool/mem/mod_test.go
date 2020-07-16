@@ -31,7 +31,7 @@ func TestPool_Add(t *testing.T) {
 	err = pool.Add(fakeTx{id: []byte{2}})
 	require.NoError(t, err)
 
-	// A transaction that exists in the active queue can simply be overriden
+	// A transaction that exists in the active queue can simply be overwritten
 	// thus no error is expected.
 	err = pool.Add(fakeTx{id: []byte{1}})
 	require.NoError(t, err)

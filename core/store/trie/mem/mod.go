@@ -15,7 +15,7 @@ type item struct {
 }
 
 // Trie is an in-memory implementation of a trie. It saves the updates in an
-// internal store and only keep the updates of the current trie. When reading,
+// internal store and only keeps the updates of the current trie. When reading,
 // it'll look up by following the parent trie if the key is not found.
 //
 // - implements trie.Trie
@@ -87,8 +87,8 @@ func (t *Trie) GetRoot() []byte {
 	return t.root
 }
 
-// GetShare implements trie.Trie. It reads the key and prepare a share that will
-// prove if the key is set, or not.
+// GetShare implements trie.Trie. It reads the key and prepares a share that
+// will prove if the key is set, or not.
 func (t *Trie) GetShare(key []byte) (trie.Share, error) {
 	// In-memory store does not trigger any error.
 	value, _ := t.Get(key)

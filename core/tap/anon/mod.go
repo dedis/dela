@@ -84,7 +84,7 @@ func (t Transaction) GetArg(key string) []byte {
 	return t.args[key]
 }
 
-// Fingerprint implements serde.Fingerprinter. It writes a deteministic binary
+// Fingerprint implements serde.Fingerprinter. It writes a deterministic binary
 // representation of the transaction.
 func (t Transaction) Fingerprint(w io.Writer) error {
 	buffer := make([]byte, 8)

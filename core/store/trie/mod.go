@@ -28,11 +28,11 @@ type Trie interface {
 	GetRoot() []byte
 
 	// GetShare returns a share of the store that will allow one to verify the
-	// integrity of a piece of data. It can be ensured by completed the share
+	// integrity of a piece of data. It can be ensured by completing the share
 	// with the missing data to compute the final root that should match.
 	GetShare(key []byte) (Share, error)
 
 	// Stage must create a writable trie from the current one that will be
-	// pass to the callback then return it.
+	// passed to the callback then return it.
 	Stage(func(store.Snapshot) error) (Trie, error)
 }

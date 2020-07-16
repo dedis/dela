@@ -97,8 +97,8 @@ func (s *Service) Listen() error {
 	return nil
 }
 
-// Close implements ordering.Service.
-func (s *Service) Close() error {
+// Stop implements ordering.Service.
+func (s *Service) Stop() error {
 	if s.closing == nil {
 		return xerrors.New("service not started")
 	}
