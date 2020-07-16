@@ -34,7 +34,7 @@ type Service interface {
 	// Close closes the service.
 	Close() error
 
-	// GetProof must return a proof of the value of the provided key.
+	// GetProof must return a proof of the value at the provided key.
 	GetProof(key []byte) (Proof, error)
 
 	// Watch returns channel populated with events when transactions are
