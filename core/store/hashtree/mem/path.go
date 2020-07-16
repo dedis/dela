@@ -1,8 +1,17 @@
 package mem
 
+import (
+	"math/big"
+
+	"go.dedis.ch/dela/crypto"
+)
+
 // Path is a path along the tree nodes to a key and its value, or none.
 type Path struct {
-	key       []byte
+	key []byte
+	// Root is the root of the hash tree. This value is not serialized and
+	// reproduced from the leaf and the interior nodes when deserializing.
+	root      []byte
 	interiors [][]byte
 	leaf      TreeNode
 }
@@ -32,16 +41,28 @@ func (s Path) GetValue() []byte {
 
 // GetRoot returns the root of the path.
 func (s Path) GetRoot() []byte {
-	if len(s.interiors) == 0 {
-		switch leaf := s.leaf.(type) {
-		case *EmptyNode:
-			return leaf.hash
-		case *LeafNode:
-			return leaf.hash
-		default:
-			return nil
+	return s.root
+}
+
+func computeRoot(leaf, key []byte, interiors [][]byte, fac crypto.HashFactory) ([]byte, error) {
+	curr := leaf
+
+	bi := new(big.Int)
+	bi.SetBytes(key)
+
+	for i := len(interiors) - 1; i >= 0; i-- {
+		h := fac.New()
+
+		if bi.Bit(i) == 0 {
+			h.Write(curr)
+			h.Write(interiors[i])
+		} else {
+			h.Write(interiors[i])
+			h.Write(curr)
 		}
+
+		curr = h.Sum(nil)
 	}
 
-	return s.interiors[0]
+	return curr, nil
 }

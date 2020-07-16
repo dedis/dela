@@ -8,9 +8,13 @@ import (
 	"golang.org/x/xerrors"
 )
 
+// Nonce is the type of the tree nonce.
+type Nonce [8]byte
+
 const (
-	// NonceLength is the length in bytes of the tree nonce.
-	NonceLength = 8
+	// MaxDepth is the maximum depth the tree should reach. It is equivalent to
+	// the maximum key length.
+	MaxDepth = 32
 )
 
 const (
@@ -19,19 +23,40 @@ const (
 	leafNodeType
 )
 
+// TreeNode is the interface for the different types of nodes that a Merkle tree
+// could have.
+type TreeNode interface {
+	GetHash() []byte
+
+	GetType() byte
+
+	Search(key *big.Int, path *Path) []byte
+
+	Insert(key, value []byte, bi *big.Int) TreeNode
+
+	Delete(key *big.Int) TreeNode
+
+	Prepare(nonce []byte, prefix *big.Int, fac crypto.HashFactory) ([]byte, error)
+
+	Visit(func(TreeNode))
+
+	Clone() TreeNode
+}
+
 // Tree is an implementation of a Merkle binary prefix tree. Due to the
 // structure of the tree, any prefix of an index is overriden which means that
 // the key should have the same length.
 type Tree struct {
-	nonce    [NonceLength]byte
+	nonce    Nonce
 	maxDepth int
 	root     TreeNode
 }
 
 // NewTree creates a new empty tree.
-func NewTree(maxDepth int) *Tree {
+func NewTree(nonce Nonce) *Tree {
 	return &Tree{
-		maxDepth: maxDepth,
+		nonce:    nonce,
+		maxDepth: MaxDepth,
 		root:     NewEmptyNode(0),
 	}
 }
@@ -61,6 +86,10 @@ func (t *Tree) Search(key []byte, path *Path) ([]byte, error) {
 	bi.SetBytes(key)
 
 	value := t.root.Search(bi, path)
+
+	if path != nil {
+		path.root = t.root.GetHash()
+	}
 
 	return value, nil
 }
@@ -96,10 +125,10 @@ func (t *Tree) Delete(key []byte) error {
 }
 
 // Update updates the hashes of the tree.
-func (t *Tree) Update() error {
+func (t *Tree) Update(fac crypto.HashFactory) error {
 	prefix := new(big.Int)
 
-	_, err := t.root.Prepare(t.nonce[:], prefix, crypto.NewSha256Factory())
+	_, err := t.root.Prepare(t.nonce[:], prefix, fac)
 	if err != nil {
 		return xerrors.Errorf("failed to prepare: %v", err)
 	}
@@ -114,26 +143,6 @@ func (t *Tree) Clone() *Tree {
 		maxDepth: t.maxDepth,
 		root:     t.root.Clone(),
 	}
-}
-
-// TreeNode is the interface for the different types of nodes that a Merkle tree
-// could have.
-type TreeNode interface {
-	GetHash() []byte
-
-	GetType() byte
-
-	Search(key *big.Int, path *Path) []byte
-
-	Insert(key, value []byte, bi *big.Int) TreeNode
-
-	Delete(key *big.Int) TreeNode
-
-	Prepare(nonce []byte, prefix *big.Int, fac crypto.HashFactory) ([]byte, error)
-
-	Visit(func(TreeNode))
-
-	Clone() TreeNode
 }
 
 // EmptyNode is leaf node with no value.
@@ -244,12 +253,16 @@ func (n *InteriorNode) GetType() byte {
 // Search implements mem.TreeNode. It recursively search for the value in the
 // correct child.
 func (n *InteriorNode) Search(key *big.Int, path *Path) []byte {
-	if path != nil {
-		path.interiors = append(path.interiors, n.hash)
+	if key.Bit(n.depth) == 0 {
+		if path != nil {
+			path.interiors = append(path.interiors, n.right.GetHash())
+		}
+
+		return n.left.Search(key, path)
 	}
 
-	if key.Bit(n.depth) == 0 {
-		return n.left.Search(key, path)
+	if path != nil {
+		path.interiors = append(path.interiors, n.left.GetHash())
 	}
 
 	return n.right.Search(key, path)
