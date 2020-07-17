@@ -117,11 +117,10 @@ func TestInMemoryStore_Fetch(t *testing.T) {
 
 func TestInMemoryStore_Hash(t *testing.T) {
 	store := NewInMemoryStore()
-	store.hashFactory = fake.NewHashFactory(&fake.Hash{})
 
 	digest, err := store.Hash(&tls.Certificate{Leaf: &x509.Certificate{Raw: []byte{1}}})
 	require.NoError(t, err)
-	require.Equal(t, []byte{}, digest)
+	require.Len(t, digest, 32)
 }
 
 // -----------------------------------------------------------------------------
