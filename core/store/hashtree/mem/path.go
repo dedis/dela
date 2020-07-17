@@ -6,7 +6,9 @@ import (
 	"go.dedis.ch/dela/crypto"
 )
 
-// Path is a path along the tree nodes to a key and its value, or none.
+// Path is a path from the root to a leaf, represented as a series of interior
+// nodes hashes. The end of the path is either a leaf with a key holding a
+// value, or an empty node.
 //
 // - implements hashtree.Path
 type Path struct {
@@ -31,7 +33,7 @@ func (s Path) GetKey() []byte {
 	return s.key
 }
 
-// GetValue implements hashtree.Path. It returns the value of the path.
+// GetValue implements hashtree.Path. It returns the value pointed by the path.
 func (s Path) GetValue() []byte {
 	switch leaf := s.leaf.(type) {
 	case *LeafNode:
@@ -41,7 +43,8 @@ func (s Path) GetValue() []byte {
 	}
 }
 
-// GetRoot implements hashtree.Path. It returns the root of the path.
+// GetRoot implements hashtree.Path. It returns the hash of the root node
+// calculated from the leaf up to the root.
 func (s Path) GetRoot() []byte {
 	return s.root
 }

@@ -28,11 +28,11 @@ type Tree interface {
 	// GetRoot returns the root hash of this tree.
 	GetRoot() []byte
 
-	// GetPath returns a path to a key and its value in the tree. It can be use
+	// GetPath returns a path to a key and its value in the tree. It can be used
 	// as a proof of inclusion or a proof of absence in the contrary.
 	GetPath(key []byte) (Path, error)
 
 	// Stage must create a writable tree from the current one that will be
-	// pass to the callback then return it.
+	// passed to the callback, then return it.
 	Stage(func(store.Snapshot) error) (Tree, error)
 }

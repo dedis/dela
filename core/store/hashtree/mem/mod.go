@@ -16,7 +16,7 @@ import (
 
 // MerkleTree is an in-memory implementation of a Merkle prefix binary tree.
 // This particular implementation assumes the keys will have the same length so
-// that any prefix is overriden by the index.
+// that only the longest unique prefix along the path can be a leaf node.
 //
 // - implements hashtree.Tree
 type MerkleTree struct {
@@ -36,7 +36,7 @@ func NewMerkleTree() *MerkleTree {
 }
 
 // Get implements store.Readable. It returns the value associated with the key
-// it exists, otherwise it returns nil.
+// if it exists, otherwise it returns nil.
 func (t *MerkleTree) Get(key []byte) ([]byte, error) {
 	value, err := t.tree.Search(key, nil)
 	if err != nil {
@@ -64,8 +64,8 @@ func (t *MerkleTree) GetPath(key []byte) (hashtree.Path, error) {
 	return path, nil
 }
 
-// Stage implements hashtree.Tree. It executes the callback over a child of the
-// current trie and return the trie with the root calculated.
+// Stage implements hashtree.Tree. It executes the callback over a clone of the
+// current tree and return the clone with the root calculated.
 func (t *MerkleTree) Stage(fn func(store.Snapshot) error) (hashtree.Tree, error) {
 	trie := t.clone()
 

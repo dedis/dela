@@ -113,7 +113,7 @@ func TestEmptyNode_Search(t *testing.T) {
 func TestEmptyNode_Insert(t *testing.T) {
 	node := NewEmptyNode(0)
 
-	next := node.Insert([]byte("ping"), []byte("pong"), nil)
+	next := node.Insert(prepareKey([]byte("ping")), []byte("pong"))
 	require.IsType(t, (*LeafNode)(nil), next)
 }
 
@@ -195,10 +195,10 @@ func TestInteriorNode_Search(t *testing.T) {
 func TestInteriorNode_Insert(t *testing.T) {
 	node := NewInteriorNode(0)
 
-	next := node.Insert([]byte{0}, []byte("ping"), big.NewInt(0))
+	next := node.Insert(big.NewInt(0), []byte("ping"))
 	require.Same(t, node, next)
 
-	next = node.Insert([]byte{1}, []byte("pong"), big.NewInt(1))
+	next = node.Insert(big.NewInt(1), []byte("pong"))
 	require.Same(t, node, next)
 }
 
@@ -282,29 +282,29 @@ func TestLeafNode_Search(t *testing.T) {
 	node := NewLeafNode(0, []byte("ping"), []byte("pong"))
 	path := newPath([]byte("ping"))
 
-	value := node.Search(makeKey([]byte("ping")), &path)
+	value := node.Search(prepareKey([]byte("ping")), &path)
 	require.Equal(t, []byte("pong"), value)
 	require.Equal(t, node, path.leaf)
 
-	value = node.Search(makeKey([]byte("pong")), nil)
+	value = node.Search(prepareKey([]byte("pong")), nil)
 	require.Nil(t, value)
 }
 
 func TestLeafNode_Insert(t *testing.T) {
 	node := NewLeafNode(0, []byte("ping"), []byte("pong"))
 
-	next := node.Insert([]byte("ping"), []byte("abc"), makeKey([]byte("ping")))
+	next := node.Insert(prepareKey([]byte("ping")), []byte("abc"))
 	require.Same(t, node, next)
 	require.Equal(t, []byte("abc"), next.(*LeafNode).value)
 
 	node = NewLeafNode(0, []byte{0}, []byte{0xaa})
-	next = node.Insert([]byte{1}, []byte{0xbb}, makeKey([]byte{1}))
+	next = node.Insert(prepareKey([]byte{1}), []byte{0xbb})
 	require.IsType(t, (*InteriorNode)(nil), next)
 	require.IsType(t, (*LeafNode)(nil), next.(*InteriorNode).left)
 	require.IsType(t, (*LeafNode)(nil), next.(*InteriorNode).right)
 
 	node = NewLeafNode(0, []byte{1}, []byte{0xaa})
-	next = node.Insert([]byte{0}, []byte{0xbb}, makeKey([]byte{0}))
+	next = node.Insert(prepareKey([]byte{0}), []byte{0xbb})
 	require.IsType(t, (*InteriorNode)(nil), next)
 	require.IsType(t, (*LeafNode)(nil), next.(*InteriorNode).left)
 	require.IsType(t, (*LeafNode)(nil), next.(*InteriorNode).right)
@@ -313,10 +313,10 @@ func TestLeafNode_Insert(t *testing.T) {
 func TestLeafNode_Delete(t *testing.T) {
 	node := NewLeafNode(0, []byte("ping"), []byte("pong"))
 
-	next := node.Delete(makeKey([]byte("pong")))
+	next := node.Delete(prepareKey([]byte("pong")))
 	require.Same(t, node, next)
 
-	next = node.Delete(makeKey([]byte("ping")))
+	next = node.Delete(prepareKey([]byte("ping")))
 	require.IsType(t, (*EmptyNode)(nil), next)
 }
 
