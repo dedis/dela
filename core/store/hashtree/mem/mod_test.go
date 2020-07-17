@@ -16,6 +16,8 @@ func TestMerkleTree_IntegrationTests(t *testing.T) {
 	var tree hashtree.Tree = NewMerkleTree()
 	keys := make([][MaxDepth]byte, 0)
 
+	fac := tree.(*MerkleTree).hashFactory
+
 	f := func(key [MaxDepth]byte, value []byte) bool {
 		var err error
 		tree, err = tree.Stage(func(snap store.Snapshot) error {
@@ -28,6 +30,10 @@ func TestMerkleTree_IntegrationTests(t *testing.T) {
 
 		path, err := tree.GetPath(key[:])
 		require.NoError(t, err)
+
+		root, err := computeRoot(path.(Path).leaf.GetHash(), key[:], path.(Path).interiors, fac)
+		require.NoError(t, err)
+		require.Equal(t, root, tree.GetRoot())
 
 		return bytes.Equal(value, path.GetValue())
 	}

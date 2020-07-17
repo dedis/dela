@@ -50,6 +50,9 @@ type TreeNode interface {
 // Tree is an implementation of a Merkle binary prefix tree. Due to the
 // structure of the tree, any prefix of an index is overriden which means that
 // the key should have the same length.
+//
+// Mutable operations on the tree don't update the hash root. It can be done
+// after a batch of operations or a single one by using the Prepare function.
 type Tree struct {
 	nonce    Nonce
 	maxDepth int

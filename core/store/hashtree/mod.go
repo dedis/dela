@@ -8,13 +8,14 @@ import "go.dedis.ch/dela/core/store"
 // Path is a path along the tree to a key and its value, or none if the key is
 // not set.
 type Path interface {
-	// GetKey returns the key of the share.
+	// GetKey returns the key of the path.
 	GetKey() []byte
 
-	// GetValue returns the value of the share, or nil if it is not set.
+	// GetValue returns the value of the path, or nil if it is not set.
 	GetValue() []byte
 
-	// GetRoot returns the store root calculated from the key.
+	// GetRoot returns the store root calculated from the key. It should match
+	// the tree root for the path to be valid.
 	GetRoot() []byte
 }
 
@@ -28,7 +29,7 @@ type Tree interface {
 	GetRoot() []byte
 
 	// GetPath returns a path to a key and its value in the tree. It can be use
-	// as a proof of inclusion or a proof of absence in the contraray.
+	// as a proof of inclusion or a proof of absence in the contrary.
 	GetPath(key []byte) (Path, error)
 
 	// Stage must create a writable tree from the current one that will be

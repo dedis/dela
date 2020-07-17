@@ -7,6 +7,8 @@ import (
 )
 
 // Path is a path along the tree nodes to a key and its value, or none.
+//
+// - implements hashtree.Path
 type Path struct {
 	key []byte
 	// Root is the root of the hash tree. This value is not serialized and
@@ -24,12 +26,12 @@ func newPath(key []byte) Path {
 	}
 }
 
-// GetKey returns the key associated to the path.
+// GetKey implements hashtree.Path. It returns the key associated to the path.
 func (s Path) GetKey() []byte {
 	return s.key
 }
 
-// GetValue returns the value of the path.
+// GetValue implements hashtree.Path. It returns the value of the path.
 func (s Path) GetValue() []byte {
 	switch leaf := s.leaf.(type) {
 	case *LeafNode:
@@ -39,7 +41,7 @@ func (s Path) GetValue() []byte {
 	}
 }
 
-// GetRoot returns the root of the path.
+// GetRoot implements hashtree.Path. It returns the root of the path.
 func (s Path) GetRoot() []byte {
 	return s.root
 }
