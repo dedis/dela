@@ -12,6 +12,10 @@ import (
 type Nonce [8]byte
 
 const (
+	// DepthLength is the length in bytes of the binary representation of the
+	// depth.
+	DepthLength = 2
+
 	// MaxDepth is the maximum depth the tree should reach. It is equivalent to
 	// the maximum key length.
 	MaxDepth = 32
@@ -147,12 +151,12 @@ func (t *Tree) Clone() *Tree {
 
 // EmptyNode is leaf node with no value.
 type EmptyNode struct {
-	depth int
+	depth uint16
 	hash  []byte
 }
 
 // NewEmptyNode creates a new empty node.
-func NewEmptyNode(depth int) *EmptyNode {
+func NewEmptyNode(depth uint16) *EmptyNode {
 	return &EmptyNode{
 		depth: depth,
 	}
@@ -194,7 +198,7 @@ func (n *EmptyNode) Delete(key *big.Int) TreeNode {
 func (n *EmptyNode) Prepare(nonce []byte, prefix *big.Int, fac crypto.HashFactory) ([]byte, error) {
 	h := fac.New()
 
-	data := make([]byte, 1+len(nonce)+prefix.BitLen()+8)
+	data := make([]byte, 1+len(nonce)+prefix.BitLen()+DepthLength)
 	cursor := 1
 	data[0] = emptyNodeType
 	copy(data[cursor:], nonce)
@@ -205,7 +209,7 @@ func (n *EmptyNode) Prepare(nonce []byte, prefix *big.Int, fac crypto.HashFactor
 
 	_, err := h.Write(data)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to write: %v", err)
+		return nil, xerrors.Errorf("empty node failed: %v", err)
 	}
 
 	n.hash = h.Sum(nil)
@@ -226,13 +230,13 @@ func (n *EmptyNode) Clone() TreeNode {
 // InteriorNode is a node with two children.
 type InteriorNode struct {
 	hash  []byte
-	depth int
+	depth uint16
 	left  TreeNode
 	right TreeNode
 }
 
 // NewInteriorNode creates a new interior node with two empty nodes as children.
-func NewInteriorNode(depth int) *InteriorNode {
+func NewInteriorNode(depth uint16) *InteriorNode {
 	return &InteriorNode{
 		depth: depth,
 		left:  NewEmptyNode(depth + 1),
@@ -253,7 +257,7 @@ func (n *InteriorNode) GetType() byte {
 // Search implements mem.TreeNode. It recursively search for the value in the
 // correct child.
 func (n *InteriorNode) Search(key *big.Int, path *Path) []byte {
-	if key.Bit(n.depth) == 0 {
+	if key.Bit(int(n.depth)) == 0 {
 		if path != nil {
 			path.interiors = append(path.interiors, n.right.GetHash())
 		}
@@ -271,7 +275,7 @@ func (n *InteriorNode) Search(key *big.Int, path *Path) []byte {
 // Insert implements mem.TreeNode. It inserts the key/value pair to the right
 // path.
 func (n *InteriorNode) Insert(key, value []byte, bi *big.Int) TreeNode {
-	if bi.Bit(n.depth) == 0 {
+	if bi.Bit(int(n.depth)) == 0 {
 		n.left = n.left.Insert(key, value, bi)
 	} else {
 		n.right = n.right.Insert(key, value, bi)
@@ -282,7 +286,7 @@ func (n *InteriorNode) Insert(key, value []byte, bi *big.Int) TreeNode {
 
 // Delete implements mem.TreeNode. It deletes the key from the right path.
 func (n *InteriorNode) Delete(key *big.Int) TreeNode {
-	if key.Bit(n.depth) == 0 {
+	if key.Bit(int(n.depth)) == 0 {
 		n.left = n.left.Delete(key)
 	} else {
 		n.right = n.right.Delete(key)
@@ -302,19 +306,21 @@ func (n *InteriorNode) Delete(key *big.Int) TreeNode {
 func (n *InteriorNode) Prepare(nonce []byte, prefix *big.Int, fac crypto.HashFactory) ([]byte, error) {
 	h := fac.New()
 
-	left, err := n.left.Prepare(nonce, new(big.Int).SetBit(prefix, n.depth, 0), fac)
+	left, err := n.left.Prepare(nonce, new(big.Int).SetBit(prefix, int(n.depth), 0), fac)
 	if err != nil {
+		// No wrapping to prevent recursive calls to create huge error messages.
 		return nil, err
 	}
 
-	right, err := n.right.Prepare(nonce, new(big.Int).SetBit(prefix, n.depth, 1), fac)
+	right, err := n.right.Prepare(nonce, new(big.Int).SetBit(prefix, int(n.depth), 1), fac)
 	if err != nil {
+		// No wrapping to prevent recursive calls to create huge error messages.
 		return nil, err
 	}
 
 	_, err = h.Write(append(left, right...))
 	if err != nil {
-		return nil, xerrors.Errorf("failed to write: %v", err)
+		return nil, xerrors.Errorf("interior node failed: %v", err)
 	}
 
 	n.hash = h.Sum(nil)
@@ -342,13 +348,13 @@ func (n *InteriorNode) Clone() TreeNode {
 // LeafNode is a leaf node with a key and a value.
 type LeafNode struct {
 	hash  []byte
-	depth int
+	depth uint16
 	key   []byte
 	value []byte
 }
 
 // NewLeafNode creates a new leaf node.
-func NewLeafNode(depth int, key, value []byte) *LeafNode {
+func NewLeafNode(depth uint16, key, value []byte) *LeafNode {
 	return &LeafNode{
 		depth: depth,
 		key:   key,
@@ -372,10 +378,7 @@ func (n *LeafNode) Search(key *big.Int, path *Path) []byte {
 		path.leaf = n
 	}
 
-	curr := new(big.Int)
-	curr.SetBytes(n.key)
-
-	if curr.Cmp(key) == 0 {
+	if makeKey(n.key).Cmp(key) == 0 {
 		return n.value
 	}
 
@@ -385,8 +388,7 @@ func (n *LeafNode) Search(key *big.Int, path *Path) []byte {
 // Insert implements mem.TreeNode. It replaces the leaf node by an interior node
 // that contains both the current pair and the new one to insert.
 func (n *LeafNode) Insert(key, value []byte, bi *big.Int) TreeNode {
-	curr := new(big.Int)
-	curr.SetBytes(n.key)
+	curr := makeKey(n.key)
 
 	if curr.Cmp(bi) == 0 {
 		n.value = value
@@ -395,13 +397,13 @@ func (n *LeafNode) Insert(key, value []byte, bi *big.Int) TreeNode {
 
 	node := NewInteriorNode(n.depth)
 
-	if curr.Bit(n.depth) == 0 {
+	if curr.Bit(int(n.depth)) == 0 {
 		node.left = node.left.Insert(n.key, n.value, curr)
 	} else {
 		node.right = node.right.Insert(n.key, n.value, curr)
 	}
 
-	if bi.Bit(n.depth) == 0 {
+	if bi.Bit(int(n.depth)) == 0 {
 		node.left = node.left.Insert(key, value, bi)
 	} else {
 		node.right = node.right.Insert(key, value, bi)
@@ -412,10 +414,7 @@ func (n *LeafNode) Insert(key, value []byte, bi *big.Int) TreeNode {
 
 // Delete implements mem.TreeNode. It removes the leaf if the key matches.
 func (n *LeafNode) Delete(key *big.Int) TreeNode {
-	curr := new(big.Int)
-	curr.SetBytes(n.key)
-
-	if curr.Cmp(key) == 0 {
+	if makeKey(n.key).Cmp(key) == 0 {
 		return NewEmptyNode(n.depth)
 	}
 
@@ -427,22 +426,22 @@ func (n *LeafNode) Delete(key *big.Int) TreeNode {
 func (n *LeafNode) Prepare(nonce []byte, prefix *big.Int, fac crypto.HashFactory) ([]byte, error) {
 	h := fac.New()
 
-	data := make([]byte, 1+len(nonce)+n.depth+8+len(n.key)+len(n.value))
+	data := make([]byte, 1+len(nonce)+DepthLength+prefix.BitLen()+len(n.key)+len(n.value))
 	data[0] = leafNodeType
 	cursor := 1
 	copy(data[cursor:], nonce)
 	cursor += len(nonce)
 	copy(data[cursor:], int2buffer(n.depth))
-	cursor += 8
+	cursor += DepthLength
 	copy(data[cursor:], prefix.Bytes())
-	cursor += n.depth
+	cursor += prefix.BitLen()
 	copy(data[cursor:], n.key)
 	cursor += len(n.key)
 	copy(data[cursor:], n.value)
 
 	_, err := h.Write(data)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to write: %v", err)
+		return nil, xerrors.Errorf("leaf node failed: %v", err)
 	}
 
 	n.hash = h.Sum(nil)
@@ -460,9 +459,16 @@ func (n *LeafNode) Clone() TreeNode {
 	return NewLeafNode(n.depth, n.key, n.value)
 }
 
-func int2buffer(depth int) []byte {
-	buffer := make([]byte, 8)
-	binary.LittleEndian.PutUint64(buffer, uint64(depth))
+func int2buffer(depth uint16) []byte {
+	buffer := make([]byte, 2)
+	binary.LittleEndian.PutUint16(buffer, depth)
 
 	return buffer
+}
+
+func makeKey(key []byte) *big.Int {
+	bi := new(big.Int)
+	bi.SetBytes(key)
+
+	return bi
 }

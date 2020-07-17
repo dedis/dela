@@ -1,6 +1,7 @@
 // Package mem implements the hash tree interface by following the merkle binary
 // prefix tree described in:
 //
+// @nolint-next-line
 // https://www.usenix.org/system/files/conference/usenixsecurity15/sec15-paper-melara.pdf
 package mem
 

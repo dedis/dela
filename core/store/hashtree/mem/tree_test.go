@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
+	"golang.org/x/xerrors"
 )
 
 func TestTree_Len(t *testing.T) {
@@ -135,10 +136,10 @@ func TestEmptyNode_Prepare(t *testing.T) {
 	_, err = node.Prepare([]byte{1}, new(big.Int).SetBytes([]byte{2}), fake.NewHashFactory(&fake.Hash{Call: calls}))
 	require.NoError(t, err)
 	require.Equal(t, 1, calls.Len())
-	require.Equal(t, "\x00\x01\x02\x00\x03\x00\x00\x00\x00\x00\x00\x00", string(calls.Get(0, 0).([]byte)))
+	require.Equal(t, "\x00\x01\x02\x00\x03\x00", string(calls.Get(0, 0).([]byte)))
 
 	_, err = node.Prepare([]byte{1}, new(big.Int), fake.NewHashFactory(fake.NewBadHash()))
-	require.EqualError(t, err, "failed to write: fake error")
+	require.EqualError(t, err, "empty node failed: fake error")
 }
 
 func TestEmptyNode_Visit(t *testing.T) {
@@ -158,4 +159,208 @@ func TestEmptyNode_Clone(t *testing.T) {
 
 	clone := node.Clone()
 	require.Equal(t, node, clone)
+}
+
+func TestInteriorNode_GetHash(t *testing.T) {
+	node := NewInteriorNode(3)
+
+	require.Empty(t, node.GetHash())
+
+	node.hash = []byte{1, 2, 3}
+	require.Equal(t, []byte{1, 2, 3}, node.GetHash())
+}
+
+func TestInteriorNode_GetType(t *testing.T) {
+	node := NewInteriorNode(3)
+
+	require.Equal(t, interiorNodeType, node.GetType())
+}
+
+func TestInteriorNode_Search(t *testing.T) {
+	node := NewInteriorNode(0)
+	node.left = NewLeafNode(1, big.NewInt(0).Bytes(), []byte("ping"))
+	node.right = NewLeafNode(1, big.NewInt(1).Bytes(), []byte("pong"))
+
+	path := newPath(nil)
+	value := node.Search(big.NewInt(0), &path)
+	require.Equal(t, "ping", string(value))
+	require.Len(t, path.interiors, 1)
+
+	path = newPath(nil)
+	value = node.Search(big.NewInt(1), &path)
+	require.Equal(t, "pong", string(value))
+	require.Len(t, path.interiors, 1)
+}
+
+func TestInteriorNode_Insert(t *testing.T) {
+	node := NewInteriorNode(0)
+
+	next := node.Insert([]byte{0}, []byte("ping"), big.NewInt(0))
+	require.Same(t, node, next)
+
+	next = node.Insert([]byte{1}, []byte("pong"), big.NewInt(1))
+	require.Same(t, node, next)
+}
+
+func TestInteriorNode_Delete(t *testing.T) {
+	node := NewInteriorNode(0)
+	node.left = NewLeafNode(1, big.NewInt(0).Bytes(), []byte("ping"))
+	node.right = NewLeafNode(1, big.NewInt(1).Bytes(), []byte("pong"))
+
+	next := node.Delete(big.NewInt(0))
+	require.Same(t, node, next)
+
+	next = node.Delete(big.NewInt(1))
+	require.IsType(t, (*EmptyNode)(nil), next)
+}
+
+func TestInteriorNode_Prepare(t *testing.T) {
+	node := NewInteriorNode(1)
+	node.left = fakeNode{data: []byte{0xaa}}
+	node.right = fakeNode{data: []byte{0xbb}}
+	calls := &fake.Call{}
+
+	_, err := node.Prepare([]byte{1}, big.NewInt(1), fake.NewHashFactory(&fake.Hash{Call: calls}))
+	require.NoError(t, err)
+	require.Equal(t, 1, calls.Len())
+	require.Equal(t, "\xaa\xbb", string(calls.Get(0, 0).([]byte)))
+
+	node.left = fakeNode{err: xerrors.New("bad node error")}
+	_, err = node.Prepare([]byte{1}, big.NewInt(2), crypto.NewSha256Factory())
+	require.EqualError(t, err, "bad node error")
+
+	node.left = fakeNode{}
+	node.right = fakeNode{err: xerrors.New("bad node error")}
+	_, err = node.Prepare([]byte{1}, big.NewInt(2), crypto.NewSha256Factory())
+	require.EqualError(t, err, "bad node error")
+
+	node.right = fakeNode{}
+	_, err = node.Prepare([]byte{1}, big.NewInt(2), fake.NewHashFactory(fake.NewBadHash()))
+	require.EqualError(t, err, "interior node failed: fake error")
+}
+
+func TestInteriorNode_Visit(t *testing.T) {
+	node := NewInteriorNode(0)
+
+	counter := 0
+	node.Visit(func(n TreeNode) {
+		if counter == 0 {
+			require.IsType(t, node, n)
+		} else {
+			require.IsType(t, (*EmptyNode)(nil), n)
+		}
+		counter++
+	})
+
+	require.Equal(t, 3, counter)
+}
+
+func TestInteriorNode_Clone(t *testing.T) {
+	node := NewInteriorNode(0)
+
+	clone := node.Clone()
+	require.Equal(t, node, clone)
+}
+
+func TestLeafNode_GetHash(t *testing.T) {
+	node := NewLeafNode(0, []byte("ping"), []byte("pong"))
+
+	require.Empty(t, node.GetHash())
+
+	_, err := node.Prepare([]byte{1}, big.NewInt(2), crypto.NewSha256Factory())
+	require.NoError(t, err)
+	require.Len(t, node.GetHash(), 32)
+}
+
+func TestLeafNode_GetType(t *testing.T) {
+	node := NewLeafNode(0, []byte("ping"), []byte("pong"))
+
+	require.Equal(t, leafNodeType, node.GetType())
+}
+
+func TestLeafNode_Search(t *testing.T) {
+	node := NewLeafNode(0, []byte("ping"), []byte("pong"))
+	path := newPath([]byte("ping"))
+
+	value := node.Search(makeKey([]byte("ping")), &path)
+	require.Equal(t, []byte("pong"), value)
+	require.Equal(t, node, path.leaf)
+
+	value = node.Search(makeKey([]byte("pong")), nil)
+	require.Nil(t, value)
+}
+
+func TestLeafNode_Insert(t *testing.T) {
+	node := NewLeafNode(0, []byte("ping"), []byte("pong"))
+
+	next := node.Insert([]byte("ping"), []byte("abc"), makeKey([]byte("ping")))
+	require.Same(t, node, next)
+	require.Equal(t, []byte("abc"), next.(*LeafNode).value)
+
+	node = NewLeafNode(0, []byte{0}, []byte{0xaa})
+	next = node.Insert([]byte{1}, []byte{0xbb}, makeKey([]byte{1}))
+	require.IsType(t, (*InteriorNode)(nil), next)
+	require.IsType(t, (*LeafNode)(nil), next.(*InteriorNode).left)
+	require.IsType(t, (*LeafNode)(nil), next.(*InteriorNode).right)
+
+	node = NewLeafNode(0, []byte{1}, []byte{0xaa})
+	next = node.Insert([]byte{0}, []byte{0xbb}, makeKey([]byte{0}))
+	require.IsType(t, (*InteriorNode)(nil), next)
+	require.IsType(t, (*LeafNode)(nil), next.(*InteriorNode).left)
+	require.IsType(t, (*LeafNode)(nil), next.(*InteriorNode).right)
+}
+
+func TestLeafNode_Delete(t *testing.T) {
+	node := NewLeafNode(0, []byte("ping"), []byte("pong"))
+
+	next := node.Delete(makeKey([]byte("pong")))
+	require.Same(t, node, next)
+
+	next = node.Delete(makeKey([]byte("ping")))
+	require.IsType(t, (*EmptyNode)(nil), next)
+}
+
+func TestLeafNode_Prepare(t *testing.T) {
+	node := NewLeafNode(3, []byte("ping"), []byte("pong"))
+	calls := &fake.Call{}
+
+	_, err := node.Prepare([]byte{1}, big.NewInt(2), fake.NewHashFactory(&fake.Hash{Call: calls}))
+	require.NoError(t, err)
+	require.Equal(t, 1, calls.Len())
+	require.Equal(t, "\x02\x01\x03\x00\x02\x00pingpong", string(calls.Get(0, 0).([]byte)))
+
+	_, err = node.Prepare(nil, big.NewInt(0), fake.NewHashFactory(fake.NewBadHash()))
+	require.EqualError(t, err, "leaf node failed: fake error")
+}
+
+func TestLeafNode_Visit(t *testing.T) {
+	node := NewLeafNode(3, []byte("ping"), []byte("pong"))
+
+	counter := 0
+	node.Visit(func(n TreeNode) {
+		counter++
+		require.IsType(t, node, n)
+	})
+
+	require.Equal(t, 1, counter)
+}
+
+func TestLeafNode_Clone(t *testing.T) {
+	node := NewLeafNode(3, []byte("ping"), []byte("pong"))
+
+	clone := node.Clone()
+	require.Equal(t, node, clone)
+}
+
+// Utility functions -----------------------------------------------------------
+
+type fakeNode struct {
+	TreeNode
+
+	data []byte
+	err  error
+}
+
+func (n fakeNode) Prepare(nonce []byte, prefix *big.Int, fac crypto.HashFactory) ([]byte, error) {
+	return n.data, n.err
 }

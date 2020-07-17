@@ -12,7 +12,7 @@ import (
 	"golang.org/x/xerrors"
 )
 
-func TestMerkleTree_Random(t *testing.T) {
+func TestMerkleTree_IntegrationTests(t *testing.T) {
 	var tree hashtree.Tree = NewMerkleTree()
 	keys := make([][MaxDepth]byte, 0)
 
@@ -123,7 +123,7 @@ func TestMerkleTree_Stage(t *testing.T) {
 	tree.hashFactory = fake.NewHashFactory(fake.NewBadHash())
 	_, err = tree.Stage(func(store.Snapshot) error { return nil })
 	require.EqualError(t, err,
-		"couldn't update tree: failed to prepare: failed to write: fake error")
+		"couldn't update tree: failed to prepare: empty node failed: fake error")
 }
 
 func TestWritableMerkleTree_Set(t *testing.T) {
