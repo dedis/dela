@@ -15,7 +15,7 @@ package main
 import (
 	"os"
 
-	// calypso "go.dedis.ch/dela-apps/calypso/controller"
+	calypso "go.dedis.ch/dela-apps/calypso/controller"
 	"go.dedis.ch/dela/cli/node"
 	pedersen "go.dedis.ch/dela/dkg/pedersen/controller"
 	byzcoin "go.dedis.ch/dela/ledger/byzcoin/controller"
@@ -29,7 +29,7 @@ func main() {
 		mino.NewMinimal(),
 		byzcoin.NewMinimal(),
 		pedersen.NewMinimal(),
-		// calypso.NewMinimal(),
+		calypso.NewMinimal(),
 	)
 
 	app := builder.Build()
