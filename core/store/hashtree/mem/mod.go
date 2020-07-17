@@ -54,7 +54,7 @@ func (t *MerkleTree) GetRoot() []byte {
 // GetPath implements hashtree.Tree. It returns a path to a given key that can
 // be used to prove the inclusion or the absence of a key.
 func (t *MerkleTree) GetPath(key []byte) (hashtree.Path, error) {
-	path := newPath(key)
+	path := newPath(t.tree.nonce[:], key)
 
 	_, err := t.tree.Search(key, &path)
 	if err != nil {

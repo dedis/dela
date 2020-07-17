@@ -31,7 +31,7 @@ func TestMerkleTree_IntegrationTests(t *testing.T) {
 		path, err := tree.GetPath(key[:])
 		require.NoError(t, err)
 
-		root, err := computeRoot(path.(Path).leaf.GetHash(), key[:], path.(Path).interiors, fac)
+		root, err := path.(Path).computeRoot(fac)
 		require.NoError(t, err)
 		require.Equal(t, root, tree.GetRoot())
 
@@ -102,7 +102,7 @@ func TestMerkleTree_GetPath(t *testing.T) {
 		path, err := tree.GetPath(key[:])
 		require.NoError(t, err)
 
-		root, err := computeRoot(path.(Path).leaf.GetHash(), key[:], path.(Path).interiors, tree.hashFactory)
+		root, err := path.(Path).computeRoot(tree.hashFactory)
 		require.NoError(t, err)
 		require.Equal(t, root, path.GetRoot())
 

@@ -89,7 +89,7 @@ func (t *Tree) Search(key []byte, path *Path) ([]byte, error) {
 		return nil, xerrors.Errorf("mismatch key length %d > %d", len(key), t.maxDepth)
 	}
 
-	value := t.root.Search(prepareKey(key), path)
+	value := t.root.Search(makeKey(key), path)
 
 	if path != nil {
 		path.root = t.root.GetHash()
@@ -104,7 +104,7 @@ func (t *Tree) Insert(key []byte, value []byte) error {
 		return xerrors.Errorf("mismatch key length %d > %d", len(key), t.maxDepth)
 	}
 
-	t.root = t.root.Insert(prepareKey(key), value)
+	t.root = t.root.Insert(makeKey(key), value)
 
 	return nil
 }
@@ -115,7 +115,7 @@ func (t *Tree) Delete(key []byte) error {
 		return xerrors.Errorf("mismatch key length %d > %d", len(key), t.maxDepth)
 	}
 
-	t.root = t.root.Delete(prepareKey(key))
+	t.root = t.root.Delete(makeKey(key))
 
 	return nil
 }
@@ -167,7 +167,7 @@ func (n *EmptyNode) GetType() byte {
 // Search implements mem.TreeNode. It always return a empty value.
 func (n *EmptyNode) Search(key *big.Int, path *Path) []byte {
 	if path != nil {
-		path.leaf = n
+		path.value = nil
 	}
 
 	return nil
@@ -264,9 +264,8 @@ func (n *InteriorNode) Search(key *big.Int, path *Path) []byte {
 	return n.right.Search(key, path)
 }
 
-// Insert implements mem.TreeNode. It inserts the key/value pair by following
-// the key bits and creates a leaf as soon as it founds the smallest unique
-// prefix.
+// Insert implements mem.TreeNode. It inserts the key/value pair to the right
+// path.
 func (n *InteriorNode) Insert(key *big.Int, value []byte) TreeNode {
 	if key.Bit(int(n.depth)) == 0 {
 		n.left = n.left.Insert(key, value)
@@ -371,10 +370,10 @@ func (n *LeafNode) GetType() byte {
 // Search implements mem.TreeNode. It returns the value if the key matches.
 func (n *LeafNode) Search(key *big.Int, path *Path) []byte {
 	if path != nil {
-		path.leaf = n
+		path.value = n.value
 	}
 
-	if prepareKey(n.key).Cmp(key) == 0 {
+	if makeKey(n.key).Cmp(key) == 0 {
 		return n.value
 	}
 
@@ -384,7 +383,7 @@ func (n *LeafNode) Search(key *big.Int, path *Path) []byte {
 // Insert implements mem.TreeNode. It replaces the leaf node by an interior node
 // that contains both the current pair and the new one to insert.
 func (n *LeafNode) Insert(key *big.Int, value []byte) TreeNode {
-	curr := prepareKey(n.key)
+	curr := makeKey(n.key)
 
 	if curr.Cmp(key) == 0 {
 		n.value = value
@@ -412,7 +411,7 @@ func (n *LeafNode) Insert(key *big.Int, value []byte) TreeNode {
 
 // Delete implements mem.TreeNode. It removes the leaf if the key matches.
 func (n *LeafNode) Delete(key *big.Int) TreeNode {
-	if prepareKey(n.key).Cmp(key) == 0 {
+	if makeKey(n.key).Cmp(key) == 0 {
 		return NewEmptyNode(n.depth)
 	}
 
@@ -464,9 +463,9 @@ func int2buffer(depth uint16) []byte {
 	return buffer
 }
 
-// prepareKey is a helper to transform a key in bytes to its big number
+// makeKey is a helper to transform a key in bytes to its big number
 // equivalence.
-func prepareKey(key []byte) *big.Int {
+func makeKey(key []byte) *big.Int {
 	bi := new(big.Int)
 	bi.SetBytes(key)
 
