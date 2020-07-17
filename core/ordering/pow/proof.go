@@ -3,7 +3,7 @@ package pow
 import (
 	"bytes"
 
-	"go.dedis.ch/dela/core/store/trie"
+	"go.dedis.ch/dela/core/store/hashtree"
 	"golang.org/x/xerrors"
 )
 
@@ -13,14 +13,14 @@ import (
 // - implements ordering.Proof
 type Proof struct {
 	blocks []Block
-	share  trie.Share
+	path   hashtree.Path
 }
 
 // NewProof creates a new valid proof.
-func NewProof(blocks []Block, share trie.Share) (Proof, error) {
+func NewProof(blocks []Block, path hashtree.Path) (Proof, error) {
 	pr := Proof{
 		blocks: blocks,
-		share:  share,
+		path:   path,
 	}
 
 	if len(blocks) == 0 {
@@ -28,8 +28,8 @@ func NewProof(blocks []Block, share trie.Share) (Proof, error) {
 	}
 
 	last := blocks[len(blocks)-1]
-	if !bytes.Equal(last.root, share.GetRoot()) {
-		return pr, xerrors.Errorf("mismatch block and share store root %#x != %#x", last.root, share.GetRoot())
+	if !bytes.Equal(last.root, path.GetRoot()) {
+		return pr, xerrors.Errorf("mismatch block and share store root %#x != %#x", last.root, path.GetRoot())
 	}
 
 	return pr, nil
@@ -37,10 +37,10 @@ func NewProof(blocks []Block, share trie.Share) (Proof, error) {
 
 // GetKey implements ordering.Proof.
 func (p Proof) GetKey() []byte {
-	return p.share.GetKey()
+	return p.path.GetKey()
 }
 
 // GetValue implements ordering.Proof.
 func (p Proof) GetValue() []byte {
-	return p.share.GetValue()
+	return p.path.GetValue()
 }

@@ -8,8 +8,8 @@ import (
 	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/execution/baremetal"
 	"go.dedis.ch/dela/core/store"
-	"go.dedis.ch/dela/core/store/trie"
-	"go.dedis.ch/dela/core/store/trie/mem"
+	"go.dedis.ch/dela/core/store/hashtree"
+	tree "go.dedis.ch/dela/core/store/hashtree/mem"
 	"go.dedis.ch/dela/core/tap"
 	txn "go.dedis.ch/dela/core/tap/anon"
 	pool "go.dedis.ch/dela/core/tap/pool/mem"
@@ -20,7 +20,11 @@ import (
 
 func TestService_Basic(t *testing.T) {
 	pool := pool.NewPool()
-	srvc := NewService(pool, val.NewService(baremetal.NewExecution(testExec{})), mem.NewTrie())
+	srvc := NewService(
+		pool,
+		val.NewService(baremetal.NewExecution(testExec{})),
+		tree.NewMerkleTree(),
+	)
 
 	// 1. Start the ordering service.
 	require.NoError(t, srvc.Listen())
@@ -53,7 +57,7 @@ func TestService_Basic(t *testing.T) {
 
 func TestService_Listen(t *testing.T) {
 	pool := pool.NewPool()
-	srvc := NewService(pool, val.NewService(baremetal.NewExecution(testExec{})), mem.NewTrie())
+	srvc := NewService(pool, val.NewService(baremetal.NewExecution(testExec{})), tree.NewMerkleTree())
 
 	err := srvc.Listen()
 	require.NoError(t, err)
@@ -68,7 +72,7 @@ func TestService_Listen(t *testing.T) {
 	require.EqualError(t, err, "service not started")
 
 	pool.Add(makeTx(t, 0))
-	srvc = NewService(pool, badValidation{}, mem.NewTrie())
+	srvc = NewService(pool, badValidation{}, tree.NewMerkleTree())
 	err = srvc.Listen()
 	require.NoError(t, err)
 
@@ -77,7 +81,7 @@ func TestService_Listen(t *testing.T) {
 
 func TestService_GetProof(t *testing.T) {
 	srvc := &Service{
-		epochs: []epoch{{store: mem.NewTrie()}},
+		epochs: []epoch{{store: tree.NewMerkleTree()}},
 	}
 
 	pr, err := srvc.GetProof([]byte("A"))
@@ -129,9 +133,9 @@ func (v badValidation) Validate(store.Snapshot, []tap.Transaction) (validation.D
 }
 
 type badTrie struct {
-	trie.Trie
+	hashtree.Tree
 }
 
-func (s badTrie) GetShare([]byte) (trie.Share, error) {
+func (s badTrie) GetPath([]byte) (hashtree.Path, error) {
 	return nil, xerrors.New("oops")
 }

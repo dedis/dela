@@ -13,7 +13,7 @@ import (
 	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/store"
-	"go.dedis.ch/dela/core/store/trie"
+	"go.dedis.ch/dela/core/store/hashtree"
 	"go.dedis.ch/dela/core/tap"
 	"go.dedis.ch/dela/core/tap/pool"
 	"go.dedis.ch/dela/core/validation"
@@ -23,7 +23,7 @@ import (
 
 type epoch struct {
 	block Block
-	store trie.Trie
+	store hashtree.Tree
 }
 
 // Service is an ordering service powered by a Proof-of-Work consensus
@@ -42,7 +42,7 @@ type Service struct {
 }
 
 // NewService creates a new service.
-func NewService(pool pool.Pool, val validation.Service, trie trie.Trie) *Service {
+func NewService(pool pool.Pool, val validation.Service, trie hashtree.Tree) *Service {
 	return &Service{
 		pool:        pool,
 		validation:  val,
@@ -115,7 +115,7 @@ func (s *Service) Stop() error {
 func (s *Service) GetProof(key []byte) (ordering.Proof, error) {
 	last := s.epochs[len(s.epochs)-1]
 
-	share, err := last.store.GetShare(key)
+	path, err := last.store.GetPath(key)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't read share: %v", err)
 	}
@@ -125,7 +125,7 @@ func (s *Service) GetProof(key []byte) (ordering.Proof, error) {
 		blocks[i] = epoch.block
 	}
 
-	pr, err := NewProof(blocks, share)
+	pr, err := NewProof(blocks, path)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't create proof: %v", err)
 	}

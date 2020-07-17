@@ -13,6 +13,9 @@ import (
 	"golang.org/x/tools/go/analysis/unitchecker"
 )
 
+// NoLint is a command to disable linting for the next line.
+const NoLint = "// @nolint-next-line"
+
 // MaxLen is the maximum length of a comment
 var MaxLen = 80
 
@@ -48,7 +51,9 @@ fileLoop:
 	for _, file := range pass.Files {
 		isFirst := true
 		for _, cg := range file.Comments {
-			for _, c := range cg.List {
+			for i := 0; i < len(cg.List); i++ {
+				c := cg.List[i]
+
 				if isFirst && strings.HasPrefix(c.Text, "// Code generated") {
 					continue fileLoop
 				}
@@ -64,6 +69,11 @@ fileLoop:
 					}
 				}
 				isFirst = false
+
+				if strings.HasPrefix(c.Text, NoLint) {
+					// Skip next comment.
+					i++
+				}
 			}
 		}
 	}
