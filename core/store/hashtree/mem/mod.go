@@ -10,6 +10,7 @@ import (
 
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/hashtree"
+	"go.dedis.ch/dela/core/store/kv"
 	"go.dedis.ch/dela/crypto"
 	"golang.org/x/xerrors"
 )
@@ -25,12 +26,12 @@ type MerkleTree struct {
 }
 
 // NewMerkleTree creates a new in-memory trie.
-func NewMerkleTree() *MerkleTree {
+func NewMerkleTree(db kv.DB) *MerkleTree {
 	nonce := Nonce{}
 	rand.Read(nonce[:])
 
 	return &MerkleTree{
-		tree:        NewTree(nonce),
+		tree:        NewTree(nonce, db),
 		hashFactory: crypto.NewSha256Factory(),
 	}
 }

@@ -47,12 +47,12 @@ func (s Path) GetRoot() []byte {
 }
 
 func (s Path) computeRoot(fac crypto.HashFactory) ([]byte, error) {
-	bi := new(big.Int)
-	bi.SetBytes(s.key)
+	key := new(big.Int)
+	key.SetBytes(s.key)
 
 	var node TreeNode
 	if s.value != nil {
-		node = NewLeafNode(uint16(len(s.interiors)), s.key, s.value)
+		node = NewLeafNode(uint16(len(s.interiors)), key, s.value)
 	} else {
 		node = NewEmptyNode(uint16(len(s.interiors)))
 	}
@@ -60,10 +60,10 @@ func (s Path) computeRoot(fac crypto.HashFactory) ([]byte, error) {
 	// Reproduce the shortest unique prefix for the key.
 	prefix := new(big.Int)
 	for i := 0; i < len(s.interiors); i++ {
-		prefix.SetBit(prefix, i, bi.Bit(i))
+		prefix.SetBit(prefix, i, key.Bit(i))
 	}
 
-	curr, err := node.Prepare(s.nonce, prefix, fac)
+	curr, err := node.Prepare(s.nonce, prefix, nil, fac)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func (s Path) computeRoot(fac crypto.HashFactory) ([]byte, error) {
 	for i := len(s.interiors) - 1; i >= 0; i-- {
 		h := fac.New()
 
-		if bi.Bit(i) == 0 {
+		if key.Bit(i) == 0 {
 			h.Write(curr)
 			h.Write(s.interiors[i])
 		} else {

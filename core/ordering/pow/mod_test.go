@@ -2,6 +2,9 @@ package pow
 
 import (
 	"context"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -10,6 +13,7 @@ import (
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/hashtree"
 	tree "go.dedis.ch/dela/core/store/hashtree/mem"
+	"go.dedis.ch/dela/core/store/kv"
 	"go.dedis.ch/dela/core/tap"
 	txn "go.dedis.ch/dela/core/tap/anon"
 	pool "go.dedis.ch/dela/core/tap/pool/mem"
@@ -19,11 +23,14 @@ import (
 )
 
 func TestService_Basic(t *testing.T) {
+	tree, clean := makeTree(t)
+	defer clean()
+
 	pool := pool.NewPool()
 	srvc := NewService(
 		pool,
 		val.NewService(baremetal.NewExecution(testExec{})),
-		tree.NewMerkleTree(),
+		tree,
 	)
 
 	// 1. Start the ordering service.
@@ -56,8 +63,11 @@ func TestService_Basic(t *testing.T) {
 }
 
 func TestService_Listen(t *testing.T) {
+	tree, clean := makeTree(t)
+	defer clean()
+
 	pool := pool.NewPool()
-	srvc := NewService(pool, val.NewService(baremetal.NewExecution(testExec{})), tree.NewMerkleTree())
+	srvc := NewService(pool, val.NewService(baremetal.NewExecution(testExec{})), tree)
 
 	err := srvc.Listen()
 	require.NoError(t, err)
@@ -72,7 +82,7 @@ func TestService_Listen(t *testing.T) {
 	require.EqualError(t, err, "service not started")
 
 	pool.Add(makeTx(t, 0))
-	srvc = NewService(pool, badValidation{}, tree.NewMerkleTree())
+	srvc = NewService(pool, badValidation{}, tree)
 	err = srvc.Listen()
 	require.NoError(t, err)
 
@@ -80,8 +90,11 @@ func TestService_Listen(t *testing.T) {
 }
 
 func TestService_GetProof(t *testing.T) {
+	tree, clean := makeTree(t)
+	defer clean()
+
 	srvc := &Service{
-		epochs: []epoch{{store: tree.NewMerkleTree()}},
+		epochs: []epoch{{store: tree}},
 	}
 
 	pr, err := srvc.GetProof([]byte("A"))
@@ -100,6 +113,19 @@ func TestService_GetProof(t *testing.T) {
 
 // -----------------------------------------------------------------------------
 // Utility functions
+
+func makeTree(t *testing.T) (hashtree.Tree, func()) {
+	dir, err := ioutil.TempDir(os.TempDir(), "dela-pow")
+	require.NoError(t, err)
+
+	db, err := kv.New(filepath.Join(dir, "test.db"))
+	require.NoError(t, err)
+
+	tree := tree.NewMerkleTree(db)
+	tree.Stage(func(store.Snapshot) error { return nil })
+
+	return tree, func() { os.RemoveAll(dir) }
+}
 
 func makeTx(t *testing.T, nonce uint64) tap.Transaction {
 	tx, err := txn.NewTransaction(nonce, txn.WithArg("key", []byte("ping")), txn.WithArg("value", []byte("pong")))

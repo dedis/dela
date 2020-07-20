@@ -36,3 +36,9 @@ type Tree interface {
 	// passed to the callback, then return it.
 	Stage(func(store.Snapshot) error) (Tree, error)
 }
+
+type StagingTree interface {
+	GetRoot() []byte
+
+	Commit() (Tree, error)
+}

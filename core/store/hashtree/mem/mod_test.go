@@ -13,7 +13,7 @@ import (
 )
 
 func TestMerkleTree_IntegrationTests(t *testing.T) {
-	var tree hashtree.Tree = NewMerkleTree()
+	var tree hashtree.Tree = NewMerkleTree(fakeDB{})
 	keys := make([][MaxDepth]byte, 0)
 
 	fac := tree.(*MerkleTree).hashFactory
@@ -54,7 +54,7 @@ func TestMerkleTree_IntegrationTests(t *testing.T) {
 }
 
 func TestMerkleTree_Get(t *testing.T) {
-	tree := NewMerkleTree()
+	tree := NewMerkleTree(fakeDB{})
 
 	err := tree.tree.Insert([]byte("ping"), []byte("pong"))
 	require.NoError(t, err)
@@ -72,7 +72,7 @@ func TestMerkleTree_Get(t *testing.T) {
 }
 
 func TestMerkleTree_GetRoot(t *testing.T) {
-	tree := NewMerkleTree()
+	tree := NewMerkleTree(fakeDB{})
 	// Tree is not yet updated.
 	require.Empty(t, tree.GetRoot())
 
@@ -90,7 +90,7 @@ func TestMerkleTree_GetRoot(t *testing.T) {
 }
 
 func TestMerkleTree_GetPath(t *testing.T) {
-	tree := NewMerkleTree()
+	tree := NewMerkleTree(fakeDB{})
 
 	f := func(key [8]byte, value []byte) bool {
 		err := tree.tree.Insert(key[:], value)
@@ -117,7 +117,7 @@ func TestMerkleTree_GetPath(t *testing.T) {
 }
 
 func TestMerkleTree_Stage(t *testing.T) {
-	tree := NewMerkleTree()
+	tree := NewMerkleTree(fakeDB{})
 
 	next, err := tree.Stage(func(snap store.Snapshot) error { return nil })
 	require.NoError(t, err)
@@ -133,7 +133,7 @@ func TestMerkleTree_Stage(t *testing.T) {
 }
 
 func TestWritableMerkleTree_Set(t *testing.T) {
-	tree := writableMerkleTree{MerkleTree: NewMerkleTree()}
+	tree := writableMerkleTree{MerkleTree: NewMerkleTree(fakeDB{})}
 
 	err := tree.Set([]byte("ping"), []byte("pong"))
 	require.NoError(t, err)
@@ -144,7 +144,7 @@ func TestWritableMerkleTree_Set(t *testing.T) {
 }
 
 func TestWritableMerkleTree_Delete(t *testing.T) {
-	tree := writableMerkleTree{MerkleTree: NewMerkleTree()}
+	tree := writableMerkleTree{MerkleTree: NewMerkleTree(fakeDB{})}
 
 	err := tree.Delete([]byte("ping"))
 	require.NoError(t, err)
