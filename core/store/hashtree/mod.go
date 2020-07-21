@@ -37,8 +37,11 @@ type Tree interface {
 	Stage(func(store.Snapshot) error) (StagingTree, error)
 }
 
+// StagingTree is a tree that has been modified in-memory but is yet to be
+// committed to the disk.
 type StagingTree interface {
 	Tree
 
+	// Commit writes the tree to a persistent storage.
 	Commit() (Tree, error)
 }

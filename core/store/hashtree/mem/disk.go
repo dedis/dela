@@ -45,11 +45,12 @@ func (n *DiskNode) GetType() byte {
 func (n *DiskNode) Search(key *big.Int, path *Path, bucket kv.Bucket) ([]byte, error) {
 	node, err := n.load(key, bucket)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to load node: %v", err)
 	}
 
 	value, err := node.Search(key, path, bucket)
 	if err != nil {
+		// No wrapping to prevent very long error message from recursive calls.
 		return nil, err
 	}
 
@@ -62,11 +63,12 @@ func (n *DiskNode) Search(key *big.Int, path *Path, bucket kv.Bucket) ([]byte, e
 func (n *DiskNode) Insert(key *big.Int, value []byte, bucket kv.Bucket) (TreeNode, error) {
 	node, err := n.load(key, bucket)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to load node: %v", err)
 	}
 
 	next, err := node.Insert(key, value, bucket)
 	if err != nil {
+		// No wrapping to prevent very long error message from recursive calls.
 		return nil, err
 	}
 
@@ -79,7 +81,7 @@ func (n *DiskNode) Insert(key *big.Int, value []byte, bucket kv.Bucket) (TreeNod
 func (n *DiskNode) Delete(key *big.Int, bucket kv.Bucket) (TreeNode, error) {
 	node, err := n.load(key, bucket)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to load node: %v", err)
 	}
 
 	next, err := node.Delete(key, bucket)
@@ -98,17 +100,18 @@ func (n *DiskNode) Prepare(nonce []byte, prefix *big.Int,
 
 	node, err := n.load(prefix, bucket)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to load node: %v", err)
 	}
 
 	digest, err := node.Prepare(nonce, prefix, bucket, fac)
 	if err != nil {
+		// No wrapping to prevent very long error message from recursive calls.
 		return nil, err
 	}
 
 	err = n.store(prefix, node, bucket)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to store node: %v", err)
 	}
 
 	n.hash = digest
@@ -138,17 +141,17 @@ func (n *DiskNode) load(index *big.Int, bucket kv.Bucket) (TreeNode, error) {
 
 	data := bucket.Get(key)
 	if len(data) == 0 {
-		return nil, xerrors.Errorf("prefix %b (%b) not in database", index, key)
+		return nil, xerrors.Errorf("prefix %b (depth %d) not in database", index, n.depth)
 	}
 
 	msg, err := n.factory.Deserialize(n.context, data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to deserialize: %v", err)
 	}
 
 	node, ok := msg.(TreeNode)
 	if !ok {
-		return nil, xerrors.New("invalid tree node")
+		return nil, xerrors.Errorf("invalid node of type '%T'", msg)
 	}
 
 	return node, nil
@@ -157,14 +160,14 @@ func (n *DiskNode) load(index *big.Int, bucket kv.Bucket) (TreeNode, error) {
 func (n *DiskNode) store(index *big.Int, node TreeNode, b kv.Bucket) error {
 	data, err := node.Serialize(n.context)
 	if err != nil {
-		return err
+		return xerrors.Errorf("failed to serialize: %v", err)
 	}
 
 	key := n.prepareKey(index)
 
 	err = b.Set(key, data)
 	if err != nil {
-		return err
+		return xerrors.Errorf("failed to set key: %v", err)
 	}
 
 	return nil

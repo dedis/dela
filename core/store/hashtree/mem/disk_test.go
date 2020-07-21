@@ -1,60 +1,214 @@
 package mem
 
 import (
-	"io/ioutil"
-	"os"
-	"path/filepath"
+	"math/big"
 	"testing"
-	"testing/quick"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/store/kv"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/serde/json"
+	"golang.org/x/xerrors"
 )
 
+var testCtx = json.NewContext()
+
+func TestDiskNode_GetHash(t *testing.T) {
+	node := &DiskNode{hash: []byte{0xaa}}
+
+	require.Equal(t, []byte{0xaa}, node.GetHash())
+}
+
+func TestDiskNode_GetType(t *testing.T) {
+	node := &DiskNode{}
+
+	require.Equal(t, diskNodeType, node.GetType())
+}
+
 func TestDiskNode_Search(t *testing.T) {
-	const keyLen = 4
+	node := NewDiskNode(0, testCtx, NodeFactory{})
 
-	tree, clean := makeTree(t)
-	defer clean()
-
-	values := map[[keyLen]byte][]byte{}
-
-	// It stores everything to the disk except the root node.
-	tree.memDepth = 0
-
-	f := func(key [keyLen]byte, value []byte) bool {
-		err := tree.Insert(key[:], value[:])
-		require.NoError(t, err)
-
-		values[key] = value
-
-		return true
-	}
-
-	err := quick.Check(f, nil)
+	// Test if a leaf node can be loaded and searched for.
+	leaf := NewLeafNode(0, big.NewInt(0), []byte("pong"))
+	data, err := leaf.Serialize(testCtx)
 	require.NoError(t, err)
 
-	err = tree.Persist()
+	bucketKey := node.prepareKey(big.NewInt(0))
+
+	value, err := node.Search(big.NewInt(0), nil, newFakeBucket(bucketKey, data))
+	require.NoError(t, err)
+	require.Equal(t, []byte("pong"), value)
+
+	// Error if the node is not stored in the database.
+	_, err = node.Search(big.NewInt(0), nil, fakeBucket{})
+	require.EqualError(t, err, "failed to load node: prefix 0 (depth 0) not in database")
+
+	inter := NewInteriorNode(0, big.NewInt(0))
+	data, err = inter.Serialize(testCtx)
 	require.NoError(t, err)
 
-	for key, expected := range values {
-		value, err := tree.Search(key[:], nil)
-		require.NoError(t, err)
-		require.Equal(t, expected, value)
-	}
+	// Error deeper in the tree.
+	_, err = node.Search(big.NewInt(0), nil, newFakeBucket(bucketKey, data))
+	require.EqualError(t, err, "failed to load node: prefix 0 (depth 1) not in database")
+}
+
+func TestDiskNode_Insert(t *testing.T) {
+	node := NewDiskNode(0, testCtx, NodeFactory{})
+
+	empty := NewEmptyNode(0, big.NewInt(0))
+	data, err := empty.Serialize(testCtx)
+	require.NoError(t, err)
+
+	bucket := newFakeBucket(node.prepareKey(big.NewInt(0)), data)
+
+	next, err := node.Insert(big.NewInt(2), []byte("pong"), bucket)
+	require.NoError(t, err)
+	require.IsType(t, (*LeafNode)(nil), next)
+
+	_, err = node.Insert(big.NewInt(2), nil, fakeBucket{})
+	require.EqualError(t, err, "failed to load node: prefix 10 (depth 0) not in database")
+
+	inter := NewInteriorNode(0, big.NewInt(0))
+	data, err = inter.Serialize(testCtx)
+	require.NoError(t, err)
+
+	bucket = newFakeBucket(node.prepareKey(big.NewInt(0)), data)
+
+	_, err = node.Insert(big.NewInt(2), []byte("pong"), bucket)
+	require.EqualError(t, err, "failed to load node: prefix 10 (depth 1) not in database")
+}
+
+func TestDiskNode_Delete(t *testing.T) {
+	node := NewDiskNode(0, testCtx, NodeFactory{})
+
+	empty := NewEmptyNode(0, big.NewInt(0))
+	data, err := empty.Serialize(testCtx)
+	require.NoError(t, err)
+
+	bucket := newFakeBucket(node.prepareKey(big.NewInt(0)), data)
+
+	next, err := node.Delete(big.NewInt(2), bucket)
+	require.NoError(t, err)
+	require.IsType(t, (*EmptyNode)(nil), next)
+
+	_, err = node.Delete(big.NewInt(2), fakeBucket{})
+	require.EqualError(t, err, "failed to load node: prefix 10 (depth 0) not in database")
+
+	inter := NewInteriorNode(0, big.NewInt(0))
+	data, err = inter.Serialize(testCtx)
+	require.NoError(t, err)
+
+	bucket = newFakeBucket(node.prepareKey(big.NewInt(0)), data)
+
+	_, err = node.Delete(big.NewInt(2), bucket)
+	require.EqualError(t, err, "failed to load node: prefix 10 (depth 1) not in database")
+
+	_, err = node.Delete(big.NewInt(3), bucket)
+	require.EqualError(t, err, "failed to load node: prefix 11 (depth 1) not in database")
+}
+
+func TestDiskNode_Prepare(t *testing.T) {
+	node := NewDiskNode(0, testCtx, NodeFactory{})
+
+	empty := NewEmptyNode(0, big.NewInt(0))
+	data, err := empty.Serialize(testCtx)
+	require.NoError(t, err)
+
+	bucket := newFakeBucket(node.prepareKey(big.NewInt(0)), data)
+
+	hash, err := node.Prepare([]byte{1}, big.NewInt(0), bucket, crypto.NewSha256Factory())
+	require.NoError(t, err)
+	require.Len(t, hash, 32)
+	require.Equal(t, hash, node.hash)
+
+	_, err = node.Prepare([]byte{}, big.NewInt(0), fakeBucket{}, nil)
+	require.EqualError(t, err, "failed to load node: prefix 0 (depth 0) not in database")
+
+	bucket.errSet = xerrors.New("oops")
+	_, err = node.Prepare([]byte{}, big.NewInt(0), bucket, crypto.NewSha256Factory())
+	require.EqualError(t, err, "failed to store node: failed to set key: oops")
+
+	inter := NewInteriorNode(0, big.NewInt(0))
+	data, err = inter.Serialize(testCtx)
+	require.NoError(t, err)
+
+	bucket = newFakeBucket(node.prepareKey(big.NewInt(0)), data)
+
+	_, err = node.Prepare([]byte{}, big.NewInt(0), bucket, crypto.NewSha256Factory())
+	require.EqualError(t, err, "failed to load node: prefix 0 (depth 1) not in database")
+}
+
+func TestDiskNode_Visit(t *testing.T) {
+	node := NewDiskNode(0, testCtx, NodeFactory{})
+
+	counter := 0
+	node.Visit(func(n TreeNode) error {
+		require.Same(t, node, n)
+		counter++
+		return nil
+	})
+
+	require.Equal(t, 1, counter)
+}
+
+func TestDiskNode_Clone(t *testing.T) {
+	node := NewDiskNode(0, testCtx, NodeFactory{})
+
+	clone := node.Clone()
+	require.Equal(t, node, clone)
+}
+
+func TestDiskNode_Serialize(t *testing.T) {
+	node := NewDiskNode(0, testCtx, NodeFactory{})
+
+	_, err := node.Serialize(testCtx)
+	require.Error(t, err)
+}
+
+func TestDiskNode_Load(t *testing.T) {
+	node := NewDiskNode(0, testCtx, NodeFactory{})
+
+	empty := NewEmptyNode(0, big.NewInt(0))
+	data, err := empty.Serialize(testCtx)
+	require.NoError(t, err)
+
+	bucket := newFakeBucket(node.prepareKey(big.NewInt(0)), data)
+
+	n, err := node.load(big.NewInt(0), bucket)
+	require.NoError(t, err)
+	require.IsType(t, empty, n)
+
+	node.factory = fake.NewBadMessageFactory()
+	_, err = node.load(big.NewInt(0), bucket)
+	require.EqualError(t, err, "failed to deserialize: fake error")
+
+	node.factory = fake.MessageFactory{}
+	_, err = node.load(big.NewInt(0), bucket)
+	require.EqualError(t, err, "invalid node of type 'fake.Message'")
 }
 
 // Utility functions -----------------------------------------------------------
 
-func makeTree(t *testing.T) (*Tree, func()) {
-	dir, err := ioutil.TempDir(os.TempDir(), "dela-pow")
-	require.NoError(t, err)
+type fakeBucket struct {
+	kv.Bucket
+	values map[string][]byte
+	errSet error
+}
 
-	db, err := kv.New(filepath.Join(dir, "test.db"))
-	require.NoError(t, err)
+func newFakeBucket(key, value []byte) fakeBucket {
+	return fakeBucket{
+		values: map[string][]byte{
+			string(key): value,
+		},
+	}
+}
 
-	tree := NewTree(Nonce{}, db)
-	tree.Persist()
+func (b fakeBucket) Get(key []byte) []byte {
+	return b.values[string(key)]
+}
 
-	return tree, func() { os.RemoveAll(dir) }
+func (b fakeBucket) Set(key, value []byte) error {
+	b.values[string(key)] = value
+	return b.errSet
 }

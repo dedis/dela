@@ -68,26 +68,32 @@ func (t *MerkleTree) GetPath(key []byte) (hashtree.Path, error) {
 // Stage implements hashtree.Tree. It executes the callback over a clone of the
 // current tree and return the clone with the root calculated.
 func (t *MerkleTree) Stage(fn func(store.Snapshot) error) (hashtree.StagingTree, error) {
-	trie := t.clone()
+	clone := t.clone()
 
-	err := fn(writableMerkleTree{MerkleTree: trie})
+	err := clone.tree.db.CreateBucket(clone.tree.bucket)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to create bucket: %v", err)
+	}
+
+	err = fn(writableMerkleTree{MerkleTree: clone})
 	if err != nil {
 		return nil, xerrors.Errorf("callback failed: %v", err)
 	}
 
-	err = trie.tree.Update(t.hashFactory)
+	err = clone.tree.Update(t.hashFactory)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't update tree: %v", err)
 	}
 
-	return trie, nil
+	return clone, nil
 }
 
-// Commit implements hashtree.StagingTree.
+// Commit implements hashtree.StagingTree. It writes the leaf nodes to the disk
+// and a trade-off of other nodes.
 func (t *MerkleTree) Commit() (hashtree.Tree, error) {
 	err := t.tree.Persist()
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to persist tree: %v", err)
 	}
 
 	return t, nil

@@ -183,7 +183,7 @@ func (t *Tree) Persist() error {
 		return t.root.Visit(func(n TreeNode) error {
 			switch node := n.(type) {
 			case *InteriorNode:
-				if int(node.depth) > t.memDepth {
+				if int(node.depth) >= t.memDepth {
 					return t.persistNode(node.prefix, node.depth, node, b)
 				}
 
@@ -199,7 +199,9 @@ func (t *Tree) Persist() error {
 			case *LeafNode:
 				return t.persistNode(node.key, node.depth, node, b)
 			case *EmptyNode:
-				return t.persistNode(node.prefix, node.depth, node, b)
+				if int(node.depth) >= t.memDepth {
+					return t.persistNode(node.prefix, node.depth, node, b)
+				}
 			}
 
 			return nil
@@ -383,34 +385,31 @@ func (n *InteriorNode) Insert(key *big.Int, value []byte, b kv.Bucket) (TreeNode
 // key if it exists, otherwise nothin will change.
 func (n *InteriorNode) Delete(key *big.Int, b kv.Bucket) (TreeNode, error) {
 	var err error
+
+	// Depending on the path to follow, it will delete the key from the correct
+	// path and it will load the first node of the opposite path if it is a disk
+	// node so that the type can be compared. Errors are not wrapper to prevent
+	// very long error message.
 	if key.Bit(int(n.depth)) == 0 {
 		n.left, err = n.left.Delete(key, b)
+		if err != nil {
+			return nil, err
+		}
 
-		diskn, ok := n.right.(*DiskNode)
-		if ok {
-			node, err := diskn.load(new(big.Int).SetBit(key, int(n.depth), 1), b)
-			if err != nil {
-				return nil, err
-			}
-
-			n.right = node
+		n.right, err = n.load(n.right, key, 1, b)
+		if err != nil {
+			return nil, err
 		}
 	} else {
 		n.right, err = n.right.Delete(key, b)
-
-		diskn, ok := n.left.(*DiskNode)
-		if ok {
-			node, err := diskn.load(new(big.Int).SetBit(key, int(n.depth), 0), b)
-			if err != nil {
-				return nil, err
-			}
-
-			n.left = node
+		if err != nil {
+			return nil, err
 		}
-	}
 
-	if err != nil {
-		return nil, err
+		n.left, err = n.load(n.left, key, 0, b)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if n.left.GetType() == emptyNodeType && n.right.GetType() == emptyNodeType {
@@ -420,6 +419,20 @@ func (n *InteriorNode) Delete(key *big.Int, b kv.Bucket) (TreeNode, error) {
 	}
 
 	return n, nil
+}
+
+func (n *InteriorNode) load(node TreeNode, key *big.Int, bit uint, b kv.Bucket) (TreeNode, error) {
+	diskn, ok := node.(*DiskNode)
+	if !ok {
+		return node, nil
+	}
+
+	node, err := diskn.load(new(big.Int).SetBit(key, int(n.depth+1), bit), b)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to load node: %v", err)
+	}
+
+	return node, nil
 }
 
 // Prepare implements mem.TreeNode. It updates the hash of the node and returns

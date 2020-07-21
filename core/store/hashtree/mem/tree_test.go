@@ -2,6 +2,7 @@ package mem
 
 import (
 	"crypto/rand"
+	"math"
 	"math/big"
 	"os"
 	"runtime/pprof"
@@ -72,6 +73,67 @@ func TestTree_Delete(t *testing.T) {
 
 	err = tree.Delete(make([]byte, MaxDepth+1))
 	require.EqualError(t, err, "mismatch key length 33 > 32")
+}
+
+func TestTree_Persist(t *testing.T) {
+	db, clean := makeDB(t)
+	defer clean()
+
+	tree := NewTree(Nonce{}, db)
+	require.NoError(t, db.CreateBucket(tree.bucket))
+
+	for i := 0; i < math.MaxUint8/2; i++ {
+		key := []byte{byte(i * 2)}
+
+		err := tree.Insert(key[:], key[:])
+		require.NoError(t, err)
+	}
+
+	err := tree.Persist()
+	require.NoError(t, err)
+
+	count := 0
+
+	db.View(tree.bucket, func(bucket kv.Bucket) error {
+		bucket.ForEach(func(key, value []byte) error {
+			require.Regexp(t, `{"Leaf":{[^}]+}}`, string(value))
+			count++
+			return nil
+		})
+		return nil
+	})
+	require.Equal(t, math.MaxUint8/2, count)
+
+	tree.memDepth = 6
+	err = tree.Persist()
+	require.NoError(t, err)
+
+	count = 0
+
+	db.View(tree.bucket, func(bucket kv.Bucket) error {
+		bucket.ForEach(func(key, value []byte) error {
+			require.Regexp(t, `{"(Leaf|Interior)":{[^}]+}}`, string(value))
+			count++
+			return nil
+		})
+		return nil
+	})
+	require.Equal(t, math.MaxUint8/2+math.MaxUint8/4+math.MaxUint8/8+1, count)
+
+	tree.memDepth = 0
+	err = tree.Persist()
+	require.NoError(t, err)
+
+	count = 0
+	db.View(tree.bucket, func(bucket kv.Bucket) error {
+		bucket.ForEach(func(key, value []byte) error {
+			count++
+			return nil
+		})
+		return nil
+	})
+
+	require.Equal(t, 255, count)
 }
 
 func TestTree_Clone(t *testing.T) {
@@ -228,6 +290,15 @@ func TestInteriorNode_Delete(t *testing.T) {
 	next, err = node.Delete(big.NewInt(1), nil)
 	require.NoError(t, err)
 	require.IsType(t, (*EmptyNode)(nil), next)
+
+	node.right = NewDiskNode(1, testCtx, NodeFactory{})
+	_, err = node.Delete(big.NewInt(0), fakeBucket{})
+	require.EqualError(t, err, "failed to load node: prefix 10 (depth 1) not in database")
+
+	node.right = NewEmptyNode(1, big.NewInt(2))
+	node.left = NewDiskNode(1, testCtx, NodeFactory{})
+	_, err = node.Delete(big.NewInt(1), fakeBucket{})
+	require.EqualError(t, err, "failed to load node: prefix 1 (depth 1) not in database")
 }
 
 func TestInteriorNode_Prepare(t *testing.T) {
@@ -406,6 +477,11 @@ func BenchmarkMerkleTree(b *testing.B) {
 
 type fakeDB struct {
 	kv.DB
+	err error
+}
+
+func (db fakeDB) CreateBucket([]byte) error {
+	return db.err
 }
 
 func (db fakeDB) View(b []byte, fn func(kv.Bucket) error) error {
@@ -413,6 +489,9 @@ func (db fakeDB) View(b []byte, fn func(kv.Bucket) error) error {
 }
 
 func (db fakeDB) Update(b []byte, fn func(kv.Bucket) error) error {
+	if db.err != nil {
+		return db.err
+	}
 	return fn(nil)
 }
 

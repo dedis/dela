@@ -63,3 +63,7 @@ func (txn boltBucket) Get(key []byte) []byte {
 func (txn boltBucket) Set(key, value []byte) error {
 	return txn.bucket.Put(key, value)
 }
+
+func (txn boltBucket) ForEach(fn func(k, v []byte) error) error {
+	return txn.bucket.ForEach(fn)
+}
