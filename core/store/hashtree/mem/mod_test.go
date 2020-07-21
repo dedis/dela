@@ -13,8 +13,13 @@ import (
 )
 
 func TestMerkleTree_IntegrationTests(t *testing.T) {
-	var tree hashtree.Tree = NewMerkleTree(fakeDB{})
-	keys := make([][MaxDepth]byte, 0)
+	internal, clean := makeTree(t)
+	defer clean()
+
+	var tree hashtree.Tree = NewMerkleTree(internal.db)
+	tree.(*MerkleTree).tree.memDepth = 5
+
+	values := map[[MaxDepth]byte][]byte{}
 
 	fac := tree.(*MerkleTree).hashFactory
 
@@ -26,7 +31,7 @@ func TestMerkleTree_IntegrationTests(t *testing.T) {
 
 		require.NoError(t, err)
 
-		keys = append(keys, key)
+		values[key] = value
 
 		path, err := tree.GetPath(key[:])
 		require.NoError(t, err)
@@ -41,8 +46,17 @@ func TestMerkleTree_IntegrationTests(t *testing.T) {
 	err := quick.Check(f, nil)
 	require.NoError(t, err)
 
+	tree, err = tree.(*MerkleTree).Commit()
+	require.NoError(t, err)
+
+	for key := range values {
+		path, err := tree.GetPath(key[:])
+		require.NoError(t, err)
+		require.Equal(t, values[key], path.GetValue())
+	}
+
 	tree, err = tree.Stage(func(snap store.Snapshot) error {
-		for _, key := range keys {
+		for key := range values {
 			err = snap.Delete(key[:])
 			require.NoError(t, err)
 		}
@@ -51,6 +65,10 @@ func TestMerkleTree_IntegrationTests(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, tree.GetRoot(), 32)
+	require.IsType(t, (*EmptyNode)(nil), tree.(*MerkleTree).tree.root)
+
+	tree, err = tree.(*MerkleTree).Commit()
+	require.NoError(t, err)
 }
 
 func TestMerkleTree_Get(t *testing.T) {

@@ -34,11 +34,11 @@ type Tree interface {
 
 	// Stage must create a writable tree from the current one that will be
 	// passed to the callback, then return it.
-	Stage(func(store.Snapshot) error) (Tree, error)
+	Stage(func(store.Snapshot) error) (StagingTree, error)
 }
 
 type StagingTree interface {
-	GetRoot() []byte
+	Tree
 
 	Commit() (Tree, error)
 }

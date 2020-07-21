@@ -5,10 +5,10 @@ import (
 	"math"
 	"math/big"
 
-	types "go.dedis.ch/dela/core/store/hashtree/mem/json"
 	"go.dedis.ch/dela/core/store/kv"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
 
@@ -49,7 +49,7 @@ type TreeNode interface {
 
 	Prepare(nonce []byte, prefix *big.Int, bucket kv.Bucket, fac crypto.HashFactory) ([]byte, error)
 
-	Visit(func(TreeNode))
+	Visit(func(node TreeNode) error) error
 
 	Clone() TreeNode
 }
@@ -63,9 +63,12 @@ type TreeNode interface {
 type Tree struct {
 	nonce    Nonce
 	maxDepth int
-	root     TreeNode
+	memDepth int
 	bucket   []byte
+	root     TreeNode
 	db       kv.DB
+	context  serde.Context
+	factory  serde.Factory
 }
 
 // NewTree creates a new empty tree.
@@ -73,9 +76,12 @@ func NewTree(nonce Nonce, db kv.DB) *Tree {
 	return &Tree{
 		nonce:    nonce,
 		maxDepth: MaxDepth,
-		root:     NewEmptyNode(0),
+		memDepth: MaxDepth * 8,
+		root:     NewEmptyNode(0, big.NewInt(0)),
 		bucket:   []byte("hashtree"),
 		db:       db,
+		context:  json.NewContext(),
+		factory:  NodeFactory{},
 	}
 }
 
@@ -83,10 +89,12 @@ func NewTree(nonce Nonce, db kv.DB) *Tree {
 func (t *Tree) Len() int {
 	counter := 0
 
-	t.root.Visit(func(n TreeNode) {
+	t.root.Visit(func(n TreeNode) error {
 		if n.GetType() == leafNodeType {
 			counter++
 		}
+
+		return nil
 	})
 
 	return counter
@@ -125,7 +133,7 @@ func (t *Tree) Insert(key, value []byte) error {
 		return xerrors.Errorf("mismatch key length %d > %d", len(key), t.maxDepth)
 	}
 
-	err := t.db.Update(t.bucket, func(b kv.Bucket) error {
+	err := t.db.View(t.bucket, func(b kv.Bucket) error {
 		var err error
 		t.root, err = t.root.Insert(makeKey(key), value, b)
 
@@ -145,7 +153,7 @@ func (t *Tree) Delete(key []byte) error {
 		return xerrors.Errorf("mismatch key length %d > %d", len(key), t.maxDepth)
 	}
 
-	return t.db.Update(t.bucket, func(b kv.Bucket) error {
+	return t.db.View(t.bucket, func(b kv.Bucket) error {
 		var err error
 		t.root, err = t.root.Delete(makeKey(key), b)
 
@@ -167,27 +175,69 @@ func (t *Tree) Update(fac crypto.HashFactory) error {
 	})
 }
 
+// Persist visits the whole tree and stores the leaf node in the database and
+// replace the node with disk nodes. Depending of the parameter, it also stores
+// intermediate nodes to the disk.
+func (t *Tree) Persist() error {
+	return t.db.Update(t.bucket, func(b kv.Bucket) error {
+		return t.root.Visit(func(n TreeNode) error {
+			switch node := n.(type) {
+			case *InteriorNode:
+				if int(node.depth) > t.memDepth {
+					return t.persistNode(node.prefix, node.depth, node, b)
+				}
+
+				_, ok := node.left.(*LeafNode)
+				if ok || int(node.depth) >= t.memDepth {
+					node.left = NewDiskNode(node.depth+1, t.context, t.factory)
+				}
+
+				_, ok = node.right.(*LeafNode)
+				if ok || int(node.depth) >= t.memDepth {
+					node.right = NewDiskNode(node.depth+1, t.context, t.factory)
+				}
+			case *LeafNode:
+				return t.persistNode(node.key, node.depth, node, b)
+			case *EmptyNode:
+				return t.persistNode(node.prefix, node.depth, node, b)
+			}
+
+			return nil
+		})
+	})
+}
+
+func (t *Tree) persistNode(key *big.Int, depth uint16, node TreeNode, b kv.Bucket) error {
+	dn := NewDiskNode(depth, t.context, t.factory)
+	return dn.store(key, node, b)
+}
+
 // Clone returns a deep copy of the tree.
 func (t *Tree) Clone() *Tree {
 	return &Tree{
 		nonce:    t.nonce,
 		maxDepth: t.maxDepth,
+		memDepth: t.memDepth,
 		root:     t.root.Clone(),
 		bucket:   t.bucket,
 		db:       t.db,
+		context:  t.context,
+		factory:  t.factory,
 	}
 }
 
 // EmptyNode is leaf node with no value.
 type EmptyNode struct {
-	depth uint16
-	hash  []byte
+	depth  uint16
+	prefix *big.Int
+	hash   []byte
 }
 
 // NewEmptyNode creates a new empty node.
-func NewEmptyNode(depth uint16) *EmptyNode {
+func NewEmptyNode(depth uint16, key *big.Int) *EmptyNode {
 	return &EmptyNode{
-		depth: depth,
+		depth:  depth,
+		prefix: key,
 	}
 }
 
@@ -249,33 +299,42 @@ func (n *EmptyNode) Prepare(nonce []byte,
 }
 
 // Visit implements mem.TreeNode. It executes the callback with the node.
-func (n *EmptyNode) Visit(fn func(TreeNode)) {
-	fn(n)
+func (n *EmptyNode) Visit(fn func(node TreeNode) error) error {
+	return fn(n)
 }
 
 // Clone implements mem.TreeNode. It returns a deep copy of the empty node.
 func (n *EmptyNode) Clone() TreeNode {
-	return NewEmptyNode(n.depth)
+	return NewEmptyNode(n.depth, n.prefix)
 }
 
+// Serialize implements serde.Message. It returns the JSON data of the empty
+// node.
 func (n *EmptyNode) Serialize(ctx serde.Context) ([]byte, error) {
-	return nil, nil
+	data, err := nodeFormat{}.Encode(ctx, n)
+	if err != nil {
+		return nil, err
+	}
+
+	return data, nil
 }
 
 // InteriorNode is a node with two children.
 type InteriorNode struct {
-	hash  []byte
-	depth uint16
-	left  TreeNode
-	right TreeNode
+	hash   []byte
+	depth  uint16
+	prefix *big.Int
+	left   TreeNode
+	right  TreeNode
 }
 
 // NewInteriorNode creates a new interior node with two empty nodes as children.
-func NewInteriorNode(depth uint16) *InteriorNode {
+func NewInteriorNode(depth uint16, prefix *big.Int) *InteriorNode {
 	return &InteriorNode{
-		depth: depth,
-		left:  NewEmptyNode(depth + 1),
-		right: NewEmptyNode(depth + 1),
+		depth:  depth,
+		prefix: prefix,
+		left:   NewEmptyNode(depth+1, new(big.Int).SetBit(prefix, int(depth), 0)),
+		right:  NewEmptyNode(depth+1, new(big.Int).SetBit(prefix, int(depth), 1)),
 	}
 }
 
@@ -326,8 +385,28 @@ func (n *InteriorNode) Delete(key *big.Int, b kv.Bucket) (TreeNode, error) {
 	var err error
 	if key.Bit(int(n.depth)) == 0 {
 		n.left, err = n.left.Delete(key, b)
+
+		diskn, ok := n.right.(*DiskNode)
+		if ok {
+			node, err := diskn.load(new(big.Int).SetBit(key, int(n.depth), 1), b)
+			if err != nil {
+				return nil, err
+			}
+
+			n.right = node
+		}
 	} else {
 		n.right, err = n.right.Delete(key, b)
+
+		diskn, ok := n.left.(*DiskNode)
+		if ok {
+			node, err := diskn.load(new(big.Int).SetBit(key, int(n.depth), 0), b)
+			if err != nil {
+				return nil, err
+			}
+
+			n.left = node
+		}
 	}
 
 	if err != nil {
@@ -337,7 +416,7 @@ func (n *InteriorNode) Delete(key *big.Int, b kv.Bucket) (TreeNode, error) {
 	if n.left.GetType() == emptyNodeType && n.right.GetType() == emptyNodeType {
 		// If an interior node points to two empty nodes, it is itself an empty
 		// one.
-		return NewEmptyNode(n.depth), nil
+		return NewEmptyNode(n.depth, n.prefix), nil
 	}
 
 	return n, nil
@@ -374,23 +453,44 @@ func (n *InteriorNode) Prepare(nonce []byte,
 
 // Visit implements mem.TreeNode. It executes the callback with the node and
 // recursively with the children.
-func (n *InteriorNode) Visit(fn func(TreeNode)) {
-	fn(n)
-	n.left.Visit(fn)
-	n.right.Visit(fn)
+func (n *InteriorNode) Visit(fn func(TreeNode) error) error {
+	err := n.left.Visit(fn)
+	if err != nil {
+		return err
+	}
+
+	err = n.right.Visit(fn)
+	if err != nil {
+		return err
+	}
+
+	err = fn(n)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Clone implements mem.TreeNode. It returns a deep copy of the interior node.
 func (n *InteriorNode) Clone() TreeNode {
 	return &InteriorNode{
-		depth: n.depth,
-		left:  n.left.Clone(),
-		right: n.right.Clone(),
+		depth:  n.depth,
+		prefix: n.prefix,
+		left:   n.left.Clone(),
+		right:  n.right.Clone(),
 	}
 }
 
+// Serialize implements serde.Message. It returns the JSON data of the interior
+// node.
 func (n *InteriorNode) Serialize(ctx serde.Context) ([]byte, error) {
-	return nil, nil
+	data, err := nodeFormat{}.Encode(ctx, n)
+	if err != nil {
+		return nil, err
+	}
+
+	return data, nil
 }
 
 // LeafNode is a leaf node with a key and a value.
@@ -413,6 +513,21 @@ func NewLeafNode(depth uint16, key *big.Int, value []byte) *LeafNode {
 // GetHash implements mem.TreeNode. It returns the hash of the node.
 func (n *LeafNode) GetHash() []byte {
 	return append([]byte{}, n.hash...)
+}
+
+// GetDepth returns the depth of the node.
+func (n *LeafNode) GetDepth() uint16 {
+	return n.depth
+}
+
+// GetKey returns the key of the leaf node.
+func (n *LeafNode) GetKey() []byte {
+	return n.key.Bytes()
+}
+
+// GetValue returns the value of the leaf node.
+func (n *LeafNode) GetValue() []byte {
+	return n.value
 }
 
 // GetType implements mem.TreeNode. It returns the leaf node type.
@@ -441,7 +556,12 @@ func (n *LeafNode) Insert(key *big.Int, value []byte, b kv.Bucket) (TreeNode, er
 		return n, nil
 	}
 
-	node := NewInteriorNode(n.depth)
+	prefix := new(big.Int)
+	for i := 0; i < int(n.depth); i++ {
+		prefix.SetBit(prefix, i, key.Bit(i))
+	}
+
+	node := NewInteriorNode(n.depth, prefix)
 	var err error
 
 	// Both the leaf pair and the new one are inserted one after the other as
@@ -472,7 +592,7 @@ func (n *LeafNode) Insert(key *big.Int, value []byte, b kv.Bucket) (TreeNode, er
 // Delete implements mem.TreeNode. It removes the leaf if the key matches.
 func (n *LeafNode) Delete(key *big.Int, b kv.Bucket) (TreeNode, error) {
 	if n.key.Cmp(key) == 0 {
-		return NewEmptyNode(n.depth), nil
+		return NewEmptyNode(n.depth, key), nil
 	}
 
 	return n, nil
@@ -509,8 +629,8 @@ func (n *LeafNode) Prepare(nonce []byte,
 }
 
 // Visit implements mem.TreeNode. It executes the callback with the node.
-func (n *LeafNode) Visit(fn func(TreeNode)) {
-	fn(n)
+func (n *LeafNode) Visit(fn func(TreeNode) error) error {
+	return fn(n)
 }
 
 // Clone implements mem.TreeNode. It returns a copy of the leaf node.
@@ -518,15 +638,10 @@ func (n *LeafNode) Clone() TreeNode {
 	return NewLeafNode(n.depth, n.key, n.value)
 }
 
+// Serialize implements serde.Message. It returns the JSON data of the leaf
+// node.
 func (n *LeafNode) Serialize(ctx serde.Context) ([]byte, error) {
-	m := types.LeafNodeJSON{
-		Digest: n.hash,
-		Depth:  n.depth,
-		Key:    n.key.Bytes(),
-		Value:  n.value,
-	}
-
-	data, err := ctx.Marshal(m)
+	data, err := nodeFormat{}.Encode(ctx, n)
 	if err != nil {
 		return nil, err
 	}
@@ -534,26 +649,25 @@ func (n *LeafNode) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
+// NodeKey is the key for the node factory.
+type NodeKey struct{}
+
+// NodeFactory is the factory to deserialize tree nodes.
+//
+// - implements serde.Factory
 type NodeFactory struct{}
 
+// Deserialize implements serde.Factory. It populates the tree node associated
+// to the data if appropriate, otherwise it returns an error.
 func (f NodeFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	m := types.LeafNodeJSON{}
-	err := ctx.Unmarshal(data, &m)
+	ctx = serde.WithFactory(ctx, NodeKey{}, f)
+
+	msg, err := nodeFormat{}.Decode(ctx, data)
 	if err != nil {
 		return nil, err
 	}
 
-	key := new(big.Int)
-	key.SetBytes(m.Key)
-
-	node := &LeafNode{
-		hash:  m.Digest,
-		depth: m.Depth,
-		key:   key,
-		value: m.Value,
-	}
-
-	return node, nil
+	return msg, nil
 }
 
 func int2buffer(depth uint16) []byte {

@@ -19,7 +19,7 @@ func TestTree_Len(t *testing.T) {
 	tree := NewTree(Nonce{}, fakeDB{})
 	require.Equal(t, 0, tree.Len())
 
-	tree.root = NewInteriorNode(0)
+	tree.root = NewInteriorNode(0, big.NewInt(0))
 	require.Equal(t, 0, tree.Len())
 
 	tree.root.(*InteriorNode).left = NewLeafNode(1, nil, nil)
@@ -93,7 +93,7 @@ func TestTree_Clone(t *testing.T) {
 }
 
 func TestEmptyNode_GetHash(t *testing.T) {
-	node := NewEmptyNode(0)
+	node := NewEmptyNode(0, big.NewInt(0))
 	require.Empty(t, node.GetHash())
 
 	node.hash = []byte("ping")
@@ -101,12 +101,12 @@ func TestEmptyNode_GetHash(t *testing.T) {
 }
 
 func TestEmptyNode_GetType(t *testing.T) {
-	node := NewEmptyNode(0)
+	node := NewEmptyNode(0, big.NewInt(0))
 	require.Equal(t, emptyNodeType, node.GetType())
 }
 
 func TestEmptyNode_Search(t *testing.T) {
-	node := NewEmptyNode(0)
+	node := NewEmptyNode(0, big.NewInt(0))
 	path := newPath([]byte{}, nil)
 
 	value, err := node.Search(new(big.Int), &path, nil)
@@ -116,7 +116,7 @@ func TestEmptyNode_Search(t *testing.T) {
 }
 
 func TestEmptyNode_Insert(t *testing.T) {
-	node := NewEmptyNode(0)
+	node := NewEmptyNode(0, big.NewInt(0))
 
 	next, err := node.Insert(big.NewInt(0), []byte("pong"), nil)
 	require.NoError(t, err)
@@ -124,7 +124,7 @@ func TestEmptyNode_Insert(t *testing.T) {
 }
 
 func TestEmptyNode_Delete(t *testing.T) {
-	node := NewEmptyNode(0)
+	node := NewEmptyNode(0, big.NewInt(0))
 
 	next, err := node.Delete(nil, nil)
 	require.NoError(t, err)
@@ -132,7 +132,7 @@ func TestEmptyNode_Delete(t *testing.T) {
 }
 
 func TestEmptyNode_Prepare(t *testing.T) {
-	node := NewEmptyNode(3)
+	node := NewEmptyNode(3, big.NewInt(0))
 
 	fac := crypto.NewSha256Factory()
 
@@ -151,26 +151,28 @@ func TestEmptyNode_Prepare(t *testing.T) {
 }
 
 func TestEmptyNode_Visit(t *testing.T) {
-	node := NewEmptyNode(3)
+	node := NewEmptyNode(3, big.NewInt(0))
 	count := 0
 
-	node.Visit(func(tn TreeNode) {
+	node.Visit(func(tn TreeNode) error {
 		require.Same(t, node, tn)
 		count++
+
+		return nil
 	})
 
 	require.Equal(t, 1, count)
 }
 
 func TestEmptyNode_Clone(t *testing.T) {
-	node := NewEmptyNode(3)
+	node := NewEmptyNode(3, big.NewInt(0))
 
 	clone := node.Clone()
 	require.Equal(t, node, clone)
 }
 
 func TestInteriorNode_GetHash(t *testing.T) {
-	node := NewInteriorNode(3)
+	node := NewInteriorNode(3, big.NewInt(0))
 
 	require.Empty(t, node.GetHash())
 
@@ -179,13 +181,13 @@ func TestInteriorNode_GetHash(t *testing.T) {
 }
 
 func TestInteriorNode_GetType(t *testing.T) {
-	node := NewInteriorNode(3)
+	node := NewInteriorNode(3, big.NewInt(0))
 
 	require.Equal(t, interiorNodeType, node.GetType())
 }
 
 func TestInteriorNode_Search(t *testing.T) {
-	node := NewInteriorNode(0)
+	node := NewInteriorNode(0, big.NewInt(0))
 	node.left = NewLeafNode(1, big.NewInt(0), []byte("ping"))
 	node.right = NewLeafNode(1, big.NewInt(1), []byte("pong"))
 
@@ -203,7 +205,7 @@ func TestInteriorNode_Search(t *testing.T) {
 }
 
 func TestInteriorNode_Insert(t *testing.T) {
-	node := NewInteriorNode(0)
+	node := NewInteriorNode(0, big.NewInt(0))
 
 	next, err := node.Insert(big.NewInt(0), []byte("ping"), nil)
 	require.NoError(t, err)
@@ -215,7 +217,7 @@ func TestInteriorNode_Insert(t *testing.T) {
 }
 
 func TestInteriorNode_Delete(t *testing.T) {
-	node := NewInteriorNode(0)
+	node := NewInteriorNode(0, big.NewInt(0))
 	node.left = NewLeafNode(1, big.NewInt(0), []byte("ping"))
 	node.right = NewLeafNode(1, big.NewInt(1), []byte("pong"))
 
@@ -229,7 +231,7 @@ func TestInteriorNode_Delete(t *testing.T) {
 }
 
 func TestInteriorNode_Prepare(t *testing.T) {
-	node := NewInteriorNode(1)
+	node := NewInteriorNode(1, big.NewInt(0))
 	node.left = fakeNode{data: []byte{0xaa}}
 	node.right = fakeNode{data: []byte{0xbb}}
 	calls := &fake.Call{}
@@ -254,23 +256,25 @@ func TestInteriorNode_Prepare(t *testing.T) {
 }
 
 func TestInteriorNode_Visit(t *testing.T) {
-	node := NewInteriorNode(0)
+	node := NewInteriorNode(0, big.NewInt(0))
 
 	counter := 0
-	node.Visit(func(n TreeNode) {
-		if counter == 0 {
+	node.Visit(func(n TreeNode) error {
+		if counter == 2 {
 			require.IsType(t, node, n)
 		} else {
 			require.IsType(t, (*EmptyNode)(nil), n)
 		}
 		counter++
+
+		return nil
 	})
 
 	require.Equal(t, 3, counter)
 }
 
 func TestInteriorNode_Clone(t *testing.T) {
-	node := NewInteriorNode(0)
+	node := NewInteriorNode(0, big.NewInt(0))
 
 	clone := node.Clone()
 	require.Equal(t, node, clone)
@@ -358,9 +362,11 @@ func TestLeafNode_Visit(t *testing.T) {
 	node := NewLeafNode(3, makeKey([]byte("ping")), []byte("pong"))
 
 	counter := 0
-	node.Visit(func(n TreeNode) {
+	node.Visit(func(n TreeNode) error {
 		counter++
 		require.IsType(t, node, n)
+
+		return nil
 	})
 
 	require.Equal(t, 1, counter)

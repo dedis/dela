@@ -54,7 +54,7 @@ func (s Path) computeRoot(fac crypto.HashFactory) ([]byte, error) {
 	if s.value != nil {
 		node = NewLeafNode(uint16(len(s.interiors)), key, s.value)
 	} else {
-		node = NewEmptyNode(uint16(len(s.interiors)))
+		node = NewEmptyNode(uint16(len(s.interiors)), key)
 	}
 
 	// Reproduce the shortest unique prefix for the key.

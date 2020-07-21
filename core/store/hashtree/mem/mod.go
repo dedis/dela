@@ -67,7 +67,7 @@ func (t *MerkleTree) GetPath(key []byte) (hashtree.Path, error) {
 
 // Stage implements hashtree.Tree. It executes the callback over a clone of the
 // current tree and return the clone with the root calculated.
-func (t *MerkleTree) Stage(fn func(store.Snapshot) error) (hashtree.Tree, error) {
+func (t *MerkleTree) Stage(fn func(store.Snapshot) error) (hashtree.StagingTree, error) {
 	trie := t.clone()
 
 	err := fn(writableMerkleTree{MerkleTree: trie})
@@ -81,6 +81,16 @@ func (t *MerkleTree) Stage(fn func(store.Snapshot) error) (hashtree.Tree, error)
 	}
 
 	return trie, nil
+}
+
+// Commit implements hashtree.StagingTree.
+func (t *MerkleTree) Commit() (hashtree.Tree, error) {
+	err := t.tree.Persist()
+	if err != nil {
+		return nil, err
+	}
+
+	return t, nil
 }
 
 func (t *MerkleTree) clone() *MerkleTree {
