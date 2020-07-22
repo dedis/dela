@@ -41,7 +41,7 @@ func TestDiskNode_Search(t *testing.T) {
 	require.Equal(t, []byte("pong"), value)
 
 	// Error if the node is not stored in the database.
-	_, err = node.Search(big.NewInt(0), nil, fakeBucket{})
+	_, err = node.Search(big.NewInt(0), nil, &fakeBucket{})
 	require.EqualError(t, err, "failed to load node: prefix 0 (depth 0) not in database")
 
 	inter := NewInteriorNode(0, big.NewInt(0))
@@ -66,7 +66,7 @@ func TestDiskNode_Insert(t *testing.T) {
 	require.NoError(t, err)
 	require.IsType(t, (*LeafNode)(nil), next)
 
-	_, err = node.Insert(big.NewInt(2), nil, fakeBucket{})
+	_, err = node.Insert(big.NewInt(2), nil, &fakeBucket{})
 	require.EqualError(t, err, "failed to load node: prefix 10 (depth 0) not in database")
 
 	inter := NewInteriorNode(0, big.NewInt(0))
@@ -92,7 +92,7 @@ func TestDiskNode_Delete(t *testing.T) {
 	require.NoError(t, err)
 	require.IsType(t, (*EmptyNode)(nil), next)
 
-	_, err = node.Delete(big.NewInt(2), fakeBucket{})
+	_, err = node.Delete(big.NewInt(2), &fakeBucket{})
 	require.EqualError(t, err, "failed to load node: prefix 10 (depth 0) not in database")
 
 	inter := NewInteriorNode(0, big.NewInt(0))
@@ -122,7 +122,7 @@ func TestDiskNode_Prepare(t *testing.T) {
 	require.Len(t, hash, 32)
 	require.Equal(t, hash, node.hash)
 
-	_, err = node.Prepare([]byte{}, big.NewInt(0), fakeBucket{}, nil)
+	_, err = node.Prepare([]byte{}, big.NewInt(0), &fakeBucket{}, nil)
 	require.EqualError(t, err, "failed to load node: prefix 0 (depth 0) not in database")
 
 	bucket.errSet = xerrors.New("oops")
@@ -192,31 +192,36 @@ func TestDiskNode_Load(t *testing.T) {
 
 type fakeBucket struct {
 	kv.Bucket
-	values map[string][]byte
-	errSet error
+	values  map[string][]byte
+	errSet  error
+	errScan error
 }
 
-func newFakeBucket(key, value []byte) fakeBucket {
-	return fakeBucket{
+func newFakeBucket(key, value []byte) *fakeBucket {
+	return &fakeBucket{
 		values: map[string][]byte{
 			string(key): value,
 		},
 	}
 }
 
-func (b fakeBucket) Get(key []byte) []byte {
+func (b *fakeBucket) Get(key []byte) []byte {
 	return b.values[string(key)]
 }
 
-func (b fakeBucket) Set(key, value []byte) error {
+func (b *fakeBucket) Set(key, value []byte) error {
+	if b.values == nil {
+		b.values = make(map[string][]byte)
+	}
+
 	b.values[string(key)] = value
 	return b.errSet
 }
 
-func (b fakeBucket) Delete(key []byte) error {
+func (b *fakeBucket) Delete(key []byte) error {
 	return nil
 }
 
-func (b fakeBucket) Scan(prefix []byte, fn func(k, v []byte) error) error {
-	return nil
+func (b *fakeBucket) Scan(prefix []byte, fn func(k, v []byte) error) error {
+	return b.errScan
 }

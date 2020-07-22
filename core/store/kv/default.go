@@ -7,6 +7,9 @@ import (
 	"golang.org/x/xerrors"
 )
 
+// BoltDB is an adapter of the KV store using bboltdb.
+//
+// - implements kv.DB
 type boltDB struct {
 	bolt *bbolt.DB
 }
@@ -15,7 +18,7 @@ type boltDB struct {
 func New(path string) (DB, error) {
 	db, err := bbolt.Open(path, 0666, &bbolt.Options{})
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to open db: %v", err)
 	}
 
 	bdb := boltDB{
@@ -25,55 +28,60 @@ func New(path string) (DB, error) {
 	return bdb, nil
 }
 
-func (db boltDB) CreateBucket(name []byte) error {
-	return db.bolt.Update(func(txn *bbolt.Tx) error {
-		_, err := txn.CreateBucketIfNotExists(name)
-		return err
-	})
-}
-
+// View implements kv.DB. It opens a read-only transaction and opens the
+// provided bucket. It will return an error if the bucket does not exist.
 func (db boltDB) View(bucket []byte, fn func(Bucket) error) error {
 	return db.bolt.View(func(txn *bbolt.Tx) error {
-		bucket := txn.Bucket(bucket)
-		if bucket == nil {
-			return xerrors.Errorf("bucket not found")
+		b := txn.Bucket(bucket)
+		if b == nil {
+			return xerrors.Errorf("bucket '%x' not found", bucket)
 		}
 
-		return fn(boltBucket{bucket: bucket})
+		return fn(boltBucket{bucket: b})
 	})
 }
 
+// Update implements kv.DB. It opens a read-write transaction and opens the
+// bucket. It will create it if it does not exist yet.
 func (db boltDB) Update(bucket []byte, fn func(Bucket) error) error {
 	return db.bolt.Update(func(txn *bbolt.Tx) error {
 		bucket, err := txn.CreateBucketIfNotExists(bucket)
 		if err != nil {
-			return err
+			return xerrors.Errorf("failed to create bucket: %v", err)
 		}
 
 		return fn(boltBucket{bucket: bucket})
 	})
 }
 
+// BoltBucket is the adapter of a bbolt bucket to the kv.Bucket interface.
+//
+// - implements kv.Bucket
 type boltBucket struct {
 	bucket *bbolt.Bucket
 }
 
+// Get implements kv.Bucket. It returns the value associated to the key.
 func (txn boltBucket) Get(key []byte) []byte {
 	return txn.bucket.Get(key)
 }
 
+// Set implements kv.Bucket. It sets the provided key to the value.
 func (txn boltBucket) Set(key, value []byte) error {
 	return txn.bucket.Put(key, value)
 }
 
+// Delete implements kv.Bucket. It deletes the key from the bucket.
 func (txn boltBucket) Delete(key []byte) error {
 	return txn.bucket.Delete(key)
 }
 
+// ForEach implements kv.Bucket. It iterates over the whole bucket.
 func (txn boltBucket) ForEach(fn func(k, v []byte) error) error {
 	return txn.bucket.ForEach(fn)
 }
 
+// Scan implements kv.Bucket. It iterates over the keys matching the prefix.
 func (txn boltBucket) Scan(prefix []byte, fn func(k, v []byte) error) error {
 	cursor := txn.bucket.Cursor()
 	cursor.Seek(prefix)
@@ -81,7 +89,7 @@ func (txn boltBucket) Scan(prefix []byte, fn func(k, v []byte) error) error {
 	for k, v := cursor.Seek(prefix); k != nil && bytes.HasPrefix(k, prefix); k, v = cursor.Next() {
 		err := fn(k, v)
 		if err != nil {
-			return err
+			return xerrors.Errorf("callback failed: %v", err)
 		}
 	}
 

@@ -77,7 +77,7 @@ func TestMerkleTree_IntegrationTest(t *testing.T) {
 	_, err = tree.Commit()
 	require.NoError(t, err)
 
-	db.View(tree.tree.bucket, func(b kv.Bucket) error {
+	db.View(tree.bucket, func(b kv.Bucket) error {
 		return b.ForEach(func(k, v []byte) error {
 			t.Fatal("database should be empty")
 			return nil
@@ -151,7 +151,7 @@ func TestMerkleTree_Random_IntegrationTest(t *testing.T) {
 func TestMerkleTree_Get(t *testing.T) {
 	tree := NewMerkleTree(fakeDB{}, Nonce{})
 
-	err := tree.tree.Insert([]byte("ping"), []byte("pong"))
+	err := tree.tree.Insert([]byte("ping"), []byte("pong"), &fakeBucket{})
 	require.NoError(t, err)
 
 	value, err := tree.Get([]byte("ping"))
@@ -188,10 +188,10 @@ func TestMerkleTree_GetPath(t *testing.T) {
 	tree := NewMerkleTree(fakeDB{}, Nonce{})
 
 	f := func(key [8]byte, value []byte) bool {
-		err := tree.tree.Insert(key[:], value)
+		err := tree.tree.Insert(key[:], value, &fakeBucket{})
 		require.NoError(t, err)
 
-		err = tree.tree.Update(tree.hashFactory)
+		err = tree.tree.Update(tree.hashFactory, &fakeBucket{})
 		require.NoError(t, err)
 
 		path, err := tree.GetPath(key[:])
@@ -225,10 +225,6 @@ func TestMerkleTree_Stage(t *testing.T) {
 	_, err = tree.Stage(func(store.Snapshot) error { return nil })
 	require.EqualError(t, err,
 		"couldn't update tree: failed to prepare: empty node failed: fake error")
-
-	tree.tree.db = fakeDB{err: xerrors.New("oops")}
-	_, err = tree.Stage(func(store.Snapshot) error { return nil })
-	require.EqualError(t, err, "failed to create bucket: oops")
 }
 
 func TestMerkleTree_Commit(t *testing.T) {

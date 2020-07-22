@@ -1,11 +1,8 @@
 package mem
 
 import (
-	"crypto/rand"
 	"math"
 	"math/big"
-	"os"
-	"runtime/pprof"
 	"testing"
 	"testing/quick"
 
@@ -16,8 +13,12 @@ import (
 	"golang.org/x/xerrors"
 )
 
+func init() {
+	nodeFormats.Register(fake.BadFormat, fake.NewBadFormat())
+}
+
 func TestTree_Len(t *testing.T) {
-	tree := NewTree(Nonce{}, fakeDB{})
+	tree := NewTree(Nonce{})
 	require.Equal(t, 0, tree.Len())
 
 	tree.root = NewInteriorNode(0, big.NewInt(0))
@@ -31,116 +32,114 @@ func TestTree_Len(t *testing.T) {
 }
 
 func TestTree_Search(t *testing.T) {
-	tree := NewTree(Nonce{}, fakeDB{})
+	tree := NewTree(Nonce{})
 
-	value, err := tree.Search(nil, nil)
+	value, err := tree.Search(nil, nil, &fakeBucket{})
 	require.NoError(t, err)
 	require.Nil(t, value)
 
 	tree.root = NewLeafNode(0, makeKey([]byte("A")), []byte("B"))
-	value, err = tree.Search([]byte("A"), nil)
+	value, err = tree.Search([]byte("A"), nil, &fakeBucket{})
 	require.NoError(t, err)
 	require.Equal(t, []byte("B"), value)
 
-	_, err = tree.Search(make([]byte, MaxDepth+1), nil)
+	_, err = tree.Search(make([]byte, MaxDepth+1), nil, &fakeBucket{})
 	require.EqualError(t, err, "mismatch key length 33 > 32")
+
+	tree.root = fakeNode{err: xerrors.New("oops")}
+	_, err = tree.Search([]byte("A"), nil, nil)
+	require.EqualError(t, err, "failed to search: oops")
 }
 
 func TestTree_Insert(t *testing.T) {
-	tree := NewTree(Nonce{}, fakeDB{})
+	tree := NewTree(Nonce{})
 
-	err := tree.Insert([]byte("ping"), []byte("pong"))
+	err := tree.Insert([]byte("ping"), []byte("pong"), &fakeBucket{})
 	require.NoError(t, err)
 	require.Equal(t, 1, tree.Len())
 
-	err = tree.Insert(make([]byte, MaxDepth+1), nil)
+	err = tree.Insert(make([]byte, MaxDepth+1), nil, &fakeBucket{})
 	require.EqualError(t, err, "mismatch key length 33 > 32")
+
+	tree.root = fakeNode{err: xerrors.New("oops")}
+	err = tree.Insert([]byte("A"), []byte("B"), nil)
+	require.EqualError(t, err, "failed to insert: oops")
 }
 
 func TestTree_Delete(t *testing.T) {
-	tree := NewTree(Nonce{}, fakeDB{})
+	tree := NewTree(Nonce{})
 
-	err := tree.Delete(nil)
+	err := tree.Delete(nil, &fakeBucket{})
 	require.NoError(t, err)
 
-	err = tree.Delete([]byte("ping"))
+	err = tree.Delete([]byte("ping"), &fakeBucket{})
 	require.NoError(t, err)
 
 	tree.root = NewLeafNode(0, makeKey([]byte("ping")), []byte("pong"))
-	err = tree.Delete([]byte("ping"))
+	err = tree.Delete([]byte("ping"), &fakeBucket{})
 	require.NoError(t, err)
 	require.IsType(t, (*EmptyNode)(nil), tree.root)
 
-	err = tree.Delete(make([]byte, MaxDepth+1))
+	err = tree.Delete(make([]byte, MaxDepth+1), &fakeBucket{})
 	require.EqualError(t, err, "mismatch key length 33 > 32")
+
+	tree.root = fakeNode{err: xerrors.New("oops")}
+	err = tree.Delete([]byte("A"), nil)
+	require.EqualError(t, err, "failed to delete: oops")
 }
 
 func TestTree_Persist(t *testing.T) {
-	db, clean := makeDB(t)
-	defer clean()
+	bucket := &fakeBucket{}
 
-	tree := NewTree(Nonce{}, db)
-	require.NoError(t, db.CreateBucket(tree.bucket))
+	tree := NewTree(Nonce{})
 
 	for i := 0; i < math.MaxUint8/2; i++ {
 		key := []byte{byte(i * 2)}
 
-		err := tree.Insert(key[:], key[:])
+		err := tree.Insert(key[:], key[:], bucket)
 		require.NoError(t, err)
 	}
 
-	err := tree.Persist()
+	err := tree.Persist(bucket)
 	require.NoError(t, err)
 
 	count := 0
 
-	db.View(tree.bucket, func(bucket kv.Bucket) error {
-		bucket.ForEach(func(key, value []byte) error {
-			require.Regexp(t, `{"Leaf":{[^}]+}}`, string(value))
-			count++
-			return nil
-		})
-		return nil
-	})
+	for _, value := range bucket.values {
+		require.Regexp(t, `{"Leaf":{[^}]+}}`, string(value))
+		count++
+	}
 	require.Equal(t, math.MaxUint8/2, count)
 
 	tree.memDepth = 6
-	err = tree.Persist()
+	err = tree.Persist(bucket)
 	require.NoError(t, err)
 
 	count = 0
 
-	db.View(tree.bucket, func(bucket kv.Bucket) error {
-		bucket.ForEach(func(key, value []byte) error {
-			require.Regexp(t, `{"(Leaf|Interior)":{[^}]+}}`, string(value))
-			count++
-			return nil
-		})
-		return nil
-	})
+	for _, value := range bucket.values {
+		require.Regexp(t, `{"(Leaf|Interior)":{[^}]+}}`, string(value))
+		count++
+	}
 	require.Equal(t, math.MaxUint8/2+math.MaxUint8/4+math.MaxUint8/8+1, count)
 
 	tree.memDepth = 0
-	err = tree.Persist()
+	err = tree.Persist(bucket)
 	require.NoError(t, err)
+	require.Equal(t, 255, len(bucket.values))
 
-	count = 0
-	db.View(tree.bucket, func(bucket kv.Bucket) error {
-		bucket.ForEach(func(key, value []byte) error {
-			count++
-			return nil
-		})
-		return nil
-	})
+	err = tree.Persist(&fakeBucket{errSet: xerrors.New("oops")})
+	require.EqualError(t, err, "failed to store node: failed to set key: oops")
 
-	require.Equal(t, 255, count)
+	err = tree.Persist(&fakeBucket{errScan: xerrors.New("oops")})
+	require.EqualError(t, err, "failed to clean subtree: oops")
 }
 
 func TestTree_Clone(t *testing.T) {
-	tree := NewTree(Nonce{}, fakeDB{})
+	tree := NewTree(Nonce{})
 
 	f := func(key [8]byte, value []byte) bool {
-		return tree.Insert(key[:], value) == nil
+		return tree.Insert(key[:], value, &fakeBucket{}) == nil
 	}
 
 	err := quick.Check(f, nil)
@@ -149,8 +148,8 @@ func TestTree_Clone(t *testing.T) {
 	clone := tree.Clone()
 	require.Equal(t, tree.Len(), clone.Len())
 
-	require.NoError(t, tree.Update(crypto.NewSha256Factory()))
-	require.NoError(t, clone.Update(crypto.NewSha256Factory()))
+	require.NoError(t, tree.Update(crypto.NewSha256Factory(), &fakeBucket{}))
+	require.NoError(t, clone.Update(crypto.NewSha256Factory(), &fakeBucket{}))
 	require.Equal(t, tree.root.GetHash(), clone.root.GetHash())
 }
 
@@ -233,6 +232,17 @@ func TestEmptyNode_Clone(t *testing.T) {
 	require.Equal(t, node, clone)
 }
 
+func TestEmptyNode_Serialize(t *testing.T) {
+	node := NewEmptyNode(3, big.NewInt(1))
+
+	data, err := node.Serialize(testCtx)
+	require.Equal(t, `{"Empty":{"Digest":"","Depth":3,"Prefix":"AQ=="}}`, string(data))
+	require.NoError(t, err)
+
+	_, err = node.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, "failed to encode empty node: fake error")
+}
+
 func TestInteriorNode_GetHash(t *testing.T) {
 	node := NewInteriorNode(3, big.NewInt(0))
 
@@ -292,12 +302,12 @@ func TestInteriorNode_Delete(t *testing.T) {
 	require.IsType(t, (*EmptyNode)(nil), next)
 
 	node.right = NewDiskNode(1, nil, testCtx, NodeFactory{})
-	_, err = node.Delete(big.NewInt(0), fakeBucket{})
+	_, err = node.Delete(big.NewInt(0), &fakeBucket{})
 	require.EqualError(t, err, "failed to load node: prefix 1 (depth 1) not in database")
 
 	node.right = NewEmptyNode(1, big.NewInt(2))
 	node.left = NewDiskNode(1, nil, testCtx, NodeFactory{})
-	_, err = node.Delete(big.NewInt(1), fakeBucket{})
+	_, err = node.Delete(big.NewInt(1), &fakeBucket{})
 	require.EqualError(t, err, "failed to load node: prefix 0 (depth 1) not in database")
 }
 
@@ -349,6 +359,17 @@ func TestInteriorNode_Clone(t *testing.T) {
 
 	clone := node.Clone()
 	require.Equal(t, node, clone)
+}
+
+func TestInteriorNode_Serialize(t *testing.T) {
+	node := NewInteriorNode(2, big.NewInt(3))
+
+	data, err := node.Serialize(testCtx)
+	require.NoError(t, err)
+	require.Equal(t, `{"Interior":{"Digest":"","Depth":2,"Prefix":"Aw=="}}`, string(data))
+
+	_, err = node.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, "failed to encode interior node: fake error")
 }
 
 func TestLeafNode_GetHash(t *testing.T) {
@@ -450,27 +471,15 @@ func TestLeafNode_Clone(t *testing.T) {
 	require.Equal(t, node, clone)
 }
 
-// Benchmarks ------------------------------------------------------------------
+func TestLeafNode_Serialize(t *testing.T) {
+	node := NewLeafNode(2, big.NewInt(2), []byte{0xaa})
 
-func BenchmarkMerkleTree(b *testing.B) {
-	tree := NewTree(Nonce{}, fakeDB{})
+	data, err := node.Serialize(testCtx)
+	require.NoError(t, err)
+	require.Equal(t, `{"Leaf":{"Digest":"","Depth":2,"Prefix":"Ag==","Value":"qg=="}}`, string(data))
 
-	value := []byte("deadbeef")
-
-	for i := 0; i < b.N; i++ {
-		key := make([]byte, MaxDepth)
-		rand.Read(key)
-
-		err := tree.Insert(key, value)
-		require.NoError(b, err)
-	}
-
-	file, err := os.Create("mem.out")
-	require.NoError(b, err)
-
-	defer file.Close()
-
-	require.NoError(b, pprof.WriteHeapProfile(file))
+	_, err = node.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, "failed to encode leaf node: fake error")
 }
 
 // Utility functions -----------------------------------------------------------
@@ -500,6 +509,18 @@ type fakeNode struct {
 
 	data []byte
 	err  error
+}
+
+func (n fakeNode) Search(key *big.Int, path *Path, bucket kv.Bucket) ([]byte, error) {
+	return nil, n.err
+}
+
+func (n fakeNode) Insert(key *big.Int, value []byte, b kv.Bucket) (TreeNode, error) {
+	return n, n.err
+}
+
+func (n fakeNode) Delete(key *big.Int, b kv.Bucket) (TreeNode, error) {
+	return nil, n.err
 }
 
 func (n fakeNode) Prepare(nonce []byte,

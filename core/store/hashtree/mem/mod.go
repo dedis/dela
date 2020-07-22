@@ -20,13 +20,17 @@ import (
 // - implements hashtree.Tree
 type MerkleTree struct {
 	tree        *Tree
+	db          kv.DB
+	bucket      []byte
 	hashFactory crypto.HashFactory
 }
 
 // NewMerkleTree creates a new in-memory trie.
 func NewMerkleTree(db kv.DB, nonce Nonce) *MerkleTree {
 	return &MerkleTree{
-		tree:        NewTree(nonce, db),
+		tree:        NewTree(nonce),
+		db:          db,
+		bucket:      []byte("hashtree"),
 		hashFactory: crypto.NewSha256Factory(),
 	}
 }
@@ -34,7 +38,15 @@ func NewMerkleTree(db kv.DB, nonce Nonce) *MerkleTree {
 // Get implements store.Readable. It returns the value associated with the key
 // if it exists, otherwise it returns nil.
 func (t *MerkleTree) Get(key []byte) ([]byte, error) {
-	value, err := t.tree.Search(key, nil)
+	var value []byte
+
+	err := t.db.View(t.bucket, func(b kv.Bucket) error {
+		var err error
+		value, err = t.tree.Search(key, nil, b)
+
+		return err
+	})
+
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't search key: %v", err)
 	}
@@ -52,7 +64,11 @@ func (t *MerkleTree) GetRoot() []byte {
 func (t *MerkleTree) GetPath(key []byte) (hashtree.Path, error) {
 	path := newPath(t.tree.nonce[:], key)
 
-	_, err := t.tree.Search(key, &path)
+	err := t.db.View(t.bucket, func(b kv.Bucket) error {
+		_, err := t.tree.Search(key, &path, b)
+		return err
+	})
+
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't search key: %v", err)
 	}
@@ -65,28 +81,34 @@ func (t *MerkleTree) GetPath(key []byte) (hashtree.Path, error) {
 func (t *MerkleTree) Stage(fn func(store.Snapshot) error) (hashtree.StagingTree, error) {
 	clone := t.clone()
 
-	err := clone.tree.db.CreateBucket(clone.tree.bucket)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to create bucket: %v", err)
-	}
+	err := t.db.Update(t.bucket, func(b kv.Bucket) error {
+		err := fn(writableMerkleTree{
+			MerkleTree: clone,
+			bucket:     b,
+		})
 
-	err = fn(writableMerkleTree{MerkleTree: clone})
-	if err != nil {
-		return nil, xerrors.Errorf("callback failed: %v", err)
-	}
+		if err != nil {
+			return xerrors.Errorf("callback failed: %v", err)
+		}
 
-	err = clone.tree.Update(t.hashFactory)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't update tree: %v", err)
-	}
+		err = clone.tree.Update(t.hashFactory, b)
+		if err != nil {
+			return xerrors.Errorf("couldn't update tree: %v", err)
+		}
 
-	return clone, nil
+		return nil
+	})
+
+	return clone, err
 }
 
 // Commit implements hashtree.StagingTree. It writes the leaf nodes to the disk
 // and a trade-off of other nodes.
 func (t *MerkleTree) Commit() (hashtree.Tree, error) {
-	err := t.tree.Persist()
+	err := t.db.Update(t.bucket, func(b kv.Bucket) error {
+		return t.tree.Persist(b)
+	})
+
 	if err != nil {
 		return nil, xerrors.Errorf("failed to persist tree: %v", err)
 	}
@@ -97,6 +119,8 @@ func (t *MerkleTree) Commit() (hashtree.Tree, error) {
 func (t *MerkleTree) clone() *MerkleTree {
 	return &MerkleTree{
 		tree:        t.tree.Clone(),
+		db:          t.db,
+		bucket:      t.bucket,
 		hashFactory: t.hashFactory,
 	}
 }
@@ -107,12 +131,14 @@ func (t *MerkleTree) clone() *MerkleTree {
 // - implements store.Writable
 type writableMerkleTree struct {
 	*MerkleTree
+
+	bucket kv.Bucket
 }
 
 // Set implements store.Writable. It adds or updates the key in the internal
 // tree.
 func (t writableMerkleTree) Set(key, value []byte) error {
-	err := t.tree.Insert(key, value)
+	err := t.tree.Insert(key, value, t.bucket)
 	if err != nil {
 		return xerrors.Errorf("couldn't insert pair: %v", err)
 	}
@@ -122,7 +148,7 @@ func (t writableMerkleTree) Set(key, value []byte) error {
 
 // Delete implements store.Writable. It removes the key from the tree.
 func (t writableMerkleTree) Delete(key []byte) error {
-	err := t.tree.Delete(key)
+	err := t.tree.Delete(key, t.bucket)
 	if err != nil {
 		return xerrors.Errorf("couldn't delete key: %v", err)
 	}

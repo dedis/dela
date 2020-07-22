@@ -71,7 +71,7 @@ func (f nodeFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error)
 
 	data, err := ctx.Marshal(m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to marshal: %v", err)
 	}
 
 	return data, nil
@@ -81,7 +81,7 @@ func (f nodeFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error
 	m := NodeJSON{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to unmarshal: %v", err)
 	}
 
 	if m.Leaf != nil {

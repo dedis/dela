@@ -9,8 +9,13 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/json"
+	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
 )
+
+func init() {
+	nodeFormats.Register(serde.FormatJSON, nodeFormat{})
+}
 
 // Nonce is the type of the tree nonce.
 type Nonce [8]byte
@@ -31,6 +36,8 @@ const (
 	leafNodeType
 	diskNodeType
 )
+
+var nodeFormats = registry.NewSimpleRegistry()
 
 // TreeNode is the interface for the different types of nodes that a Merkle tree
 // could have.
@@ -64,22 +71,18 @@ type Tree struct {
 	nonce    Nonce
 	maxDepth int
 	memDepth int
-	bucket   []byte
 	root     TreeNode
-	db       kv.DB
 	context  serde.Context
 	factory  serde.Factory
 }
 
 // NewTree creates a new empty tree.
-func NewTree(nonce Nonce, db kv.DB) *Tree {
+func NewTree(nonce Nonce) *Tree {
 	return &Tree{
 		nonce:    nonce,
 		maxDepth: MaxDepth,
 		memDepth: MaxDepth * 8,
 		root:     NewEmptyNode(0, big.NewInt(0)),
-		bucket:   []byte("hashtree"),
-		db:       db,
 		context:  json.NewContext(),
 		factory:  NodeFactory{},
 	}
@@ -103,21 +106,14 @@ func (t *Tree) Len() int {
 // Search returns the value associated to the key if it exists, otherwise nil.
 // When path is defined, it will be filled so the interior nodes and the leaf
 // node so that it can prove the inclusion or the absence of the key.
-func (t *Tree) Search(key []byte, path *Path) ([]byte, error) {
+func (t *Tree) Search(key []byte, path *Path, b kv.Bucket) ([]byte, error) {
 	if len(key) > t.maxDepth {
 		return nil, xerrors.Errorf("mismatch key length %d > %d", len(key), t.maxDepth)
 	}
 
-	var value []byte
-	err := t.db.View(t.bucket, func(b kv.Bucket) error {
-		var err error
-		value, err = t.root.Search(makeKey(key), path, b)
-
-		return err
-	})
-
+	value, err := t.root.Search(makeKey(key), path, b)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to search: %v", err)
 	}
 
 	if path != nil {
@@ -128,84 +124,76 @@ func (t *Tree) Search(key []byte, path *Path) ([]byte, error) {
 }
 
 // Insert inserts the key in the tree.
-func (t *Tree) Insert(key, value []byte) error {
+func (t *Tree) Insert(key, value []byte, b kv.Bucket) error {
 	if len(key) > t.maxDepth {
 		return xerrors.Errorf("mismatch key length %d > %d", len(key), t.maxDepth)
 	}
 
-	err := t.db.View(t.bucket, func(b kv.Bucket) error {
-		var err error
-		t.root, err = t.root.Insert(makeKey(key), value, b)
-
-		return err
-	})
-
+	var err error
+	t.root, err = t.root.Insert(makeKey(key), value, b)
 	if err != nil {
-		return err
+		return xerrors.Errorf("failed to insert: %v", err)
 	}
 
 	return nil
 }
 
 // Delete removes a key from the tree.
-func (t *Tree) Delete(key []byte) error {
+func (t *Tree) Delete(key []byte, b kv.Bucket) error {
 	if len(key) > t.maxDepth {
 		return xerrors.Errorf("mismatch key length %d > %d", len(key), t.maxDepth)
 	}
 
-	return t.db.View(t.bucket, func(b kv.Bucket) error {
-		var err error
-		t.root, err = t.root.Delete(makeKey(key), b)
+	var err error
+	t.root, err = t.root.Delete(makeKey(key), b)
+	if err != nil {
+		return xerrors.Errorf("failed to delete: %v", err)
+	}
 
-		return err
-	})
+	return nil
 }
 
 // Update updates the hashes of the tree.
-func (t *Tree) Update(fac crypto.HashFactory) error {
+func (t *Tree) Update(fac crypto.HashFactory, b kv.Bucket) error {
 	prefix := new(big.Int)
 
-	return t.db.Update(t.bucket, func(b kv.Bucket) error {
-		_, err := t.root.Prepare(t.nonce[:], prefix, b, fac)
-		if err != nil {
-			return xerrors.Errorf("failed to prepare: %v", err)
-		}
+	_, err := t.root.Prepare(t.nonce[:], prefix, b, fac)
+	if err != nil {
+		return xerrors.Errorf("failed to prepare: %v", err)
+	}
 
-		return nil
-	})
+	return nil
 }
 
 // Persist visits the whole tree and stores the leaf node in the database and
 // replace the node with disk nodes. Depending of the parameter, it also stores
 // intermediate nodes to the disk.
-func (t *Tree) Persist() error {
-	return t.db.Update(t.bucket, func(b kv.Bucket) error {
-		return t.root.Visit(func(n TreeNode) error {
-			switch node := n.(type) {
-			case *InteriorNode:
-				if int(node.depth) >= t.memDepth {
-					return t.toDisk(node.depth, node.prefix, node, b, false, true)
-				}
-
-				_, ok := node.left.(*LeafNode)
-				if ok || int(node.depth) >= t.memDepth {
-					node.left = NewDiskNode(node.depth+1, node.left.GetHash(), t.context, t.factory)
-				}
-
-				_, ok = node.right.(*LeafNode)
-				if ok || int(node.depth) >= t.memDepth {
-					node.right = NewDiskNode(node.depth+1, node.right.GetHash(), t.context, t.factory)
-				}
-			case *LeafNode:
-				return t.toDisk(node.depth, node.key, node, b, true, true)
-			case *EmptyNode:
-				shouldStore := int(node.depth) >= t.memDepth
-
-				return t.toDisk(node.depth, node.prefix, node, b, true, shouldStore)
+func (t *Tree) Persist(b kv.Bucket) error {
+	return t.root.Visit(func(n TreeNode) error {
+		switch node := n.(type) {
+		case *InteriorNode:
+			if int(node.depth) >= t.memDepth {
+				return t.toDisk(node.depth, node.prefix, node, b, false, true)
 			}
 
-			return nil
-		})
+			_, ok := node.left.(*LeafNode)
+			if ok || int(node.depth) >= t.memDepth {
+				node.left = NewDiskNode(node.depth+1, node.left.GetHash(), t.context, t.factory)
+			}
+
+			_, ok = node.right.(*LeafNode)
+			if ok || int(node.depth) >= t.memDepth {
+				node.right = NewDiskNode(node.depth+1, node.right.GetHash(), t.context, t.factory)
+			}
+		case *LeafNode:
+			return t.toDisk(node.depth, node.key, node, b, true, true)
+		case *EmptyNode:
+			shouldStore := int(node.depth) >= t.memDepth
+
+			return t.toDisk(node.depth, node.prefix, node, b, true, shouldStore)
+		}
+
+		return nil
 	})
 }
 
@@ -236,8 +224,6 @@ func (t *Tree) Clone() *Tree {
 		maxDepth: t.maxDepth,
 		memDepth: t.memDepth,
 		root:     t.root.Clone(),
-		bucket:   t.bucket,
-		db:       t.db,
 		context:  t.context,
 		factory:  t.factory,
 	}
@@ -328,9 +314,11 @@ func (n *EmptyNode) Clone() TreeNode {
 // Serialize implements serde.Message. It returns the JSON data of the empty
 // node.
 func (n *EmptyNode) Serialize(ctx serde.Context) ([]byte, error) {
-	data, err := nodeFormat{}.Encode(ctx, n)
+	format := nodeFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, n)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to encode empty node: %v", err)
 	}
 
 	return data, nil
@@ -513,9 +501,11 @@ func (n *InteriorNode) Clone() TreeNode {
 // Serialize implements serde.Message. It returns the JSON data of the interior
 // node.
 func (n *InteriorNode) Serialize(ctx serde.Context) ([]byte, error) {
-	data, err := nodeFormat{}.Encode(ctx, n)
+	format := nodeFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, n)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to encode interior node: %v", err)
 	}
 
 	return data, nil
@@ -590,29 +580,11 @@ func (n *LeafNode) Insert(key *big.Int, value []byte, b kv.Bucket) (TreeNode, er
 	}
 
 	node := NewInteriorNode(n.depth, prefix)
-	var err error
 
-	// Both the leaf pair and the new one are inserted one after the other as
-	// they could both end up in the same path, or on a different one.
-	if n.key.Bit(int(n.depth)) == 0 {
-		node.left, err = node.left.Insert(n.key, n.value, b)
-	} else {
-		node.right, err = node.right.Insert(n.key, n.value, b)
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	if key.Bit(int(n.depth)) == 0 {
-		node.left, err = node.left.Insert(key, value, b)
-	} else {
-		node.right, err = node.right.Insert(key, value, b)
-	}
-
-	if err != nil {
-		return nil, err
-	}
+	// As the node is freshly created, the operations are in-memory and thus it
+	// doesn't trigger any error.
+	node.Insert(n.key, n.value, b)
+	node.Insert(key, value, b)
 
 	return node, nil
 }
@@ -669,9 +641,11 @@ func (n *LeafNode) Clone() TreeNode {
 // Serialize implements serde.Message. It returns the JSON data of the leaf
 // node.
 func (n *LeafNode) Serialize(ctx serde.Context) ([]byte, error) {
-	data, err := nodeFormat{}.Encode(ctx, n)
+	format := nodeFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, n)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to encode leaf node: %v", err)
 	}
 
 	return data, nil
@@ -688,11 +662,13 @@ type NodeFactory struct{}
 // Deserialize implements serde.Factory. It populates the tree node associated
 // to the data if appropriate, otherwise it returns an error.
 func (f NodeFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+	format := nodeFormats.Get(ctx.GetFormat())
+
 	ctx = serde.WithFactory(ctx, NodeKey{}, f)
 
-	msg, err := nodeFormat{}.Decode(ctx, data)
+	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to decode node: %v", err)
 	}
 
 	return msg, nil
