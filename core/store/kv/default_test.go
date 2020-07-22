@@ -10,12 +10,6 @@ import (
 	"golang.org/x/xerrors"
 )
 
-func TestBoltDB_New(t *testing.T) {
-	db, err := New("")
-	require.Nil(t, db)
-	require.EqualError(t, err, "failed to open db: open : no such file or directory")
-}
-
 func TestBoltDB_UpdateAndView(t *testing.T) {
 	dir, err := ioutil.TempDir(os.TempDir(), "dela-core-kv")
 	require.NoError(t, err)
