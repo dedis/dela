@@ -1,4 +1,4 @@
-package mem
+package binprefix
 
 import (
 	"encoding/binary"

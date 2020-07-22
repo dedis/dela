@@ -12,7 +12,7 @@ import (
 	"go.dedis.ch/dela/core/execution/baremetal"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/hashtree"
-	tree "go.dedis.ch/dela/core/store/hashtree/mem"
+	tree "go.dedis.ch/dela/core/store/hashtree/binprefix"
 	"go.dedis.ch/dela/core/store/kv"
 	"go.dedis.ch/dela/core/tap"
 	txn "go.dedis.ch/dela/core/tap/anon"

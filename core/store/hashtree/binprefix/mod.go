@@ -1,9 +1,34 @@
-// Package mem implements the hash tree interface by following the merkle binary
-// prefix tree described in:
+// Package binprefix implements the hash tree interface by following the merkle
+// binary prefix tree described in:
 //
 // @nolint-next-line
 // https://www.usenix.org/system/files/conference/usenixsecurity15/sec15-paper-melara.pdf
-package mem
+//
+// The merkle tree is stored in-memory until it reaches a certain threshold of
+// depth where it will write the nodes in disk. The leaf are always stored in
+// disk because of the value it holds.
+//
+//                         Interior (Root)
+//                           /        \
+//                        0 /          \ 1
+//                         /            \
+//                      Interior         Empty
+//                       /    \          /   \
+//                    0 /      \ 1    0 /     \ 1
+//                     /        \      /       \
+//                DiskNode  Interior  Empty    Interior
+//                           /   \              /    \
+// -------------------------------------------------------------- Memory Depth
+//                       0 /       \ 1      0 /        \ 1
+//                        /         \        /          \
+//                    DiskNode  DiskNode  DiskNode   DiskNode
+//
+// The drawing above demonstrates an example of a tree. Here the memory depth is
+// set at 3 which means that every node after this level will be a disk node. It
+// will be loaded to its in-memory type when traversing the tree. The node at
+// prefix 00 is an example of a leaf node which is a disk node even above the
+// memory depth level.
+package binprefix
 
 import (
 	"go.dedis.ch/dela/core/store"
