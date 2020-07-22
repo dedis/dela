@@ -121,7 +121,7 @@ func makeTree(t *testing.T) (hashtree.Tree, func()) {
 	db, err := kv.New(filepath.Join(dir, "test.db"))
 	require.NoError(t, err)
 
-	tree := tree.NewMerkleTree(db)
+	tree := tree.NewMerkleTree(db, tree.Nonce{})
 	tree.Stage(func(store.Snapshot) error { return nil })
 
 	return tree, func() { os.RemoveAll(dir) }

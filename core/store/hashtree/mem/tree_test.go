@@ -291,14 +291,14 @@ func TestInteriorNode_Delete(t *testing.T) {
 	require.NoError(t, err)
 	require.IsType(t, (*EmptyNode)(nil), next)
 
-	node.right = NewDiskNode(1, testCtx, NodeFactory{})
+	node.right = NewDiskNode(1, nil, testCtx, NodeFactory{})
 	_, err = node.Delete(big.NewInt(0), fakeBucket{})
-	require.EqualError(t, err, "failed to load node: prefix 10 (depth 1) not in database")
+	require.EqualError(t, err, "failed to load node: prefix 1 (depth 1) not in database")
 
 	node.right = NewEmptyNode(1, big.NewInt(2))
-	node.left = NewDiskNode(1, testCtx, NodeFactory{})
+	node.left = NewDiskNode(1, nil, testCtx, NodeFactory{})
 	_, err = node.Delete(big.NewInt(1), fakeBucket{})
-	require.EqualError(t, err, "failed to load node: prefix 1 (depth 1) not in database")
+	require.EqualError(t, err, "failed to load node: prefix 0 (depth 1) not in database")
 }
 
 func TestInteriorNode_Prepare(t *testing.T) {

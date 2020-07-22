@@ -1,6 +1,8 @@
 package kv
 
 import (
+	"bytes"
+
 	"go.etcd.io/bbolt"
 	"golang.org/x/xerrors"
 )
@@ -64,6 +66,24 @@ func (txn boltBucket) Set(key, value []byte) error {
 	return txn.bucket.Put(key, value)
 }
 
+func (txn boltBucket) Delete(key []byte) error {
+	return txn.bucket.Delete(key)
+}
+
 func (txn boltBucket) ForEach(fn func(k, v []byte) error) error {
 	return txn.bucket.ForEach(fn)
+}
+
+func (txn boltBucket) Scan(prefix []byte, fn func(k, v []byte) error) error {
+	cursor := txn.bucket.Cursor()
+	cursor.Seek(prefix)
+
+	for k, v := cursor.Seek(prefix); k != nil && bytes.HasPrefix(k, prefix); k, v = cursor.Next() {
+		err := fn(k, v)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

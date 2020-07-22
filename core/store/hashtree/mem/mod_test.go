@@ -11,16 +11,18 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/store"
+	"go.dedis.ch/dela/core/store/hashtree"
 	"go.dedis.ch/dela/core/store/kv"
+	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"golang.org/x/xerrors"
 )
 
-func TestMerkleTree_IntegrationTests(t *testing.T) {
+func TestMerkleTree_IntegrationTest(t *testing.T) {
 	db, clean := makeDB(t)
 	defer clean()
 
-	tree := NewMerkleTree(db)
+	tree := NewMerkleTree(db, Nonce{})
 	tree.tree.memDepth = 5
 	fac := tree.hashFactory
 	values := map[[MaxDepth]byte][]byte{}
@@ -75,11 +77,79 @@ func TestMerkleTree_IntegrationTests(t *testing.T) {
 	_, err = tree.Commit()
 	require.NoError(t, err)
 
-	// TODO: check db to be empty
+	db.View(tree.tree.bucket, func(b kv.Bucket) error {
+		return b.ForEach(func(k, v []byte) error {
+			t.Fatal("database should be empty")
+			return nil
+		})
+	})
+}
+
+func TestMerkleTree_Random_IntegrationTest(t *testing.T) {
+	f := func(nonce Nonce, n uint8, mem uint) bool {
+		t.Logf("Step nonce:%x n:%d mem:%d", nonce, n, mem%32)
+
+		db, clean := makeDB(t)
+		defer clean()
+
+		tree := NewMerkleTree(db, nonce)
+		tree.tree.memDepth = int(mem) % 32
+
+		values := map[[4]byte][]byte{}
+
+		var err error
+		var stage hashtree.StagingTree = tree
+		for k := 0; k < 2; k++ {
+			stage, err = stage.Stage(func(snap store.Snapshot) error {
+				for i := 0; i < int(n); i++ {
+					key := [4]byte{}
+					rand.Read(key[:])
+
+					value := make([]byte, 4)
+					rand.Read(value)
+
+					values[key] = value
+
+					snap.Set(key[:], value)
+				}
+				return nil
+			})
+			require.NoError(t, err)
+		}
+
+		// Test that all keys are present in-memory.
+		for key, value := range values {
+			v, err := stage.Get(key[:])
+			require.NoError(t, err)
+			require.Equal(t, value, v)
+		}
+
+		next, err := stage.Commit()
+		require.NoError(t, err)
+
+		tree = next.(*MerkleTree)
+
+		// Test that the keys are still present after persiting to the disk,
+		// alongside with the computed hash for the nodes.
+		for key, value := range values {
+			path, err := tree.GetPath(key[:])
+			require.NoError(t, err)
+			require.Equal(t, value, path.GetValue())
+
+			root, err := path.(Path).computeRoot(crypto.NewSha256Factory())
+			require.NoError(t, err)
+			require.Equal(t, tree.GetRoot(), root)
+		}
+
+		return true
+	}
+
+	err := quick.Check(f, &quick.Config{MaxCount: 20})
+	require.NoError(t, err)
 }
 
 func TestMerkleTree_Get(t *testing.T) {
-	tree := NewMerkleTree(fakeDB{})
+	tree := NewMerkleTree(fakeDB{}, Nonce{})
 
 	err := tree.tree.Insert([]byte("ping"), []byte("pong"))
 	require.NoError(t, err)
@@ -97,7 +167,7 @@ func TestMerkleTree_Get(t *testing.T) {
 }
 
 func TestMerkleTree_GetRoot(t *testing.T) {
-	tree := NewMerkleTree(fakeDB{})
+	tree := NewMerkleTree(fakeDB{}, Nonce{})
 	// Tree is not yet updated.
 	require.Empty(t, tree.GetRoot())
 
@@ -115,7 +185,7 @@ func TestMerkleTree_GetRoot(t *testing.T) {
 }
 
 func TestMerkleTree_GetPath(t *testing.T) {
-	tree := NewMerkleTree(fakeDB{})
+	tree := NewMerkleTree(fakeDB{}, Nonce{})
 
 	f := func(key [8]byte, value []byte) bool {
 		err := tree.tree.Insert(key[:], value)
@@ -142,7 +212,7 @@ func TestMerkleTree_GetPath(t *testing.T) {
 }
 
 func TestMerkleTree_Stage(t *testing.T) {
-	tree := NewMerkleTree(fakeDB{})
+	tree := NewMerkleTree(fakeDB{}, Nonce{})
 
 	next, err := tree.Stage(func(snap store.Snapshot) error { return nil })
 	require.NoError(t, err)
@@ -162,14 +232,14 @@ func TestMerkleTree_Stage(t *testing.T) {
 }
 
 func TestMerkleTree_Commit(t *testing.T) {
-	tree := NewMerkleTree(fakeDB{err: xerrors.New("oops")})
+	tree := NewMerkleTree(fakeDB{err: xerrors.New("oops")}, Nonce{})
 
 	_, err := tree.Commit()
 	require.EqualError(t, err, "failed to persist tree: oops")
 }
 
 func TestWritableMerkleTree_Set(t *testing.T) {
-	tree := writableMerkleTree{MerkleTree: NewMerkleTree(fakeDB{})}
+	tree := writableMerkleTree{MerkleTree: NewMerkleTree(fakeDB{}, Nonce{})}
 
 	err := tree.Set([]byte("ping"), []byte("pong"))
 	require.NoError(t, err)
@@ -180,7 +250,7 @@ func TestWritableMerkleTree_Set(t *testing.T) {
 }
 
 func TestWritableMerkleTree_Delete(t *testing.T) {
-	tree := writableMerkleTree{MerkleTree: NewMerkleTree(fakeDB{})}
+	tree := writableMerkleTree{MerkleTree: NewMerkleTree(fakeDB{}, Nonce{})}
 
 	err := tree.Delete([]byte("ping"))
 	require.NoError(t, err)

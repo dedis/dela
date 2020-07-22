@@ -27,7 +27,7 @@ func TestDiskNode_GetType(t *testing.T) {
 }
 
 func TestDiskNode_Search(t *testing.T) {
-	node := NewDiskNode(0, testCtx, NodeFactory{})
+	node := NewDiskNode(0, nil, testCtx, NodeFactory{})
 
 	// Test if a leaf node can be loaded and searched for.
 	leaf := NewLeafNode(0, big.NewInt(0), []byte("pong"))
@@ -54,7 +54,7 @@ func TestDiskNode_Search(t *testing.T) {
 }
 
 func TestDiskNode_Insert(t *testing.T) {
-	node := NewDiskNode(0, testCtx, NodeFactory{})
+	node := NewDiskNode(0, nil, testCtx, NodeFactory{})
 
 	empty := NewEmptyNode(0, big.NewInt(0))
 	data, err := empty.Serialize(testCtx)
@@ -80,7 +80,7 @@ func TestDiskNode_Insert(t *testing.T) {
 }
 
 func TestDiskNode_Delete(t *testing.T) {
-	node := NewDiskNode(0, testCtx, NodeFactory{})
+	node := NewDiskNode(0, nil, testCtx, NodeFactory{})
 
 	empty := NewEmptyNode(0, big.NewInt(0))
 	data, err := empty.Serialize(testCtx)
@@ -109,7 +109,7 @@ func TestDiskNode_Delete(t *testing.T) {
 }
 
 func TestDiskNode_Prepare(t *testing.T) {
-	node := NewDiskNode(0, testCtx, NodeFactory{})
+	node := NewDiskNode(0, nil, testCtx, NodeFactory{})
 
 	empty := NewEmptyNode(0, big.NewInt(0))
 	data, err := empty.Serialize(testCtx)
@@ -140,7 +140,7 @@ func TestDiskNode_Prepare(t *testing.T) {
 }
 
 func TestDiskNode_Visit(t *testing.T) {
-	node := NewDiskNode(0, testCtx, NodeFactory{})
+	node := NewDiskNode(0, nil, testCtx, NodeFactory{})
 
 	counter := 0
 	node.Visit(func(n TreeNode) error {
@@ -153,21 +153,21 @@ func TestDiskNode_Visit(t *testing.T) {
 }
 
 func TestDiskNode_Clone(t *testing.T) {
-	node := NewDiskNode(0, testCtx, NodeFactory{})
+	node := NewDiskNode(0, nil, testCtx, NodeFactory{})
 
 	clone := node.Clone()
 	require.Equal(t, node, clone)
 }
 
 func TestDiskNode_Serialize(t *testing.T) {
-	node := NewDiskNode(0, testCtx, NodeFactory{})
+	node := NewDiskNode(0, nil, testCtx, NodeFactory{})
 
 	_, err := node.Serialize(testCtx)
 	require.Error(t, err)
 }
 
 func TestDiskNode_Load(t *testing.T) {
-	node := NewDiskNode(0, testCtx, NodeFactory{})
+	node := NewDiskNode(0, nil, testCtx, NodeFactory{})
 
 	empty := NewEmptyNode(0, big.NewInt(0))
 	data, err := empty.Serialize(testCtx)
@@ -211,4 +211,12 @@ func (b fakeBucket) Get(key []byte) []byte {
 func (b fakeBucket) Set(key, value []byte) error {
 	b.values[string(key)] = value
 	return b.errSet
+}
+
+func (b fakeBucket) Delete(key []byte) error {
+	return nil
+}
+
+func (b fakeBucket) Scan(prefix []byte, fn func(k, v []byte) error) error {
+	return nil
 }

@@ -121,8 +121,8 @@ func (f nodeFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error
 			hash:   m.Interior.Digest,
 			depth:  m.Interior.Depth,
 			prefix: prefix,
-			left:   NewDiskNode(m.Interior.Depth+1, ctx, factory),
-			right:  NewDiskNode(m.Interior.Depth+1, ctx, factory),
+			left:   NewDiskNode(m.Interior.Depth+1, nil, ctx, factory),
+			right:  NewDiskNode(m.Interior.Depth+1, nil, ctx, factory),
 		}
 
 		return node, nil

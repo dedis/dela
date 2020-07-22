@@ -6,8 +6,6 @@
 package mem
 
 import (
-	"crypto/rand"
-
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/hashtree"
 	"go.dedis.ch/dela/core/store/kv"
@@ -26,10 +24,7 @@ type MerkleTree struct {
 }
 
 // NewMerkleTree creates a new in-memory trie.
-func NewMerkleTree(db kv.DB) *MerkleTree {
-	nonce := Nonce{}
-	rand.Read(nonce[:])
-
+func NewMerkleTree(db kv.DB, nonce Nonce) *MerkleTree {
 	return &MerkleTree{
 		tree:        NewTree(nonce, db),
 		hashFactory: crypto.NewSha256Factory(),

@@ -184,24 +184,24 @@ func (t *Tree) Persist() error {
 			switch node := n.(type) {
 			case *InteriorNode:
 				if int(node.depth) >= t.memDepth {
-					return t.persistNode(node.prefix, node.depth, node, b)
+					return t.toDisk(node.depth, node.prefix, node, b, false, true)
 				}
 
 				_, ok := node.left.(*LeafNode)
 				if ok || int(node.depth) >= t.memDepth {
-					node.left = NewDiskNode(node.depth+1, t.context, t.factory)
+					node.left = NewDiskNode(node.depth+1, node.left.GetHash(), t.context, t.factory)
 				}
 
 				_, ok = node.right.(*LeafNode)
 				if ok || int(node.depth) >= t.memDepth {
-					node.right = NewDiskNode(node.depth+1, t.context, t.factory)
+					node.right = NewDiskNode(node.depth+1, node.right.GetHash(), t.context, t.factory)
 				}
 			case *LeafNode:
-				return t.persistNode(node.key, node.depth, node, b)
+				return t.toDisk(node.depth, node.key, node, b, true, true)
 			case *EmptyNode:
-				if int(node.depth) >= t.memDepth {
-					return t.persistNode(node.prefix, node.depth, node, b)
-				}
+				shouldStore := int(node.depth) >= t.memDepth
+
+				return t.toDisk(node.depth, node.prefix, node, b, true, shouldStore)
 			}
 
 			return nil
@@ -209,9 +209,24 @@ func (t *Tree) Persist() error {
 	})
 }
 
-func (t *Tree) persistNode(key *big.Int, depth uint16, node TreeNode, b kv.Bucket) error {
-	dn := NewDiskNode(depth, t.context, t.factory)
-	return dn.store(key, node, b)
+func (t *Tree) toDisk(depth uint16, prefix *big.Int, node TreeNode, b kv.Bucket, clean, store bool) error {
+	disknode := NewDiskNode(depth, nil, t.context, t.factory)
+
+	if clean {
+		err := disknode.cleanSubtree(depth, prefix, b)
+		if err != nil {
+			return xerrors.Errorf("failed to clean subtree: %v", err)
+		}
+	}
+
+	if store {
+		err := disknode.store(prefix, node, b)
+		if err != nil {
+			return xerrors.Errorf("failed to store node: %v", err)
+		}
+	}
+
+	return nil
 }
 
 // Clone returns a deep copy of the tree.
@@ -427,7 +442,7 @@ func (n *InteriorNode) load(node TreeNode, key *big.Int, bit uint, b kv.Bucket) 
 		return node, nil
 	}
 
-	node, err := diskn.load(new(big.Int).SetBit(key, int(n.depth+1), bit), b)
+	node, err := diskn.load(new(big.Int).SetBit(key, int(n.depth), bit), b)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to load node: %v", err)
 	}

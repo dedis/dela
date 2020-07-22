@@ -21,9 +21,10 @@ type DiskNode struct {
 }
 
 // NewDiskNode creates a new disk node.
-func NewDiskNode(depth uint16, ctx serde.Context, factory serde.Factory) *DiskNode {
+func NewDiskNode(depth uint16, hash []byte, ctx serde.Context, factory serde.Factory) *DiskNode {
 	return &DiskNode{
 		depth:   depth,
+		hash:    hash,
 		context: ctx,
 		factory: factory,
 	}
@@ -127,7 +128,7 @@ func (n *DiskNode) Visit(fn func(TreeNode) error) error {
 // Clone implements mem.TreeNode. It clones the disk node but both the old and
 // the new will read the same bucket.
 func (n *DiskNode) Clone() TreeNode {
-	return NewDiskNode(n.depth, n.context, n.factory)
+	return NewDiskNode(n.depth, n.hash, n.context, n.factory)
 }
 
 // Serialize implements serde.Message. It always returns an error as a disk node
@@ -173,6 +174,30 @@ func (n *DiskNode) store(index *big.Int, node TreeNode, b kv.Bucket) error {
 	return nil
 }
 
+func (n *DiskNode) cleanSubtree(depth uint16, index *big.Int, b kv.Bucket) error {
+	prefix := n.prepareKey(index)
+	if len(prefix) > 0 {
+		// It needs to scan a bitwise prefix thus it removes the last byte.
+		prefix = prefix[:len(prefix)-1]
+	}
+
+	// The database can scan over prefix at the *byte* level but the node keys
+	// are bitwise so it manually compares the bits of the last byte of the
+	// prefix.
+	return b.Scan(prefix, func(k, _ []byte) error {
+		key := new(big.Int)
+		key.SetBytes(reverse(k))
+
+		for i := len(prefix) * 8; i < int(depth); i++ {
+			if key.Bit(i) != index.Bit(i) {
+				return nil
+			}
+		}
+
+		return b.Delete(k)
+	})
+}
+
 func (n *DiskNode) prepareKey(index *big.Int) []byte {
 	prefix := new(big.Int)
 
@@ -186,5 +211,14 @@ func (n *DiskNode) prepareKey(index *big.Int) []byte {
 	// end with 0s.
 	prefix.SetBit(prefix, int(n.depth), 1)
 
-	return prefix.Bytes()
+	return reverse(prefix.Bytes())
+}
+
+func reverse(buffer []byte) []byte {
+	buffer = append([]byte{}, buffer...)
+	for i, j := 0, len(buffer)-1; i < j; i, j = i+1, j-1 {
+		buffer[i], buffer[j] = buffer[j], buffer[i]
+	}
+
+	return buffer
 }
