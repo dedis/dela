@@ -8,6 +8,7 @@ import (
 // Transaction is the definition of an action that should be applied to the
 // global state.
 type Transaction interface {
+	serde.Message
 	serde.Fingerprinter
 
 	// GetID returns the unique identifier for the transaction.

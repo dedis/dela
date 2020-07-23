@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"go.dedis.ch/dela/core/tap"
+	"go.dedis.ch/dela/mino"
 )
 
 // Event is an event triggered when new transactions arrived to the pool.
@@ -22,6 +23,10 @@ type Pool interface {
 
 	// GetAll returns the list of transactions available.
 	GetAll() []tap.Transaction
+
+	// SetPlayers updates the list of participants that should eventually
+	// receive the transactions.
+	SetPlayers(mino.Players) error
 
 	// Add adds the transaction to the pool.
 	Add(tap.Transaction) error

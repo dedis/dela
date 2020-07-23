@@ -6,8 +6,17 @@ import (
 
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/ledger/arc"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
 )
+
+var txFormats = registry.NewSimpleRegistry()
+
+// RegisterTransactionFormat registers the engine for the provided format.
+func RegisterTransactionFormat(f serde.Format, e serde.FormatEngine) {
+	txFormats.Register(f, e)
+}
 
 // Transaction is a an anonymous transaction. It can contain arguments but the
 // identity will always be nil.
@@ -73,9 +82,24 @@ func (t Transaction) GetID() []byte {
 	return t.hash
 }
 
+// GetNonce returns the nonce of the transaction.
+func (t Transaction) GetNonce() uint64 {
+	return t.nonce
+}
+
 // GetIdentity implements tap.Transaction. It returns nil.
 func (t Transaction) GetIdentity() arc.Identity {
 	return nil
+}
+
+// GetArgs returns the list of arguments available.
+func (t Transaction) GetArgs() []string {
+	args := make([]string, 0, len(t.args))
+	for key := range t.args {
+		args = append(args, key)
+	}
+
+	return args
 }
 
 // GetArg implements tap.Transaction. It returns the value of the argument if it
@@ -96,4 +120,34 @@ func (t Transaction) Fingerprint(w io.Writer) error {
 	}
 
 	return nil
+}
+
+// Serialize implements serde.Message. It returns the serialized data of the
+// transaction.
+func (t Transaction) Serialize(ctx serde.Context) ([]byte, error) {
+	format := txFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, t)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to encode: %v", err)
+	}
+
+	return data, nil
+}
+
+type TransactionFactory struct{}
+
+func NewTransactionFactory() TransactionFactory {
+	return TransactionFactory{}
+}
+
+func (f TransactionFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+	format := txFormats.Get(ctx.GetFormat())
+
+	msg, err := format.Decode(ctx, data)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to decode: %v", err)
+	}
+
+	return msg, nil
 }
