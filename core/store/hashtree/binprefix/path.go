@@ -4,6 +4,7 @@ import (
 	"math/big"
 
 	"go.dedis.ch/dela/crypto"
+	"golang.org/x/xerrors"
 )
 
 // Path is a path from the root to a leaf, represented as a series of interior
@@ -65,7 +66,7 @@ func (s Path) computeRoot(fac crypto.HashFactory) ([]byte, error) {
 
 	curr, err := node.Prepare(s.nonce, prefix, nil, fac)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to calculate digest: %v", err)
 	}
 
 	for i := len(s.interiors) - 1; i >= 0; i-- {

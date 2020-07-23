@@ -172,17 +172,17 @@ func (t *Tree) Persist(b kv.Bucket) error {
 	return t.root.Visit(func(n TreeNode) error {
 		switch node := n.(type) {
 		case *InteriorNode:
-			if int(node.depth) >= t.memDepth {
+			if int(node.depth) > t.memDepth {
 				return t.toDisk(node.depth, node.prefix, node, b, false, true)
 			}
 
 			_, ok := node.left.(*LeafNode)
-			if ok || int(node.depth) >= t.memDepth {
+			if ok || int(node.depth) == t.memDepth {
 				node.left = NewDiskNode(node.depth+1, node.left.GetHash(), t.context, t.factory)
 			}
 
 			_, ok = node.right.(*LeafNode)
-			if ok || int(node.depth) >= t.memDepth {
+			if ok || int(node.depth) == t.memDepth {
 				node.right = NewDiskNode(node.depth+1, node.right.GetHash(), t.context, t.factory)
 			}
 		case *LeafNode:
@@ -303,7 +303,12 @@ func (n *EmptyNode) Prepare(nonce []byte,
 
 // Visit implements mem.TreeNode. It executes the callback with the node.
 func (n *EmptyNode) Visit(fn func(node TreeNode) error) error {
-	return fn(n)
+	err := fn(n)
+	if err != nil {
+		return xerrors.Errorf("visiting empty: %v", err)
+	}
+
+	return nil
 }
 
 // Clone implements mem.TreeNode. It returns a deep copy of the empty node.
@@ -357,12 +362,16 @@ func (n *InteriorNode) GetType() byte {
 // correct child.
 func (n *InteriorNode) Search(key *big.Int, path *Path, b kv.Bucket) ([]byte, error) {
 	if key.Bit(int(n.depth)) == 0 {
+		n.right, _ = n.load(n.right, key, 1, b)
+
 		if path != nil {
 			path.interiors = append(path.interiors, n.right.GetHash())
 		}
 
 		return n.left.Search(key, path, b)
 	}
+
+	n.left, _ = n.load(n.left, key, 0, b)
 
 	if path != nil {
 		path.interiors = append(path.interiors, n.left.GetHash())
@@ -472,17 +481,19 @@ func (n *InteriorNode) Prepare(nonce []byte,
 func (n *InteriorNode) Visit(fn func(TreeNode) error) error {
 	err := n.left.Visit(fn)
 	if err != nil {
+		// No wrapping to prevent long error message from recursive calls.
 		return err
 	}
 
 	err = n.right.Visit(fn)
 	if err != nil {
+		// No wrapping to prevent long error message from recursive calls.
 		return err
 	}
 
 	err = fn(n)
 	if err != nil {
-		return err
+		return xerrors.Errorf("visiting interior: %v", err)
 	}
 
 	return nil
@@ -630,7 +641,12 @@ func (n *LeafNode) Prepare(nonce []byte,
 
 // Visit implements mem.TreeNode. It executes the callback with the node.
 func (n *LeafNode) Visit(fn func(TreeNode) error) error {
-	return fn(n)
+	err := fn(n)
+	if err != nil {
+		return xerrors.Errorf("visiting leaf: %v", err)
+	}
+
+	return nil
 }
 
 // Clone implements mem.TreeNode. It returns a copy of the leaf node.

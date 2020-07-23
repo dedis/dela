@@ -93,8 +93,10 @@ func TestTree_Persist(t *testing.T) {
 
 	tree := NewTree(Nonce{})
 
-	for i := 0; i < math.MaxUint8/2; i++ {
-		key := []byte{byte(i * 2)}
+	// 1. Test if the tree can be stored in disk with the default parameter to
+	// only store leaf nodes.
+	for i := 0; i <= math.MaxUint8; i++ {
+		key := []byte{byte(i)}
 
 		err := tree.Insert(key[:], key[:], bucket)
 		require.NoError(t, err)
@@ -104,35 +106,67 @@ func TestTree_Persist(t *testing.T) {
 	require.NoError(t, err)
 
 	count := 0
-
 	for _, value := range bucket.values {
 		require.Regexp(t, `{"Leaf":{[^}]+}}`, string(value))
 		count++
 	}
-	require.Equal(t, math.MaxUint8/2, count)
+	require.Equal(t, 256, count)
 
+	// 2. Test with a memory depth of 6 which means that only disk nodes should
+	// exist after this level.
 	tree.memDepth = 6
 	err = tree.Persist(bucket)
 	require.NoError(t, err)
 
-	count = 0
+	tree.root.Visit(func(n TreeNode) error {
+		switch node := n.(type) {
+		case *InteriorNode:
+			require.LessOrEqual(t, int(node.depth), 6)
+		case *EmptyNode:
+			require.LessOrEqual(t, int(node.depth), 6)
+		case *LeafNode:
+			t.Fatal("no leaf node expected in-memory")
+		}
+		return nil
+	})
 
+	count = 0
 	for _, value := range bucket.values {
 		require.Regexp(t, `{"(Leaf|Interior)":{[^}]+}}`, string(value))
 		count++
 	}
-	require.Equal(t, math.MaxUint8/2+math.MaxUint8/4+math.MaxUint8/8+1, count)
+	// 2^9-1 - (2^7-1) = 384
+	require.Equal(t, 384, count)
 
+	// 3. Test with only the root in-memory.
 	tree.memDepth = 0
 	err = tree.Persist(bucket)
 	require.NoError(t, err)
-	require.Equal(t, 255, len(bucket.values))
+	// 2^9-1 = 511 (root is not on disk)
+	require.Equal(t, 510, len(bucket.values))
+
+	tree.root.Visit(func(n TreeNode) error {
+		switch node := n.(type) {
+		case *InteriorNode:
+			// Only the root is allow as an interior node.
+			require.Equal(t, uint16(0), node.depth)
+		case *EmptyNode:
+			t.Fatal("expect only disk nodes")
+		case *LeafNode:
+			t.Fatal("expect only disk nodes")
+		}
+		return nil
+	})
+
+	tree.root = NewInteriorNode(0, big.NewInt(0))
 
 	err = tree.Persist(&fakeBucket{errSet: xerrors.New("oops")})
-	require.EqualError(t, err, "failed to store node: failed to set key: oops")
+	require.EqualError(t, err,
+		"visiting empty: failed to store node: failed to set key: oops")
 
 	err = tree.Persist(&fakeBucket{errScan: xerrors.New("oops")})
-	require.EqualError(t, err, "failed to clean subtree: oops")
+	require.EqualError(t, err,
+		"visiting empty: failed to clean subtree: oops")
 }
 
 func TestTree_Clone(t *testing.T) {
@@ -340,7 +374,7 @@ func TestInteriorNode_Visit(t *testing.T) {
 	node := NewInteriorNode(0, big.NewInt(0))
 
 	counter := 0
-	node.Visit(func(n TreeNode) error {
+	err := node.Visit(func(n TreeNode) error {
 		if counter == 2 {
 			require.IsType(t, node, n)
 		} else {
@@ -350,8 +384,17 @@ func TestInteriorNode_Visit(t *testing.T) {
 
 		return nil
 	})
-
+	require.NoError(t, err)
 	require.Equal(t, 3, counter)
+
+	node.left = fakeNode{}
+	node.right = fakeNode{}
+	err = node.Visit(func(TreeNode) error { return xerrors.New("oops") })
+	require.EqualError(t, err, "visiting interior: oops")
+
+	node.right = NewEmptyNode(1, big.NewInt(2))
+	err = node.Visit(func(TreeNode) error { return xerrors.New("oops") })
+	require.EqualError(t, err, "visiting empty: oops")
 }
 
 func TestInteriorNode_Clone(t *testing.T) {
@@ -454,14 +497,17 @@ func TestLeafNode_Visit(t *testing.T) {
 	node := NewLeafNode(3, makeKey([]byte("ping")), []byte("pong"))
 
 	counter := 0
-	node.Visit(func(n TreeNode) error {
+	err := node.Visit(func(n TreeNode) error {
 		counter++
 		require.IsType(t, node, n)
 
 		return nil
 	})
-
+	require.NoError(t, err)
 	require.Equal(t, 1, counter)
+
+	err = node.Visit(func(n TreeNode) error { return xerrors.New("oops") })
+	require.EqualError(t, err, "visiting leaf: oops")
 }
 
 func TestLeafNode_Clone(t *testing.T) {
@@ -527,4 +573,8 @@ func (n fakeNode) Prepare(nonce []byte,
 	prefix *big.Int, b kv.Bucket, fac crypto.HashFactory) ([]byte, error) {
 
 	return n.data, n.err
+}
+
+func (n fakeNode) Visit(func(TreeNode) error) error {
+	return n.err
 }

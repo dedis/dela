@@ -12,7 +12,7 @@
 //                           /        \
 //                        0 /          \ 1
 //                         /            \
-//                      Interior         Empty
+//                      Interior       Interior
 //                       /    \          /   \
 //                    0 /      \ 1    0 /     \ 1
 //                     /        \      /       \
