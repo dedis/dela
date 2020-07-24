@@ -3,12 +3,15 @@ package gossip
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/core/tap"
 	"go.dedis.ch/dela/core/tap/anon"
+	"go.dedis.ch/dela/core/tap/pool"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/gossip"
@@ -17,23 +20,51 @@ import (
 )
 
 func TestPool_Basic(t *testing.T) {
-	_, pools := makeRoster(t, 3)
+	_, pools := makeRoster(t, 10)
 	defer func() {
 		for _, pool := range pools {
 			require.NoError(t, pool.Close())
 		}
 	}()
 
+	wg := sync.WaitGroup{}
+	wg.Add(3)
+
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			err := pools[0].Add(makeTx(t, uint64(i)))
+			require.NoError(t, err)
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			err := pools[2].Add(makeTx(t, uint64(i)+100))
+			require.NoError(t, err)
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			err := pools[7].Add(makeTx(t, uint64(i)+200))
+			require.NoError(t, err)
+		}
+	}()
+
+	wg.Wait()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	evts := pools[2].Watch(ctx)
+	evts := pools[9].Watch(ctx)
 
-	err := pools[0].Add(makeTx(t))
+	err := pools[8].Add(makeTx(t, 0))
 	require.NoError(t, err)
 
-	evt := <-evts
-	require.Equal(t, 1, evt.Len)
+	waitEvt(t, evts, 300)
 }
 
 func TestPool_New(t *testing.T) {
@@ -59,9 +90,9 @@ func TestPool_Len(t *testing.T) {
 func TestPool_GetAll(t *testing.T) {
 	pool := &Pool{
 		bag: map[string]tap.Transaction{
-			"A": makeTx(t),
-			"B": makeTx(t),
-			"C": makeTx(t),
+			"A": makeTx(t, 0),
+			"B": makeTx(t, 1),
+			"C": makeTx(t, 2),
 		},
 	}
 
@@ -81,15 +112,14 @@ func TestPool_Add(t *testing.T) {
 
 	evts := pool.Watch(ctx)
 
-	err := pool.Add(makeTx(t))
+	err := pool.Add(makeTx(t, 0))
 	require.NoError(t, err)
 	require.Len(t, pool.bag, 1)
 
-	evt := <-evts
-	require.Equal(t, 1, evt.Len)
+	waitEvt(t, evts, 1)
 
 	pool.actor = fakeActor{err: xerrors.New("oops")}
-	err = pool.Add(makeTx(t))
+	err = pool.Add(makeTx(t, 0))
 	require.EqualError(t, err, "failed to gossip tx: oops")
 }
 
@@ -105,15 +135,14 @@ func TestPool_Remove(t *testing.T) {
 
 	evts := pool.Watch(ctx)
 
-	tx := makeTx(t)
+	tx := makeTx(t, 0)
 	pool.bag[string(tx.GetID())] = tx
 
 	err := pool.Remove(tx)
 	require.NoError(t, err)
 	require.Len(t, pool.bag, 2)
 
-	evt := <-evts
-	require.Equal(t, 2, evt.Len)
+	waitEvt(t, evts, 2)
 }
 
 func TestPool_Close(t *testing.T) {
@@ -133,8 +162,8 @@ func TestPool_Close(t *testing.T) {
 
 // Utility functions -----------------------------------------------------------
 
-func makeTx(t *testing.T) tap.Transaction {
-	tx, err := anon.NewTransaction(0)
+func makeTx(t *testing.T, nonce uint64) tap.Transaction {
+	tx, err := anon.NewTransaction(nonce)
 	require.NoError(t, err)
 	return tx
 }
@@ -165,6 +194,15 @@ func makeRoster(t *testing.T, n int) (mino.Players, []*Pool) {
 	}
 
 	return players, pools
+}
+
+func waitEvt(t *testing.T, ch <-chan pool.Event, expected int) {
+	select {
+	case evt := <-ch:
+		require.Equal(t, expected, evt.Len)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout")
+	}
 }
 
 type fakeActor struct {

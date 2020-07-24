@@ -2,6 +2,7 @@ package json
 
 import (
 	"go.dedis.ch/dela/core/tap/anon"
+	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
@@ -16,8 +17,15 @@ type TransactionJSON struct {
 	Args  map[string][]byte
 }
 
-type txFormat struct{}
+// TxFormat is the JSON format engine for transactions.
+//
+// - implements serde.FormatEngine
+type txFormat struct {
+	hashFactory crypto.HashFactory
+}
 
+// Encode implements serde.FormatEngine. It returns the JSON data of the
+// provided transaction if appropriate, otherwise it returns an error.
 func (fmt txFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	tx, ok := msg.(anon.Transaction)
 	if !ok {
@@ -42,6 +50,8 @@ func (fmt txFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error)
 	return data, nil
 }
 
+// Decode implements serde.FormatEngine. It returns the transaction from the
+// JSON data if appropriate, otherwise it returns an error.
 func (fmt txFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := TransactionJSON{}
 	err := ctx.Unmarshal(data, &m)
@@ -49,9 +59,13 @@ func (fmt txFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error
 		return nil, xerrors.Errorf("failed to unmarshal: %v", err)
 	}
 
-	args := make([]anon.TransactionOption, 0, len(m.Args))
+	args := make([]anon.TransactionOption, 0, len(m.Args)+1)
 	for key, value := range m.Args {
 		args = append(args, anon.WithArg(key, value))
+	}
+
+	if fmt.hashFactory != nil {
+		args = append(args, anon.WithHashFactory(fmt.hashFactory))
 	}
 
 	tx, err := anon.NewTransaction(m.Nonce, args...)

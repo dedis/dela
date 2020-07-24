@@ -135,12 +135,18 @@ func (t Transaction) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
+// TransactionFactory is a factory to deserialize transactions.
+//
+// - implements serde.Factory
 type TransactionFactory struct{}
 
+// NewTransactionFactory returns a new factory.
 func NewTransactionFactory() TransactionFactory {
 	return TransactionFactory{}
 }
 
+// Deserialize implements serde.Factory. It populates the transaction from the
+// data if appropriate, otherwise it returns an error.
 func (f TransactionFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := txFormats.Get(ctx.GetFormat())
 

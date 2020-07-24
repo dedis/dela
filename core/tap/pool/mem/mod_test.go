@@ -68,6 +68,12 @@ func TestPool_GetAll(t *testing.T) {
 	require.Len(t, txs, 2)
 }
 
+func TestPool_SetPlayers(t *testing.T) {
+	pool := NewPool()
+
+	require.NoError(t, pool.SetPlayers(nil))
+}
+
 func TestPool_Watch(t *testing.T) {
 	pool := NewPool()
 	pool.txs[Key{}] = fakeTx{}

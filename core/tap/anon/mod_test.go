@@ -8,6 +8,11 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 )
 
+func init() {
+	RegisterTransactionFormat(fake.GoodFormat, fake.Format{Msg: Transaction{}})
+	RegisterTransactionFormat(fake.BadFormat, fake.NewBadFormat())
+}
+
 func TestTransaction_New(t *testing.T) {
 	tx, err := NewTransaction(0)
 	require.NoError(t, err)
@@ -25,10 +30,27 @@ func TestTransaction_GetID(t *testing.T) {
 	require.Len(t, id, 32)
 }
 
+func TestTransaction_GetNonce(t *testing.T) {
+	tx, err := NewTransaction(123)
+	require.NoError(t, err)
+
+	nonce := tx.GetNonce()
+	require.Equal(t, uint64(123), nonce)
+}
+
 func TestTransaction_GetIdentity(t *testing.T) {
 	tx, err := NewTransaction(1)
 	require.NoError(t, err)
 	require.Nil(t, tx.GetIdentity())
+}
+
+func TestTransaction_GetArgs(t *testing.T) {
+	tx, err := NewTransaction(5, WithArg("A", []byte{1}), WithArg("B", []byte{2}))
+	require.NoError(t, err)
+
+	args := tx.GetArgs()
+	require.Contains(t, args, "A")
+	require.Contains(t, args, "B")
 }
 
 func TestTransaction_GetArg(t *testing.T) {
@@ -56,4 +78,27 @@ func TestTransaction_Fingerprint(t *testing.T) {
 
 	err = tx.Fingerprint(fake.NewBadHash())
 	require.EqualError(t, err, "couldn't write nonce: fake error")
+}
+
+func TestTransaction_Serialize(t *testing.T) {
+	tx, err := NewTransaction(0)
+	require.NoError(t, err)
+
+	data, err := tx.Serialize(fake.NewContext())
+	require.NoError(t, err)
+	require.Equal(t, `fake format`, string(data))
+
+	_, err = tx.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, "failed to encode: fake error")
+}
+
+func TestTransactionFactory_Deserialize(t *testing.T) {
+	factory := NewTransactionFactory()
+
+	msg, err := factory.Deserialize(fake.NewContext(), nil)
+	require.NoError(t, err)
+	require.IsType(t, Transaction{}, msg)
+
+	_, err = factory.Deserialize(fake.NewBadContext(), nil)
+	require.EqualError(t, err, "failed to decode: fake error")
 }

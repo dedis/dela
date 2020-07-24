@@ -1,3 +1,5 @@
+// Package gossip implements a transaction pool that is using a gossip protocol
+// to spread the transactions to other participants.
 package gossip
 
 import (
@@ -133,6 +135,9 @@ func (p *Pool) setTx(tx tap.Transaction) {
 }
 
 func (p *Pool) notify() {
+	// Notify is done independently and the lock is only acquired to create the
+	// event but released so that spreading the event doesn't slow down other
+	// functions.
 	p.Lock()
 	event := pool.Event{
 		Len: len(p.bag),
