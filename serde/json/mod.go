@@ -12,6 +12,7 @@ import (
 	_ "go.dedis.ch/dela/consensus/viewchange/roster/json"
 	_ "go.dedis.ch/dela/core/ordering/cosipbft/json"
 	_ "go.dedis.ch/dela/core/tap/anon/json"
+	_ "go.dedis.ch/dela/core/validation/simple/json"
 	_ "go.dedis.ch/dela/cosi/json"
 	_ "go.dedis.ch/dela/crypto/bls/json"
 	_ "go.dedis.ch/dela/crypto/ed25519/json"

@@ -12,12 +12,12 @@ import (
 )
 
 func TestTransactionResult_GetTransaction(t *testing.T) {
-	res := NewTransactionResult(fakeTx{})
+	res := NewTransactionResult(fakeTx{}, true, "")
 	require.Equal(t, fakeTx{}, res.GetTransaction())
 }
 
 func TestTransactionResult_GetStatus(t *testing.T) {
-	res := NewTransactionResult(fakeTx{})
+	res := NewTransactionResult(fakeTx{}, true, "")
 
 	accepted, reason := res.GetStatus()
 	require.True(t, accepted)

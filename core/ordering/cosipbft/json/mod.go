@@ -5,6 +5,8 @@ import (
 
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
+	"go.dedis.ch/dela/core/validation"
+	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
@@ -12,21 +14,36 @@ import (
 func init() {
 	types.RegisterGenesisFormat(serde.FormatJSON, genesisFormat{})
 	types.RegisterMessageFormat(serde.FormatJSON, msgFormat{})
+	types.RegisterBlockFormat(serde.FormatJSON, blockFormat{})
 }
 
 type GenesisJSON struct {
 	Roster json.RawMessage
 }
 
+type BlockJSON struct {
+	TreeRoot []byte
+	Data     json.RawMessage
+	Link     json.RawMessage
+}
+
 type GenesisMessageJSON struct {
 	Genesis json.RawMessage
 }
 
-type BlockMessageJSON struct{}
+type BlockMessageJSON struct {
+	Block json.RawMessage
+}
 
-type CommitMessageJSON struct{}
+type CommitMessageJSON struct {
+	ID        []byte
+	Signature json.RawMessage
+}
 
-type DoneMessageJSON struct{}
+type DoneMessageJSON struct {
+	ID        []byte
+	Signature json.RawMessage
+}
 
 type MessageJSON struct {
 	Genesis *GenesisMessageJSON
@@ -79,7 +96,65 @@ func (f genesisFormat) Decode(ctx serde.Context, data []byte) (serde.Message, er
 		return nil, err
 	}
 
-	return types.NewGenesis(roster), nil
+	genesis, err := types.NewGenesis(roster)
+	if err != nil {
+		return nil, err
+	}
+
+	return genesis, nil
+}
+
+type blockFormat struct{}
+
+func (f blockFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
+	block, ok := msg.(types.Block)
+	if !ok {
+		return nil, xerrors.New("invalid block type")
+	}
+
+	blockdata, err := block.GetData().Serialize(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	m := BlockJSON{
+		TreeRoot: block.GetTreeRoot(),
+		Data:     blockdata,
+	}
+
+	data, err := ctx.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+
+	return data, nil
+}
+
+func (f blockFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
+	m := BlockJSON{}
+	err := ctx.Unmarshal(data, &m)
+	if err != nil {
+		return nil, err
+	}
+
+	factory := ctx.GetFactory(types.DataKey{})
+
+	fac, ok := factory.(validation.DataFactory)
+	if !ok {
+		return nil, xerrors.Errorf("invalid data factory")
+	}
+
+	blockdata, err := fac.DataOf(ctx, m.Data)
+	if err != nil {
+		return nil, err
+	}
+
+	block, err := types.NewBlock(blockdata, types.WithTreeRoot(m.TreeRoot))
+	if err != nil {
+		return nil, err
+	}
+
+	return block, nil
 }
 
 type msgFormat struct{}
@@ -100,15 +175,38 @@ func (f msgFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) 
 
 		m = MessageJSON{Genesis: &gm}
 	case types.BlockMessage:
-		bm := BlockMessageJSON{}
+		block, err := in.GetBlock().Serialize(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		bm := BlockMessageJSON{
+			Block: block,
+		}
 
 		m = MessageJSON{Block: &bm}
 	case types.CommitMessage:
-		cm := CommitMessageJSON{}
+		sig, err := in.GetSignature().Serialize(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		cm := CommitMessageJSON{
+			ID:        in.GetID(),
+			Signature: sig,
+		}
 
 		m = MessageJSON{Commit: &cm}
 	case types.DoneMessage:
-		dm := DoneMessageJSON{}
+		sig, err := in.GetSignature().Serialize(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		dm := DoneMessageJSON{
+			ID:        in.GetID(),
+			Signature: sig,
+		}
 
 		m = MessageJSON{Done: &dm}
 	}
@@ -145,16 +243,54 @@ func (f msgFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error)
 	}
 
 	if m.Block != nil {
-		return types.BlockMessage{}, nil
+		factory := ctx.GetFactory(types.BlockKey{})
+
+		msg, err := factory.Deserialize(ctx, m.Block.Block)
+		if err != nil {
+			return nil, err
+		}
+
+		block, ok := msg.(types.Block)
+		if !ok {
+			return nil, xerrors.New("invalid block")
+		}
+
+		return types.NewBlockMessage(block), nil
 	}
 
 	if m.Commit != nil {
-		return types.CommitMessage{}, nil
+		sig, err := decodeSignature(ctx, m.Commit.Signature)
+		if err != nil {
+			return nil, xerrors.Errorf("commit failed: %v", err)
+		}
+
+		return types.NewCommit(m.Commit.ID, sig), nil
 	}
 
 	if m.Done != nil {
-		return types.DoneMessage{}, nil
+		sig, err := decodeSignature(ctx, m.Done.Signature)
+		if err != nil {
+			return nil, xerrors.Errorf("done failed: %v", err)
+		}
+
+		return types.NewDone(m.Done.ID, sig), nil
 	}
 
 	return nil, xerrors.New("message is empty")
+}
+
+func decodeSignature(ctx serde.Context, data []byte) (crypto.Signature, error) {
+	factory := ctx.GetFactory(types.SignatureKey{})
+
+	fac, ok := factory.(crypto.SignatureFactory)
+	if !ok {
+		return nil, xerrors.Errorf("invalid signature")
+	}
+
+	sig, err := fac.SignatureOf(ctx, data)
+	if err != nil {
+		return nil, xerrors.Errorf("factory failed: %v", err)
+	}
+
+	return sig, nil
 }

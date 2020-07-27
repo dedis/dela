@@ -2,14 +2,17 @@ package cosipbft
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/core/ordering"
+	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/hashtree"
+	"go.dedis.ch/dela/core/tap"
 	"go.dedis.ch/dela/core/tap/pool"
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/cosi"
@@ -21,7 +24,7 @@ import (
 const (
 	// RoundTimeout is the maximum of time the service waits for an event to
 	// happen.
-	RoundTimeout = 500 * time.Millisecond
+	RoundTimeout = 200 * time.Millisecond
 )
 
 // Service is an ordering service using collective signatures combined with PBFT
@@ -31,8 +34,8 @@ type Service struct {
 
 	me    mino.Address
 	rpc   mino.RPC
-	pool  pool.Pool
 	actor cosi.Actor
+	val   validation.Service
 
 	closing chan struct{}
 }
@@ -45,12 +48,18 @@ func NewService(
 	tree hashtree.Tree,
 	val validation.Service,
 ) (*Service, error) {
+	hashFactory := crypto.NewSha256Factory()
 	rosterFac := roster.NewFactory(m.GetAddressFactory(), c.GetPublicKeyFactory())
+	genesis := blockstore.NewGenesisStore()
+	blocks := blockstore.NewInMemory()
+	committer := newTwoPhaseCommit(val, c, hashFactory, genesis, blocks)
 
-	h := newHandler(tree, val, rosterFac)
+	h := newHandler(tree, rosterFac, committer, hashFactory, genesis, blocks, p)
 
 	fac := types.NewMessageFactory(
 		types.NewGenesisFactory(rosterFac),
+		types.NewBlockFactory(val.GetFactory()),
+		c.GetSignatureFactory(),
 	)
 
 	h.MessageFactory = fac
@@ -69,8 +78,8 @@ func NewService(
 		handler: h,
 		me:      m.GetAddress(),
 		rpc:     rpc,
-		pool:    p,
 		actor:   actor,
+		val:     val,
 		closing: make(chan struct{}),
 	}
 
@@ -86,7 +95,10 @@ func NewService(
 
 // Setup creates a genesis block and sends it to the collective authority.
 func (s *Service) Setup(ca crypto.CollectiveAuthority) error {
-	genesis := types.NewGenesis(ca)
+	genesis, err := types.NewGenesis(ca)
+	if err != nil {
+		return err
+	}
 
 	ctx := context.Background()
 
@@ -155,6 +167,15 @@ func (s *Service) main() error {
 func (s *Service) init() error {
 	<-s.started
 
+	// Look up the latest roster of the chain and update the pool to send rumors
+	// to it.
+	roster, err := s.getCurrentRoster()
+	if err != nil {
+		return err
+	}
+
+	s.pool.SetPlayers(roster)
+
 	return nil
 }
 
@@ -172,13 +193,16 @@ func (s *Service) doRound() error {
 
 	dela.Logger.Info().Msg("round has started")
 
-	txs := s.pool.GetAll()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	txs := s.collectTxs(ctx)
 
 	var data validation.Data
 
 	stageTree, err := s.tree.Stage(func(snap store.Snapshot) error {
 		var err error
-		data, err = s.validation.Validate(snap, txs)
+		data, err = s.val.Validate(snap, txs)
 		return err
 	})
 
@@ -186,9 +210,12 @@ func (s *Service) doRound() error {
 		return err
 	}
 
-	block := types.NewBlock(data, stageTree.GetRoot())
+	block, err := types.NewBlock(data, types.WithTreeRoot(stageTree.GetRoot()))
+	if err != nil {
+		return err
+	}
 
-	err = s.doPBFT(block)
+	err = s.doPBFT(ctx, block)
 	if err != nil {
 		return err
 	}
@@ -196,35 +223,58 @@ func (s *Service) doRound() error {
 	return nil
 }
 
-func (s *Service) doPBFT(block types.Block) error {
-	roster := s.genesis.GetRoster()
+func (s *Service) collectTxs(ctx context.Context) []tap.Transaction {
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
 
-	ctx := context.Background()
+	events := s.pool.Watch(ctx)
+
+	if s.pool.Len() > 0 {
+		return s.pool.GetAll()
+	}
+
+	for evt := range events {
+		if evt.Len > 0 {
+			return s.pool.GetAll()
+		}
+	}
+
+	return nil
+}
+
+func (s *Service) doPBFT(ctx context.Context, block types.Block) error {
+	roster, err := s.getCurrentRoster()
+	if err != nil {
+		return err
+	}
+
+	id, err := s.committer.Propose(block, s.tree)
+	if err != nil {
+		return err
+	}
 
 	// 1. Prepare phase
-	req := types.BlockMessage{}
+	req := types.NewBlockMessage(block)
 
 	sig, err := s.actor.Sign(ctx, req, roster)
 	if err != nil {
 		return xerrors.Errorf("prepare phase failed: %v", err)
 	}
 
-	dela.Logger.Info().Msg("signature done")
+	dela.Logger.Info().Str("signature", fmt.Sprintf("%v", sig)).Msg("prepare done")
 
 	// 2. Commit phase
-
-	commit := types.NewCommit(sig)
+	commit := types.NewCommit(id, sig)
 
 	sig, err = s.actor.Sign(ctx, commit, roster)
 	if err != nil {
 		return err
 	}
 
-	dela.Logger.Info().Msg("pbft done")
+	dela.Logger.Info().Str("signature", fmt.Sprintf("%v", sig)).Msg("commit done")
 
 	// 3. Propagation phase
-
-	done := types.NewDone(sig)
+	done := types.NewDone(id, sig)
 
 	resps, err := s.rpc.Call(ctx, done, roster)
 	if err != nil {

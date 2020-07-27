@@ -7,12 +7,17 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/consensus/viewchange/roster"
+	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/execution/baremetal"
+	"go.dedis.ch/dela/core/ordering"
+	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/hashtree/binprefix"
 	"go.dedis.ch/dela/core/store/kv"
+	"go.dedis.ch/dela/core/tap"
 	txn "go.dedis.ch/dela/core/tap/anon"
 	"go.dedis.ch/dela/core/tap/pool"
 	poolimpl "go.dedis.ch/dela/core/tap/pool/gossip"
@@ -34,17 +39,19 @@ func TestService_Basic(t *testing.T) {
 
 	err := srvs[0].service.Setup(ro)
 	require.NoError(t, err)
-	require.NotNil(t, srvs[1].service.genesis)
 
 	events := srvs[2].service.Watch(ctx)
 
-	tx, err := txn.NewTransaction(0)
+	err = srvs[0].pool.Add(makeTx(t, 0))
 	require.NoError(t, err)
 
-	err = srvs[1].pool.Add(tx)
+	evt := waitEvent(t, events)
+	require.Equal(t, uint64(1), evt.Index)
+
+	err = srvs[1].pool.Add(makeTx(t, 1))
 	require.NoError(t, err)
 
-	evt := <-events
+	evt = waitEvent(t, events)
 	require.Equal(t, uint64(1), evt.Index)
 }
 
@@ -54,6 +61,30 @@ type testNode struct {
 	service *Service
 	pool    pool.Pool
 	dbpath  string
+}
+
+type testExec struct {
+	err error
+}
+
+func (e testExec) Execute(tap.Transaction, store.Snapshot) (execution.Result, error) {
+	return execution.Result{Accepted: true}, e.err
+}
+
+func makeTx(t *testing.T, nonce uint64) tap.Transaction {
+	tx, err := txn.NewTransaction(nonce)
+	require.NoError(t, err)
+	return tx
+}
+
+func waitEvent(t *testing.T, events <-chan ordering.Event) ordering.Event {
+	select {
+	case <-time.After(5 * time.Second):
+		t.Fatal("no event received before the timeout")
+		return ordering.Event{}
+	case evt := <-events:
+		return evt
+	}
 }
 
 func makeAuthority(t *testing.T, n int) ([]testNode, crypto.CollectiveAuthority, func()) {
@@ -85,7 +116,9 @@ func makeAuthority(t *testing.T, n int) ([]testNode, crypto.CollectiveAuthority,
 
 		tree := binprefix.NewMerkleTree(db, binprefix.Nonce{})
 
-		srv, err := NewService(m, c, pool, tree, simple.NewService(baremetal.NewExecution(nil)))
+		vs := simple.NewService(baremetal.NewExecution(testExec{}), txn.NewTransactionFactory())
+
+		srv, err := NewService(m, c, pool, tree, vs)
 		require.NoError(t, err)
 
 		nodes[i] = testNode{

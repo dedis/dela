@@ -169,6 +169,10 @@ func (sig Signature) Equal(other crypto.Signature) bool {
 	return bytes.Equal(sig.data, otherSig.data)
 }
 
+func (sig Signature) String() string {
+	return fmt.Sprintf("bls:%x", sig.data)
+}
+
 // publicKeyFactory creates BLS compatible public key from protobuf messages.
 //
 // - serde.Factory

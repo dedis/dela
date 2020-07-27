@@ -29,7 +29,7 @@ func TestService_Basic(t *testing.T) {
 	pool := pool.NewPool()
 	srvc := NewService(
 		pool,
-		val.NewService(baremetal.NewExecution(testExec{})),
+		val.NewService(baremetal.NewExecution(testExec{}), txn.NewTransactionFactory()),
 		tree,
 	)
 
@@ -66,8 +66,10 @@ func TestService_Listen(t *testing.T) {
 	tree, clean := makeTree(t)
 	defer clean()
 
+	vs := val.NewService(baremetal.NewExecution(testExec{}), txn.NewTransactionFactory())
+
 	pool := pool.NewPool()
-	srvc := NewService(pool, val.NewService(baremetal.NewExecution(testExec{})), tree)
+	srvc := NewService(pool, vs, tree)
 
 	err := srvc.Listen()
 	require.NoError(t, err)
@@ -152,7 +154,9 @@ func (e testExec) Execute(tx tap.Transaction, store store.Snapshot) (execution.R
 	return execution.Result{Accepted: true}, nil
 }
 
-type badValidation struct{}
+type badValidation struct {
+	validation.Service
+}
 
 func (v badValidation) Validate(store.Snapshot, []tap.Transaction) (validation.Data, error) {
 	return nil, xerrors.New("oops")

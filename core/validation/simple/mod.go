@@ -15,13 +15,21 @@ import (
 // - implements validation.Service
 type Service struct {
 	execution execution.Service
+	fac       validation.DataFactory
 }
 
 // NewService creates a new validation service.
-func NewService(exec execution.Service) Service {
+func NewService(exec execution.Service, f tap.TransactionFactory) Service {
 	return Service{
 		execution: exec,
+		fac:       NewDataFactory(f),
 	}
+}
+
+// GetFactory implements validation.Service. It returns the factory for the
+// validated data.
+func (s Service) GetFactory() validation.DataFactory {
+	return s.fac
 }
 
 // Validate implements validation.Service. It processes the list of transactions
