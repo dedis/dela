@@ -74,20 +74,20 @@ func (m BlockMessage) Serialize(ctx serde.Context) ([]byte, error) {
 // CommitMessage is a message containing the signature of the prepare phase of a
 // PBFT execution.
 type CommitMessage struct {
-	id        []byte
+	id        Digest
 	signature crypto.Signature
 }
 
 // NewCommit creates a new commit message.
-func NewCommit(id []byte, sig crypto.Signature) CommitMessage {
+func NewCommit(id Digest, sig crypto.Signature) CommitMessage {
 	return CommitMessage{
 		id:        id,
 		signature: sig,
 	}
 }
 
-func (m CommitMessage) GetID() []byte {
-	return append([]byte{}, m.id...)
+func (m CommitMessage) GetID() Digest {
+	return m.id
 }
 
 func (m CommitMessage) GetSignature() crypto.Signature {
@@ -109,20 +109,20 @@ func (m CommitMessage) Serialize(ctx serde.Context) ([]byte, error) {
 // DoneMessage is a message containing the signature of the commit phase of a
 // PBFT execution.
 type DoneMessage struct {
-	id        []byte
+	id        Digest
 	signature crypto.Signature
 }
 
 // NewDone creates a new done message.
-func NewDone(id []byte, sig crypto.Signature) DoneMessage {
+func NewDone(id Digest, sig crypto.Signature) DoneMessage {
 	return DoneMessage{
 		id:        id,
 		signature: sig,
 	}
 }
 
-func (m DoneMessage) GetID() []byte {
-	return append([]byte{}, m.id...)
+func (m DoneMessage) GetID() Digest {
+	return m.id
 }
 
 func (m DoneMessage) GetSignature() crypto.Signature {
@@ -131,6 +131,37 @@ func (m DoneMessage) GetSignature() crypto.Signature {
 
 // Serialize implements serde.Message.
 func (m DoneMessage) Serialize(ctx serde.Context) ([]byte, error) {
+	format := msgFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, m)
+	if err != nil {
+		return nil, err
+	}
+
+	return data, nil
+}
+
+type ViewMessage struct {
+	id     Digest
+	leader int
+}
+
+func NewViewMessage(id Digest, leader int) ViewMessage {
+	return ViewMessage{
+		id:     id,
+		leader: leader,
+	}
+}
+
+func (m ViewMessage) GetID() Digest {
+	return m.id
+}
+
+func (m ViewMessage) GetLeader() int {
+	return m.leader
+}
+
+func (m ViewMessage) Serialize(ctx serde.Context) ([]byte, error) {
 	format := msgFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, m)

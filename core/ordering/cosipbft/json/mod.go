@@ -22,7 +22,7 @@ type GenesisJSON struct {
 }
 
 type BlockJSON struct {
-	TreeRoot []byte
+	TreeRoot types.Digest
 	Data     json.RawMessage
 	Link     json.RawMessage
 }
@@ -36,13 +36,18 @@ type BlockMessageJSON struct {
 }
 
 type CommitMessageJSON struct {
-	ID        []byte
+	ID        types.Digest
 	Signature json.RawMessage
 }
 
 type DoneMessageJSON struct {
-	ID        []byte
+	ID        types.Digest
 	Signature json.RawMessage
+}
+
+type ViewMessageJSON struct {
+	Leader int
+	ID     types.Digest
 }
 
 type MessageJSON struct {
@@ -50,6 +55,7 @@ type MessageJSON struct {
 	Block   *BlockMessageJSON
 	Commit  *CommitMessageJSON
 	Done    *DoneMessageJSON
+	View    *ViewMessageJSON
 }
 
 type genesisFormat struct{}
@@ -209,6 +215,13 @@ func (f msgFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) 
 		}
 
 		m = MessageJSON{Done: &dm}
+	case types.ViewMessage:
+		vm := ViewMessageJSON{
+			ID:     in.GetID(),
+			Leader: in.GetLeader(),
+		}
+
+		m = MessageJSON{View: &vm}
 	}
 
 	data, err := ctx.Marshal(m)
@@ -274,6 +287,10 @@ func (f msgFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error)
 		}
 
 		return types.NewDone(m.Done.ID, sig), nil
+	}
+
+	if m.View != nil {
+		return types.NewViewMessage(m.View.ID, m.View.Leader), nil
 	}
 
 	return nil, xerrors.New("message is empty")

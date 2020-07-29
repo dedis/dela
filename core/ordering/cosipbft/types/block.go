@@ -1,6 +1,7 @@
 package types
 
 import (
+	"fmt"
 	"io"
 
 	"go.dedis.ch/dela/consensus/viewchange"
@@ -27,12 +28,19 @@ func RegisterBlockFormat(f serde.Format, e serde.FormatEngine) {
 	blockFormats.Register(f, e)
 }
 
+// Digest defines the result of a fingerprint. It expects a digest of 256 bits.
+type Digest [32]byte
+
+func (d Digest) String() string {
+	return fmt.Sprintf("%x", d[:])[:8]
+}
+
 // Genesis is the very first block of a chain. It contains the initial roster
 // and tree root.
 type Genesis struct {
-	digest   []byte
+	digest   Digest
 	roster   viewchange.Authority
-	treeRoot []byte
+	treeRoot Digest
 }
 
 type genesisTemplate struct {
@@ -48,7 +56,7 @@ func NewGenesis(ca crypto.CollectiveAuthority, opts ...GenesisOption) (Genesis, 
 	tmpl := genesisTemplate{
 		Genesis: Genesis{
 			roster:   roster.FromAuthority(ca),
-			treeRoot: []byte{},
+			treeRoot: Digest{},
 		},
 		hashFactory: crypto.NewSha256Factory(),
 	}
@@ -63,13 +71,14 @@ func NewGenesis(ca crypto.CollectiveAuthority, opts ...GenesisOption) (Genesis, 
 		return tmpl.Genesis, err
 	}
 
-	tmpl.digest = h.Sum(nil)
+	copy(tmpl.digest[:], h.Sum(nil))
 
 	return tmpl.Genesis, nil
 }
 
-func (g Genesis) GetHash() []byte {
-	return append([]byte{}, g.digest...)
+// GetHash returns the digest of the block.
+func (g Genesis) GetHash() Digest {
+	return g.digest
 }
 
 // GetRoster returns the roster of the genesis block.
@@ -79,7 +88,7 @@ func (g Genesis) GetRoster() viewchange.Authority {
 
 // GetRoot returns the tree root.
 func (g Genesis) GetRoot() []byte {
-	return g.treeRoot
+	return g.treeRoot[:]
 }
 
 // Serialize implements serde.Message.
@@ -96,7 +105,7 @@ func (g Genesis) Serialize(ctx serde.Context) ([]byte, error) {
 
 // Fingerprint implements serde.Fingerprinter.
 func (g Genesis) Fingerprint(w io.Writer) error {
-	_, err := w.Write(g.treeRoot)
+	_, err := w.Write(g.treeRoot[:])
 	if err != nil {
 		return err
 	}
@@ -138,42 +147,64 @@ func (f GenesisFactory) Deserialize(ctx serde.Context, data []byte) (serde.Messa
 	return msg, nil
 }
 
-// ForwardLink contains the different proofs that a block has been committed by
+// BlockLink contains the different proofs that a block has been committed by
 // the collective authority.
 type BlockLink struct {
-	from       []byte
+	from       Digest
 	to         Block
 	changeset  viewchange.ChangeSet
 	prepareSig crypto.Signature
 	commitSig  crypto.Signature
 }
 
-func NewForwardLink(from []byte, to Block) BlockLink {
+func NewForwardLink(from Digest, to Block) BlockLink {
 	return BlockLink{
 		from: from,
 		to:   to,
 	}
 }
 
-func (link BlockLink) GetFrom() []byte {
-	return append([]byte{}, link.from...)
+func (link BlockLink) GetFrom() Digest {
+	return link.from
 }
 
 func (link BlockLink) GetTo() Block {
 	return link.to
 }
 
+func (link BlockLink) GetPrepareSignature() crypto.Signature {
+	return link.prepareSig
+}
+
+func (link BlockLink) GetCommitSignature() crypto.Signature {
+	return link.commitSig
+}
+
+func (link BlockLink) GetChangeSet() viewchange.ChangeSet {
+	return link.changeset
+}
+
 func (link BlockLink) Fingerprint(w io.Writer) error {
-	w.Write(link.from)
-	w.Write(link.to.GetHash())
+	_, err := w.Write(link.from[:])
+	if err != nil {
+		return err
+	}
+
+	id := link.GetTo().GetHash()
+
+	_, err = w.Write(id[:])
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
 // Block is a block of the chain.
 type Block struct {
-	digest   []byte
+	digest   Digest
 	data     validation.Data
-	treeRoot []byte
+	treeRoot Digest
 }
 
 type blockTemplate struct {
@@ -183,7 +214,7 @@ type blockTemplate struct {
 
 type BlockOption func(*blockTemplate)
 
-func WithTreeRoot(root []byte) BlockOption {
+func WithTreeRoot(root Digest) BlockOption {
 	return func(tmpl *blockTemplate) {
 		tmpl.treeRoot = root
 	}
@@ -194,7 +225,7 @@ func NewBlock(data validation.Data, opts ...BlockOption) (Block, error) {
 	tmpl := blockTemplate{
 		Block: Block{
 			data:     data,
-			treeRoot: []byte{},
+			treeRoot: Digest{},
 		},
 		hashFactory: crypto.NewSha256Factory(),
 	}
@@ -209,13 +240,13 @@ func NewBlock(data validation.Data, opts ...BlockOption) (Block, error) {
 		return tmpl.Block, err
 	}
 
-	tmpl.digest = h.Sum(nil)
+	copy(tmpl.digest[:], h.Sum(nil))
 
 	return tmpl.Block, nil
 }
 
-func (b Block) GetHash() []byte {
-	return append([]byte{}, b.digest...)
+func (b Block) GetHash() Digest {
+	return b.digest
 }
 
 func (b Block) GetData() validation.Data {
@@ -233,12 +264,12 @@ func (b Block) GetTransactions() []tap.Transaction {
 	return txs
 }
 
-func (b Block) GetTreeRoot() []byte {
+func (b Block) GetTreeRoot() Digest {
 	return b.treeRoot
 }
 
 func (b Block) Fingerprint(w io.Writer) error {
-	_, err := w.Write(b.treeRoot)
+	_, err := w.Write(b.treeRoot[:])
 	if err != nil {
 		return err
 	}

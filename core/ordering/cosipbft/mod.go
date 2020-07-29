@@ -9,6 +9,7 @@ import (
 	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
+	"go.dedis.ch/dela/core/ordering/cosipbft/pbft"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/hashtree"
@@ -24,63 +25,97 @@ import (
 const (
 	// RoundTimeout is the maximum of time the service waits for an event to
 	// happen.
-	RoundTimeout = 200 * time.Millisecond
+	RoundTimeout = 100 * time.Millisecond
 )
 
 // Service is an ordering service using collective signatures combined with PBFT
 // to create a chain of blocks.
 type Service struct {
-	*handler
+	*processor
 
 	me    mino.Address
 	rpc   mino.RPC
 	actor cosi.Actor
 	val   validation.Service
+	pbft  pbft.StateMachine
 
 	closing chan struct{}
 }
 
-// NewService starts a new service.
-func NewService(
-	m mino.Mino,
-	c cosi.CollectiveSigning,
-	p pool.Pool,
-	tree hashtree.Tree,
-	val validation.Service,
-) (*Service, error) {
-	hashFactory := crypto.NewSha256Factory()
-	rosterFac := roster.NewFactory(m.GetAddressFactory(), c.GetPublicKeyFactory())
-	genesis := blockstore.NewGenesisStore()
-	blocks := blockstore.NewInMemory()
-	committer := newTwoPhaseCommit(val, c, hashFactory, genesis, blocks)
+type serviceTemplate struct {
+	hashFac crypto.HashFactory
+	blocks  blockstore.BlockStore
+	genesis blockstore.GenesisStore
+}
 
-	h := newHandler(tree, rosterFac, committer, hashFactory, genesis, blocks, p)
+// ServiceOption is the type of option to set some fields of the service.
+type ServiceOption func(*serviceTemplate)
+
+// ServiceParam is the different components to provide to the service. All the
+// fields are mandatory and it will panic if any is nil.
+type ServiceParam struct {
+	Mino       mino.Mino
+	Cosi       cosi.CollectiveSigning
+	Validation validation.Service
+	Pool       pool.Pool
+	Tree       hashtree.Tree
+}
+
+// NewService starts a new service.
+func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
+	tmpl := serviceTemplate{
+		hashFac: crypto.NewSha256Factory(),
+		genesis: blockstore.NewGenesisStore(),
+		blocks:  blockstore.NewInMemory(),
+	}
+
+	for _, opt := range opts {
+		opt(&tmpl)
+	}
+
+	proc := newProcessor()
+	proc.hashFactory = tmpl.hashFac
+	proc.blocks = tmpl.blocks
+	proc.genesis = tmpl.genesis
+	proc.pool = param.Pool
+	proc.rosterFac = roster.NewFactory(param.Mino.GetAddressFactory(), param.Cosi.GetPublicKeyFactory())
+	proc.tree = param.Tree
+
+	pcparam := pbft.StateMachineParam{
+		Validation:      param.Validation,
+		VerifierFactory: param.Cosi.GetVerifierFactory(),
+		Blocks:          tmpl.blocks,
+		Genesis:         tmpl.genesis,
+	}
+
+	proc.committer = pbft.NewStateMachine(pcparam)
 
 	fac := types.NewMessageFactory(
-		types.NewGenesisFactory(rosterFac),
-		types.NewBlockFactory(val.GetFactory()),
-		c.GetSignatureFactory(),
+		types.NewGenesisFactory(proc.rosterFac),
+		types.NewBlockFactory(param.Validation.GetFactory()),
+		param.Cosi.GetSignatureFactory(),
 	)
 
-	h.MessageFactory = fac
+	proc.MessageFactory = fac
 
-	rpc, err := m.MakeRPC("cosipbft", h, fac)
+	rpc, err := param.Mino.MakeRPC("cosipbft", proc, fac)
 	if err != nil {
 		return nil, xerrors.Errorf("rpc failed: %v", err)
 	}
 
-	actor, err := c.Listen(h)
+	actor, err := param.Cosi.Listen(proc)
 	if err != nil {
 		return nil, xerrors.Errorf("cosi failed: %v", err)
 	}
 
 	s := &Service{
-		handler: h,
-		me:      m.GetAddress(),
-		rpc:     rpc,
-		actor:   actor,
-		val:     val,
-		closing: make(chan struct{}),
+		processor: proc,
+		me:        param.Mino.GetAddress(),
+		rpc:       rpc,
+		actor:     actor,
+		val:       param.Validation,
+		pbft:      proc.committer,
+		closing:   make(chan struct{}),
 	}
 
 	go func() {
@@ -150,12 +185,10 @@ func (s *Service) main() error {
 	dela.Logger.Info().Msg("node has started")
 
 	for {
-		roundTimeout := time.After(RoundTimeout)
-
 		select {
 		case <-s.closing:
 			return nil
-		case <-roundTimeout:
+		default:
 			err := s.doRound()
 			if err != nil {
 				return xerrors.Errorf("round failed: %v", err)
@@ -185,17 +218,64 @@ func (s *Service) doRound() error {
 		return err
 	}
 
-	_, idx := roster.GetPublicKey(s.me)
-	if idx != 0 {
-		// Only the leader tries to create a block.
-		return nil
+	if s.pbft.GetState() == pbft.InitialState {
+		err = s.pbft.PrePrepare(roster)
+		if err != nil {
+			return err
+		}
 	}
-
-	dela.Logger.Info().Msg("round has started")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	events := s.Watch(ctx)
+
+	for !s.me.Equal(s.pbft.GetLeader()) {
+		// Only enters the loop if the node is not the leader. It has to wait
+		// for the new block, or the round timeout, to proceed.
+
+		select {
+		case <-time.After(RoundTimeout):
+			dela.Logger.Warn().Str("addr", fmt.Sprintf("%v", s.me)).Msg("round reached the timeout")
+
+			statesCh := s.pbft.Watch(ctx)
+
+			view, err := s.pbft.Expire(s.me)
+			if err != nil {
+				return err
+			}
+
+			resps, err := s.rpc.Call(ctx, types.NewViewMessage(view.ID, view.Leader), roster)
+			if err != nil {
+				return err
+			}
+
+			for resp := range resps {
+				_, err = resp.GetMessageOrError()
+				if err != nil {
+					dela.Logger.Warn().Err(err).Msg("view propagation failure")
+				}
+			}
+
+			for state := range statesCh {
+				if state == pbft.PrePrepareState {
+					break
+				}
+			}
+
+			dela.Logger.Info().Str("addr", fmt.Sprintf("%v", s.me)).Msg("view change successful")
+		case <-events:
+			// A block has been created meaning that the round is over.
+			return nil
+		case <-s.closing:
+			return nil
+		}
+	}
+
+	dela.Logger.Info().Str("addr", fmt.Sprintf("%v", s.me)).Msg("round has started")
+
+	// TODO: check that no committed block exists in the case of a leader failure
+	// when propagating the collective signature.
 	txs := s.collectTxs(ctx)
 
 	var data validation.Data
@@ -210,7 +290,10 @@ func (s *Service) doRound() error {
 		return err
 	}
 
-	block, err := types.NewBlock(data, types.WithTreeRoot(stageTree.GetRoot()))
+	root := types.Digest{}
+	copy(root[:], stageTree.GetRoot())
+
+	block, err := types.NewBlock(data, types.WithTreeRoot(root))
 	if err != nil {
 		return err
 	}
@@ -248,7 +331,7 @@ func (s *Service) doPBFT(ctx context.Context, block types.Block) error {
 		return err
 	}
 
-	id, err := s.committer.Propose(block, s.tree)
+	id, err := s.committer.Prepare(block, s.tree)
 	if err != nil {
 		return err
 	}

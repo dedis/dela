@@ -31,7 +31,7 @@ import (
 )
 
 func TestService_Basic(t *testing.T) {
-	srvs, ro, clean := makeAuthority(t, 3)
+	srvs, ro, clean := makeAuthority(t, 4)
 	defer clean()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -79,7 +79,7 @@ func makeTx(t *testing.T, nonce uint64) tap.Transaction {
 
 func waitEvent(t *testing.T, events <-chan ordering.Event) ordering.Event {
 	select {
-	case <-time.After(5 * time.Second):
+	case <-time.After(4 * time.Second):
 		t.Fatal("no event received before the timeout")
 		return ordering.Event{}
 	case evt := <-events:
@@ -118,7 +118,15 @@ func makeAuthority(t *testing.T, n int) ([]testNode, crypto.CollectiveAuthority,
 
 		vs := simple.NewService(baremetal.NewExecution(testExec{}), txn.NewTransactionFactory())
 
-		srv, err := NewService(m, c, pool, tree, vs)
+		param := ServiceParam{
+			Mino:       m,
+			Cosi:       c,
+			Validation: vs,
+			Pool:       pool,
+			Tree:       tree,
+		}
+
+		srv, err := NewService(param)
 		require.NoError(t, err)
 
 		nodes[i] = testNode{

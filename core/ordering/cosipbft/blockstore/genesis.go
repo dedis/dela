@@ -10,6 +10,7 @@ type cachedGenesis struct {
 	set     bool
 }
 
+// NewGenesisStore returns a new empty genesis store.
 func NewGenesisStore() GenesisStore {
 	return &cachedGenesis{}
 }
