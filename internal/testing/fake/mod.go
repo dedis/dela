@@ -422,7 +422,7 @@ func (pk PublicKey) Verify([]byte, crypto.Signature) error {
 
 // MarshalBinary implements encoding.BinaryMarshaler.
 func (pk PublicKey) MarshalBinary() ([]byte, error) {
-	return []byte{0xdf}, pk.err
+	return []byte("PK"), pk.err
 }
 
 // Serialize implements serde.Message.

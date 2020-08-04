@@ -25,7 +25,7 @@ import (
 const (
 	// RoundTimeout is the maximum of time the service waits for an event to
 	// happen.
-	RoundTimeout = 100 * time.Millisecond
+	RoundTimeout = 1 * time.Second
 )
 
 // Service is an ordering service using collective signatures combined with PBFT

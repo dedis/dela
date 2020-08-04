@@ -216,7 +216,7 @@ func (m *pbftsm) Prepare(block types.Block, tree hashtree.Tree) (types.Digest, e
 		return types.Digest{}, xerrors.Errorf("couldn't get latest digest: %v", err)
 	}
 
-	link := types.NewForwardLink(lastID, block)
+	link := types.NewBlockLink(lastID, block)
 
 	h := m.hashFac.New()
 	err = link.Fingerprint(h)
@@ -300,7 +300,7 @@ func (m *pbftsm) Finalize(id types.Digest, sig crypto.Signature) (hashtree.Tree,
 		return nil, xerrors.Errorf("couldn't get latest digest: %v", err)
 	}
 
-	link := types.NewForwardLink(lastID, m.round.block)
+	link := types.NewBlockLink(lastID, m.round.block)
 
 	err = m.blocks.Store(link)
 	if err != nil {

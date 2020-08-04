@@ -1,6 +1,7 @@
 package types
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
 
@@ -11,6 +12,7 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/registry"
+	"golang.org/x/xerrors"
 )
 
 var (
@@ -51,6 +53,20 @@ type genesisTemplate struct {
 // GenesisOption is the option type to set some fields of a genesis block.
 type GenesisOption func(*genesisTemplate)
 
+// WithGenesisRoot is an option to set the tree root of the genesis block.
+func WithGenesisRoot(root Digest) GenesisOption {
+	return func(tmpl *genesisTemplate) {
+		tmpl.treeRoot = root
+	}
+}
+
+// WithHashFactory is an option to set the hash factory.
+func WithHashFactory(fac crypto.HashFactory) GenesisOption {
+	return func(tmpl *genesisTemplate) {
+		tmpl.hashFactory = fac
+	}
+}
+
 // NewGenesis creates a new genesis block with the provided roster.
 func NewGenesis(ca crypto.CollectiveAuthority, opts ...GenesisOption) (Genesis, error) {
 	tmpl := genesisTemplate{
@@ -68,7 +84,7 @@ func NewGenesis(ca crypto.CollectiveAuthority, opts ...GenesisOption) (Genesis, 
 	h := tmpl.hashFactory.New()
 	err := tmpl.Fingerprint(h)
 	if err != nil {
-		return tmpl.Genesis, err
+		return tmpl.Genesis, xerrors.Errorf("fingerprint failed: %v", err)
 	}
 
 	copy(tmpl.digest[:], h.Sum(nil))
@@ -87,8 +103,8 @@ func (g Genesis) GetRoster() viewchange.Authority {
 }
 
 // GetRoot returns the tree root.
-func (g Genesis) GetRoot() []byte {
-	return g.treeRoot[:]
+func (g Genesis) GetRoot() Digest {
+	return g.treeRoot
 }
 
 // Serialize implements serde.Message.
@@ -107,12 +123,12 @@ func (g Genesis) Serialize(ctx serde.Context) ([]byte, error) {
 func (g Genesis) Fingerprint(w io.Writer) error {
 	_, err := w.Write(g.treeRoot[:])
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't write root: %v", err)
 	}
 
 	err = g.roster.Fingerprint(w)
 	if err != nil {
-		return err
+		return xerrors.Errorf("roster fingerprint failed: %v", err)
 	}
 
 	return nil
@@ -157,44 +173,54 @@ type BlockLink struct {
 	commitSig  crypto.Signature
 }
 
-func NewForwardLink(from Digest, to Block) BlockLink {
+// NewBlockLink creates a new block link between from and to.
+func NewBlockLink(from Digest, to Block) BlockLink {
 	return BlockLink{
 		from: from,
 		to:   to,
 	}
 }
 
+// GetFrom returns the digest of the source block.
 func (link BlockLink) GetFrom() Digest {
 	return link.from
 }
 
+// GetTo returns the block the link is pointing to.
 func (link BlockLink) GetTo() Block {
 	return link.to
 }
 
+// GetPrepareSignature returns the prepare signature if it is set, otherwise it
+// returns nil.
 func (link BlockLink) GetPrepareSignature() crypto.Signature {
 	return link.prepareSig
 }
 
+// GetCommitSignature returns the commit signature if it is set, otherwise it
+// returns nil.
 func (link BlockLink) GetCommitSignature() crypto.Signature {
 	return link.commitSig
 }
 
+// GetChangeSet returns the change set of the roster for this link.
 func (link BlockLink) GetChangeSet() viewchange.ChangeSet {
 	return link.changeset
 }
 
+// Fingerprint implements serde.Fingerprinter. It deterministically writes a
+// binary representation of the block link.
 func (link BlockLink) Fingerprint(w io.Writer) error {
 	_, err := w.Write(link.from[:])
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't write from: %v", err)
 	}
 
 	id := link.GetTo().GetHash()
 
 	_, err = w.Write(id[:])
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't write to: %v", err)
 	}
 
 	return nil
@@ -203,6 +229,7 @@ func (link BlockLink) Fingerprint(w io.Writer) error {
 // Block is a block of the chain.
 type Block struct {
 	digest   Digest
+	index    uint64
 	data     validation.Data
 	treeRoot Digest
 }
@@ -212,8 +239,17 @@ type blockTemplate struct {
 	hashFactory crypto.HashFactory
 }
 
+// BlockOption is the type of option to set some fields of a block.
 type BlockOption func(*blockTemplate)
 
+// WithIndex is an option to set the index of the block.
+func WithIndex(index uint64) BlockOption {
+	return func(tmpl *blockTemplate) {
+		tmpl.index = index
+	}
+}
+
+// WithTreeRoot is an option to set the tree root for the block.
 func WithTreeRoot(root Digest) BlockOption {
 	return func(tmpl *blockTemplate) {
 		tmpl.treeRoot = root
@@ -245,14 +281,18 @@ func NewBlock(data validation.Data, opts ...BlockOption) (Block, error) {
 	return tmpl.Block, nil
 }
 
+// GetHash returns the digest of the block.
 func (b Block) GetHash() Digest {
 	return b.digest
 }
 
+// GetData returns the validated data of the block.
 func (b Block) GetData() validation.Data {
 	return b.data
 }
 
+// GetTransactions is a helper to extract the transactions from the validated
+// data.
 func (b Block) GetTransactions() []tap.Transaction {
 	results := b.data.GetTransactionResults()
 	txs := make([]tap.Transaction, len(results))
@@ -264,19 +304,29 @@ func (b Block) GetTransactions() []tap.Transaction {
 	return txs
 }
 
+// GetTreeRoot returns the tree root of the block.
 func (b Block) GetTreeRoot() Digest {
 	return b.treeRoot
 }
 
+// Fingerprint implements serde.Fingerprinter. It deterministically writes a
+// binary representation of the block into the writer.
 func (b Block) Fingerprint(w io.Writer) error {
-	_, err := w.Write(b.treeRoot[:])
+	buffer := make([]byte, 8)
+	binary.LittleEndian.PutUint64(buffer, b.index)
+	_, err := w.Write(buffer)
 	if err != nil {
-		return err
+		return xerrors.Errorf("couldn't write index: %v", err)
+	}
+
+	_, err = w.Write(b.treeRoot[:])
+	if err != nil {
+		return xerrors.Errorf("couldn't write root: %v", err)
 	}
 
 	err = b.data.Fingerprint(w)
 	if err != nil {
-		return err
+		return xerrors.Errorf("data fingerprint failed: %v", err)
 	}
 
 	return nil
@@ -294,18 +344,23 @@ func (b Block) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
+// DataKey is the key for the validated data factory.
 type DataKey struct{}
 
+// BlockFactory is a factory to deserialize block messages.
 type BlockFactory struct {
 	dataFac validation.DataFactory
 }
 
+// NewBlockFactory creates a new block factory.
 func NewBlockFactory(fac validation.DataFactory) BlockFactory {
 	return BlockFactory{
 		dataFac: fac,
 	}
 }
 
+// Deserialize implements serde.Factory. It populates the block from the data if
+// appropriate, otherwise it returns an error.
 func (f BlockFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := blockFormats.Get(ctx.GetFormat())
 

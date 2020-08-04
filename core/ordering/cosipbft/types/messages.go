@@ -86,10 +86,12 @@ func NewCommit(id Digest, sig crypto.Signature) CommitMessage {
 	}
 }
 
+// GetID returns the block digest to commit.
 func (m CommitMessage) GetID() Digest {
 	return m.id
 }
 
+// GetSignature returns the prepare signature.
 func (m CommitMessage) GetSignature() crypto.Signature {
 	return m.signature
 }
@@ -121,10 +123,13 @@ func NewDone(id Digest, sig crypto.Signature) DoneMessage {
 	}
 }
 
+// GetID returns the digest of the block that has been accepted.
 func (m DoneMessage) GetID() Digest {
 	return m.id
 }
 
+// GetSignature returns the commit signature that proves the commitment of the
+// block.
 func (m DoneMessage) GetSignature() crypto.Signature {
 	return m.signature
 }
@@ -141,11 +146,13 @@ func (m DoneMessage) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
+// ViewMessage is a message to announce a view change request.
 type ViewMessage struct {
 	id     Digest
 	leader int
 }
 
+// NewViewMessage creates a new view message.
 func NewViewMessage(id Digest, leader int) ViewMessage {
 	return ViewMessage{
 		id:     id,
@@ -153,14 +160,17 @@ func NewViewMessage(id Digest, leader int) ViewMessage {
 	}
 }
 
+// GetID returns the digest of the latest block.
 func (m ViewMessage) GetID() Digest {
 	return m.id
 }
 
+// GetLeader returns the leader index of the view change.
 func (m ViewMessage) GetLeader() int {
 	return m.leader
 }
 
+// Serialize implements serde.Message.
 func (m ViewMessage) Serialize(ctx serde.Context) ([]byte, error) {
 	format := msgFormats.Get(ctx.GetFormat())
 
@@ -178,6 +188,7 @@ type GenesisKey struct{}
 // BlockKey is the key of the block factory.
 type BlockKey struct{}
 
+// SignatureKey is the key of the collective signature factory.
 type SignatureKey struct{}
 
 // MessageFactory is the factory to deserialize messages.
