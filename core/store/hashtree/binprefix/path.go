@@ -1,9 +1,10 @@
-package mem
+package binprefix
 
 import (
 	"math/big"
 
 	"go.dedis.ch/dela/crypto"
+	"golang.org/x/xerrors"
 )
 
 // Path is a path from the root to a leaf, represented as a series of interior
@@ -12,19 +13,21 @@ import (
 //
 // - implements hashtree.Path
 type Path struct {
-	key []byte
+	nonce []byte
+	key   []byte
+	value []byte
 	// Root is the root of the hash tree. This value is not serialized and
 	// reproduced from the leaf and the interior nodes when deserializing.
 	root      []byte
 	interiors [][]byte
-	leaf      TreeNode
 }
 
 // newPath creates an empty path for the provided key. It must be filled to be
 // valid.
-func newPath(key []byte) Path {
+func newPath(nonce, key []byte) Path {
 	return Path{
-		key: key,
+		nonce: nonce,
+		key:   key,
 	}
 }
 
@@ -35,12 +38,7 @@ func (s Path) GetKey() []byte {
 
 // GetValue implements hashtree.Path. It returns the value pointed by the path.
 func (s Path) GetValue() []byte {
-	switch leaf := s.leaf.(type) {
-	case *LeafNode:
-		return leaf.value
-	default:
-		return nil
-	}
+	return s.value
 }
 
 // GetRoot implements hashtree.Path. It returns the hash of the root node
@@ -49,20 +47,36 @@ func (s Path) GetRoot() []byte {
 	return s.root
 }
 
-func computeRoot(leaf, key []byte, interiors [][]byte, fac crypto.HashFactory) ([]byte, error) {
-	curr := leaf
+func (s Path) computeRoot(fac crypto.HashFactory) ([]byte, error) {
+	key := new(big.Int)
+	key.SetBytes(s.key)
 
-	bi := new(big.Int)
-	bi.SetBytes(key)
+	var node TreeNode
+	if s.value != nil {
+		node = NewLeafNode(uint16(len(s.interiors)), key, s.value)
+	} else {
+		node = NewEmptyNode(uint16(len(s.interiors)), key)
+	}
 
-	for i := len(interiors) - 1; i >= 0; i-- {
+	// Reproduce the shortest unique prefix for the key.
+	prefix := new(big.Int)
+	for i := 0; i < len(s.interiors); i++ {
+		prefix.SetBit(prefix, i, key.Bit(i))
+	}
+
+	curr, err := node.Prepare(s.nonce, prefix, nil, fac)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to calculate digest: %v", err)
+	}
+
+	for i := len(s.interiors) - 1; i >= 0; i-- {
 		h := fac.New()
 
-		if bi.Bit(i) == 0 {
+		if key.Bit(i) == 0 {
 			h.Write(curr)
-			h.Write(interiors[i])
+			h.Write(s.interiors[i])
 		} else {
-			h.Write(interiors[i])
+			h.Write(s.interiors[i])
 			h.Write(curr)
 		}
 

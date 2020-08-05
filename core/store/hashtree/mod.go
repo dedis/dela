@@ -34,5 +34,14 @@ type Tree interface {
 
 	// Stage must create a writable tree from the current one that will be
 	// passed to the callback, then return it.
-	Stage(func(store.Snapshot) error) (Tree, error)
+	Stage(func(store.Snapshot) error) (StagingTree, error)
+}
+
+// StagingTree is a tree that has been modified in-memory but is yet to be
+// committed to the disk.
+type StagingTree interface {
+	Tree
+
+	// Commit writes the tree to a persistent storage.
+	Commit() (Tree, error)
 }
