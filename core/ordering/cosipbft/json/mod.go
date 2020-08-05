@@ -22,6 +22,7 @@ type GenesisJSON struct {
 }
 
 type BlockJSON struct {
+	Index    uint64
 	TreeRoot types.Digest
 	Data     json.RawMessage
 	Link     json.RawMessage
@@ -124,6 +125,7 @@ func (f blockFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error
 	}
 
 	m := BlockJSON{
+		Index:    block.GetIndex(),
 		TreeRoot: block.GetTreeRoot(),
 		Data:     blockdata,
 	}
@@ -155,7 +157,12 @@ func (f blockFormat) Decode(ctx serde.Context, data []byte) (serde.Message, erro
 		return nil, err
 	}
 
-	block, err := types.NewBlock(blockdata, types.WithTreeRoot(m.TreeRoot))
+	block, err := types.NewBlock(
+		blockdata,
+		types.WithTreeRoot(m.TreeRoot),
+		types.WithIndex(m.Index),
+	)
+
 	if err != nil {
 		return nil, err
 	}

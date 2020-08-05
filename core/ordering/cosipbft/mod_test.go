@@ -10,10 +10,13 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/execution/baremetal"
 	"go.dedis.ch/dela/core/ordering"
+	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
+	"go.dedis.ch/dela/core/ordering/cosipbft/pbft"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/hashtree/binprefix"
 	"go.dedis.ch/dela/core/store/kv"
@@ -21,13 +24,18 @@ import (
 	txn "go.dedis.ch/dela/core/tap/anon"
 	"go.dedis.ch/dela/core/tap/pool"
 	poolimpl "go.dedis.ch/dela/core/tap/pool/gossip"
+	"go.dedis.ch/dela/core/tap/pool/mem"
+	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/cosi/flatcosi"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
+	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/gossip"
 	"go.dedis.ch/dela/mino/minoch"
+	"go.dedis.ch/dela/serde"
+	"golang.org/x/xerrors"
 )
 
 func TestService_Basic(t *testing.T) {
@@ -52,7 +60,104 @@ func TestService_Basic(t *testing.T) {
 	require.NoError(t, err)
 
 	evt = waitEvent(t, events)
-	require.Equal(t, uint64(1), evt.Index)
+	require.Equal(t, uint64(2), evt.Index)
+}
+
+func TestService_ViewChange_DoRound(t *testing.T) {
+	rpc := fake.NewRPC()
+	ch := make(chan pbft.State)
+
+	srvc := &Service{
+		processor: newProcessor(),
+		me:        fake.NewAddress(1),
+		rpc:       rpc,
+		timeout:   time.Millisecond,
+		closing:   make(chan struct{}),
+	}
+	srvc.tree = fakeTree{}
+	srvc.rosterFac = roster.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
+	srvc.pbftsm = fakeSM{
+		state: pbft.InitialState,
+		ch:    ch,
+	}
+
+	rpc.SendResponse(fake.NewAddress(3), nil)
+	rpc.SendResponseWithError(fake.NewAddress(2), xerrors.New("oops"))
+	rpc.Done()
+
+	go func() {
+		ch <- pbft.PrePrepareState
+		close(ch)
+		srvc.Close()
+	}()
+
+	err := srvc.doRound()
+	require.NoError(t, err)
+
+	srvc.closing = make(chan struct{})
+	srvc.pbftsm = fakeSM{err: xerrors.New("oops")}
+	err = srvc.doRound()
+	require.EqualError(t, err, "pbft pre-prepare failed: oops")
+
+	srvc.pbftsm = fakeSM{err: xerrors.New("oops"), state: pbft.PrePrepareState}
+	err = srvc.doRound()
+	require.EqualError(t, err, "pbft expire failed: oops")
+
+	srvc.pbftsm = fakeSM{}
+	srvc.rpc = fake.NewBadRPC()
+	err = srvc.doRound()
+	require.EqualError(t, err, "rpc failed: fake error")
+
+	srvc.rosterFac = badRosterFac{}
+	err = srvc.doRound()
+	require.EqualError(t, err, "read roster failed: decode failed: oops")
+}
+
+func TestService_CollectTxs(t *testing.T) {
+	srvc := &Service{processor: newProcessor()}
+	srvc.pool = mem.NewPool()
+
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		srvc.pool.Add(makeTx(t, 0))
+	}()
+
+	txs := srvc.collectTxs(context.Background())
+	require.Len(t, txs, 1)
+
+	srvc.pool.Add(makeTx(t, 1))
+
+	txs = srvc.collectTxs(context.Background())
+	require.Len(t, txs, 2)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	srvc.pool = mem.NewPool()
+	txs = srvc.collectTxs(ctx)
+	require.Len(t, txs, 0)
+}
+
+func TestService_PrepareBlock(t *testing.T) {
+	srvc := &Service{processor: newProcessor()}
+	srvc.tree = fakeTree{}
+	srvc.val = fakeValidation{}
+	srvc.blocks = blockstore.NewInMemory()
+	srvc.hashFactory = crypto.NewSha256Factory()
+
+	block, err := srvc.prepareBlock(nil)
+	require.NoError(t, err)
+	require.NotNil(t, block)
+
+	srvc.val = fakeValidation{err: xerrors.New("oops")}
+	_, err = srvc.prepareBlock(nil)
+	require.EqualError(t, err, "staging tree failed: validation failed: oops")
+
+	srvc.val = fakeValidation{}
+	srvc.hashFactory = fake.NewHashFactory(fake.NewBadHash())
+	_, err = srvc.prepareBlock(nil)
+	require.EqualError(t, err,
+		"creating block failed: fingerprint failed: couldn't write index: fake error")
 }
 
 // Utility functions -----------------------------------------------------------
@@ -147,4 +252,22 @@ func makeAuthority(t *testing.T, n int) ([]testNode, crypto.CollectiveAuthority,
 	}
 
 	return nodes, ro, clean
+}
+
+type badRosterFac struct {
+	viewchange.AuthorityFactory
+}
+
+func (fac badRosterFac) AuthorityOf(serde.Context, []byte) (viewchange.Authority, error) {
+	return nil, xerrors.New("oops")
+}
+
+type fakeValidation struct {
+	validation.Service
+
+	err error
+}
+
+func (val fakeValidation) Validate(store.Snapshot, []tap.Transaction) (validation.Data, error) {
+	return simple.NewData(nil), val.err
 }

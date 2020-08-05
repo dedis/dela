@@ -88,7 +88,7 @@ func TestClientTransaction_Fingerprint(t *testing.T) {
 
 	err := tx.Fingerprint(buffer)
 	require.NoError(t, err)
-	require.Equal(t, "\x08\x07\x06\x05\x04\x03\x02\x01\xdf\xcc", buffer.String())
+	require.Equal(t, "\x08\x07\x06\x05\x04\x03\x02\x01PK\xcc", buffer.String())
 
 	err = tx.Fingerprint(fake.NewBadHash())
 	require.EqualError(t, err, "couldn't write nonce: fake error")

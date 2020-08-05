@@ -3,12 +3,14 @@ package types
 import (
 	"bytes"
 	"io"
+	"io/ioutil"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/core/tap/anon"
+	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"golang.org/x/xerrors"
@@ -16,7 +18,15 @@ import (
 
 func init() {
 	RegisterGenesisFormat(fake.GoodFormat, fake.Format{Msg: Genesis{}})
+	RegisterGenesisFormat(fake.BadFormat, fake.NewBadFormat())
 	RegisterBlockFormat(fake.GoodFormat, fake.Format{Msg: Block{}})
+	RegisterBlockFormat(fake.BadFormat, fake.NewBadFormat())
+}
+
+func TestDigest_String(t *testing.T) {
+	digest := Digest{1, 2, 3, 4}
+
+	require.Equal(t, "01020304", digest.String())
 }
 
 func TestGenesis_GetHash(t *testing.T) {
@@ -50,6 +60,9 @@ func TestGenesis_Serialize(t *testing.T) {
 	data, err := genesis.Serialize(fake.NewContext())
 	require.NoError(t, err)
 	require.Equal(t, "fake format", string(data))
+
+	_, err = genesis.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, "encoding failed: fake error")
 }
 
 func TestGenesis_Fingerprint(t *testing.T) {
@@ -62,7 +75,7 @@ func TestGenesis_Fingerprint(t *testing.T) {
 	require.NoError(t, err)
 	require.Regexp(t, "^\x05(\x00){35,}PK", buffer.String())
 
-	_, err = NewGenesis(ro, WithHashFactory(fake.NewHashFactory(fake.NewBadHash())))
+	_, err = NewGenesis(ro, WithGenesisHashFactory(fake.NewHashFactory(fake.NewBadHash())))
 	require.EqualError(t, err, "fingerprint failed: couldn't write root: fake error")
 
 	genesis.roster = badRoster{}
@@ -76,6 +89,9 @@ func TestGenesisFactory_Deserialize(t *testing.T) {
 	msg, err := fac.Deserialize(fake.NewContext(), nil)
 	require.NoError(t, err)
 	require.IsType(t, Genesis{}, msg)
+
+	_, err = fac.Deserialize(fake.NewBadContext(), nil)
+	require.EqualError(t, err, "decoding failed: fake error")
 }
 
 func TestBlockLink_GetFrom(t *testing.T) {
@@ -114,7 +130,7 @@ func TestBlockLink_GetChangeSet(t *testing.T) {
 }
 
 func TestBlockLink_Fingerprint(t *testing.T) {
-	link := BlockLink{}
+	link := NewBlockLink(Digest{}, Block{digest: Digest{}})
 
 	buffer := new(bytes.Buffer)
 
@@ -130,9 +146,15 @@ func TestBlockLink_Fingerprint(t *testing.T) {
 }
 
 func TestBlock_GetHash(t *testing.T) {
-	block, err := NewBlock(simple.NewData(nil), WithIndex(1), WithTreeRoot(Digest{2}))
+	block, err := NewBlock(simple.NewData(nil), WithTreeRoot(Digest{2}))
 	require.NoError(t, err)
 	require.NotEqual(t, Digest{}, block.GetHash())
+}
+
+func TestBlock_GetIndex(t *testing.T) {
+	block, err := NewBlock(simple.NewData(nil), WithIndex(2))
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), block.GetIndex())
 }
 
 func TestBlock_GetData(t *testing.T) {
@@ -173,6 +195,13 @@ func TestBlock_Fingerprint(t *testing.T) {
 
 	err = block.Fingerprint(fake.NewBadHashWithDelay(1))
 	require.EqualError(t, err, "couldn't write root: fake error")
+
+	block.data = badData{}
+	err = block.Fingerprint(ioutil.Discard)
+	require.EqualError(t, err, "data fingerprint failed: oops")
+
+	_, err = NewBlock(block.data, WithHashFactory(fake.NewHashFactory(fake.NewBadHash())))
+	require.EqualError(t, err, "fingerprint failed: couldn't write index: fake error")
 }
 
 func TestBlock_Serialize(t *testing.T) {
@@ -182,6 +211,9 @@ func TestBlock_Serialize(t *testing.T) {
 	data, err := block.Serialize(fake.NewContext())
 	require.NoError(t, err)
 	require.Equal(t, "fake format", string(data))
+
+	_, err = block.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, "encoding failed: fake error")
 }
 
 func TestBlockFactory_Deserialize(t *testing.T) {
@@ -190,6 +222,9 @@ func TestBlockFactory_Deserialize(t *testing.T) {
 	msg, err := fac.Deserialize(fake.NewContext(), nil)
 	require.NoError(t, err)
 	require.IsType(t, Block{}, msg)
+
+	_, err = fac.Deserialize(fake.NewBadContext(), nil)
+	require.EqualError(t, err, "decoding failed: fake error")
 }
 
 // Utility functions -----------------------------------------------------------
@@ -199,5 +234,13 @@ type badRoster struct {
 }
 
 func (r badRoster) Fingerprint(io.Writer) error {
+	return xerrors.New("oops")
+}
+
+type badData struct {
+	validation.Data
+}
+
+func (d badData) Fingerprint(io.Writer) error {
 	return xerrors.New("oops")
 }

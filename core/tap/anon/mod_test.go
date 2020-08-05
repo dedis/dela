@@ -6,11 +6,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/serde"
 )
 
 func init() {
 	RegisterTransactionFormat(fake.GoodFormat, fake.Format{Msg: Transaction{}})
 	RegisterTransactionFormat(fake.BadFormat, fake.NewBadFormat())
+	RegisterTransactionFormat(serde.Format("BAD_TYPE"), fake.Format{Msg: fake.Message{}})
 }
 
 func TestTransaction_New(t *testing.T) {
@@ -101,4 +103,7 @@ func TestTransactionFactory_Deserialize(t *testing.T) {
 
 	_, err = factory.Deserialize(fake.NewBadContext(), nil)
 	require.EqualError(t, err, "failed to decode: fake error")
+
+	_, err = factory.Deserialize(fake.NewContextWithFormat(serde.Format("BAD_TYPE")), nil)
+	require.EqualError(t, err, "invalid transaction of type 'fake.Message'")
 }

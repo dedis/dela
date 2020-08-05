@@ -15,10 +15,12 @@ var (
 	dataFormats = registry.NewSimpleRegistry()
 )
 
+// RegisterResultFormat registers the engine for the provided format.
 func RegisterResultFormat(f serde.Format, e serde.FormatEngine) {
 	resFormats.Register(f, e)
 }
 
+// RegisterDataFormat registers the engine for the provided format.
 func RegisterDataFormat(f serde.Format, e serde.FormatEngine) {
 	dataFormats.Register(f, e)
 }
@@ -38,8 +40,8 @@ type TransactionResult struct {
 func NewTransactionResult(tx tap.Transaction, accepted bool, reason string) TransactionResult {
 	return TransactionResult{
 		tx:       tx,
-		accepted: true,
-		reason:   "",
+		accepted: accepted,
+		reason:   reason,
 	}
 }
 
@@ -62,24 +64,31 @@ func (res TransactionResult) Serialize(ctx serde.Context) ([]byte, error) {
 
 	data, err := format.Encode(ctx, res)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("encoding failed: %v", err)
 	}
 
 	return data, nil
 }
 
+// TransactionKey is the key of the transaction factory.
 type TransactionKey struct{}
 
+// ResultFactory is the factory to deserialize transaction results.
+//
+// - implements serde.Factory
 type ResultFactory struct {
 	fac tap.TransactionFactory
 }
 
+// NewResultFactory creates a new transaction result factory.
 func NewResultFactory(f tap.TransactionFactory) ResultFactory {
 	return ResultFactory{
 		fac: f,
 	}
 }
 
+// Deserialize implements serde.Factory. It populates the transaction result if
+// appropriate, otherwise it returns an error.
 func (f ResultFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := resFormats.Get(ctx.GetFormat())
 
@@ -87,7 +96,7 @@ func (f ResultFactory) Deserialize(ctx serde.Context, data []byte) (serde.Messag
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("decoding failed: %v", err)
 	}
 
 	return msg, nil
@@ -100,6 +109,7 @@ type Data struct {
 	txs []TransactionResult
 }
 
+// NewData creates new validated data from a list of transaction results.
 func NewData(results []TransactionResult) Data {
 	return Data{
 		txs: results,
@@ -145,28 +155,37 @@ func (d Data) Serialize(ctx serde.Context) ([]byte, error) {
 
 	data, err := format.Encode(ctx, d)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("encoding failed: %v", err)
 	}
 
 	return data, nil
 }
 
+// ResultKey is the key of the transaction result factory.
 type ResultKey struct{}
 
+// DataFactory is the factory to deserialize validated data.
+//
+// - implements validation.DataFactory
 type DataFactory struct {
 	fac serde.Factory
 }
 
+// NewDataFactory creates a new data factory.
 func NewDataFactory(f tap.TransactionFactory) DataFactory {
 	return DataFactory{
 		fac: NewResultFactory(f),
 	}
 }
 
+// Deserialize implements serde.Factory. It populates the validated data if
+// appropriate, otherwise it returns an error.
 func (f DataFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	return f.DataOf(ctx, data)
 }
 
+// DataOf implements validation.DataFactory. It returns the validated data from
+// the serialized data if appropriate, otherwise it returns an error.
 func (f DataFactory) DataOf(ctx serde.Context, data []byte) (validation.Data, error) {
 	format := dataFormats.Get(ctx.GetFormat())
 
@@ -174,12 +193,12 @@ func (f DataFactory) DataOf(ctx serde.Context, data []byte) (validation.Data, er
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("decoding failed: %v", err)
 	}
 
 	vdata, ok := msg.(Data)
 	if !ok {
-		return nil, xerrors.Errorf("invalid data type")
+		return nil, xerrors.Errorf("invalid data type '%T'", msg)
 	}
 
 	return vdata, nil

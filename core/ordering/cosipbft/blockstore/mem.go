@@ -32,7 +32,8 @@ func (s *InMemory) Store(link types.BlockLink) error {
 		latest := s.blocks[len(s.blocks)-1]
 
 		if latest.GetTo().GetHash() != link.GetFrom() {
-			return xerrors.Errorf("mismatch link")
+			return xerrors.Errorf("mismatch link '%v' != '%v'",
+				link.GetFrom(), latest.GetTo().GetHash())
 		}
 	}
 
@@ -50,14 +51,14 @@ func (s *InMemory) Get(id types.Digest) (types.BlockLink, error) {
 		}
 	}
 
-	return types.BlockLink{}, xerrors.New(ErrBlockUnknown)
+	return types.BlockLink{}, xerrors.Errorf("block not found: %w", ErrNoBlock)
 }
 
 // Last implements blockstore.BlockStore. It returns the latest block of the
 // store.
 func (s *InMemory) Last() (types.BlockLink, error) {
 	if len(s.blocks) == 0 {
-		return types.BlockLink{}, xerrors.New(ErrBlockUnknown)
+		return types.BlockLink{}, xerrors.Errorf("store empty: %w", ErrNoBlock)
 	}
 
 	return s.blocks[len(s.blocks)-1], nil

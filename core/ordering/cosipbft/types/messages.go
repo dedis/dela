@@ -4,6 +4,7 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/registry"
+	"golang.org/x/xerrors"
 )
 
 var msgFormats = registry.NewSimpleRegistry()
@@ -30,13 +31,14 @@ func (m GenesisMessage) GetGenesis() *Genesis {
 	return m.genesis
 }
 
-// Serialize implements serde.Message.
+// Serialize implements serde.Message. It returns the serialized data for this
+// message.
 func (m GenesisMessage) Serialize(ctx serde.Context) ([]byte, error) {
 	format := msgFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("encoding failed: %v", err)
 	}
 
 	return data, nil
@@ -65,7 +67,7 @@ func (m BlockMessage) Serialize(ctx serde.Context) ([]byte, error) {
 
 	data, err := format.Encode(ctx, m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("encoding failed: %v", err)
 	}
 
 	return data, nil
@@ -102,7 +104,7 @@ func (m CommitMessage) Serialize(ctx serde.Context) ([]byte, error) {
 
 	data, err := format.Encode(ctx, m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("encoding failed: %v", err)
 	}
 
 	return data, nil
@@ -140,7 +142,7 @@ func (m DoneMessage) Serialize(ctx serde.Context) ([]byte, error) {
 
 	data, err := format.Encode(ctx, m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("encoding failed: %v", err)
 	}
 
 	return data, nil
@@ -170,13 +172,14 @@ func (m ViewMessage) GetLeader() int {
 	return m.leader
 }
 
-// Serialize implements serde.Message.
+// Serialize implements serde.Message. It returns the serialized data for this
+// message.
 func (m ViewMessage) Serialize(ctx serde.Context) ([]byte, error) {
 	format := msgFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("encoding failed: %v", err)
 	}
 
 	return data, nil
@@ -217,7 +220,7 @@ func (f MessageFactory) Deserialize(ctx serde.Context, data []byte) (serde.Messa
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("decoding failed: %v", err)
 	}
 
 	return msg, nil

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/core/ordering"
@@ -37,8 +38,9 @@ type Service struct {
 	rpc   mino.RPC
 	actor cosi.Actor
 	val   validation.Service
-	pbft  pbft.StateMachine
 
+	logger  zerolog.Logger
+	timeout time.Duration
 	closing chan struct{}
 }
 
@@ -88,7 +90,7 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 		Genesis:         tmpl.genesis,
 	}
 
-	proc.committer = pbft.NewStateMachine(pcparam)
+	proc.pbftsm = pbft.NewStateMachine(pcparam)
 
 	fac := types.NewMessageFactory(
 		types.NewGenesisFactory(proc.rosterFac),
@@ -114,14 +116,15 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 		rpc:       rpc,
 		actor:     actor,
 		val:       param.Validation,
-		pbft:      proc.committer,
+		logger:    dela.Logger.With().Str("addr", param.Mino.GetAddress().String()).Logger(),
+		timeout:   RoundTimeout,
 		closing:   make(chan struct{}),
 	}
 
 	go func() {
 		err := s.main()
 		if err != nil {
-			dela.Logger.Err(err).Msg("main loop stopped")
+			s.logger.Err(err).Msg("main loop stopped")
 		}
 	}()
 
@@ -182,7 +185,7 @@ func (s *Service) main() error {
 	// Try to init, or wait for a genesis block from a setup or a leader.
 	s.init()
 
-	dela.Logger.Info().Msg("node has started")
+	s.logger.Debug().Msg("node has started")
 
 	for {
 		select {
@@ -215,13 +218,13 @@ func (s *Service) init() error {
 func (s *Service) doRound() error {
 	roster, err := s.getCurrentRoster()
 	if err != nil {
-		return err
+		return xerrors.Errorf("read roster failed: %v", err)
 	}
 
-	if s.pbft.GetState() == pbft.InitialState {
-		err = s.pbft.PrePrepare(roster)
+	if s.pbftsm.GetState() == pbft.InitialState {
+		err = s.pbftsm.PrePrepare(roster)
 		if err != nil {
-			return err
+			return xerrors.Errorf("pbft pre-prepare failed: %v", err)
 		}
 	}
 
@@ -230,30 +233,30 @@ func (s *Service) doRound() error {
 
 	events := s.Watch(ctx)
 
-	for !s.me.Equal(s.pbft.GetLeader()) {
+	for !s.me.Equal(s.pbftsm.GetLeader()) {
 		// Only enters the loop if the node is not the leader. It has to wait
 		// for the new block, or the round timeout, to proceed.
 
 		select {
-		case <-time.After(RoundTimeout):
-			dela.Logger.Warn().Str("addr", fmt.Sprintf("%v", s.me)).Msg("round reached the timeout")
+		case <-time.After(s.timeout):
+			s.logger.Warn().Msg("round reached the timeout")
 
-			statesCh := s.pbft.Watch(ctx)
+			statesCh := s.pbftsm.Watch(ctx)
 
-			view, err := s.pbft.Expire(s.me)
+			view, err := s.pbftsm.Expire(s.me)
 			if err != nil {
-				return err
+				return xerrors.Errorf("pbft expire failed: %v", err)
 			}
 
 			resps, err := s.rpc.Call(ctx, types.NewViewMessage(view.ID, view.Leader), roster)
 			if err != nil {
-				return err
+				return xerrors.Errorf("rpc failed: %v", err)
 			}
 
 			for resp := range resps {
 				_, err = resp.GetMessageOrError()
 				if err != nil {
-					dela.Logger.Warn().Err(err).Msg("view propagation failure")
+					s.logger.Warn().Err(err).Msg("view propagation failure")
 				}
 			}
 
@@ -263,7 +266,7 @@ func (s *Service) doRound() error {
 				}
 			}
 
-			dela.Logger.Info().Str("addr", fmt.Sprintf("%v", s.me)).Msg("view change successful")
+			s.logger.Debug().Msg("view change successful")
 		case <-events:
 			// A block has been created meaning that the round is over.
 			return nil
@@ -272,28 +275,13 @@ func (s *Service) doRound() error {
 		}
 	}
 
-	dela.Logger.Info().Str("addr", fmt.Sprintf("%v", s.me)).Msg("round has started")
+	s.logger.Debug().Msg("round has started")
 
 	// TODO: check that no committed block exists in the case of a leader failure
 	// when propagating the collective signature.
 	txs := s.collectTxs(ctx)
 
-	var data validation.Data
-
-	stageTree, err := s.tree.Stage(func(snap store.Snapshot) error {
-		var err error
-		data, err = s.val.Validate(snap, txs)
-		return err
-	})
-
-	if err != nil {
-		return err
-	}
-
-	root := types.Digest{}
-	copy(root[:], stageTree.GetRoot())
-
-	block, err := types.NewBlock(data, types.WithTreeRoot(root))
+	block, err := s.prepareBlock(txs)
 	if err != nil {
 		return err
 	}
@@ -325,49 +313,85 @@ func (s *Service) collectTxs(ctx context.Context) []tap.Transaction {
 	return nil
 }
 
-func (s *Service) doPBFT(ctx context.Context, block types.Block) error {
-	roster, err := s.getCurrentRoster()
+func (s *Service) prepareBlock(txs []tap.Transaction) (*types.Block, error) {
+	var data validation.Data
+
+	stageTree, err := s.tree.Stage(func(snap store.Snapshot) error {
+		var err error
+		data, err = s.val.Validate(snap, txs)
+		if err != nil {
+			return xerrors.Errorf("validation failed: %v", err)
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		return err
+		return nil, xerrors.Errorf("staging tree failed: %v", err)
 	}
 
-	id, err := s.committer.Prepare(block, s.tree)
+	root := types.Digest{}
+	copy(root[:], stageTree.GetRoot())
+
+	index := s.blocks.Len() + 1
+
+	block, err := types.NewBlock(
+		data,
+		types.WithTreeRoot(root),
+		types.WithIndex(uint64(index)),
+		types.WithHashFactory(s.hashFactory),
+	)
+
 	if err != nil {
-		return err
+		return nil, xerrors.Errorf("creating block failed: %v", err)
+	}
+
+	return &block, nil
+}
+
+func (s *Service) doPBFT(ctx context.Context, block *types.Block) error {
+	roster, err := s.getCurrentRoster()
+	if err != nil {
+		return xerrors.Errorf("read roster failed: %v", err)
+	}
+
+	id, err := s.pbftsm.Prepare(*block, s.tree)
+	if err != nil {
+		return xerrors.Errorf("pbft prepare failed: %v", err)
 	}
 
 	// 1. Prepare phase
-	req := types.NewBlockMessage(block)
+	req := types.NewBlockMessage(*block)
 
 	sig, err := s.actor.Sign(ctx, req, roster)
 	if err != nil {
 		return xerrors.Errorf("prepare phase failed: %v", err)
 	}
 
-	dela.Logger.Info().Str("signature", fmt.Sprintf("%v", sig)).Msg("prepare done")
+	s.logger.Debug().Str("signature", fmt.Sprintf("%v", sig)).Msg("prepare done")
 
 	// 2. Commit phase
 	commit := types.NewCommit(id, sig)
 
 	sig, err = s.actor.Sign(ctx, commit, roster)
 	if err != nil {
-		return err
+		return xerrors.Errorf("commit phase failed: %v", err)
 	}
 
-	dela.Logger.Info().Str("signature", fmt.Sprintf("%v", sig)).Msg("commit done")
+	s.logger.Debug().Str("signature", fmt.Sprintf("%v", sig)).Msg("commit done")
 
 	// 3. Propagation phase
 	done := types.NewDone(id, sig)
 
 	resps, err := s.rpc.Call(ctx, done, roster)
 	if err != nil {
-		return err
+		return xerrors.Errorf("rpc failed: %v", err)
 	}
 
 	for resp := range resps {
 		_, err = resp.GetMessageOrError()
 		if err != nil {
-			return err
+			s.logger.Warn().Err(err).Msg("propagation failed")
 		}
 	}
 

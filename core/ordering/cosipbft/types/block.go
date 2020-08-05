@@ -60,8 +60,8 @@ func WithGenesisRoot(root Digest) GenesisOption {
 	}
 }
 
-// WithHashFactory is an option to set the hash factory.
-func WithHashFactory(fac crypto.HashFactory) GenesisOption {
+// WithGenesisHashFactory is an option to set the hash factory.
+func WithGenesisHashFactory(fac crypto.HashFactory) GenesisOption {
 	return func(tmpl *genesisTemplate) {
 		tmpl.hashFactory = fac
 	}
@@ -113,7 +113,7 @@ func (g Genesis) Serialize(ctx serde.Context) ([]byte, error) {
 
 	data, err := format.Encode(ctx, g)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("encoding failed: %v", err)
 	}
 
 	return data, nil
@@ -157,7 +157,7 @@ func (f GenesisFactory) Deserialize(ctx serde.Context, data []byte) (serde.Messa
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("decoding failed: %v", err)
 	}
 
 	return msg, nil
@@ -256,6 +256,13 @@ func WithTreeRoot(root Digest) BlockOption {
 	}
 }
 
+// WithHashFactory is an option to set the hash factory for the block.
+func WithHashFactory(fac crypto.HashFactory) BlockOption {
+	return func(tmpl *blockTemplate) {
+		tmpl.hashFactory = fac
+	}
+}
+
 // NewBlock creates a new block.
 func NewBlock(data validation.Data, opts ...BlockOption) (Block, error) {
 	tmpl := blockTemplate{
@@ -273,7 +280,7 @@ func NewBlock(data validation.Data, opts ...BlockOption) (Block, error) {
 	h := tmpl.hashFactory.New()
 	err := tmpl.Fingerprint(h)
 	if err != nil {
-		return tmpl.Block, err
+		return tmpl.Block, xerrors.Errorf("fingerprint failed: %v", err)
 	}
 
 	copy(tmpl.digest[:], h.Sum(nil))
@@ -284,6 +291,11 @@ func NewBlock(data validation.Data, opts ...BlockOption) (Block, error) {
 // GetHash returns the digest of the block.
 func (b Block) GetHash() Digest {
 	return b.digest
+}
+
+// GetIndex returns the index of the block.
+func (b Block) GetIndex() uint64 {
+	return b.index
 }
 
 // GetData returns the validated data of the block.
@@ -338,7 +350,7 @@ func (b Block) Serialize(ctx serde.Context) ([]byte, error) {
 
 	data, err := format.Encode(ctx, b)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("encoding failed: %v", err)
 	}
 
 	return data, nil
@@ -368,7 +380,7 @@ func (f BlockFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("decoding failed: %v", err)
 	}
 
 	return msg, nil

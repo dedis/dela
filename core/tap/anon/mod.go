@@ -152,6 +152,8 @@ func (f TransactionFactory) Deserialize(ctx serde.Context, data []byte) (serde.M
 	return f.TransactionOf(ctx, data)
 }
 
+// TransactionOf implements tap.TransactionFactory. It populates the transaction
+// from the data if appropriate, otherwise it returns an error.
 func (f TransactionFactory) TransactionOf(ctx serde.Context, data []byte) (tap.Transaction, error) {
 	format := txFormats.Get(ctx.GetFormat())
 
@@ -162,7 +164,7 @@ func (f TransactionFactory) TransactionOf(ctx serde.Context, data []byte) (tap.T
 
 	tx, ok := msg.(Transaction)
 	if !ok {
-		return nil, xerrors.Errorf("invalid transaction type")
+		return nil, xerrors.Errorf("invalid transaction of type '%T'", msg)
 	}
 
 	return tx, nil

@@ -101,7 +101,7 @@ func TestRoster_Fingerprint(t *testing.T) {
 	out := new(bytes.Buffer)
 	err := roster.Fingerprint(out)
 	require.NoError(t, err)
-	require.Equal(t, "\x00\x00\x00\x00\xdf\x01\x00\x00\x00\xdf", out.String())
+	require.Equal(t, "\x00\x00\x00\x00PK\x01\x00\x00\x00PK", out.String())
 
 	roster.addrs[0] = fake.NewBadAddress()
 	err = roster.Fingerprint(out)

@@ -115,12 +115,12 @@ func TestStateMachine_Prepare(t *testing.T) {
 
 	sm.genesis = blockstore.NewGenesisStore()
 	_, err = sm.Prepare(block, tree)
-	require.EqualError(t, err, "couldn't get latest digest: missing genesis")
+	require.EqualError(t, err, "couldn't get latest digest: missing genesis block")
 
 	sm.genesis.Set(types.Genesis{})
 	sm.hashFac = fake.NewHashFactory(fake.NewBadHash())
 	_, err = sm.Prepare(block, tree)
-	require.EqualError(t, err, "couldn't fingerprint link: fake error")
+	require.EqualError(t, err, "couldn't fingerprint link: couldn't write from: fake error")
 }
 
 func TestStateMachine_Commit(t *testing.T) {
@@ -192,7 +192,7 @@ func TestStateMachine_Finalize(t *testing.T) {
 	sm.genesis = blockstore.NewGenesisStore()
 	sm.blocks = blockstore.NewInMemory()
 	_, err = sm.Finalize(types.Digest{1}, fake.Signature{})
-	require.EqualError(t, err, "couldn't get latest digest: missing genesis")
+	require.EqualError(t, err, "couldn't get latest digest: missing genesis block")
 }
 
 func TestStateMachine_Accept(t *testing.T) {
@@ -241,7 +241,7 @@ func TestStateMachine_Expire(t *testing.T) {
 
 	sm.genesis = blockstore.NewGenesisStore()
 	_, err = sm.Expire(fake.NewAddress(0))
-	require.EqualError(t, err, "couldn't get latest digest: missing genesis")
+	require.EqualError(t, err, "couldn't get latest digest: missing genesis block")
 }
 
 func TestStateMachine_Watch(t *testing.T) {

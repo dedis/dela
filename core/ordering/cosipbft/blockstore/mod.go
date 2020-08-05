@@ -1,11 +1,13 @@
 package blockstore
 
 import (
+	"errors"
+
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 )
 
-// ErrBlockUnknown is the error message returned when the block is unknown.
-const ErrBlockUnknown = "block is unknown"
+// ErrNoBlock is the error message returned when the block is unknown.
+var ErrNoBlock = errors.New("no block")
 
 // GenesisStore is the interface to store and get the genesis block. It is left
 // to the implementation to persist it.
