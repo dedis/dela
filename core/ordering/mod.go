@@ -27,13 +27,6 @@ type Event struct {
 // Service is the interface of an ordering service. It provides the primitives
 // to order transactions from a pool.
 type Service interface {
-	// Listen opens the endpoints of the service so that other participants can
-	// contact the node.
-	Listen() error
-
-	// Stop closes the service.
-	Stop() error
-
 	// GetProof must return a proof of the value at the provided key.
 	GetProof(key []byte) (Proof, error)
 

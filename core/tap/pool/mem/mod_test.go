@@ -89,19 +89,12 @@ func TestPool_Watch(t *testing.T) {
 
 	cancel()
 
-	for i := 0; i < 10; i++ {
-		require.NoError(t, pool.Add(fakeTx{id: []byte{2}}))
-		select {
-		case <-events:
-			// Events watcher should close eventually.
-		default:
-			return
-		}
-
-		time.Sleep(5 * time.Millisecond)
+	select {
+	case <-time.After(5 * time.Second):
+		t.Fatal("expect events channel to close")
+	case _, more := <-events:
+		require.False(t, more)
 	}
-
-	t.Fatal("expect events channel to close")
 }
 
 // -----------------------------------------------------------------------------

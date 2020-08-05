@@ -10,6 +10,8 @@ import (
 
 // TransactionResult is the result of a transaction execution.
 type TransactionResult interface {
+	serde.Message
+
 	// GetTransaction returns the transaction associated to the result.
 	GetTransaction() tap.Transaction
 
@@ -21,15 +23,24 @@ type TransactionResult interface {
 
 // Data is the result of a validation.
 type Data interface {
+	serde.Message
 	serde.Fingerprinter
 
 	// GetTransactionResults returns the results.
 	GetTransactionResults() []TransactionResult
 }
 
+type DataFactory interface {
+	serde.Factory
+
+	DataOf(serde.Context, []byte) (Data, error)
+}
+
 // Service is the validation service that will process a batch of transactions
 // into a validated data that can be used as a payload of a block.
 type Service interface {
+	GetFactory() DataFactory
+
 	// Validate takes a snapshot and a list of transactions and returns a
 	// validated data bundle.
 	Validate(store.Snapshot, []tap.Transaction) (Data, error)

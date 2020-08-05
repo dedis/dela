@@ -11,8 +11,13 @@ import (
 	"golang.org/x/xerrors"
 )
 
+func TestService_GetFactory(t *testing.T) {
+	srvc := NewService(fakeExec{}, nil)
+	require.NotNil(t, srvc.GetFactory())
+}
+
 func TestService_Validate(t *testing.T) {
-	srvc := NewService(fakeExec{})
+	srvc := NewService(fakeExec{}, nil)
 
 	data, err := srvc.Validate(fakeSnapshot{}, []tap.Transaction{makeTx(t)})
 	require.NoError(t, err)

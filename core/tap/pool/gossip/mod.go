@@ -111,6 +111,7 @@ func (p *Pool) Watch(ctx context.Context) <-chan pool.Event {
 	go func() {
 		<-ctx.Done()
 		p.watcher.Remove(obs)
+		close(ch)
 	}()
 
 	return ch

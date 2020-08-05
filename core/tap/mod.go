@@ -20,3 +20,9 @@ type Transaction interface {
 	// GetArg is a getter for the arguments of the transaction.
 	GetArg(key string) []byte
 }
+
+type TransactionFactory interface {
+	serde.Factory
+
+	TransactionOf(serde.Context, []byte) (Transaction, error)
+}
