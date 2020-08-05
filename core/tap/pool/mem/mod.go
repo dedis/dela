@@ -6,6 +6,7 @@ import (
 	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/core/tap"
 	"go.dedis.ch/dela/core/tap/pool"
+	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
 )
 
@@ -94,6 +95,12 @@ func (s Pool) GetAll() []tap.Transaction {
 	}
 
 	return txs
+}
+
+// SetPlayers implements pool.Pool. It does nothing as the pool is in-memory and
+// only shares the transactions to the host.
+func (s Pool) SetPlayers(mino.Players) error {
+	return nil
 }
 
 // Watch implements pool.Pool.
