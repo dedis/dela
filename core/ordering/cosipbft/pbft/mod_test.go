@@ -74,6 +74,7 @@ func TestStateMachine_Prepare(t *testing.T) {
 		Validation: simple.NewService(fakeExec{}, nil),
 		Blocks:     blockstore.NewInMemory(),
 		Genesis:    blockstore.NewGenesisStore(),
+		Tree:       blockstore.NewTreeCache(tree),
 	}
 
 	param.Genesis.Set(types.Genesis{})
@@ -87,39 +88,39 @@ func TestStateMachine_Prepare(t *testing.T) {
 	sm := NewStateMachine(param).(*pbftsm)
 	sm.state = PrePrepareState
 
-	id, err := sm.Prepare(block, tree)
+	id, err := sm.Prepare(block)
 	require.NoError(t, err)
 	require.NotEqual(t, types.Digest{}, id)
 	require.Equal(t, PrepareState, sm.state)
 	require.Equal(t, id, sm.round.id)
 
-	id, err = sm.Prepare(block, tree)
+	id, err = sm.Prepare(block)
 	require.NoError(t, err)
 	require.Equal(t, sm.round.id, id)
 
 	sm.state = ViewChangeState
-	_, err = sm.Prepare(block, tree)
+	_, err = sm.Prepare(block)
 	require.EqualError(t, err, "mismatch state viewchange != preprepare")
 
 	sm.state = PrePrepareState
 	sm.val = badValidation{}
-	_, err = sm.Prepare(block, tree)
+	_, err = sm.Prepare(block)
 	require.EqualError(t, err, "tree failed: callback failed: validation failed: oops")
 
 	other, err := types.NewBlock(simple.NewData(nil), types.WithTreeRoot(types.Digest{}))
 	require.NoError(t, err)
 
 	sm.val = simple.NewService(fakeExec{}, nil)
-	_, err = sm.Prepare(other, tree)
+	_, err = sm.Prepare(other)
 	require.EqualError(t, err, "mismatch tree root '71b6c1d5' != '00000000'")
 
 	sm.genesis = blockstore.NewGenesisStore()
-	_, err = sm.Prepare(block, tree)
+	_, err = sm.Prepare(block)
 	require.EqualError(t, err, "couldn't get latest digest: missing genesis block")
 
 	sm.genesis.Set(types.Genesis{})
 	sm.hashFac = fake.NewHashFactory(fake.NewBadHash())
-	_, err = sm.Prepare(block, tree)
+	_, err = sm.Prepare(block)
 	require.EqualError(t, err, "couldn't fingerprint link: couldn't write from: fake error")
 }
 
@@ -162,6 +163,7 @@ func TestStateMachine_Finalize(t *testing.T) {
 		VerifierFactory: fake.NewVerifierFactory(fake.Verifier{}),
 		Blocks:          blockstore.NewInMemory(),
 		Genesis:         blockstore.NewGenesisStore(),
+		Tree:            blockstore.NewTreeCache(tree),
 	}
 
 	param.Genesis.Set(types.Genesis{})
@@ -171,27 +173,26 @@ func TestStateMachine_Finalize(t *testing.T) {
 	sm.round.tree = tree.(hashtree.StagingTree)
 	sm.round.prepareSig = fake.Signature{}
 
-	tree, err := sm.Finalize(types.Digest{1}, fake.Signature{})
+	err := sm.Finalize(types.Digest{1}, fake.Signature{})
 	require.NoError(t, err)
-	require.NotNil(t, tree)
 
-	_, err = sm.Finalize(types.Digest{1}, fake.Signature{})
+	err = sm.Finalize(types.Digest{1}, fake.Signature{})
 	require.EqualError(t, err, "mismatch state initial != commit")
 
 	sm.state = CommitState
 	sm.verifierFac = fake.NewBadVerifierFactory()
-	_, err = sm.Finalize(types.Digest{1}, fake.Signature{})
+	err = sm.Finalize(types.Digest{1}, fake.Signature{})
 	require.EqualError(t, err, "couldn't make verifier: fake error")
 
 	sm.verifierFac = fake.NewVerifierFactory(fake.NewBadVerifier())
 	sm.round.prepareSig = fake.Signature{}
-	_, err = sm.Finalize(types.Digest{1}, fake.Signature{})
+	err = sm.Finalize(types.Digest{1}, fake.Signature{})
 	require.EqualError(t, err, "verifier failed: fake error")
 
 	sm.verifierFac = fake.NewVerifierFactory(fake.Verifier{})
 	sm.genesis = blockstore.NewGenesisStore()
 	sm.blocks = blockstore.NewInMemory()
-	_, err = sm.Finalize(types.Digest{1}, fake.Signature{})
+	err = sm.Finalize(types.Digest{1}, fake.Signature{})
 	require.EqualError(t, err, "couldn't get latest digest: missing genesis block")
 }
 

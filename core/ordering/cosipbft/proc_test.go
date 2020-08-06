@@ -8,6 +8,7 @@ import (
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
+	"go.dedis.ch/dela/core/ordering/cosipbft/blocksync"
 	"go.dedis.ch/dela/core/ordering/cosipbft/pbft"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
@@ -24,6 +25,8 @@ func TestProcessor_BlockMessage_Invoke(t *testing.T) {
 
 	proc := newProcessor()
 	proc.rosterFac = roster.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
+	proc.sync = fakeSync{}
+	proc.blocks = blockstore.NewInMemory()
 	proc.pbftsm = fakeSM{
 		state: pbft.PrePrepareState,
 		id:    expected,
@@ -36,11 +39,11 @@ func TestProcessor_BlockMessage_Invoke(t *testing.T) {
 	require.Equal(t, expected[:], id)
 
 	proc.pbftsm = fakeSM{state: pbft.InitialState}
-	proc.tree = fakeTree{err: xerrors.New("oops")}
+	proc.tree = blockstore.NewTreeCache(fakeTree{err: xerrors.New("oops")})
 	_, err = proc.Invoke(fake.NewAddress(0), msg)
 	require.EqualError(t, err, "read roster failed: read from tree: oops")
 
-	proc.tree = fakeTree{}
+	proc.tree = blockstore.NewTreeCache(fakeTree{})
 	proc.pbftsm = fakeSM{state: pbft.InitialState, err: xerrors.New("oops")}
 	_, err = proc.Invoke(fake.NewAddress(0), msg)
 	require.EqualError(t, err, "pbft pre-prepare failed: oops")
@@ -75,7 +78,7 @@ func TestProcessor_CommitMessage_Invoke(t *testing.T) {
 
 func TestProcessor_GenesisMessage_Process(t *testing.T) {
 	proc := newProcessor()
-	proc.tree = fakeTree{}
+	proc.tree = blockstore.NewTreeCache(fakeTree{})
 	proc.genesis = blockstore.NewGenesisStore()
 
 	genesis, err := types.NewGenesis(fake.NewAuthority(3, fake.NewSigner))
@@ -89,15 +92,15 @@ func TestProcessor_GenesisMessage_Process(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, msg)
 
-	proc.tree = fakeTree{errStage: xerrors.New("oops")}
+	proc.tree = blockstore.NewTreeCache(fakeTree{errStage: xerrors.New("oops")})
 	_, err = proc.Process(req)
 	require.EqualError(t, err, "tree stage failed: oops")
 
-	proc.tree = fakeTree{errCommit: xerrors.New("oops")}
+	proc.tree = blockstore.NewTreeCache(fakeTree{errCommit: xerrors.New("oops")})
 	_, err = proc.Process(req)
 	require.EqualError(t, err, "tree commit failed: oops")
 
-	proc.tree = fakeTree{}
+	proc.tree = blockstore.NewTreeCache(fakeTree{})
 	proc.genesis = badGenesisStore{}
 	_, err = proc.Process(req)
 	require.EqualError(t, err, "set genesis failed: oops")
@@ -110,7 +113,7 @@ func TestProcessor_DoneMessage_Process(t *testing.T) {
 	proc := newProcessor()
 	proc.pbftsm = fakeSM{}
 	proc.blocks = blockstore.NewInMemory()
-	proc.blocks.Store(types.NewBlockLink(types.Digest{}, block))
+	proc.blocks.Store(types.NewBlockLink(types.Digest{}, block, nil, nil))
 
 	req := mino.Request{
 		Message: types.NewDone(types.Digest{}, fake.Signature{}),
@@ -123,11 +126,6 @@ func TestProcessor_DoneMessage_Process(t *testing.T) {
 	proc.pbftsm = fakeSM{err: xerrors.New("oops")}
 	_, err = proc.Process(req)
 	require.EqualError(t, err, "pbftsm finalized failed: oops")
-
-	proc.pbftsm = fakeSM{}
-	proc.blocks = badBlockStore{}
-	_, err = proc.Process(req)
-	require.EqualError(t, err, "couldn't get latest block: oops")
 }
 
 func TestProcessor_ViewMessage_Process(t *testing.T) {
@@ -173,7 +171,7 @@ func (sm fakeSM) PrePrepare(viewchange.Authority) error {
 	return sm.err
 }
 
-func (sm fakeSM) Prepare(types.Block, hashtree.Tree) (types.Digest, error) {
+func (sm fakeSM) Prepare(types.Block) (types.Digest, error) {
 	return sm.id, sm.err
 }
 
@@ -181,8 +179,8 @@ func (sm fakeSM) Commit(types.Digest, crypto.Signature) error {
 	return sm.err
 }
 
-func (sm fakeSM) Finalize(types.Digest, crypto.Signature) (hashtree.Tree, error) {
-	return fakeTree{}, sm.err
+func (sm fakeSM) Finalize(types.Digest, crypto.Signature) error {
+	return sm.err
 }
 
 func (sm fakeSM) Expire(mino.Address) (pbft.View, error) {
@@ -193,6 +191,14 @@ func (sm fakeSM) Accept(pbft.View) {}
 
 func (sm fakeSM) Watch(context.Context) <-chan pbft.State {
 	return sm.ch
+}
+
+type fakeSync struct {
+	blocksync.Synchronizer
+}
+
+func (sync fakeSync) GetLatest() uint64 {
+	return 0
 }
 
 type fakeSnapshot struct {
@@ -246,12 +252,4 @@ type badGenesisStore struct {
 
 func (s badGenesisStore) Set(types.Genesis) error {
 	return xerrors.New("oops")
-}
-
-type badBlockStore struct {
-	blockstore.BlockStore
-}
-
-func (s badBlockStore) Last() (types.BlockLink, error) {
-	return types.BlockLink{}, xerrors.New("oops")
 }

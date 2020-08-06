@@ -10,10 +10,10 @@ import (
 
 func TestInMemory_Len(t *testing.T) {
 	store := NewInMemory()
-	require.Equal(t, 0, store.Len())
+	require.Equal(t, uint64(0), store.Len())
 
 	store.blocks = []types.BlockLink{{}, {}}
-	require.Equal(t, 2, store.Len())
+	require.Equal(t, uint64(2), store.Len())
 }
 
 func TestInMemory_Store(t *testing.T) {
@@ -60,7 +60,7 @@ func makeLink(t *testing.T, from types.Digest) types.BlockLink {
 	to, err := types.NewBlock(simple.NewData(nil))
 	require.NoError(t, err)
 
-	link := types.NewBlockLink(from, to)
+	link := types.NewBlockLink(from, to, nil, nil)
 
 	return link
 }

@@ -7,9 +7,11 @@ import (
 
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
+	"go.dedis.ch/dela/core/ordering/cosipbft/blocksync"
 	"go.dedis.ch/dela/core/ordering/cosipbft/pbft"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
@@ -26,7 +28,7 @@ import (
 const (
 	// RoundTimeout is the maximum of time the service waits for an event to
 	// happen.
-	RoundTimeout = 1 * time.Second
+	RoundTimeout = 10 * time.Second
 )
 
 // Service is an ordering service using collective signatures combined with PBFT
@@ -81,20 +83,38 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 	proc.genesis = tmpl.genesis
 	proc.pool = param.Pool
 	proc.rosterFac = roster.NewFactory(param.Mino.GetAddressFactory(), param.Cosi.GetPublicKeyFactory())
-	proc.tree = param.Tree
+	proc.tree = blockstore.NewTreeCache(param.Tree)
 
 	pcparam := pbft.StateMachineParam{
 		Validation:      param.Validation,
 		VerifierFactory: param.Cosi.GetVerifierFactory(),
 		Blocks:          tmpl.blocks,
 		Genesis:         tmpl.genesis,
+		Tree:            proc.tree,
 	}
 
 	proc.pbftsm = pbft.NewStateMachine(pcparam)
 
+	blockFac := types.NewBlockFactory(param.Validation.GetFactory())
+	linkFac := types.NewBlockLinkFactory(blockFac, param.Cosi.GetSignatureFactory())
+
+	syncparam := blocksync.SyncParam{
+		Mino:        param.Mino,
+		Blocks:      tmpl.blocks,
+		PBFT:        proc.pbftsm,
+		LinkFactory: linkFac,
+	}
+
+	blocksync, err := blocksync.NewSynchronizer(syncparam)
+	if err != nil {
+		return nil, err
+	}
+
+	proc.sync = blocksync
+
 	fac := types.NewMessageFactory(
 		types.NewGenesisFactory(proc.rosterFac),
-		types.NewBlockFactory(param.Validation.GetFactory()),
+		blockFac,
 		param.Cosi.GetSignatureFactory(),
 	)
 
@@ -121,12 +141,8 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 		closing:   make(chan struct{}),
 	}
 
-	go func() {
-		err := s.main()
-		if err != nil {
-			s.logger.Err(err).Msg("main loop stopped")
-		}
-	}()
+	go func() { s.run(s.main(), "main loop failed") }()
+	go s.watchBlocks()
 
 	return s, nil
 }
@@ -179,6 +195,29 @@ func (s *Service) Watch(ctx context.Context) <-chan ordering.Event {
 func (s *Service) Close() error {
 	close(s.closing)
 	return nil
+}
+
+func (s *Service) watchBlocks() {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	go func() {
+		<-s.closing
+		cancel()
+	}()
+
+	linkCh := s.blocks.Watch(ctx)
+
+	for link := range linkCh {
+		// 1. Remove the transactions from the pool to avoid duplicates.
+		for _, res := range link.GetTo().GetData().GetTransactionResults() {
+			s.pool.Remove(res.GetTransaction())
+		}
+
+		// 2. Notify the new block to potential listeners.
+		s.watcher.Notify(ordering.Event{
+			Index: link.GetTo().GetIndex(),
+		})
+	}
 }
 
 func (s *Service) main() error {
@@ -277,8 +316,15 @@ func (s *Service) doRound() error {
 
 	s.logger.Debug().Msg("round has started")
 
-	// TODO: check that no committed block exists in the case of a leader failure
-	// when propagating the collective signature.
+	// Send a synchronization to the roster so that they can learn about the
+	// latest block of the chain.
+	err = s.waitSync(ctx, roster)
+	if err != nil {
+		return err
+	}
+
+	// TODO: check that no committed block exists in the case of a leader
+	// failure when propagating the collective signature.
 	txs := s.collectTxs(ctx)
 
 	block, err := s.prepareBlock(txs)
@@ -292,6 +338,25 @@ func (s *Service) doRound() error {
 	}
 
 	return nil
+}
+
+func (s *Service) waitSync(ctx context.Context, roster viewchange.Authority) error {
+	syncEvents, err := s.sync.Sync(ctx, roster)
+	if err != nil {
+		return err
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case evt := <-syncEvents:
+			// TODO: get threshold
+			if evt.Hard >= roster.Len() {
+				return nil
+			}
+		}
+	}
 }
 
 func (s *Service) collectTxs(ctx context.Context) []tap.Transaction {
@@ -316,7 +381,7 @@ func (s *Service) collectTxs(ctx context.Context) []tap.Transaction {
 func (s *Service) prepareBlock(txs []tap.Transaction) (*types.Block, error) {
 	var data validation.Data
 
-	stageTree, err := s.tree.Stage(func(snap store.Snapshot) error {
+	stageTree, err := s.tree.Get().Stage(func(snap store.Snapshot) error {
 		var err error
 		data, err = s.val.Validate(snap, txs)
 		if err != nil {
@@ -355,7 +420,7 @@ func (s *Service) doPBFT(ctx context.Context, block *types.Block) error {
 		return xerrors.Errorf("read roster failed: %v", err)
 	}
 
-	id, err := s.pbftsm.Prepare(*block, s.tree)
+	id, err := s.pbftsm.Prepare(*block)
 	if err != nil {
 		return xerrors.Errorf("pbft prepare failed: %v", err)
 	}
@@ -396,6 +461,12 @@ func (s *Service) doPBFT(ctx context.Context, block *types.Block) error {
 	}
 
 	return nil
+}
+
+func (s *Service) run(err error, msg string) {
+	if err != nil {
+		s.logger.Warn().Err(err).Msg(msg)
+	}
 }
 
 type observer struct {

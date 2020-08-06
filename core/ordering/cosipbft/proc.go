@@ -1,14 +1,16 @@
 package cosipbft
 
 import (
+	"context"
+
 	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
+	"go.dedis.ch/dela/core/ordering/cosipbft/blocksync"
 	"go.dedis.ch/dela/core/ordering/cosipbft/pbft"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
-	"go.dedis.ch/dela/core/store/hashtree"
 	"go.dedis.ch/dela/core/tap/pool"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
@@ -27,7 +29,8 @@ type processor struct {
 	types.MessageFactory
 
 	pbftsm      pbft.StateMachine
-	tree        hashtree.Tree
+	sync        blocksync.Synchronizer
+	tree        blockstore.TreeCache
 	pool        pool.Pool
 	watcher     blockchain.Observable
 	rosterFac   viewchange.AuthorityFactory
@@ -54,6 +57,21 @@ func newProcessor() *processor {
 func (h *processor) Invoke(from mino.Address, msg serde.Message) ([]byte, error) {
 	switch in := msg.(type) {
 	case types.BlockMessage:
+		// In case the node is falling behing the chain, it gives it a chance to
+		// catch up before moving forward.
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		blocks := h.blocks.Watch(ctx)
+
+		if h.sync.GetLatest() > h.blocks.Len() {
+			for link := range blocks {
+				if link.GetTo().GetIndex() >= h.sync.GetLatest() {
+					cancel()
+				}
+			}
+		}
+
 		if h.pbftsm.GetState() == pbft.InitialState {
 			roster, err := h.getCurrentRoster()
 			if err != nil {
@@ -66,7 +84,7 @@ func (h *processor) Invoke(from mino.Address, msg serde.Message) ([]byte, error)
 			}
 		}
 
-		digest, err := h.pbftsm.Prepare(in.GetBlock(), h.tree)
+		digest, err := h.pbftsm.Prepare(in.GetBlock())
 		if err != nil {
 			return nil, xerrors.Errorf("pbft prepare failed: %v", err)
 		}
@@ -98,7 +116,7 @@ func (h *processor) Process(req mino.Request) (serde.Message, error) {
 			return nil, xerrors.Errorf("encode roster failed: %v", err)
 		}
 
-		stageTree, err := h.tree.Stage(func(snap store.Snapshot) error {
+		stageTree, err := h.tree.Get().Stage(func(snap store.Snapshot) error {
 			snap.Set(keyRoster[:], roster)
 			return nil
 		})
@@ -111,7 +129,7 @@ func (h *processor) Process(req mino.Request) (serde.Message, error) {
 			return nil, xerrors.Errorf("tree commit failed: %v", err)
 		}
 
-		h.tree = tree
+		h.tree.Set(tree)
 		err = h.genesis.Set(*msg.GetGenesis())
 		if err != nil {
 			return nil, xerrors.Errorf("set genesis failed: %v", err)
@@ -121,23 +139,10 @@ func (h *processor) Process(req mino.Request) (serde.Message, error) {
 
 		close(h.started)
 	case types.DoneMessage:
-		tree, err := h.pbftsm.Finalize(msg.GetID(), msg.GetSignature())
+		err := h.pbftsm.Finalize(msg.GetID(), msg.GetSignature())
 		if err != nil {
 			return nil, xerrors.Errorf("pbftsm finalized failed: %v", err)
 		}
-
-		h.tree = tree
-
-		last, err := h.blocks.Last()
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't get latest block: %v", err)
-		}
-
-		for _, res := range last.GetTo().GetData().GetTransactionResults() {
-			h.pool.Remove(res.GetTransaction())
-		}
-
-		h.watcher.Notify(ordering.Event{Index: last.GetTo().GetIndex()})
 	case types.ViewMessage:
 		view := pbft.View{
 			From:   req.Address,
@@ -154,7 +159,7 @@ func (h *processor) Process(req mino.Request) (serde.Message, error) {
 }
 
 func (h *processor) getCurrentRoster() (viewchange.Authority, error) {
-	data, err := h.tree.Get(keyRoster[:])
+	data, err := h.tree.Get().Get(keyRoster[:])
 	if err != nil {
 		return nil, xerrors.Errorf("read from tree: %v", err)
 	}

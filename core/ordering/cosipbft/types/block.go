@@ -18,6 +18,7 @@ import (
 var (
 	genesisFormats = registry.NewSimpleRegistry()
 	blockFormats   = registry.NewSimpleRegistry()
+	linkFormats    = registry.NewSimpleRegistry()
 )
 
 // RegisterGenesisFormat registers the engine for the provided format.
@@ -30,11 +31,19 @@ func RegisterBlockFormat(f serde.Format, e serde.FormatEngine) {
 	blockFormats.Register(f, e)
 }
 
+func RegisterLinkFormat(f serde.Format, e serde.FormatEngine) {
+	linkFormats.Register(f, e)
+}
+
 // Digest defines the result of a fingerprint. It expects a digest of 256 bits.
 type Digest [32]byte
 
 func (d Digest) String() string {
 	return fmt.Sprintf("%x", d[:])[:8]
+}
+
+func (d Digest) Bytes() []byte {
+	return d[:]
 }
 
 // Genesis is the very first block of a chain. It contains the initial roster
@@ -174,10 +183,12 @@ type BlockLink struct {
 }
 
 // NewBlockLink creates a new block link between from and to.
-func NewBlockLink(from Digest, to Block) BlockLink {
+func NewBlockLink(from Digest, to Block, p, c crypto.Signature) BlockLink {
 	return BlockLink{
-		from: from,
-		to:   to,
+		from:       from,
+		to:         to,
+		prepareSig: p,
+		commitSig:  c,
 	}
 }
 
@@ -224,6 +235,43 @@ func (link BlockLink) Fingerprint(w io.Writer) error {
 	}
 
 	return nil
+}
+
+func (link BlockLink) Serialize(ctx serde.Context) ([]byte, error) {
+	format := linkFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, link)
+	if err != nil {
+		return nil, xerrors.Errorf("encoding failed: %v", err)
+	}
+
+	return data, nil
+}
+
+type BlockLinkFactory struct {
+	blockFac serde.Factory
+	sigFac   crypto.SignatureFactory
+}
+
+func NewBlockLinkFactory(blockFac serde.Factory, sigFac crypto.SignatureFactory) BlockLinkFactory {
+	return BlockLinkFactory{
+		blockFac: blockFac,
+		sigFac:   sigFac,
+	}
+}
+
+func (fac BlockLinkFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+	format := linkFormats.Get(ctx.GetFormat())
+
+	ctx = serde.WithFactory(ctx, BlockKey{}, fac.blockFac)
+	ctx = serde.WithFactory(ctx, SignatureKey{}, fac.sigFac)
+
+	msg, err := format.Decode(ctx, data)
+	if err != nil {
+		return nil, xerrors.Errorf("decoding failed: %v", err)
+	}
+
+	return msg, nil
 }
 
 // Block is a block of the chain.

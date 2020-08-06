@@ -10,6 +10,7 @@ import (
 	_ "go.dedis.ch/dela/consensus/cosipbft/json"
 	_ "go.dedis.ch/dela/consensus/qsc/json"
 	_ "go.dedis.ch/dela/consensus/viewchange/roster/json"
+	_ "go.dedis.ch/dela/core/ordering/cosipbft/blocksync/json"
 	_ "go.dedis.ch/dela/core/ordering/cosipbft/json"
 	_ "go.dedis.ch/dela/core/tap/anon/json"
 	_ "go.dedis.ch/dela/core/validation/simple/json"

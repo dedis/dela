@@ -71,12 +71,13 @@ type StateMachine interface {
 	GetState() State
 	GetLeader() mino.Address
 	PrePrepare(ro viewchange.Authority) error
-	Prepare(block types.Block, tree hashtree.Tree) (types.Digest, error)
+	Prepare(block types.Block) (types.Digest, error)
 	Commit(types.Digest, crypto.Signature) error
-	Finalize(types.Digest, crypto.Signature) (hashtree.Tree, error)
+	Finalize(types.Digest, crypto.Signature) error
 	Accept(View)
 	AcceptAll([]View)
 	Expire(addr mino.Address) (View, error)
+	CatchUp(types.BlockLink) error
 	Watch(context.Context) <-chan State
 }
 
@@ -100,6 +101,7 @@ type pbftsm struct {
 	verifierFac crypto.VerifierFactory
 	blocks      blockstore.BlockStore
 	genesis     blockstore.GenesisStore
+	tree        blockstore.TreeCache
 
 	state State
 	round round
@@ -112,6 +114,7 @@ type StateMachineParam struct {
 	VerifierFactory crypto.VerifierFactory
 	Blocks          blockstore.BlockStore
 	Genesis         blockstore.GenesisStore
+	Tree            blockstore.TreeCache
 }
 
 // NewStateMachine returns a new state machine.
@@ -123,6 +126,7 @@ func NewStateMachine(param StateMachineParam) StateMachine {
 		verifierFac: param.VerifierFactory,
 		blocks:      param.Blocks,
 		genesis:     param.Genesis,
+		tree:        param.Tree,
 		state:       InitialState,
 	}
 }
@@ -177,7 +181,7 @@ func (m *pbftsm) PrePrepare(ro viewchange.Authority) error {
 // Prepare implements pbft.StateMachine. It receives the proposal from the
 // leader and the current tree, and produces the next tree alongside the ID of
 // the proposal that will be signed.
-func (m *pbftsm) Prepare(block types.Block, tree hashtree.Tree) (types.Digest, error) {
+func (m *pbftsm) Prepare(block types.Block) (types.Digest, error) {
 	m.Lock()
 	defer m.Unlock()
 
@@ -191,43 +195,10 @@ func (m *pbftsm) Prepare(block types.Block, tree hashtree.Tree) (types.Digest, e
 		return types.Digest{}, xerrors.Errorf("mismatch state %v != %v", m.state, PrePrepareState)
 	}
 
-	stageTree, err := tree.Stage(func(snap store.Snapshot) error {
-		_, err := m.val.Validate(snap, block.GetTransactions())
-		if err != nil {
-			return xerrors.Errorf("validation failed: %v", err)
-		}
-
-		return nil
-	})
-
+	err := m.verifyPrepare(m.tree.Get(), block, &m.round)
 	if err != nil {
-		return types.Digest{}, xerrors.Errorf("tree failed: %v", err)
+		return types.Digest{}, err
 	}
-
-	root := types.Digest{}
-	copy(root[:], stageTree.GetRoot())
-
-	if root != block.GetTreeRoot() {
-		return types.Digest{}, xerrors.Errorf("mismatch tree root '%v' != '%v'", root, block.GetTreeRoot())
-	}
-
-	lastID, err := m.getLatestID()
-	if err != nil {
-		return types.Digest{}, xerrors.Errorf("couldn't get latest digest: %v", err)
-	}
-
-	link := types.NewBlockLink(lastID, block)
-
-	h := m.hashFac.New()
-	err = link.Fingerprint(h)
-	if err != nil {
-		return types.Digest{}, xerrors.Errorf("couldn't fingerprint link: %v", err)
-	}
-
-	copy(m.round.id[:], h.Sum(nil))
-
-	m.round.block = block
-	m.round.tree = stageTree
 
 	m.setState(PrepareState)
 
@@ -253,17 +224,10 @@ func (m *pbftsm) Commit(id types.Digest, sig crypto.Signature) error {
 		return xerrors.Errorf("mismatch id '%v' != '%v'", id, m.round.id)
 	}
 
-	verifier, err := m.verifierFac.FromAuthority(m.round.roster)
+	err := m.verifyCommit(&m.round, sig)
 	if err != nil {
-		return xerrors.Errorf("couldn't make verifier: %v", err)
+		return err
 	}
-
-	err = verifier.Verify(id[:], sig)
-	if err != nil {
-		return xerrors.Errorf("verifier failed: %v", err)
-	}
-
-	m.round.prepareSig = sig
 
 	m.setState(CommitState)
 
@@ -272,56 +236,28 @@ func (m *pbftsm) Commit(id types.Digest, sig crypto.Signature) error {
 
 // Finalize implements pbft.StateMachine. It makes sure the commit signature is
 // correct and then moves to the initial state.
-func (m *pbftsm) Finalize(id types.Digest, sig crypto.Signature) (hashtree.Tree, error) {
+func (m *pbftsm) Finalize(id types.Digest, sig crypto.Signature) error {
 	m.Lock()
 	defer m.Unlock()
 
 	if m.state != CommitState {
-		return nil, xerrors.Errorf("mismatch state %v != %v", m.state, CommitState)
+		return xerrors.Errorf("mismatch state %v != %v", m.state, CommitState)
 	}
 
-	verifier, err := m.verifierFac.FromAuthority(m.round.roster)
+	tree, err := m.verifyFinalize(&m.round, sig)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't make verifier: %v", err)
+		return err
 	}
 
-	buffer, err := m.round.prepareSig.MarshalBinary()
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't marshal signature: %v", err)
-	}
-
-	err = verifier.Verify(buffer, sig)
-	if err != nil {
-		return nil, xerrors.Errorf("verifier failed: %v", err)
-	}
-
-	lastID, err := m.getLatestID()
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't get latest digest: %v", err)
-	}
-
-	link := types.NewBlockLink(lastID, m.round.block)
-
-	err = m.blocks.Store(link)
-	if err != nil {
-		// TODO: database tx
-		return nil, err
-	}
-
-	tree, err := m.round.tree.Commit()
-	if err != nil {
-		// TODO: database tx
-		return nil, err
-	}
+	m.tree.Set(tree)
 
 	m.round = round{
-		leader: m.round.leader,
 		roster: m.round.roster,
 	}
 
 	m.setState(InitialState)
 
-	return tree, nil
+	return nil
 }
 
 // Accept implements pbft.StateMachine. It processes view change messages and
@@ -408,6 +344,41 @@ func (m *pbftsm) Expire(addr mino.Address) (View, error) {
 	return view, nil
 }
 
+func (m *pbftsm) CatchUp(link types.BlockLink) error {
+	m.Lock()
+	defer m.Unlock()
+
+	r := round{
+		roster:    m.round.roster,
+		threshold: m.round.threshold,
+	}
+
+	err := m.verifyPrepare(m.tree.Get(), link.GetTo(), &r)
+	if err != nil {
+		return err
+	}
+
+	err = m.verifyCommit(&r, link.GetPrepareSignature())
+	if err != nil {
+		return err
+	}
+
+	tree, err := m.verifyFinalize(&r, link.GetCommitSignature())
+	if err != nil {
+		return err
+	}
+
+	m.tree.Set(tree)
+
+	m.round = round{
+		roster: m.round.roster,
+	}
+
+	m.setState(InitialState)
+
+	return nil
+}
+
 // Watch implements pbft.StateMachine. It returns a channel that will be
 // populated with stage changes.
 func (m *pbftsm) Watch(ctx context.Context) <-chan State {
@@ -423,6 +394,102 @@ func (m *pbftsm) Watch(ctx context.Context) <-chan State {
 	}()
 
 	return ch
+}
+
+func (m *pbftsm) verifyPrepare(tree hashtree.Tree, block types.Block, r *round) error {
+	stageTree, err := tree.Stage(func(snap store.Snapshot) error {
+		_, err := m.val.Validate(snap, block.GetTransactions())
+		if err != nil {
+			return xerrors.Errorf("validation failed: %v", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return xerrors.Errorf("tree failed: %v", err)
+	}
+
+	root := types.Digest{}
+	copy(root[:], stageTree.GetRoot())
+
+	if root != block.GetTreeRoot() {
+		return xerrors.Errorf("mismatch tree root '%v' != '%v'", root, block.GetTreeRoot())
+	}
+
+	lastID, err := m.getLatestID()
+	if err != nil {
+		return xerrors.Errorf("couldn't get latest digest: %v", err)
+	}
+
+	link := types.NewBlockLink(lastID, block, nil, nil)
+
+	h := m.hashFac.New()
+	err = link.Fingerprint(h)
+	if err != nil {
+		return xerrors.Errorf("couldn't fingerprint link: %v", err)
+	}
+
+	copy(r.id[:], h.Sum(nil))
+
+	r.tree = stageTree
+	r.block = link.GetTo()
+
+	return nil
+}
+
+func (m *pbftsm) verifyCommit(r *round, sig crypto.Signature) error {
+	verifier, err := m.verifierFac.FromAuthority(r.roster)
+	if err != nil {
+		return xerrors.Errorf("couldn't make verifier: %v", err)
+	}
+
+	err = verifier.Verify(r.id[:], sig)
+	if err != nil {
+		return xerrors.Errorf("verifier failed: %v", err)
+	}
+
+	r.prepareSig = sig
+
+	return nil
+}
+
+func (m *pbftsm) verifyFinalize(r *round, sig crypto.Signature) (hashtree.Tree, error) {
+	verifier, err := m.verifierFac.FromAuthority(r.roster)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't make verifier: %v", err)
+	}
+
+	buffer, err := r.prepareSig.MarshalBinary()
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't marshal signature: %v", err)
+	}
+
+	err = verifier.Verify(buffer, sig)
+	if err != nil {
+		return nil, xerrors.Errorf("verifier failed: %v", err)
+	}
+
+	lastID, err := m.getLatestID()
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't get latest digest: %v", err)
+	}
+
+	link := types.NewBlockLink(lastID, r.block, r.prepareSig, sig)
+
+	err = m.blocks.Store(link)
+	if err != nil {
+		// TODO: database tx
+		return nil, err
+	}
+
+	tree, err := r.tree.Commit()
+	if err != nil {
+		// TODO: database tx
+		return nil, err
+	}
+
+	return tree, nil
 }
 
 func (m *pbftsm) setState(s State) {

@@ -74,7 +74,7 @@ func TestService_ViewChange_DoRound(t *testing.T) {
 		timeout:   time.Millisecond,
 		closing:   make(chan struct{}),
 	}
-	srvc.tree = fakeTree{}
+	srvc.tree = blockstore.NewTreeCache(fakeTree{})
 	srvc.rosterFac = roster.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 	srvc.pbftsm = fakeSM{
 		state: pbft.InitialState,
@@ -140,7 +140,7 @@ func TestService_CollectTxs(t *testing.T) {
 
 func TestService_PrepareBlock(t *testing.T) {
 	srvc := &Service{processor: newProcessor()}
-	srvc.tree = fakeTree{}
+	srvc.tree = blockstore.NewTreeCache(fakeTree{})
 	srvc.val = fakeValidation{}
 	srvc.blocks = blockstore.NewInMemory()
 	srvc.hashFactory = crypto.NewSha256Factory()

@@ -15,6 +15,7 @@ func init() {
 	types.RegisterGenesisFormat(serde.FormatJSON, genesisFormat{})
 	types.RegisterMessageFormat(serde.FormatJSON, msgFormat{})
 	types.RegisterBlockFormat(serde.FormatJSON, blockFormat{})
+	types.RegisterLinkFormat(serde.FormatJSON, linkFormat{})
 }
 
 type GenesisJSON struct {
@@ -25,7 +26,13 @@ type BlockJSON struct {
 	Index    uint64
 	TreeRoot types.Digest
 	Data     json.RawMessage
-	Link     json.RawMessage
+}
+
+type BlockLinkJSON struct {
+	From             types.Digest
+	Block            json.RawMessage
+	PrepareSignature json.RawMessage
+	CommitSignature  json.RawMessage
 }
 
 type GenesisMessageJSON struct {
@@ -64,7 +71,7 @@ type genesisFormat struct{}
 func (f genesisFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	genesis, ok := msg.(types.Genesis)
 	if !ok {
-		return nil, xerrors.New("invalid genesis")
+		return nil, xerrors.Errorf("invalid genesis '%T'", msg)
 	}
 
 	roster, err := genesis.GetRoster().Serialize(ctx)

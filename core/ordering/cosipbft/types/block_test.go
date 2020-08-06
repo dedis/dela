@@ -130,7 +130,7 @@ func TestBlockLink_GetChangeSet(t *testing.T) {
 }
 
 func TestBlockLink_Fingerprint(t *testing.T) {
-	link := NewBlockLink(Digest{}, Block{digest: Digest{}})
+	link := NewBlockLink(Digest{}, Block{digest: Digest{}}, nil, nil)
 
 	buffer := new(bytes.Buffer)
 
