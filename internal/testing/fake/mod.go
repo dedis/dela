@@ -597,8 +597,8 @@ func (f AddressFactory) FromText(text []byte) mino.Address {
 }
 
 // NewReceiver returns a new receiver
-func NewReceiver(Msg ...serde.Message) Receiver {
-	return Receiver{
+func NewReceiver(Msg ...serde.Message) *Receiver {
+	return &Receiver{
 		Msg: Msg,
 	}
 }
@@ -613,25 +613,25 @@ type Receiver struct {
 }
 
 // NewBadReceiver returns a new receiver that returns an error.
-func NewBadReceiver() Receiver {
-	return Receiver{err: xerrors.New("fake error")}
+func NewBadReceiver() *Receiver {
+	return &Receiver{err: xerrors.New("fake error")}
 }
 
 // Recv implements mino.Receiver.
 func (r *Receiver) Recv(context.Context) (mino.Address, serde.Message, error) {
-	if r.Msg == nil {
+	if len(r.Msg) == 0 {
 		return nil, nil, r.err
 	}
 
 	// In the case there are no more messages to read we return the last one
 	if r.index >= len(r.Msg) {
-		return nil, r.Msg[len(r.Msg)-1], r.err
+		return NewAddress(0), r.Msg[len(r.Msg)-1], r.err
 	}
 
 	defer func() {
 		r.index++
 	}()
-	return nil, r.Msg[r.index], r.err
+	return NewAddress(0), r.Msg[r.index], nil
 }
 
 // Sender is a fake RPC stream sender.
@@ -671,9 +671,9 @@ func NewRPC() *RPC {
 }
 
 // NewStreamRPC returns a fake rpc with specific stream options.
-func NewStreamRPC(r Receiver, s Sender) *RPC {
+func NewStreamRPC(r *Receiver, s Sender) *RPC {
 	rpc := &RPC{
-		receiver: &r,
+		receiver: r,
 		sender:   s,
 	}
 	rpc.Reset()

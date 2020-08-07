@@ -191,6 +191,7 @@ type GenesisKey struct{}
 // BlockKey is the key of the block factory.
 type BlockKey struct{}
 
+// BlockLinkKey is the key of the block link factory.
 type BlockLinkKey struct{}
 
 // SignatureKey is the key of the collective signature factory.

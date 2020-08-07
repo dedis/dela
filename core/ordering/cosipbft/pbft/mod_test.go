@@ -82,7 +82,7 @@ func TestStateMachine_Prepare(t *testing.T) {
 	root := types.Digest{}
 	copy(root[:], tree.GetRoot())
 
-	block, err := types.NewBlock(simple.NewData(nil), types.WithTreeRoot(root))
+	block, err := types.NewBlock(simple.NewData(nil), types.WithTreeRoot(root), types.WithIndex(1))
 	require.NoError(t, err)
 
 	sm := NewStateMachine(param).(*pbftsm)
@@ -243,6 +243,44 @@ func TestStateMachine_Expire(t *testing.T) {
 	sm.genesis = blockstore.NewGenesisStore()
 	_, err = sm.Expire(fake.NewAddress(0))
 	require.EqualError(t, err, "couldn't get latest digest: missing genesis block")
+}
+
+func TestStateMachine_CatchUp(t *testing.T) {
+	tree, clean := makeTree(t)
+	defer clean()
+
+	param := StateMachineParam{
+		Validation:      simple.NewService(fakeExec{}, nil),
+		VerifierFactory: fake.VerifierFactory{},
+		Blocks:          blockstore.NewInMemory(),
+		Genesis:         blockstore.NewGenesisStore(),
+		Tree:            blockstore.NewTreeCache(tree),
+	}
+
+	param.Genesis.Set(types.Genesis{})
+
+	root := types.Digest{}
+	copy(root[:], tree.GetRoot())
+
+	block, err := types.NewBlock(simple.NewData(nil), types.WithTreeRoot(root), types.WithIndex(1))
+	require.NoError(t, err)
+
+	sm := NewStateMachine(param).(*pbftsm)
+
+	err = sm.CatchUp(types.NewBlockLink(types.Digest{}, block, fake.Signature{}, fake.Signature{}))
+	require.NoError(t, err)
+
+	err = sm.CatchUp(types.NewBlockLink(types.Digest{}, block, fake.Signature{}, fake.Signature{}))
+	require.EqualError(t, err, "prepare failed: mismatch index 1 != 2")
+
+	sm.blocks = blockstore.NewInMemory()
+	sm.verifierFac = fake.NewVerifierFactory(fake.NewBadVerifier())
+	err = sm.CatchUp(types.NewBlockLink(types.Digest{}, block, fake.Signature{}, fake.Signature{}))
+	require.EqualError(t, err, "commit failed: verifier failed: fake error")
+
+	sm.verifierFac = fake.VerifierFactory{}
+	err = sm.CatchUp(types.NewBlockLink(types.Digest{}, block, fake.NewBadSignature(), fake.Signature{}))
+	require.EqualError(t, err, "finalize failed: couldn't marshal signature: fake error")
 }
 
 func TestStateMachine_Watch(t *testing.T) {

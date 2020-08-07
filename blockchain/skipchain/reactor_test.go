@@ -68,7 +68,7 @@ func TestReactor_InvokeValidate(t *testing.T) {
 
 	r.reactor = &fakeReactor{}
 	req = types.NewBlueprint(5, nil, nil)
-	r.rpc = fake.NewStreamRPC(fake.Receiver{}, fake.NewBadSender())
+	r.rpc = fake.NewStreamRPC(fake.NewReceiver(), fake.NewBadSender())
 	_, err = r.InvokeValidate(fake.Address{}, req)
 	require.EqualError(t, err,
 		"couldn't catch up: couldn't send block request: fake error")

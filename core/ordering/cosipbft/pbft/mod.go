@@ -344,6 +344,8 @@ func (m *pbftsm) Expire(addr mino.Address) (View, error) {
 	return view, nil
 }
 
+// CatchUp implements pbft.StateMachine. It can force a block link to be
+// inserted to reset the state machine to a initial state.
 func (m *pbftsm) CatchUp(link types.BlockLink) error {
 	m.Lock()
 	defer m.Unlock()
@@ -355,17 +357,17 @@ func (m *pbftsm) CatchUp(link types.BlockLink) error {
 
 	err := m.verifyPrepare(m.tree.Get(), link.GetTo(), &r)
 	if err != nil {
-		return err
+		return xerrors.Errorf("prepare failed: %v", err)
 	}
 
 	err = m.verifyCommit(&r, link.GetPrepareSignature())
 	if err != nil {
-		return err
+		return xerrors.Errorf("commit failed: %v", err)
 	}
 
 	tree, err := m.verifyFinalize(&r, link.GetCommitSignature())
 	if err != nil {
-		return err
+		return xerrors.Errorf("finalize failed: %v", err)
 	}
 
 	m.tree.Set(tree)
@@ -415,6 +417,10 @@ func (m *pbftsm) verifyPrepare(tree hashtree.Tree, block types.Block, r *round) 
 
 	if root != block.GetTreeRoot() {
 		return xerrors.Errorf("mismatch tree root '%v' != '%v'", root, block.GetTreeRoot())
+	}
+
+	if m.blocks.Len()+1 != block.GetIndex() {
+		return xerrors.Errorf("mismatch index %d != %d", block.GetIndex(), m.blocks.Len()+1)
 	}
 
 	lastID, err := m.getLatestID()

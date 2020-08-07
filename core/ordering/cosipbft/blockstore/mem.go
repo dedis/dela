@@ -69,7 +69,7 @@ func (s *InMemory) Get(id types.Digest) (types.BlockLink, error) {
 		}
 	}
 
-	return types.BlockLink{}, xerrors.Errorf("block not found: %w", ErrNoBlock)
+	return nil, xerrors.Errorf("block not found: %w", ErrNoBlock)
 }
 
 // GetByIndex implements blockstore.BlockStore. It returns the block associated
@@ -79,7 +79,7 @@ func (s *InMemory) GetByIndex(index uint64) (types.BlockLink, error) {
 	defer s.Unlock()
 
 	if int(index) >= len(s.blocks) {
-		return types.BlockLink{}, xerrors.Errorf("block not found: %w", ErrNoBlock)
+		return nil, xerrors.Errorf("block not found: %w", ErrNoBlock)
 	}
 
 	return s.blocks[index], nil
@@ -92,7 +92,7 @@ func (s *InMemory) Last() (types.BlockLink, error) {
 	defer s.Unlock()
 
 	if len(s.blocks) == 0 {
-		return types.BlockLink{}, xerrors.Errorf("store empty: %w", ErrNoBlock)
+		return nil, xerrors.Errorf("store empty: %w", ErrNoBlock)
 	}
 
 	return s.blocks[len(s.blocks)-1], nil
@@ -101,7 +101,7 @@ func (s *InMemory) Last() (types.BlockLink, error) {
 // Watch implements blockstore.BlockStore. It returns a channel populated with
 // new blocks.
 func (s *InMemory) Watch(ctx context.Context) <-chan types.BlockLink {
-	obs := observer{ch: make(chan types.BlockLink)}
+	obs := observer{ch: make(chan types.BlockLink, 1)}
 	s.watcher.Add(obs)
 
 	go func() {

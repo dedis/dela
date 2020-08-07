@@ -16,22 +16,22 @@ import (
 func TestHandler_Stream(t *testing.T) {
 	h := Handler{startRes: &state{}}
 	receiver := fake.NewBadReceiver()
-	err := h.Stream(fake.Sender{}, &receiver)
+	err := h.Stream(fake.Sender{}, receiver)
 	require.EqualError(t, err, "failed to receive: fake error")
 
 	receiver = fake.NewReceiver(types.Deal{}, types.DecryptRequest{})
-	err = h.Stream(fake.Sender{}, &receiver)
+	err = h.Stream(fake.Sender{}, receiver)
 	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")
 
 	h.startRes.distrKey = suite.Point()
 	h.startRes.participants = []mino.Address{fake.NewAddress(0)}
 	h.privShare = &share.PriShare{I: 0, V: suite.Scalar()}
 	receiver = fake.NewReceiver(types.DecryptRequest{C: suite.Point()})
-	err = h.Stream(fake.NewBadSender(), &receiver)
+	err = h.Stream(fake.NewBadSender(), receiver)
 	require.EqualError(t, err, "got an error while sending the decrypt reply: fake error")
 
 	receiver = fake.NewReceiver(fake.Message{})
-	err = h.Stream(fake.Sender{}, &receiver)
+	err = h.Stream(fake.Sender{}, receiver)
 	require.EqualError(t, err, "expected Start message, decrypt request or Deal as first message, got: fake.Message")
 }
 
@@ -57,11 +57,11 @@ func TestHandler_Start(t *testing.T) {
 		[]kyber.Point{pubKey, suite.Point()},
 	)
 	receiver := fake.NewBadReceiver()
-	err = h.start(start, []types.Deal{}, nil, fake.Sender{}, &receiver)
+	err = h.start(start, []types.Deal{}, nil, fake.Sender{}, receiver)
 	require.EqualError(t, err, "failed to receive after sending deals: fake error")
 
 	receiver = fake.NewReceiver(types.Deal{}, nil)
-	err = h.start(start, []types.Deal{}, nil, fake.Sender{}, &receiver)
+	err = h.start(start, []types.Deal{}, nil, fake.Sender{}, receiver)
 	require.EqualError(t, err, "failed to certify: expected a response, got: <nil>")
 
 	err = h.start(start, []types.Deal{}, nil, fake.Sender{}, &fake.Receiver{})
@@ -86,7 +86,7 @@ func TestHandler_Certify(t *testing.T) {
 	receiver := fake.NewBadReceiver()
 	responses := []*pedersen.Response{{Response: &vss.Response{}}}
 
-	_, err = h.certify(responses, fake.Sender{}, &receiver, nil)
+	_, err = h.certify(responses, fake.Sender{}, receiver, nil)
 	require.EqualError(t, err, "failed to receive after sending deals: fake error")
 
 	dkg = getCertified(t)

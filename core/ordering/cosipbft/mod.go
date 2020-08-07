@@ -318,10 +318,7 @@ func (s *Service) doRound() error {
 
 	// Send a synchronization to the roster so that they can learn about the
 	// latest block of the chain.
-	err = s.waitSync(ctx, roster)
-	if err != nil {
-		return err
-	}
+	s.waitSync(ctx, roster)
 
 	// TODO: check that no committed block exists in the case of a leader
 	// failure when propagating the collective signature.
@@ -340,20 +337,17 @@ func (s *Service) doRound() error {
 	return nil
 }
 
-func (s *Service) waitSync(ctx context.Context, roster viewchange.Authority) error {
-	syncEvents, err := s.sync.Sync(ctx, roster)
-	if err != nil {
-		return err
-	}
+func (s *Service) waitSync(ctx context.Context, roster viewchange.Authority) {
+	syncEvents := s.sync.Sync(ctx, roster)
 
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return
 		case evt := <-syncEvents:
 			// TODO: get threshold
 			if evt.Hard >= roster.Len() {
-				return nil
+				return
 			}
 		}
 	}
