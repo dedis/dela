@@ -12,7 +12,6 @@ import (
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc"
 	"go.dedis.ch/dela/mino/minogrpc/routing"
-	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/kyber/v3"
 )
 
@@ -39,7 +38,7 @@ func TestPedersen_Setup(t *testing.T) {
 	_, err := actor.Setup(fakeAuthority, 0)
 	require.EqualError(t, err, "failed to stream: fake error")
 
-	rpc := fake.NewStreamRPC(fake.Receiver{}, fake.NewBadSender())
+	rpc := fake.NewStreamRPC(fake.NewReceiver(), fake.NewBadSender())
 	actor.rpc = rpc
 
 	_, err = actor.Setup(fakeAuthority, 0)
@@ -53,18 +52,16 @@ func TestPedersen_Setup(t *testing.T) {
 	_, err = actor.Setup(fakeAuthority, 1)
 	require.EqualError(t, err, "got an error from '%!s(<nil>)' while receiving: fake error")
 
-	rpc = fake.NewStreamRPC(fake.Receiver{}, fake.Sender{})
+	rpc = fake.NewStreamRPC(fake.NewReceiver(), fake.Sender{})
 	actor.rpc = rpc
 
 	_, err = actor.Setup(fakeAuthority, 1)
 	require.EqualError(t, err, "expected to receive a Done message, but go the following: <nil>")
 
-	rpc = fake.NewStreamRPC(fake.Receiver{
-		Msg: []serde.Message{
-			types.NewStartDone(suite.Point()),
-			types.NewStartDone(suite.Point().Pick(suite.RandomStream())),
-		},
-	}, fake.Sender{})
+	rpc = fake.NewStreamRPC(fake.NewReceiver(
+		types.NewStartDone(suite.Point()),
+		types.NewStartDone(suite.Point().Pick(suite.RandomStream())),
+	), fake.Sender{})
 	actor.rpc = rpc
 
 	_, err = actor.Setup(fakeAuthority, 1)
@@ -100,7 +97,7 @@ func TestPedersen_Decrypt(t *testing.T) {
 	_, err = actor.Decrypt(suite.Point(), suite.Point())
 	require.EqualError(t, err, "failed to receive from '%!s(<nil>)': fake error")
 
-	rpc = fake.NewStreamRPC(fake.Receiver{}, fake.Sender{})
+	rpc = fake.NewStreamRPC(fake.NewReceiver(), fake.Sender{})
 	actor.rpc = rpc
 
 	_, err = actor.Decrypt(suite.Point(), suite.Point())
