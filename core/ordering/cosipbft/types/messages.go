@@ -48,6 +48,7 @@ func (m GenesisMessage) Serialize(ctx serde.Context) ([]byte, error) {
 // BlockMessage is a message sent to participants to share a block.
 type BlockMessage struct {
 	block Block
+	// TODO: include view change messages if appropriate.
 }
 
 // NewBlockMessage creates a new block message with the provided block.

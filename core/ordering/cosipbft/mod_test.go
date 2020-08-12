@@ -102,7 +102,7 @@ func TestService_ViewChange_DoRound(t *testing.T) {
 	rpc.Done()
 
 	go func() {
-		ch <- pbft.PrePrepareState
+		ch <- pbft.InitialState
 		close(ch)
 		srvc.Close()
 	}()
@@ -111,11 +111,8 @@ func TestService_ViewChange_DoRound(t *testing.T) {
 	require.NoError(t, err)
 
 	srvc.closing = make(chan struct{})
-	srvc.pbftsm = fakeSM{err: xerrors.New("oops")}
-	err = srvc.doRound()
-	require.EqualError(t, err, "pbft pre-prepare failed: oops")
 
-	srvc.pbftsm = fakeSM{err: xerrors.New("oops"), state: pbft.PrePrepareState}
+	srvc.pbftsm = fakeSM{err: xerrors.New("oops"), state: pbft.InitialState}
 	err = srvc.doRound()
 	require.EqualError(t, err, "pbft expire failed: oops")
 

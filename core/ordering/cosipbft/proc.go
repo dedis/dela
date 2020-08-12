@@ -2,6 +2,7 @@ package cosipbft
 
 import (
 	"context"
+	"time"
 
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela/blockchain"
@@ -60,7 +61,7 @@ func newProcessor() *processor {
 func (h *processor) Invoke(from mino.Address, msg serde.Message) ([]byte, error) {
 	switch in := msg.(type) {
 	case types.BlockMessage:
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 
 		blocks := h.blocks.Watch(ctx)
@@ -75,18 +76,6 @@ func (h *processor) Invoke(from mino.Address, msg serde.Message) ([]byte, error)
 			}
 		}
 
-		if h.pbftsm.GetState() == pbft.InitialState {
-			roster, err := h.getCurrentRoster()
-			if err != nil {
-				return nil, xerrors.Errorf("read roster failed: %v", err)
-			}
-
-			err = h.pbftsm.PrePrepare(roster)
-			if err != nil {
-				return nil, xerrors.Errorf("pbft pre-prepare failed: %v", err)
-			}
-		}
-
 		digest, err := h.pbftsm.Prepare(in.GetBlock())
 		if err != nil {
 			return nil, xerrors.Errorf("pbft prepare failed: %v", err)
@@ -96,6 +85,7 @@ func (h *processor) Invoke(from mino.Address, msg serde.Message) ([]byte, error)
 	case types.CommitMessage:
 		err := h.pbftsm.Commit(in.GetID(), in.GetSignature())
 		if err != nil {
+			h.logger.Info().Msg("commit failed")
 			return nil, xerrors.Errorf("pbft commit failed: %v", err)
 		}
 

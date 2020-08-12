@@ -28,7 +28,7 @@ func TestProcessor_BlockMessage_Invoke(t *testing.T) {
 	proc.sync = fakeSync{}
 	proc.blocks = blockstore.NewInMemory()
 	proc.pbftsm = fakeSM{
-		state: pbft.PrePrepareState,
+		state: pbft.InitialState,
 		id:    expected,
 	}
 
@@ -38,17 +38,7 @@ func TestProcessor_BlockMessage_Invoke(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expected[:], id)
 
-	proc.pbftsm = fakeSM{state: pbft.InitialState}
-	proc.tree = blockstore.NewTreeCache(fakeTree{err: xerrors.New("oops")})
-	_, err = proc.Invoke(fake.NewAddress(0), msg)
-	require.EqualError(t, err, "read roster failed: read from tree: oops")
-
-	proc.tree = blockstore.NewTreeCache(fakeTree{})
 	proc.pbftsm = fakeSM{state: pbft.InitialState, err: xerrors.New("oops")}
-	_, err = proc.Invoke(fake.NewAddress(0), msg)
-	require.EqualError(t, err, "pbft pre-prepare failed: oops")
-
-	proc.pbftsm = fakeSM{state: pbft.PrePrepareState, err: xerrors.New("oops")}
 	_, err = proc.Invoke(fake.NewAddress(0), msg)
 	require.EqualError(t, err, "pbft prepare failed: oops")
 }
@@ -163,8 +153,8 @@ func (sm fakeSM) GetState() pbft.State {
 	return sm.state
 }
 
-func (sm fakeSM) GetLeader() mino.Address {
-	return fake.NewAddress(0)
+func (sm fakeSM) GetLeader() (mino.Address, error) {
+	return fake.NewAddress(0), nil
 }
 
 func (sm fakeSM) PrePrepare(viewchange.Authority) error {

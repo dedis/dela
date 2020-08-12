@@ -19,6 +19,9 @@ func TestBareMetal_Execute(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, execution.Result{}, res)
 
+	_, err = srvc.Execute(fakeTx{contract: "none"}, nil)
+	require.EqualError(t, err, "unknown contract 'none'")
+
 	_, err = srvc.Execute(fakeTx{contract: "bad"}, nil)
 	require.EqualError(t, err, "failed to execute: oops")
 }

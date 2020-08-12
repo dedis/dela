@@ -41,6 +41,7 @@ type Service struct {
 	val   validation.Service
 
 	timeout time.Duration
+	events  chan ordering.Event
 	closing chan struct{}
 }
 
@@ -139,6 +140,7 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 		actor:     actor,
 		val:       param.Validation,
 		timeout:   RoundTimeout,
+		events:    make(chan ordering.Event, 1),
 		closing:   make(chan struct{}),
 	}
 
@@ -220,10 +222,19 @@ func (s *Service) watchBlocks() {
 			s.logger.Err(err).Msg("roster refresh failed")
 		}
 
-		// 2. Notify the new block to potential listeners.
-		s.watcher.Notify(ordering.Event{
+		event := ordering.Event{
 			Index: link.GetTo().GetIndex(),
-		})
+		}
+
+		// 3. Notify the main loop that a new block has been created, but ignore
+		// if the channel is busy.
+		select {
+		case s.events <- event:
+		default:
+		}
+
+		// 4. Notify the new block to potential listeners.
+		s.watcher.Notify(event)
 	}
 }
 
@@ -281,19 +292,15 @@ func (s *Service) doRound() error {
 		return xerrors.Errorf("read roster failed: %v", err)
 	}
 
-	if s.pbftsm.GetState() == pbft.InitialState {
-		err = s.pbftsm.PrePrepare(roster)
-		if err != nil {
-			return xerrors.Errorf("pbft pre-prepare failed: %v", err)
-		}
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	events := s.Watch(ctx)
+	leader, err := s.pbftsm.GetLeader()
+	if err != nil {
+		return err
+	}
 
-	for !s.me.Equal(s.pbftsm.GetLeader()) {
+	for !s.me.Equal(leader) {
 		// Only enters the loop if the node is not the leader. It has to wait
 		// for the new block, or the round timeout, to proceed.
 
@@ -321,13 +328,13 @@ func (s *Service) doRound() error {
 			}
 
 			for state := range statesCh {
-				if state == pbft.PrePrepareState {
+				if state == pbft.InitialState {
 					break
 				}
 			}
 
 			s.logger.Debug().Msg("view change successful")
-		case <-events:
+		case <-s.events:
 			// A block has been created meaning that the round is over.
 			return nil
 		case <-s.closing:
@@ -335,7 +342,7 @@ func (s *Service) doRound() error {
 		}
 	}
 
-	s.logger.Debug().Msg("round has started")
+	s.logger.Debug().Uint64("index", s.blocks.Len()+1).Msg("round has started")
 
 	// Send a synchronization to the roster so that they can learn about the
 	// latest block of the chain.
@@ -349,6 +356,8 @@ func (s *Service) doRound() error {
 	if err != nil {
 		return err
 	}
+
+	s.logger.Debug().Uint64("index", s.blocks.Len()+1).Msg("pbft has started")
 
 	err = s.doPBFT(ctx, block)
 	if err != nil {

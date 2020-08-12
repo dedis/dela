@@ -47,7 +47,7 @@ func (bm *BareMetal) Execute(tx txn.Transaction, snap store.Snapshot) (execution
 
 	contract := bm.contracts[name]
 	if contract == nil {
-		return execution.Result{}, xerrors.Errorf("unknwon contract '%s'", name)
+		return execution.Result{}, xerrors.Errorf("unknown contract '%s'", name)
 	}
 
 	res, err := contract.Execute(tx, snap)
