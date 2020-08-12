@@ -2,7 +2,7 @@ package execution
 
 import (
 	"go.dedis.ch/dela/core/store"
-	"go.dedis.ch/dela/core/tap"
+	"go.dedis.ch/dela/core/txn"
 )
 
 // Result is the result of a transaction execution.
@@ -20,5 +20,5 @@ type Result struct {
 type Service interface {
 	// Execute must apply the transaction to the trie and return the result of
 	// it.
-	Execute(tx tap.Transaction, snap store.Snapshot) (Result, error)
+	Execute(tx txn.Transaction, snap store.Snapshot) (Result, error)
 }

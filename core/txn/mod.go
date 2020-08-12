@@ -1,4 +1,5 @@
-package tap
+// Package txn contains the definition of a transaction and its factory.
+package txn
 
 import (
 	"go.dedis.ch/dela/ledger/arc"
@@ -21,6 +22,8 @@ type Transaction interface {
 	GetArg(key string) []byte
 }
 
+// TransactionFactory is the definition of a factory to deserialize transaction
+// messages.
 type TransactionFactory interface {
 	serde.Factory
 

@@ -14,8 +14,8 @@ import (
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/hashtree"
-	"go.dedis.ch/dela/core/tap"
-	"go.dedis.ch/dela/core/tap/pool"
+	"go.dedis.ch/dela/core/txn"
+	"go.dedis.ch/dela/core/txn/pool"
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/crypto"
 	"golang.org/x/xerrors"
@@ -203,7 +203,7 @@ func (s *Service) createBlock(ctx context.Context) error {
 // waitTxs is a procedure to wait for transactions from the pool. It will wait
 // the provided minimum amount of time before waiting for at least one
 // transaction.
-func (s *Service) waitTxs(ctx context.Context) []tap.Transaction {
+func (s *Service) waitTxs(ctx context.Context) []txn.Transaction {
 	watchCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

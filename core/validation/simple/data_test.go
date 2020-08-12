@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/core/tap"
+	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
@@ -112,7 +112,7 @@ func TestDataFactory_Deserialize(t *testing.T) {
 // Utility functions
 
 type fakeTx struct {
-	tap.Transaction
+	txn.Transaction
 
 	err error
 }

@@ -17,7 +17,7 @@ import (
 	"go.dedis.ch/dela/core/store/hashtree"
 	"go.dedis.ch/dela/core/store/hashtree/binprefix"
 	"go.dedis.ch/dela/core/store/kv"
-	"go.dedis.ch/dela/core/tap"
+	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/internal/testing/fake"
@@ -322,7 +322,7 @@ type fakeExec struct {
 	err error
 }
 
-func (e fakeExec) Execute(tap.Transaction, store.Snapshot) (execution.Result, error) {
+func (e fakeExec) Execute(txn.Transaction, store.Snapshot) (execution.Result, error) {
 	return execution.Result{}, e.err
 }
 
@@ -330,6 +330,6 @@ type badValidation struct {
 	validation.Service
 }
 
-func (v badValidation) Validate(store.Snapshot, []tap.Transaction) (validation.Data, error) {
+func (v badValidation) Validate(store.Snapshot, []txn.Transaction) (validation.Data, error) {
 	return nil, xerrors.New("oops")
 }

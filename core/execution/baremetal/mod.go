@@ -3,7 +3,7 @@ package baremetal
 import (
 	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/store"
-	"go.dedis.ch/dela/core/tap"
+	"go.dedis.ch/dela/core/txn"
 	"golang.org/x/xerrors"
 )
 
@@ -27,7 +27,7 @@ func NewExecution(exec execution.Service) BareMetal {
 
 // Execute implements execution.Service. It uses the executor to process the
 // incoming transaction and return the result.
-func (bm BareMetal) Execute(tx tap.Transaction, snap store.Snapshot) (execution.Result, error) {
+func (bm BareMetal) Execute(tx txn.Transaction, snap store.Snapshot) (execution.Result, error) {
 	res, err := bm.exec.Execute(tx, snap)
 	if err != nil {
 		return res, xerrors.Errorf("failed to execute: %v", err)

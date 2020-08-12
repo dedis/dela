@@ -7,7 +7,7 @@ import (
 
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/consensus/viewchange/roster"
-	"go.dedis.ch/dela/core/tap"
+	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/serde"
@@ -378,9 +378,9 @@ func (b Block) GetData() validation.Data {
 
 // GetTransactions is a helper to extract the transactions from the validated
 // data.
-func (b Block) GetTransactions() []tap.Transaction {
+func (b Block) GetTransactions() []txn.Transaction {
 	results := b.data.GetTransactionResults()
-	txs := make([]tap.Transaction, len(results))
+	txs := make([]txn.Transaction, len(results))
 
 	for i, res := range results {
 		txs[i] = res.GetTransaction()

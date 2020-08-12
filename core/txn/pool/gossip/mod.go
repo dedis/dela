@@ -7,8 +7,8 @@ import (
 	"sync"
 
 	"go.dedis.ch/dela/blockchain"
-	"go.dedis.ch/dela/core/tap"
-	"go.dedis.ch/dela/core/tap/pool"
+	"go.dedis.ch/dela/core/txn"
+	"go.dedis.ch/dela/core/txn/pool"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/gossip"
 	"golang.org/x/xerrors"
@@ -21,7 +21,7 @@ import (
 type Pool struct {
 	sync.Mutex
 	actor   gossip.Actor
-	bag     map[string]tap.Transaction
+	bag     map[string]txn.Transaction
 	watcher blockchain.Observable
 	closing chan struct{}
 }
@@ -35,7 +35,7 @@ func NewPool(gossiper gossip.Gossiper) (*Pool, error) {
 
 	p := &Pool{
 		actor:   actor,
-		bag:     make(map[string]tap.Transaction),
+		bag:     make(map[string]txn.Transaction),
 		watcher: blockchain.NewWatcher(),
 		closing: make(chan struct{}),
 	}
@@ -56,11 +56,11 @@ func (p *Pool) Len() int {
 // GetAll implements pool.Pool. It returns the list of transactions that have
 // been received. It does not remove the transactions from the pool, thus
 // consecutive calls can return the same list.
-func (p *Pool) GetAll() []tap.Transaction {
+func (p *Pool) GetAll() []txn.Transaction {
 	p.Lock()
 	defer p.Unlock()
 
-	txs := make([]tap.Transaction, 0, len(p.bag))
+	txs := make([]txn.Transaction, 0, len(p.bag))
 	for _, tx := range p.bag {
 		txs = append(txs, tx)
 	}
@@ -77,7 +77,7 @@ func (p *Pool) SetPlayers(players mino.Players) error {
 
 // Add implements pool.Pool. It adds the transaction to the pool and gossips it
 // to other participants.
-func (p *Pool) Add(tx tap.Transaction) error {
+func (p *Pool) Add(tx txn.Transaction) error {
 	err := p.actor.Add(tx)
 	if err != nil {
 		return xerrors.Errorf("failed to gossip tx: %v", err)
@@ -90,7 +90,7 @@ func (p *Pool) Add(tx tap.Transaction) error {
 }
 
 // Remove implements pool.Pool. It removes the transaction from the pool.
-func (p *Pool) Remove(tx tap.Transaction) error {
+func (p *Pool) Remove(tx txn.Transaction) error {
 	p.Lock()
 	delete(p.bag, string(tx.GetID()))
 	p.Unlock()
@@ -129,7 +129,7 @@ func (p *Pool) Close() error {
 	return nil
 }
 
-func (p *Pool) setTx(tx tap.Transaction) {
+func (p *Pool) setTx(tx txn.Transaction) {
 	p.Lock()
 	p.bag[string(tx.GetID())] = tx
 	p.Unlock()
@@ -152,7 +152,7 @@ func (p *Pool) listenRumors(ch <-chan gossip.Rumor) {
 	for {
 		select {
 		case r := <-ch:
-			tx, ok := r.(tap.Transaction)
+			tx, ok := r.(txn.Transaction)
 			if ok {
 				p.setTx(tx)
 				p.notify()

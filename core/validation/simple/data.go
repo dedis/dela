@@ -3,7 +3,7 @@ package simple
 import (
 	"io"
 
-	"go.dedis.ch/dela/core/tap"
+	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/registry"
@@ -30,14 +30,14 @@ func RegisterDataFormat(f serde.Format, e serde.FormatEngine) {
 //
 // - implements validation.TransactionResult
 type TransactionResult struct {
-	tx       tap.Transaction
+	tx       txn.Transaction
 	accepted bool
 	reason   string
 }
 
 // NewTransactionResult creates a new transaction result for the provided
 // transaction.
-func NewTransactionResult(tx tap.Transaction, accepted bool, reason string) TransactionResult {
+func NewTransactionResult(tx txn.Transaction, accepted bool, reason string) TransactionResult {
 	return TransactionResult{
 		tx:       tx,
 		accepted: accepted,
@@ -47,7 +47,7 @@ func NewTransactionResult(tx tap.Transaction, accepted bool, reason string) Tran
 
 // GetTransaction implements validation.TransactionResult. It returns the
 // transaction associated to the result.
-func (res TransactionResult) GetTransaction() tap.Transaction {
+func (res TransactionResult) GetTransaction() txn.Transaction {
 	return res.tx
 }
 
@@ -77,11 +77,11 @@ type TransactionKey struct{}
 //
 // - implements serde.Factory
 type ResultFactory struct {
-	fac tap.TransactionFactory
+	fac txn.TransactionFactory
 }
 
 // NewResultFactory creates a new transaction result factory.
-func NewResultFactory(f tap.TransactionFactory) ResultFactory {
+func NewResultFactory(f txn.TransactionFactory) ResultFactory {
 	return ResultFactory{
 		fac: f,
 	}
@@ -172,7 +172,7 @@ type DataFactory struct {
 }
 
 // NewDataFactory creates a new data factory.
-func NewDataFactory(f tap.TransactionFactory) DataFactory {
+func NewDataFactory(f txn.TransactionFactory) DataFactory {
 	return DataFactory{
 		fac: NewResultFactory(f),
 	}

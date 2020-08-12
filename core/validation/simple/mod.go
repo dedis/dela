@@ -4,7 +4,7 @@ package simple
 import (
 	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/store"
-	"go.dedis.ch/dela/core/tap"
+	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/validation"
 	"golang.org/x/xerrors"
 )
@@ -19,7 +19,7 @@ type Service struct {
 }
 
 // NewService creates a new validation service.
-func NewService(exec execution.Service, f tap.TransactionFactory) Service {
+func NewService(exec execution.Service, f txn.TransactionFactory) Service {
 	return Service{
 		execution: exec,
 		fac:       NewDataFactory(f),
@@ -34,7 +34,7 @@ func (s Service) GetFactory() validation.DataFactory {
 
 // Validate implements validation.Service. It processes the list of transactions
 // while updating the snapshot then returns a bundle of the transaction results.
-func (s Service) Validate(store store.Snapshot, txs []tap.Transaction) (validation.Data, error) {
+func (s Service) Validate(store store.Snapshot, txs []txn.Transaction) (validation.Data, error) {
 	results := make([]TransactionResult, len(txs))
 
 	for i, tx := range txs {

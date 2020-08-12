@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/core/tap"
-	"go.dedis.ch/dela/core/tap/anon"
+	"go.dedis.ch/dela/core/txn"
+	"go.dedis.ch/dela/core/txn/anon"
 	"go.dedis.ch/dela/internal/testing/fake"
 )
 
@@ -45,7 +45,7 @@ func TestTxFormat_Decode(t *testing.T) {
 
 // Utility functions -----------------------------------------------------------
 
-func makeTx(t *testing.T, nonce uint64, opts ...anon.TransactionOption) tap.Transaction {
+func makeTx(t *testing.T, nonce uint64, opts ...anon.TransactionOption) txn.Transaction {
 	tx, err := anon.NewTransaction(nonce, opts...)
 	require.NoError(t, err)
 

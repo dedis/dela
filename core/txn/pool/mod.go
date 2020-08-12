@@ -6,7 +6,7 @@ package pool
 import (
 	"context"
 
-	"go.dedis.ch/dela/core/tap"
+	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/mino"
 )
 
@@ -22,17 +22,17 @@ type Pool interface {
 	Len() int
 
 	// GetAll returns the list of transactions available.
-	GetAll() []tap.Transaction
+	GetAll() []txn.Transaction
 
 	// SetPlayers updates the list of participants that should eventually
 	// receive the transactions.
 	SetPlayers(mino.Players) error
 
 	// Add adds the transaction to the pool.
-	Add(tap.Transaction) error
+	Add(txn.Transaction) error
 
 	// Remove removes the transaction from the pool.
-	Remove(tap.Transaction) error
+	Remove(txn.Transaction) error
 
 	// Watch returns a channel of events that will be populated when the length
 	// of the pool evolves.

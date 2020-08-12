@@ -14,9 +14,9 @@ import (
 	"go.dedis.ch/dela/core/store/hashtree"
 	tree "go.dedis.ch/dela/core/store/hashtree/binprefix"
 	"go.dedis.ch/dela/core/store/kv"
-	"go.dedis.ch/dela/core/tap"
-	txn "go.dedis.ch/dela/core/tap/anon"
-	pool "go.dedis.ch/dela/core/tap/pool/mem"
+	"go.dedis.ch/dela/core/txn"
+	"go.dedis.ch/dela/core/txn/anon"
+	pool "go.dedis.ch/dela/core/txn/pool/mem"
 	"go.dedis.ch/dela/core/validation"
 	val "go.dedis.ch/dela/core/validation/simple"
 	"golang.org/x/xerrors"
@@ -29,7 +29,7 @@ func TestService_Basic(t *testing.T) {
 	pool := pool.NewPool()
 	srvc := NewService(
 		pool,
-		val.NewService(baremetal.NewExecution(testExec{}), txn.NewTransactionFactory()),
+		val.NewService(baremetal.NewExecution(testExec{}), anon.NewTransactionFactory()),
 		tree,
 	)
 
@@ -66,7 +66,7 @@ func TestService_Listen(t *testing.T) {
 	tree, clean := makeTree(t)
 	defer clean()
 
-	vs := val.NewService(baremetal.NewExecution(testExec{}), txn.NewTransactionFactory())
+	vs := val.NewService(baremetal.NewExecution(testExec{}), anon.NewTransactionFactory())
 
 	pool := pool.NewPool()
 	srvc := NewService(pool, vs, tree)
@@ -129,8 +129,8 @@ func makeTree(t *testing.T) (hashtree.Tree, func()) {
 	return tree, func() { os.RemoveAll(dir) }
 }
 
-func makeTx(t *testing.T, nonce uint64) tap.Transaction {
-	tx, err := txn.NewTransaction(nonce, txn.WithArg("key", []byte("ping")), txn.WithArg("value", []byte("pong")))
+func makeTx(t *testing.T, nonce uint64) txn.Transaction {
+	tx, err := anon.NewTransaction(nonce, anon.WithArg("key", []byte("ping")), anon.WithArg("value", []byte("pong")))
 	require.NoError(t, err)
 
 	return tx
@@ -138,7 +138,7 @@ func makeTx(t *testing.T, nonce uint64) tap.Transaction {
 
 type testExec struct{}
 
-func (e testExec) Execute(tx tap.Transaction, store store.Snapshot) (execution.Result, error) {
+func (e testExec) Execute(tx txn.Transaction, store store.Snapshot) (execution.Result, error) {
 	key := tx.GetArg("key")
 	value := tx.GetArg("value")
 
@@ -158,7 +158,7 @@ type badValidation struct {
 	validation.Service
 }
 
-func (v badValidation) Validate(store.Snapshot, []tap.Transaction) (validation.Data, error) {
+func (v badValidation) Validate(store.Snapshot, []txn.Transaction) (validation.Data, error) {
 	return nil, xerrors.New("oops")
 }
 
