@@ -14,6 +14,7 @@ import (
 	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/execution/baremetal"
+	rosterchange "go.dedis.ch/dela/core/execution/baremetal/viewchange"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/ordering/cosipbft/pbft"
@@ -35,17 +36,20 @@ import (
 	"go.dedis.ch/dela/mino/gossip"
 	"go.dedis.ch/dela/mino/minoch"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
 
 func TestService_Basic(t *testing.T) {
-	srvs, ro, clean := makeAuthority(t, 4)
+	srvs, ro, clean := makeAuthority(t, 5)
 	defer clean()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	err := srvs[0].service.Setup(ro)
+	initial := ro.Take(mino.RangeFilter(0, 4)).(crypto.CollectiveAuthority)
+
+	err := srvs[0].service.Setup(initial)
 	require.NoError(t, err)
 
 	events := srvs[2].service.Watch(ctx)
@@ -61,6 +65,18 @@ func TestService_Basic(t *testing.T) {
 
 	evt = waitEvent(t, events)
 	require.Equal(t, uint64(2), evt.Index)
+
+	err = srvs[1].pool.Add(makeRosterTx(t, 2, ro))
+	require.NoError(t, err)
+
+	evt = waitEvent(t, events)
+	require.Equal(t, uint64(3), evt.Index)
+
+	err = srvs[1].pool.Add(makeTx(t, 3))
+	require.NoError(t, err)
+
+	evt = waitEvent(t, events)
+	require.Equal(t, uint64(4), evt.Index)
 }
 
 func TestService_ViewChange_DoRound(t *testing.T) {
@@ -184,6 +200,20 @@ func makeTx(t *testing.T, nonce uint64) txn.Transaction {
 	return tx
 }
 
+func makeRosterTx(t *testing.T, nonce uint64, roster viewchange.Authority) txn.Transaction {
+	data, err := roster.Serialize(json.NewContext())
+	require.NoError(t, err)
+
+	tx, err := anon.NewTransaction(
+		nonce,
+		anon.WithArg(baremetal.ContractArg, []byte(rosterchange.ContractName)),
+		anon.WithArg(rosterchange.AuthorityArg, data),
+	)
+	require.NoError(t, err)
+
+	return tx
+}
+
 func waitEvent(t *testing.T, events <-chan ordering.Event) ordering.Event {
 	select {
 	case <-time.After(4 * time.Second):
@@ -194,7 +224,7 @@ func waitEvent(t *testing.T, events <-chan ordering.Event) ordering.Event {
 	}
 }
 
-func makeAuthority(t *testing.T, n int) ([]testNode, crypto.CollectiveAuthority, func()) {
+func makeAuthority(t *testing.T, n int) ([]testNode, viewchange.Authority, func()) {
 	manager := minoch.NewManager()
 
 	addrs := make([]mino.Address, n)
@@ -225,6 +255,9 @@ func makeAuthority(t *testing.T, n int) ([]testNode, crypto.CollectiveAuthority,
 
 		exec := baremetal.NewExecution()
 		exec.Set(testContractName, testExec{})
+
+		rosterFac := roster.NewFactory(m.GetAddressFactory(), c.GetPublicKeyFactory())
+		exec.Set(rosterchange.ContractName, rosterchange.NewContract(keyRoster[:], rosterFac))
 
 		vs := simple.NewService(exec, anon.NewTransactionFactory())
 

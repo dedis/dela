@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/internal/testing/fake"
 )
 
@@ -118,7 +119,7 @@ func TestViewMessage_Serialize(t *testing.T) {
 }
 
 func TestMessageFactory_Deserialize(t *testing.T) {
-	fac := NewMessageFactory(GenesisFactory{}, BlockFactory{}, fake.SignatureFactory{})
+	fac := NewMessageFactory(GenesisFactory{}, BlockFactory{}, fake.SignatureFactory{}, roster.NewChangeSetFactory(fake.AddressFactory{}, fake.PublicKeyFactory{}))
 
 	msg, err := fac.Deserialize(fake.NewContext(), nil)
 	require.NoError(t, err)

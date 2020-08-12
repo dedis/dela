@@ -1,6 +1,7 @@
 package types
 
 import (
+	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/registry"
@@ -202,14 +203,16 @@ type MessageFactory struct {
 	genesisFac serde.Factory
 	blockFac   serde.Factory
 	sigFac     crypto.SignatureFactory
+	csFac      viewchange.ChangeSetFactory
 }
 
 // NewMessageFactory creates a new message factory.
-func NewMessageFactory(gf, bf serde.Factory, sf crypto.SignatureFactory) MessageFactory {
+func NewMessageFactory(gf, bf serde.Factory, sf crypto.SignatureFactory, csf viewchange.ChangeSetFactory) MessageFactory {
 	return MessageFactory{
 		genesisFac: gf,
 		blockFac:   bf,
 		sigFac:     sf,
+		csFac:      csf,
 	}
 }
 
@@ -220,7 +223,7 @@ func (f MessageFactory) Deserialize(ctx serde.Context, data []byte) (serde.Messa
 	ctx = serde.WithFactory(ctx, GenesisKey{}, f.genesisFac)
 	ctx = serde.WithFactory(ctx, BlockKey{}, f.blockFac)
 	ctx = serde.WithFactory(ctx, SignatureKey{}, f.sigFac)
-	ctx = serde.WithFactory(ctx, BlockLinkKey{}, NewBlockLinkFactory(f.blockFac, f.sigFac))
+	ctx = serde.WithFactory(ctx, BlockLinkKey{}, NewBlockLinkFactory(f.blockFac, f.sigFac, f.csFac))
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {

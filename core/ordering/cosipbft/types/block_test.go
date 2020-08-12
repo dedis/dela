@@ -140,7 +140,7 @@ func TestBlockLink_GetChangeSet(t *testing.T) {
 }
 
 func TestBlockLink_Fingerprint(t *testing.T) {
-	link := NewBlockLink(Digest{}, Block{digest: Digest{}}, nil, nil)
+	link := NewBlockLink(Digest{}, Block{digest: Digest{}}, nil, nil, nil)
 
 	buffer := new(bytes.Buffer)
 
@@ -167,7 +167,7 @@ func TestBlockLink_Serialize(t *testing.T) {
 }
 
 func TestBlockLinkFac_Deserialize(t *testing.T) {
-	fac := NewBlockLinkFactory(BlockFactory{}, fake.SignatureFactory{})
+	fac := NewBlockLinkFactory(BlockFactory{}, fake.SignatureFactory{}, roster.NewChangeSetFactory(fake.AddressFactory{}, fake.PublicKeyFactory{}))
 
 	msg, err := fac.Deserialize(fake.NewContext(), nil)
 	require.NoError(t, err)

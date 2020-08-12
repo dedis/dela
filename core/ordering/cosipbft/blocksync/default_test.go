@@ -10,6 +10,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blocksync/types"
 	"go.dedis.ch/dela/core/ordering/cosipbft/pbft"
@@ -218,11 +219,12 @@ func makeNodes(t *testing.T, n int) ([]defaultSync, mino.Players) {
 
 		blocks := blockstore.NewInMemory()
 		blockFac := cosipbft.NewBlockFactory(simple.NewDataFactory(anon.NewTransactionFactory()))
+		csFac := roster.NewChangeSetFactory(m.GetAddressFactory(), fake.PublicKeyFactory{})
 
 		param := SyncParam{
 			Mino:        m,
 			Blocks:      blocks,
-			LinkFactory: cosipbft.NewBlockLinkFactory(blockFac, fake.SignatureFactory{}),
+			LinkFactory: cosipbft.NewBlockLinkFactory(blockFac, fake.SignatureFactory{}, csFac),
 			PBFT:        testSM{blocks: blocks},
 		}
 
@@ -242,7 +244,7 @@ func storeBlocks(t *testing.T, blocks blockstore.BlockStore, n int) {
 		block, err := cosipbft.NewBlock(simple.NewData(nil), cosipbft.WithIndex(uint64(i)))
 		require.NoError(t, err)
 
-		err = blocks.Store(cosipbft.NewBlockLink(prev, block, fake.Signature{}, fake.Signature{}))
+		err = blocks.Store(cosipbft.NewBlockLink(prev, block, fake.Signature{}, fake.Signature{}, roster.ChangeSet{}))
 		require.NoError(t, err)
 
 		prev = block.GetHash()

@@ -11,6 +11,9 @@ import (
 )
 
 const (
+	// ContractName is the name of the contract.
+	ContractName = "go.dedis.ch/dela/core/execution/baremetal/viewchange.Contract"
+
 	// AuthorityArg is the key of the argument for the new roster.
 	AuthorityArg = "viewchange:authority"
 

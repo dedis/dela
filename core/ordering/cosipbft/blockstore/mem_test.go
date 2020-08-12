@@ -96,7 +96,7 @@ func makeLink(t *testing.T, from types.Digest, opts ...types.BlockOption) types.
 	to, err := types.NewBlock(simple.NewData(nil), opts...)
 	require.NoError(t, err)
 
-	link := types.NewBlockLink(from, to, nil, nil)
+	link := types.NewBlockLink(from, to, nil, nil, nil)
 
 	return link
 }

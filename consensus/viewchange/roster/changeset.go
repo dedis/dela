@@ -30,8 +30,21 @@ type ChangeSet struct {
 	Add    []Player
 }
 
+// NumChanges implements viewchange.ChangeSet. It returns the number of changes
+// that is applied with the change set.
 func (set ChangeSet) NumChanges() int {
 	return len(set.Remove) + len(set.Add)
+}
+
+// GetNewAddresses implements viewchange.ChangeSet. It returns the list of
+// addresses of the new members.
+func (set ChangeSet) GetNewAddresses() []mino.Address {
+	addrs := make([]mino.Address, len(set.Add))
+	for i, player := range set.Add {
+		addrs[i] = player.Address
+	}
+
+	return addrs
 }
 
 // Serialize implements serde.Message.

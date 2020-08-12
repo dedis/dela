@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/blockchain"
+	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
@@ -159,11 +160,16 @@ func TestStateMachine_Finalize(t *testing.T) {
 	tree, clean := makeTree(t)
 	defer clean()
 
+	ro := roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+
 	param := StateMachineParam{
 		VerifierFactory: fake.NewVerifierFactory(fake.Verifier{}),
 		Blocks:          blockstore.NewInMemory(),
 		Genesis:         blockstore.NewGenesisStore(),
 		Tree:            blockstore.NewTreeCache(tree),
+		AuthorityReader: func(hashtree.Tree) (viewchange.Authority, error) {
+			return ro, nil
+		},
 	}
 
 	param.Genesis.Set(types.Genesis{})
@@ -172,6 +178,7 @@ func TestStateMachine_Finalize(t *testing.T) {
 	sm.state = CommitState
 	sm.round.tree = tree.(hashtree.StagingTree)
 	sm.round.prepareSig = fake.Signature{}
+	sm.round.roster = ro
 
 	err := sm.Finalize(types.Digest{1}, fake.Signature{})
 	require.NoError(t, err)
@@ -249,12 +256,17 @@ func TestStateMachine_CatchUp(t *testing.T) {
 	tree, clean := makeTree(t)
 	defer clean()
 
+	ro := roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+
 	param := StateMachineParam{
 		Validation:      simple.NewService(fakeExec{}, nil),
 		VerifierFactory: fake.VerifierFactory{},
 		Blocks:          blockstore.NewInMemory(),
 		Genesis:         blockstore.NewGenesisStore(),
 		Tree:            blockstore.NewTreeCache(tree),
+		AuthorityReader: func(hashtree.Tree) (viewchange.Authority, error) {
+			return ro, nil
+		},
 	}
 
 	param.Genesis.Set(types.Genesis{})
@@ -266,20 +278,24 @@ func TestStateMachine_CatchUp(t *testing.T) {
 	require.NoError(t, err)
 
 	sm := NewStateMachine(param).(*pbftsm)
+	sm.round.roster = ro
 
-	err = sm.CatchUp(types.NewBlockLink(types.Digest{}, block, fake.Signature{}, fake.Signature{}))
+	link := types.NewBlockLink(types.Digest{}, block, fake.Signature{}, fake.Signature{}, roster.ChangeSet{})
+
+	err = sm.CatchUp(link)
 	require.NoError(t, err)
 
-	err = sm.CatchUp(types.NewBlockLink(types.Digest{}, block, fake.Signature{}, fake.Signature{}))
+	err = sm.CatchUp(link)
 	require.EqualError(t, err, "prepare failed: mismatch index 1 != 2")
 
 	sm.blocks = blockstore.NewInMemory()
 	sm.verifierFac = fake.NewVerifierFactory(fake.NewBadVerifier())
-	err = sm.CatchUp(types.NewBlockLink(types.Digest{}, block, fake.Signature{}, fake.Signature{}))
+	err = sm.CatchUp(link)
 	require.EqualError(t, err, "commit failed: verifier failed: fake error")
 
+	link = types.NewBlockLink(types.Digest{}, block, fake.NewBadSignature(), fake.Signature{}, roster.ChangeSet{})
 	sm.verifierFac = fake.VerifierFactory{}
-	err = sm.CatchUp(types.NewBlockLink(types.Digest{}, block, fake.NewBadSignature(), fake.Signature{}))
+	err = sm.CatchUp(link)
 	require.EqualError(t, err, "finalize failed: couldn't marshal signature: fake error")
 }
 

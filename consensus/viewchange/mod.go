@@ -11,6 +11,8 @@ type ChangeSet interface {
 	serde.Message
 
 	NumChanges() int
+
+	GetNewAddresses() []mino.Address
 }
 
 type ChangeSetFactory interface {

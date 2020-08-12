@@ -92,6 +92,10 @@ type round struct {
 	views      map[mino.Address]struct{}
 }
 
+// AuthorityReader is a function to help the state machine to read the current
+// authority for a given tree.
+type AuthorityReader func(tree hashtree.Tree) (viewchange.Authority, error)
+
 type pbftsm struct {
 	sync.Mutex
 
@@ -102,6 +106,7 @@ type pbftsm struct {
 	blocks      blockstore.BlockStore
 	genesis     blockstore.GenesisStore
 	tree        blockstore.TreeCache
+	authReader  AuthorityReader
 
 	state State
 	round round
@@ -115,6 +120,7 @@ type StateMachineParam struct {
 	Blocks          blockstore.BlockStore
 	Genesis         blockstore.GenesisStore
 	Tree            blockstore.TreeCache
+	AuthorityReader AuthorityReader
 }
 
 // NewStateMachine returns a new state machine.
@@ -128,6 +134,7 @@ func NewStateMachine(param StateMachineParam) StateMachine {
 		genesis:     param.Genesis,
 		tree:        param.Tree,
 		state:       InitialState,
+		authReader:  param.AuthorityReader,
 	}
 }
 
@@ -244,12 +251,10 @@ func (m *pbftsm) Finalize(id types.Digest, sig crypto.Signature) error {
 		return xerrors.Errorf("mismatch state %v != %v", m.state, CommitState)
 	}
 
-	tree, err := m.verifyFinalize(&m.round, sig)
+	err := m.verifyFinalize(&m.round, sig)
 	if err != nil {
 		return err
 	}
-
-	m.tree.Set(tree)
 
 	m.round = round{
 		roster: m.round.roster,
@@ -365,15 +370,13 @@ func (m *pbftsm) CatchUp(link types.BlockLink) error {
 		return xerrors.Errorf("commit failed: %v", err)
 	}
 
-	tree, err := m.verifyFinalize(&r, link.GetCommitSignature())
+	err = m.verifyFinalize(&r, link.GetCommitSignature())
 	if err != nil {
 		return xerrors.Errorf("finalize failed: %v", err)
 	}
 
-	m.tree.Set(tree)
-
 	m.round = round{
-		roster: m.round.roster,
+		roster: m.round.roster.Apply(link.GetChangeSet()),
 	}
 
 	m.setState(InitialState)
@@ -428,7 +431,7 @@ func (m *pbftsm) verifyPrepare(tree hashtree.Tree, block types.Block, r *round) 
 		return xerrors.Errorf("couldn't get latest digest: %v", err)
 	}
 
-	link := types.NewBlockLink(lastID, block, nil, nil)
+	link := types.NewBlockLink(lastID, block, nil, nil, nil)
 
 	h := m.hashFac.New()
 	err = link.Fingerprint(h)
@@ -439,7 +442,7 @@ func (m *pbftsm) verifyPrepare(tree hashtree.Tree, block types.Block, r *round) 
 	copy(r.id[:], h.Sum(nil))
 
 	r.tree = stageTree
-	r.block = link.GetTo()
+	r.block = block
 
 	return nil
 }
@@ -460,42 +463,49 @@ func (m *pbftsm) verifyCommit(r *round, sig crypto.Signature) error {
 	return nil
 }
 
-func (m *pbftsm) verifyFinalize(r *round, sig crypto.Signature) (hashtree.Tree, error) {
+func (m *pbftsm) verifyFinalize(r *round, sig crypto.Signature) error {
 	verifier, err := m.verifierFac.FromAuthority(r.roster)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't make verifier: %v", err)
+		return xerrors.Errorf("couldn't make verifier: %v", err)
 	}
 
 	buffer, err := r.prepareSig.MarshalBinary()
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't marshal signature: %v", err)
+		return xerrors.Errorf("couldn't marshal signature: %v", err)
 	}
 
 	err = verifier.Verify(buffer, sig)
 	if err != nil {
-		return nil, xerrors.Errorf("verifier failed: %v", err)
+		return xerrors.Errorf("verifier failed: %v", err)
 	}
 
 	lastID, err := m.getLatestID()
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't get latest digest: %v", err)
+		return xerrors.Errorf("couldn't get latest digest: %v", err)
 	}
 
-	link := types.NewBlockLink(lastID, r.block, r.prepareSig, sig)
-
-	err = m.blocks.Store(link)
+	roster, err := m.authReader(r.tree)
 	if err != nil {
-		// TODO: database tx
-		return nil, err
+		return xerrors.Errorf("read roster failed: %v", err)
 	}
 
 	tree, err := r.tree.Commit()
 	if err != nil {
 		// TODO: database tx
-		return nil, err
+		return err
 	}
 
-	return tree, nil
+	m.tree.Set(tree)
+
+	link := types.NewBlockLink(lastID, r.block, r.prepareSig, sig, r.roster.Diff(roster))
+
+	err = m.blocks.Store(link)
+	if err != nil {
+		// TODO: database tx
+		return err
+	}
+
+	return nil
 }
 
 func (m *pbftsm) setState(s State) {

@@ -113,7 +113,7 @@ func TestProcessor_DoneMessage_Process(t *testing.T) {
 	proc := newProcessor()
 	proc.pbftsm = fakeSM{}
 	proc.blocks = blockstore.NewInMemory()
-	proc.blocks.Store(types.NewBlockLink(types.Digest{}, block, nil, nil))
+	proc.blocks.Store(types.NewBlockLink(types.Digest{}, block, nil, nil, nil))
 
 	req := mino.Request{
 		Message: types.NewDone(types.Digest{}, fake.Signature{}),

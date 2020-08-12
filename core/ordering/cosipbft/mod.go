@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/consensus/viewchange/roster"
@@ -41,7 +40,6 @@ type Service struct {
 	actor cosi.Actor
 	val   validation.Service
 
-	logger  zerolog.Logger
 	timeout time.Duration
 	closing chan struct{}
 }
@@ -84,6 +82,7 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 	proc.pool = param.Pool
 	proc.rosterFac = roster.NewFactory(param.Mino.GetAddressFactory(), param.Cosi.GetPublicKeyFactory())
 	proc.tree = blockstore.NewTreeCache(param.Tree)
+	proc.logger = dela.Logger.With().Str("addr", param.Mino.GetAddress().String()).Logger()
 
 	pcparam := pbft.StateMachineParam{
 		Validation:      param.Validation,
@@ -91,12 +90,14 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 		Blocks:          tmpl.blocks,
 		Genesis:         tmpl.genesis,
 		Tree:            proc.tree,
+		AuthorityReader: proc.readRoster,
 	}
 
 	proc.pbftsm = pbft.NewStateMachine(pcparam)
 
 	blockFac := types.NewBlockFactory(param.Validation.GetFactory())
-	linkFac := types.NewBlockLinkFactory(blockFac, param.Cosi.GetSignatureFactory())
+	csFac := roster.NewChangeSetFactory(param.Mino.GetAddressFactory(), param.Cosi.GetPublicKeyFactory())
+	linkFac := types.NewBlockLinkFactory(blockFac, param.Cosi.GetSignatureFactory(), csFac)
 
 	syncparam := blocksync.SyncParam{
 		Mino:        param.Mino,
@@ -116,6 +117,7 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 		types.NewGenesisFactory(proc.rosterFac),
 		blockFac,
 		param.Cosi.GetSignatureFactory(),
+		csFac,
 	)
 
 	proc.MessageFactory = fac
@@ -136,7 +138,6 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 		rpc:       rpc,
 		actor:     actor,
 		val:       param.Validation,
-		logger:    dela.Logger.With().Str("addr", param.Mino.GetAddress().String()).Logger(),
 		timeout:   RoundTimeout,
 		closing:   make(chan struct{}),
 	}
@@ -213,11 +214,31 @@ func (s *Service) watchBlocks() {
 			s.pool.Remove(res.GetTransaction())
 		}
 
+		// 2. Update the current membership.
+		err := s.refreshRoster()
+		if err != nil {
+			s.logger.Err(err).Msg("roster refresh failed")
+		}
+
 		// 2. Notify the new block to potential listeners.
 		s.watcher.Notify(ordering.Event{
 			Index: link.GetTo().GetIndex(),
 		})
 	}
+}
+
+func (s *Service) refreshRoster() error {
+	roster, err := s.getCurrentRoster()
+	if err != nil {
+		return err
+	}
+
+	err = s.pool.SetPlayers(roster)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (s *Service) main() error {
@@ -451,6 +472,31 @@ func (s *Service) doPBFT(ctx context.Context, block *types.Block) error {
 		_, err = resp.GetMessageOrError()
 		if err != nil {
 			s.logger.Warn().Err(err).Msg("propagation failed")
+		}
+	}
+
+	// 4. Wake up new participants.
+	newRoster, err := s.getCurrentRoster()
+	if err != nil {
+		return xerrors.Errorf("read roster failed: %v", err)
+	}
+
+	changeset := roster.Diff(newRoster)
+
+	genesis, err := s.genesis.Get()
+	if err != nil {
+		return xerrors.Errorf("read genesis failed: %v", err)
+	}
+
+	resps, err = s.rpc.Call(ctx, types.NewGenesisMessage(genesis), mino.NewAddresses(changeset.GetNewAddresses()...))
+	if err != nil {
+		return xerrors.Errorf("rpc failed: %v", err)
+	}
+
+	for resp := range resps {
+		_, err := resp.GetMessageOrError()
+		if err != nil {
+			s.logger.Warn().Err(err).Msg("wake up failed")
 		}
 	}
 

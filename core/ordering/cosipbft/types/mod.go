@@ -1,6 +1,7 @@
 package types
 
 import (
+	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/serde"
 )
@@ -18,6 +19,8 @@ type BlockLink interface {
 	GetPrepareSignature() crypto.Signature
 
 	GetCommitSignature() crypto.Signature
+
+	GetChangeSet() viewchange.ChangeSet
 }
 
 // BlockLinkFactory is the interface of the block link factory.
