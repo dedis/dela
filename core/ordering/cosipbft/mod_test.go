@@ -168,6 +168,8 @@ type testNode struct {
 	dbpath  string
 }
 
+const testContractName = "abc"
+
 type testExec struct {
 	err error
 }
@@ -177,7 +179,7 @@ func (e testExec) Execute(txn.Transaction, store.Snapshot) (execution.Result, er
 }
 
 func makeTx(t *testing.T, nonce uint64) txn.Transaction {
-	tx, err := anon.NewTransaction(nonce)
+	tx, err := anon.NewTransaction(nonce, anon.WithArg(baremetal.ContractArg, []byte(testContractName)))
 	require.NoError(t, err)
 	return tx
 }
@@ -221,7 +223,10 @@ func makeAuthority(t *testing.T, n int) ([]testNode, crypto.CollectiveAuthority,
 
 		tree := binprefix.NewMerkleTree(db, binprefix.Nonce{})
 
-		vs := simple.NewService(baremetal.NewExecution(testExec{}), anon.NewTransactionFactory())
+		exec := baremetal.NewExecution()
+		exec.Set(testContractName, testExec{})
+
+		vs := simple.NewService(exec, anon.NewTransactionFactory())
 
 		param := ServiceParam{
 			Mino:       m,

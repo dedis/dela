@@ -30,6 +30,10 @@ type ChangeSet struct {
 	Add    []Player
 }
 
+func (set ChangeSet) NumChanges() int {
+	return len(set.Remove) + len(set.Add)
+}
+
 // Serialize implements serde.Message.
 func (set ChangeSet) Serialize(ctx serde.Context) ([]byte, error) {
 	format := csetFormats.Get(ctx.GetFormat())

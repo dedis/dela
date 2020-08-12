@@ -9,6 +9,8 @@ import (
 // ChangeSet is the return of a diff between two authorities.
 type ChangeSet interface {
 	serde.Message
+
+	NumChanges() int
 }
 
 type ChangeSetFactory interface {
