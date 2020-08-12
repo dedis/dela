@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"go.dedis.ch/dela/blockchain"
-	"go.dedis.ch/dela/core/tap"
-	"go.dedis.ch/dela/core/tap/pool"
+	"go.dedis.ch/dela/core/txn"
+	"go.dedis.ch/dela/core/txn/pool"
 	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
 )
@@ -23,7 +23,7 @@ type Key [KeyMaxLength]byte
 // - implements pool.Pool
 type Pool struct {
 	history map[Key]struct{}
-	txs     map[Key]tap.Transaction
+	txs     map[Key]txn.Transaction
 	watcher blockchain.Observable
 }
 
@@ -31,7 +31,7 @@ type Pool struct {
 func NewPool() Pool {
 	return Pool{
 		history: make(map[Key]struct{}),
-		txs:     make(map[Key]tap.Transaction),
+		txs:     make(map[Key]txn.Transaction),
 		watcher: blockchain.NewWatcher(),
 	}
 }
@@ -43,7 +43,7 @@ func (s Pool) Len() int {
 
 // Add implements pool.Pool. It adds the transaction to the pool of waiting
 // transactions.
-func (s Pool) Add(tx tap.Transaction) error {
+func (s Pool) Add(tx txn.Transaction) error {
 	id := tx.GetID()
 	if len(id) > KeyMaxLength {
 		return xerrors.Errorf("tx identifier is too long: %d > %d", len(id), KeyMaxLength)
@@ -66,7 +66,7 @@ func (s Pool) Add(tx tap.Transaction) error {
 
 // Remove implements pool.Pool. It removes the transaction from the pool if it
 // exists, otherwise it returns an error.
-func (s Pool) Remove(tx tap.Transaction) error {
+func (s Pool) Remove(tx txn.Transaction) error {
 	key := Key{}
 	copy(key[:], tx.GetID())
 
@@ -88,8 +88,8 @@ func (s Pool) Remove(tx tap.Transaction) error {
 
 // GetAll implements pool.Pool. It returns all the waiting transactions in
 // the pool.
-func (s Pool) GetAll() []tap.Transaction {
-	txs := make([]tap.Transaction, 0, len(s.txs))
+func (s Pool) GetAll() []txn.Transaction {
+	txs := make([]txn.Transaction, 0, len(s.txs))
 	for _, tx := range s.txs {
 		txs = append(txs, tx)
 	}

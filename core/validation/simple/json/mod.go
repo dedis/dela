@@ -3,7 +3,7 @@ package json
 import (
 	"encoding/json"
 
-	"go.dedis.ch/dela/core/tap"
+	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
@@ -62,7 +62,7 @@ func (f resFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error)
 
 	factory := ctx.GetFactory(simple.TransactionKey{})
 
-	fac, ok := factory.(tap.TransactionFactory)
+	fac, ok := factory.(txn.TransactionFactory)
 	if !ok {
 		return nil, xerrors.Errorf("invalid transaction factory")
 	}

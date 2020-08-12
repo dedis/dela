@@ -4,7 +4,7 @@ package validation
 
 import (
 	"go.dedis.ch/dela/core/store"
-	"go.dedis.ch/dela/core/tap"
+	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/serde"
 )
 
@@ -13,7 +13,7 @@ type TransactionResult interface {
 	serde.Message
 
 	// GetTransaction returns the transaction associated to the result.
-	GetTransaction() tap.Transaction
+	GetTransaction() txn.Transaction
 
 	// GetStatus returns the status of the execution. It returns true if the
 	// transaction has been accepted, otherwise false with a message to explain
@@ -43,5 +43,5 @@ type Service interface {
 
 	// Validate takes a snapshot and a list of transactions and returns a
 	// validated data bundle.
-	Validate(store.Snapshot, []tap.Transaction) (Data, error)
+	Validate(store.Snapshot, []txn.Transaction) (Data, error)
 }

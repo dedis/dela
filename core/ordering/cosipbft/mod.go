@@ -16,8 +16,8 @@ import (
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/hashtree"
-	"go.dedis.ch/dela/core/tap"
-	"go.dedis.ch/dela/core/tap/pool"
+	"go.dedis.ch/dela/core/txn"
+	"go.dedis.ch/dela/core/txn/pool"
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto"
@@ -353,7 +353,7 @@ func (s *Service) waitSync(ctx context.Context, roster viewchange.Authority) {
 	}
 }
 
-func (s *Service) collectTxs(ctx context.Context) []tap.Transaction {
+func (s *Service) collectTxs(ctx context.Context) []txn.Transaction {
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 
@@ -372,7 +372,7 @@ func (s *Service) collectTxs(ctx context.Context) []tap.Transaction {
 	return nil
 }
 
-func (s *Service) prepareBlock(txs []tap.Transaction) (*types.Block, error) {
+func (s *Service) prepareBlock(txs []txn.Transaction) (*types.Block, error) {
 	var data validation.Data
 
 	stageTree, err := s.tree.Get().Stage(func(snap store.Snapshot) error {

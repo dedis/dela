@@ -20,11 +20,11 @@ import (
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/hashtree/binprefix"
 	"go.dedis.ch/dela/core/store/kv"
-	"go.dedis.ch/dela/core/tap"
-	txn "go.dedis.ch/dela/core/tap/anon"
-	"go.dedis.ch/dela/core/tap/pool"
-	poolimpl "go.dedis.ch/dela/core/tap/pool/gossip"
-	"go.dedis.ch/dela/core/tap/pool/mem"
+	"go.dedis.ch/dela/core/txn"
+	"go.dedis.ch/dela/core/txn/anon"
+	"go.dedis.ch/dela/core/txn/pool"
+	poolimpl "go.dedis.ch/dela/core/txn/pool/gossip"
+	"go.dedis.ch/dela/core/txn/pool/mem"
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/cosi/flatcosi"
@@ -172,12 +172,12 @@ type testExec struct {
 	err error
 }
 
-func (e testExec) Execute(tap.Transaction, store.Snapshot) (execution.Result, error) {
+func (e testExec) Execute(txn.Transaction, store.Snapshot) (execution.Result, error) {
 	return execution.Result{Accepted: true}, e.err
 }
 
-func makeTx(t *testing.T, nonce uint64) tap.Transaction {
-	tx, err := txn.NewTransaction(nonce)
+func makeTx(t *testing.T, nonce uint64) txn.Transaction {
+	tx, err := anon.NewTransaction(nonce)
 	require.NoError(t, err)
 	return tx
 }
@@ -216,12 +216,12 @@ func makeAuthority(t *testing.T, n int) ([]testNode, crypto.CollectiveAuthority,
 		db, err := kv.New(filepath.Join(dir, "test.db"))
 		require.NoError(t, err)
 
-		pool, err := poolimpl.NewPool(gossip.NewFlat(m, txn.NewTransactionFactory()))
+		pool, err := poolimpl.NewPool(gossip.NewFlat(m, anon.NewTransactionFactory()))
 		require.NoError(t, err)
 
 		tree := binprefix.NewMerkleTree(db, binprefix.Nonce{})
 
-		vs := simple.NewService(baremetal.NewExecution(testExec{}), txn.NewTransactionFactory())
+		vs := simple.NewService(baremetal.NewExecution(testExec{}), anon.NewTransactionFactory())
 
 		param := ServiceParam{
 			Mino:       m,
@@ -268,6 +268,6 @@ type fakeValidation struct {
 	err error
 }
 
-func (val fakeValidation) Validate(store.Snapshot, []tap.Transaction) (validation.Data, error) {
+func (val fakeValidation) Validate(store.Snapshot, []txn.Transaction) (validation.Data, error) {
 	return simple.NewData(nil), val.err
 }

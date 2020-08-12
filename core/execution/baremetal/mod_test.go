@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/store"
-	"go.dedis.ch/dela/core/tap"
+	"go.dedis.ch/dela/core/txn"
 	"golang.org/x/xerrors"
 )
 
@@ -29,6 +29,6 @@ type fakeExec struct {
 	err error
 }
 
-func (e fakeExec) Execute(tap.Transaction, store.Snapshot) (execution.Result, error) {
+func (e fakeExec) Execute(txn.Transaction, store.Snapshot) (execution.Result, error) {
 	return execution.Result{}, e.err
 }

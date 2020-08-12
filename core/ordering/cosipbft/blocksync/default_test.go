@@ -14,7 +14,7 @@ import (
 	"go.dedis.ch/dela/core/ordering/cosipbft/blocksync/types"
 	"go.dedis.ch/dela/core/ordering/cosipbft/pbft"
 	cosipbft "go.dedis.ch/dela/core/ordering/cosipbft/types"
-	"go.dedis.ch/dela/core/tap/anon"
+	"go.dedis.ch/dela/core/txn/anon"
 	"go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"

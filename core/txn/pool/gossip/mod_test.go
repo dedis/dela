@@ -9,9 +9,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/blockchain"
-	"go.dedis.ch/dela/core/tap"
-	"go.dedis.ch/dela/core/tap/anon"
-	"go.dedis.ch/dela/core/tap/pool"
+	"go.dedis.ch/dela/core/txn"
+	"go.dedis.ch/dela/core/txn/anon"
+	"go.dedis.ch/dela/core/txn/pool"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/gossip"
@@ -83,13 +83,13 @@ func TestPool_Len(t *testing.T) {
 	pool := &Pool{}
 	require.Equal(t, 0, pool.Len())
 
-	pool.bag = map[string]tap.Transaction{"": nil, "A": nil}
+	pool.bag = map[string]txn.Transaction{"": nil, "A": nil}
 	require.Equal(t, 2, pool.Len())
 }
 
 func TestPool_GetAll(t *testing.T) {
 	pool := &Pool{
-		bag: map[string]tap.Transaction{
+		bag: map[string]txn.Transaction{
 			"A": makeTx(t, 0),
 			"B": makeTx(t, 1),
 			"C": makeTx(t, 2),
@@ -103,7 +103,7 @@ func TestPool_GetAll(t *testing.T) {
 func TestPool_Add(t *testing.T) {
 	pool := &Pool{
 		actor:   fakeActor{},
-		bag:     make(map[string]tap.Transaction),
+		bag:     make(map[string]txn.Transaction),
 		watcher: blockchain.NewWatcher(),
 	}
 
@@ -126,7 +126,7 @@ func TestPool_Add(t *testing.T) {
 func TestPool_Remove(t *testing.T) {
 	pool := &Pool{
 		actor:   fakeActor{},
-		bag:     map[string]tap.Transaction{"A": nil, "B": nil},
+		bag:     map[string]txn.Transaction{"A": nil, "B": nil},
 		watcher: blockchain.NewWatcher(),
 	}
 
@@ -162,7 +162,7 @@ func TestPool_Close(t *testing.T) {
 
 // Utility functions -----------------------------------------------------------
 
-func makeTx(t *testing.T, nonce uint64) tap.Transaction {
+func makeTx(t *testing.T, nonce uint64) txn.Transaction {
 	tx, err := anon.NewTransaction(nonce)
 	require.NoError(t, err)
 	return tx

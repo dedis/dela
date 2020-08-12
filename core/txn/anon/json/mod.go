@@ -1,7 +1,7 @@
 package json
 
 import (
-	"go.dedis.ch/dela/core/tap/anon"
+	"go.dedis.ch/dela/core/txn/anon"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"

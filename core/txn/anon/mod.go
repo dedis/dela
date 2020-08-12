@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"io"
 
-	"go.dedis.ch/dela/core/tap"
+	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/serde"
@@ -22,7 +22,7 @@ func RegisterTransactionFormat(f serde.Format, e serde.FormatEngine) {
 // Transaction is a an anonymous transaction. It can contain arguments but the
 // identity will always be nil.
 //
-// - implements tap.Transaction
+// - implements txn.Transaction
 type Transaction struct {
 	nonce uint64
 	args  map[string][]byte
@@ -78,7 +78,7 @@ func NewTransaction(nonce uint64, opts ...TransactionOption) (Transaction, error
 	return tmpl.Transaction, nil
 }
 
-// GetID implements tap.Transaction. It returns the ID of the transaction.
+// GetID implements txn.Transaction. It returns the ID of the transaction.
 func (t Transaction) GetID() []byte {
 	return t.hash
 }
@@ -88,7 +88,7 @@ func (t Transaction) GetNonce() uint64 {
 	return t.nonce
 }
 
-// GetIdentity implements tap.Transaction. It returns nil.
+// GetIdentity implements txn.Transaction. It returns nil.
 func (t Transaction) GetIdentity() arc.Identity {
 	return nil
 }
@@ -103,7 +103,7 @@ func (t Transaction) GetArgs() []string {
 	return args
 }
 
-// GetArg implements tap.Transaction. It returns the value of the argument if it
+// GetArg implements txn.Transaction. It returns the value of the argument if it
 // is set, otherwise nil.
 func (t Transaction) GetArg(key string) []byte {
 	return t.args[key]
@@ -152,9 +152,9 @@ func (f TransactionFactory) Deserialize(ctx serde.Context, data []byte) (serde.M
 	return f.TransactionOf(ctx, data)
 }
 
-// TransactionOf implements tap.TransactionFactory. It populates the transaction
+// TransactionOf implements txn.TransactionFactory. It populates the transaction
 // from the data if appropriate, otherwise it returns an error.
-func (f TransactionFactory) TransactionOf(ctx serde.Context, data []byte) (tap.Transaction, error) {
+func (f TransactionFactory) TransactionOf(ctx serde.Context, data []byte) (txn.Transaction, error) {
 	format := txFormats.Get(ctx.GetFormat())
 
 	msg, err := format.Decode(ctx, data)

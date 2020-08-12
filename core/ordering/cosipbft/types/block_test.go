@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/consensus/viewchange/roster"
-	"go.dedis.ch/dela/core/tap/anon"
+	"go.dedis.ch/dela/core/txn/anon"
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/internal/testing/fake"

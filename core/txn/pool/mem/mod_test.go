@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/core/tap"
+	"go.dedis.ch/dela/core/txn"
 )
 
 func TestPool_Len(t *testing.T) {
@@ -101,7 +101,7 @@ func TestPool_Watch(t *testing.T) {
 // Utility functions
 
 type fakeTx struct {
-	tap.Transaction
+	txn.Transaction
 
 	id []byte
 }
