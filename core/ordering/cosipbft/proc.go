@@ -2,7 +2,6 @@ package cosipbft
 
 import (
 	"context"
-	"time"
 
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela/blockchain"
@@ -61,7 +60,7 @@ func newProcessor() *processor {
 func (h *processor) Invoke(from mino.Address, msg serde.Message) ([]byte, error) {
 	switch in := msg.(type) {
 	case types.BlockMessage:
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
 		blocks := h.blocks.Watch(ctx)

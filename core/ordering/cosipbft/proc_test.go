@@ -143,10 +143,11 @@ func TestProcessor_Unsupported_Process(t *testing.T) {
 type fakeSM struct {
 	pbft.StateMachine
 
-	err   error
-	state pbft.State
-	id    types.Digest
-	ch    chan pbft.State
+	err       error
+	errLeader error
+	state     pbft.State
+	id        types.Digest
+	ch        chan pbft.State
 }
 
 func (sm fakeSM) GetState() pbft.State {
@@ -154,7 +155,7 @@ func (sm fakeSM) GetState() pbft.State {
 }
 
 func (sm fakeSM) GetLeader() (mino.Address, error) {
-	return fake.NewAddress(0), nil
+	return fake.NewAddress(0), sm.errLeader
 }
 
 func (sm fakeSM) PrePrepare(viewchange.Authority) error {
@@ -189,6 +190,13 @@ type fakeSync struct {
 
 func (sync fakeSync) GetLatest() uint64 {
 	return 0
+}
+
+func (sync fakeSync) Sync(ctx context.Context, players mino.Players) <-chan blocksync.Event {
+	ch := make(chan blocksync.Event, 1)
+	ch <- blocksync.Event{Hard: 999}
+
+	return ch
 }
 
 type fakeSnapshot struct {

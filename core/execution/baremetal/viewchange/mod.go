@@ -51,19 +51,19 @@ func (c Contract) Execute(tx txn.Transaction, snap store.Snapshot) (execution.Re
 	roster, err := c.rosterFac.AuthorityOf(c.context, tx.GetArg(AuthorityArg))
 	if err != nil {
 		res.Message = messageArgMissing
-		return res, xerrors.Errorf("roster factory failed: %v", err)
+		return res, xerrors.Errorf("failed to decode arg: %v", err)
 	}
 
 	currData, err := snap.Get(c.rosterKey)
 	if err != nil {
 		res.Message = messageStorageEmpty
-		return res, xerrors.Errorf("couldn't read roster: %v", err)
+		return res, xerrors.Errorf("failed to read roster: %v", err)
 	}
 
 	curr, err := c.rosterFac.AuthorityOf(c.context, currData)
 	if err != nil {
 		res.Message = messageStorageEmpty
-		return res, xerrors.Errorf("roster factory failed: %v", err)
+		return res, xerrors.Errorf("failed to decode roster: %v", err)
 	}
 
 	changeset := curr.Diff(roster)
@@ -79,8 +79,10 @@ func (c Contract) Execute(tx txn.Transaction, snap store.Snapshot) (execution.Re
 	err = snap.Set(c.rosterKey, tx.GetArg(AuthorityArg))
 	if err != nil {
 		res.Message = messageStorageFailure
-		return res, xerrors.Errorf("couldn't store authority: %v", err)
+		return res, xerrors.Errorf("failed to store roster: %v", err)
 	}
+
+	res.Accepted = true
 
 	return res, nil
 }

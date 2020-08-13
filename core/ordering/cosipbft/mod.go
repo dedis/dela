@@ -28,6 +28,8 @@ const (
 	// RoundTimeout is the maximum of time the service waits for an event to
 	// happen.
 	RoundTimeout = 10 * time.Second
+
+	rpcName = "cosipbft"
 )
 
 // Service is an ordering service using collective signatures combined with PBFT
@@ -53,6 +55,13 @@ type serviceTemplate struct {
 
 // ServiceOption is the type of option to set some fields of the service.
 type ServiceOption func(*serviceTemplate)
+
+// WithHashFactory is an option to set the hash factory used by the service.
+func WithHashFactory(fac crypto.HashFactory) ServiceOption {
+	return func(tmpl *serviceTemplate) {
+		tmpl.hashFac = fac
+	}
+}
 
 // ServiceParam is the different components to provide to the service. All the
 // fields are mandatory and it will panic if any is nil.
@@ -109,7 +118,7 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 
 	blocksync, err := blocksync.NewSynchronizer(syncparam)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("creating sync failed: %v", err)
 	}
 
 	proc.sync = blocksync
@@ -123,14 +132,14 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 
 	proc.MessageFactory = fac
 
-	rpc, err := param.Mino.MakeRPC("cosipbft", proc, fac)
+	rpc, err := param.Mino.MakeRPC(rpcName, proc, fac)
 	if err != nil {
-		return nil, xerrors.Errorf("rpc failed: %v", err)
+		return nil, xerrors.Errorf("creating rpc failed: %v", err)
 	}
 
 	actor, err := param.Cosi.Listen(proc)
 	if err != nil {
-		return nil, xerrors.Errorf("cosi failed: %v", err)
+		return nil, xerrors.Errorf("creating cosi failed: %v", err)
 	}
 
 	s := &Service{
@@ -151,23 +160,21 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 }
 
 // Setup creates a genesis block and sends it to the collective authority.
-func (s *Service) Setup(ca crypto.CollectiveAuthority) error {
-	genesis, err := types.NewGenesis(ca)
+func (s *Service) Setup(ctx context.Context, ca crypto.CollectiveAuthority) error {
+	genesis, err := types.NewGenesis(ca, types.WithGenesisHashFactory(s.hashFactory))
 	if err != nil {
-		return err
+		return xerrors.Errorf("creating genesis: %v", err)
 	}
-
-	ctx := context.Background()
 
 	resps, err := s.rpc.Call(ctx, types.NewGenesisMessage(genesis), ca)
 	if err != nil {
-		return xerrors.Errorf("call failed: %v", err)
+		return xerrors.Errorf("sending genesis: %v", err)
 	}
 
 	for resp := range resps {
 		_, err := resp.GetMessageOrError()
 		if err != nil {
-			return xerrors.Errorf("propagation failed: %v", err)
+			return xerrors.Errorf("one request failed: %v", err)
 		}
 	}
 
@@ -241,20 +248,32 @@ func (s *Service) watchBlocks() {
 func (s *Service) refreshRoster() error {
 	roster, err := s.getCurrentRoster()
 	if err != nil {
-		return err
+		return xerrors.Errorf("reading roster: %v", err)
 	}
 
 	err = s.pool.SetPlayers(roster)
 	if err != nil {
-		return err
+		return xerrors.Errorf("updating tx pool: %v", err)
 	}
 
 	return nil
 }
 
 func (s *Service) main() error {
-	// Try to init, or wait for a genesis block from a setup or a leader.
-	s.init()
+	select {
+	case <-s.started:
+		// A genesis block has been set, the node will then follow the chain
+		// related to it.
+	case <-s.closing:
+		return nil
+	}
+
+	// Update the components that need to learn about the participants like the
+	// transaction pool.
+	err := s.refreshRoster()
+	if err != nil {
+		return xerrors.Errorf("refreshing roster: %v", err)
+	}
 
 	s.logger.Debug().Msg("node has started")
 
@@ -271,25 +290,10 @@ func (s *Service) main() error {
 	}
 }
 
-func (s *Service) init() error {
-	<-s.started
-
-	// Look up the latest roster of the chain and update the pool to send rumors
-	// to it.
-	roster, err := s.getCurrentRoster()
-	if err != nil {
-		return err
-	}
-
-	s.pool.SetPlayers(roster)
-
-	return nil
-}
-
 func (s *Service) doRound() error {
 	roster, err := s.getCurrentRoster()
 	if err != nil {
-		return xerrors.Errorf("read roster failed: %v", err)
+		return xerrors.Errorf("reading roster: %v", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -297,7 +301,7 @@ func (s *Service) doRound() error {
 
 	leader, err := s.pbftsm.GetLeader()
 	if err != nil {
-		return err
+		return xerrors.Errorf("reading leader: %v", err)
 	}
 
 	for !s.me.Equal(leader) {
@@ -352,16 +356,11 @@ func (s *Service) doRound() error {
 	// failure when propagating the collective signature.
 	txs := s.collectTxs(ctx)
 
-	block, err := s.prepareBlock(txs)
-	if err != nil {
-		return err
-	}
-
 	s.logger.Debug().Uint64("index", s.blocks.Len()+1).Msg("pbft has started")
 
-	err = s.doPBFT(ctx, block)
+	err = s.doPBFT(ctx, txs)
 	if err != nil {
-		return err
+		return xerrors.Errorf("pbft failed: %v", err)
 	}
 
 	return nil
@@ -402,55 +401,34 @@ func (s *Service) collectTxs(ctx context.Context) []txn.Transaction {
 	return nil
 }
 
-func (s *Service) prepareBlock(txs []txn.Transaction) (*types.Block, error) {
-	var data validation.Data
-
-	stageTree, err := s.tree.Get().Stage(func(snap store.Snapshot) error {
-		var err error
-		data, err = s.val.Validate(snap, txs)
-		if err != nil {
-			return xerrors.Errorf("validation failed: %v", err)
-		}
-
-		return nil
-	})
-
+func (s *Service) doPBFT(ctx context.Context, txs []txn.Transaction) error {
+	data, root, err := s.prepareData(txs)
 	if err != nil {
-		return nil, xerrors.Errorf("staging tree failed: %v", err)
+		return xerrors.Errorf("failed to prepare data: %v", err)
 	}
-
-	root := types.Digest{}
-	copy(root[:], stageTree.GetRoot())
-
-	index := s.blocks.Len() + 1
 
 	block, err := types.NewBlock(
 		data,
 		types.WithTreeRoot(root),
-		types.WithIndex(uint64(index)),
-		types.WithHashFactory(s.hashFactory),
-	)
+		types.WithIndex(uint64(s.blocks.Len()+1)),
+		types.WithHashFactory(s.hashFactory))
 
 	if err != nil {
-		return nil, xerrors.Errorf("creating block failed: %v", err)
+		return xerrors.Errorf("creating block failed: %v", err)
 	}
 
-	return &block, nil
-}
+	id, err := s.pbftsm.Prepare(block)
+	if err != nil {
+		return xerrors.Errorf("pbft prepare failed: %v", err)
+	}
 
-func (s *Service) doPBFT(ctx context.Context, block *types.Block) error {
 	roster, err := s.getCurrentRoster()
 	if err != nil {
 		return xerrors.Errorf("read roster failed: %v", err)
 	}
 
-	id, err := s.pbftsm.Prepare(*block)
-	if err != nil {
-		return xerrors.Errorf("pbft prepare failed: %v", err)
-	}
-
 	// 1. Prepare phase
-	req := types.NewBlockMessage(*block)
+	req := types.NewBlockMessage(block)
 
 	sig, err := s.actor.Sign(ctx, req, roster)
 	if err != nil {
@@ -484,7 +462,38 @@ func (s *Service) doPBFT(ctx context.Context, block *types.Block) error {
 		}
 	}
 
-	// 4. Wake up new participants.
+	// 4. Wake up new participants so that they can learn about the chain.
+	err = s.wakeUp(ctx, roster)
+	if err != nil {
+		return xerrors.Errorf("wake up failed: %v", err)
+	}
+
+	return nil
+}
+
+func (s *Service) prepareData(txs []txn.Transaction) (data validation.Data, id types.Digest, err error) {
+	var stageTree hashtree.StagingTree
+
+	stageTree, err = s.tree.Get().Stage(func(snap store.Snapshot) error {
+		data, err = s.val.Validate(snap, txs)
+		if err != nil {
+			return xerrors.Errorf("validation failed: %v", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		err = xerrors.Errorf("staging tree failed: %v", err)
+		return
+	}
+
+	copy(id[:], stageTree.GetRoot())
+
+	return
+}
+
+func (s *Service) wakeUp(ctx context.Context, roster viewchange.Authority) error {
 	newRoster, err := s.getCurrentRoster()
 	if err != nil {
 		return xerrors.Errorf("read roster failed: %v", err)
@@ -497,7 +506,7 @@ func (s *Service) doPBFT(ctx context.Context, block *types.Block) error {
 		return xerrors.Errorf("read genesis failed: %v", err)
 	}
 
-	resps, err = s.rpc.Call(ctx, types.NewGenesisMessage(genesis), mino.NewAddresses(changeset.GetNewAddresses()...))
+	resps, err := s.rpc.Call(ctx, types.NewGenesisMessage(genesis), mino.NewAddresses(changeset.GetNewAddresses()...))
 	if err != nil {
 		return xerrors.Errorf("rpc failed: %v", err)
 	}

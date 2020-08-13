@@ -88,6 +88,10 @@ func TestInMemory_Watch(t *testing.T) {
 
 	link := <-ch
 	require.Equal(t, types.Digest{}, link.GetFrom())
+
+	cancel()
+	_, more := <-ch
+	require.False(t, more)
 }
 
 // Utility functions -----------------------------------------------------------
