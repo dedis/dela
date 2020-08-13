@@ -140,7 +140,7 @@ func TestService_Main(t *testing.T) {
 	srvc.rosterFac = roster.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 	srvc.closing = make(chan struct{})
 
-	require.NoError(t, srvc.Close())
+	close(srvc.closing)
 
 	err := srvc.main()
 	require.NoError(t, err)
@@ -180,7 +180,7 @@ func TestService_DoRound(t *testing.T) {
 	srvc.tree = blockstore.NewTreeCache(fakeTree{})
 	srvc.rosterFac = roster.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 	srvc.pbftsm = fakeSM{
-		state: pbft.InitialState,
+		state: pbft.ViewChangeState,
 		ch:    ch,
 	}
 
@@ -193,30 +193,34 @@ func TestService_DoRound(t *testing.T) {
 	go func() {
 		ch <- pbft.InitialState
 		close(ch)
-		srvc.Close()
+		close(srvc.closing)
 	}()
 
-	err := srvc.doRound()
+	ctx := context.Background()
+
+	err := srvc.doRound(ctx)
 	require.NoError(t, err)
 
 	srvc.closing = make(chan struct{})
+	err = srvc.doRound(ctx)
+	require.EqualError(t, err, "viewchange failed")
 
 	srvc.pbftsm = fakeSM{err: xerrors.New("oops"), state: pbft.InitialState}
-	err = srvc.doRound()
+	err = srvc.doRound(ctx)
 	require.EqualError(t, err, "pbft expire failed: oops")
 
 	srvc.pbftsm = fakeSM{}
 	srvc.rpc = fake.NewBadRPC()
-	err = srvc.doRound()
+	err = srvc.doRound(ctx)
 	require.EqualError(t, err, "rpc failed: fake error")
 
 	srvc.rosterFac = badRosterFac{}
-	err = srvc.doRound()
+	err = srvc.doRound(ctx)
 	require.EqualError(t, err, "reading roster: decode failed: oops")
 
 	srvc.rosterFac = roster.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 	srvc.pbftsm = fakeSM{errLeader: xerrors.New("oops")}
-	err = srvc.doRound()
+	err = srvc.doRound(ctx)
 	require.EqualError(t, err, "reading leader: oops")
 
 	srvc.pbftsm = fakeSM{}
@@ -227,7 +231,7 @@ func TestService_DoRound(t *testing.T) {
 
 	srvc.sync = fakeSync{}
 	srvc.val = fakeValidation{err: xerrors.New("oops")}
-	err = srvc.doRound()
+	err = srvc.doRound(ctx)
 	require.EqualError(t, err,
 		"pbft failed: failed to prepare data: staging tree failed: validation failed: oops")
 }
@@ -296,6 +300,12 @@ func TestService_DoPBFT(t *testing.T) {
 	srvc.genesis = blockstore.NewGenesisStore()
 	err = srvc.doPBFT(ctx)
 	require.EqualError(t, err, "wake up failed: read genesis failed: missing genesis block")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err = srvc.doPBFT(ctx)
+	require.EqualError(t, err, "context canceled")
 }
 
 func TestService_WakeUp(t *testing.T) {
@@ -332,6 +342,7 @@ func TestService_WakeUp(t *testing.T) {
 type testNode struct {
 	service *Service
 	pool    pool.Pool
+	db      kv.DB
 	dbpath  string
 }
 
@@ -426,6 +437,7 @@ func makeAuthority(t *testing.T, n int) ([]testNode, viewchange.Authority, func(
 		nodes[i] = testNode{
 			service: srv,
 			pool:    pool,
+			db:      db,
 			dbpath:  dir,
 		}
 	}
@@ -434,9 +446,9 @@ func makeAuthority(t *testing.T, n int) ([]testNode, viewchange.Authority, func(
 
 	clean := func() {
 		for _, node := range nodes {
-			node.service.Close()
-
-			os.RemoveAll(node.dbpath)
+			require.NoError(t, node.service.Close())
+			require.NoError(t, node.db.Close())
+			require.NoError(t, os.RemoveAll(node.dbpath))
 		}
 	}
 

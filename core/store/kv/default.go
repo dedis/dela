@@ -54,6 +54,12 @@ func (db boltDB) Update(bucket []byte, fn func(Bucket) error) error {
 	})
 }
 
+// Close implements kv.DB. It closes the database. Any view or update call will
+// result in an error after this function is called.
+func (db boltDB) Close() error {
+	return db.bolt.Close()
+}
+
 // BoltBucket is the adapter of a bbolt bucket to the kv.Bucket interface.
 //
 // - implements kv.Bucket

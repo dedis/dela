@@ -45,6 +45,7 @@ type Service struct {
 	timeout time.Duration
 	events  chan ordering.Event
 	closing chan struct{}
+	closed  chan struct{}
 }
 
 type serviceTemplate struct {
@@ -151,9 +152,18 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 		timeout:   RoundTimeout,
 		events:    make(chan ordering.Event, 1),
 		closing:   make(chan struct{}),
+		closed:    make(chan struct{}),
 	}
 
-	go func() { s.run(s.main(), "main loop failed") }()
+	go func() {
+		err := s.main()
+		if err != nil {
+			s.logger.Err(err).Msg("main loop failed")
+		}
+
+		close(s.closed)
+	}()
+
 	go s.watchBlocks()
 
 	return s, nil
@@ -201,9 +211,12 @@ func (s *Service) Watch(ctx context.Context) <-chan ordering.Event {
 	return ch
 }
 
-// Close closes.
+// Close gracefully closes the service. It will announce the closing request and
+// wait for the current to end before returning.
 func (s *Service) Close() error {
 	close(s.closing)
+	<-s.closed
+
 	return nil
 }
 
@@ -278,11 +291,16 @@ func (s *Service) main() error {
 	s.logger.Debug().Msg("node has started")
 
 	for {
+		ctx, cancel := context.WithCancel(context.Background())
+
 		select {
 		case <-s.closing:
+			cancel()
 			return nil
 		default:
-			err := s.doRound()
+			err := s.doRound(ctx)
+			cancel()
+
 			if err != nil {
 				return xerrors.Errorf("round failed: %v", err)
 			}
@@ -290,14 +308,11 @@ func (s *Service) main() error {
 	}
 }
 
-func (s *Service) doRound() error {
+func (s *Service) doRound(ctx context.Context) error {
 	roster, err := s.getCurrentRoster()
 	if err != nil {
 		return xerrors.Errorf("reading roster: %v", err)
 	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	leader, err := s.pbftsm.GetLeader()
 	if err != nil {
@@ -312,15 +327,17 @@ func (s *Service) doRound() error {
 		case <-time.After(s.timeout):
 			s.logger.Warn().Msg("round reached the timeout")
 
-			statesCh := s.pbftsm.Watch(ctx)
+			ctx, cancel := context.WithTimeout(ctx, s.timeout)
 
 			view, err := s.pbftsm.Expire(s.me)
 			if err != nil {
+				cancel()
 				return xerrors.Errorf("pbft expire failed: %v", err)
 			}
 
 			resps, err := s.rpc.Call(ctx, types.NewViewMessage(view.ID, view.Leader), roster)
 			if err != nil {
+				cancel()
 				return xerrors.Errorf("rpc failed: %v", err)
 			}
 
@@ -331,13 +348,22 @@ func (s *Service) doRound() error {
 				}
 			}
 
-			for state := range statesCh {
-				if state == pbft.InitialState {
-					break
+			statesCh := s.pbftsm.Watch(ctx)
+
+			state := s.pbftsm.GetState()
+			var more bool
+
+			for state != pbft.InitialState {
+				state, more = <-statesCh
+				if !more {
+					cancel()
+					return xerrors.New("viewchange failed")
 				}
 			}
 
 			s.logger.Debug().Msg("view change successful")
+
+			cancel()
 		case <-s.events:
 			// A block has been created meaning that the round is over.
 			return nil
@@ -345,6 +371,9 @@ func (s *Service) doRound() error {
 			return nil
 		}
 	}
+
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
 
 	s.logger.Debug().Uint64("index", s.blocks.Len()+1).Msg("round has started")
 
@@ -371,6 +400,11 @@ func (s *Service) doRound() error {
 
 func (s *Service) doPBFT(ctx context.Context) error {
 	txs := s.pool.Gather(ctx, pool.Config{Min: 1})
+
+	if ctx.Err() != nil {
+		// Don't bother trying PBFT if the context is done.
+		return ctx.Err()
+	}
 
 	data, root, err := s.prepareData(txs)
 	if err != nil {
@@ -489,12 +523,6 @@ func (s *Service) wakeUp(ctx context.Context, roster viewchange.Authority) error
 	}
 
 	return nil
-}
-
-func (s *Service) run(err error, msg string) {
-	if err != nil {
-		s.logger.Warn().Err(err).Msg(msg)
-	}
 }
 
 type observer struct {
