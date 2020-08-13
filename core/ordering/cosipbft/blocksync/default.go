@@ -74,22 +74,7 @@ func (s defaultSync) GetLatest() uint64 {
 
 // Sync implements blocksync.Synchronizer. it starts a routine to first
 // soft-sync the participants and then send the blocks when necessary.
-func (s defaultSync) Sync(ctx context.Context, players mino.Players) <-chan Event {
-	ch := make(chan Event, 1)
-
-	go func() {
-		err := s.routine(ctx, players, ch)
-		if err != nil {
-			s.logger.Warn().Err(err).Msg("synchronization failed")
-		}
-
-		close(ch)
-	}()
-
-	return ch
-}
-
-func (s defaultSync) routine(ctx context.Context, players mino.Players, ch chan Event) error {
+func (s defaultSync) Sync(ctx context.Context, players mino.Players, cfg Config) error {
 	sender, rcvr, err := s.rpc.Stream(ctx, players)
 	if err != nil {
 		return xerrors.Errorf("stream failed: %v", err)
@@ -110,9 +95,8 @@ func (s defaultSync) routine(ctx context.Context, players mino.Players, ch chan 
 	// the context.
 	soft := map[mino.Address]struct{}{}
 	hard := map[mino.Address]struct{}{}
-	hardErrs := []error{}
 
-	for len(hard) < players.Len() {
+	for len(soft) < cfg.MinSoft || len(hard) < cfg.MinHard {
 		from, msg, err := rcvr.Recv(ctx)
 		if err != nil {
 			return xerrors.Errorf("receiver failed: %v", err)
@@ -128,20 +112,13 @@ func (s defaultSync) routine(ctx context.Context, players mino.Players, ch chan 
 
 			soft[from] = struct{}{}
 
-			sendToChannel(ch, soft, hard, hardErrs)
-
 			err := s.syncNode(in.GetFrom(), sender, from)
 			if err != nil {
-				hard[from] = struct{}{}
-				hardErrs = append(hardErrs, err)
-
-				sendToChannel(ch, soft, hard, hardErrs)
+				return xerrors.Errorf("synchronizing node %v: %v", from, err)
 			}
 		case types.SyncAck:
 			soft[from] = struct{}{}
 			hard[from] = struct{}{}
-
-			sendToChannel(ch, soft, hard, hardErrs)
 		}
 	}
 
@@ -263,25 +240,6 @@ func (h *handler) ack(out mino.Sender, orch mino.Address) error {
 	}
 
 	return nil
-}
-
-func sendToChannel(ch chan Event, soft, hard map[mino.Address]struct{}, errs []error) {
-	empty := false
-	for !empty {
-		select {
-		case <-ch:
-			// A new event is always an update of the previous ones, therefore
-			// the channel is drained to keep only one message in the buffer.
-		default:
-			empty = true
-		}
-	}
-
-	ch <- Event{
-		Soft:   len(soft),
-		Hard:   len(hard),
-		Errors: errs,
-	}
 }
 
 func iter2arr(iter mino.AddressIterator) []mino.Address {

@@ -221,6 +221,11 @@ func TestService_DoRound(t *testing.T) {
 
 	srvc.pbftsm = fakeSM{}
 	srvc.me = fake.NewAddress(0)
+	srvc.sync = fakeSync{err: xerrors.New("oops")}
+	err = srvc.doRound()
+	require.EqualError(t, err, "sync failed: oops")
+
+	srvc.sync = fakeSync{}
 	srvc.val = fakeValidation{err: xerrors.New("oops")}
 	err = srvc.doRound()
 	require.EqualError(t, err,
