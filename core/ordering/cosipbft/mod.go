@@ -358,11 +358,10 @@ func (s *Service) doRound() error {
 
 	// TODO: check that no committed block exists in the case of a leader
 	// failure when propagating the collective signature.
-	txs := s.collectTxs(ctx)
 
 	s.logger.Debug().Uint64("index", s.blocks.Len()+1).Msg("pbft has started")
 
-	err = s.doPBFT(ctx, txs)
+	err = s.doPBFT(ctx)
 	if err != nil {
 		return xerrors.Errorf("pbft failed: %v", err)
 	}
@@ -370,26 +369,9 @@ func (s *Service) doRound() error {
 	return nil
 }
 
-func (s *Service) collectTxs(ctx context.Context) []txn.Transaction {
-	ctx, cancel := context.WithTimeout(ctx, time.Minute)
-	defer cancel()
+func (s *Service) doPBFT(ctx context.Context) error {
+	txs := s.pool.Gather(ctx, pool.Config{Min: 1})
 
-	events := s.pool.Watch(ctx)
-
-	if s.pool.Len() > 0 {
-		return s.pool.GetAll()
-	}
-
-	for evt := range events {
-		if evt.Len > 0 {
-			return s.pool.GetAll()
-		}
-	}
-
-	return nil
-}
-
-func (s *Service) doPBFT(ctx context.Context, txs []txn.Transaction) error {
 	data, root, err := s.prepareData(txs)
 	if err != nil {
 		return xerrors.Errorf("failed to prepare data: %v", err)

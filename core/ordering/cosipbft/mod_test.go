@@ -232,31 +232,6 @@ func TestService_DoRound(t *testing.T) {
 		"pbft failed: failed to prepare data: staging tree failed: validation failed: oops")
 }
 
-func TestService_CollectTxs(t *testing.T) {
-	srvc := &Service{processor: newProcessor()}
-	srvc.pool = mem.NewPool()
-
-	go func() {
-		time.Sleep(10 * time.Millisecond)
-		srvc.pool.Add(makeTx(t, 0))
-	}()
-
-	txs := srvc.collectTxs(context.Background())
-	require.Len(t, txs, 1)
-
-	srvc.pool.Add(makeTx(t, 1))
-
-	txs = srvc.collectTxs(context.Background())
-	require.Len(t, txs, 2)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	srvc.pool = mem.NewPool()
-	txs = srvc.collectTxs(ctx)
-	require.Len(t, txs, 0)
-}
-
 func TestService_DoPBFT(t *testing.T) {
 	rpc := fake.NewRPC()
 
@@ -269,6 +244,8 @@ func TestService_DoPBFT(t *testing.T) {
 	srvc.pbftsm = fakeSM{}
 	srvc.rosterFac = roster.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 	srvc.actor = fakeCosiActor{}
+	srvc.pool = mem.NewPool()
+	srvc.pool.Add(makeTx(t, 0))
 	srvc.rpc = rpc
 
 	ctx := context.Background()
@@ -277,47 +254,47 @@ func TestService_DoPBFT(t *testing.T) {
 	rpc.Done()
 	srvc.genesis.Set(types.Genesis{})
 
-	err := srvc.doPBFT(ctx, nil)
+	err := srvc.doPBFT(ctx)
 	require.NoError(t, err)
 
 	srvc.val = fakeValidation{err: xerrors.New("oops")}
-	err = srvc.doPBFT(ctx, nil)
+	err = srvc.doPBFT(ctx)
 	require.EqualError(t, err,
 		"failed to prepare data: staging tree failed: validation failed: oops")
 
 	srvc.val = fakeValidation{}
 	srvc.hashFactory = fake.NewHashFactory(fake.NewBadHash())
-	err = srvc.doPBFT(ctx, nil)
+	err = srvc.doPBFT(ctx)
 	require.EqualError(t, err,
 		"creating block failed: fingerprint failed: couldn't write index: fake error")
 
 	srvc.hashFactory = crypto.NewSha256Factory()
 	srvc.pbftsm = fakeSM{err: xerrors.New("oops")}
-	err = srvc.doPBFT(ctx, nil)
+	err = srvc.doPBFT(ctx)
 	require.EqualError(t, err, "pbft prepare failed: oops")
 
 	srvc.pbftsm = fakeSM{}
 	srvc.tree.Set(fakeTree{err: xerrors.New("oops")})
-	err = srvc.doPBFT(ctx, nil)
+	err = srvc.doPBFT(ctx)
 	require.EqualError(t, err, "read roster failed: read from tree: oops")
 
 	srvc.tree.Set(fakeTree{})
 	srvc.actor = fakeCosiActor{err: xerrors.New("oops")}
-	err = srvc.doPBFT(ctx, nil)
+	err = srvc.doPBFT(ctx)
 	require.EqualError(t, err, "prepare phase failed: oops")
 
 	srvc.actor = fakeCosiActor{err: xerrors.New("oops"), counter: fake.NewCounter(1)}
-	err = srvc.doPBFT(ctx, nil)
+	err = srvc.doPBFT(ctx)
 	require.EqualError(t, err, "commit phase failed: oops")
 
 	srvc.actor = fakeCosiActor{}
 	srvc.rpc = fake.NewBadRPC()
-	err = srvc.doPBFT(ctx, nil)
+	err = srvc.doPBFT(ctx)
 	require.EqualError(t, err, "rpc failed: fake error")
 
 	srvc.rpc = rpc
 	srvc.genesis = blockstore.NewGenesisStore()
-	err = srvc.doPBFT(ctx, nil)
+	err = srvc.doPBFT(ctx)
 	require.EqualError(t, err, "wake up failed: read genesis failed: missing genesis block")
 }
 

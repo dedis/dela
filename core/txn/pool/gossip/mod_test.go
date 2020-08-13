@@ -3,12 +3,10 @@ package gossip
 import (
 	"context"
 	"fmt"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/anon"
 	"go.dedis.ch/dela/core/txn/pool"
@@ -27,11 +25,7 @@ func TestPool_Basic(t *testing.T) {
 		}
 	}()
 
-	wg := sync.WaitGroup{}
-	wg.Add(3)
-
 	go func() {
-		defer wg.Done()
 		for i := 0; i < 100; i++ {
 			err := pools[0].Add(makeTx(t, uint64(i)))
 			require.NoError(t, err)
@@ -39,7 +33,6 @@ func TestPool_Basic(t *testing.T) {
 	}()
 
 	go func() {
-		defer wg.Done()
 		for i := 0; i < 100; i++ {
 			err := pools[2].Add(makeTx(t, uint64(i)+100))
 			require.NoError(t, err)
@@ -47,24 +40,17 @@ func TestPool_Basic(t *testing.T) {
 	}()
 
 	go func() {
-		defer wg.Done()
 		for i := 0; i < 100; i++ {
 			err := pools[7].Add(makeTx(t, uint64(i)+200))
 			require.NoError(t, err)
 		}
 	}()
 
-	wg.Wait()
-
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	evts := pools[9].Watch(ctx)
-
-	err := pools[8].Add(makeTx(t, 0))
-	require.NoError(t, err)
-
-	waitEvt(t, evts, 300)
+	txs := pools[0].Gather(ctx, pool.Config{Min: 300})
+	require.Len(t, txs, 300)
 }
 
 func TestPool_New(t *testing.T) {
@@ -79,44 +65,16 @@ func TestPool_New(t *testing.T) {
 	require.EqualError(t, err, "failed to listen: oops")
 }
 
-func TestPool_Len(t *testing.T) {
-	pool := &Pool{}
-	require.Equal(t, 0, pool.Len())
-
-	pool.bag = map[string]txn.Transaction{"": nil, "A": nil}
-	require.Equal(t, 2, pool.Len())
-}
-
-func TestPool_GetAll(t *testing.T) {
-	pool := &Pool{
-		bag: map[string]txn.Transaction{
-			"A": makeTx(t, 0),
-			"B": makeTx(t, 1),
-			"C": makeTx(t, 2),
-		},
-	}
-
-	txs := pool.GetAll()
-	require.Len(t, txs, 3)
-}
-
 func TestPool_Add(t *testing.T) {
 	pool := &Pool{
-		actor:   fakeActor{},
-		bag:     make(map[string]txn.Transaction),
-		watcher: blockchain.NewWatcher(),
+		actor:    fakeActor{},
+		bag:      make(map[string]txn.Transaction),
+		gatherer: pool.NewSimpleGatherer(),
 	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	evts := pool.Watch(ctx)
 
 	err := pool.Add(makeTx(t, 0))
 	require.NoError(t, err)
 	require.Len(t, pool.bag, 1)
-
-	waitEvt(t, evts, 1)
 
 	pool.actor = fakeActor{err: xerrors.New("oops")}
 	err = pool.Add(makeTx(t, 0))
@@ -125,15 +83,9 @@ func TestPool_Add(t *testing.T) {
 
 func TestPool_Remove(t *testing.T) {
 	pool := &Pool{
-		actor:   fakeActor{},
-		bag:     map[string]txn.Transaction{"A": nil, "B": nil},
-		watcher: blockchain.NewWatcher(),
+		actor: fakeActor{},
+		bag:   map[string]txn.Transaction{"A": nil, "B": nil},
 	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	evts := pool.Watch(ctx)
 
 	tx := makeTx(t, 0)
 	pool.bag[string(tx.GetID())] = tx
@@ -141,8 +93,33 @@ func TestPool_Remove(t *testing.T) {
 	err := pool.Remove(tx)
 	require.NoError(t, err)
 	require.Len(t, pool.bag, 2)
+}
 
-	waitEvt(t, evts, 2)
+func TestPool_Gather(t *testing.T) {
+	p := &Pool{
+		actor:    fakeActor{},
+		bag:      make(map[string]txn.Transaction),
+		gatherer: pool.NewSimpleGatherer(),
+	}
+
+	ctx := context.Background()
+
+	cb := func() {
+		require.NoError(t, p.Add(makeTx(t, 0)))
+		require.NoError(t, p.Add(makeTx(t, 1)))
+	}
+
+	txs := p.Gather(ctx, pool.Config{Min: 2, Callback: cb})
+	require.Len(t, txs, 2)
+
+	txs = p.Gather(ctx, pool.Config{Min: 2})
+	require.Len(t, txs, 2)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	txs = p.Gather(ctx, pool.Config{Min: 3})
+	require.Len(t, txs, 0)
 }
 
 func TestPool_Close(t *testing.T) {
@@ -194,15 +171,6 @@ func makeRoster(t *testing.T, n int) (mino.Players, []*Pool) {
 	}
 
 	return players, pools
-}
-
-func waitEvt(t *testing.T, ch <-chan pool.Event, expected int) {
-	select {
-	case evt := <-ch:
-		require.Equal(t, expected, evt.Len)
-	case <-time.After(2 * time.Second):
-		t.Fatal("timeout")
-	}
 }
 
 type fakeActor struct {

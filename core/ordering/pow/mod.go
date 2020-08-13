@@ -14,7 +14,6 @@ import (
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/hashtree"
-	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/pool"
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/crypto"
@@ -150,7 +149,8 @@ func (s *Service) Watch(ctx context.Context) <-chan ordering.Event {
 
 func (s *Service) createBlock(ctx context.Context) error {
 	// Wait for at least one transaction before creating a block.
-	txs := s.waitTxs(ctx)
+	txs := s.pool.Gather(ctx, pool.Config{Min: 1})
+
 	if ctx.Err() != nil {
 		// Context is closed so we don't proceed in the block creation.
 		return nil
@@ -198,29 +198,4 @@ func (s *Service) createBlock(ctx context.Context) error {
 	dela.Logger.Trace().Uint64("index", block.index).Msg("block append")
 
 	return nil
-}
-
-// waitTxs is a procedure to wait for transactions from the pool. It will wait
-// the provided minimum amount of time before waiting for at least one
-// transaction.
-func (s *Service) waitTxs(ctx context.Context) []txn.Transaction {
-	watchCtx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	evts := s.pool.Watch(watchCtx)
-
-	if s.pool.Len() > 0 {
-		return s.pool.GetAll()
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case evt := <-evts:
-			if evt.Len > 0 {
-				return s.pool.GetAll()
-			}
-		}
-	}
 }

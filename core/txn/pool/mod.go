@@ -10,20 +10,21 @@ import (
 	"go.dedis.ch/dela/mino"
 )
 
-// Event is an event triggered when new transactions arrived to the pool.
-type Event struct {
-	// Len is the current length of the pool.
-	Len int
+// Config is the set of parameters that allows one to change the behavior of the
+// gathering process.
+type Config struct {
+	// Min indicates what is minimum number of transactions that is required
+	// before returning.
+	Min int
+
+	// Callback is a function called when the gathering process has to stop to
+	// wait for transactions. It allows one to take action to stop the gathering
+	// if necessary.
+	Callback func()
 }
 
 // Pool is the maintainer of the list of transactions.
 type Pool interface {
-	// Len returns the length of the pool.
-	Len() int
-
-	// GetAll returns the list of transactions available.
-	GetAll() []txn.Transaction
-
 	// SetPlayers updates the list of participants that should eventually
 	// receive the transactions.
 	SetPlayers(mino.Players) error
@@ -34,7 +35,7 @@ type Pool interface {
 	// Remove removes the transaction from the pool.
 	Remove(txn.Transaction) error
 
-	// Watch returns a channel of events that will be populated when the length
-	// of the pool evolves.
-	Watch(context.Context) <-chan Event
+	// Gather is a blocking function to gather transactions from the pool. The
+	// configuration allows one to specify criterion before returning.
+	Gather(context.Context, Config) []txn.Transaction
 }

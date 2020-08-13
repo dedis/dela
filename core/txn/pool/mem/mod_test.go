@@ -4,23 +4,11 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/txn"
+	"go.dedis.ch/dela/core/txn/pool"
 )
-
-func TestPool_Len(t *testing.T) {
-	pool := NewPool()
-
-	require.Equal(t, 0, pool.Len())
-
-	pool.txs[Key{}] = fakeTx{}
-	require.Equal(t, 1, pool.Len())
-
-	pool.txs[Key{1}] = fakeTx{}
-	require.Equal(t, 2, pool.Len())
-}
 
 func TestPool_Add(t *testing.T) {
 	pool := NewPool()
@@ -58,43 +46,32 @@ func TestPool_Remove(t *testing.T) {
 	require.EqualError(t, err, fmt.Sprintf("transaction %#x not found", Key{1}))
 }
 
-func TestPool_GetAll(t *testing.T) {
-	pool := NewPool()
-
-	pool.txs[Key{1}] = fakeTx{}
-	pool.txs[Key{2}] = fakeTx{}
-
-	txs := pool.GetAll()
-	require.Len(t, txs, 2)
-}
-
 func TestPool_SetPlayers(t *testing.T) {
 	pool := NewPool()
 
 	require.NoError(t, pool.SetPlayers(nil))
 }
 
-func TestPool_Watch(t *testing.T) {
-	pool := NewPool()
-	pool.txs[Key{}] = fakeTx{}
+func TestPool_Gather(t *testing.T) {
+	p := NewPool()
+
+	ctx := context.Background()
+
+	cb := func() {
+		require.NoError(t, p.Add(fakeTx{}))
+	}
+
+	txs := p.Gather(ctx, pool.Config{Min: 1, Callback: cb})
+	require.Len(t, txs, 1)
+
+	txs = p.Gather(ctx, pool.Config{Min: 1})
+	require.Len(t, txs, 1)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	events := pool.Watch(ctx)
-
-	require.NoError(t, pool.Add(fakeTx{id: []byte{1}}))
-	evt := <-events
-	require.Equal(t, 2, evt.Len)
-
 	cancel()
 
-	select {
-	case <-time.After(5 * time.Second):
-		t.Fatal("expect events channel to close")
-	case _, more := <-events:
-		require.False(t, more)
-	}
+	txs = p.Gather(ctx, pool.Config{Min: 2})
+	require.Len(t, txs, 0)
 }
 
 // -----------------------------------------------------------------------------
