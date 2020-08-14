@@ -6,7 +6,6 @@ import (
 	"context"
 	"sync"
 
-	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/pool"
 	"go.dedis.ch/dela/mino"
@@ -20,10 +19,10 @@ import (
 // - implements pool.Pool
 type Pool struct {
 	sync.Mutex
-	actor   gossip.Actor
-	bag     map[string]txn.Transaction
-	watcher blockchain.Observable
-	closing chan struct{}
+	actor    gossip.Actor
+	bag      map[string]txn.Transaction
+	gatherer pool.Gatherer
+	closing  chan struct{}
 }
 
 // NewPool creates a new empty pool and starts to gossip incoming transaction.
@@ -34,38 +33,15 @@ func NewPool(gossiper gossip.Gossiper) (*Pool, error) {
 	}
 
 	p := &Pool{
-		actor:   actor,
-		bag:     make(map[string]txn.Transaction),
-		watcher: blockchain.NewWatcher(),
-		closing: make(chan struct{}),
+		actor:    actor,
+		bag:      make(map[string]txn.Transaction),
+		gatherer: pool.NewSimpleGatherer(),
+		closing:  make(chan struct{}),
 	}
 
 	go p.listenRumors(gossiper.Rumors())
 
 	return p, nil
-}
-
-// Len implements pool.Pool. It returns the current length of the pool.
-func (p *Pool) Len() int {
-	p.Lock()
-	defer p.Unlock()
-
-	return len(p.bag)
-}
-
-// GetAll implements pool.Pool. It returns the list of transactions that have
-// been received. It does not remove the transactions from the pool, thus
-// consecutive calls can return the same list.
-func (p *Pool) GetAll() []txn.Transaction {
-	p.Lock()
-	defer p.Unlock()
-
-	txs := make([]txn.Transaction, 0, len(p.bag))
-	for _, tx := range p.bag {
-		txs = append(txs, tx)
-	}
-
-	return txs
 }
 
 // SetPlayers implements pool.Pool. It sets the list of participants the
@@ -84,7 +60,6 @@ func (p *Pool) Add(tx txn.Transaction) error {
 	}
 
 	p.setTx(tx)
-	p.notify()
 
 	return nil
 }
@@ -95,26 +70,24 @@ func (p *Pool) Remove(tx txn.Transaction) error {
 	delete(p.bag, string(tx.GetID()))
 	p.Unlock()
 
-	p.notify()
-
 	return nil
 }
 
-// Watch implements pool.Pool. It returns a channel that will be populated by
-// events when the pool changes.
-func (p *Pool) Watch(ctx context.Context) <-chan pool.Event {
-	ch := make(chan pool.Event, 1)
-	obs := observer{ch: ch}
+// Gather implements pool.Pool. It blocks until the pool has enough transactions
+// according to the configuration and then returns the transactions.
+func (p *Pool) Gather(ctx context.Context, cfg pool.Config) []txn.Transaction {
+	p.Lock()
 
-	p.watcher.Add(obs)
+	if len(p.bag) >= cfg.Min {
+		txs := p.makeArray()
+		p.Unlock()
 
-	go func() {
-		<-ctx.Done()
-		p.watcher.Remove(obs)
-		close(ch)
-	}()
+		return txs
+	}
 
-	return ch
+	p.Unlock()
+
+	return p.gatherer.Wait(ctx, cfg)
 }
 
 // Close stops the gossiper.
@@ -131,21 +104,21 @@ func (p *Pool) Close() error {
 
 func (p *Pool) setTx(tx txn.Transaction) {
 	p.Lock()
+
 	p.bag[string(tx.GetID())] = tx
+
+	p.gatherer.Notify(len(p.bag), p.makeArray)
+
 	p.Unlock()
 }
 
-func (p *Pool) notify() {
-	// Notify is done independently and the lock is only acquired to create the
-	// event but released so that spreading the event doesn't slow down other
-	// functions.
-	p.Lock()
-	event := pool.Event{
-		Len: len(p.bag),
+func (p *Pool) makeArray() []txn.Transaction {
+	txs := make([]txn.Transaction, 0, len(p.bag))
+	for _, tx := range p.bag {
+		txs = append(txs, tx)
 	}
-	p.Unlock()
 
-	p.watcher.Notify(event)
+	return txs
 }
 
 func (p *Pool) listenRumors(ch <-chan gossip.Rumor) {
@@ -155,18 +128,9 @@ func (p *Pool) listenRumors(ch <-chan gossip.Rumor) {
 			tx, ok := r.(txn.Transaction)
 			if ok {
 				p.setTx(tx)
-				p.notify()
 			}
 		case <-p.closing:
 			return
 		}
 	}
-}
-
-type observer struct {
-	ch chan pool.Event
-}
-
-func (obs observer) NotifyCallback(event interface{}) {
-	obs.ch <- event.(pool.Event)
 }

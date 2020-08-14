@@ -2,8 +2,8 @@ package mem
 
 import (
 	"context"
+	"sync"
 
-	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/pool"
 	"go.dedis.ch/dela/mino"
@@ -22,28 +22,24 @@ type Key [KeyMaxLength]byte
 //
 // - implements pool.Pool
 type Pool struct {
-	history map[Key]struct{}
-	txs     map[Key]txn.Transaction
-	watcher blockchain.Observable
+	sync.Mutex
+	history  map[Key]struct{}
+	txs      map[Key]txn.Transaction
+	gatherer pool.Gatherer
 }
 
 // NewPool creates a new service.
-func NewPool() Pool {
-	return Pool{
-		history: make(map[Key]struct{}),
-		txs:     make(map[Key]txn.Transaction),
-		watcher: blockchain.NewWatcher(),
+func NewPool() *Pool {
+	return &Pool{
+		history:  make(map[Key]struct{}),
+		txs:      make(map[Key]txn.Transaction),
+		gatherer: pool.NewSimpleGatherer(),
 	}
-}
-
-// Len implements pool.Pool. It returns the current length of the pool.
-func (s Pool) Len() int {
-	return len(s.txs)
 }
 
 // Add implements pool.Pool. It adds the transaction to the pool of waiting
 // transactions.
-func (s Pool) Add(tx txn.Transaction) error {
+func (s *Pool) Add(tx txn.Transaction) error {
 	id := tx.GetID()
 	if len(id) > KeyMaxLength {
 		return xerrors.Errorf("tx identifier is too long: %d > %d", len(id), KeyMaxLength)
@@ -52,26 +48,34 @@ func (s Pool) Add(tx txn.Transaction) error {
 	key := Key{}
 	copy(key[:], id)
 
+	s.Lock()
+
 	_, found := s.history[key]
 	if found {
+		s.Unlock()
 		return xerrors.Errorf("tx %#x already exists", key)
 	}
 
 	s.txs[key] = tx
 
-	s.watcher.Notify(pool.Event{Len: len(s.txs)})
+	s.gatherer.Notify(len(s.txs), s.makeArray)
+
+	s.Unlock()
 
 	return nil
 }
 
 // Remove implements pool.Pool. It removes the transaction from the pool if it
 // exists, otherwise it returns an error.
-func (s Pool) Remove(tx txn.Transaction) error {
+func (s *Pool) Remove(tx txn.Transaction) error {
 	key := Key{}
 	copy(key[:], tx.GetID())
 
+	s.Lock()
+
 	_, found := s.txs[key]
 	if !found {
+		s.Unlock()
 		return xerrors.Errorf("transaction %#x not found", key[:])
 	}
 
@@ -81,48 +85,38 @@ func (s Pool) Remove(tx txn.Transaction) error {
 	// added to the pool.
 	s.history[key] = struct{}{}
 
-	s.watcher.Notify(pool.Event{Len: len(s.txs)})
+	s.Unlock()
 
 	return nil
 }
 
-// GetAll implements pool.Pool. It returns all the waiting transactions in
-// the pool.
-func (s Pool) GetAll() []txn.Transaction {
+// SetPlayers implements pool.Pool. It does nothing as the pool is in-memory and
+// only shares the transactions to the host.
+func (s *Pool) SetPlayers(mino.Players) error {
+	return nil
+}
+
+// Gather implements pool.Pool. It gathers the transactions of the pool and
+// return them.
+func (s *Pool) Gather(ctx context.Context, cfg pool.Config) []txn.Transaction {
+	s.Lock()
+
+	if len(s.txs) >= cfg.Min {
+		txs := s.makeArray()
+		s.Unlock()
+		return txs
+	}
+
+	s.Unlock()
+
+	return s.gatherer.Wait(ctx, cfg)
+}
+
+func (s *Pool) makeArray() []txn.Transaction {
 	txs := make([]txn.Transaction, 0, len(s.txs))
 	for _, tx := range s.txs {
 		txs = append(txs, tx)
 	}
 
 	return txs
-}
-
-// SetPlayers implements pool.Pool. It does nothing as the pool is in-memory and
-// only shares the transactions to the host.
-func (s Pool) SetPlayers(mino.Players) error {
-	return nil
-}
-
-// Watch implements pool.Pool.
-func (s Pool) Watch(ctx context.Context) <-chan pool.Event {
-	ch := make(chan pool.Event, 1)
-
-	obs := observer{ch: ch}
-	s.watcher.Add(obs)
-
-	go func() {
-		<-ctx.Done()
-		s.watcher.Remove(obs)
-		close(ch)
-	}()
-
-	return ch
-}
-
-type observer struct {
-	ch chan pool.Event
-}
-
-func (obs observer) NotifyCallback(evt interface{}) {
-	obs.ch <- evt.(pool.Event)
 }
