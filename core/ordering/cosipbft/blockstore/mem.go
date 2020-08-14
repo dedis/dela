@@ -6,6 +6,7 @@ import (
 
 	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
+	"go.dedis.ch/dela/core/store"
 	"golang.org/x/xerrors"
 )
 
@@ -111,6 +112,23 @@ func (s *InMemory) Watch(ctx context.Context) <-chan types.BlockLink {
 	}()
 
 	return obs.ch
+}
+
+// WithTx implements blockstore.BlockStore. It returns a new store that will
+// apply the list of blocks at the end of the transaction.
+func (s *InMemory) WithTx(txn store.Transaction) BlockStore {
+	store := &InMemory{
+		blocks:  append([]types.BlockLink{}, s.blocks...),
+		watcher: s.watcher,
+	}
+
+	txn.OnCommit(func() {
+		s.Lock()
+		s.blocks = store.blocks
+		s.Unlock()
+	})
+
+	return store
 }
 
 type observer struct {

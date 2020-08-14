@@ -511,7 +511,7 @@ func (m *pbftsm) verifyFinalize(r *round, sig crypto.Signature, ro viewchange.Au
 		// 2. Persist the block and its forward link.
 		link := types.NewBlockLink(lastID, r.block, r.prepareSig, sig, r.changeset)
 
-		err = m.blocks.Store(link)
+		err = m.blocks.WithTx(txn).Store(link)
 		if err != nil {
 			return xerrors.Errorf("store block: %v", err)
 		}
@@ -566,7 +566,7 @@ func (obs observer) NotifyCallback(event interface{}) {
 
 // CalculateThreshold returns the number of messages that a node needs to
 // receive before confirming the view change. The threshold is 2*f where f can
-// found with n = 3*f+1 where n is the number of participants.
+// be found with n = 3*f+1 where n is the number of participants.
 func calculateThreshold(n int) int {
 	f := (n - 1) / 3
 	return 2 * f

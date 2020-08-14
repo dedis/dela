@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
+	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/hashtree"
 )
 
@@ -50,4 +51,8 @@ type BlockStore interface {
 	// Watch returns a channel that is filled with new block links. The is
 	// closed as soon as the context is done.
 	Watch(context.Context) <-chan types.BlockLink
+
+	// WithTx returns a block store that is using the transaction to perform
+	// operations on the database.
+	WithTx(store.Transaction) BlockStore
 }

@@ -424,6 +424,10 @@ type badBlockStore struct {
 	length uint64
 }
 
+func (s badBlockStore) WithTx(store.Transaction) blockstore.BlockStore {
+	return s
+}
+
 func (s badBlockStore) Len() uint64 {
 	return s.length
 }
