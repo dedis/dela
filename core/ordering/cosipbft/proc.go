@@ -65,7 +65,7 @@ func (h *processor) Invoke(from mino.Address, msg serde.Message) ([]byte, error)
 
 		blocks := h.blocks.Watch(ctx)
 
-		// In case the node is falling behing the chain, it gives it a chance to
+		// In case the node is falling behind the chain, it gives it a chance to
 		// catch up before moving forward.
 		if h.sync.GetLatest() > h.blocks.Len() {
 			for link := range blocks {

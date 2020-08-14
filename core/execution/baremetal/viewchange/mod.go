@@ -17,10 +17,11 @@ const (
 	// AuthorityArg is the key of the argument for the new roster.
 	AuthorityArg = "viewchange:authority"
 
-	messageArgMissing     = "authority not found in transaction"
-	messageStorageEmpty   = "authority not found in storage"
-	messageTooManyChanges = "too many changes"
-	messageStorageFailure = "storage failure"
+	messageArgMissing       = "authority not found in transaction"
+	messageStorageEmpty     = "authority not found in storage"
+	messageStorageCorrupted = "invalid authority data in storage"
+	messageTooManyChanges   = "too many changes"
+	messageStorageFailure   = "storage failure"
 )
 
 // Contract is a contract to update the roster at a given key in the storage. It
@@ -62,7 +63,7 @@ func (c Contract) Execute(tx txn.Transaction, snap store.Snapshot) (execution.Re
 
 	curr, err := c.rosterFac.AuthorityOf(c.context, currData)
 	if err != nil {
-		res.Message = messageStorageEmpty
+		res.Message = messageStorageCorrupted
 		return res, xerrors.Errorf("failed to decode roster: %v", err)
 	}
 

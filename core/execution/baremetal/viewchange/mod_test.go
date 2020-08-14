@@ -39,7 +39,7 @@ func TestContract_Execute(t *testing.T) {
 	res, err = contract.Execute(makeTx(t, "[]"), fakeStore{})
 	require.EqualError(t, err, "failed to decode roster: oops")
 	require.False(t, res.Accepted)
-	require.Equal(t, messageStorageEmpty, res.Message)
+	require.Equal(t, messageStorageCorrupted, res.Message)
 
 	contract.rosterFac = fac
 	res, err = contract.Execute(makeTx(t, "[{},{}]"), fakeStore{})
