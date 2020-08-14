@@ -1,14 +1,17 @@
 package pbft
 
 import (
+	"bytes"
 	"context"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/blockchain"
+	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
@@ -24,6 +27,11 @@ import (
 	"golang.org/x/xerrors"
 )
 
+func TestState_String(t *testing.T) {
+	var state State = 99
+	require.Equal(t, "none", state.String())
+}
+
 func TestStateMachine_GetState(t *testing.T) {
 	sm := &pbftsm{}
 
@@ -34,47 +42,43 @@ func TestStateMachine_GetState(t *testing.T) {
 }
 
 func TestStateMachine_GetLeader(t *testing.T) {
-	sm := &pbftsm{}
-
-	leader := sm.GetLeader()
-	require.Nil(t, leader)
-
 	authority := fake.NewAuthority(3, fake.NewSigner)
 
-	sm.round.roster = roster.FromAuthority(authority)
-	leader = sm.GetLeader()
+	sm := &pbftsm{
+		tree: blockstore.NewTreeCache(badTree{}),
+		authReader: func(hashtree.Tree) (viewchange.Authority, error) {
+			return roster.FromAuthority(authority), nil
+		},
+	}
+
+	leader, err := sm.GetLeader()
+	require.NoError(t, err)
 	require.Equal(t, authority.GetAddress(0), leader)
 
 	sm.round.leader = 2
-	leader = sm.GetLeader()
-	require.Equal(t, authority.GetAddress(2), leader)
-}
-
-func TestStateMachine_PrePrepare(t *testing.T) {
-	sm := &pbftsm{
-		watcher: blockchain.NewWatcher(),
-	}
-
-	ro := roster.FromAuthority(fake.NewAuthority(4, fake.NewSigner))
-
-	err := sm.PrePrepare(ro)
+	leader, err = sm.GetLeader()
 	require.NoError(t, err)
-	require.Equal(t, 2, sm.round.threshold)
-	require.Equal(t, ro, sm.round.roster)
+	require.Equal(t, authority.GetAddress(2), leader)
 
-	err = sm.PrePrepare(ro)
-	require.EqualError(t, err, "mismatch state preprepare != initial")
+	sm.authReader = badReader
+	_, err = sm.GetLeader()
+	require.EqualError(t, err, "failed to read roster: oops")
 }
 
 func TestStateMachine_Prepare(t *testing.T) {
 	tree, clean := makeTree(t)
 	defer clean()
 
+	ro := roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+
 	param := StateMachineParam{
 		Validation: simple.NewService(fakeExec{}, nil),
 		Blocks:     blockstore.NewInMemory(),
 		Genesis:    blockstore.NewGenesisStore(),
 		Tree:       blockstore.NewTreeCache(tree),
+		AuthorityReader: func(hashtree.Tree) (viewchange.Authority, error) {
+			return ro, nil
+		},
 	}
 
 	param.Genesis.Set(types.Genesis{})
@@ -86,7 +90,7 @@ func TestStateMachine_Prepare(t *testing.T) {
 	require.NoError(t, err)
 
 	sm := NewStateMachine(param).(*pbftsm)
-	sm.state = PrePrepareState
+	sm.state = InitialState
 
 	id, err := sm.Prepare(block)
 	require.NoError(t, err)
@@ -100,9 +104,9 @@ func TestStateMachine_Prepare(t *testing.T) {
 
 	sm.state = ViewChangeState
 	_, err = sm.Prepare(block)
-	require.EqualError(t, err, "mismatch state viewchange != preprepare")
+	require.EqualError(t, err, "mismatch state viewchange != initial")
 
-	sm.state = PrePrepareState
+	sm.state = InitialState
 	sm.val = badValidation{}
 	_, err = sm.Prepare(block)
 	require.EqualError(t, err, "tree failed: callback failed: validation failed: oops")
@@ -118,7 +122,17 @@ func TestStateMachine_Prepare(t *testing.T) {
 	_, err = sm.Prepare(block)
 	require.EqualError(t, err, "couldn't get latest digest: missing genesis block")
 
+	// Failure to read the roster of the round.
 	sm.genesis.Set(types.Genesis{})
+	sm.authReader = badReader
+	_, err = sm.Prepare(block)
+	require.EqualError(t, err, "failed to read roster: oops")
+
+	// Failure to read the roster of the staging tree.
+	err = sm.verifyPrepare(tree, block, &sm.round, ro)
+	require.EqualError(t, err, "failed to read next roster: oops")
+
+	sm.authReader = param.AuthorityReader
 	sm.hashFac = fake.NewHashFactory(fake.NewBadHash())
 	_, err = sm.Prepare(block)
 	require.EqualError(t, err, "couldn't fingerprint link: couldn't write from: fake error")
@@ -129,6 +143,10 @@ func TestStateMachine_Commit(t *testing.T) {
 		state:       PrepareState,
 		verifierFac: fake.NewVerifierFactory(fake.Verifier{}),
 		watcher:     blockchain.NewWatcher(),
+		tree:        blockstore.NewTreeCache(badTree{}),
+		authReader: func(hashtree.Tree) (viewchange.Authority, error) {
+			return roster.New(nil, nil), nil
+		},
 	}
 	sm.round.id = types.Digest{1}
 
@@ -153,17 +171,27 @@ func TestStateMachine_Commit(t *testing.T) {
 	sm.verifierFac = fake.NewVerifierFactory(fake.NewBadVerifier())
 	err = sm.Commit(types.Digest{1}, fake.Signature{})
 	require.EqualError(t, err, "verifier failed: fake error")
+
+	sm.verifierFac = fake.NewVerifierFactory(fake.Verifier{})
+	sm.authReader = badReader
+	err = sm.Commit(types.Digest{1}, fake.Signature{})
+	require.EqualError(t, err, "failed to read roster: oops")
 }
 
 func TestStateMachine_Finalize(t *testing.T) {
 	tree, clean := makeTree(t)
 	defer clean()
 
+	ro := roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+
 	param := StateMachineParam{
 		VerifierFactory: fake.NewVerifierFactory(fake.Verifier{}),
 		Blocks:          blockstore.NewInMemory(),
 		Genesis:         blockstore.NewGenesisStore(),
 		Tree:            blockstore.NewTreeCache(tree),
+		AuthorityReader: func(hashtree.Tree) (viewchange.Authority, error) {
+			return ro, nil
+		},
 	}
 
 	param.Genesis.Set(types.Genesis{})
@@ -194,6 +222,27 @@ func TestStateMachine_Finalize(t *testing.T) {
 	sm.blocks = blockstore.NewInMemory()
 	err = sm.Finalize(types.Digest{1}, fake.Signature{})
 	require.EqualError(t, err, "couldn't get latest digest: missing genesis block")
+
+	sm.blocks = badBlockStore{length: 1}
+	err = sm.Finalize(types.Digest{1}, fake.Signature{})
+	require.EqualError(t, err, "couldn't get latest digest: oops")
+
+	sm.blocks = blockstore.NewInMemory()
+	sm.blocks.Store(makeLink(t))
+	sm.round.tree = badTree{}
+	err = sm.Finalize(types.Digest{1}, fake.Signature{})
+	require.EqualError(t, err, "commit tree failed: oops")
+
+	sm.blocks = badBlockStore{}
+	sm.genesis.Set(types.Genesis{})
+	sm.round.tree = tree.(hashtree.StagingTree)
+	err = sm.Finalize(types.Digest{1}, fake.Signature{})
+	require.EqualError(t, err, "failed to store block: oops")
+
+	sm.blocks = blockstore.NewInMemory()
+	sm.authReader = badReader
+	err = sm.Finalize(types.Digest{1}, fake.Signature{})
+	require.EqualError(t, err, "failed to read roster: oops")
 }
 
 func TestStateMachine_Accept(t *testing.T) {
@@ -205,11 +254,20 @@ func TestStateMachine_Accept(t *testing.T) {
 	sm.Accept(View{From: fake.NewAddress(1), Leader: 1})
 	require.Len(t, sm.round.views, 2)
 
+	// Ignore duplicate.
 	sm.Accept(View{From: fake.NewAddress(0), Leader: 1})
 	require.Len(t, sm.round.views, 2)
 
+	// Ignore views for a different leader.
 	sm.Accept(View{From: fake.NewAddress(2), Leader: 5})
 	require.Len(t, sm.round.views, 2)
+
+	// Only accept views for the current round ID.
+	buffer := new(bytes.Buffer)
+	sm.logger = zerolog.New(buffer)
+	sm.Accept(View{From: fake.NewAddress(3), Leader: 1, ID: types.Digest{1}})
+	require.Len(t, sm.round.views, 2)
+	require.Contains(t, buffer.String(), "received a view for a different block")
 }
 
 func TestStateMachine_AcceptAll(t *testing.T) {
@@ -224,7 +282,11 @@ func TestStateMachine_AcceptAll(t *testing.T) {
 		{From: fake.NewAddress(2), Leader: 5},
 	})
 	require.Equal(t, 5, sm.round.leader)
-	require.Equal(t, PrePrepareState, sm.state)
+	require.Equal(t, InitialState, sm.state)
+
+	// Only accept if there are enough views.
+	sm.AcceptAll([]View{{Leader: 6}})
+	require.Equal(t, 5, sm.round.leader)
 }
 
 func TestStateMachine_Expire(t *testing.T) {
@@ -249,12 +311,17 @@ func TestStateMachine_CatchUp(t *testing.T) {
 	tree, clean := makeTree(t)
 	defer clean()
 
+	ro := roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+
 	param := StateMachineParam{
 		Validation:      simple.NewService(fakeExec{}, nil),
 		VerifierFactory: fake.VerifierFactory{},
 		Blocks:          blockstore.NewInMemory(),
 		Genesis:         blockstore.NewGenesisStore(),
 		Tree:            blockstore.NewTreeCache(tree),
+		AuthorityReader: func(hashtree.Tree) (viewchange.Authority, error) {
+			return ro, nil
+		},
 	}
 
 	param.Genesis.Set(types.Genesis{})
@@ -267,19 +334,27 @@ func TestStateMachine_CatchUp(t *testing.T) {
 
 	sm := NewStateMachine(param).(*pbftsm)
 
-	err = sm.CatchUp(types.NewBlockLink(types.Digest{}, block, fake.Signature{}, fake.Signature{}))
+	link := types.NewBlockLink(types.Digest{}, block, fake.Signature{}, fake.Signature{}, roster.ChangeSet{})
+
+	err = sm.CatchUp(link)
 	require.NoError(t, err)
 
-	err = sm.CatchUp(types.NewBlockLink(types.Digest{}, block, fake.Signature{}, fake.Signature{}))
+	err = sm.CatchUp(link)
 	require.EqualError(t, err, "prepare failed: mismatch index 1 != 2")
 
+	sm.authReader = badReader
+	err = sm.CatchUp(link)
+	require.EqualError(t, err, "failed to read roster: oops")
+
+	sm.authReader = param.AuthorityReader
 	sm.blocks = blockstore.NewInMemory()
 	sm.verifierFac = fake.NewVerifierFactory(fake.NewBadVerifier())
-	err = sm.CatchUp(types.NewBlockLink(types.Digest{}, block, fake.Signature{}, fake.Signature{}))
+	err = sm.CatchUp(link)
 	require.EqualError(t, err, "commit failed: verifier failed: fake error")
 
+	link = types.NewBlockLink(types.Digest{}, block, fake.NewBadSignature(), fake.Signature{}, roster.ChangeSet{})
 	sm.verifierFac = fake.VerifierFactory{}
-	err = sm.CatchUp(types.NewBlockLink(types.Digest{}, block, fake.NewBadSignature(), fake.Signature{}))
+	err = sm.CatchUp(link)
 	require.EqualError(t, err, "finalize failed: couldn't marshal signature: fake error")
 }
 
@@ -318,6 +393,13 @@ func makeTree(t *testing.T) (hashtree.Tree, func()) {
 	return stage, func() { os.RemoveAll(dir) }
 }
 
+func makeLink(t *testing.T) types.BlockLink {
+	block, err := types.NewBlock(simple.NewData(nil))
+	require.NoError(t, err)
+
+	return types.NewBlockLink(types.Digest{}, block, nil, nil, roster.ChangeSet{})
+}
+
 type fakeExec struct {
 	err error
 }
@@ -331,5 +413,34 @@ type badValidation struct {
 }
 
 func (v badValidation) Validate(store.Snapshot, []txn.Transaction) (validation.Data, error) {
+	return nil, xerrors.New("oops")
+}
+
+type badBlockStore struct {
+	blockstore.BlockStore
+	length uint64
+}
+
+func (s badBlockStore) Len() uint64 {
+	return s.length
+}
+
+func (s badBlockStore) Last() (types.BlockLink, error) {
+	return nil, xerrors.New("oops")
+}
+
+func (s badBlockStore) Store(types.BlockLink) error {
+	return xerrors.New("oops")
+}
+
+type badTree struct {
+	hashtree.StagingTree
+}
+
+func (t badTree) Commit() (hashtree.Tree, error) {
+	return nil, xerrors.New("oops")
+}
+
+func badReader(hashtree.Tree) (viewchange.Authority, error) {
 	return nil, xerrors.New("oops")
 }

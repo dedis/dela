@@ -26,10 +26,13 @@ func TestService_Basic(t *testing.T) {
 	tree, clean := makeTree(t)
 	defer clean()
 
+	exec := baremetal.NewExecution()
+	exec.Set(testContractName, testExec{})
+
 	pool := pool.NewPool()
 	srvc := NewService(
 		pool,
-		val.NewService(baremetal.NewExecution(testExec{}), anon.NewTransactionFactory()),
+		val.NewService(exec, anon.NewTransactionFactory()),
 		tree,
 	)
 
@@ -66,7 +69,7 @@ func TestService_Listen(t *testing.T) {
 	tree, clean := makeTree(t)
 	defer clean()
 
-	vs := val.NewService(baremetal.NewExecution(testExec{}), anon.NewTransactionFactory())
+	vs := val.NewService(baremetal.NewExecution(), anon.NewTransactionFactory())
 
 	pool := pool.NewPool()
 	srvc := NewService(pool, vs, tree)
@@ -116,6 +119,8 @@ func TestService_GetProof(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
+const testContractName = "abc"
+
 func makeTree(t *testing.T) (hashtree.Tree, func()) {
 	dir, err := ioutil.TempDir(os.TempDir(), "dela-pow")
 	require.NoError(t, err)
@@ -130,7 +135,12 @@ func makeTree(t *testing.T) (hashtree.Tree, func()) {
 }
 
 func makeTx(t *testing.T, nonce uint64) txn.Transaction {
-	tx, err := anon.NewTransaction(nonce, anon.WithArg("key", []byte("ping")), anon.WithArg("value", []byte("pong")))
+	tx, err := anon.NewTransaction(
+		nonce,
+		anon.WithArg("key", []byte("ping")),
+		anon.WithArg("value", []byte("pong")),
+		anon.WithArg(baremetal.ContractArg, []byte(testContractName)),
+	)
 	require.NoError(t, err)
 
 	return tx

@@ -28,7 +28,7 @@ func TestProcessor_BlockMessage_Invoke(t *testing.T) {
 	proc.sync = fakeSync{}
 	proc.blocks = blockstore.NewInMemory()
 	proc.pbftsm = fakeSM{
-		state: pbft.PrePrepareState,
+		state: pbft.InitialState,
 		id:    expected,
 	}
 
@@ -38,17 +38,7 @@ func TestProcessor_BlockMessage_Invoke(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expected[:], id)
 
-	proc.pbftsm = fakeSM{state: pbft.InitialState}
-	proc.tree = blockstore.NewTreeCache(fakeTree{err: xerrors.New("oops")})
-	_, err = proc.Invoke(fake.NewAddress(0), msg)
-	require.EqualError(t, err, "read roster failed: read from tree: oops")
-
-	proc.tree = blockstore.NewTreeCache(fakeTree{})
 	proc.pbftsm = fakeSM{state: pbft.InitialState, err: xerrors.New("oops")}
-	_, err = proc.Invoke(fake.NewAddress(0), msg)
-	require.EqualError(t, err, "pbft pre-prepare failed: oops")
-
-	proc.pbftsm = fakeSM{state: pbft.PrePrepareState, err: xerrors.New("oops")}
 	_, err = proc.Invoke(fake.NewAddress(0), msg)
 	require.EqualError(t, err, "pbft prepare failed: oops")
 }
@@ -113,7 +103,7 @@ func TestProcessor_DoneMessage_Process(t *testing.T) {
 	proc := newProcessor()
 	proc.pbftsm = fakeSM{}
 	proc.blocks = blockstore.NewInMemory()
-	proc.blocks.Store(types.NewBlockLink(types.Digest{}, block, nil, nil))
+	proc.blocks.Store(types.NewBlockLink(types.Digest{}, block, nil, nil, nil))
 
 	req := mino.Request{
 		Message: types.NewDone(types.Digest{}, fake.Signature{}),
@@ -153,18 +143,19 @@ func TestProcessor_Unsupported_Process(t *testing.T) {
 type fakeSM struct {
 	pbft.StateMachine
 
-	err   error
-	state pbft.State
-	id    types.Digest
-	ch    chan pbft.State
+	err       error
+	errLeader error
+	state     pbft.State
+	id        types.Digest
+	ch        chan pbft.State
 }
 
 func (sm fakeSM) GetState() pbft.State {
 	return sm.state
 }
 
-func (sm fakeSM) GetLeader() mino.Address {
-	return fake.NewAddress(0)
+func (sm fakeSM) GetLeader() (mino.Address, error) {
+	return fake.NewAddress(0), sm.errLeader
 }
 
 func (sm fakeSM) PrePrepare(viewchange.Authority) error {
@@ -199,6 +190,13 @@ type fakeSync struct {
 
 func (sync fakeSync) GetLatest() uint64 {
 	return 0
+}
+
+func (sync fakeSync) Sync(ctx context.Context, players mino.Players) <-chan blocksync.Event {
+	ch := make(chan blocksync.Event, 1)
+	ch <- blocksync.Event{Hard: 999}
+
+	return ch
 }
 
 type fakeSnapshot struct {

@@ -189,12 +189,13 @@ type blockLink struct {
 }
 
 // NewBlockLink creates a new block link between from and to.
-func NewBlockLink(from Digest, to Block, p, c crypto.Signature) BlockLink {
+func NewBlockLink(from Digest, to Block, p, c crypto.Signature, cs viewchange.ChangeSet) BlockLink {
 	return blockLink{
 		from:       from,
 		to:         to,
 		prepareSig: p,
 		commitSig:  c,
+		changeset:  cs,
 	}
 }
 
@@ -256,19 +257,23 @@ func (link blockLink) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
+type ChangeSetKey struct{}
+
 // BlockLinkFac is the factory to deserialize block link messages.
 //
 // - implements types.BlockLinkFactory
 type blockLinkFac struct {
 	blockFac serde.Factory
 	sigFac   crypto.SignatureFactory
+	csFac    viewchange.ChangeSetFactory
 }
 
 // NewBlockLinkFactory creates a new block link factory.
-func NewBlockLinkFactory(blockFac serde.Factory, sigFac crypto.SignatureFactory) BlockLinkFactory {
+func NewBlockLinkFactory(blockFac serde.Factory, sigFac crypto.SignatureFactory, csFac viewchange.ChangeSetFactory) BlockLinkFactory {
 	return blockLinkFac{
 		blockFac: blockFac,
 		sigFac:   sigFac,
+		csFac:    csFac,
 	}
 }
 
@@ -285,6 +290,7 @@ func (fac blockLinkFac) BlockLinkOf(ctx serde.Context, data []byte) (BlockLink, 
 
 	ctx = serde.WithFactory(ctx, BlockKey{}, fac.blockFac)
 	ctx = serde.WithFactory(ctx, SignatureKey{}, fac.sigFac)
+	ctx = serde.WithFactory(ctx, ChangeSetKey{}, fac.csFac)
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {

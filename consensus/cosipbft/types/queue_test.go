@@ -101,10 +101,9 @@ func TestQueue_Finalize(t *testing.T) {
 		items: []item{
 			{
 				ForwardLink: ForwardLink{
-					from:      []byte{0xaa},
-					to:        []byte{0xbb},
-					prepare:   fake.Signature{},
-					changeset: fake.Message{},
+					from:    []byte{0xaa},
+					to:      []byte{0xbb},
+					prepare: fake.Signature{},
 				},
 				verifier: verifier,
 			},

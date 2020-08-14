@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/consensus/viewchange"
@@ -25,8 +26,6 @@ func (s State) String() string {
 	switch s {
 	case InitialState:
 		return "initial"
-	case PrePrepareState:
-		return "preprepare"
 	case PrepareState:
 		return "prepare"
 	case CommitState:
@@ -34,7 +33,7 @@ func (s State) String() string {
 	case ViewChangeState:
 		return "viewchange"
 	default:
-		return "invalid"
+		return "none"
 	}
 }
 
@@ -42,9 +41,6 @@ const (
 	// InitialState is the entry state which means the beginning of the PBFT
 	// protocol.
 	InitialState State = iota
-
-	// PrePrepareState is the state where the roster is assigned.
-	PrePrepareState
 
 	// PrepareState is the state to indicate that a proposal has been received
 	// and the machine is waiting for confirmations.
@@ -64,13 +60,13 @@ type View struct {
 	From   mino.Address
 	ID     types.Digest
 	Leader int
+	// TODO: signature
 }
 
 // StateMachine is the interface to implement to support a PBFT protocol.
 type StateMachine interface {
 	GetState() State
-	GetLeader() mino.Address
-	PrePrepare(ro viewchange.Authority) error
+	GetLeader() (mino.Address, error)
 	Prepare(block types.Block) (types.Digest, error)
 	Commit(types.Digest, crypto.Signature) error
 	Finalize(types.Digest, crypto.Signature) error
@@ -84,17 +80,22 @@ type StateMachine interface {
 type round struct {
 	leader     int
 	threshold  int
-	roster     viewchange.Authority
 	id         types.Digest
 	block      types.Block
 	tree       hashtree.StagingTree
 	prepareSig crypto.Signature
+	changeset  viewchange.ChangeSet
 	views      map[mino.Address]struct{}
 }
+
+// AuthorityReader is a function to help the state machine to read the current
+// authority for a given tree.
+type AuthorityReader func(tree hashtree.Tree) (viewchange.Authority, error)
 
 type pbftsm struct {
 	sync.Mutex
 
+	logger      zerolog.Logger
 	watcher     blockchain.Observable
 	hashFac     crypto.HashFactory
 	val         validation.Service
@@ -102,6 +103,7 @@ type pbftsm struct {
 	blocks      blockstore.BlockStore
 	genesis     blockstore.GenesisStore
 	tree        blockstore.TreeCache
+	authReader  AuthorityReader
 
 	state State
 	round round
@@ -115,11 +117,13 @@ type StateMachineParam struct {
 	Blocks          blockstore.BlockStore
 	Genesis         blockstore.GenesisStore
 	Tree            blockstore.TreeCache
+	AuthorityReader AuthorityReader
 }
 
 // NewStateMachine returns a new state machine.
 func NewStateMachine(param StateMachineParam) StateMachine {
 	return &pbftsm{
+		logger:      dela.Logger,
 		watcher:     blockchain.NewWatcher(),
 		hashFac:     crypto.NewSha256Factory(),
 		val:         param.Validation,
@@ -128,6 +132,7 @@ func NewStateMachine(param StateMachineParam) StateMachine {
 		genesis:     param.Genesis,
 		tree:        param.Tree,
 		state:       InitialState,
+		authReader:  param.AuthorityReader,
 	}
 }
 
@@ -142,40 +147,19 @@ func (m *pbftsm) GetState() State {
 
 // GetLeader implements pbft.StateMachine. It returns the current leader of the
 // round, or nil if the roster is not yet defined.
-func (m *pbftsm) GetLeader() mino.Address {
+func (m *pbftsm) GetLeader() (mino.Address, error) {
 	m.Lock()
 	defer m.Unlock()
 
-	if m.round.roster == nil {
-		return nil
+	roster, err := m.authReader(m.tree.Get())
+	if err != nil {
+		return nil, xerrors.Errorf("failed to read roster: %v", err)
 	}
 
-	iter := m.round.roster.AddressIterator()
+	iter := roster.AddressIterator()
 	iter.Seek(m.round.leader)
 
-	return iter.GetNext()
-}
-
-// PrePrepare implements pbft.StateMachine. If the state machine is in the
-// initial state, it will set the roster and moves to the PrePrepare state,
-// otherwise it will return an error.
-func (m *pbftsm) PrePrepare(ro viewchange.Authority) error {
-	m.Lock()
-	defer m.Unlock()
-
-	if m.state != InitialState {
-		// The roster can change only at the beginning of a PBFT round.
-		return xerrors.Errorf("mismatch state %v != %v", m.state, InitialState)
-	}
-
-	m.round.leader = 0
-	m.round.roster = ro
-	// In case of view change, it requires 2f messages from other participants.
-	m.round.threshold = calculateThreshold(ro.Len())
-
-	m.setState(PrePrepareState)
-
-	return nil
+	return iter.GetNext(), nil
 }
 
 // Prepare implements pbft.StateMachine. It receives the proposal from the
@@ -191,11 +175,18 @@ func (m *pbftsm) Prepare(block types.Block) (types.Digest, error) {
 		return m.round.id, nil
 	}
 
-	if m.state != PrePrepareState {
-		return types.Digest{}, xerrors.Errorf("mismatch state %v != %v", m.state, PrePrepareState)
+	if m.state != InitialState {
+		return types.Digest{}, xerrors.Errorf("mismatch state %v != %v", m.state, InitialState)
 	}
 
-	err := m.verifyPrepare(m.tree.Get(), block, &m.round)
+	roster, err := m.authReader(m.tree.Get())
+	if err != nil {
+		return types.Digest{}, xerrors.Errorf("failed to read roster: %v", err)
+	}
+
+	m.round.threshold = calculateThreshold(roster.Len())
+
+	err = m.verifyPrepare(m.tree.Get(), block, &m.round, roster)
 	if err != nil {
 		return types.Digest{}, err
 	}
@@ -224,7 +215,12 @@ func (m *pbftsm) Commit(id types.Digest, sig crypto.Signature) error {
 		return xerrors.Errorf("mismatch id '%v' != '%v'", id, m.round.id)
 	}
 
-	err := m.verifyCommit(&m.round, sig)
+	roster, err := m.authReader(m.tree.Get())
+	if err != nil {
+		return xerrors.Errorf("failed to read roster: %v", err)
+	}
+
+	err = m.verifyCommit(&m.round, sig, roster)
 	if err != nil {
 		return err
 	}
@@ -244,15 +240,14 @@ func (m *pbftsm) Finalize(id types.Digest, sig crypto.Signature) error {
 		return xerrors.Errorf("mismatch state %v != %v", m.state, CommitState)
 	}
 
-	tree, err := m.verifyFinalize(&m.round, sig)
+	roster, err := m.authReader(m.tree.Get())
 	if err != nil {
-		return err
+		return xerrors.Errorf("failed to read roster: %v", err)
 	}
 
-	m.tree.Set(tree)
-
-	m.round = round{
-		roster: m.round.roster,
+	err = m.verifyFinalize(&m.round, sig, roster)
+	if err != nil {
+		return err
 	}
 
 	m.setState(InitialState)
@@ -274,7 +269,13 @@ func (m *pbftsm) Accept(view View) {
 	}
 
 	if view.ID != m.round.id {
-		dela.Logger.Debug().Msg("received a view for a different block")
+		m.logger.Debug().
+			Str("viewID", view.ID.String()).
+			Str("roundID", m.round.id.String()).
+			Msg("received a view for a different block")
+
+		// Ignore views for a different block as everyone should be at the same
+		// index.
 		return
 	}
 
@@ -309,7 +310,7 @@ func (m *pbftsm) AcceptAll(views []View) {
 
 	m.round.leader = views[0].Leader
 
-	m.setState(PrePrepareState)
+	m.setState(InitialState)
 }
 
 // Expire implements pbft.StateMachine. It moves the state machine to the
@@ -351,29 +352,27 @@ func (m *pbftsm) CatchUp(link types.BlockLink) error {
 	defer m.Unlock()
 
 	r := round{
-		roster:    m.round.roster,
 		threshold: m.round.threshold,
 	}
 
-	err := m.verifyPrepare(m.tree.Get(), link.GetTo(), &r)
+	roster, err := m.authReader(m.tree.Get())
+	if err != nil {
+		return xerrors.Errorf("failed to read roster: %v", err)
+	}
+
+	err = m.verifyPrepare(m.tree.Get(), link.GetTo(), &r, roster)
 	if err != nil {
 		return xerrors.Errorf("prepare failed: %v", err)
 	}
 
-	err = m.verifyCommit(&r, link.GetPrepareSignature())
+	err = m.verifyCommit(&r, link.GetPrepareSignature(), roster)
 	if err != nil {
 		return xerrors.Errorf("commit failed: %v", err)
 	}
 
-	tree, err := m.verifyFinalize(&r, link.GetCommitSignature())
+	err = m.verifyFinalize(&r, link.GetCommitSignature(), roster)
 	if err != nil {
 		return xerrors.Errorf("finalize failed: %v", err)
-	}
-
-	m.tree.Set(tree)
-
-	m.round = round{
-		roster: m.round.roster,
 	}
 
 	m.setState(InitialState)
@@ -398,7 +397,7 @@ func (m *pbftsm) Watch(ctx context.Context) <-chan State {
 	return ch
 }
 
-func (m *pbftsm) verifyPrepare(tree hashtree.Tree, block types.Block, r *round) error {
+func (m *pbftsm) verifyPrepare(tree hashtree.Tree, block types.Block, r *round, ro viewchange.Authority) error {
 	stageTree, err := tree.Stage(func(snap store.Snapshot) error {
 		_, err := m.val.Validate(snap, block.GetTransactions())
 		if err != nil {
@@ -428,7 +427,15 @@ func (m *pbftsm) verifyPrepare(tree hashtree.Tree, block types.Block, r *round) 
 		return xerrors.Errorf("couldn't get latest digest: %v", err)
 	}
 
-	link := types.NewBlockLink(lastID, block, nil, nil)
+	// The roster will be used to find the differential with the previous one so
+	// that the forward link can be populated.
+	roster, err := m.authReader(stageTree)
+	if err != nil {
+		return xerrors.Errorf("failed to read next roster: %v", err)
+	}
+
+	changeset := ro.Diff(roster)
+	link := types.NewBlockLink(lastID, block, nil, nil, changeset)
 
 	h := m.hashFac.New()
 	err = link.Fingerprint(h)
@@ -439,13 +446,14 @@ func (m *pbftsm) verifyPrepare(tree hashtree.Tree, block types.Block, r *round) 
 	copy(r.id[:], h.Sum(nil))
 
 	r.tree = stageTree
-	r.block = link.GetTo()
+	r.block = block
+	r.changeset = changeset
 
 	return nil
 }
 
-func (m *pbftsm) verifyCommit(r *round, sig crypto.Signature) error {
-	verifier, err := m.verifierFac.FromAuthority(r.roster)
+func (m *pbftsm) verifyCommit(r *round, sig crypto.Signature, ro viewchange.Authority) error {
+	verifier, err := m.verifierFac.FromAuthority(ro)
 	if err != nil {
 		return xerrors.Errorf("couldn't make verifier: %v", err)
 	}
@@ -460,42 +468,44 @@ func (m *pbftsm) verifyCommit(r *round, sig crypto.Signature) error {
 	return nil
 }
 
-func (m *pbftsm) verifyFinalize(r *round, sig crypto.Signature) (hashtree.Tree, error) {
-	verifier, err := m.verifierFac.FromAuthority(r.roster)
+func (m *pbftsm) verifyFinalize(r *round, sig crypto.Signature, ro viewchange.Authority) error {
+	verifier, err := m.verifierFac.FromAuthority(ro)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't make verifier: %v", err)
+		return xerrors.Errorf("couldn't make verifier: %v", err)
 	}
 
 	buffer, err := r.prepareSig.MarshalBinary()
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't marshal signature: %v", err)
+		return xerrors.Errorf("couldn't marshal signature: %v", err)
 	}
 
 	err = verifier.Verify(buffer, sig)
 	if err != nil {
-		return nil, xerrors.Errorf("verifier failed: %v", err)
+		return xerrors.Errorf("verifier failed: %v", err)
 	}
 
 	lastID, err := m.getLatestID()
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't get latest digest: %v", err)
-	}
-
-	link := types.NewBlockLink(lastID, r.block, r.prepareSig, sig)
-
-	err = m.blocks.Store(link)
-	if err != nil {
-		// TODO: database tx
-		return nil, err
+		return xerrors.Errorf("couldn't get latest digest: %v", err)
 	}
 
 	tree, err := r.tree.Commit()
 	if err != nil {
 		// TODO: database tx
-		return nil, err
+		return xerrors.Errorf("commit tree failed: %v", err)
 	}
 
-	return tree, nil
+	m.tree.Set(tree)
+
+	link := types.NewBlockLink(lastID, r.block, r.prepareSig, sig, r.changeset)
+
+	err = m.blocks.Store(link)
+	if err != nil {
+		// TODO: database tx
+		return xerrors.Errorf("failed to store block: %v", err)
+	}
+
+	return nil
 }
 
 func (m *pbftsm) setState(s State) {
@@ -506,7 +516,7 @@ func (m *pbftsm) setState(s State) {
 func (m *pbftsm) checkViewChange(view View) {
 	if m.state == ViewChangeState && len(m.round.views) > m.round.threshold {
 		m.round.leader = view.Leader
-		m.setState(PrePrepareState)
+		m.setState(InitialState)
 	}
 }
 

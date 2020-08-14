@@ -3,6 +3,7 @@ package cosipbft
 import (
 	"context"
 
+	"github.com/rs/zerolog"
 	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/core/ordering"
@@ -11,6 +12,7 @@ import (
 	"go.dedis.ch/dela/core/ordering/cosipbft/pbft"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
+	"go.dedis.ch/dela/core/store/hashtree"
 	"go.dedis.ch/dela/core/txn/pool"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
@@ -28,6 +30,7 @@ type processor struct {
 	mino.UnsupportedHandler
 	types.MessageFactory
 
+	logger      zerolog.Logger
 	pbftsm      pbft.StateMachine
 	sync        blocksync.Synchronizer
 	tree        blockstore.TreeCache
@@ -57,30 +60,18 @@ func newProcessor() *processor {
 func (h *processor) Invoke(from mino.Address, msg serde.Message) ([]byte, error) {
 	switch in := msg.(type) {
 	case types.BlockMessage:
-		// In case the node is falling behing the chain, it gives it a chance to
-		// catch up before moving forward.
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
 		blocks := h.blocks.Watch(ctx)
 
+		// In case the node is falling behind the chain, it gives it a chance to
+		// catch up before moving forward.
 		if h.sync.GetLatest() > h.blocks.Len() {
 			for link := range blocks {
 				if link.GetTo().GetIndex() >= h.sync.GetLatest() {
 					cancel()
 				}
-			}
-		}
-
-		if h.pbftsm.GetState() == pbft.InitialState {
-			roster, err := h.getCurrentRoster()
-			if err != nil {
-				return nil, xerrors.Errorf("read roster failed: %v", err)
-			}
-
-			err = h.pbftsm.PrePrepare(roster)
-			if err != nil {
-				return nil, xerrors.Errorf("pbft pre-prepare failed: %v", err)
 			}
 		}
 
@@ -93,6 +84,7 @@ func (h *processor) Invoke(from mino.Address, msg serde.Message) ([]byte, error)
 	case types.CommitMessage:
 		err := h.pbftsm.Commit(in.GetID(), in.GetSignature())
 		if err != nil {
+			h.logger.Info().Msg("commit failed")
 			return nil, xerrors.Errorf("pbft commit failed: %v", err)
 		}
 
@@ -159,7 +151,11 @@ func (h *processor) Process(req mino.Request) (serde.Message, error) {
 }
 
 func (h *processor) getCurrentRoster() (viewchange.Authority, error) {
-	data, err := h.tree.Get().Get(keyRoster[:])
+	return h.readRoster(h.tree.Get())
+}
+
+func (h *processor) readRoster(tree hashtree.Tree) (viewchange.Authority, error) {
+	data, err := tree.Get(keyRoster[:])
 	if err != nil {
 		return nil, xerrors.Errorf("read from tree: %v", err)
 	}

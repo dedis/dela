@@ -33,6 +33,7 @@ type BlockLinkJSON struct {
 	Block            json.RawMessage
 	PrepareSignature json.RawMessage
 	CommitSignature  json.RawMessage
+	ChangeSet        json.RawMessage
 }
 
 type GenesisMessageJSON struct {

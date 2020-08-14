@@ -1,6 +1,7 @@
 package json
 
 import (
+	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
@@ -29,11 +30,17 @@ func (fmt linkFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, erro
 		return nil, err
 	}
 
+	changeset, err := link.GetChangeSet().Serialize(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	m := BlockLinkJSON{
 		From:             link.GetFrom(),
 		Block:            block,
 		PrepareSignature: prepare,
 		CommitSignature:  commit,
+		ChangeSet:        changeset,
 	}
 
 	data, err := ctx.Marshal(m)
@@ -73,7 +80,28 @@ func (fmt linkFormat) Decode(ctx serde.Context, data []byte) (serde.Message, err
 		return nil, err
 	}
 
-	link := types.NewBlockLink(m.From, block, prepare, commit)
+	changeset, err := decodeChangeSet(ctx, m.ChangeSet)
+	if err != nil {
+		return nil, err
+	}
+
+	link := types.NewBlockLink(m.From, block, prepare, commit, changeset)
 
 	return link, nil
+}
+
+func decodeChangeSet(ctx serde.Context, data []byte) (viewchange.ChangeSet, error) {
+	factory := ctx.GetFactory(types.ChangeSetKey{})
+
+	fac, ok := factory.(viewchange.ChangeSetFactory)
+	if !ok {
+		return nil, xerrors.Errorf("invalid change set factory '%T'", factory)
+	}
+
+	changeset, err := fac.ChangeSetOf(ctx, data)
+	if err != nil {
+		return nil, xerrors.Errorf("change set decoding failed: %v", err)
+	}
+
+	return changeset, nil
 }
