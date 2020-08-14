@@ -8,7 +8,12 @@ import (
 
 // Config is the configuration to change the behaviour of the synchronization.
 type Config struct {
+	// Soft is the number of participants that have soft-synchronized, meaning
+	// they know the latest index of the leader.
 	MinSoft int
+
+	// Hard is the number of participants that have hard-synchronized, meaning
+	// they have the latest block stored.
 	MinHard int
 }
 
