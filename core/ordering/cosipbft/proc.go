@@ -116,12 +116,12 @@ func (h *processor) Process(req mino.Request) (serde.Message, error) {
 			return nil, xerrors.Errorf("tree stage failed: %v", err)
 		}
 
-		tree, err := stageTree.Commit()
+		err = stageTree.Commit()
 		if err != nil {
 			return nil, xerrors.Errorf("tree commit failed: %v", err)
 		}
 
-		h.tree.Set(tree)
+		h.tree.Set(stageTree)
 		err = h.genesis.Set(*msg.GetGenesis())
 		if err != nil {
 			return nil, xerrors.Errorf("set genesis failed: %v", err)

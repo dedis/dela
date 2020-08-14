@@ -66,7 +66,7 @@ func TestStateMachine_GetLeader(t *testing.T) {
 }
 
 func TestStateMachine_Prepare(t *testing.T) {
-	tree, clean := makeTree(t)
+	tree, db, clean := makeTree(t)
 	defer clean()
 
 	ro := roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
@@ -79,6 +79,7 @@ func TestStateMachine_Prepare(t *testing.T) {
 		AuthorityReader: func(hashtree.Tree) (viewchange.Authority, error) {
 			return ro, nil
 		},
+		DB: db,
 	}
 
 	param.Genesis.Set(types.Genesis{})
@@ -179,7 +180,7 @@ func TestStateMachine_Commit(t *testing.T) {
 }
 
 func TestStateMachine_Finalize(t *testing.T) {
-	tree, clean := makeTree(t)
+	tree, db, clean := makeTree(t)
 	defer clean()
 
 	ro := roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
@@ -192,6 +193,7 @@ func TestStateMachine_Finalize(t *testing.T) {
 		AuthorityReader: func(hashtree.Tree) (viewchange.Authority, error) {
 			return ro, nil
 		},
+		DB: db,
 	}
 
 	param.Genesis.Set(types.Genesis{})
@@ -231,13 +233,13 @@ func TestStateMachine_Finalize(t *testing.T) {
 	sm.blocks.Store(makeLink(t))
 	sm.round.tree = badTree{}
 	err = sm.Finalize(types.Digest{1}, fake.Signature{})
-	require.EqualError(t, err, "commit tree failed: oops")
+	require.EqualError(t, err, "database failed: commit tree: oops")
 
 	sm.blocks = badBlockStore{}
 	sm.genesis.Set(types.Genesis{})
 	sm.round.tree = tree.(hashtree.StagingTree)
 	err = sm.Finalize(types.Digest{1}, fake.Signature{})
-	require.EqualError(t, err, "failed to store block: oops")
+	require.EqualError(t, err, "database failed: store block: oops")
 
 	sm.blocks = blockstore.NewInMemory()
 	sm.authReader = badReader
@@ -308,7 +310,7 @@ func TestStateMachine_Expire(t *testing.T) {
 }
 
 func TestStateMachine_CatchUp(t *testing.T) {
-	tree, clean := makeTree(t)
+	tree, db, clean := makeTree(t)
 	defer clean()
 
 	ro := roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
@@ -322,6 +324,7 @@ func TestStateMachine_CatchUp(t *testing.T) {
 		AuthorityReader: func(hashtree.Tree) (viewchange.Authority, error) {
 			return ro, nil
 		},
+		DB: db,
 	}
 
 	param.Genesis.Set(types.Genesis{})
@@ -379,7 +382,7 @@ func TestStateMachine_Watch(t *testing.T) {
 
 // Utility functions -----------------------------------------------------------
 
-func makeTree(t *testing.T) (hashtree.Tree, func()) {
+func makeTree(t *testing.T) (hashtree.Tree, kv.DB, func()) {
 	dir, err := ioutil.TempDir(os.TempDir(), "pbft")
 	require.NoError(t, err)
 
@@ -390,7 +393,7 @@ func makeTree(t *testing.T) (hashtree.Tree, func()) {
 	stage, err := tree.Stage(func(store.Snapshot) error { return nil })
 	require.NoError(t, err)
 
-	return stage, func() { os.RemoveAll(dir) }
+	return stage, db, func() { os.RemoveAll(dir) }
 }
 
 func makeLink(t *testing.T) types.BlockLink {
@@ -437,8 +440,12 @@ type badTree struct {
 	hashtree.StagingTree
 }
 
-func (t badTree) Commit() (hashtree.Tree, error) {
-	return nil, xerrors.New("oops")
+func (t badTree) WithTx(store.Transaction) hashtree.StagingTree {
+	return t
+}
+
+func (t badTree) Commit() error {
+	return xerrors.New("oops")
 }
 
 func badReader(hashtree.Tree) (viewchange.Authority, error) {

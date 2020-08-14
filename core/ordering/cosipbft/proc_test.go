@@ -239,8 +239,8 @@ func (t fakeTree) Stage(fn func(store.Snapshot) error) (hashtree.StagingTree, er
 	return t, t.errStage
 }
 
-func (t fakeTree) Commit() (hashtree.Tree, error) {
-	return t, t.errCommit
+func (t fakeTree) Commit() error {
+	return t.errCommit
 }
 
 type badGenesisStore struct {

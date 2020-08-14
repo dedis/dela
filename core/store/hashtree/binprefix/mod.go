@@ -46,6 +46,7 @@ import (
 type MerkleTree struct {
 	tree        *Tree
 	db          kv.DB
+	tx          store.Transaction
 	bucket      []byte
 	hashFactory crypto.HashFactory
 }
@@ -65,9 +66,11 @@ func NewMerkleTree(db kv.DB, nonce Nonce) *MerkleTree {
 func (t *MerkleTree) Get(key []byte) ([]byte, error) {
 	var value []byte
 
-	err := t.db.View(t.bucket, func(b kv.Bucket) error {
+	err := t.doView(func(tx kv.ReadableTx) error {
+		bucket := tx.GetBucket(t.bucket)
+
 		var err error
-		value, err = t.tree.Search(key, nil, b)
+		value, err = t.tree.Search(key, nil, bucket)
 
 		return err
 	})
@@ -89,8 +92,10 @@ func (t *MerkleTree) GetRoot() []byte {
 func (t *MerkleTree) GetPath(key []byte) (hashtree.Path, error) {
 	path := newPath(t.tree.nonce[:], key)
 
-	err := t.db.View(t.bucket, func(b kv.Bucket) error {
-		_, err := t.tree.Search(key, &path, b)
+	err := t.doView(func(tx kv.ReadableTx) error {
+		bucket := tx.GetBucket(t.bucket)
+
+		_, err := t.tree.Search(key, &path, bucket)
 		return err
 	})
 
@@ -106,8 +111,13 @@ func (t *MerkleTree) GetPath(key []byte) (hashtree.Path, error) {
 func (t *MerkleTree) Stage(fn func(store.Snapshot) error) (hashtree.StagingTree, error) {
 	clone := t.clone()
 
-	err := t.db.Update(t.bucket, func(b kv.Bucket) error {
-		err := fn(writableMerkleTree{
+	err := t.doUpdate(func(tx kv.WritableTx) error {
+		b, err := tx.GetBucketOrCreate(t.bucket)
+		if err != nil {
+			return xerrors.Errorf("read bucket failed: %v", err)
+		}
+
+		err = fn(writableMerkleTree{
 			MerkleTree: clone,
 			bucket:     b,
 		})
@@ -129,25 +139,70 @@ func (t *MerkleTree) Stage(fn func(store.Snapshot) error) (hashtree.StagingTree,
 
 // Commit implements hashtree.StagingTree. It writes the leaf nodes to the disk
 // and a trade-off of other nodes.
-func (t *MerkleTree) Commit() (hashtree.Tree, error) {
-	err := t.db.Update(t.bucket, func(b kv.Bucket) error {
-		return t.tree.Persist(b)
+func (t *MerkleTree) Commit() error {
+	err := t.doUpdate(func(tx kv.WritableTx) error {
+		bucket, err := tx.GetBucketOrCreate(t.bucket)
+		if err != nil {
+			return xerrors.Errorf("read bucket failed: %v", err)
+		}
+
+		return t.tree.Persist(bucket)
 	})
 
 	if err != nil {
-		return nil, xerrors.Errorf("failed to persist tree: %v", err)
+		return xerrors.Errorf("failed to persist tree: %v", err)
 	}
 
-	return t, nil
+	return nil
+}
+
+// WithTx implements hashtree.StagingTree. It returns a tree that will share the
+// same underlying data but it will perform operations on the database through
+// the transaction.
+func (t *MerkleTree) WithTx(tx store.Transaction) hashtree.StagingTree {
+	return &MerkleTree{
+		tree:        t.tree,
+		db:          t.db,
+		tx:          tx,
+		bucket:      t.bucket,
+		hashFactory: t.hashFactory,
+	}
 }
 
 func (t *MerkleTree) clone() *MerkleTree {
 	return &MerkleTree{
 		tree:        t.tree.Clone(),
 		db:          t.db,
+		tx:          t.tx,
 		bucket:      t.bucket,
 		hashFactory: t.hashFactory,
 	}
+}
+
+func (t *MerkleTree) doUpdate(fn func(kv.WritableTx) error) error {
+	if t.tx != nil {
+		tx, ok := t.tx.(kv.WritableTx)
+		if !ok {
+			return xerrors.Errorf("transaction '%T' is not writable", t.tx)
+		}
+
+		return fn(tx)
+	}
+
+	return t.db.Update(fn)
+}
+
+func (t *MerkleTree) doView(fn func(kv.ReadableTx) error) error {
+	if t.tx != nil {
+		tx, ok := t.tx.(kv.ReadableTx)
+		if !ok {
+			return xerrors.Errorf("transaction '%T' is not readable", t.tx)
+		}
+
+		return fn(tx)
+	}
+
+	return t.db.View(fn)
 }
 
 // WritableMerkleTree is a wrapper around the merkle tree implementation so that

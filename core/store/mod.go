@@ -18,3 +18,9 @@ type Snapshot interface {
 	Readable
 	Writable
 }
+
+// Transaction is a generic interface that store implementations can use to
+// provide atomicity.
+type Transaction interface {
+	OnCommit(func())
+}

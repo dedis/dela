@@ -47,18 +47,26 @@ func TestMerkleTree_IntegrationTest(t *testing.T) {
 	require.NotEmpty(t, values)
 	tree = next.(*MerkleTree)
 
-	_, err = tree.Commit()
+	// Test read and write in a transaction.
+	err = db.Update(func(txn kv.WritableTx) error {
+		txtree := tree.WithTx(txn)
+
+		err := txtree.Commit()
+		require.NoError(t, err)
+
+		for key := range values {
+			path, err := txtree.GetPath(key[:])
+			require.NoError(t, err)
+
+			root, err := path.(Path).computeRoot(fac)
+			require.NoError(t, err)
+			require.Equal(t, root, tree.GetRoot())
+			require.Equal(t, values[key], path.GetValue())
+		}
+
+		return nil
+	})
 	require.NoError(t, err)
-
-	for key := range values {
-		path, err := tree.GetPath(key[:])
-		require.NoError(t, err)
-
-		root, err := path.(Path).computeRoot(fac)
-		require.NoError(t, err)
-		require.Equal(t, root, tree.GetRoot())
-		require.Equal(t, values[key], path.GetValue())
-	}
 
 	next, err = tree.Stage(func(snap store.Snapshot) error {
 		for key := range values {
@@ -74,10 +82,13 @@ func TestMerkleTree_IntegrationTest(t *testing.T) {
 	require.Len(t, tree.GetRoot(), 32)
 	require.IsType(t, (*EmptyNode)(nil), tree.tree.root)
 
-	_, err = tree.Commit()
+	err = tree.Commit()
 	require.NoError(t, err)
 
-	db.View(tree.bucket, func(b kv.Bucket) error {
+	db.View(func(txn kv.ReadableTx) error {
+		b := txn.GetBucket(tree.bucket)
+		require.NotNil(t, b)
+
 		return b.ForEach(func(k, v []byte) error {
 			t.Fatal("database should be empty")
 			return nil
@@ -124,10 +135,10 @@ func TestMerkleTree_Random_IntegrationTest(t *testing.T) {
 			require.Equal(t, value, v)
 		}
 
-		next, err := stage.Commit()
+		err = stage.Commit()
 		require.NoError(t, err)
 
-		tree = next.(*MerkleTree)
+		tree = stage.(*MerkleTree)
 
 		// Test that the keys are still present after persiting to the disk,
 		// alongside with the computed hash for the nodes.
@@ -164,6 +175,11 @@ func TestMerkleTree_Get(t *testing.T) {
 
 	_, err = tree.Get(make([]byte, MaxDepth+1))
 	require.EqualError(t, err, "couldn't search key: mismatch key length 33 > 32")
+
+	tree.tx = wrongTx{}
+	_, err = tree.Get([]byte{})
+	require.EqualError(t, err,
+		"couldn't search key: transaction 'binprefix.wrongTx' is not readable")
 }
 
 func TestMerkleTree_GetRoot(t *testing.T) {
@@ -225,13 +241,25 @@ func TestMerkleTree_Stage(t *testing.T) {
 	_, err = tree.Stage(func(store.Snapshot) error { return nil })
 	require.EqualError(t, err,
 		"couldn't update tree: failed to prepare: empty node failed: fake error")
+
+	tree.tx = badTx{}
+	_, err = tree.Stage(func(store.Snapshot) error { return nil })
+	require.EqualError(t, err, "read bucket failed: oops")
+
+	tree.tx = wrongTx{}
+	_, err = tree.Stage(func(store.Snapshot) error { return nil })
+	require.EqualError(t, err, "transaction 'binprefix.wrongTx' is not writable")
 }
 
 func TestMerkleTree_Commit(t *testing.T) {
 	tree := NewMerkleTree(fakeDB{err: xerrors.New("oops")}, Nonce{})
 
-	_, err := tree.Commit()
+	err := tree.Commit()
 	require.EqualError(t, err, "failed to persist tree: oops")
+
+	tree.tx = badTx{}
+	err = tree.Commit()
+	require.EqualError(t, err, "failed to persist tree: read bucket failed: oops")
 }
 
 func TestWritableMerkleTree_Set(t *testing.T) {
@@ -265,4 +293,16 @@ func makeDB(t *testing.T) (kv.DB, func()) {
 	require.NoError(t, err)
 
 	return db, func() { os.RemoveAll(dir) }
+}
+
+type badTx struct {
+	kv.WritableTx
+}
+
+func (tx badTx) GetBucketOrCreate([]byte) (kv.Bucket, error) {
+	return nil, xerrors.New("oops")
+}
+
+type wrongTx struct {
+	store.Transaction
 }

@@ -429,6 +429,7 @@ func makeAuthority(t *testing.T, n int) ([]testNode, viewchange.Authority, func(
 			Validation: vs,
 			Pool:       pool,
 			Tree:       tree,
+			DB:         db,
 		}
 
 		srv, err := NewService(param)

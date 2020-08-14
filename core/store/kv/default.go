@@ -30,27 +30,17 @@ func New(path string) (DB, error) {
 
 // View implements kv.DB. It opens a read-only transaction and opens the
 // provided bucket. It will return an error if the bucket does not exist.
-func (db boltDB) View(bucket []byte, fn func(Bucket) error) error {
+func (db boltDB) View(fn func(ReadableTx) error) error {
 	return db.bolt.View(func(txn *bbolt.Tx) error {
-		b := txn.Bucket(bucket)
-		if b == nil {
-			return xerrors.Errorf("bucket '%x' not found", bucket)
-		}
-
-		return fn(boltBucket{bucket: b})
+		return fn(boltTx{txn: txn})
 	})
 }
 
 // Update implements kv.DB. It opens a read-write transaction and opens the
 // bucket. It will create it if it does not exist yet.
-func (db boltDB) Update(bucket []byte, fn func(Bucket) error) error {
+func (db boltDB) Update(fn func(WritableTx) error) error {
 	return db.bolt.Update(func(txn *bbolt.Tx) error {
-		bucket, err := txn.CreateBucketIfNotExists(bucket)
-		if err != nil {
-			return xerrors.Errorf("failed to create bucket: %v", err)
-		}
-
-		return fn(boltBucket{bucket: bucket})
+		return fn(boltTx{txn: txn})
 	})
 }
 
@@ -58,6 +48,42 @@ func (db boltDB) Update(bucket []byte, fn func(Bucket) error) error {
 // result in an error after this function is called.
 func (db boltDB) Close() error {
 	return db.bolt.Close()
+}
+
+// BoltTx is the adapter of a bbolt transaction to the kv.Transaction interface.
+//
+// - implements kv.Transaction
+// - implements store.Transaction
+type boltTx struct {
+	txn *bbolt.Tx
+}
+
+// GetBucket implements kv.Transaction. It returns the bucket with the given
+// name or nil if it does not exist.
+func (tx boltTx) GetBucket(name []byte) Bucket {
+	bucket := tx.txn.Bucket(name)
+	if bucket == nil {
+		return nil
+	}
+
+	return boltBucket{bucket: bucket}
+}
+
+// GetBucketOrCreate implements kv.Transaction. It creates the bucket if it does
+// not exist and then return it.
+func (tx boltTx) GetBucketOrCreate(name []byte) (Bucket, error) {
+	bucket, err := tx.txn.CreateBucketIfNotExists(name)
+	if err != nil {
+		return nil, xerrors.Errorf("create bucket failed: %v", err)
+	}
+
+	return boltBucket{bucket: bucket}, nil
+}
+
+// OnCommit implements store.Transaction. It registers a callback that is called
+// after the transaction is successful.
+func (tx boltTx) OnCommit(fn func()) {
+	tx.txn.OnCommit(fn)
 }
 
 // BoltBucket is the adapter of a bbolt bucket to the kv.Bucket interface.
