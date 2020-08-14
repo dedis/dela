@@ -4,8 +4,9 @@ package gossip
 
 import (
 	"context"
-	"sync"
 
+	"github.com/rs/zerolog"
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/pool"
 	"go.dedis.ch/dela/mino"
@@ -18,9 +19,8 @@ import (
 //
 // - implements pool.Pool
 type Pool struct {
-	sync.Mutex
+	logger   zerolog.Logger
 	actor    gossip.Actor
-	bag      map[string]txn.Transaction
 	gatherer pool.Gatherer
 	closing  chan struct{}
 }
@@ -33,8 +33,8 @@ func NewPool(gossiper gossip.Gossiper) (*Pool, error) {
 	}
 
 	p := &Pool{
+		logger:   dela.Logger,
 		actor:    actor,
-		bag:      make(map[string]txn.Transaction),
 		gatherer: pool.NewSimpleGatherer(),
 		closing:  make(chan struct{}),
 	}
@@ -54,21 +54,25 @@ func (p *Pool) SetPlayers(players mino.Players) error {
 // Add implements pool.Pool. It adds the transaction to the pool and gossips it
 // to other participants.
 func (p *Pool) Add(tx txn.Transaction) error {
-	err := p.actor.Add(tx)
+	err := p.gatherer.Add(tx)
+	if err != nil {
+		return xerrors.Errorf("store failed: %v", err)
+	}
+
+	err = p.actor.Add(tx)
 	if err != nil {
 		return xerrors.Errorf("failed to gossip tx: %v", err)
 	}
-
-	p.setTx(tx)
 
 	return nil
 }
 
 // Remove implements pool.Pool. It removes the transaction from the pool.
 func (p *Pool) Remove(tx txn.Transaction) error {
-	p.Lock()
-	delete(p.bag, string(tx.GetID()))
-	p.Unlock()
+	err := p.gatherer.Remove(tx)
+	if err != nil {
+		return xerrors.Errorf("store failed: %v", err)
+	}
 
 	return nil
 }
@@ -76,21 +80,10 @@ func (p *Pool) Remove(tx txn.Transaction) error {
 // Gather implements pool.Pool. It blocks until the pool has enough transactions
 // according to the configuration and then returns the transactions.
 func (p *Pool) Gather(ctx context.Context, cfg pool.Config) []txn.Transaction {
-	p.Lock()
-
-	if len(p.bag) >= cfg.Min {
-		txs := p.makeArray()
-		p.Unlock()
-
-		return txs
-	}
-
-	p.Unlock()
-
 	return p.gatherer.Wait(ctx, cfg)
 }
 
-// Close stops the gossiper.
+// Close stops the gossiper and terminate the routine that listens for rumors.
 func (p *Pool) Close() error {
 	close(p.closing)
 
@@ -102,32 +95,16 @@ func (p *Pool) Close() error {
 	return nil
 }
 
-func (p *Pool) setTx(tx txn.Transaction) {
-	p.Lock()
-
-	p.bag[string(tx.GetID())] = tx
-
-	p.gatherer.Notify(len(p.bag), p.makeArray)
-
-	p.Unlock()
-}
-
-func (p *Pool) makeArray() []txn.Transaction {
-	txs := make([]txn.Transaction, 0, len(p.bag))
-	for _, tx := range p.bag {
-		txs = append(txs, tx)
-	}
-
-	return txs
-}
-
 func (p *Pool) listenRumors(ch <-chan gossip.Rumor) {
 	for {
 		select {
-		case r := <-ch:
-			tx, ok := r.(txn.Transaction)
+		case rumor := <-ch:
+			tx, ok := rumor.(txn.Transaction)
 			if ok {
-				p.setTx(tx)
+				err := p.gatherer.Add(tx)
+				if err != nil {
+					p.logger.Debug().Err(err).Msg("failed to add transaction")
+				}
 			}
 		case <-p.closing:
 			return

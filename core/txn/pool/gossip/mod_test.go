@@ -1,11 +1,13 @@
 package gossip
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/anon"
@@ -66,39 +68,45 @@ func TestPool_New(t *testing.T) {
 }
 
 func TestPool_Add(t *testing.T) {
-	pool := &Pool{
+	p := &Pool{
 		actor:    fakeActor{},
-		bag:      make(map[string]txn.Transaction),
 		gatherer: pool.NewSimpleGatherer(),
 	}
 
-	err := pool.Add(makeTx(t, 0))
+	err := p.Add(makeTx(t, 0))
 	require.NoError(t, err)
-	require.Len(t, pool.bag, 1)
 
-	pool.actor = fakeActor{err: xerrors.New("oops")}
-	err = pool.Add(makeTx(t, 0))
+	p.gatherer = badGatherer{}
+	err = p.Add(makeTx(t, 0))
+	require.EqualError(t, err, "store failed: oops")
+
+	p.gatherer = pool.NewSimpleGatherer()
+	p.actor = fakeActor{err: xerrors.New("oops")}
+	err = p.Add(makeTx(t, 0))
 	require.EqualError(t, err, "failed to gossip tx: oops")
 }
 
 func TestPool_Remove(t *testing.T) {
-	pool := &Pool{
-		actor: fakeActor{},
-		bag:   map[string]txn.Transaction{"A": nil, "B": nil},
+	p := &Pool{
+		actor:    fakeActor{},
+		gatherer: pool.NewSimpleGatherer(),
 	}
 
 	tx := makeTx(t, 0)
-	pool.bag[string(tx.GetID())] = tx
 
-	err := pool.Remove(tx)
+	require.NoError(t, p.gatherer.Add(tx))
+
+	err := p.Remove(tx)
 	require.NoError(t, err)
-	require.Len(t, pool.bag, 2)
+
+	p.gatherer = badGatherer{}
+	err = p.Remove(tx)
+	require.EqualError(t, err, "store failed: oops")
 }
 
 func TestPool_Gather(t *testing.T) {
 	p := &Pool{
 		actor:    fakeActor{},
-		bag:      make(map[string]txn.Transaction),
 		gatherer: pool.NewSimpleGatherer(),
 	}
 
@@ -135,6 +143,37 @@ func TestPool_Close(t *testing.T) {
 	pool.actor = fakeActor{err: xerrors.New("oops")}
 	err = pool.Close()
 	require.EqualError(t, err, "failed to close gossiper: oops")
+}
+
+func TestPool_ListenRumors(t *testing.T) {
+	buffer := new(bytes.Buffer)
+
+	p := &Pool{
+		logger:   zerolog.New(buffer),
+		closing:  make(chan struct{}),
+		gatherer: pool.NewSimpleGatherer(),
+	}
+
+	ch := make(chan gossip.Rumor)
+	go func() {
+		ch <- makeTx(t, 0)
+		close(p.closing)
+	}()
+
+	p.listenRumors(ch)
+	require.Empty(t, buffer.String())
+
+	p.gatherer = badGatherer{}
+	p.closing = make(chan struct{})
+
+	ch = make(chan gossip.Rumor, 1)
+	go func() {
+		ch <- makeTx(t, 0)
+		close(p.closing)
+	}()
+
+	p.listenRumors(ch)
+	require.NotEmpty(t, buffer.String())
 }
 
 // Utility functions -----------------------------------------------------------
@@ -198,4 +237,16 @@ func (g fakeGossiper) Listen() (gossip.Actor, error) {
 
 func (g fakeGossiper) Rumors() <-chan gossip.Rumor {
 	return nil
+}
+
+type badGatherer struct {
+	pool.Gatherer
+}
+
+func (g badGatherer) Add(tx txn.Transaction) error {
+	return xerrors.New("oops")
+}
+
+func (g badGatherer) Remove(tx txn.Transaction) error {
+	return xerrors.New("oops")
 }
