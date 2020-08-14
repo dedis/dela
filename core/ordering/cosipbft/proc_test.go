@@ -186,17 +186,16 @@ func (sm fakeSM) Watch(context.Context) <-chan pbft.State {
 
 type fakeSync struct {
 	blocksync.Synchronizer
+
+	err error
 }
 
 func (sync fakeSync) GetLatest() uint64 {
 	return 0
 }
 
-func (sync fakeSync) Sync(ctx context.Context, players mino.Players) <-chan blocksync.Event {
-	ch := make(chan blocksync.Event, 1)
-	ch <- blocksync.Event{Hard: 999}
-
-	return ch
+func (sync fakeSync) Sync(ctx context.Context, players mino.Players, cfg blocksync.Config) error {
+	return sync.err
 }
 
 type fakeSnapshot struct {

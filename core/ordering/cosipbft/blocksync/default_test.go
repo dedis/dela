@@ -1,20 +1,18 @@
 package blocksync
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"strconv"
+	"sync"
 	"testing"
-	"time"
 
-	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blocksync/types"
 	"go.dedis.ch/dela/core/ordering/cosipbft/pbft"
-	cosipbft "go.dedis.ch/dela/core/ordering/cosipbft/types"
+	otypes "go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/txn/anon"
 	"go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/internal/testing/fake"
@@ -34,16 +32,20 @@ func TestDefaultSync_Basic(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	events := syncs[0].Sync(ctx, roster)
-
-	waitEvent(t, events, roster.Len(), roster.Len())
+	err := syncs[0].Sync(ctx, roster, Config{
+		MinSoft: roster.Len(),
+		MinHard: roster.Len(),
+	})
+	require.NoError(t, err)
 
 	storeBlocks(t, syncs[0].blocks, num)
 
 	// Test only a subset of the roster to prepare for the next test.
-	events = syncs[0].Sync(ctx, roster.Take(mino.RangeFilter(0, k)))
-
-	waitEvent(t, events, k, k)
+	err = syncs[0].Sync(ctx, roster.Take(mino.RangeFilter(0, k)), Config{
+		MinSoft: k,
+		MinHard: k,
+	})
+	require.NoError(t, err)
 
 	for i := 0; i < k; i++ {
 		require.Equal(t, uint64(num), syncs[i].blocks.Len(), strconv.Itoa(i))
@@ -51,11 +53,24 @@ func TestDefaultSync_Basic(t *testing.T) {
 
 	// Test that two parrallel synchronizations for the same latest index don't
 	// mix each other. Also test that already updated participants won't fail.
-	ch1 := syncs[0].Sync(ctx, roster)
-	ch2 := syncs[k-1].Sync(ctx, roster)
+	wg := sync.WaitGroup{}
+	wg.Add(2)
 
-	waitEvent(t, ch1, n, n)
-	waitEvent(t, ch2, n, n)
+	cfg := Config{
+		MinSoft: n,
+		MinHard: n,
+	}
+
+	go func() {
+		defer wg.Done()
+		require.NoError(t, syncs[0].Sync(ctx, roster, cfg))
+	}()
+	go func() {
+		defer wg.Done()
+		require.NoError(t, syncs[k-1].Sync(ctx, roster, cfg))
+	}()
+
+	wg.Wait()
 
 	for i := 0; i < n; i++ {
 		require.Equal(t, uint64(num), syncs[i].blocks.Len(), strconv.Itoa(i))
@@ -83,7 +98,7 @@ func TestDefaultSync_GetLatest(t *testing.T) {
 }
 
 func TestDefaultSync_Sync(t *testing.T) {
-	rcvr := fake.NewReceiver()
+	rcvr := fake.NewReceiver(types.NewSyncRequest(0), types.NewSyncRequest(0), types.NewSyncAck())
 	sender := fake.Sender{}
 
 	sync := defaultSync{
@@ -93,57 +108,25 @@ func TestDefaultSync_Sync(t *testing.T) {
 
 	ctx := context.Background()
 
-	events := sync.Sync(ctx, mino.NewAddresses())
-	waitEvent(t, events, 0, 0)
-
-	buffer := new(bytes.Buffer)
-	sync.logger = zerolog.New(buffer)
-	sync.rpc = fake.NewBadRPC()
-	events = sync.Sync(ctx, mino.NewAddresses())
-	waitEvent(t, events, 0, 0)
-	require.Contains(t, buffer.String(), "fake error")
-	require.Contains(t, buffer.String(), "synchronization failed")
-}
-
-func TestDefaultSync_Routine(t *testing.T) {
-	in := fake.NewReceiver(
-		types.NewSyncRequest(0),
-		types.NewSyncRequest(0),
-		types.NewSyncAck(),
-	)
-	out := fake.Sender{}
-
-	sync := defaultSync{
-		rpc:    fake.NewStreamRPC(in, out),
-		blocks: blockstore.NewInMemory(),
-	}
-
-	ctx := context.Background()
-	events := make(chan Event, 1)
-
-	err := sync.routine(ctx, mino.NewAddresses(fake.NewAddress(0)), events)
+	err := sync.Sync(ctx, mino.NewAddresses(), Config{MinSoft: 1, MinHard: 1})
 	require.NoError(t, err)
-	<-events
 
 	sync.rpc = fake.NewBadRPC()
-	err = sync.routine(ctx, mino.NewAddresses(), nil)
+	err = sync.Sync(ctx, mino.NewAddresses(), Config{})
 	require.EqualError(t, err, "stream failed: fake error")
 
 	sync.rpc = fake.NewStreamRPC(fake.NewReceiver(), fake.NewBadSender())
-	err = sync.routine(ctx, mino.NewAddresses(), nil)
+	err = sync.Sync(ctx, mino.NewAddresses(), Config{})
 	require.EqualError(t, err, "announcement failed: fake error")
 
 	sync.rpc = fake.NewStreamRPC(fake.NewBadReceiver(), fake.Sender{})
-	err = sync.routine(ctx, mino.NewAddresses(fake.NewAddress(0)), nil)
+	err = sync.Sync(ctx, mino.NewAddresses(fake.NewAddress(0)), Config{MinSoft: 1})
 	require.EqualError(t, err, "receiver failed: fake error")
 
+	sync.rpc = fake.NewStreamRPC(fake.NewReceiver(types.NewSyncRequest(0)), sender)
 	sync.blocks = badBlockStore{}
-	sync.rpc = fake.NewStreamRPC(fake.NewReceiver(types.NewSyncRequest(0)), out)
-	err = sync.routine(ctx, mino.NewAddresses(fake.NewAddress(0)), events)
-	require.NoError(t, err)
-
-	evt := <-events
-	require.Len(t, evt.Errors, 1)
+	err = sync.Sync(ctx, mino.NewAddresses(), Config{MinSoft: 1})
+	require.EqualError(t, err, "synchronizing node fake.Address[0]: couldn't get block: oops")
 }
 
 func TestDefaultSync_SyncNode(t *testing.T) {
@@ -218,13 +201,13 @@ func makeNodes(t *testing.T, n int) ([]defaultSync, mino.Players) {
 		addrs[i] = m.GetAddress()
 
 		blocks := blockstore.NewInMemory()
-		blockFac := cosipbft.NewBlockFactory(simple.NewDataFactory(anon.NewTransactionFactory()))
+		blockFac := otypes.NewBlockFactory(simple.NewDataFactory(anon.NewTransactionFactory()))
 		csFac := roster.NewChangeSetFactory(m.GetAddressFactory(), fake.PublicKeyFactory{})
 
 		param := SyncParam{
 			Mino:        m,
 			Blocks:      blocks,
-			LinkFactory: cosipbft.NewBlockLinkFactory(blockFac, fake.SignatureFactory{}, csFac),
+			LinkFactory: otypes.NewBlockLinkFactory(blockFac, fake.SignatureFactory{}, csFac),
 			PBFT:        testSM{blocks: blocks},
 		}
 
@@ -238,29 +221,16 @@ func makeNodes(t *testing.T, n int) ([]defaultSync, mino.Players) {
 }
 
 func storeBlocks(t *testing.T, blocks blockstore.BlockStore, n int) {
-	prev := cosipbft.Digest{}
+	prev := otypes.Digest{}
 
 	for i := 0; i < n; i++ {
-		block, err := cosipbft.NewBlock(simple.NewData(nil), cosipbft.WithIndex(uint64(i)))
+		block, err := otypes.NewBlock(simple.NewData(nil), otypes.WithIndex(uint64(i)))
 		require.NoError(t, err)
 
-		err = blocks.Store(cosipbft.NewBlockLink(prev, block, fake.Signature{}, fake.Signature{}, roster.ChangeSet{}))
+		err = blocks.Store(otypes.NewBlockLink(prev, block, fake.Signature{}, fake.Signature{}, roster.ChangeSet{}))
 		require.NoError(t, err)
 
 		prev = block.GetHash()
-	}
-}
-
-func waitEvent(t *testing.T, events <-chan Event, soft, hard int) {
-	for {
-		select {
-		case <-time.After(2 * time.Second):
-			t.Fatal("timeout")
-		case evt := <-events:
-			if evt.Soft >= soft && evt.Hard >= hard {
-				return
-			}
-		}
 	}
 }
 
@@ -270,7 +240,7 @@ type testSM struct {
 	blocks blockstore.BlockStore
 }
 
-func (sm testSM) CatchUp(link cosipbft.BlockLink) error {
+func (sm testSM) CatchUp(link otypes.BlockLink) error {
 	err := sm.blocks.Store(link)
 	if err != nil {
 		return err
@@ -287,6 +257,6 @@ func (s badBlockStore) Len() uint64 {
 	return 5
 }
 
-func (s badBlockStore) GetByIndex(index uint64) (cosipbft.BlockLink, error) {
+func (s badBlockStore) GetByIndex(index uint64) (otypes.BlockLink, error) {
 	return nil, xerrors.New("oops")
 }

@@ -350,7 +350,11 @@ func (s *Service) doRound() error {
 
 	// Send a synchronization to the roster so that they can learn about the
 	// latest block of the chain.
-	s.waitSync(ctx, roster)
+	// TODO: get pbft threshold
+	err = s.sync.Sync(ctx, roster, blocksync.Config{MinHard: roster.Len()})
+	if err != nil {
+		return xerrors.Errorf("sync failed: %v", err)
+	}
 
 	// TODO: check that no committed block exists in the case of a leader
 	// failure when propagating the collective signature.
@@ -364,22 +368,6 @@ func (s *Service) doRound() error {
 	}
 
 	return nil
-}
-
-func (s *Service) waitSync(ctx context.Context, roster viewchange.Authority) {
-	syncEvents := s.sync.Sync(ctx, roster)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case evt := <-syncEvents:
-			// TODO: get threshold
-			if evt.Hard >= roster.Len() {
-				return
-			}
-		}
-	}
 }
 
 func (s *Service) collectTxs(ctx context.Context) []txn.Transaction {
