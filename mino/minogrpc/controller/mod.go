@@ -6,8 +6,9 @@ import (
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
+	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc"
-	"go.dedis.ch/dela/mino/minogrpc/routing"
+	"go.dedis.ch/dela/mino/router/tree"
 	"golang.org/x/xerrors"
 )
 
@@ -79,18 +80,21 @@ func (m minimal) SetCommands(builder node.Builder) {
 // Run implements node.Initializer. It starts the minogrpc instance and inject
 // it in the dependency resolver.
 func (m minimal) Inject(ctx cli.Flags, inj node.Injector) error {
-	rf := routing.NewTreeRoutingFactory(treeRoutingHeight, minogrpc.AddressFactory{})
 
 	port := ctx.Int("port")
 	if port < 0 || port > 65535 {
 		return xerrors.Errorf("invalid port value %d", port)
 	}
 
-	o, err := minogrpc.NewMinogrpc("127.0.0.1", uint16(port), rf)
+	memship := minogrpc.NewMemship([]mino.Address{})
+
+	o, err := minogrpc.NewMinogrpc("127.0.0.1", uint16(port), tree.NewRouter(
+		memship, treeRoutingHeight))
 	if err != nil {
 		return xerrors.Errorf("couldn't make overlay: %v", err)
 	}
 
+	inj.Inject(memship)
 	inj.Inject(o)
 
 	dela.Logger.Info().Msgf("%v is running", o)

@@ -11,8 +11,8 @@ import (
 	internal "go.dedis.ch/dela/internal/testing"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/mino/minogrpc/routing"
 	"go.dedis.ch/dela/mino/minogrpc/tokens"
+	"go.dedis.ch/dela/mino/router/tree"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 )
@@ -79,7 +79,7 @@ func TestAddressFactory_FromText(t *testing.T) {
 }
 
 func TestMinogrpc_New(t *testing.T) {
-	m, err := NewMinogrpc("127.0.0.1", 3333, routing.NewTreeRoutingFactory(1, AddressFactory{}))
+	m, err := NewMinogrpc("127.0.0.1", 3333, tree.NewRouter(NewMemship([]mino.Address{}), 1))
 	require.NoError(t, err)
 
 	require.Equal(t, "127.0.0.1:3333", m.GetAddress().String())
@@ -94,9 +94,9 @@ func TestMinogrpc_New(t *testing.T) {
 	require.EqualError(t, err,
 		"couldn't parse url: parse \"//\\\\:0\": invalid character \"\\\\\" in host name")
 
-	_, err = NewMinogrpc("123.4.5.6", 1, routing.NewTreeRoutingFactory(1, AddressFactory{}))
+	_, err = NewMinogrpc("123.4.5.6", 1, tree.NewRouter(NewMemship([]mino.Address{}), 1))
 	require.Error(t, err)
-	// Funny enought, macos would output:
+	// Funny enough, macos would output:
 	//   couldn't start the server: failed to listen: listen tcp4 123.4.5.6:1:
 	//     bind: can't assign requested address
 	// While linux outpus:
@@ -130,7 +130,7 @@ func TestMinogrpc_Token(t *testing.T) {
 }
 
 func TestMinogrpc_GracefulClose(t *testing.T) {
-	m, err := NewMinogrpc("127.0.0.1", 0, routing.NewTreeRoutingFactory(1, AddressFactory{}))
+	m, err := NewMinogrpc("127.0.0.1", 0, tree.NewRouter(NewMemship([]mino.Address{}), 1))
 	require.NoError(t, err)
 
 	require.NoError(t, m.GracefulClose())
@@ -190,7 +190,7 @@ func TestMinogrpc_MakeRPC(t *testing.T) {
 	minoGrpc := Minogrpc{
 		namespace: "namespace",
 		overlay:   overlay{},
-		endpoints: make(map[string]Endpoint),
+		endpoints: new(sync.Map),
 	}
 
 	handler := mino.UnsupportedHandler{}
@@ -204,7 +204,9 @@ func TestMinogrpc_MakeRPC(t *testing.T) {
 		uri:     "namespace/name",
 	}
 
-	endpoint, ok := minoGrpc.endpoints[expectedRPC.uri]
+	itf, ok := minoGrpc.endpoints.Load(expectedRPC.uri)
+	require.True(t, ok)
+	endpoint, ok := itf.(*Endpoint)
 	require.True(t, ok)
 	require.Equal(t, handler, endpoint.Handler)
 	require.Equal(t, expectedRPC, rpc)

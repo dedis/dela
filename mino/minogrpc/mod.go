@@ -14,7 +14,7 @@ import (
 
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
-	"go.dedis.ch/dela/mino/minogrpc/routing"
+	"go.dedis.ch/dela/mino/router"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
@@ -126,10 +126,15 @@ type Joinable interface {
 	Join(addr, token string, digest []byte) error
 }
 
-// Endpoint defines the requirement of an endpoint.
+// Endpoint defines the requirement of an endpoint. Since the endpoint can be
+// called multiple times concurrently we need a mutex and we need to use the
+// same sender/receiver.
 type Endpoint struct {
-	Handler mino.Handler
-	Factory serde.Factory
+	sync.Mutex
+	Handler  mino.Handler
+	Factory  serde.Factory
+	sender   *sender
+	receiver *receiver
 }
 
 // Minogrpc represents a grpc service restricted to a namespace
@@ -141,7 +146,7 @@ type Minogrpc struct {
 	url       *url.URL
 	server    *grpc.Server
 	namespace string
-	endpoints map[string]Endpoint
+	endpoints *sync.Map
 	started   chan struct{}
 	closer    *sync.WaitGroup
 	closing   chan error
@@ -149,7 +154,7 @@ type Minogrpc struct {
 
 // NewMinogrpc creates and starts a new instance. The path should be a
 // resolvable host.
-func NewMinogrpc(path string, port uint16, rf routing.Factory) (*Minogrpc, error) {
+func NewMinogrpc(path string, port uint16, router router.Router) (*Minogrpc, error) {
 	url, err := url.Parse(fmt.Sprintf("//%s:%d", path, port))
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't parse url: %v", err)
@@ -157,7 +162,7 @@ func NewMinogrpc(path string, port uint16, rf routing.Factory) (*Minogrpc, error
 
 	me := address{host: url.Host}
 
-	o, err := newOverlay(me, rf, json.NewContext())
+	o, err := newOverlay(me, router, defaultAddressFactory, json.NewContext())
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't make overlay: %v", err)
 	}
@@ -170,7 +175,7 @@ func NewMinogrpc(path string, port uint16, rf routing.Factory) (*Minogrpc, error
 		url:       url,
 		server:    server,
 		namespace: "",
-		endpoints: make(map[string]Endpoint),
+		endpoints: new(sync.Map),
 		started:   make(chan struct{}),
 		closer:    &sync.WaitGroup{},
 		closing:   make(chan error, 1),
@@ -179,7 +184,7 @@ func NewMinogrpc(path string, port uint16, rf routing.Factory) (*Minogrpc, error
 	// Counter needs to be >=1 for asynchronous call to Add.
 	m.closer.Add(1)
 
-	RegisterOverlayServer(server, overlayServer{
+	RegisterOverlayServer(server, &overlayServer{
 		overlay:   o,
 		endpoints: m.endpoints,
 		closer:    m.closer,
@@ -296,10 +301,10 @@ func (m *Minogrpc) MakeRPC(name string, h mino.Handler, f serde.Factory) (mino.R
 	}
 
 	uri := fmt.Sprintf("%s/%s", m.namespace, name)
-	m.endpoints[uri] = Endpoint{
+	m.endpoints.Store(uri, &Endpoint{
 		Handler: h,
 		Factory: f,
-	}
+	})
 
 	return rpc, nil
 }

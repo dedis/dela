@@ -48,7 +48,7 @@ func TestHandler_Start(t *testing.T) {
 		[]mino.Address{fake.NewAddress(0)},
 		[]kyber.Point{},
 	)
-	err := h.start(start, []types.Deal{}, nil, nil, nil)
+	err := h.start(start, []types.Deal{}, []*pedersen.Response{}, nil, nil, nil)
 	require.EqualError(t, err, "there should be as many players as pubKey: 1 := 0")
 
 	start = types.NewStart(
@@ -57,18 +57,18 @@ func TestHandler_Start(t *testing.T) {
 		[]kyber.Point{pubKey, suite.Point()},
 	)
 	receiver := fake.NewBadReceiver()
-	err = h.start(start, []types.Deal{}, nil, fake.Sender{}, receiver)
+	err = h.start(start, []types.Deal{}, []*pedersen.Response{}, nil, fake.Sender{}, receiver)
 	require.EqualError(t, err, "failed to receive after sending deals: fake error")
 
 	receiver = fake.NewReceiver(types.Deal{}, nil)
-	err = h.start(start, []types.Deal{}, nil, fake.Sender{}, receiver)
+	err = h.start(start, []types.Deal{}, []*pedersen.Response{}, nil, fake.Sender{}, receiver)
 	require.EqualError(t, err, "failed to certify: expected a response, got: <nil>")
 
-	err = h.start(start, []types.Deal{}, nil, fake.Sender{}, &fake.Receiver{})
-	require.EqualError(t, err, "undexpected message: <nil>")
+	err = h.start(start, []types.Deal{}, []*pedersen.Response{}, nil, fake.Sender{}, &fake.Receiver{})
+	require.EqualError(t, err, "unexpected message: <nil>")
 
 	// We check when there is already something in the slice if Deals
-	err = h.start(start, []types.Deal{{}}, nil, fake.NewBadSender(), &fake.Receiver{})
+	err = h.start(start, []types.Deal{{}}, []*pedersen.Response{}, nil, fake.NewBadSender(), &fake.Receiver{})
 	require.EqualError(t, err, "failed to certify: expected a response, got: <nil>")
 }
 

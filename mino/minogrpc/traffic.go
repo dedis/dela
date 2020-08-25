@@ -15,7 +15,7 @@ import (
 )
 
 //
-// Traffic is a utility to save network informations. It can be useful for
+// Traffic is a utility to save network information. It can be useful for
 // debugging and to understand how the network works. Each server has an
 // instance of traffic but does not store logs by default. To do that you can
 // set MINO_TRAFFIC=log as varenv. You can also set MINO_TRAFFIC=print to print
@@ -24,11 +24,13 @@ import (
 // There is the possibility to save a graphviz representation of network
 // activity. The following snippet shows practical use of it:
 //
-// ```go minogrpc.SaveLog = true defer func() {
-//     minogrpc.SaveGraph("graph.dot", true, false)
-// }() ```
+// 	defer func() {
+// 		SaveAll("graph.dot", true, false)
+// 	}()
 //
-// Then you can generate of PDF with `dot -Tpdf graph.dot -o graph.pdf`
+// Then you can generate a PDF with `dot -Tpdf graph.dot -o graph.pdf`, or
+// 	MINO_TRAFFIC=log go test -run TestPedersen_Scenario && \
+//		dot -Tpdf graph.dot -o graph.pdf
 //
 
 var (
@@ -36,7 +38,19 @@ var (
 	globalCounter = atomicCounter{}
 	sendCounter   = &atomicCounter{}
 	recvCounter   = &atomicCounter{}
+	traffics      = []*traffic{}
 )
+
+// SaveAll saves all the stats as a graph
+func SaveAll(path string, withSend, withRcv bool) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+
+	GenerateGraphviz(f, withSend, withRcv, traffics...)
+	return nil
+}
 
 // traffic is used to keep track of packets traffic in a server
 type traffic struct {
@@ -53,6 +67,8 @@ func newTraffic(me mino.Address, af mino.AddressFactory, out io.Writer) *traffic
 		items:          make([]item, 0),
 		out:            out,
 	}
+
+	traffics = append(traffics, traffic)
 
 	return traffic
 }
@@ -207,7 +223,7 @@ func GenerateGraphviz(out io.Writer, withSend, withRcv bool, traffics ...*traffi
 	fmt.Fprintf(out, "}\n")
 }
 
-// This coutner only makes sense when all the nodes are running locally. It is
+// This counter only makes sense when all the nodes are running locally. It is
 // useful to analyse the traffic in a developping/test environment, when packets
 // order makes sense.
 type atomicCounter struct {

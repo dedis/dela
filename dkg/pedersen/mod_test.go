@@ -11,7 +11,7 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc"
-	"go.dedis.ch/dela/mino/minogrpc/routing"
+	"go.dedis.ch/dela/mino/router/tree"
 	"go.dedis.ch/kyber/v3"
 )
 
@@ -123,26 +123,24 @@ func TestPedersen_Reshare(t *testing.T) {
 }
 
 func TestPedersen_Scenario(t *testing.T) {
-	n := 5
-
-	addrFactory := minogrpc.AddressFactory{}
-
-	treeFactory := routing.NewTreeRoutingFactory(3, addrFactory)
+	n := 8
 
 	minos := make([]mino.Mino, n)
 	dkgs := make([]dkg.DKG, n)
 	addrs := make([]mino.Address, n)
+	memship := minogrpc.NewMemship([]mino.Address{})
 
 	for i := 0; i < n; i++ {
 
 		port := uint16(2000 + i)
-		minogrpc, err := minogrpc.NewMinogrpc("127.0.0.1", port, treeFactory)
+		minogrpc, err := minogrpc.NewMinogrpc("127.0.0.1", port, tree.NewRouter(memship, 3))
 		require.NoError(t, err)
 
 		defer minogrpc.GracefulClose()
 
 		minos[i] = minogrpc
 		addrs[i] = minogrpc.GetAddress()
+		memship.Add(minogrpc.GetAddress())
 	}
 
 	pubkeys := make([]kyber.Point, len(minos))

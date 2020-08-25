@@ -5,9 +5,10 @@ import (
 	"sync"
 
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/mino/minogrpc/routing"
+	"go.dedis.ch/dela/mino/router"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
+	"google.golang.org/grpc/metadata"
 )
 
 // OutContext is wrapper for an envelope and the error channel.
@@ -24,14 +25,18 @@ type sender struct {
 	receiver       *receiver
 	traffic        *traffic
 
-	// Routing parameters to differentiate an orchestrator from a relay. The
-	// gateway will be used to route any messages and the routing will define
-	// proper routes.
-	rting   routing.Routing
+	router router.Router
+	// gateway is the address of the one that contacted us and opened the
+	// stream. We need to know it so that when we need to contact this address,
+	// we can just reply, and not create a new connection.
 	gateway mino.Address
+
+	relays      *relays
+	connFactory ConnectionFactory
+	uri         string
 }
 
-func (s sender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
+func (s *sender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 	errs := make(chan error, 1)
 	defer close(errs)
 
@@ -58,7 +63,16 @@ func (s sender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 		return errs
 	}
 
-	env := &Envelope{
+	mebuf, err := s.me.MarshalText()
+	if err != nil {
+		errs <- xerrors.Errorf("failed to marhal my address: %v", err)
+		return errs
+	}
+
+	relayCtx := metadata.NewOutgoingContext(s.receiver.ctx, metadata.Pairs(
+		headerURIKey, s.uri, headerGatewayKey, string(mebuf)))
+
+	envelope := &Envelope{
 		To: to,
 		Message: &Message{
 			From:    from,
@@ -66,63 +80,15 @@ func (s sender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 		},
 	}
 
-	buffer, err := s.me.MarshalText()
+	dispatched, err := dispatchMessage(*envelope, s)
 	if err != nil {
-		errs <- xerrors.Errorf("couldn't marshal source address: %v", err)
+		errs <- xerrors.Errorf("failed to dispatch message: %v", err)
 		return errs
 	}
 
-	env.Message.From = buffer
-
-	s.sendEnvelope(env, errs)
+	sendToRelays(relayCtx, s, dispatched)
 
 	return errs
-}
-
-func (s sender) sendEnvelope(envelope *Envelope, errs chan error) {
-	outs := map[mino.Address]*Envelope{}
-	for _, to := range envelope.GetTo() {
-		addr := s.addressFactory.FromText(to)
-
-		if s.me.Equal(addr) {
-			s.receiver.appendMessage(envelope.GetMessage())
-		} else {
-			var relay mino.Address
-			if s.rting != nil {
-				relay = s.rting.GetRoute(s.me, addr)
-				if relay == nil {
-					relay = s.rting.GetParent(s.me)
-				}
-			} else if s.gateway != nil {
-				relay = s.gateway
-			}
-
-			env, ok := outs[relay]
-			if !ok {
-				env = &Envelope{Message: envelope.GetMessage()}
-				outs[relay] = env
-			}
-
-			env.To = append(env.To, to)
-		}
-	}
-
-	for relay, env := range outs {
-		ch := s.clients[relay]
-		if ch == nil {
-			errs <- xerrors.Errorf("inconsistent routing to <%v>", relay)
-			continue
-		}
-
-		done := make(chan error, 1)
-		ch <- OutContext{Envelope: env, Done: done}
-
-		// Wait for an potential error from grpc when sending the envelope.
-		err := <-done
-		if err != nil {
-			errs <- xerrors.Errorf("couldn't send to relay: %v", err)
-		}
-	}
 }
 
 type receiver struct {
@@ -131,6 +97,8 @@ type receiver struct {
 	addressFactory mino.AddressFactory
 	errs           chan error
 	queue          Queue
+
+	ctx context.Context
 }
 
 func (r receiver) appendMessage(msg *Message) {

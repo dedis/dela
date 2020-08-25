@@ -12,8 +12,8 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
-	"go.dedis.ch/dela/mino/minogrpc/routing"
 	"go.dedis.ch/dela/mino/minogrpc/tokens"
+	"go.dedis.ch/dela/mino/router/tree"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
@@ -22,7 +22,13 @@ import (
 )
 
 func TestIntegration_BasicLifecycle_Stream(t *testing.T) {
-	mm, rpcs := makeInstances(t, 5, nil)
+
+	// Use with MINO_TRAFFIC=log
+	defer func() {
+		SaveAll("graph.dot", true, true)
+	}()
+
+	mm, rpcs := makeInstances(t, 6, nil)
 
 	authority := fake.NewAuthorityFromMino(fake.NewSigner, mm...)
 
@@ -97,10 +103,10 @@ func TestIntegration_Basic_Call(t *testing.T) {
 func TestOverlayServer_Join(t *testing.T) {
 	overlay := overlayServer{
 		overlay: overlay{
-			tokens:         fakeTokens{},
-			certs:          certs.NewInMemoryStore(),
-			routingFactory: routing.NewTreeRoutingFactory(3, AddressFactory{}),
-			connFactory:    fakeConnFactory{},
+			tokens:      fakeTokens{},
+			certs:       certs.NewInMemoryStore(),
+			router:      tree.NewRouter(NewMemship([]mino.Address{}), 3),
+			connFactory: fakeConnFactory{},
 		},
 	}
 
@@ -147,8 +153,9 @@ func TestOverlayServer_Join(t *testing.T) {
 func TestOverlayServer_Share(t *testing.T) {
 	overlay := overlayServer{
 		overlay: overlay{
-			certs:          certs.NewInMemoryStore(),
-			routingFactory: routing.NewTreeRoutingFactory(3, AddressFactory{}),
+			certs:       certs.NewInMemoryStore(),
+			router:      tree.NewRouter(NewMemship([]mino.Address{}), 3),
+			addrFactory: AddressFactory{},
 		},
 	}
 
@@ -170,15 +177,16 @@ func TestOverlayServer_Share(t *testing.T) {
 func TestOverlayServer_Call(t *testing.T) {
 	overlay := overlayServer{
 		overlay: overlay{
-			routingFactory: routing.NewTreeRoutingFactory(3, AddressFactory{}),
-			context:        json.NewContext(),
+			router:      tree.NewRouter(NewMemship([]mino.Address{}), 3),
+			context:     json.NewContext(),
+			addrFactory: AddressFactory{},
 		},
-		endpoints: map[string]Endpoint{
-			"test": {Handler: testHandler{}, Factory: fake.MessageFactory{}},
-			"bad":  {Handler: mino.UnsupportedHandler{}, Factory: fake.MessageFactory{}},
-			"bad2": {Handler: testHandler{}, Factory: fake.NewBadMessageFactory()},
-		},
+		endpoints: new(sync.Map),
 	}
+
+	overlay.endpoints.Store("test", &Endpoint{Handler: testHandler{}, Factory: fake.MessageFactory{}})
+	overlay.endpoints.Store("bad", &Endpoint{Handler: mino.UnsupportedHandler{}, Factory: fake.MessageFactory{}})
+	overlay.endpoints.Store("bad2", &Endpoint{Handler: testHandler{}, Factory: fake.NewBadMessageFactory()})
 
 	md := metadata.New(map[string]string{headerURIKey: "test"})
 	ctx := metadata.NewIncomingContext(context.Background(), md)
@@ -214,29 +222,28 @@ func TestOverlayServer_Call(t *testing.T) {
 func TestOverlayServer_Stream(t *testing.T) {
 	overlay := overlayServer{
 		overlay: overlay{
-			routingFactory: routing.NewTreeRoutingFactory(3, AddressFactory{}),
-			context:        json.NewContext(),
+			router:      tree.NewRouter(NewMemship([]mino.Address{}), 3),
+			context:     json.NewContext(),
+			addrFactory: AddressFactory{},
+			me:          fake.NewAddress(0),
 		},
-		closer: &sync.WaitGroup{},
-		endpoints: map[string]Endpoint{
-			"test": {Handler: testHandler{skip: true}},
-			"bad":  {Handler: testHandler{skip: true, err: xerrors.New("oops")}},
-		},
+		closer:    &sync.WaitGroup{},
+		endpoints: new(sync.Map),
 	}
 
-	rting, err := routing.NewTreeRouting(mino.NewAddresses(address{"A"}))
-	require.NoError(t, err)
-
-	data, err := rting.Serialize(json.NewContext())
-	require.NoError(t, err)
+	overlay.endpoints.Store("test", &Endpoint{Handler: testHandler{skip: true}})
+	overlay.endpoints.Store("bad", &Endpoint{Handler: testHandler{skip: true,
+		err: xerrors.New("oops")}})
 
 	ch := make(chan *Envelope, 1)
-	ch <- &Envelope{Message: &Message{Payload: data}}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	inCtx := metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "test"))
+	addrBuf, err := newRootAddress().MarshalText()
+	require.NoError(t, err)
+
+	inCtx := metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "test", headerGatewayKey, string(addrBuf)))
 
 	err = overlay.Stream(fakeServerStream{ch: ch, ctx: inCtx})
 	require.NoError(t, err)
@@ -250,20 +257,12 @@ func TestOverlayServer_Stream(t *testing.T) {
 
 	inCtx = metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "test"))
 	err = overlay.Stream(fakeServerStream{ctx: inCtx, err: xerrors.New("oops")})
-	require.EqualError(t, err, "failed to receive routing message: oops")
-
-	overlay.routingFactory = badRtingFactory{}
-	overlay.context = fake.NewBadContext()
-	ch = make(chan *Envelope, 1)
-	ch <- &Envelope{Message: &Message{Payload: data}}
-	err = overlay.Stream(fakeServerStream{ch: ch, ctx: inCtx})
-	require.EqualError(t, err, "couldn't deserialize routing: oops")
+	require.EqualError(t, err, "failed to get gateway, result is nil")
 
 	overlay.context = json.NewContext()
-	overlay.routingFactory = routing.NewTreeRoutingFactory(3, AddressFactory{})
+	overlay.router = tree.NewRouter(NewMemship([]mino.Address{}), 3)
 	ch = make(chan *Envelope, 1)
-	ch <- &Envelope{Message: &Message{Payload: data}}
-	inCtx = metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "bad"))
+	inCtx = metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "bad", headerGatewayKey, string(addrBuf)))
 	err = overlay.Stream(fakeServerStream{ch: ch, ctx: inCtx})
 	require.EqualError(t, err, "handler failed to process: oops")
 }
@@ -273,22 +272,18 @@ func TestOverlay_Join(t *testing.T) {
 	require.NoError(t, err)
 
 	overlay := overlay{
-		me:             fake.NewAddress(0),
-		certs:          fakeCerts{},
-		routingFactory: routing.NewTreeRoutingFactory(3, AddressFactory{}),
+		me:     fake.NewAddress(0),
+		certs:  fakeCerts{},
+		router: tree.NewRouter(NewMemship([]mino.Address{}), 3),
 		connFactory: fakeConnFactory{
 			resp: JoinResponse{Peers: []*Certificate{{Value: cert.Leaf.Raw}}},
 		},
+		addrFactory: AddressFactory{},
 	}
 
 	err = overlay.Join("", "", nil)
 	require.NoError(t, err)
 
-	overlay.routingFactory = routing.NewTreeRoutingFactory(3, fake.AddressFactory{})
-	err = overlay.Join("", "", nil)
-	require.EqualError(t, err, "invalid address type 'fake.Address'")
-
-	overlay.routingFactory = routing.NewTreeRoutingFactory(3, AddressFactory{})
 	overlay.me = fake.NewBadAddress()
 	err = overlay.Join("", "", nil)
 	require.EqualError(t, err, "couldn't marshal own address: fake error")
@@ -311,45 +306,6 @@ func TestOverlay_Join(t *testing.T) {
 	err = overlay.Join("", "", nil)
 	require.EqualError(t, err,
 		"couldn't parse certificate: asn1: syntax error: sequence truncated")
-}
-
-func TestOverlay_SetupRelays(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	authority := fake.NewAuthority(3, fake.NewSigner)
-
-	rtingFactory := routing.NewTreeRoutingFactory(1, fake.AddressFactory{})
-	rting, err := rtingFactory.Make(fake.NewAddress(0), authority)
-	require.NoError(t, err)
-
-	overlay := overlay{
-		me:             fake.NewAddress(0),
-		routingFactory: rtingFactory,
-		connFactory:    fakeConnFactory{},
-		context:        json.NewContext(),
-	}
-
-	fac := fake.MessageFactory{}
-
-	sender, _, err := overlay.setupRelays(ctx, fake.NewAddress(0), rting, fac)
-	require.NoError(t, err)
-	require.Len(t, sender.clients, 2)
-
-	overlay.connFactory = fakeConnFactory{errConn: xerrors.New("oops")}
-	_, _, err = overlay.setupRelays(ctx, fake.NewAddress(0), rting, fac)
-	require.EqualError(t, err,
-		"couldn't setup relay to fake.Address[1]: couldn't open relay: oops")
-
-	overlay.connFactory = fakeConnFactory{errStream: xerrors.New("oops")}
-	_, _, err = overlay.setupRelays(ctx, fake.NewAddress(0), rting, fac)
-	require.EqualError(t, err,
-		"couldn't setup relay to fake.Address[1]: couldn't send routing: oops")
-
-	overlay.connFactory = fakeConnFactory{}
-	_, _, err = overlay.setupRelays(ctx, fake.NewAddress(0), badRting{Routing: rting}, fac)
-	require.EqualError(t, err,
-		"couldn't setup relay to fake.Address[1]: couldn't pack routing: oops")
 }
 
 func TestConnectionFactory_FromAddress(t *testing.T) {
@@ -388,11 +344,11 @@ func TestConnectionFactory_FromAddress(t *testing.T) {
 // Utility functions
 
 func makeInstances(t *testing.T, n int, call *fake.Call) ([]mino.Mino, []mino.RPC) {
-	rtingFactory := routing.NewTreeRoutingFactory(2, AddressFactory{})
+	memship := NewMemship([]mino.Address{})
 	mm := make([]mino.Mino, n)
 	rpcs := make([]mino.RPC, n)
 	for i := range mm {
-		m, err := NewMinogrpc("127.0.0.1", 3000+uint16(i), rtingFactory)
+		m, err := NewMinogrpc("127.0.0.1", 3000+uint16(i), tree.NewRouter(memship, 2))
 		require.NoError(t, err)
 
 		rpc, err := m.MakeRPC("test", testHandler{call: call}, fake.MessageFactory{})
@@ -407,6 +363,8 @@ func makeInstances(t *testing.T, n int, call *fake.Call) ([]mino.Mino, []mino.RP
 			m.GetCertificateStore().Store(k.GetAddress(), km.GetCertificate())
 			km.GetCertificateStore().Store(m.GetAddress(), m.GetCertificate())
 		}
+
+		memship.Add(m.GetAddress())
 	}
 
 	return mm, rpcs
@@ -494,12 +452,4 @@ func (s fakeCerts) Load(mino.Address) *tls.Certificate {
 
 func (s fakeCerts) Fetch(certs.Dialable, []byte) error {
 	return s.err
-}
-
-type badRting struct {
-	routing.Routing
-}
-
-func (r badRting) Serialize(serde.Context) ([]byte, error) {
-	return nil, xerrors.New("oops")
 }

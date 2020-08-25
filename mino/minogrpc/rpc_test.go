@@ -8,10 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/mino/minogrpc/routing"
-	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/mino/router/tree"
 	"go.dedis.ch/dela/serde/json"
-	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 )
 
@@ -50,10 +48,11 @@ func TestRPC_Stream(t *testing.T) {
 
 	rpc := &RPC{
 		overlay: overlay{
-			me:             addrs[0],
-			routingFactory: routing.NewTreeRoutingFactory(1, AddressFactory{}),
-			connFactory:    fakeConnFactory{},
-			context:        json.NewContext(),
+			me:          addrs[0],
+			router:      tree.NewRouter(NewMemship([]mino.Address{}), 1),
+			addrFactory: AddressFactory{},
+			connFactory: fakeConnFactory{},
+			context:     json.NewContext(),
 		},
 		factory: fake.MessageFactory{},
 	}
@@ -63,16 +62,6 @@ func TestRPC_Stream(t *testing.T) {
 
 	out.Send(fake.Message{}, newRootAddress())
 	in.Recv(context.Background())
-
-	rpc.overlay.routingFactory = badRtingFactory{}
-	_, _, err = rpc.Stream(context.Background(), mino.NewAddresses(fake.NewBadAddress()))
-	require.EqualError(t, err, "couldn't generate routing: oops")
-
-	rpc.overlay.routingFactory = routing.NewTreeRoutingFactory(1, AddressFactory{})
-	rpc.overlay.connFactory = fakeConnFactory{err: xerrors.New("oops")}
-	_, _, err = rpc.Stream(context.Background(), mino.NewAddresses(addrs...))
-	require.EqualError(t, err,
-		"couldn't setup relay: couldn't open connection: oops")
 }
 
 // -----------------------------------------------------------------------------
@@ -161,20 +150,4 @@ func (f fakeConnFactory) FromAddress(mino.Address) (grpc.ClientConnInterface, er
 	}
 
 	return conn, f.err
-}
-
-type badRtingFactory struct {
-	routing.Factory
-}
-
-func (f badRtingFactory) Make(mino.Address, mino.Players) (routing.Routing, error) {
-	return nil, xerrors.New("oops")
-}
-
-func (f badRtingFactory) RoutingOf(serde.Context, []byte) (routing.Routing, error) {
-	return nil, xerrors.New("oops")
-}
-
-func (f badRtingFactory) FromIterator(mino.Address, mino.AddressIterator) (routing.Routing, error) {
-	return nil, xerrors.New("oops")
 }

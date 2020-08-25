@@ -49,7 +49,7 @@ type Routing interface {
 	// address.
 	GetParent(addr mino.Address) mino.Address
 
-	// GetRoute should return the gateway address for a corresponding addresse.
+	// GetRoute should return the gateway address for a corresponding address.
 	// In a tree communication it is typically the address of the child that
 	// contains the "to" address in its sub-tree.
 	GetRoute(from, to mino.Address) mino.Address

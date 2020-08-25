@@ -111,42 +111,29 @@ func (rpc RPC) Stream(ctx context.Context,
 
 	root := newRootAddress()
 
-	rting, err := rpc.overlay.routingFactory.Make(rpc.overlay.me, players)
-	if err != nil {
-		return nil, nil, xerrors.Errorf("couldn't generate routing: %v", err)
-	}
-
-	header := metadata.New(map[string]string{headerURIKey: rpc.uri})
-
 	receiver := receiver{
 		context:        rpc.overlay.context,
 		factory:        rpc.factory,
-		addressFactory: rpc.overlay.routingFactory.GetAddressFactory(),
+		addressFactory: rpc.overlay.addrFactory,
 		errs:           make(chan error, 1),
 		queue:          newNonBlockingQueue(),
+
+		ctx: ctx,
 	}
 
-	gateway := rting.GetRoot()
-
-	sender := sender{
+	sender := &sender{
 		me:             root,
 		context:        rpc.overlay.context,
 		addressFactory: AddressFactory{},
-		gateway:        gateway,
-		clients:        map[mino.Address]chan OutContext{},
-		receiver:       &receiver,
-		traffic:        rpc.overlay.traffic,
-	}
+		// There is no gateway because this is the root
+		clients:  map[mino.Address]chan OutContext{},
+		receiver: &receiver,
+		traffic:  rpc.overlay.traffic,
 
-	relayCtx := metadata.NewOutgoingContext(ctx, header)
-
-	// The orchestrator opens a connection to the entry point of the routing map
-	// and it will relay the messages by this gateway by default. The entry
-	// point of the routing will have the orchestrator stream opens which will
-	// allow the messages to be routed back to the orchestrator.
-	err = rpc.overlay.setupRelay(relayCtx, gateway, &sender, &receiver, rting)
-	if err != nil {
-		return nil, nil, xerrors.Errorf("couldn't setup relay: %v", err)
+		router:      rpc.overlay.router,
+		connFactory: rpc.overlay.connFactory,
+		relays:      &relays{r: make(map[string]relayer)},
+		uri:         rpc.uri,
 	}
 
 	return sender, receiver, nil

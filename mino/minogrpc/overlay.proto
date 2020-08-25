@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package minogrpc;
 
-import "google/protobuf/any.proto";
-
 // Certificate is a wrapper around a x509 raw certificate and its address.
 message Certificate {
     bytes address = 1;
