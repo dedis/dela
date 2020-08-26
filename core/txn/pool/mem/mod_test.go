@@ -2,48 +2,44 @@ package mem
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/pool"
+	"golang.org/x/xerrors"
 )
 
 func TestPool_Add(t *testing.T) {
-	pool := NewPool()
+	p := NewPool()
 
-	err := pool.Add(fakeTx{id: []byte{1}})
+	err := p.Add(fakeTx{id: []byte{1}})
 	require.NoError(t, err)
 
-	err = pool.Add(fakeTx{id: []byte{2}})
+	err = p.Add(fakeTx{id: []byte{2}})
 	require.NoError(t, err)
 
 	// A transaction that exists in the active queue can simply be overwritten
 	// thus no error is expected.
-	err = pool.Add(fakeTx{id: []byte{1}})
+	err = p.Add(fakeTx{id: []byte{1}})
 	require.NoError(t, err)
 
-	longID := make([]byte, 33)
-	err = pool.Add(fakeTx{id: longID})
-	require.EqualError(t, err, "tx identifier is too long: 33 > 32")
-
-	pool.history[Key{3}] = struct{}{}
-	err = pool.Add(fakeTx{id: []byte{3}})
-	require.EqualError(t, err, fmt.Sprintf("tx %#x already exists", Key{3}))
+	p.gatherer = badGatherer{}
+	err = p.Add(fakeTx{})
+	require.EqualError(t, err, "store failed: oops")
 }
 
 func TestPool_Remove(t *testing.T) {
-	pool := NewPool()
+	p := NewPool()
 
-	pool.txs[Key{1}] = fakeTx{}
+	require.NoError(t, p.gatherer.Add(fakeTx{id: []byte{1}}))
 
-	err := pool.Remove(fakeTx{id: []byte{1}})
+	err := p.Remove(fakeTx{id: []byte{1}})
 	require.NoError(t, err)
-	require.Len(t, pool.history, 1)
 
-	err = pool.Remove(fakeTx{id: []byte{1}})
-	require.EqualError(t, err, fmt.Sprintf("transaction %#x not found", Key{1}))
+	p.gatherer = badGatherer{}
+	err = p.Remove(fakeTx{id: []byte{1}})
+	require.EqualError(t, err, "store failed: oops")
 }
 
 func TestPool_SetPlayers(t *testing.T) {
@@ -85,4 +81,16 @@ type fakeTx struct {
 
 func (tx fakeTx) GetID() []byte {
 	return tx.id
+}
+
+type badGatherer struct {
+	pool.Gatherer
+}
+
+func (g badGatherer) Add(tx txn.Transaction) error {
+	return xerrors.New("oops")
+}
+
+func (g badGatherer) Remove(tx txn.Transaction) error {
+	return xerrors.New("oops")
 }

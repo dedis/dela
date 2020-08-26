@@ -39,6 +39,20 @@ func TestBoltDB_UpdateAndView(t *testing.T) {
 	require.EqualError(t, err, "failed to create bucket: bucket name required")
 }
 
+func TestBoltDB_Close(t *testing.T) {
+	dir, err := ioutil.TempDir(os.TempDir(), "dela-core-kv")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
+	db, err := New(filepath.Join(dir, "test.db"))
+	require.NoError(t, err)
+
+	err = db.Close()
+	require.NoError(t, err)
+	require.Error(t, db.(boltDB).bolt.Sync())
+}
+
 func TestBoltBucket_Get_Set_Delete(t *testing.T) {
 	dir, err := ioutil.TempDir(os.TempDir(), "dela-core-kv")
 	require.NoError(t, err)
