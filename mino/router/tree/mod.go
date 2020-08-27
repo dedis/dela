@@ -43,7 +43,9 @@ func NewRouter(memship MembershipService, height int) *Router {
 	return r
 }
 
-// MakePacket implements router.Router
+// MakePacket implements router.Router. We don't take the source address when
+// creating the router because we often provide the router as argument when we
+// create mino, and at that time we don't know yet our address.
 func (r Router) MakePacket(me, to mino.Address, msg []byte) router.Packet {
 	return Packet{
 		source:  me,

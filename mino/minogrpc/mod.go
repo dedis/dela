@@ -133,8 +133,9 @@ type Endpoint struct {
 	sync.Mutex
 	Handler  mino.Handler
 	Factory  serde.Factory
-	sender   *sender
-	receiver *receiver
+	started  bool
+	sender   sender
+	receiver receiver
 }
 
 // Minogrpc represents a grpc service restricted to a namespace

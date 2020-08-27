@@ -143,10 +143,7 @@ func (o overlayServer) Call(ctx context.Context, msg *Message) (*Message, error)
 	if !ok {
 		return nil, xerrors.Errorf("handler '%s' is not registered", uri)
 	}
-	endpoint, ok := itf.(*Endpoint)
-	if !ok {
-		return nil, xerrors.Errorf("expected *Endpoint, got '%T'", itf)
-	}
+	endpoint := itf.(*Endpoint)
 
 	message, err := endpoint.Factory.Deserialize(o.context, msg.GetPayload())
 	if err != nil {
@@ -191,10 +188,7 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 	if !ok {
 		return xerrors.Errorf("handler '%s' is not registered", uri)
 	}
-	endpoint, ok := itf.(*Endpoint)
-	if !ok {
-		return xerrors.Errorf("expected *Endpoint, got '%T'", itf)
-	}
+	endpoint := itf.(*Endpoint)
 
 	gateway := gatewayFromContext(stream.Context(), o.addrFactory)
 	if gateway == nil {
@@ -204,10 +198,10 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 	first := false
 
 	endpoint.Lock()
-	if endpoint.sender == nil {
+	if !endpoint.started {
 		first = true
 
-		endpoint.receiver = &receiver{
+		endpoint.receiver = receiver{
 			context:        o.context,
 			factory:        endpoint.Factory,
 			addressFactory: o.addrFactory,
@@ -216,24 +210,24 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 			ctx:            stream.Context(),
 		}
 
-		endpoint.sender = &sender{
-			me:             o.me,
-			context:        o.context,
-			addressFactory: AddressFactory{},
-			clients:        map[mino.Address]chan OutContext{},
-			receiver:       endpoint.receiver,
-			traffic:        o.traffic,
+		endpoint.sender = sender{
+			me:       o.me,
+			context:  o.context,
+			clients:  map[mino.Address]chan OutContext{},
+			receiver: endpoint.receiver,
+			traffic:  o.traffic,
 
 			router:      o.router,
 			connFactory: o.connFactory,
 			uri:         uri,
 			gateway:     gateway,
-			relays:      &relays{r: map[string]relayer{}},
+			relays:      new(sync.Map), //     &relays{r: map[string]relayer{}},
 		}
 
-		endpoint.sender.relays.Set(newRootAddress().String(), stream)
-		endpoint.sender.relays.Set(gateway.String(), stream)
+		endpoint.sender.relays.Store(newRootAddress().String(), stream)
+		endpoint.sender.relays.Store(gateway.String(), stream)
 	}
+	endpoint.started = true
 	endpoint.Unlock()
 
 	mebuf, err := o.me.MarshalText()
@@ -282,8 +276,7 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 
 		// Since the handler is done, we reset the sender and receiver
 		endpoint.Lock()
-		endpoint.sender = nil
-		endpoint.receiver = nil
+		endpoint.started = false
 		endpoint.Unlock()
 
 		return nil
@@ -300,7 +293,7 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 // ourself. This function doesn't send any message, it only returns a map that
 // will allow us to then send the envelopes and create the necessary relays if
 // needed.
-func dispatchMessage(envelope Envelope, sender *sender) (map[mino.Address]*Envelope, error) {
+func dispatchMessage(envelope Envelope, sender sender) (map[mino.Address]*Envelope, error) {
 	out := map[mino.Address]*Envelope{}
 
 	for _, tobuf := range envelope.GetTo() {
@@ -333,11 +326,12 @@ func dispatchMessage(envelope Envelope, sender *sender) (map[mino.Address]*Envel
 }
 
 // sendToRelays set up the relays if needed and send the envelopes accordingly.
-func sendToRelays(relayCtx context.Context, sender *sender, out map[mino.Address]*Envelope) {
-	for relay, env := range out {
-		relayer, ok := sender.relays.Get(relay.String())
+func sendToRelays(relayCtx context.Context, sender sender, out map[mino.Address]*Envelope) {
+	for relayAddr, env := range out {
+		itf, ok := sender.relays.Load(relayAddr.String())
+		var relay relayer
 		if !ok {
-			conn, err := sender.connFactory.FromAddress(relay)
+			conn, err := sender.connFactory.FromAddress(relayAddr)
 			if err != nil {
 				// TODO: handle
 				dela.Logger.Fatal().Msgf("failed to create addr: %v", err)
@@ -345,34 +339,36 @@ func sendToRelays(relayCtx context.Context, sender *sender, out map[mino.Address
 
 			cl := NewOverlayClient(conn)
 
-			relayer, err = cl.Stream(relayCtx)
+			relay, err = cl.Stream(relayCtx)
 			if err != nil {
 				// TODO: handle
 				dela.Logger.Fatal().Msgf("failed to call stream: %v", err)
 			}
 
-			sender.relays.Set(relay.String(), relayer)
+			sender.relays.Store(relayAddr.String(), relay)
 
-			go listenRelay(relayCtx, relayer, sender, relay)
+			go listenRelay(relayCtx, relay, sender, relayAddr)
+		} else {
+			relay = itf.(relayer)
 		}
 
-		if relay.Equal(newRootAddress()) || relay.Equal(sender.gateway) {
+		if relayAddr.Equal(newRootAddress()) || relayAddr.Equal(sender.gateway) {
 			// In fact we set up the map of relay to send back the message to
 			// the one that opened the stream to us (our gateway) in case it
 			// should be sent to the root or gateway.
 			sender.traffic.logSend(relayCtx, sender.me, sender.gateway, env)
 		} else {
-			sender.traffic.logSend(relayCtx, sender.me, relay, env)
+			sender.traffic.logSend(relayCtx, sender.me, relayAddr, env)
 		}
 
-		relayer.Send(env)
+		relay.Send(env)
 	}
 }
 
 // listenRelay listens for new messages that would come from a relay that we set
 // up and either notify us, or relay the message.
 func listenRelay(relayCtx context.Context, relayer relayer,
-	sender *sender, distantAddr mino.Address) {
+	sender sender, distantAddr mino.Address) {
 
 	for {
 		envelope, err := relayer.Recv()
@@ -637,22 +633,4 @@ func gatewayFromContext(ctx context.Context, addrFactory mino.AddressFactory) mi
 	}
 
 	return addrFactory.FromText([]byte(gateway[0]))
-}
-
-type relays struct {
-	sync.Mutex
-	r map[string]relayer
-}
-
-func (r *relays) Get(k string) (relayer, bool) {
-	r.Lock()
-	defer r.Unlock()
-	el, ok := r.r[k]
-	return el, ok
-}
-
-func (r *relays) Set(k string, v relayer) {
-	r.Lock()
-	defer r.Unlock()
-	r.r[k] = v
 }

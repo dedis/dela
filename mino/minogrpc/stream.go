@@ -18,12 +18,11 @@ type OutContext struct {
 }
 
 type sender struct {
-	me             mino.Address
-	addressFactory mino.AddressFactory
-	context        serde.Context
-	clients        map[mino.Address]chan OutContext
-	receiver       *receiver
-	traffic        *traffic
+	me       mino.Address
+	context  serde.Context
+	clients  map[mino.Address]chan OutContext
+	receiver receiver
+	traffic  *traffic
 
 	router router.Router
 	// gateway is the address of the one that contacted us and opened the
@@ -31,12 +30,12 @@ type sender struct {
 	// we can just reply, and not create a new connection.
 	gateway mino.Address
 
-	relays      *relays
+	relays      *sync.Map
 	connFactory ConnectionFactory
 	uri         string
 }
 
-func (s *sender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
+func (s sender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 	errs := make(chan error, 1)
 	defer close(errs)
 

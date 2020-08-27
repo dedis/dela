@@ -121,18 +121,17 @@ func (rpc RPC) Stream(ctx context.Context,
 		ctx: ctx,
 	}
 
-	sender := &sender{
-		me:             root,
-		context:        rpc.overlay.context,
-		addressFactory: AddressFactory{},
+	sender := sender{
+		me:      root,
+		context: rpc.overlay.context,
 		// There is no gateway because this is the root
 		clients:  map[mino.Address]chan OutContext{},
-		receiver: &receiver,
+		receiver: receiver,
 		traffic:  rpc.overlay.traffic,
 
 		router:      rpc.overlay.router,
 		connFactory: rpc.overlay.connFactory,
-		relays:      &relays{r: make(map[string]relayer)},
+		relays:      new(sync.Map),
 		uri:         rpc.uri,
 	}
 
