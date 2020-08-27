@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"io"
 	"sync"
 	"testing"
 	"time"
@@ -428,47 +429,98 @@ func TestDispatchMessage(t *testing.T) {
 	require.EqualError(t, err, "failed to find route from fake.Address[0] to fake.Address[1]: fake error")
 }
 
-// func TestSendToRelay(t *testing.T) {
-// 	src, err := NewMinogrpc("127.0.0.1", 3333, nil)
-// 	require.NoError(t, err)
+func TestSendToRelay(t *testing.T) {
+	src, err := NewMinogrpc("127.0.0.1", 3333, nil)
+	require.NoError(t, err)
 
-// 	dst, err := NewMinogrpc("127.0.0.1", 3334, nil)
-// 	require.NoError(t, err)
+	dst, err := NewMinogrpc("127.0.0.1", 3334, nil)
+	require.NoError(t, err)
 
-// 	defer src.GracefulClose()
-// 	defer dst.GracefulClose()
+	defer src.GracefulClose()
+	defer dst.GracefulClose()
 
-// 	factory := DefaultConnectionFactory{
-// 		certs: certs.NewInMemoryStore(),
-// 		me:    src.GetAddress(),
-// 	}
+	factory := DefaultConnectionFactory{
+		certs: certs.NewInMemoryStore(),
+		me:    src.GetAddress(),
+	}
 
-// 	factory.certs.Store(factory.me, src.GetCertificate())
-// 	factory.certs.Store(dst.GetAddress(), dst.GetCertificate())
+	factory.certs.Store(factory.me, src.GetCertificate())
+	factory.certs.Store(dst.GetAddress(), dst.GetCertificate())
 
-// 	tobuf, err := dst.GetAddress().MarshalText()
-// 	require.NoError(t, err)
+	tobuf, err := dst.GetAddress().MarshalText()
+	require.NoError(t, err)
 
-// 	envelope := Envelope{
-// 		To: [][]byte{tobuf},
-// 	}
+	envelope := Envelope{
+		To: [][]byte{tobuf},
+	}
 
-// 	sender := sender{
-// 		me: factory.me,
-// 		receiver: receiver{
-// 			addressFactory: fake.AddressFactory{},
-// 			queue:          newNonBlockingQueue(),
-// 		},
-// 		router: fakeRouter{
-// 			isBad: true,
-// 		},
-// 		relays:      new(sync.Map),
-// 		connFactory: factory,
-// 	}
+	sender := sender{
+		me: factory.me,
+		receiver: receiver{
+			addressFactory: fake.AddressFactory{},
+			queue:          newNonBlockingQueue(),
+		},
+		relays:      new(sync.Map),
+		connFactory: factory,
+	}
 
-// 	out := map[mino.Address]*Envelope{factory.me: &envelope}
-// 	sendToRelays(context.Background(), sender, out)
-// }
+	out := map[mino.Address]*Envelope{factory.me: &envelope}
+	err = sendToRelays(context.Background(), sender, out)
+	require.NoError(t, err)
+
+	sender.relays.Store(factory.me.String(), &fakeStream{badSend: true})
+	err = sendToRelays(context.Background(), sender, out)
+	require.EqualError(t, err, "failed to send to relay '127.0.0.1:3333': oops")
+
+	out = map[mino.Address]*Envelope{fake.NewAddress(2): &envelope}
+	err = sendToRelays(context.Background(), sender, out)
+	require.EqualError(t, err, "failed to create addr: certificate for 'fake.Address[2]' not found")
+}
+
+func TestListenStream(t *testing.T) {
+	ctx := context.Background()
+	stream := &fakeStream{
+		outputs: []*Envelope{{}},
+	}
+
+	sender := sender{
+		me: fake.NewAddress(0),
+		receiver: receiver{
+			addressFactory: fake.AddressFactory{},
+			queue:          newNonBlockingQueue(),
+		},
+		router: fakeRouter{},
+		relays: new(sync.Map),
+	}
+
+	distantAddr := fake.NewAddress(1)
+
+	err := listenStream(ctx, stream, sender, distantAddr)
+	require.NoError(t, err)
+
+	addrBuf, err := fake.NewAddress(2).MarshalText()
+	require.NoError(t, err)
+
+	stream = &fakeStream{
+		outputs: []*Envelope{{
+			To: [][]byte{addrBuf},
+		}},
+	}
+
+	sender.relays.Store(fake.NewAddress(2).String(), &fakeStream{badSend: true})
+
+	err = listenStream(ctx, stream, sender, distantAddr)
+	require.EqualError(t, err, "failed to send to dispatched relays: failed to send to relay 'fake.Address[2]': oops")
+
+	sender.router = fakeRouter{isBad: true}
+	stream = &fakeStream{
+		outputs: []*Envelope{{
+			To: [][]byte{addrBuf},
+		}},
+	}
+	err = listenStream(ctx, stream, sender, distantAddr)
+	require.EqualError(t, err, "failed to dispatch: failed to find route from fake.Address[0] to fake.Address[2]: fake error")
+}
 
 // -----------------------------------------------------------------------------
 // Utility functions
@@ -620,4 +672,37 @@ func (p fakePacket) GetDestination() mino.Address {
 
 func (p fakePacket) GetMessage(ctx serde.Context, f serde.Factory) (serde.Message, error) {
 	panic("not implemented") // TODO: Implement
+}
+
+type fakeStream struct {
+	badSend bool
+	badRecv bool
+	outputs []*Envelope
+}
+
+func (r fakeStream) Context() context.Context {
+	return context.Background()
+}
+
+func (r fakeStream) Send(*Envelope) error {
+	if r.badSend {
+		return xerrors.Errorf("oops")
+	}
+
+	return nil
+}
+
+func (r *fakeStream) Recv() (*Envelope, error) {
+	if r.badRecv {
+		return nil, xerrors.Errorf("oops")
+	}
+
+	if len(r.outputs) == 0 {
+		return nil, io.EOF
+	}
+
+	out := r.outputs[len(r.outputs)-1]
+	r.outputs = r.outputs[:len(r.outputs)-1]
+
+	return out, nil
 }

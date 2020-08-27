@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"math/big"
@@ -15,7 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/tokens"
@@ -238,31 +238,13 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 	relayCtx := metadata.NewOutgoingContext(stream.Context(), metadata.Pairs(
 		headerURIKey, uri, headerGatewayKey, string(mebuf)))
 
+	f := func() error {
+		return listenStream(relayCtx, stream, endpoint.sender, gateway)
+	}
+	msg := fmt.Sprintf("failed to listen to our gateway '%s'", gateway)
+
 	go func() {
-		for {
-			envelope, err := stream.Recv()
-			status, ok := status.FromError(err)
-			if ok && status.Code() == codes.Canceled {
-				return
-			}
-			if err == io.EOF {
-				return
-			}
-			if err != nil {
-				// TODO: handle
-				dela.Logger.Fatal().Msgf("failed to receive: %v", err)
-			}
-
-			from := gatewayFromContext(stream.Context(), o.addrFactory)
-			o.traffic.logRcv(stream.Context(), from, o.me, envelope)
-
-			dispatched, err := dispatchMessage(*envelope, endpoint.sender)
-			if err != nil {
-				// TODO: handle
-				dela.Logger.Fatal().Msgf("failed to dispatch: %v", err)
-			}
-			sendToRelays(relayCtx, endpoint.sender, dispatched)
-		}
+		execOrFil(f, endpoint.sender.receiver.errs, msg)
 	}()
 
 	if first {
@@ -326,30 +308,37 @@ func dispatchMessage(envelope Envelope, sender sender) (map[mino.Address]*Envelo
 }
 
 // sendToRelays set up the relays if needed and send the envelopes accordingly.
-func sendToRelays(relayCtx context.Context, sender sender, out map[mino.Address]*Envelope) {
+func sendToRelays(relayCtx context.Context, sender sender, out map[mino.Address]*Envelope) error {
 	for relayAddr, env := range out {
+
 		itf, ok := sender.relays.Load(relayAddr.String())
 		var relay relayer
-		if !ok {
+
+		if ok {
+			relay = itf.(relayer)
+		} else {
 			conn, err := sender.connFactory.FromAddress(relayAddr)
 			if err != nil {
-				// TODO: handle
-				dela.Logger.Fatal().Msgf("failed to create addr: %v", err)
+				return xerrors.Errorf("failed to create addr: %v", err)
 			}
 
 			cl := NewOverlayClient(conn)
 
 			relay, err = cl.Stream(relayCtx)
 			if err != nil {
-				// TODO: handle
-				dela.Logger.Fatal().Msgf("failed to call stream: %v", err)
+				return xerrors.Errorf("failed to call stream for relay '%s': %v", relayAddr, err)
 			}
 
 			sender.relays.Store(relayAddr.String(), relay)
 
-			go listenRelay(relayCtx, relay, sender, relayAddr)
-		} else {
-			relay = itf.(relayer)
+			go func(relayAddr mino.Address) {
+				f := func() error {
+					return listenStream(relayCtx, relay, sender, relayAddr)
+				}
+				msg := fmt.Sprintf("failed to listen to relay '%s'", relayAddr)
+
+				execOrFil(f, sender.receiver.errs, msg)
+			}(relayAddr)
 		}
 
 		if relayAddr.Equal(newRootAddress()) || relayAddr.Equal(sender.gateway) {
@@ -361,33 +350,53 @@ func sendToRelays(relayCtx context.Context, sender sender, out map[mino.Address]
 			sender.traffic.logSend(relayCtx, sender.me, relayAddr, env)
 		}
 
-		relay.Send(env)
+		err := relay.Send(env)
+		if err != nil {
+			return xerrors.Errorf("failed to send to relay '%s': %v", relayAddr, err)
+		}
+	}
+
+	return nil
+}
+
+// execOrFil executes f and populates c if f returns an error. We need this
+// function
+func execOrFil(f func() error, c chan<- error, msg string) {
+	err := f()
+	if err != nil {
+		c <- xerrors.Errorf("%s: %v", msg, err)
 	}
 }
 
-// listenRelay listens for new messages that would come from a relay that we set
-// up and either notify us, or relay the message.
-func listenRelay(relayCtx context.Context, relayer relayer,
-	sender sender, distantAddr mino.Address) {
+// listenStream listens for new messages that would come from a stream that we
+// set up and either notify us, or relay the message.
+func listenStream(streamCtx context.Context, stream relayer,
+	sender sender, distantAddr mino.Address) error {
 
 	for {
-		envelope, err := relayer.Recv()
+		envelope, err := stream.Recv()
 		if err == io.EOF {
-			return
+			return nil
 		}
 		status, ok := status.FromError(err)
 		if ok && status.Code() == codes.Canceled {
-			return
+			return nil
 		}
 		if err != nil {
-			// TODO: handle
-			dela.Logger.Fatal().Msgf("failed to receive: %v", err)
+			return xerrors.Errorf("failed to receive: %v", err)
 		}
 
-		sender.traffic.logRcv(relayer.Context(), distantAddr, sender.me, envelope)
+		sender.traffic.logRcv(stream.Context(), distantAddr, sender.me, envelope)
 
-		dispatched, _ := dispatchMessage(*envelope, sender)
-		sendToRelays(relayCtx, sender, dispatched)
+		dispatched, err := dispatchMessage(*envelope, sender)
+		if err != nil {
+			return xerrors.Errorf("failed to dispatch: %v", err)
+		}
+
+		err = sendToRelays(streamCtx, sender, dispatched)
+		if err != nil {
+			return xerrors.Errorf("failed to send to dispatched relays: %v", err)
+		}
 	}
 }
 

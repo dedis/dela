@@ -85,7 +85,11 @@ func (s sender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 		return errs
 	}
 
-	sendToRelays(relayCtx, s, dispatched)
+	err = sendToRelays(relayCtx, s, dispatched)
+	if err != nil {
+		errs <- xerrors.Errorf("failed to send to relays: %v", err)
+		return errs
+	}
 
 	return errs
 }
