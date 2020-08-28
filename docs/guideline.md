@@ -1,8 +1,8 @@
 # Programming guideline
 
-This page covers some opiniated rules that are not (or not enought) covered by
+This page covers some opinionated rules that are not (or not enough) covered by
 the golang best practices. We first stick to the official and common golang 
-best practices, using this as a complement.
+best practices, using this as a supplement.
 
 ## Files
 
@@ -114,7 +114,7 @@ neighbour, ok := srv.neighbours[addr]
 if !ok {
 	return nil, xerrors.Errorf("finding neighbour")
 }
-// This could result with a BAD error message like:
+// This could result in a BAD error message like:
 // > Failed to start server: finding neighbour
 
 // DO
@@ -122,7 +122,7 @@ neighbour, ok := srv.neighbours[addr]
 if !ok {
 	return nil, xerrors.Errorf("couldn't find neighbour [%s]", addr)
 }
-// This could result with a GOOD error message like:
+// This could result in a GOOD error message like:
 // > Failed to start server: couldn't find neighbour [127.0.0.1]
 ```
 
@@ -181,7 +181,7 @@ func (g *simpleGatherer) Wait(ctx context.Context, cfg Config) []txn.Transaction
 }
 ```
 
-Don't use `if` with initialization statement. It makes the code harder to read.
+Don't use `if` with initialization statements. It makes the code harder to read.
 Seriously, don't spare the extra line.
 
 ```go
@@ -197,7 +197,7 @@ if err != nil {
 }
 ```
 
-Try at all cost not to use initialized return variables. It makes the code harder to read.
+Try at all costs not to use initialized return variables. It makes the code harder to read.
 
 ```go
 // DON'T
