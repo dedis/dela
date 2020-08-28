@@ -38,26 +38,48 @@ var (
 	globalCounter = atomicCounter{}
 	sendCounter   = &atomicCounter{}
 	recvCounter   = &atomicCounter{}
+	eventCounter  = &atomicCounter{}
 	traffics      = []*traffic{}
+	// LogItems allows one to granularly say when items should be logged or not.
+	// This is useful for example in an integration test where a specific part
+	// raises a problem but the full graph would be too noisy. For that, one
+	// can set LogItems = false and change it to true when needed.
+	LogItems = true
+	// LogEvent works the same as LogItems but for events. Note that in both
+	// cases the varenv should be set.
+	LogEvent = true
 )
 
-// SaveAll saves all the stats as a graph
-func SaveAll(path string, withSend, withRcv bool) error {
+// SaveItems saves all the items as a graph
+func SaveItems(path string, withSend, withRcv bool) error {
 	f, err := os.Create(path)
 	if err != nil {
 		return err
 	}
 
-	GenerateGraphviz(f, withSend, withRcv, traffics...)
+	GenerateItemsGraphviz(f, withSend, withRcv, traffics...)
+	return nil
+}
+
+// SaveEvents saves all the events as a graph
+func SaveEvents(path string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+
+	GenerateEventGraphviz(f, traffics...)
 	return nil
 }
 
 // traffic is used to keep track of packets traffic in a server
 type traffic struct {
+	sync.Mutex
 	me             mino.Address
 	addressFactory mino.AddressFactory
 	items          []item
 	out            io.Writer
+	events         []event
 }
 
 func newTraffic(me mino.Address, af mino.AddressFactory, out io.Writer) *traffic {
@@ -79,7 +101,7 @@ func (t *traffic) Save(path string, withSend, withRcv bool) error {
 		return err
 	}
 
-	GenerateGraphviz(f, withSend, withRcv, t)
+	GenerateItemsGraphviz(f, withSend, withRcv, t)
 	return nil
 }
 
@@ -91,7 +113,7 @@ func (t *traffic) logRcv(ctx context.Context, from, to mino.Address, msg *Envelo
 	t.addItem(ctx, from, to, "received", msg)
 }
 
-func (t traffic) Display(out io.Writer) {
+func (t *traffic) Display(out io.Writer) {
 	fmt.Fprint(out, "- traffic:\n")
 	var buf bytes.Buffer
 	for _, item := range t.items {
@@ -103,7 +125,7 @@ func (t traffic) Display(out io.Writer) {
 func (t *traffic) addItem(ctx context.Context,
 	from, to mino.Address, typeStr string, msg *Envelope) {
 
-	if t == nil {
+	if t == nil || !LogItems {
 		return
 	}
 
@@ -133,10 +155,29 @@ func (t *traffic) addItem(ctx context.Context,
 		newItem.typeCounter = sendCounter.IncrementAndGet()
 	}
 
-	fmt.Fprintf(t.out, "\n> %v", t.me)
+	fmt.Fprintf(t.out, "\n> %v\n", t.me)
 	newItem.Display(t.out)
 
+	t.Lock()
 	t.items = append(t.items, newItem)
+	t.Unlock()
+}
+
+func (t *traffic) addEvent(typeStr string, from, to mino.Address) {
+	if t == nil || !LogEvent {
+		return
+	}
+
+	event := event{
+		typeStr:       typeStr,
+		from:          from,
+		to:            to,
+		globalCounter: eventCounter.IncrementAndGet(),
+	}
+
+	t.Lock()
+	t.events = append(t.events, event)
+	t.Unlock()
 }
 
 func (t *traffic) getContext(ctx context.Context) string {
@@ -176,9 +217,9 @@ func (p item) Display(out io.Writer) {
 	fmt.Fprintf(out, "-- context: %s\n", p.context)
 }
 
-// GenerateGraphviz creates a graphviz representation. One can generate a
-// graphical representation with `dot -Tpdf graph.dot -o graph.pdf`
-func GenerateGraphviz(out io.Writer, withSend, withRcv bool, traffics ...*traffic) {
+// GenerateItemsGraphviz creates a graphviz representation of the items. One can
+// generate a graphical representation with `dot -Tpdf graph.dot -o graph.pdf`
+func GenerateItemsGraphviz(out io.Writer, withSend, withRcv bool, traffics ...*traffic) {
 
 	fmt.Fprintf(out, "digraph network_activity {\n")
 	fmt.Fprintf(out, "labelloc=\"t\";")
@@ -223,6 +264,36 @@ func GenerateGraphviz(out io.Writer, withSend, withRcv bool, traffics ...*traffi
 	fmt.Fprintf(out, "}\n")
 }
 
+// GenerateEventGraphviz creates a graphviz representation of the events
+func GenerateEventGraphviz(out io.Writer, traffics ...*traffic) {
+	fmt.Fprintf(out, "digraph network_activity {\n")
+	fmt.Fprintf(out, "labelloc=\"t\";")
+	fmt.Fprintf(out, "label = <Network Diagram of %d nodes <font point-size='10'><br/>(generated %s)</font>>;", len(traffics), time.Now().Format("2 Jan 06 - 15:04:05"))
+	fmt.Fprintf(out, "graph [fontname = \"helvetica\"];")
+	fmt.Fprintf(out, "graph [fontname = \"helvetica\"];")
+	fmt.Fprintf(out, "node [fontname = \"helvetica\"];")
+	fmt.Fprintf(out, "edge [fontname = \"helvetica\"];")
+
+	for _, t := range traffics {
+		for _, event := range t.events {
+
+			msgStr := event.typeStr
+
+			color := "#4AB2FF"
+
+			if event.typeStr == "close" {
+				color = "#A8A8A8"
+			}
+
+			fmt.Fprintf(out, "\"%v\" -> \"%v\" "+
+				"[ label = < <font color='#303030'><b>%d</b></font><br/>%s> color=\"%s\" ];\n",
+				event.from, event.to, event.globalCounter, msgStr, color)
+		}
+	}
+
+	fmt.Fprintf(out, "}\n")
+}
+
 // This counter only makes sense when all the nodes are running locally. It is
 // useful to analyse the traffic in a developping/test environment, when packets
 // order makes sense.
@@ -236,4 +307,15 @@ func (c *atomicCounter) IncrementAndGet() int {
 	defer c.Unlock()
 	c.c++
 	return c.c
+}
+
+type event struct {
+	typeStr       string
+	from          mino.Address
+	to            mino.Address
+	globalCounter int
+}
+
+func (e event) Display(out io.Writer) {
+	fmt.Fprintf(out, "%s\t%s:\n", e.typeStr, e.to)
 }

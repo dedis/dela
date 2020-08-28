@@ -89,7 +89,7 @@ func TestPedersen_Decrypt(t *testing.T) {
 	}
 
 	_, err := actor.Decrypt(suite.Point(), suite.Point())
-	require.NoError(t, err)
+	require.EqualError(t, err, "failed to create stream: fake error")
 
 	rpc := fake.NewStreamRPC(fake.NewBadReceiver(), fake.NewBadSender())
 	actor.rpc = rpc
@@ -123,6 +123,14 @@ func TestPedersen_Reshare(t *testing.T) {
 }
 
 func TestPedersen_Scenario(t *testing.T) {
+	// Use with MINO_TRAFFIC=log
+	// minogrpc.LogItems = false
+	// minogrpc.LogEvent = false
+	// defer func() {
+	// 	minogrpc.SaveItems("graph.dot", true, false)
+	// 	minogrpc.SaveEvents("events.dot")
+	// }()
+
 	n := 8
 
 	minos := make([]mino.Mino, n)
@@ -167,7 +175,7 @@ func TestPedersen_Scenario(t *testing.T) {
 		actors[i] = actor
 	}
 
-	// trying to call a decrpyt/encrypt before a setup
+	// trying to call a decrypt/encrypt before a setup
 	_, _, _, err := actors[0].Encrypt(message)
 	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")
 	_, err = actors[0].Decrypt(nil, nil)
@@ -184,7 +192,6 @@ func TestPedersen_Scenario(t *testing.T) {
 		K, C, remainder, err := actors[i].Encrypt(message)
 		require.NoError(t, err)
 		require.Len(t, remainder, 0)
-
 		decrypted, err := actors[i].Decrypt(K, C)
 		require.NoError(t, err)
 

@@ -26,9 +26,10 @@ import (
 func TestIntegration_BasicLifecycle_Stream(t *testing.T) {
 
 	// Use with MINO_TRAFFIC=log
-	defer func() {
-		SaveAll("graph.dot", true, true)
-	}()
+	// defer func() {
+	// 	SaveItems("graph.dot", true, true)
+	// 	SaveEvents("events.dot")
+	// }()
 
 	mm, rpcs := makeInstances(t, 6, nil)
 
@@ -233,9 +234,10 @@ func TestOverlayServer_Stream(t *testing.T) {
 		endpoints: new(sync.Map),
 	}
 
-	overlay.endpoints.Store("test", &Endpoint{Handler: testHandler{skip: true}})
+	overlay.endpoints.Store("test", &Endpoint{Handler: testHandler{skip: true},
+		streams: make(map[string]*StreamSession)})
 	overlay.endpoints.Store("bad", &Endpoint{Handler: testHandler{skip: true,
-		err: xerrors.New("oops")}})
+		err: xerrors.New("oops")}, streams: make(map[string]*StreamSession)})
 
 	ch := make(chan *Envelope, 1)
 
@@ -245,7 +247,7 @@ func TestOverlayServer_Stream(t *testing.T) {
 	addrBuf, err := newRootAddress().MarshalText()
 	require.NoError(t, err)
 
-	inCtx := metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "test", headerGatewayKey, string(addrBuf)))
+	inCtx := metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "test", headerGatewayKey, string(addrBuf), headerStreamIDKey, "test"))
 
 	err = overlay.Stream(fakeServerStream{ch: ch, ctx: inCtx})
 	require.NoError(t, err)
@@ -261,10 +263,14 @@ func TestOverlayServer_Stream(t *testing.T) {
 	err = overlay.Stream(fakeServerStream{ctx: inCtx, err: xerrors.New("oops")})
 	require.EqualError(t, err, "failed to get gateway, result is nil")
 
+	inCtx = metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "test", headerGatewayKey, string(addrBuf)))
+	err = overlay.Stream(fakeServerStream{ctx: inCtx, err: xerrors.New("oops")})
+	require.EqualError(t, err, "failed to get streamID, result is empty")
+
 	overlay.context = json.NewContext()
 	overlay.router = tree.NewRouter(NewMemship([]mino.Address{}), 3)
 	ch = make(chan *Envelope, 1)
-	inCtx = metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "bad", headerGatewayKey, string(addrBuf)))
+	inCtx = metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "bad", headerGatewayKey, string(addrBuf), headerStreamIDKey, "test"))
 	err = overlay.Stream(fakeServerStream{ch: ch, ctx: inCtx})
 	require.EqualError(t, err, "handler failed to process: oops")
 }

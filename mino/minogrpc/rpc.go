@@ -2,13 +2,18 @@ package minogrpc
 
 import (
 	context "context"
+	"crypto/rand"
+	"fmt"
 	"sync"
 
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc/metadata"
 )
+
+const streamIDLen = 16
 
 // RPC represents an RPC that has been registered by a client, which allows
 // clients to call an RPC that will execute the provided handler.
@@ -111,6 +116,15 @@ func (rpc RPC) Stream(ctx context.Context,
 
 	root := newRootAddress()
 
+	b := make([]byte, streamIDLen)
+	_, err := rand.Reader.Read(b)
+	if err != nil {
+		return nil, nil, xerrors.Errorf("failed to create streamID: %v", err)
+	}
+
+	streamID := fmt.Sprintf("%x-%x-%x-%x-%x",
+		b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+
 	receiver := receiver{
 		context:        rpc.overlay.context,
 		factory:        rpc.factory,
@@ -119,6 +133,8 @@ func (rpc RPC) Stream(ctx context.Context,
 		queue:          newNonBlockingQueue(),
 
 		ctx: ctx,
+		logger: dela.Logger.With().Str("addr", root.String()).Logger().
+			With().Str("streamID", streamID).Logger(),
 	}
 
 	sender := sender{
@@ -133,6 +149,8 @@ func (rpc RPC) Stream(ctx context.Context,
 		connFactory: rpc.overlay.connFactory,
 		relays:      new(sync.Map),
 		uri:         rpc.uri,
+
+		streamID: streamID,
 	}
 
 	return sender, receiver, nil

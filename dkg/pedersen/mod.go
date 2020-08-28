@@ -1,6 +1,8 @@
 package pedersen
 
 import (
+	"time"
+
 	"go.dedis.ch/dela/crypto/ed25519"
 
 	"go.dedis.ch/dela/crypto"
@@ -18,6 +20,11 @@ import (
 
 // suite is the Kyber suite for Pedersen.
 var suite = suites.MustFind("Ed25519")
+
+const (
+	setupTimeout   = time.Second * 10
+	decryptTimeout = time.Second * 5
+)
 
 // Pedersen allows one to initialise a new DKG protocol.
 //
@@ -77,7 +84,7 @@ func (a *Actor) Setup(co crypto.CollectiveAuthority, threshold int) (kyber.Point
 		return nil, xerrors.Errorf("startRes is already done, only one setup call is allowed")
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), setupTimeout)
 	defer cancel()
 
 	sender, receiver, err := a.rpc.Stream(ctx, co)
@@ -188,12 +195,12 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 
 	players := mino.NewAddresses(a.startRes.GetParticipants()...)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), decryptTimeout)
 	defer cancel()
 
 	sender, receiver, err := a.rpc.Stream(ctx, players)
 	if err != nil {
-		return nil, nil
+		return nil, xerrors.Errorf("failed to create stream: %v", err)
 	}
 
 	players = mino.NewAddresses(a.startRes.GetParticipants()...)
@@ -207,7 +214,6 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 	message := types.NewDecryptRequest(K, C)
 
 	sender.Send(message, addrs...)
-
 	pubShares := make([]*share.PubShare, len(addrs))
 
 	for i := 0; i < len(addrs); i++ {

@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/tokens"
@@ -34,6 +35,7 @@ const (
 	// headerURIKey is the key used in rpc header to pass the handler URI
 	headerURIKey        = "apiuri"
 	headerGatewayKey    = "gateway"
+	headerStreamIDKey   = "streamid"
 	certificateDuration = time.Hour * 24 * 180
 )
 
@@ -46,7 +48,7 @@ var (
 type overlayServer struct {
 	overlay
 
-	endpoints *sync.Map
+	endpoints *sync.Map // must contain only the type *Endpoint
 	closer    *sync.WaitGroup
 }
 
@@ -195,39 +197,66 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 		return xerrors.Errorf("failed to get gateway, result is nil")
 	}
 
+	streamID := streamIDFromContext(stream.Context())
+	if streamID == "" {
+		return xerrors.Errorf("failed to get streamID, result is empty")
+	}
+
 	first := false
 
 	endpoint.Lock()
-	if !endpoint.started {
+	session, found := endpoint.streams[streamID]
+
+	if !found {
 		first = true
 
-		endpoint.receiver = receiver{
+		errs := make(chan error, 1)
+		receiver := receiver{
 			context:        o.context,
 			factory:        endpoint.Factory,
 			addressFactory: o.addrFactory,
-			errs:           make(chan error, 1),
+			errs:           errs,
 			queue:          newNonBlockingQueue(),
 			ctx:            stream.Context(),
+			logger: dela.Logger.With().Str("addr", o.me.String()).Logger().
+				With().Str("streamID", streamID).Logger(),
 		}
 
-		endpoint.sender = sender{
+		relays := new(sync.Map)
+		relays.Store(newRootAddress().String(), stream)
+		relays.Store(gateway.String(), stream)
+
+		sender := sender{
 			me:       o.me,
 			context:  o.context,
 			clients:  map[mino.Address]chan OutContext{},
-			receiver: endpoint.receiver,
+			receiver: receiver,
 			traffic:  o.traffic,
 
 			router:      o.router,
 			connFactory: o.connFactory,
 			uri:         uri,
 			gateway:     gateway,
-			relays:      new(sync.Map), //     &relays{r: map[string]relayer{}},
+			relays:      relays,
+			streamID:    streamID,
 		}
 
-		endpoint.sender.relays.Store(newRootAddress().String(), stream)
-		endpoint.sender.relays.Store(gateway.String(), stream)
+		session = &StreamSession{
+			sender:   sender,
+			receiver: receiver,
+		}
+
+		endpoint.streams[streamID] = session
+
+		// When the handler is done we need to clean up the resources
+		defer func() {
+			endpoint.Lock()
+			close(errs)
+			delete(endpoint.streams, streamID)
+			endpoint.Unlock()
+		}()
 	}
-	endpoint.started = true
+
 	endpoint.Unlock()
 
 	mebuf, err := o.me.MarshalText()
@@ -236,32 +265,21 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 	}
 
 	relayCtx := metadata.NewOutgoingContext(stream.Context(), metadata.Pairs(
-		headerURIKey, uri, headerGatewayKey, string(mebuf)))
+		headerURIKey, uri, headerGatewayKey, string(mebuf), headerStreamIDKey,
+		streamID))
 
 	f := func() error {
-		return listenStream(relayCtx, stream, endpoint.sender, gateway)
+		return listenStream(relayCtx, stream, session.sender, gateway)
 	}
 	msg := fmt.Sprintf("failed to listen to our gateway '%s'", gateway)
 
-	go func() {
-		execOrFil(f, endpoint.sender.receiver.errs, msg)
-	}()
+	go execOrFil(f, session.sender.receiver.errs, msg)
 
 	if first {
-		err := endpoint.Handler.Stream(endpoint.sender, endpoint.receiver)
+		err := endpoint.Handler.Stream(session.sender, session.receiver)
 		if err != nil {
 			return xerrors.Errorf("handler failed to process: %v", err)
 		}
-
-		// The participant is done but waits for the protocol to end.
-		<-stream.Context().Done()
-
-		// Since the handler is done, we reset the sender and receiver
-		endpoint.Lock()
-		endpoint.started = false
-		endpoint.Unlock()
-
-		return nil
 	}
 
 	// The participant is done but waits for the protocol to end.
@@ -277,6 +295,11 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 // needed.
 func dispatchMessage(envelope Envelope, sender sender) (map[mino.Address]*Envelope, error) {
 	out := map[mino.Address]*Envelope{}
+
+	tos := make([]mino.Address, len(envelope.To))
+	for i, addrBuf := range envelope.To {
+		tos[i] = sender.receiver.addressFactory.FromText(addrBuf)
+	}
 
 	for _, tobuf := range envelope.GetTo() {
 		to := sender.receiver.addressFactory.FromText(tobuf)
@@ -324,16 +347,23 @@ func sendToRelays(relayCtx context.Context, sender sender, out map[mino.Address]
 
 			cl := NewOverlayClient(conn)
 
-			relay, err = cl.Stream(relayCtx)
+			relay, err = cl.Stream(relayCtx, grpc.WaitForReady(false))
 			if err != nil {
-				return xerrors.Errorf("failed to call stream for relay '%s': %v", relayAddr, err)
+				// TODO: this error is actually never seen by the user
+				// sender.receiver.logger.Fatal().Msgf(
+				// 	"failed to call stream for relay '%s': %v", relayAddr, err)
+				return xerrors.Errorf("'%s' failed to call stream for relay '%s': %v", sender.me, relayAddr, err)
 			}
+
+			sender.traffic.addEvent("open", sender.me, relayAddr)
 
 			sender.relays.Store(relayAddr.String(), relay)
 
 			go func(relayAddr mino.Address) {
 				f := func() error {
-					return listenStream(relayCtx, relay, sender, relayAddr)
+					err := listenStream(relayCtx, relay, sender, relayAddr)
+					sender.traffic.addEvent("close", sender.me, relayAddr)
+					return err
 				}
 				msg := fmt.Sprintf("failed to listen to relay '%s'", relayAddr)
 
@@ -359,8 +389,9 @@ func sendToRelays(relayCtx context.Context, sender sender, out map[mino.Address]
 	return nil
 }
 
-// execOrFil executes f and populates c if f returns an error. We need this
-// function
+// execOrFil executes f and populates c if f returns an error. We use this
+// function to have a better granularity in our functions, which helps us write
+// tests.
 func execOrFil(f func() error, c chan<- error, msg string) {
 	err := f()
 	if err != nil {
@@ -383,6 +414,8 @@ func listenStream(streamCtx context.Context, stream relayer,
 			return nil
 		}
 		if err != nil {
+			// TODO: this error is actually never seen by the user
+			// sender.receiver.logger.Fatal().Msgf("stream failed to receive: %v", err)
 			return xerrors.Errorf("failed to receive: %v", err)
 		}
 
@@ -642,4 +675,18 @@ func gatewayFromContext(ctx context.Context, addrFactory mino.AddressFactory) mi
 	}
 
 	return addrFactory.FromText([]byte(gateway[0]))
+}
+
+func streamIDFromContext(ctx context.Context) string {
+	headers, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ""
+	}
+
+	streamID := headers[headerStreamIDKey]
+	if len(streamID) == 0 {
+		return ""
+	}
+
+	return streamID[0]
 }

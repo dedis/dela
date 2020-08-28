@@ -131,9 +131,16 @@ type Joinable interface {
 // same sender/receiver.
 type Endpoint struct {
 	sync.Mutex
-	Handler  mino.Handler
-	Factory  serde.Factory
-	started  bool
+	Handler mino.Handler
+	Factory serde.Factory
+	streams map[string]*StreamSession
+}
+
+// StreamSession holds the state of a stream session initiated by the user.
+// Each time the user calls mino.Stream, a uniq streamID is created and every
+// node will hold its corresponding StreamSession that is deleted once the
+// stream ends.
+type StreamSession struct {
 	sender   sender
 	receiver receiver
 }
@@ -147,7 +154,7 @@ type Minogrpc struct {
 	url       *url.URL
 	server    *grpc.Server
 	namespace string
-	endpoints *sync.Map
+	endpoints *sync.Map // must contain only the type *Endpoint
 	started   chan struct{}
 	closer    *sync.WaitGroup
 	closing   chan error
@@ -305,6 +312,7 @@ func (m *Minogrpc) MakeRPC(name string, h mino.Handler, f serde.Factory) (mino.R
 	m.endpoints.Store(uri, &Endpoint{
 		Handler: h,
 		Factory: f,
+		streams: make(map[string]*StreamSession),
 	})
 
 	return rpc, nil

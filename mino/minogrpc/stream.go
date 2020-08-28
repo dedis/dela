@@ -4,6 +4,7 @@ import (
 	context "context"
 	"sync"
 
+	"github.com/rs/zerolog"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/router"
 	"go.dedis.ch/dela/serde"
@@ -30,9 +31,12 @@ type sender struct {
 	// we can just reply, and not create a new connection.
 	gateway mino.Address
 
-	relays      *sync.Map
+	relays *sync.Map // must contain only the type 'relayer'
+
 	connFactory ConnectionFactory
 	uri         string
+
+	streamID string
 }
 
 func (s sender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
@@ -69,7 +73,8 @@ func (s sender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 	}
 
 	relayCtx := metadata.NewOutgoingContext(s.receiver.ctx, metadata.Pairs(
-		headerURIKey, s.uri, headerGatewayKey, string(mebuf)))
+		headerURIKey, s.uri, headerGatewayKey, string(mebuf),
+		headerStreamIDKey, s.streamID))
 
 	envelope := &Envelope{
 		To: to,
@@ -101,7 +106,8 @@ type receiver struct {
 	errs           chan error
 	queue          Queue
 
-	ctx context.Context
+	ctx    context.Context
+	logger zerolog.Logger
 }
 
 func (r receiver) appendMessage(msg *Message) {
