@@ -28,16 +28,16 @@ func New(path string) (DB, error) {
 	return bdb, nil
 }
 
-// View implements kv.DB. It opens a read-only transaction and opens the
-// provided bucket. It will return an error if the bucket does not exist.
+// View implements kv.DB. It executes the transaction in the context of the
+// database.
 func (db boltDB) View(fn func(ReadableTx) error) error {
 	return db.bolt.View(func(txn *bbolt.Tx) error {
 		return fn(boltTx{txn: txn})
 	})
 }
 
-// Update implements kv.DB. It opens a read-write transaction and opens the
-// bucket. It will create it if it does not exist yet.
+// Update implements kv.DB. It executes the transaction in the context of the
+// database.
 func (db boltDB) Update(fn func(WritableTx) error) error {
 	return db.bolt.Update(func(txn *bbolt.Tx) error {
 		return fn(boltTx{txn: txn})

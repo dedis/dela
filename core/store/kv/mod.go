@@ -31,12 +31,10 @@ type WritableTx interface {
 
 // DB is a general interface to operate over a key/value database.
 type DB interface {
-	// View opens a read-only transaction that will be closed when the closure
-	// returns.
+	// View executes the provided transaction in the context of the database.
 	View(fn func(ReadableTx) error) error
 
-	// Update opens a writable transaction that will be committed when the
-	// closure returns.
+	// Update executes the provided transaction in the context of the database.
 	Update(fn func(WritableTx) error) error
 
 	// Close closes the database and free the resources.

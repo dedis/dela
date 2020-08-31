@@ -22,5 +22,7 @@ type Snapshot interface {
 // Transaction is a generic interface that store implementations can use to
 // provide atomicity.
 type Transaction interface {
+	// OnCommit adds a callback to be executed after the transaction
+	// successfully commits.
 	OnCommit(func())
 }
