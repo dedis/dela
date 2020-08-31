@@ -85,7 +85,15 @@ func (fmt linkFormat) Decode(ctx serde.Context, data []byte) (serde.Message, err
 		return nil, err
 	}
 
-	link := types.NewBlockLink(m.From, block, prepare, commit, changeset)
+	opts := []types.BlockLinkOption{
+		types.WithSignatures(prepare, commit),
+		types.WithChangeSet(changeset),
+	}
+
+	link, err := types.NewBlockLink(m.From, block, opts...)
+	if err != nil {
+		return nil, err
+	}
 
 	return link, nil
 }

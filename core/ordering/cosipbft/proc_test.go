@@ -97,13 +97,10 @@ func TestProcessor_GenesisMessage_Process(t *testing.T) {
 }
 
 func TestProcessor_DoneMessage_Process(t *testing.T) {
-	block, err := types.NewBlock(simple.NewData(nil))
-	require.NoError(t, err)
-
 	proc := newProcessor()
 	proc.pbftsm = fakeSM{}
 	proc.blocks = blockstore.NewInMemory()
-	proc.blocks.Store(types.NewBlockLink(types.Digest{}, block, nil, nil, nil))
+	proc.blocks.Store(makeBlock(t, types.Digest{}))
 
 	req := mino.Request{
 		Message: types.NewDone(types.Digest{}, fake.Signature{}),
@@ -139,6 +136,16 @@ func TestProcessor_Unsupported_Process(t *testing.T) {
 }
 
 // Utility functions -----------------------------------------------------------
+
+func makeBlock(t *testing.T, from types.Digest, opts ...types.BlockLinkOption) types.BlockLink {
+	block, err := types.NewBlock(simple.NewData(nil))
+	require.NoError(t, err)
+
+	link, err := types.NewBlockLink(from, block, opts...)
+	require.NoError(t, err)
+
+	return link
+}
 
 type fakeSM struct {
 	pbft.StateMachine

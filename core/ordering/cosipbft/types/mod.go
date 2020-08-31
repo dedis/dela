@@ -12,6 +12,8 @@ type BlockLink interface {
 	serde.Message
 	serde.Fingerprinter
 
+	GetHash() Digest
+
 	GetFrom() Digest
 
 	GetTo() Block

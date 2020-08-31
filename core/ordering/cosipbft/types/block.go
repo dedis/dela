@@ -181,6 +181,7 @@ func (f GenesisFactory) Deserialize(ctx serde.Context, data []byte) (serde.Messa
 // blockLink contains the different proofs that a block has been committed by
 // the collective authority.
 type blockLink struct {
+	digest     Digest
 	from       Digest
 	to         Block
 	changeset  viewchange.ChangeSet
@@ -188,15 +189,68 @@ type blockLink struct {
 	commitSig  crypto.Signature
 }
 
-// NewBlockLink creates a new block link between from and to.
-func NewBlockLink(from Digest, to Block, p, c crypto.Signature, cs viewchange.ChangeSet) BlockLink {
-	return blockLink{
-		from:       from,
-		to:         to,
-		prepareSig: p,
-		commitSig:  c,
-		changeset:  cs,
+type blockLinkTemplate struct {
+	blockLink
+
+	hashFac crypto.HashFactory
+}
+
+// BlockLinkOption is the type of option to set some optional fields of the
+// block link.
+type BlockLinkOption func(*blockLinkTemplate)
+
+// WithSignatures is the option to set the signatures of the link.
+func WithSignatures(prep, commit crypto.Signature) BlockLinkOption {
+	return func(tmpl *blockLinkTemplate) {
+		tmpl.prepareSig = prep
+		tmpl.commitSig = commit
 	}
+}
+
+// WithChangeSet is the option to set the change set of the roster for this
+// link.
+func WithChangeSet(cs viewchange.ChangeSet) BlockLinkOption {
+	return func(tmpl *blockLinkTemplate) {
+		tmpl.changeset = cs
+	}
+}
+
+// WithLinkHashFactory is the option to set the hash factory for the link.
+func WithLinkHashFactory(fac crypto.HashFactory) BlockLinkOption {
+	return func(tmpl *blockLinkTemplate) {
+		tmpl.hashFac = fac
+	}
+}
+
+// NewBlockLink creates a new block link between from and to.
+func NewBlockLink(from Digest, to Block, opts ...BlockLinkOption) (BlockLink, error) {
+	tmpl := blockLinkTemplate{
+		blockLink: blockLink{
+			from:      from,
+			to:        to,
+			changeset: roster.ChangeSet{},
+		},
+		hashFac: crypto.NewSha256Factory(),
+	}
+
+	for _, opt := range opts {
+		opt(&tmpl)
+	}
+
+	h := tmpl.hashFac.New()
+	err := tmpl.Fingerprint(h)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to fingerprint: %v", err)
+	}
+
+	copy(tmpl.digest[:], h.Sum(nil))
+
+	return tmpl.blockLink, nil
+}
+
+// GetHash returns the digest of the link.
+func (link blockLink) GetHash() Digest {
+	return link.digest
 }
 
 // GetFrom returns the digest of the source block.
@@ -257,6 +311,7 @@ func (link blockLink) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
+// ChangeSetKey is the key of the change set factory.
 type ChangeSetKey struct{}
 
 // BlockLinkFac is the factory to deserialize block link messages.

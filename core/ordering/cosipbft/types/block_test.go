@@ -104,6 +104,35 @@ func TestGenesisFactory_Deserialize(t *testing.T) {
 	require.EqualError(t, err, "decoding failed: fake error")
 }
 
+func TestBlockLink_New(t *testing.T) {
+	link, err := NewBlockLink(Digest{1}, Block{})
+	require.NoError(t, err)
+	require.Equal(t, Digest{1}, link.GetFrom())
+
+	opts := []BlockLinkOption{
+		WithSignatures(fake.Signature{}, fake.Signature{}),
+		WithChangeSet(roster.ChangeSet{}),
+	}
+
+	link, err = NewBlockLink(Digest{1}, Block{}, opts...)
+	require.NoError(t, err)
+	require.Equal(t, fake.Signature{}, link.GetPrepareSignature())
+	require.Equal(t, fake.Signature{}, link.GetCommitSignature())
+
+	opts = []BlockLinkOption{
+		WithLinkHashFactory(fake.NewHashFactory(fake.NewBadHash())),
+	}
+
+	_, err = NewBlockLink(Digest{1}, Block{}, opts...)
+	require.EqualError(t, err, "failed to fingerprint: couldn't write from: fake error")
+}
+
+func TestBlockLink_GetHash(t *testing.T) {
+	link := blockLink{digest: Digest{1}}
+
+	require.Equal(t, Digest{1}, link.GetHash())
+}
+
 func TestBlockLink_GetFrom(t *testing.T) {
 	link := blockLink{from: Digest{2}}
 
@@ -140,11 +169,12 @@ func TestBlockLink_GetChangeSet(t *testing.T) {
 }
 
 func TestBlockLink_Fingerprint(t *testing.T) {
-	link := NewBlockLink(Digest{}, Block{digest: Digest{}}, nil, nil, nil)
+	link, err := NewBlockLink(Digest{}, Block{digest: Digest{}})
+	require.NoError(t, err)
 
 	buffer := new(bytes.Buffer)
 
-	err := link.Fingerprint(buffer)
+	err = link.Fingerprint(buffer)
 	require.NoError(t, err)
 	require.Regexp(t, "^\x00{64}$", buffer.String())
 

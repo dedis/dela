@@ -77,6 +77,30 @@ func TestInMemory_Last(t *testing.T) {
 	require.Equal(t, store.blocks[0], block)
 }
 
+func TestInMemory_Range(t *testing.T) {
+	store := NewInMemory()
+
+	count := 0
+	store.Range(func(types.BlockLink) bool {
+		count++
+		return true
+	})
+	require.Equal(t, 0, count)
+
+	store.blocks = []types.BlockLink{makeLink(t, types.Digest{}), makeLink(t, types.Digest{})}
+	store.Range(func(types.BlockLink) bool {
+		count++
+		return false
+	})
+	require.Equal(t, 1, count)
+
+	store.Range(func(types.BlockLink) bool {
+		count++
+		return true
+	})
+	require.Equal(t, 3, count)
+}
+
 func TestInMemory_Watch(t *testing.T) {
 	store := NewInMemory()
 
@@ -116,7 +140,8 @@ func makeLink(t *testing.T, from types.Digest, opts ...types.BlockOption) types.
 	to, err := types.NewBlock(simple.NewData(nil), opts...)
 	require.NoError(t, err)
 
-	link := types.NewBlockLink(from, to, nil, nil, nil)
+	link, err := types.NewBlockLink(from, to)
+	require.NoError(t, err)
 
 	return link
 }

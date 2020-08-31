@@ -51,7 +51,8 @@ func TestSyncRequest_Serialize(t *testing.T) {
 }
 
 func TestSyncReply_GetLink(t *testing.T) {
-	link := types.NewBlockLink(types.Digest{1}, types.Block{}, nil, nil, nil)
+	link, err := types.NewBlockLink(types.Digest{1}, types.Block{})
+	require.NoError(t, err)
 
 	m := NewSyncReply(link)
 
@@ -59,7 +60,10 @@ func TestSyncReply_GetLink(t *testing.T) {
 }
 
 func TestSyncReply_Serialize(t *testing.T) {
-	m := NewSyncReply(types.NewBlockLink(types.Digest{}, types.Block{}, nil, nil, nil))
+	link, err := types.NewBlockLink(types.Digest{}, types.Block{})
+	require.NoError(t, err)
+
+	m := NewSyncReply(link)
 
 	data, err := m.Serialize(fake.NewContext())
 	require.NoError(t, err)

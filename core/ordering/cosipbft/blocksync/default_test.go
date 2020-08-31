@@ -227,7 +227,11 @@ func storeBlocks(t *testing.T, blocks blockstore.BlockStore, n int) {
 		block, err := otypes.NewBlock(simple.NewData(nil), otypes.WithIndex(uint64(i)))
 		require.NoError(t, err)
 
-		err = blocks.Store(otypes.NewBlockLink(prev, block, fake.Signature{}, fake.Signature{}, roster.ChangeSet{}))
+		link, err := otypes.NewBlockLink(prev, block,
+			otypes.WithSignatures(fake.Signature{}, fake.Signature{}))
+		require.NoError(t, err)
+
+		err = blocks.Store(link)
 		require.NoError(t, err)
 
 		prev = block.GetHash()

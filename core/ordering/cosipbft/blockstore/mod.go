@@ -48,6 +48,10 @@ type BlockStore interface {
 	// Last must return the latest block link in the store.
 	Last() (types.BlockLink, error)
 
+	// Range iterates over the ordered list of blocks until the callback returns
+	// false, or there is no block left.
+	Range(func(types.BlockLink) bool)
+
 	// Watch returns a channel that is filled with new block links. The is
 	// closed as soon as the context is done.
 	Watch(context.Context) <-chan types.BlockLink

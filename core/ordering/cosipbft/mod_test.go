@@ -79,6 +79,15 @@ func TestService_Basic(t *testing.T) {
 
 	evt = waitEvent(t, events)
 	require.Equal(t, uint64(4), evt.Index)
+
+	proof, err := srvs[0].service.GetProof(keyRoster[:])
+	require.NoError(t, err)
+	require.NotNil(t, proof.GetValue())
+
+	require.Equal(t, keyRoster[:], proof.GetKey())
+	require.NotNil(t, proof.GetValue())
+
+	checkProof(t, proof.(Proof), srvs[0].service)
 }
 
 func TestService_New(t *testing.T) {
@@ -338,6 +347,14 @@ func TestService_WakeUp(t *testing.T) {
 }
 
 // Utility functions -----------------------------------------------------------
+
+func checkProof(t *testing.T, p Proof, s *Service) {
+	genesis, err := s.genesis.Get()
+	require.NoError(t, err)
+
+	err = p.Verify(genesis, s.verifierFac)
+	require.NoError(t, err)
+}
 
 type testNode struct {
 	service *Service
