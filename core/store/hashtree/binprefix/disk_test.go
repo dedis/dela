@@ -51,6 +51,9 @@ func TestDiskNode_Search(t *testing.T) {
 	// Error deeper in the tree.
 	_, err = node.Search(big.NewInt(0), nil, newFakeBucket(bucketKey, data))
 	require.EqualError(t, err, "failed to load node: prefix 0 (depth 1) not in database")
+
+	_, err = node.Search(big.NewInt(0), nil, nil)
+	require.EqualError(t, err, "bucket is nil")
 }
 
 func TestDiskNode_Insert(t *testing.T) {

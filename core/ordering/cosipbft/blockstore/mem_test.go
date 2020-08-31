@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
+	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/validation/simple"
 )
 
@@ -94,6 +95,21 @@ func TestInMemory_Watch(t *testing.T) {
 	require.False(t, more)
 }
 
+func TestInMemory_WithTx(t *testing.T) {
+	store := NewInMemory()
+
+	tx := &fakeTx{}
+	txstore := store.WithTx(tx)
+
+	err := txstore.Store(makeLink(t, types.Digest{}))
+	require.NoError(t, err)
+	require.Len(t, store.blocks, 0)
+	require.Len(t, txstore.(*InMemory).blocks, 1)
+
+	tx.fn()
+	require.Len(t, store.blocks, 1)
+}
+
 // Utility functions -----------------------------------------------------------
 
 func makeLink(t *testing.T, from types.Digest, opts ...types.BlockOption) types.BlockLink {
@@ -103,4 +119,14 @@ func makeLink(t *testing.T, from types.Digest, opts ...types.BlockOption) types.
 	link := types.NewBlockLink(from, to, nil, nil, nil)
 
 	return link
+}
+
+type fakeTx struct {
+	store.Transaction
+
+	fn func()
+}
+
+func (tx *fakeTx) OnCommit(fn func()) {
+	tx.fn = fn
 }

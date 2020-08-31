@@ -15,6 +15,7 @@ import (
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/hashtree"
+	"go.dedis.ch/dela/core/store/kv"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/pool"
 	"go.dedis.ch/dela/core/validation"
@@ -72,6 +73,7 @@ type ServiceParam struct {
 	Validation validation.Service
 	Pool       pool.Pool
 	Tree       hashtree.Tree
+	DB         kv.DB
 }
 
 // NewService starts a new service.
@@ -102,6 +104,7 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 		Genesis:         tmpl.genesis,
 		Tree:            proc.tree,
 		AuthorityReader: proc.readRoster,
+		DB:              param.DB,
 	}
 
 	proc.pbftsm = pbft.NewStateMachine(pcparam)

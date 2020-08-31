@@ -12,6 +12,7 @@ import (
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/hashtree"
+	"go.dedis.ch/dela/core/store/kv"
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
@@ -104,6 +105,7 @@ type pbftsm struct {
 	genesis     blockstore.GenesisStore
 	tree        blockstore.TreeCache
 	authReader  AuthorityReader
+	db          kv.DB
 
 	state State
 	round round
@@ -118,6 +120,7 @@ type StateMachineParam struct {
 	Genesis         blockstore.GenesisStore
 	Tree            blockstore.TreeCache
 	AuthorityReader AuthorityReader
+	DB              kv.DB
 }
 
 // NewStateMachine returns a new state machine.
@@ -131,6 +134,7 @@ func NewStateMachine(param StateMachineParam) StateMachine {
 		blocks:      param.Blocks,
 		genesis:     param.Genesis,
 		tree:        param.Tree,
+		db:          param.DB,
 		state:       InitialState,
 		authReader:  param.AuthorityReader,
 	}
@@ -489,20 +493,34 @@ func (m *pbftsm) verifyFinalize(r *round, sig crypto.Signature, ro viewchange.Au
 		return xerrors.Errorf("couldn't get latest digest: %v", err)
 	}
 
-	tree, err := r.tree.Commit()
+	// Persist to the database in a transaction so that it can revert to the
+	// previous state for either the tree or the block if something goes wrong.
+	err = m.db.Update(func(txn kv.WritableTx) error {
+		// 1. Persist the tree through the transaction and update the cache.
+		err := r.tree.WithTx(txn).Commit()
+		if err != nil {
+			return xerrors.Errorf("commit tree: %v", err)
+		}
+
+		txn.OnCommit(func() {
+			// The cache is updated only after both are committed with the tree
+			// using the database as the transaction is done.
+			m.tree.Set(r.tree)
+		})
+
+		// 2. Persist the block and its forward link.
+		link := types.NewBlockLink(lastID, r.block, r.prepareSig, sig, r.changeset)
+
+		err = m.blocks.WithTx(txn).Store(link)
+		if err != nil {
+			return xerrors.Errorf("store block: %v", err)
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		// TODO: database tx
-		return xerrors.Errorf("commit tree failed: %v", err)
-	}
-
-	m.tree.Set(tree)
-
-	link := types.NewBlockLink(lastID, r.block, r.prepareSig, sig, r.changeset)
-
-	err = m.blocks.Store(link)
-	if err != nil {
-		// TODO: database tx
-		return xerrors.Errorf("failed to store block: %v", err)
+		return xerrors.Errorf("database failed: %v", err)
 	}
 
 	return nil
@@ -548,7 +566,7 @@ func (obs observer) NotifyCallback(event interface{}) {
 
 // CalculateThreshold returns the number of messages that a node needs to
 // receive before confirming the view change. The threshold is 2*f where f can
-// found with n = 3*f+1 where n is the number of participants.
+// be found with n = 3*f+1 where n is the number of participants.
 func calculateThreshold(n int) int {
 	f := (n - 1) / 3
 	return 2 * f

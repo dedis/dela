@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/xerrors"
@@ -19,24 +20,33 @@ func TestBoltDB_UpdateAndView(t *testing.T) {
 	db, err := New(filepath.Join(dir, "test.db"))
 	require.NoError(t, err)
 
-	err = db.Update([]byte("bucket"), func(b Bucket) error {
-		return b.Set([]byte("ping"), []byte("pong"))
+	ch := make(chan struct{})
+	err = db.Update(func(txn WritableTx) error {
+		txn.OnCommit(func() { close(ch) })
+
+		bucket, err := txn.GetBucketOrCreate([]byte("bucket"))
+		require.NoError(t, err)
+
+		return bucket.Set([]byte("ping"), []byte("pong"))
 	})
 	require.NoError(t, err)
 
-	err = db.View([]byte("bucket"), func(b Bucket) error {
-		value := b.Get([]byte("ping"))
+	select {
+	case <-ch:
+	case <-time.After(time.Second):
+		t.Fatal("timeout")
+	}
+
+	err = db.View(func(txn ReadableTx) error {
+		bucket := txn.GetBucket([]byte("bucket"))
+		require.NotNil(t, bucket)
+
+		value := bucket.Get([]byte("ping"))
 		require.Equal(t, []byte("pong"), value)
 
 		return nil
 	})
 	require.NoError(t, err)
-
-	err = db.View([]byte{0xaa}, nil)
-	require.EqualError(t, err, "bucket 'aa' not found")
-
-	err = db.Update(nil, nil)
-	require.EqualError(t, err, "failed to create bucket: bucket name required")
 }
 
 func TestBoltDB_Close(t *testing.T) {
@@ -53,6 +63,30 @@ func TestBoltDB_Close(t *testing.T) {
 	require.Error(t, db.(boltDB).bolt.Sync())
 }
 
+func TestBoltTx_GetBucket(t *testing.T) {
+	dir, err := ioutil.TempDir(os.TempDir(), "dela-core-kv")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
+	db, err := New(filepath.Join(dir, "test.db"))
+	require.NoError(t, err)
+
+	err = db.Update(func(tx WritableTx) error {
+		require.Nil(t, tx.GetBucket([]byte("unknown")))
+
+		_, err := tx.GetBucketOrCreate([]byte("A"))
+		require.NoError(t, err)
+		require.NotNil(t, tx.GetBucket([]byte("A")))
+
+		_, err = tx.GetBucketOrCreate(nil)
+		require.EqualError(t, err, "create bucket failed: bucket name required")
+
+		return nil
+	})
+	require.NoError(t, err)
+}
+
 func TestBoltBucket_Get_Set_Delete(t *testing.T) {
 	dir, err := ioutil.TempDir(os.TempDir(), "dela-core-kv")
 	require.NoError(t, err)
@@ -62,7 +96,10 @@ func TestBoltBucket_Get_Set_Delete(t *testing.T) {
 	db, err := New(filepath.Join(dir, "test.db"))
 	require.NoError(t, err)
 
-	err = db.Update([]byte("bucket"), func(b Bucket) error {
+	err = db.Update(func(txn WritableTx) error {
+		b, err := txn.GetBucketOrCreate([]byte("bucket"))
+		require.NoError(t, err)
+
 		require.NoError(t, b.Set([]byte("ping"), []byte("pong")))
 
 		value := b.Get([]byte("ping"))
@@ -91,7 +128,10 @@ func TestBoltBucket_ForEach(t *testing.T) {
 	db, err := New(filepath.Join(dir, "test.db"))
 	require.NoError(t, err)
 
-	err = db.Update([]byte("bucket"), func(b Bucket) error {
+	err = db.Update(func(txn WritableTx) error {
+		b, err := txn.GetBucketOrCreate([]byte("test"))
+		require.NoError(t, err)
+
 		require.NoError(t, b.Set([]byte{2}, []byte{2}))
 		require.NoError(t, b.Set([]byte{1}, []byte{1}))
 		require.NoError(t, b.Set([]byte{0}, []byte{0}))
@@ -116,7 +156,10 @@ func TestBoltBucket_Scan(t *testing.T) {
 	db, err := New(filepath.Join(dir, "test.db"))
 	require.NoError(t, err)
 
-	err = db.Update([]byte("bucket"), func(b Bucket) error {
+	err = db.Update(func(txn WritableTx) error {
+		b, err := txn.GetBucketOrCreate([]byte("bucket"))
+		require.NoError(t, err)
+
 		require.NoError(t, b.Set([]byte{7}, []byte{7}))
 		require.NoError(t, b.Set([]byte{0}, []byte{0}))
 

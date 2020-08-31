@@ -42,6 +42,10 @@ type Tree interface {
 type StagingTree interface {
 	Tree
 
+	// WithTx decorates the staging tree to use a transaction to perform
+	// operations on the database while using the same underlying data.
+	WithTx(store.Transaction) StagingTree
+
 	// Commit writes the tree to a persistent storage.
-	Commit() (Tree, error)
+	Commit() error
 }

@@ -530,6 +530,18 @@ func TestLeafNode_Serialize(t *testing.T) {
 
 // Utility functions -----------------------------------------------------------
 
+type fakeTx struct {
+	kv.WritableTx
+}
+
+func (tx fakeTx) GetBucket(name []byte) kv.Bucket {
+	return nil
+}
+
+func (tx fakeTx) GetBucketOrCreate(name []byte) (kv.Bucket, error) {
+	return nil, nil
+}
+
 type fakeDB struct {
 	kv.DB
 	err error
@@ -539,15 +551,15 @@ func (db fakeDB) CreateBucket([]byte) error {
 	return db.err
 }
 
-func (db fakeDB) View(b []byte, fn func(kv.Bucket) error) error {
-	return fn(nil)
+func (db fakeDB) View(fn func(kv.ReadableTx) error) error {
+	return fn(fakeTx{})
 }
 
-func (db fakeDB) Update(b []byte, fn func(kv.Bucket) error) error {
+func (db fakeDB) Update(fn func(kv.WritableTx) error) error {
 	if db.err != nil {
 		return db.err
 	}
-	return fn(nil)
+	return fn(fakeTx{})
 }
 
 type fakeNode struct {

@@ -44,6 +44,10 @@ func (n *DiskNode) GetType() byte {
 // Search implements mem.TreeNode. It loads the disk node and then search for
 // the key.
 func (n *DiskNode) Search(key *big.Int, path *Path, bucket kv.Bucket) ([]byte, error) {
+	if bucket == nil {
+		return nil, xerrors.New("bucket is nil")
+	}
+
 	node, err := n.load(key, bucket)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to load node: %v", err)
