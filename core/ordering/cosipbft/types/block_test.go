@@ -36,7 +36,9 @@ func TestDigest_Bytes(t *testing.T) {
 }
 
 func TestGenesis_GetHash(t *testing.T) {
-	genesis, err := NewGenesis(fake.NewAuthority(3, fake.NewSigner))
+	ro := roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+
+	genesis, err := NewGenesis(ro)
 	require.NoError(t, err)
 
 	require.NotEqual(t, Digest{}, genesis.GetHash())
@@ -47,7 +49,9 @@ func TestGenesis_GetHash(t *testing.T) {
 }
 
 func TestGenesis_GetRoster(t *testing.T) {
-	genesis, err := NewGenesis(fake.NewAuthority(3, fake.NewSigner))
+	ro := roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+
+	genesis, err := NewGenesis(ro)
 	require.NoError(t, err)
 
 	require.Equal(t, 3, genesis.GetRoster().Len())
@@ -60,7 +64,9 @@ func TestGenesis_GetRoot(t *testing.T) {
 }
 
 func TestGenesis_Serialize(t *testing.T) {
-	genesis, err := NewGenesis(fake.NewAuthority(3, fake.NewSigner))
+	ro := roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+
+	genesis, err := NewGenesis(ro)
 	require.NoError(t, err)
 
 	data, err := genesis.Serialize(fake.NewContext())
@@ -72,7 +78,8 @@ func TestGenesis_Serialize(t *testing.T) {
 }
 
 func TestGenesis_Fingerprint(t *testing.T) {
-	ro := fake.NewAuthority(1, fake.NewSigner)
+	ro := roster.FromAuthority(fake.NewAuthority(1, fake.NewSigner))
+
 	genesis, err := NewGenesis(ro, WithGenesisRoot(Digest{5}))
 	require.NoError(t, err)
 

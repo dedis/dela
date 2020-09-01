@@ -180,9 +180,14 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 
 // Setup creates a genesis block and sends it to the collective authority.
 func (s *Service) Setup(ctx context.Context, ca crypto.CollectiveAuthority) error {
-	genesis, err := types.NewGenesis(ca, types.WithGenesisHashFactory(s.hashFactory))
+	err := s.storeGenesis(roster.FromAuthority(ca), nil)
 	if err != nil {
 		return xerrors.Errorf("creating genesis: %v", err)
+	}
+
+	genesis, err := s.genesis.Get()
+	if err != nil {
+		return xerrors.Errorf("failed to read genesis: %v", err)
 	}
 
 	resps, err := s.rpc.Call(ctx, types.NewGenesisMessage(genesis), ca)

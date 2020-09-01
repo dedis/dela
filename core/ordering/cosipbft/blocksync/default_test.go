@@ -222,7 +222,9 @@ func makeNodes(t *testing.T, n int) ([]defaultSync, otypes.Genesis, mino.Players
 	syncs := make([]defaultSync, n)
 	addrs := make([]mino.Address, n)
 
-	genesis, err := otypes.NewGenesis(fake.NewAuthority(3, fake.NewSigner))
+	ro := roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+
+	genesis, err := otypes.NewGenesis(ro)
 	require.NoError(t, err)
 
 	for i := 0; i < n; i++ {

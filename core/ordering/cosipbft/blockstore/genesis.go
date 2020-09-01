@@ -30,7 +30,7 @@ func (s *cachedGenesis) Get() (types.Genesis, error) {
 	return s.genesis, nil
 }
 
-// Set implements blockstore.BlockStore. It sets the genesis block only if the
+// Set implements blockstore.GenesisStore. It sets the genesis block only if the
 // cache is empty, otherwise it returns an error.
 func (s *cachedGenesis) Set(genesis types.Genesis) error {
 	if s.set {
@@ -40,4 +40,10 @@ func (s *cachedGenesis) Set(genesis types.Genesis) error {
 	s.genesis = genesis
 	s.set = true
 	return nil
+}
+
+// Exists implements blockstore.GenesisStore. It returns true if the genesis
+// block is set.
+func (s *cachedGenesis) Exists() bool {
+	return s.set
 }

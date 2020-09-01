@@ -103,33 +103,13 @@ func (h *processor) Invoke(from mino.Address, msg serde.Message) ([]byte, error)
 func (h *processor) Process(req mino.Request) (serde.Message, error) {
 	switch msg := req.Message.(type) {
 	case types.GenesisMessage:
-		roster, err := msg.GetGenesis().GetRoster().Serialize(h.context)
-		if err != nil {
-			return nil, xerrors.Errorf("encode roster failed: %v", err)
+		if h.genesis.Exists() {
+			return nil, nil
 		}
 
-		stageTree, err := h.tree.Get().Stage(func(snap store.Snapshot) error {
-			snap.Set(keyRoster[:], roster)
-			return nil
-		})
-		if err != nil {
-			return nil, xerrors.Errorf("tree stage failed: %v", err)
-		}
+		root := msg.GetGenesis().GetRoot()
 
-		err = stageTree.Commit()
-		if err != nil {
-			return nil, xerrors.Errorf("tree commit failed: %v", err)
-		}
-
-		h.tree.Set(stageTree)
-		err = h.genesis.Set(*msg.GetGenesis())
-		if err != nil {
-			return nil, xerrors.Errorf("set genesis failed: %v", err)
-		}
-
-		h.watcher.Notify(ordering.Event{Index: 0})
-
-		close(h.started)
+		return nil, h.storeGenesis(msg.GetGenesis().GetRoster(), &root)
 	case types.DoneMessage:
 		err := h.pbftsm.Finalize(msg.GetID(), msg.GetSignature())
 		if err != nil {
@@ -166,4 +146,48 @@ func (h *processor) readRoster(tree hashtree.Tree) (viewchange.Authority, error)
 	}
 
 	return roster, nil
+}
+
+func (h *processor) storeGenesis(roster viewchange.Authority, match *types.Digest) error {
+	value, err := roster.Serialize(h.context)
+	if err != nil {
+		return xerrors.Errorf("failed to serialize roster: %v", err)
+	}
+
+	stageTree, err := h.tree.Get().Stage(func(snap store.Snapshot) error {
+		return snap.Set(keyRoster[:], value)
+	})
+	if err != nil {
+		return xerrors.Errorf("tree stage failed: %v", err)
+	}
+
+	root := types.Digest{}
+	copy(root[:], stageTree.GetRoot())
+
+	if match != nil && *match != root {
+		return xerrors.Errorf("mismatch tree root '%v' != '%v'", match, root)
+	}
+
+	genesis, err := types.NewGenesis(roster, types.WithGenesisRoot(root))
+	if err != nil {
+		return xerrors.Errorf("creating genesis: %v", err)
+	}
+
+	err = stageTree.Commit()
+	if err != nil {
+		return xerrors.Errorf("tree commit failed: %v", err)
+	}
+
+	h.tree.Set(stageTree)
+
+	err = h.genesis.Set(genesis)
+	if err != nil {
+		return xerrors.Errorf("set genesis failed: %v", err)
+	}
+
+	h.watcher.Notify(ordering.Event{Index: 0})
+
+	close(h.started)
+
+	return nil
 }

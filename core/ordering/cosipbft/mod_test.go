@@ -118,6 +118,8 @@ func TestService_Setup(t *testing.T) {
 	srvc := &Service{processor: newProcessor()}
 	srvc.rpc = rpc
 	srvc.hashFactory = crypto.NewSha256Factory()
+	srvc.tree = blockstore.NewTreeCache(fakeTree{})
+	srvc.genesis = blockstore.NewGenesisStore()
 
 	rpc.Done()
 
@@ -127,16 +129,23 @@ func TestService_Setup(t *testing.T) {
 	err := srvc.Setup(ctx, authority)
 	require.NoError(t, err)
 
-	srvc.hashFactory = fake.NewHashFactory(fake.NewBadHash())
 	err = srvc.Setup(ctx, authority)
 	require.EqualError(t, err,
-		"creating genesis: fingerprint failed: couldn't write root: fake error")
+		"creating genesis: set genesis failed: genesis block is already set")
 
-	srvc.hashFactory = crypto.NewSha256Factory()
+	srvc.started = make(chan struct{})
+	srvc.genesis = fakeGenesisStore{errGet: xerrors.New("oops")}
+	err = srvc.Setup(ctx, authority)
+	require.EqualError(t, err, "failed to read genesis: oops")
+
+	srvc.started = make(chan struct{})
+	srvc.genesis = blockstore.NewGenesisStore()
 	srvc.rpc = fake.NewBadRPC()
 	err = srvc.Setup(ctx, authority)
 	require.EqualError(t, err, "sending genesis: fake error")
 
+	srvc.started = make(chan struct{})
+	srvc.genesis = blockstore.NewGenesisStore()
 	rpc = fake.NewRPC()
 	rpc.SendResponseWithError(fake.NewAddress(1), xerrors.New("oops"))
 	srvc.rpc = rpc

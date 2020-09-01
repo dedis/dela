@@ -198,7 +198,9 @@ func TestChain_GetBlock(t *testing.T) {
 }
 
 func TestChain_Verify(t *testing.T) {
-	genesis, err := NewGenesis(fake.NewAuthority(3, fake.NewSigner))
+	ro := roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+
+	genesis, err := NewGenesis(ro)
 	require.NoError(t, err)
 
 	c := NewChain(makeLink(t, genesis.digest), nil)

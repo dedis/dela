@@ -17,6 +17,7 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
 
@@ -71,7 +72,12 @@ func TestProcessor_GenesisMessage_Process(t *testing.T) {
 	proc.tree = blockstore.NewTreeCache(fakeTree{})
 	proc.genesis = blockstore.NewGenesisStore()
 
-	genesis, err := types.NewGenesis(fake.NewAuthority(3, fake.NewSigner))
+	root := types.Digest{}
+	copy(root[:], []byte("root"))
+
+	ro := roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+
+	genesis, err := types.NewGenesis(ro, types.WithGenesisRoot(root))
 	require.NoError(t, err)
 
 	req := mino.Request{
@@ -82,6 +88,19 @@ func TestProcessor_GenesisMessage_Process(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, msg)
 
+	proc.genesis = blockstore.NewGenesisStore()
+	proc.context = fake.NewContext()
+	_, err = proc.Process(req)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to serialize roster: couldn't encode roster: ")
+
+	wrongGenesis, err := types.NewGenesis(ro)
+	require.NoError(t, err)
+
+	proc.context = json.NewContext()
+	_, err = proc.Process(mino.Request{Message: types.NewGenesisMessage(wrongGenesis)})
+	require.EqualError(t, err, "mismatch tree root '00000000' != '726f6f74'")
+
 	proc.tree = blockstore.NewTreeCache(fakeTree{errStage: xerrors.New("oops")})
 	_, err = proc.Process(req)
 	require.EqualError(t, err, "tree stage failed: oops")
@@ -91,7 +110,7 @@ func TestProcessor_GenesisMessage_Process(t *testing.T) {
 	require.EqualError(t, err, "tree commit failed: oops")
 
 	proc.tree = blockstore.NewTreeCache(fakeTree{})
-	proc.genesis = badGenesisStore{}
+	proc.genesis = fakeGenesisStore{errSet: xerrors.New("oops")}
 	_, err = proc.Process(req)
 	require.EqualError(t, err, "set genesis failed: oops")
 }
@@ -255,10 +274,21 @@ func (t fakeTree) Commit() error {
 	return t.errCommit
 }
 
-type badGenesisStore struct {
+type fakeGenesisStore struct {
 	blockstore.GenesisStore
+
+	errGet error
+	errSet error
 }
 
-func (s badGenesisStore) Set(types.Genesis) error {
-	return xerrors.New("oops")
+func (s fakeGenesisStore) Exists() bool {
+	return false
+}
+
+func (s fakeGenesisStore) Get() (types.Genesis, error) {
+	return types.Genesis{}, s.errGet
+}
+
+func (s fakeGenesisStore) Set(types.Genesis) error {
+	return s.errSet
 }
