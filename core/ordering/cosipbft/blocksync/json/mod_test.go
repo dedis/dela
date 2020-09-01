@@ -16,9 +16,9 @@ func TestMsgFormat_Encode(t *testing.T) {
 
 	ctx := fake.NewContext()
 
-	data, err := format.Encode(ctx, types.NewSyncMessage(5))
+	data, err := format.Encode(ctx, types.NewSyncMessage(fakeChain{}))
 	require.NoError(t, err)
-	require.Equal(t, `{"Message":{"LatestIndex":5}}`, string(data))
+	require.Equal(t, `{"Message":{"Chain":{}}}`, string(data))
 
 	data, err = format.Encode(ctx, types.NewSyncRequest(3))
 	require.NoError(t, err)
@@ -35,6 +35,9 @@ func TestMsgFormat_Encode(t *testing.T) {
 	_, err = format.Encode(ctx, fake.Message{})
 	require.EqualError(t, err, "unsupported message 'fake.Message'")
 
+	_, err = format.Encode(ctx, types.NewSyncMessage(fakeChain{err: xerrors.New("oops")}))
+	require.EqualError(t, err, "failed to encode chain: oops")
+
 	_, err = format.Encode(ctx, types.NewSyncReply(fakeLink{err: xerrors.New("oops")}))
 	require.EqualError(t, err, "link serialization failed: oops")
 
@@ -47,10 +50,11 @@ func TestMsgFormat_Decode(t *testing.T) {
 
 	ctx := fake.NewContext()
 	ctx = serde.WithFactory(ctx, types.LinkKey{}, fakeLinkFac{})
+	ctx = serde.WithFactory(ctx, types.ChainKey{}, fakeChainFac{})
 
 	msg, err := format.Decode(ctx, []byte(`{"Message":{}}`))
 	require.NoError(t, err)
-	require.Equal(t, types.NewSyncMessage(0), msg)
+	require.Equal(t, types.NewSyncMessage(fakeChain{}), msg)
 
 	msg, err = format.Decode(ctx, []byte(`{"Request":{}}`))
 	require.NoError(t, err)
@@ -70,6 +74,14 @@ func TestMsgFormat_Decode(t *testing.T) {
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
 	require.EqualError(t, err, "unmarshal failed: fake error")
 
+	ctx = serde.WithFactory(ctx, types.ChainKey{}, fakeChainFac{err: xerrors.New("oops")})
+	_, err = format.Decode(ctx, []byte(`{"Message":{}}`))
+	require.EqualError(t, err, "failed to decode chain: oops")
+
+	ctx = serde.WithFactory(ctx, types.ChainKey{}, fake.MessageFactory{})
+	_, err = format.Decode(ctx, []byte(`{"Message":{}}`))
+	require.EqualError(t, err, "invalid chain factory 'fake.MessageFactory'")
+
 	ctx = serde.WithFactory(ctx, types.LinkKey{}, fakeLinkFac{err: xerrors.New("oops")})
 	_, err = format.Decode(ctx, []byte(`{"Reply":{"Link":{}}}`))
 	require.EqualError(t, err, "couldn't decode link: oops")
@@ -80,6 +92,26 @@ func TestMsgFormat_Decode(t *testing.T) {
 }
 
 // Utility functions -----------------------------------------------------------
+
+type fakeChain struct {
+	otypes.Chain
+
+	err error
+}
+
+func (chain fakeChain) Serialize(serde.Context) ([]byte, error) {
+	return []byte("{}"), chain.err
+}
+
+type fakeChainFac struct {
+	otypes.ChainFactory
+
+	err error
+}
+
+func (fac fakeChainFac) ChainOf(serde.Context, []byte) (otypes.Chain, error) {
+	return fakeChain{}, fac.err
+}
 
 type fakeLink struct {
 	otypes.BlockLink
@@ -92,7 +124,7 @@ func (link fakeLink) Serialize(serde.Context) ([]byte, error) {
 }
 
 type fakeLinkFac struct {
-	otypes.BlockLinkFactory
+	otypes.LinkFactory
 
 	err error
 }

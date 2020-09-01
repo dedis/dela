@@ -137,7 +137,7 @@ func TestProcessor_Unsupported_Process(t *testing.T) {
 
 // Utility functions -----------------------------------------------------------
 
-func makeBlock(t *testing.T, from types.Digest, opts ...types.BlockLinkOption) types.BlockLink {
+func makeBlock(t *testing.T, from types.Digest, opts ...types.LinkOption) types.BlockLink {
 	block, err := types.NewBlock(simple.NewData(nil))
 	require.NoError(t, err)
 
@@ -231,6 +231,10 @@ type fakeTree struct {
 
 func (t fakeTree) GetRoot() []byte {
 	return []byte("root")
+}
+
+func (t fakeTree) GetPath(key []byte) (hashtree.Path, error) {
+	return nil, t.err
 }
 
 func (t fakeTree) Get(key []byte) ([]byte, error) {

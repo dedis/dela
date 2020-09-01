@@ -16,6 +16,7 @@ func init() {
 	types.RegisterMessageFormat(serde.FormatJSON, msgFormat{})
 	types.RegisterBlockFormat(serde.FormatJSON, blockFormat{})
 	types.RegisterLinkFormat(serde.FormatJSON, linkFormat{})
+	types.RegisterChainFormat(serde.FormatJSON, chainFormat{})
 }
 
 type GenesisJSON struct {
@@ -28,12 +29,17 @@ type BlockJSON struct {
 	Data     json.RawMessage
 }
 
-type BlockLinkJSON struct {
+type LinkJSON struct {
 	From             types.Digest
-	Block            json.RawMessage
+	To               *types.Digest `json:",omitempty"`
 	PrepareSignature json.RawMessage
 	CommitSignature  json.RawMessage
 	ChangeSet        json.RawMessage
+	Block            json.RawMessage `json:",omitempty"`
+}
+
+type ChainJSON struct {
+	Links []json.RawMessage
 }
 
 type GenesisMessageJSON struct {
@@ -162,7 +168,7 @@ func (f blockFormat) Decode(ctx serde.Context, data []byte) (serde.Message, erro
 
 	blockdata, err := fac.DataOf(ctx, m.Data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to decode data: %v", err)
 	}
 
 	block, err := types.NewBlock(
@@ -275,7 +281,7 @@ func (f msgFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error)
 
 		msg, err := factory.Deserialize(ctx, m.Block.Block)
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("failed to decode block: %v", err)
 		}
 
 		block, ok := msg.(types.Block)

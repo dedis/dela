@@ -112,13 +112,17 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 
 	blockFac := types.NewBlockFactory(param.Validation.GetFactory())
 	csFac := roster.NewChangeSetFactory(param.Mino.GetAddressFactory(), param.Cosi.GetPublicKeyFactory())
-	linkFac := types.NewBlockLinkFactory(blockFac, param.Cosi.GetSignatureFactory(), csFac)
+	linkFac := types.NewLinkFactory(blockFac, param.Cosi.GetSignatureFactory(), csFac)
+	chainFac := types.NewChainFactory(linkFac)
 
 	syncparam := blocksync.SyncParam{
-		Mino:        param.Mino,
-		Blocks:      tmpl.blocks,
-		PBFT:        proc.pbftsm,
-		LinkFactory: linkFac,
+		Mino:            param.Mino,
+		Blocks:          tmpl.blocks,
+		Genesis:         tmpl.genesis,
+		PBFT:            proc.pbftsm,
+		LinkFactory:     linkFac,
+		ChainFactory:    chainFac,
+		VerifierFactory: param.Cosi.GetVerifierFactory(),
 	}
 
 	blocksync, err := blocksync.NewSynchronizer(syncparam)
@@ -207,12 +211,10 @@ func (s *Service) GetProof(key []byte) (ordering.Proof, error) {
 		return nil, xerrors.Errorf("reading path: %v", err)
 	}
 
-	chain := make([]types.BlockLink, 0, s.blocks.Len())
-
-	s.blocks.Range(func(link types.BlockLink) bool {
-		chain = append(chain, link)
-		return true
-	})
+	chain, err := s.blocks.GetChain()
+	if err != nil {
+		return nil, xerrors.Errorf("reading chain: %v", err)
+	}
 
 	return newProof(path, chain), nil
 }
@@ -252,7 +254,7 @@ func (s *Service) watchBlocks() {
 
 	for link := range linkCh {
 		// 1. Remove the transactions from the pool to avoid duplicates.
-		for _, res := range link.GetTo().GetData().GetTransactionResults() {
+		for _, res := range link.GetBlock().GetData().GetTransactionResults() {
 			s.pool.Remove(res.GetTransaction())
 		}
 
@@ -263,7 +265,7 @@ func (s *Service) watchBlocks() {
 		}
 
 		event := ordering.Event{
-			Index: link.GetTo().GetIndex(),
+			Index: link.GetBlock().GetIndex(),
 		}
 
 		// 3. Notify the main loop that a new block has been created, but ignore

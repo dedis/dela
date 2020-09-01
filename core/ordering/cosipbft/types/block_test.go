@@ -13,7 +13,6 @@ import (
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -22,9 +21,6 @@ func init() {
 	RegisterGenesisFormat(fake.BadFormat, fake.NewBadFormat())
 	RegisterBlockFormat(fake.GoodFormat, fake.Format{Msg: Block{}})
 	RegisterBlockFormat(fake.BadFormat, fake.NewBadFormat())
-	RegisterLinkFormat(fake.GoodFormat, fake.Format{Msg: blockLink{}})
-	RegisterLinkFormat(fake.BadFormat, fake.NewBadFormat())
-	RegisterLinkFormat(serde.Format("badtype"), fake.Format{Msg: fake.Message{}})
 }
 
 func TestDigest_String(t *testing.T) {
@@ -102,112 +98,6 @@ func TestGenesisFactory_Deserialize(t *testing.T) {
 
 	_, err = fac.Deserialize(fake.NewBadContext(), nil)
 	require.EqualError(t, err, "decoding failed: fake error")
-}
-
-func TestBlockLink_New(t *testing.T) {
-	link, err := NewBlockLink(Digest{1}, Block{})
-	require.NoError(t, err)
-	require.Equal(t, Digest{1}, link.GetFrom())
-
-	opts := []BlockLinkOption{
-		WithSignatures(fake.Signature{}, fake.Signature{}),
-		WithChangeSet(roster.ChangeSet{}),
-	}
-
-	link, err = NewBlockLink(Digest{1}, Block{}, opts...)
-	require.NoError(t, err)
-	require.Equal(t, fake.Signature{}, link.GetPrepareSignature())
-	require.Equal(t, fake.Signature{}, link.GetCommitSignature())
-
-	opts = []BlockLinkOption{
-		WithLinkHashFactory(fake.NewHashFactory(fake.NewBadHash())),
-	}
-
-	_, err = NewBlockLink(Digest{1}, Block{}, opts...)
-	require.EqualError(t, err, "failed to fingerprint: couldn't write from: fake error")
-}
-
-func TestBlockLink_GetHash(t *testing.T) {
-	link := blockLink{digest: Digest{1}}
-
-	require.Equal(t, Digest{1}, link.GetHash())
-}
-
-func TestBlockLink_GetFrom(t *testing.T) {
-	link := blockLink{from: Digest{2}}
-
-	require.Equal(t, Digest{2}, link.GetFrom())
-}
-
-func TestBlockLink_GetTo(t *testing.T) {
-	block := Block{index: 5}
-	link := blockLink{to: block}
-
-	require.Equal(t, block, link.GetTo())
-}
-
-func TestBlockLink_GetPrepareSignature(t *testing.T) {
-	link := blockLink{prepareSig: fake.Signature{}}
-
-	require.NotNil(t, link.GetPrepareSignature())
-	require.Nil(t, link.GetCommitSignature())
-}
-
-func TestBlockLink_GetCommitSignature(t *testing.T) {
-	link := blockLink{commitSig: fake.Signature{}}
-
-	require.NotNil(t, link.GetCommitSignature())
-	require.Nil(t, link.GetPrepareSignature())
-}
-
-func TestBlockLink_GetChangeSet(t *testing.T) {
-	link := blockLink{
-		changeset: roster.ChangeSet{},
-	}
-
-	require.Equal(t, roster.ChangeSet{}, link.GetChangeSet())
-}
-
-func TestBlockLink_Fingerprint(t *testing.T) {
-	link, err := NewBlockLink(Digest{}, Block{digest: Digest{}})
-	require.NoError(t, err)
-
-	buffer := new(bytes.Buffer)
-
-	err = link.Fingerprint(buffer)
-	require.NoError(t, err)
-	require.Regexp(t, "^\x00{64}$", buffer.String())
-
-	err = link.Fingerprint(fake.NewBadHash())
-	require.EqualError(t, err, "couldn't write from: fake error")
-
-	err = link.Fingerprint(fake.NewBadHashWithDelay(1))
-	require.EqualError(t, err, "couldn't write to: fake error")
-}
-
-func TestBlockLink_Serialize(t *testing.T) {
-	link := blockLink{}
-
-	data, err := link.Serialize(fake.NewContext())
-	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
-
-	_, err = link.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "encoding failed: fake error")
-}
-
-func TestBlockLinkFac_Deserialize(t *testing.T) {
-	fac := NewBlockLinkFactory(BlockFactory{}, fake.SignatureFactory{}, roster.NewChangeSetFactory(fake.AddressFactory{}, fake.PublicKeyFactory{}))
-
-	msg, err := fac.Deserialize(fake.NewContext(), nil)
-	require.NoError(t, err)
-	require.Equal(t, blockLink{}, msg)
-
-	_, err = fac.Deserialize(fake.NewBadContext(), nil)
-	require.EqualError(t, err, "decoding failed: fake error")
-
-	_, err = fac.Deserialize(fake.NewContextWithFormat(serde.Format("badtype")), nil)
-	require.EqualError(t, err, "invalid block link 'fake.Message'")
 }
 
 func TestBlock_GetHash(t *testing.T) {
@@ -289,7 +179,7 @@ func TestBlockFactory_Deserialize(t *testing.T) {
 	require.IsType(t, Block{}, msg)
 
 	_, err = fac.Deserialize(fake.NewBadContext(), nil)
-	require.EqualError(t, err, "decoding failed: fake error")
+	require.EqualError(t, err, "decoding block failed: fake error")
 }
 
 // Utility functions -----------------------------------------------------------

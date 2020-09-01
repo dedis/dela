@@ -15,7 +15,7 @@ func init() {
 
 // SyncMessageJSON is the JSON representation of a sync announcement.
 type SyncMessageJSON struct {
-	LatestIndex uint64
+	Chain json.RawMessage
 }
 
 // SyncRequestJSON is the JSON representation of a sync request.
@@ -51,8 +51,13 @@ func (fmt msgFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error
 
 	switch in := msg.(type) {
 	case types.SyncMessage:
+		chain, err := in.GetChain().Serialize(ctx)
+		if err != nil {
+			return nil, xerrors.Errorf("failed to encode chain: %v", err)
+		}
+
 		sm := SyncMessageJSON{
-			LatestIndex: in.GetLatestIndex(),
+			Chain: chain,
 		}
 
 		m.Message = &sm
@@ -97,7 +102,19 @@ func (fmt msgFormat) Decode(ctx serde.Context, data []byte) (serde.Message, erro
 	}
 
 	if m.Message != nil {
-		return types.NewSyncMessage(m.Message.LatestIndex), nil
+		fac := ctx.GetFactory(types.ChainKey{})
+
+		factory, ok := fac.(otypes.ChainFactory)
+		if !ok {
+			return nil, xerrors.Errorf("invalid chain factory '%T'", fac)
+		}
+
+		chain, err := factory.ChainOf(ctx, m.Message.Chain)
+		if err != nil {
+			return nil, xerrors.Errorf("failed to decode chain: %v", err)
+		}
+
+		return types.NewSyncMessage(chain), nil
 	}
 
 	if m.Request != nil {
@@ -107,7 +124,7 @@ func (fmt msgFormat) Decode(ctx serde.Context, data []byte) (serde.Message, erro
 	if m.Reply != nil {
 		fac := ctx.GetFactory(types.LinkKey{})
 
-		factory, ok := fac.(otypes.BlockLinkFactory)
+		factory, ok := fac.(otypes.LinkFactory)
 		if !ok {
 			return nil, xerrors.Errorf("invalid link factory '%T'", fac)
 		}

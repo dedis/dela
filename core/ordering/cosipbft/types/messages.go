@@ -193,8 +193,8 @@ type GenesisKey struct{}
 // BlockKey is the key of the block factory.
 type BlockKey struct{}
 
-// BlockLinkKey is the key of the block link factory.
-type BlockLinkKey struct{}
+// LinkKey is the key of the link factory.
+type LinkKey struct{}
 
 // SignatureKey is the key of the collective signature factory.
 type SignatureKey struct{}
@@ -224,7 +224,7 @@ func (f MessageFactory) Deserialize(ctx serde.Context, data []byte) (serde.Messa
 	ctx = serde.WithFactory(ctx, GenesisKey{}, f.genesisFac)
 	ctx = serde.WithFactory(ctx, BlockKey{}, f.blockFac)
 	ctx = serde.WithFactory(ctx, SignatureKey{}, f.sigFac)
-	ctx = serde.WithFactory(ctx, BlockLinkKey{}, NewBlockLinkFactory(f.blockFac, f.sigFac, f.csFac))
+	ctx = serde.WithFactory(ctx, LinkKey{}, NewLinkFactory(f.blockFac, f.sigFac, f.csFac))
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {

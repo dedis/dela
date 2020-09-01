@@ -45,6 +45,10 @@ type BlockStore interface {
 	// GetByIndex return the block link associated to the index, or an error.
 	GetByIndex(index uint64) (types.BlockLink, error)
 
+	// GetChain returns a chain of the blocks. It can be used to prove the
+	// integrity of a the last block from the genesis.
+	GetChain() (types.Chain, error)
+
 	// Last must return the latest block link in the store.
 	Last() (types.BlockLink, error)
 

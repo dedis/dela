@@ -45,9 +45,8 @@ func (s *InMemory) Store(link types.BlockLink) error {
 	if len(s.blocks) > 0 {
 		latest := s.blocks[len(s.blocks)-1]
 
-		if latest.GetTo().GetHash() != link.GetFrom() {
-			return xerrors.Errorf("mismatch link '%v' != '%v'",
-				link.GetFrom(), latest.GetTo().GetHash())
+		if latest.GetTo() != link.GetFrom() {
+			return xerrors.Errorf("mismatch link '%v' != '%v'", link.GetFrom(), latest.GetTo())
 		}
 	}
 
@@ -65,7 +64,7 @@ func (s *InMemory) Get(id types.Digest) (types.BlockLink, error) {
 	defer s.Unlock()
 
 	for _, link := range s.blocks {
-		if link.GetTo().GetHash() == id {
+		if link.GetTo() == id {
 			return link, nil
 		}
 	}
@@ -84,6 +83,30 @@ func (s *InMemory) GetByIndex(index uint64) (types.BlockLink, error) {
 	}
 
 	return s.blocks[index], nil
+}
+
+// GetChain implements blockstore.BlockStore. It returns the chain to the latest
+// block.
+func (s *InMemory) GetChain() (types.Chain, error) {
+	s.Lock()
+	defer s.Unlock()
+
+	num := len(s.blocks) - 1
+
+	if num < 0 {
+		return nil, xerrors.New("store is empty")
+	}
+
+	if num == 0 {
+		return types.NewChain(s.blocks[num], nil), nil
+	}
+
+	prevs := make([]types.Link, num)
+	for i, block := range s.blocks[:num] {
+		prevs[i] = block.Reduce()
+	}
+
+	return types.NewChain(s.blocks[num], prevs), nil
 }
 
 // Last implements blockstore.BlockStore. It returns the latest block of the

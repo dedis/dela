@@ -17,23 +17,26 @@ func RegisterMessageFormat(f serde.Format, e serde.FormatEngine) {
 // SyncMessage is the announcement sent to the participants with the latest
 // index of the leader.
 //
-// TODO: proof
-//
 // - implements serde.Message
 type SyncMessage struct {
-	latestIndex uint64
+	chain types.Chain
 }
 
 // NewSyncMessage creates a new announcement message.
-func NewSyncMessage(index uint64) SyncMessage {
+func NewSyncMessage(chain types.Chain) SyncMessage {
 	return SyncMessage{
-		latestIndex: index,
+		chain: chain,
 	}
+}
+
+// GetChain returns the chain that proves the latest index.
+func (m SyncMessage) GetChain() types.Chain {
+	return m.chain
 }
 
 // GetLatestIndex returns the latest index.
 func (m SyncMessage) GetLatestIndex() uint64 {
-	return m.latestIndex
+	return m.chain.GetBlock().GetIndex()
 }
 
 // Serialize implements serde.Message. It returns the serialized data for this
@@ -136,20 +139,25 @@ func (m SyncAck) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
-// LinkKey is the key for the block link factory.
+// LinkKey is the key of the block link factory.
 type LinkKey struct{}
+
+// ChainKey is the key of the chain factory.
+type ChainKey struct{}
 
 // MessageFactory is a message factory for sync messages.
 //
 // - implements serde.Factory
 type MessageFactory struct {
-	linkFac types.BlockLinkFactory
+	linkFac  types.LinkFactory
+	chainFac types.ChainFactory
 }
 
 // NewMessageFactory createsa new message factory.
-func NewMessageFactory(fac types.BlockLinkFactory) MessageFactory {
+func NewMessageFactory(fac types.LinkFactory, chainFac types.ChainFactory) MessageFactory {
 	return MessageFactory{
-		linkFac: fac,
+		linkFac:  fac,
+		chainFac: chainFac,
 	}
 }
 
@@ -159,6 +167,7 @@ func (fac MessageFactory) Deserialize(ctx serde.Context, data []byte) (serde.Mes
 	format := msgFormats.Get(ctx.GetFormat())
 
 	ctx = serde.WithFactory(ctx, LinkKey{}, fac.linkFac)
+	ctx = serde.WithFactory(ctx, ChainKey{}, fac.chainFac)
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {

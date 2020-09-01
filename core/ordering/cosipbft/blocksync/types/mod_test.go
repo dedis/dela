@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
+	"go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
 )
@@ -16,14 +17,20 @@ func init() {
 	RegisterMessageFormat(fake.BadFormat, fake.NewBadFormat())
 }
 
+func TestSyncMessage_GetChain(t *testing.T) {
+	m := NewSyncMessage(makeChain(t, 5))
+
+	require.NotNil(t, m.GetChain())
+}
+
 func TestSyncMessage_GetLatestIndex(t *testing.T) {
-	m := NewSyncMessage(5)
+	m := NewSyncMessage(makeChain(t, 5))
 
 	require.Equal(t, uint64(5), m.GetLatestIndex())
 }
 
 func TestSyncMessage_Serialize(t *testing.T) {
-	m := NewSyncMessage(6)
+	m := NewSyncMessage(makeChain(t, 6))
 
 	data, err := m.Serialize(fake.NewContext())
 	require.NoError(t, err)
@@ -87,7 +94,9 @@ func TestSyncAck_Serialize(t *testing.T) {
 func TestMessageFactory_Deserialize(t *testing.T) {
 	testCalls.Clear()
 
-	fac := NewMessageFactory(types.NewBlockLinkFactory(nil, nil, nil))
+	linkFac := types.NewLinkFactory(nil, nil, nil)
+
+	fac := NewMessageFactory(linkFac, types.NewChainFactory(linkFac))
 
 	msg, err := fac.Deserialize(fake.NewContext(), nil)
 	require.NoError(t, err)
@@ -98,4 +107,16 @@ func TestMessageFactory_Deserialize(t *testing.T) {
 
 	_, err = fac.Deserialize(fake.NewBadContext(), nil)
 	require.EqualError(t, err, "decoding failed: fake error")
+}
+
+// Utility functions -----------------------------------------------------------
+
+func makeChain(t *testing.T, index uint64) types.Chain {
+	block, err := types.NewBlock(simple.NewData(nil), types.WithIndex(index))
+	require.NoError(t, err)
+
+	link, err := types.NewBlockLink(types.Digest{}, block)
+	require.NoError(t, err)
+
+	return types.NewChain(link, nil)
 }

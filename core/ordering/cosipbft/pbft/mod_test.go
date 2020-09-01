@@ -241,8 +241,8 @@ func TestStateMachine_Finalize(t *testing.T) {
 	sm.round.tree = tree.(hashtree.StagingTree)
 	sm.hashFac = fake.NewHashFactory(fake.NewBadHash())
 	err = sm.Finalize(types.Digest{1}, fake.Signature{})
-	require.EqualError(t, err,
-		"database failed: failed to fingerprint: couldn't write from: fake error")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "database failed: creating link:")
 
 	sm.hashFac = crypto.NewSha256Factory()
 	sm.blocks = badBlockStore{}
@@ -345,7 +345,7 @@ func TestStateMachine_CatchUp(t *testing.T) {
 
 	sm := NewStateMachine(param).(*pbftsm)
 
-	opts := []types.BlockLinkOption{
+	opts := []types.LinkOption{
 		types.WithSignatures(fake.Signature{}, fake.Signature{}),
 		types.WithChangeSet(roster.ChangeSet{}),
 	}
@@ -369,7 +369,7 @@ func TestStateMachine_CatchUp(t *testing.T) {
 	err = sm.CatchUp(link)
 	require.EqualError(t, err, "commit failed: verifier failed: fake error")
 
-	opts = []types.BlockLinkOption{
+	opts = []types.LinkOption{
 		types.WithSignatures(fake.NewBadSignature(), fake.Signature{}),
 		types.WithChangeSet(roster.ChangeSet{}),
 	}

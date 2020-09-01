@@ -10,7 +10,8 @@ import (
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blocksync/types"
 	"go.dedis.ch/dela/core/ordering/cosipbft/pbft"
-	cosipbft "go.dedis.ch/dela/core/ordering/cosipbft/types"
+	otypes "go.dedis.ch/dela/core/ordering/cosipbft/types"
+	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
 )
@@ -31,10 +32,13 @@ type defaultSync struct {
 
 // SyncParam is the parameter object to create a new synchronizer.
 type SyncParam struct {
-	Mino        mino.Mino
-	PBFT        pbft.StateMachine
-	Blocks      blockstore.BlockStore
-	LinkFactory cosipbft.BlockLinkFactory
+	Mino            mino.Mino
+	PBFT            pbft.StateMachine
+	Blocks          blockstore.BlockStore
+	Genesis         blockstore.GenesisStore
+	LinkFactory     otypes.LinkFactory
+	ChainFactory    otypes.ChainFactory
+	VerifierFactory crypto.VerifierFactory
 }
 
 // NewSynchronizer creates a new block synchronizer.
@@ -44,13 +48,17 @@ func NewSynchronizer(param SyncParam) (Synchronizer, error) {
 	logger := dela.Logger.With().Str("addr", param.Mino.GetAddress().String()).Logger()
 
 	h := &handler{
-		logger: logger,
-		latest: &latest,
-		blocks: param.Blocks,
-		pbftsm: param.PBFT,
+		logger:      logger,
+		latest:      &latest,
+		genesis:     param.Genesis,
+		blocks:      param.Blocks,
+		pbftsm:      param.PBFT,
+		verifierFac: param.VerifierFactory,
 	}
 
-	rpc, err := param.Mino.MakeRPC("blocksync", h, types.NewMessageFactory(param.LinkFactory))
+	fac := types.NewMessageFactory(param.LinkFactory, param.ChainFactory)
+
+	rpc, err := param.Mino.MakeRPC("blocksync", h, fac)
 	if err != nil {
 		return nil, xerrors.Errorf("rpc creation failed: %v", err)
 	}
@@ -75,6 +83,12 @@ func (s defaultSync) GetLatest() uint64 {
 // Sync implements blocksync.Synchronizer. it starts a routine to first
 // soft-sync the participants and then send the blocks when necessary.
 func (s defaultSync) Sync(ctx context.Context, players mino.Players, cfg Config) error {
+	if s.blocks.Len() == 0 {
+		// When the store is empty, that means that the participants are all
+		// synchronized anyway as there is no block.
+		return nil
+	}
+
 	sender, rcvr, err := s.rpc.Stream(ctx, players)
 	if err != nil {
 		return xerrors.Errorf("stream failed: %v", err)
@@ -82,9 +96,12 @@ func (s defaultSync) Sync(ctx context.Context, players mino.Players, cfg Config)
 
 	// 1. Send the announcement message to everyone so that they can learn about
 	// the latest block.
-	latest := s.blocks.Len()
+	chain, err := s.blocks.GetChain()
+	if err != nil {
+		return xerrors.Errorf("failed to read chain: %v", err)
+	}
 
-	errs := sender.Send(types.NewSyncMessage(latest), iter2arr(players.AddressIterator())...)
+	errs := sender.Send(types.NewSyncMessage(chain), iter2arr(players.AddressIterator())...)
 	for err := range errs {
 		if err != nil {
 			return xerrors.Errorf("announcement failed: %v", err)
@@ -147,10 +164,12 @@ type handler struct {
 	sync.Mutex
 	mino.UnsupportedHandler
 
-	latest *uint64
-	logger zerolog.Logger
-	blocks blockstore.BlockStore
-	pbftsm pbft.StateMachine
+	latest      *uint64
+	logger      zerolog.Logger
+	blocks      blockstore.BlockStore
+	genesis     blockstore.GenesisStore
+	pbftsm      pbft.StateMachine
+	verifierFac crypto.VerifierFactory
 }
 
 func (h *handler) Stream(out mino.Sender, in mino.Receiver) error {
@@ -164,6 +183,16 @@ func (h *handler) Stream(out mino.Sender, in mino.Receiver) error {
 	h.logger.Debug().
 		Uint64("index", m.GetLatestIndex()).
 		Msg("received synchronization message")
+
+	genesis, err := h.genesis.Get()
+	if err != nil {
+		return xerrors.Errorf("reading genesis: %v", err)
+	}
+
+	err = m.GetChain().Verify(genesis, h.verifierFac)
+	if err != nil {
+		return xerrors.Errorf("failed to verify chain: %v", err)
+	}
 
 	if m.GetLatestIndex() <= h.blocks.Len() {
 		// The block storage has already all the block known so far so we can
@@ -198,7 +227,7 @@ func (h *handler) Stream(out mino.Sender, in mino.Receiver) error {
 		reply, ok := msg.(types.SyncReply)
 		if ok {
 			h.logger.Debug().
-				Uint64("index", reply.GetLink().GetTo().GetIndex()).
+				Uint64("index", reply.GetLink().GetBlock().GetIndex()).
 				Msg("catch up block")
 
 			err = h.pbftsm.CatchUp(reply.GetLink())
@@ -220,14 +249,12 @@ func (h *handler) waitAnnounce(ctx context.Context,
 			return nil, nil, xerrors.Errorf("receiver failed: %v", err)
 		}
 
+		// The SyncMessage contains the chain to the latest block known by the
+		// leader which allows to verify if it is not lying.
 		m, ok := msg.(types.SyncMessage)
 		if ok {
 			return &m, orch, nil
 		}
-
-		// TODO: get a proof from the genesis to verify that the latest index
-		// exists. It should be at least equal to the current value as a leader
-		// won't send a previous index.
 	}
 }
 
