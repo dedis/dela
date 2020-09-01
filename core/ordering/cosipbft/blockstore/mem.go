@@ -97,10 +97,6 @@ func (s *InMemory) GetChain() (types.Chain, error) {
 		return nil, xerrors.New("store is empty")
 	}
 
-	if num == 0 {
-		return types.NewChain(s.blocks[num], nil), nil
-	}
-
 	prevs := make([]types.Link, num)
 	for i, block := range s.blocks[:num] {
 		prevs[i] = block.Reduce()
@@ -120,19 +116,6 @@ func (s *InMemory) Last() (types.BlockLink, error) {
 	}
 
 	return s.blocks[len(s.blocks)-1], nil
-}
-
-// Range implements blockstore.BlockStore. It iterates over the ordered list of
-// blocks stored until the callback returns false, or there is no more block.
-func (s *InMemory) Range(fn func(types.BlockLink) bool) {
-	s.Lock()
-	defer s.Unlock()
-
-	for _, block := range s.blocks {
-		if !fn(block) {
-			return
-		}
-	}
 }
 
 // Watch implements blockstore.BlockStore. It returns a channel populated with
