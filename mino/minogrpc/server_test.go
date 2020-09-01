@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"io"
 	"sync"
 	"testing"
 	"time"
@@ -184,12 +183,12 @@ func TestOverlayServer_Call(t *testing.T) {
 			context:     json.NewContext(),
 			addrFactory: AddressFactory{},
 		},
-		endpoints: new(sync.Map),
+		endpoints: make(map[string]*Endpoint),
 	}
 
-	overlay.endpoints.Store("test", &Endpoint{Handler: testHandler{}, Factory: fake.MessageFactory{}})
-	overlay.endpoints.Store("bad", &Endpoint{Handler: mino.UnsupportedHandler{}, Factory: fake.MessageFactory{}})
-	overlay.endpoints.Store("bad2", &Endpoint{Handler: testHandler{}, Factory: fake.NewBadMessageFactory()})
+	overlay.endpoints["test"] = &Endpoint{Handler: testHandler{}, Factory: fake.MessageFactory{}}
+	overlay.endpoints["bad"] = &Endpoint{Handler: mino.UnsupportedHandler{}, Factory: fake.MessageFactory{}}
+	overlay.endpoints["bad2"] = &Endpoint{Handler: testHandler{}, Factory: fake.NewBadMessageFactory()}
 
 	md := metadata.New(map[string]string{headerURIKey: "test"})
 	ctx := metadata.NewIncomingContext(context.Background(), md)
@@ -231,13 +230,13 @@ func TestOverlayServer_Stream(t *testing.T) {
 			me:          fake.NewAddress(0),
 		},
 		closer:    &sync.WaitGroup{},
-		endpoints: new(sync.Map),
+		endpoints: make(map[string]*Endpoint),
 	}
 
-	overlay.endpoints.Store("test", &Endpoint{Handler: testHandler{skip: true},
-		streams: make(map[string]*StreamSession)})
-	overlay.endpoints.Store("bad", &Endpoint{Handler: testHandler{skip: true,
-		err: xerrors.New("oops")}, streams: make(map[string]*StreamSession)})
+	overlay.endpoints["test"] = &Endpoint{Handler: testHandler{skip: true},
+		streams: make(map[string]*StreamSession)}
+	overlay.endpoints["bad"] = &Endpoint{Handler: testHandler{skip: true,
+		err: xerrors.New("oops")}, streams: make(map[string]*StreamSession)}
 
 	ch := make(chan *Envelope, 1)
 
@@ -348,7 +347,7 @@ func TestConnectionFactory_FromAddress(t *testing.T) {
 	require.EqualError(t, err, "invalid address type 'fake.Address'")
 }
 
-func TestDispatchMessage(t *testing.T) {
+func TestSenderProcessEnvelope(t *testing.T) {
 	me := fake.NewAddress(0)
 
 	inputs := [][]mino.Address{
@@ -396,7 +395,7 @@ func TestDispatchMessage(t *testing.T) {
 			router: fakeRouter{},
 		}
 
-		out, err := dispatchMessage(envelope, sender)
+		out, err := sender.processEnvelope(envelope)
 		require.NoError(t, err)
 
 		require.Equal(t, len(expected), len(out), "got from dispatch: %v", out)
@@ -431,7 +430,7 @@ func TestDispatchMessage(t *testing.T) {
 		},
 	}
 
-	_, err = dispatchMessage(envelope, sender)
+	_, err = sender.processEnvelope(envelope)
 	require.EqualError(t, err, "failed to find route from fake.Address[0] to fake.Address[1]: fake error")
 }
 
@@ -466,66 +465,14 @@ func TestSendToRelay(t *testing.T) {
 			addressFactory: fake.AddressFactory{},
 			queue:          newNonBlockingQueue(),
 		},
-		relays:      new(sync.Map),
+		clients:     make(map[mino.Address]chan OutContext),
 		connFactory: factory,
+		router:      fakeRouter{},
+		lock:        new(sync.Mutex),
 	}
 
-	out := map[mino.Address]*Envelope{factory.me: &envelope}
-	err = sendToRelays(context.Background(), sender, out)
-	require.NoError(t, err)
-
-	sender.relays.Store(factory.me.String(), &fakeStream{badSend: true})
-	err = sendToRelays(context.Background(), sender, out)
-	require.EqualError(t, err, "failed to send to relay '127.0.0.1:3333': oops")
-
-	out = map[mino.Address]*Envelope{fake.NewAddress(2): &envelope}
-	err = sendToRelays(context.Background(), sender, out)
-	require.EqualError(t, err, "failed to create addr: certificate for 'fake.Address[2]' not found")
-}
-
-func TestListenStream(t *testing.T) {
-	ctx := context.Background()
-	stream := &fakeStream{
-		outputs: []*Envelope{{}},
-	}
-
-	sender := sender{
-		me: fake.NewAddress(0),
-		receiver: receiver{
-			addressFactory: fake.AddressFactory{},
-			queue:          newNonBlockingQueue(),
-		},
-		router: fakeRouter{},
-		relays: new(sync.Map),
-	}
-
-	distantAddr := fake.NewAddress(1)
-
-	err := listenStream(ctx, stream, sender, distantAddr)
-	require.NoError(t, err)
-
-	addrBuf, err := fake.NewAddress(2).MarshalText()
-	require.NoError(t, err)
-
-	stream = &fakeStream{
-		outputs: []*Envelope{{
-			To: [][]byte{addrBuf},
-		}},
-	}
-
-	sender.relays.Store(fake.NewAddress(2).String(), &fakeStream{badSend: true})
-
-	err = listenStream(ctx, stream, sender, distantAddr)
-	require.EqualError(t, err, "failed to send to dispatched relays: failed to send to relay 'fake.Address[2]': oops")
-
-	sender.router = fakeRouter{isBad: true}
-	stream = &fakeStream{
-		outputs: []*Envelope{{
-			To: [][]byte{addrBuf},
-		}},
-	}
-	err = listenStream(ctx, stream, sender, distantAddr)
-	require.EqualError(t, err, "failed to dispatch: failed to find route from fake.Address[0] to fake.Address[2]: fake error")
+	err = sender.sendEnvelope(context.Background(), envelope)
+	require.Error(t, err)
 }
 
 // -----------------------------------------------------------------------------
@@ -680,35 +627,35 @@ func (p fakePacket) GetMessage(ctx serde.Context, f serde.Factory) (serde.Messag
 	panic("not implemented") // TODO: Implement
 }
 
-type fakeStream struct {
-	badSend bool
-	badRecv bool
-	outputs []*Envelope
-}
+// type fakeStream struct {
+// 	badSend bool
+// 	badRecv bool
+// 	outputs []*Envelope
+// }
 
-func (r fakeStream) Context() context.Context {
-	return context.Background()
-}
+// func (r fakeStream) Context() context.Context {
+// 	return context.Background()
+// }
 
-func (r fakeStream) Send(*Envelope) error {
-	if r.badSend {
-		return xerrors.Errorf("oops")
-	}
+// func (r fakeStream) Send(*Envelope) error {
+// 	if r.badSend {
+// 		return xerrors.Errorf("oops")
+// 	}
 
-	return nil
-}
+// 	return nil
+// }
 
-func (r *fakeStream) Recv() (*Envelope, error) {
-	if r.badRecv {
-		return nil, xerrors.Errorf("oops")
-	}
+// func (r *fakeStream) Recv() (*Envelope, error) {
+// 	if r.badRecv {
+// 		return nil, xerrors.Errorf("oops")
+// 	}
 
-	if len(r.outputs) == 0 {
-		return nil, io.EOF
-	}
+// 	if len(r.outputs) == 0 {
+// 		return nil, io.EOF
+// 	}
 
-	out := r.outputs[len(r.outputs)-1]
-	r.outputs = r.outputs[:len(r.outputs)-1]
+// 	out := r.outputs[len(r.outputs)-1]
+// 	r.outputs = r.outputs[:len(r.outputs)-1]
 
-	return out, nil
-}
+// 	return out, nil
+// }

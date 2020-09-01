@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"math/big"
@@ -48,7 +47,7 @@ var (
 type overlayServer struct {
 	overlay
 
-	endpoints *sync.Map // must contain only the type *Endpoint
+	endpoints map[string]*Endpoint
 	closer    *sync.WaitGroup
 }
 
@@ -140,12 +139,10 @@ func (o overlayServer) Call(ctx context.Context, msg *Message) (*Message, error)
 	// grpc metadata api. Using context.Value won't work.
 	uri := uriFromContext(ctx)
 
-	// If several are provided, only the first one is taken in account.
-	itf, ok := o.endpoints.Load(uri)
-	if !ok {
+	endpoint, found := o.endpoints[uri]
+	if !found {
 		return nil, xerrors.Errorf("handler '%s' is not registered", uri)
 	}
-	endpoint := itf.(*Endpoint)
 
 	message, err := endpoint.Factory.Deserialize(o.context, msg.GetPayload())
 	if err != nil {
@@ -186,11 +183,10 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 	// grpc metadata api. Using context.Value won't work.
 	uri := uriFromContext(stream.Context())
 
-	itf, ok := o.endpoints.Load(uri)
-	if !ok {
+	endpoint, found := o.endpoints[uri]
+	if !found {
 		return xerrors.Errorf("handler '%s' is not registered", uri)
 	}
-	endpoint := itf.(*Endpoint)
 
 	gateway := gatewayFromContext(stream.Context(), o.addrFactory)
 	if gateway == nil {
@@ -217,18 +213,12 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 			addressFactory: o.addrFactory,
 			errs:           errs,
 			queue:          newNonBlockingQueue(),
-			ctx:            stream.Context(),
 			logger: dela.Logger.With().Str("addr", o.me.String()).Logger().
 				With().Str("streamID", streamID).Logger(),
 		}
 
-		relays := new(sync.Map)
-		relays.Store(newRootAddress().String(), stream)
-		relays.Store(gateway.String(), stream)
-
 		sender := sender{
 			me:       o.me,
-			context:  o.context,
 			clients:  map[mino.Address]chan OutContext{},
 			receiver: receiver,
 			traffic:  o.traffic,
@@ -237,8 +227,13 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 			connFactory: o.connFactory,
 			uri:         uri,
 			gateway:     gateway,
-			relays:      relays,
 			streamID:    streamID,
+
+			// used to create relays
+			lock: new(sync.Mutex),
+
+			// used to notify when the context is done
+			done: make(chan struct{}),
 		}
 
 		session = &StreamSession{
@@ -248,13 +243,8 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 
 		endpoint.streams[streamID] = session
 
-		// When the handler is done we need to clean up the resources
-		defer func() {
-			endpoint.Lock()
-			close(errs)
-			delete(endpoint.streams, streamID)
-			endpoint.Unlock()
-		}()
+		sender.setupSendChan(stream, gateway)
+
 	}
 
 	endpoint.Unlock()
@@ -268,18 +258,25 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 		headerURIKey, uri, headerGatewayKey, string(mebuf), headerStreamIDKey,
 		streamID))
 
-	f := func() error {
-		return listenStream(relayCtx, stream, session.sender, gateway)
-	}
-	msg := fmt.Sprintf("failed to listen to our gateway '%s'", gateway)
-
-	go execOrFil(f, session.sender.receiver.errs, msg)
+	go session.sender.listenStream(relayCtx, stream, gateway)
 
 	if first {
 		err := endpoint.Handler.Stream(session.sender, session.receiver)
 		if err != nil {
 			return xerrors.Errorf("handler failed to process: %v", err)
 		}
+
+		// The participant is done but waits for the protocol to end.
+		<-stream.Context().Done()
+
+		close(session.sender.done)
+
+		// When the handler is done we need to clean up the resourcess
+		endpoint.Lock()
+		delete(endpoint.streams, streamID)
+		endpoint.Unlock()
+
+		return nil
 	}
 
 	// The participant is done but waits for the protocol to end.
@@ -288,32 +285,136 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 	return nil
 }
 
-// dispatchMessage creates multiple envelopes based on the relays needed for
+func (s sender) setupSendChan(stream relayer, addr mino.Address) {
+
+	// The send channel
+	out := make(chan OutContext)
+	s.clients[addr] = out
+
+	go func() {
+		for {
+			select {
+			case msg := <-out:
+				err := stream.Send(msg.Envelope)
+				if err == io.EOF {
+					close(msg.Done)
+					return
+				}
+				if err != nil {
+					msg.Done <- xerrors.Errorf("failed to send: %v", err)
+				}
+				close(msg.Done)
+			case <-stream.Context().Done():
+				return
+			case <-s.done:
+				return
+			}
+		}
+	}()
+}
+
+// sendEnvelope creates the relays if needed and send the envelopes accordingly.
+func (s sender) sendEnvelope(ctx context.Context, envelope Envelope) error {
+
+	dispatched, err := s.processEnvelope(envelope)
+	if err != nil {
+		return xerrors.Errorf("failed to process envelope: %v", err)
+	}
+
+	for relayAddr, env := range dispatched {
+		// Special case when the message is sent back to the gateway. No need to
+		// setup the relay because we use our own stream.
+		if relayAddr.Equal(newRootAddress()) || relayAddr.Equal(s.gateway) {
+			s.traffic.logSend(ctx, s.me, s.gateway, env)
+			err := s.send(s.gateway, *env)
+			if err != nil {
+				s.receiver.logger.Warn().Msgf("failed to send to relay "+
+					"'%s': %v", s.gateway, err)
+			}
+
+			continue
+		}
+
+		err := s.SetupRelay(ctx, relayAddr)
+		if err != nil {
+			return xerrors.Errorf("failed to setup relay to '%s': %v",
+				relayAddr, err)
+		}
+
+		s.traffic.logSend(ctx, s.me, relayAddr, env)
+
+		err = s.send(relayAddr, *env)
+		if err != nil {
+			s.receiver.logger.Warn().Msgf("failed to send to relay '%s': %v",
+				relayAddr, err)
+		}
+
+	}
+
+	return nil
+}
+
+func (s sender) SetupRelay(ctx context.Context, addr mino.Address) error {
+	var relay relayer
+
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	_, found := s.clients[addr]
+	if !found {
+		s.receiver.logger.Trace().Msgf("opening a relay to %s", addr)
+
+		conn, err := s.connFactory.FromAddress(addr)
+		if err != nil {
+			return xerrors.Errorf("failed to create addr: %v", err)
+		}
+
+		cl := NewOverlayClient(conn)
+
+		relay, err = cl.Stream(ctx, grpc.WaitForReady(false))
+		if err != nil {
+			// TODO: this error is actually never seen by the user
+			// s.receiver.logger.Fatal().Msgf(
+			// 	"failed to call stream for relay '%s': %v", addr, err)
+			return xerrors.Errorf("'%s' failed to call stream for "+
+				"relay '%s': %v", s.me, addr, err)
+		}
+
+		s.traffic.addEvent("open", s.me, addr)
+
+		s.setupSendChan(relay, addr)
+		go s.listenStream(ctx, relay, addr)
+	}
+
+	return nil
+}
+
+// processEnvelope creates multiple envelopes based on the relays needed for
 // each recipient. It also notifies the receiver in case the recipient is
 // ourself. This function doesn't send any message, it only returns a map that
 // will allow us to then send the envelopes and create the necessary relays if
 // needed.
-func dispatchMessage(envelope Envelope, sender sender) (map[mino.Address]*Envelope, error) {
+func (s sender) processEnvelope(envelope Envelope) (map[mino.Address]*Envelope, error) {
 	out := map[mino.Address]*Envelope{}
 
 	tos := make([]mino.Address, len(envelope.To))
 	for i, addrBuf := range envelope.To {
-		tos[i] = sender.receiver.addressFactory.FromText(addrBuf)
+		tos[i] = s.receiver.addressFactory.FromText(addrBuf)
 	}
 
 	for _, tobuf := range envelope.GetTo() {
-		to := sender.receiver.addressFactory.FromText(tobuf)
+		to := s.receiver.addressFactory.FromText(tobuf)
 
-		if to.Equal(sender.me) {
-			sender.receiver.appendMessage(envelope.GetMessage())
+		if to.Equal(s.me) {
+			s.receiver.appendMessage(envelope.GetMessage())
 			continue
 		}
 
-		packet := sender.router.MakePacket(sender.me, to, envelope.GetMessage().GetPayload())
-		relay, err := sender.router.Forward(packet)
+		packet := s.router.MakePacket(s.me, to, envelope.GetMessage().GetPayload())
+		relay, err := s.router.Forward(packet)
 		if err != nil {
 			return nil, xerrors.Errorf("failed to find route from %s to %s: %v",
-				sender.me, to, err)
+				s.me, to, err)
 		}
 
 		env, found := out[relay]
@@ -330,105 +431,34 @@ func dispatchMessage(envelope Envelope, sender sender) (map[mino.Address]*Envelo
 	return out, nil
 }
 
-// sendToRelays set up the relays if needed and send the envelopes accordingly.
-func sendToRelays(relayCtx context.Context, sender sender, out map[mino.Address]*Envelope) error {
-	for relayAddr, env := range out {
-
-		itf, ok := sender.relays.Load(relayAddr.String())
-		var relay relayer
-
-		if ok {
-			relay = itf.(relayer)
-		} else {
-			conn, err := sender.connFactory.FromAddress(relayAddr)
-			if err != nil {
-				return xerrors.Errorf("failed to create addr: %v", err)
-			}
-
-			cl := NewOverlayClient(conn)
-
-			relay, err = cl.Stream(relayCtx, grpc.WaitForReady(false))
-			if err != nil {
-				// TODO: this error is actually never seen by the user
-				// sender.receiver.logger.Fatal().Msgf(
-				// 	"failed to call stream for relay '%s': %v", relayAddr, err)
-				return xerrors.Errorf("'%s' failed to call stream for relay '%s': %v", sender.me, relayAddr, err)
-			}
-
-			sender.traffic.addEvent("open", sender.me, relayAddr)
-
-			sender.relays.Store(relayAddr.String(), relay)
-
-			go func(relayAddr mino.Address) {
-				f := func() error {
-					err := listenStream(relayCtx, relay, sender, relayAddr)
-					sender.traffic.addEvent("close", sender.me, relayAddr)
-					return err
-				}
-				msg := fmt.Sprintf("failed to listen to relay '%s'", relayAddr)
-
-				execOrFil(f, sender.receiver.errs, msg)
-			}(relayAddr)
-		}
-
-		if relayAddr.Equal(newRootAddress()) || relayAddr.Equal(sender.gateway) {
-			// In fact we set up the map of relay to send back the message to
-			// the one that opened the stream to us (our gateway) in case it
-			// should be sent to the root or gateway.
-			sender.traffic.logSend(relayCtx, sender.me, sender.gateway, env)
-		} else {
-			sender.traffic.logSend(relayCtx, sender.me, relayAddr, env)
-		}
-
-		err := relay.Send(env)
-		if err != nil {
-			return xerrors.Errorf("failed to send to relay '%s': %v", relayAddr, err)
-		}
-	}
-
-	return nil
-}
-
-// execOrFil executes f and populates c if f returns an error. We use this
-// function to have a better granularity in our functions, which helps us write
-// tests.
-func execOrFil(f func() error, c chan<- error, msg string) {
-	err := f()
-	if err != nil {
-		c <- xerrors.Errorf("%s: %v", msg, err)
-	}
-}
-
 // listenStream listens for new messages that would come from a stream that we
-// set up and either notify us, or relay the message.
-func listenStream(streamCtx context.Context, stream relayer,
-	sender sender, distantAddr mino.Address) error {
+// set up and either notify us, or relay the message. This function is blocking.
+func (s sender) listenStream(streamCtx context.Context, stream relayer, distantAddr mino.Address) {
+
+	defer s.traffic.addEvent("close", s.me, distantAddr)
 
 	for {
 		envelope, err := stream.Recv()
 		if err == io.EOF {
-			return nil
+			return
 		}
 		status, ok := status.FromError(err)
 		if ok && status.Code() == codes.Canceled {
-			return nil
+			return
 		}
 		if err != nil {
 			// TODO: this error is actually never seen by the user
 			// sender.receiver.logger.Fatal().Msgf("stream failed to receive: %v", err)
-			return xerrors.Errorf("failed to receive: %v", err)
+			s.receiver.errs <- xerrors.Errorf("failed to receive: %v", err)
+			return
 		}
 
-		sender.traffic.logRcv(stream.Context(), distantAddr, sender.me, envelope)
+		s.traffic.logRcv(stream.Context(), distantAddr, s.me, envelope)
 
-		dispatched, err := dispatchMessage(*envelope, sender)
+		err = s.sendEnvelope(streamCtx, *envelope)
 		if err != nil {
-			return xerrors.Errorf("failed to dispatch: %v", err)
-		}
-
-		err = sendToRelays(streamCtx, sender, dispatched)
-		if err != nil {
-			return xerrors.Errorf("failed to send to dispatched relays: %v", err)
+			s.receiver.errs <- xerrors.Errorf("failed to send to dispatched relays: %v", err)
+			return
 		}
 	}
 }

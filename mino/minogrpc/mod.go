@@ -130,6 +130,10 @@ type Joinable interface {
 // called multiple times concurrently we need a mutex and we need to use the
 // same sender/receiver.
 type Endpoint struct {
+	// We need this mutex to prevent two processes from concurrently checking
+	// that the stream session must be created. Using a sync.Map would require
+	// to use the "LoadOrStore" function, which would make us create the session
+	// each time, but only saving it the first time.
 	sync.Mutex
 	Handler mino.Handler
 	Factory serde.Factory
@@ -154,7 +158,7 @@ type Minogrpc struct {
 	url       *url.URL
 	server    *grpc.Server
 	namespace string
-	endpoints *sync.Map // must contain only the type *Endpoint
+	endpoints map[string]*Endpoint
 	started   chan struct{}
 	closer    *sync.WaitGroup
 	closing   chan error
@@ -183,7 +187,7 @@ func NewMinogrpc(path string, port uint16, router router.Router) (*Minogrpc, err
 		url:       url,
 		server:    server,
 		namespace: "",
-		endpoints: new(sync.Map),
+		endpoints: make(map[string]*Endpoint),
 		started:   make(chan struct{}),
 		closer:    &sync.WaitGroup{},
 		closing:   make(chan error, 1),
@@ -309,11 +313,11 @@ func (m *Minogrpc) MakeRPC(name string, h mino.Handler, f serde.Factory) (mino.R
 	}
 
 	uri := fmt.Sprintf("%s/%s", m.namespace, name)
-	m.endpoints.Store(uri, &Endpoint{
+	m.endpoints[uri] = &Endpoint{
 		Handler: h,
 		Factory: f,
 		streams: make(map[string]*StreamSession),
-	})
+	}
 
 	return rpc, nil
 }

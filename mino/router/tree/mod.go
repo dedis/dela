@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"regexp"
 	"sort"
+	"sync"
 
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/router"
@@ -26,6 +27,7 @@ type MembershipService interface {
 //
 // - implements router.Router
 type Router struct {
+	lock         *sync.Mutex
 	memship      MembershipService
 	root         *treeNode
 	routingNodes map[mino.Address]*treeNode
@@ -38,6 +40,7 @@ func NewRouter(memship MembershipService, height int) *Router {
 	r := &Router{
 		memship: memship,
 		height:  height,
+		lock:    new(sync.Mutex),
 	}
 
 	return r
@@ -72,12 +75,14 @@ func (r Router) MakePacket(me, to mino.Address, msg []byte) router.Packet {
 // will send its message to node 3.
 //
 func (r *Router) Forward(packet router.Packet) (mino.Address, error) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	// TODO: decide when to (re-)compute the tree
 	if !r.initialized {
+		r.initialized = true
 		// TODO: get the seed from somewhere
 		r.newTree(0, r.height)
-		r.initialized = true
 	}
 
 	// If the sender is unknown, it returns the root of the tree (for example,

@@ -3,9 +3,9 @@ package minogrpc
 import (
 	context "context"
 	"crypto/rand"
-	"fmt"
 	"sync"
 
+	"github.com/rs/xid"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
@@ -122,8 +122,7 @@ func (rpc RPC) Stream(ctx context.Context,
 		return nil, nil, xerrors.Errorf("failed to create streamID: %v", err)
 	}
 
-	streamID := fmt.Sprintf("%x-%x-%x-%x-%x",
-		b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+	streamID := xid.New().String()
 
 	receiver := receiver{
 		context:        rpc.overlay.context,
@@ -132,14 +131,12 @@ func (rpc RPC) Stream(ctx context.Context,
 		errs:           make(chan error, 1),
 		queue:          newNonBlockingQueue(),
 
-		ctx: ctx,
 		logger: dela.Logger.With().Str("addr", root.String()).Logger().
 			With().Str("streamID", streamID).Logger(),
 	}
 
 	sender := sender{
-		me:      root,
-		context: rpc.overlay.context,
+		me: root,
 		// There is no gateway because this is the root
 		clients:  map[mino.Address]chan OutContext{},
 		receiver: receiver,
@@ -147,11 +144,17 @@ func (rpc RPC) Stream(ctx context.Context,
 
 		router:      rpc.overlay.router,
 		connFactory: rpc.overlay.connFactory,
-		relays:      new(sync.Map),
 		uri:         rpc.uri,
 
 		streamID: streamID,
+		lock:     new(sync.Mutex),
+		done:     make(chan struct{}),
 	}
+
+	go func() {
+		<-ctx.Done()
+		close(sender.done)
+	}()
 
 	return sender, receiver, nil
 }

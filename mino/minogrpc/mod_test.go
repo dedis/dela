@@ -190,7 +190,7 @@ func TestMinogrpc_MakeRPC(t *testing.T) {
 	minoGrpc := Minogrpc{
 		namespace: "namespace",
 		overlay:   overlay{},
-		endpoints: new(sync.Map),
+		endpoints: make(map[string]*Endpoint),
 	}
 
 	handler := mino.UnsupportedHandler{}
@@ -204,9 +204,7 @@ func TestMinogrpc_MakeRPC(t *testing.T) {
 		uri:     "namespace/name",
 	}
 
-	itf, ok := minoGrpc.endpoints.Load(expectedRPC.uri)
-	require.True(t, ok)
-	endpoint, ok := itf.(*Endpoint)
+	endpoint, ok := minoGrpc.endpoints[expectedRPC.uri]
 	require.True(t, ok)
 	require.Equal(t, handler, endpoint.Handler)
 	require.Equal(t, expectedRPC, rpc)

@@ -162,6 +162,18 @@ mainSwitch:
 			"Deal as first message, got: %T", msg)
 	}
 
+	// checks that there are no unseen errors
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
+	defer cancel()
+	from, msg, err = in.Recv(ctx)
+	if err != nil {
+		return xerrors.Errorf("received an additional error from stream: %v", err)
+	}
+
+	if msg != nil {
+		return xerrors.Errorf("received an unexpected message from '%s' of type '%T'", from, msg)
+	}
+
 	return nil
 }
 
@@ -249,6 +261,7 @@ func (h *Handler) start(start types.Start, receivedDeals []types.Deal,
 			if err != nil {
 				dela.Logger.Warn().Msgf("%s failed to handle received deal "+
 					"from %s: %v", h.me, from, err)
+				return xerrors.Errorf("failed to handle deal from '%s': %v", from, err)
 			}
 			numReceivedDeals++
 
@@ -391,6 +404,7 @@ func (h *Handler) handleDeal(msg types.Deal, from mino.Address, addrs []mino.Add
 		if err != nil {
 			dela.Logger.Warn().Msgf("got an error while sending "+
 				"response: %v", err)
+			return xerrors.Errorf("failed to send response to '%s': %v", addr, err)
 		}
 
 	}

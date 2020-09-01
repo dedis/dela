@@ -22,11 +22,11 @@ import (
 var suite = suites.MustFind("Ed25519")
 
 const (
-	setupTimeout   = time.Second * 10
-	decryptTimeout = time.Second * 5
+	setupTimeout   = time.Second * 300
+	decryptTimeout = time.Second * 30
 )
 
-// Pedersen allows one to initialise a new DKG protocol.
+// Pedersen allows one to initialize a new DKG protocol.
 //
 // - implements dkg.DKG
 type Pedersen struct {
@@ -213,7 +213,12 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 
 	message := types.NewDecryptRequest(K, C)
 
-	sender.Send(message, addrs...)
+	errs := sender.Send(message, addrs...)
+	err = <-errs
+	if err != nil {
+		return nil, xerrors.Errorf("failed to send decrypt request: %v", err)
+	}
+
 	pubShares := make([]*share.PubShare, len(addrs))
 
 	for i := 0; i < len(addrs); i++ {

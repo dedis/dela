@@ -62,7 +62,7 @@ func TestHandler_Start(t *testing.T) {
 
 	receiver = fake.NewReceiver(types.Deal{}, nil)
 	err = h.start(start, []types.Deal{}, []*pedersen.Response{}, nil, fake.Sender{}, receiver)
-	require.EqualError(t, err, "failed to certify: expected a response, got: <nil>")
+	require.EqualError(t, err, "failed to handle deal from 'fake.Address[0]': failed to process deal from %!s(<nil>): schnorr: signature of invalid length 0 instead of 64")
 
 	err = h.start(start, []types.Deal{}, []*pedersen.Response{}, nil, fake.Sender{}, &fake.Receiver{})
 	require.EqualError(t, err, "unexpected message: <nil>")
@@ -131,7 +131,7 @@ func TestHandler_HandleDeal(t *testing.T) {
 		dkg: dkg1,
 	}
 	err = h.handleDeal(dealMsg, nil, []mino.Address{fake.NewAddress(0)}, fake.NewBadSender())
-	require.NoError(t, err)
+	require.EqualError(t, err, "failed to send response to 'fake.Address[0]': fake error")
 }
 
 // -----------------------------------------------------------------------------

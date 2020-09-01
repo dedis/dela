@@ -2,6 +2,7 @@ package pedersen
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/crypto"
@@ -95,7 +96,7 @@ func TestPedersen_Decrypt(t *testing.T) {
 	actor.rpc = rpc
 
 	_, err = actor.Decrypt(suite.Point(), suite.Point())
-	require.EqualError(t, err, "failed to receive from '%!s(<nil>)': fake error")
+	require.EqualError(t, err, "failed to send decrypt request: fake error")
 
 	rpc = fake.NewStreamRPC(fake.NewReceiver(), fake.Sender{})
 	actor.rpc = rpc
@@ -127,11 +128,11 @@ func TestPedersen_Scenario(t *testing.T) {
 	// minogrpc.LogItems = false
 	// minogrpc.LogEvent = false
 	// defer func() {
-	// 	minogrpc.SaveItems("graph.dot", true, false)
+	// minogrpc.SaveItems("graph.dot", true, false)
 	// 	minogrpc.SaveEvents("events.dot")
 	// }()
 
-	n := 8
+	n := 10
 
 	minos := make([]mino.Mino, n)
 	dkgs := make([]dkg.DKG, n)
@@ -183,6 +184,7 @@ func TestPedersen_Scenario(t *testing.T) {
 
 	_, err = actors[0].Setup(fakeAuthority, n)
 	require.NoError(t, err)
+	time.Sleep(time.Second)
 
 	_, err = actors[0].Setup(fakeAuthority, n)
 	require.EqualError(t, err, "startRes is already done, only one setup call is allowed")

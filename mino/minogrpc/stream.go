@@ -20,7 +20,6 @@ type OutContext struct {
 
 type sender struct {
 	me       mino.Address
-	context  serde.Context
 	clients  map[mino.Address]chan OutContext
 	receiver receiver
 	traffic  *traffic
@@ -31,19 +30,22 @@ type sender struct {
 	// we can just reply, and not create a new connection.
 	gateway mino.Address
 
-	relays *sync.Map // must contain only the type 'relayer'
-
 	connFactory ConnectionFactory
 	uri         string
+	streamID    string
 
-	streamID string
+	// used to create relays
+	lock *sync.Mutex
+
+	// used to notify when the context is done
+	done chan struct{}
 }
 
 func (s sender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 	errs := make(chan error, 1)
 	defer close(errs)
 
-	data, err := msg.Serialize(s.context)
+	data, err := msg.Serialize(s.receiver.context)
 	if err != nil {
 		errs <- xerrors.Errorf("couldn't marshal message: %v", err)
 		return errs
@@ -72,7 +74,13 @@ func (s sender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 		return errs
 	}
 
-	relayCtx := metadata.NewOutgoingContext(s.receiver.ctx, metadata.Pairs(
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-s.done
+		cancel()
+	}()
+
+	relayCtx := metadata.NewOutgoingContext(ctx, metadata.Pairs(
 		headerURIKey, s.uri, headerGatewayKey, string(mebuf),
 		headerStreamIDKey, s.streamID))
 
@@ -84,19 +92,33 @@ func (s sender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 		},
 	}
 
-	dispatched, err := dispatchMessage(*envelope, s)
-	if err != nil {
-		errs <- xerrors.Errorf("failed to dispatch message: %v", err)
-		return errs
-	}
-
-	err = sendToRelays(relayCtx, s, dispatched)
+	err = s.sendEnvelope(relayCtx, *envelope)
 	if err != nil {
 		errs <- xerrors.Errorf("failed to send to relays: %v", err)
 		return errs
 	}
 
 	return errs
+}
+
+func (s sender) send(to mino.Address, envelope Envelope) error {
+	out, found := s.clients[to]
+	if !found {
+		return xerrors.Errorf("expected to find out for client '%s'", to)
+	}
+
+	done := make(chan error, 1)
+	out <- OutContext{
+		Envelope: &envelope,
+		Done:     done,
+	}
+
+	err := <-done
+	if err != nil {
+		return xerrors.Errorf("couldn't send to relay: %v", err)
+	}
+
+	return nil
 }
 
 type receiver struct {
@@ -106,7 +128,7 @@ type receiver struct {
 	errs           chan error
 	queue          Queue
 
-	ctx    context.Context
+	// ctx    context.Context
 	logger zerolog.Logger
 }
 
