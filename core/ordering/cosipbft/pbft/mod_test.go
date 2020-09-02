@@ -10,9 +10,9 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/consensus/viewchange/roster"
+	"go.dedis.ch/dela/core"
 	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
@@ -145,7 +145,7 @@ func TestStateMachine_Commit(t *testing.T) {
 	sm := &pbftsm{
 		state:       PrepareState,
 		verifierFac: fake.NewVerifierFactory(fake.Verifier{}),
-		watcher:     blockchain.NewWatcher(),
+		watcher:     core.NewWatcher(),
 		tree:        blockstore.NewTreeCache(badTree{}),
 		authReader: func(hashtree.Tree) (viewchange.Authority, error) {
 			return roster.New(nil, nil), nil
@@ -283,7 +283,7 @@ func TestStateMachine_Accept(t *testing.T) {
 func TestStateMachine_AcceptAll(t *testing.T) {
 	sm := &pbftsm{
 		round:   round{threshold: 2},
-		watcher: blockchain.NewWatcher(),
+		watcher: core.NewWatcher(),
 	}
 
 	sm.AcceptAll([]View{
@@ -301,7 +301,7 @@ func TestStateMachine_AcceptAll(t *testing.T) {
 
 func TestStateMachine_Expire(t *testing.T) {
 	sm := &pbftsm{
-		watcher: blockchain.NewWatcher(),
+		watcher: core.NewWatcher(),
 		blocks:  blockstore.NewInMemory(),
 		genesis: blockstore.NewGenesisStore(),
 	}
@@ -383,7 +383,7 @@ func TestStateMachine_CatchUp(t *testing.T) {
 
 func TestStateMachine_Watch(t *testing.T) {
 	sm := &pbftsm{
-		watcher: blockchain.NewWatcher(),
+		watcher: core.NewWatcher(),
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

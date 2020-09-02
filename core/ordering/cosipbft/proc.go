@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/rs/zerolog"
-	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/consensus/viewchange"
+	"go.dedis.ch/dela/core"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blocksync"
@@ -35,7 +35,7 @@ type processor struct {
 	sync        blocksync.Synchronizer
 	tree        blockstore.TreeCache
 	pool        pool.Pool
-	watcher     blockchain.Observable
+	watcher     core.Observable
 	rosterFac   viewchange.AuthorityFactory
 	hashFactory crypto.HashFactory
 
@@ -48,7 +48,7 @@ type processor struct {
 
 func newProcessor() *processor {
 	return &processor{
-		watcher: blockchain.NewWatcher(),
+		watcher: core.NewWatcher(),
 		context: json.NewContext(),
 		started: make(chan struct{}),
 	}

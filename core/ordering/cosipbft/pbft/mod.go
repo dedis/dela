@@ -6,8 +6,8 @@ import (
 
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
-	"go.dedis.ch/dela/blockchain"
 	"go.dedis.ch/dela/consensus/viewchange"
+	"go.dedis.ch/dela/core"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
@@ -97,7 +97,7 @@ type pbftsm struct {
 	sync.Mutex
 
 	logger      zerolog.Logger
-	watcher     blockchain.Observable
+	watcher     core.Observable
 	hashFac     crypto.HashFactory
 	val         validation.Service
 	verifierFac crypto.VerifierFactory
@@ -127,7 +127,7 @@ type StateMachineParam struct {
 func NewStateMachine(param StateMachineParam) StateMachine {
 	return &pbftsm{
 		logger:      dela.Logger,
-		watcher:     blockchain.NewWatcher(),
+		watcher:     core.NewWatcher(),
 		hashFac:     crypto.NewSha256Factory(),
 		val:         param.Validation,
 		verifierFac: param.VerifierFactory,

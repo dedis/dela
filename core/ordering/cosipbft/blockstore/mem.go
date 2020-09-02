@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"go.dedis.ch/dela/blockchain"
+	"go.dedis.ch/dela/core"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
 	"golang.org/x/xerrors"
@@ -17,14 +17,14 @@ import (
 type InMemory struct {
 	sync.Mutex
 	blocks  []types.BlockLink
-	watcher blockchain.Observable
+	watcher core.Observable
 }
 
 // NewInMemory returns a new empty in-memory block store.
 func NewInMemory() *InMemory {
 	return &InMemory{
 		blocks:  make([]types.BlockLink, 0),
-		watcher: blockchain.NewWatcher(),
+		watcher: core.NewWatcher(),
 	}
 }
 
