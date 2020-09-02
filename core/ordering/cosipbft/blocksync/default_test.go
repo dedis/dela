@@ -206,8 +206,8 @@ func TestHandler_Stream(t *testing.T) {
 	require.EqualError(t, err, "sending ack failed: fake error")
 }
 
-// Utility functions
 // -----------------------------------------------------------------------------
+// Utility functions
 
 func makeChain(t *testing.T, index uint64) otypes.Chain {
 	block, err := otypes.NewBlock(simple.NewData(nil), otypes.WithIndex(index))

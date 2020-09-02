@@ -528,8 +528,8 @@ func TestLeafNode_Serialize(t *testing.T) {
 	require.EqualError(t, err, "failed to encode leaf node: fake error")
 }
 
-// Utility functions
 // -----------------------------------------------------------------------------
+// Utility functions
 
 type fakeTx struct {
 	kv.WritableTx

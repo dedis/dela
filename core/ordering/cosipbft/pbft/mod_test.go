@@ -400,8 +400,8 @@ func TestStateMachine_Watch(t *testing.T) {
 	require.False(t, more)
 }
 
-// Utility functions
 // -----------------------------------------------------------------------------
+// Utility functions
 
 func makeTree(t *testing.T) (hashtree.Tree, kv.DB, func()) {
 	dir, err := ioutil.TempDir(os.TempDir(), "pbft")

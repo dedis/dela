@@ -268,8 +268,8 @@ func TestChainFactory_Deserialize(t *testing.T) {
 	require.EqualError(t, err, "invalid chain 'fake.Message'")
 }
 
-// Utility functions
 // -----------------------------------------------------------------------------
+// Utility functions
 
 func makeLink(t *testing.T, from Digest) BlockLink {
 	link, err := NewForwardLink(from, Digest{}, WithSignatures(fake.Signature{}, fake.Signature{}))
