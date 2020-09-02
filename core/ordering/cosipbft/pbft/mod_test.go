@@ -10,11 +10,10 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/consensus/viewchange"
-	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/core"
 	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
+	"go.dedis.ch/dela/core/ordering/cosipbft/roster"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/hashtree"
@@ -47,7 +46,7 @@ func TestStateMachine_GetLeader(t *testing.T) {
 
 	sm := &pbftsm{
 		tree: blockstore.NewTreeCache(badTree{}),
-		authReader: func(hashtree.Tree) (viewchange.Authority, error) {
+		authReader: func(hashtree.Tree) (roster.Authority, error) {
 			return roster.FromAuthority(authority), nil
 		},
 	}
@@ -77,7 +76,7 @@ func TestStateMachine_Prepare(t *testing.T) {
 		Blocks:     blockstore.NewInMemory(),
 		Genesis:    blockstore.NewGenesisStore(),
 		Tree:       blockstore.NewTreeCache(tree),
-		AuthorityReader: func(hashtree.Tree) (viewchange.Authority, error) {
+		AuthorityReader: func(hashtree.Tree) (roster.Authority, error) {
 			return ro, nil
 		},
 		DB: db,
@@ -147,7 +146,7 @@ func TestStateMachine_Commit(t *testing.T) {
 		verifierFac: fake.NewVerifierFactory(fake.Verifier{}),
 		watcher:     core.NewWatcher(),
 		tree:        blockstore.NewTreeCache(badTree{}),
-		authReader: func(hashtree.Tree) (viewchange.Authority, error) {
+		authReader: func(hashtree.Tree) (roster.Authority, error) {
 			return roster.New(nil, nil), nil
 		},
 	}
@@ -192,7 +191,7 @@ func TestStateMachine_Finalize(t *testing.T) {
 		Blocks:          blockstore.NewInMemory(),
 		Genesis:         blockstore.NewGenesisStore(),
 		Tree:            blockstore.NewTreeCache(tree),
-		AuthorityReader: func(hashtree.Tree) (viewchange.Authority, error) {
+		AuthorityReader: func(hashtree.Tree) (roster.Authority, error) {
 			return ro, nil
 		},
 		DB: db,
@@ -329,7 +328,7 @@ func TestStateMachine_CatchUp(t *testing.T) {
 		Blocks:          blockstore.NewInMemory(),
 		Genesis:         blockstore.NewGenesisStore(),
 		Tree:            blockstore.NewTreeCache(tree),
-		AuthorityReader: func(hashtree.Tree) (viewchange.Authority, error) {
+		AuthorityReader: func(hashtree.Tree) (roster.Authority, error) {
 			return ro, nil
 		},
 		DB: db,
@@ -347,7 +346,7 @@ func TestStateMachine_CatchUp(t *testing.T) {
 
 	opts := []types.LinkOption{
 		types.WithSignatures(fake.Signature{}, fake.Signature{}),
-		types.WithChangeSet(roster.ChangeSet{}),
+		types.WithChangeSet(roster.SimpleChangeSet{}),
 	}
 
 	link, err := types.NewBlockLink(types.Digest{}, block, opts...)
@@ -371,7 +370,7 @@ func TestStateMachine_CatchUp(t *testing.T) {
 
 	opts = []types.LinkOption{
 		types.WithSignatures(fake.NewBadSignature(), fake.Signature{}),
-		types.WithChangeSet(roster.ChangeSet{}),
+		types.WithChangeSet(roster.SimpleChangeSet{}),
 	}
 
 	link, err = types.NewBlockLink(types.Digest{}, block, opts...)
@@ -476,6 +475,6 @@ func (t badTree) Commit() error {
 	return xerrors.New("oops")
 }
 
-func badReader(hashtree.Tree) (viewchange.Authority, error) {
+func badReader(hashtree.Tree) (roster.Authority, error) {
 	return nil, xerrors.New("oops")
 }

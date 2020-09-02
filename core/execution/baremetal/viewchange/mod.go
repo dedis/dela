@@ -1,8 +1,8 @@
 package viewchange
 
 import (
-	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/core/execution"
+	"go.dedis.ch/dela/core/ordering/cosipbft/roster"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/serde"
@@ -30,12 +30,12 @@ const (
 // - implements baremetal.Contract
 type Contract struct {
 	rosterKey []byte
-	rosterFac viewchange.AuthorityFactory
+	rosterFac roster.AuthorityFactory
 	context   serde.Context
 }
 
 // NewContract creates a new viewchange contract.
-func NewContract(key []byte, fac viewchange.AuthorityFactory) Contract {
+func NewContract(key []byte, fac roster.AuthorityFactory) Contract {
 	return Contract{
 		rosterKey: key,
 		rosterFac: fac,

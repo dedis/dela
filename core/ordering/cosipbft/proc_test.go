@@ -5,11 +5,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/consensus/viewchange"
-	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blocksync"
 	"go.dedis.ch/dela/core/ordering/cosipbft/pbft"
+	"go.dedis.ch/dela/core/ordering/cosipbft/roster"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/hashtree"
@@ -185,7 +184,7 @@ func (sm fakeSM) GetLeader() (mino.Address, error) {
 	return fake.NewAddress(0), sm.errLeader
 }
 
-func (sm fakeSM) PrePrepare(viewchange.Authority) error {
+func (sm fakeSM) PrePrepare(roster.Authority) error {
 	return sm.err
 }
 

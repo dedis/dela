@@ -1,7 +1,6 @@
 package roster
 
 import (
-	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
@@ -22,23 +21,23 @@ type Player struct {
 	PublicKey crypto.PublicKey
 }
 
-// ChangeSet is the smallest data model to update an authority to another.
+// SimpleChangeSet is the smallest data model to update an authority to another.
 //
 // - implements serde.Message
-type ChangeSet struct {
+type SimpleChangeSet struct {
 	Remove []uint32
 	Add    []Player
 }
 
 // NumChanges implements viewchange.ChangeSet. It returns the number of changes
 // that is applied with the change set.
-func (set ChangeSet) NumChanges() int {
+func (set SimpleChangeSet) NumChanges() int {
 	return len(set.Remove) + len(set.Add)
 }
 
 // GetNewAddresses implements viewchange.ChangeSet. It returns the list of
 // addresses of the new members.
-func (set ChangeSet) GetNewAddresses() []mino.Address {
+func (set SimpleChangeSet) GetNewAddresses() []mino.Address {
 	addrs := make([]mino.Address, len(set.Add))
 	for i, player := range set.Add {
 		addrs[i] = player.Address
@@ -48,7 +47,7 @@ func (set ChangeSet) GetNewAddresses() []mino.Address {
 }
 
 // Serialize implements serde.Message.
-func (set ChangeSet) Serialize(ctx serde.Context) ([]byte, error) {
+func (set SimpleChangeSet) Serialize(ctx serde.Context) ([]byte, error) {
 	format := csetFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, set)
@@ -69,14 +68,14 @@ type AddrKeyFac struct{}
 //
 // - viewchange.ChangeSetFactory
 // - implements serde.Factory
-type ChangeSetFactory struct {
+type SimpleChangeSetFactory struct {
 	addrFactory   mino.AddressFactory
 	pubkeyFactory crypto.PublicKeyFactory
 }
 
 // NewChangeSetFactory returns a new change set factory.
 func NewChangeSetFactory(af mino.AddressFactory, pkf crypto.PublicKeyFactory) ChangeSetFactory {
-	return ChangeSetFactory{
+	return SimpleChangeSetFactory{
 		addrFactory:   af,
 		pubkeyFactory: pkf,
 	}
@@ -84,13 +83,13 @@ func NewChangeSetFactory(af mino.AddressFactory, pkf crypto.PublicKeyFactory) Ch
 
 // Deserialize implements serde.Factory. It returns the change set from the data
 // if appropriate, otherwise an error.
-func (f ChangeSetFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+func (f SimpleChangeSetFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	return f.ChangeSetOf(ctx, data)
 }
 
 // ChangeSetOf implements viewchange.ChangeSetFactory. It returns the change set
 // from the data if appropriate, otherwise an error.
-func (f ChangeSetFactory) ChangeSetOf(ctx serde.Context, data []byte) (viewchange.ChangeSet, error) {
+func (f SimpleChangeSetFactory) ChangeSetOf(ctx serde.Context, data []byte) (ChangeSet, error) {
 	format := csetFormats.Get(ctx.GetFormat())
 
 	ctx = serde.WithFactory(ctx, PubKeyFac{}, f.pubkeyFactory)

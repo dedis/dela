@@ -8,10 +8,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blocksync/types"
 	"go.dedis.ch/dela/core/ordering/cosipbft/pbft"
+	"go.dedis.ch/dela/core/ordering/cosipbft/roster"
 	otypes "go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/txn/anon"
 	"go.dedis.ch/dela/core/validation/simple"

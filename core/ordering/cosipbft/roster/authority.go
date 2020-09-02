@@ -4,7 +4,6 @@ import (
 	"io"
 
 	"go.dedis.ch/dela"
-	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
@@ -150,8 +149,8 @@ func (r Roster) Take(updaters ...mino.FilterUpdater) mino.Players {
 // Apply implements viewchange.Authority. It returns a new authority after
 // applying the change set. The removals must be sorted by descending order and
 // unique or the behaviour will be undefined.
-func (r Roster) Apply(in viewchange.ChangeSet) viewchange.Authority {
-	changeset, ok := in.(ChangeSet)
+func (r Roster) Apply(in ChangeSet) Authority {
+	changeset, ok := in.(SimpleChangeSet)
 	if !ok {
 		dela.Logger.Warn().Msgf("Change set '%T' is not supported. Ignoring.", in)
 		return r
@@ -187,8 +186,8 @@ func (r Roster) Apply(in viewchange.ChangeSet) viewchange.Authority {
 
 // Diff implements viewchange.Authority. It returns the change set that must be
 // applied to the current authority to get the given one.
-func (r Roster) Diff(o viewchange.Authority) viewchange.ChangeSet {
-	changeset := ChangeSet{}
+func (r Roster) Diff(o Authority) ChangeSet {
+	changeset := SimpleChangeSet{}
 
 	other, ok := o.(Roster)
 	if !ok {
@@ -288,7 +287,7 @@ func (f Factory) Deserialize(ctx serde.Context, data []byte) (serde.Message, err
 
 // AuthorityOf implements viewchange.AuthorityFactory. It returns the roster
 // from the data if appropriate, otherwise an error.
-func (f Factory) AuthorityOf(ctx serde.Context, data []byte) (viewchange.Authority, error) {
+func (f Factory) AuthorityOf(ctx serde.Context, data []byte) (Authority, error) {
 	format := rosterFormats.Get(ctx.GetFormat())
 
 	ctx = serde.WithFactory(ctx, PubKeyFac{}, f.pubkeyFactory)

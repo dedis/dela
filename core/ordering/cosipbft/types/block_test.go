@@ -7,8 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/consensus/viewchange"
-	"go.dedis.ch/dela/consensus/viewchange/roster"
+	"go.dedis.ch/dela/core/ordering/cosipbft/roster"
 	"go.dedis.ch/dela/core/txn/anon"
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/core/validation/simple"
@@ -193,7 +192,7 @@ func TestBlockFactory_Deserialize(t *testing.T) {
 // Utility functions
 
 type badRoster struct {
-	viewchange.Authority
+	roster.Authority
 }
 
 func (r badRoster) Fingerprint(io.Writer) error {

@@ -6,9 +6,9 @@ import (
 
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
-	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/core"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
+	"go.dedis.ch/dela/core/ordering/cosipbft/roster"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/hashtree"
@@ -85,13 +85,13 @@ type round struct {
 	block      types.Block
 	tree       hashtree.StagingTree
 	prepareSig crypto.Signature
-	changeset  viewchange.ChangeSet
+	changeset  roster.ChangeSet
 	views      map[mino.Address]struct{}
 }
 
 // AuthorityReader is a function to help the state machine to read the current
 // authority for a given tree.
-type AuthorityReader func(tree hashtree.Tree) (viewchange.Authority, error)
+type AuthorityReader func(tree hashtree.Tree) (roster.Authority, error)
 
 type pbftsm struct {
 	sync.Mutex
@@ -401,7 +401,7 @@ func (m *pbftsm) Watch(ctx context.Context) <-chan State {
 	return ch
 }
 
-func (m *pbftsm) verifyPrepare(tree hashtree.Tree, block types.Block, r *round, ro viewchange.Authority) error {
+func (m *pbftsm) verifyPrepare(tree hashtree.Tree, block types.Block, r *round, ro roster.Authority) error {
 	stageTree, err := tree.Stage(func(snap store.Snapshot) error {
 		_, err := m.val.Validate(snap, block.GetTransactions())
 		if err != nil {
@@ -457,7 +457,7 @@ func (m *pbftsm) verifyPrepare(tree hashtree.Tree, block types.Block, r *round, 
 	return nil
 }
 
-func (m *pbftsm) verifyCommit(r *round, sig crypto.Signature, ro viewchange.Authority) error {
+func (m *pbftsm) verifyCommit(r *round, sig crypto.Signature, ro roster.Authority) error {
 	verifier, err := m.verifierFac.FromAuthority(ro)
 	if err != nil {
 		return xerrors.Errorf("couldn't make verifier: %v", err)
@@ -473,7 +473,7 @@ func (m *pbftsm) verifyCommit(r *round, sig crypto.Signature, ro viewchange.Auth
 	return nil
 }
 
-func (m *pbftsm) verifyFinalize(r *round, sig crypto.Signature, ro viewchange.Authority) error {
+func (m *pbftsm) verifyFinalize(r *round, sig crypto.Signature, ro roster.Authority) error {
 	verifier, err := m.verifierFac.FromAuthority(ro)
 	if err != nil {
 		return xerrors.Errorf("couldn't make verifier: %v", err)

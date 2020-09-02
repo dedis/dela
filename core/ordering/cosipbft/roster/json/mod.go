@@ -3,7 +3,7 @@ package json
 import (
 	"encoding/json"
 
-	"go.dedis.ch/dela/consensus/viewchange/roster"
+	"go.dedis.ch/dela/core/ordering/cosipbft/roster"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
@@ -43,7 +43,7 @@ type changeSetFormat struct{}
 // Encode implements serde.FormatEngine. It returns the data serialized for the
 // change set message if appropriate, otherwise an error.
 func (f changeSetFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
-	cset, ok := msg.(roster.ChangeSet)
+	cset, ok := msg.(roster.SimpleChangeSet)
 	if !ok {
 		return nil, xerrors.Errorf("unsupported message of type '%T'", msg)
 	}
@@ -105,7 +105,7 @@ func (f changeSetFormat) Decode(ctx serde.Context, data []byte) (serde.Message, 
 	if len(m.Add) == 0 {
 		// Keep the addition field nil if none are present to be consistent with
 		// an empty change set.
-		cset := roster.ChangeSet{Remove: m.Remove}
+		cset := roster.SimpleChangeSet{Remove: m.Remove}
 		return cset, nil
 	}
 
@@ -124,7 +124,7 @@ func (f changeSetFormat) Decode(ctx serde.Context, data []byte) (serde.Message, 
 		}
 	}
 
-	set := roster.ChangeSet{
+	set := roster.SimpleChangeSet{
 		Remove: m.Remove,
 		Add:    add,
 	}

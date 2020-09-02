@@ -6,12 +6,11 @@ import (
 	"time"
 
 	"go.dedis.ch/dela"
-	"go.dedis.ch/dela/consensus/viewchange"
-	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blocksync"
 	"go.dedis.ch/dela/core/ordering/cosipbft/pbft"
+	"go.dedis.ch/dela/core/ordering/cosipbft/roster"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/hashtree"
@@ -531,13 +530,13 @@ func (s *Service) prepareData(txs []txn.Transaction) (data validation.Data, id t
 	return
 }
 
-func (s *Service) wakeUp(ctx context.Context, roster viewchange.Authority) error {
+func (s *Service) wakeUp(ctx context.Context, ro roster.Authority) error {
 	newRoster, err := s.getCurrentRoster()
 	if err != nil {
 		return xerrors.Errorf("read roster failed: %v", err)
 	}
 
-	changeset := roster.Diff(newRoster)
+	changeset := ro.Diff(newRoster)
 
 	genesis, err := s.genesis.Get()
 	if err != nil {

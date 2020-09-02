@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"go.dedis.ch/dela/consensus/viewchange"
+	"go.dedis.ch/dela/core/ordering/cosipbft/roster"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/crypto"
@@ -49,7 +49,7 @@ func (d Digest) Bytes() []byte {
 // and tree root.
 type Genesis struct {
 	digest   Digest
-	roster   viewchange.Authority
+	roster   roster.Authority
 	treeRoot Digest
 }
 
@@ -76,7 +76,7 @@ func WithGenesisHashFactory(fac crypto.HashFactory) GenesisOption {
 }
 
 // NewGenesis creates a new genesis block with the provided roster.
-func NewGenesis(ro viewchange.Authority, opts ...GenesisOption) (Genesis, error) {
+func NewGenesis(ro roster.Authority, opts ...GenesisOption) (Genesis, error) {
 	tmpl := genesisTemplate{
 		Genesis: Genesis{
 			roster:   ro,
@@ -106,7 +106,7 @@ func (g Genesis) GetHash() Digest {
 }
 
 // GetRoster returns the roster of the genesis block.
-func (g Genesis) GetRoster() viewchange.Authority {
+func (g Genesis) GetRoster() roster.Authority {
 	return g.roster
 }
 
@@ -147,11 +147,11 @@ type RosterKey struct{}
 
 // GenesisFactory is a factory to deserialize the genesis messages.
 type GenesisFactory struct {
-	rosterFac viewchange.AuthorityFactory
+	rosterFac roster.AuthorityFactory
 }
 
 // NewGenesisFactory creates a new genesis factory.
-func NewGenesisFactory(rf viewchange.AuthorityFactory) GenesisFactory {
+func NewGenesisFactory(rf roster.AuthorityFactory) GenesisFactory {
 	return GenesisFactory{
 		rosterFac: rf,
 	}

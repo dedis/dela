@@ -4,8 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/consensus/viewchange"
-	"go.dedis.ch/dela/consensus/viewchange/roster"
+	"go.dedis.ch/dela/core/ordering/cosipbft/roster"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/anon"
@@ -79,11 +78,11 @@ func (snap fakeStore) Set(key, value []byte) error {
 }
 
 type badRosterFac struct {
-	viewchange.AuthorityFactory
+	roster.AuthorityFactory
 	counter *fake.Counter
 }
 
-func (fac badRosterFac) AuthorityOf(serde.Context, []byte) (viewchange.Authority, error) {
+func (fac badRosterFac) AuthorityOf(serde.Context, []byte) (roster.Authority, error) {
 	if fac.counter.Done() {
 		return nil, xerrors.New("oops")
 	}

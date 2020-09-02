@@ -9,13 +9,13 @@ import (
 )
 
 func init() {
-	RegisterChangeSetFormat(fake.GoodFormat, fake.Format{Msg: ChangeSet{}})
+	RegisterChangeSetFormat(fake.GoodFormat, fake.Format{Msg: SimpleChangeSet{}})
 	RegisterChangeSetFormat(serde.Format("BAD_TYPE"), fake.Format{Msg: fake.Message{}})
 	RegisterChangeSetFormat(fake.BadFormat, fake.NewBadFormat())
 }
 
 func TestChangeSet_Serialize(t *testing.T) {
-	cset := ChangeSet{}
+	cset := SimpleChangeSet{}
 
 	data, err := cset.Serialize(fake.NewContext())
 	require.NoError(t, err)
@@ -30,7 +30,7 @@ func TestChangeSetFactory_Deserialize(t *testing.T) {
 
 	msg, err := factory.Deserialize(fake.NewContext(), nil)
 	require.NoError(t, err)
-	require.Equal(t, ChangeSet{}, msg)
+	require.Equal(t, SimpleChangeSet{}, msg)
 
 	_, err = factory.Deserialize(fake.NewBadContext(), nil)
 	require.EqualError(t, err, "couldn't decode change set: fake error")

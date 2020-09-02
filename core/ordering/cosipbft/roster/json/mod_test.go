@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/consensus/viewchange/roster"
+	"go.dedis.ch/dela/core/ordering/cosipbft/roster"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
@@ -12,7 +12,7 @@ import (
 )
 
 func TestChangeSetFormat_Encode(t *testing.T) {
-	changeset := roster.ChangeSet{
+	changeset := roster.SimpleChangeSet{
 		Remove: []uint32{42},
 		Add: []roster.Player{
 			{
@@ -54,11 +54,11 @@ func TestChangeSetFormat_Decode(t *testing.T) {
 	cset, err := format.Decode(ctx, []byte(`{"Add":[{}]}`))
 	require.NoError(t, err)
 	player := roster.Player{Address: fake.NewAddress(0), PublicKey: fake.PublicKey{}}
-	require.Equal(t, roster.ChangeSet{Add: []roster.Player{player}}, cset)
+	require.Equal(t, roster.SimpleChangeSet{Add: []roster.Player{player}}, cset)
 
 	cset, err = format.Decode(ctx, []byte(`{"Add":[]}`))
 	require.NoError(t, err)
-	require.Equal(t, roster.ChangeSet{}, cset)
+	require.Equal(t, roster.SimpleChangeSet{}, cset)
 
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
 	require.EqualError(t, err, "couldn't deserialize change set: fake error")

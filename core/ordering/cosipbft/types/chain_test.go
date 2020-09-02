@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/consensus/viewchange/roster"
+	"go.dedis.ch/dela/core/ordering/cosipbft/roster"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
 )
@@ -27,7 +27,7 @@ func TestForwardLink_New(t *testing.T) {
 
 	opts := []LinkOption{
 		WithSignatures(fake.Signature{}, fake.Signature{}),
-		WithChangeSet(roster.ChangeSet{}),
+		WithChangeSet(roster.SimpleChangeSet{}),
 	}
 
 	link, err = NewForwardLink(Digest{1}, Digest{2}, opts...)
@@ -77,10 +77,10 @@ func TestForwardLink_GetCommitSignature(t *testing.T) {
 
 func TestForwardLink_GetChangeSet(t *testing.T) {
 	link := forwardLink{
-		changeset: roster.ChangeSet{},
+		changeset: roster.SimpleChangeSet{},
 	}
 
-	require.Equal(t, roster.ChangeSet{}, link.GetChangeSet())
+	require.Equal(t, roster.SimpleChangeSet{}, link.GetChangeSet())
 }
 
 func TestForwardLink_Serialize(t *testing.T) {

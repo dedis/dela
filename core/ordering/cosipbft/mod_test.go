@@ -10,14 +10,13 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/consensus/viewchange"
-	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/execution/baremetal"
 	rosterchange "go.dedis.ch/dela/core/execution/baremetal/viewchange"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/ordering/cosipbft/pbft"
+	"go.dedis.ch/dela/core/ordering/cosipbft/roster"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/hashtree/binprefix"
@@ -409,7 +408,7 @@ func makeTx(t *testing.T, nonce uint64) txn.Transaction {
 	return tx
 }
 
-func makeRosterTx(t *testing.T, nonce uint64, roster viewchange.Authority) txn.Transaction {
+func makeRosterTx(t *testing.T, nonce uint64, roster roster.Authority) txn.Transaction {
 	data, err := roster.Serialize(json.NewContext())
 	require.NoError(t, err)
 
@@ -433,7 +432,7 @@ func waitEvent(t *testing.T, events <-chan ordering.Event) ordering.Event {
 	}
 }
 
-func makeAuthority(t *testing.T, n int) ([]testNode, viewchange.Authority, func()) {
+func makeAuthority(t *testing.T, n int) ([]testNode, roster.Authority, func()) {
 	manager := minoch.NewManager()
 
 	addrs := make([]mino.Address, n)
@@ -504,10 +503,10 @@ func makeAuthority(t *testing.T, n int) ([]testNode, viewchange.Authority, func(
 }
 
 type badRosterFac struct {
-	viewchange.AuthorityFactory
+	roster.AuthorityFactory
 }
 
-func (fac badRosterFac) AuthorityOf(serde.Context, []byte) (viewchange.Authority, error) {
+func (fac badRosterFac) AuthorityOf(serde.Context, []byte) (roster.Authority, error) {
 	return nil, xerrors.New("oops")
 }
 

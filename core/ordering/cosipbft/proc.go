@@ -4,12 +4,12 @@ import (
 	"context"
 
 	"github.com/rs/zerolog"
-	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/core"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blocksync"
 	"go.dedis.ch/dela/core/ordering/cosipbft/pbft"
+	"go.dedis.ch/dela/core/ordering/cosipbft/roster"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/hashtree"
@@ -36,7 +36,7 @@ type processor struct {
 	tree        blockstore.TreeCache
 	pool        pool.Pool
 	watcher     core.Observable
-	rosterFac   viewchange.AuthorityFactory
+	rosterFac   roster.AuthorityFactory
 	hashFactory crypto.HashFactory
 
 	context serde.Context
@@ -130,11 +130,11 @@ func (h *processor) Process(req mino.Request) (serde.Message, error) {
 	return nil, nil
 }
 
-func (h *processor) getCurrentRoster() (viewchange.Authority, error) {
+func (h *processor) getCurrentRoster() (roster.Authority, error) {
 	return h.readRoster(h.tree.Get())
 }
 
-func (h *processor) readRoster(tree hashtree.Tree) (viewchange.Authority, error) {
+func (h *processor) readRoster(tree hashtree.Tree) (roster.Authority, error) {
 	data, err := tree.Get(keyRoster[:])
 	if err != nil {
 		return nil, xerrors.Errorf("read from tree: %v", err)
@@ -148,7 +148,7 @@ func (h *processor) readRoster(tree hashtree.Tree) (viewchange.Authority, error)
 	return roster, nil
 }
 
-func (h *processor) storeGenesis(roster viewchange.Authority, match *types.Digest) error {
+func (h *processor) storeGenesis(roster roster.Authority, match *types.Digest) error {
 	value, err := roster.Serialize(h.context)
 	if err != nil {
 		return xerrors.Errorf("failed to serialize roster: %v", err)

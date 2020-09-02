@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
@@ -134,10 +133,10 @@ func TestRoster_Apply(t *testing.T) {
 	roster := FromAuthority(fake.NewAuthority(3, fake.NewSigner))
 	require.Equal(t, roster, roster.Apply(nil))
 
-	roster2 := roster.Apply(ChangeSet{Remove: []uint32{3, 2, 0}})
+	roster2 := roster.Apply(SimpleChangeSet{Remove: []uint32{3, 2, 0}})
 	require.Equal(t, roster.Len()-2, roster2.Len())
 
-	roster3 := roster2.Apply(ChangeSet{Add: []Player{{}}})
+	roster3 := roster2.Apply(SimpleChangeSet{Add: []Player{{}}})
 	require.Equal(t, roster.Len()-1, roster3.Len())
 }
 
@@ -145,21 +144,21 @@ func TestRoster_Diff(t *testing.T) {
 	roster1 := FromAuthority(fake.NewAuthority(3, fake.NewSigner))
 
 	roster2 := FromAuthority(fake.NewAuthority(4, fake.NewSigner))
-	diff := roster1.Diff(roster2).(ChangeSet)
+	diff := roster1.Diff(roster2).(SimpleChangeSet)
 	require.Len(t, diff.Add, 1)
 
 	roster3 := FromAuthority(fake.NewAuthority(2, fake.NewSigner))
-	diff = roster1.Diff(roster3).(ChangeSet)
+	diff = roster1.Diff(roster3).(SimpleChangeSet)
 	require.Len(t, diff.Remove, 1)
 
 	roster4 := FromAuthority(fake.NewAuthority(3, fake.NewSigner))
 	roster4.addrs[1] = fake.NewAddress(5)
-	diff = roster1.Diff(roster4).(ChangeSet)
+	diff = roster1.Diff(roster4).(SimpleChangeSet)
 	require.Equal(t, []uint32{1, 2}, diff.Remove)
 	require.Len(t, diff.Add, 2)
 
-	diff = roster1.Diff((viewchange.Authority)(nil)).(ChangeSet)
-	require.Equal(t, ChangeSet{}, diff)
+	diff = roster1.Diff((Authority)(nil)).(SimpleChangeSet)
+	require.Equal(t, SimpleChangeSet{}, diff)
 }
 
 func TestRoster_Len(t *testing.T) {

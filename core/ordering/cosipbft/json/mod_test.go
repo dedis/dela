@@ -5,8 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/consensus/viewchange"
-	"go.dedis.ch/dela/consensus/viewchange/roster"
+	"go.dedis.ch/dela/core/ordering/cosipbft/roster"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
@@ -245,7 +244,7 @@ func TestMsgFormat_Decode(t *testing.T) {
 // Utility functions
 
 type fakeRoster struct {
-	viewchange.Authority
+	roster.Authority
 
 	err error
 }
@@ -259,12 +258,12 @@ func (fakeRoster) Fingerprint(io.Writer) error {
 }
 
 type fakeRosterFac struct {
-	viewchange.AuthorityFactory
+	roster.AuthorityFactory
 
 	err error
 }
 
-func (fac fakeRosterFac) AuthorityOf(serde.Context, []byte) (viewchange.Authority, error) {
+func (fac fakeRosterFac) AuthorityOf(serde.Context, []byte) (roster.Authority, error) {
 	return fakeRoster{}, fac.err
 }
 
