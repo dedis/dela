@@ -20,7 +20,8 @@ func TestTreeCache_Set(t *testing.T) {
 	require.Equal(t, fakeTree{value: 1}, cache.Get())
 }
 
-// Utility functions -----------------------------------------------------------
+// -----------------------------------------------------------------------------
+// Utility functions
 
 type fakeTree struct {
 	hashtree.Tree

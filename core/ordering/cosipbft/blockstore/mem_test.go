@@ -24,7 +24,7 @@ func TestInMemory_Store(t *testing.T) {
 	err := store.Store(makeLink(t, types.Digest{}))
 	require.NoError(t, err)
 
-	err = store.Store(makeLink(t, store.blocks[0].GetTo().GetHash()))
+	err = store.Store(makeLink(t, store.blocks[0].GetTo()))
 	require.NoError(t, err)
 
 	err = store.Store(makeLink(t, types.Digest{}))
@@ -36,7 +36,7 @@ func TestInMemory_Get(t *testing.T) {
 
 	store.blocks = []types.BlockLink{makeLink(t, types.Digest{})}
 
-	block, err := store.Get(store.blocks[0].GetTo().GetHash())
+	block, err := store.Get(store.blocks[0].GetTo())
 	require.NoError(t, err)
 	require.Equal(t, store.blocks[0], block)
 
@@ -55,14 +55,37 @@ func TestInMemory_GetByIndex(t *testing.T) {
 
 	block, err := store.GetByIndex(1)
 	require.NoError(t, err)
-	require.Equal(t, uint64(1), block.GetTo().GetIndex())
+	require.Equal(t, uint64(1), block.GetBlock().GetIndex())
 
 	block, err = store.GetByIndex(2)
 	require.NoError(t, err)
-	require.Equal(t, uint64(2), block.GetTo().GetIndex())
+	require.Equal(t, uint64(2), block.GetBlock().GetIndex())
 
 	_, err = store.GetByIndex(3)
 	require.EqualError(t, err, "block not found: no block")
+}
+
+func TestInMemory_GetChain(t *testing.T) {
+	store := NewInMemory()
+
+	store.blocks = []types.BlockLink{
+		makeLink(t, types.Digest{}, types.WithIndex(0)),
+		makeLink(t, types.Digest{}, types.WithIndex(1)),
+		makeLink(t, types.Digest{}, types.WithIndex(2)),
+	}
+
+	chain, err := store.GetChain()
+	require.NoError(t, err)
+	require.Len(t, chain.GetLinks(), 3)
+
+	store.blocks = store.blocks[:1]
+	chain, err = store.GetChain()
+	require.NoError(t, err)
+	require.Len(t, chain.GetLinks(), 1)
+
+	store.blocks = nil
+	_, err = store.GetChain()
+	require.EqualError(t, err, "store is empty")
 }
 
 func TestInMemory_Last(t *testing.T) {
@@ -110,13 +133,15 @@ func TestInMemory_WithTx(t *testing.T) {
 	require.Len(t, store.blocks, 1)
 }
 
-// Utility functions -----------------------------------------------------------
+// -----------------------------------------------------------------------------
+// Utility functions
 
 func makeLink(t *testing.T, from types.Digest, opts ...types.BlockOption) types.BlockLink {
 	to, err := types.NewBlock(simple.NewData(nil), opts...)
 	require.NoError(t, err)
 
-	link := types.NewBlockLink(from, to, nil, nil, nil)
+	link, err := types.NewBlockLink(from, to)
+	require.NoError(t, err)
 
 	return link
 }

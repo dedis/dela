@@ -43,7 +43,8 @@ func TestTxFormat_Decode(t *testing.T) {
 		"failed to create tx: couldn't fingerprint tx: couldn't write nonce: fake error")
 }
 
-// Utility functions -----------------------------------------------------------
+// -----------------------------------------------------------------------------
+// Utility functions
 
 func makeTx(t *testing.T, nonce uint64, opts ...anon.TransactionOption) txn.Transaction {
 	tx, err := anon.NewTransaction(nonce, opts...)

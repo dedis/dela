@@ -176,7 +176,8 @@ func TestPool_ListenRumors(t *testing.T) {
 	require.NotEmpty(t, buffer.String())
 }
 
-// Utility functions -----------------------------------------------------------
+// -----------------------------------------------------------------------------
+// Utility functions
 
 func makeTx(t *testing.T, nonce uint64) txn.Transaction {
 	tx, err := anon.NewTransaction(nonce)

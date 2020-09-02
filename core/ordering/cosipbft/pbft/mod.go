@@ -364,7 +364,7 @@ func (m *pbftsm) CatchUp(link types.BlockLink) error {
 		return xerrors.Errorf("failed to read roster: %v", err)
 	}
 
-	err = m.verifyPrepare(m.tree.Get(), link.GetTo(), &r, roster)
+	err = m.verifyPrepare(m.tree.Get(), link.GetBlock(), &r, roster)
 	if err != nil {
 		return xerrors.Errorf("prepare failed: %v", err)
 	}
@@ -439,16 +439,17 @@ func (m *pbftsm) verifyPrepare(tree hashtree.Tree, block types.Block, r *round, 
 	}
 
 	changeset := ro.Diff(roster)
-	link := types.NewBlockLink(lastID, block, nil, nil, changeset)
-
-	h := m.hashFac.New()
-	err = link.Fingerprint(h)
-	if err != nil {
-		return xerrors.Errorf("couldn't fingerprint link: %v", err)
+	opts := []types.LinkOption{
+		types.WithChangeSet(changeset),
+		types.WithLinkHashFactory(m.hashFac),
 	}
 
-	copy(r.id[:], h.Sum(nil))
+	link, err := types.NewForwardLink(lastID, block.GetHash(), opts...)
+	if err != nil {
+		return xerrors.Errorf("failed to create link: %v", err)
+	}
 
+	r.id = link.GetHash()
 	r.tree = stageTree
 	r.block = block
 	r.changeset = changeset
@@ -509,7 +510,16 @@ func (m *pbftsm) verifyFinalize(r *round, sig crypto.Signature, ro viewchange.Au
 		})
 
 		// 2. Persist the block and its forward link.
-		link := types.NewBlockLink(lastID, r.block, r.prepareSig, sig, r.changeset)
+		opts := []types.LinkOption{
+			types.WithSignatures(r.prepareSig, sig),
+			types.WithChangeSet(r.changeset),
+			types.WithLinkHashFactory(m.hashFac),
+		}
+
+		link, err := types.NewBlockLink(lastID, r.block, opts...)
+		if err != nil {
+			return xerrors.Errorf("creating link: %v", err)
+		}
 
 		err = m.blocks.WithTx(txn).Store(link)
 		if err != nil {
@@ -553,7 +563,7 @@ func (m *pbftsm) getLatestID() (types.Digest, error) {
 		return types.Digest{}, err
 	}
 
-	return last.GetTo().GetHash(), nil
+	return last.GetTo(), nil
 }
 
 type observer struct {

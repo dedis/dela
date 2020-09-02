@@ -38,10 +38,11 @@ const (
 type Service struct {
 	*processor
 
-	me    mino.Address
-	rpc   mino.RPC
-	actor cosi.Actor
-	val   validation.Service
+	me          mino.Address
+	rpc         mino.RPC
+	actor       cosi.Actor
+	val         validation.Service
+	verifierFac crypto.VerifierFactory
 
 	timeout time.Duration
 	events  chan ordering.Event
@@ -111,13 +112,17 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 
 	blockFac := types.NewBlockFactory(param.Validation.GetFactory())
 	csFac := roster.NewChangeSetFactory(param.Mino.GetAddressFactory(), param.Cosi.GetPublicKeyFactory())
-	linkFac := types.NewBlockLinkFactory(blockFac, param.Cosi.GetSignatureFactory(), csFac)
+	linkFac := types.NewLinkFactory(blockFac, param.Cosi.GetSignatureFactory(), csFac)
+	chainFac := types.NewChainFactory(linkFac)
 
 	syncparam := blocksync.SyncParam{
-		Mino:        param.Mino,
-		Blocks:      tmpl.blocks,
-		PBFT:        proc.pbftsm,
-		LinkFactory: linkFac,
+		Mino:            param.Mino,
+		Blocks:          tmpl.blocks,
+		Genesis:         tmpl.genesis,
+		PBFT:            proc.pbftsm,
+		LinkFactory:     linkFac,
+		ChainFactory:    chainFac,
+		VerifierFactory: param.Cosi.GetVerifierFactory(),
 	}
 
 	blocksync, err := blocksync.NewSynchronizer(syncparam)
@@ -147,15 +152,16 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 	}
 
 	s := &Service{
-		processor: proc,
-		me:        param.Mino.GetAddress(),
-		rpc:       rpc,
-		actor:     actor,
-		val:       param.Validation,
-		timeout:   RoundTimeout,
-		events:    make(chan ordering.Event, 1),
-		closing:   make(chan struct{}),
-		closed:    make(chan struct{}),
+		processor:   proc,
+		me:          param.Mino.GetAddress(),
+		rpc:         rpc,
+		actor:       actor,
+		val:         param.Validation,
+		verifierFac: param.Cosi.GetVerifierFactory(),
+		timeout:     RoundTimeout,
+		events:      make(chan ordering.Event, 1),
+		closing:     make(chan struct{}),
+		closed:      make(chan struct{}),
 	}
 
 	go func() {
@@ -194,16 +200,29 @@ func (s *Service) Setup(ctx context.Context, ca crypto.CollectiveAuthority) erro
 	return nil
 }
 
-// GetProof implements ordering.Service.
+// GetProof implements ordering.Service. It returns the proof of absence or
+// inclusion for the latest block. The proof integrity is not verified as this
+// is assumed the node is acting correctly so the data is anyway consistent. The
+// proof must be verified by the caller when leaving the trusted environment,
+// for instance when the proof is sent over the network.
 func (s *Service) GetProof(key []byte) (ordering.Proof, error) {
-	return nil, nil
+	path, err := s.tree.Get().GetPath(key)
+	if err != nil {
+		return nil, xerrors.Errorf("reading path: %v", err)
+	}
+
+	chain, err := s.blocks.GetChain()
+	if err != nil {
+		return nil, xerrors.Errorf("reading chain: %v", err)
+	}
+
+	return newProof(path, chain), nil
 }
 
 // Watch implements ordering.Service.
 func (s *Service) Watch(ctx context.Context) <-chan ordering.Event {
-	ch := make(chan ordering.Event, 1)
+	obs := observer{ch: make(chan ordering.Event, 1)}
 
-	obs := observer{ch: ch}
 	s.watcher.Add(obs)
 
 	go func() {
@@ -211,7 +230,7 @@ func (s *Service) Watch(ctx context.Context) <-chan ordering.Event {
 		s.watcher.Remove(obs)
 	}()
 
-	return ch
+	return obs.ch
 }
 
 // Close gracefully closes the service. It will announce the closing request and
@@ -235,7 +254,7 @@ func (s *Service) watchBlocks() {
 
 	for link := range linkCh {
 		// 1. Remove the transactions from the pool to avoid duplicates.
-		for _, res := range link.GetTo().GetData().GetTransactionResults() {
+		for _, res := range link.GetBlock().GetData().GetTransactionResults() {
 			s.pool.Remove(res.GetTransaction())
 		}
 
@@ -246,7 +265,7 @@ func (s *Service) watchBlocks() {
 		}
 
 		event := ordering.Event{
-			Index: link.GetTo().GetIndex(),
+			Index: link.GetBlock().GetIndex(),
 		}
 
 		// 3. Notify the main loop that a new block has been created, but ignore
@@ -294,13 +313,20 @@ func (s *Service) main() error {
 	s.logger.Debug().Msg("node has started")
 
 	for {
-		ctx, cancel := context.WithCancel(context.Background())
-
 		select {
 		case <-s.closing:
-			cancel()
 			return nil
 		default:
+			ctx, cancel := context.WithCancel(context.Background())
+
+			go func() {
+				select {
+				case <-s.closing:
+					cancel()
+				case <-ctx.Done():
+				}
+			}()
+
 			err := s.doRound(ctx)
 			cancel()
 

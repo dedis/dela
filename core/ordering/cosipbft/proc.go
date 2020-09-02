@@ -69,7 +69,7 @@ func (h *processor) Invoke(from mino.Address, msg serde.Message) ([]byte, error)
 		// catch up before moving forward.
 		if h.sync.GetLatest() > h.blocks.Len() {
 			for link := range blocks {
-				if link.GetTo().GetIndex() >= h.sync.GetLatest() {
+				if link.GetBlock().GetIndex() >= h.sync.GetLatest() {
 					cancel()
 				}
 			}

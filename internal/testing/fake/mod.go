@@ -511,7 +511,8 @@ func (s Signer) Aggregate(...crypto.Signature) (crypto.Signature, error) {
 // Verifier is a fake implementation of crypto.Verifier.
 type Verifier struct {
 	crypto.Verifier
-	err error
+	err   error
+	count *Counter
 }
 
 // NewBadVerifier returns a verifier that will return an error when appropriate.
@@ -519,8 +520,22 @@ func NewBadVerifier() Verifier {
 	return Verifier{err: xerrors.New("fake error")}
 }
 
+// NewBadVerifierWithDelay returns a verifier that will return an error after a
+// given delay.
+func NewBadVerifierWithDelay(value int) Verifier {
+	return Verifier{
+		err:   xerrors.New("fake error"),
+		count: NewCounter(value),
+	}
+}
+
 // Verify implements crypto.Verifier.
 func (v Verifier) Verify(msg []byte, s crypto.Signature) error {
+	if !v.count.Done() {
+		v.count.Decrease()
+		return nil
+	}
+
 	return v.err
 }
 

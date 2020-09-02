@@ -97,13 +97,10 @@ func TestProcessor_GenesisMessage_Process(t *testing.T) {
 }
 
 func TestProcessor_DoneMessage_Process(t *testing.T) {
-	block, err := types.NewBlock(simple.NewData(nil))
-	require.NoError(t, err)
-
 	proc := newProcessor()
 	proc.pbftsm = fakeSM{}
 	proc.blocks = blockstore.NewInMemory()
-	proc.blocks.Store(types.NewBlockLink(types.Digest{}, block, nil, nil, nil))
+	proc.blocks.Store(makeBlock(t, types.Digest{}))
 
 	req := mino.Request{
 		Message: types.NewDone(types.Digest{}, fake.Signature{}),
@@ -138,7 +135,18 @@ func TestProcessor_Unsupported_Process(t *testing.T) {
 	require.EqualError(t, err, "unsupported message of type 'fake.Message'")
 }
 
-// Utility functions -----------------------------------------------------------
+// -----------------------------------------------------------------------------
+// Utility functions
+
+func makeBlock(t *testing.T, from types.Digest, opts ...types.LinkOption) types.BlockLink {
+	block, err := types.NewBlock(simple.NewData(nil))
+	require.NoError(t, err)
+
+	link, err := types.NewBlockLink(from, block, opts...)
+	require.NoError(t, err)
+
+	return link
+}
 
 type fakeSM struct {
 	pbft.StateMachine
@@ -224,6 +232,10 @@ type fakeTree struct {
 
 func (t fakeTree) GetRoot() []byte {
 	return []byte("root")
+}
+
+func (t fakeTree) GetPath(key []byte) (hashtree.Path, error) {
+	return nil, t.err
 }
 
 func (t fakeTree) Get(key []byte) ([]byte, error) {

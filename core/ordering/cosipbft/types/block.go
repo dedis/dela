@@ -18,7 +18,6 @@ import (
 var (
 	genesisFormats = registry.NewSimpleRegistry()
 	blockFormats   = registry.NewSimpleRegistry()
-	linkFormats    = registry.NewSimpleRegistry()
 )
 
 // RegisterGenesisFormat registers the engine for the provided format.
@@ -29,11 +28,6 @@ func RegisterGenesisFormat(f serde.Format, e serde.FormatEngine) {
 // RegisterBlockFormat registers the engine for the provided format.
 func RegisterBlockFormat(f serde.Format, e serde.FormatEngine) {
 	blockFormats.Register(f, e)
-}
-
-// RegisterLinkFormat register the engine for the provided format.
-func RegisterLinkFormat(f serde.Format, e serde.FormatEngine) {
-	linkFormats.Register(f, e)
 }
 
 // Digest defines the result of a fingerprint. It expects a digest of 256 bits.
@@ -176,133 +170,6 @@ func (f GenesisFactory) Deserialize(ctx serde.Context, data []byte) (serde.Messa
 	}
 
 	return msg, nil
-}
-
-// blockLink contains the different proofs that a block has been committed by
-// the collective authority.
-type blockLink struct {
-	from       Digest
-	to         Block
-	changeset  viewchange.ChangeSet
-	prepareSig crypto.Signature
-	commitSig  crypto.Signature
-}
-
-// NewBlockLink creates a new block link between from and to.
-func NewBlockLink(from Digest, to Block, p, c crypto.Signature, cs viewchange.ChangeSet) BlockLink {
-	return blockLink{
-		from:       from,
-		to:         to,
-		prepareSig: p,
-		commitSig:  c,
-		changeset:  cs,
-	}
-}
-
-// GetFrom returns the digest of the source block.
-func (link blockLink) GetFrom() Digest {
-	return link.from
-}
-
-// GetTo returns the block the link is pointing to.
-func (link blockLink) GetTo() Block {
-	return link.to
-}
-
-// GetPrepareSignature returns the prepare signature if it is set, otherwise it
-// returns nil.
-func (link blockLink) GetPrepareSignature() crypto.Signature {
-	return link.prepareSig
-}
-
-// GetCommitSignature returns the commit signature if it is set, otherwise it
-// returns nil.
-func (link blockLink) GetCommitSignature() crypto.Signature {
-	return link.commitSig
-}
-
-// GetChangeSet returns the change set of the roster for this link.
-func (link blockLink) GetChangeSet() viewchange.ChangeSet {
-	return link.changeset
-}
-
-// Fingerprint implements serde.Fingerprinter. It deterministically writes a
-// binary representation of the block link.
-func (link blockLink) Fingerprint(w io.Writer) error {
-	_, err := w.Write(link.from[:])
-	if err != nil {
-		return xerrors.Errorf("couldn't write from: %v", err)
-	}
-
-	id := link.GetTo().GetHash()
-
-	_, err = w.Write(id[:])
-	if err != nil {
-		return xerrors.Errorf("couldn't write to: %v", err)
-	}
-
-	return nil
-}
-
-// Serialize implements serde.Message. It returns the serialized data for this
-// block link.
-func (link blockLink) Serialize(ctx serde.Context) ([]byte, error) {
-	format := linkFormats.Get(ctx.GetFormat())
-
-	data, err := format.Encode(ctx, link)
-	if err != nil {
-		return nil, xerrors.Errorf("encoding failed: %v", err)
-	}
-
-	return data, nil
-}
-
-type ChangeSetKey struct{}
-
-// BlockLinkFac is the factory to deserialize block link messages.
-//
-// - implements types.BlockLinkFactory
-type blockLinkFac struct {
-	blockFac serde.Factory
-	sigFac   crypto.SignatureFactory
-	csFac    viewchange.ChangeSetFactory
-}
-
-// NewBlockLinkFactory creates a new block link factory.
-func NewBlockLinkFactory(blockFac serde.Factory, sigFac crypto.SignatureFactory, csFac viewchange.ChangeSetFactory) BlockLinkFactory {
-	return blockLinkFac{
-		blockFac: blockFac,
-		sigFac:   sigFac,
-		csFac:    csFac,
-	}
-}
-
-// Deserialize implements serde.Factory. It populates the block link if
-// appropriate, otherwise it returns an error.
-func (fac blockLinkFac) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	return fac.BlockLinkOf(ctx, data)
-}
-
-// BlockLinkOf implements types.BlockLinkFactory. It populates the block link if
-// appropriate, otherwise it returns an error.
-func (fac blockLinkFac) BlockLinkOf(ctx serde.Context, data []byte) (BlockLink, error) {
-	format := linkFormats.Get(ctx.GetFormat())
-
-	ctx = serde.WithFactory(ctx, BlockKey{}, fac.blockFac)
-	ctx = serde.WithFactory(ctx, SignatureKey{}, fac.sigFac)
-	ctx = serde.WithFactory(ctx, ChangeSetKey{}, fac.csFac)
-
-	msg, err := format.Decode(ctx, data)
-	if err != nil {
-		return nil, xerrors.Errorf("decoding failed: %v", err)
-	}
-
-	link, ok := msg.(blockLink)
-	if !ok {
-		return nil, xerrors.Errorf("invalid block link '%T'", msg)
-	}
-
-	return link, nil
 }
 
 // Block is a block of the chain.
@@ -459,7 +326,7 @@ func (f BlockFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, xerrors.Errorf("decoding failed: %v", err)
+		return nil, xerrors.Errorf("decoding block failed: %v", err)
 	}
 
 	return msg, nil

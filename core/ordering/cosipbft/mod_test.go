@@ -79,6 +79,15 @@ func TestService_Basic(t *testing.T) {
 
 	evt = waitEvent(t, events)
 	require.Equal(t, uint64(4), evt.Index)
+
+	proof, err := srvs[0].service.GetProof(keyRoster[:])
+	require.NoError(t, err)
+	require.NotNil(t, proof.GetValue())
+
+	require.Equal(t, keyRoster[:], proof.GetKey())
+	require.NotNil(t, proof.GetValue())
+
+	checkProof(t, proof.(Proof), srvs[0].service)
 }
 
 func TestService_New(t *testing.T) {
@@ -337,7 +346,36 @@ func TestService_WakeUp(t *testing.T) {
 	require.EqualError(t, err, "rpc failed: fake error")
 }
 
-// Utility functions -----------------------------------------------------------
+func TestService_GetProof(t *testing.T) {
+	srvc := &Service{processor: newProcessor()}
+	srvc.tree = blockstore.NewTreeCache(fakeTree{})
+	srvc.blocks = blockstore.NewInMemory()
+	srvc.blocks.Store(makeBlock(t, types.Digest{}))
+
+	proof, err := srvc.GetProof([]byte("A"))
+	require.NoError(t, err)
+	require.NotNil(t, proof)
+
+	srvc.tree.Set(fakeTree{err: xerrors.New("oops")})
+	_, err = srvc.GetProof([]byte("A"))
+	require.EqualError(t, err, "reading path: oops")
+
+	srvc.tree.Set(fakeTree{})
+	srvc.blocks = blockstore.NewInMemory()
+	_, err = srvc.GetProof([]byte("A"))
+	require.EqualError(t, err, "reading chain: store is empty")
+}
+
+// -----------------------------------------------------------------------------
+// Utility functions
+
+func checkProof(t *testing.T, p Proof, s *Service) {
+	genesis, err := s.genesis.Get()
+	require.NoError(t, err)
+
+	err = p.Verify(genesis, s.verifierFac)
+	require.NoError(t, err)
+}
 
 type testNode struct {
 	service *Service

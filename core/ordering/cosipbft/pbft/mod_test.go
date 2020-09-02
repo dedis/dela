@@ -23,6 +23,7 @@ import (
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/core/validation/simple"
+	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"golang.org/x/xerrors"
 )
@@ -136,7 +137,8 @@ func TestStateMachine_Prepare(t *testing.T) {
 	sm.authReader = param.AuthorityReader
 	sm.hashFac = fake.NewHashFactory(fake.NewBadHash())
 	_, err = sm.Prepare(block)
-	require.EqualError(t, err, "couldn't fingerprint link: couldn't write from: fake error")
+	require.EqualError(t, err,
+		"failed to create link: failed to fingerprint: couldn't write from: fake error")
 }
 
 func TestStateMachine_Commit(t *testing.T) {
@@ -235,9 +237,15 @@ func TestStateMachine_Finalize(t *testing.T) {
 	err = sm.Finalize(types.Digest{1}, fake.Signature{})
 	require.EqualError(t, err, "database failed: commit tree: oops")
 
-	sm.blocks = badBlockStore{}
 	sm.genesis.Set(types.Genesis{})
 	sm.round.tree = tree.(hashtree.StagingTree)
+	sm.hashFac = fake.NewHashFactory(fake.NewBadHash())
+	err = sm.Finalize(types.Digest{1}, fake.Signature{})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "database failed: creating link:")
+
+	sm.hashFac = crypto.NewSha256Factory()
+	sm.blocks = badBlockStore{}
 	err = sm.Finalize(types.Digest{1}, fake.Signature{})
 	require.EqualError(t, err, "database failed: store block: oops")
 
@@ -337,7 +345,13 @@ func TestStateMachine_CatchUp(t *testing.T) {
 
 	sm := NewStateMachine(param).(*pbftsm)
 
-	link := types.NewBlockLink(types.Digest{}, block, fake.Signature{}, fake.Signature{}, roster.ChangeSet{})
+	opts := []types.LinkOption{
+		types.WithSignatures(fake.Signature{}, fake.Signature{}),
+		types.WithChangeSet(roster.ChangeSet{}),
+	}
+
+	link, err := types.NewBlockLink(types.Digest{}, block, opts...)
+	require.NoError(t, err)
 
 	err = sm.CatchUp(link)
 	require.NoError(t, err)
@@ -355,7 +369,13 @@ func TestStateMachine_CatchUp(t *testing.T) {
 	err = sm.CatchUp(link)
 	require.EqualError(t, err, "commit failed: verifier failed: fake error")
 
-	link = types.NewBlockLink(types.Digest{}, block, fake.NewBadSignature(), fake.Signature{}, roster.ChangeSet{})
+	opts = []types.LinkOption{
+		types.WithSignatures(fake.NewBadSignature(), fake.Signature{}),
+		types.WithChangeSet(roster.ChangeSet{}),
+	}
+
+	link, err = types.NewBlockLink(types.Digest{}, block, opts...)
+	require.NoError(t, err)
 	sm.verifierFac = fake.VerifierFactory{}
 	err = sm.CatchUp(link)
 	require.EqualError(t, err, "finalize failed: couldn't marshal signature: fake error")
@@ -380,7 +400,8 @@ func TestStateMachine_Watch(t *testing.T) {
 	require.False(t, more)
 }
 
-// Utility functions -----------------------------------------------------------
+// -----------------------------------------------------------------------------
+// Utility functions
 
 func makeTree(t *testing.T) (hashtree.Tree, kv.DB, func()) {
 	dir, err := ioutil.TempDir(os.TempDir(), "pbft")
@@ -400,7 +421,10 @@ func makeLink(t *testing.T) types.BlockLink {
 	block, err := types.NewBlock(simple.NewData(nil))
 	require.NoError(t, err)
 
-	return types.NewBlockLink(types.Digest{}, block, nil, nil, roster.ChangeSet{})
+	link, err := types.NewBlockLink(types.Digest{}, block)
+	require.NoError(t, err)
+
+	return link
 }
 
 type fakeExec struct {

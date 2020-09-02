@@ -15,6 +15,7 @@ import (
 	otypes "go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/txn/anon"
 	"go.dedis.ch/dela/core/validation/simple"
+	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minoch"
@@ -27,7 +28,7 @@ func TestDefaultSync_Basic(t *testing.T) {
 	k := 8
 	num := 10
 
-	syncs, roster := makeNodes(t, n)
+	syncs, genesis, roster := makeNodes(t, n)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -38,7 +39,7 @@ func TestDefaultSync_Basic(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	storeBlocks(t, syncs[0].blocks, num)
+	storeBlocks(t, syncs[0].blocks, num, genesis.GetHash().Bytes()...)
 
 	// Test only a subset of the roster to prepare for the next test.
 	err = syncs[0].Sync(ctx, roster.Take(mino.RangeFilter(0, k)), Config{
@@ -106,11 +107,19 @@ func TestDefaultSync_Sync(t *testing.T) {
 		blocks: blockstore.NewInMemory(),
 	}
 
+	storeBlocks(t, sync.blocks, 1)
+
 	ctx := context.Background()
 
 	err := sync.Sync(ctx, mino.NewAddresses(), Config{MinSoft: 1, MinHard: 1})
 	require.NoError(t, err)
 
+	sync.blocks = badBlockStore{errChain: xerrors.New("oops")}
+	err = sync.Sync(ctx, mino.NewAddresses(), Config{})
+	require.EqualError(t, err, "failed to read chain: oops")
+
+	sync.blocks = blockstore.NewInMemory()
+	storeBlocks(t, sync.blocks, 1)
 	sync.rpc = fake.NewBadRPC()
 	err = sync.Sync(ctx, mino.NewAddresses(), Config{})
 	require.EqualError(t, err, "stream failed: fake error")
@@ -146,15 +155,18 @@ func TestHandler_Stream(t *testing.T) {
 	storeBlocks(t, blocks, 3)
 
 	handler := &handler{
-		latest: &latest,
-		blocks: blockstore.NewInMemory(),
+		latest:      &latest,
+		genesis:     blockstore.NewGenesisStore(),
+		blocks:      blockstore.NewInMemory(),
+		verifierFac: fake.VerifierFactory{},
 	}
+	handler.genesis.Set(otypes.Genesis{})
 	handler.pbftsm = testSM{blocks: handler.blocks}
 
-	err := handler.Stream(fake.Sender{}, fake.NewReceiver(types.NewSyncMessage(0)))
+	err := handler.Stream(fake.Sender{}, fake.NewReceiver(types.NewSyncMessage(makeChain(t, 0))))
 	require.NoError(t, err)
 
-	msgs := []serde.Message{types.NewSyncMessage(blocks.Len())}
+	msgs := []serde.Message{types.NewSyncMessage(makeChain(t, blocks.Len()))}
 	for i := uint64(0); i < blocks.Len(); i++ {
 		link, err := blocks.GetByIndex(i)
 		require.NoError(t, err)
@@ -169,30 +181,49 @@ func TestHandler_Stream(t *testing.T) {
 	err = handler.Stream(fake.Sender{}, fake.NewBadReceiver())
 	require.EqualError(t, err, "no announcement: receiver failed: fake error")
 
-	err = handler.Stream(fake.NewBadSender(), fake.NewReceiver(types.NewSyncMessage(6)))
+	handler.genesis = blockstore.NewGenesisStore()
+	err = handler.Stream(fake.Sender{}, fake.NewReceiver(msgs...))
+	require.EqualError(t, err, "reading genesis: missing genesis block")
+
+	handler.genesis.Set(otypes.Genesis{})
+	err = handler.Stream(fake.Sender{}, fake.NewReceiver(types.NewSyncMessage(fakeChain{err: xerrors.New("oops")})))
+	require.EqualError(t, err, "failed to verify chain: oops")
+
+	err = handler.Stream(fake.NewBadSender(), fake.NewReceiver(types.NewSyncMessage(makeChain(t, 6))))
 	require.EqualError(t, err, "sending request failed: fake error")
 
 	rcvr := fake.NewBadReceiver()
-	rcvr.Msg = []serde.Message{types.NewSyncMessage(6)}
+	rcvr.Msg = []serde.Message{types.NewSyncMessage(makeChain(t, 6))}
 	err = handler.Stream(fake.Sender{}, rcvr)
 	require.EqualError(t, err, "receiver failed: fake error")
 
-	msgs = []serde.Message{types.NewSyncMessage(6), msgs[1]}
+	msgs = []serde.Message{types.NewSyncMessage(makeChain(t, 6)), msgs[1]}
 	err = handler.Stream(fake.Sender{}, fake.NewReceiver(msgs...))
 	require.Error(t, err)
 	require.Regexp(t, "pbft catch up failed: mismatch link '[0]{8}' != '[0-9a-f]{8}'", err.Error())
 
-	err = handler.Stream(fake.NewBadSender(), fake.NewReceiver(types.NewSyncMessage(0)))
+	err = handler.Stream(fake.NewBadSender(), fake.NewReceiver(types.NewSyncMessage(makeChain(t, 0))))
 	require.EqualError(t, err, "sending ack failed: fake error")
 }
 
-// Utility functions -----------------------------------------------------------
+// -----------------------------------------------------------------------------
+// Utility functions
 
-func makeNodes(t *testing.T, n int) ([]defaultSync, mino.Players) {
+func makeChain(t *testing.T, index uint64) otypes.Chain {
+	block, err := otypes.NewBlock(simple.NewData(nil), otypes.WithIndex(index))
+	require.NoError(t, err)
+
+	return fakeChain{block: block}
+}
+
+func makeNodes(t *testing.T, n int) ([]defaultSync, otypes.Genesis, mino.Players) {
 	manager := minoch.NewManager()
 
 	syncs := make([]defaultSync, n)
 	addrs := make([]mino.Address, n)
+
+	genesis, err := otypes.NewGenesis(fake.NewAuthority(3, fake.NewSigner))
+	require.NoError(t, err)
 
 	for i := 0; i < n; i++ {
 		m, err := minoch.NewMinoch(manager, fmt.Sprintf("node%d", i))
@@ -200,15 +231,22 @@ func makeNodes(t *testing.T, n int) ([]defaultSync, mino.Players) {
 
 		addrs[i] = m.GetAddress()
 
+		genstore := blockstore.NewGenesisStore()
+		genstore.Set(genesis)
+
 		blocks := blockstore.NewInMemory()
 		blockFac := otypes.NewBlockFactory(simple.NewDataFactory(anon.NewTransactionFactory()))
 		csFac := roster.NewChangeSetFactory(m.GetAddressFactory(), fake.PublicKeyFactory{})
+		linkFac := otypes.NewLinkFactory(blockFac, fake.SignatureFactory{}, csFac)
 
 		param := SyncParam{
-			Mino:        m,
-			Blocks:      blocks,
-			LinkFactory: otypes.NewBlockLinkFactory(blockFac, fake.SignatureFactory{}, csFac),
-			PBFT:        testSM{blocks: blocks},
+			Mino:            m,
+			Blocks:          blocks,
+			Genesis:         genstore,
+			LinkFactory:     linkFac,
+			ChainFactory:    otypes.NewChainFactory(linkFac),
+			PBFT:            testSM{blocks: blocks},
+			VerifierFactory: fake.VerifierFactory{},
 		}
 
 		sync, err := NewSynchronizer(param)
@@ -217,17 +255,22 @@ func makeNodes(t *testing.T, n int) ([]defaultSync, mino.Players) {
 		syncs[i] = sync.(defaultSync)
 	}
 
-	return syncs, mino.NewAddresses(addrs...)
+	return syncs, genesis, mino.NewAddresses(addrs...)
 }
 
-func storeBlocks(t *testing.T, blocks blockstore.BlockStore, n int) {
+func storeBlocks(t *testing.T, blocks blockstore.BlockStore, n int, from ...byte) {
 	prev := otypes.Digest{}
+	copy(prev[:], from)
 
 	for i := 0; i < n; i++ {
-		block, err := otypes.NewBlock(simple.NewData(nil), otypes.WithIndex(uint64(i)))
+		block, err := otypes.NewBlock(simple.NewData(nil), otypes.WithIndex(uint64(i+1)))
 		require.NoError(t, err)
 
-		err = blocks.Store(otypes.NewBlockLink(prev, block, fake.Signature{}, fake.Signature{}, roster.ChangeSet{}))
+		link, err := otypes.NewBlockLink(prev, block,
+			otypes.WithSignatures(fake.Signature{}, fake.Signature{}))
+		require.NoError(t, err)
+
+		err = blocks.Store(link)
 		require.NoError(t, err)
 
 		prev = block.GetHash()
@@ -251,12 +294,33 @@ func (sm testSM) CatchUp(link otypes.BlockLink) error {
 
 type badBlockStore struct {
 	blockstore.BlockStore
+
+	errChain error
 }
 
 func (s badBlockStore) Len() uint64 {
 	return 5
 }
 
+func (s badBlockStore) GetChain() (otypes.Chain, error) {
+	return nil, s.errChain
+}
+
 func (s badBlockStore) GetByIndex(index uint64) (otypes.BlockLink, error) {
 	return nil, xerrors.New("oops")
+}
+
+type fakeChain struct {
+	otypes.Chain
+
+	block otypes.Block
+	err   error
+}
+
+func (c fakeChain) GetBlock() otypes.Block {
+	return c.block
+}
+
+func (c fakeChain) Verify(otypes.Genesis, crypto.VerifierFactory) error {
+	return c.err
 }
