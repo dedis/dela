@@ -241,8 +241,8 @@ func TestMsgFormat_Decode(t *testing.T) {
 	require.EqualError(t, err, "message is empty")
 }
 
-// Utility functions
 // -----------------------------------------------------------------------------
+// Utility functions
 
 type fakeRoster struct {
 	viewchange.Authority

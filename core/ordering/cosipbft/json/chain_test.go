@@ -58,8 +58,8 @@ func TestChainFormat_Decode(t *testing.T) {
 	require.EqualError(t, err, "couldn't deserialize block link: oops")
 }
 
-// Utility functions
 // -----------------------------------------------------------------------------
+// Utility functions
 
 type fakeLink struct {
 	types.BlockLink

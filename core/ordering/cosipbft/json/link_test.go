@@ -114,8 +114,8 @@ func TestLinkFormat_Decode(t *testing.T) {
 	require.Contains(t, err.Error(), "creating block link: creating forward link: failed to fingerprint: ")
 }
 
-// Utility functions
 // -----------------------------------------------------------------------------
+// Utility functions
 
 func makeLink(t *testing.T, opts ...types.LinkOption) types.Link {
 	sigs := types.WithSignatures(fake.Signature{}, fake.Signature{})
