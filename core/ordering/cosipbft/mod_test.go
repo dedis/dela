@@ -416,7 +416,7 @@ func makeRosterTx(t *testing.T, nonce uint64, roster viewchange.Authority) txn.T
 
 func waitEvent(t *testing.T, events <-chan ordering.Event) ordering.Event {
 	select {
-	case <-time.After(4 * time.Second):
+	case <-time.After(15 * time.Second):
 		t.Fatal("no event received before the timeout")
 		return ordering.Event{}
 	case evt := <-events:

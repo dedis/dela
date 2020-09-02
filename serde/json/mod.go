@@ -6,9 +6,6 @@ import (
 
 	// Static registration of the JSON formats. By having them here, it ensures
 	// that an import of the JSON context engine will import the definitions.
-	_ "go.dedis.ch/dela/blockchain/skipchain/json"
-	_ "go.dedis.ch/dela/consensus/cosipbft/json"
-	_ "go.dedis.ch/dela/consensus/qsc/json"
 	_ "go.dedis.ch/dela/consensus/viewchange/roster/json"
 	_ "go.dedis.ch/dela/core/ordering/cosipbft/blocksync/json"
 	_ "go.dedis.ch/dela/core/ordering/cosipbft/json"
@@ -18,8 +15,6 @@ import (
 	_ "go.dedis.ch/dela/crypto/bls/json"
 	_ "go.dedis.ch/dela/crypto/ed25519/json"
 	_ "go.dedis.ch/dela/dkg/pedersen/json"
-	_ "go.dedis.ch/dela/ledger/arc/darc/json"
-	_ "go.dedis.ch/dela/ledger/transactions/basic/json"
 	_ "go.dedis.ch/dela/mino/minogrpc/routing/json"
 	"go.dedis.ch/dela/serde"
 )
