@@ -109,7 +109,8 @@ func TestMessageFactory_Deserialize(t *testing.T) {
 	require.EqualError(t, err, "decoding failed: fake error")
 }
 
-// Utility functions -----------------------------------------------------------
+// Utility functions
+// -----------------------------------------------------------------------------
 
 func makeChain(t *testing.T, index uint64) types.Chain {
 	block, err := types.NewBlock(simple.NewData(nil), types.WithIndex(index))

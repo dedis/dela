@@ -182,7 +182,8 @@ func TestBlockFactory_Deserialize(t *testing.T) {
 	require.EqualError(t, err, "decoding block failed: fake error")
 }
 
-// Utility functions -----------------------------------------------------------
+// Utility functions
+// -----------------------------------------------------------------------------
 
 type badRoster struct {
 	viewchange.Authority

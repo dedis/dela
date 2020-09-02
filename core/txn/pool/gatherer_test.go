@@ -59,7 +59,8 @@ func TestSimpleGatherer_Wait(t *testing.T) {
 	require.Nil(t, txs)
 }
 
-// Utility functions -----------------------------------------------------------
+// Utility functions
+// -----------------------------------------------------------------------------
 
 type fakeTx struct {
 	txn.Transaction

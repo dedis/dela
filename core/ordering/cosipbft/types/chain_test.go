@@ -224,7 +224,13 @@ func TestChain_Verify(t *testing.T) {
 	link.prepareSig = nil
 	c = NewChain(link, nil)
 	err = c.Verify(genesis, fake.VerifierFactory{})
-	require.EqualError(t, err, "unexpected nil signature in link")
+	require.EqualError(t, err, "unexpected nil prepare signature in link")
+
+	link.prepareSig = fake.Signature{}
+	link.commitSig = nil
+	c = NewChain(link, nil)
+	err = c.Verify(genesis, fake.VerifierFactory{})
+	require.EqualError(t, err, "unexpected nil commit signature in link")
 
 	link.prepareSig = fake.NewBadSignature()
 	link.commitSig = fake.Signature{}
@@ -262,7 +268,8 @@ func TestChainFactory_Deserialize(t *testing.T) {
 	require.EqualError(t, err, "invalid chain 'fake.Message'")
 }
 
-// Utility functions -----------------------------------------------------------
+// Utility functions
+// -----------------------------------------------------------------------------
 
 func makeLink(t *testing.T, from Digest) BlockLink {
 	link, err := NewForwardLink(from, Digest{}, WithSignatures(fake.Signature{}, fake.Signature{}))

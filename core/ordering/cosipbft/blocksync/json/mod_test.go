@@ -91,7 +91,8 @@ func TestMsgFormat_Decode(t *testing.T) {
 	require.EqualError(t, err, "invalid link factory 'fake.MessageFactory'")
 }
 
-// Utility functions -----------------------------------------------------------
+// Utility functions
+// -----------------------------------------------------------------------------
 
 type fakeChain struct {
 	otypes.Chain

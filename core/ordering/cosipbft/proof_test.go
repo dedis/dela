@@ -48,7 +48,8 @@ func TestProof_Verify(t *testing.T) {
 	require.EqualError(t, err, "failed to verify chain: oops")
 }
 
-// Utility functions -----------------------------------------------------------
+// Utility functions
+// -----------------------------------------------------------------------------
 
 type fakePath struct {
 	hashtree.Path

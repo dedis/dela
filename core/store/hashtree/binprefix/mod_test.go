@@ -283,7 +283,8 @@ func TestWritableMerkleTree_Delete(t *testing.T) {
 	require.EqualError(t, err, "couldn't delete key: mismatch key length 33 > 32")
 }
 
-// Utility functions -----------------------------------------------------------
+// Utility functions
+// -----------------------------------------------------------------------------
 
 func makeDB(t *testing.T) (kv.DB, func()) {
 	dir, err := ioutil.TempDir(os.TempDir(), "dela-pow")

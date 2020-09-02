@@ -64,7 +64,7 @@ type Chain interface {
 	// GetLinks returns all the links that defines the chain in order.
 	GetLinks() []Link
 
-	// GetBlock returns the block the chain is pointing at.
+	// GetBlock returns the latest block that the chain is pointing at.
 	GetBlock() Block
 
 	// Verify takes the genesis block and the verifier factory that should

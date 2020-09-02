@@ -335,8 +335,12 @@ func (c chain) Verify(genesis Genesis, fac crypto.VerifierFactory) error {
 			return xerrors.Errorf("verifier factory failed: %v", err)
 		}
 
-		if link.GetPrepareSignature() == nil || link.GetCommitSignature() == nil {
-			return xerrors.New("unexpected nil signature in link")
+		if link.GetPrepareSignature() == nil {
+			return xerrors.New("unexpected nil prepare signature in link")
+		}
+
+		if link.GetCommitSignature() == nil {
+			return xerrors.New("unexpected nil commit signature in link")
 		}
 
 		// 1. Verify the prepare signature that signs the integrity of the

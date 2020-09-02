@@ -191,7 +191,8 @@ func TestDiskNode_Load(t *testing.T) {
 	require.EqualError(t, err, "invalid node of type 'fake.Message'")
 }
 
-// Utility functions -----------------------------------------------------------
+// Utility functions
+// -----------------------------------------------------------------------------
 
 type fakeBucket struct {
 	kv.Bucket

@@ -53,7 +53,8 @@ func TestContract_Execute(t *testing.T) {
 	require.Equal(t, messageStorageFailure, res.Message)
 }
 
-// Utility functions -----------------------------------------------------------
+// Utility functions
+// -----------------------------------------------------------------------------
 
 func makeTx(t *testing.T, arg string) txn.Transaction {
 	tx, err := anon.NewTransaction(0, anon.WithArg(AuthorityArg, []byte(arg)))

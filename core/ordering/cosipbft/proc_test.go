@@ -135,7 +135,8 @@ func TestProcessor_Unsupported_Process(t *testing.T) {
 	require.EqualError(t, err, "unsupported message of type 'fake.Message'")
 }
 
-// Utility functions -----------------------------------------------------------
+// Utility functions
+// -----------------------------------------------------------------------------
 
 func makeBlock(t *testing.T, from types.Digest, opts ...types.LinkOption) types.BlockLink {
 	block, err := types.NewBlock(simple.NewData(nil))

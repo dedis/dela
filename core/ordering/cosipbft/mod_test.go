@@ -366,7 +366,8 @@ func TestService_GetProof(t *testing.T) {
 	require.EqualError(t, err, "reading chain: store is empty")
 }
 
-// Utility functions -----------------------------------------------------------
+// Utility functions
+// -----------------------------------------------------------------------------
 
 func checkProof(t *testing.T, p Proof, s *Service) {
 	genesis, err := s.genesis.Get()
