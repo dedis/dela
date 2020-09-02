@@ -162,18 +162,6 @@ mainSwitch:
 			"Deal as first message, got: %T", msg)
 	}
 
-	// checks that there are no unseen errors
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
-	defer cancel()
-	from, msg, err = in.Recv(ctx)
-	if err != nil {
-		return xerrors.Errorf("received an additional error from stream: %v", err)
-	}
-
-	if msg != nil {
-		return xerrors.Errorf("received an unexpected message from '%s' of type '%T'", from, msg)
-	}
-
 	return nil
 }
 

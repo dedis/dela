@@ -219,7 +219,6 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 
 		sender := sender{
 			me:       o.me,
-			clients:  map[mino.Address]chan OutContext{},
 			receiver: receiver,
 			traffic:  o.traffic,
 
@@ -229,11 +228,15 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 			gateway:     gateway,
 			streamID:    streamID,
 
-			// used to create relays
+			// used to create and close relays
 			lock: new(sync.Mutex),
 
 			// used to notify when the context is done
 			done: make(chan struct{}),
+
+			connections: make(map[mino.Address]safeRelay),
+
+			relaysWait: new(sync.WaitGroup),
 		}
 
 		session = &StreamSession{
@@ -243,7 +246,7 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 
 		endpoint.streams[streamID] = session
 
-		sender.setupSendChan(stream, gateway)
+		sender.connections[gateway] = &passiveConn{streamConn{client: stream}}
 
 	}
 
@@ -258,7 +261,7 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 		headerURIKey, uri, headerGatewayKey, string(mebuf), headerStreamIDKey,
 		streamID))
 
-	go session.sender.listenStream(relayCtx, stream, gateway)
+	go session.sender.listenStream(relayCtx, &passiveConn{streamConn{client: stream}}, gateway)
 
 	if first {
 		err := endpoint.Handler.Stream(session.sender, session.receiver)
@@ -269,10 +272,15 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 		// The participant is done but waits for the protocol to end.
 		<-stream.Context().Done()
 
+		endpoint.Lock()
 		close(session.sender.done)
 
-		// When the handler is done we need to clean up the resourcess
-		endpoint.Lock()
+		// be sure no relays are still listening before closing the connections,
+		// otherwise the listen function of such relay would return an error.
+		session.sender.relaysWait.Wait()
+		session.sender.closeRelays()
+		session.sender.receiver.logger.Trace().Msg("connections closed")
+
 		delete(endpoint.streams, streamID)
 		endpoint.Unlock()
 
@@ -285,32 +293,18 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 	return nil
 }
 
-func (s sender) setupSendChan(stream relayer, addr mino.Address) {
+func (s sender) closeRelays() {
+	s.lock.Lock()
+	defer s.lock.Unlock()
 
-	// The send channel
-	out := make(chan OutContext)
-	s.clients[addr] = out
-
-	go func() {
-		for {
-			select {
-			case msg := <-out:
-				err := stream.Send(msg.Envelope)
-				if err == io.EOF {
-					close(msg.Done)
-					return
-				}
-				if err != nil {
-					msg.Done <- xerrors.Errorf("failed to send: %v", err)
-				}
-				close(msg.Done)
-			case <-stream.Context().Done():
-				return
-			case <-s.done:
-				return
-			}
+	for addr, streamConn := range s.connections {
+		err := streamConn.close()
+		if err != nil {
+			s.receiver.logger.Warn().Msgf("failed to close relay '%s': %v", addr, err)
+		} else {
+			s.traffic.addEvent("close", s.me, addr)
 		}
-	}()
+	}
 }
 
 // sendEnvelope creates the relays if needed and send the envelopes accordingly.
@@ -322,17 +316,9 @@ func (s sender) sendEnvelope(ctx context.Context, envelope Envelope) error {
 	}
 
 	for relayAddr, env := range dispatched {
-		// Special case when the message is sent back to the gateway. No need to
-		// setup the relay because we use our own stream.
+		// Special case when the message is sent back to the gateway.
 		if relayAddr.Equal(newRootAddress()) || relayAddr.Equal(s.gateway) {
-			s.traffic.logSend(ctx, s.me, s.gateway, env)
-			err := s.send(s.gateway, *env)
-			if err != nil {
-				s.receiver.logger.Warn().Msgf("failed to send to relay "+
-					"'%s': %v", s.gateway, err)
-			}
-
-			continue
+			relayAddr = s.gateway
 		}
 
 		err := s.SetupRelay(ctx, relayAddr)
@@ -343,7 +329,7 @@ func (s sender) sendEnvelope(ctx context.Context, envelope Envelope) error {
 
 		s.traffic.logSend(ctx, s.me, relayAddr, env)
 
-		err = s.send(relayAddr, *env)
+		err = s.send(relayAddr, env)
 		if err != nil {
 			s.receiver.logger.Warn().Msgf("failed to send to relay '%s': %v",
 				relayAddr, err)
@@ -355,12 +341,11 @@ func (s sender) sendEnvelope(ctx context.Context, envelope Envelope) error {
 }
 
 func (s sender) SetupRelay(ctx context.Context, addr mino.Address) error {
-	var relay relayer
 
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	_, found := s.clients[addr]
+	_, found := s.connections[addr]
 	if !found {
 		s.receiver.logger.Trace().Msgf("opening a relay to %s", addr)
 
@@ -371,18 +356,20 @@ func (s sender) SetupRelay(ctx context.Context, addr mino.Address) error {
 
 		cl := NewOverlayClient(conn)
 
-		relay, err = cl.Stream(ctx, grpc.WaitForReady(false))
+		r, err := cl.Stream(ctx, grpc.WaitForReady(false))
 		if err != nil {
 			// TODO: this error is actually never seen by the user
-			// s.receiver.logger.Fatal().Msgf(
-			// 	"failed to call stream for relay '%s': %v", addr, err)
+			s.receiver.logger.Fatal().Msgf(
+				"failed to call stream for relay '%s': %v", addr, err)
 			return xerrors.Errorf("'%s' failed to call stream for "+
 				"relay '%s': %v", s.me, addr, err)
 		}
 
+		relay := &streamConn{client: r, conn: conn}
+
 		s.traffic.addEvent("open", s.me, addr)
 
-		s.setupSendChan(relay, addr)
+		s.connections[addr] = relay
 		go s.listenStream(ctx, relay, addr)
 	}
 
@@ -433,40 +420,111 @@ func (s sender) processEnvelope(envelope Envelope) (map[mino.Address]*Envelope, 
 
 // listenStream listens for new messages that would come from a stream that we
 // set up and either notify us, or relay the message. This function is blocking.
-func (s sender) listenStream(streamCtx context.Context, stream relayer, distantAddr mino.Address) {
+func (s sender) listenStream(streamCtx context.Context, stream relayable,
+	distantAddr mino.Address) {
 
-	defer s.traffic.addEvent("close", s.me, distantAddr)
+	s.relaysWait.Add(1)
+	defer s.relaysWait.Done()
 
 	for {
-		envelope, err := stream.Recv()
-		if err == io.EOF {
+		select {
+		// Allows us to perform an early stopping in case the contex is already
+		// done.
+		case <-streamCtx.Done():
 			return
-		}
-		status, ok := status.FromError(err)
-		if ok && status.Code() == codes.Canceled {
-			return
-		}
-		if err != nil {
-			// TODO: this error is actually never seen by the user
-			// sender.receiver.logger.Fatal().Msgf("stream failed to receive: %v", err)
-			s.receiver.errs <- xerrors.Errorf("failed to receive: %v", err)
-			return
-		}
+		default:
+			envelope, err := stream.Recv()
+			if err == io.EOF {
+				return
+			}
+			status, ok := status.FromError(err)
+			if ok && status.Code() == codes.Canceled {
+				return
+			}
+			if err != nil {
+				// TODO: this error is actually never seen by the user
+				s.receiver.logger.Fatal().Msgf("stream failed to receive: %v", err)
+				s.receiver.errs <- xerrors.Errorf("failed to receive: %v", err)
+				return
+			}
 
-		s.traffic.logRcv(stream.Context(), distantAddr, s.me, envelope)
+			s.traffic.logRcv(stream.Context(), distantAddr, s.me, envelope)
 
-		err = s.sendEnvelope(streamCtx, *envelope)
-		if err != nil {
-			s.receiver.errs <- xerrors.Errorf("failed to send to dispatched relays: %v", err)
-			return
+			err = s.sendEnvelope(streamCtx, *envelope)
+			if err != nil {
+				s.receiver.errs <- xerrors.Errorf("failed to send to dispatched relays: %v", err)
+				return
+			}
 		}
 	}
 }
 
-type relayer interface {
+// relayable describes the basic primitives to use a stream
+type relayable interface {
 	Context() context.Context
 	Send(*Envelope) error
 	Recv() (*Envelope, error)
+}
+
+// safeRelay is a wrapper for a relayable that must have a thread-safe Recv()
+// method and a close method
+type safeRelay interface {
+	relayable
+	close() error
+}
+
+// streamConn offers a safe way to use a stream connection, with a thread-safe
+// Recv() function.
+//
+// - implements safeRelay
+type streamConn struct {
+	client relayable
+	lock   sync.Mutex
+	conn   grpc.ClientConnInterface
+}
+
+// Context implements relayable
+func (r *streamConn) Context() context.Context {
+	return r.client.Context()
+}
+
+// Send implements relayable
+func (r *streamConn) Send(e *Envelope) error {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	return r.client.Send(e)
+}
+
+// Recv implements relayable
+func (r *streamConn) Recv() (*Envelope, error) {
+	return r.client.Recv()
+}
+
+// close implements safeRelay
+func (r *streamConn) close() error {
+	conn, ok := r.conn.(*grpc.ClientConn)
+	if !ok {
+		return xerrors.Errorf("expected to have '*grpc.ClientConn', got '%T'", r.conn)
+	}
+
+	err := conn.Close()
+	if err != nil {
+		return xerrors.Errorf("failed to close connection: %v", err)
+	}
+
+	return nil
+}
+
+// passiveConn is used for the server stream, which can't be closed.
+//
+// - implements safeRelay
+type passiveConn struct {
+	streamConn
+}
+
+// close implements safeRelay
+func (r *passiveConn) close() error {
+	return nil
 }
 
 type overlay struct {

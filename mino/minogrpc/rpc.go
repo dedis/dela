@@ -138,7 +138,6 @@ func (rpc RPC) Stream(ctx context.Context,
 	sender := sender{
 		me: root,
 		// There is no gateway because this is the root
-		clients:  map[mino.Address]chan OutContext{},
 		receiver: receiver,
 		traffic:  rpc.overlay.traffic,
 
@@ -146,9 +145,12 @@ func (rpc RPC) Stream(ctx context.Context,
 		connFactory: rpc.overlay.connFactory,
 		uri:         rpc.uri,
 
-		streamID: streamID,
-		lock:     new(sync.Mutex),
-		done:     make(chan struct{}),
+		streamID:    streamID,
+		lock:        new(sync.Mutex),
+		done:        make(chan struct{}),
+		connections: make(map[mino.Address]safeRelay),
+
+		relaysWait: new(sync.WaitGroup),
 	}
 
 	go func() {

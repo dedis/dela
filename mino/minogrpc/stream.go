@@ -12,33 +12,37 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-// OutContext is wrapper for an envelope and the error channel.
-type OutContext struct {
-	Envelope *Envelope
-	Done     chan error
-}
-
 type sender struct {
-	me       mino.Address
-	clients  map[mino.Address]chan OutContext
-	receiver receiver
-	traffic  *traffic
+	me          mino.Address
+	traffic     *traffic
+	router      router.Router
+	connFactory ConnectionFactory
 
-	router router.Router
+	// the uri is a uniq identifier for the rpc
+	uri string
+
+	// the receiver is used when one of our connections receive a message for us
+	receiver receiver
+
+	// a uniq stream id should be generated for each stream. This streamID is
+	// used by the overlay to store and get the stream sessions.
+	streamID string
+
 	// gateway is the address of the one that contacted us and opened the
 	// stream. We need to know it so that when we need to contact this address,
 	// we can just reply, and not create a new connection.
 	gateway mino.Address
 
-	connFactory ConnectionFactory
-	uri         string
-	streamID    string
-
-	// used to create relays
-	lock *sync.Mutex
-
 	// used to notify when the context is done
 	done chan struct{}
+
+	// used to create and close relays
+	lock *sync.Mutex
+
+	// holds the relays, should be carefully handled with the lock Mutex
+	connections map[mino.Address]safeRelay
+
+	relaysWait *sync.WaitGroup
 }
 
 func (s sender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
@@ -80,7 +84,7 @@ func (s sender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 		cancel()
 	}()
 
-	relayCtx := metadata.NewOutgoingContext(ctx, metadata.Pairs(
+	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs(
 		headerURIKey, s.uri, headerGatewayKey, string(mebuf),
 		headerStreamIDKey, s.streamID))
 
@@ -92,7 +96,7 @@ func (s sender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 		},
 	}
 
-	err = s.sendEnvelope(relayCtx, *envelope)
+	err = s.sendEnvelope(ctx, *envelope)
 	if err != nil {
 		errs <- xerrors.Errorf("failed to send to relays: %v", err)
 		return errs
@@ -101,21 +105,15 @@ func (s sender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 	return errs
 }
 
-func (s sender) send(to mino.Address, envelope Envelope) error {
-	out, found := s.clients[to]
+func (s sender) send(to mino.Address, envelope *Envelope) error {
+	conn, found := s.connections[to]
 	if !found {
 		return xerrors.Errorf("expected to find out for client '%s'", to)
 	}
 
-	done := make(chan error, 1)
-	out <- OutContext{
-		Envelope: &envelope,
-		Done:     done,
-	}
-
-	err := <-done
+	err := conn.Send(envelope)
 	if err != nil {
-		return xerrors.Errorf("couldn't send to relay: %v", err)
+		return xerrors.Errorf("couldn't send to address: %v", err)
 	}
 
 	return nil
@@ -127,9 +125,7 @@ type receiver struct {
 	addressFactory mino.AddressFactory
 	errs           chan error
 	queue          Queue
-
-	// ctx    context.Context
-	logger zerolog.Logger
+	logger         zerolog.Logger
 }
 
 func (r receiver) appendMessage(msg *Message) {

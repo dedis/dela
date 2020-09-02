@@ -465,7 +465,7 @@ func TestSendToRelay(t *testing.T) {
 			addressFactory: fake.AddressFactory{},
 			queue:          newNonBlockingQueue(),
 		},
-		clients:     make(map[mino.Address]chan OutContext),
+		connections: make(map[mino.Address]safeRelay),
 		connFactory: factory,
 		router:      fakeRouter{},
 		lock:        new(sync.Mutex),

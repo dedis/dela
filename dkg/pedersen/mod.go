@@ -23,7 +23,7 @@ var suite = suites.MustFind("Ed25519")
 
 const (
 	setupTimeout   = time.Second * 300
-	decryptTimeout = time.Second * 30
+	decryptTimeout = time.Second * 100
 )
 
 // Pedersen allows one to initialize a new DKG protocol.

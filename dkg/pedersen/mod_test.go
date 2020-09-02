@@ -2,7 +2,6 @@ package pedersen
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/crypto"
@@ -184,7 +183,6 @@ func TestPedersen_Scenario(t *testing.T) {
 
 	_, err = actors[0].Setup(fakeAuthority, n)
 	require.NoError(t, err)
-	time.Sleep(time.Second)
 
 	_, err = actors[0].Setup(fakeAuthority, n)
 	require.EqualError(t, err, "startRes is already done, only one setup call is allowed")
@@ -196,7 +194,6 @@ func TestPedersen_Scenario(t *testing.T) {
 		require.Len(t, remainder, 0)
 		decrypted, err := actors[i].Decrypt(K, C)
 		require.NoError(t, err)
-
 		require.Equal(t, message, decrypted)
 	}
 }
