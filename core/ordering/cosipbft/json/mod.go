@@ -129,7 +129,7 @@ func (f genesisFormat) Decode(ctx serde.Context, data []byte) (serde.Message, er
 
 	factory := ctx.GetFactory(types.RosterKey{})
 
-	fac, ok := factory.(authority.AuthorityFactory)
+	fac, ok := factory.(authority.Factory)
 	if !ok {
 		return nil, xerrors.Errorf("invalid roster factory '%T'", factory)
 	}

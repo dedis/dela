@@ -27,7 +27,7 @@ func TestForwardLink_New(t *testing.T) {
 
 	opts := []LinkOption{
 		WithSignatures(fake.Signature{}, fake.Signature{}),
-		WithChangeSet(authority.RosterChangeSet{}),
+		WithChangeSet(authority.NewChangeSet()),
 	}
 
 	link, err = NewForwardLink(Digest{1}, Digest{2}, opts...)
@@ -77,10 +77,10 @@ func TestForwardLink_GetCommitSignature(t *testing.T) {
 
 func TestForwardLink_GetChangeSet(t *testing.T) {
 	link := forwardLink{
-		changeset: authority.RosterChangeSet{},
+		changeset: authority.NewChangeSet(),
 	}
 
-	require.Equal(t, authority.RosterChangeSet{}, link.GetChangeSet())
+	require.Equal(t, authority.NewChangeSet(), link.GetChangeSet())
 }
 
 func TestForwardLink_Serialize(t *testing.T) {

@@ -147,11 +147,11 @@ type RosterKey struct{}
 
 // GenesisFactory is a factory to deserialize the genesis messages.
 type GenesisFactory struct {
-	rosterFac authority.AuthorityFactory
+	rosterFac authority.Factory
 }
 
 // NewGenesisFactory creates a new genesis factory.
-func NewGenesisFactory(rf authority.AuthorityFactory) GenesisFactory {
+func NewGenesisFactory(rf authority.Factory) GenesisFactory {
 	return GenesisFactory{
 		rosterFac: rf,
 	}

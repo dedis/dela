@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/execution/baremetal"
-	rosterchange "go.dedis.ch/dela/core/execution/baremetal/viewchange"
+	"go.dedis.ch/dela/core/execution/baremetal/viewchange"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
@@ -414,8 +414,8 @@ func makeRosterTx(t *testing.T, nonce uint64, roster authority.Authority) txn.Tr
 
 	tx, err := anon.NewTransaction(
 		nonce,
-		anon.WithArg(baremetal.ContractArg, []byte(rosterchange.ContractName)),
-		anon.WithArg(rosterchange.AuthorityArg, data),
+		anon.WithArg(baremetal.ContractArg, []byte(viewchange.ContractName)),
+		anon.WithArg(viewchange.AuthorityArg, data),
 	)
 	require.NoError(t, err)
 
@@ -465,7 +465,7 @@ func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()
 		exec.Set(testContractName, testExec{})
 
 		rosterFac := authority.NewFactory(m.GetAddressFactory(), c.GetPublicKeyFactory())
-		exec.Set(rosterchange.ContractName, rosterchange.NewContract(keyRoster[:], rosterFac))
+		exec.Set(viewchange.ContractName, viewchange.NewContract(keyRoster[:], rosterFac))
 
 		vs := simple.NewService(exec, anon.NewTransactionFactory())
 
@@ -503,7 +503,7 @@ func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()
 }
 
 type badRosterFac struct {
-	authority.AuthorityFactory
+	authority.Factory
 }
 
 func (fac badRosterFac) AuthorityOf(serde.Context, []byte) (authority.Authority, error) {

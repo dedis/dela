@@ -346,7 +346,7 @@ func TestStateMachine_CatchUp(t *testing.T) {
 
 	opts := []types.LinkOption{
 		types.WithSignatures(fake.Signature{}, fake.Signature{}),
-		types.WithChangeSet(authority.RosterChangeSet{}),
+		types.WithChangeSet(authority.NewChangeSet()),
 	}
 
 	link, err := types.NewBlockLink(types.Digest{}, block, opts...)
@@ -370,7 +370,7 @@ func TestStateMachine_CatchUp(t *testing.T) {
 
 	opts = []types.LinkOption{
 		types.WithSignatures(fake.NewBadSignature(), fake.Signature{}),
-		types.WithChangeSet(authority.RosterChangeSet{}),
+		types.WithChangeSet(authority.NewChangeSet()),
 	}
 
 	link, err = types.NewBlockLink(types.Digest{}, block, opts...)

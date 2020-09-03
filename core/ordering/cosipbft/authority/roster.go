@@ -70,9 +70,7 @@ func (i *publicKeyIterator) GetNext() crypto.PublicKey {
 
 // Roster contains a list of participants with their addresses and public keys.
 //
-// - implements crypto.CollectiveAuthority
-// - implements viewchange.Authority
-// - implements mino.Players
+// - implements authority.Authority
 type Roster struct {
 	addrs   []mino.Address
 	pubkeys []crypto.PublicKey
@@ -146,11 +144,11 @@ func (r Roster) Take(updaters ...mino.FilterUpdater) mino.Players {
 	return newRoster
 }
 
-// Apply implements viewchange.Authority. It returns a new authority after
+// Apply implements authority.Authority. It returns a new authority after
 // applying the change set. The removals must be sorted by descending order and
 // unique or the behaviour will be undefined.
 func (r Roster) Apply(in ChangeSet) Authority {
-	changeset, ok := in.(RosterChangeSet)
+	changeset, ok := in.(*RosterChangeSet)
 	if !ok {
 		dela.Logger.Warn().Msgf("Change set '%T' is not supported. Ignoring.", in)
 		return r
@@ -164,30 +162,25 @@ func (r Roster) Apply(in ChangeSet) Authority {
 		pubkeys[i] = r.pubkeys[i]
 	}
 
-	for _, i := range changeset.Remove {
+	for _, i := range changeset.remove {
 		if int(i) < len(addrs) {
 			addrs = append(addrs[:i], addrs[i+1:]...)
 			pubkeys = append(pubkeys[:i], pubkeys[i+1:]...)
 		}
 	}
 
-	for _, player := range changeset.Add {
-		addrs = append(addrs, player.Address)
-		pubkeys = append(pubkeys, player.PublicKey)
-	}
-
 	roster := Roster{
-		addrs:   addrs,
-		pubkeys: pubkeys,
+		addrs:   append(addrs, changeset.addrs...),
+		pubkeys: append(pubkeys, changeset.pubkeys...),
 	}
 
 	return roster
 }
 
-// Diff implements viewchange.Authority. It returns the change set that must be
+// Diff implements authority.Authority. It returns the change set that must be
 // applied to the current authority to get the given one.
 func (r Roster) Diff(o Authority) ChangeSet {
-	changeset := RosterChangeSet{}
+	changeset := NewChangeSet()
 
 	other, ok := o.(Roster)
 	if !ok {
@@ -202,17 +195,15 @@ func (r Roster) Diff(o Authority) ChangeSet {
 				i++
 				k++
 			} else {
-				changeset.Remove = append(changeset.Remove, uint32(i))
+				changeset.remove = append(changeset.remove, uint(i))
 				i++
 			}
 		} else if i < len(r.addrs) {
-			changeset.Remove = append(changeset.Remove, uint32(i))
+			changeset.remove = append(changeset.remove, uint(i))
 			i++
 		} else {
-			changeset.Add = append(changeset.Add, Player{
-				Address:   other.addrs[k],
-				PublicKey: other.pubkeys[k],
-			})
+			changeset.addrs = append(changeset.addrs, other.addrs[k])
+			changeset.pubkeys = append(changeset.pubkeys, other.pubkeys[k])
 			k++
 		}
 	}
@@ -262,18 +253,17 @@ func (r Roster) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
-// Factory is a factory to deserialize authority.
+// rosterFac is a factory to deserialize authority.
 //
-// - implements viewchange.AuthorityFactory
-// - implements serde.Factory
-type Factory struct {
+// - implements authority.Factory
+type rosterFac struct {
 	addrFactory   mino.AddressFactory
 	pubkeyFactory crypto.PublicKeyFactory
 }
 
 // NewFactory creates a new instance of the authority factory.
 func NewFactory(af mino.AddressFactory, pf crypto.PublicKeyFactory) Factory {
-	return Factory{
+	return rosterFac{
 		addrFactory:   af,
 		pubkeyFactory: pf,
 	}
@@ -281,13 +271,13 @@ func NewFactory(af mino.AddressFactory, pf crypto.PublicKeyFactory) Factory {
 
 // Deserialize implements serde.Factory.  It returns the roster
 // from the data if appropriate, otherwise an error.
-func (f Factory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+func (f rosterFac) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	return f.AuthorityOf(ctx, data)
 }
 
-// AuthorityOf implements viewchange.AuthorityFactory. It returns the roster
-// from the data if appropriate, otherwise an error.
-func (f Factory) AuthorityOf(ctx serde.Context, data []byte) (Authority, error) {
+// AuthorityOf implements authority.AuthorityFactory. It returns the roster from
+// the data if appropriate, otherwise an error.
+func (f rosterFac) AuthorityOf(ctx serde.Context, data []byte) (Authority, error) {
 	format := rosterFormats.Get(ctx.GetFormat())
 
 	ctx = serde.WithFactory(ctx, PubKeyFac{}, f.pubkeyFactory)

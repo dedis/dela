@@ -30,12 +30,12 @@ const (
 // - implements baremetal.Contract
 type Contract struct {
 	rosterKey []byte
-	rosterFac authority.AuthorityFactory
+	rosterFac authority.Factory
 	context   serde.Context
 }
 
 // NewContract creates a new viewchange contract.
-func NewContract(key []byte, fac authority.AuthorityFactory) Contract {
+func NewContract(key []byte, fac authority.Factory) Contract {
 	return Contract{
 		rosterKey: key,
 		rosterFac: fac,

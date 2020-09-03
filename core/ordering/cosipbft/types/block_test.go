@@ -96,7 +96,7 @@ func TestGenesis_Fingerprint(t *testing.T) {
 }
 
 func TestGenesisFactory_Deserialize(t *testing.T) {
-	fac := NewGenesisFactory(authority.Factory{})
+	fac := NewGenesisFactory(authority.NewFactory(nil, nil))
 
 	msg, err := fac.Deserialize(fake.NewContext(), nil)
 	require.NoError(t, err)

@@ -10,11 +10,15 @@ import (
 type ChangeSet interface {
 	serde.Message
 
+	// NumChanges returns the number of changes that will be applied with this
+	// change set.
 	NumChanges() int
 
+	// GetNewAddresses returns the list of addresses for the new members.
 	GetNewAddresses() []mino.Address
 }
 
+// ChangeSetFactory is the factory interface to deserialize change sets.
 type ChangeSetFactory interface {
 	serde.Factory
 
@@ -36,7 +40,8 @@ type Authority interface {
 	Diff(Authority) ChangeSet
 }
 
-type AuthorityFactory interface {
+// Factory is the factory interface to deserialize authorities.
+type Factory interface {
 	serde.Factory
 
 	AuthorityOf(serde.Context, []byte) (Authority, error)

@@ -12,36 +12,32 @@ import (
 )
 
 func TestChangeSetFormat_Encode(t *testing.T) {
-	changeset := authority.RosterChangeSet{
-		Remove: []uint32{42},
-		Add: []authority.Player{
-			{
-				Address:   fake.NewAddress(2),
-				PublicKey: fake.PublicKey{},
-			},
-		},
-	}
+	cset := authority.NewChangeSet()
+	cset.Remove(42)
+	cset.Add(fake.NewAddress(2), fake.PublicKey{})
 
 	format := changeSetFormat{}
 	ctx := serde.NewContext(fake.ContextEngine{})
 
-	data, err := format.Encode(ctx, changeset)
+	data, err := format.Encode(ctx, cset)
 	require.NoError(t, err)
-	expected := `{"Remove":[42],"Add":[{"Address":"AgAAAA==","PublicKey":{}}]}`
+	expected := `{"Remove":[42],"Addresses":["AgAAAA=="],"PublicKeys":[{}]}`
 	require.Equal(t, expected, string(data))
 
 	_, err = format.Encode(ctx, fake.Message{})
 	require.EqualError(t, err, "unsupported message of type 'fake.Message'")
 
-	_, err = format.Encode(fake.NewBadContext(), changeset)
+	_, err = format.Encode(fake.NewBadContext(), cset)
 	require.EqualError(t, err, "couldn't marshal: fake error")
 
-	changeset.Add[0].PublicKey = fake.NewBadPublicKey()
-	_, err = format.Encode(ctx, changeset)
+	cset = authority.NewChangeSet()
+	cset.Add(fake.NewAddress(0), fake.NewBadPublicKey())
+	_, err = format.Encode(ctx, cset)
 	require.EqualError(t, err, "couldn't serialize public key: fake error")
 
-	changeset.Add[0].Address = fake.NewBadAddress()
-	_, err = format.Encode(ctx, changeset)
+	cset = authority.NewChangeSet()
+	cset.Add(fake.NewBadAddress(), fake.PublicKey{})
+	_, err = format.Encode(ctx, cset)
 	require.EqualError(t, err, "couldn't serialize address: fake error")
 }
 
@@ -51,28 +47,35 @@ func TestChangeSetFormat_Decode(t *testing.T) {
 	ctx = serde.WithFactory(ctx, authority.AddrKeyFac{}, fake.AddressFactory{})
 	ctx = serde.WithFactory(ctx, authority.PubKeyFac{}, fake.PublicKeyFactory{})
 
-	cset, err := format.Decode(ctx, []byte(`{"Add":[{}]}`))
-	require.NoError(t, err)
-	player := authority.Player{Address: fake.NewAddress(0), PublicKey: fake.PublicKey{}}
-	require.Equal(t, authority.RosterChangeSet{Add: []authority.Player{player}}, cset)
+	cset := authority.NewChangeSet()
+	cset.Add(fake.NewAddress(0), fake.PublicKey{})
 
-	cset, err = format.Decode(ctx, []byte(`{"Add":[]}`))
+	msg, err := format.Decode(ctx, []byte(`{"Addresses":[[]],"PublicKeys":[{}]}`))
 	require.NoError(t, err)
-	require.Equal(t, authority.RosterChangeSet{}, cset)
+	require.Equal(t, cset, msg)
+
+	cset = authority.NewChangeSet()
+	cset.Remove(1)
+	cset.Remove(2)
+	cset.Remove(3)
+
+	msg, err = format.Decode(ctx, []byte(`{"Remove":[1,2,3]}`))
+	require.NoError(t, err)
+	require.Equal(t, cset, msg)
 
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
 	require.EqualError(t, err, "couldn't deserialize change set: fake error")
 
 	badCtx := serde.WithFactory(ctx, authority.PubKeyFac{}, fake.NewBadPublicKeyFactory())
-	_, err = format.Decode(badCtx, []byte(`{"Add":[{}]}`))
+	_, err = format.Decode(badCtx, []byte(`{"Addresses":[[]],"PublicKeys":[{}]}`))
 	require.EqualError(t, err, "couldn't deserialize public key: fake error")
 
 	badCtx = serde.WithFactory(ctx, authority.AddrKeyFac{}, nil)
-	_, err = format.Decode(badCtx, []byte(`{"Add":[{}]}`))
+	_, err = format.Decode(badCtx, []byte(`{"Addresses":[[]],"PublicKeys":[{}]}`))
 	require.EqualError(t, err, "invalid address factory of type '<nil>'")
 
 	badCtx = serde.WithFactory(ctx, authority.PubKeyFac{}, nil)
-	_, err = format.Decode(badCtx, []byte(`{"Add":[{}]}`))
+	_, err = format.Decode(badCtx, []byte(`{"Addresses":[[]],"PublicKeys":[{}]}`))
 	require.EqualError(t, err, "invalid public key factory of type '<nil>'")
 }
 

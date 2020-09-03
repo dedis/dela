@@ -15,39 +15,55 @@ func RegisterChangeSetFormat(c serde.Format, f serde.FormatEngine) {
 	csetFormats.Register(c, f)
 }
 
-// Player is a container for an address and a public key.
-type Player struct {
-	Address   mino.Address
-	PublicKey crypto.PublicKey
-}
-
 // RosterChangeSet is the smallest data model to update an authority to another.
 //
-// - implements serde.Message
+// - implements authority.ChangeSet
 type RosterChangeSet struct {
-	Remove []uint32
-	Add    []Player
+	remove  []uint
+	addrs   []mino.Address
+	pubkeys []crypto.PublicKey
 }
 
-// NumChanges implements viewchange.ChangeSet. It returns the number of changes
-// that is applied with the change set.
-func (set RosterChangeSet) NumChanges() int {
-	return len(set.Remove) + len(set.Add)
+// NewChangeSet creates a new empty change set.
+func NewChangeSet() *RosterChangeSet {
+	return &RosterChangeSet{}
 }
 
-// GetNewAddresses implements viewchange.ChangeSet. It returns the list of
+// GetPublicKeys returns the list of public keys of the new participants.
+func (set *RosterChangeSet) GetPublicKeys() []crypto.PublicKey {
+	return append([]crypto.PublicKey{}, set.pubkeys...)
+}
+
+// GetNewAddresses implements authority.ChangeSet. It returns the list of
 // addresses of the new members.
-func (set RosterChangeSet) GetNewAddresses() []mino.Address {
-	addrs := make([]mino.Address, len(set.Add))
-	for i, player := range set.Add {
-		addrs[i] = player.Address
-	}
+func (set *RosterChangeSet) GetNewAddresses() []mino.Address {
+	return append([]mino.Address{}, set.addrs...)
+}
 
-	return addrs
+// GetRemoveIndices returns the list of indices to remove from the authority.
+func (set *RosterChangeSet) GetRemoveIndices() []uint {
+	return append([]uint{}, set.remove...)
+}
+
+// Remove appends the index to the list of removals.
+func (set *RosterChangeSet) Remove(index uint) {
+	set.remove = append(set.remove, index)
+}
+
+// Add appends the address and the public key to the list of new participants.
+func (set *RosterChangeSet) Add(addr mino.Address, pubkey crypto.PublicKey) {
+	set.addrs = append(set.addrs, addr)
+	set.pubkeys = append(set.pubkeys, pubkey)
+}
+
+// NumChanges implements authority.ChangeSet. It returns the number of changes
+// that is applied with the change set.
+func (set *RosterChangeSet) NumChanges() int {
+	return len(set.remove) + len(set.addrs)
 }
 
 // Serialize implements serde.Message.
-func (set RosterChangeSet) Serialize(ctx serde.Context) ([]byte, error) {
+func (set *RosterChangeSet) Serialize(ctx serde.Context) ([]byte, error) {
 	format := csetFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, set)
@@ -66,8 +82,7 @@ type AddrKeyFac struct{}
 
 // SimpleChangeSetFactory is a message factory to deserialize a change set.
 //
-// - viewchange.ChangeSetFactory
-// - implements serde.Factory
+// - roster.ChangeSetFactory
 type SimpleChangeSetFactory struct {
 	addrFactory   mino.AddressFactory
 	pubkeyFactory crypto.PublicKeyFactory
@@ -87,7 +102,7 @@ func (f SimpleChangeSetFactory) Deserialize(ctx serde.Context, data []byte) (ser
 	return f.ChangeSetOf(ctx, data)
 }
 
-// ChangeSetOf implements viewchange.ChangeSetFactory. It returns the change set
+// ChangeSetOf implements roster.ChangeSetFactory. It returns the change set
 // from the data if appropriate, otherwise an error.
 func (f SimpleChangeSetFactory) ChangeSetOf(ctx serde.Context, data []byte) (ChangeSet, error) {
 	format := csetFormats.Get(ctx.GetFormat())

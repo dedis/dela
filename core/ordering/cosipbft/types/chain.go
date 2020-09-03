@@ -77,7 +77,7 @@ func NewForwardLink(from, to Digest, opts ...LinkOption) (Link, error) {
 		forwardLink: forwardLink{
 			from:      from,
 			to:        to,
-			changeset: authority.RosterChangeSet{},
+			changeset: authority.NewChangeSet(),
 		},
 		hashFac: crypto.NewSha256Factory(),
 	}

@@ -24,8 +24,9 @@ type Player struct {
 
 // ChangeSet is a JSON message of the change set of an authority.
 type ChangeSet struct {
-	Remove []uint32
-	Add    []Player
+	Remove     []uint
+	Addresses  [][]byte
+	PublicKeys []json.RawMessage
 }
 
 // Address is a JSON message for an address.
@@ -43,32 +44,35 @@ type changeSetFormat struct{}
 // Encode implements serde.FormatEngine. It returns the data serialized for the
 // change set message if appropriate, otherwise an error.
 func (f changeSetFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
-	cset, ok := msg.(authority.RosterChangeSet)
+	cset, ok := msg.(*authority.RosterChangeSet)
 	if !ok {
 		return nil, xerrors.Errorf("unsupported message of type '%T'", msg)
 	}
 
-	add := make([]Player, len(cset.Add))
-	for i, player := range cset.Add {
-		addr, err := player.Address.MarshalText()
+	addrs := make([][]byte, 0)
+	for _, addr := range cset.GetNewAddresses() {
+		raw, err := addr.MarshalText()
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't serialize address: %v", err)
 		}
 
-		pubkey, err := player.PublicKey.Serialize(ctx)
+		addrs = append(addrs, raw)
+	}
+
+	pubkeys := make([]json.RawMessage, 0)
+	for _, pubkey := range cset.GetPublicKeys() {
+		raw, err := pubkey.Serialize(ctx)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't serialize public key: %v", err)
 		}
 
-		add[i] = Player{
-			Address:   addr,
-			PublicKey: pubkey,
-		}
+		pubkeys = append(pubkeys, raw)
 	}
 
 	m := ChangeSet{
-		Remove: cset.Remove,
-		Add:    add,
+		Remove:     cset.GetRemoveIndices(),
+		Addresses:  addrs,
+		PublicKeys: pubkeys,
 	}
 
 	data, err := ctx.Marshal(m)
@@ -102,34 +106,24 @@ func (f changeSetFormat) Decode(ctx serde.Context, data []byte) (serde.Message, 
 		return nil, xerrors.Errorf("invalid address factory of type '%T'", factory)
 	}
 
-	if len(m.Add) == 0 {
-		// Keep the addition field nil if none are present to be consistent with
-		// an empty change set.
-		cset := authority.RosterChangeSet{Remove: m.Remove}
-		return cset, nil
+	cset := authority.NewChangeSet()
+
+	for _, index := range m.Remove {
+		cset.Remove(index)
 	}
 
-	add := make([]authority.Player, len(m.Add))
-	for i, player := range m.Add {
-		addr := addrFac.FromText(player.Address)
+	for i, rawAddr := range m.Addresses {
+		addr := addrFac.FromText(rawAddr)
 
-		pubkey, err := pkFac.PublicKeyOf(ctx, player.PublicKey)
+		pubkey, err := pkFac.PublicKeyOf(ctx, m.PublicKeys[i])
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't deserialize public key: %v", err)
 		}
 
-		add[i] = authority.Player{
-			Address:   addr,
-			PublicKey: pubkey,
-		}
+		cset.Add(addr, pubkey)
 	}
 
-	set := authority.RosterChangeSet{
-		Remove: m.Remove,
-		Add:    add,
-	}
-
-	return set, nil
+	return cset, nil
 }
 
 // RosterFormat is the engine to encode and decode roster messages in JSON

@@ -78,7 +78,7 @@ func (snap fakeStore) Set(key, value []byte) error {
 }
 
 type badRosterFac struct {
-	authority.AuthorityFactory
+	authority.Factory
 	counter *fake.Counter
 }
 

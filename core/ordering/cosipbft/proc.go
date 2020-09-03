@@ -36,7 +36,7 @@ type processor struct {
 	tree        blockstore.TreeCache
 	pool        pool.Pool
 	watcher     core.Observable
-	rosterFac   authority.AuthorityFactory
+	rosterFac   authority.Factory
 	hashFactory crypto.HashFactory
 
 	context serde.Context
