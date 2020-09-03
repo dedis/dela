@@ -218,6 +218,15 @@ func (f publicKeyFactory) PublicKeyOf(ctx serde.Context, data []byte) (crypto.Pu
 	return pubkey, nil
 }
 
+func (f publicKeyFactory) FromBytes(data []byte) (crypto.PublicKey, error) {
+	pubkey, err := NewPublicKey(data)
+	if err != nil {
+		return nil, err
+	}
+
+	return pubkey, nil
+}
+
 // signatureFactory provides functions to create schnorr signatures from
 // protobuf messages.
 //

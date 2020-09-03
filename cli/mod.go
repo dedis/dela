@@ -65,6 +65,8 @@ type Flag interface {
 type Flags interface {
 	String(name string) string
 
+	StringSlice(name string) []string
+
 	Duration(name string) time.Duration
 
 	Path(name string) string

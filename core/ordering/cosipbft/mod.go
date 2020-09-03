@@ -201,6 +201,10 @@ func (s *Service) Setup(ctx context.Context, ca crypto.CollectiveAuthority) erro
 		}
 	}
 
+	s.logger.Info().
+		Int("roster", ca.Len()).
+		Msg("new chain has been created")
+
 	return nil
 }
 
@@ -303,6 +307,7 @@ func (s *Service) main() error {
 	case <-s.started:
 		// A genesis block has been set, the node will then follow the chain
 		// related to it.
+		s.logger.Info().Msg("node has started following the chain")
 	case <-s.closing:
 		return nil
 	}
@@ -358,6 +363,12 @@ func (s *Service) doRound(ctx context.Context) error {
 
 		select {
 		case <-time.After(s.timeout):
+			if s.pool.Len() == 0 {
+				// When the pool of transactions is empty, the round is aborted
+				// and everything restart.
+				return nil
+			}
+
 			s.logger.Warn().Msg("round reached the timeout")
 
 			ctx, cancel := context.WithTimeout(ctx, s.timeout)
@@ -433,6 +444,9 @@ func (s *Service) doRound(ctx context.Context) error {
 
 func (s *Service) doPBFT(ctx context.Context) error {
 	txs := s.pool.Gather(ctx, pool.Config{Min: 1})
+	if len(txs) == 0 {
+		return nil
+	}
 
 	if ctx.Err() != nil {
 		// Don't bother trying PBFT if the context is done.

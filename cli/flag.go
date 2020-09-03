@@ -16,6 +16,15 @@ type StringFlag struct {
 // Flag implements cli.Flag.
 func (flag StringFlag) Flag() {}
 
+type StringSliceFlag struct {
+	Name     string
+	Usage    string
+	Required bool
+	Value    []string
+}
+
+func (flag StringSliceFlag) Flag() {}
+
 // DurationFlag is a definition of a command flag expected to be parsed as a
 // duration.
 //

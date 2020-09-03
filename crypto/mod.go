@@ -35,6 +35,8 @@ type PublicKeyFactory interface {
 	serde.Factory
 
 	PublicKeyOf(serde.Context, []byte) (PublicKey, error)
+
+	FromBytes([]byte) (PublicKey, error)
 }
 
 // PublicKeyIterator is an iterator over the list of public keys of a

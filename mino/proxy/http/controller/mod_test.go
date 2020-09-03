@@ -2,7 +2,6 @@ package controller
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/cli"
@@ -112,6 +111,8 @@ func (i *fakeInjector) Inject(v interface{}) {
 //
 // - implements cli.Flags
 type fakeFlags struct {
+	cli.Flags
+
 	Strings map[string]string
 	Ints    map[string]int
 }
@@ -119,16 +120,6 @@ type fakeFlags struct {
 // String implements cli.Flags
 func (f fakeFlags) String(name string) string {
 	return f.Strings[name]
-}
-
-// Duration implements cli.Flags
-func (f fakeFlags) Duration(name string) time.Duration {
-	panic("not implemented") // TODO: Implement
-}
-
-// Path implements cli.Flags
-func (f fakeFlags) Path(name string) string {
-	panic("not implemented") // TODO: Implement
 }
 
 // Int implements cli.Flags

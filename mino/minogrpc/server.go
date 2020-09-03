@@ -53,6 +53,10 @@ func (o overlayServer) Join(ctx context.Context, req *JoinRequest) (*JoinRespons
 		return nil, xerrors.Errorf("token '%s' is invalid", req.Token)
 	}
 
+	dela.Logger.Info().
+		Str("from", string(req.GetCertificate().GetAddress())).
+		Msg("valid token received")
+
 	// 2. Share certificates to current participants.
 	list := make(map[mino.Address][]byte)
 	o.certs.Range(func(addr mino.Address, cert *tls.Certificate) bool {
@@ -152,6 +156,10 @@ func (o overlayServer) Call(ctx context.Context, msg *Message) (*Message, error)
 	result, err := endpoint.Handler.Process(req)
 	if err != nil {
 		return nil, xerrors.Errorf("handler failed to process: %v", err)
+	}
+
+	if result == nil {
+		return &Message{}, nil
 	}
 
 	res, err := result.Serialize(o.context)

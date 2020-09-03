@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -117,26 +116,10 @@ func TestSocketDaemon_Listen(t *testing.T) {
 func TestSocketFactory_ClientFromContext(t *testing.T) {
 	factory := socketFactory{}
 
-	homeDir, err := os.UserHomeDir()
-	require.NoError(t, err)
-
-	client, err := factory.ClientFromContext(fakeContext{})
+	client, err := factory.ClientFromContext(fakeContext{path: "cfgdir"})
 	require.NoError(t, err)
 	require.NotNil(t, client)
-	require.Equal(t, filepath.Join(homeDir, ".dela", "daemon.sock"),
-		client.(socketClient).socketpath)
-
-	if runtime.GOOS == "windows" {
-		require.NoError(t, syscall.Unsetenv("USERPROFILE"))
-		defer syscall.Setenv("USERPROFILE", homeDir)
-	} else {
-		require.NoError(t, syscall.Unsetenv("HOME"))
-		defer syscall.Setenv("HOME", homeDir)
-	}
-
-	client, err = factory.ClientFromContext(fakeContext{})
-	require.NoError(t, err)
-	require.Equal(t, filepath.Join(os.TempDir(), "dela", "daemon.sock"),
+	require.Equal(t, filepath.Join("cfgdir", "daemon.sock"),
 		client.(socketClient).socketpath)
 }
 

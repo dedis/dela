@@ -1,12 +1,18 @@
 // Package main implements a ledger based on in-memory components.
 //
-//  go run mod.go start
-//  go run mod.go --socket 2001.socket start --port 2001\
-//    --clientaddr :8081
-//  go run mod.go minogrpc token
-//  go run mod.go --socket 2001.socket minogrpc join\
-//    --address 127.0.0.1:2000 --token XX --cert-hash XX
+// Unix example:
 //
+//  go install
+//
+//  memcoin --socket /tmp/node1 start --port 2001 &
+//  memcoin --socket /tmp/node2 start --port 2002 &
+//
+//  memcoin --config /tmp/node2 minogrpc join --address 127.0.0.1:2001\
+//    $(memcoin --config /tmp/node1 minogrpc token)
+//
+//  memcoin --config /tmp/node1 ordering setup\
+//    --member $(memcoin --config /tmp/node1 ordering export)\
+//    --member $(memcoin --config /tmp/node2 ordering export)
 //
 package main
 
@@ -14,16 +20,14 @@ import (
 	"os"
 
 	"go.dedis.ch/dela/cli/node"
-	pedersen "go.dedis.ch/dela/dkg/pedersen/controller"
+	cosipbft "go.dedis.ch/dela/core/ordering/cosipbft/controller"
 	mino "go.dedis.ch/dela/mino/minogrpc/controller"
-	proxyhttp "go.dedis.ch/dela/mino/proxy/http/controller"
 )
 
 func main() {
 	builder := node.NewBuilder(
-		proxyhttp.NewMinimal(),
 		mino.NewMinimal(),
-		pedersen.NewMinimal(),
+		cosipbft.NewMinimal(),
 	)
 
 	app := builder.Build()

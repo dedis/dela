@@ -81,7 +81,7 @@ func TestCliBuilder_Build(t *testing.T) {
 
 	sub := cb.SetSubCommand("subtest")
 	sub.SetDescription("subtest description")
-	sub.SetFlags(cli.DurationFlag{}, cli.IntFlag{})
+	sub.SetFlags(cli.DurationFlag{}, cli.IntFlag{}, cli.StringSliceFlag{})
 
 	cb = builder.SetCommand("another")
 	cb.SetAction(func(cli.Flags) error {

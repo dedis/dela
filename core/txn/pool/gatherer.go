@@ -23,6 +23,8 @@ func (k Key) String() string {
 // Gatherer is a common tool to the pool implementations that helps to implement
 // the gathering process.
 type Gatherer interface {
+	Len() int
+
 	Add(tx txn.Transaction) error
 
 	Remove(tx txn.Transaction) error
@@ -50,6 +52,15 @@ func NewSimpleGatherer() Gatherer {
 		set:     make(map[Key]txn.Transaction),
 		history: make(map[Key]struct{}),
 	}
+}
+
+// Len implements pool.Gatherer. It returns the number of transaction available
+// in the pool.
+func (g *simpleGatherer) Len() int {
+	g.Lock()
+	defer g.Unlock()
+
+	return len(g.set)
 }
 
 // Add implements pool.Gatherer. It adds the transaction to the set of available

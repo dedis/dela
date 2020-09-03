@@ -29,6 +29,9 @@ type Pool interface {
 	// receive the transactions.
 	SetPlayers(mino.Players) error
 
+	// Len returns the number of transactions available in the pool.
+	Len() int
+
 	// Add adds the transaction to the pool.
 	Add(txn.Transaction) error
 

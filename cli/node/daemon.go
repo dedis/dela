@@ -63,9 +63,11 @@ type socketDaemon struct {
 func (d *socketDaemon) Listen() error {
 	dir, _ := filepath.Split(d.socketpath)
 
-	err := os.MkdirAll(dir, 0700)
-	if err != nil {
-		return xerrors.Errorf("couldn't make path: %v", err)
+	if dir != "" {
+		err := os.MkdirAll(dir, 0700)
+		if err != nil {
+			return xerrors.Errorf("couldn't make path: %v", err)
+		}
 	}
 
 	socket, err := net.Listen("unix", d.socketpath)
@@ -183,15 +185,5 @@ func (f socketFactory) DaemonFromContext(ctx cli.Flags) (Daemon, error) {
 }
 
 func (f socketFactory) getSocketPath(ctx cli.Flags) string {
-	path := ctx.Path("socket")
-	if path == "" {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return filepath.Join(os.TempDir(), "dela", "daemon.sock")
-		}
-
-		return filepath.Join(homeDir, ".dela", "daemon.sock")
-	}
-
-	return path
+	return filepath.Join(ctx.Path("config"), "daemon.sock")
 }

@@ -114,8 +114,9 @@ func (b *cliBuilder) Build() cli.Application {
 		Usage: "Dedis Ledger Architecture",
 		Flags: []ucli.Flag{
 			&ucli.PathFlag{
-				Name:  "socket",
-				Usage: "path to the daemon socket",
+				Name:  "config",
+				Usage: "path to the config folder",
+				Value: ".dela",
 			},
 		},
 		Commands: commands,
@@ -195,6 +196,13 @@ func (b *cliBuilder) buildFlags(in []cli.Flag) []ucli.Flag {
 				Usage:    flag.Usage,
 				Required: flag.Required,
 				Value:    flag.Value,
+			}
+		case cli.StringSliceFlag:
+			flags[i] = &ucli.StringSliceFlag{
+				Name:     flag.Name,
+				Usage:    flag.Usage,
+				Required: flag.Required,
+				Value:    ucli.NewStringSlice(flag.Value...),
 			}
 		case cli.DurationFlag:
 			flags[i] = &ucli.DurationFlag{
