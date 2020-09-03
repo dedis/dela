@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/core/ordering/cosipbft/roster"
+	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/internal/testing/fake"
@@ -145,7 +145,7 @@ func makeBlockLink(t *testing.T, opts ...types.LinkOption) types.BlockLink {
 }
 
 type fakeChangeSet struct {
-	roster.ChangeSet
+	authority.ChangeSet
 
 	err error
 }
@@ -155,12 +155,12 @@ func (cs fakeChangeSet) Serialize(serde.Context) ([]byte, error) {
 }
 
 type fakeChangeSetFac struct {
-	roster.ChangeSetFactory
+	authority.ChangeSetFactory
 
 	err error
 }
 
-func (fac fakeChangeSetFac) ChangeSetOf(serde.Context, []byte) (roster.ChangeSet, error) {
+func (fac fakeChangeSetFac) ChangeSetOf(serde.Context, []byte) (authority.ChangeSet, error) {
 	return fakeChangeSet{}, fac.err
 }
 

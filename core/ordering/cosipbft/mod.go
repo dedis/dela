@@ -7,10 +7,10 @@ import (
 
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/core/ordering"
+	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blocksync"
 	"go.dedis.ch/dela/core/ordering/cosipbft/pbft"
-	"go.dedis.ch/dela/core/ordering/cosipbft/roster"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/hashtree"
@@ -93,7 +93,7 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 	proc.blocks = tmpl.blocks
 	proc.genesis = tmpl.genesis
 	proc.pool = param.Pool
-	proc.rosterFac = roster.NewFactory(param.Mino.GetAddressFactory(), param.Cosi.GetPublicKeyFactory())
+	proc.rosterFac = authority.NewFactory(param.Mino.GetAddressFactory(), param.Cosi.GetPublicKeyFactory())
 	proc.tree = blockstore.NewTreeCache(param.Tree)
 	proc.logger = dela.Logger.With().Str("addr", param.Mino.GetAddress().String()).Logger()
 
@@ -110,7 +110,7 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 	proc.pbftsm = pbft.NewStateMachine(pcparam)
 
 	blockFac := types.NewBlockFactory(param.Validation.GetFactory())
-	csFac := roster.NewChangeSetFactory(param.Mino.GetAddressFactory(), param.Cosi.GetPublicKeyFactory())
+	csFac := authority.NewChangeSetFactory(param.Mino.GetAddressFactory(), param.Cosi.GetPublicKeyFactory())
 	linkFac := types.NewLinkFactory(blockFac, param.Cosi.GetSignatureFactory(), csFac)
 	chainFac := types.NewChainFactory(linkFac)
 
@@ -179,7 +179,7 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 
 // Setup creates a genesis block and sends it to the collective authority.
 func (s *Service) Setup(ctx context.Context, ca crypto.CollectiveAuthority) error {
-	err := s.storeGenesis(roster.FromAuthority(ca), nil)
+	err := s.storeGenesis(authority.FromAuthority(ca), nil)
 	if err != nil {
 		return xerrors.Errorf("creating genesis: %v", err)
 	}
@@ -530,7 +530,7 @@ func (s *Service) prepareData(txs []txn.Transaction) (data validation.Data, id t
 	return
 }
 
-func (s *Service) wakeUp(ctx context.Context, ro roster.Authority) error {
+func (s *Service) wakeUp(ctx context.Context, ro authority.Authority) error {
 	newRoster, err := s.getCurrentRoster()
 	if err != nil {
 		return xerrors.Errorf("read roster failed: %v", err)

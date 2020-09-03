@@ -3,7 +3,7 @@ package json
 import (
 	"encoding/json"
 
-	"go.dedis.ch/dela/core/ordering/cosipbft/roster"
+	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
@@ -11,8 +11,8 @@ import (
 )
 
 func init() {
-	roster.RegisterChangeSetFormat(serde.FormatJSON, changeSetFormat{})
-	roster.RegisterRosterFormat(serde.FormatJSON, rosterFormat{})
+	authority.RegisterChangeSetFormat(serde.FormatJSON, changeSetFormat{})
+	authority.RegisterRosterFormat(serde.FormatJSON, rosterFormat{})
 }
 
 // Player is a JSON message that contains the address and the public key of a
@@ -31,7 +31,7 @@ type ChangeSet struct {
 // Address is a JSON message for an address.
 type Address []byte
 
-// Roster is a JSON message for a roster.
+// Roster is a JSON message for a authority.
 type Roster []Player
 
 // ChangeSetFormat is the engine to encode and decode change set messages in
@@ -43,7 +43,7 @@ type changeSetFormat struct{}
 // Encode implements serde.FormatEngine. It returns the data serialized for the
 // change set message if appropriate, otherwise an error.
 func (f changeSetFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
-	cset, ok := msg.(roster.SimpleChangeSet)
+	cset, ok := msg.(authority.RosterChangeSet)
 	if !ok {
 		return nil, xerrors.Errorf("unsupported message of type '%T'", msg)
 	}
@@ -88,14 +88,14 @@ func (f changeSetFormat) Decode(ctx serde.Context, data []byte) (serde.Message, 
 		return nil, xerrors.Errorf("couldn't deserialize change set: %v", err)
 	}
 
-	factory := ctx.GetFactory(roster.PubKeyFac{})
+	factory := ctx.GetFactory(authority.PubKeyFac{})
 
 	pkFac, ok := factory.(crypto.PublicKeyFactory)
 	if !ok {
 		return nil, xerrors.Errorf("invalid public key factory of type '%T'", factory)
 	}
 
-	factory = ctx.GetFactory(roster.AddrKeyFac{})
+	factory = ctx.GetFactory(authority.AddrKeyFac{})
 
 	addrFac, ok := factory.(mino.AddressFactory)
 	if !ok {
@@ -105,11 +105,11 @@ func (f changeSetFormat) Decode(ctx serde.Context, data []byte) (serde.Message, 
 	if len(m.Add) == 0 {
 		// Keep the addition field nil if none are present to be consistent with
 		// an empty change set.
-		cset := roster.SimpleChangeSet{Remove: m.Remove}
+		cset := authority.RosterChangeSet{Remove: m.Remove}
 		return cset, nil
 	}
 
-	add := make([]roster.Player, len(m.Add))
+	add := make([]authority.Player, len(m.Add))
 	for i, player := range m.Add {
 		addr := addrFac.FromText(player.Address)
 
@@ -118,13 +118,13 @@ func (f changeSetFormat) Decode(ctx serde.Context, data []byte) (serde.Message, 
 			return nil, xerrors.Errorf("couldn't deserialize public key: %v", err)
 		}
 
-		add[i] = roster.Player{
+		add[i] = authority.Player{
 			Address:   addr,
 			PublicKey: pubkey,
 		}
 	}
 
-	set := roster.SimpleChangeSet{
+	set := authority.RosterChangeSet{
 		Remove: m.Remove,
 		Add:    add,
 	}
@@ -141,7 +141,7 @@ type rosterFormat struct{}
 // Encode implements serde.FormatEngine. It returns the data serialized for the
 // roster message if appropriate, otherwise an error.
 func (f rosterFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
-	roster, ok := msg.(roster.Roster)
+	roster, ok := msg.(authority.Roster)
 	if !ok {
 		return nil, xerrors.Errorf("unsupported message of type '%T'", msg)
 	}
@@ -186,14 +186,14 @@ func (f rosterFormat) Decode(ctx serde.Context, data []byte) (serde.Message, err
 		return nil, xerrors.Errorf("couldn't deserialize roster: %v", err)
 	}
 
-	factory := ctx.GetFactory(roster.PubKeyFac{})
+	factory := ctx.GetFactory(authority.PubKeyFac{})
 
 	pkFac, ok := factory.(crypto.PublicKeyFactory)
 	if !ok {
 		return nil, xerrors.Errorf("invalid public key factory of type '%T'", factory)
 	}
 
-	factory = ctx.GetFactory(roster.AddrKeyFac{})
+	factory = ctx.GetFactory(authority.AddrKeyFac{})
 
 	addrFac, ok := factory.(mino.AddressFactory)
 	if !ok {
@@ -214,5 +214,5 @@ func (f rosterFormat) Decode(ctx serde.Context, data []byte) (serde.Message, err
 		pubkeys[i] = pubkey
 	}
 
-	return roster.New(addrs, pubkeys), nil
+	return authority.New(addrs, pubkeys), nil
 }

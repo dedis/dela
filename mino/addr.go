@@ -67,12 +67,12 @@ func (r roster) Take(updaters ...FilterUpdater) Players {
 }
 
 // AddressIterator implements mino.Players. It returns an iterator for the
-// roster.
+// authority.
 func (r roster) AddressIterator() AddressIterator {
 	return NewAddressIterator(r.addrs)
 }
 
-// Len implements mino.Players. It returns the length of the roster.
+// Len implements mino.Players. It returns the length of the authority.
 func (r roster) Len() int {
 	return len(r.addrs)
 }

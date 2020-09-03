@@ -1,7 +1,7 @@
 package json
 
 import (
-	"go.dedis.ch/dela/core/ordering/cosipbft/roster"
+	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/serde"
@@ -149,10 +149,10 @@ func (fmt linkFormat) Decode(ctx serde.Context, data []byte) (serde.Message, err
 	return link, nil
 }
 
-func decodeChangeSet(ctx serde.Context, data []byte) (roster.ChangeSet, error) {
+func decodeChangeSet(ctx serde.Context, data []byte) (authority.ChangeSet, error) {
 	factory := ctx.GetFactory(types.ChangeSetKey{})
 
-	fac, ok := factory.(roster.ChangeSetFactory)
+	fac, ok := factory.(authority.ChangeSetFactory)
 	if !ok {
 		return nil, xerrors.Errorf("invalid factory '%T'", factory)
 	}

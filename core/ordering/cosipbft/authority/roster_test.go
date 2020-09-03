@@ -1,4 +1,4 @@
-package roster
+package authority
 
 import (
 	"bytes"
@@ -133,10 +133,10 @@ func TestRoster_Apply(t *testing.T) {
 	roster := FromAuthority(fake.NewAuthority(3, fake.NewSigner))
 	require.Equal(t, roster, roster.Apply(nil))
 
-	roster2 := roster.Apply(SimpleChangeSet{Remove: []uint32{3, 2, 0}})
+	roster2 := roster.Apply(RosterChangeSet{Remove: []uint32{3, 2, 0}})
 	require.Equal(t, roster.Len()-2, roster2.Len())
 
-	roster3 := roster2.Apply(SimpleChangeSet{Add: []Player{{}}})
+	roster3 := roster2.Apply(RosterChangeSet{Add: []Player{{}}})
 	require.Equal(t, roster.Len()-1, roster3.Len())
 }
 
@@ -144,21 +144,21 @@ func TestRoster_Diff(t *testing.T) {
 	roster1 := FromAuthority(fake.NewAuthority(3, fake.NewSigner))
 
 	roster2 := FromAuthority(fake.NewAuthority(4, fake.NewSigner))
-	diff := roster1.Diff(roster2).(SimpleChangeSet)
+	diff := roster1.Diff(roster2).(RosterChangeSet)
 	require.Len(t, diff.Add, 1)
 
 	roster3 := FromAuthority(fake.NewAuthority(2, fake.NewSigner))
-	diff = roster1.Diff(roster3).(SimpleChangeSet)
+	diff = roster1.Diff(roster3).(RosterChangeSet)
 	require.Len(t, diff.Remove, 1)
 
 	roster4 := FromAuthority(fake.NewAuthority(3, fake.NewSigner))
 	roster4.addrs[1] = fake.NewAddress(5)
-	diff = roster1.Diff(roster4).(SimpleChangeSet)
+	diff = roster1.Diff(roster4).(RosterChangeSet)
 	require.Equal(t, []uint32{1, 2}, diff.Remove)
 	require.Len(t, diff.Add, 2)
 
-	diff = roster1.Diff((Authority)(nil)).(SimpleChangeSet)
-	require.Equal(t, SimpleChangeSet{}, diff)
+	diff = roster1.Diff((Authority)(nil)).(RosterChangeSet)
+	require.Equal(t, RosterChangeSet{}, diff)
 }
 
 func TestRoster_Len(t *testing.T) {
@@ -170,7 +170,7 @@ func TestRoster_GetPublicKey(t *testing.T) {
 	authority := fake.NewAuthority(3, fake.NewSigner)
 	roster := FromAuthority(authority)
 
-	iter := authority.AddressIterator()
+	iter := roster.AddressIterator()
 	i := 0
 	for iter.HasNext() {
 		pubkey, index := roster.GetPublicKey(iter.GetNext())

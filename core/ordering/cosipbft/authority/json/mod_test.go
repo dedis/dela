@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/core/ordering/cosipbft/roster"
+	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
@@ -12,9 +12,9 @@ import (
 )
 
 func TestChangeSetFormat_Encode(t *testing.T) {
-	changeset := roster.SimpleChangeSet{
+	changeset := authority.RosterChangeSet{
 		Remove: []uint32{42},
-		Add: []roster.Player{
+		Add: []authority.Player{
 			{
 				Address:   fake.NewAddress(2),
 				PublicKey: fake.PublicKey{},
@@ -48,36 +48,36 @@ func TestChangeSetFormat_Encode(t *testing.T) {
 func TestChangeSetFormat_Decode(t *testing.T) {
 	format := changeSetFormat{}
 	ctx := serde.NewContext(fake.ContextEngine{})
-	ctx = serde.WithFactory(ctx, roster.AddrKeyFac{}, fake.AddressFactory{})
-	ctx = serde.WithFactory(ctx, roster.PubKeyFac{}, fake.PublicKeyFactory{})
+	ctx = serde.WithFactory(ctx, authority.AddrKeyFac{}, fake.AddressFactory{})
+	ctx = serde.WithFactory(ctx, authority.PubKeyFac{}, fake.PublicKeyFactory{})
 
 	cset, err := format.Decode(ctx, []byte(`{"Add":[{}]}`))
 	require.NoError(t, err)
-	player := roster.Player{Address: fake.NewAddress(0), PublicKey: fake.PublicKey{}}
-	require.Equal(t, roster.SimpleChangeSet{Add: []roster.Player{player}}, cset)
+	player := authority.Player{Address: fake.NewAddress(0), PublicKey: fake.PublicKey{}}
+	require.Equal(t, authority.RosterChangeSet{Add: []authority.Player{player}}, cset)
 
 	cset, err = format.Decode(ctx, []byte(`{"Add":[]}`))
 	require.NoError(t, err)
-	require.Equal(t, roster.SimpleChangeSet{}, cset)
+	require.Equal(t, authority.RosterChangeSet{}, cset)
 
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
 	require.EqualError(t, err, "couldn't deserialize change set: fake error")
 
-	badCtx := serde.WithFactory(ctx, roster.PubKeyFac{}, fake.NewBadPublicKeyFactory())
+	badCtx := serde.WithFactory(ctx, authority.PubKeyFac{}, fake.NewBadPublicKeyFactory())
 	_, err = format.Decode(badCtx, []byte(`{"Add":[{}]}`))
 	require.EqualError(t, err, "couldn't deserialize public key: fake error")
 
-	badCtx = serde.WithFactory(ctx, roster.AddrKeyFac{}, nil)
+	badCtx = serde.WithFactory(ctx, authority.AddrKeyFac{}, nil)
 	_, err = format.Decode(badCtx, []byte(`{"Add":[{}]}`))
 	require.EqualError(t, err, "invalid address factory of type '<nil>'")
 
-	badCtx = serde.WithFactory(ctx, roster.PubKeyFac{}, nil)
+	badCtx = serde.WithFactory(ctx, authority.PubKeyFac{}, nil)
 	_, err = format.Decode(badCtx, []byte(`{"Add":[{}]}`))
 	require.EqualError(t, err, "invalid public key factory of type '<nil>'")
 }
 
 func TestRosterFormat_Encode(t *testing.T) {
-	ro := roster.FromAuthority(fake.NewAuthority(1, fake.NewSigner))
+	ro := authority.FromAuthority(fake.NewAuthority(1, fake.NewSigner))
 
 	format := rosterFormat{}
 	ctx := serde.NewContext(fake.ContextEngine{})
@@ -92,11 +92,11 @@ func TestRosterFormat_Encode(t *testing.T) {
 	_, err = format.Encode(fake.NewBadContext(), ro)
 	require.EqualError(t, err, "couldn't marshal: fake error")
 
-	ro = roster.New([]mino.Address{fake.NewBadAddress()}, nil)
+	ro = authority.New([]mino.Address{fake.NewBadAddress()}, nil)
 	_, err = format.Encode(ctx, ro)
 	require.EqualError(t, err, "couldn't marshal address: fake error")
 
-	ro = roster.New([]mino.Address{fake.NewAddress(0)}, []crypto.PublicKey{fake.NewBadPublicKey()})
+	ro = authority.New([]mino.Address{fake.NewAddress(0)}, []crypto.PublicKey{fake.NewBadPublicKey()})
 	_, err = format.Encode(ctx, ro)
 	require.EqualError(t, err, "couldn't serialize public key: fake error")
 }
@@ -104,25 +104,25 @@ func TestRosterFormat_Encode(t *testing.T) {
 func TestRosterFormat_Decode(t *testing.T) {
 	format := rosterFormat{}
 	ctx := serde.NewContext(fake.ContextEngine{})
-	ctx = serde.WithFactory(ctx, roster.AddrKeyFac{}, fake.AddressFactory{})
-	ctx = serde.WithFactory(ctx, roster.PubKeyFac{}, fake.PublicKeyFactory{})
+	ctx = serde.WithFactory(ctx, authority.AddrKeyFac{}, fake.AddressFactory{})
+	ctx = serde.WithFactory(ctx, authority.PubKeyFac{}, fake.PublicKeyFactory{})
 
 	ro, err := format.Decode(ctx, []byte(`[{}]`))
 	require.NoError(t, err)
-	require.Equal(t, roster.FromAuthority(fake.NewAuthority(1, fake.NewSigner)), ro)
+	require.Equal(t, authority.FromAuthority(fake.NewAuthority(1, fake.NewSigner)), ro)
 
 	_, err = format.Decode(fake.NewBadContext(), []byte(`[]`))
 	require.EqualError(t, err, "couldn't deserialize roster: fake error")
 
-	badCtx := serde.WithFactory(ctx, roster.PubKeyFac{}, fake.NewBadPublicKeyFactory())
+	badCtx := serde.WithFactory(ctx, authority.PubKeyFac{}, fake.NewBadPublicKeyFactory())
 	_, err = format.Decode(badCtx, []byte(`[{}]`))
 	require.EqualError(t, err, "couldn't deserialize public key: fake error")
 
-	badCtx = serde.WithFactory(ctx, roster.AddrKeyFac{}, nil)
+	badCtx = serde.WithFactory(ctx, authority.AddrKeyFac{}, nil)
 	_, err = format.Decode(badCtx, []byte(`[{}]`))
 	require.EqualError(t, err, "invalid address factory of type '<nil>'")
 
-	badCtx = serde.WithFactory(ctx, roster.PubKeyFac{}, nil)
+	badCtx = serde.WithFactory(ctx, authority.PubKeyFac{}, nil)
 	_, err = format.Decode(badCtx, []byte(`[{}]`))
 	require.EqualError(t, err, "invalid public key factory of type '<nil>'")
 }

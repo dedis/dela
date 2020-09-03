@@ -1,4 +1,4 @@
-package roster
+package authority
 
 import (
 	"go.dedis.ch/dela/crypto"

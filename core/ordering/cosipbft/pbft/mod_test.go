@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core"
 	"go.dedis.ch/dela/core/execution"
+	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
-	"go.dedis.ch/dela/core/ordering/cosipbft/roster"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/hashtree"
@@ -42,23 +42,23 @@ func TestStateMachine_GetState(t *testing.T) {
 }
 
 func TestStateMachine_GetLeader(t *testing.T) {
-	authority := fake.NewAuthority(3, fake.NewSigner)
+	roster := fake.NewAuthority(3, fake.NewSigner)
 
 	sm := &pbftsm{
 		tree: blockstore.NewTreeCache(badTree{}),
-		authReader: func(hashtree.Tree) (roster.Authority, error) {
-			return roster.FromAuthority(authority), nil
+		authReader: func(hashtree.Tree) (authority.Authority, error) {
+			return authority.FromAuthority(roster), nil
 		},
 	}
 
 	leader, err := sm.GetLeader()
 	require.NoError(t, err)
-	require.Equal(t, authority.GetAddress(0), leader)
+	require.Equal(t, roster.GetAddress(0), leader)
 
 	sm.round.leader = 2
 	leader, err = sm.GetLeader()
 	require.NoError(t, err)
-	require.Equal(t, authority.GetAddress(2), leader)
+	require.Equal(t, roster.GetAddress(2), leader)
 
 	sm.authReader = badReader
 	_, err = sm.GetLeader()
@@ -69,14 +69,14 @@ func TestStateMachine_Prepare(t *testing.T) {
 	tree, db, clean := makeTree(t)
 	defer clean()
 
-	ro := roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+	ro := authority.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
 
 	param := StateMachineParam{
 		Validation: simple.NewService(fakeExec{}, nil),
 		Blocks:     blockstore.NewInMemory(),
 		Genesis:    blockstore.NewGenesisStore(),
 		Tree:       blockstore.NewTreeCache(tree),
-		AuthorityReader: func(hashtree.Tree) (roster.Authority, error) {
+		AuthorityReader: func(hashtree.Tree) (authority.Authority, error) {
 			return ro, nil
 		},
 		DB: db,
@@ -146,8 +146,8 @@ func TestStateMachine_Commit(t *testing.T) {
 		verifierFac: fake.NewVerifierFactory(fake.Verifier{}),
 		watcher:     core.NewWatcher(),
 		tree:        blockstore.NewTreeCache(badTree{}),
-		authReader: func(hashtree.Tree) (roster.Authority, error) {
-			return roster.New(nil, nil), nil
+		authReader: func(hashtree.Tree) (authority.Authority, error) {
+			return authority.New(nil, nil), nil
 		},
 	}
 	sm.round.id = types.Digest{1}
@@ -184,14 +184,14 @@ func TestStateMachine_Finalize(t *testing.T) {
 	tree, db, clean := makeTree(t)
 	defer clean()
 
-	ro := roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+	ro := authority.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
 
 	param := StateMachineParam{
 		VerifierFactory: fake.NewVerifierFactory(fake.Verifier{}),
 		Blocks:          blockstore.NewInMemory(),
 		Genesis:         blockstore.NewGenesisStore(),
 		Tree:            blockstore.NewTreeCache(tree),
-		AuthorityReader: func(hashtree.Tree) (roster.Authority, error) {
+		AuthorityReader: func(hashtree.Tree) (authority.Authority, error) {
 			return ro, nil
 		},
 		DB: db,
@@ -320,7 +320,7 @@ func TestStateMachine_CatchUp(t *testing.T) {
 	tree, db, clean := makeTree(t)
 	defer clean()
 
-	ro := roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+	ro := authority.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
 
 	param := StateMachineParam{
 		Validation:      simple.NewService(fakeExec{}, nil),
@@ -328,7 +328,7 @@ func TestStateMachine_CatchUp(t *testing.T) {
 		Blocks:          blockstore.NewInMemory(),
 		Genesis:         blockstore.NewGenesisStore(),
 		Tree:            blockstore.NewTreeCache(tree),
-		AuthorityReader: func(hashtree.Tree) (roster.Authority, error) {
+		AuthorityReader: func(hashtree.Tree) (authority.Authority, error) {
 			return ro, nil
 		},
 		DB: db,
@@ -346,7 +346,7 @@ func TestStateMachine_CatchUp(t *testing.T) {
 
 	opts := []types.LinkOption{
 		types.WithSignatures(fake.Signature{}, fake.Signature{}),
-		types.WithChangeSet(roster.SimpleChangeSet{}),
+		types.WithChangeSet(authority.RosterChangeSet{}),
 	}
 
 	link, err := types.NewBlockLink(types.Digest{}, block, opts...)
@@ -370,7 +370,7 @@ func TestStateMachine_CatchUp(t *testing.T) {
 
 	opts = []types.LinkOption{
 		types.WithSignatures(fake.NewBadSignature(), fake.Signature{}),
-		types.WithChangeSet(roster.SimpleChangeSet{}),
+		types.WithChangeSet(authority.RosterChangeSet{}),
 	}
 
 	link, err = types.NewBlockLink(types.Digest{}, block, opts...)
@@ -475,6 +475,6 @@ func (t badTree) Commit() error {
 	return xerrors.New("oops")
 }
 
-func badReader(hashtree.Tree) (roster.Authority, error) {
+func badReader(hashtree.Tree) (authority.Authority, error) {
 	return nil, xerrors.New("oops")
 }

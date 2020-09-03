@@ -1,4 +1,4 @@
-package roster
+package authority
 
 import (
 	"io"
@@ -150,7 +150,7 @@ func (r Roster) Take(updaters ...mino.FilterUpdater) mino.Players {
 // applying the change set. The removals must be sorted by descending order and
 // unique or the behaviour will be undefined.
 func (r Roster) Apply(in ChangeSet) Authority {
-	changeset, ok := in.(SimpleChangeSet)
+	changeset, ok := in.(RosterChangeSet)
 	if !ok {
 		dela.Logger.Warn().Msgf("Change set '%T' is not supported. Ignoring.", in)
 		return r
@@ -187,7 +187,7 @@ func (r Roster) Apply(in ChangeSet) Authority {
 // Diff implements viewchange.Authority. It returns the change set that must be
 // applied to the current authority to get the given one.
 func (r Roster) Diff(o Authority) ChangeSet {
-	changeset := SimpleChangeSet{}
+	changeset := RosterChangeSet{}
 
 	other, ok := o.(Roster)
 	if !ok {
@@ -220,14 +220,14 @@ func (r Roster) Diff(o Authority) ChangeSet {
 	return changeset
 }
 
-// Len implements mino.Players. It returns the length of the roster.
+// Len implements mino.Players. It returns the length of the authority.
 func (r Roster) Len() int {
 	return len(r.addrs)
 }
 
 // GetPublicKey implements crypto.CollectiveAuthority. It returns the public key
 // of the address if it exists, nil otherwise. The second return is the index of
-// the public key in the roster.
+// the public key in the authority.
 func (r Roster) GetPublicKey(target mino.Address) (crypto.PublicKey, int) {
 	for i, addr := range r.addrs {
 		if addr.Equal(target) {
@@ -262,7 +262,7 @@ func (r Roster) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
-// Factory is a factory to deserialize roster.
+// Factory is a factory to deserialize authority.
 //
 // - implements viewchange.AuthorityFactory
 // - implements serde.Factory

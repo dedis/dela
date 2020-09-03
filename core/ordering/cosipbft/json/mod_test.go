@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/core/ordering/cosipbft/roster"
+	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
@@ -244,7 +244,7 @@ func TestMsgFormat_Decode(t *testing.T) {
 // Utility functions
 
 type fakeRoster struct {
-	roster.Authority
+	authority.Authority
 
 	err error
 }
@@ -258,12 +258,12 @@ func (fakeRoster) Fingerprint(io.Writer) error {
 }
 
 type fakeRosterFac struct {
-	roster.AuthorityFactory
+	authority.AuthorityFactory
 
 	err error
 }
 
-func (fac fakeRosterFac) AuthorityOf(serde.Context, []byte) (roster.Authority, error) {
+func (fac fakeRosterFac) AuthorityOf(serde.Context, []byte) (authority.Authority, error) {
 	return fakeRoster{}, fac.err
 }
 
@@ -276,7 +276,7 @@ func (fakeGenesisFormat) Encode(serde.Context, serde.Message) ([]byte, error) {
 }
 
 func (fakeGenesisFormat) Decode(serde.Context, []byte) (serde.Message, error) {
-	genesis, err := types.NewGenesis(roster.New(nil, nil))
+	genesis, err := types.NewGenesis(authority.New(nil, nil))
 	if err != nil {
 		return nil, err
 	}

@@ -1,4 +1,4 @@
-package roster
+package authority
 
 import (
 	"go.dedis.ch/dela/crypto"
@@ -21,23 +21,23 @@ type Player struct {
 	PublicKey crypto.PublicKey
 }
 
-// SimpleChangeSet is the smallest data model to update an authority to another.
+// RosterChangeSet is the smallest data model to update an authority to another.
 //
 // - implements serde.Message
-type SimpleChangeSet struct {
+type RosterChangeSet struct {
 	Remove []uint32
 	Add    []Player
 }
 
 // NumChanges implements viewchange.ChangeSet. It returns the number of changes
 // that is applied with the change set.
-func (set SimpleChangeSet) NumChanges() int {
+func (set RosterChangeSet) NumChanges() int {
 	return len(set.Remove) + len(set.Add)
 }
 
 // GetNewAddresses implements viewchange.ChangeSet. It returns the list of
 // addresses of the new members.
-func (set SimpleChangeSet) GetNewAddresses() []mino.Address {
+func (set RosterChangeSet) GetNewAddresses() []mino.Address {
 	addrs := make([]mino.Address, len(set.Add))
 	for i, player := range set.Add {
 		addrs[i] = player.Address
@@ -47,7 +47,7 @@ func (set SimpleChangeSet) GetNewAddresses() []mino.Address {
 }
 
 // Serialize implements serde.Message.
-func (set SimpleChangeSet) Serialize(ctx serde.Context) ([]byte, error) {
+func (set RosterChangeSet) Serialize(ctx serde.Context) ([]byte, error) {
 	format := csetFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, set)
@@ -64,7 +64,7 @@ type PubKeyFac struct{}
 // AddrKeyFac is the key for the address factory.
 type AddrKeyFac struct{}
 
-// ChangeSetFactory is a message factory to deserialize a change set.
+// SimpleChangeSetFactory is a message factory to deserialize a change set.
 //
 // - viewchange.ChangeSetFactory
 // - implements serde.Factory

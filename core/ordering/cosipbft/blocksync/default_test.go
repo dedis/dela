@@ -8,10 +8,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blocksync/types"
 	"go.dedis.ch/dela/core/ordering/cosipbft/pbft"
-	"go.dedis.ch/dela/core/ordering/cosipbft/roster"
 	otypes "go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/txn/anon"
 	"go.dedis.ch/dela/core/validation/simple"
@@ -222,7 +222,7 @@ func makeNodes(t *testing.T, n int) ([]defaultSync, otypes.Genesis, mino.Players
 	syncs := make([]defaultSync, n)
 	addrs := make([]mino.Address, n)
 
-	ro := roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+	ro := authority.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
 
 	genesis, err := otypes.NewGenesis(ro)
 	require.NoError(t, err)
@@ -238,7 +238,7 @@ func makeNodes(t *testing.T, n int) ([]defaultSync, otypes.Genesis, mino.Players
 
 		blocks := blockstore.NewInMemory()
 		blockFac := otypes.NewBlockFactory(simple.NewDataFactory(anon.NewTransactionFactory()))
-		csFac := roster.NewChangeSetFactory(m.GetAddressFactory(), fake.PublicKeyFactory{})
+		csFac := authority.NewChangeSetFactory(m.GetAddressFactory(), fake.PublicKeyFactory{})
 		linkFac := otypes.NewLinkFactory(blockFac, fake.SignatureFactory{}, csFac)
 
 		param := SyncParam{

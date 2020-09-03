@@ -1,7 +1,7 @@
 package types
 
 import (
-	"go.dedis.ch/dela/core/ordering/cosipbft/roster"
+	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/serde"
 )
@@ -30,7 +30,7 @@ type Link interface {
 	GetCommitSignature() crypto.Signature
 
 	// GetChangeSet returns the roster change set for this link.
-	GetChangeSet() roster.ChangeSet
+	GetChangeSet() authority.ChangeSet
 }
 
 // BlockLink is an extension of the Link interface to include the block the link
