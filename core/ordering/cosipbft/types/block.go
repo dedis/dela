@@ -6,7 +6,6 @@ import (
 	"io"
 
 	"go.dedis.ch/dela/consensus/viewchange"
-	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/crypto"
@@ -77,10 +76,10 @@ func WithGenesisHashFactory(fac crypto.HashFactory) GenesisOption {
 }
 
 // NewGenesis creates a new genesis block with the provided roster.
-func NewGenesis(ca crypto.CollectiveAuthority, opts ...GenesisOption) (Genesis, error) {
+func NewGenesis(ro viewchange.Authority, opts ...GenesisOption) (Genesis, error) {
 	tmpl := genesisTemplate{
 		Genesis: Genesis{
-			roster:   roster.FromAuthority(ca),
+			roster:   ro,
 			treeRoot: Digest{},
 		},
 		hashFactory: crypto.NewSha256Factory(),

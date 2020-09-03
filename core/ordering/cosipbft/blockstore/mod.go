@@ -28,6 +28,9 @@ type GenesisStore interface {
 
 	// Set must set the genesis block.
 	Set(types.Genesis) error
+
+	// Exists returns true if the genesis is already set.
+	Exists() bool
 }
 
 // BlockStore is the interface to store and get blocks.

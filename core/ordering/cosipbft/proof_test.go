@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store/hashtree"
 	"go.dedis.ch/dela/core/validation/simple"
@@ -29,7 +30,9 @@ func TestProof_GetValue(t *testing.T) {
 }
 
 func TestProof_Verify(t *testing.T) {
-	genesis, err := types.NewGenesis(fake.NewAuthority(3, fake.NewSigner))
+	ro := roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+
+	genesis, err := types.NewGenesis(ro)
 	require.NoError(t, err)
 
 	block, err := types.NewBlock(simple.NewData(nil))

@@ -8,8 +8,13 @@ import (
 	"golang.org/x/xerrors"
 )
 
+// ChainFormat is the JSON format to encode and decode chains.
+//
+// - implements serde.FormatEngine
 type chainFormat struct{}
 
+// Encode implements serde.FormatEngine. It serializes the chain if appropriate,
+// otherwise it returns an error.
 func (fmt chainFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	chain, ok := msg.(types.Chain)
 	if !ok {
@@ -22,7 +27,7 @@ func (fmt chainFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, err
 	for i, link := range links {
 		raw, err := link.Serialize(ctx)
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("couldn't serialize link: %v", err)
 		}
 
 		raws[i] = raw
@@ -34,41 +39,45 @@ func (fmt chainFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, err
 
 	data, err := ctx.Marshal(m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to marshal: %v", err)
 	}
 
 	return data, nil
 }
 
+// Decode implements serde.FormatEngine. It deserializes the chain if
+// appropriate, otherwise it returns an error.
 func (fmt chainFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := ChainJSON{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to unmarshal: %v", err)
 	}
 
 	if len(m.Links) == 0 {
 		return nil, xerrors.New("chain cannot be empty")
 	}
 
-	fac, ok := ctx.GetFactory(types.LinkKey{}).(types.LinkFactory)
+	fac := ctx.GetFactory(types.LinkKey{})
+
+	factory, ok := fac.(types.LinkFactory)
 	if !ok {
-		return nil, xerrors.Errorf("invalid factory")
+		return nil, xerrors.Errorf("invalid link factory '%T'", fac)
 	}
 
 	prevs := make([]types.Link, len(m.Links)-1)
 	for i, raw := range m.Links[:len(m.Links)-1] {
-		link, err := fac.LinkOf(ctx, raw)
+		link, err := factory.LinkOf(ctx, raw)
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("couldn't deserialize link: %v", err)
 		}
 
 		prevs[i] = link
 	}
 
-	last, err := fac.BlockLinkOf(ctx, m.Links[len(m.Links)-1])
+	last, err := factory.BlockLinkOf(ctx, m.Links[len(m.Links)-1])
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("couldn't deserialize block link: %v", err)
 	}
 
 	return types.NewChain(last, prevs), nil
