@@ -258,7 +258,7 @@ func (fakeRoster) Fingerprint(io.Writer) error {
 }
 
 type fakeRosterFac struct {
-	authority.AuthorityFactory
+	authority.Factory
 
 	err error
 }
