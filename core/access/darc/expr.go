@@ -4,7 +4,7 @@ import (
 	"io"
 	"sort"
 
-	"go.dedis.ch/dela/ledger/arc"
+	"go.dedis.ch/dela/core/access"
 	"golang.org/x/xerrors"
 )
 
@@ -34,7 +34,7 @@ func (expr Expression) GetMatches() []string {
 
 // Evolve returns a new expression with the targets added in the list of
 // authorized identities.
-func (expr Expression) Evolve(targets []arc.Identity) (Expression, error) {
+func (expr Expression) Evolve(targets []access.Identity) (Expression, error) {
 	e := expr.Clone()
 
 	for _, target := range targets {
@@ -51,7 +51,7 @@ func (expr Expression) Evolve(targets []arc.Identity) (Expression, error) {
 
 // Match returns nil if all the targets are allowed for the rule, otherwise it
 // returns the reason why it failed.
-func (expr Expression) Match(targets []arc.Identity) error {
+func (expr Expression) Match(targets []access.Identity) error {
 	for _, target := range targets {
 		text, err := target.MarshalText()
 		if err != nil {

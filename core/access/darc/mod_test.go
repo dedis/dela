@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"go.dedis.ch/dela/ledger/arc"
 	"golang.org/x/xerrors"
 )
 
@@ -29,31 +29,31 @@ func TestAccess_GetRules(t *testing.T) {
 }
 
 func TestAccess_Evolve(t *testing.T) {
-	access := NewAccess()
+	a := NewAccess()
 
-	idents := []arc.Identity{
+	idents := []access.Identity{
 		fakeIdentity{buffer: []byte{0xaa}},
 		fakeIdentity{buffer: []byte{0xbb}},
 	}
 
-	access, err := access.Evolve("fake", idents...)
+	a, err := a.Evolve("fake", idents...)
 	require.NoError(t, err)
-	require.Len(t, access.rules, 1)
+	require.Len(t, a.rules, 1)
 
-	access, err = access.Evolve("another", idents...)
+	a, err = a.Evolve("another", idents...)
 	require.NoError(t, err)
-	require.Len(t, access.rules, 2)
+	require.Len(t, a.rules, 2)
 
-	access, err = access.Evolve("fake")
+	a, err = a.Evolve("fake")
 	require.NoError(t, err)
-	require.Len(t, access.rules, 2)
+	require.Len(t, a.rules, 2)
 
-	_, err = access.Evolve("fake", fakeIdentity{err: xerrors.New("oops")})
+	_, err = a.Evolve("fake", fakeIdentity{err: xerrors.New("oops")})
 	require.EqualError(t, err, "couldn't evolve rule: couldn't marshal identity: oops")
 }
 
 func TestAccess_Match(t *testing.T) {
-	idents := []arc.Identity{
+	idents := []access.Identity{
 		fakeIdentity{buffer: []byte{0xaa}},
 		fakeIdentity{buffer: []byte{0xbb}},
 	}

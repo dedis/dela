@@ -2,7 +2,7 @@
 package txn
 
 import (
-	"go.dedis.ch/dela/ledger/arc"
+	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/serde"
 )
 
@@ -16,7 +16,7 @@ type Transaction interface {
 	GetID() []byte
 
 	// GetIdentity returns the identity that created the transaction.
-	GetIdentity() arc.Identity
+	GetIdentity() access.Identity
 
 	// GetArg is a getter for the arguments of the transaction.
 	GetArg(key string) []byte

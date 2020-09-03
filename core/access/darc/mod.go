@@ -5,7 +5,7 @@ import (
 	"io"
 	"sort"
 
-	"go.dedis.ch/dela/ledger/arc"
+	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
@@ -66,7 +66,7 @@ func (ac Access) GetRules() map[string]Expression {
 
 // Evolve implements darc.EvolvableAccessControl. It updates the rule with the
 // list of targets.
-func (ac Access) Evolve(rule string, targets ...arc.Identity) (Access, error) {
+func (ac Access) Evolve(rule string, targets ...access.Identity) (Access, error) {
 	access := ac.Clone()
 
 	expr, ok := access.rules[rule]
@@ -86,7 +86,7 @@ func (ac Access) Evolve(rule string, targets ...arc.Identity) (Access, error) {
 
 // Match implements arc.AccessControl. It returns true if the rule exists and
 // the identity is associated with it.
-func (ac Access) Match(rule string, targets ...arc.Identity) error {
+func (ac Access) Match(rule string, targets ...access.Identity) error {
 	if len(targets) == 0 {
 		return xerrors.New("expect at least one identity")
 	}
@@ -166,7 +166,7 @@ func (f Factory) Deserialize(ctx serde.Context, data []byte) (serde.Message, err
 }
 
 // AccessOf implements arc.AccessControlFactory.
-func (f Factory) AccessOf(ctx serde.Context, data []byte) (arc.AccessControl, error) {
+func (f Factory) AccessOf(ctx serde.Context, data []byte) (access.AccessControl, error) {
 	format := accessFormats.Get(ctx.GetFormat())
 
 	msg, err := format.Decode(ctx, data)
@@ -174,7 +174,7 @@ func (f Factory) AccessOf(ctx serde.Context, data []byte) (arc.AccessControl, er
 		return nil, xerrors.Errorf("couldn't decode access: %v", err)
 	}
 
-	access, ok := msg.(arc.AccessControl)
+	access, ok := msg.(access.AccessControl)
 	if !ok {
 		return nil, xerrors.Errorf("invalid access of type '%T'", msg)
 	}

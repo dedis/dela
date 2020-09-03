@@ -1,5 +1,5 @@
-// Package arc defines the interfaces for the Access Rights Control.
-package arc
+// Package access defines the interfaces for the Access Rights Control.
+package access
 
 import (
 	"encoding"

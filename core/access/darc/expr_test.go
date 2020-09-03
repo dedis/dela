@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"go.dedis.ch/dela/ledger/arc"
 	"golang.org/x/xerrors"
 )
 
@@ -25,7 +25,7 @@ func TestExpression_Evolve(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, expr.matches, 0)
 
-	idents := []arc.Identity{
+	idents := []access.Identity{
 		fakeIdentity{buffer: []byte{0xaa}},
 		fakeIdentity{buffer: []byte{0xbb}},
 	}
@@ -38,12 +38,12 @@ func TestExpression_Evolve(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, expr.matches, 2)
 
-	_, err = expr.Evolve([]arc.Identity{fakeIdentity{err: xerrors.New("oops")}})
+	_, err = expr.Evolve([]access.Identity{fakeIdentity{err: xerrors.New("oops")}})
 	require.EqualError(t, err, "couldn't marshal identity: oops")
 }
 
 func TestExpression_Match(t *testing.T) {
-	idents := []arc.Identity{
+	idents := []access.Identity{
 		fakeIdentity{buffer: []byte{0xaa}},
 		fakeIdentity{buffer: []byte{0xbb}},
 	}
@@ -54,10 +54,10 @@ func TestExpression_Match(t *testing.T) {
 	err = expr.Match(idents)
 	require.NoError(t, err)
 
-	err = expr.Match([]arc.Identity{fakeIdentity{buffer: []byte{0xcc}}})
+	err = expr.Match([]access.Identity{fakeIdentity{buffer: []byte{0xcc}}})
 	require.EqualError(t, err, "couldn't match identity '\xcc'")
 
-	err = expr.Match([]arc.Identity{fakeIdentity{err: xerrors.New("oops")}})
+	err = expr.Match([]access.Identity{fakeIdentity{err: xerrors.New("oops")}})
 	require.EqualError(t, err, "couldn't marshal identity: oops")
 }
 
@@ -81,7 +81,7 @@ func TestExpression_Fingerprint(t *testing.T) {
 // Utility functions
 
 type fakeIdentity struct {
-	arc.Identity
+	access.Identity
 	buffer []byte
 	err    error
 }

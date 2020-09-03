@@ -4,9 +4,9 @@ import (
 	"encoding/binary"
 	"io"
 
+	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
@@ -89,7 +89,7 @@ func (t Transaction) GetNonce() uint64 {
 }
 
 // GetIdentity implements txn.Transaction. It returns nil.
-func (t Transaction) GetIdentity() arc.Identity {
+func (t Transaction) GetIdentity() access.Identity {
 	return nil
 }
 
