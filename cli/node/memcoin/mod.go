@@ -18,7 +18,6 @@ import (
 	calypso "go.dedis.ch/dela-apps/calypso/controller"
 	"go.dedis.ch/dela/cli/node"
 	pedersen "go.dedis.ch/dela/dkg/pedersen/controller"
-	byzcoin "go.dedis.ch/dela/ledger/byzcoin/controller"
 	mino "go.dedis.ch/dela/mino/minogrpc/controller"
 	proxyhttp "go.dedis.ch/dela/mino/proxy/http/controller"
 )
@@ -27,7 +26,6 @@ func main() {
 	builder := node.NewBuilder(
 		proxyhttp.NewMinimal(),
 		mino.NewMinimal(),
-		byzcoin.NewMinimal(),
 		pedersen.NewMinimal(),
 		calypso.NewMinimal(),
 	)
