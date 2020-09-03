@@ -213,10 +213,12 @@ func (f publicKeyFactory) PublicKeyOf(ctx serde.Context, data []byte) (crypto.Pu
 	return pubkey, nil
 }
 
+// FromBytes implements crypto.PublicKeyFactory. It returns the public key
+// unmarshaled from the bytes.
 func (f publicKeyFactory) FromBytes(data []byte) (crypto.PublicKey, error) {
 	pubkey, err := NewPublicKey(data)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to unmarshal key: %v", err)
 	}
 
 	return pubkey, nil

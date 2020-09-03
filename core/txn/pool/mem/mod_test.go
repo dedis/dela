@@ -10,6 +10,14 @@ import (
 	"golang.org/x/xerrors"
 )
 
+func TestPool_Len(t *testing.T) {
+	p := NewPool()
+	require.Equal(t, 0, p.Len())
+
+	p.gatherer.Add(fakeTx{})
+	require.Equal(t, 1, p.Len())
+}
+
 func TestPool_Add(t *testing.T) {
 	p := NewPool()
 

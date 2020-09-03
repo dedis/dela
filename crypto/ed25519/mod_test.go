@@ -206,6 +206,22 @@ func TestPublicKeyFactory_PublicKeyOf(t *testing.T) {
 	require.EqualError(t, err, "invalid public key of type 'fake.Message'")
 }
 
+func TestPublicKeyFactory_FromBytes(t *testing.T) {
+	fac := NewPublicKeyFactory()
+
+	point := suite.Point()
+	data, err := point.MarshalBinary()
+	require.NoError(t, err)
+
+	pk, err := fac.FromBytes(data)
+	require.NoError(t, err)
+	require.True(t, pk.(PublicKey).point.Equal(point))
+
+	_, err = fac.FromBytes(nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to unmarshal the key: ")
+}
+
 func TestSignatureFactory_New(t *testing.T) {
 	sf := NewSignatureFactory()
 	require.IsType(t, signatureFactory{}, sf)
