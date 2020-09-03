@@ -3,8 +3,7 @@ package types
 import (
 	"io"
 
-	"go.dedis.ch/dela/consensus/viewchange"
-	"go.dedis.ch/dela/consensus/viewchange/roster"
+	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/registry"
@@ -34,7 +33,7 @@ type forwardLink struct {
 	digest     Digest
 	from       Digest
 	to         Digest
-	changeset  viewchange.ChangeSet
+	changeset  authority.ChangeSet
 	prepareSig crypto.Signature
 	commitSig  crypto.Signature
 }
@@ -59,7 +58,7 @@ func WithSignatures(prep, commit crypto.Signature) LinkOption {
 
 // WithChangeSet is the option to set the change set of the roster for this
 // link.
-func WithChangeSet(cs viewchange.ChangeSet) LinkOption {
+func WithChangeSet(cs authority.ChangeSet) LinkOption {
 	return func(tmpl *linkTemplate) {
 		tmpl.changeset = cs
 	}
@@ -78,7 +77,7 @@ func NewForwardLink(from, to Digest, opts ...LinkOption) (Link, error) {
 		forwardLink: forwardLink{
 			from:      from,
 			to:        to,
-			changeset: roster.ChangeSet{},
+			changeset: authority.NewChangeSet(),
 		},
 		hashFac: crypto.NewSha256Factory(),
 	}
@@ -127,7 +126,7 @@ func (link forwardLink) GetCommitSignature() crypto.Signature {
 
 // GetChangeSet implements types.Link. It returns the change set of the roster
 // for this link.
-func (link forwardLink) GetChangeSet() viewchange.ChangeSet {
+func (link forwardLink) GetChangeSet() authority.ChangeSet {
 	return link.changeset
 }
 
@@ -221,12 +220,12 @@ type ChangeSetKey struct{}
 type linkFac struct {
 	blockFac serde.Factory
 	sigFac   crypto.SignatureFactory
-	csFac    viewchange.ChangeSetFactory
+	csFac    authority.ChangeSetFactory
 }
 
 // NewLinkFactory creates a new block link factory.
 func NewLinkFactory(blockFac serde.Factory,
-	sigFac crypto.SignatureFactory, csFac viewchange.ChangeSetFactory) LinkFactory {
+	sigFac crypto.SignatureFactory, csFac authority.ChangeSetFactory) LinkFactory {
 
 	return linkFac{
 		blockFac: blockFac,

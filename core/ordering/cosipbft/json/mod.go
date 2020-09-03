@@ -3,7 +3,7 @@ package json
 import (
 	"encoding/json"
 
-	"go.dedis.ch/dela/consensus/viewchange"
+	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/crypto"
@@ -129,7 +129,7 @@ func (f genesisFormat) Decode(ctx serde.Context, data []byte) (serde.Message, er
 
 	factory := ctx.GetFactory(types.RosterKey{})
 
-	fac, ok := factory.(viewchange.AuthorityFactory)
+	fac, ok := factory.(authority.Factory)
 	if !ok {
 		return nil, xerrors.Errorf("invalid roster factory '%T'", factory)
 	}

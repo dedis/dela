@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/consensus/viewchange/roster"
+	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/internal/testing/fake"
 )
@@ -12,7 +12,7 @@ import (
 func TestCachedGenesis_Get(t *testing.T) {
 	store := NewGenesisStore().(*cachedGenesis)
 
-	ro := roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+	ro := authority.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
 
 	_, err := store.Get()
 	require.EqualError(t, err, "missing genesis block")
@@ -29,7 +29,7 @@ func TestCachedGenesis_Get(t *testing.T) {
 }
 
 func TestCachedGenesis_Set(t *testing.T) {
-	ro := roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+	ro := authority.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
 
 	block, err := types.NewGenesis(ro)
 	require.NoError(t, err)

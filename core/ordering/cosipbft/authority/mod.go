@@ -1,4 +1,4 @@
-package viewchange
+package authority
 
 import (
 	"go.dedis.ch/dela/crypto"
@@ -10,35 +10,19 @@ import (
 type ChangeSet interface {
 	serde.Message
 
+	// NumChanges returns the number of changes that will be applied with this
+	// change set.
 	NumChanges() int
 
+	// GetNewAddresses returns the list of addresses for the new members.
 	GetNewAddresses() []mino.Address
 }
 
+// ChangeSetFactory is the factory interface to deserialize change sets.
 type ChangeSetFactory interface {
 	serde.Factory
 
 	ChangeSetOf(serde.Context, []byte) (ChangeSet, error)
-}
-
-// ViewChange provides primitives to verify if a participant is allowed to
-// propose a block as the leader. Some consensus need a single node to propose
-// and the others as backups when it is failing. The index returned announces
-// who is allowed to be the leader.
-type ViewChange interface {
-	GetChangeSetFactory() ChangeSetFactory
-
-	// GetAuthority returns the authority at the given index.
-	// TODO: use the proposal ID if we move the blockchain module to be a plugin
-	// of the ledger.
-	GetAuthority(index uint64) (Authority, error)
-
-	// Wait returns true if the node is the leader for the next proposal.
-	Wait() bool
-
-	// Verify returns the authority for the proposal if the address is the
-	// correct leader.
-	Verify(from mino.Address, index uint64) (Authority, error)
 }
 
 // Authority is an extension of the collective authority to provide
@@ -56,7 +40,8 @@ type Authority interface {
 	Diff(Authority) ChangeSet
 }
 
-type AuthorityFactory interface {
+// Factory is the factory interface to deserialize authorities.
+type Factory interface {
 	serde.Factory
 
 	AuthorityOf(serde.Context, []byte) (Authority, error)

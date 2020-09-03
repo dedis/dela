@@ -7,8 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/consensus/viewchange"
-	"go.dedis.ch/dela/consensus/viewchange/roster"
+	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/txn/anon"
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/core/validation/simple"
@@ -36,7 +35,7 @@ func TestDigest_Bytes(t *testing.T) {
 }
 
 func TestGenesis_GetHash(t *testing.T) {
-	ro := roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+	ro := authority.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
 
 	genesis, err := NewGenesis(ro)
 	require.NoError(t, err)
@@ -49,7 +48,7 @@ func TestGenesis_GetHash(t *testing.T) {
 }
 
 func TestGenesis_GetRoster(t *testing.T) {
-	ro := roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+	ro := authority.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
 
 	genesis, err := NewGenesis(ro)
 	require.NoError(t, err)
@@ -64,7 +63,7 @@ func TestGenesis_GetRoot(t *testing.T) {
 }
 
 func TestGenesis_Serialize(t *testing.T) {
-	ro := roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+	ro := authority.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
 
 	genesis, err := NewGenesis(ro)
 	require.NoError(t, err)
@@ -78,7 +77,7 @@ func TestGenesis_Serialize(t *testing.T) {
 }
 
 func TestGenesis_Fingerprint(t *testing.T) {
-	ro := roster.FromAuthority(fake.NewAuthority(1, fake.NewSigner))
+	ro := authority.FromAuthority(fake.NewAuthority(1, fake.NewSigner))
 
 	genesis, err := NewGenesis(ro, WithGenesisRoot(Digest{5}))
 	require.NoError(t, err)
@@ -97,7 +96,7 @@ func TestGenesis_Fingerprint(t *testing.T) {
 }
 
 func TestGenesisFactory_Deserialize(t *testing.T) {
-	fac := NewGenesisFactory(roster.Factory{})
+	fac := NewGenesisFactory(authority.NewFactory(nil, nil))
 
 	msg, err := fac.Deserialize(fake.NewContext(), nil)
 	require.NoError(t, err)
@@ -193,7 +192,7 @@ func TestBlockFactory_Deserialize(t *testing.T) {
 // Utility functions
 
 type badRoster struct {
-	viewchange.Authority
+	authority.Authority
 }
 
 func (r badRoster) Fingerprint(io.Writer) error {

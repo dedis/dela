@@ -10,12 +10,11 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/consensus/viewchange"
-	"go.dedis.ch/dela/consensus/viewchange/roster"
 	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/execution/baremetal"
-	rosterchange "go.dedis.ch/dela/core/execution/baremetal/viewchange"
+	"go.dedis.ch/dela/core/execution/baremetal/viewchange"
 	"go.dedis.ch/dela/core/ordering"
+	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/ordering/cosipbft/pbft"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
@@ -155,7 +154,7 @@ func TestService_Setup(t *testing.T) {
 
 func TestService_Main(t *testing.T) {
 	srvc := &Service{processor: newProcessor()}
-	srvc.rosterFac = roster.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
+	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 	srvc.closing = make(chan struct{})
 
 	close(srvc.closing)
@@ -196,7 +195,7 @@ func TestService_DoRound(t *testing.T) {
 	srvc.sync = fakeSync{}
 	srvc.pool = mem.NewPool()
 	srvc.tree = blockstore.NewTreeCache(fakeTree{})
-	srvc.rosterFac = roster.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
+	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 	srvc.pbftsm = fakeSM{
 		state: pbft.ViewChangeState,
 		ch:    ch,
@@ -236,7 +235,7 @@ func TestService_DoRound(t *testing.T) {
 	err = srvc.doRound(ctx)
 	require.EqualError(t, err, "reading roster: decode failed: oops")
 
-	srvc.rosterFac = roster.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
+	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 	srvc.pbftsm = fakeSM{errLeader: xerrors.New("oops")}
 	err = srvc.doRound(ctx)
 	require.EqualError(t, err, "reading leader: oops")
@@ -264,7 +263,7 @@ func TestService_DoPBFT(t *testing.T) {
 	srvc.genesis = blockstore.NewGenesisStore()
 	srvc.hashFactory = crypto.NewSha256Factory()
 	srvc.pbftsm = fakeSM{}
-	srvc.rosterFac = roster.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
+	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 	srvc.actor = fakeCosiActor{}
 	srvc.pool = mem.NewPool()
 	srvc.pool.Add(makeTx(t, 0))
@@ -333,14 +332,14 @@ func TestService_WakeUp(t *testing.T) {
 	srvc.tree = blockstore.NewTreeCache(fakeTree{})
 	srvc.genesis = blockstore.NewGenesisStore()
 	srvc.genesis.Set(types.Genesis{})
-	srvc.rosterFac = roster.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
+	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 	srvc.rpc = rpc
 
 	ctx := context.Background()
 
 	rpc.SendResponseWithError(fake.NewAddress(5), xerrors.New("oops"))
 	rpc.Done()
-	ro := roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+	ro := authority.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
 
 	err := srvc.wakeUp(ctx, ro)
 	require.NoError(t, err)
@@ -409,14 +408,14 @@ func makeTx(t *testing.T, nonce uint64) txn.Transaction {
 	return tx
 }
 
-func makeRosterTx(t *testing.T, nonce uint64, roster viewchange.Authority) txn.Transaction {
+func makeRosterTx(t *testing.T, nonce uint64, roster authority.Authority) txn.Transaction {
 	data, err := roster.Serialize(json.NewContext())
 	require.NoError(t, err)
 
 	tx, err := anon.NewTransaction(
 		nonce,
-		anon.WithArg(baremetal.ContractArg, []byte(rosterchange.ContractName)),
-		anon.WithArg(rosterchange.AuthorityArg, data),
+		anon.WithArg(baremetal.ContractArg, []byte(viewchange.ContractName)),
+		anon.WithArg(viewchange.AuthorityArg, data),
 	)
 	require.NoError(t, err)
 
@@ -433,7 +432,7 @@ func waitEvent(t *testing.T, events <-chan ordering.Event) ordering.Event {
 	}
 }
 
-func makeAuthority(t *testing.T, n int) ([]testNode, viewchange.Authority, func()) {
+func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()) {
 	manager := minoch.NewManager()
 
 	addrs := make([]mino.Address, n)
@@ -465,8 +464,8 @@ func makeAuthority(t *testing.T, n int) ([]testNode, viewchange.Authority, func(
 		exec := baremetal.NewExecution()
 		exec.Set(testContractName, testExec{})
 
-		rosterFac := roster.NewFactory(m.GetAddressFactory(), c.GetPublicKeyFactory())
-		exec.Set(rosterchange.ContractName, rosterchange.NewContract(keyRoster[:], rosterFac))
+		rosterFac := authority.NewFactory(m.GetAddressFactory(), c.GetPublicKeyFactory())
+		exec.Set(viewchange.ContractName, viewchange.NewContract(keyRoster[:], rosterFac))
 
 		vs := simple.NewService(exec, anon.NewTransactionFactory())
 
@@ -490,7 +489,7 @@ func makeAuthority(t *testing.T, n int) ([]testNode, viewchange.Authority, func(
 		}
 	}
 
-	ro := roster.New(addrs, pubkeys)
+	ro := authority.New(addrs, pubkeys)
 
 	clean := func() {
 		for _, node := range nodes {
@@ -504,10 +503,10 @@ func makeAuthority(t *testing.T, n int) ([]testNode, viewchange.Authority, func(
 }
 
 type badRosterFac struct {
-	viewchange.AuthorityFactory
+	authority.Factory
 }
 
-func (fac badRosterFac) AuthorityOf(serde.Context, []byte) (viewchange.Authority, error) {
+func (fac badRosterFac) AuthorityOf(serde.Context, []byte) (authority.Authority, error) {
 	return nil, xerrors.New("oops")
 }
 

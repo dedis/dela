@@ -4,8 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/consensus/viewchange"
-	"go.dedis.ch/dela/consensus/viewchange/roster"
+	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/anon"
@@ -15,7 +14,7 @@ import (
 )
 
 func TestContract_Execute(t *testing.T) {
-	fac := roster.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
+	fac := authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 
 	contract := NewContract([]byte("abc"), fac)
 
@@ -79,11 +78,11 @@ func (snap fakeStore) Set(key, value []byte) error {
 }
 
 type badRosterFac struct {
-	viewchange.AuthorityFactory
+	authority.Factory
 	counter *fake.Counter
 }
 
-func (fac badRosterFac) AuthorityOf(serde.Context, []byte) (viewchange.Authority, error) {
+func (fac badRosterFac) AuthorityOf(serde.Context, []byte) (authority.Authority, error) {
 	if fac.counter.Done() {
 		return nil, xerrors.New("oops")
 	}

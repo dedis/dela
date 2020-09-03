@@ -1,7 +1,7 @@
 package types
 
 import (
-	"go.dedis.ch/dela/consensus/viewchange"
+	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/registry"
@@ -204,11 +204,11 @@ type MessageFactory struct {
 	genesisFac serde.Factory
 	blockFac   serde.Factory
 	sigFac     crypto.SignatureFactory
-	csFac      viewchange.ChangeSetFactory
+	csFac      authority.ChangeSetFactory
 }
 
 // NewMessageFactory creates a new message factory.
-func NewMessageFactory(gf, bf serde.Factory, sf crypto.SignatureFactory, csf viewchange.ChangeSetFactory) MessageFactory {
+func NewMessageFactory(gf, bf serde.Factory, sf crypto.SignatureFactory, csf authority.ChangeSetFactory) MessageFactory {
 	return MessageFactory{
 		genesisFac: gf,
 		blockFac:   bf,

@@ -10,7 +10,7 @@ import (
 	"sync"
 
 	"go.dedis.ch/dela"
-	"go.dedis.ch/dela/blockchain"
+	"go.dedis.ch/dela/core"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/hashtree"
@@ -35,7 +35,7 @@ type Service struct {
 	epochs      []epoch
 	hashFactory crypto.HashFactory
 	difficulty  uint
-	watcher     blockchain.Observable
+	watcher     core.Observable
 	closing     chan struct{}
 	closed      sync.WaitGroup
 }
@@ -48,7 +48,7 @@ func NewService(pool pool.Pool, val validation.Service, trie hashtree.Tree) *Ser
 		epochs:      []epoch{{store: trie}},
 		hashFactory: crypto.NewSha256Factory(),
 		difficulty:  1,
-		watcher:     blockchain.NewWatcher(),
+		watcher:     core.NewWatcher(),
 	}
 }
 

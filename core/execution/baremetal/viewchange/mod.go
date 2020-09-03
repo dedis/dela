@@ -1,8 +1,8 @@
 package viewchange
 
 import (
-	"go.dedis.ch/dela/consensus/viewchange"
 	"go.dedis.ch/dela/core/execution"
+	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/serde"
@@ -14,7 +14,7 @@ const (
 	// ContractName is the name of the contract.
 	ContractName = "go.dedis.ch/dela/core/execution/baremetal/viewchange.Contract"
 
-	// AuthorityArg is the key of the argument for the new roster.
+	// AuthorityArg is the key of the argument for the new authority.
 	AuthorityArg = "viewchange:authority"
 
 	messageArgMissing       = "authority not found in transaction"
@@ -30,12 +30,12 @@ const (
 // - implements baremetal.Contract
 type Contract struct {
 	rosterKey []byte
-	rosterFac viewchange.AuthorityFactory
+	rosterFac authority.Factory
 	context   serde.Context
 }
 
 // NewContract creates a new viewchange contract.
-func NewContract(key []byte, fac viewchange.AuthorityFactory) Contract {
+func NewContract(key []byte, fac authority.Factory) Contract {
 	return Contract{
 		rosterKey: key,
 		rosterFac: fac,

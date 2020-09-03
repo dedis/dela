@@ -5,8 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/consensus/viewchange"
-	"go.dedis.ch/dela/consensus/viewchange/roster"
+	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blocksync"
 	"go.dedis.ch/dela/core/ordering/cosipbft/pbft"
@@ -25,7 +24,7 @@ func TestProcessor_BlockMessage_Invoke(t *testing.T) {
 	expected := types.Digest{1}
 
 	proc := newProcessor()
-	proc.rosterFac = roster.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
+	proc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 	proc.sync = fakeSync{}
 	proc.blocks = blockstore.NewInMemory()
 	proc.pbftsm = fakeSM{
@@ -75,7 +74,7 @@ func TestProcessor_GenesisMessage_Process(t *testing.T) {
 	root := types.Digest{}
 	copy(root[:], []byte("root"))
 
-	ro := roster.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+	ro := authority.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
 
 	genesis, err := types.NewGenesis(ro, types.WithGenesisRoot(root))
 	require.NoError(t, err)
@@ -185,7 +184,7 @@ func (sm fakeSM) GetLeader() (mino.Address, error) {
 	return fake.NewAddress(0), sm.errLeader
 }
 
-func (sm fakeSM) PrePrepare(viewchange.Authority) error {
+func (sm fakeSM) PrePrepare(authority.Authority) error {
 	return sm.err
 }
 
