@@ -31,7 +31,7 @@ func TestMinimal_Inject(t *testing.T) {
 			// we use a different port here because the server runing from the
 			// previous test might not be fully stop at the time this test
 			// starts.
-			"clientaddr": "127.0.0.1:2001",
+			"clientaddr": "127.0.0.1:2501",
 		},
 	}, inj)
 	require.NoError(t, err)

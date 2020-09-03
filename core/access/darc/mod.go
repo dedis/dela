@@ -166,7 +166,7 @@ func (f Factory) Deserialize(ctx serde.Context, data []byte) (serde.Message, err
 }
 
 // AccessOf implements arc.AccessControlFactory.
-func (f Factory) AccessOf(ctx serde.Context, data []byte) (access.AccessControl, error) {
+func (f Factory) AccessOf(ctx serde.Context, data []byte) (access.Access, error) {
 	format := accessFormats.Get(ctx.GetFormat())
 
 	msg, err := format.Decode(ctx, data)
@@ -174,7 +174,7 @@ func (f Factory) AccessOf(ctx serde.Context, data []byte) (access.AccessControl,
 		return nil, xerrors.Errorf("couldn't decode access: %v", err)
 	}
 
-	access, ok := msg.(access.AccessControl)
+	access, ok := msg.(access.Access)
 	if !ok {
 		return nil, xerrors.Errorf("invalid access of type '%T'", msg)
 	}

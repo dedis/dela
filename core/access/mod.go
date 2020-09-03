@@ -14,18 +14,19 @@ type Identity interface {
 	encoding.TextMarshaler
 }
 
-// AccessControl is an abstraction to verify if an identity has access to a
+// Access is an abstraction to verify if an identity has access to a
 // specific rule.
-type AccessControl interface {
+type Access interface {
 	serde.Message
 
 	Match(rule string, idents ...Identity) error
 }
 
-type AccessControlFactory interface {
+// Factory is the factory interface to deserialize accesses.
+type Factory interface {
 	serde.Factory
 
-	AccessOf(serde.Context, []byte) (AccessControl, error)
+	AccessOf(serde.Context, []byte) (Access, error)
 }
 
 // Compile returns a compacted rule from the string segments.

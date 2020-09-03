@@ -995,13 +995,13 @@ func (ctx ContextEngine) Unmarshal(data []byte, m interface{}) error {
 }
 
 // NewAccessControl creates a new access control
-func NewAccessControl() access.AccessControl {
+func NewAccessControl() access.Access {
 	return AccessControl{}
 }
 
 // NewBadAccessControl creates a new access control that return an error when
 // serialized
-func NewBadAccessControl() access.AccessControl {
+func NewBadAccessControl() access.Access {
 	return AccessControl{
 		err: xerrors.New("fake error"),
 	}
@@ -1051,6 +1051,6 @@ func (f AccessControlFactory) Deserialize(serde.Context, []byte) (serde.Message,
 }
 
 // AccessOf implements arc.AccessControlFactory
-func (f AccessControlFactory) AccessOf(serde.Context, []byte) (access.AccessControl, error) {
+func (f AccessControlFactory) AccessOf(serde.Context, []byte) (access.Access, error) {
 	return NewAccessControl(), f.err
 }
