@@ -24,8 +24,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/ledger/arc"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
@@ -995,13 +995,13 @@ func (ctx ContextEngine) Unmarshal(data []byte, m interface{}) error {
 }
 
 // NewAccessControl creates a new access control
-func NewAccessControl() arc.AccessControl {
+func NewAccessControl() access.Access {
 	return AccessControl{}
 }
 
 // NewBadAccessControl creates a new access control that return an error when
 // serialized
-func NewBadAccessControl() arc.AccessControl {
+func NewBadAccessControl() access.Access {
 	return AccessControl{
 		err: xerrors.New("fake error"),
 	}
@@ -1016,7 +1016,7 @@ type AccessControl struct {
 }
 
 // Match implements arc.AccessControl
-func (fac AccessControl) Match(rule string, idents ...arc.Identity) error {
+func (fac AccessControl) Match(rule string, idents ...access.Identity) error {
 	return nil
 }
 
@@ -1051,6 +1051,6 @@ func (f AccessControlFactory) Deserialize(serde.Context, []byte) (serde.Message,
 }
 
 // AccessOf implements arc.AccessControlFactory
-func (f AccessControlFactory) AccessOf(serde.Context, []byte) (arc.AccessControl, error) {
+func (f AccessControlFactory) AccessOf(serde.Context, []byte) (access.Access, error) {
 	return NewAccessControl(), f.err
 }
