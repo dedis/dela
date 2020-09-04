@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/internal/testing/fake"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -22,10 +23,10 @@ func TestTraffic_Integration(t *testing.T) {
 	header := metadata.New(map[string]string{headerURIKey: "test"})
 	ctx := metadata.NewOutgoingContext(context.Background(), header)
 
-	msg := &Message{From: []byte("D")}
+	// msg := &Message{From: []byte("D")}
 
-	traffic.logRcv(ctx, a1, a2, &Envelope{To: [][]byte{{0x01}}, Message: msg})
-	traffic.logSend(context.Background(), a3, a1, &Envelope{To: [][]byte{{0x02}}, Message: msg})
+	traffic.logRcv(ctx, a1, a2)
+	traffic.logSend(context.Background(), a3, a1, newFakePacket(fake.NewAddress(0)))
 
 	buffer := new(bytes.Buffer)
 	traffic.Display(buffer)
@@ -35,15 +36,14 @@ func TestTraffic_Integration(t *testing.T) {
 --- typeStr: received
 --- from: A
 --- to: B
---- msg: (type *minogrpc.Envelope) to:"\001" message:<from:"D" > 
----- To: [[1]]
+--- msg: (type <nil>) %!s(<nil>)
 --- context: test
 -- item:
 --- typeStr: send
 --- from: C
 --- to: A
---- msg: (type *minogrpc.Envelope) to:"\002" message:<from:"D" > 
----- To: [[2]]
+--- msg: (type minogrpc.fakePacket) fakePacket
+---- To: []
 --- context: 
 `
 	require.Equal(t, expected, buffer.String())

@@ -49,7 +49,7 @@ func TestRPC_Stream(t *testing.T) {
 	rpc := &RPC{
 		overlay: overlay{
 			me:          addrs[0],
-			router:      tree.NewRouter(NewMemship([]mino.Address{}), 1),
+			router:      tree.NewRouter(NewMemship([]mino.Address{fake.NewAddress(0)}), 1),
 			addrFactory: AddressFactory{},
 			connFactory: fakeConnFactory{},
 			context:     json.NewContext(),
@@ -69,8 +69,8 @@ func TestRPC_Stream(t *testing.T) {
 
 type fakeClientStream struct {
 	grpc.ClientStream
-	init *Envelope
-	ch   chan *Envelope
+	init *Packet
+	ch   chan *Packet
 	err  error
 }
 
@@ -80,11 +80,11 @@ func (str *fakeClientStream) SendMsg(m interface{}) error {
 	}
 
 	if str.init == nil {
-		str.init = m.(*Envelope)
+		str.init = m.(*Packet)
 		return nil
 	}
 
-	str.ch <- m.(*Envelope)
+	str.ch <- m.(*Packet)
 	return nil
 }
 
@@ -94,7 +94,7 @@ func (str *fakeClientStream) RecvMsg(m interface{}) error {
 		return io.EOF
 	}
 
-	*(m.(*Envelope)) = *msg
+	*(m.(*Packet)) = *msg
 	return nil
 }
 
@@ -124,7 +124,7 @@ func (conn fakeConnection) Invoke(ctx context.Context, m string, arg interface{}
 func (conn fakeConnection) NewStream(ctx context.Context, desc *grpc.StreamDesc,
 	m string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
 
-	ch := make(chan *Envelope, 1)
+	ch := make(chan *Packet, 1)
 
 	go func() {
 		<-ctx.Done()

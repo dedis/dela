@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/router"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -25,7 +26,8 @@ import (
 // activity. The following snippet shows practical use of it:
 //
 // 	defer func() {
-// 		SaveAll("graph.dot", true, false)
+// 		minogrpc.SaveItems("graph.dot", true, true)
+// 		minogrpc.SaveEvents("events.dot")
 // 	}()
 //
 // Then you can generate a PDF with `dot -Tpdf graph.dot -o graph.pdf`, or
@@ -105,12 +107,16 @@ func (t *traffic) Save(path string, withSend, withRcv bool) error {
 	return nil
 }
 
-func (t *traffic) logSend(ctx context.Context, from, to mino.Address, msg *Envelope) {
+func (t *traffic) logSend(ctx context.Context, from, to mino.Address, msg router.Packet) {
 	t.addItem(ctx, from, to, "send", msg)
 }
 
-func (t *traffic) logRcv(ctx context.Context, from, to mino.Address, msg *Envelope) {
-	t.addItem(ctx, from, to, "received", msg)
+// when we receive a packet, we get only the proto message, which is the
+// marshalled version of the packet. The only way to have the unmarshalled
+// version is by calling the "router.Forward" function, which we shouldn't do
+// when we receive the packet. This is why we don't take the router.Packet.
+func (t *traffic) logRcv(ctx context.Context, from, to mino.Address) {
+	t.addItem(ctx, from, to, "received", nil)
 }
 
 func (t *traffic) Display(out io.Writer) {
@@ -123,7 +129,7 @@ func (t *traffic) Display(out io.Writer) {
 }
 
 func (t *traffic) addItem(ctx context.Context,
-	from, to mino.Address, typeStr string, msg *Envelope) {
+	from, to mino.Address, typeStr string, msg router.Packet) {
 
 	if t == nil || !LogItems {
 		return
@@ -201,7 +207,7 @@ type item struct {
 	typeStr       string
 	from          mino.Address
 	to            mino.Address
-	msg           *Envelope
+	msg           router.Packet
 	context       string
 	globalCounter int
 	typeCounter   int
@@ -213,7 +219,9 @@ func (p item) Display(out io.Writer) {
 	fmt.Fprintf(out, "-- from: %v\n", p.from)
 	fmt.Fprintf(out, "-- to: %v\n", p.to)
 	fmt.Fprintf(out, "-- msg: (type %T) %s\n", p.msg, p.msg)
-	fmt.Fprintf(out, "--- To: %v\n", p.msg.To)
+	if p.msg != nil {
+		fmt.Fprintf(out, "--- To: %v\n", p.msg.GetDestination())
+	}
 	fmt.Fprintf(out, "-- context: %s\n", p.context)
 }
 
@@ -245,16 +253,18 @@ func GenerateItemsGraphviz(out io.Writer, withSend, withRcv bool, traffics ...*t
 				color = "#A8A8A8"
 			}
 
-			toStr := ""
-			for _, to := range item.msg.To {
-				addr := traffic.addressFactory.FromText(to)
-				toStr += fmt.Sprintf("to \"%v\"<br/>", addr)
+			var toStr, from, msgStr string
+
+			if item.msg != nil {
+				for _, to := range item.msg.GetDestination() {
+					toStr += fmt.Sprintf("to \"%v\"<br/>", to)
+				}
+
+				from = item.msg.GetSource().String()
+
+				msgStr = fmt.Sprintf("<font point-size='10' color='#9C9C9C'>from \"%v\"<br/>%s</font>",
+					from, toStr)
 			}
-
-			from := traffic.addressFactory.FromText(item.msg.GetMessage().From)
-
-			msgStr := fmt.Sprintf("<font point-size='10' color='#9C9C9C'>from \"%v\"<br/>%s</font>",
-				from, toStr)
 
 			fmt.Fprintf(out, "\"%v\" -> \"%v\" "+
 				"[ label = < <font color='#303030'><b>%d</b> <font point-size='10'>(%d)</font></font><br/>%s> color=\"%s\" ];\n",

@@ -66,12 +66,6 @@ func (s sender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 		to[i] = buffer
 	}
 
-	from, err := s.me.MarshalText()
-	if err != nil {
-		errs <- xerrors.Errorf("couldn't marshal source address: %v", err)
-		return errs
-	}
-
 	mebuf, err := s.me.MarshalText()
 	if err != nil {
 		errs <- xerrors.Errorf("failed to marhal my address: %v", err)
@@ -88,15 +82,18 @@ func (s sender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 		headerURIKey, s.uri, headerGatewayKey, string(mebuf),
 		headerStreamIDKey, s.streamID))
 
-	envelope := &Envelope{
-		To: to,
-		Message: &Message{
-			From:    from,
-			Payload: data,
-		},
+	packet := s.router.MakePacket(s.me, addrs, data)
+	ser, err := packet.Serialize(s.receiver.context)
+	if err != nil {
+		errs <- xerrors.Errorf("failed to serialize packet: %v", err)
+		return errs
 	}
 
-	err = s.sendEnvelope(ctx, *envelope)
+	proto := &Packet{
+		Serialized: ser,
+	}
+
+	err = s.sendPacket(ctx, proto)
 	if err != nil {
 		errs <- xerrors.Errorf("failed to send to relays: %v", err)
 		return errs
@@ -105,13 +102,13 @@ func (s sender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 	return errs
 }
 
-func (s sender) send(to mino.Address, envelope *Envelope) error {
+func (s sender) send(to mino.Address, proto *Packet) error {
 	conn, found := s.connections[to]
 	if !found {
 		return xerrors.Errorf("expected to find out for client '%s'", to)
 	}
 
-	err := conn.Send(envelope)
+	err := conn.Send(proto)
 	if err != nil {
 		return xerrors.Errorf("couldn't send to address: %v", err)
 	}
@@ -128,13 +125,13 @@ type receiver struct {
 	logger         zerolog.Logger
 }
 
-func (r receiver) appendMessage(msg *Message) {
+func (r receiver) appendMessage(msg router.Packet) {
 	// This *must* be non-blocking to avoid the relay to stall.
 	r.queue.Push(msg)
 }
 
 func (r receiver) Recv(ctx context.Context) (mino.Address, serde.Message, error) {
-	var msg *Message
+	var msg router.Packet
 	select {
 	case msg = <-r.queue.Channel():
 	case err := <-r.errs:
@@ -143,20 +140,18 @@ func (r receiver) Recv(ctx context.Context) (mino.Address, serde.Message, error)
 		return nil, nil, ctx.Err()
 	}
 
-	payload, err := r.factory.Deserialize(r.context, msg.GetPayload())
+	payload, err := msg.GetMessage(r.context, r.factory)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, xerrors.Errorf("failed to get message: %v", err)
 	}
 
-	from := r.addressFactory.FromText(msg.GetFrom())
-
-	return from, payload, nil
+	return msg.GetSource(), payload, nil
 }
 
 // Queue is an interface to queue messages.
 type Queue interface {
-	Channel() <-chan *Message
-	Push(*Message)
+	Channel() <-chan router.Packet
+	Push(router.Packet)
 }
 
 // NonBlockingQueue is an implementation of a queue that makes sure pushing a
@@ -164,25 +159,25 @@ type Queue interface {
 type NonBlockingQueue struct {
 	sync.Mutex
 	working sync.WaitGroup
-	buffer  []*Message
+	buffer  []router.Packet
 	running bool
-	ch      chan *Message
+	ch      chan router.Packet
 }
 
 func newNonBlockingQueue() *NonBlockingQueue {
 	return &NonBlockingQueue{
-		ch: make(chan *Message, 1),
+		ch: make(chan router.Packet, 1),
 	}
 }
 
 // Channel implements minogrpc.Queue. It returns the message channel.
-func (q *NonBlockingQueue) Channel() <-chan *Message {
+func (q *NonBlockingQueue) Channel() <-chan router.Packet {
 	return q.ch
 }
 
 // Push implements minogrpc.Queue. It appends the message to the queue without
 // blocking.
-func (q *NonBlockingQueue) Push(msg *Message) {
+func (q *NonBlockingQueue) Push(msg router.Packet) {
 	select {
 	case q.ch <- msg:
 		// Message went through !

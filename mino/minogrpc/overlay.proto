@@ -30,10 +30,9 @@ message Message {
     bytes payload = 2;
 }
 
-// Envelope is wrapper around a message and one or several recipients.
-message Envelope {
-    repeated bytes to = 1;
-    Message message = 2;
+// Packet is a wrapper around a packet.
+message Packet {
+    bytes serialized = 1;
 }
 
 service Overlay {
@@ -47,5 +46,5 @@ service Overlay {
 
     rpc Call(Message) returns (Message) {}
     
-    rpc Stream(stream Envelope) returns (stream Envelope) {}
+    rpc Stream(stream Packet) returns (stream Packet) {}
 }

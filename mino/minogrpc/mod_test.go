@@ -23,7 +23,7 @@ func TestMessages(t *testing.T) {
 		&CertificateAck{},
 		&JoinRequest{},
 		&JoinResponse{},
-		&Envelope{},
+		&Packet{},
 		&Message{},
 	}
 

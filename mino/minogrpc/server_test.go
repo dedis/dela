@@ -238,7 +238,7 @@ func TestOverlayServer_Stream(t *testing.T) {
 	overlay.endpoints["bad"] = &Endpoint{Handler: testHandler{skip: true,
 		err: xerrors.New("oops")}, streams: make(map[string]*StreamSession)}
 
-	ch := make(chan *Envelope, 1)
+	ch := make(chan *Packet, 1)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -268,7 +268,7 @@ func TestOverlayServer_Stream(t *testing.T) {
 
 	overlay.context = json.NewContext()
 	overlay.router = tree.NewRouter(NewMemship([]mino.Address{}), 3)
-	ch = make(chan *Envelope, 1)
+	ch = make(chan *Packet, 1)
 	inCtx = metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "bad", headerGatewayKey, string(addrBuf), headerStreamIDKey, "test"))
 	err = overlay.Stream(fakeServerStream{ch: ch, ctx: inCtx})
 	require.EqualError(t, err, "handler failed to process: oops")
@@ -347,134 +347,6 @@ func TestConnectionFactory_FromAddress(t *testing.T) {
 	require.EqualError(t, err, "invalid address type 'fake.Address'")
 }
 
-func TestSenderProcessEnvelope(t *testing.T) {
-	me := fake.NewAddress(0)
-
-	inputs := [][]mino.Address{
-		{fake.NewAddress(1), fake.NewAddress(2)},
-		{fake.NewAddress(1), fake.NewAddress(2), fake.NewAddress(1)},
-		{fake.NewAddress(0), fake.NewAddress(2), fake.NewAddress(3), fake.NewAddress(3)},
-	}
-
-	expecteds := []map[mino.Address][]mino.Address{
-		{
-			fake.NewAddress(1): []mino.Address{fake.NewAddress(1)},
-			fake.NewAddress(2): []mino.Address{fake.NewAddress(2)},
-		},
-		{
-			fake.NewAddress(1): []mino.Address{fake.NewAddress(1), fake.NewAddress(1)},
-			fake.NewAddress(2): []mino.Address{fake.NewAddress(2)},
-		},
-		{
-			fake.NewAddress(2): []mino.Address{fake.NewAddress(2)},
-			fake.NewAddress(3): []mino.Address{fake.NewAddress(3), fake.NewAddress(3)},
-		},
-	}
-
-	for i := range inputs {
-		input := inputs[i]
-		expected := expecteds[i]
-
-		addrsBuf := make([][]byte, len(input))
-		for i, addr := range input {
-			addrBuf, err := addr.MarshalText()
-			require.NoError(t, err)
-			addrsBuf[i] = addrBuf
-		}
-
-		envelope := Envelope{
-			To: addrsBuf,
-		}
-
-		sender := sender{
-			me: me,
-			receiver: receiver{
-				addressFactory: fake.AddressFactory{},
-				queue:          newNonBlockingQueue(),
-			},
-			router: fakeRouter{},
-		}
-
-		out, err := sender.processEnvelope(envelope)
-		require.NoError(t, err)
-
-		require.Equal(t, len(expected), len(out), "got from dispatch: %v", out)
-
-		for relayAddr, tos := range expected {
-			outEnv, found := out[relayAddr]
-			require.True(t, found, "%s not found in %v", relayAddr, out)
-			require.Equal(t, len(tos), len(outEnv.GetTo()))
-			for i, tobuf := range outEnv.GetTo() {
-				to := sender.receiver.addressFactory.FromText(tobuf)
-				require.True(t, tos[i].Equal(to))
-			}
-		}
-	}
-
-	// Test with a bad router
-	tobuf, err := fake.NewAddress(1).MarshalText()
-	require.NoError(t, err)
-
-	envelope := Envelope{
-		To: [][]byte{tobuf},
-	}
-
-	sender := sender{
-		me: me,
-		receiver: receiver{
-			addressFactory: fake.AddressFactory{},
-			queue:          newNonBlockingQueue(),
-		},
-		router: fakeRouter{
-			isBad: true,
-		},
-	}
-
-	_, err = sender.processEnvelope(envelope)
-	require.EqualError(t, err, "failed to find route from fake.Address[0] to fake.Address[1]: fake error")
-}
-
-func TestSendToRelay(t *testing.T) {
-	src, err := NewMinogrpc("127.0.0.1", 3333, nil)
-	require.NoError(t, err)
-
-	dst, err := NewMinogrpc("127.0.0.1", 3334, nil)
-	require.NoError(t, err)
-
-	defer src.GracefulClose()
-	defer dst.GracefulClose()
-
-	factory := DefaultConnectionFactory{
-		certs: certs.NewInMemoryStore(),
-		me:    src.GetAddress(),
-	}
-
-	factory.certs.Store(factory.me, src.GetCertificate())
-	factory.certs.Store(dst.GetAddress(), dst.GetCertificate())
-
-	tobuf, err := dst.GetAddress().MarshalText()
-	require.NoError(t, err)
-
-	envelope := Envelope{
-		To: [][]byte{tobuf},
-	}
-
-	sender := sender{
-		me: factory.me,
-		receiver: receiver{
-			addressFactory: fake.AddressFactory{},
-			queue:          newNonBlockingQueue(),
-		},
-		connections: make(map[mino.Address]safeRelay),
-		connFactory: factory,
-		router:      fakeRouter{},
-		lock:        new(sync.Mutex),
-	}
-
-	err = sender.sendEnvelope(context.Background(), envelope)
-	require.Error(t, err)
-}
-
 // -----------------------------------------------------------------------------
 // Utility functions
 
@@ -540,7 +412,7 @@ func (h testHandler) Process(req mino.Request) (serde.Message, error) {
 
 type fakeServerStream struct {
 	grpc.ServerStream
-	ch  chan *Envelope
+	ch  chan *Packet
 	ctx context.Context
 	err error
 }
@@ -549,12 +421,12 @@ func (s fakeServerStream) Context() context.Context {
 	return s.ctx
 }
 
-func (s fakeServerStream) Send(m *Envelope) error {
+func (s fakeServerStream) Send(m *Packet) error {
 	s.ch <- m
 	return nil
 }
 
-func (s fakeServerStream) Recv() (*Envelope, error) {
+func (s fakeServerStream) Recv() (*Packet, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -589,42 +461,58 @@ func (s fakeCerts) Fetch(certs.Dialable, []byte) error {
 	return s.err
 }
 
-type fakeRouter struct {
-	isBad bool
-}
+// type fakeRouter struct {
+// 	isBad bool
+// }
 
-func (r fakeRouter) MakePacket(me mino.Address, to mino.Address, msg []byte) router.Packet {
-	return fakePacket{
-		dest: to,
-	}
-}
+// func (r fakeRouter) MakePacket(me mino.Address, to []mino.Address,
+// 	msg []byte) router.Packet {
+// 	return fakePacket{
+// 		dest: to,
+// 	}
+// }
 
-func (r fakeRouter) Forward(packet router.Packet) (mino.Address, error) {
-	if r.isBad {
-		return nil, xerrors.New("fake error")
-	}
+// func (r fakeRouter) Forward(me mino.Address, data []byte, ctx serde.Context,
+// 	f mino.AddressFactory) (map[mino.Address]Packet, error) {
 
-	return packet.GetDestination(), nil
-}
+// 	if r.isBad {
+// 		return nil, xerrors.New("fake error")
+// 	}
 
-func (r fakeRouter) OnFailure(to mino.Address) error {
-	panic("not implemented") // TODO: Implement
-}
+// 	return map[mino.Address]Packet{}, nil
+// }
+
+// func (r fakeRouter) OnFailure(to mino.Address) error {
+// 	panic("not implemented") // TODO: Implement
+// }
 
 type fakePacket struct {
-	dest mino.Address
+	serde.Message
+	source mino.Address
+	dest   []mino.Address
+}
+
+func newFakePacket(source mino.Address, dest ...mino.Address) router.Packet {
+	return fakePacket{
+		source: source,
+		dest:   dest,
+	}
 }
 
 func (p fakePacket) GetSource() mino.Address {
-	panic("not implemented") // TODO: Implement
+	return p.source
 }
 
-func (p fakePacket) GetDestination() mino.Address {
+func (p fakePacket) GetDestination() []mino.Address {
 	return p.dest
 }
 
 func (p fakePacket) GetMessage(ctx serde.Context, f serde.Factory) (serde.Message, error) {
 	panic("not implemented") // TODO: Implement
+}
+
+func (p fakePacket) String() string {
+	return "fakePacket"
 }
 
 // type fakeStream struct {

@@ -261,7 +261,7 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 		headerURIKey, uri, headerGatewayKey, string(mebuf), headerStreamIDKey,
 		streamID))
 
-	go session.sender.listenStream(relayCtx, &passiveConn{streamConn{client: stream}}, gateway)
+	go session.sender.listenStream(relayCtx, stream, gateway)
 
 	if first {
 		err := endpoint.Handler.Stream(session.sender, session.receiver)
@@ -307,34 +307,57 @@ func (s sender) closeRelays() {
 	}
 }
 
-// sendEnvelope creates the relays if needed and send the envelopes accordingly.
-func (s sender) sendEnvelope(ctx context.Context, envelope Envelope) error {
+// sendPacket creates the relays if needed and sends the packets accordingly.
+func (s sender) sendPacket(ctx context.Context, proto *Packet) error {
 
-	dispatched, err := s.processEnvelope(envelope)
+	packets, err := s.router.Forward(s.me, proto.Serialized, s.receiver.context,
+		s.receiver.addressFactory)
 	if err != nil {
-		return xerrors.Errorf("failed to process envelope: %v", err)
+		return xerrors.Errorf("failed to route packet: %v", err)
 	}
 
-	for relayAddr, env := range dispatched {
-		// Special case when the message is sent back to the gateway.
-		if relayAddr.Equal(newRootAddress()) || relayAddr.Equal(s.gateway) {
-			relayAddr = s.gateway
+	for to, packet := range packets {
+
+		// The router should send nil when it doesn't know the 'from' and the
+		// 'to'.
+		if to == nil {
+			to = newRootAddress()
 		}
 
-		err := s.SetupRelay(ctx, relayAddr)
+		if to.Equal(s.me) {
+			s.receiver.appendMessage(packet)
+			continue
+		}
+
+		// If we are not the orchestrator and we must send a message to it, our
+		// only option is to send the message back to our gateway.
+		if to.Equal(newRootAddress()) {
+			to = s.gateway
+		}
+
+		// If not already done, setup the connection to this address
+		err := s.SetupRelay(ctx, to)
 		if err != nil {
 			return xerrors.Errorf("failed to setup relay to '%s': %v",
-				relayAddr, err)
+				to, err)
 		}
 
-		s.traffic.logSend(ctx, s.me, relayAddr, env)
+		buf, err := packet.Serialize(s.receiver.context)
+		if err != nil {
+			return xerrors.Errorf("failed to serialize packet: %v", err)
+		}
 
-		err = s.send(relayAddr, env)
+		proto := &Packet{
+			Serialized: buf,
+		}
+
+		s.traffic.logSend(ctx, s.me, to, packet)
+
+		err = s.send(to, proto)
 		if err != nil {
 			s.receiver.logger.Warn().Msgf("failed to send to relay '%s': %v",
-				relayAddr, err)
+				to, err)
 		}
-
 	}
 
 	return nil
@@ -376,48 +399,6 @@ func (s sender) SetupRelay(ctx context.Context, addr mino.Address) error {
 	return nil
 }
 
-// processEnvelope creates multiple envelopes based on the relays needed for
-// each recipient. It also notifies the receiver in case the recipient is
-// ourself. This function doesn't send any message, it only returns a map that
-// will allow us to then send the envelopes and create the necessary relays if
-// needed.
-func (s sender) processEnvelope(envelope Envelope) (map[mino.Address]*Envelope, error) {
-	out := map[mino.Address]*Envelope{}
-
-	tos := make([]mino.Address, len(envelope.To))
-	for i, addrBuf := range envelope.To {
-		tos[i] = s.receiver.addressFactory.FromText(addrBuf)
-	}
-
-	for _, tobuf := range envelope.GetTo() {
-		to := s.receiver.addressFactory.FromText(tobuf)
-
-		if to.Equal(s.me) {
-			s.receiver.appendMessage(envelope.GetMessage())
-			continue
-		}
-
-		packet := s.router.MakePacket(s.me, to, envelope.GetMessage().GetPayload())
-		relay, err := s.router.Forward(packet)
-		if err != nil {
-			return nil, xerrors.Errorf("failed to find route from %s to %s: %v",
-				s.me, to, err)
-		}
-
-		env, found := out[relay]
-		if !found {
-			out[relay] = &Envelope{
-				To:      [][]byte{tobuf},
-				Message: envelope.GetMessage(),
-			}
-		} else {
-			env.To = append(env.To, tobuf)
-		}
-	}
-
-	return out, nil
-}
-
 // listenStream listens for new messages that would come from a stream that we
 // set up and either notify us, or relay the message. This function is blocking.
 func (s sender) listenStream(streamCtx context.Context, stream relayable,
@@ -433,7 +414,7 @@ func (s sender) listenStream(streamCtx context.Context, stream relayable,
 		case <-streamCtx.Done():
 			return
 		default:
-			envelope, err := stream.Recv()
+			proto, err := stream.Recv()
 			if err == io.EOF {
 				return
 			}
@@ -443,16 +424,17 @@ func (s sender) listenStream(streamCtx context.Context, stream relayable,
 			}
 			if err != nil {
 				// TODO: this error is actually never seen by the user
-				s.receiver.logger.Fatal().Msgf("stream failed to receive: %v", err)
+				s.receiver.logger.Warn().Msgf("stream failed to receive: %v", err)
 				s.receiver.errs <- xerrors.Errorf("failed to receive: %v", err)
 				return
 			}
 
-			s.traffic.logRcv(stream.Context(), distantAddr, s.me, envelope)
+			s.traffic.logRcv(stream.Context(), distantAddr, s.me)
 
-			err = s.sendEnvelope(streamCtx, *envelope)
+			err = s.sendPacket(streamCtx, proto)
 			if err != nil {
-				s.receiver.errs <- xerrors.Errorf("failed to send to dispatched relays: %v", err)
+				s.receiver.errs <- xerrors.Errorf("failed to send to "+
+					"dispatched relays: %v", err)
 				return
 			}
 		}
@@ -462,8 +444,8 @@ func (s sender) listenStream(streamCtx context.Context, stream relayable,
 // relayable describes the basic primitives to use a stream
 type relayable interface {
 	Context() context.Context
-	Send(*Envelope) error
-	Recv() (*Envelope, error)
+	Send(*Packet) error
+	Recv() (*Packet, error)
 }
 
 // safeRelay is a wrapper for a relayable that must have a thread-safe Recv()
@@ -489,14 +471,14 @@ func (r *streamConn) Context() context.Context {
 }
 
 // Send implements relayable
-func (r *streamConn) Send(e *Envelope) error {
+func (r *streamConn) Send(e *Packet) error {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 	return r.client.Send(e)
 }
 
 // Recv implements relayable
-func (r *streamConn) Recv() (*Envelope, error) {
+func (r *streamConn) Recv() (*Packet, error) {
 	return r.client.Recv()
 }
 
@@ -538,7 +520,8 @@ type overlay struct {
 	addrFactory mino.AddressFactory
 }
 
-func newOverlay(me mino.Address, router router.Router, addrFactory mino.AddressFactory, ctx serde.Context) (overlay, error) {
+func newOverlay(me mino.Address, router router.Router,
+	addrFactory mino.AddressFactory, ctx serde.Context) (overlay, error) {
 
 	cert, err := makeCertificate()
 	if err != nil {
