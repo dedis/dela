@@ -6,7 +6,6 @@ import (
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/core/execution/baremetal"
-	"go.dedis.ch/dela/core/execution/baremetal/viewchange"
 	"go.dedis.ch/dela/core/ordering/cosipbft"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/store/hashtree/binprefix"
@@ -32,7 +31,7 @@ func (minimal) SetCommands(builder node.Builder) {
 	cmd.SetDescription("Ordering service administration")
 
 	sub := cmd.SetSubCommand("setup")
-	sub.SetDescription("creates a new chain")
+	sub.SetDescription("Creates a new chain")
 	sub.SetFlags(
 		cli.StringSliceFlag{
 			Name:     "member",
@@ -43,8 +42,22 @@ func (minimal) SetCommands(builder node.Builder) {
 	sub.SetAction(builder.MakeAction(setupAction{}))
 
 	sub = cmd.SetSubCommand("export")
-	sub.SetDescription("export the node information")
+	sub.SetDescription("Export the node information")
 	sub.SetAction(builder.MakeAction(exportAction{}))
+
+	sub = cmd.SetSubCommand("roster")
+	sub.SetDescription("Roster administration")
+
+	sub = sub.SetSubCommand("add")
+	sub.SetDescription("Add a member to the chain")
+	sub.SetFlags(
+		cli.StringFlag{
+			Name:     "member",
+			Required: true,
+			Usage:    "base64 description of the member to add",
+		},
+	)
+	sub.SetAction(builder.MakeAction(rosterAddAction{}))
 }
 
 func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
@@ -59,7 +72,7 @@ func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
 	exec := baremetal.NewExecution()
 
 	rosterFac := authority.NewFactory(m.GetAddressFactory(), cosi.GetPublicKeyFactory())
-	exec.Set(viewchange.ContractName, viewchange.NewContract(cosipbft.GetRosterKey(), rosterFac))
+	cosipbft.RegisterRosterContract(exec, rosterFac)
 
 	txFac := anon.NewTransactionFactory()
 	vs := simple.NewService(exec, txFac)
@@ -90,6 +103,7 @@ func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
 
 	inj.Inject(srvc)
 	inj.Inject(cosi)
+	inj.Inject(pool)
 
 	return nil
 }

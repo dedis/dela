@@ -169,3 +169,34 @@ func (f TransactionFactory) TransactionOf(ctx serde.Context, data []byte) (txn.T
 
 	return tx, nil
 }
+
+// TransactionManager is a manager to create anonymous transactions. It manages
+// the nonce by itself.
+//
+// - implements txn.TransactionManager
+type transactionManager struct {
+	nonce uint64
+}
+
+// NewManager creates a new transaction manager.
+func NewManager() txn.TransactionManager {
+	return &transactionManager{
+		// TODO: sync with latest block
+		nonce: 0,
+	}
+}
+
+// Make creates a transaction populated with the arguments.
+func (mgr *transactionManager) Make(args ...txn.Arg) (txn.Transaction, error) {
+	opts := make([]TransactionOption, len(args))
+	for i, arg := range args {
+		opts[i] = WithArg(arg.Key, arg.Value)
+	}
+
+	tx, err := NewTransaction(mgr.nonce, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	return tx, nil
+}

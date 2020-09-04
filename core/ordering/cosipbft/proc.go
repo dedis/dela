@@ -25,11 +25,6 @@ var (
 	keyRoster = [32]byte{}
 )
 
-// GetRosterKey returns the storage key of the roster.
-func GetRosterKey() []byte {
-	return keyRoster[:]
-}
-
 // Processor processes the messages to run a collective signing PBFT consensus.
 type processor struct {
 	mino.UnsupportedHandler

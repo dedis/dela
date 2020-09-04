@@ -29,3 +29,15 @@ type TransactionFactory interface {
 
 	TransactionOf(serde.Context, []byte) (Transaction, error)
 }
+
+// Arg is a generic argument that can be stored in a transaction.
+type Arg struct {
+	Key   string
+	Value []byte
+}
+
+// TransactionManager is a manager to create transaction. It can help creating
+// transactions when some information is required like the current nonce.
+type TransactionManager interface {
+	Make(args ...Arg) (Transaction, error)
+}

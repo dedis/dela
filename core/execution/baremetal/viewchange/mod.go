@@ -2,6 +2,7 @@ package viewchange
 
 import (
 	"go.dedis.ch/dela/core/execution"
+	"go.dedis.ch/dela/core/execution/baremetal"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/txn"
@@ -23,6 +24,23 @@ const (
 	messageTooManyChanges   = "too many changes"
 	messageStorageFailure   = "storage failure"
 )
+
+func NewTransaction(mgr txn.TransactionManager, roster authority.Authority) (txn.Transaction, error) {
+	data, err := roster.Serialize(json.NewContext())
+	if err != nil {
+		return nil, err
+	}
+
+	tx, err := mgr.Make(
+		txn.Arg{Key: baremetal.ContractArg, Value: []byte(ContractName)},
+		txn.Arg{Key: AuthorityArg, Value: data},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return tx, nil
+}
 
 // Contract is a contract to update the roster at a given key in the storage. It
 // only allows one member change per transaction.

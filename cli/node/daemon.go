@@ -158,6 +158,7 @@ func (d *socketDaemon) Close() error {
 type socketFactory struct {
 	injector Injector
 	actions  *actionMap
+	out      io.Writer
 }
 
 // ClientFromContext implements node.DaemonFactory. It creates a client based on
@@ -165,7 +166,7 @@ type socketFactory struct {
 func (f socketFactory) ClientFromContext(ctx cli.Flags) (Client, error) {
 	client := socketClient{
 		socketpath: f.getSocketPath(ctx),
-		out:        os.Stdout,
+		out:        f.out,
 	}
 
 	return client, nil

@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/core/execution/baremetal"
+	"go.dedis.ch/dela/core/execution/baremetal/viewchange"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
@@ -31,6 +33,12 @@ const (
 
 	rpcName = "cosipbft"
 )
+
+// RegisterRosterContract registers the baremetal contract to update the roster
+// to the given service.
+func RegisterRosterContract(exec *baremetal.BareMetal, fac authority.Factory) {
+	exec.Set(viewchange.ContractName, viewchange.NewContract(keyRoster[:], fac))
+}
 
 // Service is an ordering service using collective signatures combined with PBFT
 // to create a chain of blocks.
@@ -227,6 +235,11 @@ func (s *Service) GetProof(key []byte) (ordering.Proof, error) {
 	return newProof(path, chain), nil
 }
 
+// GetRoster returns the current roster of the service.
+func (s *Service) GetRoster() (authority.Authority, error) {
+	return s.getCurrentRoster()
+}
+
 // Watch implements ordering.Service.
 func (s *Service) Watch(ctx context.Context) <-chan ordering.Event {
 	obs := observer{ch: make(chan ordering.Event, 1)}
@@ -285,6 +298,10 @@ func (s *Service) watchBlocks() {
 
 		// 4. Notify the new block to potential listeners.
 		s.watcher.Notify(event)
+
+		s.logger.Info().
+			Uint64("index", link.GetBlock().GetIndex()).
+			Msg("block event")
 	}
 }
 

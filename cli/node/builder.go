@@ -3,6 +3,7 @@ package node
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"reflect"
@@ -26,10 +27,24 @@ type cliBuilder struct {
 	startFlags    []cli.Flag
 	commands      []*cliCommand
 	inits         []Initializer
+	writer        io.Writer
 }
 
 // NewBuilder returns a new empty builder.
 func NewBuilder(inits ...Initializer) cli.Builder {
+	return NewBuilderWithCfg(nil, nil, inits...)
+}
+
+// NewBuilderWithCfg returns a new empty builder with specific configurations.
+func NewBuilderWithCfg(sigs chan os.Signal, out io.Writer, inits ...Initializer) cli.Builder {
+	if out == nil {
+		out = os.Stdout
+	}
+
+	if sigs == nil {
+		sigs = make(chan os.Signal, 1)
+	}
+
 	injector := &reflectInjector{
 		mapper: make(map[reflect.Type]interface{}),
 	}
@@ -39,14 +54,16 @@ func NewBuilder(inits ...Initializer) cli.Builder {
 	factory := socketFactory{
 		injector: injector,
 		actions:  actions,
+		out:      out,
 	}
 
 	return &cliBuilder{
 		injector:      injector,
 		actions:       actions,
 		daemonFactory: factory,
-		sigs:          make(chan os.Signal, 1),
+		sigs:          sigs,
 		inits:         inits,
+		writer:        out,
 	}
 }
 
@@ -120,6 +137,7 @@ func (b *cliBuilder) Build() cli.Application {
 			},
 		},
 		Commands: commands,
+		Writer:   b.writer,
 	}
 
 	return app

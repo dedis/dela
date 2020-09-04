@@ -27,7 +27,6 @@ func TestCliBuilder_SetStartFlags(t *testing.T) {
 
 func TestCliBuilder_Start(t *testing.T) {
 	builder := NewBuilder(fakeInitializer{}).(*cliBuilder)
-
 	builder.sigs <- syscall.SIGTERM
 
 	err := builder.start(nil)
@@ -42,6 +41,8 @@ func TestCliBuilder_Start(t *testing.T) {
 	require.EqualError(t, err, "couldn't start the daemon: oops")
 
 	builder = NewBuilder(fakeInitializer{err: xerrors.New("oops")}).(*cliBuilder)
+	builder.sigs <- syscall.SIGTERM
+
 	err = builder.start(nil)
 	require.EqualError(t, err, "couldn't run the controller: oops")
 }
