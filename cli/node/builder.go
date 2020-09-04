@@ -2,12 +2,14 @@ package node
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
 	"reflect"
 	"syscall"
+	"time"
 
 	ucli "github.com/urfave/cli/v2"
 	"go.dedis.ch/dela"
@@ -81,6 +83,53 @@ func (b *cliBuilder) SetStartFlags(flags ...cli.Flag) {
 	b.startFlags = append(b.startFlags, flags...)
 }
 
+type FlagSet map[string]interface{}
+
+func (fset FlagSet) String(name string) string {
+	switch v := fset[name].(type) {
+	case string:
+		return v
+	default:
+		return ""
+	}
+}
+
+func (fset FlagSet) StringSlice(name string) []string {
+	switch v := fset[name].(type) {
+	case []string:
+		return v
+	default:
+		return nil
+	}
+}
+
+func (fset FlagSet) Duration(name string) time.Duration {
+	switch v := fset[name].(type) {
+	case float64:
+		return time.Duration(v)
+	default:
+		return 0
+	}
+}
+
+func (fset FlagSet) Path(name string) string {
+	switch v := fset[name].(type) {
+	case string:
+		return v
+	default:
+		return ""
+	}
+}
+
+func (fset FlagSet) Int(name string) int {
+	switch v := fset[name].(type) {
+	case int:
+		return v
+	default:
+		return 0
+	}
+}
+
 // MakeAction implements node.Builder. It creates a CLI action from the
 // template.
 func (b *cliBuilder) MakeAction(tmpl ActionTemplate) cli.Action {
@@ -96,13 +145,28 @@ func (b *cliBuilder) MakeAction(tmpl ActionTemplate) cli.Action {
 		id := make([]byte, 2)
 		binary.LittleEndian.PutUint16(id, index)
 
-		action := b.actions.Get(index)
-		msg, err := action.GenerateRequest(c)
-		if err != nil {
-			return xerrors.Errorf("couldn't prepare action: %v", err)
+		ctx := c.(*ucli.Context)
+
+		fset := make(FlagSet)
+		for _, lin := range ctx.Lineage() {
+			if lin.Command == nil {
+				continue
+			}
+
+			for _, flag := range lin.Command.Flags {
+				name := flag.Names()[0]
+				if name != "help" {
+					fset[name] = ctx.Generic(name)
+				}
+			}
 		}
 
-		err = client.Send(append(id, msg...))
+		buf, err := json.Marshal(fset)
+		if err != nil {
+			return err
+		}
+
+		err = client.Send(append(id, buf...))
 		if err != nil {
 			return xerrors.Errorf("couldn't send action: %v", err)
 		}

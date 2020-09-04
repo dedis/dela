@@ -2,6 +2,7 @@ package node
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -117,6 +118,15 @@ func (d *socketDaemon) handleConn(conn net.Conn) {
 		return
 	}
 
+	dec := json.NewDecoder(conn)
+
+	fset := make(FlagSet)
+	err = dec.Decode(&fset)
+	if err != nil {
+		d.sendError(conn, err)
+		return
+	}
+
 	id := binary.LittleEndian.Uint16(buffer)
 	action := d.actions.Get(id)
 
@@ -127,7 +137,7 @@ func (d *socketDaemon) handleConn(conn net.Conn) {
 
 	actx := Context{
 		Injector: d.injector,
-		In:       conn,
+		Flags:    fset,
 		Out:      conn,
 	}
 

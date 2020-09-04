@@ -55,10 +55,6 @@ type Builder interface {
 // ActionTemplate is an extension of the cli.Action interface to allow an action
 // to send a request to the daemon.
 type ActionTemplate interface {
-	// Prepare returns the bytes to be sent to the daemon.
-	// TODO: improve after encoding changes
-	GenerateRequest(cli.Flags) ([]byte, error)
-
 	// Execute processes a command received from the CLI on the daemon.
 	Execute(Context) error
 }
@@ -67,7 +63,7 @@ type ActionTemplate interface {
 // provides the dependency injector alongside with the input and output.
 type Context struct {
 	Injector Injector
-	In       io.Reader
+	Flags    cli.Flags
 	Out      io.Writer
 }
 

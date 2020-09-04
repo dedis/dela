@@ -3,12 +3,10 @@ package controller
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
-	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/core/execution/baremetal/viewchange"
 	"go.dedis.ch/dela/core/ordering/cosipbft"
@@ -31,30 +29,13 @@ type Member struct {
 // the roster to use.
 type Members []Member
 
+// SetupAction is an action to create a new chain with a list of participants.
+//
+// - implements node.ActionTemplate
 type setupAction struct{}
 
-func (a setupAction) GenerateRequest(flags cli.Flags) ([]byte, error) {
-	members := make(Members, 0)
-
-	for _, member := range flags.StringSlice("member") {
-		var m Member
-
-		err := decodeBase64(member, &m)
-		if err != nil {
-			return nil, err
-		}
-
-		members = append(members, m)
-	}
-
-	data, err := json.Marshal(members)
-	if err != nil {
-		return nil, err
-	}
-
-	return data, nil
-}
-
+// Execute implements node.ActionTemplate. It reads the list of members and
+// requesthe setup to the service.
 func (a setupAction) Execute(ctx node.Context) error {
 	roster, err := a.readMembers(ctx)
 	if err != nil {
@@ -79,16 +60,21 @@ func (a setupAction) Execute(ctx node.Context) error {
 }
 
 func (a setupAction) readMembers(ctx node.Context) (authority.Authority, error) {
-	dec := json.NewDecoder(ctx.In)
+	members := make(Members, 0)
 
-	var members Members
-	err := dec.Decode(&members)
-	if err != nil {
-		return nil, err
+	for _, member := range ctx.Flags.StringSlice("member") {
+		var m Member
+
+		err := decodeBase64(member, &m)
+		if err != nil {
+			return nil, err
+		}
+
+		members = append(members, m)
 	}
 
 	var c cosi.CollectiveSigning
-	err = ctx.Injector.Resolve(&c)
+	err := ctx.Injector.Resolve(&c)
 	if err != nil {
 		return nil, err
 	}
@@ -116,12 +102,14 @@ func (a setupAction) readMembers(ctx node.Context) (authority.Authority, error) 
 	return authority.New(addrs, pubkeys), nil
 }
 
+// ExportAction is an action to display a base64 string describing the node. It
+// can be used to transmit the identity of a node to another one.
+//
+// - implements node.ActionTemplate
 type exportAction struct{}
 
-func (a exportAction) GenerateRequest(cli.Flags) ([]byte, error) {
-	return nil, nil
-}
-
+// Execute implements node.ActionTemplate. It looks for the node address and
+// public key and prints a base64 string.
 func (a exportAction) Execute(ctx node.Context) error {
 	var m mino.Mino
 	err := ctx.Injector.Resolve(&m)
@@ -152,23 +140,14 @@ func (a exportAction) Execute(ctx node.Context) error {
 	return nil
 }
 
+// RosterAddAction is an action to require a roster change in the change by
+// adding a new member.
+//
+// - implements node.ActionTemplate
 type rosterAddAction struct{}
 
-func (rosterAddAction) GenerateRequest(flags cli.Flags) ([]byte, error) {
-	var member Member
-	err := decodeBase64(flags.String("member"), &member)
-	if err != nil {
-		return nil, err
-	}
-
-	data, err := json.Marshal(member)
-	if err != nil {
-		return nil, err
-	}
-
-	return data, nil
-}
-
+// Execute implements node.ActionTemplate. It reads the new member and send a
+// transaction to require a roster change.
 func (rosterAddAction) Execute(ctx node.Context) error {
 	var srvc *cosipbft.Service
 	err := ctx.Injector.Resolve(&srvc)
@@ -181,10 +160,8 @@ func (rosterAddAction) Execute(ctx node.Context) error {
 		return err
 	}
 
-	dec := json.NewDecoder(ctx.In)
-
 	var member Member
-	err = dec.Decode(&member)
+	err = decodeBase64(ctx.Flags.String("member"), &member)
 	if err != nil {
 		return err
 	}

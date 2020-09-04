@@ -53,18 +53,15 @@ func TestCliBuilder_MakeNodeAction(t *testing.T) {
 		daemonFactory: fakeFactory{},
 	}
 
-	err := builder.MakeAction(fakeAction{})(fakeContext{})
+	err := builder.MakeAction(fakeAction{})(&ucli.Context{})
 	require.NoError(t, err)
 
-	err = builder.MakeAction(fakeAction{err: xerrors.New("oops")})(fakeContext{})
-	require.EqualError(t, err, "couldn't prepare action: oops")
-
 	builder.daemonFactory = fakeFactory{err: xerrors.New("oops")}
-	err = builder.MakeAction(fakeAction{})(fakeContext{})
+	err = builder.MakeAction(fakeAction{})(&ucli.Context{})
 	require.EqualError(t, err, "couldn't make client: oops")
 
 	builder.daemonFactory = fakeFactory{errClient: xerrors.New("oops")}
-	err = builder.MakeAction(fakeAction{})(fakeContext{})
+	err = builder.MakeAction(fakeAction{})(&ucli.Context{})
 	require.EqualError(t, err, "couldn't send action: oops")
 }
 

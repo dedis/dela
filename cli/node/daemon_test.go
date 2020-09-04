@@ -80,17 +80,17 @@ func TestSocketDaemon_Listen(t *testing.T) {
 		out:        out,
 	}
 
-	err = client.Send([]byte{0x0})
+	err = client.Send(append([]byte{0x0, 0x0}, []byte("{}")...))
 	require.NoError(t, err)
 	require.Equal(t, "deadbeef", out.String())
 
 	out.Reset()
-	err = client.Send([]byte{0x1})
+	err = client.Send(append([]byte{0x1, 0x0}, []byte("{}")...))
 	require.NoError(t, err)
 	require.Equal(t, "[ERROR] command error: oops\n", out.String())
 
 	out.Reset()
-	err = client.Send([]byte{0x2})
+	err = client.Send(append([]byte{0x2, 0x0}, []byte("{}")...))
 	require.NoError(t, err)
 	require.Equal(t, "[ERROR] unknown command '2'\n", out.String())
 
@@ -194,10 +194,6 @@ func (f fakeFactory) DaemonFromContext(cli.Flags) (Daemon, error) {
 
 type fakeAction struct {
 	err error
-}
-
-func (a fakeAction) GenerateRequest(cli.Flags) ([]byte, error) {
-	return []byte{}, a.err
 }
 
 func (a fakeAction) Execute(req Context) error {
