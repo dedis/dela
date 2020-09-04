@@ -9,7 +9,6 @@ import (
 	"os/signal"
 	"reflect"
 	"syscall"
-	"time"
 
 	ucli "github.com/urfave/cli/v2"
 	"go.dedis.ch/dela"
@@ -83,53 +82,6 @@ func (b *cliBuilder) SetStartFlags(flags ...cli.Flag) {
 	b.startFlags = append(b.startFlags, flags...)
 }
 
-type FlagSet map[string]interface{}
-
-func (fset FlagSet) String(name string) string {
-	switch v := fset[name].(type) {
-	case string:
-		return v
-	default:
-		return ""
-	}
-}
-
-func (fset FlagSet) StringSlice(name string) []string {
-	switch v := fset[name].(type) {
-	case []string:
-		return v
-	default:
-		return nil
-	}
-}
-
-func (fset FlagSet) Duration(name string) time.Duration {
-	switch v := fset[name].(type) {
-	case float64:
-		return time.Duration(v)
-	default:
-		return 0
-	}
-}
-
-func (fset FlagSet) Path(name string) string {
-	switch v := fset[name].(type) {
-	case string:
-		return v
-	default:
-		return ""
-	}
-}
-
-func (fset FlagSet) Int(name string) int {
-	switch v := fset[name].(type) {
-	case int:
-		return v
-	default:
-		return 0
-	}
-}
-
 // MakeAction implements node.Builder. It creates a CLI action from the
 // template.
 func (b *cliBuilder) MakeAction(tmpl ActionTemplate) cli.Action {
@@ -145,21 +97,10 @@ func (b *cliBuilder) MakeAction(tmpl ActionTemplate) cli.Action {
 		id := make([]byte, 2)
 		binary.LittleEndian.PutUint16(id, index)
 
-		ctx := c.(*ucli.Context)
-
+		// Prepare a set of flags that will be transmitted to the daemon so that
+		// the action has access to the same flags and their values.
 		fset := make(FlagSet)
-		for _, lin := range ctx.Lineage() {
-			if lin.Command == nil {
-				continue
-			}
-
-			for _, flag := range lin.Command.Flags {
-				name := flag.Names()[0]
-				if name != "help" {
-					fset[name] = ctx.Generic(name)
-				}
-			}
-		}
+		lookupFlags(fset, c.(*ucli.Context))
 
 		buf, err := json.Marshal(fset)
 		if err != nil {
@@ -172,6 +113,38 @@ func (b *cliBuilder) MakeAction(tmpl ActionTemplate) cli.Action {
 		}
 
 		return nil
+	}
+}
+
+func lookupFlags(fset FlagSet, ctx *ucli.Context) {
+	for _, ancestor := range ctx.Lineage() {
+		if ancestor.Command != nil {
+			fill(fset, ancestor.Command.Flags, ancestor)
+		}
+
+		if ancestor.App != nil {
+			fill(fset, ancestor.App.Flags, ancestor)
+		}
+	}
+}
+
+func fill(fset FlagSet, flags []ucli.Flag, ctx *ucli.Context) {
+	for _, flag := range flags {
+		names := flag.Names()
+		if len(names) > 0 {
+			fset[names[0]] = convert(ctx.Value(names[0]))
+		}
+	}
+}
+
+func convert(v interface{}) interface{} {
+	switch value := v.(type) {
+	case ucli.StringSlice:
+		// StringSlice is an edge-case as it won't serialize correctly with JSON
+		// so we ask for the actual []string to allow a correct serialization.
+		return value.Value()
+	default:
+		return v
 	}
 }
 

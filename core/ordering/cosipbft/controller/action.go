@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strings"
-	"time"
 
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/core/execution/baremetal/viewchange"
@@ -48,7 +47,9 @@ func (a setupAction) Execute(ctx node.Context) error {
 		return err
 	}
 
-	setupCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	timeout := ctx.Flags.Duration("timeout")
+
+	setupCtx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	err = srvc.Setup(setupCtx, roster)

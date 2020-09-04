@@ -2,6 +2,7 @@ package controller
 
 import (
 	"path/filepath"
+	"time"
 
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
@@ -33,6 +34,11 @@ func (minimal) SetCommands(builder node.Builder) {
 	sub := cmd.SetSubCommand("setup")
 	sub.SetDescription("Creates a new chain")
 	sub.SetFlags(
+		cli.DurationFlag{
+			Name:  "timeout",
+			Usage: "maximum amount of time to setup",
+			Value: 20 * time.Second,
+		},
 		cli.StringSliceFlag{
 			Name:     "member",
 			Required: true,
