@@ -310,8 +310,7 @@ func (s sender) closeRelays() {
 // sendPacket creates the relays if needed and sends the packets accordingly.
 func (s sender) sendPacket(ctx context.Context, proto *Packet) error {
 
-	packets, err := s.router.Forward(s.me, proto.Serialized, s.receiver.context,
-		s.receiver.addressFactory)
+	packets, err := s.router.Forward(s.me, proto.Serialized, s.receiver.context)
 	if err != nil {
 		return xerrors.Errorf("failed to route packet: %v", err)
 	}

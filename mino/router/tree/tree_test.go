@@ -81,7 +81,7 @@ func TestAddresses_Sort(t *testing.T) {
 }
 
 func TestTreeNode_Display(t *testing.T) {
-	r := NewRouter(newFakeMemship(5), 2)
+	r := NewRouter(newFakeMemship(5), 2, nil)
 	r.newTree(0, 2)
 
 	buffer := new(bytes.Buffer)

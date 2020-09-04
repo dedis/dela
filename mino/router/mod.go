@@ -44,8 +44,7 @@ type Router interface {
 	//
 	//	{A: packet{to: [A, B, C]}}
 	//
-	Forward(me mino.Address, data []byte, ctx serde.Context,
-		f mino.AddressFactory) (map[mino.Address]Packet, error)
+	Forward(me mino.Address, data []byte, ctx serde.Context) (map[mino.Address]Packet, error)
 
 	// OnFailure is used to announce that a packet failed to be routed. It
 	// allows the router to find a different route. Forward can be called

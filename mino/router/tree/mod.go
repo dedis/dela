@@ -37,14 +37,18 @@ type Router struct {
 	routingNodes map[mino.Address]*treeNode
 	initialized  bool
 	height       int
+	fac          serde.Factory
 }
 
 // NewRouter returns a new router
-func NewRouter(memship MembershipService, height int) *Router {
+func NewRouter(memship MembershipService, height int, f mino.AddressFactory) *Router {
+	fac := types.NewPacketFactory(f)
+
 	r := &Router{
 		memship: memship,
 		height:  height,
 		lock:    new(sync.Mutex),
+		fac:     fac,
 	}
 
 	return r
@@ -79,14 +83,13 @@ func (r Router) MakePacket(me mino.Address, to []mino.Address, msg []byte) route
 // for all its children, and see that for its child 3, 3 >= 4 <= 5, so the root
 // will send its message to node 3.
 //
-func (r *Router) Forward(me mino.Address, data []byte, ctx serde.Context, f mino.AddressFactory) (map[mino.Address]router.Packet, error) {
+func (r *Router) Forward(me mino.Address, data []byte,
+	ctx serde.Context) (map[mino.Address]router.Packet, error) {
 
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	fac := types.NewPacketFactory(f)
-
-	msg, err := fac.Deserialize(ctx, data)
+	msg, err := r.fac.Deserialize(ctx, data)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to deserialize packet: %v", err)
 	}
@@ -171,8 +174,11 @@ func (r Router) getDest(from, to mino.Address) mino.Address {
 	}
 
 	if sourceNode.Parent == nil {
+		// This error only happens if the tree is malformed, which should never
+		// happen if newTree is used and is very grave if it does.
 		dela.Logger.Fatal().Msgf("didn't find any children to send to %s, "+
 			"and there is no root for %s", target.Addr, sourceNode.Addr)
+		return nil
 	}
 
 	return sourceNode.Parent.Addr

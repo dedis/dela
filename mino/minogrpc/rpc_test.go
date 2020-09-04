@@ -49,7 +49,7 @@ func TestRPC_Stream(t *testing.T) {
 	rpc := &RPC{
 		overlay: overlay{
 			me:          addrs[0],
-			router:      tree.NewRouter(NewMemship([]mino.Address{fake.NewAddress(0)}), 1),
+			router:      tree.NewRouter(NewMemship([]mino.Address{fake.NewAddress(0)}), 1, AddressFactory{}),
 			addrFactory: AddressFactory{},
 			connFactory: fakeConnFactory{},
 			context:     json.NewContext(),

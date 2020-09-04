@@ -89,7 +89,7 @@ func (m minimal) Inject(ctx cli.Flags, inj node.Injector) error {
 	memship := minogrpc.NewMemship([]mino.Address{})
 
 	o, err := minogrpc.NewMinogrpc("127.0.0.1", uint16(port), tree.NewRouter(
-		memship, treeRoutingHeight))
+		memship, treeRoutingHeight, minogrpc.AddressFactory{}))
 	if err != nil {
 		return xerrors.Errorf("couldn't make overlay: %v", err)
 	}
