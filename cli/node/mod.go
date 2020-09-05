@@ -46,9 +46,8 @@ type Builder interface {
 	// start command.
 	SetStartFlags(...cli.Flag)
 
-	// MakeNodeAction creates a CLI action from a given template. The template
-	// must implements the request generated from the flags and the handler that
-	// will be executed on the daemon.
+	// MakeAction creates a CLI action from a given template. The template must
+	// implements the handler that will be executed on the daemon.
 	MakeAction(ActionTemplate) cli.Action
 }
 

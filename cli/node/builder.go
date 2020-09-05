@@ -104,7 +104,7 @@ func (b *cliBuilder) MakeAction(tmpl ActionTemplate) cli.Action {
 
 		buf, err := json.Marshal(fset)
 		if err != nil {
-			return err
+			return xerrors.Errorf("failed to marshal flag set: %v", err)
 		}
 
 		err = client.Send(append(id, buf...))

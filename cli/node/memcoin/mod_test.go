@@ -33,7 +33,7 @@ func TestMemcoin_Scenario_1(t *testing.T) {
 	go func() {
 		defer wg.Done()
 
-		err := runWithCfg(makeNodeArg(node1, 2001), cfg)
+		err := runWithCfg(makeNodeArg(node1, 2111), cfg)
 		require.NoError(t, err)
 	}()
 
@@ -41,14 +41,14 @@ func TestMemcoin_Scenario_1(t *testing.T) {
 	go func() {
 		defer wg.Done()
 
-		err := runWithCfg(makeNodeArg(node2, 2002), cfg)
+		err := runWithCfg(makeNodeArg(node2, 2112), cfg)
 		require.NoError(t, err)
 	}()
 
 	go func() {
 		defer wg.Done()
 
-		err := runWithCfg(makeNodeArg(node3, 2003), cfg)
+		err := runWithCfg(makeNodeArg(node3, 2113), cfg)
 		require.NoError(t, err)
 	}()
 
@@ -85,8 +85,6 @@ func TestMemcoin_Scenario_1(t *testing.T) {
 	err = run(args)
 	require.NoError(t, err)
 
-	time.Sleep(time.Second)
-
 	// Test a bad command.
 	err = runWithCfg([]string{os.Args[0], "ordering", "setup"}, cfg)
 	require.EqualError(t, err, `Required flag "member" not set`)
@@ -103,7 +101,7 @@ func makeNodeArg(path string, port uint16) []string {
 
 func shareCert(t *testing.T, path string, src string) {
 	args := append(
-		[]string{os.Args[0], "--config", path, "minogrpc", "join", "--address", "127.0.0.1:2001"},
+		[]string{os.Args[0], "--config", path, "minogrpc", "join", "--address", "127.0.0.1:2111"},
 		getToken(t, src)...,
 	)
 

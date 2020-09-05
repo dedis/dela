@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/cli"
@@ -58,15 +59,17 @@ func TestSocketClient_Send(t *testing.T) {
 
 func TestSocketDaemon_Listen(t *testing.T) {
 	path := filepath.Join(os.TempDir(), "dela", "daemon.sock")
+	defer os.RemoveAll(filepath.Join(os.TempDir(), "dela"))
 
 	actions := &actionMap{}
 	actions.Set(fakeAction{})                         // id 0
 	actions.Set(fakeAction{err: xerrors.New("oops")}) // id 1
 
 	daemon := &socketDaemon{
-		socketpath: path,
-		actions:    actions,
-		closing:    make(chan struct{}),
+		socketpath:  path,
+		actions:     actions,
+		closing:     make(chan struct{}),
+		readTimeout: time.Second,
 	}
 
 	err := daemon.Listen()
@@ -93,6 +96,17 @@ func TestSocketDaemon_Listen(t *testing.T) {
 	err = client.Send(append([]byte{0x2, 0x0}, []byte("{}")...))
 	require.NoError(t, err)
 	require.Equal(t, "[ERROR] unknown command '2'\n", out.String())
+
+	out.Reset()
+	err = client.Send([]byte{0x0, 0x0, 0x0})
+	require.NoError(t, err)
+	require.Contains(t, out.String(), "[ERROR] failed to decode flags: ")
+
+	out.Reset()
+	daemon.readTimeout = time.Nanosecond
+	err = client.Send([]byte{})
+	require.NoError(t, err)
+	require.Contains(t, out.String(), "[ERROR] stream corrupted: ")
 
 	// the rest is not concerned by windows that actually allows the creation of
 	// root files and folders
@@ -161,10 +175,12 @@ func (c fakeInitializer) Inject(cli.Flags, Injector) error {
 }
 
 type fakeClient struct {
-	err error
+	err   error
+	calls *fake.Call
 }
 
-func (c fakeClient) Send([]byte) error {
+func (c fakeClient) Send(data []byte) error {
+	c.calls.Add(data)
 	return c.err
 }
 
@@ -182,10 +198,11 @@ type fakeFactory struct {
 	err       error
 	errClient error
 	errDaemon error
+	calls     *fake.Call
 }
 
 func (f fakeFactory) ClientFromContext(cli.Flags) (Client, error) {
-	return fakeClient{err: f.errClient}, f.err
+	return fakeClient{err: f.errClient, calls: f.calls}, f.err
 }
 
 func (f fakeFactory) DaemonFromContext(cli.Flags) (Daemon, error) {

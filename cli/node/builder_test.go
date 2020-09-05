@@ -1,12 +1,14 @@
 package node
 
 import (
+	"flag"
 	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	ucli "github.com/urfave/cli/v2"
 	"go.dedis.ch/dela/cli"
+	"go.dedis.ch/dela/internal/testing/fake"
 	"golang.org/x/xerrors"
 )
 
@@ -47,21 +49,31 @@ func TestCliBuilder_Start(t *testing.T) {
 	require.EqualError(t, err, "couldn't run the controller: oops")
 }
 
-func TestCliBuilder_MakeNodeAction(t *testing.T) {
+func TestCliBuilder_MakeAction(t *testing.T) {
+	calls := &fake.Call{}
 	builder := &cliBuilder{
 		actions:       &actionMap{},
-		daemonFactory: fakeFactory{},
+		daemonFactory: fakeFactory{calls: calls},
 	}
 
-	err := builder.MakeAction(fakeAction{})(&ucli.Context{})
+	fset := flag.NewFlagSet("", 0)
+	fset.Var(ucli.NewStringSlice("item 1", "item 2"), "flag-1", "")
+	fset.Int("flag-2", 20, "")
+
+	ctx := ucli.NewContext(makeApp(), fset, nil)
+
+	err := builder.MakeAction(fakeAction{})(ctx)
 	require.NoError(t, err)
 
+	data := string(calls.Get(0, 0).([]byte))
+	require.Equal(t, "\x00\x00"+`{"flag-1":["item 1","item 2"],"flag-2":20}`, data)
+
 	builder.daemonFactory = fakeFactory{err: xerrors.New("oops")}
-	err = builder.MakeAction(fakeAction{})(&ucli.Context{})
+	err = builder.MakeAction(fakeAction{})(ctx)
 	require.EqualError(t, err, "couldn't make client: oops")
 
 	builder.daemonFactory = fakeFactory{errClient: xerrors.New("oops")}
-	err = builder.MakeAction(fakeAction{})(&ucli.Context{})
+	err = builder.MakeAction(fakeAction{})(ctx)
 	require.EqualError(t, err, "couldn't send action: oops")
 }
 
@@ -109,4 +121,16 @@ func TestCliBuilder_UnknownType_BuildFlags(t *testing.T) {
 	builder.SetStartFlags((cli.Flag)(nil))
 
 	builder.buildFlags(builder.startFlags)
+}
+
+// -----------------------------------------------------------------------------
+// Utility functions
+
+func makeApp() *ucli.App {
+	return &ucli.App{
+		Flags: []ucli.Flag{
+			&ucli.StringSliceFlag{Name: "flag-1"},
+			&ucli.IntFlag{Name: "flag-2"},
+		},
+	}
 }

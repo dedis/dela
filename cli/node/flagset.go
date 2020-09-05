@@ -42,7 +42,7 @@ func (fset FlagSet) Duration(name string) time.Duration {
 	case float64:
 		return time.Duration(v)
 	default:
-		return 0
+		return time.Duration(0)
 	}
 }
 
