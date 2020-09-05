@@ -29,7 +29,6 @@ func TestMemcoin_Scenario_1(t *testing.T) {
 
 	cfg := config{Channel: sigs, Writer: ioutil.Discard}
 
-	// Run node 1
 	go func() {
 		defer wg.Done()
 
@@ -37,7 +36,6 @@ func TestMemcoin_Scenario_1(t *testing.T) {
 		require.NoError(t, err)
 	}()
 
-	// Run node 2
 	go func() {
 		defer wg.Done()
 
@@ -62,6 +60,8 @@ func TestMemcoin_Scenario_1(t *testing.T) {
 		os.RemoveAll(node3)
 	}()
 
+	// Wait for the servers to have properly started.
+	// TODO: could be improved
 	time.Sleep(500 * time.Millisecond)
 
 	// Share the certificates.

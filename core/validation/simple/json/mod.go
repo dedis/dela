@@ -62,7 +62,7 @@ func (f resFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error)
 
 	factory := ctx.GetFactory(simple.TransactionKey{})
 
-	fac, ok := factory.(txn.TransactionFactory)
+	fac, ok := factory.(txn.Factory)
 	if !ok {
 		return nil, xerrors.Errorf("invalid transaction factory")
 	}

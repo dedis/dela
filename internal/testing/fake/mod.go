@@ -756,6 +756,10 @@ func NewBadMino() Mino {
 
 // GetAddress implements mino.Mino.
 func (m Mino) GetAddress() mino.Address {
+	if m.err != nil {
+		return NewBadAddress()
+	}
+
 	return Address{}
 }
 

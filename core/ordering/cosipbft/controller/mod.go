@@ -18,6 +18,7 @@ import (
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/gossip"
+	"golang.org/x/xerrors"
 )
 
 type minimal struct{}
@@ -70,7 +71,7 @@ func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
 	var m mino.Mino
 	err := inj.Resolve(&m)
 	if err != nil {
-		return err
+		return xerrors.Errorf("injector: %v", err)
 	}
 
 	signer := bls.NewSigner()
@@ -85,12 +86,12 @@ func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
 
 	pool, err := poolimpl.NewPool(gossip.NewFlat(m, txFac))
 	if err != nil {
-		return err
+		return xerrors.Errorf("pool: %v", err)
 	}
 
 	db, err := kv.New(filepath.Join(flags.String("config"), "test.db"))
 	if err != nil {
-		return err
+		return xerrors.Errorf("db: %v", err)
 	}
 
 	param := cosipbft.ServiceParam{
@@ -104,7 +105,7 @@ func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
 
 	srvc, err := cosipbft.NewService(param)
 	if err != nil {
-		return err
+		return xerrors.Errorf("service: %v", err)
 	}
 
 	inj.Inject(srvc)

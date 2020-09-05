@@ -8,25 +8,27 @@ import (
 
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/core/execution/baremetal/viewchange"
-	"go.dedis.ch/dela/core/ordering/cosipbft"
+	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/txn/anon"
 	"go.dedis.ch/dela/core/txn/pool"
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
+	"golang.org/x/xerrors"
 )
 
-// Member is the structure that contains enough data to reproduce a roster
-// member.
-type Member struct {
-	Addr      []byte
-	PublicKey []byte
-}
+const separator = ":"
 
-// Members is the structure sent to the setup command so that it can reproduce
-// the roster to use.
-type Members []Member
+// Service is the expected interface of the ordering service that is extended
+// with some additional functions.
+type Service interface {
+	ordering.Service
+
+	GetRoster() (authority.Authority, error)
+
+	Setup(ctx context.Context, ca crypto.CollectiveAuthority) error
+}
 
 // SetupAction is an action to create a new chain with a list of participants.
 //
@@ -38,13 +40,13 @@ type setupAction struct{}
 func (a setupAction) Execute(ctx node.Context) error {
 	roster, err := a.readMembers(ctx)
 	if err != nil {
-		return err
+		return xerrors.Errorf("failed to read roster: %v", err)
 	}
 
-	var srvc *cosipbft.Service
+	var srvc Service
 	err = ctx.Injector.Resolve(&srvc)
 	if err != nil {
-		return err
+		return xerrors.Errorf("injector: %v", err)
 	}
 
 	timeout := ctx.Flags.Duration("timeout")
@@ -54,46 +56,22 @@ func (a setupAction) Execute(ctx node.Context) error {
 
 	err = srvc.Setup(setupCtx, roster)
 	if err != nil {
-		return err
+		return xerrors.Errorf("failed to setup: %v", err)
 	}
 
 	return nil
 }
 
 func (a setupAction) readMembers(ctx node.Context) (authority.Authority, error) {
-	members := make(Members, 0)
-
-	for _, member := range ctx.Flags.StringSlice("member") {
-		var m Member
-
-		err := decodeBase64(member, &m)
-		if err != nil {
-			return nil, err
-		}
-
-		members = append(members, m)
-	}
-
-	var c cosi.CollectiveSigning
-	err := ctx.Injector.Resolve(&c)
-	if err != nil {
-		return nil, err
-	}
-
-	var m mino.Mino
-	err = ctx.Injector.Resolve(&m)
-	if err != nil {
-		return nil, err
-	}
+	members := ctx.Flags.StringSlice("member")
 
 	addrs := make([]mino.Address, len(members))
 	pubkeys := make([]crypto.PublicKey, len(members))
-	for i, member := range members {
-		addr := m.GetAddressFactory().FromText(member.Addr)
 
-		pubkey, err := c.GetPublicKeyFactory().FromBytes(member.PublicKey)
+	for i, member := range members {
+		addr, pubkey, err := decodeMember(ctx, member)
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("failed to decode: %v", err)
 		}
 
 		addrs[i] = addr
@@ -110,31 +88,32 @@ func (a setupAction) readMembers(ctx node.Context) (authority.Authority, error) 
 type exportAction struct{}
 
 // Execute implements node.ActionTemplate. It looks for the node address and
-// public key and prints a base64 string.
+// public key and prints "$ADDR_BASE64:$PUBLIC_KEY_BASE64".
 func (a exportAction) Execute(ctx node.Context) error {
 	var m mino.Mino
 	err := ctx.Injector.Resolve(&m)
 	if err != nil {
-		return err
+		return xerrors.Errorf("injector: %v", err)
 	}
 
 	addr, err := m.GetAddress().MarshalText()
 	if err != nil {
-		return err
+		return xerrors.Errorf("failed to marshal address: %v", err)
 	}
 
 	var c cosi.CollectiveSigning
 	err = ctx.Injector.Resolve(&c)
 	if err != nil {
-		return err
+		return xerrors.Errorf("injector: %v", err)
 	}
 
 	pubkey, err := c.GetSigner().GetPublicKey().MarshalBinary()
 	if err != nil {
-		return err
+		return xerrors.Errorf("failed to marshal public key: %v", err)
 	}
 
-	desc := base64.StdEncoding.EncodeToString(addr) + ":" + base64.StdEncoding.EncodeToString(pubkey)
+	desc := base64.StdEncoding.EncodeToString(addr) + separator +
+		base64.StdEncoding.EncodeToString(pubkey)
 
 	fmt.Fprint(ctx.Out, desc)
 
@@ -150,59 +129,41 @@ type rosterAddAction struct{}
 // Execute implements node.ActionTemplate. It reads the new member and send a
 // transaction to require a roster change.
 func (rosterAddAction) Execute(ctx node.Context) error {
-	var srvc *cosipbft.Service
+	var srvc Service
 	err := ctx.Injector.Resolve(&srvc)
 	if err != nil {
-		return err
+		return xerrors.Errorf("injector: %v", err)
 	}
 
 	roster, err := srvc.GetRoster()
 	if err != nil {
-		return err
+		return xerrors.Errorf("failed to read roster: %v", err)
 	}
 
-	var member Member
-	err = decodeBase64(ctx.Flags.String("member"), &member)
+	addr, pubkey, err := decodeMember(ctx, ctx.Flags.String("member"))
 	if err != nil {
-		return err
-	}
-
-	var m mino.Mino
-	err = ctx.Injector.Resolve(&m)
-	if err != nil {
-		return err
-	}
-
-	var c cosi.CollectiveSigning
-	err = ctx.Injector.Resolve(&c)
-	if err != nil {
-		return err
-	}
-
-	addr := m.GetAddressFactory().FromText(member.Addr)
-
-	pubkey, err := c.GetPublicKeyFactory().FromBytes(member.PublicKey)
-	if err != nil {
-		return err
+		return xerrors.Errorf("failed to decode member: %v", err)
 	}
 
 	cset := authority.NewChangeSet()
 	cset.Add(addr, pubkey)
 
-	tx, err := viewchange.NewTransaction(anon.NewManager(), roster.Apply(cset))
+	mgr := viewchange.NewManager(anon.NewManager())
+
+	tx, err := mgr.Make(roster.Apply(cset))
 	if err != nil {
-		return err
+		return xerrors.Errorf("transaction manager: %v", err)
 	}
 
 	var p pool.Pool
 	err = ctx.Injector.Resolve(&p)
 	if err != nil {
-		return err
+		return xerrors.Errorf("injector: %v", err)
 	}
 
 	err = p.Add(tx)
 	if err != nil {
-		return err
+		return xerrors.Errorf("failed to add transaction: %v", err)
 	}
 
 	// TODO: listen for the new block and check the tx.
@@ -210,22 +171,42 @@ func (rosterAddAction) Execute(ctx node.Context) error {
 	return nil
 }
 
-func decodeBase64(str string, m *Member) error {
-	parts := strings.Split(str, ":")
-
-	addr, err := base64.StdEncoding.DecodeString(parts[0])
-	if err != nil {
-		return err
+func decodeMember(ctx node.Context, str string) (mino.Address, crypto.PublicKey, error) {
+	parts := strings.Split(str, separator)
+	if len(parts) != 2 {
+		return nil, nil, xerrors.New("invalid member base64 string")
 	}
 
-	m.Addr = addr
-
-	pubkey, err := base64.StdEncoding.DecodeString(parts[1])
+	// 1. Deserialize the address.
+	var m mino.Mino
+	err := ctx.Injector.Resolve(&m)
 	if err != nil {
-		return err
+		return nil, nil, xerrors.Errorf("injector: %v", err)
 	}
 
-	m.PublicKey = pubkey
+	addrBuf, err := base64.StdEncoding.DecodeString(parts[0])
+	if err != nil {
+		return nil, nil, xerrors.Errorf("base64 address: %v", err)
+	}
 
-	return nil
+	addr := m.GetAddressFactory().FromText(addrBuf)
+
+	// 2. Deserialize the public key.
+	var c cosi.CollectiveSigning
+	err = ctx.Injector.Resolve(&c)
+	if err != nil {
+		return nil, nil, xerrors.Errorf("injector: %v", err)
+	}
+
+	pubkeyBuf, err := base64.StdEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil, nil, xerrors.Errorf("base64 public key: %v", err)
+	}
+
+	pubkey, err := c.GetPublicKeyFactory().FromBytes(pubkeyBuf)
+	if err != nil {
+		return nil, nil, xerrors.Errorf("failed to decode public key: %v", err)
+	}
+
+	return addr, pubkey, nil
 }

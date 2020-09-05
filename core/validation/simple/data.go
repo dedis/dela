@@ -77,11 +77,11 @@ type TransactionKey struct{}
 //
 // - implements serde.Factory
 type ResultFactory struct {
-	fac txn.TransactionFactory
+	fac txn.Factory
 }
 
 // NewResultFactory creates a new transaction result factory.
-func NewResultFactory(f txn.TransactionFactory) ResultFactory {
+func NewResultFactory(f txn.Factory) ResultFactory {
 	return ResultFactory{
 		fac: f,
 	}
@@ -172,7 +172,7 @@ type DataFactory struct {
 }
 
 // NewDataFactory creates a new data factory.
-func NewDataFactory(f txn.TransactionFactory) DataFactory {
+func NewDataFactory(f txn.Factory) DataFactory {
 	return DataFactory{
 		fac: NewResultFactory(f),
 	}

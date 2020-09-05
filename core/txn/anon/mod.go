@@ -175,27 +175,31 @@ func (f TransactionFactory) TransactionOf(ctx serde.Context, data []byte) (txn.T
 //
 // - implements txn.TransactionManager
 type transactionManager struct {
-	nonce uint64
+	nonce   uint64
+	hashFac crypto.HashFactory
 }
 
 // NewManager creates a new transaction manager.
-func NewManager() txn.TransactionManager {
+func NewManager() txn.Manager {
 	return &transactionManager{
 		// TODO: sync with latest block
-		nonce: 0,
+		nonce:   0,
+		hashFac: crypto.NewSha256Factory(),
 	}
 }
 
 // Make creates a transaction populated with the arguments.
 func (mgr *transactionManager) Make(args ...txn.Arg) (txn.Transaction, error) {
-	opts := make([]TransactionOption, len(args))
+	opts := make([]TransactionOption, len(args)+1)
 	for i, arg := range args {
 		opts[i] = WithArg(arg.Key, arg.Value)
 	}
 
+	opts[len(args)] = WithHashFactory(mgr.hashFac)
+
 	tx, err := NewTransaction(mgr.nonce, opts...)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to create tx: %v", err)
 	}
 
 	return tx, nil
