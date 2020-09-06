@@ -99,8 +99,8 @@ func waitDaemon(t *testing.T, daemons []string) {
 		for i := 0; i < num; i++ {
 			// Windows: we have to check the file as Dial on Windows creates the
 			// file and prevent to listen.
-			stat, err := os.Stat(filepath.Join(daemon, "daemon.sock"))
-			if err == nil && stat != nil {
+			_, err := os.Stat(filepath.Join(daemon, "daemon.sock"))
+			if !os.IsNotExist(err) {
 				conn, err := net.Dial("unix", filepath.Join(daemon, "daemon.sock"))
 				if err == nil {
 					conn.Close()
