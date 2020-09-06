@@ -2,6 +2,7 @@ package node
 
 import (
 	"bytes"
+	"io/ioutil"
 	"net"
 	"os"
 	"path/filepath"
@@ -58,28 +59,29 @@ func TestSocketClient_Send(t *testing.T) {
 }
 
 func TestSocketDaemon_Listen(t *testing.T) {
-	path := filepath.Join(os.TempDir(), "dela", "daemon.sock")
-	defer os.RemoveAll(filepath.Join(os.TempDir(), "dela"))
+	dir, err := ioutil.TempDir(os.TempDir(), "dela-test-")
+	require.NoError(t, err)
+	defer os.RemoveAll(dir)
 
 	actions := &actionMap{}
 	actions.Set(fakeAction{})                         // id 0
 	actions.Set(fakeAction{err: xerrors.New("oops")}) // id 1
 
 	daemon := &socketDaemon{
-		socketpath:  path,
+		socketpath:  filepath.Join(dir, "daemon.sock"),
 		actions:     actions,
 		closing:     make(chan struct{}),
 		readTimeout: time.Second,
 	}
 
-	err := daemon.Listen()
+	err = daemon.Listen()
 	require.NoError(t, err)
 
 	defer daemon.Close()
 
 	out := new(bytes.Buffer)
 	client := socketClient{
-		socketpath: path,
+		socketpath: daemon.socketpath,
 		out:        out,
 	}
 
@@ -113,13 +115,6 @@ func TestSocketDaemon_Listen(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip()
 	}
-
-	daemon.socketpath = "/deadbeef/test.sock"
-	err = daemon.Listen()
-	require.Error(t, err)
-	// on the testing env the message can be different with a readonly error
-	// instead of a permission denied, thus we check only the first part.
-	require.Regexp(t, "^couldn't make path: mkdir /deadbeef/:", err)
 
 	daemon.socketpath = "/test.sock"
 	err = daemon.Listen()

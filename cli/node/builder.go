@@ -181,17 +181,18 @@ func (b *cliBuilder) Build() cli.Application {
 }
 
 func (b *cliBuilder) start(c *ucli.Context) error {
+	dir := c.Path("config")
+	if dir != "" {
+		err := os.MkdirAll(dir, 0700)
+		if err != nil {
+			return xerrors.Errorf("couldn't make path: %v", err)
+		}
+	}
+
 	daemon, err := b.daemonFactory.DaemonFromContext(c)
 	if err != nil {
 		return xerrors.Errorf("couldn't make daemon: %v", err)
 	}
-
-	err = daemon.Listen()
-	if err != nil {
-		return xerrors.Errorf("couldn't start the daemon: %v", err)
-	}
-
-	defer daemon.Close()
 
 	for _, controller := range b.inits {
 		err = controller.Inject(c, b.injector)
@@ -199,6 +200,15 @@ func (b *cliBuilder) start(c *ucli.Context) error {
 			return xerrors.Errorf("couldn't run the controller: %v", err)
 		}
 	}
+
+	// Daemon is started after the controllers so that everything has started
+	// when the daemon is available.
+	err = daemon.Listen()
+	if err != nil {
+		return xerrors.Errorf("couldn't start the daemon: %v", err)
+	}
+
+	defer daemon.Close()
 
 	signal.Notify(b.sigs, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(b.sigs)

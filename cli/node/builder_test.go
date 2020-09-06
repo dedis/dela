@@ -2,6 +2,7 @@ package node
 
 import (
 	"flag"
+	"runtime"
 	"syscall"
 	"testing"
 
@@ -33,6 +34,16 @@ func TestCliBuilder_Start(t *testing.T) {
 
 	err := builder.start(nil)
 	require.NoError(t, err)
+
+	fset := flag.NewFlagSet("", 0)
+	fset.String("config", "/test/", "")
+
+	if runtime.GOOS != "windows" {
+		ctx := ucli.NewContext(nil, fset, nil)
+		err = builder.start(ctx)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "couldn't make path: mkdir /test/: ")
+	}
 
 	builder.daemonFactory = fakeFactory{err: xerrors.New("oops")}
 	err = builder.start(nil)

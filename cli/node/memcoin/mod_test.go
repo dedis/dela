@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"io/ioutil"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -60,9 +61,7 @@ func TestMemcoin_Scenario_1(t *testing.T) {
 		os.RemoveAll(node3)
 	}()
 
-	// Wait for the servers to have properly started.
-	// TODO: could be improved
-	time.Sleep(500 * time.Millisecond)
+	waitDaemon(t, []string{node1, node2, node3})
 
 	// Share the certificates.
 	shareCert(t, node2, node1)
@@ -92,6 +91,31 @@ func TestMemcoin_Scenario_1(t *testing.T) {
 
 // -----------------------------------------------------------------------------
 // Utility functions
+
+func waitDaemon(t *testing.T, daemons []string) {
+	num := 20
+
+	for _, daemon := range daemons {
+		for i := 0; i < num; i++ {
+			// Windows: we have to check the file as Dial on Windows creates the
+			// file and prevent to listen.
+			stat, err := os.Stat(filepath.Join(daemon, "daemon.sock"))
+			if err == nil && stat != nil {
+				conn, err := net.Dial("unix", filepath.Join(daemon, "daemon.sock"))
+				if err == nil {
+					conn.Close()
+					break
+				}
+			}
+
+			time.Sleep(30 * time.Millisecond)
+
+			if i+1 >= num {
+				t.Fatal("timeout")
+			}
+		}
+	}
+}
 
 func makeNodeArg(path string, port uint16) []string {
 	return []string{

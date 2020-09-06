@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -64,15 +63,6 @@ type socketDaemon struct {
 // Listen implements node.Daemon. It starts the daemon by creating the unix
 // socket file to the path.
 func (d *socketDaemon) Listen() error {
-	dir, _ := filepath.Split(d.socketpath)
-
-	if dir != "" {
-		err := os.MkdirAll(dir, 0700)
-		if err != nil {
-			return xerrors.Errorf("couldn't make path: %v", err)
-		}
-	}
-
 	socket, err := net.Listen("unix", d.socketpath)
 	if err != nil {
 		return xerrors.Errorf("couldn't bind socket: %v", err)
