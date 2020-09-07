@@ -8,7 +8,11 @@
 // locally and creates a block with the proof of work.
 package ordering
 
-import "context"
+import (
+	"context"
+
+	"go.dedis.ch/dela/core/store"
+)
 
 // Proof contains the value of a specific key.
 type Proof interface {
@@ -29,6 +33,8 @@ type Event struct {
 type Service interface {
 	// GetProof must return a proof of the value at the provided key.
 	GetProof(key []byte) (Proof, error)
+
+	GetStore() store.Readable
 
 	// Watch returns a channel populated with events when transactions are
 	// accepted.

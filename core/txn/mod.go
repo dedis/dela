@@ -15,6 +15,8 @@ type Transaction interface {
 	// GetID returns the unique identifier for the transaction.
 	GetID() []byte
 
+	GetNonce() uint64
+
 	// GetIdentity returns the identity that created the transaction.
 	GetIdentity() access.Identity
 
@@ -40,4 +42,6 @@ type Arg struct {
 // transactions when some information is required like the current nonce.
 type Manager interface {
 	Make(args ...Arg) (Transaction, error)
+
+	Sync() error
 }

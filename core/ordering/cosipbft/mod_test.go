@@ -46,6 +46,8 @@ func TestService_Basic(t *testing.T) {
 	srvs, ro, clean := makeAuthority(t, 5)
 	defer clean()
 
+	signer := srvs[0].signer
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -56,25 +58,25 @@ func TestService_Basic(t *testing.T) {
 
 	events := srvs[2].service.Watch(ctx)
 
-	err = srvs[0].pool.Add(makeTx(t, 0))
+	err = srvs[0].pool.Add(makeTx(t, 0, signer))
 	require.NoError(t, err)
 
 	evt := waitEvent(t, events)
 	require.Equal(t, uint64(1), evt.Index)
 
-	err = srvs[1].pool.Add(makeTx(t, 1))
+	err = srvs[1].pool.Add(makeTx(t, 1, signer))
 	require.NoError(t, err)
 
 	evt = waitEvent(t, events)
 	require.Equal(t, uint64(2), evt.Index)
 
-	err = srvs[1].pool.Add(makeRosterTx(t, 2, ro))
+	err = srvs[1].pool.Add(makeRosterTx(t, 2, ro, signer))
 	require.NoError(t, err)
 
 	evt = waitEvent(t, events)
 	require.Equal(t, uint64(3), evt.Index)
 
-	err = srvs[1].pool.Add(makeTx(t, 3))
+	err = srvs[1].pool.Add(makeTx(t, 3, signer))
 	require.NoError(t, err)
 
 	evt = waitEvent(t, events)
@@ -95,7 +97,7 @@ func TestService_New(t *testing.T) {
 		Mino:       fake.Mino{},
 		Cosi:       flatcosi.NewFlat(fake.Mino{}, fake.NewAggregateSigner()),
 		Tree:       fakeTree{},
-		Validation: simple.NewService(nil, anon.NewTransactionFactory()),
+		Validation: simple.NewService(nil, nil),
 	}
 
 	srvc, err := NewService(param, WithHashFactory(fake.NewHashFactory(&fake.Hash{})))
@@ -212,7 +214,7 @@ func TestService_DoRound(t *testing.T) {
 	err := srvc.doRound(ctx)
 	require.NoError(t, err)
 
-	srvc.pool.Add(makeTx(t, 0))
+	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
 
 	go func() {
 		ch <- pbft.InitialState
@@ -287,7 +289,7 @@ func TestService_DoPBFT(t *testing.T) {
 
 	// This time the gathering succeeds.
 	ctx = context.Background()
-	srvc.pool.Add(makeTx(t, 0))
+	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
 	err = srvc.doPBFT(ctx)
 	require.NoError(t, err)
 
@@ -413,6 +415,7 @@ type testNode struct {
 	pool    pool.Pool
 	db      kv.DB
 	dbpath  string
+	signer  crypto.Signer
 }
 
 const testContractName = "abc"
@@ -425,18 +428,24 @@ func (e testExec) Execute(txn.Transaction, store.Snapshot) (execution.Result, er
 	return execution.Result{Accepted: true}, e.err
 }
 
-func makeTx(t *testing.T, nonce uint64) txn.Transaction {
-	tx, err := anon.NewTransaction(nonce, anon.WithArg(baremetal.ContractArg, []byte(testContractName)))
+func makeTx(t *testing.T, nonce uint64, signer crypto.Signer) txn.Transaction {
+	opts := []anon.TransactionOption{
+		anon.WithArg(baremetal.ContractArg, []byte(testContractName)),
+		anon.WithPublicKey(signer.GetPublicKey()),
+	}
+
+	tx, err := anon.NewTransaction(nonce, opts...)
 	require.NoError(t, err)
 	return tx
 }
 
-func makeRosterTx(t *testing.T, nonce uint64, roster authority.Authority) txn.Transaction {
+func makeRosterTx(t *testing.T, nonce uint64, roster authority.Authority, signer crypto.Signer) txn.Transaction {
 	data, err := roster.Serialize(json.NewContext())
 	require.NoError(t, err)
 
 	tx, err := anon.NewTransaction(
 		nonce,
+		anon.WithPublicKey(signer.GetPublicKey()),
 		anon.WithArg(baremetal.ContractArg, []byte(viewchange.ContractName)),
 		anon.WithArg(viewchange.AuthorityArg, data),
 	)
@@ -479,7 +488,9 @@ func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()
 		db, err := kv.New(filepath.Join(dir, "test.db"))
 		require.NoError(t, err)
 
-		pool, err := poolimpl.NewPool(gossip.NewFlat(m, anon.NewTransactionFactory()))
+		txFac := anon.NewTransactionFactory()
+
+		pool, err := poolimpl.NewPool(gossip.NewFlat(m, txFac))
 		require.NoError(t, err)
 
 		tree := binprefix.NewMerkleTree(db, binprefix.Nonce{})
@@ -490,7 +501,7 @@ func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()
 		rosterFac := authority.NewFactory(m.GetAddressFactory(), c.GetPublicKeyFactory())
 		RegisterRosterContract(exec, rosterFac)
 
-		vs := simple.NewService(exec, anon.NewTransactionFactory())
+		vs := simple.NewService(exec, txFac)
 
 		param := ServiceParam{
 			Mino:       m,
@@ -512,6 +523,7 @@ func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()
 			pool:    pool,
 			db:      db,
 			dbpath:  dir,
+			signer:  c.GetSigner(),
 		}
 	}
 

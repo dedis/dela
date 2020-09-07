@@ -11,6 +11,7 @@ import (
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/txn"
+	"go.dedis.ch/dela/core/txn/anon"
 	"go.dedis.ch/dela/core/txn/pool"
 	"go.dedis.ch/dela/core/txn/pool/mem"
 	"go.dedis.ch/dela/cosi"
@@ -103,6 +104,7 @@ func TestRosterAddAction_Execute(t *testing.T) {
 
 	ctx.Injector.Inject(fake.Mino{})
 	ctx.Injector.Inject(fakeCosi{})
+	ctx.Injector.Inject(fakeTxManager{})
 	err = action.Execute(ctx)
 	require.EqualError(t, err, "injector: couldn't find dependency for 'pool.Pool'")
 
@@ -144,6 +146,7 @@ func prepContext(calls *fake.Call) node.Context {
 	ctx.Injector.Inject(fakeCosi{})
 	ctx.Injector.Inject(fakeService{calls: calls})
 	ctx.Injector.Inject(mem.NewPool())
+	ctx.Injector.Inject(fakeTxManager{})
 
 	return ctx
 }
@@ -182,6 +185,23 @@ func (c fakeCosi) GetSigner() crypto.Signer {
 	}
 
 	return fake.NewSigner()
+}
+
+type fakeTxManager struct {
+	txn.Manager
+}
+
+func (fakeTxManager) Make(args ...txn.Arg) (txn.Transaction, error) {
+	tx, err := anon.NewTransaction(0)
+	if err != nil {
+		return nil, err
+	}
+
+	return tx, nil
+}
+
+func (fakeTxManager) Sync() error {
+	return nil
 }
 
 type badPool struct {

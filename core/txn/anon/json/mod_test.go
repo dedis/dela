@@ -7,6 +7,7 @@ import (
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/anon"
 	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/serde"
 )
 
 func TestTxFormat_Encode(t *testing.T) {
@@ -14,14 +15,16 @@ func TestTxFormat_Encode(t *testing.T) {
 
 	ctx := fake.NewContext()
 
-	data, err := format.Encode(ctx, makeTx(t, 1, anon.WithArg("A", []byte{1})))
+	tx := makeTx(t, 1, anon.WithArg("A", []byte{1}), anon.WithPublicKey(fake.PublicKey{}))
+
+	data, err := format.Encode(ctx, tx)
 	require.NoError(t, err)
-	require.Equal(t, `{"Nonce":1,"Args":{"A":"AQ=="}}`, string(data))
+	require.Equal(t, `{"Nonce":1,"Args":{"A":"AQ=="},"PublicKey":{}}`, string(data))
 
 	_, err = format.Encode(ctx, fake.Message{})
 	require.EqualError(t, err, "unsupported message of type 'fake.Message'")
 
-	_, err = format.Encode(fake.NewBadContext(), makeTx(t, 0))
+	_, err = format.Encode(fake.NewBadContext(), makeTx(t, 0, anon.WithPublicKey(fake.PublicKey{})))
 	require.EqualError(t, err, "failed to marshal: fake error")
 }
 
@@ -29,10 +32,12 @@ func TestTxFormat_Decode(t *testing.T) {
 	format := txFormat{}
 
 	ctx := fake.NewContext()
+	ctx = serde.WithFactory(ctx, anon.PublicKeyFac{}, fake.PublicKeyFactory{})
 
 	msg, err := format.Decode(ctx, []byte(`{"Nonce":2,"Args":{"B":"AQ=="}}`))
 	require.NoError(t, err)
-	require.Equal(t, makeTx(t, 2, anon.WithArg("B", []byte{1})), msg)
+	expected := makeTx(t, 2, anon.WithArg("B", []byte{1}), anon.WithPublicKey(fake.PublicKey{}))
+	require.Equal(t, expected, msg)
 
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
 	require.EqualError(t, err, "failed to unmarshal: fake error")

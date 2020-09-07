@@ -178,7 +178,8 @@ func TestBlock_Serialize(t *testing.T) {
 }
 
 func TestBlockFactory_Deserialize(t *testing.T) {
-	fac := NewBlockFactory(simple.NewDataFactory(anon.NewTransactionFactory()))
+	txFac := anon.NewTransactionFactory()
+	fac := NewBlockFactory(simple.NewDataFactory(txFac))
 
 	msg, err := fac.Deserialize(fake.NewContext(), nil)
 	require.NoError(t, err)

@@ -12,6 +12,7 @@ import (
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/anon"
 	"go.dedis.ch/dela/core/txn/pool"
+	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/gossip"
@@ -191,7 +192,8 @@ func TestPool_ListenRumors(t *testing.T) {
 // Utility functions
 
 func makeTx(t *testing.T, nonce uint64) txn.Transaction {
-	tx, err := anon.NewTransaction(nonce)
+	signer := bls.NewSigner()
+	tx, err := anon.NewTransaction(nonce, anon.WithPublicKey(signer.GetPublicKey()))
 	require.NoError(t, err)
 	return tx
 }

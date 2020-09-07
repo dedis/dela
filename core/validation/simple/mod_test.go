@@ -8,6 +8,7 @@ import (
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/anon"
+	"go.dedis.ch/dela/crypto/bls"
 	"golang.org/x/xerrors"
 )
 
@@ -32,7 +33,9 @@ func TestService_Validate(t *testing.T) {
 // Utility functions
 
 func makeTx(t *testing.T) txn.Transaction {
-	tx, err := anon.NewTransaction(0)
+	signer := bls.NewSigner()
+
+	tx, err := anon.NewTransaction(0, anon.WithPublicKey(signer.GetPublicKey()))
 	require.NoError(t, err)
 	return tx
 }
@@ -47,4 +50,12 @@ func (e fakeExec) Execute(txn.Transaction, store.Snapshot) (execution.Result, er
 
 type fakeSnapshot struct {
 	store.Snapshot
+}
+
+func (fakeSnapshot) Get(key []byte) ([]byte, error) {
+	return nil, nil
+}
+
+func (fakeSnapshot) Set(key, value []byte) error {
+	return nil
 }

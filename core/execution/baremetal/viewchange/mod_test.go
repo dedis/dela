@@ -14,7 +14,7 @@ import (
 )
 
 func TestNewTransaction(t *testing.T) {
-	mgr := NewManager(anon.NewManager())
+	mgr := NewManager(anon.NewManager(fake.NewSigner(), nil))
 
 	tx, err := mgr.Make(authority.New(nil, nil))
 	require.NoError(t, err)

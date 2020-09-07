@@ -110,7 +110,7 @@ func TestTransactionFactory_Deserialize(t *testing.T) {
 }
 
 func TestManager_Make(t *testing.T) {
-	mgr := NewManager().(*transactionManager)
+	mgr := NewManager(fake.NewSigner(), nil).(*transactionManager)
 
 	tx, err := mgr.Make(txn.Arg{Key: "a", Value: []byte{1, 2, 3}})
 	require.NoError(t, err)

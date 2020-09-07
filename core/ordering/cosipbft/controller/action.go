@@ -10,7 +10,7 @@ import (
 	"go.dedis.ch/dela/core/execution/baremetal/viewchange"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
-	"go.dedis.ch/dela/core/txn/anon"
+	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/pool"
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto"
@@ -148,9 +148,12 @@ func (rosterAddAction) Execute(ctx node.Context) error {
 	cset := authority.NewChangeSet()
 	cset.Add(addr, pubkey)
 
-	mgr := viewchange.NewManager(anon.NewManager())
+	mgr, err := makeManager(ctx)
+	if err != nil {
+		return xerrors.Errorf("manager: %v", err)
+	}
 
-	tx, err := mgr.Make(roster.Apply(cset))
+	tx, err := viewchange.NewManager(mgr).Make(roster.Apply(cset))
 	if err != nil {
 		return xerrors.Errorf("transaction manager: %v", err)
 	}
@@ -169,6 +172,23 @@ func (rosterAddAction) Execute(ctx node.Context) error {
 	// TODO: listen for the new block and check the tx.
 
 	return nil
+}
+
+func makeManager(ctx node.Context) (txn.Manager, error) {
+	var mgr txn.Manager
+	err := ctx.Injector.Resolve(&mgr)
+	if err != nil {
+		return nil, err
+	}
+
+	// Synchronize the manager with the latest state of the chain so that it can
+	// create valid transactions.
+	err = mgr.Sync()
+	if err != nil {
+		return nil, err
+	}
+
+	return mgr, nil
 }
 
 func decodeMember(ctx node.Context, str string) (mino.Address, crypto.PublicKey, error) {

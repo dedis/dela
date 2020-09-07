@@ -84,6 +84,11 @@ func TestMemcoin_Scenario_1(t *testing.T) {
 	err = run(args)
 	require.NoError(t, err)
 
+	time.Sleep(1 * time.Second)
+
+	err = run(args)
+	require.NoError(t, err)
+
 	// Test a bad command.
 	err = runWithCfg([]string{os.Args[0], "ordering", "setup"}, cfg)
 	require.EqualError(t, err, `Required flag "member" not set`)

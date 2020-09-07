@@ -235,6 +235,12 @@ func (s *Service) GetProof(key []byte) (ordering.Proof, error) {
 	return newProof(path, chain), nil
 }
 
+// GetStore implements ordering.Service. It returns the current tree as a
+// read-only storage.
+func (s *Service) GetStore() store.Readable {
+	return s.tree.Get()
+}
+
 // GetRoster returns the current roster of the service.
 func (s *Service) GetRoster() (authority.Authority, error) {
 	return s.getCurrentRoster()

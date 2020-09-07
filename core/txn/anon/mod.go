@@ -7,6 +7,7 @@ import (
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/crypto/common"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
@@ -24,9 +25,10 @@ func RegisterTransactionFormat(f serde.Format, e serde.FormatEngine) {
 //
 // - implements txn.Transaction
 type Transaction struct {
-	nonce uint64
-	args  map[string][]byte
-	hash  []byte
+	nonce  uint64
+	args   map[string][]byte
+	pubkey crypto.PublicKey
+	hash   []byte
 }
 
 type template struct {
@@ -42,6 +44,12 @@ type TransactionOption func(*template)
 func WithArg(key string, value []byte) TransactionOption {
 	return func(tmpl *template) {
 		tmpl.args[key] = value
+	}
+}
+
+func WithPublicKey(pubkey crypto.PublicKey) TransactionOption {
+	return func(tmpl *template) {
+		tmpl.pubkey = pubkey
 	}
 }
 
@@ -90,7 +98,7 @@ func (t Transaction) GetNonce() uint64 {
 
 // GetIdentity implements txn.Transaction. It returns nil.
 func (t Transaction) GetIdentity() access.Identity {
-	return nil
+	return t.pubkey
 }
 
 // GetArgs returns the list of arguments available.
@@ -120,6 +128,8 @@ func (t Transaction) Fingerprint(w io.Writer) error {
 		return xerrors.Errorf("couldn't write nonce: %v", err)
 	}
 
+	// TODO: args + identity
+
 	return nil
 }
 
@@ -136,14 +146,20 @@ func (t Transaction) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
+type PublicKeyFac struct{}
+
 // TransactionFactory is a factory to deserialize transactions.
 //
 // - implements serde.Factory
-type TransactionFactory struct{}
+type TransactionFactory struct {
+	pubkeyFac crypto.PublicKeyFactory
+}
 
 // NewTransactionFactory returns a new factory.
 func NewTransactionFactory() TransactionFactory {
-	return TransactionFactory{}
+	return TransactionFactory{
+		pubkeyFac: common.NewPublicKeyFactory(),
+	}
 }
 
 // Deserialize implements serde.Factory. It populates the transaction from the
@@ -156,6 +172,8 @@ func (f TransactionFactory) Deserialize(ctx serde.Context, data []byte) (serde.M
 // from the data if appropriate, otherwise it returns an error.
 func (f TransactionFactory) TransactionOf(ctx serde.Context, data []byte) (txn.Transaction, error) {
 	format := txFormats.Get(ctx.GetFormat())
+
+	ctx = serde.WithFactory(ctx, PublicKeyFac{}, f.pubkeyFac)
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
@@ -170,19 +188,28 @@ func (f TransactionFactory) TransactionOf(ctx serde.Context, data []byte) (txn.T
 	return tx, nil
 }
 
+// Client is the interface the manager is using to get the nonce of an identity.
+// It allows a local implementation, or through a network client.
+type Client interface {
+	GetNonce(access.Identity) (uint64, error)
+}
+
 // TransactionManager is a manager to create anonymous transactions. It manages
 // the nonce by itself.
 //
 // - implements txn.TransactionManager
 type transactionManager struct {
+	client  Client
+	signer  crypto.Signer
 	nonce   uint64
 	hashFac crypto.HashFactory
 }
 
 // NewManager creates a new transaction manager.
-func NewManager() txn.Manager {
+func NewManager(signer crypto.Signer, client Client) txn.Manager {
 	return &transactionManager{
-		// TODO: sync with latest block
+		client:  client,
+		signer:  signer,
 		nonce:   0,
 		hashFac: crypto.NewSha256Factory(),
 	}
@@ -190,17 +217,31 @@ func NewManager() txn.Manager {
 
 // Make creates a transaction populated with the arguments.
 func (mgr *transactionManager) Make(args ...txn.Arg) (txn.Transaction, error) {
-	opts := make([]TransactionOption, len(args)+1)
+	opts := make([]TransactionOption, len(args), len(args)+2)
 	for i, arg := range args {
 		opts[i] = WithArg(arg.Key, arg.Value)
 	}
 
-	opts[len(args)] = WithHashFactory(mgr.hashFac)
+	opts = append(opts, WithPublicKey(mgr.signer.GetPublicKey()))
+	opts = append(opts, WithHashFactory(mgr.hashFac))
 
 	tx, err := NewTransaction(mgr.nonce, opts...)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create tx: %v", err)
 	}
 
+	mgr.nonce++
+
 	return tx, nil
+}
+
+func (mgr *transactionManager) Sync() error {
+	nonce, err := mgr.client.GetNonce(mgr.signer.GetPublicKey())
+	if err != nil {
+		return err
+	}
+
+	mgr.nonce = nonce
+
+	return nil
 }

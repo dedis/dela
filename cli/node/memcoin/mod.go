@@ -33,6 +33,7 @@ import (
 
 	"go.dedis.ch/dela/cli/node"
 	cosipbft "go.dedis.ch/dela/core/ordering/cosipbft/controller"
+	anon "go.dedis.ch/dela/core/txn/anon/controller"
 	mino "go.dedis.ch/dela/mino/minogrpc/controller"
 )
 
@@ -60,6 +61,7 @@ func runWithCfg(args []string, cfg config) error {
 		cfg.Writer,
 		mino.NewMinimal(),
 		cosipbft.NewMinimal(),
+		anon.NewManagerController(),
 	)
 
 	app := builder.Build()

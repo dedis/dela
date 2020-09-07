@@ -108,6 +108,10 @@ func (f PublicKeyFactory) PublicKeyOf(ctx serde.Context, data []byte) (crypto.Pu
 	return msg.(crypto.PublicKey), nil
 }
 
+func (f PublicKeyFactory) FromBytes(data []byte) (crypto.PublicKey, error) {
+	return nil, xerrors.New("not implemented")
+}
+
 // SignatureFactory is a factory for commonly known algorithms.
 type SignatureFactory struct {
 	factories map[string]crypto.SignatureFactory

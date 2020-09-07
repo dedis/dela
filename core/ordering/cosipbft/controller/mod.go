@@ -111,6 +111,7 @@ func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
 	inj.Inject(srvc)
 	inj.Inject(cosi)
 	inj.Inject(pool)
+	inj.Inject(vs)
 
 	return nil
 }

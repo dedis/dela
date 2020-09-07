@@ -1,6 +1,8 @@
 package json
 
 import (
+	"encoding/json"
+
 	"go.dedis.ch/dela/core/txn/anon"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/serde"
@@ -13,8 +15,9 @@ func init() {
 
 // TransactionJSON is the JSON message of a transaction.
 type TransactionJSON struct {
-	Nonce uint64
-	Args  map[string][]byte
+	Nonce     uint64
+	Args      map[string][]byte
+	PublicKey json.RawMessage
 }
 
 // TxFormat is the JSON format engine for transactions.
@@ -37,9 +40,19 @@ func (fmt txFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error)
 		args[arg] = tx.GetArg(arg)
 	}
 
+	if tx.GetIdentity() == nil {
+		return nil, xerrors.New("missing identity")
+	}
+
+	pubkey, err := tx.GetIdentity().Serialize(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	m := TransactionJSON{
-		Nonce: tx.GetNonce(),
-		Args:  args,
+		Nonce:     tx.GetNonce(),
+		Args:      args,
+		PublicKey: pubkey,
 	}
 
 	data, err := ctx.Marshal(m)
@@ -63,6 +76,20 @@ func (fmt txFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error
 	for key, value := range m.Args {
 		args = append(args, anon.WithArg(key, value))
 	}
+
+	fac := ctx.GetFactory(anon.PublicKeyFac{})
+
+	factory, ok := fac.(crypto.PublicKeyFactory)
+	if !ok {
+		return nil, xerrors.Errorf("invalid public key factory '%T'", fac)
+	}
+
+	pubkey, err := factory.PublicKeyOf(ctx, m.PublicKey)
+	if err != nil {
+		return nil, err
+	}
+
+	args = append(args, anon.WithPublicKey(pubkey))
 
 	if fmt.hashFactory != nil {
 		args = append(args, anon.WithHashFactory(fmt.hashFactory))
