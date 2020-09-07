@@ -4,7 +4,6 @@ import (
 	"bytes"
 
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
@@ -198,13 +197,23 @@ func (f SignatureFactory) SignatureOf(ctx serde.Context, data []byte) (crypto.Si
 //
 // - implements crypto.Verifier
 type Verifier struct {
-	ca      crypto.CollectiveAuthority
+	pubkeys []crypto.PublicKey
 	factory crypto.VerifierFactory
 }
 
 func newVerifier(ca crypto.CollectiveAuthority, f crypto.VerifierFactory) Verifier {
+	pubkeys := make([]crypto.PublicKey, 0, ca.Len())
+	iter := ca.PublicKeyIterator()
+	for iter.HasNext() {
+		pubkeys = append(pubkeys, iter.GetNext())
+	}
+
+	return newVerifierArr(pubkeys, f)
+}
+
+func newVerifierArr(pubkeys []crypto.PublicKey, f crypto.VerifierFactory) Verifier {
 	return Verifier{
-		ca:      ca,
+		pubkeys: pubkeys,
 		factory: f,
 	}
 }
@@ -216,10 +225,12 @@ func (v Verifier) Verify(msg []byte, s crypto.Signature) error {
 		return xerrors.Errorf("invalid signature type '%T' != '%T'", s, signature)
 	}
 
-	filter := mino.ListFilter(signature.GetIndices())
-	subset := v.ca.Take(filter).(crypto.CollectiveAuthority)
+	pubkeys := make([]crypto.PublicKey, 0, len(v.pubkeys))
+	for _, index := range signature.GetIndices() {
+		pubkeys = append(pubkeys, v.pubkeys[index])
+	}
 
-	verifier, err := v.factory.FromAuthority(subset)
+	verifier, err := v.factory.FromArray(pubkeys)
 	if err != nil {
 		return xerrors.Errorf("couldn't make verifier: %v", err)
 	}
@@ -240,7 +251,6 @@ func (f verifierFactory) FromAuthority(authority crypto.CollectiveAuthority) (cr
 	return newVerifier(authority, f.factory), nil
 }
 
-func (f verifierFactory) FromArray([]crypto.PublicKey) (crypto.Verifier, error) {
-	// TODO: think about this
-	return nil, xerrors.New("not implemented")
+func (f verifierFactory) FromArray(pubkeys []crypto.PublicKey) (crypto.Verifier, error) {
+	return newVerifierArr(pubkeys, f.factory), nil
 }
