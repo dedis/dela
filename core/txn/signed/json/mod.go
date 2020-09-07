@@ -3,7 +3,7 @@ package json
 import (
 	"encoding/json"
 
-	"go.dedis.ch/dela/core/txn/anon"
+	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/common"
 	"go.dedis.ch/dela/serde"
@@ -11,7 +11,7 @@ import (
 )
 
 func init() {
-	anon.RegisterTransactionFormat(serde.FormatJSON, txFormat{})
+	signed.RegisterTransactionFormat(serde.FormatJSON, txFormat{})
 }
 
 // TransactionJSON is the JSON message of a transaction.
@@ -31,7 +31,7 @@ type txFormat struct {
 // Encode implements serde.FormatEngine. It returns the JSON data of the
 // provided transaction if appropriate, otherwise it returns an error.
 func (fmt txFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
-	tx, ok := msg.(anon.Transaction)
+	tx, ok := msg.(signed.Transaction)
 	if !ok {
 		return nil, xerrors.Errorf("unsupported message of type '%T'", msg)
 	}
@@ -69,7 +69,7 @@ func (fmt txFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error
 		return nil, xerrors.Errorf("failed to unmarshal: %v", err)
 	}
 
-	fac := ctx.GetFactory(anon.PublicKeyFac{})
+	fac := ctx.GetFactory(signed.PublicKeyFac{})
 
 	factory, ok := fac.(common.PublicKeyFactory)
 	if !ok {
@@ -81,16 +81,16 @@ func (fmt txFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error
 		return nil, xerrors.Errorf("failed to decode public key: %v", err)
 	}
 
-	args := make([]anon.TransactionOption, 0, len(m.Args)+1)
+	args := make([]signed.TransactionOption, 0, len(m.Args)+1)
 	for key, value := range m.Args {
-		args = append(args, anon.WithArg(key, value))
+		args = append(args, signed.WithArg(key, value))
 	}
 
 	if fmt.hashFactory != nil {
-		args = append(args, anon.WithHashFactory(fmt.hashFactory))
+		args = append(args, signed.WithHashFactory(fmt.hashFactory))
 	}
 
-	tx, err := anon.NewTransaction(m.Nonce, pubkey, args...)
+	tx, err := signed.NewTransaction(m.Nonce, pubkey, args...)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create tx: %v", err)
 	}

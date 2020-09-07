@@ -6,7 +6,7 @@ import (
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/store"
-	"go.dedis.ch/dela/core/txn/anon"
+	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/crypto/bls"
 )
 
@@ -41,7 +41,7 @@ func (mgrController) Inject(flags cli.Flags, inj node.Injector) error {
 
 	signer := bls.NewSigner()
 
-	mgr := anon.NewManager(signer, client{
+	mgr := signed.NewManager(signer, client{
 		srvc: srvc,
 		mgr:  nonceMgr,
 	})

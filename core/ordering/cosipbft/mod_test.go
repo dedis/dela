@@ -23,10 +23,10 @@ import (
 	"go.dedis.ch/dela/core/store/hashtree/binprefix"
 	"go.dedis.ch/dela/core/store/kv"
 	"go.dedis.ch/dela/core/txn"
-	"go.dedis.ch/dela/core/txn/anon"
 	"go.dedis.ch/dela/core/txn/pool"
 	poolimpl "go.dedis.ch/dela/core/txn/pool/gossip"
 	"go.dedis.ch/dela/core/txn/pool/mem"
+	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/cosi"
@@ -436,11 +436,11 @@ func (e testExec) Execute(txn.Transaction, store.Snapshot) (execution.Result, er
 }
 
 func makeTx(t *testing.T, nonce uint64, signer crypto.Signer) txn.Transaction {
-	opts := []anon.TransactionOption{
-		anon.WithArg(baremetal.ContractArg, []byte(testContractName)),
+	opts := []signed.TransactionOption{
+		signed.WithArg(baremetal.ContractArg, []byte(testContractName)),
 	}
 
-	tx, err := anon.NewTransaction(nonce, signer.GetPublicKey(), opts...)
+	tx, err := signed.NewTransaction(nonce, signer.GetPublicKey(), opts...)
 	require.NoError(t, err)
 	return tx
 }
@@ -449,11 +449,11 @@ func makeRosterTx(t *testing.T, nonce uint64, roster authority.Authority, signer
 	data, err := roster.Serialize(json.NewContext())
 	require.NoError(t, err)
 
-	tx, err := anon.NewTransaction(
+	tx, err := signed.NewTransaction(
 		nonce,
 		signer.GetPublicKey(),
-		anon.WithArg(baremetal.ContractArg, []byte(viewchange.ContractName)),
-		anon.WithArg(viewchange.AuthorityArg, data),
+		signed.WithArg(baremetal.ContractArg, []byte(viewchange.ContractName)),
+		signed.WithArg(viewchange.AuthorityArg, data),
 	)
 	require.NoError(t, err)
 
@@ -494,7 +494,7 @@ func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()
 		db, err := kv.New(filepath.Join(dir, "test.db"))
 		require.NoError(t, err)
 
-		txFac := anon.NewTransactionFactory()
+		txFac := signed.NewTransactionFactory()
 
 		pool, err := poolimpl.NewPool(gossip.NewFlat(m, txFac))
 		require.NoError(t, err)

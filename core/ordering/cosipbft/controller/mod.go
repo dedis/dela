@@ -11,8 +11,8 @@ import (
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/store/hashtree/binprefix"
 	"go.dedis.ch/dela/core/store/kv"
-	"go.dedis.ch/dela/core/txn/anon"
 	poolimpl "go.dedis.ch/dela/core/txn/pool/gossip"
+	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/cosi/flatcosi"
 	"go.dedis.ch/dela/crypto/bls"
@@ -85,7 +85,7 @@ func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
 	rosterFac := authority.NewFactory(m.GetAddressFactory(), cosi.GetPublicKeyFactory())
 	cosipbft.RegisterRosterContract(exec, rosterFac)
 
-	txFac := anon.NewTransactionFactory()
+	txFac := signed.NewTransactionFactory()
 	vs := simple.NewService(exec, txFac)
 
 	pool, err := poolimpl.NewPool(gossip.NewFlat(m, txFac))

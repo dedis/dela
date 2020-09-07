@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
-	"go.dedis.ch/dela/core/txn/anon"
+	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/internal/testing/fake"
@@ -178,7 +178,7 @@ func TestBlock_Serialize(t *testing.T) {
 }
 
 func TestBlockFactory_Deserialize(t *testing.T) {
-	txFac := anon.NewTransactionFactory()
+	txFac := signed.NewTransactionFactory()
 	fac := NewBlockFactory(simple.NewDataFactory(txFac))
 
 	msg, err := fac.Deserialize(fake.NewContext(), nil)

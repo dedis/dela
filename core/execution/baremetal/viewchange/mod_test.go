@@ -7,14 +7,14 @@ import (
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/txn"
-	"go.dedis.ch/dela/core/txn/anon"
+	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
 func TestNewTransaction(t *testing.T) {
-	mgr := NewManager(anon.NewManager(fake.NewSigner(), nil))
+	mgr := NewManager(signed.NewManager(fake.NewSigner(), nil))
 
 	tx, err := mgr.Make(authority.New(nil, nil))
 	require.NoError(t, err)
@@ -72,7 +72,7 @@ func TestContract_Execute(t *testing.T) {
 // Utility functions
 
 func makeTx(t *testing.T, arg string) txn.Transaction {
-	tx, err := anon.NewTransaction(0, fake.PublicKey{}, anon.WithArg(AuthorityArg, []byte(arg)))
+	tx, err := signed.NewTransaction(0, fake.PublicKey{}, signed.WithArg(AuthorityArg, []byte(arg)))
 	require.NoError(t, err)
 
 	return tx

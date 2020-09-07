@@ -1,4 +1,4 @@
-package anon
+package signed
 
 import (
 	"bytes"

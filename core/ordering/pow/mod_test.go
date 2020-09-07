@@ -15,8 +15,8 @@ import (
 	tree "go.dedis.ch/dela/core/store/hashtree/binprefix"
 	"go.dedis.ch/dela/core/store/kv"
 	"go.dedis.ch/dela/core/txn"
-	"go.dedis.ch/dela/core/txn/anon"
 	pool "go.dedis.ch/dela/core/txn/pool/mem"
+	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/core/validation"
 	val "go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/crypto"
@@ -35,7 +35,7 @@ func TestService_Basic(t *testing.T) {
 	pool := pool.NewPool()
 	srvc := NewService(
 		pool,
-		val.NewService(exec, anon.NewTransactionFactory()),
+		val.NewService(exec, signed.NewTransactionFactory()),
 		tree,
 	)
 
@@ -74,7 +74,7 @@ func TestService_Listen(t *testing.T) {
 	tree, clean := makeTree(t)
 	defer clean()
 
-	vs := val.NewService(baremetal.NewExecution(), anon.NewTransactionFactory())
+	vs := val.NewService(baremetal.NewExecution(), signed.NewTransactionFactory())
 
 	pool := pool.NewPool()
 	srvc := NewService(pool, vs, tree)
@@ -140,12 +140,12 @@ func makeTree(t *testing.T) (hashtree.Tree, func()) {
 }
 
 func makeTx(t *testing.T, nonce uint64, signer crypto.Signer) txn.Transaction {
-	tx, err := anon.NewTransaction(
+	tx, err := signed.NewTransaction(
 		nonce,
 		signer.GetPublicKey(),
-		anon.WithArg("key", []byte("ping")),
-		anon.WithArg("value", []byte("pong")),
-		anon.WithArg(baremetal.ContractArg, []byte(testContractName)),
+		signed.WithArg("key", []byte("ping")),
+		signed.WithArg("value", []byte("pong")),
+		signed.WithArg(baremetal.ContractArg, []byte(testContractName)),
 	)
 	require.NoError(t, err)
 

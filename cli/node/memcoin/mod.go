@@ -33,7 +33,7 @@ import (
 
 	"go.dedis.ch/dela/cli/node"
 	cosipbft "go.dedis.ch/dela/core/ordering/cosipbft/controller"
-	anon "go.dedis.ch/dela/core/txn/anon/controller"
+	anon "go.dedis.ch/dela/core/txn/signed/controller"
 	mino "go.dedis.ch/dela/mino/minogrpc/controller"
 )
 

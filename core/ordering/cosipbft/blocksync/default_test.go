@@ -13,7 +13,7 @@ import (
 	"go.dedis.ch/dela/core/ordering/cosipbft/blocksync/types"
 	"go.dedis.ch/dela/core/ordering/cosipbft/pbft"
 	otypes "go.dedis.ch/dela/core/ordering/cosipbft/types"
-	"go.dedis.ch/dela/core/txn/anon"
+	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
@@ -237,7 +237,7 @@ func makeNodes(t *testing.T, n int) ([]defaultSync, otypes.Genesis, mino.Players
 		genstore.Set(genesis)
 
 		blocks := blockstore.NewInMemory()
-		blockFac := otypes.NewBlockFactory(simple.NewDataFactory(anon.NewTransactionFactory()))
+		blockFac := otypes.NewBlockFactory(simple.NewDataFactory(signed.NewTransactionFactory()))
 		csFac := authority.NewChangeSetFactory(m.GetAddressFactory(), fake.PublicKeyFactory{})
 		linkFac := otypes.NewLinkFactory(blockFac, fake.SignatureFactory{}, csFac)
 

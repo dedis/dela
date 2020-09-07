@@ -1,4 +1,4 @@
-package anon
+package signed
 
 import (
 	"encoding/binary"
@@ -22,8 +22,8 @@ func RegisterTransactionFormat(f serde.Format, e serde.FormatEngine) {
 	txFormats.Register(f, e)
 }
 
-// Transaction is a an anonymous transaction. It can contain arguments but the
-// identity will always be nil.
+// Transaction is a signed transaction using a nonce to proect itself against
+// replay attack.
 //
 // - implements txn.Transaction
 type Transaction struct {
@@ -215,8 +215,8 @@ type Client interface {
 	GetNonce(access.Identity) (uint64, error)
 }
 
-// TransactionManager is a manager to create anonymous transactions. It manages
-// the nonce by itself.
+// TransactionManager is a manager to create signed transactions. It manages the
+// nonce by itself.
 //
 // - implements txn.TransactionManager
 type transactionManager struct {
