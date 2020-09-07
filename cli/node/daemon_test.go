@@ -71,7 +71,7 @@ func TestSocketDaemon_Listen(t *testing.T) {
 		socketpath:  filepath.Join(dir, "daemon.sock"),
 		actions:     actions,
 		closing:     make(chan struct{}),
-		readTimeout: time.Second,
+		readTimeout: 50 * time.Millisecond,
 	}
 
 	err = daemon.Listen()
@@ -105,7 +105,6 @@ func TestSocketDaemon_Listen(t *testing.T) {
 	require.Contains(t, out.String(), "[ERROR] failed to decode flags: ")
 
 	out.Reset()
-	daemon.readTimeout = time.Nanosecond
 	err = client.Send([]byte{})
 	require.NoError(t, err)
 	require.Contains(t, out.String(), "[ERROR] stream corrupted: ")
