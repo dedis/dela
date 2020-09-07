@@ -78,6 +78,10 @@ func (rpc *RPC) Call(ctx context.Context,
 				return
 			}
 
+			if callResp.GetPayload() == nil {
+				return
+			}
+
 			resp, err := rpc.factory.Deserialize(rpc.overlay.context, callResp.GetPayload())
 			if err != nil {
 				resp := mino.NewResponseWithError(

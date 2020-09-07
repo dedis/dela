@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
 )
@@ -106,4 +107,18 @@ func TestTransactionFactory_Deserialize(t *testing.T) {
 
 	_, err = factory.Deserialize(fake.NewContextWithFormat(serde.Format("BAD_TYPE")), nil)
 	require.EqualError(t, err, "invalid transaction of type 'fake.Message'")
+}
+
+func TestManager_Make(t *testing.T) {
+	mgr := NewManager().(*transactionManager)
+
+	tx, err := mgr.Make(txn.Arg{Key: "a", Value: []byte{1, 2, 3}})
+	require.NoError(t, err)
+	require.Equal(t, uint64(0), tx.(Transaction).nonce)
+	require.Equal(t, []byte{1, 2, 3}, tx.GetArg("a"))
+
+	mgr.hashFac = fake.NewHashFactory(fake.NewBadHash())
+	_, err = mgr.Make()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to create tx: ")
 }

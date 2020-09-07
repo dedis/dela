@@ -17,13 +17,6 @@ import (
 	"golang.org/x/xerrors"
 )
 
-func TestCertAction_Prepare(t *testing.T) {
-	action := certAction{}
-	buffer, err := action.GenerateRequest(nil)
-	require.NoError(t, err)
-	require.Nil(t, buffer)
-}
-
 func TestCertAction_Execute(t *testing.T) {
 	action := certAction{}
 
@@ -51,21 +44,16 @@ func TestCertAction_Execute(t *testing.T) {
 		"couldn't resolve: couldn't find dependency for 'minogrpc.Joinable'")
 }
 
-func TestTokenAction_Prepare(t *testing.T) {
-	action := tokenAction{}
-
-	buffer, err := action.GenerateRequest(fakeContext{duration: time.Millisecond})
-	require.NoError(t, err)
-	require.Equal(t, "{\"Expiration\":1000000}", string(buffer))
-}
-
 func TestTokenAction_Execute(t *testing.T) {
 	action := tokenAction{}
+
+	flags := make(node.FlagSet)
+	flags["expiration"] = time.Millisecond
 
 	out := new(bytes.Buffer)
 	req := node.Context{
 		Out:      out,
-		In:       bytes.NewBufferString("{\"Expiration\":1000000}"),
+		Flags:    flags,
 		Injector: node.NewInjector(),
 	}
 
@@ -86,30 +74,20 @@ func TestTokenAction_Execute(t *testing.T) {
 		base64.StdEncoding.EncodeToString(hash))
 	require.Equal(t, expected, out.String())
 
-	req.In = new(bytes.Buffer)
-	err = action.Execute(req)
-	require.EqualError(t, err, "couldn't decode input: EOF")
-
-	req.In = bytes.NewBufferString("{}")
 	req.Injector = node.NewInjector()
 	err = action.Execute(req)
 	require.EqualError(t, err,
 		"couldn't resolve: couldn't find dependency for 'minogrpc.Joinable'")
 }
 
-func TestJoinAction_Prepare(t *testing.T) {
-	action := joinAction{}
-
-	buffer, err := action.GenerateRequest(fakeContext{str: "a"})
-	require.NoError(t, err)
-	require.Equal(t, "{\"Token\":\"a\",\"Addr\":\"a\",\"CertHash\":\"a\"}", string(buffer))
-}
-
 func TestJoinAction_Execute(t *testing.T) {
 	action := joinAction{}
 
+	flags := make(node.FlagSet)
+	flags["cert-hash"] = "YQ=="
+
 	req := node.Context{
-		In:       bytes.NewBufferString("{\"CertHash\":\"YQ==\"}"),
+		Flags:    flags,
 		Injector: node.NewInjector(),
 	}
 
@@ -118,21 +96,16 @@ func TestJoinAction_Execute(t *testing.T) {
 	err := action.Execute(req)
 	require.NoError(t, err)
 
-	req.In = bytes.NewBufferString("")
-	err = action.Execute(req)
-	require.EqualError(t, err, "couldn't decode input: EOF")
-
-	req.In = bytes.NewBufferString("{\"CertHash\":\"a\"}")
+	flags["cert-hash"] = "a"
 	err = action.Execute(req)
 	require.EqualError(t, err,
 		"couldn't decode digest: illegal base64 data at input byte 0")
 
-	req.In = bytes.NewBufferString("{}")
+	flags["cert-hash"] = "YQ=="
 	req.Injector.Inject(fakeJoinable{err: xerrors.New("oops")})
 	err = action.Execute(req)
 	require.EqualError(t, err, "couldn't join: oops")
 
-	req.In = bytes.NewBufferString("{}")
 	req.Injector = node.NewInjector()
 	err = action.Execute(req)
 	require.EqualError(t, err,

@@ -323,6 +323,11 @@ func (f PublicKeyFactory) PublicKeyOf(serde.Context, []byte) (crypto.PublicKey, 
 	return f.pubkey, f.err
 }
 
+// FromBytes implements crypto.PublicKeyFactory.
+func (f PublicKeyFactory) FromBytes([]byte) (crypto.PublicKey, error) {
+	return f.pubkey, f.err
+}
+
 // SignatureByte is the byte returned when marshaling a fake signature.
 const SignatureByte = 0xfe
 
@@ -751,6 +756,10 @@ func NewBadMino() Mino {
 
 // GetAddress implements mino.Mino.
 func (m Mino) GetAddress() mino.Address {
+	if m.err != nil {
+		return NewBadAddress()
+	}
+
 	return Address{}
 }
 

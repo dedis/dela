@@ -1,9 +1,7 @@
 package controller
 
 import (
-	"encoding/hex"
-	"fmt"
-
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/dkg/pedersen"
@@ -43,9 +41,9 @@ func (m minimal) Inject(ctx cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("failed to encode pubkey: %v", err)
 	}
 
-	pubkeyHex := hex.EncodeToString(pubkeyBuf)
-
-	fmt.Printf("The nodes's Calypso hex pub key is: %s\n", pubkeyHex)
+	dela.Logger.Info().
+		Hex("public key", pubkeyBuf).
+		Msg("perdersen public key")
 
 	return nil
 }

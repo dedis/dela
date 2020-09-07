@@ -19,7 +19,7 @@ type Service struct {
 }
 
 // NewService creates a new validation service.
-func NewService(exec execution.Service, f txn.TransactionFactory) Service {
+func NewService(exec execution.Service, f txn.Factory) Service {
 	return Service{
 		execution: exec,
 		fac:       NewDataFactory(f),

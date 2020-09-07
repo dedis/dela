@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/execution/baremetal"
@@ -205,6 +206,12 @@ func TestService_DoRound(t *testing.T) {
 	rpc.SendResponseWithError(fake.NewAddress(2), xerrors.New("oops"))
 	rpc.Done()
 
+	ctx := context.Background()
+
+	// Round with timeout but no transaction in the pool.
+	err := srvc.doRound(ctx)
+	require.NoError(t, err)
+
 	srvc.pool.Add(makeTx(t, 0))
 
 	go func() {
@@ -213,9 +220,8 @@ func TestService_DoRound(t *testing.T) {
 		close(srvc.closing)
 	}()
 
-	ctx := context.Background()
-
-	err := srvc.doRound(ctx)
+	// Round with timeout and a transaction in the pool.
+	err = srvc.doRound(ctx)
 	require.NoError(t, err)
 
 	srvc.closing = make(chan struct{})
@@ -266,16 +272,23 @@ func TestService_DoPBFT(t *testing.T) {
 	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 	srvc.actor = fakeCosiActor{}
 	srvc.pool = mem.NewPool()
-	srvc.pool.Add(makeTx(t, 0))
 	srvc.rpc = rpc
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
 
 	rpc.SendResponseWithError(fake.NewAddress(5), xerrors.New("oops"))
 	rpc.Done()
 	srvc.genesis.Set(types.Genesis{})
 
+	// Context timed out and no transaction are in the pool.
 	err := srvc.doPBFT(ctx)
+	require.NoError(t, err)
+
+	// This time the gathering succeeds.
+	ctx = context.Background()
+	srvc.pool.Add(makeTx(t, 0))
+	err = srvc.doPBFT(ctx)
 	require.NoError(t, err)
 
 	srvc.val = fakeValidation{err: xerrors.New("oops")}
@@ -318,7 +331,7 @@ func TestService_DoPBFT(t *testing.T) {
 	err = srvc.doPBFT(ctx)
 	require.EqualError(t, err, "wake up failed: read genesis failed: missing genesis block")
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel = context.WithCancel(context.Background())
 	cancel()
 
 	err = srvc.doPBFT(ctx)
@@ -372,6 +385,16 @@ func TestService_GetProof(t *testing.T) {
 	srvc.blocks = blockstore.NewInMemory()
 	_, err = srvc.GetProof([]byte("A"))
 	require.EqualError(t, err, "reading chain: store is empty")
+}
+
+func TestService_GetRoster(t *testing.T) {
+	srvc := &Service{processor: newProcessor()}
+	srvc.tree = blockstore.NewTreeCache(fakeTree{})
+	srvc.rosterFac = fakeRosterFac{}
+
+	roster, err := srvc.GetRoster()
+	require.NoError(t, err)
+	require.Equal(t, 3, roster.Len())
 }
 
 // -----------------------------------------------------------------------------
@@ -465,7 +488,7 @@ func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()
 		exec.Set(testContractName, testExec{})
 
 		rosterFac := authority.NewFactory(m.GetAddressFactory(), c.GetPublicKeyFactory())
-		exec.Set(viewchange.ContractName, viewchange.NewContract(keyRoster[:], rosterFac))
+		RegisterRosterContract(exec, rosterFac)
 
 		vs := simple.NewService(exec, anon.NewTransactionFactory())
 
@@ -480,6 +503,9 @@ func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()
 
 		srv, err := NewService(param)
 		require.NoError(t, err)
+
+		// Disable logs.
+		srv.logger = srv.logger.Level(zerolog.NoLevel)
 
 		nodes[i] = testNode{
 			service: srv,
@@ -564,4 +590,12 @@ func (c fakeCosiActor) Sign(ctx context.Context, msg serde.Message,
 
 	c.counter.Decrease()
 	return fake.Signature{}, nil
+}
+
+type fakeRosterFac struct {
+	authority.Factory
+}
+
+func (fakeRosterFac) AuthorityOf(serde.Context, []byte) (authority.Authority, error) {
+	return authority.FromAuthority(fake.NewAuthority(3, fake.NewSigner)), nil
 }

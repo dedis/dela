@@ -13,6 +13,22 @@ import (
 	"golang.org/x/xerrors"
 )
 
+func TestNewTransaction(t *testing.T) {
+	mgr := NewManager(anon.NewManager())
+
+	tx, err := mgr.Make(authority.New(nil, nil))
+	require.NoError(t, err)
+	require.NotNil(t, tx)
+	require.Equal(t, "[]", string(tx.GetArg(AuthorityArg)))
+
+	_, err = mgr.Make(badRoster{})
+	require.EqualError(t, err, "failed to serialize roster: oops")
+
+	mgr.manager = badManager{}
+	_, err = mgr.Make(authority.New(nil, nil))
+	require.EqualError(t, err, "creating transaction: oops")
+}
+
 func TestContract_Execute(t *testing.T) {
 	fac := authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 
@@ -89,4 +105,20 @@ func (fac badRosterFac) AuthorityOf(serde.Context, []byte) (authority.Authority,
 
 	fac.counter.Decrease()
 	return nil, nil
+}
+
+type badRoster struct {
+	authority.Authority
+}
+
+func (ro badRoster) Serialize(serde.Context) ([]byte, error) {
+	return nil, xerrors.New("oops")
+}
+
+type badManager struct {
+	txn.Manager
+}
+
+func (badManager) Make(opts ...txn.Arg) (txn.Transaction, error) {
+	return nil, xerrors.New("oops")
 }

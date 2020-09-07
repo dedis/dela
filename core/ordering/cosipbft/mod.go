@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/core/execution/baremetal"
+	"go.dedis.ch/dela/core/execution/baremetal/viewchange"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
@@ -31,6 +33,12 @@ const (
 
 	rpcName = "cosipbft"
 )
+
+// RegisterRosterContract registers the baremetal contract to update the roster
+// to the given service.
+func RegisterRosterContract(exec *baremetal.BareMetal, fac authority.Factory) {
+	exec.Set(viewchange.ContractName, viewchange.NewContract(keyRoster[:], fac))
+}
 
 // Service is an ordering service using collective signatures combined with PBFT
 // to create a chain of blocks.
@@ -201,6 +209,10 @@ func (s *Service) Setup(ctx context.Context, ca crypto.CollectiveAuthority) erro
 		}
 	}
 
+	s.logger.Info().
+		Int("roster", ca.Len()).
+		Msg("new chain has been created")
+
 	return nil
 }
 
@@ -221,6 +233,11 @@ func (s *Service) GetProof(key []byte) (ordering.Proof, error) {
 	}
 
 	return newProof(path, chain), nil
+}
+
+// GetRoster returns the current roster of the service.
+func (s *Service) GetRoster() (authority.Authority, error) {
+	return s.getCurrentRoster()
 }
 
 // Watch implements ordering.Service.
@@ -281,6 +298,10 @@ func (s *Service) watchBlocks() {
 
 		// 4. Notify the new block to potential listeners.
 		s.watcher.Notify(event)
+
+		s.logger.Info().
+			Uint64("index", link.GetBlock().GetIndex()).
+			Msg("block event")
 	}
 }
 
@@ -303,6 +324,7 @@ func (s *Service) main() error {
 	case <-s.started:
 		// A genesis block has been set, the node will then follow the chain
 		// related to it.
+		s.logger.Info().Msg("node has started following the chain")
 	case <-s.closing:
 		return nil
 	}
@@ -358,6 +380,12 @@ func (s *Service) doRound(ctx context.Context) error {
 
 		select {
 		case <-time.After(s.timeout):
+			if s.pool.Len() == 0 {
+				// When the pool of transactions is empty, the round is aborted
+				// and everything restart.
+				return nil
+			}
+
 			s.logger.Warn().Msg("round reached the timeout")
 
 			ctx, cancel := context.WithTimeout(ctx, s.timeout)
@@ -433,6 +461,9 @@ func (s *Service) doRound(ctx context.Context) error {
 
 func (s *Service) doPBFT(ctx context.Context) error {
 	txs := s.pool.Gather(ctx, pool.Config{Min: 1})
+	if len(txs) == 0 {
+		return nil
+	}
 
 	if ctx.Err() != nil {
 		// Don't bother trying PBFT if the context is done.

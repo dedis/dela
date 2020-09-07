@@ -24,6 +24,12 @@ func NewPool() *Pool {
 	}
 }
 
+// Len implements pool.Pool. It returns the number of transactions available in
+// the pool.
+func (s *Pool) Len() int {
+	return s.gatherer.Len()
+}
+
 // Add implements pool.Pool. It adds the transaction to the pool of waiting
 // transactions.
 func (s *Pool) Add(tx txn.Transaction) error {

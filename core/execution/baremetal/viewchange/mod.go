@@ -2,6 +2,7 @@ package viewchange
 
 import (
 	"go.dedis.ch/dela/core/execution"
+	"go.dedis.ch/dela/core/execution/baremetal"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/txn"
@@ -23,6 +24,40 @@ const (
 	messageTooManyChanges   = "too many changes"
 	messageStorageFailure   = "storage failure"
 )
+
+// Manager is an extension of a normal transaction manager to help creating view
+// change ones.
+type Manager struct {
+	manager txn.Manager
+	context serde.Context
+}
+
+// NewManager returns a view change manager from the transaction manager.
+func NewManager(mgr txn.Manager) Manager {
+	return Manager{
+		manager: mgr,
+		context: json.NewContext(),
+	}
+}
+
+// Make creates a new transaction using the provided manager. It contains the
+// new roster that the transction should apply.
+func (mgr Manager) Make(roster authority.Authority) (txn.Transaction, error) {
+	data, err := roster.Serialize(mgr.context)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to serialize roster: %v", err)
+	}
+
+	tx, err := mgr.manager.Make(
+		txn.Arg{Key: baremetal.ContractArg, Value: []byte(ContractName)},
+		txn.Arg{Key: AuthorityArg, Value: data},
+	)
+	if err != nil {
+		return nil, xerrors.Errorf("creating transaction: %v", err)
+	}
+
+	return tx, nil
+}
 
 // Contract is a contract to update the roster at a given key in the storage. It
 // only allows one member change per transaction.

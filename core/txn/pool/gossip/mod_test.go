@@ -67,6 +67,17 @@ func TestPool_New(t *testing.T) {
 	require.EqualError(t, err, "failed to listen: oops")
 }
 
+func TestPool_Len(t *testing.T) {
+	p := &Pool{
+		gatherer: pool.NewSimpleGatherer(),
+	}
+
+	require.Equal(t, 0, p.Len())
+
+	p.gatherer.Add(makeTx(t, 0))
+	require.Equal(t, 1, p.Len())
+}
+
 func TestPool_Add(t *testing.T) {
 	p := &Pool{
 		actor:    fakeActor{},

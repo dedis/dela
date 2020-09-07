@@ -8,6 +8,14 @@ import (
 	"go.dedis.ch/dela/core/txn"
 )
 
+func TestSimpleGatherer_Len(t *testing.T) {
+	gatherer := NewSimpleGatherer().(*simpleGatherer)
+	require.Equal(t, 0, gatherer.Len())
+
+	gatherer.set[Key{}] = fakeTx{}
+	require.Equal(t, 1, gatherer.Len())
+}
+
 func TestSimpleGatherer_Add(t *testing.T) {
 	gatherer := NewSimpleGatherer().(*simpleGatherer)
 

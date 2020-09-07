@@ -13,9 +13,9 @@ require (
 	go.dedis.ch/kyber/v3 v3.0.13
 	go.etcd.io/bbolt v1.3.5
 	golang.org/x/crypto v0.0.0-20200820211705-5c72a883971a // indirect
-	golang.org/x/net v0.0.0-20200822124328-c89045814202
-	golang.org/x/sys v0.0.0-20200831180312-196b9ba8737a // indirect
-	golang.org/x/tools v0.0.0-20200903005429-2364a5e8fdcf
+	golang.org/x/net v0.0.0-20200904194848-62affa334b73
+	golang.org/x/sys v0.0.0-20200905004654-be1d3432aa8f // indirect
+	golang.org/x/tools v0.0.0-20200904185747-39188db58858
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
 	google.golang.org/grpc v1.31.1
 	gopkg.in/check.v1 v1.0.0-20200902074654-038fdea0a05b // indirect

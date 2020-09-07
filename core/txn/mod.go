@@ -22,10 +22,22 @@ type Transaction interface {
 	GetArg(key string) []byte
 }
 
-// TransactionFactory is the definition of a factory to deserialize transaction
+// Factory is the definition of a factory to deserialize transaction
 // messages.
-type TransactionFactory interface {
+type Factory interface {
 	serde.Factory
 
 	TransactionOf(serde.Context, []byte) (Transaction, error)
+}
+
+// Arg is a generic argument that can be stored in a transaction.
+type Arg struct {
+	Key   string
+	Value []byte
+}
+
+// Manager is a manager to create transaction. It can help creating
+// transactions when some information is required like the current nonce.
+type Manager interface {
+	Make(args ...Arg) (Transaction, error)
 }
