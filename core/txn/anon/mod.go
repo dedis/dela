@@ -3,6 +3,7 @@ package anon
 import (
 	"encoding/binary"
 	"io"
+	"sort"
 
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/txn"
@@ -47,12 +48,6 @@ func WithArg(key string, value []byte) TransactionOption {
 	}
 }
 
-func WithPublicKey(pubkey crypto.PublicKey) TransactionOption {
-	return func(tmpl *template) {
-		tmpl.pubkey = pubkey
-	}
-}
-
 // WithHashFactory is an option to set a different hash factory when creating a
 // transaction.
 func WithHashFactory(f crypto.HashFactory) TransactionOption {
@@ -62,11 +57,12 @@ func WithHashFactory(f crypto.HashFactory) TransactionOption {
 }
 
 // NewTransaction creates a new transaction with the provided nonce.
-func NewTransaction(nonce uint64, opts ...TransactionOption) (Transaction, error) {
+func NewTransaction(nonce uint64, pk crypto.PublicKey, opts ...TransactionOption) (Transaction, error) {
 	tmpl := template{
 		Transaction: Transaction{
-			nonce: nonce,
-			args:  make(map[string][]byte),
+			nonce:  nonce,
+			pubkey: pk,
+			args:   make(map[string][]byte),
 		},
 		hashFactory: crypto.NewSha256Factory(),
 	}
@@ -128,7 +124,30 @@ func (t Transaction) Fingerprint(w io.Writer) error {
 		return xerrors.Errorf("couldn't write nonce: %v", err)
 	}
 
-	// TODO: args + identity
+	// Sort the argument to deterministically write them to the hash.
+	args := make(sort.StringSlice, 0, len(t.args))
+	for key := range t.args {
+		args = append(args, key)
+	}
+
+	sort.Sort(args)
+
+	for _, key := range args {
+		_, err = w.Write(append([]byte(key), t.args[key]...))
+		if err != nil {
+			return xerrors.Errorf("couldn't write arg: %v", err)
+		}
+	}
+
+	buffer, err = t.pubkey.MarshalBinary()
+	if err != nil {
+		return xerrors.Errorf("failed to marshal public key: %v", err)
+	}
+
+	_, err = w.Write(buffer)
+	if err != nil {
+		return xerrors.Errorf("couldn't write public key: %v", err)
+	}
 
 	return nil
 }
@@ -146,6 +165,7 @@ func (t Transaction) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
+// PublicKeyFac is the key of the public key factory.
 type PublicKeyFac struct{}
 
 // TransactionFactory is a factory to deserialize transactions.
@@ -206,6 +226,8 @@ type transactionManager struct {
 }
 
 // NewManager creates a new transaction manager.
+//
+// - implements txn.Manager
 func NewManager(signer crypto.Signer, client Client) txn.Manager {
 	return &transactionManager{
 		client:  client,
@@ -215,17 +237,17 @@ func NewManager(signer crypto.Signer, client Client) txn.Manager {
 	}
 }
 
-// Make creates a transaction populated with the arguments.
+// Make implements txn.Manager. It creates a transaction populated with the
+// arguments.
 func (mgr *transactionManager) Make(args ...txn.Arg) (txn.Transaction, error) {
 	opts := make([]TransactionOption, len(args), len(args)+2)
 	for i, arg := range args {
 		opts[i] = WithArg(arg.Key, arg.Value)
 	}
 
-	opts = append(opts, WithPublicKey(mgr.signer.GetPublicKey()))
 	opts = append(opts, WithHashFactory(mgr.hashFac))
 
-	tx, err := NewTransaction(mgr.nonce, opts...)
+	tx, err := NewTransaction(mgr.nonce, mgr.signer.GetPublicKey(), opts...)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create tx: %v", err)
 	}
@@ -235,10 +257,12 @@ func (mgr *transactionManager) Make(args ...txn.Arg) (txn.Transaction, error) {
 	return tx, nil
 }
 
+// Sync implements txn.Manager. It fetches the latest nonce of the signer to
+// create valid transactions.
 func (mgr *transactionManager) Sync() error {
 	nonce, err := mgr.client.GetNonce(mgr.signer.GetPublicKey())
 	if err != nil {
-		return err
+		return xerrors.Errorf("client: %v", err)
 	}
 
 	mgr.nonce = nonce

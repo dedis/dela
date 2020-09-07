@@ -104,6 +104,17 @@ func TestRosterAddAction_Execute(t *testing.T) {
 
 	ctx.Injector.Inject(fake.Mino{})
 	ctx.Injector.Inject(fakeCosi{})
+	err = action.Execute(ctx)
+	require.EqualError(t, err, "txn manager: injector: couldn't find dependency for 'txn.Manager'")
+
+	ctx.Injector.Inject(fakeTxManager{errSync: xerrors.New("oops")})
+	err = action.Execute(ctx)
+	require.EqualError(t, err, "txn manager: sync: oops")
+
+	ctx.Injector.Inject(fakeTxManager{errMake: xerrors.New("oops")})
+	err = action.Execute(ctx)
+	require.EqualError(t, err, "transaction: creating transaction: oops")
+
 	ctx.Injector.Inject(fakeTxManager{})
 	err = action.Execute(ctx)
 	require.EqualError(t, err, "injector: couldn't find dependency for 'pool.Pool'")
@@ -189,19 +200,21 @@ func (c fakeCosi) GetSigner() crypto.Signer {
 
 type fakeTxManager struct {
 	txn.Manager
+	errMake error
+	errSync error
 }
 
-func (fakeTxManager) Make(args ...txn.Arg) (txn.Transaction, error) {
-	tx, err := anon.NewTransaction(0)
+func (mgr fakeTxManager) Make(args ...txn.Arg) (txn.Transaction, error) {
+	tx, err := anon.NewTransaction(0, fake.PublicKey{})
 	if err != nil {
 		return nil, err
 	}
 
-	return tx, nil
+	return tx, mgr.errMake
 }
 
-func (fakeTxManager) Sync() error {
-	return nil
+func (mgr fakeTxManager) Sync() error {
+	return mgr.errSync
 }
 
 type badPool struct {

@@ -193,7 +193,7 @@ func TestPool_ListenRumors(t *testing.T) {
 
 func makeTx(t *testing.T, nonce uint64) txn.Transaction {
 	signer := bls.NewSigner()
-	tx, err := anon.NewTransaction(nonce, anon.WithPublicKey(signer.GetPublicKey()))
+	tx, err := anon.NewTransaction(nonce, signer.GetPublicKey())
 	require.NoError(t, err)
 	return tx
 }

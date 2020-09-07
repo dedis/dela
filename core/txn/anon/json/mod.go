@@ -40,13 +40,9 @@ func (fmt txFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error)
 		args[arg] = tx.GetArg(arg)
 	}
 
-	if tx.GetIdentity() == nil {
-		return nil, xerrors.New("missing identity")
-	}
-
 	pubkey, err := tx.GetIdentity().Serialize(ctx)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to encode public key: %v", err)
 	}
 
 	m := TransactionJSON{
@@ -72,11 +68,6 @@ func (fmt txFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error
 		return nil, xerrors.Errorf("failed to unmarshal: %v", err)
 	}
 
-	args := make([]anon.TransactionOption, 0, len(m.Args)+1)
-	for key, value := range m.Args {
-		args = append(args, anon.WithArg(key, value))
-	}
-
 	fac := ctx.GetFactory(anon.PublicKeyFac{})
 
 	factory, ok := fac.(crypto.PublicKeyFactory)
@@ -86,16 +77,19 @@ func (fmt txFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error
 
 	pubkey, err := factory.PublicKeyOf(ctx, m.PublicKey)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to decode public key: %v", err)
 	}
 
-	args = append(args, anon.WithPublicKey(pubkey))
+	args := make([]anon.TransactionOption, 0, len(m.Args)+1)
+	for key, value := range m.Args {
+		args = append(args, anon.WithArg(key, value))
+	}
 
 	if fmt.hashFactory != nil {
 		args = append(args, anon.WithHashFactory(fmt.hashFactory))
 	}
 
-	tx, err := anon.NewTransaction(m.Nonce, args...)
+	tx, err := anon.NewTransaction(m.Nonce, pubkey, args...)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create tx: %v", err)
 	}

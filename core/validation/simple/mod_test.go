@@ -35,7 +35,7 @@ func TestService_Validate(t *testing.T) {
 func makeTx(t *testing.T) txn.Transaction {
 	signer := bls.NewSigner()
 
-	tx, err := anon.NewTransaction(0, anon.WithPublicKey(signer.GetPublicKey()))
+	tx, err := anon.NewTransaction(0, signer.GetPublicKey())
 	require.NoError(t, err)
 	return tx
 }

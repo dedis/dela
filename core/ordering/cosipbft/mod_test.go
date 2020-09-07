@@ -431,10 +431,9 @@ func (e testExec) Execute(txn.Transaction, store.Snapshot) (execution.Result, er
 func makeTx(t *testing.T, nonce uint64, signer crypto.Signer) txn.Transaction {
 	opts := []anon.TransactionOption{
 		anon.WithArg(baremetal.ContractArg, []byte(testContractName)),
-		anon.WithPublicKey(signer.GetPublicKey()),
 	}
 
-	tx, err := anon.NewTransaction(nonce, opts...)
+	tx, err := anon.NewTransaction(nonce, signer.GetPublicKey(), opts...)
 	require.NoError(t, err)
 	return tx
 }
@@ -445,7 +444,7 @@ func makeRosterTx(t *testing.T, nonce uint64, roster authority.Authority, signer
 
 	tx, err := anon.NewTransaction(
 		nonce,
-		anon.WithPublicKey(signer.GetPublicKey()),
+		signer.GetPublicKey(),
 		anon.WithArg(baremetal.ContractArg, []byte(viewchange.ContractName)),
 		anon.WithArg(viewchange.AuthorityArg, data),
 	)
@@ -516,7 +515,7 @@ func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()
 		require.NoError(t, err)
 
 		// Disable logs.
-		srv.logger = srv.logger.Level(zerolog.NoLevel)
+		srv.logger = srv.logger.Level(zerolog.ErrorLevel)
 
 		nodes[i] = testNode{
 			service: srv,

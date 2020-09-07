@@ -150,12 +150,12 @@ func (rosterAddAction) Execute(ctx node.Context) error {
 
 	mgr, err := makeManager(ctx)
 	if err != nil {
-		return xerrors.Errorf("manager: %v", err)
+		return xerrors.Errorf("txn manager: %v", err)
 	}
 
 	tx, err := viewchange.NewManager(mgr).Make(roster.Apply(cset))
 	if err != nil {
-		return xerrors.Errorf("transaction manager: %v", err)
+		return xerrors.Errorf("transaction: %v", err)
 	}
 
 	var p pool.Pool
@@ -178,14 +178,14 @@ func makeManager(ctx node.Context) (txn.Manager, error) {
 	var mgr txn.Manager
 	err := ctx.Injector.Resolve(&mgr)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("injector: %v", err)
 	}
 
 	// Synchronize the manager with the latest state of the chain so that it can
 	// create valid transactions.
 	err = mgr.Sync()
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("sync: %v", err)
 	}
 
 	return mgr, nil

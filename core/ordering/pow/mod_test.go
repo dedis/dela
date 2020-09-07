@@ -142,7 +142,7 @@ func makeTree(t *testing.T) (hashtree.Tree, func()) {
 func makeTx(t *testing.T, nonce uint64, signer crypto.Signer) txn.Transaction {
 	tx, err := anon.NewTransaction(
 		nonce,
-		anon.WithPublicKey(signer.GetPublicKey()),
+		signer.GetPublicKey(),
 		anon.WithArg("key", []byte("ping")),
 		anon.WithArg("value", []byte("pong")),
 		anon.WithArg(baremetal.ContractArg, []byte(testContractName)),

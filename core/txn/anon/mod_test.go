@@ -5,9 +5,11 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
+	"golang.org/x/xerrors"
 )
 
 func init() {
@@ -17,16 +19,16 @@ func init() {
 }
 
 func TestTransaction_New(t *testing.T) {
-	tx, err := NewTransaction(0)
+	tx, err := NewTransaction(0, fake.PublicKey{})
 	require.NoError(t, err)
 	require.NotNil(t, tx)
 
-	_, err = NewTransaction(0, WithHashFactory(fake.NewHashFactory(fake.NewBadHash())))
+	_, err = NewTransaction(0, fake.PublicKey{}, WithHashFactory(fake.NewHashFactory(fake.NewBadHash())))
 	require.EqualError(t, err, "couldn't fingerprint tx: couldn't write nonce: fake error")
 }
 
 func TestTransaction_GetID(t *testing.T) {
-	tx, err := NewTransaction(0)
+	tx, err := NewTransaction(0, fake.PublicKey{})
 	require.NoError(t, err)
 
 	id := tx.GetID()
@@ -34,7 +36,7 @@ func TestTransaction_GetID(t *testing.T) {
 }
 
 func TestTransaction_GetNonce(t *testing.T) {
-	tx, err := NewTransaction(123)
+	tx, err := NewTransaction(123, fake.PublicKey{})
 	require.NoError(t, err)
 
 	nonce := tx.GetNonce()
@@ -42,13 +44,13 @@ func TestTransaction_GetNonce(t *testing.T) {
 }
 
 func TestTransaction_GetIdentity(t *testing.T) {
-	tx, err := NewTransaction(1)
+	tx, err := NewTransaction(1, fake.PublicKey{})
 	require.NoError(t, err)
-	require.Nil(t, tx.GetIdentity())
+	require.Equal(t, fake.PublicKey{}, tx.GetIdentity())
 }
 
 func TestTransaction_GetArgs(t *testing.T) {
-	tx, err := NewTransaction(5, WithArg("A", []byte{1}), WithArg("B", []byte{2}))
+	tx, err := NewTransaction(5, fake.PublicKey{}, WithArg("A", []byte{1}), WithArg("B", []byte{2}))
 	require.NoError(t, err)
 
 	args := tx.GetArgs()
@@ -57,7 +59,7 @@ func TestTransaction_GetArgs(t *testing.T) {
 }
 
 func TestTransaction_GetArg(t *testing.T) {
-	tx, err := NewTransaction(5, WithArg("A", []byte{1}), WithArg("B", []byte{2}))
+	tx, err := NewTransaction(5, fake.PublicKey{}, WithArg("A", []byte{1}), WithArg("B", []byte{2}))
 	require.NoError(t, err)
 
 	value := tx.GetArg("A")
@@ -71,20 +73,30 @@ func TestTransaction_GetArg(t *testing.T) {
 }
 
 func TestTransaction_Fingerprint(t *testing.T) {
-	tx, err := NewTransaction(2)
+	tx, err := NewTransaction(2, fake.PublicKey{}, WithArg("A", []byte{1, 2, 3}))
 	require.NoError(t, err)
 
 	buffer := new(bytes.Buffer)
 	err = tx.Fingerprint(buffer)
 	require.NoError(t, err)
-	require.Equal(t, "\x02\x00\x00\x00\x00\x00\x00\x00", buffer.String())
+	require.Equal(t, "\x02\x00\x00\x00\x00\x00\x00\x00A\x01\x02\x03PK", buffer.String())
 
 	err = tx.Fingerprint(fake.NewBadHash())
 	require.EqualError(t, err, "couldn't write nonce: fake error")
+
+	err = tx.Fingerprint(fake.NewBadHashWithDelay(1))
+	require.EqualError(t, err, "couldn't write arg: fake error")
+
+	err = tx.Fingerprint(fake.NewBadHashWithDelay(2))
+	require.EqualError(t, err, "couldn't write public key: fake error")
+
+	tx.pubkey = fake.NewBadPublicKey()
+	err = tx.Fingerprint(buffer)
+	require.EqualError(t, err, "failed to marshal public key: fake error")
 }
 
 func TestTransaction_Serialize(t *testing.T) {
-	tx, err := NewTransaction(0)
+	tx, err := NewTransaction(0, fake.PublicKey{})
 	require.NoError(t, err)
 
 	data, err := tx.Serialize(fake.NewContext())
@@ -121,4 +133,27 @@ func TestManager_Make(t *testing.T) {
 	_, err = mgr.Make()
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to create tx: ")
+}
+
+func TestManager_Sync(t *testing.T) {
+	mgr := NewManager(fake.NewSigner(), fakeClient{})
+
+	err := mgr.Sync()
+	require.NoError(t, err)
+	require.Equal(t, uint64(42), mgr.(*transactionManager).nonce)
+
+	mgr = NewManager(fake.NewSigner(), fakeClient{err: xerrors.New("oops")})
+	err = mgr.Sync()
+	require.EqualError(t, err, "client: oops")
+}
+
+// -----------------------------------------------------------------------------
+// Utility functions
+
+type fakeClient struct {
+	err error
+}
+
+func (c fakeClient) GetNonce(access.Identity) (uint64, error) {
+	return 42, c.err
 }

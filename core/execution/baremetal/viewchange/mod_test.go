@@ -72,7 +72,7 @@ func TestContract_Execute(t *testing.T) {
 // Utility functions
 
 func makeTx(t *testing.T, arg string) txn.Transaction {
-	tx, err := anon.NewTransaction(0, anon.WithArg(AuthorityArg, []byte(arg)))
+	tx, err := anon.NewTransaction(0, fake.PublicKey{}, anon.WithArg(AuthorityArg, []byte(arg)))
 	require.NoError(t, err)
 
 	return tx

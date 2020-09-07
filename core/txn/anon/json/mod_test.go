@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/anon"
+	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
 )
@@ -15,7 +16,7 @@ func TestTxFormat_Encode(t *testing.T) {
 
 	ctx := fake.NewContext()
 
-	tx := makeTx(t, 1, anon.WithArg("A", []byte{1}), anon.WithPublicKey(fake.PublicKey{}))
+	tx := makeTx(t, 1, fake.PublicKey{}, anon.WithArg("A", []byte{1}))
 
 	data, err := format.Encode(ctx, tx)
 	require.NoError(t, err)
@@ -24,8 +25,12 @@ func TestTxFormat_Encode(t *testing.T) {
 	_, err = format.Encode(ctx, fake.Message{})
 	require.EqualError(t, err, "unsupported message of type 'fake.Message'")
 
-	_, err = format.Encode(fake.NewBadContext(), makeTx(t, 0, anon.WithPublicKey(fake.PublicKey{})))
+	_, err = format.Encode(fake.NewBadContext(), makeTx(t, 0, fake.PublicKey{}))
 	require.EqualError(t, err, "failed to marshal: fake error")
+
+	tx, _ = anon.NewTransaction(0, fake.NewBadPublicKey())
+	_, err = format.Encode(ctx, tx)
+	require.EqualError(t, err, "failed to encode public key: fake error")
 }
 
 func TestTxFormat_Decode(t *testing.T) {
@@ -36,7 +41,7 @@ func TestTxFormat_Decode(t *testing.T) {
 
 	msg, err := format.Decode(ctx, []byte(`{"Nonce":2,"Args":{"B":"AQ=="}}`))
 	require.NoError(t, err)
-	expected := makeTx(t, 2, anon.WithArg("B", []byte{1}), anon.WithPublicKey(fake.PublicKey{}))
+	expected := makeTx(t, 2, fake.PublicKey{}, anon.WithArg("B", []byte{1}))
 	require.Equal(t, expected, msg)
 
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
@@ -46,13 +51,23 @@ func TestTxFormat_Decode(t *testing.T) {
 	_, err = format.Decode(ctx, []byte(`{}`))
 	require.EqualError(t, err,
 		"failed to create tx: couldn't fingerprint tx: couldn't write nonce: fake error")
+
+	badCtx := serde.WithFactory(ctx, anon.PublicKeyFac{}, nil)
+	_, err = format.Decode(badCtx, []byte(`{}`))
+	require.EqualError(t, err, "invalid public key factory '<nil>'")
+
+	badCtx = serde.WithFactory(ctx, anon.PublicKeyFac{}, fake.NewBadPublicKeyFactory())
+	_, err = format.Decode(badCtx, []byte(`{}`))
+	require.EqualError(t, err, "failed to decode public key: fake error")
 }
 
 // -----------------------------------------------------------------------------
 // Utility functions
 
-func makeTx(t *testing.T, nonce uint64, opts ...anon.TransactionOption) txn.Transaction {
-	tx, err := anon.NewTransaction(nonce, opts...)
+func makeTx(t *testing.T, nonce uint64,
+	pk crypto.PublicKey, opts ...anon.TransactionOption) txn.Transaction {
+
+	tx, err := anon.NewTransaction(nonce, pk, opts...)
 	require.NoError(t, err)
 
 	return tx
