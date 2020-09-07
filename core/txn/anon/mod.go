@@ -5,6 +5,7 @@ import (
 	"io"
 	"sort"
 
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/crypto"
@@ -266,6 +267,8 @@ func (mgr *transactionManager) Sync() error {
 	}
 
 	mgr.nonce = nonce
+
+	dela.Logger.Debug().Uint64("nonce", nonce).Msg("manager synchronized")
 
 	return nil
 }

@@ -1,10 +1,12 @@
 package controller
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
 	"strings"
+	"time"
 
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/core/execution/baremetal/viewchange"
@@ -169,9 +171,37 @@ func (rosterAddAction) Execute(ctx node.Context) error {
 		return xerrors.Errorf("failed to add transaction: %v", err)
 	}
 
-	// TODO: listen for the new block and check the tx.
+	wait := ctx.Flags.Duration("wait")
+	if wait > 0 {
+		err := waitTx(srvc, wait, tx)
+		if err != nil {
+			return xerrors.Errorf("wait: %v", err)
+		}
+	}
 
 	return nil
+}
+
+func waitTx(srvc Service, wait time.Duration, tx txn.Transaction) error {
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
+	defer cancel()
+
+	events := srvc.Watch(ctx)
+
+	for event := range events {
+		for _, res := range event.Transactions {
+			if bytes.Equal(res.GetTransaction().GetID(), tx.GetID()) {
+				accepted, msg := res.GetStatus()
+				if !accepted {
+					return xerrors.Errorf("transaction refused: %s", msg)
+				}
+
+				return nil
+			}
+		}
+	}
+
+	return xerrors.New("transaction not found after timeout")
 }
 
 func makeManager(ctx node.Context) (txn.Manager, error) {

@@ -79,15 +79,23 @@ func TestMemcoin_Scenario_1(t *testing.T) {
 	require.NoError(t, err)
 
 	// Add node 3 to the current chain.
-	args = append([]string{os.Args[0], "--config", node1, "ordering", "roster", "add"}, getExport(t, node3)...)
+	args = append([]string{
+		os.Args[0],
+		"--config", node1, "ordering", "roster", "add",
+		"--wait", "60s"},
+		getExport(t, node3)...,
+	)
 
 	err = run(args)
 	require.NoError(t, err)
 
-	time.Sleep(1 * time.Second)
-
-	err = run(args)
+	// Test a timeout waiting for a transaction.
+	buffer := new(bytes.Buffer)
+	args[7] = "1ns"
+	err = runWithCfg(args, config{Writer: buffer})
 	require.NoError(t, err)
+	require.Equal(t, "[ERROR] command error: wait: transaction not found after timeout\n",
+		buffer.String())
 
 	// Test a bad command.
 	err = runWithCfg([]string{os.Args[0], "ordering", "setup"}, cfg)

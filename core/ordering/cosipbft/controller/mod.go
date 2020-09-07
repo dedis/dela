@@ -63,6 +63,10 @@ func (minimal) SetCommands(builder node.Builder) {
 			Required: true,
 			Usage:    "base64 description of the member to add",
 		},
+		cli.DurationFlag{
+			Name:  "wait",
+			Usage: "wait for the transaction to be processed",
+		},
 	)
 	sub.SetAction(builder.MakeAction(rosterAddAction{}))
 }

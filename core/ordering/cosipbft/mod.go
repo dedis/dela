@@ -255,6 +255,7 @@ func (s *Service) Watch(ctx context.Context) <-chan ordering.Event {
 	go func() {
 		<-ctx.Done()
 		s.watcher.Remove(obs)
+		close(obs.ch)
 	}()
 
 	return obs.ch
@@ -292,7 +293,8 @@ func (s *Service) watchBlocks() {
 		}
 
 		event := ordering.Event{
-			Index: link.GetBlock().GetIndex(),
+			Index:        link.GetBlock().GetIndex(),
+			Transactions: link.GetBlock().GetData().GetTransactionResults(),
 		}
 
 		// 3. Notify the main loop that a new block has been created, but ignore
