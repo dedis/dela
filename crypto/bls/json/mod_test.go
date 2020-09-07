@@ -79,6 +79,15 @@ func TestSigFormat_Decode(t *testing.T) {
 	require.EqualError(t, err, "couldn't deserialize data: fake error")
 }
 
+func TestAssert(t *testing.T) {
+	defer func() {
+		r := recover()
+		require.Contains(t, r, ": oops")
+	}()
+
+	assert(xerrors.New("oops"))
+}
+
 // -----------------------------------------------------------------------------
 // Utility functions
 
