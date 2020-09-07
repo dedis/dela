@@ -173,7 +173,7 @@ type PublicKeyFac struct{}
 //
 // - implements serde.Factory
 type TransactionFactory struct {
-	pubkeyFac crypto.PublicKeyFactory
+	pubkeyFac common.PublicKeyFactory
 }
 
 // NewTransactionFactory returns a new factory.

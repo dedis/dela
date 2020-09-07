@@ -5,6 +5,7 @@ import (
 
 	"go.dedis.ch/dela/core/txn/anon"
 	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/crypto/common"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
@@ -70,7 +71,7 @@ func (fmt txFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error
 
 	fac := ctx.GetFactory(anon.PublicKeyFac{})
 
-	factory, ok := fac.(crypto.PublicKeyFactory)
+	factory, ok := fac.(common.PublicKeyFactory)
 	if !ok {
 		return nil, xerrors.Errorf("invalid public key factory '%T'", fac)
 	}

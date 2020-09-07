@@ -389,6 +389,13 @@ func TestService_GetProof(t *testing.T) {
 	require.EqualError(t, err, "reading chain: store is empty")
 }
 
+func TestService_GetStore(t *testing.T) {
+	srvc := &Service{processor: newProcessor()}
+	srvc.tree = blockstore.NewTreeCache(fakeTree{})
+
+	require.IsType(t, fakeTree{}, srvc.GetStore())
+}
+
 func TestService_GetRoster(t *testing.T) {
 	srvc := &Service{processor: newProcessor()}
 	srvc.tree = blockstore.NewTreeCache(fakeTree{})

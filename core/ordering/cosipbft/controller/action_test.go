@@ -5,15 +5,16 @@ import (
 	"context"
 	"io/ioutil"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/txn"
-	"go.dedis.ch/dela/core/txn/anon"
 	"go.dedis.ch/dela/core/txn/pool"
 	"go.dedis.ch/dela/core/txn/pool/mem"
+	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
@@ -81,6 +82,7 @@ func TestRosterAddAction_Execute(t *testing.T) {
 
 	ctx := prepContext(nil)
 	ctx.Flags.(node.FlagSet)["member"] = "YQ==:YQ=="
+	ctx.Flags.(node.FlagSet)["wait"] = float64(time.Second)
 
 	err := action.Execute(ctx)
 	require.NoError(t, err)
@@ -122,6 +124,20 @@ func TestRosterAddAction_Execute(t *testing.T) {
 	ctx.Injector.Inject(badPool{})
 	err = action.Execute(ctx)
 	require.EqualError(t, err, "failed to add transaction: oops")
+
+	events := []ordering.Event{
+		{Transactions: []validation.TransactionResult{fakeResult{refused: true}}},
+	}
+	ctx = prepContext(nil)
+	ctx.Flags.(node.FlagSet)["member"] = "YQ==:YQ=="
+	ctx.Flags.(node.FlagSet)["wait"] = float64(time.Second)
+	ctx.Injector.Inject(fakeService{events: events})
+	err = action.Execute(ctx)
+	require.EqualError(t, err, "wait: transaction refused: message")
+
+	ctx.Injector.Inject(fakeService{events: nil})
+	err = action.Execute(ctx)
+	require.EqualError(t, err, "wait: transaction not found after timeout")
 }
 
 func TestDecodeMember(t *testing.T) {
@@ -153,9 +169,13 @@ func prepContext(calls *fake.Call) node.Context {
 		Out:      ioutil.Discard,
 	}
 
+	events := []ordering.Event{
+		{Transactions: []validation.TransactionResult{fakeResult{}}},
+	}
+
 	ctx.Injector.Inject(fake.Mino{})
 	ctx.Injector.Inject(fakeCosi{})
-	ctx.Injector.Inject(fakeService{calls: calls})
+	ctx.Injector.Inject(fakeService{calls: calls, events: events})
 	ctx.Injector.Inject(mem.NewPool())
 	ctx.Injector.Inject(fakeTxManager{})
 
@@ -164,8 +184,9 @@ func prepContext(calls *fake.Call) node.Context {
 
 type fakeService struct {
 	ordering.Service
-	calls *fake.Call
-	err   error
+	calls  *fake.Call
+	events []ordering.Event
+	err    error
 }
 
 func (s fakeService) GetRoster() (authority.Authority, error) {
@@ -175,6 +196,16 @@ func (s fakeService) GetRoster() (authority.Authority, error) {
 func (s fakeService) Setup(ctx context.Context, ca crypto.CollectiveAuthority) error {
 	s.calls.Add(ctx, ca)
 	return s.err
+}
+
+func (s fakeService) Watch(context.Context) <-chan ordering.Event {
+	ch := make(chan ordering.Event, len(s.events))
+	for _, evt := range s.events {
+		ch <- evt
+	}
+	close(ch)
+
+	return ch
 }
 
 type fakeCosi struct {
@@ -198,6 +229,27 @@ func (c fakeCosi) GetSigner() crypto.Signer {
 	return fake.NewSigner()
 }
 
+type fakeTx struct {
+	txn.Transaction
+}
+
+func (fakeTx) GetID() []byte {
+	return []byte{0xaa}
+}
+
+type fakeResult struct {
+	validation.TransactionResult
+	refused bool
+}
+
+func (fakeResult) GetTransaction() txn.Transaction {
+	return fakeTx{}
+}
+
+func (res fakeResult) GetStatus() (bool, string) {
+	return !res.refused, "message"
+}
+
 type fakeTxManager struct {
 	txn.Manager
 	errMake error
@@ -205,12 +257,7 @@ type fakeTxManager struct {
 }
 
 func (mgr fakeTxManager) Make(args ...txn.Arg) (txn.Transaction, error) {
-	tx, err := anon.NewTransaction(0, fake.PublicKey{})
-	if err != nil {
-		return nil, err
-	}
-
-	return tx, mgr.errMake
+	return fakeTx{}, mgr.errMake
 }
 
 func (mgr fakeTxManager) Sync() error {
