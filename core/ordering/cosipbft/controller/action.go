@@ -36,7 +36,7 @@ type Service interface {
 type setupAction struct{}
 
 // Execute implements node.ActionTemplate. It reads the list of members and
-// requesthe setup to the service.
+// request the setup to the service.
 func (a setupAction) Execute(ctx node.Context) error {
 	roster, err := a.readMembers(ctx)
 	if err != nil {

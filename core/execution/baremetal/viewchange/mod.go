@@ -25,7 +25,7 @@ const (
 	messageStorageFailure   = "storage failure"
 )
 
-// Manager is an extension of a norma transaction manager to help creating view
+// Manager is an extension of a normal transaction manager to help creating view
 // change ones.
 type Manager struct {
 	manager txn.Manager
