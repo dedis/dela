@@ -6,7 +6,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/txn"
+	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
@@ -114,7 +116,27 @@ func TestDataFactory_Deserialize(t *testing.T) {
 type fakeTx struct {
 	txn.Transaction
 
-	err error
+	nonce  uint64
+	pubkey crypto.PublicKey
+	err    error
+}
+
+func newTx() fakeTx {
+	return fakeTx{
+		pubkey: fake.PublicKey{},
+	}
+}
+
+func (tx fakeTx) GetID() []byte {
+	return []byte{0xa, 0xb, 0xc, 0xd}
+}
+
+func (tx fakeTx) GetIdentity() access.Identity {
+	return tx.pubkey
+}
+
+func (tx fakeTx) GetNonce() uint64 {
+	return tx.nonce
 }
 
 func (tx fakeTx) Fingerprint(io.Writer) error {

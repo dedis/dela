@@ -7,8 +7,8 @@ import (
 	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/txn"
-	"go.dedis.ch/dela/core/txn/anon"
-	"go.dedis.ch/dela/crypto/bls"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/internal/testing/fake"
 	"golang.org/x/xerrors"
 )
 
@@ -17,28 +17,59 @@ func TestService_GetFactory(t *testing.T) {
 	require.NotNil(t, srvc.GetFactory())
 }
 
+func TestService_GetNonce(t *testing.T) {
+	srvc := NewService(fakeExec{}, nil)
+
+	nonce, err := srvc.GetNonce(fakeSnapshot{}, fake.PublicKey{})
+	require.NoError(t, err)
+	require.Equal(t, uint64(0), nonce)
+
+	buffer := make([]byte, 8)
+	buffer[0] = 2
+	nonce, err = srvc.GetNonce(fakeSnapshot{value: buffer}, fake.PublicKey{})
+	require.NoError(t, err)
+	require.Equal(t, uint64(3), nonce)
+
+	_, err = srvc.GetNonce(fakeSnapshot{}, fake.NewBadPublicKey())
+	require.EqualError(t, err, "key: failed to marshal identity: fake error")
+
+	_, err = srvc.GetNonce(fakeSnapshot{errGet: xerrors.New("oops")}, fake.PublicKey{})
+	require.EqualError(t, err, "store: oops")
+}
+
 func TestService_Validate(t *testing.T) {
 	srvc := NewService(fakeExec{}, nil)
 
-	data, err := srvc.Validate(fakeSnapshot{}, []txn.Transaction{makeTx(t)})
+	data, err := srvc.Validate(fakeSnapshot{}, []txn.Transaction{newTx()})
 	require.NoError(t, err)
 	require.NotNil(t, data)
 
+	tx := newTx()
+	tx.nonce = 1
+	data, err = srvc.Validate(fakeSnapshot{}, []txn.Transaction{tx})
+	require.NoError(t, err)
+
+	status, _ := data.GetTransactionResults()[0].GetStatus()
+	require.False(t, status)
+
+	_, err = srvc.Validate(fakeSnapshot{}, []txn.Transaction{fakeTx{}})
+	require.EqualError(t, err, "tx 0x0a0b0c0d: nonce: missing identity in transaction")
+
+	_, err = srvc.Validate(fakeSnapshot{errSet: xerrors.New("oops")}, []txn.Transaction{newTx()})
+	require.EqualError(t, err, "tx 0x0a0b0c0d: failed to set nonce: store: oops")
+
+	srvc.hashFac = fake.NewHashFactory(fake.NewBadHash())
+	err = srvc.set(fakeSnapshot{}, fake.PublicKey{}, 0)
+	require.EqualError(t, err, "key: failed to write identity: fake error")
+
+	srvc.hashFac = crypto.NewSha256Factory()
 	srvc.execution = fakeExec{err: xerrors.New("oops")}
-	_, err = srvc.Validate(fakeSnapshot{}, []txn.Transaction{makeTx(t)})
-	require.EqualError(t, err, "failed to execute tx: oops")
+	_, err = srvc.Validate(fakeSnapshot{}, []txn.Transaction{newTx()})
+	require.EqualError(t, err, "tx 0x0a0b0c0d: failed to execute tx: oops")
 }
 
 // -----------------------------------------------------------------------------
 // Utility functions
-
-func makeTx(t *testing.T) txn.Transaction {
-	signer := bls.NewSigner()
-
-	tx, err := anon.NewTransaction(0, signer.GetPublicKey())
-	require.NoError(t, err)
-	return tx
-}
 
 type fakeExec struct {
 	err error
@@ -50,12 +81,16 @@ func (e fakeExec) Execute(txn.Transaction, store.Snapshot) (execution.Result, er
 
 type fakeSnapshot struct {
 	store.Snapshot
+
+	value  []byte
+	errGet error
+	errSet error
 }
 
-func (fakeSnapshot) Get(key []byte) ([]byte, error) {
-	return nil, nil
+func (s fakeSnapshot) Get(key []byte) ([]byte, error) {
+	return s.value, s.errGet
 }
 
-func (fakeSnapshot) Set(key, value []byte) error {
-	return nil
+func (s fakeSnapshot) Set(key, value []byte) error {
+	return s.errSet
 }
