@@ -3,6 +3,7 @@ package types
 import (
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/crypto/common"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
@@ -152,15 +153,17 @@ func (m DoneMessage) Serialize(ctx serde.Context) ([]byte, error) {
 
 // ViewMessage is a message to announce a view change request.
 type ViewMessage struct {
-	id     Digest
-	leader int
+	id        Digest
+	leader    uint16
+	signature crypto.Signature
 }
 
 // NewViewMessage creates a new view message.
-func NewViewMessage(id Digest, leader int) ViewMessage {
+func NewViewMessage(id Digest, leader uint16, sig crypto.Signature) ViewMessage {
 	return ViewMessage{
-		id:     id,
-		leader: leader,
+		id:        id,
+		leader:    leader,
+		signature: sig,
 	}
 }
 
@@ -170,8 +173,13 @@ func (m ViewMessage) GetID() Digest {
 }
 
 // GetLeader returns the leader index of the view change.
-func (m ViewMessage) GetLeader() int {
+func (m ViewMessage) GetLeader() uint16 {
 	return m.leader
+}
+
+// GetSignature returns the signature of the view.
+func (m ViewMessage) GetSignature() crypto.Signature {
+	return m.signature
 }
 
 // Serialize implements serde.Message. It returns the serialized data for this
@@ -196,23 +204,28 @@ type BlockKey struct{}
 // LinkKey is the key of the link factory.
 type LinkKey struct{}
 
-// SignatureKey is the key of the collective signature factory.
+// AggregateKey is the key of the collective signature factory.
+type AggregateKey struct{}
+
+// SignatureKey is the key of the view signature factory.
 type SignatureKey struct{}
 
 // MessageFactory is the factory to deserialize messages.
 type MessageFactory struct {
 	genesisFac serde.Factory
 	blockFac   serde.Factory
+	aggFac     crypto.SignatureFactory
 	sigFac     crypto.SignatureFactory
 	csFac      authority.ChangeSetFactory
 }
 
 // NewMessageFactory creates a new message factory.
-func NewMessageFactory(gf, bf serde.Factory, sf crypto.SignatureFactory, csf authority.ChangeSetFactory) MessageFactory {
+func NewMessageFactory(gf, bf serde.Factory, aggFac crypto.SignatureFactory, csf authority.ChangeSetFactory) MessageFactory {
 	return MessageFactory{
 		genesisFac: gf,
 		blockFac:   bf,
-		sigFac:     sf,
+		aggFac:     aggFac,
+		sigFac:     common.NewSignatureFactory(),
 		csFac:      csf,
 	}
 }
@@ -223,8 +236,9 @@ func (f MessageFactory) Deserialize(ctx serde.Context, data []byte) (serde.Messa
 
 	ctx = serde.WithFactory(ctx, GenesisKey{}, f.genesisFac)
 	ctx = serde.WithFactory(ctx, BlockKey{}, f.blockFac)
+	ctx = serde.WithFactory(ctx, AggregateKey{}, f.aggFac)
 	ctx = serde.WithFactory(ctx, SignatureKey{}, f.sigFac)
-	ctx = serde.WithFactory(ctx, LinkKey{}, NewLinkFactory(f.blockFac, f.sigFac, f.csFac))
+	ctx = serde.WithFactory(ctx, LinkKey{}, NewLinkFactory(f.blockFac, f.aggFac, f.csFac))
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {

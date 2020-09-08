@@ -71,8 +71,9 @@ type DoneMessageJSON struct {
 
 // ViewMessageJSON is the JSON message to send a view change request.
 type ViewMessageJSON struct {
-	Leader int
-	ID     []byte
+	Leader    uint16
+	ID        []byte
+	Signature json.RawMessage
 }
 
 // MessageJSON is the JSON message that wraps the different kinds of messages.
@@ -289,9 +290,15 @@ func (f msgFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) 
 
 		m = MessageJSON{Done: &dm}
 	case types.ViewMessage:
+		sig, err := in.GetSignature().Serialize(ctx)
+		if err != nil {
+			return nil, xerrors.Errorf("failed to serialize signature: %v", err)
+		}
+
 		vm := ViewMessageJSON{
-			ID:     in.GetID().Bytes(),
-			Leader: in.GetLeader(),
+			ID:        in.GetID().Bytes(),
+			Leader:    in.GetLeader(),
+			Signature: sig,
 		}
 
 		m = MessageJSON{View: &vm}
@@ -353,7 +360,7 @@ func (f msgFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error)
 	}
 
 	if m.Commit != nil {
-		sig, err := decodeSignature(ctx, m.Commit.Signature)
+		sig, err := decodeSignature(ctx, m.Commit.Signature, types.AggregateKey{})
 		if err != nil {
 			return nil, xerrors.Errorf("commit failed: %v", err)
 		}
@@ -365,7 +372,7 @@ func (f msgFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error)
 	}
 
 	if m.Done != nil {
-		sig, err := decodeSignature(ctx, m.Done.Signature)
+		sig, err := decodeSignature(ctx, m.Done.Signature, types.AggregateKey{})
 		if err != nil {
 			return nil, xerrors.Errorf("done failed: %v", err)
 		}
@@ -377,17 +384,22 @@ func (f msgFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error)
 	}
 
 	if m.View != nil {
+		sig, err := decodeSignature(ctx, m.View.Signature, types.SignatureKey{})
+		if err != nil {
+			return nil, xerrors.Errorf("signature: %v", err)
+		}
+
 		id := types.Digest{}
 		copy(id[:], m.View.ID)
 
-		return types.NewViewMessage(id, m.View.Leader), nil
+		return types.NewViewMessage(id, m.View.Leader, sig), nil
 	}
 
 	return nil, xerrors.New("message is empty")
 }
 
-func decodeSignature(ctx serde.Context, data []byte) (crypto.Signature, error) {
-	factory := ctx.GetFactory(types.SignatureKey{})
+func decodeSignature(ctx serde.Context, data []byte, key interface{}) (crypto.Signature, error) {
+	factory := ctx.GetFactory(key)
 
 	fac, ok := factory.(crypto.SignatureFactory)
 	if !ok {

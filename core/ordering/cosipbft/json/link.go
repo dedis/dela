@@ -87,12 +87,12 @@ func (fmt linkFormat) Decode(ctx serde.Context, data []byte) (serde.Message, err
 		return nil, xerrors.Errorf("failed to unmarshal: %v", err)
 	}
 
-	prepare, err := decodeSignature(ctx, m.PrepareSignature)
+	prepare, err := decodeSignature(ctx, m.PrepareSignature, types.AggregateKey{})
 	if err != nil {
 		return nil, xerrors.Errorf("failed to decode prepare: %v", err)
 	}
 
-	commit, err := decodeSignature(ctx, m.CommitSignature)
+	commit, err := decodeSignature(ctx, m.CommitSignature, types.AggregateKey{})
 	if err != nil {
 		return nil, xerrors.Errorf("failed to decode commit: %v", err)
 	}

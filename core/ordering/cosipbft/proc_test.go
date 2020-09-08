@@ -137,7 +137,9 @@ func TestProcessor_ViewMessage_Process(t *testing.T) {
 	proc := newProcessor()
 	proc.pbftsm = fakeSM{}
 
-	req := mino.Request{Message: types.NewViewMessage(types.Digest{}, 0)}
+	req := mino.Request{
+		Message: types.NewViewMessage(types.Digest{}, 0, fake.Signature{}),
+	}
 
 	resp, err := proc.Process(req)
 	require.NoError(t, err)
@@ -204,7 +206,9 @@ func (sm fakeSM) Expire(mino.Address) (pbft.View, error) {
 	return pbft.View{}, sm.err
 }
 
-func (sm fakeSM) Accept(pbft.View) {}
+func (sm fakeSM) Accept(pbft.View) error {
+	return nil
+}
 
 func (sm fakeSM) Watch(context.Context) <-chan pbft.State {
 	return sm.ch

@@ -107,6 +107,7 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 
 	pcparam := pbft.StateMachineParam{
 		Validation:      param.Validation,
+		Signer:          param.Cosi.GetSigner(),
 		VerifierFactory: param.Cosi.GetVerifierFactory(),
 		Blocks:          tmpl.blocks,
 		Genesis:         tmpl.genesis,
@@ -404,7 +405,9 @@ func (s *Service) doRound(ctx context.Context) error {
 				return xerrors.Errorf("pbft expire failed: %v", err)
 			}
 
-			resps, err := s.rpc.Call(ctx, types.NewViewMessage(view.ID, view.Leader), roster)
+			viewMsg := types.NewViewMessage(view.GetID(), view.GetLeader(), view.GetSignature())
+
+			resps, err := s.rpc.Call(ctx, viewMsg, roster)
 			if err != nil {
 				cancel()
 				return xerrors.Errorf("rpc failed: %v", err)

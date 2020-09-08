@@ -166,11 +166,14 @@ func TestMsgFormat_Encode(t *testing.T) {
 	_, err = format.Encode(ctx, types.NewDone(types.Digest{}, fake.NewBadSignature()))
 	require.EqualError(t, err, "failed to serialize signature: fake error")
 
-	data, err = format.Encode(ctx, types.NewViewMessage(types.Digest{}, 5))
+	data, err = format.Encode(ctx, types.NewViewMessage(types.Digest{}, 5, fake.Signature{}))
 	require.NoError(t, err)
-	require.Regexp(t, `{"View":{"Leader":5,"ID":"[^"]+"}}`, string(data))
+	require.Regexp(t, `{"View":{"Leader":5,"ID":"[^"]+","Signature":{}}}`, string(data))
 
-	_, err = format.Encode(fake.NewBadContext(), types.NewViewMessage(types.Digest{}, 0))
+	_, err = format.Encode(ctx, types.NewViewMessage(types.Digest{}, 0, fake.NewBadSignature()))
+	require.EqualError(t, err, "failed to serialize signature: fake error")
+
+	_, err = format.Encode(fake.NewBadContext(), types.NewViewMessage(types.Digest{}, 0, fake.Signature{}))
 	require.EqualError(t, err, "failed to marshal: fake error")
 }
 
@@ -180,6 +183,7 @@ func TestMsgFormat_Decode(t *testing.T) {
 	ctx := fake.NewContext()
 	ctx = serde.WithFactory(ctx, types.GenesisKey{}, types.GenesisFactory{})
 	ctx = serde.WithFactory(ctx, types.BlockKey{}, types.BlockFactory{})
+	ctx = serde.WithFactory(ctx, types.AggregateKey{}, fake.SignatureFactory{})
 	ctx = serde.WithFactory(ctx, types.SignatureKey{}, fake.SignatureFactory{})
 
 	msg, err := format.Decode(ctx, []byte(`{"Genesis":{}}`))
@@ -218,7 +222,7 @@ func TestMsgFormat_Decode(t *testing.T) {
 	require.NoError(t, err)
 	require.IsType(t, types.CommitMessage{}, msg)
 
-	badCtx = serde.WithFactory(ctx, types.SignatureKey{}, nil)
+	badCtx = serde.WithFactory(ctx, types.AggregateKey{}, nil)
 	_, err = format.Decode(badCtx, []byte(`{"Commit":{}}`))
 	require.EqualError(t, err, "commit failed: invalid signature factory '<nil>'")
 
@@ -232,6 +236,10 @@ func TestMsgFormat_Decode(t *testing.T) {
 	msg, err = format.Decode(ctx, []byte(`{"View":{}}`))
 	require.NoError(t, err)
 	require.IsType(t, types.ViewMessage{}, msg)
+
+	badCtx = serde.WithFactory(ctx, types.SignatureKey{}, nil)
+	_, err = format.Decode(badCtx, []byte(`{"View":{}}`))
+	require.EqualError(t, err, "signature: invalid signature factory '<nil>'")
 
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
 	require.EqualError(t, err, "failed to unmarshal: fake error")

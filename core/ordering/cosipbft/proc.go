@@ -116,13 +116,16 @@ func (h *processor) Process(req mino.Request) (serde.Message, error) {
 			return nil, xerrors.Errorf("pbftsm finalized failed: %v", err)
 		}
 	case types.ViewMessage:
-		view := pbft.View{
+		param := pbft.ViewParam{
 			From:   req.Address,
 			ID:     msg.GetID(),
 			Leader: msg.GetLeader(),
 		}
 
-		h.pbftsm.Accept(view)
+		err := h.pbftsm.Accept(pbft.NewView(param, msg.GetSignature()))
+		if err != nil {
+			h.logger.Warn().Err(err).Msg("view message refused")
+		}
 	default:
 		return nil, xerrors.Errorf("unsupported message of type '%T'", req.Message)
 	}

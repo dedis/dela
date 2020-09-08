@@ -566,6 +566,10 @@ type badCosi struct {
 	cosi.CollectiveSigning
 }
 
+func (c badCosi) GetSigner() crypto.Signer {
+	return fake.NewBadSigner()
+}
+
 func (c badCosi) GetPublicKeyFactory() crypto.PublicKeyFactory {
 	return fake.NewPublicKeyFactory(fake.PublicKey{})
 }

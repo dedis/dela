@@ -96,19 +96,25 @@ func TestDoneMessage_Serialize(t *testing.T) {
 }
 
 func TestViewMessage_GetID(t *testing.T) {
-	msg := NewViewMessage(Digest{1}, 0)
+	msg := NewViewMessage(Digest{1}, 0, nil)
 
 	require.Equal(t, Digest{1}, msg.GetID())
 }
 
 func TestViewMessage_GetLeader(t *testing.T) {
-	msg := NewViewMessage(Digest{}, 2)
+	msg := NewViewMessage(Digest{}, 2, nil)
 
-	require.Equal(t, 2, msg.GetLeader())
+	require.Equal(t, uint16(2), msg.GetLeader())
+}
+
+func TestViewMessage_GetSignature(t *testing.T) {
+	msg := NewViewMessage(Digest{}, 0, fake.Signature{})
+
+	require.Equal(t, fake.Signature{}, msg.GetSignature())
 }
 
 func TestViewMessage_Serialize(t *testing.T) {
-	msg := NewViewMessage(Digest{}, 3)
+	msg := NewViewMessage(Digest{}, 3, fake.Signature{})
 
 	data, err := msg.Serialize(fake.NewContext())
 	require.NoError(t, err)

@@ -61,7 +61,7 @@ func TestLinkFormat_Decode(t *testing.T) {
 	format := linkFormat{}
 
 	ctx := fake.NewContext()
-	ctx = serde.WithFactory(ctx, types.SignatureKey{}, fake.SignatureFactory{})
+	ctx = serde.WithFactory(ctx, types.AggregateKey{}, fake.SignatureFactory{})
 	ctx = serde.WithFactory(ctx, types.ChangeSetKey{}, fakeChangeSetFac{})
 	ctx = serde.WithFactory(ctx, types.BlockKey{}, types.BlockFactory{})
 
@@ -76,11 +76,11 @@ func TestLinkFormat_Decode(t *testing.T) {
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
 	require.EqualError(t, err, "failed to unmarshal: fake error")
 
-	badCtx := serde.WithFactory(ctx, types.SignatureKey{}, fake.NewBadSignatureFactory())
+	badCtx := serde.WithFactory(ctx, types.AggregateKey{}, fake.NewBadSignatureFactory())
 	_, err = format.Decode(badCtx, []byte(`{}`))
 	require.EqualError(t, err, "failed to decode prepare: factory failed: fake error")
 
-	badCtx = serde.WithFactory(ctx, types.SignatureKey{}, fake.NewBadSignatureFactoryWithDelay(1))
+	badCtx = serde.WithFactory(ctx, types.AggregateKey{}, fake.NewBadSignatureFactoryWithDelay(1))
 	_, err = format.Decode(badCtx, []byte(`{}`))
 	require.EqualError(t, err, "failed to decode commit: factory failed: fake error")
 
