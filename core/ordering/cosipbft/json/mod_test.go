@@ -185,7 +185,7 @@ func TestMsgFormat_Encode(t *testing.T) {
 	require.Regexp(t, `{"View":{"Leader":5,"ID":"[^"]+","Signature":{}}}`, string(data))
 
 	_, err = format.Encode(ctx, types.NewViewMessage(types.Digest{}, 0, fake.NewBadSignature()))
-	require.EqualError(t, err, "failed to serialize signature: fake error")
+	require.EqualError(t, err, "view: failed to serialize signature: fake error")
 
 	_, err = format.Encode(fake.NewBadContext(), types.NewViewMessage(types.Digest{}, 0, fake.Signature{}))
 	require.EqualError(t, err, "failed to marshal: fake error")

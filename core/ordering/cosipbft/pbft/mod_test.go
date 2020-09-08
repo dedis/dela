@@ -371,7 +371,7 @@ func TestStateMachine_AcceptAll(t *testing.T) {
 
 	// Only accept if there are enough views.
 	err = sm.AcceptAll([]View{})
-	require.EqualError(t, err, "not enough views")
+	require.EqualError(t, err, "not enough views: 0 <= 0")
 
 	err = sm.AcceptAll([]View{{from: fake.NewAddress(4), leader: 6}})
 	require.EqualError(t, err, "invalid view: unknown peer: fake.Address[4]")

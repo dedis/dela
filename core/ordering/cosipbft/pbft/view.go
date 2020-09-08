@@ -84,7 +84,7 @@ func (v View) Verify(pubkey crypto.PublicKey) error {
 }
 
 func (v View) bytes() []byte {
-	buffer := make([]byte, 8)
+	buffer := make([]byte, 2)
 	binary.LittleEndian.PutUint16(buffer, v.leader)
 
 	return append(buffer, v.id.Bytes()...)

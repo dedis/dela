@@ -310,7 +310,7 @@ func (f msgFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) 
 	case types.ViewMessage:
 		vm, err := encodeView(in, ctx)
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("view: %v", err)
 		}
 
 		m = MessageJSON{View: vm}

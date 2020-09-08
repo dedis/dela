@@ -320,7 +320,7 @@ func (m *pbftsm) Accept(view View) error {
 
 // AcceptAll implements pbft.StateMachine. It accepts a list of views which
 // allows a node falling behind to catch up. The list must contain enough views
-// reach the threshold otherwise it will be ignored.
+// to reach the threshold, otherwise it will be ignored.
 func (m *pbftsm) AcceptAll(views []View) error {
 	m.Lock()
 	defer m.Unlock()
@@ -331,7 +331,8 @@ func (m *pbftsm) AcceptAll(views []View) error {
 	}
 
 	if len(views) <= m.round.threshold {
-		return xerrors.New("not enough views")
+		return xerrors.Errorf("not enough views: %d <= %d",
+			len(views), m.round.threshold)
 	}
 
 	if views[0].leader == m.round.leader {
