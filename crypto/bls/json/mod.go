@@ -75,9 +75,8 @@ func (f sigFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) 
 		return nil, xerrors.Errorf("unsupported message of type '%T'", msg)
 	}
 
-	// The BLS signature cannot return an error so it is ignored.
-	// TODO: runtime assertion
-	buffer, _ := sig.MarshalBinary()
+	buffer, err := sig.MarshalBinary()
+	assert(err)
 
 	m := json.Signature{
 		Algorithm: json.Algorithm{Name: bls.Algorithm},
@@ -102,4 +101,13 @@ func (f sigFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error)
 	}
 
 	return bls.NewSignature(m.Data), nil
+}
+
+// Current implementation cannot return an error but it might change in the
+// future therefore an assertion is made to detect if it changes.
+func assert(err error) {
+	if err != nil {
+		panic("Implementation of the BLS signature is expected " +
+			"to return a nil when marshaling but an error has been found: " + err.Error())
+	}
 }
