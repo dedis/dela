@@ -11,7 +11,6 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/execution/baremetal"
 	"go.dedis.ch/dela/core/execution/baremetal/viewchange"
 	"go.dedis.ch/dela/core/ordering"
@@ -431,8 +430,8 @@ type testExec struct {
 	err error
 }
 
-func (e testExec) Execute(txn.Transaction, store.Snapshot) (execution.Result, error) {
-	return execution.Result{Accepted: true}, e.err
+func (e testExec) Execute(txn.Transaction, store.Snapshot) error {
+	return e.err
 }
 
 func makeTx(t *testing.T, nonce uint64, signer crypto.Signer) txn.Transaction {

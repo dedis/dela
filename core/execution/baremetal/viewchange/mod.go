@@ -1,7 +1,7 @@
 package viewchange
 
 import (
-	"go.dedis.ch/dela/core/execution"
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/core/execution/baremetal"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/store"
@@ -23,6 +23,7 @@ const (
 	messageStorageCorrupted = "invalid authority data in storage"
 	messageTooManyChanges   = "too many changes"
 	messageStorageFailure   = "storage failure"
+	messageDuplicate        = "duplicate in roster"
 )
 
 // Manager is an extension of a normal transaction manager to help creating view
@@ -81,32 +82,39 @@ func NewContract(key []byte, fac authority.Factory) Contract {
 // Execute implements baremetal.Contract. It looks for the roster in the
 // transaction and updates the storage if there is at most one membership
 // change.
-func (c Contract) Execute(tx txn.Transaction, snap store.Snapshot) (execution.Result, error) {
-	res := execution.Result{}
-
+func (c Contract) Execute(tx txn.Transaction, snap store.Snapshot) error {
 	roster, err := c.rosterFac.AuthorityOf(c.context, tx.GetArg(AuthorityArg))
 	if err != nil {
-		res.Message = messageArgMissing
-		return res, xerrors.Errorf("failed to decode arg: %v", err)
+		reportErr(tx, xerrors.Errorf("incoming roster: %v", err))
+
+		return xerrors.Errorf(messageArgMissing)
 	}
 
 	currData, err := snap.Get(c.rosterKey)
 	if err != nil {
-		res.Message = messageStorageEmpty
-		return res, xerrors.Errorf("failed to read roster: %v", err)
+		reportErr(tx, xerrors.Errorf("reading store: %v", err))
+
+		return xerrors.Errorf(messageStorageEmpty)
 	}
 
 	curr, err := c.rosterFac.AuthorityOf(c.context, currData)
 	if err != nil {
-		res.Message = messageStorageCorrupted
-		return res, xerrors.Errorf("failed to decode roster: %v", err)
+		reportErr(tx, xerrors.Errorf("stored roster: %v", err))
+
+		return xerrors.Errorf(messageStorageCorrupted)
 	}
 
 	changeset := curr.Diff(roster)
 
 	if changeset.NumChanges() > 1 {
-		res.Message = messageTooManyChanges
-		return res, xerrors.Errorf("only one change is expected but found %d", changeset.NumChanges())
+		return xerrors.Errorf(messageTooManyChanges)
+	}
+
+	for _, addr := range changeset.GetNewAddresses() {
+		_, index := curr.GetPublicKey(addr)
+		if index >= 0 {
+			return xerrors.Errorf("%s: %v", messageDuplicate, addr)
+		}
 	}
 
 	// TODO: check the number of changes per batch instead of transaction wide.
@@ -114,11 +122,19 @@ func (c Contract) Execute(tx txn.Transaction, snap store.Snapshot) (execution.Re
 
 	err = snap.Set(c.rosterKey, tx.GetArg(AuthorityArg))
 	if err != nil {
-		res.Message = messageStorageFailure
-		return res, xerrors.Errorf("failed to store roster: %v", err)
+		reportErr(tx, xerrors.Errorf("writing store: %v", err))
+
+		return xerrors.Errorf(messageStorageFailure)
 	}
 
-	res.Accepted = true
+	return nil
+}
 
-	return res, nil
+// reportErr prints a log with the actual error while the transaction will
+// contain a simplified explanation.
+func reportErr(tx txn.Transaction, err error) {
+	dela.Logger.Warn().
+		Hex("ID", tx.GetID()).
+		Err(err).
+		Msg("transction refused")
 }

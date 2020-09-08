@@ -34,38 +34,30 @@ func TestContract_Execute(t *testing.T) {
 
 	contract := NewContract([]byte("abc"), fac)
 
-	res, err := contract.Execute(makeTx(t, "[]"), fakeStore{})
+	err := contract.Execute(makeTx(t, "[]"), fakeStore{})
 	require.NoError(t, err)
-	require.True(t, res.Accepted)
 
 	contract.rosterFac = badRosterFac{}
-	res, err = contract.Execute(makeTx(t, "[]"), fakeStore{})
-	require.EqualError(t, err, "failed to decode arg: oops")
-	require.False(t, res.Accepted)
-	require.Equal(t, messageArgMissing, res.Message)
+	err = contract.Execute(makeTx(t, "[]"), fakeStore{})
+	require.EqualError(t, err, messageArgMissing)
 
 	contract.rosterFac = fac
-	res, err = contract.Execute(makeTx(t, "[]"), fakeStore{errGet: xerrors.New("oops")})
-	require.EqualError(t, err, "failed to read roster: oops")
-	require.False(t, res.Accepted)
-	require.Equal(t, messageStorageEmpty, res.Message)
+	err = contract.Execute(makeTx(t, "[]"), fakeStore{errGet: xerrors.New("oops")})
+	require.EqualError(t, err, messageStorageEmpty)
 
 	contract.rosterFac = badRosterFac{counter: fake.NewCounter(1)}
-	res, err = contract.Execute(makeTx(t, "[]"), fakeStore{})
-	require.EqualError(t, err, "failed to decode roster: oops")
-	require.False(t, res.Accepted)
-	require.Equal(t, messageStorageCorrupted, res.Message)
+	err = contract.Execute(makeTx(t, "[]"), fakeStore{})
+	require.EqualError(t, err, messageStorageCorrupted)
 
 	contract.rosterFac = fac
-	res, err = contract.Execute(makeTx(t, "[{},{}]"), fakeStore{})
-	require.EqualError(t, err, "only one change is expected but found 2")
-	require.False(t, res.Accepted)
-	require.Equal(t, messageTooManyChanges, res.Message)
+	err = contract.Execute(makeTx(t, "[{},{},{}]"), fakeStore{})
+	require.EqualError(t, err, messageTooManyChanges)
 
-	res, err = contract.Execute(makeTx(t, "[]"), fakeStore{errSet: xerrors.New("oops")})
-	require.EqualError(t, err, "failed to store roster: oops")
-	require.False(t, res.Accepted)
-	require.Equal(t, messageStorageFailure, res.Message)
+	err = contract.Execute(makeTx(t, "[{},{}]"), fakeStore{})
+	require.EqualError(t, err, "duplicate in roster: fake.Address[0]")
+
+	err = contract.Execute(makeTx(t, "[]"), fakeStore{errSet: xerrors.New("oops")})
+	require.EqualError(t, err, messageStorageFailure)
 }
 
 // -----------------------------------------------------------------------------
@@ -86,7 +78,7 @@ type fakeStore struct {
 }
 
 func (snap fakeStore) Get(key []byte) ([]byte, error) {
-	return []byte("[]"), snap.errGet
+	return []byte("[{}]"), snap.errGet
 }
 
 func (snap fakeStore) Set(key, value []byte) error {

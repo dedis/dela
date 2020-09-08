@@ -15,7 +15,7 @@ const (
 // Contract is the interface to implement to register a smart contract that will
 // be executed natively.
 type Contract interface {
-	Execute(txn.Transaction, store.Snapshot) (execution.Result, error)
+	Execute(txn.Transaction, store.Snapshot) error
 }
 
 // BareMetal is an execution service for packaged applications. Those
@@ -50,9 +50,14 @@ func (bm *BareMetal) Execute(tx txn.Transaction, snap store.Snapshot) (execution
 		return execution.Result{}, xerrors.Errorf("unknown contract '%s'", name)
 	}
 
-	res, err := contract.Execute(tx, snap)
+	res := execution.Result{
+		Accepted: true,
+	}
+
+	err := contract.Execute(tx, snap)
 	if err != nil {
-		return res, xerrors.Errorf("failed to execute: %v", err)
+		res.Accepted = false
+		res.Message = err.Error()
 	}
 
 	return res, nil
