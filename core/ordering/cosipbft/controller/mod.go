@@ -11,8 +11,8 @@ import (
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/store/hashtree/binprefix"
 	"go.dedis.ch/dela/core/store/kv"
-	"go.dedis.ch/dela/core/txn/anon"
 	poolimpl "go.dedis.ch/dela/core/txn/pool/gossip"
+	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/cosi/flatcosi"
 	"go.dedis.ch/dela/crypto/bls"
@@ -63,6 +63,10 @@ func (minimal) SetCommands(builder node.Builder) {
 			Required: true,
 			Usage:    "base64 description of the member to add",
 		},
+		cli.DurationFlag{
+			Name:  "wait",
+			Usage: "wait for the transaction to be processed",
+		},
 	)
 	sub.SetAction(builder.MakeAction(rosterAddAction{}))
 }
@@ -81,7 +85,7 @@ func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
 	rosterFac := authority.NewFactory(m.GetAddressFactory(), cosi.GetPublicKeyFactory())
 	cosipbft.RegisterRosterContract(exec, rosterFac)
 
-	txFac := anon.NewTransactionFactory()
+	txFac := signed.NewTransactionFactory()
 	vs := simple.NewService(exec, txFac)
 
 	pool, err := poolimpl.NewPool(gossip.NewFlat(m, txFac))
@@ -111,6 +115,7 @@ func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
 	inj.Inject(srvc)
 	inj.Inject(cosi)
 	inj.Inject(pool)
+	inj.Inject(vs)
 
 	return nil
 }

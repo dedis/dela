@@ -10,8 +10,9 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/txn"
-	"go.dedis.ch/dela/core/txn/anon"
 	"go.dedis.ch/dela/core/txn/pool"
+	"go.dedis.ch/dela/core/txn/signed"
+	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/gossip"
@@ -191,7 +192,8 @@ func TestPool_ListenRumors(t *testing.T) {
 // Utility functions
 
 func makeTx(t *testing.T, nonce uint64) txn.Transaction {
-	tx, err := anon.NewTransaction(nonce)
+	signer := bls.NewSigner()
+	tx, err := signed.NewTransaction(nonce, signer.GetPublicKey())
 	require.NoError(t, err)
 	return tx
 }
@@ -208,7 +210,7 @@ func makeRoster(t *testing.T, n int) (mino.Players, []*Pool) {
 
 		addrs[i] = m.GetAddress()
 
-		g := gossip.NewFlat(m, anon.NewTransactionFactory())
+		g := gossip.NewFlat(m, signed.NewTransactionFactory())
 
 		pool, err := NewPool(g)
 		require.NoError(t, err)

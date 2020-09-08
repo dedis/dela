@@ -15,10 +15,13 @@ import (
 	tree "go.dedis.ch/dela/core/store/hashtree/binprefix"
 	"go.dedis.ch/dela/core/store/kv"
 	"go.dedis.ch/dela/core/txn"
-	"go.dedis.ch/dela/core/txn/anon"
 	pool "go.dedis.ch/dela/core/txn/pool/mem"
+	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/core/validation"
 	val "go.dedis.ch/dela/core/validation/simple"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/crypto/bls"
+	"go.dedis.ch/dela/internal/testing/fake"
 	"golang.org/x/xerrors"
 )
 
@@ -32,7 +35,7 @@ func TestService_Basic(t *testing.T) {
 	pool := pool.NewPool()
 	srvc := NewService(
 		pool,
-		val.NewService(exec, anon.NewTransactionFactory()),
+		val.NewService(exec, signed.NewTransactionFactory()),
 		tree,
 	)
 
@@ -46,9 +49,11 @@ func TestService_Basic(t *testing.T) {
 
 	evts := srvc.Watch(ctx)
 
+	signer := bls.NewSigner()
+
 	// 3. Send a transaction to the pool. It should be detected by the ordering
 	// service and start a new block.
-	require.NoError(t, pool.Add(makeTx(t, 0)))
+	require.NoError(t, pool.Add(makeTx(t, 0, signer)))
 
 	evt := <-evts
 	require.Equal(t, uint64(1), evt.Index)
@@ -59,7 +64,7 @@ func TestService_Basic(t *testing.T) {
 
 	// 4. Send another transaction to the pool. This time it should creates a
 	// block appended to the previous one.
-	require.NoError(t, pool.Add(makeTx(t, 1)))
+	require.NoError(t, pool.Add(makeTx(t, 1, signer)))
 
 	evt = <-evts
 	require.Equal(t, uint64(2), evt.Index)
@@ -69,7 +74,7 @@ func TestService_Listen(t *testing.T) {
 	tree, clean := makeTree(t)
 	defer clean()
 
-	vs := val.NewService(baremetal.NewExecution(), anon.NewTransactionFactory())
+	vs := val.NewService(baremetal.NewExecution(), signed.NewTransactionFactory())
 
 	pool := pool.NewPool()
 	srvc := NewService(pool, vs, tree)
@@ -86,7 +91,7 @@ func TestService_Listen(t *testing.T) {
 	err = srvc.Stop()
 	require.EqualError(t, err, "service not started")
 
-	pool.Add(makeTx(t, 0))
+	pool.Add(makeTx(t, 0, fake.NewSigner()))
 	srvc = NewService(pool, badValidation{}, tree)
 	err = srvc.Listen()
 	require.NoError(t, err)
@@ -134,12 +139,13 @@ func makeTree(t *testing.T) (hashtree.Tree, func()) {
 	return tree, func() { os.RemoveAll(dir) }
 }
 
-func makeTx(t *testing.T, nonce uint64) txn.Transaction {
-	tx, err := anon.NewTransaction(
+func makeTx(t *testing.T, nonce uint64, signer crypto.Signer) txn.Transaction {
+	tx, err := signed.NewTransaction(
 		nonce,
-		anon.WithArg("key", []byte("ping")),
-		anon.WithArg("value", []byte("pong")),
-		anon.WithArg(baremetal.ContractArg, []byte(testContractName)),
+		signer.GetPublicKey(),
+		signed.WithArg("key", []byte("ping")),
+		signed.WithArg("value", []byte("pong")),
+		signed.WithArg(baremetal.ContractArg, []byte(testContractName)),
 	)
 	require.NoError(t, err)
 

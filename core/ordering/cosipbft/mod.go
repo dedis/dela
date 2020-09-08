@@ -235,6 +235,12 @@ func (s *Service) GetProof(key []byte) (ordering.Proof, error) {
 	return newProof(path, chain), nil
 }
 
+// GetStore implements ordering.Service. It returns the current tree as a
+// read-only storage.
+func (s *Service) GetStore() store.Readable {
+	return s.tree.Get()
+}
+
 // GetRoster returns the current roster of the service.
 func (s *Service) GetRoster() (authority.Authority, error) {
 	return s.getCurrentRoster()
@@ -249,6 +255,7 @@ func (s *Service) Watch(ctx context.Context) <-chan ordering.Event {
 	go func() {
 		<-ctx.Done()
 		s.watcher.Remove(obs)
+		close(obs.ch)
 	}()
 
 	return obs.ch
@@ -286,7 +293,8 @@ func (s *Service) watchBlocks() {
 		}
 
 		event := ordering.Event{
-			Index: link.GetBlock().GetIndex(),
+			Index:        link.GetBlock().GetIndex(),
+			Transactions: link.GetBlock().GetData().GetTransactionResults(),
 		}
 
 		// 3. Notify the main loop that a new block has been created, but ignore

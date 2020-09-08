@@ -49,17 +49,26 @@ func (alg Algorithm) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
-// PublicKeyFactory is a public key factory for commonly known algorithms.
+// PublicKeyFactory is a redefinition of the crypto public key factory to
+// exclude some functions that are incompatible with the logic of a common
+// factory which requires specific serialization.
+type PublicKeyFactory interface {
+	serde.Factory
+
+	PublicKeyOf(serde.Context, []byte) (crypto.PublicKey, error)
+}
+
+// publicKeyFac is a public key factory for commonly known algorithms.
 //
-// - implements crypto.PublicKeyFactory
+// - implements crypto.publicKeyFac
 // - implements serde.Factory
-type PublicKeyFactory struct {
+type publicKeyFac struct {
 	factories map[string]crypto.PublicKeyFactory
 }
 
 // NewPublicKeyFactory returns a new instance of the common public key factory.
 func NewPublicKeyFactory() PublicKeyFactory {
-	factory := PublicKeyFactory{
+	factory := publicKeyFac{
 		factories: make(map[string]crypto.PublicKeyFactory),
 	}
 
@@ -70,13 +79,13 @@ func NewPublicKeyFactory() PublicKeyFactory {
 
 // RegisterAlgorithm registers the factory for the algorithm. It will override
 // an already existing key.
-func (f PublicKeyFactory) RegisterAlgorithm(algo string, factory crypto.PublicKeyFactory) {
+func (f publicKeyFac) RegisterAlgorithm(algo string, factory crypto.PublicKeyFactory) {
 	f.factories[algo] = factory
 }
 
 // Deserialize implements serde.Factory. It looks up the format and returns the
 // public key of the data if appropriate, otherwise an error.
-func (f PublicKeyFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+func (f publicKeyFac) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := algFormats.Get(ctx.GetFormat())
 
 	m, err := format.Decode(ctx, data)
@@ -99,7 +108,7 @@ func (f PublicKeyFactory) Deserialize(ctx serde.Context, data []byte) (serde.Mes
 
 // PublicKeyOf implements crypto.PublicKeyFactory. It returns the public key of
 // the data if appropriate, otherwise an error.
-func (f PublicKeyFactory) PublicKeyOf(ctx serde.Context, data []byte) (crypto.PublicKey, error) {
+func (f publicKeyFac) PublicKeyOf(ctx serde.Context, data []byte) (crypto.PublicKey, error) {
 	msg, err := f.Deserialize(ctx, data)
 	if err != nil {
 		return nil, err

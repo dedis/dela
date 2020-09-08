@@ -23,10 +23,10 @@ import (
 	"go.dedis.ch/dela/core/store/hashtree/binprefix"
 	"go.dedis.ch/dela/core/store/kv"
 	"go.dedis.ch/dela/core/txn"
-	"go.dedis.ch/dela/core/txn/anon"
 	"go.dedis.ch/dela/core/txn/pool"
 	poolimpl "go.dedis.ch/dela/core/txn/pool/gossip"
 	"go.dedis.ch/dela/core/txn/pool/mem"
+	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/cosi"
@@ -46,6 +46,8 @@ func TestService_Basic(t *testing.T) {
 	srvs, ro, clean := makeAuthority(t, 5)
 	defer clean()
 
+	signer := srvs[0].signer
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -56,25 +58,25 @@ func TestService_Basic(t *testing.T) {
 
 	events := srvs[2].service.Watch(ctx)
 
-	err = srvs[0].pool.Add(makeTx(t, 0))
+	err = srvs[0].pool.Add(makeTx(t, 0, signer))
 	require.NoError(t, err)
 
 	evt := waitEvent(t, events)
 	require.Equal(t, uint64(1), evt.Index)
 
-	err = srvs[1].pool.Add(makeTx(t, 1))
+	err = srvs[1].pool.Add(makeTx(t, 1, signer))
 	require.NoError(t, err)
 
 	evt = waitEvent(t, events)
 	require.Equal(t, uint64(2), evt.Index)
 
-	err = srvs[1].pool.Add(makeRosterTx(t, 2, ro))
+	err = srvs[1].pool.Add(makeRosterTx(t, 2, ro, signer))
 	require.NoError(t, err)
 
 	evt = waitEvent(t, events)
 	require.Equal(t, uint64(3), evt.Index)
 
-	err = srvs[1].pool.Add(makeTx(t, 3))
+	err = srvs[1].pool.Add(makeTx(t, 3, signer))
 	require.NoError(t, err)
 
 	evt = waitEvent(t, events)
@@ -95,7 +97,7 @@ func TestService_New(t *testing.T) {
 		Mino:       fake.Mino{},
 		Cosi:       flatcosi.NewFlat(fake.Mino{}, fake.NewAggregateSigner()),
 		Tree:       fakeTree{},
-		Validation: simple.NewService(nil, anon.NewTransactionFactory()),
+		Validation: simple.NewService(nil, nil),
 	}
 
 	srvc, err := NewService(param, WithHashFactory(fake.NewHashFactory(&fake.Hash{})))
@@ -212,7 +214,7 @@ func TestService_DoRound(t *testing.T) {
 	err := srvc.doRound(ctx)
 	require.NoError(t, err)
 
-	srvc.pool.Add(makeTx(t, 0))
+	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
 
 	go func() {
 		ch <- pbft.InitialState
@@ -287,7 +289,7 @@ func TestService_DoPBFT(t *testing.T) {
 
 	// This time the gathering succeeds.
 	ctx = context.Background()
-	srvc.pool.Add(makeTx(t, 0))
+	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
 	err = srvc.doPBFT(ctx)
 	require.NoError(t, err)
 
@@ -387,6 +389,13 @@ func TestService_GetProof(t *testing.T) {
 	require.EqualError(t, err, "reading chain: store is empty")
 }
 
+func TestService_GetStore(t *testing.T) {
+	srvc := &Service{processor: newProcessor()}
+	srvc.tree = blockstore.NewTreeCache(fakeTree{})
+
+	require.IsType(t, fakeTree{}, srvc.GetStore())
+}
+
 func TestService_GetRoster(t *testing.T) {
 	srvc := &Service{processor: newProcessor()}
 	srvc.tree = blockstore.NewTreeCache(fakeTree{})
@@ -413,6 +422,7 @@ type testNode struct {
 	pool    pool.Pool
 	db      kv.DB
 	dbpath  string
+	signer  crypto.Signer
 }
 
 const testContractName = "abc"
@@ -425,20 +435,25 @@ func (e testExec) Execute(txn.Transaction, store.Snapshot) (execution.Result, er
 	return execution.Result{Accepted: true}, e.err
 }
 
-func makeTx(t *testing.T, nonce uint64) txn.Transaction {
-	tx, err := anon.NewTransaction(nonce, anon.WithArg(baremetal.ContractArg, []byte(testContractName)))
+func makeTx(t *testing.T, nonce uint64, signer crypto.Signer) txn.Transaction {
+	opts := []signed.TransactionOption{
+		signed.WithArg(baremetal.ContractArg, []byte(testContractName)),
+	}
+
+	tx, err := signed.NewTransaction(nonce, signer.GetPublicKey(), opts...)
 	require.NoError(t, err)
 	return tx
 }
 
-func makeRosterTx(t *testing.T, nonce uint64, roster authority.Authority) txn.Transaction {
+func makeRosterTx(t *testing.T, nonce uint64, roster authority.Authority, signer crypto.Signer) txn.Transaction {
 	data, err := roster.Serialize(json.NewContext())
 	require.NoError(t, err)
 
-	tx, err := anon.NewTransaction(
+	tx, err := signed.NewTransaction(
 		nonce,
-		anon.WithArg(baremetal.ContractArg, []byte(viewchange.ContractName)),
-		anon.WithArg(viewchange.AuthorityArg, data),
+		signer.GetPublicKey(),
+		signed.WithArg(baremetal.ContractArg, []byte(viewchange.ContractName)),
+		signed.WithArg(viewchange.AuthorityArg, data),
 	)
 	require.NoError(t, err)
 
@@ -479,7 +494,9 @@ func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()
 		db, err := kv.New(filepath.Join(dir, "test.db"))
 		require.NoError(t, err)
 
-		pool, err := poolimpl.NewPool(gossip.NewFlat(m, anon.NewTransactionFactory()))
+		txFac := signed.NewTransactionFactory()
+
+		pool, err := poolimpl.NewPool(gossip.NewFlat(m, txFac))
 		require.NoError(t, err)
 
 		tree := binprefix.NewMerkleTree(db, binprefix.Nonce{})
@@ -490,7 +507,7 @@ func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()
 		rosterFac := authority.NewFactory(m.GetAddressFactory(), c.GetPublicKeyFactory())
 		RegisterRosterContract(exec, rosterFac)
 
-		vs := simple.NewService(exec, anon.NewTransactionFactory())
+		vs := simple.NewService(exec, txFac)
 
 		param := ServiceParam{
 			Mino:       m,
@@ -505,13 +522,14 @@ func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()
 		require.NoError(t, err)
 
 		// Disable logs.
-		srv.logger = srv.logger.Level(zerolog.NoLevel)
+		srv.logger = srv.logger.Level(zerolog.ErrorLevel)
 
 		nodes[i] = testNode{
 			service: srv,
 			pool:    pool,
 			db:      db,
 			dbpath:  dir,
+			signer:  c.GetSigner(),
 		}
 	}
 

@@ -9,7 +9,7 @@ import (
 	_ "go.dedis.ch/dela/core/ordering/cosipbft/authority/json"
 	_ "go.dedis.ch/dela/core/ordering/cosipbft/blocksync/json"
 	_ "go.dedis.ch/dela/core/ordering/cosipbft/json"
-	_ "go.dedis.ch/dela/core/txn/anon/json"
+	_ "go.dedis.ch/dela/core/txn/signed/json"
 	_ "go.dedis.ch/dela/core/validation/simple/json"
 	_ "go.dedis.ch/dela/cosi/json"
 	_ "go.dedis.ch/dela/crypto/bls/json"

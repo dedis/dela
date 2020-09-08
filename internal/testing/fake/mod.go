@@ -430,6 +430,11 @@ func (pk PublicKey) MarshalBinary() ([]byte, error) {
 	return []byte("PK"), pk.err
 }
 
+// MarshalText implements encoding.TextMarshaler.
+func (pk PublicKey) MarshalText() ([]byte, error) {
+	return pk.MarshalBinary()
+}
+
 // Serialize implements serde.Message.
 func (pk PublicKey) Serialize(serde.Context) ([]byte, error) {
 	return []byte(`{}`), pk.err

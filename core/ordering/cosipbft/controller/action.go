@@ -1,16 +1,18 @@
 package controller
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
 	"strings"
+	"time"
 
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/core/execution/baremetal/viewchange"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
-	"go.dedis.ch/dela/core/txn/anon"
+	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/pool"
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto"
@@ -148,11 +150,14 @@ func (rosterAddAction) Execute(ctx node.Context) error {
 	cset := authority.NewChangeSet()
 	cset.Add(addr, pubkey)
 
-	mgr := viewchange.NewManager(anon.NewManager())
-
-	tx, err := mgr.Make(roster.Apply(cset))
+	mgr, err := makeManager(ctx)
 	if err != nil {
-		return xerrors.Errorf("transaction manager: %v", err)
+		return xerrors.Errorf("txn manager: %v", err)
+	}
+
+	tx, err := viewchange.NewManager(mgr).Make(roster.Apply(cset))
+	if err != nil {
+		return xerrors.Errorf("transaction: %v", err)
 	}
 
 	var p pool.Pool
@@ -166,9 +171,54 @@ func (rosterAddAction) Execute(ctx node.Context) error {
 		return xerrors.Errorf("failed to add transaction: %v", err)
 	}
 
-	// TODO: listen for the new block and check the tx.
+	wait := ctx.Flags.Duration("wait")
+	if wait > 0 {
+		err := waitTx(srvc, wait, tx)
+		if err != nil {
+			return xerrors.Errorf("wait: %v", err)
+		}
+	}
 
 	return nil
+}
+
+func waitTx(srvc Service, wait time.Duration, tx txn.Transaction) error {
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
+	defer cancel()
+
+	events := srvc.Watch(ctx)
+
+	for event := range events {
+		for _, res := range event.Transactions {
+			if bytes.Equal(res.GetTransaction().GetID(), tx.GetID()) {
+				accepted, msg := res.GetStatus()
+				if !accepted {
+					return xerrors.Errorf("transaction refused: %s", msg)
+				}
+
+				return nil
+			}
+		}
+	}
+
+	return xerrors.New("transaction not found after timeout")
+}
+
+func makeManager(ctx node.Context) (txn.Manager, error) {
+	var mgr txn.Manager
+	err := ctx.Injector.Resolve(&mgr)
+	if err != nil {
+		return nil, xerrors.Errorf("injector: %v", err)
+	}
+
+	// Synchronize the manager with the latest state of the chain so that it can
+	// create valid transactions.
+	err = mgr.Sync()
+	if err != nil {
+		return nil, xerrors.Errorf("sync: %v", err)
+	}
+
+	return mgr, nil
 }
 
 func decodeMember(ctx node.Context, str string) (mino.Address, crypto.PublicKey, error) {

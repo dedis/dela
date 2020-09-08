@@ -18,6 +18,7 @@ type InMemory struct {
 	sync.Mutex
 	blocks  []types.BlockLink
 	watcher core.Observable
+	withTx  bool
 }
 
 // NewInMemory returns a new empty in-memory block store.
@@ -52,7 +53,11 @@ func (s *InMemory) Store(link types.BlockLink) error {
 
 	s.blocks = append(s.blocks, link)
 
-	s.watcher.Notify(link)
+	if !s.withTx {
+		// When the store is using a database transaction, it will delay the
+		// notification until the commit.
+		s.watcher.Notify(link)
+	}
 
 	return nil
 }
@@ -139,12 +144,22 @@ func (s *InMemory) WithTx(txn store.Transaction) BlockStore {
 	store := &InMemory{
 		blocks:  append([]types.BlockLink{}, s.blocks...),
 		watcher: s.watcher,
+		withTx:  true,
 	}
+
+	from := len(store.blocks)
 
 	txn.OnCommit(func() {
 		s.Lock()
 		s.blocks = store.blocks
+		s.withTx = false
+
+		newBlocks := append([]types.BlockLink{}, s.blocks[from:]...)
 		s.Unlock()
+
+		for _, link := range newBlocks {
+			s.watcher.Notify(link)
+		}
 	})
 
 	return store

@@ -42,7 +42,7 @@ func TestAlgorithm_Serialize(t *testing.T) {
 }
 
 func TestPublicKeyFactory_RegisterAlgorithm(t *testing.T) {
-	factory := NewPublicKeyFactory()
+	factory := NewPublicKeyFactory().(publicKeyFac)
 
 	// Check passive registrations.
 	require.Len(t, factory.factories, 1)
@@ -52,7 +52,7 @@ func TestPublicKeyFactory_RegisterAlgorithm(t *testing.T) {
 }
 
 func TestPublicKeyFactory_Deserialize(t *testing.T) {
-	factory := NewPublicKeyFactory()
+	factory := NewPublicKeyFactory().(publicKeyFac)
 	factory.RegisterAlgorithm(testAlgorithm, fake.PublicKeyFactory{})
 
 	msg, err := factory.Deserialize(fake.NewContext(), nil)
@@ -65,13 +65,13 @@ func TestPublicKeyFactory_Deserialize(t *testing.T) {
 	_, err = factory.Deserialize(fake.NewContextWithFormat(serde.Format("BAD_TYPE")), nil)
 	require.EqualError(t, err, "invalid message of type 'fake.Message'")
 
-	factory = NewPublicKeyFactory()
+	factory = NewPublicKeyFactory().(publicKeyFac)
 	_, err = factory.Deserialize(fake.NewContext(), nil)
 	require.EqualError(t, err, "unknown algorithm 'fake'")
 }
 
 func TestPublicKeyFactory_PublicKeyOf(t *testing.T) {
-	factory := NewPublicKeyFactory()
+	factory := NewPublicKeyFactory().(publicKeyFac)
 	factory.RegisterAlgorithm(testAlgorithm, fake.PublicKeyFactory{})
 
 	pk, err := factory.PublicKeyOf(fake.NewContext(), nil)

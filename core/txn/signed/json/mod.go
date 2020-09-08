@@ -1,20 +1,24 @@
 package json
 
 import (
-	"go.dedis.ch/dela/core/txn/anon"
+	"encoding/json"
+
+	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/crypto/common"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
 func init() {
-	anon.RegisterTransactionFormat(serde.FormatJSON, txFormat{})
+	signed.RegisterTransactionFormat(serde.FormatJSON, txFormat{})
 }
 
 // TransactionJSON is the JSON message of a transaction.
 type TransactionJSON struct {
-	Nonce uint64
-	Args  map[string][]byte
+	Nonce     uint64
+	Args      map[string][]byte
+	PublicKey json.RawMessage
 }
 
 // TxFormat is the JSON format engine for transactions.
@@ -27,7 +31,7 @@ type txFormat struct {
 // Encode implements serde.FormatEngine. It returns the JSON data of the
 // provided transaction if appropriate, otherwise it returns an error.
 func (fmt txFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
-	tx, ok := msg.(anon.Transaction)
+	tx, ok := msg.(signed.Transaction)
 	if !ok {
 		return nil, xerrors.Errorf("unsupported message of type '%T'", msg)
 	}
@@ -37,9 +41,15 @@ func (fmt txFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error)
 		args[arg] = tx.GetArg(arg)
 	}
 
+	pubkey, err := tx.GetIdentity().Serialize(ctx)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to encode public key: %v", err)
+	}
+
 	m := TransactionJSON{
-		Nonce: tx.GetNonce(),
-		Args:  args,
+		Nonce:     tx.GetNonce(),
+		Args:      args,
+		PublicKey: pubkey,
 	}
 
 	data, err := ctx.Marshal(m)
@@ -59,16 +69,28 @@ func (fmt txFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error
 		return nil, xerrors.Errorf("failed to unmarshal: %v", err)
 	}
 
-	args := make([]anon.TransactionOption, 0, len(m.Args)+1)
+	fac := ctx.GetFactory(signed.PublicKeyFac{})
+
+	factory, ok := fac.(common.PublicKeyFactory)
+	if !ok {
+		return nil, xerrors.Errorf("invalid public key factory '%T'", fac)
+	}
+
+	pubkey, err := factory.PublicKeyOf(ctx, m.PublicKey)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to decode public key: %v", err)
+	}
+
+	args := make([]signed.TransactionOption, 0, len(m.Args)+1)
 	for key, value := range m.Args {
-		args = append(args, anon.WithArg(key, value))
+		args = append(args, signed.WithArg(key, value))
 	}
 
 	if fmt.hashFactory != nil {
-		args = append(args, anon.WithHashFactory(fmt.hashFactory))
+		args = append(args, signed.WithHashFactory(fmt.hashFactory))
 	}
 
-	tx, err := anon.NewTransaction(m.Nonce, args...)
+	tx, err := signed.NewTransaction(m.Nonce, pubkey, args...)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create tx: %v", err)
 	}
