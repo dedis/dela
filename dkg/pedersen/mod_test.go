@@ -101,7 +101,7 @@ func TestPedersen_Decrypt(t *testing.T) {
 	actor.rpc = rpc
 
 	_, err = actor.Decrypt(suite.Point(), suite.Point())
-	require.EqualError(t, err, "got unexpected reply, expected a decrypt reply but got: <nil>")
+	require.EqualError(t, err, "got unexpected reply, expected types.DecryptReply but got: <nil>")
 
 	rpc = fake.NewStreamRPC(fake.NewReceiver(types.DecryptReply{I: -1, V: suite.Point()}), fake.Sender{})
 	actor.rpc = rpc
@@ -126,12 +126,12 @@ func TestPedersen_Scenario(t *testing.T) {
 	// Use with MINO_TRAFFIC=log
 	// minogrpc.LogItems = false
 	// minogrpc.LogEvent = false
-	// defer func() {
-	// minogrpc.SaveItems("graph.dot", true, false)
-	// 	minogrpc.SaveEvents("events.dot")
-	// }()
+	defer func() {
+		// minogrpc.SaveItems("graph.dot", true, false)
+		// minogrpc.SaveEvents("events.dot")
+	}()
 
-	n := 10
+	n := 8
 
 	minos := make([]mino.Mino, n)
 	dkgs := make([]dkg.DKG, n)
@@ -141,7 +141,7 @@ func TestPedersen_Scenario(t *testing.T) {
 	for i := 0; i < n; i++ {
 
 		port := uint16(2000 + i)
-		minogrpc, err := minogrpc.NewMinogrpc("127.0.0.1", port, tree.NewRouter(memship, 3, minogrpc.AddressFactory{}))
+		minogrpc, err := minogrpc.NewMinogrpc("127.0.0.1", port, tree.NewRouter(3, minogrpc.AddressFactory{}))
 		require.NoError(t, err)
 
 		defer minogrpc.GracefulClose()

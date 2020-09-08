@@ -2,6 +2,7 @@ package types
 
 import (
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/router"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
@@ -21,7 +22,7 @@ type Packet struct {
 	Source  mino.Address
 	Dest    []mino.Address
 	Message []byte
-	Seed    int64
+	Depth   int
 }
 
 // GetSource implements router.Packet
@@ -35,13 +36,32 @@ func (p Packet) GetDestination() []mino.Address {
 }
 
 // GetMessage implements router.Packet
-func (p Packet) GetMessage(ctx serde.Context, f serde.Factory) (serde.Message, error) {
-	msg, err := f.Deserialize(ctx, p.Message)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to deserialize message: %v", err)
+func (p Packet) GetMessage() []byte {
+	return p.Message
+}
+
+// Slice implements router.Packet
+func (p *Packet) Slice(addr mino.Address) router.Packet {
+	removed := false
+
+	// in reverse order to remove from the slice "in place"
+	for i := len(p.Dest) - 1; i >= 0; i-- {
+		if p.Dest[i].Equal(addr) {
+			p.Dest = append(p.Dest[:i], p.Dest[i+1:]...)
+			removed = true
+		}
 	}
 
-	return msg, nil
+	if !removed {
+		return nil
+	}
+
+	return &Packet{
+		Source:  p.Source,
+		Dest:    []mino.Address{addr},
+		Message: p.Message,
+		Depth:   p.Depth,
+	}
 }
 
 // Serialize implements serde.Message
@@ -71,6 +91,21 @@ func NewPacketFactory(f mino.AddressFactory) PacketFactory {
 	return PacketFactory{
 		addrFactory: f,
 	}
+}
+
+// PacketOf implements router.PacketFactory
+func (f PacketFactory) PacketOf(ctx serde.Context, data []byte) (router.Packet, error) {
+	msg, err := f.Deserialize(ctx, data)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to deserialize packet: %v", err)
+	}
+
+	packet, ok := msg.(Packet)
+	if !ok {
+		return nil, xerrors.Errorf("expected to find type '%T', but found '%T'", packet, msg)
+	}
+
+	return &packet, nil
 }
 
 // Deserialize implements serde.Factory

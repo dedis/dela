@@ -47,7 +47,7 @@ func (f packetFormat) Encode(ctx serde.Context, message serde.Message) ([]byte, 
 		Source:  source,
 		Dest:    dest,
 		Message: packet.Message,
-		Seed:    packet.Seed,
+		Depth:   packet.Depth,
 	}
 
 	data, err := ctx.Marshal(p)
@@ -85,7 +85,7 @@ func (f packetFormat) Decode(ctx serde.Context, data []byte) (serde.Message, err
 		Source:  source,
 		Dest:    dest,
 		Message: p.Message,
-		Seed:    p.Seed,
+		Depth:   p.Depth,
 	}
 
 	return packet, nil
@@ -96,5 +96,5 @@ type Packet struct {
 	Source  []byte
 	Dest    [][]byte
 	Message []byte
-	Seed    int64
+	Depth   int
 }

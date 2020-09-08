@@ -103,7 +103,7 @@ type treeNode struct {
 
 func (n treeNode) Display(out io.Writer) {
 	fmt.Fprintf(out, "Node[%s-index[%d]-lastIndex[%d]](",
-		n.Addr.String(), n.Index, n.LastIndex)
+		n.Addr, n.Index, n.LastIndex)
 
 	if len(n.Children) > 0 {
 		fmt.Fprintf(out, "\n")

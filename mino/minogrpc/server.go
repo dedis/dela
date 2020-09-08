@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"io"
 	"io/ioutil"
 	"math/big"
 	"net"
@@ -24,10 +23,8 @@ import (
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
-	codes "google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
-	status "google.golang.org/grpc/status"
 )
 
 const (
@@ -198,13 +195,10 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 		return xerrors.Errorf("failed to get streamID, result is empty")
 	}
 
-	first := false
-
 	endpoint.Lock()
-	session, found := endpoint.streams[streamID]
+	session, initiated := endpoint.streams[streamID]
 
-	if !found {
-		first = true
+	if !initiated {
 
 		errs := make(chan error, 1)
 		receiver := receiver{
@@ -218,7 +212,8 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 		}
 
 		sender := sender{
-			me:       o.me,
+			overlay:  &o.overlay,
+			sme:      o.me,
 			receiver: receiver,
 			traffic:  o.traffic,
 
@@ -258,12 +253,13 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 	}
 
 	relayCtx := metadata.NewOutgoingContext(stream.Context(), metadata.Pairs(
-		headerURIKey, uri, headerGatewayKey, string(mebuf), headerStreamIDKey,
-		streamID))
+		headerURIKey, uri,
+		headerGatewayKey, string(mebuf),
+		headerStreamIDKey, streamID))
 
 	go session.sender.listenStream(relayCtx, stream, gateway)
 
-	if first {
+	if !initiated {
 		err := endpoint.Handler.Stream(session.sender, session.receiver)
 		if err != nil {
 			return xerrors.Errorf("handler failed to process: %v", err)
@@ -291,153 +287,6 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 	<-stream.Context().Done()
 
 	return nil
-}
-
-func (s sender) closeRelays() {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	for addr, streamConn := range s.connections {
-		err := streamConn.close()
-		if err != nil {
-			s.receiver.logger.Warn().Msgf("failed to close relay '%s': %v", addr, err)
-		} else {
-			s.traffic.addEvent("close", s.me, addr)
-		}
-	}
-}
-
-// sendPacket creates the relays if needed and sends the packets accordingly.
-func (s sender) sendPacket(ctx context.Context, proto *Packet) error {
-
-	packets, err := s.router.Forward(s.me, proto.Serialized, s.receiver.context)
-	if err != nil {
-		return xerrors.Errorf("failed to route packet: %v", err)
-	}
-
-	for to, packet := range packets {
-
-		// The router should send nil when it doesn't know the 'from' and the
-		// 'to'.
-		if to == nil {
-			to = newRootAddress()
-		}
-
-		if to.Equal(s.me) {
-			s.receiver.appendMessage(packet)
-			continue
-		}
-
-		// If we are not the orchestrator and we must send a message to it, our
-		// only option is to send the message back to our gateway.
-		if to.Equal(newRootAddress()) {
-			to = s.gateway
-		}
-
-		// If not already done, setup the connection to this address
-		err := s.SetupRelay(ctx, to)
-		if err != nil {
-			return xerrors.Errorf("failed to setup relay to '%s': %v",
-				to, err)
-		}
-
-		buf, err := packet.Serialize(s.receiver.context)
-		if err != nil {
-			return xerrors.Errorf("failed to serialize packet: %v", err)
-		}
-
-		proto := &Packet{
-			Serialized: buf,
-		}
-
-		s.traffic.logSend(ctx, s.me, to, packet)
-
-		err = s.send(to, proto)
-		if err != nil {
-			s.receiver.logger.Warn().Msgf("failed to send to relay '%s': %v",
-				to, err)
-		}
-	}
-
-	return nil
-}
-
-func (s sender) SetupRelay(ctx context.Context, addr mino.Address) error {
-
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	_, found := s.connections[addr]
-	if !found {
-		s.receiver.logger.Trace().Msgf("opening a relay to %s", addr)
-
-		conn, err := s.connFactory.FromAddress(addr)
-		if err != nil {
-			return xerrors.Errorf("failed to create addr: %v", err)
-		}
-
-		cl := NewOverlayClient(conn)
-
-		r, err := cl.Stream(ctx, grpc.WaitForReady(false))
-		if err != nil {
-			// TODO: this error is actually never seen by the user
-			s.receiver.logger.Fatal().Msgf(
-				"failed to call stream for relay '%s': %v", addr, err)
-			return xerrors.Errorf("'%s' failed to call stream for "+
-				"relay '%s': %v", s.me, addr, err)
-		}
-
-		relay := &streamConn{client: r, conn: conn}
-
-		s.traffic.addEvent("open", s.me, addr)
-
-		s.connections[addr] = relay
-		go s.listenStream(ctx, relay, addr)
-	}
-
-	return nil
-}
-
-// listenStream listens for new messages that would come from a stream that we
-// set up and either notify us, or relay the message. This function is blocking.
-func (s sender) listenStream(streamCtx context.Context, stream relayable,
-	distantAddr mino.Address) {
-
-	s.relaysWait.Add(1)
-	defer s.relaysWait.Done()
-
-	for {
-		select {
-		// Allows us to perform an early stopping in case the contex is already
-		// done.
-		case <-streamCtx.Done():
-			return
-		default:
-			proto, err := stream.Recv()
-			if err == io.EOF {
-				return
-			}
-			status, ok := status.FromError(err)
-			if ok && status.Code() == codes.Canceled {
-				return
-			}
-			if err != nil {
-				// TODO: this error is actually never seen by the user
-				s.receiver.logger.Warn().Msgf("stream failed to receive: %v", err)
-				s.receiver.errs <- xerrors.Errorf("failed to receive: %v", err)
-				return
-			}
-
-			s.traffic.logRcv(stream.Context(), distantAddr, s.me)
-
-			err = s.sendPacket(streamCtx, proto)
-			if err != nil {
-				s.receiver.errs <- xerrors.Errorf("failed to send to "+
-					"dispatched relays: %v", err)
-				return
-			}
-		}
-	}
 }
 
 // relayable describes the basic primitives to use a stream
@@ -508,6 +357,7 @@ func (r *passiveConn) close() error {
 	return nil
 }
 
+// - implements router.Membership
 type overlay struct {
 	context     serde.Context
 	me          mino.Address
@@ -551,6 +401,14 @@ func newOverlay(me mino.Address, router router.Router,
 	}
 
 	return o, nil
+}
+
+func (o overlay) GetLocal() mino.Address {
+	return o.me
+}
+
+func (o overlay) GetAddresses() []mino.Address {
+	panic("not implemented")
 }
 
 // GetCertificate returns the certificate of the overlay.

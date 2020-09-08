@@ -4,7 +4,6 @@ package tree
 
 import (
 	"bytes"
-	"math/rand"
 	"regexp"
 	"sort"
 	"sync"
@@ -13,13 +12,10 @@ import (
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/router"
 	"go.dedis.ch/dela/mino/router/tree/types"
-	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
 var eachLine = regexp.MustCompile(`(?m)^(.+)$`)
-
-const seed = int64(1234)
 
 // MembershipService is a service that is required by the router to get
 // information about the participants so that it can generate the correct tree.
@@ -32,37 +28,54 @@ type MembershipService interface {
 // - implements router.Router
 type Router struct {
 	lock         *sync.Mutex
-	memship      MembershipService
 	root         *treeNode
 	routingNodes map[mino.Address]*treeNode
-	initialized  bool
 	height       int
-	fac          serde.Factory
+	fac          router.PacketFactory
+
+	childs  map[mino.Address]struct{}
+	parents map[mino.Address]struct{}
+
+	curHeight int
 }
 
 // NewRouter returns a new router
-func NewRouter(memship MembershipService, height int, f mino.AddressFactory) *Router {
-	fac := types.NewPacketFactory(f)
+func NewRouter(height int, f mino.AddressFactory) *Router {
+	fac := NewPacketFactory(f)
 
 	r := &Router{
-		memship: memship,
-		height:  height,
-		lock:    new(sync.Mutex),
-		fac:     fac,
+		height: height,
+		lock:   new(sync.Mutex),
+		fac:    fac,
+
+		childs:  make(map[mino.Address]struct{}),
+		parents: make(map[mino.Address]struct{}),
+
+		curHeight: -1,
 	}
 
 	return r
+}
+
+// NewPacketFactory returns a new packet factory.
+func NewPacketFactory(f mino.AddressFactory) router.PacketFactory {
+	return types.NewPacketFactory(f)
+}
+
+// GetPacketFactory implements router.Router
+func (r Router) GetPacketFactory() router.PacketFactory {
+	return r.fac
 }
 
 // MakePacket implements router.Router. We don't take the source address when
 // creating the router because we often provide the router as argument when we
 // create mino, and at that time we don't know yet our address.
 func (r Router) MakePacket(me mino.Address, to []mino.Address, msg []byte) router.Packet {
-	return types.Packet{
+	return &types.Packet{
 		Source:  me,
 		Dest:    to,
 		Message: msg,
-		Seed:    seed,
+		Depth:   0, // the root packet is at the first level
 	}
 }
 
@@ -83,41 +96,61 @@ func (r Router) MakePacket(me mino.Address, to []mino.Address, msg []byte) route
 // for all its children, and see that for its child 3, 3 >= 4 <= 5, so the root
 // will send its message to node 3.
 //
-func (r *Router) Forward(me mino.Address, data []byte,
-	ctx serde.Context) (map[mino.Address]router.Packet, error) {
+func (r *Router) Forward(memship router.Membership, packet router.Packet) (map[mino.Address]router.Packet, error) {
 
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	msg, err := r.fac.Deserialize(ctx, data)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to deserialize packet: %v", err)
-	}
-
-	packet, ok := msg.(types.Packet)
+	treePacket, ok := packet.(*types.Packet)
 	if !ok {
-		return nil, xerrors.Errorf("expected to have %T, got: %T", packet, msg)
+		return nil, xerrors.Errorf("expected to have %T, got: %T", treePacket, packet)
 	}
 
-	// TODO: decide when to (re-)compute the tree
-	if !r.initialized {
-		r.initialized = true
-		r.newTree(packet.Seed, r.height)
+	// We re-compute the tree if the packet does not come from a child and there
+	// is at least one new address in the destination. If the packet comes from
+	// a child to an unknown destination then we will send it back to our
+	// parent.
+	_, isChild := r.childs[memship.GetLocal()]
+	if !isChild {
+		r.parents[memship.GetLocal()] = struct{}{}
+	}
+
+	if !isChild && r.foundNewChild(packet.GetDestination()) || r.curHeight != r.height-treePacket.Depth {
+		// fmt.Println(memship.GetLocal(), "new child found:", packet.GetDestination())
+		for _, addr := range packet.GetDestination() {
+			_, isParent := r.parents[addr]
+			if !isParent && !addr.Equal(memship.GetLocal()) {
+				r.childs[addr] = struct{}{}
+			}
+		}
+
+		r.curHeight = r.height - treePacket.Depth
+		r.newTree(r.curHeight)
+		// r.root.Display(os.Stdout)
+		// fmt.Println("childs:", r.childs, "is child", isChild, "parents:", r.parents)
 	}
 
 	packets := map[mino.Address]*types.Packet{}
 
-	for _, addr := range packet.GetDestination() {
+	for _, addr := range treePacket.GetDestination() {
 
-		to := r.getDest(me, addr)
+		to := r.getDest(addr)
+
+		// to = addr
+		// fmt.Println("from", memship.GetLocal(), "to", addr, "=", to)
 
 		p := packets[to]
 		if p == nil {
 			p = &types.Packet{
-				Source:  packet.Source,
+				Source:  treePacket.Source,
 				Dest:    []mino.Address{},
-				Message: packet.Message,
-				Seed:    packet.Seed,
+				Message: treePacket.Message,
+				Depth:   treePacket.Depth + 1,
+			}
+			if to == nil {
+				p.Depth -= 2
+			} else if to.Equal(memship.GetLocal()) {
+				p.Depth--
 			}
 			packets[to] = p
 		}
@@ -134,85 +167,77 @@ func (r *Router) Forward(me mino.Address, data []byte,
 	return out, nil
 }
 
-func (r Router) getDest(from, to mino.Address) mino.Address {
-
-	sourceNode := r.routingNodes[from]
-	target := r.routingNodes[to]
-
-	// If we don't know the source and the target we can't do anything
-	if sourceNode == nil && target == nil {
-		return nil
+func (r *Router) foundNewChild(addrs []mino.Address) bool {
+	for _, addr := range addrs {
+		_, found := r.childs[addr]
+		_, isParent := r.parents[addr]
+		if !found && !isParent {
+			return true
+		}
 	}
 
-	// If the sender is unknown, it returns the root of the tree (for example,
-	// the source might be the fake orchestrator address).
-	if sourceNode == nil {
-		return r.root.Addr
-	}
+	return false
+}
 
-	// If the source equals the destination, it sends to the destination.
-	if sourceNode.Addr.Equal(to) {
+func (r Router) getDest(to mino.Address) mino.Address {
+
+	// If the destination is one of our parent, then we can directly send the
+	// message to it.
+	_, isParent := r.parents[to]
+	if isParent {
 		return to
 	}
 
-	// If the target address is not in the tree, it sends to its parent.
-	if target == nil && sourceNode.Parent != nil {
-		return sourceNode.Parent.Addr
-	}
-
-	// If there is no parent and the destination is unknown, it sends to the
-	// destination.
+	// If we don't know the target we can't do anything.
+	target := r.routingNodes[to]
 	if target == nil {
 		return nil
 	}
 
 	// Find the correct children
-	for _, c := range sourceNode.Children {
+	for _, c := range r.root.Children {
 		if target.Index >= c.Index && target.Index <= c.LastIndex {
 			return c.Addr
 		}
 	}
 
-	if sourceNode.Parent == nil {
-		// This error only happens if the tree is malformed, which should never
-		// happen if newTree is used and is very grave if it does.
-		dela.Logger.Fatal().Msgf("didn't find any children to send to %s, "+
-			"and there is no root for %s", target.Addr, sourceNode.Addr)
-		return nil
-	}
+	// This error only happens if the tree is malformed, which should never
+	// happen if newTree is used and is very grave if it does.
+	dela.Logger.Fatal().Msgf("didn't find any children to send to %s, "+
+		"and there is no parent", target.Addr)
 
-	return sourceNode.Parent.Addr
+	return nil
 }
 
 // newTree builds a new tree
-func (r *Router) newTree(seed int64, height int) error {
-	addrs := r.memship.Get(nil)
-	addrsBuf := make([][]byte, len(addrs))
+func (r *Router) newTree(height int) error {
+	addrsBuf := make([][]byte, 0)
+	naddrs := make([]mino.Address, 0)
 
-	for i, addr := range addrs {
+	for addr := range r.childs {
+
 		addrBuf, err := addr.MarshalText()
 		if err != nil {
 			return xerrors.Errorf("failed to marshal addr: %v", err)
 		}
 
-		addrsBuf[i] = addrBuf
+		addrsBuf = append(addrsBuf, addrBuf)
+		naddrs = append(naddrs, addr)
 	}
 
-	sort.Stable(Addresses{buffers: addrsBuf, addrs: addrs})
-	rand.Seed(seed)
-	rand.Shuffle(len(addrs), func(i, j int) {
-		addrs[i], addrs[j] = addrs[j], addrs[i]
-	})
+	// This is convenient to keep a consistent growing tree
+	sort.Stable(Addresses{buffers: addrsBuf, addrs: naddrs})
+	// rand.Seed(0)
+	// rand.Shuffle(len(naddrs), func(i, j int) {
+	// 	naddrs[i], naddrs[j] = naddrs[j], naddrs[i]
+	// })
 
-	tree := buildTree(addrs[0], addrs[1:], height, 0, nil)
+	tree := buildTree(nil, naddrs, height, 0, nil)
 
 	routingNodes := make(map[mino.Address]*treeNode)
-	routingNodes[addrs[0]] = tree
 
 	tree.ForEach(func(n *treeNode) {
-		if !n.Addr.Equal(addrs[0]) {
-			routingNodes[n.Addr] = n
-		}
+		routingNodes[n.Addr] = n
 	})
 
 	r.root = tree

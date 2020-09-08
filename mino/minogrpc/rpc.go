@@ -2,7 +2,6 @@ package minogrpc
 
 import (
 	context "context"
-	"crypto/rand"
 	"sync"
 
 	"github.com/rs/xid"
@@ -12,8 +11,6 @@ import (
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc/metadata"
 )
-
-const streamIDLen = 16
 
 // RPC represents an RPC that has been registered by a client, which allows
 // clients to call an RPC that will execute the provided handler.
@@ -116,12 +113,6 @@ func (rpc RPC) Stream(ctx context.Context,
 
 	root := newRootAddress()
 
-	b := make([]byte, streamIDLen)
-	_, err := rand.Reader.Read(b)
-	if err != nil {
-		return nil, nil, xerrors.Errorf("failed to create streamID: %v", err)
-	}
-
 	streamID := xid.New().String()
 
 	receiver := receiver{
@@ -136,7 +127,8 @@ func (rpc RPC) Stream(ctx context.Context,
 	}
 
 	sender := sender{
-		me: root,
+		overlay: &rpc.overlay,
+		sme:     root,
 		// There is no gateway because this is the root
 		receiver: receiver,
 		traffic:  rpc.overlay.traffic,

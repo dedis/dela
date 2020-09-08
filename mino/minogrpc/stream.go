@@ -2,6 +2,7 @@ package minogrpc
 
 import (
 	context "context"
+	"io"
 	"sync"
 
 	"github.com/rs/zerolog"
@@ -9,11 +10,16 @@ import (
 	"go.dedis.ch/dela/mino/router"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
+	"google.golang.org/grpc"
+	codes "google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	status "google.golang.org/grpc/status"
 )
 
 type sender struct {
-	me          mino.Address
+	*overlay
+
+	sme         mino.Address // 'me' refers to overlay.me
 	traffic     *traffic
 	router      router.Router
 	connFactory ConnectionFactory
@@ -66,7 +72,7 @@ func (s sender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 		to[i] = buffer
 	}
 
-	mebuf, err := s.me.MarshalText()
+	mebuf, err := s.sme.MarshalText()
 	if err != nil {
 		errs <- xerrors.Errorf("failed to marhal my address: %v", err)
 		return errs
@@ -79,21 +85,13 @@ func (s sender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 	}()
 
 	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs(
-		headerURIKey, s.uri, headerGatewayKey, string(mebuf),
+		headerURIKey, s.uri,
+		headerGatewayKey, string(mebuf),
 		headerStreamIDKey, s.streamID))
 
-	packet := s.router.MakePacket(s.me, addrs, data)
-	ser, err := packet.Serialize(s.receiver.context)
-	if err != nil {
-		errs <- xerrors.Errorf("failed to serialize packet: %v", err)
-		return errs
-	}
+	packet := s.router.MakePacket(s.sme, addrs, data)
 
-	proto := &Packet{
-		Serialized: ser,
-	}
-
-	err = s.sendPacket(ctx, proto)
+	err = s.sendPacket(ctx, packet)
 	if err != nil {
 		errs <- xerrors.Errorf("failed to send to relays: %v", err)
 		return errs
@@ -116,6 +114,169 @@ func (s sender) send(to mino.Address, proto *Packet) error {
 	return nil
 }
 
+func (s sender) closeRelays() {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	for addr, streamConn := range s.connections {
+		err := streamConn.close()
+		if err != nil {
+			s.receiver.logger.Warn().Msgf("failed to close relay '%s': %v", addr, err)
+		} else {
+			s.traffic.addEvent("close", s.sme, addr)
+		}
+	}
+}
+
+// sendPacket creates the relays if needed and sends the packets accordingly.
+func (s sender) sendPacket(ctx context.Context, packet router.Packet) error {
+
+	p := packet.Slice(newRootAddress())
+
+	packets, err := s.router.Forward(s, packet)
+	if err != nil {
+		return xerrors.Errorf("failed to route packet: %v", err)
+	}
+
+	if p != nil {
+		// TODO: Am I replacing something there?
+		packets[newRootAddress()] = p
+	}
+
+	for to, packet := range packets {
+
+		// s.receiver.logger.Info().Msgf("sending to %s, dest: %v",
+		// to, packet.GetDestination())
+
+		// The router should send nil when it doesn't know the 'from' or the
+		// 'to'.
+		if to == nil {
+			to = newRootAddress()
+		}
+
+		if to.Equal(s.sme) {
+			s.receiver.appendMessage(packet)
+			continue
+		}
+
+		// If we are not the orchestrator and we must send a message to it, our
+		// only option is to send the message back to our gateway.
+		if to.Equal(newRootAddress()) {
+			to = s.gateway
+		}
+
+		// If not already done, setup the connection to this address
+		err := s.SetupRelay(ctx, to)
+		if err != nil {
+			return xerrors.Errorf("failed to setup relay to '%s': %v",
+				to, err)
+		}
+
+		buf, err := packet.Serialize(s.receiver.context)
+		if err != nil {
+			return xerrors.Errorf("failed to serialize packet: %v", err)
+		}
+
+		proto := &Packet{
+			Serialized: buf,
+		}
+
+		s.traffic.logSend(ctx, s.sme, to, packet)
+
+		err = s.send(to, proto)
+		if err != nil {
+			s.receiver.logger.Warn().Msgf("failed to send to relay '%s': %v",
+				to, err)
+		}
+	}
+
+	return nil
+}
+
+func (s sender) SetupRelay(ctx context.Context, addr mino.Address) error {
+
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	_, found := s.connections[addr]
+	if !found {
+		s.receiver.logger.Trace().Msgf("opening a relay to %s", addr)
+
+		conn, err := s.connFactory.FromAddress(addr)
+		if err != nil {
+			return xerrors.Errorf("failed to create addr: %v", err)
+		}
+
+		cl := NewOverlayClient(conn)
+
+		r, err := cl.Stream(ctx, grpc.WaitForReady(false))
+		if err != nil {
+			// TODO: this error is actually never seen by the user
+			s.receiver.logger.Fatal().Msgf(
+				"failed to call stream for relay '%s': %v", addr, err)
+			return xerrors.Errorf("'%s' failed to call stream for "+
+				"relay '%s': %v", s.sme, addr, err)
+		}
+
+		relay := &streamConn{client: r, conn: conn}
+
+		s.traffic.addEvent("open", s.sme, addr)
+
+		s.connections[addr] = relay
+		go s.listenStream(ctx, relay, addr)
+	}
+
+	return nil
+}
+
+// listenStream listens for new messages that would come from a stream that we
+// set up and either notify us, or relay the message. This function is blocking.
+func (s sender) listenStream(streamCtx context.Context, stream relayable,
+	distantAddr mino.Address) {
+
+	s.relaysWait.Add(1)
+	defer s.relaysWait.Done()
+
+	for {
+		select {
+		// Allows us to perform an early stopping in case the contex is already
+		// done.
+		case <-streamCtx.Done():
+			return
+		default:
+			proto, err := stream.Recv()
+			if err == io.EOF {
+				return
+			}
+			status, ok := status.FromError(err)
+			if ok && status.Code() == codes.Canceled {
+				return
+			}
+			if err != nil {
+				// TODO: this error is actually never seen by the user
+				s.receiver.logger.Warn().Msgf("stream failed to receive: %v", err)
+				s.receiver.errs <- xerrors.Errorf("failed to receive: %v", err)
+				return
+			}
+
+			packet, err := s.router.GetPacketFactory().PacketOf(s.receiver.context, proto.Serialized)
+			if err != nil {
+				s.receiver.errs <- xerrors.Errorf("failed to deserialize packet: %v", err)
+				return
+			}
+
+			s.traffic.logRcv(stream.Context(), distantAddr, s.sme)
+
+			err = s.sendPacket(streamCtx, packet)
+			if err != nil {
+				s.receiver.errs <- xerrors.Errorf("failed to send to "+
+					"dispatched relays: %v", err)
+				return
+			}
+		}
+	}
+}
+
 type receiver struct {
 	context        serde.Context
 	factory        serde.Factory
@@ -131,21 +292,23 @@ func (r receiver) appendMessage(msg router.Packet) {
 }
 
 func (r receiver) Recv(ctx context.Context) (mino.Address, serde.Message, error) {
-	var msg router.Packet
+	var packet router.Packet
 	select {
-	case msg = <-r.queue.Channel():
+	case packet = <-r.queue.Channel():
 	case err := <-r.errs:
 		return nil, nil, err
 	case <-ctx.Done():
 		return nil, nil, ctx.Err()
 	}
 
-	payload, err := msg.GetMessage(r.context, r.factory)
+	payload := packet.GetMessage()
+
+	msg, err := r.factory.Deserialize(r.context, payload)
 	if err != nil {
-		return nil, nil, xerrors.Errorf("failed to get message: %v", err)
+		return nil, nil, xerrors.Errorf("failed to deserialize message: %v", err)
 	}
 
-	return msg.GetSource(), payload, nil
+	return packet.GetSource(), msg, nil
 }
 
 // Queue is an interface to queue messages.

@@ -81,18 +81,22 @@ func TestAddresses_Sort(t *testing.T) {
 }
 
 func TestTreeNode_Display(t *testing.T) {
-	r := NewRouter(newFakeMemship(5), 2, nil)
-	r.newTree(0, 2)
+	r := NewRouter(2, nil)
+	r.childs[fake.NewAddress(0)] = struct{}{}
+	r.childs[fake.NewAddress(1)] = struct{}{}
+	r.childs[fake.NewAddress(2)] = struct{}{}
+	r.childs[fake.NewAddress(3)] = struct{}{}
+	r.newTree(2)
 
 	buffer := new(bytes.Buffer)
 	r.root.Display(buffer)
 
-	expected := `Node[fake.Address[2]-index[0]-lastIndex[4]](
-	Node[fake.Address[3]-index[1]-lastIndex[2]](
+	expected := `Node[%!s(<nil>)-index[0]-lastIndex[4]](
+	Node[fake.Address[0]-index[1]-lastIndex[2]](
 		Node[fake.Address[1]-index[2]-lastIndex[2]]()
 	)
-	Node[fake.Address[0]-index[3]-lastIndex[4]](
-		Node[fake.Address[4]-index[4]-lastIndex[4]]()
+	Node[fake.Address[2]-index[3]-lastIndex[4]](
+		Node[fake.Address[3]-index[4]-lastIndex[4]]()
 	)
 )
 `

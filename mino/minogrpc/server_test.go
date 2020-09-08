@@ -107,7 +107,7 @@ func TestOverlayServer_Join(t *testing.T) {
 		overlay: overlay{
 			tokens:      fakeTokens{},
 			certs:       certs.NewInMemoryStore(),
-			router:      tree.NewRouter(NewMemship([]mino.Address{}), 3, AddressFactory{}),
+			router:      tree.NewRouter(3, AddressFactory{}),
 			connFactory: fakeConnFactory{},
 		},
 	}
@@ -156,7 +156,7 @@ func TestOverlayServer_Share(t *testing.T) {
 	overlay := overlayServer{
 		overlay: overlay{
 			certs:       certs.NewInMemoryStore(),
-			router:      tree.NewRouter(NewMemship([]mino.Address{}), 3, AddressFactory{}),
+			router:      tree.NewRouter(3, AddressFactory{}),
 			addrFactory: AddressFactory{},
 		},
 	}
@@ -179,7 +179,7 @@ func TestOverlayServer_Share(t *testing.T) {
 func TestOverlayServer_Call(t *testing.T) {
 	overlay := overlayServer{
 		overlay: overlay{
-			router:      tree.NewRouter(NewMemship([]mino.Address{}), 3, AddressFactory{}),
+			router:      tree.NewRouter(3, AddressFactory{}),
 			context:     json.NewContext(),
 			addrFactory: AddressFactory{},
 		},
@@ -224,7 +224,7 @@ func TestOverlayServer_Call(t *testing.T) {
 func TestOverlayServer_Stream(t *testing.T) {
 	overlay := overlayServer{
 		overlay: overlay{
-			router:      tree.NewRouter(NewMemship([]mino.Address{}), 3, AddressFactory{}),
+			router:      tree.NewRouter(3, AddressFactory{}),
 			context:     json.NewContext(),
 			addrFactory: AddressFactory{},
 			me:          fake.NewAddress(0),
@@ -267,7 +267,7 @@ func TestOverlayServer_Stream(t *testing.T) {
 	require.EqualError(t, err, "failed to get streamID, result is empty")
 
 	overlay.context = json.NewContext()
-	overlay.router = tree.NewRouter(NewMemship([]mino.Address{}), 3, AddressFactory{})
+	overlay.router = tree.NewRouter(3, AddressFactory{})
 	ch = make(chan *Packet, 1)
 	inCtx = metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "bad", headerGatewayKey, string(addrBuf), headerStreamIDKey, "test"))
 	err = overlay.Stream(fakeServerStream{ch: ch, ctx: inCtx})
@@ -281,7 +281,7 @@ func TestOverlay_Join(t *testing.T) {
 	overlay := overlay{
 		me:     fake.NewAddress(0),
 		certs:  fakeCerts{},
-		router: tree.NewRouter(NewMemship([]mino.Address{}), 3, AddressFactory{}),
+		router: tree.NewRouter(3, AddressFactory{}),
 		connFactory: fakeConnFactory{
 			resp: JoinResponse{Peers: []*Certificate{{Value: cert.Leaf.Raw}}},
 		},
@@ -355,7 +355,7 @@ func makeInstances(t *testing.T, n int, call *fake.Call) ([]mino.Mino, []mino.RP
 	mm := make([]mino.Mino, n)
 	rpcs := make([]mino.RPC, n)
 	for i := range mm {
-		m, err := NewMinogrpc("127.0.0.1", 3000+uint16(i), tree.NewRouter(memship, 2, AddressFactory{}))
+		m, err := NewMinogrpc("127.0.0.1", 3000+uint16(i), tree.NewRouter(2, AddressFactory{}))
 		require.NoError(t, err)
 
 		rpc, err := m.MakeRPC("test", testHandler{call: call}, fake.MessageFactory{})
@@ -507,12 +507,16 @@ func (p fakePacket) GetDestination() []mino.Address {
 	return p.dest
 }
 
-func (p fakePacket) GetMessage(ctx serde.Context, f serde.Factory) (serde.Message, error) {
+func (p fakePacket) GetMessage() []byte {
 	panic("not implemented") // TODO: Implement
 }
 
 func (p fakePacket) String() string {
 	return "fakePacket"
+}
+
+func (p fakePacket) Slice(addr mino.Address) router.Packet {
+	panic("not implemented")
 }
 
 // type fakeStream struct {

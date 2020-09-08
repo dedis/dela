@@ -213,8 +213,7 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 
 	message := types.NewDecryptRequest(K, C)
 
-	errs := sender.Send(message, addrs...)
-	err = <-errs
+	err = <-sender.Send(message, addrs...)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to send decrypt request: %v", err)
 	}
@@ -231,7 +230,7 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 		decryptReply, ok := message.(types.DecryptReply)
 		if !ok {
 			return []byte{}, xerrors.Errorf("got unexpected reply, expected "+
-				"a decrypt reply but got: %T", message)
+				"%T but got: %T", decryptReply, message)
 		}
 
 		pubShares[i] = &share.PubShare{

@@ -7,6 +7,18 @@ import (
 	"go.dedis.ch/dela/serde"
 )
 
+// PacketFactory describes the primitives to deserialize a packet
+type PacketFactory interface {
+	serde.Factory
+	PacketOf(serde.Context, []byte) (Packet, error)
+}
+
+// Membership describes the primitives to know what nodes the node knows
+type Membership interface {
+	GetLocal() mino.Address
+	GetAddresses() []mino.Address
+}
+
 // Packet is the type of message processed by the router. It contains
 // information that will allow the message to be routed.
 type Packet interface {
@@ -21,12 +33,20 @@ type Packet interface {
 	// GetMessage returns the message to be transmitted to the application when
 	// the source address is the current node. Message is only deserialized when
 	// needed.
-	GetMessage(ctx serde.Context, f serde.Factory) (serde.Message, error)
+	GetMessage() []byte
+
+	// Slice removes the address from the destination if found and return a new
+	// packet with the addr as the destination. If not found return nil.
+	Slice(addr mino.Address) Packet
 }
 
 // Router is the interface of the routing service. It provides the primitives to
-// route a packet among a set of participants.
+// route a packet among a set of participants. The orchestrator address (if any)
+// is not handled by the router. For that matter, the Packet.Slice function can
+// be used to handle special cases with that address.
 type Router interface {
+	GetPacketFactory() PacketFactory
+
 	// MakePacket should be first called by the caller to set the specific
 	// required attribute on the packet if needed, for example a seed.
 	MakePacket(me mino.Address, to []mino.Address, msg []byte) Packet
@@ -44,7 +64,7 @@ type Router interface {
 	//
 	//	{A: packet{to: [A, B, C]}}
 	//
-	Forward(me mino.Address, data []byte, ctx serde.Context) (map[mino.Address]Packet, error)
+	Forward(memship Membership, packet Packet) (map[mino.Address]Packet, error)
 
 	// OnFailure is used to announce that a packet failed to be routed. It
 	// allows the router to find a different route. Forward can be called
