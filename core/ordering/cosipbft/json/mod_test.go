@@ -8,6 +8,7 @@ import (
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
@@ -145,12 +146,20 @@ func TestMsgFormat_Encode(t *testing.T) {
 	_, err = format.Encode(fake.NewBadContext(), types.NewGenesisMessage(genesis))
 	require.EqualError(t, err, "failed to serialize genesis: encoding failed: fake error")
 
-	data, err = format.Encode(ctx, types.NewBlockMessage(block))
+	views := map[mino.Address]types.ViewMessage{
+		fake.NewAddress(0): types.NewViewMessage(types.Digest{1}, 5, fake.Signature{}),
+	}
+	data, err = format.Encode(ctx, types.NewBlockMessage(block, views))
 	require.NoError(t, err)
-	require.Equal(t, `{"Block":{"Block":{}}}`, string(data))
+	require.Regexp(t,
+		`{"Block":{"Block":{},"Views":{"[^"]+":{"Leader":5,"ID":"[^"]+","Signature":{}}}}}`, string(data))
 
-	_, err = format.Encode(fake.NewBadContext(), types.NewBlockMessage(block))
-	require.EqualError(t, err, "failed to serialize block: encoding failed: fake error")
+	views[fake.NewAddress(0)] = types.NewViewMessage(types.Digest{}, 0, fake.NewBadSignature())
+	_, err = format.Encode(ctx, types.NewBlockMessage(block, views))
+	require.EqualError(t, err, "view: failed to serialize signature: fake error")
+
+	_, err = format.Encode(fake.NewBadContext(), types.NewBlockMessage(block, nil))
+	require.EqualError(t, err, "block: encoding failed: fake error")
 
 	data, err = format.Encode(ctx, types.NewCommit(types.Digest{}, fake.Signature{}))
 	require.NoError(t, err)
@@ -185,6 +194,7 @@ func TestMsgFormat_Decode(t *testing.T) {
 	ctx = serde.WithFactory(ctx, types.BlockKey{}, types.BlockFactory{})
 	ctx = serde.WithFactory(ctx, types.AggregateKey{}, fake.SignatureFactory{})
 	ctx = serde.WithFactory(ctx, types.SignatureKey{}, fake.SignatureFactory{})
+	ctx = serde.WithFactory(ctx, types.AddressKey{}, fake.AddressFactory{})
 
 	msg, err := format.Decode(ctx, []byte(`{"Genesis":{}}`))
 	require.NoError(t, err)
@@ -202,9 +212,10 @@ func TestMsgFormat_Decode(t *testing.T) {
 	_, err = format.Decode(badCtx, []byte(`{"Genesis":{}}`))
 	require.EqualError(t, err, "invalid genesis 'fake.Message'")
 
-	msg, err = format.Decode(ctx, []byte(`{"Block":{}}`))
+	msg, err = format.Decode(ctx, []byte(`{"Block":{"Views":{"":{}}}}`))
 	require.NoError(t, err)
 	require.IsType(t, types.BlockMessage{}, msg)
+	require.Len(t, msg.(types.BlockMessage).GetViews(), 1)
 
 	badCtx = serde.WithFactory(ctx, types.BlockKey{}, nil)
 	_, err = format.Decode(badCtx, []byte(`{"Block":{}}`))
@@ -217,6 +228,10 @@ func TestMsgFormat_Decode(t *testing.T) {
 	badCtx = serde.WithFactory(ctx, types.BlockKey{}, fake.MessageFactory{})
 	_, err = format.Decode(badCtx, []byte(`{"Block":{}}`))
 	require.EqualError(t, err, "invalid block 'fake.Message'")
+
+	badCtx = serde.WithFactory(ctx, types.SignatureKey{}, nil)
+	_, err = format.Decode(badCtx, []byte(`{"Block":{"Views":{"":{}}}}`))
+	require.EqualError(t, err, "view: signature: invalid signature factory '<nil>'")
 
 	msg, err = format.Decode(ctx, []byte(`{"Commit":{}}`))
 	require.NoError(t, err)

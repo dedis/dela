@@ -25,6 +25,8 @@ type State byte
 
 func (s State) String() string {
 	switch s {
+	case NoneState:
+		return "none"
 	case InitialState:
 		return "initial"
 	case PrepareState:
@@ -34,14 +36,17 @@ func (s State) String() string {
 	case ViewChangeState:
 		return "viewchange"
 	default:
-		return "none"
+		return "unknown"
 	}
 }
 
 const (
+	// NoneState is the very first state of the machine where nothing is set.
+	NoneState State = iota
+
 	// InitialState is the entry state which means the beginning of the PBFT
 	// protocol.
-	InitialState State = iota
+	InitialState
 
 	// PrepareState is the state to indicate that a proposal has been received
 	// and the machine is waiting for confirmations.
@@ -60,6 +65,7 @@ const (
 type StateMachine interface {
 	GetState() State
 	GetLeader() (mino.Address, error)
+	GetViews() map[mino.Address]View
 	Prepare(block types.Block) (types.Digest, error)
 	Commit(types.Digest, crypto.Signature) error
 	Finalize(types.Digest, crypto.Signature) error
@@ -78,7 +84,8 @@ type round struct {
 	tree       hashtree.StagingTree
 	prepareSig crypto.Signature
 	changeset  authority.ChangeSet
-	views      map[mino.Address]struct{}
+	prevViews  map[mino.Address]View
+	views      map[mino.Address]View
 }
 
 // AuthorityReader is a function to help the state machine to read the current
@@ -133,7 +140,7 @@ func NewStateMachine(param StateMachineParam) StateMachine {
 		genesis:     param.Genesis,
 		tree:        param.Tree,
 		db:          param.DB,
-		state:       InitialState,
+		state:       NoneState,
 		authReader:  param.AuthorityReader,
 	}
 }
@@ -164,6 +171,10 @@ func (m *pbftsm) GetLeader() (mino.Address, error) {
 	return iter.GetNext(), nil
 }
 
+func (m *pbftsm) GetViews() map[mino.Address]View {
+	return m.round.prevViews
+}
+
 // Prepare implements pbft.StateMachine. It receives the proposal from the
 // leader and the current tree, and produces the next tree alongside the ID of
 // the proposal that will be signed.
@@ -177,7 +188,7 @@ func (m *pbftsm) Prepare(block types.Block) (types.Digest, error) {
 		return m.round.id, nil
 	}
 
-	if m.state != InitialState {
+	if m.state != InitialState && m.state != NoneState {
 		return types.Digest{}, xerrors.Errorf("mismatch state %v != %v", m.state, InitialState)
 	}
 
@@ -252,6 +263,8 @@ func (m *pbftsm) Finalize(id types.Digest, sig crypto.Signature) error {
 		return err
 	}
 
+	m.round.prevViews = nil
+	m.round.views = nil
 	m.setState(InitialState)
 
 	return nil
@@ -263,16 +276,31 @@ func (m *pbftsm) Accept(view View) error {
 	m.Lock()
 	defer m.Unlock()
 
-	err := m.verifyViews(false, view)
+	err := m.init()
+	if err != nil {
+		return err
+	}
+
+	if view.leader == m.round.leader {
+		// Ignore view coming for the current leader as we already accepted this
+		// one.
+		return nil
+	}
+
+	err = m.verifyViews(false, view)
 	if err != nil {
 		return xerrors.Errorf("invalid view: %v", err)
 	}
 
 	if m.round.views == nil {
-		m.round.views = make(map[mino.Address]struct{})
+		m.round.views = make(map[mino.Address]View)
 	}
 
-	m.round.views[view.from] = struct{}{}
+	m.logger.Trace().
+		Str("from", view.from.String()).
+		Msg("view accepted")
+
+	m.round.views[view.from] = view
 
 	m.checkViewChange(view)
 
@@ -286,21 +314,28 @@ func (m *pbftsm) AcceptAll(views []View) error {
 	m.Lock()
 	defer m.Unlock()
 
+	err := m.init()
+	if err != nil {
+		return err
+	}
+
 	if len(views) <= m.round.threshold {
 		return xerrors.New("not enough views")
 	}
 
-	err := m.verifyViews(true, views...)
+	if views[0].leader == m.round.leader {
+		// Skip verifying the views if the leader will anyway be the same.
+		return nil
+	}
+
+	err = m.verifyViews(true, views...)
 	if err != nil {
 		return xerrors.Errorf("invalid view: %v", err)
 	}
 
-	set := make(map[mino.Address]struct{})
-
+	set := make(map[mino.Address]View)
 	for _, view := range views {
-		if view.id == m.round.id {
-			set[view.from] = struct{}{}
-		}
+		set[view.from] = view
 	}
 
 	m.round.views = set
@@ -337,8 +372,13 @@ func (m *pbftsm) verifyViews(skip bool, views ...View) error {
 			return xerrors.Errorf("mismatch leader %d != %d", view.leader, m.round.leader+1)
 		}
 
-		if view.id != m.round.id {
-			return xerrors.Errorf("mismatch id %v != %v", view.id, m.round.id)
+		latestID, err := m.getLatestID()
+		if err != nil {
+			return err
+		}
+
+		if view.id != latestID {
+			return xerrors.Errorf("mismatch id %v != %v", view.id, latestID)
 		}
 	}
 
@@ -351,6 +391,11 @@ func (m *pbftsm) verifyViews(skip bool, views ...View) error {
 func (m *pbftsm) Expire(addr mino.Address) (View, error) {
 	m.Lock()
 	defer m.Unlock()
+
+	err := m.init()
+	if err != nil {
+		return View{}, err
+	}
 
 	lastID, err := m.getLatestID()
 	if err != nil {
@@ -371,10 +416,10 @@ func (m *pbftsm) Expire(addr mino.Address) (View, error) {
 	m.setState(ViewChangeState)
 
 	if m.round.views == nil {
-		m.round.views = make(map[mino.Address]struct{})
+		m.round.views = make(map[mino.Address]View)
 	}
 
-	m.round.views[addr] = struct{}{}
+	m.round.views[addr] = view
 
 	m.checkViewChange(view)
 
@@ -411,6 +456,8 @@ func (m *pbftsm) CatchUp(link types.BlockLink) error {
 		return xerrors.Errorf("finalize failed: %v", err)
 	}
 
+	m.round.views = nil
+	m.round.prevViews = nil
 	m.setState(InitialState)
 
 	return nil
@@ -568,6 +615,23 @@ func (m *pbftsm) verifyFinalize(r *round, sig crypto.Signature, ro authority.Aut
 	return nil
 }
 
+func (m *pbftsm) init() error {
+	if m.state != NoneState {
+		return nil
+	}
+
+	roster, err := m.authReader(m.tree.Get())
+	if err != nil {
+		return err
+	}
+
+	m.round.threshold = calculateThreshold(roster.Len())
+
+	m.setState(InitialState)
+
+	return nil
+}
+
 func (m *pbftsm) setState(s State) {
 	m.state = s
 	m.watcher.Notify(s)
@@ -575,6 +639,8 @@ func (m *pbftsm) setState(s State) {
 
 func (m *pbftsm) checkViewChange(view View) {
 	if m.state == ViewChangeState && len(m.round.views) > m.round.threshold {
+		m.round.prevViews = m.round.views
+		m.round.views = nil
 		m.round.leader = view.leader
 		m.setState(InitialState)
 	}

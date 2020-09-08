@@ -75,6 +75,27 @@ func (h *processor) Invoke(from mino.Address, msg serde.Message) ([]byte, error)
 			}
 		}
 
+		viewMsgs := in.GetViews()
+		if len(viewMsgs) > 0 {
+			views := make([]pbft.View, 0, len(viewMsgs))
+			for addr, view := range viewMsgs {
+				param := pbft.ViewParam{
+					From:   addr,
+					ID:     view.GetID(),
+					Leader: view.GetLeader(),
+				}
+
+				views = append(views, pbft.NewView(param, view.GetSignature()))
+			}
+
+			// Force a view change if enough views are provided in the situation
+			// where the current node is falling behind the others.
+			err := h.pbftsm.AcceptAll(views)
+			if err != nil {
+				return nil, xerrors.Errorf("accept all: %v", err)
+			}
+		}
+
 		digest, err := h.pbftsm.Prepare(in.GetBlock())
 		if err != nil {
 			return nil, xerrors.Errorf("pbft prepare failed: %v", err)

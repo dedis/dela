@@ -42,54 +42,82 @@ import (
 	"golang.org/x/xerrors"
 )
 
-func TestService_Basic(t *testing.T) {
-	srvs, ro, clean := makeAuthority(t, 5)
+func TestService_Scenario_Basic(t *testing.T) {
+	nodes, ro, clean := makeAuthority(t, 5)
 	defer clean()
 
-	signer := srvs[0].signer
+	signer := nodes[0].signer
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	initial := ro.Take(mino.RangeFilter(0, 4)).(crypto.CollectiveAuthority)
 
-	err := srvs[0].service.Setup(ctx, initial)
+	err := nodes[0].service.Setup(ctx, initial)
 	require.NoError(t, err)
 
-	events := srvs[2].service.Watch(ctx)
+	events := nodes[2].service.Watch(ctx)
 
-	err = srvs[0].pool.Add(makeTx(t, 0, signer))
+	err = nodes[0].pool.Add(makeTx(t, 0, signer))
 	require.NoError(t, err)
 
 	evt := waitEvent(t, events)
 	require.Equal(t, uint64(1), evt.Index)
 
-	err = srvs[1].pool.Add(makeTx(t, 1, signer))
+	err = nodes[1].pool.Add(makeTx(t, 1, signer))
 	require.NoError(t, err)
 
 	evt = waitEvent(t, events)
 	require.Equal(t, uint64(2), evt.Index)
 
-	err = srvs[1].pool.Add(makeRosterTx(t, 2, ro, signer))
+	err = nodes[1].pool.Add(makeRosterTx(t, 2, ro, signer))
 	require.NoError(t, err)
 
 	evt = waitEvent(t, events)
 	require.Equal(t, uint64(3), evt.Index)
 
-	err = srvs[1].pool.Add(makeTx(t, 3, signer))
+	err = nodes[1].pool.Add(makeTx(t, 3, signer))
 	require.NoError(t, err)
 
 	evt = waitEvent(t, events)
 	require.Equal(t, uint64(4), evt.Index)
 
-	proof, err := srvs[0].service.GetProof(keyRoster[:])
+	proof, err := nodes[0].service.GetProof(keyRoster[:])
 	require.NoError(t, err)
 	require.NotNil(t, proof.GetValue())
 
 	require.Equal(t, keyRoster[:], proof.GetKey())
 	require.NotNil(t, proof.GetValue())
 
-	checkProof(t, proof.(Proof), srvs[0].service)
+	checkProof(t, proof.(Proof), nodes[0].service)
+}
+
+func TestService_Scenario_ViewChange(t *testing.T) {
+	nodes, ro, clean := makeAuthority(t, 4)
+	defer clean()
+
+	for _, node := range nodes {
+		node.service.timeout = 200 * time.Millisecond
+	}
+
+	// Simulate an issue with the leader transaction pool so that it does not
+	// receive any of them.
+	nodes[0].pool.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := nodes[1].service.Setup(ctx, ro)
+	require.NoError(t, err)
+
+	events := nodes[2].service.Watch(ctx)
+
+	// Other nodes will detect a transaction but no block incoming => timeout
+	err = nodes[1].pool.Add(makeTx(t, 0, nodes[1].signer))
+	require.NoError(t, err)
+
+	evt := waitEvent(t, events)
+	require.Equal(t, uint64(1), evt.Index)
 }
 
 func TestService_New(t *testing.T) {
@@ -219,14 +247,12 @@ func TestService_DoRound(t *testing.T) {
 	go func() {
 		ch <- pbft.InitialState
 		close(ch)
-		close(srvc.closing)
 	}()
 
 	// Round with timeout and a transaction in the pool.
 	err = srvc.doRound(ctx)
 	require.NoError(t, err)
 
-	srvc.closing = make(chan struct{})
 	err = srvc.doRound(ctx)
 	require.EqualError(t, err, "viewchange failed")
 
@@ -419,7 +445,7 @@ func checkProof(t *testing.T, p Proof, s *Service) {
 
 type testNode struct {
 	service *Service
-	pool    pool.Pool
+	pool    *poolimpl.Pool
 	db      kv.DB
 	dbpath  string
 	signer  crypto.Signer

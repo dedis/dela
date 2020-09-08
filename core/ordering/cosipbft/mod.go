@@ -143,6 +143,7 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 	fac := types.NewMessageFactory(
 		types.NewGenesisFactory(proc.rosterFac),
 		blockFac,
+		param.Mino.GetAddressFactory(),
 		param.Cosi.GetSignatureFactory(),
 		csFac,
 	)
@@ -436,6 +437,7 @@ func (s *Service) doRound(ctx context.Context) error {
 			s.logger.Debug().Msg("view change successful")
 
 			cancel()
+			return nil
 		case <-s.events:
 			// A block has been created meaning that the round is over.
 			return nil
@@ -507,7 +509,7 @@ func (s *Service) doPBFT(ctx context.Context) error {
 	}
 
 	// 1. Prepare phase
-	req := types.NewBlockMessage(block)
+	req := types.NewBlockMessage(block, s.prepareViews())
 
 	sig, err := s.actor.Sign(ctx, req, roster)
 	if err != nil {
@@ -548,6 +550,17 @@ func (s *Service) doPBFT(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (s *Service) prepareViews() map[mino.Address]types.ViewMessage {
+	views := s.pbftsm.GetViews()
+	msgs := make(map[mino.Address]types.ViewMessage)
+
+	for addr, view := range views {
+		msgs[addr] = types.NewViewMessage(view.GetID(), view.GetLeader(), view.GetSignature())
+	}
+
+	return msgs
 }
 
 func (s *Service) prepareData(txs []txn.Transaction) (data validation.Data, id types.Digest, err error) {

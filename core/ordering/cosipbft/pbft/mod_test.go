@@ -29,13 +29,12 @@ import (
 
 func TestState_String(t *testing.T) {
 	var state State = 99
-	require.Equal(t, "none", state.String())
+	require.Equal(t, "unknown", state.String())
 }
 
 func TestStateMachine_GetState(t *testing.T) {
 	sm := &pbftsm{}
-
-	require.Equal(t, InitialState, sm.GetState())
+	require.Equal(t, NoneState, sm.GetState())
 
 	sm.state = CommitState
 	require.Equal(t, CommitState, sm.GetState())
@@ -258,12 +257,17 @@ func TestStateMachine_Accept(t *testing.T) {
 	ro := authority.FromAuthority(fake.NewAuthority(4, fake.NewSigner))
 
 	sm := &pbftsm{
-		signer: fake.NewSigner(),
-		tree:   blockstore.NewTreeCache(badTree{}),
+		blocks:  blockstore.NewInMemory(),
+		genesis: blockstore.NewGenesisStore(),
+		watcher: core.NewWatcher(),
+		signer:  fake.NewSigner(),
+		tree:    blockstore.NewTreeCache(badTree{}),
 		authReader: func(hashtree.Tree) (authority.Authority, error) {
 			return ro, nil
 		},
 	}
+
+	sm.genesis.Set(types.Genesis{})
 
 	err := sm.Accept(View{from: fake.NewAddress(0), leader: 1})
 	require.NoError(t, err)
@@ -290,7 +294,7 @@ func TestStateMachine_Accept(t *testing.T) {
 	sm.authReader = func(hashtree.Tree) (authority.Authority, error) {
 		return nil, xerrors.New("oops")
 	}
-	err = sm.Accept(View{})
+	err = sm.Accept(View{leader: 1})
 	require.EqualError(t, err, "invalid view: failed to read roster: oops")
 
 	// Ignore view with an invalid signature.
@@ -301,7 +305,7 @@ func TestStateMachine_Accept(t *testing.T) {
 		)
 		return ro, nil
 	}
-	err = sm.Accept(View{from: fake.NewAddress(0)})
+	err = sm.Accept(View{from: fake.NewAddress(0), leader: 1})
 	require.EqualError(t, err, "invalid view: invalid signature: verify: fake error")
 }
 
@@ -309,6 +313,8 @@ func TestStateMachine_AcceptAll(t *testing.T) {
 	ro := authority.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
 
 	sm := &pbftsm{
+		blocks:  blockstore.NewInMemory(),
+		genesis: blockstore.NewGenesisStore(),
 		round:   round{threshold: 2},
 		watcher: core.NewWatcher(),
 		signer:  fake.NewSigner(),
@@ -317,6 +323,8 @@ func TestStateMachine_AcceptAll(t *testing.T) {
 			return ro, nil
 		},
 	}
+
+	sm.genesis.Set(types.Genesis{})
 
 	err := sm.AcceptAll([]View{
 		{from: fake.NewAddress(0), leader: 5},
@@ -332,19 +340,25 @@ func TestStateMachine_AcceptAll(t *testing.T) {
 	require.EqualError(t, err, "not enough views")
 
 	err = sm.AcceptAll([]View{
-		{from: fake.NewAddress(0), leader: 5},
-		{from: fake.NewAddress(1), leader: 5},
-		{from: fake.NewAddress(3), leader: 5},
+		{from: fake.NewAddress(0), leader: 6},
+		{from: fake.NewAddress(1), leader: 6},
+		{from: fake.NewAddress(3), leader: 6},
 	})
 	require.EqualError(t, err, "invalid view: unknown peer: fake.Address[3]")
 }
 
 func TestStateMachine_Expire(t *testing.T) {
+	ro := authority.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+
 	sm := &pbftsm{
 		watcher: core.NewWatcher(),
 		blocks:  blockstore.NewInMemory(),
 		genesis: blockstore.NewGenesisStore(),
 		signer:  bls.NewSigner(),
+		tree:    blockstore.NewTreeCache(badTree{}),
+		authReader: func(hashtree.Tree) (authority.Authority, error) {
+			return ro, nil
+		},
 	}
 
 	sm.genesis.Set(types.Genesis{})

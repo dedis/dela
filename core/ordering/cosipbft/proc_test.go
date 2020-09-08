@@ -32,7 +32,7 @@ func TestProcessor_BlockMessage_Invoke(t *testing.T) {
 		id:    expected,
 	}
 
-	msg := types.NewBlockMessage(types.Block{})
+	msg := types.NewBlockMessage(types.Block{}, nil)
 
 	id, err := proc.Invoke(fake.NewAddress(0), msg)
 	require.NoError(t, err)
@@ -184,6 +184,10 @@ func (sm fakeSM) GetState() pbft.State {
 
 func (sm fakeSM) GetLeader() (mino.Address, error) {
 	return fake.NewAddress(0), sm.errLeader
+}
+
+func (sm fakeSM) GetViews() map[mino.Address]pbft.View {
+	return nil
 }
 
 func (sm fakeSM) PrePrepare(authority.Authority) error {
