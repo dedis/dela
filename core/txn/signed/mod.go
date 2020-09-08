@@ -22,7 +22,7 @@ func RegisterTransactionFormat(f serde.Format, e serde.FormatEngine) {
 	txFormats.Register(f, e)
 }
 
-// Transaction is a signed transaction using a nonce to proect itself against
+// Transaction is a signed transaction using a nonce to protect itself against
 // replay attack.
 //
 // - implements txn.Transaction
