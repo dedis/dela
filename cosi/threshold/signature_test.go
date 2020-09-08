@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 )
 
@@ -144,7 +144,7 @@ func TestVerifier_Verify(t *testing.T) {
 	err := verifier.Verify([]byte{0xff}, &Signature{mask: []byte{0x3}})
 	require.NoError(t, err)
 	require.Equal(t, 1, call.Len())
-	require.Equal(t, 2, call.Get(0, 0).(mino.Players).Len())
+	require.Len(t, call.Get(0, 0), 2)
 
 	err = verifier.Verify([]byte{}, nil)
 	require.EqualError(t, err, "invalid signature type '<nil>' != '*threshold.Signature'")
@@ -156,4 +156,14 @@ func TestVerifier_Verify(t *testing.T) {
 	verifier.factory = fake.NewVerifierFactory(fake.NewBadVerifier())
 	err = verifier.Verify([]byte{}, &Signature{})
 	require.EqualError(t, err, "invalid signature: fake error")
+}
+
+func TestVerifierFactory_FromArray(t *testing.T) {
+	fac := verifierFactory{
+		factory: fake.NewVerifierFactory(fake.Verifier{}),
+	}
+
+	verifier, err := fac.FromArray([]crypto.PublicKey{fake.PublicKey{}})
+	require.NoError(t, err)
+	require.Len(t, verifier.(Verifier).pubkeys, 1)
 }

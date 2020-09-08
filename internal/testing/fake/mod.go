@@ -571,9 +571,15 @@ func NewBadVerifierFactory() VerifierFactory {
 
 // FromAuthority implements crypto.VerifierFactory.
 func (f VerifierFactory) FromAuthority(ca crypto.CollectiveAuthority) (crypto.Verifier, error) {
-	if f.call != nil {
-		f.call.Add(ca)
-	}
+	f.call.Add(ca)
+
+	return f.verifier, f.err
+}
+
+// FromArray implements crypto.VerifierFactory.
+func (f VerifierFactory) FromArray(pubkeys []crypto.PublicKey) (crypto.Verifier, error) {
+	f.call.Add(pubkeys)
+
 	return f.verifier, f.err
 }
 
