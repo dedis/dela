@@ -176,7 +176,11 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 	go func() {
 		err := s.main()
 		if err != nil {
-			s.logger.Err(err).Msg("main loop failed")
+			select {
+			case <-s.closing:
+			default:
+				s.logger.Err(err).Msg("main loop failed")
+			}
 		}
 
 		close(s.closed)

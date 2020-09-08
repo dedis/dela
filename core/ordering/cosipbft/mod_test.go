@@ -126,11 +126,16 @@ func TestService_New(t *testing.T) {
 		Cosi:       flatcosi.NewFlat(fake.Mino{}, fake.NewAggregateSigner()),
 		Tree:       fakeTree{},
 		Validation: simple.NewService(nil, nil),
+		Pool:       badPool{},
 	}
 
 	srvc, err := NewService(param, WithHashFactory(fake.NewHashFactory(&fake.Hash{})))
 	require.NoError(t, err)
 	require.NotNil(t, srvc)
+
+	srvc.logger = zerolog.New(ioutil.Discard)
+	close(srvc.started)
+	<-srvc.closed
 
 	param.Mino = fake.NewBadMino()
 	_, err = NewService(param)

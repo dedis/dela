@@ -266,7 +266,7 @@ func (f msgFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) 
 		for addr, view := range in.GetViews() {
 			key, err := addr.MarshalText()
 			if err != nil {
-				return nil, err
+				return nil, xerrors.Errorf("failed to serialize address: %v", err)
 			}
 
 			rawView, err := encodeView(view, ctx)
@@ -368,6 +368,7 @@ func (f msgFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error)
 	}
 
 	if m.Block != nil {
+		// 1. Decode the block.
 		factory := ctx.GetFactory(types.BlockKey{})
 		if factory == nil {
 			return nil, xerrors.New("missing block factory")
@@ -383,11 +384,12 @@ func (f msgFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error)
 			return nil, xerrors.Errorf("invalid block '%T'", msg)
 		}
 
+		// 2. Decode the view messages if any.
 		factory = ctx.GetFactory(types.AddressKey{})
 
 		fac, ok := factory.(mino.AddressFactory)
 		if !ok {
-			return nil, xerrors.Errorf("invalid address factory: %v", factory)
+			return nil, xerrors.Errorf("invalid address factory '%T'", factory)
 		}
 
 		views := make(map[mino.Address]types.ViewMessage)

@@ -158,6 +158,11 @@ func TestMsgFormat_Encode(t *testing.T) {
 	_, err = format.Encode(ctx, types.NewBlockMessage(block, views))
 	require.EqualError(t, err, "view: failed to serialize signature: fake error")
 
+	delete(views, fake.NewAddress(0))
+	views[fake.NewBadAddress()] = types.NewViewMessage(types.Digest{}, 0, fake.Signature{})
+	_, err = format.Encode(ctx, types.NewBlockMessage(block, views))
+	require.EqualError(t, err, "failed to serialize address: fake error")
+
 	_, err = format.Encode(fake.NewBadContext(), types.NewBlockMessage(block, nil))
 	require.EqualError(t, err, "block: encoding failed: fake error")
 
@@ -228,6 +233,10 @@ func TestMsgFormat_Decode(t *testing.T) {
 	badCtx = serde.WithFactory(ctx, types.BlockKey{}, fake.MessageFactory{})
 	_, err = format.Decode(badCtx, []byte(`{"Block":{}}`))
 	require.EqualError(t, err, "invalid block 'fake.Message'")
+
+	badCtx = serde.WithFactory(ctx, types.AddressKey{}, nil)
+	_, err = format.Decode(badCtx, []byte(`{"Block":{"Views":{"":{}}}}`))
+	require.EqualError(t, err, "invalid address factory '<nil>'")
 
 	badCtx = serde.WithFactory(ctx, types.SignatureKey{}, nil)
 	_, err = format.Decode(badCtx, []byte(`{"Block":{"Views":{"":{}}}}`))

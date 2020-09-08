@@ -25,8 +25,8 @@ func TestProcessor_BlockMessage_Invoke(t *testing.T) {
 
 	proc := newProcessor()
 	proc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
-	proc.sync = fakeSync{}
-	proc.blocks = blockstore.NewInMemory()
+	proc.sync = fakeSync{latest: 1}
+	proc.blocks = fakeStore{}
 	proc.pbftsm = fakeSM{
 		state: pbft.InitialState,
 		id:    expected,
@@ -41,6 +41,12 @@ func TestProcessor_BlockMessage_Invoke(t *testing.T) {
 	proc.pbftsm = fakeSM{state: pbft.InitialState, err: xerrors.New("oops")}
 	_, err = proc.Invoke(fake.NewAddress(0), msg)
 	require.EqualError(t, err, "pbft prepare failed: oops")
+
+	views := map[mino.Address]types.ViewMessage{fake.NewAddress(0): {}}
+	msg = types.NewBlockMessage(types.Block{}, views)
+	proc.pbftsm = fakeSM{err: xerrors.New("oops")}
+	_, err = proc.Invoke(fake.NewAddress(0), msg)
+	require.EqualError(t, err, "accept all: oops")
 }
 
 func TestProcessor_CommitMessage_Invoke(t *testing.T) {
@@ -144,6 +150,10 @@ func TestProcessor_ViewMessage_Process(t *testing.T) {
 	resp, err := proc.Process(req)
 	require.NoError(t, err)
 	require.Nil(t, resp)
+
+	proc.pbftsm = fakeSM{err: xerrors.New("oops")}
+	_, err = proc.Process(req)
+	require.NoError(t, err)
 }
 
 func TestProcessor_Unsupported_Process(t *testing.T) {
@@ -211,7 +221,11 @@ func (sm fakeSM) Expire(mino.Address) (pbft.View, error) {
 }
 
 func (sm fakeSM) Accept(pbft.View) error {
-	return nil
+	return sm.err
+}
+
+func (sm fakeSM) AcceptAll([]pbft.View) error {
+	return sm.err
 }
 
 func (sm fakeSM) Watch(context.Context) <-chan pbft.State {
@@ -221,11 +235,12 @@ func (sm fakeSM) Watch(context.Context) <-chan pbft.State {
 type fakeSync struct {
 	blocksync.Synchronizer
 
-	err error
+	latest uint64
+	err    error
 }
 
 func (sync fakeSync) GetLatest() uint64 {
-	return 0
+	return sync.latest
 }
 
 func (sync fakeSync) Sync(ctx context.Context, players mino.Players, cfg blocksync.Config) error {
@@ -298,4 +313,23 @@ func (s fakeGenesisStore) Get() (types.Genesis, error) {
 
 func (s fakeGenesisStore) Set(types.Genesis) error {
 	return s.errSet
+}
+
+type fakeStore struct {
+	blockstore.BlockStore
+}
+
+func (fakeStore) Len() uint64 {
+	return 0
+}
+
+func (fakeStore) Watch(context.Context) <-chan types.BlockLink {
+	ch := make(chan types.BlockLink, 1)
+
+	block, _ := types.NewBlock(simple.NewData(nil), types.WithIndex(1))
+	link, _ := types.NewBlockLink(types.Digest{}, block)
+	ch <- link
+	close(ch)
+
+	return ch
 }

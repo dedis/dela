@@ -171,8 +171,19 @@ func (m *pbftsm) GetLeader() (mino.Address, error) {
 	return iter.GetNext(), nil
 }
 
+// GetViews implements pbft.StateMachine. It returns the views for which the
+// current round has been accepted.
 func (m *pbftsm) GetViews() map[mino.Address]View {
-	return m.round.prevViews
+	m.Lock()
+
+	views := make(map[mino.Address]View)
+	for key, value := range m.round.prevViews {
+		views[key] = value
+	}
+
+	m.Unlock()
+
+	return views
 }
 
 // Prepare implements pbft.StateMachine. It receives the proposal from the
@@ -278,12 +289,12 @@ func (m *pbftsm) Accept(view View) error {
 
 	err := m.init()
 	if err != nil {
-		return err
+		return xerrors.Errorf("init: %v", err)
 	}
 
 	if view.leader == m.round.leader {
 		// Ignore view coming for the current leader as we already accepted this
-		// one.
+		// leader.
 		return nil
 	}
 
@@ -316,7 +327,7 @@ func (m *pbftsm) AcceptAll(views []View) error {
 
 	err := m.init()
 	if err != nil {
-		return err
+		return xerrors.Errorf("init: %v", err)
 	}
 
 	if len(views) <= m.round.threshold {
@@ -374,7 +385,7 @@ func (m *pbftsm) verifyViews(skip bool, views ...View) error {
 
 		latestID, err := m.getLatestID()
 		if err != nil {
-			return err
+			return xerrors.Errorf("failed to read latest id: %v", err)
 		}
 
 		if view.id != latestID {
@@ -394,7 +405,7 @@ func (m *pbftsm) Expire(addr mino.Address) (View, error) {
 
 	err := m.init()
 	if err != nil {
-		return View{}, err
+		return View{}, xerrors.Errorf("init: %v", err)
 	}
 
 	lastID, err := m.getLatestID()
@@ -622,7 +633,7 @@ func (m *pbftsm) init() error {
 
 	roster, err := m.authReader(m.tree.Get())
 	if err != nil {
-		return err
+		return xerrors.Errorf("failed to read roster: %v", err)
 	}
 
 	m.round.threshold = calculateThreshold(roster.Len())

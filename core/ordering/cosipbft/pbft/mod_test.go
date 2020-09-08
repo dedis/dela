@@ -30,6 +30,9 @@ import (
 func TestState_String(t *testing.T) {
 	var state State = 99
 	require.Equal(t, "unknown", state.String())
+
+	state = 0
+	require.Equal(t, "none", state.String())
 }
 
 func TestStateMachine_GetState(t *testing.T) {
@@ -62,6 +65,17 @@ func TestStateMachine_GetLeader(t *testing.T) {
 	sm.authReader = badReader
 	_, err = sm.GetLeader()
 	require.EqualError(t, err, "failed to read roster: oops")
+}
+
+func TestStateMachine_GetViews(t *testing.T) {
+	sm := &pbftsm{}
+	require.Len(t, sm.GetViews(), 0)
+
+	sm.round.prevViews = map[mino.Address]View{
+		fake.NewAddress(0): {},
+		fake.NewAddress(1): {},
+	}
+	require.Len(t, sm.GetViews(), 2)
 }
 
 func TestStateMachine_Prepare(t *testing.T) {
@@ -271,9 +285,15 @@ func TestStateMachine_Accept(t *testing.T) {
 
 	err := sm.Accept(View{from: fake.NewAddress(0), leader: 1})
 	require.NoError(t, err)
+	require.Equal(t, 2, sm.round.threshold)
 	require.Len(t, sm.round.views, 1)
 
 	err = sm.Accept(View{from: fake.NewAddress(1), leader: 1})
+	require.NoError(t, err)
+	require.Len(t, sm.round.views, 2)
+
+	// Ignore view for the same leader.
+	err = sm.Accept(View{from: fake.NewAddress(2), leader: 0})
 	require.NoError(t, err)
 	require.Len(t, sm.round.views, 2)
 
@@ -282,22 +302,30 @@ func TestStateMachine_Accept(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, sm.round.views, 2)
 
-	// Ignore views for a different leader.
+	// Ignore views for a different leader than the next one.
 	err = sm.Accept(View{from: fake.NewAddress(2), leader: 5})
 	require.EqualError(t, err, "invalid view: mismatch leader 5 != 1")
 	require.Len(t, sm.round.views, 2)
 
+	sm.genesis = blockstore.NewGenesisStore()
+	err = sm.Accept(View{from: fake.NewAddress(0), leader: 1})
+	require.EqualError(t, err, "invalid view: failed to read latest id: missing genesis block")
+
 	// Only accept views for the current round ID.
+	sm.genesis.Set(types.Genesis{})
 	err = sm.Accept(View{from: fake.NewAddress(3), leader: 1, id: types.Digest{1}})
 	require.EqualError(t, err, "invalid view: mismatch id 01000000 != 00000000")
 
-	sm.authReader = func(hashtree.Tree) (authority.Authority, error) {
-		return nil, xerrors.New("oops")
-	}
+	sm.authReader = badReader
 	err = sm.Accept(View{leader: 1})
 	require.EqualError(t, err, "invalid view: failed to read roster: oops")
 
+	sm.state = NoneState
+	err = sm.Accept(View{leader: 1})
+	require.EqualError(t, err, "init: failed to read roster: oops")
+
 	// Ignore view with an invalid signature.
+	sm.state = InitialState
 	sm.authReader = func(hashtree.Tree) (authority.Authority, error) {
 		ro := authority.New(
 			[]mino.Address{fake.NewAddress(0)},
@@ -310,12 +338,11 @@ func TestStateMachine_Accept(t *testing.T) {
 }
 
 func TestStateMachine_AcceptAll(t *testing.T) {
-	ro := authority.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+	ro := authority.FromAuthority(fake.NewAuthority(4, fake.NewSigner))
 
 	sm := &pbftsm{
 		blocks:  blockstore.NewInMemory(),
 		genesis: blockstore.NewGenesisStore(),
-		round:   round{threshold: 2},
 		watcher: core.NewWatcher(),
 		signer:  fake.NewSigner(),
 		tree:    blockstore.NewTreeCache(badTree{}),
@@ -332,23 +359,31 @@ func TestStateMachine_AcceptAll(t *testing.T) {
 		{from: fake.NewAddress(2), leader: 5},
 	})
 	require.NoError(t, err)
+	require.Equal(t, 2, sm.round.threshold)
 	require.Equal(t, uint16(5), sm.round.leader)
 	require.Equal(t, InitialState, sm.state)
+	require.Nil(t, sm.round.views)
+	require.Len(t, sm.round.prevViews, 3)
+
+	sm.round.threshold = 0
+	err = sm.AcceptAll([]View{{leader: 5}})
+	require.NoError(t, err)
 
 	// Only accept if there are enough views.
 	err = sm.AcceptAll([]View{})
 	require.EqualError(t, err, "not enough views")
 
-	err = sm.AcceptAll([]View{
-		{from: fake.NewAddress(0), leader: 6},
-		{from: fake.NewAddress(1), leader: 6},
-		{from: fake.NewAddress(3), leader: 6},
-	})
-	require.EqualError(t, err, "invalid view: unknown peer: fake.Address[3]")
+	err = sm.AcceptAll([]View{{from: fake.NewAddress(4), leader: 6}})
+	require.EqualError(t, err, "invalid view: unknown peer: fake.Address[4]")
+
+	sm.state = NoneState
+	sm.authReader = badReader
+	err = sm.AcceptAll([]View{{}})
+	require.EqualError(t, err, "init: failed to read roster: oops")
 }
 
 func TestStateMachine_Expire(t *testing.T) {
-	ro := authority.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+	ro := authority.FromAuthority(fake.NewAuthority(4, fake.NewSigner))
 
 	sm := &pbftsm{
 		watcher: core.NewWatcher(),
@@ -365,6 +400,7 @@ func TestStateMachine_Expire(t *testing.T) {
 
 	view, err := sm.Expire(fake.NewAddress(0))
 	require.NoError(t, err)
+	require.Equal(t, 2, sm.round.threshold)
 	require.Equal(t, uint16(1), view.leader)
 	require.NoError(t, view.Verify(sm.signer.GetPublicKey()))
 
@@ -376,6 +412,11 @@ func TestStateMachine_Expire(t *testing.T) {
 	sm.genesis = blockstore.NewGenesisStore()
 	_, err = sm.Expire(fake.NewAddress(0))
 	require.EqualError(t, err, "couldn't get latest digest: missing genesis block")
+
+	sm.authReader = badReader
+	sm.state = NoneState
+	_, err = sm.Expire(fake.NewAddress(0))
+	require.EqualError(t, err, "init: failed to read roster: oops")
 }
 
 func TestStateMachine_CatchUp(t *testing.T) {
