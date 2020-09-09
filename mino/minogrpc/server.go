@@ -162,7 +162,7 @@ func (o overlayServer) Call(ctx context.Context, msg *ptypes.Message) (*ptypes.M
 	}
 
 	if result == nil {
-		return &Message{}, nil
+		return &ptypes.Message{}, nil
 	}
 
 	res, err := result.Serialize(o.context)
