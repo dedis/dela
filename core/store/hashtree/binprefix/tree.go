@@ -104,7 +104,7 @@ func (t *Tree) Len() int {
 }
 
 // Search returns the value associated to the key if it exists, otherwise nil.
-// When path is defined, it will be filled so the interior nodes and the leaf
+// When path is defined, it will be filled with the interior nodes and the leaf
 // node so that it can prove the inclusion or the absence of the key.
 func (t *Tree) Search(key []byte, path *Path, b kv.Bucket) ([]byte, error) {
 	if len(key) > t.maxDepth {
@@ -166,8 +166,8 @@ func (t *Tree) Update(fac crypto.HashFactory, b kv.Bucket) error {
 }
 
 // Persist visits the whole tree and stores the leaf node in the database and
-// replace the node with disk nodes. Depending of the parameter, it also stores
-// intermediate nodes to the disk.
+// replaces the node with disk nodes. Depending of the parameter, it also stores
+// intermediate nodes on the disk.
 func (t *Tree) Persist(b kv.Bucket) error {
 	return t.root.Visit(func(n TreeNode) error {
 		switch node := n.(type) {

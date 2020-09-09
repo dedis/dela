@@ -241,7 +241,7 @@ func NewManager(signer crypto.Signer, client Client) txn.Manager {
 // Make implements txn.Manager. It creates a transaction populated with the
 // arguments.
 func (mgr *transactionManager) Make(args ...txn.Arg) (txn.Transaction, error) {
-	opts := make([]TransactionOption, len(args), len(args)+2)
+	opts := make([]TransactionOption, len(args), len(args)+1)
 	for i, arg := range args {
 		opts[i] = WithArg(arg.Key, arg.Value)
 	}

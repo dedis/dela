@@ -4,7 +4,7 @@ package ifcheck
 
 func dummy2() {
 	// Should be good since this file has the "Code generated" comment
-	if b := false; b { // want "Please do not do initialization in if statement"
+	if b := false; b {
 
 	}
 }
