@@ -7,6 +7,7 @@ import (
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
@@ -55,6 +56,7 @@ type GenesisMessageJSON struct {
 // BlockMessageJSON is the JSON message to send a block.
 type BlockMessageJSON struct {
 	Block json.RawMessage
+	Views map[string]ViewMessageJSON
 }
 
 // CommitMessageJSON is the JSON message to send a commit request.
@@ -71,8 +73,9 @@ type DoneMessageJSON struct {
 
 // ViewMessageJSON is the JSON message to send a view change request.
 type ViewMessageJSON struct {
-	Leader int
-	ID     []byte
+	Leader    uint16
+	ID        []byte
+	Signature json.RawMessage
 }
 
 // MessageJSON is the JSON message that wraps the different kinds of messages.
@@ -256,11 +259,27 @@ func (f msgFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) 
 	case types.BlockMessage:
 		block, err := in.GetBlock().Serialize(ctx)
 		if err != nil {
-			return nil, xerrors.Errorf("failed to serialize block: %v", err)
+			return nil, xerrors.Errorf("block: %v", err)
+		}
+
+		views := make(map[string]ViewMessageJSON)
+		for addr, view := range in.GetViews() {
+			key, err := addr.MarshalText()
+			if err != nil {
+				return nil, xerrors.Errorf("failed to serialize address: %v", err)
+			}
+
+			rawView, err := encodeView(view, ctx)
+			if err != nil {
+				return nil, xerrors.Errorf("view: %v", err)
+			}
+
+			views[string(key)] = *rawView
 		}
 
 		bm := BlockMessageJSON{
 			Block: block,
+			Views: views,
 		}
 
 		m = MessageJSON{Block: &bm}
@@ -289,12 +308,12 @@ func (f msgFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) 
 
 		m = MessageJSON{Done: &dm}
 	case types.ViewMessage:
-		vm := ViewMessageJSON{
-			ID:     in.GetID().Bytes(),
-			Leader: in.GetLeader(),
+		vm, err := encodeView(in, ctx)
+		if err != nil {
+			return nil, xerrors.Errorf("view: %v", err)
 		}
 
-		m = MessageJSON{View: &vm}
+		m = MessageJSON{View: vm}
 	}
 
 	data, err := ctx.Marshal(m)
@@ -303,6 +322,21 @@ func (f msgFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) 
 	}
 
 	return data, nil
+}
+
+func encodeView(in types.ViewMessage, ctx serde.Context) (*ViewMessageJSON, error) {
+	sig, err := in.GetSignature().Serialize(ctx)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to serialize signature: %v", err)
+	}
+
+	vm := &ViewMessageJSON{
+		ID:        in.GetID().Bytes(),
+		Leader:    in.GetLeader(),
+		Signature: sig,
+	}
+
+	return vm, nil
 }
 
 // Decode implements serde.FormatEngine. It populates the message if
@@ -334,6 +368,7 @@ func (f msgFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error)
 	}
 
 	if m.Block != nil {
+		// 1. Decode the block.
 		factory := ctx.GetFactory(types.BlockKey{})
 		if factory == nil {
 			return nil, xerrors.New("missing block factory")
@@ -349,11 +384,31 @@ func (f msgFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error)
 			return nil, xerrors.Errorf("invalid block '%T'", msg)
 		}
 
-		return types.NewBlockMessage(block), nil
+		// 2. Decode the view messages if any.
+		factory = ctx.GetFactory(types.AddressKey{})
+
+		fac, ok := factory.(mino.AddressFactory)
+		if !ok {
+			return nil, xerrors.Errorf("invalid address factory '%T'", factory)
+		}
+
+		views := make(map[mino.Address]types.ViewMessage)
+		for key, rawView := range m.Block.Views {
+			addr := fac.FromText([]byte(key))
+
+			view, err := decodeView(ctx, &rawView)
+			if err != nil {
+				return nil, xerrors.Errorf("view: %v", err)
+			}
+
+			views[addr] = view
+		}
+
+		return types.NewBlockMessage(block, views), nil
 	}
 
 	if m.Commit != nil {
-		sig, err := decodeSignature(ctx, m.Commit.Signature)
+		sig, err := decodeSignature(ctx, m.Commit.Signature, types.AggregateKey{})
 		if err != nil {
 			return nil, xerrors.Errorf("commit failed: %v", err)
 		}
@@ -365,7 +420,7 @@ func (f msgFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error)
 	}
 
 	if m.Done != nil {
-		sig, err := decodeSignature(ctx, m.Done.Signature)
+		sig, err := decodeSignature(ctx, m.Done.Signature, types.AggregateKey{})
 		if err != nil {
 			return nil, xerrors.Errorf("done failed: %v", err)
 		}
@@ -377,17 +432,26 @@ func (f msgFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error)
 	}
 
 	if m.View != nil {
-		id := types.Digest{}
-		copy(id[:], m.View.ID)
-
-		return types.NewViewMessage(id, m.View.Leader), nil
+		return decodeView(ctx, m.View)
 	}
 
 	return nil, xerrors.New("message is empty")
 }
 
-func decodeSignature(ctx serde.Context, data []byte) (crypto.Signature, error) {
-	factory := ctx.GetFactory(types.SignatureKey{})
+func decodeView(ctx serde.Context, view *ViewMessageJSON) (types.ViewMessage, error) {
+	sig, err := decodeSignature(ctx, view.Signature, types.SignatureKey{})
+	if err != nil {
+		return types.ViewMessage{}, xerrors.Errorf("signature: %v", err)
+	}
+
+	id := types.Digest{}
+	copy(id[:], view.ID)
+
+	return types.NewViewMessage(id, view.Leader, sig), nil
+}
+
+func decodeSignature(ctx serde.Context, data []byte, key interface{}) (crypto.Signature, error) {
+	factory := ctx.GetFactory(key)
 
 	fac, ok := factory.(crypto.SignatureFactory)
 	if !ok {

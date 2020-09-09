@@ -25,6 +25,8 @@ type State byte
 
 func (s State) String() string {
 	switch s {
+	case NoneState:
+		return "none"
 	case InitialState:
 		return "initial"
 	case PrepareState:
@@ -34,14 +36,17 @@ func (s State) String() string {
 	case ViewChangeState:
 		return "viewchange"
 	default:
-		return "none"
+		return "unknown"
 	}
 }
 
 const (
+	// NoneState is the very first state of the machine where nothing is set.
+	NoneState State = iota
+
 	// InitialState is the entry state which means the beginning of the PBFT
 	// protocol.
-	InitialState State = iota
+	InitialState
 
 	// PrepareState is the state to indicate that a proposal has been received
 	// and the machine is waiting for confirmations.
@@ -56,37 +61,31 @@ const (
 	ViewChangeState
 )
 
-// View is the view change request sent to other participants.
-type View struct {
-	From   mino.Address
-	ID     types.Digest
-	Leader int
-	// TODO: signature
-}
-
 // StateMachine is the interface to implement to support a PBFT protocol.
 type StateMachine interface {
 	GetState() State
 	GetLeader() (mino.Address, error)
+	GetViews() map[mino.Address]View
 	Prepare(block types.Block) (types.Digest, error)
 	Commit(types.Digest, crypto.Signature) error
 	Finalize(types.Digest, crypto.Signature) error
-	Accept(View)
-	AcceptAll([]View)
+	Accept(View) error
+	AcceptAll([]View) error
 	Expire(addr mino.Address) (View, error)
 	CatchUp(types.BlockLink) error
 	Watch(context.Context) <-chan State
 }
 
 type round struct {
-	leader     int
+	leader     uint16
 	threshold  int
 	id         types.Digest
 	block      types.Block
 	tree       hashtree.StagingTree
 	prepareSig crypto.Signature
 	changeset  authority.ChangeSet
-	views      map[mino.Address]struct{}
+	prevViews  map[mino.Address]View
+	views      map[mino.Address]View
 }
 
 // AuthorityReader is a function to help the state machine to read the current
@@ -96,16 +95,20 @@ type AuthorityReader func(tree hashtree.Tree) (authority.Authority, error)
 type pbftsm struct {
 	sync.Mutex
 
-	logger      zerolog.Logger
-	watcher     core.Observable
-	hashFac     crypto.HashFactory
-	val         validation.Service
+	logger     zerolog.Logger
+	watcher    core.Observable
+	hashFac    crypto.HashFactory
+	val        validation.Service
+	blocks     blockstore.BlockStore
+	genesis    blockstore.GenesisStore
+	tree       blockstore.TreeCache
+	authReader AuthorityReader
+	db         kv.DB
+
+	// verifierFac creates a verifier for the aggregated signature.
 	verifierFac crypto.VerifierFactory
-	blocks      blockstore.BlockStore
-	genesis     blockstore.GenesisStore
-	tree        blockstore.TreeCache
-	authReader  AuthorityReader
-	db          kv.DB
+	// signer signs and verify single signature for the view change.
+	signer crypto.Signer
 
 	state State
 	round round
@@ -116,6 +119,7 @@ type pbftsm struct {
 type StateMachineParam struct {
 	Validation      validation.Service
 	VerifierFactory crypto.VerifierFactory
+	Signer          crypto.Signer
 	Blocks          blockstore.BlockStore
 	Genesis         blockstore.GenesisStore
 	Tree            blockstore.TreeCache
@@ -131,11 +135,12 @@ func NewStateMachine(param StateMachineParam) StateMachine {
 		hashFac:     crypto.NewSha256Factory(),
 		val:         param.Validation,
 		verifierFac: param.VerifierFactory,
+		signer:      param.Signer,
 		blocks:      param.Blocks,
 		genesis:     param.Genesis,
 		tree:        param.Tree,
 		db:          param.DB,
-		state:       InitialState,
+		state:       NoneState,
 		authReader:  param.AuthorityReader,
 	}
 }
@@ -161,9 +166,24 @@ func (m *pbftsm) GetLeader() (mino.Address, error) {
 	}
 
 	iter := roster.AddressIterator()
-	iter.Seek(m.round.leader)
+	iter.Seek(int(m.round.leader))
 
 	return iter.GetNext(), nil
+}
+
+// GetViews implements pbft.StateMachine. It returns the views for which the
+// current round has been accepted.
+func (m *pbftsm) GetViews() map[mino.Address]View {
+	m.Lock()
+
+	views := make(map[mino.Address]View)
+	for key, value := range m.round.prevViews {
+		views[key] = value
+	}
+
+	m.Unlock()
+
+	return views
 }
 
 // Prepare implements pbft.StateMachine. It receives the proposal from the
@@ -179,7 +199,7 @@ func (m *pbftsm) Prepare(block types.Block) (types.Digest, error) {
 		return m.round.id, nil
 	}
 
-	if m.state != InitialState {
+	if m.state != InitialState && m.state != NoneState {
 		return types.Digest{}, xerrors.Errorf("mismatch state %v != %v", m.state, InitialState)
 	}
 
@@ -254,6 +274,8 @@ func (m *pbftsm) Finalize(id types.Digest, sig crypto.Signature) error {
 		return err
 	}
 
+	m.round.prevViews = nil
+	m.round.views = nil
 	m.setState(InitialState)
 
 	return nil
@@ -261,60 +283,118 @@ func (m *pbftsm) Finalize(id types.Digest, sig crypto.Signature) error {
 
 // Accept implements pbft.StateMachine. It processes view change messages and
 // reset the current PBFT if it receives enough of them.
-func (m *pbftsm) Accept(view View) {
+func (m *pbftsm) Accept(view View) error {
 	m.Lock()
 	defer m.Unlock()
 
-	if view.Leader != m.round.leader+1 {
-		// The state machine ignore view messages from different rounds. It only
-		// accepts views for the next leader even if the state machine is not in
-		// ViewChange state.
-		return
+	err := m.init()
+	if err != nil {
+		return xerrors.Errorf("init: %v", err)
 	}
 
-	if view.ID != m.round.id {
-		m.logger.Debug().
-			Str("viewID", view.ID.String()).
-			Str("roundID", m.round.id.String()).
-			Msg("received a view for a different block")
+	if view.leader == m.round.leader {
+		// Ignore view coming for the current leader as we already accepted this
+		// leader.
+		return nil
+	}
 
-		// Ignore views for a different block as everyone should be at the same
-		// index.
-		return
+	err = m.verifyViews(false, view)
+	if err != nil {
+		return xerrors.Errorf("invalid view: %v", err)
 	}
 
 	if m.round.views == nil {
-		m.round.views = make(map[mino.Address]struct{})
+		m.round.views = make(map[mino.Address]View)
 	}
 
-	m.round.views[view.From] = struct{}{}
+	m.logger.Trace().
+		Str("from", view.from.String()).
+		Msg("view accepted")
+
+	m.round.views[view.from] = view
 
 	m.checkViewChange(view)
+
+	return nil
 }
 
 // AcceptAll implements pbft.StateMachine. It accepts a list of views which
 // allows a node falling behind to catch up. The list must contain enough views
-// reach the threshold otherwise it will be ignored.
-func (m *pbftsm) AcceptAll(views []View) {
+// to reach the threshold, otherwise it will be ignored.
+func (m *pbftsm) AcceptAll(views []View) error {
 	m.Lock()
 	defer m.Unlock()
 
-	set := make(map[mino.Address]struct{})
-
-	for _, view := range views {
-		if view.ID == m.round.id {
-			set[view.From] = struct{}{}
-		}
+	err := m.init()
+	if err != nil {
+		return xerrors.Errorf("init: %v", err)
 	}
 
 	if len(views) <= m.round.threshold {
-		// Not enough views to accept the view change.
-		return
+		return xerrors.Errorf("not enough views: %d <= %d",
+			len(views), m.round.threshold)
 	}
 
-	m.round.leader = views[0].Leader
+	if views[0].leader == m.round.leader {
+		// Skip verifying the views if the leader will anyway be the same.
+		return nil
+	}
 
-	m.setState(InitialState)
+	err = m.verifyViews(true, views...)
+	if err != nil {
+		return xerrors.Errorf("invalid view: %v", err)
+	}
+
+	set := make(map[mino.Address]View)
+	for _, view := range views {
+		set[view.from] = view
+	}
+
+	m.round.views = set
+	m.state = ViewChangeState
+	m.checkViewChange(views[0])
+
+	return nil
+}
+
+func (m *pbftsm) verifyViews(skip bool, views ...View) error {
+	roster, err := m.authReader(m.tree.Get())
+	if err != nil {
+		return xerrors.Errorf("failed to read roster: %v", err)
+	}
+
+	for _, view := range views {
+		pubkey, _ := roster.GetPublicKey(view.from)
+		if pubkey == nil {
+			return xerrors.Errorf("unknown peer: %v", view.from)
+		}
+
+		err := view.Verify(pubkey)
+		if err != nil {
+			return xerrors.Errorf("invalid signature: %v", err)
+		}
+
+		if !skip && view.leader != m.round.leader+1 {
+			// The state machine ignore view messages from different rounds. It only
+			// accepts views for the next leader even if the state machine is not in
+			// ViewChange state.
+			//
+			// This check can be skipped when enough views are received for a
+			// given leader index.
+			return xerrors.Errorf("mismatch leader %d != %d", view.leader, m.round.leader+1)
+		}
+
+		latestID, err := m.getLatestID()
+		if err != nil {
+			return xerrors.Errorf("failed to read latest id: %v", err)
+		}
+
+		if view.id != latestID {
+			return xerrors.Errorf("mismatch id %v != %v", view.id, latestID)
+		}
+	}
+
+	return nil
 }
 
 // Expire implements pbft.StateMachine. It moves the state machine to the
@@ -324,25 +404,34 @@ func (m *pbftsm) Expire(addr mino.Address) (View, error) {
 	m.Lock()
 	defer m.Unlock()
 
-	view := View{
-		From:   addr,
-		Leader: m.round.leader + 1,
+	err := m.init()
+	if err != nil {
+		return View{}, xerrors.Errorf("init: %v", err)
 	}
 
 	lastID, err := m.getLatestID()
 	if err != nil {
-		return view, xerrors.Errorf("couldn't get latest digest: %v", err)
+		return View{}, xerrors.Errorf("couldn't get latest digest: %v", err)
 	}
 
-	view.ID = lastID
+	param := ViewParam{
+		From:   addr,
+		ID:     lastID,
+		Leader: m.round.leader + 1,
+	}
+
+	view, err := NewViewAndSign(param, m.signer)
+	if err != nil {
+		return view, xerrors.Errorf("create view: %v", err)
+	}
 
 	m.setState(ViewChangeState)
 
 	if m.round.views == nil {
-		m.round.views = make(map[mino.Address]struct{})
+		m.round.views = make(map[mino.Address]View)
 	}
 
-	m.round.views[addr] = struct{}{}
+	m.round.views[addr] = view
 
 	m.checkViewChange(view)
 
@@ -379,6 +468,8 @@ func (m *pbftsm) CatchUp(link types.BlockLink) error {
 		return xerrors.Errorf("finalize failed: %v", err)
 	}
 
+	m.round.views = nil
+	m.round.prevViews = nil
 	m.setState(InitialState)
 
 	return nil
@@ -536,6 +627,23 @@ func (m *pbftsm) verifyFinalize(r *round, sig crypto.Signature, ro authority.Aut
 	return nil
 }
 
+func (m *pbftsm) init() error {
+	if m.state != NoneState {
+		return nil
+	}
+
+	roster, err := m.authReader(m.tree.Get())
+	if err != nil {
+		return xerrors.Errorf("failed to read roster: %v", err)
+	}
+
+	m.round.threshold = calculateThreshold(roster.Len())
+
+	m.setState(InitialState)
+
+	return nil
+}
+
 func (m *pbftsm) setState(s State) {
 	m.state = s
 	m.watcher.Notify(s)
@@ -543,7 +651,9 @@ func (m *pbftsm) setState(s State) {
 
 func (m *pbftsm) checkViewChange(view View) {
 	if m.state == ViewChangeState && len(m.round.views) > m.round.threshold {
-		m.round.leader = view.Leader
+		m.round.prevViews = m.round.views
+		m.round.views = nil
+		m.round.leader = view.leader
 		m.setState(InitialState)
 	}
 }

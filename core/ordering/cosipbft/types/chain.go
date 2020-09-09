@@ -240,7 +240,7 @@ func (fac linkFac) Deserialize(ctx serde.Context, data []byte) (serde.Message, e
 	format := linkFormats.Get(ctx.GetFormat())
 
 	ctx = serde.WithFactory(ctx, BlockKey{}, fac.blockFac)
-	ctx = serde.WithFactory(ctx, SignatureKey{}, fac.sigFac)
+	ctx = serde.WithFactory(ctx, AggregateKey{}, fac.sigFac)
 	ctx = serde.WithFactory(ctx, ChangeSetKey{}, fac.csFac)
 
 	msg, err := format.Decode(ctx, data)

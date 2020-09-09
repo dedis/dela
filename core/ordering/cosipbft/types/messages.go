@@ -3,6 +3,8 @@ package types
 import (
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/crypto/common"
+	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
@@ -48,19 +50,25 @@ func (m GenesisMessage) Serialize(ctx serde.Context) ([]byte, error) {
 // BlockMessage is a message sent to participants to share a block.
 type BlockMessage struct {
 	block Block
-	// TODO: include view change messages if appropriate.
+	views map[mino.Address]ViewMessage
 }
 
 // NewBlockMessage creates a new block message with the provided block.
-func NewBlockMessage(block Block) BlockMessage {
+func NewBlockMessage(block Block, views map[mino.Address]ViewMessage) BlockMessage {
 	return BlockMessage{
 		block: block,
+		views: views,
 	}
 }
 
 // GetBlock returns the block of the message.
 func (m BlockMessage) GetBlock() Block {
 	return m.block
+}
+
+// GetViews returns the view messages if any.
+func (m BlockMessage) GetViews() map[mino.Address]ViewMessage {
+	return m.views
 }
 
 // Serialize implements serde.Message.
@@ -152,15 +160,17 @@ func (m DoneMessage) Serialize(ctx serde.Context) ([]byte, error) {
 
 // ViewMessage is a message to announce a view change request.
 type ViewMessage struct {
-	id     Digest
-	leader int
+	id        Digest
+	leader    uint16
+	signature crypto.Signature
 }
 
 // NewViewMessage creates a new view message.
-func NewViewMessage(id Digest, leader int) ViewMessage {
+func NewViewMessage(id Digest, leader uint16, sig crypto.Signature) ViewMessage {
 	return ViewMessage{
-		id:     id,
-		leader: leader,
+		id:        id,
+		leader:    leader,
+		signature: sig,
 	}
 }
 
@@ -170,8 +180,13 @@ func (m ViewMessage) GetID() Digest {
 }
 
 // GetLeader returns the leader index of the view change.
-func (m ViewMessage) GetLeader() int {
+func (m ViewMessage) GetLeader() uint16 {
 	return m.leader
+}
+
+// GetSignature returns the signature of the view.
+func (m ViewMessage) GetSignature() crypto.Signature {
+	return m.signature
 }
 
 // Serialize implements serde.Message. It returns the serialized data for this
@@ -196,24 +211,34 @@ type BlockKey struct{}
 // LinkKey is the key of the link factory.
 type LinkKey struct{}
 
-// SignatureKey is the key of the collective signature factory.
+// AggregateKey is the key of the collective signature factory.
+type AggregateKey struct{}
+
+// SignatureKey is the key of the view signature factory.
 type SignatureKey struct{}
+
+type AddressKey struct{}
 
 // MessageFactory is the factory to deserialize messages.
 type MessageFactory struct {
 	genesisFac serde.Factory
 	blockFac   serde.Factory
+	aggFac     crypto.SignatureFactory
 	sigFac     crypto.SignatureFactory
 	csFac      authority.ChangeSetFactory
+	addrFac    mino.AddressFactory
 }
 
 // NewMessageFactory creates a new message factory.
-func NewMessageFactory(gf, bf serde.Factory, sf crypto.SignatureFactory, csf authority.ChangeSetFactory) MessageFactory {
+func NewMessageFactory(gf, bf serde.Factory, addrFac mino.AddressFactory,
+	aggFac crypto.SignatureFactory, csf authority.ChangeSetFactory) MessageFactory {
 	return MessageFactory{
 		genesisFac: gf,
 		blockFac:   bf,
-		sigFac:     sf,
+		aggFac:     aggFac,
+		sigFac:     common.NewSignatureFactory(),
 		csFac:      csf,
+		addrFac:    addrFac,
 	}
 }
 
@@ -223,8 +248,10 @@ func (f MessageFactory) Deserialize(ctx serde.Context, data []byte) (serde.Messa
 
 	ctx = serde.WithFactory(ctx, GenesisKey{}, f.genesisFac)
 	ctx = serde.WithFactory(ctx, BlockKey{}, f.blockFac)
+	ctx = serde.WithFactory(ctx, AggregateKey{}, f.aggFac)
 	ctx = serde.WithFactory(ctx, SignatureKey{}, f.sigFac)
-	ctx = serde.WithFactory(ctx, LinkKey{}, NewLinkFactory(f.blockFac, f.sigFac, f.csFac))
+	ctx = serde.WithFactory(ctx, LinkKey{}, NewLinkFactory(f.blockFac, f.aggFac, f.csFac))
+	ctx = serde.WithFactory(ctx, AddressKey{}, f.addrFac)
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {

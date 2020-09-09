@@ -75,6 +75,27 @@ func (h *processor) Invoke(from mino.Address, msg serde.Message) ([]byte, error)
 			}
 		}
 
+		viewMsgs := in.GetViews()
+		if len(viewMsgs) > 0 {
+			views := make([]pbft.View, 0, len(viewMsgs))
+			for addr, view := range viewMsgs {
+				param := pbft.ViewParam{
+					From:   addr,
+					ID:     view.GetID(),
+					Leader: view.GetLeader(),
+				}
+
+				views = append(views, pbft.NewView(param, view.GetSignature()))
+			}
+
+			// Force a view change if enough views are provided in the situation
+			// where the current node is falling behind the others.
+			err := h.pbftsm.AcceptAll(views)
+			if err != nil {
+				return nil, xerrors.Errorf("accept all: %v", err)
+			}
+		}
+
 		digest, err := h.pbftsm.Prepare(in.GetBlock())
 		if err != nil {
 			return nil, xerrors.Errorf("pbft prepare failed: %v", err)
@@ -116,13 +137,16 @@ func (h *processor) Process(req mino.Request) (serde.Message, error) {
 			return nil, xerrors.Errorf("pbftsm finalized failed: %v", err)
 		}
 	case types.ViewMessage:
-		view := pbft.View{
+		param := pbft.ViewParam{
 			From:   req.Address,
 			ID:     msg.GetID(),
 			Leader: msg.GetLeader(),
 		}
 
-		h.pbftsm.Accept(view)
+		err := h.pbftsm.Accept(pbft.NewView(param, msg.GetSignature()))
+		if err != nil {
+			h.logger.Warn().Err(err).Msg("view message refused")
+		}
 	default:
 		return nil, xerrors.Errorf("unsupported message of type '%T'", req.Message)
 	}

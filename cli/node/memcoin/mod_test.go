@@ -106,7 +106,7 @@ func TestMemcoin_Scenario_1(t *testing.T) {
 // Utility functions
 
 func waitDaemon(t *testing.T, daemons []string) {
-	num := 20
+	num := 50
 
 	for _, daemon := range daemons {
 		for i := 0; i < num; i++ {
