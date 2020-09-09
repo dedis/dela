@@ -85,8 +85,9 @@ func (m minimal) Inject(ctx cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("invalid port value %d", port)
 	}
 
-	o, err := minogrpc.NewMinogrpc("127.0.0.1", uint16(port), tree.NewRouter(
-		treeRoutingHeight, minogrpc.AddressFactory{}))
+	rter := tree.NewRouter(treeRoutingHeight, minogrpc.AddressFactory{})
+
+	o, err := minogrpc.NewMinogrpc("127.0.0.1", uint16(port), rter)
 	if err != nil {
 		return xerrors.Errorf("couldn't make overlay: %v", err)
 	}

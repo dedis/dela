@@ -5,6 +5,7 @@ import (
 	"io"
 	"sync"
 
+	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
@@ -17,11 +18,15 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// ConnectionManager is an interface required by the session to open and release
+// connections to the relays.
 type ConnectionManager interface {
 	Acquire(mino.Address) (grpc.ClientConnInterface, error)
 	Release(mino.Address)
 }
 
+// Session is an interface for a stream session that allows to send messages to
+// the parent and relays, while receiving the ones for the local address.
 type Session interface {
 	mino.Sender
 	mino.Receiver
@@ -29,6 +34,8 @@ type Session interface {
 	Listen()
 }
 
+// Relay is the interface of the relays spawn by the session when trying to
+// contact a child node.
 type Relay interface {
 	Context() context.Context
 	Recv() (router.Packet, error)
@@ -39,6 +46,8 @@ type Relay interface {
 type session struct {
 	sync.Mutex
 	sync.WaitGroup
+
+	logger  zerolog.Logger
 	md      metadata.MD
 	me      mino.Address
 	gateway Relay
@@ -52,6 +61,7 @@ type session struct {
 	connMgr ConnectionManager
 }
 
+// NewSession creates a new session for the provided stream.
 func NewSession(
 	md metadata.MD,
 	stream PacketStream,
@@ -63,6 +73,7 @@ func NewSession(
 	connMgr ConnectionManager,
 ) Session {
 	return &session{
+		logger:  dela.Logger.With().Str("addr", me.String()).Logger(),
 		md:      md,
 		me:      me,
 		gateway: newRelay(stream, pktFac, ctx),
@@ -77,6 +88,8 @@ func NewSession(
 	}
 }
 
+// Listen implements session.Session. It listens for incoming packets from the
+// parent stream and closes the relays when it is done.
 func (s *session) Listen() {
 	defer func() {
 		s.close()
@@ -101,18 +114,20 @@ func (s *session) Listen() {
 
 		err = s.sendPacket(s.gateway.Context(), packet)
 		if err != nil {
-			dela.Logger.Err(err).Msg("failed to send to dispatched relays")
+			s.logger.Err(err).Msg("failed to send to dispatched relays")
 		}
 	}
 }
 
+// Send implements mino.Sender. It sends the message to the provided addresses
+// through the relays or the parent.
 func (s *session) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 	errs := make(chan error, 1)
-	close(errs)
+	defer close(errs)
 
 	data, err := msg.Serialize(s.context)
 	if err != nil {
-		errs <- err
+		errs <- xerrors.Errorf("failed to serialize msg: %v", err)
 		return errs
 	}
 
@@ -120,23 +135,30 @@ func (s *session) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 
 	err = s.sendPacket(s.gateway.Context(), packet)
 	if err != nil {
-		errs <- err
+		errs <- xerrors.Errorf("packet: %v", err)
 		return errs
 	}
 
 	return errs
 }
 
+// Recv implements mino.Receiver. It waits for a message to arrive and returns
+// it, or returns an error if something wrong happens. The context can cancel
+// the blocking call.
 func (s *session) Recv(ctx context.Context) (mino.Address, serde.Message, error) {
 	select {
 	case <-ctx.Done():
 		return nil, nil, ctx.Err()
 	case err := <-s.errs:
-		return nil, nil, err
+		if err != nil {
+			return nil, nil, xerrors.Errorf("stream closed unexpectedly: %v", err)
+		}
+
+		return nil, nil, io.EOF
 	case packet := <-s.queue.Channel():
 		msg, err := s.msgFac.Deserialize(s.context, packet.GetMessage())
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, xerrors.Errorf("message: %v", err)
 		}
 
 		return packet.GetSource(), msg, nil
@@ -149,7 +171,7 @@ func (s *session) close() {
 
 	for to, relay := range s.relays {
 		err := relay.Close()
-		dela.Logger.Trace().Err(err).Msg("relay closed")
+		s.logger.Trace().Err(err).Msg("relay closed")
 
 		// Let the manager know it can close the connection if necessary.
 		s.connMgr.Release(to)
@@ -170,7 +192,7 @@ func (s *session) sendPacket(ctx context.Context, p router.Packet) error {
 
 	routes, err := s.table.Forward(p)
 	if err != nil {
-		return err
+		return xerrors.Errorf("routing table: %v", err)
 	}
 
 	for addr, packet := range routes {
@@ -180,7 +202,7 @@ func (s *session) sendPacket(ctx context.Context, p router.Packet) error {
 		} else {
 			relay, err = s.setupRelay(ctx, addr)
 			if err != nil {
-				return err
+				return xerrors.Errorf("relay aborted: %v", err)
 			}
 		}
 
@@ -203,31 +225,33 @@ func (s *session) setupRelay(ctx context.Context, addr mino.Address) (Relay, err
 		return relay, nil
 	}
 
+	// 1. Acquire a connection to the distant peer.
 	conn, err := s.connMgr.Acquire(addr)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to create addr: %v", err)
+		return nil, xerrors.Errorf("failed to dial: %v", err)
 	}
 
 	cl := ptypes.NewOverlayClient(conn)
 	ctx = metadata.NewOutgoingContext(ctx, s.md)
 
-	r, err := cl.Stream(ctx, grpc.WaitForReady(false))
+	stream, err := cl.Stream(ctx, grpc.WaitForReady(false))
 	if err != nil {
-		return nil, xerrors.Errorf("'%s' failed to call stream for "+
-			"relay '%s': %v", s.me, addr, err)
+		return nil, xerrors.Errorf("client: %v", err)
 	}
 
+	// 2. Send the first message which is the router handshake.
 	hs, err := s.table.Prelude(addr).Serialize(s.context)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to serialize handshake: %v", err)
 	}
 
-	err = r.Send(&ptypes.Packet{Serialized: hs})
+	err = stream.Send(&ptypes.Packet{Serialized: hs})
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to send handshake: %v", err)
 	}
 
-	relay = newRelay(r, s.pktFac, s.context)
+	// 3. Create and run the relay to respond to incoming packets.
+	relay = newRelay(stream, s.pktFac, s.context)
 
 	s.relays[addr] = relay
 	s.Add(1)
@@ -244,32 +268,34 @@ func (s *session) setupRelay(ctx context.Context, addr mino.Address) (Relay, err
 				return
 			}
 			if err != nil {
-				dela.Logger.Err(err).Msg("relay failed")
+				s.logger.Err(err).Msg("relay failed")
 				return
 			}
 
 			err = s.sendPacket(ctx, pkt)
 			if err != nil {
-				dela.Logger.Err(err).Msg("relay failed to send a packet")
+				s.logger.Err(err).Msg("relay failed to send a packet")
 				return
 			}
 		}
 	}()
 
-	dela.Logger.Trace().
-		Str("from", s.me.String()).
+	s.logger.Trace().
 		Str("to", addr.String()).
 		Msg("relay opened")
 
 	return relay, nil
 }
 
+// PacketStream is a gRPC stream to send and receive protobuf packets.
 type PacketStream interface {
 	Context() context.Context
 	Send(*ptypes.Packet) error
 	Recv() (*ptypes.Packet, error)
 }
 
+// Relay is a relay open to a distant peer in a session. It offers functions to
+// send and receive messages.
 type relay struct {
 	sync.Mutex
 	stream    PacketStream
@@ -287,28 +313,34 @@ func newRelay(stream PacketStream, fac router.PacketFactory, ctx serde.Context) 
 	return r
 }
 
+// Context implements session.Relay. It returns the context of the stream.
 func (r *relay) Context() context.Context {
 	return r.stream.Context()
 }
 
+// Recv implements session.Relay. It waits for a message from the distant peer
+// and returns it.
 func (r *relay) Recv() (router.Packet, error) {
 	proto, err := r.stream.Recv()
 	if err != nil {
+		// The session will parse the error to detect specific events of the
+		// stream, therefore no wrap is done here.
 		return nil, err
 	}
 
 	packet, err := r.packetFac.PacketOf(r.context, proto.Serialized)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("packet: %v", err)
 	}
 
 	return packet, nil
 }
 
+// Send implements session.Relay. It sends the message to the distant peer.
 func (r *relay) Send(p router.Packet) error {
 	data, err := p.Serialize(r.context)
 	if err != nil {
-		return err
+		return xerrors.Errorf("failed to serialize: %v", err)
 	}
 
 	r.Lock()
@@ -316,18 +348,19 @@ func (r *relay) Send(p router.Packet) error {
 
 	err = r.stream.Send(&ptypes.Packet{Serialized: data})
 	if err != nil {
-		return err
+		return xerrors.Errorf("stream failed: %v", err)
 	}
 
 	return nil
 }
 
+// Close implements session.Relay. It closes the stream.
 func (r *relay) Close() error {
 	stream, ok := r.stream.(ptypes.Overlay_StreamClient)
 	if ok {
 		err := stream.CloseSend()
 		if err != nil {
-			return err
+			return xerrors.Errorf("failed to close stream: %v", err)
 		}
 	}
 
