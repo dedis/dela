@@ -464,7 +464,7 @@ type fakeServerStream struct {
 
 func newFakeServerStream(ctx context.Context) fakeServerStream {
 	ch := make(chan *ptypes.Packet, 1)
-	ch <- &ptypes.Packet{Serialized: []byte{0, 0}}
+	ch <- &ptypes.Packet{Serialized: []byte(`{}`)}
 
 	return fakeServerStream{
 		ch:  ch,

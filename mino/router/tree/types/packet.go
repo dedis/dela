@@ -47,6 +47,10 @@ func (p *Packet) GetMessage() []byte {
 	return p.msg
 }
 
+func (p *Packet) Add(to mino.Address) {
+	p.dest = append(p.dest, to)
+}
+
 // Slice implements router.Packet
 func (p *Packet) Slice(addr mino.Address) router.Packet {
 	removed := false
