@@ -92,6 +92,7 @@ func (s Service) validateTx(store store.Snapshot, tx txn.Transaction, r *Transac
 	}
 
 	if expectedNonce != tx.GetNonce() {
+		r.reason = "nonce is invalid"
 		r.accepted = false
 		return nil
 	}
@@ -102,6 +103,7 @@ func (s Service) validateTx(store store.Snapshot, tx txn.Transaction, r *Transac
 		return xerrors.Errorf("failed to execute tx: %v", err)
 	}
 
+	r.reason = res.Message
 	r.accepted = res.Accepted
 
 	// Update the nonce associated to the identity so that this transaction

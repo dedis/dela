@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/execution/baremetal"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/hashtree"
@@ -154,20 +153,20 @@ func makeTx(t *testing.T, nonce uint64, signer crypto.Signer) txn.Transaction {
 
 type testExec struct{}
 
-func (e testExec) Execute(tx txn.Transaction, store store.Snapshot) (execution.Result, error) {
+func (e testExec) Execute(tx txn.Transaction, store store.Snapshot) error {
 	key := tx.GetArg("key")
 	value := tx.GetArg("value")
 
 	if len(key) == 0 || len(value) == 0 {
-		return execution.Result{Accepted: false, Message: "key or value is nil"}, nil
+		return xerrors.New("key or value is nil")
 	}
 
 	err := store.Set(key, value)
 	if err != nil {
-		return execution.Result{}, err
+		return err
 	}
 
-	return execution.Result{Accepted: true}, nil
+	return nil
 }
 
 type badValidation struct {

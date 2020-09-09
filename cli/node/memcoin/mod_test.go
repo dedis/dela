@@ -89,13 +89,22 @@ func TestMemcoin_Scenario_1(t *testing.T) {
 	err = run(args)
 	require.NoError(t, err)
 
-	// Test a timeout waiting for a transaction.
 	buffer := new(bytes.Buffer)
+
+	// Run a few transactions.
+	for i := 0; i < 5; i++ {
+		buffer.Reset()
+		err = runWithCfg(args, config{Writer: buffer})
+		require.NoError(t, err)
+		require.Contains(t, buffer.String(), "transaction refused: duplicate in roster")
+	}
+
+	// Test a timeout waiting for a transaction.
 	args[7] = "1ns"
+	buffer.Reset()
 	err = runWithCfg(args, config{Writer: buffer})
 	require.NoError(t, err)
-	require.Equal(t, "[ERROR] command error: wait: transaction not found after timeout\n",
-		buffer.String())
+	require.Contains(t, buffer.String(), "transaction not found after timeout\n")
 
 	// Test a bad command.
 	err = runWithCfg([]string{os.Args[0], "ordering", "setup"}, cfg)
