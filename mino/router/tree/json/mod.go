@@ -11,6 +11,13 @@ func init() {
 	types.RegisterMessageFormat(serde.FormatJSON, newpacketFormat())
 }
 
+// PacketJSON describes a JSON formatted packet
+type PacketJSON struct {
+	Source  []byte
+	Dest    [][]byte
+	Message []byte
+}
+
 // packetFormat is the engine to encode and decode Packets in JSON format.
 //
 // - implements serde.FormatEngine
@@ -22,7 +29,7 @@ func newpacketFormat() packetFormat {
 
 // Encode implements serde.FormatEngine
 func (f packetFormat) Encode(ctx serde.Context, message serde.Message) ([]byte, error) {
-	packet, ok := message.(types.Packet)
+	packet, ok := message.(*types.Packet)
 	if !ok {
 		return nil, xerrors.Errorf("unexpected type: %T != %T", packet, message)
 	}
@@ -43,11 +50,10 @@ func (f packetFormat) Encode(ctx serde.Context, message serde.Message) ([]byte, 
 		dest[i] = addBuf
 	}
 
-	p := Packet{
+	p := PacketJSON{
 		Source:  source,
 		Dest:    dest,
 		Message: packet.Message,
-		Depth:   packet.Depth,
 	}
 
 	data, err := ctx.Marshal(p)
@@ -60,7 +66,7 @@ func (f packetFormat) Encode(ctx serde.Context, message serde.Message) ([]byte, 
 
 // Decode implements serde.FormatEngine
 func (f packetFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
-	p := Packet{}
+	p := PacketJSON{}
 
 	err := ctx.Unmarshal(data, &p)
 	if err != nil {
@@ -81,20 +87,7 @@ func (f packetFormat) Decode(ctx serde.Context, data []byte) (serde.Message, err
 		dest[i] = fac.FromText(buf)
 	}
 
-	packet := types.Packet{
-		Source:  source,
-		Dest:    dest,
-		Message: p.Message,
-		Depth:   p.Depth,
-	}
+	packet := types.NewPacket(source, p.Message, dest...)
 
 	return packet, nil
-}
-
-// Packet describes a JSON formatted packet
-type Packet struct {
-	Source  []byte
-	Dest    [][]byte
-	Message []byte
-	Depth   int
 }

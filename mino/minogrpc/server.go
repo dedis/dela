@@ -176,6 +176,16 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 	o.closer.Add(1)
 	defer o.closer.Done()
 
+	packet, err := stream.Recv()
+	if err != nil {
+		return err
+	}
+
+	hs, err := o.router.GetHandshakeFactory().HandshakeOf(o.context, packet.GetSerialized())
+	if err != nil {
+		return err
+	}
+
 	// We fetch the uri that identifies the handler in the handlers map with the
 	// grpc metadata api. Using context.Value won't work.
 	uri := uriFromContext(stream.Context())
@@ -199,6 +209,10 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 	session, initiated := endpoint.streams[streamID]
 
 	if !initiated {
+		table, err := o.router.TableOf(hs)
+		if err != nil {
+			return err
+		}
 
 		errs := make(chan error, 1)
 		receiver := receiver{
@@ -217,7 +231,7 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 			receiver: receiver,
 			traffic:  o.traffic,
 
-			router:      o.router,
+			table:       table,
 			connFactory: o.connFactory,
 			uri:         uri,
 			gateway:     gateway,

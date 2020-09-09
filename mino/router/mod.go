@@ -7,18 +7,6 @@ import (
 	"go.dedis.ch/dela/serde"
 )
 
-// PacketFactory describes the primitives to deserialize a packet
-type PacketFactory interface {
-	serde.Factory
-	PacketOf(serde.Context, []byte) (Packet, error)
-}
-
-// Membership describes the primitives to know what nodes the node knows
-type Membership interface {
-	GetLocal() mino.Address
-	GetAddresses() []mino.Address
-}
-
 // Packet is the type of message processed by the router. It contains
 // information that will allow the message to be routed.
 type Packet interface {
@@ -40,6 +28,23 @@ type Packet interface {
 	Slice(addr mino.Address) Packet
 }
 
+// PacketFactory describes the primitives to deserialize a packet
+type PacketFactory interface {
+	serde.Factory
+
+	PacketOf(serde.Context, []byte) (Packet, error)
+}
+
+type Handshake interface {
+	serde.Message
+}
+
+type HandshakeFactory interface {
+	serde.Factory
+
+	HandshakeOf(serde.Context, []byte) (Handshake, error)
+}
+
 // Router is the interface of the routing service. It provides the primitives to
 // route a packet among a set of participants. The orchestrator address (if any)
 // is not handled by the router. For that matter, the Packet.Slice function can
@@ -47,9 +52,21 @@ type Packet interface {
 type Router interface {
 	GetPacketFactory() PacketFactory
 
-	// MakePacket should be first called by the caller to set the specific
-	// required attribute on the packet if needed, for example a seed.
-	MakePacket(me mino.Address, to []mino.Address, msg []byte) Packet
+	GetHandshakeFactory() HandshakeFactory
+
+	New(mino.Players) (RoutingTable, error)
+
+	// TableOf returns the routing table associated to the handshake. A node
+	// should be able to route any incoming packet after receiving one.
+	TableOf(Handshake) (RoutingTable, error)
+}
+
+type Routes map[mino.Address]Packet
+
+type RoutingTable interface {
+	Make(src mino.Address, to []mino.Address, msg []byte) Packet
+
+	Prelude(mino.Address) Handshake
 
 	// Forward takes the destination address, unmarshal the packet, and, based
 	// on its content, return a map of packets, where each element of the map
@@ -64,10 +81,10 @@ type Router interface {
 	//
 	//	{A: packet{to: [A, B, C]}}
 	//
-	Forward(memship Membership, packet Packet) (map[mino.Address]Packet, error)
+	Forward(packet Packet) (Routes, error)
 
 	// OnFailure is used to announce that a packet failed to be routed. It
 	// allows the router to find a different route. Forward can be called
 	// afterwards to find an alternative route.
-	OnFailure(to mino.Address) error
+	OnFailure(to mino.Address)
 }

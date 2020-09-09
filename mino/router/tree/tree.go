@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"regexp"
 
 	"go.dedis.ch/dela/mino"
 )
+
+var eachLine = regexp.MustCompile(`(?m)^(.+)$`)
 
 // buildTree builds the newtwork tree based on the list of addresses. The first
 // call should have an index of 0. The height is the maximum number of edges in

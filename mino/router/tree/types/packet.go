@@ -22,21 +22,28 @@ type Packet struct {
 	Source  mino.Address
 	Dest    []mino.Address
 	Message []byte
-	Depth   int
+}
+
+func NewPacket(src mino.Address, msg []byte, dest ...mino.Address) *Packet {
+	return &Packet{
+		Source:  src,
+		Dest:    dest,
+		Message: msg,
+	}
 }
 
 // GetSource implements router.Packet
-func (p Packet) GetSource() mino.Address {
+func (p *Packet) GetSource() mino.Address {
 	return p.Source
 }
 
 // GetDestination implements router.Packet
-func (p Packet) GetDestination() []mino.Address {
+func (p *Packet) GetDestination() []mino.Address {
 	return p.Dest
 }
 
 // GetMessage implements router.Packet
-func (p Packet) GetMessage() []byte {
+func (p *Packet) GetMessage() []byte {
 	return p.Message
 }
 
@@ -60,12 +67,11 @@ func (p *Packet) Slice(addr mino.Address) router.Packet {
 		Source:  p.Source,
 		Dest:    []mino.Address{addr},
 		Message: p.Message,
-		Depth:   p.Depth,
 	}
 }
 
 // Serialize implements serde.Message
-func (p Packet) Serialize(ctx serde.Context) ([]byte, error) {
+func (p *Packet) Serialize(ctx serde.Context) ([]byte, error) {
 	format := packetFormat.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, p)
@@ -100,12 +106,12 @@ func (f PacketFactory) PacketOf(ctx serde.Context, data []byte) (router.Packet, 
 		return nil, xerrors.Errorf("failed to deserialize packet: %v", err)
 	}
 
-	packet, ok := msg.(Packet)
+	packet, ok := msg.(*Packet)
 	if !ok {
 		return nil, xerrors.Errorf("expected to find type '%T', but found '%T'", packet, msg)
 	}
 
-	return &packet, nil
+	return packet, nil
 }
 
 // Deserialize implements serde.Factory

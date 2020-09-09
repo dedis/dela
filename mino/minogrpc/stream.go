@@ -21,8 +21,8 @@ type sender struct {
 
 	sme         mino.Address // 'me' refers to overlay.me
 	traffic     *traffic
-	router      router.Router
 	connFactory ConnectionFactory
+	table       router.RoutingTable
 
 	// the uri is a uniq identifier for the rpc
 	uri string
@@ -89,7 +89,7 @@ func (s sender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 		headerGatewayKey, string(mebuf),
 		headerStreamIDKey, s.streamID))
 
-	packet := s.router.MakePacket(s.sme, addrs, data)
+	packet := s.table.Make(s.sme, addrs, data)
 
 	err = s.sendPacket(ctx, packet)
 	if err != nil {
@@ -130,10 +130,14 @@ func (s sender) closeRelays() {
 
 // sendPacket creates the relays if needed and sends the packets accordingly.
 func (s sender) sendPacket(ctx context.Context, packet router.Packet) error {
+	me := packet.Slice(s.sme)
+	if me != nil {
+		s.receiver.appendMessage(me)
+	}
 
 	p := packet.Slice(newRootAddress())
 
-	packets, err := s.router.Forward(s, packet)
+	packets, err := s.table.Forward(packet)
 	if err != nil {
 		return xerrors.Errorf("failed to route packet: %v", err)
 	}
@@ -194,7 +198,6 @@ func (s sender) sendPacket(ctx context.Context, packet router.Packet) error {
 }
 
 func (s sender) SetupRelay(ctx context.Context, addr mino.Address) error {
-
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
@@ -216,6 +219,16 @@ func (s sender) SetupRelay(ctx context.Context, addr mino.Address) error {
 				"failed to call stream for relay '%s': %v", addr, err)
 			return xerrors.Errorf("'%s' failed to call stream for "+
 				"relay '%s': %v", s.sme, addr, err)
+		}
+
+		hs, err := s.table.Prelude(addr).Serialize(s.context)
+		if err != nil {
+			return err
+		}
+
+		err = r.Send(&Packet{Serialized: hs})
+		if err != nil {
+			return err
 		}
 
 		relay := &streamConn{client: r, conn: conn}

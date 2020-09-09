@@ -131,7 +131,7 @@ func TestPedersen_Scenario(t *testing.T) {
 		// minogrpc.SaveEvents("events.dot")
 	}()
 
-	n := 8
+	n := 3
 
 	minos := make([]mino.Mino, n)
 	dkgs := make([]dkg.DKG, n)

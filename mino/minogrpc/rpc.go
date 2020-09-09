@@ -126,6 +126,11 @@ func (rpc RPC) Stream(ctx context.Context,
 			With().Str("streamID", streamID).Logger(),
 	}
 
+	table, err := rpc.overlay.router.New(players)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	sender := sender{
 		overlay: &rpc.overlay,
 		sme:     root,
@@ -133,7 +138,7 @@ func (rpc RPC) Stream(ctx context.Context,
 		receiver: receiver,
 		traffic:  rpc.overlay.traffic,
 
-		router:      rpc.overlay.router,
+		table:       table,
 		connFactory: rpc.overlay.connFactory,
 		uri:         rpc.uri,
 
