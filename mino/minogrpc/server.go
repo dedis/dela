@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
@@ -43,10 +44,9 @@ var (
 )
 
 type overlayServer struct {
-	overlay
+	*overlay
 
 	endpoints map[string]*Endpoint
-	closer    *sync.WaitGroup
 }
 
 func (o overlayServer) Join(ctx context.Context, req *ptypes.JoinRequest) (*ptypes.JoinResponse, error) {
@@ -82,11 +82,13 @@ func (o overlayServer) Join(ctx context.Context, req *ptypes.JoinRequest) (*ptyp
 
 		// Share the new node certificate with existing peers.
 		go func(to mino.Address) {
-			conn, err := o.connFactory.FromAddress(to)
+			conn, err := o.connMgr.Acquire(to)
 			if err != nil {
 				res <- xerrors.Errorf("couldn't open connection: %v", err)
 				return
 			}
+
+			defer o.connMgr.Release(to)
 
 			client := ptypes.NewOverlayClient(conn)
 
@@ -219,10 +221,16 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 			endpoint.Factory,
 			o.router.GetPacketFactory(),
 			o.context,
-			o.connFactory,
+			o.connMgr,
 		)
 
-		go sess.Listen()
+		o.closer.Add(1)
+
+		go func() {
+			defer o.closer.Done()
+
+			sess.Listen()
+		}()
 
 		endpoint.streams[streamID] = sess
 	}
@@ -230,7 +238,7 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 
 	err = endpoint.Handler.Stream(sess, sess)
 	if err != nil {
-		return err
+		return xerrors.Errorf("handler failed to process: %v", err)
 	}
 
 	<-stream.Context().Done()
@@ -240,37 +248,36 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 
 // - implements router.Membership
 type overlay struct {
+	closer      *sync.WaitGroup
 	context     serde.Context
 	me          mino.Address
 	certs       certs.Storage
 	tokens      tokens.Holder
 	router      router.Router
-	connFactory ConnectionFactory
+	connMgr     session.ConnectionManager
 	traffic     *traffic
 	addrFactory mino.AddressFactory
 }
 
 func newOverlay(me mino.Address, router router.Router,
-	addrFactory mino.AddressFactory, ctx serde.Context) (overlay, error) {
+	addrFactory mino.AddressFactory, ctx serde.Context) (*overlay, error) {
 
 	cert, err := makeCertificate()
 	if err != nil {
-		return overlay{}, xerrors.Errorf("failed to make certificate: %v", err)
+		return nil, xerrors.Errorf("failed to make certificate: %v", err)
 	}
 
 	certs := certs.NewInMemoryStore()
 	certs.Store(me, cert)
 
-	o := overlay{
-		context: ctx,
-		me:      me,
-		tokens:  tokens.NewInMemoryHolder(),
-		certs:   certs,
-		router:  router,
-		connFactory: DefaultConnectionFactory{
-			certs: certs,
-			me:    me,
-		},
+	o := &overlay{
+		closer:      new(sync.WaitGroup),
+		context:     ctx,
+		me:          me,
+		tokens:      tokens.NewInMemoryHolder(),
+		certs:       certs,
+		router:      router,
+		connMgr:     newConnManager(me, certs),
 		addrFactory: addrFactory,
 	}
 
@@ -284,16 +291,16 @@ func newOverlay(me mino.Address, router router.Router,
 	return o, nil
 }
 
-func (o overlay) GetLocal() mino.Address {
+func (o *overlay) GetLocal() mino.Address {
 	return o.me
 }
 
-func (o overlay) GetAddresses() []mino.Address {
+func (o *overlay) GetAddresses() []mino.Address {
 	panic("not implemented")
 }
 
 // GetCertificate returns the certificate of the overlay.
-func (o overlay) GetCertificate() *tls.Certificate {
+func (o *overlay) GetCertificate() *tls.Certificate {
 	me := o.certs.Load(o.me)
 	if me == nil {
 		// This should never happen and it will panic if it does as this will
@@ -305,13 +312,13 @@ func (o overlay) GetCertificate() *tls.Certificate {
 }
 
 // AddCertificateStore returns the certificate store.
-func (o overlay) GetCertificateStore() certs.Storage {
+func (o *overlay) GetCertificateStore() certs.Storage {
 	return o.certs
 }
 
 // Join sends a join request to a distant node with token generated beforehands
 // by the later.
-func (o overlay) Join(addr, token string, certHash []byte) error {
+func (o *overlay) Join(addr, token string, certHash []byte) error {
 	target := o.addrFactory.FromText([]byte(addr))
 
 	netAddr, ok := target.(certs.Dialable)
@@ -333,10 +340,12 @@ func (o overlay) Join(addr, token string, certHash []byte) error {
 		return xerrors.Errorf("couldn't fetch distant certificate: %v", err)
 	}
 
-	conn, err := o.connFactory.FromAddress(target)
+	conn, err := o.connMgr.Acquire(target)
 	if err != nil {
 		return xerrors.Errorf("couldn't open connection: %v", err)
 	}
+
+	defer o.connMgr.Release(target)
 
 	client := ptypes.NewOverlayClient(conn)
 
@@ -406,31 +415,44 @@ func makeCertificate() (*tls.Certificate, error) {
 	}, nil
 }
 
-// ConnectionFactory is a factory to open connection to distant addresses.
-type ConnectionFactory interface {
-	FromAddress(mino.Address) (grpc.ClientConnInterface, error)
+type connManager struct {
+	sync.Mutex
+	certs    certs.Storage
+	me       mino.Address
+	counters map[mino.Address]int
+	conns    map[mino.Address]*grpc.ClientConn
 }
 
-// DefaultConnectionFactory creates connection for grpc usages.
-type DefaultConnectionFactory struct {
-	certs certs.Storage
-	me    mino.Address
+func newConnManager(me mino.Address, certs certs.Storage) *connManager {
+	return &connManager{
+		certs:    certs,
+		me:       me,
+		counters: make(map[mino.Address]int),
+		conns:    make(map[mino.Address]*grpc.ClientConn),
+	}
 }
 
-// FromAddress implements minogrpc.ConnectionFactory. It creates a gRPC
-// connection from the server to the client.
-func (f DefaultConnectionFactory) FromAddress(addr mino.Address) (grpc.ClientConnInterface, error) {
-	clientPubCert := f.certs.Load(addr)
+func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, error) {
+	mgr.Lock()
+	defer mgr.Unlock()
+
+	conn, ok := mgr.conns[to]
+	if ok {
+		mgr.counters[to]++
+		return conn, nil
+	}
+
+	clientPubCert := mgr.certs.Load(to)
 	if clientPubCert == nil {
-		return nil, xerrors.Errorf("certificate for '%v' not found", addr)
+		return nil, xerrors.Errorf("certificate for '%v' not found", to)
 	}
 
 	pool := x509.NewCertPool()
 	pool.AddCert(clientPubCert.Leaf)
 
-	me := f.certs.Load(f.me)
+	me := mgr.certs.Load(mgr.me)
 	if me == nil {
-		return nil, xerrors.Errorf("couldn't find server '%v' certificate", f.me)
+		return nil, xerrors.Errorf("couldn't find server '%v' certificate", mgr.me)
 	}
 
 	ta := credentials.NewTLS(&tls.Config{
@@ -438,9 +460,9 @@ func (f DefaultConnectionFactory) FromAddress(addr mino.Address) (grpc.ClientCon
 		RootCAs:      pool,
 	})
 
-	netAddr, ok := addr.(address)
+	netAddr, ok := to.(address)
 	if !ok {
-		return nil, xerrors.Errorf("invalid address type '%T'", addr)
+		return nil, xerrors.Errorf("invalid address type '%T'", to)
 	}
 
 	// Connecting using TLS and the distant server certificate as the root.
@@ -455,7 +477,32 @@ func (f DefaultConnectionFactory) FromAddress(addr mino.Address) (grpc.ClientCon
 		return nil, xerrors.Errorf("failed to dial: %v", err)
 	}
 
+	mgr.conns[to] = conn
+	mgr.counters[to] = 1
+
 	return conn, nil
+}
+
+func (mgr *connManager) Release(to mino.Address) {
+	mgr.Lock()
+	defer mgr.Unlock()
+
+	count, ok := mgr.counters[to]
+	if ok {
+		if count <= 1 {
+			delete(mgr.counters, to)
+
+			conn := mgr.conns[to]
+			delete(mgr.conns, to)
+
+			err := conn.Close()
+			dela.Logger.Info().Err(err).Str("to", to.String()).Msg("connection closed")
+
+			return
+		}
+
+		mgr.counters[to]--
+	}
 }
 
 func uriFromContext(ctx context.Context) string {
@@ -470,20 +517,6 @@ func uriFromContext(ctx context.Context) string {
 	}
 
 	return apiURI[0]
-}
-
-func gatewayFromContext(ctx context.Context, addrFactory mino.AddressFactory) mino.Address {
-	headers, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return nil
-	}
-
-	gateway := headers[headerGatewayKey]
-	if len(gateway) == 0 {
-		return nil
-	}
-
-	return addrFactory.FromText([]byte(gateway[0]))
 }
 
 func streamIDFromContext(ctx context.Context) string {

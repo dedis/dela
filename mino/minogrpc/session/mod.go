@@ -17,9 +17,9 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// ConnectionFactory is a factory to open connection to distant addresses.
-type ConnectionFactory interface {
-	FromAddress(mino.Address) (grpc.ClientConnInterface, error)
+type ConnectionManager interface {
+	Acquire(mino.Address) (grpc.ClientConnInterface, error)
+	Release(mino.Address)
 }
 
 type Session interface {
@@ -38,6 +38,7 @@ type Relay interface {
 
 type session struct {
 	sync.Mutex
+	sync.WaitGroup
 	md      metadata.MD
 	me      mino.Address
 	gateway Relay
@@ -48,7 +49,7 @@ type session struct {
 	context serde.Context
 	queue   Queue
 	relays  map[mino.Address]Relay
-	connFac ConnectionFactory
+	connMgr ConnectionManager
 }
 
 func NewSession(
@@ -59,12 +60,12 @@ func NewSession(
 	msgFac serde.Factory,
 	pktFac router.PacketFactory,
 	ctx serde.Context,
-	connFac ConnectionFactory,
+	connMgr ConnectionManager,
 ) Session {
 	return &session{
 		md:      md,
 		me:      me,
-		gateway: NewRelay(stream, pktFac, ctx),
+		gateway: newRelay(stream, pktFac, ctx),
 		errs:    make(chan error, 1),
 		table:   table,
 		msgFac:  msgFac,
@@ -72,17 +73,13 @@ func NewSession(
 		context: ctx,
 		queue:   newNonBlockingQueue(),
 		relays:  make(map[mino.Address]Relay),
-		connFac: connFac,
+		connMgr: connMgr,
 	}
 }
 
 func (s *session) Listen() {
 	defer func() {
-		err := s.close()
-		if err != nil {
-			s.errs <- err
-		}
-
+		s.close()
 		close(s.errs)
 	}()
 
@@ -104,8 +101,7 @@ func (s *session) Listen() {
 
 		err = s.sendPacket(s.gateway.Context(), packet)
 		if err != nil {
-			s.errs <- xerrors.Errorf("failed to send to dispatched relays: %v", err)
-			return
+			dela.Logger.Err(err).Msg("failed to send to dispatched relays")
 		}
 	}
 }
@@ -147,18 +143,19 @@ func (s *session) Recv(ctx context.Context) (mino.Address, serde.Message, error)
 	}
 }
 
-func (s *session) close() error {
+func (s *session) close() {
 	s.Lock()
 	defer s.Unlock()
 
-	for _, relay := range s.relays {
+	for to, relay := range s.relays {
 		err := relay.Close()
-		if err != nil {
-			return err
-		}
+		dela.Logger.Info().Err(err).Msg("relay closed")
+
+		// Let the manager know it can close the connection if necessary.
+		s.connMgr.Release(to)
 	}
 
-	return nil
+	s.Wait()
 }
 
 func (s *session) sendPacket(ctx context.Context, p router.Packet) error {
@@ -206,14 +203,12 @@ func (s *session) setupRelay(ctx context.Context, addr mino.Address) (Relay, err
 		return relay, nil
 	}
 
-	// TODO: connection manager
-	conn, err := s.connFac.FromAddress(addr)
+	conn, err := s.connMgr.Acquire(addr)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create addr: %v", err)
 	}
 
 	cl := ptypes.NewOverlayClient(conn)
-
 	ctx = metadata.NewOutgoingContext(ctx, s.md)
 
 	r, err := cl.Stream(ctx, grpc.WaitForReady(false))
@@ -232,21 +227,30 @@ func (s *session) setupRelay(ctx context.Context, addr mino.Address) (Relay, err
 		return nil, err
 	}
 
-	relay = NewRelay(r, s.pktFac, s.context)
+	relay = newRelay(r, s.pktFac, s.context)
 
 	s.relays[addr] = relay
+	s.Add(1)
 
 	go func() {
+		defer s.Done()
+
 		for {
 			pkt, err := relay.Recv()
+			if err == io.EOF {
+				return
+			}
+			if status.Code(err) == codes.Canceled {
+				return
+			}
 			if err != nil {
-				s.errs <- err
+				dela.Logger.Err(err).Msg("relay failed")
 				return
 			}
 
 			err = s.sendPacket(ctx, pkt)
 			if err != nil {
-				s.errs <- err
+				dela.Logger.Err(err).Msg("relay failed to send a packet")
 				return
 			}
 		}
@@ -273,12 +277,14 @@ type relay struct {
 	context   serde.Context
 }
 
-func NewRelay(stream PacketStream, fac router.PacketFactory, ctx serde.Context) Relay {
-	return &relay{
+func newRelay(stream PacketStream, fac router.PacketFactory, ctx serde.Context) *relay {
+	r := &relay{
 		stream:    stream,
 		packetFac: fac,
 		context:   ctx,
 	}
+
+	return r
 }
 
 func (r *relay) Context() context.Context {
@@ -323,8 +329,6 @@ func (r *relay) Close() error {
 		if err != nil {
 			return err
 		}
-
-		dela.Logger.Info().Err(err).Msg("relay has closed")
 	}
 
 	return nil

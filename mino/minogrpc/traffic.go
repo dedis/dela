@@ -40,8 +40,8 @@ var (
 	globalCounter = atomicCounter{}
 	sendCounter   = &atomicCounter{}
 	recvCounter   = &atomicCounter{}
-	eventCounter  = &atomicCounter{}
-	traffics      = []*traffic{}
+	// eventCounter  = &atomicCounter{}
+	traffics = []*traffic{}
 	// LogItems allows one to granularly say when items should be logged or not.
 	// This is useful for example in an integration test where a specific part
 	// raises a problem but the full graph would be too noisy. For that, one
@@ -169,22 +169,22 @@ func (t *traffic) addItem(ctx context.Context,
 	t.Unlock()
 }
 
-func (t *traffic) addEvent(typeStr string, from, to mino.Address) {
-	if t == nil || !LogEvent {
-		return
-	}
+// func (t *traffic) addEvent(typeStr string, from, to mino.Address) {
+// 	if t == nil || !LogEvent {
+// 		return
+// 	}
 
-	event := event{
-		typeStr:       typeStr,
-		from:          from,
-		to:            to,
-		globalCounter: eventCounter.IncrementAndGet(),
-	}
+// 	event := event{
+// 		typeStr:       typeStr,
+// 		from:          from,
+// 		to:            to,
+// 		globalCounter: eventCounter.IncrementAndGet(),
+// 	}
 
-	t.Lock()
-	t.events = append(t.events, event)
-	t.Unlock()
-}
+// 	t.Lock()
+// 	t.events = append(t.events, event)
+// 	t.Unlock()
+// }
 
 func (t *traffic) getContext(ctx context.Context) string {
 	headers, ok := metadata.FromIncomingContext(ctx)

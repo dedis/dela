@@ -97,7 +97,7 @@ func TestMinogrpc_GetAddressFactory(t *testing.T) {
 func TestMinogrpc_GetAddress(t *testing.T) {
 	addr := address{}
 	minoGrpc := &Minogrpc{
-		overlay: overlay{me: addr},
+		overlay: &overlay{me: addr},
 	}
 
 	require.Equal(t, addr, minoGrpc.GetAddress())
@@ -105,7 +105,7 @@ func TestMinogrpc_GetAddress(t *testing.T) {
 
 func TestMinogrpc_Token(t *testing.T) {
 	minoGrpc := &Minogrpc{
-		overlay: overlay{tokens: tokens.NewInMemoryHolder()},
+		overlay: &overlay{tokens: tokens.NewInMemoryHolder()},
 	}
 
 	token := minoGrpc.GenerateToken(time.Minute)
@@ -125,10 +125,12 @@ func TestMinogrpc_GracefulClose(t *testing.T) {
 
 	// gRPC failed to stop gracefully.
 	m = &Minogrpc{
+		overlay: &overlay{
+			closer: new(sync.WaitGroup),
+		},
 		url:     &url.URL{Host: "127.0.0.1:0"},
 		server:  grpc.NewServer(),
 		started: make(chan struct{}),
-		closer:  &sync.WaitGroup{},
 		closing: make(chan error, 1),
 	}
 	m.closer.Add(1)
@@ -172,7 +174,7 @@ func TestMinogrpc_MakeNamespace(t *testing.T) {
 func TestMinogrpc_MakeRPC(t *testing.T) {
 	minoGrpc := Minogrpc{
 		namespace: "namespace",
-		overlay:   overlay{},
+		overlay:   &overlay{},
 		endpoints: make(map[string]*Endpoint),
 	}
 
@@ -183,7 +185,7 @@ func TestMinogrpc_MakeRPC(t *testing.T) {
 
 	expectedRPC := &RPC{
 		factory: fake.MessageFactory{},
-		overlay: overlay{},
+		overlay: &overlay{},
 		uri:     "namespace/name",
 	}
 
@@ -195,7 +197,7 @@ func TestMinogrpc_MakeRPC(t *testing.T) {
 
 func TestMinogrpc_String(t *testing.T) {
 	minoGrpc := &Minogrpc{
-		overlay: overlay{me: fake.NewAddress(0)},
+		overlay: &overlay{me: fake.NewAddress(0)},
 	}
 
 	require.Equal(t, "fake.Address[0]", minoGrpc.String())

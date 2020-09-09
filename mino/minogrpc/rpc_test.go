@@ -3,12 +3,14 @@ package minogrpc
 import (
 	context "context"
 	"io"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
+	"go.dedis.ch/dela/mino/minogrpc/session"
 	"go.dedis.ch/dela/mino/router/tree"
 	"go.dedis.ch/dela/serde/json"
 	"google.golang.org/grpc"
@@ -17,10 +19,10 @@ import (
 func TestRPC_Call(t *testing.T) {
 	rpc := &RPC{
 		factory: fake.MessageFactory{},
-		overlay: overlay{
-			me:          fake.NewAddress(1),
-			connFactory: fakeConnFactory{},
-			context:     json.NewContext(),
+		overlay: &overlay{
+			me:      fake.NewAddress(1),
+			connMgr: fakeConnMgr{},
+			context: json.NewContext(),
 		},
 	}
 
@@ -48,21 +50,28 @@ func TestRPC_Stream(t *testing.T) {
 	addrs := []mino.Address{address{"A"}, address{"B"}}
 
 	rpc := &RPC{
-		overlay: overlay{
+		overlay: &overlay{
+			closer:      new(sync.WaitGroup),
 			me:          addrs[0],
 			router:      tree.NewRouter(1, AddressFactory{}),
 			addrFactory: AddressFactory{},
-			connFactory: fakeConnFactory{},
+			connMgr:     fakeConnMgr{},
 			context:     json.NewContext(),
 		},
 		factory: fake.MessageFactory{},
 	}
 
-	out, in, err := rpc.Stream(context.Background(), mino.NewAddresses(addrs...))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	out, in, err := rpc.Stream(ctx, mino.NewAddresses(addrs...))
 	require.NoError(t, err)
 
 	out.Send(fake.Message{}, newRootAddress())
-	in.Recv(context.Background())
+	in.Recv(ctx)
+
+	cancel()
+	rpc.overlay.closer.Wait()
 }
 
 // -----------------------------------------------------------------------------
@@ -135,15 +144,15 @@ func (conn fakeConnection) NewStream(ctx context.Context, desc *grpc.StreamDesc,
 	return &fakeClientStream{ch: ch, err: conn.errStream}, conn.err
 }
 
-type fakeConnFactory struct {
-	ConnectionFactory
+type fakeConnMgr struct {
+	session.ConnectionManager
 	resp      interface{}
 	err       error
 	errConn   error
 	errStream error
 }
 
-func (f fakeConnFactory) FromAddress(mino.Address) (grpc.ClientConnInterface, error) {
+func (f fakeConnMgr) Acquire(mino.Address) (grpc.ClientConnInterface, error) {
 	conn := fakeConnection{
 		resp:      f.resp,
 		err:       f.errConn,
@@ -152,3 +161,5 @@ func (f fakeConnFactory) FromAddress(mino.Address) (grpc.ClientConnInterface, er
 
 	return conn, f.err
 }
+
+func (f fakeConnMgr) Release(mino.Address) {}

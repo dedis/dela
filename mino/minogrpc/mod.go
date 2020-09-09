@@ -147,13 +147,12 @@ type Endpoint struct {
 // - implements mino.Mino
 // - implements fmt.Stringer
 type Minogrpc struct {
-	overlay
+	*overlay
 	url       *url.URL
 	server    *grpc.Server
 	namespace string
 	endpoints map[string]*Endpoint
 	started   chan struct{}
-	closer    *sync.WaitGroup
 	closing   chan error
 }
 
@@ -182,7 +181,6 @@ func NewMinogrpc(path string, port uint16, router router.Router) (*Minogrpc, err
 		namespace: "",
 		endpoints: make(map[string]*Endpoint),
 		started:   make(chan struct{}),
-		closer:    &sync.WaitGroup{},
 		closing:   make(chan error, 1),
 	}
 
@@ -192,7 +190,6 @@ func NewMinogrpc(path string, port uint16, router router.Router) (*Minogrpc, err
 	ptypes.RegisterOverlayServer(server, &overlayServer{
 		overlay:   o,
 		endpoints: m.endpoints,
-		closer:    m.closer,
 	})
 
 	err = m.Listen()

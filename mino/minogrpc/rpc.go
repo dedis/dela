@@ -11,6 +11,7 @@ import (
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 // RPC represents an RPC that has been registered by a client, which allows
@@ -18,7 +19,7 @@ import (
 //
 // - implements mino.RPC
 type RPC struct {
-	overlay overlay
+	overlay *overlay
 	uri     string
 	factory serde.Factory
 }
@@ -54,7 +55,7 @@ func (rpc *RPC) Call(ctx context.Context,
 		go func() {
 			defer wg.Done()
 
-			clientConn, err := rpc.overlay.connFactory.FromAddress(addr)
+			clientConn, err := rpc.overlay.connMgr.Acquire(addr)
 			if err != nil {
 				resp := mino.NewResponseWithError(
 					addr,
@@ -64,6 +65,8 @@ func (rpc *RPC) Call(ctx context.Context,
 				out <- resp
 				return
 			}
+
+			defer rpc.overlay.connMgr.Release(addr)
 
 			cl := ptypes.NewOverlayClient(clientConn)
 
@@ -132,8 +135,16 @@ func (rpc RPC) Stream(ctx context.Context,
 		rpc.factory,
 		rpc.overlay.router.GetPacketFactory(),
 		rpc.overlay.context,
-		rpc.overlay.connFactory,
+		rpc.overlay.connMgr,
 	)
+
+	rpc.overlay.closer.Add(1)
+
+	go func() {
+		defer rpc.overlay.closer.Done()
+
+		sess.Listen()
+	}()
 
 	return sess, sess, nil
 }
@@ -146,4 +157,9 @@ type orchStream struct {
 
 func (s orchStream) Context() context.Context {
 	return s.ctx
+}
+
+func (s orchStream) Recv() (*ptypes.Packet, error) {
+	<-s.ctx.Done()
+	return nil, status.FromContextError(s.ctx.Err()).Err()
 }

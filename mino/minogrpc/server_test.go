@@ -106,11 +106,11 @@ func TestIntegration_Basic_Call(t *testing.T) {
 
 func TestOverlayServer_Join(t *testing.T) {
 	overlay := overlayServer{
-		overlay: overlay{
-			tokens:      fakeTokens{},
-			certs:       certs.NewInMemoryStore(),
-			router:      tree.NewRouter(3, AddressFactory{}),
-			connFactory: fakeConnFactory{},
+		overlay: &overlay{
+			tokens:  fakeTokens{},
+			certs:   certs.NewInMemoryStore(),
+			router:  tree.NewRouter(3, AddressFactory{}),
+			connMgr: fakeConnMgr{},
 		},
 	}
 
@@ -143,12 +143,12 @@ func TestOverlayServer_Join(t *testing.T) {
 
 	overlay.certs = certs.NewInMemoryStore()
 	overlay.certs.Store(fake.NewAddress(0), cert)
-	overlay.connFactory = fakeConnFactory{err: xerrors.New("oops")}
+	overlay.connMgr = fakeConnMgr{err: xerrors.New("oops")}
 	_, err = overlay.Join(ctx, req)
 	require.EqualError(t, err,
 		"failed to share certificate: couldn't open connection: oops")
 
-	overlay.connFactory = fakeConnFactory{errConn: xerrors.New("oops")}
+	overlay.connMgr = fakeConnMgr{errConn: xerrors.New("oops")}
 	_, err = overlay.Join(ctx, req)
 	require.EqualError(t, err,
 		"failed to share certificate: couldn't call share: oops")
@@ -156,7 +156,7 @@ func TestOverlayServer_Join(t *testing.T) {
 
 func TestOverlayServer_Share(t *testing.T) {
 	overlay := overlayServer{
-		overlay: overlay{
+		overlay: &overlay{
 			certs:       certs.NewInMemoryStore(),
 			router:      tree.NewRouter(3, AddressFactory{}),
 			addrFactory: AddressFactory{},
@@ -180,7 +180,7 @@ func TestOverlayServer_Share(t *testing.T) {
 
 func TestOverlayServer_Call(t *testing.T) {
 	overlay := overlayServer{
-		overlay: overlay{
+		overlay: &overlay{
 			router:      tree.NewRouter(3, AddressFactory{}),
 			context:     json.NewContext(),
 			addrFactory: AddressFactory{},
@@ -225,13 +225,13 @@ func TestOverlayServer_Call(t *testing.T) {
 
 func TestOverlayServer_Stream(t *testing.T) {
 	overlay := overlayServer{
-		overlay: overlay{
+		overlay: &overlay{
 			router:      tree.NewRouter(3, AddressFactory{}),
 			context:     json.NewContext(),
 			addrFactory: AddressFactory{},
 			me:          fake.NewAddress(0),
+			closer:      &sync.WaitGroup{},
 		},
-		closer:    &sync.WaitGroup{},
 		endpoints: make(map[string]*Endpoint),
 	}
 
@@ -240,39 +240,31 @@ func TestOverlayServer_Stream(t *testing.T) {
 	overlay.endpoints["bad"] = &Endpoint{Handler: testHandler{skip: true,
 		err: xerrors.New("oops")}, streams: make(map[string]session.Session)}
 
-	ch := make(chan *ptypes.Packet, 1)
-
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	addrBuf, err := newRootAddress().MarshalText()
+	inCtx := metadata.NewIncomingContext(ctx, metadata.Pairs(
+		headerURIKey, "test",
+		headerStreamIDKey, "test"))
+
+	err := overlay.Stream(newFakeServerStream(inCtx))
 	require.NoError(t, err)
 
-	inCtx := metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "test", headerGatewayKey, string(addrBuf), headerStreamIDKey, "test"))
-
-	err = overlay.Stream(fakeServerStream{ch: ch, ctx: inCtx})
-	require.NoError(t, err)
-
-	err = overlay.Stream(fakeServerStream{ctx: ctx})
+	err = overlay.Stream(newFakeServerStream(ctx))
 	require.EqualError(t, err, "handler '' is not registered")
 
 	inCtx = metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "unknown"))
-	err = overlay.Stream(fakeServerStream{ctx: inCtx})
+	err = overlay.Stream(newFakeServerStream(inCtx))
 	require.EqualError(t, err, "handler 'unknown' is not registered")
 
 	inCtx = metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "test"))
-	err = overlay.Stream(fakeServerStream{ctx: inCtx, err: xerrors.New("oops")})
-	require.EqualError(t, err, "failed to get gateway, result is nil")
-
-	inCtx = metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "test", headerGatewayKey, string(addrBuf)))
-	err = overlay.Stream(fakeServerStream{ctx: inCtx, err: xerrors.New("oops")})
+	err = overlay.Stream(newFakeServerStream(inCtx))
 	require.EqualError(t, err, "failed to get streamID, result is empty")
 
 	overlay.context = json.NewContext()
 	overlay.router = tree.NewRouter(3, AddressFactory{})
-	ch = make(chan *ptypes.Packet, 1)
-	inCtx = metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "bad", headerGatewayKey, string(addrBuf), headerStreamIDKey, "test"))
-	err = overlay.Stream(fakeServerStream{ch: ch, ctx: inCtx})
+	inCtx = metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "bad", headerStreamIDKey, "test"))
+	err = overlay.Stream(newFakeServerStream(inCtx))
 	require.EqualError(t, err, "handler failed to process: oops")
 }
 
@@ -284,7 +276,7 @@ func TestOverlay_Join(t *testing.T) {
 		me:     fake.NewAddress(0),
 		certs:  fakeCerts{},
 		router: tree.NewRouter(3, AddressFactory{}),
-		connFactory: fakeConnFactory{
+		connMgr: fakeConnMgr{
 			resp: ptypes.JoinResponse{Peers: []*ptypes.Certificate{{Value: cert.Leaf.Raw}}},
 		},
 		addrFactory: AddressFactory{},
@@ -303,49 +295,47 @@ func TestOverlay_Join(t *testing.T) {
 	require.EqualError(t, err, "couldn't fetch distant certificate: oops")
 
 	overlay.certs = fakeCerts{}
-	overlay.connFactory = fakeConnFactory{err: xerrors.New("oops")}
+	overlay.connMgr = fakeConnMgr{err: xerrors.New("oops")}
 	err = overlay.Join("", "", nil)
 	require.EqualError(t, err, "couldn't open connection: oops")
 
-	overlay.connFactory = fakeConnFactory{resp: ptypes.JoinResponse{}, errConn: xerrors.New("oops")}
+	overlay.connMgr = fakeConnMgr{resp: ptypes.JoinResponse{}, errConn: xerrors.New("oops")}
 	err = overlay.Join("", "", nil)
 	require.EqualError(t, err, "couldn't call join: oops")
 
-	overlay.connFactory = fakeConnFactory{resp: ptypes.JoinResponse{Peers: []*ptypes.Certificate{{}}}}
+	overlay.connMgr = fakeConnMgr{resp: ptypes.JoinResponse{Peers: []*ptypes.Certificate{{}}}}
 	err = overlay.Join("", "", nil)
 	require.EqualError(t, err,
 		"couldn't parse certificate: asn1: syntax error: sequence truncated")
 }
 
-func TestConnectionFactory_FromAddress(t *testing.T) {
+func TestConnManager_Acquire(t *testing.T) {
 	dst, err := NewMinogrpc("127.0.0.1", 3334, nil)
 	require.NoError(t, err)
 
 	defer dst.GracefulClose()
 
-	factory := DefaultConnectionFactory{
-		certs: certs.NewInMemoryStore(),
-		me:    fake.NewAddress(0),
-	}
+	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore())
 
-	factory.certs.Store(factory.me, &tls.Certificate{})
-	factory.certs.Store(dst.GetAddress(), dst.GetCertificate())
+	mgr.certs.Store(mgr.me, &tls.Certificate{})
+	mgr.certs.Store(dst.GetAddress(), dst.GetCertificate())
 
-	conn, err := factory.FromAddress(dst.GetAddress())
+	conn, err := mgr.Acquire(dst.GetAddress())
 	require.NoError(t, err)
 	require.NotNil(t, conn)
 
 	conn.(*grpc.ClientConn).Close()
 
-	_, err = factory.FromAddress(fake.NewAddress(1))
+	_, err = mgr.Acquire(fake.NewAddress(1))
 	require.EqualError(t, err, "certificate for 'fake.Address[1]' not found")
 
-	factory.certs.Delete(factory.me)
-	_, err = factory.FromAddress(dst.GetAddress())
+	mgr.conns = make(map[mino.Address]*grpc.ClientConn)
+	mgr.certs.Delete(mgr.me)
+	_, err = mgr.Acquire(dst.GetAddress())
 	require.EqualError(t, err, "couldn't find server 'fake.Address[0]' certificate")
 
-	factory.certs.Store(factory.me, dst.GetCertificate())
-	_, err = factory.FromAddress(factory.me)
+	mgr.certs.Store(mgr.me, dst.GetCertificate())
+	_, err = mgr.Acquire(mgr.me)
 	require.EqualError(t, err, "invalid address type 'fake.Address'")
 }
 
@@ -414,6 +404,16 @@ type fakeServerStream struct {
 	ch  chan *ptypes.Packet
 	ctx context.Context
 	err error
+}
+
+func newFakeServerStream(ctx context.Context) fakeServerStream {
+	ch := make(chan *ptypes.Packet, 1)
+	ch <- &ptypes.Packet{Serialized: []byte{0, 0}}
+
+	return fakeServerStream{
+		ch:  ch,
+		ctx: ctx,
+	}
 }
 
 func (s fakeServerStream) Context() context.Context {
