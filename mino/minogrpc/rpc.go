@@ -5,8 +5,9 @@ import (
 	"sync"
 
 	"github.com/rs/xid"
-	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/minogrpc/ptypes"
+	"go.dedis.ch/dela/mino/minogrpc/session"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc/metadata"
@@ -36,7 +37,7 @@ func (rpc *RPC) Call(ctx context.Context,
 		return nil, xerrors.Errorf("failed to marshal address: %v", err)
 	}
 
-	sendMsg := &Message{
+	sendMsg := &ptypes.Message{
 		From:    from,
 		Payload: data,
 	}
@@ -64,7 +65,7 @@ func (rpc *RPC) Call(ctx context.Context,
 				return
 			}
 
-			cl := NewOverlayClient(clientConn)
+			cl := ptypes.NewOverlayClient(clientConn)
 
 			header := metadata.New(map[string]string{headerURIKey: rpc.uri})
 			newCtx := metadata.NewOutgoingContext(ctx, header)
@@ -115,45 +116,34 @@ func (rpc RPC) Stream(ctx context.Context,
 
 	streamID := xid.New().String()
 
-	receiver := receiver{
-		context:        rpc.overlay.context,
-		factory:        rpc.factory,
-		addressFactory: rpc.overlay.addrFactory,
-		errs:           make(chan error, 1),
-		queue:          newNonBlockingQueue(),
-
-		logger: dela.Logger.With().Str("addr", root.String()).Logger().
-			With().Str("streamID", streamID).Logger(),
-	}
-
 	table, err := rpc.overlay.router.New(players)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	sender := sender{
-		overlay: &rpc.overlay,
-		sme:     root,
-		// There is no gateway because this is the root
-		receiver: receiver,
-		traffic:  rpc.overlay.traffic,
+	md := metadata.Pairs(headerURIKey, rpc.uri, headerStreamIDKey, streamID)
 
-		table:       table,
-		connFactory: rpc.overlay.connFactory,
-		uri:         rpc.uri,
+	// Streamless session as this is the orchestrator of the protocol.
+	sess := session.NewSession(
+		md,
+		orchStream{ctx: ctx},
+		root,
+		table,
+		rpc.factory,
+		rpc.overlay.router.GetPacketFactory(),
+		rpc.overlay.context,
+		rpc.overlay.connFactory,
+	)
 
-		streamID:    streamID,
-		lock:        new(sync.Mutex),
-		done:        make(chan struct{}),
-		connections: make(map[mino.Address]safeRelay),
+	return sess, sess, nil
+}
 
-		relaysWait: new(sync.WaitGroup),
-	}
+type orchStream struct {
+	session.PacketStream
 
-	go func() {
-		<-ctx.Done()
-		close(sender.done)
-	}()
+	ctx context.Context
+}
 
-	return sender, receiver, nil
+func (s orchStream) Context() context.Context {
+	return s.ctx
 }

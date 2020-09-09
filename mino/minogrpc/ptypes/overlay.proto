@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package minogrpc;
+package ptypes;
 
 // Certificate is a wrapper around a x509 raw certificate and its address.
 message Certificate {

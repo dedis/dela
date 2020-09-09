@@ -12,6 +12,8 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
+	"go.dedis.ch/dela/mino/minogrpc/ptypes"
+	"go.dedis.ch/dela/mino/minogrpc/session"
 	"go.dedis.ch/dela/mino/minogrpc/tokens"
 	"go.dedis.ch/dela/mino/router"
 	"go.dedis.ch/dela/mino/router/tree"
@@ -118,9 +120,9 @@ func TestOverlayServer_Join(t *testing.T) {
 	overlay.certs.Store(fake.NewAddress(0), cert)
 
 	ctx := context.Background()
-	req := &JoinRequest{
+	req := &ptypes.JoinRequest{
 		Token: "abc",
-		Certificate: &Certificate{
+		Certificate: &ptypes.Certificate{
 			Address: []byte{},
 			Value:   cert.Leaf.Raw,
 		},
@@ -166,12 +168,12 @@ func TestOverlayServer_Share(t *testing.T) {
 
 	cert := fake.MakeCertificate(t, 1)
 
-	resp, err := overlay.Share(ctx, &Certificate{Value: cert.Leaf.Raw})
+	resp, err := overlay.Share(ctx, &ptypes.Certificate{Value: cert.Leaf.Raw})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	require.NotNil(t, overlay.certs.Load(address{}))
 
-	_, err = overlay.Share(ctx, &Certificate{})
+	_, err = overlay.Share(ctx, &ptypes.Certificate{})
 	require.EqualError(t, err,
 		"couldn't parse certificate: asn1: syntax error: sequence truncated")
 }
@@ -193,7 +195,7 @@ func TestOverlayServer_Call(t *testing.T) {
 	md := metadata.New(map[string]string{headerURIKey: "test"})
 	ctx := metadata.NewIncomingContext(context.Background(), md)
 
-	resp, err := overlay.Call(ctx, &Message{Payload: []byte(`{}`)})
+	resp, err := overlay.Call(ctx, &ptypes.Message{Payload: []byte(`{}`)})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	require.Equal(t, []byte(`{}`), resp.GetPayload())
@@ -207,17 +209,17 @@ func TestOverlayServer_Call(t *testing.T) {
 	badCtx = metadata.NewIncomingContext(context.Background(), metadata.New(
 		map[string]string{headerURIKey: "bad2"},
 	))
-	_, err = overlay.Call(badCtx, &Message{Payload: []byte(``)})
+	_, err = overlay.Call(badCtx, &ptypes.Message{Payload: []byte(``)})
 	require.EqualError(t, err, "couldn't deserialize message: fake error")
 
 	badCtx = metadata.NewIncomingContext(context.Background(), metadata.New(
 		map[string]string{headerURIKey: "bad"},
 	))
-	_, err = overlay.Call(badCtx, &Message{Payload: []byte(``)})
+	_, err = overlay.Call(badCtx, &ptypes.Message{Payload: []byte(``)})
 	require.EqualError(t, err, "handler failed to process: rpc is not supported")
 
 	overlay.context = fake.NewBadContext()
-	_, err = overlay.Call(ctx, &Message{Payload: []byte(``)})
+	_, err = overlay.Call(ctx, &ptypes.Message{Payload: []byte(``)})
 	require.EqualError(t, err, "couldn't serialize result: fake error")
 }
 
@@ -234,11 +236,11 @@ func TestOverlayServer_Stream(t *testing.T) {
 	}
 
 	overlay.endpoints["test"] = &Endpoint{Handler: testHandler{skip: true},
-		streams: make(map[string]*StreamSession)}
+		streams: make(map[string]session.Session)}
 	overlay.endpoints["bad"] = &Endpoint{Handler: testHandler{skip: true,
-		err: xerrors.New("oops")}, streams: make(map[string]*StreamSession)}
+		err: xerrors.New("oops")}, streams: make(map[string]session.Session)}
 
-	ch := make(chan *Packet, 1)
+	ch := make(chan *ptypes.Packet, 1)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -268,7 +270,7 @@ func TestOverlayServer_Stream(t *testing.T) {
 
 	overlay.context = json.NewContext()
 	overlay.router = tree.NewRouter(3, AddressFactory{})
-	ch = make(chan *Packet, 1)
+	ch = make(chan *ptypes.Packet, 1)
 	inCtx = metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "bad", headerGatewayKey, string(addrBuf), headerStreamIDKey, "test"))
 	err = overlay.Stream(fakeServerStream{ch: ch, ctx: inCtx})
 	require.EqualError(t, err, "handler failed to process: oops")
@@ -283,7 +285,7 @@ func TestOverlay_Join(t *testing.T) {
 		certs:  fakeCerts{},
 		router: tree.NewRouter(3, AddressFactory{}),
 		connFactory: fakeConnFactory{
-			resp: JoinResponse{Peers: []*Certificate{{Value: cert.Leaf.Raw}}},
+			resp: ptypes.JoinResponse{Peers: []*ptypes.Certificate{{Value: cert.Leaf.Raw}}},
 		},
 		addrFactory: AddressFactory{},
 	}
@@ -305,11 +307,11 @@ func TestOverlay_Join(t *testing.T) {
 	err = overlay.Join("", "", nil)
 	require.EqualError(t, err, "couldn't open connection: oops")
 
-	overlay.connFactory = fakeConnFactory{resp: JoinResponse{}, errConn: xerrors.New("oops")}
+	overlay.connFactory = fakeConnFactory{resp: ptypes.JoinResponse{}, errConn: xerrors.New("oops")}
 	err = overlay.Join("", "", nil)
 	require.EqualError(t, err, "couldn't call join: oops")
 
-	overlay.connFactory = fakeConnFactory{resp: JoinResponse{Peers: []*Certificate{{}}}}
+	overlay.connFactory = fakeConnFactory{resp: ptypes.JoinResponse{Peers: []*ptypes.Certificate{{}}}}
 	err = overlay.Join("", "", nil)
 	require.EqualError(t, err,
 		"couldn't parse certificate: asn1: syntax error: sequence truncated")
@@ -351,7 +353,6 @@ func TestConnectionFactory_FromAddress(t *testing.T) {
 // Utility functions
 
 func makeInstances(t *testing.T, n int, call *fake.Call) ([]mino.Mino, []mino.RPC) {
-	memship := NewMemship([]mino.Address{})
 	mm := make([]mino.Mino, n)
 	rpcs := make([]mino.RPC, n)
 	for i := range mm {
@@ -370,8 +371,6 @@ func makeInstances(t *testing.T, n int, call *fake.Call) ([]mino.Mino, []mino.RP
 			m.GetCertificateStore().Store(k.GetAddress(), km.GetCertificate())
 			km.GetCertificateStore().Store(m.GetAddress(), m.GetCertificate())
 		}
-
-		memship.Add(m.GetAddress())
 	}
 
 	return mm, rpcs
@@ -412,7 +411,7 @@ func (h testHandler) Process(req mino.Request) (serde.Message, error) {
 
 type fakeServerStream struct {
 	grpc.ServerStream
-	ch  chan *Packet
+	ch  chan *ptypes.Packet
 	ctx context.Context
 	err error
 }
@@ -421,12 +420,12 @@ func (s fakeServerStream) Context() context.Context {
 	return s.ctx
 }
 
-func (s fakeServerStream) Send(m *Packet) error {
+func (s fakeServerStream) Send(m *ptypes.Packet) error {
 	s.ch <- m
 	return nil
 }
 
-func (s fakeServerStream) Recv() (*Packet, error) {
+func (s fakeServerStream) Recv() (*ptypes.Packet, error) {
 	if s.err != nil {
 		return nil, s.err
 	}

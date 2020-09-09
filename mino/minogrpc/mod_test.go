@@ -6,9 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
-	internal "go.dedis.ch/dela/internal/testing"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/tokens"
@@ -16,21 +14,6 @@ import (
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 )
-
-func TestMessages(t *testing.T) {
-	messages := []proto.Message{
-		&Certificate{},
-		&CertificateAck{},
-		&JoinRequest{},
-		&JoinResponse{},
-		&Packet{},
-		&Message{},
-	}
-
-	for _, m := range messages {
-		internal.CoverProtoMessage(t, m)
-	}
-}
 
 func TestRootAddress_Equal(t *testing.T) {
 	root := newRootAddress()

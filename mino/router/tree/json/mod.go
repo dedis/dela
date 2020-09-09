@@ -53,7 +53,7 @@ func (f packetFormat) Encode(ctx serde.Context, message serde.Message) ([]byte, 
 	p := PacketJSON{
 		Source:  source,
 		Dest:    dest,
-		Message: packet.Message,
+		Message: packet.GetMessage(),
 	}
 
 	data, err := ctx.Marshal(p)

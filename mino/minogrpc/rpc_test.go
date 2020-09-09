@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/minogrpc/ptypes"
 	"go.dedis.ch/dela/mino/router/tree"
 	"go.dedis.ch/dela/serde/json"
 	"google.golang.org/grpc"
@@ -69,8 +70,8 @@ func TestRPC_Stream(t *testing.T) {
 
 type fakeClientStream struct {
 	grpc.ClientStream
-	init *Packet
-	ch   chan *Packet
+	init *ptypes.Packet
+	ch   chan *ptypes.Packet
 	err  error
 }
 
@@ -80,11 +81,11 @@ func (str *fakeClientStream) SendMsg(m interface{}) error {
 	}
 
 	if str.init == nil {
-		str.init = m.(*Packet)
+		str.init = m.(*ptypes.Packet)
 		return nil
 	}
 
-	str.ch <- m.(*Packet)
+	str.ch <- m.(*ptypes.Packet)
 	return nil
 }
 
@@ -94,7 +95,7 @@ func (str *fakeClientStream) RecvMsg(m interface{}) error {
 		return io.EOF
 	}
 
-	*(m.(*Packet)) = *msg
+	*(m.(*ptypes.Packet)) = *msg
 	return nil
 }
 
@@ -109,12 +110,12 @@ func (conn fakeConnection) Invoke(ctx context.Context, m string, arg interface{}
 	resp interface{}, opts ...grpc.CallOption) error {
 
 	switch msg := resp.(type) {
-	case *Message:
-		*msg = Message{
+	case *ptypes.Message:
+		*msg = ptypes.Message{
 			Payload: []byte(`{}`),
 		}
-	case *JoinResponse:
-		*msg = conn.resp.(JoinResponse)
+	case *ptypes.JoinResponse:
+		*msg = conn.resp.(ptypes.JoinResponse)
 	default:
 	}
 
@@ -124,7 +125,7 @@ func (conn fakeConnection) Invoke(ctx context.Context, m string, arg interface{}
 func (conn fakeConnection) NewStream(ctx context.Context, desc *grpc.StreamDesc,
 	m string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
 
-	ch := make(chan *Packet, 1)
+	ch := make(chan *ptypes.Packet, 1)
 
 	go func() {
 		<-ctx.Done()

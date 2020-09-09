@@ -14,9 +14,10 @@ import (
 	"sync"
 	"time"
 
-	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
+	"go.dedis.ch/dela/mino/minogrpc/ptypes"
+	"go.dedis.ch/dela/mino/minogrpc/session"
 	"go.dedis.ch/dela/mino/minogrpc/tokens"
 	"go.dedis.ch/dela/mino/router"
 	"go.dedis.ch/dela/serde"
@@ -48,7 +49,7 @@ type overlayServer struct {
 	closer    *sync.WaitGroup
 }
 
-func (o overlayServer) Join(ctx context.Context, req *JoinRequest) (*JoinResponse, error) {
+func (o overlayServer) Join(ctx context.Context, req *ptypes.JoinRequest) (*ptypes.JoinResponse, error) {
 	// 1. Check validity of the token.
 	if !o.tokens.Verify(req.Token) {
 		return nil, xerrors.Errorf("token '%s' is invalid", req.Token)
@@ -65,7 +66,7 @@ func (o overlayServer) Join(ctx context.Context, req *JoinRequest) (*JoinRespons
 		return true
 	})
 
-	peers := make([]*Certificate, 0, len(list))
+	peers := make([]*ptypes.Certificate, 0, len(list))
 	res := make(chan error, 1)
 
 	for to, cert := range list {
@@ -74,7 +75,7 @@ func (o overlayServer) Join(ctx context.Context, req *JoinRequest) (*JoinRespons
 			return nil, xerrors.Errorf("couldn't marshal address: %v", err)
 		}
 
-		msg := &Certificate{Address: text, Value: cert}
+		msg := &ptypes.Certificate{Address: text, Value: cert}
 
 		// Prepare the list of known certificates to send back to the new node.
 		peers = append(peers, msg)
@@ -87,7 +88,7 @@ func (o overlayServer) Join(ctx context.Context, req *JoinRequest) (*JoinRespons
 				return
 			}
 
-			client := NewOverlayClient(conn)
+			client := ptypes.NewOverlayClient(conn)
 
 			_, err = client.Share(ctx, req.GetCertificate())
 			if err != nil {
@@ -110,10 +111,10 @@ func (o overlayServer) Join(ctx context.Context, req *JoinRequest) (*JoinRespons
 	}
 
 	// 3. Return the set of known certificates.
-	return &JoinResponse{Peers: peers}, nil
+	return &ptypes.JoinResponse{Peers: peers}, nil
 }
 
-func (o overlayServer) Share(ctx context.Context, msg *Certificate) (*CertificateAck, error) {
+func (o overlayServer) Share(ctx context.Context, msg *ptypes.Certificate) (*ptypes.CertificateAck, error) {
 	// TODO: verify the validity of the certificate by connecting to the distant
 	// node but that requires a protection against malicious share.
 
@@ -126,12 +127,12 @@ func (o overlayServer) Share(ctx context.Context, msg *Certificate) (*Certificat
 
 	o.certs.Store(from, &tls.Certificate{Leaf: cert})
 
-	return &CertificateAck{}, nil
+	return &ptypes.CertificateAck{}, nil
 }
 
 // Call implements minogrpc.OverlayClient. It processes the request with the
 // targeted handler if it exists, otherwise it returns an error.
-func (o overlayServer) Call(ctx context.Context, msg *Message) (*Message, error) {
+func (o overlayServer) Call(ctx context.Context, msg *ptypes.Message) (*ptypes.Message, error) {
 	// We fetch the uri that identifies the handler in the handlers map with the
 	// grpc metadata api. Using context.Value won't work.
 	uri := uriFromContext(ctx)
@@ -167,12 +168,12 @@ func (o overlayServer) Call(ctx context.Context, msg *Message) (*Message, error)
 		return nil, xerrors.Errorf("couldn't serialize result: %v", err)
 	}
 
-	return &Message{Payload: res}, nil
+	return &ptypes.Message{Payload: res}, nil
 }
 
 // Stream implements minogrpc.OverlayClient. It opens streams according to the
 // routing and transmits the message according to their recipient.
-func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
+func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 	o.closer.Add(1)
 	defer o.closer.Done()
 
@@ -186,6 +187,11 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 		return err
 	}
 
+	table, err := o.router.TableOf(hs)
+	if err != nil {
+		return err
+	}
+
 	// We fetch the uri that identifies the handler in the handlers map with the
 	// grpc metadata api. Using context.Value won't work.
 	uri := uriFromContext(stream.Context())
@@ -195,179 +201,40 @@ func (o *overlayServer) Stream(stream Overlay_StreamServer) error {
 		return xerrors.Errorf("handler '%s' is not registered", uri)
 	}
 
-	gateway := gatewayFromContext(stream.Context(), o.addrFactory)
-	if gateway == nil {
-		return xerrors.Errorf("failed to get gateway, result is nil")
-	}
-
 	streamID := streamIDFromContext(stream.Context())
 	if streamID == "" {
 		return xerrors.Errorf("failed to get streamID, result is empty")
 	}
 
+	md := metadata.Pairs(headerURIKey, uri, headerStreamIDKey, streamID)
+
 	endpoint.Lock()
-	session, initiated := endpoint.streams[streamID]
-
+	sess, initiated := endpoint.streams[streamID]
 	if !initiated {
-		table, err := o.router.TableOf(hs)
-		if err != nil {
-			return err
-		}
+		sess = session.NewSession(
+			md,
+			stream,
+			o.me,
+			table,
+			endpoint.Factory,
+			o.router.GetPacketFactory(),
+			o.context,
+			o.connFactory,
+		)
 
-		errs := make(chan error, 1)
-		receiver := receiver{
-			context:        o.context,
-			factory:        endpoint.Factory,
-			addressFactory: o.addrFactory,
-			errs:           errs,
-			queue:          newNonBlockingQueue(),
-			logger: dela.Logger.With().Str("addr", o.me.String()).Logger().
-				With().Str("streamID", streamID).Logger(),
-		}
+		go sess.Listen()
 
-		sender := sender{
-			overlay:  &o.overlay,
-			sme:      o.me,
-			receiver: receiver,
-			traffic:  o.traffic,
-
-			table:       table,
-			connFactory: o.connFactory,
-			uri:         uri,
-			gateway:     gateway,
-			streamID:    streamID,
-
-			// used to create and close relays
-			lock: new(sync.Mutex),
-
-			// used to notify when the context is done
-			done: make(chan struct{}),
-
-			connections: make(map[mino.Address]safeRelay),
-
-			relaysWait: new(sync.WaitGroup),
-		}
-
-		session = &StreamSession{
-			sender:   sender,
-			receiver: receiver,
-		}
-
-		endpoint.streams[streamID] = session
-
-		sender.connections[gateway] = &passiveConn{streamConn{client: stream}}
-
+		endpoint.streams[streamID] = sess
 	}
-
 	endpoint.Unlock()
 
-	mebuf, err := o.me.MarshalText()
+	err = endpoint.Handler.Stream(sess, sess)
 	if err != nil {
-		return xerrors.Errorf("failed to marshal my address: %v", err)
+		return err
 	}
 
-	relayCtx := metadata.NewOutgoingContext(stream.Context(), metadata.Pairs(
-		headerURIKey, uri,
-		headerGatewayKey, string(mebuf),
-		headerStreamIDKey, streamID))
-
-	go session.sender.listenStream(relayCtx, stream, gateway)
-
-	if !initiated {
-		err := endpoint.Handler.Stream(session.sender, session.receiver)
-		if err != nil {
-			return xerrors.Errorf("handler failed to process: %v", err)
-		}
-
-		// The participant is done but waits for the protocol to end.
-		<-stream.Context().Done()
-
-		endpoint.Lock()
-		close(session.sender.done)
-
-		// be sure no relays are still listening before closing the connections,
-		// otherwise the listen function of such relay would return an error.
-		session.sender.relaysWait.Wait()
-		session.sender.closeRelays()
-		session.sender.receiver.logger.Trace().Msg("connections closed")
-
-		delete(endpoint.streams, streamID)
-		endpoint.Unlock()
-
-		return nil
-	}
-
-	// The participant is done but waits for the protocol to end.
 	<-stream.Context().Done()
 
-	return nil
-}
-
-// relayable describes the basic primitives to use a stream
-type relayable interface {
-	Context() context.Context
-	Send(*Packet) error
-	Recv() (*Packet, error)
-}
-
-// safeRelay is a wrapper for a relayable that must have a thread-safe Recv()
-// method and a close method
-type safeRelay interface {
-	relayable
-	close() error
-}
-
-// streamConn offers a safe way to use a stream connection, with a thread-safe
-// Recv() function.
-//
-// - implements safeRelay
-type streamConn struct {
-	client relayable
-	lock   sync.Mutex
-	conn   grpc.ClientConnInterface
-}
-
-// Context implements relayable
-func (r *streamConn) Context() context.Context {
-	return r.client.Context()
-}
-
-// Send implements relayable
-func (r *streamConn) Send(e *Packet) error {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-	return r.client.Send(e)
-}
-
-// Recv implements relayable
-func (r *streamConn) Recv() (*Packet, error) {
-	return r.client.Recv()
-}
-
-// close implements safeRelay
-func (r *streamConn) close() error {
-	conn, ok := r.conn.(*grpc.ClientConn)
-	if !ok {
-		return xerrors.Errorf("expected to have '*grpc.ClientConn', got '%T'", r.conn)
-	}
-
-	err := conn.Close()
-	if err != nil {
-		return xerrors.Errorf("failed to close connection: %v", err)
-	}
-
-	return nil
-}
-
-// passiveConn is used for the server stream, which can't be closed.
-//
-// - implements safeRelay
-type passiveConn struct {
-	streamConn
-}
-
-// close implements safeRelay
-func (r *passiveConn) close() error {
 	return nil
 }
 
@@ -471,11 +338,11 @@ func (o overlay) Join(addr, token string, certHash []byte) error {
 		return xerrors.Errorf("couldn't open connection: %v", err)
 	}
 
-	client := NewOverlayClient(conn)
+	client := ptypes.NewOverlayClient(conn)
 
-	req := &JoinRequest{
+	req := &ptypes.JoinRequest{
 		Token: token,
-		Certificate: &Certificate{
+		Certificate: &ptypes.Certificate{
 			Address: meAddr,
 			Value:   meCert.Leaf.Raw,
 		},

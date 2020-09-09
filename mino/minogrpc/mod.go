@@ -14,6 +14,8 @@ import (
 
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
+	"go.dedis.ch/dela/mino/minogrpc/ptypes"
+	"go.dedis.ch/dela/mino/minogrpc/session"
 	"go.dedis.ch/dela/mino/router"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/json"
@@ -137,16 +139,7 @@ type Endpoint struct {
 	sync.Mutex
 	Handler mino.Handler
 	Factory serde.Factory
-	streams map[string]*StreamSession
-}
-
-// StreamSession holds the state of a stream session initiated by the user.
-// Each time the user calls mino.Stream, a uniq streamID is created and every
-// node will hold its corresponding StreamSession that is deleted once the
-// stream ends.
-type StreamSession struct {
-	sender   sender
-	receiver receiver
+	streams map[string]session.Session
 }
 
 // Minogrpc represents a grpc service restricted to a namespace
@@ -196,7 +189,7 @@ func NewMinogrpc(path string, port uint16, router router.Router) (*Minogrpc, err
 	// Counter needs to be >=1 for asynchronous call to Add.
 	m.closer.Add(1)
 
-	RegisterOverlayServer(server, &overlayServer{
+	ptypes.RegisterOverlayServer(server, &overlayServer{
 		overlay:   o,
 		endpoints: m.endpoints,
 		closer:    m.closer,
@@ -316,7 +309,7 @@ func (m *Minogrpc) MakeRPC(name string, h mino.Handler, f serde.Factory) (mino.R
 	m.endpoints[uri] = &Endpoint{
 		Handler: h,
 		Factory: f,
-		streams: make(map[string]*StreamSession),
+		streams: make(map[string]session.Session),
 	}
 
 	return rpc, nil

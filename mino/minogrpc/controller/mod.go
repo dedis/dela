@@ -6,7 +6,6 @@ import (
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
-	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc"
 	"go.dedis.ch/dela/mino/router/tree"
 	"golang.org/x/xerrors"
@@ -86,15 +85,12 @@ func (m minimal) Inject(ctx cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("invalid port value %d", port)
 	}
 
-	memship := minogrpc.NewMemship([]mino.Address{})
-
 	o, err := minogrpc.NewMinogrpc("127.0.0.1", uint16(port), tree.NewRouter(
 		treeRoutingHeight, minogrpc.AddressFactory{}))
 	if err != nil {
 		return xerrors.Errorf("couldn't make overlay: %v", err)
 	}
 
-	inj.Inject(memship)
 	inj.Inject(o)
 
 	dela.Logger.Info().Msgf("%v is running", o)

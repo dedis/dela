@@ -19,32 +19,32 @@ func RegisterMessageFormat(c serde.Format, f serde.FormatEngine) {
 //
 // - implements router.Packet
 type Packet struct {
-	Source  mino.Address
-	Dest    []mino.Address
-	Message []byte
+	src  mino.Address
+	dest []mino.Address
+	msg  []byte
 }
 
 func NewPacket(src mino.Address, msg []byte, dest ...mino.Address) *Packet {
 	return &Packet{
-		Source:  src,
-		Dest:    dest,
-		Message: msg,
+		src:  src,
+		dest: dest,
+		msg:  msg,
 	}
 }
 
 // GetSource implements router.Packet
 func (p *Packet) GetSource() mino.Address {
-	return p.Source
+	return p.src
 }
 
 // GetDestination implements router.Packet
 func (p *Packet) GetDestination() []mino.Address {
-	return p.Dest
+	return append([]mino.Address{}, p.dest...)
 }
 
 // GetMessage implements router.Packet
 func (p *Packet) GetMessage() []byte {
-	return p.Message
+	return p.msg
 }
 
 // Slice implements router.Packet
@@ -52,9 +52,9 @@ func (p *Packet) Slice(addr mino.Address) router.Packet {
 	removed := false
 
 	// in reverse order to remove from the slice "in place"
-	for i := len(p.Dest) - 1; i >= 0; i-- {
-		if p.Dest[i].Equal(addr) {
-			p.Dest = append(p.Dest[:i], p.Dest[i+1:]...)
+	for i := len(p.dest) - 1; i >= 0; i-- {
+		if p.dest[i].Equal(addr) {
+			p.dest = append(p.dest[:i], p.dest[i+1:]...)
 			removed = true
 		}
 	}
@@ -64,9 +64,9 @@ func (p *Packet) Slice(addr mino.Address) router.Packet {
 	}
 
 	return &Packet{
-		Source:  p.Source,
-		Dest:    []mino.Address{addr},
-		Message: p.Message,
+		src:  p.src,
+		dest: []mino.Address{addr},
+		msg:  p.msg,
 	}
 }
 
