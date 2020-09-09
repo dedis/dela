@@ -1,4 +1,4 @@
-package minogrpc
+package traffic
 
 import (
 	"bytes"
@@ -41,7 +41,7 @@ var (
 	sendCounter   = &atomicCounter{}
 	recvCounter   = &atomicCounter{}
 	// eventCounter  = &atomicCounter{}
-	traffics = []*traffic{}
+	traffics = []*Traffic{}
 	// LogItems allows one to granularly say when items should be logged or not.
 	// This is useful for example in an integration test where a specific part
 	// raises a problem but the full graph would be too noisy. For that, one
@@ -50,6 +50,8 @@ var (
 	// LogEvent works the same as LogItems but for events. Note that in both
 	// cases the varenv should be set.
 	LogEvent = true
+
+	headerURIKey = "apiuri"
 )
 
 // SaveItems saves all the items as a graph
@@ -74,8 +76,8 @@ func SaveEvents(path string) error {
 	return nil
 }
 
-// traffic is used to keep track of packets traffic in a server
-type traffic struct {
+// Traffic is used to keep track of packets Traffic in a server
+type Traffic struct {
 	sync.Mutex
 	me             mino.Address
 	addressFactory mino.AddressFactory
@@ -84,8 +86,8 @@ type traffic struct {
 	events         []event
 }
 
-func newTraffic(me mino.Address, af mino.AddressFactory, out io.Writer) *traffic {
-	traffic := &traffic{
+func NewTraffic(me mino.Address, af mino.AddressFactory, out io.Writer) *Traffic {
+	traffic := &Traffic{
 		me:             me,
 		addressFactory: af,
 		items:          make([]item, 0),
@@ -97,7 +99,7 @@ func newTraffic(me mino.Address, af mino.AddressFactory, out io.Writer) *traffic
 	return traffic
 }
 
-func (t *traffic) Save(path string, withSend, withRcv bool) error {
+func (t *Traffic) Save(path string, withSend, withRcv bool) error {
 	f, err := os.Create(path)
 	if err != nil {
 		return err
@@ -107,7 +109,7 @@ func (t *traffic) Save(path string, withSend, withRcv bool) error {
 	return nil
 }
 
-func (t *traffic) logSend(ctx context.Context, from, to mino.Address, msg router.Packet) {
+func (t *Traffic) logSend(ctx context.Context, from, to mino.Address, msg router.Packet) {
 	t.addItem(ctx, from, to, "send", msg)
 }
 
@@ -115,11 +117,11 @@ func (t *traffic) logSend(ctx context.Context, from, to mino.Address, msg router
 // marshalled version of the packet. The only way to have the unmarshalled
 // version is by calling the "router.Forward" function, which we shouldn't do
 // when we receive the packet. This is why we don't take the router.Packet.
-func (t *traffic) logRcv(ctx context.Context, from, to mino.Address) {
+func (t *Traffic) logRcv(ctx context.Context, from, to mino.Address) {
 	t.addItem(ctx, from, to, "received", nil)
 }
 
-func (t *traffic) Display(out io.Writer) {
+func (t *Traffic) Display(out io.Writer) {
 	fmt.Fprint(out, "- traffic:\n")
 	var buf bytes.Buffer
 	for _, item := range t.items {
@@ -128,19 +130,11 @@ func (t *traffic) Display(out io.Writer) {
 	fmt.Fprint(out, eachLine.ReplaceAllString(buf.String(), "-$1"))
 }
 
-func (t *traffic) addItem(ctx context.Context,
+func (t *Traffic) addItem(ctx context.Context,
 	from, to mino.Address, typeStr string, msg router.Packet) {
 
 	if t == nil || !LogItems {
 		return
-	}
-
-	if to == nil {
-		to = newRootAddress()
-	}
-
-	if from == nil {
-		from = newRootAddress()
 	}
 
 	newItem := item{
@@ -186,7 +180,7 @@ func (t *traffic) addItem(ctx context.Context,
 // 	t.Unlock()
 // }
 
-func (t *traffic) getContext(ctx context.Context) string {
+func (t *Traffic) getContext(ctx context.Context) string {
 	headers, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		headers, ok = metadata.FromOutgoingContext(ctx)
@@ -227,7 +221,7 @@ func (p item) Display(out io.Writer) {
 
 // GenerateItemsGraphviz creates a graphviz representation of the items. One can
 // generate a graphical representation with `dot -Tpdf graph.dot -o graph.pdf`
-func GenerateItemsGraphviz(out io.Writer, withSend, withRcv bool, traffics ...*traffic) {
+func GenerateItemsGraphviz(out io.Writer, withSend, withRcv bool, traffics ...*Traffic) {
 
 	fmt.Fprintf(out, "digraph network_activity {\n")
 	fmt.Fprintf(out, "labelloc=\"t\";")
@@ -275,7 +269,7 @@ func GenerateItemsGraphviz(out io.Writer, withSend, withRcv bool, traffics ...*t
 }
 
 // GenerateEventGraphviz creates a graphviz representation of the events
-func GenerateEventGraphviz(out io.Writer, traffics ...*traffic) {
+func GenerateEventGraphviz(out io.Writer, traffics ...*Traffic) {
 	fmt.Fprintf(out, "digraph network_activity {\n")
 	fmt.Fprintf(out, "labelloc=\"t\";")
 	fmt.Fprintf(out, "label = <Network Diagram of %d nodes <font point-size='10'><br/>(generated %s)</font>>;", len(traffics), time.Now().Format("2 Jan 06 - 15:04:05"))

@@ -76,7 +76,6 @@ type address struct {
 // GetDialAddress returns a string formatted to be understood by grpc.Dial()
 // functions.
 func (a address) GetDialAddress() string {
-	// TODO: check the DNS resolver thing.
 	return a.host
 }
 

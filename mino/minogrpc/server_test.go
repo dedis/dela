@@ -189,6 +189,7 @@ func TestOverlayServer_Call(t *testing.T) {
 	}
 
 	overlay.endpoints["test"] = &Endpoint{Handler: testHandler{}, Factory: fake.MessageFactory{}}
+	overlay.endpoints["empty"] = &Endpoint{Handler: emptyHandler{}, Factory: fake.MessageFactory{}}
 	overlay.endpoints["bad"] = &Endpoint{Handler: mino.UnsupportedHandler{}, Factory: fake.MessageFactory{}}
 	overlay.endpoints["bad2"] = &Endpoint{Handler: testHandler{}, Factory: fake.NewBadMessageFactory()}
 
@@ -199,6 +200,12 @@ func TestOverlayServer_Call(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	require.Equal(t, []byte(`{}`), resp.GetPayload())
+
+	ctx = metadata.NewIncomingContext(context.Background(), metadata.Pairs(headerURIKey, "empty"))
+	resp, err = overlay.Call(ctx, &ptypes.Message{Payload: []byte(`{}`)})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Nil(t, resp.GetPayload())
 
 	badCtx := metadata.NewIncomingContext(context.Background(), metadata.New(
 		map[string]string{headerURIKey: "unknown"},
@@ -218,6 +225,7 @@ func TestOverlayServer_Call(t *testing.T) {
 	_, err = overlay.Call(badCtx, &ptypes.Message{Payload: []byte(``)})
 	require.EqualError(t, err, "handler failed to process: rpc is not supported")
 
+	ctx = metadata.NewIncomingContext(context.Background(), metadata.Pairs(headerURIKey, "test"))
 	overlay.context = fake.NewBadContext()
 	_, err = overlay.Call(ctx, &ptypes.Message{Payload: []byte(``)})
 	require.EqualError(t, err, "couldn't serialize result: fake error")
@@ -250,6 +258,20 @@ func TestOverlayServer_Stream(t *testing.T) {
 	err := overlay.Stream(newFakeServerStream(inCtx))
 	require.NoError(t, err)
 
+	stream := newFakeServerStream(inCtx)
+	stream.err = xerrors.New("oops")
+	err = overlay.Stream(stream)
+	require.EqualError(t, err, "receive handshake: oops")
+
+	overlay.router = fakeRouter{errFac: xerrors.New("oops")}
+	err = overlay.Stream(newFakeServerStream(ctx))
+	require.EqualError(t, err, "handshake: oops")
+
+	overlay.router = fakeRouter{err: xerrors.New("oops")}
+	err = overlay.Stream(newFakeServerStream(ctx))
+	require.EqualError(t, err, "routing table: oops")
+
+	overlay.router = tree.NewRouter(3, AddressFactory{})
 	err = overlay.Stream(newFakeServerStream(ctx))
 	require.EqualError(t, err, "handler '' is not registered")
 
@@ -266,6 +288,19 @@ func TestOverlayServer_Stream(t *testing.T) {
 	inCtx = metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "bad", headerStreamIDKey, "test"))
 	err = overlay.Stream(newFakeServerStream(inCtx))
 	require.EqualError(t, err, "handler failed to process: oops")
+}
+
+func TestOverlay_Panic_GetCertificate(t *testing.T) {
+	defer func() {
+		r := recover()
+		require.Equal(t, "certificate of the overlay must be populated", r)
+	}()
+
+	o := &overlay{
+		certs: certs.NewInMemoryStore(),
+	}
+
+	o.GetCertificate()
 }
 
 func TestOverlay_Join(t *testing.T) {
@@ -285,6 +320,11 @@ func TestOverlay_Join(t *testing.T) {
 	err = overlay.Join("", "", nil)
 	require.NoError(t, err)
 
+	overlay.addrFactory = fake.AddressFactory{}
+	err = overlay.Join("", "", nil)
+	require.EqualError(t, err, "invalid address type 'fake.Address'")
+
+	overlay.addrFactory = AddressFactory{}
 	overlay.me = fake.NewBadAddress()
 	err = overlay.Join("", "", nil)
 	require.EqualError(t, err, "couldn't marshal own address: fake error")
@@ -324,7 +364,15 @@ func TestConnManager_Acquire(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, conn)
 
-	conn.(*grpc.ClientConn).Close()
+	_, err = mgr.Acquire(dst.GetAddress())
+	require.NoError(t, err)
+	require.Len(t, mgr.conns, 1)
+	require.Equal(t, 2, mgr.counters[dst.GetAddress()])
+
+	mgr.Release(dst.GetAddress())
+	mgr.Release(dst.GetAddress())
+	require.Len(t, mgr.conns, 0)
+	require.Equal(t, 0, mgr.counters[dst.GetAddress()])
 
 	_, err = mgr.Acquire(fake.NewAddress(1))
 	require.EqualError(t, err, "certificate for 'fake.Address[1]' not found")
@@ -399,6 +447,14 @@ func (h testHandler) Process(req mino.Request) (serde.Message, error) {
 	return req.Message, nil
 }
 
+type emptyHandler struct {
+	mino.UnsupportedHandler
+}
+
+func (h emptyHandler) Process(req mino.Request) (serde.Message, error) {
+	return nil, nil
+}
+
 type fakeServerStream struct {
 	grpc.ServerStream
 	ch  chan *ptypes.Packet
@@ -460,93 +516,31 @@ func (s fakeCerts) Fetch(certs.Dialable, []byte) error {
 	return s.err
 }
 
-// type fakeRouter struct {
-// 	isBad bool
-// }
+type fakeRouter struct {
+	router.Router
 
-// func (r fakeRouter) MakePacket(me mino.Address, to []mino.Address,
-// 	msg []byte) router.Packet {
-// 	return fakePacket{
-// 		dest: to,
-// 	}
-// }
-
-// func (r fakeRouter) Forward(me mino.Address, data []byte, ctx serde.Context,
-// 	f mino.AddressFactory) (map[mino.Address]Packet, error) {
-
-// 	if r.isBad {
-// 		return nil, xerrors.New("fake error")
-// 	}
-
-// 	return map[mino.Address]Packet{}, nil
-// }
-
-// func (r fakeRouter) OnFailure(to mino.Address) error {
-// 	panic("not implemented") // TODO: Implement
-// }
-
-type fakePacket struct {
-	serde.Message
-	source mino.Address
-	dest   []mino.Address
+	errFac error
+	err    error
 }
 
-func newFakePacket(source mino.Address, dest ...mino.Address) router.Packet {
-	return fakePacket{
-		source: source,
-		dest:   dest,
-	}
+func (r fakeRouter) GetHandshakeFactory() router.HandshakeFactory {
+	return fakeHandshakeFac{err: r.errFac}
 }
 
-func (p fakePacket) GetSource() mino.Address {
-	return p.source
+func (r fakeRouter) New(mino.Players) (router.RoutingTable, error) {
+	return nil, r.err
 }
 
-func (p fakePacket) GetDestination() []mino.Address {
-	return p.dest
+func (r fakeRouter) TableOf(router.Handshake) (router.RoutingTable, error) {
+	return nil, r.err
 }
 
-func (p fakePacket) GetMessage() []byte {
-	panic("not implemented") // TODO: Implement
+type fakeHandshakeFac struct {
+	router.HandshakeFactory
+
+	err error
 }
 
-func (p fakePacket) String() string {
-	return "fakePacket"
+func (fac fakeHandshakeFac) HandshakeOf(serde.Context, []byte) (router.Handshake, error) {
+	return nil, fac.err
 }
-
-func (p fakePacket) Slice(addr mino.Address) router.Packet {
-	panic("not implemented")
-}
-
-// type fakeStream struct {
-// 	badSend bool
-// 	badRecv bool
-// 	outputs []*Envelope
-// }
-
-// func (r fakeStream) Context() context.Context {
-// 	return context.Background()
-// }
-
-// func (r fakeStream) Send(*Envelope) error {
-// 	if r.badSend {
-// 		return xerrors.Errorf("oops")
-// 	}
-
-// 	return nil
-// }
-
-// func (r *fakeStream) Recv() (*Envelope, error) {
-// 	if r.badRecv {
-// 		return nil, xerrors.Errorf("oops")
-// 	}
-
-// 	if len(r.outputs) == 0 {
-// 		return nil, io.EOF
-// 	}
-
-// 	out := r.outputs[len(r.outputs)-1]
-// 	r.outputs = r.outputs[:len(r.outputs)-1]
-
-// 	return out, nil
-// }

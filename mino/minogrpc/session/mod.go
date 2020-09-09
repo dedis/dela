@@ -149,7 +149,7 @@ func (s *session) close() {
 
 	for to, relay := range s.relays {
 		err := relay.Close()
-		dela.Logger.Info().Err(err).Msg("relay closed")
+		dela.Logger.Trace().Err(err).Msg("relay closed")
 
 		// Let the manager know it can close the connection if necessary.
 		s.connMgr.Release(to)
@@ -256,7 +256,7 @@ func (s *session) setupRelay(ctx context.Context, addr mino.Address) (Relay, err
 		}
 	}()
 
-	dela.Logger.Info().
+	dela.Logger.Trace().
 		Str("from", s.me.String()).
 		Str("to", addr.String()).
 		Msg("relay opened")

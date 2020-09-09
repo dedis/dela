@@ -30,7 +30,7 @@ func (rpc *RPC) Call(ctx context.Context,
 
 	data, err := req.Serialize(rpc.overlay.context)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to marshal msg to any: %v", err)
+		return nil, xerrors.Errorf("failed to marshal msg: %v", err)
 	}
 
 	from, err := rpc.overlay.me.MarshalText()
@@ -121,7 +121,7 @@ func (rpc RPC) Stream(ctx context.Context,
 
 	table, err := rpc.overlay.router.New(players)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, xerrors.Errorf("routing table: %v", err)
 	}
 
 	md := metadata.Pairs(headerURIKey, rpc.uri, headerStreamIDKey, streamID)

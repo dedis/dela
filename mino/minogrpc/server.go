@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/internal/traffic"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
@@ -32,7 +33,6 @@ import (
 const (
 	// headerURIKey is the key used in rpc header to pass the handler URI
 	headerURIKey        = "apiuri"
-	headerGatewayKey    = "gateway"
 	headerStreamIDKey   = "streamid"
 	certificateDuration = time.Hour * 24 * 180
 )
@@ -55,7 +55,7 @@ func (o overlayServer) Join(ctx context.Context, req *ptypes.JoinRequest) (*ptyp
 		return nil, xerrors.Errorf("token '%s' is invalid", req.Token)
 	}
 
-	dela.Logger.Info().
+	dela.Logger.Debug().
 		Str("from", string(req.GetCertificate().GetAddress())).
 		Msg("valid token received")
 
@@ -181,17 +181,17 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 
 	packet, err := stream.Recv()
 	if err != nil {
-		return err
+		return xerrors.Errorf("receive handshake: %v", err)
 	}
 
 	hs, err := o.router.GetHandshakeFactory().HandshakeOf(o.context, packet.GetSerialized())
 	if err != nil {
-		return err
+		return xerrors.Errorf("handshake: %v", err)
 	}
 
 	table, err := o.router.TableOf(hs)
 	if err != nil {
-		return err
+		return xerrors.Errorf("routing table: %v", err)
 	}
 
 	// We fetch the uri that identifies the handler in the handlers map with the
@@ -255,7 +255,7 @@ type overlay struct {
 	tokens      tokens.Holder
 	router      router.Router
 	connMgr     session.ConnectionManager
-	traffic     *traffic
+	traffic     *traffic.Traffic
 	addrFactory mino.AddressFactory
 }
 
@@ -283,20 +283,12 @@ func newOverlay(me mino.Address, router router.Router,
 
 	switch os.Getenv("MINO_TRAFFIC") {
 	case "log":
-		o.traffic = newTraffic(me, addrFactory, ioutil.Discard)
+		o.traffic = traffic.NewTraffic(me, addrFactory, ioutil.Discard)
 	case "print":
-		o.traffic = newTraffic(me, addrFactory, os.Stdout)
+		o.traffic = traffic.NewTraffic(me, addrFactory, os.Stdout)
 	}
 
 	return o, nil
-}
-
-func (o *overlay) GetLocal() mino.Address {
-	return o.me
-}
-
-func (o *overlay) GetAddresses() []mino.Address {
-	panic("not implemented")
 }
 
 // GetCertificate returns the certificate of the overlay.
@@ -415,6 +407,10 @@ func makeCertificate() (*tls.Certificate, error) {
 	}, nil
 }
 
+// ConnManager is a manager to dial and close connections depending how the
+// usage.
+//
+// - implements session.ConnectionManager
 type connManager struct {
 	sync.Mutex
 	certs    certs.Storage
@@ -432,6 +428,8 @@ func newConnManager(me mino.Address, certs certs.Storage) *connManager {
 	}
 }
 
+// Acquire implements session.ConnectionManager. It either dials to open the
+// connection or returns an existing one for the address.
 func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, error) {
 	mgr.Lock()
 	defer mgr.Unlock()
@@ -483,6 +481,8 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 	return conn, nil
 }
 
+// Release implements session.ConnectionManager. It closes the connection to the
+// address if appropriate.
 func (mgr *connManager) Release(to mino.Address) {
 	mgr.Lock()
 	defer mgr.Unlock()
@@ -496,7 +496,7 @@ func (mgr *connManager) Release(to mino.Address) {
 			delete(mgr.conns, to)
 
 			err := conn.Close()
-			dela.Logger.Info().Err(err).Str("to", to.String()).Msg("connection closed")
+			dela.Logger.Trace().Err(err).Str("to", to.String()).Msg("connection closed")
 
 			return
 		}
