@@ -186,14 +186,14 @@ func TestPedersen_Scenario(t *testing.T) {
 	require.EqualError(t, err, "startRes is already done, only one setup call is allowed")
 
 	// every node should be able to encrypt/decrypt
-	// for i := 0; i < n; i++ {
-	// 	K, C, remainder, err := actors[i].Encrypt(message)
-	// 	require.NoError(t, err)
-	// 	require.Len(t, remainder, 0)
-	// 	decrypted, err := actors[i].Decrypt(K, C)
-	// 	require.NoError(t, err)
-	// 	require.Equal(t, message, decrypted)
-	// }
+	for i := 0; i < n; i++ {
+		K, C, remainder, err := actors[i].Encrypt(message)
+		require.NoError(t, err)
+		require.Len(t, remainder, 0)
+		decrypted, err := actors[i].Decrypt(K, C)
+		require.NoError(t, err)
+		require.Equal(t, message, decrypted)
+	}
 }
 
 // -----------------------------------------------------------------------------

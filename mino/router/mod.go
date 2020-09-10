@@ -35,10 +35,13 @@ type PacketFactory interface {
 	PacketOf(serde.Context, []byte) (Packet, error)
 }
 
+// Handshake is the message sent to the relay as the very first message. It is a
+// way to provide parameters to the relays.
 type Handshake interface {
 	serde.Message
 }
 
+// HandshakeFactory is the factory to serialize and deserialize handshakes.
 type HandshakeFactory interface {
 	serde.Factory
 
@@ -61,11 +64,18 @@ type Router interface {
 	TableOf(Handshake) (RoutingTable, error)
 }
 
+// Routes is a set of relay addresses where to send the packet.
 type Routes map[mino.Address]Packet
 
+// RoutingTable is built by the router and provides information about the
+// routing of the packets.
 type RoutingTable interface {
+	// Make creates and returns a packet with the given source, destination and
+	// payload.
 	Make(src mino.Address, to []mino.Address, msg []byte) Packet
 
+	// Prelude is called before a relay is opened to generate the handshake that
+	// will be sent.
 	Prelude(mino.Address) Handshake
 
 	// Forward takes the destination address, unmarshal the packet, and, based
