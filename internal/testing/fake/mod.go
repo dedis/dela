@@ -925,8 +925,12 @@ func (f MessageFactory) Deserialize(ctx serde.Context, data []byte) (serde.Messa
 }
 
 const (
+	// GoodFormat should register working format engines.
 	GoodFormat = serde.Format("FakeGood")
-	BadFormat  = serde.Format("FakeBad")
+	// BadFormat should register non-working format engines.
+	BadFormat = serde.Format("FakeBad")
+	// MsgFormat should register an engine for fake.Message.
+	MsgFormat = serde.Format("FakeMsg")
 )
 
 type Format struct {
@@ -947,6 +951,26 @@ func (f Format) Encode(ctx serde.Context, m serde.Message) ([]byte, error) {
 func (f Format) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	f.Call.Add(ctx, data)
 	return f.Msg, f.err
+}
+
+// MessageFormat is a format engine to encode and decode fake messages.
+//
+// - implements serde.FormatEngine
+type MessageFormat struct{}
+
+// NewMsgFormat creates a new format.
+func NewMsgFormat() MessageFormat {
+	return MessageFormat{}
+}
+
+// Encode implements serde.FormatEngine.
+func (f MessageFormat) Encode(ctx serde.Context, m serde.Message) ([]byte, error) {
+	return Message{}.Serialize(ctx)
+}
+
+// Decode implements serde.FormatEngine.
+func (f MessageFormat) Decode(serde.Context, []byte) (serde.Message, error) {
+	return Message{}, nil
 }
 
 type ContextEngine struct {
@@ -979,6 +1003,12 @@ func NewBadContextWithDelay(delay int) serde.Context {
 		Count:  &Counter{Value: delay},
 		format: BadFormat,
 		err:    xerrors.New("fake error"),
+	})
+}
+
+func NewMsgContext() serde.Context {
+	return serde.NewContext(ContextEngine{
+		format: MsgFormat,
 	})
 }
 

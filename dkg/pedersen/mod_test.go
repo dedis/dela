@@ -140,7 +140,7 @@ func TestPedersen_Scenario(t *testing.T) {
 	for i := 0; i < n; i++ {
 
 		port := uint16(2000 + i)
-		minogrpc, err := minogrpc.NewMinogrpc("127.0.0.1", port, tree.NewRouter(3, minogrpc.AddressFactory{}))
+		minogrpc, err := minogrpc.NewMinogrpc("127.0.0.1", port, tree.NewRouter(minogrpc.AddressFactory{}))
 		require.NoError(t, err)
 
 		defer minogrpc.GracefulClose()

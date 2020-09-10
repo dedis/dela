@@ -24,8 +24,6 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
-//go:generate protoc -I ./ --go_out=plugins=grpc:./ ./overlay.proto
-
 const (
 	orchestratorDescription = "Orchestrator"
 	orchestratorCode        = "\ue000"

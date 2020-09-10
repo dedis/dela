@@ -280,7 +280,7 @@ func (s *session) setupRelay(ctx context.Context, addr mino.Address) (Relay, err
 		}
 	}()
 
-	s.logger.Trace().
+	s.logger.Debug().
 		Str("to", addr.String()).
 		Msg("relay opened")
 

@@ -163,3 +163,7 @@ func (s orchStream) Recv() (*ptypes.Packet, error) {
 	<-s.ctx.Done()
 	return nil, status.FromContextError(s.ctx.Err()).Err()
 }
+
+func (orchStream) Send(*ptypes.Packet) error {
+	return xerrors.New("no parent stream")
+}

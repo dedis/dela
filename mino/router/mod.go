@@ -86,5 +86,5 @@ type RoutingTable interface {
 	// OnFailure is used to announce that a packet failed to be routed. It
 	// allows the router to find a different route. Forward can be called
 	// afterwards to find an alternative route.
-	OnFailure(to mino.Address)
+	OnFailure(to mino.Address) error
 }

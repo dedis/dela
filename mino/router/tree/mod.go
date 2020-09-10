@@ -6,22 +6,27 @@ import (
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/router"
 	"go.dedis.ch/dela/mino/router/tree/types"
+	"golang.org/x/xerrors"
 )
+
+const defaultHeight = 3
 
 // Router is the routing service
 //
 // - implements router.Router
 type Router struct {
+	maxHeight int
 	packetFac router.PacketFactory
 	hsFac     router.HandshakeFactory
 }
 
 // NewRouter returns a new router
-func NewRouter(height int, f mino.AddressFactory) Router {
+func NewRouter(f mino.AddressFactory) Router {
 	fac := types.NewPacketFactory(f)
 	hsFac := types.NewHandshakeFactory(f)
 
 	r := Router{
+		maxHeight: defaultHeight,
 		packetFac: fac,
 		hsFac:     hsFac,
 	}
@@ -49,7 +54,7 @@ func (r Router) New(players mino.Players) (router.RoutingTable, error) {
 		addrs = append(addrs, iter.GetNext())
 	}
 
-	return NewTable(3, addrs), nil
+	return NewTable(r.maxHeight, addrs), nil
 }
 
 // TableOf implements router.Router. It creates the routing table associated
@@ -62,10 +67,13 @@ func (r Router) TableOf(h router.Handshake) (router.RoutingTable, error) {
 
 // Table is a routing table that is using a tree structure to communicate
 // between the nodes.
+//
+// - implements router.RoutingTable
 type Table struct {
-	tree DynamicTree
+	tree Tree
 }
 
+// NewTable creates a new routing table for the given addresses.
 func NewTable(height int, expected []mino.Address) Table {
 	return Table{
 		tree: NewTree(height, expected),
@@ -82,7 +90,9 @@ func (t Table) Make(src mino.Address, to []mino.Address, msg []byte) router.Pack
 // should be sent to the distant before as the first message when opening a
 // relay to it.
 func (t Table) Prelude(to mino.Address) router.Handshake {
-	return types.NewHandshake(t.tree.GetHeight()-1, t.tree.GetAddressSet(to))
+	newHeight := t.tree.GetMaxHeight() - 1
+
+	return types.NewHandshake(newHeight, t.tree.GetChildren(to))
 }
 
 // Forward implements router.RoutingTable. It takes a packet and split it into
@@ -105,8 +115,10 @@ func (t Table) Forward(packet router.Packet) (router.Routes, error) {
 	return routes, nil
 }
 
-// OnFailure implements router.Router. It can be call by a node to announce that
-// a route has failed so that the tree can be adapted.
-func (t Table) OnFailure(to mino.Address) {
-	panic("nope")
+// OnFailure implements router.Router. The tree will try to adapt itself to
+// reach the address, but it will return an error if the address is a direct
+// branch of the tree.
+// TODO: impl
+func (t Table) OnFailure(to mino.Address) error {
+	return xerrors.New("unreachable address")
 }

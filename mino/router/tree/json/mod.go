@@ -8,7 +8,7 @@ import (
 )
 
 func init() {
-	types.RegisterMessageFormat(serde.FormatJSON, newpacketFormat())
+	types.RegisterPacketFormat(serde.FormatJSON, newpacketFormat())
 	types.RegisterHandshakeFormat(serde.FormatJSON, hsFormat{})
 }
 

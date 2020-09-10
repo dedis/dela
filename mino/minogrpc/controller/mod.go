@@ -11,10 +11,6 @@ import (
 	"golang.org/x/xerrors"
 )
 
-const (
-	treeRoutingHeight = 3
-)
-
 // Minimal is an initializer with the minimum set of commands.
 //
 // - implements node.Initializer
@@ -85,7 +81,7 @@ func (m minimal) Inject(ctx cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("invalid port value %d", port)
 	}
 
-	rter := tree.NewRouter(treeRoutingHeight, minogrpc.AddressFactory{})
+	rter := tree.NewRouter(minogrpc.AddressFactory{})
 
 	o, err := minogrpc.NewMinogrpc("127.0.0.1", uint16(port), rter)
 	if err != nil {

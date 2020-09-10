@@ -10,11 +10,6 @@ import (
 
 var packetFormat = registry.NewSimpleRegistry()
 
-// RegisterMessageFormat register the engine for the provided format.
-func RegisterMessageFormat(c serde.Format, f serde.FormatEngine) {
-	packetFormat.Register(c, f)
-}
-
 // Packet describes a tree routing packet
 //
 // - implements router.Packet
@@ -24,6 +19,7 @@ type Packet struct {
 	msg  []byte
 }
 
+// NewPacket creates a new packet.
 func NewPacket(src mino.Address, msg []byte, dest ...mino.Address) *Packet {
 	return &Packet{
 		src:  src,
@@ -32,26 +28,38 @@ func NewPacket(src mino.Address, msg []byte, dest ...mino.Address) *Packet {
 	}
 }
 
-// GetSource implements router.Packet
+// GetSource implements router.Packet. It returns the source address of the
+// packet.
 func (p *Packet) GetSource() mino.Address {
 	return p.src
 }
 
-// GetDestination implements router.Packet
+// GetDestination implements router.Packet. It returns a list of addresses where
+// the packet should be send to.
 func (p *Packet) GetDestination() []mino.Address {
 	return append([]mino.Address{}, p.dest...)
 }
 
-// GetMessage implements router.Packet
+// GetMessage implements router.Packet. It returns the byte buffer of the
+// message.
 func (p *Packet) GetMessage() []byte {
 	return p.msg
 }
 
+// Add appends the address to the destination list.
 func (p *Packet) Add(to mino.Address) {
+	for _, addr := range p.dest {
+		if addr.Equal(to) {
+			return
+		}
+	}
+
 	p.dest = append(p.dest, to)
 }
 
-// Slice implements router.Packet
+// Slice implements router.Packet. It removes the address from the destination
+// list and returns a packet with this single destination, if it exists.
+// Otherwise the packet stays unchanged.
 func (p *Packet) Slice(addr mino.Address) router.Packet {
 	removed := false
 
@@ -74,13 +82,14 @@ func (p *Packet) Slice(addr mino.Address) router.Packet {
 	}
 }
 
-// Serialize implements serde.Message
+// Serialize implements serde.Message. It returns the serialized data of the
+// packet.
 func (p *Packet) Serialize(ctx serde.Context) ([]byte, error) {
 	format := packetFormat.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, p)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to serialize packet: %v", err)
+		return nil, xerrors.Errorf("packet format: %v", err)
 	}
 
 	return data, nil
@@ -103,31 +112,28 @@ func NewPacketFactory(f mino.AddressFactory) PacketFactory {
 	}
 }
 
-// PacketOf implements router.PacketFactory
+// PacketOf implements router.PacketFactory. It populates the packet associated
+// with the data if appropriate, otherwise it returns an error.
 func (f PacketFactory) PacketOf(ctx serde.Context, data []byte) (router.Packet, error) {
-	msg, err := f.Deserialize(ctx, data)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to deserialize packet: %v", err)
-	}
-
-	packet, ok := msg.(*Packet)
-	if !ok {
-		return nil, xerrors.Errorf("expected to find type '%T', but found '%T'", packet, msg)
-	}
-
-	return packet, nil
-}
-
-// Deserialize implements serde.Factory
-func (f PacketFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := packetFormat.Get(ctx.GetFormat())
 
 	ctx = serde.WithFactory(ctx, AddrKey{}, f.addrFactory)
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't decode message: %v", err)
+		return nil, xerrors.Errorf("packet format: %v", err)
 	}
 
-	return msg, nil
+	packet, ok := msg.(*Packet)
+	if !ok {
+		return nil, xerrors.Errorf("invalid packet '%T'", msg)
+	}
+
+	return packet, nil
+}
+
+// Deserialize implements serde.Factory. It populates the packet associated
+// with the data if appropriate, otherwise it returns an error.
+func (f PacketFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+	return f.PacketOf(ctx, data)
 }

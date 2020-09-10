@@ -62,7 +62,7 @@ func TestAddressFactory_FromText(t *testing.T) {
 }
 
 func TestMinogrpc_New(t *testing.T) {
-	m, err := NewMinogrpc("127.0.0.1", 3333, tree.NewRouter(1, AddressFactory{}))
+	m, err := NewMinogrpc("127.0.0.1", 3333, tree.NewRouter(AddressFactory{}))
 	require.NoError(t, err)
 
 	require.Equal(t, "127.0.0.1:3333", m.GetAddress().String())
@@ -77,7 +77,7 @@ func TestMinogrpc_New(t *testing.T) {
 	require.EqualError(t, err,
 		"couldn't parse url: parse \"//\\\\:0\": invalid character \"\\\\\" in host name")
 
-	_, err = NewMinogrpc("123.4.5.6", 1, tree.NewRouter(1, AddressFactory{}))
+	_, err = NewMinogrpc("123.4.5.6", 1, tree.NewRouter(AddressFactory{}))
 	require.Error(t, err)
 	// Funny enough, macos would output:
 	//   couldn't start the server: failed to listen: listen tcp4 123.4.5.6:1:
@@ -113,7 +113,7 @@ func TestMinogrpc_Token(t *testing.T) {
 }
 
 func TestMinogrpc_GracefulClose(t *testing.T) {
-	m, err := NewMinogrpc("127.0.0.1", 0, tree.NewRouter(1, AddressFactory{}))
+	m, err := NewMinogrpc("127.0.0.1", 0, tree.NewRouter(AddressFactory{}))
 	require.NoError(t, err)
 
 	require.NoError(t, m.GracefulClose())

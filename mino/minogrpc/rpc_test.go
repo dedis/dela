@@ -97,7 +97,7 @@ func TestRPC_Stream(t *testing.T) {
 		overlay: &overlay{
 			closer:      new(sync.WaitGroup),
 			me:          addrs[0],
-			router:      tree.NewRouter(1, AddressFactory{}),
+			router:      tree.NewRouter(AddressFactory{}),
 			addrFactory: AddressFactory{},
 			connMgr:     fakeConnMgr{},
 			context:     json.NewContext(),

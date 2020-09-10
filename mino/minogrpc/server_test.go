@@ -109,7 +109,7 @@ func TestOverlayServer_Join(t *testing.T) {
 		overlay: &overlay{
 			tokens:  fakeTokens{},
 			certs:   certs.NewInMemoryStore(),
-			router:  tree.NewRouter(3, AddressFactory{}),
+			router:  tree.NewRouter(AddressFactory{}),
 			connMgr: fakeConnMgr{},
 		},
 	}
@@ -158,7 +158,7 @@ func TestOverlayServer_Share(t *testing.T) {
 	overlay := overlayServer{
 		overlay: &overlay{
 			certs:       certs.NewInMemoryStore(),
-			router:      tree.NewRouter(3, AddressFactory{}),
+			router:      tree.NewRouter(AddressFactory{}),
 			addrFactory: AddressFactory{},
 		},
 	}
@@ -181,7 +181,7 @@ func TestOverlayServer_Share(t *testing.T) {
 func TestOverlayServer_Call(t *testing.T) {
 	overlay := overlayServer{
 		overlay: &overlay{
-			router:      tree.NewRouter(3, AddressFactory{}),
+			router:      tree.NewRouter(AddressFactory{}),
 			context:     json.NewContext(),
 			addrFactory: AddressFactory{},
 		},
@@ -234,7 +234,7 @@ func TestOverlayServer_Call(t *testing.T) {
 func TestOverlayServer_Stream(t *testing.T) {
 	overlay := overlayServer{
 		overlay: &overlay{
-			router:      tree.NewRouter(3, AddressFactory{}),
+			router:      tree.NewRouter(AddressFactory{}),
 			context:     json.NewContext(),
 			addrFactory: AddressFactory{},
 			me:          fake.NewAddress(0),
@@ -271,7 +271,7 @@ func TestOverlayServer_Stream(t *testing.T) {
 	err = overlay.Stream(newFakeServerStream(ctx))
 	require.EqualError(t, err, "routing table: oops")
 
-	overlay.router = tree.NewRouter(3, AddressFactory{})
+	overlay.router = tree.NewRouter(AddressFactory{})
 	err = overlay.Stream(newFakeServerStream(ctx))
 	require.EqualError(t, err, "handler '' is not registered")
 
@@ -284,7 +284,7 @@ func TestOverlayServer_Stream(t *testing.T) {
 	require.EqualError(t, err, "failed to get streamID, result is empty")
 
 	overlay.context = json.NewContext()
-	overlay.router = tree.NewRouter(3, AddressFactory{})
+	overlay.router = tree.NewRouter(AddressFactory{})
 	inCtx = metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "bad", headerStreamIDKey, "test"))
 	err = overlay.Stream(newFakeServerStream(inCtx))
 	require.EqualError(t, err, "handler failed to process: oops")
@@ -310,7 +310,7 @@ func TestOverlay_Join(t *testing.T) {
 	overlay := overlay{
 		me:     fake.NewAddress(0),
 		certs:  fakeCerts{},
-		router: tree.NewRouter(3, AddressFactory{}),
+		router: tree.NewRouter(AddressFactory{}),
 		connMgr: fakeConnMgr{
 			resp: ptypes.JoinResponse{Peers: []*ptypes.Certificate{{Value: cert.Leaf.Raw}}},
 		},
@@ -394,7 +394,7 @@ func makeInstances(t *testing.T, n int, call *fake.Call) ([]mino.Mino, []mino.RP
 	mm := make([]mino.Mino, n)
 	rpcs := make([]mino.RPC, n)
 	for i := range mm {
-		m, err := NewMinogrpc("127.0.0.1", 3000+uint16(i), tree.NewRouter(2, AddressFactory{}))
+		m, err := NewMinogrpc("127.0.0.1", 3000+uint16(i), tree.NewRouter(AddressFactory{}))
 		require.NoError(t, err)
 
 		rpc, err := m.MakeRPC("test", testHandler{call: call}, fake.MessageFactory{})
