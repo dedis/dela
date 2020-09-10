@@ -3,6 +3,7 @@ package blockstore
 import (
 	"context"
 	"errors"
+	"sync"
 
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
@@ -18,6 +19,10 @@ type TreeCache interface {
 	Get() hashtree.Tree
 
 	Set(hashtree.Tree)
+
+	// SetAndLock sets the tree and acquires the cache lock until the wait group
+	// is done which allows an external caller to delay the release of the lock.
+	SetAndLock(hashtree.Tree, *sync.WaitGroup)
 }
 
 // GenesisStore is the interface to store and get the genesis block. It is left

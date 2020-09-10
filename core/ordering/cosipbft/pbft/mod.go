@@ -594,10 +594,13 @@ func (m *pbftsm) verifyFinalize(r *round, sig crypto.Signature, ro authority.Aut
 			return xerrors.Errorf("commit tree: %v", err)
 		}
 
+		wg := sync.WaitGroup{}
+		wg.Add(1)
+
 		txn.OnCommit(func() {
 			// The cache is updated only after both are committed with the tree
 			// using the database as the transaction is done.
-			m.tree.Set(r.tree)
+			go m.tree.SetAndLock(r.tree, &wg)
 		})
 
 		// 2. Persist the block and its forward link.
@@ -616,6 +619,10 @@ func (m *pbftsm) verifyFinalize(r *round, sig crypto.Signature, ro authority.Aut
 		if err != nil {
 			return xerrors.Errorf("store block: %v", err)
 		}
+
+		// Only release the tree cache at the very beginning of the transaction,
+		// so that a call to get the tree will hold until the block is stored.
+		txn.OnCommit(wg.Done)
 
 		return nil
 	})
