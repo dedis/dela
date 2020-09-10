@@ -4,10 +4,14 @@ import (
 	context "context"
 	"sync"
 
+	"github.com/rs/xid"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/minogrpc/ptypes"
+	"go.dedis.ch/dela/mino/minogrpc/session"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 // RPC represents an RPC that has been registered by a client, which allows
@@ -15,7 +19,7 @@ import (
 //
 // - implements mino.RPC
 type RPC struct {
-	overlay overlay
+	overlay *overlay
 	uri     string
 	factory serde.Factory
 }
@@ -26,7 +30,7 @@ func (rpc *RPC) Call(ctx context.Context,
 
 	data, err := req.Serialize(rpc.overlay.context)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to marshal msg to any: %v", err)
+		return nil, xerrors.Errorf("failed to marshal msg: %v", err)
 	}
 
 	from, err := rpc.overlay.me.MarshalText()
@@ -34,7 +38,7 @@ func (rpc *RPC) Call(ctx context.Context,
 		return nil, xerrors.Errorf("failed to marshal address: %v", err)
 	}
 
-	sendMsg := &Message{
+	sendMsg := &ptypes.Message{
 		From:    from,
 		Payload: data,
 	}
@@ -51,7 +55,7 @@ func (rpc *RPC) Call(ctx context.Context,
 		go func() {
 			defer wg.Done()
 
-			clientConn, err := rpc.overlay.connFactory.FromAddress(addr)
+			clientConn, err := rpc.overlay.connMgr.Acquire(addr)
 			if err != nil {
 				resp := mino.NewResponseWithError(
 					addr,
@@ -62,7 +66,9 @@ func (rpc *RPC) Call(ctx context.Context,
 				return
 			}
 
-			cl := NewOverlayClient(clientConn)
+			defer rpc.overlay.connMgr.Release(addr)
+
+			cl := ptypes.NewOverlayClient(clientConn)
 
 			header := metadata.New(map[string]string{headerURIKey: rpc.uri})
 			newCtx := metadata.NewOutgoingContext(ctx, header)
@@ -111,43 +117,53 @@ func (rpc RPC) Stream(ctx context.Context,
 
 	root := newRootAddress()
 
-	rting, err := rpc.overlay.routingFactory.Make(rpc.overlay.me, players)
+	streamID := xid.New().String()
+
+	table, err := rpc.overlay.router.New(players)
 	if err != nil {
-		return nil, nil, xerrors.Errorf("couldn't generate routing: %v", err)
+		return nil, nil, xerrors.Errorf("routing table: %v", err)
 	}
 
-	header := metadata.New(map[string]string{headerURIKey: rpc.uri})
+	md := metadata.Pairs(headerURIKey, rpc.uri, headerStreamIDKey, streamID)
 
-	receiver := receiver{
-		context:        rpc.overlay.context,
-		factory:        rpc.factory,
-		addressFactory: rpc.overlay.routingFactory.GetAddressFactory(),
-		errs:           make(chan error, 1),
-		queue:          newNonBlockingQueue(),
-	}
+	// Streamless session as this is the orchestrator of the protocol.
+	sess := session.NewSession(
+		md,
+		orchStream{ctx: ctx},
+		root,
+		table,
+		rpc.factory,
+		rpc.overlay.router.GetPacketFactory(),
+		rpc.overlay.context,
+		rpc.overlay.connMgr,
+	)
 
-	gateway := rting.GetRoot()
+	rpc.overlay.closer.Add(1)
 
-	sender := sender{
-		me:             root,
-		context:        rpc.overlay.context,
-		addressFactory: AddressFactory{},
-		gateway:        gateway,
-		clients:        map[mino.Address]chan OutContext{},
-		receiver:       &receiver,
-		traffic:        rpc.overlay.traffic,
-	}
+	go func() {
+		defer rpc.overlay.closer.Done()
 
-	relayCtx := metadata.NewOutgoingContext(ctx, header)
+		sess.Listen()
+	}()
 
-	// The orchestrator opens a connection to the entry point of the routing map
-	// and it will relay the messages by this gateway by default. The entry
-	// point of the routing will have the orchestrator stream opens which will
-	// allow the messages to be routed back to the orchestrator.
-	err = rpc.overlay.setupRelay(relayCtx, gateway, &sender, &receiver, rting)
-	if err != nil {
-		return nil, nil, xerrors.Errorf("couldn't setup relay: %v", err)
-	}
+	return sess, sess, nil
+}
 
-	return sender, receiver, nil
+type orchStream struct {
+	session.PacketStream
+
+	ctx context.Context
+}
+
+func (s orchStream) Context() context.Context {
+	return s.ctx
+}
+
+func (s orchStream) Recv() (*ptypes.Packet, error) {
+	<-s.ctx.Done()
+	return nil, status.FromContextError(s.ctx.Err()).Err()
+}
+
+func (orchStream) Send(*ptypes.Packet) error {
+	return xerrors.New("no parent stream")
 }

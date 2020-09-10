@@ -6,31 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
-	internal "go.dedis.ch/dela/internal/testing"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/mino/minogrpc/routing"
 	"go.dedis.ch/dela/mino/minogrpc/tokens"
+	"go.dedis.ch/dela/mino/router/tree"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 )
-
-func TestMessages(t *testing.T) {
-	messages := []proto.Message{
-		&Certificate{},
-		&CertificateAck{},
-		&JoinRequest{},
-		&JoinResponse{},
-		&Envelope{},
-		&Message{},
-	}
-
-	for _, m := range messages {
-		internal.CoverProtoMessage(t, m)
-	}
-}
 
 func TestRootAddress_Equal(t *testing.T) {
 	root := newRootAddress()
@@ -79,7 +62,7 @@ func TestAddressFactory_FromText(t *testing.T) {
 }
 
 func TestMinogrpc_New(t *testing.T) {
-	m, err := NewMinogrpc("127.0.0.1", 3333, routing.NewTreeRoutingFactory(1, AddressFactory{}))
+	m, err := NewMinogrpc("127.0.0.1", 3333, tree.NewRouter(AddressFactory{}))
 	require.NoError(t, err)
 
 	require.Equal(t, "127.0.0.1:3333", m.GetAddress().String())
@@ -94,9 +77,9 @@ func TestMinogrpc_New(t *testing.T) {
 	require.EqualError(t, err,
 		"couldn't parse url: parse \"//\\\\:0\": invalid character \"\\\\\" in host name")
 
-	_, err = NewMinogrpc("123.4.5.6", 1, routing.NewTreeRoutingFactory(1, AddressFactory{}))
+	_, err = NewMinogrpc("123.4.5.6", 1, tree.NewRouter(AddressFactory{}))
 	require.Error(t, err)
-	// Funny enought, macos would output:
+	// Funny enough, macos would output:
 	//   couldn't start the server: failed to listen: listen tcp4 123.4.5.6:1:
 	//     bind: can't assign requested address
 	// While linux outpus:
@@ -114,7 +97,7 @@ func TestMinogrpc_GetAddressFactory(t *testing.T) {
 func TestMinogrpc_GetAddress(t *testing.T) {
 	addr := address{}
 	minoGrpc := &Minogrpc{
-		overlay: overlay{me: addr},
+		overlay: &overlay{me: addr},
 	}
 
 	require.Equal(t, addr, minoGrpc.GetAddress())
@@ -122,7 +105,7 @@ func TestMinogrpc_GetAddress(t *testing.T) {
 
 func TestMinogrpc_Token(t *testing.T) {
 	minoGrpc := &Minogrpc{
-		overlay: overlay{tokens: tokens.NewInMemoryHolder()},
+		overlay: &overlay{tokens: tokens.NewInMemoryHolder()},
 	}
 
 	token := minoGrpc.GenerateToken(time.Minute)
@@ -130,7 +113,7 @@ func TestMinogrpc_Token(t *testing.T) {
 }
 
 func TestMinogrpc_GracefulClose(t *testing.T) {
-	m, err := NewMinogrpc("127.0.0.1", 0, routing.NewTreeRoutingFactory(1, AddressFactory{}))
+	m, err := NewMinogrpc("127.0.0.1", 0, tree.NewRouter(AddressFactory{}))
 	require.NoError(t, err)
 
 	require.NoError(t, m.GracefulClose())
@@ -142,10 +125,12 @@ func TestMinogrpc_GracefulClose(t *testing.T) {
 
 	// gRPC failed to stop gracefully.
 	m = &Minogrpc{
+		overlay: &overlay{
+			closer: new(sync.WaitGroup),
+		},
 		url:     &url.URL{Host: "127.0.0.1:0"},
 		server:  grpc.NewServer(),
 		started: make(chan struct{}),
-		closer:  &sync.WaitGroup{},
 		closing: make(chan error, 1),
 	}
 	m.closer.Add(1)
@@ -189,8 +174,8 @@ func TestMinogrpc_MakeNamespace(t *testing.T) {
 func TestMinogrpc_MakeRPC(t *testing.T) {
 	minoGrpc := Minogrpc{
 		namespace: "namespace",
-		overlay:   overlay{},
-		endpoints: make(map[string]Endpoint),
+		overlay:   &overlay{},
+		endpoints: make(map[string]*Endpoint),
 	}
 
 	handler := mino.UnsupportedHandler{}
@@ -200,7 +185,7 @@ func TestMinogrpc_MakeRPC(t *testing.T) {
 
 	expectedRPC := &RPC{
 		factory: fake.MessageFactory{},
-		overlay: overlay{},
+		overlay: &overlay{},
 		uri:     "namespace/name",
 	}
 
@@ -212,7 +197,7 @@ func TestMinogrpc_MakeRPC(t *testing.T) {
 
 func TestMinogrpc_String(t *testing.T) {
 	minoGrpc := &Minogrpc{
-		overlay: overlay{me: fake.NewAddress(0)},
+		overlay: &overlay{me: fake.NewAddress(0)},
 	}
 
 	require.Equal(t, "fake.Address[0]", minoGrpc.String())

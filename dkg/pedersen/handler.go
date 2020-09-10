@@ -85,6 +85,7 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 	// the start message.
 
 	deals := []types.Deal{}
+	responses := []*pedersen.Response{}
 
 mainSwitch:
 	from, msg, err := in.Recv(context.Background())
@@ -97,7 +98,7 @@ mainSwitch:
 	switch msg := msg.(type) {
 
 	case types.Start:
-		err := h.start(msg, deals, from, out, in)
+		err := h.start(msg, deals, responses, from, out, in)
 		if err != nil {
 			return xerrors.Errorf("failed to start: %v", err)
 		}
@@ -108,6 +109,23 @@ mainSwitch:
 		// received our start signal. In this case we collect the Deals while
 		// waiting for the start signal.
 		deals = append(deals, msg)
+		goto mainSwitch
+
+	case types.Response:
+		// This is a special case where a DKG started, some nodes received the
+		// start signal and started sending their deals but we have not yet
+		// received our start signal. In this case we collect the Response while
+		// waiting for the start signal.
+		response := &pedersen.Response{
+			Index: msg.GetIndex(),
+			Response: &vss.Response{
+				SessionID: msg.GetResponse().GetSessionID(),
+				Index:     msg.GetResponse().GetIndex(),
+				Status:    msg.GetResponse().GetStatus(),
+				Signature: msg.GetResponse().GetSignature(),
+			},
+		}
+		responses = append(responses, response)
 		goto mainSwitch
 
 	case types.DecryptRequest:
@@ -150,8 +168,9 @@ mainSwitch:
 // start is called when the node has received its start message. Note that we
 // might have already received some deals from other nodes in the meantime. The
 // function handles the DKG creation protocol.
-func (h *Handler) start(start types.Start, receivedDeals []types.Deal, from mino.Address,
-	out mino.Sender, in mino.Receiver) error {
+func (h *Handler) start(start types.Start, receivedDeals []types.Deal,
+	receivedResps []*pedersen.Response, from mino.Address, out mino.Sender,
+	in mino.Receiver) error {
 
 	if len(start.GetAddresses()) != len(start.GetPublicKeys()) {
 		return xerrors.Errorf("there should be as many players as "+
@@ -201,8 +220,6 @@ func (h *Handler) start(start types.Start, receivedDeals []types.Deal, from mino
 
 	dela.Logger.Trace().Msgf("%s sent all its deals", h.me)
 
-	receivedResps := make([]*pedersen.Response, 0)
-
 	numReceivedDeals := 0
 
 	// Process the deals we received before the start message
@@ -232,6 +249,7 @@ func (h *Handler) start(start types.Start, receivedDeals []types.Deal, from mino
 			if err != nil {
 				dela.Logger.Warn().Msgf("%s failed to handle received deal "+
 					"from %s: %v", h.me, from, err)
+				return xerrors.Errorf("failed to handle deal from '%s': %v", from, err)
 			}
 			numReceivedDeals++
 
@@ -250,7 +268,7 @@ func (h *Handler) start(start types.Start, receivedDeals []types.Deal, from mino
 			receivedResps = append(receivedResps, response)
 
 		default:
-			return xerrors.Errorf("undexpected message: %T", msg)
+			return xerrors.Errorf("unexpected message: %T", msg)
 		}
 	}
 
@@ -374,6 +392,7 @@ func (h *Handler) handleDeal(msg types.Deal, from mino.Address, addrs []mino.Add
 		if err != nil {
 			dela.Logger.Warn().Msgf("got an error while sending "+
 				"response: %v", err)
+			return xerrors.Errorf("failed to send response to '%s': %v", addr, err)
 		}
 
 	}

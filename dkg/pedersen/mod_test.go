@@ -11,7 +11,7 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc"
-	"go.dedis.ch/dela/mino/minogrpc/routing"
+	"go.dedis.ch/dela/mino/router/tree"
 	"go.dedis.ch/kyber/v3"
 )
 
@@ -89,19 +89,19 @@ func TestPedersen_Decrypt(t *testing.T) {
 	}
 
 	_, err := actor.Decrypt(suite.Point(), suite.Point())
-	require.NoError(t, err)
+	require.EqualError(t, err, "failed to create stream: fake error")
 
 	rpc := fake.NewStreamRPC(fake.NewBadReceiver(), fake.NewBadSender())
 	actor.rpc = rpc
 
 	_, err = actor.Decrypt(suite.Point(), suite.Point())
-	require.EqualError(t, err, "failed to receive from '%!s(<nil>)': fake error")
+	require.EqualError(t, err, "failed to send decrypt request: fake error")
 
 	rpc = fake.NewStreamRPC(fake.NewReceiver(), fake.Sender{})
 	actor.rpc = rpc
 
 	_, err = actor.Decrypt(suite.Point(), suite.Point())
-	require.EqualError(t, err, "got unexpected reply, expected a decrypt reply but got: <nil>")
+	require.EqualError(t, err, "got unexpected reply, expected types.DecryptReply but got: <nil>")
 
 	rpc = fake.NewStreamRPC(fake.NewReceiver(types.DecryptReply{I: -1, V: suite.Point()}), fake.Sender{})
 	actor.rpc = rpc
@@ -123,11 +123,15 @@ func TestPedersen_Reshare(t *testing.T) {
 }
 
 func TestPedersen_Scenario(t *testing.T) {
+	// Use with MINO_TRAFFIC=log
+	// traffic.LogItems = false
+	// traffic.LogEvent = false
+	// defer func() {
+	// 	traffic.SaveItems("graph.dot", true, false)
+	// 	traffic.SaveEvents("events.dot")
+	// }()
+
 	n := 5
-
-	addrFactory := minogrpc.AddressFactory{}
-
-	treeFactory := routing.NewTreeRoutingFactory(3, addrFactory)
 
 	minos := make([]mino.Mino, n)
 	dkgs := make([]dkg.DKG, n)
@@ -136,7 +140,7 @@ func TestPedersen_Scenario(t *testing.T) {
 	for i := 0; i < n; i++ {
 
 		port := uint16(2000 + i)
-		minogrpc, err := minogrpc.NewMinogrpc("127.0.0.1", port, treeFactory)
+		minogrpc, err := minogrpc.NewMinogrpc("127.0.0.1", port, tree.NewRouter(minogrpc.AddressFactory{}))
 		require.NoError(t, err)
 
 		defer minogrpc.GracefulClose()
@@ -169,7 +173,7 @@ func TestPedersen_Scenario(t *testing.T) {
 		actors[i] = actor
 	}
 
-	// trying to call a decrpyt/encrypt before a setup
+	// trying to call a decrypt/encrypt before a setup
 	_, _, _, err := actors[0].Encrypt(message)
 	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")
 	_, err = actors[0].Decrypt(nil, nil)
@@ -186,10 +190,8 @@ func TestPedersen_Scenario(t *testing.T) {
 		K, C, remainder, err := actors[i].Encrypt(message)
 		require.NoError(t, err)
 		require.Len(t, remainder, 0)
-
 		decrypted, err := actors[i].Decrypt(K, C)
 		require.NoError(t, err)
-
 		require.Equal(t, message, decrypted)
 	}
 }

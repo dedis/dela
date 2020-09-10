@@ -3,13 +3,15 @@ package minogrpc
 import (
 	context "context"
 	"io"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/mino/minogrpc/routing"
-	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/mino/minogrpc/ptypes"
+	"go.dedis.ch/dela/mino/minogrpc/session"
+	"go.dedis.ch/dela/mino/router/tree"
 	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
@@ -18,16 +20,17 @@ import (
 func TestRPC_Call(t *testing.T) {
 	rpc := &RPC{
 		factory: fake.MessageFactory{},
-		overlay: overlay{
-			me:          fake.NewAddress(1),
-			connFactory: fakeConnFactory{},
-			context:     json.NewContext(),
+		overlay: &overlay{
+			me:      fake.NewAddress(1),
+			connMgr: fakeConnMgr{},
+			context: json.NewContext(),
 		},
 	}
 
+	ctx := context.Background()
 	addrs := []mino.Address{address{"A"}, address{"B"}}
 
-	msgs, err := rpc.Call(context.Background(), fake.Message{}, mino.NewAddresses(addrs...))
+	msgs, err := rpc.Call(ctx, fake.Message{}, mino.NewAddresses(addrs...))
 	require.NoError(t, err)
 
 	for i := 0; i < 2; i++ {
@@ -43,36 +46,80 @@ func TestRPC_Call(t *testing.T) {
 
 	_, more := <-msgs
 	require.False(t, more)
+
+	// Test if the distant handler does not return an answer to have the channel
+	// closed without anything coming into it.
+	rpc.overlay.connMgr = fakeConnMgr{empty: true}
+	msgs, err = rpc.Call(ctx, fake.Message{}, mino.NewAddresses(addrs...))
+	require.NoError(t, err)
+
+	_, more = <-msgs
+	require.False(t, more)
+
+	_, err = rpc.Call(ctx, fake.NewBadPublicKey(), mino.NewAddresses())
+	require.EqualError(t, err, "failed to marshal msg: fake error")
+
+	rpc.overlay.me = fake.NewBadAddress()
+	_, err = rpc.Call(ctx, fake.Message{}, mino.NewAddresses())
+	require.EqualError(t, err, "failed to marshal address: fake error")
+
+	rpc.overlay.me = fake.NewAddress(0)
+	rpc.overlay.connMgr = fakeConnMgr{err: xerrors.New("oops")}
+	msgs, err = rpc.Call(ctx, fake.Message{}, mino.NewAddresses(addrs...))
+	require.NoError(t, err)
+
+	msg := <-msgs
+	_, err = msg.GetMessageOrError()
+	require.EqualError(t, err, "failed to get client conn: oops")
+
+	rpc.overlay.connMgr = fakeConnMgr{errConn: xerrors.New("oops")}
+	msgs, err = rpc.Call(ctx, fake.Message{}, mino.NewAddresses(addrs...))
+	require.NoError(t, err)
+
+	msg = <-msgs
+	_, err = msg.GetMessageOrError()
+	require.EqualError(t, err, "failed to call client: oops")
+
+	rpc.overlay.connMgr = fakeConnMgr{}
+	rpc.factory = fake.NewBadMessageFactory()
+	msgs, err = rpc.Call(ctx, fake.Message{}, mino.NewAddresses(addrs...))
+	require.NoError(t, err)
+
+	msg = <-msgs
+	_, err = msg.GetMessageOrError()
+	require.EqualError(t, err, "couldn't unmarshal payload: fake error")
 }
 
 func TestRPC_Stream(t *testing.T) {
 	addrs := []mino.Address{address{"A"}, address{"B"}}
 
 	rpc := &RPC{
-		overlay: overlay{
-			me:             addrs[0],
-			routingFactory: routing.NewTreeRoutingFactory(1, AddressFactory{}),
-			connFactory:    fakeConnFactory{},
-			context:        json.NewContext(),
+		overlay: &overlay{
+			closer:      new(sync.WaitGroup),
+			me:          addrs[0],
+			router:      tree.NewRouter(AddressFactory{}),
+			addrFactory: AddressFactory{},
+			connMgr:     fakeConnMgr{},
+			context:     json.NewContext(),
 		},
 		factory: fake.MessageFactory{},
 	}
 
-	out, in, err := rpc.Stream(context.Background(), mino.NewAddresses(addrs...))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	out, in, err := rpc.Stream(ctx, mino.NewAddresses(addrs...))
 	require.NoError(t, err)
 
 	out.Send(fake.Message{}, newRootAddress())
-	in.Recv(context.Background())
+	in.Recv(ctx)
 
-	rpc.overlay.routingFactory = badRtingFactory{}
-	_, _, err = rpc.Stream(context.Background(), mino.NewAddresses(fake.NewBadAddress()))
-	require.EqualError(t, err, "couldn't generate routing: oops")
+	cancel()
+	rpc.overlay.closer.Wait()
 
-	rpc.overlay.routingFactory = routing.NewTreeRoutingFactory(1, AddressFactory{})
-	rpc.overlay.connFactory = fakeConnFactory{err: xerrors.New("oops")}
-	_, _, err = rpc.Stream(context.Background(), mino.NewAddresses(addrs...))
-	require.EqualError(t, err,
-		"couldn't setup relay: couldn't open connection: oops")
+	rpc.overlay.router = fakeRouter{err: xerrors.New("oops")}
+	_, _, err = rpc.Stream(ctx, mino.NewAddresses())
+	require.EqualError(t, err, "routing table: oops")
 }
 
 // -----------------------------------------------------------------------------
@@ -80,8 +127,8 @@ func TestRPC_Stream(t *testing.T) {
 
 type fakeClientStream struct {
 	grpc.ClientStream
-	init *Envelope
-	ch   chan *Envelope
+	init *ptypes.Packet
+	ch   chan *ptypes.Packet
 	err  error
 }
 
@@ -91,11 +138,11 @@ func (str *fakeClientStream) SendMsg(m interface{}) error {
 	}
 
 	if str.init == nil {
-		str.init = m.(*Envelope)
+		str.init = m.(*ptypes.Packet)
 		return nil
 	}
 
-	str.ch <- m.(*Envelope)
+	str.ch <- m.(*ptypes.Packet)
 	return nil
 }
 
@@ -105,13 +152,14 @@ func (str *fakeClientStream) RecvMsg(m interface{}) error {
 		return io.EOF
 	}
 
-	*(m.(*Envelope)) = *msg
+	*(m.(*ptypes.Packet)) = *msg
 	return nil
 }
 
 type fakeConnection struct {
 	grpc.ClientConnInterface
 	resp      interface{}
+	empty     bool
 	err       error
 	errStream error
 }
@@ -119,13 +167,17 @@ type fakeConnection struct {
 func (conn fakeConnection) Invoke(ctx context.Context, m string, arg interface{},
 	resp interface{}, opts ...grpc.CallOption) error {
 
+	if conn.empty {
+		return conn.err
+	}
+
 	switch msg := resp.(type) {
-	case *Message:
-		*msg = Message{
+	case *ptypes.Message:
+		*msg = ptypes.Message{
 			Payload: []byte(`{}`),
 		}
-	case *JoinResponse:
-		*msg = conn.resp.(JoinResponse)
+	case *ptypes.JoinResponse:
+		*msg = conn.resp.(ptypes.JoinResponse)
 	default:
 	}
 
@@ -135,7 +187,7 @@ func (conn fakeConnection) Invoke(ctx context.Context, m string, arg interface{}
 func (conn fakeConnection) NewStream(ctx context.Context, desc *grpc.StreamDesc,
 	m string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
 
-	ch := make(chan *Envelope, 1)
+	ch := make(chan *ptypes.Packet, 1)
 
 	go func() {
 		<-ctx.Done()
@@ -145,16 +197,18 @@ func (conn fakeConnection) NewStream(ctx context.Context, desc *grpc.StreamDesc,
 	return &fakeClientStream{ch: ch, err: conn.errStream}, conn.err
 }
 
-type fakeConnFactory struct {
-	ConnectionFactory
+type fakeConnMgr struct {
+	session.ConnectionManager
 	resp      interface{}
+	empty     bool
 	err       error
 	errConn   error
 	errStream error
 }
 
-func (f fakeConnFactory) FromAddress(mino.Address) (grpc.ClientConnInterface, error) {
+func (f fakeConnMgr) Acquire(mino.Address) (grpc.ClientConnInterface, error) {
 	conn := fakeConnection{
+		empty:     f.empty,
 		resp:      f.resp,
 		err:       f.errConn,
 		errStream: f.errStream,
@@ -163,18 +217,4 @@ func (f fakeConnFactory) FromAddress(mino.Address) (grpc.ClientConnInterface, er
 	return conn, f.err
 }
 
-type badRtingFactory struct {
-	routing.Factory
-}
-
-func (f badRtingFactory) Make(mino.Address, mino.Players) (routing.Routing, error) {
-	return nil, xerrors.New("oops")
-}
-
-func (f badRtingFactory) RoutingOf(serde.Context, []byte) (routing.Routing, error) {
-	return nil, xerrors.New("oops")
-}
-
-func (f badRtingFactory) FromIterator(mino.Address, mino.AddressIterator) (routing.Routing, error) {
-	return nil, xerrors.New("oops")
-}
+func (f fakeConnMgr) Release(mino.Address) {}

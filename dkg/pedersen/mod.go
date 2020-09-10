@@ -1,6 +1,8 @@
 package pedersen
 
 import (
+	"time"
+
 	"go.dedis.ch/dela/crypto/ed25519"
 
 	"go.dedis.ch/dela/crypto"
@@ -19,7 +21,12 @@ import (
 // suite is the Kyber suite for Pedersen.
 var suite = suites.MustFind("Ed25519")
 
-// Pedersen allows one to initialise a new DKG protocol.
+const (
+	setupTimeout   = time.Second * 300
+	decryptTimeout = time.Second * 100
+)
+
+// Pedersen allows one to initialize a new DKG protocol.
 //
 // - implements dkg.DKG
 type Pedersen struct {
@@ -77,7 +84,7 @@ func (a *Actor) Setup(co crypto.CollectiveAuthority, threshold int) (kyber.Point
 		return nil, xerrors.Errorf("startRes is already done, only one setup call is allowed")
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), setupTimeout)
 	defer cancel()
 
 	sender, receiver, err := a.rpc.Stream(ctx, co)
@@ -188,12 +195,12 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 
 	players := mino.NewAddresses(a.startRes.GetParticipants()...)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), decryptTimeout)
 	defer cancel()
 
 	sender, receiver, err := a.rpc.Stream(ctx, players)
 	if err != nil {
-		return nil, nil
+		return nil, xerrors.Errorf("failed to create stream: %v", err)
 	}
 
 	players = mino.NewAddresses(a.startRes.GetParticipants()...)
@@ -206,7 +213,10 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 
 	message := types.NewDecryptRequest(K, C)
 
-	sender.Send(message, addrs...)
+	err = <-sender.Send(message, addrs...)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to send decrypt request: %v", err)
+	}
 
 	pubShares := make([]*share.PubShare, len(addrs))
 
@@ -220,7 +230,7 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 		decryptReply, ok := message.(types.DecryptReply)
 		if !ok {
 			return []byte{}, xerrors.Errorf("got unexpected reply, expected "+
-				"a decrypt reply but got: %T", message)
+				"%T but got: %T", decryptReply, message)
 		}
 
 		pubShares[i] = &share.PubShare{
