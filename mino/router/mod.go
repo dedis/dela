@@ -91,6 +91,9 @@ type RoutingTable interface {
 	//
 	//	{A: packet{to: [A, B, C]}}
 	//
+	// Caution: it can return an error for unreachable addresses while still
+	// returning correct routes.
+	//
 	Forward(packet Packet) (Routes, error)
 
 	// OnFailure is used to announce that a packet failed to be routed. It

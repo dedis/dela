@@ -24,7 +24,7 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-func TestIntegration_BasicLifecycle_Stream(t *testing.T) {
+func TestIntegration_Scenario_Stream(t *testing.T) {
 
 	// Use with MINO_TRAFFIC=log
 	// defer func() {
@@ -64,7 +64,7 @@ func TestIntegration_BasicLifecycle_Stream(t *testing.T) {
 	}
 }
 
-func TestIntegration_Basic_Call(t *testing.T) {
+func TestIntegration_Scenario_Call(t *testing.T) {
 	call := &fake.Call{}
 	mm, rpcs := makeInstances(t, 10, call)
 
@@ -102,6 +102,46 @@ func TestIntegration_Basic_Call(t *testing.T) {
 			t.Fatal("timeout waiting for closure")
 		}
 	}
+}
+
+func TestMinogrpc_Scenario_Failures(t *testing.T) {
+	srvs, rpcs := makeInstances(t, 10, nil)
+	defer func() {
+		for _, srv := range srvs[1:] {
+			srv.(*Minogrpc).GracefulClose()
+		}
+	}()
+
+	// Shutdown one of the instance
+	require.NoError(t, srvs[0].(*Minogrpc).GracefulClose())
+
+	authority := fake.NewAuthorityFromMino(fake.NewSigner, srvs...)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	sender, recvr, err := rpcs[1].Stream(ctx, authority)
+	require.NoError(t, err)
+
+	// Send a message to the shutted down instance to setup the relay, so that
+	// we can try it will remove it and use another address later.
+	err = <-sender.Send(fake.Message{}, srvs[0].GetAddress())
+	require.EqualError(t, err, "packet: no relay available: routing table: unreachable addresses: [127.0.0.1:3000]")
+
+	// Test if the router learnt about the dead node and fixed the relay.
+	iter := authority.Take(mino.RangeFilter(1, 10)).AddressIterator()
+	for iter.HasNext() {
+		to := iter.GetNext()
+		errs := sender.Send(fake.Message{}, to)
+		require.NoError(t, <-errs)
+
+		from, msg, err := recvr.Recv(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, to, from)
+		require.IsType(t, fake.Message{}, msg)
+	}
+
+	cancel()
 }
 
 func TestOverlayServer_Join(t *testing.T) {

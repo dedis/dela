@@ -4,7 +4,9 @@ import (
 	"math"
 	"sync"
 
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/mino"
+	"golang.org/x/xerrors"
 )
 
 const minNumChildren = float64(5)
@@ -16,11 +18,13 @@ type Tree interface {
 
 	// GetRoute returns the address to route the provided target. It will return
 	// a nil value if no route is found in this tree.
-	GetRoute(to mino.Address) mino.Address
+	GetRoute(to mino.Address) (mino.Address, error)
 
 	// GetChildren returns the children of a direct branch of this tree. It
 	// represents the list of routable addresses for a given branch.
 	GetChildren(to mino.Address) []mino.Address
+
+	Remove(addr mino.Address)
 }
 
 // AddrSet is a set of unique addresses.
@@ -30,6 +34,15 @@ type AddrSet map[mino.Address]struct{}
 func (set AddrSet) Search(to mino.Address) bool {
 	_, found := set[to]
 	return found
+}
+
+// GetRandom returns a member of the set randomly.
+func (set AddrSet) GetRandom() mino.Address {
+	for addr := range set {
+		return addr
+	}
+
+	return nil
 }
 
 // Branches is a partial representation of a tree which shows only the direct
@@ -64,6 +77,7 @@ type dynTree struct {
 	m        int
 	branches Branches
 	expected AddrSet
+	offline  AddrSet
 }
 
 // NewTree creates a new empty tree that will spawn to a maximum depth and route
@@ -87,6 +101,7 @@ func NewTree(height int, addrs []mino.Address) Tree {
 		m:        int(m),
 		branches: make(Branches),
 		expected: expected,
+		offline:  make(AddrSet),
 	}
 }
 
@@ -98,13 +113,17 @@ func (t *dynTree) GetMaxHeight() int {
 
 // GetRoute implements tree.Tree. It returns the address to route the target, or
 // nil if no route is found.
-func (t *dynTree) GetRoute(to mino.Address) mino.Address {
+func (t *dynTree) GetRoute(to mino.Address) (mino.Address, error) {
 	t.Lock()
 	defer t.Unlock()
 
+	if t.offline.Search(to) {
+		return nil, xerrors.Errorf("address is unreachable")
+	}
+
 	gateway := t.branches.Search(to)
 	if gateway != nil {
-		return gateway
+		return gateway, nil
 	}
 
 	if t.expected.Search(to) {
@@ -112,10 +131,10 @@ func (t *dynTree) GetRoute(to mino.Address) mino.Address {
 		// it some children.
 		t.updateTree(to)
 
-		return to
+		return to, nil
 	}
 
-	return nil
+	return nil, nil
 }
 
 // GetChildren implements tree.Tree. It returns the children of a branch.
@@ -131,6 +150,32 @@ func (t *dynTree) GetChildren(to mino.Address) []mino.Address {
 	}
 
 	return addrs
+}
+
+func (t *dynTree) Remove(addr mino.Address) {
+	t.Lock()
+	defer t.Unlock()
+
+	branch, found := t.branches[addr]
+	if !found {
+		// TODO: mark a child of a branch as unreachable.
+		return
+	}
+
+	delete(t.branches, addr)
+
+	// Keep a trace that this address cannot be routed anymore.
+	t.offline[addr] = struct{}{}
+	dela.Logger.Warn().Str("addr", addr.String()).Msg("address unreachable")
+
+	if len(branch) == 0 {
+		return
+	}
+
+	// Pick a child and grant it the parent role.
+	newParent := branch.GetRandom()
+	delete(branch, newParent)
+	t.branches[newParent] = branch
 }
 
 func (t *dynTree) updateTree(to mino.Address) {

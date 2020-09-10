@@ -229,6 +229,9 @@ func (s *session) sendPacket(ctx context.Context, p router.Packet) error {
 		}
 
 		err := relay.Send(packet)
+		if status.Code(xerrors.Unwrap(err)) == codes.Unavailable {
+			return xerrors.New("relay is closing")
+		}
 		if err != nil {
 			s.logger.Warn().Err(err).Msg("relay failed to send")
 
@@ -416,7 +419,7 @@ func (r *relay) Send(p router.Packet) error {
 
 	err = r.stream.Send(&ptypes.Packet{Serialized: data})
 	if err != nil {
-		return xerrors.Errorf("stream failed: %v", err)
+		return xerrors.Errorf("stream failed: %w", err)
 	}
 
 	r.traffic.LogSend(r.stream.Context(), r.gw, p)

@@ -3,6 +3,8 @@
 package tree
 
 import (
+	"strings"
+
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/router"
 	"go.dedis.ch/dela/mino/router/tree/types"
@@ -99,9 +101,14 @@ func (t Table) Prelude(to mino.Address) router.Handshake {
 // the different routes it should be forwarded to.
 func (t Table) Forward(packet router.Packet) (router.Routes, error) {
 	routes := make(router.Routes)
+	errs := make([]string, 0)
 
 	for _, dest := range packet.GetDestination() {
-		gateway := t.tree.GetRoute(dest)
+		gateway, err := t.tree.GetRoute(dest)
+		if err != nil {
+			errs = append(errs, dest.String())
+			continue
+		}
 
 		p, ok := routes[gateway]
 		if !ok {
@@ -112,6 +119,10 @@ func (t Table) Forward(packet router.Packet) (router.Routes, error) {
 		p.(*types.Packet).Add(dest)
 	}
 
+	if len(errs) > 0 {
+		return routes, xerrors.Errorf("unreachable addresses: [%s]", strings.Join(errs, ", "))
+	}
+
 	return routes, nil
 }
 
@@ -120,5 +131,13 @@ func (t Table) Forward(packet router.Packet) (router.Routes, error) {
 // branch of the tree.
 // TODO: impl
 func (t Table) OnFailure(to mino.Address) error {
-	return xerrors.New("unreachable address")
+	if t.tree.GetMaxHeight() <= 1 {
+		// When the node does only have leafs, it will simply return an error to
+		// announce the address as unreachable.
+		return xerrors.New("unreachable address")
+	}
+
+	t.tree.Remove(to)
+
+	return nil
 }

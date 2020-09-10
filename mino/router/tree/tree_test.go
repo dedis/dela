@@ -43,9 +43,12 @@ func TestDynTree_GetRoute(t *testing.T) {
 	tree := NewTree(5, addrs)
 
 	for _, addr := range addrs {
-		require.Nil(t, tree.GetRoute(fake.NewAddress(500)))
+		gateway, err := tree.GetRoute(fake.NewAddress(500))
+		require.NoError(t, err)
+		require.Nil(t, gateway)
 
-		gateway := tree.GetRoute(addr)
+		gateway, err = tree.GetRoute(addr)
+		require.NoError(t, err)
 		require.NotNil(t, gateway)
 	}
 }

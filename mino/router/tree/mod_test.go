@@ -74,7 +74,7 @@ func TestTable_Forward(t *testing.T) {
 }
 
 func TestTable_OnFailure(t *testing.T) {
-	table := NewTable(3, makeAddrs(5))
+	table := NewTable(1, makeAddrs(5))
 
 	err := table.OnFailure(fake.NewAddress(3))
 	require.EqualError(t, err, "unreachable address")

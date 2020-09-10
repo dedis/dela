@@ -361,8 +361,12 @@ func (t fakeTable) Prelude(mino.Address) router.Handshake {
 }
 
 func (t fakeTable) Forward(router.Packet) (router.Routes, error) {
+	if t.err != nil {
+		return nil, t.err
+	}
+
 	routes := router.Routes{t.route: fakePkt{}}
-	return routes, t.err
+	return routes, nil
 }
 
 func (t fakeTable) OnFailure(mino.Address) error {
