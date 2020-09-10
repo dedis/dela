@@ -68,8 +68,8 @@ func TestTable_Forward(t *testing.T) {
 
 	pkt := types.NewPacket(fake.NewAddress(0), []byte{1, 2, 3}, makeAddrs(20)...)
 
-	routes, err := table.Forward(pkt)
-	require.NoError(t, err)
+	routes, voids := table.Forward(pkt)
+	require.Empty(t, voids)
 	require.Len(t, routes, 5)
 }
 

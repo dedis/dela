@@ -3,8 +3,6 @@
 package tree
 
 import (
-	"strings"
-
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/router"
 	"go.dedis.ch/dela/mino/router/tree/types"
@@ -99,14 +97,14 @@ func (t Table) Prelude(to mino.Address) router.Handshake {
 
 // Forward implements router.RoutingTable. It takes a packet and split it into
 // the different routes it should be forwarded to.
-func (t Table) Forward(packet router.Packet) (router.Routes, error) {
+func (t Table) Forward(packet router.Packet) (router.Routes, router.Voids) {
 	routes := make(router.Routes)
-	errs := make([]string, 0)
+	voids := make(router.Voids)
 
 	for _, dest := range packet.GetDestination() {
 		gateway, err := t.tree.GetRoute(dest)
 		if err != nil {
-			errs = append(errs, dest.String())
+			voids[dest] = err
 			continue
 		}
 
@@ -119,11 +117,7 @@ func (t Table) Forward(packet router.Packet) (router.Routes, error) {
 		p.(*types.Packet).Add(dest)
 	}
 
-	if len(errs) > 0 {
-		return routes, xerrors.Errorf("unreachable addresses: [%s]", strings.Join(errs, ", "))
-	}
-
-	return routes, nil
+	return routes, voids
 }
 
 // OnFailure implements router.Router. The tree will try to adapt itself to

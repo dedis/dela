@@ -126,9 +126,11 @@ func (s *session) Listen() {
 			return
 		}
 
-		err = s.sendPacket(s.gateway.Context(), packet)
-		if err != nil {
-			s.logger.Err(err).Msg("failed to send to dispatched relays")
+		errs := make(chan error)
+		go s.sendAndClose(s.gateway.Context(), packet, errs)
+
+		for err := range errs {
+			s.logger.Err(err).Msg("forwarding")
 		}
 	}
 }
@@ -136,22 +138,18 @@ func (s *session) Listen() {
 // Send implements mino.Sender. It sends the message to the provided addresses
 // through the relays or the parent.
 func (s *session) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
-	errs := make(chan error, 1)
-	defer close(errs)
+	errs := make(chan error, len(addrs)+1)
 
 	data, err := msg.Serialize(s.context)
 	if err != nil {
 		errs <- xerrors.Errorf("failed to serialize msg: %v", err)
+		close(errs)
 		return errs
 	}
 
 	packet := s.table.Make(s.me, addrs, data)
 
-	err = s.sendPacket(s.gateway.Context(), packet)
-	if err != nil {
-		errs <- xerrors.Errorf("packet: %v", err)
-		return errs
-	}
+	go s.sendAndClose(s.gateway.Context(), packet, errs)
 
 	return errs
 }
@@ -196,23 +194,30 @@ func (s *session) close() {
 	s.Wait()
 }
 
-func (s *session) sendPacket(ctx context.Context, p router.Packet) error {
+func (s *session) sendAndClose(ctx context.Context, p router.Packet, errs chan error) {
+	s.sendPacket(ctx, p, errs)
+	close(errs)
+}
+
+func (s *session) sendPacket(ctx context.Context, p router.Packet, errs chan error) {
 	me := p.Slice(s.me)
 	if me != nil {
 		s.queue.Push(me)
 	}
 
 	if len(p.GetDestination()) == 0 {
-		return nil
+		return
 	}
 
-	routes, err := s.table.Forward(p)
-	if err != nil {
-		return xerrors.Errorf("routing table: %v", err)
+	routes, voids := s.table.Forward(p)
+	for addr, err := range voids {
+		errs <- xerrors.Errorf("routing %v: %v", addr, err)
 	}
+
+	var relay Relay
+	var err error
 
 	for addr, packet := range routes {
-		var relay Relay
 		if addr == nil {
 			relay = s.gateway
 		} else {
@@ -221,29 +226,25 @@ func (s *session) sendPacket(ctx context.Context, p router.Packet) error {
 				s.logger.Warn().Err(err).Msg("failed to setup relay")
 
 				// Try to open a different relay.
-				err = s.onFailure(ctx, addr, packet)
-				if err != nil {
-					return xerrors.Errorf("no relay available: %v", err)
-				}
+				s.onFailure(ctx, addr, packet, errs)
+				continue
 			}
 		}
 
-		err := relay.Send(packet)
+		err = relay.Send(packet)
 		if status.Code(xerrors.Unwrap(err)) == codes.Unavailable {
-			return xerrors.New("relay is closing")
+			// The relay is closing upfront so we need to blacklist it.
+			s.table.OnFailure(addr)
+			errs <- xerrors.Errorf("relay %v is closing", addr)
+			continue
 		}
 		if err != nil {
 			s.logger.Warn().Err(err).Msg("relay failed to send")
 
 			// Try to send the packet through a different route.
-			err = s.onFailure(ctx, addr, packet)
-			if err != nil {
-				return xerrors.Errorf("failure handler: %v", err)
-			}
+			s.onFailure(ctx, addr, packet, errs)
 		}
 	}
-
-	return nil
 }
 
 func (s *session) setupRelay(ctx context.Context, addr mino.Address) (Relay, error) {
@@ -318,11 +319,11 @@ func (s *session) setupRelay(ctx context.Context, addr mino.Address) (Relay, err
 				return
 			}
 
-			err = s.sendPacket(ctx, pkt)
-			if err != nil {
-				s.logger.Err(err).Msg("relay failed to send")
+			errs := make(chan error)
+			go s.sendAndClose(ctx, pkt, errs)
 
-				return
+			for err := range errs {
+				s.logger.Err(err).Msg("forwarding")
 			}
 		}
 	}()
@@ -335,23 +336,17 @@ func (s *session) setupRelay(ctx context.Context, addr mino.Address) (Relay, err
 	return newRelay, nil
 }
 
-func (s *session) onFailure(ctx context.Context, gateway mino.Address, p router.Packet) error {
+func (s *session) onFailure(ctx context.Context, gateway mino.Address, p router.Packet, errs chan error) {
 	err := s.table.OnFailure(gateway)
 	if err != nil {
-		return xerrors.Errorf("routing table: %v", err)
+		errs <- xerrors.Errorf("routing table: %v", err)
+		return
 	}
 
 	// Retry to send the packet after the announcement of a link failure. It
 	// recursive call will eventually end by either a success, or a total
 	// failure to send the packet.
-	err = s.sendPacket(ctx, p)
-	if err != nil {
-		// This call is recursive so we don't wrap in order to keep the error
-		// meaningful.
-		return err
-	}
-
-	return nil
+	s.sendPacket(ctx, p, errs)
 }
 
 // PacketStream is a gRPC stream to send and receive protobuf packets.

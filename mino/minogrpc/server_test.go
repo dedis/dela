@@ -126,13 +126,14 @@ func TestMinogrpc_Scenario_Failures(t *testing.T) {
 	// Send a message to the shutted down instance to setup the relay, so that
 	// we can try it will remove it and use another address later.
 	err = <-sender.Send(fake.Message{}, srvs[0].GetAddress())
-	require.EqualError(t, err, "packet: no relay available: routing table: unreachable addresses: [127.0.0.1:3000]")
+	require.EqualError(t, err, "routing 127.0.0.1:3000: address is unreachable")
 
 	// Test if the router learnt about the dead node and fixed the relay.
 	iter := authority.Take(mino.RangeFilter(1, 10)).AddressIterator()
 	for iter.HasNext() {
 		to := iter.GetNext()
-		errs := sender.Send(fake.Message{}, to)
+		errs := sender.Send(fake.Message{}, srvs[0].GetAddress(), to)
+		require.EqualError(t, <-errs, "routing 127.0.0.1:3000: address is unreachable")
 		require.NoError(t, <-errs)
 
 		from, msg, err := recvr.Recv(context.Background())

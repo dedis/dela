@@ -4,7 +4,6 @@ import (
 	"math"
 	"sync"
 
-	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
 )
@@ -166,7 +165,6 @@ func (t *dynTree) Remove(addr mino.Address) {
 
 	// Keep a trace that this address cannot be routed anymore.
 	t.offline[addr] = struct{}{}
-	dela.Logger.Warn().Str("addr", addr.String()).Msg("address unreachable")
 
 	if len(branch) == 0 {
 		return

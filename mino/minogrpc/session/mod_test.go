@@ -99,24 +99,28 @@ func TestSession_Send(t *testing.T) {
 
 	errs = sess.Send(fake.NewBadPublicKey())
 	require.EqualError(t, <-errs, "failed to serialize msg: fake error")
+	require.NoError(t, <-errs)
 
 	sess.table = fakeTable{err: xerrors.New("oops")}
 	errs = sess.Send(fake.Message{})
-	require.EqualError(t, <-errs, "packet: routing table: oops")
+	require.EqualError(t, <-errs, "routing fake.Address[400]: oops")
+	require.NoError(t, <-errs)
 
 	// Test when an error occurred when setting up a relay, which moves to the
 	// failure handler that will then fail on the routing table.
 	sess.table = fakeTable{errFail: xerrors.New("oops"), route: fake.NewAddress(5)}
 	sess.connMgr = fakeConnMgr{err: xerrors.New("blabla")}
 	errs = sess.Send(fake.Message{})
-	require.EqualError(t, <-errs, "packet: no relay available: routing table: oops")
+	require.EqualError(t, <-errs, "routing table: oops")
+	require.NoError(t, <-errs)
 
 	// Test when an error occurred when forwarding a message to a relay, which
 	// moves to the failure handler that will fail on the routing table.
 	sess.table = fakeTable{errFail: xerrors.New("unavailable")}
 	sess.gateway = newRelay(&fakeStream{err: xerrors.New("oops")}, sess.pktFac, sess.context)
 	errs = sess.Send(fake.Message{})
-	require.EqualError(t, <-errs, "packet: failure handler: routing table: unavailable")
+	require.EqualError(t, <-errs, "routing table: unavailable")
+	require.NoError(t, <-errs)
 }
 
 func TestSession_SetupRelay(t *testing.T) {
@@ -209,22 +213,23 @@ func TestSession_Recv(t *testing.T) {
 
 func TestSession_OnFailure(t *testing.T) {
 	sess := &session{
-		table: fakeTable{},
-		queue: newNonBlockingQueue(),
+		table:   fakeTable{},
+		queue:   newNonBlockingQueue(),
+		gateway: newRelay(&fakeStream{}, fakePktFac{}, fake.NewContext()),
 	}
 
 	ctx := context.Background()
+	errs := make(chan error, 100)
 
-	err := sess.onFailure(ctx, fake.NewAddress(0), fakePkt{})
-	require.NoError(t, err)
+	sess.onFailure(ctx, fake.NewAddress(0), fakePkt{}, errs)
 
 	sess.table = fakeTable{errFail: xerrors.New("oops")}
-	err = sess.onFailure(ctx, fake.NewAddress(0), fakePkt{})
-	require.EqualError(t, err, "routing table: oops")
+	sess.onFailure(ctx, fake.NewAddress(0), fakePkt{}, errs)
+	require.EqualError(t, <-errs, "routing table: oops")
 
 	sess.table = fakeTable{err: xerrors.New("oops")}
-	err = sess.onFailure(ctx, fake.NewAddress(0), fakePkt{dest: fake.NewAddress(1)})
-	require.EqualError(t, err, "routing table: oops")
+	sess.onFailure(ctx, fake.NewAddress(0), fakePkt{dest: fake.NewAddress(1)}, errs)
+	require.EqualError(t, <-errs, "routing fake.Address[400]: oops")
 }
 
 func TestRelay_Recv(t *testing.T) {
@@ -360,13 +365,15 @@ func (t fakeTable) Prelude(mino.Address) router.Handshake {
 	return fakeHandshake{err: t.err}
 }
 
-func (t fakeTable) Forward(router.Packet) (router.Routes, error) {
+func (t fakeTable) Forward(router.Packet) (router.Routes, router.Voids) {
+	voids := make(router.Voids)
 	if t.err != nil {
-		return nil, t.err
+		voids[fake.NewAddress(400)] = t.err
 	}
 
 	routes := router.Routes{t.route: fakePkt{}}
-	return routes, nil
+
+	return routes, voids
 }
 
 func (t fakeTable) OnFailure(mino.Address) error {
