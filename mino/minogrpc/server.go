@@ -7,15 +7,12 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"io/ioutil"
 	"math/big"
 	"net"
-	"os"
 	"sync"
 	"time"
 
 	"go.dedis.ch/dela"
-	"go.dedis.ch/dela/internal/traffic"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
@@ -255,7 +252,6 @@ type overlay struct {
 	tokens      tokens.Holder
 	router      router.Router
 	connMgr     session.ConnectionManager
-	traffic     *traffic.Traffic
 	addrFactory mino.AddressFactory
 }
 
@@ -279,13 +275,6 @@ func newOverlay(me mino.Address, router router.Router,
 		router:      router,
 		connMgr:     newConnManager(me, certs),
 		addrFactory: addrFactory,
-	}
-
-	switch os.Getenv("MINO_TRAFFIC") {
-	case "log":
-		o.traffic = traffic.NewTraffic(me, addrFactory, ioutil.Discard)
-	case "print":
-		o.traffic = traffic.NewTraffic(me, addrFactory, os.Stdout)
 	}
 
 	return o, nil

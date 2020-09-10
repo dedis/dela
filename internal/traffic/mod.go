@@ -12,8 +12,12 @@ import (
 
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/router"
+	"golang.org/x/xerrors"
 	"google.golang.org/grpc/metadata"
 )
+
+// EnvVariable is the name of the environment variable to enable the traffic.
+const EnvVariable = "MINO_TRAFFIC"
 
 //
 // Traffic is a utility to save network information. It can be useful for
@@ -40,8 +44,8 @@ var (
 	globalCounter = atomicCounter{}
 	sendCounter   = &atomicCounter{}
 	recvCounter   = &atomicCounter{}
-	// eventCounter  = &atomicCounter{}
-	traffics = []*Traffic{}
+	eventCounter  = &atomicCounter{}
+	traffics      = []*Traffic{}
 	// LogItems allows one to granularly say when items should be logged or not.
 	// This is useful for example in an integration test where a specific part
 	// raises a problem but the full graph would be too noisy. For that, one
@@ -58,7 +62,7 @@ var (
 func SaveItems(path string, withSend, withRcv bool) error {
 	f, err := os.Create(path)
 	if err != nil {
-		return err
+		return xerrors.Errorf("file: %v", err)
 	}
 
 	GenerateItemsGraphviz(f, withSend, withRcv, traffics...)
@@ -69,7 +73,7 @@ func SaveItems(path string, withSend, withRcv bool) error {
 func SaveEvents(path string) error {
 	f, err := os.Create(path)
 	if err != nil {
-		return err
+		return xerrors.Errorf("file: %v", err)
 	}
 
 	GenerateEventGraphviz(f, traffics...)
@@ -79,19 +83,18 @@ func SaveEvents(path string) error {
 // Traffic is used to keep track of packets Traffic in a server
 type Traffic struct {
 	sync.Mutex
-	me             mino.Address
-	addressFactory mino.AddressFactory
-	items          []item
-	out            io.Writer
-	events         []event
+	src    mino.Address
+	items  []item
+	out    io.Writer
+	events []event
 }
 
-func NewTraffic(me mino.Address, af mino.AddressFactory, out io.Writer) *Traffic {
+// NewTraffic creates a new empty traffic recorder.
+func NewTraffic(src mino.Address, out io.Writer) *Traffic {
 	traffic := &Traffic{
-		me:             me,
-		addressFactory: af,
-		items:          make([]item, 0),
-		out:            out,
+		src:   src,
+		items: make([]item, 0),
+		out:   out,
 	}
 
 	traffics = append(traffics, traffic)
@@ -99,29 +102,45 @@ func NewTraffic(me mino.Address, af mino.AddressFactory, out io.Writer) *Traffic
 	return traffic
 }
 
+// Save saves the items graph to the given address.
 func (t *Traffic) Save(path string, withSend, withRcv bool) error {
 	f, err := os.Create(path)
 	if err != nil {
-		return err
+		return xerrors.Errorf("file: %v", err)
 	}
 
 	GenerateItemsGraphviz(f, withSend, withRcv, t)
 	return nil
 }
 
-func (t *Traffic) logSend(ctx context.Context, from, to mino.Address, msg router.Packet) {
-	t.addItem(ctx, from, to, "send", msg)
+// LogSend records a packet sent by the node. It records the node address as the
+// sender and the gateway as the receiver, while also recording the packet
+// itself.
+func (t *Traffic) LogSend(ctx context.Context, gateway mino.Address, pkt router.Packet) {
+	t.addItem(ctx, "send", gateway, pkt)
 }
 
-// when we receive a packet, we get only the proto message, which is the
-// marshalled version of the packet. The only way to have the unmarshalled
-// version is by calling the "router.Forward" function, which we shouldn't do
-// when we receive the packet. This is why we don't take the router.Packet.
-func (t *Traffic) logRcv(ctx context.Context, from, to mino.Address) {
-	t.addItem(ctx, from, to, "received", nil)
+// LogRecv records a packet received by the node. The sender is the gateway and
+// the receiver the node.
+func (t *Traffic) LogRecv(ctx context.Context, gateway mino.Address, pkt router.Packet) {
+	t.addItem(ctx, "received", gateway, pkt)
 }
 
+// LogRelay records a new relay.
+func (t *Traffic) LogRelay(to mino.Address) {
+	t.addEvent("relay", to)
+}
+
+// LogRelayClosed records the end of a relay.
+func (t *Traffic) LogRelayClosed(to mino.Address) {
+	t.addEvent("close", to)
+}
+
+// Display prints the current traffic to the writer.
 func (t *Traffic) Display(out io.Writer) {
+	t.Lock()
+	defer t.Unlock()
+
 	fmt.Fprint(out, "- traffic:\n")
 	var buf bytes.Buffer
 	for _, item := range t.items {
@@ -130,55 +149,60 @@ func (t *Traffic) Display(out io.Writer) {
 	fmt.Fprint(out, eachLine.ReplaceAllString(buf.String(), "-$1"))
 }
 
-func (t *Traffic) addItem(ctx context.Context,
-	from, to mino.Address, typeStr string, msg router.Packet) {
-
+func (t *Traffic) addItem(ctx context.Context, typeStr string, gw mino.Address, msg router.Packet) {
 	if t == nil || !LogItems {
 		return
 	}
 
+	t.Lock()
+	defer t.Unlock()
+
 	newItem := item{
+		src:           t.src,
+		gateway:       gw,
 		typeStr:       typeStr,
 		msg:           msg,
 		context:       t.getContext(ctx),
 		globalCounter: globalCounter.IncrementAndGet(),
 	}
 
+	if gw == nil {
+		newItem.gateway = parentAddr{}
+	}
+
 	switch typeStr {
 	case "received":
-		newItem.from = from
-		newItem.to = to
 		newItem.typeCounter = recvCounter.IncrementAndGet()
 	case "send":
-		newItem.from = from
-		newItem.to = to
 		newItem.typeCounter = sendCounter.IncrementAndGet()
 	}
 
-	fmt.Fprintf(t.out, "\n> %v\n", t.me)
+	fmt.Fprintf(t.out, "\n> %v\n", t.src)
 	newItem.Display(t.out)
 
-	t.Lock()
 	t.items = append(t.items, newItem)
-	t.Unlock()
 }
 
-// func (t *traffic) addEvent(typeStr string, from, to mino.Address) {
-// 	if t == nil || !LogEvent {
-// 		return
-// 	}
+func (t *Traffic) addEvent(typeStr string, to mino.Address) {
+	if t == nil || !LogEvent {
+		return
+	}
 
-// 	event := event{
-// 		typeStr:       typeStr,
-// 		from:          from,
-// 		to:            to,
-// 		globalCounter: eventCounter.IncrementAndGet(),
-// 	}
+	t.Lock()
+	defer t.Unlock()
 
-// 	t.Lock()
-// 	t.events = append(t.events, event)
-// 	t.Unlock()
-// }
+	event := event{
+		typeStr:       typeStr,
+		from:          t.src,
+		to:            to,
+		globalCounter: eventCounter.IncrementAndGet(),
+	}
+
+	fmt.Fprintf(t.out, "\n> %v\n", t.src)
+	event.Display(t.out)
+
+	t.events = append(t.events, event)
+}
 
 func (t *Traffic) getContext(ctx context.Context) string {
 	headers, ok := metadata.FromIncomingContext(ctx)
@@ -199,8 +223,8 @@ func (t *Traffic) getContext(ctx context.Context) string {
 
 type item struct {
 	typeStr       string
-	from          mino.Address
-	to            mino.Address
+	src           mino.Address
+	gateway       mino.Address
 	msg           router.Packet
 	context       string
 	globalCounter int
@@ -210,8 +234,8 @@ type item struct {
 func (p item) Display(out io.Writer) {
 	fmt.Fprint(out, "- item:\n")
 	fmt.Fprintf(out, "-- typeStr: %s\n", p.typeStr)
-	fmt.Fprintf(out, "-- from: %v\n", p.from)
-	fmt.Fprintf(out, "-- to: %v\n", p.to)
+	fmt.Fprintf(out, "-- node: %v\n", p.src)
+	fmt.Fprintf(out, "-- gateway: %v\n", p.gateway)
 	fmt.Fprintf(out, "-- msg: (type %T) %s\n", p.msg, p.msg)
 	if p.msg != nil {
 		fmt.Fprintf(out, "--- To: %v\n", p.msg.GetDestination())
@@ -223,7 +247,7 @@ func (p item) Display(out io.Writer) {
 // generate a graphical representation with `dot -Tpdf graph.dot -o graph.pdf`
 func GenerateItemsGraphviz(out io.Writer, withSend, withRcv bool, traffics ...*Traffic) {
 
-	fmt.Fprintf(out, "digraph network_activity {\n")
+	fmt.Fprintf(out, "diagraph network_activity {\n")
 	fmt.Fprintf(out, "labelloc=\"t\";")
 	fmt.Fprintf(out, "label = <Network Diagram of %d nodes <font point-size='10'><br/>(generated %s)</font>>;", len(traffics), time.Now().Format("2 Jan 06 - 15:04:05"))
 	fmt.Fprintf(out, "graph [fontname = \"helvetica\"];")
@@ -262,7 +286,7 @@ func GenerateItemsGraphviz(out io.Writer, withSend, withRcv bool, traffics ...*T
 
 			fmt.Fprintf(out, "\"%v\" -> \"%v\" "+
 				"[ label = < <font color='#303030'><b>%d</b> <font point-size='10'>(%d)</font></font><br/>%s> color=\"%s\" ];\n",
-				item.from, item.to, item.typeCounter, item.globalCounter, msgStr, color)
+				item.src, item.gateway, item.typeCounter, item.globalCounter, msgStr, color)
 		}
 	}
 	fmt.Fprintf(out, "}\n")
@@ -322,4 +346,12 @@ type event struct {
 
 func (e event) Display(out io.Writer) {
 	fmt.Fprintf(out, "%s\t%s:\n", e.typeStr, e.to)
+}
+
+type parentAddr struct {
+	mino.Address
+}
+
+func (parentAddr) String() string {
+	return "Parent Gateway"
 }

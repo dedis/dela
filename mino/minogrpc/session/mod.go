@@ -3,10 +3,13 @@ package session
 import (
 	"context"
 	"io"
+	"io/ioutil"
+	"os"
 	"sync"
 
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/internal/traffic"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
 	"go.dedis.ch/dela/mino/router"
@@ -59,6 +62,7 @@ type session struct {
 	queue   Queue
 	relays  map[mino.Address]Relay
 	connMgr ConnectionManager
+	traffic *traffic.Traffic
 }
 
 // NewSession creates a new session for the provided stream.
@@ -72,11 +76,10 @@ func NewSession(
 	ctx serde.Context,
 	connMgr ConnectionManager,
 ) Session {
-	return &session{
+	sess := &session{
 		logger:  dela.Logger.With().Str("addr", me.String()).Logger(),
 		md:      md,
 		me:      me,
-		gateway: newRelay(stream, pktFac, ctx),
 		errs:    make(chan error, 1),
 		table:   table,
 		msgFac:  msgFac,
@@ -86,6 +89,20 @@ func NewSession(
 		relays:  make(map[mino.Address]Relay),
 		connMgr: connMgr,
 	}
+
+	switch os.Getenv(traffic.EnvVariable) {
+	case "log":
+		sess.traffic = traffic.NewTraffic(me, ioutil.Discard)
+	case "print":
+		sess.traffic = traffic.NewTraffic(me, os.Stdout)
+	}
+
+	gateway := newRelay(stream, pktFac, ctx)
+	gateway.traffic = sess.traffic
+
+	sess.gateway = gateway
+
+	return sess
 }
 
 // Listen implements session.Session. It listens for incoming packets from the
@@ -109,8 +126,6 @@ func (s *session) Listen() {
 			s.errs <- xerrors.Errorf("failed to receive: %v", err)
 			return
 		}
-
-		// TODO: s.traffic.logRcv(stream.Context(), distantAddr, s.sme)
 
 		err = s.sendPacket(s.gateway.Context(), packet)
 		if err != nil {
@@ -171,6 +186,8 @@ func (s *session) close() {
 
 	for to, relay := range s.relays {
 		err := relay.Close()
+
+		s.traffic.LogRelayClosed(to)
 		s.logger.Trace().Err(err).Msg("relay closed")
 
 		// Let the manager know it can close the connection if necessary.
@@ -251,16 +268,18 @@ func (s *session) setupRelay(ctx context.Context, addr mino.Address) (Relay, err
 	}
 
 	// 3. Create and run the relay to respond to incoming packets.
-	relay = newRelay(stream, s.pktFac, s.context)
+	newRelay := newRelay(stream, s.pktFac, s.context)
+	newRelay.gw = addr
+	newRelay.traffic = s.traffic
 
-	s.relays[addr] = relay
+	s.relays[addr] = newRelay
 	s.Add(1)
 
 	go func() {
 		defer s.Done()
 
 		for {
-			pkt, err := relay.Recv()
+			pkt, err := newRelay.Recv()
 			if err == io.EOF {
 				return
 			}
@@ -280,11 +299,12 @@ func (s *session) setupRelay(ctx context.Context, addr mino.Address) (Relay, err
 		}
 	}()
 
+	s.traffic.LogRelay(addr)
 	s.logger.Debug().
 		Str("to", addr.String()).
 		Msg("relay opened")
 
-	return relay, nil
+	return newRelay, nil
 }
 
 // PacketStream is a gRPC stream to send and receive protobuf packets.
@@ -298,9 +318,11 @@ type PacketStream interface {
 // send and receive messages.
 type relay struct {
 	sync.Mutex
+	gw        mino.Address
 	stream    PacketStream
 	packetFac router.PacketFactory
 	context   serde.Context
+	traffic   *traffic.Traffic
 }
 
 func newRelay(stream PacketStream, fac router.PacketFactory, ctx serde.Context) *relay {
@@ -333,6 +355,8 @@ func (r *relay) Recv() (router.Packet, error) {
 		return nil, xerrors.Errorf("packet: %v", err)
 	}
 
+	r.traffic.LogRecv(r.stream.Context(), r.gw, packet)
+
 	return packet, nil
 }
 
@@ -350,6 +374,8 @@ func (r *relay) Send(p router.Packet) error {
 	if err != nil {
 		return xerrors.Errorf("stream failed: %v", err)
 	}
+
+	r.traffic.LogSend(r.stream.Context(), r.gw, p)
 
 	return nil
 }

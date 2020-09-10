@@ -3,11 +3,13 @@ package session
 import (
 	"context"
 	"io"
+	"os"
 	"testing"
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/internal/traffic"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
 	"go.dedis.ch/dela/mino/router"
@@ -17,6 +19,23 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+func TestSession_New(t *testing.T) {
+	curr := os.Getenv(traffic.EnvVariable)
+	defer os.Setenv(traffic.EnvVariable, curr)
+
+	os.Setenv(traffic.EnvVariable, "log")
+	sess := NewSession(nil, nil, fake.NewAddress(999), nil, nil, nil, fake.NewContext(), nil)
+	require.NotNil(t, sess.(*session).traffic)
+
+	os.Setenv(traffic.EnvVariable, "print")
+	sess = NewSession(nil, nil, fake.NewAddress(999), nil, nil, nil, fake.NewContext(), nil)
+	require.NotNil(t, sess.(*session).traffic)
+
+	os.Unsetenv(traffic.EnvVariable)
+	sess = NewSession(nil, nil, fake.NewAddress(999), nil, nil, nil, fake.NewContext(), nil)
+	require.Nil(t, sess.(*session).traffic)
+}
 
 func TestSession_Listen(t *testing.T) {
 	sess := NewSession(
@@ -375,6 +394,10 @@ type fakeClientStream struct {
 	ch      chan *ptypes.Packet
 	err     error
 	errRecv error
+}
+
+func (str *fakeClientStream) Context() context.Context {
+	return context.Background()
 }
 
 func (str *fakeClientStream) SendMsg(m interface{}) error {
