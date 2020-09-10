@@ -118,8 +118,7 @@ func (s *session) Listen() {
 		if err == io.EOF {
 			return
 		}
-		status, ok := status.FromError(err)
-		if ok && status.Code() == codes.Canceled {
+		if status.Code(err) == codes.Canceled {
 			return
 		}
 		if err != nil {
@@ -182,18 +181,18 @@ func (s *session) Recv(ctx context.Context) (mino.Address, serde.Message, error)
 
 func (s *session) close() {
 	s.Lock()
-	defer s.Unlock()
 
 	for to, relay := range s.relays {
 		err := relay.Close()
 
 		s.traffic.LogRelayClosed(to)
 		s.logger.Trace().Err(err).Msg("relay closed")
-
-		// Let the manager know it can close the connection if necessary.
-		s.connMgr.Release(to)
 	}
 
+	s.Unlock()
+
+	// Lock must be released to let the relays close themselves and clean the
+	// map.
 	s.Wait()
 }
 
@@ -219,13 +218,25 @@ func (s *session) sendPacket(ctx context.Context, p router.Packet) error {
 		} else {
 			relay, err = s.setupRelay(ctx, addr)
 			if err != nil {
-				return xerrors.Errorf("relay aborted: %v", err)
+				s.logger.Warn().Err(err).Msg("failed to setup relay")
+
+				// Try to open a different relay.
+				err = s.onFailure(ctx, addr, packet)
+				if err != nil {
+					return xerrors.Errorf("no relay available: %v", err)
+				}
 			}
 		}
 
 		err := relay.Send(packet)
 		if err != nil {
-			return err
+			s.logger.Warn().Err(err).Msg("relay failed to send")
+
+			// Try to send the packet through a different route.
+			err = s.onFailure(ctx, addr, packet)
+			if err != nil {
+				return xerrors.Errorf("failure handler: %v", err)
+			}
 		}
 	}
 
@@ -276,7 +287,15 @@ func (s *session) setupRelay(ctx context.Context, addr mino.Address) (Relay, err
 	s.Add(1)
 
 	go func() {
-		defer s.Done()
+		defer func() {
+			s.Lock()
+			delete(s.relays, addr)
+			s.Unlock()
+
+			// Let the manager know it can close the connection if necessary.
+			s.connMgr.Release(addr)
+			s.Done()
+		}()
 
 		for {
 			pkt, err := newRelay.Recv()
@@ -287,13 +306,19 @@ func (s *session) setupRelay(ctx context.Context, addr mino.Address) (Relay, err
 				return
 			}
 			if err != nil {
-				s.logger.Err(err).Msg("relay failed")
+				s.logger.Err(err).Msg("relay failed to receive")
+
+				// Relay has lost the connection, therefore we announce the
+				// address as unreachable.
+				s.table.OnFailure(addr)
+
 				return
 			}
 
 			err = s.sendPacket(ctx, pkt)
 			if err != nil {
-				s.logger.Err(err).Msg("relay failed to send a packet")
+				s.logger.Err(err).Msg("relay failed to send")
+
 				return
 			}
 		}
@@ -305,6 +330,25 @@ func (s *session) setupRelay(ctx context.Context, addr mino.Address) (Relay, err
 		Msg("relay opened")
 
 	return newRelay, nil
+}
+
+func (s *session) onFailure(ctx context.Context, gateway mino.Address, p router.Packet) error {
+	err := s.table.OnFailure(gateway)
+	if err != nil {
+		return xerrors.Errorf("routing table: %v", err)
+	}
+
+	// Retry to send the packet after the announcement of a link failure. It
+	// recursive call will eventually end by either a success, or a total
+	// failure to send the packet.
+	err = s.sendPacket(ctx, p)
+	if err != nil {
+		// This call is recursive so we don't wrap in order to keep the error
+		// meaningful.
+		return err
+	}
+
+	return nil
 }
 
 // PacketStream is a gRPC stream to send and receive protobuf packets.
