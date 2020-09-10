@@ -28,7 +28,7 @@ func TestTreeCache_SetAndLock(t *testing.T) {
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 
-	go cache.SetAndLock(fakeTree{}, &wg)
+	cache.SetAndLock(fakeTree{}, &wg)
 
 	ch := make(chan struct{})
 	go func() {

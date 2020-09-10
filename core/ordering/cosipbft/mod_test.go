@@ -96,7 +96,8 @@ func TestService_Scenario_ViewChange(t *testing.T) {
 	defer clean()
 
 	for _, node := range nodes {
-		node.service.timeout = 200 * time.Millisecond
+		node.service.timeoutRound = 200 * time.Millisecond
+		node.service.timeoutViewchange = 10 * time.Second
 	}
 
 	// Simulate an issue with the leader transaction pool so that it does not
@@ -220,11 +221,11 @@ func TestService_DoRound(t *testing.T) {
 	ch := make(chan pbft.State)
 
 	srvc := &Service{
-		processor: newProcessor(),
-		me:        fake.NewAddress(1),
-		rpc:       rpc,
-		timeout:   time.Millisecond,
-		closing:   make(chan struct{}),
+		processor:    newProcessor(),
+		me:           fake.NewAddress(1),
+		rpc:          rpc,
+		timeoutRound: time.Millisecond,
+		closing:      make(chan struct{}),
 	}
 	srvc.blocks = blockstore.NewInMemory()
 	srvc.sync = fakeSync{}

@@ -600,7 +600,7 @@ func (m *pbftsm) verifyFinalize(r *round, sig crypto.Signature, ro authority.Aut
 		txn.OnCommit(func() {
 			// The cache is updated only after both are committed with the tree
 			// using the database as the transaction is done.
-			go m.tree.SetAndLock(r.tree, &wg)
+			m.tree.SetAndLock(r.tree, &wg)
 		})
 
 		// 2. Persist the block and its forward link.

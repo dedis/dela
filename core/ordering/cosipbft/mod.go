@@ -51,7 +51,9 @@ type Service struct {
 	val         validation.Service
 	verifierFac crypto.VerifierFactory
 
-	timeout time.Duration
+	timeoutRound      time.Duration
+	timeoutViewchange time.Duration
+
 	events  chan ordering.Event
 	closing chan struct{}
 	closed  chan struct{}
@@ -161,16 +163,17 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 	}
 
 	s := &Service{
-		processor:   proc,
-		me:          param.Mino.GetAddress(),
-		rpc:         rpc,
-		actor:       actor,
-		val:         param.Validation,
-		verifierFac: param.Cosi.GetVerifierFactory(),
-		timeout:     RoundTimeout,
-		events:      make(chan ordering.Event, 1),
-		closing:     make(chan struct{}),
-		closed:      make(chan struct{}),
+		processor:         proc,
+		me:                param.Mino.GetAddress(),
+		rpc:               rpc,
+		actor:             actor,
+		val:               param.Validation,
+		verifierFac:       param.Cosi.GetVerifierFactory(),
+		timeoutRound:      RoundTimeout,
+		timeoutViewchange: RoundTimeout,
+		events:            make(chan ordering.Event, 1),
+		closing:           make(chan struct{}),
+		closed:            make(chan struct{}),
 	}
 
 	go func() {
@@ -393,7 +396,7 @@ func (s *Service) doRound(ctx context.Context) error {
 		// for the new block, or the round timeout, to proceed.
 
 		select {
-		case <-time.After(s.timeout):
+		case <-time.After(s.timeoutRound):
 			if s.pool.Len() == 0 {
 				// When the pool of transactions is empty, the round is aborted
 				// and everything restart.
@@ -402,7 +405,7 @@ func (s *Service) doRound(ctx context.Context) error {
 
 			s.logger.Warn().Msg("round reached the timeout")
 
-			ctx, cancel := context.WithTimeout(ctx, s.timeout)
+			ctx, cancel := context.WithTimeout(ctx, s.timeoutViewchange)
 
 			view, err := s.pbftsm.Expire(s.me)
 			if err != nil {
@@ -450,7 +453,7 @@ func (s *Service) doRound(ctx context.Context) error {
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	ctx, cancel := context.WithTimeout(ctx, s.timeoutRound)
 	defer cancel()
 
 	s.logger.Debug().Uint64("index", s.blocks.Len()+1).Msg("round has started")

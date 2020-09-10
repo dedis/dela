@@ -45,9 +45,11 @@ func (c *treeCache) SetAndLock(tree hashtree.Tree, lock *sync.WaitGroup) {
 	c.Lock()
 	c.tree = tree
 
-	// This allows an external call to hold the cache until some event are
-	// fulfilled.
-	lock.Wait()
+	go func() {
+		// This allows an external call to hold the cache until some event are
+		// fulfilled.
+		lock.Wait()
 
-	c.Unlock()
+		c.Unlock()
+	}()
 }
