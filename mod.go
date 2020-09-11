@@ -16,4 +16,4 @@ var logout = zerolog.ConsoleWriter{
 var Logger = zerolog.New(logout).
 	With().Timestamp().Logger().
 	With().Caller().Logger().
-	Level(zerolog.WarnLevel)
+	Level(zerolog.DebugLevel)

@@ -2,7 +2,6 @@ package minogrpc
 
 import (
 	context "context"
-	"io"
 	"sync"
 
 	"github.com/rs/xid"
@@ -178,12 +177,18 @@ func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, m
 		rpc.overlay.connMgr,
 	)
 
+	rpc.overlay.closer.Add(1)
+
 	go func() {
-		defer relay.Close()
+		defer func() {
+			relay.Close()
+			rpc.overlay.connMgr.Release(gw)
+			rpc.overlay.closer.Done()
+		}()
 
 		for {
 			p, err := stream.Recv()
-			if err == io.EOF {
+			if err != nil {
 				return
 			}
 

@@ -108,6 +108,7 @@ func NewSession(
 func (s *session) Listen(stream PacketStream) {
 	defer func() {
 		s.close()
+		s.gateway.Close()
 		close(s.errs)
 
 		s.logger.Trace().Str("addr", s.me.String()).Msg("session has been closed")
