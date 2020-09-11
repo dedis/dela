@@ -131,7 +131,7 @@ func TestPedersen_Scenario(t *testing.T) {
 	// 	traffic.SaveEvents("events.dot")
 	// }()
 
-	n := 5
+	n := 10
 
 	minos := make([]mino.Mino, n)
 	dkgs := make([]dkg.DKG, n)

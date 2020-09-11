@@ -166,10 +166,6 @@ func (t *Traffic) addItem(ctx context.Context, typeStr string, gw mino.Address, 
 		globalCounter: globalCounter.IncrementAndGet(),
 	}
 
-	if gw == nil {
-		newItem.gateway = parentAddr{}
-	}
-
 	switch typeStr {
 	case "received":
 		newItem.typeCounter = recvCounter.IncrementAndGet()
@@ -247,7 +243,7 @@ func (p item) Display(out io.Writer) {
 // generate a graphical representation with `dot -Tpdf graph.dot -o graph.pdf`
 func GenerateItemsGraphviz(out io.Writer, withSend, withRcv bool, traffics ...*Traffic) {
 
-	fmt.Fprintf(out, "diagraph network_activity {\n")
+	fmt.Fprintf(out, "digraph network_activity {\n")
 	fmt.Fprintf(out, "labelloc=\"t\";")
 	fmt.Fprintf(out, "label = <Network Diagram of %d nodes <font point-size='10'><br/>(generated %s)</font>>;", len(traffics), time.Now().Format("2 Jan 06 - 15:04:05"))
 	fmt.Fprintf(out, "graph [fontname = \"helvetica\"];")
@@ -346,12 +342,4 @@ type event struct {
 
 func (e event) Display(out io.Writer) {
 	fmt.Fprintf(out, "%s\t%s:\n", e.typeStr, e.to)
-}
-
-type parentAddr struct {
-	mino.Address
-}
-
-func (parentAddr) String() string {
-	return "Parent Gateway"
 }

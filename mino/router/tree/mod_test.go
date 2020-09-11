@@ -77,7 +77,7 @@ func TestTable_OnFailure(t *testing.T) {
 	table := NewTable(1, makeAddrs(5))
 
 	err := table.OnFailure(fake.NewAddress(3))
-	require.EqualError(t, err, "unreachable address")
+	require.EqualError(t, err, "address is unreachable")
 }
 
 // -----------------------------------------------------------------------------

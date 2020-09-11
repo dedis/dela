@@ -15,7 +15,6 @@ import (
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
 	"go.dedis.ch/dela/mino/minogrpc/session"
 	"go.dedis.ch/dela/mino/minogrpc/tokens"
-	"go.dedis.ch/dela/mino/router"
 	"go.dedis.ch/dela/mino/router/tree"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/json"
@@ -105,7 +104,7 @@ func TestIntegration_Scenario_Call(t *testing.T) {
 }
 
 func TestMinogrpc_Scenario_Failures(t *testing.T) {
-	srvs, rpcs := makeInstances(t, 10, nil)
+	srvs, rpcs := makeInstances(t, 14, nil)
 	defer func() {
 		for _, srv := range srvs {
 			srv.(*Minogrpc).GracefulClose()
@@ -130,7 +129,7 @@ func TestMinogrpc_Scenario_Failures(t *testing.T) {
 
 	// Test if the router learnt about the dead node and fixed the relay, while
 	// opening relay to known nodes for the following test.
-	iter := authority.Take(mino.ListFilter([]int{1, 4, 8})).AddressIterator()
+	iter := authority.Take(mino.ListFilter([]int{1, 4, 8, 11, 12, 13})).AddressIterator()
 	for iter.HasNext() {
 		to := iter.GetNext()
 		errs := sender.Send(fake.Message{}, srvs[0].GetAddress(), to)
@@ -145,19 +144,23 @@ func TestMinogrpc_Scenario_Failures(t *testing.T) {
 	// This node is a relay for sure by using the tree router, so we close it to
 	// make sure the protocol can progress.
 	srvs[4].(*Minogrpc).Close()
+	// Close also a leaf to see if we get the feedback that it has failed.
+	srvs[2].(*Minogrpc).Close()
 
 	closed := []mino.Address{
 		srvs[0].GetAddress(),
 		srvs[4].GetAddress(),
+		srvs[2].GetAddress(),
 	}
 
-	re := `^no route to 127\.0\.0\.1:300[04]: address is unreachable$`
+	re := `^no route to 127\.0\.0\.1:300[042]: address is unreachable$`
 
 	// Test if the network can progress with the lost of a relay.
 	iter = authority.Take(mino.ListFilter([]int{3, 5, 6, 7, 9})).AddressIterator()
 	for iter.HasNext() {
 		to := iter.GetNext()
 		errs := sender.Send(fake.Message{}, append([]mino.Address{to}, closed...)...)
+		require.Regexp(t, re, <-errs)
 		require.Regexp(t, re, <-errs)
 		require.Regexp(t, re, <-errs)
 		require.NoError(t, <-errs)
@@ -305,6 +308,7 @@ func TestOverlayServer_Stream(t *testing.T) {
 			addrFactory: AddressFactory{},
 			me:          fake.NewAddress(0),
 			closer:      &sync.WaitGroup{},
+			connMgr:     fakeConnMgr{},
 		},
 		endpoints: make(map[string]*Endpoint),
 	}
@@ -319,39 +323,36 @@ func TestOverlayServer_Stream(t *testing.T) {
 
 	inCtx := metadata.NewIncomingContext(ctx, metadata.Pairs(
 		headerURIKey, "test",
-		headerStreamIDKey, "test"))
+		headerStreamIDKey, "test",
+		"handshake", "{}"))
 
 	err := overlay.Stream(newFakeServerStream(inCtx))
 	require.NoError(t, err)
 
-	stream := newFakeServerStream(inCtx)
-	stream.err = xerrors.New("oops")
+	stream := newFakeServerStream(ctx)
 	err = overlay.Stream(stream)
-	require.EqualError(t, err, "receive handshake: oops")
+	require.EqualError(t, err, "missing headers")
 
-	overlay.router = fakeRouter{errFac: xerrors.New("oops")}
-	err = overlay.Stream(newFakeServerStream(ctx))
-	require.EqualError(t, err, "handshake: oops")
-
-	overlay.router = fakeRouter{err: xerrors.New("oops")}
-	err = overlay.Stream(newFakeServerStream(ctx))
-	require.EqualError(t, err, "routing table: oops")
+	stream = newFakeServerStream(metadata.NewIncomingContext(ctx, make(metadata.MD)))
+	err = overlay.Stream(stream)
+	require.EqualError(t, err, "headers missing routing table")
 
 	overlay.router = tree.NewRouter(AddressFactory{})
-	err = overlay.Stream(newFakeServerStream(ctx))
+	stream = newFakeServerStream(metadata.NewIncomingContext(ctx, metadata.Pairs("handshake", "{}")))
+	err = overlay.Stream(stream)
 	require.EqualError(t, err, "handler '' is not registered")
 
-	inCtx = metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "unknown"))
-	err = overlay.Stream(newFakeServerStream(inCtx))
+	md := metadata.Pairs("handshake", "{}", headerURIKey, "unknown")
+	err = overlay.Stream(newFakeServerStream(metadata.NewIncomingContext(ctx, md)))
 	require.EqualError(t, err, "handler 'unknown' is not registered")
 
-	inCtx = metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "test"))
-	err = overlay.Stream(newFakeServerStream(inCtx))
+	md = metadata.Pairs("handshake", "{}", headerURIKey, "test")
+	err = overlay.Stream(newFakeServerStream(metadata.NewIncomingContext(ctx, md)))
 	require.EqualError(t, err, "failed to get streamID, result is empty")
 
 	overlay.context = json.NewContext()
 	overlay.router = tree.NewRouter(AddressFactory{})
-	inCtx = metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "bad", headerStreamIDKey, "test"))
+	inCtx = metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "bad", headerStreamIDKey, "test", "handshake", "{}"))
 	err = overlay.Stream(newFakeServerStream(inCtx))
 	require.EqualError(t, err, "handler failed to process: oops")
 }
@@ -538,6 +539,10 @@ func newFakeServerStream(ctx context.Context) fakeServerStream {
 	}
 }
 
+func (s fakeServerStream) SendHeader(metadata.MD) error {
+	return nil
+}
+
 func (s fakeServerStream) Context() context.Context {
 	return s.ctx
 }
@@ -580,33 +585,4 @@ func (s fakeCerts) Load(mino.Address) *tls.Certificate {
 
 func (s fakeCerts) Fetch(certs.Dialable, []byte) error {
 	return s.err
-}
-
-type fakeRouter struct {
-	router.Router
-
-	errFac error
-	err    error
-}
-
-func (r fakeRouter) GetHandshakeFactory() router.HandshakeFactory {
-	return fakeHandshakeFac{err: r.errFac}
-}
-
-func (r fakeRouter) New(mino.Players) (router.RoutingTable, error) {
-	return nil, r.err
-}
-
-func (r fakeRouter) TableOf(router.Handshake) (router.RoutingTable, error) {
-	return nil, r.err
-}
-
-type fakeHandshakeFac struct {
-	router.HandshakeFactory
-
-	err error
-}
-
-func (fac fakeHandshakeFac) HandshakeOf(serde.Context, []byte) (router.Handshake, error) {
-	return nil, fac.err
 }

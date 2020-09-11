@@ -128,7 +128,7 @@ func (t Table) OnFailure(to mino.Address) error {
 	if t.tree.GetMaxHeight() <= 1 {
 		// When the node does only have leafs, it will simply return an error to
 		// announce the address as unreachable.
-		return xerrors.New("unreachable address")
+		return xerrors.New("address is unreachable")
 	}
 
 	t.tree.Remove(to)

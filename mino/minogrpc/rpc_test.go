@@ -15,6 +15,7 @@ import (
 	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 func TestRPC_Call(t *testing.T) {
@@ -116,10 +117,6 @@ func TestRPC_Stream(t *testing.T) {
 
 	cancel()
 	rpc.overlay.closer.Wait()
-
-	rpc.overlay.router = fakeRouter{err: xerrors.New("oops")}
-	_, _, err = rpc.Stream(ctx, mino.NewAddresses())
-	require.EqualError(t, err, "routing table: oops")
 }
 
 // -----------------------------------------------------------------------------
@@ -130,6 +127,14 @@ type fakeClientStream struct {
 	init *ptypes.Packet
 	ch   chan *ptypes.Packet
 	err  error
+}
+
+func (str *fakeClientStream) Context() context.Context {
+	return context.Background()
+}
+
+func (str *fakeClientStream) Header() (metadata.MD, error) {
+	return make(metadata.MD), nil
 }
 
 func (str *fakeClientStream) SendMsg(m interface{}) error {
@@ -153,6 +158,10 @@ func (str *fakeClientStream) RecvMsg(m interface{}) error {
 	}
 
 	*(m.(*ptypes.Packet)) = *msg
+	return nil
+}
+
+func (str *fakeClientStream) CloseSend() error {
 	return nil
 }
 

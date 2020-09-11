@@ -6,7 +6,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/internal/traffic"
@@ -17,6 +16,7 @@ import (
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -38,50 +38,13 @@ func TestSession_New(t *testing.T) {
 }
 
 func TestSession_Listen(t *testing.T) {
-	sess := NewSession(
-		nil,
-		&fakeStream{num: 2},
-		fake.NewAddress(999),
-		fakeTable{err: xerrors.New("oops")},
-		nil,
-		fakePktFac{},
-		fake.NewContext(),
-		fakeConnMgr{},
-	).(*session)
 
-	sess.logger = zerolog.Nop()
-	sess.relays[fake.NewAddress(100)] = newRelay(nil, nil, sess.context)
-
-	sess.Listen()
-	_, more := <-sess.errs
-	require.False(t, more)
-
-	sess.gateway = newRelay(&fakeStream{num: 1}, fakePktFac{dest: fake.NewAddress(0)}, sess.context)
-	sess.errs = make(chan error)
-	sess.Listen()
-	_, more = <-sess.errs
-	require.False(t, more)
-
-	stream := &fakeStream{err: status.Error(codes.Canceled, "")}
-	sess.gateway = newRelay(stream, sess.pktFac, sess.context)
-	sess.errs = make(chan error)
-	sess.Listen()
-	_, more = <-sess.errs
-	require.False(t, more)
-
-	stream = &fakeStream{err: xerrors.New("oops")}
-	sess.gateway = newRelay(stream, sess.pktFac, sess.context)
-	sess.errs = make(chan error, 1)
-	sess.Listen()
-	err, more := <-sess.errs
-	require.True(t, more)
-	require.EqualError(t, err, "failed to receive: oops")
 }
 
 func TestSession_Send(t *testing.T) {
 	stream := &fakeStream{calls: &fake.Call{}}
 	sess := &session{
-		gateway: newRelay(stream, fakePktFac{}, fake.NewContext()),
+		gateway: NewStreamRelay(nil, stream, fake.NewContext()),
 		table:   fakeTable{},
 		context: fake.NewContext(),
 		queue:   newNonBlockingQueue(),
@@ -93,7 +56,7 @@ func TestSession_Send(t *testing.T) {
 	require.Equal(t, 1, stream.calls.Len())
 
 	sess.table = fakeTable{route: fake.NewAddress(0)}
-	sess.relays[fake.NewAddress(0)] = newRelay(&fakeStream{}, nil, sess.context)
+	sess.relays[fake.NewAddress(0)] = NewStreamRelay(nil, &fakeStream{}, sess.context)
 	errs = sess.Send(fake.Message{}, fake.NewAddress(1))
 	require.NoError(t, <-errs)
 
@@ -111,15 +74,20 @@ func TestSession_Send(t *testing.T) {
 	sess.table = fakeTable{errFail: xerrors.New("oops"), route: fake.NewAddress(5)}
 	sess.connMgr = fakeConnMgr{err: xerrors.New("blabla")}
 	errs = sess.Send(fake.Message{})
-	require.EqualError(t, <-errs, "routing table: oops")
+	require.EqualError(t, <-errs, "no route to fake.Address[5]: oops")
 	require.NoError(t, <-errs)
 
 	// Test when an error occurred when forwarding a message to a relay, which
 	// moves to the failure handler that will fail on the routing table.
-	sess.table = fakeTable{errFail: xerrors.New("unavailable")}
-	sess.gateway = newRelay(&fakeStream{err: xerrors.New("oops")}, sess.pktFac, sess.context)
+	sess.relays[fake.NewAddress(6)] = NewStreamRelay(
+		fake.NewAddress(800),
+		&fakeStream{err: xerrors.New("oops")},
+		sess.context)
+
+	sess.table = fakeTable{errFail: xerrors.New("unavailable"), route: fake.NewAddress(6)}
+	sess.gateway = NewStreamRelay(nil, &fakeStream{err: xerrors.New("oops")}, sess.context)
 	errs = sess.Send(fake.Message{})
-	require.EqualError(t, <-errs, "routing table: unavailable")
+	require.EqualError(t, <-errs, "no route to fake.Address[800]: unavailable")
 	require.NoError(t, <-errs)
 }
 
@@ -148,10 +116,6 @@ func TestSession_SetupRelay(t *testing.T) {
 	_, err = sess.setupRelay(ctx, fake.NewAddress(1))
 	require.EqualError(t, err, "client: oops")
 
-	sess.connMgr = fakeConnMgr{errStream: xerrors.New("oops")}
-	_, err = sess.setupRelay(ctx, fake.NewAddress(1))
-	require.EqualError(t, err, "failed to send handshake: oops")
-
 	sess.connMgr = fakeConnMgr{}
 	sess.table = fakeTable{err: xerrors.New("oops")}
 	_, err = sess.setupRelay(ctx, fake.NewAddress(1))
@@ -165,14 +129,6 @@ func TestSession_SetupRelay(t *testing.T) {
 
 	sess.connMgr = fakeConnMgr{errRecv: xerrors.New("oops")}
 	_, err = sess.setupRelay(ctx, fake.NewAddress(2))
-	require.NoError(t, err)
-	sess.Wait()
-
-	sess.connMgr = fakeConnMgr{msg: &ptypes.Packet{}}
-	sess.pktFac = fakePktFac{dest: fake.NewAddress(500)}
-	sess.table = fakeTable{route: fake.NewAddress(500), errFail: xerrors.New("table")}
-	sess.relays[fake.NewAddress(500)] = newRelay(&fakeStream{err: xerrors.New("oops")}, sess.pktFac, sess.context)
-	_, err = sess.setupRelay(ctx, fake.NewAddress(3))
 	require.NoError(t, err)
 	sess.Wait()
 }
@@ -212,54 +168,54 @@ func TestSession_Recv(t *testing.T) {
 }
 
 func TestSession_OnFailure(t *testing.T) {
+	gw, e := NewRelay(&fakeStream{}, fake.NewAddress(0), fake.NewContext(), fakeConnMgr{}, make(metadata.MD))
+	require.NoError(t, e)
+
 	sess := &session{
 		table:   fakeTable{},
 		queue:   newNonBlockingQueue(),
-		gateway: newRelay(&fakeStream{}, fakePktFac{}, fake.NewContext()),
+		gateway: gw,
 	}
 
 	ctx := context.Background()
-	errs := make(chan error, 100)
 
-	sess.onFailure(ctx, fake.NewAddress(0), fakePkt{}, errs)
+	var err error
+	cb := func(e error) { err = e }
+
+	sess.onFailure(ctx, fake.NewAddress(0), fakePkt{}, cb)
 
 	sess.table = fakeTable{errFail: xerrors.New("oops")}
-	sess.onFailure(ctx, fake.NewAddress(0), fakePkt{}, errs)
-	require.EqualError(t, <-errs, "routing table: oops")
+	sess.onFailure(ctx, fake.NewAddress(0), fakePkt{}, cb)
+	require.EqualError(t, err, "no route to fake.Address[0]: oops")
 
 	sess.table = fakeTable{err: xerrors.New("oops")}
-	sess.onFailure(ctx, fake.NewAddress(0), fakePkt{dest: fake.NewAddress(1)}, errs)
-	require.EqualError(t, <-errs, "no route to fake.Address[400]: oops")
-}
-
-func TestRelay_Recv(t *testing.T) {
-	r := newRelay(&fakeStream{num: 1}, fakePktFac{}, fake.NewContext())
-
-	packet, err := r.Recv()
-	require.NoError(t, err)
-	require.Equal(t, fakePkt{}, packet)
-
-	r = newRelay(&fakeStream{num: 1}, fakePktFac{err: xerrors.New("oops")}, fake.NewContext())
-	_, err = r.Recv()
-	require.EqualError(t, err, "packet: oops")
+	sess.onFailure(ctx, fake.NewAddress(0), fakePkt{dest: fake.NewAddress(1)}, cb)
+	require.EqualError(t, err, "no route to fake.Address[400]: oops")
 }
 
 func TestRelay_Send(t *testing.T) {
-	r := newRelay(&fakeStream{}, fakePktFac{}, fake.NewContext())
+	r := &relay{
+		md:   make(metadata.MD),
+		conn: fakeConnection{},
+	}
 
-	err := r.Send(fakePkt{})
+	ack, err := r.Send(context.Background(), fakePkt{})
 	require.NoError(t, err)
+	require.NotNil(t, ack)
 
-	err = r.Send(fakePkt{err: xerrors.New("oops")})
+	_, err = r.Send(context.Background(), fakePkt{err: xerrors.New("oops")})
 	require.EqualError(t, err, "failed to serialize: oops")
 
-	r.stream = &fakeStream{err: xerrors.New("oops")}
-	err = r.Send(fakePkt{})
-	require.EqualError(t, err, "stream failed: oops")
+	r.conn = fakeConnection{err: xerrors.New("oops")}
+	_, err = r.Send(context.Background(), fakePkt{})
+	require.EqualError(t, err, "client: oops")
 }
 
 func TestRelay_Close(t *testing.T) {
-	r := newRelay(&fakeStream{}, fakePktFac{}, fake.NewContext())
+	r := &relay{
+		connMgr: fakeConnMgr{},
+		stream:  &fakeStream{},
+	}
 
 	err := r.Close()
 	require.NoError(t, err)
@@ -306,17 +262,6 @@ func (s *fakeStream) Send(p *ptypes.Packet) error {
 
 func (s *fakeStream) CloseSend() error {
 	return s.err
-}
-
-type fakePktFac struct {
-	router.PacketFactory
-	dest   mino.Address
-	err    error
-	errPkt error
-}
-
-func (fac fakePktFac) PacketOf(serde.Context, []byte) (router.Packet, error) {
-	return fakePkt{dest: fac.dest, err: fac.errPkt}, fac.err
 }
 
 type fakePkt struct {
@@ -421,6 +366,10 @@ type fakeConnection struct {
 	errRecv   error
 }
 
+func (conn fakeConnection) Invoke(context.Context, string, interface{}, interface{}, ...grpc.CallOption) error {
+	return conn.err
+}
+
 func (conn fakeConnection) NewStream(ctx context.Context, desc *grpc.StreamDesc,
 	m string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
 
@@ -449,6 +398,10 @@ type fakeClientStream struct {
 
 func (str *fakeClientStream) Context() context.Context {
 	return context.Background()
+}
+
+func (str *fakeClientStream) Header() (metadata.MD, error) {
+	return make(metadata.MD), nil
 }
 
 func (str *fakeClientStream) SendMsg(m interface{}) error {

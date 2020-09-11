@@ -35,6 +35,10 @@ message Packet {
     bytes serialized = 1;
 }
 
+message Ack {
+    repeated string errors = 1;
+}
+
 service Overlay {
     // Join handles join request from an unknown node. It accepts to share the
     // certificates if the token is valid.
@@ -47,4 +51,6 @@ service Overlay {
     rpc Call(Message) returns (Message) {}
     
     rpc Stream(stream Packet) returns (stream Packet) {}
+
+    rpc Forward(Packet) returns (Ack) {}
 }
