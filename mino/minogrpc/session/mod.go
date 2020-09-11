@@ -211,7 +211,7 @@ func (s *session) sendPacket(ctx context.Context, p router.Packet, errs chan err
 
 	routes, voids := s.table.Forward(p)
 	for addr, err := range voids {
-		errs <- xerrors.Errorf("routing %v: %v", addr, err)
+		errs <- xerrors.Errorf("no route to %v: %v", addr, err)
 	}
 
 	var relay Relay
@@ -223,7 +223,10 @@ func (s *session) sendPacket(ctx context.Context, p router.Packet, errs chan err
 		} else {
 			relay, err = s.setupRelay(ctx, addr)
 			if err != nil {
-				s.logger.Warn().Err(err).Msg("failed to setup relay")
+				s.logger.Warn().
+					Err(err).
+					Str("to", addr.String()).
+					Msg("failed to setup relay")
 
 				// Try to open a different relay.
 				s.onFailure(ctx, addr, packet, errs)
@@ -310,7 +313,10 @@ func (s *session) setupRelay(ctx context.Context, addr mino.Address) (Relay, err
 				return
 			}
 			if err != nil {
-				s.logger.Err(err).Msg("relay failed to receive")
+				s.logger.
+					Err(err).
+					Str("to", addr.String()).
+					Msg("relay failed to receive")
 
 				// Relay has lost the connection, therefore we announce the
 				// address as unreachable.

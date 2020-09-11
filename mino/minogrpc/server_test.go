@@ -107,7 +107,7 @@ func TestIntegration_Scenario_Call(t *testing.T) {
 func TestMinogrpc_Scenario_Failures(t *testing.T) {
 	srvs, rpcs := makeInstances(t, 10, nil)
 	defer func() {
-		for _, srv := range srvs[1:] {
+		for _, srv := range srvs {
 			srv.(*Minogrpc).GracefulClose()
 		}
 	}()
@@ -126,20 +126,45 @@ func TestMinogrpc_Scenario_Failures(t *testing.T) {
 	// Send a message to the shutted down instance to setup the relay, so that
 	// we can try it will remove it and use another address later.
 	err = <-sender.Send(fake.Message{}, srvs[0].GetAddress())
-	require.EqualError(t, err, "routing 127.0.0.1:3000: address is unreachable")
+	require.EqualError(t, err, "no route to 127.0.0.1:3000: address is unreachable")
 
-	// Test if the router learnt about the dead node and fixed the relay.
-	iter := authority.Take(mino.RangeFilter(1, 10)).AddressIterator()
+	// Test if the router learnt about the dead node and fixed the relay, while
+	// opening relay to known nodes for the following test.
+	iter := authority.Take(mino.ListFilter([]int{1, 4, 8})).AddressIterator()
 	for iter.HasNext() {
 		to := iter.GetNext()
 		errs := sender.Send(fake.Message{}, srvs[0].GetAddress(), to)
-		require.EqualError(t, <-errs, "routing 127.0.0.1:3000: address is unreachable")
+		require.EqualError(t, <-errs, "no route to 127.0.0.1:3000: address is unreachable")
 		require.NoError(t, <-errs)
 
-		from, msg, err := recvr.Recv(context.Background())
+		from, _, err := recvr.Recv(context.Background())
 		require.NoError(t, err)
 		require.Equal(t, to, from)
-		require.IsType(t, fake.Message{}, msg)
+	}
+
+	// This node is a relay for sure by using the tree router, so we close it to
+	// make sure the protocol can progress.
+	srvs[4].(*Minogrpc).Close()
+
+	closed := []mino.Address{
+		srvs[0].GetAddress(),
+		srvs[4].GetAddress(),
+	}
+
+	re := `^no route to 127\.0\.0\.1:300[04]: address is unreachable$`
+
+	// Test if the network can progress with the lost of a relay.
+	iter = authority.Take(mino.ListFilter([]int{3, 5, 6, 7, 9})).AddressIterator()
+	for iter.HasNext() {
+		to := iter.GetNext()
+		errs := sender.Send(fake.Message{}, append([]mino.Address{to}, closed...)...)
+		require.Regexp(t, re, <-errs)
+		require.Regexp(t, re, <-errs)
+		require.NoError(t, <-errs)
+
+		from, _, err := recvr.Recv(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, to, from)
 	}
 
 	cancel()

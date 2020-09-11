@@ -103,7 +103,7 @@ func TestSession_Send(t *testing.T) {
 
 	sess.table = fakeTable{err: xerrors.New("oops")}
 	errs = sess.Send(fake.Message{})
-	require.EqualError(t, <-errs, "routing fake.Address[400]: oops")
+	require.EqualError(t, <-errs, "no route to fake.Address[400]: oops")
 	require.NoError(t, <-errs)
 
 	// Test when an error occurred when setting up a relay, which moves to the
@@ -229,7 +229,7 @@ func TestSession_OnFailure(t *testing.T) {
 
 	sess.table = fakeTable{err: xerrors.New("oops")}
 	sess.onFailure(ctx, fake.NewAddress(0), fakePkt{dest: fake.NewAddress(1)}, errs)
-	require.EqualError(t, <-errs, "routing fake.Address[400]: oops")
+	require.EqualError(t, <-errs, "no route to fake.Address[400]: oops")
 }
 
 func TestRelay_Recv(t *testing.T) {

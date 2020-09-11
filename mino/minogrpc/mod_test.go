@@ -135,7 +135,11 @@ func TestMinogrpc_GracefulClose(t *testing.T) {
 	}
 	m.closer.Add(1)
 	close(m.started)
-	m.closing <- xerrors.New("oops")
+
+	go func() {
+		m.closer.Wait()
+		m.closing <- xerrors.New("oops")
+	}()
 
 	err = m.GracefulClose()
 	require.EqualError(t, err, "failed to stop gracefully: oops")

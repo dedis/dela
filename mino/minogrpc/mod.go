@@ -250,6 +250,12 @@ func (m *Minogrpc) GracefulClose() error {
 		return xerrors.New("server should be listening before trying to close")
 	}
 
+	select {
+	case <-m.closing:
+		return xerrors.New("server is already closed")
+	default:
+	}
+
 	m.server.GracefulStop()
 
 	m.closer.Done()
@@ -258,6 +264,33 @@ func (m *Minogrpc) GracefulClose() error {
 	err := <-m.closing
 	if err != nil {
 		return xerrors.Errorf("failed to stop gracefully: %v", err)
+	}
+
+	return nil
+}
+
+// Close stops the server immediatly.
+func (m *Minogrpc) Close() error {
+	select {
+	case <-m.started:
+	default:
+		return xerrors.New("server should be listening before trying to close")
+	}
+
+	select {
+	case <-m.closing:
+		return xerrors.New("server is already closed")
+	default:
+	}
+
+	m.server.Stop()
+
+	m.closer.Done()
+	m.closer.Wait()
+
+	err := <-m.closing
+	if err != nil {
+		return err
 	}
 
 	return nil
