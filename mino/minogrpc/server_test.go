@@ -106,8 +106,10 @@ func TestIntegration_Scenario_Call(t *testing.T) {
 func TestMinogrpc_Scenario_Failures(t *testing.T) {
 	srvs, rpcs := makeInstances(t, 14, nil)
 	defer func() {
-		for _, srv := range srvs {
-			srv.(*Minogrpc).GracefulClose()
+		require.NoError(t, srvs[1].(*Minogrpc).GracefulClose())
+		require.NoError(t, srvs[3].(*Minogrpc).GracefulClose())
+		for _, srv := range srvs[5:] {
+			require.NoError(t, srv.(*Minogrpc).GracefulClose())
 		}
 	}()
 
@@ -276,11 +278,15 @@ func TestOverlayServer_Call(t *testing.T) {
 	require.NotNil(t, resp)
 	require.Nil(t, resp.GetPayload())
 
-	badCtx := metadata.NewIncomingContext(context.Background(), metadata.New(
-		map[string]string{headerURIKey: "unknown"},
-	))
+	badCtx := makeCtx(headerURIKey, "unknown")
 	_, err = overlay.Call(badCtx, nil)
 	require.EqualError(t, err, "handler 'unknown' is not registered")
+
+	_, err = overlay.Call(context.Background(), nil)
+	require.EqualError(t, err, "handler '' is not registered")
+
+	_, err = overlay.Call(makeCtx(), nil)
+	require.EqualError(t, err, "handler '' is not registered")
 
 	badCtx = metadata.NewIncomingContext(context.Background(), metadata.New(
 		map[string]string{headerURIKey: "bad2"},
@@ -324,37 +330,91 @@ func TestOverlayServer_Stream(t *testing.T) {
 	inCtx := metadata.NewIncomingContext(ctx, metadata.Pairs(
 		headerURIKey, "test",
 		headerStreamIDKey, "test",
-		"handshake", "{}"))
+		headerHandshake, "{}"))
 
-	err := overlay.Stream(newFakeServerStream(inCtx))
+	err := overlay.Stream(&fakeSrvStream{ctx: inCtx})
 	require.NoError(t, err)
 
-	stream := newFakeServerStream(ctx)
-	err = overlay.Stream(stream)
+	err = overlay.Stream(&fakeSrvStream{ctx: ctx})
 	require.EqualError(t, err, "missing headers")
 
-	stream = newFakeServerStream(metadata.NewIncomingContext(ctx, make(metadata.MD)))
-	err = overlay.Stream(stream)
-	require.EqualError(t, err, "headers missing routing table")
+	err = overlay.Stream(&fakeSrvStream{ctx: makeCtx()})
+	require.EqualError(t, err, "routing table: headers are empty")
+
+	overlay.router = badRouter{}
+	badCtx := makeCtx(headerStreamIDKey, "abc", headerAddress, "{}")
+	err = overlay.Stream(&fakeSrvStream{ctx: badCtx})
+	require.EqualError(t, err, "routing table: failed to create: oops")
+
+	overlay.router = badRouter{errFac: true}
+	err = overlay.Stream(&fakeSrvStream{ctx: inCtx})
+	require.EqualError(t, err, "routing table: malformed handshake: oops")
+
+	overlay.router = badRouter{}
+	err = overlay.Stream(&fakeSrvStream{ctx: inCtx})
+	require.EqualError(t, err, "routing table: invalid handshake: oops")
 
 	overlay.router = tree.NewRouter(AddressFactory{})
-	stream = newFakeServerStream(metadata.NewIncomingContext(ctx, metadata.Pairs("handshake", "{}")))
-	err = overlay.Stream(stream)
+	badCtx = makeCtx(headerHandshake, "{}", headerStreamIDKey, "abc")
+	err = overlay.Stream(&fakeSrvStream{ctx: badCtx})
 	require.EqualError(t, err, "handler '' is not registered")
 
-	md := metadata.Pairs("handshake", "{}", headerURIKey, "unknown")
-	err = overlay.Stream(newFakeServerStream(metadata.NewIncomingContext(ctx, md)))
+	badCtx = makeCtx(headerHandshake, "{}", headerURIKey, "unknown", headerStreamIDKey, "abc")
+	err = overlay.Stream(&fakeSrvStream{ctx: badCtx})
 	require.EqualError(t, err, "handler 'unknown' is not registered")
 
-	md = metadata.Pairs("handshake", "{}", headerURIKey, "test")
-	err = overlay.Stream(newFakeServerStream(metadata.NewIncomingContext(ctx, md)))
-	require.EqualError(t, err, "failed to get streamID, result is empty")
+	badCtx = makeCtx(headerHandshake, "{}", headerURIKey, "test")
+	err = overlay.Stream(&fakeSrvStream{ctx: badCtx})
+	require.EqualError(t, err, "unexpected empty stream ID")
 
 	overlay.context = json.NewContext()
 	overlay.router = tree.NewRouter(AddressFactory{})
-	inCtx = metadata.NewIncomingContext(ctx, metadata.Pairs(headerURIKey, "bad", headerStreamIDKey, "test", "handshake", "{}"))
-	err = overlay.Stream(newFakeServerStream(inCtx))
+	badCtx = makeCtx(headerURIKey, "bad", headerStreamIDKey, "test", headerHandshake, "{}")
+	err = overlay.Stream(&fakeSrvStream{ctx: badCtx})
 	require.EqualError(t, err, "handler failed to process: oops")
+
+	err = overlay.Stream(&fakeSrvStream{ctx: inCtx, err: xerrors.New("oops")})
+	require.EqualError(t, err, "failed to send header: oops")
+
+	overlay.connMgr = fakeConnMgr{err: xerrors.New("oops")}
+	err = overlay.Stream(&fakeSrvStream{ctx: inCtx})
+	require.EqualError(t, err, "gateway connection failed: oops")
+}
+
+func TestOverlay_Forward(t *testing.T) {
+	overlay := overlayServer{
+		overlay: &overlay{
+			router:      tree.NewRouter(AddressFactory{}),
+			context:     json.NewContext(),
+			addrFactory: AddressFactory{},
+			me:          fake.NewAddress(0),
+			closer:      &sync.WaitGroup{},
+			connMgr:     fakeConnMgr{},
+		},
+		endpoints: make(map[string]*Endpoint),
+	}
+
+	overlay.endpoints["test"] = &Endpoint{
+		Handler: testHandler{skip: true},
+		streams: map[string]session.Session{
+			"stream-1": fakeSession{},
+		},
+	}
+
+	ctx := makeCtx(headerURIKey, "test", headerStreamIDKey, "stream-1")
+
+	ack, err := overlay.Forward(ctx, &ptypes.Packet{})
+	require.NoError(t, err)
+	require.NotNil(t, ack)
+
+	_, err = overlay.Forward(context.Background(), &ptypes.Packet{})
+	require.EqualError(t, err, "no header in the context")
+
+	_, err = overlay.Forward(makeCtx(headerURIKey, "unknown"), &ptypes.Packet{})
+	require.EqualError(t, err, "handler 'unknown' is not registered")
+
+	_, err = overlay.Forward(makeCtx(headerURIKey, "test", headerStreamIDKey, "nope"), &ptypes.Packet{})
+	require.EqualError(t, err, "no stream 'nope' found")
 }
 
 func TestOverlay_Panic_GetCertificate(t *testing.T) {
@@ -481,6 +541,13 @@ func makeInstances(t *testing.T, n int, call *fake.Call) ([]mino.Mino, []mino.RP
 	return mm, rpcs
 }
 
+func makeCtx(kv ...string) context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	return metadata.NewIncomingContext(ctx, metadata.Pairs(kv...))
+}
+
 type testHandler struct {
 	mino.UnsupportedHandler
 	call *fake.Call
@@ -522,43 +589,22 @@ func (h emptyHandler) Process(req mino.Request) (serde.Message, error) {
 	return nil, nil
 }
 
-type fakeServerStream struct {
-	grpc.ServerStream
-	ch  chan *ptypes.Packet
+type fakeSrvStream struct {
+	ptypes.Overlay_StreamServer
 	ctx context.Context
 	err error
 }
 
-func newFakeServerStream(ctx context.Context) fakeServerStream {
-	ch := make(chan *ptypes.Packet, 1)
-	ch <- &ptypes.Packet{Serialized: []byte(`{}`)}
-
-	return fakeServerStream{
-		ch:  ch,
-		ctx: ctx,
-	}
+func (s fakeSrvStream) SendHeader(metadata.MD) error {
+	return s.err
 }
 
-func (s fakeServerStream) SendHeader(metadata.MD) error {
-	return nil
-}
-
-func (s fakeServerStream) Context() context.Context {
+func (s fakeSrvStream) Context() context.Context {
 	return s.ctx
 }
 
-func (s fakeServerStream) Send(m *ptypes.Packet) error {
-	s.ch <- m
-	return nil
-}
-
-func (s fakeServerStream) Recv() (*ptypes.Packet, error) {
-	if s.err != nil {
-		return nil, s.err
-	}
-
-	env := <-s.ch
-	return env, nil
+func (s fakeSrvStream) Recv() (*ptypes.Packet, error) {
+	return nil, s.err
 }
 
 type fakeTokens struct {
@@ -585,4 +631,12 @@ func (s fakeCerts) Load(mino.Address) *tls.Certificate {
 
 func (s fakeCerts) Fetch(certs.Dialable, []byte) error {
 	return s.err
+}
+
+type fakeSession struct {
+	session.Session
+}
+
+func (fakeSession) RecvPacket(mino.Address, *ptypes.Packet) (*ptypes.Ack, error) {
+	return &ptypes.Ack{}, nil
 }

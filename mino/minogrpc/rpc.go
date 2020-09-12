@@ -110,23 +110,21 @@ func (rpc *RPC) Call(ctx context.Context,
 	return out, nil
 }
 
-// Stream implements mino.RPC.
+// Stream implements mino.RPC. It will open a stream to one of the addresses
+// with a bidirectional channel that will send and receive packets. The chosen
+// address will open one or several streams to the rest of the players according
+// to the routing table.
 func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, mino.Receiver, error) {
 	streamID := xid.New().String()
-
-	me, err := newRootAddress().MarshalText()
-	if err != nil {
-		return nil, nil, err
-	}
 
 	md := metadata.Pairs(
 		headerURIKey, rpc.uri,
 		headerStreamIDKey, streamID,
-		headerGateway, string(me))
+		headerGateway, orchestratorCode)
 
 	table, err := rpc.overlay.router.New(mino.NewAddresses())
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, xerrors.Errorf("routing table failed: %v", err)
 	}
 
 	gw, others := rpc.findGateway(players)
@@ -134,15 +132,15 @@ func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, m
 	for _, addr := range others {
 		addr, err := addr.MarshalText()
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, xerrors.Errorf("marshal address failed: %v", err)
 		}
 
-		md.Append("addr", string(addr))
+		md.Append(headerAddress, string(addr))
 	}
 
 	conn, err := rpc.overlay.connMgr.Acquire(gw)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, xerrors.Errorf("gateway connection failed: %v", err)
 	}
 
 	client := ptypes.NewOverlayClient(conn)
@@ -151,20 +149,21 @@ func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, m
 
 	stream, err := client.Stream(ctx)
 	if err != nil {
-		return nil, nil, err
+		rpc.overlay.connMgr.Release(gw)
+
+		return nil, nil, xerrors.Errorf("failed to open stream: %v", err)
 	}
 
 	// Wait for the event from the server to tell that the stream is
 	// initialized.
 	_, err = stream.Header()
 	if err != nil {
-		return nil, nil, err
+		rpc.overlay.connMgr.Release(gw)
+
+		return nil, nil, xerrors.Errorf("failed to receive header: %v", err)
 	}
 
-	relay, err := session.NewRelay(stream, gw, rpc.overlay.context, rpc.overlay.connMgr, md)
-	if err != nil {
-		return nil, nil, err
-	}
+	relay := session.NewRelay(stream, gw, rpc.overlay.context, conn, md)
 
 	sess := session.NewSession(
 		md,

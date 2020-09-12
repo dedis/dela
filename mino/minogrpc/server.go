@@ -32,6 +32,8 @@ const (
 	headerURIKey        = "apiuri"
 	headerStreamIDKey   = "streamid"
 	headerGateway       = "gateway"
+	headerAddress       = "addr"
+	headerHandshake     = "handshake"
 	certificateDuration = time.Hour * 24 * 180
 )
 
@@ -171,7 +173,7 @@ func (o overlayServer) Call(ctx context.Context, msg *ptypes.Message) (*ptypes.M
 	return &ptypes.Message{Payload: res}, nil
 }
 
-// Stream implements minogrpc.OverlayClient. It opens streams according to the
+// Stream implements ptypes.OverlayClient. It opens streams according to the
 // routing and transmits the message according to their recipient.
 func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 	o.closer.Add(1)
@@ -184,19 +186,17 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 
 	table, isRoot, err := o.tableFromHeaders(headers)
 	if err != nil {
-		return err
+		return xerrors.Errorf("routing table: %v", err)
 	}
 
-	uri := uriFromContext(stream.Context())
+	uri, streamID, gateway := readHeaders(headers)
+	if streamID == "" {
+		return xerrors.New("unexpected empty stream ID")
+	}
 
 	endpoint, found := o.endpoints[uri]
 	if !found {
 		return xerrors.Errorf("handler '%s' is not registered", uri)
-	}
-
-	streamID := streamIDFromContext(stream.Context())
-	if streamID == "" {
-		return xerrors.Errorf("failed to get streamID, result is empty")
 	}
 
 	me, err := o.me.MarshalText()
@@ -210,18 +210,23 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 		headerGateway, string(me))
 
 	var relay session.Relay
+	var conn grpc.ClientConnInterface
 	if isRoot {
 		// The relay back to the orchestrator is using the stream as this is the
 		// only way to get back to it. Fortunately, if the stream succeeds, it
 		// means the packet arrived.
 		relay = session.NewStreamRelay(newRootAddress(), stream, o.context)
 	} else {
-		gateway := o.addrFactory.FromText(gatewayFromContext(stream.Context()))
+		gw := o.addrFactory.FromText([]byte(gateway))
 
-		relay, err = session.NewRelay(stream, gateway, o.context, o.connMgr, md)
+		conn, err = o.connMgr.Acquire(gw)
 		if err != nil {
-			return err
+			return xerrors.Errorf("gateway connection failed: %v", err)
 		}
+
+		defer o.connMgr.Release(gw)
+
+		relay = session.NewRelay(stream, gw, o.context, conn, md)
 	}
 
 	sess := session.NewSession(
@@ -243,14 +248,13 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 	o.closer.Add(1)
 
 	go func() {
-		defer o.closer.Done()
-
 		sess.Listen(stream)
+		o.closer.Done()
 	}()
 
 	err = stream.SendHeader(make(metadata.MD))
 	if err != nil {
-		return err
+		return xerrors.Errorf("failed to send header: %v", err)
 	}
 
 	err = endpoint.Handler.Stream(sess, sess)
@@ -264,24 +268,24 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 }
 
 func (o *overlayServer) tableFromHeaders(h metadata.MD) (router.RoutingTable, bool, error) {
-	values := h.Get("handshake")
+	values := h.Get(headerHandshake)
 	if len(values) != 0 {
-		hs, err := o.overlay.router.GetHandshakeFactory().Deserialize(o.context, []byte(values[0]))
+		hs, err := o.overlay.router.GetHandshakeFactory().HandshakeOf(o.context, []byte(values[0]))
 		if err != nil {
-			return nil, false, err
+			return nil, false, xerrors.Errorf("malformed handshake: %v", err)
 		}
 
 		table, err := o.router.TableOf(hs)
 		if err != nil {
-			return nil, false, err
+			return nil, false, xerrors.Errorf("invalid handshake: %v", err)
 		}
 
 		return table, false, nil
 	}
 
-	values = h.Get("addr")
+	values = h.Get(headerAddress)
 	if len(values) == 0 {
-		return nil, false, xerrors.New("headers missing routing table")
+		return nil, false, xerrors.New("headers are empty")
 	}
 
 	addrs := make([]mino.Address, len(values))
@@ -291,38 +295,36 @@ func (o *overlayServer) tableFromHeaders(h metadata.MD) (router.RoutingTable, bo
 
 	table, err := o.router.New(mino.NewAddresses(addrs...))
 	if err != nil {
-		return nil, true, err
+		return nil, true, xerrors.Errorf("failed to create: %v", err)
 	}
 
 	return table, true, nil
 }
 
+// Forward implements ptypes.OverlayServer. It handles a request to forward a
+// packet by sending it to the appropriate session.
 func (o *overlayServer) Forward(ctx context.Context, p *ptypes.Packet) (*ptypes.Ack, error) {
-	// We fetch the uri that identifies the handler in the handlers map with the
-	// grpc metadata api. Using context.Value won't work.
-	uri := uriFromContext(ctx)
+	headers, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return nil, xerrors.New("no header in the context")
+	}
+
+	uri, streamID, gateway := readHeaders(headers)
 
 	endpoint, found := o.endpoints[uri]
 	if !found {
 		return nil, xerrors.Errorf("handler '%s' is not registered", uri)
 	}
 
-	streamID := streamIDFromContext(ctx)
-	if streamID == "" {
-		return nil, xerrors.Errorf("failed to get streamID, result is empty")
-	}
-
-	gateway := gatewayFromContext(ctx)
-
-	from := o.addrFactory.FromText(gateway)
-
 	endpoint.RLock()
 	sess, ok := endpoint.streams[streamID]
 	endpoint.RUnlock()
 
 	if !ok {
-		return nil, xerrors.New("missing stream")
+		return nil, xerrors.Errorf("no stream '%s' found", streamID)
 	}
+
+	from := o.addrFactory.FromText([]byte(gateway))
 
 	return sess.RecvPacket(from, p)
 }
@@ -592,44 +594,33 @@ func (mgr *connManager) Release(to mino.Address) {
 	}
 }
 
+func readHeaders(md metadata.MD) (uri string, streamID string, gw string) {
+	uri = getOrEmpty(md, headerURIKey)
+	streamID = getOrEmpty(md, headerStreamIDKey)
+	gw = getOrEmpty(md, headerGateway)
+
+	return
+}
+
+func getOrEmpty(md metadata.MD, key string) string {
+	values := md.Get(key)
+	if len(values) == 0 {
+		return ""
+	}
+
+	return values[0]
+}
+
 func uriFromContext(ctx context.Context) string {
 	headers, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return ""
 	}
 
-	apiURI := headers[headerURIKey]
+	apiURI := headers.Get(headerURIKey)
 	if len(apiURI) == 0 {
 		return ""
 	}
 
 	return apiURI[0]
-}
-
-func streamIDFromContext(ctx context.Context) string {
-	headers, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return ""
-	}
-
-	streamID := headers[headerStreamIDKey]
-	if len(streamID) == 0 {
-		return ""
-	}
-
-	return streamID[0]
-}
-
-func gatewayFromContext(ctx context.Context) []byte {
-	headers, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return []byte{}
-	}
-
-	gateway := headers[headerGateway]
-	if len(gateway) == 0 {
-		return []byte{}
-	}
-
-	return []byte(gateway[0])
 }

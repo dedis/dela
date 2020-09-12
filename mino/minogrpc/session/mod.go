@@ -35,17 +35,28 @@ type Session interface {
 	mino.Sender
 	mino.Receiver
 
+	// Listen takes a stream that will determine when to close the session.
 	Listen(stream PacketStream)
 
+	// RecvPacket takes a packet and the address of the distant peer that have
+	// sent it, then pass it to the correct relay according to the routing
+	// table.
 	RecvPacket(from mino.Address, p *ptypes.Packet) (*ptypes.Ack, error)
 }
 
 // Relay is the interface of the relays spawn by the session when trying to
 // contact a child node.
 type Relay interface {
+	// Distant returns the address of the peer at the other end of the relay.
 	Distant() mino.Address
+
+	// Stream returns the stream that is holding the relay.
 	Stream() PacketStream
+
+	// Send sends a packet through the relay.
 	Send(ctx context.Context, p router.Packet) (*ptypes.Ack, error)
+
+	// Close closes the relay and clean the resources.
 	Close() error
 }
 
@@ -107,31 +118,30 @@ func NewSession(
 // Listen implements session.Session. It listens for incoming packets from the
 // parent stream and closes the relays when it is done.
 func (s *session) Listen(stream PacketStream) {
-	defer func() {
-		s.close()
-
-		s.logger.Trace().Str("addr", s.me.String()).Msg("session has been closed")
-	}()
+	defer s.close()
 
 	for {
 		_, err := stream.Recv()
-		if err == io.EOF {
-			return
-		}
-		if status.Code(err) == codes.Canceled {
+		code := status.Code(err)
+		if err == io.EOF || code != codes.Unknown {
+			s.logger.Trace().Stringer("code", code).Msg("session closing")
+
 			return
 		}
 		if err != nil {
-			s.errs <- xerrors.Errorf("failed to receive: %v", err)
+			s.errs <- xerrors.Errorf("stream closed unexpectedly: %v", err)
+
 			return
 		}
 	}
 }
 
+// RecvPacket implements session.Session. It process the packet and send it to
+// the relays, or itself.
 func (s *session) RecvPacket(from mino.Address, p *ptypes.Packet) (*ptypes.Ack, error) {
 	pkt, err := s.pktFac.PacketOf(s.context, p.GetSerialized())
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("packet malformed: %v", err)
 	}
 
 	s.traffic.LogRecv(s.gateway.Stream().Context(), from, pkt)
@@ -198,6 +208,8 @@ func (s *session) close() {
 	// Lock must be released to let the relays close themselves and clean the
 	// map.
 	s.Wait()
+
+	s.logger.Trace().Msg("session has been closed")
 }
 
 func (s *session) sendPacket(ctx context.Context, p router.Packet, fn func(error)) {
@@ -236,10 +248,7 @@ func (s *session) sendTo(ctx context.Context, to mino.Address, pkt router.Packet
 	} else {
 		relay, err = s.setupRelay(ctx, to)
 		if err != nil {
-			s.logger.Warn().
-				Err(err).
-				Str("to", to.String()).
-				Msg("failed to setup relay")
+			s.logger.Warn().Err(err).Stringer("to", to).Msg("failed to setup relay")
 
 			// Try to open a different relay.
 			s.onFailure(ctx, to, pkt, fn)
@@ -288,15 +297,15 @@ func (s *session) setupRelay(ctx context.Context, addr mino.Address) (Relay, err
 		return relay, nil
 	}
 
+	hs, err := s.table.Prelude(addr).Serialize(s.context)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to serialize handshake: %v", err)
+	}
+
 	// 1. Acquire a connection to the distant peer.
 	conn, err := s.connMgr.Acquire(addr)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to dial: %v", err)
-	}
-
-	hs, err := s.table.Prelude(addr).Serialize(s.context)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to serialize handshake: %v", err)
 	}
 
 	md := s.md.Copy()
@@ -308,20 +317,19 @@ func (s *session) setupRelay(ctx context.Context, addr mino.Address) (Relay, err
 
 	stream, err := cl.Stream(ctx, grpc.WaitForReady(false))
 	if err != nil {
+		s.connMgr.Release(addr)
 		return nil, xerrors.Errorf("client: %v", err)
 	}
 
 	// 2. Wait for the header event to confirm the stream is up and running.
 	_, err = stream.Header()
 	if err != nil {
-		return nil, err
+		s.connMgr.Release(addr)
+		return nil, xerrors.Errorf("failed to receive header: %v", err)
 	}
 
 	// 3. Create and run the relay to respond to incoming packets.
-	newRelay, err := NewRelay(stream, addr, s.context, s.connMgr, s.md)
-	if err != nil {
-		return nil, err
-	}
+	newRelay := NewRelay(stream, addr, s.context, conn, s.md)
 
 	s.relays[addr] = newRelay
 	s.Add(1)
@@ -337,24 +345,31 @@ func (s *session) setupRelay(ctx context.Context, addr mino.Address) (Relay, err
 			// Let the manager know it can close the connection if necessary.
 			s.connMgr.Release(addr)
 
-			s.traffic.LogRelayClosed(addr)
-			s.logger.Trace().Err(err).Msg("relay closed")
 			s.Done()
+
+			s.traffic.LogRelayClosed(addr)
+			s.logger.Trace().
+				Err(err).
+				Stringer("gateway", addr).
+				Msg("relay has closed")
 		}()
 
 		for {
 			_, err := stream.Recv()
-			if err == io.EOF {
-				return
-			}
-			if status.Code(err) == codes.Canceled {
+			code := status.Code(err)
+			if err == io.EOF || code != codes.Unknown {
+				s.logger.Trace().
+					Stringer("code", code).
+					Stringer("to", addr).
+					Msg("relay is closing")
+
 				return
 			}
 			if err != nil {
 				s.logger.
 					Err(err).
-					Str("to", addr.String()).
-					Msg("relay failed to receive")
+					Stringer("to", addr).
+					Msg("relay closed unexpectedly")
 
 				// Relay has lost the connection, therefore we announce the
 				// address as unreachable.
@@ -366,9 +381,8 @@ func (s *session) setupRelay(ctx context.Context, addr mino.Address) (Relay, err
 	}()
 
 	s.traffic.LogRelay(addr)
-	s.logger.Debug().
-		Str("to", addr.String()).
-		Msg("relay opened")
+
+	s.logger.Trace().Stringer("to", addr).Msg("relay opened")
 
 	return newRelay, nil
 }
@@ -402,31 +416,24 @@ type unicastRelay struct {
 	md      metadata.MD
 	gw      mino.Address
 	stream  PacketStream
-	connMgr ConnectionManager
 	conn    grpc.ClientConnInterface
 	context serde.Context
 }
 
 // NewRelay returns a new relay that will send messages to the gateway through
 // unicast requests.
-func NewRelay(stream PacketStream, gw mino.Address, ctx serde.Context,
-	connMgr ConnectionManager, md metadata.MD) (Relay, error) {
-
-	conn, err := connMgr.Acquire(gw)
-	if err != nil {
-		return nil, err
-	}
+func NewRelay(stream PacketStream, gw mino.Address,
+	ctx serde.Context, conn grpc.ClientConnInterface, md metadata.MD) Relay {
 
 	r := &unicastRelay{
 		md:      md,
 		gw:      gw,
 		stream:  stream,
 		context: ctx,
-		connMgr: connMgr,
 		conn:    conn,
 	}
 
-	return r, nil
+	return r
 }
 
 func (r *unicastRelay) Distant() mino.Address {
@@ -458,8 +465,6 @@ func (r *unicastRelay) Send(ctx context.Context, p router.Packet) (*ptypes.Ack, 
 
 // Close implements session.Relay. It closes the stream.
 func (r *unicastRelay) Close() error {
-	r.connMgr.Release(r.gw)
-
 	stream, ok := r.stream.(ptypes.Overlay_StreamClient)
 	if ok {
 		err := stream.CloseSend()
@@ -507,7 +512,7 @@ func (r *streamRelay) Send(ctx context.Context, p router.Packet) (*ptypes.Ack, e
 
 	err = r.stream.Send(&ptypes.Packet{Serialized: data})
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("stream: %v", err)
 	}
 
 	return &ptypes.Ack{}, nil

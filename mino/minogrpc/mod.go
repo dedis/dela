@@ -4,6 +4,7 @@
 package minogrpc
 
 import (
+	"bytes"
 	"crypto/tls"
 	"fmt"
 	"net"
@@ -32,6 +33,7 @@ const (
 var (
 	namespaceMatch        = regexp.MustCompile("^[a-zA-Z0-9]+$")
 	defaultAddressFactory = AddressFactory{}
+	orchestratorBytes     = []byte(orchestratorCode)
 )
 
 // rootAddress is the address of the orchestrator of a protocol. When Stream is
@@ -55,7 +57,7 @@ func (a rootAddress) Equal(other mino.Address) bool {
 // MarshalText implements mino.Address. It returns a buffer that uses the
 // private area of Unicode to define the root.
 func (a rootAddress) MarshalText() ([]byte, error) {
-	return []byte(orchestratorCode), nil
+	return orchestratorBytes, nil
 }
 
 // String implements fmt.Stringer. It returns a string representation of the
@@ -104,7 +106,7 @@ type AddressFactory struct {
 // FromText implements mino.AddressFactory. It returns an instance of an
 // address from a byte slice.
 func (f AddressFactory) FromText(text []byte) mino.Address {
-	if string(text) == orchestratorCode {
+	if bytes.Equal(text, orchestratorBytes) {
 		return newRootAddress()
 	}
 
@@ -218,50 +220,19 @@ func (m *Minogrpc) GenerateToken(expiration time.Duration) string {
 // GracefulClose first stops the grpc server then waits for the remaining
 // handlers to close.
 func (m *Minogrpc) GracefulClose() error {
-	err := m.checkClose()
-	if err != nil {
-		return xerrors.Errorf("unable to close: %v", err)
-	}
-
 	m.server.GracefulStop()
 
-	err = m.postCheckClose()
-	if err != nil {
-		return xerrors.Errorf("close failed: %v", err)
-	}
-
-	return nil
+	return m.postCheckClose()
 }
 
 // Close stops the server immediatly.
 func (m *Minogrpc) Close() error {
-	err := m.checkClose()
-	if err != nil {
-		return xerrors.Errorf("unable to close: %v", err)
-	}
-
 	m.server.Stop()
 
-	err = m.postCheckClose()
-	if err != nil {
-		return xerrors.Errorf("close failed: %v", err)
-	}
-
-	return nil
-}
-
-func (m *Minogrpc) checkClose() error {
-	select {
-	case <-m.closing:
-		return xerrors.New("server is already closed")
-	default:
-	}
-
-	return nil
+	return m.postCheckClose()
 }
 
 func (m *Minogrpc) postCheckClose() error {
-	m.closer.Done()
 	m.closer.Wait()
 
 	err := <-m.closing
@@ -333,15 +304,17 @@ func (m *Minogrpc) String() string {
 // returning.
 func (m *Minogrpc) listen() error {
 	// TODO: bind 0.0.0.0:PORT => get port from address.
-	lis, err := net.Listen("tcp4", m.url.Host)
+	socket, err := net.Listen("tcp4", m.url.Host)
 	if err != nil {
 		return xerrors.Errorf("failed to listen: %v", err)
 	}
 
 	go func() {
+		defer m.closer.Done()
+
 		close(m.started)
 
-		err := m.server.Serve(lis)
+		err := m.server.Serve(socket)
 		if err != nil {
 			m.closing <- xerrors.Errorf("failed to serve: %v", err)
 		}

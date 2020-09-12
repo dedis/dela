@@ -1,7 +1,6 @@
 package minogrpc
 
 import (
-	"net/url"
 	"sync"
 	"testing"
 	"time"
@@ -113,30 +112,29 @@ func TestMinogrpc_Token(t *testing.T) {
 }
 
 func TestMinogrpc_GracefulClose(t *testing.T) {
-	m, err := NewMinogrpc("127.0.0.1", 0, tree.NewRouter(AddressFactory{}))
-	require.NoError(t, err)
-	require.NoError(t, m.GracefulClose())
-
-	// gRPC failed to stop gracefully.
-	m = &Minogrpc{
+	m := &Minogrpc{
 		overlay: &overlay{
-			closer: new(sync.WaitGroup),
+			closer:  new(sync.WaitGroup),
+			connMgr: fakeConnMgr{},
 		},
-		url:     &url.URL{Host: "127.0.0.1:0"},
 		server:  grpc.NewServer(),
-		started: make(chan struct{}),
-		closing: make(chan error, 1),
+		closing: make(chan error),
 	}
-	m.closer.Add(1)
-	close(m.started)
 
-	go func() {
-		m.closer.Wait()
-		m.closing <- xerrors.New("oops")
-	}()
+	close(m.closing)
+	err := m.GracefulClose()
+	require.NoError(t, err)
 
+	m.closing = make(chan error, 1)
+	m.closing <- xerrors.New("oops")
 	err = m.GracefulClose()
-	require.EqualError(t, err, "close failed: server stopped unexpectedly: oops")
+	require.EqualError(t, err, "server stopped unexpectedly: oops")
+
+	m.closing = make(chan error)
+	close(m.closing)
+	m.connMgr = fakeConnMgr{len: 1}
+	err = m.GracefulClose()
+	require.EqualError(t, err, "connection manager not empty: 1")
 }
 
 func TestMinogrpc_MakeNamespace(t *testing.T) {
