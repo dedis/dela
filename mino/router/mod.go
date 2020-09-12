@@ -94,8 +94,8 @@ type RoutingTable interface {
 	//
 	//	{A: packet{to: [A, B, C]}}
 	//
-	// Caution: it can return an error for unreachable addresses while still
-	// returning correct routes.
+	// The second return of the function contains the list of addresses that are
+	// known the be broken.
 	//
 	Forward(packet Packet) (Routes, Voids)
 

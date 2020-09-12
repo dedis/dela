@@ -115,13 +115,7 @@ func TestMinogrpc_Token(t *testing.T) {
 func TestMinogrpc_GracefulClose(t *testing.T) {
 	m, err := NewMinogrpc("127.0.0.1", 0, tree.NewRouter(AddressFactory{}))
 	require.NoError(t, err)
-
 	require.NoError(t, m.GracefulClose())
-
-	// Closing when the server has not started.
-	m = &Minogrpc{started: make(chan struct{})}
-	err = m.GracefulClose()
-	require.EqualError(t, err, "server should be listening before trying to close")
 
 	// gRPC failed to stop gracefully.
 	m = &Minogrpc{
@@ -142,7 +136,7 @@ func TestMinogrpc_GracefulClose(t *testing.T) {
 	}()
 
 	err = m.GracefulClose()
-	require.EqualError(t, err, "failed to stop gracefully: oops")
+	require.EqualError(t, err, "close failed: server stopped unexpectedly: oops")
 }
 
 func TestMinogrpc_MakeNamespace(t *testing.T) {

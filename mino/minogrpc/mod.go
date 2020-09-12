@@ -133,7 +133,8 @@ type Endpoint struct {
 	// that the stream session must be created. Using a sync.Map would require
 	// to use the "LoadOrStore" function, which would make us create the session
 	// each time, but only saving it the first time.
-	sync.Mutex
+	sync.RWMutex
+
 	Handler mino.Handler
 	Factory serde.Factory
 	streams map[string]session.Session
@@ -189,7 +190,7 @@ func NewMinogrpc(path string, port uint16, router router.Router) (*Minogrpc, err
 		endpoints: m.endpoints,
 	})
 
-	err = m.Listen()
+	err = m.listen()
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't start the server: %v", err)
 	}
@@ -214,56 +215,19 @@ func (m *Minogrpc) GenerateToken(expiration time.Duration) string {
 	return m.tokens.Generate(expiration)
 }
 
-// Listen starts the server. It waits for the go routine to start before
-// returning.
-func (m *Minogrpc) Listen() error {
-	// TODO: bind 0.0.0.0:PORT => get port from address.
-	lis, err := net.Listen("tcp4", m.url.Host)
-	if err != nil {
-		return xerrors.Errorf("failed to listen: %v", err)
-	}
-
-	go func() {
-		close(m.started)
-
-		err := m.server.Serve(lis)
-		if err != nil {
-			m.closing <- xerrors.Errorf("failed to serve: %v", err)
-		}
-
-		close(m.closing)
-	}()
-
-	// Force the go routine to be executed before returning which means the
-	// server has well started after that point.
-	<-m.started
-
-	return nil
-}
-
 // GracefulClose first stops the grpc server then waits for the remaining
 // handlers to close.
 func (m *Minogrpc) GracefulClose() error {
-	select {
-	case <-m.started:
-	default:
-		return xerrors.New("server should be listening before trying to close")
-	}
-
-	select {
-	case <-m.closing:
-		return xerrors.New("server is already closed")
-	default:
+	err := m.checkClose()
+	if err != nil {
+		return xerrors.Errorf("unable to close: %v", err)
 	}
 
 	m.server.GracefulStop()
 
-	m.closer.Done()
-	m.closer.Wait()
-
-	err := <-m.closing
+	err = m.postCheckClose()
 	if err != nil {
-		return xerrors.Errorf("failed to stop gracefully: %v", err)
+		return xerrors.Errorf("close failed: %v", err)
 	}
 
 	return nil
@@ -271,26 +235,43 @@ func (m *Minogrpc) GracefulClose() error {
 
 // Close stops the server immediatly.
 func (m *Minogrpc) Close() error {
-	select {
-	case <-m.started:
-	default:
-		return xerrors.New("server should be listening before trying to close")
+	err := m.checkClose()
+	if err != nil {
+		return xerrors.Errorf("unable to close: %v", err)
 	}
 
+	m.server.Stop()
+
+	err = m.postCheckClose()
+	if err != nil {
+		return xerrors.Errorf("close failed: %v", err)
+	}
+
+	return nil
+}
+
+func (m *Minogrpc) checkClose() error {
 	select {
 	case <-m.closing:
 		return xerrors.New("server is already closed")
 	default:
 	}
 
-	m.server.Stop()
+	return nil
+}
 
+func (m *Minogrpc) postCheckClose() error {
 	m.closer.Done()
 	m.closer.Wait()
 
 	err := <-m.closing
 	if err != nil {
-		return err
+		return xerrors.Errorf("server stopped unexpectedly: %v", err)
+	}
+
+	numConns := m.overlay.connMgr.Len()
+	if numConns > 0 {
+		return xerrors.Errorf("connection manager not empty: %d", numConns)
 	}
 
 	return nil
@@ -346,4 +327,31 @@ func (m *Minogrpc) MakeRPC(name string, h mino.Handler, f serde.Factory) (mino.R
 // instance.
 func (m *Minogrpc) String() string {
 	return fmt.Sprintf("%v", m.overlay.me)
+}
+
+// Listen starts the server. It waits for the go routine to start before
+// returning.
+func (m *Minogrpc) listen() error {
+	// TODO: bind 0.0.0.0:PORT => get port from address.
+	lis, err := net.Listen("tcp4", m.url.Host)
+	if err != nil {
+		return xerrors.Errorf("failed to listen: %v", err)
+	}
+
+	go func() {
+		close(m.started)
+
+		err := m.server.Serve(lis)
+		if err != nil {
+			m.closing <- xerrors.Errorf("failed to serve: %v", err)
+		}
+
+		close(m.closing)
+	}()
+
+	// Force the go routine to be executed before returning which means the
+	// server has well started after that point.
+	<-m.started
+
+	return nil
 }

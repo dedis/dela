@@ -194,7 +194,7 @@ func TestSession_OnFailure(t *testing.T) {
 }
 
 func TestRelay_Send(t *testing.T) {
-	r := &relay{
+	r := &unicastRelay{
 		md:   make(metadata.MD),
 		conn: fakeConnection{},
 	}
@@ -212,7 +212,7 @@ func TestRelay_Send(t *testing.T) {
 }
 
 func TestRelay_Close(t *testing.T) {
-	r := &relay{
+	r := &unicastRelay{
 		connMgr: fakeConnMgr{},
 		stream:  &fakeStream{},
 	}
@@ -419,5 +419,9 @@ func (str *fakeClientStream) RecvMsg(m interface{}) error {
 	}
 
 	*(m.(*ptypes.Packet)) = *msg
+	return nil
+}
+
+func (str *fakeClientStream) CloseSend() error {
 	return nil
 }

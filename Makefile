@@ -1,5 +1,5 @@
 generate:
-	go get -u github.com/golang/protobuf/protoc-gen-go@v1.3.4
+	go get -u github.com/golang/protobuf/protoc-gen-go@v1.3.5
 	go generate ./...
 
 lint:

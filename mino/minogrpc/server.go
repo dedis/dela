@@ -211,6 +211,9 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 
 	var relay session.Relay
 	if isRoot {
+		// The relay back to the orchestrator is using the stream as this is the
+		// only way to get back to it. Fortunately, if the stream succeeds, it
+		// means the packet arrived.
 		relay = session.NewStreamRelay(newRootAddress(), stream, o.context)
 	} else {
 		gateway := o.addrFactory.FromText(gatewayFromContext(stream.Context()))
@@ -232,7 +235,7 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 		o.connMgr,
 	)
 
-	// TODO: clean
+	// TODO: support multiple parents and clean the stream.
 	endpoint.Lock()
 	endpoint.streams[streamID] = sess
 	endpoint.Unlock()
@@ -313,9 +316,9 @@ func (o *overlayServer) Forward(ctx context.Context, p *ptypes.Packet) (*ptypes.
 
 	from := o.addrFactory.FromText(gateway)
 
-	endpoint.Lock()
+	endpoint.RLock()
 	sess, ok := endpoint.streams[streamID]
-	endpoint.Unlock()
+	endpoint.RUnlock()
 
 	if !ok {
 		return nil, xerrors.New("missing stream")
@@ -496,6 +499,15 @@ func newConnManager(me mino.Address, certs certs.Storage) *connManager {
 		counters: make(map[mino.Address]int),
 		conns:    make(map[mino.Address]*grpc.ClientConn),
 	}
+}
+
+// Len implements session.ConnectionManager. It returns the number of active
+// connections in the manager.
+func (mgr *connManager) Len() int {
+	mgr.Lock()
+	defer mgr.Unlock()
+
+	return len(mgr.conns)
 }
 
 // Acquire implements session.ConnectionManager. It either dials to open the

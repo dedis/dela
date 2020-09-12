@@ -123,7 +123,6 @@ func (t Table) Forward(packet router.Packet) (router.Routes, router.Voids) {
 // OnFailure implements router.Router. The tree will try to adapt itself to
 // reach the address, but it will return an error if the address is a direct
 // branch of the tree.
-// TODO: impl
 func (t Table) OnFailure(to mino.Address) error {
 	if t.tree.GetMaxHeight() <= 1 {
 		// When the node does only have leafs, it will simply return an error to
