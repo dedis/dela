@@ -138,8 +138,13 @@ func TestGenerateItemsGraphViz(t *testing.T) {
 	traffic.LogRecv(context.Background(), fake.NewAddress(1), newFakePacket(fake.NewAddress(2)))
 	traffic.LogSend(context.Background(), fake.NewAddress(1), newFakePacket(fake.NewAddress(2)))
 
+	traffic2 := NewTraffic(fake.NewAddress(1), ioutil.Discard)
+
+	traffic3 := NewTraffic(fake.NewAddress(3), ioutil.Discard)
+	traffic3.LogRelay(fake.NewAddress(0))
+
 	buffer := new(bytes.Buffer)
-	GenerateItemsGraphviz(buffer, false, false, traffic)
+	GenerateItemsGraphviz(buffer, false, false, traffic2, traffic, traffic3)
 	require.NotContains(t, buffer.String(), "received")
 	require.NotContains(t, buffer.String(), "send")
 }
