@@ -60,3 +60,19 @@ func TestDynTree_GetChildren(t *testing.T) {
 	tree.GetRoute(fake.NewAddress(0))
 	require.Len(t, tree.GetChildren(fake.NewAddress(0)), 3)
 }
+
+func TestDynTree_Remove(t *testing.T) {
+	tree := NewTree(3, makeAddrs(20)).(*dynTree)
+	tree.GetRoute(fake.NewAddress(1))
+
+	tree.Remove(fake.NewAddress(1))
+	require.Len(t, tree.offline, 1)
+	require.Len(t, tree.branches, 1)
+
+	tree = NewTree(3, makeAddrs(1)).(*dynTree)
+	tree.GetRoute(fake.NewAddress(0))
+
+	tree.Remove(fake.NewAddress(0))
+	require.Len(t, tree.offline, 1)
+	require.Len(t, tree.branches, 0)
+}

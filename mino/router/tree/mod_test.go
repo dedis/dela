@@ -71,13 +71,22 @@ func TestTable_Forward(t *testing.T) {
 	routes, voids := table.Forward(pkt)
 	require.Empty(t, voids)
 	require.Len(t, routes, 5)
+
+	table.tree.(*dynTree).offline[fake.NewAddress(1)] = struct{}{}
+	routes, voids = table.Forward(pkt)
+	require.Len(t, voids, 1)
+	require.Len(t, routes, 5)
 }
 
 func TestTable_OnFailure(t *testing.T) {
 	table := NewTable(1, makeAddrs(5))
-
 	err := table.OnFailure(fake.NewAddress(3))
 	require.EqualError(t, err, "address is unreachable")
+
+	table = NewTable(3, makeAddrs(20))
+	err = table.OnFailure(fake.NewAddress(12))
+	require.NoError(t, err)
+	require.Len(t, table.tree.(*dynTree).offline, 1)
 }
 
 // -----------------------------------------------------------------------------
