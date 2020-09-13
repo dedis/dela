@@ -112,15 +112,30 @@ func (rpc *RPC) Call(ctx context.Context,
 
 // Stream implements mino.RPC. It will open a stream to one of the addresses
 // with a bidirectional channel that will send and receive packets. The chosen
-// address will open one or several streams to the rest of the players according
-// to the routing table.
+// address will open one or several streams to the rest of the players.
+//
+// The way routes are created depends on the router implementation chosen for
+// the endpoint. It can for instance use a tree structure, which means the
+// network for 9 nodes could look like this:
+//
+//                               Orchestrator
+//                                     |
+//                                  __ A __
+//                                 /       \
+//                                B         C
+//                              / | \     /   \
+//                             D  E  F   G     H
+//
+// If C has to send a message to B, it will send it through node A. Similarly,
+// if D has to send a message to G, it will move up the tree through B, A and
+// finally C.
 func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, mino.Receiver, error) {
 	streamID := xid.New().String()
 
 	md := metadata.Pairs(
 		headerURIKey, rpc.uri,
 		headerStreamIDKey, streamID,
-		headerGateway, orchestratorCode)
+		headerGatewayKey, orchestratorCode)
 
 	table, err := rpc.overlay.router.New(mino.NewAddresses())
 	if err != nil {
@@ -135,7 +150,7 @@ func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, m
 			return nil, nil, xerrors.Errorf("marshal address failed: %v", err)
 		}
 
-		md.Append(headerAddress, string(addr))
+		md.Append(headerAddressKey, string(addr))
 	}
 
 	conn, err := rpc.overlay.connMgr.Acquire(gw)

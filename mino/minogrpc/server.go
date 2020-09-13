@@ -29,11 +29,11 @@ import (
 
 const (
 	// headerURIKey is the key used in rpc header to pass the handler URI
-	headerURIKey        = "apiuri"
-	headerStreamIDKey   = "streamid"
-	headerGateway       = "gateway"
-	headerAddress       = "addr"
-	headerHandshake     = "handshake"
+	headerURIKey      = "apiuri"
+	headerStreamIDKey = "streamid"
+	headerGatewayKey  = "gateway"
+	headerAddressKey  = "addr"
+
 	certificateDuration = time.Hour * 24 * 180
 )
 
@@ -49,6 +49,9 @@ type overlayServer struct {
 	endpoints map[string]*Endpoint
 }
 
+// Join implements ptypes.OverlayServer. It processes the request by checking
+// the validity of the token and if it is accepted, by sending the certificate
+// to the known peers. It finally returns the certificates to the caller.
 func (o overlayServer) Join(ctx context.Context, req *ptypes.JoinRequest) (*ptypes.JoinResponse, error) {
 	// 1. Check validity of the token.
 	if !o.tokens.Verify(req.Token) {
@@ -116,6 +119,8 @@ func (o overlayServer) Join(ctx context.Context, req *ptypes.JoinRequest) (*ptyp
 	return &ptypes.JoinResponse{Peers: peers}, nil
 }
 
+// Share implements ptypes.OverlayServer. It accepts a certificate from a
+// participant.
 func (o overlayServer) Share(ctx context.Context, msg *ptypes.Certificate) (*ptypes.CertificateAck, error) {
 	// TODO: verify the validity of the certificate by connecting to the distant
 	// node but that requires a protection against malicious share.
@@ -132,7 +137,7 @@ func (o overlayServer) Share(ctx context.Context, msg *ptypes.Certificate) (*pty
 	return &ptypes.CertificateAck{}, nil
 }
 
-// Call implements minogrpc.OverlayClient. It processes the request with the
+// Call implements minogrpc.OverlayServer. It processes the request with the
 // targeted handler if it exists, otherwise it returns an error.
 func (o overlayServer) Call(ctx context.Context, msg *ptypes.Message) (*ptypes.Message, error) {
 	// We fetch the uri that identifies the handler in the handlers map with the
@@ -173,8 +178,19 @@ func (o overlayServer) Call(ctx context.Context, msg *ptypes.Message) (*ptypes.M
 	return &ptypes.Message{Payload: res}, nil
 }
 
-// Stream implements ptypes.OverlayClient. It opens streams according to the
-// routing and transmits the message according to their recipient.
+// Stream implements ptypes.OverlayServer. It can be called in two different
+// situations: 1. the node is the very first contacted by the orchestrator and
+// will then lead the protocol, or 2. the node is part of the protocol.
+//
+// A stream is always built with the orchestrator as the original caller that
+// contacts one of the participant. The chosen one will relay the messages to
+// and from the orchestrator.
+//
+// Other participants of the protocol will wake up when receiving a message from
+// a parent which will open a stream that will determine when to close. If they
+// have to relay a message, they will use a unicast call recursively until the
+// message is delivered, or has failed. This allows to return an acknowledgement
+// that contains the missing delivered addresses.
 func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 	o.closer.Add(1)
 	defer o.closer.Done()
@@ -199,15 +215,10 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 		return xerrors.Errorf("handler '%s' is not registered", uri)
 	}
 
-	me, err := o.me.MarshalText()
-	if err != nil {
-		return err
-	}
-
 	md := metadata.Pairs(
 		headerURIKey, uri,
 		headerStreamIDKey, streamID,
-		headerGateway, string(me))
+		headerGatewayKey, o.meStr)
 
 	var relay session.Relay
 	var conn grpc.ClientConnInterface
@@ -268,7 +279,7 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 }
 
 func (o *overlayServer) tableFromHeaders(h metadata.MD) (router.RoutingTable, bool, error) {
-	values := h.Get(headerHandshake)
+	values := h.Get(session.HandshakeKey)
 	if len(values) != 0 {
 		hs, err := o.overlay.router.GetHandshakeFactory().HandshakeOf(o.context, []byte(values[0]))
 		if err != nil {
@@ -283,7 +294,7 @@ func (o *overlayServer) tableFromHeaders(h metadata.MD) (router.RoutingTable, bo
 		return table, false, nil
 	}
 
-	values = h.Get(headerAddress)
+	values = h.Get(headerAddressKey)
 	if len(values) == 0 {
 		return nil, false, xerrors.New("headers are empty")
 	}
@@ -329,7 +340,6 @@ func (o *overlayServer) Forward(ctx context.Context, p *ptypes.Packet) (*ptypes.
 	return sess.RecvPacket(from, p)
 }
 
-// - implements router.Membership
 type overlay struct {
 	closer      *sync.WaitGroup
 	context     serde.Context
@@ -339,6 +349,10 @@ type overlay struct {
 	router      router.Router
 	connMgr     session.ConnectionManager
 	addrFactory mino.AddressFactory
+
+	// Keep a text marshalled value for the overlay address so that it's not
+	// calculated for each request.
+	meStr string
 }
 
 func newOverlay(me mino.Address, router router.Router,
@@ -349,6 +363,11 @@ func newOverlay(me mino.Address, router router.Router,
 		return nil, xerrors.Errorf("failed to make certificate: %v", err)
 	}
 
+	meBytes, err := me.MarshalText()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to marshal address: %v", err)
+	}
+
 	certs := certs.NewInMemoryStore()
 	certs.Store(me, cert)
 
@@ -356,6 +375,7 @@ func newOverlay(me mino.Address, router router.Router,
 		closer:      new(sync.WaitGroup),
 		context:     ctx,
 		me:          me,
+		meStr:       string(meBytes),
 		tokens:      tokens.NewInMemoryHolder(),
 		certs:       certs,
 		router:      router,
@@ -582,8 +602,8 @@ func (mgr *connManager) Release(to mino.Address) {
 			err := conn.Close()
 			dela.Logger.Trace().
 				Err(err).
-				Str("to", to.String()).
-				Str("from", mgr.me.String()).
+				Stringer("to", to).
+				Stringer("from", mgr.me).
 				Int("length", len(mgr.conns)).
 				Msg("connection closed")
 
@@ -597,7 +617,7 @@ func (mgr *connManager) Release(to mino.Address) {
 func readHeaders(md metadata.MD) (uri string, streamID string, gw string) {
 	uri = getOrEmpty(md, headerURIKey)
 	streamID = getOrEmpty(md, headerStreamIDKey)
-	gw = getOrEmpty(md, headerGateway)
+	gw = getOrEmpty(md, headerGatewayKey)
 
 	return
 }

@@ -282,6 +282,7 @@ func (m *Packet) GetSerialized() []byte {
 	return nil
 }
 
+// Ack is the return of a unicast request to forward a message.
 type Ack struct {
 	Errors               []string `protobuf:"bytes,1,rep,name=errors,proto3" json:"errors,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
@@ -380,8 +381,14 @@ type OverlayClient interface {
 	// Share handles a certificate share from another participant of the
 	// network.
 	Share(ctx context.Context, in *Certificate, opts ...grpc.CallOption) (*CertificateAck, error)
+	// Call is a unicast rpc to send a message to a participant and expect a
+	// reply from it.
 	Call(ctx context.Context, in *Message, opts ...grpc.CallOption) (*Message, error)
+	// Stream is a stream rpc that will build a network of nodes which will
+	// relay the messages between each others.
 	Stream(ctx context.Context, opts ...grpc.CallOption) (Overlay_StreamClient, error)
+	// Forward is used in association with Stream to send a message through
+	// relays and get a feedback that the message has been received.
 	Forward(ctx context.Context, in *Packet, opts ...grpc.CallOption) (*Ack, error)
 }
 
@@ -468,8 +475,14 @@ type OverlayServer interface {
 	// Share handles a certificate share from another participant of the
 	// network.
 	Share(context.Context, *Certificate) (*CertificateAck, error)
+	// Call is a unicast rpc to send a message to a participant and expect a
+	// reply from it.
 	Call(context.Context, *Message) (*Message, error)
+	// Stream is a stream rpc that will build a network of nodes which will
+	// relay the messages between each others.
 	Stream(Overlay_StreamServer) error
+	// Forward is used in association with Stream to send a message through
+	// relays and get a feedback that the message has been received.
 	Forward(context.Context, *Packet) (*Ack, error)
 }
 

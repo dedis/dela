@@ -330,7 +330,7 @@ func TestOverlayServer_Stream(t *testing.T) {
 	inCtx := metadata.NewIncomingContext(ctx, metadata.Pairs(
 		headerURIKey, "test",
 		headerStreamIDKey, "test",
-		headerHandshake, "{}"))
+		session.HandshakeKey, "{}"))
 
 	err := overlay.Stream(&fakeSrvStream{ctx: inCtx})
 	require.NoError(t, err)
@@ -342,7 +342,7 @@ func TestOverlayServer_Stream(t *testing.T) {
 	require.EqualError(t, err, "routing table: headers are empty")
 
 	overlay.router = badRouter{}
-	badCtx := makeCtx(headerStreamIDKey, "abc", headerAddress, "{}")
+	badCtx := makeCtx(headerStreamIDKey, "abc", headerAddressKey, "{}")
 	err = overlay.Stream(&fakeSrvStream{ctx: badCtx})
 	require.EqualError(t, err, "routing table: failed to create: oops")
 
@@ -355,21 +355,21 @@ func TestOverlayServer_Stream(t *testing.T) {
 	require.EqualError(t, err, "routing table: invalid handshake: oops")
 
 	overlay.router = tree.NewRouter(AddressFactory{})
-	badCtx = makeCtx(headerHandshake, "{}", headerStreamIDKey, "abc")
+	badCtx = makeCtx(session.HandshakeKey, "{}", headerStreamIDKey, "abc")
 	err = overlay.Stream(&fakeSrvStream{ctx: badCtx})
 	require.EqualError(t, err, "handler '' is not registered")
 
-	badCtx = makeCtx(headerHandshake, "{}", headerURIKey, "unknown", headerStreamIDKey, "abc")
+	badCtx = makeCtx(session.HandshakeKey, "{}", headerURIKey, "unknown", headerStreamIDKey, "abc")
 	err = overlay.Stream(&fakeSrvStream{ctx: badCtx})
 	require.EqualError(t, err, "handler 'unknown' is not registered")
 
-	badCtx = makeCtx(headerHandshake, "{}", headerURIKey, "test")
+	badCtx = makeCtx(session.HandshakeKey, "{}", headerURIKey, "test")
 	err = overlay.Stream(&fakeSrvStream{ctx: badCtx})
 	require.EqualError(t, err, "unexpected empty stream ID")
 
 	overlay.context = json.NewContext()
 	overlay.router = tree.NewRouter(AddressFactory{})
-	badCtx = makeCtx(headerURIKey, "bad", headerStreamIDKey, "test", headerHandshake, "{}")
+	badCtx = makeCtx(headerURIKey, "bad", headerStreamIDKey, "test", session.HandshakeKey, "{}")
 	err = overlay.Stream(&fakeSrvStream{ctx: badCtx})
 	require.EqualError(t, err, "handler failed to process: oops")
 
@@ -415,6 +415,15 @@ func TestOverlay_Forward(t *testing.T) {
 
 	_, err = overlay.Forward(makeCtx(headerURIKey, "test", headerStreamIDKey, "nope"), &ptypes.Packet{})
 	require.EqualError(t, err, "no stream 'nope' found")
+}
+
+func TestOverlay_New(t *testing.T) {
+	o, err := newOverlay(fake.NewAddress(0), nil, nil, fake.NewContext())
+	require.NoError(t, err)
+	require.NotNil(t, o.certs.Load(fake.NewAddress(0)))
+
+	_, err = newOverlay(fake.NewBadAddress(), nil, nil, fake.NewContext())
+	require.EqualError(t, err, "failed to marshal address: fake error")
 }
 
 func TestOverlay_Panic_GetCertificate(t *testing.T) {

@@ -21,6 +21,9 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// HandshakeKey is the key to the handshake store in the headers.
+const HandshakeKey = "handshake"
+
 // ConnectionManager is an interface required by the session to open and release
 // connections to the relays.
 type ConnectionManager interface {
@@ -47,8 +50,9 @@ type Session interface {
 // Relay is the interface of the relays spawn by the session when trying to
 // contact a child node.
 type Relay interface {
-	// Distant returns the address of the peer at the other end of the relay.
-	Distant() mino.Address
+	// GetDistantAddress returns the address of the peer at the other end of the
+	// relay.
+	GetDistantAddress() mino.Address
 
 	// Stream returns the stream that is holding the relay.
 	Stream() PacketStream
@@ -60,6 +64,11 @@ type Relay interface {
 	Close() error
 }
 
+// session is a participant to a stream protocol which has a parent gateway that
+// determines when to close, and it can open further relays to distant peers if
+// the routing table requires it.
+//
+// - implements session.Session
 type session struct {
 	sync.Mutex
 	sync.WaitGroup
@@ -79,7 +88,7 @@ type session struct {
 	traffic *traffic.Traffic
 }
 
-// NewSession creates a new session for the provided stream.
+// NewSession creates a new session for the provided parent relay.
 func NewSession(
 	md metadata.MD,
 	gw Relay,
@@ -115,8 +124,8 @@ func NewSession(
 	return sess
 }
 
-// Listen implements session.Session. It listens for incoming packets from the
-// parent stream and closes the relays when it is done.
+// Listen implements session.Session. It listens for the stream to detect when
+// it closes, which will start the closing procedure.
 func (s *session) Listen(stream PacketStream) {
 	defer s.close()
 
@@ -257,7 +266,7 @@ func (s *session) sendTo(ctx context.Context, to mino.Address, pkt router.Packet
 		}
 	}
 
-	s.traffic.LogSend(ctx, relay.Distant(), pkt)
+	s.traffic.LogSend(ctx, relay.GetDistantAddress(), pkt)
 
 	ack, err := relay.Send(ctx, pkt)
 	if to == nil && err != nil {
@@ -275,7 +284,7 @@ func (s *session) sendTo(ctx context.Context, to mino.Address, pkt router.Packet
 		s.logger.Warn().Err(err).Msg("relay failed to send")
 
 		// Try to send the packet through a different route.
-		s.onFailure(ctx, relay.Distant(), pkt, fn)
+		s.onFailure(ctx, relay.GetDistantAddress(), pkt, fn)
 
 		return
 	}
@@ -309,7 +318,7 @@ func (s *session) setupRelay(ctx context.Context, addr mino.Address) (Relay, err
 	}
 
 	md := s.md.Copy()
-	md.Set("handshake", string(hs))
+	md.Set(HandshakeKey, string(hs))
 
 	ctx = metadata.NewOutgoingContext(ctx, md)
 
@@ -436,10 +445,14 @@ func NewRelay(stream PacketStream, gw mino.Address,
 	return r
 }
 
-func (r *unicastRelay) Distant() mino.Address {
+// GetDistantAddress implements session.Relay. It returns the address of the
+// distant peer.
+func (r *unicastRelay) GetDistantAddress() mino.Address {
 	return r.gw
 }
 
+// Stream implements session.Relay. It returns the stream associated to the
+// relay.
 func (r *unicastRelay) Stream() PacketStream {
 	return r.stream
 }
@@ -496,14 +509,19 @@ func NewStreamRelay(gw mino.Address, stream PacketStream, ctx serde.Context) Rel
 	}
 }
 
-func (r *streamRelay) Distant() mino.Address {
+// GetDistantAddress implements session.Relay. It returns the address of the
+// distant peer.
+func (r *streamRelay) GetDistantAddress() mino.Address {
 	return r.gw
 }
 
+// Stream implements session.Relay. It returns the stream associated with the
+// relay.
 func (r *streamRelay) Stream() PacketStream {
 	return r.stream
 }
 
+// Send implements session.Relay. It sends the packet through the stream.
 func (r *streamRelay) Send(ctx context.Context, p router.Packet) (*ptypes.Ack, error) {
 	data, err := p.Serialize(r.context)
 	if err != nil {
@@ -518,6 +536,8 @@ func (r *streamRelay) Send(ctx context.Context, p router.Packet) (*ptypes.Ack, e
 	return &ptypes.Ack{}, nil
 }
 
+// Close implements session.Relay. It does not do anything as it is not
+// responsible for closing the stream.
 func (r *streamRelay) Close() error {
 	return nil
 }
