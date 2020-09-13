@@ -14,54 +14,10 @@ import (
 	"google.golang.org/grpc"
 )
 
-func TestRootAddress_Equal(t *testing.T) {
-	root := newRootAddress()
-	require.True(t, root.Equal(newRootAddress()))
-	require.True(t, root.Equal(root))
-	require.False(t, root.Equal(address{}))
-}
-
-func TestRootAddress_MarshalText(t *testing.T) {
-	root := newRootAddress()
-	text, err := root.MarshalText()
-	require.NoError(t, err)
-	require.Equal(t, "\ue000", string(text))
-}
-
-func TestRootAddress_String(t *testing.T) {
-	root := newRootAddress()
-	require.Equal(t, orchestratorDescription, root.String())
-}
-
-func TestAddress_Equal(t *testing.T) {
-	addr := address{host: "127.0.0.1:2000"}
-
-	require.True(t, addr.Equal(addr))
-	require.False(t, addr.Equal(address{}))
-}
-
-func TestAddress_MarshalText(t *testing.T) {
-	addr := address{host: "127.0.0.1:2000"}
-	buffer, err := addr.MarshalText()
-	require.NoError(t, err)
-
-	require.Equal(t, []byte(addr.host), buffer)
-}
-
-func TestAddress_String(t *testing.T) {
-	addr := address{host: "127.0.0.1:2000"}
-	require.Equal(t, addr.host, addr.String())
-}
-
-func TestAddressFactory_FromText(t *testing.T) {
-	factory := AddressFactory{}
-	addr := factory.FromText([]byte("127.0.0.1:2000"))
-
-	require.Equal(t, "127.0.0.1:2000", addr.(address).host)
-}
-
 func TestMinogrpc_New(t *testing.T) {
-	m, err := NewMinogrpc("127.0.0.1", 3333, tree.NewRouter(AddressFactory{}))
+	addr := ParseAddress("127.0.0.1", 3333)
+
+	m, err := NewMinogrpc(addr, tree.NewRouter(AddressFactory{}))
 	require.NoError(t, err)
 
 	require.Equal(t, "127.0.0.1:3333", m.GetAddress().String())
@@ -72,20 +28,17 @@ func TestMinogrpc_New(t *testing.T) {
 
 	require.NoError(t, m.GracefulStop())
 
-	_, err = NewMinogrpc("\\", 0, nil)
-	require.EqualError(t, err,
-		"couldn't parse url: parse \"//\\\\:0\": invalid character \"\\\\\" in host name")
+	addr = ParseAddress("123.4.5.6", 1)
 
-	_, err = NewMinogrpc("123.4.5.6", 1, tree.NewRouter(AddressFactory{}))
+	_, err = NewMinogrpc(addr, tree.NewRouter(AddressFactory{}))
 	require.Error(t, err)
 	// Funny enough, macos would output:
-	//   couldn't start the server: failed to listen: listen tcp4 123.4.5.6:1:
+	//   couldn't start the server: failed to listen: listen tcp 123.4.5.6:1:
 	//     bind: can't assign requested address
 	// While linux outpus:
-	//   couldn't start the server: failed to listen: listen tcp4 123.4.5.6:1:
+	//   couldn't start the server: failed to listen: listen tcp 123.4.5.6:1:
 	//     bind: cannot assign requested address
-	require.Regexp(t, "^couldn't start the server: failed to listen: listen "+
-		"tcp4 123.4.5.6:1:", err)
+	require.Regexp(t, "^failed to bind: listen tcp 123.4.5.6:1:", err)
 }
 
 func TestMinogrpc_GetAddressFactory(t *testing.T) {

@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"net"
 	"time"
 
 	"go.dedis.ch/dela"
@@ -83,7 +84,12 @@ func (m minimal) Inject(ctx cli.Flags, inj node.Injector) error {
 
 	rter := tree.NewRouter(minogrpc.AddressFactory{})
 
-	o, err := minogrpc.NewMinogrpc("127.0.0.1", uint16(port), rter)
+	addr := &net.TCPAddr{
+		IP:   net.IPv4(127, 0, 0, 1),
+		Port: port,
+	}
+
+	o, err := minogrpc.NewMinogrpc(addr, rter)
 	if err != nil {
 		return xerrors.Errorf("couldn't make overlay: %v", err)
 	}
