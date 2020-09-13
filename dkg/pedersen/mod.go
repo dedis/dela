@@ -221,10 +221,9 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 	pubShares := make([]*share.PubShare, len(addrs))
 
 	for i := 0; i < len(addrs); i++ {
-		from, message, err := receiver.Recv(ctx)
+		_, message, err := receiver.Recv(ctx)
 		if err != nil {
-			return []byte{}, xerrors.Errorf("failed to receive from '%s': %v",
-				from, err)
+			return []byte{}, xerrors.Errorf("stream stopped unexpectedly: %v", err)
 		}
 
 		decryptReply, ok := message.(types.DecryptReply)
