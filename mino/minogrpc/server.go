@@ -299,7 +299,7 @@ func (o *overlayServer) cleanStream(endpoint *Endpoint, id string) {
 	defer endpoint.Unlock()
 
 	// It's important to check the session currently stored as it may be a new
-	// one with an active parent.
+	// one with an active parent, or it might be already cleaned.
 	sess, found := endpoint.streams[id]
 	if !found {
 		return
