@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
@@ -37,30 +38,74 @@ func TestSession_New(t *testing.T) {
 	require.Nil(t, sess.(*session).traffic)
 }
 
-func TestSession_Listen(t *testing.T) {
-	sess := &session{
-		errs:    make(chan error),
-		parents: make(map[mino.Address]parent),
+func TestSession_getNumParents(t *testing.T) {
+	sess := &session{}
+
+	num := sess.GetNumParents()
+	require.Equal(t, 0, num)
+
+	sess.parents = map[mino.Address]parent{
+		fake.NewAddress(0): {},
+		fake.NewAddress(1): {},
 	}
 
-	parent := &streamRelay{stream: &fakeStream{}}
+	num = sess.GetNumParents()
+	require.Equal(t, 2, num)
+}
 
-	sess.Listen(parent, fakeTable{}, make(chan struct{}))
+func TestSession_Listen(t *testing.T) {
+	p := &streamRelay{
+		stream: &fakeStream{},
+		gw:     fake.NewAddress(123),
+	}
+
+	sess := &session{
+		errs: make(chan error),
+		parents: map[mino.Address]parent{
+			p.gw: {relay: p},
+		},
+	}
+
+	ready := make(chan struct{})
+
+	sess.Listen(p, fakeTable{}, ready)
 	select {
-	case <-sess.errs:
-	default:
+	case <-ready:
+	case <-time.After(time.Second):
 		t.Fatal("expect channel to be closed")
 	}
 
+	require.Len(t, sess.parents, 0)
+
 	sess.errs = make(chan error, 1)
-	parent.stream = &fakeStream{err: xerrors.New("oops")}
-	sess.Listen(parent, fakeTable{}, make(chan struct{}))
+	p.stream = &fakeStream{err: xerrors.New("oops")}
+	sess.Listen(p, fakeTable{}, make(chan struct{}))
 	select {
 	case err := <-sess.errs:
 		require.EqualError(t, err, "stream closed unexpectedly: oops")
 	default:
 		t.Fatal("expect an error")
 	}
+}
+
+func TestSession_Close(t *testing.T) {
+	sess := &session{errs: make(chan error)}
+
+	sess.Close()
+	select {
+	case <-sess.errs:
+	default:
+		t.Fatal("expect channel to be closed")
+	}
+}
+
+func TestSession_Passive(t *testing.T) {
+	sess := &session{
+		parents: make(map[mino.Address]parent),
+	}
+
+	sess.Passive(&streamRelay{}, fakeTable{})
+	require.Len(t, sess.parents, 1)
 }
 
 func TestSession_RecvPacket(t *testing.T) {
@@ -83,6 +128,11 @@ func TestSession_RecvPacket(t *testing.T) {
 	sess.pktFac = fakePktFac{err: xerrors.New("oops")}
 	_, err = sess.RecvPacket(fake.NewAddress(0), &ptypes.Packet{})
 	require.EqualError(t, err, "packet malformed: oops")
+
+	sess.pktFac = fakePktFac{}
+	sess.parents = nil
+	_, err = sess.RecvPacket(fake.NewAddress(0), &ptypes.Packet{})
+	require.EqualError(t, err, "packet is dropped")
 }
 
 func TestSession_Send(t *testing.T) {
@@ -170,6 +220,12 @@ func TestSession_Send(t *testing.T) {
 	}
 	errs = sess.Send(fake.Message{})
 	require.EqualError(t, <-errs, "bad route")
+
+	sess.parents = map[mino.Address]parent{
+		key: {table: fakeTable{empty: true}},
+	}
+	errs = sess.Send(fake.Message{})
+	require.EqualError(t, <-errs, "packet ignored")
 }
 
 func TestSession_SetupRelay(t *testing.T) {
@@ -320,6 +376,12 @@ func TestStreamRelay_Send(t *testing.T) {
 	require.EqualError(t, err, "failed to serialize: oops")
 }
 
+func TestStreamRelay_Close(t *testing.T) {
+	r := &streamRelay{}
+
+	require.NoError(t, r.Close())
+}
+
 // -----------------------------------------------------------------------------
 // Utility functions
 
@@ -364,8 +426,9 @@ func (s *fakeStream) CloseSend() error {
 
 type fakePkt struct {
 	router.Packet
-	dest mino.Address
-	err  error
+	dest  mino.Address
+	empty bool
+	err   error
 }
 
 func (p fakePkt) GetSource() mino.Address {
@@ -385,6 +448,10 @@ func (p fakePkt) GetMessage() []byte {
 }
 
 func (p fakePkt) Slice(mino.Address) router.Packet {
+	if p.empty {
+		return nil
+	}
+
 	return p
 }
 
@@ -406,12 +473,13 @@ type fakeTable struct {
 	router.RoutingTable
 
 	route   mino.Address
+	empty   bool
 	err     error
 	errFail error
 }
 
 func (t fakeTable) Make(mino.Address, []mino.Address, []byte) router.Packet {
-	return fakePkt{dest: fake.NewAddress(0)}
+	return fakePkt{dest: fake.NewAddress(0), empty: t.empty}
 }
 
 func (t fakeTable) Prelude(mino.Address) router.Handshake {
@@ -424,7 +492,10 @@ func (t fakeTable) Forward(router.Packet) (router.Routes, router.Voids) {
 		voids[fake.NewAddress(400)] = router.Void{Error: t.err}
 	}
 
-	routes := router.Routes{t.route: fakePkt{}}
+	routes := router.Routes{}
+	if !t.empty {
+		routes[t.route] = fakePkt{}
+	}
 
 	return routes, voids
 }

@@ -38,17 +38,24 @@ type Session interface {
 	mino.Sender
 	mino.Receiver
 
+	// GetNumParents returns the number of active parents for the session.
+	GetNumParents() int
+
 	// Listen takes a stream that will determine when to close the session.
 	Listen(parent Relay, table router.RoutingTable, ready chan struct{})
 
+	// Close shutdowns the session so that future calls to receive will return
+	// an error.
+	Close()
+
+	// Passive sets a new passive parent. A passive parent is not automatically
+	// removed from the list of parents.
 	Passive(parent Relay, table router.RoutingTable)
 
 	// RecvPacket takes a packet and the address of the distant peer that have
 	// sent it, then pass it to the correct relay according to the routing
 	// table.
 	RecvPacket(from mino.Address, p *ptypes.Packet) (*ptypes.Ack, error)
-
-	OnClose(func())
 }
 
 // Relay is the interface of the relays spawn by the session when trying to
@@ -95,7 +102,6 @@ type session struct {
 	traffic *traffic.Traffic
 
 	parents map[mino.Address]parent
-	funcs   []func()
 	// A read-write lock is used there as there are much more read requests than
 	// write ones, and the read should be parrallelized.
 	parentsLock sync.RWMutex
@@ -134,28 +140,24 @@ func NewSession(
 	return sess
 }
 
-// Listen implements session.Session. It listens for the stream to detect when
-// it closes, which will start the closing procedure.
+// GetNumParents implements session.Session. It returns the number of active
+// parents in the session.
+func (s *session) GetNumParents() int {
+	s.parentsLock.RLock()
+	defer s.parentsLock.RUnlock()
+
+	return len(s.parents)
+}
+
+// Listen implements session.Session. It listens for the stream and returns only
+// when the is has been closed.
 func (s *session) Listen(relay Relay, table router.RoutingTable, ready chan struct{}) {
 	defer func() {
 		s.parentsLock.Lock()
 
 		delete(s.parents, relay.GetDistantAddress())
-		count := len(s.parents)
-
-		for _, fn := range s.funcs {
-			fn()
-		}
 
 		s.parentsLock.Unlock()
-
-		if count == 0 {
-			close(s.errs)
-
-			s.Wait()
-
-			s.logger.Trace().Msg("session has been closed")
-		}
 	}()
 
 	s.parentsLock.Lock()
@@ -180,6 +182,17 @@ func (s *session) Listen(relay Relay, table router.RoutingTable, ready chan stru
 	}
 }
 
+// Close implements session.Session. It shutdowns the session and waits for the
+// relays to close.
+func (s *session) Close() {
+	close(s.errs)
+
+	s.Wait()
+
+	s.logger.Trace().Msg("session has been closed")
+}
+
+// Passive implements session.Session. It sets a passive parent.
 func (s *session) Passive(p Relay, table router.RoutingTable) {
 	s.parentsLock.Lock()
 	s.parents[p.GetDistantAddress()] = parent{
@@ -221,12 +234,6 @@ func (s *session) RecvPacket(from mino.Address, p *ptypes.Packet) (*ptypes.Ack, 
 	return nil, xerrors.New("packet is dropped")
 }
 
-func (s *session) OnClose(fn func()) {
-	s.parentsLock.Lock()
-	s.funcs = append(s.funcs, fn)
-	s.parentsLock.Unlock()
-}
-
 // Send implements mino.Sender. It sends the message to the provided addresses
 // through the relays or the parent.
 func (s *session) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
@@ -266,12 +273,14 @@ func (s *session) Recv(ctx context.Context) (mino.Address, serde.Message, error)
 	select {
 	case <-ctx.Done():
 		return nil, nil, ctx.Err()
+
 	case err := <-s.errs:
 		if err != nil {
 			return nil, nil, xerrors.Errorf("stream closed unexpectedly: %v", err)
 		}
 
 		return nil, nil, io.EOF
+
 	case packet := <-s.queue.Channel():
 		msg, err := s.msgFac.Deserialize(s.context, packet.GetMessage())
 		if err != nil {
@@ -395,7 +404,8 @@ func (s *session) setupRelay(p parent, addr mino.Address) (Relay, error) {
 		return nil, xerrors.Errorf("client: %v", err)
 	}
 
-	// 2. Wait for the header event to confirm the stream is up and running.
+	// 2. Wait for the header event to confirm the stream is registered in the
+	// session at the other end.
 	_, err = stream.Header()
 	if err != nil {
 		s.connMgr.Release(addr)

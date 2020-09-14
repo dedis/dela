@@ -222,6 +222,24 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 		headerStreamIDKey, streamID,
 		headerGatewayKey, o.meStr)
 
+	// This lock will make sure that a session is ready before any message
+	// forwarded will be received.
+	endpoint.Lock()
+
+	sess, initiated := endpoint.streams[streamID]
+	if !initiated {
+		sess = session.NewSession(
+			md,
+			o.me,
+			endpoint.Factory,
+			o.router.GetPacketFactory(),
+			o.context,
+			o.connMgr,
+		)
+
+		endpoint.streams[streamID] = sess
+	}
+
 	var relay session.Relay
 	var conn grpc.ClientConnInterface
 	if isRoot {
@@ -242,34 +260,14 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 		relay = session.NewRelay(stream, gw, o.context, conn, md)
 	}
 
-	sess := session.NewSession(
-		md,
-		o.me,
-		endpoint.Factory,
-		o.router.GetPacketFactory(),
-		o.context,
-		o.connMgr,
-	)
-
-	// The stream session needs to be removed from the endpoint but only when no
-	// parent is left.
-	sess.OnClose(func() {
-		endpoint.Lock()
-		delete(endpoint.streams, streamID)
-		endpoint.Unlock()
-
-		dela.Logger.Info().Msg("stream has been cleaned")
-	})
-
-	endpoint.Lock()
-	endpoint.streams[streamID] = sess
-
 	o.closer.Add(1)
 
 	ready := make(chan struct{})
 
 	go func() {
 		sess.Listen(relay, table, ready)
+
+		o.cleanStream(endpoint, streamID)
 		o.closer.Done()
 	}()
 
@@ -279,6 +277,8 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 
 	endpoint.Unlock()
 
+	// This event sent a confirmation to the parent that the stream is
+	// registered and it can send messages to it.
 	err = stream.SendHeader(make(metadata.MD))
 	if err != nil {
 		return xerrors.Errorf("failed to send header: %v", err)
@@ -292,6 +292,30 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 	<-stream.Context().Done()
 
 	return nil
+}
+
+func (o *overlayServer) cleanStream(endpoint *Endpoint, id string) {
+	endpoint.Lock()
+	defer endpoint.Unlock()
+
+	// It's important to check the session currently stored as it may be a new
+	// one with an active parent.
+	sess, found := endpoint.streams[id]
+	if !found {
+		return
+	}
+
+	if sess.GetNumParents() > 0 {
+		return
+	}
+
+	delete(endpoint.streams, id)
+
+	sess.Close()
+
+	dela.Logger.Trace().
+		Str("id", id).
+		Msg("stream has been cleaned")
 }
 
 func (o *overlayServer) tableFromHeaders(h metadata.MD) (router.RoutingTable, bool, error) {
