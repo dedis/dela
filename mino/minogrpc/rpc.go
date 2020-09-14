@@ -188,14 +188,14 @@ func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, m
 
 	sess := session.NewSession(
 		md,
-		relay,
 		newRootAddress(),
-		table,
 		rpc.factory,
 		rpc.overlay.router.GetPacketFactory(),
 		rpc.overlay.context,
 		rpc.overlay.connMgr,
 	)
+
+	sess.Passive(relay, table)
 
 	rpc.overlay.closer.Add(1)
 

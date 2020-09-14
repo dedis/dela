@@ -244,26 +244,40 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 
 	sess := session.NewSession(
 		md,
-		relay,
 		o.me,
-		table,
 		endpoint.Factory,
 		o.router.GetPacketFactory(),
 		o.context,
 		o.connMgr,
 	)
 
-	// TODO: support multiple parents and clean the stream.
+	// The stream session needs to be removed from the endpoint but only when no
+	// parent is left.
+	sess.OnClose(func() {
+		endpoint.Lock()
+		delete(endpoint.streams, streamID)
+		endpoint.Unlock()
+
+		dela.Logger.Info().Msg("stream has been cleaned")
+	})
+
 	endpoint.Lock()
 	endpoint.streams[streamID] = sess
-	endpoint.Unlock()
 
 	o.closer.Add(1)
 
+	ready := make(chan struct{})
+
 	go func() {
-		sess.Listen(stream)
+		sess.Listen(relay, table, ready)
 		o.closer.Done()
 	}()
+
+	// There, it is important to make sure the parent relay is registered in the
+	// session before releasing the endpoint.
+	<-ready
+
+	endpoint.Unlock()
 
 	err = stream.SendHeader(make(metadata.MD))
 	if err != nil {
