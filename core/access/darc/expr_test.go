@@ -2,79 +2,75 @@ package darc
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/access"
-	"go.dedis.ch/dela/internal/testing/fake"
-	"golang.org/x/xerrors"
 )
 
-func TestExpression_GetMatches(t *testing.T) {
+func TestIdentitySet_New(t *testing.T) {
+	iset := NewIdentitySet(newIdentity("A"), newIdentity("B"), newIdentity("A"))
+	require.Len(t, iset, 2)
+}
+
+func TestIdentitySet_Search(t *testing.T) {
+	iset := NewIdentitySet(newIdentity("A"), newIdentity("B"))
+
+	require.True(t, iset.Contains(newIdentity("A")))
+	require.True(t, iset.Contains(newIdentity("B")))
+	require.False(t, iset.Contains(newIdentity("C")))
+}
+
+func TestIdentitySet_Equal(t *testing.T) {
+	iset := NewIdentitySet(newIdentity("A"), newIdentity("C"))
+
+	require.True(t, iset.Equal(iset))
+	require.False(t, iset.Equal(NewIdentitySet()))
+	require.False(t, iset.Equal(NewIdentitySet(newIdentity("A"), newIdentity("B"))))
+}
+
+func TestExpression_GetIdentitySets(t *testing.T) {
 	expr := Expression{
-		matches: map[string]struct{}{"A": {}, "B": {}},
+		matches: []IdentitySet{{}, {}},
 	}
 
-	require.Len(t, expr.GetMatches(), 2)
+	require.Len(t, expr.GetIdentitySets(), 2)
 }
 
 func TestExpression_Evolve(t *testing.T) {
-	expr := newExpression()
+	expr := NewExpression()
 
-	expr, err := expr.Evolve(nil)
-	require.NoError(t, err)
+	expr.Evolve(true, nil)
 	require.Len(t, expr.matches, 0)
 
-	idents := []access.Identity{
-		fakeIdentity{buffer: []byte{0xaa}},
-		fakeIdentity{buffer: []byte{0xbb}},
-	}
+	idents := []access.Identity{newIdentity("A"), newIdentity("B")}
 
-	expr, err = expr.Evolve(idents)
-	require.NoError(t, err)
+	expr.Evolve(true, idents)
+	require.Len(t, expr.matches, 1)
+	require.Len(t, expr.matches[0], 2)
+
+	expr.Evolve(true, idents)
+	require.Len(t, expr.matches, 1)
+
+	expr.Evolve(true, []access.Identity{newIdentity("A"), newIdentity("C")})
 	require.Len(t, expr.matches, 2)
 
-	expr, err = expr.Evolve(idents)
-	require.NoError(t, err)
-	require.Len(t, expr.matches, 2)
-
-	_, err = expr.Evolve([]access.Identity{fakeIdentity{err: xerrors.New("oops")}})
-	require.EqualError(t, err, "couldn't marshal identity: oops")
+	expr.Evolve(false, idents)
+	require.Len(t, expr.matches, 1)
 }
 
 func TestExpression_Match(t *testing.T) {
-	idents := []access.Identity{
-		fakeIdentity{buffer: []byte{0xaa}},
-		fakeIdentity{buffer: []byte{0xbb}},
-	}
+	idents := []access.Identity{newIdentity("A"), newIdentity("B")}
 
-	expr, err := newExpression().Evolve(idents)
+	expr := NewExpression()
+	expr.Evolve(true, idents)
+
+	err := expr.Match(idents)
 	require.NoError(t, err)
 
-	err = expr.Match(idents)
-	require.NoError(t, err)
-
-	err = expr.Match([]access.Identity{fakeIdentity{buffer: []byte{0xcc}}})
-	require.EqualError(t, err, "couldn't match identity '\xcc'")
-
-	err = expr.Match([]access.Identity{fakeIdentity{err: xerrors.New("oops")}})
-	require.EqualError(t, err, "couldn't marshal identity: oops")
-}
-
-func TestExpression_Fingerprint(t *testing.T) {
-	expr := Expression{matches: map[string]struct{}{
-		"\x01": {},
-		"\x03": {},
-	}}
-
-	buffer := new(bytes.Buffer)
-
-	err := expr.Fingerprint(buffer)
-	require.NoError(t, err)
-	require.Equal(t, "\x01\x03", buffer.String())
-
-	err = expr.Fingerprint(fake.NewBadHash())
-	require.EqualError(t, err, "couldn't write match: fake error")
+	err = expr.Match([]access.Identity{newIdentity("A"), newIdentity("C")})
+	require.EqualError(t, err, "unauthorized: ['A' 'C']")
 }
 
 // -----------------------------------------------------------------------------
@@ -82,14 +78,19 @@ func TestExpression_Fingerprint(t *testing.T) {
 
 type fakeIdentity struct {
 	access.Identity
+
 	buffer []byte
-	err    error
 }
 
-func (i fakeIdentity) MarshalText() ([]byte, error) {
-	return i.buffer, i.err
+func newIdentity(value string) fakeIdentity {
+	return fakeIdentity{buffer: []byte(value)}
 }
 
 func (i fakeIdentity) String() string {
-	return string(i.buffer)
+	return fmt.Sprintf("'%s'", i.buffer)
+}
+
+func (i fakeIdentity) Equal(o interface{}) bool {
+	other, ok := o.(fakeIdentity)
+	return ok && bytes.Equal(i.buffer, other.buffer)
 }

@@ -3,33 +3,27 @@ package access
 
 import (
 	"encoding"
-	"strings"
 
+	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/serde"
 )
 
 // Identity is an abstraction to uniquely identify a signer.
 type Identity interface {
 	serde.Message
+
 	encoding.TextMarshaler
+
+	Equal(other interface{}) bool
 }
 
-// Access is an abstraction to verify if an identity has access to a
-// specific rule.
-type Access interface {
-	serde.Message
-
-	Match(rule string, idents ...Identity) error
+type Credentials interface {
+	GetID() []byte
+	GetRule() string
 }
 
-// Factory is the factory interface to deserialize accesses.
-type Factory interface {
-	serde.Factory
+type Service interface {
+	Match(store store.Readable, creds Credentials, idents ...Identity) error
 
-	AccessOf(serde.Context, []byte) (Access, error)
-}
-
-// Compile returns a compacted rule from the string segments.
-func Compile(segments ...string) string {
-	return strings.Join(segments, ":")
+	Grant(store store.Snapshot, creds Credentials, idents ...Identity) error
 }

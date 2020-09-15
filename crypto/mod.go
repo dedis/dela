@@ -27,7 +27,7 @@ type PublicKey interface {
 
 	Verify(msg []byte, signature Signature) error
 
-	Equal(other PublicKey) bool
+	Equal(other interface{}) bool
 }
 
 // PublicKeyFactory is a factory to decode public keys.

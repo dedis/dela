@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/txn"
@@ -32,7 +33,7 @@ func TestNewTransaction(t *testing.T) {
 func TestContract_Execute(t *testing.T) {
 	fac := authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 
-	contract := NewContract([]byte("abc"), fac)
+	contract := NewContract([]byte("roster"), []byte("access"), fac, fakeAccessService{})
 
 	err := contract.Execute(makeTx(t, "[]"), fakeStore{})
 	require.NoError(t, err)
@@ -113,4 +114,12 @@ type badManager struct {
 
 func (badManager) Make(opts ...txn.Arg) (txn.Transaction, error) {
 	return nil, xerrors.New("oops")
+}
+
+type fakeAccessService struct {
+	access.Service
+}
+
+func (fakeAccessService) Match(store.Readable, access.Credentials, ...access.Identity) error {
+	return nil
 }

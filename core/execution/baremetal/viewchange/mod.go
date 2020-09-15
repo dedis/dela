@@ -2,6 +2,7 @@ package viewchange
 
 import (
 	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/execution/baremetal"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/store"
@@ -13,7 +14,7 @@ import (
 
 const (
 	// ContractName is the name of the contract.
-	ContractName = "go.dedis.ch/dela/core/execution/baremetal/viewchange.Contract"
+	ContractName = "go.dedis.ch/dela.ViewChange"
 
 	// AuthorityArg is the key of the argument for the new authority.
 	AuthorityArg = "viewchange:authority"
@@ -24,7 +25,16 @@ const (
 	messageTooManyChanges   = "too many changes"
 	messageStorageFailure   = "storage failure"
 	messageDuplicate        = "duplicate in roster"
+	messageUnauthorized     = "unauthorized"
 )
+
+func RegisterContract(exec *baremetal.BareMetal, c Contract) {
+	exec.Set(ContractName, c)
+}
+
+func NewCreds(id []byte) access.Credentials {
+	return access.NewContractCreds(id, ContractName, "update")
+}
 
 // Manager is an extension of a normal transaction manager to help creating view
 // change ones.
@@ -67,14 +77,18 @@ func (mgr Manager) Make(roster authority.Authority) (txn.Transaction, error) {
 type Contract struct {
 	rosterKey []byte
 	rosterFac authority.Factory
+	accessKey []byte
+	access    access.Service
 	context   serde.Context
 }
 
 // NewContract creates a new viewchange contract.
-func NewContract(key []byte, fac authority.Factory) Contract {
+func NewContract(rKey, aKey []byte, rFac authority.Factory, srvc access.Service) Contract {
 	return Contract{
-		rosterKey: key,
-		rosterFac: fac,
+		rosterKey: rKey,
+		rosterFac: rFac,
+		accessKey: aKey,
+		access:    srvc,
 		context:   json.NewContext(),
 	}
 }
@@ -118,7 +132,15 @@ func (c Contract) Execute(tx txn.Transaction, snap store.Snapshot) error {
 	}
 
 	// TODO: check the number of changes per batch instead of transaction wide.
-	// TODO: access rights control
+
+	creds := NewCreds(c.accessKey)
+
+	err = c.access.Match(snap, creds, tx.GetIdentity())
+	if err != nil {
+		reportErr(tx, xerrors.Errorf("access control: %v", err))
+
+		return xerrors.Errorf("access control: %v", err)
+	}
 
 	err = snap.Set(c.rosterKey, tx.GetArg(AuthorityArg))
 	if err != nil {

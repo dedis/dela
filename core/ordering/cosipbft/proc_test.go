@@ -76,6 +76,7 @@ func TestProcessor_GenesisMessage_Process(t *testing.T) {
 	proc := newProcessor()
 	proc.tree = blockstore.NewTreeCache(fakeTree{})
 	proc.genesis = blockstore.NewGenesisStore()
+	proc.access = fakeAccess{}
 
 	root := types.Digest{}
 	copy(root[:], []byte("root"))

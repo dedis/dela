@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/execution/baremetal"
 	"go.dedis.ch/dela/core/execution/baremetal/viewchange"
 	"go.dedis.ch/dela/core/ordering"
@@ -36,8 +37,10 @@ const (
 
 // RegisterRosterContract registers the baremetal contract to update the roster
 // to the given service.
-func RegisterRosterContract(exec *baremetal.BareMetal, fac authority.Factory) {
-	exec.Set(viewchange.ContractName, viewchange.NewContract(keyRoster[:], fac))
+func RegisterRosterContract(exec *baremetal.BareMetal, rFac authority.Factory, srvc access.Service) {
+	contract := viewchange.NewContract(keyRoster[:], keyAccess[:], rFac, srvc)
+
+	viewchange.RegisterContract(exec, contract)
 }
 
 // Service is an ordering service using collective signatures combined with PBFT
@@ -81,6 +84,7 @@ type ServiceParam struct {
 	Mino       mino.Mino
 	Cosi       cosi.CollectiveSigning
 	Validation validation.Service
+	Access     access.Service
 	Pool       pool.Pool
 	Tree       hashtree.Tree
 	DB         kv.DB
@@ -105,6 +109,7 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 	proc.pool = param.Pool
 	proc.rosterFac = authority.NewFactory(param.Mino.GetAddressFactory(), param.Cosi.GetPublicKeyFactory())
 	proc.tree = blockstore.NewTreeCache(param.Tree)
+	proc.access = param.Access
 	proc.logger = dela.Logger.With().Str("addr", param.Mino.GetAddress().String()).Logger()
 
 	pcparam := pbft.StateMachineParam{

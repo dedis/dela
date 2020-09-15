@@ -9,7 +9,7 @@ import (
 
 const (
 	// ContractArg is the argument key in the transaction to look up a contract.
-	ContractArg = "go.dedis.ch/dela/core/execution/baremetal.ContractArg"
+	ContractArg = "go.dedis.ch/dela.ContractArg"
 )
 
 // Contract is the interface to implement to register a smart contract that will

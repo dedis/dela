@@ -1,98 +1,109 @@
 package darc
 
 import (
-	"io"
-	"sort"
-
 	"go.dedis.ch/dela/core/access"
 	"golang.org/x/xerrors"
 )
 
-// Expression is an abstraction of a list of identities allowed for a given
-// rule.
-//
-// - implements encoding.Packable
+// IdentitySet is a set of identities that belongs to one of the conjunction.
+type IdentitySet []access.Identity
+
+// NewIdentitySet creates a new identity set from the list of identities by
+// removing duplicates.
+func NewIdentitySet(idents ...access.Identity) IdentitySet {
+	set := make(IdentitySet, 0, len(idents))
+	if len(idents) == 0 {
+		return set
+	}
+
+	for _, ident := range idents {
+		if !set.Contains(ident) {
+			set = append(set, ident)
+		}
+	}
+
+	return set[:]
+}
+
+// Contains returns true if the identity exists in the set.
+func (set IdentitySet) Contains(target access.Identity) bool {
+	_, found := set.Search(target)
+	return found
+}
+
+func (set IdentitySet) Search(target access.Identity) (int, bool) {
+	for i, ident := range set {
+		if ident.Equal(target) {
+			return i, true
+		}
+	}
+
+	return -1, false
+}
+
+// Equal return true if both sets are the same.
+func (set IdentitySet) Equal(o IdentitySet) bool {
+	if len(set) != len(o) {
+		return false
+	}
+
+	for _, ident := range set {
+		if !o.Contains(ident) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// Expression is the representation of the disjunctive normal form of the
+// allowed groups of identities.
 type Expression struct {
-	matches map[string]struct{}
+	matches []IdentitySet
 }
 
-func newExpression() Expression {
-	return Expression{
-		matches: make(map[string]struct{}),
+func NewExpression(sets ...IdentitySet) *Expression {
+	return &Expression{
+		matches: sets,
 	}
 }
 
-// GetMatches returns the list of possible matches for an expression.
-func (expr Expression) GetMatches() []string {
-	matches := make([]string, 0, len(expr.matches))
-	for match := range expr.matches {
-		matches = append(matches, match)
-	}
-
-	return matches
+// GetIdentitySets returns the list of identity sets.
+func (expr *Expression) GetIdentitySets() []IdentitySet {
+	return append([]IdentitySet{}, expr.matches...)
 }
 
-// Evolve returns a new expression with the targets added in the list of
+// Evolve returns a new expression with the group added in the list of
 // authorized identities.
-func (expr Expression) Evolve(targets []access.Identity) (Expression, error) {
-	e := expr.Clone()
-
-	for _, target := range targets {
-		text, err := target.MarshalText()
-		if err != nil {
-			return e, xerrors.Errorf("couldn't marshal identity: %v", err)
-		}
-
-		e.matches[string(text)] = struct{}{}
+func (expr *Expression) Evolve(grant bool, group []access.Identity) {
+	iset := NewIdentitySet(group...)
+	if len(iset) == 0 {
+		return
 	}
 
-	return e, nil
+	for i, match := range expr.matches {
+		if match.Equal(iset) {
+			if !grant {
+				expr.matches = append(expr.matches[:i], expr.matches[i+1:]...)
+			}
+
+			return
+		}
+	}
+
+	expr.matches = append(expr.matches, iset)
 }
 
-// Match returns nil if all the targets are allowed for the rule, otherwise it
-// returns the reason why it failed.
-func (expr Expression) Match(targets []access.Identity) error {
-	for _, target := range targets {
-		text, err := target.MarshalText()
-		if err != nil {
-			return xerrors.Errorf("couldn't marshal identity: %v", err)
-		}
+// Match returns nil if the group are allowed for the rule, otherwise it returns
+// the reason why it failed.
+func (expr *Expression) Match(group []access.Identity) error {
+	iset := NewIdentitySet(group...)
 
-		_, ok := expr.matches[string(text)]
-		if !ok {
-			return xerrors.Errorf("couldn't match identity '%v'", target)
+	for _, match := range expr.matches {
+		if match.Equal(iset) {
+			return nil
 		}
 	}
 
-	return nil
-}
-
-// Fingerprint implements encoding.Fingerprinter. It serializes the expression
-// into the writer in a deterministic way.
-func (expr Expression) Fingerprint(w io.Writer) error {
-	matches := make(sort.StringSlice, 0, len(expr.matches))
-	for key := range expr.matches {
-		matches = append(matches, key)
-	}
-
-	sort.Sort(matches)
-
-	for _, match := range matches {
-		_, err := w.Write([]byte(match))
-		if err != nil {
-			return xerrors.Errorf("couldn't write match: %v", err)
-		}
-	}
-
-	return nil
-}
-
-// Clone returns a deep copy of the expression.
-func (expr Expression) Clone() Expression {
-	e := newExpression()
-	for match := range expr.matches {
-		e.matches[match] = struct{}{}
-	}
-
-	return e
+	return xerrors.Errorf("unauthorized: %v", group)
 }
