@@ -1,7 +1,7 @@
 package blockstore
 
 import (
-	"sync/atomic"
+	"sync"
 
 	"go.dedis.ch/dela/core/store/hashtree"
 )
@@ -10,27 +10,46 @@ import (
 //
 // - implements blockstore.TreeCache
 type treeCache struct {
-	tree atomic.Value
+	sync.Mutex
+	tree hashtree.Tree
 }
 
 // NewTreeCache creates a new cache with the given tree as the first value.
 func NewTreeCache(tree hashtree.Tree) TreeCache {
-	var value atomic.Value
-	value.Store(tree)
-
 	return &treeCache{
-		tree: value,
+		tree: tree,
 	}
 }
 
 // Get implements blockstore.TreeCache. It returns the current value of the
 // cache.
 func (c *treeCache) Get() hashtree.Tree {
-	return c.tree.Load().(hashtree.Tree)
+	c.Lock()
+	defer c.Unlock()
+
+	return c.tree
 }
 
 // Set implements blockstore.TreeCache. It stores the new tree as the cache
 // value but panic if it is nil.
 func (c *treeCache) Set(tree hashtree.Tree) {
-	c.tree.Store(tree)
+	c.Lock()
+	c.tree = tree
+	c.Unlock()
+}
+
+// SetAndLock implements blockstore.TreeCache. It sets the tree and acquires the
+// cache lock until the wait group is done which allows an external caller to
+// delay the release of the lock.
+func (c *treeCache) SetAndLock(tree hashtree.Tree, lock *sync.WaitGroup) {
+	c.Lock()
+	c.tree = tree
+
+	go func() {
+		// This allows an external call to hold the cache until some event are
+		// fulfilled.
+		lock.Wait()
+
+		c.Unlock()
+	}()
 }
