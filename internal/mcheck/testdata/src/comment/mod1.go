@@ -6,8 +6,20 @@ package comment
 // This line is too long and should raise an error because it exceed the 80 chars limit // want ""
 
 /*
-This line is not too long and should raise an error because it exceed the 80
+This line is not too long and should not raise an error because it exceed the 80
 chars
 */
+
+// @nolint-next-line
+// this should not raise an error because we manually set to no lint the next line
+
+/*
+// @nolint-next-line
+this should not raise an error because we manually set to no lint the next line inside block comment
+*/
+
+// https://thisisaverylongurlthatshouldnotraiseanyproblembecauseweacceptlongurlincomments
+
+// http://thisisaverylongurlthatshouldnotraiseanyproblembecauseweacceptlongurlincomments
 
 //go:generate this line should be ignore even if it's too long because it started with a go:generate

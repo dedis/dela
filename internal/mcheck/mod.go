@@ -21,7 +21,9 @@ var MaxLen = 80
 
 // This check verifies that no comments exceed the "MaxLen" length. It ignores
 // files that have as first comment a "// Code genereated..." comment and it
-// ignores comments that start with "//go:generate"
+// ignores comments that start with "//go:generate". It also ignores lines that
+// starts with a link, ie start with "http(s)://". One can also ignore a next
+// comment with "// @nolint-next-line".
 var commentLenAnalyzer = &analysis.Analyzer{
 	Name: "commentLen",
 	Doc:  "checks the lengths of comments",
@@ -59,19 +61,29 @@ fileLoop:
 				}
 				// in case of /* */ comment there might be multiple lines
 				lines := strings.Split(c.Text, "\n")
-				for _, line := range lines {
+				for j := 0; j < len(lines); j++ {
+					line := lines[j]
+
 					if strings.HasPrefix(line, "//go:generate") {
+						continue
+					}
+					if strings.HasPrefix(line, "// http://") || strings.HasPrefix(line, "// https://") {
 						continue
 					}
 					if len(line) > MaxLen {
 						pass.Reportf(c.Pos(), "Comment too long: %s (%d)",
 							line, len(line))
 					}
+					if strings.HasPrefix(line, NoLint) {
+						// Skip next comment for block comment.
+						j++
+					}
 				}
+
 				isFirst = false
 
 				if strings.HasPrefix(c.Text, NoLint) {
-					// Skip next comment.
+					// Skip next comment for one-line comment.
 					i++
 				}
 			}
