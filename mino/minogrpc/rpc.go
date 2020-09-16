@@ -195,7 +195,9 @@ func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, m
 		rpc.overlay.connMgr,
 	)
 
-	sess.Passive(relay, table)
+	// There is no listen for the orchestrator as we need to forward the
+	// messages received from the stream.
+	sess.SetPassive(relay, table)
 
 	rpc.overlay.closer.Add(1)
 

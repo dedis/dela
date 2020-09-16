@@ -44,13 +44,14 @@ type Session interface {
 	// Listen takes a stream that will determine when to close the session.
 	Listen(parent Relay, table router.RoutingTable, ready chan struct{})
 
+	// SetPassive sets a new passive parent. A passive parent is part of the
+	// parent relays, but the stream is not listen to, and thus it is not
+	// removed from the map if it closed.
+	SetPassive(parent Relay, table router.RoutingTable)
+
 	// Close shutdowns the session so that future calls to receive will return
 	// an error.
 	Close()
-
-	// Passive sets a new passive parent. A passive parent is not automatically
-	// removed from the list of parents.
-	Passive(parent Relay, table router.RoutingTable)
 
 	// RecvPacket takes a packet and the address of the distant peer that have
 	// sent it, then pass it to the correct relay according to the routing
@@ -182,6 +183,17 @@ func (s *session) Listen(relay Relay, table router.RoutingTable, ready chan stru
 	}
 }
 
+// SetPassive implements session.Session. It adds the parent relay to the map
+// but in the contrary of Listen, it won't listen for the stream.
+func (s *session) SetPassive(p Relay, table router.RoutingTable) {
+	s.parentsLock.Lock()
+	s.parents[p.GetDistantAddress()] = parent{
+		relay: p,
+		table: table,
+	}
+	s.parentsLock.Unlock()
+}
+
 // Close implements session.Session. It shutdowns the session and waits for the
 // relays to close.
 func (s *session) Close() {
@@ -190,16 +202,6 @@ func (s *session) Close() {
 	s.Wait()
 
 	s.logger.Trace().Msg("session has been closed")
-}
-
-// Passive implements session.Session. It sets a passive parent.
-func (s *session) Passive(p Relay, table router.RoutingTable) {
-	s.parentsLock.Lock()
-	s.parents[p.GetDistantAddress()] = parent{
-		relay: p,
-		table: table,
-	}
-	s.parentsLock.Unlock()
 }
 
 // RecvPacket implements session.Session. It process the packet and send it to

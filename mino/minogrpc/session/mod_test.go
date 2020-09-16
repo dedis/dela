@@ -104,7 +104,7 @@ func TestSession_Passive(t *testing.T) {
 		parents: make(map[mino.Address]parent),
 	}
 
-	sess.Passive(&streamRelay{}, fakeTable{})
+	sess.SetPassive(&streamRelay{}, fakeTable{})
 	require.Len(t, sess.parents, 1)
 }
 
