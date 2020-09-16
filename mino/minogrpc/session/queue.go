@@ -96,16 +96,16 @@ func (q *NonBlockingQueue) pushAndWait() {
 func (q *NonBlockingQueue) replaceBuffer() bool {
 	exp := float64(0)
 	if cap(q.buffer) > 0 {
-		exp = math.Floor(math.Log2(float64(cap(q.buffer)))) + 1
+		exp = math.Floor(math.Log2(float64(cap(q.buffer))/q.cap)) + 1
 	}
 
 	if exp > q.limit {
 		return false
 	}
 
-	size := int(math.Pow(2, exp) * q.cap)
+	newSize := int(math.Pow(2, exp) * q.cap)
 
-	buffer := make([]router.Packet, len(q.buffer), size)
+	buffer := make([]router.Packet, len(q.buffer), newSize)
 	copy(buffer, q.buffer)
 	q.buffer = buffer
 
