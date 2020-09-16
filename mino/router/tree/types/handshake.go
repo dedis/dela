@@ -19,7 +19,7 @@ type Handshake struct {
 }
 
 // NewHandshake returns a new handshake message.
-func NewHandshake(height int, expected []mino.Address) Handshake {
+func NewHandshake(height int, expected ...mino.Address) Handshake {
 	return Handshake{
 		height:   height,
 		expected: expected,

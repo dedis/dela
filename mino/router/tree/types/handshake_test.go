@@ -21,13 +21,13 @@ func TestHandshake_GetHeight(t *testing.T) {
 }
 
 func TestHandshake_GetAddresses(t *testing.T) {
-	hs := NewHandshake(3, makeAddrs(5))
+	hs := NewHandshake(3, makeAddrs(5)...)
 
 	require.Len(t, hs.GetAddresses(), 5)
 }
 
 func TestHandshake_Serialize(t *testing.T) {
-	hs := NewHandshake(3, makeAddrs(5))
+	hs := NewHandshake(3, makeAddrs(5)...)
 
 	ctx := fake.NewContext()
 

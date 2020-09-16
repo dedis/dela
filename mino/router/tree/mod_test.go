@@ -40,7 +40,7 @@ func TestRouter_New(t *testing.T) {
 func TestRouter_TableOf(t *testing.T) {
 	router := NewRouter(fake.AddressFactory{})
 
-	hs := types.NewHandshake(3, makeAddrs(5))
+	hs := types.NewHandshake(3, makeAddrs(5)...)
 	table, err := router.TableOf(hs)
 	require.NoError(t, err)
 	require.NotNil(t, table)

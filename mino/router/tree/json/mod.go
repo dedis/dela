@@ -8,7 +8,7 @@ import (
 )
 
 func init() {
-	types.RegisterPacketFormat(serde.FormatJSON, newpacketFormat())
+	types.RegisterPacketFormat(serde.FormatJSON, packetFormat{})
 	types.RegisterHandshakeFormat(serde.FormatJSON, hsFormat{})
 }
 
@@ -19,6 +19,7 @@ type PacketJSON struct {
 	Message []byte
 }
 
+// HandshakeJSON is the JSON message for the handshake.
 type HandshakeJSON struct {
 	Height    int
 	Addresses [][]byte
@@ -29,15 +30,12 @@ type HandshakeJSON struct {
 // - implements serde.FormatEngine
 type packetFormat struct{}
 
-func newpacketFormat() packetFormat {
-	return packetFormat{}
-}
-
-// Encode implements serde.FormatEngine
-func (f packetFormat) Encode(ctx serde.Context, message serde.Message) ([]byte, error) {
-	packet, ok := message.(*types.Packet)
+// Encode implements serde.FormatEngine. It returns the serialized data for the
+// packet if appropriate, otherwise it returns an error.
+func (f packetFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
+	packet, ok := msg.(*types.Packet)
 	if !ok {
-		return nil, xerrors.Errorf("unexpected type: %T != %T", packet, message)
+		return nil, xerrors.Errorf("unsupported message '%T'", msg)
 	}
 
 	source, err := packet.GetSource().MarshalText()
@@ -70,7 +68,8 @@ func (f packetFormat) Encode(ctx serde.Context, message serde.Message) ([]byte, 
 	return data, nil
 }
 
-// Decode implements serde.FormatEngine
+// Decode implements serde.FormatEngine. It populates the packet if appropriate,
+// otherwise it returns an error.
 func (f packetFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	p := PacketJSON{}
 
@@ -83,7 +82,7 @@ func (f packetFormat) Decode(ctx serde.Context, data []byte) (serde.Message, err
 
 	fac, ok := factory.(mino.AddressFactory)
 	if !ok {
-		return nil, xerrors.Errorf("invalid factory of type '%T'", factory)
+		return nil, xerrors.Errorf("invalid address factory '%T'", factory)
 	}
 
 	source := fac.FromText(p.Source)
@@ -98,19 +97,24 @@ func (f packetFormat) Decode(ctx serde.Context, data []byte) (serde.Message, err
 	return packet, nil
 }
 
+// HandshakeFormat is the format engine to encode and decode handshake messages.
+//
+// - implements serde.FormatEngine
 type hsFormat struct{}
 
+// Encode implements serde.FormatEngine. It returns the serialized data for the
+// handshake if appropriate, otherwise it returns an error.
 func (hsFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	hs, ok := msg.(types.Handshake)
 	if !ok {
-		return nil, xerrors.Errorf("invalid handshake '%T'", msg)
+		return nil, xerrors.Errorf("unsupported message '%T'", msg)
 	}
 
 	addrs := make([][]byte, len(hs.GetAddresses()))
 	for i, addr := range hs.GetAddresses() {
 		raw, err := addr.MarshalText()
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("failed to marshal address: %v", err)
 		}
 
 		addrs[i] = raw
@@ -123,24 +127,26 @@ func (hsFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 
 	data, err := ctx.Marshal(m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to marshal handshake: %v", err)
 	}
 
 	return data, nil
 }
 
+// Decode implements serde.FormatEngine. It populates the handshake if
+// appropriate, otherwise it returns an error.
 func (hsFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := HandshakeJSON{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to unmarshal: %v", err)
 	}
 
 	fac := ctx.GetFactory(types.AddrKey{})
 
 	factory, ok := fac.(mino.AddressFactory)
 	if !ok {
-		return nil, xerrors.Errorf("invalid factory")
+		return nil, xerrors.Errorf("invalid address factory '%T'", fac)
 	}
 
 	addrs := make([]mino.Address, len(m.Addresses))
@@ -148,5 +154,5 @@ func (hsFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 		addrs[i] = factory.FromText(raw)
 	}
 
-	return types.NewHandshake(m.Height, addrs), nil
+	return types.NewHandshake(m.Height, addrs...), nil
 }

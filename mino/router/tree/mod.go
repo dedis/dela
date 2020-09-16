@@ -92,7 +92,7 @@ func (t Table) Make(src mino.Address, to []mino.Address, msg []byte) router.Pack
 func (t Table) Prelude(to mino.Address) router.Handshake {
 	newHeight := t.tree.GetMaxHeight() - 1
 
-	return types.NewHandshake(newHeight, t.tree.GetChildren(to))
+	return types.NewHandshake(newHeight, t.tree.GetChildren(to)...)
 }
 
 // Forward implements router.RoutingTable. It takes a packet and split it into
