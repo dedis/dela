@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
@@ -1048,4 +1049,44 @@ func (ctx ContextEngine) Unmarshal(data []byte, m interface{}) error {
 	}
 
 	return ctx.err
+}
+
+type InMemorySnapshot struct {
+	store.Snapshot
+
+	values    map[string][]byte
+	ErrRead   error
+	ErrWrite  error
+	ErrDelete error
+}
+
+func NewSnapshot() *InMemorySnapshot {
+	return &InMemorySnapshot{
+		values: make(map[string][]byte),
+	}
+}
+
+func NewBadSnapshot() *InMemorySnapshot {
+	return &InMemorySnapshot{
+		values:    make(map[string][]byte),
+		ErrRead:   xerrors.New("fake error"),
+		ErrWrite:  xerrors.New("fake error"),
+		ErrDelete: xerrors.New("fake error"),
+	}
+}
+
+func (snap *InMemorySnapshot) Get(key []byte) ([]byte, error) {
+	return snap.values[string(key)], snap.ErrRead
+}
+
+func (snap *InMemorySnapshot) Set(key, value []byte) error {
+	snap.values[string(key)] = value
+
+	return snap.ErrWrite
+}
+
+func (snap *InMemorySnapshot) Delete(key []byte) error {
+	delete(snap.values, string(key))
+
+	return snap.ErrDelete
 }

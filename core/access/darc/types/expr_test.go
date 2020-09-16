@@ -1,4 +1,4 @@
-package darc
+package types
 
 import (
 	"bytes"
@@ -22,12 +22,14 @@ func TestIdentitySet_Search(t *testing.T) {
 	require.False(t, iset.Contains(newIdentity("C")))
 }
 
-func TestIdentitySet_Equal(t *testing.T) {
+func TestIdentitySet_IsSuperset(t *testing.T) {
 	iset := NewIdentitySet(newIdentity("A"), newIdentity("C"))
 
-	require.True(t, iset.Equal(iset))
-	require.False(t, iset.Equal(NewIdentitySet()))
-	require.False(t, iset.Equal(NewIdentitySet(newIdentity("A"), newIdentity("B"))))
+	require.True(t, iset.IsSuperset(iset))
+	require.True(t, iset.IsSuperset(NewIdentitySet(newIdentity("A"))))
+	require.True(t, iset.IsSuperset(NewIdentitySet()))
+	require.False(t, iset.IsSuperset(NewIdentitySet(newIdentity("A"), newIdentity("B"))))
+	require.False(t, iset.IsSuperset(NewIdentitySet(newIdentity("B"))))
 }
 
 func TestExpression_GetIdentitySets(t *testing.T) {

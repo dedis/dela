@@ -1,4 +1,4 @@
-package darc
+package types
 
 import (
 	"go.dedis.ch/dela/core/access"
@@ -31,6 +31,8 @@ func (set IdentitySet) Contains(target access.Identity) bool {
 	return found
 }
 
+// Search searches for the target in the set and returns the index if it exists,
+// otherwise a negative value.
 func (set IdentitySet) Search(target access.Identity) (int, bool) {
 	for i, ident := range set {
 		if ident.Equal(target) {
@@ -41,14 +43,14 @@ func (set IdentitySet) Search(target access.Identity) (int, bool) {
 	return -1, false
 }
 
-// Equal return true if both sets are the same.
-func (set IdentitySet) Equal(o IdentitySet) bool {
-	if len(set) != len(o) {
+// IsSuperset return true if both sets are the same.
+func (set IdentitySet) IsSuperset(o IdentitySet) bool {
+	if len(set) < len(o) {
 		return false
 	}
 
-	for _, ident := range set {
-		if !o.Contains(ident) {
+	for _, ident := range o {
+		if !set.Contains(ident) {
 			return false
 		}
 	}
@@ -62,6 +64,7 @@ type Expression struct {
 	matches []IdentitySet
 }
 
+// NewExpression creates a new expression from the list of identity sets.
 func NewExpression(sets ...IdentitySet) *Expression {
 	return &Expression{
 		matches: sets,
@@ -82,7 +85,7 @@ func (expr *Expression) Evolve(grant bool, group []access.Identity) {
 	}
 
 	for i, match := range expr.matches {
-		if match.Equal(iset) {
+		if match.IsSuperset(iset) {
 			if !grant {
 				expr.matches = append(expr.matches[:i], expr.matches[i+1:]...)
 			}
@@ -100,7 +103,7 @@ func (expr *Expression) Match(group []access.Identity) error {
 	iset := NewIdentitySet(group...)
 
 	for _, match := range expr.matches {
-		if match.Equal(iset) {
+		if iset.IsSuperset(match) {
 			return nil
 		}
 	}

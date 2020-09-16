@@ -1,4 +1,4 @@
-package darc
+package types
 
 import (
 	"go.dedis.ch/dela/core/access"
@@ -34,6 +34,7 @@ func WithRule(rule string, group ...access.Identity) PermissionOption {
 	}
 }
 
+// WithExpression is an option to set a rule from its expression.
 func WithExpression(rule string, expr *Expression) PermissionOption {
 	return func(perm *DisjunctivePermission) {
 		perm.rules[rule] = expr
@@ -99,7 +100,7 @@ func (perm *DisjunctivePermission) Match(rule string, group ...access.Identity) 
 
 	err := expr.Match(group)
 	if err != nil {
-		return xerrors.Errorf("couldn't match '%s': %v", rule, err)
+		return xerrors.Errorf("rule '%s': %v", rule, err)
 	}
 
 	return nil
@@ -118,11 +119,12 @@ func (perm *DisjunctivePermission) Serialize(ctx serde.Context) ([]byte, error) 
 	return data, nil
 }
 
-type PublicKeyFacKey struct{}
+// PublicKeyFac is the key of the public key factory.
+type PublicKeyFac struct{}
 
 // permFac is the implementation of a permission factory.
 //
-// - implements darc.PermissionFactory
+// - implements darc.permFac
 type permFac struct {
 	fac common.PublicKeyFactory
 }
@@ -143,16 +145,16 @@ func (f permFac) Deserialize(ctx serde.Context, data []byte) (serde.Message, err
 func (f permFac) PermissionOf(ctx serde.Context, data []byte) (Permission, error) {
 	format := permFormats.Get(ctx.GetFormat())
 
-	ctx = serde.WithFactory(ctx, PublicKeyFacKey{}, f.fac)
+	ctx = serde.WithFactory(ctx, PublicKeyFac{}, f.fac)
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't decode access: %v", err)
+		return nil, xerrors.Errorf("%v format: %v", ctx.GetFormat(), err)
 	}
 
 	access, ok := msg.(Permission)
 	if !ok {
-		return nil, xerrors.Errorf("invalid access of type '%T'", msg)
+		return nil, xerrors.Errorf("invalid access '%T'", msg)
 	}
 
 	return access, nil

@@ -664,8 +664,10 @@ func (fakeRosterFac) AuthorityOf(serde.Context, []byte) (authority.Authority, er
 
 type fakeAccess struct {
 	access.Service
+
+	err error
 }
 
-func (fakeAccess) Grant(store.Snapshot, access.Credentials, ...access.Identity) error {
-	return nil
+func (srvc fakeAccess) Grant(store.Snapshot, access.Credentials, ...access.Identity) error {
+	return srvc.err
 }

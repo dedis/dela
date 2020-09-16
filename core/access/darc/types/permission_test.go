@@ -1,4 +1,4 @@
-package darc
+package types
 
 import (
 	"testing"
@@ -11,6 +11,7 @@ import (
 func init() {
 	RegisterPermissionFormat(fake.GoodFormat, fake.Format{Msg: &DisjunctivePermission{}})
 	RegisterPermissionFormat(fake.BadFormat, fake.NewBadFormat())
+	RegisterPermissionFormat(fake.MsgFormat, fake.NewMsgFormat())
 }
 
 func TestPermission_WithRule(t *testing.T) {
@@ -19,6 +20,11 @@ func TestPermission_WithRule(t *testing.T) {
 	require.Len(t, perm.rules, 1)
 	require.Len(t, perm.rules["A"].matches, 1)
 	require.Len(t, perm.rules["A"].matches[0], 2)
+}
+
+func TestPermission_WithExpression(t *testing.T) {
+	perm := NewPermission(WithExpression("test", NewExpression()))
+	require.Len(t, perm.rules, 1)
 }
 
 func TestPermission_GetRules(t *testing.T) {
@@ -70,8 +76,7 @@ func TestPermission_Match(t *testing.T) {
 	require.EqualError(t, err, "rule 'unknown' not found")
 
 	err = perm.Match("fake", newIdentity("C"))
-	require.EqualError(t, err,
-		"couldn't match 'fake': unauthorized: ['C']")
+	require.EqualError(t, err, "rule 'fake': unauthorized: ['C']")
 }
 
 func TestPermission_Serialize(t *testing.T) {
@@ -85,7 +90,7 @@ func TestPermission_Serialize(t *testing.T) {
 	require.EqualError(t, err, "couldn't encode access: fake error")
 }
 
-func TestFactory_Deserialize(t *testing.T) {
+func TestPermissionFactory_Deserialize(t *testing.T) {
 	factory := NewFactory()
 
 	msg, err := factory.Deserialize(fake.NewContext(), nil)
@@ -93,5 +98,8 @@ func TestFactory_Deserialize(t *testing.T) {
 	require.IsType(t, &DisjunctivePermission{}, msg)
 
 	_, err = factory.Deserialize(fake.NewBadContext(), nil)
-	require.EqualError(t, err, "couldn't decode access: fake error")
+	require.EqualError(t, err, "FakeBad format: fake error")
+
+	_, err = factory.Deserialize(fake.NewMsgContext(), nil)
+	require.EqualError(t, err, "invalid access 'fake.Message'")
 }

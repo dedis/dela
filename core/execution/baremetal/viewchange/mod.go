@@ -25,13 +25,16 @@ const (
 	messageTooManyChanges   = "too many changes"
 	messageStorageFailure   = "storage failure"
 	messageDuplicate        = "duplicate in roster"
-	messageUnauthorized     = "unauthorized"
+	messageUnauthorized     = "unauthorized identity"
 )
 
+// RegisterContract registers the view change contract to the given execution
+// service.
 func RegisterContract(exec *baremetal.BareMetal, c Contract) {
 	exec.Set(ContractName, c)
 }
 
+// NewCreds creates new credentials for a view change contract execution.
 func NewCreds(id []byte) access.Credentials {
 	return access.NewContractCreds(id, ContractName, "update")
 }
@@ -101,27 +104,27 @@ func (c Contract) Execute(tx txn.Transaction, snap store.Snapshot) error {
 	if err != nil {
 		reportErr(tx, xerrors.Errorf("incoming roster: %v", err))
 
-		return xerrors.Errorf(messageArgMissing)
+		return xerrors.New(messageArgMissing)
 	}
 
 	currData, err := snap.Get(c.rosterKey)
 	if err != nil {
 		reportErr(tx, xerrors.Errorf("reading store: %v", err))
 
-		return xerrors.Errorf(messageStorageEmpty)
+		return xerrors.New(messageStorageEmpty)
 	}
 
 	curr, err := c.rosterFac.AuthorityOf(c.context, currData)
 	if err != nil {
 		reportErr(tx, xerrors.Errorf("stored roster: %v", err))
 
-		return xerrors.Errorf(messageStorageCorrupted)
+		return xerrors.New(messageStorageCorrupted)
 	}
 
 	changeset := curr.Diff(roster)
 
 	if changeset.NumChanges() > 1 {
-		return xerrors.Errorf(messageTooManyChanges)
+		return xerrors.New(messageTooManyChanges)
 	}
 
 	for _, addr := range changeset.GetNewAddresses() {
@@ -139,14 +142,14 @@ func (c Contract) Execute(tx txn.Transaction, snap store.Snapshot) error {
 	if err != nil {
 		reportErr(tx, xerrors.Errorf("access control: %v", err))
 
-		return xerrors.Errorf("access control: %v", err)
+		return xerrors.Errorf("%s: %v", messageUnauthorized, tx.GetIdentity())
 	}
 
 	err = snap.Set(c.rosterKey, tx.GetArg(AuthorityArg))
 	if err != nil {
 		reportErr(tx, xerrors.Errorf("writing store: %v", err))
 
-		return xerrors.Errorf(messageStorageFailure)
+		return xerrors.New(messageStorageFailure)
 	}
 
 	return nil
@@ -158,5 +161,5 @@ func reportErr(tx txn.Transaction, err error) {
 	dela.Logger.Warn().
 		Hex("ID", tx.GetID()).
 		Err(err).
-		Msg("transction refused")
+		Msg("transaction refused")
 }

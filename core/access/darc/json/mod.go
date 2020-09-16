@@ -4,58 +4,63 @@ import (
 	"encoding/json"
 
 	"go.dedis.ch/dela/core/access"
-	"go.dedis.ch/dela/core/access/darc"
+	"go.dedis.ch/dela/core/access/darc/types"
 	"go.dedis.ch/dela/crypto/common"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
 func init() {
-	darc.RegisterPermissionFormat(serde.FormatJSON, permFormat{})
+	types.RegisterPermissionFormat(serde.FormatJSON, permFormat{})
 }
 
+// PermissionJSON is the JSON message for a permission.
 type PermissionJSON struct {
-	Expressions map[string]json.RawMessage
+	Expressions map[string]ExpressionJSON
 }
 
+// ExpressionJSON is the JSON message for an expression.
 type ExpressionJSON struct {
 	Identities []json.RawMessage
 	Matches    [][]int
 }
 
+// PermFormat is the format to encode and decode permission messages.
+//
+// - implements serde.FormatEngine
 type permFormat struct{}
 
+// Encode implements serde.FormatEngine. It encodes the permission message if
+// appropriate, otherwise it returns an error.
 func (permFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
-	perm, ok := msg.(*darc.DisjunctivePermission)
+	perm, ok := msg.(*types.DisjunctivePermission)
 	if !ok {
 		return nil, xerrors.Errorf("invalid permission '%T'", msg)
 	}
 
-	expressions := make(map[string]json.RawMessage)
+	expressions := make(map[string]ExpressionJSON)
 
 	for key, expr := range perm.GetRules() {
-		data, err := encodeExpression(ctx, expr)
+		m, err := encodeExpression(ctx, expr)
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("failed to encode expression: %v", err)
 		}
 
-		expressions[key] = data
+		expressions[key] = m
 	}
 
-	m := PermissionJSON{
-		Expressions: expressions,
-	}
+	m := PermissionJSON{Expressions: expressions}
 
 	data, err := ctx.Marshal(m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to marshal: %v", err)
 	}
 
 	return data, nil
 }
 
-func encodeExpression(ctx serde.Context, expr *darc.Expression) ([]byte, error) {
-	identities := make(darc.IdentitySet, 0)
+func encodeExpression(ctx serde.Context, expr *types.Expression) (m ExpressionJSON, _ error) {
+	identities := make(types.IdentitySet, 0)
 
 	matches := make([][]int, len(expr.GetIdentitySets()))
 
@@ -80,54 +85,43 @@ func encodeExpression(ctx serde.Context, expr *darc.Expression) ([]byte, error) 
 	for i, ident := range identities {
 		data, err := ident.Serialize(ctx)
 		if err != nil {
-			return nil, err
+			return m, xerrors.Errorf("failed to serialize identity: %v", err)
 		}
 
 		identitiesRaw[i] = data
 	}
 
-	m := ExpressionJSON{
-		Identities: identitiesRaw,
-		Matches:    matches,
-	}
+	m.Identities = identitiesRaw
+	m.Matches = matches
 
-	data, err := ctx.Marshal(m)
-	if err != nil {
-		return nil, err
-	}
-
-	return data, nil
+	return m, nil
 }
 
+// Decode implements serde.FormatEngine. It populates the permission from the
+// data if appropriate, otherwise it returns an error.
 func (permFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := PermissionJSON{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to unmarshal: %v", err)
 	}
 
-	opts := make([]darc.PermissionOption, 0, len(m.Expressions))
+	opts := make([]types.PermissionOption, 0, len(m.Expressions))
 
 	for rule, raw := range m.Expressions {
 		expr, err := decodeExpr(ctx, raw)
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("failed to decode expression: %v", err)
 		}
 
-		opts = append(opts, darc.WithExpression(rule, expr))
+		opts = append(opts, types.WithExpression(rule, expr))
 	}
 
-	return darc.NewPermission(opts...), nil
+	return types.NewPermission(opts...), nil
 }
 
-func decodeExpr(ctx serde.Context, data []byte) (*darc.Expression, error) {
-	m := ExpressionJSON{}
-	err := ctx.Unmarshal(data, &m)
-	if err != nil {
-		return nil, err
-	}
-
-	fac := ctx.GetFactory(darc.PublicKeyFacKey{})
+func decodeExpr(ctx serde.Context, m ExpressionJSON) (*types.Expression, error) {
+	fac := ctx.GetFactory(types.PublicKeyFac{})
 
 	factory, ok := fac.(common.PublicKeyFactory)
 	if !ok {
@@ -139,21 +133,21 @@ func decodeExpr(ctx serde.Context, data []byte) (*darc.Expression, error) {
 	for i, raw := range m.Identities {
 		pubkey, err := factory.PublicKeyOf(ctx, raw)
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("public key: %v", err)
 		}
 
 		identities[i] = pubkey
 	}
 
-	matches := make([]darc.IdentitySet, len(m.Matches))
+	matches := make([]types.IdentitySet, len(m.Matches))
 
 	for i, indices := range m.Matches {
-		matches[i] = make(darc.IdentitySet, len(indices))
+		matches[i] = make(types.IdentitySet, len(indices))
 
 		for j, index := range indices {
 			matches[i][j] = identities[index]
 		}
 	}
 
-	return darc.NewExpression(matches...), nil
+	return types.NewExpression(matches...), nil
 }

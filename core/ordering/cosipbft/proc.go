@@ -190,13 +190,13 @@ func (h *processor) storeGenesis(roster authority.Authority, match *types.Digest
 
 		err = snap.Set(keyRoster[:], value)
 		if err != nil {
-			return err
+			return xerrors.Errorf("failed to store roster: %v", err)
 		}
 
 		return nil
 	})
 	if err != nil {
-		return xerrors.Errorf("tree stage failed: %v", err)
+		return xerrors.Errorf("while updating tree: %v", err)
 	}
 
 	root := types.Digest{}
