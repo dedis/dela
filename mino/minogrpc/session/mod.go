@@ -224,6 +224,7 @@ func (s *session) close() {
 func (s *session) sendPacket(ctx context.Context, p router.Packet, fn func(error)) {
 	me := p.Slice(s.me)
 	if me != nil {
+		// TODO: check error after merging PR #104
 		s.queue.Push(me)
 	}
 
