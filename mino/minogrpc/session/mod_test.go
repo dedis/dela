@@ -132,7 +132,7 @@ func TestSession_RecvPacket(t *testing.T) {
 	sess.pktFac = fakePktFac{}
 	sess.parents = nil
 	_, err = sess.RecvPacket(fake.NewAddress(0), &ptypes.Packet{})
-	require.EqualError(t, err, "packet is dropped")
+	require.EqualError(t, err, "packet is dropped (tried 0 parent-s)")
 }
 
 func TestSession_Send(t *testing.T) {

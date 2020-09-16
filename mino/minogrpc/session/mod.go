@@ -45,7 +45,7 @@ type Session interface {
 	Listen(parent Relay, table router.RoutingTable, ready chan struct{})
 
 	// SetPassive sets a new passive parent. A passive parent is part of the
-	// parent relays, but the stream is not listen to, and thus it is not
+	// parent relays, but the stream does not listen to, and thus it is not
 	// removed from the map if it closed.
 	SetPassive(parent Relay, table router.RoutingTable)
 
@@ -104,7 +104,7 @@ type session struct {
 
 	parents map[mino.Address]parent
 	// A read-write lock is used there as there are much more read requests than
-	// write ones, and the read should be parrallelized.
+	// write ones, and the read should be parralellized.
 	parentsLock sync.RWMutex
 }
 
@@ -151,7 +151,7 @@ func (s *session) GetNumParents() int {
 }
 
 // Listen implements session.Session. It listens for the stream and returns only
-// when the is has been closed.
+// when the stream has been closed.
 func (s *session) Listen(relay Relay, table router.RoutingTable, ready chan struct{}) {
 	defer func() {
 		s.parentsLock.Lock()
@@ -215,6 +215,7 @@ func (s *session) RecvPacket(from mino.Address, p *ptypes.Packet) (*ptypes.Ack, 
 	s.parentsLock.RLock()
 	defer s.parentsLock.RUnlock()
 
+	// Try to send the packet to each parent until one works.
 	for _, parent := range s.parents {
 		s.traffic.LogRecv(parent.relay.Stream().Context(), from, pkt)
 
@@ -233,7 +234,7 @@ func (s *session) RecvPacket(from mino.Address, p *ptypes.Packet) (*ptypes.Ack, 
 		}
 	}
 
-	return nil, xerrors.New("packet is dropped")
+	return nil, xerrors.Errorf("packet is dropped (tried %d parent-s)", len(s.parents))
 }
 
 // Send implements mino.Sender. It sends the message to the provided addresses

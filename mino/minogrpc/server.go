@@ -277,7 +277,7 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 
 	endpoint.Unlock()
 
-	// This event sent a confirmation to the parent that the stream is
+	// This event sends a confirmation to the parent that the stream is
 	// registered and it can send messages to it.
 	err = stream.SendHeader(make(metadata.MD))
 	if err != nil {
