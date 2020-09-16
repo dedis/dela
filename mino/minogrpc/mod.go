@@ -4,11 +4,9 @@
 package minogrpc
 
 import (
-	"bytes"
 	"crypto/tls"
 	"fmt"
 	"net"
-	"net/url"
 	"regexp"
 	"sync"
 	"time"
@@ -36,81 +34,12 @@ var (
 	orchestratorBytes     = []byte(orchestratorCode)
 )
 
-// rootAddress is the address of the orchestrator of a protocol. When Stream is
-// called, the caller takes this address so that participants know how to route
-// message to it.
-//
-// - implements mino.Address
-type rootAddress struct{}
-
-func newRootAddress() rootAddress {
-	return rootAddress{}
-}
-
-// Equal implements mino.Address. It returns true if the other address is also a
-// root address.
-func (a rootAddress) Equal(other mino.Address) bool {
-	addr, ok := other.(rootAddress)
-	return ok && a == addr
-}
-
-// MarshalText implements mino.Address. It returns a buffer that uses the
-// private area of Unicode to define the root.
-func (a rootAddress) MarshalText() ([]byte, error) {
-	return orchestratorBytes, nil
-}
-
-// String implements fmt.Stringer. It returns a string representation of the
-// address.
-func (a rootAddress) String() string {
-	return orchestratorDescription
-}
-
-// address is a representation of the network address of a participant.
-//
-// - implements mino.Address
-type address struct {
-	host string
-}
-
-// GetDialAddress returns a string formatted to be understood by grpc.Dial()
-// functions.
-func (a address) GetDialAddress() string {
-	return a.host
-}
-
-// Equal implements mino.Address. It returns true if both addresses points to
-// the same participant.
-func (a address) Equal(other mino.Address) bool {
-	addr, ok := other.(address)
-	return ok && addr == a
-}
-
-// MarshalText implements mino.Address. It returns the text format of the
-// address that can later be deserialized.
-func (a address) MarshalText() ([]byte, error) {
-	return []byte(a.host), nil
-}
-
-// String implements fmt.Stringer. It returns a string representation of the
-// address.
-func (a address) String() string {
-	return a.host
-}
-
-// AddressFactory implements mino.AddressFactory
-type AddressFactory struct {
-	serde.Factory
-}
-
-// FromText implements mino.AddressFactory. It returns an instance of an
-// address from a byte slice.
-func (f AddressFactory) FromText(text []byte) mino.Address {
-	if bytes.Equal(text, orchestratorBytes) {
-		return newRootAddress()
+// ParseAddress is a helper to create a TCP network address.
+func ParseAddress(ip string, port uint16) net.Addr {
+	return &net.TCPAddr{
+		IP:   net.ParseIP(ip),
+		Port: int(port),
 	}
-
-	return address{host: string(text)}
 }
 
 // Joinable is an extension of the mino.Mino interface to allow distant servers
@@ -148,7 +77,7 @@ type Endpoint struct {
 // - implements fmt.Stringer
 type Minogrpc struct {
 	*overlay
-	url       *url.URL
+
 	server    *grpc.Server
 	namespace string
 	endpoints map[string]*Endpoint
@@ -158,13 +87,13 @@ type Minogrpc struct {
 
 // NewMinogrpc creates and starts a new instance. The path should be a
 // resolvable host.
-func NewMinogrpc(path string, port uint16, router router.Router) (*Minogrpc, error) {
-	url, err := url.Parse(fmt.Sprintf("//%s:%d", path, port))
+func NewMinogrpc(addr net.Addr, router router.Router) (*Minogrpc, error) {
+	socket, err := net.Listen(addr.Network(), addr.String())
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't parse url: %v", err)
+		return nil, xerrors.Errorf("failed to bind: %v", err)
 	}
 
-	me := address{host: url.Host}
+	me := address{host: socket.Addr().String()}
 
 	o, err := newOverlay(me, router, defaultAddressFactory, json.NewContext())
 	if err != nil {
@@ -176,7 +105,6 @@ func NewMinogrpc(path string, port uint16, router router.Router) (*Minogrpc, err
 
 	m := &Minogrpc{
 		overlay:   o,
-		url:       url,
 		server:    server,
 		namespace: "",
 		endpoints: make(map[string]*Endpoint),
@@ -192,10 +120,7 @@ func NewMinogrpc(path string, port uint16, router router.Router) (*Minogrpc, err
 		endpoints: m.endpoints,
 	})
 
-	err = m.listen()
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't start the server: %v", err)
-	}
+	m.listen(socket)
 
 	return m, nil
 }
@@ -302,13 +227,7 @@ func (m *Minogrpc) String() string {
 
 // Listen starts the server. It waits for the go routine to start before
 // returning.
-func (m *Minogrpc) listen() error {
-	// TODO: bind 0.0.0.0:PORT => get port from address.
-	socket, err := net.Listen("tcp4", m.url.Host)
-	if err != nil {
-		return xerrors.Errorf("failed to listen: %v", err)
-	}
-
+func (m *Minogrpc) listen(socket net.Listener) {
 	go func() {
 		defer m.closer.Done()
 
@@ -325,6 +244,4 @@ func (m *Minogrpc) listen() error {
 	// Force the go routine to be executed before returning which means the
 	// server has well started after that point.
 	<-m.started
-
-	return nil
 }

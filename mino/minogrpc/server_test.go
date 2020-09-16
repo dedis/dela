@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -127,7 +128,7 @@ func TestMinogrpc_Scenario_Failures(t *testing.T) {
 	// Send a message to the shutted down instance to setup the relay, so that
 	// we can try it will remove it and use another address later.
 	err = <-sender.Send(fake.Message{}, srvs[0].GetAddress())
-	require.EqualError(t, err, "no route to 127.0.0.1:3000: address is unreachable")
+	checkError(t, err, srvs[0])
 
 	// Test if the router learnt about the dead node and fixed the relay, while
 	// opening relay to known nodes for the following test.
@@ -135,7 +136,7 @@ func TestMinogrpc_Scenario_Failures(t *testing.T) {
 	for iter.HasNext() {
 		to := iter.GetNext()
 		errs := sender.Send(fake.Message{}, srvs[0].GetAddress(), to)
-		require.EqualError(t, <-errs, "no route to 127.0.0.1:3000: address is unreachable")
+		checkError(t, <-errs, srvs[0])
 		require.NoError(t, <-errs)
 
 		from, _, err := recvr.Recv(context.Background())
@@ -155,16 +156,14 @@ func TestMinogrpc_Scenario_Failures(t *testing.T) {
 		srvs[2].GetAddress(),
 	}
 
-	re := `^no route to 127\.0\.0\.1:300[042]: address is unreachable$`
-
 	// Test if the network can progress with the loss of a relay.
 	iter = authority.Take(mino.ListFilter([]int{3, 5, 6, 7, 9})).AddressIterator()
 	for iter.HasNext() {
 		to := iter.GetNext()
 		errs := sender.Send(fake.Message{}, append([]mino.Address{to}, closed...)...)
-		require.Regexp(t, re, <-errs)
-		require.Regexp(t, re, <-errs)
-		require.Regexp(t, re, <-errs)
+		checkError(t, <-errs, srvs[0], srvs[2], srvs[4])
+		checkError(t, <-errs, srvs[0], srvs[2], srvs[4])
+		checkError(t, <-errs, srvs[0], srvs[2], srvs[4])
 		require.NoError(t, <-errs)
 
 		from, _, err := recvr.Recv(context.Background())
@@ -486,7 +485,9 @@ func TestOverlay_Join(t *testing.T) {
 }
 
 func TestConnManager_Acquire(t *testing.T) {
-	dst, err := NewMinogrpc("127.0.0.1", 3334, nil)
+	addr := ParseAddress("127.0.0.1", 0)
+
+	dst, err := NewMinogrpc(addr, nil)
 	require.NoError(t, err)
 
 	defer dst.GracefulStop()
@@ -530,7 +531,9 @@ func makeInstances(t *testing.T, n int, call *fake.Call) ([]mino.Mino, []mino.RP
 	mm := make([]mino.Mino, n)
 	rpcs := make([]mino.RPC, n)
 	for i := range mm {
-		m, err := NewMinogrpc("127.0.0.1", 3000+uint16(i), tree.NewRouter(AddressFactory{}))
+		addr := ParseAddress("127.0.0.1", 0)
+
+		m, err := NewMinogrpc(addr, tree.NewRouter(AddressFactory{}))
 		require.NoError(t, err)
 
 		rpc, err := m.MakeRPC("test", testHandler{call: call}, fake.MessageFactory{})
@@ -548,6 +551,18 @@ func makeInstances(t *testing.T, n int, call *fake.Call) ([]mino.Mino, []mino.RP
 	}
 
 	return mm, rpcs
+}
+
+func checkError(t *testing.T, err error, mm ...mino.Mino) {
+	require.Error(t, err)
+
+	for _, m := range mm {
+		if err.Error() == fmt.Sprintf("no route to %s: address is unreachable", m.GetAddress()) {
+			return
+		}
+	}
+
+	t.Fatal("unexpected error", err)
 }
 
 func makeCtx(kv ...string) context.Context {
