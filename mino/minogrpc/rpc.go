@@ -112,11 +112,13 @@ func (rpc *RPC) Call(ctx context.Context,
 
 // Stream implements mino.RPC. It will open a stream to one of the addresses
 // with a bidirectional channel that will send and receive packets. The chosen
-// address will open one or several streams to the rest of the players.
+// address will open one or several streams to the rest of the players. The
+// choice of the gateway is first the local node if it belongs to the list,
+// otherwise the first node of the list.
 //
 // The way routes are created depends on the router implementation chosen for
 // the endpoint. It can for instance use a tree structure, which means the
-// network for 9 nodes could look like this:
+// network for 8 nodes could look like this:
 //
 //                               Orchestrator
 //                                     |
@@ -130,6 +132,10 @@ func (rpc *RPC) Call(ctx context.Context,
 // if D has to send a message to G, it will move up the tree through B, A and
 // finally C.
 func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, mino.Receiver, error) {
+	if players == nil || players.Len() == 0 {
+		return nil, nil, xerrors.New("empty list of addresses")
+	}
+
 	streamID := xid.New().String()
 
 	md := metadata.Pairs(
@@ -222,10 +228,10 @@ func (rpc RPC) findGateway(players mino.Players) (mino.Address, []mino.Address) 
 	for iter.HasNext() {
 		addr := iter.GetNext()
 
-		if !addr.Equal(rpc.overlay.me) {
-			addrs = append(addrs, addr)
-		} else {
+		if addr.Equal(rpc.overlay.me) {
 			gw = addr
+		} else {
+			addrs = append(addrs, addr)
 		}
 	}
 

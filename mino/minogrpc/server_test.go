@@ -59,7 +59,7 @@ func TestIntegration_Scenario_Stream(t *testing.T) {
 	for _, m := range mm {
 		// This makes sure that the relay handlers have been closed by the
 		// context.
-		require.NoError(t, m.(*Minogrpc).GracefulClose())
+		require.NoError(t, m.(*Minogrpc).GracefulStop())
 	}
 }
 
@@ -80,7 +80,7 @@ func TestIntegration_Scenario_Call(t *testing.T) {
 		case resp, more := <-resps:
 			if !more {
 				for _, m := range mm {
-					require.NoError(t, m.(*Minogrpc).GracefulClose())
+					require.NoError(t, m.(*Minogrpc).GracefulStop())
 				}
 
 				// Verify the parameter of the Process handler.
@@ -106,15 +106,15 @@ func TestIntegration_Scenario_Call(t *testing.T) {
 func TestMinogrpc_Scenario_Failures(t *testing.T) {
 	srvs, rpcs := makeInstances(t, 14, nil)
 	defer func() {
-		require.NoError(t, srvs[1].(*Minogrpc).GracefulClose())
-		require.NoError(t, srvs[3].(*Minogrpc).GracefulClose())
+		require.NoError(t, srvs[1].(*Minogrpc).GracefulStop())
+		require.NoError(t, srvs[3].(*Minogrpc).GracefulStop())
 		for _, srv := range srvs[5:] {
-			require.NoError(t, srv.(*Minogrpc).GracefulClose())
+			require.NoError(t, srv.(*Minogrpc).GracefulStop())
 		}
 	}()
 
 	// Shutdown one of the instance
-	require.NoError(t, srvs[0].(*Minogrpc).GracefulClose())
+	require.NoError(t, srvs[0].(*Minogrpc).GracefulStop())
 
 	authority := fake.NewAuthorityFromMino(fake.NewSigner, srvs...)
 
@@ -145,9 +145,9 @@ func TestMinogrpc_Scenario_Failures(t *testing.T) {
 
 	// This node is a relay for sure by using the tree router, so we close it to
 	// make sure the protocol can progress.
-	srvs[4].(*Minogrpc).Close()
+	srvs[4].(*Minogrpc).Stop()
 	// Close also a leaf to see if we get the feedback that it has failed.
-	srvs[2].(*Minogrpc).Close()
+	srvs[2].(*Minogrpc).Stop()
 
 	closed := []mino.Address{
 		srvs[0].GetAddress(),
@@ -157,7 +157,7 @@ func TestMinogrpc_Scenario_Failures(t *testing.T) {
 
 	re := `^no route to 127\.0\.0\.1:300[042]: address is unreachable$`
 
-	// Test if the network can progress with the lost of a relay.
+	// Test if the network can progress with the loss of a relay.
 	iter = authority.Take(mino.ListFilter([]int{3, 5, 6, 7, 9})).AddressIterator()
 	for iter.HasNext() {
 		to := iter.GetNext()
@@ -489,7 +489,7 @@ func TestConnManager_Acquire(t *testing.T) {
 	dst, err := NewMinogrpc("127.0.0.1", 3334, nil)
 	require.NoError(t, err)
 
-	defer dst.GracefulClose()
+	defer dst.GracefulStop()
 
 	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore())
 

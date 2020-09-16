@@ -67,8 +67,13 @@ type Router interface {
 // Routes is a set of relay addresses where to send the packet.
 type Routes map[mino.Address]Packet
 
+// Void is the structure that describes a void route.
+type Void struct {
+	Error error
+}
+
 // Voids is a set of addresses that cannot be addressed by the routing table.
-type Voids map[mino.Address]error
+type Voids map[mino.Address]Void
 
 // RoutingTable is built by the router and provides information about the
 // routing of the packets.

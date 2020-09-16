@@ -70,7 +70,7 @@ func TestMinogrpc_New(t *testing.T) {
 	cert := m.GetCertificate()
 	require.NotNil(t, cert)
 
-	require.NoError(t, m.GracefulClose())
+	require.NoError(t, m.GracefulStop())
 
 	_, err = NewMinogrpc("\\", 0, nil)
 	require.EqualError(t, err,
@@ -122,18 +122,18 @@ func TestMinogrpc_GracefulClose(t *testing.T) {
 	}
 
 	close(m.closing)
-	err := m.GracefulClose()
+	err := m.GracefulStop()
 	require.NoError(t, err)
 
 	m.closing = make(chan error, 1)
 	m.closing <- xerrors.New("oops")
-	err = m.GracefulClose()
+	err = m.GracefulStop()
 	require.EqualError(t, err, "server stopped unexpectedly: oops")
 
 	m.closing = make(chan error)
 	close(m.closing)
 	m.connMgr = fakeConnMgr{len: 1}
-	err = m.GracefulClose()
+	err = m.GracefulStop()
 	require.EqualError(t, err, "connection manager not empty: 1")
 }
 

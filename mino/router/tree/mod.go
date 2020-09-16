@@ -104,7 +104,7 @@ func (t Table) Forward(packet router.Packet) (router.Routes, router.Voids) {
 	for _, dest := range packet.GetDestination() {
 		gateway, err := t.tree.GetRoute(dest)
 		if err != nil {
-			voids[dest] = err
+			voids[dest] = router.Void{Error: err}
 			continue
 		}
 

@@ -232,8 +232,8 @@ func (s *session) sendPacket(ctx context.Context, p router.Packet, fn func(error
 	}
 
 	routes, voids := s.table.Forward(p)
-	for addr, err := range voids {
-		fn(xerrors.Errorf("no route to %v: %v", addr, err))
+	for addr, void := range voids {
+		fn(xerrors.Errorf("no route to %v: %v", addr, void.Error))
 	}
 
 	wg := sync.WaitGroup{}

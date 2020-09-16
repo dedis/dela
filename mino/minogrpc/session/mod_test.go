@@ -390,7 +390,7 @@ func (t fakeTable) Prelude(mino.Address) router.Handshake {
 func (t fakeTable) Forward(router.Packet) (router.Routes, router.Voids) {
 	voids := make(router.Voids)
 	if t.err != nil {
-		voids[fake.NewAddress(400)] = t.err
+		voids[fake.NewAddress(400)] = router.Void{Error: t.err}
 	}
 
 	routes := router.Routes{t.route: fakePkt{}}

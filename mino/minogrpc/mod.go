@@ -217,16 +217,16 @@ func (m *Minogrpc) GenerateToken(expiration time.Duration) string {
 	return m.tokens.Generate(expiration)
 }
 
-// GracefulClose first stops the grpc server then waits for the remaining
+// GracefulStop first stops the grpc server then waits for the remaining
 // handlers to close.
-func (m *Minogrpc) GracefulClose() error {
+func (m *Minogrpc) GracefulStop() error {
 	m.server.GracefulStop()
 
 	return m.postCheckClose()
 }
 
-// Close stops the server immediatly.
-func (m *Minogrpc) Close() error {
+// Stop stops the server immediatly.
+func (m *Minogrpc) Stop() error {
 	m.server.Stop()
 
 	return m.postCheckClose()

@@ -30,7 +30,7 @@ func TestMinimal_Run(t *testing.T) {
 	var m *minogrpc.Minogrpc
 	err = injector.Resolve(&m)
 	require.NoError(t, err)
-	require.NoError(t, m.GracefulClose())
+	require.NoError(t, m.GracefulStop())
 
 	err = minimal.Inject(fakeContext{num: 100000}, injector)
 	require.EqualError(t, err, "invalid port value 100000")

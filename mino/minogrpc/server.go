@@ -32,7 +32,9 @@ const (
 	headerURIKey      = "apiuri"
 	headerStreamIDKey = "streamid"
 	headerGatewayKey  = "gateway"
-	headerAddressKey  = "addr"
+	// headerAddressKey is the key of the header that contains the list of
+	// addresses that will allow a node to create a routing table.
+	headerAddressKey = "addr"
 
 	certificateDuration = time.Hour * 24 * 180
 )

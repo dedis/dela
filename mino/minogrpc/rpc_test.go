@@ -112,10 +112,11 @@ func TestRPC_Stream(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Send to multiple addresses.
 	out, in, err := rpc.Stream(ctx, mino.NewAddresses(addrs...))
 	require.NoError(t, err)
 
-	out.Send(fake.Message{}, newRootAddress())
+	out.Send(fake.Message{}, newRootAddress(), addrs[1])
 	in.Recv(ctx)
 
 	cancel()
@@ -124,8 +125,21 @@ func TestRPC_Stream(t *testing.T) {
 	require.Equal(t, addrs[0], calls.Get(1, 1))
 	require.Equal(t, "release", calls.Get(1, 0))
 
-	rpc.overlay.router = badRouter{}
+	// Only one is contacted, and the context is canceled.
+	out, in, err = rpc.Stream(ctx, mino.NewAddresses(addrs[0]))
+	require.NoError(t, err)
+
+	out.Send(fake.Message{}, addrs[0])
+	_, _, err = in.Recv(ctx)
+	require.Equal(t, context.Canceled, err)
+
+	rpc.overlay.closer.Wait()
+
 	_, _, err = rpc.Stream(ctx, mino.NewAddresses())
+	require.EqualError(t, err, "empty list of addresses")
+
+	rpc.overlay.router = badRouter{}
+	_, _, err = rpc.Stream(ctx, mino.NewAddresses(addrs[0]))
 	require.EqualError(t, err, "routing table failed: oops")
 
 	rpc.overlay.router = tree.NewRouter(AddressFactory{})
@@ -139,13 +153,13 @@ func TestRPC_Stream(t *testing.T) {
 	rpc.overlay.connMgr = fakeConnMgr{errConn: xerrors.New("oops"), calls: calls}
 	_, _, err = rpc.Stream(ctx, mino.NewAddresses(addrs...))
 	require.EqualError(t, err, "failed to open stream: oops")
-	require.Equal(t, 4, calls.Len())
+	require.Equal(t, 6, calls.Len())
 	require.Equal(t, "release", calls.Get(3, 0))
 
 	rpc.overlay.connMgr = fakeConnMgr{errStream: xerrors.New("oops"), calls: calls}
 	_, _, err = rpc.Stream(ctx, mino.NewAddresses(addrs...))
 	require.EqualError(t, err, "failed to receive header: oops")
-	require.Equal(t, 6, calls.Len())
+	require.Equal(t, 8, calls.Len())
 	require.Equal(t, "release", calls.Get(5, 0))
 }
 
