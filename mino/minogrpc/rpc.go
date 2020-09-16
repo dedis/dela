@@ -188,14 +188,16 @@ func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, m
 
 	sess := session.NewSession(
 		md,
-		relay,
 		newRootAddress(),
-		table,
 		rpc.factory,
 		rpc.overlay.router.GetPacketFactory(),
 		rpc.overlay.context,
 		rpc.overlay.connMgr,
 	)
+
+	// There is no listen for the orchestrator as we need to forward the
+	// messages received from the stream.
+	sess.SetPassive(relay, table)
 
 	rpc.overlay.closer.Add(1)
 

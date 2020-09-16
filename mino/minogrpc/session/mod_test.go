@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
@@ -25,33 +26,60 @@ func TestSession_New(t *testing.T) {
 	defer os.Setenv(traffic.EnvVariable, curr)
 
 	os.Setenv(traffic.EnvVariable, "log")
-	sess := NewSession(nil, nil, fake.NewAddress(999), nil, nil, nil, fake.NewContext(), nil)
+	sess := NewSession(nil, fake.NewAddress(999), nil, nil, fake.NewContext(), nil)
 	require.NotNil(t, sess.(*session).traffic)
 
 	os.Setenv(traffic.EnvVariable, "print")
-	sess = NewSession(nil, nil, fake.NewAddress(999), nil, nil, nil, fake.NewContext(), nil)
+	sess = NewSession(nil, fake.NewAddress(999), nil, nil, fake.NewContext(), nil)
 	require.NotNil(t, sess.(*session).traffic)
 
 	os.Unsetenv(traffic.EnvVariable)
-	sess = NewSession(nil, nil, fake.NewAddress(999), nil, nil, nil, fake.NewContext(), nil)
+	sess = NewSession(nil, fake.NewAddress(999), nil, nil, fake.NewContext(), nil)
 	require.Nil(t, sess.(*session).traffic)
 }
 
-func TestSession_Listen(t *testing.T) {
-	sess := &session{
-		gateway: &streamRelay{},
-		errs:    make(chan error),
+func TestSession_getNumParents(t *testing.T) {
+	sess := &session{}
+
+	num := sess.GetNumParents()
+	require.Equal(t, 0, num)
+
+	sess.parents = map[mino.Address]parent{
+		fake.NewAddress(0): {},
+		fake.NewAddress(1): {},
 	}
 
-	sess.Listen(&fakeStream{})
+	num = sess.GetNumParents()
+	require.Equal(t, 2, num)
+}
+
+func TestSession_Listen(t *testing.T) {
+	p := &streamRelay{
+		stream: &fakeStream{},
+		gw:     fake.NewAddress(123),
+	}
+
+	sess := &session{
+		errs: make(chan error),
+		parents: map[mino.Address]parent{
+			p.gw: {relay: p},
+		},
+	}
+
+	ready := make(chan struct{})
+
+	sess.Listen(p, fakeTable{}, ready)
 	select {
-	case <-sess.errs:
-	default:
+	case <-ready:
+	case <-time.After(time.Second):
 		t.Fatal("expect channel to be closed")
 	}
 
+	require.Len(t, sess.parents, 0)
+
 	sess.errs = make(chan error, 1)
-	sess.Listen(&fakeStream{err: xerrors.New("oops")})
+	p.stream = &fakeStream{err: xerrors.New("oops")}
+	sess.Listen(p, fakeTable{}, make(chan struct{}))
 	select {
 	case err := <-sess.errs:
 		require.EqualError(t, err, "stream closed unexpectedly: oops")
@@ -60,12 +88,36 @@ func TestSession_Listen(t *testing.T) {
 	}
 }
 
+func TestSession_Close(t *testing.T) {
+	sess := &session{errs: make(chan error)}
+
+	sess.Close()
+	select {
+	case <-sess.errs:
+	default:
+		t.Fatal("expect channel to be closed")
+	}
+}
+
+func TestSession_Passive(t *testing.T) {
+	sess := &session{
+		parents: make(map[mino.Address]parent),
+	}
+
+	sess.SetPassive(&streamRelay{}, fakeTable{})
+	require.Len(t, sess.parents, 1)
+}
+
 func TestSession_RecvPacket(t *testing.T) {
 	sess := &session{
-		pktFac:  fakePktFac{},
-		gateway: &streamRelay{stream: &fakeStream{}},
-		queue:   newNonBlockingQueue(),
-		table:   fakeTable{err: xerrors.New("bad route")},
+		pktFac: fakePktFac{},
+		queue:  newNonBlockingQueue(),
+		parents: map[mino.Address]parent{
+			fake.NewAddress(123): {
+				relay: &streamRelay{stream: &fakeStream{}},
+				table: fakeTable{err: xerrors.New("bad route")},
+			},
+		},
 	}
 
 	ack, err := sess.RecvPacket(fake.NewAddress(0), &ptypes.Packet{})
@@ -76,23 +128,37 @@ func TestSession_RecvPacket(t *testing.T) {
 	sess.pktFac = fakePktFac{err: xerrors.New("oops")}
 	_, err = sess.RecvPacket(fake.NewAddress(0), &ptypes.Packet{})
 	require.EqualError(t, err, "packet malformed: oops")
+
+	sess.pktFac = fakePktFac{}
+	sess.parents = nil
+	_, err = sess.RecvPacket(fake.NewAddress(0), &ptypes.Packet{})
+	require.EqualError(t, err, "packet is dropped (tried 0 parent-s)")
 }
 
 func TestSession_Send(t *testing.T) {
 	stream := &fakeStream{calls: &fake.Call{}}
+	key := fake.NewAddress(123)
+
 	sess := &session{
-		gateway: NewStreamRelay(nil, stream, fake.NewContext()),
-		table:   fakeTable{},
 		context: fake.NewContext(),
 		queue:   newNonBlockingQueue(),
 		relays:  make(map[mino.Address]Relay),
+		parents: map[mino.Address]parent{
+			key: {
+				relay: &streamRelay{stream: stream},
+				table: fakeTable{},
+			},
+		},
 	}
 
 	errs := sess.Send(fake.Message{}, fake.NewAddress(0))
 	require.NoError(t, <-errs)
 	require.Equal(t, 1, stream.calls.Len())
 
-	sess.table = fakeTable{route: fake.NewAddress(0)}
+	sess.parents[key] = parent{
+		relay: &streamRelay{stream: stream},
+		table: fakeTable{route: fake.NewAddress(0)},
+	}
 	sess.relays[fake.NewAddress(0)] = NewStreamRelay(nil, &fakeStream{}, sess.context)
 	errs = sess.Send(fake.Message{}, fake.NewAddress(1))
 	require.NoError(t, <-errs)
@@ -101,14 +167,20 @@ func TestSession_Send(t *testing.T) {
 	require.EqualError(t, <-errs, "failed to serialize msg: fake error")
 	require.NoError(t, <-errs)
 
-	sess.table = fakeTable{err: xerrors.New("oops")}
+	sess.parents[key] = parent{
+		relay: &streamRelay{stream: stream},
+		table: fakeTable{err: xerrors.New("oops")},
+	}
 	errs = sess.Send(fake.Message{})
 	require.EqualError(t, <-errs, "no route to fake.Address[400]: oops")
 	require.NoError(t, <-errs)
 
 	// Test when an error occurred when setting up a relay, which moves to the
 	// failure handler that will then fail on the routing table.
-	sess.table = fakeTable{errFail: xerrors.New("oops"), route: fake.NewAddress(5)}
+	sess.parents[key] = parent{
+		relay: &streamRelay{stream: stream},
+		table: fakeTable{errFail: xerrors.New("oops"), route: fake.NewAddress(5)},
+	}
 	sess.connMgr = fakeConnMgr{err: xerrors.New("blabla")}
 	errs = sess.Send(fake.Message{})
 	require.EqualError(t, <-errs, "no route to fake.Address[5]: oops")
@@ -121,70 +193,84 @@ func TestSession_Send(t *testing.T) {
 		&fakeStream{err: xerrors.New("oops")},
 		sess.context)
 
-	sess.table = fakeTable{errFail: xerrors.New("unavailable"), route: fake.NewAddress(6)}
-	sess.gateway = NewStreamRelay(nil, &fakeStream{err: xerrors.New("oops")}, sess.context)
+	sess.parents[key] = parent{
+		relay: NewStreamRelay(nil, &fakeStream{err: xerrors.New("oops")}, sess.context),
+		table: fakeTable{errFail: xerrors.New("unavailable"), route: fake.NewAddress(6)},
+	}
 	errs = sess.Send(fake.Message{})
 	require.EqualError(t, <-errs, "no route to fake.Address[800]: unavailable")
 	require.NoError(t, <-errs)
 
 	// Test when the parent stream has closed.
 	sess.me = fake.NewAddress(123)
-	sess.table = fakeTable{}
-	sess.gateway = NewStreamRelay(nil, &fakeStream{err: xerrors.New("oops")}, sess.context)
+	sess.parents[key] = parent{
+		relay: NewStreamRelay(nil, &fakeStream{err: xerrors.New("oops")}, sess.context),
+		table: fakeTable{},
+	}
 	errs = sess.Send(fake.Message{})
 	require.EqualError(t, <-errs, "session fake.Address[123] is closing: OK")
 
 	// Test when a packet is sent but some addresses are not reachable.
-	sess.gateway = &unicastRelay{
-		stream: &fakeStream{},
-		conn:   fakeConnection{ack: &ptypes.Ack{Errors: []string{"bad route"}}},
+	sess.parents[key] = parent{
+		relay: &unicastRelay{
+			stream: &fakeStream{},
+			conn:   fakeConnection{ack: &ptypes.Ack{Errors: []string{"bad route"}}},
+		},
+		table: fakeTable{},
 	}
 	errs = sess.Send(fake.Message{})
 	require.EqualError(t, <-errs, "bad route")
+
+	sess.parents = map[mino.Address]parent{
+		key: {table: fakeTable{empty: true}},
+	}
+	errs = sess.Send(fake.Message{})
+	require.EqualError(t, <-errs, "packet ignored")
 }
 
 func TestSession_SetupRelay(t *testing.T) {
 	sess := &session{
 		connMgr: fakeConnMgr{},
-		table:   fakeTable{},
 		context: fake.NewContext(),
 		relays:  make(map[mino.Address]Relay),
 		queue:   newNonBlockingQueue(),
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	p := parent{
+		relay: &streamRelay{stream: &fakeStream{}},
+		table: fakeTable{},
+	}
 
-	relay, err := sess.setupRelay(ctx, fake.NewAddress(0))
+	relay, err := sess.setupRelay(p, fake.NewAddress(0))
 	require.NoError(t, err)
 	require.NotNil(t, relay)
 	sess.Wait()
 
 	sess.connMgr = fakeConnMgr{err: xerrors.New("oops")}
-	_, err = sess.setupRelay(ctx, fake.NewAddress(1))
+	_, err = sess.setupRelay(p, fake.NewAddress(1))
 	require.EqualError(t, err, "failed to dial: oops")
 
 	sess.connMgr = fakeConnMgr{errConn: xerrors.New("oops")}
-	_, err = sess.setupRelay(ctx, fake.NewAddress(1))
+	_, err = sess.setupRelay(p, fake.NewAddress(1))
 	require.EqualError(t, err, "client: oops")
 
 	sess.connMgr = fakeConnMgr{errHeader: xerrors.New("oops")}
-	_, err = sess.setupRelay(ctx, fake.NewAddress(1))
+	_, err = sess.setupRelay(p, fake.NewAddress(1))
 	require.EqualError(t, err, "failed to receive header: oops")
 
 	sess.connMgr = fakeConnMgr{}
-	sess.table = fakeTable{err: xerrors.New("oops")}
-	_, err = sess.setupRelay(ctx, fake.NewAddress(1))
+	p.table = fakeTable{err: xerrors.New("oops")}
+	_, err = sess.setupRelay(p, fake.NewAddress(1))
 	require.EqualError(t, err, "failed to serialize handshake: oops")
 
-	sess.table = fakeTable{}
+	p.table = fakeTable{}
 	sess.connMgr = fakeConnMgr{errRecv: status.Error(codes.Canceled, "")}
-	_, err = sess.setupRelay(ctx, fake.NewAddress(1))
+	_, err = sess.setupRelay(p, fake.NewAddress(1))
 	require.NoError(t, err)
 	sess.Wait()
 
 	sess.connMgr = fakeConnMgr{errRecv: xerrors.New("oops")}
-	_, err = sess.setupRelay(ctx, fake.NewAddress(2))
+	_, err = sess.setupRelay(p, fake.NewAddress(2))
 	require.NoError(t, err)
 	sess.Wait()
 }
@@ -224,28 +310,26 @@ func TestSession_Recv(t *testing.T) {
 }
 
 func TestSession_OnFailure(t *testing.T) {
-	gw := NewRelay(&fakeStream{}, fake.NewAddress(0), fake.NewContext(), fakeConnection{}, make(metadata.MD))
-
 	sess := &session{
-		table:   fakeTable{},
-		queue:   newNonBlockingQueue(),
-		gateway: gw,
+		queue: newNonBlockingQueue(),
 	}
 
-	ctx := context.Background()
+	p := parent{
+		relay: &streamRelay{stream: &fakeStream{}},
+		table: fakeTable{},
+	}
 
-	var err error
-	cb := func(e error) { err = e }
+	errs := make(chan error, 1)
 
-	sess.onFailure(ctx, fake.NewAddress(0), fakePkt{}, cb)
+	sess.onFailure(p, fake.NewAddress(0), fakePkt{}, errs)
 
-	sess.table = fakeTable{errFail: xerrors.New("oops")}
-	sess.onFailure(ctx, fake.NewAddress(0), fakePkt{}, cb)
-	require.EqualError(t, err, "no route to fake.Address[0]: oops")
+	p.table = fakeTable{errFail: xerrors.New("oops")}
+	sess.onFailure(p, fake.NewAddress(0), fakePkt{}, errs)
+	require.EqualError(t, <-errs, "no route to fake.Address[0]: oops")
 
-	sess.table = fakeTable{err: xerrors.New("oops")}
-	sess.onFailure(ctx, fake.NewAddress(0), fakePkt{dest: fake.NewAddress(1)}, cb)
-	require.EqualError(t, err, "no route to fake.Address[400]: oops")
+	p.table = fakeTable{err: xerrors.New("oops")}
+	sess.onFailure(p, fake.NewAddress(0), fakePkt{dest: fake.NewAddress(1)}, errs)
+	require.EqualError(t, <-errs, "no route to fake.Address[400]: oops")
 }
 
 func TestRelay_Send(t *testing.T) {
@@ -292,6 +376,12 @@ func TestStreamRelay_Send(t *testing.T) {
 	require.EqualError(t, err, "failed to serialize: oops")
 }
 
+func TestStreamRelay_Close(t *testing.T) {
+	r := &streamRelay{}
+
+	require.NoError(t, r.Close())
+}
+
 // -----------------------------------------------------------------------------
 // Utility functions
 
@@ -304,7 +394,10 @@ type fakeStream struct {
 }
 
 func (s *fakeStream) Context() context.Context {
-	return context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	return ctx
 }
 
 func (s *fakeStream) Recv() (*ptypes.Packet, error) {
@@ -333,8 +426,9 @@ func (s *fakeStream) CloseSend() error {
 
 type fakePkt struct {
 	router.Packet
-	dest mino.Address
-	err  error
+	dest  mino.Address
+	empty bool
+	err   error
 }
 
 func (p fakePkt) GetSource() mino.Address {
@@ -354,6 +448,10 @@ func (p fakePkt) GetMessage() []byte {
 }
 
 func (p fakePkt) Slice(mino.Address) router.Packet {
+	if p.empty {
+		return nil
+	}
+
 	return p
 }
 
@@ -375,12 +473,13 @@ type fakeTable struct {
 	router.RoutingTable
 
 	route   mino.Address
+	empty   bool
 	err     error
 	errFail error
 }
 
 func (t fakeTable) Make(mino.Address, []mino.Address, []byte) router.Packet {
-	return fakePkt{dest: fake.NewAddress(0)}
+	return fakePkt{dest: fake.NewAddress(0), empty: t.empty}
 }
 
 func (t fakeTable) Prelude(mino.Address) router.Handshake {
@@ -393,7 +492,10 @@ func (t fakeTable) Forward(router.Packet) (router.Routes, router.Voids) {
 		voids[fake.NewAddress(400)] = router.Void{Error: t.err}
 	}
 
-	routes := router.Routes{t.route: fakePkt{}}
+	routes := router.Routes{}
+	if !t.empty {
+		routes[t.route] = fakePkt{}
+	}
 
 	return routes, voids
 }

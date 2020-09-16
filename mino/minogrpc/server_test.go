@@ -16,6 +16,7 @@ import (
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
 	"go.dedis.ch/dela/mino/minogrpc/session"
 	"go.dedis.ch/dela/mino/minogrpc/tokens"
+	"go.dedis.ch/dela/mino/router"
 	"go.dedis.ch/dela/mino/router/tree"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/json"
@@ -331,8 +332,25 @@ func TestOverlayServer_Stream(t *testing.T) {
 		headerStreamIDKey, "test",
 		session.HandshakeKey, "{}"))
 
+	wg := sync.WaitGroup{}
+	wg.Add(5)
+	for i := 0; i < 5; i++ {
+		go func() {
+			defer wg.Done()
+
+			err := overlay.Stream(&fakeSrvStream{ctx: inCtx})
+			require.NoError(t, err)
+		}()
+	}
+	wg.Wait()
+	overlay.closer.Wait()
+	require.Empty(t, overlay.endpoints["test"].streams)
+
+	overlay.endpoints["test"].streams["test"] = fakeSession{numParents: 1}
 	err := overlay.Stream(&fakeSrvStream{ctx: inCtx})
+	overlay.closer.Wait()
 	require.NoError(t, err)
+	require.Len(t, overlay.endpoints["test"].streams, 1)
 
 	err = overlay.Stream(&fakeSrvStream{ctx: ctx})
 	require.EqualError(t, err, "missing headers")
@@ -659,6 +677,16 @@ func (s fakeCerts) Fetch(certs.Dialable, []byte) error {
 
 type fakeSession struct {
 	session.Session
+
+	numParents int
+}
+
+func (sess fakeSession) GetNumParents() int {
+	return sess.numParents
+}
+
+func (fakeSession) Listen(p session.Relay, t router.RoutingTable, c chan struct{}) {
+	close(c)
 }
 
 func (fakeSession) RecvPacket(mino.Address, *ptypes.Packet) (*ptypes.Ack, error) {

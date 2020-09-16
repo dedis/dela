@@ -38,8 +38,20 @@ type Session interface {
 	mino.Sender
 	mino.Receiver
 
+	// GetNumParents returns the number of active parents for the session.
+	GetNumParents() int
+
 	// Listen takes a stream that will determine when to close the session.
-	Listen(stream PacketStream)
+	Listen(parent Relay, table router.RoutingTable, ready chan struct{})
+
+	// SetPassive sets a new passive parent. A passive parent is part of the
+	// parent relays, but the stream does not listen to, and thus it is not
+	// removed from the map if it closed.
+	SetPassive(parent Relay, table router.RoutingTable)
+
+	// Close shutdowns the session so that future calls to receive will return
+	// an error.
+	Close()
 
 	// RecvPacket takes a packet and the address of the distant peer that have
 	// sent it, then pass it to the correct relay according to the routing
@@ -64,6 +76,11 @@ type Relay interface {
 	Close() error
 }
 
+type parent struct {
+	relay Relay
+	table router.RoutingTable
+}
+
 // session is a participant to a stream protocol which has a parent gateway that
 // determines when to close, and it can open further relays to distant peers if
 // the routing table requires it.
@@ -76,9 +93,7 @@ type session struct {
 	logger  zerolog.Logger
 	md      metadata.MD
 	me      mino.Address
-	gateway Relay
 	errs    chan error
-	table   router.RoutingTable
 	pktFac  router.PacketFactory
 	msgFac  serde.Factory
 	context serde.Context
@@ -86,14 +101,17 @@ type session struct {
 	relays  map[mino.Address]Relay
 	connMgr ConnectionManager
 	traffic *traffic.Traffic
+
+	parents map[mino.Address]parent
+	// A read-write lock is used there as there are much more read requests than
+	// write ones, and the read should be parralellized.
+	parentsLock sync.RWMutex
 }
 
 // NewSession creates a new session for the provided parent relay.
 func NewSession(
 	md metadata.MD,
-	gw Relay,
 	me mino.Address,
-	table router.RoutingTable,
 	msgFac serde.Factory,
 	pktFac router.PacketFactory,
 	ctx serde.Context,
@@ -104,14 +122,13 @@ func NewSession(
 		md:      md,
 		me:      me,
 		errs:    make(chan error, 1),
-		table:   table,
 		msgFac:  msgFac,
 		pktFac:  pktFac,
 		context: ctx,
 		queue:   newNonBlockingQueue(),
 		relays:  make(map[mino.Address]Relay),
 		connMgr: connMgr,
-		gateway: gw,
+		parents: make(map[mino.Address]parent),
 	}
 
 	switch os.Getenv(traffic.EnvVariable) {
@@ -124,13 +141,34 @@ func NewSession(
 	return sess
 }
 
-// Listen implements session.Session. It listens for the stream to detect when
-// it closes, which will start the closing procedure.
-func (s *session) Listen(stream PacketStream) {
-	defer s.close()
+// GetNumParents implements session.Session. It returns the number of active
+// parents in the session.
+func (s *session) GetNumParents() int {
+	s.parentsLock.RLock()
+	defer s.parentsLock.RUnlock()
+
+	return len(s.parents)
+}
+
+// Listen implements session.Session. It listens for the stream and returns only
+// when the stream has been closed.
+func (s *session) Listen(relay Relay, table router.RoutingTable, ready chan struct{}) {
+	defer func() {
+		s.parentsLock.Lock()
+
+		delete(s.parents, relay.GetDistantAddress())
+
+		s.parentsLock.Unlock()
+	}()
+
+	s.parentsLock.Lock()
+	s.parents[relay.GetDistantAddress()] = parent{relay: relay, table: table}
+	s.parentsLock.Unlock()
+
+	close(ready)
 
 	for {
-		_, err := stream.Recv()
+		_, err := relay.Stream().Recv()
 		code := status.Code(err)
 		if err == io.EOF || code != codes.Unknown {
 			s.logger.Trace().Stringer("code", code).Msg("session closing")
@@ -145,6 +183,27 @@ func (s *session) Listen(stream PacketStream) {
 	}
 }
 
+// SetPassive implements session.Session. It adds the parent relay to the map
+// but in the contrary of Listen, it won't listen for the stream.
+func (s *session) SetPassive(p Relay, table router.RoutingTable) {
+	s.parentsLock.Lock()
+	s.parents[p.GetDistantAddress()] = parent{
+		relay: p,
+		table: table,
+	}
+	s.parentsLock.Unlock()
+}
+
+// Close implements session.Session. It shutdowns the session and waits for the
+// relays to close.
+func (s *session) Close() {
+	close(s.errs)
+
+	s.Wait()
+
+	s.logger.Trace().Msg("session has been closed")
+}
+
 // RecvPacket implements session.Session. It process the packet and send it to
 // the relays, or itself.
 func (s *session) RecvPacket(from mino.Address, p *ptypes.Packet) (*ptypes.Ack, error) {
@@ -153,14 +212,29 @@ func (s *session) RecvPacket(from mino.Address, p *ptypes.Packet) (*ptypes.Ack, 
 		return nil, xerrors.Errorf("packet malformed: %v", err)
 	}
 
-	s.traffic.LogRecv(s.gateway.Stream().Context(), from, pkt)
+	s.parentsLock.RLock()
+	defer s.parentsLock.RUnlock()
 
-	ack := &ptypes.Ack{}
-	s.sendPacket(s.gateway.Stream().Context(), pkt, func(err error) {
-		ack.Errors = append(ack.Errors, err.Error())
-	})
+	// Try to send the packet to each parent until one works.
+	for _, parent := range s.parents {
+		s.traffic.LogRecv(parent.relay.Stream().Context(), from, pkt)
 
-	return ack, nil
+		errs := make(chan error, len(pkt.GetDestination()))
+		sent := s.sendPacket(parent, pkt, errs)
+		close(errs)
+
+		if sent {
+			ack := &ptypes.Ack{}
+
+			for err := range errs {
+				ack.Errors = append(ack.Errors, err.Error())
+			}
+
+			return ack, nil
+		}
+	}
+
+	return nil, xerrors.Errorf("packet is dropped (tried %d parent-s)", len(s.parents))
 }
 
 // Send implements mino.Sender. It sends the message to the provided addresses
@@ -177,11 +251,19 @@ func (s *session) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 			return
 		}
 
-		packet := s.table.Make(s.me, addrs, data)
+		s.parentsLock.RLock()
+		defer s.parentsLock.RUnlock()
 
-		s.sendPacket(s.gateway.Stream().Context(), packet, func(err error) {
-			errs <- err
-		})
+		for _, parent := range s.parents {
+			packet := parent.table.Make(s.me, addrs, data)
+
+			sent := s.sendPacket(parent, packet, errs)
+			if sent {
+				return
+			}
+		}
+
+		errs <- xerrors.New("packet ignored")
 	}()
 
 	return errs
@@ -194,12 +276,14 @@ func (s *session) Recv(ctx context.Context) (mino.Address, serde.Message, error)
 	select {
 	case <-ctx.Done():
 		return nil, nil, ctx.Err()
+
 	case err := <-s.errs:
 		if err != nil {
 			return nil, nil, xerrors.Errorf("stream closed unexpectedly: %v", err)
 		}
 
 		return nil, nil, io.EOF
+
 	case packet := <-s.queue.Channel():
 		msg, err := s.msgFac.Deserialize(s.context, packet.GetMessage())
 		if err != nil {
@@ -210,62 +294,55 @@ func (s *session) Recv(ctx context.Context) (mino.Address, serde.Message, error)
 	}
 }
 
-func (s *session) close() {
-	s.gateway.Close()
-	close(s.errs)
-
-	// Lock must be released to let the relays close themselves and clean the
-	// map.
-	s.Wait()
-
-	s.logger.Trace().Msg("session has been closed")
-}
-
-func (s *session) sendPacket(ctx context.Context, p router.Packet, fn func(error)) {
-	me := p.Slice(s.me)
+func (s *session) sendPacket(p parent, pkt router.Packet, errs chan error) bool {
+	me := pkt.Slice(s.me)
 	if me != nil {
 		// TODO: check error after merging PR #104
 		s.queue.Push(me)
 	}
 
-	if len(p.GetDestination()) == 0 {
-		return
+	routes, voids := p.table.Forward(pkt)
+	for addr, void := range voids {
+		errs <- xerrors.Errorf("no route to %v: %v", addr, void.Error)
 	}
 
-	routes, voids := s.table.Forward(p)
-	for addr, void := range voids {
-		fn(xerrors.Errorf("no route to %v: %v", addr, void.Error))
+	if len(routes) == 0 && len(voids) == 0 {
+		return me != nil
 	}
 
 	wg := sync.WaitGroup{}
 	wg.Add(len(routes))
 
 	for addr, packet := range routes {
-		go s.sendTo(ctx, addr, packet, fn, &wg)
+		go s.sendTo(p, addr, packet, errs, &wg)
 	}
 
 	wg.Wait()
+
+	return true
 }
 
-func (s *session) sendTo(ctx context.Context, to mino.Address, pkt router.Packet, fn func(error), wg *sync.WaitGroup) {
+func (s *session) sendTo(p parent, to mino.Address, pkt router.Packet, errs chan error, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	var relay Relay
 	var err error
 
 	if to == nil {
-		relay = s.gateway
+		relay = p.relay
 	} else {
-		relay, err = s.setupRelay(ctx, to)
+		relay, err = s.setupRelay(p, to)
 		if err != nil {
 			s.logger.Warn().Err(err).Stringer("to", to).Msg("failed to setup relay")
 
 			// Try to open a different relay.
-			s.onFailure(ctx, to, pkt, fn)
+			s.onFailure(p, to, pkt, errs)
 
 			return
 		}
 	}
+
+	ctx := p.relay.Stream().Context()
 
 	s.traffic.LogSend(ctx, relay.GetDistantAddress(), pkt)
 
@@ -277,7 +354,7 @@ func (s *session) sendTo(ctx context.Context, to mino.Address, pkt router.Packet
 
 		code := status.Code(xerrors.Unwrap(err))
 
-		fn(xerrors.Errorf("session %v is closing: %v", s.me, code))
+		errs <- xerrors.Errorf("session %v is closing: %v", s.me, code)
 
 		return
 	}
@@ -285,7 +362,7 @@ func (s *session) sendTo(ctx context.Context, to mino.Address, pkt router.Packet
 		s.logger.Warn().Err(err).Msg("relay failed to send")
 
 		// Try to send the packet through a different route.
-		s.onFailure(ctx, relay.GetDistantAddress(), pkt, fn)
+		s.onFailure(p, relay.GetDistantAddress(), pkt, errs)
 
 		return
 	}
@@ -293,11 +370,11 @@ func (s *session) sendTo(ctx context.Context, to mino.Address, pkt router.Packet
 	for _, err := range ack.Errors {
 		// Note: it would be possible to use this ack feedback to further
 		// improve the correction of the routes by retrying here too.
-		fn(xerrors.New(err))
+		errs <- xerrors.New(err)
 	}
 }
 
-func (s *session) setupRelay(ctx context.Context, addr mino.Address) (Relay, error) {
+func (s *session) setupRelay(p parent, addr mino.Address) (Relay, error) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -307,7 +384,7 @@ func (s *session) setupRelay(ctx context.Context, addr mino.Address) (Relay, err
 		return relay, nil
 	}
 
-	hs, err := s.table.Prelude(addr).Serialize(s.context)
+	hs, err := p.table.Prelude(addr).Serialize(s.context)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to serialize handshake: %v", err)
 	}
@@ -321,7 +398,7 @@ func (s *session) setupRelay(ctx context.Context, addr mino.Address) (Relay, err
 	md := s.md.Copy()
 	md.Set(HandshakeKey, string(hs))
 
-	ctx = metadata.NewOutgoingContext(ctx, md)
+	ctx := metadata.NewOutgoingContext(p.relay.Stream().Context(), md)
 
 	cl := ptypes.NewOverlayClient(conn)
 
@@ -331,7 +408,8 @@ func (s *session) setupRelay(ctx context.Context, addr mino.Address) (Relay, err
 		return nil, xerrors.Errorf("client: %v", err)
 	}
 
-	// 2. Wait for the header event to confirm the stream is up and running.
+	// 2. Wait for the header event to confirm the stream is registered in the
+	// session at the other end.
 	_, err = stream.Header()
 	if err != nil {
 		s.connMgr.Release(addr)
@@ -383,7 +461,7 @@ func (s *session) setupRelay(ctx context.Context, addr mino.Address) (Relay, err
 
 				// Relay has lost the connection, therefore we announce the
 				// address as unreachable.
-				s.table.OnFailure(addr)
+				p.table.OnFailure(addr)
 
 				return
 			}
@@ -397,17 +475,17 @@ func (s *session) setupRelay(ctx context.Context, addr mino.Address) (Relay, err
 	return newRelay, nil
 }
 
-func (s *session) onFailure(ctx context.Context, gateway mino.Address, p router.Packet, fn func(error)) {
-	err := s.table.OnFailure(gateway)
+func (s *session) onFailure(p parent, gateway mino.Address, pkt router.Packet, errs chan error) {
+	err := p.table.OnFailure(gateway)
 	if err != nil {
-		fn(xerrors.Errorf("no route to %v: %v", gateway, err))
+		errs <- xerrors.Errorf("no route to %v: %v", gateway, err)
 		return
 	}
 
 	// Retry to send the packet after the announcement of a link failure. This
 	// recursive call will eventually end by either a success, or a total
 	// failure to send the packet.
-	s.sendPacket(ctx, p, fn)
+	s.sendPacket(p, pkt, errs)
 }
 
 // PacketStream is a gRPC stream to send and receive protobuf packets.
