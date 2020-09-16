@@ -96,7 +96,8 @@ func TestService_Scenario_ViewChange(t *testing.T) {
 	defer clean()
 
 	for _, node := range nodes {
-		node.service.timeoutRound = 200 * time.Millisecond
+		// Must be high enough for slow machines.
+		node.service.timeoutRound = 500 * time.Millisecond
 		node.service.timeoutViewchange = 10 * time.Second
 	}
 
@@ -556,9 +557,6 @@ func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()
 
 		srv, err := NewService(param)
 		require.NoError(t, err)
-
-		// Disable logs.
-		srv.logger = srv.logger.Level(zerolog.ErrorLevel)
 
 		nodes[i] = testNode{
 			service: srv,
