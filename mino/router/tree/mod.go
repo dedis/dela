@@ -97,11 +97,16 @@ func (t Table) Prelude(to mino.Address) router.Handshake {
 
 // Forward implements router.RoutingTable. It takes a packet and split it into
 // the different routes it should be forwarded to.
-func (t Table) Forward(packet router.Packet) (router.Routes, error) {
+func (t Table) Forward(packet router.Packet) (router.Routes, router.Voids) {
 	routes := make(router.Routes)
+	voids := make(router.Voids)
 
 	for _, dest := range packet.GetDestination() {
-		gateway := t.tree.GetRoute(dest)
+		gateway, err := t.tree.GetRoute(dest)
+		if err != nil {
+			voids[dest] = router.Void{Error: err}
+			continue
+		}
 
 		p, ok := routes[gateway]
 		if !ok {
@@ -112,13 +117,20 @@ func (t Table) Forward(packet router.Packet) (router.Routes, error) {
 		p.(*types.Packet).Add(dest)
 	}
 
-	return routes, nil
+	return routes, voids
 }
 
 // OnFailure implements router.Router. The tree will try to adapt itself to
 // reach the address, but it will return an error if the address is a direct
 // branch of the tree.
-// TODO: impl
 func (t Table) OnFailure(to mino.Address) error {
-	return xerrors.New("unreachable address")
+	if t.tree.GetMaxHeight() <= 1 {
+		// When the node does only have leafs, it will simply return an error to
+		// announce the address as unreachable.
+		return xerrors.New("address is unreachable")
+	}
+
+	t.tree.Remove(to)
+
+	return nil
 }

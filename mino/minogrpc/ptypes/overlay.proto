@@ -35,6 +35,11 @@ message Packet {
     bytes serialized = 1;
 }
 
+// Ack is the return of a unicast request to forward a message.
+message Ack {
+    repeated string errors = 1;
+}
+
 service Overlay {
     // Join handles join request from an unknown node. It accepts to share the
     // certificates if the token is valid.
@@ -44,7 +49,15 @@ service Overlay {
     // network.
     rpc Share(Certificate) returns (CertificateAck) {}
 
+    // Call is a unicast rpc to send a message to a participant and expect a
+    // reply from it.
     rpc Call(Message) returns (Message) {}
     
+    // Stream is a stream rpc that will build a network of nodes which will
+    // relay the messages between each others.
     rpc Stream(stream Packet) returns (stream Packet) {}
+
+    // Forward is used in association with Stream to send a message through
+    // relays and get a feedback that the message has been received.
+    rpc Forward(Packet) returns (Ack) {}
 }

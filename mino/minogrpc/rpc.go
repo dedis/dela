@@ -11,7 +11,6 @@ import (
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/status"
 )
 
 // RPC represents an RPC that has been registered by a client, which allows
@@ -111,26 +110,86 @@ func (rpc *RPC) Call(ctx context.Context,
 	return out, nil
 }
 
-// Stream implements mino.RPC. TODO: errors
-func (rpc RPC) Stream(ctx context.Context,
-	players mino.Players) (mino.Sender, mino.Receiver, error) {
-
-	root := newRootAddress()
+// Stream implements mino.RPC. It will open a stream to one of the addresses
+// with a bidirectional channel that will send and receive packets. The chosen
+// address will open one or several streams to the rest of the players. The
+// choice of the gateway is first the local node if it belongs to the list,
+// otherwise the first node of the list.
+//
+// The way routes are created depends on the router implementation chosen for
+// the endpoint. It can for instance use a tree structure, which means the
+// network for 8 nodes could look like this:
+//
+//                               Orchestrator
+//                                     |
+//                                  __ A __
+//                                 /       \
+//                                B         C
+//                              / | \     /   \
+//                             D  E  F   G     H
+//
+// If C has to send a message to B, it will send it through node A. Similarly,
+// if D has to send a message to G, it will move up the tree through B, A and
+// finally C.
+func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, mino.Receiver, error) {
+	if players == nil || players.Len() == 0 {
+		return nil, nil, xerrors.New("empty list of addresses")
+	}
 
 	streamID := xid.New().String()
 
-	table, err := rpc.overlay.router.New(players)
+	md := metadata.Pairs(
+		headerURIKey, rpc.uri,
+		headerStreamIDKey, streamID,
+		headerGatewayKey, orchestratorCode)
+
+	table, err := rpc.overlay.router.New(mino.NewAddresses())
 	if err != nil {
-		return nil, nil, xerrors.Errorf("routing table: %v", err)
+		return nil, nil, xerrors.Errorf("routing table failed: %v", err)
 	}
 
-	md := metadata.Pairs(headerURIKey, rpc.uri, headerStreamIDKey, streamID)
+	gw, others := rpc.findGateway(players)
 
-	// Streamless session as this is the orchestrator of the protocol.
+	for _, addr := range others {
+		addr, err := addr.MarshalText()
+		if err != nil {
+			return nil, nil, xerrors.Errorf("marshal address failed: %v", err)
+		}
+
+		md.Append(headerAddressKey, string(addr))
+	}
+
+	conn, err := rpc.overlay.connMgr.Acquire(gw)
+	if err != nil {
+		return nil, nil, xerrors.Errorf("gateway connection failed: %v", err)
+	}
+
+	client := ptypes.NewOverlayClient(conn)
+
+	ctx = metadata.NewOutgoingContext(ctx, md)
+
+	stream, err := client.Stream(ctx)
+	if err != nil {
+		rpc.overlay.connMgr.Release(gw)
+
+		return nil, nil, xerrors.Errorf("failed to open stream: %v", err)
+	}
+
+	// Wait for the event from the server to tell that the stream is
+	// initialized.
+	_, err = stream.Header()
+	if err != nil {
+		rpc.overlay.connMgr.Release(gw)
+
+		return nil, nil, xerrors.Errorf("failed to receive header: %v", err)
+	}
+
+	relay := session.NewRelay(stream, gw, rpc.overlay.context, conn, md)
+
 	sess := session.NewSession(
 		md,
-		orchStream{ctx: ctx},
-		root,
+		relay,
+		newRootAddress(),
 		table,
 		rpc.factory,
 		rpc.overlay.router.GetPacketFactory(),
@@ -141,29 +200,44 @@ func (rpc RPC) Stream(ctx context.Context,
 	rpc.overlay.closer.Add(1)
 
 	go func() {
-		defer rpc.overlay.closer.Done()
+		defer func() {
+			relay.Close()
+			rpc.overlay.connMgr.Release(gw)
+			rpc.overlay.closer.Done()
+		}()
 
-		sess.Listen()
+		for {
+			p, err := stream.Recv()
+			if err != nil {
+				return
+			}
+
+			sess.RecvPacket(gw, p)
+		}
 	}()
 
 	return sess, sess, nil
 }
 
-type orchStream struct {
-	session.PacketStream
+func (rpc RPC) findGateway(players mino.Players) (mino.Address, []mino.Address) {
+	iter := players.AddressIterator()
+	addrs := make([]mino.Address, 0, players.Len())
 
-	ctx context.Context
-}
+	var gw mino.Address
 
-func (s orchStream) Context() context.Context {
-	return s.ctx
-}
+	for iter.HasNext() {
+		addr := iter.GetNext()
 
-func (s orchStream) Recv() (*ptypes.Packet, error) {
-	<-s.ctx.Done()
-	return nil, status.FromContextError(s.ctx.Err()).Err()
-}
+		if addr.Equal(rpc.overlay.me) {
+			gw = addr
+		} else {
+			addrs = append(addrs, addr)
+		}
+	}
 
-func (orchStream) Send(*ptypes.Packet) error {
-	return xerrors.New("no parent stream")
+	if gw == nil {
+		return addrs[0], addrs[1:]
+	}
+
+	return gw, addrs
 }

@@ -5,8 +5,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"regexp"
+	"sort"
 	"sync"
 	"time"
 
@@ -45,7 +47,7 @@ var (
 	sendCounter   = &atomicCounter{}
 	recvCounter   = &atomicCounter{}
 	eventCounter  = &atomicCounter{}
-	traffics      = []*Traffic{}
+	traffics      = trafficSlice{}
 	// LogItems allows one to granularly say when items should be logged or not.
 	// This is useful for example in an integration test where a specific part
 	// raises a problem but the full graph would be too noisy. For that, one
@@ -83,9 +85,9 @@ func SaveEvents(path string) error {
 // Traffic is used to keep track of packets Traffic in a server
 type Traffic struct {
 	sync.Mutex
+	out    io.Writer
 	src    mino.Address
 	items  []item
-	out    io.Writer
 	events []event
 }
 
@@ -166,10 +168,6 @@ func (t *Traffic) addItem(ctx context.Context, typeStr string, gw mino.Address, 
 		globalCounter: globalCounter.IncrementAndGet(),
 	}
 
-	if gw == nil {
-		newItem.gateway = parentAddr{}
-	}
-
 	switch typeStr {
 	case "received":
 		newItem.typeCounter = recvCounter.IncrementAndGet()
@@ -221,6 +219,18 @@ func (t *Traffic) getContext(ctx context.Context) string {
 	return values[0]
 }
 
+func (t *Traffic) getFirstCounter() int {
+	if len(t.items) > 0 {
+		return t.items[0].globalCounter
+	}
+
+	if len(t.events) > 0 {
+		return t.events[0].globalCounter
+	}
+
+	return math.MaxInt64
+}
+
 type item struct {
 	typeStr       string
 	src           mino.Address
@@ -247,7 +257,9 @@ func (p item) Display(out io.Writer) {
 // generate a graphical representation with `dot -Tpdf graph.dot -o graph.pdf`
 func GenerateItemsGraphviz(out io.Writer, withSend, withRcv bool, traffics ...*Traffic) {
 
-	fmt.Fprintf(out, "diagraph network_activity {\n")
+	sort.Sort(trafficSlice(traffics))
+
+	fmt.Fprintf(out, "digraph network_activity {\n")
 	fmt.Fprintf(out, "labelloc=\"t\";")
 	fmt.Fprintf(out, "label = <Network Diagram of %d nodes <font point-size='10'><br/>(generated %s)</font>>;", len(traffics), time.Now().Format("2 Jan 06 - 15:04:05"))
 	fmt.Fprintf(out, "graph [fontname = \"helvetica\"];")
@@ -294,6 +306,9 @@ func GenerateItemsGraphviz(out io.Writer, withSend, withRcv bool, traffics ...*T
 
 // GenerateEventGraphviz creates a graphviz representation of the events
 func GenerateEventGraphviz(out io.Writer, traffics ...*Traffic) {
+
+	sort.Sort(trafficSlice(traffics))
+
 	fmt.Fprintf(out, "digraph network_activity {\n")
 	fmt.Fprintf(out, "labelloc=\"t\";")
 	fmt.Fprintf(out, "label = <Network Diagram of %d nodes <font point-size='10'><br/>(generated %s)</font>>;", len(traffics), time.Now().Format("2 Jan 06 - 15:04:05"))
@@ -348,10 +363,16 @@ func (e event) Display(out io.Writer) {
 	fmt.Fprintf(out, "%s\t%s:\n", e.typeStr, e.to)
 }
 
-type parentAddr struct {
-	mino.Address
+type trafficSlice []*Traffic
+
+func (tt trafficSlice) Len() int {
+	return len(tt)
 }
 
-func (parentAddr) String() string {
-	return "Parent Gateway"
+func (tt trafficSlice) Less(i, j int) bool {
+	return tt[i].getFirstCounter() < tt[j].getFirstCounter()
+}
+
+func (tt trafficSlice) Swap(i, j int) {
+	tt[i], tt[j] = tt[j], tt[i]
 }

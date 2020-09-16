@@ -43,9 +43,12 @@ func TestDynTree_GetRoute(t *testing.T) {
 	tree := NewTree(5, addrs)
 
 	for _, addr := range addrs {
-		require.Nil(t, tree.GetRoute(fake.NewAddress(500)))
+		gateway, err := tree.GetRoute(fake.NewAddress(500))
+		require.NoError(t, err)
+		require.Nil(t, gateway)
 
-		gateway := tree.GetRoute(addr)
+		gateway, err = tree.GetRoute(addr)
+		require.NoError(t, err)
 		require.NotNil(t, gateway)
 	}
 }
@@ -56,4 +59,20 @@ func TestDynTree_GetChildren(t *testing.T) {
 
 	tree.GetRoute(fake.NewAddress(0))
 	require.Len(t, tree.GetChildren(fake.NewAddress(0)), 3)
+}
+
+func TestDynTree_Remove(t *testing.T) {
+	tree := NewTree(3, makeAddrs(20)).(*dynTree)
+	tree.GetRoute(fake.NewAddress(1))
+
+	tree.Remove(fake.NewAddress(1))
+	require.Len(t, tree.offline, 1)
+	require.Len(t, tree.branches, 1)
+
+	tree = NewTree(3, makeAddrs(1)).(*dynTree)
+	tree.GetRoute(fake.NewAddress(0))
+
+	tree.Remove(fake.NewAddress(0))
+	require.Len(t, tree.offline, 1)
+	require.Len(t, tree.branches, 0)
 }

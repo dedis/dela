@@ -67,6 +67,14 @@ type Router interface {
 // Routes is a set of relay addresses where to send the packet.
 type Routes map[mino.Address]Packet
 
+// Void is the structure that describes a void route.
+type Void struct {
+	Error error
+}
+
+// Voids is a set of addresses that cannot be addressed by the routing table.
+type Voids map[mino.Address]Void
+
 // RoutingTable is built by the router and provides information about the
 // routing of the packets.
 type RoutingTable interface {
@@ -91,7 +99,10 @@ type RoutingTable interface {
 	//
 	//	{A: packet{to: [A, B, C]}}
 	//
-	Forward(packet Packet) (Routes, error)
+	// The second return of the function contains the list of addresses that are
+	// known the be broken.
+	//
+	Forward(packet Packet) (Routes, Voids)
 
 	// OnFailure is used to announce that a packet failed to be routed. It
 	// allows the router to find a different route. Forward can be called

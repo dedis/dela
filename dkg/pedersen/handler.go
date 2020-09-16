@@ -39,17 +39,22 @@ func (s *state) GetDistKey() kyber.Point {
 	return s.distrKey
 }
 
+func (s *state) SetDistKey(key kyber.Point) {
+	s.Lock()
+	s.distrKey = key
+	s.Unlock()
+}
+
 func (s *state) GetParticipants() []mino.Address {
 	s.Lock()
 	defer s.Unlock()
 	return s.participants
 }
 
-func (s *state) Fill(participants []mino.Address, distrKey kyber.Point) {
+func (s *state) SetParticipants(addrs []mino.Address) {
 	s.Lock()
-	defer s.Unlock()
-	s.participants = participants
-	s.distrKey = distrKey
+	s.participants = addrs
+	s.Unlock()
 }
 
 // Handler represents the RPC executed on each node
@@ -272,18 +277,18 @@ func (h *Handler) start(start types.Start, receivedDeals []types.Deal,
 		}
 	}
 
-	pubKey, err := h.certify(receivedResps, out, in, from)
+	h.startRes.SetParticipants(start.GetAddresses())
+
+	err = h.certify(receivedResps, out, in, from)
 	if err != nil {
 		return xerrors.Errorf("failed to certify: %v", err)
 	}
-
-	h.startRes.Fill(start.GetAddresses(), pubKey)
 
 	return nil
 }
 
 func (h *Handler) certify(resps []*pedersen.Response, out mino.Sender,
-	in mino.Receiver, from mino.Address) (kyber.Point, error) {
+	in mino.Receiver, from mino.Address) error {
 
 	for _, response := range resps {
 		_, err := h.dkg.ProcessResponse(response)
@@ -299,7 +304,7 @@ func (h *Handler) certify(resps []*pedersen.Response, out mino.Sender,
 
 		from, msg, err := in.Recv(ctx)
 		if err != nil {
-			return nil, xerrors.Errorf("failed to receive after sending deals: %v", err)
+			return xerrors.Errorf("failed to receive after sending deals: %v", err)
 		}
 
 		switch msg := msg.(type) {
@@ -324,7 +329,7 @@ func (h *Handler) certify(resps []*pedersen.Response, out mino.Sender,
 			}
 
 		default:
-			return nil, xerrors.Errorf("expected a response, got: %T", msg)
+			return xerrors.Errorf("expected a response, got: %T", msg)
 		}
 	}
 
@@ -333,20 +338,24 @@ func (h *Handler) certify(resps []*pedersen.Response, out mino.Sender,
 	// 6. Send back the public DKG key
 	distrKey, err := h.dkg.DistKeyShare()
 	if err != nil {
-		return nil, xerrors.Errorf("failed to get distr key: %v", err)
+		return xerrors.Errorf("failed to get distr key: %v", err)
 	}
 
-	done := types.NewStartDone(distrKey.Public())
-	err = <-out.Send(done, from)
-	if err != nil {
-		return nil, xerrors.Errorf("got an error while sending pub key: %v", err)
-	}
+	// 7. Update the state before sending to acknowledgement to the
+	// orchestrator, so that it can process decrypt requests right away.
+	h.startRes.SetDistKey(distrKey.Public())
 
 	h.Lock()
 	h.privShare = distrKey.PriShare()
 	h.Unlock()
 
-	return distrKey.Public(), nil
+	done := types.NewStartDone(distrKey.Public())
+	err = <-out.Send(done, from)
+	if err != nil {
+		return xerrors.Errorf("got an error while sending pub key: %v", err)
+	}
+
+	return nil
 }
 
 // handleDeal process the Deal and send the responses to the other nodes.

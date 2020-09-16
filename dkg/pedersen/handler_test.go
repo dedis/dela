@@ -86,12 +86,12 @@ func TestHandler_Certify(t *testing.T) {
 	receiver := fake.NewBadReceiver()
 	responses := []*pedersen.Response{{Response: &vss.Response{}}}
 
-	_, err = h.certify(responses, fake.Sender{}, receiver, nil)
+	err = h.certify(responses, fake.Sender{}, receiver, nil)
 	require.EqualError(t, err, "failed to receive after sending deals: fake error")
 
 	dkg = getCertified(t)
 	h.dkg = dkg
-	_, err = h.certify(responses, fake.NewBadSender(), &fake.Receiver{}, nil)
+	err = h.certify(responses, fake.NewBadSender(), &fake.Receiver{}, nil)
 	require.EqualError(t, err, "got an error while sending pub key: fake error")
 }
 

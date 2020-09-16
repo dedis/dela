@@ -4,6 +4,7 @@
 package minogrpc
 
 import (
+	"bytes"
 	"crypto/tls"
 	"fmt"
 	"net"
@@ -32,6 +33,7 @@ const (
 var (
 	namespaceMatch        = regexp.MustCompile("^[a-zA-Z0-9]+$")
 	defaultAddressFactory = AddressFactory{}
+	orchestratorBytes     = []byte(orchestratorCode)
 )
 
 // rootAddress is the address of the orchestrator of a protocol. When Stream is
@@ -55,7 +57,7 @@ func (a rootAddress) Equal(other mino.Address) bool {
 // MarshalText implements mino.Address. It returns a buffer that uses the
 // private area of Unicode to define the root.
 func (a rootAddress) MarshalText() ([]byte, error) {
-	return []byte(orchestratorCode), nil
+	return orchestratorBytes, nil
 }
 
 // String implements fmt.Stringer. It returns a string representation of the
@@ -104,7 +106,7 @@ type AddressFactory struct {
 // FromText implements mino.AddressFactory. It returns an instance of an
 // address from a byte slice.
 func (f AddressFactory) FromText(text []byte) mino.Address {
-	if string(text) == orchestratorCode {
+	if bytes.Equal(text, orchestratorBytes) {
 		return newRootAddress()
 	}
 
@@ -133,7 +135,8 @@ type Endpoint struct {
 	// that the stream session must be created. Using a sync.Map would require
 	// to use the "LoadOrStore" function, which would make us create the session
 	// each time, but only saving it the first time.
-	sync.Mutex
+	sync.RWMutex
+
 	Handler mino.Handler
 	Factory serde.Factory
 	streams map[string]session.Session
@@ -189,7 +192,7 @@ func NewMinogrpc(path string, port uint16, router router.Router) (*Minogrpc, err
 		endpoints: m.endpoints,
 	})
 
-	err = m.Listen()
+	err = m.listen()
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't start the server: %v", err)
 	}
@@ -214,50 +217,32 @@ func (m *Minogrpc) GenerateToken(expiration time.Duration) string {
 	return m.tokens.Generate(expiration)
 }
 
-// Listen starts the server. It waits for the go routine to start before
-// returning.
-func (m *Minogrpc) Listen() error {
-	// TODO: bind 0.0.0.0:PORT => get port from address.
-	lis, err := net.Listen("tcp4", m.url.Host)
-	if err != nil {
-		return xerrors.Errorf("failed to listen: %v", err)
-	}
-
-	go func() {
-		close(m.started)
-
-		err := m.server.Serve(lis)
-		if err != nil {
-			m.closing <- xerrors.Errorf("failed to serve: %v", err)
-		}
-
-		close(m.closing)
-	}()
-
-	// Force the go routine to be executed before returning which means the
-	// server has well started after that point.
-	<-m.started
-
-	return nil
-}
-
-// GracefulClose first stops the grpc server then waits for the remaining
+// GracefulStop first stops the grpc server then waits for the remaining
 // handlers to close.
-func (m *Minogrpc) GracefulClose() error {
-	select {
-	case <-m.started:
-	default:
-		return xerrors.New("server should be listening before trying to close")
-	}
-
+func (m *Minogrpc) GracefulStop() error {
 	m.server.GracefulStop()
 
-	m.closer.Done()
+	return m.postCheckClose()
+}
+
+// Stop stops the server immediatly.
+func (m *Minogrpc) Stop() error {
+	m.server.Stop()
+
+	return m.postCheckClose()
+}
+
+func (m *Minogrpc) postCheckClose() error {
 	m.closer.Wait()
 
 	err := <-m.closing
 	if err != nil {
-		return xerrors.Errorf("failed to stop gracefully: %v", err)
+		return xerrors.Errorf("server stopped unexpectedly: %v", err)
+	}
+
+	numConns := m.overlay.connMgr.Len()
+	if numConns > 0 {
+		return xerrors.Errorf("connection manager not empty: %d", numConns)
 	}
 
 	return nil
@@ -313,4 +298,33 @@ func (m *Minogrpc) MakeRPC(name string, h mino.Handler, f serde.Factory) (mino.R
 // instance.
 func (m *Minogrpc) String() string {
 	return fmt.Sprintf("%v", m.overlay.me)
+}
+
+// Listen starts the server. It waits for the go routine to start before
+// returning.
+func (m *Minogrpc) listen() error {
+	// TODO: bind 0.0.0.0:PORT => get port from address.
+	socket, err := net.Listen("tcp4", m.url.Host)
+	if err != nil {
+		return xerrors.Errorf("failed to listen: %v", err)
+	}
+
+	go func() {
+		defer m.closer.Done()
+
+		close(m.started)
+
+		err := m.server.Serve(socket)
+		if err != nil {
+			m.closing <- xerrors.Errorf("failed to serve: %v", err)
+		}
+
+		close(m.closing)
+	}()
+
+	// Force the go routine to be executed before returning which means the
+	// server has well started after that point.
+	<-m.started
+
+	return nil
 }
