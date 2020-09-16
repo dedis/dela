@@ -1,7 +1,7 @@
 package controller
 
 import (
-	"net"
+	"math"
 	"time"
 
 	"go.dedis.ch/dela"
@@ -78,16 +78,13 @@ func (m minimal) SetCommands(builder node.Builder) {
 func (m minimal) Inject(ctx cli.Flags, inj node.Injector) error {
 
 	port := ctx.Int("port")
-	if port < 0 || port > 65535 {
+	if port < 0 || port > math.MaxUint16 {
 		return xerrors.Errorf("invalid port value %d", port)
 	}
 
 	rter := tree.NewRouter(minogrpc.AddressFactory{})
 
-	addr := &net.TCPAddr{
-		IP:   net.IPv4(127, 0, 0, 1),
-		Port: port,
-	}
+	addr := minogrpc.ParseAddress("127.0.0.1", uint16(port))
 
 	o, err := minogrpc.NewMinogrpc(addr, rter)
 	if err != nil {
