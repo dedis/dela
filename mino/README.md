@@ -1,3 +1,0 @@
-# Mino
-
-Minimalist Network Overlay

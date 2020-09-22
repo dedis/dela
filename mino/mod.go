@@ -69,6 +69,7 @@ type Receiver interface {
 type Request struct {
 	// Address is the address of the sender of the request.
 	Address Address
+
 	// Message is the message of the request.
 	Message serde.Message
 }
@@ -144,8 +145,8 @@ type Mino interface {
 	// MakeNamespace returns an instance restricted to the namespace.
 	MakeNamespace(namespace string) (Mino, error)
 
-	// MakeRPC creates an RPC that can send to and receive from a uniq URI which
-	// is computed with URI = (namespace || name)
-	// The namespace is known by the minion instance.
+	// MakeRPC creates an RPC that can send to and receive from a unique URI
+	// which is computed with URI = (namespace || name). The namespace is known
+	// by the mino instance.
 	MakeRPC(name string, h Handler, f serde.Factory) (RPC, error)
 }
