@@ -71,6 +71,13 @@ type serviceTemplate struct {
 // ServiceOption is the type of option to set some fields of the service.
 type ServiceOption func(*serviceTemplate)
 
+// WithGenesisStore is an option to set the genesis store.
+func WithGenesisStore(store blockstore.GenesisStore) ServiceOption {
+	return func(tmpl *serviceTemplate) {
+		tmpl.genesis = store
+	}
+}
+
 // WithHashFactory is an option to set the hash factory used by the service.
 func WithHashFactory(fac crypto.HashFactory) ServiceOption {
 	return func(tmpl *serviceTemplate) {
@@ -196,6 +203,12 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 
 	go s.watchBlocks()
 
+	if s.genesis.Exists() {
+		// If the genesis already exists, the service can start right away to
+		// participate in the chain.
+		close(s.started)
+	}
+
 	return s, nil
 }
 
@@ -225,6 +238,7 @@ func (s *Service) Setup(ctx context.Context, ca crypto.CollectiveAuthority) erro
 
 	s.logger.Info().
 		Int("roster", ca.Len()).
+		Stringer("digest", genesis.GetHash()).
 		Msg("new chain has been created")
 
 	return nil

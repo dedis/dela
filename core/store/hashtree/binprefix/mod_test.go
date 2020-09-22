@@ -152,6 +152,22 @@ func TestMerkleTree_Random_IntegrationTest(t *testing.T) {
 			require.Equal(t, tree.GetRoot(), root)
 		}
 
+		newTree := NewMerkleTree(db, nonce)
+		err = newTree.Load()
+		require.NoError(t, err)
+
+		// Test that the keys are still present after loading the tree from the
+		// disk.
+		for key, value := range values {
+			path, err := newTree.GetPath(key[:])
+			require.NoError(t, err)
+			require.Equal(t, value, path.GetValue())
+
+			root, err := path.(Path).computeRoot(crypto.NewSha256Factory())
+			require.NoError(t, err)
+			require.Equal(t, newTree.GetRoot(), root)
+		}
+
 		return true
 	}
 

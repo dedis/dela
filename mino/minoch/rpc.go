@@ -17,6 +17,7 @@ type Envelope struct {
 	to      []mino.Address
 	from    address
 	message []byte
+	errs    chan error
 }
 
 // RPC is an implementation of the mino.RPC interface.
@@ -149,7 +150,6 @@ func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, min
 
 			err := peer.rpcs[c.path].h.Stream(s, r)
 			if err != nil {
-				// TODO:
 				errs <- xerrors.Errorf("couldn't process: %v", err)
 			}
 		}(outs[addr.String()])
@@ -210,6 +210,7 @@ func (s sender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 	if err != nil {
 		errs <- xerrors.Errorf("couldn't marshal message: %v", err)
 		close(errs)
+
 		return errs
 	}
 

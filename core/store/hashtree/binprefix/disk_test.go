@@ -226,6 +226,17 @@ func (b *fakeBucket) Delete(key []byte) error {
 	return nil
 }
 
+func (b *fakeBucket) ForEach(fn func(k, v []byte) error) error {
+	for key, value := range b.values {
+		err := fn([]byte(key), value)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (b *fakeBucket) Scan(prefix []byte, fn func(k, v []byte) error) error {
 	return b.errScan
 }

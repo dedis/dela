@@ -10,6 +10,8 @@ import (
 	"go.dedis.ch/dela/core/execution/baremetal"
 	"go.dedis.ch/dela/core/ordering/cosipbft"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
+	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
+	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store/hashtree/binprefix"
 	"go.dedis.ch/dela/core/store/kv"
 	poolimpl "go.dedis.ch/dela/core/txn/pool/gossip"
@@ -101,6 +103,8 @@ func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("db: %v", err)
 	}
 
+	tree := binprefix.NewMerkleTree(db, binprefix.Nonce{})
+
 	param := cosipbft.ServiceParam{
 		Mino:       m,
 		Cosi:       cosi,
@@ -108,10 +112,22 @@ func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
 		Access:     access,
 		Pool:       pool,
 		DB:         db,
-		Tree:       binprefix.NewMerkleTree(db, binprefix.Nonce{}),
+		Tree:       tree,
 	}
 
-	srvc, err := cosipbft.NewService(param)
+	err = tree.Load()
+	if err != nil {
+		return xerrors.Errorf("failed to load tree: %v", err)
+	}
+
+	genstore := blockstore.NewGenesisDiskStore(db, types.NewGenesisFactory(rosterFac))
+
+	err = genstore.Load()
+	if err != nil {
+		return xerrors.Errorf("failed to load genesis: %v", err)
+	}
+
+	srvc, err := cosipbft.NewService(param, cosipbft.WithGenesisStore(genstore))
 	if err != nil {
 		return xerrors.Errorf("service: %v", err)
 	}

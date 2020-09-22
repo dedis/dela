@@ -103,6 +103,40 @@ func (t *Tree) Len() int {
 	return counter
 }
 
+// Load scans the bucket for leafs to insert them in the tree. It will then
+// persist the tree to restore the memory depth limit.
+func (t *Tree) Load(bucket kv.Bucket) error {
+	err := bucket.ForEach(func(key, value []byte) error {
+		node, err := t.factory.Deserialize(t.context, value)
+		if err != nil {
+			return xerrors.Errorf("tree node malformed: %v", err)
+		}
+
+		leaf, ok := node.(*LeafNode)
+		if !ok {
+			return nil
+		}
+
+		err = t.Insert(leaf.GetKey(), leaf.GetValue(), bucket)
+		if err != nil {
+			return xerrors.Errorf("while inserting value: %v", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return xerrors.Errorf("while scanning: %v", err)
+	}
+
+	err = t.Persist(bucket)
+	if err != nil {
+		return xerrors.Errorf("failed to persist: %v", err)
+	}
+
+	return nil
+}
+
 // Search returns the value associated to the key if it exists, otherwise nil.
 // When path is defined, it will be filled with the interior nodes and the leaf
 // node so that it can prove the inclusion or the absence of the key.

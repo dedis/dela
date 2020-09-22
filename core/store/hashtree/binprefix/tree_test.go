@@ -31,6 +31,32 @@ func TestTree_Len(t *testing.T) {
 	require.Equal(t, 2, tree.Len())
 }
 
+func TestTree_Load(t *testing.T) {
+	tree := NewTree(Nonce{})
+
+	bucket := makeBucket(t)
+
+	err := tree.Load(bucket)
+	require.NoError(t, err)
+
+	key := big.NewInt(0)
+	key.SetBit(key, MaxDepth*8+1, 1)
+	badNode, err := NewLeafNode(2, key, []byte{}).Serialize(testCtx)
+	require.NoError(t, err)
+
+	bucket.values[string([]byte{2})] = badNode
+	err = tree.Load(bucket)
+	require.EqualError(t, err, "while scanning: while inserting value: mismatch key length 33 > 32")
+
+	tree.factory = fake.NewBadMessageFactory()
+	err = tree.Load(bucket)
+	require.EqualError(t, err, "while scanning: tree node malformed: fake error")
+
+	err = tree.Load(&fakeBucket{errSet: xerrors.New("oops")})
+	require.EqualError(t, err,
+		"failed to persist: visiting leaf: failed to store node: failed to set key: oops")
+}
+
 func TestTree_Search(t *testing.T) {
 	tree := NewTree(Nonce{})
 
@@ -530,6 +556,23 @@ func TestLeafNode_Serialize(t *testing.T) {
 
 // -----------------------------------------------------------------------------
 // Utility functions
+
+func makeBucket(t *testing.T) *fakeBucket {
+	emptyNode, err := NewEmptyNode(1, big.NewInt(0)).Serialize(testCtx)
+	require.NoError(t, err)
+
+	leafNode, err := NewLeafNode(1, big.NewInt(1), []byte{1, 2, 3}).Serialize(testCtx)
+	require.NoError(t, err)
+
+	bucket := &fakeBucket{
+		values: map[string][]byte{
+			string([]byte{0}): emptyNode,
+			string([]byte{1}): leafNode,
+		},
+	}
+
+	return bucket
+}
 
 type fakeTx struct {
 	kv.WritableTx

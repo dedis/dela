@@ -60,6 +60,29 @@ func NewMerkleTree(db kv.DB, nonce Nonce) *MerkleTree {
 	}
 }
 
+// Load tries to read the bucket and scan it for existing leafs and populate the
+// tree with them.
+func (t *MerkleTree) Load() error {
+	return t.doUpdate(func(tx kv.WritableTx) error {
+		bucket := tx.GetBucket(t.bucket)
+		if bucket == nil {
+			return nil
+		}
+
+		err := t.tree.Load(bucket)
+		if err != nil {
+			return err
+		}
+
+		err = t.tree.Update(t.hashFactory, bucket)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 // Get implements store.Readable. It returns the value associated with the key
 // if it exists, otherwise it returns nil.
 func (t *MerkleTree) Get(key []byte) ([]byte, error) {
