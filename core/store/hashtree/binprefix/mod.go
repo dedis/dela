@@ -65,18 +65,15 @@ func NewMerkleTree(db kv.DB, nonce Nonce) *MerkleTree {
 func (t *MerkleTree) Load() error {
 	return t.doUpdate(func(tx kv.WritableTx) error {
 		bucket := tx.GetBucket(t.bucket)
-		if bucket == nil {
-			return nil
-		}
 
 		err := t.tree.Load(bucket)
 		if err != nil {
-			return err
+			return xerrors.Errorf("failed to load: %v", err)
 		}
 
 		err = t.tree.Update(t.hashFactory, bucket)
 		if err != nil {
-			return err
+			return xerrors.Errorf("while updating: %v", err)
 		}
 
 		return nil

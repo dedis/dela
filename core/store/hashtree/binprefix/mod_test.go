@@ -97,7 +97,7 @@ func TestMerkleTree_IntegrationTest(t *testing.T) {
 }
 
 func TestMerkleTree_Random_IntegrationTest(t *testing.T) {
-	f := func(nonce Nonce, n uint8, mem uint) bool {
+	f := func(nonce Nonce, n uint8, mem uint8) bool {
 		t.Logf("Step nonce:%x n:%d mem:%d", nonce, n, mem%32)
 
 		db, clean := makeDB(t)
@@ -173,6 +173,22 @@ func TestMerkleTree_Random_IntegrationTest(t *testing.T) {
 
 	err := quick.Check(f, &quick.Config{MaxCount: 20})
 	require.NoError(t, err)
+}
+
+func TestMerkleTree_Load(t *testing.T) {
+	tree := NewMerkleTree(fakeDB{}, Nonce{})
+
+	err := tree.Load()
+	require.NoError(t, err)
+
+	tree.tx = fakeTx{bucket: &fakeBucket{errScan: xerrors.New("oops")}}
+	err = tree.Load()
+	require.EqualError(t, err, "failed to load: while scanning: oops")
+
+	tree.tx = nil
+	tree.hashFactory = fake.NewHashFactory(fake.NewBadHash())
+	err = tree.Load()
+	require.EqualError(t, err, "while updating: failed to prepare: empty node failed: fake error")
 }
 
 func TestMerkleTree_Get(t *testing.T) {

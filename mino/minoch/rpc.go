@@ -17,7 +17,6 @@ type Envelope struct {
 	to      []mino.Address
 	from    address
 	message []byte
-	errs    chan error
 }
 
 // RPC is an implementation of the mino.RPC interface.

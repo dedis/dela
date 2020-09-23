@@ -125,6 +125,7 @@ func TestDiskNode_Prepare(t *testing.T) {
 	require.Len(t, hash, 32)
 	require.Equal(t, hash, node.hash)
 
+	node.hash = nil
 	_, err = node.Prepare([]byte{}, big.NewInt(0), &fakeBucket{}, nil)
 	require.EqualError(t, err, "failed to load node: prefix 0 (depth 0) not in database")
 
@@ -226,7 +227,7 @@ func (b *fakeBucket) Delete(key []byte) error {
 	return nil
 }
 
-func (b *fakeBucket) ForEach(fn func(k, v []byte) error) error {
+func (b *fakeBucket) Scan(prefix []byte, fn func(k, v []byte) error) error {
 	for key, value := range b.values {
 		err := fn([]byte(key), value)
 		if err != nil {
@@ -234,9 +235,5 @@ func (b *fakeBucket) ForEach(fn func(k, v []byte) error) error {
 		}
 	}
 
-	return nil
-}
-
-func (b *fakeBucket) Scan(prefix []byte, fn func(k, v []byte) error) error {
 	return b.errScan
 }

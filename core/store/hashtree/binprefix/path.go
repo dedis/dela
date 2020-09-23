@@ -66,7 +66,7 @@ func (s Path) computeRoot(fac crypto.HashFactory) ([]byte, error) {
 
 	curr, err := node.Prepare(s.nonce, prefix, nil, fac)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to calculate digest: %v", err)
+		return nil, xerrors.Errorf("while preparing: %v", err)
 	}
 
 	for i := len(s.interiors) - 1; i >= 0; i-- {

@@ -103,6 +103,10 @@ func (n *DiskNode) Delete(key *big.Int, bucket kv.Bucket) (TreeNode, error) {
 func (n *DiskNode) Prepare(nonce []byte, prefix *big.Int,
 	bucket kv.Bucket, fac crypto.HashFactory) ([]byte, error) {
 
+	if n.hash != nil {
+		return n.hash, nil
+	}
+
 	node, err := n.load(prefix, bucket)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to load node: %v", err)

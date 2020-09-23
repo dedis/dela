@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/internal/testing/fake"
 )
 
 func TestPath_GetKey(t *testing.T) {
@@ -28,4 +29,15 @@ func TestPath_GetRoot(t *testing.T) {
 
 	path.root = []byte("pong")
 	require.Equal(t, []byte("pong"), path.GetRoot())
+}
+
+func TestPath_ComputeRoot(t *testing.T) {
+	path := newPath([]byte{1, 2, 3}, []byte("A"))
+
+	root, err := path.computeRoot(fake.NewHashFactory(&fake.Hash{}))
+	require.NoError(t, err)
+	require.NotEmpty(t, root)
+
+	_, err = path.computeRoot(fake.NewHashFactory(fake.NewBadHash()))
+	require.EqualError(t, err, "while preparing: empty node failed: fake error")
 }

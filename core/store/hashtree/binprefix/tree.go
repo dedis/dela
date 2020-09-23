@@ -106,21 +106,34 @@ func (t *Tree) Len() int {
 // Load scans the bucket for leafs to insert them in the tree. It will then
 // persist the tree to restore the memory depth limit.
 func (t *Tree) Load(bucket kv.Bucket) error {
-	err := bucket.ForEach(func(key, value []byte) error {
-		node, err := t.factory.Deserialize(t.context, value)
+	if bucket == nil {
+		return nil
+	}
+
+	t.root = NewInteriorNode(0, new(big.Int))
+
+	err := bucket.Scan([]byte{}, func(key, value []byte) error {
+		msg, err := t.factory.Deserialize(t.context, value)
 		if err != nil {
 			return xerrors.Errorf("tree node malformed: %v", err)
 		}
 
-		leaf, ok := node.(*LeafNode)
-		if !ok {
-			return nil
+		var diskNode *DiskNode
+		var prefix *big.Int
+
+		switch node := msg.(type) {
+		case *InteriorNode:
+			diskNode = NewDiskNode(node.depth, node.hash, t.context, t.factory)
+			prefix = node.prefix
+		case *EmptyNode:
+			diskNode = NewDiskNode(node.depth, node.hash, t.context, t.factory)
+			prefix = node.prefix
+		case *LeafNode:
+			diskNode = NewDiskNode(node.depth, node.hash, t.context, t.factory)
+			prefix = node.key
 		}
 
-		err = t.Insert(leaf.GetKey(), leaf.GetValue(), bucket)
-		if err != nil {
-			return xerrors.Errorf("while inserting value: %v", err)
-		}
+		t.restore(t.root, prefix, diskNode)
 
 		return nil
 	})
@@ -129,12 +142,32 @@ func (t *Tree) Load(bucket kv.Bucket) error {
 		return xerrors.Errorf("while scanning: %v", err)
 	}
 
-	err = t.Persist(bucket)
-	if err != nil {
-		return xerrors.Errorf("failed to persist: %v", err)
+	return nil
+}
+
+func (t *Tree) restore(curr TreeNode, prefix *big.Int, node *DiskNode) TreeNode {
+	var interior *InteriorNode
+
+	switch n := curr.(type) {
+	case *InteriorNode:
+		interior = n
+	case *DiskNode:
+		return curr
+	case *EmptyNode:
+		if node.depth == n.depth {
+			return node
+		}
+
+		interior = NewInteriorNode(n.depth, n.prefix)
 	}
 
-	return nil
+	if prefix.Bit(int(interior.depth)) == 0 {
+		interior.left = t.restore(interior.left, prefix, node)
+	} else {
+		interior.right = t.restore(interior.right, prefix, node)
+	}
+
+	return interior
 }
 
 // Search returns the value associated to the key if it exists, otherwise nil.
@@ -314,6 +347,10 @@ func (n *EmptyNode) Delete(key *big.Int, b kv.Bucket) (TreeNode, error) {
 func (n *EmptyNode) Prepare(nonce []byte,
 	prefix *big.Int, b kv.Bucket, fac crypto.HashFactory) ([]byte, error) {
 
+	if len(n.hash) > 0 {
+		return n.hash, nil
+	}
+
 	h := fac.New()
 
 	data := make([]byte, 1+len(nonce)+bilen(prefix)+DepthLength)
@@ -424,6 +461,8 @@ func (n *InteriorNode) Insert(key *big.Int, value []byte, b kv.Bucket) (TreeNode
 		n.right, err = n.right.Insert(key, value, b)
 	}
 
+	n.hash = nil
+
 	return n, err
 }
 
@@ -485,6 +524,10 @@ func (n *InteriorNode) load(node TreeNode, key *big.Int, bit uint, b kv.Bucket) 
 // the digest.
 func (n *InteriorNode) Prepare(nonce []byte,
 	prefix *big.Int, b kv.Bucket, fac crypto.HashFactory) ([]byte, error) {
+
+	if len(n.hash) > 0 {
+		return n.hash, nil
+	}
 
 	h := fac.New()
 
@@ -648,6 +691,10 @@ func (n *LeafNode) Delete(key *big.Int, b kv.Bucket) (TreeNode, error) {
 func (n *LeafNode) Prepare(nonce []byte,
 	prefix *big.Int, b kv.Bucket, fac crypto.HashFactory) ([]byte, error) {
 
+	if len(n.hash) > 0 {
+		return n.hash, nil
+	}
+
 	h := fac.New()
 
 	data := make([]byte, 1+len(nonce)+DepthLength+bilen(prefix)+bilen(n.key)+len(n.value))
@@ -718,7 +765,7 @@ func (f NodeFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message,
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to decode node: %v", err)
+		return nil, xerrors.Errorf("format failed: %v", err)
 	}
 
 	return msg, nil
