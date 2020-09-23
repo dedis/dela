@@ -2,7 +2,6 @@ package cosipbft
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela/core"
@@ -104,8 +103,6 @@ func (h *processor) Invoke(from mino.Address, msg serde.Message) ([]byte, error)
 		if err != nil {
 			return nil, xerrors.Errorf("pbft prepare failed: %v", err)
 		}
-
-		fmt.Printf("%v\n", digest)
 
 		return digest[:], nil
 	case types.CommitMessage:

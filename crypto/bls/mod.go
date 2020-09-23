@@ -327,51 +327,76 @@ func (v verifierFactory) FromArray(publicKeys []crypto.PublicKey) (crypto.Verifi
 	return newVerifier(points), nil
 }
 
-type signer struct {
-	keyPair *key.Pair
+// Signer is the BLS signer which can sign messages to be verified with its
+// public key.
+//
+// - implements crypto.AggregateSigner
+// - implements encodinf.BinaryMarshaler
+type Signer struct {
+	public  kyber.Point
+	private kyber.Scalar
 }
 
 // NewSigner generates and returns a new random signer.
-func NewSigner() crypto.AggregateSigner {
-	return Generate().(crypto.AggregateSigner)
+func NewSigner() Signer {
+	return Generate().(Signer)
+}
+
+// NewSignerFromBytes restores a signer from a marshalling.
+func NewSignerFromBytes(data []byte) (crypto.AggregateSigner, error) {
+	scalar := suite.Scalar()
+	err := scalar.UnmarshalBinary(data)
+	if err != nil {
+		return nil, xerrors.Errorf("while unmarshaling scalar: %v", err)
+	}
+
+	pubkey := suite.Point().Mul(scalar, nil)
+
+	signer := Signer{
+		public:  pubkey,
+		private: scalar,
+	}
+
+	return signer, nil
 }
 
 // Generate returns a new random BLS signer that supports aggregation.
 func Generate() crypto.Signer {
 	kp := key.NewKeyPair(suite)
-	return signer{
-		keyPair: kp,
+	return Signer{
+		private: kp.Private,
+		public:  kp.Public,
 	}
 }
 
 // GetVerifierFactory implements crypto.Signer. It returns the verifier factory
 // for BLS signatures.
-func (s signer) GetVerifierFactory() crypto.VerifierFactory {
+func (s Signer) GetVerifierFactory() crypto.VerifierFactory {
 	return verifierFactory{}
 }
 
 // GetPublicKeyFactory implements crypto.Signer. It returns the public key
 // factory for BLS signatures.
-func (s signer) GetPublicKeyFactory() crypto.PublicKeyFactory {
+func (s Signer) GetPublicKeyFactory() crypto.PublicKeyFactory {
 	return publicKeyFactory{}
 }
 
 // GetSignatureFactory implements crypto.Signer. It returns the signature
 // factory for BLS signatures.
-func (s signer) GetSignatureFactory() crypto.SignatureFactory {
+func (s Signer) GetSignatureFactory() crypto.SignatureFactory {
 	return signatureFactory{}
 }
 
 // GetPublicKey implements crypto.Signer. It returns the public key of the
 // signer that can be used to verify signatures.
-func (s signer) GetPublicKey() crypto.PublicKey {
-	return PublicKey{point: s.keyPair.Public}
+func (s Signer) GetPublicKey() crypto.PublicKey {
+	return PublicKey{point: s.public}
 }
 
 // Sign implements crypto.Signer. It signs the message in parameter and returns
 // the signature, or an error if it cannot sign.
-func (s signer) Sign(msg []byte) (crypto.Signature, error) {
-	sig, err := bls.Sign(suite, s.keyPair.Private, msg)
+func (s Signer) Sign(msg []byte) (crypto.Signature, error) {
+	sig, err := bls.Sign(suite, s.private, msg)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't make bls signature: %v", err)
 	}
@@ -381,7 +406,7 @@ func (s signer) Sign(msg []byte) (crypto.Signature, error) {
 
 // Aggregate implements crypto.Signer. It aggregates the signatures into a
 // single one that can be verifier with the aggregated public key associated.
-func (s signer) Aggregate(signatures ...crypto.Signature) (crypto.Signature, error) {
+func (s Signer) Aggregate(signatures ...crypto.Signature) (crypto.Signature, error) {
 	buffers := make([][]byte, len(signatures))
 	for i, sig := range signatures {
 		buffers[i] = sig.(Signature).data
@@ -393,4 +418,15 @@ func (s signer) Aggregate(signatures ...crypto.Signature) (crypto.Signature, err
 	}
 
 	return Signature{data: agg}, nil
+}
+
+// MarshalBinary implements encoding.BinaryMarshaler. It returns a binary
+// representation of the signer.
+func (s Signer) MarshalBinary() ([]byte, error) {
+	data, err := s.private.MarshalBinary()
+	if err != nil {
+		return nil, xerrors.Errorf("while marshaling scalar: %v", err)
+	}
+
+	return data, nil
 }

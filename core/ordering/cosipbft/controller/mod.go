@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"encoding/base64"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -18,6 +20,7 @@ import (
 	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/cosi/flatcosi"
+	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/gossip"
@@ -82,7 +85,11 @@ func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("injector: %v", err)
 	}
 
-	signer := bls.NewSigner()
+	signer, err := loadSigner(flags.Path("config"))
+	if err != nil {
+		return err
+	}
+
 	cosi := flatcosi.NewFlat(m, signer)
 	exec := baremetal.NewExecution()
 	access := darc.NewService(json.NewContext())
@@ -149,4 +156,57 @@ func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
 	inj.Inject(vs)
 
 	return nil
+}
+
+func loadSigner(cfg string) (crypto.AggregateSigner, error) {
+	path := filepath.Join(cfg, "private.key")
+
+	_, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		signer := bls.NewSigner()
+
+		data, err := signer.MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+
+		file, err := os.Create(path)
+		if err != nil {
+			return nil, err
+		}
+
+		defer file.Close()
+
+		enc := base64.NewEncoder(base64.StdEncoding, file)
+		defer enc.Close()
+
+		_, err = enc.Write(data)
+		if err != nil {
+			return nil, err
+		}
+
+		return signer, nil
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+
+	defer file.Close()
+
+	dec := base64.NewDecoder(base64.StdEncoding, file)
+
+	buffer := make([]byte, 512)
+	n, err := dec.Read(buffer)
+	if err != nil {
+		return nil, err
+	}
+
+	signer, err := bls.NewSignerFromBytes(buffer[:n])
+	if err != nil {
+		return nil, err
+	}
+
+	return signer, nil
 }
