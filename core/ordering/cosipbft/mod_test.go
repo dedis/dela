@@ -132,12 +132,18 @@ func TestService_New(t *testing.T) {
 		Pool:       badPool{},
 	}
 
-	srvc, err := NewService(param, WithHashFactory(fake.NewHashFactory(&fake.Hash{})))
+	genesis := blockstore.NewGenesisStore()
+	genesis.Set(types.Genesis{})
+
+	opts := []ServiceOption{
+		WithHashFactory(fake.NewHashFactory(&fake.Hash{})),
+		WithGenesisStore(genesis),
+	}
+
+	srvc, err := NewService(param, opts...)
 	require.NoError(t, err)
 	require.NotNil(t, srvc)
 
-	srvc.logger = zerolog.New(ioutil.Discard)
-	close(srvc.started)
 	<-srvc.closed
 
 	param.Mino = fake.NewBadMino()
