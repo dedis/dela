@@ -2,12 +2,12 @@ package cosipbft
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela/core"
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/execution/baremetal/viewchange"
-	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blocksync"
@@ -104,6 +104,8 @@ func (h *processor) Invoke(from mino.Address, msg serde.Message) ([]byte, error)
 		if err != nil {
 			return nil, xerrors.Errorf("pbft prepare failed: %v", err)
 		}
+
+		fmt.Printf("%v\n", digest)
 
 		return digest[:], nil
 	case types.CommitMessage:
@@ -222,8 +224,6 @@ func (h *processor) storeGenesis(roster authority.Authority, match *types.Digest
 	if err != nil {
 		return xerrors.Errorf("set genesis failed: %v", err)
 	}
-
-	h.watcher.Notify(ordering.Event{Index: 0})
 
 	close(h.started)
 

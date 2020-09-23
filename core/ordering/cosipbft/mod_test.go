@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/access/darc"
@@ -63,25 +62,25 @@ func TestService_Scenario_Basic(t *testing.T) {
 	require.NoError(t, err)
 
 	evt := waitEvent(t, events)
-	require.Equal(t, uint64(1), evt.Index)
+	require.Equal(t, uint64(0), evt.Index)
 
 	err = nodes[1].pool.Add(makeTx(t, 1, signer))
 	require.NoError(t, err)
 
 	evt = waitEvent(t, events)
-	require.Equal(t, uint64(2), evt.Index)
+	require.Equal(t, uint64(1), evt.Index)
 
 	err = nodes[1].pool.Add(makeRosterTx(t, 2, ro, signer))
 	require.NoError(t, err)
 
 	evt = waitEvent(t, events)
-	require.Equal(t, uint64(3), evt.Index)
+	require.Equal(t, uint64(2), evt.Index)
 
 	err = nodes[1].pool.Add(makeTx(t, 3, signer))
 	require.NoError(t, err)
 
 	evt = waitEvent(t, events)
-	require.Equal(t, uint64(4), evt.Index)
+	require.Equal(t, uint64(3), evt.Index)
 
 	proof, err := nodes[0].service.GetProof(keyRoster[:])
 	require.NoError(t, err)
@@ -120,7 +119,7 @@ func TestService_Scenario_ViewChange(t *testing.T) {
 	require.NoError(t, err)
 
 	evt := waitEvent(t, events)
-	require.Equal(t, uint64(1), evt.Index)
+	require.Equal(t, uint64(0), evt.Index)
 }
 
 func TestService_New(t *testing.T) {

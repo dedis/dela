@@ -144,12 +144,15 @@ func (s defaultSync) Sync(ctx context.Context, players mino.Players, cfg Config)
 
 func (s defaultSync) syncNode(from uint64, sender mino.Sender, to mino.Address) error {
 	for i := from; i < s.blocks.Len(); i++ {
-		s.logger.Debug().Uint64("index", i).Str("to", to.String()).Msg("send block")
-
 		link, err := s.blocks.GetByIndex(i)
 		if err != nil {
 			return xerrors.Errorf("couldn't get block: %v", err)
 		}
+
+		s.logger.Debug().
+			Uint64("index", link.GetBlock().GetIndex()).
+			Stringer("to", to).
+			Msg("send block")
 
 		err = <-sender.Send(types.NewSyncReply(link), to)
 		if err != nil {
@@ -194,7 +197,7 @@ func (h *handler) Stream(out mino.Sender, in mino.Receiver) error {
 		return xerrors.Errorf("failed to verify chain: %v", err)
 	}
 
-	if m.GetLatestIndex() <= h.blocks.Len() {
+	if m.GetLatestIndex() < h.blocks.Len() {
 		// The block storage has already all the block known so far so we can
 		// send the hard-sync acknowledgement.
 		return h.ack(out, orch)
@@ -218,7 +221,7 @@ func (h *handler) Stream(out mino.Sender, in mino.Receiver) error {
 		return xerrors.Errorf("sending request failed: %v", err)
 	}
 
-	for h.blocks.Len() < m.GetLatestIndex() {
+	for h.blocks.Len() <= m.GetLatestIndex() {
 		_, msg, err := in.Recv(ctx)
 		if err != nil {
 			return xerrors.Errorf("receiver failed: %v", err)

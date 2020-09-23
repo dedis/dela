@@ -127,7 +127,18 @@ func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("failed to load genesis: %v", err)
 	}
 
-	srvc, err := cosipbft.NewService(param, cosipbft.WithGenesisStore(genstore))
+	blockFac := types.NewBlockFactory(vs.GetFactory())
+	csFac := authority.NewChangeSetFactory(m.GetAddressFactory(), cosi.GetPublicKeyFactory())
+	linkFac := types.NewLinkFactory(blockFac, cosi.GetSignatureFactory(), csFac)
+
+	blocks := blockstore.NewDiskStore(db, linkFac)
+
+	err = blocks.Load()
+	if err != nil {
+		return xerrors.Errorf("failed to load blocks: %v", err)
+	}
+
+	srvc, err := cosipbft.NewService(param, cosipbft.WithGenesisStore(genstore), cosipbft.WithBlockStore(blocks))
 	if err != nil {
 		return xerrors.Errorf("service: %v", err)
 	}

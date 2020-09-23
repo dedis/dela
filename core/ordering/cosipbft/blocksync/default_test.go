@@ -162,11 +162,12 @@ func TestHandler_Stream(t *testing.T) {
 	}
 	handler.genesis.Set(otypes.Genesis{})
 	handler.pbftsm = testSM{blocks: handler.blocks}
+	storeBlocks(t, handler.blocks, 1)
 
 	err := handler.Stream(fake.Sender{}, fake.NewReceiver(types.NewSyncMessage(makeChain(t, 0))))
 	require.NoError(t, err)
 
-	msgs := []serde.Message{types.NewSyncMessage(makeChain(t, blocks.Len()))}
+	msgs := []serde.Message{types.NewSyncMessage(makeChain(t, blocks.Len()-1))}
 	for i := uint64(0); i < blocks.Len(); i++ {
 		link, err := blocks.GetByIndex(i)
 		require.NoError(t, err)
@@ -174,6 +175,8 @@ func TestHandler_Stream(t *testing.T) {
 		msgs = append(msgs, types.NewSyncReply(link))
 	}
 
+	handler.blocks = blockstore.NewInMemory()
+	handler.pbftsm = testSM{blocks: handler.blocks}
 	err = handler.Stream(fake.Sender{}, fake.NewReceiver(msgs...))
 	require.NoError(t, err)
 	require.Equal(t, blocks.Len(), handler.blocks.Len())
@@ -265,7 +268,7 @@ func storeBlocks(t *testing.T, blocks blockstore.BlockStore, n int, from ...byte
 	copy(prev[:], from)
 
 	for i := 0; i < n; i++ {
-		block, err := otypes.NewBlock(simple.NewData(nil), otypes.WithIndex(uint64(i+1)))
+		block, err := otypes.NewBlock(simple.NewData(nil), otypes.WithIndex(uint64(i)))
 		require.NoError(t, err)
 
 		link, err := otypes.NewBlockLink(prev, block,

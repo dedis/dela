@@ -117,6 +117,9 @@ func TestMemcoin_Scenario_2(t *testing.T) {
 	setupChain(t, node1, 2210)
 
 	// TODO: correctly stop the node then restart it.
+	defer func() {
+		os.RemoveAll(node1)
+	}()
 }
 
 // -----------------------------------------------------------------------------

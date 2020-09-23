@@ -355,9 +355,6 @@ func TestOverlayServer_Stream(t *testing.T) {
 	err = overlay.Stream(&fakeSrvStream{ctx: ctx})
 	require.EqualError(t, err, "missing headers")
 
-	err = overlay.Stream(&fakeSrvStream{ctx: makeCtx()})
-	require.EqualError(t, err, "routing table: headers are empty")
-
 	overlay.router = badRouter{}
 	badCtx := makeCtx(headerStreamIDKey, "abc", headerAddressKey, "{}")
 	err = overlay.Stream(&fakeSrvStream{ctx: badCtx})
