@@ -15,17 +15,17 @@ import (
 )
 
 type cacheData struct {
-	length uint64
-	last   types.BlockLink
-	mapper map[types.Digest]uint64
+	sync.Mutex
+
+	length  uint64
+	last    types.BlockLink
+	indices map[types.Digest]uint64
 }
 
 // InDisk is a persistent storage implementation for the blocks.
 //
 // - implements blockstore.BlockStore
 type InDisk struct {
-	sync.Mutex
-
 	*cacheData
 
 	db      kv.DB
@@ -46,7 +46,7 @@ func NewDiskStore(db kv.DB, fac types.LinkFactory) *InDisk {
 		fac:     fac,
 		watcher: core.NewWatcher(),
 		cacheData: &cacheData{
-			mapper: make(map[types.Digest]uint64),
+			indices: make(map[types.Digest]uint64),
 		},
 	}
 }
@@ -71,18 +71,24 @@ func (s *InDisk) Load() error {
 			return nil
 		}
 
-		return bucket.Scan([]byte{}, func(key, value []byte) error {
+		err := bucket.Scan([]byte{}, func(key, value []byte) error {
 			link, err := s.fac.BlockLinkOf(s.context, value)
 			if err != nil {
-				return err
+				return xerrors.Errorf("malformed block: %v", err)
 			}
 
 			s.length++
 			s.last = link
-			s.mapper[link.GetBlock().GetHash()] = link.GetBlock().GetIndex()
+			s.indices[link.GetBlock().GetHash()] = link.GetBlock().GetIndex()
 
 			return nil
 		})
+
+		if err != nil {
+			return xerrors.Errorf("while scanning: %v", err)
+		}
+
+		return nil
 	})
 }
 
@@ -94,18 +100,19 @@ func (s *InDisk) Store(link types.BlockLink) error {
 	s.Unlock()
 
 	if last != nil && last.GetTo() != link.GetFrom() {
-		return xerrors.Errorf("mismatch")
+		return xerrors.Errorf("mismatch digests '%v' (new) != '%v' (last)",
+			link.GetFrom(), last.GetTo())
 	}
 
 	data, err := link.Serialize(s.context)
 	if err != nil {
-		return err
+		return xerrors.Errorf("failed to serialize: %v", err)
 	}
 
 	return s.doUpdate(func(tx kv.WritableTx) error {
 		bucket, err := tx.GetBucketOrCreate(s.bucket)
 		if err != nil {
-			return err
+			return xerrors.Errorf("bucket failed: %v", err)
 		}
 
 		index := link.GetBlock().GetIndex()
@@ -114,7 +121,7 @@ func (s *InDisk) Store(link types.BlockLink) error {
 
 		err = bucket.Set(key, data)
 		if err != nil {
-			return err
+			return xerrors.Errorf("while writing: %v", err)
 		}
 
 		tx.OnCommit(func() {
@@ -122,7 +129,7 @@ func (s *InDisk) Store(link types.BlockLink) error {
 
 			s.length++
 			s.last = link
-			s.mapper[link.GetBlock().GetHash()] = index
+			s.indices[link.GetBlock().GetHash()] = index
 
 			s.Unlock()
 
@@ -137,11 +144,11 @@ func (s *InDisk) Store(link types.BlockLink) error {
 // identifier if it exists, otherwise it returns an error.
 func (s *InDisk) Get(id types.Digest) (types.BlockLink, error) {
 	s.Lock()
-	index, found := s.mapper[id]
+	index, found := s.indices[id]
 	s.Unlock()
 
 	if !found {
-		return nil, xerrors.Errorf("'%v' is unknown", id)
+		return nil, xerrors.Errorf("'%v' not found: %w", id, ErrNoBlock)
 	}
 
 	return s.GetByIndex(index)
@@ -149,32 +156,33 @@ func (s *InDisk) Get(id types.Digest) (types.BlockLink, error) {
 
 // GetByIndex implements blockstore.BlockStore. It returns the block associated
 // to the index if it exists, otherwise it returns an error.
-func (s *InDisk) GetByIndex(index uint64) (types.BlockLink, error) {
+func (s *InDisk) GetByIndex(index uint64) (link types.BlockLink, err error) {
 	key := s.makeKey(index)
 
-	var link types.BlockLink
-
-	err := s.doView(func(tx kv.ReadableTx) error {
+	err = s.doView(func(tx kv.ReadableTx) error {
 		bucket := tx.GetBucket(s.bucket)
 
+		value := bucket.Get(key)
+
+		if len(value) == 0 {
+			return xerrors.Errorf("index %d not found: %w", index, ErrNoBlock)
+		}
+
 		var err error
-		link, err = s.fac.BlockLinkOf(s.context, bucket.Get(key))
+		link, err = s.fac.BlockLinkOf(s.context, value)
 		if err != nil {
-			return err
+			return xerrors.Errorf("malformed block: %v", err)
 		}
 
 		return nil
 	})
-	if err != nil {
-		return nil, err
-	}
 
-	return link, nil
+	return
 }
 
 // GetChain implements blockstore.Blockstore. It returns a chain to the latest
 // block.
-func (s *InDisk) GetChain() (types.Chain, error) {
+func (s *InDisk) GetChain() (chain types.Chain, err error) {
 	s.Lock()
 	length := s.length
 	s.Unlock()
@@ -184,20 +192,19 @@ func (s *InDisk) GetChain() (types.Chain, error) {
 	}
 
 	prevs := make([]types.Link, length-1)
-	var last types.BlockLink
 
-	err := s.doView(func(tx kv.ReadableTx) error {
+	err = s.doView(func(tx kv.ReadableTx) error {
 		bucket := tx.GetBucket(s.bucket)
 
 		i := uint64(0)
-		bucket.Scan([]byte{}, func(key, value []byte) error {
+		err := bucket.Scan([]byte{}, func(key, value []byte) error {
 			link, err := s.fac.BlockLinkOf(s.context, value)
 			if err != nil {
-				return err
+				return xerrors.Errorf("block malformed: %v", err)
 			}
 
 			if i >= length-1 {
-				last = link
+				chain = types.NewChain(link, prevs)
 				return nil
 			}
 
@@ -207,14 +214,14 @@ func (s *InDisk) GetChain() (types.Chain, error) {
 			return nil
 		})
 
+		if err != nil {
+			return xerrors.Errorf("while scanning: %v", err)
+		}
+
 		return nil
 	})
 
-	if err != nil {
-		return nil, err
-	}
-
-	return types.NewChain(last, prevs), nil
+	return
 }
 
 // Last implements blockstore.BlockStore. It returns the last block stored in
@@ -224,7 +231,7 @@ func (s *InDisk) Last() (types.BlockLink, error) {
 	defer s.Unlock()
 
 	if s.length == 0 {
-		return nil, xerrors.Errorf("store empty: %w", ErrNoBlock)
+		return nil, xerrors.Errorf("store is empty: %w", ErrNoBlock)
 	}
 
 	return s.last, nil
@@ -265,7 +272,7 @@ func (s *InDisk) doUpdate(fn func(tx kv.WritableTx) error) error {
 	if s.txn != nil {
 		tx, ok := s.txn.(kv.WritableTx)
 		if !ok {
-			return xerrors.Errorf("transction '%T' is not writable", s.txn)
+			return xerrors.Errorf("transaction '%T' is not writable", s.txn)
 		}
 
 		return fn(tx)

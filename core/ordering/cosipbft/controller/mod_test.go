@@ -3,6 +3,8 @@ package controller
 import (
 	"io/ioutil"
 	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -39,4 +41,31 @@ func TestMinimal_Inject(t *testing.T) {
 	inj.Inject(fake.NewBadMino())
 	err = m.Inject(fset, inj)
 	require.EqualError(t, err, "pool: failed to listen: couldn't create the rpc: fake error")
+}
+
+func TestLoadSigner(t *testing.T) {
+	dir, err := ioutil.TempDir(os.TempDir(), "dela-cosipbft")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
+	signer, err := loadSigner(dir)
+	require.NoError(t, err)
+	require.NotNil(t, signer)
+	require.True(t, fileExists(t, filepath.Join(dir, privateKeyFile)))
+
+	if runtime.GOOS != "windows" {
+		_, err = loadSigner("/")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to create file: ")
+	}
+}
+
+// -----------------------------------------------------------------------------
+// Utility functions
+
+func fileExists(t *testing.T, path string) bool {
+	stat, err := os.Stat(path)
+
+	return !os.IsNotExist(err) && !stat.IsDir()
 }

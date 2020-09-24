@@ -80,6 +80,8 @@ func (h *processor) Invoke(from mino.Address, msg serde.Message) ([]byte, error)
 
 		viewMsgs := in.GetViews()
 		if len(viewMsgs) > 0 {
+			h.logger.Debug().Int("num", len(viewMsgs)).Msg("process views")
+
 			views := make([]pbft.View, 0, len(viewMsgs))
 			for addr, view := range viewMsgs {
 				param := pbft.ViewParam{

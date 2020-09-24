@@ -137,6 +137,7 @@ func TestService_New(t *testing.T) {
 	opts := []ServiceOption{
 		WithHashFactory(fake.NewHashFactory(&fake.Hash{})),
 		WithGenesisStore(genesis),
+		WithBlockStore(blockstore.NewInMemory()),
 	}
 
 	srvc, err := NewService(param, opts...)

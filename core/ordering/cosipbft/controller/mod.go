@@ -28,6 +28,8 @@ import (
 	"golang.org/x/xerrors"
 )
 
+const privateKeyFile = "private.key"
+
 type minimal struct{}
 
 // NewMinimal creates a new minimal controller for cosipbft.
@@ -87,7 +89,7 @@ func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
 
 	signer, err := loadSigner(flags.Path("config"))
 	if err != nil {
-		return err
+		return xerrors.Errorf("signer: %v", err)
 	}
 
 	cosi := flatcosi.NewFlat(m, signer)
@@ -159,7 +161,7 @@ func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
 }
 
 func loadSigner(cfg string) (crypto.AggregateSigner, error) {
-	path := filepath.Join(cfg, "private.key")
+	path := filepath.Join(cfg, privateKeyFile)
 
 	_, err := os.Stat(path)
 	if os.IsNotExist(err) {
@@ -167,12 +169,12 @@ func loadSigner(cfg string) (crypto.AggregateSigner, error) {
 
 		data, err := signer.MarshalBinary()
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("failed to marshal signer: %v", err)
 		}
 
 		file, err := os.Create(path)
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("failed to create file: %v", err)
 		}
 
 		defer file.Close()
@@ -182,7 +184,7 @@ func loadSigner(cfg string) (crypto.AggregateSigner, error) {
 
 		_, err = enc.Write(data)
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("while writing to file: %v", err)
 		}
 
 		return signer, nil
@@ -190,22 +192,22 @@ func loadSigner(cfg string) (crypto.AggregateSigner, error) {
 
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to open file: %v", err)
 	}
 
 	defer file.Close()
 
 	dec := base64.NewDecoder(base64.StdEncoding, file)
 
-	buffer := make([]byte, 512)
+	buffer := make([]byte, 128)
 	n, err := dec.Read(buffer)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("while reading file: %v", err)
 	}
 
 	signer, err := bls.NewSignerFromBytes(buffer[:n])
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to unmarshal signer: %v", err)
 	}
 
 	return signer, nil
