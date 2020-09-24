@@ -10,12 +10,14 @@ import (
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/core/access/darc"
 	"go.dedis.ch/dela/core/execution/baremetal"
+	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store/hashtree/binprefix"
 	"go.dedis.ch/dela/core/store/kv"
+	"go.dedis.ch/dela/core/txn/pool"
 	poolimpl "go.dedis.ch/dela/core/txn/pool/gossip"
 	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/core/validation/simple"
@@ -163,38 +165,54 @@ func (minimal) OnStart(flags cli.Flags, inj node.Injector) error {
 	return nil
 }
 
+// ClosableService is an extension of the ordering service that allows one to
+// close the service.
+type ClosableService interface {
+	ordering.Service
+
+	Close() error
+}
+
+// ClosablePool is an extension of the pool interface that allows one to close
+// it.
+type ClosablePool interface {
+	pool.Pool
+
+	Close() error
+}
+
 func (minimal) OnStop(inj node.Injector) error {
-	var srvc *cosipbft.Service
+	var srvc ClosableService
 	err := inj.Resolve(&srvc)
 	if err != nil {
-		return err
+		return xerrors.Errorf("injector: %v", err)
 	}
 
 	err = srvc.Close()
 	if err != nil {
-		return err
+		return xerrors.Errorf("while closing service: %v", err)
 	}
 
-	var pool *poolimpl.Pool
+	var pool ClosablePool
 	err = inj.Resolve(&pool)
 	if err != nil {
-		return err
+		return xerrors.Errorf("injector: %v", err)
 	}
 
 	err = pool.Close()
 	if err != nil {
-		return err
+		return xerrors.Errorf("while closing pool: %v", err)
 	}
 
 	var db kv.DB
 	err = inj.Resolve(&db)
 	if err != nil {
-		return err
+		return xerrors.Errorf("injector: %v", err)
 	}
 
 	err = db.Close()
 	if err != nil {
-		return err
+		return xerrors.Errorf("while closing db: %v", err)
 	}
 
 	return nil
