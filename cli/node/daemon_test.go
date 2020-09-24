@@ -159,13 +159,18 @@ func listen(t *testing.T, path string, quick bool) {
 }
 
 type fakeInitializer struct {
-	err error
+	err     error
+	errStop error
 }
 
 func (c fakeInitializer) SetCommands(Builder) {}
 
-func (c fakeInitializer) Inject(cli.Flags, Injector) error {
+func (c fakeInitializer) OnStart(cli.Flags, Injector) error {
 	return c.err
+}
+
+func (c fakeInitializer) OnStop(Injector) error {
+	return c.errStop
 }
 
 type fakeClient struct {

@@ -81,9 +81,12 @@ type Initializer interface {
 	// Build populates the builder with the commands of the controller.
 	SetCommands(Builder)
 
-	// Inject starts the components of the initializer and populates the
+	// OnStart starts the components of the initializer and populates the
 	// injector.
-	Inject(cli.Flags, Injector) error
+	OnStart(cli.Flags, Injector) error
+
+	// OnStop stops the components and clean the resources.
+	OnStop(Injector) error
 }
 
 // Client is the interface to send a message to the daemon.

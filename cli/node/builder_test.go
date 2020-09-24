@@ -53,11 +53,19 @@ func TestCliBuilder_Start(t *testing.T) {
 	err = builder.start(nil)
 	require.EqualError(t, err, "couldn't start the daemon: oops")
 
+	// Test when a component cannot start.
 	builder = NewBuilder(fakeInitializer{err: xerrors.New("oops")}).(*cliBuilder)
 	builder.sigs <- syscall.SIGTERM
 
 	err = builder.start(nil)
 	require.EqualError(t, err, "couldn't run the controller: oops")
+
+	// Test when a component cannot stop.
+	builder = NewBuilder(fakeInitializer{errStop: xerrors.New("oops")}).(*cliBuilder)
+	builder.sigs <- syscall.SIGTERM
+
+	err = builder.start(nil)
+	require.EqualError(t, err, "couldn't stop controller: oops")
 }
 
 func TestCliBuilder_MakeAction(t *testing.T) {

@@ -32,14 +32,14 @@ func TestMinimal_Inject(t *testing.T) {
 	inj := node.NewInjector()
 	inj.Inject(fake.Mino{})
 
-	err = m.Inject(fset, inj)
+	err = m.OnStart(fset, inj)
 	require.NoError(t, err)
 
-	err = m.Inject(fset, node.NewInjector())
+	err = m.OnStart(fset, node.NewInjector())
 	require.EqualError(t, err, "injector: couldn't find dependency for 'mino.Mino'")
 
 	inj.Inject(fake.NewBadMino())
-	err = m.Inject(fset, inj)
+	err = m.OnStart(fset, inj)
 	require.EqualError(t, err, "pool: failed to listen: couldn't create the rpc: fake error")
 }
 

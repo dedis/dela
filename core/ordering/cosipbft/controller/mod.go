@@ -80,7 +80,7 @@ func (minimal) SetCommands(builder node.Builder) {
 	sub.SetAction(builder.MakeAction(rosterAddAction{}))
 }
 
-func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
+func (minimal) OnStart(flags cli.Flags, inj node.Injector) error {
 	var m mino.Mino
 	err := inj.Resolve(&m)
 	if err != nil {
@@ -154,10 +154,48 @@ func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("service: %v", err)
 	}
 
+	inj.Inject(db)
 	inj.Inject(srvc)
 	inj.Inject(cosi)
 	inj.Inject(pool)
 	inj.Inject(vs)
+
+	return nil
+}
+
+func (minimal) OnStop(inj node.Injector) error {
+	var srvc *cosipbft.Service
+	err := inj.Resolve(&srvc)
+	if err != nil {
+		return err
+	}
+
+	err = srvc.Close()
+	if err != nil {
+		return err
+	}
+
+	var pool *poolimpl.Pool
+	err = inj.Resolve(&pool)
+	if err != nil {
+		return err
+	}
+
+	err = pool.Close()
+	if err != nil {
+		return err
+	}
+
+	var db kv.DB
+	err = inj.Resolve(&db)
+	if err != nil {
+		return err
+	}
+
+	err = db.Close()
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
