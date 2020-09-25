@@ -436,7 +436,7 @@ func (pk PublicKey) MarshalText() ([]byte, error) {
 }
 
 // Equal implements crypto.PublicKey.
-func (pk PublicKey) Equal(other crypto.PublicKey) bool {
+func (pk PublicKey) Equal(other interface{}) bool {
 	_, ok := other.(PublicKey)
 
 	return ok
