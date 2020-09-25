@@ -17,7 +17,6 @@ import (
 	"go.dedis.ch/dela/mino/gossip"
 	"go.dedis.ch/dela/mino/minoch"
 	"go.dedis.ch/dela/serde"
-	"golang.org/x/xerrors"
 )
 
 func TestPool_Basic(t *testing.T) {
@@ -64,8 +63,8 @@ func TestPool_New(t *testing.T) {
 	err = pool.Close()
 	require.NoError(t, err)
 
-	_, err = NewPool(fakeGossiper{err: xerrors.New("oops")})
-	require.EqualError(t, err, "failed to listen: oops")
+	_, err = NewPool(fakeGossiper{err: fake.GetError()})
+	require.EqualError(t, err, fake.Err("failed to listen"))
 }
 
 func TestPool_Len(t *testing.T) {
@@ -90,12 +89,12 @@ func TestPool_Add(t *testing.T) {
 
 	p.gatherer = badGatherer{}
 	err = p.Add(makeTx(0))
-	require.EqualError(t, err, "store failed: oops")
+	require.EqualError(t, err, fake.Err("store failed"))
 
 	p.gatherer = pool.NewSimpleGatherer()
-	p.actor = fakeActor{err: xerrors.New("oops")}
+	p.actor = fakeActor{err: fake.GetError()}
 	err = p.Add(makeTx(0))
-	require.EqualError(t, err, "failed to gossip tx: oops")
+	require.EqualError(t, err, fake.Err("failed to gossip tx"))
 }
 
 func TestPool_Remove(t *testing.T) {
@@ -113,7 +112,7 @@ func TestPool_Remove(t *testing.T) {
 
 	p.gatherer = badGatherer{}
 	err = p.Remove(tx)
-	require.EqualError(t, err, "store failed: oops")
+	require.EqualError(t, err, fake.Err("store failed"))
 }
 
 func TestPool_Gather(t *testing.T) {
@@ -153,9 +152,9 @@ func TestPool_Close(t *testing.T) {
 	require.NoError(t, err)
 
 	pool.closing = make(chan struct{})
-	pool.actor = fakeActor{err: xerrors.New("oops")}
+	pool.actor = fakeActor{err: fake.GetError()}
 	err = pool.Close()
-	require.EqualError(t, err, "failed to close gossiper: oops")
+	require.EqualError(t, err, fake.Err("failed to close gossiper"))
 }
 
 func TestPool_ListenRumors(t *testing.T) {
@@ -281,9 +280,9 @@ type badGatherer struct {
 }
 
 func (g badGatherer) Add(tx txn.Transaction) error {
-	return xerrors.New("oops")
+	return fake.GetError()
 }
 
 func (g badGatherer) Remove(tx txn.Transaction) error {
-	return xerrors.New("oops")
+	return fake.GetError()
 }

@@ -9,7 +9,6 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde/json"
-	"golang.org/x/xerrors"
 )
 
 var testCtx = json.NewContext()
@@ -129,9 +128,9 @@ func TestDiskNode_Prepare(t *testing.T) {
 	_, err = node.Prepare([]byte{}, big.NewInt(0), &fakeBucket{}, nil)
 	require.EqualError(t, err, "failed to load node: prefix 0 (depth 0) not in database")
 
-	bucket.errSet = xerrors.New("oops")
+	bucket.errSet = fake.GetError()
 	_, err = node.Prepare([]byte{}, big.NewInt(0), bucket, crypto.NewSha256Factory())
-	require.EqualError(t, err, "failed to store node: failed to set key: oops")
+	require.EqualError(t, err, fake.Err("failed to store node: failed to set key"))
 
 	inter := NewInteriorNode(0, big.NewInt(0))
 	data, err = inter.Serialize(testCtx)

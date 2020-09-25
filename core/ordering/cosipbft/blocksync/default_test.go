@@ -22,7 +22,6 @@ import (
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minoch"
 	"go.dedis.ch/dela/serde"
-	"golang.org/x/xerrors"
 )
 
 func TestDefaultSync_Basic(t *testing.T) {
@@ -116,9 +115,9 @@ func TestDefaultSync_Sync(t *testing.T) {
 	err := sync.Sync(ctx, mino.NewAddresses(), Config{MinSoft: 1, MinHard: 1})
 	require.NoError(t, err)
 
-	sync.blocks = badBlockStore{errChain: xerrors.New("oops")}
+	sync.blocks = badBlockStore{errChain: fake.GetError()}
 	err = sync.Sync(ctx, mino.NewAddresses(), Config{})
-	require.EqualError(t, err, "failed to read chain: oops")
+	require.EqualError(t, err, fake.Err("failed to read chain"))
 
 	sync.blocks = blockstore.NewInMemory()
 	storeBlocks(t, sync.blocks, 1)
@@ -140,7 +139,7 @@ func TestDefaultSync_Sync(t *testing.T) {
 	sync.rpc = fake.NewStreamRPC(fake.NewReceiver(types.NewSyncRequest(0)), sender)
 	sync.blocks = badBlockStore{}
 	err = sync.Sync(ctx, mino.NewAddresses(), Config{MinSoft: 1})
-	require.EqualError(t, err, "synchronizing node fake.Address[0]: couldn't get block: oops")
+	require.EqualError(t, err, fake.Err("synchronizing node fake.Address[0]: couldn't get block"))
 }
 
 func TestDefaultSync_SyncNode(t *testing.T) {
@@ -194,8 +193,8 @@ func TestHandler_Stream(t *testing.T) {
 	require.EqualError(t, err, "reading genesis: missing genesis block")
 
 	handler.genesis.Set(otypes.Genesis{})
-	err = handler.Stream(fake.Sender{}, fake.NewReceiver(types.NewSyncMessage(fakeChain{err: xerrors.New("oops")})))
-	require.EqualError(t, err, "failed to verify chain: oops")
+	err = handler.Stream(fake.Sender{}, fake.NewReceiver(types.NewSyncMessage(fakeChain{err: fake.GetError()})))
+	require.EqualError(t, err, fake.Err("failed to verify chain"))
 
 	err = handler.Stream(fake.NewBadSender(), fake.NewReceiver(types.NewSyncMessage(makeChain(t, 6))))
 	require.EqualError(t, err, fake.Err("sending request failed"))
@@ -317,7 +316,7 @@ func (s badBlockStore) GetChain() (otypes.Chain, error) {
 }
 
 func (s badBlockStore) GetByIndex(index uint64) (otypes.BlockLink, error) {
-	return nil, xerrors.New("oops")
+	return nil, fake.GetError()
 }
 
 type fakeChain struct {

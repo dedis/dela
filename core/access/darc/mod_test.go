@@ -10,7 +10,6 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/json"
-	"golang.org/x/xerrors"
 )
 
 var testCtx = json.NewContext()
@@ -82,12 +81,12 @@ func TestService_Grant(t *testing.T) {
 
 	srvc.fac = badFac{}
 	err = srvc.Grant(store, creds, alice.GetPublicKey())
-	require.EqualError(t, err, "failed to serialize: oops")
+	require.EqualError(t, err, fake.Err("failed to serialize"))
 
 	badStore := fake.NewSnapshot()
-	badStore.ErrWrite = xerrors.New("oops")
+	badStore.ErrWrite = fake.GetError()
 	err = srvc.Grant(badStore, creds, alice.GetPublicKey())
-	require.EqualError(t, err, "store failed to write: oops")
+	require.EqualError(t, err, fake.Err("store failed to write"))
 }
 
 // -----------------------------------------------------------------------------
@@ -108,5 +107,5 @@ type badPerm struct {
 func (badPerm) Allow(string, ...access.Identity) {}
 
 func (badPerm) Serialize(serde.Context) ([]byte, error) {
-	return nil, xerrors.New("oops")
+	return nil, fake.GetError()
 }

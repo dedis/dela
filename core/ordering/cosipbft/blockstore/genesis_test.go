@@ -11,7 +11,6 @@ import (
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store/kv"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"golang.org/x/xerrors"
 )
 
 func TestCachedGenesis_Get(t *testing.T) {
@@ -116,11 +115,11 @@ func TestGenesisDiskStore_Set(t *testing.T) {
 
 	store = NewGenesisDiskStore(badDB{}, makeFac())
 	err = store.Set(makeGenesis(t))
-	require.EqualError(t, err, "store failed: bucket: oops")
+	require.EqualError(t, err, fake.Err("store failed: bucket"))
 
 	store.db = badDB{bucket: badBucket{}}
 	err = store.Set(makeGenesis(t))
-	require.EqualError(t, err, "store failed: while writing to bucket: oops")
+	require.EqualError(t, err, fake.Err("store failed: while writing to bucket"))
 
 	store.context = fake.NewBadContext()
 	err = store.Set(makeGenesis(t))
@@ -151,7 +150,7 @@ type badBucket struct {
 }
 
 func (badBucket) Set(key, value []byte) error {
-	return xerrors.New("oops")
+	return fake.GetError()
 }
 
 type badTx struct {
@@ -165,7 +164,7 @@ func (tx badTx) GetBucketOrCreate(name []byte) (kv.Bucket, error) {
 		return tx.bucket, nil
 	}
 
-	return nil, xerrors.New("oops")
+	return nil, fake.GetError()
 }
 
 type badDB struct {

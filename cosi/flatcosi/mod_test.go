@@ -9,7 +9,6 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"golang.org/x/xerrors"
 )
 
 func TestFlat_GetSigner(t *testing.T) {
@@ -78,9 +77,9 @@ func TestActor_Sign(t *testing.T) {
 	require.EqualError(t, err, fake.Err("couldn't make verifier"))
 
 	actor.signer = fake.NewAggregateSigner()
-	actor.reactor = fakeReactor{err: xerrors.New("oops")}
+	actor.reactor = fakeReactor{err: fake.GetError()}
 	_, err = actor.Sign(ctx, message, ca)
-	require.EqualError(t, err, "couldn't react to message: oops")
+	require.EqualError(t, err, fake.Err("couldn't react to message"))
 }
 
 func TestActor_SignWrongSignature(t *testing.T) {
@@ -138,11 +137,11 @@ func TestActor_Context_Sign(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	rpc.SendResponseWithError(nil, xerrors.New("oops"))
+	rpc.SendResponseWithError(nil, fake.GetError())
 	rpc.Done()
 
 	sig, err := actor.Sign(ctx, message, ca)
-	require.EqualError(t, err, "one request has failed: oops")
+	require.EqualError(t, err, fake.Err("one request has failed"))
 	require.Nil(t, sig)
 }
 

@@ -59,9 +59,9 @@ func TestTree_Search(t *testing.T) {
 	_, err = tree.Search(make([]byte, MaxDepth+1), nil, &fakeBucket{})
 	require.EqualError(t, err, "mismatch key length 33 > 32")
 
-	tree.root = fakeNode{err: xerrors.New("oops")}
+	tree.root = fakeNode{err: fake.GetError()}
 	_, err = tree.Search([]byte("A"), nil, nil)
-	require.EqualError(t, err, "failed to search: oops")
+	require.EqualError(t, err, fake.Err("failed to search"))
 }
 
 func TestTree_Insert(t *testing.T) {
@@ -74,9 +74,9 @@ func TestTree_Insert(t *testing.T) {
 	err = tree.Insert(make([]byte, MaxDepth+1), nil, &fakeBucket{})
 	require.EqualError(t, err, "mismatch key length 33 > 32")
 
-	tree.root = fakeNode{err: xerrors.New("oops")}
+	tree.root = fakeNode{err: fake.GetError()}
 	err = tree.Insert([]byte("A"), []byte("B"), nil)
-	require.EqualError(t, err, "failed to insert: oops")
+	require.EqualError(t, err, fake.Err("failed to insert"))
 }
 
 func TestTree_Delete(t *testing.T) {
@@ -96,9 +96,9 @@ func TestTree_Delete(t *testing.T) {
 	err = tree.Delete(make([]byte, MaxDepth+1), &fakeBucket{})
 	require.EqualError(t, err, "mismatch key length 33 > 32")
 
-	tree.root = fakeNode{err: xerrors.New("oops")}
+	tree.root = fakeNode{err: fake.GetError()}
 	err = tree.Delete([]byte("A"), nil)
-	require.EqualError(t, err, "failed to delete: oops")
+	require.EqualError(t, err, fake.Err("failed to delete"))
 }
 
 func TestTree_Persist(t *testing.T) {
@@ -173,13 +173,13 @@ func TestTree_Persist(t *testing.T) {
 
 	tree.root = NewInteriorNode(0, big.NewInt(0))
 
-	err = tree.Persist(&fakeBucket{errSet: xerrors.New("oops")})
+	err = tree.Persist(&fakeBucket{errSet: fake.GetError()})
 	require.EqualError(t, err,
-		"visiting empty: failed to store node: failed to set key: oops")
+		fake.Err("visiting empty: failed to store node: failed to set key"))
 
-	err = tree.Persist(&fakeBucket{errScan: xerrors.New("oops")})
+	err = tree.Persist(&fakeBucket{errScan: fake.GetError()})
 	require.EqualError(t, err,
-		"visiting empty: failed to clean subtree: oops")
+		fake.Err("visiting empty: failed to clean subtree"))
 }
 
 func TestTree_Clone(t *testing.T) {
@@ -405,12 +405,12 @@ func TestInteriorNode_Visit(t *testing.T) {
 
 	node.left = fakeNode{}
 	node.right = fakeNode{}
-	err = node.Visit(func(TreeNode) error { return xerrors.New("oops") })
-	require.EqualError(t, err, "visiting interior: oops")
+	err = node.Visit(func(TreeNode) error { return fake.GetError() })
+	require.EqualError(t, err, fake.Err("visiting interior"))
 
 	node.right = NewEmptyNode(1, big.NewInt(2))
-	err = node.Visit(func(TreeNode) error { return xerrors.New("oops") })
-	require.EqualError(t, err, "visiting empty: oops")
+	err = node.Visit(func(TreeNode) error { return fake.GetError() })
+	require.EqualError(t, err, fake.Err("visiting empty"))
 }
 
 func TestInteriorNode_Clone(t *testing.T) {
@@ -523,8 +523,8 @@ func TestLeafNode_Visit(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, counter)
 
-	err = node.Visit(func(n TreeNode) error { return xerrors.New("oops") })
-	require.EqualError(t, err, "visiting leaf: oops")
+	err = node.Visit(func(n TreeNode) error { return fake.GetError() })
+	require.EqualError(t, err, fake.Err("visiting leaf"))
 }
 
 func TestLeafNode_Clone(t *testing.T) {

@@ -15,7 +15,6 @@ import (
 	"go.dedis.ch/dela/core/store/kv"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"golang.org/x/xerrors"
 )
 
 func TestMerkleTree_IntegrationTest(t *testing.T) {
@@ -181,9 +180,9 @@ func TestMerkleTree_Load(t *testing.T) {
 	err := tree.Load()
 	require.NoError(t, err)
 
-	tree.tx = fakeTx{bucket: &fakeBucket{errScan: xerrors.New("oops")}}
+	tree.tx = fakeTx{bucket: &fakeBucket{errScan: fake.GetError()}}
 	err = tree.Load()
-	require.EqualError(t, err, "failed to load: while scanning: oops")
+	require.EqualError(t, err, fake.Err("failed to load: while scanning"))
 
 	tree.tx = nil
 	tree.hashFactory = fake.NewHashFactory(fake.NewBadHash())
@@ -266,8 +265,8 @@ func TestMerkleTree_Stage(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, next.GetRoot())
 
-	_, err = tree.Stage(func(store.Snapshot) error { return xerrors.New("oops") })
-	require.EqualError(t, err, "callback failed: oops")
+	_, err = tree.Stage(func(store.Snapshot) error { return fake.GetError() })
+	require.EqualError(t, err, fake.Err("callback failed"))
 
 	tree.hashFactory = fake.NewHashFactory(fake.NewBadHash())
 	_, err = tree.Stage(func(store.Snapshot) error { return nil })
@@ -276,7 +275,7 @@ func TestMerkleTree_Stage(t *testing.T) {
 
 	tree.tx = badTx{}
 	_, err = tree.Stage(func(store.Snapshot) error { return nil })
-	require.EqualError(t, err, "read bucket failed: oops")
+	require.EqualError(t, err, fake.Err("read bucket failed"))
 
 	tree.tx = wrongTx{}
 	_, err = tree.Stage(func(store.Snapshot) error { return nil })
@@ -284,14 +283,14 @@ func TestMerkleTree_Stage(t *testing.T) {
 }
 
 func TestMerkleTree_Commit(t *testing.T) {
-	tree := NewMerkleTree(fakeDB{err: xerrors.New("oops")}, Nonce{})
+	tree := NewMerkleTree(fakeDB{err: fake.GetError()}, Nonce{})
 
 	err := tree.Commit()
-	require.EqualError(t, err, "failed to persist tree: oops")
+	require.EqualError(t, err, fake.Err("failed to persist tree"))
 
 	tree.tx = badTx{}
 	err = tree.Commit()
-	require.EqualError(t, err, "failed to persist tree: read bucket failed: oops")
+	require.EqualError(t, err, fake.Err("failed to persist tree: read bucket failed"))
 }
 
 func TestWritableMerkleTree_Set(t *testing.T) {
@@ -333,7 +332,7 @@ type badTx struct {
 }
 
 func (tx badTx) GetBucketOrCreate([]byte) (kv.Bucket, error) {
-	return nil, xerrors.New("oops")
+	return nil, fake.GetError()
 }
 
 type wrongTx struct {

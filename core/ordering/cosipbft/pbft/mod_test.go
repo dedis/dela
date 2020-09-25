@@ -24,7 +24,6 @@ import (
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
-	"golang.org/x/xerrors"
 )
 
 func TestState_String(t *testing.T) {
@@ -64,7 +63,7 @@ func TestStateMachine_GetLeader(t *testing.T) {
 
 	sm.authReader = badReader
 	_, err = sm.GetLeader()
-	require.EqualError(t, err, "failed to read roster: oops")
+	require.EqualError(t, err, fake.Err("failed to read roster"))
 }
 
 func TestStateMachine_GetViews(t *testing.T) {
@@ -123,7 +122,7 @@ func TestStateMachine_Prepare(t *testing.T) {
 	sm.state = InitialState
 	sm.val = badValidation{}
 	_, err = sm.Prepare(block)
-	require.EqualError(t, err, "tree failed: callback failed: validation failed: oops")
+	require.EqualError(t, err, fake.Err("tree failed: callback failed: validation failed"))
 
 	other, err := types.NewBlock(simple.NewData(nil), types.WithTreeRoot(types.Digest{}))
 	require.NoError(t, err)
@@ -140,11 +139,11 @@ func TestStateMachine_Prepare(t *testing.T) {
 	sm.genesis.Set(types.Genesis{})
 	sm.authReader = badReader
 	_, err = sm.Prepare(block)
-	require.EqualError(t, err, "failed to read roster: oops")
+	require.EqualError(t, err, fake.Err("failed to read roster"))
 
 	// Failure to read the roster of the staging tree.
 	err = sm.verifyPrepare(tree, block, &sm.round, ro)
-	require.EqualError(t, err, "failed to read next roster: oops")
+	require.EqualError(t, err, fake.Err("failed to read next roster"))
 
 	sm.authReader = param.AuthorityReader
 	sm.hashFac = fake.NewHashFactory(fake.NewBadHash())
@@ -190,7 +189,7 @@ func TestStateMachine_Commit(t *testing.T) {
 	sm.verifierFac = fake.NewVerifierFactory(fake.Verifier{})
 	sm.authReader = badReader
 	err = sm.Commit(types.Digest{1}, fake.Signature{})
-	require.EqualError(t, err, "failed to read roster: oops")
+	require.EqualError(t, err, fake.Err("failed to read roster"))
 }
 
 func TestStateMachine_Finalize(t *testing.T) {
@@ -241,13 +240,13 @@ func TestStateMachine_Finalize(t *testing.T) {
 
 	sm.blocks = badBlockStore{length: 1}
 	err = sm.Finalize(types.Digest{1}, fake.Signature{})
-	require.EqualError(t, err, "couldn't get latest digest: oops")
+	require.EqualError(t, err, fake.Err("couldn't get latest digest"))
 
 	sm.blocks = blockstore.NewInMemory()
 	sm.blocks.Store(makeLink(t))
 	sm.round.tree = badTree{}
 	err = sm.Finalize(types.Digest{1}, fake.Signature{})
-	require.EqualError(t, err, "database failed: commit tree: oops")
+	require.EqualError(t, err, fake.Err("database failed: commit tree"))
 
 	sm.genesis.Set(types.Genesis{})
 	sm.round.tree = tree.(hashtree.StagingTree)
@@ -259,12 +258,12 @@ func TestStateMachine_Finalize(t *testing.T) {
 	sm.hashFac = crypto.NewSha256Factory()
 	sm.blocks = badBlockStore{}
 	err = sm.Finalize(types.Digest{1}, fake.Signature{})
-	require.EqualError(t, err, "database failed: store block: oops")
+	require.EqualError(t, err, fake.Err("database failed: store block"))
 
 	sm.blocks = blockstore.NewInMemory()
 	sm.authReader = badReader
 	err = sm.Finalize(types.Digest{1}, fake.Signature{})
-	require.EqualError(t, err, "failed to read roster: oops")
+	require.EqualError(t, err, fake.Err("failed to read roster"))
 }
 
 func TestStateMachine_Accept(t *testing.T) {
@@ -318,11 +317,11 @@ func TestStateMachine_Accept(t *testing.T) {
 
 	sm.authReader = badReader
 	err = sm.Accept(View{leader: 1})
-	require.EqualError(t, err, "invalid view: failed to read roster: oops")
+	require.EqualError(t, err, fake.Err("invalid view: failed to read roster"))
 
 	sm.state = NoneState
 	err = sm.Accept(View{leader: 1})
-	require.EqualError(t, err, "init: failed to read roster: oops")
+	require.EqualError(t, err, fake.Err("init: failed to read roster"))
 
 	// Ignore view with an invalid signature.
 	sm.state = InitialState
@@ -379,7 +378,7 @@ func TestStateMachine_AcceptAll(t *testing.T) {
 	sm.state = NoneState
 	sm.authReader = badReader
 	err = sm.AcceptAll([]View{{}})
-	require.EqualError(t, err, "init: failed to read roster: oops")
+	require.EqualError(t, err, fake.Err("init: failed to read roster"))
 }
 
 func TestStateMachine_Expire(t *testing.T) {
@@ -416,7 +415,7 @@ func TestStateMachine_Expire(t *testing.T) {
 	sm.authReader = badReader
 	sm.state = NoneState
 	_, err = sm.Expire(fake.NewAddress(0))
-	require.EqualError(t, err, "init: failed to read roster: oops")
+	require.EqualError(t, err, fake.Err("init: failed to read roster"))
 }
 
 func TestStateMachine_CatchUp(t *testing.T) {
@@ -463,7 +462,7 @@ func TestStateMachine_CatchUp(t *testing.T) {
 
 	sm.authReader = badReader
 	err = sm.CatchUp(link)
-	require.EqualError(t, err, "failed to read roster: oops")
+	require.EqualError(t, err, fake.Err("failed to read roster"))
 
 	sm.authReader = param.AuthorityReader
 	sm.blocks = blockstore.NewInMemory()
@@ -542,7 +541,7 @@ type badValidation struct {
 }
 
 func (v badValidation) Validate(store.Snapshot, []txn.Transaction) (validation.Data, error) {
-	return nil, xerrors.New("oops")
+	return nil, fake.GetError()
 }
 
 type badBlockStore struct {
@@ -559,11 +558,11 @@ func (s badBlockStore) Len() uint64 {
 }
 
 func (s badBlockStore) Last() (types.BlockLink, error) {
-	return nil, xerrors.New("oops")
+	return nil, fake.GetError()
 }
 
 func (s badBlockStore) Store(types.BlockLink) error {
-	return xerrors.New("oops")
+	return fake.GetError()
 }
 
 type badTree struct {
@@ -575,9 +574,9 @@ func (t badTree) WithTx(store.Transaction) hashtree.StagingTree {
 }
 
 func (t badTree) Commit() error {
-	return xerrors.New("oops")
+	return fake.GetError()
 }
 
 func badReader(hashtree.Tree) (authority.Authority, error) {
-	return nil, xerrors.New("oops")
+	return nil, fake.GetError()
 }

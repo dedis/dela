@@ -9,7 +9,6 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
-	"golang.org/x/xerrors"
 )
 
 func TestTxFormat_Encode(t *testing.T) {
@@ -38,7 +37,7 @@ func TestTxFormat_Encode(t *testing.T) {
 
 	tx = makeTx(t, 0, badPublicKey{})
 	_, err = format.Encode(fake.NewBadContextWithDelay(1), tx)
-	require.EqualError(t, err, "failed to encode public key: oops")
+	require.EqualError(t, err, fake.Err("failed to encode public key"))
 }
 
 func TestTxFormat_Decode(t *testing.T) {
@@ -97,7 +96,7 @@ type badPublicKey struct {
 }
 
 func (badPublicKey) Serialize(serde.Context) ([]byte, error) {
-	return nil, xerrors.New("oops")
+	return nil, fake.GetError()
 }
 
 func (badPublicKey) MarshalBinary() ([]byte, error) {

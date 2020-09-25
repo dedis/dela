@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
+	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/proxy/http"
 	"golang.org/x/xerrors"
@@ -97,13 +98,13 @@ type fakeInjector struct {
 // Resolve implements node.Injector
 func (i fakeInjector) Resolve(el interface{}) error {
 	if i.isBad {
-		return xerrors.New("oops")
+		return fake.GetError()
 	}
 
 	switch msg := el.(type) {
 	case *mino.Mino:
 		if i.mino == nil {
-			return xerrors.New("oops")
+			return fake.GetError()
 		}
 		*msg = i.mino
 	default:

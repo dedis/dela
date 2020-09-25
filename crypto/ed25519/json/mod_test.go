@@ -8,7 +8,6 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/kyber/v3"
-	"golang.org/x/xerrors"
 )
 
 func TestPubKkeyFormat_Encode(t *testing.T) {
@@ -27,7 +26,7 @@ func TestPubKkeyFormat_Encode(t *testing.T) {
 	require.EqualError(t, err, fake.Err("couldn't marshal"))
 
 	_, err = format.Encode(fake.NewBadContext(), ed25519.NewPublicKeyFromPoint(badPoint{}))
-	require.EqualError(t, err, "couldn't marshal point: oops")
+	require.EqualError(t, err, fake.Err("couldn't marshal point"))
 
 	_, err = format.Encode(fake.NewBadContext(), fake.Message{})
 	require.EqualError(t, err, "unsupported message of type 'fake.Message'")
@@ -99,5 +98,5 @@ type badPoint struct {
 }
 
 func (p badPoint) MarshalBinary() ([]byte, error) {
-	return nil, xerrors.New("oops")
+	return nil, fake.GetError()
 }

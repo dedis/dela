@@ -12,7 +12,6 @@ import (
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"golang.org/x/xerrors"
 )
 
 func init() {
@@ -92,7 +91,7 @@ func TestGenesis_Fingerprint(t *testing.T) {
 
 	genesis.roster = badRoster{}
 	err = genesis.Fingerprint(buffer)
-	require.EqualError(t, err, "roster fingerprint failed: oops")
+	require.EqualError(t, err, fake.Err("roster fingerprint failed"))
 }
 
 func TestGenesisFactory_Deserialize(t *testing.T) {
@@ -159,7 +158,7 @@ func TestBlock_Fingerprint(t *testing.T) {
 
 	block.data = badData{}
 	err = block.Fingerprint(ioutil.Discard)
-	require.EqualError(t, err, "data fingerprint failed: oops")
+	require.EqualError(t, err, fake.Err("data fingerprint failed"))
 
 	_, err = NewBlock(block.data, WithHashFactory(fake.NewHashFactory(fake.NewBadHash())))
 	require.EqualError(t, err, fake.Err("fingerprint failed: couldn't write index"))
@@ -197,7 +196,7 @@ type badRoster struct {
 }
 
 func (r badRoster) Fingerprint(io.Writer) error {
-	return xerrors.New("oops")
+	return fake.GetError()
 }
 
 type badData struct {
@@ -205,5 +204,5 @@ type badData struct {
 }
 
 func (d badData) Fingerprint(io.Writer) error {
-	return xerrors.New("oops")
+	return fake.GetError()
 }

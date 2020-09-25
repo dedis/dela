@@ -10,7 +10,6 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
-	"golang.org/x/xerrors"
 )
 
 func init() {
@@ -36,11 +35,11 @@ func TestGenesisFormat_Encode(t *testing.T) {
 	_, err = format.Encode(fake.NewBadContext(), genesis)
 	require.EqualError(t, err, fake.Err("failed to marshal"))
 
-	genesis, err = types.NewGenesis(fakeRoster{err: xerrors.New("oops")})
+	genesis, err = types.NewGenesis(fakeRoster{err: fake.GetError()})
 	require.NoError(t, err)
 
 	_, err = format.Encode(ctx, genesis)
-	require.EqualError(t, err, "failed to serialize roster: oops")
+	require.EqualError(t, err, fake.Err("failed to serialize roster"))
 }
 
 func TestGenesisFormat_Decode(t *testing.T) {
@@ -63,9 +62,9 @@ func TestGenesisFormat_Decode(t *testing.T) {
 	_, err = format.Decode(badCtx, []byte(`{}`))
 	require.EqualError(t, err, "invalid roster factory '<nil>'")
 
-	badCtx = serde.WithFactory(ctx, types.RosterKey{}, fakeRosterFac{err: xerrors.New("oops")})
+	badCtx = serde.WithFactory(ctx, types.RosterKey{}, fakeRosterFac{err: fake.GetError()})
 	_, err = format.Decode(badCtx, []byte(`{}`))
-	require.EqualError(t, err, "authority factory failed: oops")
+	require.EqualError(t, err, fake.Err("authority factory failed"))
 
 	format.hashFac = fake.NewHashFactory(fake.NewBadHash())
 	_, err = format.Decode(ctx, []byte(`{}`))
@@ -91,11 +90,11 @@ func TestBlockFormat_Encode(t *testing.T) {
 	_, err = format.Encode(fake.NewBadContext(), block)
 	require.EqualError(t, err, fake.Err("failed to marshal"))
 
-	block, err = types.NewBlock(fakeData{err: xerrors.New("oops")})
+	block, err = types.NewBlock(fakeData{err: fake.GetError()})
 	require.NoError(t, err)
 
 	_, err = format.Encode(ctx, block)
-	require.EqualError(t, err, "failed to serialize data: oops")
+	require.EqualError(t, err, fake.Err("failed to serialize data"))
 }
 
 func TestBlockFormat_Decode(t *testing.T) {
@@ -118,9 +117,9 @@ func TestBlockFormat_Decode(t *testing.T) {
 	_, err = format.Decode(badCtx, []byte(`{}`))
 	require.EqualError(t, err, "invalid data factory '<nil>'")
 
-	badCtx = serde.WithFactory(ctx, types.DataKey{}, fakeDataFac{err: xerrors.New("oops")})
+	badCtx = serde.WithFactory(ctx, types.DataKey{}, fakeDataFac{err: fake.GetError()})
 	_, err = format.Decode(badCtx, []byte(`{}`))
-	require.EqualError(t, err, "data factory failed: oops")
+	require.EqualError(t, err, fake.Err("data factory failed"))
 
 	format.hashFac = fake.NewHashFactory(fake.NewBadHash())
 	_, err = format.Decode(ctx, []byte(`{}`))

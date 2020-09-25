@@ -9,6 +9,7 @@ import (
 )
 
 func init() {
+	// A random value is injected to prevent hardcoded value in the tests.
 	fakeFmtValue = make([]byte, 8)
 	rand.Read(fakeFmtValue)
 }

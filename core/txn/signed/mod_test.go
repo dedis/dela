@@ -11,7 +11,6 @@ import (
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
-	"golang.org/x/xerrors"
 )
 
 func init() {
@@ -183,9 +182,9 @@ func TestManager_Sync(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(42), mgr.(*transactionManager).nonce)
 
-	mgr = NewManager(fake.NewSigner(), fakeClient{err: xerrors.New("oops")})
+	mgr = NewManager(fake.NewSigner(), fakeClient{err: fake.GetError()})
 	err = mgr.Sync()
-	require.EqualError(t, err, "client: oops")
+	require.EqualError(t, err, fake.Err("client"))
 }
 
 // -----------------------------------------------------------------------------

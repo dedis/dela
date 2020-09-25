@@ -9,7 +9,6 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
-	"golang.org/x/xerrors"
 )
 
 func TestRPC_Call(t *testing.T) {
@@ -97,7 +96,7 @@ func TestRPC_Failures_Stream(t *testing.T) {
 	out, in, err := rpc.Stream(ctx, mino.NewAddresses(m.GetAddress()))
 	require.NoError(t, err)
 	_, _, err = in.Recv(ctx)
-	require.EqualError(t, err, "couldn't process: oops")
+	require.EqualError(t, err, fake.Err("couldn't process"))
 
 	errs := out.Send(fake.Message{})
 	err = testWait(t, nil, errs)
@@ -177,5 +176,5 @@ type fakeBadStreamHandler struct {
 }
 
 func (h fakeBadStreamHandler) Stream(out mino.Sender, in mino.Receiver) error {
-	return xerrors.New("oops")
+	return fake.GetError()
 }

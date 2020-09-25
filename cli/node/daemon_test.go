@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"golang.org/x/xerrors"
 )
 
 func TestSocketClient_Send(t *testing.T) {
@@ -64,8 +63,8 @@ func TestSocketDaemon_Listen(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	actions := &actionMap{}
-	actions.Set(fakeAction{})                         // id 0
-	actions.Set(fakeAction{err: xerrors.New("oops")}) // id 1
+	actions.Set(fakeAction{})                     // id 0
+	actions.Set(fakeAction{err: fake.GetError()}) // id 1
 
 	daemon := &socketDaemon{
 		socketpath:  filepath.Join(dir, "daemon.sock"),
@@ -92,7 +91,7 @@ func TestSocketDaemon_Listen(t *testing.T) {
 	out.Reset()
 	err = client.Send(append([]byte{0x1, 0x0}, []byte("{}")...))
 	require.NoError(t, err)
-	require.Equal(t, "[ERROR] command error: oops\n", out.String())
+	require.Equal(t, fake.Err("[ERROR] command error")+"\n", out.String())
 
 	out.Reset()
 	err = client.Send(append([]byte{0x2, 0x0}, []byte("{}")...))

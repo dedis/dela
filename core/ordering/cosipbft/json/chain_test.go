@@ -7,7 +7,6 @@ import (
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
-	"golang.org/x/xerrors"
 )
 
 func TestChainFormat_Encode(t *testing.T) {
@@ -22,8 +21,8 @@ func TestChainFormat_Encode(t *testing.T) {
 	_, err = format.Encode(ctx, fake.Message{})
 	require.EqualError(t, err, "unsupported message 'fake.Message'")
 
-	_, err = format.Encode(ctx, types.NewChain(fakeLink{err: xerrors.New("oops")}, nil))
-	require.EqualError(t, err, "couldn't serialize link: oops")
+	_, err = format.Encode(ctx, types.NewChain(fakeLink{err: fake.GetError()}, nil))
+	require.EqualError(t, err, fake.Err("couldn't serialize link"))
 
 	_, err = format.Encode(fake.NewBadContext(), types.NewChain(fakeLink{}, nil))
 	require.EqualError(t, err, fake.Err("failed to marshal"))
@@ -49,13 +48,13 @@ func TestChainFormat_Decode(t *testing.T) {
 	_, err = format.Decode(badCtx, []byte(`{"Links":[{}]}`))
 	require.EqualError(t, err, "invalid link factory 'fake.MessageFactory'")
 
-	badCtx = serde.WithFactory(ctx, types.LinkKey{}, fakeLinkFac{errLink: xerrors.New("oops")})
+	badCtx = serde.WithFactory(ctx, types.LinkKey{}, fakeLinkFac{errLink: fake.GetError()})
 	_, err = format.Decode(badCtx, []byte(`{"Links":[{}, {}]}`))
-	require.EqualError(t, err, "couldn't deserialize link: oops")
+	require.EqualError(t, err, fake.Err("couldn't deserialize link"))
 
-	badCtx = serde.WithFactory(ctx, types.LinkKey{}, fakeLinkFac{errBlockLink: xerrors.New("oops")})
+	badCtx = serde.WithFactory(ctx, types.LinkKey{}, fakeLinkFac{errBlockLink: fake.GetError()})
 	_, err = format.Decode(badCtx, []byte(`{"Links": [{}]}`))
-	require.EqualError(t, err, "couldn't deserialize block link: oops")
+	require.EqualError(t, err, fake.Err("couldn't deserialize block link"))
 }
 
 // -----------------------------------------------------------------------------

@@ -9,7 +9,6 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
-	"golang.org/x/xerrors"
 )
 
 func TestFlat_Listen(t *testing.T) {
@@ -58,7 +57,7 @@ func TestActor_Add(t *testing.T) {
 	rpc = fake.NewRPC()
 	actor.rpc = rpc
 	actor.logger = zerolog.New(buffer).Level(zerolog.WarnLevel)
-	rpc.SendResponseWithError(nil, xerrors.New("oops"))
+	rpc.SendResponseWithError(nil, fake.GetError())
 	rpc.Done()
 
 	err = actor.Add(fakeRumor{})

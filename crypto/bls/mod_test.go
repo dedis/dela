@@ -9,7 +9,6 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/kyber/v3"
-	"golang.org/x/xerrors"
 )
 
 func init() {
@@ -86,7 +85,7 @@ func TestPublicKey_MarshalText(t *testing.T) {
 
 	pk := PublicKey{point: badPoint{}}
 	_, err = pk.MarshalText()
-	require.EqualError(t, err, "couldn't marshal: oops")
+	require.EqualError(t, err, fake.Err("couldn't marshal"))
 }
 
 func TestPublicKey_String(t *testing.T) {
@@ -354,7 +353,7 @@ func TestSigner_MarshalBinary(t *testing.T) {
 
 	signer.private = badScalar{}
 	_, err = signer.MarshalBinary()
-	require.EqualError(t, err, "while marshaling scalar: oops")
+	require.EqualError(t, err, fake.Err("while marshaling scalar"))
 
 	_, err = NewSignerFromBytes(nil)
 	require.EqualError(t, err, "while unmarshaling scalar: UnmarshalBinary: wrong size buffer")
@@ -368,7 +367,7 @@ type badPoint struct {
 }
 
 func (p badPoint) MarshalBinary() ([]byte, error) {
-	return nil, xerrors.New("oops")
+	return nil, fake.GetError()
 }
 
 type badScalar struct {
@@ -376,5 +375,5 @@ type badScalar struct {
 }
 
 func (s badScalar) MarshalBinary() ([]byte, error) {
-	return nil, xerrors.New("oops")
+	return nil, fake.GetError()
 }

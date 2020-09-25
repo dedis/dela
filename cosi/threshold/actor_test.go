@@ -14,7 +14,6 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
-	"golang.org/x/xerrors"
 )
 
 func TestActor_Sign(t *testing.T) {
@@ -44,9 +43,9 @@ func TestActor_Sign(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, sig)
 
-	actor.reactor = fakeReactor{err: xerrors.New("oops")}
+	actor.reactor = fakeReactor{err: fake.GetError()}
 	_, err = actor.Sign(ctx, fake.Message{}, ca)
-	require.EqualError(t, err, "couldn't react to message: oops")
+	require.EqualError(t, err, fake.Err("couldn't react to message"))
 
 	buffer := new(bytes.Buffer)
 	actor.logger = zerolog.New(buffer).Level(zerolog.WarnLevel)
@@ -87,7 +86,7 @@ type fakeSender struct {
 func (s fakeSender) Send(serde.Message, ...mino.Address) <-chan error {
 	ch := make(chan error, s.numErr)
 	for i := 0; i < s.numErr; i++ {
-		ch <- xerrors.New("oops")
+		ch <- fake.GetError()
 	}
 
 	close(ch)

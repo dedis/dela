@@ -10,7 +10,6 @@ import (
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
-	"golang.org/x/xerrors"
 )
 
 func init() {
@@ -46,9 +45,9 @@ func TestLinkFormat_Encode(t *testing.T) {
 	_, err = format.Encode(ctx, makeLink(t, opt))
 	require.EqualError(t, err, fake.Err("couldn't serialize commit"))
 
-	opt = types.WithChangeSet(fakeChangeSet{err: xerrors.New("oops")})
+	opt = types.WithChangeSet(fakeChangeSet{err: fake.GetError()})
 	_, err = format.Encode(ctx, makeBlockLink(t, opt))
-	require.EqualError(t, err, "couldn't serialize change set: oops")
+	require.EqualError(t, err, fake.Err("couldn't serialize change set"))
 
 	_, err = format.Encode(fake.NewBadContext(), makeBlockLink(t))
 	require.EqualError(t, err, fake.Err("couldn't serialize block: encoding failed"))
@@ -88,9 +87,9 @@ func TestLinkFormat_Decode(t *testing.T) {
 	_, err = format.Decode(badCtx, []byte(`{}`))
 	require.EqualError(t, err, "failed to decode change set: invalid factory 'fake.MessageFactory'")
 
-	badCtx = serde.WithFactory(ctx, types.ChangeSetKey{}, fakeChangeSetFac{err: xerrors.New("oops")})
+	badCtx = serde.WithFactory(ctx, types.ChangeSetKey{}, fakeChangeSetFac{err: fake.GetError()})
 	_, err = format.Decode(badCtx, []byte(`{}`))
-	require.EqualError(t, err, "failed to decode change set: factory failed: oops")
+	require.EqualError(t, err, fake.Err("failed to decode change set: factory failed"))
 
 	badCtx = serde.WithFactory(ctx, types.BlockKey{}, nil)
 	_, err = format.Decode(badCtx, []byte(`{"Block":{}}`))

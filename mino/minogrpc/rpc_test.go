@@ -15,7 +15,6 @@ import (
 	"go.dedis.ch/dela/mino/router/tree"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/json"
-	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
@@ -67,21 +66,21 @@ func TestRPC_Call(t *testing.T) {
 	require.EqualError(t, err, fake.Err("failed to marshal address"))
 
 	rpc.overlay.me = fake.NewAddress(0)
-	rpc.overlay.connMgr = fakeConnMgr{err: xerrors.New("oops")}
+	rpc.overlay.connMgr = fakeConnMgr{err: fake.GetError()}
 	msgs, err = rpc.Call(ctx, fake.Message{}, mino.NewAddresses(addrs...))
 	require.NoError(t, err)
 
 	msg := <-msgs
 	_, err = msg.GetMessageOrError()
-	require.EqualError(t, err, "failed to get client conn: oops")
+	require.EqualError(t, err, fake.Err("failed to get client conn"))
 
-	rpc.overlay.connMgr = fakeConnMgr{errConn: xerrors.New("oops")}
+	rpc.overlay.connMgr = fakeConnMgr{errConn: fake.GetError()}
 	msgs, err = rpc.Call(ctx, fake.Message{}, mino.NewAddresses(addrs...))
 	require.NoError(t, err)
 
 	msg = <-msgs
 	_, err = msg.GetMessageOrError()
-	require.EqualError(t, err, "failed to call client: oops")
+	require.EqualError(t, err, fake.Err("failed to call client"))
 
 	rpc.overlay.connMgr = fakeConnMgr{}
 	rpc.factory = fake.NewBadMessageFactory()
@@ -140,25 +139,25 @@ func TestRPC_Stream(t *testing.T) {
 
 	rpc.overlay.router = badRouter{}
 	_, _, err = rpc.Stream(ctx, mino.NewAddresses(addrs[0]))
-	require.EqualError(t, err, "routing table failed: oops")
+	require.EqualError(t, err, fake.Err("routing table failed"))
 
 	rpc.overlay.router = tree.NewRouter(AddressFactory{})
 	_, _, err = rpc.Stream(ctx, mino.NewAddresses(addrs[0], fake.NewBadAddress()))
 	require.EqualError(t, err, fake.Err("marshal address failed"))
 
-	rpc.overlay.connMgr = fakeConnMgr{err: xerrors.New("oops")}
+	rpc.overlay.connMgr = fakeConnMgr{err: fake.GetError()}
 	_, _, err = rpc.Stream(ctx, mino.NewAddresses(addrs...))
-	require.EqualError(t, err, "gateway connection failed: oops")
+	require.EqualError(t, err, fake.Err("gateway connection failed"))
 
-	rpc.overlay.connMgr = fakeConnMgr{errConn: xerrors.New("oops"), calls: calls}
+	rpc.overlay.connMgr = fakeConnMgr{errConn: fake.GetError(), calls: calls}
 	_, _, err = rpc.Stream(ctx, mino.NewAddresses(addrs...))
-	require.EqualError(t, err, "failed to open stream: oops")
+	require.EqualError(t, err, fake.Err("failed to open stream"))
 	require.Equal(t, 6, calls.Len())
 	require.Equal(t, "release", calls.Get(3, 0))
 
-	rpc.overlay.connMgr = fakeConnMgr{errStream: xerrors.New("oops"), calls: calls}
+	rpc.overlay.connMgr = fakeConnMgr{errStream: fake.GetError(), calls: calls}
 	_, _, err = rpc.Stream(ctx, mino.NewAddresses(addrs...))
-	require.EqualError(t, err, "failed to receive header: oops")
+	require.EqualError(t, err, fake.Err("failed to receive header"))
 	require.Equal(t, 8, calls.Len())
 	require.Equal(t, "release", calls.Get(5, 0))
 }
@@ -290,18 +289,18 @@ type badRouter struct {
 
 func (r badRouter) GetHandshakeFactory() router.HandshakeFactory {
 	if r.errFac {
-		return fakeHandshakeFactory{err: xerrors.New("oops")}
+		return fakeHandshakeFactory{err: fake.GetError()}
 	}
 
 	return fakeHandshakeFactory{}
 }
 
 func (badRouter) New(mino.Players) (router.RoutingTable, error) {
-	return nil, xerrors.New("oops")
+	return nil, fake.GetError()
 }
 
 func (badRouter) TableOf(router.Handshake) (router.RoutingTable, error) {
-	return nil, xerrors.New("oops")
+	return nil, fake.GetError()
 }
 
 type fakeHandshakeFactory struct {

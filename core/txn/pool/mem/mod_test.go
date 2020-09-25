@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/pool"
-	"golang.org/x/xerrors"
+	"go.dedis.ch/dela/internal/testing/fake"
 )
 
 func TestPool_Len(t *testing.T) {
@@ -34,7 +34,7 @@ func TestPool_Add(t *testing.T) {
 
 	p.gatherer = badGatherer{}
 	err = p.Add(fakeTx{})
-	require.EqualError(t, err, "store failed: oops")
+	require.EqualError(t, err, fake.Err("store failed"))
 }
 
 func TestPool_Remove(t *testing.T) {
@@ -47,7 +47,7 @@ func TestPool_Remove(t *testing.T) {
 
 	p.gatherer = badGatherer{}
 	err = p.Remove(fakeTx{id: []byte{1}})
-	require.EqualError(t, err, "store failed: oops")
+	require.EqualError(t, err, fake.Err("store failed"))
 }
 
 func TestPool_SetPlayers(t *testing.T) {
@@ -96,9 +96,9 @@ type badGatherer struct {
 }
 
 func (g badGatherer) Add(tx txn.Transaction) error {
-	return xerrors.New("oops")
+	return fake.GetError()
 }
 
 func (g badGatherer) Remove(tx txn.Transaction) error {
-	return xerrors.New("oops")
+	return fake.GetError()
 }

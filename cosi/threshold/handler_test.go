@@ -6,7 +6,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"golang.org/x/xerrors"
 )
 
 func TestThresholdHandler_Stream(t *testing.T) {
@@ -21,18 +20,18 @@ func TestThresholdHandler_Stream(t *testing.T) {
 	err := handler.Stream(sender, rcvr)
 	require.NoError(t, err)
 
-	rcvr.err = xerrors.New("oops")
+	rcvr.err = fake.GetError()
 	err = handler.processRequest(sender, rcvr)
-	require.EqualError(t, err, "failed to receive: oops")
+	require.EqualError(t, err, fake.Err("failed to receive"))
 
 	err = handler.processRequest(sender, &fakeReceiver{resps: makeBadResponse()})
 	require.EqualError(t, err, "invalid request type 'fake.Message'")
 
-	handler.reactor = fakeReactor{err: xerrors.New("oops")}
+	handler.reactor = fakeReactor{err: fake.GetError()}
 	rcvr.err = nil
 	rcvr.resps = makeResponse()
 	err = handler.processRequest(sender, rcvr)
-	require.EqualError(t, err, "couldn't hash message: oops")
+	require.EqualError(t, err, fake.Err("couldn't hash message"))
 
 	handler.reactor = fakeReactor{}
 	handler.signer = fake.NewBadSigner()

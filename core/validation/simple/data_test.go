@@ -11,7 +11,6 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
-	"golang.org/x/xerrors"
 )
 
 func init() {
@@ -80,9 +79,9 @@ func TestData_Fingerprint(t *testing.T) {
 	err = data.Fingerprint(fake.NewBadHash())
 	require.EqualError(t, err, fake.Err("couldn't write accepted"))
 
-	data.txs[0].tx = fakeTx{err: xerrors.New("oops")}
+	data.txs[0].tx = fakeTx{err: fake.GetError()}
 	err = data.Fingerprint(buffer)
-	require.EqualError(t, err, "couldn't fingerprint tx: oops")
+	require.EqualError(t, err, fake.Err("couldn't fingerprint tx"))
 }
 
 func TestData_Serialize(t *testing.T) {

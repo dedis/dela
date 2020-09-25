@@ -10,7 +10,6 @@ import (
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/tokens"
 	"go.dedis.ch/dela/mino/router/tree"
-	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 )
 
@@ -79,9 +78,9 @@ func TestMinogrpc_GracefulClose(t *testing.T) {
 	require.NoError(t, err)
 
 	m.closing = make(chan error, 1)
-	m.closing <- xerrors.New("oops")
+	m.closing <- fake.GetError()
 	err = m.GracefulStop()
-	require.EqualError(t, err, "server stopped unexpectedly: oops")
+	require.EqualError(t, err, fake.Err("server stopped unexpectedly"))
 
 	m.closing = make(chan error)
 	close(m.closing)

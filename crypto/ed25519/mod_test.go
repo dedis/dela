@@ -9,7 +9,6 @@ import (
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/sign/schnorr"
 	"go.dedis.ch/kyber/v3/util/key"
-	"golang.org/x/xerrors"
 )
 
 func init() {
@@ -110,7 +109,7 @@ func TestPublicKey_MarshalText(t *testing.T) {
 
 	pk.point = badPoint{}
 	_, err = pk.MarshalText()
-	require.EqualError(t, err, "couldn't marshal: oops")
+	require.EqualError(t, err, fake.Err("couldn't marshal"))
 }
 
 func TestPublicKey_GetPoint(t *testing.T) {
@@ -317,5 +316,5 @@ type badPoint struct {
 }
 
 func (p badPoint) MarshalBinary() ([]byte, error) {
-	return nil, xerrors.New("oops")
+	return nil, fake.GetError()
 }

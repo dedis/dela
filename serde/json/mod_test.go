@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
-	"golang.org/x/xerrors"
 )
 
 func TestJSONEngine_GetFormat(t *testing.T) {
@@ -21,7 +21,7 @@ func TestJSONEngine_Marshal(t *testing.T) {
 	require.Equal(t, `{}`, string(data))
 
 	_, err = ctx.Marshal(badObject{})
-	require.EqualError(t, err, "json: error calling MarshalJSON for type json.badObject: oops")
+	require.EqualError(t, err, fake.Err("json: error calling MarshalJSON for type json.badObject"))
 }
 
 func TestJSONEngine_Unmarshal(t *testing.T) {
@@ -42,5 +42,5 @@ func TestJSONEngine_Unmarshal(t *testing.T) {
 type badObject struct{}
 
 func (o badObject) MarshalJSON() ([]byte, error) {
-	return nil, xerrors.New("oops")
+	return nil, fake.GetError()
 }

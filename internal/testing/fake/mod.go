@@ -19,6 +19,8 @@ import (
 )
 
 func init() {
+	// A random value is injected every time, so that the error is never the
+	// same and prevent hardcoded values in the tests.
 	random := make([]byte, 4)
 	rand.Read(random)
 
