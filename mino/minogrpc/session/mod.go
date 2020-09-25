@@ -297,8 +297,10 @@ func (s *session) Recv(ctx context.Context) (mino.Address, serde.Message, error)
 func (s *session) sendPacket(p parent, pkt router.Packet, errs chan error) bool {
 	me := pkt.Slice(s.me)
 	if me != nil {
-		// TODO: check error after merging PR #104
-		s.queue.Push(me)
+		err := s.queue.Push(me)
+		if err != nil {
+			errs <- xerrors.Errorf("%v dropped the packet: %v", s.me, err)
+		}
 	}
 
 	routes, voids := p.table.Forward(pkt)

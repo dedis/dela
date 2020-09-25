@@ -140,6 +140,7 @@ func TestSession_Send(t *testing.T) {
 	key := fake.NewAddress(123)
 
 	sess := &session{
+		me:      fake.NewAddress(600),
 		context: fake.NewContext(),
 		queue:   newNonBlockingQueue(),
 		relays:  make(map[mino.Address]Relay),
@@ -167,6 +168,11 @@ func TestSession_Send(t *testing.T) {
 	require.EqualError(t, <-errs, "failed to serialize msg: fake error")
 	require.NoError(t, <-errs)
 
+	sess.queue = badQueue{}
+	errs = sess.Send(fake.Message{})
+	require.EqualError(t, <-errs, "fake.Address[600] dropped the packet: oops")
+
+	sess.queue = newNonBlockingQueue()
 	sess.parents[key] = parent{
 		relay: &streamRelay{stream: stream},
 		table: fakeTable{err: xerrors.New("oops")},
@@ -619,4 +625,12 @@ func (str *fakeClientStream) RecvMsg(m interface{}) error {
 
 func (str *fakeClientStream) CloseSend() error {
 	return nil
+}
+
+type badQueue struct {
+	Queue
+}
+
+func (badQueue) Push(router.Packet) error {
+	return xerrors.New("oops")
 }
