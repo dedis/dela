@@ -43,7 +43,7 @@ func TestFlat_Listen(t *testing.T) {
 
 	flat.mino = fake.NewBadMino()
 	_, err = flat.Listen(fakeReactor{})
-	require.EqualError(t, err, "couldn't make the rpc: fake error")
+	require.EqualError(t, err, fake.Err("couldn't make the rpc"))
 }
 
 func TestActor_Sign(t *testing.T) {
@@ -70,12 +70,12 @@ func TestActor_Sign(t *testing.T) {
 
 	actor.rpc = fake.NewBadRPC()
 	_, err = actor.Sign(ctx, message, ca)
-	require.EqualError(t, err, "call aborted: fake error")
+	require.EqualError(t, err, fake.Err("call aborted"))
 
 	actor.rpc = rpc
 	actor.signer = fake.NewSignerWithVerifierFactory(fake.NewBadVerifierFactory())
 	_, err = actor.Sign(ctx, message, ca)
-	require.EqualError(t, err, "couldn't make verifier: fake error")
+	require.EqualError(t, err, fake.Err("couldn't make verifier"))
 
 	actor.signer = fake.NewAggregateSigner()
 	actor.reactor = fakeReactor{err: xerrors.New("oops")}
@@ -100,7 +100,7 @@ func TestActor_SignWrongSignature(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := actor.Sign(ctx, message, ca)
-	require.EqualError(t, err, "couldn't verify the aggregation: fake error")
+	require.EqualError(t, err, fake.Err("couldn't verify the aggregation"))
 }
 
 func TestActor_RPCError_Sign(t *testing.T) {
@@ -164,5 +164,5 @@ func TestActor_SignProcessError(t *testing.T) {
 
 	actor.signer = fake.NewBadSigner()
 	_, err = actor.processResponse(cosi.SignatureResponse{}, fake.Signature{})
-	require.EqualError(t, err, "couldn't aggregate: fake error")
+	require.EqualError(t, err, fake.Err("couldn't aggregate"))
 }

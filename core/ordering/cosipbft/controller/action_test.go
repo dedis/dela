@@ -66,7 +66,7 @@ func TestExportAction_Execute(t *testing.T) {
 
 	ctx.Injector.Inject(fake.NewBadMino())
 	err = action.Execute(ctx)
-	require.EqualError(t, err, "failed to marshal address: fake error")
+	require.EqualError(t, err, fake.Err("failed to marshal address"))
 
 	ctx.Injector.Inject(fake.Mino{})
 	err = action.Execute(ctx)
@@ -74,7 +74,7 @@ func TestExportAction_Execute(t *testing.T) {
 
 	ctx.Injector.Inject(fakeCosi{err: true})
 	err = action.Execute(ctx)
-	require.EqualError(t, err, "failed to marshal public key: fake error")
+	require.EqualError(t, err, fake.Err("failed to marshal public key"))
 }
 
 func TestRosterAddAction_Execute(t *testing.T) {
@@ -156,7 +156,7 @@ func TestDecodeMember(t *testing.T) {
 
 	ctx.Injector.Inject(fakeCosi{err: true})
 	_, _, err = decodeMember(ctx, ":")
-	require.EqualError(t, err, "failed to decode public key: fake error")
+	require.EqualError(t, err, fake.Err("failed to decode public key"))
 }
 
 // -----------------------------------------------------------------------------

@@ -31,7 +31,7 @@ func TestService_GetNonce(t *testing.T) {
 	require.Equal(t, uint64(3), nonce)
 
 	_, err = srvc.GetNonce(fakeSnapshot{}, fake.NewBadPublicKey())
-	require.EqualError(t, err, "key: failed to marshal identity: fake error")
+	require.EqualError(t, err, fake.Err("key: failed to marshal identity"))
 
 	_, err = srvc.GetNonce(fakeSnapshot{errGet: xerrors.New("oops")}, fake.PublicKey{})
 	require.EqualError(t, err, "store: oops")
@@ -60,7 +60,7 @@ func TestService_Validate(t *testing.T) {
 
 	srvc.hashFac = fake.NewHashFactory(fake.NewBadHash())
 	err = srvc.set(fakeSnapshot{}, fake.PublicKey{}, 0)
-	require.EqualError(t, err, "key: failed to write identity: fake error")
+	require.EqualError(t, err, fake.Err("key: failed to write identity"))
 
 	srvc.hashFac = crypto.NewSha256Factory()
 	srvc.execution = fakeExec{err: xerrors.New("oops")}

@@ -66,7 +66,7 @@ func TestProcessor_CommitMessage_Invoke(t *testing.T) {
 	proc.pbftsm = fakeSM{}
 	msg = types.NewCommit(types.Digest{}, fake.NewBadSignature())
 	_, err = proc.Invoke(fake.NewAddress(0), msg)
-	require.EqualError(t, err, "couldn't marshal signature: fake error")
+	require.EqualError(t, err, fake.Err("couldn't marshal signature"))
 
 	_, err = proc.Invoke(fake.NewAddress(0), fake.Message{})
 	require.EqualError(t, err, "unsupported message of type 'fake.Message'")

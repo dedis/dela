@@ -42,7 +42,7 @@ func TestMsgFormat_Encode(t *testing.T) {
 	require.EqualError(t, err, "link serialization failed: oops")
 
 	_, err = format.Encode(fake.NewBadContext(), types.NewSyncAck())
-	require.EqualError(t, err, "marshal failed: fake error")
+	require.EqualError(t, err, fake.Err("marshal failed"))
 }
 
 func TestMsgFormat_Decode(t *testing.T) {
@@ -72,7 +72,7 @@ func TestMsgFormat_Decode(t *testing.T) {
 	require.EqualError(t, err, "message is empty")
 
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
-	require.EqualError(t, err, "unmarshal failed: fake error")
+	require.EqualError(t, err, fake.Err("unmarshal failed"))
 
 	ctx = serde.WithFactory(ctx, types.ChainKey{}, fakeChainFac{err: xerrors.New("oops")})
 	_, err = format.Decode(ctx, []byte(`{"Message":{}}`))

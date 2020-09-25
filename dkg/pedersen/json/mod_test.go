@@ -30,14 +30,14 @@ func TestMessageFormat_Start_Encode(t *testing.T) {
 
 	start = types.NewStart(0, []mino.Address{fake.NewBadAddress()}, nil)
 	_, err = format.Encode(ctx, start)
-	require.EqualError(t, err, "couldn't marshal address: fake error")
+	require.EqualError(t, err, fake.Err("couldn't marshal address"))
 
 	start = types.NewStart(0, nil, []kyber.Point{badPoint{}})
 	_, err = format.Encode(ctx, start)
 	require.EqualError(t, err, "couldn't marshal public key: oops")
 
 	_, err = format.Encode(fake.NewBadContext(), types.Start{})
-	require.EqualError(t, err, "couldn't marshal: fake error")
+	require.EqualError(t, err, fake.Err("couldn't marshal"))
 
 	_, err = format.Encode(ctx, fake.Message{})
 	require.EqualError(t, err, "unsupported message of type 'fake.Message'")
@@ -195,7 +195,7 @@ func TestMessageFormat_Decode(t *testing.T) {
 		"couldn't unmarshal V: invalid Ed25519 curve point")
 
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
-	require.EqualError(t, err, "couldn't deserialize message: fake error")
+	require.EqualError(t, err, fake.Err("couldn't deserialize message"))
 
 	_, err = format.Decode(ctx, []byte(`{}`))
 	require.EqualError(t, err, "message is empty")

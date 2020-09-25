@@ -28,7 +28,7 @@ func TestPubkeyFormat_Encode(t *testing.T) {
 	require.EqualError(t, err, "couldn't marshal point: oops")
 
 	_, err = format.Encode(fake.NewBadContext(), signer.GetPublicKey())
-	require.EqualError(t, err, "couldn't marshal: fake error")
+	require.EqualError(t, err, fake.Err("couldn't marshal"))
 }
 
 func TestPubkeyFormat_Decode(t *testing.T) {
@@ -48,7 +48,7 @@ func TestPubkeyFormat_Decode(t *testing.T) {
 		"couldn't unmarshal point: bn256.G2: not enough data")
 
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
-	require.EqualError(t, err, "couldn't deserialize data: fake error")
+	require.EqualError(t, err, fake.Err("couldn't deserialize data"))
 }
 
 func TestSigFormat_Encode(t *testing.T) {
@@ -64,7 +64,7 @@ func TestSigFormat_Encode(t *testing.T) {
 	require.EqualError(t, err, "unsupported message of type 'fake.Message'")
 
 	_, err = format.Encode(fake.NewBadContext(), sig)
-	require.EqualError(t, err, "couldn't marshal: fake error")
+	require.EqualError(t, err, fake.Err("couldn't marshal"))
 }
 
 func TestSigFormat_Decode(t *testing.T) {
@@ -76,7 +76,7 @@ func TestSigFormat_Decode(t *testing.T) {
 	require.Equal(t, bls.NewSignature([]byte("A")), sig)
 
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{"Data":"QQ=="}`))
-	require.EqualError(t, err, "couldn't deserialize data: fake error")
+	require.EqualError(t, err, fake.Err("couldn't deserialize data"))
 }
 
 func TestAssert(t *testing.T) {

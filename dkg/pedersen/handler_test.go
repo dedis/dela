@@ -17,7 +17,7 @@ func TestHandler_Stream(t *testing.T) {
 	h := Handler{startRes: &state{}}
 	receiver := fake.NewBadReceiver()
 	err := h.Stream(fake.Sender{}, receiver)
-	require.EqualError(t, err, "failed to receive: fake error")
+	require.EqualError(t, err, fake.Err("failed to receive"))
 
 	receiver = fake.NewReceiver(types.Deal{}, types.DecryptRequest{})
 	err = h.Stream(fake.Sender{}, receiver)
@@ -28,7 +28,7 @@ func TestHandler_Stream(t *testing.T) {
 	h.privShare = &share.PriShare{I: 0, V: suite.Scalar()}
 	receiver = fake.NewReceiver(types.DecryptRequest{C: suite.Point()})
 	err = h.Stream(fake.NewBadSender(), receiver)
-	require.EqualError(t, err, "got an error while sending the decrypt reply: fake error")
+	require.EqualError(t, err, fake.Err("got an error while sending the decrypt reply"))
 
 	receiver = fake.NewReceiver(fake.Message{})
 	err = h.Stream(fake.Sender{}, receiver)
@@ -58,7 +58,7 @@ func TestHandler_Start(t *testing.T) {
 	)
 	receiver := fake.NewBadReceiver()
 	err = h.start(start, []types.Deal{}, []*pedersen.Response{}, nil, fake.Sender{}, receiver)
-	require.EqualError(t, err, "failed to receive after sending deals: fake error")
+	require.EqualError(t, err, fake.Err("failed to receive after sending deals"))
 
 	receiver = fake.NewReceiver(types.Deal{}, nil)
 	err = h.start(start, []types.Deal{}, []*pedersen.Response{}, nil, fake.Sender{}, receiver)
@@ -87,12 +87,12 @@ func TestHandler_Certify(t *testing.T) {
 	responses := []*pedersen.Response{{Response: &vss.Response{}}}
 
 	err = h.certify(responses, fake.Sender{}, receiver, nil)
-	require.EqualError(t, err, "failed to receive after sending deals: fake error")
+	require.EqualError(t, err, fake.Err("failed to receive after sending deals"))
 
 	dkg = getCertified(t)
 	h.dkg = dkg
 	err = h.certify(responses, fake.NewBadSender(), &fake.Receiver{}, nil)
-	require.EqualError(t, err, "got an error while sending pub key: fake error")
+	require.EqualError(t, err, fake.Err("got an error while sending pub key"))
 }
 
 func TestHandler_HandleDeal(t *testing.T) {
@@ -131,7 +131,7 @@ func TestHandler_HandleDeal(t *testing.T) {
 		dkg: dkg1,
 	}
 	err = h.handleDeal(dealMsg, nil, []mino.Address{fake.NewAddress(0)}, fake.NewBadSender())
-	require.EqualError(t, err, "failed to send response to 'fake.Address[0]': fake error")
+	require.EqualError(t, err, fake.Err("failed to send response to 'fake.Address[0]'"))
 }
 
 // -----------------------------------------------------------------------------

@@ -210,7 +210,7 @@ func TestOverlayServer_Join(t *testing.T) {
 	overlay.tokens = fakeTokens{}
 	overlay.certs.Store(fake.NewBadAddress(), cert)
 	_, err = overlay.Join(ctx, req)
-	require.EqualError(t, err, "couldn't marshal address: fake error")
+	require.EqualError(t, err, fake.Err("couldn't marshal address"))
 
 	overlay.certs = certs.NewInMemoryStore()
 	overlay.certs.Store(fake.NewAddress(0), cert)
@@ -292,7 +292,7 @@ func TestOverlayServer_Call(t *testing.T) {
 		map[string]string{headerURIKey: "bad2"},
 	))
 	_, err = overlay.Call(badCtx, &ptypes.Message{Payload: []byte(``)})
-	require.EqualError(t, err, "couldn't deserialize message: fake error")
+	require.EqualError(t, err, fake.Err("couldn't deserialize message"))
 
 	badCtx = metadata.NewIncomingContext(context.Background(), metadata.New(
 		map[string]string{headerURIKey: "bad"},
@@ -303,7 +303,7 @@ func TestOverlayServer_Call(t *testing.T) {
 	ctx = metadata.NewIncomingContext(context.Background(), metadata.Pairs(headerURIKey, "test"))
 	overlay.context = fake.NewBadContext()
 	_, err = overlay.Call(ctx, &ptypes.Message{Payload: []byte(``)})
-	require.EqualError(t, err, "couldn't serialize result: fake error")
+	require.EqualError(t, err, fake.Err("couldn't serialize result"))
 }
 
 func TestOverlayServer_Stream(t *testing.T) {
@@ -437,7 +437,7 @@ func TestOverlay_New(t *testing.T) {
 	require.NotNil(t, o.certs.Load(fake.NewAddress(0)))
 
 	_, err = newOverlay(fake.NewBadAddress(), nil, nil, fake.NewContext())
-	require.EqualError(t, err, "failed to marshal address: fake error")
+	require.EqualError(t, err, fake.Err("failed to marshal address"))
 }
 
 func TestOverlay_Panic_GetCertificate(t *testing.T) {
@@ -477,7 +477,7 @@ func TestOverlay_Join(t *testing.T) {
 	overlay.addrFactory = AddressFactory{}
 	overlay.me = fake.NewBadAddress()
 	err = overlay.Join("", "", nil)
-	require.EqualError(t, err, "couldn't marshal own address: fake error")
+	require.EqualError(t, err, fake.Err("couldn't marshal own address"))
 
 	overlay.me = fake.NewAddress(0)
 	overlay.certs = fakeCerts{err: xerrors.New("oops")}

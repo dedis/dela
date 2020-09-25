@@ -32,7 +32,7 @@ func TestHandler_Process(t *testing.T) {
 	h.reactor = fakeReactor{}
 	h.signer = fake.NewBadSigner()
 	_, err = h.Process(req)
-	require.EqualError(t, err, "couldn't sign: fake error")
+	require.EqualError(t, err, fake.Err("couldn't sign"))
 }
 
 // -----------------------------------------------------------------------------

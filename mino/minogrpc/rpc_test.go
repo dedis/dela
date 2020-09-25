@@ -60,11 +60,11 @@ func TestRPC_Call(t *testing.T) {
 	require.False(t, more)
 
 	_, err = rpc.Call(ctx, fake.NewBadPublicKey(), mino.NewAddresses())
-	require.EqualError(t, err, "failed to marshal msg: fake error")
+	require.EqualError(t, err, fake.Err("failed to marshal msg"))
 
 	rpc.overlay.me = fake.NewBadAddress()
 	_, err = rpc.Call(ctx, fake.Message{}, mino.NewAddresses())
-	require.EqualError(t, err, "failed to marshal address: fake error")
+	require.EqualError(t, err, fake.Err("failed to marshal address"))
 
 	rpc.overlay.me = fake.NewAddress(0)
 	rpc.overlay.connMgr = fakeConnMgr{err: xerrors.New("oops")}
@@ -90,7 +90,7 @@ func TestRPC_Call(t *testing.T) {
 
 	msg = <-msgs
 	_, err = msg.GetMessageOrError()
-	require.EqualError(t, err, "couldn't unmarshal payload: fake error")
+	require.EqualError(t, err, fake.Err("couldn't unmarshal payload"))
 }
 
 func TestRPC_Stream(t *testing.T) {
@@ -144,7 +144,7 @@ func TestRPC_Stream(t *testing.T) {
 
 	rpc.overlay.router = tree.NewRouter(AddressFactory{})
 	_, _, err = rpc.Stream(ctx, mino.NewAddresses(addrs[0], fake.NewBadAddress()))
-	require.EqualError(t, err, "marshal address failed: fake error")
+	require.EqualError(t, err, fake.Err("marshal address failed"))
 
 	rpc.overlay.connMgr = fakeConnMgr{err: xerrors.New("oops")}
 	_, _, err = rpc.Stream(ctx, mino.NewAddresses(addrs...))

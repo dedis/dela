@@ -101,7 +101,7 @@ func TestRPC_Failures_Stream(t *testing.T) {
 
 	errs := out.Send(fake.Message{})
 	err = testWait(t, nil, errs)
-	require.EqualError(t, err, "couldn't marshal message: fake error")
+	require.EqualError(t, err, fake.Err("couldn't marshal message"))
 
 	m.context = serde.NewContext(fake.ContextEngine{})
 	_, _, err = rpc.Stream(ctx, mino.NewAddresses(fake.NewAddress(0)))
@@ -130,7 +130,7 @@ func TestReceiver_Recv(t *testing.T) {
 	recv.factory = fake.NewBadMessageFactory()
 	recv.out <- Envelope{}
 	_, _, err = recv.Recv(context.Background())
-	require.EqualError(t, err, "couldn't deserialize: fake error")
+	require.EqualError(t, err, fake.Err("couldn't deserialize"))
 }
 
 // -----------------------------------------------------------------------------

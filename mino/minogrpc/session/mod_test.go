@@ -165,7 +165,7 @@ func TestSession_Send(t *testing.T) {
 	require.NoError(t, <-errs)
 
 	errs = sess.Send(fake.NewBadPublicKey())
-	require.EqualError(t, <-errs, "failed to serialize msg: fake error")
+	require.EqualError(t, <-errs, fake.Err("failed to serialize msg"))
 	require.NoError(t, <-errs)
 
 	sess.queue = badQueue{}
@@ -300,7 +300,7 @@ func TestSession_Recv(t *testing.T) {
 
 	sess.msgFac = fake.NewBadMessageFactory()
 	_, _, err = sess.Recv(ctx)
-	require.EqualError(t, err, "message: fake error")
+	require.EqualError(t, err, fake.Err("message"))
 
 	sess.errs <- xerrors.New("oops")
 	_, _, err = sess.Recv(ctx)

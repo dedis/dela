@@ -40,21 +40,21 @@ func TestLinkFormat_Encode(t *testing.T) {
 
 	opt := types.WithSignatures(fake.NewBadSignature(), fake.Signature{})
 	_, err = format.Encode(ctx, makeLink(t, opt))
-	require.EqualError(t, err, "couldn't serialize prepare: fake error")
+	require.EqualError(t, err, fake.Err("couldn't serialize prepare"))
 
 	opt = types.WithSignatures(fake.Signature{}, fake.NewBadSignature())
 	_, err = format.Encode(ctx, makeLink(t, opt))
-	require.EqualError(t, err, "couldn't serialize commit: fake error")
+	require.EqualError(t, err, fake.Err("couldn't serialize commit"))
 
 	opt = types.WithChangeSet(fakeChangeSet{err: xerrors.New("oops")})
 	_, err = format.Encode(ctx, makeBlockLink(t, opt))
 	require.EqualError(t, err, "couldn't serialize change set: oops")
 
 	_, err = format.Encode(fake.NewBadContext(), makeBlockLink(t))
-	require.EqualError(t, err, "couldn't serialize block: encoding failed: fake error")
+	require.EqualError(t, err, fake.Err("couldn't serialize block: encoding failed"))
 
 	_, err = format.Encode(fake.NewBadContext(), makeLink(t))
-	require.EqualError(t, err, "failed to marshal: fake error")
+	require.EqualError(t, err, fake.Err("failed to marshal"))
 }
 
 func TestLinkFormat_Decode(t *testing.T) {
@@ -74,15 +74,15 @@ func TestLinkFormat_Decode(t *testing.T) {
 	require.Equal(t, makeBlockLink(t), msg)
 
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
-	require.EqualError(t, err, "failed to unmarshal: fake error")
+	require.EqualError(t, err, fake.Err("failed to unmarshal"))
 
 	badCtx := serde.WithFactory(ctx, types.AggregateKey{}, fake.NewBadSignatureFactory())
 	_, err = format.Decode(badCtx, []byte(`{}`))
-	require.EqualError(t, err, "failed to decode prepare: factory failed: fake error")
+	require.EqualError(t, err, fake.Err("failed to decode prepare: factory failed"))
 
 	badCtx = serde.WithFactory(ctx, types.AggregateKey{}, fake.NewBadSignatureFactoryWithDelay(1))
 	_, err = format.Decode(badCtx, []byte(`{}`))
-	require.EqualError(t, err, "failed to decode commit: factory failed: fake error")
+	require.EqualError(t, err, fake.Err("failed to decode commit: factory failed"))
 
 	badCtx = serde.WithFactory(ctx, types.ChangeSetKey{}, fake.MessageFactory{})
 	_, err = format.Decode(badCtx, []byte(`{}`))
@@ -98,7 +98,7 @@ func TestLinkFormat_Decode(t *testing.T) {
 
 	badCtx = serde.WithFactory(ctx, types.BlockKey{}, fake.NewBadMessageFactory())
 	_, err = format.Decode(badCtx, []byte(`{"Block":{}}`))
-	require.EqualError(t, err, "failed to decode block: fake error")
+	require.EqualError(t, err, fake.Err("failed to decode block"))
 
 	badCtx = serde.WithFactory(ctx, types.BlockKey{}, fake.MessageFactory{})
 	_, err = format.Decode(badCtx, []byte(`{"Block":{}}`))

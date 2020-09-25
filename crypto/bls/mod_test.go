@@ -50,7 +50,7 @@ func TestPublicKey_Serialize(t *testing.T) {
 	require.Equal(t, "fake format", string(data))
 
 	_, err = pubkey.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "couldn't encode public key: fake error")
+	require.EqualError(t, err, fake.Err("couldn't encode public key"))
 }
 
 func TestPublicKey_Verify(t *testing.T) {
@@ -107,7 +107,7 @@ func TestPublicKeyFactory_Deserialize(t *testing.T) {
 	require.Equal(t, PublicKey{}, msg)
 
 	_, err = factory.Deserialize(fake.NewBadContext(), nil)
-	require.EqualError(t, err, "couldn't decode public key: fake error")
+	require.EqualError(t, err, fake.Err("couldn't decode public key"))
 }
 
 func TestPublicKeyFactory_PublicKeyOf(t *testing.T) {
@@ -118,7 +118,7 @@ func TestPublicKeyFactory_PublicKeyOf(t *testing.T) {
 	require.Equal(t, PublicKey{}, pk)
 
 	_, err = factory.PublicKeyOf(fake.NewBadContext(), nil)
-	require.EqualError(t, err, "couldn't decode public key: fake error")
+	require.EqualError(t, err, fake.Err("couldn't decode public key"))
 
 	_, err = factory.PublicKeyOf(fake.NewContextWithFormat(serde.Format("BAD_TYPE")), nil)
 	require.EqualError(t, err, "invalid public key of type 'fake.Message'")
@@ -162,7 +162,7 @@ func TestSignature_Serialize(t *testing.T) {
 	require.Equal(t, "fake format", string(data))
 
 	_, err = sig.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "couldn't encode signature: fake error")
+	require.EqualError(t, err, fake.Err("couldn't encode signature"))
 }
 
 func TestSignature_Equal(t *testing.T) {
@@ -195,7 +195,7 @@ func TestSignatureFactory_Deserialize(t *testing.T) {
 	require.Equal(t, Signature{}, msg)
 
 	_, err = factory.Deserialize(fake.NewBadContext(), nil)
-	require.EqualError(t, err, "couldn't decode signature: fake error")
+	require.EqualError(t, err, fake.Err("couldn't decode signature"))
 }
 
 func TestSignatureFactory_SignatureOf(t *testing.T) {
@@ -206,7 +206,7 @@ func TestSignatureFactory_SignatureOf(t *testing.T) {
 	require.Equal(t, Signature{}, sig)
 
 	_, err = factory.SignatureOf(fake.NewBadContext(), nil)
-	require.EqualError(t, err, "couldn't decode signature: fake error")
+	require.EqualError(t, err, fake.Err("couldn't decode signature"))
 
 	_, err = factory.SignatureOf(fake.NewContextWithFormat(serde.Format("BAD_TYPE")), nil)
 	require.EqualError(t, err, "invalid signature of type 'fake.Message'")

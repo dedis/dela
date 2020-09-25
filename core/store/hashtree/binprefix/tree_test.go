@@ -41,7 +41,7 @@ func TestTree_Load(t *testing.T) {
 
 	tree.factory = fake.NewBadMessageFactory()
 	err = tree.FillFromBucket(bucket)
-	require.EqualError(t, err, "while scanning: tree node malformed: fake error")
+	require.EqualError(t, err, fake.Err("while scanning: tree node malformed"))
 }
 
 func TestTree_Search(t *testing.T) {
@@ -257,7 +257,7 @@ func TestEmptyNode_Prepare(t *testing.T) {
 
 	node.hash = nil
 	_, err = node.Prepare([]byte{1}, new(big.Int), nil, fake.NewHashFactory(fake.NewBadHash()))
-	require.EqualError(t, err, "empty node failed: fake error")
+	require.EqualError(t, err, fake.Err("empty node failed"))
 }
 
 func TestEmptyNode_Visit(t *testing.T) {
@@ -289,7 +289,7 @@ func TestEmptyNode_Serialize(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = node.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "failed to encode empty node: fake error")
+	require.EqualError(t, err, fake.Err("failed to encode empty node"))
 }
 
 func TestInteriorNode_GetHash(t *testing.T) {
@@ -383,7 +383,7 @@ func TestInteriorNode_Prepare(t *testing.T) {
 
 	node.right = fakeNode{}
 	_, err = node.Prepare([]byte{1}, big.NewInt(2), nil, fake.NewHashFactory(fake.NewBadHash()))
-	require.EqualError(t, err, "interior node failed: fake error")
+	require.EqualError(t, err, fake.Err("interior node failed"))
 }
 
 func TestInteriorNode_Visit(t *testing.T) {
@@ -428,7 +428,7 @@ func TestInteriorNode_Serialize(t *testing.T) {
 	require.Equal(t, `{"Interior":{"Digest":"","Depth":2,"Prefix":"Aw=="}}`, string(data))
 
 	_, err = node.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "failed to encode interior node: fake error")
+	require.EqualError(t, err, fake.Err("failed to encode interior node"))
 }
 
 func TestLeafNode_GetHash(t *testing.T) {
@@ -507,7 +507,7 @@ func TestLeafNode_Prepare(t *testing.T) {
 
 	node.hash = nil
 	_, err = node.Prepare(nil, big.NewInt(0), nil, fake.NewHashFactory(fake.NewBadHash()))
-	require.EqualError(t, err, "leaf node failed: fake error")
+	require.EqualError(t, err, fake.Err("leaf node failed"))
 }
 
 func TestLeafNode_Visit(t *testing.T) {
@@ -542,7 +542,7 @@ func TestLeafNode_Serialize(t *testing.T) {
 	require.Equal(t, `{"Leaf":{"Digest":"","Depth":2,"Prefix":"Ag==","Value":"qg=="}}`, string(data))
 
 	_, err = node.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "failed to encode leaf node: fake error")
+	require.EqualError(t, err, fake.Err("failed to encode leaf node"))
 }
 
 func TestNodeFactory_Deserialize(t *testing.T) {

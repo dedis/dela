@@ -185,7 +185,7 @@ func TestDiskNode_Load(t *testing.T) {
 
 	node.factory = fake.NewBadMessageFactory()
 	_, err = node.load(big.NewInt(0), bucket)
-	require.EqualError(t, err, "failed to deserialize: fake error")
+	require.EqualError(t, err, fake.Err("failed to deserialize"))
 
 	node.factory = fake.MessageFactory{}
 	_, err = node.load(big.NewInt(0), bucket)

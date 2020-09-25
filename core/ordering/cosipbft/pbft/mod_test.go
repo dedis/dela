@@ -150,7 +150,7 @@ func TestStateMachine_Prepare(t *testing.T) {
 	sm.hashFac = fake.NewHashFactory(fake.NewBadHash())
 	_, err = sm.Prepare(block)
 	require.EqualError(t, err,
-		"failed to create link: failed to fingerprint: couldn't write from: fake error")
+		fake.Err("failed to create link: failed to fingerprint: couldn't write from"))
 }
 
 func TestStateMachine_Commit(t *testing.T) {
@@ -181,11 +181,11 @@ func TestStateMachine_Commit(t *testing.T) {
 
 	sm.verifierFac = fake.NewBadVerifierFactory()
 	err = sm.Commit(types.Digest{1}, fake.Signature{})
-	require.EqualError(t, err, "couldn't make verifier: fake error")
+	require.EqualError(t, err, fake.Err("couldn't make verifier"))
 
 	sm.verifierFac = fake.NewVerifierFactory(fake.NewBadVerifier())
 	err = sm.Commit(types.Digest{1}, fake.Signature{})
-	require.EqualError(t, err, "verifier failed: fake error")
+	require.EqualError(t, err, fake.Err("verifier failed"))
 
 	sm.verifierFac = fake.NewVerifierFactory(fake.Verifier{})
 	sm.authReader = badReader
@@ -226,12 +226,12 @@ func TestStateMachine_Finalize(t *testing.T) {
 	sm.state = CommitState
 	sm.verifierFac = fake.NewBadVerifierFactory()
 	err = sm.Finalize(types.Digest{1}, fake.Signature{})
-	require.EqualError(t, err, "couldn't make verifier: fake error")
+	require.EqualError(t, err, fake.Err("couldn't make verifier"))
 
 	sm.verifierFac = fake.NewVerifierFactory(fake.NewBadVerifier())
 	sm.round.prepareSig = fake.Signature{}
 	err = sm.Finalize(types.Digest{1}, fake.Signature{})
-	require.EqualError(t, err, "verifier failed: fake error")
+	require.EqualError(t, err, fake.Err("verifier failed"))
 
 	sm.verifierFac = fake.NewVerifierFactory(fake.Verifier{})
 	sm.genesis = blockstore.NewGenesisStore()
@@ -334,7 +334,7 @@ func TestStateMachine_Accept(t *testing.T) {
 		return ro, nil
 	}
 	err = sm.Accept(View{from: fake.NewAddress(0), leader: 1})
-	require.EqualError(t, err, "invalid view: invalid signature: verify: fake error")
+	require.EqualError(t, err, fake.Err("invalid view: invalid signature: verify"))
 }
 
 func TestStateMachine_AcceptAll(t *testing.T) {
@@ -406,7 +406,7 @@ func TestStateMachine_Expire(t *testing.T) {
 
 	sm.signer = fake.NewBadSigner()
 	_, err = sm.Expire(fake.NewAddress(0))
-	require.EqualError(t, err, "create view: signer: fake error")
+	require.EqualError(t, err, fake.Err("create view: signer"))
 
 	sm.signer = fake.NewSigner()
 	sm.genesis = blockstore.NewGenesisStore()
@@ -469,7 +469,7 @@ func TestStateMachine_CatchUp(t *testing.T) {
 	sm.blocks = blockstore.NewInMemory()
 	sm.verifierFac = fake.NewVerifierFactory(fake.NewBadVerifier())
 	err = sm.CatchUp(link)
-	require.EqualError(t, err, "commit failed: verifier failed: fake error")
+	require.EqualError(t, err, fake.Err("commit failed: verifier failed"))
 
 	opts = []types.LinkOption{
 		types.WithSignatures(fake.NewBadSignature(), fake.Signature{}),
@@ -480,7 +480,7 @@ func TestStateMachine_CatchUp(t *testing.T) {
 	require.NoError(t, err)
 	sm.verifierFac = fake.VerifierFactory{}
 	err = sm.CatchUp(link)
-	require.EqualError(t, err, "finalize failed: couldn't marshal signature: fake error")
+	require.EqualError(t, err, fake.Err("finalize failed: couldn't marshal signature"))
 }
 
 func TestStateMachine_Watch(t *testing.T) {

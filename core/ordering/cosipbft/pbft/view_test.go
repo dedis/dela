@@ -38,8 +38,8 @@ func TestView_Verify(t *testing.T) {
 	require.NoError(t, view.Verify(signer.GetPublicKey()))
 
 	_, err = NewViewAndSign(param, fake.NewBadSigner())
-	require.EqualError(t, err, "signer: fake error")
+	require.EqualError(t, err, fake.Err("signer"))
 
 	err = view.Verify(fake.NewBadPublicKey())
-	require.EqualError(t, err, "verify: fake error")
+	require.EqualError(t, err, fake.Err("verify"))
 }

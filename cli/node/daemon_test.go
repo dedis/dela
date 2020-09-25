@@ -40,7 +40,7 @@ func TestSocketClient_Send(t *testing.T) {
 	client.socketpath = path
 	client.out = fake.NewBadHash()
 	err = client.Send([]byte("deadbeef"))
-	require.EqualError(t, err, "couldn't read output: fake error")
+	require.EqualError(t, err, fake.Err("couldn't read output"))
 
 	// Windows only allows opening one socket per address, this is why we use
 	// another one.

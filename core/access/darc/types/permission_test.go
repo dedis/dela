@@ -101,7 +101,7 @@ func TestPermission_Serialize(t *testing.T) {
 	require.Equal(t, "fake format", string(data))
 
 	_, err = perm.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "couldn't encode access: fake error")
+	require.EqualError(t, err, fake.Err("couldn't encode access"))
 }
 
 func TestPermissionFactory_Deserialize(t *testing.T) {
@@ -112,7 +112,7 @@ func TestPermissionFactory_Deserialize(t *testing.T) {
 	require.IsType(t, &DisjunctivePermission{}, msg)
 
 	_, err = factory.Deserialize(fake.NewBadContext(), nil)
-	require.EqualError(t, err, "FakeBad format: fake error")
+	require.EqualError(t, err, fake.Err("FakeBad format"))
 
 	_, err = factory.Deserialize(fake.NewMsgContext(), nil)
 	require.EqualError(t, err, "invalid access 'fake.Message'")

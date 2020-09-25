@@ -63,7 +63,7 @@ func TestPublicKey_Serialize(t *testing.T) {
 	require.Equal(t, "fake format", string(pkBuf))
 
 	_, err = pk.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "couldn't encode public key: fake error")
+	require.EqualError(t, err, fake.Err("couldn't encode public key"))
 }
 
 func TestPublicKey_Verify(t *testing.T) {
@@ -158,7 +158,7 @@ func TestSignature_Serialize(t *testing.T) {
 
 	ctx = fake.NewBadContext()
 	_, err = sig.Serialize(ctx)
-	require.EqualError(t, err, "couldn't encode signature: fake error")
+	require.EqualError(t, err, fake.Err("couldn't encode signature"))
 }
 
 func TestSignature_Equal(t *testing.T) {
@@ -199,7 +199,7 @@ func TestPublicKeyFactory_PublicKeyOf(t *testing.T) {
 
 	ctx = fake.NewBadContext()
 	_, err = pkf.PublicKeyOf(ctx, nil)
-	require.EqualError(t, err, "couldn't decode public key: fake error")
+	require.EqualError(t, err, fake.Err("couldn't decode public key"))
 
 	ctx = fake.NewContextWithFormat("BAD_POINT")
 	_, err = pkf.PublicKeyOf(ctx, nil)
@@ -246,7 +246,7 @@ func TestSignatureFactory_SignatureOf(t *testing.T) {
 
 	ctx = fake.NewBadContext()
 	_, err = sf.SignatureOf(ctx, nil)
-	require.EqualError(t, err, "couldn't decode signature: fake error")
+	require.EqualError(t, err, fake.Err("couldn't decode signature"))
 
 	ctx = fake.NewContextWithFormat("BAD_SIG")
 	_, err = sf.SignatureOf(ctx, nil)

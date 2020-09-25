@@ -112,7 +112,7 @@ func TestInMemoryStore_Fetch(t *testing.T) {
 	store.hashFactory = fake.NewHashFactory(fake.NewBadHash())
 	err = store.Fetch(fakeDialable{host: l.Addr().String()}, []byte{})
 	require.EqualError(t, err,
-		"couldn't hash certificate: couldn't write leaf: fake error")
+		fake.Err("couldn't hash certificate: couldn't write leaf"))
 }
 
 func TestInMemoryStore_Hash(t *testing.T) {

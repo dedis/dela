@@ -57,7 +57,7 @@ func TestSignature_Merge(t *testing.T) {
 	require.EqualError(t, err, "index 1 already merged")
 
 	err = sig.Merge(fake.NewBadSigner(), 0, fake.Signature{})
-	require.EqualError(t, err, "couldn't aggregate: fake error")
+	require.EqualError(t, err, fake.Err("couldn't aggregate"))
 	require.Equal(t, []byte{0b00000110}, sig.mask)
 }
 
@@ -84,7 +84,7 @@ func TestSignature_Serialize(t *testing.T) {
 	require.Equal(t, "fake format", string(data))
 
 	_, err = sig.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "couldn't encode signature: fake error")
+	require.EqualError(t, err, fake.Err("couldn't encode signature"))
 }
 
 func TestSignature_MarshalBinary(t *testing.T) {
@@ -99,7 +99,7 @@ func TestSignature_MarshalBinary(t *testing.T) {
 
 	sig.agg = fake.NewBadSignature()
 	_, err = sig.MarshalBinary()
-	require.EqualError(t, err, "couldn't marshal signature: fake error")
+	require.EqualError(t, err, fake.Err("couldn't marshal signature"))
 }
 
 func TestSignature_Equal(t *testing.T) {
@@ -134,7 +134,7 @@ func TestSignatureFactory_SignatureOf(t *testing.T) {
 	require.Equal(t, &Signature{}, sig)
 
 	_, err = factory.SignatureOf(fake.NewBadContext(), nil)
-	require.EqualError(t, err, "couldn't decode signature: fake error")
+	require.EqualError(t, err, fake.Err("couldn't decode signature"))
 
 	_, err = factory.SignatureOf(fake.NewContextWithFormat(serde.Format("BAD_TYPE")), nil)
 	require.EqualError(t, err, "invalid signature of type 'fake.Message'")
@@ -157,11 +157,11 @@ func TestVerifier_Verify(t *testing.T) {
 
 	verifier.factory = fake.NewBadVerifierFactory()
 	err = verifier.Verify([]byte{}, &Signature{})
-	require.EqualError(t, err, "couldn't make verifier: fake error")
+	require.EqualError(t, err, fake.Err("couldn't make verifier"))
 
 	verifier.factory = fake.NewVerifierFactory(fake.NewBadVerifier())
 	err = verifier.Verify([]byte{}, &Signature{})
-	require.EqualError(t, err, "invalid signature: fake error")
+	require.EqualError(t, err, fake.Err("invalid signature"))
 }
 
 func TestVerifierFactory_FromArray(t *testing.T) {

@@ -42,10 +42,10 @@ func TestBlock_Prepare(t *testing.T) {
 	require.Len(t, block.hash, 32)
 
 	err = block.prepare(ctx, fake.NewHashFactory(fake.NewBadHash()), 0)
-	require.EqualError(t, err, "failed to write index: fake error")
+	require.EqualError(t, err, fake.Err("failed to write index"))
 
 	err = block.prepare(ctx, fake.NewHashFactory(fake.NewBadHashWithDelay(1)), 0)
-	require.EqualError(t, err, "failed to write root: fake error")
+	require.EqualError(t, err, fake.Err("failed to write root"))
 
 	block.data = fakeData{err: xerrors.New("oops")}
 	err = block.prepare(ctx, crypto.NewSha256Factory(), 0)
@@ -53,13 +53,13 @@ func TestBlock_Prepare(t *testing.T) {
 
 	block.data = fakeData{}
 	err = block.prepare(ctx, fake.NewHashFactory(fake.NewBadHashWithDelay(2)), 0)
-	require.EqualError(t, err, "couldn't marshal digest: fake error")
+	require.EqualError(t, err, fake.Err("couldn't marshal digest"))
 
 	err = block.prepare(ctx, fake.NewHashFactory(fake.NewBadHashWithDelay(3)), 0)
-	require.EqualError(t, err, "couldn't unmarshal digest: fake error")
+	require.EqualError(t, err, fake.Err("couldn't unmarshal digest"))
 
 	err = block.prepare(ctx, fake.NewHashFactory(fake.NewBadHashWithDelay(4)), 0)
-	require.EqualError(t, err, "failed to write nonce: fake error")
+	require.EqualError(t, err, fake.Err("failed to write nonce"))
 }
 
 // -----------------------------------------------------------------------------

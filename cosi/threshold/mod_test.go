@@ -101,7 +101,7 @@ func TestCoSi_Listen(t *testing.T) {
 
 	c.mino = fake.NewBadMino()
 	_, err = c.Listen(fakeReactor{})
-	require.EqualError(t, err, "couldn't make rpc: fake error")
+	require.EqualError(t, err, fake.Err("couldn't make rpc"))
 }
 
 // -----------------------------------------------------------------------------

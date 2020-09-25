@@ -26,7 +26,7 @@ func TestChainFormat_Encode(t *testing.T) {
 	require.EqualError(t, err, "couldn't serialize link: oops")
 
 	_, err = format.Encode(fake.NewBadContext(), types.NewChain(fakeLink{}, nil))
-	require.EqualError(t, err, "failed to marshal: fake error")
+	require.EqualError(t, err, fake.Err("failed to marshal"))
 }
 
 func TestChainFormat_Decode(t *testing.T) {
@@ -40,7 +40,7 @@ func TestChainFormat_Decode(t *testing.T) {
 	require.Equal(t, types.NewChain(fakeLink{}, []types.Link{fakeLink{}, fakeLink{}}), chain)
 
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
-	require.EqualError(t, err, "failed to unmarshal: fake error")
+	require.EqualError(t, err, fake.Err("failed to unmarshal"))
 
 	_, err = format.Decode(ctx, []byte(`{}`))
 	require.EqualError(t, err, "chain cannot be empty")

@@ -23,7 +23,7 @@ func TestSignatureRequest(t *testing.T) {
 	require.Equal(t, "fake format", string(data))
 
 	_, err = req.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "couldn't encode request: fake error")
+	require.EqualError(t, err, fake.Err("couldn't encode request"))
 }
 
 func TestSignatureResponse(t *testing.T) {
@@ -34,7 +34,7 @@ func TestSignatureResponse(t *testing.T) {
 	require.Equal(t, "fake format", string(data))
 
 	_, err = resp.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "couldn't encode response: fake error")
+	require.EqualError(t, err, fake.Err("couldn't encode response"))
 }
 
 func TestMessageFactory_Deserialize(t *testing.T) {
@@ -52,5 +52,5 @@ func TestMessageFactory_Deserialize(t *testing.T) {
 	require.Equal(t, fake.SignatureFactory{}, ctx.GetFactory(SigKey{}))
 
 	_, err = factory.Deserialize(fake.NewBadContext(), nil)
-	require.EqualError(t, err, "couldn't decode message: fake error")
+	require.EqualError(t, err, fake.Err("couldn't decode message"))
 }

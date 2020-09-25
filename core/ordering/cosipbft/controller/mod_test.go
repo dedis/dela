@@ -44,7 +44,7 @@ func TestMinimal_OnStart(t *testing.T) {
 
 	inj.Inject(fake.NewBadMino())
 	err = m.OnStart(fset, inj)
-	require.EqualError(t, err, "pool: failed to listen: couldn't create the rpc: fake error")
+	require.EqualError(t, err, fake.Err("pool: failed to listen: couldn't create the rpc"))
 }
 
 func TestMinimal_OnStop(t *testing.T) {

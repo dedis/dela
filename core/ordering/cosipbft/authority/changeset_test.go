@@ -57,7 +57,7 @@ func TestChangeSet_Serialize(t *testing.T) {
 	require.Equal(t, "fake format", string(data))
 
 	_, err = cset.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "couldn't encode change set: fake error")
+	require.EqualError(t, err, fake.Err("couldn't encode change set"))
 }
 
 func TestChangeSetFactory_Deserialize(t *testing.T) {
@@ -68,7 +68,7 @@ func TestChangeSetFactory_Deserialize(t *testing.T) {
 	require.Equal(t, NewChangeSet(), msg)
 
 	_, err = factory.Deserialize(fake.NewBadContext(), nil)
-	require.EqualError(t, err, "couldn't decode change set: fake error")
+	require.EqualError(t, err, fake.Err("couldn't decode change set"))
 
 	_, err = factory.Deserialize(fake.NewContextWithFormat(serde.Format("BAD_TYPE")), nil)
 	require.EqualError(t, err, "invalid message of type 'fake.Message'")

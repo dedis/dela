@@ -65,7 +65,7 @@ func TestPacket_Serialize(t *testing.T) {
 	require.Equal(t, "fake format", string(data))
 
 	_, err = pkt.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "packet format: fake error")
+	require.EqualError(t, err, fake.Err("packet format"))
 }
 
 func TestPacketFactory_Deserialize(t *testing.T) {
@@ -76,7 +76,7 @@ func TestPacketFactory_Deserialize(t *testing.T) {
 	require.Equal(t, &Packet{}, msg)
 
 	_, err = fac.Deserialize(fake.NewBadContext(), nil)
-	require.EqualError(t, err, "packet format: fake error")
+	require.EqualError(t, err, fake.Err("packet format"))
 
 	_, err = fac.Deserialize(fake.NewMsgContext(), nil)
 	require.EqualError(t, err, "invalid packet 'fake.Message'")

@@ -21,7 +21,7 @@ func TestFlat_Listen(t *testing.T) {
 
 	gossiper.mino = fake.NewBadMino()
 	_, err = gossiper.Listen()
-	require.EqualError(t, err, "couldn't create the rpc: fake error")
+	require.EqualError(t, err, fake.Err("couldn't create the rpc"))
 }
 
 func TestFlat_Rumors(t *testing.T) {
@@ -52,7 +52,7 @@ func TestActor_Add(t *testing.T) {
 
 	actor.rpc = fake.NewBadRPC()
 	err = actor.Add(fakeRumor{})
-	require.EqualError(t, err, "couldn't call peers: fake error")
+	require.EqualError(t, err, fake.Err("couldn't call peers"))
 
 	buffer := new(bytes.Buffer)
 	rpc = fake.NewRPC()

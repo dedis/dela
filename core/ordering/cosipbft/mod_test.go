@@ -151,7 +151,7 @@ func TestService_New(t *testing.T) {
 
 	param.Mino = fake.NewBadMino()
 	_, err = NewService(param)
-	require.EqualError(t, err, "creating sync failed: rpc creation failed: fake error")
+	require.EqualError(t, err, fake.Err("creating sync failed: rpc creation failed"))
 
 	param.Mino = fake.Mino{}
 	param.Cosi = badCosi{}
@@ -190,7 +190,7 @@ func TestService_Setup(t *testing.T) {
 	srvc.genesis = blockstore.NewGenesisStore()
 	srvc.rpc = fake.NewBadRPC()
 	err = srvc.Setup(ctx, authority)
-	require.EqualError(t, err, "sending genesis: fake error")
+	require.EqualError(t, err, fake.Err("sending genesis"))
 
 	srvc.started = make(chan struct{})
 	srvc.genesis = blockstore.NewGenesisStore()
@@ -290,7 +290,7 @@ func TestService_DoRound(t *testing.T) {
 	srvc.pbftsm = fakeSM{}
 	srvc.rpc = fake.NewBadRPC()
 	err = srvc.doRound(ctx)
-	require.EqualError(t, err, "rpc failed: fake error")
+	require.EqualError(t, err, fake.Err("rpc failed"))
 
 	srvc.rosterFac = badRosterFac{}
 	err = srvc.doRound(ctx)
@@ -355,7 +355,7 @@ func TestService_DoPBFT(t *testing.T) {
 	srvc.hashFactory = fake.NewHashFactory(fake.NewBadHash())
 	err = srvc.doPBFT(ctx)
 	require.EqualError(t, err,
-		"creating block failed: fingerprint failed: couldn't write index: fake error")
+		fake.Err("creating block failed: fingerprint failed: couldn't write index"))
 
 	srvc.hashFactory = crypto.NewSha256Factory()
 	srvc.pbftsm = fakeSM{err: xerrors.New("oops")}
@@ -379,7 +379,7 @@ func TestService_DoPBFT(t *testing.T) {
 	srvc.actor = fakeCosiActor{}
 	srvc.rpc = fake.NewBadRPC()
 	err = srvc.doPBFT(ctx)
-	require.EqualError(t, err, "rpc failed: fake error")
+	require.EqualError(t, err, fake.Err("rpc failed"))
 
 	srvc.rpc = rpc
 	srvc.genesis = blockstore.NewGenesisStore()
@@ -419,7 +419,7 @@ func TestService_WakeUp(t *testing.T) {
 	srvc.tree.Set(fakeTree{})
 	srvc.rpc = fake.NewBadRPC()
 	err = srvc.wakeUp(ctx, ro)
-	require.EqualError(t, err, "rpc failed: fake error")
+	require.EqualError(t, err, fake.Err("rpc failed"))
 }
 
 func TestService_GetProof(t *testing.T) {

@@ -38,7 +38,7 @@ func TestThresholdHandler_Stream(t *testing.T) {
 	handler.signer = fake.NewBadSigner()
 	rcvr.resps = makeResponse()
 	err = handler.processRequest(sender, rcvr)
-	require.EqualError(t, err, "couldn't sign: fake error")
+	require.EqualError(t, err, fake.Err("couldn't sign"))
 
 	handler.signer = fake.NewAggregateSigner()
 	sender = fakeSender{numErr: 1}

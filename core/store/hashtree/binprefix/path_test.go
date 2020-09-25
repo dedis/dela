@@ -39,5 +39,5 @@ func TestPath_ComputeRoot(t *testing.T) {
 	require.NotEmpty(t, root)
 
 	_, err = path.computeRoot(fake.NewHashFactory(fake.NewBadHash()))
-	require.EqualError(t, err, "while preparing: empty node failed: fake error")
+	require.EqualError(t, err, fake.Err("while preparing: empty node failed"))
 }

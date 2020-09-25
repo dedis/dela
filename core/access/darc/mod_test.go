@@ -46,8 +46,7 @@ func TestService_Match(t *testing.T) {
 		"^permission: rule 'test:match': unauthorized: \\[bls:[[:xdigit:]]+\\]", err.Error())
 
 	err = srvc.Match(fake.NewBadSnapshot(), creds, alice.GetPublicKey())
-	require.EqualError(t, err,
-		"store failed: while reading: fake error")
+	require.EqualError(t, err, fake.Err("store failed: while reading"))
 
 	err = srvc.Match(store, access.NewContractCreds([]byte{0xcc}, "", ""))
 	require.EqualError(t, err, "permission 0xcc not found")
@@ -75,7 +74,7 @@ func TestService_Grant(t *testing.T) {
 	require.NoError(t, err)
 
 	err = srvc.Grant(fake.NewBadSnapshot(), creds)
-	require.EqualError(t, err, "store failed: while reading: fake error")
+	require.EqualError(t, err, fake.Err("store failed: while reading"))
 
 	err = srvc.Grant(store, access.NewContractCreds([]byte{0xbb}, "", ""))
 	require.EqualError(t, err,

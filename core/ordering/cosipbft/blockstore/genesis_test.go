@@ -85,7 +85,7 @@ func TestGenesisDiskStore_Load(t *testing.T) {
 
 	store.fac = fake.NewBadMessageFactory()
 	err = store.Load()
-	require.EqualError(t, err, "malformed value: fake error")
+	require.EqualError(t, err, fake.Err("malformed value"))
 
 	store.fac = fake.MessageFactory{}
 	err = store.Load()

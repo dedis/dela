@@ -188,7 +188,7 @@ func TestMerkleTree_Load(t *testing.T) {
 	tree.tx = nil
 	tree.hashFactory = fake.NewHashFactory(fake.NewBadHash())
 	err = tree.Load()
-	require.EqualError(t, err, "while updating: failed to prepare: empty node failed: fake error")
+	require.EqualError(t, err, fake.Err("while updating: failed to prepare: empty node failed"))
 }
 
 func TestMerkleTree_Get(t *testing.T) {
@@ -272,7 +272,7 @@ func TestMerkleTree_Stage(t *testing.T) {
 	tree.hashFactory = fake.NewHashFactory(fake.NewBadHash())
 	_, err = tree.Stage(func(store.Snapshot) error { return nil })
 	require.EqualError(t, err,
-		"couldn't update tree: failed to prepare: empty node failed: fake error")
+		fake.Err("couldn't update tree: failed to prepare: empty node failed"))
 
 	tree.tx = badTx{}
 	_, err = tree.Stage(func(store.Snapshot) error { return nil })

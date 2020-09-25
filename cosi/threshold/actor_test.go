@@ -69,11 +69,11 @@ func TestActor_Sign(t *testing.T) {
 	actor.signer = fake.NewAggregateSigner()
 	resp := cosi.SignatureResponse{Signature: fake.Signature{}}
 	err = actor.merge(&types.Signature{}, resp, 0, fake.NewInvalidPublicKey(), []byte{})
-	require.EqualError(t, err, "couldn't verify: fake error")
+	require.EqualError(t, err, fake.Err("couldn't verify"))
 
 	actor.rpc = fake.NewBadRPC()
 	_, err = actor.Sign(ctx, fake.Message{}, ca)
-	require.EqualError(t, err, "couldn't open stream: fake error")
+	require.EqualError(t, err, fake.Err("couldn't open stream"))
 }
 
 // -----------------------------------------------------------------------------

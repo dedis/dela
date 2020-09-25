@@ -45,7 +45,7 @@ func TestStart_Serialize(t *testing.T) {
 	require.Equal(t, "fake format", string(data))
 
 	_, err = start.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "couldn't encode message: fake error")
+	require.EqualError(t, err, fake.Err("couldn't encode message"))
 }
 
 func TestEncryptedDeal_Getters(t *testing.T) {
@@ -100,7 +100,7 @@ func TestDeal_Serialize(t *testing.T) {
 	require.Equal(t, "fake format", string(data))
 
 	_, err = deal.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "couldn't encode deal: fake error")
+	require.EqualError(t, err, fake.Err("couldn't encode deal"))
 }
 
 func TestDealerResponse_Getters(t *testing.T) {
@@ -144,7 +144,7 @@ func TestResponse_Serialize(t *testing.T) {
 	require.Equal(t, "fake format", string(data))
 
 	_, err = resp.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "couldn't encode response: fake error")
+	require.EqualError(t, err, fake.Err("couldn't encode response"))
 }
 
 func TestStartDone_GetPublicKey(t *testing.T) {
@@ -161,7 +161,7 @@ func TestStartDone_Serialize(t *testing.T) {
 	require.Equal(t, "fake format", string(data))
 
 	_, err = ack.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "couldn't encode ack: fake error")
+	require.EqualError(t, err, fake.Err("couldn't encode ack"))
 }
 
 func TestDecryptRequest_GetK(t *testing.T) {
@@ -184,7 +184,7 @@ func TestDecryptRequest_Serialize(t *testing.T) {
 	require.Equal(t, "fake format", string(data))
 
 	_, err = req.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "couldn't encode decrypt request: fake error")
+	require.EqualError(t, err, fake.Err("couldn't encode decrypt request"))
 }
 
 func TestDecryptReply_GetV(t *testing.T) {
@@ -207,7 +207,7 @@ func TestDecryptReply_Serialize(t *testing.T) {
 	require.Equal(t, "fake format", string(data))
 
 	_, err = resp.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "couldn't encode decrypt reply: fake error")
+	require.EqualError(t, err, fake.Err("couldn't encode decrypt reply"))
 }
 
 func TestMessageFactory(t *testing.T) {
@@ -224,7 +224,7 @@ func TestMessageFactory(t *testing.T) {
 	require.Equal(t, fake.AddressFactory{}, ctx.GetFactory(AddrKey{}))
 
 	_, err = factory.Deserialize(fake.NewBadContext(), nil)
-	require.EqualError(t, err, "couldn't decode message: fake error")
+	require.EqualError(t, err, fake.Err("couldn't decode message"))
 }
 
 // -----------------------------------------------------------------------------

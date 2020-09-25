@@ -31,10 +31,10 @@ func TestTxFormat_Encode(t *testing.T) {
 
 	badTx := makeTx(t, 0, fake.PublicKey{}, signed.WithSignature(fake.NewBadSignature()))
 	_, err = format.Encode(ctx, badTx)
-	require.EqualError(t, err, "failed to encode signature: fake error")
+	require.EqualError(t, err, fake.Err("failed to encode signature"))
 
 	_, err = format.Encode(fake.NewBadContext(), tx)
-	require.EqualError(t, err, "failed to marshal: fake error")
+	require.EqualError(t, err, fake.Err("failed to marshal"))
 
 	tx = makeTx(t, 0, badPublicKey{})
 	_, err = format.Encode(fake.NewBadContextWithDelay(1), tx)
@@ -54,12 +54,12 @@ func TestTxFormat_Decode(t *testing.T) {
 	require.Equal(t, expected, msg)
 
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
-	require.EqualError(t, err, "failed to unmarshal: fake error")
+	require.EqualError(t, err, fake.Err("failed to unmarshal"))
 
 	format.hashFactory = fake.NewHashFactory(fake.NewBadHash())
 	_, err = format.Decode(ctx, []byte(`{}`))
 	require.EqualError(t, err,
-		"failed to create tx: couldn't fingerprint tx: couldn't write nonce: fake error")
+		fake.Err("failed to create tx: couldn't fingerprint tx: couldn't write nonce"))
 
 	badCtx := serde.WithFactory(ctx, signed.PublicKeyFac{}, nil)
 	_, err = format.Decode(badCtx, []byte(`{}`))
@@ -67,7 +67,7 @@ func TestTxFormat_Decode(t *testing.T) {
 
 	badCtx = serde.WithFactory(ctx, signed.PublicKeyFac{}, fake.NewBadPublicKeyFactory())
 	_, err = format.Decode(badCtx, []byte(`{}`))
-	require.EqualError(t, err, "public key: malformed: fake error")
+	require.EqualError(t, err, fake.Err("public key: malformed"))
 
 	badCtx = serde.WithFactory(ctx, signed.SignatureFac{}, nil)
 	_, err = format.Decode(badCtx, []byte(`{}`))
@@ -75,7 +75,7 @@ func TestTxFormat_Decode(t *testing.T) {
 
 	badCtx = serde.WithFactory(ctx, signed.SignatureFac{}, fake.NewBadSignatureFactory())
 	_, err = format.Decode(badCtx, []byte(`{}`))
-	require.EqualError(t, err, "signature: malformed: fake error")
+	require.EqualError(t, err, fake.Err("signature: malformed"))
 }
 
 // -----------------------------------------------------------------------------
