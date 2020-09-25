@@ -26,6 +26,9 @@ type Actor interface {
 		ca crypto.CollectiveAuthority) (crypto.Signature, error)
 }
 
+// Threshold is a function that returns the threshold to reach for a given n.
+type Threshold func(int) int
+
 // CollectiveSigning is the interface that provides the primitives to sign a
 // message by members of a network.
 type CollectiveSigning interface {
@@ -43,6 +46,9 @@ type CollectiveSigning interface {
 	// GetVerifierFactory returns a factory that can create a verifier to check
 	// the validity of a signature.
 	GetVerifierFactory() crypto.VerifierFactory
+
+	// SetThreshold updates the threshold required by a collective signature.
+	SetThreshold(Threshold)
 
 	// Listen starts the collective signing so that it will answer to requests.
 	Listen(Reactor) (Actor, error)

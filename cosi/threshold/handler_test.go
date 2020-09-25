@@ -25,6 +25,9 @@ func TestThresholdHandler_Stream(t *testing.T) {
 	err = handler.processRequest(sender, rcvr)
 	require.EqualError(t, err, "failed to receive: oops")
 
+	err = handler.processRequest(sender, &fakeReceiver{resps: makeBadResponse()})
+	require.EqualError(t, err, "invalid request type 'fake.Message'")
+
 	handler.reactor = fakeReactor{err: xerrors.New("oops")}
 	rcvr.err = nil
 	rcvr.resps = makeResponse()
@@ -49,4 +52,8 @@ func TestThresholdHandler_Stream(t *testing.T) {
 
 func makeResponse() [][]interface{} {
 	return [][]interface{}{{fake.Address{}, cosi.SignatureRequest{Value: fake.Message{}}}}
+}
+
+func makeBadResponse() [][]interface{} {
+	return [][]interface{}{{fake.Address{}, fake.Message{}}}
 }

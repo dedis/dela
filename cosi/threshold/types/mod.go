@@ -1,7 +1,9 @@
-package threshold
+package types
 
 import (
 	"bytes"
+	"fmt"
+	"math/big"
 
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/serde"
@@ -149,6 +151,14 @@ func (s *Signature) Equal(o crypto.Signature) bool {
 	return ok && other.agg.Equal(s.agg) && bytes.Equal(s.mask, other.mask)
 }
 
+// String implements fmt.Stringer. It returns a string representation of the
+// signature.
+func (s *Signature) String() string {
+	mask := new(big.Int).SetBytes(s.mask)
+
+	return fmt.Sprintf("thres[%b]:%s", mask, s.agg)
+}
+
 // AggKey is the key for the aggregate signature factory.
 type AggKey struct{}
 
@@ -245,6 +255,14 @@ func (v Verifier) Verify(msg []byte, s crypto.Signature) error {
 
 type verifierFactory struct {
 	factory crypto.VerifierFactory
+}
+
+// NewThresholdVerifierFactory creates a new verifier factory from the
+// underlying verifier factory.
+func NewThresholdVerifierFactory(fac crypto.VerifierFactory) crypto.VerifierFactory {
+	return verifierFactory{
+		factory: fac,
+	}
 }
 
 func (f verifierFactory) FromAuthority(authority crypto.CollectiveAuthority) (crypto.Verifier, error) {

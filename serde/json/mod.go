@@ -13,6 +13,7 @@ import (
 	_ "go.dedis.ch/dela/core/txn/signed/json"
 	_ "go.dedis.ch/dela/core/validation/simple/json"
 	_ "go.dedis.ch/dela/cosi/json"
+	_ "go.dedis.ch/dela/cosi/threshold/json"
 	_ "go.dedis.ch/dela/crypto/bls/json"
 	_ "go.dedis.ch/dela/crypto/ed25519/json"
 	_ "go.dedis.ch/dela/dkg/pedersen/json"

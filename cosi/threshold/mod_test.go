@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/internal/testing/fake"
@@ -25,7 +26,7 @@ func TestCoSi_Basic(t *testing.T) {
 
 	ca := fake.NewAuthorityFromMino(bls.Generate, m1, m2)
 	c1 := NewCoSi(m1, ca.GetSigner(0).(crypto.AggregateSigner))
-	c1.Threshold = func(n int) int { return n - 1 }
+	c1.SetThreshold(OneThreshold)
 
 	actor, err := c1.Listen(fakeReactor{})
 	require.NoError(t, err)
@@ -49,6 +50,20 @@ func TestDefaultThreshold(t *testing.T) {
 	require.Equal(t, 5, defaultThreshold(5))
 }
 
+func TestOneThreshold(t *testing.T) {
+	require.Equal(t, 0, OneThreshold(-10))
+	require.Equal(t, 0, OneThreshold(0))
+	require.Equal(t, 5, OneThreshold(6))
+}
+
+func TestByzantineThreshold(t *testing.T) {
+	require.Equal(t, 0, ByzantineThreshold(-10))
+	require.Equal(t, 0, ByzantineThreshold(0))
+	require.Equal(t, 2, ByzantineThreshold(2))
+	require.Equal(t, 3, ByzantineThreshold(4))
+	require.Equal(t, 5, ByzantineThreshold(7))
+}
+
 func TestCoSi_GetSigner(t *testing.T) {
 	c := &CoSi{signer: fake.NewAggregateSigner()}
 	require.NotNil(t, c.GetSigner())
@@ -62,6 +77,16 @@ func TestCoSi_GetPublicKeyFactory(t *testing.T) {
 func TestCoSi_GetSignatureFactory(t *testing.T) {
 	c := &CoSi{signer: fake.NewAggregateSigner()}
 	require.NotNil(t, c.GetSignatureFactory())
+}
+
+func TestCoSi_SetThreshold(t *testing.T) {
+	c := NewCoSi(nil, nil)
+
+	c.SetThreshold(nil)
+	require.NotNil(t, c.threshold.Load())
+
+	c.SetThreshold(ByzantineThreshold)
+	require.Equal(t, ByzantineThreshold(999), c.threshold.Load().(cosi.Threshold)(999))
 }
 
 func TestCoSi_Listen(t *testing.T) {

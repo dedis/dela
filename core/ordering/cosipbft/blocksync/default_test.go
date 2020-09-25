@@ -1,12 +1,14 @@
 package blocksync
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"strconv"
 	"sync"
 	"testing"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
@@ -124,9 +126,12 @@ func TestDefaultSync_Sync(t *testing.T) {
 	err = sync.Sync(ctx, mino.NewAddresses(), Config{})
 	require.EqualError(t, err, "stream failed: fake error")
 
+	buffer := new(bytes.Buffer)
+	sync.logger = zerolog.New(buffer)
 	sync.rpc = fake.NewStreamRPC(fake.NewReceiver(), fake.NewBadSender())
 	err = sync.Sync(ctx, mino.NewAddresses(), Config{})
-	require.EqualError(t, err, "announcement failed: fake error")
+	require.NoError(t, err)
+	require.Contains(t, buffer.String(), `"message":"announcement failed"`)
 
 	sync.rpc = fake.NewStreamRPC(fake.NewBadReceiver(), fake.Sender{})
 	err = sync.Sync(ctx, mino.NewAddresses(fake.NewAddress(0)), Config{MinSoft: 1})

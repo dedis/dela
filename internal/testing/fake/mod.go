@@ -358,6 +358,11 @@ func (s Signature) MarshalBinary() ([]byte, error) {
 	return []byte{SignatureByte}, s.err
 }
 
+// String implements fmt.Stringer.
+func (s Signature) String() string {
+	return "fakeSignature"
+}
+
 // SignatureFactory is a fake implementation of the signature factory.
 type SignatureFactory struct {
 	Counter   *Counter

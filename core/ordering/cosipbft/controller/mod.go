@@ -19,7 +19,7 @@ import (
 	poolimpl "go.dedis.ch/dela/core/txn/pool/gossip"
 	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/core/validation/simple"
-	"go.dedis.ch/dela/cosi/flatcosi"
+	"go.dedis.ch/dela/cosi/threshold"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/mino"
@@ -92,7 +92,9 @@ func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("signer: %v", err)
 	}
 
-	cosi := flatcosi.NewFlat(m, signer)
+	cosi := threshold.NewCoSi(m, signer)
+	cosi.SetThreshold(threshold.ByzantineThreshold)
+
 	exec := baremetal.NewExecution()
 	access := darc.NewService(json.NewContext())
 

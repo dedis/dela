@@ -1,12 +1,15 @@
 package threshold
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"testing"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/cosi"
+	"go.dedis.ch/dela/cosi/threshold/types"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
@@ -19,8 +22,7 @@ func TestActor_Sign(t *testing.T) {
 
 	actor := thresholdActor{
 		CoSi: &CoSi{
-			signer:    ca.GetSigner(0).(crypto.AggregateSigner),
-			Threshold: func(n int) int { return n - 1 },
+			signer: ca.GetSigner(0).(crypto.AggregateSigner),
 		},
 		rpc: fakeRPC{
 			receiver: &fakeReceiver{
@@ -34,6 +36,8 @@ func TestActor_Sign(t *testing.T) {
 		reactor: fakeReactor{},
 	}
 
+	actor.SetThreshold(OneThreshold)
+
 	ctx := context.Background()
 
 	sig, err := actor.Sign(ctx, fake.Message{}, ca)
@@ -44,10 +48,13 @@ func TestActor_Sign(t *testing.T) {
 	_, err = actor.Sign(ctx, fake.Message{}, ca)
 	require.EqualError(t, err, "couldn't react to message: oops")
 
+	buffer := new(bytes.Buffer)
+	actor.logger = zerolog.New(buffer).Level(zerolog.WarnLevel)
 	actor.reactor = fakeReactor{}
-	actor.rpc = fakeRPC{receiver: &fakeReceiver{}}
+	actor.rpc = fakeRPC{receiver: &fakeReceiver{resps: makeBadResponse()}}
 	_, err = actor.Sign(ctx, fake.Message{}, ca)
 	require.EqualError(t, err, "couldn't receive more messages: EOF")
+	require.Contains(t, buffer.String(), "failed to process signature response")
 
 	actor.rpc = fakeRPC{receiver: &fakeReceiver{blocking: true}}
 	doneCtx, cancel := context.WithCancel(context.Background())
@@ -61,7 +68,7 @@ func TestActor_Sign(t *testing.T) {
 
 	actor.signer = fake.NewAggregateSigner()
 	resp := cosi.SignatureResponse{Signature: fake.Signature{}}
-	err = actor.merge(&Signature{}, resp, 0, fake.NewInvalidPublicKey(), []byte{})
+	err = actor.merge(&types.Signature{}, resp, 0, fake.NewInvalidPublicKey(), []byte{})
 	require.EqualError(t, err, "couldn't verify: fake error")
 
 	actor.rpc = fake.NewBadRPC()
