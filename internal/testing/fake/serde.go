@@ -1,11 +1,17 @@
 package fake
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"io"
 
 	"go.dedis.ch/dela/serde"
 )
+
+func init() {
+	fakeFmtValue = make([]byte, 8)
+	rand.Read(fakeFmtValue)
+}
 
 const (
 	// GoodFormat should register working format engines.
@@ -17,6 +23,13 @@ const (
 	// MsgFormat should register an engine for fake.Message.
 	MsgFormat = serde.Format("FakeMsg")
 )
+
+var fakeFmtValue []byte
+
+// GetFakeFormatValue returns the value of the fake format serialization.
+func GetFakeFormatValue() []byte {
+	return append([]byte{}, fakeFmtValue...)
+}
 
 // Message is a fake implementation if a serde message.
 type Message struct {
@@ -66,7 +79,8 @@ func NewBadFormat() Format {
 // Encode implements serde.FormatEngine.
 func (f Format) Encode(ctx serde.Context, m serde.Message) ([]byte, error) {
 	f.Call.Add(ctx, m)
-	return []byte("fake format"), f.err
+
+	return GetFakeFormatValue(), f.err
 }
 
 // Decode implements serde.FormatEngine.

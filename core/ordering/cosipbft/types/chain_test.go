@@ -88,7 +88,7 @@ func TestForwardLink_Serialize(t *testing.T) {
 
 	data, err := link.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = link.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("encoding link failed"))
@@ -149,7 +149,7 @@ func TestBlockLink_Serialize(t *testing.T) {
 
 	data, err := link.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = link.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("encoding failed"))
@@ -250,7 +250,7 @@ func TestChain_Serialize(t *testing.T) {
 
 	data, err := chain.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = chain.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("encoding chain failed"))

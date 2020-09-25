@@ -40,7 +40,7 @@ func TestTransactionResult_Serialize(t *testing.T) {
 
 	data, err := res.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = res.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("encoding failed"))
@@ -90,7 +90,7 @@ func TestData_Serialize(t *testing.T) {
 
 	data, err := vdata.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = vdata.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("encoding failed"))

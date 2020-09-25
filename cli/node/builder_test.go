@@ -45,9 +45,9 @@ func TestCliBuilder_Start(t *testing.T) {
 		require.Contains(t, err.Error(), "couldn't make path: mkdir /test/: ")
 	}
 
-	builder.daemonFactory = fakeFactory{err: xerrors.New("oops")}
+	builder.daemonFactory = fakeFactory{err: fake.GetError()}
 	err = builder.start(nil)
-	require.EqualError(t, err, "couldn't make daemon: oops")
+	require.EqualError(t, err, fake.Err("couldn't make daemon"))
 
 	builder.daemonFactory = fakeFactory{errDaemon: xerrors.New("oops")}
 	err = builder.start(nil)

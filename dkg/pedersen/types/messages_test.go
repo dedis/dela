@@ -42,7 +42,7 @@ func TestStart_Serialize(t *testing.T) {
 
 	data, err := start.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = start.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("couldn't encode message"))
@@ -97,7 +97,7 @@ func TestDeal_Serialize(t *testing.T) {
 
 	data, err := deal.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = deal.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("couldn't encode deal"))
@@ -141,7 +141,7 @@ func TestResponse_Serialize(t *testing.T) {
 
 	data, err := resp.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = resp.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("couldn't encode response"))
@@ -158,7 +158,7 @@ func TestStartDone_Serialize(t *testing.T) {
 
 	data, err := ack.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = ack.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("couldn't encode ack"))
@@ -181,7 +181,7 @@ func TestDecryptRequest_Serialize(t *testing.T) {
 
 	data, err := req.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = req.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("couldn't encode decrypt request"))
@@ -204,7 +204,7 @@ func TestDecryptReply_Serialize(t *testing.T) {
 
 	data, err := resp.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = resp.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("couldn't encode decrypt reply"))

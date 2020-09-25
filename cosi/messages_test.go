@@ -20,7 +20,7 @@ func TestSignatureRequest(t *testing.T) {
 
 	data, err := req.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = req.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("couldn't encode request"))
@@ -31,7 +31,7 @@ func TestSignatureResponse(t *testing.T) {
 
 	data, err := resp.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = resp.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("couldn't encode response"))

@@ -137,7 +137,7 @@ func TestTransaction_Serialize(t *testing.T) {
 
 	data, err := tx.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, `fake format`, string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = tx.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("failed to encode"))

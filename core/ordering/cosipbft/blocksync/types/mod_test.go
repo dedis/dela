@@ -34,7 +34,7 @@ func TestSyncMessage_Serialize(t *testing.T) {
 
 	data, err := m.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = m.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("encoding failed"))
@@ -51,7 +51,7 @@ func TestSyncRequest_Serialize(t *testing.T) {
 
 	data, err := m.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = m.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("encoding failed"))
@@ -74,7 +74,7 @@ func TestSyncReply_Serialize(t *testing.T) {
 
 	data, err := m.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = m.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("encoding failed"))
@@ -85,7 +85,7 @@ func TestSyncAck_Serialize(t *testing.T) {
 
 	data, err := m.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = m.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("encoding failed"))

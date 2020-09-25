@@ -47,7 +47,7 @@ func TestPublicKey_Serialize(t *testing.T) {
 
 	data, err := pubkey.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = pubkey.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("couldn't encode public key"))
@@ -159,7 +159,7 @@ func TestSignature_Serialize(t *testing.T) {
 
 	data, err := sig.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = sig.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("couldn't encode signature"))

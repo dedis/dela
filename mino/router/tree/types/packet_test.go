@@ -62,7 +62,7 @@ func TestPacket_Serialize(t *testing.T) {
 
 	data, err := pkt.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = pkt.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("packet format"))

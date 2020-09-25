@@ -70,7 +70,7 @@ func TestGenesis_Serialize(t *testing.T) {
 
 	data, err := genesis.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = genesis.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("encoding failed"))
@@ -171,7 +171,7 @@ func TestBlock_Serialize(t *testing.T) {
 
 	data, err := block.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = block.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("encoding failed"))

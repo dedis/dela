@@ -35,7 +35,7 @@ func TestAlgorithm_Serialize(t *testing.T) {
 
 	data, err := algo.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = algo.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("couldn't encode algorithm"))

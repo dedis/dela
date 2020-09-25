@@ -33,7 +33,7 @@ func TestHandshake_Serialize(t *testing.T) {
 
 	data, err := hs.Serialize(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = hs.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("encode"))

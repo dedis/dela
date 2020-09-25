@@ -29,6 +29,11 @@ func init() {
 // on a fixed value.
 var fakeErr error
 
+// GetError returns the fake error.
+func GetError() error {
+	return fakeErr
+}
+
 // Err returns the expected format of an error returned by a fake component.
 func Err(msg string) string {
 	return fmt.Sprintf("%s: %v", msg, fakeErr)

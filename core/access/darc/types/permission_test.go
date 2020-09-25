@@ -98,7 +98,7 @@ func TestPermission_Serialize(t *testing.T) {
 
 	data, err := perm.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = perm.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("couldn't encode access"))
