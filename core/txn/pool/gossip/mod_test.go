@@ -3,6 +3,7 @@ package gossip
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"testing"
 	"time"
@@ -11,12 +12,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/pool"
-	"go.dedis.ch/dela/core/txn/signed"
-	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/gossip"
 	"go.dedis.ch/dela/mino/minoch"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -30,26 +30,26 @@ func TestPool_Basic(t *testing.T) {
 
 	go func() {
 		for i := 0; i < 100; i++ {
-			err := pools[0].Add(makeTx(t, uint64(i)))
+			err := pools[0].Add(makeTx(uint64(i)))
 			require.NoError(t, err)
 		}
 	}()
 
 	go func() {
 		for i := 0; i < 100; i++ {
-			err := pools[2].Add(makeTx(t, uint64(i)+100))
+			err := pools[2].Add(makeTx(uint64(i + 100)))
 			require.NoError(t, err)
 		}
 	}()
 
 	go func() {
 		for i := 0; i < 100; i++ {
-			err := pools[7].Add(makeTx(t, uint64(i)+200))
+			err := pools[7].Add(makeTx(uint64(i + 200)))
 			require.NoError(t, err)
 		}
 	}()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	txs := pools[0].Gather(ctx, pool.Config{Min: 300})
@@ -75,7 +75,7 @@ func TestPool_Len(t *testing.T) {
 
 	require.Equal(t, 0, p.Len())
 
-	p.gatherer.Add(makeTx(t, 0))
+	p.gatherer.Add(makeTx(0))
 	require.Equal(t, 1, p.Len())
 }
 
@@ -85,16 +85,16 @@ func TestPool_Add(t *testing.T) {
 		gatherer: pool.NewSimpleGatherer(),
 	}
 
-	err := p.Add(makeTx(t, 0))
+	err := p.Add(makeTx(0))
 	require.NoError(t, err)
 
 	p.gatherer = badGatherer{}
-	err = p.Add(makeTx(t, 0))
+	err = p.Add(makeTx(0))
 	require.EqualError(t, err, "store failed: oops")
 
 	p.gatherer = pool.NewSimpleGatherer()
 	p.actor = fakeActor{err: xerrors.New("oops")}
-	err = p.Add(makeTx(t, 0))
+	err = p.Add(makeTx(0))
 	require.EqualError(t, err, "failed to gossip tx: oops")
 }
 
@@ -104,7 +104,7 @@ func TestPool_Remove(t *testing.T) {
 		gatherer: pool.NewSimpleGatherer(),
 	}
 
-	tx := makeTx(t, 0)
+	tx := makeTx(0)
 
 	require.NoError(t, p.gatherer.Add(tx))
 
@@ -125,8 +125,8 @@ func TestPool_Gather(t *testing.T) {
 	ctx := context.Background()
 
 	cb := func() {
-		require.NoError(t, p.Add(makeTx(t, 0)))
-		require.NoError(t, p.Add(makeTx(t, 1)))
+		require.NoError(t, p.Add(makeTx(0)))
+		require.NoError(t, p.Add(makeTx(1)))
 	}
 
 	txs := p.Gather(ctx, pool.Config{Min: 2, Callback: cb})
@@ -168,7 +168,7 @@ func TestPool_ListenRumors(t *testing.T) {
 
 	ch := make(chan gossip.Rumor)
 	go func() {
-		ch <- makeTx(t, 0)
+		ch <- makeTx(0)
 		close(p.closing)
 	}()
 
@@ -180,7 +180,7 @@ func TestPool_ListenRumors(t *testing.T) {
 
 	ch = make(chan gossip.Rumor, 1)
 	go func() {
-		ch <- makeTx(t, 0)
+		ch <- makeTx(0)
 		close(p.closing)
 	}()
 
@@ -191,11 +191,11 @@ func TestPool_ListenRumors(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-func makeTx(t *testing.T, nonce uint64) txn.Transaction {
-	signer := bls.NewSigner()
-	tx, err := signed.NewTransaction(nonce, signer.GetPublicKey())
-	require.NoError(t, err)
-	return tx
+func makeTx(nonce uint64) txn.Transaction {
+	id := make([]byte, 8)
+	binary.LittleEndian.PutUint64(id, nonce)
+
+	return fakeTx{id: id}
 }
 
 func makeRoster(t *testing.T, n int) (mino.Players, []*Pool) {
@@ -210,7 +210,7 @@ func makeRoster(t *testing.T, n int) (mino.Players, []*Pool) {
 
 		addrs[i] = m.GetAddress()
 
-		g := gossip.NewFlat(m, signed.NewTransactionFactory())
+		g := gossip.NewFlat(m, fakeTxFac{})
 
 		pool, err := NewPool(g)
 		require.NoError(t, err)
@@ -224,6 +224,28 @@ func makeRoster(t *testing.T, n int) (mino.Players, []*Pool) {
 	}
 
 	return players, pools
+}
+
+type fakeTx struct {
+	txn.Transaction
+
+	id []byte
+}
+
+func (tx fakeTx) GetID() []byte {
+	return tx.id
+}
+
+func (tx fakeTx) Serialize(serde.Context) ([]byte, error) {
+	return tx.id, nil
+}
+
+type fakeTxFac struct {
+	txn.Factory
+}
+
+func (fakeTxFac) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+	return fakeTx{id: data}, nil
 }
 
 type fakeActor struct {

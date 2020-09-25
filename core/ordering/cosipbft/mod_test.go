@@ -473,6 +473,9 @@ func makeTx(t *testing.T, nonce uint64, signer crypto.Signer) txn.Transaction {
 
 	tx, err := signed.NewTransaction(nonce, signer.GetPublicKey(), opts...)
 	require.NoError(t, err)
+
+	require.NoError(t, tx.Sign(signer))
+
 	return tx
 }
 
@@ -487,6 +490,8 @@ func makeRosterTx(t *testing.T, nonce uint64, roster authority.Authority, signer
 		signed.WithArg(viewchange.AuthorityArg, data),
 	)
 	require.NoError(t, err)
+
+	require.NoError(t, tx.Sign(signer))
 
 	return tx
 }

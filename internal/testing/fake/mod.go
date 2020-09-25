@@ -435,6 +435,13 @@ func (pk PublicKey) MarshalText() ([]byte, error) {
 	return pk.MarshalBinary()
 }
 
+// Equal implements crypto.PublicKey.
+func (pk PublicKey) Equal(other crypto.PublicKey) bool {
+	_, ok := other.(PublicKey)
+
+	return ok
+}
+
 // Serialize implements serde.Message.
 func (pk PublicKey) Serialize(serde.Context) ([]byte, error) {
 	return []byte(`{}`), pk.err

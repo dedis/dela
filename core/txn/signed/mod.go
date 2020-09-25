@@ -30,6 +30,7 @@ type Transaction struct {
 	nonce  uint64
 	args   map[string][]byte
 	pubkey crypto.PublicKey
+	sig    crypto.Signature
 	hash   []byte
 }
 
@@ -49,6 +50,14 @@ func WithArg(key string, value []byte) TransactionOption {
 	}
 }
 
+// WithSignature is an option to set a valid signature. The signature will be
+// verified against the identity.
+func WithSignature(sig crypto.Signature) TransactionOption {
+	return func(tmpl *template) {
+		tmpl.sig = sig
+	}
+}
+
 // WithHashFactory is an option to set a different hash factory when creating a
 // transaction.
 func WithHashFactory(f crypto.HashFactory) TransactionOption {
@@ -58,7 +67,7 @@ func WithHashFactory(f crypto.HashFactory) TransactionOption {
 }
 
 // NewTransaction creates a new transaction with the provided nonce.
-func NewTransaction(nonce uint64, pk crypto.PublicKey, opts ...TransactionOption) (Transaction, error) {
+func NewTransaction(nonce uint64, pk crypto.PublicKey, opts ...TransactionOption) (*Transaction, error) {
 	tmpl := template{
 		Transaction: Transaction{
 			nonce:  nonce,
@@ -75,31 +84,43 @@ func NewTransaction(nonce uint64, pk crypto.PublicKey, opts ...TransactionOption
 	h := tmpl.hashFactory.New()
 	err := tmpl.Fingerprint(h)
 	if err != nil {
-		return tmpl.Transaction, xerrors.Errorf("couldn't fingerprint tx: %v", err)
+		return nil, xerrors.Errorf("couldn't fingerprint tx: %v", err)
 	}
 
 	tmpl.hash = h.Sum(nil)
 
-	return tmpl.Transaction, nil
+	if tmpl.sig != nil {
+		err := tmpl.pubkey.Verify(tmpl.hash, tmpl.sig)
+		if err != nil {
+			return nil, xerrors.Errorf("invalid signature: %v", err)
+		}
+	}
+
+	return &tmpl.Transaction, nil
 }
 
 // GetID implements txn.Transaction. It returns the ID of the transaction.
-func (t Transaction) GetID() []byte {
+func (t *Transaction) GetID() []byte {
 	return t.hash
 }
 
 // GetNonce returns the nonce of the transaction.
-func (t Transaction) GetNonce() uint64 {
+func (t *Transaction) GetNonce() uint64 {
 	return t.nonce
 }
 
 // GetIdentity implements txn.Transaction. It returns nil.
-func (t Transaction) GetIdentity() access.Identity {
+func (t *Transaction) GetIdentity() access.Identity {
 	return t.pubkey
 }
 
+// GetSignature returns the signature of the transaction.
+func (t *Transaction) GetSignature() crypto.Signature {
+	return t.sig
+}
+
 // GetArgs returns the list of arguments available.
-func (t Transaction) GetArgs() []string {
+func (t *Transaction) GetArgs() []string {
 	args := make([]string, 0, len(t.args))
 	for key := range t.args {
 		args = append(args, key)
@@ -110,13 +131,33 @@ func (t Transaction) GetArgs() []string {
 
 // GetArg implements txn.Transaction. It returns the value of the argument if it
 // is set, otherwise nil.
-func (t Transaction) GetArg(key string) []byte {
+func (t *Transaction) GetArg(key string) []byte {
 	return t.args[key]
+}
+
+// Sign signs the transaction and stores the signature.
+func (t *Transaction) Sign(signer crypto.Signer) error {
+	if len(t.hash) == 0 {
+		return xerrors.New("missing digest in transaction")
+	}
+
+	if !signer.GetPublicKey().Equal(t.pubkey) {
+		return xerrors.New("mismatch signer and identity")
+	}
+
+	sig, err := signer.Sign(t.hash)
+	if err != nil {
+		return xerrors.Errorf("signer: %v", err)
+	}
+
+	t.sig = sig
+
+	return nil
 }
 
 // Fingerprint implements serde.Fingerprinter. It writes a deterministic binary
 // representation of the transaction.
-func (t Transaction) Fingerprint(w io.Writer) error {
+func (t *Transaction) Fingerprint(w io.Writer) error {
 	buffer := make([]byte, 8)
 	binary.LittleEndian.PutUint64(buffer, t.nonce)
 
@@ -155,7 +196,7 @@ func (t Transaction) Fingerprint(w io.Writer) error {
 
 // Serialize implements serde.Message. It returns the serialized data of the
 // transaction.
-func (t Transaction) Serialize(ctx serde.Context) ([]byte, error) {
+func (t *Transaction) Serialize(ctx serde.Context) ([]byte, error) {
 	format := txFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, t)
@@ -169,17 +210,22 @@ func (t Transaction) Serialize(ctx serde.Context) ([]byte, error) {
 // PublicKeyFac is the key of the public key factory.
 type PublicKeyFac struct{}
 
+// SignatureFac is the key of the signature factory.
+type SignatureFac struct{}
+
 // TransactionFactory is a factory to deserialize transactions.
 //
 // - implements serde.Factory
 type TransactionFactory struct {
 	pubkeyFac common.PublicKeyFactory
+	sigFac    common.SignatureFactory
 }
 
 // NewTransactionFactory returns a new factory.
 func NewTransactionFactory() TransactionFactory {
 	return TransactionFactory{
 		pubkeyFac: common.NewPublicKeyFactory(),
+		sigFac:    common.NewSignatureFactory(),
 	}
 }
 
@@ -195,13 +241,14 @@ func (f TransactionFactory) TransactionOf(ctx serde.Context, data []byte) (txn.T
 	format := txFormats.Get(ctx.GetFormat())
 
 	ctx = serde.WithFactory(ctx, PublicKeyFac{}, f.pubkeyFac)
+	ctx = serde.WithFactory(ctx, SignatureFac{}, f.sigFac)
 
 	msg, err := format.Decode(ctx, data)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to decode: %v", err)
 	}
 
-	tx, ok := msg.(Transaction)
+	tx, ok := msg.(*Transaction)
 	if !ok {
 		return nil, xerrors.Errorf("invalid transaction of type '%T'", msg)
 	}
@@ -251,6 +298,11 @@ func (mgr *transactionManager) Make(args ...txn.Arg) (txn.Transaction, error) {
 	tx, err := NewTransaction(mgr.nonce, mgr.signer.GetPublicKey(), opts...)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create tx: %v", err)
+	}
+
+	err = tx.Sign(mgr.signer)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to sign: %v", err)
 	}
 
 	mgr.nonce++
