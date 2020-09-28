@@ -103,7 +103,8 @@ func (n *DiskNode) Delete(key *big.Int, bucket kv.Bucket) (TreeNode, error) {
 func (n *DiskNode) Prepare(nonce []byte, prefix *big.Int,
 	bucket kv.Bucket, fac crypto.HashFactory) ([]byte, error) {
 
-	if n.hash != nil {
+	if len(n.hash) > 0 {
+		// Hash is already calculated so we can skip and return.
 		return n.hash, nil
 	}
 

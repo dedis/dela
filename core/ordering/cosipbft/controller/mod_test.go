@@ -49,13 +49,13 @@ func TestLoadSigner(t *testing.T) {
 
 	defer os.RemoveAll(dir)
 
-	signer, err := loadSigner(dir)
+	signer, err := loadOrCreateSigner(dir)
 	require.NoError(t, err)
 	require.NotNil(t, signer)
 	require.True(t, fileExists(t, filepath.Join(dir, privateKeyFile)))
 
 	if runtime.GOOS != "windows" {
-		_, err = loadSigner("/")
+		_, err = loadOrCreateSigner("/")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to create file: ")
 	}

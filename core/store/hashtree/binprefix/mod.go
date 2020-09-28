@@ -73,12 +73,12 @@ func (t *MerkleTree) Load() error {
 	return t.doUpdate(func(tx kv.WritableTx) error {
 		bucket := tx.GetBucket(t.bucket)
 
-		err := t.tree.Load(bucket)
+		err := t.tree.FillFromBucket(bucket)
 		if err != nil {
 			return xerrors.Errorf("failed to load: %v", err)
 		}
 
-		err = t.tree.Update(t.hashFactory, bucket)
+		err = t.tree.CalculateRoot(t.hashFactory, bucket)
 		if err != nil {
 			return xerrors.Errorf("while updating: %v", err)
 		}
@@ -161,7 +161,7 @@ func (t *MerkleTree) Stage(fn func(store.Snapshot) error) (hashtree.StagingTree,
 			return xerrors.Errorf("callback failed: %v", err)
 		}
 
-		err = clone.tree.Update(t.hashFactory, b)
+		err = clone.tree.CalculateRoot(t.hashFactory, b)
 		if err != nil {
 			return xerrors.Errorf("couldn't update tree: %v", err)
 		}

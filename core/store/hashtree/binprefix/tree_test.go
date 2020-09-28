@@ -36,11 +36,11 @@ func TestTree_Load(t *testing.T) {
 
 	bucket := makeBucket(t)
 
-	err := tree.Load(bucket)
+	err := tree.FillFromBucket(bucket)
 	require.NoError(t, err)
 
 	tree.factory = fake.NewBadMessageFactory()
-	err = tree.Load(bucket)
+	err = tree.FillFromBucket(bucket)
 	require.EqualError(t, err, "while scanning: tree node malformed: fake error")
 }
 
@@ -195,8 +195,8 @@ func TestTree_Clone(t *testing.T) {
 	clone := tree.Clone()
 	require.Equal(t, tree.Len(), clone.Len())
 
-	require.NoError(t, tree.Update(crypto.NewSha256Factory(), &fakeBucket{}))
-	require.NoError(t, clone.Update(crypto.NewSha256Factory(), &fakeBucket{}))
+	require.NoError(t, tree.CalculateRoot(crypto.NewSha256Factory(), &fakeBucket{}))
+	require.NoError(t, clone.CalculateRoot(crypto.NewSha256Factory(), &fakeBucket{}))
 	require.Equal(t, tree.root.GetHash(), clone.root.GetHash())
 }
 

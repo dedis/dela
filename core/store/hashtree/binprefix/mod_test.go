@@ -239,7 +239,7 @@ func TestMerkleTree_GetPath(t *testing.T) {
 		err := tree.tree.Insert(key[:], value, &fakeBucket{})
 		require.NoError(t, err)
 
-		err = tree.tree.Update(tree.hashFactory, &fakeBucket{})
+		err = tree.tree.CalculateRoot(tree.hashFactory, &fakeBucket{})
 		require.NoError(t, err)
 
 		path, err := tree.GetPath(key[:])

@@ -103,9 +103,9 @@ func (t *Tree) Len() int {
 	return counter
 }
 
-// Load scans the bucket for leafs to insert them in the tree. It will then
-// persist the tree to restore the memory depth limit.
-func (t *Tree) Load(bucket kv.Bucket) error {
+// FillFromBucket scans the bucket for leafs to insert them in the tree. It will
+// then persist the tree to restore the memory depth limit.
+func (t *Tree) FillFromBucket(bucket kv.Bucket) error {
 	if bucket == nil {
 		return nil
 	}
@@ -145,6 +145,9 @@ func (t *Tree) Load(bucket kv.Bucket) error {
 	return nil
 }
 
+// Restore is a recursive function that will append node to the tree by
+// recreating the interior nodes from the root to its natural position defined
+// by the prefix.
 func (t *Tree) restore(curr TreeNode, prefix *big.Int, node *DiskNode) TreeNode {
 	var interior *InteriorNode
 
@@ -220,8 +223,8 @@ func (t *Tree) Delete(key []byte, b kv.Bucket) error {
 	return nil
 }
 
-// Update updates the hashes of the tree.
-func (t *Tree) Update(fac crypto.HashFactory, b kv.Bucket) error {
+// CalculateRoot updates the hashes of the tree.
+func (t *Tree) CalculateRoot(fac crypto.HashFactory, b kv.Bucket) error {
 	prefix := new(big.Int)
 
 	_, err := t.root.Prepare(t.nonce[:], prefix, b, fac)
@@ -342,12 +345,13 @@ func (n *EmptyNode) Delete(key *big.Int, b kv.Bucket) (TreeNode, error) {
 	return n, nil
 }
 
-// Prepare implements mem.TreeNode. It updates the hash of the node and return
-// the digest.
+// Prepare implements mem.TreeNode. It updates the hash of the node if not
+// already set and returns the digest.
 func (n *EmptyNode) Prepare(nonce []byte,
 	prefix *big.Int, b kv.Bucket, fac crypto.HashFactory) ([]byte, error) {
 
 	if len(n.hash) > 0 {
+		// Hash is already calculated so we can skip and return.
 		return n.hash, nil
 	}
 
@@ -461,6 +465,8 @@ func (n *InteriorNode) Insert(key *big.Int, value []byte, b kv.Bucket) (TreeNode
 		n.right, err = n.right.Insert(key, value, b)
 	}
 
+	// Reset the hash as the subtree will change and thus invalidate this
+	// current value.
 	n.hash = nil
 
 	return n, err
@@ -520,12 +526,13 @@ func (n *InteriorNode) load(node TreeNode, key *big.Int, bit uint, b kv.Bucket) 
 	return node, nil
 }
 
-// Prepare implements mem.TreeNode. It updates the hash of the node and returns
-// the digest.
+// Prepare implements mem.TreeNode. It updates the hash of the node if not
+// already set and returns the digest.
 func (n *InteriorNode) Prepare(nonce []byte,
 	prefix *big.Int, b kv.Bucket, fac crypto.HashFactory) ([]byte, error) {
 
 	if len(n.hash) > 0 {
+		// Hash is already calculated so we can skip and return.
 		return n.hash, nil
 	}
 
@@ -686,12 +693,13 @@ func (n *LeafNode) Delete(key *big.Int, b kv.Bucket) (TreeNode, error) {
 	return n, nil
 }
 
-// Prepare implements mem.TreeNode. It updates the hash of the node and return
-// the digest.
+// Prepare implements mem.TreeNode. It updates the hash of the node if not
+// already set and returns the digest.
 func (n *LeafNode) Prepare(nonce []byte,
 	prefix *big.Int, b kv.Bucket, fac crypto.HashFactory) ([]byte, error) {
 
 	if len(n.hash) > 0 {
+		// Hash is already calculated so we can skip and return.
 		return n.hash, nil
 	}
 

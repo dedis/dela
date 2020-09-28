@@ -14,7 +14,7 @@ import (
 	"golang.org/x/xerrors"
 )
 
-type cacheData struct {
+type cachedData struct {
 	sync.Mutex
 
 	length  uint64
@@ -26,7 +26,7 @@ type cacheData struct {
 //
 // - implements blockstore.BlockStore
 type InDisk struct {
-	*cacheData
+	*cachedData
 
 	db      kv.DB
 	bucket  []byte
@@ -45,7 +45,7 @@ func NewDiskStore(db kv.DB, fac types.LinkFactory) *InDisk {
 		context: json.NewContext(),
 		fac:     fac,
 		watcher: core.NewWatcher(),
-		cacheData: &cacheData{
+		cachedData: &cachedData{
 			indices: make(map[types.Digest]uint64),
 		},
 	}
@@ -182,7 +182,7 @@ func (s *InDisk) GetByIndex(index uint64) (link types.BlockLink, err error) {
 
 // GetChain implements blockstore.Blockstore. It returns a chain to the latest
 // block.
-func (s *InDisk) GetChain() (chain types.Chain, err error) {
+func (s *InDisk) GetChain() (types.Chain, error) {
 	s.Lock()
 	length := s.length
 	s.Unlock()
@@ -193,7 +193,9 @@ func (s *InDisk) GetChain() (chain types.Chain, err error) {
 
 	prevs := make([]types.Link, length-1)
 
-	err = s.doView(func(tx kv.ReadableTx) error {
+	var chain types.Chain
+
+	err := s.doView(func(tx kv.ReadableTx) error {
 		bucket := tx.GetBucket(s.bucket)
 
 		i := uint64(0)
@@ -221,7 +223,11 @@ func (s *InDisk) GetChain() (chain types.Chain, err error) {
 		return nil
 	})
 
-	return
+	if err != nil {
+		return nil, xerrors.Errorf("while reading database: %v", err)
+	}
+
+	return chain, nil
 }
 
 // Last implements blockstore.BlockStore. It returns the last block stored in
@@ -256,13 +262,13 @@ func (s *InDisk) Watch(ctx context.Context) <-chan types.BlockLink {
 // transaction for the operations on the database.
 func (s *InDisk) WithTx(txn store.Transaction) BlockStore {
 	store := &InDisk{
-		db:        s.db,
-		bucket:    s.bucket,
-		context:   s.context,
-		fac:       s.fac,
-		watcher:   s.watcher,
-		cacheData: s.cacheData,
-		txn:       txn,
+		db:         s.db,
+		bucket:     s.bucket,
+		context:    s.context,
+		fac:        s.fac,
+		watcher:    s.watcher,
+		cachedData: s.cachedData,
+		txn:        txn,
 	}
 
 	return store

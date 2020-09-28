@@ -87,7 +87,7 @@ func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("injector: %v", err)
 	}
 
-	signer, err := loadSigner(flags.Path("config"))
+	signer, err := loadOrCreateSigner(flags.Path("config"))
 	if err != nil {
 		return xerrors.Errorf("signer: %v", err)
 	}
@@ -160,7 +160,7 @@ func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
 	return nil
 }
 
-func loadSigner(cfg string) (crypto.AggregateSigner, error) {
+func loadOrCreateSigner(cfg string) (crypto.AggregateSigner, error) {
 	path := filepath.Join(cfg, privateKeyFile)
 
 	_, err := os.Stat(path)
