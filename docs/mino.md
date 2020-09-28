@@ -32,7 +32,7 @@ type Players interface {
 }
 ```
 
-It provides simple primitives to update and get the list of addresses. Each
+It provides simple primitives to filter and get the list of addresses. Each
 implementation of Mino has its own address representation. Minoch uses Go
 channels and therefore uses string identifiers, whereas Minogrpc uses actual
 network addresses.
@@ -91,7 +91,7 @@ Call is one of the API provided by Mino. It takes a context, a message and the
 list of participants as input parameters.
 
 The context can be used to cancel the protocol earlier if necessary. When the
-context is done, the connection to other peers will be shutdown down and
+context is done, the connection to other peers will be shutdown  and
 resources cleaned up.
 
 A normal execution of the call will send the message to all the participants and
