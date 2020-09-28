@@ -1,8 +1,10 @@
 package gossip
 
 import (
+	"bytes"
 	"testing"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
@@ -48,13 +50,20 @@ func TestActor_Add(t *testing.T) {
 	err := actor.Add(fakeRumor{})
 	require.NoError(t, err)
 
+	actor.rpc = fake.NewBadRPC()
+	err = actor.Add(fakeRumor{})
+	require.EqualError(t, err, "couldn't call peers: fake error")
+
+	buffer := new(bytes.Buffer)
 	rpc = fake.NewRPC()
 	actor.rpc = rpc
+	actor.logger = zerolog.New(buffer).Level(zerolog.WarnLevel)
 	rpc.SendResponseWithError(nil, xerrors.New("oops"))
 	rpc.Done()
 
 	err = actor.Add(fakeRumor{})
-	require.EqualError(t, err, "couldn't send the rumor: oops")
+	require.NoError(t, err)
+	require.Contains(t, buffer.String(), `"message":"rumor not sent"`)
 
 	actor.players = nil
 	err = actor.Add(fakeRumor{})

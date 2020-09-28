@@ -1,4 +1,4 @@
-package threshold
+package types
 
 import (
 	"testing"
@@ -112,6 +112,12 @@ func TestSignature_Equal(t *testing.T) {
 	require.False(t, sig.Equal(nil))
 }
 
+func TestSignature_String(t *testing.T) {
+	sig := NewSignature(fake.Signature{}, []byte{0xa})
+
+	require.Equal(t, "thres[1010]:fakeSignature", sig.String())
+}
+
 func TestSignatureFactory_Deserialize(t *testing.T) {
 	factory := NewSignatureFactory(fake.SignatureFactory{})
 
@@ -147,7 +153,7 @@ func TestVerifier_Verify(t *testing.T) {
 	require.Len(t, call.Get(0, 0), 2)
 
 	err = verifier.Verify([]byte{}, nil)
-	require.EqualError(t, err, "invalid signature type '<nil>' != '*threshold.Signature'")
+	require.EqualError(t, err, "invalid signature type '<nil>' != '*types.Signature'")
 
 	verifier.factory = fake.NewBadVerifierFactory()
 	err = verifier.Verify([]byte{}, &Signature{})
@@ -159,11 +165,13 @@ func TestVerifier_Verify(t *testing.T) {
 }
 
 func TestVerifierFactory_FromArray(t *testing.T) {
-	fac := verifierFactory{
-		factory: fake.NewVerifierFactory(fake.Verifier{}),
-	}
+	fac := NewThresholdVerifierFactory(fake.NewVerifierFactory(fake.Verifier{}))
 
 	verifier, err := fac.FromArray([]crypto.PublicKey{fake.PublicKey{}})
 	require.NoError(t, err)
 	require.Len(t, verifier.(Verifier).pubkeys, 1)
+
+	verifier, err = fac.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+	require.NoError(t, err)
+	require.Len(t, verifier.(Verifier).pubkeys, 3)
 }

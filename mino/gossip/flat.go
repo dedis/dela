@@ -5,6 +5,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rs/zerolog"
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
@@ -45,7 +47,8 @@ func (flat *Flat) Listen() (Actor, error) {
 	}
 
 	actor := &flatActor{
-		rpc: rpc,
+		logger: dela.Logger.With().Str("addr", flat.mino.GetAddress().String()).Logger(),
+		rpc:    rpc,
 	}
 
 	return actor, nil
@@ -60,6 +63,7 @@ func (flat *Flat) Rumors() <-chan Rumor {
 type flatActor struct {
 	sync.Mutex
 
+	logger  zerolog.Logger
 	rpc     mino.RPC
 	players mino.Players
 }
@@ -100,7 +104,7 @@ func (a *flatActor) Add(rumor Rumor) error {
 
 		_, err := resp.GetMessageOrError()
 		if err != nil {
-			return xerrors.Errorf("couldn't send the rumor: %v", err)
+			a.logger.Warn().Err(err).Msg("rumor not sent")
 		}
 	}
 }

@@ -22,34 +22,21 @@ func TestMemcoin_Main(t *testing.T) {
 func TestMemcoin_Scenario_1(t *testing.T) {
 	sigs := make(chan os.Signal)
 	wg := sync.WaitGroup{}
-	wg.Add(3)
+	wg.Add(5)
 
 	node1 := filepath.Join(os.TempDir(), "memcoin", "node1")
 	node2 := filepath.Join(os.TempDir(), "memcoin", "node2")
 	node3 := filepath.Join(os.TempDir(), "memcoin", "node3")
+	node4 := filepath.Join(os.TempDir(), "memcoin", "node4")
+	node5 := filepath.Join(os.TempDir(), "memcoin", "node5")
 
 	cfg := config{Channel: sigs, Writer: ioutil.Discard}
 
-	go func() {
-		defer wg.Done()
-
-		err := runWithCfg(makeNodeArg(node1, 2111), cfg)
-		require.NoError(t, err)
-	}()
-
-	go func() {
-		defer wg.Done()
-
-		err := runWithCfg(makeNodeArg(node2, 2112), cfg)
-		require.NoError(t, err)
-	}()
-
-	go func() {
-		defer wg.Done()
-
-		err := runWithCfg(makeNodeArg(node3, 2113), cfg)
-		require.NoError(t, err)
-	}()
+	runNode(t, node1, cfg, 2111, &wg)
+	runNode(t, node2, cfg, 2112, &wg)
+	runNode(t, node3, cfg, 2113, &wg)
+	runNode(t, node4, cfg, 2114, &wg)
+	runNode(t, node5, cfg, 2115, &wg)
 
 	defer func() {
 		// Simulate a Ctrl+C
@@ -59,6 +46,8 @@ func TestMemcoin_Scenario_1(t *testing.T) {
 		os.RemoveAll(node1)
 		os.RemoveAll(node2)
 		os.RemoveAll(node3)
+		os.RemoveAll(node4)
+		os.RemoveAll(node5)
 	}()
 
 	waitDaemon(t, []string{node1, node2, node3})
@@ -66,24 +55,38 @@ func TestMemcoin_Scenario_1(t *testing.T) {
 	// Share the certificates.
 	shareCert(t, node2, node1)
 	shareCert(t, node3, node1)
+	shareCert(t, node5, node1)
 
 	// Setup the chain with nodes 1 and 2.
-	args := append(
+	args := append(append(
 		append(
 			[]string{os.Args[0], "--config", node1, "ordering", "setup"},
 			getExport(t, node1)...,
 		),
-		getExport(t, node2)...)
+		getExport(t, node2)...),
+		getExport(t, node3)...)
 
 	err := run(args)
 	require.NoError(t, err)
 
-	// Add node 3 to the current chain.
+	// Add node 4 to the current chain. This node is not reachable from the
+	// others but transactions should work as the threshold is correct.
 	args = append([]string{
 		os.Args[0],
 		"--config", node1, "ordering", "roster", "add",
 		"--wait", "60s"},
-		getExport(t, node3)...,
+		getExport(t, node4)...,
+	)
+
+	err = run(args)
+	require.NoError(t, err)
+
+	// Add node 5 which should be participating.
+	args = append([]string{
+		os.Args[0],
+		"--config", node1, "ordering", "roster", "add",
+		"--wait", "60s"},
+		getExport(t, node5)...,
 	)
 
 	err = run(args)
@@ -125,6 +128,15 @@ func TestMemcoin_Scenario_2(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
+func runNode(t *testing.T, node string, cfg config, port uint16, wg *sync.WaitGroup) {
+	go func() {
+		defer wg.Done()
+
+		err := runWithCfg(makeNodeArg(node, port), cfg)
+		require.NoError(t, err)
+	}()
+}
+
 func setupChain(t *testing.T, node string, port uint16) {
 	sigs := make(chan os.Signal)
 	wg := sync.WaitGroup{}
@@ -132,12 +144,7 @@ func setupChain(t *testing.T, node string, port uint16) {
 
 	cfg := config{Channel: sigs, Writer: ioutil.Discard}
 
-	go func() {
-		defer wg.Done()
-
-		err := runWithCfg(makeNodeArg(node, port), cfg)
-		require.NoError(t, err)
-	}()
+	runNode(t, node, cfg, port, &wg)
 
 	defer func() {
 		// Simulate a Ctrl+C

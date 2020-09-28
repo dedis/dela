@@ -31,6 +31,7 @@ import (
 	"go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/cosi/flatcosi"
+	"go.dedis.ch/dela/cosi/threshold"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/internal/testing/fake"
@@ -532,7 +533,8 @@ func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()
 		signer := bls.NewSigner()
 		pubkeys[i] = signer.GetPublicKey()
 
-		c := flatcosi.NewFlat(m, signer)
+		c := threshold.NewCoSi(m, signer)
+		c.SetThreshold(threshold.ByzantineThreshold)
 
 		dir, err := ioutil.TempDir(os.TempDir(), "cosipbft")
 		require.NoError(t, err)

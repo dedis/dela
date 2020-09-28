@@ -22,6 +22,7 @@ import (
 	"go.dedis.ch/dela/core/txn/pool"
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/cosi"
+	"go.dedis.ch/dela/cosi/threshold"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
@@ -486,8 +487,7 @@ func (s *Service) doRound(ctx context.Context) error {
 
 	// Send a synchronization to the roster so that they can learn about the
 	// latest block of the chain.
-	// TODO: get pbft threshold
-	err = s.sync.Sync(ctx, roster, blocksync.Config{MinHard: roster.Len()})
+	err = s.sync.Sync(ctx, roster, blocksync.Config{MinHard: threshold.ByzantineThreshold(roster.Len())})
 	if err != nil {
 		return xerrors.Errorf("sync failed: %v", err)
 	}

@@ -104,7 +104,7 @@ func (s defaultSync) Sync(ctx context.Context, players mino.Players, cfg Config)
 	errs := sender.Send(types.NewSyncMessage(chain), iter2arr(players.AddressIterator())...)
 	for err := range errs {
 		if err != nil {
-			return xerrors.Errorf("announcement failed: %v", err)
+			s.logger.Warn().Err(err).Msg("announcement failed")
 		}
 	}
 

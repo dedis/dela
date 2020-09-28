@@ -17,7 +17,10 @@ const (
 )
 
 // Flat is an implementation of the collective signing interface by
-// using BLS signatures.
+// using BLS signatures. It ignores the threshold and always requests a
+// signature from every participant.
+//
+// - implements cosi.CollectiveSigning
 type Flat struct {
 	mino   mino.Mino
 	signer crypto.AggregateSigner
@@ -37,23 +40,31 @@ func (flat *Flat) GetSigner() crypto.Signer {
 	return flat.signer
 }
 
-// GetPublicKeyFactory returns the public key factory.
+// GetPublicKeyFactory implements cosi.CollectiveSigning. It returns the public
+// key factory.
 func (flat *Flat) GetPublicKeyFactory() crypto.PublicKeyFactory {
 	return flat.signer.GetPublicKeyFactory()
 }
 
-// GetSignatureFactory returns the signature factory.
+// GetSignatureFactory implements cosi.CollectiveSigning. It returns the
+// signature factory.
 func (flat *Flat) GetSignatureFactory() crypto.SignatureFactory {
 	return flat.signer.GetSignatureFactory()
 }
 
-// GetVerifierFactory returns the verifier factory.
+// GetVerifierFactory implements cosi.CollectiveSigning. It returns the verifier
+// factory.
 func (flat *Flat) GetVerifierFactory() crypto.VerifierFactory {
 	return flat.signer.GetVerifierFactory()
 }
 
-// Listen creates an actor that starts an RPC called cosi and respond to signing
-// requests. The actor can also be used to sign a message.
+// SetThreshold implements cosi.CollectiveSigning. It ignores the new threshold
+// as this implementation only accepts full participation.
+func (flat *Flat) SetThreshold(fn cosi.Threshold) {}
+
+// Listen implements cosi.CollectiveSigning. It creates an actor that starts an
+// RPC called cosi and respond to signing requests. The actor can also be used
+// to sign a message.
 func (flat *Flat) Listen(r cosi.Reactor) (cosi.Actor, error) {
 	actor := flatActor{
 		logger:  dela.Logger,
@@ -82,7 +93,7 @@ type flatActor struct {
 	reactor cosi.Reactor
 }
 
-// Sign returns the collective signature of the block.
+// Sign implements cosi.Actor. It returns the collective signature of the block.
 func (a flatActor) Sign(ctx context.Context, msg serde.Message,
 	ca crypto.CollectiveAuthority) (crypto.Signature, error) {
 

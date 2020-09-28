@@ -3,8 +3,10 @@ package threshold
 import (
 	"context"
 
+	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cosi"
+	"go.dedis.ch/dela/cosi/threshold/types"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
@@ -17,6 +19,8 @@ import (
 // - implements cosi.Actor
 type thresholdActor struct {
 	*CoSi
+
+	logger  zerolog.Logger
 	me      mino.Address
 	rpc     mino.RPC
 	reactor cosi.Reactor
@@ -42,7 +46,7 @@ func (a thresholdActor) Sign(ctx context.Context, msg serde.Message,
 
 	// The aggregated signature needs to include at least a threshold number of
 	// signatures.
-	thres := a.Threshold(ca.Len())
+	thres := a.threshold.Load().(cosi.Threshold)(ca.Len())
 
 	req := cosi.SignatureRequest{
 		Value: msg,
@@ -55,7 +59,7 @@ func (a thresholdActor) Sign(ctx context.Context, msg serde.Message,
 	go a.waitCtx(innerCtx, ctx, cancel)
 
 	count := 0
-	signature := &Signature{}
+	signature := new(types.Signature)
 	for count < thres {
 		addr, resp, err := rcvr.Recv(innerCtx)
 		if err != nil {
@@ -66,7 +70,7 @@ func (a thresholdActor) Sign(ctx context.Context, msg serde.Message,
 		if index >= 0 {
 			err = a.merge(signature, resp, index, pubkey, digest)
 			if err != nil {
-				dela.Logger.Warn().Err(err).Send()
+				a.logger.Warn().Err(err).Msg("failed to process signature response")
 			} else {
 				count++
 			}
@@ -106,7 +110,7 @@ func (a thresholdActor) waitCtx(inner, upper context.Context, cancel func()) {
 	}
 }
 
-func (a thresholdActor) merge(signature *Signature, m serde.Message,
+func (a thresholdActor) merge(signature *types.Signature, m serde.Message,
 	index int, pubkey crypto.PublicKey, digest []byte) error {
 
 	resp, ok := m.(cosi.SignatureResponse)

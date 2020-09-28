@@ -1,17 +1,39 @@
 package threshold
 
 import (
+	"sync/atomic"
+
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cosi"
+	"go.dedis.ch/dela/cosi/threshold/types"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
 )
 
-// Threshold is a function that returns the threshold to reach for a given n.
-type Threshold func(int) int
-
 func defaultThreshold(n int) int {
 	return n
+}
+
+// OneThreshold is a threshold function to allow one failure.
+func OneThreshold(n int) int {
+	if n <= 0 {
+		return 0
+	}
+
+	return n - 1
+}
+
+// ByzantineThreshold is a threshold function to allow a threshold number of
+// failures and comply to the Byzantine Fault Tolerance theorem.
+func ByzantineThreshold(n int) int {
+	if n <= 0 {
+		return 0
+	}
+
+	f := (n - 1) / 3
+
+	return n - f
 }
 
 // CoSi is an implementation of the cosi.CollectiveSigning interface that is
@@ -19,17 +41,22 @@ func defaultThreshold(n int) int {
 type CoSi struct {
 	mino   mino.Mino
 	signer crypto.AggregateSigner
-
-	Threshold Threshold
+	// Stores the cosi.Threshold function. It will always contain a valid
+	// function by construction.
+	threshold atomic.Value
 }
 
 // NewCoSi returns a new instance.
 func NewCoSi(m mino.Mino, signer crypto.AggregateSigner) *CoSi {
-	return &CoSi{
-		mino:      m,
-		signer:    signer,
-		Threshold: defaultThreshold,
+	c := &CoSi{
+		mino:   m,
+		signer: signer,
 	}
+
+	// Force the cosi.Threshold type to allow later updates of the same type.
+	c.threshold.Store(cosi.Threshold(defaultThreshold))
+
+	return c
 }
 
 // GetSigner implements cosi.CollectiveSigning. It returns the signer of the
@@ -47,15 +74,23 @@ func (c *CoSi) GetPublicKeyFactory() crypto.PublicKeyFactory {
 // GetSignatureFactory implements cosi.CollectiveSigning. It returns the
 // signature factory.
 func (c *CoSi) GetSignatureFactory() crypto.SignatureFactory {
-	return SignatureFactory{
-		aggFactory: c.signer.GetSignatureFactory(),
-	}
+	return types.NewSignatureFactory(c.signer.GetSignatureFactory())
 }
 
 // GetVerifierFactory implements cosi.CollectiveSigning. It returns the verifier
 // factory.
 func (c *CoSi) GetVerifierFactory() crypto.VerifierFactory {
-	return verifierFactory{factory: c.signer.GetVerifierFactory()}
+	return types.NewThresholdVerifierFactory(c.signer.GetVerifierFactory())
+}
+
+// SetThreshold implements cosi.CollectiveSigning. It sets a new threshold
+// function.
+func (c *CoSi) SetThreshold(fn cosi.Threshold) {
+	if fn == nil {
+		return
+	}
+
+	c.threshold.Store(fn)
 }
 
 // Listen implements cosi.CollectiveSigning.
@@ -69,6 +104,7 @@ func (c *CoSi) Listen(r cosi.Reactor) (cosi.Actor, error) {
 
 	actor := thresholdActor{
 		CoSi:    c,
+		logger:  dela.Logger.With().Str("addr", c.mino.GetAddress().String()).Logger(),
 		me:      c.mino.GetAddress(),
 		rpc:     rpc,
 		reactor: r,
