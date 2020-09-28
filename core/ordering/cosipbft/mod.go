@@ -422,14 +422,14 @@ func (s *Service) doRound(ctx context.Context) error {
 		return xerrors.Errorf("reading leader: %v", err)
 	}
 
+	timeout := s.timeoutRound
+	if s.failedRound {
+		timeout = s.timeoutRoundAfterFailure
+	}
+
 	for !s.me.Equal(leader) {
 		// Only enters the loop if the node is not the leader. It has to wait
 		// for the new block, or the round timeout, to proceed.
-
-		timeout := s.timeoutRound
-		if s.failedRound {
-			timeout = s.timeoutRoundAfterFailure
-		}
 
 		select {
 		case <-time.After(timeout):
@@ -485,6 +485,8 @@ func (s *Service) doRound(ctx context.Context) error {
 			cancel()
 			return nil
 		case <-s.events:
+			// As a child, a block has been comitted thus the previous view
+			// change succeeded.
 			s.failedRound = false
 
 			// A block has been created meaning that the round is over.
@@ -494,7 +496,7 @@ func (s *Service) doRound(ctx context.Context) error {
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, s.timeoutRound)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	s.logger.Debug().Uint64("index", s.blocks.Len()).Msg("round has started")
@@ -515,6 +517,10 @@ func (s *Service) doRound(ctx context.Context) error {
 	if err != nil {
 		return xerrors.Errorf("pbft failed: %v", err)
 	}
+
+	// The leader can be a new leader coming from a view change, so it resets
+	// the value as a round has finished.
+	s.failedRound = false
 
 	return nil
 }
