@@ -5,6 +5,8 @@ import (
 
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela/core"
+	"go.dedis.ch/dela/core/access"
+	"go.dedis.ch/dela/core/execution/baremetal/viewchange"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
@@ -23,6 +25,7 @@ import (
 
 var (
 	keyRoster = [32]byte{}
+	keyAccess = [32]byte{1}
 )
 
 // Processor processes the messages to run a collective signing PBFT consensus.
@@ -38,6 +41,7 @@ type processor struct {
 	watcher     core.Observable
 	rosterFac   authority.Factory
 	hashFactory crypto.HashFactory
+	access      access.Service
 
 	context serde.Context
 	genesis blockstore.GenesisStore
@@ -179,10 +183,20 @@ func (h *processor) storeGenesis(roster authority.Authority, match *types.Digest
 	}
 
 	stageTree, err := h.tree.Get().Stage(func(snap store.Snapshot) error {
-		return snap.Set(keyRoster[:], value)
+		err := h.makeAccess(snap, roster)
+		if err != nil {
+			return xerrors.Errorf("failed to set access: %v", err)
+		}
+
+		err = snap.Set(keyRoster[:], value)
+		if err != nil {
+			return xerrors.Errorf("failed to store roster: %v", err)
+		}
+
+		return nil
 	})
 	if err != nil {
-		return xerrors.Errorf("tree stage failed: %v", err)
+		return xerrors.Errorf("while updating tree: %v", err)
 	}
 
 	root := types.Digest{}
@@ -212,6 +226,21 @@ func (h *processor) storeGenesis(roster authority.Authority, match *types.Digest
 	h.watcher.Notify(ordering.Event{Index: 0})
 
 	close(h.started)
+
+	return nil
+}
+
+func (h *processor) makeAccess(store store.Snapshot, roster authority.Authority) error {
+	creds := viewchange.NewCreds(keyAccess[:])
+
+	iter := roster.PublicKeyIterator()
+	for iter.HasNext() {
+		// Grant each member of the roster an access to change the roster.
+		err := h.access.Grant(store, creds, iter.GetNext())
+		if err != nil {
+			return err
+		}
+	}
 
 	return nil
 }

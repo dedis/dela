@@ -2,182 +2,90 @@
 package darc
 
 import (
-	"io"
-	"sort"
-
 	"go.dedis.ch/dela/core/access"
+	"go.dedis.ch/dela/core/access/darc/types"
+	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/serde"
-	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
 )
 
-var accessFormats = registry.NewSimpleRegistry()
-
-// RegisterAccessFormat registers the engine for the provided format.
-func RegisterAccessFormat(c serde.Format, f serde.FormatEngine) {
-	accessFormats.Register(c, f)
+// Service is an implementation of an access service that will allow one to
+// store and verify access for a group of identities.
+type Service struct {
+	fac     types.PermissionFactory
+	context serde.Context
 }
 
-// Access is the DARC implementation of an Evolvable Access Control.
-//
-// - implements darc.EvolvableAccessControl
-// - implements encoding.Packable
-type Access struct {
-	rules map[string]Expression
-}
-
-// AccessOption is the option type to create an access control.
-type AccessOption func(*Access)
-
-// WithRule is an option to set a rule to a new access control.
-func WithRule(rule string, matches []string) AccessOption {
-	return func(a *Access) {
-		mapper := make(map[string]struct{})
-		for _, match := range matches {
-			mapper[match] = struct{}{}
-		}
-
-		a.rules[rule] = Expression{matches: mapper}
+// NewService creates a new service.
+func NewService(ctx serde.Context) Service {
+	return Service{
+		fac:     types.NewFactory(),
+		context: ctx,
 	}
 }
 
-// NewAccess returns a new empty instance of an access control.
-func NewAccess(opts ...AccessOption) Access {
-	a := Access{
-		rules: make(map[string]Expression),
-	}
-
-	for _, opt := range opts {
-		opt(&a)
-	}
-
-	return a
-}
-
-// GetRules returns the list of rules of an access control.
-func (ac Access) GetRules() map[string]Expression {
-	rules := make(map[string]Expression)
-	for k, v := range ac.rules {
-		rules[k] = v
-	}
-
-	return rules
-}
-
-// Evolve implements darc.EvolvableAccessControl. It updates the rule with the
-// list of targets.
-func (ac Access) Evolve(rule string, targets ...access.Identity) (Access, error) {
-	access := ac.Clone()
-
-	expr, ok := access.rules[rule]
-	if !ok {
-		expr = newExpression()
-	}
-
-	expr, err := expr.Evolve(targets)
+// Match implements access.Service. It returns nil if the group of identities
+// have access to the given credentials, otherwise a meaningful error on the
+// reason it does not have access.
+func (srvc Service) Match(store store.Readable, creds access.Credential, idents ...access.Identity) error {
+	perm, err := srvc.readPermission(store, creds.GetID())
 	if err != nil {
-		return access, xerrors.Errorf("couldn't evolve rule: %v", err)
+		return xerrors.Errorf("store failed: %v", err)
 	}
 
-	access.rules[rule] = expr
-
-	return access, nil
-}
-
-// Match implements arc.AccessControl. It returns true if the rule exists and
-// the identity is associated with it.
-func (ac Access) Match(rule string, targets ...access.Identity) error {
-	if len(targets) == 0 {
-		return xerrors.New("expect at least one identity")
+	if perm == nil {
+		return xerrors.Errorf("permission %#x not found", creds.GetID())
 	}
 
-	expr, ok := ac.rules[rule]
-	if !ok {
-		return xerrors.Errorf("rule '%s' not found", rule)
-	}
-
-	err := expr.Match(targets)
+	err = perm.Match(creds.GetRule(), idents...)
 	if err != nil {
-		return xerrors.Errorf("couldn't match '%s': %v", rule, err)
+		return xerrors.Errorf("permission: %v", err)
 	}
 
 	return nil
 }
 
-// Fingerprint implements encoding.Fingerprinter. It serializes the access to
-// the writer in a deterministic way.
-func (ac Access) Fingerprint(w io.Writer) error {
-	keys := make(sort.StringSlice, 0, len(ac.rules))
-	for key := range ac.rules {
-		keys = append(keys, key)
+// Grant implements access.Service. It updates or creates the credentials and
+// grant the access to the group of identities.
+func (srvc Service) Grant(store store.Snapshot, creds access.Credential, idents ...access.Identity) error {
+	perm, err := srvc.readPermission(store, creds.GetID())
+	if err != nil {
+		return xerrors.Errorf("store failed: %v", err)
 	}
 
-	sort.Sort(keys)
+	if perm == nil {
+		perm = types.NewPermission()
+	}
 
-	for _, key := range keys {
-		_, err := w.Write([]byte(key))
-		if err != nil {
-			return xerrors.Errorf("couldn't write key: %v", err)
-		}
+	perm.Allow(creds.GetRule(), idents...)
 
-		err = ac.rules[key].Fingerprint(w)
-		if err != nil {
-			return xerrors.Errorf("couldn't fingerprint rule '%s': %v", key, err)
-		}
+	value, err := perm.Serialize(srvc.context)
+	if err != nil {
+		return xerrors.Errorf("failed to serialize: %v", err)
+	}
+
+	err = store.Set(creds.GetID(), value)
+	if err != nil {
+		return xerrors.Errorf("store failed to write: %v", err)
 	}
 
 	return nil
 }
 
-// Serialize implements serde.Message. It looks up the format and returns the
-// serialized data for the access.
-func (ac Access) Serialize(ctx serde.Context) ([]byte, error) {
-	format := accessFormats.Get(ctx.GetFormat())
-
-	data, err := format.Encode(ctx, ac)
+func (srvc Service) readPermission(store store.Readable, key []byte) (types.Permission, error) {
+	value, err := store.Get(key)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't encode access: %v", err)
+		return nil, xerrors.Errorf("while reading: %v", err)
 	}
 
-	return data, nil
-}
-
-// Clone returns a deep copy of the access control.
-func (ac Access) Clone() Access {
-	access := Access{rules: make(map[string]Expression)}
-	for rule, expr := range ac.rules {
-		access.rules[rule] = expr.Clone()
+	if value == nil {
+		return nil, nil
 	}
 
-	return access
-}
-
-// Factory is the implementation of an access control factory for DARCs.
-type Factory struct{}
-
-// NewFactory returns a new instance of the factory.
-func NewFactory() Factory {
-	return Factory{}
-}
-
-// Deserialize implements serde.Factory.
-func (f Factory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	return f.AccessOf(ctx, data)
-}
-
-// AccessOf implements arc.AccessControlFactory.
-func (f Factory) AccessOf(ctx serde.Context, data []byte) (access.Access, error) {
-	format := accessFormats.Get(ctx.GetFormat())
-
-	msg, err := format.Decode(ctx, data)
+	perm, err := srvc.fac.PermissionOf(srvc.context, value)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't decode access: %v", err)
+		return nil, xerrors.Errorf("permission malformed: %v", err)
 	}
 
-	access, ok := msg.(access.Access)
-	if !ok {
-		return nil, xerrors.Errorf("invalid access of type '%T'", msg)
-	}
-
-	return access, nil
+	return perm, nil
 }

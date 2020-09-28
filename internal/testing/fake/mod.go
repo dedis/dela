@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/core/access"
+	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
@@ -436,7 +436,7 @@ func (pk PublicKey) MarshalText() ([]byte, error) {
 }
 
 // Equal implements crypto.PublicKey.
-func (pk PublicKey) Equal(other crypto.PublicKey) bool {
+func (pk PublicKey) Equal(other interface{}) bool {
 	_, ok := other.(PublicKey)
 
 	return ok
@@ -1051,63 +1051,42 @@ func (ctx ContextEngine) Unmarshal(data []byte, m interface{}) error {
 	return ctx.err
 }
 
-// NewAccessControl creates a new access control
-func NewAccessControl() access.Access {
-	return AccessControl{}
+type InMemorySnapshot struct {
+	store.Snapshot
+
+	values    map[string][]byte
+	ErrRead   error
+	ErrWrite  error
+	ErrDelete error
 }
 
-// NewBadAccessControl creates a new access control that return an error when
-// serialized
-func NewBadAccessControl() access.Access {
-	return AccessControl{
-		err: xerrors.New("fake error"),
+func NewSnapshot() *InMemorySnapshot {
+	return &InMemorySnapshot{
+		values: make(map[string][]byte),
 	}
 }
 
-// AccessControl is an access control
-//
-// - implements ard.AccessControl
-type AccessControl struct {
-	serde.Message
-	err error
-}
-
-// Match implements arc.AccessControl
-func (fac AccessControl) Match(rule string, idents ...access.Identity) error {
-	return nil
-}
-
-// Serialize implements serde.Message.
-func (fac AccessControl) Serialize(serde.Context) ([]byte, error) {
-	return []byte("{}"), fac.err
-}
-
-// NewAccessControlFactory returns a new access control factory
-func NewAccessControlFactory() serde.Factory {
-	return AccessControlFactory{}
-}
-
-// NewBadAccessControlFactory returns a new bad access control factory
-func NewBadAccessControlFactory() serde.Factory {
-	return AccessControlFactory{
-		err: xerrors.New("fake error"),
+func NewBadSnapshot() *InMemorySnapshot {
+	return &InMemorySnapshot{
+		values:    make(map[string][]byte),
+		ErrRead:   xerrors.New("fake error"),
+		ErrWrite:  xerrors.New("fake error"),
+		ErrDelete: xerrors.New("fake error"),
 	}
 }
 
-// AccessControlFactory is a fake factory for access control
-//
-// - implements arc.AccessControlFactory
-// - implements serde.Factory
-type AccessControlFactory struct {
-	err error
+func (snap *InMemorySnapshot) Get(key []byte) ([]byte, error) {
+	return snap.values[string(key)], snap.ErrRead
 }
 
-// Deserialize implements serde.Factory.
-func (f AccessControlFactory) Deserialize(serde.Context, []byte) (serde.Message, error) {
-	return NewAccessControl(), f.err
+func (snap *InMemorySnapshot) Set(key, value []byte) error {
+	snap.values[string(key)] = value
+
+	return snap.ErrWrite
 }
 
-// AccessOf implements arc.AccessControlFactory
-func (f AccessControlFactory) AccessOf(serde.Context, []byte) (access.Access, error) {
-	return NewAccessControl(), f.err
+func (snap *InMemorySnapshot) Delete(key []byte) error {
+	delete(snap.values, string(key))
+
+	return snap.ErrDelete
 }

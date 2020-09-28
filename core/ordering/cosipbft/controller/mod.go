@@ -6,6 +6,7 @@ import (
 
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
+	"go.dedis.ch/dela/core/access/darc"
 	"go.dedis.ch/dela/core/execution/baremetal"
 	"go.dedis.ch/dela/core/ordering/cosipbft"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
@@ -18,6 +19,7 @@ import (
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/gossip"
+	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
 
@@ -81,9 +83,10 @@ func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
 	signer := bls.NewSigner()
 	cosi := flatcosi.NewFlat(m, signer)
 	exec := baremetal.NewExecution()
+	access := darc.NewService(json.NewContext())
 
 	rosterFac := authority.NewFactory(m.GetAddressFactory(), cosi.GetPublicKeyFactory())
-	cosipbft.RegisterRosterContract(exec, rosterFac)
+	cosipbft.RegisterRosterContract(exec, rosterFac, access)
 
 	txFac := signed.NewTransactionFactory()
 	vs := simple.NewService(exec, txFac)
@@ -102,6 +105,7 @@ func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
 		Mino:       m,
 		Cosi:       cosi,
 		Validation: vs,
+		Access:     access,
 		Pool:       pool,
 		DB:         db,
 		Tree:       binprefix.NewMerkleTree(db, binprefix.Nonce{}),

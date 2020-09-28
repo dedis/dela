@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/core/access"
+	"go.dedis.ch/dela/core/execution/baremetal"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/txn"
@@ -12,6 +14,12 @@ import (
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
+
+func TestRegisterContract(t *testing.T) {
+	srvc := baremetal.NewExecution()
+
+	RegisterContract(srvc, Contract{})
+}
 
 func TestNewTransaction(t *testing.T) {
 	mgr := NewManager(signed.NewManager(fake.NewSigner(), nil))
@@ -32,7 +40,7 @@ func TestNewTransaction(t *testing.T) {
 func TestContract_Execute(t *testing.T) {
 	fac := authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 
-	contract := NewContract([]byte("abc"), fac)
+	contract := NewContract([]byte("roster"), []byte("access"), fac, fakeAccess{})
 
 	err := contract.Execute(makeTx(t, "[]"), fakeStore{})
 	require.NoError(t, err)
@@ -58,6 +66,10 @@ func TestContract_Execute(t *testing.T) {
 
 	err = contract.Execute(makeTx(t, "[]"), fakeStore{errSet: xerrors.New("oops")})
 	require.EqualError(t, err, messageStorageFailure)
+
+	contract.access = fakeAccess{err: xerrors.New("oops")}
+	err = contract.Execute(makeTx(t, "[]"), fakeStore{})
+	require.EqualError(t, err, "unauthorized identity: fake.PublicKey")
 }
 
 // -----------------------------------------------------------------------------
@@ -113,4 +125,14 @@ type badManager struct {
 
 func (badManager) Make(opts ...txn.Arg) (txn.Transaction, error) {
 	return nil, xerrors.New("oops")
+}
+
+type fakeAccess struct {
+	access.Service
+
+	err error
+}
+
+func (srvc fakeAccess) Match(store.Readable, access.Credential, ...access.Identity) error {
+	return srvc.err
 }

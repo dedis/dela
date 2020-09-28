@@ -1,119 +1,113 @@
 package darc
 
 import (
-	"bytes"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/access"
+	"go.dedis.ch/dela/core/access/darc/types"
+	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
 
-func init() {
-	RegisterAccessFormat(fake.GoodFormat, fake.Format{Msg: Access{}})
-	RegisterAccessFormat(fake.BadFormat, fake.NewBadFormat())
-}
+var testCtx = json.NewContext()
 
-func TestAccess_WithRule(t *testing.T) {
-	access := NewAccess(WithRule("A", []string{"B", "C"}))
+func TestService_Match(t *testing.T) {
+	store := fake.NewSnapshot()
 
-	require.Len(t, access.rules, 1)
-	require.Len(t, access.rules["A"].matches, 2)
-}
+	alice := bls.NewSigner()
+	bob := bls.NewSigner()
 
-func TestAccess_GetRules(t *testing.T) {
-	access := NewAccess(WithRule("A", nil), WithRule("B", nil))
+	creds := access.NewContractCreds([]byte{0xaa}, "test", "match")
 
-	require.Len(t, access.GetRules(), 2)
-}
-
-func TestAccess_Evolve(t *testing.T) {
-	a := NewAccess()
-
-	idents := []access.Identity{
-		fakeIdentity{buffer: []byte{0xaa}},
-		fakeIdentity{buffer: []byte{0xbb}},
-	}
-
-	a, err := a.Evolve("fake", idents...)
-	require.NoError(t, err)
-	require.Len(t, a.rules, 1)
-
-	a, err = a.Evolve("another", idents...)
-	require.NoError(t, err)
-	require.Len(t, a.rules, 2)
-
-	a, err = a.Evolve("fake")
-	require.NoError(t, err)
-	require.Len(t, a.rules, 2)
-
-	_, err = a.Evolve("fake", fakeIdentity{err: xerrors.New("oops")})
-	require.EqualError(t, err, "couldn't evolve rule: couldn't marshal identity: oops")
-}
-
-func TestAccess_Match(t *testing.T) {
-	idents := []access.Identity{
-		fakeIdentity{buffer: []byte{0xaa}},
-		fakeIdentity{buffer: []byte{0xbb}},
-	}
-
-	access, err := NewAccess().Evolve("fake", idents...)
+	perm := types.NewPermission()
+	perm.Allow(creds.GetRule(), alice.GetPublicKey())
+	data, err := perm.Serialize(testCtx)
 	require.NoError(t, err)
 
-	err = access.Match("fake", idents...)
+	store.Set([]byte{0xaa}, data)
+	store.Set([]byte{0xbb}, []byte{})
+
+	srvc := NewService(testCtx)
+
+	err = srvc.Match(store, creds, alice.GetPublicKey())
 	require.NoError(t, err)
 
-	err = access.Match("fake")
-	require.EqualError(t, err, "expect at least one identity")
+	// Only the key of Alice is necessary, so it should pass.
+	err = srvc.Match(store, creds, alice.GetPublicKey(), bob.GetPublicKey())
+	require.NoError(t, err)
 
-	err = access.Match("unknown", idents...)
-	require.EqualError(t, err, "rule 'unknown' not found")
+	err = srvc.Match(store, creds, bob.GetPublicKey())
+	require.Error(t, err)
+	require.Regexp(t,
+		"^permission: rule 'test:match': unauthorized: \\[bls:[[:xdigit:]]+\\]", err.Error())
 
-	err = access.Match("fake", fakeIdentity{buffer: []byte{0xcc}})
+	err = srvc.Match(fake.NewBadSnapshot(), creds, alice.GetPublicKey())
 	require.EqualError(t, err,
-		"couldn't match 'fake': couldn't match identity '\xcc'")
-}
+		"store failed: while reading: fake error")
 
-func TestAccess_Fingerprint(t *testing.T) {
-	access := Access{
-		rules: map[string]Expression{
-			"\x02": {matches: map[string]struct{}{"\x04": {}}},
-		},
-	}
+	err = srvc.Match(store, access.NewContractCreds([]byte{0xcc}, "", ""))
+	require.EqualError(t, err, "permission 0xcc not found")
 
-	buffer := new(bytes.Buffer)
-
-	err := access.Fingerprint(buffer)
-	require.NoError(t, err)
-	require.Equal(t, "\x02\x04", buffer.String())
-
-	err = access.Fingerprint(fake.NewBadHash())
-	require.EqualError(t, err, "couldn't write key: fake error")
-
-	err = access.Fingerprint(fake.NewBadHashWithDelay(1))
+	err = srvc.Match(store, access.NewContractCreds([]byte{0xbb}, "", ""), alice.GetPublicKey())
 	require.EqualError(t, err,
-		"couldn't fingerprint rule '\x02': couldn't write match: fake error")
+		"store failed: permission malformed: JSON format: failed to unmarshal: unexpected end of JSON input")
 }
 
-func TestAccess_Serialize(t *testing.T) {
-	access := NewAccess()
+func TestService_Grant(t *testing.T) {
+	store := fake.NewSnapshot()
+	store.Set([]byte{0xbb}, []byte{})
 
-	data, err := access.Serialize(fake.NewContext())
+	creds := access.NewContractCreds([]byte{0xaa}, "test", "grant")
+
+	alice := bls.NewSigner()
+	bob := bls.NewSigner()
+
+	srvc := NewService(testCtx)
+
+	err := srvc.Grant(store, creds, alice.GetPublicKey())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
 
-	_, err = access.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "couldn't encode access: fake error")
+	err = srvc.Grant(store, creds, bob.GetPublicKey())
+	require.NoError(t, err)
+
+	err = srvc.Grant(fake.NewBadSnapshot(), creds)
+	require.EqualError(t, err, "store failed: while reading: fake error")
+
+	err = srvc.Grant(store, access.NewContractCreds([]byte{0xbb}, "", ""))
+	require.EqualError(t, err,
+		"store failed: permission malformed: JSON format: failed to unmarshal: unexpected end of JSON input")
+
+	srvc.fac = badFac{}
+	err = srvc.Grant(store, creds, alice.GetPublicKey())
+	require.EqualError(t, err, "failed to serialize: oops")
+
+	badStore := fake.NewSnapshot()
+	badStore.ErrWrite = xerrors.New("oops")
+	err = srvc.Grant(badStore, creds, alice.GetPublicKey())
+	require.EqualError(t, err, "store failed to write: oops")
 }
 
-func TestFactory_Deserialize(t *testing.T) {
-	factory := NewFactory()
+// -----------------------------------------------------------------------------
+// Utility functions
 
-	msg, err := factory.Deserialize(fake.NewContext(), nil)
-	require.NoError(t, err)
-	require.IsType(t, Access{}, msg)
+type badFac struct {
+	types.PermissionFactory
+}
 
-	_, err = factory.Deserialize(fake.NewBadContext(), nil)
-	require.EqualError(t, err, "couldn't decode access: fake error")
+func (badFac) PermissionOf(serde.Context, []byte) (types.Permission, error) {
+	return badPerm{}, nil
+}
+
+type badPerm struct {
+	types.Permission
+}
+
+func (badPerm) Allow(string, ...access.Identity) {}
+
+func (badPerm) Serialize(serde.Context) ([]byte, error) {
+	return nil, xerrors.New("oops")
 }

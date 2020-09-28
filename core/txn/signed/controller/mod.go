@@ -7,7 +7,7 @@ import (
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/txn/signed"
-	"go.dedis.ch/dela/crypto/bls"
+	"go.dedis.ch/dela/cosi"
 )
 
 // NonceManager is a required interface for the manager to read the nonce of an
@@ -39,9 +39,13 @@ func (mgrController) Inject(flags cli.Flags, inj node.Injector) error {
 		return err
 	}
 
-	signer := bls.NewSigner()
+	var c cosi.CollectiveSigning
+	err = inj.Resolve(&c)
+	if err != nil {
+		return err
+	}
 
-	mgr := signed.NewManager(signer, client{
+	mgr := signed.NewManager(c.GetSigner(), client{
 		srvc: srvc,
 		mgr:  nonceMgr,
 	})

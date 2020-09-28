@@ -103,7 +103,7 @@ func (pk PublicKey) Verify(msg []byte, sig crypto.Signature) error {
 
 // Equal implements crypto.PublicKey. It returns true if the other public key
 // is the same.
-func (pk PublicKey) Equal(other crypto.PublicKey) bool {
+func (pk PublicKey) Equal(other interface{}) bool {
 	pubkey, ok := other.(PublicKey)
 	if !ok {
 		return false

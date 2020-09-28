@@ -76,6 +76,7 @@ func TestProcessor_GenesisMessage_Process(t *testing.T) {
 	proc := newProcessor()
 	proc.tree = blockstore.NewTreeCache(fakeTree{})
 	proc.genesis = blockstore.NewGenesisStore()
+	proc.access = fakeAccess{}
 
 	root := types.Digest{}
 	copy(root[:], []byte("root"))
@@ -106,9 +107,14 @@ func TestProcessor_GenesisMessage_Process(t *testing.T) {
 	_, err = proc.Process(mino.Request{Message: types.NewGenesisMessage(wrongGenesis)})
 	require.EqualError(t, err, "mismatch tree root '00000000' != '726f6f74'")
 
-	proc.tree = blockstore.NewTreeCache(fakeTree{errStage: xerrors.New("oops")})
+	proc.access = fakeAccess{err: xerrors.New("oops")}
 	_, err = proc.Process(req)
-	require.EqualError(t, err, "tree stage failed: oops")
+	require.EqualError(t, err, "while updating tree: failed to set access: oops")
+
+	proc.access = fakeAccess{}
+	proc.tree = blockstore.NewTreeCache(fakeTree{errStore: xerrors.New("oops")})
+	_, err = proc.Process(req)
+	require.EqualError(t, err, "while updating tree: failed to store roster: oops")
 
 	proc.tree = blockstore.NewTreeCache(fakeTree{errCommit: xerrors.New("oops")})
 	_, err = proc.Process(req)
@@ -249,18 +255,20 @@ func (sync fakeSync) Sync(ctx context.Context, players mino.Players, cfg blocksy
 
 type fakeSnapshot struct {
 	store.Snapshot
+
+	err error
 }
 
 func (snap fakeSnapshot) Get(key []byte) ([]byte, error) {
-	return []byte{}, nil
+	return []byte{}, snap.err
 }
 
 func (snap fakeSnapshot) Set(key []byte, value []byte) error {
-	return nil
+	return snap.err
 }
 
 func (snap fakeSnapshot) Delete(key []byte) error {
-	return nil
+	return snap.err
 }
 
 type fakeTree struct {
@@ -269,6 +277,7 @@ type fakeTree struct {
 	err       error
 	errStage  error
 	errCommit error
+	errStore  error
 }
 
 func (t fakeTree) GetRoot() []byte {
@@ -284,7 +293,7 @@ func (t fakeTree) Get(key []byte) ([]byte, error) {
 }
 
 func (t fakeTree) Stage(fn func(store.Snapshot) error) (hashtree.StagingTree, error) {
-	err := fn(fakeSnapshot{})
+	err := fn(fakeSnapshot{err: t.errStore})
 	if err != nil {
 		return nil, err
 	}

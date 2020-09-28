@@ -2,6 +2,7 @@ package viewchange
 
 import (
 	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/execution/baremetal"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/store"
@@ -13,7 +14,7 @@ import (
 
 const (
 	// ContractName is the name of the contract.
-	ContractName = "go.dedis.ch/dela/core/execution/baremetal/viewchange.Contract"
+	ContractName = "go.dedis.ch/dela.ViewChange"
 
 	// AuthorityArg is the key of the argument for the new authority.
 	AuthorityArg = "viewchange:authority"
@@ -24,7 +25,19 @@ const (
 	messageTooManyChanges   = "too many changes"
 	messageStorageFailure   = "storage failure"
 	messageDuplicate        = "duplicate in roster"
+	messageUnauthorized     = "unauthorized identity"
 )
+
+// RegisterContract registers the view change contract to the given execution
+// service.
+func RegisterContract(exec *baremetal.BareMetal, c Contract) {
+	exec.Set(ContractName, c)
+}
+
+// NewCreds creates new credentials for a view change contract execution.
+func NewCreds(id []byte) access.Credential {
+	return access.NewContractCreds(id, ContractName, "update")
+}
 
 // Manager is an extension of a normal transaction manager to help creating view
 // change ones.
@@ -67,14 +80,18 @@ func (mgr Manager) Make(roster authority.Authority) (txn.Transaction, error) {
 type Contract struct {
 	rosterKey []byte
 	rosterFac authority.Factory
+	accessKey []byte
+	access    access.Service
 	context   serde.Context
 }
 
 // NewContract creates a new viewchange contract.
-func NewContract(key []byte, fac authority.Factory) Contract {
+func NewContract(rKey, aKey []byte, rFac authority.Factory, srvc access.Service) Contract {
 	return Contract{
-		rosterKey: key,
-		rosterFac: fac,
+		rosterKey: rKey,
+		rosterFac: rFac,
+		accessKey: aKey,
+		access:    srvc,
 		context:   json.NewContext(),
 	}
 }
@@ -87,27 +104,27 @@ func (c Contract) Execute(tx txn.Transaction, snap store.Snapshot) error {
 	if err != nil {
 		reportErr(tx, xerrors.Errorf("incoming roster: %v", err))
 
-		return xerrors.Errorf(messageArgMissing)
+		return xerrors.New(messageArgMissing)
 	}
 
 	currData, err := snap.Get(c.rosterKey)
 	if err != nil {
 		reportErr(tx, xerrors.Errorf("reading store: %v", err))
 
-		return xerrors.Errorf(messageStorageEmpty)
+		return xerrors.New(messageStorageEmpty)
 	}
 
 	curr, err := c.rosterFac.AuthorityOf(c.context, currData)
 	if err != nil {
 		reportErr(tx, xerrors.Errorf("stored roster: %v", err))
 
-		return xerrors.Errorf(messageStorageCorrupted)
+		return xerrors.New(messageStorageCorrupted)
 	}
 
 	changeset := curr.Diff(roster)
 
 	if changeset.NumChanges() > 1 {
-		return xerrors.Errorf(messageTooManyChanges)
+		return xerrors.New(messageTooManyChanges)
 	}
 
 	for _, addr := range changeset.GetNewAddresses() {
@@ -118,13 +135,21 @@ func (c Contract) Execute(tx txn.Transaction, snap store.Snapshot) error {
 	}
 
 	// TODO: check the number of changes per batch instead of transaction wide.
-	// TODO: access rights control
+
+	creds := NewCreds(c.accessKey)
+
+	err = c.access.Match(snap, creds, tx.GetIdentity())
+	if err != nil {
+		reportErr(tx, xerrors.Errorf("access control: %v", err))
+
+		return xerrors.Errorf("%s: %v", messageUnauthorized, tx.GetIdentity())
+	}
 
 	err = snap.Set(c.rosterKey, tx.GetArg(AuthorityArg))
 	if err != nil {
 		reportErr(tx, xerrors.Errorf("writing store: %v", err))
 
-		return xerrors.Errorf(messageStorageFailure)
+		return xerrors.New(messageStorageFailure)
 	}
 
 	return nil
@@ -136,5 +161,5 @@ func reportErr(tx txn.Transaction, err error) {
 	dela.Logger.Warn().
 		Hex("ID", tx.GetID()).
 		Err(err).
-		Msg("transction refused")
+		Msg("transaction refused")
 }

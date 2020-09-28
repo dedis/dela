@@ -3,33 +3,54 @@ package access
 
 import (
 	"encoding"
-	"strings"
 
+	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/serde"
 )
 
 // Identity is an abstraction to uniquely identify a signer.
 type Identity interface {
 	serde.Message
+
 	encoding.TextMarshaler
+
+	Equal(other interface{}) bool
 }
 
-// Access is an abstraction to verify if an identity has access to a
-// specific rule.
-type Access interface {
-	serde.Message
-
-	Match(rule string, idents ...Identity) error
+// Credential is an abstraction of an entity that allows one or several
+// identities to access a given scope.
+//
+// As an example, the identifier is the username of a username/password pair. It
+// defines the component to compare against. Then the password is the list of
+// identities, verified beforehands, that will match, or won't, match to the
+// identifier underlying permissions. The rule defines which scope should be
+// verified so that the permissions can hold multiple of thoses.
+//
+//   -- 0xdeadbeef
+//      -- "myContract:sayHello"
+//         -- Alice
+//         -- Bob
+//      -- "myContract:sayBye"
+//         -- Bob
+//
+// The example above shows two credentials for the contract "myContract" that is
+// allowing two commands "sayHello" and "sayBye". Alice and Bob can say hello,
+// but only Bob is allow to say bye. Alice can prove that she's allowed by
+// providing the credential with the identifier 0xdeadbeef and the rule
+// "myContract:sayHello".
+type Credential interface {
+	GetID() []byte
+	GetRule() string
 }
 
-// Factory is the factory interface to deserialize accesses.
-type Factory interface {
-	serde.Factory
+// Service is an access control service that can read the storage to find
+// permissions associated to the credentials, or update existing ones.
+type Service interface {
+	// Match returns nil if the credentials can be matched to the group of
+	// identities.
+	Match(store store.Readable, creds Credential, idents ...Identity) error
 
-	AccessOf(serde.Context, []byte) (Access, error)
-}
-
-// Compile returns a compacted rule from the string segments.
-func Compile(segments ...string) string {
-	return strings.Join(segments, ":")
+	// Grant updates the store so that the group of identities will match the
+	// credentials.
+	Grant(store store.Snapshot, creds Credential, idents ...Identity) error
 }

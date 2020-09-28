@@ -11,6 +11,8 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/core/access"
+	"go.dedis.ch/dela/core/access/darc"
 	"go.dedis.ch/dela/core/execution/baremetal"
 	"go.dedis.ch/dela/core/execution/baremetal/viewchange"
 	"go.dedis.ch/dela/core/ordering"
@@ -156,6 +158,7 @@ func TestService_Setup(t *testing.T) {
 	srvc.hashFactory = crypto.NewSha256Factory()
 	srvc.tree = blockstore.NewTreeCache(fakeTree{})
 	srvc.genesis = blockstore.NewGenesisStore()
+	srvc.access = fakeAccess{}
 
 	rpc.Done()
 
@@ -541,8 +544,10 @@ func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()
 		exec := baremetal.NewExecution()
 		exec.Set(testContractName, testExec{})
 
+		accessSrvc := darc.NewService(json.NewContext())
+
 		rosterFac := authority.NewFactory(m.GetAddressFactory(), c.GetPublicKeyFactory())
-		RegisterRosterContract(exec, rosterFac)
+		RegisterRosterContract(exec, rosterFac, accessSrvc)
 
 		vs := simple.NewService(exec, txFac)
 
@@ -550,6 +555,7 @@ func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()
 			Mino:       m,
 			Cosi:       c,
 			Validation: vs,
+			Access:     accessSrvc,
 			Pool:       pool,
 			Tree:       tree,
 			DB:         db,
@@ -654,4 +660,14 @@ type fakeRosterFac struct {
 
 func (fakeRosterFac) AuthorityOf(serde.Context, []byte) (authority.Authority, error) {
 	return authority.FromAuthority(fake.NewAuthority(3, fake.NewSigner)), nil
+}
+
+type fakeAccess struct {
+	access.Service
+
+	err error
+}
+
+func (srvc fakeAccess) Grant(store.Snapshot, access.Credential, ...access.Identity) error {
+	return srvc.err
 }
