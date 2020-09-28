@@ -98,9 +98,11 @@ func TestService_Scenario_ViewChange(t *testing.T) {
 	defer clean()
 
 	for _, node := range nodes {
-		// Must be high enough for slow machines.
-		node.service.timeoutRound = 500 * time.Millisecond
-		node.service.timeoutViewchange = 10 * time.Second
+		// Short timeout to for the first round that we want to fail.
+		node.service.timeoutRound = 50 * time.Millisecond
+		// Long enough timeout so that any slow machine won't fail the test.
+		node.service.timeoutRoundAfterFailure = 30 * time.Second
+		node.service.timeoutViewchange = 30 * time.Second
 	}
 
 	// Simulate an issue with the leader transaction pool so that it does not

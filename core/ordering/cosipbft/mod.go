@@ -55,12 +55,14 @@ type Service struct {
 	val         validation.Service
 	verifierFac crypto.VerifierFactory
 
-	timeoutRound      time.Duration
-	timeoutViewchange time.Duration
+	timeoutRound             time.Duration
+	timeoutRoundAfterFailure time.Duration
+	timeoutViewchange        time.Duration
 
-	events  chan ordering.Event
-	closing chan struct{}
-	closed  chan struct{}
+	events      chan ordering.Event
+	closing     chan struct{}
+	closed      chan struct{}
+	failedRound bool
 }
 
 type serviceTemplate struct {
@@ -128,6 +130,7 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 	proc.logger = dela.Logger.With().Str("addr", param.Mino.GetAddress().String()).Logger()
 
 	pcparam := pbft.StateMachineParam{
+		Logger:          proc.logger,
 		Validation:      param.Validation,
 		Signer:          param.Cosi.GetSigner(),
 		VerifierFactory: param.Cosi.GetVerifierFactory(),
@@ -183,17 +186,18 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 	}
 
 	s := &Service{
-		processor:         proc,
-		me:                param.Mino.GetAddress(),
-		rpc:               rpc,
-		actor:             actor,
-		val:               param.Validation,
-		verifierFac:       param.Cosi.GetVerifierFactory(),
-		timeoutRound:      RoundTimeout,
-		timeoutViewchange: RoundTimeout,
-		events:            make(chan ordering.Event, 1),
-		closing:           make(chan struct{}),
-		closed:            make(chan struct{}),
+		processor:                proc,
+		me:                       param.Mino.GetAddress(),
+		rpc:                      rpc,
+		actor:                    actor,
+		val:                      param.Validation,
+		verifierFac:              param.Cosi.GetVerifierFactory(),
+		timeoutRound:             RoundTimeout,
+		timeoutRoundAfterFailure: RoundTimeout,
+		timeoutViewchange:        RoundTimeout,
+		events:                   make(chan ordering.Event, 1),
+		closing:                  make(chan struct{}),
+		closed:                   make(chan struct{}),
 	}
 
 	go func() {
@@ -422,8 +426,13 @@ func (s *Service) doRound(ctx context.Context) error {
 		// Only enters the loop if the node is not the leader. It has to wait
 		// for the new block, or the round timeout, to proceed.
 
+		timeout := s.timeoutRound
+		if s.failedRound {
+			timeout = s.timeoutRoundAfterFailure
+		}
+
 		select {
-		case <-time.After(s.timeoutRound):
+		case <-time.After(timeout):
 			if s.pool.Len() == 0 {
 				// When the pool of transactions is empty, the round is aborted
 				// and everything restart.
@@ -431,6 +440,9 @@ func (s *Service) doRound(ctx context.Context) error {
 			}
 
 			s.logger.Warn().Msg("round reached the timeout")
+
+			// Mark that the view change happened during this round.
+			s.failedRound = true
 
 			ctx, cancel := context.WithTimeout(ctx, s.timeoutViewchange)
 
@@ -473,6 +485,8 @@ func (s *Service) doRound(ctx context.Context) error {
 			cancel()
 			return nil
 		case <-s.events:
+			s.failedRound = false
+
 			// A block has been created meaning that the round is over.
 			return nil
 		case <-s.closing:
