@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	"github.com/rs/zerolog"
-	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/core"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
@@ -117,6 +116,7 @@ type pbftsm struct {
 // StateMachineParam is a structure to pass the different components of the PBFT
 // state machine.
 type StateMachineParam struct {
+	Logger          zerolog.Logger
 	Validation      validation.Service
 	VerifierFactory crypto.VerifierFactory
 	Signer          crypto.Signer
@@ -130,7 +130,7 @@ type StateMachineParam struct {
 // NewStateMachine returns a new state machine.
 func NewStateMachine(param StateMachineParam) StateMachine {
 	return &pbftsm{
-		logger:      dela.Logger,
+		logger:      param.Logger,
 		watcher:     core.NewWatcher(),
 		hashFac:     crypto.NewSha256Factory(),
 		val:         param.Validation,
