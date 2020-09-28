@@ -25,7 +25,7 @@ func TestMinogrpc_New(t *testing.T) {
 
 	cert := m.GetCertificate()
 	require.NotNil(t, cert)
-
+	<-m.started
 	require.NoError(t, m.GracefulStop())
 
 	addr = ParseAddress("123.4.5.6", 1)
