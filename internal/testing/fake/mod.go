@@ -6,6 +6,7 @@
 package fake
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -19,10 +20,12 @@ import (
 	"io"
 	"math/big"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/crypto"
@@ -1110,4 +1113,42 @@ func (f AccessControlFactory) Deserialize(serde.Context, []byte) (serde.Message,
 // AccessOf implements arc.AccessControlFactory
 func (f AccessControlFactory) AccessOf(serde.Context, []byte) (access.Access, error) {
 	return NewAccessControl(), f.err
+}
+
+// WaitLog is a helper to wait for a log to be printed. It executes the callback
+// when it detects it.
+func WaitLog(msg string, t time.Duration, cb func()) (zerolog.Logger, *bytes.Buffer) {
+	reader, writer := io.Pipe()
+	done := make(chan struct{})
+
+	buffer := new(bytes.Buffer)
+	tee := io.TeeReader(reader, buffer)
+
+	go func() {
+		select {
+		case <-done:
+		case <-time.After(t):
+			writer.Close()
+		}
+	}()
+
+	go func() {
+		defer cb()
+		defer close(done)
+
+		data := make([]byte, 1024)
+
+		for {
+			n, err := tee.Read(data)
+			if err != nil {
+				return
+			}
+
+			if strings.Contains(string(data[:n]), fmt.Sprintf(`"%s"`, msg)) {
+				return
+			}
+		}
+	}()
+
+	return zerolog.New(writer), buffer
 }
