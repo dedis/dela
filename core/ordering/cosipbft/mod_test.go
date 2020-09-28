@@ -205,6 +205,7 @@ func TestService_Main(t *testing.T) {
 	srvc := &Service{processor: newProcessor()}
 	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 	srvc.closing = make(chan struct{})
+	srvc.closed = make(chan struct{})
 
 	close(srvc.closing)
 
@@ -214,19 +215,26 @@ func TestService_Main(t *testing.T) {
 	srvc.tree = blockstore.NewTreeCache(fakeTree{err: xerrors.New("oops")})
 	srvc.closing = make(chan struct{})
 	srvc.started = make(chan struct{})
+	srvc.closed = make(chan struct{})
 	close(srvc.started)
 	err = srvc.main()
 	require.EqualError(t, err, "refreshing roster: reading roster: read from tree: oops")
 
 	srvc.tree.Set(fakeTree{})
 	srvc.pool = badPool{}
+	srvc.closed = make(chan struct{})
 	err = srvc.main()
 	require.EqualError(t, err, "refreshing roster: updating tx pool: oops")
 
+	logger, buffer := fake.WaitLog("round failed", 2*time.Second, func() { close(srvc.closing) })
+
+	srvc.logger = logger
 	srvc.pool = mem.NewPool()
 	srvc.pbftsm = fakeSM{errLeader: xerrors.New("oops")}
+	srvc.closed = make(chan struct{})
 	err = srvc.main()
-	require.EqualError(t, err, "round failed: reading leader: oops")
+	require.NoError(t, err)
+	require.Contains(t, buffer.String(), "round failed")
 }
 
 func TestService_DoRound(t *testing.T) {

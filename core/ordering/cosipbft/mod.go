@@ -3,6 +3,7 @@ package cosipbft
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	"go.dedis.ch/dela"
@@ -32,6 +33,13 @@ const (
 	// RoundTimeout is the maximum of time the service waits for an event to
 	// happen.
 	RoundTimeout = 10 * time.Second
+
+	// RoundWait is the constant value of the exponential backoff use between
+	// round failures.
+	RoundWait = 5 * time.Millisecond
+
+	// RoundMaxWait is the maximum amount for the backoff.
+	RoundMaxWait = 5 * time.Minute
 
 	rpcName = "cosipbft"
 )
@@ -200,18 +208,7 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 		closed:                   make(chan struct{}),
 	}
 
-	go func() {
-		err := s.main()
-		if err != nil {
-			select {
-			case <-s.closing:
-			default:
-				s.logger.Err(err).Msg("main loop failed")
-			}
-		}
-
-		close(s.closed)
-	}()
+	go s.main()
 
 	go s.watchBlocks()
 
@@ -368,6 +365,8 @@ func (s *Service) refreshRoster() error {
 }
 
 func (s *Service) main() error {
+	defer close(s.closed)
+
 	select {
 	case <-s.started:
 		// A genesis block has been set, the node will then follow the chain
@@ -386,7 +385,13 @@ func (s *Service) main() error {
 
 	s.logger.Debug().Msg("node has started")
 
+	backoff := float64(0)
+
 	for {
+		// When a round failure occurs, it sleeps with a given backoff to give a
+		// chance to the system to recover without exhausting the resources.
+		time.Sleep(calculateBackoff(backoff))
+
 		select {
 		case <-s.closing:
 			return nil
@@ -405,7 +410,13 @@ func (s *Service) main() error {
 			cancel()
 
 			if err != nil {
-				return xerrors.Errorf("round failed: %v", err)
+				if calculateBackoff(backoff+1) < RoundMaxWait {
+					backoff++
+				}
+
+				s.logger.Err(err).Msg("round failed")
+			} else {
+				backoff = 0
 			}
 		}
 	}
@@ -672,4 +683,8 @@ type observer struct {
 
 func (obs observer) NotifyCallback(event interface{}) {
 	obs.ch <- event.(ordering.Event)
+}
+
+func calculateBackoff(backoff float64) time.Duration {
+	return time.Duration(math.Pow(2, backoff)) * RoundWait
 }
