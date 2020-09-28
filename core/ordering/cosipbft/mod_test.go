@@ -234,11 +234,12 @@ func TestService_DoRound(t *testing.T) {
 	ch := make(chan pbft.State)
 
 	srvc := &Service{
-		processor:    newProcessor(),
-		me:           fake.NewAddress(1),
-		rpc:          rpc,
-		timeoutRound: time.Millisecond,
-		closing:      make(chan struct{}),
+		processor:                newProcessor(),
+		me:                       fake.NewAddress(1),
+		rpc:                      rpc,
+		timeoutRound:             time.Millisecond,
+		timeoutRoundAfterFailure: time.Millisecond,
+		closing:                  make(chan struct{}),
 	}
 	srvc.blocks = blockstore.NewInMemory()
 	srvc.sync = fakeSync{}
