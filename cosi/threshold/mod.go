@@ -39,8 +39,10 @@ func ByzantineThreshold(n int) int {
 // CoSi is an implementation of the cosi.CollectiveSigning interface that is
 // using streams to parallelize the work.
 type CoSi struct {
-	mino      mino.Mino
-	signer    crypto.AggregateSigner
+	mino   mino.Mino
+	signer crypto.AggregateSigner
+	// Stores the cosi.Threshold function. It will always contain a valid
+	// function by construction.
 	threshold atomic.Value
 }
 
