@@ -33,7 +33,7 @@ func TestPermission_GetRules(t *testing.T) {
 	require.Len(t, perm.GetRules(), 2)
 }
 
-func TestPermission_Evolve(t *testing.T) {
+func TestPermission_Allow(t *testing.T) {
 	perm := NewPermission()
 
 	idents := []access.Identity{
@@ -41,20 +41,34 @@ func TestPermission_Evolve(t *testing.T) {
 		fakeIdentity{buffer: []byte{0xbb}},
 	}
 
-	perm.Evolve("fake", true, idents...)
+	perm.Allow("fake", idents...)
 	require.Len(t, perm.rules, 1)
 
-	perm.Evolve("another", true, idents...)
+	perm.Allow("another", idents...)
 	require.Len(t, perm.rules, 2)
 
-	perm.Evolve("fake", true)
+	perm.Allow("fake")
 	require.Len(t, perm.rules, 2)
 
-	perm.Evolve("fake", false, idents...)
+	perm.Deny("fake", idents...)
 	require.Len(t, perm.rules, 1)
 
-	perm.Evolve("fake", false, idents...)
+	perm.Deny("fake", idents...)
 	require.Len(t, perm.rules, 1)
+}
+
+func TestPermission_Deny(t *testing.T) {
+	perm := NewPermission()
+	perm.rules["fake"] = NewExpression(NewIdentitySet(newIdentity("A")))
+
+	perm.Deny("fake")
+	require.Len(t, perm.rules, 1)
+
+	perm.Deny("fake", newIdentity("B"))
+	require.Len(t, perm.rules, 1)
+
+	perm.Deny("fake", newIdentity("A"))
+	require.Len(t, perm.rules, 0)
 }
 
 func TestPermission_Match(t *testing.T) {
@@ -64,7 +78,7 @@ func TestPermission_Match(t *testing.T) {
 	}
 
 	perm := NewPermission()
-	perm.Evolve("fake", true, idents...)
+	perm.Allow("fake", idents...)
 
 	err := perm.Match("fake", idents...)
 	require.NoError(t, err)

@@ -19,7 +19,7 @@ func RegisterPermissionFormat(c serde.Format, f serde.FormatEngine) {
 // Disjunctive Normal Form to represent the groups of identities allowed for a
 // given rule.
 //
-// - implements darc.Permission
+// - implements types.Permission
 type DisjunctivePermission struct {
 	rules map[string]*Expression
 }
@@ -30,7 +30,7 @@ type PermissionOption func(*DisjunctivePermission)
 // WithRule is an option to grant a given group access to a rule.
 func WithRule(rule string, group ...access.Identity) PermissionOption {
 	return func(perm *DisjunctivePermission) {
-		perm.Evolve(rule, true, group...)
+		perm.Allow(rule, group...)
 	}
 }
 
@@ -65,29 +65,38 @@ func (perm *DisjunctivePermission) GetRules() map[string]*Expression {
 	return rules
 }
 
-// Evolve implements darc.Permission. It grants or remove the access to a group
-// to a given rule.
-func (perm *DisjunctivePermission) Evolve(rule string, grant bool, group ...access.Identity) {
+// Allow implements types.Permission. It grants the permission to the group of
+// identities as a single entity.
+func (perm *DisjunctivePermission) Allow(rule string, group ...access.Identity) {
 	expr, ok := perm.rules[rule]
 	if !ok {
-		if !grant {
-			return
-		}
-
 		expr = NewExpression()
 	}
 
-	expr.Evolve(grant, group)
+	expr.Allow(group)
 
+	perm.rules[rule] = expr
+}
+
+// Deny implements types.Permission. It denies the permission to the group of
+// identities as a single entity by removing every subset matching this
+// superset.
+func (perm *DisjunctivePermission) Deny(rule string, group ...access.Identity) {
+	expr, ok := perm.rules[rule]
+	if !ok {
+		return
+	}
+
+	expr.Deny(group)
+
+	// Clean the the rule if it was the last group allowed.
 	if len(expr.matches) == 0 {
 		delete(perm.rules, rule)
-	} else {
-		perm.rules[rule] = expr
 	}
 }
 
-// Match implements arc.Permission. It returns true if the rule exists and
-// the group of identities is associated with it.
+// Match implements types.Permission. It returns true if the rule exists and the
+// group of identities is associated with it.
 func (perm *DisjunctivePermission) Match(rule string, group ...access.Identity) error {
 	if len(group) == 0 {
 		return xerrors.New("expect at least one identity")
@@ -141,7 +150,7 @@ func (f permFac) Deserialize(ctx serde.Context, data []byte) (serde.Message, err
 	return f.PermissionOf(ctx, data)
 }
 
-// PermissionOf implements darc.PermissionFactory.
+// PermissionOf implements types.PermissionFactory.
 func (f permFac) PermissionOf(ctx serde.Context, data []byte) (Permission, error) {
 	format := permFormats.Get(ctx.GetFormat())
 

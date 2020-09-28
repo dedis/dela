@@ -59,7 +59,9 @@ func (permFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	return data, nil
 }
 
-func encodeExpression(ctx serde.Context, expr *types.Expression) (m ExpressionJSON, _ error) {
+func encodeExpression(ctx serde.Context, expr *types.Expression) (ExpressionJSON, error) {
+
+	var m ExpressionJSON
 	identities := make(types.IdentitySet, 0)
 
 	matches := make([][]int, len(expr.GetIdentitySets()))

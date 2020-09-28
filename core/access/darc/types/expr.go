@@ -76,25 +76,35 @@ func (expr *Expression) GetIdentitySets() []IdentitySet {
 	return append([]IdentitySet{}, expr.matches...)
 }
 
-// Evolve returns a new expression with the group added in the list of
-// authorized identities.
-func (expr *Expression) Evolve(grant bool, group []access.Identity) {
+// Allow adds the group of identities as long as there is no duplicate.
+func (expr *Expression) Allow(group []access.Identity) {
+	iset := NewIdentitySet(group...)
+	if len(iset) == 0 {
+		return
+	}
+
+	for _, match := range expr.matches {
+		if match.IsSuperset(iset) {
+			// The group is already allowed.
+			return
+		}
+	}
+
+	expr.matches = append(expr.matches, iset)
+}
+
+// Deny removes the group of identities from the list of matching subsets.
+func (expr *Expression) Deny(group []access.Identity) {
 	iset := NewIdentitySet(group...)
 	if len(iset) == 0 {
 		return
 	}
 
 	for i, match := range expr.matches {
-		if match.IsSuperset(iset) {
-			if !grant {
-				expr.matches = append(expr.matches[:i], expr.matches[i+1:]...)
-			}
-
-			return
+		if iset.IsSuperset(match) {
+			expr.matches = append(expr.matches[:i], expr.matches[i+1:]...)
 		}
 	}
-
-	expr.matches = append(expr.matches, iset)
 }
 
 // Match returns nil if the group are allowed for the rule, otherwise it returns

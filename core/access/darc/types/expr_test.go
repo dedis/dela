@@ -40,25 +40,39 @@ func TestExpression_GetIdentitySets(t *testing.T) {
 	require.Len(t, expr.GetIdentitySets(), 2)
 }
 
-func TestExpression_Evolve(t *testing.T) {
+func TestExpression_Allow(t *testing.T) {
 	expr := NewExpression()
 
-	expr.Evolve(true, nil)
+	expr.Allow(nil)
 	require.Len(t, expr.matches, 0)
 
 	idents := []access.Identity{newIdentity("A"), newIdentity("B")}
 
-	expr.Evolve(true, idents)
+	expr.Allow(idents)
 	require.Len(t, expr.matches, 1)
 	require.Len(t, expr.matches[0], 2)
 
-	expr.Evolve(true, idents)
+	expr.Allow(idents)
 	require.Len(t, expr.matches, 1)
 
-	expr.Evolve(true, []access.Identity{newIdentity("A"), newIdentity("C")})
+	expr.Allow([]access.Identity{newIdentity("A"), newIdentity("C")})
+	require.Len(t, expr.matches, 2)
+}
+
+func TestExpression_Deny(t *testing.T) {
+	expr := NewExpression()
+	expr.matches = []IdentitySet{
+		NewIdentitySet(newIdentity("A"), newIdentity("B")),
+		NewIdentitySet(newIdentity("C")),
+	}
+
+	expr.Deny(nil)
 	require.Len(t, expr.matches, 2)
 
-	expr.Evolve(false, idents)
+	expr.Deny([]access.Identity{newIdentity("A")})
+	require.Len(t, expr.matches, 2)
+
+	expr.Deny([]access.Identity{newIdentity("A"), newIdentity("B")})
 	require.Len(t, expr.matches, 1)
 }
 
@@ -66,7 +80,7 @@ func TestExpression_Match(t *testing.T) {
 	idents := []access.Identity{newIdentity("A"), newIdentity("B")}
 
 	expr := NewExpression()
-	expr.Evolve(true, idents)
+	expr.Allow(idents)
 
 	err := expr.Match(idents)
 	require.NoError(t, err)

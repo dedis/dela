@@ -24,7 +24,7 @@ func TestService_Match(t *testing.T) {
 	creds := access.NewContractCreds([]byte{0xaa}, "test", "match")
 
 	perm := types.NewPermission()
-	perm.Evolve(creds.GetRule(), true, alice.GetPublicKey())
+	perm.Allow(creds.GetRule(), alice.GetPublicKey())
 	data, err := perm.Serialize(testCtx)
 	require.NoError(t, err)
 
@@ -106,7 +106,7 @@ type badPerm struct {
 	types.Permission
 }
 
-func (badPerm) Evolve(string, bool, ...access.Identity) {}
+func (badPerm) Allow(string, ...access.Identity) {}
 
 func (badPerm) Serialize(serde.Context) ([]byte, error) {
 	return nil, xerrors.New("oops")
