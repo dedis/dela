@@ -668,6 +668,6 @@ type fakeAccess struct {
 	err error
 }
 
-func (srvc fakeAccess) Grant(store.Snapshot, access.Credentials, ...access.Identity) error {
+func (srvc fakeAccess) Grant(store.Snapshot, access.Credential, ...access.Identity) error {
 	return srvc.err
 }

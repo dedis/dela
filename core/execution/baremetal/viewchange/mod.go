@@ -35,7 +35,7 @@ func RegisterContract(exec *baremetal.BareMetal, c Contract) {
 }
 
 // NewCreds creates new credentials for a view change contract execution.
-func NewCreds(id []byte) access.Credentials {
+func NewCreds(id []byte) access.Credential {
 	return access.NewContractCreds(id, ContractName, "update")
 }
 

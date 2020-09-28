@@ -27,7 +27,7 @@ func NewService(ctx serde.Context) Service {
 // Match implements access.Service. It returns nil if the group of identities
 // have access to the given credentials, otherwise a meaningful error on the
 // reason it does not have access.
-func (srvc Service) Match(store store.Readable, creds access.Credentials, idents ...access.Identity) error {
+func (srvc Service) Match(store store.Readable, creds access.Credential, idents ...access.Identity) error {
 	perm, err := srvc.readPermission(store, creds.GetID())
 	if err != nil {
 		return xerrors.Errorf("store failed: %v", err)
@@ -47,7 +47,7 @@ func (srvc Service) Match(store store.Readable, creds access.Credentials, idents
 
 // Grant implements access.Service. It updates or creates the credentials and
 // grant the access to the group of identities.
-func (srvc Service) Grant(store store.Snapshot, creds access.Credentials, idents ...access.Identity) error {
+func (srvc Service) Grant(store store.Snapshot, creds access.Credential, idents ...access.Identity) error {
 	perm, err := srvc.readPermission(store, creds.GetID())
 	if err != nil {
 		return xerrors.Errorf("store failed: %v", err)

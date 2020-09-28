@@ -17,7 +17,7 @@ type Identity interface {
 	Equal(other interface{}) bool
 }
 
-// Credentials is an abstraction of an entity that allows one or several
+// Credential is an abstraction of an entity that allows one or several
 // identities to access a given scope.
 //
 // As an example, the identifier is the username of a username/password pair. It
@@ -26,16 +26,19 @@ type Identity interface {
 // identifier underlying permissions. The rule defines which scope should be
 // verified so that the permissions can hold multiple of thoses.
 //
-//   []byte{0xde, 0xad, 0xbe, 0xef} -> {
-//     "myContract:sayHello": ["Alice", "Bob"],
-//     "myContract:sayBye": ["Bob"],
-//   }
+//   -- 0xdeadbeef
+//      -- "myContract:sayHello"
+//         -- Alice
+//         -- Bob
+//      -- "myContract:sayBye"
+//         -- Bob
 //
-// The example above shows an access control for the contract "myContract" that
-// is allowing two commands "sayHello" and "sayBye". Alice and Bob can say
-// hello, but only Bob is allow to say bye. Alice can prove that she's allowed
-// by providing credentials with the identifier 0xdeadbeef.
-type Credentials interface {
+// The example above shows two credentials for the contract "myContract" that is
+// allowing two commands "sayHello" and "sayBye". Alice and Bob can say hello,
+// but only Bob is allow to say bye. Alice can prove that she's allowed by
+// providing the credential with the identifier 0xdeadbeef and the rule
+// "myContract:sayHello".
+type Credential interface {
 	GetID() []byte
 	GetRule() string
 }
@@ -45,9 +48,9 @@ type Credentials interface {
 type Service interface {
 	// Match returns nil if the credentials can be matched to the group of
 	// identities.
-	Match(store store.Readable, creds Credentials, idents ...Identity) error
+	Match(store store.Readable, creds Credential, idents ...Identity) error
 
 	// Grant updates the store so that the group of identities will match the
 	// credentials.
-	Grant(store store.Snapshot, creds Credentials, idents ...Identity) error
+	Grant(store store.Snapshot, creds Credential, idents ...Identity) error
 }

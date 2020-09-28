@@ -133,6 +133,6 @@ type fakeAccess struct {
 	err error
 }
 
-func (srvc fakeAccess) Match(store.Readable, access.Credentials, ...access.Identity) error {
+func (srvc fakeAccess) Match(store.Readable, access.Credential, ...access.Identity) error {
 	return srvc.err
 }
