@@ -5,12 +5,15 @@ import (
 	"sync"
 
 	"github.com/rs/xid"
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
 	"go.dedis.ch/dela/mino/minogrpc/session"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 // RPC represents an RPC that has been registered by a client, which allows
@@ -211,6 +214,10 @@ func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, m
 		for {
 			p, err := stream.Recv()
 			if err != nil {
+				if status.Code(err) == codes.Unknown {
+					dela.Logger.Err(err).Msg("stream to root failed")
+				}
+
 				return
 			}
 

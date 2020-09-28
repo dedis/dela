@@ -513,8 +513,8 @@ func (m *pbftsm) verifyPrepare(tree hashtree.Tree, block types.Block, r *round, 
 		return xerrors.Errorf("mismatch tree root '%v' != '%v'", root, block.GetTreeRoot())
 	}
 
-	if m.blocks.Len()+1 != block.GetIndex() {
-		return xerrors.Errorf("mismatch index %d != %d", block.GetIndex(), m.blocks.Len()+1)
+	if m.blocks.Len() != block.GetIndex() {
+		return xerrors.Errorf("mismatch index %d != %d", block.GetIndex(), m.blocks.Len())
 	}
 
 	lastID, err := m.getLatestID()

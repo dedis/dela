@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"encoding/base64"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -10,18 +12,23 @@ import (
 	"go.dedis.ch/dela/core/execution/baremetal"
 	"go.dedis.ch/dela/core/ordering/cosipbft"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
+	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
+	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store/hashtree/binprefix"
 	"go.dedis.ch/dela/core/store/kv"
 	poolimpl "go.dedis.ch/dela/core/txn/pool/gossip"
 	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/cosi/flatcosi"
+	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/gossip"
 	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
+
+const privateKeyFile = "private.key"
 
 type minimal struct{}
 
@@ -80,7 +87,11 @@ func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("injector: %v", err)
 	}
 
-	signer := bls.NewSigner()
+	signer, err := loadOrCreateSigner(flags.Path("config"))
+	if err != nil {
+		return xerrors.Errorf("signer: %v", err)
+	}
+
 	cosi := flatcosi.NewFlat(m, signer)
 	exec := baremetal.NewExecution()
 	access := darc.NewService(json.NewContext())
@@ -101,6 +112,8 @@ func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("db: %v", err)
 	}
 
+	tree := binprefix.NewMerkleTree(db, binprefix.Nonce{})
+
 	param := cosipbft.ServiceParam{
 		Mino:       m,
 		Cosi:       cosi,
@@ -108,10 +121,33 @@ func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
 		Access:     access,
 		Pool:       pool,
 		DB:         db,
-		Tree:       binprefix.NewMerkleTree(db, binprefix.Nonce{}),
+		Tree:       tree,
 	}
 
-	srvc, err := cosipbft.NewService(param)
+	err = tree.Load()
+	if err != nil {
+		return xerrors.Errorf("failed to load tree: %v", err)
+	}
+
+	genstore := blockstore.NewGenesisDiskStore(db, types.NewGenesisFactory(rosterFac))
+
+	err = genstore.Load()
+	if err != nil {
+		return xerrors.Errorf("failed to load genesis: %v", err)
+	}
+
+	blockFac := types.NewBlockFactory(vs.GetFactory())
+	csFac := authority.NewChangeSetFactory(m.GetAddressFactory(), cosi.GetPublicKeyFactory())
+	linkFac := types.NewLinkFactory(blockFac, cosi.GetSignatureFactory(), csFac)
+
+	blocks := blockstore.NewDiskStore(db, linkFac)
+
+	err = blocks.Load()
+	if err != nil {
+		return xerrors.Errorf("failed to load blocks: %v", err)
+	}
+
+	srvc, err := cosipbft.NewService(param, cosipbft.WithGenesisStore(genstore), cosipbft.WithBlockStore(blocks))
 	if err != nil {
 		return xerrors.Errorf("service: %v", err)
 	}
@@ -122,4 +158,57 @@ func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
 	inj.Inject(vs)
 
 	return nil
+}
+
+func loadOrCreateSigner(cfg string) (crypto.AggregateSigner, error) {
+	path := filepath.Join(cfg, privateKeyFile)
+
+	_, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		signer := bls.NewSigner()
+
+		data, err := signer.MarshalBinary()
+		if err != nil {
+			return nil, xerrors.Errorf("failed to marshal signer: %v", err)
+		}
+
+		file, err := os.Create(path)
+		if err != nil {
+			return nil, xerrors.Errorf("failed to create file: %v", err)
+		}
+
+		defer file.Close()
+
+		enc := base64.NewEncoder(base64.StdEncoding, file)
+		defer enc.Close()
+
+		_, err = enc.Write(data)
+		if err != nil {
+			return nil, xerrors.Errorf("while writing to file: %v", err)
+		}
+
+		return signer, nil
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to open file: %v", err)
+	}
+
+	defer file.Close()
+
+	dec := base64.NewDecoder(base64.StdEncoding, file)
+
+	buffer := make([]byte, 128)
+	n, err := dec.Read(buffer)
+	if err != nil {
+		return nil, xerrors.Errorf("while reading file: %v", err)
+	}
+
+	signer, err := bls.NewSignerFromBytes(buffer[:n])
+	if err != nil {
+		return nil, xerrors.Errorf("failed to unmarshal signer: %v", err)
+	}
+
+	return signer, nil
 }

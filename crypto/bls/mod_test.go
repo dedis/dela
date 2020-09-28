@@ -339,6 +339,27 @@ func TestSigner_Aggregate(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestSigner_MarshalBinary(t *testing.T) {
+	signer := NewSigner()
+
+	sig, err := signer.Sign([]byte{1, 2, 3})
+	require.NoError(t, err)
+
+	data, err := signer.MarshalBinary()
+	require.NoError(t, err)
+
+	next, err := NewSignerFromBytes(data)
+	require.NoError(t, err)
+	require.NoError(t, next.GetPublicKey().Verify([]byte{1, 2, 3}, sig))
+
+	signer.private = badScalar{}
+	_, err = signer.MarshalBinary()
+	require.EqualError(t, err, "while marshaling scalar: oops")
+
+	_, err = NewSignerFromBytes(nil)
+	require.EqualError(t, err, "while unmarshaling scalar: UnmarshalBinary: wrong size buffer")
+}
+
 // -----------------------------------------------------------------------------
 // Utility functions
 
@@ -347,5 +368,13 @@ type badPoint struct {
 }
 
 func (p badPoint) MarshalBinary() ([]byte, error) {
+	return nil, xerrors.New("oops")
+}
+
+type badScalar struct {
+	kyber.Scalar
+}
+
+func (s badScalar) MarshalBinary() ([]byte, error) {
 	return nil, xerrors.New("oops")
 }

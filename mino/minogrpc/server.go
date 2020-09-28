@@ -335,9 +335,6 @@ func (o *overlayServer) tableFromHeaders(h metadata.MD) (router.RoutingTable, bo
 	}
 
 	values = h.Get(headerAddressKey)
-	if len(values) == 0 {
-		return nil, false, xerrors.New("headers are empty")
-	}
 
 	addrs := make([]mino.Address, len(values))
 	for i, addr := range values {

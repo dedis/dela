@@ -111,8 +111,51 @@ func TestMemcoin_Scenario_1(t *testing.T) {
 	require.EqualError(t, err, `Required flag "member" not set`)
 }
 
+func TestMemcoin_Scenario_2(t *testing.T) {
+	node1 := filepath.Join(os.TempDir(), "memcoin-2", "node1")
+
+	setupChain(t, node1, 2210)
+
+	// TODO: correctly stop the node then restart it.
+	defer func() {
+		os.RemoveAll(node1)
+	}()
+}
+
 // -----------------------------------------------------------------------------
 // Utility functions
+
+func setupChain(t *testing.T, node string, port uint16) {
+	sigs := make(chan os.Signal)
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	cfg := config{Channel: sigs, Writer: ioutil.Discard}
+
+	go func() {
+		defer wg.Done()
+
+		err := runWithCfg(makeNodeArg(node, port), cfg)
+		require.NoError(t, err)
+	}()
+
+	defer func() {
+		// Simulate a Ctrl+C
+		close(sigs)
+		wg.Wait()
+	}()
+
+	waitDaemon(t, []string{node})
+
+	// Setup the chain with nodes 1.
+	args := append(
+		[]string{os.Args[0], "--config", node, "ordering", "setup"},
+		getExport(t, node)...,
+	)
+
+	err := run(args)
+	require.NoError(t, err)
+}
 
 func waitDaemon(t *testing.T, daemons []string) {
 	num := 50

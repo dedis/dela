@@ -1,12 +1,17 @@
 package blockstore
 
 import (
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
+	"go.dedis.ch/dela/core/store/kv"
 	"go.dedis.ch/dela/internal/testing/fake"
+	"golang.org/x/xerrors"
 )
 
 func TestCachedGenesis_Get(t *testing.T) {
@@ -51,4 +56,124 @@ func TestCachedGenesis_Exists(t *testing.T) {
 
 	store.Set(types.Genesis{})
 	require.True(t, store.Exists())
+}
+
+func TestGenesisDiskStore_Load(t *testing.T) {
+	dir, err := ioutil.TempDir(os.TempDir(), "dela-blockstore-")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
+	db, err := kv.New(filepath.Join(dir, "test.db"))
+	require.NoError(t, err)
+
+	store := NewGenesisDiskStore(db, makeFac())
+
+	err = store.Load()
+	require.NoError(t, err)
+	require.False(t, store.set)
+
+	err = store.Set(makeGenesis(t))
+	require.NoError(t, err)
+
+	// Reset the store.
+	store = NewGenesisDiskStore(db, makeFac())
+
+	err = store.Load()
+	require.NoError(t, err)
+	require.True(t, store.set)
+
+	store.fac = fake.NewBadMessageFactory()
+	err = store.Load()
+	require.EqualError(t, err, "malformed value: fake error")
+
+	store.fac = fake.MessageFactory{}
+	err = store.Load()
+	require.EqualError(t, err, "unsupported message 'fake.Message'")
+}
+
+func TestGenesisDiskStore_Set(t *testing.T) {
+	dir, err := ioutil.TempDir(os.TempDir(), "dela-blockstore-")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
+	db, err := kv.New(filepath.Join(dir, "test.db"))
+	require.NoError(t, err)
+
+	store := NewGenesisDiskStore(db, makeFac())
+
+	err = store.Set(makeGenesis(t))
+	require.NoError(t, err)
+
+	var data []byte
+	db.View(func(tx kv.ReadableTx) error {
+		data = tx.GetBucket(genesisBucket).Get(genesisKey)
+		return nil
+	})
+
+	require.NotEmpty(t, data)
+
+	store = NewGenesisDiskStore(badDB{}, makeFac())
+	err = store.Set(makeGenesis(t))
+	require.EqualError(t, err, "store failed: bucket: oops")
+
+	store.db = badDB{bucket: badBucket{}}
+	err = store.Set(makeGenesis(t))
+	require.EqualError(t, err, "store failed: while writing to bucket: oops")
+
+	store.context = fake.NewBadContext()
+	err = store.Set(makeGenesis(t))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to serialize genesis: ")
+}
+
+// -----------------------------------------------------------------------------
+// Utility functions
+
+func makeFac() types.GenesisFactory {
+	authFac := authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
+
+	return types.NewGenesisFactory(authFac)
+}
+
+func makeGenesis(t *testing.T) types.Genesis {
+	ro := authority.FromAuthority(fake.NewAuthority(1, fake.NewSigner))
+
+	genesis, err := types.NewGenesis(ro)
+	require.NoError(t, err)
+
+	return genesis
+}
+
+type badBucket struct {
+	kv.Bucket
+}
+
+func (badBucket) Set(key, value []byte) error {
+	return xerrors.New("oops")
+}
+
+type badTx struct {
+	kv.WritableTx
+
+	bucket kv.Bucket
+}
+
+func (tx badTx) GetBucketOrCreate(name []byte) (kv.Bucket, error) {
+	if tx.bucket != nil {
+		return tx.bucket, nil
+	}
+
+	return nil, xerrors.New("oops")
+}
+
+type badDB struct {
+	kv.DB
+
+	bucket kv.Bucket
+}
+
+func (db badDB) Update(fn func(kv.WritableTx) error) error {
+	return fn(badTx{bucket: db.bucket})
 }

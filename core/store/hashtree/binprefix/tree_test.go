@@ -31,6 +31,19 @@ func TestTree_Len(t *testing.T) {
 	require.Equal(t, 2, tree.Len())
 }
 
+func TestTree_Load(t *testing.T) {
+	tree := NewTree(Nonce{})
+
+	bucket := makeBucket(t)
+
+	err := tree.FillFromBucket(bucket)
+	require.NoError(t, err)
+
+	tree.factory = fake.NewBadMessageFactory()
+	err = tree.FillFromBucket(bucket)
+	require.EqualError(t, err, "while scanning: tree node malformed: fake error")
+}
+
 func TestTree_Search(t *testing.T) {
 	tree := NewTree(Nonce{})
 
@@ -182,8 +195,8 @@ func TestTree_Clone(t *testing.T) {
 	clone := tree.Clone()
 	require.Equal(t, tree.Len(), clone.Len())
 
-	require.NoError(t, tree.Update(crypto.NewSha256Factory(), &fakeBucket{}))
-	require.NoError(t, clone.Update(crypto.NewSha256Factory(), &fakeBucket{}))
+	require.NoError(t, tree.CalculateRoot(crypto.NewSha256Factory(), &fakeBucket{}))
+	require.NoError(t, clone.CalculateRoot(crypto.NewSha256Factory(), &fakeBucket{}))
 	require.Equal(t, tree.root.GetHash(), clone.root.GetHash())
 }
 
@@ -236,11 +249,13 @@ func TestEmptyNode_Prepare(t *testing.T) {
 	require.Equal(t, hash, node.hash)
 
 	calls := &fake.Call{}
+	node.hash = nil
 	_, err = node.Prepare([]byte{1}, new(big.Int).SetBytes([]byte{2}), nil, fake.NewHashFactory(&fake.Hash{Call: calls}))
 	require.NoError(t, err)
 	require.Equal(t, 1, calls.Len())
 	require.Equal(t, "\x00\x01\x02\x03\x00", string(calls.Get(0, 0).([]byte)))
 
+	node.hash = nil
 	_, err = node.Prepare([]byte{1}, new(big.Int), nil, fake.NewHashFactory(fake.NewBadHash()))
 	require.EqualError(t, err, "empty node failed: fake error")
 }
@@ -356,6 +371,7 @@ func TestInteriorNode_Prepare(t *testing.T) {
 	require.Equal(t, 1, calls.Len())
 	require.Equal(t, "\xaa\xbb", string(calls.Get(0, 0).([]byte)))
 
+	node.hash = nil
 	node.left = fakeNode{err: xerrors.New("bad node error")}
 	_, err = node.Prepare([]byte{1}, big.NewInt(2), nil, crypto.NewSha256Factory())
 	require.EqualError(t, err, "bad node error")
@@ -489,6 +505,7 @@ func TestLeafNode_Prepare(t *testing.T) {
 	require.Equal(t, 1, calls.Len())
 	require.Equal(t, "\x02\x01\x03\x00\x02pingpong", string(calls.Get(0, 0).([]byte)))
 
+	node.hash = nil
 	_, err = node.Prepare(nil, big.NewInt(0), nil, fake.NewHashFactory(fake.NewBadHash()))
 	require.EqualError(t, err, "leaf node failed: fake error")
 }
@@ -528,15 +545,45 @@ func TestLeafNode_Serialize(t *testing.T) {
 	require.EqualError(t, err, "failed to encode leaf node: fake error")
 }
 
+func TestNodeFactory_Deserialize(t *testing.T) {
+	fac := NodeFactory{}
+
+	msg, err := fac.Deserialize(testCtx, []byte(`{"Empty":{}}`))
+	require.NoError(t, err)
+	require.IsType(t, &EmptyNode{}, msg)
+
+	_, err = fac.Deserialize(testCtx, []byte(`{}`))
+	require.EqualError(t, err, "format failed: message is empty")
+}
+
 // -----------------------------------------------------------------------------
 // Utility functions
 
+func makeBucket(t *testing.T) *fakeBucket {
+	emptyNode, err := NewEmptyNode(1, big.NewInt(0)).Serialize(testCtx)
+	require.NoError(t, err)
+
+	leafNode, err := NewLeafNode(1, big.NewInt(1), []byte{1, 2, 3}).Serialize(testCtx)
+	require.NoError(t, err)
+
+	bucket := &fakeBucket{
+		values: map[string][]byte{
+			string([]byte{0}): emptyNode,
+			string([]byte{1}): leafNode,
+		},
+	}
+
+	return bucket
+}
+
 type fakeTx struct {
 	kv.WritableTx
+
+	bucket kv.Bucket
 }
 
 func (tx fakeTx) GetBucket(name []byte) kv.Bucket {
-	return nil
+	return tx.bucket
 }
 
 func (tx fakeTx) GetBucketOrCreate(name []byte) (kv.Bucket, error) {

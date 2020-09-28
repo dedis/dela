@@ -71,6 +71,20 @@ type serviceTemplate struct {
 // ServiceOption is the type of option to set some fields of the service.
 type ServiceOption func(*serviceTemplate)
 
+// WithGenesisStore is an option to set the genesis store.
+func WithGenesisStore(store blockstore.GenesisStore) ServiceOption {
+	return func(tmpl *serviceTemplate) {
+		tmpl.genesis = store
+	}
+}
+
+// WithBlockStore is an option to set the block store.
+func WithBlockStore(store blockstore.BlockStore) ServiceOption {
+	return func(tmpl *serviceTemplate) {
+		tmpl.blocks = store
+	}
+}
+
 // WithHashFactory is an option to set the hash factory used by the service.
 func WithHashFactory(fac crypto.HashFactory) ServiceOption {
 	return func(tmpl *serviceTemplate) {
@@ -196,6 +210,12 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 
 	go s.watchBlocks()
 
+	if s.genesis.Exists() {
+		// If the genesis already exists, the service can start right away to
+		// participate in the chain.
+		close(s.started)
+	}
+
 	return s, nil
 }
 
@@ -225,6 +245,7 @@ func (s *Service) Setup(ctx context.Context, ca crypto.CollectiveAuthority) erro
 
 	s.logger.Info().
 		Int("roster", ca.Len()).
+		Stringer("digest", genesis.GetHash()).
 		Msg("new chain has been created")
 
 	return nil
@@ -461,7 +482,7 @@ func (s *Service) doRound(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, s.timeoutRound)
 	defer cancel()
 
-	s.logger.Debug().Uint64("index", s.blocks.Len()+1).Msg("round has started")
+	s.logger.Debug().Uint64("index", s.blocks.Len()).Msg("round has started")
 
 	// Send a synchronization to the roster so that they can learn about the
 	// latest block of the chain.
@@ -474,7 +495,7 @@ func (s *Service) doRound(ctx context.Context) error {
 	// TODO: check that no committed block exists in the case of a leader
 	// failure when propagating the collective signature.
 
-	s.logger.Debug().Uint64("index", s.blocks.Len()+1).Msg("pbft has started")
+	s.logger.Debug().Uint64("index", s.blocks.Len()).Msg("pbft has started")
 
 	err = s.doPBFT(ctx)
 	if err != nil {
@@ -503,7 +524,7 @@ func (s *Service) doPBFT(ctx context.Context) error {
 	block, err := types.NewBlock(
 		data,
 		types.WithTreeRoot(root),
-		types.WithIndex(uint64(s.blocks.Len()+1)),
+		types.WithIndex(uint64(s.blocks.Len())),
 		types.WithHashFactory(s.hashFactory))
 
 	if err != nil {

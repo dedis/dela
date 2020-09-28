@@ -30,6 +30,8 @@
 package binprefix
 
 import (
+	"sync"
+
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/hashtree"
 	"go.dedis.ch/dela/core/store/kv"
@@ -43,6 +45,8 @@ import (
 //
 // - implements hashtree.Tree
 type MerkleTree struct {
+	sync.Mutex
+
 	tree        *Tree
 	db          kv.DB
 	tx          store.Transaction
@@ -60,9 +64,35 @@ func NewMerkleTree(db kv.DB, nonce Nonce) *MerkleTree {
 	}
 }
 
+// Load tries to read the bucket and scan it for existing leafs and populate the
+// tree with them.
+func (t *MerkleTree) Load() error {
+	t.Lock()
+	defer t.Unlock()
+
+	return t.doUpdate(func(tx kv.WritableTx) error {
+		bucket := tx.GetBucket(t.bucket)
+
+		err := t.tree.FillFromBucket(bucket)
+		if err != nil {
+			return xerrors.Errorf("failed to load: %v", err)
+		}
+
+		err = t.tree.CalculateRoot(t.hashFactory, bucket)
+		if err != nil {
+			return xerrors.Errorf("while updating: %v", err)
+		}
+
+		return nil
+	})
+}
+
 // Get implements store.Readable. It returns the value associated with the key
 // if it exists, otherwise it returns nil.
 func (t *MerkleTree) Get(key []byte) ([]byte, error) {
+	t.Lock()
+	defer t.Unlock()
+
 	var value []byte
 
 	err := t.doView(func(tx kv.ReadableTx) error {
@@ -83,12 +113,18 @@ func (t *MerkleTree) Get(key []byte) ([]byte, error) {
 
 // GetRoot implements hashtree.Tree. It returns the root of the hash tree.
 func (t *MerkleTree) GetRoot() []byte {
+	t.Lock()
+	defer t.Unlock()
+
 	return t.tree.root.GetHash()
 }
 
 // GetPath implements hashtree.Tree. It returns a path to a given key that can
 // be used to prove the inclusion or the absence of a key.
 func (t *MerkleTree) GetPath(key []byte) (hashtree.Path, error) {
+	t.Lock()
+	defer t.Unlock()
+
 	path := newPath(t.tree.nonce[:], key)
 
 	err := t.doView(func(tx kv.ReadableTx) error {
@@ -125,7 +161,7 @@ func (t *MerkleTree) Stage(fn func(store.Snapshot) error) (hashtree.StagingTree,
 			return xerrors.Errorf("callback failed: %v", err)
 		}
 
-		err = clone.tree.Update(t.hashFactory, b)
+		err = clone.tree.CalculateRoot(t.hashFactory, b)
 		if err != nil {
 			return xerrors.Errorf("couldn't update tree: %v", err)
 		}
@@ -139,6 +175,9 @@ func (t *MerkleTree) Stage(fn func(store.Snapshot) error) (hashtree.StagingTree,
 // Commit implements hashtree.StagingTree. It writes the leaf nodes to the disk
 // and a trade-off of other nodes.
 func (t *MerkleTree) Commit() error {
+	t.Lock()
+	defer t.Unlock()
+
 	err := t.doUpdate(func(tx kv.WritableTx) error {
 		bucket, err := tx.GetBucketOrCreate(t.bucket)
 		if err != nil {
@@ -217,6 +256,9 @@ type writableMerkleTree struct {
 // Set implements store.Writable. It adds or updates the key in the internal
 // tree.
 func (t writableMerkleTree) Set(key, value []byte) error {
+	t.Lock()
+	defer t.Unlock()
+
 	err := t.tree.Insert(key, value, t.bucket)
 	if err != nil {
 		return xerrors.Errorf("couldn't insert pair: %v", err)
@@ -227,6 +269,9 @@ func (t writableMerkleTree) Set(key, value []byte) error {
 
 // Delete implements store.Writable. It removes the key from the tree.
 func (t writableMerkleTree) Delete(key []byte) error {
+	t.Lock()
+	defer t.Unlock()
+
 	err := t.tree.Delete(key, t.bucket)
 	if err != nil {
 		return xerrors.Errorf("couldn't delete key: %v", err)

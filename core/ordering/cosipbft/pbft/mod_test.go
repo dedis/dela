@@ -100,7 +100,7 @@ func TestStateMachine_Prepare(t *testing.T) {
 	root := types.Digest{}
 	copy(root[:], tree.GetRoot())
 
-	block, err := types.NewBlock(simple.NewData(nil), types.WithTreeRoot(root), types.WithIndex(1))
+	block, err := types.NewBlock(simple.NewData(nil), types.WithTreeRoot(root), types.WithIndex(0))
 	require.NoError(t, err)
 
 	sm := NewStateMachine(param).(*pbftsm)
@@ -442,7 +442,7 @@ func TestStateMachine_CatchUp(t *testing.T) {
 	root := types.Digest{}
 	copy(root[:], tree.GetRoot())
 
-	block, err := types.NewBlock(simple.NewData(nil), types.WithTreeRoot(root), types.WithIndex(1))
+	block, err := types.NewBlock(simple.NewData(nil), types.WithTreeRoot(root), types.WithIndex(0))
 	require.NoError(t, err)
 
 	sm := NewStateMachine(param).(*pbftsm)
@@ -459,7 +459,7 @@ func TestStateMachine_CatchUp(t *testing.T) {
 	require.NoError(t, err)
 
 	err = sm.CatchUp(link)
-	require.EqualError(t, err, "prepare failed: mismatch index 1 != 2")
+	require.EqualError(t, err, "prepare failed: mismatch index 0 != 1")
 
 	sm.authReader = badReader
 	err = sm.CatchUp(link)

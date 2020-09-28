@@ -97,7 +97,7 @@ func TestMerkleTree_IntegrationTest(t *testing.T) {
 }
 
 func TestMerkleTree_Random_IntegrationTest(t *testing.T) {
-	f := func(nonce Nonce, n uint8, mem uint) bool {
+	f := func(nonce Nonce, n uint8, mem uint8) bool {
 		t.Logf("Step nonce:%x n:%d mem:%d", nonce, n, mem%32)
 
 		db, clean := makeDB(t)
@@ -152,11 +152,43 @@ func TestMerkleTree_Random_IntegrationTest(t *testing.T) {
 			require.Equal(t, tree.GetRoot(), root)
 		}
 
+		newTree := NewMerkleTree(db, nonce)
+		err = newTree.Load()
+		require.NoError(t, err)
+
+		// Test that the keys are still present after loading the tree from the
+		// disk.
+		for key, value := range values {
+			path, err := newTree.GetPath(key[:])
+			require.NoError(t, err)
+			require.Equal(t, value, path.GetValue())
+
+			root, err := path.(Path).computeRoot(crypto.NewSha256Factory())
+			require.NoError(t, err)
+			require.Equal(t, newTree.GetRoot(), root)
+		}
+
 		return true
 	}
 
 	err := quick.Check(f, &quick.Config{MaxCount: 20})
 	require.NoError(t, err)
+}
+
+func TestMerkleTree_Load(t *testing.T) {
+	tree := NewMerkleTree(fakeDB{}, Nonce{})
+
+	err := tree.Load()
+	require.NoError(t, err)
+
+	tree.tx = fakeTx{bucket: &fakeBucket{errScan: xerrors.New("oops")}}
+	err = tree.Load()
+	require.EqualError(t, err, "failed to load: while scanning: oops")
+
+	tree.tx = nil
+	tree.hashFactory = fake.NewHashFactory(fake.NewBadHash())
+	err = tree.Load()
+	require.EqualError(t, err, "while updating: failed to prepare: empty node failed: fake error")
 }
 
 func TestMerkleTree_Get(t *testing.T) {
@@ -207,7 +239,7 @@ func TestMerkleTree_GetPath(t *testing.T) {
 		err := tree.tree.Insert(key[:], value, &fakeBucket{})
 		require.NoError(t, err)
 
-		err = tree.tree.Update(tree.hashFactory, &fakeBucket{})
+		err = tree.tree.CalculateRoot(tree.hashFactory, &fakeBucket{})
 		require.NoError(t, err)
 
 		path, err := tree.GetPath(key[:])

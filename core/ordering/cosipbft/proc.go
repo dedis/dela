@@ -7,7 +7,6 @@ import (
 	"go.dedis.ch/dela/core"
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/execution/baremetal/viewchange"
-	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blocksync"
@@ -81,6 +80,8 @@ func (h *processor) Invoke(from mino.Address, msg serde.Message) ([]byte, error)
 
 		viewMsgs := in.GetViews()
 		if len(viewMsgs) > 0 {
+			h.logger.Debug().Int("num", len(viewMsgs)).Msg("process views")
+
 			views := make([]pbft.View, 0, len(viewMsgs))
 			for addr, view := range viewMsgs {
 				param := pbft.ViewParam{
@@ -222,8 +223,6 @@ func (h *processor) storeGenesis(roster authority.Authority, match *types.Digest
 	if err != nil {
 		return xerrors.Errorf("set genesis failed: %v", err)
 	}
-
-	h.watcher.Notify(ordering.Event{Index: 0})
 
 	close(h.started)
 
