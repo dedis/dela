@@ -110,7 +110,7 @@ func (t *Tree) FillFromBucket(bucket kv.Bucket) error {
 		return nil
 	}
 
-	t.root = NewInteriorNode(0, new(big.Int))
+	t.root = NewInteriorNode(0, big.NewInt(0))
 
 	err := bucket.Scan([]byte{}, func(key, value []byte) error {
 		msg, err := t.factory.Deserialize(t.context, value)

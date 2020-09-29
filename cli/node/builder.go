@@ -195,7 +195,7 @@ func (b *cliBuilder) start(c *ucli.Context) error {
 	}
 
 	for _, controller := range b.inits {
-		err = controller.Inject(c, b.injector)
+		err = controller.OnStart(c, b.injector)
 		if err != nil {
 			return xerrors.Errorf("couldn't run the controller: %v", err)
 		}
@@ -214,6 +214,16 @@ func (b *cliBuilder) start(c *ucli.Context) error {
 	defer signal.Stop(b.sigs)
 
 	<-b.sigs
+
+	// Controllers are stopped in reverse order so that high level components
+	// are stopped before lower level ones (i.e. stop a service before the
+	// database to avoid errors).
+	for i := len(b.inits) - 1; i >= 0; i-- {
+		err = b.inits[i].OnStop(b.injector)
+		if err != nil {
+			return xerrors.Errorf("couldn't stop controller: %v", err)
+		}
+	}
 
 	dela.Logger.Trace().Msg("daemon has been stopped")
 

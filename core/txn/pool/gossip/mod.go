@@ -91,6 +91,8 @@ func (p *Pool) Gather(ctx context.Context, cfg pool.Config) []txn.Transaction {
 
 // Close stops the gossiper and terminate the routine that listens for rumors.
 func (p *Pool) Close() error {
+	p.gatherer.Close()
+
 	close(p.closing)
 
 	err := p.actor.Close()

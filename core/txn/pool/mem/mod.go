@@ -63,3 +63,10 @@ func (s *Pool) SetPlayers(mino.Players) error {
 func (s *Pool) Gather(ctx context.Context, cfg pool.Config) []txn.Transaction {
 	return s.gatherer.Wait(ctx, cfg)
 }
+
+// Close implements pool.Pool. It
+func (s *Pool) Close() error {
+	s.gatherer.Close()
+
+	return nil
+}

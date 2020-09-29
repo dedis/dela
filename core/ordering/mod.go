@@ -42,4 +42,7 @@ type Service interface {
 	// Watch returns a channel populated with events when transactions are
 	// accepted.
 	Watch(ctx context.Context) <-chan Event
+
+	// Close closes the service and cleans the resources.
+	Close() error
 }

@@ -208,6 +208,10 @@ func (s fakeService) Watch(context.Context) <-chan ordering.Event {
 	return ch
 }
 
+func (s fakeService) Close() error {
+	return s.err
+}
+
 type fakeCosi struct {
 	cosi.CollectiveSigning
 	err bool

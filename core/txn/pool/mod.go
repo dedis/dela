@@ -41,4 +41,7 @@ type Pool interface {
 	// Gather is a blocking function to gather transactions from the pool. The
 	// configuration allows one to specify criterion before returning.
 	Gather(context.Context, Config) []txn.Transaction
+
+	// Close closes the pool and cleans the resources.
+	Close() error
 }

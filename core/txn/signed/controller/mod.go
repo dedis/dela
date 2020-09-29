@@ -26,7 +26,7 @@ func NewManagerController() node.Initializer {
 
 func (mgrController) SetCommands(node.Builder) {}
 
-func (mgrController) Inject(flags cli.Flags, inj node.Injector) error {
+func (mgrController) OnStart(flags cli.Flags, inj node.Injector) error {
 	var srvc ordering.Service
 	err := inj.Resolve(&srvc)
 	if err != nil {
@@ -52,6 +52,10 @@ func (mgrController) Inject(flags cli.Flags, inj node.Injector) error {
 
 	inj.Inject(mgr)
 
+	return nil
+}
+
+func (mgrController) OnStop(node.Injector) error {
 	return nil
 }
 

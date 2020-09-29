@@ -21,11 +21,10 @@ func NewMinimal() node.Initializer {
 type minimal struct{}
 
 // Build implements node.Initializer. In this case we don't need any command.
-func (m minimal) SetCommands(_ node.Builder) {
-}
+func (m minimal) SetCommands(_ node.Builder) {}
 
-// Inject implements node.Initializer. It creates and registers a pedersen DKG.
-func (m minimal) Inject(ctx cli.Flags, inj node.Injector) error {
+// OnStart implements node.Initializer. It creates and registers a pedersen DKG.
+func (m minimal) OnStart(ctx cli.Flags, inj node.Injector) error {
 	var no mino.Mino
 	err := inj.Resolve(&no)
 	if err != nil {
@@ -45,5 +44,10 @@ func (m minimal) Inject(ctx cli.Flags, inj node.Injector) error {
 		Hex("public key", pubkeyBuf).
 		Msg("perdersen public key")
 
+	return nil
+}
+
+// OnStop implements node.Initializer.
+func (minimal) OnStop(node.Injector) error {
 	return nil
 }

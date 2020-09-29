@@ -542,6 +542,10 @@ func (s *Service) doPBFT(ctx context.Context) error {
 		return nil
 	}
 
+	s.logger.Debug().
+		Int("num", len(txs)).
+		Msg("transactions have been found")
+
 	if ctx.Err() != nil {
 		// Don't bother trying PBFT if the context is done.
 		return ctx.Err()

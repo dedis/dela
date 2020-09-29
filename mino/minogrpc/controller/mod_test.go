@@ -8,6 +8,7 @@ import (
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino/minogrpc"
+	"golang.org/x/xerrors"
 )
 
 func TestMinimal_Build(t *testing.T) {
@@ -19,12 +20,12 @@ func TestMinimal_Build(t *testing.T) {
 	require.Equal(t, 17, call.Len())
 }
 
-func TestMinimal_Run(t *testing.T) {
+func TestMinimal_OnStart(t *testing.T) {
 	minimal := NewMinimal()
 
 	injector := node.NewInjector()
 
-	err := minimal.Inject(fakeContext{}, injector)
+	err := minimal.OnStart(fakeContext{}, injector)
 	require.NoError(t, err)
 
 	var m *minogrpc.Minogrpc
@@ -32,8 +33,28 @@ func TestMinimal_Run(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, m.GracefulStop())
 
-	err = minimal.Inject(fakeContext{num: 100000}, injector)
+	err = minimal.OnStart(fakeContext{num: 100000}, injector)
 	require.EqualError(t, err, "invalid port value 100000")
+}
+
+func TestMinimal_OnStop(t *testing.T) {
+	minimal := NewMinimal()
+
+	injector := node.NewInjector()
+
+	err := minimal.OnStart(fakeContext{}, injector)
+	require.NoError(t, err)
+
+	err = minimal.OnStop(injector)
+	require.NoError(t, err)
+
+	err = minimal.OnStop(node.NewInjector())
+	require.EqualError(t, err, "injector: couldn't find dependency for 'controller.StoppableMino'")
+
+	injector = node.NewInjector()
+	injector.Inject(badMino{})
+	err = minimal.OnStop(injector)
+	require.EqualError(t, err, "while stopping mino: oops")
 }
 
 // -----------------------------------------------------------------------------
@@ -76,4 +97,12 @@ func (b fakeBuilder) SetStartFlags(flags ...cli.Flag) {
 func (b fakeBuilder) MakeAction(tmpl node.ActionTemplate) cli.Action {
 	b.call.Add(tmpl)
 	return nil
+}
+
+type badMino struct {
+	StoppableMino
+}
+
+func (badMino) GracefulStop() error {
+	return xerrors.New("oops")
 }

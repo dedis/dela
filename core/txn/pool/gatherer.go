@@ -32,6 +32,8 @@ type Gatherer interface {
 	// Wait waits for a notification with sufficient transactions to return the
 	// array, or nil if the context ends.
 	Wait(ctx context.Context, cfg Config) []txn.Transaction
+
+	Close()
 }
 
 type item struct {
@@ -144,6 +146,10 @@ func (g *simpleGatherer) Wait(ctx context.Context, cfg Config) []txn.Transaction
 	case <-ctx.Done():
 		return nil
 	}
+}
+
+func (g *simpleGatherer) Close() {
+	// TODO: clean resources
 }
 
 // Notify implements pool.Gatherer. It triggers the elements of the queue that

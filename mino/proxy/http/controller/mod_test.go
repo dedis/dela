@@ -21,18 +21,15 @@ func TestMinimal_SetCommands(t *testing.T) {
 	require.Equal(t, "clientaddr", builder.Startflags[0].(cli.StringFlag).Name)
 }
 
-func TestMinimal_Inject(t *testing.T) {
+func TestMinimal_OnStart(t *testing.T) {
 	minimal := NewMinimal()
 
 	inj := newInjector()
-	err := minimal.Inject(fakeFlags{
-		Strings: map[string]string{
-			// we use a different port here because the server runing from the
-			// previous test might not be fully stop at the time this test
-			// starts.
-			"clientaddr": "127.0.0.1:2501",
-		},
-	}, inj)
+	flags := fakeFlags{
+		Strings: map[string]string{"clientaddr": "127.0.0.1:0"},
+	}
+
+	err := minimal.OnStart(flags, inj)
 	require.NoError(t, err)
 
 	require.Len(t, inj.(*fakeInjector).history, 1)
@@ -40,6 +37,23 @@ func TestMinimal_Inject(t *testing.T) {
 
 	aa := inj.(*fakeInjector).history[0]
 	aa.(*http.HTTP).Stop()
+}
+
+func TestMinimal_OnStop(t *testing.T) {
+	minimal := NewMinimal()
+
+	inj := node.NewInjector()
+
+	proxy := http.NewHTTP("127.0.0.1:0")
+	go proxy.Listen()
+
+	inj.Inject(proxy)
+
+	err := minimal.OnStop(inj)
+	require.NoError(t, err)
+
+	err = minimal.OnStop(node.NewInjector())
+	require.EqualError(t, err, "injector: couldn't find dependency for '*http.HTTP'")
 }
 
 // -----------------------------------------------------------------------------
