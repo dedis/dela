@@ -16,10 +16,10 @@ func TestSimpleGatherer_Len(t *testing.T) {
 	gatherer := NewSimpleGatherer().(*simpleGatherer)
 	require.Equal(t, 0, gatherer.Len())
 
-	gatherer.txs["Alice"] = Transactions{fakeTx{}}
+	gatherer.txs["Alice"] = transactions{fakeTx{}}
 	require.Equal(t, 1, gatherer.Len())
 
-	gatherer.txs["Bob"] = Transactions{fakeTx{}, fakeTx{}}
+	gatherer.txs["Bob"] = transactions{fakeTx{}, fakeTx{}}
 	require.Equal(t, 3, gatherer.Len())
 }
 
@@ -56,10 +56,19 @@ func TestSimpleGatherer_Add(t *testing.T) {
 
 func TestSimpleGatherer_Remove(t *testing.T) {
 	gatherer := NewSimpleGatherer().(*simpleGatherer)
-	gatherer.txs["Alice"] = Transactions{}
+	gatherer.txs["Alice"] = transactions{newTx(0, "Alice"), newTx(1, "Alice")}
 
-	err := gatherer.Remove(newTx(0xa, "Alice"))
+	err := gatherer.Remove(newTx(0, "Alice"))
 	require.NoError(t, err)
+	require.Len(t, gatherer.txs["Alice"], 1)
+
+	err = gatherer.Remove(newTx(0, "Alice"))
+	require.NoError(t, err)
+	require.Len(t, gatherer.txs["Alice"], 1)
+
+	err = gatherer.Remove(newTx(1, "Alice"))
+	require.NoError(t, err)
+	require.Len(t, gatherer.txs["Alice"], 0)
 
 	err = gatherer.Remove(fakeTx{identity: fake.NewBadPublicKey()})
 	require.EqualError(t, err, fake.Err("identity key failed"))

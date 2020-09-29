@@ -17,23 +17,23 @@ import (
 const DefaultIdentitySize = 10
 
 // Transactions is a sortable list of transactions.
-type Transactions []txn.Transaction
+type transactions []txn.Transaction
 
-func (txs Transactions) Len() int {
+func (txs transactions) Len() int {
 	return len(txs)
 }
 
-func (txs Transactions) Less(i, j int) bool {
+func (txs transactions) Less(i, j int) bool {
 	return txs[i].GetNonce() < txs[j].GetNonce()
 }
 
-func (txs Transactions) Swap(i, j int) {
+func (txs transactions) Swap(i, j int) {
 	txs[i], txs[j] = txs[j], txs[i]
 }
 
 // Add adds the transaction to the list if and only if the nonce is unique. The
 // resulting list will be sorted by nonce.
-func (txs Transactions) Add(other txn.Transaction) Transactions {
+func (txs transactions) Add(other txn.Transaction) transactions {
 	for _, tx := range txs {
 		if tx.GetNonce() == other.GetNonce() {
 			return txs
@@ -46,8 +46,9 @@ func (txs Transactions) Add(other txn.Transaction) Transactions {
 	return list
 }
 
-// Remove removes the transaction from the list if it exists.
-func (txs Transactions) Remove(other txn.Transaction) Transactions {
+// Remove removes the transaction from the list if it exists, while preserving
+// the order of the transactions.
+func (txs transactions) Remove(other txn.Transaction) transactions {
 	for i, tx := range txs {
 		if bytes.Equal(tx.GetID(), other.GetID()) {
 			return append(txs[:i], txs[i+1:]...)
@@ -86,20 +87,25 @@ type item struct {
 	ch  chan []txn.Transaction
 }
 
+// SimpleGatherer is a gatherer of transactions that will use filters to drop
+// invalid transactions. It limits the size for each identity, *as long as* a
+// filter is set, otherwise it can grow indefinitely.
+//
+// - implements pool.Gatherer
 type simpleGatherer struct {
 	sync.Mutex
 
 	limit      int
 	queue      []item
 	validators []Filter
-	txs        map[string]Transactions
+	txs        map[string]transactions
 }
 
 // NewSimpleGatherer creates a new gatherer.
 func NewSimpleGatherer() Gatherer {
 	return &simpleGatherer{
 		limit: DefaultIdentitySize,
-		txs:   make(map[string]Transactions),
+		txs:   make(map[string]transactions),
 	}
 }
 
@@ -203,7 +209,7 @@ func (g *simpleGatherer) Wait(ctx context.Context, cfg Config) []txn.Transaction
 func (g *simpleGatherer) Close() {
 	g.Lock()
 
-	g.txs = make(map[string]Transactions)
+	g.txs = make(map[string]transactions)
 
 	for _, item := range g.queue {
 		close(item.ch)
