@@ -1,86 +1,49 @@
-// Package json implements a JSON serializer. Please refer to the official
-// documentation to learn about the specificity of the format.
-//
-// https://golang.org/pkg/encoding/json/
+// Package json implements the context engine for a the JSON format.
 package json
 
 import (
 	"encoding/json"
 
-	"go.dedis.ch/dela/internal/serdereflect"
+	// Static registration of the JSON formats. By having them here, it ensures
+	// that an import of the JSON context engine will import the definitions.
+	_ "go.dedis.ch/dela/core/access/darc/json"
+	_ "go.dedis.ch/dela/core/ordering/cosipbft/authority/json"
+	_ "go.dedis.ch/dela/core/ordering/cosipbft/blocksync/json"
+	_ "go.dedis.ch/dela/core/ordering/cosipbft/json"
+	_ "go.dedis.ch/dela/core/txn/signed/json"
+	_ "go.dedis.ch/dela/core/validation/simple/json"
+	_ "go.dedis.ch/dela/cosi/json"
+	_ "go.dedis.ch/dela/cosi/threshold/json"
+	_ "go.dedis.ch/dela/crypto/bls/json"
+	_ "go.dedis.ch/dela/crypto/ed25519/json"
+	_ "go.dedis.ch/dela/dkg/pedersen/json"
+	_ "go.dedis.ch/dela/mino/router/tree/json"
 	"go.dedis.ch/dela/serde"
-	"golang.org/x/xerrors"
 )
 
-// FactoryInput is an implementation of the factory input.
+// JSONEngine is a context engine to marshal and unmarshal in JSON format.
 //
-// - implements serde.FactoryInput
-type factoryInput struct {
-	serde serde.Serializer
-	data  []byte
+// - implements serde.ContextEngine
+type jsonEngine struct{}
+
+// NewContext returns a JSON context.
+func NewContext() serde.Context {
+	return serde.NewContext(jsonEngine{})
 }
 
-// GetSerializer implements serde.FactoryInput. It returns the serializer of the
-// context.
-func (d factoryInput) GetSerializer() serde.Serializer {
-	return d.serde
+// GetFormat implements serde.FormatEngine. It returns the JSON format name.
+func (ctx jsonEngine) GetFormat() serde.Format {
+	return serde.FormatJSON
 }
 
-// Feed implements serde.FactoryInput. It decodes the data into the given
-// interface.
-func (d factoryInput) Feed(m interface{}) error {
-	err := json.Unmarshal(d.data, m)
-	if err != nil {
-		return xerrors.Errorf("couldn't unmarshal: %w", err)
-	}
-
-	return nil
+// Marshal implements serde.FormatEngine. It returns the bytes of the message
+// marshaled in JSON format.
+func (ctx jsonEngine) Marshal(m interface{}) ([]byte, error) {
+	return json.Marshal(m)
 }
 
-// Serializer is an encoder using JSON as the underlying format.
-//
-// - implements serde.Serializer
-type Serializer struct{}
-
-// NewSerializer returns a new JSON serializer.
-func NewSerializer() serde.Serializer {
-	return Serializer{}
-}
-
-// Serialize implements serde.Serializer.
-func (e Serializer) Serialize(m serde.Message) ([]byte, error) {
-	if m == nil {
-		return nil, xerrors.New("message is nil")
-	}
-
-	itf, err := m.VisitJSON(e)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't serialize '%T' to json: %w", m, err)
-	}
-
-	buffer, err := json.Marshal(itf)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't encode: %v", err)
-	}
-
-	return buffer, nil
-}
-
-// Deserialize implements serde.Deserialize.
-func (e Serializer) Deserialize(buffer []byte, f serde.Factory, o interface{}) error {
-	if f == nil {
-		return xerrors.New("factory is nil")
-	}
-
-	m, err := f.VisitJSON(factoryInput{data: buffer, serde: e})
-	if err != nil {
-		return xerrors.Errorf("couldn't deserialize from json with '%T': %w", f, err)
-	}
-
-	err = serdereflect.AssignTo(m, o)
-	if err != nil {
-		return xerrors.Errorf("couldn't assign: %v", err)
-	}
-
-	return nil
+// Unmarshal implements serde.FormatEngine. It populates the message using the
+// JSON format definition.
+func (ctx jsonEngine) Unmarshal(data []byte, m interface{}) error {
+	return json.Unmarshal(data, m)
 }

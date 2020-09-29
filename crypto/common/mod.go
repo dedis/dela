@@ -5,39 +5,73 @@
 package common
 
 import (
-	"reflect"
-
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
-	"go.dedis.ch/dela/crypto/common/json"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
 )
 
-// PublicKeyFactory is a public key factory for commonly known algorithms.
-//
-// - implements crypto.PublicKeyFactory
-// - implements serde.Factory
-type PublicKeyFactory struct {
-	serde.UnimplementedFactory
+var algFormats = registry.NewSimpleRegistry()
 
-	encoder    encoding.ProtoMarshaler
-	deprecated map[reflect.Type]crypto.PublicKeyFactory
-	factories  map[string]serde.Factory
+// RegisterAlgorithmFormat registers the engine for the provided format.
+func RegisterAlgorithmFormat(c serde.Format, f serde.FormatEngine) {
+	algFormats.Register(c, f)
+}
+
+// Algorithm contains information about a signature algorithm.
+//
+// - implements serde.Message
+type Algorithm struct {
+	name string
+}
+
+// NewAlgorithm returns a new algorithm from the provided name.
+func NewAlgorithm(name string) Algorithm {
+	return Algorithm{name: name}
+}
+
+// GetName returns the name of the algorithm.
+func (alg Algorithm) GetName() string {
+	return alg.name
+}
+
+// Serialize implements serde.Message. It looks up the format and returns the
+// serialized data of the algorithm.
+func (alg Algorithm) Serialize(ctx serde.Context) ([]byte, error) {
+	format := algFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, alg)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't encode algorithm: %v", err)
+	}
+
+	return data, nil
+}
+
+// PublicKeyFactory is a redefinition of the crypto public key factory to
+// exclude some functions that are incompatible with the logic of a common
+// factory which requires specific serialization.
+type PublicKeyFactory interface {
+	serde.Factory
+
+	PublicKeyOf(serde.Context, []byte) (crypto.PublicKey, error)
+}
+
+// publicKeyFac is a public key factory for commonly known algorithms.
+//
+// - implements crypto.publicKeyFac
+// - implements serde.Factory
+type publicKeyFac struct {
+	factories map[string]crypto.PublicKeyFactory
 }
 
 // NewPublicKeyFactory returns a new instance of the common public key factory.
 func NewPublicKeyFactory() PublicKeyFactory {
-	factory := PublicKeyFactory{
-		encoder:    encoding.NewProtoEncoder(),
-		deprecated: make(map[reflect.Type]crypto.PublicKeyFactory),
-		factories:  make(map[string]serde.Factory),
+	factory := publicKeyFac{
+		factories: make(map[string]crypto.PublicKeyFactory),
 	}
 
-	factory.Register((*bls.PublicKeyProto)(nil), bls.NewPublicKeyFactory())
 	factory.RegisterAlgorithm(bls.Algorithm, bls.NewPublicKeyFactory())
 
 	return factory
@@ -45,126 +79,95 @@ func NewPublicKeyFactory() PublicKeyFactory {
 
 // RegisterAlgorithm registers the factory for the algorithm. It will override
 // an already existing key.
-func (f PublicKeyFactory) RegisterAlgorithm(algo string, factory serde.Factory) {
+func (f publicKeyFac) RegisterAlgorithm(algo string, factory crypto.PublicKeyFactory) {
 	f.factories[algo] = factory
 }
 
-// Register binds a protobuf message type to a public key factory. If a key
-// already exists, it will override it.
-func (f PublicKeyFactory) Register(msg proto.Message, factory crypto.PublicKeyFactory) {
-	key := reflect.TypeOf(msg)
-	f.deprecated[key] = factory
-}
+// Deserialize implements serde.Factory. It looks up the format and returns the
+// public key of the data if appropriate, otherwise an error.
+func (f publicKeyFac) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+	format := algFormats.Get(ctx.GetFormat())
 
-// FromProto implements crypto.PublicKeyFactory. It returns the implementation
-// of the public key if the message is a known public key message, otherwise it
-// returns an error.
-func (f PublicKeyFactory) FromProto(in proto.Message) (crypto.PublicKey, error) {
-	inAny, ok := in.(*any.Any)
-	if ok {
-		var err error
-		in, err = f.encoder.UnmarshalDynamicAny(inAny)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't decode message: %v", err)
-		}
-	}
-
-	key := reflect.TypeOf(in)
-	factory := f.deprecated[key]
-	if factory == nil {
-		return nil, xerrors.Errorf("couldn't find factory for '%s'", key)
-	}
-
-	return factory.FromProto(in)
-}
-
-// VisitJSON implements serde.Factory. It deserializes the public key for the
-// given algorithm if it's known.
-func (f PublicKeyFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
-	algo := json.Algorithm{}
-	err := in.Feed(&algo)
+	m, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize algorithm: %v", err)
+		return nil, xerrors.Errorf("couldn't decode algorithm: %v", err)
 	}
 
-	factory := f.factories[algo.Name]
+	alg, ok := m.(Algorithm)
+	if !ok {
+		return nil, xerrors.Errorf("invalid message of type '%T'", m)
+	}
+
+	factory := f.factories[alg.name]
 	if factory == nil {
-		return nil, xerrors.Errorf("unknown algorithm '%s'", algo.Name)
+		return nil, xerrors.Errorf("unknown algorithm '%s'", alg.name)
 	}
 
-	return factory.VisitJSON(in)
+	return factory.PublicKeyOf(ctx, data)
+}
+
+// PublicKeyOf implements crypto.PublicKeyFactory. It returns the public key of
+// the data if appropriate, otherwise an error.
+func (f publicKeyFac) PublicKeyOf(ctx serde.Context, data []byte) (crypto.PublicKey, error) {
+	msg, err := f.Deserialize(ctx, data)
+	if err != nil {
+		return nil, err
+	}
+
+	return msg.(crypto.PublicKey), nil
 }
 
 // SignatureFactory is a factory for commonly known algorithms.
 type SignatureFactory struct {
-	serde.UnimplementedFactory
-
-	encoder    encoding.ProtoMarshaler
-	deprecated map[reflect.Type]crypto.SignatureFactory
-	factories  map[string]serde.Factory
+	factories map[string]crypto.SignatureFactory
 }
 
 // NewSignatureFactory returns a new instance of the common signature factory.
 func NewSignatureFactory() SignatureFactory {
 	factory := SignatureFactory{
-		encoder:    encoding.NewProtoEncoder(),
-		deprecated: make(map[reflect.Type]crypto.SignatureFactory),
-		factories:  make(map[string]serde.Factory),
+		factories: make(map[string]crypto.SignatureFactory),
 	}
 
-	factory.Register((*bls.SignatureProto)(nil), bls.NewSignatureFactory())
 	factory.RegisterAlgorithm(bls.Algorithm, bls.NewSignatureFactory())
 
 	return factory
 }
 
 // RegisterAlgorithm register the factory for the algorithm.
-func (f SignatureFactory) RegisterAlgorithm(name string, factory serde.Factory) {
+func (f SignatureFactory) RegisterAlgorithm(name string, factory crypto.SignatureFactory) {
 	f.factories[name] = factory
 }
 
-// Register binds a protobuf message type to a signature factory. If a key
-// already exists, it will override it.
-func (f SignatureFactory) Register(msg proto.Message, factory crypto.SignatureFactory) {
-	key := reflect.TypeOf(msg)
-	f.deprecated[key] = factory
-}
+// Deserialize implements serde.Factory. It looks up the format and returns the
+// signature of the data if appropriate, otherwise an error.
+func (f SignatureFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+	format := algFormats.Get(ctx.GetFormat())
 
-// FromProto implements crypto.SignatureFactory. It returns the implementation
-// of the signature if the message is a known signature message, otherwise it
-// returns an error.
-func (f SignatureFactory) FromProto(in proto.Message) (crypto.Signature, error) {
-	inAny, ok := in.(*any.Any)
-	if ok {
-		var err error
-		in, err = f.encoder.UnmarshalDynamicAny(inAny)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't decode message: %v", err)
-		}
-	}
-
-	key := reflect.TypeOf(in)
-	factory := f.deprecated[key]
-	if factory == nil {
-		return nil, xerrors.Errorf("couldn't find factory for '%s'", key)
-	}
-
-	return factory.FromProto(in)
-}
-
-// VisitJSON implements serde.Factory. It deserializes the signature using the
-// factory of the algorithm if it is registered.
-func (f SignatureFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
-	algo := json.Algorithm{}
-	err := in.Feed(&algo)
+	m, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize algorithm: %v", err)
+		return nil, xerrors.Errorf("couldn't decode algorithm: %v", err)
 	}
 
-	factory := f.factories[algo.Name]
+	alg, ok := m.(Algorithm)
+	if !ok {
+		return nil, xerrors.Errorf("invalid message of type '%T'", m)
+	}
+
+	factory := f.factories[alg.name]
 	if factory == nil {
-		return nil, xerrors.Errorf("unknown algorithm '%s'", algo.Name)
+		return nil, xerrors.Errorf("unknown algorithm '%s'", alg.name)
 	}
 
-	return factory.VisitJSON(in)
+	return factory.SignatureOf(ctx, data)
+}
+
+// SignatureOf implements crypto.SignatureFactory. It returns the signature of
+// the data if appropriate, otherwise an error.
+func (f SignatureFactory) SignatureOf(ctx serde.Context, data []byte) (crypto.Signature, error) {
+	msg, err := f.Deserialize(ctx, data)
+	if err != nil {
+		return nil, err
+	}
+
+	return msg.(crypto.Signature), nil
 }

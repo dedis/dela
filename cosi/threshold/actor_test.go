@@ -1,16 +1,19 @@
 package threshold
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"testing"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/empty"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/cosi"
+	"go.dedis.ch/dela/cosi/threshold/types"
+	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -19,21 +22,21 @@ func TestActor_Sign(t *testing.T) {
 
 	actor := thresholdActor{
 		CoSi: &CoSi{
-			encoder:   encoding.NewProtoEncoder(),
-			signer:    ca.GetSigner(0),
-			Threshold: func(n int) int { return n - 1 },
+			signer: ca.GetSigner(0).(crypto.AggregateSigner),
 		},
 		rpc: fakeRPC{
 			receiver: &fakeReceiver{
 				resps: [][]interface{}{
-					{ca.GetAddress(0), &empty.Empty{}},
-					{ca.GetAddress(0), &empty.Empty{}},
-					{ca.GetAddress(1), &empty.Empty{}},
+					{ca.GetAddress(0), cosi.SignatureResponse{Signature: fake.Signature{}}},
+					{ca.GetAddress(0), cosi.SignatureResponse{Signature: fake.Signature{}}},
+					{ca.GetAddress(1), cosi.SignatureResponse{Signature: fake.Signature{}}},
 				},
 			},
 		},
 		reactor: fakeReactor{},
 	}
+
+	actor.SetThreshold(OneThreshold)
 
 	ctx := context.Background()
 
@@ -45,10 +48,13 @@ func TestActor_Sign(t *testing.T) {
 	_, err = actor.Sign(ctx, fake.Message{}, ca)
 	require.EqualError(t, err, "couldn't react to message: oops")
 
+	buffer := new(bytes.Buffer)
+	actor.logger = zerolog.New(buffer).Level(zerolog.WarnLevel)
 	actor.reactor = fakeReactor{}
-	actor.rpc = fakeRPC{receiver: &fakeReceiver{}}
+	actor.rpc = fakeRPC{receiver: &fakeReceiver{resps: makeBadResponse()}}
 	_, err = actor.Sign(ctx, fake.Message{}, ca)
 	require.EqualError(t, err, "couldn't receive more messages: EOF")
+	require.Contains(t, buffer.String(), "failed to process signature response")
 
 	actor.rpc = fakeRPC{receiver: &fakeReceiver{blocking: true}}
 	doneCtx, cancel := context.WithCancel(context.Background())
@@ -60,15 +66,12 @@ func TestActor_Sign(t *testing.T) {
 	_, err = actor.Sign(ctx, fake.Message{}, ca)
 	require.EqualError(t, err, "couldn't receive more messages: context canceled")
 
-	actor.signer = fake.NewSignerWithSignatureFactory(fake.NewBadSignatureFactory())
-	err = actor.merge(&Signature{}, &empty.Empty{}, 0, nil, nil)
-	require.EqualError(t, err, "couldn't decode signature: fake error")
-
-	actor.signer = fake.NewSigner()
-	err = actor.merge(&Signature{}, &empty.Empty{}, 0, fake.NewInvalidPublicKey(), []byte{})
+	actor.signer = fake.NewAggregateSigner()
+	resp := cosi.SignatureResponse{Signature: fake.Signature{}}
+	err = actor.merge(&types.Signature{}, resp, 0, fake.NewInvalidPublicKey(), []byte{})
 	require.EqualError(t, err, "couldn't verify: fake error")
 
-	actor.rpc = fake.NewBadStreamRPC()
+	actor.rpc = fake.NewBadRPC()
 	_, err = actor.Sign(ctx, fake.Message{}, ca)
 	require.EqualError(t, err, "couldn't open stream: fake error")
 }
@@ -81,7 +84,7 @@ type fakeSender struct {
 	numErr int
 }
 
-func (s fakeSender) Send(proto.Message, ...mino.Address) <-chan error {
+func (s fakeSender) Send(serde.Message, ...mino.Address) <-chan error {
 	ch := make(chan error, s.numErr)
 	for i := 0; i < s.numErr; i++ {
 		ch <- xerrors.New("oops")
@@ -98,7 +101,7 @@ type fakeReceiver struct {
 	err      error
 }
 
-func (r *fakeReceiver) Recv(ctx context.Context) (mino.Address, proto.Message, error) {
+func (r *fakeReceiver) Recv(ctx context.Context) (mino.Address, serde.Message, error) {
 	if r.blocking {
 		<-ctx.Done()
 		return nil, nil, ctx.Err()
@@ -114,7 +117,7 @@ func (r *fakeReceiver) Recv(ctx context.Context) (mino.Address, proto.Message, e
 
 	next := r.resps[0]
 	r.resps = r.resps[1:]
-	return next[0].(mino.Address), next[1].(proto.Message), nil
+	return next[0].(mino.Address), next[1].(serde.Message), nil
 }
 
 type fakeRPC struct {

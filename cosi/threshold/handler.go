@@ -7,7 +7,6 @@ import (
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -44,7 +43,7 @@ func (h thresholdHandler) Stream(out mino.Sender, in mino.Receiver) error {
 func (h thresholdHandler) processRequest(sender mino.Sender, rcvr mino.Receiver) error {
 	ctx := context.Background()
 
-	addr, resp, err := rcvr.Recv(ctx)
+	addr, msg, err := rcvr.Recv(ctx)
 	if err == io.EOF {
 		return err
 	}
@@ -52,9 +51,12 @@ func (h thresholdHandler) processRequest(sender mino.Sender, rcvr mino.Receiver)
 		return xerrors.Errorf("failed to receive: %v", err)
 	}
 
-	in := tmp.FromProto(resp, h.reactor)
+	req, ok := msg.(cosi.SignatureRequest)
+	if !ok {
+		return xerrors.Errorf("invalid request type '%T'", msg)
+	}
 
-	buffer, err := h.reactor.Invoke(addr, in)
+	buffer, err := h.reactor.Invoke(addr, req.Value)
 	if err != nil {
 		return xerrors.Errorf("couldn't hash message: %v", err)
 	}
@@ -64,14 +66,12 @@ func (h thresholdHandler) processRequest(sender mino.Sender, rcvr mino.Receiver)
 		return xerrors.Errorf("couldn't sign: %v", err)
 	}
 
-	signaturepb, err := h.encoder.Pack(signature)
-	if err != nil {
-		return xerrors.Errorf("couldn't pack signature: %v", err)
+	resp := cosi.SignatureResponse{
+		Signature: signature,
 	}
 
-	errs := sender.Send(signaturepb, addr)
-	err, more := <-errs
-	if more {
+	err = <-sender.Send(resp, addr)
+	if err != nil {
 		return xerrors.Errorf("couldn't send the response: %v", err)
 	}
 

@@ -1,5 +1,6 @@
 - **General purpose**
 - [Introduction](introduction.md)
 - [Serde](serde.md)
+- [Mino](mino.md)
 - **Code**
 - [Guideline](guideline.md)

@@ -1,9 +1,0 @@
-syntax = "proto3";
-
-package routing;
-
-message TreeRoutingProto {
-    bytes root = 1;
-    // Should be the MarshalText representation of each addr.
-    repeated bytes addrs = 2;
-}

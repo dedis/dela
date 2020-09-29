@@ -7,20 +7,19 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"io"
-	"io/ioutil"
 	"math/big"
 	"net"
-	"os"
 	"sync"
 	"time"
 
 	"go.dedis.ch/dela"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
-	"go.dedis.ch/dela/mino/minogrpc/routing"
+	"go.dedis.ch/dela/mino/minogrpc/ptypes"
+	"go.dedis.ch/dela/mino/minogrpc/session"
 	"go.dedis.ch/dela/mino/minogrpc/tokens"
+	"go.dedis.ch/dela/mino/router"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
@@ -30,7 +29,13 @@ import (
 
 const (
 	// headerURIKey is the key used in rpc header to pass the handler URI
-	headerURIKey        = "apiuri"
+	headerURIKey      = "apiuri"
+	headerStreamIDKey = "streamid"
+	headerGatewayKey  = "gateway"
+	// headerAddressKey is the key of the header that contains the list of
+	// addresses that will allow a node to create a routing table.
+	headerAddressKey = "addr"
+
 	certificateDuration = time.Hour * 24 * 180
 )
 
@@ -41,17 +46,23 @@ var (
 )
 
 type overlayServer struct {
-	overlay
+	*overlay
 
-	handlers map[string]mino.Handler
-	closer   *sync.WaitGroup
+	endpoints map[string]*Endpoint
 }
 
-func (o overlayServer) Join(ctx context.Context, req *JoinRequest) (*JoinResponse, error) {
+// Join implements ptypes.OverlayServer. It processes the request by checking
+// the validity of the token and if it is accepted, by sending the certificate
+// to the known peers. It finally returns the certificates to the caller.
+func (o overlayServer) Join(ctx context.Context, req *ptypes.JoinRequest) (*ptypes.JoinResponse, error) {
 	// 1. Check validity of the token.
 	if !o.tokens.Verify(req.Token) {
 		return nil, xerrors.Errorf("token '%s' is invalid", req.Token)
 	}
+
+	dela.Logger.Debug().
+		Str("from", string(req.GetCertificate().GetAddress())).
+		Msg("valid token received")
 
 	// 2. Share certificates to current participants.
 	list := make(map[mino.Address][]byte)
@@ -60,7 +71,7 @@ func (o overlayServer) Join(ctx context.Context, req *JoinRequest) (*JoinRespons
 		return true
 	})
 
-	peers := make([]*Certificate, 0, len(list))
+	peers := make([]*ptypes.Certificate, 0, len(list))
 	res := make(chan error, 1)
 
 	for to, cert := range list {
@@ -69,20 +80,22 @@ func (o overlayServer) Join(ctx context.Context, req *JoinRequest) (*JoinRespons
 			return nil, xerrors.Errorf("couldn't marshal address: %v", err)
 		}
 
-		msg := &Certificate{Address: text, Value: cert}
+		msg := &ptypes.Certificate{Address: text, Value: cert}
 
 		// Prepare the list of known certificates to send back to the new node.
 		peers = append(peers, msg)
 
 		// Share the new node certificate with existing peers.
 		go func(to mino.Address) {
-			conn, err := o.connFactory.FromAddress(to)
+			conn, err := o.connMgr.Acquire(to)
 			if err != nil {
 				res <- xerrors.Errorf("couldn't open connection: %v", err)
 				return
 			}
 
-			client := NewOverlayClient(conn)
+			defer o.connMgr.Release(to)
+
+			client := ptypes.NewOverlayClient(conn)
 
 			_, err = client.Share(ctx, req.GetCertificate())
 			if err != nil {
@@ -105,14 +118,16 @@ func (o overlayServer) Join(ctx context.Context, req *JoinRequest) (*JoinRespons
 	}
 
 	// 3. Return the set of known certificates.
-	return &JoinResponse{Peers: peers}, nil
+	return &ptypes.JoinResponse{Peers: peers}, nil
 }
 
-func (o overlayServer) Share(ctx context.Context, msg *Certificate) (*CertificateAck, error) {
+// Share implements ptypes.OverlayServer. It accepts a certificate from a
+// participant.
+func (o overlayServer) Share(ctx context.Context, msg *ptypes.Certificate) (*ptypes.CertificateAck, error) {
 	// TODO: verify the validity of the certificate by connecting to the distant
 	// node but that requires a protection against malicious share.
 
-	from := o.routingFactory.GetAddressFactory().FromText(msg.GetAddress())
+	from := o.addrFactory.FromText(msg.GetAddress())
 
 	cert, err := x509.ParseCertificate(msg.GetValue())
 	if err != nil {
@@ -121,142 +136,295 @@ func (o overlayServer) Share(ctx context.Context, msg *Certificate) (*Certificat
 
 	o.certs.Store(from, &tls.Certificate{Leaf: cert})
 
-	return &CertificateAck{}, nil
+	return &ptypes.CertificateAck{}, nil
 }
 
-// Call implements minogrpc.OverlayClient. It processes the request with the
+// Call implements minogrpc.OverlayServer. It processes the request with the
 // targeted handler if it exists, otherwise it returns an error.
-func (o overlayServer) Call(ctx context.Context, msg *Message) (*Message, error) {
+func (o overlayServer) Call(ctx context.Context, msg *ptypes.Message) (*ptypes.Message, error) {
 	// We fetch the uri that identifies the handler in the handlers map with the
 	// grpc metadata api. Using context.Value won't work.
 	uri := uriFromContext(ctx)
 
-	// If several are provided, only the first one is taken in account.
-	handler, ok := o.handlers[uri]
-	if !ok {
+	endpoint, found := o.endpoints[uri]
+	if !found {
 		return nil, xerrors.Errorf("handler '%s' is not registered", uri)
 	}
 
-	message, err := o.encoder.UnmarshalDynamicAny(msg.GetPayload())
+	message, err := endpoint.Factory.Deserialize(o.context, msg.GetPayload())
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
+		return nil, xerrors.Errorf("couldn't deserialize message: %v", err)
 	}
 
-	from := o.routingFactory.GetAddressFactory().FromText(msg.GetFrom())
+	from := o.addrFactory.FromText(msg.GetFrom())
 
 	req := mino.Request{
 		Address: from,
 		Message: message,
 	}
 
-	result, err := handler.Process(req)
+	result, err := endpoint.Handler.Process(req)
 	if err != nil {
 		return nil, xerrors.Errorf("handler failed to process: %v", err)
 	}
 
-	anyResult, err := o.encoder.MarshalAny(result)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't marshal result: %v", err)
+	if result == nil {
+		return &ptypes.Message{}, nil
 	}
 
-	return &Message{Payload: anyResult}, nil
+	res, err := result.Serialize(o.context)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't serialize result: %v", err)
+	}
+
+	return &ptypes.Message{Payload: res}, nil
 }
 
-// Stream implements minogrpc.OverlayClient. It opens streams according to the
-// routing and transmits the message according to their recipient.
-func (o overlayServer) Stream(stream Overlay_StreamServer) error {
+// Stream implements ptypes.OverlayServer. It can be called in two different
+// situations: 1. the node is the very first contacted by the orchestrator and
+// will then lead the protocol, or 2. the node is part of the protocol.
+//
+// A stream is always built with the orchestrator as the original caller that
+// contacts one of the participant. The chosen one will relay the messages to
+// and from the orchestrator.
+//
+// Other participants of the protocol will wake up when receiving a message from
+// a parent which will open a stream that will determine when to close. If they
+// have to relay a message, they will use a unicast call recursively until the
+// message is delivered, or has failed. This allows to return an acknowledgement
+// that contains the missing delivered addresses.
+func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 	o.closer.Add(1)
 	defer o.closer.Done()
 
-	// We fetch the uri that identifies the handler in the handlers map with the
-	// grpc metadata api. Using context.Value won't work.
-	uri := uriFromContext(stream.Context())
-
-	handler, ok := o.handlers[uri]
+	headers, ok := metadata.FromIncomingContext(stream.Context())
 	if !ok {
+		return xerrors.New("missing headers")
+	}
+
+	table, isRoot, err := o.tableFromHeaders(headers)
+	if err != nil {
+		return xerrors.Errorf("routing table: %v", err)
+	}
+
+	uri, streamID, gateway := readHeaders(headers)
+	if streamID == "" {
+		return xerrors.New("unexpected empty stream ID")
+	}
+
+	endpoint, found := o.endpoints[uri]
+	if !found {
 		return xerrors.Errorf("handler '%s' is not registered", uri)
 	}
 
-	// Listen on the first message, which should be the routing infos
-	msg, err := stream.Recv()
-	if err != nil {
-		return xerrors.Errorf("failed to receive routing message: %v", err)
+	md := metadata.Pairs(
+		headerURIKey, uri,
+		headerStreamIDKey, streamID,
+		headerGatewayKey, o.meStr)
+
+	// This lock will make sure that a session is ready before any message
+	// forwarded will be received.
+	endpoint.Lock()
+
+	sess, initiated := endpoint.streams[streamID]
+	if !initiated {
+		sess = session.NewSession(
+			md,
+			o.me,
+			endpoint.Factory,
+			o.router.GetPacketFactory(),
+			o.context,
+			o.connMgr,
+		)
+
+		endpoint.streams[streamID] = sess
 	}
 
-	rting, err := o.routingFactory.FromAny(msg.GetMessage().GetPayload())
-	if err != nil {
-		return xerrors.Errorf("couldn't decode routing: %v", err)
+	var relay session.Relay
+	var conn grpc.ClientConnInterface
+	if isRoot {
+		// The relay back to the orchestrator is using the stream as this is the
+		// only way to get back to it. Fortunately, if the stream succeeds, it
+		// means the packet arrived.
+		relay = session.NewStreamRelay(newRootAddress(), stream, o.context)
+	} else {
+		gw := o.addrFactory.FromText([]byte(gateway))
+
+		conn, err = o.connMgr.Acquire(gw)
+		if err != nil {
+			return xerrors.Errorf("gateway connection failed: %v", err)
+		}
+
+		defer o.connMgr.Release(gw)
+
+		relay = session.NewRelay(stream, gw, o.context, conn, md)
 	}
 
-	relayCtx := metadata.NewOutgoingContext(stream.Context(), metadata.Pairs(headerURIKey, uri))
+	o.closer.Add(1)
 
-	sender, receiver, err := o.setupRelays(relayCtx, o.me, rting)
+	ready := make(chan struct{})
+
+	go func() {
+		sess.Listen(relay, table, ready)
+
+		o.cleanStream(endpoint, streamID)
+		o.closer.Done()
+	}()
+
+	// There, it is important to make sure the parent relay is registered in the
+	// session before releasing the endpoint.
+	<-ready
+
+	endpoint.Unlock()
+
+	// This event sends a confirmation to the parent that the stream is
+	// registered and it can send messages to it.
+	err = stream.SendHeader(make(metadata.MD))
 	if err != nil {
-		return xerrors.Errorf("couldn't setup relays: %v", err)
+		return xerrors.Errorf("failed to send header: %v", err)
 	}
 
-	o.setupStream(stream, &sender, &receiver, rting.GetParent(o.me))
-
-	err = handler.Stream(sender, receiver)
+	err = endpoint.Handler.Stream(sess, sess)
 	if err != nil {
 		return xerrors.Errorf("handler failed to process: %v", err)
 	}
 
-	// The participant is done but waits for the protocol to end.
 	<-stream.Context().Done()
 
 	return nil
 }
 
-type relayer interface {
-	Context() context.Context
-	Send(*Envelope) error
-	Recv() (*Envelope, error)
+func (o *overlayServer) cleanStream(endpoint *Endpoint, id string) {
+	endpoint.Lock()
+	defer endpoint.Unlock()
+
+	// It's important to check the session currently stored as it may be a new
+	// one with an active parent, or it might be already cleaned.
+	sess, found := endpoint.streams[id]
+	if !found {
+		return
+	}
+
+	if sess.GetNumParents() > 0 {
+		return
+	}
+
+	delete(endpoint.streams, id)
+
+	sess.Close()
+
+	dela.Logger.Trace().
+		Str("id", id).
+		Msg("stream has been cleaned")
+}
+
+func (o *overlayServer) tableFromHeaders(h metadata.MD) (router.RoutingTable, bool, error) {
+	values := h.Get(session.HandshakeKey)
+	if len(values) != 0 {
+		hs, err := o.overlay.router.GetHandshakeFactory().HandshakeOf(o.context, []byte(values[0]))
+		if err != nil {
+			return nil, false, xerrors.Errorf("malformed handshake: %v", err)
+		}
+
+		table, err := o.router.TableOf(hs)
+		if err != nil {
+			return nil, false, xerrors.Errorf("invalid handshake: %v", err)
+		}
+
+		return table, false, nil
+	}
+
+	values = h.Get(headerAddressKey)
+
+	addrs := make([]mino.Address, len(values))
+	for i, addr := range values {
+		addrs[i] = o.addrFactory.FromText([]byte(addr))
+	}
+
+	table, err := o.router.New(mino.NewAddresses(addrs...))
+	if err != nil {
+		return nil, true, xerrors.Errorf("failed to create: %v", err)
+	}
+
+	return table, true, nil
+}
+
+// Forward implements ptypes.OverlayServer. It handles a request to forward a
+// packet by sending it to the appropriate session.
+func (o *overlayServer) Forward(ctx context.Context, p *ptypes.Packet) (*ptypes.Ack, error) {
+	headers, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return nil, xerrors.New("no header in the context")
+	}
+
+	uri, streamID, gateway := readHeaders(headers)
+
+	endpoint, found := o.endpoints[uri]
+	if !found {
+		return nil, xerrors.Errorf("handler '%s' is not registered", uri)
+	}
+
+	endpoint.RLock()
+	sess, ok := endpoint.streams[streamID]
+	endpoint.RUnlock()
+
+	if !ok {
+		return nil, xerrors.Errorf("no stream '%s' found", streamID)
+	}
+
+	from := o.addrFactory.FromText([]byte(gateway))
+
+	return sess.RecvPacket(from, p)
 }
 
 type overlay struct {
-	encoder        encoding.ProtoMarshaler
-	me             mino.Address
-	certs          certs.Storage
-	tokens         tokens.Holder
-	routingFactory routing.Factory
-	connFactory    ConnectionFactory
-	traffic        *traffic
+	closer      *sync.WaitGroup
+	context     serde.Context
+	me          mino.Address
+	certs       certs.Storage
+	tokens      tokens.Holder
+	router      router.Router
+	connMgr     session.ConnectionManager
+	addrFactory mino.AddressFactory
+
+	// Keep a text marshalled value for the overlay address so that it's not
+	// calculated for each request.
+	meStr string
 }
 
-func newOverlay(me mino.Address, rf routing.Factory) (overlay, error) {
+func newOverlay(me mino.Address, router router.Router,
+	addrFactory mino.AddressFactory, ctx serde.Context) (*overlay, error) {
+
 	cert, err := makeCertificate()
 	if err != nil {
-		return overlay{}, xerrors.Errorf("failed to make certificate: %v", err)
+		return nil, xerrors.Errorf("failed to make certificate: %v", err)
+	}
+
+	meBytes, err := me.MarshalText()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to marshal address: %v", err)
 	}
 
 	certs := certs.NewInMemoryStore()
 	certs.Store(me, cert)
 
-	o := overlay{
-		encoder:        encoding.NewProtoEncoder(),
-		me:             me,
-		tokens:         tokens.NewInMemoryHolder(),
-		certs:          certs,
-		routingFactory: rf,
-		connFactory: DefaultConnectionFactory{
-			certs: certs,
-			me:    me,
-		},
-	}
-
-	switch os.Getenv("MINO_TRAFFIC") {
-	case "log":
-		o.traffic = newTraffic(me, rf.GetAddressFactory(), ioutil.Discard)
-	case "print":
-		o.traffic = newTraffic(me, rf.GetAddressFactory(), os.Stdout)
+	o := &overlay{
+		closer:      new(sync.WaitGroup),
+		context:     ctx,
+		me:          me,
+		meStr:       string(meBytes),
+		tokens:      tokens.NewInMemoryHolder(),
+		certs:       certs,
+		router:      router,
+		connMgr:     newConnManager(me, certs),
+		addrFactory: addrFactory,
 	}
 
 	return o, nil
 }
 
 // GetCertificate returns the certificate of the overlay.
-func (o overlay) GetCertificate() *tls.Certificate {
+func (o *overlay) GetCertificate() *tls.Certificate {
 	me := o.certs.Load(o.me)
 	if me == nil {
 		// This should never happen and it will panic if it does as this will
@@ -268,14 +436,14 @@ func (o overlay) GetCertificate() *tls.Certificate {
 }
 
 // AddCertificateStore returns the certificate store.
-func (o overlay) GetCertificateStore() certs.Storage {
+func (o *overlay) GetCertificateStore() certs.Storage {
 	return o.certs
 }
 
 // Join sends a join request to a distant node with token generated beforehands
 // by the later.
-func (o overlay) Join(addr, token string, certHash []byte) error {
-	target := o.routingFactory.GetAddressFactory().FromText([]byte(addr))
+func (o *overlay) Join(addr, token string, certHash []byte) error {
+	target := o.addrFactory.FromText([]byte(addr))
 
 	netAddr, ok := target.(certs.Dialable)
 	if !ok {
@@ -296,16 +464,18 @@ func (o overlay) Join(addr, token string, certHash []byte) error {
 		return xerrors.Errorf("couldn't fetch distant certificate: %v", err)
 	}
 
-	conn, err := o.connFactory.FromAddress(target)
+	conn, err := o.connMgr.Acquire(target)
 	if err != nil {
 		return xerrors.Errorf("couldn't open connection: %v", err)
 	}
 
-	client := NewOverlayClient(conn)
+	defer o.connMgr.Release(target)
 
-	req := &JoinRequest{
+	client := ptypes.NewOverlayClient(conn)
+
+	req := &ptypes.JoinRequest{
 		Token: token,
-		Certificate: &Certificate{
+		Certificate: &ptypes.Certificate{
 			Address: meAddr,
 			Value:   meCert.Leaf.Raw,
 		},
@@ -322,7 +492,7 @@ func (o overlay) Join(addr, token string, certHash []byte) error {
 	// Update the certificate store with the response from the node we just
 	// joined. That will allow the node to communicate with the network.
 	for _, raw := range resp.Peers {
-		from := o.routingFactory.GetAddressFactory().FromText(raw.GetAddress())
+		from := o.addrFactory.FromText(raw.GetAddress())
 
 		leaf, err := x509.ParseCertificate(raw.GetValue())
 		if err != nil {
@@ -333,124 +503,6 @@ func (o overlay) Join(addr, token string, certHash []byte) error {
 	}
 
 	return nil
-}
-
-func (o overlay) setupRelays(ctx context.Context,
-	senderAddr mino.Address, rting routing.Routing) (sender, receiver, error) {
-
-	receiver := receiver{
-		addressFactory: o.routingFactory.GetAddressFactory(),
-		encoder:        o.encoder,
-		errs:           make(chan error, 1),
-		queue:          newNonBlockingQueue(),
-	}
-	sender := sender{
-		encoder:        o.encoder,
-		me:             senderAddr,
-		addressFactory: AddressFactory{},
-		rting:          rting,
-		clients:        map[mino.Address]chan OutContext{},
-		receiver:       &receiver,
-		traffic:        o.traffic,
-	}
-
-	for _, link := range rting.GetDirectLinks(senderAddr) {
-		dela.Logger.Trace().
-			Str("addr", o.me.String()).
-			Str("to", link.String()).
-			Msg("open relay")
-
-		err := o.setupRelay(ctx, link, &sender, &receiver, rting)
-		if err != nil {
-			return sender, receiver, xerrors.Errorf("couldn't setup relay to %v: %v", link, err)
-		}
-	}
-
-	return sender, receiver, nil
-}
-
-func (o overlay) setupRelay(ctx context.Context, relay mino.Address,
-	sender *sender, receiver *receiver, rting routing.Routing) error {
-
-	conn, err := o.connFactory.FromAddress(relay)
-	if err != nil {
-		return xerrors.Errorf("couldn't open connection: %v", err)
-	}
-
-	cl := NewOverlayClient(conn)
-
-	client, err := cl.Stream(ctx)
-	if err != nil {
-		return xerrors.Errorf("couldn't open relay: %v", err)
-	}
-
-	rtingAny, err := sender.encoder.PackAny(rting)
-	if err != nil {
-		return xerrors.Errorf("couldn't pack routing: %v", err)
-	}
-
-	err = client.Send(&Envelope{Message: &Message{Payload: rtingAny}})
-	if err != nil {
-		return xerrors.Errorf("couldn't send routing: %v", err)
-	}
-
-	o.setupStream(client, sender, receiver, relay)
-
-	return nil
-}
-
-func (o overlay) setupStream(stream relayer, sender *sender, receiver *receiver,
-	addr mino.Address) {
-
-	// Relay sender for that connection.
-	ch := make(chan OutContext)
-	sender.clients[addr] = ch
-
-	go func() {
-		for {
-			md, more := <-ch
-			if !more {
-				return
-			}
-
-			err := stream.Send(md.Envelope)
-			if err == io.EOF {
-				close(md.Done)
-				return
-			}
-
-			if err != nil {
-				md.Done <- xerrors.Errorf("couldn't send: %v", err)
-				close(md.Done)
-				return
-			}
-
-			o.traffic.logSend(stream.Context(), sender.me, addr, md.Envelope)
-			close(md.Done)
-		}
-	}()
-
-	// Relay listener for that connection.
-	go func() {
-		defer close(ch)
-
-		for {
-			envelope, err := stream.Recv()
-			if err == io.EOF {
-				return
-			}
-
-			if err != nil {
-				receiver.errs <- xerrors.Errorf("couldn't receive on stream: %v", err)
-				return
-			}
-
-			o.traffic.logRcv(stream.Context(), addr, sender.me, envelope)
-
-			// TODO: do something with error
-			sender.sendEnvelope(envelope, nil)
-		}
-	}()
 }
 
 func makeCertificate() (*tls.Certificate, error) {
@@ -487,31 +539,59 @@ func makeCertificate() (*tls.Certificate, error) {
 	}, nil
 }
 
-// ConnectionFactory is a factory to open connection to distant addresses.
-type ConnectionFactory interface {
-	FromAddress(mino.Address) (grpc.ClientConnInterface, error)
+// ConnManager is a manager to dial and close connections depending how the
+// usage.
+//
+// - implements session.ConnectionManager
+type connManager struct {
+	sync.Mutex
+	certs    certs.Storage
+	me       mino.Address
+	counters map[mino.Address]int
+	conns    map[mino.Address]*grpc.ClientConn
 }
 
-// DefaultConnectionFactory creates connection for grpc usages.
-type DefaultConnectionFactory struct {
-	certs certs.Storage
-	me    mino.Address
+func newConnManager(me mino.Address, certs certs.Storage) *connManager {
+	return &connManager{
+		certs:    certs,
+		me:       me,
+		counters: make(map[mino.Address]int),
+		conns:    make(map[mino.Address]*grpc.ClientConn),
+	}
 }
 
-// FromAddress implements minogrpc.ConnectionFactory. It creates a gRPC
-// connection from the server to the client.
-func (f DefaultConnectionFactory) FromAddress(addr mino.Address) (grpc.ClientConnInterface, error) {
-	clientPubCert := f.certs.Load(addr)
+// Len implements session.ConnectionManager. It returns the number of active
+// connections in the manager.
+func (mgr *connManager) Len() int {
+	mgr.Lock()
+	defer mgr.Unlock()
+
+	return len(mgr.conns)
+}
+
+// Acquire implements session.ConnectionManager. It either dials to open the
+// connection or returns an existing one for the address.
+func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, error) {
+	mgr.Lock()
+	defer mgr.Unlock()
+
+	conn, ok := mgr.conns[to]
+	if ok {
+		mgr.counters[to]++
+		return conn, nil
+	}
+
+	clientPubCert := mgr.certs.Load(to)
 	if clientPubCert == nil {
-		return nil, xerrors.Errorf("certificate for '%v' not found", addr)
+		return nil, xerrors.Errorf("certificate for '%v' not found", to)
 	}
 
 	pool := x509.NewCertPool()
 	pool.AddCert(clientPubCert.Leaf)
 
-	me := f.certs.Load(f.me)
+	me := mgr.certs.Load(mgr.me)
 	if me == nil {
-		return nil, xerrors.Errorf("couldn't find server '%v' certificate", f.me)
+		return nil, xerrors.Errorf("couldn't find server '%v' certificate", mgr.me)
 	}
 
 	ta := credentials.NewTLS(&tls.Config{
@@ -519,9 +599,9 @@ func (f DefaultConnectionFactory) FromAddress(addr mino.Address) (grpc.ClientCon
 		RootCAs:      pool,
 	})
 
-	netAddr, ok := addr.(address)
+	netAddr, ok := to.(address)
 	if !ok {
-		return nil, xerrors.Errorf("invalid address type '%T'", addr)
+		return nil, xerrors.Errorf("invalid address type '%T'", to)
 	}
 
 	// Connecting using TLS and the distant server certificate as the root.
@@ -536,7 +616,56 @@ func (f DefaultConnectionFactory) FromAddress(addr mino.Address) (grpc.ClientCon
 		return nil, xerrors.Errorf("failed to dial: %v", err)
 	}
 
+	mgr.conns[to] = conn
+	mgr.counters[to] = 1
+
 	return conn, nil
+}
+
+// Release implements session.ConnectionManager. It closes the connection to the
+// address if appropriate.
+func (mgr *connManager) Release(to mino.Address) {
+	mgr.Lock()
+	defer mgr.Unlock()
+
+	count, ok := mgr.counters[to]
+	if ok {
+		if count <= 1 {
+			delete(mgr.counters, to)
+
+			conn := mgr.conns[to]
+			delete(mgr.conns, to)
+
+			err := conn.Close()
+			dela.Logger.Trace().
+				Err(err).
+				Stringer("to", to).
+				Stringer("from", mgr.me).
+				Int("length", len(mgr.conns)).
+				Msg("connection closed")
+
+			return
+		}
+
+		mgr.counters[to]--
+	}
+}
+
+func readHeaders(md metadata.MD) (uri string, streamID string, gw string) {
+	uri = getOrEmpty(md, headerURIKey)
+	streamID = getOrEmpty(md, headerStreamIDKey)
+	gw = getOrEmpty(md, headerGatewayKey)
+
+	return
+}
+
+func getOrEmpty(md metadata.MD, key string) string {
+	values := md.Get(key)
+	if len(values) == 0 {
+		return ""
+	}
+
+	return values[0]
 }
 
 func uriFromContext(ctx context.Context) string {
@@ -545,7 +674,7 @@ func uriFromContext(ctx context.Context) string {
 		return ""
 	}
 
-	apiURI := headers[headerURIKey]
+	apiURI := headers.Get(headerURIKey)
 	if len(apiURI) == 0 {
 		return ""
 	}

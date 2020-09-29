@@ -1,5 +1,12 @@
 package mino
 
+// NewAddressIterator returns a new address iterator
+func NewAddressIterator(addrs []Address) AddressIterator {
+	return &addressIterator{
+		addrs: addrs,
+	}
+}
+
 // addressIterator is an implementation of the iterator for addresses.
 //
 // - implements mino.AddressIterator
@@ -22,12 +29,9 @@ func (it *addressIterator) HasNext() bool {
 // GetNext implements mino.AddressIterator. It returns the address at the
 // current index and moves the iterator to the next address.
 func (it *addressIterator) GetNext() Address {
-	if it.HasNext() {
-		res := it.addrs[it.index]
-		it.index++
-		return res
-	}
-	return nil
+	res := it.addrs[it.index]
+	it.index++
+	return res
 }
 
 // roster is an implementation of the mino.Players interface. It provides helper
@@ -63,12 +67,12 @@ func (r roster) Take(updaters ...FilterUpdater) Players {
 }
 
 // AddressIterator implements mino.Players. It returns an iterator for the
-// roster.
+// authority.
 func (r roster) AddressIterator() AddressIterator {
-	return &addressIterator{addrs: r.addrs}
+	return NewAddressIterator(r.addrs)
 }
 
-// Len implements mino.Players. It returns the length of the roster.
+// Len implements mino.Players. It returns the length of the authority.
 func (r roster) Len() int {
 	return len(r.addrs)
 }

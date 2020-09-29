@@ -1,7 +1,6 @@
 package json
 
 import (
-	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -9,137 +8,39 @@ import (
 	"golang.org/x/xerrors"
 )
 
-func TestFactoryInput_GetSerializer(t *testing.T) {
-	input := factoryInput{
-		serde: NewSerializer(),
-	}
-
-	require.NotNil(t, input.GetSerializer())
+func TestJSONEngine_GetFormat(t *testing.T) {
+	ctx := NewContext()
+	require.Equal(t, serde.FormatJSON, ctx.GetFormat())
 }
 
-func TestFactoryInput_Feed(t *testing.T) {
-	input := factoryInput{
-		data: []byte("{}"),
-	}
+func TestJSONEngine_Marshal(t *testing.T) {
+	ctx := NewContext()
 
-	ret := struct{}{}
-	err := input.Feed(&ret)
+	data, err := ctx.Marshal(struct{}{})
 	require.NoError(t, err)
+	require.Equal(t, `{}`, string(data))
 
-	err = input.Feed(nil)
-	require.EqualError(t, err, "couldn't unmarshal: json: Unmarshal(nil)")
+	_, err = ctx.Marshal(badObject{})
+	require.EqualError(t, err, "json: error calling MarshalJSON for type json.badObject: oops")
 }
 
-func TestJsonEncoder_Serialize(t *testing.T) {
-	s := NewSerializer()
+func TestJSONEngine_Unmarshal(t *testing.T) {
+	ctx := NewContext()
 
-	dm := block{
-		Value: "Hello World!",
-		Index: 42,
-	}
-
-	buffer, err := s.Serialize(dm)
+	var m interface{}
+	err := ctx.Unmarshal([]byte(`{"A":"B"}`), &m)
 	require.NoError(t, err)
-	require.Equal(t, "{\"Index\":42,\"Value\":\"Hello World!\"}", string(buffer))
+	require.Equal(t, map[string]interface{}{"A": "B"}, m)
 
-	_, err = s.Serialize(nil)
-	require.EqualError(t, err, "message is nil")
-
-	_, err = s.Serialize(badMessage{err: xerrors.New("oops")})
-	require.EqualError(t, err,
-		"couldn't serialize 'json.badMessage' to json: oops")
-
-	_, err = s.Serialize(badMessage{})
-	require.EqualError(t, err,
-		"couldn't encode: json: error calling MarshalJSON for type json.badJSON: oops")
-}
-
-func TestSerializer_Deserialize(t *testing.T) {
-	s := NewSerializer()
-
-	buffer := []byte("{\"Value\":\"Hello World!\",\"Index\":42}")
-
-	var m block
-	err := s.Deserialize(buffer, blockFactory{}, &m)
-	require.NoError(t, err)
-	require.Equal(t, block{Value: "Hello World!", Index: 42}, m)
-
-	err = s.Deserialize(buffer, nil, &m)
-	require.EqualError(t, err, "factory is nil")
-
-	err = s.Deserialize(buffer, badFactory{}, &m)
-	require.EqualError(t, err,
-		"couldn't deserialize from json with 'json.badFactory': oops")
-
-	err = s.Deserialize(buffer, blockFactory{}, nil)
-	require.EqualError(t, err, "couldn't assign: expect a pointer")
+	err = ctx.Unmarshal(nil, &m)
+	require.EqualError(t, err, "unexpected end of JSON input")
 }
 
 // -----------------------------------------------------------------------------
 // Utility functions
 
-type blockMessage struct {
-	Index uint64
-	Value string
-}
+type badObject struct{}
 
-type block struct {
-	serde.UnimplementedMessage
-
-	Index uint64
-	Value string
-}
-
-func (m block) VisitJSON(serde.Serializer) (interface{}, error) {
-	t := blockMessage{
-		Value: m.Value,
-		Index: m.Index,
-	}
-
-	return t, nil
-}
-
-type blockFactory struct {
-	serde.UnimplementedFactory
-}
-
-func (f blockFactory) VisitJSON(input serde.FactoryInput) (serde.Message, error) {
-	m := blockMessage{}
-	err := input.Feed(&m)
-	if err != nil {
-		return nil, err
-	}
-
-	t := block{
-		Value: m.Value,
-		Index: m.Index,
-	}
-
-	return t, nil
-}
-
-type badJSON struct {
-	json.Marshaler
-}
-
-func (j badJSON) MarshalJSON() ([]byte, error) {
-	return nil, xerrors.New("oops")
-}
-
-type badMessage struct {
-	serde.UnimplementedMessage
-
-	err error
-}
-
-func (m badMessage) VisitJSON(serde.Serializer) (interface{}, error) {
-	return badJSON{}, m.err
-}
-
-type badFactory struct {
-	serde.UnimplementedFactory
-}
-
-func (m badFactory) VisitJSON(serde.FactoryInput) (serde.Message, error) {
+func (o badObject) MarshalJSON() ([]byte, error) {
 	return nil, xerrors.New("oops")
 }

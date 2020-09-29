@@ -12,7 +12,7 @@ func TestAddressIterator_Seek(t *testing.T) {
 	iter := addressIterator{addrs: addrs}
 	iter.Seek(1)
 	require.NotNil(t, iter.GetNext())
-	require.Nil(t, iter.GetNext())
+	require.False(t, iter.HasNext())
 }
 
 func TestAddressIterator_HasNext(t *testing.T) {
@@ -32,7 +32,7 @@ func TestAddressIterator_GetNext(t *testing.T) {
 	iter := addressIterator{addrs: addrs}
 	require.NotNil(t, iter.GetNext())
 	require.NotNil(t, iter.GetNext())
-	require.Nil(t, iter.GetNext())
+	require.False(t, iter.HasNext())
 }
 
 func TestRoster_Take(t *testing.T) {
@@ -47,7 +47,7 @@ func TestRoster_AddressIterator(t *testing.T) {
 
 	iter := addrs.AddressIterator()
 	require.NotNil(t, iter.GetNext())
-	require.Nil(t, iter.GetNext())
+	require.False(t, iter.HasNext())
 }
 
 func TestRoster_Len(t *testing.T) {

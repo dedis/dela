@@ -2,11 +2,18 @@ package minogrpc
 
 import (
 	context "context"
+	"sync"
 
-	proto "github.com/golang/protobuf/proto"
+	"github.com/rs/xid"
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/minogrpc/ptypes"
+	"go.dedis.ch/dela/mino/minogrpc/session"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 // RPC represents an RPC that has been registered by a client, which allows
@@ -14,106 +21,232 @@ import (
 //
 // - implements mino.RPC
 type RPC struct {
-	overlay overlay
+	overlay *overlay
 	uri     string
+	factory serde.Factory
 }
 
 // Call implements mino.RPC. It calls the RPC on each provided address.
-func (rpc *RPC) Call(ctx context.Context, req proto.Message,
-	players mino.Players) (<-chan proto.Message, <-chan error) {
+func (rpc *RPC) Call(ctx context.Context,
+	req serde.Message, players mino.Players) (<-chan mino.Response, error) {
 
-	out := make(chan proto.Message, players.Len())
-	errs := make(chan error, players.Len())
-
-	m, err := rpc.overlay.encoder.MarshalAny(req)
+	data, err := req.Serialize(rpc.overlay.context)
 	if err != nil {
-		errs <- xerrors.Errorf("failed to marshal msg to any: %v", err)
-		return out, errs
+		return nil, xerrors.Errorf("failed to marshal msg: %v", err)
 	}
 
-	sendMsg := &Message{Payload: m}
+	from, err := rpc.overlay.me.MarshalText()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to marshal address: %v", err)
+	}
 
-	go func() {
-		iter := players.AddressIterator()
-		for iter.HasNext() {
-			addr := iter.GetNext()
+	sendMsg := &ptypes.Message{
+		From:    from,
+		Payload: data,
+	}
 
-			clientConn, err := rpc.overlay.connFactory.FromAddress(addr)
+	out := make(chan mino.Response, players.Len())
+
+	wg := sync.WaitGroup{}
+	wg.Add(players.Len())
+
+	iter := players.AddressIterator()
+	for iter.HasNext() {
+		addr := iter.GetNext()
+
+		go func() {
+			defer wg.Done()
+
+			clientConn, err := rpc.overlay.connMgr.Acquire(addr)
 			if err != nil {
-				errs <- xerrors.Errorf("failed to get client conn for '%v': %v",
-					addr, err)
-				continue
+				resp := mino.NewResponseWithError(
+					addr,
+					xerrors.Errorf("failed to get client conn: %v", err),
+				)
+
+				out <- resp
+				return
 			}
 
-			cl := NewOverlayClient(clientConn)
+			defer rpc.overlay.connMgr.Release(addr)
+
+			cl := ptypes.NewOverlayClient(clientConn)
 
 			header := metadata.New(map[string]string{headerURIKey: rpc.uri})
 			newCtx := metadata.NewOutgoingContext(ctx, header)
 
 			callResp, err := cl.Call(newCtx, sendMsg)
 			if err != nil {
-				errs <- xerrors.Errorf("failed to call client '%s': %v", addr, err)
-				continue
+				resp := mino.NewResponseWithError(
+					addr,
+					xerrors.Errorf("failed to call client: %v", err),
+				)
+
+				out <- resp
+				return
 			}
 
-			resp, err := rpc.overlay.encoder.UnmarshalDynamicAny(callResp.GetPayload())
+			if callResp.GetPayload() == nil {
+				return
+			}
+
+			resp, err := rpc.factory.Deserialize(rpc.overlay.context, callResp.GetPayload())
 			if err != nil {
-				errs <- xerrors.Errorf("couldn't unmarshal payload: %v", err)
-				continue
+				resp := mino.NewResponseWithError(
+					addr,
+					xerrors.Errorf("couldn't unmarshal payload: %v", err),
+				)
+
+				out <- resp
+				return
 			}
 
-			out <- resp
-		}
+			out <- mino.NewResponse(addr, resp)
+		}()
+	}
 
+	go func() {
+		wg.Wait()
 		close(out)
 	}()
 
-	return out, errs
+	return out, nil
 }
 
-// Stream implements mino.RPC. TODO: errors
-func (rpc RPC) Stream(ctx context.Context,
-	players mino.Players) (mino.Sender, mino.Receiver, error) {
+// Stream implements mino.RPC. It will open a stream to one of the addresses
+// with a bidirectional channel that will send and receive packets. The chosen
+// address will open one or several streams to the rest of the players. The
+// choice of the gateway is first the local node if it belongs to the list,
+// otherwise the first node of the list.
+//
+// The way routes are created depends on the router implementation chosen for
+// the endpoint. It can for instance use a tree structure, which means the
+// network for 8 nodes could look like this:
+//
+//                               Orchestrator
+//                                     |
+//                                  __ A __
+//                                 /       \
+//                                B         C
+//                              / | \     /   \
+//                             D  E  F   G     H
+//
+// If C has to send a message to B, it will send it through node A. Similarly,
+// if D has to send a message to G, it will move up the tree through B, A and
+// finally C.
+func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, mino.Receiver, error) {
+	if players == nil || players.Len() == 0 {
+		return nil, nil, xerrors.New("empty list of addresses")
+	}
 
-	root := newRootAddress()
+	streamID := xid.New().String()
 
-	rting, err := rpc.overlay.routingFactory.FromIterator(rpc.overlay.me,
-		players.AddressIterator())
+	md := metadata.Pairs(
+		headerURIKey, rpc.uri,
+		headerStreamIDKey, streamID,
+		headerGatewayKey, orchestratorCode)
+
+	table, err := rpc.overlay.router.New(mino.NewAddresses())
 	if err != nil {
-		return nil, nil, xerrors.Errorf("couldn't generate routing: %v", err)
+		return nil, nil, xerrors.Errorf("routing table failed: %v", err)
 	}
 
-	header := metadata.New(map[string]string{headerURIKey: rpc.uri})
+	gw, others := rpc.findGateway(players)
 
-	receiver := receiver{
-		addressFactory: rpc.overlay.routingFactory.GetAddressFactory(),
-		encoder:        rpc.overlay.encoder,
-		errs:           make(chan error, 1),
-		queue:          newNonBlockingQueue(),
+	for _, addr := range others {
+		addr, err := addr.MarshalText()
+		if err != nil {
+			return nil, nil, xerrors.Errorf("marshal address failed: %v", err)
+		}
+
+		md.Append(headerAddressKey, string(addr))
 	}
 
-	gateway := rting.GetRoot()
-
-	sender := sender{
-		encoder:        rpc.overlay.encoder,
-		me:             root,
-		addressFactory: AddressFactory{},
-		gateway:        gateway,
-		clients:        map[mino.Address]chan OutContext{},
-		receiver:       &receiver,
-		traffic:        rpc.overlay.traffic,
-	}
-
-	relayCtx := metadata.NewOutgoingContext(ctx, header)
-
-	// The orchestrator opens a connection to the entry point of the routing map
-	// and it will relay the messages by this gateway by default. The entry
-	// point of the routing will have the orchestrator stream opens which will
-	// allow the messages to be routed back to the orchestrator.
-	err = rpc.overlay.setupRelay(relayCtx, gateway, &sender, &receiver, rting)
+	conn, err := rpc.overlay.connMgr.Acquire(gw)
 	if err != nil {
-		return nil, nil, xerrors.Errorf("couldn't setup relay: %v", err)
+		return nil, nil, xerrors.Errorf("gateway connection failed: %v", err)
 	}
 
-	return sender, receiver, nil
+	client := ptypes.NewOverlayClient(conn)
+
+	ctx = metadata.NewOutgoingContext(ctx, md)
+
+	stream, err := client.Stream(ctx)
+	if err != nil {
+		rpc.overlay.connMgr.Release(gw)
+
+		return nil, nil, xerrors.Errorf("failed to open stream: %v", err)
+	}
+
+	// Wait for the event from the server to tell that the stream is
+	// initialized.
+	_, err = stream.Header()
+	if err != nil {
+		rpc.overlay.connMgr.Release(gw)
+
+		return nil, nil, xerrors.Errorf("failed to receive header: %v", err)
+	}
+
+	relay := session.NewRelay(stream, gw, rpc.overlay.context, conn, md)
+
+	sess := session.NewSession(
+		md,
+		newRootAddress(),
+		rpc.factory,
+		rpc.overlay.router.GetPacketFactory(),
+		rpc.overlay.context,
+		rpc.overlay.connMgr,
+	)
+
+	// There is no listen for the orchestrator as we need to forward the
+	// messages received from the stream.
+	sess.SetPassive(relay, table)
+
+	rpc.overlay.closer.Add(1)
+
+	go func() {
+		defer func() {
+			relay.Close()
+			rpc.overlay.connMgr.Release(gw)
+			rpc.overlay.closer.Done()
+		}()
+
+		for {
+			p, err := stream.Recv()
+			if err != nil {
+				if status.Code(err) == codes.Unknown {
+					dela.Logger.Err(err).Msg("stream to root failed")
+				}
+
+				return
+			}
+
+			sess.RecvPacket(gw, p)
+		}
+	}()
+
+	return sess, sess, nil
+}
+
+func (rpc RPC) findGateway(players mino.Players) (mino.Address, []mino.Address) {
+	iter := players.AddressIterator()
+	addrs := make([]mino.Address, 0, players.Len())
+
+	var gw mino.Address
+
+	for iter.HasNext() {
+		addr := iter.GetNext()
+
+		if addr.Equal(rpc.overlay.me) {
+			gw = addr
+		} else {
+			addrs = append(addrs, addr)
+		}
+	}
+
+	if gw == nil {
+		return addrs[0], addrs[1:]
+	}
+
+	return gw, addrs
 }

@@ -2,14 +2,11 @@ package bls
 
 import (
 	"bytes"
-	fmt "fmt"
+	"fmt"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/any"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/crypto/common/json"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/registry"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/pairing"
 	"go.dedis.ch/kyber/v3/sign/bls"
@@ -17,61 +14,74 @@ import (
 	"golang.org/x/xerrors"
 )
 
-//go:generate protoc -I ./ --go_out=./ ./messages.proto
-
 const (
 	// Algorithm is the name of the curve used for the BLS signature.
-	Algorithm = "CURVE-BN256"
+	Algorithm = "BLS-CURVE-BN256"
 )
 
 var (
 	suite = pairing.NewSuiteBn256()
+
+	pubkeyFormats = registry.NewSimpleRegistry()
+	sigFormats    = registry.NewSimpleRegistry()
 )
 
-// publicKey can be provided to verify a BLS signature.
-type publicKey struct {
-	serde.UnimplementedMessage
+// RegisterPublicKeyFormat registers the engine for the provided format.
+func RegisterPublicKeyFormat(c serde.Format, f serde.FormatEngine) {
+	pubkeyFormats.Register(c, f)
+}
 
+// RegisterSignatureFormat registers the engine for the provided format.
+func RegisterSignatureFormat(c serde.Format, f serde.FormatEngine) {
+	sigFormats.Register(c, f)
+}
+
+// PublicKey can be provided to verify a BLS signature.
+type PublicKey struct {
 	point kyber.Point
+}
+
+// NewPublicKey creates a new public key by unmarshaling the data into BN256
+// point.
+func NewPublicKey(data []byte) (PublicKey, error) {
+	point := suite.Point()
+	err := point.UnmarshalBinary(data)
+	if err != nil {
+		return PublicKey{}, err
+	}
+
+	return PublicKey{point: point}, nil
+}
+
+// NewPublicKeyFromPoint creates a new public key from an existing point.
+func NewPublicKeyFromPoint(point kyber.Point) PublicKey {
+	return PublicKey{
+		point: point,
+	}
 }
 
 // MarshalBinary implements encoding.BinaryMarshaler. It produces a slice of
 // bytes representing the public key.
-func (pk publicKey) MarshalBinary() ([]byte, error) {
+func (pk PublicKey) MarshalBinary() ([]byte, error) {
 	return pk.point.MarshalBinary()
 }
 
-// Pack implements encoding.Packable. It returns the protobuf message
-// representing the public key.
-func (pk publicKey) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
-	buffer, err := pk.point.MarshalBinary()
+// Serialize implements serde.Message.
+func (pk PublicKey) Serialize(ctx serde.Context) ([]byte, error) {
+	format := pubkeyFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, pk)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't marshal point: %v", err)
+		return nil, xerrors.Errorf("couldn't encode public key: %v", err)
 	}
 
-	return &PublicKeyProto{Data: buffer}, nil
-}
-
-// VisitJSON implements serde.Message. It returns the JSON message for the
-// public key.
-func (pk publicKey) VisitJSON(serde.Serializer) (interface{}, error) {
-	buffer, err := pk.point.MarshalBinary()
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't marshal point: %v", err)
-	}
-
-	m := json.PublicKey{
-		Algorithm: json.Algorithm{Name: Algorithm},
-		Data:      buffer,
-	}
-
-	return m, nil
+	return data, nil
 }
 
 // Verify implements crypto.PublicKey. It returns nil if the signature matches
 // the message with this public key.
-func (pk publicKey) Verify(msg []byte, sig crypto.Signature) error {
-	signature, ok := sig.(signature)
+func (pk PublicKey) Verify(msg []byte, sig crypto.Signature) error {
+	signature, ok := sig.(Signature)
 	if !ok {
 		return xerrors.Errorf("invalid signature type '%T'", sig)
 	}
@@ -86,8 +96,8 @@ func (pk publicKey) Verify(msg []byte, sig crypto.Signature) error {
 
 // Equal implements crypto.PublicKey. It returns true if the other public key
 // is the same.
-func (pk publicKey) Equal(other crypto.PublicKey) bool {
-	pubkey, ok := other.(publicKey)
+func (pk PublicKey) Equal(other interface{}) bool {
+	pubkey, ok := other.(PublicKey)
 	if !ok {
 		return false
 	}
@@ -97,7 +107,7 @@ func (pk publicKey) Equal(other crypto.PublicKey) bool {
 
 // MarshalText implements encoding.TextMarshaler. It returns a text
 // representation of the public key.
-func (pk publicKey) MarshalText() ([]byte, error) {
+func (pk PublicKey) MarshalText() ([]byte, error) {
 	buffer, err := pk.MarshalBinary()
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't marshal: %v", err)
@@ -108,7 +118,7 @@ func (pk publicKey) MarshalText() ([]byte, error) {
 
 // String implements fmt.String. It returns a string representation of the
 // point.
-func (pk publicKey) String() string {
+func (pk PublicKey) String() string {
 	buffer, err := pk.MarshalText()
 	if err != nil {
 		return "bls:malformed_point"
@@ -118,40 +128,40 @@ func (pk publicKey) String() string {
 	return string(buffer)[:4+16]
 }
 
-// signature is a proof of the integrity of a single message associated with a
+// Signature is a proof of the integrity of a single message associated with a
 // unique public key.
-type signature struct {
-	serde.UnimplementedMessage
-
+type Signature struct {
 	data []byte
+}
+
+// NewSignature creates a new signature from the provided data.
+func NewSignature(data []byte) Signature {
+	return Signature{
+		data: data,
+	}
 }
 
 // MarshalBinary implements encoding.BinaryMarshaler. It returns a slice of
 // bytes representing the signature.
-func (sig signature) MarshalBinary() ([]byte, error) {
+func (sig Signature) MarshalBinary() ([]byte, error) {
 	return sig.data, nil
 }
 
-// Pack implements encoding.Packable. It returns  the protobuf message
-// representing the signature.
-func (sig signature) Pack(encoding.ProtoMarshaler) (proto.Message, error) {
-	return &SignatureProto{Data: sig.data}, nil
-}
+// Serialize implements serde.Message.
+func (sig Signature) Serialize(ctx serde.Context) ([]byte, error) {
+	format := sigFormats.Get(ctx.GetFormat())
 
-// VisitJSON implements serde.Message. It returns the JSON message for the
-// signature.
-func (sig signature) VisitJSON(serde.Serializer) (interface{}, error) {
-	m := json.Signature{
-		Algorithm: json.Algorithm{Name: Algorithm},
-		Data:      sig.data,
+	data, err := format.Encode(ctx, sig)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't encode signature: %v", err)
 	}
 
-	return m, nil
+	return data, nil
 }
 
 // Equal implements crypto.PublicKey.
-func (sig signature) Equal(other crypto.Signature) bool {
-	otherSig, ok := other.(signature)
+func (sig Signature) Equal(other crypto.Signature) bool {
+	otherSig, ok := other.(Signature)
 	if !ok {
 		return false
 	}
@@ -159,111 +169,97 @@ func (sig signature) Equal(other crypto.Signature) bool {
 	return bytes.Equal(sig.data, otherSig.data)
 }
 
-// publicKeyFactory creates BLS compatible public key from protobuf messages.
-type publicKeyFactory struct {
-	serde.UnimplementedFactory
-	encoder encoding.ProtoMarshaler
+func (sig Signature) String() string {
+	return fmt.Sprintf("bls:%x", sig.data)
 }
+
+// publicKeyFactory creates BLS compatible public key from protobuf messages.
+//
+// - serde.Factory
+// - crypto.PublicKeyFactory
+type publicKeyFactory struct{}
 
 // NewPublicKeyFactory returns a new instance of the factory.
 func NewPublicKeyFactory() crypto.PublicKeyFactory {
-	return publicKeyFactory{
-		encoder: encoding.NewProtoEncoder(),
-	}
+	return publicKeyFactory{}
 }
 
-// FromProto implements crypto.PublicKeyFactory. It creates a public key from
-// its protobuf representation.
-func (f publicKeyFactory) FromProto(src proto.Message) (crypto.PublicKey, error) {
-	var pb *PublicKeyProto
+// Deserialize implements serde.Factory. It looks up the format and returns the
+// deserialized public key.
+func (f publicKeyFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+	format := pubkeyFormats.Get(ctx.GetFormat())
 
-	switch msg := src.(type) {
-	case *PublicKeyProto:
-		pb = msg
-	case *any.Any:
-		pb = &PublicKeyProto{}
-
-		err := f.encoder.UnmarshalAny(msg, pb)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
-		}
-	default:
-		return nil, xerrors.Errorf("invalid public key type '%T'", src)
-	}
-
-	point := suite.Point()
-	err := point.UnmarshalBinary(pb.GetData())
+	m, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to unmarshal point: %v", err)
+		return nil, xerrors.Errorf("couldn't decode public key: %v", err)
 	}
 
-	return publicKey{point: point}, nil
+	return m, nil
 }
 
-// VisitJSON implements serde.Factory. It deserializes the public key in JSON
-// format.
-func (f publicKeyFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
-	m := json.PublicKey{}
-	err := in.Feed(&m)
+// PublicKeyOf implements crypto.PublicKeyFactory. It returns the public key
+// deserialized from the data.
+func (f publicKeyFactory) PublicKeyOf(ctx serde.Context, data []byte) (crypto.PublicKey, error) {
+	m, err := f.Deserialize(ctx, data)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize data: %v", err)
+		return nil, err
 	}
 
-	point := suite.Point()
-	err = point.UnmarshalBinary(m.Data)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't unmarshal point: %v", err)
+	pubkey, ok := m.(crypto.PublicKey)
+	if !ok {
+		return nil, xerrors.Errorf("invalid public key of type '%T'", m)
 	}
 
-	return publicKey{point: point}, nil
+	return pubkey, nil
+}
+
+// FromBytes implements crypto.PublicKeyFactory. It returns the public key
+// unmarshaled from the bytes.
+func (f publicKeyFactory) FromBytes(data []byte) (crypto.PublicKey, error) {
+	pubkey, err := NewPublicKey(data)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to unmarshal key: %v", err)
+	}
+
+	return pubkey, nil
 }
 
 // signatureFactory provides functions to create BLS signatures from protobuf
 // messages.
-type signatureFactory struct {
-	serde.UnimplementedFactory
-	encoder encoding.ProtoMarshaler
-}
+type signatureFactory struct{}
 
 // NewSignatureFactory returns a new instance of the factory.
 func NewSignatureFactory() crypto.SignatureFactory {
-	return signatureFactory{
-		encoder: encoding.NewProtoEncoder(),
-	}
+	return signatureFactory{}
 }
 
-// FromProto implements crypto.SignatureFactory. It creates a BLS signature from
-// its protobuf representation.
-func (f signatureFactory) FromProto(src proto.Message) (crypto.Signature, error) {
-	var pb *SignatureProto
+// Deserialize implements serde.Factory. It looks up the format and returns the
+// message of the data if appropriate, otherwise an error.
+func (f signatureFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+	format := sigFormats.Get(ctx.GetFormat())
 
-	switch msg := src.(type) {
-	case *SignatureProto:
-		pb = msg
-	case *any.Any:
-		pb = &SignatureProto{}
-
-		err := f.encoder.UnmarshalAny(msg, pb)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't unmarshal message: %v", err)
-		}
-	default:
-		return nil, xerrors.Errorf("invalid signature type '%T'", src)
-	}
-
-	return signature{data: pb.GetData()}, nil
-}
-
-// VisitJSON implements serde.Factory. It deserializes the signature in JSON
-// format.
-func (f signatureFactory) VisitJSON(in serde.FactoryInput) (serde.Message, error) {
-	m := json.Signature{}
-	err := in.Feed(&m)
+	m, err := format.Decode(ctx, data)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't deserialize data: %v", err)
+		return nil, xerrors.Errorf("couldn't decode signature: %v", err)
 	}
 
-	return signature{data: m.Data}, nil
+	return m, nil
+}
+
+// SignatureOf implements crypto.SignatureFactory. It populates the signature
+// with the data if appropriate, otherwise it returns an error.
+func (f signatureFactory) SignatureOf(ctx serde.Context, data []byte) (crypto.Signature, error) {
+	m, err := f.Deserialize(ctx, data)
+	if err != nil {
+		return nil, err
+	}
+
+	sig, ok := m.(Signature)
+	if !ok {
+		return nil, xerrors.Errorf("invalid signature of type '%T'", m)
+	}
+
+	return sig, nil
 }
 
 // verifier provides primitives to verify a BLS signature of a unique message.
@@ -281,7 +277,7 @@ func newVerifier(points []kyber.Point) crypto.Verifier {
 func (v blsVerifier) Verify(msg []byte, sig crypto.Signature) error {
 	aggKey := bls.AggregatePublicKeys(suite, v.points...)
 
-	err := bls.Verify(suite, aggKey, msg, sig.(signature).data)
+	err := bls.Verify(suite, aggKey, msg, sig.(Signature).data)
 	if err != nil {
 		return err
 	}
@@ -303,7 +299,7 @@ func (v verifierFactory) FromAuthority(ca crypto.CollectiveAuthority) (crypto.Ve
 	iter := ca.PublicKeyIterator()
 	for iter.HasNext() {
 		next := iter.GetNext()
-		pk, ok := next.(publicKey)
+		pk, ok := next.(PublicKey)
 		if !ok {
 			return nil, xerrors.Errorf("invalid public key type: %T", next)
 		}
@@ -320,7 +316,7 @@ func (v verifierFactory) FromAuthority(ca crypto.CollectiveAuthority) (crypto.Ve
 func (v verifierFactory) FromArray(publicKeys []crypto.PublicKey) (crypto.Verifier, error) {
 	points := make([]kyber.Point, len(publicKeys))
 	for i, pubkey := range publicKeys {
-		pk, ok := pubkey.(publicKey)
+		pk, ok := pubkey.(PublicKey)
 		if !ok {
 			return nil, xerrors.Errorf("invalid public key type: %T", pubkey)
 		}
@@ -331,63 +327,89 @@ func (v verifierFactory) FromArray(publicKeys []crypto.PublicKey) (crypto.Verifi
 	return newVerifier(points), nil
 }
 
-type signer struct {
-	keyPair *key.Pair
+// Signer is the BLS signer which can sign messages to be verified with its
+// public key.
+//
+// - implements crypto.AggregateSigner
+// - implements encodinf.BinaryMarshaler
+type Signer struct {
+	public  kyber.Point
+	private kyber.Scalar
 }
 
-// NewSigner returns a new random BLS signer that supports aggregation.
-func NewSigner() crypto.AggregateSigner {
+// NewSigner generates and returns a new random signer.
+func NewSigner() Signer {
+	return Generate().(Signer)
+}
+
+// NewSignerFromBytes restores a signer from a marshalling.
+func NewSignerFromBytes(data []byte) (crypto.AggregateSigner, error) {
+	scalar := suite.Scalar()
+	err := scalar.UnmarshalBinary(data)
+	if err != nil {
+		return nil, xerrors.Errorf("while unmarshaling scalar: %v", err)
+	}
+
+	pubkey := suite.Point().Mul(scalar, nil)
+
+	signer := Signer{
+		public:  pubkey,
+		private: scalar,
+	}
+
+	return signer, nil
+}
+
+// Generate returns a new random BLS signer that supports aggregation.
+func Generate() crypto.Signer {
 	kp := key.NewKeyPair(suite)
-	return signer{
-		keyPair: kp,
+	return Signer{
+		private: kp.Private,
+		public:  kp.Public,
 	}
 }
 
 // GetVerifierFactory implements crypto.Signer. It returns the verifier factory
 // for BLS signatures.
-func (s signer) GetVerifierFactory() crypto.VerifierFactory {
+func (s Signer) GetVerifierFactory() crypto.VerifierFactory {
 	return verifierFactory{}
 }
 
 // GetPublicKeyFactory implements crypto.Signer. It returns the public key
 // factory for BLS signatures.
-func (s signer) GetPublicKeyFactory() crypto.PublicKeyFactory {
-	return publicKeyFactory{
-		encoder: encoding.NewProtoEncoder(),
-	}
+func (s Signer) GetPublicKeyFactory() crypto.PublicKeyFactory {
+	return publicKeyFactory{}
 }
 
 // GetSignatureFactory implements crypto.Signer. It returns the signature
 // factory for BLS signatures.
-func (s signer) GetSignatureFactory() crypto.SignatureFactory {
-	return signatureFactory{
-		encoder: encoding.NewProtoEncoder(),
-	}
+func (s Signer) GetSignatureFactory() crypto.SignatureFactory {
+	return signatureFactory{}
 }
 
 // GetPublicKey implements crypto.Signer. It returns the public key of the
 // signer that can be used to verify signatures.
-func (s signer) GetPublicKey() crypto.PublicKey {
-	return publicKey{point: s.keyPair.Public}
+func (s Signer) GetPublicKey() crypto.PublicKey {
+	return PublicKey{point: s.public}
 }
 
 // Sign implements crypto.Signer. It signs the message in parameter and returns
 // the signature, or an error if it cannot sign.
-func (s signer) Sign(msg []byte) (crypto.Signature, error) {
-	sig, err := bls.Sign(suite, s.keyPair.Private, msg)
+func (s Signer) Sign(msg []byte) (crypto.Signature, error) {
+	sig, err := bls.Sign(suite, s.private, msg)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't make bls signature: %v", err)
 	}
 
-	return signature{data: sig}, nil
+	return Signature{data: sig}, nil
 }
 
 // Aggregate implements crypto.Signer. It aggregates the signatures into a
 // single one that can be verifier with the aggregated public key associated.
-func (s signer) Aggregate(signatures ...crypto.Signature) (crypto.Signature, error) {
+func (s Signer) Aggregate(signatures ...crypto.Signature) (crypto.Signature, error) {
 	buffers := make([][]byte, len(signatures))
 	for i, sig := range signatures {
-		buffers[i] = sig.(signature).data
+		buffers[i] = sig.(Signature).data
 	}
 
 	agg, err := bls.AggregateSignatures(suite, buffers...)
@@ -395,5 +417,16 @@ func (s signer) Aggregate(signatures ...crypto.Signature) (crypto.Signature, err
 		return nil, xerrors.Errorf("couldn't aggregate: %v", err)
 	}
 
-	return signature{data: agg}, nil
+	return Signature{data: agg}, nil
+}
+
+// MarshalBinary implements encoding.BinaryMarshaler. It returns a binary
+// representation of the signer.
+func (s Signer) MarshalBinary() ([]byte, error) {
+	data, err := s.private.MarshalBinary()
+	if err != nil {
+		return nil, xerrors.Errorf("while marshaling scalar: %v", err)
+	}
+
+	return data, nil
 }
