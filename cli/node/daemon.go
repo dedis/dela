@@ -2,12 +2,13 @@ package node
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
-	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cli"
@@ -52,22 +53,16 @@ func (c socketClient) Send(data []byte) error {
 // - implements node.Daemon
 type socketDaemon struct {
 	sync.WaitGroup
-	socketpath string
-	injector   Injector
-	actions    *actionMap
-	closing    chan struct{}
+	socketpath  string
+	injector    Injector
+	actions     *actionMap
+	closing     chan struct{}
+	readTimeout time.Duration
 }
 
 // Listen implements node.Daemon. It starts the daemon by creating the unix
 // socket file to the path.
 func (d *socketDaemon) Listen() error {
-	dir, _ := filepath.Split(d.socketpath)
-
-	err := os.MkdirAll(dir, 0700)
-	if err != nil {
-		return xerrors.Errorf("couldn't make path: %v", err)
-	}
-
 	socket, err := net.Listen("unix", d.socketpath)
 	if err != nil {
 		return xerrors.Errorf("couldn't bind socket: %v", err)
@@ -109,9 +104,20 @@ func (d *socketDaemon) handleConn(conn net.Conn) {
 	// Read the first two bytes that will be converted into the action ID.
 	buffer := make([]byte, 2)
 
+	conn.SetReadDeadline(time.Now().Add(d.readTimeout))
+
 	_, err := conn.Read(buffer)
 	if err != nil {
 		d.sendError(conn, xerrors.Errorf("stream corrupted: %v", err))
+		return
+	}
+
+	dec := json.NewDecoder(conn)
+
+	fset := make(FlagSet)
+	err = dec.Decode(&fset)
+	if err != nil {
+		d.sendError(conn, xerrors.Errorf("failed to decode flags: %v", err))
 		return
 	}
 
@@ -125,7 +131,7 @@ func (d *socketDaemon) handleConn(conn net.Conn) {
 
 	actx := Context{
 		Injector: d.injector,
-		In:       conn,
+		Flags:    fset,
 		Out:      conn,
 	}
 
@@ -156,6 +162,7 @@ func (d *socketDaemon) Close() error {
 type socketFactory struct {
 	injector Injector
 	actions  *actionMap
+	out      io.Writer
 }
 
 // ClientFromContext implements node.DaemonFactory. It creates a client based on
@@ -163,7 +170,7 @@ type socketFactory struct {
 func (f socketFactory) ClientFromContext(ctx cli.Flags) (Client, error) {
 	client := socketClient{
 		socketpath: f.getSocketPath(ctx),
-		out:        os.Stdout,
+		out:        f.out,
 	}
 
 	return client, nil
@@ -173,25 +180,16 @@ func (f socketFactory) ClientFromContext(ctx cli.Flags) (Client, error) {
 // the flags of the context.
 func (f socketFactory) DaemonFromContext(ctx cli.Flags) (Daemon, error) {
 	daemon := &socketDaemon{
-		socketpath: f.getSocketPath(ctx),
-		injector:   f.injector,
-		actions:    f.actions,
-		closing:    make(chan struct{}),
+		socketpath:  f.getSocketPath(ctx),
+		injector:    f.injector,
+		actions:     f.actions,
+		closing:     make(chan struct{}),
+		readTimeout: time.Second,
 	}
 
 	return daemon, nil
 }
 
 func (f socketFactory) getSocketPath(ctx cli.Flags) string {
-	path := ctx.Path("socket")
-	if path == "" {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return filepath.Join(os.TempDir(), "dela", "daemon.sock")
-		}
-
-		return filepath.Join(homeDir, ".dela", "daemon.sock")
-	}
-
-	return path
+	return filepath.Join(ctx.Path("config"), "daemon.sock")
 }

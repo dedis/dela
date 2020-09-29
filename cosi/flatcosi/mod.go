@@ -7,21 +7,20 @@ import (
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
-	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
-
-//go:generate protoc -I ./ --go_out=./ ./messages.proto
 
 const (
 	rpcName = "cosi"
 )
 
 // Flat is an implementation of the collective signing interface by
-// using BLS signatures.
+// using BLS signatures. It ignores the threshold and always requests a
+// signature from every participant.
+//
+// - implements cosi.CollectiveSigning
 type Flat struct {
 	mino   mino.Mino
 	signer crypto.AggregateSigner
@@ -37,37 +36,46 @@ func NewFlat(o mino.Mino, signer crypto.AggregateSigner) *Flat {
 
 // GetSigner implements cosi.CollectiveSigning. It returns the signer of the
 // instance.
-func (cosi *Flat) GetSigner() crypto.Signer {
-	return cosi.signer
+func (flat *Flat) GetSigner() crypto.Signer {
+	return flat.signer
 }
 
-// GetPublicKeyFactory returns the public key factory.
-func (cosi *Flat) GetPublicKeyFactory() crypto.PublicKeyFactory {
-	return cosi.signer.GetPublicKeyFactory()
+// GetPublicKeyFactory implements cosi.CollectiveSigning. It returns the public
+// key factory.
+func (flat *Flat) GetPublicKeyFactory() crypto.PublicKeyFactory {
+	return flat.signer.GetPublicKeyFactory()
 }
 
-// GetSignatureFactory returns the signature factory.
-func (cosi *Flat) GetSignatureFactory() crypto.SignatureFactory {
-	return cosi.signer.GetSignatureFactory()
+// GetSignatureFactory implements cosi.CollectiveSigning. It returns the
+// signature factory.
+func (flat *Flat) GetSignatureFactory() crypto.SignatureFactory {
+	return flat.signer.GetSignatureFactory()
 }
 
-// GetVerifierFactory returns the verifier factory.
-func (cosi *Flat) GetVerifierFactory() crypto.VerifierFactory {
-	return cosi.signer.GetVerifierFactory()
+// GetVerifierFactory implements cosi.CollectiveSigning. It returns the verifier
+// factory.
+func (flat *Flat) GetVerifierFactory() crypto.VerifierFactory {
+	return flat.signer.GetVerifierFactory()
 }
 
-// Listen creates an actor that starts an RPC called cosi and respond to signing
-// requests. The actor can also be used to sign a message.
-func (cosi *Flat) Listen(r cosi.Reactor) (cosi.Actor, error) {
+// SetThreshold implements cosi.CollectiveSigning. It ignores the new threshold
+// as this implementation only accepts full participation.
+func (flat *Flat) SetThreshold(fn cosi.Threshold) {}
+
+// Listen implements cosi.CollectiveSigning. It creates an actor that starts an
+// RPC called cosi and respond to signing requests. The actor can also be used
+// to sign a message.
+func (flat *Flat) Listen(r cosi.Reactor) (cosi.Actor, error) {
 	actor := flatActor{
 		logger:  dela.Logger,
-		me:      cosi.mino.GetAddress(),
-		signer:  cosi.signer,
-		encoder: encoding.NewProtoEncoder(),
+		me:      flat.mino.GetAddress(),
+		signer:  flat.signer,
 		reactor: r,
 	}
 
-	rpc, err := cosi.mino.MakeRPC(rpcName, newHandler(cosi.signer, r))
+	factory := cosi.NewMessageFactory(r, flat.signer.GetSignatureFactory())
+
+	rpc, err := flat.mino.MakeRPC(rpcName, newHandler(flat.signer, r), factory)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't make the rpc: %v", err)
 	}
@@ -82,11 +90,10 @@ type flatActor struct {
 	me      mino.Address
 	rpc     mino.RPC
 	signer  crypto.AggregateSigner
-	encoder encoding.ProtoMarshaler
 	reactor cosi.Reactor
 }
 
-// Sign returns the collective signature of the block.
+// Sign implements cosi.Actor. It returns the collective signature of the block.
 func (a flatActor) Sign(ctx context.Context, msg serde.Message,
 	ca crypto.CollectiveAuthority) (crypto.Signature, error) {
 
@@ -95,11 +102,14 @@ func (a flatActor) Sign(ctx context.Context, msg serde.Message,
 		return nil, xerrors.Errorf("couldn't make verifier: %v", err)
 	}
 
-	req := SignatureRequest{
-		message: msg,
+	req := cosi.SignatureRequest{
+		Value: msg,
 	}
 
-	msgs, errs := a.rpc.Call(ctx, tmp.ProtoOf(req), ca)
+	msgs, err := a.rpc.Call(ctx, req, ca)
+	if err != nil {
+		return nil, xerrors.Errorf("call aborted: %v", err)
+	}
 
 	digest, err := a.reactor.Invoke(a.me, msg)
 	if err != nil {
@@ -108,35 +118,34 @@ func (a flatActor) Sign(ctx context.Context, msg serde.Message,
 
 	var agg crypto.Signature
 	for {
-		select {
-		case resp, more := <-msgs:
-			if !more {
-				if agg == nil {
-					return nil, xerrors.New("signature is nil")
-				}
-
-				err = verifier.Verify(digest, agg)
-				if err != nil {
-					return nil, xerrors.Errorf("couldn't verify the aggregation: %v", err)
-				}
-
-				return agg, nil
+		resp, more := <-msgs
+		if !more {
+			if agg == nil {
+				return nil, xerrors.New("signature is nil")
 			}
 
-			in := tmp.FromProto(resp, newResponseFactory(a.signer.GetSignatureFactory()))
-
-			agg, err = a.processResponse(in, agg)
+			err = verifier.Verify(digest, agg)
 			if err != nil {
-				return nil, xerrors.Errorf("couldn't process response: %v", err)
+				return nil, xerrors.Errorf("couldn't verify the aggregation: %v", err)
 			}
-		case err := <-errs:
+
+			return agg, nil
+		}
+
+		reply, err := resp.GetMessageOrError()
+		if err != nil {
 			return nil, xerrors.Errorf("one request has failed: %v", err)
+		}
+
+		agg, err = a.processResponse(reply, agg)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't process response: %v", err)
 		}
 	}
 }
 
 func (a flatActor) processResponse(resp serde.Message, agg crypto.Signature) (crypto.Signature, error) {
-	reply, ok := resp.(SignatureResponse)
+	reply, ok := resp.(cosi.SignatureResponse)
 	if !ok {
 		return nil, xerrors.Errorf("invalid response type '%T'", resp)
 	}
@@ -144,9 +153,9 @@ func (a flatActor) processResponse(resp serde.Message, agg crypto.Signature) (cr
 	var err error
 
 	if agg == nil {
-		agg = reply.signature
+		agg = reply.Signature
 	} else {
-		agg, err = a.signer.Aggregate(agg, reply.signature)
+		agg, err = a.signer.Aggregate(agg, reply.Signature)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't aggregate: %v", err)
 		}

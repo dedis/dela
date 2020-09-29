@@ -4,15 +4,14 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/encoding"
+	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
 func TestThresholdHandler_Stream(t *testing.T) {
 	handler := newHandler(
-		&CoSi{signer: fake.NewSigner(), encoder: encoding.NewProtoEncoder()},
+		&CoSi{signer: fake.NewAggregateSigner()},
 		fakeReactor{},
 	)
 
@@ -26,6 +25,9 @@ func TestThresholdHandler_Stream(t *testing.T) {
 	err = handler.processRequest(sender, rcvr)
 	require.EqualError(t, err, "failed to receive: oops")
 
+	err = handler.processRequest(sender, &fakeReceiver{resps: makeBadResponse()})
+	require.EqualError(t, err, "invalid request type 'fake.Message'")
+
 	handler.reactor = fakeReactor{err: xerrors.New("oops")}
 	rcvr.err = nil
 	rcvr.resps = makeResponse()
@@ -38,13 +40,7 @@ func TestThresholdHandler_Stream(t *testing.T) {
 	err = handler.processRequest(sender, rcvr)
 	require.EqualError(t, err, "couldn't sign: fake error")
 
-	handler.signer = fake.NewSigner()
-	handler.encoder = fake.BadPackEncoder{}
-	rcvr.resps = makeResponse()
-	err = handler.processRequest(sender, rcvr)
-	require.EqualError(t, err, "couldn't pack signature: fake error")
-
-	handler.encoder = encoding.NewProtoEncoder()
+	handler.signer = fake.NewAggregateSigner()
 	sender = fakeSender{numErr: 1}
 	rcvr.resps = makeResponse()
 	err = handler.Stream(sender, rcvr)
@@ -55,5 +51,9 @@ func TestThresholdHandler_Stream(t *testing.T) {
 // Utility functions
 
 func makeResponse() [][]interface{} {
-	return [][]interface{}{{fake.Address{}, tmp.ProtoOf(fake.Message{})}}
+	return [][]interface{}{{fake.Address{}, cosi.SignatureRequest{Value: fake.Message{}}}}
+}
+
+func makeBadResponse() [][]interface{} {
+	return [][]interface{}{{fake.Address{}, fake.Message{}}}
 }

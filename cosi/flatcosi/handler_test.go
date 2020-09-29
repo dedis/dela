@@ -4,28 +4,32 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
-	"go.dedis.ch/dela/serde/tmp"
+	"golang.org/x/xerrors"
 )
 
 func TestHandler_Process(t *testing.T) {
-	h := newHandler(bls.NewSigner(), fakeReactor{})
+	h := newHandler(bls.Generate(), fakeReactor{})
 	req := mino.Request{
-		Message: tmp.ProtoOf(SignatureRequest{message: fake.Message{}}),
+		Message: cosi.SignatureRequest{Value: fake.Message{}},
 	}
 
 	_, err := h.Process(req)
 	require.NoError(t, err)
 
-	h.factory = fake.MessageFactory{}
-	resp, err := h.Process(mino.Request{Message: tmp.ProtoOf(fake.Message{})})
+	resp, err := h.Process(mino.Request{Message: fake.Message{}})
 	require.EqualError(t, err, "invalid message type 'fake.Message'")
 	require.Nil(t, resp)
 
-	h.factory = newRequestFactory(h.reactor)
+	h.reactor = fakeReactor{err: xerrors.New("oops")}
+	_, err = h.Process(req)
+	require.EqualError(t, err, "couldn't hash message: oops")
+
+	h.reactor = fakeReactor{}
 	h.signer = fake.NewBadSigner()
 	_, err = h.Process(req)
 	require.EqualError(t, err, "couldn't sign: fake error")
@@ -35,8 +39,6 @@ func TestHandler_Process(t *testing.T) {
 // Utility functions
 
 type fakeReactor struct {
-	serde.UnimplementedFactory
-
 	err error
 }
 
@@ -44,6 +46,6 @@ func (h fakeReactor) Invoke(mino.Address, serde.Message) ([]byte, error) {
 	return []byte{0xab}, h.err
 }
 
-func (h fakeReactor) VisitJSON(serde.FactoryInput) (serde.Message, error) {
-	return fake.Message{}, nil
+func (h fakeReactor) Deserialize(serde.Context, []byte) (serde.Message, error) {
+	return fake.Message{}, h.err
 }

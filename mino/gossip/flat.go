@@ -5,10 +5,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/protobuf/proto"
+	"github.com/rs/zerolog"
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
-	"go.dedis.ch/dela/serde/tmp"
 	"golang.org/x/xerrors"
 )
 
@@ -41,13 +41,14 @@ func NewFlat(m mino.Mino, f serde.Factory) *Flat {
 func (flat *Flat) Listen() (Actor, error) {
 	h := handler{Flat: flat}
 
-	rpc, err := flat.mino.MakeRPC("flatgossip", h)
+	rpc, err := flat.mino.MakeRPC("flatgossip", h, flat.rumorFactory)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't create the rpc: %v", err)
 	}
 
 	actor := &flatActor{
-		rpc: rpc,
+		logger: dela.Logger.With().Str("addr", flat.mino.GetAddress().String()).Logger(),
+		rpc:    rpc,
 	}
 
 	return actor, nil
@@ -62,6 +63,7 @@ func (flat *Flat) Rumors() <-chan Rumor {
 type flatActor struct {
 	sync.Mutex
 
+	logger  zerolog.Logger
 	rpc     mino.RPC
 	players mino.Players
 }
@@ -89,15 +91,20 @@ func (a *flatActor) Add(rumor Rumor) error {
 	ctx, cancel := context.WithTimeout(context.Background(), rumorTimeout)
 	defer cancel()
 
-	resps, errs := a.rpc.Call(ctx, tmp.ProtoOf(rumor), players)
+	resps, err := a.rpc.Call(ctx, rumor, players)
+	if err != nil {
+		return xerrors.Errorf("couldn't call peers: %v", err)
+	}
+
 	for {
-		select {
-		case _, more := <-resps:
-			if !more {
-				return nil
-			}
-		case err := <-errs:
-			return xerrors.Errorf("couldn't send the rumor: %v", err)
+		resp, more := <-resps
+		if !more {
+			return nil
+		}
+
+		_, err := resp.GetMessageOrError()
+		if err != nil {
+			a.logger.Warn().Err(err).Msg("rumor not sent")
 		}
 	}
 }
@@ -121,12 +128,10 @@ type handler struct {
 
 // Process implements mino.Handler. It notifies the new rumor if appropriate and
 // does not return anything.
-func (h handler) Process(req mino.Request) (proto.Message, error) {
-	m := tmp.FromProto(req.Message, h.rumorFactory)
-
-	rumor, ok := m.(Rumor)
+func (h handler) Process(req mino.Request) (serde.Message, error) {
+	rumor, ok := req.Message.(Rumor)
 	if !ok {
-		return nil, xerrors.Errorf("unexpected rumor of type '%T'", m)
+		return nil, xerrors.Errorf("unexpected rumor of type '%T'", req.Message)
 	}
 
 	h.ch <- rumor

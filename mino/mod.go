@@ -8,7 +8,7 @@ import (
 	"encoding"
 	"errors"
 
-	"github.com/golang/protobuf/proto"
+	"go.dedis.ch/dela/serde"
 )
 
 // Address is a representation of a node's address.
@@ -54,7 +54,13 @@ type Sender interface {
 	// will be populated with errors coming from the network layer if the
 	// message cannot be sent. The channel must be closed after the message has
 	// been/failed to be sent.
-	Send(msg proto.Message, addrs ...Address) <-chan error
+	Send(msg serde.Message, addrs ...Address) <-chan error
+}
+
+// Receiver is an interface to provide primitives to receive messages from
+// recipients.
+type Receiver interface {
+	Recv(context.Context) (Address, serde.Message, error)
 }
 
 // Request is a wrapper around the context of a message received from a player
@@ -63,24 +69,32 @@ type Sender interface {
 type Request struct {
 	// Address is the address of the sender of the request.
 	Address Address
+
 	// Message is the message of the request.
-	Message proto.Message
+	Message serde.Message
 }
 
-// Receiver is an interface to provide primitives to receive messages from
-// recipients.
-type Receiver interface {
-	Recv(context.Context) (Address, proto.Message, error)
+// Response is a interface that Mino implementations should comply with. The
+// response can either contain a message, or an error if something wrong
+// happened.
+type Response interface {
+	// GetFrom returns the address of the source of the reply.
+	GetFrom() Address
+
+	// GetMessageOrError returns the message, or an error if something wrong
+	// happened.
+	GetMessageOrError() (serde.Message, error)
 }
 
 // RPC is a representation of a remote procedure call that can call a single
 // distant procedure or multiple.
 type RPC interface {
-	// Call is a basic request to one or multiple distant peers. Only the
-	// responses channel will be close when all requests have been processed,
-	// either by success or after it filled the errors channel.
-	Call(ctx context.Context, req proto.Message,
-		players Players) (<-chan proto.Message, <-chan error)
+	// Call is a basic request to one or multiple distant peers. It directly
+	// contacts all the players and thus expect a reasonable number of peers.
+	//
+	// The response channel must be closed after every request ended in a
+	// result, either a reply or an error.
+	Call(ctx context.Context, req serde.Message, players Players) (<-chan Response, error)
 
 	// Stream is a persistent request that will be closed only when the
 	// orchestrator is done or an error occured.
@@ -91,11 +105,7 @@ type RPC interface {
 type Handler interface {
 	// Process handles a single request by producing the response according to
 	// the request message.
-	Process(req Request) (resp proto.Message, err error)
-
-	// Combine gives a chance to reduce the network load by combining multiple
-	// messages for a collect call on the intermediate nodes.
-	Combine(req []proto.Message) (resp []proto.Message, err error)
+	Process(req Request) (resp serde.Message, err error)
 
 	// Stream is a handler for a stream request. It will open a stream with the
 	// participants.
@@ -107,13 +117,8 @@ type Handler interface {
 type UnsupportedHandler struct{}
 
 // Process is the default implementation for a handler. It will return an error.
-func (h UnsupportedHandler) Process(req Request) (proto.Message, error) {
+func (h UnsupportedHandler) Process(req Request) (serde.Message, error) {
 	return nil, errors.New("rpc is not supported")
-}
-
-// Combine returns the messages without combining them.
-func (h UnsupportedHandler) Combine(req []proto.Message) ([]proto.Message, error) {
-	return req, nil
 }
 
 // Stream is the default implementation for a handler. It will return an error.
@@ -123,6 +128,8 @@ func (h UnsupportedHandler) Stream(in Sender, out Receiver) error {
 
 // AddressFactory is the factory to decode addresses.
 type AddressFactory interface {
+	serde.Factory
+
 	FromText(text []byte) Address
 }
 
@@ -138,8 +145,8 @@ type Mino interface {
 	// MakeNamespace returns an instance restricted to the namespace.
 	MakeNamespace(namespace string) (Mino, error)
 
-	// MakeRPC creates an RPC that can send to and receive from a uniq URI which
-	// is computed with URI = (namespace || name)
-	// The namespace is known by the minion instance.
-	MakeRPC(name string, h Handler) (RPC, error)
+	// MakeRPC creates an RPC that can send to and receive from a unique URI
+	// which is computed with URI = (namespace || name). The namespace is known
+	// by the mino instance.
+	MakeRPC(name string, h Handler, f serde.Factory) (RPC, error)
 }

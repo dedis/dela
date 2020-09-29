@@ -1,10 +1,9 @@
 package crypto
 
 import (
+	"encoding"
 	"hash"
 
-	"github.com/golang/protobuf/proto"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 )
@@ -22,21 +21,22 @@ type RandGenerator interface {
 
 // PublicKey is a public identity that can be used to verify a signature.
 type PublicKey interface {
-	encoding.Packable
 	encoding.BinaryMarshaler
 	encoding.TextMarshaler
 	serde.Message
 
 	Verify(msg []byte, signature Signature) error
 
-	Equal(other PublicKey) bool
+	Equal(other interface{}) bool
 }
 
-// PublicKeyFactory is a factory to create public keys.
+// PublicKeyFactory is a factory to decode public keys.
 type PublicKeyFactory interface {
 	serde.Factory
 
-	FromProto(src proto.Message) (PublicKey, error)
+	PublicKeyOf(serde.Context, []byte) (PublicKey, error)
+
+	FromBytes([]byte) (PublicKey, error)
 }
 
 // PublicKeyIterator is an iterator over the list of public keys of a
@@ -56,18 +56,17 @@ type PublicKeyIterator interface {
 
 // Signature is a verifiable element for a unique message.
 type Signature interface {
-	encoding.Packable
 	encoding.BinaryMarshaler
 	serde.Message
 
 	Equal(other Signature) bool
 }
 
-// SignatureFactory is a factory to create BLS signature.
+// SignatureFactory is a factory to decode signatures.
 type SignatureFactory interface {
 	serde.Factory
 
-	FromProto(src proto.Message) (Signature, error)
+	SignatureOf(serde.Context, []byte) (Signature, error)
 }
 
 // Verifier provides the primitive to verify a signature w.r.t. a message.
@@ -83,7 +82,6 @@ type VerifierFactory interface {
 
 // Signer provides the primitives to sign and verify signatures.
 type Signer interface {
-	GetVerifierFactory() VerifierFactory
 	GetPublicKeyFactory() PublicKeyFactory
 	GetSignatureFactory() SignatureFactory
 	GetPublicKey() PublicKey
@@ -95,6 +93,8 @@ type Signer interface {
 type AggregateSigner interface {
 	Signer
 
+	GetVerifierFactory() VerifierFactory
+
 	Aggregate(signatures ...Signature) (Signature, error)
 }
 
@@ -104,10 +104,10 @@ type CollectiveAuthority interface {
 	mino.Players
 
 	// GetPublicKey returns the public key and its index of the corresponding
-	// address if any matches.
+	// address if any matches. An index < 0 means no correspondance found.
 	GetPublicKey(addr mino.Address) (PublicKey, int)
 
-	// PublicKeyIterator creates an public key iterator that iterates over the
-	// list of public keys.
+	// PublicKeyIterator creates a public key iterator that iterates over the
+	// list of public keys and is consistent with the address iterator.
 	PublicKeyIterator() PublicKeyIterator
 }

@@ -5,13 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
-	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/encoding"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
 
@@ -20,12 +17,12 @@ func TestRPC_Call(t *testing.T) {
 
 	m1, err := NewMinoch(manager, "A")
 	require.NoError(t, err)
-	rpc1, err := m1.MakeRPC("test", fakeHandler{})
+	rpc1, err := m1.MakeRPC("test", fakeHandler{}, fake.MessageFactory{})
 	require.NoError(t, err)
 
 	m2, err := NewMinoch(manager, "B")
 	require.NoError(t, err)
-	_, err = m2.MakeRPC("test", badHandler{})
+	_, err = m2.MakeRPC("test", badHandler{}, fake.MessageFactory{})
 	require.NoError(t, err)
 
 	m3, err := NewMinoch(manager, "C")
@@ -34,28 +31,29 @@ func TestRPC_Call(t *testing.T) {
 	ctx := context.Background()
 
 	addrs := mino.NewAddresses(m1.GetAddress())
-	resps, errs := rpc1.Call(ctx, &empty.Empty{}, addrs)
+	resps, err := rpc1.Call(ctx, fake.Message{}, addrs)
+	require.NoError(t, err)
 
-	err = testWait(t, errs, resps)
+	err = testWait(t, resps, nil)
 	// Message to self with a correct handler
 	require.NoError(t, err)
 
-	addrs = mino.NewAddresses(fake.NewAddress(99), m3.GetAddress())
-	resps, errs = rpc1.Call(ctx, &empty.Empty{}, addrs)
-
-	err = testWait(t, errs, resps)
-	// Message to the fake address.
+	addrs = mino.NewAddresses(fake.NewAddress(99))
+	_, err = rpc1.Call(ctx, fake.Message{}, addrs)
 	require.EqualError(t, err,
 		"couldn't find peer: invalid address type 'fake.Address'")
 
-	err = testWait(t, errs, resps)
+	resps, err = rpc1.Call(ctx, fake.Message{}, mino.NewAddresses(m3.GetAddress()))
+	require.NoError(t, err)
+	err = testWait(t, resps, nil)
 	// Message to m3 that has not the handler registered.
 	require.EqualError(t, err, "unknown rpc /test")
 
 	addrs = mino.NewAddresses(m2.GetAddress())
-	resps, errs = rpc1.Call(ctx, &empty.Empty{}, addrs)
+	resps, err = rpc1.Call(ctx, fake.Message{}, addrs)
+	require.NoError(t, err)
 
-	err = testWait(t, errs, resps)
+	err = testWait(t, resps, nil)
 	// Message to m2 with a handler but no implementation.
 	require.EqualError(t, err, "couldn't process request: rpc is not supported")
 }
@@ -65,7 +63,7 @@ func TestRPC_Stream(t *testing.T) {
 
 	m, err := NewMinoch(manager, "A")
 	require.NoError(t, err)
-	rpc, err := m.MakeRPC("test", fakeStreamHandler{})
+	rpc, err := m.MakeRPC("test", fakeStreamHandler{}, fake.MessageFactory{})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -73,7 +71,7 @@ func TestRPC_Stream(t *testing.T) {
 	sender, receiver, err := rpc.Stream(ctx, mino.NewAddresses(m.GetAddress()))
 	require.NoError(t, err)
 
-	sender.Send(&empty.Empty{}, m.GetAddress())
+	sender.Send(fake.Message{}, m.GetAddress())
 	_, _, err = receiver.Recv(context.Background())
 	require.NoError(t, err)
 
@@ -88,7 +86,9 @@ func TestRPC_Failures_Stream(t *testing.T) {
 
 	m, err := NewMinoch(manager, "A")
 	require.NoError(t, err)
-	rpc, err := m.MakeRPC("test", fakeBadStreamHandler{})
+
+	m.context = fake.NewBadContext()
+	rpc, err := m.MakeRPC("test", fakeBadStreamHandler{}, fake.MessageFactory{})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -99,10 +99,11 @@ func TestRPC_Failures_Stream(t *testing.T) {
 	_, _, err = in.Recv(ctx)
 	require.EqualError(t, err, "couldn't process: oops")
 
-	errs := out.Send(nil)
-	err = testWait(t, errs, nil)
-	require.EqualError(t, err, "couldn't marshal message: message is nil")
+	errs := out.Send(fake.Message{})
+	err = testWait(t, nil, errs)
+	require.EqualError(t, err, "couldn't marshal message: fake error")
 
+	m.context = serde.NewContext(fake.ContextEngine{})
 	_, _, err = rpc.Stream(ctx, mino.NewAddresses(fake.NewAddress(0)))
 	require.EqualError(t, err,
 		"couldn't find peer: invalid address type 'fake.Address'")
@@ -110,17 +111,15 @@ func TestRPC_Failures_Stream(t *testing.T) {
 
 func TestReceiver_Recv(t *testing.T) {
 	recv := receiver{
-		encoder: encoding.NewProtoEncoder(),
 		out:     make(chan Envelope, 1),
 		errs:    make(chan error),
+		context: serde.NewContext(fake.ContextEngine{}),
+		factory: fake.MessageFactory{},
 	}
-
-	msgAny, err := ptypes.MarshalAny(&empty.Empty{})
-	require.NoError(t, err)
 
 	recv.out <- Envelope{
 		from:    address{id: "A"},
-		message: msgAny,
+		message: []byte(`{}`),
 	}
 
 	from, msg, err := recv.Recv(context.Background())
@@ -128,22 +127,28 @@ func TestReceiver_Recv(t *testing.T) {
 	require.Equal(t, address{id: "A"}, from)
 	require.NotNil(t, msg)
 
-	recv.encoder = fake.BadUnmarshalDynEncoder{}
+	recv.factory = fake.NewBadMessageFactory()
 	recv.out <- Envelope{}
 	_, _, err = recv.Recv(context.Background())
-	require.EqualError(t, err, "couldn't unmarshal message: fake error")
+	require.EqualError(t, err, "couldn't deserialize: fake error")
 }
 
 // -----------------------------------------------------------------------------
 // Utility functions
 
-func testWait(t *testing.T, errs <-chan error, resps <-chan proto.Message) error {
+func testWait(t *testing.T, resps <-chan mino.Response, errs <-chan error) error {
 	select {
 	case <-time.After(50 * time.Millisecond):
 		t.Fatal("an error is expected")
 		return nil
-	case <-resps:
-		return nil
+	case resp, more := <-resps:
+		if !more {
+			return nil
+		}
+
+		_, err := resp.GetMessageOrError()
+
+		return err
 	case err := <-errs:
 		return err
 	}

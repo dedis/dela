@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -245,10 +246,27 @@ func run(c *cli.Context) error {
 	fmt.Fprintf(out, "ratio = fill;\n")
 	fmt.Fprintf(out, "rankdir=\"LR\";\n")
 
-	for pkg, depsBag := range links {
+	// We sort packages to improve the rendering
+	packages := make([]string, 0, len(links))
+	for pkg := range links {
+		packages = append(packages, pkg)
+	}
+
+	sort.Strings(packages)
+
+	for _, pkg := range packages {
+		depsBag := links[pkg]
 		nodesList[pkg] = true
 
+		// We sort dependencies to improve the rendering
+		dependencies := make([]string, 0, len(depsBag))
 		for dep := range depsBag {
+			dependencies = append(dependencies, dep)
+		}
+
+		sort.Strings(dependencies)
+
+		for _, dep := range dependencies {
 			nodesList[dep] = true
 			fmt.Fprintf(out, "\"%v\" -> \"%v\" [minlen=1];\n", pkg, dep)
 		}
@@ -258,7 +276,7 @@ func run(c *cli.Context) error {
 	for k := range nodesList {
 		_, found := interfaces[k]
 		if found {
-			fmt.Fprintf(out, "\"%s\" [style=filled fillcolor=mediumspringgreen];\n", k)
+			fmt.Fprintf(out, "\"%s\" [style=filled fillcolor=olivedrab1];\n", k)
 		}
 	}
 

@@ -2,11 +2,13 @@ package node
 
 import (
 	"bytes"
+	"io/ioutil"
 	"net"
 	"os"
 	"path/filepath"
-	"syscall"
+	"runtime"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/cli"
@@ -40,80 +42,92 @@ func TestSocketClient_Send(t *testing.T) {
 	err = client.Send([]byte("deadbeef"))
 	require.EqualError(t, err, "couldn't read output: fake error")
 
+	// Windows only allows opening one socket per address, this is why we use
+	// another one.
+	path = filepath.Join(os.TempDir(), "daemon2.sock")
+	client.socketpath = path
+
 	listen(t, path, true)
 	in := make([]byte, 256*1000) // fill the buffer
 	err = client.Send(in)
-	require.EqualError(t, err,
-		"couldn't write to daemon: write unix @->/tmp/daemon.sock: write: broken pipe")
+	require.Error(t, err)
+
+	if runtime.GOOS == "linux" {
+		require.EqualError(t, err,
+			"couldn't write to daemon: write unix @->/tmp/daemon2.sock: write: broken pipe")
+	}
 }
 
 func TestSocketDaemon_Listen(t *testing.T) {
-	path := filepath.Join(os.TempDir(), "dela", "daemon.sock")
+	dir, err := ioutil.TempDir(os.TempDir(), "dela-test-")
+	require.NoError(t, err)
+	defer os.RemoveAll(dir)
 
 	actions := &actionMap{}
 	actions.Set(fakeAction{})                         // id 0
 	actions.Set(fakeAction{err: xerrors.New("oops")}) // id 1
 
 	daemon := &socketDaemon{
-		socketpath: path,
-		actions:    actions,
-		closing:    make(chan struct{}),
+		socketpath:  filepath.Join(dir, "daemon.sock"),
+		actions:     actions,
+		closing:     make(chan struct{}),
+		readTimeout: 50 * time.Millisecond,
 	}
 
-	err := daemon.Listen()
+	err = daemon.Listen()
 	require.NoError(t, err)
 
 	defer daemon.Close()
 
 	out := new(bytes.Buffer)
 	client := socketClient{
-		socketpath: path,
+		socketpath: daemon.socketpath,
 		out:        out,
 	}
 
-	err = client.Send([]byte{0x0})
+	err = client.Send(append([]byte{0x0, 0x0}, []byte("{}")...))
 	require.NoError(t, err)
 	require.Equal(t, "deadbeef", out.String())
 
 	out.Reset()
-	err = client.Send([]byte{0x1})
+	err = client.Send(append([]byte{0x1, 0x0}, []byte("{}")...))
 	require.NoError(t, err)
 	require.Equal(t, "[ERROR] command error: oops\n", out.String())
 
 	out.Reset()
-	err = client.Send([]byte{0x2})
+	err = client.Send(append([]byte{0x2, 0x0}, []byte("{}")...))
 	require.NoError(t, err)
 	require.Equal(t, "[ERROR] unknown command '2'\n", out.String())
 
-	daemon.socketpath = "/deadbeef/test.sock"
-	err = daemon.Listen()
-	require.EqualError(t, err,
-		"couldn't make path: mkdir /deadbeef/: permission denied")
+	out.Reset()
+	err = client.Send([]byte{0x0, 0x0, 0x0})
+	require.NoError(t, err)
+	require.Contains(t, out.String(), "[ERROR] failed to decode flags: ")
+
+	out.Reset()
+	err = client.Send([]byte{})
+	require.NoError(t, err)
+	require.Contains(t, out.String(), "[ERROR] stream corrupted: ")
+
+	// the rest is not concerned by windows that actually allows the creation of
+	// root files and folders
+	if runtime.GOOS == "windows" {
+		t.Skip()
+	}
 
 	daemon.socketpath = "/test.sock"
 	err = daemon.Listen()
-	require.EqualError(t, err,
-		"couldn't bind socket: listen unix /test.sock: bind: permission denied")
+	require.Error(t, err)
+	require.Regexp(t, "^couldn't bind socket: listen unix /test.sock: bind:", err)
 }
 
 func TestSocketFactory_ClientFromContext(t *testing.T) {
 	factory := socketFactory{}
 
-	homeDir, err := os.UserHomeDir()
-	require.NoError(t, err)
-
-	client, err := factory.ClientFromContext(fakeContext{})
+	client, err := factory.ClientFromContext(fakeContext{path: "cfgdir"})
 	require.NoError(t, err)
 	require.NotNil(t, client)
-	require.Equal(t, filepath.Join(homeDir, ".dela", "daemon.sock"),
-		client.(socketClient).socketpath)
-
-	require.NoError(t, syscall.Unsetenv("HOME"))
-	defer syscall.Setenv("HOME", homeDir)
-
-	client, err = factory.ClientFromContext(fakeContext{})
-	require.NoError(t, err)
-	require.Equal(t, filepath.Join(os.TempDir(), "dela", "daemon.sock"),
+	require.Equal(t, filepath.Join("cfgdir", "daemon.sock"),
 		client.(socketClient).socketpath)
 }
 
@@ -155,10 +169,12 @@ func (c fakeInitializer) Inject(cli.Flags, Injector) error {
 }
 
 type fakeClient struct {
-	err error
+	err   error
+	calls *fake.Call
 }
 
-func (c fakeClient) Send([]byte) error {
+func (c fakeClient) Send(data []byte) error {
+	c.calls.Add(data)
 	return c.err
 }
 
@@ -176,10 +192,11 @@ type fakeFactory struct {
 	err       error
 	errClient error
 	errDaemon error
+	calls     *fake.Call
 }
 
 func (f fakeFactory) ClientFromContext(cli.Flags) (Client, error) {
-	return fakeClient{err: f.errClient}, f.err
+	return fakeClient{err: f.errClient, calls: f.calls}, f.err
 }
 
 func (f fakeFactory) DaemonFromContext(cli.Flags) (Daemon, error) {
@@ -188,10 +205,6 @@ func (f fakeFactory) DaemonFromContext(cli.Flags) (Daemon, error) {
 
 type fakeAction struct {
 	err error
-}
-
-func (a fakeAction) GenerateRequest(cli.Flags) ([]byte, error) {
-	return []byte{}, a.err
 }
 
 func (a fakeAction) Execute(req Context) error {

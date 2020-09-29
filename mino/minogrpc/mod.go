@@ -5,22 +5,23 @@ package minogrpc
 
 import (
 	"crypto/tls"
-	fmt "fmt"
+	"fmt"
 	"net"
-	"net/url"
 	"regexp"
 	"sync"
 	"time"
 
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
-	"go.dedis.ch/dela/mino/minogrpc/routing"
+	"go.dedis.ch/dela/mino/minogrpc/ptypes"
+	"go.dedis.ch/dela/mino/minogrpc/session"
+	"go.dedis.ch/dela/mino/router"
+	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
-
-//go:generate protoc -I ./ --go_out=plugins=grpc:./ ./overlay.proto
 
 const (
 	orchestratorDescription = "Orchestrator"
@@ -30,82 +31,15 @@ const (
 var (
 	namespaceMatch        = regexp.MustCompile("^[a-zA-Z0-9]+$")
 	defaultAddressFactory = AddressFactory{}
+	orchestratorBytes     = []byte(orchestratorCode)
 )
 
-// rootAddress is the address of the orchestrator of a protocol. When Stream is
-// called, the caller takes this address so that participants know how to route
-// message to it.
-//
-// - implements mino.Address
-type rootAddress struct{}
-
-func newRootAddress() rootAddress {
-	return rootAddress{}
-}
-
-// Equal implements mino.Address. It returns true if the other address is also a
-// root address.
-func (a rootAddress) Equal(other mino.Address) bool {
-	addr, ok := other.(rootAddress)
-	return ok && a == addr
-}
-
-// MarshalText implements mino.Address. It returns a buffer that uses the
-// private area of Unicode to define the root.
-func (a rootAddress) MarshalText() ([]byte, error) {
-	return []byte(orchestratorCode), nil
-}
-
-// String implements fmt.Stringer. It returns a string representation of the
-// address.
-func (a rootAddress) String() string {
-	return orchestratorDescription
-}
-
-// address is a representation of the network address of a participant.
-//
-// - implements mino.Address
-type address struct {
-	host string
-}
-
-// GetDialAddress returns a string formatted to be understood by grpc.Dial()
-// functions.
-func (a address) GetDialAddress() string {
-	// TODO: check the DNS resolver thing.
-	return a.host
-}
-
-// Equal implements mino.Address. It returns true if both addresses points to
-// the same participant.
-func (a address) Equal(other mino.Address) bool {
-	addr, ok := other.(address)
-	return ok && addr == a
-}
-
-// MarshalText implements mino.Address. It returns the text format of the
-// address that can later be deserialized.
-func (a address) MarshalText() ([]byte, error) {
-	return []byte(a.host), nil
-}
-
-// String implements fmt.Stringer. It returns a string representation of the
-// address.
-func (a address) String() string {
-	return a.host
-}
-
-// AddressFactory implements mino.AddressFactory
-type AddressFactory struct{}
-
-// FromText implements mino.AddressFactory. It returns an instance of an
-// address from a byte slice.
-func (f AddressFactory) FromText(text []byte) mino.Address {
-	if string(text) == orchestratorCode {
-		return newRootAddress()
+// ParseAddress is a helper to create a TCP network address.
+func ParseAddress(ip string, port uint16) net.Addr {
+	return &net.TCPAddr{
+		IP:   net.ParseIP(ip),
+		Port: int(port),
 	}
-
-	return address{host: string(text)}
 }
 
 // Joinable is an extension of the mino.Mino interface to allow distant servers
@@ -122,32 +56,46 @@ type Joinable interface {
 	Join(addr, token string, digest []byte) error
 }
 
+// Endpoint defines the requirement of an endpoint. Since the endpoint can be
+// called multiple times concurrently we need a mutex and we need to use the
+// same sender/receiver.
+type Endpoint struct {
+	// We need this mutex to prevent two processes from concurrently checking
+	// that the stream session must be created. Using a sync.Map would require
+	// to use the "LoadOrStore" function, which would make us create the session
+	// each time, but only saving it the first time.
+	sync.RWMutex
+
+	Handler mino.Handler
+	Factory serde.Factory
+	streams map[string]session.Session
+}
+
 // Minogrpc represents a grpc service restricted to a namespace
 //
 // - implements mino.Mino
 // - implements fmt.Stringer
 type Minogrpc struct {
-	overlay
-	url       *url.URL
+	*overlay
+
 	server    *grpc.Server
 	namespace string
-	handlers  map[string]mino.Handler
+	endpoints map[string]*Endpoint
 	started   chan struct{}
-	closer    *sync.WaitGroup
 	closing   chan error
 }
 
 // NewMinogrpc creates and starts a new instance. The path should be a
 // resolvable host.
-func NewMinogrpc(path string, port uint16, rf routing.Factory) (*Minogrpc, error) {
-	url, err := url.Parse(fmt.Sprintf("//%s:%d", path, port))
+func NewMinogrpc(addr net.Addr, router router.Router) (*Minogrpc, error) {
+	socket, err := net.Listen(addr.Network(), addr.String())
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't parse url: %v", err)
+		return nil, xerrors.Errorf("failed to bind: %v", err)
 	}
 
-	me := address{host: url.Host}
+	me := address{host: socket.Addr().String()}
 
-	o, err := newOverlay(me, rf)
+	o, err := newOverlay(me, router, defaultAddressFactory, json.NewContext())
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't make overlay: %v", err)
 	}
@@ -157,28 +105,22 @@ func NewMinogrpc(path string, port uint16, rf routing.Factory) (*Minogrpc, error
 
 	m := &Minogrpc{
 		overlay:   o,
-		url:       url,
 		server:    server,
 		namespace: "",
-		handlers:  make(map[string]mino.Handler),
+		endpoints: make(map[string]*Endpoint),
 		started:   make(chan struct{}),
-		closer:    &sync.WaitGroup{},
 		closing:   make(chan error, 1),
 	}
 
 	// Counter needs to be >=1 for asynchronous call to Add.
 	m.closer.Add(1)
 
-	RegisterOverlayServer(server, overlayServer{
-		overlay:  o,
-		handlers: m.handlers,
-		closer:   m.closer,
+	ptypes.RegisterOverlayServer(server, &overlayServer{
+		overlay:   o,
+		endpoints: m.endpoints,
 	})
 
-	err = m.Listen()
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't start the server: %v", err)
-	}
+	m.listen(socket)
 
 	return m, nil
 }
@@ -200,50 +142,32 @@ func (m *Minogrpc) GenerateToken(expiration time.Duration) string {
 	return m.tokens.Generate(expiration)
 }
 
-// Listen starts the server. It waits for the go routine to start before
-// returning.
-func (m *Minogrpc) Listen() error {
-	// TODO: bind 0.0.0.0:PORT => get port from address.
-	lis, err := net.Listen("tcp4", m.url.Host)
-	if err != nil {
-		return xerrors.Errorf("failed to listen: %v", err)
-	}
-
-	go func() {
-		close(m.started)
-
-		err := m.server.Serve(lis)
-		if err != nil {
-			m.closing <- xerrors.Errorf("failed to serve: %v", err)
-		}
-
-		close(m.closing)
-	}()
-
-	// Force the go routine to be executed before returning which means the
-	// server has well started after that point.
-	<-m.started
-
-	return nil
-}
-
-// GracefulClose first stops the grpc server then waits for the remaining
+// GracefulStop first stops the grpc server then waits for the remaining
 // handlers to close.
-func (m *Minogrpc) GracefulClose() error {
-	select {
-	case <-m.started:
-	default:
-		return xerrors.New("server should be listening before trying to close")
-	}
-
+func (m *Minogrpc) GracefulStop() error {
 	m.server.GracefulStop()
 
-	m.closer.Done()
+	return m.postCheckClose()
+}
+
+// Stop stops the server immediatly.
+func (m *Minogrpc) Stop() error {
+	m.server.Stop()
+
+	return m.postCheckClose()
+}
+
+func (m *Minogrpc) postCheckClose() error {
 	m.closer.Wait()
 
 	err := <-m.closing
 	if err != nil {
-		return xerrors.Errorf("failed to stop gracefully: %v", err)
+		return xerrors.Errorf("server stopped unexpectedly: %v", err)
+	}
+
+	numConns := m.overlay.connMgr.Len()
+	if numConns > 0 {
+		return xerrors.Errorf("connection manager not empty: %d", numConns)
 	}
 
 	return nil
@@ -270,7 +194,7 @@ func (m *Minogrpc) MakeNamespace(namespace string) (mino.Mino, error) {
 		server:    m.server,
 		overlay:   m.overlay,
 		namespace: namespace,
-		handlers:  m.handlers,
+		endpoints: m.endpoints,
 	}
 	return newM, nil
 }
@@ -278,14 +202,19 @@ func (m *Minogrpc) MakeNamespace(namespace string) (mino.Mino, error) {
 // MakeRPC implements Mino. It registers the handler using a uniq URI of
 // form "namespace/name". It returns a struct that allows client to call the
 // RPC.
-func (m *Minogrpc) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
+func (m *Minogrpc) MakeRPC(name string, h mino.Handler, f serde.Factory) (mino.RPC, error) {
 	rpc := &RPC{
 		uri:     fmt.Sprintf("%s/%s", m.namespace, name),
 		overlay: m.overlay,
+		factory: f,
 	}
 
 	uri := fmt.Sprintf("%s/%s", m.namespace, name)
-	m.handlers[uri] = h
+	m.endpoints[uri] = &Endpoint{
+		Handler: h,
+		Factory: f,
+		streams: make(map[string]session.Session),
+	}
 
 	return rpc, nil
 }
@@ -294,4 +223,25 @@ func (m *Minogrpc) MakeRPC(name string, h mino.Handler) (mino.RPC, error) {
 // instance.
 func (m *Minogrpc) String() string {
 	return fmt.Sprintf("%v", m.overlay.me)
+}
+
+// Listen starts the server. It waits for the go routine to start before
+// returning.
+func (m *Minogrpc) listen(socket net.Listener) {
+	go func() {
+		defer m.closer.Done()
+
+		close(m.started)
+
+		err := m.server.Serve(socket)
+		if err != nil {
+			m.closing <- xerrors.Errorf("failed to serve: %v", err)
+		}
+
+		close(m.closing)
+	}()
+
+	// Force the go routine to be executed before returning which means the
+	// server has well started after that point.
+	<-m.started
 }

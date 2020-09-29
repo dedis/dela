@@ -2,7 +2,9 @@ package node
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"reflect"
@@ -26,10 +28,24 @@ type cliBuilder struct {
 	startFlags    []cli.Flag
 	commands      []*cliCommand
 	inits         []Initializer
+	writer        io.Writer
 }
 
 // NewBuilder returns a new empty builder.
 func NewBuilder(inits ...Initializer) cli.Builder {
+	return NewBuilderWithCfg(nil, nil, inits...)
+}
+
+// NewBuilderWithCfg returns a new empty builder with specific configurations.
+func NewBuilderWithCfg(sigs chan os.Signal, out io.Writer, inits ...Initializer) cli.Builder {
+	if out == nil {
+		out = os.Stdout
+	}
+
+	if sigs == nil {
+		sigs = make(chan os.Signal, 1)
+	}
+
 	injector := &reflectInjector{
 		mapper: make(map[reflect.Type]interface{}),
 	}
@@ -39,14 +55,16 @@ func NewBuilder(inits ...Initializer) cli.Builder {
 	factory := socketFactory{
 		injector: injector,
 		actions:  actions,
+		out:      out,
 	}
 
 	return &cliBuilder{
 		injector:      injector,
 		actions:       actions,
 		daemonFactory: factory,
-		sigs:          make(chan os.Signal, 1),
+		sigs:          sigs,
 		inits:         inits,
+		writer:        out,
 	}
 }
 
@@ -79,18 +97,54 @@ func (b *cliBuilder) MakeAction(tmpl ActionTemplate) cli.Action {
 		id := make([]byte, 2)
 		binary.LittleEndian.PutUint16(id, index)
 
-		action := b.actions.Get(index)
-		msg, err := action.GenerateRequest(c)
+		// Prepare a set of flags that will be transmitted to the daemon so that
+		// the action has access to the same flags and their values.
+		fset := make(FlagSet)
+		lookupFlags(fset, c.(*ucli.Context))
+
+		buf, err := json.Marshal(fset)
 		if err != nil {
-			return xerrors.Errorf("couldn't prepare action: %v", err)
+			return xerrors.Errorf("failed to marshal flag set: %v", err)
 		}
 
-		err = client.Send(append(id, msg...))
+		err = client.Send(append(id, buf...))
 		if err != nil {
 			return xerrors.Errorf("couldn't send action: %v", err)
 		}
 
 		return nil
+	}
+}
+
+func lookupFlags(fset FlagSet, ctx *ucli.Context) {
+	for _, ancestor := range ctx.Lineage() {
+		if ancestor.Command != nil {
+			fill(fset, ancestor.Command.Flags, ancestor)
+		}
+
+		if ancestor.App != nil {
+			fill(fset, ancestor.App.Flags, ancestor)
+		}
+	}
+}
+
+func fill(fset FlagSet, flags []ucli.Flag, ctx *ucli.Context) {
+	for _, flag := range flags {
+		names := flag.Names()
+		if len(names) > 0 {
+			fset[names[0]] = convert(ctx.Value(names[0]))
+		}
+	}
+}
+
+func convert(v interface{}) interface{} {
+	switch value := v.(type) {
+	case ucli.StringSlice:
+		// StringSlice is an edge-case as it won't serialize correctly with JSON
+		// so we ask for the actual []string to allow a correct serialization.
+		return value.Value()
+	default:
+		return v
 	}
 }
 
@@ -114,28 +168,31 @@ func (b *cliBuilder) Build() cli.Application {
 		Usage: "Dedis Ledger Architecture",
 		Flags: []ucli.Flag{
 			&ucli.PathFlag{
-				Name:  "socket",
-				Usage: "path to the daemon socket",
+				Name:  "config",
+				Usage: "path to the config folder",
+				Value: ".dela",
 			},
 		},
 		Commands: commands,
+		Writer:   b.writer,
 	}
 
 	return app
 }
 
 func (b *cliBuilder) start(c *ucli.Context) error {
+	dir := c.Path("config")
+	if dir != "" {
+		err := os.MkdirAll(dir, 0700)
+		if err != nil {
+			return xerrors.Errorf("couldn't make path: %v", err)
+		}
+	}
+
 	daemon, err := b.daemonFactory.DaemonFromContext(c)
 	if err != nil {
 		return xerrors.Errorf("couldn't make daemon: %v", err)
 	}
-
-	err = daemon.Listen()
-	if err != nil {
-		return xerrors.Errorf("couldn't start the daemon: %v", err)
-	}
-
-	defer daemon.Close()
 
 	for _, controller := range b.inits {
 		err = controller.Inject(c, b.injector)
@@ -143,6 +200,15 @@ func (b *cliBuilder) start(c *ucli.Context) error {
 			return xerrors.Errorf("couldn't run the controller: %v", err)
 		}
 	}
+
+	// Daemon is started after the controllers so that everything has started
+	// when the daemon is available.
+	err = daemon.Listen()
+	if err != nil {
+		return xerrors.Errorf("couldn't start the daemon: %v", err)
+	}
+
+	defer daemon.Close()
 
 	signal.Notify(b.sigs, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(b.sigs)
@@ -195,6 +261,13 @@ func (b *cliBuilder) buildFlags(in []cli.Flag) []ucli.Flag {
 				Usage:    flag.Usage,
 				Required: flag.Required,
 				Value:    flag.Value,
+			}
+		case cli.StringSliceFlag:
+			flags[i] = &ucli.StringSliceFlag{
+				Name:     flag.Name,
+				Usage:    flag.Usage,
+				Required: flag.Required,
+				Value:    ucli.NewStringSlice(flag.Value...),
 			}
 		case cli.DurationFlag:
 			flags[i] = &ucli.DurationFlag{
