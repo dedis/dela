@@ -8,6 +8,8 @@ import (
 )
 
 // PublicKeyFactory is a fake implementation of a public key factory.
+//
+// - implements crypto.PublicKeyFactory.
 type PublicKeyFactory struct {
 	pubkey PublicKey
 	err    error
@@ -46,6 +48,8 @@ func (f PublicKeyFactory) FromBytes([]byte) (crypto.PublicKey, error) {
 const SignatureByte = 0xfe
 
 // Signature is a fake implementation of the signature.
+//
+// - implements crypto.Signature
 type Signature struct {
 	crypto.Signature
 	err error
@@ -78,6 +82,8 @@ func (s Signature) String() string {
 }
 
 // SignatureFactory is a fake implementation of the signature factory.
+//
+// - implements crypto.SignatureFactory
 type SignatureFactory struct {
 	Counter   *Counter
 	signature Signature
@@ -119,6 +125,8 @@ func (f SignatureFactory) SignatureOf(serde.Context, []byte) (crypto.Signature, 
 }
 
 // PublicKey is a fake implementation of crypto.PublicKey.
+//
+// - implements crypto.PublicKey
 type PublicKey struct {
 	crypto.PublicKey
 	err       error
@@ -171,6 +179,8 @@ func (pk PublicKey) String() string {
 }
 
 // Signer is a fake implementation of the crypto.AggregateSigner interface.
+//
+// - implements crypto.Signer
 type Signer struct {
 	crypto.AggregateSigner
 	publicKey        PublicKey
@@ -244,6 +254,8 @@ func (s Signer) Aggregate(...crypto.Signature) (crypto.Signature, error) {
 }
 
 // Verifier is a fake implementation of crypto.Verifier.
+//
+// - implements crypto.Verifier
 type Verifier struct {
 	crypto.Verifier
 	err   error
@@ -275,6 +287,8 @@ func (v Verifier) Verify(msg []byte, s crypto.Signature) error {
 }
 
 // VerifierFactory is a fake implementation of crypto.VerifierFactory.
+//
+// - implements crypto.VerifierFactory
 type VerifierFactory struct {
 	crypto.VerifierFactory
 	verifier Verifier
@@ -314,6 +328,8 @@ func (f VerifierFactory) FromArray(pubkeys []crypto.PublicKey) (crypto.Verifier,
 }
 
 // Hash is a fake implementation of hash.Hash.
+//
+// - implements hash.Hash
 type Hash struct {
 	hash.Hash
 	delay int
@@ -332,6 +348,7 @@ func NewBadHashWithDelay(delay int) *Hash {
 	return &Hash{err: fakeErr, delay: delay}
 }
 
+// Write implements hash.Hash.
 func (h *Hash) Write(in []byte) (int, error) {
 	if h.Call != nil {
 		h.Call.Add(in)
@@ -372,7 +389,9 @@ func (h *Hash) UnmarshalBinary([]byte) error {
 	return h.err
 }
 
-// HashFactory is a fake implementation of crypto.HashFactory.
+// HashFactory is a fake implementation of a hash factory.
+//
+// - implements crypto.HashFactory
 type HashFactory struct {
 	hash *Hash
 }

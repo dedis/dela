@@ -33,6 +33,8 @@ func GetFakeFormatValue() []byte {
 }
 
 // Message is a fake implementation if a serde message.
+//
+// - implements serde.Message
 type Message struct {
 	Digest []byte
 }
@@ -49,6 +51,8 @@ func (m Message) Serialize(ctx serde.Context) ([]byte, error) {
 }
 
 // MessageFactory is a fake implementation of a serde factory.
+//
+// - implements serde.Factory
 type MessageFactory struct {
 	err error
 }

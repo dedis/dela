@@ -20,7 +20,9 @@ import (
 	"go.dedis.ch/dela/serde"
 )
 
-// Address is a fake implementation of mino.Address
+// Address is a fake implementation of an address.
+//
+// - implements mino.Address
 type Address struct {
 	mino.Address
 	index int
@@ -50,11 +52,14 @@ func (a Address) MarshalText() ([]byte, error) {
 	return buffer, a.err
 }
 
+// String implements fmt.Stringer.
 func (a Address) String() string {
 	return fmt.Sprintf("fake.Address[%d]", a.index)
 }
 
-// AddressFactory is a fake implementation of mino.AddressFactory.
+// AddressFactory is a fake implementation of an address factory.
+//
+// - implements mino.AddressFactory
 type AddressFactory struct {
 	mino.AddressFactory
 }
@@ -68,8 +73,9 @@ func (f AddressFactory) FromText(text []byte) mino.Address {
 	return Address{}
 }
 
-// AddressIterator is a fake implementation of the mino.AddressIterator
-// interface.
+// AddressIterator is a fake implementation an address iterator.
+//
+// - implements mino.AddressIterator
 type AddressIterator struct {
 	mino.AddressIterator
 	addrs []mino.Address
@@ -100,7 +106,9 @@ func (i *AddressIterator) GetNext() mino.Address {
 	return res
 }
 
-// PublicKeyIterator is a fake implementation of crypto.PublicKeyIterator.
+// PublicKeyIterator is a fake implementation of a public key iterator.
+//
+// - implements crypto.PublicKeyIterator
 type PublicKeyIterator struct {
 	signers []crypto.Signer
 	index   int
@@ -133,8 +141,9 @@ func (i *PublicKeyIterator) GetNext() crypto.PublicKey {
 	return nil
 }
 
-// CollectiveAuthority is a fake implementation of the cosi.CollectiveAuthority
-// interface.
+// CollectiveAuthority is a fake implementation of a collective authority.
+//
+// - implements crypto.CollectiveAuthority
 type CollectiveAuthority struct {
 	crypto.CollectiveAuthority
 	addrs   []mino.Address
@@ -201,7 +210,7 @@ func (ca CollectiveAuthority) GetSigner(index int) crypto.Signer {
 	return ca.signers[index]
 }
 
-// GetPublicKey implements cosi.CollectiveAuthority.
+// GetPublicKey implements crypto.CollectiveAuthority.
 func (ca CollectiveAuthority) GetPublicKey(addr mino.Address) (crypto.PublicKey, int) {
 	if ca.PubkeyNotFound {
 		return nil, -1
@@ -240,9 +249,20 @@ func (ca CollectiveAuthority) AddressIterator() mino.AddressIterator {
 	return &AddressIterator{addrs: ca.addrs}
 }
 
-// PublicKeyIterator implements cosi.CollectiveAuthority.
+// PublicKeyIterator implements crypto.CollectiveAuthority.
 func (ca CollectiveAuthority) PublicKeyIterator() crypto.PublicKeyIterator {
 	return &PublicKeyIterator{signers: ca.signers}
+}
+
+// Receiver is a fake RPC stream receiver. It will return the consecutive
+// messages stored in the Msg slice.
+//
+// - implements mino.Receiver
+type Receiver struct {
+	mino.Receiver
+	err   error
+	Msg   []serde.Message
+	index int
 }
 
 // NewReceiver returns a new receiver
@@ -250,15 +270,6 @@ func NewReceiver(Msg ...serde.Message) *Receiver {
 	return &Receiver{
 		Msg: Msg,
 	}
-}
-
-// Receiver is a fake RPC stream receiver. It will return the consecutive
-// messages stored in the Msg slice.
-type Receiver struct {
-	mino.Receiver
-	err   error
-	Msg   []serde.Message
-	index int
 }
 
 // NewBadReceiver returns a new receiver that returns an error.
@@ -284,6 +295,8 @@ func (r *Receiver) Recv(context.Context) (mino.Address, serde.Message, error) {
 }
 
 // Sender is a fake RPC stream sender.
+//
+// - implements mino.Sender
 type Sender struct {
 	mino.Sender
 	err error
@@ -302,7 +315,9 @@ func (s Sender) Send(serde.Message, ...mino.Address) <-chan error {
 	return errs
 }
 
-// RPC is a fake implementation of mino.RPC.
+// RPC is a fake implementation of an RPC.
+//
+// - implements mino.RPC
 type RPC struct {
 	mino.RPC
 	Calls    *Call
@@ -375,7 +390,9 @@ func (rpc *RPC) Reset() {
 	rpc.msgs = make(chan mino.Response, 100)
 }
 
-// Mino is a fake implementation of mino.Mino.
+// Mino is a fake implementation of mino.
+//
+// - implements mino.Mino
 type Mino struct {
 	mino.Mino
 	err error
