@@ -165,24 +165,8 @@ func (minimal) OnStart(flags cli.Flags, inj node.Injector) error {
 	return nil
 }
 
-// ClosableService is an extension of the ordering service that allows one to
-// close the service.
-type ClosableService interface {
-	ordering.Service
-
-	Close() error
-}
-
-// ClosablePool is an extension of the pool interface that allows one to close
-// it.
-type ClosablePool interface {
-	pool.Pool
-
-	Close() error
-}
-
 func (minimal) OnStop(inj node.Injector) error {
-	var srvc ClosableService
+	var srvc ordering.Service
 	err := inj.Resolve(&srvc)
 	if err != nil {
 		return xerrors.Errorf("injector: %v", err)
@@ -193,13 +177,13 @@ func (minimal) OnStop(inj node.Injector) error {
 		return xerrors.Errorf("while closing service: %v", err)
 	}
 
-	var pool ClosablePool
-	err = inj.Resolve(&pool)
+	var p pool.Pool
+	err = inj.Resolve(&p)
 	if err != nil {
 		return xerrors.Errorf("injector: %v", err)
 	}
 
-	err = pool.Close()
+	err = p.Close()
 	if err != nil {
 		return xerrors.Errorf("while closing pool: %v", err)
 	}

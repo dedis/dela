@@ -75,7 +75,7 @@ func (m minimal) SetCommands(builder node.Builder) {
 }
 
 // OnStart implements node.Initializer. It starts the minogrpc instance and
-// inject it in the dependency resolver.
+// injects it in the dependency resolver.
 func (m minimal) OnStart(ctx cli.Flags, inj node.Injector) error {
 
 	port := ctx.Int("port")

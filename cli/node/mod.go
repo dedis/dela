@@ -85,7 +85,7 @@ type Initializer interface {
 	// injector.
 	OnStart(cli.Flags, Injector) error
 
-	// OnStop stops the components and clean the resources.
+	// OnStop stops the components and cleans the resources.
 	OnStop(Injector) error
 }
 

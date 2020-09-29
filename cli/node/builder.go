@@ -215,6 +215,9 @@ func (b *cliBuilder) start(c *ucli.Context) error {
 
 	<-b.sigs
 
+	// Controllers are stopped in reverse order so that high level components
+	// are stopped before lower level ones (i.e. stop a service before the
+	// database to avoid errors).
 	for i := len(b.inits) - 1; i >= 0; i-- {
 		err = b.inits[i].OnStop(b.injector)
 		if err != nil {

@@ -144,8 +144,9 @@ func TestPool_Gather(t *testing.T) {
 
 func TestPool_Close(t *testing.T) {
 	pool := &Pool{
-		closing: make(chan struct{}),
-		actor:   fakeActor{},
+		gatherer: pool.NewSimpleGatherer(),
+		closing:  make(chan struct{}),
+		actor:    fakeActor{},
 	}
 
 	err := pool.Close()

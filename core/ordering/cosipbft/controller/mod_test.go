@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/core/store/kv"
+	"go.dedis.ch/dela/core/txn/pool"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"golang.org/x/xerrors"
 )
@@ -69,7 +70,7 @@ func TestMinimal_OnStop(t *testing.T) {
 	inj = node.NewInjector()
 	err = m.OnStop(inj)
 	require.EqualError(t, err,
-		"injector: couldn't find dependency for 'controller.ClosableService'")
+		"injector: couldn't find dependency for 'ordering.Service'")
 
 	inj.Inject(fakeService{err: xerrors.New("oops")})
 	err = m.OnStop(inj)
@@ -78,7 +79,7 @@ func TestMinimal_OnStop(t *testing.T) {
 	inj.Inject(fakeService{})
 	err = m.OnStop(inj)
 	require.EqualError(t, err,
-		"injector: couldn't find dependency for 'controller.ClosablePool'")
+		"injector: couldn't find dependency for 'pool.Pool'")
 
 	inj.Inject(fakePool{err: xerrors.New("oops")})
 	err = m.OnStop(inj)
@@ -121,7 +122,7 @@ func fileExists(t *testing.T, path string) bool {
 }
 
 type fakePool struct {
-	ClosablePool
+	pool.Pool
 
 	err error
 }
