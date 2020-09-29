@@ -3,6 +3,7 @@ package viewchange
 import (
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/core/access"
+	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/execution/baremetal"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/store"
@@ -19,6 +20,7 @@ const (
 	// AuthorityArg is the key of the argument for the new authority.
 	AuthorityArg = "viewchange:authority"
 
+	messageOnlyOne          = "only one view change per block is allowed"
 	messageArgMissing       = "authority not found in transaction"
 	messageStorageEmpty     = "authority not found in storage"
 	messageStorageCorrupted = "invalid authority data in storage"
@@ -99,24 +101,32 @@ func NewContract(rKey, aKey []byte, rFac authority.Factory, srvc access.Service)
 // Execute implements baremetal.Contract. It looks for the roster in the
 // transaction and updates the storage if there is at most one membership
 // change.
-func (c Contract) Execute(tx txn.Transaction, snap store.Snapshot) error {
-	roster, err := c.rosterFac.AuthorityOf(c.context, tx.GetArg(AuthorityArg))
+func (c Contract) Execute(snap store.Snapshot, step execution.Step) error {
+	for _, tx := range step.Previous {
+		// Only one view change transaction is allowed per block to prevent
+		// malicious peers to reach the threshold.
+		if string(tx.GetArg(baremetal.ContractArg)) == ContractName {
+			return xerrors.New(messageOnlyOne)
+		}
+	}
+
+	roster, err := c.rosterFac.AuthorityOf(c.context, step.Current.GetArg(AuthorityArg))
 	if err != nil {
-		reportErr(tx, xerrors.Errorf("incoming roster: %v", err))
+		reportErr(step.Current, xerrors.Errorf("incoming roster: %v", err))
 
 		return xerrors.New(messageArgMissing)
 	}
 
 	currData, err := snap.Get(c.rosterKey)
 	if err != nil {
-		reportErr(tx, xerrors.Errorf("reading store: %v", err))
+		reportErr(step.Current, xerrors.Errorf("reading store: %v", err))
 
 		return xerrors.New(messageStorageEmpty)
 	}
 
 	curr, err := c.rosterFac.AuthorityOf(c.context, currData)
 	if err != nil {
-		reportErr(tx, xerrors.Errorf("stored roster: %v", err))
+		reportErr(step.Current, xerrors.Errorf("stored roster: %v", err))
 
 		return xerrors.New(messageStorageCorrupted)
 	}
@@ -134,20 +144,18 @@ func (c Contract) Execute(tx txn.Transaction, snap store.Snapshot) error {
 		}
 	}
 
-	// TODO: check the number of changes per batch instead of transaction wide.
-
 	creds := NewCreds(c.accessKey)
 
-	err = c.access.Match(snap, creds, tx.GetIdentity())
+	err = c.access.Match(snap, creds, step.Current.GetIdentity())
 	if err != nil {
-		reportErr(tx, xerrors.Errorf("access control: %v", err))
+		reportErr(step.Current, xerrors.Errorf("access control: %v", err))
 
-		return xerrors.Errorf("%s: %v", messageUnauthorized, tx.GetIdentity())
+		return xerrors.Errorf("%s: %v", messageUnauthorized, step.Current.GetIdentity())
 	}
 
-	err = snap.Set(c.rosterKey, tx.GetArg(AuthorityArg))
+	err = snap.Set(c.rosterKey, step.Current.GetArg(AuthorityArg))
 	if err != nil {
-		reportErr(tx, xerrors.Errorf("writing store: %v", err))
+		reportErr(step.Current, xerrors.Errorf("writing store: %v", err))
 
 		return xerrors.New(messageStorageFailure)
 	}

@@ -532,7 +532,7 @@ type fakeExec struct {
 	err error
 }
 
-func (e fakeExec) Execute(txn.Transaction, store.Snapshot) (execution.Result, error) {
+func (e fakeExec) Execute(store.Snapshot, execution.Step) (execution.Result, error) {
 	return execution.Result{}, e.err
 }
 

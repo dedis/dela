@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/access"
+	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/execution/baremetal"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/store"
@@ -41,41 +42,53 @@ func TestContract_Execute(t *testing.T) {
 
 	contract := NewContract([]byte("roster"), []byte("access"), fac, fakeAccess{})
 
-	err := contract.Execute(makeTx(t, "[]"), fakeStore{})
+	err := contract.Execute(fakeStore{}, makeStep(t, "[]"))
 	require.NoError(t, err)
 
+	err = contract.Execute(fakeStore{}, execution.Step{Previous: []txn.Transaction{makeTx(t, "")}})
+	require.EqualError(t, err, "only one view change per block is allowed")
+
 	contract.rosterFac = badRosterFac{}
-	err = contract.Execute(makeTx(t, "[]"), fakeStore{})
+	err = contract.Execute(fakeStore{}, makeStep(t, "[]"))
 	require.EqualError(t, err, messageArgMissing)
 
 	contract.rosterFac = fac
-	err = contract.Execute(makeTx(t, "[]"), fakeStore{errGet: fake.GetError()})
+	err = contract.Execute(fakeStore{errGet: fake.GetError()}, makeStep(t, "[]"))
 	require.EqualError(t, err, messageStorageEmpty)
 
 	contract.rosterFac = badRosterFac{counter: fake.NewCounter(1)}
-	err = contract.Execute(makeTx(t, "[]"), fakeStore{})
+	err = contract.Execute(fakeStore{}, makeStep(t, "[]"))
 	require.EqualError(t, err, messageStorageCorrupted)
 
 	contract.rosterFac = fac
-	err = contract.Execute(makeTx(t, "[{},{},{}]"), fakeStore{})
+	err = contract.Execute(fakeStore{}, makeStep(t, "[{},{},{}]"))
 	require.EqualError(t, err, messageTooManyChanges)
 
-	err = contract.Execute(makeTx(t, "[{},{}]"), fakeStore{})
+	err = contract.Execute(fakeStore{}, makeStep(t, "[{},{}]"))
 	require.EqualError(t, err, "duplicate in roster: fake.Address[0]")
 
-	err = contract.Execute(makeTx(t, "[]"), fakeStore{errSet: fake.GetError()})
+	err = contract.Execute(fakeStore{errSet: fake.GetError()}, makeStep(t, "[]"))
 	require.EqualError(t, err, messageStorageFailure)
 
 	contract.access = fakeAccess{err: fake.GetError()}
-	err = contract.Execute(makeTx(t, "[]"), fakeStore{})
+	err = contract.Execute(fakeStore{}, makeStep(t, "[]"))
 	require.EqualError(t, err, "unauthorized identity: fake.PublicKey")
 }
 
 // -----------------------------------------------------------------------------
 // Utility functions
 
+func makeStep(t *testing.T, arg string) execution.Step {
+	return execution.Step{Current: makeTx(t, arg)}
+}
+
 func makeTx(t *testing.T, arg string) txn.Transaction {
-	tx, err := signed.NewTransaction(0, fake.PublicKey{}, signed.WithArg(AuthorityArg, []byte(arg)))
+	args := []signed.TransactionOption{
+		signed.WithArg(AuthorityArg, []byte(arg)),
+		signed.WithArg(baremetal.ContractArg, []byte(ContractName)),
+	}
+
+	tx, err := signed.NewTransaction(0, fake.PublicKey{}, args...)
 	require.NoError(t, err)
 
 	return tx

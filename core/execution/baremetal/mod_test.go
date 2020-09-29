@@ -15,15 +15,20 @@ func TestBareMetal_Execute(t *testing.T) {
 	srvc.Set("abc", fakeExec{})
 	srvc.Set("bad", fakeExec{err: fake.GetError()})
 
-	res, err := srvc.Execute(fakeTx{contract: "abc"}, nil)
+	step := execution.Step{}
+	step.Current = fakeTx{contract: "abc"}
+
+	res, err := srvc.Execute(nil, step)
 	require.NoError(t, err)
 	require.Equal(t, execution.Result{Accepted: true}, res)
 
-	res, err = srvc.Execute(fakeTx{contract: "bad"}, nil)
+	step.Current = fakeTx{contract: "bad"}
+	res, err = srvc.Execute(nil, step)
 	require.NoError(t, err)
 	require.Equal(t, execution.Result{Message: fake.GetError().Error()}, res)
 
-	_, err = srvc.Execute(fakeTx{contract: "none"}, nil)
+	step.Current = fakeTx{contract: "none"}
+	_, err = srvc.Execute(nil, step)
 	require.EqualError(t, err, "unknown contract 'none'")
 }
 
@@ -34,7 +39,7 @@ type fakeExec struct {
 	err error
 }
 
-func (e fakeExec) Execute(txn.Transaction, store.Snapshot) error {
+func (e fakeExec) Execute(store.Snapshot, execution.Step) error {
 	return e.err
 }
 

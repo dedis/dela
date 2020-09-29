@@ -3,7 +3,6 @@ package baremetal
 import (
 	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/store"
-	"go.dedis.ch/dela/core/txn"
 	"golang.org/x/xerrors"
 )
 
@@ -15,7 +14,7 @@ const (
 // Contract is the interface to implement to register a smart contract that will
 // be executed natively.
 type Contract interface {
-	Execute(txn.Transaction, store.Snapshot) error
+	Execute(store.Snapshot, execution.Step) error
 }
 
 // BareMetal is an execution service for packaged applications. Those
@@ -42,8 +41,8 @@ func (bm *BareMetal) Set(name string, contract Contract) {
 
 // Execute implements execution.Service. It uses the executor to process the
 // incoming transaction and return the result.
-func (bm *BareMetal) Execute(tx txn.Transaction, snap store.Snapshot) (execution.Result, error) {
-	name := string(tx.GetArg(ContractArg))
+func (bm *BareMetal) Execute(snap store.Snapshot, step execution.Step) (execution.Result, error) {
+	name := string(step.Current.GetArg(ContractArg))
 
 	contract := bm.contracts[name]
 	if contract == nil {
@@ -54,7 +53,7 @@ func (bm *BareMetal) Execute(tx txn.Transaction, snap store.Snapshot) (execution
 		Accepted: true,
 	}
 
-	err := contract.Execute(tx, snap)
+	err := contract.Execute(snap, step)
 	if err != nil {
 		res.Accepted = false
 		res.Message = err.Error()

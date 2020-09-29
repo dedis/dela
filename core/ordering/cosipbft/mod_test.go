@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/access/darc"
+	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/execution/baremetal"
 	"go.dedis.ch/dela/core/execution/baremetal/viewchange"
 	"go.dedis.ch/dela/core/ordering"
@@ -483,7 +484,7 @@ type testExec struct {
 	err error
 }
 
-func (e testExec) Execute(txn.Transaction, store.Snapshot) error {
+func (e testExec) Execute(store.Snapshot, execution.Step) error {
 	return e.err
 }
 
