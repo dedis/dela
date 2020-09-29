@@ -16,6 +16,8 @@ const KeyMaxLength = 32
 // identifier of the transaction is no more than 32 bytes long.
 type Key [KeyMaxLength]byte
 
+// String implements fmt.Stringer. It returns a short string representation of
+// the key.
 func (k Key) String() string {
 	return fmt.Sprintf("%#x", k[:4])
 }
@@ -23,16 +25,20 @@ func (k Key) String() string {
 // Gatherer is a common tool to the pool implementations that helps to implement
 // the gathering process.
 type Gatherer interface {
+	// Len returns the number of pending transactions.
 	Len() int
 
+	// Add adds the transaction to the list of pending transactions.
 	Add(tx txn.Transaction) error
 
+	// Remove removes a transaction from the list of pending ones.
 	Remove(tx txn.Transaction) error
 
 	// Wait waits for a notification with sufficient transactions to return the
 	// array, or nil if the context ends.
 	Wait(ctx context.Context, cfg Config) []txn.Transaction
 
+	// Close closes current operations and cleans the resources.
 	Close()
 }
 
@@ -148,8 +154,21 @@ func (g *simpleGatherer) Wait(ctx context.Context, cfg Config) []txn.Transaction
 	}
 }
 
+// Close implements pool.Gatherer. It closes the operations and cleans the
+// resources.
 func (g *simpleGatherer) Close() {
-	// TODO: clean resources
+	g.Lock()
+
+	g.history = make(map[Key]struct{})
+	g.set = make(map[Key]txn.Transaction)
+
+	for _, item := range g.queue {
+		close(item.ch)
+	}
+
+	g.queue = nil
+
+	g.Unlock()
 }
 
 // Notify implements pool.Gatherer. It triggers the elements of the queue that

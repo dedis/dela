@@ -2,6 +2,7 @@ package pool
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -65,6 +66,38 @@ func TestSimpleGatherer_Wait(t *testing.T) {
 
 	txs = gatherer.Wait(ctx, Config{Min: 2})
 	require.Nil(t, txs)
+}
+
+func TestSimpleGatherer_Close(t *testing.T) {
+	gatherer := NewSimpleGatherer().(*simpleGatherer)
+
+	require.NoError(t, gatherer.Add(fakeTx{id: []byte{0}}))
+	require.NoError(t, gatherer.Add(fakeTx{id: []byte{1}}))
+	require.NoError(t, gatherer.Remove(fakeTx{id: []byte{0}}))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+
+		txs := gatherer.Wait(ctx, Config{Min: 100, Callback: wg.Done})
+		require.Empty(t, txs)
+	}()
+
+	wg.Wait()
+	wg.Add(1)
+
+	gatherer.Close()
+
+	require.Empty(t, gatherer.history)
+	require.Empty(t, gatherer.queue)
+	require.Empty(t, gatherer.set)
+
+	wg.Wait()
 }
 
 // -----------------------------------------------------------------------------
