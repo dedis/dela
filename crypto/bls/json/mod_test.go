@@ -9,7 +9,6 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/kyber/v3"
-	"golang.org/x/xerrors"
 )
 
 func TestPubkeyFormat_Encode(t *testing.T) {
@@ -25,10 +24,10 @@ func TestPubkeyFormat_Encode(t *testing.T) {
 	require.EqualError(t, err, "unsupported message of type 'fake.Message'")
 
 	_, err = format.Encode(ctx, bls.NewPublicKeyFromPoint(badPoint{}))
-	require.EqualError(t, err, "couldn't marshal point: oops")
+	require.EqualError(t, err, fake.Err("couldn't marshal point"))
 
 	_, err = format.Encode(fake.NewBadContext(), signer.GetPublicKey())
-	require.EqualError(t, err, "couldn't marshal: fake error")
+	require.EqualError(t, err, fake.Err("couldn't marshal"))
 }
 
 func TestPubkeyFormat_Decode(t *testing.T) {
@@ -48,7 +47,7 @@ func TestPubkeyFormat_Decode(t *testing.T) {
 		"couldn't unmarshal point: bn256.G2: not enough data")
 
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
-	require.EqualError(t, err, "couldn't deserialize data: fake error")
+	require.EqualError(t, err, fake.Err("couldn't deserialize data"))
 }
 
 func TestSigFormat_Encode(t *testing.T) {
@@ -64,7 +63,7 @@ func TestSigFormat_Encode(t *testing.T) {
 	require.EqualError(t, err, "unsupported message of type 'fake.Message'")
 
 	_, err = format.Encode(fake.NewBadContext(), sig)
-	require.EqualError(t, err, "couldn't marshal: fake error")
+	require.EqualError(t, err, fake.Err("couldn't marshal"))
 }
 
 func TestSigFormat_Decode(t *testing.T) {
@@ -76,16 +75,16 @@ func TestSigFormat_Decode(t *testing.T) {
 	require.Equal(t, bls.NewSignature([]byte("A")), sig)
 
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{"Data":"QQ=="}`))
-	require.EqualError(t, err, "couldn't deserialize data: fake error")
+	require.EqualError(t, err, fake.Err("couldn't deserialize data"))
 }
 
 func TestAssert(t *testing.T) {
 	defer func() {
 		r := recover()
-		require.Contains(t, r, ": oops")
+		require.Contains(t, r, fake.GetError().Error())
 	}()
 
-	assert(xerrors.New("oops"))
+	assert(fake.GetError())
 }
 
 // -----------------------------------------------------------------------------
@@ -96,5 +95,5 @@ type badPoint struct {
 }
 
 func (p badPoint) MarshalBinary() ([]byte, error) {
-	return nil, xerrors.New("oops")
+	return nil, fake.GetError()
 }

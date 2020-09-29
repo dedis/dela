@@ -8,7 +8,6 @@ import (
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino/minogrpc"
-	"golang.org/x/xerrors"
 )
 
 func TestMinimal_Build(t *testing.T) {
@@ -54,7 +53,7 @@ func TestMinimal_OnStop(t *testing.T) {
 	injector = node.NewInjector()
 	injector.Inject(badMino{})
 	err = minimal.OnStop(injector)
-	require.EqualError(t, err, "while stopping mino: oops")
+	require.EqualError(t, err, fake.Err("while stopping mino"))
 }
 
 // -----------------------------------------------------------------------------
@@ -104,5 +103,5 @@ type badMino struct {
 }
 
 func (badMino) GracefulStop() error {
-	return xerrors.New("oops")
+	return fake.GetError()
 }

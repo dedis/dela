@@ -9,7 +9,6 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
-	"golang.org/x/xerrors"
 )
 
 func TestFlat_Listen(t *testing.T) {
@@ -21,7 +20,7 @@ func TestFlat_Listen(t *testing.T) {
 
 	gossiper.mino = fake.NewBadMino()
 	_, err = gossiper.Listen()
-	require.EqualError(t, err, "couldn't create the rpc: fake error")
+	require.EqualError(t, err, fake.Err("couldn't create the rpc"))
 }
 
 func TestFlat_Rumors(t *testing.T) {
@@ -52,13 +51,13 @@ func TestActor_Add(t *testing.T) {
 
 	actor.rpc = fake.NewBadRPC()
 	err = actor.Add(fakeRumor{})
-	require.EqualError(t, err, "couldn't call peers: fake error")
+	require.EqualError(t, err, fake.Err("couldn't call peers"))
 
 	buffer := new(bytes.Buffer)
 	rpc = fake.NewRPC()
 	actor.rpc = rpc
 	actor.logger = zerolog.New(buffer).Level(zerolog.WarnLevel)
-	rpc.SendResponseWithError(nil, xerrors.New("oops"))
+	rpc.SendResponseWithError(nil, fake.GetError())
 	rpc.Done()
 
 	err = actor.Add(fakeRumor{})

@@ -17,7 +17,6 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde/json"
-	"golang.org/x/xerrors"
 )
 
 func TestProcessor_BlockMessage_Invoke(t *testing.T) {
@@ -38,15 +37,15 @@ func TestProcessor_BlockMessage_Invoke(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expected[:], id)
 
-	proc.pbftsm = fakeSM{state: pbft.InitialState, err: xerrors.New("oops")}
+	proc.pbftsm = fakeSM{state: pbft.InitialState, err: fake.GetError()}
 	_, err = proc.Invoke(fake.NewAddress(0), msg)
-	require.EqualError(t, err, "pbft prepare failed: oops")
+	require.EqualError(t, err, fake.Err("pbft prepare failed"))
 
 	views := map[mino.Address]types.ViewMessage{fake.NewAddress(0): {}}
 	msg = types.NewBlockMessage(types.Block{}, views)
-	proc.pbftsm = fakeSM{err: xerrors.New("oops")}
+	proc.pbftsm = fakeSM{err: fake.GetError()}
 	_, err = proc.Invoke(fake.NewAddress(0), msg)
-	require.EqualError(t, err, "accept all: oops")
+	require.EqualError(t, err, fake.Err("accept all"))
 }
 
 func TestProcessor_CommitMessage_Invoke(t *testing.T) {
@@ -59,14 +58,14 @@ func TestProcessor_CommitMessage_Invoke(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []byte{0xfe}, id)
 
-	proc.pbftsm = fakeSM{err: xerrors.New("oops")}
+	proc.pbftsm = fakeSM{err: fake.GetError()}
 	_, err = proc.Invoke(fake.NewAddress(0), msg)
-	require.EqualError(t, err, "pbft commit failed: oops")
+	require.EqualError(t, err, fake.Err("pbft commit failed"))
 
 	proc.pbftsm = fakeSM{}
 	msg = types.NewCommit(types.Digest{}, fake.NewBadSignature())
 	_, err = proc.Invoke(fake.NewAddress(0), msg)
-	require.EqualError(t, err, "couldn't marshal signature: fake error")
+	require.EqualError(t, err, fake.Err("couldn't marshal signature"))
 
 	_, err = proc.Invoke(fake.NewAddress(0), fake.Message{})
 	require.EqualError(t, err, "unsupported message of type 'fake.Message'")
@@ -107,23 +106,23 @@ func TestProcessor_GenesisMessage_Process(t *testing.T) {
 	_, err = proc.Process(mino.Request{Message: types.NewGenesisMessage(wrongGenesis)})
 	require.EqualError(t, err, "mismatch tree root '00000000' != '726f6f74'")
 
-	proc.access = fakeAccess{err: xerrors.New("oops")}
+	proc.access = fakeAccess{err: fake.GetError()}
 	_, err = proc.Process(req)
-	require.EqualError(t, err, "while updating tree: failed to set access: oops")
+	require.EqualError(t, err, fake.Err("while updating tree: failed to set access"))
 
 	proc.access = fakeAccess{}
-	proc.tree = blockstore.NewTreeCache(fakeTree{errStore: xerrors.New("oops")})
+	proc.tree = blockstore.NewTreeCache(fakeTree{errStore: fake.GetError()})
 	_, err = proc.Process(req)
-	require.EqualError(t, err, "while updating tree: failed to store roster: oops")
+	require.EqualError(t, err, fake.Err("while updating tree: failed to store roster"))
 
-	proc.tree = blockstore.NewTreeCache(fakeTree{errCommit: xerrors.New("oops")})
+	proc.tree = blockstore.NewTreeCache(fakeTree{errCommit: fake.GetError()})
 	_, err = proc.Process(req)
-	require.EqualError(t, err, "tree commit failed: oops")
+	require.EqualError(t, err, fake.Err("tree commit failed"))
 
 	proc.tree = blockstore.NewTreeCache(fakeTree{})
-	proc.genesis = fakeGenesisStore{errSet: xerrors.New("oops")}
+	proc.genesis = fakeGenesisStore{errSet: fake.GetError()}
 	_, err = proc.Process(req)
-	require.EqualError(t, err, "set genesis failed: oops")
+	require.EqualError(t, err, fake.Err("set genesis failed"))
 }
 
 func TestProcessor_DoneMessage_Process(t *testing.T) {
@@ -140,9 +139,9 @@ func TestProcessor_DoneMessage_Process(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, resp)
 
-	proc.pbftsm = fakeSM{err: xerrors.New("oops")}
+	proc.pbftsm = fakeSM{err: fake.GetError()}
 	_, err = proc.Process(req)
-	require.EqualError(t, err, "pbftsm finalized failed: oops")
+	require.EqualError(t, err, fake.Err("pbftsm finalized failed"))
 }
 
 func TestProcessor_ViewMessage_Process(t *testing.T) {
@@ -157,7 +156,7 @@ func TestProcessor_ViewMessage_Process(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, resp)
 
-	proc.pbftsm = fakeSM{err: xerrors.New("oops")}
+	proc.pbftsm = fakeSM{err: fake.GetError()}
 	_, err = proc.Process(req)
 	require.NoError(t, err)
 }

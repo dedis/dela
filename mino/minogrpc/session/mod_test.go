@@ -78,11 +78,11 @@ func TestSession_Listen(t *testing.T) {
 	require.Len(t, sess.parents, 0)
 
 	sess.errs = make(chan error, 1)
-	p.stream = &fakeStream{err: xerrors.New("oops")}
+	p.stream = &fakeStream{err: fake.GetError()}
 	sess.Listen(p, fakeTable{}, make(chan struct{}))
 	select {
 	case err := <-sess.errs:
-		require.EqualError(t, err, "stream closed unexpectedly: oops")
+		require.EqualError(t, err, fake.Err("stream closed unexpectedly"))
 	default:
 		t.Fatal("expect an error")
 	}
@@ -125,9 +125,9 @@ func TestSession_RecvPacket(t *testing.T) {
 	require.NotEmpty(t, ack.Errors)
 	require.Equal(t, "no route to fake.Address[400]: bad route", ack.GetErrors()[0])
 
-	sess.pktFac = fakePktFac{err: xerrors.New("oops")}
+	sess.pktFac = fakePktFac{err: fake.GetError()}
 	_, err = sess.RecvPacket(fake.NewAddress(0), &ptypes.Packet{})
-	require.EqualError(t, err, "packet malformed: oops")
+	require.EqualError(t, err, fake.Err("packet malformed"))
 
 	sess.pktFac = fakePktFac{}
 	sess.parents = nil
@@ -165,42 +165,42 @@ func TestSession_Send(t *testing.T) {
 	require.NoError(t, <-errs)
 
 	errs = sess.Send(fake.NewBadPublicKey())
-	require.EqualError(t, <-errs, "failed to serialize msg: fake error")
+	require.EqualError(t, <-errs, fake.Err("failed to serialize msg"))
 	require.NoError(t, <-errs)
 
 	sess.queue = badQueue{}
 	errs = sess.Send(fake.Message{})
-	require.EqualError(t, <-errs, "fake.Address[600] dropped the packet: oops")
+	require.EqualError(t, <-errs, fake.Err("fake.Address[600] dropped the packet"))
 
 	sess.queue = newNonBlockingQueue()
 	sess.parents[key] = parent{
 		relay: &streamRelay{stream: stream},
-		table: fakeTable{err: xerrors.New("oops")},
+		table: fakeTable{err: fake.GetError()},
 	}
 	errs = sess.Send(fake.Message{})
-	require.EqualError(t, <-errs, "no route to fake.Address[400]: oops")
+	require.EqualError(t, <-errs, fake.Err("no route to fake.Address[400]"))
 	require.NoError(t, <-errs)
 
 	// Test when an error occurred when setting up a relay, which moves to the
 	// failure handler that will then fail on the routing table.
 	sess.parents[key] = parent{
 		relay: &streamRelay{stream: stream},
-		table: fakeTable{errFail: xerrors.New("oops"), route: fake.NewAddress(5)},
+		table: fakeTable{errFail: fake.GetError(), route: fake.NewAddress(5)},
 	}
 	sess.connMgr = fakeConnMgr{err: xerrors.New("blabla")}
 	errs = sess.Send(fake.Message{})
-	require.EqualError(t, <-errs, "no route to fake.Address[5]: oops")
+	require.EqualError(t, <-errs, fake.Err("no route to fake.Address[5]"))
 	require.NoError(t, <-errs)
 
 	// Test when an error occurred when forwarding a message to a relay, which
 	// moves to the failure handler that will fail on the routing table.
 	sess.relays[fake.NewAddress(6)] = NewStreamRelay(
 		fake.NewAddress(800),
-		&fakeStream{err: xerrors.New("oops")},
+		&fakeStream{err: fake.GetError()},
 		sess.context)
 
 	sess.parents[key] = parent{
-		relay: NewStreamRelay(nil, &fakeStream{err: xerrors.New("oops")}, sess.context),
+		relay: NewStreamRelay(nil, &fakeStream{err: fake.GetError()}, sess.context),
 		table: fakeTable{errFail: xerrors.New("unavailable"), route: fake.NewAddress(6)},
 	}
 	errs = sess.Send(fake.Message{})
@@ -210,7 +210,7 @@ func TestSession_Send(t *testing.T) {
 	// Test when the parent stream has closed.
 	sess.me = fake.NewAddress(123)
 	sess.parents[key] = parent{
-		relay: NewStreamRelay(nil, &fakeStream{err: xerrors.New("oops")}, sess.context),
+		relay: NewStreamRelay(nil, &fakeStream{err: fake.GetError()}, sess.context),
 		table: fakeTable{},
 	}
 	errs = sess.Send(fake.Message{})
@@ -252,22 +252,22 @@ func TestSession_SetupRelay(t *testing.T) {
 	require.NotNil(t, relay)
 	sess.Wait()
 
-	sess.connMgr = fakeConnMgr{err: xerrors.New("oops")}
+	sess.connMgr = fakeConnMgr{err: fake.GetError()}
 	_, err = sess.setupRelay(p, fake.NewAddress(1))
-	require.EqualError(t, err, "failed to dial: oops")
+	require.EqualError(t, err, fake.Err("failed to dial"))
 
-	sess.connMgr = fakeConnMgr{errConn: xerrors.New("oops")}
+	sess.connMgr = fakeConnMgr{errConn: fake.GetError()}
 	_, err = sess.setupRelay(p, fake.NewAddress(1))
-	require.EqualError(t, err, "client: oops")
+	require.EqualError(t, err, fake.Err("client"))
 
-	sess.connMgr = fakeConnMgr{errHeader: xerrors.New("oops")}
+	sess.connMgr = fakeConnMgr{errHeader: fake.GetError()}
 	_, err = sess.setupRelay(p, fake.NewAddress(1))
-	require.EqualError(t, err, "failed to receive header: oops")
+	require.EqualError(t, err, fake.Err("failed to receive header"))
 
 	sess.connMgr = fakeConnMgr{}
-	p.table = fakeTable{err: xerrors.New("oops")}
+	p.table = fakeTable{err: fake.GetError()}
 	_, err = sess.setupRelay(p, fake.NewAddress(1))
-	require.EqualError(t, err, "failed to serialize handshake: oops")
+	require.EqualError(t, err, fake.Err("failed to serialize handshake"))
 
 	p.table = fakeTable{}
 	sess.connMgr = fakeConnMgr{errRecv: status.Error(codes.Canceled, "")}
@@ -275,7 +275,7 @@ func TestSession_SetupRelay(t *testing.T) {
 	require.NoError(t, err)
 	sess.Wait()
 
-	sess.connMgr = fakeConnMgr{errRecv: xerrors.New("oops")}
+	sess.connMgr = fakeConnMgr{errRecv: fake.GetError()}
 	_, err = sess.setupRelay(p, fake.NewAddress(2))
 	require.NoError(t, err)
 	sess.Wait()
@@ -300,11 +300,11 @@ func TestSession_Recv(t *testing.T) {
 
 	sess.msgFac = fake.NewBadMessageFactory()
 	_, _, err = sess.Recv(ctx)
-	require.EqualError(t, err, "message: fake error")
+	require.EqualError(t, err, fake.Err("message"))
 
-	sess.errs <- xerrors.New("oops")
+	sess.errs <- fake.GetError()
 	_, _, err = sess.Recv(ctx)
-	require.EqualError(t, err, "stream closed unexpectedly: oops")
+	require.EqualError(t, err, fake.Err("stream closed unexpectedly"))
 
 	sess.errs <- nil
 	_, _, err = sess.Recv(ctx)
@@ -329,13 +329,13 @@ func TestSession_OnFailure(t *testing.T) {
 
 	sess.onFailure(p, fake.NewAddress(0), fakePkt{}, errs)
 
-	p.table = fakeTable{errFail: xerrors.New("oops")}
+	p.table = fakeTable{errFail: fake.GetError()}
 	sess.onFailure(p, fake.NewAddress(0), fakePkt{}, errs)
-	require.EqualError(t, <-errs, "no route to fake.Address[0]: oops")
+	require.EqualError(t, <-errs, fake.Err("no route to fake.Address[0]"))
 
-	p.table = fakeTable{err: xerrors.New("oops")}
+	p.table = fakeTable{err: fake.GetError()}
 	sess.onFailure(p, fake.NewAddress(0), fakePkt{dest: fake.NewAddress(1)}, errs)
-	require.EqualError(t, <-errs, "no route to fake.Address[400]: oops")
+	require.EqualError(t, <-errs, fake.Err("no route to fake.Address[400]"))
 }
 
 func TestRelay_Send(t *testing.T) {
@@ -348,12 +348,12 @@ func TestRelay_Send(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, ack)
 
-	_, err = r.Send(context.Background(), fakePkt{err: xerrors.New("oops")})
-	require.EqualError(t, err, "failed to serialize: oops")
+	_, err = r.Send(context.Background(), fakePkt{err: fake.GetError()})
+	require.EqualError(t, err, fake.Err("failed to serialize"))
 
-	r.conn = fakeConnection{err: xerrors.New("oops")}
+	r.conn = fakeConnection{err: fake.GetError()}
 	_, err = r.Send(context.Background(), fakePkt{})
-	require.EqualError(t, err, "client: oops")
+	require.EqualError(t, err, fake.Err("client"))
 }
 
 func TestRelay_Close(t *testing.T) {
@@ -364,9 +364,9 @@ func TestRelay_Close(t *testing.T) {
 	err := r.Close()
 	require.NoError(t, err)
 
-	r.stream = &fakeStream{err: xerrors.New("oops")}
+	r.stream = &fakeStream{err: fake.GetError()}
 	err = r.Close()
-	require.EqualError(t, err, "failed to close stream: oops")
+	require.EqualError(t, err, fake.Err("failed to close stream"))
 }
 
 func TestStreamRelay_Send(t *testing.T) {
@@ -378,8 +378,8 @@ func TestStreamRelay_Send(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, ack.Errors)
 
-	_, err = r.Send(context.Background(), fakePkt{err: xerrors.New("oops")})
-	require.EqualError(t, err, "failed to serialize: oops")
+	_, err = r.Send(context.Background(), fakePkt{err: fake.GetError()})
+	require.EqualError(t, err, fake.Err("failed to serialize"))
 }
 
 func TestStreamRelay_Close(t *testing.T) {
@@ -632,5 +632,5 @@ type badQueue struct {
 }
 
 func (badQueue) Push(router.Packet) error {
-	return xerrors.New("oops")
+	return fake.GetError()
 }

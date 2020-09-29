@@ -9,7 +9,6 @@ import (
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/sign/schnorr"
 	"go.dedis.ch/kyber/v3/util/key"
-	"golang.org/x/xerrors"
 )
 
 func init() {
@@ -60,10 +59,10 @@ func TestPublicKey_Serialize(t *testing.T) {
 
 	pkBuf, err := pk.Serialize(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(pkBuf))
+	require.Equal(t, fake.GetFakeFormatValue(), pkBuf)
 
 	_, err = pk.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "couldn't encode public key: fake error")
+	require.EqualError(t, err, fake.Err("couldn't encode public key"))
 }
 
 func TestPublicKey_Verify(t *testing.T) {
@@ -110,7 +109,7 @@ func TestPublicKey_MarshalText(t *testing.T) {
 
 	pk.point = badPoint{}
 	_, err = pk.MarshalText()
-	require.EqualError(t, err, "couldn't marshal: oops")
+	require.EqualError(t, err, fake.Err("couldn't marshal"))
 }
 
 func TestPublicKey_GetPoint(t *testing.T) {
@@ -154,11 +153,11 @@ func TestSignature_Serialize(t *testing.T) {
 	ctx := fake.NewContext()
 	buf, err := sig.Serialize(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(buf))
+	require.Equal(t, fake.GetFakeFormatValue(), buf)
 
 	ctx = fake.NewBadContext()
 	_, err = sig.Serialize(ctx)
-	require.EqualError(t, err, "couldn't encode signature: fake error")
+	require.EqualError(t, err, fake.Err("couldn't encode signature"))
 }
 
 func TestSignature_Equal(t *testing.T) {
@@ -199,7 +198,7 @@ func TestPublicKeyFactory_PublicKeyOf(t *testing.T) {
 
 	ctx = fake.NewBadContext()
 	_, err = pkf.PublicKeyOf(ctx, nil)
-	require.EqualError(t, err, "couldn't decode public key: fake error")
+	require.EqualError(t, err, fake.Err("couldn't decode public key"))
 
 	ctx = fake.NewContextWithFormat("BAD_POINT")
 	_, err = pkf.PublicKeyOf(ctx, nil)
@@ -246,7 +245,7 @@ func TestSignatureFactory_SignatureOf(t *testing.T) {
 
 	ctx = fake.NewBadContext()
 	_, err = sf.SignatureOf(ctx, nil)
-	require.EqualError(t, err, "couldn't decode signature: fake error")
+	require.EqualError(t, err, fake.Err("couldn't decode signature"))
 
 	ctx = fake.NewContextWithFormat("BAD_SIG")
 	_, err = sf.SignatureOf(ctx, nil)
@@ -317,5 +316,5 @@ type badPoint struct {
 }
 
 func (p badPoint) MarshalBinary() ([]byte, error) {
-	return nil, xerrors.New("oops")
+	return nil, fake.GetError()
 }

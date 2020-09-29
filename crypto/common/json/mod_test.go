@@ -23,7 +23,7 @@ func TestAlgoFormat_Encode(t *testing.T) {
 	require.EqualError(t, err, "unsupported message of type 'fake.Message'")
 
 	_, err = format.Encode(fake.NewBadContext(), algo)
-	require.EqualError(t, err, "couldn't marshal: fake error")
+	require.EqualError(t, err, fake.Err("couldn't marshal"))
 }
 
 func TestFormat_Decode(t *testing.T) {
@@ -35,5 +35,5 @@ func TestFormat_Decode(t *testing.T) {
 	require.Equal(t, common.NewAlgorithm("fake"), algo)
 
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
-	require.EqualError(t, err, "couldn't deserialize algorithm: fake error")
+	require.EqualError(t, err, fake.Err("couldn't deserialize algorithm"))
 }

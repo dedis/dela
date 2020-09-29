@@ -23,11 +23,11 @@ func TestFormat_Encode(t *testing.T) {
 	require.EqualError(t, err, "unsupported message of type 'fake.Message'")
 
 	_, err = format.Encode(fake.NewBadContext(), sig)
-	require.EqualError(t, err, "couldn't marshal: fake error")
+	require.EqualError(t, err, fake.Err("couldn't marshal"))
 
 	sig = types.NewSignature(fake.NewBadSignature(), nil)
 	_, err = format.Encode(ctx, sig)
-	require.EqualError(t, err, "couldn't serialize aggregate: fake error")
+	require.EqualError(t, err, fake.Err("couldn't serialize aggregate"))
 }
 
 func TestFormat_Decode(t *testing.T) {
@@ -41,11 +41,11 @@ func TestFormat_Decode(t *testing.T) {
 	require.Equal(t, []byte{1}, sig.(*types.Signature).GetMask())
 
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
-	require.EqualError(t, err, "couldn't unmarshal message: fake error")
+	require.EqualError(t, err, fake.Err("couldn't unmarshal message"))
 
 	ctx = serde.WithFactory(ctx, types.AggKey{}, fake.NewBadSignatureFactory())
 	_, err = format.Decode(ctx, []byte(`{}`))
-	require.EqualError(t, err, "couldn't deserialize signature: fake error")
+	require.EqualError(t, err, fake.Err("couldn't deserialize signature"))
 
 	ctx = serde.WithFactory(ctx, types.AggKey{}, nil)
 	_, err = format.Decode(ctx, []byte(`{}`))

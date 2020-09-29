@@ -14,7 +14,6 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino/minogrpc"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
-	"golang.org/x/xerrors"
 )
 
 func TestCertAction_Execute(t *testing.T) {
@@ -102,9 +101,9 @@ func TestJoinAction_Execute(t *testing.T) {
 		"couldn't decode digest: illegal base64 data at input byte 0")
 
 	flags["cert-hash"] = "YQ=="
-	req.Injector.Inject(fakeJoinable{err: xerrors.New("oops")})
+	req.Injector.Inject(fakeJoinable{err: fake.GetError()})
 	err = action.Execute(req)
-	require.EqualError(t, err, "couldn't join: oops")
+	require.EqualError(t, err, fake.Err("couldn't join"))
 
 	req.Injector = node.NewInjector()
 	err = action.Execute(req)

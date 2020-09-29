@@ -40,7 +40,7 @@ func TestForwardLink_New(t *testing.T) {
 	}
 
 	_, err = NewForwardLink(Digest{1}, Digest{2}, opts...)
-	require.EqualError(t, err, "failed to fingerprint: couldn't write from: fake error")
+	require.EqualError(t, err, fake.Err("failed to fingerprint: couldn't write from"))
 }
 
 func TestForwardLink_GetHash(t *testing.T) {
@@ -88,10 +88,10 @@ func TestForwardLink_Serialize(t *testing.T) {
 
 	data, err := link.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = link.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "encoding link failed: fake error")
+	require.EqualError(t, err, fake.Err("encoding link failed"))
 }
 
 func TestForwardLink_Fingerprint(t *testing.T) {
@@ -105,10 +105,10 @@ func TestForwardLink_Fingerprint(t *testing.T) {
 	require.Regexp(t, "^\x01\x00{31}\x02\x00{31}$", buffer.String())
 
 	err = link.Fingerprint(fake.NewBadHash())
-	require.EqualError(t, err, "couldn't write from: fake error")
+	require.EqualError(t, err, fake.Err("couldn't write from"))
 
 	err = link.Fingerprint(fake.NewBadHashWithDelay(1))
-	require.EqualError(t, err, "couldn't write to: fake error")
+	require.EqualError(t, err, fake.Err("couldn't write to"))
 }
 
 func TestBlockLink_New(t *testing.T) {
@@ -120,7 +120,7 @@ func TestBlockLink_New(t *testing.T) {
 
 	_, err = NewBlockLink(Digest{}, Block{}, opt)
 	require.EqualError(t, err,
-		"creating forward link: failed to fingerprint: couldn't write from: fake error")
+		fake.Err("creating forward link: failed to fingerprint: couldn't write from"))
 }
 
 func TestBlockLink_GetBlock(t *testing.T) {
@@ -149,10 +149,10 @@ func TestBlockLink_Serialize(t *testing.T) {
 
 	data, err := link.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = link.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "encoding failed: fake error")
+	require.EqualError(t, err, fake.Err("encoding failed"))
 }
 
 func TestLinkFac_LinkOf(t *testing.T) {
@@ -164,7 +164,7 @@ func TestLinkFac_LinkOf(t *testing.T) {
 	require.Equal(t, blockLink{}, msg)
 
 	_, err = fac.LinkOf(fake.NewBadContext(), nil)
-	require.EqualError(t, err, "decoding link failed: fake error")
+	require.EqualError(t, err, fake.Err("decoding link failed"))
 
 	_, err = fac.LinkOf(fake.NewContextWithFormat(serde.Format("badtype")), nil)
 	require.EqualError(t, err, "invalid forward link 'fake.Message'")
@@ -179,7 +179,7 @@ func TestLinkFac_BlockLinkOf(t *testing.T) {
 	require.Equal(t, blockLink{}, msg)
 
 	_, err = fac.BlockLinkOf(fake.NewBadContext(), nil)
-	require.EqualError(t, err, "decoding link failed: fake error")
+	require.EqualError(t, err, fake.Err("decoding link failed"))
 
 	_, err = fac.BlockLinkOf(fake.NewContextWithFormat(serde.Format("badtype")), nil)
 	require.EqualError(t, err, "invalid block link 'fake.Message'")
@@ -217,10 +217,10 @@ func TestChain_Verify(t *testing.T) {
 
 	c = NewChain(makeLink(t, genesis.digest), nil)
 	err = c.Verify(genesis, fake.NewBadVerifierFactory())
-	require.EqualError(t, err, "verifier factory failed: fake error")
+	require.EqualError(t, err, fake.Err("verifier factory failed"))
 
 	err = c.Verify(genesis, fake.NewVerifierFactory(fake.NewBadVerifier()))
-	require.EqualError(t, err, "invalid prepare signature: fake error")
+	require.EqualError(t, err, fake.Err("invalid prepare signature"))
 
 	link := makeLink(t, genesis.digest).(blockLink)
 	link.prepareSig = nil
@@ -238,11 +238,11 @@ func TestChain_Verify(t *testing.T) {
 	link.commitSig = fake.Signature{}
 	c = NewChain(link, nil)
 	err = c.Verify(genesis, fake.VerifierFactory{})
-	require.EqualError(t, err, "failed to marshal signature: fake error")
+	require.EqualError(t, err, fake.Err("failed to marshal signature"))
 
 	c = NewChain(makeLink(t, genesis.digest), nil)
 	err = c.Verify(genesis, fake.NewVerifierFactory(fake.NewBadVerifierWithDelay(1)))
-	require.EqualError(t, err, "invalid commit signature: fake error")
+	require.EqualError(t, err, fake.Err("invalid commit signature"))
 }
 
 func TestChain_Serialize(t *testing.T) {
@@ -250,10 +250,10 @@ func TestChain_Serialize(t *testing.T) {
 
 	data, err := chain.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = chain.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "encoding chain failed: fake error")
+	require.EqualError(t, err, fake.Err("encoding chain failed"))
 }
 
 func TestChainFactory_Deserialize(t *testing.T) {
@@ -264,7 +264,7 @@ func TestChainFactory_Deserialize(t *testing.T) {
 	require.Equal(t, chain{}, msg)
 
 	_, err = fac.Deserialize(fake.NewBadContext(), nil)
-	require.EqualError(t, err, "decoding chain failed: fake error")
+	require.EqualError(t, err, fake.Err("decoding chain failed"))
 
 	_, err = fac.Deserialize(fake.NewContextWithFormat(serde.Format("badtype")), nil)
 	require.EqualError(t, err, "invalid chain 'fake.Message'")

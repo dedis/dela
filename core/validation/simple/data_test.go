@@ -11,7 +11,6 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
-	"golang.org/x/xerrors"
 )
 
 func init() {
@@ -40,10 +39,10 @@ func TestTransactionResult_Serialize(t *testing.T) {
 
 	data, err := res.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = res.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "encoding failed: fake error")
+	require.EqualError(t, err, fake.Err("encoding failed"))
 }
 
 func TestResultFactory_Deserialize(t *testing.T) {
@@ -54,7 +53,7 @@ func TestResultFactory_Deserialize(t *testing.T) {
 	require.Equal(t, TransactionResult{}, msg)
 
 	_, err = fac.Deserialize(fake.NewBadContext(), nil)
-	require.EqualError(t, err, "decoding failed: fake error")
+	require.EqualError(t, err, fake.Err("decoding failed"))
 }
 
 func TestData_GetTransactionResults(t *testing.T) {
@@ -78,11 +77,11 @@ func TestData_Fingerprint(t *testing.T) {
 	require.NoError(t, err)
 
 	err = data.Fingerprint(fake.NewBadHash())
-	require.EqualError(t, err, "couldn't write accepted: fake error")
+	require.EqualError(t, err, fake.Err("couldn't write accepted"))
 
-	data.txs[0].tx = fakeTx{err: xerrors.New("oops")}
+	data.txs[0].tx = fakeTx{err: fake.GetError()}
 	err = data.Fingerprint(buffer)
-	require.EqualError(t, err, "couldn't fingerprint tx: oops")
+	require.EqualError(t, err, fake.Err("couldn't fingerprint tx"))
 }
 
 func TestData_Serialize(t *testing.T) {
@@ -90,10 +89,10 @@ func TestData_Serialize(t *testing.T) {
 
 	data, err := vdata.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = vdata.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "encoding failed: fake error")
+	require.EqualError(t, err, fake.Err("encoding failed"))
 }
 
 func TestDataFactory_Deserialize(t *testing.T) {
@@ -104,7 +103,7 @@ func TestDataFactory_Deserialize(t *testing.T) {
 	require.Equal(t, Data{}, msg)
 
 	_, err = fac.Deserialize(fake.NewBadContext(), nil)
-	require.EqualError(t, err, "decoding failed: fake error")
+	require.EqualError(t, err, fake.Err("decoding failed"))
 
 	_, err = fac.Deserialize(fake.NewContextWithFormat(serde.Format("BAD_TYPE")), nil)
 	require.EqualError(t, err, "invalid data type 'fake.Message'")

@@ -10,7 +10,6 @@ import (
 	"go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"golang.org/x/xerrors"
 )
 
 func TestProof_GetKey(t *testing.T) {
@@ -46,9 +45,9 @@ func TestProof_Verify(t *testing.T) {
 	err = p.Verify(genesis, fake.VerifierFactory{})
 	require.EqualError(t, err, "mismatch tree root: '00000000' != '01020300'")
 
-	p.chain = fakeChain{err: xerrors.New("oops")}
+	p.chain = fakeChain{err: fake.GetError()}
 	err = p.Verify(genesis, fake.VerifierFactory{})
-	require.EqualError(t, err, "failed to verify chain: oops")
+	require.EqualError(t, err, fake.Err("failed to verify chain"))
 }
 
 // -----------------------------------------------------------------------------

@@ -104,19 +104,19 @@ func TestRoster_Fingerprint(t *testing.T) {
 
 	roster.addrs[0] = fake.NewBadAddress()
 	err = roster.Fingerprint(out)
-	require.EqualError(t, err, "couldn't marshal address: fake error")
+	require.EqualError(t, err, fake.Err("couldn't marshal address"))
 
 	roster.addrs[0] = fake.NewAddress(0)
 	roster.pubkeys[0] = fake.NewBadPublicKey()
 	err = roster.Fingerprint(out)
-	require.EqualError(t, err, "couldn't marshal public key: fake error")
+	require.EqualError(t, err, fake.Err("couldn't marshal public key"))
 
 	roster.pubkeys[0] = fake.PublicKey{}
 	err = roster.Fingerprint(fake.NewBadHash())
-	require.EqualError(t, err, "couldn't write address: fake error")
+	require.EqualError(t, err, fake.Err("couldn't write address"))
 
 	err = roster.Fingerprint(fake.NewBadHashWithDelay(1))
-	require.EqualError(t, err, "couldn't write public key: fake error")
+	require.EqualError(t, err, fake.Err("couldn't write public key"))
 }
 
 func TestRoster_Take(t *testing.T) {
@@ -219,10 +219,10 @@ func TestRoster_Serialize(t *testing.T) {
 
 	data, err := roster.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = roster.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "couldn't encode roster: fake error")
+	require.EqualError(t, err, fake.Err("couldn't encode roster"))
 }
 
 func TestFactory_Deserialize(t *testing.T) {
@@ -233,7 +233,7 @@ func TestFactory_Deserialize(t *testing.T) {
 	require.Equal(t, Roster{}, msg)
 
 	_, err = factory.Deserialize(fake.NewBadContext(), nil)
-	require.EqualError(t, err, "couldn't decode roster: fake error")
+	require.EqualError(t, err, fake.Err("couldn't decode roster"))
 
 	_, err = factory.Deserialize(fake.NewContextWithFormat(serde.Format("BAD_TYPE")), nil)
 	require.EqualError(t, err, "invalid message of type 'fake.Message'")

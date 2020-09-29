@@ -23,11 +23,11 @@ func TestMsgFormat_Encode(t *testing.T) {
 
 	req.Value = fake.NewBadPublicKey()
 	_, err = format.Encode(ctx, req)
-	require.EqualError(t, err, "couldn't serialize message: fake error")
+	require.EqualError(t, err, fake.Err("couldn't serialize message"))
 
 	req.Value = fake.PublicKey{}
 	_, err = format.Encode(fake.NewBadContext(), req)
-	require.EqualError(t, err, "couldn't marshal: fake error")
+	require.EqualError(t, err, fake.Err("couldn't marshal"))
 }
 
 func TestMsgFormat_SignatureResponse_Encode(t *testing.T) {
@@ -44,7 +44,7 @@ func TestMsgFormat_SignatureResponse_Encode(t *testing.T) {
 
 	resp.Signature = fake.NewBadSignature()
 	_, err = format.Encode(ctx, resp)
-	require.EqualError(t, err, "couldn't serialize signature: fake error")
+	require.EqualError(t, err, fake.Err("couldn't serialize signature"))
 }
 
 func TestMsgFormat_Decode(t *testing.T) {
@@ -59,7 +59,7 @@ func TestMsgFormat_Decode(t *testing.T) {
 
 	badCtx := serde.WithFactory(ctx, cosi.MsgKey{}, fake.NewBadMessageFactory())
 	_, err = format.Decode(badCtx, []byte(`{"Request":{}}`))
-	require.EqualError(t, err, "couldn't deserialize value: fake error")
+	require.EqualError(t, err, fake.Err("couldn't deserialize value"))
 
 	badCtx = serde.WithFactory(ctx, cosi.MsgKey{}, nil)
 	_, err = format.Decode(badCtx, []byte(`{"Request":{}}`))
@@ -71,14 +71,14 @@ func TestMsgFormat_Decode(t *testing.T) {
 
 	badCtx = serde.WithFactory(ctx, cosi.SigKey{}, fake.NewBadSignatureFactory())
 	_, err = format.Decode(badCtx, []byte(`{"Response":{}}`))
-	require.EqualError(t, err, "couldn't deserialize signature: fake error")
+	require.EqualError(t, err, fake.Err("couldn't deserialize signature"))
 
 	badCtx = serde.WithFactory(ctx, cosi.SigKey{}, nil)
 	_, err = format.Decode(badCtx, []byte(`{"Response":{}}`))
 	require.EqualError(t, err, "invalid factory of type '<nil>'")
 
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
-	require.EqualError(t, err, "couldn't unmarshal message: fake error")
+	require.EqualError(t, err, fake.Err("couldn't unmarshal message"))
 
 	_, err = format.Decode(ctx, []byte(`{}`))
 	require.EqualError(t, err, "message is empty")

@@ -12,7 +12,6 @@ import (
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minoch"
 	"go.dedis.ch/dela/serde"
-	"golang.org/x/xerrors"
 )
 
 func TestCoSi_Basic(t *testing.T) {
@@ -32,7 +31,7 @@ func TestCoSi_Basic(t *testing.T) {
 	require.NoError(t, err)
 
 	c2 := NewCoSi(m2, ca.GetSigner(1).(crypto.AggregateSigner))
-	_, err = c2.Listen(fakeReactor{err: xerrors.New("oops")})
+	_, err = c2.Listen(fakeReactor{err: fake.GetError()})
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -101,7 +100,7 @@ func TestCoSi_Listen(t *testing.T) {
 
 	c.mino = fake.NewBadMino()
 	_, err = c.Listen(fakeReactor{})
-	require.EqualError(t, err, "couldn't make rpc: fake error")
+	require.EqualError(t, err, fake.Err("couldn't make rpc"))
 }
 
 // -----------------------------------------------------------------------------

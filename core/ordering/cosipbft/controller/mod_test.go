@@ -12,7 +12,6 @@ import (
 	"go.dedis.ch/dela/core/store/kv"
 	"go.dedis.ch/dela/core/txn/pool"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"golang.org/x/xerrors"
 )
 
 func TestMinimal_SetCommands(t *testing.T) {
@@ -44,7 +43,7 @@ func TestMinimal_OnStart(t *testing.T) {
 
 	inj.Inject(fake.NewBadMino())
 	err = m.OnStart(fset, inj)
-	require.EqualError(t, err, "pool: failed to listen: couldn't create the rpc: fake error")
+	require.EqualError(t, err, fake.Err("pool: failed to listen: couldn't create the rpc"))
 }
 
 func TestMinimal_OnStop(t *testing.T) {
@@ -72,26 +71,26 @@ func TestMinimal_OnStop(t *testing.T) {
 	require.EqualError(t, err,
 		"injector: couldn't find dependency for 'ordering.Service'")
 
-	inj.Inject(fakeService{err: xerrors.New("oops")})
+	inj.Inject(fakeService{err: fake.GetError()})
 	err = m.OnStop(inj)
-	require.EqualError(t, err, "while closing service: oops")
+	require.EqualError(t, err, fake.Err("while closing service"))
 
 	inj.Inject(fakeService{})
 	err = m.OnStop(inj)
 	require.EqualError(t, err,
 		"injector: couldn't find dependency for 'pool.Pool'")
 
-	inj.Inject(fakePool{err: xerrors.New("oops")})
+	inj.Inject(fakePool{err: fake.GetError()})
 	err = m.OnStop(inj)
-	require.EqualError(t, err, "while closing pool: oops")
+	require.EqualError(t, err, fake.Err("while closing pool"))
 
 	inj.Inject(fakePool{})
 	err = m.OnStop(inj)
 	require.EqualError(t, err, "injector: couldn't find dependency for 'kv.DB'")
 
-	inj.Inject(fakeDb{err: xerrors.New("oops")})
+	inj.Inject(fakeDb{err: fake.GetError()})
 	err = m.OnStop(inj)
-	require.EqualError(t, err, "while closing db: oops")
+	require.EqualError(t, err, fake.Err("while closing db"))
 }
 
 func TestLoadSigner(t *testing.T) {

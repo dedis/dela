@@ -9,7 +9,6 @@ import (
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"golang.org/x/xerrors"
 )
 
 func TestService_GetFactory(t *testing.T) {
@@ -31,10 +30,10 @@ func TestService_GetNonce(t *testing.T) {
 	require.Equal(t, uint64(3), nonce)
 
 	_, err = srvc.GetNonce(fakeSnapshot{}, fake.NewBadPublicKey())
-	require.EqualError(t, err, "key: failed to marshal identity: fake error")
+	require.EqualError(t, err, fake.Err("key: failed to marshal identity"))
 
-	_, err = srvc.GetNonce(fakeSnapshot{errGet: xerrors.New("oops")}, fake.PublicKey{})
-	require.EqualError(t, err, "store: oops")
+	_, err = srvc.GetNonce(fakeSnapshot{errGet: fake.GetError()}, fake.PublicKey{})
+	require.EqualError(t, err, fake.Err("store"))
 }
 
 func TestService_Validate(t *testing.T) {
@@ -55,17 +54,17 @@ func TestService_Validate(t *testing.T) {
 	_, err = srvc.Validate(fakeSnapshot{}, []txn.Transaction{fakeTx{}})
 	require.EqualError(t, err, "tx 0x0a0b0c0d: nonce: missing identity in transaction")
 
-	_, err = srvc.Validate(fakeSnapshot{errSet: xerrors.New("oops")}, []txn.Transaction{newTx()})
-	require.EqualError(t, err, "tx 0x0a0b0c0d: failed to set nonce: store: oops")
+	_, err = srvc.Validate(fakeSnapshot{errSet: fake.GetError()}, []txn.Transaction{newTx()})
+	require.EqualError(t, err, fake.Err("tx 0x0a0b0c0d: failed to set nonce: store"))
 
 	srvc.hashFac = fake.NewHashFactory(fake.NewBadHash())
 	err = srvc.set(fakeSnapshot{}, fake.PublicKey{}, 0)
-	require.EqualError(t, err, "key: failed to write identity: fake error")
+	require.EqualError(t, err, fake.Err("key: failed to write identity"))
 
 	srvc.hashFac = crypto.NewSha256Factory()
-	srvc.execution = fakeExec{err: xerrors.New("oops")}
+	srvc.execution = fakeExec{err: fake.GetError()}
 	_, err = srvc.Validate(fakeSnapshot{}, []txn.Transaction{newTx()})
-	require.EqualError(t, err, "tx 0x0a0b0c0d: failed to execute tx: oops")
+	require.EqualError(t, err, fake.Err("tx 0x0a0b0c0d: failed to execute tx"))
 }
 
 // -----------------------------------------------------------------------------

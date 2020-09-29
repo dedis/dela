@@ -19,7 +19,6 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
-	"golang.org/x/xerrors"
 )
 
 func TestSetupAction_Execute(t *testing.T) {
@@ -43,9 +42,9 @@ func TestSetupAction_Execute(t *testing.T) {
 	err = action.Execute(ctx)
 	require.EqualError(t, err, "injector: couldn't find dependency for 'controller.Service'")
 
-	ctx.Injector.Inject(fakeService{err: xerrors.New("oops")})
+	ctx.Injector.Inject(fakeService{err: fake.GetError()})
 	err = action.Execute(ctx)
-	require.EqualError(t, err, "failed to setup: oops")
+	require.EqualError(t, err, fake.Err("failed to setup"))
 }
 
 func TestExportAction_Execute(t *testing.T) {
@@ -66,7 +65,7 @@ func TestExportAction_Execute(t *testing.T) {
 
 	ctx.Injector.Inject(fake.NewBadMino())
 	err = action.Execute(ctx)
-	require.EqualError(t, err, "failed to marshal address: fake error")
+	require.EqualError(t, err, fake.Err("failed to marshal address"))
 
 	ctx.Injector.Inject(fake.Mino{})
 	err = action.Execute(ctx)
@@ -74,7 +73,7 @@ func TestExportAction_Execute(t *testing.T) {
 
 	ctx.Injector.Inject(fakeCosi{err: true})
 	err = action.Execute(ctx)
-	require.EqualError(t, err, "failed to marshal public key: fake error")
+	require.EqualError(t, err, fake.Err("failed to marshal public key"))
 }
 
 func TestRosterAddAction_Execute(t *testing.T) {
@@ -95,9 +94,9 @@ func TestRosterAddAction_Execute(t *testing.T) {
 	err = action.Execute(ctx)
 	require.EqualError(t, err, "injector: couldn't find dependency for 'controller.Service'")
 
-	ctx.Injector.Inject(fakeService{err: xerrors.New("oops")})
+	ctx.Injector.Inject(fakeService{err: fake.GetError()})
 	err = action.Execute(ctx)
-	require.EqualError(t, err, "failed to read roster: oops")
+	require.EqualError(t, err, fake.Err("failed to read roster"))
 
 	ctx.Injector.Inject(fakeService{})
 	err = action.Execute(ctx)
@@ -109,13 +108,13 @@ func TestRosterAddAction_Execute(t *testing.T) {
 	err = action.Execute(ctx)
 	require.EqualError(t, err, "txn manager: injector: couldn't find dependency for 'txn.Manager'")
 
-	ctx.Injector.Inject(fakeTxManager{errSync: xerrors.New("oops")})
+	ctx.Injector.Inject(fakeTxManager{errSync: fake.GetError()})
 	err = action.Execute(ctx)
-	require.EqualError(t, err, "txn manager: sync: oops")
+	require.EqualError(t, err, fake.Err("txn manager: sync"))
 
-	ctx.Injector.Inject(fakeTxManager{errMake: xerrors.New("oops")})
+	ctx.Injector.Inject(fakeTxManager{errMake: fake.GetError()})
 	err = action.Execute(ctx)
-	require.EqualError(t, err, "transaction: creating transaction: oops")
+	require.EqualError(t, err, fake.Err("transaction: creating transaction"))
 
 	ctx.Injector.Inject(fakeTxManager{})
 	err = action.Execute(ctx)
@@ -123,7 +122,7 @@ func TestRosterAddAction_Execute(t *testing.T) {
 
 	ctx.Injector.Inject(badPool{})
 	err = action.Execute(ctx)
-	require.EqualError(t, err, "failed to add transaction: oops")
+	require.EqualError(t, err, fake.Err("failed to add transaction"))
 
 	events := []ordering.Event{
 		{Transactions: []validation.TransactionResult{fakeResult{refused: true}}},
@@ -156,7 +155,7 @@ func TestDecodeMember(t *testing.T) {
 
 	ctx.Injector.Inject(fakeCosi{err: true})
 	_, _, err = decodeMember(ctx, ":")
-	require.EqualError(t, err, "failed to decode public key: fake error")
+	require.EqualError(t, err, fake.Err("failed to decode public key"))
 }
 
 // -----------------------------------------------------------------------------
@@ -273,5 +272,5 @@ type badPool struct {
 }
 
 func (p badPool) Add(txn.Transaction) error {
-	return xerrors.New("oops")
+	return fake.GetError()
 }

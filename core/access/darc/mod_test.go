@@ -10,7 +10,6 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/json"
-	"golang.org/x/xerrors"
 )
 
 var testCtx = json.NewContext()
@@ -46,8 +45,7 @@ func TestService_Match(t *testing.T) {
 		"^permission: rule 'test:match': unauthorized: \\[bls:[[:xdigit:]]+\\]", err.Error())
 
 	err = srvc.Match(fake.NewBadSnapshot(), creds, alice.GetPublicKey())
-	require.EqualError(t, err,
-		"store failed: while reading: fake error")
+	require.EqualError(t, err, fake.Err("store failed: while reading"))
 
 	err = srvc.Match(store, access.NewContractCreds([]byte{0xcc}, "", ""))
 	require.EqualError(t, err, "permission 0xcc not found")
@@ -75,7 +73,7 @@ func TestService_Grant(t *testing.T) {
 	require.NoError(t, err)
 
 	err = srvc.Grant(fake.NewBadSnapshot(), creds)
-	require.EqualError(t, err, "store failed: while reading: fake error")
+	require.EqualError(t, err, fake.Err("store failed: while reading"))
 
 	err = srvc.Grant(store, access.NewContractCreds([]byte{0xbb}, "", ""))
 	require.EqualError(t, err,
@@ -83,12 +81,12 @@ func TestService_Grant(t *testing.T) {
 
 	srvc.fac = badFac{}
 	err = srvc.Grant(store, creds, alice.GetPublicKey())
-	require.EqualError(t, err, "failed to serialize: oops")
+	require.EqualError(t, err, fake.Err("failed to serialize"))
 
 	badStore := fake.NewSnapshot()
-	badStore.ErrWrite = xerrors.New("oops")
+	badStore.ErrWrite = fake.GetError()
 	err = srvc.Grant(badStore, creds, alice.GetPublicKey())
-	require.EqualError(t, err, "store failed to write: oops")
+	require.EqualError(t, err, fake.Err("store failed to write"))
 }
 
 // -----------------------------------------------------------------------------
@@ -109,5 +107,5 @@ type badPerm struct {
 func (badPerm) Allow(string, ...access.Identity) {}
 
 func (badPerm) Serialize(serde.Context) ([]byte, error) {
-	return nil, xerrors.New("oops")
+	return nil, fake.GetError()
 }

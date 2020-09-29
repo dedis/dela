@@ -20,7 +20,6 @@ import (
 	"go.dedis.ch/dela/mino/router/tree"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/json"
-	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
@@ -210,19 +209,19 @@ func TestOverlayServer_Join(t *testing.T) {
 	overlay.tokens = fakeTokens{}
 	overlay.certs.Store(fake.NewBadAddress(), cert)
 	_, err = overlay.Join(ctx, req)
-	require.EqualError(t, err, "couldn't marshal address: fake error")
+	require.EqualError(t, err, fake.Err("couldn't marshal address"))
 
 	overlay.certs = certs.NewInMemoryStore()
 	overlay.certs.Store(fake.NewAddress(0), cert)
-	overlay.connMgr = fakeConnMgr{err: xerrors.New("oops")}
+	overlay.connMgr = fakeConnMgr{err: fake.GetError()}
 	_, err = overlay.Join(ctx, req)
 	require.EqualError(t, err,
-		"failed to share certificate: couldn't open connection: oops")
+		fake.Err("failed to share certificate: couldn't open connection"))
 
-	overlay.connMgr = fakeConnMgr{errConn: xerrors.New("oops")}
+	overlay.connMgr = fakeConnMgr{errConn: fake.GetError()}
 	_, err = overlay.Join(ctx, req)
 	require.EqualError(t, err,
-		"failed to share certificate: couldn't call share: oops")
+		fake.Err("failed to share certificate: couldn't call share"))
 }
 
 func TestOverlayServer_Share(t *testing.T) {
@@ -292,7 +291,7 @@ func TestOverlayServer_Call(t *testing.T) {
 		map[string]string{headerURIKey: "bad2"},
 	))
 	_, err = overlay.Call(badCtx, &ptypes.Message{Payload: []byte(``)})
-	require.EqualError(t, err, "couldn't deserialize message: fake error")
+	require.EqualError(t, err, fake.Err("couldn't deserialize message"))
 
 	badCtx = metadata.NewIncomingContext(context.Background(), metadata.New(
 		map[string]string{headerURIKey: "bad"},
@@ -303,7 +302,7 @@ func TestOverlayServer_Call(t *testing.T) {
 	ctx = metadata.NewIncomingContext(context.Background(), metadata.Pairs(headerURIKey, "test"))
 	overlay.context = fake.NewBadContext()
 	_, err = overlay.Call(ctx, &ptypes.Message{Payload: []byte(``)})
-	require.EqualError(t, err, "couldn't serialize result: fake error")
+	require.EqualError(t, err, fake.Err("couldn't serialize result"))
 }
 
 func TestOverlayServer_Stream(t *testing.T) {
@@ -322,7 +321,7 @@ func TestOverlayServer_Stream(t *testing.T) {
 	overlay.endpoints["test"] = &Endpoint{Handler: testHandler{skip: true},
 		streams: make(map[string]session.Session)}
 	overlay.endpoints["bad"] = &Endpoint{Handler: testHandler{skip: true,
-		err: xerrors.New("oops")}, streams: make(map[string]session.Session)}
+		err: fake.GetError()}, streams: make(map[string]session.Session)}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -358,15 +357,15 @@ func TestOverlayServer_Stream(t *testing.T) {
 	overlay.router = badRouter{}
 	badCtx := makeCtx(headerStreamIDKey, "abc", headerAddressKey, "{}")
 	err = overlay.Stream(&fakeSrvStream{ctx: badCtx})
-	require.EqualError(t, err, "routing table: failed to create: oops")
+	require.EqualError(t, err, fake.Err("routing table: failed to create"))
 
 	overlay.router = badRouter{errFac: true}
 	err = overlay.Stream(&fakeSrvStream{ctx: inCtx})
-	require.EqualError(t, err, "routing table: malformed handshake: oops")
+	require.EqualError(t, err, fake.Err("routing table: malformed handshake"))
 
 	overlay.router = badRouter{}
 	err = overlay.Stream(&fakeSrvStream{ctx: inCtx})
-	require.EqualError(t, err, "routing table: invalid handshake: oops")
+	require.EqualError(t, err, fake.Err("routing table: invalid handshake"))
 
 	overlay.router = tree.NewRouter(AddressFactory{})
 	badCtx = makeCtx(session.HandshakeKey, "{}", headerStreamIDKey, "abc")
@@ -385,14 +384,14 @@ func TestOverlayServer_Stream(t *testing.T) {
 	overlay.router = tree.NewRouter(AddressFactory{})
 	badCtx = makeCtx(headerURIKey, "bad", headerStreamIDKey, "test", session.HandshakeKey, "{}")
 	err = overlay.Stream(&fakeSrvStream{ctx: badCtx})
-	require.EqualError(t, err, "handler failed to process: oops")
+	require.EqualError(t, err, fake.Err("handler failed to process"))
 
-	err = overlay.Stream(&fakeSrvStream{ctx: inCtx, err: xerrors.New("oops")})
-	require.EqualError(t, err, "failed to send header: oops")
+	err = overlay.Stream(&fakeSrvStream{ctx: inCtx, err: fake.GetError()})
+	require.EqualError(t, err, fake.Err("failed to send header"))
 
-	overlay.connMgr = fakeConnMgr{err: xerrors.New("oops")}
+	overlay.connMgr = fakeConnMgr{err: fake.GetError()}
 	err = overlay.Stream(&fakeSrvStream{ctx: inCtx})
-	require.EqualError(t, err, "gateway connection failed: oops")
+	require.EqualError(t, err, fake.Err("gateway connection failed"))
 }
 
 func TestOverlay_Forward(t *testing.T) {
@@ -437,7 +436,7 @@ func TestOverlay_New(t *testing.T) {
 	require.NotNil(t, o.certs.Load(fake.NewAddress(0)))
 
 	_, err = newOverlay(fake.NewBadAddress(), nil, nil, fake.NewContext())
-	require.EqualError(t, err, "failed to marshal address: fake error")
+	require.EqualError(t, err, fake.Err("failed to marshal address"))
 }
 
 func TestOverlay_Panic_GetCertificate(t *testing.T) {
@@ -477,21 +476,21 @@ func TestOverlay_Join(t *testing.T) {
 	overlay.addrFactory = AddressFactory{}
 	overlay.me = fake.NewBadAddress()
 	err = overlay.Join("", "", nil)
-	require.EqualError(t, err, "couldn't marshal own address: fake error")
+	require.EqualError(t, err, fake.Err("couldn't marshal own address"))
 
 	overlay.me = fake.NewAddress(0)
-	overlay.certs = fakeCerts{err: xerrors.New("oops")}
+	overlay.certs = fakeCerts{err: fake.GetError()}
 	err = overlay.Join("", "", nil)
-	require.EqualError(t, err, "couldn't fetch distant certificate: oops")
+	require.EqualError(t, err, fake.Err("couldn't fetch distant certificate"))
 
 	overlay.certs = fakeCerts{}
-	overlay.connMgr = fakeConnMgr{err: xerrors.New("oops")}
+	overlay.connMgr = fakeConnMgr{err: fake.GetError()}
 	err = overlay.Join("", "", nil)
-	require.EqualError(t, err, "couldn't open connection: oops")
+	require.EqualError(t, err, fake.Err("couldn't open connection"))
 
-	overlay.connMgr = fakeConnMgr{resp: ptypes.JoinResponse{}, errConn: xerrors.New("oops")}
+	overlay.connMgr = fakeConnMgr{resp: ptypes.JoinResponse{}, errConn: fake.GetError()}
 	err = overlay.Join("", "", nil)
-	require.EqualError(t, err, "couldn't call join: oops")
+	require.EqualError(t, err, fake.Err("couldn't call join"))
 
 	overlay.connMgr = fakeConnMgr{resp: ptypes.JoinResponse{Peers: []*ptypes.Certificate{{}}}}
 	err = overlay.Join("", "", nil)

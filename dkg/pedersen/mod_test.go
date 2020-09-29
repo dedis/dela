@@ -18,7 +18,7 @@ import (
 func TestPedersen_Listen(t *testing.T) {
 	pedersen, _ := NewPedersen(fake.NewBadMino())
 	_, err := pedersen.Listen()
-	require.EqualError(t, err, "failed to create RPC: fake error")
+	require.EqualError(t, err, fake.Err("failed to create RPC"))
 
 	pedersen, _ = NewPedersen(fake.Mino{})
 	actor, err := pedersen.Listen()
@@ -36,7 +36,7 @@ func TestPedersen_Setup(t *testing.T) {
 	fakeAuthority := fake.NewAuthority(1, fake.NewSigner)
 
 	_, err := actor.Setup(fakeAuthority, 0)
-	require.EqualError(t, err, "failed to stream: fake error")
+	require.EqualError(t, err, fake.Err("failed to stream"))
 
 	rpc := fake.NewStreamRPC(fake.NewReceiver(), fake.NewBadSender())
 	actor.rpc = rpc
@@ -50,7 +50,7 @@ func TestPedersen_Setup(t *testing.T) {
 	fakeAuthority = fake.NewAuthority(2, ed25519.NewSigner)
 
 	_, err = actor.Setup(fakeAuthority, 1)
-	require.EqualError(t, err, "got an error from '%!s(<nil>)' while receiving: fake error")
+	require.EqualError(t, err, fake.Err("got an error from '%!s(<nil>)' while receiving"))
 
 	rpc = fake.NewStreamRPC(fake.NewReceiver(), fake.Sender{})
 	actor.rpc = rpc
@@ -89,13 +89,13 @@ func TestPedersen_Decrypt(t *testing.T) {
 	}
 
 	_, err := actor.Decrypt(suite.Point(), suite.Point())
-	require.EqualError(t, err, "failed to create stream: fake error")
+	require.EqualError(t, err, fake.Err("failed to create stream"))
 
 	rpc := fake.NewStreamRPC(fake.NewBadReceiver(), fake.NewBadSender())
 	actor.rpc = rpc
 
 	_, err = actor.Decrypt(suite.Point(), suite.Point())
-	require.EqualError(t, err, "failed to send decrypt request: fake error")
+	require.EqualError(t, err, fake.Err("failed to send decrypt request"))
 
 	rpc = fake.NewStreamRPC(fake.NewReceiver(), fake.Sender{})
 	actor.rpc = rpc

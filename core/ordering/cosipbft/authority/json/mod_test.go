@@ -28,17 +28,17 @@ func TestChangeSetFormat_Encode(t *testing.T) {
 	require.EqualError(t, err, "unsupported message of type 'fake.Message'")
 
 	_, err = format.Encode(fake.NewBadContext(), cset)
-	require.EqualError(t, err, "couldn't marshal: fake error")
+	require.EqualError(t, err, fake.Err("couldn't marshal"))
 
 	cset = authority.NewChangeSet()
 	cset.Add(fake.NewAddress(0), fake.NewBadPublicKey())
 	_, err = format.Encode(ctx, cset)
-	require.EqualError(t, err, "couldn't serialize public key: fake error")
+	require.EqualError(t, err, fake.Err("couldn't serialize public key"))
 
 	cset = authority.NewChangeSet()
 	cset.Add(fake.NewBadAddress(), fake.PublicKey{})
 	_, err = format.Encode(ctx, cset)
-	require.EqualError(t, err, "couldn't serialize address: fake error")
+	require.EqualError(t, err, fake.Err("couldn't serialize address"))
 }
 
 func TestChangeSetFormat_Decode(t *testing.T) {
@@ -64,11 +64,11 @@ func TestChangeSetFormat_Decode(t *testing.T) {
 	require.Equal(t, cset, msg)
 
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
-	require.EqualError(t, err, "couldn't deserialize change set: fake error")
+	require.EqualError(t, err, fake.Err("couldn't deserialize change set"))
 
 	badCtx := serde.WithFactory(ctx, authority.PubKeyFac{}, fake.NewBadPublicKeyFactory())
 	_, err = format.Decode(badCtx, []byte(`{"Addresses":[[]],"PublicKeys":[{}]}`))
-	require.EqualError(t, err, "couldn't deserialize public key: fake error")
+	require.EqualError(t, err, fake.Err("couldn't deserialize public key"))
 
 	badCtx = serde.WithFactory(ctx, authority.AddrKeyFac{}, nil)
 	_, err = format.Decode(badCtx, []byte(`{"Addresses":[[]],"PublicKeys":[{}]}`))
@@ -93,15 +93,15 @@ func TestRosterFormat_Encode(t *testing.T) {
 	require.EqualError(t, err, "unsupported message of type 'fake.Message'")
 
 	_, err = format.Encode(fake.NewBadContext(), ro)
-	require.EqualError(t, err, "couldn't marshal: fake error")
+	require.EqualError(t, err, fake.Err("couldn't marshal"))
 
 	ro = authority.New([]mino.Address{fake.NewBadAddress()}, nil)
 	_, err = format.Encode(ctx, ro)
-	require.EqualError(t, err, "couldn't marshal address: fake error")
+	require.EqualError(t, err, fake.Err("couldn't marshal address"))
 
 	ro = authority.New([]mino.Address{fake.NewAddress(0)}, []crypto.PublicKey{fake.NewBadPublicKey()})
 	_, err = format.Encode(ctx, ro)
-	require.EqualError(t, err, "couldn't serialize public key: fake error")
+	require.EqualError(t, err, fake.Err("couldn't serialize public key"))
 }
 
 func TestRosterFormat_Decode(t *testing.T) {
@@ -115,11 +115,11 @@ func TestRosterFormat_Decode(t *testing.T) {
 	require.Equal(t, authority.FromAuthority(fake.NewAuthority(1, fake.NewSigner)), ro)
 
 	_, err = format.Decode(fake.NewBadContext(), []byte(`[]`))
-	require.EqualError(t, err, "couldn't deserialize roster: fake error")
+	require.EqualError(t, err, fake.Err("couldn't deserialize roster"))
 
 	badCtx := serde.WithFactory(ctx, authority.PubKeyFac{}, fake.NewBadPublicKeyFactory())
 	_, err = format.Decode(badCtx, []byte(`[{}]`))
-	require.EqualError(t, err, "couldn't deserialize public key: fake error")
+	require.EqualError(t, err, fake.Err("couldn't deserialize public key"))
 
 	badCtx = serde.WithFactory(ctx, authority.AddrKeyFac{}, nil)
 	_, err = format.Decode(badCtx, []byte(`[{}]`))

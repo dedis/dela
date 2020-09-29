@@ -23,13 +23,13 @@ func TestPacketFormat_Encode(t *testing.T) {
 	require.EqualError(t, err, "unsupported message 'fake.Message'")
 
 	_, err = fmt.Encode(ctx, types.NewPacket(fake.NewBadAddress(), nil))
-	require.EqualError(t, err, "failed to marshal source addr: fake error")
+	require.EqualError(t, err, fake.Err("failed to marshal source addr"))
 
 	_, err = fmt.Encode(ctx, types.NewPacket(fake.NewAddress(0), nil, fake.NewBadAddress()))
-	require.EqualError(t, err, "failed to marshal dest addr: fake error")
+	require.EqualError(t, err, fake.Err("failed to marshal dest addr"))
 
 	_, err = fmt.Encode(fake.NewBadContext(), pkt)
-	require.EqualError(t, err, "failed to marshal packet: fake error")
+	require.EqualError(t, err, fake.Err("failed to marshal packet"))
 }
 
 func TestPacketFormat_Decode(t *testing.T) {
@@ -45,7 +45,7 @@ func TestPacketFormat_Decode(t *testing.T) {
 	require.Equal(t, pkt, msg)
 
 	_, err = fmt.Decode(fake.NewBadContext(), []byte(`{}`))
-	require.EqualError(t, err, "failed to unmarshal packet: fake error")
+	require.EqualError(t, err, fake.Err("failed to unmarshal packet"))
 
 	badCtx := serde.WithFactory(ctx, types.AddrKey{}, nil)
 	_, err = fmt.Decode(badCtx, []byte(`{}`))
@@ -66,10 +66,10 @@ func TestHandshakeFormat_Encode(t *testing.T) {
 	require.EqualError(t, err, "unsupported message 'fake.Message'")
 
 	_, err = fmt.Encode(ctx, types.NewHandshake(1, fake.NewBadAddress()))
-	require.EqualError(t, err, "failed to marshal address: fake error")
+	require.EqualError(t, err, fake.Err("failed to marshal address"))
 
 	_, err = fmt.Encode(fake.NewBadContext(), hs)
-	require.EqualError(t, err, "failed to marshal handshake: fake error")
+	require.EqualError(t, err, fake.Err("failed to marshal handshake"))
 }
 
 func TestHandshakeFormat_Decode(t *testing.T) {
@@ -83,7 +83,7 @@ func TestHandshakeFormat_Decode(t *testing.T) {
 	require.Equal(t, types.NewHandshake(0, fake.NewAddress(1)), msg)
 
 	_, err = fmt.Decode(fake.NewBadContext(), []byte(`{}`))
-	require.EqualError(t, err, "failed to unmarshal: fake error")
+	require.EqualError(t, err, fake.Err("failed to unmarshal"))
 
 	badCtx := serde.WithFactory(ctx, types.AddrKey{}, nil)
 	_, err = fmt.Decode(badCtx, []byte(`{}`))

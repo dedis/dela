@@ -11,7 +11,6 @@ import (
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
-	"golang.org/x/xerrors"
 )
 
 func init() {
@@ -34,7 +33,7 @@ func TestTransaction_New(t *testing.T) {
 	require.NotNil(t, tx.GetSignature())
 
 	_, err = NewTransaction(0, fake.PublicKey{}, WithHashFactory(fake.NewHashFactory(fake.NewBadHash())))
-	require.EqualError(t, err, "couldn't fingerprint tx: couldn't write nonce: fake error")
+	require.EqualError(t, err, fake.Err("couldn't fingerprint tx: couldn't write nonce"))
 
 	_, err = NewTransaction(1, signer.GetPublicKey(), WithSignature(tx.GetSignature()))
 	require.EqualError(t, err, "invalid signature: bls verify failed: bls: invalid signature")
@@ -105,7 +104,7 @@ func TestTransaction_Sign(t *testing.T) {
 
 	tx.pubkey = fake.PublicKey{}
 	err = tx.Sign(fake.NewBadSigner())
-	require.EqualError(t, err, "signer: fake error")
+	require.EqualError(t, err, fake.Err("signer"))
 }
 
 func TestTransaction_Fingerprint(t *testing.T) {
@@ -118,17 +117,17 @@ func TestTransaction_Fingerprint(t *testing.T) {
 	require.Equal(t, "\x02\x00\x00\x00\x00\x00\x00\x00A\x01\x02\x03PK", buffer.String())
 
 	err = tx.Fingerprint(fake.NewBadHash())
-	require.EqualError(t, err, "couldn't write nonce: fake error")
+	require.EqualError(t, err, fake.Err("couldn't write nonce"))
 
 	err = tx.Fingerprint(fake.NewBadHashWithDelay(1))
-	require.EqualError(t, err, "couldn't write arg: fake error")
+	require.EqualError(t, err, fake.Err("couldn't write arg"))
 
 	err = tx.Fingerprint(fake.NewBadHashWithDelay(2))
-	require.EqualError(t, err, "couldn't write public key: fake error")
+	require.EqualError(t, err, fake.Err("couldn't write public key"))
 
 	tx.pubkey = fake.NewBadPublicKey()
 	err = tx.Fingerprint(buffer)
-	require.EqualError(t, err, "failed to marshal public key: fake error")
+	require.EqualError(t, err, fake.Err("failed to marshal public key"))
 }
 
 func TestTransaction_Serialize(t *testing.T) {
@@ -137,10 +136,10 @@ func TestTransaction_Serialize(t *testing.T) {
 
 	data, err := tx.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, `fake format`, string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = tx.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "failed to encode: fake error")
+	require.EqualError(t, err, fake.Err("failed to encode"))
 }
 
 func TestTransactionFactory_Deserialize(t *testing.T) {
@@ -151,7 +150,7 @@ func TestTransactionFactory_Deserialize(t *testing.T) {
 	require.IsType(t, &Transaction{}, msg)
 
 	_, err = factory.Deserialize(fake.NewBadContext(), nil)
-	require.EqualError(t, err, "failed to decode: fake error")
+	require.EqualError(t, err, fake.Err("failed to decode"))
 
 	_, err = factory.Deserialize(fake.NewContextWithFormat(serde.Format("BAD_TYPE")), nil)
 	require.EqualError(t, err, "invalid transaction of type 'fake.Message'")
@@ -173,7 +172,7 @@ func TestManager_Make(t *testing.T) {
 	mgr.hashFac = crypto.NewSha256Factory()
 	mgr.signer = fake.NewBadSigner()
 	_, err = mgr.Make()
-	require.EqualError(t, err, "failed to sign: signer: fake error")
+	require.EqualError(t, err, fake.Err("failed to sign: signer"))
 }
 
 func TestManager_Sync(t *testing.T) {
@@ -183,9 +182,9 @@ func TestManager_Sync(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(42), mgr.(*transactionManager).nonce)
 
-	mgr = NewManager(fake.NewSigner(), fakeClient{err: xerrors.New("oops")})
+	mgr = NewManager(fake.NewSigner(), fakeClient{err: fake.GetError()})
 	err = mgr.Sync()
-	require.EqualError(t, err, "client: oops")
+	require.EqualError(t, err, fake.Err("client"))
 }
 
 // -----------------------------------------------------------------------------

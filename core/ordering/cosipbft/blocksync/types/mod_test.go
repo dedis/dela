@@ -34,10 +34,10 @@ func TestSyncMessage_Serialize(t *testing.T) {
 
 	data, err := m.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = m.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "encoding failed: fake error")
+	require.EqualError(t, err, fake.Err("encoding failed"))
 }
 
 func TestSyncRequest_GetFrom(t *testing.T) {
@@ -51,10 +51,10 @@ func TestSyncRequest_Serialize(t *testing.T) {
 
 	data, err := m.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = m.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "encoding failed: fake error")
+	require.EqualError(t, err, fake.Err("encoding failed"))
 }
 
 func TestSyncReply_GetLink(t *testing.T) {
@@ -74,10 +74,10 @@ func TestSyncReply_Serialize(t *testing.T) {
 
 	data, err := m.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = m.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "encoding failed: fake error")
+	require.EqualError(t, err, fake.Err("encoding failed"))
 }
 
 func TestSyncAck_Serialize(t *testing.T) {
@@ -85,10 +85,10 @@ func TestSyncAck_Serialize(t *testing.T) {
 
 	data, err := m.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = m.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "encoding failed: fake error")
+	require.EqualError(t, err, fake.Err("encoding failed"))
 }
 
 func TestMessageFactory_Deserialize(t *testing.T) {
@@ -106,7 +106,7 @@ func TestMessageFactory_Deserialize(t *testing.T) {
 	require.NotNil(t, factory)
 
 	_, err = fac.Deserialize(fake.NewBadContext(), nil)
-	require.EqualError(t, err, "decoding failed: fake error")
+	require.EqualError(t, err, fake.Err("decoding failed"))
 }
 
 // -----------------------------------------------------------------------------

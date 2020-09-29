@@ -117,7 +117,7 @@ func TestService_GetProof(t *testing.T) {
 
 	srvc.epochs[0].store = badTrie{}
 	_, err = srvc.GetProof([]byte("A"))
-	require.EqualError(t, err, "couldn't read share: oops")
+	require.EqualError(t, err, fake.Err("couldn't read share"))
 }
 
 // -----------------------------------------------------------------------------
@@ -174,7 +174,7 @@ type badValidation struct {
 }
 
 func (v badValidation) Validate(store.Snapshot, []txn.Transaction) (validation.Data, error) {
-	return nil, xerrors.New("oops")
+	return nil, fake.GetError()
 }
 
 type badTrie struct {
@@ -182,5 +182,5 @@ type badTrie struct {
 }
 
 func (s badTrie) GetPath([]byte) (hashtree.Path, error) {
-	return nil, xerrors.New("oops")
+	return nil, fake.GetError()
 }

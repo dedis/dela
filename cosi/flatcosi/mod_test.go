@@ -9,7 +9,6 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"golang.org/x/xerrors"
 )
 
 func TestFlat_GetSigner(t *testing.T) {
@@ -43,7 +42,7 @@ func TestFlat_Listen(t *testing.T) {
 
 	flat.mino = fake.NewBadMino()
 	_, err = flat.Listen(fakeReactor{})
-	require.EqualError(t, err, "couldn't make the rpc: fake error")
+	require.EqualError(t, err, fake.Err("couldn't make the rpc"))
 }
 
 func TestActor_Sign(t *testing.T) {
@@ -70,17 +69,17 @@ func TestActor_Sign(t *testing.T) {
 
 	actor.rpc = fake.NewBadRPC()
 	_, err = actor.Sign(ctx, message, ca)
-	require.EqualError(t, err, "call aborted: fake error")
+	require.EqualError(t, err, fake.Err("call aborted"))
 
 	actor.rpc = rpc
 	actor.signer = fake.NewSignerWithVerifierFactory(fake.NewBadVerifierFactory())
 	_, err = actor.Sign(ctx, message, ca)
-	require.EqualError(t, err, "couldn't make verifier: fake error")
+	require.EqualError(t, err, fake.Err("couldn't make verifier"))
 
 	actor.signer = fake.NewAggregateSigner()
-	actor.reactor = fakeReactor{err: xerrors.New("oops")}
+	actor.reactor = fakeReactor{err: fake.GetError()}
 	_, err = actor.Sign(ctx, message, ca)
-	require.EqualError(t, err, "couldn't react to message: oops")
+	require.EqualError(t, err, fake.Err("couldn't react to message"))
 }
 
 func TestActor_SignWrongSignature(t *testing.T) {
@@ -100,7 +99,7 @@ func TestActor_SignWrongSignature(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := actor.Sign(ctx, message, ca)
-	require.EqualError(t, err, "couldn't verify the aggregation: fake error")
+	require.EqualError(t, err, fake.Err("couldn't verify the aggregation"))
 }
 
 func TestActor_RPCError_Sign(t *testing.T) {
@@ -138,11 +137,11 @@ func TestActor_Context_Sign(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	rpc.SendResponseWithError(nil, xerrors.New("oops"))
+	rpc.SendResponseWithError(nil, fake.GetError())
 	rpc.Done()
 
 	sig, err := actor.Sign(ctx, message, ca)
-	require.EqualError(t, err, "one request has failed: oops")
+	require.EqualError(t, err, fake.Err("one request has failed"))
 	require.Nil(t, sig)
 }
 
@@ -164,5 +163,5 @@ func TestActor_SignProcessError(t *testing.T) {
 
 	actor.signer = fake.NewBadSigner()
 	_, err = actor.processResponse(cosi.SignatureResponse{}, fake.Signature{})
-	require.EqualError(t, err, "couldn't aggregate: fake error")
+	require.EqualError(t, err, fake.Err("couldn't aggregate"))
 }
