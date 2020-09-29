@@ -3,13 +3,13 @@ package gossip
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/pool"
 	"go.dedis.ch/dela/internal/testing/fake"
@@ -28,22 +28,22 @@ func TestPool_Basic(t *testing.T) {
 	}()
 
 	go func() {
-		for i := 0; i < 100; i++ {
+		for i := 0; i < 50; i++ {
 			err := pools[0].Add(makeTx(uint64(i)))
 			require.NoError(t, err)
 		}
 	}()
 
 	go func() {
-		for i := 0; i < 100; i++ {
-			err := pools[2].Add(makeTx(uint64(i + 100)))
+		for i := 0; i < 50; i++ {
+			err := pools[2].Add(makeTx(uint64(i + 50)))
 			require.NoError(t, err)
 		}
 	}()
 
 	go func() {
-		for i := 0; i < 100; i++ {
-			err := pools[7].Add(makeTx(uint64(i + 200)))
+		for i := 0; i < 50; i++ {
+			err := pools[7].Add(makeTx(uint64(i + 100)))
 			require.NoError(t, err)
 		}
 	}()
@@ -51,8 +51,8 @@ func TestPool_Basic(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	txs := pools[0].Gather(ctx, pool.Config{Min: 300})
-	require.Len(t, txs, 300)
+	txs := pools[0].Gather(ctx, pool.Config{Min: 150})
+	require.Len(t, txs, 150)
 }
 
 func TestPool_New(t *testing.T) {
@@ -76,6 +76,14 @@ func TestPool_Len(t *testing.T) {
 
 	p.gatherer.Add(makeTx(0))
 	require.Equal(t, 1, p.Len())
+}
+
+func TestPool_AddFilter(t *testing.T) {
+	p := &Pool{
+		gatherer: pool.NewSimpleGatherer(),
+	}
+
+	p.AddFilter(nil)
 }
 
 func TestPool_Add(t *testing.T) {
@@ -192,10 +200,7 @@ func TestPool_ListenRumors(t *testing.T) {
 // Utility functions
 
 func makeTx(nonce uint64) txn.Transaction {
-	id := make([]byte, 8)
-	binary.LittleEndian.PutUint64(id, nonce)
-
-	return fakeTx{id: id}
+	return fakeTx{nonce: nonce}
 }
 
 func makeRoster(t *testing.T, n int) (mino.Players, []*Pool) {
@@ -229,15 +234,23 @@ func makeRoster(t *testing.T, n int) (mino.Players, []*Pool) {
 type fakeTx struct {
 	txn.Transaction
 
-	id []byte
+	nonce uint64
+}
+
+func (tx fakeTx) GetNonce() uint64 {
+	return tx.nonce
+}
+
+func (tx fakeTx) GetIdentity() access.Identity {
+	return fake.PublicKey{}
 }
 
 func (tx fakeTx) GetID() []byte {
-	return tx.id
+	return []byte{byte(tx.nonce)}
 }
 
 func (tx fakeTx) Serialize(serde.Context) ([]byte, error) {
-	return tx.id, nil
+	return tx.GetID(), nil
 }
 
 type fakeTxFac struct {
@@ -245,7 +258,7 @@ type fakeTxFac struct {
 }
 
 func (fakeTxFac) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	return fakeTx{id: data}, nil
+	return fakeTx{nonce: uint64(data[0])}, nil
 }
 
 type fakeActor struct {

@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"go.dedis.ch/dela/core/txn"
+	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/mino"
 )
 
@@ -23,11 +24,20 @@ type Config struct {
 	Callback func()
 }
 
+// Filter is the interface to implement to validate if a transaction will be
+// accepted and thus is allowed to be pushed in the pool.
+type Filter interface {
+	// Accept returns an error when the transaction is going to be rejected.
+	Accept(tx txn.Transaction, leeway validation.Leeway) error
+}
+
 // Pool is the maintainer of the list of transactions.
 type Pool interface {
 	// SetPlayers updates the list of participants that should eventually
 	// receive the transactions.
 	SetPlayers(mino.Players) error
+
+	AddFilter(Filter)
 
 	// Len returns the number of transactions available in the pool.
 	Len() int

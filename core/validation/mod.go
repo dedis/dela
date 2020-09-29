@@ -3,6 +3,7 @@
 package validation
 
 import (
+	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/serde"
@@ -30,16 +31,29 @@ type Data interface {
 	GetTransactionResults() []TransactionResult
 }
 
+// DataFactory is the factory for validation data.
 type DataFactory interface {
 	serde.Factory
 
 	DataOf(serde.Context, []byte) (Data, error)
 }
 
+type Leeway struct {
+	MaxSequenceDifference int
+}
+
 // Service is the validation service that will process a batch of transactions
 // into a validated data that can be used as a payload of a block.
 type Service interface {
 	GetFactory() DataFactory
+
+	// GetNonce returns the nonce associated with the identity. The value
+	// returned should be used for the next transaction to be valid.
+	GetNonce(store.Readable, access.Identity) (uint64, error)
+
+	// Accept returns nil if the transaction will be accepted by the service.
+	// The leeway parameter allows to reduce some constraints.
+	Accept(store.Readable, txn.Transaction, Leeway) error
 
 	// Validate takes a snapshot and a list of transactions and returns a
 	// validated data bundle.

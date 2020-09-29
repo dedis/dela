@@ -7,6 +7,7 @@ import (
 	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/txn"
+	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"golang.org/x/xerrors"
@@ -35,6 +36,27 @@ func TestService_GetNonce(t *testing.T) {
 
 	_, err = srvc.GetNonce(fakeSnapshot{errGet: fake.GetError()}, fake.PublicKey{})
 	require.EqualError(t, err, fake.Err("store"))
+}
+
+func TestService_Accept(t *testing.T) {
+	srvc := NewService(fakeExec{}, nil)
+
+	tx := newTx()
+	tx.nonce = 5
+
+	err := srvc.Accept(fakeSnapshot{}, tx, validation.Leeway{MaxSequenceDifference: 5})
+	require.NoError(t, err)
+
+	err = srvc.Accept(fakeSnapshot{}, fakeTx{}, validation.Leeway{})
+	require.EqualError(t, err, "while reading nonce: missing identity in transaction")
+
+	value := make([]byte, 8)
+	value[0] = 5
+	err = srvc.Accept(fakeSnapshot{value: value}, newTx(), validation.Leeway{})
+	require.EqualError(t, err, "nonce '0' < '6'")
+
+	err = srvc.Accept(fakeSnapshot{}, tx, validation.Leeway{MaxSequenceDifference: 1})
+	require.EqualError(t, err, "nonce '5' above the limit '1'")
 }
 
 func TestService_Validate(t *testing.T) {

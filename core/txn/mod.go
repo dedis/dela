@@ -15,6 +15,7 @@ type Transaction interface {
 	// GetID returns the unique identifier for the transaction.
 	GetID() []byte
 
+	// GetNonce returns the sequence number of the transaction.
 	GetNonce() uint64
 
 	// GetIdentity returns the identity that created the transaction.
