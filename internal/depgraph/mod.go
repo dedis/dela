@@ -39,19 +39,19 @@ func main() {
 		UsageText: "./depgraph [--config | --modname ] source ",
 		Description: `This utility will recursively parse a folder and extract 
 for each package that it finds the list of dependencies it uses to generate a
-graphviz representation.
+graphviz representation. By default it excludes _test.go files.
 Since there might be a lot of dependencies, one can provide a yaml config file
 in order to scope the parsing. The config format is the following:
 
 modname: MODULE_NAME
 includes:
-	- go.dedis.ch/fabric/*
+	- go.dedis.ch/dela/*
 	- ...
 excludes:
-	- go.dedis.ch/fabric/encoding*
+	- go.dedis.ch/dela/core/.*(types|json)
 	- ...
 interfaces:
-	- blockchain
+	- core/validation
 	- ...
 
 "includes" and "excludes" are two lists of regular expressions.
@@ -59,22 +59,24 @@ interfaces:
 If "includes" is empty then everything is included. Otherwise, the program only
 keeps the package AND dependencies that are specified in the includes list.
 
-Each pacakge AND dependency is checked against the "excludes" list and discarded
+Each package AND dependency is checked against the "excludes" list and discarded
 if it matches any of the elements.
 
 "interfaces" is used to mark specific packages that should be displayed
-differently. In this case thoses pacakges will be outlined by a green
+differently. In this case those package will be outlined by a green
 background.
+
+Packages and their dependencies are sorted and the graph built accordingly.
 
 Examples:
 
-./depgrah --modname "go.dedis.ch/fabric" -o graph.dot -F ./
-./depgrah --config internal/depgraph/config.yml -o graph.dot -F ./
+./depgrah --modname "go.dedis.ch/dela" -o graph.dot -F ./
+./depgrah --config internal/depgraph/dep.yml -o graph.dot -F ./
 
 The following commands can be used to generate a visual representation from the
 output of depgraph using DOT:
 
-dot -Gdpi=300 -Tpng graph.dot -o graph.png
+dot -Tpdf graph.dot -o graph.pdf
 dot -Gdpi=300 -Tpng graph.dot -o graph.png -Gsplines=ortho`,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
@@ -96,7 +98,12 @@ dot -Gdpi=300 -Tpng graph.dot -o graph.png -Gsplines=ortho`,
 			&cli.BoolFlag{
 				Name:    "force",
 				Aliases: []string{"F"},
-				Usage:   "overwrite the output file",
+				Usage:   "overwrites the output file",
+			},
+			&cli.BoolFlag{
+				Name:    "withTest",
+				Aliases: []string{"t"},
+				Usage:   "includes the test files",
 			},
 		},
 		Action: run,
@@ -108,27 +115,26 @@ dot -Gdpi=300 -Tpng graph.dot -o graph.png -Gsplines=ortho`,
 	}
 }
 
+// run is the main action of the CLI.
 func run(c *cli.Context) error {
-	if c.NArg() == 0 {
-		return xerrors.Errorf("please provide the folder path")
-	}
 
 	searchDir := c.Args().First()
 	if searchDir == "" {
-		return xerrors.Errorf("please provide a root with '--root'")
+		return xerrors.Errorf("please provide the folder path")
 	}
 
 	config := config{}
+
 	configPath := c.String("config")
 	if configPath != "" {
 		configBuf, err := ioutil.ReadFile(configPath)
 		if err != nil {
-			log.Fatal(err)
+			return xerrors.Errorf("failed to read config file: %v", err)
 		}
 
 		err = yaml.Unmarshal([]byte(configBuf), &config)
 		if err != nil {
-			log.Fatalf("error: %v", err)
+			return xerrors.Errorf("failed to unmarshal config: %v", err)
 		}
 
 		config.Modname = config.Modname + "/"
@@ -145,6 +151,7 @@ func run(c *cli.Context) error {
 	out := os.Stdout
 
 	if c.String("out") != "" {
+
 		_, err := os.Stat(c.String("out"))
 		if !os.IsNotExist(err) && !c.Bool("force") {
 			return xerrors.Errorf("file '%s' already exist, use '-F' to "+
@@ -157,26 +164,31 @@ func run(c *cli.Context) error {
 		}
 	}
 
-	// We built a bag of interfaces with a map, the bool value is meaningless.
-	interfaces := map[string]bool{}
+	// We build a bag of interfaces with a map.
+	interfaces := make(map[string]struct{})
 	for _, it := range config.Interfaces {
-		interfaces[it] = true
+		interfaces[it] = struct{}{}
 	}
 
-	// links will contain for every package a bag of dependencies. The bag is
+	// links will contain, for every package, a bag of dependencies. The bag is
 	// done with a dummy map.
-	links := make(map[string]map[string]bool)
+	links := make(map[string]map[string]struct{})
 
-	// parseFile will be called recusively on each file and folder
+	// parseFile will be called recursively on each file and folder
 	parseFile := func(path string, f os.FileInfo, err error) error {
 		if err != nil {
 			return xerrors.Errorf("got an error while walking: %v", err)
 		}
 
-		// we exclude the dir, non-go files and test files
+		// we exclude the dir and non-go files
 		if f.IsDir() || !strings.HasSuffix(f.Name(), ".go") ||
 			strings.HasSuffix(f.Name(), "_test.go") {
 
+			return nil
+		}
+
+		// we exclude test files if not otherwise asked
+		if !c.Bool("withTest") && strings.HasSuffix(f.Name(), "_test.go") {
 			return nil
 		}
 
@@ -187,7 +199,7 @@ func run(c *cli.Context) error {
 
 		path = filepath.Dir(path)
 		// This is the full package path. From "mino" we want
-		// "go.dedis.ch/fabric/mino"
+		// "go.dedis.ch/dela/mino"
 		packagePath := config.Modname + path
 
 		if !isIncluded(packagePath, config.Includes) ||
@@ -208,15 +220,15 @@ func run(c *cli.Context) error {
 
 			// in the case the package imports a package from the same module,
 			// we want to keep only the "relative" name. From
-			// "go.dedis.ch/fabric/mino/minogrpc" we want only "mino/minogrpc".
+			// "go.dedis.ch/dela/mino/minogrpc" we want only "mino/minogrpc".
 			importPath = strings.TrimPrefix(importPath, config.Modname)
 
 			if links[packagePath[len(config.Modname):]] == nil {
-				links[packagePath[len(config.Modname):]] = make(map[string]bool)
+				links[packagePath[len(config.Modname):]] = make(map[string]struct{})
 			}
 
 			// add the dependency to the bag
-			links[packagePath[len(config.Modname):]][importPath] = true
+			links[packagePath[len(config.Modname):]][importPath] = struct{}{}
 		}
 
 		return nil
@@ -229,7 +241,7 @@ func run(c *cli.Context) error {
 
 	// a bag of nodes, used to keep track of every node added so that we can
 	// later on outline the interfaces.
-	nodesList := make(map[string]bool)
+	nodesList := make(map[string]struct{})
 
 	fmt.Fprintf(out, "strict digraph {\n")
 	fmt.Fprintf(out, "labelloc=\"t\";\n")
@@ -256,7 +268,7 @@ func run(c *cli.Context) error {
 
 	for _, pkg := range packages {
 		depsBag := links[pkg]
-		nodesList[pkg] = true
+		nodesList[pkg] = struct{}{}
 
 		// We sort dependencies to improve the rendering
 		dependencies := make([]string, 0, len(depsBag))
@@ -267,7 +279,7 @@ func run(c *cli.Context) error {
 		sort.Strings(dependencies)
 
 		for _, dep := range dependencies {
-			nodesList[dep] = true
+			nodesList[dep] = struct{}{}
 			fmt.Fprintf(out, "\"%v\" -> \"%v\" [minlen=1];\n", pkg, dep)
 		}
 	}
