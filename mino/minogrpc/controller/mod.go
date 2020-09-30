@@ -167,7 +167,7 @@ func (m minimal) getKey(flags cli.Flags) (*ecdsa.PrivateKey, error) {
 
 	key, err := x509.ParseECPrivateKey(keydata)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("while parsing: %v", err)
 	}
 
 	return key, nil

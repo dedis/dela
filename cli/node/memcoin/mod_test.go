@@ -132,6 +132,9 @@ func TestMemcoin_Scenario_2(t *testing.T) {
 
 	cfg := config{Channel: sigs, Writer: ioutil.Discard}
 
+	// Now the node are restarted. It should correctly follow the existing chain
+	// and then participate to new blocks. It essentially tests that components
+	// are correctly loaded from the disk.
 	runNode(t, node1, cfg, 2210, &wg)
 	runNode(t, node2, cfg, 2211, &wg)
 
@@ -187,7 +190,6 @@ func setupChain(t *testing.T, nodes []string, ports []uint16) {
 
 	shareCert(t, nodes[1], nodes[0], fmt.Sprintf("127.0.0.1:%d", ports[0]))
 
-	// Setup the chain with nodes 1.
 	args := append(append(
 		[]string{os.Args[0], "--config", nodes[0], "ordering", "setup"},
 		getExport(t, nodes[0])...),

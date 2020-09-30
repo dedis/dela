@@ -70,8 +70,8 @@ func TestMinimal_OnStart(t *testing.T) {
 	defer file.Close()
 
 	err = minimal.OnStart(fakeContext{path: dir}, injector)
-	require.EqualError(t, err,
-		"cert private key: x509: failed to parse EC private key: asn1: syntax error: sequence truncated")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cert private key: while parsing: x509: ")
 }
 
 func TestMinimal_OnStop(t *testing.T) {
