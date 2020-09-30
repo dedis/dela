@@ -20,6 +20,7 @@ import (
 	"go.dedis.ch/dela/mino/minogrpc/tokens"
 	"go.dedis.ch/dela/mino/router"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
@@ -386,38 +387,54 @@ type overlay struct {
 	router      router.Router
 	connMgr     session.ConnectionManager
 	addrFactory mino.AddressFactory
+	secret      interface{}
+	public      interface{}
 
 	// Keep a text marshalled value for the overlay address so that it's not
 	// calculated for each request.
 	meStr string
 }
 
-func newOverlay(me mino.Address, router router.Router,
-	addrFactory mino.AddressFactory, ctx serde.Context) (*overlay, error) {
+func newOverlay(tmpl minoTemplate) (*overlay, error) {
+	if tmpl.secret == nil || tmpl.public == nil {
+		priv, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't generate the private key: %+v", err)
+		}
 
-	cert, err := makeCertificate()
-	if err != nil {
-		return nil, xerrors.Errorf("failed to make certificate: %v", err)
+		tmpl.secret = priv
+		tmpl.public = priv.Public()
 	}
 
-	meBytes, err := me.MarshalText()
+	meBytes, err := tmpl.me.MarshalText()
 	if err != nil {
 		return nil, xerrors.Errorf("failed to marshal address: %v", err)
 	}
 
-	certs := certs.NewInMemoryStore()
-	certs.Store(me, cert)
-
 	o := &overlay{
 		closer:      new(sync.WaitGroup),
-		context:     ctx,
-		me:          me,
+		context:     json.NewContext(),
+		me:          tmpl.me,
 		meStr:       string(meBytes),
 		tokens:      tokens.NewInMemoryHolder(),
-		certs:       certs,
-		router:      router,
-		connMgr:     newConnManager(me, certs),
-		addrFactory: addrFactory,
+		certs:       tmpl.certs,
+		router:      tmpl.router,
+		connMgr:     newConnManager(tmpl.me, tmpl.certs),
+		addrFactory: tmpl.fac,
+		secret:      tmpl.secret,
+		public:      tmpl.public,
+	}
+
+	cert, err := o.certs.Load(o.me)
+	if err != nil {
+		return nil, err
+	}
+
+	if cert == nil {
+		err = o.makeCertificate()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return o, nil
@@ -437,6 +454,8 @@ func (o *overlay) GetCertificate() *tls.Certificate {
 		// provoke several issues later on.
 		panic("certificate of the overlay must be populated")
 	}
+
+	me.PrivateKey = o.secret
 
 	return me
 }
@@ -511,12 +530,21 @@ func (o *overlay) Join(addr, token string, certHash []byte) error {
 	return nil
 }
 
-func makeCertificate() (*tls.Certificate, error) {
-	priv, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
+func (o *overlay) makeCertificate() error {
+	cert, err := makeCertificate(o.secret, o.public)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't generate the private key: %+v", err)
+		return xerrors.Errorf("failed to make certificate: %v", err)
 	}
 
+	err = o.certs.Store(o.me, cert)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func makeCertificate(priv, public interface{}) (*tls.Certificate, error) {
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
@@ -528,7 +556,7 @@ func makeCertificate() (*tls.Certificate, error) {
 		BasicConstraintsValid: true,
 	}
 
-	buf, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
+	buf, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, public, priv)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't create the certificate: %+v", err)
 	}

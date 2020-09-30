@@ -17,7 +17,6 @@ import (
 	"go.dedis.ch/dela/mino/minogrpc/session"
 	"go.dedis.ch/dela/mino/router"
 	"go.dedis.ch/dela/serde"
-	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -85,17 +84,50 @@ type Minogrpc struct {
 	closing   chan error
 }
 
+type minoTemplate struct {
+	me     mino.Address
+	router router.Router
+	fac    mino.AddressFactory
+	certs  certs.Storage
+	secret interface{}
+	public interface{}
+}
+
+type Option func(*minoTemplate)
+
+func WithStorage(certs certs.Storage) Option {
+	return func(tmpl *minoTemplate) {
+		tmpl.certs = certs
+	}
+}
+
+func WithCertificateKey(secret, public interface{}) Option {
+	return func(tmpl *minoTemplate) {
+		tmpl.secret = secret
+		tmpl.public = public
+	}
+}
+
 // NewMinogrpc creates and starts a new instance. The path should be a
 // resolvable host.
-func NewMinogrpc(addr net.Addr, router router.Router) (*Minogrpc, error) {
+func NewMinogrpc(addr net.Addr, router router.Router, opts ...Option) (*Minogrpc, error) {
 	socket, err := net.Listen(addr.Network(), addr.String())
 	if err != nil {
 		return nil, xerrors.Errorf("failed to bind: %v", err)
 	}
 
-	me := address{host: socket.Addr().String()}
+	tmpl := minoTemplate{
+		me:     address{host: socket.Addr().String()},
+		router: router,
+		fac:    AddressFactory{},
+		certs:  certs.NewInMemoryStore(),
+	}
 
-	o, err := newOverlay(me, router, defaultAddressFactory, json.NewContext())
+	for _, opt := range opts {
+		opt(&tmpl)
+	}
+
+	o, err := newOverlay(tmpl)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't make overlay: %v", err)
 	}

@@ -25,6 +25,9 @@ func TestMinimal_OnStart(t *testing.T) {
 	dir, err := ioutil.TempDir(os.TempDir(), "dela-test-")
 	require.NoError(t, err)
 
+	db, err := kv.New(filepath.Join(dir, "test.db"))
+	require.NoError(t, err)
+
 	defer os.RemoveAll(dir)
 
 	m := NewMinimal()
@@ -34,6 +37,7 @@ func TestMinimal_OnStart(t *testing.T) {
 
 	inj := node.NewInjector()
 	inj.Inject(fake.Mino{})
+	inj.Inject(db)
 
 	err = m.OnStart(fset, inj)
 	require.NoError(t, err)
@@ -50,6 +54,9 @@ func TestMinimal_OnStop(t *testing.T) {
 	dir, err := ioutil.TempDir(os.TempDir(), "dela-test-")
 	require.NoError(t, err)
 
+	db, err := kv.New(filepath.Join(dir, "test.db"))
+	require.NoError(t, err)
+
 	defer os.RemoveAll(dir)
 
 	m := NewMinimal()
@@ -59,6 +66,7 @@ func TestMinimal_OnStop(t *testing.T) {
 
 	inj := node.NewInjector()
 	inj.Inject(fake.Mino{})
+	inj.Inject(db)
 
 	err = m.OnStart(fset, inj)
 	require.NoError(t, err)
@@ -83,14 +91,6 @@ func TestMinimal_OnStop(t *testing.T) {
 	inj.Inject(fakePool{err: fake.GetError()})
 	err = m.OnStop(inj)
 	require.EqualError(t, err, fake.Err("while closing pool"))
-
-	inj.Inject(fakePool{})
-	err = m.OnStop(inj)
-	require.EqualError(t, err, "injector: couldn't find dependency for 'kv.DB'")
-
-	inj.Inject(fakeDb{err: fake.GetError()})
-	err = m.OnStop(inj)
-	require.EqualError(t, err, fake.Err("while closing db"))
 }
 
 func TestLoadSigner(t *testing.T) {
@@ -128,14 +128,4 @@ type fakePool struct {
 
 func (p fakePool) Close() error {
 	return p.err
-}
-
-type fakeDb struct {
-	kv.DB
-
-	err error
-}
-
-func (db fakeDb) Close() error {
-	return db.err
 }

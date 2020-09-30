@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"io/ioutil"
 	"net"
 	"os"
@@ -32,8 +33,8 @@ func TestMemcoin_Scenario_1(t *testing.T) {
 	node1 := filepath.Join(dir, "node1")
 	node2 := filepath.Join(dir, "node2")
 	node3 := filepath.Join(dir, "node3")
-	node4 := filepath.Join(dir, "memcoin", "node4")
-	node5 := filepath.Join(dir, "memcoin", "node5")
+	node4 := filepath.Join(dir, "node4")
+	node5 := filepath.Join(dir, "node5")
 
 	cfg := config{Channel: sigs, Writer: ioutil.Discard}
 
@@ -52,9 +53,9 @@ func TestMemcoin_Scenario_1(t *testing.T) {
 	require.True(t, waitDaemon(t, []string{node1, node2, node3}), "timeout")
 
 	// Share the certificates.
-	shareCert(t, node2, node1)
-	shareCert(t, node3, node1)
-	shareCert(t, node5, node1)
+	shareCert(t, node2, node1, "127.0.0.1:2111")
+	shareCert(t, node3, node1, "127.0.0.1:2111")
+	shareCert(t, node5, node1, "127.0.0.1:2111")
 
 	// Setup the chain with nodes 1 and 2.
 	args := append(append(
@@ -120,22 +121,19 @@ func TestMemcoin_Scenario_2(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	node1 := filepath.Join(dir, "node1")
+	node2 := filepath.Join(dir, "node2")
 
 	// Setup the chain and closes the node.
-	setupChain(t, node1, 2210)
+	setupChain(t, []string{node1, node2}, []uint16{2210, 2211})
 
 	sigs := make(chan os.Signal)
 	wg := sync.WaitGroup{}
-	wg.Add(1)
+	wg.Add(2)
 
 	cfg := config{Channel: sigs, Writer: ioutil.Discard}
 
-	go func() {
-		defer wg.Done()
-
-		err := runWithCfg(makeNodeArg(node1, 2210), cfg)
-		require.NoError(t, err)
-	}()
+	runNode(t, node1, cfg, 2210, &wg)
+	runNode(t, node2, cfg, 2211, &wg)
 
 	defer func() {
 		// Simulate a Ctrl+C
@@ -143,7 +141,7 @@ func TestMemcoin_Scenario_2(t *testing.T) {
 		wg.Wait()
 	}()
 
-	require.True(t, waitDaemon(t, []string{node1}), "timeout")
+	require.True(t, waitDaemon(t, []string{node1, node2}), "timeout")
 
 	args := append([]string{
 		os.Args[0],
@@ -168,14 +166,16 @@ func runNode(t *testing.T, node string, cfg config, port uint16, wg *sync.WaitGr
 	}()
 }
 
-func setupChain(t *testing.T, node string, port uint16) {
+func setupChain(t *testing.T, nodes []string, ports []uint16) {
 	sigs := make(chan os.Signal)
 	wg := sync.WaitGroup{}
-	wg.Add(1)
+	wg.Add(len(nodes))
 
 	cfg := config{Channel: sigs, Writer: ioutil.Discard}
 
-	runNode(t, node, cfg, port, &wg)
+	for i, node := range nodes {
+		runNode(t, node, cfg, ports[i], &wg)
+	}
 
 	defer func() {
 		// Simulate a Ctrl+C
@@ -183,12 +183,15 @@ func setupChain(t *testing.T, node string, port uint16) {
 		wg.Wait()
 	}()
 
-	waitDaemon(t, []string{node})
+	waitDaemon(t, nodes)
+
+	shareCert(t, nodes[1], nodes[0], fmt.Sprintf("127.0.0.1:%d", ports[0]))
 
 	// Setup the chain with nodes 1.
-	args := append(
-		[]string{os.Args[0], "--config", node, "ordering", "setup"},
-		getExport(t, node)...,
+	args := append(append(
+		[]string{os.Args[0], "--config", nodes[0], "ordering", "setup"},
+		getExport(t, nodes[0])...),
+		getExport(t, nodes[1])...,
 	)
 
 	err := run(args)
@@ -228,9 +231,9 @@ func makeNodeArg(path string, port uint16) []string {
 	}
 }
 
-func shareCert(t *testing.T, path string, src string) {
+func shareCert(t *testing.T, path string, src string, addr string) {
 	args := append(
-		[]string{os.Args[0], "--config", path, "minogrpc", "join", "--address", "127.0.0.1:2111"},
+		[]string{os.Args[0], "--config", path, "minogrpc", "join", "--address", addr},
 		getToken(t, src)...,
 	)
 

@@ -111,9 +111,10 @@ func (minimal) OnStart(flags cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("pool: %v", err)
 	}
 
-	db, err := kv.New(filepath.Join(flags.String("config"), "test.db"))
+	var db kv.DB
+	err = inj.Resolve(&db)
 	if err != nil {
-		return xerrors.Errorf("db: %v", err)
+		return err
 	}
 
 	tree := binprefix.NewMerkleTree(db, binprefix.Nonce{})
@@ -186,17 +187,6 @@ func (minimal) OnStop(inj node.Injector) error {
 	err = p.Close()
 	if err != nil {
 		return xerrors.Errorf("while closing pool: %v", err)
-	}
-
-	var db kv.DB
-	err = inj.Resolve(&db)
-	if err != nil {
-		return xerrors.Errorf("injector: %v", err)
-	}
-
-	err = db.Close()
-	if err != nil {
-		return xerrors.Errorf("while closing db: %v", err)
 	}
 
 	return nil

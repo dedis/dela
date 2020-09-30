@@ -1,11 +1,15 @@
 package controller
 
 import (
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
+	"go.dedis.ch/dela/core/store/kv"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino/minogrpc"
 )
@@ -20,11 +24,20 @@ func TestMinimal_Build(t *testing.T) {
 }
 
 func TestMinimal_OnStart(t *testing.T) {
+	dir, err := ioutil.TempDir(os.TempDir(), "minogrpc")
+	require.NoError(t, err)
+
+	db, err := kv.New(filepath.Join(dir, "test.db"))
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
 	minimal := NewMinimal()
 
 	injector := node.NewInjector()
+	injector.Inject(db)
 
-	err := minimal.OnStart(fakeContext{}, injector)
+	err = minimal.OnStart(fakeContext{path: dir}, injector)
 	require.NoError(t, err)
 
 	var m *minogrpc.Minogrpc
@@ -37,11 +50,20 @@ func TestMinimal_OnStart(t *testing.T) {
 }
 
 func TestMinimal_OnStop(t *testing.T) {
+	dir, err := ioutil.TempDir(os.TempDir(), "minogrpc")
+	require.NoError(t, err)
+
+	db, err := kv.New(filepath.Join(dir, "test.db"))
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
 	minimal := NewMinimal()
 
 	injector := node.NewInjector()
+	injector.Inject(db)
 
-	err := minimal.OnStart(fakeContext{}, injector)
+	err = minimal.OnStart(fakeContext{path: dir}, injector)
 	require.NoError(t, err)
 
 	err = minimal.OnStop(injector)

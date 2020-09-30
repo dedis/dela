@@ -1,14 +1,23 @@
 package controller
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"io/ioutil"
 	"math"
+	"os"
+	"path/filepath"
 	"time"
 
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
+	"go.dedis.ch/dela/core/store/kv"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc"
+	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/router/tree"
 	"golang.org/x/xerrors"
 )
@@ -87,7 +96,25 @@ func (m minimal) OnStart(ctx cli.Flags, inj node.Injector) error {
 
 	addr := minogrpc.ParseAddress("127.0.0.1", uint16(port))
 
-	o, err := minogrpc.NewMinogrpc(addr, rter)
+	var db kv.DB
+	err := inj.Resolve(&db)
+	if err != nil {
+		return err
+	}
+
+	certs := certs.NewDiskStore(db, minogrpc.AddressFactory{})
+
+	key, err := loadOrCreateKey(filepath.Join(ctx.Path("config"), "cert.key"))
+	if err != nil {
+		return err
+	}
+
+	opts := []minogrpc.Option{
+		minogrpc.WithStorage(certs),
+		minogrpc.WithCertificateKey(key, key.Public()),
+	}
+
+	o, err := minogrpc.NewMinogrpc(addr, rter, opts...)
 	if err != nil {
 		return xerrors.Errorf("couldn't make overlay: %v", err)
 	}
@@ -120,4 +147,48 @@ func (m minimal) OnStop(inj node.Injector) error {
 	}
 
 	return nil
+}
+
+func loadOrCreateKey(path string) (*ecdsa.PrivateKey, error) {
+	_, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		priv, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't generate the private key: %+v", err)
+		}
+
+		data, err := x509.MarshalECPrivateKey(priv)
+		if err != nil {
+			return nil, err
+		}
+
+		file, err := os.Create(path)
+		if err != nil {
+			return nil, err
+		}
+
+		_, err = file.Write(data)
+		if err != nil {
+			return nil, err
+		}
+
+		return priv, nil
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := ioutil.ReadAll(file)
+	if err != nil {
+		return nil, err
+	}
+
+	priv, err := x509.ParseECPrivateKey(data)
+	if err != nil {
+		return nil, err
+	}
+
+	return priv, nil
 }

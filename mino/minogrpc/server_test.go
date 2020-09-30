@@ -175,19 +175,19 @@ func TestMinogrpc_Scenario_Failures(t *testing.T) {
 }
 
 func TestOverlayServer_Join(t *testing.T) {
-	overlay := overlayServer{
-		overlay: &overlay{
-			tokens:  fakeTokens{},
-			certs:   certs.NewInMemoryStore(),
-			router:  tree.NewRouter(AddressFactory{}),
-			connMgr: fakeConnMgr{},
-		},
-	}
-
-	cert, err := makeCertificate()
+	o, err := newOverlay(minoTemplate{
+		me:     fake.NewAddress(0),
+		certs:  certs.NewInMemoryStore(),
+		router: tree.NewRouter(AddressFactory{}),
+	})
 	require.NoError(t, err)
 
-	overlay.certs.Store(fake.NewAddress(0), cert)
+	o.tokens = fakeTokens{}
+	o.connMgr = fakeConnMgr{}
+
+	overlay := &overlayServer{overlay: o}
+
+	cert := overlay.GetCertificate()
 
 	ctx := context.Background()
 	req := &ptypes.JoinRequest{
@@ -434,14 +434,14 @@ func TestOverlay_Forward(t *testing.T) {
 }
 
 func TestOverlay_New(t *testing.T) {
-	o, err := newOverlay(fake.NewAddress(0), nil, nil, fake.NewContext())
+	o, err := newOverlay(minoTemplate{me: fake.NewAddress(0), certs: certs.NewInMemoryStore()})
 	require.NoError(t, err)
 
 	cert, err := o.certs.Load(fake.NewAddress(0))
 	require.NoError(t, err)
 	require.NotNil(t, cert)
 
-	_, err = newOverlay(fake.NewBadAddress(), nil, nil, fake.NewContext())
+	_, err = newOverlay(minoTemplate{me: fake.NewBadAddress()})
 	require.EqualError(t, err, fake.Err("failed to marshal address"))
 }
 
@@ -459,19 +459,21 @@ func TestOverlay_Panic_GetCertificate(t *testing.T) {
 }
 
 func TestOverlay_Join(t *testing.T) {
-	cert, err := makeCertificate()
+	overlay, err := newOverlay(minoTemplate{
+		me:     fake.NewAddress(0),
+		certs:  certs.NewInMemoryStore(),
+		router: tree.NewRouter(AddressFactory{}),
+		fac:    AddressFactory{},
+	})
 	require.NoError(t, err)
 
-	overlay := overlay{
-		me:     fake.NewAddress(0),
-		certs:  fakeCerts{},
-		router: tree.NewRouter(AddressFactory{}),
-		connMgr: fakeConnMgr{
-			resp: ptypes.JoinResponse{Peers: []*ptypes.Certificate{{Value: cert.Leaf.Raw}}},
+	overlay.connMgr = fakeConnMgr{
+		resp: ptypes.JoinResponse{
+			Peers: []*ptypes.Certificate{{Value: overlay.GetCertificate().Leaf.Raw}},
 		},
-		addrFactory: AddressFactory{},
 	}
 
+	overlay.certs = fakeCerts{}
 	err = overlay.Join("", "", nil)
 	require.NoError(t, err)
 

@@ -106,7 +106,10 @@ func (s *DiskStore) Load(addr mino.Address) (*tls.Certificate, error) {
 		return nil, xerrors.Errorf("certificate malformed: %v", err)
 	}
 
-	cert = &tls.Certificate{Leaf: leaf}
+	cert = &tls.Certificate{
+		Certificate: [][]byte{data},
+		Leaf:        leaf,
+	}
 
 	// Keep the certificate in cache for faster access.
 	s.InMemoryStore.Store(addr, cert)
