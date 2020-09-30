@@ -39,7 +39,7 @@ func TestService_GetNonce(t *testing.T) {
 }
 
 func TestService_Accept(t *testing.T) {
-	srvc := NewService(fakeExec{}, nil)
+	srvc := NewService(&fakeExec{}, nil)
 
 	tx := newTx()
 	tx.nonce = 5

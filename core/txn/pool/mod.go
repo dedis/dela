@@ -18,8 +18,9 @@ type Config struct {
 	// before returning.
 	Min int
 
-	// Callback is a function called when the gathering process has to stop to
-	// wait for transactions. It allows one to take action to stop the gathering
+	// Callback is a function called when the pool doesn't have enough
+	// transactions at the moment of calling and must therefore wait for new
+	// transactions to come. It allows one to take action to stop the gathering
 	// if necessary.
 	Callback func()
 }

@@ -17,16 +17,22 @@ import (
 const DefaultIdentitySize = 10
 
 // Transactions is a sortable list of transactions.
+//
+// - implements sort.Interface
 type transactions []txn.Transaction
 
+// Len implements sort.Interface. It returns the length of the list.
 func (txs transactions) Len() int {
 	return len(txs)
 }
 
+// Less implements sort.Interface. It returns true if the nonce of the ith
+// transaction is smaller than the jth.
 func (txs transactions) Less(i, j int) bool {
 	return txs[i].GetNonce() < txs[j].GetNonce()
 }
 
+// Swap implements sort.Interface. It swaps the ith and the jth transactions.
 func (txs transactions) Swap(i, j int) {
 	txs[i], txs[j] = txs[j], txs[i]
 }
@@ -98,7 +104,11 @@ type simpleGatherer struct {
 	limit      int
 	queue      []item
 	validators []Filter
-	txs        map[string]transactions
+
+	// A string key is generated for each unique identity, which will have its
+	// own list of transactions, so that a limited size can be enforced
+	// independently from each other.
+	txs map[string]transactions
 }
 
 // NewSimpleGatherer creates a new gatherer.

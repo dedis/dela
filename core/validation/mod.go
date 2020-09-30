@@ -38,7 +38,11 @@ type DataFactory interface {
 	DataOf(serde.Context, []byte) (Data, error)
 }
 
+// Leeway is the configuration when asserting if a transaction will be accepted
+// to lighten some of the constraints.
 type Leeway struct {
+	// MaxSequenceDifference defines how much from the current sequence the
+	// transaction can differ.
 	MaxSequenceDifference int
 }
 
