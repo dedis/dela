@@ -4,8 +4,11 @@
 package minogrpc
 
 import (
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
 	"regexp"
 	"sync"
@@ -91,20 +94,33 @@ type minoTemplate struct {
 	certs  certs.Storage
 	secret interface{}
 	public interface{}
+	curve  elliptic.Curve
+	random io.Reader
 }
 
+// Option is the type to set some fields.
 type Option func(*minoTemplate)
 
+// WithStorage is an option to set a different certificate storage.
 func WithStorage(certs certs.Storage) Option {
 	return func(tmpl *minoTemplate) {
 		tmpl.certs = certs
 	}
 }
 
+// WithCertificateKey is an option to set the key of the server certificate.
 func WithCertificateKey(secret, public interface{}) Option {
 	return func(tmpl *minoTemplate) {
 		tmpl.secret = secret
 		tmpl.public = public
+	}
+}
+
+// WithRandom is an option to set the randomness if the certificate private key
+// needs to be generated.
+func WithRandom(r io.Reader) Option {
+	return func(tmpl *minoTemplate) {
+		tmpl.random = r
 	}
 }
 
@@ -121,6 +137,8 @@ func NewMinogrpc(addr net.Addr, router router.Router, opts ...Option) (*Minogrpc
 		router: router,
 		fac:    AddressFactory{},
 		certs:  certs.NewInMemoryStore(),
+		curve:  elliptic.P521(),
+		random: rand.Reader,
 	}
 
 	for _, opt := range opts {
@@ -129,7 +147,9 @@ func NewMinogrpc(addr net.Addr, router router.Router, opts ...Option) (*Minogrpc
 
 	o, err := newOverlay(tmpl)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't make overlay: %v", err)
+		socket.Close()
+
+		return nil, xerrors.Errorf("overlay: %v", err)
 	}
 
 	creds := credentials.NewServerTLSFromCert(o.GetCertificate())

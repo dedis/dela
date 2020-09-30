@@ -3,7 +3,6 @@ package minogrpc
 import (
 	"context"
 	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
@@ -396,19 +395,19 @@ type overlay struct {
 }
 
 func newOverlay(tmpl minoTemplate) (*overlay, error) {
+	meBytes, err := tmpl.me.MarshalText()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to marshal address: %v", err)
+	}
+
 	if tmpl.secret == nil || tmpl.public == nil {
-		priv, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
+		priv, err := ecdsa.GenerateKey(tmpl.curve, tmpl.random)
 		if err != nil {
-			return nil, xerrors.Errorf("couldn't generate the private key: %+v", err)
+			return nil, xerrors.Errorf("cert private key: %v", err)
 		}
 
 		tmpl.secret = priv
 		tmpl.public = priv.Public()
-	}
-
-	meBytes, err := tmpl.me.MarshalText()
-	if err != nil {
-		return nil, xerrors.Errorf("failed to marshal address: %v", err)
 	}
 
 	o := &overlay{
@@ -427,13 +426,13 @@ func newOverlay(tmpl minoTemplate) (*overlay, error) {
 
 	cert, err := o.certs.Load(o.me)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("while loading cert: %v", err)
 	}
 
 	if cert == nil {
 		err = o.makeCertificate()
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("certificate failed: %v", err)
 		}
 	}
 
@@ -531,20 +530,6 @@ func (o *overlay) Join(addr, token string, certHash []byte) error {
 }
 
 func (o *overlay) makeCertificate() error {
-	cert, err := makeCertificate(o.secret, o.public)
-	if err != nil {
-		return xerrors.Errorf("failed to make certificate: %v", err)
-	}
-
-	err = o.certs.Store(o.me, cert)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func makeCertificate(priv, public interface{}) (*tls.Certificate, error) {
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
@@ -556,21 +541,28 @@ func makeCertificate(priv, public interface{}) (*tls.Certificate, error) {
 		BasicConstraintsValid: true,
 	}
 
-	buf, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, public, priv)
+	buf, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, o.public, o.secret)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't create the certificate: %+v", err)
+		return xerrors.Errorf("while creating: %+v", err)
 	}
 
-	cert, err := x509.ParseCertificate(buf)
+	leaf, err := x509.ParseCertificate(buf)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't parse the certificate: %+v", err)
+		return xerrors.Errorf("couldn't parse the certificate: %v", err)
 	}
 
-	return &tls.Certificate{
+	cert := &tls.Certificate{
 		Certificate: [][]byte{buf},
-		PrivateKey:  priv,
-		Leaf:        cert,
-	}, nil
+		PrivateKey:  o.secret,
+		Leaf:        leaf,
+	}
+
+	err = o.certs.Store(o.me, cert)
+	if err != nil {
+		return xerrors.Errorf("while storing: %v", err)
+	}
+
+	return nil
 }
 
 // ConnManager is a manager to dial and close connections depending how the
@@ -617,7 +609,7 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 
 	clientPubCert, err := mgr.certs.Load(to)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("while loading distant cert: %v", err)
 	}
 	if clientPubCert == nil {
 		return nil, xerrors.Errorf("certificate for '%v' not found", to)
@@ -628,7 +620,7 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 
 	me, err := mgr.certs.Load(mgr.me)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("while loading own cert: %v", err)
 	}
 	if me == nil {
 		return nil, xerrors.Errorf("couldn't find server '%v' certificate", mgr.me)

@@ -5,9 +5,8 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
-	"io/ioutil"
+	"io"
 	"math"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -15,6 +14,7 @@ import (
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/core/store/kv"
+	"go.dedis.ch/dela/crypto/loader"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
@@ -22,14 +22,22 @@ import (
 	"golang.org/x/xerrors"
 )
 
+const certKeyName = "cert.key"
+
 // Minimal is an initializer with the minimum set of commands.
 //
 // - implements node.Initializer
-type minimal struct{}
+type minimal struct {
+	random io.Reader
+	curve  elliptic.Curve
+}
 
 // NewMinimal returns a new initializer to start an instance of Minogrpc.
 func NewMinimal() node.Initializer {
-	return minimal{}
+	return minimal{
+		random: rand.Reader,
+		curve:  elliptic.P521(),
+	}
 }
 
 // Build implements node.Initializer. It populates the builder with the commands
@@ -99,14 +107,14 @@ func (m minimal) OnStart(ctx cli.Flags, inj node.Injector) error {
 	var db kv.DB
 	err := inj.Resolve(&db)
 	if err != nil {
-		return err
+		return xerrors.Errorf("injector: %v", err)
 	}
 
 	certs := certs.NewDiskStore(db, minogrpc.AddressFactory{})
 
-	key, err := loadOrCreateKey(filepath.Join(ctx.Path("config"), "cert.key"))
+	key, err := m.getKey(ctx)
 	if err != nil {
-		return err
+		return xerrors.Errorf("cert private key: %v", err)
 	}
 
 	opts := []minogrpc.Option{
@@ -149,46 +157,44 @@ func (m minimal) OnStop(inj node.Injector) error {
 	return nil
 }
 
-func loadOrCreateKey(path string) (*ecdsa.PrivateKey, error) {
-	_, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		priv, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
-		if err != nil {
-			return nil, xerrors.Errorf("couldn't generate the private key: %+v", err)
-		}
+func (m minimal) getKey(flags cli.Flags) (*ecdsa.PrivateKey, error) {
+	loader := loader.NewFileLoader(filepath.Join(flags.Path("config"), certKeyName))
 
-		data, err := x509.MarshalECPrivateKey(priv)
-		if err != nil {
-			return nil, err
-		}
-
-		file, err := os.Create(path)
-		if err != nil {
-			return nil, err
-		}
-
-		_, err = file.Write(data)
-		if err != nil {
-			return nil, err
-		}
-
-		return priv, nil
+	keydata, err := loader.LoadOrCreate(newGenerator(m.random, m.curve))
+	if err != nil {
+		return nil, xerrors.Errorf("while loading: %v", err)
 	}
 
-	file, err := os.Open(path)
+	key, err := x509.ParseECPrivateKey(keydata)
 	if err != nil {
 		return nil, err
 	}
 
-	data, err := ioutil.ReadAll(file)
+	return key, nil
+}
+
+type generator struct {
+	random io.Reader
+	curve  elliptic.Curve
+}
+
+func newGenerator(r io.Reader, c elliptic.Curve) loader.Generator {
+	return generator{
+		random: r,
+		curve:  c,
+	}
+}
+
+func (g generator) Generate() ([]byte, error) {
+	priv, err := ecdsa.GenerateKey(g.curve, g.random)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("ecdsa: %v", err)
 	}
 
-	priv, err := x509.ParseECPrivateKey(data)
+	data, err := x509.MarshalECPrivateKey(priv)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("while marshaling: %v", err)
 	}
 
-	return priv, nil
+	return data, nil
 }

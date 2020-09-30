@@ -1,10 +1,11 @@
 package controller
 
 import (
-	"encoding/base64"
-	"os"
+	"encoding"
 	"path/filepath"
 	"time"
+
+	"go.dedis.ch/dela/crypto"
 
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
@@ -22,8 +23,8 @@ import (
 	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/cosi/threshold"
-	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
+	"go.dedis.ch/dela/crypto/loader"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/gossip"
 	"go.dedis.ch/dela/serde/json"
@@ -32,11 +33,19 @@ import (
 
 const privateKeyFile = "private.key"
 
-type minimal struct{}
+func blsSigner() encoding.BinaryMarshaler {
+	return bls.NewSigner()
+}
+
+type minimal struct {
+	signerFn func() encoding.BinaryMarshaler
+}
 
 // NewMinimal creates a new minimal controller for cosipbft.
 func NewMinimal() node.Initializer {
-	return minimal{}
+	return minimal{
+		signerFn: blsSigner,
+	}
 }
 
 func (minimal) SetCommands(builder node.Builder) {
@@ -82,31 +91,31 @@ func (minimal) SetCommands(builder node.Builder) {
 	sub.SetAction(builder.MakeAction(rosterAddAction{}))
 }
 
-func (minimal) OnStart(flags cli.Flags, inj node.Injector) error {
-	var m mino.Mino
-	err := inj.Resolve(&m)
+func (m minimal) OnStart(flags cli.Flags, inj node.Injector) error {
+	var onet mino.Mino
+	err := inj.Resolve(&onet)
 	if err != nil {
 		return xerrors.Errorf("injector: %v", err)
 	}
 
-	signer, err := loadOrCreateSigner(flags.Path("config"))
+	signer, err := m.getSigner(flags)
 	if err != nil {
 		return xerrors.Errorf("signer: %v", err)
 	}
 
-	cosi := threshold.NewCoSi(m, signer)
+	cosi := threshold.NewCoSi(onet, signer)
 	cosi.SetThreshold(threshold.ByzantineThreshold)
 
 	exec := baremetal.NewExecution()
 	access := darc.NewService(json.NewContext())
 
-	rosterFac := authority.NewFactory(m.GetAddressFactory(), cosi.GetPublicKeyFactory())
+	rosterFac := authority.NewFactory(onet.GetAddressFactory(), cosi.GetPublicKeyFactory())
 	cosipbft.RegisterRosterContract(exec, rosterFac, access)
 
 	txFac := signed.NewTransactionFactory()
 	vs := simple.NewService(exec, txFac)
 
-	pool, err := poolimpl.NewPool(gossip.NewFlat(m, txFac))
+	pool, err := poolimpl.NewPool(gossip.NewFlat(onet, txFac))
 	if err != nil {
 		return xerrors.Errorf("pool: %v", err)
 	}
@@ -114,13 +123,13 @@ func (minimal) OnStart(flags cli.Flags, inj node.Injector) error {
 	var db kv.DB
 	err = inj.Resolve(&db)
 	if err != nil {
-		return err
+		return xerrors.Errorf("injector: %v", err)
 	}
 
 	tree := binprefix.NewMerkleTree(db, binprefix.Nonce{})
 
 	param := cosipbft.ServiceParam{
-		Mino:       m,
+		Mino:       onet,
 		Cosi:       cosi,
 		Validation: vs,
 		Access:     access,
@@ -142,7 +151,7 @@ func (minimal) OnStart(flags cli.Flags, inj node.Injector) error {
 	}
 
 	blockFac := types.NewBlockFactory(vs.GetFactory())
-	csFac := authority.NewChangeSetFactory(m.GetAddressFactory(), cosi.GetPublicKeyFactory())
+	csFac := authority.NewChangeSetFactory(onet.GetAddressFactory(), cosi.GetPublicKeyFactory())
 	linkFac := types.NewLinkFactory(blockFac, cosi.GetSignatureFactory(), csFac)
 
 	blocks := blockstore.NewDiskStore(db, linkFac)
@@ -192,55 +201,33 @@ func (minimal) OnStop(inj node.Injector) error {
 	return nil
 }
 
-func loadOrCreateSigner(cfg string) (crypto.AggregateSigner, error) {
-	path := filepath.Join(cfg, privateKeyFile)
+func (m minimal) getSigner(flags cli.Flags) (crypto.AggregateSigner, error) {
+	loader := loader.NewFileLoader(filepath.Join(flags.Path("config"), privateKeyFile))
 
-	_, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		signer := bls.NewSigner()
-
-		data, err := signer.MarshalBinary()
-		if err != nil {
-			return nil, xerrors.Errorf("failed to marshal signer: %v", err)
-		}
-
-		file, err := os.Create(path)
-		if err != nil {
-			return nil, xerrors.Errorf("failed to create file: %v", err)
-		}
-
-		defer file.Close()
-
-		enc := base64.NewEncoder(base64.StdEncoding, file)
-		defer enc.Close()
-
-		_, err = enc.Write(data)
-		if err != nil {
-			return nil, xerrors.Errorf("while writing to file: %v", err)
-		}
-
-		return signer, nil
+	signerdata, err := loader.LoadOrCreate(generator{newFn: m.signerFn})
+	if err != nil {
+		return nil, xerrors.Errorf("while loading: %v", err)
 	}
 
-	file, err := os.Open(path)
+	signer, err := bls.NewSignerFromBytes(signerdata)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to open file: %v", err)
-	}
-
-	defer file.Close()
-
-	dec := base64.NewDecoder(base64.StdEncoding, file)
-
-	buffer := make([]byte, 128)
-	n, err := dec.Read(buffer)
-	if err != nil {
-		return nil, xerrors.Errorf("while reading file: %v", err)
-	}
-
-	signer, err := bls.NewSignerFromBytes(buffer[:n])
-	if err != nil {
-		return nil, xerrors.Errorf("failed to unmarshal signer: %v", err)
+		return nil, xerrors.Errorf("while unmarshaling: %v", err)
 	}
 
 	return signer, nil
+}
+
+type generator struct {
+	newFn func() encoding.BinaryMarshaler
+}
+
+func (g generator) Generate() ([]byte, error) {
+	signer := g.newFn()
+
+	data, err := signer.MarshalBinary()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to marshal signer: %v", err)
+	}
+
+	return data, nil
 }

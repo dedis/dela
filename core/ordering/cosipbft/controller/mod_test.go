@@ -1,10 +1,10 @@
 package controller
 
 import (
+	"encoding"
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -30,7 +30,7 @@ func TestMinimal_OnStart(t *testing.T) {
 
 	defer os.RemoveAll(dir)
 
-	m := NewMinimal()
+	m := NewMinimal().(minimal)
 
 	fset := make(node.FlagSet)
 	fset["config"] = dir
@@ -43,11 +43,38 @@ func TestMinimal_OnStart(t *testing.T) {
 	require.NoError(t, err)
 
 	err = m.OnStart(fset, node.NewInjector())
-	require.EqualError(t, err, "injector: couldn't find dependency for 'mino.Mino'")
+	require.EqualError(t, err,
+		"injector: couldn't find dependency for 'mino.Mino'")
 
+	require.NoError(t, os.Remove(filepath.Join(dir, privateKeyFile)))
+	m.signerFn = badFn
+	err = m.OnStart(fset, inj)
+	require.EqualError(t, err,
+		fake.Err("signer: while loading: generator failed: failed to marshal signer"))
+
+	m.signerFn = blsSigner
 	inj.Inject(fake.NewBadMino())
 	err = m.OnStart(fset, inj)
-	require.EqualError(t, err, fake.Err("pool: failed to listen: couldn't create the rpc"))
+	require.EqualError(t, err,
+		fake.Err("pool: failed to listen: couldn't create the rpc"))
+
+	inj = node.NewInjector()
+	inj.Inject(fake.Mino{})
+	err = m.OnStart(fset, inj)
+	require.EqualError(t, err, "injector: couldn't find dependency for 'kv.DB'")
+
+	// Test with an invalid private key in the file.
+	os.Remove(filepath.Join(dir, privateKeyFile))
+
+	file, err := os.Create(filepath.Join(dir, privateKeyFile))
+	require.NoError(t, err)
+
+	file.Close()
+
+	inj.Inject(db)
+	err = m.OnStart(fset, inj)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "signer: while unmarshaling: ")
 }
 
 func TestMinimal_OnStop(t *testing.T) {
@@ -93,31 +120,11 @@ func TestMinimal_OnStop(t *testing.T) {
 	require.EqualError(t, err, fake.Err("while closing pool"))
 }
 
-func TestLoadSigner(t *testing.T) {
-	dir, err := ioutil.TempDir(os.TempDir(), "dela-cosipbft")
-	require.NoError(t, err)
-
-	defer os.RemoveAll(dir)
-
-	signer, err := loadOrCreateSigner(dir)
-	require.NoError(t, err)
-	require.NotNil(t, signer)
-	require.True(t, fileExists(t, filepath.Join(dir, privateKeyFile)))
-
-	if runtime.GOOS != "windows" {
-		_, err = loadOrCreateSigner("/")
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "failed to create file: ")
-	}
-}
-
 // -----------------------------------------------------------------------------
 // Utility functions
 
-func fileExists(t *testing.T, path string) bool {
-	stat, err := os.Stat(path)
-
-	return !os.IsNotExist(err) && !stat.IsDir()
+func badFn() encoding.BinaryMarshaler {
+	return fake.NewBadHash()
 }
 
 type fakePool struct {

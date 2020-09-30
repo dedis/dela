@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"crypto/elliptic"
+	"crypto/rand"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -32,7 +34,7 @@ func TestMinimal_OnStart(t *testing.T) {
 
 	defer os.RemoveAll(dir)
 
-	minimal := NewMinimal()
+	minimal := NewMinimal().(minimal)
 
 	injector := node.NewInjector()
 	injector.Inject(db)
@@ -47,6 +49,29 @@ func TestMinimal_OnStart(t *testing.T) {
 
 	err = minimal.OnStart(fakeContext{num: 100000}, injector)
 	require.EqualError(t, err, "invalid port value 100000")
+
+	err = minimal.OnStart(fakeContext{}, node.NewInjector())
+	require.EqualError(t, err, "injector: couldn't find dependency for 'kv.DB'")
+
+	minimal.random = badReader{}
+	err = minimal.OnStart(fakeContext{}, injector)
+	require.EqualError(t, err, fake.Err("cert private key: while loading: generator failed: ecdsa"))
+
+	minimal.random = rand.Reader
+	minimal.curve = badCurve{Curve: elliptic.P224()}
+	err = minimal.OnStart(fakeContext{}, injector)
+	require.EqualError(t, err,
+		"cert private key: while loading: generator failed: while marshaling: x509: unknown elliptic curve")
+
+	require.NoError(t, os.Remove(filepath.Join(dir, certKeyName)))
+	file, err := os.Create(filepath.Join(dir, certKeyName))
+	require.NoError(t, err)
+
+	defer file.Close()
+
+	err = minimal.OnStart(fakeContext{path: dir}, injector)
+	require.EqualError(t, err,
+		"cert private key: x509: failed to parse EC private key: asn1: syntax error: sequence truncated")
 }
 
 func TestMinimal_OnStop(t *testing.T) {
@@ -126,4 +151,14 @@ type badMino struct {
 
 func (badMino) GracefulStop() error {
 	return fake.GetError()
+}
+
+type badReader struct{}
+
+func (badReader) Read([]byte) (int, error) {
+	return 0, fake.GetError()
+}
+
+type badCurve struct {
+	elliptic.Curve
 }

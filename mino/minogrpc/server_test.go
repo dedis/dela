@@ -2,6 +2,8 @@ package minogrpc
 
 import (
 	"context"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -179,6 +181,8 @@ func TestOverlayServer_Join(t *testing.T) {
 		me:     fake.NewAddress(0),
 		certs:  certs.NewInMemoryStore(),
 		router: tree.NewRouter(AddressFactory{}),
+		curve:  elliptic.P521(),
+		random: rand.Reader,
 	})
 	require.NoError(t, err)
 
@@ -434,7 +438,12 @@ func TestOverlay_Forward(t *testing.T) {
 }
 
 func TestOverlay_New(t *testing.T) {
-	o, err := newOverlay(minoTemplate{me: fake.NewAddress(0), certs: certs.NewInMemoryStore()})
+	o, err := newOverlay(minoTemplate{
+		me:     fake.NewAddress(0),
+		certs:  certs.NewInMemoryStore(),
+		curve:  elliptic.P521(),
+		random: rand.Reader,
+	})
 	require.NoError(t, err)
 
 	cert, err := o.certs.Load(fake.NewAddress(0))
@@ -458,12 +467,27 @@ func TestOverlay_Panic_GetCertificate(t *testing.T) {
 	o.GetCertificate()
 }
 
+func TestOverlay_Panic2_GetCertificate(t *testing.T) {
+	defer func() {
+		r := recover()
+		require.EqualError(t, r.(error), fake.Err("certificate of the overlay is inaccessible"))
+	}()
+
+	o := &overlay{
+		certs: fakeCerts{errLoad: fake.GetError()},
+	}
+
+	o.GetCertificate()
+}
+
 func TestOverlay_Join(t *testing.T) {
 	overlay, err := newOverlay(minoTemplate{
 		me:     fake.NewAddress(0),
 		certs:  certs.NewInMemoryStore(),
 		router: tree.NewRouter(AddressFactory{}),
 		fac:    AddressFactory{},
+		curve:  elliptic.P521(),
+		random: rand.Reader,
 	})
 	require.NoError(t, err)
 
@@ -516,8 +540,9 @@ func TestConnManager_Acquire(t *testing.T) {
 
 	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore())
 
-	mgr.certs.Store(mgr.me, &tls.Certificate{})
-	mgr.certs.Store(dst.GetAddress(), dst.GetCertificate())
+	certs := mgr.certs
+	certs.Store(mgr.me, &tls.Certificate{})
+	certs.Store(dst.GetAddress(), dst.GetCertificate())
 
 	conn, err := mgr.Acquire(dst.GetAddress())
 	require.NoError(t, err)
@@ -533,9 +558,19 @@ func TestConnManager_Acquire(t *testing.T) {
 	require.Len(t, mgr.conns, 0)
 	require.Equal(t, 0, mgr.counters[dst.GetAddress()])
 
+	mgr.certs = fakeCerts{errLoad: fake.GetError()}
+	_, err = mgr.Acquire(fake.NewAddress(0))
+	require.EqualError(t, err, fake.Err("while loading distant cert"))
+
+	mgr.certs = certs
 	_, err = mgr.Acquire(fake.NewAddress(1))
 	require.EqualError(t, err, "certificate for 'fake.Address[1]' not found")
 
+	mgr.certs = fakeCerts{errLoad: fake.GetError(), counter: fake.NewCounter(1)}
+	_, err = mgr.Acquire(fake.NewAddress(0))
+	require.EqualError(t, err, fake.Err("while loading own cert"))
+
+	mgr.certs = certs
 	mgr.conns = make(map[mino.Address]*grpc.ClientConn)
 	mgr.certs.Delete(mgr.me)
 	_, err = mgr.Acquire(dst.GetAddress())
@@ -664,14 +699,27 @@ func (t fakeTokens) Verify(string) bool {
 
 type fakeCerts struct {
 	certs.Storage
-	err error
+	err      error
+	errLoad  error
+	errStore error
+	counter  *fake.Counter
 }
 
 func (s fakeCerts) Store(mino.Address, *tls.Certificate) error {
-	return nil
+	return s.errStore
 }
 
 func (s fakeCerts) Load(mino.Address) (*tls.Certificate, error) {
+	if s.errStore != nil {
+		return nil, s.errLoad
+	}
+
+	if s.errLoad != nil && s.counter.Done() {
+		return nil, s.errLoad
+	}
+
+	s.counter.Decrease()
+
 	return &tls.Certificate{Leaf: &x509.Certificate{Raw: []byte{0x89}}}, nil
 }
 

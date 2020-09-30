@@ -81,7 +81,7 @@ func (s *DiskStore) Load(addr mino.Address) (*tls.Certificate, error) {
 		return nil, xerrors.Errorf("certificate key failed: %v", err)
 	}
 
-	var data []byte
+	var leaf *x509.Certificate
 
 	err = s.db.View(func(tx kv.ReadableTx) error {
 		bucket := tx.GetBucket(s.bucket)
@@ -89,7 +89,19 @@ func (s *DiskStore) Load(addr mino.Address) (*tls.Certificate, error) {
 			return nil
 		}
 
-		data = bucket.Get(key)
+		value := bucket.Get(key)
+
+		if len(value) == 0 {
+			return nil
+		}
+
+		data := make([]byte, len(value))
+		copy(data, value)
+
+		leaf, err = x509.ParseCertificate(data)
+		if err != nil {
+			return xerrors.Errorf("certificate malformed: %v", err)
+		}
 
 		return nil
 	})
@@ -97,17 +109,12 @@ func (s *DiskStore) Load(addr mino.Address) (*tls.Certificate, error) {
 		return nil, xerrors.Errorf("while reading db: %v", err)
 	}
 
-	if len(data) == 0 {
+	if leaf == nil {
 		return nil, nil
 	}
 
-	leaf, err := x509.ParseCertificate(data)
-	if err != nil {
-		return nil, xerrors.Errorf("certificate malformed: %v", err)
-	}
-
 	cert = &tls.Certificate{
-		Certificate: [][]byte{data},
+		Certificate: [][]byte{leaf.Raw},
 		Leaf:        leaf,
 	}
 
@@ -157,7 +164,13 @@ func (s *DiskStore) Range(fn func(addr mino.Address, cert *tls.Certificate) bool
 		}
 
 		return bucket.ForEach(func(key, value []byte) error {
-			leaf, err := x509.ParseCertificate(value)
+			// The raw certificate is retained in the x509 leaf, therefore it
+			// needs an independent array. The database could reuse the one
+			// provided.
+			data := make([]byte, len(value))
+			copy(data, value)
+
+			leaf, err := x509.ParseCertificate(data)
 			if err != nil {
 				return xerrors.Errorf("certificate malformed: %v", err)
 			}
