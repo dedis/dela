@@ -131,7 +131,6 @@ dot -Gdpi=300 -Tpng graph.dot -o graph.png -Gsplines=ortho`,
 
 // run is the main action of the CLI.
 func run(c *cli.Context) error {
-
 	searchDir := c.Args().First()
 	if searchDir == "" {
 		return xerrors.Errorf("please provide the folder path")
@@ -163,7 +162,6 @@ func run(c *cli.Context) error {
 	displayGraph(out, links, interfaces)
 
 	return nil
-
 }
 
 func loadConfig(c *cli.Context) (config, error) {
@@ -212,7 +210,6 @@ func getWriter(config config) (io.Writer, error) {
 	}
 
 	return out, nil
-
 }
 
 // walkFn returns the functions that will be called recursively on each file and
