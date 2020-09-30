@@ -1,8 +1,11 @@
 modname: go.dedis.ch/dela
+overwrite: true
+outfile: graph.dot
 includes:
   - go.dedis.ch/dela/core*
 #  - go.dedis.ch/dela/cosi*
   - go.dedis.ch/dela/cli*
+  - go.dedis.ch/dela/mino*
 excludes:
   - go.dedis.ch/dela/core/.*(controller|store|types|json)
 interfaces:
@@ -13,3 +16,7 @@ interfaces:
   - core/txn
   - core/validation
   - core/txn/pool
+  - mino
+  - mino/router
+  - mino/proxy
+  - cli/node

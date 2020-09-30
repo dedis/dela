@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/parser"
 	"go/token"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -29,7 +30,12 @@ type config struct {
 	Includes   []string `yaml:"includes"`
 	Excludes   []string `yaml:"excludes"`
 	Interfaces []string `yaml:"interfaces"`
+	WithTests  bool     `yaml:"withtests"`
+	OverWrite  bool     `yaml:"overwrite"`
+	OutFile    string   `yaml:"outfile"`
 }
+
+type bag map[string]struct{}
 
 func main() {
 
@@ -44,6 +50,9 @@ Since there might be a lot of dependencies, one can provide a yaml config file
 in order to scope the parsing. The config format is the following:
 
 modname: MODULE_NAME
+overwrite: [true|false]
+outfile: FILE_PATH.dot
+withtests: [true|false]
 includes:
 	- go.dedis.ch/dela/*
 	- ...
@@ -87,23 +96,28 @@ dot -Gdpi=300 -Tpng graph.dot -o graph.png -Gsplines=ortho`,
 			&cli.StringFlag{
 				Name: "modname",
 				Usage: "the module name, convenient if one doesn't want to " +
-					"provide a config file. Overwrites value from the config " +
-					"file if provided.",
+					"provide a config file. Is not taken into account if a " +
+					"config with 'modname' is provided. If provided without " +
+					"a config, must have a trailing '/'",
 			},
 			&cli.StringFlag{
 				Name:    "out",
 				Aliases: []string{"o"},
-				Usage:   "if provided will save the result to the specified file",
+				Usage: "if provided, will save the result to the specified " +
+					"file. Is not taken into account if a config with " +
+					"'outfile' is provided.",
 			},
 			&cli.BoolFlag{
 				Name:    "force",
 				Aliases: []string{"F"},
-				Usage:   "overwrites the output file",
+				Usage: "overwrites the output file. Is not taken into " +
+					"account if a config with 'overwrite' is provided.",
 			},
 			&cli.BoolFlag{
-				Name:    "withTest",
+				Name:    "withTests",
 				Aliases: []string{"t"},
-				Usage:   "includes the test files",
+				Usage: "includes the test files. Is not taken into account " +
+					"if a config with 'withtests' is provided.",
 			},
 		},
 		Action: run,
@@ -123,59 +137,90 @@ func run(c *cli.Context) error {
 		return xerrors.Errorf("please provide the folder path")
 	}
 
-	config := config{}
+	config, err := loadConfig(c)
+	if err != nil {
+		return xerrors.Errorf("failed to load config: %v", err)
+	}
+
+	out, err := getWriter(config)
+	if err != nil {
+		return xerrors.Errorf("failed to get writer: %v", err)
+	}
+
+	interfaces := make(bag)
+	for _, it := range config.Interfaces {
+		interfaces[it] = struct{}{}
+	}
+
+	// links will contain, for every package, a bag of dependencies.
+	links := make(map[string]bag)
+
+	err = filepath.Walk(searchDir, walkFn(config, links))
+	if err != nil {
+		return xerrors.Errorf("failed to parse folder: %v", err)
+	}
+
+	displayGraph(out, links, interfaces)
+
+	return nil
+
+}
+
+func loadConfig(c *cli.Context) (config, error) {
+	config := config{
+		Modname:   c.String("modname"),
+		WithTests: c.Bool("withTests"),
+		OverWrite: c.Bool("force"),
+		OutFile:   c.String("out"),
+	}
 
 	configPath := c.String("config")
 	if configPath != "" {
 		configBuf, err := ioutil.ReadFile(configPath)
 		if err != nil {
-			return xerrors.Errorf("failed to read config file: %v", err)
+			return config, xerrors.Errorf("failed to read config file: %v", err)
 		}
 
 		err = yaml.Unmarshal([]byte(configBuf), &config)
 		if err != nil {
-			return xerrors.Errorf("failed to unmarshal config: %v", err)
+			return config, xerrors.Errorf("failed to unmarshal config: %v", err)
 		}
 
-		config.Modname = config.Modname + "/"
-	}
-
-	if c.String("modname") != "" {
 		// we add a "/" to build the full package name. If the module name is
 		// mod.ch/module, then a package 'pancake' inside it should be
 		// mod.ch/module/pancake, but the parsing will only extract 'pancake'.
-		config.Modname = c.String("modname") + "/"
+		config.Modname = config.Modname + "/"
 	}
 
-	fset := token.NewFileSet()
-	out := os.Stdout
+	return config, nil
+}
 
-	if c.String("out") != "" {
-
-		_, err := os.Stat(c.String("out"))
-		if !os.IsNotExist(err) && !c.Bool("force") {
-			return xerrors.Errorf("file '%s' already exist, use '-F' to "+
-				"overwrite", c.String("out"))
-		}
-
-		out, err = os.Create(c.String("out"))
-		if err != nil {
-			return xerrors.Errorf("failed to create output file: %v", err)
-		}
+func getWriter(config config) (io.Writer, error) {
+	if config.OutFile == "" {
+		return os.Stdout, nil
 	}
 
-	// We build a bag of interfaces with a map.
-	interfaces := make(map[string]struct{})
-	for _, it := range config.Interfaces {
-		interfaces[it] = struct{}{}
+	_, err := os.Stat(config.OutFile)
+	if !os.IsNotExist(err) && !config.OverWrite {
+		return nil, xerrors.Errorf("file '%s' already exist, use '-F' to "+
+			"overwrite", config.OutFile)
 	}
 
-	// links will contain, for every package, a bag of dependencies. The bag is
-	// done with a dummy map.
-	links := make(map[string]map[string]struct{})
+	out, err := os.Create(config.OutFile)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to create output file: %v", err)
+	}
 
-	// parseFile will be called recursively on each file and folder
-	parseFile := func(path string, f os.FileInfo, err error) error {
+	return out, nil
+
+}
+
+// walkFn returns the functions that will be called recursively on each file and
+// folder
+func walkFn(config config, links map[string]bag) filepath.WalkFunc {
+	return func(path string, f os.FileInfo, err error) error {
+		fset := token.NewFileSet()
+
 		if err != nil {
 			return xerrors.Errorf("got an error while walking: %v", err)
 		}
@@ -188,7 +233,7 @@ func run(c *cli.Context) error {
 		}
 
 		// we exclude test files if not otherwise asked
-		if !c.Bool("withTest") && strings.HasSuffix(f.Name(), "_test.go") {
+		if !config.WithTests && strings.HasSuffix(f.Name(), "_test.go") {
 			return nil
 		}
 
@@ -224,7 +269,7 @@ func run(c *cli.Context) error {
 			importPath = strings.TrimPrefix(importPath, config.Modname)
 
 			if links[packagePath[len(config.Modname):]] == nil {
-				links[packagePath[len(config.Modname):]] = make(map[string]struct{})
+				links[packagePath[len(config.Modname):]] = make(bag)
 			}
 
 			// add the dependency to the bag
@@ -233,15 +278,12 @@ func run(c *cli.Context) error {
 
 		return nil
 	}
+}
 
-	err := filepath.Walk(searchDir, parseFile)
-	if err != nil {
-		return xerrors.Errorf("failed to parse folder: %v", err)
-	}
-
+func displayGraph(out io.Writer, links map[string]bag, interfaces bag) {
 	// a bag of nodes, used to keep track of every node added so that we can
 	// later on outline the interfaces.
-	nodesList := make(map[string]struct{})
+	nodesList := make(bag)
 
 	fmt.Fprintf(out, "strict digraph {\n")
 	fmt.Fprintf(out, "labelloc=\"t\";\n")
@@ -293,9 +335,6 @@ func run(c *cli.Context) error {
 	}
 
 	fmt.Fprintf(out, "}\n")
-
-	return nil
-
 }
 
 func isIncluded(path string, includes []string) bool {
