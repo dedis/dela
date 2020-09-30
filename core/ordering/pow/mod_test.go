@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/execution/baremetal"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/hashtree"
@@ -117,7 +118,7 @@ func TestService_GetProof(t *testing.T) {
 
 	srvc.epochs[0].store = badTrie{}
 	_, err = srvc.GetProof([]byte("A"))
-	require.EqualError(t, err, "couldn't read share: oops")
+	require.EqualError(t, err, fake.Err("couldn't read share"))
 }
 
 // -----------------------------------------------------------------------------
@@ -153,9 +154,9 @@ func makeTx(t *testing.T, nonce uint64, signer crypto.Signer) txn.Transaction {
 
 type testExec struct{}
 
-func (e testExec) Execute(tx txn.Transaction, store store.Snapshot) error {
-	key := tx.GetArg("key")
-	value := tx.GetArg("value")
+func (e testExec) Execute(store store.Snapshot, step execution.Step) error {
+	key := step.Current.GetArg("key")
+	value := step.Current.GetArg("value")
 
 	if len(key) == 0 || len(value) == 0 {
 		return xerrors.New("key or value is nil")
@@ -174,7 +175,7 @@ type badValidation struct {
 }
 
 func (v badValidation) Validate(store.Snapshot, []txn.Transaction) (validation.Data, error) {
-	return nil, xerrors.New("oops")
+	return nil, fake.GetError()
 }
 
 type badTrie struct {
@@ -182,5 +183,5 @@ type badTrie struct {
 }
 
 func (s badTrie) GetPath([]byte) (hashtree.Path, error) {
-	return nil, xerrors.New("oops")
+	return nil, fake.GetError()
 }

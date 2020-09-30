@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/access/darc"
+	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/execution/baremetal"
 	"go.dedis.ch/dela/core/execution/baremetal/viewchange"
 	"go.dedis.ch/dela/core/ordering"
@@ -40,7 +41,6 @@ import (
 	"go.dedis.ch/dela/mino/minoch"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/json"
-	"golang.org/x/xerrors"
 )
 
 func TestService_Scenario_Basic(t *testing.T) {
@@ -151,12 +151,12 @@ func TestService_New(t *testing.T) {
 
 	param.Mino = fake.NewBadMino()
 	_, err = NewService(param)
-	require.EqualError(t, err, "creating sync failed: rpc creation failed: fake error")
+	require.EqualError(t, err, fake.Err("creating sync failed: rpc creation failed"))
 
 	param.Mino = fake.Mino{}
 	param.Cosi = badCosi{}
 	_, err = NewService(param)
-	require.EqualError(t, err, "creating cosi failed: oops")
+	require.EqualError(t, err, fake.Err("creating cosi failed"))
 }
 
 func TestService_Setup(t *testing.T) {
@@ -182,23 +182,23 @@ func TestService_Setup(t *testing.T) {
 		"creating genesis: set genesis failed: genesis block is already set")
 
 	srvc.started = make(chan struct{})
-	srvc.genesis = fakeGenesisStore{errGet: xerrors.New("oops")}
+	srvc.genesis = fakeGenesisStore{errGet: fake.GetError()}
 	err = srvc.Setup(ctx, authority)
-	require.EqualError(t, err, "failed to read genesis: oops")
+	require.EqualError(t, err, fake.Err("failed to read genesis"))
 
 	srvc.started = make(chan struct{})
 	srvc.genesis = blockstore.NewGenesisStore()
 	srvc.rpc = fake.NewBadRPC()
 	err = srvc.Setup(ctx, authority)
-	require.EqualError(t, err, "sending genesis: fake error")
+	require.EqualError(t, err, fake.Err("sending genesis"))
 
 	srvc.started = make(chan struct{})
 	srvc.genesis = blockstore.NewGenesisStore()
 	rpc = fake.NewRPC()
-	rpc.SendResponseWithError(fake.NewAddress(1), xerrors.New("oops"))
+	rpc.SendResponseWithError(fake.NewAddress(1), fake.GetError())
 	srvc.rpc = rpc
 	err = srvc.Setup(ctx, authority)
-	require.EqualError(t, err, "one request failed: oops")
+	require.EqualError(t, err, fake.Err("one request failed"))
 }
 
 func TestService_Main(t *testing.T) {
@@ -212,25 +212,25 @@ func TestService_Main(t *testing.T) {
 	err := srvc.main()
 	require.NoError(t, err)
 
-	srvc.tree = blockstore.NewTreeCache(fakeTree{err: xerrors.New("oops")})
+	srvc.tree = blockstore.NewTreeCache(fakeTree{err: fake.GetError()})
 	srvc.closing = make(chan struct{})
 	srvc.started = make(chan struct{})
 	srvc.closed = make(chan struct{})
 	close(srvc.started)
 	err = srvc.main()
-	require.EqualError(t, err, "refreshing roster: reading roster: read from tree: oops")
+	require.EqualError(t, err, fake.Err("refreshing roster: reading roster: read from tree"))
 
 	srvc.tree.Set(fakeTree{})
 	srvc.pool = badPool{}
 	srvc.closed = make(chan struct{})
 	err = srvc.main()
-	require.EqualError(t, err, "refreshing roster: updating tx pool: oops")
+	require.EqualError(t, err, fake.Err("refreshing roster: updating tx pool"))
 
 	logger, buffer := fake.WaitLog("round failed", 2*time.Second, func() { close(srvc.closing) })
 
 	srvc.logger = logger
 	srvc.pool = mem.NewPool()
-	srvc.pbftsm = fakeSM{errLeader: xerrors.New("oops")}
+	srvc.pbftsm = fakeSM{errLeader: fake.GetError()}
 	srvc.closed = make(chan struct{})
 	err = srvc.main()
 	require.NoError(t, err)
@@ -260,7 +260,7 @@ func TestService_DoRound(t *testing.T) {
 	}
 
 	rpc.SendResponse(fake.NewAddress(3), nil)
-	rpc.SendResponseWithError(fake.NewAddress(2), xerrors.New("oops"))
+	rpc.SendResponseWithError(fake.NewAddress(2), fake.GetError())
 	rpc.Done()
 
 	ctx := context.Background()
@@ -283,35 +283,35 @@ func TestService_DoRound(t *testing.T) {
 	err = srvc.doRound(ctx)
 	require.EqualError(t, err, "viewchange failed")
 
-	srvc.pbftsm = fakeSM{err: xerrors.New("oops"), state: pbft.InitialState}
+	srvc.pbftsm = fakeSM{err: fake.GetError(), state: pbft.InitialState}
 	err = srvc.doRound(ctx)
-	require.EqualError(t, err, "pbft expire failed: oops")
+	require.EqualError(t, err, fake.Err("pbft expire failed"))
 
 	srvc.pbftsm = fakeSM{}
 	srvc.rpc = fake.NewBadRPC()
 	err = srvc.doRound(ctx)
-	require.EqualError(t, err, "rpc failed: fake error")
+	require.EqualError(t, err, fake.Err("rpc failed"))
 
 	srvc.rosterFac = badRosterFac{}
 	err = srvc.doRound(ctx)
-	require.EqualError(t, err, "reading roster: decode failed: oops")
+	require.EqualError(t, err, fake.Err("reading roster: decode failed"))
 
 	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
-	srvc.pbftsm = fakeSM{errLeader: xerrors.New("oops")}
+	srvc.pbftsm = fakeSM{errLeader: fake.GetError()}
 	err = srvc.doRound(ctx)
-	require.EqualError(t, err, "reading leader: oops")
+	require.EqualError(t, err, fake.Err("reading leader"))
 
 	srvc.pbftsm = fakeSM{}
 	srvc.me = fake.NewAddress(0)
-	srvc.sync = fakeSync{err: xerrors.New("oops")}
+	srvc.sync = fakeSync{err: fake.GetError()}
 	err = srvc.doRound(ctx)
-	require.EqualError(t, err, "sync failed: oops")
+	require.EqualError(t, err, fake.Err("sync failed"))
 
 	srvc.sync = fakeSync{}
-	srvc.val = fakeValidation{err: xerrors.New("oops")}
+	srvc.val = fakeValidation{err: fake.GetError()}
 	err = srvc.doRound(ctx)
 	require.EqualError(t, err,
-		"pbft failed: failed to prepare data: staging tree failed: validation failed: oops")
+		fake.Err("pbft failed: failed to prepare data: staging tree failed: validation failed"))
 }
 
 func TestService_DoPBFT(t *testing.T) {
@@ -332,7 +332,7 @@ func TestService_DoPBFT(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	rpc.SendResponseWithError(fake.NewAddress(5), xerrors.New("oops"))
+	rpc.SendResponseWithError(fake.NewAddress(5), fake.GetError())
 	rpc.Done()
 	srvc.genesis.Set(types.Genesis{})
 
@@ -346,40 +346,40 @@ func TestService_DoPBFT(t *testing.T) {
 	err = srvc.doPBFT(ctx)
 	require.NoError(t, err)
 
-	srvc.val = fakeValidation{err: xerrors.New("oops")}
+	srvc.val = fakeValidation{err: fake.GetError()}
 	err = srvc.doPBFT(ctx)
 	require.EqualError(t, err,
-		"failed to prepare data: staging tree failed: validation failed: oops")
+		fake.Err("failed to prepare data: staging tree failed: validation failed"))
 
 	srvc.val = fakeValidation{}
 	srvc.hashFactory = fake.NewHashFactory(fake.NewBadHash())
 	err = srvc.doPBFT(ctx)
 	require.EqualError(t, err,
-		"creating block failed: fingerprint failed: couldn't write index: fake error")
+		fake.Err("creating block failed: fingerprint failed: couldn't write index"))
 
 	srvc.hashFactory = crypto.NewSha256Factory()
-	srvc.pbftsm = fakeSM{err: xerrors.New("oops")}
+	srvc.pbftsm = fakeSM{err: fake.GetError()}
 	err = srvc.doPBFT(ctx)
-	require.EqualError(t, err, "pbft prepare failed: oops")
+	require.EqualError(t, err, fake.Err("pbft prepare failed"))
 
 	srvc.pbftsm = fakeSM{}
-	srvc.tree.Set(fakeTree{err: xerrors.New("oops")})
+	srvc.tree.Set(fakeTree{err: fake.GetError()})
 	err = srvc.doPBFT(ctx)
-	require.EqualError(t, err, "read roster failed: read from tree: oops")
+	require.EqualError(t, err, fake.Err("read roster failed: read from tree"))
 
 	srvc.tree.Set(fakeTree{})
-	srvc.actor = fakeCosiActor{err: xerrors.New("oops")}
+	srvc.actor = fakeCosiActor{err: fake.GetError()}
 	err = srvc.doPBFT(ctx)
-	require.EqualError(t, err, "prepare phase failed: oops")
+	require.EqualError(t, err, fake.Err("prepare phase failed"))
 
-	srvc.actor = fakeCosiActor{err: xerrors.New("oops"), counter: fake.NewCounter(1)}
+	srvc.actor = fakeCosiActor{err: fake.GetError(), counter: fake.NewCounter(1)}
 	err = srvc.doPBFT(ctx)
-	require.EqualError(t, err, "commit phase failed: oops")
+	require.EqualError(t, err, fake.Err("commit phase failed"))
 
 	srvc.actor = fakeCosiActor{}
 	srvc.rpc = fake.NewBadRPC()
 	err = srvc.doPBFT(ctx)
-	require.EqualError(t, err, "rpc failed: fake error")
+	require.EqualError(t, err, fake.Err("rpc failed"))
 
 	srvc.rpc = rpc
 	srvc.genesis = blockstore.NewGenesisStore()
@@ -405,21 +405,21 @@ func TestService_WakeUp(t *testing.T) {
 
 	ctx := context.Background()
 
-	rpc.SendResponseWithError(fake.NewAddress(5), xerrors.New("oops"))
+	rpc.SendResponseWithError(fake.NewAddress(5), fake.GetError())
 	rpc.Done()
 	ro := authority.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
 
 	err := srvc.wakeUp(ctx, ro)
 	require.NoError(t, err)
 
-	srvc.tree.Set(fakeTree{err: xerrors.New("oops")})
+	srvc.tree.Set(fakeTree{err: fake.GetError()})
 	err = srvc.wakeUp(ctx, ro)
-	require.EqualError(t, err, "read roster failed: read from tree: oops")
+	require.EqualError(t, err, fake.Err("read roster failed: read from tree"))
 
 	srvc.tree.Set(fakeTree{})
 	srvc.rpc = fake.NewBadRPC()
 	err = srvc.wakeUp(ctx, ro)
-	require.EqualError(t, err, "rpc failed: fake error")
+	require.EqualError(t, err, fake.Err("rpc failed"))
 }
 
 func TestService_GetProof(t *testing.T) {
@@ -432,9 +432,9 @@ func TestService_GetProof(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, proof)
 
-	srvc.tree.Set(fakeTree{err: xerrors.New("oops")})
+	srvc.tree.Set(fakeTree{err: fake.GetError()})
 	_, err = srvc.GetProof([]byte("A"))
-	require.EqualError(t, err, "reading path: oops")
+	require.EqualError(t, err, fake.Err("reading path"))
 
 	srvc.tree.Set(fakeTree{})
 	srvc.blocks = blockstore.NewInMemory()
@@ -457,6 +457,20 @@ func TestService_GetRoster(t *testing.T) {
 	roster, err := srvc.GetRoster()
 	require.NoError(t, err)
 	require.Equal(t, 3, roster.Len())
+}
+
+func TestService_PoolFilter(t *testing.T) {
+	filter := poolFilter{
+		tree: blockstore.NewTreeCache(fakeTree{}),
+		srvc: fakeValidation{},
+	}
+
+	err := filter.Accept(makeTx(t, 0, fake.NewSigner()), validation.Leeway{})
+	require.NoError(t, err)
+
+	filter.srvc = fakeValidation{err: fake.GetError()}
+	err = filter.Accept(makeTx(t, 0, fake.NewSigner()), validation.Leeway{})
+	require.EqualError(t, err, fake.Err("unacceptable transaction"))
 }
 
 // -----------------------------------------------------------------------------
@@ -484,7 +498,7 @@ type testExec struct {
 	err error
 }
 
-func (e testExec) Execute(txn.Transaction, store.Snapshot) error {
+func (e testExec) Execute(store.Snapshot, execution.Step) error {
 	return e.err
 }
 
@@ -610,7 +624,7 @@ type badRosterFac struct {
 }
 
 func (fac badRosterFac) AuthorityOf(serde.Context, []byte) (authority.Authority, error) {
-	return nil, xerrors.New("oops")
+	return nil, fake.GetError()
 }
 
 type badPool struct {
@@ -618,8 +632,10 @@ type badPool struct {
 }
 
 func (p badPool) SetPlayers(mino.Players) error {
-	return xerrors.New("oops")
+	return fake.GetError()
 }
+
+func (p badPool) AddFilter(pool.Filter) {}
 
 type badCosi struct {
 	cosi.CollectiveSigning
@@ -642,13 +658,17 @@ func (c badCosi) GetVerifierFactory() crypto.VerifierFactory {
 }
 
 func (c badCosi) Listen(cosi.Reactor) (cosi.Actor, error) {
-	return nil, xerrors.New("oops")
+	return nil, fake.GetError()
 }
 
 type fakeValidation struct {
 	validation.Service
 
 	err error
+}
+
+func (val fakeValidation) Accept(store.Readable, txn.Transaction, validation.Leeway) error {
+	return val.err
 }
 
 func (val fakeValidation) Validate(store.Snapshot, []txn.Transaction) (validation.Data, error) {

@@ -51,6 +51,11 @@ func (p *Pool) SetPlayers(players mino.Players) error {
 	return nil
 }
 
+// AddFilter implements pool.Pool. It adds the filter to the gatherer.
+func (p *Pool) AddFilter(filter pool.Filter) {
+	p.gatherer.AddFilter(filter)
+}
+
 // Len implements pool.Pool. It returns the number of transactions available in
 // the pool.
 func (p *Pool) Len() int {
@@ -91,6 +96,8 @@ func (p *Pool) Gather(ctx context.Context, cfg pool.Config) []txn.Transaction {
 
 // Close stops the gossiper and terminate the routine that listens for rumors.
 func (p *Pool) Close() error {
+	p.gatherer.Close()
+
 	close(p.closing)
 
 	err := p.actor.Close()

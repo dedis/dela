@@ -10,7 +10,6 @@ import (
 	ucli "github.com/urfave/cli/v2"
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"golang.org/x/xerrors"
 )
 
 func TestCliBuilder_Command(t *testing.T) {
@@ -45,19 +44,27 @@ func TestCliBuilder_Start(t *testing.T) {
 		require.Contains(t, err.Error(), "couldn't make path: mkdir /test/: ")
 	}
 
-	builder.daemonFactory = fakeFactory{err: xerrors.New("oops")}
+	builder.daemonFactory = fakeFactory{err: fake.GetError()}
 	err = builder.start(nil)
-	require.EqualError(t, err, "couldn't make daemon: oops")
+	require.EqualError(t, err, fake.Err("couldn't make daemon"))
 
-	builder.daemonFactory = fakeFactory{errDaemon: xerrors.New("oops")}
+	builder.daemonFactory = fakeFactory{errDaemon: fake.GetError()}
 	err = builder.start(nil)
-	require.EqualError(t, err, "couldn't start the daemon: oops")
+	require.EqualError(t, err, fake.Err("couldn't start the daemon"))
 
-	builder = NewBuilder(fakeInitializer{err: xerrors.New("oops")}).(*cliBuilder)
+	// Test when a component cannot start.
+	builder = NewBuilder(fakeInitializer{err: fake.GetError()}).(*cliBuilder)
 	builder.sigs <- syscall.SIGTERM
 
 	err = builder.start(nil)
-	require.EqualError(t, err, "couldn't run the controller: oops")
+	require.EqualError(t, err, fake.Err("couldn't run the controller"))
+
+	// Test when a component cannot stop.
+	builder = NewBuilder(fakeInitializer{errStop: fake.GetError()}).(*cliBuilder)
+	builder.sigs <- syscall.SIGTERM
+
+	err = builder.start(nil)
+	require.EqualError(t, err, fake.Err("couldn't stop controller"))
 }
 
 func TestCliBuilder_MakeAction(t *testing.T) {
@@ -79,13 +86,13 @@ func TestCliBuilder_MakeAction(t *testing.T) {
 	data := string(calls.Get(0, 0).([]byte))
 	require.Equal(t, "\x00\x00"+`{"flag-1":["item 1","item 2"],"flag-2":20}`, data)
 
-	builder.daemonFactory = fakeFactory{err: xerrors.New("oops")}
+	builder.daemonFactory = fakeFactory{err: fake.GetError()}
 	err = builder.MakeAction(fakeAction{})(ctx)
-	require.EqualError(t, err, "couldn't make client: oops")
+	require.EqualError(t, err, fake.Err("couldn't make client"))
 
-	builder.daemonFactory = fakeFactory{errClient: xerrors.New("oops")}
+	builder.daemonFactory = fakeFactory{errClient: fake.GetError()}
 	err = builder.MakeAction(fakeAction{})(ctx)
-	require.EqualError(t, err, "couldn't send action: oops")
+	require.EqualError(t, err, fake.Err("couldn't send action"))
 }
 
 func TestCliBuilder_Build(t *testing.T) {
@@ -111,7 +118,7 @@ func TestCliBuilder_Build(t *testing.T) {
 
 	cb = builder.SetCommand("last")
 	cb.SetAction(func(cli.Flags) error {
-		return xerrors.New("oops")
+		return fake.GetError()
 	})
 
 	app := builder.Build().(*ucli.App)

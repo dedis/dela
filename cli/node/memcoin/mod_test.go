@@ -20,15 +20,20 @@ func TestMemcoin_Main(t *testing.T) {
 }
 
 func TestMemcoin_Scenario_1(t *testing.T) {
+	dir, err := ioutil.TempDir(os.TempDir(), "memcoin1")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
 	sigs := make(chan os.Signal)
 	wg := sync.WaitGroup{}
 	wg.Add(5)
 
-	node1 := filepath.Join(os.TempDir(), "memcoin", "node1")
-	node2 := filepath.Join(os.TempDir(), "memcoin", "node2")
-	node3 := filepath.Join(os.TempDir(), "memcoin", "node3")
-	node4 := filepath.Join(os.TempDir(), "memcoin", "node4")
-	node5 := filepath.Join(os.TempDir(), "memcoin", "node5")
+	node1 := filepath.Join(dir, "node1")
+	node2 := filepath.Join(dir, "node2")
+	node3 := filepath.Join(dir, "node3")
+	node4 := filepath.Join(dir, "memcoin", "node4")
+	node5 := filepath.Join(dir, "memcoin", "node5")
 
 	cfg := config{Channel: sigs, Writer: ioutil.Discard}
 
@@ -42,12 +47,6 @@ func TestMemcoin_Scenario_1(t *testing.T) {
 		// Simulate a Ctrl+C
 		close(sigs)
 		wg.Wait()
-
-		os.RemoveAll(node1)
-		os.RemoveAll(node2)
-		os.RemoveAll(node3)
-		os.RemoveAll(node4)
-		os.RemoveAll(node5)
 	}()
 
 	waitDaemon(t, []string{node1, node2, node3})
@@ -66,7 +65,7 @@ func TestMemcoin_Scenario_1(t *testing.T) {
 		getExport(t, node2)...),
 		getExport(t, node3)...)
 
-	err := run(args)
+	err = run(args)
 	require.NoError(t, err)
 
 	// Add node 4 to the current chain. This node is not reachable from the
@@ -115,14 +114,46 @@ func TestMemcoin_Scenario_1(t *testing.T) {
 }
 
 func TestMemcoin_Scenario_2(t *testing.T) {
-	node1 := filepath.Join(os.TempDir(), "memcoin-2", "node1")
+	dir, err := ioutil.TempDir(os.TempDir(), "memcoin2")
+	require.NoError(t, err)
 
+	defer os.RemoveAll(dir)
+
+	node1 := filepath.Join(dir, "node1")
+
+	// Setup the chain and closes the node.
 	setupChain(t, node1, 2210)
 
-	// TODO: correctly stop the node then restart it.
-	defer func() {
-		os.RemoveAll(node1)
+	sigs := make(chan os.Signal)
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	cfg := config{Channel: sigs, Writer: ioutil.Discard}
+
+	go func() {
+		defer wg.Done()
+
+		err := runWithCfg(makeNodeArg(node1, 2210), cfg)
+		require.NoError(t, err)
 	}()
+
+	defer func() {
+		// Simulate a Ctrl+C
+		close(sigs)
+		wg.Wait()
+	}()
+
+	waitDaemon(t, []string{node1})
+
+	args := append([]string{
+		os.Args[0],
+		"--config", node1, "ordering", "roster", "add",
+		"--wait", "60s"},
+		getExport(t, node1)...,
+	)
+
+	err = run(args)
+	require.NoError(t, err)
 }
 
 // -----------------------------------------------------------------------------

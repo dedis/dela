@@ -25,10 +25,10 @@ func TestGenesisMessage_Serialize(t *testing.T) {
 
 	data, err := msg.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = msg.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "encoding failed: fake error")
+	require.EqualError(t, err, fake.Err("encoding failed"))
 }
 
 func TestBlockMessage_GetBlock(t *testing.T) {
@@ -52,10 +52,10 @@ func TestBlockMessage_Serialize(t *testing.T) {
 
 	data, err := msg.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = msg.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "encoding failed: fake error")
+	require.EqualError(t, err, fake.Err("encoding failed"))
 }
 
 func TestCommitMessage_GetID(t *testing.T) {
@@ -75,10 +75,10 @@ func TestCommitMessage_Serialize(t *testing.T) {
 
 	data, err := msg.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = msg.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "encoding failed: fake error")
+	require.EqualError(t, err, fake.Err("encoding failed"))
 }
 
 func TestDoneMessage_GetID(t *testing.T) {
@@ -98,10 +98,10 @@ func TestDoneMessage_Serialize(t *testing.T) {
 
 	data, err := msg.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = msg.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "encoding failed: fake error")
+	require.EqualError(t, err, fake.Err("encoding failed"))
 }
 
 func TestViewMessage_GetID(t *testing.T) {
@@ -127,10 +127,10 @@ func TestViewMessage_Serialize(t *testing.T) {
 
 	data, err := msg.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = msg.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "encoding failed: fake error")
+	require.EqualError(t, err, fake.Err("encoding failed"))
 }
 
 func TestMessageFactory_Deserialize(t *testing.T) {
@@ -147,5 +147,5 @@ func TestMessageFactory_Deserialize(t *testing.T) {
 	require.Equal(t, GenesisMessage{}, msg)
 
 	_, err = fac.Deserialize(fake.NewBadContext(), nil)
-	require.EqualError(t, err, "decoding failed: fake error")
+	require.EqualError(t, err, fake.Err("decoding failed"))
 }

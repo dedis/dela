@@ -1,12 +1,10 @@
 package controller
 
 import (
-	"os"
-	"os/signal"
-
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/mino/proxy/http"
+	"golang.org/x/xerrors"
 )
 
 const defaultAddr = "127.0.0.1:8080"
@@ -32,9 +30,9 @@ func (m minimal) SetCommands(builder node.Builder) {
 	})
 }
 
-// Inject implements node.Initializer. It creates, starts, and registers a
+// OnStart implements node.Initializer. It creates, starts, and registers a
 // client proxy.
-func (m minimal) Inject(ctx cli.Flags, inj node.Injector) error {
+func (m minimal) OnStart(ctx cli.Flags, inj node.Injector) error {
 
 	addr := ctx.String("clientaddr")
 
@@ -44,12 +42,18 @@ func (m minimal) Inject(ctx cli.Flags, inj node.Injector) error {
 
 	go proxyhttp.Listen()
 
-	go func() {
-		quit := make(chan os.Signal, 1)
-		signal.Notify(quit, os.Interrupt)
-		<-quit
-		proxyhttp.Stop()
-	}()
+	return nil
+}
+
+// OnStop implements node.Initializer. It stops the http server.
+func (m minimal) OnStop(inj node.Injector) error {
+	var proxy *http.HTTP
+	err := inj.Resolve(&proxy)
+	if err != nil {
+		return xerrors.Errorf("injector: %v", err)
+	}
+
+	proxy.Stop()
 
 	return nil
 }

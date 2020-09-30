@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"golang.org/x/xerrors"
 )
 
 func TestSocketClient_Send(t *testing.T) {
@@ -40,7 +39,7 @@ func TestSocketClient_Send(t *testing.T) {
 	client.socketpath = path
 	client.out = fake.NewBadHash()
 	err = client.Send([]byte("deadbeef"))
-	require.EqualError(t, err, "couldn't read output: fake error")
+	require.EqualError(t, err, fake.Err("couldn't read output"))
 
 	// Windows only allows opening one socket per address, this is why we use
 	// another one.
@@ -64,8 +63,8 @@ func TestSocketDaemon_Listen(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	actions := &actionMap{}
-	actions.Set(fakeAction{})                         // id 0
-	actions.Set(fakeAction{err: xerrors.New("oops")}) // id 1
+	actions.Set(fakeAction{})                     // id 0
+	actions.Set(fakeAction{err: fake.GetError()}) // id 1
 
 	daemon := &socketDaemon{
 		socketpath:  filepath.Join(dir, "daemon.sock"),
@@ -92,7 +91,7 @@ func TestSocketDaemon_Listen(t *testing.T) {
 	out.Reset()
 	err = client.Send(append([]byte{0x1, 0x0}, []byte("{}")...))
 	require.NoError(t, err)
-	require.Equal(t, "[ERROR] command error: oops\n", out.String())
+	require.Equal(t, fake.Err("[ERROR] command error")+"\n", out.String())
 
 	out.Reset()
 	err = client.Send(append([]byte{0x2, 0x0}, []byte("{}")...))
@@ -159,13 +158,18 @@ func listen(t *testing.T, path string, quick bool) {
 }
 
 type fakeInitializer struct {
-	err error
+	err     error
+	errStop error
 }
 
 func (c fakeInitializer) SetCommands(Builder) {}
 
-func (c fakeInitializer) Inject(cli.Flags, Injector) error {
+func (c fakeInitializer) OnStart(cli.Flags, Injector) error {
 	return c.err
+}
+
+func (c fakeInitializer) OnStop(Injector) error {
+	return c.errStop
 }
 
 type fakeClient struct {

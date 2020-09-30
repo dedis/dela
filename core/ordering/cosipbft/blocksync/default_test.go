@@ -22,7 +22,6 @@ import (
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minoch"
 	"go.dedis.ch/dela/serde"
-	"golang.org/x/xerrors"
 )
 
 func TestDefaultSync_Basic(t *testing.T) {
@@ -87,7 +86,7 @@ func TestDefaultSync_New(t *testing.T) {
 	}
 
 	_, err := NewSynchronizer(param)
-	require.EqualError(t, err, "rpc creation failed: fake error")
+	require.EqualError(t, err, fake.Err("rpc creation failed"))
 }
 
 func TestDefaultSync_GetLatest(t *testing.T) {
@@ -116,15 +115,15 @@ func TestDefaultSync_Sync(t *testing.T) {
 	err := sync.Sync(ctx, mino.NewAddresses(), Config{MinSoft: 1, MinHard: 1})
 	require.NoError(t, err)
 
-	sync.blocks = badBlockStore{errChain: xerrors.New("oops")}
+	sync.blocks = badBlockStore{errChain: fake.GetError()}
 	err = sync.Sync(ctx, mino.NewAddresses(), Config{})
-	require.EqualError(t, err, "failed to read chain: oops")
+	require.EqualError(t, err, fake.Err("failed to read chain"))
 
 	sync.blocks = blockstore.NewInMemory()
 	storeBlocks(t, sync.blocks, 1)
 	sync.rpc = fake.NewBadRPC()
 	err = sync.Sync(ctx, mino.NewAddresses(), Config{})
-	require.EqualError(t, err, "stream failed: fake error")
+	require.EqualError(t, err, fake.Err("stream failed"))
 
 	buffer := new(bytes.Buffer)
 	sync.logger = zerolog.New(buffer)
@@ -135,12 +134,12 @@ func TestDefaultSync_Sync(t *testing.T) {
 
 	sync.rpc = fake.NewStreamRPC(fake.NewBadReceiver(), fake.Sender{})
 	err = sync.Sync(ctx, mino.NewAddresses(fake.NewAddress(0)), Config{MinSoft: 1})
-	require.EqualError(t, err, "receiver failed: fake error")
+	require.EqualError(t, err, fake.Err("receiver failed"))
 
 	sync.rpc = fake.NewStreamRPC(fake.NewReceiver(types.NewSyncRequest(0)), sender)
 	sync.blocks = badBlockStore{}
 	err = sync.Sync(ctx, mino.NewAddresses(), Config{MinSoft: 1})
-	require.EqualError(t, err, "synchronizing node fake.Address[0]: couldn't get block: oops")
+	require.EqualError(t, err, fake.Err("synchronizing node fake.Address[0]: couldn't get block"))
 }
 
 func TestDefaultSync_SyncNode(t *testing.T) {
@@ -151,7 +150,7 @@ func TestDefaultSync_SyncNode(t *testing.T) {
 	storeBlocks(t, sync.blocks, 5)
 
 	err := sync.syncNode(0, fake.NewBadSender(), fake.NewAddress(0))
-	require.EqualError(t, err, "failed to send block: fake error")
+	require.EqualError(t, err, fake.Err("failed to send block"))
 }
 
 func TestHandler_Stream(t *testing.T) {
@@ -187,23 +186,23 @@ func TestHandler_Stream(t *testing.T) {
 	require.Equal(t, blocks.Len(), handler.blocks.Len())
 
 	err = handler.Stream(fake.Sender{}, fake.NewBadReceiver())
-	require.EqualError(t, err, "no announcement: receiver failed: fake error")
+	require.EqualError(t, err, fake.Err("no announcement: receiver failed"))
 
 	handler.genesis = blockstore.NewGenesisStore()
 	err = handler.Stream(fake.Sender{}, fake.NewReceiver(msgs...))
 	require.EqualError(t, err, "reading genesis: missing genesis block")
 
 	handler.genesis.Set(otypes.Genesis{})
-	err = handler.Stream(fake.Sender{}, fake.NewReceiver(types.NewSyncMessage(fakeChain{err: xerrors.New("oops")})))
-	require.EqualError(t, err, "failed to verify chain: oops")
+	err = handler.Stream(fake.Sender{}, fake.NewReceiver(types.NewSyncMessage(fakeChain{err: fake.GetError()})))
+	require.EqualError(t, err, fake.Err("failed to verify chain"))
 
 	err = handler.Stream(fake.NewBadSender(), fake.NewReceiver(types.NewSyncMessage(makeChain(t, 6))))
-	require.EqualError(t, err, "sending request failed: fake error")
+	require.EqualError(t, err, fake.Err("sending request failed"))
 
 	rcvr := fake.NewBadReceiver()
 	rcvr.Msg = []serde.Message{types.NewSyncMessage(makeChain(t, 6))}
 	err = handler.Stream(fake.Sender{}, rcvr)
-	require.EqualError(t, err, "receiver failed: fake error")
+	require.EqualError(t, err, fake.Err("receiver failed"))
 
 	msgs = []serde.Message{types.NewSyncMessage(makeChain(t, 6)), msgs[1]}
 	err = handler.Stream(fake.Sender{}, fake.NewReceiver(msgs...))
@@ -211,7 +210,7 @@ func TestHandler_Stream(t *testing.T) {
 	require.Regexp(t, "pbft catch up failed: mismatch link '[0]{8}' != '[0-9a-f]{8}'", err.Error())
 
 	err = handler.Stream(fake.NewBadSender(), fake.NewReceiver(types.NewSyncMessage(makeChain(t, 0))))
-	require.EqualError(t, err, "sending ack failed: fake error")
+	require.EqualError(t, err, fake.Err("sending ack failed"))
 }
 
 // -----------------------------------------------------------------------------
@@ -317,7 +316,7 @@ func (s badBlockStore) GetChain() (otypes.Chain, error) {
 }
 
 func (s badBlockStore) GetByIndex(index uint64) (otypes.BlockLink, error) {
-	return nil, xerrors.New("oops")
+	return nil, fake.GetError()
 }
 
 type fakeChain struct {

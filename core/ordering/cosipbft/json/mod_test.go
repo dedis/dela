@@ -10,7 +10,6 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
-	"golang.org/x/xerrors"
 )
 
 func init() {
@@ -34,13 +33,13 @@ func TestGenesisFormat_Encode(t *testing.T) {
 	require.EqualError(t, err, "invalid genesis 'fake.Message'")
 
 	_, err = format.Encode(fake.NewBadContext(), genesis)
-	require.EqualError(t, err, "failed to marshal: fake error")
+	require.EqualError(t, err, fake.Err("failed to marshal"))
 
-	genesis, err = types.NewGenesis(fakeRoster{err: xerrors.New("oops")})
+	genesis, err = types.NewGenesis(fakeRoster{err: fake.GetError()})
 	require.NoError(t, err)
 
 	_, err = format.Encode(ctx, genesis)
-	require.EqualError(t, err, "failed to serialize roster: oops")
+	require.EqualError(t, err, fake.Err("failed to serialize roster"))
 }
 
 func TestGenesisFormat_Decode(t *testing.T) {
@@ -57,15 +56,15 @@ func TestGenesisFormat_Decode(t *testing.T) {
 	require.NotNil(t, msg, genesis)
 
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
-	require.EqualError(t, err, "failed to unmarshal: fake error")
+	require.EqualError(t, err, fake.Err("failed to unmarshal"))
 
 	badCtx := serde.WithFactory(ctx, types.RosterKey{}, nil)
 	_, err = format.Decode(badCtx, []byte(`{}`))
 	require.EqualError(t, err, "invalid roster factory '<nil>'")
 
-	badCtx = serde.WithFactory(ctx, types.RosterKey{}, fakeRosterFac{err: xerrors.New("oops")})
+	badCtx = serde.WithFactory(ctx, types.RosterKey{}, fakeRosterFac{err: fake.GetError()})
 	_, err = format.Decode(badCtx, []byte(`{}`))
-	require.EqualError(t, err, "authority factory failed: oops")
+	require.EqualError(t, err, fake.Err("authority factory failed"))
 
 	format.hashFac = fake.NewHashFactory(fake.NewBadHash())
 	_, err = format.Decode(ctx, []byte(`{}`))
@@ -89,13 +88,13 @@ func TestBlockFormat_Encode(t *testing.T) {
 	require.EqualError(t, err, "invalid block 'fake.Message'")
 
 	_, err = format.Encode(fake.NewBadContext(), block)
-	require.EqualError(t, err, "failed to marshal: fake error")
+	require.EqualError(t, err, fake.Err("failed to marshal"))
 
-	block, err = types.NewBlock(fakeData{err: xerrors.New("oops")})
+	block, err = types.NewBlock(fakeData{err: fake.GetError()})
 	require.NoError(t, err)
 
 	_, err = format.Encode(ctx, block)
-	require.EqualError(t, err, "failed to serialize data: oops")
+	require.EqualError(t, err, fake.Err("failed to serialize data"))
 }
 
 func TestBlockFormat_Decode(t *testing.T) {
@@ -112,15 +111,15 @@ func TestBlockFormat_Decode(t *testing.T) {
 	require.Equal(t, block, msg)
 
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
-	require.EqualError(t, err, "failed to unmarshal: fake error")
+	require.EqualError(t, err, fake.Err("failed to unmarshal"))
 
 	badCtx := serde.WithFactory(ctx, types.DataKey{}, nil)
 	_, err = format.Decode(badCtx, []byte(`{}`))
 	require.EqualError(t, err, "invalid data factory '<nil>'")
 
-	badCtx = serde.WithFactory(ctx, types.DataKey{}, fakeDataFac{err: xerrors.New("oops")})
+	badCtx = serde.WithFactory(ctx, types.DataKey{}, fakeDataFac{err: fake.GetError()})
 	_, err = format.Decode(badCtx, []byte(`{}`))
-	require.EqualError(t, err, "data factory failed: oops")
+	require.EqualError(t, err, fake.Err("data factory failed"))
 
 	format.hashFac = fake.NewHashFactory(fake.NewBadHash())
 	_, err = format.Decode(ctx, []byte(`{}`))
@@ -144,7 +143,7 @@ func TestMsgFormat_Encode(t *testing.T) {
 	require.Equal(t, `{"Genesis":{"Genesis":{}}}`, string(data))
 
 	_, err = format.Encode(fake.NewBadContext(), types.NewGenesisMessage(genesis))
-	require.EqualError(t, err, "failed to serialize genesis: encoding failed: fake error")
+	require.EqualError(t, err, fake.Err("failed to serialize genesis: encoding failed"))
 
 	views := map[mino.Address]types.ViewMessage{
 		fake.NewAddress(0): types.NewViewMessage(types.Digest{1}, 5, fake.Signature{}),
@@ -156,39 +155,39 @@ func TestMsgFormat_Encode(t *testing.T) {
 
 	views[fake.NewAddress(0)] = types.NewViewMessage(types.Digest{}, 0, fake.NewBadSignature())
 	_, err = format.Encode(ctx, types.NewBlockMessage(block, views))
-	require.EqualError(t, err, "view: failed to serialize signature: fake error")
+	require.EqualError(t, err, fake.Err("view: failed to serialize signature"))
 
 	delete(views, fake.NewAddress(0))
 	views[fake.NewBadAddress()] = types.NewViewMessage(types.Digest{}, 0, fake.Signature{})
 	_, err = format.Encode(ctx, types.NewBlockMessage(block, views))
-	require.EqualError(t, err, "failed to serialize address: fake error")
+	require.EqualError(t, err, fake.Err("failed to serialize address"))
 
 	_, err = format.Encode(fake.NewBadContext(), types.NewBlockMessage(block, nil))
-	require.EqualError(t, err, "block: encoding failed: fake error")
+	require.EqualError(t, err, fake.Err("block: encoding failed"))
 
 	data, err = format.Encode(ctx, types.NewCommit(types.Digest{}, fake.Signature{}))
 	require.NoError(t, err)
 	require.Regexp(t, `{"Commit":{"ID":"[^"]+","Signature":{}}}`, string(data))
 
 	_, err = format.Encode(ctx, types.NewCommit(types.Digest{}, fake.NewBadSignature()))
-	require.EqualError(t, err, "failed to serialize signature: fake error")
+	require.EqualError(t, err, fake.Err("failed to serialize signature"))
 
 	data, err = format.Encode(ctx, types.NewDone(types.Digest{}, fake.Signature{}))
 	require.NoError(t, err)
 	require.Regexp(t, `{"Done":{"ID":"[^"]+","Signature":{}}}`, string(data))
 
 	_, err = format.Encode(ctx, types.NewDone(types.Digest{}, fake.NewBadSignature()))
-	require.EqualError(t, err, "failed to serialize signature: fake error")
+	require.EqualError(t, err, fake.Err("failed to serialize signature"))
 
 	data, err = format.Encode(ctx, types.NewViewMessage(types.Digest{}, 5, fake.Signature{}))
 	require.NoError(t, err)
 	require.Regexp(t, `{"View":{"Leader":5,"ID":"[^"]+","Signature":{}}}`, string(data))
 
 	_, err = format.Encode(ctx, types.NewViewMessage(types.Digest{}, 0, fake.NewBadSignature()))
-	require.EqualError(t, err, "view: failed to serialize signature: fake error")
+	require.EqualError(t, err, fake.Err("view: failed to serialize signature"))
 
 	_, err = format.Encode(fake.NewBadContext(), types.NewViewMessage(types.Digest{}, 0, fake.Signature{}))
-	require.EqualError(t, err, "failed to marshal: fake error")
+	require.EqualError(t, err, fake.Err("failed to marshal"))
 }
 
 func TestMsgFormat_Decode(t *testing.T) {
@@ -211,7 +210,7 @@ func TestMsgFormat_Decode(t *testing.T) {
 
 	badCtx = serde.WithFactory(ctx, types.GenesisKey{}, fake.NewBadMessageFactory())
 	_, err = format.Decode(badCtx, []byte(`{"Genesis":{}}`))
-	require.EqualError(t, err, "failed to deserialize genesis: fake error")
+	require.EqualError(t, err, fake.Err("failed to deserialize genesis"))
 
 	badCtx = serde.WithFactory(ctx, types.GenesisKey{}, fake.MessageFactory{})
 	_, err = format.Decode(badCtx, []byte(`{"Genesis":{}}`))
@@ -228,7 +227,7 @@ func TestMsgFormat_Decode(t *testing.T) {
 
 	badCtx = serde.WithFactory(ctx, types.BlockKey{}, fake.NewBadMessageFactory())
 	_, err = format.Decode(badCtx, []byte(`{"Block":{}}`))
-	require.EqualError(t, err, "failed to deserialize block: fake error")
+	require.EqualError(t, err, fake.Err("failed to deserialize block"))
 
 	badCtx = serde.WithFactory(ctx, types.BlockKey{}, fake.MessageFactory{})
 	_, err = format.Decode(badCtx, []byte(`{"Block":{}}`))
@@ -266,7 +265,7 @@ func TestMsgFormat_Decode(t *testing.T) {
 	require.EqualError(t, err, "signature: invalid signature factory '<nil>'")
 
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
-	require.EqualError(t, err, "failed to unmarshal: fake error")
+	require.EqualError(t, err, fake.Err("failed to unmarshal"))
 
 	_, err = format.Decode(ctx, []byte(`{}`))
 	require.EqualError(t, err, "message is empty")

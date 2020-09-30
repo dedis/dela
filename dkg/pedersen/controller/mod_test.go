@@ -11,18 +11,31 @@ import (
 	"golang.org/x/xerrors"
 )
 
-func TestMinimal_Inject(t *testing.T) {
+func TestMinimal_SetCommands(t *testing.T) {
+	minimal := NewMinimal()
+
+	minimal.SetCommands(nil)
+}
+
+func TestMinimal_OnStart(t *testing.T) {
 	minimal := NewMinimal()
 
 	inj := newInjector(fake.Mino{})
-	err := minimal.Inject(nil, inj)
+	err := minimal.OnStart(nil, inj)
 	require.NoError(t, err)
 
 	require.Len(t, inj.(*fakeInjector).history, 1)
 	require.IsType(t, &pedersen.Pedersen{}, inj.(*fakeInjector).history[0])
 
-	err = minimal.Inject(nil, newBadInjector())
-	require.EqualError(t, err, "failed to resolve mino: oops")
+	err = minimal.OnStart(nil, newBadInjector())
+	require.EqualError(t, err, fake.Err("failed to resolve mino"))
+}
+
+func TestMinimal_OnStop(t *testing.T) {
+	minimal := NewMinimal()
+
+	err := minimal.OnStop(node.NewInjector())
+	require.NoError(t, err)
 }
 
 // -----------------------------------------------------------------------------
@@ -52,13 +65,13 @@ type fakeInjector struct {
 // Resolve implements node.Injector
 func (i fakeInjector) Resolve(el interface{}) error {
 	if i.isBad {
-		return xerrors.New("oops")
+		return fake.GetError()
 	}
 
 	switch msg := el.(type) {
 	case *mino.Mino:
 		if i.mino == nil {
-			return xerrors.New("oops")
+			return fake.GetError()
 		}
 		*msg = i.mino
 	default:

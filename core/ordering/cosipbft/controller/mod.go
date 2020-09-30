@@ -10,12 +10,14 @@ import (
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/core/access/darc"
 	"go.dedis.ch/dela/core/execution/baremetal"
+	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store/hashtree/binprefix"
 	"go.dedis.ch/dela/core/store/kv"
+	"go.dedis.ch/dela/core/txn/pool"
 	poolimpl "go.dedis.ch/dela/core/txn/pool/gossip"
 	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/core/validation/simple"
@@ -80,7 +82,7 @@ func (minimal) SetCommands(builder node.Builder) {
 	sub.SetAction(builder.MakeAction(rosterAddAction{}))
 }
 
-func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
+func (minimal) OnStart(flags cli.Flags, inj node.Injector) error {
 	var m mino.Mino
 	err := inj.Resolve(&m)
 	if err != nil {
@@ -154,10 +156,48 @@ func (minimal) Inject(flags cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("service: %v", err)
 	}
 
+	inj.Inject(db)
 	inj.Inject(srvc)
 	inj.Inject(cosi)
 	inj.Inject(pool)
 	inj.Inject(vs)
+
+	return nil
+}
+
+func (minimal) OnStop(inj node.Injector) error {
+	var srvc ordering.Service
+	err := inj.Resolve(&srvc)
+	if err != nil {
+		return xerrors.Errorf("injector: %v", err)
+	}
+
+	err = srvc.Close()
+	if err != nil {
+		return xerrors.Errorf("while closing service: %v", err)
+	}
+
+	var p pool.Pool
+	err = inj.Resolve(&p)
+	if err != nil {
+		return xerrors.Errorf("injector: %v", err)
+	}
+
+	err = p.Close()
+	if err != nil {
+		return xerrors.Errorf("while closing pool: %v", err)
+	}
+
+	var db kv.DB
+	err = inj.Resolve(&db)
+	if err != nil {
+		return xerrors.Errorf("injector: %v", err)
+	}
+
+	err = db.Close()
+	if err != nil {
+		return xerrors.Errorf("while closing db: %v", err)
+	}
 
 	return nil
 }

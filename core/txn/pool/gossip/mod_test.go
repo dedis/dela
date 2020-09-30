@@ -3,13 +3,13 @@ package gossip
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/pool"
 	"go.dedis.ch/dela/internal/testing/fake"
@@ -17,7 +17,6 @@ import (
 	"go.dedis.ch/dela/mino/gossip"
 	"go.dedis.ch/dela/mino/minoch"
 	"go.dedis.ch/dela/serde"
-	"golang.org/x/xerrors"
 )
 
 func TestPool_Basic(t *testing.T) {
@@ -29,22 +28,22 @@ func TestPool_Basic(t *testing.T) {
 	}()
 
 	go func() {
-		for i := 0; i < 100; i++ {
+		for i := 0; i < 50; i++ {
 			err := pools[0].Add(makeTx(uint64(i)))
 			require.NoError(t, err)
 		}
 	}()
 
 	go func() {
-		for i := 0; i < 100; i++ {
-			err := pools[2].Add(makeTx(uint64(i + 100)))
+		for i := 0; i < 50; i++ {
+			err := pools[2].Add(makeTx(uint64(i + 50)))
 			require.NoError(t, err)
 		}
 	}()
 
 	go func() {
-		for i := 0; i < 100; i++ {
-			err := pools[7].Add(makeTx(uint64(i + 200)))
+		for i := 0; i < 50; i++ {
+			err := pools[7].Add(makeTx(uint64(i + 100)))
 			require.NoError(t, err)
 		}
 	}()
@@ -52,8 +51,8 @@ func TestPool_Basic(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	txs := pools[0].Gather(ctx, pool.Config{Min: 300})
-	require.Len(t, txs, 300)
+	txs := pools[0].Gather(ctx, pool.Config{Min: 150})
+	require.Len(t, txs, 150)
 }
 
 func TestPool_New(t *testing.T) {
@@ -64,8 +63,8 @@ func TestPool_New(t *testing.T) {
 	err = pool.Close()
 	require.NoError(t, err)
 
-	_, err = NewPool(fakeGossiper{err: xerrors.New("oops")})
-	require.EqualError(t, err, "failed to listen: oops")
+	_, err = NewPool(fakeGossiper{err: fake.GetError()})
+	require.EqualError(t, err, fake.Err("failed to listen"))
 }
 
 func TestPool_Len(t *testing.T) {
@@ -79,6 +78,14 @@ func TestPool_Len(t *testing.T) {
 	require.Equal(t, 1, p.Len())
 }
 
+func TestPool_AddFilter(t *testing.T) {
+	p := &Pool{
+		gatherer: pool.NewSimpleGatherer(),
+	}
+
+	p.AddFilter(nil)
+}
+
 func TestPool_Add(t *testing.T) {
 	p := &Pool{
 		actor:    fakeActor{},
@@ -90,12 +97,12 @@ func TestPool_Add(t *testing.T) {
 
 	p.gatherer = badGatherer{}
 	err = p.Add(makeTx(0))
-	require.EqualError(t, err, "store failed: oops")
+	require.EqualError(t, err, fake.Err("store failed"))
 
 	p.gatherer = pool.NewSimpleGatherer()
-	p.actor = fakeActor{err: xerrors.New("oops")}
+	p.actor = fakeActor{err: fake.GetError()}
 	err = p.Add(makeTx(0))
-	require.EqualError(t, err, "failed to gossip tx: oops")
+	require.EqualError(t, err, fake.Err("failed to gossip tx"))
 }
 
 func TestPool_Remove(t *testing.T) {
@@ -113,7 +120,7 @@ func TestPool_Remove(t *testing.T) {
 
 	p.gatherer = badGatherer{}
 	err = p.Remove(tx)
-	require.EqualError(t, err, "store failed: oops")
+	require.EqualError(t, err, fake.Err("store failed"))
 }
 
 func TestPool_Gather(t *testing.T) {
@@ -144,17 +151,18 @@ func TestPool_Gather(t *testing.T) {
 
 func TestPool_Close(t *testing.T) {
 	pool := &Pool{
-		closing: make(chan struct{}),
-		actor:   fakeActor{},
+		gatherer: pool.NewSimpleGatherer(),
+		closing:  make(chan struct{}),
+		actor:    fakeActor{},
 	}
 
 	err := pool.Close()
 	require.NoError(t, err)
 
 	pool.closing = make(chan struct{})
-	pool.actor = fakeActor{err: xerrors.New("oops")}
+	pool.actor = fakeActor{err: fake.GetError()}
 	err = pool.Close()
-	require.EqualError(t, err, "failed to close gossiper: oops")
+	require.EqualError(t, err, fake.Err("failed to close gossiper"))
 }
 
 func TestPool_ListenRumors(t *testing.T) {
@@ -178,7 +186,7 @@ func TestPool_ListenRumors(t *testing.T) {
 	p.gatherer = badGatherer{}
 	p.closing = make(chan struct{})
 
-	ch = make(chan gossip.Rumor, 1)
+	ch = make(chan gossip.Rumor)
 	go func() {
 		ch <- makeTx(0)
 		close(p.closing)
@@ -192,10 +200,7 @@ func TestPool_ListenRumors(t *testing.T) {
 // Utility functions
 
 func makeTx(nonce uint64) txn.Transaction {
-	id := make([]byte, 8)
-	binary.LittleEndian.PutUint64(id, nonce)
-
-	return fakeTx{id: id}
+	return fakeTx{nonce: nonce}
 }
 
 func makeRoster(t *testing.T, n int) (mino.Players, []*Pool) {
@@ -229,15 +234,23 @@ func makeRoster(t *testing.T, n int) (mino.Players, []*Pool) {
 type fakeTx struct {
 	txn.Transaction
 
-	id []byte
+	nonce uint64
+}
+
+func (tx fakeTx) GetNonce() uint64 {
+	return tx.nonce
+}
+
+func (tx fakeTx) GetIdentity() access.Identity {
+	return fake.PublicKey{}
 }
 
 func (tx fakeTx) GetID() []byte {
-	return tx.id
+	return []byte{byte(tx.nonce)}
 }
 
 func (tx fakeTx) Serialize(serde.Context) ([]byte, error) {
-	return tx.id, nil
+	return tx.GetID(), nil
 }
 
 type fakeTxFac struct {
@@ -245,7 +258,7 @@ type fakeTxFac struct {
 }
 
 func (fakeTxFac) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	return fakeTx{id: data}, nil
+	return fakeTx{nonce: uint64(data[0])}, nil
 }
 
 type fakeActor struct {
@@ -280,9 +293,9 @@ type badGatherer struct {
 }
 
 func (g badGatherer) Add(tx txn.Transaction) error {
-	return xerrors.New("oops")
+	return fake.GetError()
 }
 
 func (g badGatherer) Remove(tx txn.Transaction) error {
-	return xerrors.New("oops")
+	return fake.GetError()
 }

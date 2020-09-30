@@ -35,10 +35,10 @@ func TestAlgorithm_Serialize(t *testing.T) {
 
 	data, err := algo.Serialize(fake.NewContext())
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = algo.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "couldn't encode algorithm: fake error")
+	require.EqualError(t, err, fake.Err("couldn't encode algorithm"))
 }
 
 func TestPublicKeyFactory_RegisterAlgorithm(t *testing.T) {
@@ -60,7 +60,7 @@ func TestPublicKeyFactory_Deserialize(t *testing.T) {
 	require.Equal(t, fake.PublicKey{}, msg)
 
 	_, err = factory.Deserialize(fake.NewBadContext(), nil)
-	require.EqualError(t, err, "couldn't decode algorithm: fake error")
+	require.EqualError(t, err, fake.Err("couldn't decode algorithm"))
 
 	_, err = factory.Deserialize(fake.NewContextWithFormat(serde.Format("BAD_TYPE")), nil)
 	require.EqualError(t, err, "invalid message of type 'fake.Message'")
@@ -79,7 +79,7 @@ func TestPublicKeyFactory_PublicKeyOf(t *testing.T) {
 	require.Equal(t, fake.PublicKey{}, pk)
 
 	_, err = factory.PublicKeyOf(fake.NewBadContext(), nil)
-	require.EqualError(t, err, "couldn't decode algorithm: fake error")
+	require.EqualError(t, err, fake.Err("couldn't decode algorithm"))
 }
 
 func TestSignatureFactory_RegisterAlgorithm(t *testing.T) {
@@ -100,7 +100,7 @@ func TestSignatureFactory_Deserialize(t *testing.T) {
 	require.Equal(t, fake.Signature{}, msg)
 
 	_, err = factory.Deserialize(fake.NewBadContext(), nil)
-	require.EqualError(t, err, "couldn't decode algorithm: fake error")
+	require.EqualError(t, err, fake.Err("couldn't decode algorithm"))
 
 	_, err = factory.Deserialize(fake.NewContextWithFormat(serde.Format("BAD_TYPE")), nil)
 	require.EqualError(t, err, "invalid message of type 'fake.Message'")
@@ -119,5 +119,5 @@ func TestSignatureFactory_SignatureOf(t *testing.T) {
 	require.Equal(t, fake.Signature{}, sig)
 
 	_, err = factory.SignatureOf(fake.NewBadContext(), nil)
-	require.EqualError(t, err, "couldn't decode algorithm: fake error")
+	require.EqualError(t, err, fake.Err("couldn't decode algorithm"))
 }

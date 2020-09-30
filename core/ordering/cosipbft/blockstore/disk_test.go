@@ -15,7 +15,6 @@ import (
 	"go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
-	"golang.org/x/xerrors"
 )
 
 func TestInDisk_Len(t *testing.T) {
@@ -48,7 +47,7 @@ func TestInDisk_Load(t *testing.T) {
 
 	store.fac = badLinkFac{}
 	err = store.Load()
-	require.EqualError(t, err, "while scanning: callback failed: malformed block: oops")
+	require.EqualError(t, err, fake.Err("while scanning: callback failed: malformed block"))
 }
 
 func TestInDisk_Store(t *testing.T) {
@@ -73,15 +72,15 @@ func TestInDisk_Store(t *testing.T) {
 
 	store = NewDiskStore(db, makeBlockFac())
 	err = store.Store(badLink{})
-	require.EqualError(t, err, "failed to serialize: oops")
+	require.EqualError(t, err, fake.Err("failed to serialize"))
 
 	store.db = badDB{}
 	err = store.Store(makeLink(t, types.Digest{}))
-	require.EqualError(t, err, "bucket failed: oops")
+	require.EqualError(t, err, fake.Err("bucket failed"))
 
 	store.db = badDB{bucket: badBucket{}}
 	err = store.Store(makeLink(t, types.Digest{}))
-	require.EqualError(t, err, "while writing: oops")
+	require.EqualError(t, err, fake.Err("while writing"))
 }
 
 func TestInDisk_Get(t *testing.T) {
@@ -123,7 +122,7 @@ func TestInDisk_GetByIndex(t *testing.T) {
 
 	store.fac = badLinkFac{}
 	_, err = store.GetByIndex(0)
-	require.EqualError(t, err, "malformed block: oops")
+	require.EqualError(t, err, fake.Err("malformed block"))
 }
 
 func TestInDisk_GetChain(t *testing.T) {
@@ -148,7 +147,7 @@ func TestInDisk_GetChain(t *testing.T) {
 	store.fac = badLinkFac{}
 	_, err = store.GetChain()
 	require.EqualError(t, err,
-		"while reading database: while scanning: callback failed: block malformed: oops")
+		fake.Err("while reading database: while scanning: callback failed: block malformed"))
 }
 
 func TestInDisk_Last(t *testing.T) {
@@ -264,7 +263,7 @@ type badLinkFac struct {
 }
 
 func (badLinkFac) BlockLinkOf(serde.Context, []byte) (types.BlockLink, error) {
-	return nil, xerrors.New("oops")
+	return nil, fake.GetError()
 }
 
 type badLink struct {
@@ -276,7 +275,7 @@ func (badLink) GetFrom() types.Digest {
 }
 
 func (badLink) Serialize(serde.Context) ([]byte, error) {
-	return nil, xerrors.New("oops")
+	return nil, fake.GetError()
 }
 
 type dummyTx struct {

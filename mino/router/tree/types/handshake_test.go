@@ -33,10 +33,10 @@ func TestHandshake_Serialize(t *testing.T) {
 
 	data, err := hs.Serialize(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "fake format", string(data))
+	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = hs.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, "encode: fake error")
+	require.EqualError(t, err, fake.Err("encode"))
 }
 
 func TestHandshakeFactory_Deserialize(t *testing.T) {
@@ -47,7 +47,7 @@ func TestHandshakeFactory_Deserialize(t *testing.T) {
 	require.Equal(t, Handshake{}, msg)
 
 	_, err = fac.Deserialize(fake.NewBadContext(), nil)
-	require.EqualError(t, err, "decode: fake error")
+	require.EqualError(t, err, fake.Err("decode"))
 
 	_, err = fac.Deserialize(fake.NewMsgContext(), nil)
 	require.EqualError(t, err, "invalid handshake 'fake.Message'")

@@ -208,6 +208,10 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 		closed:                   make(chan struct{}),
 	}
 
+	// Pool will filter the transaction that are already accepted by this
+	// service.
+	param.Pool.AddFilter(poolFilter{tree: proc.tree, srvc: param.Validation})
+
 	go s.main()
 
 	go s.watchBlocks()
@@ -542,6 +546,10 @@ func (s *Service) doPBFT(ctx context.Context) error {
 		return nil
 	}
 
+	s.logger.Debug().
+		Int("num", len(txs)).
+		Msg("transactions have been found")
+
 	if ctx.Err() != nil {
 		// Don't bother trying PBFT if the context is done.
 		return ctx.Err()
@@ -687,4 +695,26 @@ func (obs observer) NotifyCallback(event interface{}) {
 
 func calculateBackoff(backoff float64) time.Duration {
 	return time.Duration(math.Pow(2, backoff)) * RoundWait
+}
+
+// PoolFilter is a filter to drop transactions which are already included in the
+// block or simply with an invalid nonce.
+//
+// - implements pool.Filter
+type poolFilter struct {
+	tree blockstore.TreeCache
+	srvc validation.Service
+}
+
+// Accept implements pool.Filter. It returns an error if the transaction exists
+// already or the nonce is invalid.
+func (f poolFilter) Accept(tx txn.Transaction, leeway validation.Leeway) error {
+	store := f.tree.Get()
+
+	err := f.srvc.Accept(store, tx, leeway)
+	if err != nil {
+		return xerrors.Errorf("unacceptable transaction: %v", err)
+	}
+
+	return nil
 }

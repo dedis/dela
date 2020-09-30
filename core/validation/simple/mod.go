@@ -38,8 +38,8 @@ func (s Service) GetFactory() validation.DataFactory {
 	return s.fac
 }
 
-// GetNonce reads the latest nonce in the storage for the given identity and
-// returns the next valid nonce.
+// GetNonce implements validation.Service. It reads the latest nonce in the
+// storage for the given identity and returns the next valid nonce.
 func (s Service) GetNonce(store store.Readable, ident access.Identity) (uint64, error) {
 	if ident == nil {
 		return 0, xerrors.New("missing identity in transaction")
@@ -62,17 +62,48 @@ func (s Service) GetNonce(store store.Readable, ident access.Identity) (uint64, 
 	return binary.LittleEndian.Uint64(value) + 1, nil
 }
 
+// Accept implements validation.Service. It returns nil if the transaction would
+// be accepted by the service given some leeway.
+func (s Service) Accept(store store.Readable, tx txn.Transaction, leeway validation.Leeway) error {
+	nonce, err := s.GetNonce(store, tx.GetIdentity())
+	if err != nil {
+		return xerrors.Errorf("while reading nonce: %v", err)
+	}
+
+	if tx.GetNonce() < nonce {
+		return xerrors.Errorf("nonce '%d' < '%d'", tx.GetNonce(), nonce)
+	}
+
+	limit := nonce + uint64(leeway.MaxSequenceDifference)
+
+	if tx.GetNonce() > limit {
+		return xerrors.Errorf("nonce '%d' above the limit '%d'", tx.GetNonce(), limit)
+	}
+
+	return nil
+}
+
 // Validate implements validation.Service. It processes the list of transactions
 // while updating the snapshot then returns a bundle of the transaction results.
 func (s Service) Validate(store store.Snapshot, txs []txn.Transaction) (validation.Data, error) {
 	results := make([]TransactionResult, len(txs))
 
+	step := execution.Step{
+		Previous: make([]txn.Transaction, 0, len(txs)),
+	}
+
 	for i, tx := range txs {
 		res := TransactionResult{tx: tx}
 
-		err := s.validateTx(store, tx, &res)
+		step.Current = tx
+
+		err := s.validateTx(store, step, &res)
 		if err != nil {
 			return nil, xerrors.Errorf("tx %#x: %v", tx.GetID()[:4], err)
+		}
+
+		if res.accepted {
+			step.Previous = append(step.Previous, tx)
 		}
 
 		results[i] = res
@@ -85,19 +116,19 @@ func (s Service) Validate(store store.Snapshot, txs []txn.Transaction) (validati
 	return data, nil
 }
 
-func (s Service) validateTx(store store.Snapshot, tx txn.Transaction, r *TransactionResult) error {
-	expectedNonce, err := s.GetNonce(store, tx.GetIdentity())
+func (s Service) validateTx(store store.Snapshot, step execution.Step, r *TransactionResult) error {
+	expectedNonce, err := s.GetNonce(store, step.Current.GetIdentity())
 	if err != nil {
 		return xerrors.Errorf("nonce: %v", err)
 	}
 
-	if expectedNonce != tx.GetNonce() {
+	if expectedNonce != step.Current.GetNonce() {
 		r.reason = "nonce is invalid"
 		r.accepted = false
 		return nil
 	}
 
-	res, err := s.execution.Execute(tx, store)
+	res, err := s.execution.Execute(store, step)
 	if err != nil {
 		// This is a critical error unrelated to the transaction itself.
 		return xerrors.Errorf("failed to execute tx: %v", err)
@@ -108,7 +139,7 @@ func (s Service) validateTx(store store.Snapshot, tx txn.Transaction, r *Transac
 
 	// Update the nonce associated to the identity so that this transaction
 	// cannot be applied again.
-	err = s.set(store, tx.GetIdentity(), tx.GetNonce())
+	err = s.set(store, step.Current.GetIdentity(), step.Current.GetNonce())
 	if err != nil {
 		return xerrors.Errorf("failed to set nonce: %v", err)
 	}

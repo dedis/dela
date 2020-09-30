@@ -26,11 +26,11 @@ func TestPermFormat_Encode(t *testing.T) {
 	require.EqualError(t, err, "invalid permission 'fake.Message'")
 
 	_, err = fmt.Encode(fake.NewBadContext(), perm)
-	require.EqualError(t, err, "failed to marshal: fake error")
+	require.EqualError(t, err, fake.Err("failed to marshal"))
 
 	perm = types.NewPermission(types.WithRule("test", fake.NewBadPublicKey()))
 	_, err = fmt.Encode(ctx, perm)
-	require.EqualError(t, err, "failed to encode expression: failed to serialize identity: fake error")
+	require.EqualError(t, err, fake.Err("failed to encode expression: failed to serialize identity"))
 }
 
 func TestPermFormat_Decode(t *testing.T) {
@@ -44,7 +44,7 @@ func TestPermFormat_Decode(t *testing.T) {
 	require.Equal(t, types.NewPermission(types.WithRule("test", fake.PublicKey{})), msg)
 
 	_, err = fmt.Decode(fake.NewBadContext(), []byte(`{}`))
-	require.EqualError(t, err, "failed to unmarshal: fake error")
+	require.EqualError(t, err, fake.Err("failed to unmarshal"))
 
 	badCtx := serde.WithFactory(ctx, types.PublicKeyFac{}, nil)
 	_, err = fmt.Decode(badCtx, []byte(testValue))
@@ -52,5 +52,5 @@ func TestPermFormat_Decode(t *testing.T) {
 
 	badCtx = serde.WithFactory(ctx, types.PublicKeyFac{}, fake.NewBadPublicKeyFactory())
 	_, err = fmt.Decode(badCtx, []byte(testValue))
-	require.EqualError(t, err, "failed to decode expression: public key: fake error")
+	require.EqualError(t, err, fake.Err("failed to decode expression: public key"))
 }

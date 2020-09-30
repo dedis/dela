@@ -9,6 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/cli/node"
+	"go.dedis.ch/dela/core/store/kv"
+	"go.dedis.ch/dela/core/txn/pool"
 	"go.dedis.ch/dela/internal/testing/fake"
 )
 
@@ -19,9 +21,10 @@ func TestMinimal_SetCommands(t *testing.T) {
 	m.SetCommands(b.(node.Builder))
 }
 
-func TestMinimal_Inject(t *testing.T) {
+func TestMinimal_OnStart(t *testing.T) {
 	dir, err := ioutil.TempDir(os.TempDir(), "dela-test-")
 	require.NoError(t, err)
+
 	defer os.RemoveAll(dir)
 
 	m := NewMinimal()
@@ -32,15 +35,62 @@ func TestMinimal_Inject(t *testing.T) {
 	inj := node.NewInjector()
 	inj.Inject(fake.Mino{})
 
-	err = m.Inject(fset, inj)
+	err = m.OnStart(fset, inj)
 	require.NoError(t, err)
 
-	err = m.Inject(fset, node.NewInjector())
+	err = m.OnStart(fset, node.NewInjector())
 	require.EqualError(t, err, "injector: couldn't find dependency for 'mino.Mino'")
 
 	inj.Inject(fake.NewBadMino())
-	err = m.Inject(fset, inj)
-	require.EqualError(t, err, "pool: failed to listen: couldn't create the rpc: fake error")
+	err = m.OnStart(fset, inj)
+	require.EqualError(t, err, fake.Err("pool: failed to listen: couldn't create the rpc"))
+}
+
+func TestMinimal_OnStop(t *testing.T) {
+	dir, err := ioutil.TempDir(os.TempDir(), "dela-test-")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
+	m := NewMinimal()
+
+	fset := make(node.FlagSet)
+	fset["config"] = dir
+
+	inj := node.NewInjector()
+	inj.Inject(fake.Mino{})
+
+	err = m.OnStart(fset, inj)
+	require.NoError(t, err)
+
+	err = m.OnStop(inj)
+	require.NoError(t, err)
+
+	inj = node.NewInjector()
+	err = m.OnStop(inj)
+	require.EqualError(t, err,
+		"injector: couldn't find dependency for 'ordering.Service'")
+
+	inj.Inject(fakeService{err: fake.GetError()})
+	err = m.OnStop(inj)
+	require.EqualError(t, err, fake.Err("while closing service"))
+
+	inj.Inject(fakeService{})
+	err = m.OnStop(inj)
+	require.EqualError(t, err,
+		"injector: couldn't find dependency for 'pool.Pool'")
+
+	inj.Inject(fakePool{err: fake.GetError()})
+	err = m.OnStop(inj)
+	require.EqualError(t, err, fake.Err("while closing pool"))
+
+	inj.Inject(fakePool{})
+	err = m.OnStop(inj)
+	require.EqualError(t, err, "injector: couldn't find dependency for 'kv.DB'")
+
+	inj.Inject(fakeDb{err: fake.GetError()})
+	err = m.OnStop(inj)
+	require.EqualError(t, err, fake.Err("while closing db"))
 }
 
 func TestLoadSigner(t *testing.T) {
@@ -68,4 +118,24 @@ func fileExists(t *testing.T, path string) bool {
 	stat, err := os.Stat(path)
 
 	return !os.IsNotExist(err) && !stat.IsDir()
+}
+
+type fakePool struct {
+	pool.Pool
+
+	err error
+}
+
+func (p fakePool) Close() error {
+	return p.err
+}
+
+type fakeDb struct {
+	kv.DB
+
+	err error
+}
+
+func (db fakeDb) Close() error {
+	return db.err
 }

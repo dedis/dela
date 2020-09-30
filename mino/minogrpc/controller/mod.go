@@ -7,6 +7,7 @@ import (
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
+	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc"
 	"go.dedis.ch/dela/mino/router/tree"
 	"golang.org/x/xerrors"
@@ -73,9 +74,9 @@ func (m minimal) SetCommands(builder node.Builder) {
 	sub.SetAction(builder.MakeAction(joinAction{}))
 }
 
-// Run implements node.Initializer. It starts the minogrpc instance and inject
-// it in the dependency resolver.
-func (m minimal) Inject(ctx cli.Flags, inj node.Injector) error {
+// OnStart implements node.Initializer. It starts the minogrpc instance and
+// injects it in the dependency resolver.
+func (m minimal) OnStart(ctx cli.Flags, inj node.Injector) error {
 
 	port := ctx.Int("port")
 	if port < 0 || port > math.MaxUint16 {
@@ -94,6 +95,29 @@ func (m minimal) Inject(ctx cli.Flags, inj node.Injector) error {
 	inj.Inject(o)
 
 	dela.Logger.Info().Msgf("%v is running", o)
+
+	return nil
+}
+
+// StoppableMino is an extension of Mino to allow one to stop the instance.
+type StoppableMino interface {
+	mino.Mino
+
+	GracefulStop() error
+}
+
+// OnStop implements node.Initializer. It stops the network overlay.
+func (m minimal) OnStop(inj node.Injector) error {
+	var o StoppableMino
+	err := inj.Resolve(&o)
+	if err != nil {
+		return xerrors.Errorf("injector: %v", err)
+	}
+
+	err = o.GracefulStop()
+	if err != nil {
+		return xerrors.Errorf("while stopping mino: %v", err)
+	}
 
 	return nil
 }

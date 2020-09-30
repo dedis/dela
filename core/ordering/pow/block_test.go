@@ -9,7 +9,6 @@ import (
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"golang.org/x/xerrors"
 )
 
 func TestBlock_New(t *testing.T) {
@@ -42,24 +41,24 @@ func TestBlock_Prepare(t *testing.T) {
 	require.Len(t, block.hash, 32)
 
 	err = block.prepare(ctx, fake.NewHashFactory(fake.NewBadHash()), 0)
-	require.EqualError(t, err, "failed to write index: fake error")
+	require.EqualError(t, err, fake.Err("failed to write index"))
 
 	err = block.prepare(ctx, fake.NewHashFactory(fake.NewBadHashWithDelay(1)), 0)
-	require.EqualError(t, err, "failed to write root: fake error")
+	require.EqualError(t, err, fake.Err("failed to write root"))
 
-	block.data = fakeData{err: xerrors.New("oops")}
+	block.data = fakeData{err: fake.GetError()}
 	err = block.prepare(ctx, crypto.NewSha256Factory(), 0)
-	require.EqualError(t, err, "failed to fingerprint data: oops")
+	require.EqualError(t, err, fake.Err("failed to fingerprint data"))
 
 	block.data = fakeData{}
 	err = block.prepare(ctx, fake.NewHashFactory(fake.NewBadHashWithDelay(2)), 0)
-	require.EqualError(t, err, "couldn't marshal digest: fake error")
+	require.EqualError(t, err, fake.Err("couldn't marshal digest"))
 
 	err = block.prepare(ctx, fake.NewHashFactory(fake.NewBadHashWithDelay(3)), 0)
-	require.EqualError(t, err, "couldn't unmarshal digest: fake error")
+	require.EqualError(t, err, fake.Err("couldn't unmarshal digest"))
 
 	err = block.prepare(ctx, fake.NewHashFactory(fake.NewBadHashWithDelay(4)), 0)
-	require.EqualError(t, err, "failed to write nonce: fake error")
+	require.EqualError(t, err, fake.Err("failed to write nonce"))
 }
 
 // -----------------------------------------------------------------------------
