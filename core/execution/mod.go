@@ -5,7 +5,9 @@ import (
 	"go.dedis.ch/dela/core/txn"
 )
 
-// Step is a context of execution.
+// Step is a context of execution. It allows for example a smart contract to
+// execute a given transaction knowing what previous transactions have already
+// been accepted and executed in a block.
 type Step struct {
 	Previous []txn.Transaction
 	Current  txn.Transaction
