@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"go.dedis.ch/dela/core/txn"
+	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/mino"
 )
 
@@ -17,10 +18,18 @@ type Config struct {
 	// before returning.
 	Min int
 
-	// Callback is a function called when the gathering process has to stop to
-	// wait for transactions. It allows one to take action to stop the gathering
+	// Callback is a function called when the pool doesn't have enough
+	// transactions at the moment of calling and must therefore wait for new
+	// transactions to come. It allows one to take action to stop the gathering
 	// if necessary.
 	Callback func()
+}
+
+// Filter is the interface to implement to validate if a transaction will be
+// accepted and thus is allowed to be pushed in the pool.
+type Filter interface {
+	// Accept returns an error when the transaction is going to be rejected.
+	Accept(tx txn.Transaction, leeway validation.Leeway) error
 }
 
 // Pool is the maintainer of the list of transactions.
@@ -28,6 +37,8 @@ type Pool interface {
 	// SetPlayers updates the list of participants that should eventually
 	// receive the transactions.
 	SetPlayers(mino.Players) error
+
+	AddFilter(Filter)
 
 	// Len returns the number of transactions available in the pool.
 	Len() int

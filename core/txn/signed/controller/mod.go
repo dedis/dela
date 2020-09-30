@@ -5,16 +5,10 @@ import (
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/ordering"
-	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/txn/signed"
+	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/cosi"
 )
-
-// NonceManager is a required interface for the manager to read the nonce of an
-// identity from the storage.
-type NonceManager interface {
-	GetNonce(store.Readable, access.Identity) (uint64, error)
-}
 
 type mgrController struct{}
 
@@ -33,7 +27,7 @@ func (mgrController) OnStart(flags cli.Flags, inj node.Injector) error {
 		return err
 	}
 
-	var nonceMgr NonceManager
+	var nonceMgr validation.Service
 	err = inj.Resolve(&nonceMgr)
 	if err != nil {
 		return err
@@ -61,7 +55,7 @@ func (mgrController) OnStop(node.Injector) error {
 
 type client struct {
 	srvc ordering.Service
-	mgr  NonceManager
+	mgr  validation.Service
 }
 
 func (c client) GetNonce(ident access.Identity) (uint64, error) {

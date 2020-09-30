@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/cli/node"
+	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/txn"
@@ -234,6 +235,14 @@ func (c fakeCosi) GetSigner() crypto.Signer {
 
 type fakeTx struct {
 	txn.Transaction
+}
+
+func (fakeTx) GetNonce() uint64 {
+	return 0
+}
+
+func (fakeTx) GetIdentity() access.Identity {
+	return fake.PublicKey{}
 }
 
 func (fakeTx) GetID() []byte {

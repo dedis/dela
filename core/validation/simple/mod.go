@@ -38,8 +38,8 @@ func (s Service) GetFactory() validation.DataFactory {
 	return s.fac
 }
 
-// GetNonce reads the latest nonce in the storage for the given identity and
-// returns the next valid nonce.
+// GetNonce implements validation.Service. It reads the latest nonce in the
+// storage for the given identity and returns the next valid nonce.
 func (s Service) GetNonce(store store.Readable, ident access.Identity) (uint64, error) {
 	if ident == nil {
 		return 0, xerrors.New("missing identity in transaction")
@@ -60,6 +60,27 @@ func (s Service) GetNonce(store store.Readable, ident access.Identity) (uint64, 
 	}
 
 	return binary.LittleEndian.Uint64(value) + 1, nil
+}
+
+// Accept implements validation.Service. It returns nil if the transaction would
+// be accepted by the service given some leeway.
+func (s Service) Accept(store store.Readable, tx txn.Transaction, leeway validation.Leeway) error {
+	nonce, err := s.GetNonce(store, tx.GetIdentity())
+	if err != nil {
+		return xerrors.Errorf("while reading nonce: %v", err)
+	}
+
+	if tx.GetNonce() < nonce {
+		return xerrors.Errorf("nonce '%d' < '%d'", tx.GetNonce(), nonce)
+	}
+
+	limit := nonce + uint64(leeway.MaxSequenceDifference)
+
+	if tx.GetNonce() > limit {
+		return xerrors.Errorf("nonce '%d' above the limit '%d'", tx.GetNonce(), limit)
+	}
+
+	return nil
 }
 
 // Validate implements validation.Service. It processes the list of transactions

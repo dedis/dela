@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/pool"
 	"go.dedis.ch/dela/internal/testing/fake"
@@ -16,6 +17,12 @@ func TestPool_Len(t *testing.T) {
 
 	p.gatherer.Add(fakeTx{})
 	require.Equal(t, 1, p.Len())
+}
+
+func TestPool_AddFilter(t *testing.T) {
+	p := NewPool()
+
+	p.AddFilter(nil)
 }
 
 func TestPool_Add(t *testing.T) {
@@ -78,6 +85,13 @@ func TestPool_Gather(t *testing.T) {
 	require.Len(t, txs, 0)
 }
 
+func TestPool_Close(t *testing.T) {
+	p := NewPool()
+
+	err := p.Close()
+	require.NoError(t, err)
+}
+
 // -----------------------------------------------------------------------------
 // Utility functions
 
@@ -85,6 +99,14 @@ type fakeTx struct {
 	txn.Transaction
 
 	id []byte
+}
+
+func (tx fakeTx) GetNonce() uint64 {
+	return 0
+}
+
+func (tx fakeTx) GetIdentity() access.Identity {
+	return fake.PublicKey{}
 }
 
 func (tx fakeTx) GetID() []byte {

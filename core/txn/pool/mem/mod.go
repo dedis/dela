@@ -30,6 +30,11 @@ func (s *Pool) Len() int {
 	return s.gatherer.Len()
 }
 
+// AddFilter implements pool.Pool. It adds the filter to the gatherer.
+func (s *Pool) AddFilter(filter pool.Filter) {
+	s.gatherer.AddFilter(filter)
+}
+
 // Add implements pool.Pool. It adds the transaction to the pool of waiting
 // transactions.
 func (s *Pool) Add(tx txn.Transaction) error {
@@ -64,7 +69,7 @@ func (s *Pool) Gather(ctx context.Context, cfg pool.Config) []txn.Transaction {
 	return s.gatherer.Wait(ctx, cfg)
 }
 
-// Close implements pool.Pool. It
+// Close implements pool.Pool. It cleans the resources of the gatherer.
 func (s *Pool) Close() error {
 	s.gatherer.Close()
 

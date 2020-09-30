@@ -459,6 +459,20 @@ func TestService_GetRoster(t *testing.T) {
 	require.Equal(t, 3, roster.Len())
 }
 
+func TestService_PoolFilter(t *testing.T) {
+	filter := poolFilter{
+		tree: blockstore.NewTreeCache(fakeTree{}),
+		srvc: fakeValidation{},
+	}
+
+	err := filter.Accept(makeTx(t, 0, fake.NewSigner()), validation.Leeway{})
+	require.NoError(t, err)
+
+	filter.srvc = fakeValidation{err: fake.GetError()}
+	err = filter.Accept(makeTx(t, 0, fake.NewSigner()), validation.Leeway{})
+	require.EqualError(t, err, fake.Err("unacceptable transaction"))
+}
+
 // -----------------------------------------------------------------------------
 // Utility functions
 
@@ -621,6 +635,8 @@ func (p badPool) SetPlayers(mino.Players) error {
 	return fake.GetError()
 }
 
+func (p badPool) AddFilter(pool.Filter) {}
+
 type badCosi struct {
 	cosi.CollectiveSigning
 }
@@ -649,6 +665,10 @@ type fakeValidation struct {
 	validation.Service
 
 	err error
+}
+
+func (val fakeValidation) Accept(store.Readable, txn.Transaction, validation.Leeway) error {
+	return val.err
 }
 
 func (val fakeValidation) Validate(store.Snapshot, []txn.Transaction) (validation.Data, error) {
