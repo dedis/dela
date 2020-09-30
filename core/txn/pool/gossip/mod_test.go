@@ -178,7 +178,7 @@ func TestPool_ListenRumors(t *testing.T) {
 	p.gatherer = badGatherer{}
 	p.closing = make(chan struct{})
 
-	ch = make(chan gossip.Rumor, 1)
+	ch = make(chan gossip.Rumor)
 	go func() {
 		ch <- makeTx(0)
 		close(p.closing)

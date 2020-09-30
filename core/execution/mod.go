@@ -5,6 +5,14 @@ import (
 	"go.dedis.ch/dela/core/txn"
 )
 
+// Step is a context of execution. It allows for example a smart contract to
+// execute a given transaction knowing what previous transactions have already
+// been accepted and executed in a block.
+type Step struct {
+	Previous []txn.Transaction
+	Current  txn.Transaction
+}
+
 // Result is the result of a transaction execution.
 type Result struct {
 	// Accepted is the success state of the transaction.
@@ -20,5 +28,5 @@ type Result struct {
 type Service interface {
 	// Execute must apply the transaction to the trie and return the result of
 	// it.
-	Execute(tx txn.Transaction, snap store.Snapshot) (Result, error)
+	Execute(snap store.Snapshot, step Step) (Result, error)
 }
