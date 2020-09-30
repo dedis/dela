@@ -121,7 +121,12 @@ type fakeJoinable struct {
 }
 
 func (j fakeJoinable) GetCertificate() *tls.Certificate {
-	return j.certs.Load(fake.NewAddress(0))
+	cert, err := j.certs.Load(fake.NewAddress(0))
+	if err != nil {
+		panic(err)
+	}
+
+	return cert
 }
 
 func (j fakeJoinable) GetCertificateStore() certs.Storage {

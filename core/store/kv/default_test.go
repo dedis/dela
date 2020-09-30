@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/internal/testing/fake"
+	"golang.org/x/xerrors"
 )
 
 func TestBoltDB_UpdateAndView(t *testing.T) {
@@ -173,14 +173,14 @@ func TestBoltBucket_Scan(t *testing.T) {
 		require.Equal(t, byte(14), i)
 
 		err = b.Scan([]byte{1}, func(k, v []byte) error {
-			return fake.GetError()
+			return xerrors.New("scan")
 		})
 		require.NoError(t, err)
 
 		err = b.Scan([]byte{}, func(k, v []byte) error {
-			return fake.GetError()
+			return xerrors.New("scan")
 		})
-		require.EqualError(t, err, fake.Err("callback failed"))
+		require.EqualError(t, err, "callback failed: scan")
 
 		return nil
 	})

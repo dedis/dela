@@ -49,7 +49,7 @@ func TestMemcoin_Scenario_1(t *testing.T) {
 		wg.Wait()
 	}()
 
-	waitDaemon(t, []string{node1, node2, node3})
+	require.True(t, waitDaemon(t, []string{node1, node2, node3}), "timeout")
 
 	// Share the certificates.
 	shareCert(t, node2, node1)
@@ -143,7 +143,7 @@ func TestMemcoin_Scenario_2(t *testing.T) {
 		wg.Wait()
 	}()
 
-	waitDaemon(t, []string{node1})
+	require.True(t, waitDaemon(t, []string{node1}), "timeout")
 
 	args := append([]string{
 		os.Args[0],
@@ -195,7 +195,7 @@ func setupChain(t *testing.T, node string, port uint16) {
 	require.NoError(t, err)
 }
 
-func waitDaemon(t *testing.T, daemons []string) {
+func waitDaemon(t *testing.T, daemons []string) bool {
 	num := 50
 
 	for _, daemon := range daemons {
@@ -211,13 +211,15 @@ func waitDaemon(t *testing.T, daemons []string) {
 				}
 			}
 
-			time.Sleep(30 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 
 			if i+1 >= num {
-				t.Fatal("timeout")
+				return false
 			}
 		}
 	}
+
+	return true
 }
 
 func makeNodeArg(path string, port uint16) []string {

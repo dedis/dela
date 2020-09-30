@@ -21,17 +21,17 @@ type Dialable interface {
 // Storage is an interface to manage the certificates of a server.
 type Storage interface {
 	// Store stores the certificate with the address as the key.
-	Store(mino.Address, *tls.Certificate)
+	Store(mino.Address, *tls.Certificate) error
 
 	// Load returns the certificate associated with the address if any.
-	Load(mino.Address) *tls.Certificate
+	Load(mino.Address) (*tls.Certificate, error)
 
 	// Delete removes all the certificates associated with the address.
-	Delete(mino.Address)
+	Delete(mino.Address) error
 
 	// Range iterates over the certificates held by the store. If the callback
 	// returns false, range stops the iteration.
-	Range(func(addr mino.Address, cert *tls.Certificate) bool)
+	Range(func(addr mino.Address, cert *tls.Certificate) bool) error
 
 	// Fetch calls the address to fetch its certificate and verifies the
 	// integrity with the given digest.

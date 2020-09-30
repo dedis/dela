@@ -425,7 +425,13 @@ func newOverlay(me mino.Address, router router.Router,
 
 // GetCertificate returns the certificate of the overlay.
 func (o *overlay) GetCertificate() *tls.Certificate {
-	me := o.certs.Load(o.me)
+	me, err := o.certs.Load(o.me)
+	if err != nil {
+		// An error when getting the certificate of the server is caused by the
+		// underlying storage, and that should never happen in healthy
+		// environment.
+		panic(xerrors.Errorf("certificate of the overlay is inaccessible: %v", err))
+	}
 	if me == nil {
 		// This should never happen and it will panic if it does as this will
 		// provoke several issues later on.
@@ -581,7 +587,10 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 		return conn, nil
 	}
 
-	clientPubCert := mgr.certs.Load(to)
+	clientPubCert, err := mgr.certs.Load(to)
+	if err != nil {
+		return nil, err
+	}
 	if clientPubCert == nil {
 		return nil, xerrors.Errorf("certificate for '%v' not found", to)
 	}
@@ -589,7 +598,10 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 	pool := x509.NewCertPool()
 	pool.AddCert(clientPubCert.Leaf)
 
-	me := mgr.certs.Load(mgr.me)
+	me, err := mgr.certs.Load(mgr.me)
+	if err != nil {
+		return nil, err
+	}
 	if me == nil {
 		return nil, xerrors.Errorf("couldn't find server '%v' certificate", mgr.me)
 	}
@@ -605,7 +617,7 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 	}
 
 	// Connecting using TLS and the distant server certificate as the root.
-	conn, err := grpc.Dial(netAddr.GetDialAddress(),
+	conn, err = grpc.Dial(netAddr.GetDialAddress(),
 		grpc.WithTransportCredentials(ta),
 		grpc.WithConnectParams(grpc.ConnectParams{
 			Backoff:           backoff.DefaultConfig,

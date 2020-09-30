@@ -595,10 +595,6 @@ type fakeDB struct {
 	err error
 }
 
-func (db fakeDB) CreateBucket([]byte) error {
-	return db.err
-}
-
 func (db fakeDB) View(fn func(kv.ReadableTx) error) error {
 	return fn(fakeTx{})
 }

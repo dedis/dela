@@ -28,29 +28,36 @@ func NewInMemoryStore() *InMemoryStore {
 }
 
 // Store implements certs.Store.
-func (s *InMemoryStore) Store(addr mino.Address, cert *tls.Certificate) {
+func (s *InMemoryStore) Store(addr mino.Address, cert *tls.Certificate) error {
 	s.certs.Store(addr, cert)
+
+	return nil
 }
 
 // Load implements certs.Store.
-func (s *InMemoryStore) Load(addr mino.Address) *tls.Certificate {
+func (s *InMemoryStore) Load(addr mino.Address) (*tls.Certificate, error) {
 	val, found := s.certs.Load(addr)
 	if !found {
-		return nil
+		return nil, nil
 	}
-	return val.(*tls.Certificate)
+
+	return val.(*tls.Certificate), nil
 }
 
 // Delete implements certs.Store.
-func (s *InMemoryStore) Delete(addr mino.Address) {
+func (s *InMemoryStore) Delete(addr mino.Address) error {
 	s.certs.Delete(addr)
+
+	return nil
 }
 
 // Range implements certs.Store.
-func (s *InMemoryStore) Range(fn func(addr mino.Address, cert *tls.Certificate) bool) {
+func (s *InMemoryStore) Range(fn func(addr mino.Address, cert *tls.Certificate) bool) error {
 	s.certs.Range(func(key, value interface{}) bool {
 		return fn(key.(mino.Address), value.(*tls.Certificate))
 	})
+
+	return nil
 }
 
 // Fetch implements certs.Store.

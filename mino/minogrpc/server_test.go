@@ -241,7 +241,10 @@ func TestOverlayServer_Share(t *testing.T) {
 	resp, err := overlay.Share(ctx, &ptypes.Certificate{Value: cert.Leaf.Raw})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
-	require.NotNil(t, overlay.certs.Load(address{}))
+
+	shared, err := overlay.certs.Load(address{})
+	require.NoError(t, err)
+	require.NotNil(t, shared)
 
 	_, err = overlay.Share(ctx, &ptypes.Certificate{})
 	require.EqualError(t, err,
@@ -433,7 +436,10 @@ func TestOverlay_Forward(t *testing.T) {
 func TestOverlay_New(t *testing.T) {
 	o, err := newOverlay(fake.NewAddress(0), nil, nil, fake.NewContext())
 	require.NoError(t, err)
-	require.NotNil(t, o.certs.Load(fake.NewAddress(0)))
+
+	cert, err := o.certs.Load(fake.NewAddress(0))
+	require.NoError(t, err)
+	require.NotNil(t, cert)
 
 	_, err = newOverlay(fake.NewBadAddress(), nil, nil, fake.NewContext())
 	require.EqualError(t, err, fake.Err("failed to marshal address"))
@@ -659,12 +665,12 @@ type fakeCerts struct {
 	err error
 }
 
-func (s fakeCerts) Store(mino.Address, *tls.Certificate) {
-
+func (s fakeCerts) Store(mino.Address, *tls.Certificate) error {
+	return nil
 }
 
-func (s fakeCerts) Load(mino.Address) *tls.Certificate {
-	return &tls.Certificate{Leaf: &x509.Certificate{Raw: []byte{0x89}}}
+func (s fakeCerts) Load(mino.Address) (*tls.Certificate, error) {
+	return &tls.Certificate{Leaf: &x509.Certificate{Raw: []byte{0x89}}}, nil
 }
 
 func (s fakeCerts) Fetch(certs.Dialable, []byte) error {
