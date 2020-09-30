@@ -1,0 +1,15 @@
+modname: go.dedis.ch/dela
+includes:
+  - go.dedis.ch/dela/core*
+#  - go.dedis.ch/dela/cosi*
+  - go.dedis.ch/dela/cli*
+excludes:
+  - go.dedis.ch/dela/core/.*(controller|store|types|json)
+interfaces:
+  - core/access
+  - core/execution
+  - core/ordering
+  - core/store
+  - core/txn
+  - core/validation
+  - core/txn/pool
