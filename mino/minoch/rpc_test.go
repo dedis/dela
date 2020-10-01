@@ -29,12 +29,20 @@ func TestRPC_Call(t *testing.T) {
 
 	ctx := context.Background()
 
+	// Message to self with a correct handler.
 	addrs := mino.NewAddresses(m1.GetAddress())
 	resps, err := rpc1.Call(ctx, fake.Message{}, addrs)
 	require.NoError(t, err)
 
 	err = testWait(t, resps, nil)
-	// Message to self with a correct handler
+	require.NoError(t, err)
+
+	// Test with a filter that will drop the messages.
+	rpc1.(*RPC).filters = []Filter{func(m mino.Request) bool { return false }}
+	resps, err = rpc1.Call(ctx, fake.Message{}, addrs)
+	require.NoError(t, err)
+
+	err = testWait(t, resps, nil)
 	require.NoError(t, err)
 
 	addrs = mino.NewAddresses(fake.NewAddress(99))

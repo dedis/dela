@@ -1,6 +1,8 @@
 package session
 
 import (
+	"fmt"
+
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 )
@@ -10,7 +12,13 @@ const (
 	followerCode     = "F"
 )
 
-// Address is a representation of the network Address of a participant.
+// Address is a representation of the network Address of a participant. The
+// overlay implementation requires a difference between an orchestrator and its
+// source address, where the former initiates a protocol and the later
+// participates.
+//
+// See session.wrapAddress for the abstraction provided to a caller external to
+// the overlay module.
 //
 // - implements mino.Address
 type Address struct {
@@ -38,13 +46,15 @@ func (a Address) GetDialAddress() string {
 	return a.host
 }
 
-// Equal implements mino.Address. It returns true if both addresses points to
-// the same participant.
+// Equal implements mino.Address. It returns true if both addresses are exactly
+// similar, in the sense that an orchestrator won't match a follower address
+// with the same host.
 func (a Address) Equal(other mino.Address) bool {
 	switch addr := other.(type) {
 	case Address:
 		return addr == a
 	case wrapAddress:
+		// Switch to the wrapped address equality.
 		return addr.Equal(a)
 	}
 
@@ -67,23 +77,38 @@ func (a Address) MarshalText() ([]byte, error) {
 // String implements fmt.Stringer. It returns a string representation of the
 // address.
 func (a Address) String() string {
+	if a.orchestrator {
+		return fmt.Sprintf("Orchestrator:%s", a.host)
+	}
+
 	return a.host
 }
 
+// WrapAddress is a super type of the address so that the orchestrator becomes
+// equal to its original address. It allows a caller of a protocol to compare
+// the actual source address of a request while preserving the orchestrator
+// address for the overlay when sending a message back.
+//
+// - implements mino.Address
 type wrapAddress struct {
 	mino.Address
 }
 
-func newWrapAddress(addr mino.Address) mino.Address {
+func newWrapAddress(addr mino.Address) wrapAddress {
 	return wrapAddress{
 		Address: addr,
 	}
 }
 
+// Unwrap returns the wrapped address.
 func (a wrapAddress) Unwrap() mino.Address {
 	return a.Address
 }
 
+// Equal implements mino.Address. When it wraps a network address, it will
+// consider addresses with the same host as similar, otherwise it returns the
+// result of the underlying address comparison. That way, an orchestrator
+// address will match the address with the same origin.
 func (a wrapAddress) Equal(other mino.Address) bool {
 	me, ok := a.Address.(Address)
 	if !ok {
@@ -93,6 +118,8 @@ func (a wrapAddress) Equal(other mino.Address) bool {
 	switch addr := other.(type) {
 	case Address:
 		return addr.host == me.host
+	case wrapAddress:
+		return addr == a
 	}
 
 	return false

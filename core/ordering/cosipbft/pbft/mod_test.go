@@ -77,6 +77,23 @@ func TestStateMachine_GetViews(t *testing.T) {
 	require.Len(t, sm.GetViews(), 2)
 }
 
+func TestStateMachine_GetCommit(t *testing.T) {
+	sm := &pbftsm{}
+
+	id, block := sm.GetCommit()
+	require.Equal(t, types.Digest{}, id)
+	require.Equal(t, types.Block{}, block)
+
+	block, err := types.NewBlock(simple.Data{}, types.WithIndex(1))
+	require.NoError(t, err)
+
+	sm.round.id = types.Digest{1}
+	sm.round.block = block
+	id, block = sm.GetCommit()
+	require.Equal(t, types.Digest{1}, id)
+	require.Equal(t, block, block)
+}
+
 func TestStateMachine_Prepare(t *testing.T) {
 	tree, db, clean := makeTree(t)
 	defer clean()
@@ -148,6 +165,9 @@ func TestStateMachine_Prepare(t *testing.T) {
 	require.EqualError(t, err, fake.Err("failed to read next roster"))
 
 	sm.authReader = param.AuthorityReader
+	_, err = sm.Prepare(fake.NewAddress(1), block)
+	require.EqualError(t, err, "'fake.Address[1]' is not the leader")
+
 	sm.hashFac = fake.NewHashFactory(fake.NewBadHash())
 	_, err = sm.Prepare(from, block)
 	require.EqualError(t, err,
@@ -269,6 +289,7 @@ func TestStateMachine_Accept(t *testing.T) {
 	ro := authority.FromAuthority(fake.NewAuthority(4, fake.NewSigner))
 
 	sm := &pbftsm{
+		state:   ViewChangeState,
 		blocks:  blockstore.NewInMemory(),
 		genesis: blockstore.NewGenesisStore(),
 		watcher: core.NewWatcher(),
@@ -280,6 +301,7 @@ func TestStateMachine_Accept(t *testing.T) {
 	}
 
 	sm.genesis.Set(types.Genesis{})
+	sm.round.threshold = 2
 
 	err := sm.Accept(View{from: fake.NewAddress(0), leader: 1})
 	require.NoError(t, err)
@@ -300,26 +322,32 @@ func TestStateMachine_Accept(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, sm.round.views, 2)
 
+	// Finalize view change from a commit state
+	sm.round.committed = true
+	err = sm.Accept(View{from: fake.NewAddress(3), leader: 1})
+	require.NoError(t, err)
+	require.Equal(t, CommitState, sm.state)
+
 	// Ignore views for a different leader than the next one.
 	err = sm.Accept(View{from: fake.NewAddress(2), leader: 5})
-	require.EqualError(t, err, "invalid view: mismatch leader 5 != 1")
-	require.Len(t, sm.round.views, 2)
+	require.EqualError(t, err, "invalid view: mismatch leader 5 != 2")
+	require.Len(t, sm.round.views, 0)
 
 	sm.genesis = blockstore.NewGenesisStore()
-	err = sm.Accept(View{from: fake.NewAddress(0), leader: 1})
+	err = sm.Accept(View{from: fake.NewAddress(0), leader: 2})
 	require.EqualError(t, err, "invalid view: failed to read latest id: missing genesis block")
 
 	// Only accept views for the current round ID.
 	sm.genesis.Set(types.Genesis{})
-	err = sm.Accept(View{from: fake.NewAddress(3), leader: 1, id: types.Digest{1}})
+	err = sm.Accept(View{from: fake.NewAddress(3), leader: 2, id: types.Digest{1}})
 	require.EqualError(t, err, "invalid view: mismatch id 01000000 != 00000000")
 
 	sm.authReader = badReader
-	err = sm.Accept(View{leader: 1})
+	err = sm.Accept(View{leader: 2})
 	require.EqualError(t, err, fake.Err("invalid view: failed to read roster"))
 
 	sm.state = NoneState
-	err = sm.Accept(View{leader: 1})
+	err = sm.Accept(View{leader: 2})
 	require.EqualError(t, err, fake.Err("init: failed to read roster"))
 
 	// Ignore view with an invalid signature.
@@ -331,7 +359,7 @@ func TestStateMachine_Accept(t *testing.T) {
 		)
 		return ro, nil
 	}
-	err = sm.Accept(View{from: fake.NewAddress(0), leader: 1})
+	err = sm.Accept(View{from: fake.NewAddress(0), leader: 2})
 	require.EqualError(t, err, fake.Err("invalid view: invalid signature: verify"))
 }
 
@@ -456,6 +484,13 @@ func TestStateMachine_CatchUp(t *testing.T) {
 	err = sm.CatchUp(link)
 	require.NoError(t, err)
 
+	sm.state = CommitState
+	sm.round.id = types.Digest{}
+	err = sm.CatchUp(link)
+	require.EqualError(t, err, "already committed to '00000000'")
+
+	sm.state = InitialState
+	sm.round.id = link.GetHash()
 	err = sm.CatchUp(link)
 	require.EqualError(t, err, "prepare failed: mismatch index 0 != 1")
 

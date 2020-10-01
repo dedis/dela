@@ -240,27 +240,29 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 		endpoint.streams[streamID] = sess
 	}
 
+	gatewayAddr := o.addrFactory.FromText([]byte(gateway))
+
 	var relay session.Relay
 	var conn grpc.ClientConnInterface
 	if isRoot {
-		gw := o.addrFactory.FromText([]byte(gateway))
+		// Only the original address is sent to make use of the cached marshaled
+		// value, so it needs to be upgraded to an orchestrator address.
+		gatewayAddr = session.NewOrchestratorAddress(gatewayAddr)
 
 		// The relay back to the orchestrator is using the stream as this is the
 		// only way to get back to it. Fortunately, if the stream succeeds, it
 		// means the packet arrived.
-		relay = session.NewStreamRelay(gw, stream, o.context)
+		relay = session.NewStreamRelay(gatewayAddr, stream, o.context)
 	} else {
-		gw := o.addrFactory.FromText([]byte(gateway))
-
-		conn, err = o.connMgr.Acquire(gw)
+		conn, err = o.connMgr.Acquire(gatewayAddr)
 		if err != nil {
 			endpoint.Unlock()
 			return xerrors.Errorf("gateway connection failed: %v", err)
 		}
 
-		defer o.connMgr.Release(gw)
+		defer o.connMgr.Release(gatewayAddr)
 
-		relay = session.NewRelay(stream, gw, o.context, conn, md)
+		relay = session.NewRelay(stream, gatewayAddr, o.context, conn, md)
 	}
 
 	o.closer.Add(1)

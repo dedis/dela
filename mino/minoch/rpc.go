@@ -38,7 +38,6 @@ func (c RPC) Call(ctx context.Context,
 	req serde.Message, players mino.Players) (<-chan mino.Response, error) {
 
 	data, err := req.Serialize(json.NewContext())
-
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't serialize: %v", err)
 	}

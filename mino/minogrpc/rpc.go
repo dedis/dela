@@ -139,19 +139,12 @@ func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, m
 		return nil, nil, xerrors.New("empty list of addresses")
 	}
 
-	me := session.NewOrchestratorAddress(rpc.overlay.myAddr)
-
-	meBuf, err := me.MarshalText()
-	if err != nil {
-		return nil, nil, err
-	}
-
 	streamID := xid.New().String()
 
 	md := metadata.Pairs(
 		headerURIKey, rpc.uri,
 		headerStreamIDKey, streamID,
-		headerGatewayKey, string(meBuf))
+		headerGatewayKey, rpc.overlay.myAddrStr)
 
 	table, err := rpc.overlay.router.New(mino.NewAddresses())
 	if err != nil {
@@ -198,7 +191,7 @@ func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, m
 
 	sess := session.NewSession(
 		md,
-		me,
+		session.NewOrchestratorAddress(rpc.overlay.myAddr),
 		rpc.factory,
 		rpc.overlay.router.GetPacketFactory(),
 		rpc.overlay.context,

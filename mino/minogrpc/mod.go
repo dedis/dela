@@ -30,6 +30,7 @@ var (
 	addressFac     = session.AddressFactory{}
 )
 
+// NewAddressFactory returns a new address factory.
 func NewAddressFactory() mino.AddressFactory {
 	return addressFac
 }

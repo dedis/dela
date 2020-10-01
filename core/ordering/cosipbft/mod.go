@@ -493,7 +493,7 @@ func (s *Service) doRound(ctx context.Context) error {
 			state := s.pbftsm.GetState()
 			var more bool
 
-			for state != pbft.InitialState && state != pbft.CommitState {
+			for state == pbft.ViewChangeState {
 				state, more = <-statesCh
 				if !more {
 					cancel()

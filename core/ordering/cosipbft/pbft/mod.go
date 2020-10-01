@@ -205,35 +205,38 @@ func (m *pbftsm) Prepare(from mino.Address, block types.Block) (types.Digest, er
 	m.Lock()
 	defer m.Unlock()
 
-	if m.state == PrepareState {
-		// It only accepts one proposal from the leader and skip any more
-		// arriving.
-		return m.round.id, nil
-	}
+	id := m.round.id
 
 	if m.state == ViewChangeState {
-		return types.Digest{}, xerrors.Errorf("mismatch state %v != %v", m.state, InitialState)
+		// When in view change mode, it must refused any proposal incoming until
+		// the node leaves the state.
+		return id, xerrors.Errorf("mismatch state %v != %v", m.state, InitialState)
 	}
 
 	roster, err := m.authReader(m.tree.Get())
 	if err != nil {
-		return types.Digest{}, xerrors.Errorf("failed to read roster: %v", err)
+		return id, xerrors.Errorf("failed to read roster: %v", err)
 	}
 
 	_, index := roster.GetPublicKey(from)
+
 	if uint16(index) != m.round.leader {
-		return types.Digest{}, xerrors.New("expect block from the leader")
+		return id, xerrors.Errorf("'%v' is not the leader", from)
 	}
 
-	if m.state == CommitState {
-		return m.round.id, nil
+	// Check the state after verifying that the proposal comes from the right
+	// leader.
+	if m.state == PrepareState || m.state == CommitState {
+		// The leader should only propose one block, therefore the accepted
+		// proposal identifier is sent back, whatever the input is.
+		return id, nil
 	}
 
 	m.round.threshold = calculateThreshold(roster.Len())
 
 	err = m.verifyPrepare(m.tree.Get(), block, &m.round, roster)
 	if err != nil {
-		return types.Digest{}, err
+		return id, err
 	}
 
 	m.setState(PrepareState)
@@ -465,8 +468,8 @@ func (m *pbftsm) CatchUp(link types.BlockLink) error {
 	m.Lock()
 	defer m.Unlock()
 
-	if m.state == CommitState {
-		return xerrors.New("cannot catch up while committed to a block")
+	if m.state == CommitState && m.round.id != link.GetHash() {
+		return xerrors.Errorf("already committed to '%v'", m.round.id)
 	}
 
 	r := round{
