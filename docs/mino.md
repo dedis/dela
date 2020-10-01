@@ -134,8 +134,8 @@ load but is very sensible to failures so this is of course only an example.
 
 #### Example
 
-The following illustrates how to use the stream API to send a message that a
-node will simply send back.
+This illustrates how to use the stream API to implement a simple ping service, 
+where a message is echoed back to the node who sent it.
 
 ```go
 func demo() {
