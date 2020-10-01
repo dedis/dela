@@ -1,3 +1,7 @@
+// Package main provides a utility CLI to generate the dependency graph of each
+// package inside a module.
+// You can get the explanations on how to use it with `go build && ./depgraph
+// help`.
 package main
 
 import (
@@ -8,6 +12,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -18,12 +23,6 @@ import (
 	"golang.org/x/xerrors"
 	"gopkg.in/yaml.v2"
 )
-
-/*
-	This package provides a utility CLI to generate the dependency graph of each
-	package inside a module. You can get the explanations on how to use it with
-	`go build && ./depgraph help`.
-*/
 
 type config struct {
 	Modname    string   `yaml:"modname"`
@@ -179,7 +178,7 @@ func loadConfig(c *cli.Context) (config, error) {
 			return config, xerrors.Errorf("failed to read config file: %v", err)
 		}
 
-		err = yaml.Unmarshal([]byte(configBuf), &config)
+		err = yaml.Unmarshal(configBuf, &config)
 		if err != nil {
 			return config, xerrors.Errorf("failed to unmarshal config: %v", err)
 		}
@@ -202,6 +201,11 @@ func getWriter(config config) (io.Writer, error) {
 	if !os.IsNotExist(err) && !config.OverWrite {
 		return nil, xerrors.Errorf("file '%s' already exist, use '-F' to "+
 			"overwrite", config.OutFile)
+	}
+
+	err = os.MkdirAll(path.Dir(config.OutFile), 0755)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to create dir: %v", err)
 	}
 
 	out, err := os.Create(config.OutFile)
