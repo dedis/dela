@@ -248,6 +248,6 @@ func (r receiver) Recv(ctx context.Context) (mino.Address, serde.Message, error)
 	case err := <-r.errs:
 		return nil, nil, err
 	case <-ctx.Done():
-		return nil, nil, xerrors.New("timeout")
+		return nil, nil, ctx.Err()
 	}
 }

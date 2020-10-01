@@ -14,6 +14,20 @@ func TestTreeCache_Get(t *testing.T) {
 	require.Equal(t, fakeTree{}, cache.Get())
 }
 
+func TestTreeCache_GetWithLock(t *testing.T) {
+	cache := NewTreeCache(fakeTree{})
+
+	tree, unlock := cache.GetWithLock()
+	require.NotNil(t, tree)
+
+	unlock()
+
+	tree, unlock = cache.GetWithLock()
+	require.NotNil(t, tree)
+
+	unlock()
+}
+
 func TestTreeCache_Set(t *testing.T) {
 	cache := NewTreeCache(fakeTree{})
 

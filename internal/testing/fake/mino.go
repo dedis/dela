@@ -266,15 +266,15 @@ type Receiver struct {
 }
 
 // NewReceiver returns a new receiver
-func NewReceiver(Msg ...serde.Message) *Receiver {
+func NewReceiver(msg ...serde.Message) *Receiver {
 	return &Receiver{
-		Msg: Msg,
+		Msg: msg,
 	}
 }
 
 // NewBadReceiver returns a new receiver that returns an error.
-func NewBadReceiver() *Receiver {
-	return &Receiver{err: fakeErr}
+func NewBadReceiver(msg ...serde.Message) *Receiver {
+	return &Receiver{Msg: msg, err: fakeErr}
 }
 
 // Recv implements mino.Receiver.
@@ -285,7 +285,7 @@ func (r *Receiver) Recv(context.Context) (mino.Address, serde.Message, error) {
 
 	// In the case there are no more messages to read we return the last one
 	if r.index >= len(r.Msg) {
-		return NewAddress(0), r.Msg[len(r.Msg)-1], r.err
+		return NewAddress(0), nil, r.err
 	}
 
 	defer func() {

@@ -77,11 +77,13 @@ func TestService_Scenario_Basic(t *testing.T) {
 	evt = waitEvent(t, events)
 	require.Equal(t, uint64(2), evt.Index)
 
-	err = nodes[1].pool.Add(makeTx(t, 3, signer))
-	require.NoError(t, err)
+	for i := 0; i < 3; i++ {
+		err = nodes[1].pool.Add(makeTx(t, uint64(i+3), signer))
+		require.NoError(t, err)
 
-	evt = waitEvent(t, events)
-	require.Equal(t, uint64(3), evt.Index)
+		evt = waitEvent(t, events)
+		require.Equal(t, uint64(i+3), evt.Index)
+	}
 
 	proof, err := nodes[0].service.GetProof(keyRoster[:])
 	require.NoError(t, err)
@@ -226,7 +228,11 @@ func TestService_Main(t *testing.T) {
 	err = srvc.main()
 	require.EqualError(t, err, fake.Err("refreshing roster: updating tx pool"))
 
-	logger, buffer := fake.WaitLog("round failed", 2*time.Second, func() { close(srvc.closing) })
+	logger, wait := fake.WaitLog("round failed", 2*time.Second)
+	go func() {
+		wait(t)
+		close(srvc.closing)
+	}()
 
 	srvc.logger = logger
 	srvc.pool = mem.NewPool()
@@ -234,7 +240,6 @@ func TestService_Main(t *testing.T) {
 	srvc.closed = make(chan struct{})
 	err = srvc.main()
 	require.NoError(t, err)
-	require.Contains(t, buffer.String(), "round failed")
 }
 
 func TestService_DoRound(t *testing.T) {

@@ -1,14 +1,13 @@
 package blocksync
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
-	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
@@ -93,7 +92,8 @@ func TestDefaultSync_GetLatest(t *testing.T) {
 	latest := uint64(5)
 
 	sync := defaultSync{
-		latest: &latest,
+		latest:      &latest,
+		catchUpLock: new(sync.Mutex),
 	}
 
 	require.Equal(t, uint64(5), sync.GetLatest())
@@ -125,21 +125,30 @@ func TestDefaultSync_Sync(t *testing.T) {
 	err = sync.Sync(ctx, mino.NewAddresses(), Config{})
 	require.EqualError(t, err, fake.Err("stream failed"))
 
-	buffer := new(bytes.Buffer)
-	sync.logger = zerolog.New(buffer)
+	logger, check := fake.CheckLog("announcement failed")
+
+	sync.logger = logger
 	sync.rpc = fake.NewStreamRPC(fake.NewReceiver(), fake.NewBadSender())
 	err = sync.Sync(ctx, mino.NewAddresses(), Config{})
 	require.NoError(t, err)
-	require.Contains(t, buffer.String(), `"message":"announcement failed"`)
+	check(t)
 
+	logger, check = fake.CheckLog("sync finished")
+
+	sync.logger = logger
 	sync.rpc = fake.NewStreamRPC(fake.NewBadReceiver(), fake.Sender{})
 	err = sync.Sync(ctx, mino.NewAddresses(fake.NewAddress(0)), Config{MinSoft: 1})
-	require.EqualError(t, err, fake.Err("receiver failed"))
+	require.NoError(t, err)
+	check(t)
 
+	logger, wait := fake.WaitLog("while synchronizing fake.Address[0]", time.Second)
+
+	sync.logger = logger
 	sync.rpc = fake.NewStreamRPC(fake.NewReceiver(types.NewSyncRequest(0)), sender)
 	sync.blocks = badBlockStore{}
 	err = sync.Sync(ctx, mino.NewAddresses(), Config{MinSoft: 1})
-	require.EqualError(t, err, fake.Err("synchronizing node fake.Address[0]: couldn't get block"))
+	require.NoError(t, err)
+	wait(t)
 }
 
 func TestDefaultSync_SyncNode(t *testing.T) {
@@ -149,8 +158,12 @@ func TestDefaultSync_SyncNode(t *testing.T) {
 
 	storeBlocks(t, sync.blocks, 5)
 
-	err := sync.syncNode(0, fake.NewBadSender(), fake.NewAddress(0))
-	require.EqualError(t, err, fake.Err("failed to send block"))
+	logger, check := fake.CheckLog("while synchronizing fake.Address[0]")
+
+	sync.logger = logger
+	sync.syncNode(0, fake.NewBadSender(), fake.NewAddress(0))
+
+	check(t)
 }
 
 func TestHandler_Stream(t *testing.T) {
@@ -160,6 +173,7 @@ func TestHandler_Stream(t *testing.T) {
 
 	handler := &handler{
 		latest:      &latest,
+		catchUpLock: new(sync.Mutex),
 		genesis:     blockstore.NewGenesisStore(),
 		blocks:      blockstore.NewInMemory(),
 		verifierFac: fake.VerifierFactory{},
@@ -199,7 +213,7 @@ func TestHandler_Stream(t *testing.T) {
 	err = handler.Stream(fake.NewBadSender(), fake.NewReceiver(types.NewSyncMessage(makeChain(t, 6))))
 	require.EqualError(t, err, fake.Err("sending request failed"))
 
-	rcvr := fake.NewBadReceiver()
+	rcvr := fake.NewBadReceiver(types.NewSyncMessage(makeChain(t, blocks.Len()-1)))
 	rcvr.Msg = []serde.Message{types.NewSyncMessage(makeChain(t, 6))}
 	err = handler.Stream(fake.Sender{}, rcvr)
 	require.EqualError(t, err, fake.Err("receiver failed"))

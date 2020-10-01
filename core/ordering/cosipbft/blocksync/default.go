@@ -2,8 +2,8 @@ package blocksync
 
 import (
 	"context"
+	"io"
 	"sync"
-	"sync/atomic"
 
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
@@ -27,7 +27,9 @@ type defaultSync struct {
 	rpc    mino.RPC
 	pbftsm pbft.StateMachine
 	blocks blockstore.BlockStore
-	latest *uint64
+
+	latest      *uint64
+	catchUpLock *sync.Mutex
 }
 
 // SyncParam is the parameter object to create a new synchronizer.
@@ -48,8 +50,9 @@ func NewSynchronizer(param SyncParam) (Synchronizer, error) {
 	logger := dela.Logger.With().Str("addr", param.Mino.GetAddress().String()).Logger()
 
 	h := &handler{
-		logger:      logger,
 		latest:      &latest,
+		catchUpLock: new(sync.Mutex),
+		logger:      logger,
 		genesis:     param.Genesis,
 		blocks:      param.Blocks,
 		pbftsm:      param.PBFT,
@@ -64,11 +67,12 @@ func NewSynchronizer(param SyncParam) (Synchronizer, error) {
 	}
 
 	s := defaultSync{
-		logger: logger,
-		rpc:    rpc,
-		pbftsm: param.PBFT,
-		blocks: param.Blocks,
-		latest: &latest,
+		logger:      logger,
+		rpc:         rpc,
+		pbftsm:      param.PBFT,
+		blocks:      param.Blocks,
+		latest:      &latest,
+		catchUpLock: h.catchUpLock,
 	}
 
 	return s, nil
@@ -77,7 +81,10 @@ func NewSynchronizer(param SyncParam) (Synchronizer, error) {
 // GetLatest implements blocksync.Synchronizer. It returns the latest index
 // known by the instance.
 func (s defaultSync) GetLatest() uint64 {
-	return atomic.LoadUint64(s.latest)
+	s.catchUpLock.Lock()
+	defer s.catchUpLock.Unlock()
+
+	return *s.latest
 }
 
 // Sync implements blocksync.Synchronizer. it starts a routine to first
@@ -110,43 +117,63 @@ func (s defaultSync) Sync(ctx context.Context, players mino.Players, cfg Config)
 
 	// 2. Wait for the hard synchronization to end. It can be interrupted with
 	// the context.
-	soft := map[mino.Address]struct{}{}
-	hard := map[mino.Address]struct{}{}
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	once := sync.Once{}
 
-	for len(soft) < cfg.MinSoft || len(hard) < cfg.MinHard {
-		from, msg, err := rcvr.Recv(ctx)
-		if err != nil {
-			return xerrors.Errorf("receiver failed: %v", err)
-		}
+	// The synchronization is run in background so that it continues even after
+	// the threshold is reached, which allow other nodes to complete a catch up
+	// whthe round is performing.
+	go func() {
+		defer once.Do(wg.Done)
 
-		switch in := msg.(type) {
-		case types.SyncRequest:
-			_, found := soft[from]
-			if found {
-				s.logger.Warn().Msg("found duplicate request")
-				continue
+		soft := map[mino.Address]struct{}{}
+		hard := map[mino.Address]struct{}{}
+
+		for {
+			from, msg, err := rcvr.Recv(ctx)
+			if err == context.Canceled || err == io.EOF {
+				return
 			}
-
-			soft[from] = struct{}{}
-
-			err := s.syncNode(in.GetFrom(), sender, from)
 			if err != nil {
-				return xerrors.Errorf("synchronizing node %v: %v", from, err)
+				s.logger.Warn().Err(err).Msg("sync finished")
+				return
 			}
-		case types.SyncAck:
-			soft[from] = struct{}{}
-			hard[from] = struct{}{}
+
+			switch in := msg.(type) {
+			case types.SyncRequest:
+				_, found := soft[from]
+				if found {
+					s.logger.Warn().Msg("found duplicate request")
+					continue
+				}
+
+				soft[from] = struct{}{}
+
+				go s.syncNode(in.GetFrom(), sender, from)
+
+			case types.SyncAck:
+				soft[from] = struct{}{}
+				hard[from] = struct{}{}
+			}
+
+			if len(soft) >= cfg.MinSoft && len(hard) >= cfg.MinHard {
+				once.Do(wg.Done)
+			}
 		}
-	}
+	}()
+
+	wg.Wait()
 
 	return nil
 }
 
-func (s defaultSync) syncNode(from uint64, sender mino.Sender, to mino.Address) error {
+func (s defaultSync) syncNode(from uint64, sender mino.Sender, to mino.Address) {
 	for i := from; i < s.blocks.Len(); i++ {
 		link, err := s.blocks.GetByIndex(i)
 		if err != nil {
-			return xerrors.Errorf("couldn't get block: %v", err)
+			s.logger.Err(err).Msgf("while synchronizing %v", to)
+			return
 		}
 
 		s.logger.Debug().
@@ -156,18 +183,18 @@ func (s defaultSync) syncNode(from uint64, sender mino.Sender, to mino.Address) 
 
 		err = <-sender.Send(types.NewSyncReply(link), to)
 		if err != nil {
-			return xerrors.Errorf("failed to send block: %v", err)
+			s.logger.Err(err).Msgf("while synchronizing %v", to)
+			return
 		}
 	}
-
-	return nil
 }
 
 type handler struct {
-	sync.Mutex
 	mino.UnsupportedHandler
 
 	latest      *uint64
+	catchUpLock *sync.Mutex
+
 	logger      zerolog.Logger
 	blocks      blockstore.BlockStore
 	genesis     blockstore.GenesisStore
@@ -207,13 +234,13 @@ func (h *handler) Stream(out mino.Sender, in mino.Receiver) error {
 	// waits for the lock to be free, which means that in the meantime some
 	// blocks might have been stored but the request is sent with the most
 	// up-to-date block index, so it won't catch up twice the same block.
-	h.Lock()
-	defer h.Unlock()
+	h.catchUpLock.Lock()
+	defer h.catchUpLock.Unlock()
 
 	// Update the latest index through atomic operations as it can be read
 	// asynchronously from the getter.
-	if m.GetLatestIndex() > atomic.LoadUint64(h.latest) {
-		atomic.StoreUint64(h.latest, m.GetLatestIndex())
+	if m.GetLatestIndex() > *h.latest {
+		*h.latest = m.GetLatestIndex()
 	}
 
 	err = <-out.Send(types.NewSyncRequest(h.blocks.Len()), orch)
@@ -239,6 +266,8 @@ func (h *handler) Stream(out mino.Sender, in mino.Receiver) error {
 			}
 		}
 	}
+
+	h.logger.Debug().Msg("catch up done")
 
 	return h.ack(out, orch)
 }
