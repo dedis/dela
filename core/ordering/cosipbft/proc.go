@@ -28,6 +28,8 @@ var (
 )
 
 // Processor processes the messages to run a collective signing PBFT consensus.
+//
+// - implements cosi.Reactor
 type processor struct {
 	mino.UnsupportedHandler
 	types.MessageFactory
