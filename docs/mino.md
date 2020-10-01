@@ -103,7 +103,11 @@ populated.
 ### Stream (bidirectional stream-based protocol)
 
 Stream is one of the API provided by Mino. It takes a context and the list of
-participants as input parameters.
+participants as input parameters:
+
+```go
+sender, receiver, err := rpc.Stream(ctx context.Context, players Players)
+```
 
 The context defines when the protocol is done, and it should therefore always be
 canceled at some point. When it arrives, all the connections are shut down and
@@ -127,3 +131,53 @@ when necessary. For instance, for a tree-based algorithm, it *could* look like:
 A message coming from F would then be relayed through B and A to reach the right
 side of the tree. This kind of algorithm is efficient in terms of distributed
 load but is very sensible to failures so this is of course only an example.
+
+#### Example
+
+This illustrates how to use the stream API to implement a simple ping service, 
+where a message is echoed back to the node who sent it.
+
+```go
+func demo() {
+    // This mino will be the orchestrator
+    m, err := NewMinogrpc(addr, tree.NewRouter(AddressFactory{}))
+    if err {...}
+
+    // We provide the handler that each node will execute
+    rpc, err := m.MakeRPC("test", handler{}, aMessageFactory)
+    if err {...}
+
+    // Players is the list of all the participants
+    sender, receiver, err := rpc.Stream(ctx context.Context, players Players)
+    if err {...}
+
+    // We send a message to one of the participant
+    err := <-sender.Send(aMessage, anAddress)
+    if err {...}
+
+    // The participant will receive the message and execute the handler, which will
+    // send back the message to us.
+    from, msg, err := recv.Recv(context.Background())
+}
+
+type handler struct {}
+
+// Stream implements mino.Handler. It simply sends back the message that it 
+// receives.
+func (h handler) Stream(out mino.Sender, in mino.Receiver) error {
+    from, msg, err := in.Recv(context.Background())
+    if err != nil {
+        return err
+    }
+
+    // Here we are just sending back the message, but one could have a more 
+    // complex handler that for example sends messages to other nodes, waits for
+    // their replies and does some processing.
+    err = <-out.Send(msg, from)
+    if err != nil {
+        return err
+    }
+
+    return nil
+}
+```
