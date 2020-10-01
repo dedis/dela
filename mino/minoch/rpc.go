@@ -27,6 +27,7 @@ type RPC struct {
 	h       mino.Handler
 	context serde.Context
 	factory serde.Factory
+	filters []Filter
 }
 
 // Call sends the message to all participants and gather their reply. The
@@ -91,6 +92,11 @@ func (c RPC) Call(ctx context.Context,
 				return
 			}
 
+			if !rpc.runFilters(req) {
+				// Message is dropped by one of the filter.
+				return
+			}
+
 			resp, err := rpc.h.Process(req)
 			if err != nil {
 				resp := mino.NewResponseWithError(
@@ -113,6 +119,16 @@ func (c RPC) Call(ctx context.Context,
 	}()
 
 	return out, nil
+}
+
+func (c RPC) runFilters(req mino.Request) bool {
+	for _, filter := range c.filters {
+		if !filter(req) {
+			return false
+		}
+	}
+
+	return true
 }
 
 // Stream opens a stream. The caller is responsible for cancelling the context

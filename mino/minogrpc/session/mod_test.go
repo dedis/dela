@@ -295,7 +295,7 @@ func TestSession_Recv(t *testing.T) {
 
 	from, msg, err := sess.Recv(ctx)
 	require.NoError(t, err)
-	require.Equal(t, fake.NewAddress(700), from)
+	require.True(t, from.Equal(fake.NewAddress(700)))
 	require.Equal(t, fake.Message{}, msg)
 
 	sess.msgFac = fake.NewBadMessageFactory()

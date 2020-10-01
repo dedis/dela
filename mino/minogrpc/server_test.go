@@ -51,7 +51,7 @@ func TestIntegration_Scenario_Stream(t *testing.T) {
 
 		from, msg, err := recv.Recv(context.Background())
 		require.NoError(t, err)
-		require.Equal(t, to, from)
+		require.True(t, to.Equal(from))
 		require.IsType(t, fake.Message{}, msg)
 	}
 
@@ -142,7 +142,7 @@ func TestMinogrpc_Scenario_Failures(t *testing.T) {
 
 		from, _, err := recvr.Recv(context.Background())
 		require.NoError(t, err)
-		require.Equal(t, to, from)
+		require.True(t, to.Equal(from))
 	}
 
 	// This node is a relay for sure by using the tree router, so we close it to
@@ -169,7 +169,7 @@ func TestMinogrpc_Scenario_Failures(t *testing.T) {
 
 		from, _, err := recvr.Recv(context.Background())
 		require.NoError(t, err)
-		require.Equal(t, to, from)
+		require.True(t, to.Equal(from))
 	}
 
 	cancel()
@@ -179,7 +179,7 @@ func TestOverlayServer_Join(t *testing.T) {
 	o, err := newOverlay(minoTemplate{
 		myAddr: fake.NewAddress(0),
 		certs:  certs.NewInMemoryStore(),
-		router: tree.NewRouter(AddressFactory{}),
+		router: tree.NewRouter(addressFac),
 		curve:  elliptic.P521(),
 		random: rand.Reader,
 	})
@@ -231,8 +231,8 @@ func TestOverlayServer_Share(t *testing.T) {
 	overlay := overlayServer{
 		overlay: &overlay{
 			certs:       certs.NewInMemoryStore(),
-			router:      tree.NewRouter(AddressFactory{}),
-			addrFactory: AddressFactory{},
+			router:      tree.NewRouter(addressFac),
+			addrFactory: addressFac,
 		},
 	}
 
@@ -245,7 +245,7 @@ func TestOverlayServer_Share(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
-	shared, err := overlay.certs.Load(address{})
+	shared, err := overlay.certs.Load(session.NewAddress(""))
 	require.NoError(t, err)
 	require.NotNil(t, shared)
 
@@ -257,9 +257,9 @@ func TestOverlayServer_Share(t *testing.T) {
 func TestOverlayServer_Call(t *testing.T) {
 	overlay := overlayServer{
 		overlay: &overlay{
-			router:      tree.NewRouter(AddressFactory{}),
+			router:      tree.NewRouter(addressFac),
 			context:     json.NewContext(),
-			addrFactory: AddressFactory{},
+			addrFactory: addressFac,
 		},
 		endpoints: make(map[string]*Endpoint),
 	}
@@ -314,9 +314,9 @@ func TestOverlayServer_Call(t *testing.T) {
 func TestOverlayServer_Stream(t *testing.T) {
 	overlay := overlayServer{
 		overlay: &overlay{
-			router:      tree.NewRouter(AddressFactory{}),
+			router:      tree.NewRouter(addressFac),
 			context:     json.NewContext(),
-			addrFactory: AddressFactory{},
+			addrFactory: addressFac,
 			myAddr:      fake.NewAddress(0),
 			closer:      &sync.WaitGroup{},
 			connMgr:     fakeConnMgr{},
@@ -373,7 +373,7 @@ func TestOverlayServer_Stream(t *testing.T) {
 	err = overlay.Stream(&fakeSrvStream{ctx: inCtx})
 	require.EqualError(t, err, fake.Err("routing table: invalid handshake"))
 
-	overlay.router = tree.NewRouter(AddressFactory{})
+	overlay.router = tree.NewRouter(addressFac)
 	badCtx = makeCtx(session.HandshakeKey, "{}", headerStreamIDKey, "abc")
 	err = overlay.Stream(&fakeSrvStream{ctx: badCtx})
 	require.EqualError(t, err, "handler '' is not registered")
@@ -387,7 +387,7 @@ func TestOverlayServer_Stream(t *testing.T) {
 	require.EqualError(t, err, "unexpected empty stream ID")
 
 	overlay.context = json.NewContext()
-	overlay.router = tree.NewRouter(AddressFactory{})
+	overlay.router = tree.NewRouter(addressFac)
 	badCtx = makeCtx(headerURIKey, "bad", headerStreamIDKey, "test", session.HandshakeKey, "{}")
 	err = overlay.Stream(&fakeSrvStream{ctx: badCtx})
 	require.EqualError(t, err, fake.Err("handler failed to process"))
@@ -403,9 +403,9 @@ func TestOverlayServer_Stream(t *testing.T) {
 func TestOverlay_Forward(t *testing.T) {
 	overlay := overlayServer{
 		overlay: &overlay{
-			router:      tree.NewRouter(AddressFactory{}),
+			router:      tree.NewRouter(addressFac),
 			context:     json.NewContext(),
-			addrFactory: AddressFactory{},
+			addrFactory: addressFac,
 			myAddr:      fake.NewAddress(0),
 			closer:      &sync.WaitGroup{},
 			connMgr:     fakeConnMgr{},
@@ -483,8 +483,8 @@ func TestOverlay_Join(t *testing.T) {
 	overlay, err := newOverlay(minoTemplate{
 		myAddr: fake.NewAddress(0),
 		certs:  certs.NewInMemoryStore(),
-		router: tree.NewRouter(AddressFactory{}),
-		fac:    AddressFactory{},
+		router: tree.NewRouter(addressFac),
+		fac:    addressFac,
 		curve:  elliptic.P521(),
 		random: rand.Reader,
 	})
@@ -499,15 +499,6 @@ func TestOverlay_Join(t *testing.T) {
 	overlay.certs = fakeCerts{}
 	err = overlay.Join("", "", nil)
 	require.NoError(t, err)
-
-	overlay.addrFactory = fake.AddressFactory{}
-	err = overlay.Join("", "", nil)
-	require.EqualError(t, err, "invalid address type 'fake.Address'")
-
-	overlay.addrFactory = AddressFactory{}
-	overlay.myAddr = fake.NewBadAddress()
-	err = overlay.Join("", "", nil)
-	require.EqualError(t, err, fake.Err("couldn't marshal own address"))
 
 	overlay.myAddr = fake.NewAddress(0)
 	overlay.certs = fakeCerts{err: fake.GetError()}
@@ -609,7 +600,7 @@ func makeInstances(t *testing.T, n int, call *fake.Call) ([]mino.Mino, []mino.RP
 	for i := range mm {
 		addr := ParseAddress("127.0.0.1", 0)
 
-		m, err := NewMinogrpc(addr, tree.NewRouter(AddressFactory{}))
+		m, err := NewMinogrpc(addr, tree.NewRouter(addressFac))
 		require.NoError(t, err)
 
 		rpc, err := m.MakeRPC("test", testHandler{call: call}, fake.MessageFactory{})

@@ -12,6 +12,10 @@ import (
 	"go.dedis.ch/dela/serde/json"
 )
 
+// Filter is a function called for any request to an RPC which will drop it if
+// it returns false.
+type Filter func(mino.Request) bool
+
 // Minoch is an implementation of the Mino interface using channels. Each
 // instance must have a unique string assigned to it.
 type Minoch struct {
@@ -19,8 +23,9 @@ type Minoch struct {
 	manager    *Manager
 	identifier string
 	path       string
-	rpcs       map[string]RPC
+	rpcs       map[string]*RPC
 	context    serde.Context
+	filters    []Filter
 }
 
 // NewMinoch creates a new instance of a local Mino instance.
@@ -29,7 +34,7 @@ func NewMinoch(manager *Manager, identifier string) (*Minoch, error) {
 		manager:    manager,
 		identifier: identifier,
 		path:       "",
-		rpcs:       make(map[string]RPC),
+		rpcs:       make(map[string]*RPC),
 		context:    json.NewContext(),
 	}
 
@@ -54,6 +59,16 @@ func (m *Minoch) GetAddress() mino.Address {
 	return address{id: m.identifier}
 }
 
+// AddFilter adds the filter to all of the RPCs. This must be called before
+// receiving requests.
+func (m *Minoch) AddFilter(filter Filter) {
+	m.filters = append(m.filters, filter)
+
+	for _, rpc := range m.rpcs {
+		rpc.filters = m.filters
+	}
+}
+
 // MakeNamespace returns an instance restricted to the namespace.
 func (m *Minoch) MakeNamespace(path string) (mino.Mino, error) {
 	newMinoch := &Minoch{
@@ -68,13 +83,14 @@ func (m *Minoch) MakeNamespace(path string) (mino.Mino, error) {
 
 // MakeRPC creates an RPC that can send to and receive from the unique path.
 func (m *Minoch) MakeRPC(name string, h mino.Handler, f serde.Factory) (mino.RPC, error) {
-	rpc := RPC{
+	rpc := &RPC{
 		manager: m.manager,
 		addr:    m.GetAddress(),
 		path:    fmt.Sprintf("%s/%s", m.path, name),
 		h:       h,
 		context: m.context,
 		factory: f,
+		filters: m.filters,
 	}
 
 	m.Lock()

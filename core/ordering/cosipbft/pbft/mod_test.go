@@ -102,43 +102,45 @@ func TestStateMachine_Prepare(t *testing.T) {
 	block, err := types.NewBlock(simple.NewData(nil), types.WithTreeRoot(root), types.WithIndex(0))
 	require.NoError(t, err)
 
+	from := fake.NewAddress(0)
+
 	sm := NewStateMachine(param).(*pbftsm)
 	sm.state = InitialState
 
-	id, err := sm.Prepare(block)
+	id, err := sm.Prepare(from, block)
 	require.NoError(t, err)
 	require.NotEqual(t, types.Digest{}, id)
 	require.Equal(t, PrepareState, sm.state)
 	require.Equal(t, id, sm.round.id)
 
-	id, err = sm.Prepare(block)
+	id, err = sm.Prepare(from, block)
 	require.NoError(t, err)
 	require.Equal(t, sm.round.id, id)
 
 	sm.state = ViewChangeState
-	_, err = sm.Prepare(block)
+	_, err = sm.Prepare(from, block)
 	require.EqualError(t, err, "mismatch state viewchange != initial")
 
 	sm.state = InitialState
 	sm.val = badValidation{}
-	_, err = sm.Prepare(block)
+	_, err = sm.Prepare(from, block)
 	require.EqualError(t, err, fake.Err("tree failed: callback failed: validation failed"))
 
 	other, err := types.NewBlock(simple.NewData(nil), types.WithTreeRoot(types.Digest{}))
 	require.NoError(t, err)
 
 	sm.val = simple.NewService(fakeExec{}, nil)
-	_, err = sm.Prepare(other)
+	_, err = sm.Prepare(from, other)
 	require.EqualError(t, err, "mismatch tree root '71b6c1d5' != '00000000'")
 
 	sm.genesis = blockstore.NewGenesisStore()
-	_, err = sm.Prepare(block)
+	_, err = sm.Prepare(from, block)
 	require.EqualError(t, err, "couldn't get latest digest: missing genesis block")
 
 	// Failure to read the roster of the round.
 	sm.genesis.Set(types.Genesis{})
 	sm.authReader = badReader
-	_, err = sm.Prepare(block)
+	_, err = sm.Prepare(from, block)
 	require.EqualError(t, err, fake.Err("failed to read roster"))
 
 	// Failure to read the roster of the staging tree.
@@ -147,7 +149,7 @@ func TestStateMachine_Prepare(t *testing.T) {
 
 	sm.authReader = param.AuthorityReader
 	sm.hashFac = fake.NewHashFactory(fake.NewBadHash())
-	_, err = sm.Prepare(block)
+	_, err = sm.Prepare(from, block)
 	require.EqualError(t, err,
 		fake.Err("failed to create link: failed to fingerprint: couldn't write from"))
 }
@@ -165,9 +167,6 @@ func TestStateMachine_Commit(t *testing.T) {
 	sm.round.id = types.Digest{1}
 
 	err := sm.Commit(types.Digest{1}, fake.Signature{})
-	require.NoError(t, err)
-
-	err = sm.Commit(types.Digest{}, fake.Signature{})
 	require.NoError(t, err)
 
 	sm.state = ViewChangeState

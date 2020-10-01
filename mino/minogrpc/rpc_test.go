@@ -30,7 +30,7 @@ func TestRPC_Call(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	addrs := []mino.Address{address{"A"}, address{"B"}}
+	addrs := []mino.Address{session.NewAddress("A"), session.NewAddress("B")}
 
 	msgs, err := rpc.Call(ctx, fake.Message{}, mino.NewAddresses(addrs...))
 	require.NoError(t, err)
@@ -43,7 +43,7 @@ func TestRPC_Call(t *testing.T) {
 		reply, err := msg.GetMessageOrError()
 		require.NoError(t, err)
 		require.Equal(t, fake.Message{}, reply)
-		require.True(t, msg.GetFrom().Equal(address{"A"}) || msg.GetFrom().Equal(address{"B"}))
+		require.True(t, msg.GetFrom().Equal(session.NewAddress("A")) || msg.GetFrom().Equal(session.NewAddress("B")))
 	}
 
 	_, more := <-msgs
@@ -93,15 +93,15 @@ func TestRPC_Call(t *testing.T) {
 }
 
 func TestRPC_Stream(t *testing.T) {
-	addrs := []mino.Address{address{"A"}, address{"B"}}
+	addrs := []mino.Address{session.NewAddress("A"), session.NewAddress("B")}
 	calls := &fake.Call{}
 
 	rpc := &RPC{
 		overlay: &overlay{
 			closer:      new(sync.WaitGroup),
-			myAddr:      address{"C"},
-			router:      tree.NewRouter(AddressFactory{}),
-			addrFactory: AddressFactory{},
+			myAddr:      session.NewAddress("C"),
+			router:      tree.NewRouter(addressFac),
+			addrFactory: addressFac,
 			connMgr:     fakeConnMgr{calls: calls},
 			context:     json.NewContext(),
 		},
@@ -115,7 +115,7 @@ func TestRPC_Stream(t *testing.T) {
 	out, in, err := rpc.Stream(ctx, mino.NewAddresses(addrs...))
 	require.NoError(t, err)
 
-	out.Send(fake.Message{}, newRootAddress(), addrs[1])
+	out.Send(fake.Message{}, session.NewOrchestratorAddress(session.NewAddress("C")), addrs[1])
 	in.Recv(ctx)
 
 	cancel()
@@ -141,7 +141,7 @@ func TestRPC_Stream(t *testing.T) {
 	_, _, err = rpc.Stream(ctx, mino.NewAddresses(addrs[0]))
 	require.EqualError(t, err, fake.Err("routing table failed"))
 
-	rpc.overlay.router = tree.NewRouter(AddressFactory{})
+	rpc.overlay.router = tree.NewRouter(addressFac)
 	_, _, err = rpc.Stream(ctx, mino.NewAddresses(addrs[0], fake.NewBadAddress()))
 	require.EqualError(t, err, fake.Err("marshal address failed"))
 

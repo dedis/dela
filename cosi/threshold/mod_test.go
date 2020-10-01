@@ -79,7 +79,7 @@ func TestCoSi_GetSignatureFactory(t *testing.T) {
 }
 
 func TestCoSi_SetThreshold(t *testing.T) {
-	c := NewCoSi(nil, nil)
+	c := NewCoSi(fake.Mino{}, nil)
 
 	c.SetThreshold(nil)
 	require.NotNil(t, c.threshold.Load())

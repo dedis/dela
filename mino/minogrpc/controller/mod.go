@@ -18,6 +18,7 @@ import (
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
+	"go.dedis.ch/dela/mino/minogrpc/session"
 	"go.dedis.ch/dela/mino/router/tree"
 	"golang.org/x/xerrors"
 )
@@ -100,7 +101,7 @@ func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("invalid port value %d", port)
 	}
 
-	rter := tree.NewRouter(minogrpc.AddressFactory{})
+	rter := tree.NewRouter(minogrpc.NewAddressFactory())
 
 	addr := minogrpc.ParseAddress("127.0.0.1", uint16(port))
 
@@ -110,7 +111,7 @@ func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("injector: %v", err)
 	}
 
-	certs := certs.NewDiskStore(db, minogrpc.AddressFactory{})
+	certs := certs.NewDiskStore(db, session.AddressFactory{})
 
 	key, err := m.getKey(ctx)
 	if err != nil {

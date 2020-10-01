@@ -3,7 +3,6 @@ package threshold
 import (
 	"context"
 
-	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/cosi/threshold/types"
@@ -20,7 +19,6 @@ import (
 type thresholdActor struct {
 	*CoSi
 
-	logger  zerolog.Logger
 	me      mino.Address
 	rpc     mino.RPC
 	reactor cosi.Reactor

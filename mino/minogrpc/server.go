@@ -243,15 +243,18 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 	var relay session.Relay
 	var conn grpc.ClientConnInterface
 	if isRoot {
+		gw := o.addrFactory.FromText([]byte(gateway))
+
 		// The relay back to the orchestrator is using the stream as this is the
 		// only way to get back to it. Fortunately, if the stream succeeds, it
 		// means the packet arrived.
-		relay = session.NewStreamRelay(newRootAddress(), stream, o.context)
+		relay = session.NewStreamRelay(gw, stream, o.context)
 	} else {
 		gw := o.addrFactory.FromText([]byte(gateway))
 
 		conn, err = o.connMgr.Acquire(gw)
 		if err != nil {
+			endpoint.Unlock()
 			return xerrors.Errorf("gateway connection failed: %v", err)
 		}
 
@@ -470,23 +473,13 @@ func (o *overlay) GetCertificateStore() certs.Storage {
 // Join sends a join request to a distant node with token generated beforehands
 // by the later.
 func (o *overlay) Join(addr, token string, certHash []byte) error {
-	target := o.addrFactory.FromText([]byte(addr))
-
-	netAddr, ok := target.(certs.Dialable)
-	if !ok {
-		return xerrors.Errorf("invalid address type '%T'", target)
-	}
+	target := session.NewAddress(addr)
 
 	meCert := o.GetCertificate()
 
-	meAddr, err := o.myAddr.MarshalText()
-	if err != nil {
-		return xerrors.Errorf("couldn't marshal own address: %v", err)
-	}
-
 	// Fetch the certificate of the node we want to join. The hash is used to
 	// ensure that we get the right certificate.
-	err = o.certs.Fetch(netAddr, certHash)
+	err := o.certs.Fetch(target, certHash)
 	if err != nil {
 		return xerrors.Errorf("couldn't fetch distant certificate: %v", err)
 	}
@@ -503,7 +496,7 @@ func (o *overlay) Join(addr, token string, certHash []byte) error {
 	req := &ptypes.JoinRequest{
 		Token: token,
 		Certificate: &ptypes.Certificate{
-			Address: meAddr,
+			Address: []byte(o.myAddrStr),
 			Value:   meCert.Leaf.Raw,
 		},
 	}
@@ -634,7 +627,7 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 		RootCAs:      pool,
 	})
 
-	netAddr, ok := to.(address)
+	netAddr, ok := to.(session.Address)
 	if !ok {
 		return nil, xerrors.Errorf("invalid address type '%T'", to)
 	}

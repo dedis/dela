@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/minogrpc/session"
 	"go.dedis.ch/dela/mino/minogrpc/tokens"
 	"go.dedis.ch/dela/mino/router/tree"
 	"google.golang.org/grpc"
@@ -16,7 +17,7 @@ import (
 func TestMinogrpc_New(t *testing.T) {
 	addr := ParseAddress("127.0.0.1", 3333)
 
-	router := tree.NewRouter(AddressFactory{})
+	router := tree.NewRouter(addressFac)
 
 	m, err := NewMinogrpc(addr, router)
 	require.NoError(t, err)
@@ -32,7 +33,7 @@ func TestMinogrpc_New(t *testing.T) {
 
 func TestMinogrpc_FailGenerateKey_New(t *testing.T) {
 	addr := ParseAddress("127.0.0.1", 3333)
-	router := tree.NewRouter(AddressFactory{})
+	router := tree.NewRouter(addressFac)
 
 	_, err := NewMinogrpc(addr, router, WithRandom(badReader{}))
 	require.EqualError(t, err, fake.Err("overlay: cert private key"))
@@ -40,7 +41,7 @@ func TestMinogrpc_FailGenerateKey_New(t *testing.T) {
 
 func TestMinogrpc_FailCreateCert_New(t *testing.T) {
 	addr := ParseAddress("127.0.0.1", 3333)
-	router := tree.NewRouter(AddressFactory{})
+	router := tree.NewRouter(addressFac)
 
 	_, err := NewMinogrpc(addr, router, WithCertificateKey(struct{}{}, struct{}{}))
 	require.Error(t, err)
@@ -49,7 +50,7 @@ func TestMinogrpc_FailCreateCert_New(t *testing.T) {
 
 func TestMinogrpc_FailStoreCert_New(t *testing.T) {
 	addr := ParseAddress("127.0.0.1", 3333)
-	router := tree.NewRouter(AddressFactory{})
+	router := tree.NewRouter(addressFac)
 
 	_, err := NewMinogrpc(addr, router, WithStorage(fakeCerts{errStore: fake.GetError()}))
 	require.EqualError(t, err, fake.Err("overlay: certificate failed: while storing"))
@@ -57,7 +58,7 @@ func TestMinogrpc_FailStoreCert_New(t *testing.T) {
 
 func TestMinogrpc_FailLoadCert_New(t *testing.T) {
 	addr := ParseAddress("127.0.0.1", 3333)
-	router := tree.NewRouter(AddressFactory{})
+	router := tree.NewRouter(addressFac)
 
 	_, err := NewMinogrpc(addr, router, WithStorage(fakeCerts{errLoad: fake.GetError()}))
 	require.EqualError(t, err, fake.Err("overlay: while loading cert"))
@@ -65,7 +66,7 @@ func TestMinogrpc_FailLoadCert_New(t *testing.T) {
 
 func TestMinogrpc_BadAddress_New(t *testing.T) {
 	addr := ParseAddress("123.4.5.6", 1)
-	router := tree.NewRouter(AddressFactory{})
+	router := tree.NewRouter(addressFac)
 
 	_, err := NewMinogrpc(addr, router)
 	require.Error(t, err)
@@ -80,11 +81,11 @@ func TestMinogrpc_BadAddress_New(t *testing.T) {
 
 func TestMinogrpc_GetAddressFactory(t *testing.T) {
 	m := &Minogrpc{}
-	require.IsType(t, AddressFactory{}, m.GetAddressFactory())
+	require.IsType(t, addressFac, m.GetAddressFactory())
 }
 
 func TestMinogrpc_GetAddress(t *testing.T) {
-	addr := address{}
+	addr := session.NewAddress("")
 	minoGrpc := &Minogrpc{
 		overlay: &overlay{myAddr: addr},
 	}
