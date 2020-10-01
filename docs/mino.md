@@ -172,7 +172,7 @@ func (h handler) Stream(out mino.Sender, in mino.Receiver) error {
 
     // Here we are just sending back the message, but one could have a more 
     // complex handler that for example sends messages to other nodes, waits for
-    // their replies and do some processing.
+    // their replies and does some processing.
     err = <-out.Send(msg, from)
     if err != nil {
         return err
