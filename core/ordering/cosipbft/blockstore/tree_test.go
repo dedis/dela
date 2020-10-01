@@ -1,7 +1,6 @@
 package blockstore
 
 import (
-	"sync"
 	"testing"
 	"time"
 
@@ -25,10 +24,7 @@ func TestTreeCache_Set(t *testing.T) {
 func TestTreeCache_SetAndLock(t *testing.T) {
 	cache := NewTreeCache(fakeTree{})
 
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-
-	cache.SetAndLock(fakeTree{}, &wg)
+	unlock := cache.SetWithLock(fakeTree{})
 
 	ch := make(chan struct{})
 	go func() {
@@ -44,7 +40,7 @@ func TestTreeCache_SetAndLock(t *testing.T) {
 	default:
 	}
 
-	wg.Done()
+	unlock()
 
 	select {
 	case <-ch:
