@@ -70,7 +70,7 @@ func NewInMemoryDB() *InMemoryDB {
 }
 
 // NewBadDB returns a new database that will return an error inside the
-// transactions.
+// transactions, and when closing the database.
 func NewBadDB() *InMemoryDB {
 	db := NewInMemoryDB()
 	db.err = fakeErr

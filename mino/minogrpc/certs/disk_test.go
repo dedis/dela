@@ -3,6 +3,7 @@ package certs
 import (
 	"crypto/tls"
 	"io/ioutil"
+	"net"
 	"os"
 	"testing"
 
@@ -16,41 +17,62 @@ func TestDiskStore_Store(t *testing.T) {
 	db, clean := makeDb(t)
 	defer clean()
 
-	cert := fake.MakeCertificate(t, 0)
+	cert0 := fake.MakeCertificate(t, 1, net.IPv4(127, 0, 0, 1))
+	cert0.PrivateKey = nil
+	cert12 := fake.MakeCertificate(t, 1, net.IPv4(127, 0, 0, 12))
+	cert12.PrivateKey = nil
 
 	store := NewDiskStore(db, fake.AddressFactory{})
 
-	err := store.Store(fake.NewAddress(0), cert)
+	err := store.Store(fake.NewAddress(0), cert0)
 	require.NoError(t, err)
 
-	err = store.Store(fake.NewAddress(12), cert)
+	err = store.Store(fake.NewAddress(12), cert12)
 	require.NoError(t, err)
 
-	cert, _ = store.InMemoryStore.Load(fake.NewAddress(0))
-	require.NotNil(t, cert)
-	cert, _ = store.InMemoryStore.Load(fake.NewAddress(12))
-	require.NotNil(t, cert)
+	cert, err := store.InMemoryStore.Load(fake.NewAddress(0))
+	require.NoError(t, err)
+	require.Equal(t, cert0, cert)
+	cert, err = store.InMemoryStore.Load(fake.NewAddress(12))
+	require.NoError(t, err)
+	require.Equal(t, cert12, cert)
 
 	other := NewDiskStore(db, fake.AddressFactory{})
 
 	cert, err = other.Load(fake.NewAddress(0))
 	require.NoError(t, err)
-	require.NotNil(t, cert)
+	require.Equal(t, cert0, cert)
 	cert, err = other.Load(fake.NewAddress(12))
 	require.NoError(t, err)
-	require.NotNil(t, cert)
+	require.Equal(t, cert12, cert)
+}
 
-	err = store.Store(fake.NewBadAddress(), nil)
+func TestDiskStore_BadKey_Store(t *testing.T) {
+	store := &DiskStore{}
+
+	err := store.Store(fake.NewBadAddress(), nil)
 	require.EqualError(t, err, fake.Err("certificate key failed"))
+}
 
-	store.db = fake.NewBadDB()
-	err = store.Store(fake.NewAddress(0), cert)
-	require.EqualError(t, err, fake.Err("while updating db: bucket"))
+func TestDiskStore_FailCreateBucket_Store(t *testing.T) {
+	store := &DiskStore{
+		db: fake.NewBadDB(),
+	}
 
+	err := store.Store(fake.NewAddress(0), fake.MakeCertificate(t, 0))
+	require.EqualError(t, err, fake.Err("while updating db: while getting bucket"))
+}
+
+func TestDiskStore_FailWriteDB_Store(t *testing.T) {
 	memdb := fake.NewInMemoryDB()
-	memdb.SetBucket(store.bucket, fake.NewBadWriteBucket())
-	store.db = memdb
-	err = store.Store(fake.NewAddress(0), cert)
+	memdb.SetBucket(certBucket, fake.NewBadWriteBucket())
+
+	store := &DiskStore{
+		bucket: certBucket,
+		db:     memdb,
+	}
+
+	err := store.Store(fake.NewAddress(0), fake.MakeCertificate(t, 0))
 	require.EqualError(t, err, fake.Err("while updating db: while writing"))
 }
 
@@ -73,26 +95,46 @@ func TestDiskStore_Load(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, cert)
 
-	_, err = store.Load(fake.NewBadAddress())
-	require.EqualError(t, err, fake.Err("certificate key failed"))
-
 	store = NewDiskStore(fake.NewInMemoryDB(), fake.AddressFactory{})
 	cert, err = store.Load(fake.NewAddress(0))
 	require.NoError(t, err)
 	require.Nil(t, cert)
+}
 
-	store.db = fake.NewBadViewDB()
-	_, err = store.Load(fake.NewAddress(0))
+func TestDiskStore_BadKey_Load(t *testing.T) {
+	store := &DiskStore{
+		InMemoryStore: NewInMemoryStore(),
+	}
+
+	_, err := store.Load(fake.NewBadAddress())
+	require.EqualError(t, err, fake.Err("certificate key failed"))
+}
+
+func TestDiskStore_FailReadDB_Load(t *testing.T) {
+	store := &DiskStore{
+		InMemoryStore: NewInMemoryStore(),
+		db:            fake.NewBadViewDB(),
+	}
+
+	_, err := store.Load(fake.NewAddress(0))
 	require.EqualError(t, err, fake.Err("while reading db"))
+}
 
+func TestDiskStore_MalformedCert_Load(t *testing.T) {
 	bucket := fake.NewBucket()
 	key, err := fake.NewAddress(0).MarshalText()
 	require.NoError(t, err)
 	bucket.Set(key, []byte{1, 2, 3})
 
 	memdb := fake.NewInMemoryDB()
-	memdb.SetBucket(store.bucket, bucket)
-	store.db = memdb
+	memdb.SetBucket(certBucket, bucket)
+
+	store := &DiskStore{
+		bucket:        certBucket,
+		InMemoryStore: NewInMemoryStore(),
+		db:            memdb,
+	}
+
 	_, err = store.Load(fake.NewAddress(0))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "certificate malformed: asn1: ")
@@ -125,14 +167,28 @@ func TestDiskStore_Delete(t *testing.T) {
 	cert, err = store.Load(key)
 	require.NoError(t, err)
 	require.Nil(t, cert)
+}
 
-	err = store.Delete(fake.NewBadAddress())
+func TestDiskStore_BadKey_Delete(t *testing.T) {
+	store := &DiskStore{
+		InMemoryStore: NewInMemoryStore(),
+	}
+
+	err := store.Delete(fake.NewBadAddress())
 	require.EqualError(t, err, fake.Err("certificate key failed"))
+}
 
+func TestDiskStore_FailWriteDB_Delete(t *testing.T) {
 	memdb := fake.NewInMemoryDB()
-	memdb.SetBucket(store.bucket, fake.NewBadDeleteBucket())
-	store.db = memdb
-	err = store.Delete(fake.NewAddress(0))
+	memdb.SetBucket(certBucket, fake.NewBadDeleteBucket())
+
+	store := &DiskStore{
+		InMemoryStore: NewInMemoryStore(),
+		bucket:        certBucket,
+		db:            memdb,
+	}
+
+	err := store.Delete(fake.NewAddress(0))
 	require.EqualError(t, err, fake.Err("while updating db: while deleting"))
 }
 
@@ -170,15 +226,22 @@ func TestDiskStore_Range(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, 4, count)
+}
 
+func TestDiskNode_MalformedCertificate_Range(t *testing.T) {
 	bucket := fake.NewBucket()
 	bucket.Set([]byte{}, []byte{1, 2, 3})
 
 	memdb := fake.NewInMemoryDB()
-	memdb.SetBucket(store.bucket, bucket)
+	memdb.SetBucket(certBucket, bucket)
 
-	store.db = memdb
-	err = store.Range(func(addr mino.Address, cert *tls.Certificate) bool { return true })
+	store := &DiskStore{
+		InMemoryStore: NewInMemoryStore(),
+		bucket:        certBucket,
+		db:            memdb,
+	}
+
+	err := store.Range(func(addr mino.Address, cert *tls.Certificate) bool { return true })
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "while reading db: certificate malformed: asn1: ")
 }

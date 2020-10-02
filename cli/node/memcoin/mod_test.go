@@ -20,7 +20,11 @@ func TestMemcoin_Main(t *testing.T) {
 	main()
 }
 
-func TestMemcoin_Scenario_1(t *testing.T) {
+// This test creates a chain with initially 3 nodes. It then adds node 4 and 5
+// in two blocks. Node 4 does not share its certificate which means others won't
+// be able to communicate, but the chain should proceed because of the
+// threshold.
+func TestMemcoin_Scenario_SetupAndTransactions(t *testing.T) {
 	dir, err := ioutil.TempDir(os.TempDir(), "memcoin1")
 	require.NoError(t, err)
 
@@ -114,7 +118,11 @@ func TestMemcoin_Scenario_1(t *testing.T) {
 	require.EqualError(t, err, `Required flag "member" not set`)
 }
 
-func TestMemcoin_Scenario_2(t *testing.T) {
+// This test creates a chain with two nodes, then gracefully close them. It
+// finally restarts both of them to make sure the chain can proceed after the
+// restart. It basically tests if the components are correctly loaded from the
+// persisten storage.
+func TestMemcoin_Scenario_RestartNode(t *testing.T) {
 	dir, err := ioutil.TempDir(os.TempDir(), "memcoin2")
 	require.NoError(t, err)
 
@@ -133,8 +141,7 @@ func TestMemcoin_Scenario_2(t *testing.T) {
 	cfg := config{Channel: sigs, Writer: ioutil.Discard}
 
 	// Now the node are restarted. It should correctly follow the existing chain
-	// and then participate to new blocks. It essentially tests that components
-	// are correctly loaded from the disk.
+	// and then participate to new blocks.
 	runNode(t, node1, cfg, 2210, &wg)
 	runNode(t, node2, cfg, 2211, &wg)
 

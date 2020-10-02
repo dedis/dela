@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/core/store/kv"
 	"go.dedis.ch/dela/core/txn/pool"
@@ -22,57 +23,90 @@ func TestMinimal_SetCommands(t *testing.T) {
 }
 
 func TestMinimal_OnStart(t *testing.T) {
-	dir, err := ioutil.TempDir(os.TempDir(), "dela-test-")
-	require.NoError(t, err)
+	flags, dir, clean := makeFlags(t)
+	defer clean()
 
 	db, err := kv.New(filepath.Join(dir, "test.db"))
 	require.NoError(t, err)
 
-	defer os.RemoveAll(dir)
-
 	m := NewMinimal().(minimal)
-
-	fset := make(node.FlagSet)
-	fset["config"] = dir
 
 	inj := node.NewInjector()
 	inj.Inject(fake.Mino{})
 	inj.Inject(db)
 
-	err = m.OnStart(fset, inj)
+	err = m.OnStart(flags, inj)
 	require.NoError(t, err)
+}
 
-	err = m.OnStart(fset, node.NewInjector())
+func TestMinimal_MissingMino_OnStart(t *testing.T) {
+	m := NewMinimal()
+
+	err := m.OnStart(make(node.FlagSet), node.NewInjector())
 	require.EqualError(t, err,
 		"injector: couldn't find dependency for 'mino.Mino'")
+}
 
-	require.NoError(t, os.Remove(filepath.Join(dir, privateKeyFile)))
+func TestMinimal_FailLoadKey_OnStart(t *testing.T) {
+	flags, _, clean := makeFlags(t)
+	defer clean()
+
+	m := NewMinimal().(minimal)
+
+	inj := node.NewInjector()
+	inj.Inject(fake.Mino{})
+	inj.Inject(fake.NewInMemoryDB())
+
 	m.signerFn = badFn
-	err = m.OnStart(fset, inj)
+
+	err := m.OnStart(flags, inj)
 	require.EqualError(t, err,
 		fake.Err("signer: while loading: generator failed: failed to marshal signer"))
+}
 
-	m.signerFn = blsSigner
+func TestMinimal_FailCreatePool_OnStart(t *testing.T) {
+	flags, _, clean := makeFlags(t)
+	defer clean()
+
+	m := NewMinimal().(minimal)
+
+	inj := node.NewInjector()
 	inj.Inject(fake.NewBadMino())
-	err = m.OnStart(fset, inj)
+
+	err := m.OnStart(flags, inj)
 	require.EqualError(t, err,
 		fake.Err("pool: failed to listen: couldn't create the rpc"))
+}
 
-	inj = node.NewInjector()
+func TestMinimal_MissingDB_OnStart(t *testing.T) {
+	flags, _, clean := makeFlags(t)
+	defer clean()
+
+	m := NewMinimal().(minimal)
+
+	inj := node.NewInjector()
 	inj.Inject(fake.Mino{})
-	err = m.OnStart(fset, inj)
-	require.EqualError(t, err, "injector: couldn't find dependency for 'kv.DB'")
 
-	// Test with an invalid private key in the file.
-	os.Remove(filepath.Join(dir, privateKeyFile))
+	err := m.OnStart(flags, inj)
+	require.EqualError(t, err, "injector: couldn't find dependency for 'kv.DB'")
+}
+
+func TestMinimal_MalformedKey_OnStart(t *testing.T) {
+	flags, dir, clean := makeFlags(t)
+	defer clean()
+
+	m := NewMinimal().(minimal)
+
+	inj := node.NewInjector()
+	inj.Inject(fake.Mino{})
+	inj.Inject(fake.NewInMemoryDB())
 
 	file, err := os.Create(filepath.Join(dir, privateKeyFile))
 	require.NoError(t, err)
 
 	file.Close()
 
-	inj.Inject(db)
-	err = m.OnStart(fset, inj)
+	err = m.OnStart(flags, inj)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "signer: while unmarshaling: ")
 }
@@ -122,6 +156,16 @@ func TestMinimal_OnStop(t *testing.T) {
 
 // -----------------------------------------------------------------------------
 // Utility functions
+
+func makeFlags(t *testing.T) (cli.Flags, string, func()) {
+	dir, err := ioutil.TempDir(os.TempDir(), "dela-")
+	require.NoError(t, err)
+
+	fset := make(node.FlagSet)
+	fset["config"] = dir
+
+	return fset, dir, func() { os.RemoveAll(dir) }
+}
 
 func badFn() encoding.BinaryMarshaler {
 	return fake.NewBadHash()

@@ -49,7 +49,7 @@ func (s *DiskStore) Store(addr mino.Address, cert *tls.Certificate) error {
 	err = s.db.Update(func(tx kv.WritableTx) error {
 		bucket, err := tx.GetBucketOrCreate(s.bucket)
 		if err != nil {
-			return xerrors.Errorf("bucket: %v", err)
+			return xerrors.Errorf("while getting bucket: %v", err)
 		}
 
 		err = bucket.Set(key, cert.Leaf.Raw)

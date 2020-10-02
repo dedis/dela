@@ -35,46 +35,82 @@ func TestFileLoader_LoadOrCreate(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []byte{1, 2, 3}, data)
 	require.Equal(t, 1, generator.calls.Len())
+}
 
-	os.Remove(file.Name())
-	_, err = loader.LoadOrCreate(fakeGenerator{err: fake.GetError()})
+func TestFileLoader_BadGenerator_LoadOrCreate(t *testing.T) {
+	loader := fileLoader{
+		path:   "",
+		statFn: statNotExists,
+	}
+
+	_, err := loader.LoadOrCreate(fakeGenerator{err: fake.GetError()})
 	require.EqualError(t, err, fake.Err("generator failed"))
+}
 
-	loader.statFn = func(path string) (os.FileInfo, error) {
-		return nil, os.ErrNotExist
+func TestFileLoader_FailCreateFile_LoadOrCreate(t *testing.T) {
+	loader := fileLoader{
+		path:   "",
+		statFn: statNotExists,
+		openFileFn: func(path string, flags int, perms os.FileMode) (*os.File, error) {
+			return nil, fake.GetError()
+		},
 	}
-	loader.openFileFn = func(path string, flags int, perms os.FileMode) (*os.File, error) {
-		return nil, fake.GetError()
-	}
-	_, err = loader.LoadOrCreate(generator)
+
+	_, err := loader.LoadOrCreate(fakeGenerator{})
 	require.EqualError(t, err, fake.Err("while creating file"))
+}
 
-	loader.openFileFn = func(path string, flags int, perms os.FileMode) (*os.File, error) {
-		return os.NewFile(0, ""), nil
+func TestFileLoader_FailWriteFile_LoadOrCreate(t *testing.T) {
+	loader := fileLoader{
+		path:   "",
+		statFn: statNotExists,
+		openFileFn: func(path string, flags int, perms os.FileMode) (*os.File, error) {
+			return os.NewFile(0, ""), nil
+		},
 	}
-	_, err = loader.LoadOrCreate(generator)
+
+	_, err := loader.LoadOrCreate(fakeGenerator{})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "while writing: write : ")
+}
 
-	loader.statFn = func(path string) (os.FileInfo, error) {
-		return nil, nil
+func TestFileLoader_FailOpenFile_LoadOrCreate(t *testing.T) {
+	loader := fileLoader{
+		path:   "",
+		statFn: statExists,
+		openFn: func(path string) (*os.File, error) {
+			return nil, fake.GetError()
+		},
 	}
-	loader.openFn = func(path string) (*os.File, error) {
-		return nil, fake.GetError()
-	}
-	_, err = loader.LoadOrCreate(generator)
+
+	_, err := loader.LoadOrCreate(fakeGenerator{})
 	require.EqualError(t, err, fake.Err("while opening file"))
+}
 
-	loader.openFn = func(path string) (*os.File, error) {
-		return os.Open(os.TempDir())
+func TestFileLoader_FailReadFile_LoadOrCreate(t *testing.T) {
+	loader := fileLoader{
+		path:   "",
+		statFn: statExists,
+		openFn: func(path string) (*os.File, error) {
+			return os.Open(os.TempDir())
+		},
 	}
-	_, err = loader.LoadOrCreate(generator)
+
+	_, err := loader.LoadOrCreate(fakeGenerator{})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "while reading file: ")
 }
 
 // -----------------------------------------------------------------------------
 // Utility functions
+
+func statNotExists(path string) (os.FileInfo, error) {
+	return nil, os.ErrNotExist
+}
+
+func statExists(path string) (os.FileInfo, error) {
+	return nil, nil
+}
 
 type fakeGenerator struct {
 	calls *fake.Call
