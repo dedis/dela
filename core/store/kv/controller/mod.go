@@ -9,16 +9,18 @@ import (
 	"golang.org/x/xerrors"
 )
 
-type minimal struct{}
+type minimalController struct{}
 
-func NewMinimal() node.Initializer {
-	return minimal{}
+// NewController returns a minimal controller that will setup a key/value
+// database.
+func NewController() node.Initializer {
+	return minimalController{}
 }
 
-func (m minimal) SetCommands(builder node.Builder) {}
+func (m minimalController) SetCommands(builder node.Builder) {}
 
-func (m minimal) OnStart(flags cli.Flags, inj node.Injector) error {
-	db, err := kv.New(filepath.Join(flags.String("config"), "test.db"))
+func (m minimalController) OnStart(flags cli.Flags, inj node.Injector) error {
+	db, err := kv.New(filepath.Join(flags.String("config"), "dela.db"))
 	if err != nil {
 		return xerrors.Errorf("db: %v", err)
 	}
@@ -28,7 +30,7 @@ func (m minimal) OnStart(flags cli.Flags, inj node.Injector) error {
 	return nil
 }
 
-func (m minimal) OnStop(inj node.Injector) error {
+func (m minimalController) OnStop(inj node.Injector) error {
 	var db kv.DB
 	err := inj.Resolve(&db)
 	if err != nil {

@@ -110,11 +110,15 @@ func (db *InMemoryDB) Close() error {
 	return db.err
 }
 
+// dbTx is a fake implementation of a database transaction.
+//
+// - implements kv.WritableTx
 type dbTx struct {
 	buckets map[string]*Bucket
 	err     error
 }
 
+// GetBucket implements kv.ReadableTx.
 func (tx dbTx) GetBucket(name []byte) kv.Bucket {
 	bucket, found := tx.buckets[string(name)]
 	if !found {
@@ -124,10 +128,12 @@ func (tx dbTx) GetBucket(name []byte) kv.Bucket {
 	return bucket
 }
 
+// GetBucketOrCreate implements kv.WritableTx.
 func (tx dbTx) GetBucketOrCreate(name []byte) (kv.Bucket, error) {
 	return tx.GetBucket(name), tx.err
 }
 
+// GetBucketOrCreate implements store.Transaction.
 func (dbTx) OnCommit(fn func()) {}
 
 // Bucket is a fake key/value storage bucket.

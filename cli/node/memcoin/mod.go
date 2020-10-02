@@ -60,7 +60,7 @@ func runWithCfg(args []string, cfg config) error {
 	builder := node.NewBuilderWithCfg(
 		cfg.Channel,
 		cfg.Writer,
-		db.NewMinimal(),
+		db.NewController(),
 		mino.NewMinimal(),
 		cosipbft.NewMinimal(),
 		signed.NewManagerController(),

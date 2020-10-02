@@ -69,7 +69,7 @@ func (s *DiskStore) Store(addr mino.Address, cert *tls.Certificate) error {
 }
 
 // Load implements certs.Storage. It first tries to read the certificate from
-// the cache, then from the disk.
+// the cache, then from the disk. It returns nil if not found in both.
 func (s *DiskStore) Load(addr mino.Address) (*tls.Certificate, error) {
 	cert, _ := s.InMemoryStore.Load(addr)
 	if cert != nil {
