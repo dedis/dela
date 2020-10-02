@@ -24,17 +24,17 @@ import (
 
 const certKeyName = "cert.key"
 
-// Minimal is an initializer with the minimum set of commands.
+// MiniController is an initializer with the minimum set of commands.
 //
 // - implements node.Initializer
-type minimal struct {
+type miniController struct {
 	random io.Reader
 	curve  elliptic.Curve
 }
 
-// NewMinimal returns a new initializer to start an instance of Minogrpc.
-func NewMinimal() node.Initializer {
-	return minimal{
+// NewController returns a new initializer to start an instance of Minogrpc.
+func NewController() node.Initializer {
+	return miniController{
 		random: rand.Reader,
 		curve:  elliptic.P521(),
 	}
@@ -42,7 +42,7 @@ func NewMinimal() node.Initializer {
 
 // Build implements node.Initializer. It populates the builder with the commands
 // to control Minogrpc.
-func (m minimal) SetCommands(builder node.Builder) {
+func (m miniController) SetCommands(builder node.Builder) {
 	builder.SetStartFlags(
 		cli.IntFlag{
 			Name:  "port",
@@ -93,7 +93,7 @@ func (m minimal) SetCommands(builder node.Builder) {
 
 // OnStart implements node.Initializer. It starts the minogrpc instance and
 // injects it in the dependency resolver.
-func (m minimal) OnStart(ctx cli.Flags, inj node.Injector) error {
+func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
 
 	port := ctx.Int("port")
 	if port < 0 || port > math.MaxUint16 {
@@ -142,7 +142,7 @@ type StoppableMino interface {
 }
 
 // OnStop implements node.Initializer. It stops the network overlay.
-func (m minimal) OnStop(inj node.Injector) error {
+func (m miniController) OnStop(inj node.Injector) error {
 	var o StoppableMino
 	err := inj.Resolve(&o)
 	if err != nil {
@@ -157,7 +157,7 @@ func (m minimal) OnStop(inj node.Injector) error {
 	return nil
 }
 
-func (m minimal) getKey(flags cli.Flags) (*ecdsa.PrivateKey, error) {
+func (m miniController) getKey(flags cli.Flags) (*ecdsa.PrivateKey, error) {
 	loader := loader.NewFileLoader(filepath.Join(flags.Path("config"), certKeyName))
 
 	keydata, err := loader.LoadOrCreate(newGenerator(m.random, m.curve))

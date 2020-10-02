@@ -220,7 +220,7 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 	md := metadata.Pairs(
 		headerURIKey, uri,
 		headerStreamIDKey, streamID,
-		headerGatewayKey, o.meStr)
+		headerGatewayKey, o.myAddrStr)
 
 	// This lock will make sure that a session is ready before any message
 	// forwarded will be received.
@@ -230,7 +230,7 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 	if !initiated {
 		sess = session.NewSession(
 			md,
-			o.me,
+			o.myAddr,
 			endpoint.Factory,
 			o.router.GetPacketFactory(),
 			o.context,
@@ -380,22 +380,25 @@ func (o *overlayServer) Forward(ctx context.Context, p *ptypes.Packet) (*ptypes.
 type overlay struct {
 	closer      *sync.WaitGroup
 	context     serde.Context
-	me          mino.Address
+	myAddr      mino.Address
 	certs       certs.Storage
 	tokens      tokens.Holder
 	router      router.Router
 	connMgr     session.ConnectionManager
 	addrFactory mino.AddressFactory
-	secret      interface{}
-	public      interface{}
+
+	// secret and public are the key pair that has generated the server
+	// certificate.
+	secret interface{}
+	public interface{}
 
 	// Keep a text marshalled value for the overlay address so that it's not
 	// calculated for each request.
-	meStr string
+	myAddrStr string
 }
 
 func newOverlay(tmpl minoTemplate) (*overlay, error) {
-	meBytes, err := tmpl.me.MarshalText()
+	myAddrBuf, err := tmpl.myAddr.MarshalText()
 	if err != nil {
 		return nil, xerrors.Errorf("failed to marshal address: %v", err)
 	}
@@ -413,18 +416,18 @@ func newOverlay(tmpl minoTemplate) (*overlay, error) {
 	o := &overlay{
 		closer:      new(sync.WaitGroup),
 		context:     json.NewContext(),
-		me:          tmpl.me,
-		meStr:       string(meBytes),
+		myAddr:      tmpl.myAddr,
+		myAddrStr:   string(myAddrBuf),
 		tokens:      tokens.NewInMemoryHolder(),
 		certs:       tmpl.certs,
 		router:      tmpl.router,
-		connMgr:     newConnManager(tmpl.me, tmpl.certs),
+		connMgr:     newConnManager(tmpl.myAddr, tmpl.certs),
 		addrFactory: tmpl.fac,
 		secret:      tmpl.secret,
 		public:      tmpl.public,
 	}
 
-	cert, err := o.certs.Load(o.me)
+	cert, err := o.certs.Load(o.myAddr)
 	if err != nil {
 		return nil, xerrors.Errorf("while loading cert: %v", err)
 	}
@@ -441,7 +444,7 @@ func newOverlay(tmpl minoTemplate) (*overlay, error) {
 
 // GetCertificate returns the certificate of the overlay.
 func (o *overlay) GetCertificate() *tls.Certificate {
-	me, err := o.certs.Load(o.me)
+	me, err := o.certs.Load(o.myAddr)
 	if err != nil {
 		// An error when getting the certificate of the server is caused by the
 		// underlying storage, and that should never happen in healthy
@@ -476,7 +479,7 @@ func (o *overlay) Join(addr, token string, certHash []byte) error {
 
 	meCert := o.GetCertificate()
 
-	meAddr, err := o.me.MarshalText()
+	meAddr, err := o.myAddr.MarshalText()
 	if err != nil {
 		return xerrors.Errorf("couldn't marshal own address: %v", err)
 	}
@@ -557,7 +560,7 @@ func (o *overlay) makeCertificate() error {
 		Leaf:        leaf,
 	}
 
-	err = o.certs.Store(o.me, cert)
+	err = o.certs.Store(o.myAddr, cert)
 	if err != nil {
 		return xerrors.Errorf("while storing: %v", err)
 	}
@@ -572,15 +575,15 @@ func (o *overlay) makeCertificate() error {
 type connManager struct {
 	sync.Mutex
 	certs    certs.Storage
-	me       mino.Address
+	myAddr   mino.Address
 	counters map[mino.Address]int
 	conns    map[mino.Address]*grpc.ClientConn
 }
 
-func newConnManager(me mino.Address, certs certs.Storage) *connManager {
+func newConnManager(myAddr mino.Address, certs certs.Storage) *connManager {
 	return &connManager{
 		certs:    certs,
-		me:       me,
+		myAddr:   myAddr,
 		counters: make(map[mino.Address]int),
 		conns:    make(map[mino.Address]*grpc.ClientConn),
 	}
@@ -618,12 +621,12 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 	pool := x509.NewCertPool()
 	pool.AddCert(clientPubCert.Leaf)
 
-	me, err := mgr.certs.Load(mgr.me)
+	me, err := mgr.certs.Load(mgr.myAddr)
 	if err != nil {
 		return nil, xerrors.Errorf("while loading own cert: %v", err)
 	}
 	if me == nil {
-		return nil, xerrors.Errorf("couldn't find server '%v' certificate", mgr.me)
+		return nil, xerrors.Errorf("couldn't find server '%v' certificate", mgr.myAddr)
 	}
 
 	ta := credentials.NewTLS(&tls.Config{
@@ -672,7 +675,7 @@ func (mgr *connManager) Release(to mino.Address) {
 			dela.Logger.Trace().
 				Err(err).
 				Stringer("to", to).
-				Stringer("from", mgr.me).
+				Stringer("from", mgr.myAddr).
 				Int("length", len(mgr.conns)).
 				Msg("connection closed")
 

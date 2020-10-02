@@ -23,7 +23,7 @@ func TestRPC_Call(t *testing.T) {
 	rpc := &RPC{
 		factory: fake.MessageFactory{},
 		overlay: &overlay{
-			me:      fake.NewAddress(1),
+			myAddr:  fake.NewAddress(1),
 			connMgr: fakeConnMgr{},
 			context: json.NewContext(),
 		},
@@ -61,11 +61,11 @@ func TestRPC_Call(t *testing.T) {
 	_, err = rpc.Call(ctx, fake.NewBadPublicKey(), mino.NewAddresses())
 	require.EqualError(t, err, fake.Err("failed to marshal msg"))
 
-	rpc.overlay.me = fake.NewBadAddress()
+	rpc.overlay.myAddr = fake.NewBadAddress()
 	_, err = rpc.Call(ctx, fake.Message{}, mino.NewAddresses())
 	require.EqualError(t, err, fake.Err("failed to marshal address"))
 
-	rpc.overlay.me = fake.NewAddress(0)
+	rpc.overlay.myAddr = fake.NewAddress(0)
 	rpc.overlay.connMgr = fakeConnMgr{err: fake.GetError()}
 	msgs, err = rpc.Call(ctx, fake.Message{}, mino.NewAddresses(addrs...))
 	require.NoError(t, err)
@@ -99,7 +99,7 @@ func TestRPC_Stream(t *testing.T) {
 	rpc := &RPC{
 		overlay: &overlay{
 			closer:      new(sync.WaitGroup),
-			me:          address{"C"},
+			myAddr:      address{"C"},
 			router:      tree.NewRouter(AddressFactory{}),
 			addrFactory: AddressFactory{},
 			connMgr:     fakeConnMgr{calls: calls},

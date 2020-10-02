@@ -2,7 +2,6 @@ package controller
 
 import (
 	"crypto/elliptic"
-	"crypto/rand"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -16,65 +15,98 @@ import (
 	"go.dedis.ch/dela/mino/minogrpc"
 )
 
-func TestMinimal_Build(t *testing.T) {
-	minimal := NewMinimal()
+func TestMiniController_Build(t *testing.T) {
+	ctrl := NewController()
 
 	call := &fake.Call{}
-	minimal.SetCommands(fakeBuilder{call: call})
+	ctrl.SetCommands(fakeBuilder{call: call})
 
 	require.Equal(t, 17, call.Len())
 }
 
-func TestMinimal_OnStart(t *testing.T) {
+func TestMiniController_OnStart(t *testing.T) {
 	dir, err := ioutil.TempDir(os.TempDir(), "minogrpc")
-	require.NoError(t, err)
-
-	db, err := kv.New(filepath.Join(dir, "test.db"))
 	require.NoError(t, err)
 
 	defer os.RemoveAll(dir)
 
-	minimal := NewMinimal().(minimal)
+	db, err := kv.New(filepath.Join(dir, "test.db"))
+	require.NoError(t, err)
+
+	ctrl := NewController().(miniController)
 
 	injector := node.NewInjector()
 	injector.Inject(db)
 
-	err = minimal.OnStart(fakeContext{path: dir}, injector)
+	err = ctrl.OnStart(fakeContext{path: dir}, injector)
 	require.NoError(t, err)
 
 	var m *minogrpc.Minogrpc
 	err = injector.Resolve(&m)
 	require.NoError(t, err)
 	require.NoError(t, m.GracefulStop())
+}
 
-	err = minimal.OnStart(fakeContext{num: 100000}, injector)
+func TestMiniController_InvalidPort_OnStart(t *testing.T) {
+	ctrl := NewController()
+
+	err := ctrl.OnStart(fakeContext{num: 100000}, node.NewInjector())
 	require.EqualError(t, err, "invalid port value 100000")
+}
 
-	err = minimal.OnStart(fakeContext{}, node.NewInjector())
+func TestMiniController_MissingDB_OnStart(t *testing.T) {
+	ctrl := NewController()
+
+	err := ctrl.OnStart(fakeContext{}, node.NewInjector())
 	require.EqualError(t, err, "injector: couldn't find dependency for 'kv.DB'")
+}
 
-	minimal.random = badReader{}
-	err = minimal.OnStart(fakeContext{}, injector)
-	require.EqualError(t, err, fake.Err("cert private key: while loading: generator failed: ecdsa"))
+func TestMiniController_FailGenerateKey_OnStart(t *testing.T) {
+	ctrl := NewController().(miniController)
+	ctrl.random = badReader{}
 
-	minimal.random = rand.Reader
-	minimal.curve = badCurve{Curve: elliptic.P224()}
-	err = minimal.OnStart(fakeContext{}, injector)
+	inj := node.NewInjector()
+	inj.Inject(fake.NewInMemoryDB())
+
+	err := ctrl.OnStart(fakeContext{}, inj)
+	require.EqualError(t, err,
+		fake.Err("cert private key: while loading: generator failed: ecdsa"))
+}
+
+func TestMiniController_FailMarshalKey_OnStart(t *testing.T) {
+	ctrl := NewController().(miniController)
+	ctrl.curve = badCurve{Curve: elliptic.P224()}
+
+	inj := node.NewInjector()
+	inj.Inject(fake.NewInMemoryDB())
+
+	err := ctrl.OnStart(fakeContext{}, inj)
 	require.EqualError(t, err,
 		"cert private key: while loading: generator failed: while marshaling: x509: unknown elliptic curve")
+}
 
-	require.NoError(t, os.Remove(filepath.Join(dir, certKeyName)))
+func TestMiniController_FailParseKey_OnStart(t *testing.T) {
+	dir, err := ioutil.TempDir(os.TempDir(), "dela")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
+	ctrl := NewController().(miniController)
+
+	inj := node.NewInjector()
+	inj.Inject(fake.NewInMemoryDB())
+
 	file, err := os.Create(filepath.Join(dir, certKeyName))
 	require.NoError(t, err)
 
 	defer file.Close()
 
-	err = minimal.OnStart(fakeContext{path: dir}, injector)
+	err = ctrl.OnStart(fakeContext{path: dir}, inj)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "cert private key: while parsing: x509: ")
 }
 
-func TestMinimal_OnStop(t *testing.T) {
+func TestMiniController_OnStop(t *testing.T) {
 	dir, err := ioutil.TempDir(os.TempDir(), "minogrpc")
 	require.NoError(t, err)
 
@@ -83,23 +115,32 @@ func TestMinimal_OnStop(t *testing.T) {
 
 	defer os.RemoveAll(dir)
 
-	minimal := NewMinimal()
+	ctrl := NewController()
 
 	injector := node.NewInjector()
 	injector.Inject(db)
 
-	err = minimal.OnStart(fakeContext{path: dir}, injector)
+	err = ctrl.OnStart(fakeContext{path: dir}, injector)
 	require.NoError(t, err)
 
-	err = minimal.OnStop(injector)
+	err = ctrl.OnStop(injector)
 	require.NoError(t, err)
+}
 
-	err = minimal.OnStop(node.NewInjector())
+func TestMiniController_MissingMino_OnStop(t *testing.T) {
+	ctrl := NewController()
+
+	err := ctrl.OnStop(node.NewInjector())
 	require.EqualError(t, err, "injector: couldn't find dependency for 'controller.StoppableMino'")
+}
 
-	injector = node.NewInjector()
-	injector.Inject(badMino{})
-	err = minimal.OnStop(injector)
+func TestMiniController_FailStopMino_OnStop(t *testing.T) {
+	ctrl := NewController()
+
+	inj := node.NewInjector()
+	inj.Inject(badMino{})
+
+	err := ctrl.OnStop(inj)
 	require.EqualError(t, err, fake.Err("while stopping mino"))
 }
 

@@ -88,7 +88,7 @@ type Minogrpc struct {
 }
 
 type minoTemplate struct {
-	me     mino.Address
+	myAddr mino.Address
 	router router.Router
 	fac    mino.AddressFactory
 	certs  certs.Storage
@@ -133,7 +133,7 @@ func NewMinogrpc(addr net.Addr, router router.Router, opts ...Option) (*Minogrpc
 	}
 
 	tmpl := minoTemplate{
-		me:     address{host: socket.Addr().String()},
+		myAddr: address{host: socket.Addr().String()},
 		router: router,
 		fac:    AddressFactory{},
 		certs:  certs.NewInMemoryStore(),
@@ -185,7 +185,7 @@ func (m *Minogrpc) GetAddressFactory() mino.AddressFactory {
 
 // GetAddress implements Mino. It returns the address of the server.
 func (m *Minogrpc) GetAddress() mino.Address {
-	return m.overlay.me
+	return m.overlay.myAddr
 }
 
 // GenerateToken generates and returns a new token that will be valid for the
@@ -274,7 +274,7 @@ func (m *Minogrpc) MakeRPC(name string, h mino.Handler, f serde.Factory) (mino.R
 // String implements fmt.Stringer. It prints a short description of the
 // instance.
 func (m *Minogrpc) String() string {
-	return fmt.Sprintf("%v", m.overlay.me)
+	return fmt.Sprintf("%v", m.overlay.myAddr)
 }
 
 // Listen starts the server. It waits for the go routine to start before
