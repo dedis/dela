@@ -72,4 +72,7 @@ func TestAddressFactory_FromText(t *testing.T) {
 	addr = factory.FromText([]byte(followerCode + "127.0.0.1:2001"))
 	require.Equal(t, "127.0.0.1:2001", addr.(Address).host)
 	require.False(t, addr.(Address).orchestrator)
+
+	addr = factory.FromText([]byte{1})
+	require.Equal(t, "", addr.(Address).host)
 }

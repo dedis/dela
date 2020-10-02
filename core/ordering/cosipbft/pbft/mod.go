@@ -208,9 +208,9 @@ func (m *pbftsm) Prepare(from mino.Address, block types.Block) (types.Digest, er
 	id := m.round.id
 
 	if m.state == ViewChangeState {
-		// When in view change mode, it must refused any proposal incoming until
+		// When in view change mode, it must refuse any proposal incoming until
 		// the node leaves the state.
-		return id, xerrors.Errorf("mismatch state %v != %v", m.state, InitialState)
+		return id, xerrors.New("cannot be in view change state during prepare")
 	}
 
 	roster, err := m.authReader(m.tree.Get())
@@ -251,7 +251,7 @@ func (m *pbftsm) Commit(id types.Digest, sig crypto.Signature) error {
 	defer m.Unlock()
 
 	if m.state != PrepareState && m.state != CommitState {
-		return xerrors.Errorf("mismatch state %v != %v", m.state, PrepareState)
+		return xerrors.Errorf("cannot commit from %v state", m.state)
 	}
 
 	if id != m.round.id {

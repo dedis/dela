@@ -136,7 +136,7 @@ func TestStateMachine_Prepare(t *testing.T) {
 
 	sm.state = ViewChangeState
 	_, err = sm.Prepare(from, block)
-	require.EqualError(t, err, "mismatch state viewchange != initial")
+	require.EqualError(t, err, "cannot be in view change state during prepare")
 
 	sm.state = InitialState
 	sm.val = badValidation{}
@@ -191,7 +191,7 @@ func TestStateMachine_Commit(t *testing.T) {
 
 	sm.state = ViewChangeState
 	err = sm.Commit(types.Digest{}, fake.Signature{})
-	require.EqualError(t, err, "mismatch state viewchange != prepare")
+	require.EqualError(t, err, "cannot commit from viewchange state")
 
 	sm.state = PrepareState
 	err = sm.Commit(types.Digest{2}, fake.Signature{})

@@ -133,13 +133,14 @@ type AddressFactory struct {
 // FromText implements mino.AddressFactory. It returns an instance of an
 // address from a byte slice.
 func (f AddressFactory) FromText(text []byte) mino.Address {
-	if len(text) == 0 {
+	str := string(text)
+
+	if len(str) == 0 {
 		return Address{}
 	}
 
-	if string(text)[0] == orchestratorCode[0] {
-		return Address{host: string(text)[1:], orchestrator: true}
+	return Address{
+		host:         str[1:],
+		orchestrator: str[0] == orchestratorCode[0],
 	}
-
-	return Address{host: string(text)[1:]}
 }
