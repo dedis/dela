@@ -123,7 +123,7 @@ func (s defaultSync) Sync(ctx context.Context, players mino.Players, cfg Config)
 
 	// The synchronization is run in background so that it continues even after
 	// the threshold is reached, which allow other nodes to complete a catch up
-	// whthe round is performing.
+	// while the round is performing.
 	go func() {
 		defer once.Do(wg.Done)
 

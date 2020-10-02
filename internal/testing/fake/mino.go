@@ -283,7 +283,7 @@ func (r *Receiver) Recv(context.Context) (mino.Address, serde.Message, error) {
 		return nil, nil, r.err
 	}
 
-	// In the case there are no more messages to read we return the last one
+	// In the case there are no more messages to read we return nil.
 	if r.index >= len(r.Msg) {
 		return NewAddress(0), nil, r.err
 	}

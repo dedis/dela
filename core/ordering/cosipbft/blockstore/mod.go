@@ -21,7 +21,7 @@ type TreeCache interface {
 	// of the cache alongside a function to unlock the cache. It allows one to
 	// delay a set while fetching associated data. The function returned must be
 	// called.
-	GetWithLock() (hashtree.Tree, func())
+	GetWithLock() (tree hashtree.Tree, unlock func())
 
 	Set(hashtree.Tree)
 
@@ -29,7 +29,7 @@ type TreeCache interface {
 	// holding the lock and returns a function to unlock it. It allows one to
 	// prevent an access until associated data is updated. The function returned
 	// must be called.
-	SetWithLock(hashtree.Tree) func()
+	SetWithLock(hashtree.Tree) (unlock func())
 }
 
 // GenesisStore is the interface to store and get the genesis block. It is left
