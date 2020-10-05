@@ -77,7 +77,7 @@ func TestRPC_Stream(t *testing.T) {
 	ctx, cancel2 := context.WithCancel(context.Background())
 	cancel2() // fake a timeout
 	_, _, err = receiver.Recv(ctx)
-	require.EqualError(t, err, "timeout")
+	require.Equal(t, err, context.Canceled)
 }
 
 func TestRPC_Failures_Stream(t *testing.T) {

@@ -170,5 +170,18 @@ type observer struct {
 }
 
 func (obs observer) NotifyCallback(evt interface{}) {
-	obs.ch <- evt.(types.BlockLink)
+	// TODO: use a non-blocking queue to prevent a event from blocking when the
+	// channel is busy.
+	for {
+		select {
+		case obs.ch <- evt.(types.BlockLink):
+			// Event went through.
+			return
+		default:
+			// A event is waiting to be read from the listener but the watcher
+			// needs to push this event forward. The channel is thus drained,
+			// and populated again with the most recent event.
+			<-obs.ch
+		}
+	}
 }

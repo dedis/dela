@@ -263,11 +263,16 @@ func (s *Service) Setup(ctx context.Context, ca crypto.CollectiveAuthority) erro
 // proof must be verified by the caller when leaving the trusted environment,
 // for instance when the proof is sent over the network.
 func (s *Service) GetProof(key []byte) (ordering.Proof, error) {
-	path, err := s.tree.Get().GetPath(key)
+	tree, unlock := s.tree.GetWithLock()
+	defer unlock()
+
+	path, err := tree.GetPath(key)
 	if err != nil {
 		return nil, xerrors.Errorf("reading path: %v", err)
 	}
 
+	// The chain is fetched while having the lock of the tree cache so that
+	// there is no race between the two stores when finalizing a block.
 	chain, err := s.blocks.GetChain()
 	if err != nil {
 		return nil, xerrors.Errorf("reading chain: %v", err)
@@ -350,6 +355,7 @@ func (s *Service) watchBlocks() {
 
 		s.logger.Info().
 			Uint64("index", link.GetBlock().GetIndex()).
+			Stringer("root", link.GetBlock().GetTreeRoot()).
 			Msg("block event")
 	}
 }

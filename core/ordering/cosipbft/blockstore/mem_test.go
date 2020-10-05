@@ -110,9 +110,10 @@ func TestInMemory_Watch(t *testing.T) {
 	ch := store.Watch(ctx)
 
 	store.Store(makeLink(t, types.Digest{}))
+	store.Store(makeLink(t, store.blocks[0].GetTo()))
 
 	link := <-ch
-	require.Equal(t, types.Digest{}, link.GetFrom())
+	require.Equal(t, store.blocks[1].GetTo(), link.GetFrom())
 
 	cancel()
 	_, more := <-ch

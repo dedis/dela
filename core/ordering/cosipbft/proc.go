@@ -72,9 +72,11 @@ func (h *processor) Invoke(from mino.Address, msg serde.Message) ([]byte, error)
 
 		// In case the node is falling behind the chain, it gives it a chance to
 		// catch up before moving forward.
-		if h.sync.GetLatest() > h.blocks.Len() {
+		latest := h.sync.GetLatest()
+
+		if latest > h.blocks.Len() {
 			for link := range blocks {
-				if link.GetBlock().GetIndex() >= h.sync.GetLatest() {
+				if link.GetBlock().GetIndex() >= latest {
 					cancel()
 				}
 			}
@@ -112,7 +114,8 @@ func (h *processor) Invoke(from mino.Address, msg serde.Message) ([]byte, error)
 	case types.CommitMessage:
 		err := h.pbftsm.Commit(in.GetID(), in.GetSignature())
 		if err != nil {
-			h.logger.Info().Msg("commit failed")
+			h.logger.Debug().Msg("commit failed")
+
 			return nil, xerrors.Errorf("pbft commit failed: %v", err)
 		}
 
