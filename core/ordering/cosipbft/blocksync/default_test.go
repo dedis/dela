@@ -20,7 +20,6 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minoch"
-	"go.dedis.ch/dela/serde"
 )
 
 func TestDefaultSync_Basic(t *testing.T) {
@@ -100,7 +99,11 @@ func TestDefaultSync_GetLatest(t *testing.T) {
 }
 
 func TestDefaultSync_Sync(t *testing.T) {
-	rcvr := fake.NewReceiver(types.NewSyncRequest(0), types.NewSyncRequest(0), types.NewSyncAck())
+	rcvr := fake.NewReceiver(
+		fake.NewRecvMsg(fake.NewAddress(0), types.NewSyncRequest(0)),
+		fake.NewRecvMsg(fake.NewAddress(0), types.NewSyncRequest(0)),
+		fake.NewRecvMsg(fake.NewAddress(0), types.NewSyncAck()),
+	)
 	sender := fake.Sender{}
 
 	sync := defaultSync{
@@ -143,8 +146,12 @@ func TestDefaultSync_Sync(t *testing.T) {
 
 	logger, wait := fake.WaitLog("while synchronizing fake.Address[0]", time.Second)
 
+	recv := fake.NewReceiver(
+		fake.NewRecvMsg(fake.NewAddress(0), types.NewSyncRequest(0)),
+	)
+
 	sync.logger = logger
-	sync.rpc = fake.NewStreamRPC(fake.NewReceiver(types.NewSyncRequest(0)), sender)
+	sync.rpc = fake.NewStreamRPC(recv, sender)
 	sync.blocks = badBlockStore{}
 	err = sync.Sync(ctx, mino.NewAddresses(), Config{MinSoft: 1})
 	require.NoError(t, err)
@@ -182,15 +189,21 @@ func TestHandler_Stream(t *testing.T) {
 	handler.pbftsm = testSM{blocks: handler.blocks}
 	storeBlocks(t, handler.blocks, 1)
 
-	err := handler.Stream(fake.Sender{}, fake.NewReceiver(types.NewSyncMessage(makeChain(t, 0))))
+	recv := fake.NewReceiver(
+		fake.NewRecvMsg(fake.NewAddress(0), types.NewSyncMessage(makeChain(t, 0))),
+	)
+
+	err := handler.Stream(fake.Sender{}, recv)
 	require.NoError(t, err)
 
-	msgs := []serde.Message{types.NewSyncMessage(makeChain(t, blocks.Len()-1))}
+	msgs := []fake.ReceiverMessage{
+		fake.NewRecvMsg(fake.NewAddress(0), types.NewSyncMessage(makeChain(t, blocks.Len()-1))),
+	}
 	for i := uint64(0); i < blocks.Len(); i++ {
 		link, err := blocks.GetByIndex(i)
 		require.NoError(t, err)
 
-		msgs = append(msgs, types.NewSyncReply(link))
+		msgs = append(msgs, fake.NewRecvMsg(fake.NewAddress(0), types.NewSyncReply(link)))
 	}
 
 	handler.blocks = blockstore.NewInMemory()
@@ -206,24 +219,42 @@ func TestHandler_Stream(t *testing.T) {
 	err = handler.Stream(fake.Sender{}, fake.NewReceiver(msgs...))
 	require.EqualError(t, err, "reading genesis: missing genesis block")
 
+	recv = fake.NewReceiver(
+		fake.NewRecvMsg(fake.NewAddress(0), types.NewSyncMessage(fakeChain{err: fake.GetError()})),
+	)
+
 	handler.genesis.Set(otypes.Genesis{})
-	err = handler.Stream(fake.Sender{}, fake.NewReceiver(types.NewSyncMessage(fakeChain{err: fake.GetError()})))
+	err = handler.Stream(fake.Sender{}, recv)
 	require.EqualError(t, err, fake.Err("failed to verify chain"))
 
-	err = handler.Stream(fake.NewBadSender(), fake.NewReceiver(types.NewSyncMessage(makeChain(t, 6))))
+	recv = fake.NewReceiver(
+		fake.NewRecvMsg(fake.NewAddress(0), types.NewSyncMessage(makeChain(t, 6))),
+	)
+
+	err = handler.Stream(fake.NewBadSender(), recv)
 	require.EqualError(t, err, fake.Err("sending request failed"))
 
-	rcvr := fake.NewBadReceiver(types.NewSyncMessage(makeChain(t, blocks.Len()-1)))
-	rcvr.Msg = []serde.Message{types.NewSyncMessage(makeChain(t, 6))}
-	err = handler.Stream(fake.Sender{}, rcvr)
+	recv = fake.NewBadReceiver(
+		fake.NewRecvMsg(fake.NewAddress(0), types.NewSyncMessage(makeChain(t, 6))),
+	)
+
+	err = handler.Stream(fake.Sender{}, recv)
 	require.EqualError(t, err, fake.Err("receiver failed"))
 
-	msgs = []serde.Message{types.NewSyncMessage(makeChain(t, 6)), msgs[1]}
-	err = handler.Stream(fake.Sender{}, fake.NewReceiver(msgs...))
+	recv = fake.NewReceiver(
+		fake.NewRecvMsg(fake.NewAddress(0), types.NewSyncMessage(makeChain(t, 6))),
+		msgs[1],
+	)
+
+	err = handler.Stream(fake.Sender{}, recv)
 	require.Error(t, err)
 	require.Regexp(t, "pbft catch up failed: mismatch link '[0]{8}' != '[0-9a-f]{8}'", err.Error())
 
-	err = handler.Stream(fake.NewBadSender(), fake.NewReceiver(types.NewSyncMessage(makeChain(t, 0))))
+	recv = fake.NewReceiver(
+		fake.NewRecvMsg(fake.NewAddress(0), types.NewSyncMessage(makeChain(t, 0))),
+	)
+
+	err = handler.Stream(fake.NewBadSender(), recv)
 	require.EqualError(t, err, fake.Err("sending ack failed"))
 }
 

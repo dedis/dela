@@ -103,7 +103,7 @@ func (m minimal) OnStart(flags cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("signer: %v", err)
 	}
 
-	cosi := threshold.NewCoSi(onet, signer)
+	cosi := threshold.NewThreshold(onet, signer)
 	cosi.SetThreshold(threshold.ByzantineThreshold)
 
 	exec := baremetal.NewExecution()

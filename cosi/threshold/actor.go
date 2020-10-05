@@ -1,3 +1,10 @@
+//
+// This file contains the implementation of the collective signing actor that
+// provides a primitive to send a signature request to participants.
+//
+// Document Last Review: 05.10.2020
+//
+
 package threshold
 
 import (
@@ -12,12 +19,11 @@ import (
 	"golang.org/x/xerrors"
 )
 
-// thresholdActor is an implementation of the cosi.Actor interface for a
-// threshold collective signing.
+// thresholdActor is an implementation of a collective signing actor.
 //
 // - implements cosi.Actor
 type thresholdActor struct {
-	*CoSi
+	*Threshold
 
 	me      mino.Address
 	rpc     mino.RPC
@@ -25,14 +31,15 @@ type thresholdActor struct {
 }
 
 // Sign implements cosi.Actor. It returns the collective signature from the
-// collective authority, or an error if it failed.
+// collective authority, or an error if it failed. The signature may be composed
+// of only a subset of the participants, depending on the threshold. The
+// function will return as soon as a valid signature is available.
+// The context must be cancel at some point, and it will interrupt the protocol
+// if it is not done yet.
 func (a thresholdActor) Sign(ctx context.Context, msg serde.Message,
 	ca crypto.CollectiveAuthority) (crypto.Signature, error) {
 
-	innerCtx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	sender, rcvr, err := a.rpc.Stream(innerCtx, ca)
+	sender, rcvr, err := a.rpc.Stream(ctx, ca)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't open stream: %v", err)
 	}
@@ -44,7 +51,7 @@ func (a thresholdActor) Sign(ctx context.Context, msg serde.Message,
 
 	// The aggregated signature needs to include at least a threshold number of
 	// signatures.
-	thres := a.threshold.Load().(cosi.Threshold)(ca.Len())
+	thres := a.thresholdFn.Load().(cosi.Threshold)(ca.Len())
 
 	req := cosi.SignatureRequest{
 		Value: msg,
@@ -52,14 +59,15 @@ func (a thresholdActor) Sign(ctx context.Context, msg serde.Message,
 
 	errs := sender.Send(req, iter2slice(ca)...)
 
-	go a.waitResp(errs, ca.Len()-thres, cancel)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-	go a.waitCtx(innerCtx, ctx, cancel)
+	go a.waitResp(errs, ca.Len()-thres, cancel)
 
 	count := 0
 	signature := new(types.Signature)
 	for count < thres {
-		addr, resp, err := rcvr.Recv(innerCtx)
+		addr, resp, err := rcvr.Recv(ctx)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't receive more messages: %v", err)
 		}
@@ -83,26 +91,12 @@ func (a thresholdActor) Sign(ctx context.Context, msg serde.Message,
 func (a thresholdActor) waitResp(errs <-chan error, maxErrs int, cancel func()) {
 	errCount := 0
 	for err := range errs {
-		dela.Logger.Warn().Err(err).Send()
+		a.logger.Warn().Err(err).Msg("signature request to a peer failed")
 		errCount++
 
 		if errCount > maxErrs {
 			dela.Logger.Warn().Msg("aborting collective signing due to too many errors")
 			cancel()
-			return
-		}
-	}
-}
-
-func (a thresholdActor) waitCtx(inner, upper context.Context, cancel func()) {
-	for {
-		select {
-		case <-upper.Done():
-			// Upper context has been canceled so the inner should be
-			// aborted.
-			cancel()
-			return
-		case <-inner.Done():
 			return
 		}
 	}

@@ -1,3 +1,9 @@
+// Package types implements the threshold collective signature and its verifier.
+// It wraps a signature implementation in order to extract the correct
+// aggregated public key.
+//
+// Documentation Last Review: 05.10.2020
+//
 package types
 
 import (
@@ -36,7 +42,7 @@ type Signature struct {
 	mask []byte
 }
 
-// NewSignature returns a new thresholded signature.
+// NewSignature returns a new threshold signature.
 func NewSignature(agg crypto.Signature, mask []byte) *Signature {
 	return &Signature{
 		agg:  agg,
@@ -177,13 +183,14 @@ func NewSignatureFactory(f crypto.SignatureFactory) SignatureFactory {
 	}
 }
 
-// Deserialize implements serde.Factory. It deserializes the signature in JSON
-// format.
+// Deserialize implements serde.Factory. It populates the signature from the
+// data if appropriate, otherwise it returns an error.
 func (f SignatureFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	return f.SignatureOf(ctx, data)
 }
 
-// SignatureOf implements crypto.SignatureFactory.
+// SignatureOf implements crypto.SignatureFactory. It populates the signature
+// from the data if appropriate, otherwise it returns an error.
 func (f SignatureFactory) SignatureOf(ctx serde.Context, data []byte) (crypto.Signature, error) {
 	format := formats.Get(ctx.GetFormat())
 
@@ -228,7 +235,8 @@ func newVerifierArr(pubkeys []crypto.PublicKey, f crypto.VerifierFactory) Verifi
 	}
 }
 
-// Verify implements crypto.Verifier.
+// Verify implements crypto.Verifier. It returns nil if the signature matches
+// the aggregate public key for the mask associated to the signature.
 func (v Verifier) Verify(msg []byte, s crypto.Signature) error {
 	signature, ok := s.(*Signature)
 	if !ok {
@@ -253,6 +261,8 @@ func (v Verifier) Verify(msg []byte, s crypto.Signature) error {
 	return nil
 }
 
+// VerifierFactory is a factory to create a verifier from a list of
+// participants.
 type verifierFactory struct {
 	factory crypto.VerifierFactory
 }
@@ -265,10 +275,16 @@ func NewThresholdVerifierFactory(fac crypto.VerifierFactory) crypto.VerifierFact
 	}
 }
 
+// FromAuthority implements crypto.VerifierFactory. It creates a verifier from
+// the authority so that the mask's signature will pick the participants that
+// have participated. The ordering of the authority must be the same.
 func (f verifierFactory) FromAuthority(authority crypto.CollectiveAuthority) (crypto.Verifier, error) {
 	return newVerifier(authority, f.factory), nil
 }
 
+// FromArray implements crypto.VerifierFactory. It creates a verifier from the
+// list of public keys so that the mask's signature will pick the participants
+// that have participated. The ordering of the keys must be the same.
 func (f verifierFactory) FromArray(pubkeys []crypto.PublicKey) (crypto.Verifier, error) {
 	return newVerifierArr(pubkeys, f.factory), nil
 }

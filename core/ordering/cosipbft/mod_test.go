@@ -607,7 +607,7 @@ func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()
 		signer := bls.NewSigner()
 		pubkeys[i] = signer.GetPublicKey()
 
-		c := threshold.NewCoSi(m, signer)
+		c := threshold.NewThreshold(m, signer)
 		c.SetThreshold(threshold.ByzantineThreshold)
 
 		dir, err := ioutil.TempDir(os.TempDir(), "cosipbft")
