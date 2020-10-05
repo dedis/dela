@@ -8,6 +8,11 @@ import (
 	"golang.org/x/xerrors"
 )
 
+// Handler is the RPC callback when a participant of a collective signing
+// receives a request. It will invoke the reactor and sign the unique value, or
+// return an error if the reactor refuses the message.
+//
+// - implements mino.Handler
 type handler struct {
 	mino.UnsupportedHandler
 	signer  crypto.Signer
@@ -21,8 +26,12 @@ func newHandler(s crypto.Signer, r cosi.Reactor) handler {
 	}
 }
 
+// Process implements mino.Handler. It sends the message to the reactor and
+// sends back the signature if the message is correctly processed, otherwise it
+// returns an error.
 func (h handler) Process(req mino.Request) (serde.Message, error) {
 	switch msg := req.Message.(type) {
+
 	case cosi.SignatureRequest:
 		buf, err := h.reactor.Invoke(req.Address, msg.Value)
 		if err != nil {
@@ -39,6 +48,7 @@ func (h handler) Process(req mino.Request) (serde.Message, error) {
 		}
 
 		return resp, nil
+
 	default:
 		return nil, xerrors.Errorf("invalid message type '%T'", msg)
 	}
