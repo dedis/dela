@@ -1,3 +1,9 @@
+// Package loader defines an abstraction to load a key from a persistent
+// storage. It allows one to either read it from the storage, or to generate a
+// new one and stores it for the next time.
+//
+// Documentation Last Review: 05.10.2020
+//
 package loader
 
 // Generator is the interface to implement to generate a key.
