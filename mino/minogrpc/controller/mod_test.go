@@ -110,10 +110,10 @@ func TestMiniController_OnStop(t *testing.T) {
 	dir, err := ioutil.TempDir(os.TempDir(), "minogrpc")
 	require.NoError(t, err)
 
+	defer os.RemoveAll(dir)
+
 	db, err := kv.New(filepath.Join(dir, "test.db"))
 	require.NoError(t, err)
-
-	defer os.RemoveAll(dir)
 
 	ctrl := NewController()
 
