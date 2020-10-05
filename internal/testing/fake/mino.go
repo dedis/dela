@@ -424,13 +424,13 @@ func (m Mino) MakeRPC(string, mino.Handler, serde.Factory) (mino.RPC, error) {
 
 // MakeCertificate generates a valid certificate for the localhost address and
 // for an hour.
-func MakeCertificate(t *testing.T, n int) *tls.Certificate {
+func MakeCertificate(t *testing.T, n int, ips ...net.IP) *tls.Certificate {
 	priv, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
 	require.NoError(t, err)
 
 	tmpl := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
-		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
+		IPAddresses:           ips,
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().Add(time.Hour),
 		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,

@@ -3,7 +3,6 @@ package minogrpc
 import (
 	"context"
 	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
@@ -20,6 +19,7 @@ import (
 	"go.dedis.ch/dela/mino/minogrpc/tokens"
 	"go.dedis.ch/dela/mino/router"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
@@ -220,7 +220,7 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 	md := metadata.Pairs(
 		headerURIKey, uri,
 		headerStreamIDKey, streamID,
-		headerGatewayKey, o.meStr)
+		headerGatewayKey, o.myAddrStr)
 
 	// This lock will make sure that a session is ready before any message
 	// forwarded will be received.
@@ -230,7 +230,7 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 	if !initiated {
 		sess = session.NewSession(
 			md,
-			o.me,
+			o.myAddr,
 			endpoint.Factory,
 			o.router.GetPacketFactory(),
 			o.context,
@@ -380,44 +380,63 @@ func (o *overlayServer) Forward(ctx context.Context, p *ptypes.Packet) (*ptypes.
 type overlay struct {
 	closer      *sync.WaitGroup
 	context     serde.Context
-	me          mino.Address
+	myAddr      mino.Address
 	certs       certs.Storage
 	tokens      tokens.Holder
 	router      router.Router
 	connMgr     session.ConnectionManager
 	addrFactory mino.AddressFactory
 
+	// secret and public are the key pair that has generated the server
+	// certificate.
+	secret interface{}
+	public interface{}
+
 	// Keep a text marshalled value for the overlay address so that it's not
 	// calculated for each request.
-	meStr string
+	myAddrStr string
 }
 
-func newOverlay(me mino.Address, router router.Router,
-	addrFactory mino.AddressFactory, ctx serde.Context) (*overlay, error) {
-
-	cert, err := makeCertificate()
-	if err != nil {
-		return nil, xerrors.Errorf("failed to make certificate: %v", err)
-	}
-
-	meBytes, err := me.MarshalText()
+func newOverlay(tmpl minoTemplate) (*overlay, error) {
+	myAddrBuf, err := tmpl.myAddr.MarshalText()
 	if err != nil {
 		return nil, xerrors.Errorf("failed to marshal address: %v", err)
 	}
 
-	certs := certs.NewInMemoryStore()
-	certs.Store(me, cert)
+	if tmpl.secret == nil || tmpl.public == nil {
+		priv, err := ecdsa.GenerateKey(tmpl.curve, tmpl.random)
+		if err != nil {
+			return nil, xerrors.Errorf("cert private key: %v", err)
+		}
+
+		tmpl.secret = priv
+		tmpl.public = priv.Public()
+	}
 
 	o := &overlay{
 		closer:      new(sync.WaitGroup),
-		context:     ctx,
-		me:          me,
-		meStr:       string(meBytes),
+		context:     json.NewContext(),
+		myAddr:      tmpl.myAddr,
+		myAddrStr:   string(myAddrBuf),
 		tokens:      tokens.NewInMemoryHolder(),
-		certs:       certs,
-		router:      router,
-		connMgr:     newConnManager(me, certs),
-		addrFactory: addrFactory,
+		certs:       tmpl.certs,
+		router:      tmpl.router,
+		connMgr:     newConnManager(tmpl.myAddr, tmpl.certs),
+		addrFactory: tmpl.fac,
+		secret:      tmpl.secret,
+		public:      tmpl.public,
+	}
+
+	cert, err := o.certs.Load(o.myAddr)
+	if err != nil {
+		return nil, xerrors.Errorf("while loading cert: %v", err)
+	}
+
+	if cert == nil {
+		err = o.makeCertificate()
+		if err != nil {
+			return nil, xerrors.Errorf("certificate failed: %v", err)
+		}
 	}
 
 	return o, nil
@@ -425,12 +444,20 @@ func newOverlay(me mino.Address, router router.Router,
 
 // GetCertificate returns the certificate of the overlay.
 func (o *overlay) GetCertificate() *tls.Certificate {
-	me := o.certs.Load(o.me)
+	me, err := o.certs.Load(o.myAddr)
+	if err != nil {
+		// An error when getting the certificate of the server is caused by the
+		// underlying storage, and that should never happen in healthy
+		// environment.
+		panic(xerrors.Errorf("certificate of the overlay is inaccessible: %v", err))
+	}
 	if me == nil {
 		// This should never happen and it will panic if it does as this will
 		// provoke several issues later on.
 		panic("certificate of the overlay must be populated")
 	}
+
+	me.PrivateKey = o.secret
 
 	return me
 }
@@ -452,7 +479,7 @@ func (o *overlay) Join(addr, token string, certHash []byte) error {
 
 	meCert := o.GetCertificate()
 
-	meAddr, err := o.me.MarshalText()
+	meAddr, err := o.myAddr.MarshalText()
 	if err != nil {
 		return xerrors.Errorf("couldn't marshal own address: %v", err)
 	}
@@ -505,12 +532,7 @@ func (o *overlay) Join(addr, token string, certHash []byte) error {
 	return nil
 }
 
-func makeCertificate() (*tls.Certificate, error) {
-	priv, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't generate the private key: %+v", err)
-	}
-
+func (o *overlay) makeCertificate() error {
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
@@ -522,21 +544,28 @@ func makeCertificate() (*tls.Certificate, error) {
 		BasicConstraintsValid: true,
 	}
 
-	buf, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
+	buf, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, o.public, o.secret)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't create the certificate: %+v", err)
+		return xerrors.Errorf("while creating: %+v", err)
 	}
 
-	cert, err := x509.ParseCertificate(buf)
+	leaf, err := x509.ParseCertificate(buf)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't parse the certificate: %+v", err)
+		return xerrors.Errorf("couldn't parse the certificate: %v", err)
 	}
 
-	return &tls.Certificate{
+	cert := &tls.Certificate{
 		Certificate: [][]byte{buf},
-		PrivateKey:  priv,
-		Leaf:        cert,
-	}, nil
+		PrivateKey:  o.secret,
+		Leaf:        leaf,
+	}
+
+	err = o.certs.Store(o.myAddr, cert)
+	if err != nil {
+		return xerrors.Errorf("while storing: %v", err)
+	}
+
+	return nil
 }
 
 // ConnManager is a manager to dial and close connections depending how the
@@ -546,15 +575,15 @@ func makeCertificate() (*tls.Certificate, error) {
 type connManager struct {
 	sync.Mutex
 	certs    certs.Storage
-	me       mino.Address
+	myAddr   mino.Address
 	counters map[mino.Address]int
 	conns    map[mino.Address]*grpc.ClientConn
 }
 
-func newConnManager(me mino.Address, certs certs.Storage) *connManager {
+func newConnManager(myAddr mino.Address, certs certs.Storage) *connManager {
 	return &connManager{
 		certs:    certs,
-		me:       me,
+		myAddr:   myAddr,
 		counters: make(map[mino.Address]int),
 		conns:    make(map[mino.Address]*grpc.ClientConn),
 	}
@@ -581,7 +610,10 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 		return conn, nil
 	}
 
-	clientPubCert := mgr.certs.Load(to)
+	clientPubCert, err := mgr.certs.Load(to)
+	if err != nil {
+		return nil, xerrors.Errorf("while loading distant cert: %v", err)
+	}
 	if clientPubCert == nil {
 		return nil, xerrors.Errorf("certificate for '%v' not found", to)
 	}
@@ -589,9 +621,12 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 	pool := x509.NewCertPool()
 	pool.AddCert(clientPubCert.Leaf)
 
-	me := mgr.certs.Load(mgr.me)
+	me, err := mgr.certs.Load(mgr.myAddr)
+	if err != nil {
+		return nil, xerrors.Errorf("while loading own cert: %v", err)
+	}
 	if me == nil {
-		return nil, xerrors.Errorf("couldn't find server '%v' certificate", mgr.me)
+		return nil, xerrors.Errorf("couldn't find server '%v' certificate", mgr.myAddr)
 	}
 
 	ta := credentials.NewTLS(&tls.Config{
@@ -605,7 +640,7 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 	}
 
 	// Connecting using TLS and the distant server certificate as the root.
-	conn, err := grpc.Dial(netAddr.GetDialAddress(),
+	conn, err = grpc.Dial(netAddr.GetDialAddress(),
 		grpc.WithTransportCredentials(ta),
 		grpc.WithConnectParams(grpc.ConnectParams{
 			Backoff:           backoff.DefaultConfig,
@@ -640,7 +675,7 @@ func (mgr *connManager) Release(to mino.Address) {
 			dela.Logger.Trace().
 				Err(err).
 				Stringer("to", to).
-				Stringer("from", mgr.me).
+				Stringer("from", mgr.myAddr).
 				Int("length", len(mgr.conns)).
 				Msg("connection closed")
 

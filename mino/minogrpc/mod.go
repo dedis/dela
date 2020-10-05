@@ -4,8 +4,11 @@
 package minogrpc
 
 import (
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
 	"regexp"
 	"sync"
@@ -17,7 +20,6 @@ import (
 	"go.dedis.ch/dela/mino/minogrpc/session"
 	"go.dedis.ch/dela/mino/router"
 	"go.dedis.ch/dela/serde"
-	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -85,19 +87,69 @@ type Minogrpc struct {
 	closing   chan error
 }
 
+type minoTemplate struct {
+	myAddr mino.Address
+	router router.Router
+	fac    mino.AddressFactory
+	certs  certs.Storage
+	secret interface{}
+	public interface{}
+	curve  elliptic.Curve
+	random io.Reader
+}
+
+// Option is the type to set some fields.
+type Option func(*minoTemplate)
+
+// WithStorage is an option to set a different certificate storage.
+func WithStorage(certs certs.Storage) Option {
+	return func(tmpl *minoTemplate) {
+		tmpl.certs = certs
+	}
+}
+
+// WithCertificateKey is an option to set the key of the server certificate.
+func WithCertificateKey(secret, public interface{}) Option {
+	return func(tmpl *minoTemplate) {
+		tmpl.secret = secret
+		tmpl.public = public
+	}
+}
+
+// WithRandom is an option to set the randomness if the certificate private key
+// needs to be generated.
+func WithRandom(r io.Reader) Option {
+	return func(tmpl *minoTemplate) {
+		tmpl.random = r
+	}
+}
+
 // NewMinogrpc creates and starts a new instance. The path should be a
 // resolvable host.
-func NewMinogrpc(addr net.Addr, router router.Router) (*Minogrpc, error) {
+func NewMinogrpc(addr net.Addr, router router.Router, opts ...Option) (*Minogrpc, error) {
 	socket, err := net.Listen(addr.Network(), addr.String())
 	if err != nil {
 		return nil, xerrors.Errorf("failed to bind: %v", err)
 	}
 
-	me := address{host: socket.Addr().String()}
+	tmpl := minoTemplate{
+		myAddr: address{host: socket.Addr().String()},
+		router: router,
+		fac:    AddressFactory{},
+		certs:  certs.NewInMemoryStore(),
+		curve:  elliptic.P521(),
+		random: rand.Reader,
+	}
 
-	o, err := newOverlay(me, router, defaultAddressFactory, json.NewContext())
+	for _, opt := range opts {
+		opt(&tmpl)
+	}
+
+	o, err := newOverlay(tmpl)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't make overlay: %v", err)
+		socket.Close()
+
+		return nil, xerrors.Errorf("overlay: %v", err)
 	}
 
 	creds := credentials.NewServerTLSFromCert(o.GetCertificate())
@@ -133,7 +185,7 @@ func (m *Minogrpc) GetAddressFactory() mino.AddressFactory {
 
 // GetAddress implements Mino. It returns the address of the server.
 func (m *Minogrpc) GetAddress() mino.Address {
-	return m.overlay.me
+	return m.overlay.myAddr
 }
 
 // GenerateToken generates and returns a new token that will be valid for the
@@ -222,7 +274,7 @@ func (m *Minogrpc) MakeRPC(name string, h mino.Handler, f serde.Factory) (mino.R
 // String implements fmt.Stringer. It prints a short description of the
 // instance.
 func (m *Minogrpc) String() string {
-	return fmt.Sprintf("%v", m.overlay.me)
+	return fmt.Sprintf("%v", m.overlay.myAddr)
 }
 
 // Listen starts the server. It waits for the go routine to start before

@@ -34,13 +34,16 @@ func TestInMemoryStore_Load(t *testing.T) {
 	store.certs.Store(fake.NewAddress(0), &tls.Certificate{})
 	store.certs.Store(fake.NewAddress(1), &tls.Certificate{})
 
-	cert := store.Load(fake.NewAddress(0))
+	cert, err := store.Load(fake.NewAddress(0))
+	require.NoError(t, err)
 	require.NotNil(t, cert)
 
-	cert = store.Load(fake.NewAddress(1))
+	cert, err = store.Load(fake.NewAddress(1))
+	require.NoError(t, err)
 	require.NotNil(t, cert)
 
-	cert = store.Load(fake.NewAddress(2))
+	cert, err = store.Load(fake.NewAddress(2))
+	require.NoError(t, err)
 	require.Nil(t, cert)
 }
 

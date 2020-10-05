@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"io/ioutil"
 	"net"
 	"os"
@@ -19,7 +20,11 @@ func TestMemcoin_Main(t *testing.T) {
 	main()
 }
 
-func TestMemcoin_Scenario_1(t *testing.T) {
+// This test creates a chain with initially 3 nodes. It then adds node 4 and 5
+// in two blocks. Node 4 does not share its certificate which means others won't
+// be able to communicate, but the chain should proceed because of the
+// threshold.
+func TestMemcoin_Scenario_SetupAndTransactions(t *testing.T) {
 	dir, err := ioutil.TempDir(os.TempDir(), "memcoin1")
 	require.NoError(t, err)
 
@@ -32,8 +37,8 @@ func TestMemcoin_Scenario_1(t *testing.T) {
 	node1 := filepath.Join(dir, "node1")
 	node2 := filepath.Join(dir, "node2")
 	node3 := filepath.Join(dir, "node3")
-	node4 := filepath.Join(dir, "memcoin", "node4")
-	node5 := filepath.Join(dir, "memcoin", "node5")
+	node4 := filepath.Join(dir, "node4")
+	node5 := filepath.Join(dir, "node5")
 
 	cfg := config{Channel: sigs, Writer: ioutil.Discard}
 
@@ -49,12 +54,12 @@ func TestMemcoin_Scenario_1(t *testing.T) {
 		wg.Wait()
 	}()
 
-	waitDaemon(t, []string{node1, node2, node3})
+	require.True(t, waitDaemon(t, []string{node1, node2, node3}), "timeout")
 
 	// Share the certificates.
-	shareCert(t, node2, node1)
-	shareCert(t, node3, node1)
-	shareCert(t, node5, node1)
+	shareCert(t, node2, node1, "127.0.0.1:2111")
+	shareCert(t, node3, node1, "127.0.0.1:2111")
+	shareCert(t, node5, node1, "127.0.0.1:2111")
 
 	// Setup the chain with nodes 1 and 2.
 	args := append(append(
@@ -113,29 +118,32 @@ func TestMemcoin_Scenario_1(t *testing.T) {
 	require.EqualError(t, err, `Required flag "member" not set`)
 }
 
-func TestMemcoin_Scenario_2(t *testing.T) {
+// This test creates a chain with two nodes, then gracefully close them. It
+// finally restarts both of them to make sure the chain can proceed after the
+// restart. It basically tests if the components are correctly loaded from the
+// persisten storage.
+func TestMemcoin_Scenario_RestartNode(t *testing.T) {
 	dir, err := ioutil.TempDir(os.TempDir(), "memcoin2")
 	require.NoError(t, err)
 
 	defer os.RemoveAll(dir)
 
 	node1 := filepath.Join(dir, "node1")
+	node2 := filepath.Join(dir, "node2")
 
 	// Setup the chain and closes the node.
-	setupChain(t, node1, 2210)
+	setupChain(t, []string{node1, node2}, []uint16{2210, 2211})
 
 	sigs := make(chan os.Signal)
 	wg := sync.WaitGroup{}
-	wg.Add(1)
+	wg.Add(2)
 
 	cfg := config{Channel: sigs, Writer: ioutil.Discard}
 
-	go func() {
-		defer wg.Done()
-
-		err := runWithCfg(makeNodeArg(node1, 2210), cfg)
-		require.NoError(t, err)
-	}()
+	// Now the node are restarted. It should correctly follow the existing chain
+	// and then participate to new blocks.
+	runNode(t, node1, cfg, 2210, &wg)
+	runNode(t, node2, cfg, 2211, &wg)
 
 	defer func() {
 		// Simulate a Ctrl+C
@@ -143,7 +151,7 @@ func TestMemcoin_Scenario_2(t *testing.T) {
 		wg.Wait()
 	}()
 
-	waitDaemon(t, []string{node1})
+	require.True(t, waitDaemon(t, []string{node1, node2}), "timeout")
 
 	args := append([]string{
 		os.Args[0],
@@ -168,14 +176,16 @@ func runNode(t *testing.T, node string, cfg config, port uint16, wg *sync.WaitGr
 	}()
 }
 
-func setupChain(t *testing.T, node string, port uint16) {
+func setupChain(t *testing.T, nodes []string, ports []uint16) {
 	sigs := make(chan os.Signal)
 	wg := sync.WaitGroup{}
-	wg.Add(1)
+	wg.Add(len(nodes))
 
 	cfg := config{Channel: sigs, Writer: ioutil.Discard}
 
-	runNode(t, node, cfg, port, &wg)
+	for i, node := range nodes {
+		runNode(t, node, cfg, ports[i], &wg)
+	}
 
 	defer func() {
 		// Simulate a Ctrl+C
@@ -183,19 +193,21 @@ func setupChain(t *testing.T, node string, port uint16) {
 		wg.Wait()
 	}()
 
-	waitDaemon(t, []string{node})
+	waitDaemon(t, nodes)
 
-	// Setup the chain with nodes 1.
-	args := append(
-		[]string{os.Args[0], "--config", node, "ordering", "setup"},
-		getExport(t, node)...,
+	shareCert(t, nodes[1], nodes[0], fmt.Sprintf("127.0.0.1:%d", ports[0]))
+
+	args := append(append(
+		[]string{os.Args[0], "--config", nodes[0], "ordering", "setup"},
+		getExport(t, nodes[0])...),
+		getExport(t, nodes[1])...,
 	)
 
 	err := run(args)
 	require.NoError(t, err)
 }
 
-func waitDaemon(t *testing.T, daemons []string) {
+func waitDaemon(t *testing.T, daemons []string) bool {
 	num := 50
 
 	for _, daemon := range daemons {
@@ -211,13 +223,15 @@ func waitDaemon(t *testing.T, daemons []string) {
 				}
 			}
 
-			time.Sleep(30 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 
 			if i+1 >= num {
-				t.Fatal("timeout")
+				return false
 			}
 		}
 	}
+
+	return true
 }
 
 func makeNodeArg(path string, port uint16) []string {
@@ -226,9 +240,9 @@ func makeNodeArg(path string, port uint16) []string {
 	}
 }
 
-func shareCert(t *testing.T, path string, src string) {
+func shareCert(t *testing.T, path string, src string, addr string) {
 	args := append(
-		[]string{os.Args[0], "--config", path, "minogrpc", "join", "--address", "127.0.0.1:2111"},
+		[]string{os.Args[0], "--config", path, "minogrpc", "join", "--address", addr},
 		getToken(t, src)...,
 	)
 

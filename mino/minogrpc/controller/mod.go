@@ -1,31 +1,48 @@
 package controller
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"io"
 	"math"
+	"path/filepath"
 	"time"
 
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
+	"go.dedis.ch/dela/core/store/kv"
+	"go.dedis.ch/dela/crypto/loader"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc"
+	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/router/tree"
 	"golang.org/x/xerrors"
 )
 
-// Minimal is an initializer with the minimum set of commands.
+const certKeyName = "cert.key"
+
+// MiniController is an initializer with the minimum set of commands.
 //
 // - implements node.Initializer
-type minimal struct{}
+type miniController struct {
+	random io.Reader
+	curve  elliptic.Curve
+}
 
-// NewMinimal returns a new initializer to start an instance of Minogrpc.
-func NewMinimal() node.Initializer {
-	return minimal{}
+// NewController returns a new initializer to start an instance of Minogrpc.
+func NewController() node.Initializer {
+	return miniController{
+		random: rand.Reader,
+		curve:  elliptic.P521(),
+	}
 }
 
 // Build implements node.Initializer. It populates the builder with the commands
 // to control Minogrpc.
-func (m minimal) SetCommands(builder node.Builder) {
+func (m miniController) SetCommands(builder node.Builder) {
 	builder.SetStartFlags(
 		cli.IntFlag{
 			Name:  "port",
@@ -76,7 +93,7 @@ func (m minimal) SetCommands(builder node.Builder) {
 
 // OnStart implements node.Initializer. It starts the minogrpc instance and
 // injects it in the dependency resolver.
-func (m minimal) OnStart(ctx cli.Flags, inj node.Injector) error {
+func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
 
 	port := ctx.Int("port")
 	if port < 0 || port > math.MaxUint16 {
@@ -87,7 +104,25 @@ func (m minimal) OnStart(ctx cli.Flags, inj node.Injector) error {
 
 	addr := minogrpc.ParseAddress("127.0.0.1", uint16(port))
 
-	o, err := minogrpc.NewMinogrpc(addr, rter)
+	var db kv.DB
+	err := inj.Resolve(&db)
+	if err != nil {
+		return xerrors.Errorf("injector: %v", err)
+	}
+
+	certs := certs.NewDiskStore(db, minogrpc.AddressFactory{})
+
+	key, err := m.getKey(ctx)
+	if err != nil {
+		return xerrors.Errorf("cert private key: %v", err)
+	}
+
+	opts := []minogrpc.Option{
+		minogrpc.WithStorage(certs),
+		minogrpc.WithCertificateKey(key, key.Public()),
+	}
+
+	o, err := minogrpc.NewMinogrpc(addr, rter, opts...)
 	if err != nil {
 		return xerrors.Errorf("couldn't make overlay: %v", err)
 	}
@@ -107,7 +142,7 @@ type StoppableMino interface {
 }
 
 // OnStop implements node.Initializer. It stops the network overlay.
-func (m minimal) OnStop(inj node.Injector) error {
+func (m miniController) OnStop(inj node.Injector) error {
 	var o StoppableMino
 	err := inj.Resolve(&o)
 	if err != nil {
@@ -120,4 +155,46 @@ func (m minimal) OnStop(inj node.Injector) error {
 	}
 
 	return nil
+}
+
+func (m miniController) getKey(flags cli.Flags) (*ecdsa.PrivateKey, error) {
+	loader := loader.NewFileLoader(filepath.Join(flags.Path("config"), certKeyName))
+
+	keydata, err := loader.LoadOrCreate(newGenerator(m.random, m.curve))
+	if err != nil {
+		return nil, xerrors.Errorf("while loading: %v", err)
+	}
+
+	key, err := x509.ParseECPrivateKey(keydata)
+	if err != nil {
+		return nil, xerrors.Errorf("while parsing: %v", err)
+	}
+
+	return key, nil
+}
+
+type generator struct {
+	random io.Reader
+	curve  elliptic.Curve
+}
+
+func newGenerator(r io.Reader, c elliptic.Curve) loader.Generator {
+	return generator{
+		random: r,
+		curve:  c,
+	}
+}
+
+func (g generator) Generate() ([]byte, error) {
+	priv, err := ecdsa.GenerateKey(g.curve, g.random)
+	if err != nil {
+		return nil, xerrors.Errorf("ecdsa: %v", err)
+	}
+
+	data, err := x509.MarshalECPrivateKey(priv)
+	if err != nil {
+		return nil, xerrors.Errorf("while marshaling: %v", err)
+	}
+
+	return data, nil
 }

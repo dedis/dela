@@ -35,7 +35,7 @@ func (rpc *RPC) Call(ctx context.Context,
 		return nil, xerrors.Errorf("failed to marshal msg: %v", err)
 	}
 
-	from, err := rpc.overlay.me.MarshalText()
+	from, err := rpc.overlay.myAddr.MarshalText()
 	if err != nil {
 		return nil, xerrors.Errorf("failed to marshal address: %v", err)
 	}
@@ -237,7 +237,7 @@ func (rpc RPC) findGateway(players mino.Players) (mino.Address, []mino.Address) 
 	for iter.HasNext() {
 		addr := iter.GetNext()
 
-		if addr.Equal(rpc.overlay.me) {
+		if addr.Equal(rpc.overlay.myAddr) {
 			gw = addr
 		} else {
 			addrs = append(addrs, addr)

@@ -33,6 +33,7 @@ import (
 
 	"go.dedis.ch/dela/cli/node"
 	cosipbft "go.dedis.ch/dela/core/ordering/cosipbft/controller"
+	db "go.dedis.ch/dela/core/store/kv/controller"
 	signed "go.dedis.ch/dela/core/txn/signed/controller"
 	mino "go.dedis.ch/dela/mino/minogrpc/controller"
 )
@@ -59,7 +60,8 @@ func runWithCfg(args []string, cfg config) error {
 	builder := node.NewBuilderWithCfg(
 		cfg.Channel,
 		cfg.Writer,
-		mino.NewMinimal(),
+		db.NewController(),
+		mino.NewController(),
 		cosipbft.NewMinimal(),
 		signed.NewManagerController(),
 	)

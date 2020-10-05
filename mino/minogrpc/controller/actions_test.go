@@ -121,7 +121,12 @@ type fakeJoinable struct {
 }
 
 func (j fakeJoinable) GetCertificate() *tls.Certificate {
-	return j.certs.Load(fake.NewAddress(0))
+	cert, err := j.certs.Load(fake.NewAddress(0))
+	if err != nil {
+		panic(err)
+	}
+
+	return cert
 }
 
 func (j fakeJoinable) GetCertificateStore() certs.Storage {
@@ -140,6 +145,7 @@ type fakeContext struct {
 	cli.Flags
 	duration time.Duration
 	str      string
+	path     string
 	num      int
 }
 
@@ -149,6 +155,10 @@ func (ctx fakeContext) Duration(string) time.Duration {
 
 func (ctx fakeContext) String(string) string {
 	return ctx.str
+}
+
+func (ctx fakeContext) Path(string) string {
+	return ctx.path
 }
 
 func (ctx fakeContext) Int(string) int {
