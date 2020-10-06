@@ -132,7 +132,7 @@ func (o overlayServer) Share(ctx context.Context, msg *ptypes.Certificate) (*pty
 	}
 
 	// Make sure the certificate is valid for the public key provided.
-	err = cert.CheckSignature(cert.SignatureAlgorithm, cert.RawTBSCertificate, cert.Signature)
+	err = cert.CheckSignatureFrom(cert)
 	if err != nil {
 		return nil, xerrors.Errorf("invalid certificate signature: %v", err)
 	}
@@ -550,9 +550,11 @@ func (o *overlay) makeCertificate() error {
 		NotBefore:    time.Now(),
 		NotAfter:     time.Now().Add(certificateDuration),
 
-		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
+		MaxPathLen:            1,
+		IsCA:                  true,
 	}
 
 	buf, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, o.public, o.secret)
