@@ -44,6 +44,20 @@ func TestMinoch_GetAddress(t *testing.T) {
 	require.Equal(t, "A", addr.String())
 }
 
+func TestMinoch_AddFilter(t *testing.T) {
+	manager := NewManager()
+
+	m, err := NewMinoch(manager, "A")
+	require.NoError(t, err)
+
+	rpc, err := m.MakeRPC("test", nil, nil)
+	require.NoError(t, err)
+
+	m.AddFilter(func(m mino.Request) bool { return true })
+	require.Len(t, m.filters, 1)
+	require.Len(t, rpc.(*RPC).filters, 1)
+}
+
 func TestMinoch_MakeNamespace(t *testing.T) {
 	manager := NewManager()
 

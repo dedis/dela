@@ -105,7 +105,7 @@ func (h *processor) Invoke(from mino.Address, msg serde.Message) ([]byte, error)
 			}
 		}
 
-		digest, err := h.pbftsm.Prepare(in.GetBlock())
+		digest, err := h.pbftsm.Prepare(from, in.GetBlock())
 		if err != nil {
 			return nil, xerrors.Errorf("pbft prepare failed: %v", err)
 		}

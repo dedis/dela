@@ -493,7 +493,7 @@ func (s *Service) doRound(ctx context.Context) error {
 			state := s.pbftsm.GetState()
 			var more bool
 
-			for state != pbft.InitialState {
+			for state == pbft.ViewChangeState {
 				state, more = <-statesCh
 				if !more {
 					cancel()
@@ -529,9 +529,6 @@ func (s *Service) doRound(ctx context.Context) error {
 		return xerrors.Errorf("sync failed: %v", err)
 	}
 
-	// TODO: check that no committed block exists in the case of a leader
-	// failure when propagating the collective signature.
-
 	s.logger.Debug().Uint64("index", s.blocks.Len()).Msg("pbft has started")
 
 	err = s.doPBFT(ctx)
@@ -547,38 +544,47 @@ func (s *Service) doRound(ctx context.Context) error {
 }
 
 func (s *Service) doPBFT(ctx context.Context) error {
-	txs := s.pool.Gather(ctx, pool.Config{Min: 1})
-	if len(txs) == 0 {
-		return nil
-	}
+	var id types.Digest
+	var block types.Block
 
-	s.logger.Debug().
-		Int("num", len(txs)).
-		Msg("transactions have been found")
+	if s.pbftsm.GetState() >= pbft.CommitState {
+		// The node is already committed to a block, which means enough nodes
+		// have accepted, but somehow the finalization failed.
+		id, block = s.pbftsm.GetCommit()
+	} else {
+		txs := s.pool.Gather(ctx, pool.Config{Min: 1})
+		if len(txs) == 0 {
+			return nil
+		}
 
-	if ctx.Err() != nil {
-		// Don't bother trying PBFT if the context is done.
-		return ctx.Err()
-	}
+		s.logger.Debug().
+			Int("num", len(txs)).
+			Msg("transactions have been found")
 
-	data, root, err := s.prepareData(txs)
-	if err != nil {
-		return xerrors.Errorf("failed to prepare data: %v", err)
-	}
+		if ctx.Err() != nil {
+			// Don't bother trying PBFT if the context is done.
+			return ctx.Err()
+		}
 
-	block, err := types.NewBlock(
-		data,
-		types.WithTreeRoot(root),
-		types.WithIndex(uint64(s.blocks.Len())),
-		types.WithHashFactory(s.hashFactory))
+		data, root, err := s.prepareData(txs)
+		if err != nil {
+			return xerrors.Errorf("failed to prepare data: %v", err)
+		}
 
-	if err != nil {
-		return xerrors.Errorf("creating block failed: %v", err)
-	}
+		block, err = types.NewBlock(
+			data,
+			types.WithTreeRoot(root),
+			types.WithIndex(uint64(s.blocks.Len())),
+			types.WithHashFactory(s.hashFactory))
 
-	id, err := s.pbftsm.Prepare(block)
-	if err != nil {
-		return xerrors.Errorf("pbft prepare failed: %v", err)
+		if err != nil {
+			return xerrors.Errorf("creating block failed: %v", err)
+		}
+
+		id, err = s.pbftsm.Prepare(s.me, block)
+		if err != nil {
+			return xerrors.Errorf("pbft prepare failed: %v", err)
+		}
 	}
 
 	roster, err := s.getCurrentRoster()

@@ -209,7 +209,7 @@ func (sm fakeSM) PrePrepare(authority.Authority) error {
 	return sm.err
 }
 
-func (sm fakeSM) Prepare(types.Block) (types.Digest, error) {
+func (sm fakeSM) Prepare(mino.Address, types.Block) (types.Digest, error) {
 	return sm.id, sm.err
 }
 

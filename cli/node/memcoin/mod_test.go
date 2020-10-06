@@ -54,7 +54,7 @@ func TestMemcoin_Scenario_SetupAndTransactions(t *testing.T) {
 		wg.Wait()
 	}()
 
-	require.True(t, waitDaemon(t, []string{node1, node2, node3}), "timeout")
+	require.True(t, waitDaemon(t, []string{node1, node2, node3}), "daemon failed to start")
 
 	// Share the certificates.
 	shareCert(t, node2, node1, "127.0.0.1:2111")
@@ -151,7 +151,7 @@ func TestMemcoin_Scenario_RestartNode(t *testing.T) {
 		wg.Wait()
 	}()
 
-	require.True(t, waitDaemon(t, []string{node1, node2}), "timeout")
+	require.True(t, waitDaemon(t, []string{node1, node2}), "daemon failed to start")
 
 	args := append([]string{
 		os.Args[0],

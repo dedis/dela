@@ -3,6 +3,7 @@ package threshold
 import (
 	"sync/atomic"
 
+	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/cosi/threshold/types"
@@ -39,6 +40,7 @@ func ByzantineThreshold(n int) int {
 // CoSi is an implementation of the cosi.CollectiveSigning interface that is
 // using streams to parallelize the work.
 type CoSi struct {
+	logger zerolog.Logger
 	mino   mino.Mino
 	signer crypto.AggregateSigner
 	// Stores the cosi.Threshold function. It will always contain a valid
@@ -49,6 +51,7 @@ type CoSi struct {
 // NewCoSi returns a new instance.
 func NewCoSi(m mino.Mino, signer crypto.AggregateSigner) *CoSi {
 	c := &CoSi{
+		logger: dela.Logger.With().Str("addr", m.GetAddress().String()).Logger(),
 		mino:   m,
 		signer: signer,
 	}
@@ -104,7 +107,6 @@ func (c *CoSi) Listen(r cosi.Reactor) (cosi.Actor, error) {
 
 	actor := thresholdActor{
 		CoSi:    c,
-		logger:  dela.Logger.With().Str("addr", c.mino.GetAddress().String()).Logger(),
 		me:      c.mino.GetAddress(),
 		rpc:     rpc,
 		reactor: r,

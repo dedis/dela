@@ -144,7 +144,7 @@ func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, m
 	md := metadata.Pairs(
 		headerURIKey, rpc.uri,
 		headerStreamIDKey, streamID,
-		headerGatewayKey, orchestratorCode)
+		headerGatewayKey, rpc.overlay.myAddrStr)
 
 	table, err := rpc.overlay.router.New(mino.NewAddresses())
 	if err != nil {
@@ -191,7 +191,7 @@ func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, m
 
 	sess := session.NewSession(
 		md,
-		newRootAddress(),
+		session.NewOrchestratorAddress(rpc.overlay.myAddr),
 		rpc.factory,
 		rpc.overlay.router.GetPacketFactory(),
 		rpc.overlay.context,
