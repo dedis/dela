@@ -1,3 +1,9 @@
+// Package flatcosi is a flat implementation of a collective signing so that the
+// orchestrator will contact all the participants to require their signatures
+// and then aggregate them to the final one.
+//
+// Documentation Last Review: 05.10.2020
+//
 package flatcosi
 
 import (
@@ -85,6 +91,10 @@ func (flat *Flat) Listen(r cosi.Reactor) (cosi.Actor, error) {
 	return actor, nil
 }
 
+// FlatActor is the active component of the flat collective signing. It provides
+// a primitive to trigger a request for signatures from the participants.
+//
+// - implements cosi.Actor
 type flatActor struct {
 	logger  zerolog.Logger
 	me      mino.Address
@@ -93,7 +103,8 @@ type flatActor struct {
 	reactor cosi.Reactor
 }
 
-// Sign implements cosi.Actor. It returns the collective signature of the block.
+// Sign implements cosi.Actor. It returns the collective signature of the
+// message if every participant returns its signature.
 func (a flatActor) Sign(ctx context.Context, msg serde.Message,
 	ca crypto.CollectiveAuthority) (crypto.Signature, error) {
 
