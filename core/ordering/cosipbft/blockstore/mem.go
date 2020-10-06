@@ -166,7 +166,6 @@ func (s *InMemory) WithTx(txn store.Transaction) BlockStore {
 type observer struct {
 	sync.Mutex
 
-	working sync.WaitGroup
 	buffer  []types.BlockLink
 	running bool
 	closed  bool
@@ -211,18 +210,13 @@ func (obs *observer) NotifyCallback(evt interface{}) {
 		// The buffer size is not controlled as we assume the event will be read
 		// shortly by the caller.
 		obs.buffer = append(obs.buffer, evt.(types.BlockLink))
+		obs.running = true
 
-		if !obs.running {
-			obs.running = true
-			go obs.pushAndWait()
-		}
+		go obs.pushAndWait()
 	}
 }
 
 func (obs *observer) pushAndWait() {
-	obs.working.Add(1)
-	defer obs.working.Done()
-
 	for {
 		obs.Lock()
 
