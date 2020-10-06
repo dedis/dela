@@ -34,13 +34,13 @@ func Example() {
 	// Create the collective signing endpoints for both A and B.
 	cosiA := NewFlat(mA, roster.GetSigner(0).(crypto.AggregateSigner))
 
-	actor, err := cosiA.Listen(exampleHandler{})
+	actor, err := cosiA.Listen(exampleReactor{})
 	if err != nil {
 		panic(fmt.Sprintf("failed to listen on root: %+v", err))
 	}
 
 	cosiB := NewFlat(mB, roster.GetSigner(1).(crypto.AggregateSigner))
-	_, err = cosiB.Listen(exampleHandler{})
+	_, err = cosiB.Listen(exampleReactor{})
 	if err != nil {
 		panic(fmt.Sprintf("failed to listen on child: %+v", err))
 	}
@@ -83,9 +83,9 @@ func (msg exampleMessage) Serialize(ctx serde.Context) ([]byte, error) {
 	return ctx.Marshal(msg)
 }
 
-type exampleHandler struct{}
+type exampleReactor struct{}
 
-func (exampleHandler) Invoke(from mino.Address, msg serde.Message) ([]byte, error) {
+func (exampleReactor) Invoke(from mino.Address, msg serde.Message) ([]byte, error) {
 	example, ok := msg.(exampleMessage)
 	if !ok {
 		return nil, errors.New("unsupported message")
@@ -96,7 +96,7 @@ func (exampleHandler) Invoke(from mino.Address, msg serde.Message) ([]byte, erro
 	return []byte(example.Value), nil
 }
 
-func (exampleHandler) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+func (exampleReactor) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	var msg exampleMessage
 	err := ctx.Unmarshal(data, &msg)
 

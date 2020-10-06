@@ -1,5 +1,5 @@
 // Package flatcosi is a flat implementation of a collective signing so that the
-// orchestrator will contact all of the participants to require their signature
+// orchestrator will contact all the participants to require their signatures
 // and then aggregate them to the final one.
 //
 // Documentation Last Review: 05.10.2020

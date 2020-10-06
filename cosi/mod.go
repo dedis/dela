@@ -24,7 +24,9 @@ import (
 	"go.dedis.ch/dela/serde"
 )
 
-// Reactor is an event handler that demultiplex the events.
+// Reactor is a collective signature event handler. Every participant must react
+// to an incoming signature request from the leader, and this abstraction
+// provides the primitive that allows to do so.
 type Reactor interface {
 	serde.Factory
 
