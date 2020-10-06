@@ -1,3 +1,7 @@
+//
+// Documentation Last Review: 06.10.2020
+//
+
 package tree
 
 import (
@@ -62,7 +66,7 @@ func (c Branches) Search(to mino.Address) mino.Address {
 	return nil
 }
 
-// DynamicTree is a tree that will optimistically build the tree according on
+// DynamicTree is a tree that will optimistically build the tree according to
 // route requests. It will adjust the branches and their children when
 // necessary.
 //

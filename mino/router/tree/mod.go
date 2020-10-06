@@ -1,5 +1,16 @@
-// Package tree is an implementation of the router.Router interface. It uses a
-// static tree generation to route the packets.
+// Package tree is an implementation of a tree-based routing algorithm.
+//
+// The router creates a routing table for each protocol that will progressively
+// build a tree. The tree will adapt to unresponsive participants but it is not
+// resilient to faults happening after the table has been generated.
+//
+// The resulting tree will be balanced to limit the number of hops you need to
+// send a message, while also trying to limit the number of connections per
+// node. The routes are built upon requests so that the interior nodes of the
+// tree are the first participants to be contacted.
+//
+// Documentation Last Review: 06.10.2020
+//
 package tree
 
 import (
@@ -11,7 +22,8 @@ import (
 
 const defaultHeight = 3
 
-// Router is the routing service
+// Router is an implementation of a router producing routes with an algorithm
+// based on tree.
 //
 // - implements router.Router
 type Router struct {
@@ -20,7 +32,7 @@ type Router struct {
 	hsFac     router.HandshakeFactory
 }
 
-// NewRouter returns a new router
+// NewRouter returns a new router.
 func NewRouter(f mino.AddressFactory) Router {
 	fac := types.NewPacketFactory(f)
 	hsFac := types.NewHandshakeFactory(f)
@@ -46,7 +58,7 @@ func (r Router) GetHandshakeFactory() router.HandshakeFactory {
 }
 
 // New implements router.Router. It creates the routing table for the node that
-// is booting the protocol.
+// is booting the protocol. This node will be the root of the tree.
 func (r Router) New(players mino.Players) (router.RoutingTable, error) {
 	addrs := make([]mino.Address, 0, players.Len())
 	iter := players.AddressIterator()
@@ -87,8 +99,8 @@ func (t Table) Make(src mino.Address, to []mino.Address, msg []byte) router.Pack
 }
 
 // Prelude implements router.RoutingTable. It creates a handshake message that
-// should be sent to the distant before as the first message when opening a
-// relay to it.
+// should be sent to the distant peer when opening a relay to it. The peer will
+// then generate its own routing table based on the handshake.
 func (t Table) Prelude(to mino.Address) router.Handshake {
 	newHeight := t.tree.GetMaxHeight() - 1
 

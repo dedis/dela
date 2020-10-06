@@ -1,3 +1,9 @@
+// This file implements a manager that will connect the different instances of
+// Minoch so that they can communicate between each others.
+//
+// Documentation Last Review: 06.10.2020
+//
+
 package minoch
 
 import (
@@ -7,8 +13,7 @@ import (
 	"golang.org/x/xerrors"
 )
 
-// Manager is an orchestrator to manage the communication between the local
-// instances of Mino.
+// Manager manages the communication between the local instances of Mino.
 type Manager struct {
 	sync.Mutex
 	instances map[string]*Minoch

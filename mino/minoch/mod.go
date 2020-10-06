@@ -1,5 +1,16 @@
-// Package minoch is an implementation of MINO that is using channels and a
+// Package minoch is an implementation of Mino that is using channels and a
 // local manager to exchange messages.
+//
+// Because it is using only Go channels to communicate, this implementation can
+// only be used by multiple instances in the same process. Its usage is purely
+// to simplify the writing of tests, therefore it also provides some additionnal
+// functionalities like filters.
+//
+// A filter is called for any message incoming and it will determine if the
+// instance should drop the message.
+//
+// Documentation Last Review: 06.10.2020
+//
 package minoch
 
 import (
@@ -18,8 +29,11 @@ type Filter func(mino.Request) bool
 
 // Minoch is an implementation of the Mino interface using channels. Each
 // instance must have a unique string assigned to it.
+//
+// - implements mino.Mino
 type Minoch struct {
 	sync.Mutex
+
 	manager    *Manager
 	identifier string
 	path       string
@@ -29,7 +43,7 @@ type Minoch struct {
 }
 
 // NewMinoch creates a new instance of a local Mino instance.
-func NewMinoch(manager *Manager, identifier string) (*Minoch, error) {
+func NewMinoch(manager *Manager, identifier string) *Minoch {
 	inst := &Minoch{
 		manager:    manager,
 		identifier: identifier,
@@ -40,21 +54,21 @@ func NewMinoch(manager *Manager, identifier string) (*Minoch, error) {
 
 	err := manager.insert(inst)
 	if err != nil {
-		return nil, err
+		panic("manager refused: " + err.Error())
 	}
 
 	dela.Logger.Trace().Msgf("New instance with identifier %s", identifier)
 
-	return inst, nil
+	return inst
 }
 
-// GetAddressFactory returns the address factory.
+// GetAddressFactory implements mino.Mino. It returns the address factory.
 func (m *Minoch) GetAddressFactory() mino.AddressFactory {
 	return AddressFactory{}
 }
 
-// GetAddress returns the address that other participants should use to contact
-// this instance.
+// GetAddress implements mino.Mino. It returns the address that other
+// participants should use to contact this instance.
 func (m *Minoch) GetAddress() mino.Address {
 	return address{id: m.identifier}
 }
@@ -69,7 +83,8 @@ func (m *Minoch) AddFilter(filter Filter) {
 	}
 }
 
-// MakeNamespace returns an instance restricted to the namespace.
+// MakeNamespace implements mino.Mino. It returns an instance restricted to the
+// namespace.
 func (m *Minoch) MakeNamespace(path string) (mino.Mino, error) {
 	newMinoch := &Minoch{
 		manager:    m.manager,
@@ -81,7 +96,8 @@ func (m *Minoch) MakeNamespace(path string) (mino.Mino, error) {
 	return newMinoch, nil
 }
 
-// MakeRPC creates an RPC that can send to and receive from the unique path.
+// MakeRPC implements mino.Mino. It creates an RPC that can send to and receive
+// from the unique path.
 func (m *Minoch) MakeRPC(name string, h mino.Handler, f serde.Factory) (mino.RPC, error) {
 	rpc := &RPC{
 		manager: m.manager,

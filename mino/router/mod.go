@@ -1,5 +1,8 @@
 // Package router defines the primitives to route a packet among a set of
 // participants.
+//
+// Documentation Last Review: 06.10.2020
+//
 package router
 
 import (
@@ -32,6 +35,8 @@ type Packet interface {
 type PacketFactory interface {
 	serde.Factory
 
+	// PacketOf returns the packet for the data if appropriate, otherwise an
+	// error.
 	PacketOf(serde.Context, []byte) (Packet, error)
 }
 
@@ -45,6 +50,8 @@ type Handshake interface {
 type HandshakeFactory interface {
 	serde.Factory
 
+	// HandshakeOf returns the handshake of the data if appropriate, otherwise
+	// an error.
 	HandshakeOf(serde.Context, []byte) (Handshake, error)
 }
 
@@ -53,10 +60,13 @@ type HandshakeFactory interface {
 // is not handled by the router. For that matter, the Packet.Slice function can
 // be used to handle special cases with that address.
 type Router interface {
+	// GetPacketFactory returns the packet factory.
 	GetPacketFactory() PacketFactory
 
+	// GetHandshakeFactory returns the handshake factory.
 	GetHandshakeFactory() HandshakeFactory
 
+	// New creates a new routing table that will forward packets to the players.
 	New(mino.Players) (RoutingTable, error)
 
 	// TableOf returns the routing table associated to the handshake. A node

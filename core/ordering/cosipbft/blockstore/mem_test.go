@@ -170,7 +170,7 @@ func TestObserver_Flooding_NotifyCallback(t *testing.T) {
 
 	obs := &observer{
 		logger: logger,
-		ch:     make(chan types.BlockLink, 1),
+		ch:     make(chan types.BlockLink),
 	}
 
 	link := makeLink(t, types.Digest{})

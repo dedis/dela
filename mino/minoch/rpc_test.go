@@ -14,62 +14,140 @@ import (
 func TestRPC_Call(t *testing.T) {
 	manager := NewManager()
 
-	m1, err := NewMinoch(manager, "A")
-	require.NoError(t, err)
-	rpc1, err := m1.MakeRPC("test", fakeHandler{}, fake.MessageFactory{})
-	require.NoError(t, err)
-
-	m2, err := NewMinoch(manager, "B")
-	require.NoError(t, err)
-	_, err = m2.MakeRPC("test", badHandler{}, fake.MessageFactory{})
+	mA := NewMinoch(manager, "A")
+	rpcA, err := mA.MakeRPC("test", fakeHandler{}, fake.MessageFactory{})
 	require.NoError(t, err)
 
-	m3, err := NewMinoch(manager, "C")
+	mB := NewMinoch(manager, "B")
+	_, err = mB.MakeRPC("test", fakeHandler{}, fake.MessageFactory{})
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	// Message to self with a correct handler.
-	addrs := mino.NewAddresses(m1.GetAddress())
-	resps, err := rpc1.Call(ctx, fake.Message{}, addrs)
+	addrs := mino.NewAddresses(mA.GetAddress(), mB.GetAddress())
+	resps, err := rpcA.Call(ctx, fake.Message{}, addrs)
 	require.NoError(t, err)
 
 	err = testWait(t, resps, nil)
 	require.NoError(t, err)
 
-	// Test with a filter that will drop the messages.
-	rpc1.(*RPC).filters = []Filter{func(m mino.Request) bool { return false }}
-	resps, err = rpc1.Call(ctx, fake.Message{}, addrs)
+	err = testWait(t, resps, nil)
+	require.NoError(t, err)
+}
+
+func TestRPC_Filter_Call(t *testing.T) {
+	manager := NewManager()
+
+	m := NewMinoch(manager, "A")
+
+	rpc, err := m.MakeRPC("test", fakeHandler{}, fake.MessageFactory{})
+	require.NoError(t, err)
+
+	m.AddFilter(func(m mino.Request) bool { return false })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	resps, err := rpc.Call(ctx, fake.Message{}, mino.NewAddresses(m.GetAddress()))
+	require.NoError(t, err)
+
+	_, more := <-resps
+	require.False(t, more)
+}
+
+func TestRPC_BadContext_Call(t *testing.T) {
+	rpc := &RPC{
+		context: fake.NewBadContext(),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	_, err := rpc.Call(ctx, fake.Message{}, nil)
+	require.EqualError(t, err, fake.Err("couldn't serialize"))
+}
+
+func TestRPC_BadFactory_Call(t *testing.T) {
+	manager := NewManager()
+
+	m := NewMinoch(manager, "A")
+
+	rpc, err := m.MakeRPC("test", fakeHandler{}, fake.NewBadMessageFactory())
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	resps, err := rpc.Call(ctx, fake.Message{}, mino.NewAddresses(m.GetAddress()))
 	require.NoError(t, err)
 
 	err = testWait(t, resps, nil)
+	require.EqualError(t, err, fake.Err("couldn't deserialize"))
+}
+
+func TestRPC_UnkownPeer_Call(t *testing.T) {
+	manager := NewManager()
+
+	m := NewMinoch(manager, "A")
+	rpc, err := m.MakeRPC("test", fakeHandler{}, fake.MessageFactory{})
 	require.NoError(t, err)
 
-	addrs = mino.NewAddresses(fake.NewAddress(99))
-	_, err = rpc1.Call(ctx, fake.Message{}, addrs)
-	require.EqualError(t, err,
-		"couldn't find peer: invalid address type 'fake.Address'")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	resps, err = rpc1.Call(ctx, fake.Message{}, mino.NewAddresses(m3.GetAddress()))
+	to := address{
+		id: "B",
+	}
+
+	_, err = rpc.Call(ctx, fake.Message{}, mino.NewAddresses(to))
+	require.EqualError(t, err, "couldn't find peer: address <B> not found")
+}
+
+func TestRPC_MissingHandler_Call(t *testing.T) {
+	manager := NewManager()
+
+	mA := NewMinoch(manager, "A")
+	rpcA, err := mA.MakeRPC("test", fakeHandler{}, fake.MessageFactory{})
 	require.NoError(t, err)
+
+	mB := NewMinoch(manager, "B")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	resps, err := rpcA.Call(ctx, fake.Message{}, mino.NewAddresses(mB.GetAddress()))
+	require.NoError(t, err)
+
 	err = testWait(t, resps, nil)
-	// Message to m3 that has not the handler registered.
 	require.EqualError(t, err, "unknown rpc /test")
+}
 
-	addrs = mino.NewAddresses(m2.GetAddress())
-	resps, err = rpc1.Call(ctx, fake.Message{}, addrs)
+func TestRPC_BadHandler_Call(t *testing.T) {
+	manager := NewManager()
+
+	mA := NewMinoch(manager, "A")
+	rpcA, err := mA.MakeRPC("test", fakeHandler{}, fake.MessageFactory{})
+	require.NoError(t, err)
+
+	mB := NewMinoch(manager, "B")
+	_, err = mB.MakeRPC("test", badHandler{}, fake.MessageFactory{})
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	resps, err := rpcA.Call(ctx, fake.Message{}, mino.NewAddresses(mB.GetAddress()))
 	require.NoError(t, err)
 
 	err = testWait(t, resps, nil)
-	// Message to m2 with a handler but no implementation.
 	require.EqualError(t, err, "couldn't process request: rpc is not supported")
 }
 
 func TestRPC_Stream(t *testing.T) {
 	manager := NewManager()
 
-	m, err := NewMinoch(manager, "A")
-	require.NoError(t, err)
+	m := NewMinoch(manager, "A")
 	rpc, err := m.MakeRPC("test", fakeStreamHandler{}, fake.MessageFactory{})
 	require.NoError(t, err)
 
@@ -91,8 +169,7 @@ func TestRPC_Stream(t *testing.T) {
 func TestRPC_Failures_Stream(t *testing.T) {
 	manager := NewManager()
 
-	m, err := NewMinoch(manager, "A")
-	require.NoError(t, err)
+	m := NewMinoch(manager, "A")
 
 	m.context = fake.NewBadContext()
 	rpc, err := m.MakeRPC("test", fakeBadStreamHandler{}, fake.MessageFactory{})

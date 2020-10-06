@@ -210,8 +210,7 @@ func makeRoster(t *testing.T, n int) (mino.Players, []*Pool) {
 	addrs := make([]mino.Address, n)
 
 	for i := 0; i < n; i++ {
-		m, err := minoch.NewMinoch(manager, fmt.Sprintf("node%d", i))
-		require.NoError(t, err)
+		m := minoch.NewMinoch(manager, fmt.Sprintf("node%d", i))
 
 		addrs[i] = m.GetAddress()
 
