@@ -102,6 +102,7 @@ func TestInMemory_Last(t *testing.T) {
 }
 
 func TestInMemory_Watch(t *testing.T) {
+	num := 20
 	store := NewInMemory()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -110,14 +111,15 @@ func TestInMemory_Watch(t *testing.T) {
 	ch := store.Watch(ctx)
 
 	store.Store(makeLink(t, types.Digest{}))
-	store.Store(makeLink(t, store.blocks[0].GetTo()))
 
-	link := <-ch
-	require.Equal(t, store.blocks[1].GetTo(), link.GetFrom())
+	for i := 0; i < num; i++ {
+		store.Store(makeLink(t, store.blocks[i].GetTo(), types.WithIndex(uint64(i+1))))
+	}
 
-	cancel()
-	_, more := <-ch
-	require.False(t, more)
+	for i := 0; i <= num; i++ {
+		link := <-ch
+		require.Equal(t, store.blocks[i].GetTo(), link.GetTo(), i)
+	}
 }
 
 func TestInMemory_WithTx(t *testing.T) {
@@ -133,6 +135,61 @@ func TestInMemory_WithTx(t *testing.T) {
 
 	tx.fn()
 	require.Len(t, store.blocks, 1)
+}
+
+func TestObserver_NotifyCallback(t *testing.T) {
+	obs := &observer{
+		ch: make(chan types.BlockLink, 1),
+	}
+
+	link := makeLink(t, types.Digest{})
+
+	// The observer should not block when the event is not drained.
+	obs.NotifyCallback(link)
+	obs.NotifyCallback(link)
+	obs.NotifyCallback(link)
+	require.True(t, obs.running)
+	require.Len(t, obs.buffer, 2)
+	require.Len(t, obs.ch, 1)
+
+	// Closing with events waiting should clean resources.
+	obs.close()
+	require.Empty(t, obs.buffer)
+	require.Empty(t, obs.ch)
+	require.True(t, obs.closed)
+	require.False(t, obs.running)
+
+	// Incoming events should now be ignored.
+	obs.NotifyCallback(link)
+	require.Empty(t, obs.buffer)
+	require.Empty(t, obs.ch)
+}
+
+func TestObserver_Flooding_NotifyCallback(t *testing.T) {
+	logger, check := fake.CheckLog("observer queue is growing unexpectedly")
+
+	obs := &observer{
+		logger: logger,
+		ch:     make(chan types.BlockLink, 1),
+	}
+
+	link := makeLink(t, types.Digest{})
+
+	for i := 0; i < sizeWarnLimit+1; i++ {
+		obs.NotifyCallback(link)
+	}
+
+	check(t)
+}
+
+func TestObserver_WhileEmpty_Close(t *testing.T) {
+	obs := &observer{
+		ch:      make(chan types.BlockLink),
+		running: true,
+	}
+
+	obs.close()
+	require.True(t, obs.closed)
 }
 
 // -----------------------------------------------------------------------------
