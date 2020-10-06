@@ -14,7 +14,7 @@ import (
 	"go.dedis.ch/dela/serde"
 )
 
-func TestCoSi_Basic(t *testing.T) {
+func TestThreshold_Scenario_Basic(t *testing.T) {
 	manager := minoch.NewManager()
 
 	m1, err := minoch.NewMinoch(manager, "A")
@@ -24,13 +24,13 @@ func TestCoSi_Basic(t *testing.T) {
 	require.NoError(t, err)
 
 	ca := fake.NewAuthorityFromMino(bls.Generate, m1, m2)
-	c1 := NewCoSi(m1, ca.GetSigner(0).(crypto.AggregateSigner))
+	c1 := NewThreshold(m1, ca.GetSigner(0).(crypto.AggregateSigner))
 	c1.SetThreshold(OneThreshold)
 
 	actor, err := c1.Listen(fakeReactor{})
 	require.NoError(t, err)
 
-	c2 := NewCoSi(m2, ca.GetSigner(1).(crypto.AggregateSigner))
+	c2 := NewThreshold(m2, ca.GetSigner(1).(crypto.AggregateSigner))
 	_, err = c2.Listen(fakeReactor{err: fake.GetError()})
 	require.NoError(t, err)
 
@@ -63,33 +63,33 @@ func TestByzantineThreshold(t *testing.T) {
 	require.Equal(t, 5, ByzantineThreshold(7))
 }
 
-func TestCoSi_GetSigner(t *testing.T) {
-	c := &CoSi{signer: fake.NewAggregateSigner()}
+func TestThreshold_GetSigner(t *testing.T) {
+	c := &Threshold{signer: fake.NewAggregateSigner()}
 	require.NotNil(t, c.GetSigner())
 }
 
-func TestCoSi_GetPublicKeyFactory(t *testing.T) {
-	c := &CoSi{signer: fake.NewAggregateSigner()}
+func TestThreshold_GetPublicKeyFactory(t *testing.T) {
+	c := &Threshold{signer: fake.NewAggregateSigner()}
 	require.NotNil(t, c.GetPublicKeyFactory())
 }
 
-func TestCoSi_GetSignatureFactory(t *testing.T) {
-	c := &CoSi{signer: fake.NewAggregateSigner()}
+func TestThreshold_GetSignatureFactory(t *testing.T) {
+	c := &Threshold{signer: fake.NewAggregateSigner()}
 	require.NotNil(t, c.GetSignatureFactory())
 }
 
-func TestCoSi_SetThreshold(t *testing.T) {
-	c := NewCoSi(fake.Mino{}, nil)
+func TestThreshold_SetThreshold(t *testing.T) {
+	c := NewThreshold(fake.Mino{}, nil)
 
 	c.SetThreshold(nil)
-	require.NotNil(t, c.threshold.Load())
+	require.NotNil(t, c.thresholdFn.Load())
 
 	c.SetThreshold(ByzantineThreshold)
-	require.Equal(t, ByzantineThreshold(999), c.threshold.Load().(cosi.Threshold)(999))
+	require.Equal(t, ByzantineThreshold(999), c.thresholdFn.Load().(cosi.Threshold)(999))
 }
 
-func TestCoSi_Listen(t *testing.T) {
-	c := &CoSi{
+func TestThreshold_Listen(t *testing.T) {
+	c := &Threshold{
 		mino:   fake.Mino{},
 		signer: fake.NewAggregateSigner(),
 	}

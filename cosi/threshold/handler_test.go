@@ -10,49 +10,83 @@ import (
 
 func TestThresholdHandler_Stream(t *testing.T) {
 	handler := newHandler(
-		&CoSi{signer: fake.NewAggregateSigner()},
+		&Threshold{signer: fake.NewAggregateSigner()},
 		fakeReactor{},
 	)
 
-	rcvr := &fakeReceiver{resps: makeResponse()}
-	sender := fakeSender{}
+	recv := fake.NewReceiver(
+		fake.NewRecvMsg(fake.NewAddress(0), cosi.SignatureRequest{Value: fake.Message{}}),
+	)
+	sender := fake.NewBadSender()
 
-	err := handler.Stream(sender, rcvr)
+	err := handler.Stream(sender, recv)
 	require.NoError(t, err)
+}
 
-	rcvr.err = fake.GetError()
-	err = handler.processRequest(sender, rcvr)
+func TestThresholdHandler_BadStream_Stream(t *testing.T) {
+	handler := newHandler(
+		&Threshold{},
+		fakeReactor{},
+	)
+
+	recv := fake.NewBadReceiver()
+
+	err := handler.Stream(fake.Sender{}, recv)
 	require.EqualError(t, err, fake.Err("failed to receive"))
+}
 
-	err = handler.processRequest(sender, &fakeReceiver{resps: makeBadResponse()})
-	require.EqualError(t, err, "invalid request type 'fake.Message'")
+func TestThresholdHandler_UnsupportedMessage_Stream(t *testing.T) {
+	logger, check := fake.CheckLog("invalid request type 'fake.Message'")
 
-	handler.reactor = fakeReactor{err: fake.GetError()}
-	rcvr.err = nil
-	rcvr.resps = makeResponse()
-	err = handler.processRequest(sender, rcvr)
-	require.EqualError(t, err, fake.Err("couldn't hash message"))
+	handler := newHandler(
+		&Threshold{
+			logger: logger,
+		},
+		fakeReactor{},
+	)
 
-	handler.reactor = fakeReactor{}
-	handler.signer = fake.NewBadSigner()
-	rcvr.resps = makeResponse()
-	err = handler.processRequest(sender, rcvr)
-	require.EqualError(t, err, fake.Err("couldn't sign"))
+	recv := fake.NewReceiver(fake.NewRecvMsg(fake.NewAddress(0), fake.Message{}))
 
-	handler.signer = fake.NewAggregateSigner()
-	sender = fakeSender{numErr: 1}
-	rcvr.resps = makeResponse()
-	err = handler.Stream(sender, rcvr)
+	err := handler.Stream(fake.Sender{}, recv)
 	require.NoError(t, err)
+	check(t)
 }
 
-// -----------------------------------------------------------------------------
-// Utility functions
+func TestThresholdHandler_BadReactor_Stream(t *testing.T) {
+	logger, check := fake.CheckLog(fake.Err("couldn't hash message"))
 
-func makeResponse() [][]interface{} {
-	return [][]interface{}{{fake.Address{}, cosi.SignatureRequest{Value: fake.Message{}}}}
+	handler := newHandler(
+		&Threshold{
+			logger: logger,
+		},
+		fakeReactor{err: fake.GetError()},
+	)
+
+	recv := fake.NewReceiver(
+		fake.NewRecvMsg(fake.NewAddress(0), cosi.SignatureRequest{Value: fake.Message{}}),
+	)
+
+	err := handler.Stream(fake.Sender{}, recv)
+	require.NoError(t, err)
+	check(t)
 }
 
-func makeBadResponse() [][]interface{} {
-	return [][]interface{}{{fake.Address{}, fake.Message{}}}
+func TestThresholdHandler_BadSigner_Stream(t *testing.T) {
+	logger, check := fake.CheckLog(fake.Err("couldn't sign"))
+
+	handler := newHandler(
+		&Threshold{
+			logger: logger,
+		},
+		fakeReactor{},
+	)
+
+	handler.signer = fake.NewBadSigner()
+	recv := fake.NewReceiver(
+		fake.NewRecvMsg(fake.NewAddress(0), cosi.SignatureRequest{Value: fake.Message{}}),
+	)
+
+	err := handler.Stream(fake.Sender{}, recv)
+	require.NoError(t, err)
+	check(t)
 }
