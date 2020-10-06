@@ -1,6 +1,10 @@
 // Package types implements the threshold collective signature and its verifier.
+//
 // It wraps a signature implementation in order to extract the correct
 // aggregated public key.
+//
+// The messages have been implemented in this isolated package so that it does
+// not create cycle imports when importing the serde formats.
 //
 // Documentation Last Review: 05.10.2020
 //
