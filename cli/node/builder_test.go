@@ -2,7 +2,6 @@ package node
 
 import (
 	"flag"
-	"runtime"
 	"syscall"
 	"testing"
 
@@ -29,41 +28,59 @@ func TestCliBuilder_SetStartFlags(t *testing.T) {
 
 func TestCliBuilder_Start(t *testing.T) {
 	builder := NewBuilder(fakeInitializer{}).(*cliBuilder)
+
 	builder.sigs <- syscall.SIGTERM
+	close(builder.sigs)
 
 	err := builder.start(nil)
 	require.NoError(t, err)
+}
+
+func TestCliBuilder_ForbiddenFolder_Start(t *testing.T) {
+	builder := NewBuilder(fakeInitializer{}).(*cliBuilder)
 
 	fset := flag.NewFlagSet("", 0)
-	fset.String("config", "/test/", "")
+	fset.String("config", "\x00", "")
 
-	if runtime.GOOS != "windows" {
-		ctx := ucli.NewContext(nil, fset, nil)
-		err = builder.start(ctx)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "couldn't make path: mkdir /test/: ")
-	}
+	ctx := ucli.NewContext(nil, fset, nil)
+
+	err := builder.start(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "couldn't make path: mkdir \x00: ")
+
+}
+
+func TestCliBuilder_FailedDaemon_Start(t *testing.T) {
+	builder := NewBuilder(fakeInitializer{}).(*cliBuilder)
 
 	builder.daemonFactory = fakeFactory{err: fake.GetError()}
-	err = builder.start(nil)
+
+	err := builder.start(nil)
 	require.EqualError(t, err, fake.Err("couldn't make daemon"))
+}
+
+func TestCliBuilder_FailStartDaemon_Start(t *testing.T) {
+	builder := NewBuilder(fakeInitializer{}).(*cliBuilder)
 
 	builder.daemonFactory = fakeFactory{errDaemon: fake.GetError()}
-	err = builder.start(nil)
+
+	err := builder.start(nil)
 	require.EqualError(t, err, fake.Err("couldn't start the daemon"))
+}
 
-	// Test when a component cannot start.
-	builder = NewBuilder(fakeInitializer{err: fake.GetError()}).(*cliBuilder)
-	builder.sigs <- syscall.SIGTERM
+func TestCliBuilder_FailStartComponent_Start(t *testing.T) {
+	builder := NewBuilder(fakeInitializer{err: fake.GetError()}).(*cliBuilder)
 
-	err = builder.start(nil)
+	err := builder.start(nil)
 	require.EqualError(t, err, fake.Err("couldn't run the controller"))
+}
 
-	// Test when a component cannot stop.
-	builder = NewBuilder(fakeInitializer{errStop: fake.GetError()}).(*cliBuilder)
-	builder.sigs <- syscall.SIGTERM
+func TestCliBuilder_FailStopComponent_Start(t *testing.T) {
+	builder := NewBuilder(fakeInitializer{errStop: fake.GetError()}).(*cliBuilder)
+	builder.enableSignal = false
+	close(builder.sigs)
 
-	err = builder.start(nil)
+	err := builder.start(nil)
 	require.EqualError(t, err, fake.Err("couldn't stop controller"))
 }
 

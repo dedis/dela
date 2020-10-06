@@ -129,6 +129,10 @@ func (d *socketDaemon) handleConn(conn net.Conn) {
 		return
 	}
 
+	dela.Logger.Debug().
+		Str("flags", fmt.Sprintf("%v", fset)).
+		Msg("received command on the daemon")
+
 	actx := Context{
 		Injector: d.injector,
 		Flags:    fset,
