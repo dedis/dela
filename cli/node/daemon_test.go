@@ -80,8 +80,9 @@ func TestSocketDaemon_Listen(t *testing.T) {
 
 	out := new(bytes.Buffer)
 	client := socketClient{
-		socketpath: daemon.socketpath,
-		out:        out,
+		socketpath:  daemon.socketpath,
+		out:         out,
+		dialTimeout: time.Second,
 	}
 
 	err = client.Send(append([]byte{0x0, 0x0}, []byte("{}")...))
