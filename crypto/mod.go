@@ -3,11 +3,11 @@
 //
 // It defines the abstraction of a public and a private key and their
 // combination where a private key can create a signature for a given message,
-// while the public key can verify the associated of the those two elements.
+// while the public key can verify the association of those two elements.
 //
 // A signer is a unique entity that possesses both a public and an associated
 // private key. It is assumed that the combination is a unique identity. This
-// abstraction hides the logic a private key.
+// abstraction hides the logic of a private key.
 //
 // For the aggregation of those primitives, a verifier abstraction is defined to
 // provide the primitives to verify using the aggregate instead of a single one.
