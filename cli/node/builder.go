@@ -24,12 +24,15 @@ type cliBuilder struct {
 	daemonFactory DaemonFactory
 	injector      Injector
 	actions       *actionMap
-	enableSignal  bool
-	sigs          chan os.Signal
 	startFlags    []cli.Flag
 	commands      []*cliCommand
 	inits         []Initializer
 	writer        io.Writer
+
+	// In production, the daemon is stopped via SIGTERM. In case of testing, the
+	// channel will be closed instead, because of instability.
+	enableSignal bool
+	sigs         chan os.Signal
 }
 
 // NewBuilder returns a new empty builder.

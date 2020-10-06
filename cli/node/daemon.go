@@ -15,18 +15,21 @@ import (
 	"golang.org/x/xerrors"
 )
 
+const ioTimeout = 30 * time.Second
+
 // SocketClient opens a connection to a unix socket daemon to send commands.
 //
 // - implements node.Client
 type socketClient struct {
-	socketpath string
-	out        io.Writer
+	socketpath  string
+	out         io.Writer
+	dialTimeout time.Duration
 }
 
 // Send implements node.Client. It opens a connection and sends the data to the
 // daemon. It writes the result of the command to the output.
 func (c socketClient) Send(data []byte) error {
-	conn, err := net.Dial("unix", c.socketpath)
+	conn, err := net.DialTimeout("unix", c.socketpath, c.dialTimeout)
 	if err != nil {
 		return xerrors.Errorf("couldn't open connection: %v", err)
 	}
@@ -173,8 +176,9 @@ type socketFactory struct {
 // the flags of the context.
 func (f socketFactory) ClientFromContext(ctx cli.Flags) (Client, error) {
 	client := socketClient{
-		socketpath: f.getSocketPath(ctx),
-		out:        f.out,
+		socketpath:  f.getSocketPath(ctx),
+		out:         f.out,
+		dialTimeout: ioTimeout,
 	}
 
 	return client, nil
@@ -188,7 +192,7 @@ func (f socketFactory) DaemonFromContext(ctx cli.Flags) (Daemon, error) {
 		injector:    f.injector,
 		actions:     f.actions,
 		closing:     make(chan struct{}),
-		readTimeout: time.Second,
+		readTimeout: ioTimeout,
 	}
 
 	return daemon, nil
