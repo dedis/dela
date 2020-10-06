@@ -4,11 +4,17 @@ import (
 	"context"
 	"sync"
 
+	"github.com/rs/zerolog"
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/core"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
 	"golang.org/x/xerrors"
 )
+
+// sizeWarnLimit defines the limit after which a warning is emitted every time
+// the queue keeps growing.
+const sizeWarnLimit = 100
 
 // InMemory is a block store that only stores the block in-memory which means
 // they won't persist.
@@ -166,6 +172,7 @@ func (s *InMemory) WithTx(txn store.Transaction) BlockStore {
 type observer struct {
 	sync.Mutex
 
+	logger  zerolog.Logger
 	buffer  []types.BlockLink
 	running bool
 	closed  bool
@@ -175,7 +182,8 @@ type observer struct {
 func newObserver(ctx context.Context, watcher core.Observable) *observer {
 	ch := make(chan types.BlockLink, 1)
 	obs := &observer{
-		ch: ch,
+		logger: dela.Logger,
+		ch:     ch,
 	}
 
 	watcher.Add(obs)
@@ -200,6 +208,7 @@ func (obs *observer) NotifyCallback(evt interface{}) {
 
 	if obs.running {
 		obs.buffer = append(obs.buffer, evt.(types.BlockLink))
+		obs.checkSize()
 		return
 	}
 
@@ -210,9 +219,20 @@ func (obs *observer) NotifyCallback(evt interface{}) {
 		// The buffer size is not controlled as we assume the event will be read
 		// shortly by the caller.
 		obs.buffer = append(obs.buffer, evt.(types.BlockLink))
+
+		obs.checkSize()
+
 		obs.running = true
 
 		go obs.pushAndWait()
+	}
+}
+
+func (obs *observer) checkSize() {
+	if len(obs.buffer) >= sizeWarnLimit {
+		obs.logger.Warn().
+			Int("size", len(obs.buffer)).
+			Msg("observer queue is growing unexpectedly")
 	}
 }
 

@@ -165,6 +165,23 @@ func TestObserver_NotifyCallback(t *testing.T) {
 	require.Empty(t, obs.ch)
 }
 
+func TestObserver_Flooding_NotifyCallback(t *testing.T) {
+	logger, check := fake.CheckLog("observer queue is growing unexpectedly")
+
+	obs := &observer{
+		logger: logger,
+		ch:     make(chan types.BlockLink, 1),
+	}
+
+	link := makeLink(t, types.Digest{})
+
+	for i := 0; i < sizeWarnLimit+1; i++ {
+		obs.NotifyCallback(link)
+	}
+
+	check(t)
+}
+
 func TestObserver_WhileEmpty_Close(t *testing.T) {
 	obs := &observer{
 		ch:      make(chan types.BlockLink),
