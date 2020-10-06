@@ -242,6 +242,13 @@ func (s *session) RecvPacket(from mino.Address, p *ptypes.Packet) (*ptypes.Ack, 
 func (s *session) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 	errs := make(chan error, len(addrs)+1)
 
+	for i, addr := range addrs {
+		switch to := addr.(type) {
+		case wrapAddress:
+			addrs[i] = to.Unwrap()
+		}
+	}
+
 	go func() {
 		defer close(errs)
 
@@ -290,7 +297,11 @@ func (s *session) Recv(ctx context.Context) (mino.Address, serde.Message, error)
 			return nil, nil, xerrors.Errorf("message: %v", err)
 		}
 
-		return packet.GetSource(), msg, nil
+		// The source address is wrapped so that an orchestrator will look like
+		// its actual source address to the caller.
+		from := newWrapAddress(packet.GetSource())
+
+		return from, msg, nil
 	}
 }
 

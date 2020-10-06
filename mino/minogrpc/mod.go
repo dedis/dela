@@ -25,16 +25,15 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
-const (
-	orchestratorDescription = "Orchestrator"
-	orchestratorCode        = "\ue000"
+var (
+	namespaceMatch = regexp.MustCompile("^[a-zA-Z0-9]+$")
+	addressFac     = session.AddressFactory{}
 )
 
-var (
-	namespaceMatch        = regexp.MustCompile("^[a-zA-Z0-9]+$")
-	defaultAddressFactory = AddressFactory{}
-	orchestratorBytes     = []byte(orchestratorCode)
-)
+// NewAddressFactory returns a new address factory.
+func NewAddressFactory() mino.AddressFactory {
+	return addressFac
+}
 
 // ParseAddress is a helper to create a TCP network address.
 func ParseAddress(ip string, port uint16) net.Addr {
@@ -133,9 +132,9 @@ func NewMinogrpc(addr net.Addr, router router.Router, opts ...Option) (*Minogrpc
 	}
 
 	tmpl := minoTemplate{
-		myAddr: address{host: socket.Addr().String()},
+		myAddr: session.NewAddress(socket.Addr().String()),
 		router: router,
-		fac:    AddressFactory{},
+		fac:    addressFac,
 		certs:  certs.NewInMemoryStore(),
 		curve:  elliptic.P521(),
 		random: rand.Reader,
@@ -180,7 +179,7 @@ func NewMinogrpc(addr net.Addr, router router.Router, opts ...Option) (*Minogrpc
 // GetAddressFactory implements Mino. It returns the address
 // factory.
 func (m *Minogrpc) GetAddressFactory() mino.AddressFactory {
-	return defaultAddressFactory
+	return NewAddressFactory()
 }
 
 // GetAddress implements Mino. It returns the address of the server.

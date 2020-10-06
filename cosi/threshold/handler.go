@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 
-	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
@@ -35,7 +34,7 @@ func (h thresholdHandler) Stream(out mino.Sender, in mino.Receiver) error {
 			return nil
 		}
 		if err != nil {
-			dela.Logger.Warn().Err(err).Send()
+			h.logger.Warn().Err(err).Send()
 		}
 	}
 }

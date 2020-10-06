@@ -127,6 +127,49 @@ func TestService_Scenario_ViewChange(t *testing.T) {
 	require.Equal(t, uint64(0), evt.Index)
 }
 
+// Test that a block committed will be eventually finalized even if the
+// propagation failed.
+//
+// Expected log warnings and errors:
+//  - timeout from the followers
+//  - block not from the leader
+//  - round failed on node 0
+//  - mismatch state viewchange != (initial|prepare)
+func TestService_Scenario_FinalizeFailure(t *testing.T) {
+	nodes, ro, clean := makeAuthority(t, 4)
+	defer clean()
+
+	filter := func(req mino.Request) bool {
+		switch req.Message.(type) {
+		case types.DoneMessage:
+			// Ignore propagation from node 0 which produces a committed block
+			// without finalization. Node 1 will take over and finalize it.
+			return !req.Address.Equal(nodes[0].service.me)
+		default:
+			return true
+		}
+	}
+
+	for i := 0; i < 4; i++ {
+		nodes[i].onet.AddFilter(filter)
+		nodes[i].service.timeoutRound = 200 * time.Millisecond
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := nodes[0].service.Setup(ctx, ro)
+	require.NoError(t, err)
+
+	events := nodes[1].service.Watch(ctx)
+
+	err = nodes[0].pool.Add(makeTx(t, 0, nodes[0].signer))
+	require.NoError(t, err)
+
+	evt := waitEvent(t, events)
+	require.Equal(t, uint64(0), evt.Index)
+}
+
 func TestService_New(t *testing.T) {
 	param := ServiceParam{
 		Mino:       fake.Mino{},
@@ -490,6 +533,7 @@ func checkProof(t *testing.T, p Proof, s *Service) {
 }
 
 type testNode struct {
+	onet    *minoch.Minoch
 	service *Service
 	pool    *poolimpl.Pool
 	db      kv.DB
@@ -603,6 +647,7 @@ func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()
 		require.NoError(t, err)
 
 		nodes[i] = testNode{
+			onet:    m,
 			service: srv,
 			pool:    pool,
 			db:      db,
