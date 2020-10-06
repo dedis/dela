@@ -27,8 +27,14 @@ func ExampleLoader_LoadOrCreate() {
 	// Output: a marshaled private key
 }
 
+// Example of dummy generator which generates a key and returns its
+// serialization.
+//
+// - implements loader.Generator
 type exampleGenerator struct{}
 
+// Generate implements loader.Generator. It returns a dummy byte slice for the
+// example.
 func (exampleGenerator) Generate() ([]byte, error) {
 	return []byte("a marshaled private key"), nil
 }
