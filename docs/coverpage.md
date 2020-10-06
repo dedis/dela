@@ -14,4 +14,4 @@
 - A set of modular abstractions to perform DL operations
 - Provides an implementation of a minimalistic DL
 - Demonstrates a full working DL implementation based on [Byzcoin](https://www.usenix.org/system/files/conference/usenixsecurity16/sec16_paper_kokoris-kogias.pdf)
-- Offers a platform that supports reseach in DLT
+- Offers a platform that supports research in DLT

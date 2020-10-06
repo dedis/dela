@@ -12,37 +12,64 @@ import (
 )
 
 func TestHandler_Process(t *testing.T) {
-	h := newHandler(bls.Generate(), fakeReactor{})
+	signer := bls.NewSigner()
+
+	h := newHandler(signer, fakeReactor{})
+	req := mino.Request{
+		Message: cosi.SignatureRequest{Value: fake.Message{}},
+	}
+
+	msg, err := h.Process(req)
+	require.NoError(t, err)
+
+	resp, ok := msg.(cosi.SignatureResponse)
+	require.True(t, ok)
+
+	err = signer.GetPublicKey().Verify(testValue, resp.Signature)
+	require.NoError(t, err)
+}
+
+func TestHandler_InvalidMessage_Process(t *testing.T) {
+	h := newHandler(fake.NewSigner(), fakeReactor{})
+
+	resp, err := h.Process(mino.Request{Message: fake.Message{}})
+	require.EqualError(t, err, "invalid message type 'fake.Message'")
+	require.Nil(t, resp)
+}
+
+func TestHandler_DenyingReactor_Process(t *testing.T) {
+	h := newHandler(fake.NewSigner(), fakeReactor{err: fake.GetError()})
+
 	req := mino.Request{
 		Message: cosi.SignatureRequest{Value: fake.Message{}},
 	}
 
 	_, err := h.Process(req)
-	require.NoError(t, err)
-
-	resp, err := h.Process(mino.Request{Message: fake.Message{}})
-	require.EqualError(t, err, "invalid message type 'fake.Message'")
-	require.Nil(t, resp)
-
-	h.reactor = fakeReactor{err: fake.GetError()}
-	_, err = h.Process(req)
 	require.EqualError(t, err, fake.Err("couldn't hash message"))
+}
 
-	h.reactor = fakeReactor{}
-	h.signer = fake.NewBadSigner()
-	_, err = h.Process(req)
+func TestHandler_FailSign_Process(t *testing.T) {
+	h := newHandler(fake.NewBadSigner(), fakeReactor{})
+
+	req := mino.Request{
+		Message: cosi.SignatureRequest{Value: fake.Message{}},
+	}
+
+	_, err := h.Process(req)
 	require.EqualError(t, err, fake.Err("couldn't sign"))
 }
 
 // -----------------------------------------------------------------------------
 // Utility functions
 
+var testValue = []byte{0xab}
+
 type fakeReactor struct {
 	err error
 }
 
 func (h fakeReactor) Invoke(mino.Address, serde.Message) ([]byte, error) {
-	return []byte{0xab}, h.err
+	return testValue, h.err
 }
 
 func (h fakeReactor) Deserialize(serde.Context, []byte) (serde.Message, error) {

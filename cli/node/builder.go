@@ -24,11 +24,15 @@ type cliBuilder struct {
 	daemonFactory DaemonFactory
 	injector      Injector
 	actions       *actionMap
-	sigs          chan os.Signal
 	startFlags    []cli.Flag
 	commands      []*cliCommand
 	inits         []Initializer
 	writer        io.Writer
+
+	// In production, the daemon is stopped via SIGTERM. In case of testing, the
+	// channel will be closed instead, because of instability.
+	enableSignal bool
+	sigs         chan os.Signal
 }
 
 // NewBuilder returns a new empty builder.
@@ -42,8 +46,11 @@ func NewBuilderWithCfg(sigs chan os.Signal, out io.Writer, inits ...Initializer)
 		out = os.Stdout
 	}
 
+	enabled := false
+
 	if sigs == nil {
 		sigs = make(chan os.Signal, 1)
+		enabled = true
 	}
 
 	injector := &reflectInjector{
@@ -62,6 +69,7 @@ func NewBuilderWithCfg(sigs chan os.Signal, out io.Writer, inits ...Initializer)
 		injector:      injector,
 		actions:       actions,
 		daemonFactory: factory,
+		enableSignal:  enabled,
 		sigs:          sigs,
 		inits:         inits,
 		writer:        out,
@@ -181,6 +189,12 @@ func (b *cliBuilder) Build() cli.Application {
 }
 
 func (b *cliBuilder) start(c *ucli.Context) error {
+	if b.enableSignal {
+		signal.Notify(b.sigs, syscall.SIGINT, syscall.SIGTERM)
+
+		defer signal.Stop(b.sigs)
+	}
+
 	dir := c.Path("config")
 	if dir != "" {
 		err := os.MkdirAll(dir, 0700)
@@ -210,10 +224,8 @@ func (b *cliBuilder) start(c *ucli.Context) error {
 
 	defer daemon.Close()
 
-	signal.Notify(b.sigs, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(b.sigs)
-
 	<-b.sigs
+	signal.Stop(b.sigs)
 
 	// Controllers are stopped in reverse order so that high level components
 	// are stopped before lower level ones (i.e. stop a service before the

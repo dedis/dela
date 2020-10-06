@@ -39,9 +39,12 @@ func TestFlat_Listen(t *testing.T) {
 	actor := a.(flatActor)
 	require.NotNil(t, actor.signer)
 	require.NotNil(t, actor.rpc)
+}
 
-	flat.mino = fake.NewBadMino()
-	_, err = flat.Listen(fakeReactor{})
+func TestFlat_FailRPC_Listen(t *testing.T) {
+	flat := NewFlat(fake.NewBadMino(), bls.NewSigner())
+
+	_, err := flat.Listen(fakeReactor{})
 	require.EqualError(t, err, fake.Err("couldn't make the rpc"))
 }
 
@@ -66,19 +69,50 @@ func TestActor_Sign(t *testing.T) {
 	sig, err := actor.Sign(ctx, message, ca)
 	require.NoError(t, err)
 	require.NotNil(t, sig)
+}
 
-	actor.rpc = fake.NewBadRPC()
-	_, err = actor.Sign(ctx, message, ca)
+func TestActor_NetworkError_Sign(t *testing.T) {
+	actor := flatActor{
+		signer:  fake.NewAggregateSigner(),
+		rpc:     fake.NewBadRPC(),
+		reactor: fakeReactor{},
+	}
+
+	ctx := context.Background()
+	message := fake.Message{}
+	roster := fake.NewAuthority(3, fake.NewSigner)
+
+	_, err := actor.Sign(ctx, message, roster)
 	require.EqualError(t, err, fake.Err("call aborted"))
+}
 
-	actor.rpc = rpc
-	actor.signer = fake.NewSignerWithVerifierFactory(fake.NewBadVerifierFactory())
-	_, err = actor.Sign(ctx, message, ca)
+func TestActor_FailVerifier_Sign(t *testing.T) {
+	actor := flatActor{
+		signer:  fake.NewSignerWithVerifierFactory(fake.NewBadVerifierFactory()),
+		rpc:     fake.NewBadRPC(),
+		reactor: fakeReactor{},
+	}
+
+	ctx := context.Background()
+	message := fake.Message{}
+	roster := fake.NewAuthority(3, fake.NewSigner)
+
+	_, err := actor.Sign(ctx, message, roster)
 	require.EqualError(t, err, fake.Err("couldn't make verifier"))
+}
 
-	actor.signer = fake.NewAggregateSigner()
-	actor.reactor = fakeReactor{err: fake.GetError()}
-	_, err = actor.Sign(ctx, message, ca)
+func TestActor_DenyingReactor_Sign(t *testing.T) {
+	actor := flatActor{
+		signer:  fake.NewAggregateSigner(),
+		rpc:     fake.NewRPC(),
+		reactor: fakeReactor{err: fake.GetError()},
+	}
+
+	ctx := context.Background()
+	message := fake.Message{}
+	roster := fake.NewAuthority(3, fake.NewSigner)
+
+	_, err := actor.Sign(ctx, message, roster)
 	require.EqualError(t, err, fake.Err("couldn't react to message"))
 }
 

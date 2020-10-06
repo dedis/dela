@@ -46,9 +46,7 @@ func main() {
 }
 
 func run(args []string) error {
-	sigs := make(chan os.Signal, 1)
-
-	return runWithCfg(args, config{Channel: sigs, Writer: os.Stdout})
+	return runWithCfg(args, config{Writer: os.Stdout})
 }
 
 type config struct {
