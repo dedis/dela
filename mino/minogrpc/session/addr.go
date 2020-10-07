@@ -1,3 +1,8 @@
+// This file implements the address for minogrpc.
+//
+// Documentation Last Review: 07.10.2020
+//
+
 package session
 
 import (
@@ -137,7 +142,9 @@ func (a wrapAddress) Equal(other mino.Address) bool {
 	return false
 }
 
-// AddressFactory implements mino.AddressFactory
+// AddressFactory is a factory for addresses.
+//
+// - implements mino.AddressFactory
 type AddressFactory struct {
 	serde.Factory
 }

@@ -1,3 +1,8 @@
+// This file contains the implementation of an in-memory certificate storage.
+//
+// Documentation Last Review: 07.10.2020
+//
+
 package certs
 
 import (
@@ -13,7 +18,7 @@ import (
 // InMemoryStore is a certificate store that keeps the certificates in
 // memory only, which means it does not persist.
 //
-// - implements certs.Store
+// - implements certs.Storage
 type InMemoryStore struct {
 	certs       *sync.Map
 	hashFactory crypto.HashFactory
@@ -27,14 +32,16 @@ func NewInMemoryStore() *InMemoryStore {
 	}
 }
 
-// Store implements certs.Store.
+// Store implements certs.Storage. It stores the certificate with the address as
+// the key.
 func (s *InMemoryStore) Store(addr mino.Address, cert *tls.Certificate) error {
 	s.certs.Store(addr, cert)
 
 	return nil
 }
 
-// Load implements certs.Store.
+// Load implements certs.Storage. It looks for the certificate associated to the
+// address. If it does not exist, it will return nil.
 func (s *InMemoryStore) Load(addr mino.Address) (*tls.Certificate, error) {
 	val, found := s.certs.Load(addr)
 	if !found {
@@ -44,14 +51,16 @@ func (s *InMemoryStore) Load(addr mino.Address) (*tls.Certificate, error) {
 	return val.(*tls.Certificate), nil
 }
 
-// Delete implements certs.Store.
+// Delete implements certs.Storage. It deletes the certificate associated to the
+// address if any, otherwise it does nothing.
 func (s *InMemoryStore) Delete(addr mino.Address) error {
 	s.certs.Delete(addr)
 
 	return nil
 }
 
-// Range implements certs.Store.
+// Range implements certs.Storage. It iterates over all the certificates stored
+// as long as the callback return true.
 func (s *InMemoryStore) Range(fn func(addr mino.Address, cert *tls.Certificate) bool) error {
 	s.certs.Range(func(key, value interface{}) bool {
 		return fn(key.(mino.Address), value.(*tls.Certificate))
@@ -60,7 +69,9 @@ func (s *InMemoryStore) Range(fn func(addr mino.Address, cert *tls.Certificate) 
 	return nil
 }
 
-// Fetch implements certs.Store.
+// Fetch implements certs.Storage. It tries to open a TLS connection to the
+// address only to get the certificate from the distant peer. The connection is
+// dropped right after the certificate is read and stored.
 func (s *InMemoryStore) Fetch(addr Dialable, hash []byte) error {
 	cfg := &tls.Config{
 		// The server certificate is unknown yet, but we don't want to
@@ -100,7 +111,8 @@ func (s *InMemoryStore) Fetch(addr Dialable, hash []byte) error {
 	return nil
 }
 
-// Hash implements certs.Store.
+// Hash implements certs.Storage. It returns the unique digest for the
+// certificate.
 func (s *InMemoryStore) Hash(cert *tls.Certificate) ([]byte, error) {
 	h := s.hashFactory.New()
 
