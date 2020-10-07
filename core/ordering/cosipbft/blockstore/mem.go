@@ -176,6 +176,7 @@ type observer struct {
 	buffer  []types.BlockLink
 	running bool
 	closed  bool
+	working sync.WaitGroup
 	ch      chan types.BlockLink
 }
 
@@ -224,6 +225,8 @@ func (obs *observer) NotifyCallback(evt interface{}) {
 
 		obs.running = true
 
+		obs.working.Add(1)
+
 		go obs.pushAndWait()
 	}
 }
@@ -237,6 +240,8 @@ func (obs *observer) checkSize() {
 }
 
 func (obs *observer) pushAndWait() {
+	defer obs.working.Done()
+
 	for {
 		obs.Lock()
 
@@ -258,20 +263,20 @@ func (obs *observer) pushAndWait() {
 
 func (obs *observer) close() {
 	obs.Lock()
-	defer obs.Unlock()
 
 	obs.closed = true
+	obs.running = false
+	obs.buffer = nil
 
-	if obs.running {
-		obs.running = false
-		obs.buffer = nil
-
-		// Drain the message in transit to close the channel properly.
-		select {
-		case <-obs.ch:
-		default:
-		}
+	// Drain message in transit to close the channel properly.
+	select {
+	case <-obs.ch:
+	default:
 	}
 
 	close(obs.ch)
+
+	obs.Unlock()
+
+	obs.working.Wait()
 }

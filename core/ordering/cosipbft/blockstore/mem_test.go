@@ -148,9 +148,12 @@ func TestObserver_NotifyCallback(t *testing.T) {
 	obs.NotifyCallback(link)
 	obs.NotifyCallback(link)
 	obs.NotifyCallback(link)
-	require.True(t, obs.running)
-	require.Len(t, obs.buffer, 2)
-	require.Len(t, obs.ch, 1)
+
+	evt := <-obs.ch
+	require.NotNil(t, evt)
+
+	evt = <-obs.ch
+	require.NotNil(t, evt)
 
 	// Closing with events waiting should clean resources.
 	obs.close()
