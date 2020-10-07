@@ -1,3 +1,8 @@
+// This file contains the implementation of a format registry.
+//
+// Documentation Last Review: 07.10.2020
+//
+
 package registry
 
 import (
