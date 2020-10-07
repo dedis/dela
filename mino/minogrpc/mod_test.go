@@ -7,7 +7,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/session"
 	"go.dedis.ch/dela/mino/minogrpc/tokens"
 	"go.dedis.ch/dela/mino/router/tree"
@@ -27,6 +26,7 @@ func TestMinogrpc_New(t *testing.T) {
 
 	cert := m.GetCertificate()
 	require.NotNil(t, cert)
+
 	<-m.started
 	require.NoError(t, m.GracefulStop())
 }
@@ -137,7 +137,7 @@ func TestMinogrpc_MakeNamespace(t *testing.T) {
 	newMinoGrpc, ok := newMino.(*Minogrpc)
 	require.True(t, ok)
 
-	require.Equal(t, ns, newMinoGrpc.namespace)
+	require.Equal(t, "/"+ns, newMinoGrpc.namespace)
 
 	// A namespace can not be empty
 	ns = ""
@@ -159,26 +159,27 @@ func TestMinogrpc_MakeNamespace(t *testing.T) {
 }
 
 func TestMinogrpc_MakeRPC(t *testing.T) {
-	minoGrpc := Minogrpc{
-		namespace: "namespace",
+	m := Minogrpc{
+		namespace: "",
 		overlay:   &overlay{},
 		endpoints: make(map[string]*Endpoint),
 	}
 
-	handler := mino.UnsupportedHandler{}
+	mNs, err := m.MakeNamespace("namespace")
+	require.NoError(t, err)
 
-	rpc, err := minoGrpc.MakeRPC("name", handler, fake.MessageFactory{})
+	rpc, err := mNs.MakeRPC("name", emptyHandler{}, fake.MessageFactory{})
 	require.NoError(t, err)
 
 	expectedRPC := &RPC{
 		factory: fake.MessageFactory{},
 		overlay: &overlay{},
-		uri:     "namespace/name",
+		uri:     "/namespace/name",
 	}
 
-	endpoint, ok := minoGrpc.endpoints[expectedRPC.uri]
+	endpoint, ok := m.endpoints[expectedRPC.uri]
 	require.True(t, ok)
-	require.Equal(t, handler, endpoint.Handler)
+	require.Equal(t, emptyHandler{}, endpoint.Handler)
 	require.Equal(t, expectedRPC, rpc)
 }
 
@@ -187,7 +188,7 @@ func TestMinogrpc_String(t *testing.T) {
 		overlay: &overlay{myAddr: fake.NewAddress(0)},
 	}
 
-	require.Equal(t, "fake.Address[0]", minoGrpc.String())
+	require.Equal(t, "mino[fake.Address[0]]", minoGrpc.String())
 }
 
 // -----------------------------------------------------------------------------

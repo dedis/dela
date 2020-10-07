@@ -6,8 +6,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strings"
-	"time"
 
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/core/execution/baremetal/viewchange"
 	"go.dedis.ch/dela/core/ordering"
@@ -166,31 +166,35 @@ func (rosterAddAction) Execute(ctx node.Context) error {
 		return xerrors.Errorf("injector: %v", err)
 	}
 
+	wait := ctx.Flags.Duration("wait")
+
+	// Start listening for new transactions before sending the new one, to
+	// be sure the event will be received.
+	watchCtx, cancel := context.WithTimeout(context.Background(), wait)
+	defer cancel()
+
+	events := srvc.Watch(watchCtx)
+
 	err = p.Add(tx)
 	if err != nil {
 		return xerrors.Errorf("failed to add transaction: %v", err)
 	}
 
-	wait := ctx.Flags.Duration("wait")
 	if wait > 0 {
-		err := waitTx(srvc, wait, tx)
-		if err != nil {
-			return xerrors.Errorf("wait: %v", err)
-		}
-	}
+		dela.Logger.Debug().
+			Hex("id", tx.GetID()).
+			Msg("wait for the transaction to be included")
 
-	return nil
-}
+		for event := range events {
+			for _, res := range event.Transactions {
+				if !bytes.Equal(res.GetTransaction().GetID(), tx.GetID()) {
+					continue
+				}
 
-func waitTx(srvc Service, wait time.Duration, tx txn.Transaction) error {
-	ctx, cancel := context.WithTimeout(context.Background(), wait)
-	defer cancel()
+				dela.Logger.Debug().
+					Hex("id", tx.GetID()).
+					Msg("transaction included in the block")
 
-	events := srvc.Watch(ctx)
-
-	for event := range events {
-		for _, res := range event.Transactions {
-			if bytes.Equal(res.GetTransaction().GetID(), tx.GetID()) {
 				accepted, msg := res.GetStatus()
 				if !accepted {
 					return xerrors.Errorf("transaction refused: %s", msg)
@@ -199,9 +203,11 @@ func waitTx(srvc Service, wait time.Duration, tx txn.Transaction) error {
 				return nil
 			}
 		}
+
+		return xerrors.New("transaction not found after timeout")
 	}
 
-	return xerrors.New("transaction not found after timeout")
+	return nil
 }
 
 func makeManager(ctx node.Context) (txn.Manager, error) {

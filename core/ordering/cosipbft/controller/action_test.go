@@ -87,6 +87,11 @@ func TestRosterAddAction_Execute(t *testing.T) {
 	err := action.Execute(ctx)
 	require.NoError(t, err)
 
+	ctx.Flags.(node.FlagSet)["wait"] = float64(0)
+
+	err = action.Execute(ctx)
+	require.NoError(t, err)
+
 	var p pool.Pool
 	require.NoError(t, ctx.Injector.Resolve(&p))
 	require.Equal(t, 1, p.Len())
@@ -133,11 +138,11 @@ func TestRosterAddAction_Execute(t *testing.T) {
 	ctx.Flags.(node.FlagSet)["wait"] = float64(time.Second)
 	ctx.Injector.Inject(fakeService{events: events})
 	err = action.Execute(ctx)
-	require.EqualError(t, err, "wait: transaction refused: message")
+	require.EqualError(t, err, "transaction refused: message")
 
 	ctx.Injector.Inject(fakeService{events: nil})
 	err = action.Execute(ctx)
-	require.EqualError(t, err, "wait: transaction not found after timeout")
+	require.EqualError(t, err, "transaction not found after timeout")
 }
 
 func TestDecodeMember(t *testing.T) {
