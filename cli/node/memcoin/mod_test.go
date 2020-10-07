@@ -167,6 +167,8 @@ func TestMemcoin_Scenario_RestartNode(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
+const testDialTimeout = 500 * time.Millisecond
+
 func runNode(t *testing.T, node string, cfg config, port uint16, wg *sync.WaitGroup) {
 	go func() {
 		defer wg.Done()
@@ -211,12 +213,14 @@ func waitDaemon(t *testing.T, daemons []string) bool {
 	num := 50
 
 	for _, daemon := range daemons {
+		path := filepath.Join(daemon, "daemon.sock")
+
 		for i := 0; i < num; i++ {
 			// Windows: we have to check the file as Dial on Windows creates the
 			// file and prevent to listen.
-			_, err := os.Stat(filepath.Join(daemon, "daemon.sock"))
+			_, err := os.Stat(path)
 			if !os.IsNotExist(err) {
-				conn, err := net.Dial("unix", filepath.Join(daemon, "daemon.sock"))
+				conn, err := net.DialTimeout("unix", path, testDialTimeout)
 				if err == nil {
 					conn.Close()
 					break

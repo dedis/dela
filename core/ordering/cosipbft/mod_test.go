@@ -355,6 +355,8 @@ func TestService_DoRound(t *testing.T) {
 	err = srvc.doRound(ctx)
 	require.EqualError(t, err, fake.Err("sync failed"))
 
+	srvc.timeoutRound = RoundTimeout
+	srvc.timeoutRoundAfterFailure = RoundTimeout
 	srvc.sync = fakeSync{}
 	srvc.val = fakeValidation{err: fake.GetError()}
 	err = srvc.doRound(ctx)
