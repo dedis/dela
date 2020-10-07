@@ -122,19 +122,35 @@ func (o overlayServer) Join(ctx context.Context, req *ptypes.JoinRequest) (*ptyp
 }
 
 // Share implements ptypes.OverlayServer. It accepts a certificate from a
-// participant.
+// participant only if it is valid from the address it claims to be.
 func (o overlayServer) Share(ctx context.Context, msg *ptypes.Certificate) (*ptypes.CertificateAck, error) {
-	// TODO: verify the validity of the certificate by connecting to the distant
-	// node but that requires a protection against malicious share.
-
-	from := o.addrFactory.FromText(msg.GetAddress())
+	from := o.addrFactory.FromText(msg.GetAddress()).(session.Address)
 
 	cert, err := x509.ParseCertificate(msg.GetValue())
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't parse certificate: %v", err)
 	}
 
-	o.certs.Store(from, &tls.Certificate{Leaf: cert})
+	// Make sure the certificate is valid for the public key provided.
+	err = cert.CheckSignatureFrom(cert)
+	if err != nil {
+		return nil, xerrors.Errorf("invalid certificate signature: %v", err)
+	}
+
+	hostname, err := from.GetHostname()
+	if err != nil {
+		return nil, xerrors.Errorf("malformed address: %v", err)
+	}
+
+	err = cert.VerifyHostname(hostname)
+	if err != nil {
+		return nil, xerrors.Errorf("invalid hostname: %v", err)
+	}
+
+	o.certs.Store(from, &tls.Certificate{
+		Certificate: [][]byte{msg.GetValue()},
+		Leaf:        cert,
+	})
 
 	return &ptypes.CertificateAck{}, nil
 }
@@ -534,9 +550,11 @@ func (o *overlay) makeCertificate() error {
 		NotBefore:    time.Now(),
 		NotAfter:     time.Now().Add(certificateDuration),
 
-		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
+		MaxPathLen:            1,
+		IsCA:                  true,
 	}
 
 	buf, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, o.public, o.secret)

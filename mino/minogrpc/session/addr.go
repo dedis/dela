@@ -2,9 +2,11 @@ package session
 
 import (
 	"fmt"
+	"net/url"
 
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
+	"golang.org/x/xerrors"
 )
 
 const (
@@ -44,6 +46,16 @@ func NewAddress(host string) Address {
 // functions.
 func (a Address) GetDialAddress() string {
 	return a.host
+}
+
+// GetHostname parses the address to extract the hostname.
+func (a Address) GetHostname() (string, error) {
+	url, err := url.Parse(fmt.Sprintf("//%s", a.host))
+	if err != nil {
+		return "", xerrors.Errorf("malformed address: %v", err)
+	}
+
+	return url.Hostname(), nil
 }
 
 // Equal implements mino.Address. It returns true if both addresses are exactly

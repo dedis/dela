@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"net"
 	"sync"
 	"testing"
 	"time"
@@ -239,13 +240,22 @@ func TestOverlayServer_Share(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	cert := fake.MakeCertificate(t, 1)
+	from := session.NewAddress("127.0.0.1:8080")
+	fromBuf, err := from.MarshalText()
+	require.NoError(t, err)
 
-	resp, err := overlay.Share(ctx, &ptypes.Certificate{Value: cert.Leaf.Raw})
+	cert := fake.MakeCertificate(t, 1, net.IPv4(127, 0, 0, 1))
+
+	req := &ptypes.Certificate{
+		Address: fromBuf,
+		Value:   cert.Leaf.Raw,
+	}
+
+	resp, err := overlay.Share(ctx, req)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
-	shared, err := overlay.certs.Load(session.NewAddress(""))
+	shared, err := overlay.certs.Load(from)
 	require.NoError(t, err)
 	require.NotNil(t, shared)
 

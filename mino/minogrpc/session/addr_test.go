@@ -12,6 +12,25 @@ func TestAddress_GetDialAddress(t *testing.T) {
 	require.Equal(t, "127.0.0.2", addr.GetDialAddress())
 }
 
+func TestAddress_GetHostname(t *testing.T) {
+	addr := NewAddress("127.0.0.1:2000")
+
+	hostname, err := addr.GetHostname()
+	require.NoError(t, err)
+	require.Equal(t, "127.0.0.1", hostname)
+
+	addr = NewAddress("example.com:8080")
+
+	hostname, err = addr.GetHostname()
+	require.NoError(t, err)
+	require.Equal(t, "example.com", hostname)
+
+	addr = NewAddress("\x00")
+
+	_, err = addr.GetHostname()
+	require.EqualError(t, err, "malformed address: parse \"//\\x00\": net/url: invalid control character in URL")
+}
+
 func TestAddress_Equal(t *testing.T) {
 	addr := NewAddress("127.0.0.1:2000")
 	require.True(t, addr.Equal(addr))
