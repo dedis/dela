@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,8 +28,8 @@ import (
 )
 
 var (
-	namespaceMatch = regexp.MustCompile("^[a-zA-Z0-9]+$")
-	addressFac     = session.AddressFactory{}
+	segmentMatch = regexp.MustCompile("^[a-zA-Z0-9]+$")
+	addressFac   = session.AddressFactory{}
 )
 
 // NewAddressFactory returns a new address factory.
@@ -93,7 +94,7 @@ type Minogrpc struct {
 	*overlay
 
 	server    *grpc.Server
-	namespace string
+	segments  []string
 	endpoints map[string]*Endpoint
 	started   chan struct{}
 	closing   chan error
@@ -170,7 +171,7 @@ func NewMinogrpc(addr net.Addr, router router.Router, opts ...Option) (*Minogrpc
 	m := &Minogrpc{
 		overlay:   o,
 		server:    server,
-		namespace: "",
+		segments:  nil,
 		endpoints: make(map[string]*Endpoint),
 		started:   make(chan struct{}),
 		closing:   make(chan error, 1),
@@ -237,43 +238,50 @@ func (m *Minogrpc) postCheckClose() error {
 	return nil
 }
 
-// MakeNamespace implements mino.Mino. It returns an instance that extends the
-// current namespace with the one provided in parameter. The namespace can not
-// be empty an should match [a-zA-Z0-9]+
-func (m *Minogrpc) MakeNamespace(namespace string) (mino.Mino, error) {
-	if namespace == "" {
-		return nil, xerrors.Errorf("a namespace can not be empty")
-	}
+// WithSegment returns a new mino instance that will have its URI path extended
+// with the provided segment. The segment can not be empty and should match
+// [a-zA-Z0-9]+
+func (m *Minogrpc) WithSegment(segment string) mino.Mino {
 
-	ok := namespaceMatch.MatchString(namespace)
-	if !ok {
-		return nil, xerrors.Errorf("a namespace should match [a-zA-Z0-9]+, "+
-			"but found '%s'", namespace)
+	if segment == "" {
+		return m
 	}
 
 	newM := &Minogrpc{
 		server:    m.server,
 		overlay:   m.overlay,
-		namespace: concatenateNamespace(m.namespace, namespace),
+		segments:  append(m.segments, segment),
 		endpoints: m.endpoints,
 	}
 
-	return newM, nil
+	return newM
 }
 
-// MakeRPC implements mino.Mino. It returns a newly created rpc with the
-// provided name and reserved for the current namespace. When contacting distant
-// peers, it will only talk to mirrored RPCs with the same name and namespace.
-func (m *Minogrpc) MakeRPC(name string, h mino.Handler, f serde.Factory) (mino.RPC, error) {
-	uri := concatenateNamespace(m.namespace, name)
+// CreateRPC implements Mino. It returns a newly created rpc with the provided
+// name and reserved for the current namespace. When contacting distant peers,
+// it will only talk to mirrored RPCs with the same name and namespace.
+func (m *Minogrpc) CreateRPC(name string, h mino.Handler, f serde.Factory) (mino.RPC, error) {
+	uri := append(append([]string{}, m.segments...), name)
 
 	rpc := &RPC{
-		uri:     uri,
+		uri:     strings.Join(uri, "/"),
 		overlay: m.overlay,
 		factory: f,
 	}
 
-	m.endpoints[uri] = &Endpoint{
+	for _, segment := range uri {
+		ok := segmentMatch.MatchString(segment)
+		if !ok {
+			return nil, xerrors.Errorf("invalid segment in uri '%s': '%s'", rpc.uri, segment)
+		}
+	}
+
+	_, found := m.endpoints[rpc.uri]
+	if found {
+		return nil, xerrors.Errorf("rpc '%s' already exists", rpc.uri)
+	}
+
+	m.endpoints[rpc.uri] = &Endpoint{
 		Handler: h,
 		Factory: f,
 		streams: make(map[string]session.Session),
@@ -307,8 +315,4 @@ func (m *Minogrpc) listen(socket net.Listener) {
 	// Force the go routine to be executed before returning which means the
 	// server has well started after that point.
 	<-m.started
-}
-
-func concatenateNamespace(base, segment string) string {
-	return fmt.Sprintf("%s/%s", base, segment)
 }

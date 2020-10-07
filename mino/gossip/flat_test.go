@@ -17,10 +17,6 @@ func TestFlat_Listen(t *testing.T) {
 	actor, err := gossiper.Listen()
 	require.NoError(t, err)
 	require.NotNil(t, actor)
-
-	gossiper.mino = fake.NewBadMino()
-	_, err = gossiper.Listen()
-	require.EqualError(t, err, fake.Err("couldn't create the rpc"))
 }
 
 func TestFlat_Rumors(t *testing.T) {

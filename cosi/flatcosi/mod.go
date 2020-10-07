@@ -81,12 +81,7 @@ func (flat *Flat) Listen(r cosi.Reactor) (cosi.Actor, error) {
 
 	factory := cosi.NewMessageFactory(r, flat.signer.GetSignatureFactory())
 
-	rpc, err := flat.mino.MakeRPC(rpcName, newHandler(flat.signer, r), factory)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't make the rpc: %v", err)
-	}
-
-	actor.rpc = rpc
+	actor.rpc = mino.MustCreateRPC(flat.mino, rpcName, newHandler(flat.signer, r), factory)
 
 	return actor, nil
 }

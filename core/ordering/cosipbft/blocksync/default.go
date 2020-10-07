@@ -44,7 +44,7 @@ type SyncParam struct {
 }
 
 // NewSynchronizer creates a new block synchronizer.
-func NewSynchronizer(param SyncParam) (Synchronizer, error) {
+func NewSynchronizer(param SyncParam) Synchronizer {
 	latest := param.Blocks.Len()
 
 	logger := dela.Logger.With().Str("addr", param.Mino.GetAddress().String()).Logger()
@@ -61,21 +61,16 @@ func NewSynchronizer(param SyncParam) (Synchronizer, error) {
 
 	fac := types.NewMessageFactory(param.LinkFactory, param.ChainFactory)
 
-	rpc, err := param.Mino.MakeRPC("blocksync", h, fac)
-	if err != nil {
-		return nil, xerrors.Errorf("rpc creation failed: %v", err)
-	}
-
 	s := defaultSync{
 		logger:      logger,
-		rpc:         rpc,
+		rpc:         mino.MustCreateRPC(param.Mino, "blocksync", h, fac),
 		pbftsm:      param.PBFT,
 		blocks:      param.Blocks,
 		latest:      &latest,
 		catchUpLock: h.catchUpLock,
 	}
 
-	return s, nil
+	return s
 }
 
 // GetLatest implements blocksync.Synchronizer. It returns the latest index

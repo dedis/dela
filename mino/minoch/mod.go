@@ -95,9 +95,9 @@ func (m *Minoch) AddFilter(filter Filter) {
 	}
 }
 
-// MakeNamespace implements mino.Mino. It returns an instance restricted to the
-// namespace.
-func (m *Minoch) MakeNamespace(path string) (mino.Mino, error) {
+// WithSegment returns a new mino instance that will have its URI path extended
+// with the provided segment.
+func (m *Minoch) WithSegment(path string) mino.Mino {
 	newMinoch := &Minoch{
 		manager:    m.manager,
 		identifier: m.identifier,
@@ -105,12 +105,11 @@ func (m *Minoch) MakeNamespace(path string) (mino.Mino, error) {
 		rpcs:       m.rpcs,
 	}
 
-	return newMinoch, nil
+	return newMinoch
 }
 
-// MakeRPC implements mino.Mino. It creates an RPC that can send to and receive
-// from the unique path.
-func (m *Minoch) MakeRPC(name string, h mino.Handler, f serde.Factory) (mino.RPC, error) {
+// CreateRPC creates an RPC that can send to and receive from the unique path.
+func (m *Minoch) CreateRPC(name string, h mino.Handler, f serde.Factory) (mino.RPC, error) {
 	rpc := &RPC{
 		manager: m.manager,
 		addr:    m.GetAddress(),
@@ -122,7 +121,14 @@ func (m *Minoch) MakeRPC(name string, h mino.Handler, f serde.Factory) (mino.RPC
 	}
 
 	m.Lock()
+
+	_, found := m.rpcs[rpc.path]
+	if found {
+		return nil, xerrors.Errorf("rpc '%s' already exists", rpc.path)
+	}
+
 	m.rpcs[rpc.path] = rpc
+
 	m.Unlock()
 
 	return rpc, nil

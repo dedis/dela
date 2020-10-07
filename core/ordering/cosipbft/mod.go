@@ -166,10 +166,7 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 		VerifierFactory: param.Cosi.GetVerifierFactory(),
 	}
 
-	blocksync, err := blocksync.NewSynchronizer(syncparam)
-	if err != nil {
-		return nil, xerrors.Errorf("creating sync failed: %v", err)
-	}
+	blocksync := blocksync.NewSynchronizer(syncparam)
 
 	proc.sync = blocksync
 
@@ -183,11 +180,6 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 
 	proc.MessageFactory = fac
 
-	rpc, err := param.Mino.MakeRPC(rpcName, proc, fac)
-	if err != nil {
-		return nil, xerrors.Errorf("creating rpc failed: %v", err)
-	}
-
 	actor, err := param.Cosi.Listen(proc)
 	if err != nil {
 		return nil, xerrors.Errorf("creating cosi failed: %v", err)
@@ -196,7 +188,7 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 	s := &Service{
 		processor:                proc,
 		me:                       param.Mino.GetAddress(),
-		rpc:                      rpc,
+		rpc:                      mino.MustCreateRPC(param.Mino, rpcName, proc, fac),
 		actor:                    actor,
 		val:                      param.Validation,
 		verifierFac:              param.Cosi.GetVerifierFactory(),

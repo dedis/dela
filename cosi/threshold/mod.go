@@ -17,7 +17,6 @@ import (
 	"go.dedis.ch/dela/cosi/threshold/types"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
-	"golang.org/x/xerrors"
 )
 
 func defaultThreshold(n int) int {
@@ -109,15 +108,10 @@ func (c *Threshold) SetThreshold(fn cosi.Threshold) {
 func (c *Threshold) Listen(r cosi.Reactor) (cosi.Actor, error) {
 	factory := cosi.NewMessageFactory(r, c.signer.GetSignatureFactory())
 
-	rpc, err := c.mino.MakeRPC("cosi", newHandler(c, r), factory)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't make rpc: %v", err)
-	}
-
 	actor := thresholdActor{
 		Threshold: c,
 		me:        c.mino.GetAddress(),
-		rpc:       rpc,
+		rpc:       mino.MustCreateRPC(c.mino, "cosi", newHandler(c, r), factory),
 		reactor:   r,
 	}
 

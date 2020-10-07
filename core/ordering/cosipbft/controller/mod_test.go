@@ -64,20 +64,6 @@ func TestMinimal_FailLoadKey_OnStart(t *testing.T) {
 		fake.Err("signer: while loading: generator failed: failed to marshal signer"))
 }
 
-func TestMinimal_FailCreatePool_OnStart(t *testing.T) {
-	flags, _, clean := makeFlags(t)
-	defer clean()
-
-	m := NewMinimal().(minimal)
-
-	inj := node.NewInjector()
-	inj.Inject(fake.NewBadMino())
-
-	err := m.OnStart(flags, inj)
-	require.EqualError(t, err,
-		fake.Err("pool: failed to listen: couldn't create the rpc"))
-}
-
 func TestMinimal_MissingDB_OnStart(t *testing.T) {
 	flags, _, clean := makeFlags(t)
 	defer clean()

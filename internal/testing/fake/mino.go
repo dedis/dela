@@ -454,9 +454,14 @@ func (m Mino) GetAddressFactory() mino.AddressFactory {
 	return AddressFactory{}
 }
 
-// MakeRPC implements mino.Mino.
-func (m Mino) MakeRPC(string, mino.Handler, serde.Factory) (mino.RPC, error) {
-	return NewRPC(), m.err
+// WithSegment implements mino.Mino.
+func (m Mino) WithSegment(segment string) mino.Mino {
+	return m
+}
+
+// CreateRPC implements mino.Mino.
+func (m Mino) CreateRPC(string, mino.Handler, serde.Factory) (mino.RPC, error) {
+	return NewRPC(), nil
 }
 
 // MakeCertificate generates a valid certificate for the localhost address and

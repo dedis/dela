@@ -16,11 +16,8 @@ import (
 )
 
 func TestPedersen_Listen(t *testing.T) {
-	pedersen, _ := NewPedersen(fake.NewBadMino())
-	_, err := pedersen.Listen()
-	require.EqualError(t, err, fake.Err("failed to create RPC"))
+	pedersen, _ := NewPedersen(fake.Mino{})
 
-	pedersen, _ = NewPedersen(fake.Mino{})
 	actor, err := pedersen.Listen()
 	require.NoError(t, err)
 

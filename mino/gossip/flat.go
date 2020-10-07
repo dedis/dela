@@ -45,14 +45,9 @@ func NewFlat(m mino.Mino, f serde.Factory) *Flat {
 func (flat *Flat) Listen() (Actor, error) {
 	h := handler{Flat: flat}
 
-	rpc, err := flat.mino.MakeRPC("flatgossip", h, flat.rumorFactory)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't create the rpc: %v", err)
-	}
-
 	actor := &flatActor{
 		logger: dela.Logger.With().Str("addr", flat.mino.GetAddress().String()).Logger(),
-		rpc:    rpc,
+		rpc:    mino.MustCreateRPC(flat.mino, "flatgossip", h, flat.rumorFactory),
 	}
 
 	return actor, nil

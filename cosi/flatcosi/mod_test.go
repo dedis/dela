@@ -41,13 +41,6 @@ func TestFlat_Listen(t *testing.T) {
 	require.NotNil(t, actor.rpc)
 }
 
-func TestFlat_FailRPC_Listen(t *testing.T) {
-	flat := NewFlat(fake.NewBadMino(), bls.NewSigner())
-
-	_, err := flat.Listen(fakeReactor{})
-	require.EqualError(t, err, fake.Err("couldn't make the rpc"))
-}
-
 func TestActor_Sign(t *testing.T) {
 	message := fake.Message{}
 	ca := fake.NewAuthority(1, fake.NewSigner)

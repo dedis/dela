@@ -16,20 +16,14 @@ func ExampleRPC_Call() {
 		panic("overlay A failed: " + err.Error())
 	}
 
-	rpcA, err := mA.MakeRPC("test", exampleHandler{}, exampleFactory{})
-	if err != nil {
-		panic("rpc A failed: " + err.Error())
-	}
+	rpcA := mino.MustCreateRPC(mA, "test", exampleHandler{}, exampleFactory{})
 
 	mB, err := NewMinogrpc(ParseAddress("127.0.0.1", 0), tree.NewRouter(NewAddressFactory()))
 	if err != nil {
 		panic("overlay B failed: " + err.Error())
 	}
 
-	_, err = mB.MakeRPC("test", exampleHandler{}, exampleFactory{})
-	if err != nil {
-		panic("rpc B failed: " + err.Error())
-	}
+	mino.MustCreateRPC(mB, "test", exampleHandler{}, exampleFactory{})
 
 	mA.GetCertificateStore().Store(mB.GetAddress(), mB.GetCertificate())
 	mB.GetCertificateStore().Store(mA.GetAddress(), mA.GetCertificate())
@@ -68,20 +62,14 @@ func ExampleRPC_Stream() {
 		panic("overlay A failed: " + err.Error())
 	}
 
-	rpcA, err := mA.MakeRPC("test", exampleHandler{}, exampleFactory{})
-	if err != nil {
-		panic("rpc A failed: " + err.Error())
-	}
+	rpcA := mino.MustCreateRPC(mA, "test", exampleHandler{}, exampleFactory{})
 
 	mB, err := NewMinogrpc(ParseAddress("127.0.0.1", 0), tree.NewRouter(NewAddressFactory()))
 	if err != nil {
 		panic("overlay B failed: " + err.Error())
 	}
 
-	_, err = mB.MakeRPC("test", exampleHandler{}, exampleFactory{})
-	if err != nil {
-		panic("rpc B failed: " + err.Error())
-	}
+	mino.MustCreateRPC(mB, "test", exampleHandler{}, exampleFactory{})
 
 	mA.GetCertificateStore().Store(mB.GetAddress(), mB.GetCertificate())
 	mB.GetCertificateStore().Store(mA.GetAddress(), mA.GetCertificate())
