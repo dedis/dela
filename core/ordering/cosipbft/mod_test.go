@@ -601,7 +601,7 @@ func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()
 	nodes := make([]testNode, n)
 
 	for i := 0; i < n; i++ {
-		m := minoch.NewMinoch(manager, fmt.Sprintf("node%d", i))
+		m := minoch.MustCreate(manager, fmt.Sprintf("node%d", i))
 
 		addrs[i] = m.GetAddress()
 

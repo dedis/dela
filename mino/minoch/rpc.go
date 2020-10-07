@@ -37,10 +37,10 @@ type RPC struct {
 	filters []Filter
 }
 
-// Call implements mino.RPC. It sends the message to all participants and gather
-// their reply. The context is ignored in the scope of channel communication as
-// there is no blocking I/O. The response channel will receive n responses for n
-// players and be closed eventually.
+// Call implements mino.RPC. It sends the message to all participants and
+// gathers their replies. The context is ignored in the scope of channel
+// communication as there is no blocking I/O. The response channel will receive
+// n responses for n players and be closed eventually.
 func (c RPC) Call(ctx context.Context,
 	req serde.Message, players mino.Players) (<-chan mino.Response, error) {
 

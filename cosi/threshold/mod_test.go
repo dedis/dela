@@ -17,8 +17,8 @@ import (
 func TestThreshold_Scenario_Basic(t *testing.T) {
 	manager := minoch.NewManager()
 
-	m1 := minoch.NewMinoch(manager, "A")
-	m2 := minoch.NewMinoch(manager, "B")
+	m1 := minoch.MustCreate(manager, "A")
+	m2 := minoch.MustCreate(manager, "B")
 
 	ca := fake.NewAuthorityFromMino(bls.Generate, m1, m2)
 	c1 := NewThreshold(m1, ca.GetSigner(0).(crypto.AggregateSigner))

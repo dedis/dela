@@ -12,23 +12,23 @@ import (
 func TestMinoch_New(t *testing.T) {
 	manager := NewManager()
 
-	m1 := NewMinoch(manager, "A")
+	m1 := MustCreate(manager, "A")
 	require.NotNil(t, m1)
 
-	m2 := NewMinoch(manager, "B")
+	m2 := MustCreate(manager, "B")
 	require.NotNil(t, m2)
 }
 
-func TestMinoch_SameIdentifier_New(t *testing.T) {
+func TestMinoch_Panic_MustCreate(t *testing.T) {
 	defer func() {
-		r := recover()
-		require.Equal(t, r, "manager refused: identifier <A> already exists")
+		r := recover().(error)
+		require.EqualError(t, r, "manager refused: identifier <A> already exists")
 	}()
 
 	manager := NewManager()
 
-	NewMinoch(manager, "A")
-	NewMinoch(manager, "A")
+	MustCreate(manager, "A")
+	MustCreate(manager, "A")
 }
 
 func TestMinoch_GetAddressFactory(t *testing.T) {
@@ -39,7 +39,7 @@ func TestMinoch_GetAddressFactory(t *testing.T) {
 func TestMinoch_GetAddress(t *testing.T) {
 	manager := NewManager()
 
-	m := NewMinoch(manager, "A")
+	m := MustCreate(manager, "A")
 
 	addr := m.GetAddress()
 	require.Equal(t, "A", addr.String())
@@ -48,7 +48,7 @@ func TestMinoch_GetAddress(t *testing.T) {
 func TestMinoch_AddFilter(t *testing.T) {
 	manager := NewManager()
 
-	m := NewMinoch(manager, "A")
+	m := MustCreate(manager, "A")
 
 	rpc, err := m.MakeRPC("test", nil, nil)
 	require.NoError(t, err)
@@ -61,7 +61,7 @@ func TestMinoch_AddFilter(t *testing.T) {
 func TestMinoch_MakeNamespace(t *testing.T) {
 	manager := NewManager()
 
-	m := NewMinoch(manager, "A")
+	m := MustCreate(manager, "A")
 
 	m2, err := m.MakeNamespace("abc")
 	require.NoError(t, err)
@@ -72,7 +72,7 @@ func TestMinoch_MakeNamespace(t *testing.T) {
 func TestMinoch_MakeRPC(t *testing.T) {
 	manager := NewManager()
 
-	m := NewMinoch(manager, "A")
+	m := MustCreate(manager, "A")
 
 	rpc, err := m.MakeRPC("rpc1", badHandler{}, fake.MessageFactory{})
 	require.NoError(t, err)

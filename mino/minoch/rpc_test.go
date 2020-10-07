@@ -14,11 +14,11 @@ import (
 func TestRPC_Call(t *testing.T) {
 	manager := NewManager()
 
-	mA := NewMinoch(manager, "A")
+	mA := MustCreate(manager, "A")
 	rpcA, err := mA.MakeRPC("test", fakeHandler{}, fake.MessageFactory{})
 	require.NoError(t, err)
 
-	mB := NewMinoch(manager, "B")
+	mB := MustCreate(manager, "B")
 	_, err = mB.MakeRPC("test", fakeHandler{}, fake.MessageFactory{})
 	require.NoError(t, err)
 
@@ -39,7 +39,7 @@ func TestRPC_Call(t *testing.T) {
 func TestRPC_Filter_Call(t *testing.T) {
 	manager := NewManager()
 
-	m := NewMinoch(manager, "A")
+	m := MustCreate(manager, "A")
 
 	rpc, err := m.MakeRPC("test", fakeHandler{}, fake.MessageFactory{})
 	require.NoError(t, err)
@@ -71,7 +71,7 @@ func TestRPC_BadContext_Call(t *testing.T) {
 func TestRPC_BadFactory_Call(t *testing.T) {
 	manager := NewManager()
 
-	m := NewMinoch(manager, "A")
+	m := MustCreate(manager, "A")
 
 	rpc, err := m.MakeRPC("test", fakeHandler{}, fake.NewBadMessageFactory())
 	require.NoError(t, err)
@@ -89,7 +89,7 @@ func TestRPC_BadFactory_Call(t *testing.T) {
 func TestRPC_UnkownPeer_Call(t *testing.T) {
 	manager := NewManager()
 
-	m := NewMinoch(manager, "A")
+	m := MustCreate(manager, "A")
 	rpc, err := m.MakeRPC("test", fakeHandler{}, fake.MessageFactory{})
 	require.NoError(t, err)
 
@@ -107,11 +107,11 @@ func TestRPC_UnkownPeer_Call(t *testing.T) {
 func TestRPC_MissingHandler_Call(t *testing.T) {
 	manager := NewManager()
 
-	mA := NewMinoch(manager, "A")
+	mA := MustCreate(manager, "A")
 	rpcA, err := mA.MakeRPC("test", fakeHandler{}, fake.MessageFactory{})
 	require.NoError(t, err)
 
-	mB := NewMinoch(manager, "B")
+	mB := MustCreate(manager, "B")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -126,11 +126,11 @@ func TestRPC_MissingHandler_Call(t *testing.T) {
 func TestRPC_BadHandler_Call(t *testing.T) {
 	manager := NewManager()
 
-	mA := NewMinoch(manager, "A")
+	mA := MustCreate(manager, "A")
 	rpcA, err := mA.MakeRPC("test", fakeHandler{}, fake.MessageFactory{})
 	require.NoError(t, err)
 
-	mB := NewMinoch(manager, "B")
+	mB := MustCreate(manager, "B")
 	_, err = mB.MakeRPC("test", badHandler{}, fake.MessageFactory{})
 	require.NoError(t, err)
 
@@ -147,7 +147,7 @@ func TestRPC_BadHandler_Call(t *testing.T) {
 func TestRPC_Stream(t *testing.T) {
 	manager := NewManager()
 
-	m := NewMinoch(manager, "A")
+	m := MustCreate(manager, "A")
 	rpc, err := m.MakeRPC("test", fakeStreamHandler{}, fake.MessageFactory{})
 	require.NoError(t, err)
 
@@ -169,7 +169,7 @@ func TestRPC_Stream(t *testing.T) {
 func TestRPC_Failures_Stream(t *testing.T) {
 	manager := NewManager()
 
-	m := NewMinoch(manager, "A")
+	m := MustCreate(manager, "A")
 
 	m.context = fake.NewBadContext()
 	rpc, err := m.MakeRPC("test", fakeBadStreamHandler{}, fake.MessageFactory{})

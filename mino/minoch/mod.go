@@ -21,6 +21,7 @@ import (
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/json"
+	"golang.org/x/xerrors"
 )
 
 // Filter is a function called for any request to an RPC which will drop it if
@@ -43,7 +44,7 @@ type Minoch struct {
 }
 
 // NewMinoch creates a new instance of a local Mino instance.
-func NewMinoch(manager *Manager, identifier string) *Minoch {
+func NewMinoch(manager *Manager, identifier string) (*Minoch, error) {
 	inst := &Minoch{
 		manager:    manager,
 		identifier: identifier,
@@ -54,12 +55,23 @@ func NewMinoch(manager *Manager, identifier string) *Minoch {
 
 	err := manager.insert(inst)
 	if err != nil {
-		panic("manager refused: " + err.Error())
+		return nil, xerrors.Errorf("manager refused: %v", err.Error())
 	}
 
 	dela.Logger.Trace().Msgf("New instance with identifier %s", identifier)
 
-	return inst
+	return inst, nil
+}
+
+// MustCreate creates a new minoch instance and panic if the identifier is
+// refused by the manager.
+func MustCreate(manager *Manager, identifier string) *Minoch {
+	m, err := NewMinoch(manager, identifier)
+	if err != nil {
+		panic(err)
+	}
+
+	return m
 }
 
 // GetAddressFactory implements mino.Mino. It returns the address factory.

@@ -96,7 +96,7 @@ type RPC interface {
 	Call(ctx context.Context, req serde.Message, players Players) (<-chan Response, error)
 
 	// Stream is a persistent request that will be closed only when the
-	// orchestrator is done or an error occured.
+	// orchestrator is done or an error occured, or the context is done.
 	Stream(ctx context.Context, players Players) (Sender, Receiver, error)
 }
 

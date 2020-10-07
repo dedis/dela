@@ -11,8 +11,8 @@ import (
 func ExampleRPC_Call() {
 	manager := NewManager()
 
-	minoA := NewMinoch(manager, "A")
-	minoB := NewMinoch(manager, "B")
+	minoA := MustCreate(manager, "A")
+	minoB := MustCreate(manager, "B")
 
 	roster := mino.NewAddresses(minoA.GetAddress(), minoB.GetAddress())
 
