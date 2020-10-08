@@ -236,7 +236,7 @@ func makeDB(t *testing.T) (kv.DB, func()) {
 }
 
 func makeBlockFac() types.LinkFactory {
-	blockFac := types.NewBlockFactory(fakeDataFac{})
+	blockFac := types.NewBlockFactory(fakeResultFac{})
 
 	return types.NewLinkFactory(blockFac, fake.SignatureFactory{}, fakeCsFac{})
 }
@@ -249,12 +249,12 @@ func (fakeCsFac) ChangeSetOf(serde.Context, []byte) (authority.ChangeSet, error)
 	return authority.NewChangeSet(), nil
 }
 
-type fakeDataFac struct {
-	validation.DataFactory
+type fakeResultFac struct {
+	validation.ResultFactory
 }
 
-func (fakeDataFac) DataOf(serde.Context, []byte) (validation.Data, error) {
-	return simple.NewData(nil), nil
+func (fakeResultFac) ResultOf(serde.Context, []byte) (validation.Result, error) {
+	return simple.NewResult(nil), nil
 }
 
 type badLinkFac struct {

@@ -175,7 +175,7 @@ func (f GenesisFactory) Deserialize(ctx serde.Context, data []byte) (serde.Messa
 type Block struct {
 	digest   Digest
 	index    uint64
-	data     validation.Data
+	data     validation.Result
 	treeRoot Digest
 }
 
@@ -209,7 +209,7 @@ func WithHashFactory(fac crypto.HashFactory) BlockOption {
 }
 
 // NewBlock creates a new block.
-func NewBlock(data validation.Data, opts ...BlockOption) (Block, error) {
+func NewBlock(data validation.Result, opts ...BlockOption) (Block, error) {
 	tmpl := blockTemplate{
 		Block: Block{
 			data:     data,
@@ -244,7 +244,7 @@ func (b Block) GetIndex() uint64 {
 }
 
 // GetData returns the validated data of the block.
-func (b Block) GetData() validation.Data {
+func (b Block) GetData() validation.Result {
 	return b.data
 }
 
@@ -306,11 +306,11 @@ type DataKey struct{}
 
 // BlockFactory is a factory to deserialize block messages.
 type BlockFactory struct {
-	dataFac validation.DataFactory
+	dataFac validation.ResultFactory
 }
 
 // NewBlockFactory creates a new block factory.
-func NewBlockFactory(fac validation.DataFactory) BlockFactory {
+func NewBlockFactory(fac validation.ResultFactory) BlockFactory {
 	return BlockFactory{
 		dataFac: fac,
 	}

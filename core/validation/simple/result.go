@@ -1,3 +1,8 @@
+// This file contains the implementation of the result returned by the service.
+//
+// Documentation Last Review: 08.10.2020
+//
+
 package simple
 
 import (
@@ -11,18 +16,18 @@ import (
 )
 
 var (
-	resFormats  = registry.NewSimpleRegistry()
-	dataFormats = registry.NewSimpleRegistry()
+	txResFormats = registry.NewSimpleRegistry()
+	resFormats   = registry.NewSimpleRegistry()
 )
+
+// RegisterTransactionResultFormat registers the engine for the provided format.
+func RegisterTransactionResultFormat(f serde.Format, e serde.FormatEngine) {
+	txResFormats.Register(f, e)
+}
 
 // RegisterResultFormat registers the engine for the provided format.
 func RegisterResultFormat(f serde.Format, e serde.FormatEngine) {
 	resFormats.Register(f, e)
-}
-
-// RegisterDataFormat registers the engine for the provided format.
-func RegisterDataFormat(f serde.Format, e serde.FormatEngine) {
-	dataFormats.Register(f, e)
 }
 
 // TransactionResult is the result of a transaction processing. It contains the
@@ -60,7 +65,7 @@ func (res TransactionResult) GetStatus() (bool, string) {
 // Serialize implements serde.Message. It returns the transaction result
 // serialized.
 func (res TransactionResult) Serialize(ctx serde.Context) ([]byte, error) {
-	format := resFormats.Get(ctx.GetFormat())
+	format := txResFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, res)
 	if err != nil {
@@ -73,24 +78,24 @@ func (res TransactionResult) Serialize(ctx serde.Context) ([]byte, error) {
 // TransactionKey is the key of the transaction factory.
 type TransactionKey struct{}
 
-// ResultFactory is the factory to deserialize transaction results.
+// TransactionResultFactory is the factory to deserialize transaction results.
 //
 // - implements serde.Factory
-type ResultFactory struct {
+type TransactionResultFactory struct {
 	fac txn.Factory
 }
 
-// NewResultFactory creates a new transaction result factory.
-func NewResultFactory(f txn.Factory) ResultFactory {
-	return ResultFactory{
+// NewTransactionResultFactory creates a new transaction result factory.
+func NewTransactionResultFactory(f txn.Factory) TransactionResultFactory {
+	return TransactionResultFactory{
 		fac: f,
 	}
 }
 
 // Deserialize implements serde.Factory. It populates the transaction result if
 // appropriate, otherwise it returns an error.
-func (f ResultFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	format := resFormats.Get(ctx.GetFormat())
+func (f TransactionResultFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+	format := txResFormats.Get(ctx.GetFormat())
 
 	ctx = serde.WithFactory(ctx, TransactionKey{}, f.fac)
 
@@ -102,22 +107,23 @@ func (f ResultFactory) Deserialize(ctx serde.Context, data []byte) (serde.Messag
 	return msg, nil
 }
 
-// Data is the validated data of a standard validation.
+// Result is the result of a standard validation.
 //
-// - implements validation.Data
-type Data struct {
+// - implements validation.Result
+type Result struct {
 	txs []TransactionResult
 }
 
-// NewData creates new validated data from a list of transaction results.
-func NewData(results []TransactionResult) Data {
-	return Data{
+// NewResult creates a new result from a list of transaction results.
+func NewResult(results []TransactionResult) Result {
+	return Result{
 		txs: results,
 	}
 }
 
-// GetTransactionResults implements validation.Data. It returns the results.
-func (d Data) GetTransactionResults() []validation.TransactionResult {
+// GetTransactionResults implements validation.Result. It returns the
+// transaction results.
+func (d Result) GetTransactionResults() []validation.TransactionResult {
 	res := make([]validation.TransactionResult, len(d.txs))
 	for i, r := range d.txs {
 		res[i] = r
@@ -127,8 +133,8 @@ func (d Data) GetTransactionResults() []validation.TransactionResult {
 }
 
 // Fingerprint implements serde.Fingerprinter. It writes a deterministic binary
-// representation of the validated data.
-func (d Data) Fingerprint(w io.Writer) error {
+// representation of the result.
+func (d Result) Fingerprint(w io.Writer) error {
 	for _, res := range d.txs {
 		err := res.tx.Fingerprint(w)
 		if err != nil {
@@ -149,9 +155,10 @@ func (d Data) Fingerprint(w io.Writer) error {
 	return nil
 }
 
-// Serialize implements serde.Message. It returns the serialized data.
-func (d Data) Serialize(ctx serde.Context) ([]byte, error) {
-	format := dataFormats.Get(ctx.GetFormat())
+// Serialize implements serde.Message. It returns the serialized data of the
+// result.
+func (d Result) Serialize(ctx serde.Context) ([]byte, error) {
+	format := resFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, d)
 	if err != nil {
@@ -164,30 +171,30 @@ func (d Data) Serialize(ctx serde.Context) ([]byte, error) {
 // ResultKey is the key of the transaction result factory.
 type ResultKey struct{}
 
-// DataFactory is the factory to deserialize validated data.
+// ResultFactory is the factory to deserialize results.
 //
-// - implements validation.DataFactory
-type DataFactory struct {
+// - implements validation.ResultFactory
+type ResultFactory struct {
 	fac serde.Factory
 }
 
-// NewDataFactory creates a new data factory.
-func NewDataFactory(f txn.Factory) DataFactory {
-	return DataFactory{
-		fac: NewResultFactory(f),
+// NewResultFactory creates a new result factory.
+func NewResultFactory(f txn.Factory) ResultFactory {
+	return ResultFactory{
+		fac: NewTransactionResultFactory(f),
 	}
 }
 
-// Deserialize implements serde.Factory. It populates the validated data if
-// appropriate, otherwise it returns an error.
-func (f DataFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
-	return f.DataOf(ctx, data)
+// Deserialize implements serde.Factory. It populates the result if appropriate,
+// otherwise it returns an error.
+func (f ResultFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+	return f.ResultOf(ctx, data)
 }
 
-// DataOf implements validation.DataFactory. It returns the validated data from
-// the serialized data if appropriate, otherwise it returns an error.
-func (f DataFactory) DataOf(ctx serde.Context, data []byte) (validation.Data, error) {
-	format := dataFormats.Get(ctx.GetFormat())
+// ResultOf implements validation.ResultFactory. It returns the result from the
+// serialized data if appropriate, otherwise it returns an error.
+func (f ResultFactory) ResultOf(ctx serde.Context, data []byte) (validation.Result, error) {
+	format := resFormats.Get(ctx.GetFormat())
 
 	ctx = serde.WithFactory(ctx, ResultKey{}, f.fac)
 
@@ -196,10 +203,10 @@ func (f DataFactory) DataOf(ctx serde.Context, data []byte) (validation.Data, er
 		return nil, xerrors.Errorf("decoding failed: %v", err)
 	}
 
-	vdata, ok := msg.(Data)
+	res, ok := msg.(Result)
 	if !ok {
-		return nil, xerrors.Errorf("invalid data type '%T'", msg)
+		return nil, xerrors.Errorf("invalid result type '%T'", msg)
 	}
 
-	return vdata, nil
+	return res, nil
 }

@@ -174,7 +174,7 @@ func TestProcessor_Unsupported_Process(t *testing.T) {
 // Utility functions
 
 func makeBlock(t *testing.T, from types.Digest, opts ...types.LinkOption) types.BlockLink {
-	block, err := types.NewBlock(simple.NewData(nil))
+	block, err := types.NewBlock(simple.NewResult(nil))
 	require.NoError(t, err)
 
 	link, err := types.NewBlockLink(from, block, opts...)
@@ -334,7 +334,7 @@ func (fakeStore) Len() uint64 {
 func (fakeStore) Watch(context.Context) <-chan types.BlockLink {
 	ch := make(chan types.BlockLink, 1)
 
-	block, _ := types.NewBlock(simple.NewData(nil), types.WithIndex(1))
+	block, _ := types.NewBlock(simple.NewResult(nil), types.WithIndex(1))
 	link, _ := types.NewBlockLink(types.Digest{}, block)
 	ch <- link
 	close(ch)

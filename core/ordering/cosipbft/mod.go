@@ -676,7 +676,7 @@ func (s *Service) prepareViews() map[mino.Address]types.ViewMessage {
 	return msgs
 }
 
-func (s *Service) prepareData(txs []txn.Transaction) (data validation.Data, id types.Digest, err error) {
+func (s *Service) prepareData(txs []txn.Transaction) (data validation.Result, id types.Digest, err error) {
 	var stageTree hashtree.StagingTree
 
 	stageTree, err = s.tree.Get().Stage(func(snap store.Snapshot) error {

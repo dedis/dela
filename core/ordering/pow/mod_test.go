@@ -174,7 +174,7 @@ type badValidation struct {
 	validation.Service
 }
 
-func (v badValidation) Validate(store.Snapshot, []txn.Transaction) (validation.Data, error) {
+func (v badValidation) Validate(store.Snapshot, []txn.Transaction) (validation.Result, error) {
 	return nil, fake.GetError()
 }
 

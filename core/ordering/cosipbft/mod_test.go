@@ -1049,8 +1049,8 @@ func (val fakeValidation) Accept(store.Readable, txn.Transaction, validation.Lee
 	return val.err
 }
 
-func (val fakeValidation) Validate(store.Snapshot, []txn.Transaction) (validation.Data, error) {
-	return simple.NewData(nil), val.err
+func (val fakeValidation) Validate(store.Snapshot, []txn.Transaction) (validation.Result, error) {
+	return simple.NewResult(nil), val.err
 }
 
 type fakeCosiActor struct {

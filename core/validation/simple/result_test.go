@@ -14,11 +14,11 @@ import (
 )
 
 func init() {
-	RegisterDataFormat(fake.GoodFormat, fake.Format{Msg: Data{}})
-	RegisterDataFormat(fake.BadFormat, fake.NewBadFormat())
-	RegisterDataFormat(serde.Format("BAD_TYPE"), fake.Format{Msg: fake.Message{}})
-	RegisterResultFormat(fake.GoodFormat, fake.Format{Msg: TransactionResult{}})
+	RegisterResultFormat(fake.GoodFormat, fake.Format{Msg: Result{}})
 	RegisterResultFormat(fake.BadFormat, fake.NewBadFormat())
+	RegisterResultFormat(serde.Format("BAD_TYPE"), fake.Format{Msg: fake.Message{}})
+	RegisterTransactionResultFormat(fake.GoodFormat, fake.Format{Msg: TransactionResult{}})
+	RegisterTransactionResultFormat(fake.BadFormat, fake.NewBadFormat())
 }
 
 func TestTransactionResult_GetTransaction(t *testing.T) {
@@ -45,8 +45,8 @@ func TestTransactionResult_Serialize(t *testing.T) {
 	require.EqualError(t, err, fake.Err("encoding failed"))
 }
 
-func TestResultFactory_Deserialize(t *testing.T) {
-	fac := NewResultFactory(nil)
+func TestTransactionResultFactory_Deserialize(t *testing.T) {
+	fac := NewTransactionResultFactory(nil)
 
 	msg, err := fac.Deserialize(fake.NewContext(), nil)
 	require.NoError(t, err)
@@ -56,16 +56,16 @@ func TestResultFactory_Deserialize(t *testing.T) {
 	require.EqualError(t, err, fake.Err("decoding failed"))
 }
 
-func TestData_GetTransactionResults(t *testing.T) {
-	data := Data{
+func TestResult_GetTransactionResults(t *testing.T) {
+	res := Result{
 		txs: []TransactionResult{{}, {}},
 	}
 
-	require.Len(t, data.GetTransactionResults(), 2)
+	require.Len(t, res.GetTransactionResults(), 2)
 }
 
-func TestData_Fingerprint(t *testing.T) {
-	data := Data{
+func TestResult_Fingerprint(t *testing.T) {
+	res := Result{
 		txs: []TransactionResult{
 			{tx: fakeTx{}},
 			{tx: fakeTx{}, accepted: true},
@@ -73,40 +73,40 @@ func TestData_Fingerprint(t *testing.T) {
 	}
 
 	buffer := new(bytes.Buffer)
-	err := data.Fingerprint(buffer)
+	err := res.Fingerprint(buffer)
 	require.NoError(t, err)
 
-	err = data.Fingerprint(fake.NewBadHash())
+	err = res.Fingerprint(fake.NewBadHash())
 	require.EqualError(t, err, fake.Err("couldn't write accepted"))
 
-	data.txs[0].tx = fakeTx{err: fake.GetError()}
-	err = data.Fingerprint(buffer)
+	res.txs[0].tx = fakeTx{err: fake.GetError()}
+	err = res.Fingerprint(buffer)
 	require.EqualError(t, err, fake.Err("couldn't fingerprint tx"))
 }
 
-func TestData_Serialize(t *testing.T) {
-	vdata := NewData(nil)
+func TestResult_Serialize(t *testing.T) {
+	res := NewResult(nil)
 
-	data, err := vdata.Serialize(fake.NewContext())
+	data, err := res.Serialize(fake.NewContext())
 	require.NoError(t, err)
 	require.Equal(t, fake.GetFakeFormatValue(), data)
 
-	_, err = vdata.Serialize(fake.NewBadContext())
+	_, err = res.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("encoding failed"))
 }
 
-func TestDataFactory_Deserialize(t *testing.T) {
-	fac := NewDataFactory(nil)
+func TestResultFactory_Deserialize(t *testing.T) {
+	fac := NewResultFactory(nil)
 
 	msg, err := fac.Deserialize(fake.NewContext(), nil)
 	require.NoError(t, err)
-	require.Equal(t, Data{}, msg)
+	require.Equal(t, Result{}, msg)
 
 	_, err = fac.Deserialize(fake.NewBadContext(), nil)
 	require.EqualError(t, err, fake.Err("decoding failed"))
 
 	_, err = fac.Deserialize(fake.NewContextWithFormat(serde.Format("BAD_TYPE")), nil)
-	require.EqualError(t, err, "invalid data type 'fake.Message'")
+	require.EqualError(t, err, "invalid result type 'fake.Message'")
 }
 
 // -----------------------------------------------------------------------------

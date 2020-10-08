@@ -113,7 +113,7 @@ func TestMessageFactory_Deserialize(t *testing.T) {
 // Utility functions
 
 func makeChain(t *testing.T, index uint64) types.Chain {
-	block, err := types.NewBlock(simple.NewData(nil), types.WithIndex(index))
+	block, err := types.NewBlock(simple.NewResult(nil), types.WithIndex(index))
 	require.NoError(t, err)
 
 	link, err := types.NewBlockLink(types.Digest{}, block)

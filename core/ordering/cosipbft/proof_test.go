@@ -34,7 +34,7 @@ func TestProof_Verify(t *testing.T) {
 	genesis, err := types.NewGenesis(ro)
 	require.NoError(t, err)
 
-	block, err := types.NewBlock(simple.NewData(nil))
+	block, err := types.NewBlock(simple.NewResult(nil))
 	require.NoError(t, err)
 
 	p := Proof{
