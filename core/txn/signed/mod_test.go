@@ -157,7 +157,7 @@ func TestTransactionFactory_Deserialize(t *testing.T) {
 }
 
 func TestManager_Make(t *testing.T) {
-	mgr := NewManager(fake.NewSigner(), nil).(*transactionManager)
+	mgr := NewManager(fake.NewSigner(), nil)
 
 	tx, err := mgr.Make(txn.Arg{Key: "a", Value: []byte{1, 2, 3}})
 	require.NoError(t, err)
@@ -180,7 +180,7 @@ func TestManager_Sync(t *testing.T) {
 
 	err := mgr.Sync()
 	require.NoError(t, err)
-	require.Equal(t, uint64(42), mgr.(*transactionManager).nonce)
+	require.Equal(t, uint64(42), mgr.nonce)
 
 	mgr = NewManager(fake.NewSigner(), fakeClient{err: fake.GetError()})
 	err = mgr.Sync()
