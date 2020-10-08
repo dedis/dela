@@ -8,12 +8,12 @@ import (
 
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/core/access"
-	"go.dedis.ch/dela/core/execution/baremetal"
-	"go.dedis.ch/dela/core/execution/baremetal/viewchange"
+	"go.dedis.ch/dela/core/execution/native"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blocksync"
+	"go.dedis.ch/dela/core/ordering/cosipbft/contracts/viewchange"
 	"go.dedis.ch/dela/core/ordering/cosipbft/pbft"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
@@ -44,9 +44,9 @@ const (
 	rpcName = "cosipbft"
 )
 
-// RegisterRosterContract registers the baremetal contract to update the roster
-// to the given service.
-func RegisterRosterContract(exec *baremetal.BareMetal, rFac authority.Factory, srvc access.Service) {
+// RegisterRosterContract registers the native smart contract to update the
+// roster to the given service.
+func RegisterRosterContract(exec *native.Service, rFac authority.Factory, srvc access.Service) {
 	contract := viewchange.NewContract(keyRoster[:], keyAccess[:], rFac, srvc)
 
 	viewchange.RegisterContract(exec, contract)

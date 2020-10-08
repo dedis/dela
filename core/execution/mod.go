@@ -1,3 +1,8 @@
+// Package execution defines the service to execute a step in a validation
+// batch.
+//
+// Documentation Last Review: 08.10.2020
+//
 package execution
 
 import (

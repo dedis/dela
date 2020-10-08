@@ -13,11 +13,11 @@ import (
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/access/darc"
 	"go.dedis.ch/dela/core/execution"
-	"go.dedis.ch/dela/core/execution/baremetal"
-	"go.dedis.ch/dela/core/execution/baremetal/viewchange"
+	"go.dedis.ch/dela/core/execution/native"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
+	"go.dedis.ch/dela/core/ordering/cosipbft/contracts/viewchange"
 	"go.dedis.ch/dela/core/ordering/cosipbft/pbft"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
@@ -555,7 +555,7 @@ func (e testExec) Execute(store.Snapshot, execution.Step) error {
 
 func makeTx(t *testing.T, nonce uint64, signer crypto.Signer) txn.Transaction {
 	opts := []signed.TransactionOption{
-		signed.WithArg(baremetal.ContractArg, []byte(testContractName)),
+		signed.WithArg(native.ContractArg, []byte(testContractName)),
 	}
 
 	tx, err := signed.NewTransaction(nonce, signer.GetPublicKey(), opts...)
@@ -573,7 +573,7 @@ func makeRosterTx(t *testing.T, nonce uint64, roster authority.Authority, signer
 	tx, err := signed.NewTransaction(
 		nonce,
 		signer.GetPublicKey(),
-		signed.WithArg(baremetal.ContractArg, []byte(viewchange.ContractName)),
+		signed.WithArg(native.ContractArg, []byte(viewchange.ContractName)),
 		signed.WithArg(viewchange.AuthorityArg, data),
 	)
 	require.NoError(t, err)
@@ -624,7 +624,7 @@ func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()
 
 		tree := binprefix.NewMerkleTree(db, binprefix.Nonce{})
 
-		exec := baremetal.NewExecution()
+		exec := native.NewExecution()
 		exec.Set(testContractName, testExec{})
 
 		accessSrvc := darc.NewService(json.NewContext())

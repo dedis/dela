@@ -10,7 +10,7 @@ import (
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/core/access/darc"
-	"go.dedis.ch/dela/core/execution/baremetal"
+	"go.dedis.ch/dela/core/execution/native"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
@@ -106,7 +106,7 @@ func (m minimal) OnStart(flags cli.Flags, inj node.Injector) error {
 	cosi := threshold.NewThreshold(onet, signer)
 	cosi.SetThreshold(threshold.ByzantineThreshold)
 
-	exec := baremetal.NewExecution()
+	exec := native.NewExecution()
 	access := darc.NewService(json.NewContext())
 
 	rosterFac := authority.NewFactory(onet.GetAddressFactory(), cosi.GetPublicKeyFactory())
