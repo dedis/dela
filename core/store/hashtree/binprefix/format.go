@@ -54,16 +54,16 @@ func (f nodeFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error)
 	case *EmptyNode:
 		empty := EmptyNodeJSON{
 			Digest: node.GetHash(),
-			Depth:  node.depth,
-			Prefix: node.prefix.Bytes(),
+			Depth:  node.GetDepth(),
+			Prefix: node.GetPrefix().Bytes(),
 		}
 
 		m = NodeJSON{Empty: &empty}
 	case *InteriorNode:
 		inter := InteriorNodeJSON{
 			Digest: node.GetHash(),
-			Depth:  node.depth,
-			Prefix: node.prefix.Bytes(),
+			Depth:  node.GetDepth(),
+			Prefix: node.GetPrefix().Bytes(),
 		}
 
 		m = NodeJSON{Interior: &inter}
@@ -88,12 +88,7 @@ func (f nodeFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error
 		key := new(big.Int)
 		key.SetBytes(m.Leaf.Prefix)
 
-		node := &LeafNode{
-			hash:  m.Leaf.Digest,
-			depth: m.Leaf.Depth,
-			key:   key,
-			value: m.Leaf.Value,
-		}
+		node := NewLeafNodeWithDigest(m.Leaf.Depth, key, m.Leaf.Value, m.Leaf.Digest)
 
 		return node, nil
 	}
@@ -102,11 +97,7 @@ func (f nodeFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error
 		prefix := new(big.Int)
 		prefix.SetBytes(m.Empty.Prefix)
 
-		node := &EmptyNode{
-			hash:   m.Empty.Digest,
-			depth:  m.Empty.Depth,
-			prefix: prefix,
-		}
+		node := NewEmptyNodeWithDigest(m.Empty.Depth, prefix, m.Empty.Digest)
 
 		return node, nil
 	}
@@ -117,13 +108,13 @@ func (f nodeFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error
 		prefix := new(big.Int)
 		prefix.SetBytes(m.Interior.Prefix)
 
-		node := &InteriorNode{
-			hash:   m.Interior.Digest,
-			depth:  m.Interior.Depth,
-			prefix: prefix,
-			left:   NewDiskNode(m.Interior.Depth+1, nil, ctx, factory),
-			right:  NewDiskNode(m.Interior.Depth+1, nil, ctx, factory),
-		}
+		node := NewInteriorNodeWithChildren(
+			m.Interior.Depth,
+			prefix,
+			m.Interior.Digest,
+			NewDiskNode(m.Interior.Depth+1, nil, ctx, factory),
+			NewDiskNode(m.Interior.Depth+1, nil, ctx, factory),
+		)
 
 		return node, nil
 	}

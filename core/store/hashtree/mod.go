@@ -1,6 +1,10 @@
-// Package hashtree defines the specialization of the store as a Merkle tree. It
-// allows the creation of proofs to demonstrate if a key/value pair is stored in
-// the tree, or if it is not.
+// Package hashtree defines the specialization of the store as a Merkle tree.
+//
+// Merkle trees allow the creation of proofs to demonstrate if a key/value pair
+// is stored in the tree, or if it is not.
+//
+// Documentation Last Review: 08.10.2020
+//
 package hashtree
 
 import "go.dedis.ch/dela/core/store"
@@ -19,7 +23,7 @@ type Path interface {
 	GetRoot() []byte
 }
 
-// Tree is a specialization of a store. It uses the Merkle data structure to
+// Tree is a specialization of a store. It uses the Merkle tree structure to
 // create a root hash that represents the state of the tree and can be used to
 // create proof of inclusion/proof of absence.
 type Tree interface {
