@@ -237,7 +237,7 @@ func (m *Minogrpc) postCheckClose() error {
 	return nil
 }
 
-// MakeNamespace implements mino.Mino. It returns a instance that extends the
+// MakeNamespace implements mino.Mino. It returns an instance that extends the
 // current namespace with the one provided in parameter. The namespace can not
 // be empty an should match [a-zA-Z0-9]+
 func (m *Minogrpc) MakeNamespace(namespace string) (mino.Mino, error) {
