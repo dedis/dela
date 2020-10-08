@@ -1,3 +1,7 @@
+//
+// Documentation Last Review: 12.10.2020
+//
+
 package types
 
 import (
@@ -133,7 +137,7 @@ type PublicKeyFac struct{}
 
 // permFac is the implementation of a permission factory.
 //
-// - implements darc.permFac
+// - implements types.PermissionFactory
 type permFac struct {
 	fac common.PublicKeyFactory
 }

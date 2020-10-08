@@ -1,3 +1,7 @@
+//
+// Documentation Last Review: 12.10.2020
+//
+
 package types
 
 import (
