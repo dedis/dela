@@ -1,3 +1,10 @@
+// Package types implements the darc messages.
+//
+// The messages are implemented in a separate package to prevent cycle imports
+// when importing the serde formats.
+//
+// Documentation Last Review: 08.10.2020
+//
 package types
 
 import (
