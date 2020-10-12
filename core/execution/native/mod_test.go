@@ -1,4 +1,4 @@
-package baremetal
+package native
 
 import (
 	"testing"
@@ -10,7 +10,7 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 )
 
-func TestBareMetal_Execute(t *testing.T) {
+func TestService_Execute(t *testing.T) {
 	srvc := NewExecution()
 	srvc.Set("abc", fakeExec{})
 	srvc.Set("bad", fakeExec{err: fake.GetError()})

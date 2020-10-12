@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/execution"
-	"go.dedis.ch/dela/core/execution/baremetal"
+	"go.dedis.ch/dela/core/execution/native"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/txn"
@@ -16,7 +16,7 @@ import (
 )
 
 func TestRegisterContract(t *testing.T) {
-	srvc := baremetal.NewExecution()
+	srvc := native.NewExecution()
 
 	RegisterContract(srvc, Contract{})
 }
@@ -85,7 +85,7 @@ func makeStep(t *testing.T, arg string) execution.Step {
 func makeTx(t *testing.T, arg string) txn.Transaction {
 	args := []signed.TransactionOption{
 		signed.WithArg(AuthorityArg, []byte(arg)),
-		signed.WithArg(baremetal.ContractArg, []byte(ContractName)),
+		signed.WithArg(native.ContractArg, []byte(ContractName)),
 	}
 
 	tx, err := signed.NewTransaction(0, fake.PublicKey{}, args...)

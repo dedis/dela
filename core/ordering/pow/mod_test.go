@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/execution"
-	"go.dedis.ch/dela/core/execution/baremetal"
+	"go.dedis.ch/dela/core/execution/native"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/hashtree"
 	tree "go.dedis.ch/dela/core/store/hashtree/binprefix"
@@ -29,7 +29,7 @@ func TestService_Basic(t *testing.T) {
 	tree, clean := makeTree(t)
 	defer clean()
 
-	exec := baremetal.NewExecution()
+	exec := native.NewExecution()
 	exec.Set(testContractName, testExec{})
 
 	pool := pool.NewPool()
@@ -74,7 +74,7 @@ func TestService_Listen(t *testing.T) {
 	tree, clean := makeTree(t)
 	defer clean()
 
-	vs := val.NewService(baremetal.NewExecution(), signed.NewTransactionFactory())
+	vs := val.NewService(native.NewExecution(), signed.NewTransactionFactory())
 
 	pool := pool.NewPool()
 	srvc := NewService(pool, vs, tree)
@@ -145,7 +145,7 @@ func makeTx(t *testing.T, nonce uint64, signer crypto.Signer) txn.Transaction {
 		signer.GetPublicKey(),
 		signed.WithArg("key", []byte("ping")),
 		signed.WithArg("value", []byte("pong")),
-		signed.WithArg(baremetal.ContractArg, []byte(testContractName)),
+		signed.WithArg(native.ContractArg, []byte(testContractName)),
 	)
 	require.NoError(t, err)
 

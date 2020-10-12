@@ -9,9 +9,9 @@ import (
 
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cli/node"
-	"go.dedis.ch/dela/core/execution/baremetal/viewchange"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
+	"go.dedis.ch/dela/core/ordering/cosipbft/contracts/viewchange"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/pool"
 	"go.dedis.ch/dela/cosi"
