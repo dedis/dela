@@ -46,8 +46,11 @@ func newNonBlockingQueue() *NonBlockingQueue {
 	}
 }
 
-// Channel implements session.Queue. It returns the message channel and it
-// should be read as much as possible to avoid messages to be dropped.
+// Channel implements session.Queue. It returns a channel that will be populated
+// with incoming messages. The queue uses a buffer when the channel is busy
+// therefore this channel should listened to as much as possible to drain the
+// messages. At some point when the size of the buffer reaches a limit, messages
+// will be dropped.
 func (q *NonBlockingQueue) Channel() <-chan router.Packet {
 	return q.ch
 }
