@@ -51,7 +51,7 @@ func (srvc Service) Match(store store.Readable, creds access.Credential, idents 
 }
 
 // Grant implements access.Service. It updates or creates the credential and
-// grant the access to the group of identities.
+// grants the access to the group of identities.
 func (srvc Service) Grant(store store.Snapshot, cred access.Credential, idents ...access.Identity) error {
 	perm, err := srvc.readPermission(store, cred.GetID())
 	if err != nil {
