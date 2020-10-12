@@ -117,7 +117,7 @@ func (b *cliBuilder) MakeAction(tmpl ActionTemplate) cli.Action {
 
 		err = client.Send(append(id, buf...))
 		if err != nil {
-			return xerrors.Errorf("couldn't send action: %v", err)
+			return xerrors.Opaque(err)
 		}
 
 		return nil
