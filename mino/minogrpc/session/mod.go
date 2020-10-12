@@ -397,7 +397,7 @@ func (s *session) setupRelay(p parent, addr mino.Address) (Relay, error) {
 		return relay, nil
 	}
 
-	hs, err := p.table.Prelude(addr).Serialize(s.context)
+	hs, err := p.table.PrepareHandshakeFor(addr).Serialize(s.context)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to serialize handshake: %v", err)
 	}

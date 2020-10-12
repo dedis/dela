@@ -89,14 +89,14 @@ type Players interface {
 // RPC is an abstraction of a distributed Remote Procedure Call.
 type RPC interface {
 	// Call is a basic request to one or multiple distant peers. It directly
-	// contacts all the players and thus expect a reasonable number of peers.
+	// contacts all the players and thus expects a reasonable number of peers.
 	//
-	// The response channel must be closed after every request ended in a
-	// result, either a reply or an error.
+	// The response channel must be closed once the request ends in a result,
+	// either a reply or an error.
 	Call(ctx context.Context, req serde.Message, players Players) (<-chan Response, error)
 
 	// Stream is a persistent request that will be closed only when the
-	// orchestrator is done or an error occured, or the context is done.
+	// orchestrator is done or an error has occured, or the context is done.
 	Stream(ctx context.Context, players Players) (Sender, Receiver, error)
 }
 
@@ -129,7 +129,7 @@ type Sender interface {
 	// Send sends the message to all the addresses. It returns a channel that
 	// will be populated with errors coming from the network layer if the
 	// message cannot be sent. The channel must be closed after the message has
-	// been/failed to be sent.
+	// been sent or failed to be sent.
 	Send(msg serde.Message, addrs ...Address) <-chan error
 }
 

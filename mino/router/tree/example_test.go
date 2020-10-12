@@ -31,7 +31,7 @@ func ExampleRouter_New() {
 	// 127.0.0.1:3000
 }
 
-func ExampleTable_Prelude() {
+func ExampleTable_PrepareHandshakeFor() {
 	routerA := NewRouter(session.AddressFactory{})
 
 	addrA := session.NewAddress("127.0.0.1:2000")
@@ -44,13 +44,13 @@ func ExampleTable_Prelude() {
 		panic("routing table failed: " + err.Error())
 	}
 
-	handshake := table.Prelude(addrB)
+	handshake := table.PrepareHandshakeFor(addrB)
 
 	// Send the handshake to the address B..
 
 	routerB := NewRouter(session.AddressFactory{})
 
-	tableB, err := routerB.TableOf(handshake)
+	tableB, err := routerB.GenerateTableFrom(handshake)
 	if err != nil {
 		panic("malformed handshake: " + err.Error())
 	}

@@ -299,7 +299,7 @@ func (badRouter) New(mino.Players) (router.RoutingTable, error) {
 	return nil, fake.GetError()
 }
 
-func (badRouter) TableOf(router.Handshake) (router.RoutingTable, error) {
+func (badRouter) GenerateTableFrom(router.Handshake) (router.RoutingTable, error) {
 	return nil, fake.GetError()
 }
 

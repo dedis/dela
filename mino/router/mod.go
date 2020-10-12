@@ -69,9 +69,9 @@ type Router interface {
 	// New creates a new routing table that will forward packets to the players.
 	New(mino.Players) (RoutingTable, error)
 
-	// TableOf returns the routing table associated to the handshake. A node
-	// should be able to route any incoming packet after receiving one.
-	TableOf(Handshake) (RoutingTable, error)
+	// GenerateTableFrom returns the routing table associated to the handshake.
+	// A node should be able to route any incoming packet after receiving one.
+	GenerateTableFrom(Handshake) (RoutingTable, error)
 }
 
 // Routes is a set of relay addresses where to send the packet.
@@ -92,9 +92,9 @@ type RoutingTable interface {
 	// payload.
 	Make(src mino.Address, to []mino.Address, msg []byte) Packet
 
-	// Prelude is called before a relay is opened to generate the handshake that
-	// will be sent.
-	Prelude(mino.Address) Handshake
+	// PrepareHandshakeFor is called before a relay is opened to generate the
+	// handshake that will be sent.
+	PrepareHandshakeFor(mino.Address) Handshake
 
 	// Forward takes the destination address, unmarshal the packet, and, based
 	// on its content, return a map of packets, where each element of the map

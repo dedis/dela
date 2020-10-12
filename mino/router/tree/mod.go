@@ -69,9 +69,9 @@ func (r Router) New(players mino.Players) (router.RoutingTable, error) {
 	return NewTable(r.maxHeight, addrs), nil
 }
 
-// TableOf implements router.Router. It creates the routing table associated
-// with the handshake that can contain some parameter.
-func (r Router) TableOf(h router.Handshake) (router.RoutingTable, error) {
+// GenerateTableFrom implements router.Router. It creates the routing table
+// associated with the handshake that can contain some parameter.
+func (r Router) GenerateTableFrom(h router.Handshake) (router.RoutingTable, error) {
 	treeH := h.(types.Handshake)
 
 	return NewTable(treeH.GetHeight(), treeH.GetAddresses()), nil
@@ -98,10 +98,10 @@ func (t Table) Make(src mino.Address, to []mino.Address, msg []byte) router.Pack
 	return types.NewPacket(src, msg, to...)
 }
 
-// Prelude implements router.RoutingTable. It creates a handshake message that
-// should be sent to the distant peer when opening a relay to it. The peer will
-// then generate its own routing table based on the handshake.
-func (t Table) Prelude(to mino.Address) router.Handshake {
+// PrepareHandshakeFor implements router.RoutingTable. It creates a handshake
+// message that should be sent to the distant peer when opening a relay to it.
+// The peer will then generate its own routing table based on the handshake.
+func (t Table) PrepareHandshakeFor(to mino.Address) router.Handshake {
 	newHeight := t.tree.GetMaxHeight() - 1
 
 	return types.NewHandshake(newHeight, t.tree.GetChildren(to)...)

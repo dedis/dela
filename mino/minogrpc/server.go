@@ -347,7 +347,7 @@ func (o *overlayServer) tableFromHeaders(h metadata.MD) (router.RoutingTable, bo
 			return nil, false, xerrors.Errorf("malformed handshake: %v", err)
 		}
 
-		table, err := o.router.TableOf(hs)
+		table, err := o.router.GenerateTableFrom(hs)
 		if err != nil {
 			return nil, false, xerrors.Errorf("invalid handshake: %v", err)
 		}
