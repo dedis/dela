@@ -1,3 +1,9 @@
+// This file contains the implementation of the inner overlay of the minogrpc
+// instance which processes the requests from the gRPC server.
+//
+// Dcoumentation Last Review: 07.10.2020
+//
+
 package minogrpc
 
 import (
@@ -37,12 +43,10 @@ const (
 	headerAddressKey = "addr"
 
 	certificateDuration = time.Hour * 24 * 180
-)
 
-var (
 	// defaultMinConnectTimeout is the minimum amount of time we are willing to
 	// wait for a grpc connection to complete
-	defaultMinConnectTimeout = 7 * time.Second
+	defaultMinConnectTimeout = 10 * time.Second
 )
 
 type overlayServer struct {
@@ -463,7 +467,8 @@ func newOverlay(tmpl minoTemplate) (*overlay, error) {
 	return o, nil
 }
 
-// GetCertificate returns the certificate of the overlay.
+// GetCertificate returns the certificate of the overlay with its private key
+// set.
 func (o *overlay) GetCertificate() *tls.Certificate {
 	me, err := o.certs.Load(o.myAddr)
 	if err != nil {
@@ -483,7 +488,7 @@ func (o *overlay) GetCertificate() *tls.Certificate {
 	return me
 }
 
-// AddCertificateStore returns the certificate store.
+// GetCertificateStore returns the certificate store.
 func (o *overlay) GetCertificateStore() certs.Storage {
 	return o.certs
 }
@@ -581,7 +586,7 @@ func (o *overlay) makeCertificate() error {
 	return nil
 }
 
-// ConnManager is a manager to dial and close connections depending how the
+// ConnManager is a manager to dial and close connections depending on the
 // usage.
 //
 // - implements session.ConnectionManager

@@ -23,7 +23,6 @@ func TestRPC_Call(t *testing.T) {
 	rpc := &RPC{
 		factory: fake.MessageFactory{},
 		overlay: &overlay{
-			myAddr:  fake.NewAddress(1),
 			connMgr: fakeConnMgr{},
 			context: json.NewContext(),
 		},
@@ -43,51 +42,112 @@ func TestRPC_Call(t *testing.T) {
 		reply, err := msg.GetMessageOrError()
 		require.NoError(t, err)
 		require.Equal(t, fake.Message{}, reply)
-		require.True(t, msg.GetFrom().Equal(session.NewAddress("A")) || msg.GetFrom().Equal(session.NewAddress("B")))
+
+		isA := msg.GetFrom().Equal(session.NewAddress("A"))
+		isB := msg.GetFrom().Equal(session.NewAddress("B"))
+		require.True(t, isA || isB)
 	}
 
 	_, more := <-msgs
 	require.False(t, more)
+}
 
-	// Test if the distant handler does not return an answer to have the channel
-	// closed without anything coming into it.
-	rpc.overlay.connMgr = fakeConnMgr{empty: true}
-	msgs, err = rpc.Call(ctx, fake.Message{}, mino.NewAddresses(addrs...))
+func TestRPC_EmptyAnswer_Call(t *testing.T) {
+	rpc := &RPC{
+		overlay: &overlay{
+			connMgr: fakeConnMgr{empty: true},
+			context: json.NewContext(),
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	addrs := mino.NewAddresses(session.NewAddress(""))
+
+	msgs, err := rpc.Call(ctx, fake.Message{}, addrs)
 	require.NoError(t, err)
 
-	_, more = <-msgs
+	_, more := <-msgs
 	require.False(t, more)
+}
 
-	_, err = rpc.Call(ctx, fake.NewBadPublicKey(), mino.NewAddresses())
-	require.EqualError(t, err, fake.Err("failed to marshal msg"))
+func TestRPC_FailSerialize_Call(t *testing.T) {
+	rpc := &RPC{
+		overlay: &overlay{
+			context: fake.NewBadContext(),
+		},
+	}
 
-	rpc.overlay.myAddr = fake.NewBadAddress()
-	_, err = rpc.Call(ctx, fake.Message{}, mino.NewAddresses())
-	require.EqualError(t, err, fake.Err("failed to marshal address"))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	rpc.overlay.myAddr = fake.NewAddress(0)
-	rpc.overlay.connMgr = fakeConnMgr{err: fake.GetError()}
-	msgs, err = rpc.Call(ctx, fake.Message{}, mino.NewAddresses(addrs...))
+	_, err := rpc.Call(ctx, fake.Message{}, mino.NewAddresses())
+	require.EqualError(t, err, fake.Err("while serializing"))
+}
+
+func TestRPC_FailConn_Call(t *testing.T) {
+	rpc := &RPC{
+		factory: fake.MessageFactory{},
+		overlay: &overlay{
+			connMgr: fakeConnMgr{err: fake.GetError()},
+			context: json.NewContext(),
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	addrs := mino.NewAddresses(session.NewAddress(""))
+
+	msgs, err := rpc.Call(ctx, fake.Message{}, addrs)
 	require.NoError(t, err)
 
 	msg := <-msgs
 	_, err = msg.GetMessageOrError()
 	require.EqualError(t, err, fake.Err("failed to get client conn"))
+}
 
-	rpc.overlay.connMgr = fakeConnMgr{errConn: fake.GetError()}
-	msgs, err = rpc.Call(ctx, fake.Message{}, mino.NewAddresses(addrs...))
+func TestRPC_BadConn_Call(t *testing.T) {
+	rpc := &RPC{
+		factory: fake.MessageFactory{},
+		overlay: &overlay{
+			connMgr: fakeConnMgr{errConn: fake.GetError()},
+			context: json.NewContext(),
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	addrs := mino.NewAddresses(session.NewAddress(""))
+
+	msgs, err := rpc.Call(ctx, fake.Message{}, addrs)
 	require.NoError(t, err)
 
-	msg = <-msgs
+	msg := <-msgs
 	_, err = msg.GetMessageOrError()
 	require.EqualError(t, err, fake.Err("failed to call client"))
+}
 
-	rpc.overlay.connMgr = fakeConnMgr{}
-	rpc.factory = fake.NewBadMessageFactory()
-	msgs, err = rpc.Call(ctx, fake.Message{}, mino.NewAddresses(addrs...))
+func TestRPC_FailDeserialize_Call(t *testing.T) {
+	rpc := &RPC{
+		factory: fake.NewBadMessageFactory(),
+		overlay: &overlay{
+			connMgr: fakeConnMgr{},
+			context: json.NewContext(),
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	addrs := mino.NewAddresses(session.NewAddress(""))
+
+	msgs, err := rpc.Call(ctx, fake.Message{}, addrs)
 	require.NoError(t, err)
 
-	msg = <-msgs
+	msg := <-msgs
 	_, err = msg.GetMessageOrError()
 	require.EqualError(t, err, fake.Err("couldn't unmarshal payload"))
 }
@@ -133,33 +193,105 @@ func TestRPC_Stream(t *testing.T) {
 	require.Equal(t, context.Canceled, err)
 
 	rpc.overlay.closer.Wait()
+}
 
-	_, _, err = rpc.Stream(ctx, mino.NewAddresses())
+func TestRPC_EmptyPlayers_Stream(t *testing.T) {
+	rpc := &RPC{}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	_, _, err := rpc.Stream(ctx, mino.NewAddresses())
 	require.EqualError(t, err, "empty list of addresses")
+}
 
-	rpc.overlay.router = badRouter{}
-	_, _, err = rpc.Stream(ctx, mino.NewAddresses(addrs[0]))
+func TestRPC_FailRtingTable_Stream(t *testing.T) {
+	rpc := &RPC{
+		overlay: &overlay{
+			router: badRouter{},
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	_, _, err := rpc.Stream(ctx, mino.NewAddresses(session.NewAddress("")))
 	require.EqualError(t, err, fake.Err("routing table failed"))
+}
 
-	rpc.overlay.router = tree.NewRouter(addressFac)
-	_, _, err = rpc.Stream(ctx, mino.NewAddresses(addrs[0], fake.NewBadAddress()))
-	require.EqualError(t, err, fake.Err("marshal address failed"))
+func TestRPC_BadAddress_Stream(t *testing.T) {
+	rpc := &RPC{
+		overlay: &overlay{
+			router: tree.NewRouter(addressFac),
+		},
+	}
 
-	rpc.overlay.connMgr = fakeConnMgr{err: fake.GetError()}
-	_, _, err = rpc.Stream(ctx, mino.NewAddresses(addrs...))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	addrs := mino.NewAddresses(session.NewAddress(""), fake.NewBadAddress())
+
+	_, _, err := rpc.Stream(ctx, addrs)
+	require.EqualError(t, err, fake.Err("while marshaling address"))
+}
+
+func TestRPC_BadGateway_Stream(t *testing.T) {
+	rpc := &RPC{
+		overlay: &overlay{
+			router:  tree.NewRouter(addressFac),
+			connMgr: fakeConnMgr{err: fake.GetError()},
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	addrs := mino.NewAddresses(session.NewAddress(""))
+
+	_, _, err := rpc.Stream(ctx, addrs)
 	require.EqualError(t, err, fake.Err("gateway connection failed"))
+}
 
-	rpc.overlay.connMgr = fakeConnMgr{errConn: fake.GetError(), calls: calls}
-	_, _, err = rpc.Stream(ctx, mino.NewAddresses(addrs...))
+func TestRPC_BadConn_Stream(t *testing.T) {
+	calls := fake.NewCall()
+
+	rpc := &RPC{
+		overlay: &overlay{
+			router:  tree.NewRouter(addressFac),
+			connMgr: fakeConnMgr{errConn: fake.GetError(), calls: calls},
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	addrs := mino.NewAddresses(session.NewAddress(""))
+
+	_, _, err := rpc.Stream(ctx, addrs)
 	require.EqualError(t, err, fake.Err("failed to open stream"))
-	require.Equal(t, 6, calls.Len())
-	require.Equal(t, "release", calls.Get(3, 0))
+	require.Equal(t, 2, calls.Len())
+	require.Equal(t, "release", calls.Get(1, 0))
+}
 
-	rpc.overlay.connMgr = fakeConnMgr{errStream: fake.GetError(), calls: calls}
-	_, _, err = rpc.Stream(ctx, mino.NewAddresses(addrs...))
+func TestRPC_BadStream_Stream(t *testing.T) {
+	calls := fake.NewCall()
+
+	rpc := &RPC{
+		overlay: &overlay{
+			router:  tree.NewRouter(addressFac),
+			connMgr: fakeConnMgr{errStream: fake.GetError(), calls: calls},
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	addrs := mino.NewAddresses(session.NewAddress(""))
+
+	_, _, err := rpc.Stream(ctx, addrs)
 	require.EqualError(t, err, fake.Err("failed to receive header"))
-	require.Equal(t, 8, calls.Len())
-	require.Equal(t, "release", calls.Get(5, 0))
+	require.Equal(t, 2, calls.Len())
+	require.Equal(t, "release", calls.Get(1, 0))
 }
 
 // -----------------------------------------------------------------------------
