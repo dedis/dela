@@ -1,3 +1,8 @@
+// This file contains the implementation of a proof for this ordering service.
+//
+// Documentation Last Review: 12.10.2020
+//
+
 package cosipbft
 
 import (

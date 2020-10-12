@@ -1,3 +1,29 @@
+// Package cosipbft implements an ordering service using collective signatures
+// for the consensus.
+//
+// The consensus follows the PBFT algorithm using collective signatures to
+// perform the prepare and commit phases. The participants will timeout after a
+// round timeout if no block is created *and* transactions are available in
+// their pools. The view change procedure is always waiting on the next leader
+// confirmation before moving to a different one, which means if not enough
+// nodes are online to create a block, the round will fail until enough wakes up
+// and confirm the next leader. If the new leader fails to create a block within
+// round timeout, a new view change starts to move to the next candidate and so
+// on until a block is created.
+//
+// Before each PBFT round, a synchronization is run from the leader to allow
+// nodes that have fallen behind (or are new) to catch missing blocks. Only a
+// PBFT threshold of nodes needs to confirm a hard synchronization (having all
+// the blocks) for the round to proceed, but others will keep catching up.
+//
+// Related Papers:
+//
+// Enhancing Bitcoin Security and Performance with Strong Consistency via
+// Collective Signing (2016)
+// https://www.usenix.org/system/files/conference/usenixsecurity16/sec16_paper_kokoris-kogias.pdf
+//
+// Documentation Last Review: 12.10.2020
+//
 package cosipbft
 
 import (
@@ -54,6 +80,8 @@ func RegisterRosterContract(exec *native.Service, rFac authority.Factory, srvc a
 
 // Service is an ordering service using collective signatures combined with PBFT
 // to create a chain of blocks.
+//
+// - implements ordering.Service
 type Service struct {
 	*processor
 
@@ -115,7 +143,7 @@ type ServiceParam struct {
 	DB         kv.DB
 }
 
-// NewService starts a new service.
+// NewService starts a new ordering service.
 func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 	tmpl := serviceTemplate{
 		hashFac: crypto.NewSha256Factory(),
@@ -284,7 +312,10 @@ func (s *Service) GetRoster() (authority.Authority, error) {
 	return s.getCurrentRoster()
 }
 
-// Watch implements ordering.Service.
+// Watch implements ordering.Service. It returns a channel that will be
+// populated with new incoming blocks and some information about them. The
+// channel must be listened at all time and the context must be closed when
+// done.
 func (s *Service) Watch(ctx context.Context) <-chan ordering.Event {
 	obs := observer{ch: make(chan ordering.Event, 1)}
 
@@ -470,7 +501,7 @@ func (s *Service) doRound(ctx context.Context) error {
 			resps, err := s.rpc.Call(ctx, viewMsg, roster)
 			if err != nil {
 				cancel()
-				return xerrors.Errorf("rpc failed: %v", err)
+				return xerrors.Errorf("rpc failed to send views: %v", err)
 			}
 
 			for resp := range resps {
@@ -591,7 +622,7 @@ func (s *Service) doPBFT(ctx context.Context) error {
 
 	sig, err := s.actor.Sign(ctx, req, roster)
 	if err != nil {
-		return xerrors.Errorf("prepare phase failed: %v", err)
+		return xerrors.Errorf("prepare signature failed: %v", err)
 	}
 
 	s.logger.Debug().Str("signature", fmt.Sprintf("%v", sig)).Msg("prepare done")
@@ -601,7 +632,7 @@ func (s *Service) doPBFT(ctx context.Context) error {
 
 	sig, err = s.actor.Sign(ctx, commit, roster)
 	if err != nil {
-		return xerrors.Errorf("commit phase failed: %v", err)
+		return xerrors.Errorf("commit signature failed: %v", err)
 	}
 
 	s.logger.Debug().Str("signature", fmt.Sprintf("%v", sig)).Msg("commit done")
@@ -611,7 +642,7 @@ func (s *Service) doPBFT(ctx context.Context) error {
 
 	resps, err := s.rpc.Call(ctx, done, roster)
 	if err != nil {
-		return xerrors.Errorf("rpc failed: %v", err)
+		return xerrors.Errorf("propagation failed: %v", err)
 	}
 
 	for resp := range resps {
