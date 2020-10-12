@@ -137,27 +137,9 @@ func (rosterAddAction) Execute(ctx node.Context) error {
 		return xerrors.Errorf("injector: %v", err)
 	}
 
-	roster, err := srvc.GetRoster()
+	tx, err := prepareRosterTx(ctx, srvc)
 	if err != nil {
-		return xerrors.Errorf("failed to read roster: %v", err)
-	}
-
-	addr, pubkey, err := decodeMember(ctx, ctx.Flags.String("member"))
-	if err != nil {
-		return xerrors.Errorf("failed to decode member: %v", err)
-	}
-
-	cset := authority.NewChangeSet()
-	cset.Add(addr, pubkey)
-
-	mgr, err := makeManager(ctx)
-	if err != nil {
-		return xerrors.Errorf("txn manager: %v", err)
-	}
-
-	tx, err := viewchange.NewManager(mgr).Make(roster.Apply(cset))
-	if err != nil {
-		return xerrors.Errorf("transaction: %v", err)
+		return xerrors.Errorf("while preparing tx: %v", err)
 	}
 
 	var p pool.Pool
@@ -208,6 +190,33 @@ func (rosterAddAction) Execute(ctx node.Context) error {
 	}
 
 	return nil
+}
+
+func prepareRosterTx(ctx node.Context, srvc Service) (txn.Transaction, error) {
+	roster, err := srvc.GetRoster()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to read roster: %v", err)
+	}
+
+	addr, pubkey, err := decodeMember(ctx, ctx.Flags.String("member"))
+	if err != nil {
+		return nil, xerrors.Errorf("failed to decode member: %v", err)
+	}
+
+	cset := authority.NewChangeSet()
+	cset.Add(addr, pubkey)
+
+	mgr, err := makeManager(ctx)
+	if err != nil {
+		return nil, xerrors.Errorf("txn manager: %v", err)
+	}
+
+	tx, err := viewchange.NewManager(mgr).Make(roster.Apply(cset))
+	if err != nil {
+		return nil, xerrors.Errorf("transaction: %v", err)
+	}
+
+	return tx, nil
 }
 
 func makeManager(ctx node.Context) (txn.Manager, error) {

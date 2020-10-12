@@ -102,25 +102,26 @@ func TestRosterAddAction_Execute(t *testing.T) {
 
 	ctx.Injector.Inject(fakeService{err: fake.GetError()})
 	err = action.Execute(ctx)
-	require.EqualError(t, err, fake.Err("failed to read roster"))
+	require.EqualError(t, err, fake.Err("while preparing tx: failed to read roster"))
 
 	ctx.Injector.Inject(fakeService{})
 	err = action.Execute(ctx)
 	require.EqualError(t, err,
-		"failed to decode member: injector: couldn't find dependency for 'mino.Mino'")
+		"while preparing tx: failed to decode member: injector: couldn't find dependency for 'mino.Mino'")
 
 	ctx.Injector.Inject(fake.Mino{})
 	ctx.Injector.Inject(fakeCosi{})
 	err = action.Execute(ctx)
-	require.EqualError(t, err, "txn manager: injector: couldn't find dependency for 'txn.Manager'")
+	require.EqualError(t, err,
+		"while preparing tx: txn manager: injector: couldn't find dependency for 'txn.Manager'")
 
 	ctx.Injector.Inject(fakeTxManager{errSync: fake.GetError()})
 	err = action.Execute(ctx)
-	require.EqualError(t, err, fake.Err("txn manager: sync"))
+	require.EqualError(t, err, fake.Err("while preparing tx: txn manager: sync"))
 
 	ctx.Injector.Inject(fakeTxManager{errMake: fake.GetError()})
 	err = action.Execute(ctx)
-	require.EqualError(t, err, fake.Err("transaction: creating transaction"))
+	require.EqualError(t, err, fake.Err("while preparing tx: transaction: creating transaction"))
 
 	ctx.Injector.Inject(fakeTxManager{})
 	err = action.Execute(ctx)
