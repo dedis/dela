@@ -522,7 +522,7 @@ func (n *InteriorNode) Insert(key *big.Int, value []byte, b kv.Bucket) (TreeNode
 }
 
 // Delete implements binprefix.TreeNode. It deletes the leaf node associated to
-// the key if it exists, otherwise nothin will change.
+// the key if it exists, otherwise nothing will change.
 func (n *InteriorNode) Delete(key *big.Int, b kv.Bucket) (TreeNode, error) {
 	var err error
 

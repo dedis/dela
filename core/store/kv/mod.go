@@ -25,7 +25,7 @@ type Bucket interface {
 	// The iteration stops when the callback returns an error.
 	ForEach(func(k, v []byte) error) error
 
-	// Scan iterates over every key that matches the prefix in an ordered
+	// Scan iterates over every key that matches the prefix in an order
 	// determined by the implementation. The iteration stops when the callback
 	// returns an error.
 	Scan(prefix []byte, fn func(k, v []byte) error) error
