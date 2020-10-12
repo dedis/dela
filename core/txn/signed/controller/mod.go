@@ -1,3 +1,8 @@
+// Package controller implements a CLI controller to inject a transaction
+// manager.
+//
+// Documentation Last Review: 08.10.2020
+//
 package controller
 
 import (
@@ -10,6 +15,10 @@ import (
 	"go.dedis.ch/dela/cosi"
 )
 
+// MgrController is a CLI controller that will inject a transaction manager
+// using the signer of the collective signing component.
+//
+// - implements node.Initializer
 type mgrController struct{}
 
 // NewManagerController creates a new controller that will inject a transaction
@@ -18,8 +27,11 @@ func NewManagerController() node.Initializer {
 	return mgrController{}
 }
 
+// SetCommands implements node.Initializer. It does not register any command.
 func (mgrController) SetCommands(node.Builder) {}
 
+// OnStart implements node.Initializer. It creates a transaction manager using
+// the signer of the collective signing component and injects it.
 func (mgrController) OnStart(flags cli.Flags, inj node.Injector) error {
 	var srvc ordering.Service
 	err := inj.Resolve(&srvc)
@@ -49,15 +61,22 @@ func (mgrController) OnStart(flags cli.Flags, inj node.Injector) error {
 	return nil
 }
 
+// OnStop implements node.initializer. It does nothing.
 func (mgrController) OnStop(node.Injector) error {
 	return nil
 }
 
+// Client is a local client for the manager to read the current identity's nonce
+// from the ordering service.
+//
+// - implements signed.Client
 type client struct {
 	srvc ordering.Service
 	mgr  validation.Service
 }
 
+// GetNonce implements signed.Client. It reads the store of the ordering service
+// to get the next nonce of the identity and returns it.
 func (c client) GetNonce(ident access.Identity) (uint64, error) {
 	store := c.srvc.GetStore()
 

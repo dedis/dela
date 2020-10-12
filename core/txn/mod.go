@@ -1,4 +1,15 @@
-// Package txn contains the definition of a transaction and its factory.
+// Package txn defines the abstraction of transactions.
+//
+// A transaction is a smart contract input. It is uniquely identifiable via a
+// digest and it can be sorted with the nonce that acts as a sequence number.
+// The transaction is also created by an identity that can be used for access
+// control for instance.
+//
+// The manager helps to create transactions as the nonce needs to be correct for
+// the transaction to be valid.
+//
+// Documentation Last Review: 08.10.2020
+//
 package txn
 
 import (
@@ -6,8 +17,8 @@ import (
 	"go.dedis.ch/dela/serde"
 )
 
-// Transaction is the definition of an action that should be applied to the
-// global state.
+// Transaction is what triggers a smart contract execution by passing it as part
+// of the input.
 type Transaction interface {
 	serde.Message
 	serde.Fingerprinter

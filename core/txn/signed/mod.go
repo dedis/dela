@@ -1,3 +1,11 @@
+// Package signed is an implementation of the transaction abstraction.
+//
+// It uses a signature to make sure the identity owns the transaction. The nonce
+// is a monotonically increasing number that is used to prevent a replay attack
+// of an existing transaction.
+//
+// Documentation Last Review: 08.10.2020
+//
 package signed
 
 import (
@@ -104,7 +112,7 @@ func (t *Transaction) GetID() []byte {
 	return t.hash
 }
 
-// GetNonce returns the nonce of the transaction.
+// GetNonce implements txn.Transaction. It returns the nonce of the transaction.
 func (t *Transaction) GetNonce() uint64 {
 	return t.nonce
 }
@@ -263,10 +271,11 @@ type Client interface {
 }
 
 // TransactionManager is a manager to create signed transactions. It manages the
-// nonce by itself.
+// nonce by itself, except if the transaction is refused by the ledger. In that
+// case the manager should be synchronized before creating a new one.
 //
 // - implements txn.TransactionManager
-type transactionManager struct {
+type TransactionManager struct {
 	client  Client
 	signer  crypto.Signer
 	nonce   uint64
@@ -276,8 +285,8 @@ type transactionManager struct {
 // NewManager creates a new transaction manager.
 //
 // - implements txn.Manager
-func NewManager(signer crypto.Signer, client Client) txn.Manager {
-	return &transactionManager{
+func NewManager(signer crypto.Signer, client Client) *TransactionManager {
+	return &TransactionManager{
 		client:  client,
 		signer:  signer,
 		nonce:   0,
@@ -287,7 +296,7 @@ func NewManager(signer crypto.Signer, client Client) txn.Manager {
 
 // Make implements txn.Manager. It creates a transaction populated with the
 // arguments.
-func (mgr *transactionManager) Make(args ...txn.Arg) (txn.Transaction, error) {
+func (mgr *TransactionManager) Make(args ...txn.Arg) (txn.Transaction, error) {
 	opts := make([]TransactionOption, len(args), len(args)+1)
 	for i, arg := range args {
 		opts[i] = WithArg(arg.Key, arg.Value)
@@ -312,7 +321,7 @@ func (mgr *transactionManager) Make(args ...txn.Arg) (txn.Transaction, error) {
 
 // Sync implements txn.Manager. It fetches the latest nonce of the signer to
 // create valid transactions.
-func (mgr *transactionManager) Sync() error {
+func (mgr *TransactionManager) Sync() error {
 	nonce, err := mgr.client.GetNonce(mgr.signer.GetPublicKey())
 	if err != nil {
 		return xerrors.Errorf("client: %v", err)
