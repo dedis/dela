@@ -66,7 +66,7 @@ func (mgrController) OnStop(node.Injector) error {
 	return nil
 }
 
-// Client is a local client for the manager to read the identity current nonce
+// Client is a local client for the manager to read the current identity's nonce
 // from the ordering service.
 //
 // - implements signed.Client
