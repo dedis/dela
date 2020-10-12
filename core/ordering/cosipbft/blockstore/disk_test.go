@@ -47,7 +47,7 @@ func TestInDisk_Load(t *testing.T) {
 
 	store.fac = badLinkFac{}
 	err = store.Load()
-	require.EqualError(t, err, fake.Err("while scanning: callback failed: malformed block"))
+	require.EqualError(t, err, fake.Err("while scanning: malformed block"))
 }
 
 func TestInDisk_Store(t *testing.T) {
@@ -146,8 +146,7 @@ func TestInDisk_GetChain(t *testing.T) {
 
 	store.fac = badLinkFac{}
 	_, err = store.GetChain()
-	require.EqualError(t, err,
-		fake.Err("while reading database: while scanning: callback failed: block malformed"))
+	require.EqualError(t, err, fake.Err("while reading database: while scanning: block malformed"))
 }
 
 func TestInDisk_Last(t *testing.T) {

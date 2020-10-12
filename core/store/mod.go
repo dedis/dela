@@ -1,3 +1,7 @@
+// Package store defines the primitives of a simple key/value storage.
+//
+// Documentation Last Review: 08.10.2020
+//
 package store
 
 // Readable is the interface for a readable store.
