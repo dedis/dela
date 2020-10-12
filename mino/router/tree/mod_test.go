@@ -37,11 +37,11 @@ func TestRouter_New(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestRouter_TableOf(t *testing.T) {
+func TestRouter_GenerateTableFrom(t *testing.T) {
 	router := NewRouter(fake.AddressFactory{})
 
 	hs := types.NewHandshake(3, makeAddrs(5)...)
-	table, err := router.TableOf(hs)
+	table, err := router.GenerateTableFrom(hs)
 	require.NoError(t, err)
 	require.NotNil(t, table)
 }
@@ -56,10 +56,10 @@ func TestTable_Make(t *testing.T) {
 	require.Equal(t, []byte{1, 2, 3}, pkt.GetMessage())
 }
 
-func TestTable_Prelude(t *testing.T) {
+func TestTable_PrepareHandshakeFor(t *testing.T) {
 	table := NewTable(3, makeAddrs(5))
 
-	hs := table.Prelude(fake.NewAddress(1))
+	hs := table.PrepareHandshakeFor(fake.NewAddress(1))
 	require.Equal(t, 2, hs.(types.Handshake).GetHeight())
 }
 

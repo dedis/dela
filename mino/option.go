@@ -1,3 +1,7 @@
+//
+// Documentation Last Review: 07.10.2020
+//
+
 package mino
 
 import (

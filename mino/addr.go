@@ -1,6 +1,10 @@
+//
+// Documentation Last Review: 07.10.2020
+//
+
 package mino
 
-// NewAddressIterator returns a new address iterator
+// NewAddressIterator returns a new address iterator.
 func NewAddressIterator(addrs []Address) AddressIterator {
 	return &addressIterator{
 		addrs: addrs,
@@ -15,7 +19,9 @@ type addressIterator struct {
 	addrs []Address
 }
 
-// Seek implements mino.AddressIterator.
+// Seek implements mino.AddressIterator. It moves the iterator to a specific
+// position. The next address can be either defined or nil, it is the
+// responsibility of the caller to verify.
 func (it *addressIterator) Seek(index int) {
 	it.index = index
 }
@@ -34,8 +40,8 @@ func (it *addressIterator) GetNext() Address {
 	return res
 }
 
-// roster is an implementation of the mino.Players interface. It provides helper
-// when known addresses need to be grouped into a roster for Mino calls.
+// roster is an implementation of the players interface. It provides helper when
+// known addresses need to be grouped into a roster for Mino calls.
 //
 // - implements mino.Players
 type roster struct {

@@ -18,15 +18,8 @@ func Example() {
 	// Create the network overlay instances. It uses channels to communicate.
 	manager := minoch.NewManager()
 
-	mA, err := minoch.NewMinoch(manager, "A")
-	if err != nil {
-		panic(fmt.Sprintf("failed to serve A: %+v", err))
-	}
-
-	mB, err := minoch.NewMinoch(manager, "B")
-	if err != nil {
-		panic(fmt.Sprintf("failed to serve B: %+v", err))
-	}
+	mA := minoch.MustCreate(manager, "A")
+	mB := minoch.MustCreate(manager, "B")
 
 	// The list of participants to the signature.
 	roster := fake.NewAuthorityFromMino(bls.Generate, mA, mB)

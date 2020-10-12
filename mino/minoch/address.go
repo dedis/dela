@@ -1,3 +1,9 @@
+// This file implements the address abstraction for an in-memory implementation.
+// Each address uses a unique string to identify the instance it belongs to.
+//
+// Documentation Last Review: 06.10.2020
+//
+
 package minoch
 
 import (
@@ -6,6 +12,8 @@ import (
 )
 
 // Address is the representation of an identifier for minoch.
+//
+// - implements mino.Address
 type address struct {
 	orchestrator bool
 	id           string
@@ -17,22 +25,26 @@ func (a address) Equal(other mino.Address) bool {
 	return ok && addr.id == a.id
 }
 
-// MarshalText returns the string representation of an address.
+// MarshalText implements encoding.TextMarshaler. It returns the string
+// representation of an address.
 func (a address) MarshalText() ([]byte, error) {
 	return []byte(a.id), nil
 }
 
-// String returns the address as a string.
+// String implements fmt.Stringer. It returns the address as a string.
 func (a address) String() string {
 	return a.id
 }
 
-// AddressFactory is an implementation of the factory interface.
+// AddressFactory is a factory to deserialize Minoch addresses.
+//
+// - implements mino.AddressFactory
 type AddressFactory struct {
 	serde.Factory
 }
 
-// FromText returns an instance of an address from a byte slice.
+// FromText implements mino.AddressFactory. It returns an instance of an address
+// from a byte slice.
 func (f AddressFactory) FromText(text []byte) mino.Address {
 	return address{id: string(text)}
 }

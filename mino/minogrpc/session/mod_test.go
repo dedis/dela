@@ -488,7 +488,7 @@ func (t fakeTable) Make(mino.Address, []mino.Address, []byte) router.Packet {
 	return fakePkt{dest: fake.NewAddress(0), empty: t.empty}
 }
 
-func (t fakeTable) Prelude(mino.Address) router.Handshake {
+func (t fakeTable) PrepareHandshakeFor(mino.Address) router.Handshake {
 	return fakeHandshake{err: t.err}
 }
 
