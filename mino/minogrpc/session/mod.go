@@ -1,3 +1,20 @@
+// Package session defines an abstraction of a session during a distributed RPC.
+//
+// During a stream-based distributed RPC in minogrpc, the stream is kept alive
+// during the whole protocol to act as a health check so that resources can be
+// cleaned eventually, or if something goes wrong. The session manages this
+// state while also managing the relays to other participants that the node must
+// forward the messages to. Basically, a session has one or several relays open
+// to the parent nodes and zero, one or multiple relays to other participants
+// depending on the routing of the messages.
+//
+// The package implements a unicast and a stream relay. Stream relay is only
+// used when the orchestrator of a protocol is connecting to the first
+// participant. Unicast is then used so that the sender of a message can receive
+// feedbacks on the status of the message.
+//
+// Documentation Last Review: 07.10.20202
+//
 package session
 
 import (
