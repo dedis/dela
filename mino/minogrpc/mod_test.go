@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/session"
 	"go.dedis.ch/dela/mino/minogrpc/tokens"
 	"go.dedis.ch/dela/mino/router/tree"
@@ -22,7 +23,7 @@ func TestMinogrpc_New(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, "127.0.0.1:3333", m.GetAddress().String())
-	require.Equal(t, "", m.namespace)
+	require.Empty(t, m.segments)
 
 	cert := m.GetCertificate()
 	require.NotNil(t, cert)
@@ -128,59 +129,61 @@ func TestMinogrpc_GracefulClose(t *testing.T) {
 	require.EqualError(t, err, "connection manager not empty: 1")
 }
 
-func TestMinogrpc_MakeNamespace(t *testing.T) {
-	minoGrpc := Minogrpc{}
+func TestMinogrpc_WithSegment(t *testing.T) {
+	m := &Minogrpc{}
 	ns := "Test"
-	newMino, err := minoGrpc.MakeNamespace(ns)
-	require.NoError(t, err)
+
+	newMino := m.WithSegment(ns)
 
 	newMinoGrpc, ok := newMino.(*Minogrpc)
 	require.True(t, ok)
+	require.Equal(t, ns, newMinoGrpc.segments[0])
 
-	require.Equal(t, "/"+ns, newMinoGrpc.namespace)
-
-	// A namespace can not be empty
-	ns = ""
-	_, err = minoGrpc.MakeNamespace(ns)
-	require.EqualError(t, err, "a namespace can not be empty")
-
-	// A namespace should match [a-zA-Z0-9]+
-	ns = "/namespace"
-	_, err = minoGrpc.MakeNamespace(ns)
-	require.EqualError(t, err, "a namespace should match [a-zA-Z0-9]+, but found '/namespace'")
-
-	ns = " test"
-	_, err = minoGrpc.MakeNamespace(ns)
-	require.EqualError(t, err, "a namespace should match [a-zA-Z0-9]+, but found ' test'")
-
-	ns = "test$"
-	_, err = minoGrpc.MakeNamespace(ns)
-	require.EqualError(t, err, "a namespace should match [a-zA-Z0-9]+, but found 'test$'")
+	newMino = m.WithSegment("")
+	require.Equal(t, m, newMino)
 }
 
-func TestMinogrpc_MakeRPC(t *testing.T) {
+func TestMinogrpc_CreateRPC(t *testing.T) {
 	m := Minogrpc{
-		namespace: "",
 		overlay:   &overlay{},
 		endpoints: make(map[string]*Endpoint),
 	}
 
-	mNs, err := m.MakeNamespace("namespace")
-	require.NoError(t, err)
+	mNs := m.WithSegment("segment")
 
-	rpc, err := mNs.MakeRPC("name", emptyHandler{}, fake.MessageFactory{})
+	rpc, err := mNs.CreateRPC("name", emptyHandler{}, fake.MessageFactory{})
 	require.NoError(t, err)
 
 	expectedRPC := &RPC{
 		factory: fake.MessageFactory{},
 		overlay: &overlay{},
-		uri:     "/namespace/name",
+		uri:     "segment/name",
 	}
 
 	endpoint, ok := m.endpoints[expectedRPC.uri]
 	require.True(t, ok)
 	require.Equal(t, emptyHandler{}, endpoint.Handler)
 	require.Equal(t, expectedRPC, rpc)
+
+	_, err = mNs.CreateRPC("name", emptyHandler{}, fake.MessageFactory{})
+	require.EqualError(t, err, "rpc 'segment/name' already exists")
+}
+
+func TestMinogrpc_InvalidSegment_CreateRPC(t *testing.T) {
+	m := &Minogrpc{
+		segments: []string{"example"},
+	}
+
+	handler := mino.UnsupportedHandler{}
+
+	_, err := m.CreateRPC("/test", handler, fake.MessageFactory{})
+	require.EqualError(t, err, "invalid segment in uri 'example//test': '/test'")
+
+	_, err = m.CreateRPC(" test", handler, fake.MessageFactory{})
+	require.EqualError(t, err, "invalid segment in uri 'example/ test': ' test'")
+
+	_, err = m.CreateRPC("test$", handler, fake.MessageFactory{})
+	require.EqualError(t, err, "invalid segment in uri 'example/test$': 'test$'")
 }
 
 func TestMinogrpc_String(t *testing.T) {

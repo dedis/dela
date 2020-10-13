@@ -20,23 +20,23 @@ import (
 // Mino is an abstraction of a overlay network. It provides primitives to send
 // messages to a set of participants.
 //
-// It uses namespaces to separate the different RPCs of multiple services in a
-// URI-like manner (i.e. /my/awesome/rpc has _my_ and _awesome_ namespaces).
+// It uses segments to separate the different RPCs of multiple services in a
+// URI-like manner (i.e. /my/awesome/rpc has _my_ and _awesome_ segments).
 type Mino interface {
-	// GetAddressFactory returns the factory for addresses.
 	GetAddressFactory() AddressFactory
 
 	// Address returns the address that other participants should use to contact
 	// this instance.
 	GetAddress() Address
 
-	// MakeNamespace returns an instance restricted to the namespace.
-	MakeNamespace(namespace string) (Mino, error)
+	// WithSegment returns a new mino instance that will have its URI path
+	// extended with the provided segment.
+	WithSegment(segment string) Mino
 
-	// MakeRPC creates an RPC that can send to and receive from a unique URI
-	// which is computed with URI = (namespace || name). The namespace is known
-	// by the mino instance.
-	MakeRPC(name string, h Handler, f serde.Factory) (RPC, error)
+	// CreateRPC creates an RPC that can send to and receive from a unique
+	// URI which is computed with URI = (segment || segment || ... || name). If
+	// the combination already exists, it will return an error.
+	CreateRPC(name string, h Handler, f serde.Factory) (RPC, error)
 }
 
 // Address is a representation of a node's address.
@@ -50,7 +50,7 @@ type Address interface {
 	String() string
 }
 
-// AddressFactory is the factory to decode addresses.
+// AddressFactory is the factory to deserialize addresses.
 type AddressFactory interface {
 	serde.Factory
 
@@ -165,4 +165,16 @@ func (h UnsupportedHandler) Process(req Request) (serde.Message, error) {
 // Stream is the default implementation for a handler. It will return an error.
 func (h UnsupportedHandler) Stream(in Sender, out Receiver) error {
 	return errors.New("stream is not supported")
+}
+
+// MustCreateRPC creates the RPC with the given name, handler and factory to the
+// Mino instance and expects the operation to be successful, otherwise it will
+// panic.
+func MustCreateRPC(m Mino, name string, h Handler, f serde.Factory) RPC {
+	rpc, err := m.CreateRPC(name, h, f)
+	if err != nil {
+		panic(err)
+	}
+
+	return rpc
 }

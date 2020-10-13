@@ -54,13 +54,8 @@ func NewPedersen(m mino.Mino) (*Pedersen, kyber.Point) {
 func (s *Pedersen) Listen() (dkg.Actor, error) {
 	h := NewHandler(s.privKey, s.mino.GetAddress())
 
-	rpc, err := s.mino.MakeRPC("dkg", h, s.factory)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to create RPC: %v", err)
-	}
-
 	a := &Actor{
-		rpc:      rpc,
+		rpc:      mino.MustCreateRPC(s.mino, "dkg", h, s.factory),
 		factory:  s.factory,
 		startRes: h.startRes,
 	}

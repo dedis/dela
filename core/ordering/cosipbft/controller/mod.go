@@ -103,7 +103,7 @@ func (m minimal) OnStart(flags cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("signer: %v", err)
 	}
 
-	cosi := threshold.NewThreshold(onet, signer)
+	cosi := threshold.NewThreshold(onet.WithSegment("cosi"), signer)
 	cosi.SetThreshold(threshold.ByzantineThreshold)
 
 	exec := native.NewExecution()
@@ -115,7 +115,7 @@ func (m minimal) OnStart(flags cli.Flags, inj node.Injector) error {
 	txFac := signed.NewTransactionFactory()
 	vs := simple.NewService(exec, txFac)
 
-	pool, err := poolimpl.NewPool(gossip.NewFlat(onet, txFac))
+	pool, err := poolimpl.NewPool(gossip.NewFlat(onet.WithSegment("pool"), txFac))
 	if err != nil {
 		return xerrors.Errorf("pool: %v", err)
 	}

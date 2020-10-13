@@ -194,11 +194,6 @@ func TestService_New(t *testing.T) {
 
 	<-srvc.closed
 
-	param.Mino = fake.NewBadMino()
-	_, err = NewService(param)
-	require.EqualError(t, err, fake.Err("creating sync failed: rpc creation failed"))
-
-	param.Mino = fake.Mino{}
 	param.Cosi = badCosi{}
 	_, err = NewService(param)
 	require.EqualError(t, err, fake.Err("creating cosi failed"))

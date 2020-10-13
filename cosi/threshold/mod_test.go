@@ -94,10 +94,6 @@ func TestThreshold_Listen(t *testing.T) {
 	actor, err := c.Listen(fakeReactor{})
 	require.NoError(t, err)
 	require.NotNil(t, actor)
-
-	c.mino = fake.NewBadMino()
-	_, err = c.Listen(fakeReactor{})
-	require.EqualError(t, err, fake.Err("couldn't make rpc"))
 }
 
 // -----------------------------------------------------------------------------

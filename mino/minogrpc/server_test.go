@@ -831,11 +831,8 @@ func makeInstances(t *testing.T, n int, call *fake.Call) ([]mino.Mino, []mino.RP
 		m, err := NewMinogrpc(addr, tree.NewRouter(addressFac))
 		require.NoError(t, err)
 
-		rpc, err := m.MakeRPC("test", testHandler{call: call}, fake.MessageFactory{})
-		require.NoError(t, err)
-
 		mm[i] = m
-		rpcs[i] = rpc
+		rpcs[i] = mino.MustCreateRPC(m, "test", testHandler{call: call}, fake.MessageFactory{})
 
 		for _, k := range mm[:i] {
 			km := k.(*Minogrpc)

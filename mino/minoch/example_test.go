@@ -11,30 +11,13 @@ import (
 func ExampleRPC_Call() {
 	manager := NewManager()
 
-	minoA := MustCreate(manager, "A")
-	minoB := MustCreate(manager, "B")
+	minoA := MustCreate(manager, "A").WithSegment("example")
+	minoB := MustCreate(manager, "B").WithSegment("example")
+
+	rpcA := mino.MustCreateRPC(minoA, "hello", exampleHandler{}, exampleFactory{})
+	mino.MustCreateRPC(minoB, "hello", exampleHandler{}, exampleFactory{})
 
 	roster := mino.NewAddresses(minoA.GetAddress(), minoB.GetAddress())
-
-	nsA, err := minoA.MakeNamespace("example")
-	if err != nil {
-		panic("namespace failed: " + err.Error())
-	}
-
-	rpcA, err := nsA.MakeRPC("hello", exampleHandler{}, exampleFactory{})
-	if err != nil {
-		panic("rpc failed: " + err.Error())
-	}
-
-	nsB, err := minoB.MakeNamespace("example")
-	if err != nil {
-		panic("namespace failed: " + err.Error())
-	}
-
-	_, err = nsB.MakeRPC("hello", exampleHandler{}, exampleFactory{})
-	if err != nil {
-		panic("rpc failed: " + err.Error())
-	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

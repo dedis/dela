@@ -50,33 +50,34 @@ func TestMinoch_AddFilter(t *testing.T) {
 
 	m := MustCreate(manager, "A")
 
-	rpc, err := m.MakeRPC("test", nil, nil)
-	require.NoError(t, err)
+	rpc := mino.MustCreateRPC(m, "test", nil, nil)
 
 	m.AddFilter(func(m mino.Request) bool { return true })
 	require.Len(t, m.filters, 1)
 	require.Len(t, rpc.(*RPC).filters, 1)
 }
 
-func TestMinoch_MakeNamespace(t *testing.T) {
+func TestMinoch_WithSegment(t *testing.T) {
 	manager := NewManager()
 
 	m := MustCreate(manager, "A")
 
-	m2, err := m.MakeNamespace("abc")
-	require.NoError(t, err)
+	m2 := m.WithSegment("abc")
 	require.Equal(t, m.identifier, m2.(*Minoch).identifier)
 	require.Equal(t, "/abc", m2.(*Minoch).path)
 }
 
-func TestMinoch_MakeRPC(t *testing.T) {
+func TestMinoch_CreateRPC(t *testing.T) {
 	manager := NewManager()
 
 	m := MustCreate(manager, "A")
 
-	rpc, err := m.MakeRPC("rpc1", badHandler{}, fake.MessageFactory{})
+	rpc, err := m.CreateRPC("rpc_name", fakeHandler{}, fake.MessageFactory{})
 	require.NoError(t, err)
 	require.NotNil(t, rpc)
+
+	_, err = m.CreateRPC("rpc_name", fakeHandler{}, fake.MessageFactory{})
+	require.EqualError(t, err, "rpc '/rpc_name' already exists")
 }
 
 type badHandler struct {

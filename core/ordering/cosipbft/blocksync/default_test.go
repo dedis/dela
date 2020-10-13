@@ -77,16 +77,6 @@ func TestDefaultSync_Basic(t *testing.T) {
 	}
 }
 
-func TestDefaultSync_New(t *testing.T) {
-	param := SyncParam{
-		Mino:   fake.NewBadMino(),
-		Blocks: blockstore.NewInMemory(),
-	}
-
-	_, err := NewSynchronizer(param)
-	require.EqualError(t, err, fake.Err("rpc creation failed"))
-}
-
 func TestDefaultSync_GetLatest(t *testing.T) {
 	latest := uint64(5)
 
@@ -302,10 +292,7 @@ func makeNodes(t *testing.T, n int) ([]defaultSync, otypes.Genesis, mino.Players
 			VerifierFactory: fake.VerifierFactory{},
 		}
 
-		sync, err := NewSynchronizer(param)
-		require.NoError(t, err)
-
-		syncs[i] = sync.(defaultSync)
+		syncs[i] = NewSynchronizer(param).(defaultSync)
 	}
 
 	return syncs, genesis, mino.NewAddresses(addrs...)
