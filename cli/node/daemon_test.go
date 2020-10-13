@@ -139,40 +139,19 @@ func TestSocketDaemon_ConnectivityTest_Listen(t *testing.T) {
 	require.NoError(t, conn.Close())
 }
 
-func TestSocketDaemon_ConnClosedFromClient_Listen(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		// This test does not work on Windows.
-		t.SkipNow()
-	}
-
-	dir, err := ioutil.TempDir(os.TempDir(), "dela-test-")
-	require.NoError(t, err)
-
-	defer os.RemoveAll(dir)
-
-	logger, wait := fake.WaitLog("connection to daemon has error", 10*time.Second)
+func TestSocketDaemon_ConnClosedFromClient_HandleConn(t *testing.T) {
+	logger, check := fake.CheckLog("connection to daemon has error")
 
 	daemon := &socketDaemon{
 		logger:      logger,
-		socketpath:  filepath.Join(dir, "daemon.sock"),
 		actions:     &actionMap{},
 		closing:     make(chan struct{}),
 		readTimeout: 50 * time.Millisecond,
 	}
 
-	err = daemon.Listen()
-	require.NoError(t, err)
+	daemon.handleConn(badConn{})
 
-	defer daemon.Close()
-
-	conn, err := net.DialTimeout("unix", daemon.socketpath, 5*time.Second)
-	require.NoError(t, err)
-
-	_, err = conn.Write([]byte{0, 0})
-	require.NoError(t, err)
-	require.NoError(t, conn.Close())
-
-	wait(t)
+	check(t)
 }
 
 func TestClientWriter_Write(t *testing.T) {
@@ -305,4 +284,24 @@ type fakeContext struct {
 
 func (ctx fakeContext) Path(name string) string {
 	return ctx.path
+}
+
+type badConn struct {
+	net.Conn
+}
+
+func (badConn) Read([]byte) (int, error) {
+	return 0, fake.GetError()
+}
+
+func (badConn) Write([]byte) (int, error) {
+	return 0, fake.GetError()
+}
+
+func (badConn) SetReadDeadline(t time.Time) error {
+	return nil
+}
+
+func (badConn) Close() error {
+	return nil
 }
