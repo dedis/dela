@@ -7,7 +7,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
@@ -17,50 +16,64 @@ import (
 )
 
 func TestSocketClient_Send(t *testing.T) {
-	path := filepath.Join(os.TempDir(), "daemon.sock")
+	dir, err := ioutil.TempDir(os.TempDir(), "dela")
+	require.NoError(t, err)
 
-	listen(t, path, false, false)
+	defer os.RemoveAll(dir)
 
 	out := new(bytes.Buffer)
+
 	client := socketClient{
-		socketpath: path,
+		socketpath: filepath.Join(dir, "daemon.sock"),
 		out:        out,
+		dialFn:     net.DialTimeout,
 	}
 
-	err := client.Send([]byte("deadbeef"))
+	listen(t, client.socketpath)
+
+	err = client.Send([]byte("deadbeef"))
 	require.NoError(t, err)
 	require.Equal(t, "deadbeef\n", out.String())
+}
 
-	client.socketpath = ""
-	err = client.Send(nil)
-	require.EqualError(t, err,
-		"couldn't open connection: dial unix: missing address")
-
-	listen(t, path, false, true)
-	client.socketpath = path
-	err = client.Send([]byte("}"))
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "fail to decode event: ")
-
-	// Windows only allows opening one socket per address, this is why we use
-	// another one.
-	path = filepath.Join(os.TempDir(), "daemon2.sock")
-	client.socketpath = path
-
-	listen(t, path, true, false)
-	in := make([]byte, 256*1000) // fill the buffer
-	err = client.Send(in)
-	require.Error(t, err)
-
-	if runtime.GOOS == "linux" {
-		require.EqualError(t, err,
-			"couldn't write to daemon: write unix @->/tmp/daemon2.sock: write: broken pipe")
+func TestSocketClient_FailDial_Send(t *testing.T) {
+	client := socketClient{
+		socketpath: "",
+		dialFn: func(network, addr string, timeout time.Duration) (net.Conn, error) {
+			return nil, fake.GetError()
+		},
 	}
+
+	err := client.Send(nil)
+	require.EqualError(t, err, fake.Err("couldn't open connection"))
+}
+
+func TestSocketClient_BadOutConn_Send(t *testing.T) {
+	client := socketClient{
+		dialFn: func(network, addr string, timeout time.Duration) (net.Conn, error) {
+			return badConn{}, nil
+		},
+	}
+
+	err := client.Send([]byte{1, 2, 3})
+	require.EqualError(t, err, fake.Err("couldn't write to daemon"))
+}
+
+func TestSocketClient_BadInConn_Send(t *testing.T) {
+	client := socketClient{
+		dialFn: func(network, addr string, timeout time.Duration) (net.Conn, error) {
+			return badConn{counter: fake.NewCounter(1)}, nil
+		},
+	}
+
+	err := client.Send([]byte{})
+	require.EqualError(t, err, fake.Err("fail to decode event"))
 }
 
 func TestSocketDaemon_Listen(t *testing.T) {
-	dir, err := ioutil.TempDir(os.TempDir(), "dela-test-")
+	dir, err := ioutil.TempDir(os.TempDir(), "dela")
 	require.NoError(t, err)
+
 	defer os.RemoveAll(dir)
 
 	actions := &actionMap{}
@@ -72,6 +85,7 @@ func TestSocketDaemon_Listen(t *testing.T) {
 		actions:     actions,
 		closing:     make(chan struct{}),
 		readTimeout: 50 * time.Millisecond,
+		listenFn:    net.Listen,
 	}
 
 	err = daemon.Listen()
@@ -84,6 +98,7 @@ func TestSocketDaemon_Listen(t *testing.T) {
 		socketpath:  daemon.socketpath,
 		out:         out,
 		dialTimeout: time.Second,
+		dialFn:      net.DialTimeout,
 	}
 
 	err = client.Send(append([]byte{0x0, 0x0}, []byte("{}")...))
@@ -103,21 +118,10 @@ func TestSocketDaemon_Listen(t *testing.T) {
 	err = client.Send([]byte{})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "stream corrupted: ")
-
-	// the rest is not concerned by windows that actually allows the creation of
-	// root files and folders
-	if runtime.GOOS == "windows" {
-		t.Skip()
-	}
-
-	daemon.socketpath = "/test.sock"
-	err = daemon.Listen()
-	require.Error(t, err)
-	require.Regexp(t, "^couldn't bind socket: listen unix /test.sock: bind:", err)
 }
 
 func TestSocketDaemon_ConnectivityTest_Listen(t *testing.T) {
-	dir, err := ioutil.TempDir(os.TempDir(), "dela-test-")
+	dir, err := ioutil.TempDir(os.TempDir(), "dela")
 	require.NoError(t, err)
 
 	defer os.RemoveAll(dir)
@@ -127,6 +131,7 @@ func TestSocketDaemon_ConnectivityTest_Listen(t *testing.T) {
 		actions:     &actionMap{},
 		closing:     make(chan struct{}),
 		readTimeout: 50 * time.Millisecond,
+		listenFn:    net.Listen,
 	}
 
 	err = daemon.Listen()
@@ -137,6 +142,17 @@ func TestSocketDaemon_ConnectivityTest_Listen(t *testing.T) {
 	conn, err := net.DialTimeout("unix", daemon.socketpath, 1*time.Second)
 	require.NoError(t, err)
 	require.NoError(t, conn.Close())
+}
+
+func TestSocketDaemon_FailBindSocket_Listen(t *testing.T) {
+	daemon := &socketDaemon{
+		listenFn: func(network, addr string) (net.Listener, error) {
+			return nil, fake.GetError()
+		},
+	}
+
+	err := daemon.Listen()
+	require.EqualError(t, err, fake.Err("couldn't bind socket"))
 }
 
 func TestSocketDaemon_ConnClosedFromClient_HandleConn(t *testing.T) {
@@ -185,7 +201,7 @@ func TestSocketFactory_ClientFromContext(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-func listen(t *testing.T, path string, quick bool, badFormat bool) {
+func listen(t *testing.T, path string) {
 	socket, err := net.Listen("unix", path)
 	require.NoError(t, err)
 
@@ -196,21 +212,13 @@ func listen(t *testing.T, path string, quick bool, badFormat bool) {
 		defer conn.Close()
 		defer socket.Close()
 
-		if quick {
-			return
-		}
-
 		buffer := make([]byte, 100)
 		n, err := conn.Read(buffer)
 		require.NoError(t, err)
 
-		if badFormat {
-			conn.Write(buffer[:n])
-		} else {
-			enc := json.NewEncoder(conn)
-			err = enc.Encode(event{Value: string(buffer[:n])})
-			require.NoError(t, err)
-		}
+		enc := json.NewEncoder(conn)
+		err = enc.Encode(event{Value: string(buffer[:n])})
+		require.NoError(t, err)
 	}()
 }
 
@@ -288,13 +296,25 @@ func (ctx fakeContext) Path(name string) string {
 
 type badConn struct {
 	net.Conn
+
+	counter *fake.Counter
 }
 
-func (badConn) Read([]byte) (int, error) {
+func (conn badConn) Read(data []byte) (int, error) {
+	if !conn.counter.Done() {
+		conn.counter.Decrease()
+		return len(data), nil
+	}
+
 	return 0, fake.GetError()
 }
 
-func (badConn) Write([]byte) (int, error) {
+func (conn badConn) Write(data []byte) (int, error) {
+	if !conn.counter.Done() {
+		conn.counter.Decrease()
+		return len(data), nil
+	}
+
 	return 0, fake.GetError()
 }
 

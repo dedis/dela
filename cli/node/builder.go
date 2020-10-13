@@ -1,3 +1,8 @@
+// This file contains the implementation of a CLI builder.
+//
+// Documentation Last Review: 13.10.20202
+//
+
 package node
 
 import (
@@ -7,7 +12,6 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"reflect"
 	"syscall"
 
 	ucli "github.com/urfave/cli/v2"
@@ -20,7 +24,7 @@ import (
 // control a node.
 //
 // - implements node.Builder
-type cliBuilder struct {
+type CLIBuilder struct {
 	daemonFactory DaemonFactory
 	injector      Injector
 	actions       *actionMap
@@ -36,12 +40,12 @@ type cliBuilder struct {
 }
 
 // NewBuilder returns a new empty builder.
-func NewBuilder(inits ...Initializer) cli.Builder {
+func NewBuilder(inits ...Initializer) *CLIBuilder {
 	return NewBuilderWithCfg(nil, nil, inits...)
 }
 
 // NewBuilderWithCfg returns a new empty builder with specific configurations.
-func NewBuilderWithCfg(sigs chan os.Signal, out io.Writer, inits ...Initializer) cli.Builder {
+func NewBuilderWithCfg(sigs chan os.Signal, out io.Writer, inits ...Initializer) *CLIBuilder {
 	if out == nil {
 		out = os.Stdout
 	}
@@ -53,9 +57,7 @@ func NewBuilderWithCfg(sigs chan os.Signal, out io.Writer, inits ...Initializer)
 		enabled = true
 	}
 
-	injector := &reflectInjector{
-		mapper: make(map[reflect.Type]interface{}),
-	}
+	injector := NewInjector()
 
 	actions := &actionMap{}
 
@@ -65,7 +67,7 @@ func NewBuilderWithCfg(sigs chan os.Signal, out io.Writer, inits ...Initializer)
 		out:      out,
 	}
 
-	return &cliBuilder{
+	return &CLIBuilder{
 		injector:      injector,
 		actions:       actions,
 		daemonFactory: factory,
@@ -78,7 +80,7 @@ func NewBuilderWithCfg(sigs chan os.Signal, out io.Writer, inits ...Initializer)
 
 // SetCommand implements node.Builder. It creates a new command and return its
 // builder.
-func (b *cliBuilder) SetCommand(name string) cli.CommandBuilder {
+func (b *CLIBuilder) SetCommand(name string) cli.CommandBuilder {
 	cb := &cliCommand{name: name}
 	b.commands = append(b.commands, cb)
 	return cb
@@ -86,13 +88,13 @@ func (b *cliBuilder) SetCommand(name string) cli.CommandBuilder {
 
 // SetStartFlags implements node.Builder. It appends the given flags to the list
 // of flags that will be used to create the start command.
-func (b *cliBuilder) SetStartFlags(flags ...cli.Flag) {
+func (b *CLIBuilder) SetStartFlags(flags ...cli.Flag) {
 	b.startFlags = append(b.startFlags, flags...)
 }
 
 // MakeAction implements node.Builder. It creates a CLI action from the
 // template.
-func (b *cliBuilder) MakeAction(tmpl ActionTemplate) cli.Action {
+func (b *CLIBuilder) MakeAction(tmpl ActionTemplate) cli.Action {
 	index := b.actions.Set(tmpl)
 
 	return func(c cli.Flags) error {
@@ -157,7 +159,7 @@ func convert(v interface{}) interface{} {
 }
 
 // Build implements node.Builder. It returns the application.
-func (b *cliBuilder) Build() cli.Application {
+func (b *CLIBuilder) Build() cli.Application {
 	for _, controller := range b.inits {
 		controller.SetCommands(b)
 	}
@@ -188,7 +190,7 @@ func (b *cliBuilder) Build() cli.Application {
 	return app
 }
 
-func (b *cliBuilder) start(c *ucli.Context) error {
+func (b *CLIBuilder) start(c *ucli.Context) error {
 	if b.enableSignal {
 		signal.Notify(b.sigs, syscall.SIGINT, syscall.SIGTERM)
 
@@ -242,7 +244,7 @@ func (b *cliBuilder) start(c *ucli.Context) error {
 	return nil
 }
 
-func (b *cliBuilder) buildCommands(in []*cliCommand) []*ucli.Command {
+func (b *CLIBuilder) buildCommands(in []*cliCommand) []*ucli.Command {
 	if len(in) == 0 {
 		return nil
 	}
@@ -267,13 +269,13 @@ func (b *cliBuilder) buildCommands(in []*cliCommand) []*ucli.Command {
 	return commands
 }
 
-func (b *cliBuilder) buildAction(a cli.Action) func(*ucli.Context) error {
+func (b *CLIBuilder) buildAction(a cli.Action) func(*ucli.Context) error {
 	return func(ctx *ucli.Context) error {
 		return a(ctx)
 	}
 }
 
-func (b *cliBuilder) buildFlags(in []cli.Flag) []ucli.Flag {
+func (b *CLIBuilder) buildFlags(in []cli.Flag) []ucli.Flag {
 	flags := make([]ucli.Flag, len(in))
 	for i, input := range in {
 		switch flag := input.(type) {

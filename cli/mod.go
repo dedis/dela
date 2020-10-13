@@ -14,6 +14,9 @@
 //
 // An implementation of the builder is free to provide primitives to create more
 // complex action.
+//
+// Documentation Last Review: 13.10.2020
+//
 package cli
 
 import (
