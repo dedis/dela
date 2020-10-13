@@ -1,3 +1,8 @@
+// This file contains the implementation of a chain of block links.
+//
+// Documentation Last Review: 13.10.2020
+//
+
 package types
 
 import (
@@ -29,6 +34,7 @@ func RegisterChainFormat(f serde.Format, e serde.FormatEngine) {
 // digests to reduce the serialization footprint.
 //
 // - implements types.Link
+// - implements serde.Fingerprinter
 type forwardLink struct {
 	digest     Digest
 	from       Digest

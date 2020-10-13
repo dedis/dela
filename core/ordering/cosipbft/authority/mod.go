@@ -1,3 +1,12 @@
+// Package authority defines the collective authority for cosipbft.
+//
+// The package also contains an implementation of a roster and the related
+// change set. A roster is a list of participants where each of them has an Mino
+// address and a corresponding public key that supports aggregation for the
+// collective signing.
+//
+// Documentation Last Review: 13.10.2020
+//
 package authority
 
 import (
@@ -18,15 +27,15 @@ type ChangeSet interface {
 	GetNewAddresses() []mino.Address
 }
 
-// ChangeSetFactory is the factory interface to deserialize change sets.
+// ChangeSetFactory is the factory to deserialize change sets.
 type ChangeSetFactory interface {
 	serde.Factory
 
 	ChangeSetOf(serde.Context, []byte) (ChangeSet, error)
 }
 
-// Authority is an extension of the collective authority to provide
-// primitives to append new players to it.
+// Authority is an extension of the collective authority to provide primitives
+// to append new players to it.
 type Authority interface {
 	serde.Message
 	serde.Fingerprinter
@@ -40,7 +49,7 @@ type Authority interface {
 	Diff(Authority) ChangeSet
 }
 
-// Factory is the factory interface to deserialize authorities.
+// Factory is the factory to deserialize authorities.
 type Factory interface {
 	serde.Factory
 

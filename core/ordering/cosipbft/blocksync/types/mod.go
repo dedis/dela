@@ -1,3 +1,10 @@
+// Package types implements the network messages for a synchronization.
+//
+// The messages are implemented in a different package to prevent cycle imports
+// when importing the serde formats.
+//
+// Documentation Last Review: 13.10.2020
+//
 package types
 
 import (
@@ -15,7 +22,8 @@ func RegisterMessageFormat(f serde.Format, e serde.FormatEngine) {
 }
 
 // SyncMessage is the announcement sent to the participants with the latest
-// index of the leader.
+// index of the leader. The chain is provided to prove the validity of the
+// index.
 //
 // - implements serde.Message
 type SyncMessage struct {
@@ -116,7 +124,8 @@ func (m SyncReply) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
-// SyncAck is a message sent to confirm a hard synchronization.
+// SyncAck is a message sent to confirm a hard synchronization, which is when
+// the node has all the blocks.
 //
 // - implements serde.Message
 type SyncAck struct{}
