@@ -2,14 +2,18 @@
 // for the consensus.
 //
 // The consensus follows the PBFT algorithm using collective signatures to
-// perform the prepare and commit phases. The participants will timeout after a
-// round timeout if no block is created *and* transactions are available in
-// their pools. The view change procedure is always waiting on the next leader
-// confirmation before moving to a different one, which means if not enough
-// nodes are online to create a block, the round will fail until enough wakes up
-// and confirm the next leader. If the new leader fails to create a block within
-// round timeout, a new view change starts to move to the next candidate and so
-// on until a block is created.
+// perform the prepare and commit phases. The leader is orchestrating the
+// protocol and the followers wait for incoming messages to update their own
+// state machines and reply with signatures when the leader candidate is valid.
+// If the leader fails to send a candidate, or finalize it, the followers will
+// timeout after some time and move to a view change state.
+//
+// The view change procedure is always waiting on the leader+1 confirmation
+// before moving to leader+2, leader+3, etc. It means that if not enough nodes
+// are online to create a block, the round will fail until enough wakes up and
+// confirm leader+1. If leader+1 fails to create a block within the round
+// timeout, a new view change starts for leader+2 and so on until a block is
+// created.
 //
 // Before each PBFT round, a synchronization is run from the leader to allow
 // nodes that have fallen behind (or are new) to catch missing blocks. Only a
