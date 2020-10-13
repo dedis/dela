@@ -1,3 +1,17 @@
+// Package pbft defines a state machine to perform PBFT using collective
+// signatures.
+//
+// The package also implements a default state machine that allows only one
+// block candidate per leader so that after a successful prepare phase, it
+// expects the block to be committed and finalized. The only other state allowed
+// is the view change if the round has expired.
+//
+// The view change can be fixed only by providing enough valid views from unique
+// participants to comply to the 2f threshold, or if a catch up that provides a
+// proof of acceptance of the block.
+//
+// Documentation Last Review: 13.10.2020
+//
 package pbft
 
 import (
@@ -62,17 +76,50 @@ const (
 
 // StateMachine is the interface to implement to support a PBFT protocol.
 type StateMachine interface {
+	// GetState returns the current state.
 	GetState() State
+
+	// GetLeader returns the address of the round leader.
 	GetLeader() (mino.Address, error)
+
+	// GetViews returns the list of views for which the round has been accepted,
+	// after a successful view change. Otherwise it is empty.
 	GetViews() map[mino.Address]View
+
+	// GetCommit returns the candidate digest and the associated block if the
+	// state machine is committed to a candidate, otherwise the behaviour is
+	// undefined.
 	GetCommit() (types.Digest, types.Block)
+
+	// Prepare processes the candidate block and moves the state machine if it
+	// is valid and from the correct leader.
 	Prepare(from mino.Address, block types.Block) (types.Digest, error)
+
+	// Commit moves the state machine to the next state if the signature is
+	// valid for the candidate.
 	Commit(types.Digest, crypto.Signature) error
+
+	// Finalize finalizes a round if the signature is a valid commit signature.
 	Finalize(types.Digest, crypto.Signature) error
+
+	// Accept processes the view during a view change state, and moves to a new
+	// round if enough have been received.
 	Accept(View) error
+
+	// AcceptAll processes the list of views so that it may proceed to a future
+	// round if the list contains enough valid views.
 	AcceptAll([]View) error
+
+	// Expire announces that the round has expired and moves the state machine
+	// to a view change state.
 	Expire(addr mino.Address) (View, error)
+
+	// CatchUp forces a valid block to be processed by the state machine without
+	// doing the intermediate phases.
 	CatchUp(types.BlockLink) error
+
+	// Watch returns a channel that is populated with the changes of states from
+	// the state machine.
 	Watch(context.Context) <-chan State
 }
 
@@ -93,6 +140,9 @@ type round struct {
 // authority for a given tree.
 type AuthorityReader func(tree hashtree.Tree) (authority.Authority, error)
 
+// pbftsm is an implementation of a state machine to perform PBFT rounds.
+//
+// - implements pbft.Statemachine
 type pbftsm struct {
 	sync.Mutex
 
@@ -531,7 +581,7 @@ func (m *pbftsm) verifyPrepare(tree hashtree.Tree, block types.Block, r *round, 
 	})
 
 	if err != nil {
-		return xerrors.Errorf("tree failed: %v", err)
+		return xerrors.Errorf("while updating tree: %v", err)
 	}
 
 	root := types.Digest{}
@@ -619,7 +669,7 @@ func (m *pbftsm) verifyFinalize(r *round, sig crypto.Signature, ro authority.Aut
 		// 1. Persist the tree through the transaction and update the cache.
 		err := r.tree.WithTx(txn).Commit()
 		if err != nil {
-			return xerrors.Errorf("commit tree: %v", err)
+			return xerrors.Errorf("while committing tree: %v", err)
 		}
 
 		var unlock func()
