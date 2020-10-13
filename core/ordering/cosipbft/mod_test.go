@@ -217,27 +217,90 @@ func TestService_Setup(t *testing.T) {
 	err := srvc.Setup(ctx, authority)
 	require.NoError(t, err)
 
-	err = srvc.Setup(ctx, authority)
+	_, more := <-srvc.started
+	require.False(t, more)
+
+	genesis, err := srvc.genesis.Get()
+	require.NoError(t, err)
+	require.Equal(t, 3, genesis.GetRoster().Len())
+}
+
+func TestService_AlreadySet_Setup(t *testing.T) {
+	srvc := &Service{
+		processor: newProcessor(),
+	}
+
+	srvc.tree = blockstore.NewTreeCache(fakeTree{})
+	srvc.access = fakeAccess{}
+	srvc.genesis = blockstore.NewGenesisStore()
+	srvc.genesis.Set(types.Genesis{})
+
+	authority := fake.NewAuthority(3, fake.NewSigner)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := srvc.Setup(ctx, authority)
 	require.EqualError(t, err,
 		"creating genesis: set genesis failed: genesis block is already set")
+}
 
-	srvc.started = make(chan struct{})
+func TestService_FailReadGenesis_Setup(t *testing.T) {
+	srvc := &Service{
+		processor: newProcessor(),
+	}
+
+	srvc.tree = blockstore.NewTreeCache(fakeTree{})
+	srvc.access = fakeAccess{}
 	srvc.genesis = fakeGenesisStore{errGet: fake.GetError()}
-	err = srvc.Setup(ctx, authority)
-	require.EqualError(t, err, fake.Err("failed to read genesis"))
 
-	srvc.started = make(chan struct{})
+	authority := fake.NewAuthority(3, fake.NewSigner)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := srvc.Setup(ctx, authority)
+	require.EqualError(t, err, fake.Err("failed to read genesis"))
+}
+
+func TestService_FailPropagate_Setup(t *testing.T) {
+	srvc := &Service{
+		processor: newProcessor(),
+	}
+
+	srvc.tree = blockstore.NewTreeCache(fakeTree{})
+	srvc.access = fakeAccess{}
 	srvc.genesis = blockstore.NewGenesisStore()
 	srvc.rpc = fake.NewBadRPC()
-	err = srvc.Setup(ctx, authority)
-	require.EqualError(t, err, fake.Err("sending genesis"))
 
-	srvc.started = make(chan struct{})
+	authority := fake.NewAuthority(3, fake.NewSigner)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := srvc.Setup(ctx, authority)
+	require.EqualError(t, err, fake.Err("sending genesis"))
+}
+
+func TestService_RequestFailure_Setup(t *testing.T) {
+	srvc := &Service{
+		processor: newProcessor(),
+	}
+
+	srvc.tree = blockstore.NewTreeCache(fakeTree{})
+	srvc.access = fakeAccess{}
 	srvc.genesis = blockstore.NewGenesisStore()
-	rpc = fake.NewRPC()
+
+	rpc := fake.NewRPC()
 	rpc.SendResponseWithError(fake.NewAddress(1), fake.GetError())
 	srvc.rpc = rpc
-	err = srvc.Setup(ctx, authority)
+
+	authority := fake.NewAuthority(3, fake.NewSigner)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := srvc.Setup(ctx, authority)
 	require.EqualError(t, err, fake.Err("one request failed"))
 }
 
@@ -322,39 +385,176 @@ func TestService_DoRound(t *testing.T) {
 	// Round with timeout and a transaction in the pool.
 	err = srvc.doRound(ctx)
 	require.NoError(t, err)
+}
 
-	err = srvc.doRound(ctx)
+func TestService_ViewchangeFailed_DoRound(t *testing.T) {
+	pbftsm := fakeSM{
+		state: pbft.ViewChangeState,
+		ch:    make(chan pbft.State),
+	}
+	// Stuck to view change state thus causing the view to fail.
+	close(pbftsm.ch)
+
+	rpc := fake.NewRPC()
+	rpc.Done()
+
+	srvc := &Service{
+		processor:                newProcessor(),
+		me:                       fake.NewAddress(1),
+		rpc:                      rpc,
+		timeoutRound:             time.Millisecond,
+		timeoutRoundAfterFailure: time.Millisecond,
+	}
+
+	srvc.blocks = blockstore.NewInMemory()
+	srvc.pool = mem.NewPool()
+	srvc.tree = blockstore.NewTreeCache(fakeTree{})
+	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
+	srvc.pbftsm = pbftsm
+
+	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := srvc.doRound(ctx)
 	require.EqualError(t, err, "viewchange failed")
+}
 
-	srvc.pbftsm = fakeSM{err: fake.GetError(), state: pbft.InitialState}
-	err = srvc.doRound(ctx)
+func TestService_FailPBFTExpire_DoRound(t *testing.T) {
+	rpc := fake.NewRPC()
+	rpc.Done()
+
+	srvc := &Service{
+		processor:                newProcessor(),
+		me:                       fake.NewAddress(1),
+		rpc:                      rpc,
+		timeoutRound:             time.Millisecond,
+		timeoutRoundAfterFailure: time.Millisecond,
+	}
+
+	srvc.blocks = blockstore.NewInMemory()
+	srvc.pool = mem.NewPool()
+	srvc.tree = blockstore.NewTreeCache(fakeTree{})
+	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
+	srvc.pbftsm = fakeSM{
+		err:   fake.GetError(),
+		state: pbft.InitialState,
+	}
+
+	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := srvc.doRound(ctx)
 	require.EqualError(t, err, fake.Err("pbft expire failed"))
+}
 
+func TestService_FailSendViews_DoRound(t *testing.T) {
+	srvc := &Service{
+		processor:                newProcessor(),
+		me:                       fake.NewAddress(1),
+		rpc:                      fake.NewBadRPC(),
+		timeoutRound:             time.Millisecond,
+		timeoutRoundAfterFailure: time.Millisecond,
+	}
+
+	srvc.blocks = blockstore.NewInMemory()
+	srvc.pool = mem.NewPool()
+	srvc.tree = blockstore.NewTreeCache(fakeTree{})
+	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 	srvc.pbftsm = fakeSM{}
-	srvc.rpc = fake.NewBadRPC()
-	err = srvc.doRound(ctx)
-	require.EqualError(t, err, fake.Err("rpc failed"))
 
+	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := srvc.doRound(ctx)
+	require.EqualError(t, err, fake.Err("rpc failed to send views"))
+}
+
+func TestService_FailReadRoster_DoRound(t *testing.T) {
+	srvc := &Service{
+		processor:                newProcessor(),
+		me:                       fake.NewAddress(1),
+		timeoutRound:             time.Millisecond,
+		timeoutRoundAfterFailure: time.Millisecond,
+	}
+
+	srvc.tree = blockstore.NewTreeCache(fakeTree{})
 	srvc.rosterFac = badRosterFac{}
-	err = srvc.doRound(ctx)
-	require.EqualError(t, err, fake.Err("reading roster: decode failed"))
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := srvc.doRound(ctx)
+	require.EqualError(t, err, fake.Err("reading roster: decode failed"))
+}
+
+func TestService_FailReadLeader_DoRound(t *testing.T) {
+	srvc := &Service{
+		processor:                newProcessor(),
+		me:                       fake.NewAddress(1),
+		timeoutRound:             time.Millisecond,
+		timeoutRoundAfterFailure: time.Millisecond,
+	}
+
+	srvc.tree = blockstore.NewTreeCache(fakeTree{})
 	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 	srvc.pbftsm = fakeSM{errLeader: fake.GetError()}
-	err = srvc.doRound(ctx)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := srvc.doRound(ctx)
 	require.EqualError(t, err, fake.Err("reading leader"))
+}
 
+func TestService_FailSync_DoRound(t *testing.T) {
+	srvc := &Service{
+		processor:                newProcessor(),
+		me:                       fake.NewAddress(0),
+		timeoutRound:             time.Millisecond,
+		timeoutRoundAfterFailure: time.Millisecond,
+	}
+
+	srvc.blocks = blockstore.NewInMemory()
+	srvc.tree = blockstore.NewTreeCache(fakeTree{})
+	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 	srvc.pbftsm = fakeSM{}
-	srvc.me = fake.NewAddress(0)
 	srvc.sync = fakeSync{err: fake.GetError()}
-	err = srvc.doRound(ctx)
-	require.EqualError(t, err, fake.Err("sync failed"))
 
-	srvc.timeoutRound = RoundTimeout
-	srvc.timeoutRoundAfterFailure = RoundTimeout
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := srvc.doRound(ctx)
+	require.EqualError(t, err, fake.Err("sync failed"))
+}
+
+func TestService_FailPBFT_DoRound(t *testing.T) {
+	srvc := &Service{
+		processor:                newProcessor(),
+		me:                       fake.NewAddress(0),
+		timeoutRound:             RoundTimeout,
+		timeoutRoundAfterFailure: RoundTimeout,
+		val:                      fakeValidation{err: fake.GetError()},
+	}
+
+	srvc.blocks = blockstore.NewInMemory()
+	srvc.pool = mem.NewPool()
+	srvc.tree = blockstore.NewTreeCache(fakeTree{})
+	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
+	srvc.pbftsm = fakeSM{}
 	srvc.sync = fakeSync{}
-	srvc.val = fakeValidation{err: fake.GetError()}
-	err = srvc.doRound(ctx)
+
+	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := srvc.doRound(ctx)
 	require.EqualError(t, err,
 		fake.Err("pbft failed: failed to prepare data: staging tree failed: validation failed"))
 }
@@ -390,52 +590,184 @@ func TestService_DoPBFT(t *testing.T) {
 	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
 	err = srvc.doPBFT(ctx)
 	require.NoError(t, err)
+}
 
+func TestService_ContextCanceld_DoPBFT(t *testing.T) {
+	srvc := &Service{processor: newProcessor()}
 	srvc.val = fakeValidation{err: fake.GetError()}
-	err = srvc.doPBFT(ctx)
-	require.EqualError(t, err,
-		fake.Err("failed to prepare data: staging tree failed: validation failed"))
-
-	srvc.val = fakeValidation{}
-	srvc.hashFactory = fake.NewHashFactory(fake.NewBadHash())
-	err = srvc.doPBFT(ctx)
-	require.EqualError(t, err,
-		fake.Err("creating block failed: fingerprint failed: couldn't write index"))
-
-	srvc.hashFactory = crypto.NewSha256Factory()
-	srvc.pbftsm = fakeSM{err: fake.GetError()}
-	err = srvc.doPBFT(ctx)
-	require.EqualError(t, err, fake.Err("pbft prepare failed"))
-
+	srvc.tree = blockstore.NewTreeCache(fakeTree{})
 	srvc.pbftsm = fakeSM{}
-	srvc.tree.Set(fakeTree{err: fake.GetError()})
-	err = srvc.doPBFT(ctx)
-	require.EqualError(t, err, fake.Err("read roster failed: read from tree"))
+	srvc.pool = mem.NewPool()
 
-	srvc.tree.Set(fakeTree{})
-	srvc.actor = fakeCosiActor{err: fake.GetError()}
-	err = srvc.doPBFT(ctx)
-	require.EqualError(t, err, fake.Err("prepare phase failed"))
+	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
 
-	srvc.actor = fakeCosiActor{err: fake.GetError(), counter: fake.NewCounter(1)}
-	err = srvc.doPBFT(ctx)
-	require.EqualError(t, err, fake.Err("commit phase failed"))
-
-	srvc.actor = fakeCosiActor{}
-	srvc.rpc = fake.NewBadRPC()
-	err = srvc.doPBFT(ctx)
-	require.EqualError(t, err, fake.Err("rpc failed"))
-
-	srvc.rpc = rpc
-	srvc.genesis = blockstore.NewGenesisStore()
-	err = srvc.doPBFT(ctx)
-	require.EqualError(t, err, "wake up failed: read genesis failed: missing genesis block")
-
-	ctx, cancel = context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err = srvc.doPBFT(ctx)
+	err := srvc.doPBFT(ctx)
 	require.EqualError(t, err, "context canceled")
+}
+
+func TestService_FailValidation_DoPBFT(t *testing.T) {
+	srvc := &Service{processor: newProcessor()}
+	srvc.val = fakeValidation{err: fake.GetError()}
+	srvc.tree = blockstore.NewTreeCache(fakeTree{})
+	srvc.pbftsm = fakeSM{}
+	srvc.pool = mem.NewPool()
+
+	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srvc.val = fakeValidation{err: fake.GetError()}
+	err := srvc.doPBFT(ctx)
+	require.EqualError(t, err,
+		fake.Err("failed to prepare data: staging tree failed: validation failed"))
+}
+
+func TestService_FailCreateBlock_DoPBFT(t *testing.T) {
+	srvc := &Service{processor: newProcessor()}
+	srvc.val = fakeValidation{}
+	srvc.tree = blockstore.NewTreeCache(fakeTree{})
+	srvc.pbftsm = fakeSM{}
+	srvc.pool = mem.NewPool()
+	srvc.hashFactory = fake.NewHashFactory(fake.NewBadHash())
+	srvc.blocks = blockstore.NewInMemory()
+
+	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := srvc.doPBFT(ctx)
+	require.EqualError(t, err,
+		fake.Err("creating block failed: fingerprint failed: couldn't write index"))
+}
+
+func TestService_FailPrepare_DoPBFT(t *testing.T) {
+	srvc := &Service{processor: newProcessor()}
+	srvc.val = fakeValidation{}
+	srvc.tree = blockstore.NewTreeCache(fakeTree{})
+	srvc.pbftsm = fakeSM{err: fake.GetError()}
+	srvc.pool = mem.NewPool()
+	srvc.hashFactory = crypto.NewSha256Factory()
+	srvc.blocks = blockstore.NewInMemory()
+
+	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := srvc.doPBFT(ctx)
+	require.EqualError(t, err, fake.Err("pbft prepare failed"))
+}
+
+func TestService_FailReadRoster_DoPBFT(t *testing.T) {
+	srvc := &Service{processor: newProcessor()}
+	srvc.val = fakeValidation{}
+	srvc.tree = blockstore.NewTreeCache(fakeTree{err: fake.GetError()})
+	srvc.pbftsm = fakeSM{}
+	srvc.pool = mem.NewPool()
+	srvc.hashFactory = crypto.NewSha256Factory()
+	srvc.blocks = blockstore.NewInMemory()
+
+	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := srvc.doPBFT(ctx)
+	require.EqualError(t, err, fake.Err("read roster failed: read from tree"))
+}
+
+func TestService_FailPrepareSig_DoPBFT(t *testing.T) {
+	srvc := &Service{processor: newProcessor()}
+	srvc.val = fakeValidation{}
+	srvc.tree = blockstore.NewTreeCache(fakeTree{})
+	srvc.pbftsm = fakeSM{}
+	srvc.pool = mem.NewPool()
+	srvc.hashFactory = crypto.NewSha256Factory()
+	srvc.blocks = blockstore.NewInMemory()
+	srvc.actor = fakeCosiActor{err: fake.GetError()}
+	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
+
+	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := srvc.doPBFT(ctx)
+	require.EqualError(t, err, fake.Err("prepare signature failed"))
+}
+
+func TestService_FailCommitSign_DoPBFT(t *testing.T) {
+	srvc := &Service{processor: newProcessor()}
+	srvc.val = fakeValidation{}
+	srvc.tree = blockstore.NewTreeCache(fakeTree{})
+	srvc.pbftsm = fakeSM{}
+	srvc.pool = mem.NewPool()
+	srvc.hashFactory = crypto.NewSha256Factory()
+	srvc.blocks = blockstore.NewInMemory()
+	srvc.actor = fakeCosiActor{
+		err:     fake.GetError(),
+		counter: fake.NewCounter(1),
+	}
+	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
+
+	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := srvc.doPBFT(ctx)
+	require.EqualError(t, err, fake.Err("commit signature failed"))
+}
+
+func TestService_FailPropagation_DoPBFT(t *testing.T) {
+	srvc := &Service{processor: newProcessor()}
+	srvc.val = fakeValidation{}
+	srvc.tree = blockstore.NewTreeCache(fakeTree{})
+	srvc.pbftsm = fakeSM{}
+	srvc.pool = mem.NewPool()
+	srvc.hashFactory = crypto.NewSha256Factory()
+	srvc.blocks = blockstore.NewInMemory()
+	srvc.actor = fakeCosiActor{}
+	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
+	srvc.rpc = fake.NewBadRPC()
+
+	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := srvc.doPBFT(ctx)
+	require.EqualError(t, err, fake.Err("propagation failed"))
+}
+
+func TestService_FailWakeUp_DoPBFT(t *testing.T) {
+	rpc := fake.NewRPC()
+	rpc.Done()
+
+	srvc := &Service{processor: newProcessor()}
+	srvc.val = fakeValidation{}
+	srvc.tree = blockstore.NewTreeCache(fakeTree{})
+	srvc.pbftsm = fakeSM{}
+	srvc.pool = mem.NewPool()
+	srvc.hashFactory = crypto.NewSha256Factory()
+	srvc.blocks = blockstore.NewInMemory()
+	srvc.actor = fakeCosiActor{}
+	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
+	srvc.rpc = rpc
+	srvc.genesis = blockstore.NewGenesisStore()
+
+	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := srvc.doPBFT(ctx)
+	require.EqualError(t, err, "wake up failed: read genesis failed: missing genesis block")
 }
 
 func TestService_WakeUp(t *testing.T) {

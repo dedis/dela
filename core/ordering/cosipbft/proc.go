@@ -1,3 +1,9 @@
+// Theis file contains the network message handler implementations for the
+// collective signing reactor and the module rpc.
+//
+// Documentation Last Review: 12.10.2020
+//
+
 package cosipbft
 
 import (
@@ -30,6 +36,7 @@ var (
 // Processor processes the messages to run a collective signing PBFT consensus.
 //
 // - implements cosi.Reactor
+// - implements mino.Handler
 type processor struct {
 	mino.UnsupportedHandler
 	types.MessageFactory
