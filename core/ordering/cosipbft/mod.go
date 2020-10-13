@@ -554,6 +554,8 @@ func (s *Service) doPBFT(ctx context.Context) error {
 	} else {
 		txs := s.pool.Gather(ctx, pool.Config{Min: 1})
 		if len(txs) == 0 {
+			s.logger.Debug().Msg("no transaction in pool")
+
 			return nil
 		}
 

@@ -96,22 +96,16 @@ func TestMemcoin_Scenario_SetupAndTransactions(t *testing.T) {
 	err = run(args)
 	require.NoError(t, err)
 
-	buffer := new(bytes.Buffer)
-
 	// Run a few transactions.
 	for i := 0; i < 5; i++ {
-		buffer.Reset()
-		err = runWithCfg(args, config{Writer: buffer})
-		require.NoError(t, err)
-		require.Contains(t, buffer.String(), "transaction refused: duplicate in roster")
+		err = runWithCfg(args, config{})
+		require.EqualError(t, err, "command error: transaction refused: duplicate in roster: 127.0.0.1:2115")
 	}
 
 	// Test a timeout waiting for a transaction.
 	args[7] = "1ns"
-	buffer.Reset()
-	err = runWithCfg(args, config{Writer: buffer})
-	require.NoError(t, err)
-	require.Contains(t, buffer.String(), "transaction not found after timeout\n")
+	err = runWithCfg(args, config{})
+	require.EqualError(t, err, "command error: transaction not found after timeout")
 
 	// Test a bad command.
 	err = runWithCfg([]string{os.Args[0], "ordering", "setup"}, cfg)
@@ -161,7 +155,7 @@ func TestMemcoin_Scenario_RestartNode(t *testing.T) {
 	)
 
 	err = run(args)
-	require.NoError(t, err)
+	require.EqualError(t, err, "command error: transaction refused: duplicate in roster: 127.0.0.1:2210")
 }
 
 // -----------------------------------------------------------------------------

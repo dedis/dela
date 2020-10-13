@@ -109,7 +109,7 @@ func TestCliBuilder_MakeAction(t *testing.T) {
 
 	builder.daemonFactory = fakeFactory{errClient: fake.GetError()}
 	err = builder.MakeAction(fakeAction{})(ctx)
-	require.EqualError(t, err, fake.Err("couldn't send action"))
+	require.EqualError(t, err, fake.GetError().Error())
 }
 
 func TestCliBuilder_Build(t *testing.T) {
