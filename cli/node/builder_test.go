@@ -12,7 +12,7 @@ import (
 )
 
 func TestCliBuilder_Command(t *testing.T) {
-	builder := &cliBuilder{}
+	builder := &CLIBuilder{}
 
 	cmd := builder.SetCommand("test")
 	require.NotNil(t, cmd)
@@ -20,14 +20,14 @@ func TestCliBuilder_Command(t *testing.T) {
 }
 
 func TestCliBuilder_SetStartFlags(t *testing.T) {
-	builder := &cliBuilder{}
+	builder := &CLIBuilder{}
 
 	builder.SetStartFlags(cli.StringFlag{}, cli.IntFlag{})
 	require.Len(t, builder.startFlags, 2)
 }
 
 func TestCliBuilder_Start(t *testing.T) {
-	builder := NewBuilder(fakeInitializer{}).(*cliBuilder)
+	builder := NewBuilder(fakeInitializer{})
 
 	builder.sigs <- syscall.SIGTERM
 	close(builder.sigs)
@@ -37,7 +37,7 @@ func TestCliBuilder_Start(t *testing.T) {
 }
 
 func TestCliBuilder_ForbiddenFolder_Start(t *testing.T) {
-	builder := NewBuilder(fakeInitializer{}).(*cliBuilder)
+	builder := NewBuilder(fakeInitializer{})
 
 	fset := flag.NewFlagSet("", 0)
 	fset.String("config", "\x00", "")
@@ -51,7 +51,7 @@ func TestCliBuilder_ForbiddenFolder_Start(t *testing.T) {
 }
 
 func TestCliBuilder_FailedDaemon_Start(t *testing.T) {
-	builder := NewBuilder(fakeInitializer{}).(*cliBuilder)
+	builder := NewBuilder(fakeInitializer{})
 
 	builder.daemonFactory = fakeFactory{err: fake.GetError()}
 
@@ -60,7 +60,7 @@ func TestCliBuilder_FailedDaemon_Start(t *testing.T) {
 }
 
 func TestCliBuilder_FailStartDaemon_Start(t *testing.T) {
-	builder := NewBuilder(fakeInitializer{}).(*cliBuilder)
+	builder := NewBuilder(fakeInitializer{})
 
 	builder.daemonFactory = fakeFactory{errDaemon: fake.GetError()}
 
@@ -69,14 +69,14 @@ func TestCliBuilder_FailStartDaemon_Start(t *testing.T) {
 }
 
 func TestCliBuilder_FailStartComponent_Start(t *testing.T) {
-	builder := NewBuilder(fakeInitializer{err: fake.GetError()}).(*cliBuilder)
+	builder := NewBuilder(fakeInitializer{err: fake.GetError()})
 
 	err := builder.start(nil)
 	require.EqualError(t, err, fake.Err("couldn't run the controller"))
 }
 
 func TestCliBuilder_FailStopComponent_Start(t *testing.T) {
-	builder := NewBuilder(fakeInitializer{errStop: fake.GetError()}).(*cliBuilder)
+	builder := NewBuilder(fakeInitializer{errStop: fake.GetError()})
 	builder.enableSignal = false
 	close(builder.sigs)
 
@@ -86,7 +86,7 @@ func TestCliBuilder_FailStopComponent_Start(t *testing.T) {
 
 func TestCliBuilder_MakeAction(t *testing.T) {
 	calls := &fake.Call{}
-	builder := &cliBuilder{
+	builder := &CLIBuilder{
 		actions:       &actionMap{},
 		daemonFactory: fakeFactory{calls: calls},
 	}
@@ -113,7 +113,7 @@ func TestCliBuilder_MakeAction(t *testing.T) {
 }
 
 func TestCliBuilder_Build(t *testing.T) {
-	builder := &cliBuilder{
+	builder := &CLIBuilder{
 		actions:       &actionMap{},
 		daemonFactory: fakeFactory{},
 		inits:         []Initializer{fakeInitializer{}},
@@ -152,7 +152,7 @@ func TestCliBuilder_UnknownType_BuildFlags(t *testing.T) {
 		require.Equal(t, "flag type '<nil>' not supported", r)
 	}()
 
-	builder := &cliBuilder{}
+	builder := &CLIBuilder{}
 	builder.SetStartFlags((cli.Flag)(nil))
 
 	builder.buildFlags(builder.startFlags)

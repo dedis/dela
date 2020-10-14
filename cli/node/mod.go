@@ -1,32 +1,11 @@
-// Package node the Builder type, which builds an CLI application to controle a
-// node. The application will have a start command by default and it provide a
+// Package node defines the Builder type, which builds an CLI application to
+// controle a node.
+//
+// The application will have a start command by default and it provides a
 // function to create actions that will eventually be executed on the running
-// node.
+// node. See the example.
 //
-// 	type helloTemplate struct{}
-//
-// 	func (tmpl helloTemplate) GenerateRequest(flags cli.Flags) ([]byte, error) {
-// 		return []byte(flags.String("dude")), nil
-// 	}
-//
-// 	func (tmpl helloTemplate) Execute(ctx Context) error {
-// 		buffer, err := ioutil.ReadAll(ctx.In)
-// 		// if err != nil ...
-//
-// 		var hello Hello
-// 		err = ctx.Injector.Resolve(&hello)
-// 		// if err != nil ...
-//
-// 		hello.SayTo(string(buffer))
-// 		return nil
-// 	}
-//
-// The template provided to the builder will return an action that can be used
-// to create a command.
-//
-// 	var builder Builder
-// 	cmd := builder.SetCommand("hello")
-// 	cmd.SetAction(builder.MakeAction(helloTemplate{}))
+// Document Last Review: 13.10.2020
 //
 package node
 
