@@ -3,9 +3,11 @@ overwrite: true
 outfile: graph.dot
 includes:
   - go.dedis.ch/dela/core*
-#  - go.dedis.ch/dela/cosi*
+  - go.dedis.ch/dela/cosi*
   - go.dedis.ch/dela/cli*
-  - go.dedis.ch/dela/mino*
+  # - go.dedis.ch/dela/mino*
+  # - go.dedis.ch/dela/serde*
+  # - go.dedis.ch/dela/crypto*
 excludes:
   - go.dedis.ch/dela/core/.*(controller|store|types|json)
 interfaces:

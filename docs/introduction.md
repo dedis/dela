@@ -46,65 +46,22 @@ crypto-currency.
 
 ## Architecture
 
-What is the best and minimal recipe for a distributed ledger architecture? We
-asked ourself the same and came out with the following core ingredients:
+Dela has 6 core modules that you will find in `core/`:
 
-- We first need an **overlay** module, which is responsible for transmitting
-  messages from one entity to another one. If a group of human wants to talk and
-  agree on a state, the overlay would be the common speaking language and the
-  vocal cords that allow the persons to communicate and exchange pieces of
-  information. With Dela, the overlay layer is called "Mino" for "Minimalist
-  Network Overlay".
-- Secondly, we need a **consensus** module, which describes how a set of
-  entities can interact to agree on something. Most of the time it comes to the
-  form of a zero/low trust interaction protocol. For example, in a teaching
-  class, a common consensus is that the first to raise its hand can speak
-  and propose a solution. The consensus is the core part of a distributed ledger
-  that makes the agreement on a state possible.
-- Then, we need a **ledger** module, which keeps track of
-  events and decisions that occur among the entities. In real life we easily
-  keep track of elements by using a pen and paper. The ledger abstraction is the
-  main entry point that provides the end-user operations. The ledger module
-  holds the **will** to keep track of things, but it actually does not have a
-  pen and paper. For that it will make use of the other module. As such, the
-  ledger module is mainly an orchestrator.
-- We then need a **transaction** module, which describes *how* elements must be
-  written on the ledger. If we had to use a transaction module when we write
-  something on a paper, it would be the entity that tells us to write things
-  word by word, or sentence by sentence (but don't stop in the middle of a
-  word!).
-- Finally, we need an **inventory** module, which describes *where* elements on
-  the ledger are saved. In fact, there are a lot of mediums to store data, like
-  writing data to a file or using volatile memory. In real life, we also have
-  loads of means to store information, for example on papers, in our brain, or
-  even stone tablets. All have their advantages and Dela doesn't stick to one
-  particular solution. As with all our modules, Dela offers the ability to use
-  any implementation that satisfies the module's requirements.
+- access
+- execution
+- ordering
+- store
+- txn (and its sub-module txn/pool)
+- validation
 
-The **Ledger** module plays the central part of welcoming incoming clients'
-requests and processing them by using the other modules. The 5 modules we
-described above are the minimal set of modules needed to run a distributed
-ledger, what we call the "core" modules. There are some other modules, called
-"additional" modules that can be used for more specific distributed ledgers.
-Those are:
+The following diagram simplifies a lot the system to offer a general and
+informal overview of the components' interactions, from both the client's side
+and the node's side:
 
-- The **blockchain** module, which can be used for blockchain-based distributed ledgers.
-- The **ARC** modules, that stands for "Access Right Control" and can be used
-  for specific permissioned ledger.
+![global overview](assets/overview.png)
 
-To end this overview on Dela's architecture, here is an illustration that
-describes the interactions between the elements we described so far:
-
-![](assets/modules.png)
-
-The **Overlay** module is a transversal layer that is used by each other
-modules.
-
-## Complete packages dependencies
-
-This is still a WIP, here is the current interactions between the packages:
-
-![](assets/packages.png)
+More documentations and diagrams can be found in [architecture](architecture.md).
 
 ## Terminologies
 
