@@ -18,7 +18,7 @@ pool that can work independetly from the other abstractions. In fact, you could
 run a distributed system that only shares transactions.
 
 The second is a service that accepts a transaction and can return if it will be
-included in the next block, or if it will be rejected. Another aspect defines
+included in the next block, or if it will be rejected. Furthermore, it defines
 the validity of the transaction so that it cannot be reused in a _replay attack_
 for instance.
 

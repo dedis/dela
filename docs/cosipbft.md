@@ -43,32 +43,46 @@ The following schema shows the transitions allowed by the state machine:
 
 ```
 PBFT State Machine
+                      
+     +---------------3---------------+
+     |                               |
+     v                               |
+   +-+-+              +---+        +-+-+
++->+ I +------4------>+ P +---2--->+ C +<--+
+|  +-+-+              +-+-+        +---+   |
+|    |                ^ |          |       |
+|    |    +---+       | 5          |       |
+|    |    | N +---1---+ |          |       |
+|    |    +-+-+         v          |       |
+|    |      |      +----++         |       |
+|    |      +--5-->+     |         |       |
+|    |             |  V  +<----5---+       |
+|    +------5----->+     |                 |
+|                  +-+-+-+                 |
+|                    | |                   |
++----------6---------+ +---------6---------+
 
-                   -------------------<--------------------
-                   |                                      |
------            -----              -----               -----
-| N | ---------> | I | -----------> | P | ------------> | C | <-----
------            ----- <-----       -----               -----      |
-  |                |         |        |                   |        |
-  |                |         |        |                   |        |
-  |                |       -----      |                   |        |
-  -----------------------> | V | <-------------------------        |
-                           -----                                   |
-                             |                                     |
-                             ---------------------------------------
 ```
 
-1. Any of the state can transition to _ViewChange_ (other than (V) itself).
-2. After a view change, it either transition to _Initial_ if no candidate has
-   been comitted, otherwise to _Commit_.
-3. The usual transitions when nothing goes wrong is _Initial_ to _Prepare_ to
-   _Commit_ and back to _Initial_ after the block is finalized.
+1. The state machine is instantiated with an empty state (_None_) and waits for
+   a candidate to transition to _Prepare_.
+2. A _Prepare_ state will transition to the _Commit_ state if a valid signature
+   is provided.
+3. After a round is finalized, the state machine gets back to _Initial_.
+4. the _Initial_ state waits for a new candidate to transition to the _Prepare_
+   state.
+5. Any of the state can transition to _ViewChange_ (other than (V) itself) when
+   the round expires.
+6. After a view change is accepted, it either transition to _Initial_ if no
+   candidate has been comitted, otherwise to _Commit_.
 
-The point (2.) is explained because when a candidate is committed on at least
-one of the participant, it means that a threshold has also committed because the
-signature exists! The system will have to finalize this candidate, even if a new
-leader tries a different one. It will be refused anyway by the participants
-committed to the other.
+The point (6.) is explained because we may be in a _ViewChange_ state while a
+threshold of participants accept a new block. Furthermore, reaching a threshold
+is a prerequisite to a candidate being committed on any participant. As such, if
+a candidate has been committed on at least one of the participants, we know that
+the signature exists. The system will have to finalize this candidate, even if a
+new leader tries a different one. A different candidate will be refused anyway
+by the participants committed to the other.
 
 ## Papers
 
