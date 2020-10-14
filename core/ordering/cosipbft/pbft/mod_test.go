@@ -30,6 +30,9 @@ func TestState_String(t *testing.T) {
 	var state State = 99
 	require.Equal(t, "unknown", state.String())
 
+	state = PrepareState
+	require.Equal(t, "prepare", state.String())
+
 	state = 0
 	require.Equal(t, "none", state.String())
 }
@@ -133,43 +136,184 @@ func TestStateMachine_Prepare(t *testing.T) {
 	id, err = sm.Prepare(from, block)
 	require.NoError(t, err)
 	require.Equal(t, sm.round.id, id)
+}
 
-	sm.state = ViewChangeState
-	_, err = sm.Prepare(from, block)
+func TestStateMachine_WhileViewChange_Prepare(t *testing.T) {
+	sm := &pbftsm{
+		state: ViewChangeState,
+	}
+
+	_, err := sm.Prepare(fake.NewAddress(0), types.Block{})
 	require.EqualError(t, err, "cannot be in view change state during prepare")
+}
 
-	sm.state = InitialState
-	sm.val = badValidation{}
-	_, err = sm.Prepare(from, block)
-	require.EqualError(t, err, fake.Err("tree failed: callback failed: validation failed"))
+func TestStateMachine_WrongLeader_Prepare(t *testing.T) {
+	tree, _, clean := makeTree(t)
+	defer clean()
+
+	sm := &pbftsm{
+		state:      InitialState,
+		authReader: goodReader,
+		tree:       blockstore.NewTreeCache(tree),
+	}
+
+	link := makeLink(t)
+
+	_, err := sm.Prepare(fake.NewAddress(1), link.GetBlock())
+	require.EqualError(t, err, "'fake.Address[1]' is not the leader")
+}
+
+func TestStateMachine_FailedValidation_Prepare(t *testing.T) {
+	tree, db, clean := makeTree(t)
+	defer clean()
+
+	sm := &pbftsm{
+		state:      InitialState,
+		val:        badValidation{},
+		tree:       blockstore.NewTreeCache(tree),
+		db:         db,
+		authReader: goodReader,
+	}
+
+	link := makeLink(t)
+
+	_, err := sm.Prepare(fake.NewAddress(0), link.GetBlock())
+	require.EqualError(t, err, fake.Err("while updating tree: callback failed: validation failed"))
+}
+
+func TestStateMachine_MismatchTreeRoot_Prepare(t *testing.T) {
+	tree, db, clean := makeTree(t)
+	defer clean()
+
+	sm := &pbftsm{
+		state:      InitialState,
+		val:        badValidation{},
+		tree:       blockstore.NewTreeCache(tree),
+		db:         db,
+		authReader: goodReader,
+	}
 
 	other, err := types.NewBlock(simple.NewData(nil), types.WithTreeRoot(types.Digest{}))
 	require.NoError(t, err)
 
 	sm.val = simple.NewService(fakeExec{}, nil)
-	_, err = sm.Prepare(from, other)
+	_, err = sm.Prepare(fake.NewAddress(0), other)
 	require.EqualError(t, err, "mismatch tree root '71b6c1d5' != '00000000'")
+}
 
-	sm.genesis = blockstore.NewGenesisStore()
-	_, err = sm.Prepare(from, block)
+func TestStateMachine_MissingGenesis_Prepare(t *testing.T) {
+	tree, db, clean := makeTree(t)
+	defer clean()
+
+	sm := &pbftsm{
+		state:      InitialState,
+		val:        simple.NewService(fakeExec{}, nil),
+		tree:       blockstore.NewTreeCache(tree),
+		db:         db,
+		authReader: goodReader,
+		genesis:    blockstore.NewGenesisStore(),
+		blocks:     blockstore.NewInMemory(),
+	}
+
+	root := types.Digest{}
+	copy(root[:], tree.GetRoot())
+
+	block, err := types.NewBlock(simple.NewData(nil), types.WithTreeRoot(root))
+	require.NoError(t, err)
+
+	_, err = sm.Prepare(fake.NewAddress(0), block)
 	require.EqualError(t, err, "couldn't get latest digest: missing genesis block")
+}
 
-	// Failure to read the roster of the round.
+func TestStateMachine_FailReadCurrentRoster_Prepare(t *testing.T) {
+	tree, db, clean := makeTree(t)
+	defer clean()
+
+	sm := &pbftsm{
+		state:      InitialState,
+		val:        simple.NewService(fakeExec{}, nil),
+		tree:       blockstore.NewTreeCache(tree),
+		db:         db,
+		authReader: badReader,
+		genesis:    blockstore.NewGenesisStore(),
+		blocks:     blockstore.NewInMemory(),
+	}
+
 	sm.genesis.Set(types.Genesis{})
-	sm.authReader = badReader
-	_, err = sm.Prepare(from, block)
+
+	root := types.Digest{}
+	copy(root[:], tree.GetRoot())
+
+	block, err := types.NewBlock(simple.NewData(nil), types.WithTreeRoot(root))
+	require.NoError(t, err)
+
+	_, err = sm.Prepare(fake.NewAddress(0), block)
 	require.EqualError(t, err, fake.Err("failed to read roster"))
+}
+
+func TestStateMachine_FailReadRosterInStageTree_Prepare(t *testing.T) {
+	tree, db, clean := makeTree(t)
+	defer clean()
+
+	counter := fake.NewCounter(1)
+
+	sm := &pbftsm{
+		state: InitialState,
+		val:   simple.NewService(fakeExec{}, nil),
+		tree:  blockstore.NewTreeCache(tree),
+		db:    db,
+		authReader: func(hashtree.Tree) (authority.Authority, error) {
+			if !counter.Done() {
+				counter.Decrease()
+				return authority.FromAuthority(fake.NewAuthority(3, fake.NewSigner)), nil
+			}
+
+			return nil, fake.GetError()
+		},
+		genesis: blockstore.NewGenesisStore(),
+		blocks:  blockstore.NewInMemory(),
+		hashFac: crypto.NewSha256Factory(),
+		watcher: core.NewWatcher(),
+	}
+
+	sm.genesis.Set(types.Genesis{})
+
+	root := types.Digest{}
+	copy(root[:], tree.GetRoot())
+
+	block, err := types.NewBlock(simple.NewData(nil), types.WithTreeRoot(root))
+	require.NoError(t, err)
 
 	// Failure to read the roster of the staging tree.
-	err = sm.verifyPrepare(tree, block, &sm.round, ro)
+	_, err = sm.Prepare(fake.NewAddress(0), block)
 	require.EqualError(t, err, fake.Err("failed to read next roster"))
+}
 
-	sm.authReader = param.AuthorityReader
-	_, err = sm.Prepare(fake.NewAddress(1), block)
-	require.EqualError(t, err, "'fake.Address[1]' is not the leader")
+func TestStateMachine_FailCreateLink_Prepare(t *testing.T) {
+	tree, db, clean := makeTree(t)
+	defer clean()
 
-	sm.hashFac = fake.NewHashFactory(fake.NewBadHash())
-	_, err = sm.Prepare(from, block)
+	sm := &pbftsm{
+		state:      InitialState,
+		val:        simple.NewService(fakeExec{}, nil),
+		tree:       blockstore.NewTreeCache(tree),
+		db:         db,
+		authReader: goodReader,
+		genesis:    blockstore.NewGenesisStore(),
+		blocks:     blockstore.NewInMemory(),
+		hashFac:    fake.NewHashFactory(fake.NewBadHash()),
+		watcher:    core.NewWatcher(),
+	}
+
+	sm.genesis.Set(types.Genesis{})
+
+	root := types.Digest{}
+	copy(root[:], tree.GetRoot())
+
+	block, err := types.NewBlock(simple.NewData(nil), types.WithTreeRoot(root))
+	require.NoError(t, err)
+
+	_, err = sm.Prepare(fake.NewAddress(0), block)
 	require.EqualError(t, err,
 		fake.Err("failed to create link: failed to fingerprint: couldn't write from"))
 }
@@ -180,34 +324,72 @@ func TestStateMachine_Commit(t *testing.T) {
 		verifierFac: fake.NewVerifierFactory(fake.Verifier{}),
 		watcher:     core.NewWatcher(),
 		tree:        blockstore.NewTreeCache(badTree{}),
-		authReader: func(hashtree.Tree) (authority.Authority, error) {
-			return authority.New(nil, nil), nil
+		authReader:  goodReader,
+		round: round{
+			id: types.Digest{1},
 		},
 	}
-	sm.round.id = types.Digest{1}
 
 	err := sm.Commit(types.Digest{1}, fake.Signature{})
 	require.NoError(t, err)
+	require.Equal(t, CommitState, sm.state)
+	require.True(t, sm.round.committed)
+	require.NotNil(t, sm.round.prepareSig)
+}
 
-	sm.state = ViewChangeState
-	err = sm.Commit(types.Digest{}, fake.Signature{})
+func TestStateMachine_WhileViewChange_Commit(t *testing.T) {
+	sm := &pbftsm{
+		state: ViewChangeState,
+	}
+
+	err := sm.Commit(types.Digest{}, fake.Signature{})
 	require.EqualError(t, err, "cannot commit from viewchange state")
+}
 
-	sm.state = PrepareState
-	err = sm.Commit(types.Digest{2}, fake.Signature{})
+func TestStateMachine_MismatchCandidate_Commit(t *testing.T) {
+	sm := &pbftsm{
+		state: PrepareState,
+		round: round{
+			id: types.Digest{1},
+		},
+	}
+
+	err := sm.Commit(types.Digest{2}, fake.Signature{})
 	require.EqualError(t, err, "mismatch id '02000000' != '01000000'")
+}
 
-	sm.verifierFac = fake.NewBadVerifierFactory()
-	err = sm.Commit(types.Digest{1}, fake.Signature{})
+func TestStateMachine_FailCreateVerifier_Commit(t *testing.T) {
+	sm := &pbftsm{
+		state:       PrepareState,
+		verifierFac: fake.NewBadVerifierFactory(),
+		tree:        blockstore.NewTreeCache(badTree{}),
+		authReader:  goodReader,
+	}
+
+	err := sm.Commit(types.Digest{}, fake.Signature{})
 	require.EqualError(t, err, fake.Err("couldn't make verifier"))
+}
 
-	sm.verifierFac = fake.NewVerifierFactory(fake.NewBadVerifier())
-	err = sm.Commit(types.Digest{1}, fake.Signature{})
+func TestStateMachine_WrongSignature_Commit(t *testing.T) {
+	sm := &pbftsm{
+		state:       PrepareState,
+		verifierFac: fake.NewVerifierFactory(fake.NewBadVerifier()),
+		tree:        blockstore.NewTreeCache(badTree{}),
+		authReader:  goodReader,
+	}
+
+	err := sm.Commit(types.Digest{}, fake.Signature{})
 	require.EqualError(t, err, fake.Err("verifier failed"))
+}
 
-	sm.verifierFac = fake.NewVerifierFactory(fake.Verifier{})
-	sm.authReader = badReader
-	err = sm.Commit(types.Digest{1}, fake.Signature{})
+func TestStateMachine_FailReadCurrentRoster_Commit(t *testing.T) {
+	sm := &pbftsm{
+		state:      PrepareState,
+		tree:       blockstore.NewTreeCache(badTree{}),
+		authReader: badReader,
+	}
+
+	err := sm.Commit(types.Digest{}, fake.Signature{})
 	require.EqualError(t, err, fake.Err("failed to read roster"))
 }
 
@@ -237,52 +419,162 @@ func TestStateMachine_Finalize(t *testing.T) {
 
 	err := sm.Finalize(types.Digest{1}, fake.Signature{})
 	require.NoError(t, err)
+}
 
-	err = sm.Finalize(types.Digest{1}, fake.Signature{})
+func TestStateMachine_NotCommitted_Finalize(t *testing.T) {
+	sm := &pbftsm{
+		state: InitialState,
+	}
+
+	err := sm.Finalize(types.Digest{1}, fake.Signature{})
 	require.EqualError(t, err, "mismatch state initial != commit")
+}
 
-	sm.state = CommitState
-	sm.verifierFac = fake.NewBadVerifierFactory()
-	err = sm.Finalize(types.Digest{1}, fake.Signature{})
+func TestStateMachine_FailReadCurrentRoster_Finalize(t *testing.T) {
+	sm := &pbftsm{
+		state:      CommitState,
+		tree:       blockstore.NewTreeCache(badTree{}),
+		authReader: badReader,
+	}
+
+	err := sm.Finalize(types.Digest{}, fake.Signature{})
+	require.EqualError(t, err, fake.Err("failed to read roster"))
+}
+
+func TestStateMachine_FailCreateVerifier_Finalize(t *testing.T) {
+	sm := &pbftsm{
+		state:       CommitState,
+		tree:        blockstore.NewTreeCache(badTree{}),
+		authReader:  goodReader,
+		verifierFac: fake.NewBadVerifierFactory(),
+	}
+
+	err := sm.Finalize(types.Digest{1}, fake.Signature{})
 	require.EqualError(t, err, fake.Err("couldn't make verifier"))
+}
 
-	sm.verifierFac = fake.NewVerifierFactory(fake.NewBadVerifier())
-	sm.round.prepareSig = fake.Signature{}
-	err = sm.Finalize(types.Digest{1}, fake.Signature{})
+func TestStateMachine_WrongSignature_Finalize(t *testing.T) {
+	sm := &pbftsm{
+		state:       CommitState,
+		tree:        blockstore.NewTreeCache(badTree{}),
+		authReader:  goodReader,
+		verifierFac: fake.NewVerifierFactory(fake.NewBadVerifier()),
+		round: round{
+			prepareSig: fake.Signature{},
+		},
+	}
+
+	err := sm.Finalize(types.Digest{}, fake.Signature{})
 	require.EqualError(t, err, fake.Err("verifier failed"))
+}
 
-	sm.verifierFac = fake.NewVerifierFactory(fake.Verifier{})
-	sm.genesis = blockstore.NewGenesisStore()
-	sm.blocks = blockstore.NewInMemory()
-	err = sm.Finalize(types.Digest{1}, fake.Signature{})
+func TestStateMachine_MissingGenesis_Finalize(t *testing.T) {
+	sm := &pbftsm{
+		state:       CommitState,
+		tree:        blockstore.NewTreeCache(badTree{}),
+		authReader:  goodReader,
+		verifierFac: fake.NewVerifierFactory(fake.Verifier{}),
+		genesis:     blockstore.NewGenesisStore(),
+		blocks:      blockstore.NewInMemory(),
+		round: round{
+			prepareSig: fake.Signature{},
+		},
+	}
+
+	err := sm.Finalize(types.Digest{}, fake.Signature{})
 	require.EqualError(t, err, "couldn't get latest digest: missing genesis block")
+}
 
-	sm.blocks = badBlockStore{length: 1}
-	err = sm.Finalize(types.Digest{1}, fake.Signature{})
+func TestStateMachine_BadBlockStore_Finalize(t *testing.T) {
+	sm := &pbftsm{
+		state:       CommitState,
+		tree:        blockstore.NewTreeCache(badTree{}),
+		authReader:  goodReader,
+		verifierFac: fake.NewVerifierFactory(fake.Verifier{}),
+		genesis:     blockstore.NewGenesisStore(),
+		blocks:      badBlockStore{length: 1},
+		round: round{
+			prepareSig: fake.Signature{},
+		},
+	}
+
+	err := sm.Finalize(types.Digest{}, fake.Signature{})
 	require.EqualError(t, err, fake.Err("couldn't get latest digest"))
+}
 
-	sm.blocks = blockstore.NewInMemory()
+func TestStateMachine_FailCommitTree_Finalize(t *testing.T) {
+	tree, db, clean := makeTree(t)
+	defer clean()
+
+	sm := &pbftsm{
+		state:       CommitState,
+		tree:        blockstore.NewTreeCache(tree),
+		authReader:  goodReader,
+		verifierFac: fake.NewVerifierFactory(fake.Verifier{}),
+		genesis:     blockstore.NewGenesisStore(),
+		blocks:      blockstore.NewInMemory(),
+		db:          db,
+		round: round{
+			prepareSig: fake.Signature{},
+			tree:       badTree{},
+		},
+	}
+
 	sm.blocks.Store(makeLink(t))
-	sm.round.tree = badTree{}
-	err = sm.Finalize(types.Digest{1}, fake.Signature{})
-	require.EqualError(t, err, fake.Err("database failed: commit tree"))
 
-	sm.genesis.Set(types.Genesis{})
-	sm.round.tree = tree.(hashtree.StagingTree)
-	sm.hashFac = fake.NewHashFactory(fake.NewBadHash())
-	err = sm.Finalize(types.Digest{1}, fake.Signature{})
+	err := sm.Finalize(types.Digest{}, fake.Signature{})
+	require.EqualError(t, err, fake.Err("database failed: while committing tree"))
+}
+
+func TestStateMachine_FailCreateLink_Finalize(t *testing.T) {
+	tree, db, clean := makeTree(t)
+	defer clean()
+
+	sm := &pbftsm{
+		state:       CommitState,
+		tree:        blockstore.NewTreeCache(tree),
+		authReader:  goodReader,
+		verifierFac: fake.NewVerifierFactory(fake.Verifier{}),
+		genesis:     blockstore.NewGenesisStore(),
+		blocks:      blockstore.NewInMemory(),
+		db:          db,
+		hashFac:     fake.NewHashFactory(fake.NewBadHash()),
+		round: round{
+			prepareSig: fake.Signature{},
+			tree:       tree.(hashtree.StagingTree),
+		},
+	}
+
+	sm.blocks.Store(makeLink(t))
+
+	err := sm.Finalize(types.Digest{1}, fake.Signature{})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "database failed: creating link:")
+}
 
-	sm.hashFac = crypto.NewSha256Factory()
-	sm.blocks = badBlockStore{}
-	err = sm.Finalize(types.Digest{1}, fake.Signature{})
+func TestStateMachine_FailStoreBlock_Finalize(t *testing.T) {
+	tree, db, clean := makeTree(t)
+	defer clean()
+
+	sm := &pbftsm{
+		state:       CommitState,
+		tree:        blockstore.NewTreeCache(tree),
+		authReader:  goodReader,
+		verifierFac: fake.NewVerifierFactory(fake.Verifier{}),
+		genesis:     blockstore.NewGenesisStore(),
+		blocks:      badBlockStore{},
+		db:          db,
+		hashFac:     crypto.NewSha256Factory(),
+		round: round{
+			prepareSig: fake.Signature{},
+			tree:       tree.(hashtree.StagingTree),
+		},
+	}
+
+	sm.genesis.Set(types.Genesis{})
+
+	err := sm.Finalize(types.Digest{1}, fake.Signature{})
 	require.EqualError(t, err, fake.Err("database failed: store block"))
-
-	sm.blocks = blockstore.NewInMemory()
-	sm.authReader = badReader
-	err = sm.Finalize(types.Digest{1}, fake.Signature{})
-	require.EqualError(t, err, fake.Err("failed to read roster"))
 }
 
 func TestStateMachine_Accept(t *testing.T) {
@@ -609,6 +901,10 @@ func (t badTree) WithTx(store.Transaction) hashtree.StagingTree {
 
 func (t badTree) Commit() error {
 	return fake.GetError()
+}
+
+func goodReader(hashtree.Tree) (authority.Authority, error) {
+	return authority.FromAuthority(fake.NewAuthority(3, fake.NewSigner)), nil
 }
 
 func badReader(hashtree.Tree) (authority.Authority, error) {
