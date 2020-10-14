@@ -1,3 +1,9 @@
+// This file contains the implementation of a client and a daemon talking
+// through a UNIX socket.
+//
+// Documentation Last Review: 13.10.2020
+//
+
 package node
 
 import (
@@ -32,12 +38,13 @@ type socketClient struct {
 	socketpath  string
 	out         io.Writer
 	dialTimeout time.Duration
+	dialFn      func(network, addr string, timeout time.Duration) (net.Conn, error)
 }
 
 // Send implements node.Client. It opens a connection and sends the data to the
 // daemon. It writes the result of the command to the output.
 func (c socketClient) Send(data []byte) error {
-	conn, err := net.DialTimeout("unix", c.socketpath, c.dialTimeout)
+	conn, err := c.dialFn("unix", c.socketpath, c.dialTimeout)
 	if err != nil {
 		return xerrors.Errorf("couldn't open connection: %v", err)
 	}
@@ -85,12 +92,13 @@ type socketDaemon struct {
 	actions     *actionMap
 	closing     chan struct{}
 	readTimeout time.Duration
+	listenFn    func(network, addr string) (net.Listener, error)
 }
 
 // Listen implements node.Daemon. It starts the daemon by creating the unix
 // socket file to the path.
 func (d *socketDaemon) Listen() error {
-	socket, err := net.Listen("unix", d.socketpath)
+	socket, err := d.listenFn("unix", d.socketpath)
 	if err != nil {
 		return xerrors.Errorf("couldn't bind socket: %v", err)
 	}
@@ -246,6 +254,7 @@ func (f socketFactory) ClientFromContext(ctx cli.Flags) (Client, error) {
 		socketpath:  f.getSocketPath(ctx),
 		out:         f.out,
 		dialTimeout: ioTimeout,
+		dialFn:      net.DialTimeout,
 	}
 
 	return client, nil
@@ -263,6 +272,7 @@ func (f socketFactory) DaemonFromContext(ctx cli.Flags) (Daemon, error) {
 		actions:     f.actions,
 		closing:     make(chan struct{}),
 		readTimeout: ioTimeout,
+		listenFn:    net.Listen,
 	}
 
 	return daemon, nil

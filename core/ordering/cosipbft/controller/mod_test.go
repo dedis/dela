@@ -19,7 +19,7 @@ func TestMinimal_SetCommands(t *testing.T) {
 	m := NewController()
 
 	b := node.NewBuilder()
-	m.SetCommands(b.(node.Builder))
+	m.SetCommands(b)
 }
 
 func TestMinimal_OnStart(t *testing.T) {

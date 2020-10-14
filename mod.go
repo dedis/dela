@@ -1,3 +1,14 @@
+// Package dela defines the logger.
+//
+// Dela stands for DEDIS Ledger Architecture. It defines the modules that will
+// be combined to deploy a distributed public ledger.
+//
+// Dela is using a global logger with some default parameters. It is disabled by
+// default and the level can be increased using a environment variable:
+//
+//   LLVL=trace go test ./...
+//   LLVL=info go test ./...
+//
 package dela
 
 import (

@@ -1,3 +1,9 @@
+// This file contains the implementation of a simplified flag set used on the
+// daemon side.
+//
+// Documentation Last Review: 13.10.2020
+//
+
 package node
 
 import (
