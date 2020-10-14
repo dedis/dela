@@ -1,3 +1,8 @@
+// This file implements the block and the link that will form a chain.
+//
+// Documentation Last review: 13.10.2020
+//
+
 package types
 
 import (
@@ -47,6 +52,8 @@ func (d Digest) Bytes() []byte {
 
 // Genesis is the very first block of a chain. It contains the initial roster
 // and tree root.
+//
+// - implements serde.Message
 type Genesis struct {
 	digest   Digest
 	roster   authority.Authority
@@ -115,7 +122,8 @@ func (g Genesis) GetRoot() Digest {
 	return g.treeRoot
 }
 
-// Serialize implements serde.Message.
+// Serialize implements serde.Message. It returns the serialized data for this
+// genesis block.
 func (g Genesis) Serialize(ctx serde.Context) ([]byte, error) {
 	format := genesisFormats.Get(ctx.GetFormat())
 
@@ -127,7 +135,8 @@ func (g Genesis) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
-// Fingerprint implements serde.Fingerprinter.
+// Fingerprint implements serde.Fingerprinter. It deterministically writes a
+// binary representation of the genesis block into the writer.
 func (g Genesis) Fingerprint(w io.Writer) error {
 	_, err := w.Write(g.treeRoot[:])
 	if err != nil {
@@ -146,6 +155,8 @@ func (g Genesis) Fingerprint(w io.Writer) error {
 type RosterKey struct{}
 
 // GenesisFactory is a factory to deserialize the genesis messages.
+//
+// - implements serde.Factory
 type GenesisFactory struct {
 	rosterFac authority.Factory
 }
@@ -157,7 +168,8 @@ func NewGenesisFactory(rf authority.Factory) GenesisFactory {
 	}
 }
 
-// Deserialize implements serde.Factory.
+// Deserialize implements serde.Factory. It populates the genesis block if
+// appropriate, otherwise it returns an error.
 func (f GenesisFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := genesisFormats.Get(ctx.GetFormat())
 
@@ -171,11 +183,15 @@ func (f GenesisFactory) Deserialize(ctx serde.Context, data []byte) (serde.Messa
 	return msg, nil
 }
 
-// Block is a block of the chain.
+// Block is a block of a chain. It holds an index which is the height of the
+// block from the genesis block, the Merkle tree root and the validation result
+// of the transactions.
+//
+// - implements serde.Message
 type Block struct {
 	digest   Digest
 	index    uint64
-	data     validation.Data
+	data     validation.Result
 	treeRoot Digest
 }
 
@@ -209,7 +225,7 @@ func WithHashFactory(fac crypto.HashFactory) BlockOption {
 }
 
 // NewBlock creates a new block.
-func NewBlock(data validation.Data, opts ...BlockOption) (Block, error) {
+func NewBlock(data validation.Result, opts ...BlockOption) (Block, error) {
 	tmpl := blockTemplate{
 		Block: Block{
 			data:     data,
@@ -244,12 +260,12 @@ func (b Block) GetIndex() uint64 {
 }
 
 // GetData returns the validated data of the block.
-func (b Block) GetData() validation.Data {
+func (b Block) GetData() validation.Result {
 	return b.data
 }
 
-// GetTransactions is a helper to extract the transactions from the validated
-// data.
+// GetTransactions is a helper to extract the transactions from the validation
+// result.
 func (b Block) GetTransactions() []txn.Transaction {
 	results := b.data.GetTransactionResults()
 	txs := make([]txn.Transaction, len(results))
@@ -289,7 +305,8 @@ func (b Block) Fingerprint(w io.Writer) error {
 	return nil
 }
 
-// Serialize implements serde.Message.
+// Serialize implements serde.Message. It returns the serialized data of the
+// block.
 func (b Block) Serialize(ctx serde.Context) ([]byte, error) {
 	format := blockFormats.Get(ctx.GetFormat())
 
@@ -305,12 +322,14 @@ func (b Block) Serialize(ctx serde.Context) ([]byte, error) {
 type DataKey struct{}
 
 // BlockFactory is a factory to deserialize block messages.
+//
+// - implements serde.Factory
 type BlockFactory struct {
-	dataFac validation.DataFactory
+	dataFac validation.ResultFactory
 }
 
 // NewBlockFactory creates a new block factory.
-func NewBlockFactory(fac validation.DataFactory) BlockFactory {
+func NewBlockFactory(fac validation.ResultFactory) BlockFactory {
 	return BlockFactory{
 		dataFac: fac,
 	}

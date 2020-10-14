@@ -1,3 +1,9 @@
+// The file contains the implementation of a handshake message that is sent to
+// create the routing table.
+//
+// Documentation Last Review: 06.10.2020
+//
+
 package types
 
 import (

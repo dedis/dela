@@ -20,7 +20,7 @@ type Block struct {
 	index uint64
 	nonce uint64
 	root  []byte
-	data  validation.Data
+	data  validation.Result
 	hash  []byte
 }
 
@@ -66,7 +66,7 @@ func WithDifficulty(diff uint) BlockOption {
 }
 
 // NewBlock creates a new block.
-func NewBlock(ctx context.Context, data validation.Data, opts ...BlockOption) (Block, error) {
+func NewBlock(ctx context.Context, data validation.Result, opts ...BlockOption) (Block, error) {
 	tmpl := blockTemplate{
 		Block: Block{
 			data: data,

@@ -1,5 +1,9 @@
-// Package tokens defines a token holder to generate and validate access tokens
-// and provides an in-memory implementation.
+// Package tokens defines a token holder to generate and validate access tokens.
+//
+// The package also provides an in-memory implementation.
+//
+// Documentation Last Review: 07.10.2020
+//
 package tokens
 
 import (
@@ -11,7 +15,11 @@ import (
 
 // Holder is a store for access tokens.
 type Holder interface {
+	// Generate creates a new token that is valid for the provided amount of
+	// time.
 	Generate(expiration time.Duration) string
+
+	// Verify checks that the given token exists and is still valid.
 	Verify(token string) bool
 }
 

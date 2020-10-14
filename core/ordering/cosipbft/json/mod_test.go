@@ -77,7 +77,7 @@ func TestBlockFormat_Encode(t *testing.T) {
 
 	ctx := fake.NewContext()
 
-	block, err := types.NewBlock(fakeData{})
+	block, err := types.NewBlock(fakeResult{})
 	require.NoError(t, err)
 
 	data, err := format.Encode(ctx, block)
@@ -90,7 +90,7 @@ func TestBlockFormat_Encode(t *testing.T) {
 	_, err = format.Encode(fake.NewBadContext(), block)
 	require.EqualError(t, err, fake.Err("failed to marshal"))
 
-	block, err = types.NewBlock(fakeData{err: fake.GetError()})
+	block, err = types.NewBlock(fakeResult{err: fake.GetError()})
 	require.NoError(t, err)
 
 	_, err = format.Encode(ctx, block)
@@ -101,9 +101,9 @@ func TestBlockFormat_Decode(t *testing.T) {
 	format := blockFormat{}
 
 	ctx := fake.NewContext()
-	ctx = serde.WithFactory(ctx, types.DataKey{}, fakeDataFac{})
+	ctx = serde.WithFactory(ctx, types.DataKey{}, fakeResultFac{})
 
-	block, err := types.NewBlock(fakeData{})
+	block, err := types.NewBlock(fakeResult{})
 	require.NoError(t, err)
 
 	msg, err := format.Decode(ctx, []byte(`{}`))
@@ -117,7 +117,7 @@ func TestBlockFormat_Decode(t *testing.T) {
 	_, err = format.Decode(badCtx, []byte(`{}`))
 	require.EqualError(t, err, "invalid data factory '<nil>'")
 
-	badCtx = serde.WithFactory(ctx, types.DataKey{}, fakeDataFac{err: fake.GetError()})
+	badCtx = serde.WithFactory(ctx, types.DataKey{}, fakeResultFac{err: fake.GetError()})
 	_, err = format.Decode(badCtx, []byte(`{}`))
 	require.EqualError(t, err, fake.Err("data factory failed"))
 
@@ -133,7 +133,7 @@ func TestMsgFormat_Encode(t *testing.T) {
 	genesis, err := types.NewGenesis(fakeRoster{})
 	require.NoError(t, err)
 
-	block, err := types.NewBlock(fakeData{})
+	block, err := types.NewBlock(fakeResult{})
 	require.NoError(t, err)
 
 	ctx := fake.NewContext()

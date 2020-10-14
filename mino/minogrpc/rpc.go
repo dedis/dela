@@ -1,3 +1,8 @@
+// This file contains the implementation of the RPC in the context of gRPC.
+//
+// Documentation Last Review: 07.10.2020
+//
+
 package minogrpc
 
 import (
@@ -32,16 +37,11 @@ func (rpc *RPC) Call(ctx context.Context,
 
 	data, err := req.Serialize(rpc.overlay.context)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to marshal msg: %v", err)
-	}
-
-	from, err := rpc.overlay.myAddr.MarshalText()
-	if err != nil {
-		return nil, xerrors.Errorf("failed to marshal address: %v", err)
+		return nil, xerrors.Errorf("while serializing: %v", err)
 	}
 
 	sendMsg := &ptypes.Message{
-		From:    from,
+		From:    []byte(rpc.overlay.myAddrStr),
 		Payload: data,
 	}
 
@@ -144,7 +144,7 @@ func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, m
 	md := metadata.Pairs(
 		headerURIKey, rpc.uri,
 		headerStreamIDKey, streamID,
-		headerGatewayKey, orchestratorCode)
+		headerGatewayKey, rpc.overlay.myAddrStr)
 
 	table, err := rpc.overlay.router.New(mino.NewAddresses())
 	if err != nil {
@@ -156,7 +156,7 @@ func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, m
 	for _, addr := range others {
 		addr, err := addr.MarshalText()
 		if err != nil {
-			return nil, nil, xerrors.Errorf("marshal address failed: %v", err)
+			return nil, nil, xerrors.Errorf("while marshaling address: %v", err)
 		}
 
 		md.Append(headerAddressKey, string(addr))
@@ -191,7 +191,7 @@ func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, m
 
 	sess := session.NewSession(
 		md,
-		newRootAddress(),
+		session.NewOrchestratorAddress(rpc.overlay.myAddr),
 		rpc.factory,
 		rpc.overlay.router.GetPacketFactory(),
 		rpc.overlay.context,

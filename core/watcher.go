@@ -1,3 +1,7 @@
+// Package core implements commonly used tools.
+//
+// Documentation Last Review: 08.10.2020
+//
 package core
 
 import "sync"
@@ -10,14 +14,24 @@ type Observer interface {
 // Observable provides primitives to add and remove observers and to notify
 // them of new events.
 type Observable interface {
+	// Add adds the observer to the list of observers that will be notified of
+	// new events.
 	Add(observer Observer)
+
+	// Remove removes the observer from the list thus stopping it from receiving
+	// new events.
 	Remove(observer Observer)
+
+	// Notify notifies the observers of a new event.
 	Notify(event interface{})
 }
 
 // Watcher is an implementation of the Observable interface.
+//
+// - implements core.Observable
 type Watcher struct {
 	sync.Mutex
+
 	observers map[Observer]struct{}
 }
 
@@ -28,23 +42,24 @@ func NewWatcher() *Watcher {
 	}
 }
 
-// Add adds the observer to the list of observers that will be notified of
-// new events.
+// Add implements core.Observable. It adds the observer to the list of observers
+// that will be notified of new events.
 func (w *Watcher) Add(observer Observer) {
 	w.Lock()
 	w.observers[observer] = struct{}{}
 	w.Unlock()
 }
 
-// Remove removes the observer from the list thus stopping it from receiving
-// new events.
+// Remove implements core.Observable. It removes the observer from the list thus
+// stopping it from receiving new events.
 func (w *Watcher) Remove(observer Observer) {
 	w.Lock()
 	delete(w.observers, observer)
 	w.Unlock()
 }
 
-// Notify notifies the whole list of observers one after each other.
+// Notify implements core.Observable. It notifies the whole list of observers
+// one after each other.
 func (w *Watcher) Notify(event interface{}) {
 	w.Lock()
 	defer w.Unlock()

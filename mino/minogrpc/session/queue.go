@@ -1,3 +1,8 @@
+// This file contains an implementation of a non-blocking queue for messages.
+//
+// Documentation Last Review: 07.10.2020
+//
+
 package session
 
 import (
@@ -19,7 +24,10 @@ type Queue interface {
 }
 
 // NonBlockingQueue is an implementation of a queue that makes sure pushing a
-// message will never hang.
+// message will never hang. The queue will fill a buffer if the channel is not
+// drained and will drop messages when the limit is reached.
+//
+// - implements session.Queue
 type NonBlockingQueue struct {
 	sync.Mutex
 	working sync.WaitGroup
@@ -38,13 +46,18 @@ func newNonBlockingQueue() *NonBlockingQueue {
 	}
 }
 
-// Channel implements minogrpc.Queue. It returns the message channel.
+// Channel implements session.Queue. It returns a channel that will be populated
+// with incoming messages. The queue uses a buffer when the channel is busy
+// therefore this channel should listened to as much as possible to drain the
+// messages. At some point when the size of the buffer reaches a limit, messages
+// will be dropped.
 func (q *NonBlockingQueue) Channel() <-chan router.Packet {
 	return q.ch
 }
 
-// Push implements minogrpc.Queue. It appends the message to the queue without
-// blocking.
+// Push implements session.Queue. It appends the message to the queue without
+// blocking. The message is dropped if the queue is at maximum capacity by
+// returning an error.
 func (q *NonBlockingQueue) Push(msg router.Packet) error {
 	select {
 	case q.ch <- msg:

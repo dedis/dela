@@ -204,12 +204,12 @@ func (f blockFormat) Decode(ctx serde.Context, data []byte) (serde.Message, erro
 
 	factory := ctx.GetFactory(types.DataKey{})
 
-	fac, ok := factory.(validation.DataFactory)
+	fac, ok := factory.(validation.ResultFactory)
 	if !ok {
 		return nil, xerrors.Errorf("invalid data factory '%T'", factory)
 	}
 
-	blockdata, err := fac.DataOf(ctx, m.Data)
+	blockdata, err := fac.ResultOf(ctx, m.Data)
 	if err != nil {
 		return nil, xerrors.Errorf("data factory failed: %v", err)
 	}

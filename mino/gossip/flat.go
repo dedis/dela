@@ -1,3 +1,7 @@
+//
+// Documentation Last Review: 06.10.2020
+//
+
 package gossip
 
 import (
@@ -17,7 +21,7 @@ const (
 )
 
 // Flat is an implementation of a message passing protocol that is using a flat
-// communication approach.
+// communication approach by sending a rumor to all the known participants.
 //
 // - implements gossip.Gossiper
 type Flat struct {
@@ -41,14 +45,9 @@ func NewFlat(m mino.Mino, f serde.Factory) *Flat {
 func (flat *Flat) Listen() (Actor, error) {
 	h := handler{Flat: flat}
 
-	rpc, err := flat.mino.MakeRPC("flatgossip", h, flat.rumorFactory)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't create the rpc: %v", err)
-	}
-
 	actor := &flatActor{
 		logger: dela.Logger.With().Str("addr", flat.mino.GetAddress().String()).Logger(),
-		rpc:    rpc,
+		rpc:    mino.MustCreateRPC(flat.mino, "flatgossip", h, flat.rumorFactory),
 	}
 
 	return actor, nil
@@ -60,6 +59,10 @@ func (flat *Flat) Rumors() <-chan Rumor {
 	return flat.ch
 }
 
+// flatActor is the actor returned by the gossiper that provide the primitives
+// to send a rumor.
+//
+// - implements gossip.Actor
 type flatActor struct {
 	sync.Mutex
 

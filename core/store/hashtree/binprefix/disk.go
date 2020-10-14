@@ -1,3 +1,7 @@
+//
+// Documentation Last Review: 08.10.2020
+//
+
 package binprefix
 
 import (
@@ -12,7 +16,7 @@ import (
 // DiskNode is an implementation of a tree node which is stored on the
 // disk.
 //
-// - implements mem.TreeNode
+// - implements binprefix.TreeNode
 type DiskNode struct {
 	depth   uint16
 	hash    []byte
@@ -30,8 +34,8 @@ func NewDiskNode(depth uint16, hash []byte, ctx serde.Context, factory serde.Fac
 	}
 }
 
-// GetHash implements mem.TreeNode. It returns the hash of the disk node if it
-// is set, otherwise it returns nil.
+// GetHash implements binprefix.TreeNode. It returns the hash of the disk node
+// if it is set, otherwise it returns nil.
 func (n *DiskNode) GetHash() []byte {
 	return n.hash
 }
@@ -41,8 +45,8 @@ func (n *DiskNode) GetType() byte {
 	return diskNodeType
 }
 
-// Search implements mem.TreeNode. It loads the disk node and then search for
-// the key.
+// Search implements binprefix.TreeNode. It loads the disk node and then search
+// for the key.
 func (n *DiskNode) Search(key *big.Int, path *Path, bucket kv.Bucket) ([]byte, error) {
 	if bucket == nil {
 		return nil, xerrors.New("bucket is nil")
@@ -62,9 +66,9 @@ func (n *DiskNode) Search(key *big.Int, path *Path, bucket kv.Bucket) ([]byte, e
 	return value, nil
 }
 
-// Insert implements mem.TreeNode. It loads the node and inserts the key/value
-// pair using in-memory operations. The whole path to the key will be loaded and
-// kept in-memory until the tree is persisted.
+// Insert implements binprefix.TreeNode. It loads the node and inserts the
+// key/value pair using in-memory operations. The whole path to the key will be
+// loaded and kept in-memory until the tree is persisted.
 func (n *DiskNode) Insert(key *big.Int, value []byte, bucket kv.Bucket) (TreeNode, error) {
 	node, err := n.load(key, bucket)
 	if err != nil {
@@ -80,8 +84,8 @@ func (n *DiskNode) Insert(key *big.Int, value []byte, bucket kv.Bucket) (TreeNod
 	return next, nil
 }
 
-// Delete implements mem.TreeNode. It loads the node and deletes the key if it
-// exists. The whole path to the key is loaded in-memory until the tree is
+// Delete implements binprefix.TreeNode. It loads the node and deletes the key
+// if it exists. The whole path to the key is loaded in-memory until the tree is
 // persisted.
 func (n *DiskNode) Delete(key *big.Int, bucket kv.Bucket) (TreeNode, error) {
 	node, err := n.load(key, bucket)
@@ -97,9 +101,9 @@ func (n *DiskNode) Delete(key *big.Int, bucket kv.Bucket) (TreeNode, error) {
 	return next, nil
 }
 
-// Prepare implements mem.TreeNode. It loads the node and calculates its hash.
-// The subtree might be loaded in-memory if deeper hashes have not been computed
-// yet.
+// Prepare implements binprefix.TreeNode. It loads the node and calculates its
+// hash. The subtree might be loaded in-memory if deeper hashes have not been
+// computed yet.
 func (n *DiskNode) Prepare(nonce []byte, prefix *big.Int,
 	bucket kv.Bucket, fac crypto.HashFactory) ([]byte, error) {
 
@@ -129,13 +133,13 @@ func (n *DiskNode) Prepare(nonce []byte, prefix *big.Int,
 	return digest, nil
 }
 
-// Visit implements mem.TreeNode.
+// Visit implements binprefix.TreeNode.
 func (n *DiskNode) Visit(fn func(TreeNode) error) error {
 	return fn(n)
 }
 
-// Clone implements mem.TreeNode. It clones the disk node but both the old and
-// the new will read the same bucket.
+// Clone implements binprefix.TreeNode. It clones the disk node but both the old
+// and the new will read the same bucket.
 func (n *DiskNode) Clone() TreeNode {
 	return NewDiskNode(n.depth, n.hash, n.context, n.factory)
 }

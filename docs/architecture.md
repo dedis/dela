@@ -1,13 +1,13 @@
 # Architecture
 
 Dela has been built with modularization and testability in mind. As such, the
-system is made of multiple interoperable modules' implementations based on a set
-of well-defined abstractions.
+system is made of multiple interoperable modules based on a set of well-defined
+abstractions.
 
 ## Stacks
 
 The stacks display the role of each module and its relation to others. Each
-module can rely on zero or more of the modules bellow it. From the client's
+module can rely on zero or more of the modules below it. From the client's
 perspective the stack is simpler since it doesn't need to know about the complex
 ordering mechanism.
 
@@ -15,7 +15,7 @@ ordering mechanism.
 
 ## Execution flow
 
-The execution flow displays how the system uses the modules in order to fullfil
+The execution flow displays how the system uses the modules in order to fulfill
 its goals. Since a client and a node have different goals, we display the
 perspective from those two separately.
 

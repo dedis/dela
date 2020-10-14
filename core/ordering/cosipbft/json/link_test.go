@@ -129,7 +129,7 @@ func makeLink(t *testing.T, opts ...types.LinkOption) types.Link {
 }
 
 func makeBlockLink(t *testing.T, opts ...types.LinkOption) types.BlockLink {
-	block, err := types.NewBlock(fakeData{})
+	block, err := types.NewBlock(fakeResult{})
 	require.NoError(t, err)
 
 	sigs := types.WithSignatures(fake.Signature{}, fake.Signature{})
@@ -163,28 +163,28 @@ func (fac fakeChangeSetFac) ChangeSetOf(serde.Context, []byte) (authority.Change
 	return fakeChangeSet{}, fac.err
 }
 
-type fakeData struct {
-	validation.Data
+type fakeResult struct {
+	validation.Result
 
 	err error
 }
 
-func (data fakeData) Serialize(serde.Context) ([]byte, error) {
+func (data fakeResult) Serialize(serde.Context) ([]byte, error) {
 	return []byte(`{}`), data.err
 }
 
-func (fakeData) Fingerprint(io.Writer) error {
+func (fakeResult) Fingerprint(io.Writer) error {
 	return nil
 }
 
-type fakeDataFac struct {
-	validation.DataFactory
+type fakeResultFac struct {
+	validation.ResultFactory
 
 	err error
 }
 
-func (fac fakeDataFac) DataOf(serde.Context, []byte) (validation.Data, error) {
-	return fakeData{}, fac.err
+func (fac fakeResultFac) ResultOf(serde.Context, []byte) (validation.Result, error) {
+	return fakeResult{}, fac.err
 }
 
 type fakeBlockFormat struct {
@@ -196,7 +196,7 @@ func (fakeBlockFormat) Encode(serde.Context, serde.Message) ([]byte, error) {
 }
 
 func (fakeBlockFormat) Decode(serde.Context, []byte) (serde.Message, error) {
-	block, err := types.NewBlock(fakeData{})
+	block, err := types.NewBlock(fakeResult{})
 	if err != nil {
 		return nil, err
 	}

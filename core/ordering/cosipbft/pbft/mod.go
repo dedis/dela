@@ -1,3 +1,17 @@
+// Package pbft defines a state machine to perform PBFT using collective
+// signatures.
+//
+// The package also implements a default state machine that allows only one
+// block candidate per leader so that after a successful prepare phase, it
+// expects the block to be committed and finalized. The only other state allowed
+// is the view change if the round has expired.
+//
+// The view change can be fixed only by providing enough valid views from unique
+// participants to comply to the 2f threshold, or if a catch up that provides a
+// proof of acceptance of the block.
+//
+// Documentation Last Review: 13.10.2020
+//
 package pbft
 
 import (
@@ -62,16 +76,50 @@ const (
 
 // StateMachine is the interface to implement to support a PBFT protocol.
 type StateMachine interface {
+	// GetState returns the current state.
 	GetState() State
+
+	// GetLeader returns the address of the round leader.
 	GetLeader() (mino.Address, error)
+
+	// GetViews returns the list of views for which the round has been accepted,
+	// after a successful view change. Otherwise it is empty.
 	GetViews() map[mino.Address]View
-	Prepare(block types.Block) (types.Digest, error)
+
+	// GetCommit returns the candidate digest and the associated block if the
+	// state machine is committed to a candidate, otherwise the behaviour is
+	// undefined.
+	GetCommit() (types.Digest, types.Block)
+
+	// Prepare processes the candidate block and moves the state machine if it
+	// is valid and from the correct leader.
+	Prepare(from mino.Address, block types.Block) (types.Digest, error)
+
+	// Commit moves the state machine to the next state if the signature is
+	// valid for the candidate.
 	Commit(types.Digest, crypto.Signature) error
+
+	// Finalize finalizes a round if the signature is a valid commit signature.
 	Finalize(types.Digest, crypto.Signature) error
+
+	// Accept processes the view during a view change state, and moves to a new
+	// round if enough have been received.
 	Accept(View) error
+
+	// AcceptAll processes the list of views so that it may proceed to a future
+	// round if the list contains enough valid views.
 	AcceptAll([]View) error
+
+	// Expire announces that the round has expired and moves the state machine
+	// to a view change state.
 	Expire(addr mino.Address) (View, error)
+
+	// CatchUp forces a valid block to be processed by the state machine without
+	// doing the intermediate phases.
 	CatchUp(types.BlockLink) error
+
+	// Watch returns a channel that is populated with the changes of states from
+	// the state machine.
 	Watch(context.Context) <-chan State
 }
 
@@ -83,6 +131,7 @@ type round struct {
 	tree       hashtree.StagingTree
 	prepareSig crypto.Signature
 	changeset  authority.ChangeSet
+	committed  bool
 	prevViews  map[mino.Address]View
 	views      map[mino.Address]View
 }
@@ -91,6 +140,9 @@ type round struct {
 // authority for a given tree.
 type AuthorityReader func(tree hashtree.Tree) (authority.Authority, error)
 
+// pbftsm is an implementation of a state machine to perform PBFT rounds.
+//
+// - implements pbft.Statemachine
 type pbftsm struct {
 	sync.Mutex
 
@@ -186,33 +238,55 @@ func (m *pbftsm) GetViews() map[mino.Address]View {
 	return views
 }
 
-// Prepare implements pbft.StateMachine. It receives the proposal from the
-// leader and the current tree, and produces the next tree alongside the ID of
-// the proposal that will be signed.
-func (m *pbftsm) Prepare(block types.Block) (types.Digest, error) {
+// GetCommit implements pbft.StateMachine. It returns the proposal identifier
+// and the block that have been proposed to the state machine. The values are
+// valid only if the state is at least PrepareState.
+func (m *pbftsm) GetCommit() (types.Digest, types.Block) {
 	m.Lock()
 	defer m.Unlock()
 
-	if m.state == PrepareState {
-		// It only accepts one proposal from the leader and skip any more
-		// arriving.
-		return m.round.id, nil
-	}
+	return m.round.id, m.round.block
+}
 
-	if m.state != InitialState && m.state != NoneState {
-		return types.Digest{}, xerrors.Errorf("mismatch state %v != %v", m.state, InitialState)
+// Prepare implements pbft.StateMachine. It receives the proposal from the
+// leader and the current tree, and produces the next tree alongside the ID of
+// the proposal that will be signed.
+func (m *pbftsm) Prepare(from mino.Address, block types.Block) (types.Digest, error) {
+	m.Lock()
+	defer m.Unlock()
+
+	id := m.round.id
+
+	if m.state == ViewChangeState {
+		// When in view change mode, it must refuse any proposal incoming until
+		// the node leaves the state.
+		return id, xerrors.New("cannot be in view change state during prepare")
 	}
 
 	roster, err := m.authReader(m.tree.Get())
 	if err != nil {
-		return types.Digest{}, xerrors.Errorf("failed to read roster: %v", err)
+		return id, xerrors.Errorf("failed to read roster: %v", err)
+	}
+
+	_, index := roster.GetPublicKey(from)
+
+	if uint16(index) != m.round.leader {
+		return id, xerrors.Errorf("'%v' is not the leader", from)
+	}
+
+	// Check the state after verifying that the proposal comes from the right
+	// leader.
+	if m.state == PrepareState || m.state == CommitState {
+		// The leader should only propose one block, therefore the accepted
+		// proposal identifier is sent back, whatever the input is.
+		return id, nil
 	}
 
 	m.round.threshold = calculateThreshold(roster.Len())
 
 	err = m.verifyPrepare(m.tree.Get(), block, &m.round, roster)
 	if err != nil {
-		return types.Digest{}, err
+		return id, err
 	}
 
 	m.setState(PrepareState)
@@ -226,13 +300,8 @@ func (m *pbftsm) Commit(id types.Digest, sig crypto.Signature) error {
 	m.Lock()
 	defer m.Unlock()
 
-	if m.state == CommitState {
-		// The state machine is already committed to a proposal.
-		return nil
-	}
-
-	if m.state != PrepareState {
-		return xerrors.Errorf("mismatch state %v != %v", m.state, PrepareState)
+	if m.state != PrepareState && m.state != CommitState {
+		return xerrors.Errorf("cannot commit from %v state", m.state)
 	}
 
 	if id != m.round.id {
@@ -248,6 +317,9 @@ func (m *pbftsm) Commit(id types.Digest, sig crypto.Signature) error {
 	if err != nil {
 		return err
 	}
+
+	// At this point, the proposal must be finalized whatever happens.
+	m.round.committed = true
 
 	m.setState(CommitState)
 
@@ -276,6 +348,8 @@ func (m *pbftsm) Finalize(id types.Digest, sig crypto.Signature) error {
 
 	m.round.prevViews = nil
 	m.round.views = nil
+	m.round.committed = false
+
 	m.setState(InitialState)
 
 	return nil
@@ -444,6 +518,10 @@ func (m *pbftsm) CatchUp(link types.BlockLink) error {
 	m.Lock()
 	defer m.Unlock()
 
+	if m.state == CommitState && m.round.id != link.GetHash() {
+		return xerrors.Errorf("already committed to '%v'", m.round.id)
+	}
+
 	r := round{
 		threshold: m.round.threshold,
 	}
@@ -503,7 +581,7 @@ func (m *pbftsm) verifyPrepare(tree hashtree.Tree, block types.Block, r *round, 
 	})
 
 	if err != nil {
-		return xerrors.Errorf("tree failed: %v", err)
+		return xerrors.Errorf("while updating tree: %v", err)
 	}
 
 	root := types.Digest{}
@@ -591,7 +669,7 @@ func (m *pbftsm) verifyFinalize(r *round, sig crypto.Signature, ro authority.Aut
 		// 1. Persist the tree through the transaction and update the cache.
 		err := r.tree.WithTx(txn).Commit()
 		if err != nil {
-			return xerrors.Errorf("commit tree: %v", err)
+			return xerrors.Errorf("while committing tree: %v", err)
 		}
 
 		var unlock func()
@@ -662,7 +740,12 @@ func (m *pbftsm) checkViewChange(view View) {
 		m.round.prevViews = m.round.views
 		m.round.views = nil
 		m.round.leader = view.leader
-		m.setState(InitialState)
+
+		if m.round.committed {
+			m.setState(CommitState)
+		} else {
+			m.setState(InitialState)
+		}
 	}
 }
 

@@ -1,3 +1,11 @@
+// Package loader defines an abstraction to store a private, or a public, key in
+// a storage.
+//
+// When the key does not exist, it will generate a new one using a generator
+// implemented by the caller and stores it for the next time.
+//
+// Documentation Last Review: 06.10.2020
+//
 package loader
 
 // Generator is the interface to implement to generate a key.

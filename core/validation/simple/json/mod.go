@@ -10,23 +10,25 @@ import (
 )
 
 func init() {
+	simple.RegisterTransactionResultFormat(serde.FormatJSON, txResFormat{})
 	simple.RegisterResultFormat(serde.FormatJSON, resFormat{})
-	simple.RegisterDataFormat(serde.FormatJSON, dataFormat{})
 }
 
+// TransactionResultJSON is the JSON message for transaction results.
 type TransactionResultJSON struct {
 	Transaction json.RawMessage
 	Accepted    bool
 	Reason      string
 }
 
-type DataJSON struct {
+// ResultJSON is the JSON message for results.
+type ResultJSON struct {
 	Results []json.RawMessage
 }
 
-type resFormat struct{}
+type txResFormat struct{}
 
-func (f resFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
+func (f txResFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
 	txres, ok := msg.(simple.TransactionResult)
 	if !ok {
 		return nil, xerrors.Errorf("unsupported message")
@@ -53,7 +55,7 @@ func (f resFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) 
 	return data, nil
 }
 
-func (f resFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
+func (f txResFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
 	m := TransactionResultJSON{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {
@@ -77,15 +79,15 @@ func (f resFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error)
 	return res, nil
 }
 
-type dataFormat struct{}
+type resFormat struct{}
 
-func (f dataFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
-	data, ok := msg.(simple.Data)
+func (f resFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) {
+	res, ok := msg.(simple.Result)
 	if !ok {
 		return nil, xerrors.Errorf("unsupported message")
 	}
 
-	results := data.GetTransactionResults()
+	results := res.GetTransactionResults()
 	raws := make([]json.RawMessage, len(results))
 
 	for i, res := range results {
@@ -97,7 +99,7 @@ func (f dataFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error)
 		raws[i] = buffer
 	}
 
-	m := DataJSON{
+	m := ResultJSON{
 		Results: raws,
 	}
 
@@ -109,8 +111,8 @@ func (f dataFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error)
 	return buffer, nil
 }
 
-func (f dataFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
-	m := DataJSON{}
+func (f resFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error) {
+	m := ResultJSON{}
 	err := ctx.Unmarshal(data, &m)
 	if err != nil {
 		return nil, err
@@ -133,7 +135,7 @@ func (f dataFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error
 		results[i] = res
 	}
 
-	vdata := simple.NewData(results)
+	res := simple.NewResult(results)
 
-	return vdata, nil
+	return res, nil
 }

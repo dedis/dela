@@ -47,7 +47,7 @@ func TestInDisk_Load(t *testing.T) {
 
 	store.fac = badLinkFac{}
 	err = store.Load()
-	require.EqualError(t, err, fake.Err("while scanning: callback failed: malformed block"))
+	require.EqualError(t, err, fake.Err("while scanning: malformed block"))
 }
 
 func TestInDisk_Store(t *testing.T) {
@@ -146,8 +146,7 @@ func TestInDisk_GetChain(t *testing.T) {
 
 	store.fac = badLinkFac{}
 	_, err = store.GetChain()
-	require.EqualError(t, err,
-		fake.Err("while reading database: while scanning: callback failed: block malformed"))
+	require.EqualError(t, err, fake.Err("while reading database: while scanning: block malformed"))
 }
 
 func TestInDisk_Last(t *testing.T) {
@@ -237,7 +236,7 @@ func makeDB(t *testing.T) (kv.DB, func()) {
 }
 
 func makeBlockFac() types.LinkFactory {
-	blockFac := types.NewBlockFactory(fakeDataFac{})
+	blockFac := types.NewBlockFactory(fakeResultFac{})
 
 	return types.NewLinkFactory(blockFac, fake.SignatureFactory{}, fakeCsFac{})
 }
@@ -250,12 +249,12 @@ func (fakeCsFac) ChangeSetOf(serde.Context, []byte) (authority.ChangeSet, error)
 	return authority.NewChangeSet(), nil
 }
 
-type fakeDataFac struct {
-	validation.DataFactory
+type fakeResultFac struct {
+	validation.ResultFactory
 }
 
-func (fakeDataFac) DataOf(serde.Context, []byte) (validation.Data, error) {
-	return simple.NewData(nil), nil
+func (fakeResultFac) ResultOf(serde.Context, []byte) (validation.Result, error) {
+	return simple.NewResult(nil), nil
 }
 
 type badLinkFac struct {

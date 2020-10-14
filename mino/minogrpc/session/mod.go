@@ -1,3 +1,20 @@
+// Package session defines an abstraction of a session during a distributed RPC.
+//
+// During a stream-based distributed RPC in minogrpc, the stream is kept alive
+// during the whole protocol to act as a health check so that resources can be
+// cleaned eventually, or if something goes wrong. The session manages this
+// state while also managing the relays to other participants that the node must
+// forward the messages to. Basically, a session has one or several relays open
+// to the parent nodes and zero, one or multiple relays to other participants
+// depending on the routing of the messages.
+//
+// The package implements a unicast and a stream relay. Stream relay is only
+// used when the orchestrator of a protocol is connecting to the first
+// participant. Unicast is then used so that the sender of a message can receive
+// feedbacks on the status of the message.
+//
+// Documentation Last Review: 07.10.20202
+//
 package session
 
 import (
@@ -242,6 +259,13 @@ func (s *session) RecvPacket(from mino.Address, p *ptypes.Packet) (*ptypes.Ack, 
 func (s *session) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 	errs := make(chan error, len(addrs)+1)
 
+	for i, addr := range addrs {
+		switch to := addr.(type) {
+		case wrapAddress:
+			addrs[i] = to.Unwrap()
+		}
+	}
+
 	go func() {
 		defer close(errs)
 
@@ -290,7 +314,11 @@ func (s *session) Recv(ctx context.Context) (mino.Address, serde.Message, error)
 			return nil, nil, xerrors.Errorf("message: %v", err)
 		}
 
-		return packet.GetSource(), msg, nil
+		// The source address is wrapped so that an orchestrator will look like
+		// its actual source address to the caller.
+		from := newWrapAddress(packet.GetSource())
+
+		return from, msg, nil
 	}
 }
 
@@ -386,7 +414,7 @@ func (s *session) setupRelay(p parent, addr mino.Address) (Relay, error) {
 		return relay, nil
 	}
 
-	hs, err := p.table.Prelude(addr).Serialize(s.context)
+	hs, err := p.table.PrepareHandshakeFor(addr).Serialize(s.context)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to serialize handshake: %v", err)
 	}

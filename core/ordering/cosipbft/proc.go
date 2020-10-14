@@ -1,3 +1,9 @@
+// Theis file contains the network message handler implementations for the
+// collective signing reactor and the module rpc.
+//
+// Documentation Last Review: 12.10.2020
+//
+
 package cosipbft
 
 import (
@@ -6,10 +12,10 @@ import (
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela/core"
 	"go.dedis.ch/dela/core/access"
-	"go.dedis.ch/dela/core/execution/baremetal/viewchange"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blocksync"
+	"go.dedis.ch/dela/core/ordering/cosipbft/contracts/viewchange"
 	"go.dedis.ch/dela/core/ordering/cosipbft/pbft"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
@@ -30,6 +36,7 @@ var (
 // Processor processes the messages to run a collective signing PBFT consensus.
 //
 // - implements cosi.Reactor
+// - implements mino.Handler
 type processor struct {
 	mino.UnsupportedHandler
 	types.MessageFactory
@@ -105,7 +112,7 @@ func (h *processor) Invoke(from mino.Address, msg serde.Message) ([]byte, error)
 			}
 		}
 
-		digest, err := h.pbftsm.Prepare(in.GetBlock())
+		digest, err := h.pbftsm.Prepare(from, in.GetBlock())
 		if err != nil {
 			return nil, xerrors.Errorf("pbft prepare failed: %v", err)
 		}

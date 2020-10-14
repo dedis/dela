@@ -1,3 +1,16 @@
+// Package ed25519 implements the cryptographic primitives for the Edwards 25519
+// elliptic curve.
+//
+// The signatures are created using the Schnorr algorithm which allows the
+// aggregation of multiple signatures and public keys.
+//
+// Related Papers:
+//
+// Efficient Identification and Signatures for Smart Cards (1989)
+// https://link.springer.com/chapter/10.1007/0-387-34805-0_22
+//
+// Documentation Last Review: 05.10.2020
+//
 package ed25519
 
 import (
@@ -37,7 +50,7 @@ func RegisterSignatureFormat(format serde.Format, engine serde.FormatEngine) {
 	sigFormats.Register(format, engine)
 }
 
-// PublicKey can be provided to verify a schnorr signature.
+// PublicKey is the public key adapter to the Kyber Ed25519 public key.
 //
 // - implements crypto.PublicKey
 type PublicKey struct {
@@ -86,7 +99,7 @@ func (pk PublicKey) Serialize(ctx serde.Context) ([]byte, error) {
 }
 
 // Verify implements crypto.PublicKey. It returns nil if the signature matches
-// the message with this public key.
+// the message for this public key.
 func (pk PublicKey) Verify(msg []byte, sig crypto.Signature) error {
 	signature, ok := sig.(Signature)
 	if !ok {
@@ -123,12 +136,12 @@ func (pk PublicKey) MarshalText() ([]byte, error) {
 	return []byte(fmt.Sprintf("schnorr:%x", buffer)), nil
 }
 
-// GetPoint returns the kyber.point
+// GetPoint returns the kyber.point.
 func (pk PublicKey) GetPoint() kyber.Point {
 	return pk.point
 }
 
-// String implements fmt.String. It returns a string representation of the
+// String implements fmt.Stringer. It returns a string representation of the
 // point.
 func (pk PublicKey) String() string {
 	buffer, err := pk.MarshalText()
@@ -140,8 +153,9 @@ func (pk PublicKey) String() string {
 	return string(buffer)[:8+16]
 }
 
-// Signature is a proof of the integrity of a single message associated with a
-// unique public key.
+// Signature is the adapter of the Kyber Schnorr signature.
+//
+// - implements crypto.Signature
 type Signature struct {
 	data []byte
 }
@@ -172,7 +186,8 @@ func (sig Signature) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
-// Equal implements crypto.PublicKey.
+// Equal implements crypto.Signature. It returns true if both signatures are the
+// same.
 func (sig Signature) Equal(other crypto.Signature) bool {
 	otherSig, ok := other.(Signature)
 	if !ok {
@@ -182,8 +197,8 @@ func (sig Signature) Equal(other crypto.Signature) bool {
 	return bytes.Equal(sig.data, otherSig.data)
 }
 
-// publicKeyFactory creates schnorr compatible public key from protobuf
-// messages.
+// publicKeyFactory is a factory to deserialize public keys for the Ed25519
+// curve.
 //
 // - implements crypto.PublicKeyFactory
 // - implements serde.Factory
@@ -229,8 +244,8 @@ func (f publicKeyFactory) FromBytes(data []byte) (crypto.PublicKey, error) {
 	return pubkey, nil
 }
 
-// signatureFactory provides functions to create schnorr signatures from
-// protobuf messages.
+// signatureFactory is a factory to deserialize signatures of the Ed25519
+// elliptic curve.
 //
 // - implements crypto.SignatureFactory
 // - implements serde.Factory
@@ -241,12 +256,14 @@ func NewSignatureFactory() crypto.SignatureFactory {
 	return signatureFactory{}
 }
 
-// Deserialize implements serde.Factory.
+// Deserialize implements serde.Factory. It returns the signature associated to
+// the data if appropriate, otherwise an error.
 func (f signatureFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	return f.SignatureOf(ctx, data)
 }
 
-// SignatureOf implements crypto.SignatureFactory.
+// SignatureOf implements crypto.SignatureFactory. It returns the signature
+// associated to the data if appropriate, otherwise an error.
 func (f signatureFactory) SignatureOf(ctx serde.Context, data []byte) (crypto.Signature, error) {
 	format := sigFormats.Get(ctx.GetFormat())
 
@@ -263,7 +280,8 @@ func (f signatureFactory) SignatureOf(ctx serde.Context, data []byte) (crypto.Si
 	return signature, nil
 }
 
-// Signer implements a schnorr signer
+// Signer implements a signer that is creating Schnorr signatures using the
+// private key of the Ed25519 elliptic curve.
 //
 // - implements crypto.Signer
 type Signer struct {
@@ -296,7 +314,7 @@ func (s Signer) GetPublicKey() crypto.PublicKey {
 	return PublicKey{point: s.keyPair.Public}
 }
 
-// GetPrivateKey returns the signer's private key. Needed for DKG.
+// GetPrivateKey returns the signer's private key.
 func (s Signer) GetPrivateKey() kyber.Scalar {
 	return s.keyPair.Private
 }

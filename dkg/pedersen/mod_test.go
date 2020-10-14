@@ -16,11 +16,8 @@ import (
 )
 
 func TestPedersen_Listen(t *testing.T) {
-	pedersen, _ := NewPedersen(fake.NewBadMino())
-	_, err := pedersen.Listen()
-	require.EqualError(t, err, fake.Err("failed to create RPC"))
+	pedersen, _ := NewPedersen(fake.Mino{})
 
-	pedersen, _ = NewPedersen(fake.Mino{})
 	actor, err := pedersen.Listen()
 	require.NoError(t, err)
 
@@ -52,15 +49,17 @@ func TestPedersen_Setup(t *testing.T) {
 	_, err = actor.Setup(fakeAuthority, 1)
 	require.EqualError(t, err, fake.Err("got an error from '%!s(<nil>)' while receiving"))
 
-	rpc = fake.NewStreamRPC(fake.NewReceiver(), fake.Sender{})
+	recv := fake.NewReceiver(fake.NewRecvMsg(fake.NewAddress(0), nil))
+
+	rpc = fake.NewStreamRPC(recv, fake.Sender{})
 	actor.rpc = rpc
 
 	_, err = actor.Setup(fakeAuthority, 1)
 	require.EqualError(t, err, "expected to receive a Done message, but go the following: <nil>")
 
 	rpc = fake.NewStreamRPC(fake.NewReceiver(
-		types.NewStartDone(suite.Point()),
-		types.NewStartDone(suite.Point().Pick(suite.RandomStream())),
+		fake.NewRecvMsg(fake.NewAddress(0), types.NewStartDone(suite.Point())),
+		fake.NewRecvMsg(fake.NewAddress(0), types.NewStartDone(suite.Point().Pick(suite.RandomStream()))),
 	), fake.Sender{})
 	actor.rpc = rpc
 
@@ -97,20 +96,30 @@ func TestPedersen_Decrypt(t *testing.T) {
 	_, err = actor.Decrypt(suite.Point(), suite.Point())
 	require.EqualError(t, err, fake.Err("failed to send decrypt request"))
 
-	rpc = fake.NewStreamRPC(fake.NewReceiver(), fake.Sender{})
+	recv := fake.NewReceiver(fake.NewRecvMsg(fake.NewAddress(0), nil))
+
+	rpc = fake.NewStreamRPC(recv, fake.Sender{})
 	actor.rpc = rpc
 
 	_, err = actor.Decrypt(suite.Point(), suite.Point())
 	require.EqualError(t, err, "got unexpected reply, expected types.DecryptReply but got: <nil>")
 
-	rpc = fake.NewStreamRPC(fake.NewReceiver(types.DecryptReply{I: -1, V: suite.Point()}), fake.Sender{})
+	recv = fake.NewReceiver(
+		fake.NewRecvMsg(fake.NewAddress(0), types.DecryptReply{I: -1, V: suite.Point()}),
+	)
+
+	rpc = fake.NewStreamRPC(recv, fake.Sender{})
 	actor.rpc = rpc
 
 	_, err = actor.Decrypt(suite.Point(), suite.Point())
 	require.EqualError(t, err, "failed to recover commit: share: not enough "+
 		"good public shares to reconstruct secret commitment")
 
-	rpc = fake.NewStreamRPC(fake.NewReceiver(types.DecryptReply{I: 1, V: suite.Point()}), fake.Sender{})
+	recv = fake.NewReceiver(
+		fake.NewRecvMsg(fake.NewAddress(0), types.DecryptReply{I: 1, V: suite.Point()}),
+	)
+
+	rpc = fake.NewStreamRPC(recv, fake.Sender{})
 	actor.rpc = rpc
 
 	_, err = actor.Decrypt(suite.Point(), suite.Point())
@@ -140,7 +149,7 @@ func TestPedersen_Scenario(t *testing.T) {
 	for i := 0; i < n; i++ {
 		addr := minogrpc.ParseAddress("127.0.0.1", 0)
 
-		minogrpc, err := minogrpc.NewMinogrpc(addr, tree.NewRouter(minogrpc.AddressFactory{}))
+		minogrpc, err := minogrpc.NewMinogrpc(addr, tree.NewRouter(minogrpc.NewAddressFactory()))
 		require.NoError(t, err)
 
 		defer minogrpc.GracefulStop()

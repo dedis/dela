@@ -158,7 +158,7 @@ func (s *Service) createBlock(ctx context.Context) error {
 
 	latestEpoch := s.epochs[len(s.epochs)-1]
 
-	var data validation.Data
+	var data validation.Result
 	newTrie, err := latestEpoch.store.Stage(func(rwt store.Snapshot) error {
 		var err error
 		data, err = s.validation.Validate(rwt, txs)

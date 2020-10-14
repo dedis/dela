@@ -1,3 +1,33 @@
+// Package cosipbft implements an ordering service using collective signatures
+// for the consensus.
+//
+// The consensus follows the PBFT algorithm using collective signatures to
+// perform the prepare and commit phases. The leader is orchestrating the
+// protocol and the followers wait for incoming messages to update their own
+// state machines and reply with signatures when the leader candidate is valid.
+// If the leader fails to send a candidate, or finalize it, the followers will
+// timeout after some time and move to a view change state.
+//
+// The view change procedure is always waiting on the leader+1 confirmation
+// before moving to leader+2, leader+3, etc. It means that if not enough nodes
+// are online to create a block, the round will fail until enough wakes up and
+// confirm leader+1. If leader+1 fails to create a block within the round
+// timeout, a new view change starts for leader+2 and so on until a block is
+// created.
+//
+// Before each PBFT round, a synchronization is run from the leader to allow
+// nodes that have fallen behind (or are new) to catch missing blocks. Only a
+// PBFT threshold of nodes needs to confirm a hard synchronization (having all
+// the blocks) for the round to proceed, but others will keep catching up.
+//
+// Related Papers:
+//
+// Enhancing Bitcoin Security and Performance with Strong Consistency via
+// Collective Signing (2016)
+// https://www.usenix.org/system/files/conference/usenixsecurity16/sec16_paper_kokoris-kogias.pdf
+//
+// Documentation Last Review: 12.10.2020
+//
 package cosipbft
 
 import (
@@ -8,12 +38,12 @@ import (
 
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/core/access"
-	"go.dedis.ch/dela/core/execution/baremetal"
-	"go.dedis.ch/dela/core/execution/baremetal/viewchange"
+	"go.dedis.ch/dela/core/execution/native"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blocksync"
+	"go.dedis.ch/dela/core/ordering/cosipbft/contracts/viewchange"
 	"go.dedis.ch/dela/core/ordering/cosipbft/pbft"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
@@ -44,9 +74,9 @@ const (
 	rpcName = "cosipbft"
 )
 
-// RegisterRosterContract registers the baremetal contract to update the roster
-// to the given service.
-func RegisterRosterContract(exec *baremetal.BareMetal, rFac authority.Factory, srvc access.Service) {
+// RegisterRosterContract registers the native smart contract to update the
+// roster to the given service.
+func RegisterRosterContract(exec *native.Service, rFac authority.Factory, srvc access.Service) {
 	contract := viewchange.NewContract(keyRoster[:], keyAccess[:], rFac, srvc)
 
 	viewchange.RegisterContract(exec, contract)
@@ -54,6 +84,8 @@ func RegisterRosterContract(exec *baremetal.BareMetal, rFac authority.Factory, s
 
 // Service is an ordering service using collective signatures combined with PBFT
 // to create a chain of blocks.
+//
+// - implements ordering.Service
 type Service struct {
 	*processor
 
@@ -115,7 +147,7 @@ type ServiceParam struct {
 	DB         kv.DB
 }
 
-// NewService starts a new service.
+// NewService starts a new ordering service.
 func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 	tmpl := serviceTemplate{
 		hashFac: crypto.NewSha256Factory(),
@@ -166,10 +198,7 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 		VerifierFactory: param.Cosi.GetVerifierFactory(),
 	}
 
-	blocksync, err := blocksync.NewSynchronizer(syncparam)
-	if err != nil {
-		return nil, xerrors.Errorf("creating sync failed: %v", err)
-	}
+	blocksync := blocksync.NewSynchronizer(syncparam)
 
 	proc.sync = blocksync
 
@@ -183,11 +212,6 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 
 	proc.MessageFactory = fac
 
-	rpc, err := param.Mino.MakeRPC(rpcName, proc, fac)
-	if err != nil {
-		return nil, xerrors.Errorf("creating rpc failed: %v", err)
-	}
-
 	actor, err := param.Cosi.Listen(proc)
 	if err != nil {
 		return nil, xerrors.Errorf("creating cosi failed: %v", err)
@@ -196,7 +220,7 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 	s := &Service{
 		processor:                proc,
 		me:                       param.Mino.GetAddress(),
-		rpc:                      rpc,
+		rpc:                      mino.MustCreateRPC(param.Mino, rpcName, proc, fac),
 		actor:                    actor,
 		val:                      param.Validation,
 		verifierFac:              param.Cosi.GetVerifierFactory(),
@@ -292,7 +316,10 @@ func (s *Service) GetRoster() (authority.Authority, error) {
 	return s.getCurrentRoster()
 }
 
-// Watch implements ordering.Service.
+// Watch implements ordering.Service. It returns a channel that will be
+// populated with new incoming blocks and some information about them. The
+// channel must be listened at all time and the context must be closed when
+// done.
 func (s *Service) Watch(ctx context.Context) <-chan ordering.Event {
 	obs := observer{ch: make(chan ordering.Event, 1)}
 
@@ -478,7 +505,7 @@ func (s *Service) doRound(ctx context.Context) error {
 			resps, err := s.rpc.Call(ctx, viewMsg, roster)
 			if err != nil {
 				cancel()
-				return xerrors.Errorf("rpc failed: %v", err)
+				return xerrors.Errorf("rpc failed to send views: %v", err)
 			}
 
 			for resp := range resps {
@@ -493,7 +520,7 @@ func (s *Service) doRound(ctx context.Context) error {
 			state := s.pbftsm.GetState()
 			var more bool
 
-			for state != pbft.InitialState {
+			for state == pbft.ViewChangeState {
 				state, more = <-statesCh
 				if !more {
 					cancel()
@@ -529,9 +556,6 @@ func (s *Service) doRound(ctx context.Context) error {
 		return xerrors.Errorf("sync failed: %v", err)
 	}
 
-	// TODO: check that no committed block exists in the case of a leader
-	// failure when propagating the collective signature.
-
 	s.logger.Debug().Uint64("index", s.blocks.Len()).Msg("pbft has started")
 
 	err = s.doPBFT(ctx)
@@ -547,38 +571,49 @@ func (s *Service) doRound(ctx context.Context) error {
 }
 
 func (s *Service) doPBFT(ctx context.Context) error {
-	txs := s.pool.Gather(ctx, pool.Config{Min: 1})
-	if len(txs) == 0 {
-		return nil
-	}
+	var id types.Digest
+	var block types.Block
 
-	s.logger.Debug().
-		Int("num", len(txs)).
-		Msg("transactions have been found")
+	if s.pbftsm.GetState() >= pbft.CommitState {
+		// The node is already committed to a block, which means enough nodes
+		// have accepted, but somehow the finalization failed.
+		id, block = s.pbftsm.GetCommit()
+	} else {
+		txs := s.pool.Gather(ctx, pool.Config{Min: 1})
+		if len(txs) == 0 {
+			s.logger.Debug().Msg("no transaction in pool")
 
-	if ctx.Err() != nil {
-		// Don't bother trying PBFT if the context is done.
-		return ctx.Err()
-	}
+			return nil
+		}
 
-	data, root, err := s.prepareData(txs)
-	if err != nil {
-		return xerrors.Errorf("failed to prepare data: %v", err)
-	}
+		s.logger.Debug().
+			Int("num", len(txs)).
+			Msg("transactions have been found")
 
-	block, err := types.NewBlock(
-		data,
-		types.WithTreeRoot(root),
-		types.WithIndex(uint64(s.blocks.Len())),
-		types.WithHashFactory(s.hashFactory))
+		if ctx.Err() != nil {
+			// Don't bother trying PBFT if the context is done.
+			return ctx.Err()
+		}
 
-	if err != nil {
-		return xerrors.Errorf("creating block failed: %v", err)
-	}
+		data, root, err := s.prepareData(txs)
+		if err != nil {
+			return xerrors.Errorf("failed to prepare data: %v", err)
+		}
 
-	id, err := s.pbftsm.Prepare(block)
-	if err != nil {
-		return xerrors.Errorf("pbft prepare failed: %v", err)
+		block, err = types.NewBlock(
+			data,
+			types.WithTreeRoot(root),
+			types.WithIndex(uint64(s.blocks.Len())),
+			types.WithHashFactory(s.hashFactory))
+
+		if err != nil {
+			return xerrors.Errorf("creating block failed: %v", err)
+		}
+
+		id, err = s.pbftsm.Prepare(s.me, block)
+		if err != nil {
+			return xerrors.Errorf("pbft prepare failed: %v", err)
+		}
 	}
 
 	roster, err := s.getCurrentRoster()
@@ -591,7 +626,7 @@ func (s *Service) doPBFT(ctx context.Context) error {
 
 	sig, err := s.actor.Sign(ctx, req, roster)
 	if err != nil {
-		return xerrors.Errorf("prepare phase failed: %v", err)
+		return xerrors.Errorf("prepare signature failed: %v", err)
 	}
 
 	s.logger.Debug().Str("signature", fmt.Sprintf("%v", sig)).Msg("prepare done")
@@ -601,7 +636,7 @@ func (s *Service) doPBFT(ctx context.Context) error {
 
 	sig, err = s.actor.Sign(ctx, commit, roster)
 	if err != nil {
-		return xerrors.Errorf("commit phase failed: %v", err)
+		return xerrors.Errorf("commit signature failed: %v", err)
 	}
 
 	s.logger.Debug().Str("signature", fmt.Sprintf("%v", sig)).Msg("commit done")
@@ -611,7 +646,7 @@ func (s *Service) doPBFT(ctx context.Context) error {
 
 	resps, err := s.rpc.Call(ctx, done, roster)
 	if err != nil {
-		return xerrors.Errorf("rpc failed: %v", err)
+		return xerrors.Errorf("propagation failed: %v", err)
 	}
 
 	for resp := range resps {
@@ -641,7 +676,7 @@ func (s *Service) prepareViews() map[mino.Address]types.ViewMessage {
 	return msgs
 }
 
-func (s *Service) prepareData(txs []txn.Transaction) (data validation.Data, id types.Digest, err error) {
+func (s *Service) prepareData(txs []txn.Transaction) (data validation.Result, id types.Digest, err error) {
 	var stageTree hashtree.StagingTree
 
 	stageTree, err = s.tree.Get().Stage(func(snap store.Snapshot) error {

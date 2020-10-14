@@ -1,10 +1,15 @@
+// Package viewchange implements a native smart contract to update the roster of
+// a chain.
+//
+// Documentation Last Review: 08.10.2020
+//
 package viewchange
 
 import (
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/execution"
-	"go.dedis.ch/dela/core/execution/baremetal"
+	"go.dedis.ch/dela/core/execution/native"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/txn"
@@ -32,7 +37,7 @@ const (
 
 // RegisterContract registers the view change contract to the given execution
 // service.
-func RegisterContract(exec *baremetal.BareMetal, c Contract) {
+func RegisterContract(exec *native.Service, c Contract) {
 	exec.Set(ContractName, c)
 }
 
@@ -65,7 +70,7 @@ func (mgr Manager) Make(roster authority.Authority) (txn.Transaction, error) {
 	}
 
 	tx, err := mgr.manager.Make(
-		txn.Arg{Key: baremetal.ContractArg, Value: []byte(ContractName)},
+		txn.Arg{Key: native.ContractArg, Value: []byte(ContractName)},
 		txn.Arg{Key: AuthorityArg, Value: data},
 	)
 	if err != nil {
@@ -78,7 +83,7 @@ func (mgr Manager) Make(roster authority.Authority) (txn.Transaction, error) {
 // Contract is a contract to update the roster at a given key in the storage. It
 // only allows one member change per transaction.
 //
-// - implements baremetal.Contract
+// - implements native.Contract
 type Contract struct {
 	rosterKey []byte
 	rosterFac authority.Factory
@@ -98,14 +103,14 @@ func NewContract(rKey, aKey []byte, rFac authority.Factory, srvc access.Service)
 	}
 }
 
-// Execute implements baremetal.Contract. It looks for the roster in the
+// Execute implements native.Contract. It looks for the roster in the
 // transaction and updates the storage if there is at most one membership
 // change.
 func (c Contract) Execute(snap store.Snapshot, step execution.Step) error {
 	for _, tx := range step.Previous {
 		// Only one view change transaction is allowed per block to prevent
 		// malicious peers to reach the threshold.
-		if string(tx.GetArg(baremetal.ContractArg)) == ContractName {
+		if string(tx.GetArg(native.ContractArg)) == ContractName {
 			return xerrors.New(messageOnlyOne)
 		}
 	}

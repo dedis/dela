@@ -1,3 +1,12 @@
+// Package bls implements the cryptographic primitives using the BLS signature
+// scheme and the BN256 elliptic curve.
+//
+// Related Papers:
+//
+// https://crypto.stanford.edu/~dabo/pubs/papers/BLSmultisig.html
+//
+// Documentation Last Review: 05.10.2020
+//
 package bls
 
 import (
@@ -36,7 +45,9 @@ func RegisterSignatureFormat(c serde.Format, f serde.FormatEngine) {
 	sigFormats.Register(c, f)
 }
 
-// PublicKey can be provided to verify a BLS signature.
+// PublicKey is the adapter a of BN256 public key.
+//
+// - implements crypto.PublicKey
 type PublicKey struct {
 	point kyber.Point
 }
@@ -66,7 +77,8 @@ func (pk PublicKey) MarshalBinary() ([]byte, error) {
 	return pk.point.MarshalBinary()
 }
 
-// Serialize implements serde.Message.
+// Serialize implements serde.Message. It returns the serialized data of the
+// public key.
 func (pk PublicKey) Serialize(ctx serde.Context) ([]byte, error) {
 	format := pubkeyFormats.Get(ctx.GetFormat())
 
@@ -79,7 +91,7 @@ func (pk PublicKey) Serialize(ctx serde.Context) ([]byte, error) {
 }
 
 // Verify implements crypto.PublicKey. It returns nil if the signature matches
-// the message with this public key.
+// the message for this public key.
 func (pk PublicKey) Verify(msg []byte, sig crypto.Signature) error {
 	signature, ok := sig.(Signature)
 	if !ok {
@@ -128,8 +140,9 @@ func (pk PublicKey) String() string {
 	return string(buffer)[:4+16]
 }
 
-// Signature is a proof of the integrity of a single message associated with a
-// unique public key.
+// Signature is the adapter of a BN256 signature.
+//
+// - implements crypto.Signature
 type Signature struct {
 	data []byte
 }
@@ -147,7 +160,8 @@ func (sig Signature) MarshalBinary() ([]byte, error) {
 	return sig.data, nil
 }
 
-// Serialize implements serde.Message.
+// Serialize implements serde.Message. It returns the serialized data of the
+// signature.
 func (sig Signature) Serialize(ctx serde.Context) ([]byte, error) {
 	format := sigFormats.Get(ctx.GetFormat())
 
@@ -159,7 +173,8 @@ func (sig Signature) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
-// Equal implements crypto.PublicKey.
+// Equal implements crypto.Signature. It returns true if both signatures are the
+// same.
 func (sig Signature) Equal(other crypto.Signature) bool {
 	otherSig, ok := other.(Signature)
 	if !ok {
@@ -169,14 +184,16 @@ func (sig Signature) Equal(other crypto.Signature) bool {
 	return bytes.Equal(sig.data, otherSig.data)
 }
 
+// String implements fmt.Stringer. It returns a string representation of the
+// signature.
 func (sig Signature) String() string {
 	return fmt.Sprintf("bls:%x", sig.data)
 }
 
-// publicKeyFactory creates BLS compatible public key from protobuf messages.
+// publicKeyFactory is a factory to deserialize public keys of the BN256
+// elliptic curve.
 //
-// - serde.Factory
-// - crypto.PublicKeyFactory
+// - implements crypto.PublicKeyFactory
 type publicKeyFactory struct{}
 
 // NewPublicKeyFactory returns a new instance of the factory.
@@ -184,8 +201,8 @@ func NewPublicKeyFactory() crypto.PublicKeyFactory {
 	return publicKeyFactory{}
 }
 
-// Deserialize implements serde.Factory. It looks up the format and returns the
-// deserialized public key.
+// Deserialize implements serde.Factory. It returns the public key of the data
+// if appropriate, otherwise an error.
 func (f publicKeyFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := pubkeyFormats.Get(ctx.GetFormat())
 
@@ -197,8 +214,8 @@ func (f publicKeyFactory) Deserialize(ctx serde.Context, data []byte) (serde.Mes
 	return m, nil
 }
 
-// PublicKeyOf implements crypto.PublicKeyFactory. It returns the public key
-// deserialized from the data.
+// PublicKeyOf implements crypto.PublicKeyFactory. It returns the public key of
+// the data if appropriate, otherwise an error.
 func (f publicKeyFactory) PublicKeyOf(ctx serde.Context, data []byte) (crypto.PublicKey, error) {
 	m, err := f.Deserialize(ctx, data)
 	if err != nil {
@@ -224,8 +241,10 @@ func (f publicKeyFactory) FromBytes(data []byte) (crypto.PublicKey, error) {
 	return pubkey, nil
 }
 
-// signatureFactory provides functions to create BLS signatures from protobuf
-// messages.
+// signatureFactory is a factory to deserialize signatures of the BN256 elliptic
+// curve.
+//
+// - implements crypto.SignatureFactory
 type signatureFactory struct{}
 
 // NewSignatureFactory returns a new instance of the factory.
@@ -233,8 +252,8 @@ func NewSignatureFactory() crypto.SignatureFactory {
 	return signatureFactory{}
 }
 
-// Deserialize implements serde.Factory. It looks up the format and returns the
-// message of the data if appropriate, otherwise an error.
+// Deserialize implements serde.Factory. It returns the signature of the data if
+// appropriate, otherwise an error.
 func (f signatureFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := sigFormats.Get(ctx.GetFormat())
 
@@ -246,8 +265,8 @@ func (f signatureFactory) Deserialize(ctx serde.Context, data []byte) (serde.Mes
 	return m, nil
 }
 
-// SignatureOf implements crypto.SignatureFactory. It populates the signature
-// with the data if appropriate, otherwise it returns an error.
+// SignatureOf implements crypto.SignatureFactory. It returns the signature of
+// the data if appropriate, otherwise an error.
 func (f signatureFactory) SignatureOf(ctx serde.Context, data []byte) (crypto.Signature, error) {
 	m, err := f.Deserialize(ctx, data)
 	if err != nil {
@@ -262,7 +281,10 @@ func (f signatureFactory) SignatureOf(ctx serde.Context, data []byte) (crypto.Si
 	return sig, nil
 }
 
-// verifier provides primitives to verify a BLS signature of a unique message.
+// blsVerifier is a verifier for BLS signatures to match against a message and
+// the public key associated to one or several identities.
+//
+// - implements crypto.Verifier
 type blsVerifier struct {
 	points []kyber.Point
 }
@@ -285,6 +307,10 @@ func (v blsVerifier) Verify(msg []byte, sig crypto.Signature) error {
 	return nil
 }
 
+// verifierFactory is a factory to create verifiers from an authority or a list
+// of public keys.
+//
+// - implements crypto.VerifierFactory
 type verifierFactory struct{}
 
 // FromIterator implements crypto.VerifierFactory. It returns a verifier that
@@ -327,11 +353,11 @@ func (v verifierFactory) FromArray(publicKeys []crypto.PublicKey) (crypto.Verifi
 	return newVerifier(points), nil
 }
 
-// Signer is the BLS signer which can sign messages to be verified with its
-// public key.
+// Signer is the adapter of a private key from the Kyber package for the BN256
+// elliptic curve.
 //
 // - implements crypto.AggregateSigner
-// - implements encodinf.BinaryMarshaler
+// - implements encoding.BinaryMarshaler
 type Signer struct {
 	public  kyber.Point
 	private kyber.Scalar

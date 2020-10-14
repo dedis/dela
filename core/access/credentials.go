@@ -1,3 +1,8 @@
+// This file contains the implementation of contract credentials.
+//
+// Documentation Last Review: 08.10.2020
+//
+
 package access
 
 import "fmt"
@@ -20,12 +25,13 @@ func NewContractCreds(id []byte, contract, command string) ContractCredential {
 	}
 }
 
-// GetID returns the identifier for the credential.
+// GetID implements access.Credential. It returns the identifier for the
+// credential.
 func (cc ContractCredential) GetID() []byte {
 	return append([]byte{}, cc.id...)
 }
 
-// GetRule returns the scope of the credential.
+// GetRule implements access.Credential. It returns the scope of the credential.
 func (cc ContractCredential) GetRule() string {
 	return fmt.Sprintf("%s:%s", cc.contract, cc.command)
 }

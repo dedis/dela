@@ -1,3 +1,8 @@
+// This file contains the implementation of the controller actions.
+//
+//
+// Documentation Last Review: 13.10.20202
+
 package controller
 
 import (
@@ -6,12 +11,12 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strings"
-	"time"
 
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cli/node"
-	"go.dedis.ch/dela/core/execution/baremetal/viewchange"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
+	"go.dedis.ch/dela/core/ordering/cosipbft/contracts/viewchange"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/pool"
 	"go.dedis.ch/dela/cosi"
@@ -137,27 +142,9 @@ func (rosterAddAction) Execute(ctx node.Context) error {
 		return xerrors.Errorf("injector: %v", err)
 	}
 
-	roster, err := srvc.GetRoster()
+	tx, err := prepareRosterTx(ctx, srvc)
 	if err != nil {
-		return xerrors.Errorf("failed to read roster: %v", err)
-	}
-
-	addr, pubkey, err := decodeMember(ctx, ctx.Flags.String("member"))
-	if err != nil {
-		return xerrors.Errorf("failed to decode member: %v", err)
-	}
-
-	cset := authority.NewChangeSet()
-	cset.Add(addr, pubkey)
-
-	mgr, err := makeManager(ctx)
-	if err != nil {
-		return xerrors.Errorf("txn manager: %v", err)
-	}
-
-	tx, err := viewchange.NewManager(mgr).Make(roster.Apply(cset))
-	if err != nil {
-		return xerrors.Errorf("transaction: %v", err)
+		return xerrors.Errorf("while preparing tx: %v", err)
 	}
 
 	var p pool.Pool
@@ -166,31 +153,35 @@ func (rosterAddAction) Execute(ctx node.Context) error {
 		return xerrors.Errorf("injector: %v", err)
 	}
 
+	wait := ctx.Flags.Duration("wait")
+
+	// Start listening for new transactions before sending the new one, to
+	// be sure the event will be received.
+	watchCtx, cancel := context.WithTimeout(context.Background(), wait)
+	defer cancel()
+
+	events := srvc.Watch(watchCtx)
+
 	err = p.Add(tx)
 	if err != nil {
 		return xerrors.Errorf("failed to add transaction: %v", err)
 	}
 
-	wait := ctx.Flags.Duration("wait")
 	if wait > 0 {
-		err := waitTx(srvc, wait, tx)
-		if err != nil {
-			return xerrors.Errorf("wait: %v", err)
-		}
-	}
+		dela.Logger.Debug().
+			Hex("id", tx.GetID()).
+			Msg("wait for the transaction to be included")
 
-	return nil
-}
+		for event := range events {
+			for _, res := range event.Transactions {
+				if !bytes.Equal(res.GetTransaction().GetID(), tx.GetID()) {
+					continue
+				}
 
-func waitTx(srvc Service, wait time.Duration, tx txn.Transaction) error {
-	ctx, cancel := context.WithTimeout(context.Background(), wait)
-	defer cancel()
+				dela.Logger.Debug().
+					Hex("id", tx.GetID()).
+					Msg("transaction included in the block")
 
-	events := srvc.Watch(ctx)
-
-	for event := range events {
-		for _, res := range event.Transactions {
-			if bytes.Equal(res.GetTransaction().GetID(), tx.GetID()) {
 				accepted, msg := res.GetStatus()
 				if !accepted {
 					return xerrors.Errorf("transaction refused: %s", msg)
@@ -199,9 +190,38 @@ func waitTx(srvc Service, wait time.Duration, tx txn.Transaction) error {
 				return nil
 			}
 		}
+
+		return xerrors.New("transaction not found after timeout")
 	}
 
-	return xerrors.New("transaction not found after timeout")
+	return nil
+}
+
+func prepareRosterTx(ctx node.Context, srvc Service) (txn.Transaction, error) {
+	roster, err := srvc.GetRoster()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to read roster: %v", err)
+	}
+
+	addr, pubkey, err := decodeMember(ctx, ctx.Flags.String("member"))
+	if err != nil {
+		return nil, xerrors.Errorf("failed to decode member: %v", err)
+	}
+
+	cset := authority.NewChangeSet()
+	cset.Add(addr, pubkey)
+
+	mgr, err := makeManager(ctx)
+	if err != nil {
+		return nil, xerrors.Errorf("txn manager: %v", err)
+	}
+
+	tx, err := viewchange.NewManager(mgr).Make(roster.Apply(cset))
+	if err != nil {
+		return nil, xerrors.Errorf("transaction: %v", err)
+	}
+
+	return tx, nil
 }
 
 func makeManager(ctx node.Context) (txn.Manager, error) {

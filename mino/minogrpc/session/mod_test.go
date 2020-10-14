@@ -152,7 +152,7 @@ func TestSession_Send(t *testing.T) {
 		},
 	}
 
-	errs := sess.Send(fake.Message{}, fake.NewAddress(0))
+	errs := sess.Send(fake.Message{}, newWrapAddress(fake.NewAddress(0)))
 	require.NoError(t, <-errs)
 	require.Equal(t, 1, stream.calls.Len())
 
@@ -295,7 +295,7 @@ func TestSession_Recv(t *testing.T) {
 
 	from, msg, err := sess.Recv(ctx)
 	require.NoError(t, err)
-	require.Equal(t, fake.NewAddress(700), from)
+	require.True(t, from.Equal(fake.NewAddress(700)))
 	require.Equal(t, fake.Message{}, msg)
 
 	sess.msgFac = fake.NewBadMessageFactory()
@@ -488,7 +488,7 @@ func (t fakeTable) Make(mino.Address, []mino.Address, []byte) router.Packet {
 	return fakePkt{dest: fake.NewAddress(0), empty: t.empty}
 }
 
-func (t fakeTable) Prelude(mino.Address) router.Handshake {
+func (t fakeTable) PrepareHandshakeFor(mino.Address) router.Handshake {
 	return fakeHandshake{err: t.err}
 }
 

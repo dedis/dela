@@ -1,3 +1,8 @@
+// This file contains the implementation of the controller actions.
+//
+// Documentation Last Review: 07.10.2020
+//
+
 package controller
 
 import (

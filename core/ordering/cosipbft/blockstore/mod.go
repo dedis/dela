@@ -1,3 +1,19 @@
+// Package blockstore defines the different storage the ordering service is
+// using.
+//
+// The block store defines the primitives to store a block and read one from the
+// disk. It also provide an API to read a chain from the genesis block to the
+// latest block. It is important to notice that a block is stored alongside the
+// link that has been created during the consensus.
+//
+// The tree cache stores the latest state of the tree, which is modified after
+// each new block.
+//
+// The genesis store allows to set a definitive genesis block and persist it so
+// that it can be reloaded later on.
+//
+// Documentation Last Review: 13.10.2020
+//
 package blockstore
 
 import (
@@ -15,6 +31,7 @@ var ErrNoBlock = errors.New("no block")
 // TreeCache is a cache to store a tree that needs to be accessed in different
 // places.
 type TreeCache interface {
+	// Get returns the current value of the cache.
 	Get() hashtree.Tree
 
 	// GetWithLock implements blockstore.TreeCache. It returns the current value
@@ -23,6 +40,7 @@ type TreeCache interface {
 	// called.
 	GetWithLock() (tree hashtree.Tree, unlock func())
 
+	// Set sets a new tree in the cache.
 	Set(hashtree.Tree)
 
 	// SetWithLock implements blockstore.TreeCache. It sets the tree while

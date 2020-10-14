@@ -1,5 +1,5 @@
 // Package binprefix implements the hash tree interface by following the merkle
-// binary prefix tree described in:
+// binary prefix tree algorithm.
 //
 // https://www.usenix.org/system/files/conference/usenixsecurity15/sec15-paper-melara.pdf
 //
@@ -27,6 +27,9 @@
 // will be loaded to its in-memory type when traversing the tree. The node at
 // prefix 00 is an example of a leaf node which is a disk node even above the
 // memory depth level.
+//
+// Documentation Last Review: 08.10.2020
+//
 package binprefix
 
 import (
@@ -39,9 +42,12 @@ import (
 	"golang.org/x/xerrors"
 )
 
-// MerkleTree is an in-memory implementation of a Merkle prefix binary tree.
-// This particular implementation assumes the keys will have the same length so
-// that only the longest unique prefix along the path can be a leaf node.
+// MerkleTree is an implementation of a Merkle prefix binary tree. This
+// particular implementation assumes the keys will have the same length so that
+// only the longest unique prefix along the path can be a leaf node.
+//
+// The leafs of the tree will be stored on the disk when committing the tree.
+// Modifications on a staged tree are done in-memory.
 //
 // - implements hashtree.Tree
 type MerkleTree struct {
@@ -54,7 +60,7 @@ type MerkleTree struct {
 	hashFactory crypto.HashFactory
 }
 
-// NewMerkleTree creates a new in-memory trie.
+// NewMerkleTree creates a new Merkle tree-based storage.
 func NewMerkleTree(db kv.DB, nonce Nonce) *MerkleTree {
 	return &MerkleTree{
 		tree:        NewTree(nonce),
@@ -111,7 +117,7 @@ func (t *MerkleTree) Get(key []byte) ([]byte, error) {
 	return value, nil
 }
 
-// GetRoot implements hashtree.Tree. It returns the root of the hash tree.
+// GetRoot implements hashtree.Tree. It returns the root hash of the tree.
 func (t *MerkleTree) GetRoot() []byte {
 	t.Lock()
 	defer t.Unlock()

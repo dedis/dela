@@ -1,3 +1,7 @@
+//
+// Documentation Last Review: 05.10.2020
+//
+
 package crypto
 
 import (
@@ -15,7 +19,7 @@ func NewSha256Factory() Sha256Factory {
 	return Sha256Factory{}
 }
 
-// New returns a new hash instance.
+// New implements crypto.HashFactory. It returns a new SHA256 instance.
 func (f Sha256Factory) New() hash.Hash {
 	return sha256.New()
 }

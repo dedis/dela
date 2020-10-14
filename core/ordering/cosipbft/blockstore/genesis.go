@@ -1,3 +1,9 @@
+// This file contains the implementations of a genesis store. An in-memory and a
+// persistent implementation are available.
+//
+// Documentation Last Review: 13.10.2020
+//
+
 package blockstore
 
 import (

@@ -2,6 +2,7 @@ package node
 
 import (
 	"bytes"
+	"encoding/json"
 	"io/ioutil"
 	"net"
 	"os"
@@ -18,7 +19,7 @@ import (
 func TestSocketClient_Send(t *testing.T) {
 	path := filepath.Join(os.TempDir(), "daemon.sock")
 
-	listen(t, path, false)
+	listen(t, path, false, false)
 
 	out := new(bytes.Buffer)
 	client := socketClient{
@@ -28,25 +29,25 @@ func TestSocketClient_Send(t *testing.T) {
 
 	err := client.Send([]byte("deadbeef"))
 	require.NoError(t, err)
-	require.Equal(t, "deadbeef", out.String())
+	require.Equal(t, "deadbeef\n", out.String())
 
 	client.socketpath = ""
 	err = client.Send(nil)
 	require.EqualError(t, err,
 		"couldn't open connection: dial unix: missing address")
 
-	listen(t, path, false)
+	listen(t, path, false, true)
 	client.socketpath = path
-	client.out = fake.NewBadHash()
-	err = client.Send([]byte("deadbeef"))
-	require.EqualError(t, err, fake.Err("couldn't read output"))
+	err = client.Send([]byte("}"))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "fail to decode event: ")
 
 	// Windows only allows opening one socket per address, this is why we use
 	// another one.
 	path = filepath.Join(os.TempDir(), "daemon2.sock")
 	client.socketpath = path
 
-	listen(t, path, true)
+	listen(t, path, true, false)
 	in := make([]byte, 256*1000) // fill the buffer
 	err = client.Send(in)
 	require.Error(t, err)
@@ -87,27 +88,21 @@ func TestSocketDaemon_Listen(t *testing.T) {
 
 	err = client.Send(append([]byte{0x0, 0x0}, []byte("{}")...))
 	require.NoError(t, err)
-	require.Equal(t, "deadbeef", out.String())
+	require.Equal(t, "deadbeef\n", out.String())
 
-	out.Reset()
 	err = client.Send(append([]byte{0x1, 0x0}, []byte("{}")...))
-	require.NoError(t, err)
-	require.Equal(t, fake.Err("[ERROR] command error")+"\n", out.String())
+	require.EqualError(t, err, fake.Err("command error"))
 
-	out.Reset()
 	err = client.Send(append([]byte{0x2, 0x0}, []byte("{}")...))
-	require.NoError(t, err)
-	require.Equal(t, "[ERROR] unknown command '2'\n", out.String())
+	require.EqualError(t, err, "unknown command '2'")
 
-	out.Reset()
 	err = client.Send([]byte{0x0, 0x0, 0x0})
-	require.NoError(t, err)
-	require.Contains(t, out.String(), "[ERROR] failed to decode flags: ")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to decode flags")
 
-	out.Reset()
 	err = client.Send([]byte{})
-	require.NoError(t, err)
-	require.Contains(t, out.String(), "[ERROR] stream corrupted: ")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "stream corrupted: ")
 
 	// the rest is not concerned by windows that actually allows the creation of
 	// root files and folders
@@ -119,6 +114,62 @@ func TestSocketDaemon_Listen(t *testing.T) {
 	err = daemon.Listen()
 	require.Error(t, err)
 	require.Regexp(t, "^couldn't bind socket: listen unix /test.sock: bind:", err)
+}
+
+func TestSocketDaemon_ConnectivityTest_Listen(t *testing.T) {
+	dir, err := ioutil.TempDir(os.TempDir(), "dela-test-")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
+	daemon := &socketDaemon{
+		socketpath:  filepath.Join(dir, "daemon.sock"),
+		actions:     &actionMap{},
+		closing:     make(chan struct{}),
+		readTimeout: 50 * time.Millisecond,
+	}
+
+	err = daemon.Listen()
+	require.NoError(t, err)
+
+	defer daemon.Close()
+
+	conn, err := net.DialTimeout("unix", daemon.socketpath, 1*time.Second)
+	require.NoError(t, err)
+	require.NoError(t, conn.Close())
+}
+
+func TestSocketDaemon_ConnClosedFromClient_HandleConn(t *testing.T) {
+	logger, check := fake.CheckLog("connection to daemon has error")
+
+	daemon := &socketDaemon{
+		logger:      logger,
+		actions:     &actionMap{},
+		closing:     make(chan struct{}),
+		readTimeout: 50 * time.Millisecond,
+	}
+
+	daemon.handleConn(badConn{})
+
+	check(t)
+}
+
+func TestClientWriter_Write(t *testing.T) {
+	buffer := new(bytes.Buffer)
+
+	w := newClientWriter(buffer)
+
+	n, err := w.Write([]byte("deadbeef"))
+	require.NoError(t, err)
+	require.Equal(t, 8, n)
+}
+
+func TestClientWriter_BadWriter_Write(t *testing.T) {
+	w := newClientWriter(fake.NewBadHash())
+
+	n, err := w.Write([]byte("deadbeef"))
+	require.Equal(t, 0, n)
+	require.EqualError(t, err, fake.Err("while packing data"))
 }
 
 func TestSocketFactory_ClientFromContext(t *testing.T) {
@@ -134,7 +185,7 @@ func TestSocketFactory_ClientFromContext(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-func listen(t *testing.T, path string, quick bool) {
+func listen(t *testing.T, path string, quick bool, badFormat bool) {
 	socket, err := net.Listen("unix", path)
 	require.NoError(t, err)
 
@@ -153,8 +204,13 @@ func listen(t *testing.T, path string, quick bool) {
 		n, err := conn.Read(buffer)
 		require.NoError(t, err)
 
-		_, err = conn.Write(buffer[:n])
-		require.NoError(t, err)
+		if badFormat {
+			conn.Write(buffer[:n])
+		} else {
+			enc := json.NewEncoder(conn)
+			err = enc.Encode(event{Value: string(buffer[:n])})
+			require.NoError(t, err)
+		}
 	}()
 }
 
@@ -228,4 +284,24 @@ type fakeContext struct {
 
 func (ctx fakeContext) Path(name string) string {
 	return ctx.path
+}
+
+type badConn struct {
+	net.Conn
+}
+
+func (badConn) Read([]byte) (int, error) {
+	return 0, fake.GetError()
+}
+
+func (badConn) Write([]byte) (int, error) {
+	return 0, fake.GetError()
+}
+
+func (badConn) SetReadDeadline(t time.Time) error {
+	return nil
+}
+
+func (badConn) Close() error {
+	return nil
 }

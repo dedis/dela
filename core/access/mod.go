@@ -1,4 +1,7 @@
-// Package access defines the interfaces for the Access Rights Control.
+// Package access defines the interfaces for Access Rights Controls.
+//
+// Documentation Last Review: 08.10.2020
+//
 package access
 
 import (
@@ -14,6 +17,7 @@ type Identity interface {
 
 	encoding.TextMarshaler
 
+	// Equal returns true when the other object is equal to the identity.
 	Equal(other interface{}) bool
 }
 
@@ -39,7 +43,10 @@ type Identity interface {
 // providing the credential with the identifier 0xdeadbeef and the rule
 // "myContract:sayHello".
 type Credential interface {
+	// GetID returns the identifier of the credential.
 	GetID() []byte
+
+	// GetRule returns the rule that is targetted by the credential.
 	GetRule() string
 }
 

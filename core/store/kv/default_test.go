@@ -173,14 +173,14 @@ func TestBoltBucket_Scan(t *testing.T) {
 		require.Equal(t, byte(14), i)
 
 		err = b.Scan([]byte{1}, func(k, v []byte) error {
-			return xerrors.New("scan")
+			return xerrors.New("callback error")
 		})
 		require.NoError(t, err)
 
 		err = b.Scan([]byte{}, func(k, v []byte) error {
-			return xerrors.New("scan")
+			return xerrors.New("callback error")
 		})
-		require.EqualError(t, err, "callback failed: scan")
+		require.EqualError(t, err, "callback error")
 
 		return nil
 	})

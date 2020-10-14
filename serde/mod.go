@@ -1,13 +1,15 @@
 // Package serde defines the serialization and deserialization mechanisms.
 //
-// Example of a JSON serialization and deserialization:
+// The serialization works through the implementation of the Message interface
+// that can either support a single format, or a dynamic registration of a
+// format engine for each format.
 //
-// 	ctx := json.NewContext()
-// 	data, err := msg.Serialize(ctx)
-// 	checkError(err)
+// The deserialization works in a similar fashion but through the Factory
+// interface.
 //
-// 	msg, err := factory.Deserialize(ctx, data)
-// 	checkError(err)
+// See dela/serde/registry for more advanced control of the formats.
+//
+// Documentation Last Review: 07.10.2020
 //
 package serde
 

@@ -1,3 +1,11 @@
+// Package controller implements a controller for minogrpc.
+//
+// The controller can be used in a CLI to inject a dependency for Mino. It will
+// start the overlay on the start command, and make sure resources are cleaned
+// when the CLI daemon is stopping.
+//
+// Documentation Last Review: 07.10.2020
+//
 package controller
 
 import (
@@ -18,6 +26,7 @@ import (
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
+	"go.dedis.ch/dela/mino/minogrpc/session"
 	"go.dedis.ch/dela/mino/router/tree"
 	"golang.org/x/xerrors"
 )
@@ -100,7 +109,7 @@ func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("invalid port value %d", port)
 	}
 
-	rter := tree.NewRouter(minogrpc.AddressFactory{})
+	rter := tree.NewRouter(minogrpc.NewAddressFactory())
 
 	addr := minogrpc.ParseAddress("127.0.0.1", uint16(port))
 
@@ -110,7 +119,7 @@ func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("injector: %v", err)
 	}
 
-	certs := certs.NewDiskStore(db, minogrpc.AddressFactory{})
+	certs := certs.NewDiskStore(db, session.AddressFactory{})
 
 	key, err := m.getKey(ctx)
 	if err != nil {
@@ -173,6 +182,9 @@ func (m miniController) getKey(flags cli.Flags) (*ecdsa.PrivateKey, error) {
 	return key, nil
 }
 
+// generator can generate a private key compatible with the x509 certificate.
+//
+// - implements loader.Generator
 type generator struct {
 	random io.Reader
 	curve  elliptic.Curve
@@ -185,6 +197,9 @@ func newGenerator(r io.Reader, c elliptic.Curve) loader.Generator {
 	}
 }
 
+// Generate implements loader.Generator. It returns the serialized data of a
+// private key generated from the an elliptic curve. The data is formatted as a
+// PEM block "EC PRIVATE KEY".
 func (g generator) Generate() ([]byte, error) {
 	priv, err := ecdsa.GenerateKey(g.curve, g.random)
 	if err != nil {

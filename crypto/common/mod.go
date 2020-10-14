@@ -1,7 +1,8 @@
-// Package common implements interfaces to support multiple algorithms. A public
-// key factory and a signature factory are available. The supported algorithms
-// are the followings:
-// - BLS
+// Package common implements the factories of the crypto primitives to allow the
+// use of multiple algorithms over the same communication channel.
+//
+// Documentation Last Review: 05.10.2020
+//
 package common
 
 import (
@@ -36,8 +37,8 @@ func (alg Algorithm) GetName() string {
 	return alg.name
 }
 
-// Serialize implements serde.Message. It looks up the format and returns the
-// serialized data of the algorithm.
+// Serialize implements serde.Message. It returns the serialized for the
+// algorithm.
 func (alg Algorithm) Serialize(ctx serde.Context) ([]byte, error) {
 	format := algFormats.Get(ctx.GetFormat())
 
@@ -55,20 +56,21 @@ func (alg Algorithm) Serialize(ctx serde.Context) ([]byte, error) {
 type PublicKeyFactory interface {
 	serde.Factory
 
+	// PublicKeyOf returns the public key associated to the data if appropriate,
+	// otherwise an error.
 	PublicKeyOf(serde.Context, []byte) (crypto.PublicKey, error)
 }
 
-// publicKeyFac is a public key factory for commonly known algorithms.
+// PublicKeyFac is a public key factory for commonly known algorithms.
 //
-// - implements crypto.publicKeyFac
-// - implements serde.Factory
-type publicKeyFac struct {
+// - implements common.PublicKeyFactory
+type PublicKeyFac struct {
 	factories map[string]crypto.PublicKeyFactory
 }
 
 // NewPublicKeyFactory returns a new instance of the common public key factory.
-func NewPublicKeyFactory() PublicKeyFactory {
-	factory := publicKeyFac{
+func NewPublicKeyFactory() PublicKeyFac {
+	factory := PublicKeyFac{
 		factories: make(map[string]crypto.PublicKeyFactory),
 	}
 
@@ -79,13 +81,13 @@ func NewPublicKeyFactory() PublicKeyFactory {
 
 // RegisterAlgorithm registers the factory for the algorithm. It will override
 // an already existing key.
-func (f publicKeyFac) RegisterAlgorithm(algo string, factory crypto.PublicKeyFactory) {
+func (f PublicKeyFac) RegisterAlgorithm(algo string, factory crypto.PublicKeyFactory) {
 	f.factories[algo] = factory
 }
 
 // Deserialize implements serde.Factory. It looks up the format and returns the
 // public key of the data if appropriate, otherwise an error.
-func (f publicKeyFac) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+func (f PublicKeyFac) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := algFormats.Get(ctx.GetFormat())
 
 	m, err := format.Decode(ctx, data)
@@ -108,7 +110,7 @@ func (f publicKeyFac) Deserialize(ctx serde.Context, data []byte) (serde.Message
 
 // PublicKeyOf implements crypto.PublicKeyFactory. It returns the public key of
 // the data if appropriate, otherwise an error.
-func (f publicKeyFac) PublicKeyOf(ctx serde.Context, data []byte) (crypto.PublicKey, error) {
+func (f PublicKeyFac) PublicKeyOf(ctx serde.Context, data []byte) (crypto.PublicKey, error) {
 	msg, err := f.Deserialize(ctx, data)
 	if err != nil {
 		return nil, err
@@ -118,11 +120,14 @@ func (f publicKeyFac) PublicKeyOf(ctx serde.Context, data []byte) (crypto.Public
 }
 
 // SignatureFactory is a factory for commonly known algorithms.
+//
+// - implements crypto.SignatureFactory
 type SignatureFactory struct {
 	factories map[string]crypto.SignatureFactory
 }
 
 // NewSignatureFactory returns a new instance of the common signature factory.
+// It registers the BLS algorithm by default.
 func NewSignatureFactory() SignatureFactory {
 	factory := SignatureFactory{
 		factories: make(map[string]crypto.SignatureFactory),
@@ -138,8 +143,8 @@ func (f SignatureFactory) RegisterAlgorithm(name string, factory crypto.Signatur
 	f.factories[name] = factory
 }
 
-// Deserialize implements serde.Factory. It looks up the format and returns the
-// signature of the data if appropriate, otherwise an error.
+// Deserialize implements serde.Factory. It returns the signature associated to
+// the data if appropriate, otherwise it returns an error.
 func (f SignatureFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := algFormats.Get(ctx.GetFormat())
 
@@ -161,8 +166,8 @@ func (f SignatureFactory) Deserialize(ctx serde.Context, data []byte) (serde.Mes
 	return factory.SignatureOf(ctx, data)
 }
 
-// SignatureOf implements crypto.SignatureFactory. It returns the signature of
-// the data if appropriate, otherwise an error.
+// SignatureOf implements crypto.SignatureFactory. It returns the signature
+// associated to the data if appropriate, otherwise it returns an error.
 func (f SignatureFactory) SignatureOf(ctx serde.Context, data []byte) (crypto.Signature, error) {
 	msg, err := f.Deserialize(ctx, data)
 	if err != nil {

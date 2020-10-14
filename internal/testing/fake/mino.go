@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"math/big"
 	"net"
 	"testing"
@@ -254,44 +255,77 @@ func (ca CollectiveAuthority) PublicKeyIterator() crypto.PublicKeyIterator {
 	return &PublicKeyIterator{signers: ca.signers}
 }
 
+// ReceiverMessage is the combination of an address and a message that is
+// returned by the receiver.
+type ReceiverMessage struct {
+	Address mino.Address
+	Message serde.Message
+}
+
+// NewRecvMsg creates a new receiver message.
+func NewRecvMsg(addr mino.Address, msg serde.Message) ReceiverMessage {
+	return ReceiverMessage{
+		Address: addr,
+		Message: msg,
+	}
+}
+
 // Receiver is a fake RPC stream receiver. It will return the consecutive
 // messages stored in the Msg slice.
 //
 // - implements mino.Receiver
 type Receiver struct {
 	mino.Receiver
-	err   error
-	Msg   []serde.Message
-	index int
+	err      error
+	Msgs     []ReceiverMessage
+	index    int
+	blocking bool
 }
 
 // NewReceiver returns a new receiver
-func NewReceiver(msg ...serde.Message) *Receiver {
+func NewReceiver(msgs ...ReceiverMessage) *Receiver {
 	return &Receiver{
-		Msg: msg,
+		Msgs: msgs,
+		err:  io.EOF,
+	}
+}
+
+// NewBlockingReceiver returns a new fake receiver that is blocking until the
+// context is done.
+func NewBlockingReceiver() *Receiver {
+	return &Receiver{
+		blocking: true,
 	}
 }
 
 // NewBadReceiver returns a new receiver that returns an error.
-func NewBadReceiver(msg ...serde.Message) *Receiver {
-	return &Receiver{Msg: msg, err: fakeErr}
+func NewBadReceiver(msg ...ReceiverMessage) *Receiver {
+	return &Receiver{Msgs: msg, err: fakeErr}
 }
 
 // Recv implements mino.Receiver.
-func (r *Receiver) Recv(context.Context) (mino.Address, serde.Message, error) {
-	if len(r.Msg) == 0 {
+func (r *Receiver) Recv(ctx context.Context) (mino.Address, serde.Message, error) {
+	if r.blocking {
+		<-ctx.Done()
+		return nil, nil, ctx.Err()
+	}
+
+	if len(r.Msgs) == 0 {
 		return nil, nil, r.err
 	}
 
 	// In the case there are no more messages to read we return nil.
-	if r.index >= len(r.Msg) {
-		return NewAddress(0), nil, r.err
+	if r.index >= len(r.Msgs) {
+		return nil, nil, r.err
 	}
 
 	defer func() {
 		r.index++
 	}()
-	return NewAddress(0), r.Msg[r.index], nil
+
+	m := r.Msgs[r.index]
+
+	return m.Address, m.Message, nil
 }
 
 // Sender is a fake RPC stream sender.
@@ -310,7 +344,10 @@ func NewBadSender() Sender {
 // Send implements mino.Sender.
 func (s Sender) Send(serde.Message, ...mino.Address) <-chan error {
 	errs := make(chan error, 1)
-	errs <- s.err
+	if s.err != nil {
+		errs <- s.err
+	}
+
 	close(errs)
 	return errs
 }
@@ -417,9 +454,14 @@ func (m Mino) GetAddressFactory() mino.AddressFactory {
 	return AddressFactory{}
 }
 
-// MakeRPC implements mino.Mino.
-func (m Mino) MakeRPC(string, mino.Handler, serde.Factory) (mino.RPC, error) {
-	return NewRPC(), m.err
+// WithSegment implements mino.Mino.
+func (m Mino) WithSegment(segment string) mino.Mino {
+	return m
+}
+
+// CreateRPC implements mino.Mino.
+func (m Mino) CreateRPC(string, mino.Handler, serde.Factory) (mino.RPC, error) {
+	return NewRPC(), nil
 }
 
 // MakeCertificate generates a valid certificate for the localhost address and
@@ -433,9 +475,11 @@ func MakeCertificate(t *testing.T, n int, ips ...net.IP) *tls.Certificate {
 		IPAddresses:           ips,
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().Add(time.Hour),
-		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
+		IsCA:                  true,
+		MaxPathLen:            1,
 	}
 
 	buf, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)

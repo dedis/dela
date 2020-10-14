@@ -1,4 +1,7 @@
 // Package json implements the context engine for a the JSON format.
+//
+// Documentation Last Review: 07.10.2020
+//
 package json
 
 import (

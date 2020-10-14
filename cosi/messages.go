@@ -1,3 +1,7 @@
+//
+// Documentation Last Review: 05.10.2020
+//
+
 package cosi
 
 import (

@@ -1,130 +1,167 @@
 package threshold
 
 import (
-	"bytes"
 	"context"
-	"io"
 	"testing"
 
-	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/cosi"
-	"go.dedis.ch/dela/cosi/threshold/types"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/serde"
 )
 
 func TestActor_Sign(t *testing.T) {
-	ca := fake.NewAuthority(3, fake.NewSigner)
+	roster := fake.NewAuthority(3, fake.NewSigner)
+
+	recv := fake.NewReceiver(
+		fake.NewRecvMsg(fake.NewAddress(0), cosi.SignatureResponse{Signature: fake.Signature{}}),
+		fake.NewRecvMsg(fake.NewAddress(0), cosi.SignatureResponse{Signature: fake.Signature{}}),
+		fake.NewRecvMsg(fake.NewAddress(1), cosi.SignatureResponse{Signature: fake.Signature{}}),
+	)
+	rpc := fake.NewStreamRPC(recv, fake.Sender{})
 
 	actor := thresholdActor{
-		CoSi: &CoSi{
-			signer: ca.GetSigner(0).(crypto.AggregateSigner),
+		Threshold: &Threshold{
+			signer: roster.GetSigner(0).(crypto.AggregateSigner),
 		},
-		rpc: fakeRPC{
-			receiver: &fakeReceiver{
-				resps: [][]interface{}{
-					{ca.GetAddress(0), cosi.SignatureResponse{Signature: fake.Signature{}}},
-					{ca.GetAddress(0), cosi.SignatureResponse{Signature: fake.Signature{}}},
-					{ca.GetAddress(1), cosi.SignatureResponse{Signature: fake.Signature{}}},
-				},
-			},
-		},
+		rpc:     rpc,
 		reactor: fakeReactor{},
 	}
 
 	actor.SetThreshold(OneThreshold)
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	sig, err := actor.Sign(ctx, fake.Message{}, ca)
+	sig, err := actor.Sign(ctx, fake.Message{}, roster)
 	require.NoError(t, err)
 	require.NotNil(t, sig)
+}
 
-	actor.reactor = fakeReactor{err: fake.GetError()}
-	_, err = actor.Sign(ctx, fake.Message{}, ca)
-	require.EqualError(t, err, fake.Err("couldn't react to message"))
+func TestActor_BadNetwork_Sign(t *testing.T) {
+	actor := thresholdActor{
+		Threshold: &Threshold{},
+		rpc:       fake.NewBadRPC(),
+		reactor:   fakeReactor{err: fake.GetError()},
+	}
 
-	buffer := new(bytes.Buffer)
-	actor.logger = zerolog.New(buffer).Level(zerolog.WarnLevel)
-	actor.reactor = fakeReactor{}
-	actor.rpc = fakeRPC{receiver: &fakeReceiver{resps: makeBadResponse()}}
-	_, err = actor.Sign(ctx, fake.Message{}, ca)
-	require.EqualError(t, err, "couldn't receive more messages: EOF")
-	require.Contains(t, buffer.String(), "failed to process signature response")
+	roster := fake.NewAuthority(3, fake.NewSigner)
 
-	actor.rpc = fakeRPC{receiver: &fakeReceiver{blocking: true}}
-	doneCtx, cancel := context.WithCancel(context.Background())
-	cancel()
-	_, err = actor.Sign(doneCtx, fake.Message{}, ca)
-	require.EqualError(t, err, "couldn't receive more messages: context canceled")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	actor.rpc = fakeRPC{sender: fakeSender{numErr: 2}, receiver: &fakeReceiver{blocking: true}}
-	_, err = actor.Sign(ctx, fake.Message{}, ca)
-	require.EqualError(t, err, "couldn't receive more messages: context canceled")
-
-	actor.signer = fake.NewAggregateSigner()
-	resp := cosi.SignatureResponse{Signature: fake.Signature{}}
-	err = actor.merge(&types.Signature{}, resp, 0, fake.NewInvalidPublicKey(), []byte{})
-	require.EqualError(t, err, fake.Err("couldn't verify"))
-
-	actor.rpc = fake.NewBadRPC()
-	_, err = actor.Sign(ctx, fake.Message{}, ca)
+	_, err := actor.Sign(ctx, fake.Message{}, roster)
 	require.EqualError(t, err, fake.Err("couldn't open stream"))
 }
 
-// -----------------------------------------------------------------------------
-// Utility functions
-
-type fakeSender struct {
-	mino.Sender
-	numErr int
-}
-
-func (s fakeSender) Send(serde.Message, ...mino.Address) <-chan error {
-	ch := make(chan error, s.numErr)
-	for i := 0; i < s.numErr; i++ {
-		ch <- fake.GetError()
+func TestActor_BadReactor_Sign(t *testing.T) {
+	actor := thresholdActor{
+		Threshold: &Threshold{},
+		rpc:       fake.NewRPC(),
+		reactor:   fakeReactor{err: fake.GetError()},
 	}
 
-	close(ch)
-	return ch
+	roster := fake.NewAuthority(3, fake.NewSigner)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	_, err := actor.Sign(ctx, fake.Message{}, roster)
+	require.EqualError(t, err, fake.Err("couldn't react to message"))
 }
 
-type fakeReceiver struct {
-	mino.Receiver
-	blocking bool
-	resps    [][]interface{}
-	err      error
-}
+func TestActor_MalformedResponse_Sign(t *testing.T) {
+	logger, check := fake.CheckLog("failed to process signature response")
 
-func (r *fakeReceiver) Recv(ctx context.Context) (mino.Address, serde.Message, error) {
-	if r.blocking {
-		<-ctx.Done()
-		return nil, nil, ctx.Err()
+	recv := fake.NewReceiver(fake.NewRecvMsg(fake.NewAddress(0), fake.Message{}))
+	rpc := fake.NewStreamRPC(recv, fake.Sender{})
+	rpc.Done()
+
+	actor := thresholdActor{
+		Threshold: &Threshold{
+			logger: logger,
+		},
+		rpc:     rpc,
+		reactor: fakeReactor{},
 	}
+	actor.thresholdFn.Store(cosi.Threshold(defaultThreshold))
 
-	if r.err != nil {
-		return nil, nil, r.err
-	}
+	roster := fake.NewAuthority(3, fake.NewSigner)
 
-	if len(r.resps) == 0 {
-		return nil, nil, io.EOF
-	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	next := r.resps[0]
-	r.resps = r.resps[1:]
-	return next[0].(mino.Address), next[1].(serde.Message), nil
+	_, err := actor.Sign(ctx, fake.Message{}, roster)
+	require.EqualError(t, err, "couldn't receive more messages: EOF")
+	check(t)
 }
 
-type fakeRPC struct {
-	mino.RPC
-	sender   fakeSender
-	receiver *fakeReceiver
+func TestActor_CanceledContext_Sign(t *testing.T) {
+	actor := thresholdActor{
+		Threshold: &Threshold{},
+		rpc:       fake.NewStreamRPC(fake.NewBlockingReceiver(), fake.Sender{}),
+		reactor:   fakeReactor{},
+	}
+	actor.thresholdFn.Store(cosi.Threshold(defaultThreshold))
+
+	roster := fake.NewAuthority(3, fake.NewSigner)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := actor.Sign(ctx, fake.Message{}, roster)
+	require.EqualError(t, err, "couldn't receive more messages: context canceled")
 }
 
-func (rpc fakeRPC) Stream(context.Context, mino.Players) (mino.Sender, mino.Receiver, error) {
-	return rpc.sender, rpc.receiver, nil
+func TestActor_TooManyErrors_Sign(t *testing.T) {
+	rpc := fake.NewStreamRPC(fake.NewBlockingReceiver(), fake.NewBadSender())
+
+	logger, check := fake.CheckLog("signature request to a peer failed")
+
+	actor := thresholdActor{
+		Threshold: &Threshold{
+			logger: logger,
+		},
+		rpc:     rpc,
+		reactor: fakeReactor{},
+	}
+	actor.thresholdFn.Store(cosi.Threshold(defaultThreshold))
+
+	roster := fake.NewAuthority(3, fake.NewSigner)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	_, err := actor.Sign(ctx, fake.Message{}, roster)
+	require.EqualError(t, err, "couldn't receive more messages: context canceled")
+	check(t)
+}
+
+func TestActor_InvalidSignature_Sign(t *testing.T) {
+	recv := fake.NewReceiver(
+		fake.NewRecvMsg(fake.NewAddress(0), cosi.SignatureResponse{Signature: fake.Signature{}}),
+	)
+	rpc := fake.NewStreamRPC(recv, fake.Sender{})
+
+	logger, check := fake.CheckLog("failed to process signature response")
+
+	actor := thresholdActor{
+		Threshold: &Threshold{
+			logger: logger,
+		},
+		rpc:     rpc,
+		reactor: fakeReactor{},
+	}
+	actor.thresholdFn.Store(cosi.Threshold(defaultThreshold))
+
+	roster := fake.NewAuthority(3, func() crypto.Signer {
+		return fake.NewSignerWithPublicKey(fake.NewBadPublicKey())
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	_, err := actor.Sign(ctx, fake.Message{}, roster)
+	require.EqualError(t, err, "couldn't receive more messages: EOF")
+	check(t)
 }

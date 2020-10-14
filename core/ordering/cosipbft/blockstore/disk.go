@@ -1,3 +1,9 @@
+// This file contains the implementation of a persistent block store. It stores
+// the blocks and their links to a key/value database.
+//
+// Documentation Last Review: 13.10.2020
+//
+
 package blockstore
 
 import (
@@ -246,14 +252,7 @@ func (s *InDisk) Last() (types.BlockLink, error) {
 // Watch implements blockstore.BlockStore. It returns a channel populated with
 // new blocks stored.
 func (s *InDisk) Watch(ctx context.Context) <-chan types.BlockLink {
-	obs := observer{ch: make(chan types.BlockLink, 1)}
-	s.watcher.Add(obs)
-
-	go func() {
-		<-ctx.Done()
-		s.watcher.Remove(obs)
-		close(obs.ch)
-	}()
+	obs := newObserver(ctx, s.watcher)
 
 	return obs.ch
 }

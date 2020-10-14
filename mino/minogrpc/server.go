@@ -1,3 +1,9 @@
+// This file contains the implementation of the inner overlay of the minogrpc
+// instance which processes the requests from the gRPC server.
+//
+// Dcoumentation Last Review: 07.10.2020
+//
+
 package minogrpc
 
 import (
@@ -37,12 +43,10 @@ const (
 	headerAddressKey = "addr"
 
 	certificateDuration = time.Hour * 24 * 180
-)
 
-var (
 	// defaultMinConnectTimeout is the minimum amount of time we are willing to
 	// wait for a grpc connection to complete
-	defaultMinConnectTimeout = 7 * time.Second
+	defaultMinConnectTimeout = 10 * time.Second
 )
 
 type overlayServer struct {
@@ -122,19 +126,35 @@ func (o overlayServer) Join(ctx context.Context, req *ptypes.JoinRequest) (*ptyp
 }
 
 // Share implements ptypes.OverlayServer. It accepts a certificate from a
-// participant.
+// participant only if it is valid from the address it claims to be.
 func (o overlayServer) Share(ctx context.Context, msg *ptypes.Certificate) (*ptypes.CertificateAck, error) {
-	// TODO: verify the validity of the certificate by connecting to the distant
-	// node but that requires a protection against malicious share.
-
-	from := o.addrFactory.FromText(msg.GetAddress())
+	from := o.addrFactory.FromText(msg.GetAddress()).(session.Address)
 
 	cert, err := x509.ParseCertificate(msg.GetValue())
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't parse certificate: %v", err)
 	}
 
-	o.certs.Store(from, &tls.Certificate{Leaf: cert})
+	// Make sure the certificate is valid for the public key provided.
+	err = cert.CheckSignatureFrom(cert)
+	if err != nil {
+		return nil, xerrors.Errorf("invalid certificate signature: %v", err)
+	}
+
+	hostname, err := from.GetHostname()
+	if err != nil {
+		return nil, xerrors.Errorf("malformed address: %v", err)
+	}
+
+	err = cert.VerifyHostname(hostname)
+	if err != nil {
+		return nil, xerrors.Errorf("invalid hostname: %v", err)
+	}
+
+	o.certs.Store(from, &tls.Certificate{
+		Certificate: [][]byte{msg.GetValue()},
+		Leaf:        cert,
+	})
 
 	return &ptypes.CertificateAck{}, nil
 }
@@ -240,24 +260,29 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 		endpoint.streams[streamID] = sess
 	}
 
+	gatewayAddr := o.addrFactory.FromText([]byte(gateway))
+
 	var relay session.Relay
 	var conn grpc.ClientConnInterface
 	if isRoot {
+		// Only the original address is sent to make use of the cached marshaled
+		// value, so it needs to be upgraded to an orchestrator address.
+		gatewayAddr = session.NewOrchestratorAddress(gatewayAddr)
+
 		// The relay back to the orchestrator is using the stream as this is the
 		// only way to get back to it. Fortunately, if the stream succeeds, it
 		// means the packet arrived.
-		relay = session.NewStreamRelay(newRootAddress(), stream, o.context)
+		relay = session.NewStreamRelay(gatewayAddr, stream, o.context)
 	} else {
-		gw := o.addrFactory.FromText([]byte(gateway))
-
-		conn, err = o.connMgr.Acquire(gw)
+		conn, err = o.connMgr.Acquire(gatewayAddr)
 		if err != nil {
+			endpoint.Unlock()
 			return xerrors.Errorf("gateway connection failed: %v", err)
 		}
 
-		defer o.connMgr.Release(gw)
+		defer o.connMgr.Release(gatewayAddr)
 
-		relay = session.NewRelay(stream, gw, o.context, conn, md)
+		relay = session.NewRelay(stream, gatewayAddr, o.context, conn, md)
 	}
 
 	o.closer.Add(1)
@@ -326,7 +351,7 @@ func (o *overlayServer) tableFromHeaders(h metadata.MD) (router.RoutingTable, bo
 			return nil, false, xerrors.Errorf("malformed handshake: %v", err)
 		}
 
-		table, err := o.router.TableOf(hs)
+		table, err := o.router.GenerateTableFrom(hs)
 		if err != nil {
 			return nil, false, xerrors.Errorf("invalid handshake: %v", err)
 		}
@@ -442,7 +467,8 @@ func newOverlay(tmpl minoTemplate) (*overlay, error) {
 	return o, nil
 }
 
-// GetCertificate returns the certificate of the overlay.
+// GetCertificate returns the certificate of the overlay with its private key
+// set.
 func (o *overlay) GetCertificate() *tls.Certificate {
 	me, err := o.certs.Load(o.myAddr)
 	if err != nil {
@@ -462,7 +488,7 @@ func (o *overlay) GetCertificate() *tls.Certificate {
 	return me
 }
 
-// AddCertificateStore returns the certificate store.
+// GetCertificateStore returns the certificate store.
 func (o *overlay) GetCertificateStore() certs.Storage {
 	return o.certs
 }
@@ -470,23 +496,13 @@ func (o *overlay) GetCertificateStore() certs.Storage {
 // Join sends a join request to a distant node with token generated beforehands
 // by the later.
 func (o *overlay) Join(addr, token string, certHash []byte) error {
-	target := o.addrFactory.FromText([]byte(addr))
-
-	netAddr, ok := target.(certs.Dialable)
-	if !ok {
-		return xerrors.Errorf("invalid address type '%T'", target)
-	}
+	target := session.NewAddress(addr)
 
 	meCert := o.GetCertificate()
 
-	meAddr, err := o.myAddr.MarshalText()
-	if err != nil {
-		return xerrors.Errorf("couldn't marshal own address: %v", err)
-	}
-
 	// Fetch the certificate of the node we want to join. The hash is used to
 	// ensure that we get the right certificate.
-	err = o.certs.Fetch(netAddr, certHash)
+	err := o.certs.Fetch(target, certHash)
 	if err != nil {
 		return xerrors.Errorf("couldn't fetch distant certificate: %v", err)
 	}
@@ -503,7 +519,7 @@ func (o *overlay) Join(addr, token string, certHash []byte) error {
 	req := &ptypes.JoinRequest{
 		Token: token,
 		Certificate: &ptypes.Certificate{
-			Address: meAddr,
+			Address: []byte(o.myAddrStr),
 			Value:   meCert.Leaf.Raw,
 		},
 	}
@@ -539,9 +555,11 @@ func (o *overlay) makeCertificate() error {
 		NotBefore:    time.Now(),
 		NotAfter:     time.Now().Add(certificateDuration),
 
-		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
+		MaxPathLen:            1,
+		IsCA:                  true,
 	}
 
 	buf, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, o.public, o.secret)
@@ -568,7 +586,7 @@ func (o *overlay) makeCertificate() error {
 	return nil
 }
 
-// ConnManager is a manager to dial and close connections depending how the
+// ConnManager is a manager to dial and close connections depending on the
 // usage.
 //
 // - implements session.ConnectionManager
@@ -634,7 +652,7 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 		RootCAs:      pool,
 	})
 
-	netAddr, ok := to.(address)
+	netAddr, ok := to.(session.Address)
 	if !ok {
 		return nil, xerrors.Errorf("invalid address type '%T'", to)
 	}

@@ -1,3 +1,10 @@
+// Package types implements the network messages for cosipbft.
+//
+// The messages are implemented in a different package to prevent cycle imports
+// when importing the serde formats.
+//
+// Documentation Last Review: 13.10.2020
+//
 package types
 
 import (

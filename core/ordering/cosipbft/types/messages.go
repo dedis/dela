@@ -1,3 +1,8 @@
+// This file contains the implementation of the wrapper messages.
+//
+// Documentation Last Review: 13.10.2020
+//
+
 package types
 
 import (
@@ -18,6 +23,8 @@ func RegisterMessageFormat(f serde.Format, e serde.FormatEngine) {
 }
 
 // GenesisMessage is a message to send a genesis to distant participants.
+//
+// - implements serde.Message
 type GenesisMessage struct {
 	genesis *Genesis
 }
@@ -48,6 +55,8 @@ func (m GenesisMessage) Serialize(ctx serde.Context) ([]byte, error) {
 }
 
 // BlockMessage is a message sent to participants to share a block.
+//
+// - implements serde.Message
 type BlockMessage struct {
 	block Block
 	views map[mino.Address]ViewMessage
@@ -71,7 +80,8 @@ func (m BlockMessage) GetViews() map[mino.Address]ViewMessage {
 	return m.views
 }
 
-// Serialize implements serde.Message.
+// Serialize implements serde.Message. It returns the serialized data of the
+// block.
 func (m BlockMessage) Serialize(ctx serde.Context) ([]byte, error) {
 	format := msgFormats.Get(ctx.GetFormat())
 
@@ -85,6 +95,8 @@ func (m BlockMessage) Serialize(ctx serde.Context) ([]byte, error) {
 
 // CommitMessage is a message containing the signature of the prepare phase of a
 // PBFT execution.
+//
+// - implements serde.Message
 type CommitMessage struct {
 	id        Digest
 	signature crypto.Signature
@@ -108,7 +120,8 @@ func (m CommitMessage) GetSignature() crypto.Signature {
 	return m.signature
 }
 
-// Serialize implements serde.Message.
+// Serialize implements serde.Message. It returns the serialized data of the
+// commit message.
 func (m CommitMessage) Serialize(ctx serde.Context) ([]byte, error) {
 	format := msgFormats.Get(ctx.GetFormat())
 
@@ -122,6 +135,8 @@ func (m CommitMessage) Serialize(ctx serde.Context) ([]byte, error) {
 
 // DoneMessage is a message containing the signature of the commit phase of a
 // PBFT execution.
+//
+// - implements serde.Message
 type DoneMessage struct {
 	id        Digest
 	signature crypto.Signature
@@ -146,7 +161,8 @@ func (m DoneMessage) GetSignature() crypto.Signature {
 	return m.signature
 }
 
-// Serialize implements serde.Message.
+// Serialize implements serde.Message. It returns the serialized data of the
+// done message.
 func (m DoneMessage) Serialize(ctx serde.Context) ([]byte, error) {
 	format := msgFormats.Get(ctx.GetFormat())
 
@@ -159,6 +175,8 @@ func (m DoneMessage) Serialize(ctx serde.Context) ([]byte, error) {
 }
 
 // ViewMessage is a message to announce a view change request.
+//
+// - implements serde.Message
 type ViewMessage struct {
 	id        Digest
 	leader    uint16
@@ -190,7 +208,7 @@ func (m ViewMessage) GetSignature() crypto.Signature {
 }
 
 // Serialize implements serde.Message. It returns the serialized data for this
-// message.
+// view message.
 func (m ViewMessage) Serialize(ctx serde.Context) ([]byte, error) {
 	format := msgFormats.Get(ctx.GetFormat())
 
@@ -217,9 +235,12 @@ type AggregateKey struct{}
 // SignatureKey is the key of the view signature factory.
 type SignatureKey struct{}
 
+// AddressKey is the key of the address factory.
 type AddressKey struct{}
 
 // MessageFactory is the factory to deserialize messages.
+//
+// - implements serde.Factory
 type MessageFactory struct {
 	genesisFac serde.Factory
 	blockFac   serde.Factory
@@ -242,7 +263,8 @@ func NewMessageFactory(gf, bf serde.Factory, addrFac mino.AddressFactory,
 	}
 }
 
-// Deserialize implements serde.Factory.
+// Deserialize implements serde.Factory. It populates the message if
+// appropriate, otherwise it returns an error.
 func (f MessageFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	format := msgFormats.Get(ctx.GetFormat())
 

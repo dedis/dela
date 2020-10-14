@@ -96,22 +96,16 @@ func TestMemcoin_Scenario_SetupAndTransactions(t *testing.T) {
 	err = run(args)
 	require.NoError(t, err)
 
-	buffer := new(bytes.Buffer)
-
 	// Run a few transactions.
 	for i := 0; i < 5; i++ {
-		buffer.Reset()
-		err = runWithCfg(args, config{Writer: buffer})
-		require.NoError(t, err)
-		require.Contains(t, buffer.String(), "transaction refused: duplicate in roster")
+		err = runWithCfg(args, config{})
+		require.EqualError(t, err, "command error: transaction refused: duplicate in roster: 127.0.0.1:2115")
 	}
 
 	// Test a timeout waiting for a transaction.
 	args[7] = "1ns"
-	buffer.Reset()
-	err = runWithCfg(args, config{Writer: buffer})
-	require.NoError(t, err)
-	require.Contains(t, buffer.String(), "transaction not found after timeout\n")
+	err = runWithCfg(args, config{})
+	require.EqualError(t, err, "command error: transaction not found after timeout")
 
 	// Test a bad command.
 	err = runWithCfg([]string{os.Args[0], "ordering", "setup"}, cfg)
@@ -161,11 +155,13 @@ func TestMemcoin_Scenario_RestartNode(t *testing.T) {
 	)
 
 	err = run(args)
-	require.NoError(t, err)
+	require.EqualError(t, err, "command error: transaction refused: duplicate in roster: 127.0.0.1:2210")
 }
 
 // -----------------------------------------------------------------------------
 // Utility functions
+
+const testDialTimeout = 500 * time.Millisecond
 
 func runNode(t *testing.T, node string, cfg config, port uint16, wg *sync.WaitGroup) {
 	go func() {
@@ -211,12 +207,14 @@ func waitDaemon(t *testing.T, daemons []string) bool {
 	num := 50
 
 	for _, daemon := range daemons {
+		path := filepath.Join(daemon, "daemon.sock")
+
 		for i := 0; i < num; i++ {
 			// Windows: we have to check the file as Dial on Windows creates the
 			// file and prevent to listen.
-			_, err := os.Stat(filepath.Join(daemon, "daemon.sock"))
+			_, err := os.Stat(path)
 			if !os.IsNotExist(err) {
-				conn, err := net.Dial("unix", filepath.Join(daemon, "daemon.sock"))
+				conn, err := net.DialTimeout("unix", path, testDialTimeout)
 				if err == nil {
 					conn.Close()
 					break

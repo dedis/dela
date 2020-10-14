@@ -1,4 +1,10 @@
-package baremetal
+// Package native implements an execution service to run native smart contracts.
+//
+// A native smart contract is written in Go and packaged with the application.
+//
+// Documentation Last Review: 08.10.2020
+//
+package native
 
 import (
 	"go.dedis.ch/dela/core/execution"
@@ -17,34 +23,34 @@ type Contract interface {
 	Execute(store.Snapshot, execution.Step) error
 }
 
-// BareMetal is an execution service for packaged applications. Those
+// Service is an execution service for packaged applications. Those
 // applications have complete access to the trie and can directly update it.
 //
 // - implements execution.Service
-type BareMetal struct {
+type Service struct {
 	contracts map[string]Contract
 }
 
-// NewExecution returns a new bare-metal execution. The given service will be
+// NewExecution returns a new native execution. The given service will be
 // executed for every incoming transaction.
-func NewExecution() *BareMetal {
-	return &BareMetal{
+func NewExecution() *Service {
+	return &Service{
 		contracts: map[string]Contract{},
 	}
 }
 
 // Set stores the contract using the name as the key. A transaction can trigger
 // this contract by using the same name as the contract argument.
-func (bm *BareMetal) Set(name string, contract Contract) {
-	bm.contracts[name] = contract
+func (ns *Service) Set(name string, contract Contract) {
+	ns.contracts[name] = contract
 }
 
 // Execute implements execution.Service. It uses the executor to process the
 // incoming transaction and return the result.
-func (bm *BareMetal) Execute(snap store.Snapshot, step execution.Step) (execution.Result, error) {
+func (ns *Service) Execute(snap store.Snapshot, step execution.Step) (execution.Result, error) {
 	name := string(step.Current.GetArg(ContractArg))
 
-	contract := bm.contracts[name]
+	contract := ns.contracts[name]
 	if contract == nil {
 		return execution.Result{}, xerrors.Errorf("unknown contract '%s'", name)
 	}

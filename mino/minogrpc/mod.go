@@ -1,6 +1,7 @@
-// Package minogrpc is an implementation of MINO using gRPC to communicate
-// over the network.
-// This package implements the interfaces defined by Mino
+// Package minogrpc implements a network overlay using gRPC.
+//
+// Documentation Last Review: 07.10.2020
+//
 package minogrpc
 
 import (
@@ -11,6 +12,7 @@ import (
 	"io"
 	"net"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,16 +27,15 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
-const (
-	orchestratorDescription = "Orchestrator"
-	orchestratorCode        = "\ue000"
+var (
+	segmentMatch = regexp.MustCompile("^[a-zA-Z0-9]+$")
+	addressFac   = session.AddressFactory{}
 )
 
-var (
-	namespaceMatch        = regexp.MustCompile("^[a-zA-Z0-9]+$")
-	defaultAddressFactory = AddressFactory{}
-	orchestratorBytes     = []byte(orchestratorCode)
-)
+// NewAddressFactory returns a new address factory.
+func NewAddressFactory() mino.AddressFactory {
+	return addressFac
+}
 
 // ParseAddress is a helper to create a TCP network address.
 func ParseAddress(ip string, port uint16) net.Addr {
@@ -49,13 +50,24 @@ func ParseAddress(ip string, port uint16) net.Addr {
 type Joinable interface {
 	mino.Mino
 
+	// GetCertificate returns the certificate of the instance.
 	GetCertificate() *tls.Certificate
 
+	// GetCertificateStore returns the certificate storage which contains every
+	// known peer certificate.
 	GetCertificateStore() certs.Storage
 
+	// GenerateToken returns a token that can be provided by a distant peer to
+	// mutually share certificates with this instance.
 	GenerateToken(expiration time.Duration) string
 
-	Join(addr, token string, digest []byte) error
+	// Join tries to mutually share certificates of the distant address in
+	// parameter using the token as a credential. The certificate of the distant
+	// address digest is compared against the one in parameter.
+	//
+	// The token and the certificate digest are provided by the distant peer
+	// over a secure channel.
+	Join(addr, token string, certHash []byte) error
 }
 
 // Endpoint defines the requirement of an endpoint. Since the endpoint can be
@@ -73,7 +85,8 @@ type Endpoint struct {
 	streams map[string]session.Session
 }
 
-// Minogrpc represents a grpc service restricted to a namespace
+// Minogrpc is an implementation of a minimalist network overlay using gRPC
+// internally to communicate with distant peers.
 //
 // - implements mino.Mino
 // - implements fmt.Stringer
@@ -81,7 +94,7 @@ type Minogrpc struct {
 	*overlay
 
 	server    *grpc.Server
-	namespace string
+	segments  []string
 	endpoints map[string]*Endpoint
 	started   chan struct{}
 	closing   chan error
@@ -98,7 +111,7 @@ type minoTemplate struct {
 	random io.Reader
 }
 
-// Option is the type to set some fields.
+// Option is the type to set some fields when instantiating an overlay.
 type Option func(*minoTemplate)
 
 // WithStorage is an option to set a different certificate storage.
@@ -124,8 +137,8 @@ func WithRandom(r io.Reader) Option {
 	}
 }
 
-// NewMinogrpc creates and starts a new instance. The path should be a
-// resolvable host.
+// NewMinogrpc creates and starts a new instance. it will try to listen for the
+// address and returns an error if it fails.
 func NewMinogrpc(addr net.Addr, router router.Router, opts ...Option) (*Minogrpc, error) {
 	socket, err := net.Listen(addr.Network(), addr.String())
 	if err != nil {
@@ -133,9 +146,9 @@ func NewMinogrpc(addr net.Addr, router router.Router, opts ...Option) (*Minogrpc
 	}
 
 	tmpl := minoTemplate{
-		myAddr: address{host: socket.Addr().String()},
+		myAddr: session.NewAddress(socket.Addr().String()),
 		router: router,
-		fac:    AddressFactory{},
+		fac:    addressFac,
 		certs:  certs.NewInMemoryStore(),
 		curve:  elliptic.P521(),
 		random: rand.Reader,
@@ -158,7 +171,7 @@ func NewMinogrpc(addr net.Addr, router router.Router, opts ...Option) (*Minogrpc
 	m := &Minogrpc{
 		overlay:   o,
 		server:    server,
-		namespace: "",
+		segments:  nil,
 		endpoints: make(map[string]*Endpoint),
 		started:   make(chan struct{}),
 		closing:   make(chan error, 1),
@@ -177,19 +190,19 @@ func NewMinogrpc(addr net.Addr, router router.Router, opts ...Option) (*Minogrpc
 	return m, nil
 }
 
-// GetAddressFactory implements Mino. It returns the address
+// GetAddressFactory implements mino.Mino. It returns the address
 // factory.
 func (m *Minogrpc) GetAddressFactory() mino.AddressFactory {
-	return defaultAddressFactory
+	return NewAddressFactory()
 }
 
-// GetAddress implements Mino. It returns the address of the server.
+// GetAddress implements mino.Mino. It returns the address of the server.
 func (m *Minogrpc) GetAddress() mino.Address {
 	return m.overlay.myAddr
 }
 
-// GenerateToken generates and returns a new token that will be valid for the
-// given amount of time.
+// GenerateToken implements minogrpc.Joinable. It generates and returns a new
+// token that will be valid for the given amount of time.
 func (m *Minogrpc) GenerateToken(expiration time.Duration) string {
 	return m.tokens.Generate(expiration)
 }
@@ -225,44 +238,50 @@ func (m *Minogrpc) postCheckClose() error {
 	return nil
 }
 
-// MakeNamespace implements Mino. It creates a new Minogrpc
-// struct that has the specified namespace. This namespace is further used to
-// scope newly created RPCs. There can be multiple namespaces. If there is
-// already a namespace, then the new one will be concatenated leading to
-// namespace1/namespace2. A namespace can not be empty an should match
+// WithSegment returns a new mino instance that will have its URI path extended
+// with the provided segment. The segment can not be empty and should match
 // [a-zA-Z0-9]+
-func (m *Minogrpc) MakeNamespace(namespace string) (mino.Mino, error) {
-	if namespace == "" {
-		return nil, xerrors.Errorf("a namespace can not be empty")
-	}
+func (m *Minogrpc) WithSegment(segment string) mino.Mino {
 
-	ok := namespaceMatch.MatchString(namespace)
-	if !ok {
-		return nil, xerrors.Errorf("a namespace should match [a-zA-Z0-9]+, "+
-			"but found '%s'", namespace)
+	if segment == "" {
+		return m
 	}
 
 	newM := &Minogrpc{
 		server:    m.server,
 		overlay:   m.overlay,
-		namespace: namespace,
+		segments:  append(m.segments, segment),
 		endpoints: m.endpoints,
 	}
-	return newM, nil
+
+	return newM
 }
 
-// MakeRPC implements Mino. It registers the handler using a uniq URI of
-// form "namespace/name". It returns a struct that allows client to call the
-// RPC.
-func (m *Minogrpc) MakeRPC(name string, h mino.Handler, f serde.Factory) (mino.RPC, error) {
+// CreateRPC implements Mino. It returns a newly created rpc with the provided
+// name and reserved for the current namespace. When contacting distant peers,
+// it will only talk to mirrored RPCs with the same name and namespace.
+func (m *Minogrpc) CreateRPC(name string, h mino.Handler, f serde.Factory) (mino.RPC, error) {
+	uri := append(append([]string{}, m.segments...), name)
+
 	rpc := &RPC{
-		uri:     fmt.Sprintf("%s/%s", m.namespace, name),
+		uri:     strings.Join(uri, "/"),
 		overlay: m.overlay,
 		factory: f,
 	}
 
-	uri := fmt.Sprintf("%s/%s", m.namespace, name)
-	m.endpoints[uri] = &Endpoint{
+	for _, segment := range uri {
+		ok := segmentMatch.MatchString(segment)
+		if !ok {
+			return nil, xerrors.Errorf("invalid segment in uri '%s': '%s'", rpc.uri, segment)
+		}
+	}
+
+	_, found := m.endpoints[rpc.uri]
+	if found {
+		return nil, xerrors.Errorf("rpc '%s' already exists", rpc.uri)
+	}
+
+	m.endpoints[rpc.uri] = &Endpoint{
 		Handler: h,
 		Factory: f,
 		streams: make(map[string]session.Session),
@@ -274,7 +293,7 @@ func (m *Minogrpc) MakeRPC(name string, h mino.Handler, f serde.Factory) (mino.R
 // String implements fmt.Stringer. It prints a short description of the
 // instance.
 func (m *Minogrpc) String() string {
-	return fmt.Sprintf("%v", m.overlay.myAddr)
+	return fmt.Sprintf("mino[%v]", m.overlay.myAddr)
 }
 
 // Listen starts the server. It waits for the go routine to start before

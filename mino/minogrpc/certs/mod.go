@@ -1,7 +1,11 @@
 // Package certs defines a certificate store that will provide primitives to
-// store and get certificates for a given address. It also provide a primitive
-// to fetch a certificate from a known address using the hash as integrity
-// validation.
+// store and get certificates for a given address.
+//
+// It also provide a primitive to fetch a certificate from a known address using
+// the hash as integrity validation.
+//
+// Documentation Last Review: 07.10.2020
+//
 package certs
 
 import (

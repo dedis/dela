@@ -10,12 +10,20 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cli"
 	"golang.org/x/xerrors"
 )
 
 const ioTimeout = 30 * time.Second
+
+// event is the structure sent over the connection between the client and the
+// daemon and vice-versa using a JSON encoding.
+type event struct {
+	Err   bool
+	Value string
+}
 
 // SocketClient opens a connection to a unix socket daemon to send commands.
 //
@@ -41,12 +49,26 @@ func (c socketClient) Send(data []byte) error {
 		return xerrors.Errorf("couldn't write to daemon: %v", err)
 	}
 
-	_, err = io.Copy(c.out, conn)
-	if err != nil {
-		return xerrors.Errorf("couldn't read output: %v", err)
-	}
+	// The client will now wait for incoming messages from the daemon, either
+	// results of the command, or an error if something goes wrong.
+	dec := json.NewDecoder(conn)
+	var evt event
 
-	return nil
+	for {
+		err = dec.Decode(&evt)
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return xerrors.Errorf("fail to decode event: %v", err)
+		}
+
+		if evt.Err {
+			return xerrors.New(evt.Value)
+		}
+
+		fmt.Fprintln(c.out, evt.Value)
+	}
 }
 
 // SocketDaemon is a daemon using UNIX socket. This allows the permissions to be
@@ -56,6 +78,8 @@ func (c socketClient) Send(data []byte) error {
 // - implements node.Daemon
 type socketDaemon struct {
 	sync.WaitGroup
+
+	logger      zerolog.Logger
 	socketpath  string
 	injector    Injector
 	actions     *actionMap
@@ -104,12 +128,19 @@ func (d *socketDaemon) Listen() error {
 func (d *socketDaemon) handleConn(conn net.Conn) {
 	defer conn.Close()
 
+	d.logger.Trace().Msg("daemon is handling a connection")
+
 	// Read the first two bytes that will be converted into the action ID.
 	buffer := make([]byte, 2)
 
 	conn.SetReadDeadline(time.Now().Add(d.readTimeout))
 
 	_, err := conn.Read(buffer)
+	if err == io.EOF {
+		// Connection closed upfront so it does not need further handling. This
+		// happens for instance when testing the connectivity of the daemon.
+		return
+	}
 	if err != nil {
 		d.sendError(conn, xerrors.Errorf("stream corrupted: %v", err))
 		return
@@ -124,6 +155,11 @@ func (d *socketDaemon) handleConn(conn net.Conn) {
 		return
 	}
 
+	d.logger.Debug().
+		Hex("command", buffer).
+		Str("flags", fmt.Sprintf("%v", fset)).
+		Msg("received command on the daemon")
+
 	id := binary.LittleEndian.Uint16(buffer)
 	action := d.actions.Get(id)
 
@@ -132,14 +168,10 @@ func (d *socketDaemon) handleConn(conn net.Conn) {
 		return
 	}
 
-	dela.Logger.Debug().
-		Str("flags", fmt.Sprintf("%v", fset)).
-		Msg("received command on the daemon")
-
 	actx := Context{
 		Injector: d.injector,
 		Flags:    fset,
-		Out:      conn,
+		Out:      newClientWriter(conn),
 	}
 
 	err = action.Execute(actx)
@@ -150,7 +182,16 @@ func (d *socketDaemon) handleConn(conn net.Conn) {
 }
 
 func (d *socketDaemon) sendError(conn net.Conn, err error) {
-	fmt.Fprintf(conn, "[ERROR] %v\n", err)
+	enc := json.NewEncoder(conn)
+
+	d.logger.Debug().Err(err).Msg("sending error to client")
+
+	// The event contains an error which will make the command on the client
+	// side fail with the value as the error message.
+	err = enc.Encode(event{Err: true, Value: err.Error()})
+	if err != nil {
+		d.logger.Warn().Err(err).Msg("connection to daemon has error")
+	}
 }
 
 // Close implements node.Daemon. It closes the daemon and waits for the go
@@ -160,6 +201,32 @@ func (d *socketDaemon) Close() error {
 	d.Wait()
 
 	return nil
+}
+
+// clientWriter is a wrapper around a socket connection that will write the data
+// using a JSON message wrapper.
+//
+// - implements io.Writer
+type clientWriter struct {
+	enc *json.Encoder
+}
+
+func newClientWriter(w io.Writer) *clientWriter {
+	return &clientWriter{
+		enc: json.NewEncoder(w),
+	}
+}
+
+// Write implements io.Writer. It wraps the data into a JSON message that is
+// written to the parent writer. The number of written bytes returned
+// corresponds to the input if successful.
+func (w *clientWriter) Write(data []byte) (int, error) {
+	err := w.enc.Encode(event{Value: string(data)})
+	if err != nil {
+		return 0, xerrors.Errorf("while packing data: %v", err)
+	}
+
+	return len(data), nil
 }
 
 // SocketFactory provides primitives to create a daemon and clients from a CLI
@@ -187,8 +254,11 @@ func (f socketFactory) ClientFromContext(ctx cli.Flags) (Client, error) {
 // DaemonFromContext implements node.DaemonFactory. It creates a daemon based on
 // the flags of the context.
 func (f socketFactory) DaemonFromContext(ctx cli.Flags) (Daemon, error) {
+	socketpath := f.getSocketPath(ctx)
+
 	daemon := &socketDaemon{
-		socketpath:  f.getSocketPath(ctx),
+		logger:      dela.Logger.With().Str("daemon", socketpath).Logger(),
+		socketpath:  socketpath,
 		injector:    f.injector,
 		actions:     f.actions,
 		closing:     make(chan struct{}),

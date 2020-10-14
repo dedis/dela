@@ -1,14 +1,22 @@
+// Package threshold is a stream-based implementation of a collective signing so
+// that the orchestrator contacts only a subset of the participants. The
+// collective signature allows a given threshold to be valid, which means that
+// not all the participants need to return their signature for the protocol to
+// end.
+//
+// Documentation Last Review: 05.10.2020
+//
 package threshold
 
 import (
 	"sync/atomic"
 
+	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/cosi/threshold/types"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
-	"golang.org/x/xerrors"
 )
 
 func defaultThreshold(n int) int {
@@ -36,78 +44,75 @@ func ByzantineThreshold(n int) int {
 	return n - f
 }
 
-// CoSi is an implementation of the cosi.CollectiveSigning interface that is
-// using streams to parallelize the work.
-type CoSi struct {
+// Threshold is an implementation of the cosi.CollectiveSigning interface that
+// is using streams to parallelize the work.
+type Threshold struct {
+	logger zerolog.Logger
 	mino   mino.Mino
 	signer crypto.AggregateSigner
 	// Stores the cosi.Threshold function. It will always contain a valid
 	// function by construction.
-	threshold atomic.Value
+	thresholdFn atomic.Value
 }
 
-// NewCoSi returns a new instance.
-func NewCoSi(m mino.Mino, signer crypto.AggregateSigner) *CoSi {
-	c := &CoSi{
+// NewThreshold returns a new instance of a threshold collective signature.
+func NewThreshold(m mino.Mino, signer crypto.AggregateSigner) *Threshold {
+	c := &Threshold{
+		logger: dela.Logger.With().Str("addr", m.GetAddress().String()).Logger(),
 		mino:   m,
 		signer: signer,
 	}
 
 	// Force the cosi.Threshold type to allow later updates of the same type.
-	c.threshold.Store(cosi.Threshold(defaultThreshold))
+	c.thresholdFn.Store(cosi.Threshold(defaultThreshold))
 
 	return c
 }
 
 // GetSigner implements cosi.CollectiveSigning. It returns the signer of the
 // instance.
-func (c *CoSi) GetSigner() crypto.Signer {
+func (c *Threshold) GetSigner() crypto.Signer {
 	return c.signer
 }
 
 // GetPublicKeyFactory implements cosi.CollectiveSigning. It returns the public
 // key factory.
-func (c *CoSi) GetPublicKeyFactory() crypto.PublicKeyFactory {
+func (c *Threshold) GetPublicKeyFactory() crypto.PublicKeyFactory {
 	return c.signer.GetPublicKeyFactory()
 }
 
 // GetSignatureFactory implements cosi.CollectiveSigning. It returns the
 // signature factory.
-func (c *CoSi) GetSignatureFactory() crypto.SignatureFactory {
+func (c *Threshold) GetSignatureFactory() crypto.SignatureFactory {
 	return types.NewSignatureFactory(c.signer.GetSignatureFactory())
 }
 
 // GetVerifierFactory implements cosi.CollectiveSigning. It returns the verifier
 // factory.
-func (c *CoSi) GetVerifierFactory() crypto.VerifierFactory {
+func (c *Threshold) GetVerifierFactory() crypto.VerifierFactory {
 	return types.NewThresholdVerifierFactory(c.signer.GetVerifierFactory())
 }
 
 // SetThreshold implements cosi.CollectiveSigning. It sets a new threshold
 // function.
-func (c *CoSi) SetThreshold(fn cosi.Threshold) {
+func (c *Threshold) SetThreshold(fn cosi.Threshold) {
 	if fn == nil {
 		return
 	}
 
-	c.threshold.Store(fn)
+	c.thresholdFn.Store(fn)
 }
 
-// Listen implements cosi.CollectiveSigning.
-func (c *CoSi) Listen(r cosi.Reactor) (cosi.Actor, error) {
+// Listen implements cosi.CollectiveSigning. It creates the rpc endpoint and
+// returns the actor that can trigger a collective signature.
+func (c *Threshold) Listen(r cosi.Reactor) (cosi.Actor, error) {
 	factory := cosi.NewMessageFactory(r, c.signer.GetSignatureFactory())
 
-	rpc, err := c.mino.MakeRPC("cosi", newHandler(c, r), factory)
-	if err != nil {
-		return nil, xerrors.Errorf("couldn't make rpc: %v", err)
-	}
-
 	actor := thresholdActor{
-		CoSi:    c,
-		logger:  dela.Logger.With().Str("addr", c.mino.GetAddress().String()).Logger(),
-		me:      c.mino.GetAddress(),
-		rpc:     rpc,
-		reactor: r,
+		Threshold: c,
+		me:        c.mino.GetAddress(),
+		rpc:       mino.MustCreateRPC(c.mino, "cosi", newHandler(c, r), factory),
+		reactor:   r,
 	}
 
 	return actor, nil

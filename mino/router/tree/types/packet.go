@@ -1,3 +1,8 @@
+// This file contains the implementation of the packet message.
+//
+// Documentation Last Review: 06.10.2020
+//
+
 package types
 
 import (
@@ -43,10 +48,11 @@ func (p *Packet) GetDestination() []mino.Address {
 // GetMessage implements router.Packet. It returns the byte buffer of the
 // message.
 func (p *Packet) GetMessage() []byte {
-	return p.msg
+	return append([]byte{}, p.msg...)
 }
 
-// Add appends the address to the destination list.
+// Add appends the address to the destination list, only if it does not exist
+// already.
 func (p *Packet) Add(to mino.Address) {
 	for _, addr := range p.dest {
 		if addr.Equal(to) {

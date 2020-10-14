@@ -12,21 +12,23 @@ import (
 func TestMinoch_New(t *testing.T) {
 	manager := NewManager()
 
-	m1, err := NewMinoch(manager, "A")
-	require.NoError(t, err)
+	m1 := MustCreate(manager, "A")
 	require.NotNil(t, m1)
 
-	m2, err := NewMinoch(manager, "B")
-	require.NoError(t, err)
+	m2 := MustCreate(manager, "B")
 	require.NotNil(t, m2)
+}
 
-	m3, err := NewMinoch(manager, "A")
-	require.Error(t, err)
-	require.Nil(t, m3)
+func TestMinoch_Panic_MustCreate(t *testing.T) {
+	defer func() {
+		r := recover().(error)
+		require.EqualError(t, r, "manager refused: identifier <A> already exists")
+	}()
 
-	m4, err := NewMinoch(manager, "")
-	require.Error(t, err)
-	require.Nil(t, m4)
+	manager := NewManager()
+
+	MustCreate(manager, "A")
+	MustCreate(manager, "A")
 }
 
 func TestMinoch_GetAddressFactory(t *testing.T) {
@@ -37,34 +39,45 @@ func TestMinoch_GetAddressFactory(t *testing.T) {
 func TestMinoch_GetAddress(t *testing.T) {
 	manager := NewManager()
 
-	m, err := NewMinoch(manager, "A")
-	require.NoError(t, err)
+	m := MustCreate(manager, "A")
 
 	addr := m.GetAddress()
 	require.Equal(t, "A", addr.String())
 }
 
-func TestMinoch_MakeNamespace(t *testing.T) {
+func TestMinoch_AddFilter(t *testing.T) {
 	manager := NewManager()
 
-	m, err := NewMinoch(manager, "A")
-	require.NoError(t, err)
+	m := MustCreate(manager, "A")
 
-	m2, err := m.MakeNamespace("abc")
-	require.NoError(t, err)
+	rpc := mino.MustCreateRPC(m, "test", nil, nil)
+
+	m.AddFilter(func(m mino.Request) bool { return true })
+	require.Len(t, m.filters, 1)
+	require.Len(t, rpc.(*RPC).filters, 1)
+}
+
+func TestMinoch_WithSegment(t *testing.T) {
+	manager := NewManager()
+
+	m := MustCreate(manager, "A")
+
+	m2 := m.WithSegment("abc")
 	require.Equal(t, m.identifier, m2.(*Minoch).identifier)
 	require.Equal(t, "/abc", m2.(*Minoch).path)
 }
 
-func TestMinoch_MakeRPC(t *testing.T) {
+func TestMinoch_CreateRPC(t *testing.T) {
 	manager := NewManager()
 
-	m, err := NewMinoch(manager, "A")
-	require.NoError(t, err)
+	m := MustCreate(manager, "A")
 
-	rpc, err := m.MakeRPC("rpc1", badHandler{}, fake.MessageFactory{})
+	rpc, err := m.CreateRPC("rpc_name", fakeHandler{}, fake.MessageFactory{})
 	require.NoError(t, err)
 	require.NotNil(t, rpc)
+
+	_, err = m.CreateRPC("rpc_name", fakeHandler{}, fake.MessageFactory{})
+	require.EqualError(t, err, "rpc '/rpc_name' already exists")
 }
 
 type badHandler struct {

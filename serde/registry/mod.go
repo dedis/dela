@@ -3,6 +3,9 @@
 // It also provides a default implementation that will always return a format
 // using an empty format when appropriate. This format will always return an
 // error.
+//
+// Documentation Last Review: 07.10.2020
+//
 package registry
 
 import (

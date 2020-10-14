@@ -1,3 +1,7 @@
+//
+// Documentation Last Review: 08.10.2020
+//
+
 package binprefix
 
 import (
@@ -66,7 +70,8 @@ type TreeNode interface {
 // means that the key should have the same length.
 //
 // Mutable operations on the tree don't update the hash root. It can be done
-// after a batch of operations or a single one by using the Prepare function.
+// after a batch of operations or a single one by using the CalculateRoot
+// function.
 type Tree struct {
 	nonce    Nonce
 	maxDepth int
@@ -83,8 +88,8 @@ func NewTree(nonce Nonce) *Tree {
 		maxDepth: MaxDepth,
 		memDepth: MaxDepth * 8,
 		root:     NewEmptyNode(0, big.NewInt(0)),
-		context:  json.NewContext(),
 		factory:  NodeFactory{},
+		context:  json.NewContext(),
 	}
 }
 
@@ -145,7 +150,7 @@ func (t *Tree) FillFromBucket(bucket kv.Bucket) error {
 	return nil
 }
 
-// Restore is a recursive function that will append node to the tree by
+// Restore is a recursive function that will append the node to the tree by
 // recreating the interior nodes from the root to its natural position defined
 // by the prefix.
 func (t *Tree) restore(curr TreeNode, prefix *big.Int, node *DiskNode) TreeNode {
@@ -300,6 +305,8 @@ func (t *Tree) Clone() *Tree {
 }
 
 // EmptyNode is leaf node with no value.
+//
+// - implements binprefix.TreeNode
 type EmptyNode struct {
 	depth  uint16
 	prefix *big.Int
@@ -308,23 +315,39 @@ type EmptyNode struct {
 
 // NewEmptyNode creates a new empty node.
 func NewEmptyNode(depth uint16, key *big.Int) *EmptyNode {
+	return NewEmptyNodeWithDigest(depth, key, nil)
+}
+
+// NewEmptyNodeWithDigest creates a new empty node with its digest.
+func NewEmptyNodeWithDigest(depth uint16, key *big.Int, hash []byte) *EmptyNode {
 	return &EmptyNode{
 		depth:  depth,
 		prefix: key,
+		hash:   hash,
 	}
 }
 
-// GetHash implements mem.TreeNode. It returns the hash of the node.
+// GetHash implements binprefix.TreeNode. It returns the hash of the node.
 func (n *EmptyNode) GetHash() []byte {
 	return append([]byte{}, n.hash...)
 }
 
-// GetType implements mem.TreeNode. It returns the empty node type.
+// GetType implements binprefix.TreeNode. It returns the empty node type.
 func (n *EmptyNode) GetType() byte {
 	return emptyNodeType
 }
 
-// Search implements mem.TreeNode. It always return a empty value.
+// GetDepth returns the depth of the node.
+func (n *EmptyNode) GetDepth() uint16 {
+	return n.depth
+}
+
+// GetPrefix returns the prefix of the node.
+func (n *EmptyNode) GetPrefix() *big.Int {
+	return n.prefix
+}
+
+// Search implements binprefix.TreeNode. It always return a empty value.
 func (n *EmptyNode) Search(key *big.Int, path *Path, b kv.Bucket) ([]byte, error) {
 	if path != nil {
 		path.value = nil
@@ -333,19 +356,19 @@ func (n *EmptyNode) Search(key *big.Int, path *Path, b kv.Bucket) ([]byte, error
 	return nil, nil
 }
 
-// Insert implements mem.TreeNode. It replaces the empty node by a leaf node
-// that contains the key and the value.
+// Insert implements binprefix.TreeNode. It replaces the empty node by a leaf
+// node that contains the key and the value.
 func (n *EmptyNode) Insert(key *big.Int, value []byte, b kv.Bucket) (TreeNode, error) {
 	return NewLeafNode(n.depth, key, value), nil
 }
 
-// Delete implements mem.TreeNode. It ignores the delete as an empty node
+// Delete implements binprefix.TreeNode. It ignores the delete as an empty node
 // already means the key is missing.
 func (n *EmptyNode) Delete(key *big.Int, b kv.Bucket) (TreeNode, error) {
 	return n, nil
 }
 
-// Prepare implements mem.TreeNode. It updates the hash of the node if not
+// Prepare implements binprefix.TreeNode. It updates the hash of the node if not
 // already set and returns the digest.
 func (n *EmptyNode) Prepare(nonce []byte,
 	prefix *big.Int, b kv.Bucket, fac crypto.HashFactory) ([]byte, error) {
@@ -376,7 +399,7 @@ func (n *EmptyNode) Prepare(nonce []byte,
 	return n.GetHash(), nil
 }
 
-// Visit implements mem.TreeNode. It executes the callback with the node.
+// Visit implements binprefix.TreeNode. It executes the callback with the node.
 func (n *EmptyNode) Visit(fn func(node TreeNode) error) error {
 	err := fn(n)
 	if err != nil {
@@ -386,7 +409,8 @@ func (n *EmptyNode) Visit(fn func(node TreeNode) error) error {
 	return nil
 }
 
-// Clone implements mem.TreeNode. It returns a deep copy of the empty node.
+// Clone implements binprefix.TreeNode. It returns a deep copy of the empty
+// node.
 func (n *EmptyNode) Clone() TreeNode {
 	return NewEmptyNode(n.depth, n.prefix)
 }
@@ -405,6 +429,8 @@ func (n *EmptyNode) Serialize(ctx serde.Context) ([]byte, error) {
 }
 
 // InteriorNode is a node with two children.
+//
+// - implements binprefix.TreeNode
 type InteriorNode struct {
 	hash   []byte
 	depth  uint16
@@ -415,26 +441,49 @@ type InteriorNode struct {
 
 // NewInteriorNode creates a new interior node with two empty nodes as children.
 func NewInteriorNode(depth uint16, prefix *big.Int) *InteriorNode {
+	return NewInteriorNodeWithChildren(
+		depth,
+		prefix,
+		nil,
+		NewEmptyNode(depth+1, new(big.Int).SetBit(prefix, int(depth), 0)),
+		NewEmptyNode(depth+1, new(big.Int).SetBit(prefix, int(depth), 1)),
+	)
+}
+
+// NewInteriorNodeWithChildren creates a new interior node with the two given
+// children.
+func NewInteriorNodeWithChildren(depth uint16, prefix *big.Int, hash []byte, left, right TreeNode) *InteriorNode {
 	return &InteriorNode{
 		depth:  depth,
 		prefix: prefix,
-		left:   NewEmptyNode(depth+1, new(big.Int).SetBit(prefix, int(depth), 0)),
-		right:  NewEmptyNode(depth+1, new(big.Int).SetBit(prefix, int(depth), 1)),
+		hash:   hash,
+		left:   left,
+		right:  right,
 	}
 }
 
-// GetHash implements mem.TreeNode. It returns the hash of the node.
+// GetHash implements binprefix.TreeNode. It returns the hash of the node.
 func (n *InteriorNode) GetHash() []byte {
 	return append([]byte{}, n.hash...)
 }
 
-// GetType implements mem.TreeNode. It returns the interior node type.
+// GetType implements binprefix.TreeNode. It returns the interior node type.
 func (n *InteriorNode) GetType() byte {
 	return interiorNodeType
 }
 
-// Search implements mem.TreeNode. It recursively search for the value in the
-// correct child.
+// GetDepth returns the depth of the node.
+func (n *InteriorNode) GetDepth() uint16 {
+	return n.depth
+}
+
+// GetPrefix returns the prefix of the node.
+func (n *InteriorNode) GetPrefix() *big.Int {
+	return n.prefix
+}
+
+// Search implements binprefix.TreeNode. It recursively search for the value in
+// the correct child.
 func (n *InteriorNode) Search(key *big.Int, path *Path, b kv.Bucket) ([]byte, error) {
 	if key.Bit(int(n.depth)) == 0 {
 		n.right, _ = n.load(n.right, key, 1, b)
@@ -455,8 +504,8 @@ func (n *InteriorNode) Search(key *big.Int, path *Path, b kv.Bucket) ([]byte, er
 	return n.right.Search(key, path, b)
 }
 
-// Insert implements mem.TreeNode. It inserts the key/value pair to the right
-// path.
+// Insert implements binprefix.TreeNode. It inserts the key/value pair to the
+// right path.
 func (n *InteriorNode) Insert(key *big.Int, value []byte, b kv.Bucket) (TreeNode, error) {
 	var err error
 	if key.Bit(int(n.depth)) == 0 {
@@ -472,8 +521,8 @@ func (n *InteriorNode) Insert(key *big.Int, value []byte, b kv.Bucket) (TreeNode
 	return n, err
 }
 
-// Delete implements mem.TreeNode. It deletes the leaf node associated to the
-// key if it exists, otherwise nothin will change.
+// Delete implements binprefix.TreeNode. It deletes the leaf node associated to
+// the key if it exists, otherwise nothing will change.
 func (n *InteriorNode) Delete(key *big.Int, b kv.Bucket) (TreeNode, error) {
 	var err error
 
@@ -526,7 +575,7 @@ func (n *InteriorNode) load(node TreeNode, key *big.Int, bit uint, b kv.Bucket) 
 	return node, nil
 }
 
-// Prepare implements mem.TreeNode. It updates the hash of the node if not
+// Prepare implements binprefix.TreeNode. It updates the hash of the node if not
 // already set and returns the digest.
 func (n *InteriorNode) Prepare(nonce []byte,
 	prefix *big.Int, b kv.Bucket, fac crypto.HashFactory) ([]byte, error) {
@@ -560,8 +609,8 @@ func (n *InteriorNode) Prepare(nonce []byte,
 	return n.GetHash(), nil
 }
 
-// Visit implements mem.TreeNode. It executes the callback with the node and
-// recursively with the children.
+// Visit implements binprefix.TreeNode. It executes the callback with the node
+// and recursively with the children.
 func (n *InteriorNode) Visit(fn func(TreeNode) error) error {
 	err := n.left.Visit(fn)
 	if err != nil {
@@ -583,7 +632,8 @@ func (n *InteriorNode) Visit(fn func(TreeNode) error) error {
 	return nil
 }
 
-// Clone implements mem.TreeNode. It returns a deep copy of the interior node.
+// Clone implements binprefix.TreeNode. It returns a deep copy of the interior
+// node.
 func (n *InteriorNode) Clone() TreeNode {
 	return &InteriorNode{
 		depth:  n.depth,
@@ -607,6 +657,8 @@ func (n *InteriorNode) Serialize(ctx serde.Context) ([]byte, error) {
 }
 
 // LeafNode is a leaf node with a key and a value.
+//
+// - implements binprefix.TreeNode
 type LeafNode struct {
 	hash  []byte
 	depth uint16
@@ -616,14 +668,20 @@ type LeafNode struct {
 
 // NewLeafNode creates a new leaf node.
 func NewLeafNode(depth uint16, key *big.Int, value []byte) *LeafNode {
+	return NewLeafNodeWithDigest(depth, key, value, nil)
+}
+
+// NewLeafNodeWithDigest creates a new leaf node with its digest.
+func NewLeafNodeWithDigest(depth uint16, key *big.Int, value, hash []byte) *LeafNode {
 	return &LeafNode{
+		hash:  hash,
 		depth: depth,
 		key:   key,
 		value: value,
 	}
 }
 
-// GetHash implements mem.TreeNode. It returns the hash of the node.
+// GetHash implements binprefix.TreeNode. It returns the hash of the node.
 func (n *LeafNode) GetHash() []byte {
 	return append([]byte{}, n.hash...)
 }
@@ -643,12 +701,13 @@ func (n *LeafNode) GetValue() []byte {
 	return n.value
 }
 
-// GetType implements mem.TreeNode. It returns the leaf node type.
+// GetType implements binprefix.TreeNode. It returns the leaf node type.
 func (n *LeafNode) GetType() byte {
 	return leafNodeType
 }
 
-// Search implements mem.TreeNode. It returns the value if the key matches.
+// Search implements binprefix.TreeNode. It returns the value if the key
+// matches.
 func (n *LeafNode) Search(key *big.Int, path *Path, b kv.Bucket) ([]byte, error) {
 	if path != nil {
 		path.value = n.value
@@ -661,8 +720,8 @@ func (n *LeafNode) Search(key *big.Int, path *Path, b kv.Bucket) ([]byte, error)
 	return nil, nil
 }
 
-// Insert implements mem.TreeNode. It replaces the leaf node by an interior node
-// that contains both the current pair and the new one to insert.
+// Insert implements binprefix.TreeNode. It replaces the leaf node by an
+// interior node that contains both the current pair and the new one to insert.
 func (n *LeafNode) Insert(key *big.Int, value []byte, b kv.Bucket) (TreeNode, error) {
 	if n.key.Cmp(key) == 0 {
 		n.value = value
@@ -684,7 +743,7 @@ func (n *LeafNode) Insert(key *big.Int, value []byte, b kv.Bucket) (TreeNode, er
 	return node, nil
 }
 
-// Delete implements mem.TreeNode. It removes the leaf if the key matches.
+// Delete implements binprefix.TreeNode. It removes the leaf if the key matches.
 func (n *LeafNode) Delete(key *big.Int, b kv.Bucket) (TreeNode, error) {
 	if n.key.Cmp(key) == 0 {
 		return NewEmptyNode(n.depth, key), nil
@@ -693,7 +752,7 @@ func (n *LeafNode) Delete(key *big.Int, b kv.Bucket) (TreeNode, error) {
 	return n, nil
 }
 
-// Prepare implements mem.TreeNode. It updates the hash of the node if not
+// Prepare implements binprefix.TreeNode. It updates the hash of the node if not
 // already set and returns the digest.
 func (n *LeafNode) Prepare(nonce []byte,
 	prefix *big.Int, b kv.Bucket, fac crypto.HashFactory) ([]byte, error) {
@@ -728,7 +787,7 @@ func (n *LeafNode) Prepare(nonce []byte,
 	return n.GetHash(), nil
 }
 
-// Visit implements mem.TreeNode. It executes the callback with the node.
+// Visit implements binprefix.TreeNode. It executes the callback with the node.
 func (n *LeafNode) Visit(fn func(TreeNode) error) error {
 	err := fn(n)
 	if err != nil {
@@ -738,7 +797,7 @@ func (n *LeafNode) Visit(fn func(TreeNode) error) error {
 	return nil
 }
 
-// Clone implements mem.TreeNode. It returns a copy of the leaf node.
+// Clone implements binprefix.TreeNode. It returns a copy of the leaf node.
 func (n *LeafNode) Clone() TreeNode {
 	return NewLeafNode(n.depth, n.key, n.value)
 }

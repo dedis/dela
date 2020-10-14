@@ -1,14 +1,25 @@
+// This file contains an in-memory implementation of a block store.
+//
+// Documentation Last Review: 13.10.2020
+//
+
 package blockstore
 
 import (
 	"context"
 	"sync"
 
+	"github.com/rs/zerolog"
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/core"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
 	"golang.org/x/xerrors"
 )
+
+// sizeWarnLimit defines the limit after which a warning is emitted every time
+// the queue keeps growing.
+const sizeWarnLimit = 100
 
 // InMemory is a block store that only stores the block in-memory which means
 // they won't persist.
@@ -126,14 +137,7 @@ func (s *InMemory) Last() (types.BlockLink, error) {
 // Watch implements blockstore.BlockStore. It returns a channel populated with
 // new blocks.
 func (s *InMemory) Watch(ctx context.Context) <-chan types.BlockLink {
-	obs := observer{ch: make(chan types.BlockLink, 1)}
-	s.watcher.Add(obs)
-
-	go func() {
-		<-ctx.Done()
-		s.watcher.Remove(obs)
-		close(obs.ch)
-	}()
+	obs := newObserver(ctx, s.watcher)
 
 	return obs.ch
 }
@@ -165,23 +169,126 @@ func (s *InMemory) WithTx(txn store.Transaction) BlockStore {
 	return store
 }
 
+// Observer is an observer that can be added to store watcher. It will announce
+// the blocks in order and without blocking the watcher even if the listener is
+// not actively emptying the queue.
+//
+// - implements core.Observer.
 type observer struct {
-	ch chan types.BlockLink
+	sync.Mutex
+
+	logger  zerolog.Logger
+	buffer  []types.BlockLink
+	running bool
+	closed  bool
+	working sync.WaitGroup
+	ch      chan types.BlockLink
 }
 
-func (obs observer) NotifyCallback(evt interface{}) {
-	// TODO: use a non-blocking queue to prevent a event from blocking when the
-	// channel is busy.
-	for {
-		select {
-		case obs.ch <- evt.(types.BlockLink):
-			// Event went through.
-			return
-		default:
-			// A event is waiting to be read from the listener but the watcher
-			// needs to push this event forward. The channel is thus drained,
-			// and populated again with the most recent event.
-			<-obs.ch
-		}
+func newObserver(ctx context.Context, watcher core.Observable) *observer {
+	// This channel must have a buffer of size 1, no more no less, in order to
+	// preserve the ordering of the events but also to prevent the observer
+	// buffer to be used when the channel is correctly listened to.
+	ch := make(chan types.BlockLink, 1)
+
+	obs := &observer{
+		logger: dela.Logger,
+		ch:     ch,
 	}
+
+	watcher.Add(obs)
+
+	go func() {
+		<-ctx.Done()
+		watcher.Remove(obs)
+		obs.close()
+	}()
+
+	return obs
+}
+
+// NotifyCallback implements core.Observer. It pushes the event to the channel
+// if it is free, otherwise it fills a buffer and waits for the channel to be
+// drained.
+func (obs *observer) NotifyCallback(evt interface{}) {
+	obs.Lock()
+	defer obs.Unlock()
+
+	if obs.closed {
+		return
+	}
+
+	if obs.running {
+		// We know the channel is busy so it goes directly to the buffer.
+		obs.buffer = append(obs.buffer, evt.(types.BlockLink))
+		obs.checkSize()
+		return
+	}
+
+	select {
+	case obs.ch <- evt.(types.BlockLink):
+
+	default:
+		// The buffer size is not controlled as we assume the event will be read
+		// shortly by the caller.
+		obs.buffer = append(obs.buffer, evt.(types.BlockLink))
+
+		obs.checkSize()
+
+		obs.running = true
+
+		obs.working.Add(1)
+
+		go obs.pushAndWait()
+	}
+}
+
+func (obs *observer) checkSize() {
+	if len(obs.buffer) >= sizeWarnLimit {
+		obs.logger.Warn().
+			Int("size", len(obs.buffer)).
+			Msg("observer queue is growing unexpectedly")
+	}
+}
+
+func (obs *observer) pushAndWait() {
+	defer obs.working.Done()
+
+	for {
+		obs.Lock()
+
+		if len(obs.buffer) == 0 {
+			obs.running = false
+			obs.Unlock()
+			return
+		}
+
+		msg := obs.buffer[0]
+		obs.buffer = obs.buffer[1:]
+
+		obs.Unlock()
+
+		// Wait for the channel to be available to writings.
+		obs.ch <- msg
+	}
+}
+
+func (obs *observer) close() {
+	obs.Lock()
+
+	obs.closed = true
+	obs.running = false
+	obs.buffer = nil
+
+	// Drain message in transit to close the channel properly.
+	select {
+	case <-obs.ch:
+	default:
+	}
+
+	close(obs.ch)
+
+	obs.Unlock()
+
+	obs.working.Wait()
 }

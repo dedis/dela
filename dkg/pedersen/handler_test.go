@@ -19,18 +19,25 @@ func TestHandler_Stream(t *testing.T) {
 	err := h.Stream(fake.Sender{}, receiver)
 	require.EqualError(t, err, fake.Err("failed to receive"))
 
-	receiver = fake.NewReceiver(types.Deal{}, types.DecryptRequest{})
+	receiver = fake.NewReceiver(
+		fake.NewRecvMsg(fake.NewAddress(0), types.Deal{}),
+		fake.NewRecvMsg(fake.NewAddress(0), types.DecryptRequest{}),
+	)
 	err = h.Stream(fake.Sender{}, receiver)
 	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")
 
 	h.startRes.distrKey = suite.Point()
 	h.startRes.participants = []mino.Address{fake.NewAddress(0)}
 	h.privShare = &share.PriShare{I: 0, V: suite.Scalar()}
-	receiver = fake.NewReceiver(types.DecryptRequest{C: suite.Point()})
+	receiver = fake.NewReceiver(
+		fake.NewRecvMsg(fake.NewAddress(0), types.DecryptRequest{C: suite.Point()}),
+	)
 	err = h.Stream(fake.NewBadSender(), receiver)
 	require.EqualError(t, err, fake.Err("got an error while sending the decrypt reply"))
 
-	receiver = fake.NewReceiver(fake.Message{})
+	receiver = fake.NewReceiver(
+		fake.NewRecvMsg(fake.NewAddress(0), fake.Message{}),
+	)
 	err = h.Stream(fake.Sender{}, receiver)
 	require.EqualError(t, err, "expected Start message, decrypt request or Deal as first message, got: fake.Message")
 }
@@ -60,7 +67,10 @@ func TestHandler_Start(t *testing.T) {
 	err = h.start(start, []types.Deal{}, []*pedersen.Response{}, nil, fake.Sender{}, receiver)
 	require.EqualError(t, err, fake.Err("failed to receive after sending deals"))
 
-	receiver = fake.NewReceiver(types.Deal{}, nil)
+	receiver = fake.NewReceiver(
+		fake.NewRecvMsg(fake.NewAddress(0), types.Deal{}),
+		fake.NewRecvMsg(fake.NewAddress(0), nil),
+	)
 	err = h.start(start, []types.Deal{}, []*pedersen.Response{}, nil, fake.Sender{}, receiver)
 	require.EqualError(t, err, "failed to handle deal from 'fake.Address[0]': failed to process deal from %!s(<nil>): schnorr: signature of invalid length 0 instead of 64")
 

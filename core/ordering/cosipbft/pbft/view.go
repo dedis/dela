@@ -1,3 +1,9 @@
+// This file contains the implementation of the views sent by the nodes during a
+// view change.
+//
+// Documentation Last Review: 13.10.2020
+//
+
 package pbft
 
 import (

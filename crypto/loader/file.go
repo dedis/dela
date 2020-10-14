@@ -1,3 +1,7 @@
+//
+// Documentation Last Review: 06.10.2020
+//
+
 package loader
 
 import (
@@ -29,7 +33,8 @@ func NewFileLoader(path string) Loader {
 }
 
 // LoadOrCreate implements loader.Loader. It either loads the key from the file
-// if it exists, or it generates a new one and stores it in the file.
+// if it exists, or it generates a new one and stores it in the file. The file
+// created has minimal read permission for the current user (0400).
 func (l fileLoader) LoadOrCreate(g Generator) ([]byte, error) {
 	_, err := l.statFn(l.path)
 	if os.IsNotExist(err) {

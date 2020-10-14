@@ -1,3 +1,11 @@
+// Package blocksync defines a block synchronizer for the ordering service.
+//
+// The package also implements a default synchronizer that will send an
+// announcement with the latest known block, and share the chain to the nodes
+// that have fallen behind.
+//
+// Documentation Last Review: 13.10.2020
+//
 package blocksync
 
 import (
