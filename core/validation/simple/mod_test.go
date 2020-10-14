@@ -8,7 +8,6 @@ import (
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/validation"
-	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"golang.org/x/xerrors"
 )
@@ -46,16 +45,32 @@ func TestService_Accept(t *testing.T) {
 
 	err := srvc.Accept(fakeSnapshot{}, tx, validation.Leeway{MaxSequenceDifference: 5})
 	require.NoError(t, err)
+}
 
-	err = srvc.Accept(fakeSnapshot{}, fakeTx{}, validation.Leeway{})
+func TestService_NilIdentity_Accept(t *testing.T) {
+	srvc := NewService(&fakeExec{}, nil)
+
+	err := srvc.Accept(fakeSnapshot{}, fakeTx{}, validation.Leeway{})
 	require.EqualError(t, err, "while reading nonce: missing identity in transaction")
+}
+
+func TestService_OlderNonce_Accept(t *testing.T) {
+	srvc := NewService(&fakeExec{}, nil)
 
 	value := make([]byte, 8)
 	value[0] = 5
-	err = srvc.Accept(fakeSnapshot{value: value}, newTx(), validation.Leeway{})
-	require.EqualError(t, err, "nonce '0' < '6'")
 
-	err = srvc.Accept(fakeSnapshot{}, tx, validation.Leeway{MaxSequenceDifference: 1})
+	err := srvc.Accept(fakeSnapshot{value: value}, newTx(), validation.Leeway{})
+	require.EqualError(t, err, "nonce '0' < '6'")
+}
+
+func TestService_FutureNonce_Accept(t *testing.T) {
+	srvc := NewService(&fakeExec{}, nil)
+
+	tx := newTx()
+	tx.nonce = 5
+
+	err := srvc.Accept(fakeSnapshot{}, tx, validation.Leeway{MaxSequenceDifference: 1})
 	require.EqualError(t, err, "nonce '5' above the limit '1'")
 }
 
@@ -63,33 +78,48 @@ func TestService_Validate(t *testing.T) {
 	exec := &fakeExec{check: true}
 	srvc := NewService(exec, nil)
 
-	data, err := srvc.Validate(fakeSnapshot{}, []txn.Transaction{newTx(), newTx(), newTx()})
+	res, err := srvc.Validate(fakeSnapshot{}, []txn.Transaction{newTx(), newTx(), newTx()})
 	require.NoError(t, err)
-	require.NotNil(t, data)
+	require.NotNil(t, res)
 	require.Equal(t, 3, exec.count)
 
 	tx := newTx()
 	tx.nonce = 1
-	data, err = srvc.Validate(fakeSnapshot{}, []txn.Transaction{tx})
+	res, err = srvc.Validate(fakeSnapshot{}, []txn.Transaction{tx})
 	require.NoError(t, err)
 
-	status, _ := data.GetTransactionResults()[0].GetStatus()
+	status, _ := res.GetTransactionResults()[0].GetStatus()
 	require.False(t, status)
+}
 
-	srvc.execution = &fakeExec{}
-	_, err = srvc.Validate(fakeSnapshot{}, []txn.Transaction{fakeTx{}})
+func TestService_NilIdentity_Validate(t *testing.T) {
+	srvc := NewService(&fakeExec{}, nil)
+
+	_, err := srvc.Validate(fakeSnapshot{}, []txn.Transaction{fakeTx{}})
 	require.EqualError(t, err, "tx 0x0a0b0c0d: nonce: missing identity in transaction")
+}
 
-	_, err = srvc.Validate(fakeSnapshot{errSet: fake.GetError()}, []txn.Transaction{newTx()})
+func TestService_FailStore_Validate(t *testing.T) {
+	srvc := NewService(&fakeExec{}, nil)
+
+	store := fakeSnapshot{errSet: fake.GetError()}
+
+	_, err := srvc.Validate(store, []txn.Transaction{newTx()})
 	require.EqualError(t, err, fake.Err("tx 0x0a0b0c0d: failed to set nonce: store"))
+}
 
+func TestService_FailIdentityToKey_Validate(t *testing.T) {
+	srvc := NewService(&fakeExec{}, nil)
 	srvc.hashFac = fake.NewHashFactory(fake.NewBadHash())
-	err = srvc.set(fakeSnapshot{}, fake.PublicKey{}, 0)
-	require.EqualError(t, err, fake.Err("key: failed to write identity"))
 
-	srvc.hashFac = crypto.NewSha256Factory()
-	srvc.execution = &fakeExec{err: fake.GetError()}
-	_, err = srvc.Validate(fakeSnapshot{}, []txn.Transaction{newTx()})
+	err := srvc.set(fakeSnapshot{}, fake.PublicKey{}, 0)
+	require.EqualError(t, err, fake.Err("key: failed to write identity"))
+}
+
+func TestService_FailExecuteTx_Validate(t *testing.T) {
+	srvc := NewService(&fakeExec{err: fake.GetError()}, nil)
+
+	_, err := srvc.Validate(fakeSnapshot{}, []txn.Transaction{newTx()})
 	require.EqualError(t, err, fake.Err("tx 0x0a0b0c0d: failed to execute tx"))
 }
 

@@ -65,7 +65,7 @@ func TestBlock_Prepare(t *testing.T) {
 // Utility functions
 
 type fakeData struct {
-	validation.Data
+	validation.Result
 	err error
 }
 

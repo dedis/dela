@@ -252,7 +252,7 @@ func TestHandler_Stream(t *testing.T) {
 // Utility functions
 
 func makeChain(t *testing.T, index uint64) otypes.Chain {
-	block, err := otypes.NewBlock(simple.NewData(nil), otypes.WithIndex(index))
+	block, err := otypes.NewBlock(simple.NewResult(nil), otypes.WithIndex(index))
 	require.NoError(t, err)
 
 	return fakeChain{block: block}
@@ -278,7 +278,7 @@ func makeNodes(t *testing.T, n int) ([]defaultSync, otypes.Genesis, mino.Players
 		genstore.Set(genesis)
 
 		blocks := blockstore.NewInMemory()
-		blockFac := otypes.NewBlockFactory(simple.NewDataFactory(signed.NewTransactionFactory()))
+		blockFac := otypes.NewBlockFactory(simple.NewResultFactory(signed.NewTransactionFactory()))
 		csFac := authority.NewChangeSetFactory(m.GetAddressFactory(), fake.PublicKeyFactory{})
 		linkFac := otypes.NewLinkFactory(blockFac, fake.SignatureFactory{}, csFac)
 
@@ -303,7 +303,7 @@ func storeBlocks(t *testing.T, blocks blockstore.BlockStore, n int, from ...byte
 	copy(prev[:], from)
 
 	for i := 0; i < n; i++ {
-		block, err := otypes.NewBlock(simple.NewData(nil), otypes.WithIndex(uint64(i)))
+		block, err := otypes.NewBlock(simple.NewResult(nil), otypes.WithIndex(uint64(i)))
 		require.NoError(t, err)
 
 		link, err := otypes.NewBlockLink(prev, block,

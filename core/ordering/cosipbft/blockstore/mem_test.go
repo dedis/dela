@@ -199,7 +199,7 @@ func TestObserver_WhileEmpty_Close(t *testing.T) {
 // Utility functions
 
 func makeLink(t *testing.T, from types.Digest, opts ...types.BlockOption) types.BlockLink {
-	to, err := types.NewBlock(simple.NewData(nil), opts...)
+	to, err := types.NewBlock(simple.NewResult(nil), opts...)
 	require.NoError(t, err)
 
 	link, err := types.NewBlockLink(from, to, types.WithSignatures(fake.Signature{}, fake.Signature{}))

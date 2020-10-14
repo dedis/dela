@@ -106,28 +106,28 @@ func TestGenesisFactory_Deserialize(t *testing.T) {
 }
 
 func TestBlock_GetHash(t *testing.T) {
-	block, err := NewBlock(simple.NewData(nil), WithTreeRoot(Digest{2}))
+	block, err := NewBlock(simple.NewResult(nil), WithTreeRoot(Digest{2}))
 	require.NoError(t, err)
 	require.NotEqual(t, Digest{}, block.GetHash())
 }
 
 func TestBlock_GetIndex(t *testing.T) {
-	block, err := NewBlock(simple.NewData(nil), WithIndex(2))
+	block, err := NewBlock(simple.NewResult(nil), WithIndex(2))
 	require.NoError(t, err)
 	require.Equal(t, uint64(2), block.GetIndex())
 }
 
 func TestBlock_GetData(t *testing.T) {
-	block := Block{data: simple.NewData(nil)}
+	block := Block{data: simple.NewResult(nil)}
 
-	require.Equal(t, simple.NewData(nil), block.GetData())
+	require.Equal(t, simple.NewResult(nil), block.GetData())
 }
 
 func TestBlock_GetTransactions(t *testing.T) {
-	block := Block{data: simple.NewData(nil)}
+	block := Block{data: simple.NewResult(nil)}
 	require.Len(t, block.GetTransactions(), 0)
 
-	block.data = simple.NewData([]simple.TransactionResult{{}})
+	block.data = simple.NewResult([]simple.TransactionResult{{}})
 	require.Len(t, block.GetTransactions(), 1)
 }
 
@@ -141,7 +141,7 @@ func TestBlock_Fingerprint(t *testing.T) {
 	block := Block{
 		index:    3,
 		treeRoot: Digest{4},
-		data:     simple.NewData(nil),
+		data:     simple.NewResult(nil),
 	}
 
 	buffer := new(bytes.Buffer)
@@ -165,7 +165,7 @@ func TestBlock_Fingerprint(t *testing.T) {
 }
 
 func TestBlock_Serialize(t *testing.T) {
-	block, err := NewBlock(simple.NewData(nil))
+	block, err := NewBlock(simple.NewResult(nil))
 	require.NoError(t, err)
 
 	data, err := block.Serialize(fake.NewContext())
@@ -178,7 +178,7 @@ func TestBlock_Serialize(t *testing.T) {
 
 func TestBlockFactory_Deserialize(t *testing.T) {
 	txFac := signed.NewTransactionFactory()
-	fac := NewBlockFactory(simple.NewDataFactory(txFac))
+	fac := NewBlockFactory(simple.NewResultFactory(txFac))
 
 	msg, err := fac.Deserialize(fake.NewContext(), nil)
 	require.NoError(t, err)
@@ -200,7 +200,7 @@ func (r badRoster) Fingerprint(io.Writer) error {
 }
 
 type badData struct {
-	validation.Data
+	validation.Result
 }
 
 func (d badData) Fingerprint(io.Writer) error {

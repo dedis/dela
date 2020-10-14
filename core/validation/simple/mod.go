@@ -1,4 +1,8 @@
-// Package simple implements a simple validation service.
+// Package simple implements a validation service that executes a batch
+// of transactions sequentially.
+//
+// Documentation Last Review: 08.10.2020
+//
 package simple
 
 import (
@@ -19,7 +23,7 @@ import (
 // - implements validation.Service
 type Service struct {
 	execution execution.Service
-	fac       validation.DataFactory
+	fac       validation.ResultFactory
 	hashFac   crypto.HashFactory
 }
 
@@ -27,14 +31,13 @@ type Service struct {
 func NewService(exec execution.Service, f txn.Factory) Service {
 	return Service{
 		execution: exec,
-		fac:       NewDataFactory(f),
+		fac:       NewResultFactory(f),
 		hashFac:   crypto.NewSha256Factory(),
 	}
 }
 
-// GetFactory implements validation.Service. It returns the factory for the
-// validated data.
-func (s Service) GetFactory() validation.DataFactory {
+// GetFactory implements validation.Service. It returns the result factory.
+func (s Service) GetFactory() validation.ResultFactory {
 	return s.fac
 }
 
@@ -63,7 +66,7 @@ func (s Service) GetNonce(store store.Readable, ident access.Identity) (uint64, 
 }
 
 // Accept implements validation.Service. It returns nil if the transaction would
-// be accepted by the service given some leeway.
+// be accepted by the service given some leeway and a snaptshot of the storage.
 func (s Service) Accept(store store.Readable, tx txn.Transaction, leeway validation.Leeway) error {
 	nonce, err := s.GetNonce(store, tx.GetIdentity())
 	if err != nil {
@@ -85,7 +88,7 @@ func (s Service) Accept(store store.Readable, tx txn.Transaction, leeway validat
 
 // Validate implements validation.Service. It processes the list of transactions
 // while updating the snapshot then returns a bundle of the transaction results.
-func (s Service) Validate(store store.Snapshot, txs []txn.Transaction) (validation.Data, error) {
+func (s Service) Validate(store store.Snapshot, txs []txn.Transaction) (validation.Result, error) {
 	results := make([]TransactionResult, len(txs))
 
 	step := execution.Step{
@@ -109,11 +112,11 @@ func (s Service) Validate(store store.Snapshot, txs []txn.Transaction) (validati
 		results[i] = res
 	}
 
-	data := Data{
+	res := Result{
 		txs: results,
 	}
 
-	return data, nil
+	return res, nil
 }
 
 func (s Service) validateTx(store store.Snapshot, step execution.Step, r *TransactionResult) error {

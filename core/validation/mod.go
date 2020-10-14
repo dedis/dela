@@ -1,5 +1,8 @@
 // Package validation defines a validation service that will apply a batch of
 // transactions to a store snapshot.
+//
+// Documentation Last Review: 08.10.2020
+//
 package validation
 
 import (
@@ -22,8 +25,8 @@ type TransactionResult interface {
 	GetStatus() (bool, string)
 }
 
-// Data is the result of a validation.
-type Data interface {
+// Result is the result of a validation.
+type Result interface {
 	serde.Message
 	serde.Fingerprinter
 
@@ -31,11 +34,11 @@ type Data interface {
 	GetTransactionResults() []TransactionResult
 }
 
-// DataFactory is the factory for validation data.
-type DataFactory interface {
+// ResultFactory is the factory for results.
+type ResultFactory interface {
 	serde.Factory
 
-	DataOf(serde.Context, []byte) (Data, error)
+	ResultOf(serde.Context, []byte) (Result, error)
 }
 
 // Leeway is the configuration when asserting if a transaction will be accepted
@@ -47,9 +50,10 @@ type Leeway struct {
 }
 
 // Service is the validation service that will process a batch of transactions
-// into a validated data that can be used as a payload of a block.
+// into a result that can be used as a payload of a block.
 type Service interface {
-	GetFactory() DataFactory
+	// GetFactory returns the result factory.
+	GetFactory() ResultFactory
 
 	// GetNonce returns the nonce associated with the identity. The value
 	// returned should be used for the next transaction to be valid.
@@ -60,6 +64,6 @@ type Service interface {
 	Accept(store.Readable, txn.Transaction, Leeway) error
 
 	// Validate takes a snapshot and a list of transactions and returns a
-	// validated data bundle.
-	Validate(store.Snapshot, []txn.Transaction) (Data, error)
+	// result.
+	Validate(store.Snapshot, []txn.Transaction) (Result, error)
 }

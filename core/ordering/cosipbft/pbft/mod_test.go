@@ -87,7 +87,7 @@ func TestStateMachine_GetCommit(t *testing.T) {
 	require.Equal(t, types.Digest{}, id)
 	require.Equal(t, types.Block{}, block)
 
-	block, err := types.NewBlock(simple.Data{}, types.WithIndex(1))
+	block, err := types.NewBlock(simple.Result{}, types.WithIndex(1))
 	require.NoError(t, err)
 
 	sm.round.id = types.Digest{1}
@@ -119,7 +119,7 @@ func TestStateMachine_Prepare(t *testing.T) {
 	root := types.Digest{}
 	copy(root[:], tree.GetRoot())
 
-	block, err := types.NewBlock(simple.NewData(nil), types.WithTreeRoot(root), types.WithIndex(0))
+	block, err := types.NewBlock(simple.NewResult(nil), types.WithTreeRoot(root), types.WithIndex(0))
 	require.NoError(t, err)
 
 	from := fake.NewAddress(0)
@@ -193,7 +193,7 @@ func TestStateMachine_MismatchTreeRoot_Prepare(t *testing.T) {
 		authReader: goodReader,
 	}
 
-	other, err := types.NewBlock(simple.NewData(nil), types.WithTreeRoot(types.Digest{}))
+	other, err := types.NewBlock(simple.NewResult(nil), types.WithTreeRoot(types.Digest{}))
 	require.NoError(t, err)
 
 	sm.val = simple.NewService(fakeExec{}, nil)
@@ -218,7 +218,7 @@ func TestStateMachine_MissingGenesis_Prepare(t *testing.T) {
 	root := types.Digest{}
 	copy(root[:], tree.GetRoot())
 
-	block, err := types.NewBlock(simple.NewData(nil), types.WithTreeRoot(root))
+	block, err := types.NewBlock(simple.NewResult(nil), types.WithTreeRoot(root))
 	require.NoError(t, err)
 
 	_, err = sm.Prepare(fake.NewAddress(0), block)
@@ -244,7 +244,7 @@ func TestStateMachine_FailReadCurrentRoster_Prepare(t *testing.T) {
 	root := types.Digest{}
 	copy(root[:], tree.GetRoot())
 
-	block, err := types.NewBlock(simple.NewData(nil), types.WithTreeRoot(root))
+	block, err := types.NewBlock(simple.NewResult(nil), types.WithTreeRoot(root))
 	require.NoError(t, err)
 
 	_, err = sm.Prepare(fake.NewAddress(0), block)
@@ -281,7 +281,7 @@ func TestStateMachine_FailReadRosterInStageTree_Prepare(t *testing.T) {
 	root := types.Digest{}
 	copy(root[:], tree.GetRoot())
 
-	block, err := types.NewBlock(simple.NewData(nil), types.WithTreeRoot(root))
+	block, err := types.NewBlock(simple.NewResult(nil), types.WithTreeRoot(root))
 	require.NoError(t, err)
 
 	// Failure to read the roster of the staging tree.
@@ -310,7 +310,7 @@ func TestStateMachine_FailCreateLink_Prepare(t *testing.T) {
 	root := types.Digest{}
 	copy(root[:], tree.GetRoot())
 
-	block, err := types.NewBlock(simple.NewData(nil), types.WithTreeRoot(root))
+	block, err := types.NewBlock(simple.NewResult(nil), types.WithTreeRoot(root))
 	require.NoError(t, err)
 
 	_, err = sm.Prepare(fake.NewAddress(0), block)
@@ -760,7 +760,7 @@ func TestStateMachine_CatchUp(t *testing.T) {
 	root := types.Digest{}
 	copy(root[:], tree.GetRoot())
 
-	block, err := types.NewBlock(simple.NewData(nil), types.WithTreeRoot(root), types.WithIndex(0))
+	block, err := types.NewBlock(simple.NewResult(nil), types.WithTreeRoot(root), types.WithIndex(0))
 	require.NoError(t, err)
 
 	sm := NewStateMachine(param).(*pbftsm)
@@ -845,7 +845,7 @@ func makeTree(t *testing.T) (hashtree.Tree, kv.DB, func()) {
 }
 
 func makeLink(t *testing.T) types.BlockLink {
-	block, err := types.NewBlock(simple.NewData(nil))
+	block, err := types.NewBlock(simple.NewResult(nil))
 	require.NoError(t, err)
 
 	link, err := types.NewBlockLink(types.Digest{}, block)
@@ -866,7 +866,7 @@ type badValidation struct {
 	validation.Service
 }
 
-func (v badValidation) Validate(store.Snapshot, []txn.Transaction) (validation.Data, error) {
+func (v badValidation) Validate(store.Snapshot, []txn.Transaction) (validation.Result, error) {
 	return nil, fake.GetError()
 }
 
