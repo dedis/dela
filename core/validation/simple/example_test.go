@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	"go.dedis.ch/dela/core/execution"
-	"go.dedis.ch/dela/core/execution/baremetal"
+	"go.dedis.ch/dela/core/execution/native"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/signed"
@@ -14,7 +14,7 @@ import (
 
 func ExampleService_GetNonce() {
 
-	exec := baremetal.NewExecution()
+	exec := native.NewExecution()
 
 	srvc := NewService(exec, signed.NewTransactionFactory())
 
@@ -33,13 +33,13 @@ func ExampleService_GetNonce() {
 
 func ExampleService_Validate() {
 
-	exec := baremetal.NewExecution()
+	exec := native.NewExecution()
 	exec.Set("example", exampleContract{})
 
 	srvc := NewService(exec, signed.NewTransactionFactory())
 
 	signer := bls.NewSigner()
-	arg := signed.WithArg(baremetal.ContractArg, []byte("example"))
+	arg := signed.WithArg(native.ContractArg, []byte("example"))
 
 	txA, err := signed.NewTransaction(0, signer.GetPublicKey(), arg)
 	if err != nil {

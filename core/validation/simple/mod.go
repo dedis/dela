@@ -1,5 +1,5 @@
 // Package simple implements a validation service that executes a batch
-// sequentially.
+// of transactions sequentially.
 //
 // Documentation Last Review: 08.10.2020
 //

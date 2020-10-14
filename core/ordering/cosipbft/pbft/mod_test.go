@@ -218,7 +218,7 @@ func TestStateMachine_MissingGenesis_Prepare(t *testing.T) {
 	root := types.Digest{}
 	copy(root[:], tree.GetRoot())
 
-	block, err := types.NewBlock(simple.NewData(nil), types.WithTreeRoot(root))
+	block, err := types.NewBlock(simple.NewResult(nil), types.WithTreeRoot(root))
 	require.NoError(t, err)
 
 	_, err = sm.Prepare(fake.NewAddress(0), block)
@@ -244,7 +244,7 @@ func TestStateMachine_FailReadCurrentRoster_Prepare(t *testing.T) {
 	root := types.Digest{}
 	copy(root[:], tree.GetRoot())
 
-	block, err := types.NewBlock(simple.NewData(nil), types.WithTreeRoot(root))
+	block, err := types.NewBlock(simple.NewResult(nil), types.WithTreeRoot(root))
 	require.NoError(t, err)
 
 	_, err = sm.Prepare(fake.NewAddress(0), block)
@@ -281,7 +281,7 @@ func TestStateMachine_FailReadRosterInStageTree_Prepare(t *testing.T) {
 	root := types.Digest{}
 	copy(root[:], tree.GetRoot())
 
-	block, err := types.NewBlock(simple.NewData(nil), types.WithTreeRoot(root))
+	block, err := types.NewBlock(simple.NewResult(nil), types.WithTreeRoot(root))
 	require.NoError(t, err)
 
 	// Failure to read the roster of the staging tree.
@@ -310,7 +310,7 @@ func TestStateMachine_FailCreateLink_Prepare(t *testing.T) {
 	root := types.Digest{}
 	copy(root[:], tree.GetRoot())
 
-	block, err := types.NewBlock(simple.NewData(nil), types.WithTreeRoot(root))
+	block, err := types.NewBlock(simple.NewResult(nil), types.WithTreeRoot(root))
 	require.NoError(t, err)
 
 	_, err = sm.Prepare(fake.NewAddress(0), block)
