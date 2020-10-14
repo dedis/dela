@@ -1,3 +1,8 @@
+// This file contains a default implementation of a block synchronizer.
+//
+// Documentation Last Review: 13.10.2020
+//
+
 package blocksync
 
 import (
@@ -83,7 +88,8 @@ func (s defaultSync) GetLatest() uint64 {
 }
 
 // Sync implements blocksync.Synchronizer. it starts a routine to first
-// soft-sync the participants and then send the blocks when necessary.
+// soft-sync the participants and then send the blocks when necessary. It will
+// synchronize other nodes as long as the context is not done.
 func (s defaultSync) Sync(ctx context.Context, players mino.Players, cfg Config) error {
 	if s.blocks.Len() == 0 {
 		// When the store is empty, that means that the participants are all
@@ -184,6 +190,9 @@ func (s defaultSync) syncNode(from uint64, sender mino.Sender, to mino.Address) 
 	}
 }
 
+// handler is a Mino handler for the synchronization messages.
+//
+// - implements mino.Handler
 type handler struct {
 	mino.UnsupportedHandler
 
@@ -197,6 +206,8 @@ type handler struct {
 	verifierFac crypto.VerifierFactory
 }
 
+// Stream implements mino.Handler. It waits for an announcement message and then
+// wait for the block message if any is needed.
 func (h *handler) Stream(out mino.Sender, in mino.Receiver) error {
 	ctx := context.Background()
 

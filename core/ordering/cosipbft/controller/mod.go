@@ -1,3 +1,7 @@
+// Package controller implements a minimal controller for cosipbft.
+//
+// Documentation Last Review: 13.10.2020
+//
 package controller
 
 import (
@@ -37,18 +41,24 @@ func blsSigner() encoding.BinaryMarshaler {
 	return bls.NewSigner()
 }
 
-type minimal struct {
+// miniController is a CLI initializer to inject an ordering service that is
+// using collective signatures and PBFT for the consensus.
+//
+// - implements node.Initializer
+type miniController struct {
 	signerFn func() encoding.BinaryMarshaler
 }
 
-// NewMinimal creates a new minimal controller for cosipbft.
-func NewMinimal() node.Initializer {
-	return minimal{
+// NewController creates a new minimal controller for cosipbft.
+func NewController() node.Initializer {
+	return miniController{
 		signerFn: blsSigner,
 	}
 }
 
-func (minimal) SetCommands(builder node.Builder) {
+// SetCommands implements node.Initializer. It sets the command to control the
+// service.
+func (miniController) SetCommands(builder node.Builder) {
 	cmd := builder.SetCommand("ordering")
 	cmd.SetDescription("Ordering service administration")
 
@@ -91,7 +101,9 @@ func (minimal) SetCommands(builder node.Builder) {
 	sub.SetAction(builder.MakeAction(rosterAddAction{}))
 }
 
-func (m minimal) OnStart(flags cli.Flags, inj node.Injector) error {
+// OnStart implements node.Initializer. It starts the ordering components and
+// inject them.
+func (m miniController) OnStart(flags cli.Flags, inj node.Injector) error {
 	var onet mino.Mino
 	err := inj.Resolve(&onet)
 	if err != nil {
@@ -166,7 +178,6 @@ func (m minimal) OnStart(flags cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("service: %v", err)
 	}
 
-	inj.Inject(db)
 	inj.Inject(srvc)
 	inj.Inject(cosi)
 	inj.Inject(pool)
@@ -175,7 +186,9 @@ func (m minimal) OnStart(flags cli.Flags, inj node.Injector) error {
 	return nil
 }
 
-func (minimal) OnStop(inj node.Injector) error {
+// OnStop implements node.Initializer. It stops the service and the transaction
+// pool.
+func (miniController) OnStop(inj node.Injector) error {
 	var srvc ordering.Service
 	err := inj.Resolve(&srvc)
 	if err != nil {
@@ -201,7 +214,7 @@ func (minimal) OnStop(inj node.Injector) error {
 	return nil
 }
 
-func (m minimal) getSigner(flags cli.Flags) (crypto.AggregateSigner, error) {
+func (m miniController) getSigner(flags cli.Flags) (crypto.AggregateSigner, error) {
 	loader := loader.NewFileLoader(filepath.Join(flags.Path("config"), privateKeyFile))
 
 	signerdata, err := loader.LoadOrCreate(generator{newFn: m.signerFn})
@@ -217,10 +230,15 @@ func (m minimal) getSigner(flags cli.Flags) (crypto.AggregateSigner, error) {
 	return signer, nil
 }
 
+// generator is an implementation to generate a private key.
+//
+// - implements loader.Generator
 type generator struct {
 	newFn func() encoding.BinaryMarshaler
 }
 
+// Generate implements loader.Generator. It returns the marshaled data of a
+// private key.
 func (g generator) Generate() ([]byte, error) {
 	signer := g.newFn()
 

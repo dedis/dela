@@ -16,7 +16,7 @@ import (
 )
 
 func TestMinimal_SetCommands(t *testing.T) {
-	m := NewMinimal()
+	m := NewController()
 
 	b := node.NewBuilder()
 	m.SetCommands(b.(node.Builder))
@@ -29,7 +29,7 @@ func TestMinimal_OnStart(t *testing.T) {
 	db, err := kv.New(filepath.Join(dir, "test.db"))
 	require.NoError(t, err)
 
-	m := NewMinimal().(minimal)
+	m := NewController().(miniController)
 
 	inj := node.NewInjector()
 	inj.Inject(fake.Mino{})
@@ -40,7 +40,7 @@ func TestMinimal_OnStart(t *testing.T) {
 }
 
 func TestMinimal_MissingMino_OnStart(t *testing.T) {
-	m := NewMinimal()
+	m := NewController()
 
 	err := m.OnStart(make(node.FlagSet), node.NewInjector())
 	require.EqualError(t, err,
@@ -51,7 +51,7 @@ func TestMinimal_FailLoadKey_OnStart(t *testing.T) {
 	flags, _, clean := makeFlags(t)
 	defer clean()
 
-	m := NewMinimal().(minimal)
+	m := NewController().(miniController)
 
 	inj := node.NewInjector()
 	inj.Inject(fake.Mino{})
@@ -68,7 +68,7 @@ func TestMinimal_MissingDB_OnStart(t *testing.T) {
 	flags, _, clean := makeFlags(t)
 	defer clean()
 
-	m := NewMinimal().(minimal)
+	m := NewController().(miniController)
 
 	inj := node.NewInjector()
 	inj.Inject(fake.Mino{})
@@ -81,7 +81,7 @@ func TestMinimal_MalformedKey_OnStart(t *testing.T) {
 	flags, dir, clean := makeFlags(t)
 	defer clean()
 
-	m := NewMinimal().(minimal)
+	m := NewController().(miniController)
 
 	inj := node.NewInjector()
 	inj.Inject(fake.Mino{})
@@ -106,7 +106,7 @@ func TestMinimal_OnStop(t *testing.T) {
 
 	defer os.RemoveAll(dir)
 
-	m := NewMinimal()
+	m := NewController()
 
 	fset := make(node.FlagSet)
 	fset["config"] = dir

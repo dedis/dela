@@ -1,3 +1,8 @@
+// This file contains an in-memory implementation of a block store.
+//
+// Documentation Last Review: 13.10.2020
+//
+
 package blockstore
 
 import (
@@ -181,7 +186,11 @@ type observer struct {
 }
 
 func newObserver(ctx context.Context, watcher core.Observable) *observer {
+	// This channel must have a buffer of size 1, no more no less, in order to
+	// preserve the ordering of the events but also to prevent the observer
+	// buffer to be used when the channel is correctly listened to.
 	ch := make(chan types.BlockLink, 1)
+
 	obs := &observer{
 		logger: dela.Logger,
 		ch:     ch,
@@ -198,7 +207,9 @@ func newObserver(ctx context.Context, watcher core.Observable) *observer {
 	return obs
 }
 
-// NotifyCallback implements core.Observer.
+// NotifyCallback implements core.Observer. It pushes the event to the channel
+// if it is free, otherwise it fills a buffer and waits for the channel to be
+// drained.
 func (obs *observer) NotifyCallback(evt interface{}) {
 	obs.Lock()
 	defer obs.Unlock()
@@ -208,6 +219,7 @@ func (obs *observer) NotifyCallback(evt interface{}) {
 	}
 
 	if obs.running {
+		// We know the channel is busy so it goes directly to the buffer.
 		obs.buffer = append(obs.buffer, evt.(types.BlockLink))
 		obs.checkSize()
 		return

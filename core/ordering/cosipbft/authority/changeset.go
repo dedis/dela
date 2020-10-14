@@ -1,3 +1,8 @@
+// This file contains the implementation of the change set.
+//
+// Documentation Last Review: 13.10.2020
+//
+
 package authority
 
 import (
@@ -62,7 +67,8 @@ func (set *RosterChangeSet) NumChanges() int {
 	return len(set.remove) + len(set.addrs)
 }
 
-// Serialize implements serde.Message.
+// Serialize implements serde.Message. It returns the serialized data for this
+// change set.
 func (set *RosterChangeSet) Serialize(ctx serde.Context) ([]byte, error) {
 	format := csetFormats.Get(ctx.GetFormat())
 

@@ -1,3 +1,9 @@
+// This file contains the implementation of a persistent block store. It stores
+// the blocks and their links to a key/value database.
+//
+// Documentation Last Review: 13.10.2020
+//
+
 package blockstore
 
 import (

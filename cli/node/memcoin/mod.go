@@ -60,7 +60,7 @@ func runWithCfg(args []string, cfg config) error {
 		cfg.Writer,
 		db.NewController(),
 		mino.NewController(),
-		cosipbft.NewMinimal(),
+		cosipbft.NewController(),
 		signed.NewManagerController(),
 	)
 

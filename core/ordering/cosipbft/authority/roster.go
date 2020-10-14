@@ -1,3 +1,8 @@
+// This file contains the implementation of a collective authority.
+//
+// Documentation Last Review: 13.10.2020
+//
+
 package authority
 
 import (
@@ -241,7 +246,8 @@ func (r Roster) PublicKeyIterator() crypto.PublicKeyIterator {
 	return &publicKeyIterator{iterator: &iterator{roster: &r}}
 }
 
-// Serialize implements serde.Message.
+// Serialize implements serde.Message. It returns the serialized data for this
+// roster.
 func (r Roster) Serialize(ctx serde.Context) ([]byte, error) {
 	format := rosterFormats.Get(ctx.GetFormat())
 
@@ -269,8 +275,8 @@ func NewFactory(af mino.AddressFactory, pf crypto.PublicKeyFactory) Factory {
 	}
 }
 
-// Deserialize implements serde.Factory.  It returns the roster
-// from the data if appropriate, otherwise an error.
+// Deserialize implements serde.Factory.  It returns the roster from the data if
+// appropriate, otherwise an error.
 func (f rosterFac) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
 	return f.AuthorityOf(ctx, data)
 }

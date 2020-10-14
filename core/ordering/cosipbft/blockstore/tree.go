@@ -1,3 +1,8 @@
+// This file contains the implementation of an in-memory tree cache.
+//
+// Documenation Last Review: 13.10.2020
+//
+
 package blockstore
 
 import (
