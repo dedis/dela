@@ -15,7 +15,7 @@ import (
 // - implements serde.ContextEngine
 type xmlEngine struct{}
 
-// NewContext returns a new serde context that is using the Gob encoding.
+// NewContext returns a new serde context that is using the XML encoding.
 func NewContext() serde.Context {
 	return serde.NewContext(xmlEngine{})
 }
