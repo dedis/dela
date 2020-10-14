@@ -50,9 +50,9 @@ Dela has 6 core modules that you will find in `core/`:
 
 - access
 - execution
-- ordering (and its sub-module ordering/pool)
+- ordering
 - store
-- txn
+- txn (and its sub-module txn/pool)
 - validation
 
 The following diagram simplifies a lot the system to offer a general and

@@ -11,7 +11,7 @@
     <a href="https://goreportcard.com/report/github.com/dedis/dela"><img src="https://goreportcard.com/badge/github.com/dedis/dela"></a>
 </p>
 
-- A set of modular abstractions to perform DL operations
+- A set of modular abstractions to perform Distributed Ledger (DL) operations
 - Provides an implementation of a minimalist DL
 - Demonstrates a full working DL implementation based on [Collective Signing](https://www.usenix.org/system/files/conference/usenixsecurity16/sec16_paper_kokoris-kogias.pdf)
-- Offers a platform that supports research in DLT
+- Offers a platform that supports research in Distributed Ledger Technologies (DLT)
