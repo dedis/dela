@@ -59,7 +59,7 @@ func (r Router) GetHandshakeFactory() router.HandshakeFactory {
 
 // New implements router.Router. It creates the routing table for the node that
 // is booting the protocol. This node will be the root of the tree.
-func (r Router) New(players mino.Players) (router.RoutingTable, error) {
+func (r Router) New(players mino.Players, address mino.Address) (router.RoutingTable, error) {
 	addrs := make([]mino.Address, 0, players.Len())
 	iter := players.AddressIterator()
 	for iter.HasNext() {

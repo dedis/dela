@@ -146,7 +146,7 @@ func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, m
 		headerStreamIDKey, streamID,
 		headerGatewayKey, rpc.overlay.myAddrStr)
 
-	table, err := rpc.overlay.router.New(mino.NewAddresses())
+	table, err := rpc.overlay.router.New(mino.NewAddresses(), rpc.overlay.myAddr)
 	if err != nil {
 		return nil, nil, xerrors.Errorf("routing table failed: %v", err)
 	}

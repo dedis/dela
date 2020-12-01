@@ -67,7 +67,7 @@ type Router interface {
 	GetHandshakeFactory() HandshakeFactory
 
 	// New creates a new routing table that will forward packets to the players.
-	New(mino.Players) (RoutingTable, error)
+	New(mino.Players, mino.Address) (RoutingTable, error)
 
 	// GenerateTableFrom returns the routing table associated to the handshake.
 	// A node should be able to route any incoming packet after receiving one.

@@ -27,7 +27,8 @@ func TestRouter_New(t *testing.T) {
 		router := NewRouter(fake.AddressFactory{})
 		router.maxHeight = int(height)
 
-		table, err := router.New(mino.NewAddresses(makeAddrs(int(n))...))
+		fakeAddrs := makeAddrs(int(n))
+		table, err := router.New(mino.NewAddresses(fakeAddrs...), fakeAddrs[0])
 		require.NoError(t, err)
 
 		return router.maxHeight == table.(Table).tree.GetMaxHeight()

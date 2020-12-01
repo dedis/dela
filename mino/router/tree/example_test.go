@@ -15,7 +15,7 @@ func ExampleRouter_New() {
 
 	players := mino.NewAddresses(addrA, addrB)
 
-	table, err := router.New(players)
+	table, err := router.New(players, addrA)
 	if err != nil {
 		panic("routing table failed: " + err.Error())
 	}
@@ -39,7 +39,7 @@ func ExampleTable_PrepareHandshakeFor() {
 
 	players := mino.NewAddresses(addrA, addrB)
 
-	table, err := routerA.New(players)
+	table, err := routerA.New(players, addrA)
 	if err != nil {
 		panic("routing table failed: " + err.Error())
 	}

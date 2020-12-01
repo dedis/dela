@@ -427,7 +427,7 @@ func (r badRouter) GetHandshakeFactory() router.HandshakeFactory {
 	return fakeHandshakeFactory{}
 }
 
-func (badRouter) New(mino.Players) (router.RoutingTable, error) {
+func (badRouter) New(mino.Players, mino.Address) (router.RoutingTable, error) {
 	return nil, fake.GetError()
 }
 
