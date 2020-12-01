@@ -12,11 +12,15 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/log"
 	"math/big"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/opentracing-contrib/go-grpc"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
@@ -217,17 +221,23 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 	o.closer.Add(1)
 	defer o.closer.Done()
 
+	ctx := stream.Context()
+	span, _ := opentracing.StartSpanFromContext(ctx, "StreamServerHandler")
+	defer span.Finish()
+
 	headers, ok := metadata.FromIncomingContext(stream.Context())
 	if !ok {
 		return xerrors.New("missing headers")
 	}
 
-	table, isRoot, err := o.tableFromHeaders(headers)
+	table, isRoot, err := o.tableFromHeaders(span, headers)
 	if err != nil {
 		return xerrors.Errorf("routing table: %v", err)
 	}
+	span.LogFields(log.Bool("isRoot", isRoot))
 
 	uri, streamID, gateway := readHeaders(headers)
+	span.LogFields(log.String("endpoint", uri), log.String("streamID", streamID), log.String("gateway", gateway))
 	if streamID == "" {
 		return xerrors.New("unexpected empty stream ID")
 	}
@@ -248,6 +258,7 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 
 	sess, initiated := endpoint.streams[streamID]
 	if !initiated {
+		span.LogFields(log.Message("creating new session"))
 		sess = session.NewSession(
 			md,
 			o.myAddr,
@@ -274,6 +285,7 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 		// means the packet arrived.
 		relay = session.NewStreamRelay(gatewayAddr, stream, o.context)
 	} else {
+		span.LogFields(log.Message("acquiring connection to " + gateway))
 		conn, err = o.connMgr.Acquire(gatewayAddr)
 		if err != nil {
 			endpoint.Unlock()
@@ -343,14 +355,14 @@ func (o *overlayServer) cleanStream(endpoint *Endpoint, id string) {
 		Msg("stream has been cleaned")
 }
 
-func (o *overlayServer) tableFromHeaders(h metadata.MD) (router.RoutingTable, bool, error) {
+func (o *overlayServer) tableFromHeaders(span opentracing.Span, h metadata.MD) (router.RoutingTable, bool, error) {
 	values := h.Get(session.HandshakeKey)
 	if len(values) != 0 {
 		hs, err := o.overlay.router.GetHandshakeFactory().HandshakeOf(o.context, []byte(values[0]))
 		if err != nil {
 			return nil, false, xerrors.Errorf("malformed handshake: %v", err)
 		}
-
+		span.LogFields(log.String("handshake", values[0]))
 		table, err := o.router.GenerateTableFrom(hs)
 		if err != nil {
 			return nil, false, xerrors.Errorf("invalid handshake: %v", err)
@@ -366,6 +378,7 @@ func (o *overlayServer) tableFromHeaders(h metadata.MD) (router.RoutingTable, bo
 		addrs[i] = o.addrFactory.FromText([]byte(addr))
 	}
 
+	span.LogFields(log.String("addresses", strings.Join(values, ",")))
 	table, err := o.router.New(mino.NewAddresses(addrs...))
 	if err != nil {
 		return nil, true, xerrors.Errorf("failed to create: %v", err)
@@ -657,6 +670,11 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 		return nil, xerrors.Errorf("invalid address type '%T'", to)
 	}
 
+	err = initTracer(mgr.myAddr.String())
+	if err != nil {
+		return nil, xerrors.Errorf("error initialising tracer: %v", err)
+	}
+
 	// Connecting using TLS and the distant server certificate as the root.
 	conn, err = grpc.Dial(netAddr.GetDialAddress(),
 		grpc.WithTransportCredentials(ta),
@@ -664,6 +682,8 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 			Backoff:           backoff.DefaultConfig,
 			MinConnectTimeout: defaultMinConnectTimeout,
 		}),
+		grpc.WithUnaryInterceptor(otgrpc.OpenTracingClientInterceptor(tracer)),
+		grpc.WithStreamInterceptor(otgrpc.OpenTracingStreamClientInterceptor(tracer)),
 	)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to dial: %v", err)

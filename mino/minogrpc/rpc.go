@@ -204,6 +204,9 @@ func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, m
 
 	rpc.overlay.closer.Add(1)
 
+	// 1 (Client)  <- grpc Stream -> 1 (Server)
+	// (1) Client has a relay (unicast) used for sending messages to server side of (1)
+	// sender.Send(msg, players...)
 	go func() {
 		defer func() {
 			relay.Close()

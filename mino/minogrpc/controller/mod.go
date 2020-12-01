@@ -9,10 +9,12 @@
 package controller
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
+	"go.dedis.ch/dela/serde"
 	"io"
 	"math"
 	"path/filepath"
@@ -98,6 +100,22 @@ func (m miniController) SetCommands(builder node.Builder) {
 		},
 	)
 	sub.SetAction(builder.MakeAction(joinAction{}))
+
+	sub = cmd.SetSubCommand("stream")
+	sub.SetDescription("stream a message to a list of addresses")
+	sub.SetFlags(
+		cli.StringSliceFlag{
+			Name:     "addresses",
+			Usage:    "list of addresses to send the message to",
+			Required: true,
+		},
+		cli.StringFlag{
+			Name:     "message",
+			Usage:    "message to send",
+			Required: true,
+		},
+	)
+	sub.SetAction(builder.MakeAction(streamAction{}))
 }
 
 // OnStart implements node.Initializer. It starts the minogrpc instance and
@@ -137,6 +155,10 @@ func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
 	}
 
 	inj.Inject(o)
+
+	rpc := mino.MustCreateRPC(o, "test", exampleHandler{}, exampleFactory{})
+
+	inj.Inject(rpc)
 
 	dela.Logger.Info().Msgf("%v is running", o)
 
@@ -212,4 +234,59 @@ func (g generator) Generate() ([]byte, error) {
 	}
 
 	return data, nil
+}
+
+// exampleHandler is an RPC handler example.
+//
+// - implements mino.Handler
+type exampleHandler struct {
+	mino.UnsupportedHandler
+}
+
+// Process implements mino.Handler. It returns the message received.
+func (exampleHandler) Process(req mino.Request) (serde.Message, error) {
+	return req.Message, nil
+}
+
+// Stream implements mino.Handler. It returns the message to the sender.
+func (exampleHandler) Stream(sender mino.Sender, recv mino.Receiver) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	from, msg, err := recv.Recv(ctx)
+	if err != nil {
+		return err
+	}
+
+	dela.Logger.Info().Msgf("in mino.Handler, got %s from %s", msg, from.String())
+	err = <-sender.Send(msg, from)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// exampleMessage is an example of a message.
+//
+// - implements serde.Message
+type exampleMessage struct {
+	value string
+}
+
+// Serialize implements serde.Message. It returns the value contained in the
+// message.
+func (m exampleMessage) Serialize(serde.Context) ([]byte, error) {
+	return []byte(m.value), nil
+}
+
+// exampleFactory is an example of a factory.
+//
+// - implements serde.Factory
+type exampleFactory struct{}
+
+// Deserialize implements serde.Factory. It returns the message using data as
+// the inner value.
+func (exampleFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+	return exampleMessage{value: string(data)}, nil
 }

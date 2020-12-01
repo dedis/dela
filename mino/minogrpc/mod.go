@@ -16,6 +16,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/opentracing-contrib/go-grpc"
+	"github.com/opentracing/opentracing-go"
+	jaeger "github.com/uber/jaeger-client-go"
+	jaegerConfig "github.com/uber/jaeger-client-go/config"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
@@ -30,6 +34,8 @@ import (
 var (
 	segmentMatch = regexp.MustCompile("^[a-zA-Z0-9]+$")
 	addressFac   = session.AddressFactory{}
+	tracer       opentracing.Tracer
+	tracerCloser io.Closer
 )
 
 // NewAddressFactory returns a new address factory.
@@ -93,11 +99,12 @@ type Endpoint struct {
 type Minogrpc struct {
 	*overlay
 
-	server    *grpc.Server
-	segments  []string
-	endpoints map[string]*Endpoint
-	started   chan struct{}
-	closing   chan error
+	server       *grpc.Server
+	segments     []string
+	endpoints    map[string]*Endpoint
+	started      chan struct{}
+	closing      chan error
+	tracerCloser io.Closer
 }
 
 type minoTemplate struct {
@@ -165,16 +172,26 @@ func NewMinogrpc(addr net.Addr, router router.Router, opts ...Option) (*Minogrpc
 		return nil, xerrors.Errorf("overlay: %v", err)
 	}
 
+	err = initTracer(o.myAddr.String())
+	if err != nil {
+		return nil, xerrors.Errorf("initTracer: %v", err)
+	}
+
 	creds := credentials.NewServerTLSFromCert(o.GetCertificate())
-	server := grpc.NewServer(grpc.Creds(creds))
+	server := grpc.NewServer(
+		grpc.Creds(creds),
+		grpc.UnaryInterceptor(otgrpc.OpenTracingServerInterceptor(tracer)),
+		grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(tracer)),
+	)
 
 	m := &Minogrpc{
-		overlay:   o,
-		server:    server,
-		segments:  nil,
-		endpoints: make(map[string]*Endpoint),
-		started:   make(chan struct{}),
-		closing:   make(chan error, 1),
+		overlay:      o,
+		server:       server,
+		segments:     nil,
+		endpoints:    make(map[string]*Endpoint),
+		started:      make(chan struct{}),
+		closing:      make(chan error, 1),
+		tracerCloser: tracerCloser,
 	}
 
 	// Counter needs to be >=1 for asynchronous call to Add.
@@ -233,6 +250,11 @@ func (m *Minogrpc) postCheckClose() error {
 	numConns := m.overlay.connMgr.Len()
 	if numConns > 0 {
 		return xerrors.Errorf("connection manager not empty: %d", numConns)
+	}
+
+	err = m.tracerCloser.Close()
+	if err != nil {
+		return xerrors.Errorf("error closing tracer: %v", err)
 	}
 
 	return nil
@@ -315,4 +337,33 @@ func (m *Minogrpc) listen(socket net.Listener) {
 	// Force the go routine to be executed before returning which means the
 	// server has well started after that point.
 	<-m.started
+}
+
+func initTracer(host string) error {
+	if tracer != nil && tracerCloser != nil {
+		return nil
+	}
+
+	cfg := &jaegerConfig.Configuration{
+		ServiceName: host,
+		Sampler: &jaegerConfig.SamplerConfig{
+			Type:  "const",
+			Param: 1,
+		},
+		Reporter: &jaegerConfig.ReporterConfig{
+			LogSpans:           true,
+			LocalAgentHostPort: "localhost:6831",
+		},
+	}
+	tr, closer, err := cfg.NewTracer(
+		jaegerConfig.Logger(jaeger.StdLogger),
+	)
+	if err != nil {
+		return xerrors.Errorf("error initialising tracer: %v", err)
+	}
+
+	tracer = tr
+	tracerCloser = closer
+	opentracing.SetGlobalTracer(tracer)
+	return nil
 }
