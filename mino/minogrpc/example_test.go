@@ -57,14 +57,14 @@ func ExampleRPC_Call() {
 }
 
 func ExampleRPC_Stream() {
-	mA, err := NewMinogrpc(ParseAddress("127.0.0.1", 0), tree.NewRouter(NewAddressFactory()))
+	mA, err := NewMinogrpc(ParseAddress("127.0.0.1", 20000), tree.NewRouter(NewAddressFactory()))
 	if err != nil {
 		panic("overlay A failed: " + err.Error())
 	}
 
 	rpcA := mino.MustCreateRPC(mA, "test", exampleHandler{}, exampleFactory{})
 
-	mB, err := NewMinogrpc(ParseAddress("127.0.0.1", 0), tree.NewRouter(NewAddressFactory()))
+	mB, err := NewMinogrpc(ParseAddress("127.0.0.1", 30000), tree.NewRouter(NewAddressFactory()))
 	if err != nil {
 		panic("overlay B failed: " + err.Error())
 	}
