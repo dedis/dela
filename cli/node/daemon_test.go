@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/internal/testing/fake"
+	"golang.org/x/xerrors"
 )
 
 func TestSocketClient_Send(t *testing.T) {
@@ -76,8 +77,16 @@ func TestSocketDaemon_Listen(t *testing.T) {
 
 	defer os.RemoveAll(dir)
 
+	fset := make(FlagSet)
+	fset["1"] = 1
+
+	buf, err := json.Marshal(&fset)
+	require.NoError(t, err)
+
 	actions := &actionMap{}
-	actions.Set(fakeAction{})                     // id 0
+	actions.Set(fakeAction{
+		intFlags: map[string]int{"1": 1},
+	}) // id 0
 	actions.Set(fakeAction{err: fake.GetError()}) // id 1
 
 	daemon := &socketDaemon{
@@ -101,7 +110,7 @@ func TestSocketDaemon_Listen(t *testing.T) {
 		dialFn:      net.DialTimeout,
 	}
 
-	err = client.Send(append([]byte{0x0, 0x0}, []byte("{}")...))
+	err = client.Send(append([]byte{0x0, 0x0}, buf...))
 	require.NoError(t, err)
 	require.Equal(t, "deadbeef\n", out.String())
 
@@ -273,12 +282,21 @@ func (f fakeFactory) DaemonFromContext(cli.Flags) (Daemon, error) {
 }
 
 type fakeAction struct {
-	err error
+	err      error
+	intFlags map[string]int
 }
 
 func (a fakeAction) Execute(req Context) error {
 	if a.err != nil {
 		return a.err
+	}
+
+	if a.intFlags != nil {
+		for k, v := range a.intFlags {
+			if req.Flags.Int(k) != v {
+				return xerrors.Errorf("missing flag %s", k)
+			}
+		}
 	}
 
 	req.Out.Write([]byte("deadbeef"))

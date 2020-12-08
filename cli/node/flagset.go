@@ -69,6 +69,14 @@ func (fset FlagSet) Int(name string) int {
 	switch v := fset[name].(type) {
 	case int:
 		return v
+	case float64:
+		// This is the case where flags have been JSON marshalled/unmarshalled.
+		// In this case JSON uses the float type for numbers.
+		if v == float64(int(v)) {
+			return int(v)
+		}
+
+		return 0
 	default:
 		return 0
 	}
