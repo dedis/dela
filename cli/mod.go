@@ -26,9 +26,7 @@ import (
 // Builder is an application builder interface. One can set properties of an
 // application then build it.
 type Builder interface {
-	// SetCommand creates a new command with the given name and returns its
-	// builder.
-	SetCommand(name string) CommandBuilder
+	Provider
 
 	// Build returns the application.
 	Build() Application
@@ -75,4 +73,21 @@ type Flags interface {
 	Path(name string) string
 
 	Int(name string) int
+}
+
+// Initializer defines a primitive for modules to add their commands. A cli will
+// gather all the initializers from each desired modules and call the
+// SetCommands for each of them.
+type Initializer interface {
+	// SetCommands if the function called by the builder to add the modules'
+	// commands. The modules implement this function and use the provided
+	// provider to create its specific commands.
+	SetCommands(Provider)
+}
+
+// Provider defines a primitive for modules to provide their commands
+type Provider interface {
+	// SetCommand creates a new command with the given name and returns its
+	// builder.
+	SetCommand(name string) CommandBuilder
 }

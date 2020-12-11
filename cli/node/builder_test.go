@@ -8,16 +8,9 @@ import (
 	"github.com/stretchr/testify/require"
 	ucli "github.com/urfave/cli/v2"
 	"go.dedis.ch/dela/cli"
+	"go.dedis.ch/dela/cli/urfave"
 	"go.dedis.ch/dela/internal/testing/fake"
 )
-
-func TestCliBuilder_Command(t *testing.T) {
-	builder := &CLIBuilder{}
-
-	cmd := builder.SetCommand("test")
-	require.NotNil(t, cmd)
-	require.Len(t, builder.commands, 1)
-}
 
 func TestCliBuilder_SetStartFlags(t *testing.T) {
 	builder := &CLIBuilder{}
@@ -32,7 +25,7 @@ func TestCliBuilder_Start(t *testing.T) {
 	builder.sigs <- syscall.SIGTERM
 	close(builder.sigs)
 
-	err := builder.start(nil)
+	err := builder.start(FlagSet{})
 	require.NoError(t, err)
 }
 
@@ -55,7 +48,7 @@ func TestCliBuilder_FailedDaemon_Start(t *testing.T) {
 
 	builder.daemonFactory = fakeFactory{err: fake.GetError()}
 
-	err := builder.start(nil)
+	err := builder.start(FlagSet{})
 	require.EqualError(t, err, fake.Err("couldn't make daemon"))
 }
 
@@ -64,14 +57,14 @@ func TestCliBuilder_FailStartDaemon_Start(t *testing.T) {
 
 	builder.daemonFactory = fakeFactory{errDaemon: fake.GetError()}
 
-	err := builder.start(nil)
+	err := builder.start(FlagSet{})
 	require.EqualError(t, err, fake.Err("couldn't start the daemon"))
 }
 
 func TestCliBuilder_FailStartComponent_Start(t *testing.T) {
 	builder := NewBuilder(fakeInitializer{err: fake.GetError()})
 
-	err := builder.start(nil)
+	err := builder.start(FlagSet{})
 	require.EqualError(t, err, fake.Err("couldn't run the controller"))
 }
 
@@ -80,7 +73,7 @@ func TestCliBuilder_FailStopComponent_Start(t *testing.T) {
 	builder.enableSignal = false
 	close(builder.sigs)
 
-	err := builder.start(nil)
+	err := builder.start(FlagSet{})
 	require.EqualError(t, err, fake.Err("couldn't stop controller"))
 }
 
@@ -114,6 +107,7 @@ func TestCliBuilder_MakeAction(t *testing.T) {
 
 func TestCliBuilder_Build(t *testing.T) {
 	builder := &CLIBuilder{
+		Builder:       urfave.NewBuilder("test", nil),
 		actions:       &actionMap{},
 		daemonFactory: fakeFactory{},
 		inits:         []Initializer{fakeInitializer{}},
@@ -135,15 +129,12 @@ func TestCliBuilder_Build(t *testing.T) {
 
 	cb = builder.SetCommand("last")
 	cb.SetAction(func(cli.Flags) error {
-		return fake.GetError()
+		return nil
 	})
 
+	// Build will add the start command, which is why we are expecting 5.
 	app := builder.Build().(*ucli.App)
-	require.Len(t, app.Commands, 4)
-
-	// Check the referencing of the actions.
-	err := app.Commands[1].Action(nil)
-	require.NoError(t, err)
+	require.Len(t, app.Commands, 5)
 }
 
 func TestCliBuilder_UnknownType_BuildFlags(t *testing.T) {
@@ -152,10 +143,10 @@ func TestCliBuilder_UnknownType_BuildFlags(t *testing.T) {
 		require.Equal(t, "flag type '<nil>' not supported", r)
 	}()
 
-	builder := &CLIBuilder{}
+	builder := &CLIBuilder{Builder: urfave.NewBuilder("test", nil)}
 	builder.SetStartFlags((cli.Flag)(nil))
 
-	builder.buildFlags(builder.startFlags)
+	builder.Build()
 }
 
 // -----------------------------------------------------------------------------
