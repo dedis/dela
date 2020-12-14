@@ -13,7 +13,7 @@ import (
 //
 // - implements cli.Builder
 type Builder struct {
-	commands map[string]*cmdBuilder
+	commands []*cmdBuilder
 	name     string
 	action   cli.Action
 	flags    []cli.Flag
@@ -24,10 +24,9 @@ type Builder struct {
 // provides the global flags available from all the commands/subcommands.
 func NewBuilder(name string, action cli.Action, flags ...cli.Flag) cli.Builder {
 	return &Builder{
-		name:     name,
-		commands: make(map[string]*cmdBuilder),
-		action:   action,
-		flags:    flags,
+		name:   name,
+		action: action,
+		flags:  flags,
 	}
 }
 
@@ -48,9 +47,9 @@ func (b Builder) Build() cli.Application {
 // SetCommand implements cli.Builder.
 func (b *Builder) SetCommand(name string) cli.CommandBuilder {
 	cmd := &cmdBuilder{
-		subcommands: make(map[string]*cmdBuilder),
+		name: name,
 	}
-	b.commands[name] = cmd
+	b.commands = append(b.commands, cmd)
 
 	return cmd
 }
@@ -59,10 +58,11 @@ func (b *Builder) SetCommand(name string) cli.CommandBuilder {
 //
 // - implements cli.CommandBuilder
 type cmdBuilder struct {
+	name        string
 	description string
 	action      cli.Action
 	flags       []ucli.Flag
-	subcommands map[string]*cmdBuilder
+	subcommands []*cmdBuilder
 }
 
 // SetDescription implements cli.CommandBuilder.
@@ -83,9 +83,9 @@ func (b *cmdBuilder) SetAction(action cli.Action) {
 // SetSubCommand implements cli.CommandBuilder.
 func (b *cmdBuilder) SetSubCommand(name string) cli.CommandBuilder {
 	builder := &cmdBuilder{
-		subcommands: make(map[string]*cmdBuilder),
+		name: name,
 	}
-	b.subcommands[name] = builder
+	b.subcommands = append(b.subcommands, builder)
 
 	return builder
 }
@@ -138,17 +138,17 @@ func buildFlags(flags []cli.Flag) []ucli.Flag {
 
 // buildCommand recursively builds the commands from a cmdBuilder struct to a
 // ucli commands.
-func buildCommand(cmds map[string]*cmdBuilder) []*ucli.Command {
-	commands := make([]*ucli.Command, 0, len(cmds))
+func buildCommand(cmds []*cmdBuilder) []*ucli.Command {
+	commands := make([]*ucli.Command, len(cmds))
 
-	for name, cmd := range cmds {
-		commands = append(commands, &ucli.Command{
-			Name:        name,
+	for i, cmd := range cmds {
+		commands[i] = &ucli.Command{
+			Name:        cmd.name,
 			Usage:       cmd.description,
 			Action:      makeAction(cmd.action),
 			Flags:       cmd.flags,
 			Subcommands: buildCommand(cmd.subcommands),
-		})
+		}
 	}
 
 	return commands

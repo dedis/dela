@@ -30,8 +30,11 @@ func TestSetCommand(t *testing.T) {
 
 	app := builder.Build().(*ucli.App)
 
-	// urfave adds by default the -help command. This is why we expect 3.
 	require.Len(t, app.Commands, 3)
+
+	require.Equal(t, "first", app.Commands[0].Name)
+	require.Equal(t, "second", app.Commands[1].Name)
+	require.Equal(t, "help", app.Commands[2].Name)
 
 }
 
@@ -56,7 +59,7 @@ func TestCommandBuilder(t *testing.T) {
 	require.Len(t, builder.commands, 1)
 	require.Len(t, builder.flags, 0)
 
-	cmd2 := builder.commands["first"]
+	cmd2 := builder.commands[0]
 	require.Len(t, cmd2.flags, 1)
 	require.Len(t, cmd2.subcommands, 1)
 }
@@ -91,6 +94,11 @@ func TestBuildFlags(t *testing.T) {
 
 	out := buildFlags(in)
 	require.Len(t, out, 4)
+
+	require.Equal(t, "name1", out[0].Names()[0])
+	require.Equal(t, "name2", out[1].Names()[0])
+	require.Equal(t, "name3", out[2].Names()[0])
+	require.Equal(t, "name4", out[3].Names()[0])
 }
 
 func TestBuildFlags_Panic(t *testing.T) {
@@ -106,13 +114,17 @@ func TestMakeAction(t *testing.T) {
 	res := makeAction(nil)
 	require.Nil(t, res)
 
+	isCalled := false
 	fakeAction := func(flags cli.Flags) error {
+		require.Nil(t, flags)
+		isCalled = true
 		return nil
 	}
 
 	res = makeAction(fakeAction)
 	require.NotNil(t, res)
 
-	out := res(&ucli.Context{})
+	out := res(nil)
 	require.NoError(t, out)
+	require.True(t, isCalled)
 }
