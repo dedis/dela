@@ -1,11 +1,11 @@
-// Package urfave provides a cli builder implementation based on the urfave/cli
+// Package ucli provides a cli builder implementation based on the urfave/cli
 // library.
-package urfave
+package ucli
 
 import (
 	"fmt"
 
-	ucli "github.com/urfave/cli/v2"
+	urfave "github.com/urfave/cli/v2"
 	"go.dedis.ch/dela/cli"
 )
 
@@ -32,7 +32,7 @@ func NewBuilder(name string, action cli.Action, flags ...cli.Flag) cli.Builder {
 
 // Build implements cli.builder.
 func (b Builder) Build() cli.Application {
-	app := &ucli.App{
+	app := &urfave.App{
 		Name:     b.name,
 		Commands: buildCommand(b.commands),
 		Action:   makeAction(b.action),
@@ -61,7 +61,7 @@ type cmdBuilder struct {
 	name        string
 	description string
 	action      cli.Action
-	flags       []ucli.Flag
+	flags       []urfave.Flag
 	subcommands []*cmdBuilder
 }
 
@@ -91,36 +91,36 @@ func (b *cmdBuilder) SetSubCommand(name string) cli.CommandBuilder {
 }
 
 // buildFlags converts cli.Flag to their corresponding urfave/cli.
-func buildFlags(flags []cli.Flag) []ucli.Flag {
-	res := make([]ucli.Flag, len(flags))
+func buildFlags(flags []cli.Flag) []urfave.Flag {
+	res := make([]urfave.Flag, len(flags))
 
 	for i, f := range flags {
-		var flag ucli.Flag
+		var flag urfave.Flag
 
 		switch e := f.(type) {
 		case cli.StringFlag:
-			flag = &ucli.StringFlag{
+			flag = &urfave.StringFlag{
 				Name:     e.Name,
 				Usage:    e.Usage,
 				Required: e.Required,
 				Value:    e.Value,
 			}
 		case cli.StringSliceFlag:
-			flag = &ucli.StringSliceFlag{
+			flag = &urfave.StringSliceFlag{
 				Name:     e.Name,
 				Usage:    e.Usage,
 				Required: e.Required,
-				Value:    ucli.NewStringSlice(e.Value...),
+				Value:    urfave.NewStringSlice(e.Value...),
 			}
 		case cli.DurationFlag:
-			flag = &ucli.DurationFlag{
+			flag = &urfave.DurationFlag{
 				Name:     e.Name,
 				Usage:    e.Usage,
 				Required: e.Required,
 				Value:    e.Value,
 			}
 		case cli.IntFlag:
-			flag = &ucli.IntFlag{
+			flag = &urfave.IntFlag{
 				Name:     e.Name,
 				Usage:    e.Usage,
 				Required: e.Required,
@@ -137,12 +137,12 @@ func buildFlags(flags []cli.Flag) []ucli.Flag {
 }
 
 // buildCommand recursively builds the commands from a cmdBuilder struct to a
-// ucli commands.
-func buildCommand(cmds []*cmdBuilder) []*ucli.Command {
-	commands := make([]*ucli.Command, len(cmds))
+// urfave commands.
+func buildCommand(cmds []*cmdBuilder) []*urfave.Command {
+	commands := make([]*urfave.Command, len(cmds))
 
 	for i, cmd := range cmds {
-		commands[i] = &ucli.Command{
+		commands[i] = &urfave.Command{
 			Name:        cmd.name,
 			Usage:       cmd.description,
 			Action:      makeAction(cmd.action),
@@ -155,9 +155,9 @@ func buildCommand(cmds []*cmdBuilder) []*ucli.Command {
 }
 
 // makeAction transforms a cli.Action to its urfave form.
-func makeAction(action cli.Action) ucli.ActionFunc {
+func makeAction(action cli.Action) urfave.ActionFunc {
 	if action != nil {
-		return func(ctx *ucli.Context) error {
+		return func(ctx *urfave.Context) error {
 			return action(ctx)
 		}
 	}

@@ -18,6 +18,8 @@ import (
 	"go.dedis.ch/dela/serde/registry"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/pairing"
+
+	//lint:ignore SA1019 we need to fix this, issues opened in #166
 	"go.dedis.ch/kyber/v3/sign/bls"
 	"go.dedis.ch/kyber/v3/util/key"
 	"golang.org/x/xerrors"

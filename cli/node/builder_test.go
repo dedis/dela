@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	ucli "github.com/urfave/cli/v2"
+	urfave "github.com/urfave/cli/v2"
 	"go.dedis.ch/dela/cli"
-	"go.dedis.ch/dela/cli/urfave"
+	"go.dedis.ch/dela/cli/ucli"
 	"go.dedis.ch/dela/internal/testing/fake"
 )
 
@@ -35,7 +35,7 @@ func TestCliBuilder_ForbiddenFolder_Start(t *testing.T) {
 	fset := flag.NewFlagSet("", 0)
 	fset.String("config", "\x00", "")
 
-	ctx := ucli.NewContext(nil, fset, nil)
+	ctx := urfave.NewContext(nil, fset, nil)
 
 	err := builder.start(ctx)
 	require.Error(t, err)
@@ -85,10 +85,10 @@ func TestCliBuilder_MakeAction(t *testing.T) {
 	}
 
 	fset := flag.NewFlagSet("", 0)
-	fset.Var(ucli.NewStringSlice("item 1", "item 2"), "flag-1", "")
+	fset.Var(urfave.NewStringSlice("item 1", "item 2"), "flag-1", "")
 	fset.Int("flag-2", 20, "")
 
-	ctx := ucli.NewContext(makeApp(), fset, nil)
+	ctx := urfave.NewContext(makeApp(), fset, nil)
 
 	err := builder.MakeAction(fakeAction{})(ctx)
 	require.NoError(t, err)
@@ -107,7 +107,7 @@ func TestCliBuilder_MakeAction(t *testing.T) {
 
 func TestCliBuilder_Build(t *testing.T) {
 	builder := &CLIBuilder{
-		Builder:       urfave.NewBuilder("test", nil),
+		Builder:       ucli.NewBuilder("test", nil),
 		actions:       &actionMap{},
 		daemonFactory: fakeFactory{},
 		inits:         []Initializer{fakeInitializer{}},
@@ -133,7 +133,7 @@ func TestCliBuilder_Build(t *testing.T) {
 	})
 
 	// Build will add the start command, which is why we are expecting 5.
-	app := builder.Build().(*ucli.App)
+	app := builder.Build().(*urfave.App)
 	require.Len(t, app.Commands, 5)
 }
 
@@ -143,7 +143,7 @@ func TestCliBuilder_UnknownType_BuildFlags(t *testing.T) {
 		require.Equal(t, "flag type '<nil>' not supported", r)
 	}()
 
-	builder := &CLIBuilder{Builder: urfave.NewBuilder("test", nil)}
+	builder := &CLIBuilder{Builder: ucli.NewBuilder("test", nil)}
 	builder.SetStartFlags((cli.Flag)(nil))
 
 	builder.Build()
@@ -152,11 +152,11 @@ func TestCliBuilder_UnknownType_BuildFlags(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-func makeApp() *ucli.App {
-	return &ucli.App{
-		Flags: []ucli.Flag{
-			&ucli.StringSliceFlag{Name: "flag-1"},
-			&ucli.IntFlag{Name: "flag-2"},
+func makeApp() *urfave.App {
+	return &urfave.App{
+		Flags: []urfave.Flag{
+			&urfave.StringSliceFlag{Name: "flag-1"},
+			&urfave.IntFlag{Name: "flag-2"},
 		},
 	}
 }

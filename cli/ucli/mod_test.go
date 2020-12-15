@@ -1,4 +1,4 @@
-package urfave
+package ucli
 
 import (
 	"io/ioutil"
@@ -6,13 +6,13 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	ucli "github.com/urfave/cli/v2"
+	urfave "github.com/urfave/cli/v2"
 	"go.dedis.ch/dela/cli"
 )
 
 func TestBuild(t *testing.T) {
 	builder := NewBuilder("test", nil)
-	app := builder.Build().(*ucli.App)
+	app := builder.Build().(*urfave.App)
 
 	app.Writer = ioutil.Discard
 
@@ -28,7 +28,7 @@ func TestSetCommand(t *testing.T) {
 	builder.SetCommand("first")
 	builder.SetCommand("second")
 
-	app := builder.Build().(*ucli.App)
+	app := builder.Build().(*urfave.App)
 
 	require.Len(t, app.Commands, 3)
 

@@ -13,10 +13,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	ucli "github.com/urfave/cli/v2"
+	urfave "github.com/urfave/cli/v2"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cli"
-	"go.dedis.ch/dela/cli/urfave"
+	"go.dedis.ch/dela/cli/ucli"
 	"golang.org/x/xerrors"
 )
 
@@ -70,7 +70,7 @@ func NewBuilderWithCfg(sigs chan os.Signal, out io.Writer, inits ...Initializer)
 	}
 
 	// We are using urfave cli builder
-	builder := urfave.NewBuilder("Dela", nil, cli.StringFlag{
+	builder := ucli.NewBuilder("Dela", nil, cli.StringFlag{
 		Name:  "config",
 		Usage: "path to the config folder",
 		Value: ".dela",
@@ -112,7 +112,7 @@ func (b *CLIBuilder) MakeAction(tmpl ActionTemplate) cli.Action {
 		// Prepare a set of flags that will be transmitted to the daemon so that
 		// the action has access to the same flags and their values.
 		fset := make(FlagSet)
-		lookupFlags(fset, c.(*ucli.Context))
+		lookupFlags(fset, c.(*urfave.Context))
 
 		buf, err := json.Marshal(fset)
 		if err != nil {
@@ -128,7 +128,7 @@ func (b *CLIBuilder) MakeAction(tmpl ActionTemplate) cli.Action {
 	}
 }
 
-func lookupFlags(fset FlagSet, ctx *ucli.Context) {
+func lookupFlags(fset FlagSet, ctx *urfave.Context) {
 	for _, ancestor := range ctx.Lineage() {
 		if ancestor.Command != nil {
 			fill(fset, ancestor.Command.Flags, ancestor)
@@ -140,7 +140,7 @@ func lookupFlags(fset FlagSet, ctx *ucli.Context) {
 	}
 }
 
-func fill(fset FlagSet, flags []ucli.Flag, ctx *ucli.Context) {
+func fill(fset FlagSet, flags []urfave.Flag, ctx *urfave.Context) {
 	for _, flag := range flags {
 		names := flag.Names()
 		if len(names) > 0 {
@@ -151,7 +151,7 @@ func fill(fset FlagSet, flags []ucli.Flag, ctx *ucli.Context) {
 
 func convert(v interface{}) interface{} {
 	switch value := v.(type) {
-	case ucli.StringSlice:
+	case urfave.StringSlice:
 		// StringSlice is an edge-case as it won't serialize correctly with JSON
 		// so we ask for the actual []string to allow a correct serialization.
 		return value.Value()
