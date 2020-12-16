@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"go.dedis.ch/dela"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
@@ -406,7 +405,7 @@ func (o *overlayServer) Forward(ctx context.Context, p *ptypes.Packet) (*ptypes.
 type overlay struct {
 	closer      *sync.WaitGroup
 	context     serde.Context
-	myAddr      mino.Address
+	myAddr      session.Address
 	certs       certs.Storage
 	tokens      tokens.Holder
 	router      router.Router
@@ -424,10 +423,8 @@ type overlay struct {
 }
 
 func newOverlay(tmpl minoTemplate) (*overlay, error) {
-	myAddrBuf, err := tmpl.myAddr.MarshalText()
-	if err != nil {
-		return nil, xerrors.Errorf("failed to marshal address: %v", err)
-	}
+	// session.Address never returns an error
+	myAddrBuf, _ := tmpl.myAddr.MarshalText()
 
 	if tmpl.secret == nil || tmpl.public == nil {
 		priv, err := ecdsa.GenerateKey(tmpl.curve, tmpl.random)
@@ -550,16 +547,9 @@ func (o *overlay) Join(addr, token string, certHash []byte) error {
 }
 
 func (o *overlay) makeCertificate() error {
-	// We take a substring from [1, N) because
-	// o.myAddrStr[0] == 'F' || o.myAddrStr[1] == 'O'
-	hostname, _, err := net.SplitHostPort(o.myAddrStr[1:])
+	hostname, err := o.myAddr.GetHostname()
 	if err != nil {
-		_, ok := o.myAddr.(fake.Address)
-		if ok {
-			hostname = "127.0.0.1"
-		} else {
-			return xerrors.Errorf("error parsing node's IP: %v", err)
-		}
+		return xerrors.Errorf("error parsing node's hostname: %v", err)
 	}
 
 	ipAddr := net.ParseIP(hostname)

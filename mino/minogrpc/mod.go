@@ -101,7 +101,7 @@ type Minogrpc struct {
 }
 
 type minoTemplate struct {
-	myAddr mino.Address
+	myAddr session.Address
 	router router.Router
 	fac    mino.AddressFactory
 	certs  certs.Storage
