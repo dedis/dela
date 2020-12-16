@@ -45,7 +45,7 @@ type Context struct {
 	Out      io.Writer
 }
 
-// Injector is a dependcy injection abstraction.
+// Injector is a dependency injection abstraction.
 type Injector interface {
 	// Resolve populates the input with the dependency if any compatible exists.
 	Resolve(interface{}) error

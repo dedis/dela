@@ -47,7 +47,11 @@ func TestFlagSet_Int(t *testing.T) {
 	fset := make(FlagSet)
 	fset["a"] = 20
 	fset["b"] = "oops"
+	fset["c"] = 30.0
+	fset["d"] = 30.1
 
 	require.Equal(t, 20, fset.Int("a"))
 	require.Equal(t, 0, fset.Int("b"))
+	require.Equal(t, 30, fset.Int("c"))
+	require.Equal(t, 0, fset.Int("d"))
 }

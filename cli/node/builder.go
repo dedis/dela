@@ -8,15 +8,15 @@ package node
 import (
 	"encoding/binary"
 	"encoding/json"
-	"fmt"
 	"io"
 	"os"
 	"os/signal"
 	"syscall"
 
-	ucli "github.com/urfave/cli/v2"
+	urfave "github.com/urfave/cli/v2"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cli"
+	"go.dedis.ch/dela/cli/ucli"
 	"golang.org/x/xerrors"
 )
 
@@ -24,12 +24,14 @@ import (
 // control a node.
 //
 // - implements node.Builder
+// - implements cli.Builder
 type CLIBuilder struct {
+	cli.Builder
+
 	daemonFactory DaemonFactory
 	injector      Injector
 	actions       *actionMap
 	startFlags    []cli.Flag
-	commands      []*cliCommand
 	inits         []Initializer
 	writer        io.Writer
 
@@ -67,7 +69,15 @@ func NewBuilderWithCfg(sigs chan os.Signal, out io.Writer, inits ...Initializer)
 		out:      out,
 	}
 
+	// We are using urfave cli builder
+	builder := ucli.NewBuilder("Dela", nil, cli.StringFlag{
+		Name:  "config",
+		Usage: "path to the config folder",
+		Value: ".dela",
+	})
+
 	return &CLIBuilder{
+		Builder:       builder,
 		injector:      injector,
 		actions:       actions,
 		daemonFactory: factory,
@@ -76,14 +86,6 @@ func NewBuilderWithCfg(sigs chan os.Signal, out io.Writer, inits ...Initializer)
 		inits:         inits,
 		writer:        out,
 	}
-}
-
-// SetCommand implements node.Builder. It creates a new command and return its
-// builder.
-func (b *CLIBuilder) SetCommand(name string) cli.CommandBuilder {
-	cb := &cliCommand{name: name}
-	b.commands = append(b.commands, cb)
-	return cb
 }
 
 // SetStartFlags implements node.Builder. It appends the given flags to the list
@@ -110,7 +112,7 @@ func (b *CLIBuilder) MakeAction(tmpl ActionTemplate) cli.Action {
 		// Prepare a set of flags that will be transmitted to the daemon so that
 		// the action has access to the same flags and their values.
 		fset := make(FlagSet)
-		lookupFlags(fset, c.(*ucli.Context))
+		lookupFlags(fset, c.(*urfave.Context))
 
 		buf, err := json.Marshal(fset)
 		if err != nil {
@@ -126,7 +128,7 @@ func (b *CLIBuilder) MakeAction(tmpl ActionTemplate) cli.Action {
 	}
 }
 
-func lookupFlags(fset FlagSet, ctx *ucli.Context) {
+func lookupFlags(fset FlagSet, ctx *urfave.Context) {
 	for _, ancestor := range ctx.Lineage() {
 		if ancestor.Command != nil {
 			fill(fset, ancestor.Command.Flags, ancestor)
@@ -138,7 +140,7 @@ func lookupFlags(fset FlagSet, ctx *ucli.Context) {
 	}
 }
 
-func fill(fset FlagSet, flags []ucli.Flag, ctx *ucli.Context) {
+func fill(fset FlagSet, flags []urfave.Flag, ctx *urfave.Context) {
 	for _, flag := range flags {
 		names := flag.Names()
 		if len(names) > 0 {
@@ -149,7 +151,7 @@ func fill(fset FlagSet, flags []ucli.Flag, ctx *ucli.Context) {
 
 func convert(v interface{}) interface{} {
 	switch value := v.(type) {
-	case ucli.StringSlice:
+	case urfave.StringSlice:
 		// StringSlice is an edge-case as it won't serialize correctly with JSON
 		// so we ask for the actual []string to allow a correct serialization.
 		return value.Value()
@@ -164,40 +166,22 @@ func (b *CLIBuilder) Build() cli.Application {
 		controller.SetCommands(b)
 	}
 
-	commands := b.buildCommands(b.commands)
+	cmd := b.SetCommand("start")
+	cmd.SetDescription("start the deamon")
+	cmd.SetFlags(b.startFlags...)
+	cmd.SetAction(b.start)
 
-	commands = append(commands, &ucli.Command{
-		Name:   "start",
-		Usage:  "start the daemon",
-		Flags:  b.buildFlags(b.startFlags),
-		Action: b.start,
-	})
-
-	app := &ucli.App{
-		Name:  "Dela",
-		Usage: "Dedis Ledger Architecture",
-		Flags: []ucli.Flag{
-			&ucli.PathFlag{
-				Name:  "config",
-				Usage: "path to the config folder",
-				Value: ".dela",
-			},
-		},
-		Commands: commands,
-		Writer:   b.writer,
-	}
-
-	return app
+	return b.Builder.Build()
 }
 
-func (b *CLIBuilder) start(c *ucli.Context) error {
+func (b *CLIBuilder) start(flags cli.Flags) error {
 	if b.enableSignal {
 		signal.Notify(b.sigs, syscall.SIGINT, syscall.SIGTERM)
 
 		defer signal.Stop(b.sigs)
 	}
 
-	dir := c.Path("config")
+	dir := flags.Path("config")
 	if dir != "" {
 		err := os.MkdirAll(dir, 0700)
 		if err != nil {
@@ -205,13 +189,13 @@ func (b *CLIBuilder) start(c *ucli.Context) error {
 		}
 	}
 
-	daemon, err := b.daemonFactory.DaemonFromContext(c)
+	daemon, err := b.daemonFactory.DaemonFromContext(flags)
 	if err != nil {
 		return xerrors.Errorf("couldn't make daemon: %v", err)
 	}
 
 	for _, controller := range b.inits {
-		err = controller.OnStart(c, b.injector)
+		err = controller.OnStart(flags, b.injector)
 		if err != nil {
 			return xerrors.Errorf("couldn't run the controller: %v", err)
 		}
@@ -242,115 +226,6 @@ func (b *CLIBuilder) start(c *ucli.Context) error {
 	dela.Logger.Trace().Msg("daemon has been stopped")
 
 	return nil
-}
-
-func (b *CLIBuilder) buildCommands(in []*cliCommand) []*ucli.Command {
-	if len(in) == 0 {
-		return nil
-	}
-
-	commands := make([]*ucli.Command, len(in))
-	for i, command := range in {
-		cmd := &ucli.Command{
-			Name:  command.name,
-			Usage: command.description,
-			Flags: b.buildFlags(command.flags),
-		}
-
-		if command.action != nil {
-			cmd.Action = b.buildAction(command.action)
-		}
-
-		cmd.Subcommands = b.buildCommands(command.subcommands)
-
-		commands[i] = cmd
-	}
-
-	return commands
-}
-
-func (b *CLIBuilder) buildAction(a cli.Action) func(*ucli.Context) error {
-	return func(ctx *ucli.Context) error {
-		return a(ctx)
-	}
-}
-
-func (b *CLIBuilder) buildFlags(in []cli.Flag) []ucli.Flag {
-	flags := make([]ucli.Flag, len(in))
-	for i, input := range in {
-		switch flag := input.(type) {
-		case cli.StringFlag:
-			flags[i] = &ucli.StringFlag{
-				Name:     flag.Name,
-				Usage:    flag.Usage,
-				Required: flag.Required,
-				Value:    flag.Value,
-			}
-		case cli.StringSliceFlag:
-			flags[i] = &ucli.StringSliceFlag{
-				Name:     flag.Name,
-				Usage:    flag.Usage,
-				Required: flag.Required,
-				Value:    ucli.NewStringSlice(flag.Value...),
-			}
-		case cli.DurationFlag:
-			flags[i] = &ucli.DurationFlag{
-				Name:     flag.Name,
-				Usage:    flag.Usage,
-				Required: flag.Required,
-				Value:    flag.Value,
-			}
-		case cli.IntFlag:
-			flags[i] = &ucli.IntFlag{
-				Name:     flag.Name,
-				Usage:    flag.Usage,
-				Required: flag.Required,
-				Value:    flag.Value,
-			}
-		default:
-			panic(fmt.Sprintf("flag type '%T' not supported", input))
-		}
-	}
-
-	return flags
-}
-
-// CLICommand is a command builder to set the properties of a command.
-//
-// - implements cli.CommandBuilder
-type cliCommand struct {
-	name        string
-	description string
-	action      cli.Action
-	flags       []cli.Flag
-	subcommands []*cliCommand
-}
-
-// SetDescription implements cli.CommandBuilder. It sets the description of the
-// command.
-func (c *cliCommand) SetDescription(value string) {
-	c.description = value
-}
-
-// SetAction implements cli.CommandBuilder. It sets the action to invoked for
-// the command.
-func (c *cliCommand) SetAction(a cli.Action) {
-	c.action = a
-}
-
-// SetFlags implements cli.CommandBuilder. It defines the list of flags that can
-// be passed by the client.
-func (c *cliCommand) SetFlags(flags ...cli.Flag) {
-	c.flags = flags
-}
-
-// SetSubCommand implements cli.CommandBuilder. It creates a new subcommand and
-// returns its builder.
-func (c *cliCommand) SetSubCommand(name string) cli.CommandBuilder {
-	sub := &cliCommand{name: name}
-	c.subcommands = append(c.subcommands, sub)
-
-	return sub
 }
 
 // ActionMap stores actions and assigns a unique index to each.
