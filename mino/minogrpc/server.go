@@ -549,9 +549,16 @@ func (o *overlay) Join(addr, token string, certHash []byte) error {
 }
 
 func (o *overlay) makeCertificate() error {
+	// We take a substring from [1, N) because
+	// o.myAddrStr[0] == 'F' || o.myAddrStr[1] == 'O'
+	ip, _, err := net.SplitHostPort(o.myAddrStr[1:])
+	if err != nil {
+		return xerrors.Errorf("error parsing node's IP: %v", err)
+	}
+
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
-		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
+		IPAddresses:  []net.IP{net.ParseIP(ip)},
 		NotBefore:    time.Now(),
 		NotAfter:     time.Now().Add(certificateDuration),
 
