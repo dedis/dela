@@ -325,6 +325,7 @@ func (s *session) Recv(ctx context.Context) (mino.Address, serde.Message, error)
 func (s *session) sendPacket(p parent, pkt router.Packet, errs chan error) bool {
 	me := pkt.Slice(s.me)
 	if me != nil {
+		dela.Logger.Debug().Msgf("pkt is for me: %s", s.me)
 		err := s.queue.Push(me)
 		if err != nil {
 			errs <- xerrors.Errorf("%v dropped the packet: %v", s.me, err)

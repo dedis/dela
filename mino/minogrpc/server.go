@@ -377,6 +377,7 @@ func (o *overlayServer) tableFromHeaders(h metadata.MD) (router.RoutingTable, bo
 // Forward implements ptypes.OverlayServer. It handles a request to forward a
 // packet by sending it to the appropriate session.
 func (o *overlayServer) Forward(ctx context.Context, p *ptypes.Packet) (*ptypes.Ack, error) {
+	dela.Logger.Debug().Msg("received a packet")
 	headers, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return nil, xerrors.New("no header in the context")
@@ -398,6 +399,7 @@ func (o *overlayServer) Forward(ctx context.Context, p *ptypes.Packet) (*ptypes.
 	}
 
 	from := o.addrFactory.FromText([]byte(gateway))
+	dela.Logger.Debug().Msgf("packet is from: %s", from)
 
 	return sess.RecvPacket(from, p)
 }
