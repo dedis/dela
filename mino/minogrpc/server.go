@@ -366,7 +366,7 @@ func (o *overlayServer) tableFromHeaders(h metadata.MD) (router.RoutingTable, bo
 		addrs[i] = o.addrFactory.FromText([]byte(addr))
 	}
 
-	table, err := o.router.New(mino.NewAddresses(addrs...))
+	table, err := o.router.New(mino.NewAddresses(addrs...), o.myAddr)
 	if err != nil {
 		return nil, true, xerrors.Errorf("failed to create: %v", err)
 	}
