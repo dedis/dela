@@ -554,7 +554,8 @@ func (o *overlay) makeCertificate() error {
 	// o.myAddrStr[0] == 'F' || o.myAddrStr[1] == 'O'
 	hostname, _, err := net.SplitHostPort(o.myAddrStr[1:])
 	if err != nil {
-		if _, ok := o.myAddr.(fake.Address); ok {
+		_, ok := o.myAddr.(fake.Address)
+		if ok {
 			hostname = "127.0.0.1"
 		} else {
 			return xerrors.Errorf("error parsing node's IP: %v", err)
