@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
@@ -551,14 +552,33 @@ func (o *overlay) Join(addr, token string, certHash []byte) error {
 func (o *overlay) makeCertificate() error {
 	// We take a substring from [1, N) because
 	// o.myAddrStr[0] == 'F' || o.myAddrStr[1] == 'O'
-	ip, _, err := net.SplitHostPort(o.myAddrStr[1:])
+	hostname, _, err := net.SplitHostPort(o.myAddrStr[1:])
 	if err != nil {
-		return xerrors.Errorf("error parsing node's IP: %v", err)
+		if _, ok := o.myAddr.(fake.Address); ok {
+			hostname = "127.0.0.1"
+		} else {
+			return xerrors.Errorf("error parsing node's IP: %v", err)
+		}
+	}
+
+	ipAddr := net.ParseIP(hostname)
+	var ipAddrs []net.IP
+
+	if ipAddr == nil {
+		addrs, err := net.LookupHost(hostname)
+		if err != nil {
+			return xerrors.Errorf("error resolving IP for %s: %v", hostname, err)
+		}
+		for _, ip := range addrs {
+			ipAddrs = append(ipAddrs, net.ParseIP(ip))
+		}
+	} else {
+		ipAddrs = append(ipAddrs, ipAddr)
 	}
 
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
-		IPAddresses:  []net.IP{net.ParseIP(ip)},
+		IPAddresses:  ipAddrs,
 		NotBefore:    time.Now(),
 		NotAfter:     time.Now().Add(certificateDuration),
 
