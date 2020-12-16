@@ -405,7 +405,7 @@ func (o *overlayServer) Forward(ctx context.Context, p *ptypes.Packet) (*ptypes.
 type overlay struct {
 	closer      *sync.WaitGroup
 	context     serde.Context
-	myAddr      mino.Address
+	myAddr      session.Address
 	certs       certs.Storage
 	tokens      tokens.Holder
 	router      router.Router
@@ -423,10 +423,8 @@ type overlay struct {
 }
 
 func newOverlay(tmpl minoTemplate) (*overlay, error) {
-	myAddrBuf, err := tmpl.myAddr.MarshalText()
-	if err != nil {
-		return nil, xerrors.Errorf("failed to marshal address: %v", err)
-	}
+	// session.Address never returns an error
+	myAddrBuf, _ := tmpl.myAddr.MarshalText()
 
 	if tmpl.secret == nil || tmpl.public == nil {
 		priv, err := ecdsa.GenerateKey(tmpl.curve, tmpl.random)
@@ -549,9 +547,29 @@ func (o *overlay) Join(addr, token string, certHash []byte) error {
 }
 
 func (o *overlay) makeCertificate() error {
+	hostname, err := o.myAddr.GetHostname()
+	if err != nil {
+		return xerrors.Errorf("error parsing node's hostname: %v", err)
+	}
+
+	ipAddr := net.ParseIP(hostname)
+	var ipAddrs []net.IP
+
+	if ipAddr == nil {
+		addrs, err := net.LookupHost(hostname)
+		if err != nil {
+			return xerrors.Errorf("error resolving IP for %s: %v", hostname, err)
+		}
+		for _, ip := range addrs {
+			ipAddrs = append(ipAddrs, net.ParseIP(ip))
+		}
+	} else {
+		ipAddrs = append(ipAddrs, ipAddr)
+	}
+
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
-		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
+		IPAddresses:  ipAddrs,
 		NotBefore:    time.Now(),
 		NotAfter:     time.Now().Add(certificateDuration),
 
