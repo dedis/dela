@@ -314,6 +314,8 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 		return xerrors.Errorf("handler failed to process: %v", err)
 	}
 
+	dela.Logger.Info().Msg("Done with the handler... waiting for context to be done")
+
 	<-stream.Context().Done()
 
 	return nil
