@@ -338,19 +338,21 @@ func TestOverlayServer_Call(t *testing.T) {
 		},
 	}
 
-	ctx := makeCtx(headerURIKey, "test")
+	ctx, cancel := makeCtx(headerURIKey, "test")
 
 	resp, err := overlay.Call(ctx, &ptypes.Message{Payload: []byte(`{}`)})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	require.Equal(t, []byte(`{}`), resp.GetPayload())
+	cancel()
 
-	ctx = makeCtx(headerURIKey, "empty")
+	ctx, cancel = makeCtx(headerURIKey, "empty")
 
 	resp, err = overlay.Call(ctx, &ptypes.Message{Payload: []byte(`{}`)})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	require.Nil(t, resp.GetPayload())
+	cancel()
 }
 
 func TestOverlayServer_UnknownHandler_Call(t *testing.T) {
@@ -358,16 +360,19 @@ func TestOverlayServer_UnknownHandler_Call(t *testing.T) {
 		endpoints: make(map[string]*Endpoint),
 	}
 
-	ctx := makeCtx(headerURIKey, "unknown")
+	ctx, cancel := makeCtx(headerURIKey, "unknown")
 
 	_, err := overlay.Call(ctx, nil)
 	require.EqualError(t, err, "handler 'unknown' is not registered")
+	cancel()
 
 	_, err = overlay.Call(context.Background(), nil)
 	require.EqualError(t, err, "handler '' is not registered")
 
-	_, err = overlay.Call(makeCtx(), nil)
+	ctx, cancel = makeCtx()
+	_, err = overlay.Call(ctx, nil)
 	require.EqualError(t, err, "handler '' is not registered")
+	cancel()
 }
 
 func TestOverlayServer_BadHandlerFactory_Call(t *testing.T) {
@@ -378,10 +383,11 @@ func TestOverlayServer_BadHandlerFactory_Call(t *testing.T) {
 		},
 	}
 
-	ctx := makeCtx(headerURIKey, "test")
+	ctx, cancel := makeCtx(headerURIKey, "test")
 
 	_, err := overlay.Call(ctx, &ptypes.Message{Payload: []byte(``)})
 	require.EqualError(t, err, fake.Err("couldn't deserialize message"))
+	cancel()
 }
 
 func TestOverlayServer_BadHandler_Call(t *testing.T) {
@@ -394,10 +400,11 @@ func TestOverlayServer_BadHandler_Call(t *testing.T) {
 		},
 	}
 
-	ctx := makeCtx(headerURIKey, "test")
+	ctx, cancel := makeCtx(headerURIKey, "test")
 
 	_, err := overlay.Call(ctx, &ptypes.Message{Payload: []byte(``)})
 	require.EqualError(t, err, "handler failed to process: rpc is not supported")
+	cancel()
 }
 
 func TestOverlayServer_BadResponseFactory_Call(t *testing.T) {
@@ -411,10 +418,11 @@ func TestOverlayServer_BadResponseFactory_Call(t *testing.T) {
 		},
 	}
 
-	ctx := makeCtx(headerURIKey, "test")
+	ctx, cancel := makeCtx(headerURIKey, "test")
 
 	_, err := overlay.Call(ctx, &ptypes.Message{Payload: []byte(``)})
 	require.EqualError(t, err, fake.Err("couldn't serialize result"))
+	cancel()
 }
 
 func TestOverlayServer_Stream(t *testing.T) {
@@ -486,14 +494,15 @@ func TestOverlay_MalformedRtingTable_Stream(t *testing.T) {
 		},
 	}
 
-	ctx := makeCtx(headerStreamIDKey, "abc", headerAddressKey, "{}")
+	ctx, cancel := makeCtx(headerStreamIDKey, "abc", headerAddressKey, "{}")
 
 	stream := &fakeSrvStream{ctx: ctx}
 
 	err := overlay.Stream(stream)
 	require.EqualError(t, err, fake.Err("routing table: failed to create"))
+	cancel()
 
-	stream.ctx = makeCtx(
+	stream.ctx, cancel = makeCtx(
 		headerStreamIDKey, "abc",
 		headerAddressKey, "{}",
 		session.HandshakeKey, "{}")
@@ -504,6 +513,7 @@ func TestOverlay_MalformedRtingTable_Stream(t *testing.T) {
 	overlay.router = badRouter{errFac: true}
 	err = overlay.Stream(stream)
 	require.EqualError(t, err, fake.Err("routing table: malformed handshake"))
+	cancel()
 }
 
 func TestOverlay_UnknownHandler_Stream(t *testing.T) {
@@ -516,20 +526,22 @@ func TestOverlay_UnknownHandler_Stream(t *testing.T) {
 		},
 	}
 
-	ctx := makeCtx(headerStreamIDKey, "abc", session.HandshakeKey, "{}")
+	ctx, cancel := makeCtx(headerStreamIDKey, "abc", session.HandshakeKey, "{}")
 
 	stream := &fakeSrvStream{ctx: ctx}
 
 	err := overlay.Stream(stream)
 	require.EqualError(t, err, "handler '' is not registered")
+	cancel()
 
-	stream.ctx = makeCtx(
+	stream.ctx, cancel = makeCtx(
 		headerURIKey, "unknown",
 		session.HandshakeKey, "{}",
 		headerStreamIDKey, "abc")
 
 	err = overlay.Stream(stream)
 	require.EqualError(t, err, "handler 'unknown' is not registered")
+	cancel()
 }
 
 func TestOverlay_BadStreamID_Stream(t *testing.T) {
@@ -542,12 +554,13 @@ func TestOverlay_BadStreamID_Stream(t *testing.T) {
 		},
 	}
 
-	ctx := makeCtx(headerStreamIDKey, "", session.HandshakeKey, "{}")
+	ctx, cancel := makeCtx(headerStreamIDKey, "", session.HandshakeKey, "{}")
 
 	stream := &fakeSrvStream{ctx: ctx}
 
 	err := overlay.Stream(stream)
 	require.EqualError(t, err, "unexpected empty stream ID")
+	cancel()
 }
 
 func TestOverlay_BadHandler_Stream(t *testing.T) {
@@ -568,12 +581,13 @@ func TestOverlay_BadHandler_Stream(t *testing.T) {
 		},
 	}
 
-	ctx := makeCtx(headerURIKey, "test", headerStreamIDKey, "abc", session.HandshakeKey, "{}")
+	ctx, cancel := makeCtx(headerURIKey, "test", headerStreamIDKey, "abc", session.HandshakeKey, "{}")
 
 	stream := &fakeSrvStream{ctx: ctx}
 
 	err := overlay.Stream(stream)
 	require.EqualError(t, err, fake.Err("handler failed to process"))
+	cancel()
 }
 
 func TestOverlay_BadConn_Stream(t *testing.T) {
@@ -594,12 +608,13 @@ func TestOverlay_BadConn_Stream(t *testing.T) {
 		},
 	}
 
-	ctx := makeCtx(headerURIKey, "test", headerStreamIDKey, "abc", session.HandshakeKey, "{}")
+	ctx, cancel := makeCtx(headerURIKey, "test", headerStreamIDKey, "abc", session.HandshakeKey, "{}")
 
 	stream := &fakeSrvStream{ctx: ctx, err: fake.GetError()}
 
 	err := overlay.Stream(stream)
 	require.EqualError(t, err, fake.Err("failed to send header"))
+	cancel()
 }
 
 func TestOverlay_BadParentGateway_Stream(t *testing.T) {
@@ -620,12 +635,13 @@ func TestOverlay_BadParentGateway_Stream(t *testing.T) {
 		},
 	}
 
-	ctx := makeCtx(headerURIKey, "test", headerStreamIDKey, "abc", session.HandshakeKey, "{}")
+	ctx, cancel := makeCtx(headerURIKey, "test", headerStreamIDKey, "abc", session.HandshakeKey, "{}")
 
 	stream := &fakeSrvStream{ctx: ctx, err: fake.GetError()}
 
 	err := overlay.Stream(stream)
 	require.EqualError(t, err, fake.Err("gateway connection failed"))
+	cancel()
 }
 
 func TestOverlay_Forward(t *testing.T) {
@@ -648,20 +664,25 @@ func TestOverlay_Forward(t *testing.T) {
 		},
 	}
 
-	ctx := makeCtx(headerURIKey, "test", headerStreamIDKey, "stream-1")
+	ctx, cancel := makeCtx(headerURIKey, "test", headerStreamIDKey, "stream-1")
 
 	ack, err := overlay.Forward(ctx, &ptypes.Packet{})
 	require.NoError(t, err)
 	require.NotNil(t, ack)
+	cancel()
 
 	_, err = overlay.Forward(context.Background(), &ptypes.Packet{})
 	require.EqualError(t, err, "no header in the context")
 
-	_, err = overlay.Forward(makeCtx(headerURIKey, "unknown"), &ptypes.Packet{})
+	ctx, cancel = makeCtx(headerURIKey, "unknown")
+	_, err = overlay.Forward(ctx, &ptypes.Packet{})
 	require.EqualError(t, err, "handler 'unknown' is not registered")
+	cancel()
 
-	_, err = overlay.Forward(makeCtx(headerURIKey, "test", headerStreamIDKey, "nope"), &ptypes.Packet{})
+	ctx, cancel = makeCtx(headerURIKey, "test", headerStreamIDKey, "nope")
+	_, err = overlay.Forward(ctx, &ptypes.Packet{})
 	require.EqualError(t, err, "no stream 'nope' found")
+	cancel()
 }
 
 func TestOverlay_New(t *testing.T) {
@@ -857,11 +878,10 @@ func checkError(t *testing.T, err error, mm ...mino.Mino) {
 	t.Fatal("unexpected error", err)
 }
 
-func makeCtx(kv ...string) context.Context {
+func makeCtx(kv ...string) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
 
-	return metadata.NewIncomingContext(ctx, metadata.Pairs(kv...))
+	return metadata.NewIncomingContext(ctx, metadata.Pairs(kv...)), cancel
 }
 
 type testHandler struct {
