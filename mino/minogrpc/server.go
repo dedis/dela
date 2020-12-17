@@ -309,14 +309,25 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 		return xerrors.Errorf("failed to send header: %v", err)
 	}
 
-	err = endpoint.Handler.Stream(sess, sess)
-	if err != nil {
-		return xerrors.Errorf("handler failed to process: %v", err)
+	errs := make(chan error)
+	go func() {
+		for {
+			err = endpoint.Handler.Stream(sess, sess)
+			if err != nil {
+				errs <-err
+				return
+			}
+		}
+	}()
+
+	for {
+		select {
+		case err := <-errs:
+			return xerrors.Errorf("handler failed to process: %v", err)
+		case <-stream.Context().Done():
+			return nil
+		}
 	}
-
-	<-stream.Context().Done()
-
-	return nil
 }
 
 func (o *overlayServer) cleanStream(endpoint *Endpoint, id string) {
