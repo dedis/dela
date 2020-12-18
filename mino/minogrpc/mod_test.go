@@ -188,10 +188,10 @@ func TestMinogrpc_InvalidSegment_CreateRPC(t *testing.T) {
 
 func TestMinogrpc_String(t *testing.T) {
 	minoGrpc := &Minogrpc{
-		overlay: &overlay{myAddr: fake.NewAddress(0)},
+		overlay: &overlay{myAddr: session.Address{}},
 	}
 
-	require.Equal(t, "mino[fake.Address[0]]", minoGrpc.String())
+	require.Equal(t, "mino[]", minoGrpc.String())
 }
 
 // -----------------------------------------------------------------------------

@@ -178,7 +178,7 @@ func TestMinogrpc_Scenario_Failures(t *testing.T) {
 
 func TestOverlayServer_Join(t *testing.T) {
 	o, err := newOverlay(minoTemplate{
-		myAddr: fake.NewAddress(0),
+		myAddr: session.NewAddress("127.0.0.1:0"),
 		certs:  certs.NewInMemoryStore(),
 		router: tree.NewRouter(addressFac),
 		curve:  elliptic.P521(),
@@ -423,7 +423,7 @@ func TestOverlayServer_Stream(t *testing.T) {
 			router:      tree.NewRouter(addressFac),
 			context:     json.NewContext(),
 			addrFactory: addressFac,
-			myAddr:      fake.NewAddress(0),
+			myAddr:      session.NewAddress("127.0.0.1:0"),
 			closer:      &sync.WaitGroup{},
 			connMgr:     fakeConnMgr{},
 		},
@@ -634,7 +634,7 @@ func TestOverlay_Forward(t *testing.T) {
 			router:      tree.NewRouter(addressFac),
 			context:     json.NewContext(),
 			addrFactory: addressFac,
-			myAddr:      fake.NewAddress(0),
+			myAddr:      session.NewAddress("127.0.0.1:0"),
 			closer:      &sync.WaitGroup{},
 			connMgr:     fakeConnMgr{},
 		},
@@ -666,19 +666,16 @@ func TestOverlay_Forward(t *testing.T) {
 
 func TestOverlay_New(t *testing.T) {
 	o, err := newOverlay(minoTemplate{
-		myAddr: fake.NewAddress(0),
+		myAddr: session.NewAddress("127.0.0.1:0"),
 		certs:  certs.NewInMemoryStore(),
 		curve:  elliptic.P521(),
 		random: rand.Reader,
 	})
 	require.NoError(t, err)
 
-	cert, err := o.certs.Load(fake.NewAddress(0))
+	cert, err := o.certs.Load(session.NewAddress("127.0.0.1:0"))
 	require.NoError(t, err)
 	require.NotNil(t, cert)
-
-	_, err = newOverlay(minoTemplate{myAddr: fake.NewBadAddress()})
-	require.EqualError(t, err, fake.Err("failed to marshal address"))
 }
 
 func TestOverlay_Panic_GetCertificate(t *testing.T) {
@@ -709,7 +706,7 @@ func TestOverlay_Panic2_GetCertificate(t *testing.T) {
 
 func TestOverlay_Join(t *testing.T) {
 	overlay, err := newOverlay(minoTemplate{
-		myAddr: fake.NewAddress(0),
+		myAddr: session.NewAddress("127.0.0.1:0"),
 		certs:  certs.NewInMemoryStore(),
 		router: tree.NewRouter(addressFac),
 		fac:    addressFac,
@@ -728,7 +725,7 @@ func TestOverlay_Join(t *testing.T) {
 	err = overlay.Join("", "", nil)
 	require.NoError(t, err)
 
-	overlay.myAddr = fake.NewAddress(0)
+	overlay.myAddr = session.NewAddress("127.0.0.1:0")
 	overlay.certs = fakeCerts{err: fake.GetError()}
 	err = overlay.Join("", "", nil)
 	require.EqualError(t, err, fake.Err("couldn't fetch distant certificate"))
