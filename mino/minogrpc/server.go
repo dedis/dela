@@ -556,6 +556,7 @@ func (o *overlay) makeCertificate() error {
 	if err != nil {
 		return xerrors.Errorf("error resolving IP: %v", err)
 	}
+
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		IPAddresses:  ipAddrs,
