@@ -549,24 +549,13 @@ func (o *overlay) Join(addr, token string, certHash []byte) error {
 func (o *overlay) makeCertificate() error {
 	hostname, err := o.myAddr.GetHostname()
 	if err != nil {
-		return xerrors.Errorf("error parsing node's hostname: %v", err)
+		return xerrors.Errorf("error retrieving hostname: %v", err)
 	}
 
-	ipAddr := net.ParseIP(hostname)
-	var ipAddrs []net.IP
-
-	if ipAddr == nil {
-		addrs, err := net.LookupHost(hostname)
-		if err != nil {
-			return xerrors.Errorf("error resolving IP for %s: %v", hostname, err)
-		}
-		for _, ip := range addrs {
-			ipAddrs = append(ipAddrs, net.ParseIP(ip))
-		}
-	} else {
-		ipAddrs = append(ipAddrs, ipAddr)
+	ipAddrs, err := net.LookupIP(hostname)
+	if err != nil {
+		return xerrors.Errorf("error resolving IP: %v", err)
 	}
-
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		IPAddresses:  ipAddrs,
