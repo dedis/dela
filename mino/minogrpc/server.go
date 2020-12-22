@@ -23,6 +23,7 @@ import (
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
 	"go.dedis.ch/dela/mino/minogrpc/session"
 	"go.dedis.ch/dela/mino/minogrpc/tokens"
+	"go.dedis.ch/dela/mino/minogrpc/tracing"
 	"go.dedis.ch/dela/mino/router"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/json"
@@ -31,6 +32,8 @@ import (
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
+
+	otgrpc "github.com/opentracing-contrib/go-grpc"
 )
 
 const (
@@ -666,12 +669,24 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 	}
 
 	// Connecting using TLS and the distant server certificate as the root.
-	conn, err = grpc.Dial(netAddr.GetDialAddress(),
+	addr := netAddr.GetDialAddress()
+	tracer, err := tracing.GetTracerForAddr(addr)
+	if err != nil {
+		return nil, err
+	}
+
+	conn, err = grpc.Dial(addr,
 		grpc.WithTransportCredentials(ta),
 		grpc.WithConnectParams(grpc.ConnectParams{
 			Backoff:           backoff.DefaultConfig,
 			MinConnectTimeout: defaultMinConnectTimeout,
 		}),
+		grpc.WithUnaryInterceptor(
+			otgrpc.OpenTracingClientInterceptor(tracer),
+		),
+		grpc.WithStreamInterceptor(
+			otgrpc.OpenTracingStreamClientInterceptor(tracer),
+		),
 	)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to dial: %v", err)

@@ -16,10 +16,12 @@ import (
 	"sync"
 	"time"
 
+	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
 	"go.dedis.ch/dela/mino/minogrpc/session"
+	"go.dedis.ch/dela/mino/minogrpc/tracing"
 	"go.dedis.ch/dela/mino/router"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
@@ -166,7 +168,16 @@ func NewMinogrpc(addr net.Addr, router router.Router, opts ...Option) (*Minogrpc
 	}
 
 	creds := credentials.NewServerTLSFromCert(o.GetCertificate())
-	server := grpc.NewServer(grpc.Creds(creds))
+	tracer, err := tracing.GetTracerForAddr(o.myAddr.GetDialAddress())
+	if err != nil {
+		return nil, err
+	}
+
+	server := grpc.NewServer(
+		grpc.Creds(creds),
+		grpc.UnaryInterceptor(otgrpc.OpenTracingServerInterceptor(tracer)),
+		grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(tracer)),
+	)
 
 	m := &Minogrpc{
 		overlay:   o,
@@ -233,6 +244,11 @@ func (m *Minogrpc) postCheckClose() error {
 	numConns := m.overlay.connMgr.Len()
 	if numConns > 0 {
 		return xerrors.Errorf("connection manager not empty: %d", numConns)
+	}
+
+	err = tracing.CloseAll()
+	if err != nil {
+		return err
 	}
 
 	return nil
