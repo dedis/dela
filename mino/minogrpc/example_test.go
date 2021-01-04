@@ -82,7 +82,6 @@ func ExampleRPC_Stream() {
 		}
 	}
 
-
 	addrs := make([]mino.Address, N)
 	for i := 0; i < N; i++ {
 		addrs[i] = minos[i].GetAddress()
