@@ -7,6 +7,7 @@ package simple
 
 import (
 	"encoding/binary"
+	"fmt"
 
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/execution"
@@ -126,8 +127,10 @@ func (s Service) validateTx(store store.Snapshot, step execution.Step, r *Transa
 	}
 
 	if expectedNonce != step.Current.GetNonce() {
-		r.reason = "nonce is invalid"
+		r.reason = fmt.Sprintf("nonce is invalid, expected %d, got %d",
+			expectedNonce, step.Current.GetNonce())
 		r.accepted = false
+
 		return nil
 	}
 

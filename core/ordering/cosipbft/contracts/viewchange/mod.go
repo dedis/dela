@@ -62,7 +62,7 @@ func NewManager(mgr txn.Manager) Manager {
 }
 
 // Make creates a new transaction using the provided manager. It contains the
-// new roster that the transction should apply.
+// new roster that the transaction should apply.
 func (mgr Manager) Make(roster authority.Authority) (txn.Transaction, error) {
 	data, err := roster.Serialize(mgr.context)
 	if err != nil {

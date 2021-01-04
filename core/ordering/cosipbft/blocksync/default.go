@@ -133,7 +133,7 @@ func (s defaultSync) Sync(ctx context.Context, players mino.Players, cfg Config)
 
 		for {
 			from, msg, err := rcvr.Recv(ctx)
-			if err == context.Canceled || err == io.EOF {
+			if err == context.Canceled || err == context.DeadlineExceeded || err == io.EOF {
 				return
 			}
 			if err != nil {
