@@ -3,10 +3,12 @@ package node
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -127,6 +129,67 @@ func TestSocketDaemon_Listen(t *testing.T) {
 	err = client.Send([]byte{})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "stream corrupted: ")
+}
+
+// TestSocketDaemon_ConnectivityTest_Listen demonstrates the neccessity to
+// protect references in action structs with a mutex.
+func TestSocketDaemon_ConcurrentListen(t *testing.T) {
+	dir, err := ioutil.TempDir(os.TempDir(), "dela")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
+	fset := make(FlagSet)
+	fset["1"] = 1
+
+	buf, err := json.Marshal(&fset)
+	require.NoError(t, err)
+
+	actions := &actionMap{}
+	actions.Set(&fakeConcurrentAction{
+		count: 0,
+	}) // id 0
+
+	daemon := &socketDaemon{
+		socketpath:  filepath.Join(dir, "daemon.sock"),
+		actions:     actions,
+		closing:     make(chan struct{}),
+		readTimeout: 50 * time.Millisecond,
+		listenFn:    net.Listen,
+	}
+
+	err = daemon.Listen()
+	require.NoError(t, err)
+
+	defer daemon.Close()
+
+	wg := sync.WaitGroup{}
+	for i := 0; i < 99; i++ {
+		wg.Add(1)
+		go func(wg *sync.WaitGroup) {
+			out := new(bytes.Buffer)
+			client := socketClient{
+				socketpath:  daemon.socketpath,
+				out:         out,
+				dialTimeout: time.Second,
+				dialFn:      net.DialTimeout,
+			}
+			err = client.Send(append([]byte{0x0, 0x0}, buf...))
+			require.NoError(t, err)
+			wg.Done()
+		}(&wg)
+	}
+	wg.Wait()
+	out := new(bytes.Buffer)
+	client := socketClient{
+		socketpath:  daemon.socketpath,
+		out:         out,
+		dialTimeout: time.Second,
+		dialFn:      net.DialTimeout,
+	}
+	err = client.Send(append([]byte{0x0, 0x0}, buf...))
+	require.NoError(t, err)
+	require.Equal(t, "100\n", out.String())
 }
 
 func TestSocketDaemon_ConnectivityTest_Listen(t *testing.T) {
@@ -300,6 +363,20 @@ func (a fakeAction) Execute(req Context) error {
 	}
 
 	req.Out.Write([]byte("deadbeef"))
+	return nil
+}
+
+type fakeConcurrentAction struct {
+	mu    sync.Mutex
+	count int
+}
+
+func (a *fakeConcurrentAction) Execute(req Context) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.count++
+	req.Out.Write([]byte(fmt.Sprintf("%d", a.count)))
 	return nil
 }
 
