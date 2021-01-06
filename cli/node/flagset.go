@@ -81,3 +81,14 @@ func (fset FlagSet) Int(name string) int {
 		return 0
 	}
 }
+
+// Bool implements cli.Flags. It return the boolean associated with the flag if
+// it is set, otherwise it returns false.
+func (fset FlagSet) Bool(name string) bool {
+	switch v := fset[name].(type) {
+	case bool:
+		return v
+	default:
+		return false
+	}
+}
