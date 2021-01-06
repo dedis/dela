@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"sync"
+
 	"go.dedis.ch/dela/crypto"
 
 	"go.dedis.ch/dela/cli/node"
@@ -22,11 +24,16 @@ var getManager = func(signer crypto.Signer, s signed.Client) txn.Manager {
 //
 // - implements node.ActionTemplate
 type addAction struct {
+	sync.Mutex
+
 	client *client
 }
 
 // Execute implements node.ActionTemplate
-func (a addAction) Execute(ctx node.Context) error {
+func (a *addAction) Execute(ctx node.Context) error {
+	a.Lock()
+	defer a.Unlock()
+
 	var p pool.Pool
 	err := ctx.Injector.Resolve(&p)
 	if err != nil {

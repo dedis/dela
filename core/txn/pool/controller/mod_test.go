@@ -21,7 +21,7 @@ func TestMiniController_Build(t *testing.T) {
 	require.Equal(t, "add", call.Get(2, 0))
 	require.Equal(t, "add a transaction to the pool", call.Get(3, 0))
 	require.Len(t, call.Get(4, 0), 3)
-	require.IsType(t, addAction{}, call.Get(5, 0))
+	require.IsType(t, &addAction{}, call.Get(5, 0))
 	require.Nil(t, call.Get(6, 0)) // our fake MakeAction() returns nil
 }
 

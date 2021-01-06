@@ -37,7 +37,7 @@ func (miniController) SetCommands(builder node.Builder) {
 		Usage:    "path to the private keyfile",
 		Required: true,
 	})
-	sub.SetAction(builder.MakeAction(addAction{
+	sub.SetAction(builder.MakeAction(&addAction{
 		client: &client{},
 	}))
 }
@@ -52,7 +52,7 @@ func (miniController) OnStop(inj node.Injector) error {
 	return nil
 }
 
-// client return monotically inscreasing nonce
+// client return monotically increasing nonce
 //
 // - implements signed.Client
 type client struct {
