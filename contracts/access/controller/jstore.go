@@ -88,7 +88,7 @@ func (s *jstore) saveFile() error {
 		return xerrors.Errorf("failed to marshal data: %v", err)
 	}
 
-	err = ioutil.WriteFile(s.path, buf, os.ModePerm)
+	err = ioutil.WriteFile(s.path, buf, 0644)
 	if err != nil {
 		return xerrors.Errorf("failed to save file '%s': %v", s.path, err)
 	}

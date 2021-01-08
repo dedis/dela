@@ -6,7 +6,8 @@
 // contract's creation.
 // CONTRACT is the contract name.
 // COMMAND specifies the command to grant access to on the contract.
-// IDENTITIES is a list of base64 encoded bls public keys, separated by comas.
+// IDENTITIES is a list of standard base64 encoded bls public keys, separated by
+// comas.
 package access
 
 import (
@@ -48,7 +49,7 @@ const (
 	CmdArg = "access:command"
 )
 
-// Command defines a command for the value contract
+// Command defines a command for the command contract
 type Command string
 
 const (
@@ -56,7 +57,7 @@ const (
 	CmdSet Command = "GRANT"
 )
 
-// NewCreds creates new credentials for a value contract execution.
+// NewCreds creates new credentials for an access contract execution.
 func NewCreds(id []byte) access.Credential {
 	return access.NewContractCreds(id, ContractName, "all")
 }
@@ -80,7 +81,7 @@ type Contract struct {
 	store store.Readable
 }
 
-// NewContract creates a new Value contract
+// NewContract creates a new access contract
 func NewContract(aKey []byte, srvc access.Service, store store.Readable) Contract {
 	return Contract{
 		access:    srvc,
