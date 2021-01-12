@@ -91,7 +91,7 @@ func ExampleRPC_Stream() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	ctx = context.WithValue(ctx, tracing.ProtocolTag, "example-protocol")
+	ctx = context.WithValue(ctx, tracing.ProtocolKey, "example-protocol")
 
 	sender, recv, err := rpcs[0].Stream(ctx, minoAddrs)
 	if err != nil {

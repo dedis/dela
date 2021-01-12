@@ -40,7 +40,7 @@ type thresholdActor struct {
 func (a thresholdActor) Sign(ctx context.Context, msg serde.Message,
 	ca crypto.CollectiveAuthority) (crypto.Signature, error) {
 
-	ctx = context.WithValue(ctx, tracing.ProtocolTag, "sign")
+	ctx = context.WithValue(ctx, tracing.ProtocolKey, "sign")
 
 	sender, rcvr, err := a.rpc.Stream(ctx, ca)
 	if err != nil {

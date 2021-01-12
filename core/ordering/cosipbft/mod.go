@@ -548,7 +548,7 @@ func (s *Service) doRound(ctx context.Context) error {
 
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	ctx = context.WithValue(ctx, tracing.ProtocolTag, "blocksync")
+	ctx = context.WithValue(ctx, tracing.ProtocolKey, "blocksync")
 
 	s.logger.Debug().Uint64("index", s.blocks.Len()).Msg("round has started")
 
