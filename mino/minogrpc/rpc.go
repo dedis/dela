@@ -14,6 +14,7 @@ import (
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
 	"go.dedis.ch/dela/mino/minogrpc/session"
+	"go.dedis.ch/dela/mino/minogrpc/tracing"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc/codes"
@@ -139,12 +140,21 @@ func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, m
 		return nil, nil, xerrors.New("empty list of addresses")
 	}
 
+	protocol := ctx.Value(tracing.ProtocolTag)
+
 	streamID := xid.New().String()
 
 	md := metadata.Pairs(
 		headerURIKey, rpc.uri,
-		headerStreamIDKey, streamID,
-		headerGatewayKey, rpc.overlay.myAddrStr)
+		HeaderStreamIDKey, streamID,
+		headerGatewayKey, rpc.overlay.myAddrStr,
+	)
+
+	if protocol != nil {
+		md.Append(tracing.ProtocolTag, protocol.(string))
+	} else {
+		md.Append(tracing.ProtocolTag, "undefined")
+	}
 
 	table, err := rpc.overlay.router.New(mino.NewAddresses(), rpc.overlay.myAddr)
 	if err != nil {

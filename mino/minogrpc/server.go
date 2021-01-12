@@ -34,12 +34,13 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	otgrpc "github.com/opentracing-contrib/go-grpc"
+	"github.com/opentracing/opentracing-go"
 )
 
 const (
 	// headerURIKey is the key used in rpc header to pass the handler URI
 	headerURIKey      = "apiuri"
-	headerStreamIDKey = "streamid"
+	HeaderStreamIDKey = "streamid"
 	headerGatewayKey  = "gateway"
 	// headerAddressKey is the key of the header that contains the list of
 	// addresses that will allow a node to create a routing table.
@@ -230,7 +231,7 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 		return xerrors.Errorf("routing table: %v", err)
 	}
 
-	uri, streamID, gateway := readHeaders(headers)
+	uri, streamID, gateway, protocol := readHeaders(headers)
 	if streamID == "" {
 		return xerrors.New("unexpected empty stream ID")
 	}
@@ -242,8 +243,10 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 
 	md := metadata.Pairs(
 		headerURIKey, uri,
-		headerStreamIDKey, streamID,
-		headerGatewayKey, o.myAddrStr)
+		HeaderStreamIDKey, streamID,
+		headerGatewayKey, o.myAddrStr,
+		tracing.ProtocolTag, protocol,
+	)
 
 	// This lock will make sure that a session is ready before any message
 	// forwarded will be received.
@@ -385,7 +388,7 @@ func (o *overlayServer) Forward(ctx context.Context, p *ptypes.Packet) (*ptypes.
 		return nil, xerrors.New("no header in the context")
 	}
 
-	uri, streamID, gateway := readHeaders(headers)
+	uri, streamID, gateway, _ := readHeaders(headers)
 
 	endpoint, found := o.endpoints[uri]
 	if !found {
@@ -675,6 +678,23 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 		return nil, err
 	}
 
+	decorator := func(ctx context.Context, span opentracing.Span, method string,
+		req, resp interface{}, grpcError error) {
+		md, ok := metadata.FromOutgoingContext(ctx)
+		if !ok {
+			return
+		}
+		protocol := getOrEmpty(md, tracing.ProtocolTag)
+		if protocol != "" {
+			span.SetTag(tracing.ProtocolTag, protocol)
+		}
+
+		streamID := getOrEmpty(md, HeaderStreamIDKey)
+		if streamID != "" {
+			span.SetTag(HeaderStreamIDKey, streamID)
+		}
+	}
+
 	conn, err = grpc.Dial(addr,
 		grpc.WithTransportCredentials(ta),
 		grpc.WithConnectParams(grpc.ConnectParams{
@@ -682,10 +702,10 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 			MinConnectTimeout: defaultMinConnectTimeout,
 		}),
 		grpc.WithUnaryInterceptor(
-			otgrpc.OpenTracingClientInterceptor(tracer),
+			otgrpc.OpenTracingClientInterceptor(tracer, otgrpc.SpanDecorator(decorator)),
 		),
 		grpc.WithStreamInterceptor(
-			otgrpc.OpenTracingStreamClientInterceptor(tracer),
+			otgrpc.OpenTracingStreamClientInterceptor(tracer, otgrpc.SpanDecorator(decorator)),
 		),
 	)
 	if err != nil {
@@ -727,10 +747,11 @@ func (mgr *connManager) Release(to mino.Address) {
 	}
 }
 
-func readHeaders(md metadata.MD) (uri string, streamID string, gw string) {
+func readHeaders(md metadata.MD) (uri string, streamID string, gw string, protocol string) {
 	uri = getOrEmpty(md, headerURIKey)
-	streamID = getOrEmpty(md, headerStreamIDKey)
+	streamID = getOrEmpty(md, HeaderStreamIDKey)
 	gw = getOrEmpty(md, headerGatewayKey)
+	protocol = getOrEmpty(md, tracing.ProtocolTag)
 
 	return
 }

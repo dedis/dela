@@ -9,6 +9,10 @@ import (
 	jaegercfg "github.com/uber/jaeger-client-go/config"
 )
 
+var (
+	ProtocolTag = "protocol"
+)
+
 type tracer struct {
 	addrTracer map[string]tracerCloser
 	sync.Mutex

@@ -15,6 +15,7 @@ import (
 	"go.dedis.ch/dela/cosi/threshold/types"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/minogrpc/tracing"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
@@ -38,6 +39,8 @@ type thresholdActor struct {
 // if it is not done yet.
 func (a thresholdActor) Sign(ctx context.Context, msg serde.Message,
 	ca crypto.CollectiveAuthority) (crypto.Signature, error) {
+
+	ctx = context.WithValue(ctx, tracing.ProtocolTag, "sign")
 
 	sender, rcvr, err := a.rpc.Stream(ctx, ca)
 	if err != nil {

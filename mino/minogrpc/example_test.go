@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/minogrpc/tracing"
 	"go.dedis.ch/dela/mino/router/tree"
 	"go.dedis.ch/dela/serde"
 )
@@ -90,6 +91,7 @@ func ExampleRPC_Stream() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	ctx = context.WithValue(ctx, tracing.ProtocolTag, "example-protocol")
 
 	sender, recv, err := rpcs[0].Stream(ctx, minoAddrs)
 	if err != nil {

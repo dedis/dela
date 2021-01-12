@@ -440,7 +440,7 @@ func TestOverlayServer_Stream(t *testing.T) {
 
 	inCtx := metadata.NewIncomingContext(ctx, metadata.Pairs(
 		headerURIKey, "test",
-		headerStreamIDKey, "streamTest",
+		HeaderStreamIDKey, "streamTest",
 		session.HandshakeKey, "{}"))
 
 	wg := sync.WaitGroup{}
@@ -486,7 +486,7 @@ func TestOverlay_MalformedRtingTable_Stream(t *testing.T) {
 		},
 	}
 
-	ctx := makeCtx(headerStreamIDKey, "abc", headerAddressKey, "{}")
+	ctx := makeCtx(HeaderStreamIDKey, "abc", headerAddressKey, "{}")
 
 	stream := &fakeSrvStream{ctx: ctx}
 
@@ -494,7 +494,7 @@ func TestOverlay_MalformedRtingTable_Stream(t *testing.T) {
 	require.EqualError(t, err, fake.Err("routing table: failed to create"))
 
 	stream.ctx = makeCtx(
-		headerStreamIDKey, "abc",
+		HeaderStreamIDKey, "abc",
 		headerAddressKey, "{}",
 		session.HandshakeKey, "{}")
 
@@ -516,7 +516,7 @@ func TestOverlay_UnknownHandler_Stream(t *testing.T) {
 		},
 	}
 
-	ctx := makeCtx(headerStreamIDKey, "abc", session.HandshakeKey, "{}")
+	ctx := makeCtx(HeaderStreamIDKey, "abc", session.HandshakeKey, "{}")
 
 	stream := &fakeSrvStream{ctx: ctx}
 
@@ -526,7 +526,7 @@ func TestOverlay_UnknownHandler_Stream(t *testing.T) {
 	stream.ctx = makeCtx(
 		headerURIKey, "unknown",
 		session.HandshakeKey, "{}",
-		headerStreamIDKey, "abc")
+		HeaderStreamIDKey, "abc")
 
 	err = overlay.Stream(stream)
 	require.EqualError(t, err, "handler 'unknown' is not registered")
@@ -542,7 +542,7 @@ func TestOverlay_BadStreamID_Stream(t *testing.T) {
 		},
 	}
 
-	ctx := makeCtx(headerStreamIDKey, "", session.HandshakeKey, "{}")
+	ctx := makeCtx(HeaderStreamIDKey, "", session.HandshakeKey, "{}")
 
 	stream := &fakeSrvStream{ctx: ctx}
 
@@ -568,7 +568,7 @@ func TestOverlay_BadHandler_Stream(t *testing.T) {
 		},
 	}
 
-	ctx := makeCtx(headerURIKey, "test", headerStreamIDKey, "abc", session.HandshakeKey, "{}")
+	ctx := makeCtx(headerURIKey, "test", HeaderStreamIDKey, "abc", session.HandshakeKey, "{}")
 
 	stream := &fakeSrvStream{ctx: ctx}
 
@@ -594,7 +594,7 @@ func TestOverlay_BadConn_Stream(t *testing.T) {
 		},
 	}
 
-	ctx := makeCtx(headerURIKey, "test", headerStreamIDKey, "abc", session.HandshakeKey, "{}")
+	ctx := makeCtx(headerURIKey, "test", HeaderStreamIDKey, "abc", session.HandshakeKey, "{}")
 
 	stream := &fakeSrvStream{ctx: ctx, err: fake.GetError()}
 
@@ -620,7 +620,7 @@ func TestOverlay_BadParentGateway_Stream(t *testing.T) {
 		},
 	}
 
-	ctx := makeCtx(headerURIKey, "test", headerStreamIDKey, "abc", session.HandshakeKey, "{}")
+	ctx := makeCtx(headerURIKey, "test", HeaderStreamIDKey, "abc", session.HandshakeKey, "{}")
 
 	stream := &fakeSrvStream{ctx: ctx, err: fake.GetError()}
 
@@ -648,7 +648,7 @@ func TestOverlay_Forward(t *testing.T) {
 		},
 	}
 
-	ctx := makeCtx(headerURIKey, "test", headerStreamIDKey, "stream-1")
+	ctx := makeCtx(headerURIKey, "test", HeaderStreamIDKey, "stream-1")
 
 	ack, err := overlay.Forward(ctx, &ptypes.Packet{})
 	require.NoError(t, err)
@@ -660,7 +660,7 @@ func TestOverlay_Forward(t *testing.T) {
 	_, err = overlay.Forward(makeCtx(headerURIKey, "unknown"), &ptypes.Packet{})
 	require.EqualError(t, err, "handler 'unknown' is not registered")
 
-	_, err = overlay.Forward(makeCtx(headerURIKey, "test", headerStreamIDKey, "nope"), &ptypes.Packet{})
+	_, err = overlay.Forward(makeCtx(headerURIKey, "test", HeaderStreamIDKey, "nope"), &ptypes.Packet{})
 	require.EqualError(t, err, "no stream 'nope' found")
 }
 

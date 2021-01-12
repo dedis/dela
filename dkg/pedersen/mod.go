@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"go.dedis.ch/dela/crypto/ed25519"
+	"go.dedis.ch/dela/mino/minogrpc/tracing"
 
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/dkg"
@@ -81,6 +82,7 @@ func (a *Actor) Setup(co crypto.CollectiveAuthority, threshold int) (kyber.Point
 
 	ctx, cancel := context.WithTimeout(context.Background(), setupTimeout)
 	defer cancel()
+	ctx = context.WithValue(ctx, tracing.ProtocolTag, "dkg-setup")
 
 	sender, receiver, err := a.rpc.Stream(ctx, co)
 	if err != nil {
@@ -192,6 +194,7 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), decryptTimeout)
 	defer cancel()
+	ctx = context.WithValue(ctx, tracing.ProtocolTag, "dkg-decrypt")
 
 	sender, receiver, err := a.rpc.Stream(ctx, players)
 	if err != nil {

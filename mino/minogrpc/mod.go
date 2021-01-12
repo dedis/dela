@@ -5,6 +5,7 @@
 package minogrpc
 
 import (
+	"context"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	otgrpc "github.com/opentracing-contrib/go-grpc"
+	opentracing "github.com/opentracing/opentracing-go"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
@@ -27,6 +29,7 @@ import (
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/metadata"
 )
 
 var (
@@ -173,10 +176,27 @@ func NewMinogrpc(addr net.Addr, router router.Router, opts ...Option) (*Minogrpc
 		return nil, err
 	}
 
+	decorator := func(ctx context.Context, span opentracing.Span, method string,
+		req, resp interface{}, grpcError error) {
+		md, ok := metadata.FromIncomingContext(ctx)
+		if !ok {
+			return
+		}
+		protocol := getOrEmpty(md, tracing.ProtocolTag)
+		if protocol != "" {
+			span.SetTag(tracing.ProtocolTag, protocol)
+		}
+
+		streamID := getOrEmpty(md, HeaderStreamIDKey)
+		if streamID != "" {
+			span.SetTag(HeaderStreamIDKey, streamID)
+		}
+	}
+
 	server := grpc.NewServer(
 		grpc.Creds(creds),
-		grpc.UnaryInterceptor(otgrpc.OpenTracingServerInterceptor(tracer)),
-		grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(tracer)),
+		grpc.UnaryInterceptor(otgrpc.OpenTracingServerInterceptor(tracer, otgrpc.SpanDecorator(decorator))),
+		grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(tracer, otgrpc.SpanDecorator(decorator))),
 	)
 
 	m := &Minogrpc{

@@ -18,7 +18,12 @@ import (
 	otypes "go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/minogrpc/tracing"
 	"golang.org/x/xerrors"
+)
+
+var (
+	protocolName = "blocksync"
 )
 
 // DefaultSync is a block synchronizer that allow soft and hard synchronization
@@ -91,6 +96,8 @@ func (s defaultSync) GetLatest() uint64 {
 // soft-sync the participants and then send the blocks when necessary. It will
 // synchronize other nodes as long as the context is not done.
 func (s defaultSync) Sync(ctx context.Context, players mino.Players, cfg Config) error {
+	ctx = context.WithValue(ctx, tracing.ProtocolTag, protocolName)
+
 	if s.blocks.Len() == 0 {
 		// When the store is empty, that means that the participants are all
 		// synchronized anyway as there is no block.
