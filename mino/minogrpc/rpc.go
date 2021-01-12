@@ -140,8 +140,6 @@ func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, m
 		return nil, nil, xerrors.New("empty list of addresses")
 	}
 
-	protocol := ctx.Value(tracing.ProtocolTag)
-
 	streamID := xid.New().String()
 
 	md := metadata.Pairs(
@@ -150,6 +148,7 @@ func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, m
 		headerGatewayKey, rpc.overlay.myAddrStr,
 	)
 
+	protocol := ctx.Value(tracing.ProtocolKey)
 	if protocol != nil {
 		md.Append(tracing.ProtocolTag, protocol.(string))
 	} else {

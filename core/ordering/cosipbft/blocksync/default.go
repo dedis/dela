@@ -96,7 +96,7 @@ func (s defaultSync) GetLatest() uint64 {
 // soft-sync the participants and then send the blocks when necessary. It will
 // synchronize other nodes as long as the context is not done.
 func (s defaultSync) Sync(ctx context.Context, players mino.Players, cfg Config) error {
-	ctx = context.WithValue(ctx, tracing.ProtocolTag, protocolName)
+	ctx = context.WithValue(ctx, tracing.ProtocolKey, protocolName)
 
 	if s.blocks.Len() == 0 {
 		// When the store is empty, that means that the participants are all

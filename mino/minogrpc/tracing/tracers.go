@@ -13,6 +13,10 @@ var (
 	ProtocolTag = "protocol"
 )
 
+type key int
+
+const ProtocolKey key = iota
+
 type tracer struct {
 	addrTracer map[string]tracerCloser
 	sync.Mutex

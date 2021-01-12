@@ -82,7 +82,7 @@ func (a *Actor) Setup(co crypto.CollectiveAuthority, threshold int) (kyber.Point
 
 	ctx, cancel := context.WithTimeout(context.Background(), setupTimeout)
 	defer cancel()
-	ctx = context.WithValue(ctx, tracing.ProtocolTag, "dkg-setup")
+	ctx = context.WithValue(ctx, tracing.ProtocolKey, "dkg-setup")
 
 	sender, receiver, err := a.rpc.Stream(ctx, co)
 	if err != nil {
@@ -194,7 +194,7 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), decryptTimeout)
 	defer cancel()
-	ctx = context.WithValue(ctx, tracing.ProtocolTag, "dkg-decrypt")
+	ctx = context.WithValue(ctx, tracing.ProtocolKey, "dkg-decrypt")
 
 	sender, receiver, err := a.rpc.Stream(ctx, players)
 	if err != nil {
