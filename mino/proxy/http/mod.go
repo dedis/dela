@@ -9,6 +9,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/mino/proxy"
 )
 
 type key int
@@ -18,7 +19,7 @@ const (
 )
 
 // NewHTTP creates a new proxy http
-func NewHTTP(listenAddr string) *HTTP {
+func NewHTTP(listenAddr string) proxy.Proxy {
 	logger := dela.Logger.With().Timestamp().Str("role", "http proxy").Logger()
 
 	nextRequestID := func() string {
@@ -107,6 +108,10 @@ func (h HTTP) Stop() {
 
 // GetAddr implements proxy.Proxy.
 func (h HTTP) GetAddr() net.Addr {
+	if h.ln == nil {
+		return nil
+	}
+
 	return h.ln.Addr()
 }
 

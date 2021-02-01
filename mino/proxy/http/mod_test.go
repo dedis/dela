@@ -32,22 +32,24 @@ func TestHTTP_Listen(t *testing.T) {
 func TestHTPP_Listen_EmptyAddr(t *testing.T) {
 	// in this case it will use a random free port
 	proxy := NewHTTP("")
+	httpProxy := proxy.(*HTTP)
 
-	require.Nil(t, proxy.ln)
+	require.Nil(t, httpProxy.ln)
 
 	go proxy.Listen()
 	time.Sleep(200 * time.Millisecond)
 
-	require.NotNil(t, proxy.ln)
+	require.NotNil(t, httpProxy.ln)
 
 	proxy.Stop()
 }
 
 func TestHTPP_Listen_BadAddr(t *testing.T) {
 	proxy := NewHTTP("bad://xx")
+	httpProxy := proxy.(*HTTP)
 
 	out := new(bytes.Buffer)
-	proxy.logger = zerolog.New(zerolog.ConsoleWriter{Out: out})
+	httpProxy.logger = zerolog.New(zerolog.ConsoleWriter{Out: out})
 
 	go func() {
 		defer func() {
@@ -57,14 +59,14 @@ func TestHTPP_Listen_BadAddr(t *testing.T) {
 
 		proxy.Listen()
 	}()
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(400 * time.Millisecond)
 
 	defer proxy.Stop()
 
 	require.Regexp(t, "failed to create conn 'bad://xx':", out.String())
 }
 
-func TestGetAddr(t *testing.T) {
+func TestGetAddr_Happy(t *testing.T) {
 	proxy := NewHTTP("127.0.0.1:2010")
 	go proxy.Listen()
 	time.Sleep(200 * time.Millisecond)
@@ -73,6 +75,11 @@ func TestGetAddr(t *testing.T) {
 
 	addr := proxy.GetAddr()
 	require.Equal(t, "127.0.0.1:2010", addr.String())
+}
+
+func TestGetAddr_Nil(t *testing.T) {
+	proxy := NewHTTP("127.0.0.1:2010")
+	require.Nil(t, proxy.GetAddr())
 }
 
 func fakeHandler(w http.ResponseWriter, r *http.Request) {
