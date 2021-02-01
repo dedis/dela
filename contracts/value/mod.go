@@ -19,10 +19,10 @@ import (
 // commands defines the commands of the value contract. This interface helps in
 // testing the contract.
 type commands interface {
-	set(snap store.Snapshot, step execution.Step) error
+	write(snap store.Snapshot, step execution.Step) error
 	read(snap store.Snapshot, step execution.Step) error
 	delete(snap store.Snapshot, step execution.Step) error
-	display(snap store.Snapshot) error
+	list(snap store.Snapshot) error
 }
 
 const (
@@ -40,14 +40,18 @@ const (
 	// CmdArg is the argument's name to indicate the kind of command we want to
 	// run on the contract. Should be one of the Command type.
 	CmdArg = "value:command"
+
+	// credentialAllCommand defines the credential command that is allowed to
+	// perform all commands.
+	credentialAllCommand = "all"
 )
 
 // Command defines a type of command for the value contract
 type Command string
 
 const (
-	// CmdSet defines the command to set a value
-	CmdSet Command = "SET"
+	// CmdWrite defines the command to write a value
+	CmdWrite Command = "WRITE"
 
 	// CmdRead defines a command to read a value
 	CmdRead Command = "READ"
@@ -55,15 +59,15 @@ const (
 	// CmdDelete defines a command to delete a value
 	CmdDelete Command = "DELETE"
 
-	// CmdDisplay defines a command to display all values set (and not deleted)
+	// CmdList defines a command to list all values set (and not deleted)
 	// so far.
-	CmdDisplay Command = "DISPLAY"
+	CmdList Command = "LIST"
 )
 
 // NewCreds creates new credentials for a value contract execution. We might
 // want to use in the future a separate credential for each command.
 func NewCreds(id []byte) access.Credential {
-	return access.NewContractCreds(id, ContractName, "all")
+	return access.NewContractCreds(id, ContractName, credentialAllCommand)
 }
 
 // RegisterContract registers the value contract to the given execution service.
@@ -79,16 +83,16 @@ type Contract struct {
 	// index contains all the keys set (and not delete) by this contract so far
 	index map[string]struct{}
 
-	// access is the access service to handle access on this smart contract
+	// access is the access control service managing this smart contract
 	access access.Service
 
-	// accessKey is the identity's key allowed to use this smart contract
+	// accessKey is the access identifier allowed to use this smart contract
 	accessKey []byte
 
-	// cmd provides the commands executions
+	// cmd provides the commands that can be executed by this smart contract
 	cmd commands
 
-	// printer is the output used by the READ and DISPLAY commands
+	// printer is the output used by the READ and LIST commands
 	printer io.Writer
 }
 
@@ -122,10 +126,10 @@ func (c Contract) Execute(snap store.Snapshot, step execution.Step) error {
 	}
 
 	switch Command(cmd) {
-	case CmdSet:
-		err := c.cmd.set(snap, step)
+	case CmdWrite:
+		err := c.cmd.write(snap, step)
 		if err != nil {
-			return xerrors.Errorf("failed to SET: %v", err)
+			return xerrors.Errorf("failed to WRITE: %v", err)
 		}
 	case CmdRead:
 		err := c.cmd.read(snap, step)
@@ -137,10 +141,10 @@ func (c Contract) Execute(snap store.Snapshot, step execution.Step) error {
 		if err != nil {
 			return xerrors.Errorf("failed to DELETE: %v", err)
 		}
-	case CmdDisplay:
-		err := c.cmd.display(snap)
+	case CmdList:
+		err := c.cmd.list(snap)
 		if err != nil {
-			return xerrors.Errorf("failed to DISPLAY: %v", err)
+			return xerrors.Errorf("failed to LIST: %v", err)
 		}
 	default:
 		return xerrors.Errorf("unknown command: %s", cmd)
@@ -156,8 +160,8 @@ type valueCommand struct {
 	*Contract
 }
 
-// set implements commands. It performs the SET command
-func (c valueCommand) set(snap store.Snapshot, step execution.Step) error {
+// write implements commands. It performs the WRITE command
+func (c valueCommand) write(snap store.Snapshot, step execution.Step) error {
 	key := step.Current.GetArg(KeyArg)
 	if len(key) == 0 {
 		return xerrors.Errorf("'%s' not found in tx arg", KeyArg)
@@ -175,7 +179,7 @@ func (c valueCommand) set(snap store.Snapshot, step execution.Step) error {
 
 	c.index[string(key)] = struct{}{}
 
-	dela.Logger.Info().Str("contract", "value").Msgf("setting %s=%s", key, value)
+	dela.Logger.Info().Str("contract", ContractName).Msgf("setting %s=%s", key, value)
 
 	return nil
 }
@@ -214,8 +218,8 @@ func (c valueCommand) delete(snap store.Snapshot, step execution.Step) error {
 	return nil
 }
 
-// display implements commands. It performs the DISPLAY command
-func (c valueCommand) display(snap store.Snapshot) error {
+// list implements commands. It performs the LIST command
+func (c valueCommand) list(snap store.Snapshot) error {
 	res := []string{}
 
 	for k := range c.index {
