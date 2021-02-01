@@ -33,10 +33,14 @@ func TestHTPP_Listen_EmptyAddr(t *testing.T) {
 	// in this case it will use a random free port
 	proxy := NewHTTP("")
 
+	require.Nil(t, proxy.ln)
+
 	go proxy.Listen()
 	time.Sleep(200 * time.Millisecond)
 
-	defer proxy.Stop()
+	require.NotNil(t, proxy.ln)
+
+	proxy.Stop()
 }
 
 func TestHTPP_Listen_BadAddr(t *testing.T) {
@@ -47,7 +51,8 @@ func TestHTPP_Listen_BadAddr(t *testing.T) {
 
 	go func() {
 		defer func() {
-			recover()
+			res := recover()
+			require.Regexp(t, "^failed to create conn 'bad://xx':", res)
 		}()
 
 		proxy.Listen()
