@@ -23,14 +23,16 @@ import (
 // - implements validation.Service
 type Service struct {
 	execution execution.Service
+	tcpExec   execution.Service
 	fac       validation.ResultFactory
 	hashFac   crypto.HashFactory
 }
 
 // NewService creates a new validation service.
-func NewService(exec execution.Service, f txn.Factory) Service {
+func NewService(exec execution.Service, tcpExec execution.Service, f txn.Factory) Service {
 	return Service{
 		execution: exec,
+		tcpExec:   tcpExec,
 		fac:       NewResultFactory(f),
 		hashFac:   crypto.NewSha256Factory(),
 	}
@@ -66,7 +68,7 @@ func (s Service) GetNonce(store store.Readable, ident access.Identity) (uint64, 
 }
 
 // Accept implements validation.Service. It returns nil if the transaction would
-// be accepted by the service given some leeway and a snaptshot of the storage.
+// be accepted by the service given some leeway and a snapshot of the storage.
 func (s Service) Accept(store store.Readable, tx txn.Transaction, leeway validation.Leeway) error {
 	nonce, err := s.GetNonce(store, tx.GetIdentity())
 	if err != nil {
@@ -131,7 +133,12 @@ func (s Service) validateTx(store store.Snapshot, step execution.Step, r *Transa
 		return nil
 	}
 
-	res, err := s.execution.Execute(store, step)
+	exec := s.execution
+	if len(step.Current.GetArg("use-unikernel")) != 0 {
+		exec = s.tcpExec
+	}
+
+	res, err := exec.Execute(store, step)
 	if err != nil {
 		// This is a critical error unrelated to the transaction itself.
 		return xerrors.Errorf("failed to execute tx: %v", err)

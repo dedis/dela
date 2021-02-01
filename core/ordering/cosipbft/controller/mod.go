@@ -15,6 +15,7 @@ import (
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/core/access/darc"
 	"go.dedis.ch/dela/core/execution/native"
+	"go.dedis.ch/dela/core/execution/tcp"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
@@ -119,13 +120,14 @@ func (m miniController) OnStart(flags cli.Flags, inj node.Injector) error {
 	cosi.SetThreshold(threshold.ByzantineThreshold)
 
 	exec := native.NewExecution()
+	tcpExec := tcp.NewExecution()
 	access := darc.NewService(json.NewContext())
 
 	rosterFac := authority.NewFactory(onet.GetAddressFactory(), cosi.GetPublicKeyFactory())
 	cosipbft.RegisterRosterContract(exec, rosterFac, access)
 
 	txFac := signed.NewTransactionFactory()
-	vs := simple.NewService(exec, txFac)
+	vs := simple.NewService(exec, tcpExec, txFac)
 
 	pool, err := poolimpl.NewPool(gossip.NewFlat(onet.WithSegment("pool"), txFac))
 	if err != nil {
