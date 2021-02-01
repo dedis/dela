@@ -9,13 +9,31 @@ import (
 	"go.dedis.ch/dela/cli"
 )
 
-func TestMain(t *testing.T) {
+func TestMain_Happy(t *testing.T) {
+	oldPrinter := printer
+	defer func() {
+		printer = oldPrinter
+	}()
+
 	builder = &fakeBuilder{}
+	buf := new(bytes.Buffer)
+	printer = buf
+
 	main()
+
+	require.Empty(t, buf)
+}
+
+func TestMain_Error(t *testing.T) {
+	oldPrinter := printer
+	defer func() {
+		printer = oldPrinter
+	}()
 
 	builder = &fakeBuilder{err: errors.New("fake")}
 	buf := new(bytes.Buffer)
 	printer = buf
+
 	main()
 	require.Equal(t, "fake\n", buf.String())
 }

@@ -13,7 +13,7 @@ import (
 )
 
 var builder cli.Builder = ucli.NewBuilder("crypto", nil)
-var printer io.Writer = os.Stdout
+var printer io.Writer = os.Stderr
 
 func main() {
 	err := run(os.Args, bls.Initializer{})

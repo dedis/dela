@@ -94,7 +94,10 @@ func TestSaveToFile(t *testing.T) {
 	require.Equal(t, []byte{1}, res)
 
 	err = saveToFile(file, false, nil)
-	require.Error(t, err) // already exist, and we do not force
+	require.Regexp(t, "^file '.*' already exist, use --force if you want to overwrite$", err)
+
+	err = saveToFile("/not/exist", true, nil)
+	require.Regexp(t, "^failed to write file:", err)
 
 	err = saveToFile(file, true, []byte{2})
 	require.NoError(t, err)
@@ -104,15 +107,17 @@ func TestSaveToFile(t *testing.T) {
 	require.Equal(t, []byte{2}, res)
 }
 
-func TestGetPUBKEY(t *testing.T) {
-	_, err := getPubkey(nil)
-	require.EqualError(t, err, "failed to unmarshal signer: while unmarshaling scalar: UnmarshalBinary: wrong size buffer")
-
+func TestGetPUBKEY_Happy(t *testing.T) {
 	buf, err := bls.NewSigner().MarshalBinary()
 	require.NoError(t, err)
 
 	_, err = getPubkey(buf)
 	require.NoError(t, err)
+}
+
+func TestGetPUBKEY_Error(t *testing.T) {
+	_, err := getPubkey(nil)
+	require.EqualError(t, err, "failed to unmarshal signer: while unmarshaling scalar: UnmarshalBinary: wrong size buffer")
 }
 
 // -----------------------------------------------------------------------------

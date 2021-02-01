@@ -50,7 +50,7 @@ func (i Initializer) SetCommands(provider cli.Provider) {
 		Required: true,
 	}, cli.StringFlag{
 		Name:     "format",
-		Usage:    "output format: [PUBKEY | BASE64 | BIN_PUBKEY]",
+		Usage:    "output format: [PUBKEY | BASE64 | BASE64_PUBKEY]",
 		Value:    "PUBKEY",
 		Required: false,
 	})

@@ -91,14 +91,15 @@ func (a action) loadSignerAction(flags cli.Flags) error {
 }
 
 func saveToFile(path string, force bool, data []byte) error {
-	existMsg := "file '%s' already exist, use --force if you want to overwrite"
-
-	exist := fileExist(path)
-	if !force && exist {
-		return xerrors.Errorf(existMsg, path)
+	if !force && fileExist(path) {
+		return xerrors.Errorf("file '%s' already exist, use --force if you "+
+			"want to overwrite", path)
 	}
 
-	ioutil.WriteFile(path, data, os.ModePerm)
+	err := ioutil.WriteFile(path, data, os.ModePerm)
+	if err != nil {
+		return xerrors.Errorf("failed to write file: %v", err)
+	}
 
 	return nil
 }
