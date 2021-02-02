@@ -779,14 +779,14 @@ func TestConnManager_FailLoadDistantCert_Acquire(t *testing.T) {
 	mgr.certs = fakeCerts{errLoad: fake.GetError()}
 
 	_, err := mgr.Acquire(fake.NewAddress(0))
-	require.EqualError(t, err, fake.Err("while loading distant cert"))
+	require.EqualError(t, err, fake.Err("error retrieving transport credential: while loading distant cert"))
 }
 
 func TestConnManager_MissingCert_Acquire(t *testing.T) {
 	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore())
 
 	_, err := mgr.Acquire(fake.NewAddress(1))
-	require.EqualError(t, err, "certificate for 'fake.Address[1]' not found")
+	require.EqualError(t, err, "error retrieving transport credential: certificate for 'fake.Address[1]' not found")
 }
 
 func TestConnManager_FailLoadOwnCert_Acquire(t *testing.T) {
@@ -797,7 +797,7 @@ func TestConnManager_FailLoadOwnCert_Acquire(t *testing.T) {
 	}
 
 	_, err := mgr.Acquire(fake.NewAddress(0))
-	require.EqualError(t, err, fake.Err("while loading own cert"))
+	require.EqualError(t, err, fake.Err("error retrieving transport credential: while loading own cert"))
 }
 
 func TestConnManager_MissingOwnCert_Acquire(t *testing.T) {
@@ -805,7 +805,7 @@ func TestConnManager_MissingOwnCert_Acquire(t *testing.T) {
 	mgr.certs.Store(fake.NewAddress(1), fake.MakeCertificate(t, 0))
 
 	_, err := mgr.Acquire(fake.NewAddress(1))
-	require.EqualError(t, err, "couldn't find server 'fake.Address[0]' certificate")
+	require.EqualError(t, err, "error retrieving transport credential: couldn't find server 'fake.Address[0]' certificate")
 }
 
 func TestConnManager_BadAddress_Acquire(t *testing.T) {

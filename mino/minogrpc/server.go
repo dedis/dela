@@ -642,6 +642,11 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 		return conn, nil
 	}
 
+	ta, err := mgr.transportCredentialForAddress(to)
+	if err != nil {
+		return nil, xerrors.Errorf("error retrieving transport credential: %v", err)
+	}
+
 	netAddr, ok := to.(session.Address)
 	if !ok {
 		return nil, xerrors.Errorf("invalid address type '%T'", to)
@@ -652,11 +657,6 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 	tracer, err := tracing.GetTracerForAddr(addr)
 	if err != nil {
 		return nil, err
-	}
-
-	ta, err := mgr.transportCredentialForAddress(to)
-	if err != nil {
-		return nil, xerrors.Errorf("error retrieving transport credential: %v", err)
 	}
 
 	conn, err = grpc.Dial(addr,
