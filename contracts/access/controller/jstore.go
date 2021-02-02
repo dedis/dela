@@ -1,3 +1,8 @@
+// This file implements a simple store based on a json file.
+//
+// Documentation Last Review: 02.02.2021
+//
+
 package controller
 
 import (
@@ -22,6 +27,12 @@ func newJstore(path string) (accessStore, error) {
 
 	ctx := json.NewContext()
 
+	jstore := &jstore{
+		ctx:  ctx,
+		path: path,
+		data: data,
+	}
+
 	if fileExist(path) {
 		buf, err := ioutil.ReadFile(path)
 		if err != nil {
@@ -32,13 +43,14 @@ func newJstore(path string) (accessStore, error) {
 		if err != nil {
 			return nil, xerrors.Errorf("failed to read json: %v", err)
 		}
+	} else {
+		err := jstore.saveFile()
+		if err != nil {
+			return nil, xerrors.Errorf("failed to save empty file: %v", err)
+		}
 	}
 
-	return &jstore{
-		ctx:  ctx,
-		path: path,
-		data: data,
-	}, nil
+	return jstore, nil
 }
 
 // jstore implements a simple store to store accesses on the access contract. It

@@ -31,6 +31,9 @@ func TestJstore_New(t *testing.T) {
 
 	_, err = newJstore(path)
 	require.EqualError(t, err, "failed to read json: unexpected end of JSON input")
+
+	_, err = newJstore("/fake/file")
+	require.Regexp(t, "^failed to save empty file:", err.Error())
 }
 
 func TestJstore_Set_Get_Delete(t *testing.T) {

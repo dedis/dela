@@ -52,12 +52,12 @@ func TestAddAction_Execute(t *testing.T) {
 	flags.strings["identity"] = []string{"a"}
 
 	err = action.Execute(ctx)
-	require.EqualError(t, err, "failed to decode pub key 'a': illegal base64 data at input byte 0")
+	require.EqualError(t, err, "failed to parse identities: failed to decode pub key 'a': illegal base64 data at input byte 0")
 
 	flags.strings["identity"] = []string{"AA=="}
 
 	err = action.Execute(ctx)
-	require.EqualError(t, err, "failed to unmarshal identity 'AA==': bn256.G2: not enough data")
+	require.EqualError(t, err, "failed to parse identities: failed to unmarshal identity 'AA==': bn256.G2: not enough data")
 
 	signer := bls.NewSigner()
 	buf, err := signer.GetPublicKey().MarshalBinary()

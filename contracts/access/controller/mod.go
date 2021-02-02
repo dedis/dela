@@ -1,3 +1,7 @@
+// Package controller implements a controller for the access contract.
+//
+// Documentation Last Review: 02.02.2021
+//
 package controller
 
 import (

@@ -48,7 +48,7 @@ func TestGrant(t *testing.T) {
 	require.EqualError(t, err, "'access:grant_id' not found in tx arg")
 
 	err = contract.grant(fakeStore{}, makeStep(t, GrantIDArg, "x"))
-	require.EqualError(t, err, "failed to decode id: encoding/hex: invalid byte: U+0078 'x'")
+	require.EqualError(t, err, "failed to decode id from tx arg: encoding/hex: invalid byte: U+0078 'x'")
 
 	err = contract.grant(fakeStore{}, makeStep(t, GrantIDArg, "deadbeef"))
 	require.EqualError(t, err, "'access:grant_contract' not found in tx arg")

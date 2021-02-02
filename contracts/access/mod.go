@@ -8,6 +8,9 @@
 // COMMAND specifies the command to grant access to on the contract.
 // IDENTITIES is a list of standard base64 encoded bls public keys, separated by
 // comas.
+//
+// Documentation Last Review: 02.02.2021
+//
 package access
 
 import (
@@ -47,6 +50,10 @@ const (
 	// CmdArg is the argument's name to indicate the kind of command we want to
 	// run on the contract. Should be one of the Command type.
 	CmdArg = "access:command"
+
+	// credentialAllCommand defines the credential command that is allowed to
+	// perform all commands.
+	credentialAllCommand = "all"
 )
 
 // Command defines a command for the command contract
@@ -59,7 +66,7 @@ const (
 
 // NewCreds creates new credentials for an access contract execution.
 func NewCreds(id []byte) access.Credential {
-	return access.NewContractCreds(id, ContractName, "all")
+	return access.NewContractCreds(id, ContractName, credentialAllCommand)
 }
 
 // RegisterContract registers the access contract to the given execution
@@ -126,7 +133,7 @@ func (c Contract) grant(snap store.Snapshot, step execution.Step) error {
 
 	id, err := hex.DecodeString(string(idHex))
 	if err != nil {
-		return xerrors.Errorf("failed to decode id: %v", err)
+		return xerrors.Errorf("failed to decode id from tx arg: %v", err)
 	}
 
 	contractName := step.Current.GetArg(GrantContractArg)

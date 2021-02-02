@@ -1,3 +1,8 @@
+// This file implements the action of the controller.
+//
+// Documentation Last Review: 02.02.2021
+//
+
 package controller
 
 import (
@@ -18,7 +23,7 @@ import (
 type addAction struct{}
 
 // Execute implements node.ActionTemplate. It reads the list of identities and
-// update the access.
+// updates the access.
 func (a addAction) Execute(ctx node.Context) error {
 	var exec *native.Service
 	err := ctx.Injector.Resolve(&exec)
@@ -39,20 +44,9 @@ func (a addAction) Execute(ctx node.Context) error {
 	}
 
 	idsStr := ctx.Flags.StringSlice("identity")
-	identities := make([]access.Identity, len(idsStr))
-
-	for i, id := range idsStr {
-		idBuf, err := base64.StdEncoding.DecodeString(id)
-		if err != nil {
-			return xerrors.Errorf("failed to decode pub key '%s': %v", id, err)
-		}
-
-		pk, err := bls.NewPublicKey(idBuf)
-		if err != nil {
-			return xerrors.Errorf("failed to unmarshal identity '%s': %v", id, err)
-		}
-
-		identities[i] = pk
+	identities, err := parseIdentities(idsStr)
+	if err != nil {
+		return xerrors.Errorf("failed to parse identities: %v", err)
 	}
 
 	err = asrv.Grant(accessStore, accessContract.NewCreds(aKey[:]), identities...)
@@ -63,4 +57,24 @@ func (a addAction) Execute(ctx node.Context) error {
 	dela.Logger.Info().Msgf("access granted to %v", identities)
 
 	return nil
+}
+
+func parseIdentities(idsStr []string) ([]access.Identity, error) {
+	identities := make([]access.Identity, len(idsStr))
+
+	for i, id := range idsStr {
+		idBuf, err := base64.StdEncoding.DecodeString(id)
+		if err != nil {
+			return nil, xerrors.Errorf("failed to decode pub key '%s': %v", id, err)
+		}
+
+		pk, err := bls.NewPublicKey(idBuf)
+		if err != nil {
+			return nil, xerrors.Errorf("failed to unmarshal identity '%s': %v", id, err)
+		}
+
+		identities[i] = pk
+	}
+
+	return identities, nil
 }
