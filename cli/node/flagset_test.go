@@ -55,3 +55,14 @@ func TestFlagSet_Int(t *testing.T) {
 	require.Equal(t, 30, fset.Int("c"))
 	require.Equal(t, 0, fset.Int("d"))
 }
+
+func TestFlagSet_Bool(t *testing.T) {
+	fset := make(FlagSet)
+	fset["a"] = true
+	fset["b"] = "oops"
+	fset["c"] = false
+
+	require.Equal(t, true, fset.Bool("a"))
+	require.Equal(t, false, fset.Bool("b"))
+	require.Equal(t, false, fset.Bool("c"))
+}

@@ -3,13 +3,13 @@ package http
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
-	"net/url"
-	"strings"
 	"time"
 
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/mino/proxy"
 )
 
 type key int
@@ -19,7 +19,7 @@ const (
 )
 
 // NewHTTP creates a new proxy http
-func NewHTTP(listenAddr string) *HTTP {
+func NewHTTP(listenAddr string) proxy.Proxy {
 	logger := dela.Logger.With().Timestamp().Str("role", "http proxy").Logger()
 
 	nextRequestID := func() string {
@@ -49,11 +49,13 @@ type HTTP struct {
 	logger     zerolog.Logger
 	listenAddr string
 	quit       chan struct{}
+
+	ln net.Listener
 }
 
 // Listen implements proxy.Proxy. This function can be called multiple times
 // provided the server is not running, ie. Stop() has been called.
-func (h HTTP) Listen() {
+func (h *HTTP) Listen() {
 	h.logger.Info().Msg("Client server is starting...")
 
 	done := make(chan struct{})
@@ -73,15 +75,22 @@ func (h HTTP) Listen() {
 		close(done)
 	}()
 
-	lu := &url.URL{Scheme: "http"}
-	if strings.HasPrefix(h.listenAddr, ":") {
-		lu.Host = "localhost" + h.listenAddr
-	} else {
-		lu.Host = h.listenAddr
+	addr := h.listenAddr
+	// if the address is empty, we use a random free port
+	if addr == "" {
+		addr = ":0"
 	}
 
-	h.logger.Info().Msgf("Server is ready to handle requests at %s", lu)
-	err := h.server.ListenAndServe()
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		h.logger.Panic().Msgf("failed to create conn '%s': %v", addr, err)
+		return
+	}
+
+	h.ln = ln
+	h.logger.Info().Msgf("Server is ready to handle requests at %s", ln.Addr())
+
+	err = h.server.Serve(ln)
 	if err != nil && err != http.ErrServerClosed {
 		h.logger.Fatal().Msgf("Could not listen on %s: %v", h.listenAddr, err)
 	}
@@ -95,6 +104,15 @@ func (h HTTP) Listen() {
 func (h HTTP) Stop() {
 	// we don't close it so it can be called multiple times without harm
 	h.quit <- struct{}{}
+}
+
+// GetAddr implements proxy.Proxy.
+func (h HTTP) GetAddr() net.Addr {
+	if h.ln == nil {
+		return nil
+	}
+
+	return h.ln.Addr()
 }
 
 // RegisterHandler implements proxy.Proxy
