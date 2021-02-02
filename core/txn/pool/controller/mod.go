@@ -1,9 +1,21 @@
+// Package controller implements a controller for the pool
+//
+// Documentation Last Review: 02.02.2021
+//
 package controller
 
 import (
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/core/access"
+)
+
+const (
+	// signerFlag is the flag name containing the path to the private keyfile.
+	signerFlag = "key"
+
+	// nonceFlag is the flag name containing the nonce.
+	nonceFlag = "nonce"
 )
 
 type miniController struct {
@@ -28,12 +40,12 @@ func (miniController) SetCommands(builder node.Builder) {
 		Name:  "args",
 		Usage: "list of key-value pairs",
 	}, cli.IntFlag{
-		Name:     "nonce",
+		Name:     nonceFlag,
 		Usage:    "nonce to use",
 		Required: false,
 		Value:    -1,
 	}, cli.StringFlag{
-		Name:     "key",
+		Name:     signerFlag,
 		Usage:    "path to the private keyfile",
 		Required: true,
 	})

@@ -34,7 +34,7 @@ func TestExecute(t *testing.T) {
 	require.NoError(t, err)
 
 	keyFile := filepath.Join(os.TempDir(), "key.buf")
-	ctx.Flags.(node.FlagSet)["key"] = keyFile
+	ctx.Flags.(node.FlagSet)[signerFlag] = keyFile
 
 	err = ioutil.WriteFile(keyFile, buf, os.ModePerm)
 	require.NoError(t, err)
@@ -66,18 +66,18 @@ func TestExecute(t *testing.T) {
 	require.NoError(t, err)
 
 	err = action.Execute(ctx)
-	require.EqualError(t, err, "failed to unmarshal signer: while unmarshaling scalar: UnmarshalBinary: wrong size buffer")
+	require.EqualError(t, err, "failed to get signer: failed to unmarshal signer: while unmarshaling scalar: UnmarshalBinary: wrong size buffer")
 
-	ctx.Flags.(node.FlagSet)["key"] = "/not/exist"
+	ctx.Flags.(node.FlagSet)[signerFlag] = "/not/exist"
 
 	err = action.Execute(ctx)
 	// the error message can be different based on the platform
-	require.Regexp(t, "^failed to load signer: while opening file: open /not/exist:", err.Error())
+	require.Regexp(t, "^failed to get signer: failed to load signer: while opening file: open /not/exist:", err.Error())
 
 	ctx.Flags.(node.FlagSet)["args"] = []interface{}{"1"}
 
 	err = action.Execute(ctx)
-	require.EqualError(t, err, "number of args should be even")
+	require.EqualError(t, err, "failed to get args: number of args should be even")
 
 	ctx.Injector = node.NewInjector()
 	err = action.Execute(ctx)
