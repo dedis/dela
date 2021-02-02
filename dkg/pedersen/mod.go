@@ -23,11 +23,11 @@ import (
 var suite = suites.MustFind("Ed25519")
 
 var (
-	// ProtocolNameSetup denotes the value of the protocol span tag associated with
-	// the `dkg-setup` protocol.
+	// ProtocolNameSetup denotes the value of the protocol span tag associated
+	// with the `dkg-setup` protocol.
 	ProtocolNameSetup = "dkg-setup"
-	// ProtocolNameDecrypt denotes the value of the protocol span tag associated with
-	// the `dkg-decrypt` protocol.
+	// ProtocolNameDecrypt denotes the value of the protocol span tag
+	// associated with the `dkg-decrypt` protocol.
 	ProtocolNameDecrypt = "dkg-decrypt"
 )
 
