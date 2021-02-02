@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"go.dedis.ch/dela/internal/tracing"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/mino/minogrpc/tracing"
 	"go.dedis.ch/dela/mino/router/tree"
 	"go.dedis.ch/dela/serde"
 )
@@ -58,6 +58,51 @@ func ExampleRPC_Call() {
 }
 
 func ExampleRPC_Stream() {
+	mA, err := NewMinogrpc(ParseAddress("127.0.0.1", 0), tree.NewRouter(NewAddressFactory()))
+	if err != nil {
+		panic("overlay A failed: " + err.Error())
+	}
+
+	rpcA := mino.MustCreateRPC(mA, "test", exampleHandler{}, exampleFactory{})
+
+	mB, err := NewMinogrpc(ParseAddress("127.0.0.1", 0), tree.NewRouter(NewAddressFactory()))
+	if err != nil {
+		panic("overlay B failed: " + err.Error())
+	}
+
+	mino.MustCreateRPC(mB, "test", exampleHandler{}, exampleFactory{})
+
+	mA.GetCertificateStore().Store(mB.GetAddress(), mB.GetCertificate())
+	mB.GetCertificateStore().Store(mA.GetAddress(), mA.GetCertificate())
+
+	addrs := mino.NewAddresses(mA.GetAddress(), mB.GetAddress())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sender, recv, err := rpcA.Stream(ctx, addrs)
+	if err != nil {
+		panic("stream failed: " + err.Error())
+	}
+
+	err = <-sender.Send(exampleMessage{value: "Hello World!"}, mB.GetAddress())
+	if err != nil {
+		panic("failed to send: " + err.Error())
+	}
+
+	from, msg, err := recv.Recv(ctx)
+	if err != nil {
+		panic("failed to receive: " + err.Error())
+	}
+
+	if from.Equal(mB.GetAddress()) {
+		fmt.Println("B", msg.(exampleMessage).value)
+	}
+
+	// Output: B Hello World!
+}
+
+func ExampleRPC_OpentracingDemo() {
 	N := 20
 	minos := make([]*Minogrpc, N)
 	rpcs := make([]mino.RPC, N)

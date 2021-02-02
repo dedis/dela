@@ -11,10 +11,10 @@ import (
 
 	"github.com/rs/xid"
 	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/internal/tracing"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
 	"go.dedis.ch/dela/mino/minogrpc/session"
-	"go.dedis.ch/dela/mino/minogrpc/tracing"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc/codes"
@@ -152,7 +152,7 @@ func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, m
 	if protocol != nil {
 		md.Append(tracing.ProtocolTag, protocol.(string))
 	} else {
-		md.Append(tracing.ProtocolTag, "undefined")
+		md.Append(tracing.ProtocolTag, tracing.UndefinedProtocol)
 	}
 
 	table, err := rpc.overlay.router.New(mino.NewAddresses(), rpc.overlay.myAddr)

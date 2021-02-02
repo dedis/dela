@@ -19,11 +19,11 @@ import (
 
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	opentracing "github.com/opentracing/opentracing-go"
+	"go.dedis.ch/dela/internal/tracing"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
 	"go.dedis.ch/dela/mino/minogrpc/session"
-	"go.dedis.ch/dela/mino/minogrpc/tracing"
 	"go.dedis.ch/dela/mino/router"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
@@ -176,27 +176,10 @@ func NewMinogrpc(addr net.Addr, router router.Router, opts ...Option) (*Minogrpc
 		return nil, err
 	}
 
-	decorator := func(ctx context.Context, span opentracing.Span, method string,
-		req, resp interface{}, grpcError error) {
-		md, ok := metadata.FromIncomingContext(ctx)
-		if !ok {
-			return
-		}
-		protocol := getOrEmpty(md, tracing.ProtocolTag)
-		if protocol != "" {
-			span.SetTag(tracing.ProtocolTag, protocol)
-		}
-
-		streamID := getOrEmpty(md, HeaderStreamIDKey)
-		if streamID != "" {
-			span.SetTag(HeaderStreamIDKey, streamID)
-		}
-	}
-
 	server := grpc.NewServer(
 		grpc.Creds(creds),
-		grpc.UnaryInterceptor(otgrpc.OpenTracingServerInterceptor(tracer, otgrpc.SpanDecorator(decorator))),
-		grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(tracer, otgrpc.SpanDecorator(decorator))),
+		grpc.UnaryInterceptor(otgrpc.OpenTracingServerInterceptor(tracer, otgrpc.SpanDecorator(serverTracingDecorator))),
+		grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(tracer, otgrpc.SpanDecorator(serverTracingDecorator))),
 	)
 
 	m := &Minogrpc{
@@ -268,7 +251,7 @@ func (m *Minogrpc) postCheckClose() error {
 
 	err = tracing.CloseAll()
 	if err != nil {
-		return err
+		return xerrors.Errorf("error closing tracers: %v", err)
 	}
 
 	return nil
@@ -351,4 +334,21 @@ func (m *Minogrpc) listen(socket net.Listener) {
 	// Force the go routine to be executed before returning which means the
 	// server has well started after that point.
 	<-m.started
+}
+
+func serverTracingDecorator(ctx context.Context, span opentracing.Span, method string,
+	req, resp interface{}, grpcError error) {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return
+	}
+	protocol := getOrEmpty(md, tracing.ProtocolTag)
+	if protocol != "" {
+		span.SetTag(tracing.ProtocolTag, protocol)
+	}
+
+	streamID := getOrEmpty(md, HeaderStreamIDKey)
+	if streamID != "" {
+		span.SetTag(HeaderStreamIDKey, streamID)
+	}
 }

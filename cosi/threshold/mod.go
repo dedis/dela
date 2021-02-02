@@ -19,6 +19,12 @@ import (
 	"go.dedis.ch/dela/mino"
 )
 
+var (
+	// ProtocolName denotes the value of the protocol span tag associated with
+	// the `sign` protocol.
+	ProtocolName = "sign"
+)
+
 func defaultThreshold(n int) int {
 	return n
 }

@@ -18,12 +18,12 @@ import (
 	"time"
 
 	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/internal/tracing"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
 	"go.dedis.ch/dela/mino/minogrpc/session"
 	"go.dedis.ch/dela/mino/minogrpc/tokens"
-	"go.dedis.ch/dela/mino/minogrpc/tracing"
 	"go.dedis.ch/dela/mino/router"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/json"
@@ -642,12 +642,53 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 		return conn, nil
 	}
 
-	clientPubCert, err := mgr.certs.Load(to)
+	netAddr, ok := to.(session.Address)
+	if !ok {
+		return nil, xerrors.Errorf("invalid address type '%T'", to)
+	}
+
+	// Connecting using TLS and the distant server certificate as the root.
+	addr := netAddr.GetDialAddress()
+	tracer, err := tracing.GetTracerForAddr(addr)
+	if err != nil {
+		return nil, err
+	}
+
+	ta, err := mgr.transportCredentialForAddress(to)
+	if err != nil {
+		return nil, xerrors.Errorf("error retrieving transport credential: %v", err)
+	}
+
+	conn, err = grpc.Dial(addr,
+		grpc.WithTransportCredentials(ta),
+		grpc.WithConnectParams(grpc.ConnectParams{
+			Backoff:           backoff.DefaultConfig,
+			MinConnectTimeout: defaultMinConnectTimeout,
+		}),
+		grpc.WithUnaryInterceptor(
+			otgrpc.OpenTracingClientInterceptor(tracer, otgrpc.SpanDecorator(clientTracingDecorator)),
+		),
+		grpc.WithStreamInterceptor(
+			otgrpc.OpenTracingStreamClientInterceptor(tracer, otgrpc.SpanDecorator(clientTracingDecorator)),
+		),
+	)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to dial: %v", err)
+	}
+
+	mgr.conns[to] = conn
+	mgr.counters[to] = 1
+
+	return conn, nil
+}
+
+func (mgr *connManager) transportCredentialForAddress(addr mino.Address) (credentials.TransportCredentials, error) {
+	clientPubCert, err := mgr.certs.Load(addr)
 	if err != nil {
 		return nil, xerrors.Errorf("while loading distant cert: %v", err)
 	}
 	if clientPubCert == nil {
-		return nil, xerrors.Errorf("certificate for '%v' not found", to)
+		return nil, xerrors.Errorf("certificate for '%v' not found", addr)
 	}
 
 	pool := x509.NewCertPool()
@@ -666,56 +707,7 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 		RootCAs:      pool,
 	})
 
-	netAddr, ok := to.(session.Address)
-	if !ok {
-		return nil, xerrors.Errorf("invalid address type '%T'", to)
-	}
-
-	// Connecting using TLS and the distant server certificate as the root.
-	addr := netAddr.GetDialAddress()
-	tracer, err := tracing.GetTracerForAddr(addr)
-	if err != nil {
-		return nil, err
-	}
-
-	decorator := func(ctx context.Context, span opentracing.Span, method string,
-		req, resp interface{}, grpcError error) {
-		md, ok := metadata.FromOutgoingContext(ctx)
-		if !ok {
-			return
-		}
-		protocol := getOrEmpty(md, tracing.ProtocolTag)
-		if protocol != "" {
-			span.SetTag(tracing.ProtocolTag, protocol)
-		}
-
-		streamID := getOrEmpty(md, HeaderStreamIDKey)
-		if streamID != "" {
-			span.SetTag(HeaderStreamIDKey, streamID)
-		}
-	}
-
-	conn, err = grpc.Dial(addr,
-		grpc.WithTransportCredentials(ta),
-		grpc.WithConnectParams(grpc.ConnectParams{
-			Backoff:           backoff.DefaultConfig,
-			MinConnectTimeout: defaultMinConnectTimeout,
-		}),
-		grpc.WithUnaryInterceptor(
-			otgrpc.OpenTracingClientInterceptor(tracer, otgrpc.SpanDecorator(decorator)),
-		),
-		grpc.WithStreamInterceptor(
-			otgrpc.OpenTracingStreamClientInterceptor(tracer, otgrpc.SpanDecorator(decorator)),
-		),
-	)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to dial: %v", err)
-	}
-
-	mgr.conns[to] = conn
-	mgr.counters[to] = 1
-
-	return conn, nil
+	return ta, nil
 }
 
 // Release implements session.ConnectionManager. It closes the connection to the
@@ -777,4 +769,21 @@ func uriFromContext(ctx context.Context) string {
 	}
 
 	return apiURI[0]
+}
+
+func clientTracingDecorator(ctx context.Context, span opentracing.Span, method string,
+	req, resp interface{}, grpcError error) {
+	md, ok := metadata.FromOutgoingContext(ctx)
+	if !ok {
+		return
+	}
+	protocol := getOrEmpty(md, tracing.ProtocolTag)
+	if protocol != "" {
+		span.SetTag(tracing.ProtocolTag, protocol)
+	}
+
+	streamID := getOrEmpty(md, HeaderStreamIDKey)
+	if streamID != "" {
+		span.SetTag(HeaderStreamIDKey, streamID)
+	}
 }
