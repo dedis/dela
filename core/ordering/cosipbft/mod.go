@@ -334,8 +334,9 @@ func (s *Service) Watch(ctx context.Context) <-chan ordering.Event {
 	return obs.ch
 }
 
-// Close gracefully closes the service. It will announce the closing request and
-// wait for the current to end before returning.
+// Close implements ordering.Service. It gracefully closes the service. It will
+// announce the closing request and wait for the current to end before
+// returning.
 func (s *Service) Close() error {
 	close(s.closing)
 	<-s.closed

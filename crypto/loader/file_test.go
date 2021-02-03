@@ -84,7 +84,7 @@ func TestFileLoader_FailOpenFile_LoadOrCreate(t *testing.T) {
 	}
 
 	_, err := loader.LoadOrCreate(fakeGenerator{})
-	require.EqualError(t, err, fake.Err("while opening file"))
+	require.EqualError(t, err, fake.Err("failed to load file: while opening file"))
 }
 
 func TestFileLoader_FailReadFile_LoadOrCreate(t *testing.T) {

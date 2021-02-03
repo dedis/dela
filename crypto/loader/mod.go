@@ -19,4 +19,7 @@ type Loader interface {
 	// LoadOrCreate tries to load the key and returns it if found, otherwise it
 	// generates a new one using the generator and stores it.
 	LoadOrCreate(Generator) ([]byte, error)
+
+	// Load loads the key and returns an error if it doesn't find it.
+	Load() ([]byte, error)
 }

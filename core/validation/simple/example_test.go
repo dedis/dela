@@ -73,7 +73,7 @@ func ExampleService_Validate() {
 
 	// Output: accepted
 	// accepted
-	// refused nonce is invalid
+	// refused nonce is invalid, expected 2, got 3
 }
 
 // exampleContract is an example of a contract doing nothing.
