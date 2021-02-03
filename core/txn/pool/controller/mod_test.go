@@ -7,48 +7,49 @@ import (
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"go.dedis.ch/dela/mino/proxy/http"
 )
 
-func TestMinimal_SetCommands(t *testing.T) {
-	minimal := NewMinimal()
-	call := fake.Call{}
-	builder := &fakeBuilder{call: &call}
-	minimal.SetCommands(builder)
+func TestMiniController_Build(t *testing.T) {
+	ctrl := NewController()
 
-	require.Equal(t, call.Len(), 6)
+	call := &fake.Call{}
+	ctrl.SetCommands(fakeBuilder{call: call})
+
+	require.Equal(t, 7, call.Len())
+	require.Equal(t, "pool", call.Get(0, 0))
+	require.Equal(t, "interact with the pool", call.Get(1, 0))
+	require.Equal(t, "add", call.Get(2, 0))
+	require.Equal(t, "add a transaction to the pool", call.Get(3, 0))
+	require.Len(t, call.Get(4, 0), 3)
+	require.IsType(t, &addAction{}, call.Get(5, 0))
+	require.Nil(t, call.Get(6, 0)) // our fake MakeAction() returns nil
 }
 
-func TestMinimal_OnStart(t *testing.T) {
-	minimal := NewMinimal()
-
-	err := minimal.OnStart(nil, nil)
-	require.NoError(t, err)
+func TestMiniController_OnStart(t *testing.T) {
+	res := NewController().OnStart(node.FlagSet{}, nil)
+	require.Nil(t, res)
 }
 
-func TestMinimal_OnStop(t *testing.T) {
-	minimal := NewMinimal()
+func TestMiniController_OnStop(t *testing.T) {
+	res := NewController().OnStop(nil)
+	require.Nil(t, res)
+}
 
-	inj := node.NewInjector()
+func TestClient(t *testing.T) {
+	c := client{}
 
-	proxy := http.NewHTTP("127.0.0.1:0")
-	go proxy.Listen()
-
-	inj.Inject(proxy)
-
-	err := minimal.OnStop(inj)
+	n, err := c.GetNonce(nil)
 	require.NoError(t, err)
+	require.Equal(t, uint64(0), n)
 
-	err = minimal.OnStop(node.NewInjector())
+	n, err = c.GetNonce(nil)
 	require.NoError(t, err)
+	require.Equal(t, uint64(1), n)
 }
 
 // -----------------------------------------------------------------------------
 // Utility functions
 
-// fakeCommandBuilder is a fake command builder
-//
-// - implements cli.CommandBuilder
 type fakeCommandBuilder struct {
 	call *fake.Call
 }
@@ -70,9 +71,6 @@ func (b fakeCommandBuilder) SetAction(a cli.Action) {
 	b.call.Add(a)
 }
 
-// fakeBuilder is a fake builders
-//
-// - implements node.Builder
 type fakeBuilder struct {
 	call *fake.Call
 }

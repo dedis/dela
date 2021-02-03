@@ -58,6 +58,17 @@ func (l fileLoader) LoadOrCreate(g Generator) ([]byte, error) {
 		return data, nil
 	}
 
+	data, err := l.Load()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to load file: %v", err)
+	}
+
+	return data, nil
+}
+
+// Load implements loader.Loader. It loads the key from the file if it exists,
+// otherwise it returns an error.
+func (l fileLoader) Load() ([]byte, error) {
 	file, err := l.openFn(l.path)
 	if err != nil {
 		return nil, xerrors.Errorf("while opening file: %v", err)

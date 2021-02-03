@@ -184,6 +184,8 @@ func (m miniController) OnStart(flags cli.Flags, inj node.Injector) error {
 	inj.Inject(cosi)
 	inj.Inject(pool)
 	inj.Inject(vs)
+	inj.Inject(exec)
+	inj.Inject(&access)
 
 	return nil
 }

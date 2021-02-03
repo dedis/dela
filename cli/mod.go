@@ -73,6 +73,8 @@ type Flags interface {
 	Path(name string) string
 
 	Int(name string) int
+
+	Bool(name string) bool
 }
 
 // Initializer defines a primitive for modules to add their commands. A cli will

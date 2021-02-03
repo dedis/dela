@@ -572,9 +572,16 @@ func (m *pbftsm) Watch(ctx context.Context) <-chan State {
 
 func (m *pbftsm) verifyPrepare(tree hashtree.Tree, block types.Block, r *round, ro authority.Authority) error {
 	stageTree, err := tree.Stage(func(snap store.Snapshot) error {
-		_, err := m.val.Validate(snap, block.GetTransactions())
+		res, err := m.val.Validate(snap, block.GetTransactions())
 		if err != nil {
 			return xerrors.Errorf("validation failed: %v", err)
+		}
+
+		for _, r := range res.GetTransactionResults() {
+			accepted, reason := r.GetStatus()
+			if !accepted {
+				m.logger.Warn().Str("reason", reason).Msg("transaction not accepted")
+			}
 		}
 
 		return nil

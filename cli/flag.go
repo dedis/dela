@@ -56,3 +56,17 @@ type IntFlag struct {
 
 // Flag implements cli.Flag.
 func (flag IntFlag) Flag() {}
+
+// BoolFlag is a definition of a command flag expected to be parsed as a
+// boolean.
+//
+// - implements cli.Flag
+type BoolFlag struct {
+	Name     string
+	Usage    string
+	Required bool
+	Value    bool
+}
+
+// Flag implements cli.Flag.
+func (flag BoolFlag) Flag() {}

@@ -274,7 +274,7 @@ type Client interface {
 // nonce by itself, except if the transaction is refused by the ledger. In that
 // case the manager should be synchronized before creating a new one.
 //
-// - implements txn.TransactionManager
+// - implements txn.Manager
 type TransactionManager struct {
 	client  Client
 	signer  crypto.Signer
