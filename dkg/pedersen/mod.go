@@ -23,12 +23,12 @@ import (
 var suite = suites.MustFind("Ed25519")
 
 var (
-	// ProtocolNameSetup denotes the value of the protocol span tag associated
+	// protocolNameSetup denotes the value of the protocol span tag associated
 	// with the `dkg-setup` protocol.
-	ProtocolNameSetup = "dkg-setup"
-	// ProtocolNameDecrypt denotes the value of the protocol span tag
+	protocolNameSetup = "dkg-setup"
+	// protocolNameDecrypt denotes the value of the protocol span tag
 	// associated with the `dkg-decrypt` protocol.
-	ProtocolNameDecrypt = "dkg-decrypt"
+	protocolNameDecrypt = "dkg-decrypt"
 )
 
 const (
@@ -91,7 +91,7 @@ func (a *Actor) Setup(co crypto.CollectiveAuthority, threshold int) (kyber.Point
 
 	ctx, cancel := context.WithTimeout(context.Background(), setupTimeout)
 	defer cancel()
-	ctx = context.WithValue(ctx, tracing.ProtocolKey, ProtocolNameSetup)
+	ctx = context.WithValue(ctx, tracing.ProtocolKey, protocolNameSetup)
 
 	sender, receiver, err := a.rpc.Stream(ctx, co)
 	if err != nil {
@@ -203,7 +203,7 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), decryptTimeout)
 	defer cancel()
-	ctx = context.WithValue(ctx, tracing.ProtocolKey, ProtocolNameDecrypt)
+	ctx = context.WithValue(ctx, tracing.ProtocolKey, protocolNameDecrypt)
 
 	sender, receiver, err := a.rpc.Stream(ctx, players)
 	if err != nil {

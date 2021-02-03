@@ -24,8 +24,9 @@ var (
 )
 
 type tracerCatalog struct {
-	tracerByAddr map[string]closableTracer
 	sync.Mutex
+
+	tracerByAddr map[string]closableTracer
 }
 
 type closableTracer struct {
@@ -51,13 +52,13 @@ func GetTracerForAddr(addr string) (opentracing.Tracer, error) {
 
 	cfg, err := jaegercfg.FromEnv()
 	if err != nil {
-		return nil, xerrors.Errorf("error parsing jaeger configuration from environment: %v", err)
+		return nil, xerrors.Errorf("failed to parse jaeger configuration from environment: %v", err)
 	}
 
 	cfg.ServiceName = addr
 	tracer, closer, err := cfg.NewTracer()
 	if err != nil {
-		return nil, xerrors.Errorf("error creating new tracer: %v", err)
+		return nil, xerrors.Errorf("failed to create new tracer: %v", err)
 	}
 
 	catalog.tracerByAddr[addr] = closableTracer{
@@ -70,10 +71,10 @@ func GetTracerForAddr(addr string) (opentracing.Tracer, error) {
 
 // CloseAll closes all the tracer instances.
 func CloseAll() error {
-	for _, tc := range catalog.tracerByAddr {
+	for addr, tc := range catalog.tracerByAddr {
 		err := tc.closer.Close()
 		if err != nil {
-			return err
+			return xerrors.Errorf("failed to close tracer for %s: %v", addr, err)
 		}
 	}
 

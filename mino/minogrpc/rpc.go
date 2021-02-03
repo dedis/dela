@@ -144,11 +144,12 @@ func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, m
 
 	md := metadata.Pairs(
 		headerURIKey, rpc.uri,
-		HeaderStreamIDKey, streamID,
+		headerStreamIDKey, streamID,
 		headerGatewayKey, rpc.overlay.myAddrStr,
 	)
 
 	protocol := ctx.Value(tracing.ProtocolKey)
+
 	if protocol != nil {
 		md.Append(tracing.ProtocolTag, protocol.(string))
 	} else {

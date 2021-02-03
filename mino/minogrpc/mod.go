@@ -171,15 +171,16 @@ func NewMinogrpc(addr net.Addr, router router.Router, opts ...Option) (*Minogrpc
 	}
 
 	creds := credentials.NewServerTLSFromCert(o.GetCertificate())
-	tracer, err := tracing.GetTracerForAddr(o.myAddr.GetDialAddress())
+	dialAddr := o.myAddr.GetDialAddress()
+	tracer, err := getTracerForAddr(dialAddr)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to get tracer for addr %s: %v", dialAddr, err)
 	}
 
 	server := grpc.NewServer(
 		grpc.Creds(creds),
-		grpc.UnaryInterceptor(otgrpc.OpenTracingServerInterceptor(tracer, otgrpc.SpanDecorator(serverTracingDecorator))),
-		grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(tracer, otgrpc.SpanDecorator(serverTracingDecorator))),
+		grpc.UnaryInterceptor(otgrpc.OpenTracingServerInterceptor(tracer, otgrpc.SpanDecorator(decorateServerTrace))),
+		grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(tracer, otgrpc.SpanDecorator(decorateServerTrace))),
 	)
 
 	m := &Minogrpc{
@@ -251,7 +252,7 @@ func (m *Minogrpc) postCheckClose() error {
 
 	err = tracing.CloseAll()
 	if err != nil {
-		return xerrors.Errorf("error closing tracers: %v", err)
+		return xerrors.Errorf("failed to close tracers: %v", err)
 	}
 
 	return nil
@@ -336,19 +337,22 @@ func (m *Minogrpc) listen(socket net.Listener) {
 	<-m.started
 }
 
-func serverTracingDecorator(ctx context.Context, span opentracing.Span, method string,
+// decorateServerTrace adds the protocol tag and the streamID tag to a server
+// side trace.
+func decorateServerTrace(ctx context.Context, span opentracing.Span, method string,
 	req, resp interface{}, grpcError error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return
 	}
+
 	protocol := getOrEmpty(md, tracing.ProtocolTag)
 	if protocol != "" {
 		span.SetTag(tracing.ProtocolTag, protocol)
 	}
 
-	streamID := getOrEmpty(md, HeaderStreamIDKey)
+	streamID := getOrEmpty(md, headerStreamIDKey)
 	if streamID != "" {
-		span.SetTag(HeaderStreamIDKey, streamID)
+		span.SetTag(headerStreamIDKey, streamID)
 	}
 }

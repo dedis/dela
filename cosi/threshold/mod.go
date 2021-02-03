@@ -20,9 +20,9 @@ import (
 )
 
 var (
-	// ProtocolName denotes the value of the protocol span tag associated with
+	// protocolName denotes the value of the protocol span tag associated with
 	// the `sign` protocol.
-	ProtocolName = "sign"
+	protocolName = "sign"
 )
 
 func defaultThreshold(n int) int {

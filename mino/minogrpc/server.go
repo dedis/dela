@@ -40,7 +40,7 @@ import (
 const (
 	// headerURIKey is the key used in rpc header to pass the handler URI
 	headerURIKey      = "apiuri"
-	HeaderStreamIDKey = "streamid"
+	headerStreamIDKey = "streamid"
 	headerGatewayKey  = "gateway"
 	// headerAddressKey is the key of the header that contains the list of
 	// addresses that will allow a node to create a routing table.
@@ -52,6 +52,8 @@ const (
 	// wait for a grpc connection to complete
 	defaultMinConnectTimeout = 10 * time.Second
 )
+
+var getTracerForAddr = tracing.GetTracerForAddr
 
 type overlayServer struct {
 	*overlay
@@ -243,7 +245,7 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 
 	md := metadata.Pairs(
 		headerURIKey, uri,
-		HeaderStreamIDKey, streamID,
+		headerStreamIDKey, streamID,
 		headerGatewayKey, o.myAddrStr,
 		tracing.ProtocolTag, protocol,
 	)
@@ -642,9 +644,9 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 		return conn, nil
 	}
 
-	ta, err := mgr.transportCredentialForAddress(to)
+	ta, err := mgr.getTransportCredential(to)
 	if err != nil {
-		return nil, xerrors.Errorf("error retrieving transport credential: %v", err)
+		return nil, xerrors.Errorf("failed to retrieve transport credential: %v", err)
 	}
 
 	netAddr, ok := to.(session.Address)
@@ -654,9 +656,9 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 
 	// Connecting using TLS and the distant server certificate as the root.
 	addr := netAddr.GetDialAddress()
-	tracer, err := tracing.GetTracerForAddr(addr)
+	tracer, err := getTracerForAddr(addr)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("failed to get tracer for addr %s: %v", addr, err)
 	}
 
 	conn, err = grpc.Dial(addr,
@@ -666,10 +668,10 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 			MinConnectTimeout: defaultMinConnectTimeout,
 		}),
 		grpc.WithUnaryInterceptor(
-			otgrpc.OpenTracingClientInterceptor(tracer, otgrpc.SpanDecorator(clientTracingDecorator)),
+			otgrpc.OpenTracingClientInterceptor(tracer, otgrpc.SpanDecorator(decorateClientTrace)),
 		),
 		grpc.WithStreamInterceptor(
-			otgrpc.OpenTracingStreamClientInterceptor(tracer, otgrpc.SpanDecorator(clientTracingDecorator)),
+			otgrpc.OpenTracingStreamClientInterceptor(tracer, otgrpc.SpanDecorator(decorateClientTrace)),
 		),
 	)
 	if err != nil {
@@ -682,7 +684,7 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 	return conn, nil
 }
 
-func (mgr *connManager) transportCredentialForAddress(addr mino.Address) (credentials.TransportCredentials, error) {
+func (mgr *connManager) getTransportCredential(addr mino.Address) (credentials.TransportCredentials, error) {
 	clientPubCert, err := mgr.certs.Load(addr)
 	if err != nil {
 		return nil, xerrors.Errorf("while loading distant cert: %v", err)
@@ -741,7 +743,7 @@ func (mgr *connManager) Release(to mino.Address) {
 
 func readHeaders(md metadata.MD) (uri string, streamID string, gw string, protocol string) {
 	uri = getOrEmpty(md, headerURIKey)
-	streamID = getOrEmpty(md, HeaderStreamIDKey)
+	streamID = getOrEmpty(md, headerStreamIDKey)
 	gw = getOrEmpty(md, headerGatewayKey)
 	protocol = getOrEmpty(md, tracing.ProtocolTag)
 
@@ -771,19 +773,22 @@ func uriFromContext(ctx context.Context) string {
 	return apiURI[0]
 }
 
-func clientTracingDecorator(ctx context.Context, span opentracing.Span, method string,
+// decorateClientTrace adds the protocol tag and the streamID tag to a client
+// side trace.
+func decorateClientTrace(ctx context.Context, span opentracing.Span, method string,
 	req, resp interface{}, grpcError error) {
 	md, ok := metadata.FromOutgoingContext(ctx)
 	if !ok {
 		return
 	}
+
 	protocol := getOrEmpty(md, tracing.ProtocolTag)
 	if protocol != "" {
 		span.SetTag(tracing.ProtocolTag, protocol)
 	}
 
-	streamID := getOrEmpty(md, HeaderStreamIDKey)
+	streamID := getOrEmpty(md, headerStreamIDKey)
 	if streamID != "" {
-		span.SetTag(HeaderStreamIDKey, streamID)
+		span.SetTag(headerStreamIDKey, streamID)
 	}
 }

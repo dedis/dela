@@ -14,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/internal/tracing"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
@@ -440,7 +441,7 @@ func TestOverlayServer_Stream(t *testing.T) {
 
 	inCtx := metadata.NewIncomingContext(ctx, metadata.Pairs(
 		headerURIKey, "test",
-		HeaderStreamIDKey, "streamTest",
+		headerStreamIDKey, "streamTest",
 		session.HandshakeKey, "{}"))
 
 	wg := sync.WaitGroup{}
@@ -486,7 +487,7 @@ func TestOverlay_MalformedRtingTable_Stream(t *testing.T) {
 		},
 	}
 
-	ctx := makeCtx(HeaderStreamIDKey, "abc", headerAddressKey, "{}")
+	ctx := makeCtx(headerStreamIDKey, "abc", headerAddressKey, "{}")
 
 	stream := &fakeSrvStream{ctx: ctx}
 
@@ -494,7 +495,7 @@ func TestOverlay_MalformedRtingTable_Stream(t *testing.T) {
 	require.EqualError(t, err, fake.Err("routing table: failed to create"))
 
 	stream.ctx = makeCtx(
-		HeaderStreamIDKey, "abc",
+		headerStreamIDKey, "abc",
 		headerAddressKey, "{}",
 		session.HandshakeKey, "{}")
 
@@ -516,7 +517,7 @@ func TestOverlay_UnknownHandler_Stream(t *testing.T) {
 		},
 	}
 
-	ctx := makeCtx(HeaderStreamIDKey, "abc", session.HandshakeKey, "{}")
+	ctx := makeCtx(headerStreamIDKey, "abc", session.HandshakeKey, "{}")
 
 	stream := &fakeSrvStream{ctx: ctx}
 
@@ -526,7 +527,7 @@ func TestOverlay_UnknownHandler_Stream(t *testing.T) {
 	stream.ctx = makeCtx(
 		headerURIKey, "unknown",
 		session.HandshakeKey, "{}",
-		HeaderStreamIDKey, "abc")
+		headerStreamIDKey, "abc")
 
 	err = overlay.Stream(stream)
 	require.EqualError(t, err, "handler 'unknown' is not registered")
@@ -542,7 +543,7 @@ func TestOverlay_BadStreamID_Stream(t *testing.T) {
 		},
 	}
 
-	ctx := makeCtx(HeaderStreamIDKey, "", session.HandshakeKey, "{}")
+	ctx := makeCtx(headerStreamIDKey, "", session.HandshakeKey, "{}")
 
 	stream := &fakeSrvStream{ctx: ctx}
 
@@ -568,7 +569,7 @@ func TestOverlay_BadHandler_Stream(t *testing.T) {
 		},
 	}
 
-	ctx := makeCtx(headerURIKey, "test", HeaderStreamIDKey, "abc", session.HandshakeKey, "{}")
+	ctx := makeCtx(headerURIKey, "test", headerStreamIDKey, "abc", session.HandshakeKey, "{}")
 
 	stream := &fakeSrvStream{ctx: ctx}
 
@@ -594,7 +595,7 @@ func TestOverlay_BadConn_Stream(t *testing.T) {
 		},
 	}
 
-	ctx := makeCtx(headerURIKey, "test", HeaderStreamIDKey, "abc", session.HandshakeKey, "{}")
+	ctx := makeCtx(headerURIKey, "test", headerStreamIDKey, "abc", session.HandshakeKey, "{}")
 
 	stream := &fakeSrvStream{ctx: ctx, err: fake.GetError()}
 
@@ -620,7 +621,7 @@ func TestOverlay_BadParentGateway_Stream(t *testing.T) {
 		},
 	}
 
-	ctx := makeCtx(headerURIKey, "test", HeaderStreamIDKey, "abc", session.HandshakeKey, "{}")
+	ctx := makeCtx(headerURIKey, "test", headerStreamIDKey, "abc", session.HandshakeKey, "{}")
 
 	stream := &fakeSrvStream{ctx: ctx, err: fake.GetError()}
 
@@ -648,7 +649,7 @@ func TestOverlay_Forward(t *testing.T) {
 		},
 	}
 
-	ctx := makeCtx(headerURIKey, "test", HeaderStreamIDKey, "stream-1")
+	ctx := makeCtx(headerURIKey, "test", headerStreamIDKey, "stream-1")
 
 	ack, err := overlay.Forward(ctx, &ptypes.Packet{})
 	require.NoError(t, err)
@@ -660,7 +661,7 @@ func TestOverlay_Forward(t *testing.T) {
 	_, err = overlay.Forward(makeCtx(headerURIKey, "unknown"), &ptypes.Packet{})
 	require.EqualError(t, err, "handler 'unknown' is not registered")
 
-	_, err = overlay.Forward(makeCtx(headerURIKey, "test", HeaderStreamIDKey, "nope"), &ptypes.Packet{})
+	_, err = overlay.Forward(makeCtx(headerURIKey, "test", headerStreamIDKey, "nope"), &ptypes.Packet{})
 	require.EqualError(t, err, "no stream 'nope' found")
 }
 
@@ -779,14 +780,14 @@ func TestConnManager_FailLoadDistantCert_Acquire(t *testing.T) {
 	mgr.certs = fakeCerts{errLoad: fake.GetError()}
 
 	_, err := mgr.Acquire(fake.NewAddress(0))
-	require.EqualError(t, err, fake.Err("error retrieving transport credential: while loading distant cert"))
+	require.EqualError(t, err, fake.Err("failed to retrieve transport credential: while loading distant cert"))
 }
 
 func TestConnManager_MissingCert_Acquire(t *testing.T) {
 	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore())
 
 	_, err := mgr.Acquire(fake.NewAddress(1))
-	require.EqualError(t, err, "error retrieving transport credential: certificate for 'fake.Address[1]' not found")
+	require.EqualError(t, err, "failed to retrieve transport credential: certificate for 'fake.Address[1]' not found")
 }
 
 func TestConnManager_FailLoadOwnCert_Acquire(t *testing.T) {
@@ -797,7 +798,7 @@ func TestConnManager_FailLoadOwnCert_Acquire(t *testing.T) {
 	}
 
 	_, err := mgr.Acquire(fake.NewAddress(0))
-	require.EqualError(t, err, fake.Err("error retrieving transport credential: while loading own cert"))
+	require.EqualError(t, err, fake.Err("failed to retrieve transport credential: while loading own cert"))
 }
 
 func TestConnManager_MissingOwnCert_Acquire(t *testing.T) {
@@ -805,7 +806,7 @@ func TestConnManager_MissingOwnCert_Acquire(t *testing.T) {
 	mgr.certs.Store(fake.NewAddress(1), fake.MakeCertificate(t, 0))
 
 	_, err := mgr.Acquire(fake.NewAddress(1))
-	require.EqualError(t, err, "error retrieving transport credential: couldn't find server 'fake.Address[0]' certificate")
+	require.EqualError(t, err, "failed to retrieve transport credential: couldn't find server 'fake.Address[0]' certificate")
 }
 
 func TestConnManager_BadAddress_Acquire(t *testing.T) {
@@ -814,6 +815,33 @@ func TestConnManager_BadAddress_Acquire(t *testing.T) {
 
 	_, err := mgr.Acquire(mgr.myAddr)
 	require.EqualError(t, err, "invalid address type 'fake.Address'")
+}
+
+func TestConnManager_BadTracer_Acquire(t *testing.T) {
+	addr := ParseAddress("127.0.0.1", 0)
+
+	dst, err := NewMinogrpc(addr, nil)
+	require.NoError(t, err)
+
+	defer dst.GracefulStop()
+
+	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore())
+
+	getTracerForAddr = fake.GetTracerForAddrWithError
+
+	certs := mgr.certs
+	certs.Store(mgr.myAddr, &tls.Certificate{})
+	certs.Store(dst.GetAddress(), dst.GetCertificate())
+
+	dstAddr := dst.GetAddress()
+	_, err = mgr.Acquire(dstAddr)
+	require.EqualError(
+		t,
+		err,
+		fmt.Sprintf("failed to get tracer for addr %s: %s", dst.GetAddress(), fake.GetError().Error()),
+	)
+
+	getTracerForAddr = tracing.GetTracerForAddr
 }
 
 // -----------------------------------------------------------------------------
