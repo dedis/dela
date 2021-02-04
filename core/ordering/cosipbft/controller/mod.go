@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"go.dedis.ch/dela/contracts/value"
 	"go.dedis.ch/dela/crypto"
 
 	"go.dedis.ch/dela/cli"
@@ -125,6 +126,9 @@ func (m miniController) OnStart(flags cli.Flags, inj node.Injector) error {
 
 	rosterFac := authority.NewFactory(onet.GetAddressFactory(), cosi.GetPublicKeyFactory())
 	cosipbft.RegisterRosterContract(exec, rosterFac, access)
+
+	akey := [32]byte{2}
+	value.RegisterContract(exec, value.NewContract(akey[:], access))
 
 	txFac := signed.NewTransactionFactory()
 	vs := simple.NewService(exec, tcpExec, txFac)

@@ -32,8 +32,10 @@ import (
 	"os"
 
 	"go.dedis.ch/dela/cli/node"
+	access "go.dedis.ch/dela/contracts/access/controller"
 	cosipbft "go.dedis.ch/dela/core/ordering/cosipbft/controller"
 	db "go.dedis.ch/dela/core/store/kv/controller"
+	pool "go.dedis.ch/dela/core/txn/pool/controller"
 	signed "go.dedis.ch/dela/core/txn/signed/controller"
 	mino "go.dedis.ch/dela/mino/minogrpc/controller"
 )
@@ -62,6 +64,8 @@ func runWithCfg(args []string, cfg config) error {
 		mino.NewController(),
 		cosipbft.NewController(),
 		signed.NewManagerController(),
+		pool.NewController(),
+		access.NewController(),
 	)
 
 	app := builder.Build()

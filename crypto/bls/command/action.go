@@ -71,7 +71,7 @@ func (a action) loadSignerAction(flags cli.Flags) error {
 			return xerrors.Errorf("failed to get PUBKEY: %v", err)
 		}
 
-		buf, err := pubkey.MarshalText()
+		buf, err := pubkey.MarshalBinary()
 		if err != nil {
 			return xerrors.Errorf("failed to marshal pubkey: %v", err)
 		}

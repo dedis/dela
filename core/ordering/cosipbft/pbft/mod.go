@@ -488,10 +488,17 @@ func (m *pbftsm) Expire(addr mino.Address) (View, error) {
 		return View{}, xerrors.Errorf("couldn't get latest digest: %v", err)
 	}
 
+	roster, err := m.authReader(m.tree.Get())
+	if err != nil {
+		return View{}, xerrors.Errorf("failed to read roster: %v", err)
+	}
+
+	newLeader := (m.round.leader + 1) % uint16(roster.Len())
+
 	param := ViewParam{
 		From:   addr,
 		ID:     lastID,
-		Leader: m.round.leader + 1,
+		Leader: newLeader,
 	}
 
 	view, err := NewViewAndSign(param, m.signer)

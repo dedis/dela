@@ -1,6 +1,7 @@
 package tcp
 
 import (
+	"encoding/binary"
 	"net"
 	"time"
 
@@ -10,29 +11,27 @@ import (
 	"golang.org/x/xerrors"
 )
 
-const unikernelAddr = "192.168.232.128:12345"
+const aunikernelAddr = "192.168.232.128:12345"
 const storeKey = "tcp:store"
+const addrArg = "tcp:addr"
 
 // Service ...
 type Service struct {
-	conn net.Conn
 }
 
 // NewExecution ...
 func NewExecution() *Service {
-	conn, err := net.Dial("tcp", unikernelAddr)
-	if err != nil {
-		dela.Logger.Fatal().Err(err).Msg("failed to connect to unikernel")
-	}
-
-	return &Service{
-		conn: conn,
-	}
+	return &Service{}
 }
 
 // Execute ...
 func (hs *Service) Execute(snap store.Snapshot, step execution.Step) (execution.Result, error) {
 	res := execution.Result{}
+
+	addr := step.Current.GetArg(addrArg)
+	if len(addr) == 0 {
+		return res, xerrors.Errorf("%s argument not found", addrArg)
+	}
 
 	current, err := snap.Get([]byte(storeKey))
 	if err != nil {
@@ -40,31 +39,36 @@ func (hs *Service) Execute(snap store.Snapshot, step execution.Step) (execution.
 	}
 
 	if len(current) == 0 {
-		current = []byte{0}
+		current = make([]byte, 8)
 	}
 
-	dela.Logger.Info().Msgf("sending value: %d", current)
+	conn, err := net.Dial("tcp", string(addr))
+	if err != nil {
+		return res, xerrors.Errorf("failed to connect to tcp with %s: %v", addr, err)
+	}
 
-	_, err = hs.conn.Write(current)
+	dela.Logger.Info().Msgf("sending value: %d", binary.LittleEndian.Uint64(current))
+
+	_, err = conn.Write(current)
 	if err != nil {
 		return res, xerrors.Errorf("failed to send to unikernel: %v", err)
 	}
 
-	readRes := make([]byte, len(current)+1)
+	readRes := make([]byte, 8)
 
-	hs.conn.SetReadDeadline(time.Now().Add(time.Second * 10))
+	conn.SetReadDeadline(time.Now().Add(time.Second * 10))
 
-	n, err := hs.conn.Read(readRes)
+	_, err = conn.Read(readRes)
 	if err != nil {
 		return res, xerrors.Errorf("failed to read result: %v", err)
 	}
 
-	err = snap.Set([]byte(storeKey), readRes[:n])
+	err = snap.Set([]byte(storeKey), readRes)
 	if err != nil {
 		return res, xerrors.Errorf("failed to set store value: %v", err)
 	}
 
-	dela.Logger.Info().Msgf("set new value: %d", readRes[:n])
+	dela.Logger.Info().Msgf("set new value:  %d", binary.LittleEndian.Uint64(readRes))
 
 	return execution.Result{
 		Accepted: true,

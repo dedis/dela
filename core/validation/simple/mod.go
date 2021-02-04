@@ -142,13 +142,15 @@ func (s Service) validateTx(store store.Snapshot, step execution.Step, r *Transa
 	}
 
 	res, err := exec.Execute(store, step)
+	// if the execution fail, we don't return an error, but we take it as an
+	// invalid transaction.
 	if err != nil {
-		// This is a critical error unrelated to the transaction itself.
-		return xerrors.Errorf("failed to execute tx: %v", err)
+		r.reason = xerrors.Errorf("failed to execute transaction: %v", err).Error()
+		r.accepted = false
+	} else {
+		r.reason = res.Message
+		r.accepted = res.Accepted
 	}
-
-	r.reason = res.Message
-	r.accepted = res.Accepted
 
 	// Update the nonce associated to the identity so that this transaction
 	// cannot be applied again.
