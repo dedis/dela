@@ -31,6 +31,7 @@ import (
 	"io"
 	"os"
 
+	gapi "go.dedis.ch/dela-apps/gapi/controller"
 	"go.dedis.ch/dela/cli/node"
 	access "go.dedis.ch/dela/contracts/access/controller"
 	cosipbft "go.dedis.ch/dela/core/ordering/cosipbft/controller"
@@ -38,6 +39,7 @@ import (
 	pool "go.dedis.ch/dela/core/txn/pool/controller"
 	signed "go.dedis.ch/dela/core/txn/signed/controller"
 	mino "go.dedis.ch/dela/mino/minogrpc/controller"
+	proxy "go.dedis.ch/dela/mino/proxy/http/controller"
 )
 
 func main() {
@@ -66,6 +68,8 @@ func runWithCfg(args []string, cfg config) error {
 		signed.NewManagerController(),
 		pool.NewController(),
 		access.NewController(),
+		proxy.NewController(),
+		gapi.NewController(),
 	)
 
 	app := builder.Build()

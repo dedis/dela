@@ -448,14 +448,15 @@ func (m *pbftsm) verifyViews(skip bool, views ...View) error {
 			return xerrors.Errorf("invalid signature: %v", err)
 		}
 
-		if !skip && view.leader != m.round.leader+1 {
+		nextLeader := (m.round.leader + 1) % uint16(roster.Len())
+		if !skip && view.leader != nextLeader {
 			// The state machine ignore view messages from different rounds. It only
 			// accepts views for the next leader even if the state machine is not in
 			// ViewChange state.
 			//
 			// This check can be skipped when enough views are received for a
 			// given leader index.
-			return xerrors.Errorf("mismatch leader %d != %d", view.leader, m.round.leader+1)
+			return xerrors.Errorf("mismatch leader %d != %d", view.leader, nextLeader)
 		}
 
 		latestID, err := m.getLatestID()

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"go.dedis.ch/dela/core"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/router"
 	"golang.org/x/xerrors"
@@ -60,6 +61,36 @@ var (
 	headerURIKey = "apiuri"
 )
 
+// GlobalWatcher ...
+var GlobalWatcher = Watcher{
+	watcher: core.NewWatcher(),
+}
+
+// Watcher ...
+type Watcher struct {
+	watcher core.Observable
+}
+
+// Watch ...
+func (w *Watcher) Watch(ctx context.Context) <-chan string {
+	obs := observer{ch: make(chan string, 1)}
+
+	w.watcher.Add(obs)
+
+	go func() {
+		<-ctx.Done()
+		w.watcher.Remove(obs)
+		close(obs.ch)
+	}()
+
+	return obs.ch
+}
+
+// GetTraffics returns the traffics in an unsafe way.
+func GetTraffics() []*Traffic {
+	return traffics
+}
+
 // SaveItems saves all the items as a graph
 func SaveItems(path string, withSend, withRcv bool) error {
 	f, err := os.Create(path)
@@ -85,18 +116,20 @@ func SaveEvents(path string) error {
 // Traffic is used to keep track of packets Traffic in a server
 type Traffic struct {
 	sync.Mutex
-	out    io.Writer
-	src    mino.Address
-	items  []item
-	events []event
+	out     io.Writer
+	src     mino.Address
+	items   []item
+	events  []event
+	watcher core.Observable
 }
 
 // NewTraffic creates a new empty traffic recorder.
 func NewTraffic(src mino.Address, out io.Writer) *Traffic {
 	traffic := &Traffic{
-		src:   src,
-		items: make([]item, 0),
-		out:   out,
+		src:     src,
+		items:   make([]item, 0),
+		out:     out,
+		watcher: core.NewWatcher(),
 	}
 
 	traffics = append(traffics, traffic)
@@ -152,6 +185,10 @@ func (t *Traffic) Display(out io.Writer) {
 }
 
 func (t *Traffic) addItem(ctx context.Context, typeStr string, gw mino.Address, msg router.Packet) {
+	if typeStr == "send" {
+		GlobalWatcher.watcher.Notify(gw.String())
+	}
+
 	if t == nil || !LogItems {
 		return
 	}
@@ -375,4 +412,12 @@ func (tt trafficSlice) Less(i, j int) bool {
 
 func (tt trafficSlice) Swap(i, j int) {
 	tt[i], tt[j] = tt[j], tt[i]
+}
+
+type observer struct {
+	ch chan string
+}
+
+func (o observer) NotifyCallback(event interface{}) {
+	o.ch <- event.(string)
 }

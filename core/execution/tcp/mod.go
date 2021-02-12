@@ -12,8 +12,11 @@ import (
 )
 
 const aunikernelAddr = "192.168.232.128:12345"
-const storeKey = "tcp:store"
+
+var storeKey = [32]byte{0, 0, 10}
+
 const addrArg = "tcp:addr"
+const dialTimeout = time.Second * 1
 
 // Service ...
 type Service struct {
@@ -33,7 +36,7 @@ func (hs *Service) Execute(snap store.Snapshot, step execution.Step) (execution.
 		return res, xerrors.Errorf("%s argument not found", addrArg)
 	}
 
-	current, err := snap.Get([]byte(storeKey))
+	current, err := snap.Get(storeKey[:])
 	if err != nil {
 		return res, xerrors.Errorf("failed to get store value: %v", err)
 	}
@@ -42,7 +45,7 @@ func (hs *Service) Execute(snap store.Snapshot, step execution.Step) (execution.
 		current = make([]byte, 8)
 	}
 
-	conn, err := net.Dial("tcp", string(addr))
+	conn, err := net.DialTimeout("tcp", string(addr), dialTimeout)
 	if err != nil {
 		return res, xerrors.Errorf("failed to connect to tcp with %s: %v", addr, err)
 	}
@@ -63,7 +66,7 @@ func (hs *Service) Execute(snap store.Snapshot, step execution.Step) (execution.
 		return res, xerrors.Errorf("failed to read result: %v", err)
 	}
 
-	err = snap.Set([]byte(storeKey), readRes)
+	err = snap.Set([]byte(storeKey[:]), readRes)
 	if err != nil {
 		return res, xerrors.Errorf("failed to set store value: %v", err)
 	}
