@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -18,9 +19,30 @@ const (
 	requestIDKey key = 0
 )
 
+var (
+	// defaultLevel can be changed to set the desired level of the logger
+	defaultLevel = zerolog.ErrorLevel
+)
+
+func init() {
+	setLogLevel()
+}
+
+func setLogLevel() {
+	switch os.Getenv("PROXY_LOG") {
+	case "warn":
+		defaultLevel = zerolog.WarnLevel
+	case "no":
+		defaultLevel = zerolog.Disabled
+	case "info":
+		defaultLevel = zerolog.InfoLevel
+	}
+}
+
 // NewHTTP creates a new proxy http
 func NewHTTP(listenAddr string) proxy.Proxy {
-	logger := dela.Logger.With().Timestamp().Str("role", "http proxy").Logger()
+	logger := dela.Logger.With().Timestamp().Str("role", "http proxy").Logger().
+		Level(defaultLevel)
 
 	nextRequestID := func() string {
 		return fmt.Sprintf("%d", time.Now().UnixNano())

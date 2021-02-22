@@ -361,7 +361,7 @@ func (m *pbftsm) Accept(view View) error {
 	m.Lock()
 	defer m.Unlock()
 
-	err := m.init()
+	_, err := m.init()
 	if err != nil {
 		return xerrors.Errorf("init: %v", err)
 	}
@@ -399,7 +399,7 @@ func (m *pbftsm) AcceptAll(views []View) error {
 	m.Lock()
 	defer m.Unlock()
 
-	err := m.init()
+	_, err := m.init()
 	if err != nil {
 		return xerrors.Errorf("init: %v", err)
 	}
@@ -448,14 +448,15 @@ func (m *pbftsm) verifyViews(skip bool, views ...View) error {
 			return xerrors.Errorf("invalid signature: %v", err)
 		}
 
-		if !skip && view.leader != m.round.leader+1 {
+		nextLeader := (m.round.leader + 1) % uint16(roster.Len())
+		if !skip && view.leader != nextLeader {
 			// The state machine ignore view messages from different rounds. It only
 			// accepts views for the next leader even if the state machine is not in
 			// ViewChange state.
 			//
 			// This check can be skipped when enough views are received for a
 			// given leader index.
-			return xerrors.Errorf("mismatch leader %d != %d", view.leader, m.round.leader+1)
+			return xerrors.Errorf("mismatch leader %d != %d", view.leader, nextLeader)
 		}
 
 		latestID, err := m.getLatestID()
@@ -478,7 +479,7 @@ func (m *pbftsm) Expire(addr mino.Address) (View, error) {
 	m.Lock()
 	defer m.Unlock()
 
-	err := m.init()
+	roster, err := m.init()
 	if err != nil {
 		return View{}, xerrors.Errorf("init: %v", err)
 	}
@@ -488,10 +489,12 @@ func (m *pbftsm) Expire(addr mino.Address) (View, error) {
 		return View{}, xerrors.Errorf("couldn't get latest digest: %v", err)
 	}
 
+	newLeader := (m.round.leader + 1) % uint16(roster.Len())
+
 	param := ViewParam{
 		From:   addr,
 		ID:     lastID,
-		Leader: m.round.leader + 1,
+		Leader: newLeader,
 	}
 
 	view, err := NewViewAndSign(param, m.signer)
@@ -720,21 +723,21 @@ func (m *pbftsm) verifyFinalize(r *round, sig crypto.Signature, ro authority.Aut
 	return nil
 }
 
-func (m *pbftsm) init() error {
-	if m.state != NoneState {
-		return nil
-	}
-
+func (m *pbftsm) init() (authority.Authority, error) {
 	roster, err := m.authReader(m.tree.Get())
 	if err != nil {
-		return xerrors.Errorf("failed to read roster: %v", err)
+		return nil, xerrors.Errorf("failed to read roster: %v", err)
+	}
+
+	if m.state != NoneState {
+		return roster, nil
 	}
 
 	m.round.threshold = calculateThreshold(roster.Len())
 
 	m.setState(InitialState)
 
-	return nil
+	return roster, nil
 }
 
 func (m *pbftsm) setState(s State) {

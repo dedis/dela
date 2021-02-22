@@ -90,15 +90,22 @@ func TestBuildFlags(t *testing.T) {
 			Required: true,
 			Value:    1,
 		},
+		cli.BoolFlag{
+			Name:     "name5",
+			Usage:    "usage5",
+			Required: true,
+			Value:    true,
+		},
 	}
 
 	out := buildFlags(in)
-	require.Len(t, out, 4)
+	require.Len(t, out, 5)
 
 	require.Equal(t, "name1", out[0].Names()[0])
 	require.Equal(t, "name2", out[1].Names()[0])
 	require.Equal(t, "name3", out[2].Names()[0])
 	require.Equal(t, "name4", out[3].Names()[0])
+	require.Equal(t, "name5", out[4].Names()[0])
 }
 
 func TestBuildFlags_Panic(t *testing.T) {

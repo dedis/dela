@@ -636,10 +636,6 @@ func TestStateMachine_Accept(t *testing.T) {
 
 	sm.authReader = badReader
 	err = sm.Accept(View{leader: 2})
-	require.EqualError(t, err, fake.Err("invalid view: failed to read roster"))
-
-	sm.state = NoneState
-	err = sm.Accept(View{leader: 2})
 	require.EqualError(t, err, fake.Err("init: failed to read roster"))
 
 	// Ignore view with an invalid signature.
@@ -653,6 +649,16 @@ func TestStateMachine_Accept(t *testing.T) {
 	}
 	err = sm.Accept(View{from: fake.NewAddress(0), leader: 2})
 	require.EqualError(t, err, fake.Err("invalid view: invalid signature: verify"))
+}
+
+func TestStateMachine_verifyViews(t *testing.T) {
+	sm := &pbftsm{
+		tree:       blockstore.NewTreeCache(badTree{}),
+		authReader: badReader,
+	}
+
+	err := sm.verifyViews(false)
+	require.EqualError(t, err, fake.Err("failed to read roster"))
 }
 
 func TestStateMachine_AcceptAll(t *testing.T) {

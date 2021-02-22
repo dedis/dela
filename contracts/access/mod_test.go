@@ -25,7 +25,7 @@ func TestExecute(t *testing.T) {
 	require.EqualError(t, err, "'access:command' not found in tx arg")
 
 	err = contract.Execute(fakeStore{}, makeStep(t, CmdArg, "fake"))
-	require.EqualError(t, err, "unknown command: fake")
+	require.EqualError(t, err, "access, unknown command: fake")
 
 	err = contract.Execute(fakeStore{}, makeStep(t, CmdArg, string(CmdSet)))
 	require.EqualError(t, err, "failed to SET: 'access:grant_id' not found in tx arg")

@@ -118,7 +118,7 @@ func (c Contract) Execute(snap store.Snapshot, step execution.Step) error {
 			return xerrors.Errorf("failed to SET: %v", err)
 		}
 	default:
-		return xerrors.Errorf("unknown command: %s", cmd)
+		return xerrors.Errorf("access, unknown command: %s", cmd)
 	}
 
 	return nil

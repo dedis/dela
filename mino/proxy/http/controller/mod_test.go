@@ -11,7 +11,7 @@ import (
 )
 
 func TestMinimal_SetCommands(t *testing.T) {
-	minimal := NewMinimal()
+	minimal := NewController()
 	call := fake.Call{}
 	builder := &fakeBuilder{call: &call}
 	minimal.SetCommands(builder)
@@ -20,14 +20,14 @@ func TestMinimal_SetCommands(t *testing.T) {
 }
 
 func TestMinimal_OnStart(t *testing.T) {
-	minimal := NewMinimal()
+	minimal := NewController()
 
 	err := minimal.OnStart(nil, nil)
 	require.NoError(t, err)
 }
 
 func TestMinimal_OnStop(t *testing.T) {
-	minimal := NewMinimal()
+	minimal := NewController()
 
 	inj := node.NewInjector()
 
