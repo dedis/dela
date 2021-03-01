@@ -1,7 +1,8 @@
 # Memcoin
 
 Memcoin is the default CLI to handle Dela nodes. You can find it in
-"cli/node/memcoin". Be sure to run "go install" in it.
+"cli/node/memcoin". Be sure to run "go install" in it and add GOPATH/bin to your
+PATH environment.
 
 ```sh
 # Run three nodes
@@ -34,7 +35,8 @@ memcoin --config /tmp/node2 access add \
 memcoin --config /tmp/node3 access add \
     --identity $(crypto bls signer read --path private.key --format BASE64_PUBKEY)
 
-# Update the access contract to allow us to use the value contract
+# Update the access contract to allow us to use the value contract. Path to
+# private.key is relative to the location where the node has been started.
 memcoin --config /tmp/node1 pool add\
     --key private.key\
     --args go.dedis.ch/dela.ContractArg --args go.dedis.ch/dela.Access\
