@@ -119,8 +119,12 @@ func TestService_FailIdentityToKey_Validate(t *testing.T) {
 func TestService_FailExecuteTx_Validate(t *testing.T) {
 	srvc := NewService(&fakeExec{err: fake.GetError()}, nil)
 
-	_, err := srvc.Validate(fakeSnapshot{}, []txn.Transaction{newTx()})
-	require.EqualError(t, err, fake.Err("tx 0x0a0b0c0d: failed to execute tx"))
+	res, err := srvc.Validate(fakeSnapshot{}, []txn.Transaction{newTx()})
+	require.NoError(t, err)
+
+	status, msg := res.GetTransactionResults()[0].GetStatus()
+	require.False(t, status)
+	require.Equal(t, fake.Err("failed to execute transaction"), msg)
 }
 
 // -----------------------------------------------------------------------------

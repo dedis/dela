@@ -8,8 +8,8 @@ import (
 
 const defaultAddr = "127.0.0.1:8080"
 
-// NewMinimal returns a new minimal initializer
-func NewMinimal() node.Initializer {
+// NewController returns a new minimal initializer
+func NewController() node.Initializer {
 	return minimal{}
 }
 

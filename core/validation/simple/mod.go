@@ -67,7 +67,7 @@ func (s Service) GetNonce(store store.Readable, ident access.Identity) (uint64, 
 }
 
 // Accept implements validation.Service. It returns nil if the transaction would
-// be accepted by the service given some leeway and a snaptshot of the storage.
+// be accepted by the service given some leeway and a snapshot of the storage.
 func (s Service) Accept(store store.Readable, tx txn.Transaction, leeway validation.Leeway) error {
 	nonce, err := s.GetNonce(store, tx.GetIdentity())
 	if err != nil {
@@ -135,13 +135,15 @@ func (s Service) validateTx(store store.Snapshot, step execution.Step, r *Transa
 	}
 
 	res, err := s.execution.Execute(store, step)
+	// if the execution fail, we don't return an error, but we take it as an
+	// invalid transaction.
 	if err != nil {
-		// This is a critical error unrelated to the transaction itself.
-		return xerrors.Errorf("failed to execute tx: %v", err)
+		r.reason = xerrors.Errorf("failed to execute transaction: %v", err).Error()
+		r.accepted = false
+	} else {
+		r.reason = res.Message
+		r.accepted = res.Accepted
 	}
-
-	r.reason = res.Message
-	r.accepted = res.Accepted
 
 	// Update the nonce associated to the identity so that this transaction
 	// cannot be applied again.

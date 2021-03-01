@@ -126,6 +126,13 @@ func buildFlags(flags []cli.Flag) []urfave.Flag {
 				Required: e.Required,
 				Value:    e.Value,
 			}
+		case cli.BoolFlag:
+			flag = &urfave.BoolFlag{
+				Name:     e.Name,
+				Usage:    e.Usage,
+				Required: e.Required,
+				Value:    e.Value,
+			}
 		default:
 			panic(fmt.Sprintf("flag type '%T' not supported", f))
 		}

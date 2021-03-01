@@ -529,12 +529,12 @@ func (s *Service) doRound(ctx context.Context) error {
 				}
 			}
 
-			s.logger.Debug().Msg("view change successful")
+			s.logger.Debug().Msgf("view change successful for %d", viewMsg.GetLeader())
 
 			cancel()
 			return nil
 		case <-s.events:
-			// As a child, a block has been comitted thus the previous view
+			// As a child, a block has been committed thus the previous view
 			// change succeeded.
 			s.failedRound = false
 
