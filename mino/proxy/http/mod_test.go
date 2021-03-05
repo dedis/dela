@@ -4,12 +4,27 @@ import (
 	"bytes"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 )
+
+func TestInit(t *testing.T) {
+	os.Setenv("PROXY_LOG", "warn")
+	setLogLevel()
+	require.Equal(t, defaultLevel, zerolog.WarnLevel)
+
+	os.Setenv("PROXY_LOG", "no")
+	setLogLevel()
+	require.Equal(t, defaultLevel, zerolog.Disabled)
+
+	os.Setenv("PROXY_LOG", "info")
+	setLogLevel()
+	require.Equal(t, defaultLevel, zerolog.InfoLevel)
+}
 
 func TestHTTP_Listen(t *testing.T) {
 	proxy := NewHTTP("127.0.0.1:2010")

@@ -361,7 +361,7 @@ func (m *pbftsm) Accept(view View) error {
 	m.Lock()
 	defer m.Unlock()
 
-	err := m.init()
+	_, err := m.init()
 	if err != nil {
 		return xerrors.Errorf("init: %v", err)
 	}
@@ -399,7 +399,7 @@ func (m *pbftsm) AcceptAll(views []View) error {
 	m.Lock()
 	defer m.Unlock()
 
-	err := m.init()
+	_, err := m.init()
 	if err != nil {
 		return xerrors.Errorf("init: %v", err)
 	}
@@ -479,7 +479,7 @@ func (m *pbftsm) Expire(addr mino.Address) (View, error) {
 	m.Lock()
 	defer m.Unlock()
 
-	err := m.init()
+	roster, err := m.init()
 	if err != nil {
 		return View{}, xerrors.Errorf("init: %v", err)
 	}
@@ -487,11 +487,6 @@ func (m *pbftsm) Expire(addr mino.Address) (View, error) {
 	lastID, err := m.getLatestID()
 	if err != nil {
 		return View{}, xerrors.Errorf("couldn't get latest digest: %v", err)
-	}
-
-	roster, err := m.authReader(m.tree.Get())
-	if err != nil {
-		return View{}, xerrors.Errorf("failed to read roster: %v", err)
 	}
 
 	newLeader := (m.round.leader + 1) % uint16(roster.Len())
@@ -728,21 +723,21 @@ func (m *pbftsm) verifyFinalize(r *round, sig crypto.Signature, ro authority.Aut
 	return nil
 }
 
-func (m *pbftsm) init() error {
-	if m.state != NoneState {
-		return nil
-	}
-
+func (m *pbftsm) init() (authority.Authority, error) {
 	roster, err := m.authReader(m.tree.Get())
 	if err != nil {
-		return xerrors.Errorf("failed to read roster: %v", err)
+		return nil, xerrors.Errorf("failed to read roster: %v", err)
+	}
+
+	if m.state != NoneState {
+		return roster, nil
 	}
 
 	m.round.threshold = calculateThreshold(roster.Len())
 
 	m.setState(InitialState)
 
-	return nil
+	return roster, nil
 }
 
 func (m *pbftsm) setState(s State) {

@@ -25,6 +25,10 @@ var (
 )
 
 func init() {
+	setLogLevel()
+}
+
+func setLogLevel() {
 	switch os.Getenv("PROXY_LOG") {
 	case "warn":
 		defaultLevel = zerolog.WarnLevel
@@ -37,7 +41,8 @@ func init() {
 
 // NewHTTP creates a new proxy http
 func NewHTTP(listenAddr string) proxy.Proxy {
-	logger := dela.Logger.With().Timestamp().Str("role", "http proxy").Logger().Level(defaultLevel)
+	logger := dela.Logger.With().Timestamp().Str("role", "http proxy").Logger().
+		Level(defaultLevel)
 
 	nextRequestID := func() string {
 		return fmt.Sprintf("%d", time.Now().UnixNano())
