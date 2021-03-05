@@ -23,6 +23,7 @@ import (
 	"io/ioutil"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
@@ -375,6 +376,9 @@ func (s *session) sendTo(p parent, to mino.Address, pkt router.Packet, errs chan
 	ctx := p.relay.Stream().Context()
 
 	s.traffic.LogSend(ctx, relay.GetDistantAddress(), pkt)
+	if !newWrapAddress(relay.GetDistantAddress()).Equal(s.me) {
+		time.Sleep(time.Millisecond * 900)
+	}
 
 	ack, err := relay.Send(ctx, pkt)
 	if to == nil && err != nil {

@@ -3,6 +3,7 @@ package tcp
 import (
 	"encoding/binary"
 	"net"
+	"os"
 	"time"
 
 	"go.dedis.ch/dela"
@@ -11,7 +12,7 @@ import (
 	"golang.org/x/xerrors"
 )
 
-const aunikernelAddr = "192.168.232.128:12345"
+const defaultUnikernelAddr = "192.168.232.128:12345"
 
 var storeKey = [32]byte{0, 0, 10}
 
@@ -31,11 +32,6 @@ func NewExecution() *Service {
 func (hs *Service) Execute(snap store.Snapshot, step execution.Step) (execution.Result, error) {
 	res := execution.Result{}
 
-	addr := step.Current.GetArg(addrArg)
-	if len(addr) == 0 {
-		return res, xerrors.Errorf("%s argument not found", addrArg)
-	}
-
 	current, err := snap.Get(storeKey[:])
 	if err != nil {
 		return res, xerrors.Errorf("failed to get store value: %v", err)
@@ -43,6 +39,11 @@ func (hs *Service) Execute(snap store.Snapshot, step execution.Step) (execution.
 
 	if len(current) == 0 {
 		current = make([]byte, 8)
+	}
+
+	addr := os.Getenv("UNIKERNEL_TCP")
+	if addr == "" {
+		addr = defaultUnikernelAddr
 	}
 
 	conn, err := net.DialTimeout("tcp", string(addr), dialTimeout)
