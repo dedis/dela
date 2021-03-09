@@ -223,15 +223,29 @@ func (e *evmService) Execute(snap store.Snapshot, step execution.Step) (executio
 		current = make([]byte, 8)
 	}
 
+	buf, err := e.ExecuteEVM(current)
+	if err != nil {
+		return res, xerrors.Errorf("failed to execute contract: %v", err)
+	}
+
+	snap.Set(storeKey[:], buf)
+	res.Accepted = true
+	return res, nil
+}
+
+// ExecuteEVM executes the `increment` contract wit the given input which
+// represents a uint64 number in little-endian format. It returns `input+1`
+// in little-endian format.
+func (e *evmService) ExecuteEVM(input []byte) ([]byte, error) {
 	contractAbi := e.contractAbi
 	accountAddr := e.accountAddr
 	instanceAddr := e.instanceAddr
 
-	currentVal := binary.LittleEndian.Uint64(current)
+	currentVal := binary.LittleEndian.Uint64(input)
 
 	callData, err := contractAbi.Pack(method, new(big.Int).SetUint64(currentVal))
 	if err != nil {
-		return res, xerrors.Errorf("failed to pack method `%s`: %v", method, err)
+		return nil, xerrors.Errorf("failed to pack method `%s`: %v", method, err)
 	}
 
 	timestamp := time.Now().UnixNano()
@@ -240,21 +254,21 @@ func (e *evmService) Execute(snap store.Snapshot, step execution.Step) (executio
 
 	ret, _, err := evm.Call(vm.AccountRef(accountAddr), instanceAddr, callData, uint64(1*WeiPerEther), big.NewInt(0))
 	if err != nil {
-		return res, xerrors.Errorf("failed to execute EVM view method: %v", err)
+		return nil, xerrors.Errorf("failed to execute EVM view method: %v", err)
 	}
 
 	methodAbi, ok := contractAbi.Methods[method]
 	if !ok {
-		return res, xerrors.Errorf("method `%s` does not exist for this contract: %v", method, err)
+		return nil, xerrors.Errorf("method `%s` does not exist for this contract: %v", method, err)
 	}
 
 	itfs, err := methodAbi.Outputs.UnpackValues(ret)
 	if err != nil {
-		return res, xerrors.Errorf("failed to unpack values: %v", err)
+		return nil, xerrors.Errorf("failed to unpack values: %v", err)
 	}
 
 	if len(itfs) == 0 {
-		return res, xerrors.Errorf("did not get output from the contract")
+		return nil, xerrors.Errorf("did not get output from the contract")
 	}
 
 	val := itfs[0].(*big.Int)
@@ -269,9 +283,8 @@ func (e *evmService) Execute(snap store.Snapshot, step execution.Step) (executio
 		buf = append(buf, 0)
 	}
 
-	snap.Set(storeKey[:], buf)
-	res.Accepted = true
-	return res, nil
+	return buf, nil
+
 }
 
 func getBlockContext(timestamp int64) vm.BlockContext {
