@@ -3,7 +3,9 @@ package main
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/execution"
+	"go.dedis.ch/dela/core/execution/evm"
 	"go.dedis.ch/dela/core/execution/tcp"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/txn"
@@ -17,6 +19,24 @@ func BenchmarkLocal(b *testing.B) {
 
 func BenchmarkUnikernel(b *testing.B) {
 	testWithAddr(b, "192.168.232.128:12345")
+}
+
+func BenchmarkEVM(b *testing.B) {
+	n := iterations
+
+	storage := newInmemory()
+	step := execution.Step{Previous: []txn.Transaction{}, Current: tx{}}
+
+	exec, err := evm.NewExecution()
+	require.NoError(b, err)
+
+	for i := 0; i < n; i++ {
+		_, err := exec.Execute(storage, step)
+		if err != nil {
+			b.Logf("failed to execute: %+v", err)
+			b.FailNow()
+		}
+	}
 }
 
 func testWithAddr(b *testing.B, addr string) {

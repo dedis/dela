@@ -1,0 +1,1 @@
+[{"inputs":[{"internalType":"uint256","name":"input","type":"uint256"}],"name":"increment","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"pure","type":"function"}]
