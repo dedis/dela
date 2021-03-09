@@ -112,7 +112,7 @@ func NewExecution() (*evmService, error) {
 		return nil, xerrors.Errorf("failed to commit root to trie: %v", err)
 	}
 
-	contractJSON, err := ioutil.ReadFile("/Users/narula/dev/dela/core/execution/evm/contracts/increment.abi")
+	contractJSON, err := ioutil.ReadFile("contracts/increment.abi")
 	if err != nil {
 		return nil, xerrors.Errorf("failed to read increment contract abi: %v", err)
 	}
@@ -136,7 +136,7 @@ func NewExecution() (*evmService, error) {
 
 func spawnContract(contractAbi abi.ABI, stateDb *state.StateDB, account *EvmAccount) error {
 
-	contractBuf, err := ioutil.ReadFile("/Users/narula/dev/dela/core/execution/evm/contracts/increment.bin")
+	contractBuf, err := ioutil.ReadFile("contracts/increment.bin")
 	if err != nil {
 		return xerrors.Errorf("failed to read increment contract: %v", err)
 	}
