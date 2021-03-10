@@ -13,13 +13,13 @@ import (
 
 const iterations = 50
 
-//func BenchmarkLocal(b *testing.B) {
-	//testWithAddr(b, "127.0.0.1:12346")
-//}
+func BenchmarkLocal(b *testing.B) {
+	testWithAddr(b, "127.0.0.1:12346")
+}
 
-//func BenchmarkUnikernel(b *testing.B) {
-	//testWithAddr(b, "192.168.232.128:12345")
-//}
+func BenchmarkUnikernel(b *testing.B) {
+	testWithAddr(b, "192.168.232.128:12345")
+}
 
 func BenchmarkEVM(b *testing.B) {
 	n := iterations
