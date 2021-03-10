@@ -43,7 +43,10 @@ func (hs *Service) Execute(snap store.Snapshot, step execution.Step) (execution.
 
 	addr := os.Getenv("UNIKERNEL_TCP")
 	if addr == "" {
-		addr = defaultUnikernelAddr
+		addr = string(step.Current.GetArg(addrArg))
+		if addr == "" {
+			addr = defaultUnikernelAddr
+		}
 	}
 
 	conn, err := net.DialTimeout("tcp", string(addr), dialTimeout)
