@@ -28,6 +28,7 @@ package main
 
 import (
 	"fmt"
+	dkg "go.dedis.ch/dela/dkg/pedersen/controller"
 	"io"
 	"os"
 
@@ -37,7 +38,6 @@ import (
 	db "go.dedis.ch/dela/core/store/kv/controller"
 	pool "go.dedis.ch/dela/core/txn/pool/controller"
 	signed "go.dedis.ch/dela/core/txn/signed/controller"
-	dkg "go.dedis.ch/dela/dkg/pedersen/controller"
 	mino "go.dedis.ch/dela/mino/minogrpc/controller"
 	proxy "go.dedis.ch/dela/mino/proxy/http/controller"
 )
@@ -64,12 +64,12 @@ func runWithCfg(args []string, cfg config) error {
 		cfg.Writer,
 		db.NewController(),
 		mino.NewController(),
+		dkg.NewController(),
 		cosipbft.NewController(),
 		signed.NewManagerController(),
 		pool.NewController(),
 		access.NewController(),
 		proxy.NewController(),
-		dkg.NewController(),
 
 	)
 
