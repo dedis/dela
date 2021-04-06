@@ -1,7 +1,9 @@
 package controller
 
 import (
+	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cli/node"
@@ -14,17 +16,28 @@ import (
 	"go.dedis.ch/kyber/v3/suites"
 	"golang.org/x/xerrors"
 	"io/ioutil"
+	"log"
+	"net/http"
 	"os"
 	"strings"
 )
 
 const separator = ":"
+const getPublicKeyEndPoint = "/dkg/pubkey"
+const encryptEndPoint = "/dkg/encrypt"
+const decryptEndPoint = "/dkg/decrypt"
 
 var suite = suites.MustFind("Ed25519")
 
+
+// initAction is an action to initialize the DKG protocol
+//
+// - implements node.ActionTemplate
 type initAction struct {
 }
 
+// Execute implements node.ActionTemplate. It creates an actor from
+// the dkgPedersen instance
 func (a *initAction) Execute(ctx node.Context) error {
 	var dkgPedersen dkg.DKG
 	err := ctx.Injector.Resolve(&dkgPedersen)
@@ -42,9 +55,14 @@ func (a *initAction) Execute(ctx node.Context) error {
 	return nil
 }
 
+// setupAction is an action to setup the DKG protocol and generate a collective public key
+//
+// - implements node.ActionTemplate
 type setupAction struct {
 }
 
+// Execute implements node.ActionTemplate. It reads the list of members and
+// request the setup.
 func (a *setupAction) Execute(ctx node.Context) error {
 	roster, err := a.readMembers(ctx)
 	if err != nil {
@@ -74,9 +92,15 @@ func (a *setupAction) Execute(ctx node.Context) error {
 	return nil
 }
 
+// exportInfoAction is an action to display a base64 string describing the node.
+// It can be used to transmit the identity of a node to another one.
+//
+// - implements node.ActionTemplate
 type exportInfoAction struct {
 }
 
+// Execute implements node.ActionTemplate. It looks for the node address and
+// public key and prints "$ADDR_BASE64:$PUBLIC_KEY_BASE64".
 func (a *exportInfoAction) Execute(ctx node.Context) error {
 	var m mino.Mino
 	err := ctx.Injector.Resolve(&m)
@@ -161,9 +185,144 @@ func decodeMember(ctx node.Context, str string) (mino.Address, crypto.PublicKey,
 	return addr, pubkey, nil
 }
 
+/* initHttpServerAction is an action to start an HTTP server handling the following endpoints :
+ /dkg/pubkey  : get request that returns the collective public key
+ /dkg/encrypt : get request that returns the encryption of "hello"
+ /dkg/decrypt : post request that returns the decryption of a ciphertext sent by the client
+
+ - implements node.ActionTemplate
+ */
+type initHttpServerAction struct {
+}
+
+// Wraps the ciphertext pairs
+type CiphertextResponse struct {
+	K []byte
+	C []byte
+}
+
+// Execute implements node.ActionTemplate. It implements the handling of endpoints
+// and start the HTTP server
+func (a *initHttpServerAction) Execute(ctx node.Context) error {
+	portNumber := ctx.Flags.String("portNumber")
+
+	//todo : think of where resolving dkg.Actor ! either now or when handling requests
+	var actor dkg.Actor
+	err := ctx.Injector.Resolve(&actor)
+	if err != nil {
+		return xerrors.Errorf("failed to resolve actor: %v", err)
+	}
+
+	http.HandleFunc(getPublicKeyEndPoint, func(w http.ResponseWriter, r *http.Request){
+
+		pubkey, err := actor.GetPublicKey()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		pubkeyBuf, err := pubkey.MarshalBinary()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		_, err = fmt.Fprintf(w, string(pubkeyBuf))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	})
+
+	plaintext := "hello"
+
+	K, C, _, err := actor.Encrypt([]byte(plaintext))
+	if err != nil {
+		return xerrors.Errorf("failed to encrypt the plaintext: %v", err)
+	}
+
+	Kmarshalled, err := K.MarshalBinary()
+	if err != nil {
+		return xerrors.Errorf("failed to marshall the K element of the ciphertext pair: %v", err)
+	}
+
+	Cmarshalled, err := C.MarshalBinary()
+	if err != nil {
+		return xerrors.Errorf("failed to marshall the C element of the ciphertext pair: %v", err)
+	}
+
+	http.HandleFunc(encryptEndPoint, func(w http.ResponseWriter, r *http.Request){
+
+		response := CiphertextResponse{K: Kmarshalled, C: Cmarshalled}
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, err = w.Write(js)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	})
+
+	http.HandleFunc(decryptEndPoint, func(w http.ResponseWriter, r *http.Request){
+		body, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		ciphertextResponse:= new (CiphertextResponse)
+		err = json.NewDecoder(bytes.NewBuffer(body)).Decode(ciphertextResponse)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		K := suite.Point()
+		err = K.UnmarshalBinary(ciphertextResponse.K)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		C := suite.Point()
+		err = C.UnmarshalBinary(ciphertextResponse.C)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		message, err := actor.Decrypt(K, C)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		_, err = fmt.Fprintf(w, string(message))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+	})
+
+	log.Fatal(http.ListenAndServe(":" + portNumber, nil))
+
+	return nil
+}
+
+// getPublicKeyAction is an action that prints the collective public key
+//
+// - implements node.ActionTemplate
 type getPublicKeyAction struct {
 }
 
+// Execute implements node.ActionTemplate. It retrieves the collective
+// public key from the DKG service and prints it.
 func (a *getPublicKeyAction) Execute(ctx node.Context) error {
 	var actor dkg.Actor
 	err := ctx.Injector.Resolve(&actor)
@@ -188,9 +347,15 @@ func (a *getPublicKeyAction) Execute(ctx node.Context) error {
 	return nil
 }
 
+// encryptAction is an action that encrypt the given plaintext
+//
+// - implements node.ActionTemplate
 type encryptAction struct {
 }
 
+// Execute implements node.ActionTemplate. It retrieves the encryption
+// of the given plaintext from the DKG service and writes the
+// ciphertext pair in files
 func (a *encryptAction) Execute(ctx node.Context) error {
 	message := ctx.Flags.String("plaintext")
 	KfilePath := ctx.Flags.String("KfilePath")
@@ -230,9 +395,15 @@ func (a *encryptAction) Execute(ctx node.Context) error {
 	return nil
 }
 
+// decryptAction is an action that decrypts the given ciphertext
+//
+// - implements node.ActionTemplate
 type decryptAction struct {
 }
 
+// Execute implements node.ActionTemplate. It reads the ciphertext pair,
+// it retrieves the decryption from the DKG service and prints the
+// corresponding plaintext
 func (a *decryptAction) Execute(ctx node.Context) error {
 	KfilePath := ctx.Flags.String("KfilePath")
 	CfilePath := ctx.Flags.String("CfilePath")

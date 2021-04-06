@@ -6,12 +6,11 @@ package controller
 
 import (
 	"encoding"
-	"go.dedis.ch/dela/dkg"
 	"path/filepath"
 	"time"
 
-	"go.dedis.ch/dela/contracts/value"
 	"go.dedis.ch/dela/contracts/evoting"
+	"go.dedis.ch/dela/contracts/value"
 	"go.dedis.ch/dela/crypto"
 
 	"go.dedis.ch/dela/cli"
@@ -135,16 +134,7 @@ func (m miniController) OnStart(flags cli.Flags, inj node.Injector) error {
 
 	value.RegisterContract(exec, value.NewContract(valueAccessKey[:], access))
 
-	var dkgPedersen dkg.DKG
-	err = inj.Resolve(&dkgPedersen)
-	if err != nil {
-		return xerrors.Errorf("failed to resolve dkg: %v", err)
-	}
-	dkgActor, err := dkgPedersen.Listen()
-	if err != nil {
-		return xerrors.Errorf("failed to start the RPC: %v", err)
-	}
-	evoting.RegisterContract(exec, evoting.NewContract(evotingAccessKey[:], access, dkgActor, onet))
+	evoting.RegisterContract(exec, evoting.NewContract(evotingAccessKey[:], access))
 
 	txFac := signed.NewTransactionFactory()
 	vs := simple.NewService(exec, txFac)

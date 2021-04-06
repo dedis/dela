@@ -1,31 +1,27 @@
 package evoting
 
 import (
-	"encoding/base64"
+	"bytes"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/execution/native"
-	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/store"
-	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/crypto/ed25519"
-	"go.dedis.ch/dela/dkg"
-	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/kyber/v3/suites"
 	"golang.org/x/xerrors"
-	"strings"
+	"io"
+	"net/http"
 )
 
-const addrKeySeparator = ":"
-const membersSeparator = ","
+const url = "http://localhost:"
+const getPublicKeyEndPoint = "/dkg/pubkey"
+const encryptEndPoint = "/dkg/encrypt"
+const decryptEndPoint = "/dkg/decrypt"
 
-var suite = suites.MustFind("Ed25519")
 
 // commands defines the commands of the evoting contract. This interface helps in
 // testing the contract.
 type commands interface {
-	genPublicKey(snap store.Snapshot, step execution.Step) error
+	getPublicKey(snap store.Snapshot, step execution.Step) error
 	encrypt(snap store.Snapshot, step execution.Step) error
 	decrypt(snap store.Snapshot, step execution.Step) error
 }
@@ -34,14 +30,9 @@ const (
 	// ContractName is the name of the contract.
 	ContractName = "go.dedis.ch/dela.Evoting"
 
-	// MembersArg is the argument's name in the transaction that contains the
-	// addresses + public keys of each members that participates in DKG
-	// TODO : we should avoid this and find another way to instantiate the collective authority (without user input) cosipbft/controller/mod
-	MembersArg = "evoting:members"
-
-	// EncryptValueArg is the argument's name in the transaction that contains the
-	// provided value to encrypt.
-	EncryptValueArg = "evoting:value"
+	// PortNumberArg is the argument's name in the transaction that contains the
+	// port number of the dkg http server you want to communicate with.
+	PortNumberArg = "evoting:portNumber"
 
 	// KeyArg is the argument's name in the transaction that contains the
 	// key of the ciphertext.
@@ -56,20 +47,50 @@ const (
 	credentialAllCommand = "all"
 )
 
-
 // Command defines a type of command for the value contract
 type Command string
 
 const (
+	/* enter this command to allow the use of the Evoting contract : 
+	memcoin --config /tmp/node1 pool add\
+	    --key private.key\
+	    --args go.dedis.ch/dela.ContractArg --args go.dedis.ch/dela.Access\
+	    --args access:grant_id --args 0300000000000000000000000000000000000000000000000000000000000000\
+	    --args access:grant_contract --args go.dedis.ch/dela.Evoting\
+	    --args access:grant_command --args all\
+	    --args access:identity --args $(crypto bls signer read --path private.key --format BASE64_PUBKEY)\
+	    --args access:command --args GRANT
+	 */
+
 	// CmdGetPublicKey defines the command to init the DKG protocol and generate the public key
+	/*
+	memcoin --config /tmp/node1 pool add\
+	    --key private.key\
+	    --args go.dedis.ch/dela.ContractArg --args go.dedis.ch/dela.Evoting\
+	    --args evoting:command --args GETPUBLICKEY --args evoting:portNumber --args 8080
+	 */
 	CmdGetPublicKey Command = "GETPUBLICKEY"
 
 	// This command helps in testing, voters would send already encrypted ballots.
 	// TODO : convert to a Store like command
-	// CmdEncrypt defines the command to encrypt a plaintext and store its ciphertext
+	// CmdEncrypt defines the command store the encryption of a random plaintext, this plaintext is encrypted only once
+	// in the server since its encryption is non-deterministic and the storing of the ciphertext would result in a
+	// mismatch tree root error
+	/*
+	memcoin --config /tmp/node1 pool add\
+	    --key private.key\
+	    --args go.dedis.ch/dela.ContractArg --args go.dedis.ch/dela.Evoting\
+	    --args evoting:command --args ENCRYPT --args evoting:portNumber --args 8080 --args evoting:key --args ciphertext1
+	 */
 	CmdEncrypt Command = "ENCRYPT"
 
 	// CmdDecrypt defines the command to decrypt a value and print it
+	/*
+	memcoin --config /tmp/node1 pool add\
+	    --key private.key\
+	    --args go.dedis.ch/dela.ContractArg --args go.dedis.ch/dela.Evoting\
+	    --args evoting:command --args DECRYPT --args evoting:portNumber --args 8080 --args evoting:key --args ciphertext1
+	 */
 	CmdDecrypt Command = "DECRYPT"
 )
 
@@ -91,15 +112,6 @@ type Contract struct {
 	// index contains all the keys set (and not delete) by this contract so far
 	indexEncryptedBallots map[string]struct{}
 
-	// dkgActor is
-	dkgActor dkg.Actor
-
-	// onet is
-	onet mino.Mino
-
-	//TODO : use some sort of enums
-	status int
-
 	// access is the access control service managing this smart contract
 	access access.Service
 
@@ -112,15 +124,11 @@ type Contract struct {
 }
 
 // NewContract creates a new Value contract
-// (maybe pass injector to the constructor ?)
-func NewContract(aKey []byte, srvc access.Service, dkgActor dkg.Actor, onet mino.Mino) Contract {
+func NewContract(aKey []byte, srvc access.Service) Contract {
 	contract := Contract{
 		indexEncryptedBallots:     map[string]struct{}{},
 		access:    srvc,
 		accessKey: aKey,
-		dkgActor: dkgActor,
-		onet: onet,
-		status : 0,
 	}
 
 	contract.cmd = evotingCommand{Contract: &contract}
@@ -143,9 +151,9 @@ func (c Contract) Execute(snap store.Snapshot, step execution.Step) error {
 
 	switch Command(cmd) {
 	case CmdGetPublicKey:
-		err := c.cmd.genPublicKey(snap, step)
+		err := c.cmd.getPublicKey(snap, step)
 		if err != nil {
-			return xerrors.Errorf("failed to GENPUBLICKEY: %v", err)
+			return xerrors.Errorf("failed to GETPUBLICKEY: %v", err)
 		}
 	case CmdEncrypt:
 		err := c.cmd.encrypt(snap, step)
@@ -173,110 +181,73 @@ type evotingCommand struct {
 	*Contract
 }
 
-/*
-memcoin --config /tmp/node1 pool add\
---key private.key\
---args go.dedis.ch/dela.ContractArg --args go.dedis.ch/dela.Evoting\
---args evoting:members --args $(memcoin --config /tmp/node1 dkg export),$(memcoin --config /tmp/node2 dkg export)\
---args evoting:command --args GETPUBLICKEY
-*/
+// getPublicKey implements commands. It performs the GETPUBLICKEY command
+func (e evotingCommand) getPublicKey(snap store.Snapshot, step execution.Step) error {
+	portNumber := step.Current.GetArg(PortNumberArg)
 
-func (e evotingCommand) genPublicKey(snap store.Snapshot, step execution.Step) error {
+	resp, err := http.Get(url + string(portNumber) + getPublicKeyEndPoint)
+	if err != nil {
+		return xerrors.Errorf("failed to retrieve the public key: %v", err)
+	}
 
-	if e.status == 0 {
-		members := step.Current.GetArg(MembersArg)
-		if len(members) == 0 {
-			return xerrors.Errorf("'%s' not found in tx arg", MembersArg)
-		}
+	defer resp.Body.Close()
 
-		addrs, pubkeys, err := readMembers(members, e.onet)
-		if err != nil {
-			return xerrors.Errorf("failed to read roster: %v", err)
-		}
+	body, err := io.ReadAll(resp.Body)
 
-		if e.onet.GetAddress() == addrs[0] {
-			roster := authority.New(addrs, pubkeys)
-			pubkey, err := e.dkgActor.Setup(roster, roster.Len())
-			if err != nil {
-				return xerrors.Errorf("failed to setup DKG: %v", err)
-			}
+	dela.Logger.Info().Msg("Response body : " + string(body))
 
-			pubkeyBuf, err := pubkey.MarshalBinary()
-			if err != nil {
-				return xerrors.Errorf("failed to encode pubkey: %v", err)
-			}
-
-			dela.Logger.Info().
-				Hex("DKG public key", pubkeyBuf).
-				Msg("DKG public key")
-
-			err = snap.Set([]byte("publicKey"), pubkeyBuf)
-			if err != nil {
-				return xerrors.Errorf("failed to set value: %v", err)
-			}
-		}
-		e.status +=1
+	err = snap.Set([]byte("public_key"), body)
+	if err != nil {
+		return xerrors.Errorf("failed to set value: %v", err)
 	}
 
 	return nil
 }
 
-func readMembers(input []byte, onet mino.Mino) ([]mino.Address, []crypto.PublicKey, error) {
-
-	members := string(input)
-
-	membersParts := strings.Split(members, membersSeparator)
-
-	addrs := make([]mino.Address, len(membersParts))
-	pubkeys := make([]crypto.PublicKey, len(membersParts))
-
-	for i, member := range membersParts {
-		addr, pubkey, err := decodeMember(onet, member)
-		if err != nil {
-			return nil, nil, xerrors.Errorf("failed to decode: %v", err)
-		}
-
-		addrs[i] = addr
-		pubkeys[i] = pubkey
-	}
-	return addrs, pubkeys, nil
-}
-
-func decodeMember(onet mino.Mino, str string) (mino.Address, crypto.PublicKey, error) {
-	parts := strings.Split(str, addrKeySeparator)
-	if len(parts) != 2 {
-		return nil, nil, xerrors.New("invalid member base64 string")
-	}
-
-	// 1. Deserialize the address.
-	addrBuf, err := base64.StdEncoding.DecodeString(parts[0])
-	if err != nil {
-		return nil, nil, xerrors.Errorf("base64 address: %v", err)
-	}
-
-	addr := onet.GetAddressFactory().FromText(addrBuf)
-
-	// 2. Deserialize the public key.
-	publicKeyFactory := ed25519.NewPublicKeyFactory()
-
-	pubkeyBuf, err := base64.StdEncoding.DecodeString(parts[1])
-	if err != nil {
-		return nil, nil, xerrors.Errorf("base64 public key: %v", err)
-	}
-
-	pubkey, err := publicKeyFactory.FromBytes(pubkeyBuf)
-	if err != nil {
-		return nil, nil, xerrors.Errorf("failed to decode public key: %v", err)
-	}
-
-	return addr, pubkey, nil
-}
-
+// encrypt implements commands. It performs the ENCRYPT command.
 func (e evotingCommand) encrypt(snap store.Snapshot, step execution.Step) error {
+	portNumber := step.Current.GetArg(PortNumberArg)
+	keyArg := step.Current.GetArg(KeyArg)
+
+	resp, err := http.Get(url + string(portNumber) + encryptEndPoint)
+	if err != nil {
+		return xerrors.Errorf("failed to retrieve the encryption from the server: %v", err)
+	}
+
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+
+	dela.Logger.Info().Msg("Response body : " + string(body))
+
+	err = snap.Set(keyArg, body)
+	if err != nil {
+		return xerrors.Errorf("failed to set value: %v", err)
+	}
+
 	return nil
 }
 
+// decrypt implements commands. It performs the DECRYPT command.
 func (e evotingCommand) decrypt(snap store.Snapshot, step execution.Step) error {
+	portNumber := step.Current.GetArg(PortNumberArg)
+	keyArg := step.Current.GetArg(KeyArg)
+
+	value, err := snap.Get(keyArg)
+	if err != nil {
+		return xerrors.Errorf("failed to get key '%s': %v", keyArg, err)
+	}
+
+	resp, err := http.Post(url + string(portNumber) + decryptEndPoint, "application/json", bytes.NewBuffer(value))
+	if err != nil {
+		return xerrors.Errorf("failed retrieve the decryption from the server: %v", err)
+	}
+
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+
+	dela.Logger.Info().Msg("Response body : " + string(body))
+
 	return nil
 }
 

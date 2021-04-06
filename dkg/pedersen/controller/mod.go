@@ -14,8 +14,7 @@ func NewController() node.Initializer {
 	return controller{}
 }
 
-// minimal is an initializer with the minimum set of commands. Indeed it only
-// creates and injects a new DKG
+// controller is an initializer with a set of commands.
 //
 // - implements node.Initializer
 type controller struct{}
@@ -39,6 +38,15 @@ func (m controller) SetCommands(builder node.Builder) {
 		Required: true,
 	})
 	sub.SetAction(builder.MakeAction(&setupAction{}))
+
+	sub = cmd.SetSubCommand("initHttpServer")
+	sub.SetDescription("Initialize the DKG service HTTP server")
+	sub.SetFlags(cli.StringFlag{
+		Name:     "portNumber",
+		Usage:    "port number of the HTTP server",
+		Required: true,
+	})
+	sub.SetAction(builder.MakeAction(&initHttpServerAction{}))
 
 	sub = cmd.SetSubCommand("export")
 	sub.SetDescription("Export the node Address")
