@@ -22,6 +22,7 @@ import (
 	_ "go.dedis.ch/dela/dkg/pedersen/json"
 	_ "go.dedis.ch/dela/mino/router/tree/json"
 	"go.dedis.ch/dela/serde"
+	_ "go.dedis.ch/dela/shuffle/neff/json"
 )
 
 // JSONEngine is a context engine to marshal and unmarshal in JSON format.
