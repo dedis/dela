@@ -111,8 +111,8 @@ func RegisterContract(exec *native.Service, c Contract) {
 //
 // - implements native.Contract
 type Contract struct {
-	// index contains all the keys set (and not delete) by this contract so far
-	indexEncryptedBallots map[string]struct{}
+	// todo : do we really need this ?
+	//indexElection map[string]struct{}
 
 	// access is the access control service managing this smart contract
 	access access.Service
@@ -128,7 +128,7 @@ type Contract struct {
 // NewContract creates a new Value contract
 func NewContract(aKey []byte, srvc access.Service) Contract {
 	contract := Contract{
-		indexEncryptedBallots:     map[string]struct{}{},
+		//indexElection:     map[string]struct{}{},
 		access:    srvc,
 		accessKey: aKey,
 	}

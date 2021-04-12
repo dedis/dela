@@ -6,6 +6,8 @@ import (
 	"golang.org/x/xerrors"
 )
 
+//Todo : redefine structs using non-raw types
+
 var msgFormats = registry.NewSimpleRegistry()
 
 // RegisterMessageFormat register the engine for the provided format.
@@ -14,7 +16,6 @@ func RegisterMessageFormat(c serde.Format, f serde.FormatEngine) {
 }
 
 type ID uint16
-type Identity uint16
 
 type status uint16
 const(
@@ -25,24 +26,38 @@ const(
 	Decrypting = 4
 )
 
+// SimpleElection contains all information about a simple election
+type SimpleElection struct {
+	ElectionId       ID
+	AdminId			 ID
+	Candidates       []string
+	Status           status // Initial | Open | Closed | Shuffling | Decrypting | ..
+	Pubkey           []byte
+	EncryptedBallots map[ID][]byte
+	ShuffledBallots  [][]byte
+	DecryptedBallots []Ballot
+}
+
 // Election contains all information about an election
 //
 // - implements serde.Message
 type Election struct {
 	ElectionId       ID
+	AdminId			 ID
 	Configuration    Configuration
 	Status           status // Initial | Open | Closed | Shuffling | Decrypting | ..
 	Pubkey           []byte
-	EncryptedBallots map[Identity][]byte
+	EncryptedBallots map[ID][]byte
 	ShuffledBallots  [][]byte
 	DecryptedBallots []Ballot
 }
 
 // NewElection creates a new Election.
-func NewElection(ElectionId ID, Configuration Configuration, Status status, Pubkey []byte,
-	EncryptedBallots map[Identity][]byte, ShuffledBallots [][]byte, DecryptedBallots []Ballot) Election {
+func NewElection(ElectionId ID, AdminId ID, Configuration Configuration, Status status, Pubkey []byte,
+	EncryptedBallots map[ID][]byte, ShuffledBallots [][]byte, DecryptedBallots []Ballot) Election {
 	return Election{
 		ElectionId:       ElectionId,
+		AdminId:          AdminId,
 		Configuration:    Configuration,
 		Status:           Status,
 		Pubkey:           Pubkey,

@@ -35,6 +35,7 @@ import (
 
 	"go.dedis.ch/dela/cli/node"
 	access "go.dedis.ch/dela/contracts/access/controller"
+	evoting "go.dedis.ch/dela/contracts/evoting/controller"
 	cosipbft "go.dedis.ch/dela/core/ordering/cosipbft/controller"
 	db "go.dedis.ch/dela/core/store/kv/controller"
 	pool "go.dedis.ch/dela/core/txn/pool/controller"
@@ -72,6 +73,7 @@ func runWithCfg(args []string, cfg config) error {
 		access.NewController(),
 		proxy.NewController(),
 		shuffle.NewController(),
+		evoting.NewController(),
 	)
 
 	app := builder.Build()
