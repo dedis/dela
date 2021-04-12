@@ -29,6 +29,7 @@ package main
 import (
 	"fmt"
 	dkg "go.dedis.ch/dela/dkg/pedersen/controller"
+	shuffle "go.dedis.ch/dela/shuffle/neff/controller"
 	"io"
 	"os"
 
@@ -70,7 +71,7 @@ func runWithCfg(args []string, cfg config) error {
 		pool.NewController(),
 		access.NewController(),
 		proxy.NewController(),
-
+		shuffle.NewController(),
 	)
 
 	app := builder.Build()

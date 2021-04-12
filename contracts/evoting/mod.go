@@ -7,6 +7,7 @@ import (
 	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/execution/native"
 	"go.dedis.ch/dela/core/store"
+	"go.dedis.ch/kyber/v3/suites"
 	"golang.org/x/xerrors"
 	"io"
 	"net/http"
@@ -16,6 +17,7 @@ const url = "http://localhost:"
 const getPublicKeyEndPoint = "/dkg/pubkey"
 const encryptEndPoint = "/dkg/encrypt"
 const decryptEndPoint = "/dkg/decrypt"
+var suite = suites.MustFind("Ed25519")
 
 
 // commands defines the commands of the evoting contract. This interface helps in
@@ -51,7 +53,7 @@ const (
 type Command string
 
 const (
-	/* enter this command to allow the use of the Evoting contract : 
+	/* enter this command to allow the use of the Evoting contract :
 	memcoin --config /tmp/node1 pool add\
 	    --key private.key\
 	    --args go.dedis.ch/dela.ContractArg --args go.dedis.ch/dela.Access\

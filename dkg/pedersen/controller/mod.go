@@ -49,7 +49,7 @@ func (m controller) SetCommands(builder node.Builder) {
 	sub.SetAction(builder.MakeAction(&initHttpServerAction{}))
 
 	sub = cmd.SetSubCommand("export")
-	sub.SetDescription("Export the node Address")
+	sub.SetDescription("Export the node address and public key")
 	sub.SetAction(builder.MakeAction(&exportInfoAction{}))
 
 	sub = cmd.SetSubCommand("getPublicKey")
