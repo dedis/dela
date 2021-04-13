@@ -21,6 +21,7 @@ func (m controller) SetCommands(builder node.Builder) {
 	cmd := builder.SetCommand("e-voting")
 	cmd.SetDescription("... ")
 
+	// memcoin --config /tmp/node1 e-voting initHttpServer --portNumber 8080
 	sub := cmd.SetSubCommand("initHttpServer")
 	sub.SetDescription("Initialize the HTTP server")
 	sub.SetFlags(cli.StringFlag{

@@ -1,9 +1,10 @@
 package controller
 
 import (
+	"encoding/json"
+	"github.com/satori/go.uuid"
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cli/node"
-	"go.dedis.ch/dela/dkg"
-	"golang.org/x/xerrors"
 	"log"
 	"net/http"
 )
@@ -17,6 +18,9 @@ const getElectionStatusEndpoint = "/evoting/status"
 const getElectionInfoEndpoint = "/evoting/info"
 const cancelElectionEndpoint = "/evoting/decrypt"
 
+const token = "token"
+
+// TODO : Merge evoting and DKG web server ?
 
 // initHttpServer is an action to initialize the shuffle protocol
 //
@@ -24,21 +28,40 @@ const cancelElectionEndpoint = "/evoting/decrypt"
 type initHttpServer struct {
 }
 
-// TODO : Merge evoting and DKG web server ?
+type LoginResponse struct {
+	UserID string
+	Token string
+}
 
 // Execute implements node.ActionTemplate. It implements the handling of endpoints
 // and start the HTTP server
 func (a *initHttpServer) Execute(ctx node.Context) error {
 	portNumber := ctx.Flags.String("portNumber")
 
-	var actor dkg.Actor
-	err := ctx.Injector.Resolve(&actor)
-	if err != nil {
-		return xerrors.Errorf("failed to resolve actor: %v", err)
-	}
-
 	http.HandleFunc(loginEndPoint, func(w http.ResponseWriter, r *http.Request){
 
+		dela.Logger.Info().Msg(loginEndPoint)
+
+		userID := uuid.NewV4()
+		userToken := token
+
+		response := LoginResponse{
+			UserID: userID.String(),
+			Token:  userToken,
+		}
+
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, err = w.Write(js)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	})
 
 	http.HandleFunc(createElectionEndPoint, func(w http.ResponseWriter, r *http.Request){
