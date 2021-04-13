@@ -2,7 +2,9 @@ package evoting
 
 import (
 	"bytes"
+	"encoding/json"
 	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/contracts/evoting/types"
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/execution/native"
@@ -11,6 +13,7 @@ import (
 	"golang.org/x/xerrors"
 	"io"
 	"net/http"
+	"strconv"
 )
 
 const url = "http://localhost:"
@@ -26,6 +29,7 @@ type commands interface {
 	getPublicKey(snap store.Snapshot, step execution.Step) error
 	encrypt(snap store.Snapshot, step execution.Step) error
 	decrypt(snap store.Snapshot, step execution.Step) error
+	createSimpleElection (snap store.Snapshot, step execution.Step) error
 }
 
 const (
@@ -43,6 +47,8 @@ const (
 	// CmdArg is the argument's name to indicate the kind of command we want to
 	// run on the contract. Should be one of the Command type.
 	CmdArg = "evoting:command"
+
+	CreateSimpleElectionArg = "evoting:simpleElectionArgs"
 
 	// credentialAllCommand defines the credential command that is allowed to
 	// perform all commands.
@@ -94,6 +100,8 @@ const (
 	    --args evoting:command --args DECRYPT --args evoting:portNumber --args 8080 --args evoting:key --args ciphertext1
 	 */
 	CmdDecrypt Command = "DECRYPT"
+
+	CmdCreateSimpleElection Command = "CREATE_SIMPLE_ELECTION"
 )
 
 // NewCreds creates new credentials for a evoting contract execution. We might
@@ -167,7 +175,11 @@ func (c Contract) Execute(snap store.Snapshot, step execution.Step) error {
 		if err != nil {
 			return xerrors.Errorf("failed to DECRYPT: %v", err)
 		}
-
+	case CmdCreateSimpleElection:
+		err := c.cmd.createSimpleElection(snap, step)
+		if err != nil {
+			return xerrors.Errorf("failed to CREATE SIMPLE ELECTION: %v", err)
+		}
 	default:
 		return xerrors.Errorf("unknown command: %s", cmd)
 	}
@@ -181,6 +193,49 @@ func (c Contract) Execute(snap store.Snapshot, step execution.Step) error {
 // - implements commands
 type evotingCommand struct {
 	*Contract
+}
+
+type CreateSimpleElectionTransaction struct {
+	ElectionID uint16
+	Title string
+	AdminId string
+	Candidates []string
+	PublicKey []byte
+}
+
+func (e evotingCommand) createSimpleElection(snap store.Snapshot, step execution.Step) error {
+	createSimpleElectionArg := step.Current.GetArg(CreateSimpleElectionArg)
+
+	createSimpleElectionTransaction := new (CreateSimpleElectionTransaction)
+	err := json.NewDecoder(bytes.NewBuffer(createSimpleElectionArg)).Decode(createSimpleElectionTransaction)
+	if err != nil {
+		return xerrors.Errorf("failed to set unmarshall CreateSimpleElectionTransaction : %v", err)
+	}
+	
+	simpleElection := types.SimpleElection{
+		Title:            createSimpleElectionTransaction.Title,
+		ElectionId:       types.ID(createSimpleElectionTransaction.ElectionID),
+		AdminId:          createSimpleElectionTransaction.AdminId,
+		Candidates:       createSimpleElectionTransaction.Candidates,
+		Status:           1,
+		Pubkey:           createSimpleElectionTransaction.PublicKey,
+		EncryptedBallots: map[string][]byte{},
+		ShuffledBallots:  [][]byte{},
+		DecryptedBallots: []types.SimpleBallot{},
+	}
+
+	js, err := json.Marshal(simpleElection)
+	if err != nil {
+		return xerrors.Errorf("failed to set marshall types.SimpleElection : %v", err)
+	}
+
+	err = snap.Set([]byte(strconv.Itoa(int(simpleElection.ElectionId))), js)
+	if err != nil {
+		return xerrors.Errorf("failed to set value: %v", err)
+	}
+
+	return nil
+	
 }
 
 // getPublicKey implements commands. It performs the GETPUBLICKEY command

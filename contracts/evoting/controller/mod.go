@@ -3,6 +3,7 @@ package controller
 import (
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
+	"go.dedis.ch/dela/core/access"
 )
 
 // NewController returns a new controller initializer
@@ -29,7 +30,15 @@ func (m controller) SetCommands(builder node.Builder) {
 		Usage:    "port number of the HTTP server",
 		Required: true,
 	})
-	sub.SetAction(builder.MakeAction(&initHttpServer{}))
+	sub.SetAction(builder.MakeAction(&initHttpServerAction{
+		ElectionIdNonce: 0,
+		// TODO : should have the same client as pool controller
+		client:          &client{nonce: 1},
+	}))
+
+	sub = cmd.SetSubCommand("createElectionTest")
+	sub.SetDescription("createElectionTest")
+	sub.SetAction(builder.MakeAction(&createElectionTestAction{}))
 }
 
 // OnStart implements node.Initializer. It creates and registers a pedersen DKG.
@@ -40,4 +49,18 @@ func (m controller) OnStart(ctx cli.Flags, inj node.Injector) error {
 // OnStop implements node.Initializer.
 func (controller) OnStop(node.Injector) error {
 	return nil
+}
+
+// client return monotically increasing nonce
+//
+// - implements signed.Client
+type client struct {
+	nonce uint64
+}
+
+// GetNonce implements signed.Client
+func (c *client) GetNonce(access.Identity) (uint64, error) {
+	res := c.nonce
+	c.nonce++
+	return res, nil
 }

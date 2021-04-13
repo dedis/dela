@@ -28,14 +28,20 @@ const(
 
 // SimpleElection contains all information about a simple election
 type SimpleElection struct {
+	Title            string
 	ElectionId       ID
-	AdminId			 ID
+	AdminId			 string
 	Candidates       []string
 	Status           status // Initial | Open | Closed | Shuffling | Decrypting | ..
 	Pubkey           []byte
-	EncryptedBallots map[ID][]byte
+	EncryptedBallots map[string][]byte
 	ShuffledBallots  [][]byte
-	DecryptedBallots []Ballot
+	DecryptedBallots []SimpleBallot
+}
+
+// SimpleBallot contains all information about a simple ballot
+type SimpleBallot struct {
+	Vote string
 }
 
 // Election contains all information about an election
