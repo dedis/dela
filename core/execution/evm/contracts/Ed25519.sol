@@ -20,6 +20,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// Upstream: https://github.com/javgh/ed25519-solidity
+
 pragma solidity ^0.8.2;
 
 // Using formulas from https://hyperelliptic.org/EFD/g1p/auto-twisted-projective.html
