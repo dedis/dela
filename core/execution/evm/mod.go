@@ -27,6 +27,9 @@ import (
 )
 
 var storeKey = [32]byte{0, 0, 10}
+var gasUsageKey = [32]byte{0, 0, 20}
+var runCountKey = [32]byte{0, 0, 30}
+var resultKey = [32]byte{0, 0, 40}
 
 var nilAddress = common.HexToAddress(
 	"0x0000000000000000000000000000000000000000")
@@ -46,12 +49,13 @@ var txParams = struct {
 	// amount of Gwei (nano ether) that the user is willing to spend on each
 	// unit of Gas
 	GasPrice *big.Int
-}{1e7, big.NewInt(1)}
+}{6721975, big.NewInt(20)}
 
-var method = "increment"
+var incrementMethod = "increment"
+var scalarMultBaseMethod = "scalarMultBase"
 
 // WeiPerEther ...
-const WeiPerEther = 1e18
+const WeiPerEther = 1e9
 
 // EvmAccount is the abstraction for an Ethereum account
 type EvmAccount struct {
@@ -85,7 +89,7 @@ var testPrivateKeys = []string{
 }
 
 // NewExection instantiates a new EvmService
-func NewExecution() (*evmService, error) {
+func NewExecution(contract string) (*evmService, error) {
 	account, err := NewEvmAccount(testPrivateKeys[0])
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create EvmAccount: %v", err)
@@ -112,17 +116,20 @@ func NewExecution() (*evmService, error) {
 		return nil, xerrors.Errorf("failed to commit root to trie: %v", err)
 	}
 
-	contractJSON, err := ioutil.ReadFile("contracts/increment.abi")
+	contractJSON, err := ioutil.ReadFile(fmt.Sprintf("contracts/%s.abi", contract))
 	if err != nil {
-		return nil, xerrors.Errorf("failed to read increment contract abi: %v", err)
+		return nil, xerrors.Errorf("failed to read %s contract abi: %v", contract, err)
 	}
 
 	contractAbi, err := abi.JSON(strings.NewReader(string(contractJSON)))
 	if err != nil {
-		return nil, xerrors.Errorf("failed to parse increment contract abi: %v", err)
+		return nil, xerrors.Errorf("failed to parse %s contract abi: %v", contract, err)
 	}
 
-	spawnContract(contractAbi, stateDb, account)
+	err = spawnContract(contract, contractAbi, stateDb, account)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to spawn contract: %v", err)
+	}
 
 	instanceAddr := crypto.CreateAddress(account.Address, 0)
 
@@ -134,11 +141,11 @@ func NewExecution() (*evmService, error) {
 	}, nil
 }
 
-func spawnContract(contractAbi abi.ABI, stateDb *state.StateDB, account *EvmAccount) error {
+func spawnContract(contract string, contractAbi abi.ABI, stateDb *state.StateDB, account *EvmAccount) error {
 
-	contractBuf, err := ioutil.ReadFile("contracts/increment.bin")
+	contractBuf, err := ioutil.ReadFile(fmt.Sprintf("contracts/%s.bin", contract))
 	if err != nil {
-		return xerrors.Errorf("failed to read increment contract: %v", err)
+		return xerrors.Errorf("failed to read %s contract: %v", contract, err)
 	}
 
 	contractHex := fmt.Sprintf("%s", contractBuf)
@@ -150,7 +157,7 @@ func spawnContract(contractAbi abi.ABI, stateDb *state.StateDB, account *EvmAcco
 
 	packedArgs, err := contractAbi.Pack("")
 	if err != nil {
-		return xerrors.Errorf("failed to pack args for increment contract: %v", err)
+		return xerrors.Errorf("failed to pack args for %s contract: %v", contract, err)
 	}
 
 	callData := append(contractByteCode, packedArgs...)
@@ -163,7 +170,11 @@ func spawnContract(contractAbi abi.ABI, stateDb *state.StateDB, account *EvmAcco
 		return xerrors.Errorf("failed to sign transaction: %v", err)
 	}
 
-	stateDb.AddBalance(account.Address, big.NewInt(1e8))
+	balance, ok := new(big.Int).SetString("100000000000000000000", 10)
+	if !ok {
+		return xerrors.Errorf("failed to parse balance")
+	}
+	stateDb.AddBalance(account.Address, balance)
 
 	// Gets the needed parameters
 	chainConfig := getChainConfig()
@@ -171,7 +182,7 @@ func spawnContract(contractAbi abi.ABI, stateDb *state.StateDB, account *EvmAcco
 
 	// GasPool tracks the amount of gas available during execution of the
 	// transactions in a block
-	gp := new(core.GasPool).AddGas(uint64(1e18))
+	gp := new(core.GasPool).AddGas(uint64(1e15))
 	usedGas := uint64(0)
 	ug := &usedGas
 
@@ -208,6 +219,8 @@ func spawnContract(contractAbi abi.ABI, stateDb *state.StateDB, account *EvmAcco
 		return xerrors.Errorf("failed to commit trie: %v", err)
 	}
 
+	//fmt.Printf("Used %d gas to spawn the contract\n", usedGas)
+
 	return nil
 }
 
@@ -220,32 +233,125 @@ func (e *evmService) Execute(snap store.Snapshot, step execution.Step) (executio
 	}
 
 	if len(current) == 0 {
-		current = make([]byte, 8)
+		current = make([]byte, 32)
 	}
 
-	buf, err := e.ExecuteEVM(current)
-	if err != nil {
-		return res, xerrors.Errorf("failed to execute contract: %v", err)
+	contract := string(step.Current.GetArg("contractName"))
+	//fmt.Printf("Executing contract %s\n", contract)
+
+	var output []byte
+	if contract == "increment" {
+		buf, err := e.ExecuteIncrement(current)
+		if err != nil {
+			return res, xerrors.Errorf("failed to execute increment contract: %v", err)
+		}
+
+		copy(output, buf)
+	} else {
+		currentCostBuf, err := snap.Get(gasUsageKey[:])
+		if err != nil {
+			return res, xerrors.Errorf("failed to get current cost: %v", err)
+		}
+
+		currentCost := binary.LittleEndian.Uint64(currentCostBuf)
+
+		runCountBuf, err := snap.Get(runCountKey[:])
+		if err != nil {
+			return res, xerrors.Errorf("failed to get run count: %v", err)
+		}
+
+		runCount := binary.LittleEndian.Uint64(runCountBuf)
+
+		buf, consumption, err := e.ExecuteEd25519(current)
+		if err != nil {
+			return res, xerrors.Errorf("failed to execute ed25519 contract: %v", err)
+		}
+
+		copy(output, buf)
+
+		newCost := currentCost + consumption
+		newCostBuf := make([]byte, 8)
+		binary.LittleEndian.PutUint64(newCostBuf, newCost)
+		snap.Set(gasUsageKey[:], newCostBuf)
+
+		newRunCount := runCount + 1
+		newRunCountBuf := make([]byte, 8)
+		binary.LittleEndian.PutUint64(newRunCountBuf, newRunCount)
+		snap.Set(runCountKey[:], newRunCountBuf)
 	}
 
-	snap.Set(storeKey[:], buf)
+	snap.Set(resultKey[:], output)
 	res.Accepted = true
 	return res, nil
+}
+
+// ExecuteEd25519 executes the scalarMultBase method in the smart contract
+// which generates an Ed25519 public key
+func (e *evmService) ExecuteEd25519(input []byte) ([]byte, uint64, error) {
+	contractAbi := e.contractAbi
+	accountAddr := e.accountAddr
+	instanceAddr := e.instanceAddr
+
+	reverse(input) // input is in little-endian
+	contractInput := new(big.Int).SetBytes(input)
+	callData, err := contractAbi.Pack(scalarMultBaseMethod, contractInput)
+	//fmt.Printf("input=%v\n", input)
+	if err != nil {
+		return nil, 0, xerrors.Errorf("failed to pack method `%s`: %v", "scalarMultBase", err)
+	}
+
+	timestamp := time.Now().UnixNano()
+
+	evm := vm.NewEVM(getBlockContext(timestamp), getTxContext(), e.stateDb, getChainConfig(), getVMConfig())
+
+	res, remainingGas, err := evm.Call(vm.AccountRef(accountAddr), instanceAddr, callData, uint64(1*WeiPerEther), big.NewInt(0))
+	if err != nil {
+		return nil, 0, xerrors.Errorf("failed to execute EVM view method: %+v", err)
+	}
+
+	methodAbi, ok := contractAbi.Methods[scalarMultBaseMethod]
+	if !ok {
+		return nil, 0, xerrors.Errorf("method `%s` does not exist for this contract: %v", scalarMultBaseMethod, err)
+	}
+
+	//outputBuf := make([]byte, 64)
+	itfs, err := methodAbi.Outputs.UnpackValues(res)
+	if err != nil {
+		return nil, 0, xerrors.Errorf("failed to unpack values: %v", err)
+	}
+
+	if len(itfs) == 0 {
+		return nil, 0, xerrors.Errorf("did not get output from the contract")
+	}
+
+	yInt := itfs[1].(*big.Int)
+	y := yInt.Bytes()
+	reverse(y)
+
+	//y[31] ^= (x[0] & 1) << 7
+	consumedGas := uint64(1*WeiPerEther) - remainingGas
+	return y, consumedGas, nil
+}
+
+func reverse(buf []byte) {
+	for i := 0; i < len(buf)/2; i++ {
+		buf[i], buf[len(buf)-i-1] = buf[len(buf)-i-1], buf[i]
+	}
 }
 
 // ExecuteEVM executes the `increment` contract wit the given input which
 // represents a uint64 number in little-endian format. It returns `input+1`
 // in little-endian format.
-func (e *evmService) ExecuteEVM(input []byte) ([]byte, error) {
+func (e *evmService) ExecuteIncrement(input []byte) ([]byte, error) {
 	contractAbi := e.contractAbi
 	accountAddr := e.accountAddr
 	instanceAddr := e.instanceAddr
 
 	currentVal := binary.LittleEndian.Uint64(input)
 
-	callData, err := contractAbi.Pack(method, new(big.Int).SetUint64(currentVal))
+	callData, err := contractAbi.Pack(incrementMethod, new(big.Int).SetUint64(currentVal))
 	if err != nil {
-		return nil, xerrors.Errorf("failed to pack method `%s`: %v", method, err)
+		return nil, xerrors.Errorf("failed to pack method `%s`: %v", incrementMethod, err)
 	}
 
 	timestamp := time.Now().UnixNano()
@@ -257,9 +363,9 @@ func (e *evmService) ExecuteEVM(input []byte) ([]byte, error) {
 		return nil, xerrors.Errorf("failed to execute EVM view method: %v", err)
 	}
 
-	methodAbi, ok := contractAbi.Methods[method]
+	methodAbi, ok := contractAbi.Methods[incrementMethod]
 	if !ok {
-		return nil, xerrors.Errorf("method `%s` does not exist for this contract: %v", method, err)
+		return nil, xerrors.Errorf("method `%s` does not exist for this contract: %v", incrementMethod, err)
 	}
 
 	itfs, err := methodAbi.Outputs.UnpackValues(ret)
@@ -273,11 +379,7 @@ func (e *evmService) ExecuteEVM(input []byte) ([]byte, error) {
 
 	val := itfs[0].(*big.Int)
 	buf := val.Bytes()
-
-	// Convert to little-endian
-	for i := 0; i < len(buf)/2; i++ {
-		buf[i], buf[len(buf)-i-1] = buf[len(buf)-i-1], buf[i]
-	}
+	reverse(buf)
 
 	for len(buf) < 8 {
 		buf = append(buf, 0)
@@ -321,7 +423,7 @@ func getChainConfig() *params.ChainConfig {
 		HomesteadBlock: big.NewInt(0),
 		DAOForkBlock:   nil,
 		DAOForkSupport: false,
-		EIP150Block:    nil,
+		EIP150Block:    big.NewInt(0), // required because Ed25519 contract has a staticall which consumes a lot of gas
 		EIP150Hash: common.HexToHash(
 			"0x0000000000000000000000000000000000000000"),
 		EIP155Block:    big.NewInt(0),
@@ -344,7 +446,9 @@ func getVMConfig() vm.Config {
 		// Debug enables debugging Interpreter options
 		Debug: false,
 		// Tracer is the op code logger
-		Tracer: nil,
+		Tracer: vm.NewStructLogger(&vm.LogConfig{
+			Debug: true,
+		}),
 		// NoRecursion disables Interpreter call, callcode,
 		// delegate call and create.
 		NoRecursion: false,
