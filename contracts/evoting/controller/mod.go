@@ -39,6 +39,10 @@ func (m controller) SetCommands(builder node.Builder) {
 	sub = cmd.SetSubCommand("createElectionTest")
 	sub.SetDescription("createElectionTest")
 	sub.SetAction(builder.MakeAction(&createElectionTestAction{}))
+
+	sub = cmd.SetSubCommand("castVoteTest")
+	sub.SetDescription("castVoteTest")
+	sub.SetAction(builder.MakeAction(&castVoteTestAction{}))
 }
 
 // OnStart implements node.Initializer. It creates and registers a pedersen DKG.

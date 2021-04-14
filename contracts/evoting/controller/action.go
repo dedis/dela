@@ -7,6 +7,7 @@ import (
 	"github.com/satori/go.uuid"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cli/node"
+	"go.dedis.ch/dela/contracts/evoting/types"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/pool"
@@ -27,7 +28,6 @@ const url = "http://localhost:"
 
 const loginEndPoint = "/evoting/login"
 const createElectionEndPoint = "/evoting/create"
-const createElectionPollingEndPoint = "/evoting/create/polling"
 const castVoteEndpoint = "/evoting/cast"
 const closeElectionEndpoint = "/evoting/close"
 const getElectionResultEndpoint = "/evoting/result"
@@ -79,9 +79,26 @@ type CreateSimpleElectionTransaction struct {
 	PublicKey []byte
 }
 
-
 type CreateSimpleElectionResponse struct {
 	ElectionID uint16
+	//Success bool
+	//Error string
+}
+
+type CastVoteRequest struct {
+	ElectionID uint16
+	UserId string
+	Ballot []byte
+	Token string
+}
+
+type CastVoteTransaction struct {
+	ElectionID uint16
+	UserId string
+	Ballot []byte
+}
+
+type CastVoteResponse struct {
 	//Success bool
 	//Error string
 }
@@ -130,6 +147,11 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		err = json.NewDecoder(bytes.NewBuffer(body)).Decode(createSimpleElectionRequest)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		if createSimpleElectionRequest.Token != token{
+			http.Error(w, "Invalid token", http.StatusUnauthorized)
 			return
 		}
 
@@ -252,6 +274,139 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 	http.HandleFunc(castVoteEndpoint, func(w http.ResponseWriter, r *http.Request){
 
+		body, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		castVoteRequest := new (CastVoteRequest)
+		err = json.NewDecoder(bytes.NewBuffer(body)).Decode(castVoteRequest)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		if castVoteRequest.Token != token{
+			http.Error(w, "Invalid token", http.StatusUnauthorized)
+			return
+		}
+
+		if castVoteRequest.ElectionID >= a.ElectionIdNonce{
+			http.Error(w, "The election does not exist", http.StatusNotFound)
+			return
+		}
+
+		var p pool.Pool
+		err = ctx.Injector.Resolve(&p)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		signer, err := getSigner(signerFilePath)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		manager := getManager(signer, a.client)
+
+		err = manager.Sync()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		castVoteTransaction := CastVoteTransaction{
+			ElectionID: castVoteRequest.ElectionID,
+			UserId:     castVoteRequest.UserId,
+			Ballot:     castVoteRequest.Ballot,
+		}
+
+		js, err := json.Marshal(castVoteTransaction)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		args := make([]txn.Arg, 3)
+		args[0] = txn.Arg{
+			Key:   "go.dedis.ch/dela.ContractArg",
+			Value: []byte("go.dedis.ch/dela.Evoting"),
+		}
+		args[1] = txn.Arg{
+			Key:   "evoting:command",
+			Value: []byte("CAST_VOTE"),
+		}
+		args[2] = txn.Arg{
+			Key:   "evoting:castVoteArgs",
+			Value: js,
+		}
+
+		tx, err := manager.Make(args...)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		var service ordering.Service
+		err = ctx.Injector.Resolve(&service)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		watchCtx, cancel := context.WithTimeout(context.Background(), createElectionTimeout)
+		defer cancel()
+
+		events := service.Watch(watchCtx)
+
+		err = p.Add(tx)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		for event := range events {
+			for _, res := range event.Transactions {
+				if !bytes.Equal(res.GetTransaction().GetID(), tx.GetID()) {
+					continue
+				}
+
+				dela.Logger.Debug().
+					Hex("id", tx.GetID()).
+					Msg("transaction included in the block")
+
+				accepted, msg := res.GetStatus()
+				if !accepted {
+					http.Error(w, "Transaction refused : " + msg, http.StatusInternalServerError)
+					return
+				}
+
+				response := CastVoteResponse{
+				}
+
+				js, err := json.Marshal(response)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				_, err = w.Write(js)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				return
+			}
+		}
+
+		http.Error(w, "Transaction not found in the block", http.StatusInternalServerError)
+		return
+
+
 	})
 
 	http.HandleFunc(closeElectionEndpoint, func(w http.ResponseWriter, r *http.Request){
@@ -330,6 +485,59 @@ func (a *createElectionTestAction) Execute(ctx node.Context) error {
 
 	dela.Logger.Info().Msg("Response body : " + string(body))
 
+	return nil
+}
+
+// castVoteTestAction is an action to
+//
+// - implements node.ActionTemplate
+type castVoteTestAction struct {
+}
+
+// Execute implements node.ActionTemplate. It creates
+func (a *castVoteTestAction) Execute(ctx node.Context) error {
+
+	castVoteRequest := CastVoteRequest{
+		ElectionID: 0,
+		UserId:     "user1",
+		Ballot:     []byte("ballot1"),
+		Token:      token,
+	}
+
+	js, err := json.Marshal(castVoteRequest)
+	if err != nil {
+		return xerrors.Errorf("failed to set marshall types.SimpleElection : %v", err)
+	}
+
+	resp, err := http.Post(url + strconv.Itoa(1000) + castVoteEndpoint, "application/json", bytes.NewBuffer(js))
+	if err != nil {
+		return xerrors.Errorf("failed retrieve the decryption from the server: %v", err)
+	}
+
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+
+	dela.Logger.Info().Msg("Response body : " + string(body))
+
+	var service ordering.Service
+	err = ctx.Injector.Resolve(&service)
+	if err != nil {
+		return xerrors.Errorf("failed to resolve service: %v", err)
+	}
+
+	proof, err := service.GetProof([]byte(strconv.Itoa(0)))
+	if err != nil {
+		return xerrors.Errorf("failed to read on the blockchain: %v", err)
+	}
+
+	simpleElection := new (types.SimpleElection)
+	err = json.NewDecoder(bytes.NewBuffer(proof.GetValue())).Decode(simpleElection)
+	if err != nil {
+		return xerrors.Errorf("failed to set unmarshall CastVoteTransaction : %v", err)
+	}
+
+	dela.Logger.Info().Msg("Length encrypted ballots : " + strconv.Itoa(len(simpleElection.EncryptedBallots)))
+	dela.Logger.Info().Msg("Ballot of user1 : " + string(simpleElection.EncryptedBallots["user1"]))
 
 	return nil
 }

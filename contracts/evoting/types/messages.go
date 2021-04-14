@@ -29,7 +29,7 @@ const(
 // SimpleElection contains all information about a simple election
 type SimpleElection struct {
 	Title            string
-	ElectionId       ID
+	ElectionID       ID
 	AdminId			 string
 	Candidates       []string
 	Status           status // Initial | Open | Closed | Shuffling | Decrypting | ..
