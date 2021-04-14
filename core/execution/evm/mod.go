@@ -41,6 +41,9 @@ type evmService struct {
 	accountAddr  common.Address
 }
 
+// GasLimit should be higher than the gas consumed during
+// the smart contract execution. We chose 1e7 here because scalarMultBase takes
+// around 500_000 units of gas
 var txParams = struct {
 	// maximum amount of Gas that a user is willing to pay for performing an
 	// action or confirming a transaction
@@ -49,7 +52,7 @@ var txParams = struct {
 	// amount of Gwei (nano ether) that the user is willing to spend on each
 	// unit of Gas
 	GasPrice *big.Int
-}{6721975, big.NewInt(20)}
+}{1e7, big.NewInt(1)}
 
 var incrementMethod = "increment"
 var scalarMultBaseMethod = "scalarMultBase"
