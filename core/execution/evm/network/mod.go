@@ -23,7 +23,7 @@ func main() {
 		panic("failed to create addr: " + err.Error())
 	}
 
-	evmSvc, err := evm.NewExecution()
+	evmSvc, err := evm.NewExecution("instruction")
 	if err != nil {
 		log.Fatalf("failed to start evm svc: %v\n", err)
 	}
@@ -51,7 +51,7 @@ func main() {
 
 		fmt.Printf("received: %d\n", val)
 
-		res, err = evmSvc.ExecuteEVM(res)
+		res, err = evmSvc.ExecuteIncrement(res)
 		if err != nil {
 			log.Fatalf("failed to execute contract: %v", err)
 		}
