@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"go.dedis.ch/dela/internal/tracing"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/router/tree"
 	"go.dedis.ch/dela/serde"
@@ -99,6 +100,91 @@ func ExampleRPC_Stream() {
 	}
 
 	// Output: B Hello World!
+}
+
+func ExampleRPC_OpentracingDemo() {
+	N := 20
+	minos := make([]*Minogrpc, N)
+	rpcs := make([]mino.RPC, N)
+
+	for i := 0; i < N; i++ {
+		m, err := NewMinogrpc(ParseAddress("127.0.0.1", 0), tree.NewRouter(NewAddressFactory()))
+		if err != nil {
+			panic(fmt.Sprintf("overlay %d failed: %s", i, err.Error()))
+		}
+		minos[i] = m
+		defer minos[i].GracefulStop()
+
+		rpcs[i] = mino.MustCreateRPC(minos[i], "test", exampleHandler{}, exampleFactory{})
+	}
+
+	for i := 0; i < N; i++ {
+		for j := 0; j < N; j++ {
+			if i == j {
+				continue
+			}
+			mA, mB := minos[i], minos[j]
+			mA.GetCertificateStore().Store(mB.GetAddress(), mB.GetCertificate())
+		}
+	}
+
+	addrs := make([]mino.Address, N)
+	for i := 0; i < N; i++ {
+		addrs[i] = minos[i].GetAddress()
+	}
+	minoAddrs := mino.NewAddresses(addrs...)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ctx = context.WithValue(ctx, tracing.ProtocolKey, "example-protocol")
+
+	sender, recv, err := rpcs[0].Stream(ctx, minoAddrs)
+	if err != nil {
+		panic("stream failed: " + err.Error())
+	}
+
+	err = <-sender.Send(exampleMessage{value: "Hello World!"}, addrs[1:]...)
+	if err != nil {
+		panic("failed to send: " + err.Error())
+	}
+
+	for i := 0; i < N-1; i++ {
+		from, msg, err := recv.Recv(ctx)
+		if err != nil {
+			panic("failed to receive: " + err.Error())
+		}
+
+		idx := -1
+		for i := 1; i < N; i++ {
+			if addrs[i].Equal(from) {
+				idx = i
+				break
+			}
+		}
+
+		fmt.Printf("%d %s\n", idx, msg.(exampleMessage).value)
+	}
+
+	// Unordered output: 1 Hello World!
+	// 2 Hello World!
+	// 3 Hello World!
+	// 4 Hello World!
+	// 5 Hello World!
+	// 6 Hello World!
+	// 7 Hello World!
+	// 8 Hello World!
+	// 9 Hello World!
+	// 10 Hello World!
+	// 11 Hello World!
+	// 12 Hello World!
+	// 13 Hello World!
+	// 14 Hello World!
+	// 15 Hello World!
+	// 16 Hello World!
+	// 17 Hello World!
+	// 18 Hello World!
+	// 19 Hello World!
+
 }
 
 // exampleHandler is an RPC handler example.

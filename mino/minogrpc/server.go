@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/internal/tracing"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
@@ -31,6 +32,9 @@ import (
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
+
+	otgrpc "github.com/opentracing-contrib/go-grpc"
+	"github.com/opentracing/opentracing-go"
 )
 
 const (
@@ -48,6 +52,8 @@ const (
 	// wait for a grpc connection to complete
 	defaultMinConnectTimeout = 10 * time.Second
 )
+
+var getTracerForAddr = tracing.GetTracerForAddr
 
 type overlayServer struct {
 	*overlay
@@ -227,7 +233,7 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 		return xerrors.Errorf("routing table: %v", err)
 	}
 
-	uri, streamID, gateway := readHeaders(headers)
+	uri, streamID, gateway, protocol := readHeaders(headers)
 	if streamID == "" {
 		return xerrors.New("unexpected empty stream ID")
 	}
@@ -240,7 +246,9 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 	md := metadata.Pairs(
 		headerURIKey, uri,
 		headerStreamIDKey, streamID,
-		headerGatewayKey, o.myAddrStr)
+		headerGatewayKey, o.myAddrStr,
+		tracing.ProtocolTag, protocol,
+	)
 
 	// This lock will make sure that a session is ready before any message
 	// forwarded will be received.
@@ -382,7 +390,7 @@ func (o *overlayServer) Forward(ctx context.Context, p *ptypes.Packet) (*ptypes.
 		return nil, xerrors.New("no header in the context")
 	}
 
-	uri, streamID, gateway := readHeaders(headers)
+	uri, streamID, gateway, _ := readHeaders(headers)
 
 	endpoint, found := o.endpoints[uri]
 	if !found {
@@ -636,12 +644,53 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 		return conn, nil
 	}
 
-	clientPubCert, err := mgr.certs.Load(to)
+	ta, err := mgr.getTransportCredential(to)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to retrieve transport credential: %v", err)
+	}
+
+	netAddr, ok := to.(session.Address)
+	if !ok {
+		return nil, xerrors.Errorf("invalid address type '%T'", to)
+	}
+
+	// Connecting using TLS and the distant server certificate as the root.
+	addr := netAddr.GetDialAddress()
+	tracer, err := getTracerForAddr(addr)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to get tracer for addr %s: %v", addr, err)
+	}
+
+	conn, err = grpc.Dial(addr,
+		grpc.WithTransportCredentials(ta),
+		grpc.WithConnectParams(grpc.ConnectParams{
+			Backoff:           backoff.DefaultConfig,
+			MinConnectTimeout: defaultMinConnectTimeout,
+		}),
+		grpc.WithUnaryInterceptor(
+			otgrpc.OpenTracingClientInterceptor(tracer, otgrpc.SpanDecorator(decorateClientTrace)),
+		),
+		grpc.WithStreamInterceptor(
+			otgrpc.OpenTracingStreamClientInterceptor(tracer, otgrpc.SpanDecorator(decorateClientTrace)),
+		),
+	)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to dial: %v", err)
+	}
+
+	mgr.conns[to] = conn
+	mgr.counters[to] = 1
+
+	return conn, nil
+}
+
+func (mgr *connManager) getTransportCredential(addr mino.Address) (credentials.TransportCredentials, error) {
+	clientPubCert, err := mgr.certs.Load(addr)
 	if err != nil {
 		return nil, xerrors.Errorf("while loading distant cert: %v", err)
 	}
 	if clientPubCert == nil {
-		return nil, xerrors.Errorf("certificate for '%v' not found", to)
+		return nil, xerrors.Errorf("certificate for '%v' not found", addr)
 	}
 
 	pool := x509.NewCertPool()
@@ -660,27 +709,7 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 		RootCAs:      pool,
 	})
 
-	netAddr, ok := to.(session.Address)
-	if !ok {
-		return nil, xerrors.Errorf("invalid address type '%T'", to)
-	}
-
-	// Connecting using TLS and the distant server certificate as the root.
-	conn, err = grpc.Dial(netAddr.GetDialAddress(),
-		grpc.WithTransportCredentials(ta),
-		grpc.WithConnectParams(grpc.ConnectParams{
-			Backoff:           backoff.DefaultConfig,
-			MinConnectTimeout: defaultMinConnectTimeout,
-		}),
-	)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to dial: %v", err)
-	}
-
-	mgr.conns[to] = conn
-	mgr.counters[to] = 1
-
-	return conn, nil
+	return ta, nil
 }
 
 // Release implements session.ConnectionManager. It closes the connection to the
@@ -712,10 +741,11 @@ func (mgr *connManager) Release(to mino.Address) {
 	}
 }
 
-func readHeaders(md metadata.MD) (uri string, streamID string, gw string) {
+func readHeaders(md metadata.MD) (uri string, streamID string, gw string, protocol string) {
 	uri = getOrEmpty(md, headerURIKey)
 	streamID = getOrEmpty(md, headerStreamIDKey)
 	gw = getOrEmpty(md, headerGatewayKey)
+	protocol = getOrEmpty(md, tracing.ProtocolTag)
 
 	return
 }
@@ -741,4 +771,24 @@ func uriFromContext(ctx context.Context) string {
 	}
 
 	return apiURI[0]
+}
+
+// decorateClientTrace adds the protocol tag and the streamID tag to a client
+// side trace.
+func decorateClientTrace(ctx context.Context, span opentracing.Span, method string,
+	req, resp interface{}, grpcError error) {
+	md, ok := metadata.FromOutgoingContext(ctx)
+	if !ok {
+		return
+	}
+
+	protocol := getOrEmpty(md, tracing.ProtocolTag)
+	if protocol != "" {
+		span.SetTag(tracing.ProtocolTag, protocol)
+	}
+
+	streamID := getOrEmpty(md, headerStreamIDKey)
+	if streamID != "" {
+		span.SetTag(headerStreamIDKey, streamID)
+	}
 }

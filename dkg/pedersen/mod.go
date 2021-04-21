@@ -8,6 +8,7 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/dkg/pedersen/types"
+	"go.dedis.ch/dela/internal/tracing"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/kyber/v3"
@@ -20,6 +21,15 @@ import (
 
 // suite is the Kyber suite for Pedersen.
 var suite = suites.MustFind("Ed25519")
+
+var (
+	// protocolNameSetup denotes the value of the protocol span tag associated
+	// with the `dkg-setup` protocol.
+	protocolNameSetup = "dkg-setup"
+	// protocolNameDecrypt denotes the value of the protocol span tag
+	// associated with the `dkg-decrypt` protocol.
+	protocolNameDecrypt = "dkg-decrypt"
+)
 
 const (
 	setupTimeout   = time.Second * 300
@@ -81,6 +91,7 @@ func (a *Actor) Setup(co crypto.CollectiveAuthority, threshold int) (kyber.Point
 
 	ctx, cancel := context.WithTimeout(context.Background(), setupTimeout)
 	defer cancel()
+	ctx = context.WithValue(ctx, tracing.ProtocolKey, protocolNameSetup)
 
 	sender, receiver, err := a.rpc.Stream(ctx, co)
 	if err != nil {
@@ -192,6 +203,7 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), decryptTimeout)
 	defer cancel()
+	ctx = context.WithValue(ctx, tracing.ProtocolKey, protocolNameDecrypt)
 
 	sender, receiver, err := a.rpc.Stream(ctx, players)
 	if err != nil {
