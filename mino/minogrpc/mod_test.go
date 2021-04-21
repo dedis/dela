@@ -1,7 +1,6 @@
 package minogrpc
 
 import (
-	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -93,7 +92,7 @@ func TestMinogrpc_BadTracer_New(t *testing.T) {
 	require.EqualError(
 		t,
 		err,
-		fmt.Sprintf("failed to get tracer for addr 127.0.0.1:3333: %s", fake.GetError().Error()),
+		fake.Err("failed to get tracer for addr 127.0.0.1:3333"),
 	)
 
 	getTracerForAddr = tracing.GetTracerForAddr
