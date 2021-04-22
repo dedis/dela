@@ -9,6 +9,8 @@ import (
 	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/execution/native"
 	"go.dedis.ch/dela/core/store"
+	"go.dedis.ch/kyber/v3"
+	//shuffleKyber "go.dedis.ch/kyber/v3/shuffle"
 	"go.dedis.ch/kyber/v3/suites"
 	"golang.org/x/xerrors"
 	"io"
@@ -29,8 +31,12 @@ type commands interface {
 	getPublicKey(snap store.Snapshot, step execution.Step) error
 	encrypt(snap store.Snapshot, step execution.Step) error
 	decrypt(snap store.Snapshot, step execution.Step) error
-	createSimpleElection (snap store.Snapshot, step execution.Step) error
-	castVote (snap store.Snapshot, step execution.Step) error
+	createSimpleElection(snap store.Snapshot, step execution.Step) error
+	castVote(snap store.Snapshot, step execution.Step) error
+	closeElection(snap store.Snapshot, step execution.Step) error
+	shuffleBallots(snap store.Snapshot, step execution.Step) error
+	decryptBallots(snap store.Snapshot, step execution.Step) error
+	cancelElection(snap store.Snapshot, step execution.Step) error
 }
 
 const (
@@ -52,6 +58,14 @@ const (
 	CreateSimpleElectionArg = "evoting:simpleElectionArgs"
 
 	CastVoteArg = "evoting:castVoteArgs"
+
+	CancelElectionArg = "evoting:cancelElectionArgs"
+
+	CloseElectionArg = "evoting:closeElectionArgs"
+
+	ShuffleBallotsArg = "evoting:shuffleBallotsArg"
+
+	DecryptBallotsArg = "evoting:decryptBallotsArg"
 
 	// credentialAllCommand defines the credential command that is allowed to
 	// perform all commands.
@@ -107,6 +121,15 @@ const (
 	CmdCreateSimpleElection Command = "CREATE_SIMPLE_ELECTION"
 
 	CmdCastVote Command = "CAST_VOTE"
+
+	CmdCloseElection Command = "CLOSE_ELECTION"
+
+	CmdShuffleBallots Command = "SHUFFLE_BALLOTS"
+
+	CmdDecryptBallots Command = "DECRYPT_BALLOTS"
+
+	CmdCancelElection Command = "CANCEL_ELECTION"
+
 )
 
 // NewCreds creates new credentials for a evoting contract execution. We might
@@ -190,6 +213,26 @@ func (c Contract) Execute(snap store.Snapshot, step execution.Step) error {
 		if err != nil {
 			return xerrors.Errorf("failed to CAST VOTE: %v", err)
 		}
+	case CmdCloseElection:
+		err := c.cmd.closeElection(snap, step)
+		if err != nil {
+			return xerrors.Errorf("failed to CLOSE ELECTION: %v", err)
+		}
+	case CmdShuffleBallots:
+		err := c.cmd.shuffleBallots(snap, step)
+		if err != nil {
+			return xerrors.Errorf("failed to SHUFFLE BALLOTS: %v", err)
+		}
+	case CmdDecryptBallots:
+		err := c.cmd.decryptBallots(snap, step)
+		if err != nil {
+			return xerrors.Errorf("failed to DECRYPT BALLOTS: %v", err)
+		}
+	case CmdCancelElection:
+		err := c.cmd.cancelElection(snap, step)
+		if err != nil {
+			return xerrors.Errorf("failed to CANCEL ELECTION: %v", err)
+		}
 	default:
 		return xerrors.Errorf("unknown command: %s", cmd)
 	}
@@ -203,6 +246,242 @@ func (c Contract) Execute(snap store.Snapshot, step execution.Step) error {
 // - implements commands
 type evotingCommand struct {
 	*Contract
+}
+
+type CloseElectionTransaction struct {
+	ElectionID uint16
+	UserId string
+}
+
+func (e evotingCommand) closeElection(snap store.Snapshot, step execution.Step) error {
+	closeElectionArg := step.Current.GetArg(CloseElectionArg)
+
+	closeElectionTransaction := new (CloseElectionTransaction)
+	err := json.NewDecoder(bytes.NewBuffer(closeElectionArg)).Decode(closeElectionTransaction)
+	if err != nil {
+		return xerrors.Errorf("failed to set unmarshall CloseElectionTransaction : %v", err)
+	}
+
+	// todo : method to cast election id to bytes or even change type of election id
+	electionMarshalled, err := snap.Get([]byte(strconv.Itoa(int(closeElectionTransaction.ElectionID))))
+	if err != nil {
+		return xerrors.Errorf("failed to get key '%s': %v", []byte(strconv.Itoa(int(closeElectionTransaction.ElectionID))), err)
+	}
+
+	simpleElection := new (types.SimpleElection)
+	err = json.NewDecoder(bytes.NewBuffer(electionMarshalled)).Decode(simpleElection)
+	if err != nil {
+		return xerrors.Errorf("failed to set unmarshall SimpleElection : %v", err)
+	}
+
+	if simpleElection.AdminId != closeElectionTransaction.UserId{
+		return xerrors.Errorf("Only the admin can close the election")
+	}
+
+	if simpleElection.Status != types.Open{
+		// todo : send status ?
+		return xerrors.Errorf("The election is not open.")
+	}
+
+	simpleElection.Status = types.Closed
+
+	js, err := json.Marshal(simpleElection)
+	if err != nil {
+		return xerrors.Errorf("failed to set marshall types.SimpleElection : %v", err)
+	}
+
+	err = snap.Set([]byte(strconv.Itoa(int(simpleElection.ElectionID))), js)
+	if err != nil {
+		return xerrors.Errorf("failed to set value: %v", err)
+	}
+
+	return nil
+}
+
+type ShuffleBallotsTransaction struct {
+	ElectionID uint16
+	UserId string
+	ShuffledBallots  [][]byte
+	Proof 			 []byte
+}
+
+type Ciphertext struct {
+	K []byte
+	C []byte
+}
+
+func (e evotingCommand) shuffleBallots(snap store.Snapshot, step execution.Step) error {
+	shuffleBallotsArg := step.Current.GetArg(ShuffleBallotsArg)
+
+	shuffleBallotsTransaction := new (ShuffleBallotsTransaction)
+	err := json.NewDecoder(bytes.NewBuffer(shuffleBallotsArg)).Decode(shuffleBallotsTransaction)
+	if err != nil {
+		return xerrors.Errorf("failed to unmarshall ShuffleBallotsTransaction : %v", err)
+	}
+
+	// todo : method to cast election id to bytes or even change type of election id
+	electionMarshalled, err := snap.Get([]byte(strconv.Itoa(int(shuffleBallotsTransaction.ElectionID))))
+	if err != nil {
+		return xerrors.Errorf("failed to get key '%s': %v", []byte(strconv.Itoa(int(shuffleBallotsTransaction.ElectionID))), err)
+	}
+
+	simpleElection := new (types.SimpleElection)
+	err = json.NewDecoder(bytes.NewBuffer(electionMarshalled)).Decode(simpleElection)
+	if err != nil {
+		return xerrors.Errorf("failed to unmarshall SimpleElection : %v", err)
+	}
+
+	if simpleElection.AdminId != shuffleBallotsTransaction.UserId{
+		return xerrors.Errorf("Only the admin can shuffle the ballots")
+	}
+
+	if simpleElection.Status != types.Closed{
+		// todo : send status ?
+		return xerrors.Errorf("The election is not closed.")
+	}
+
+	Ks := make([]kyber.Point, 0, len(shuffleBallotsTransaction.ShuffledBallots))
+	Cs := make([]kyber.Point, 0, len(shuffleBallotsTransaction.ShuffledBallots))
+	for _, v := range shuffleBallotsTransaction.ShuffledBallots{
+		ciphertext:= new (Ciphertext)
+		err = json.NewDecoder(bytes.NewBuffer(v)).Decode(ciphertext)
+		if err != nil {
+			return xerrors.Errorf("failed to unmarshall Ciphertext : %v", err)
+		}
+
+		K := suite.Point()
+		err = K.UnmarshalBinary(ciphertext.K)
+		if err != nil {
+			return xerrors.Errorf("failed to unmarshall kyber.Point : %v", err)
+		}
+
+		C := suite.Point()
+		err = C.UnmarshalBinary(ciphertext.C)
+		if err != nil {
+			return xerrors.Errorf("failed to unmarshall kyber.Point : %v", err)
+		}
+
+		Ks = append(Ks, K)
+		Cs = append(Cs, C)
+
+	}
+
+	// todo : we need all shuffles and all proofs, ask Noémien and Gaurav!
+
+	//verifier := shuffleKyber.Verifier(suite, nil, pubKey, Ks, Cs, KsShuffled, CsShuffled)
+
+	simpleElection.Status = types.ShuffledBallots
+	simpleElection.ShuffledBallots = shuffleBallotsTransaction.ShuffledBallots
+	simpleElection.Proof = shuffleBallotsTransaction.Proof
+
+	js, err := json.Marshal(simpleElection)
+	if err != nil {
+		return xerrors.Errorf("failed to marshall types.SimpleElection : %v", err)
+	}
+
+	err = snap.Set([]byte(strconv.Itoa(int(simpleElection.ElectionID))), js)
+	if err != nil {
+		return xerrors.Errorf("failed to set value: %v", err)
+	}
+
+	return nil
+}
+
+type DecryptBallotsTransaction struct {
+	ElectionID uint16
+	UserId string
+	DecryptedBallots []types.SimpleBallot
+}
+
+func (e evotingCommand) decryptBallots(snap store.Snapshot, step execution.Step) error {
+	decryptBallotsArg := step.Current.GetArg(DecryptBallotsArg)
+
+	decryptBallotsTransaction := new (DecryptBallotsTransaction)
+	err := json.NewDecoder(bytes.NewBuffer(decryptBallotsArg)).Decode(decryptBallotsTransaction)
+	if err != nil {
+		return xerrors.Errorf("failed to unmarshall DecryptBallotsTransaction : %v", err)
+	}
+
+	// todo : method to cast election id to bytes or even change type of election id
+	electionMarshalled, err := snap.Get([]byte(strconv.Itoa(int(decryptBallotsTransaction.ElectionID))))
+	if err != nil {
+		return xerrors.Errorf("failed to get key '%s': %v", []byte(strconv.Itoa(int(decryptBallotsTransaction.ElectionID))), err)
+	}
+
+	simpleElection := new (types.SimpleElection)
+	err = json.NewDecoder(bytes.NewBuffer(electionMarshalled)).Decode(simpleElection)
+	if err != nil {
+		return xerrors.Errorf("failed to unmarshall SimpleElection : %v", err)
+	}
+
+	if simpleElection.AdminId != decryptBallotsTransaction.UserId{
+		return xerrors.Errorf("Only the admin can decrypt the ballots")
+	}
+
+	if simpleElection.Status != types.ShuffledBallots{
+		// todo : send status ?
+		return xerrors.Errorf("The ballots are not shuffled.")
+	}
+
+	simpleElection.Status = types.ResultAvailable
+	simpleElection.DecryptedBallots = decryptBallotsTransaction.DecryptedBallots
+
+	js, err := json.Marshal(simpleElection)
+	if err != nil {
+		return xerrors.Errorf("failed to marshall types.SimpleElection : %v", err)
+	}
+
+	err = snap.Set([]byte(strconv.Itoa(int(simpleElection.ElectionID))), js)
+	if err != nil {
+		return xerrors.Errorf("failed to set value: %v", err)
+	}
+
+	return nil
+}
+
+type CancelElectionTransaction struct {
+	ElectionID uint16
+	UserId string
+}
+
+func (e evotingCommand) cancelElection(snap store.Snapshot, step execution.Step) error {
+	cancelElectionArg := step.Current.GetArg(CancelElectionArg)
+
+	cancelElectionTransaction := new (CancelElectionTransaction)
+	err := json.NewDecoder(bytes.NewBuffer(cancelElectionArg)).Decode(cancelElectionTransaction)
+	if err != nil {
+		return xerrors.Errorf("failed to set unmarshall CancelElectionTransaction : %v", err)
+	}
+
+	// todo : method to cast election id to bytes or even change type of election id
+	electionMarshalled, err := snap.Get([]byte(strconv.Itoa(int(cancelElectionTransaction.ElectionID))))
+	if err != nil {
+		return xerrors.Errorf("failed to get key '%s': %v", []byte(strconv.Itoa(int(cancelElectionTransaction.ElectionID))), err)
+	}
+
+	simpleElection := new (types.SimpleElection)
+	err = json.NewDecoder(bytes.NewBuffer(electionMarshalled)).Decode(simpleElection)
+	if err != nil {
+		return xerrors.Errorf("failed to set unmarshall SimpleElection : %v", err)
+	}
+
+	if simpleElection.AdminId != cancelElectionTransaction.UserId{
+		return xerrors.Errorf("Only the admin can cancel the election")
+	}
+
+	simpleElection.Status = types.Canceled
+
+	js, err := json.Marshal(simpleElection)
+	if err != nil {
+		return xerrors.Errorf("failed to set marshall types.SimpleElection : %v", err)
+	}
+
+	err = snap.Set([]byte(strconv.Itoa(int(simpleElection.ElectionID))), js)
+	if err != nil {
+		return xerrors.Errorf("failed to set value: %v", err)
+	}
+
+	return nil
 }
 
 type CastVoteTransaction struct {
@@ -229,7 +508,12 @@ func (e evotingCommand) castVote(snap store.Snapshot, step execution.Step) error
 	simpleElection := new (types.SimpleElection)
 	err = json.NewDecoder(bytes.NewBuffer(electionMarshalled)).Decode(simpleElection)
 	if err != nil {
-		return xerrors.Errorf("failed to set unmarshall CastVoteTransaction : %v", err)
+		return xerrors.Errorf("failed to set unmarshall SimpleElection : %v", err)
+	}
+
+	if simpleElection.Status != types.Open{
+		// todo : send status ?
+		return xerrors.Errorf("The election is not open.")
 	}
 
 	simpleElection.EncryptedBallots[castVoteTransaction.UserId] = castVoteTransaction.Ballot
@@ -270,7 +554,7 @@ func (e evotingCommand) createSimpleElection(snap store.Snapshot, step execution
 		ElectionID:       types.ID(createSimpleElectionTransaction.ElectionID),
 		AdminId:          createSimpleElectionTransaction.AdminId,
 		Candidates:       createSimpleElectionTransaction.Candidates,
-		Status:           1,
+		Status:           types.Open,
 		Pubkey:           createSimpleElectionTransaction.PublicKey,
 		EncryptedBallots: map[string][]byte{},
 		ShuffledBallots:  [][]byte{},

@@ -17,13 +17,16 @@ func RegisterMessageFormat(c serde.Format, f serde.FormatEngine) {
 
 type ID uint16
 
+//todo : status should be string ?
 type status uint16
 const(
-	Initial = 0
+	//Initial = 0
 	Open = 1
 	Closed = 2
-	Shuffling = 3
-	Decrypting = 4
+	ShuffledBallots = 3
+	//DecryptedBallots = 4
+	ResultAvailable = 5
+	Canceled = 6
 )
 
 // SimpleElection contains all information about a simple election
@@ -35,7 +38,10 @@ type SimpleElection struct {
 	Status           status // Initial | Open | Closed | Shuffling | Decrypting | ..
 	Pubkey           []byte
 	EncryptedBallots map[string][]byte
+	//todo : all shuffled ballots [][][]byte
 	ShuffledBallots  [][]byte
+	//todo : all proofs [][]byte
+	Proof 			 []byte
 	DecryptedBallots []SimpleBallot
 }
 

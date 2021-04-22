@@ -196,7 +196,7 @@ type initHttpServerAction struct {
 }
 
 // Wraps the ciphertext pairs
-type CiphertextResponse struct {
+type Ciphertext struct {
 	K []byte
 	C []byte
 }
@@ -253,7 +253,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 	http.HandleFunc(encryptEndPoint, func(w http.ResponseWriter, r *http.Request){
 
-		response := CiphertextResponse{K: Kmarshalled, C: Cmarshalled}
+		response := Ciphertext{K: Kmarshalled, C: Cmarshalled}
 		js, err := json.Marshal(response)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -275,22 +275,22 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		ciphertextResponse:= new (CiphertextResponse)
-		err = json.NewDecoder(bytes.NewBuffer(body)).Decode(ciphertextResponse)
+		ciphertext:= new (Ciphertext)
+		err = json.NewDecoder(bytes.NewBuffer(body)).Decode(ciphertext)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		K := suite.Point()
-		err = K.UnmarshalBinary(ciphertextResponse.K)
+		err = K.UnmarshalBinary(ciphertext.K)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		C := suite.Point()
-		err = C.UnmarshalBinary(ciphertextResponse.C)
+		err = C.UnmarshalBinary(ciphertext.C)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
