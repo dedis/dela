@@ -5,7 +5,7 @@ import (
 	"go.dedis.ch/kyber/v3"
 )
 
-// SHUFFLE defines the primitive to start a DKG protocol
+// SHUFFLE defines the primitive to start a SHUFFLE protocol
 type SHUFFLE interface {
 	// Listen starts the RPC. This function should be called on each node that
 	// wishes to participate in a SHUFFLE.

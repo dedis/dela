@@ -43,6 +43,15 @@ func (m controller) SetCommands(builder node.Builder) {
 	sub = cmd.SetSubCommand("castVoteTest")
 	sub.SetDescription("castVoteTest")
 	sub.SetAction(builder.MakeAction(&castVoteTestAction{}))
+
+	sub = cmd.SetSubCommand("scenarioTest")
+	sub.SetDescription("scenarioTest")
+	sub.SetFlags(cli.StringSliceFlag{
+		Name:     "member",
+		Usage:    "nodes participating in SHUFFLE",
+		Required: true,
+	})
+	sub.SetAction(builder.MakeAction(&scenarioTestAction{}))
 }
 
 // OnStart implements node.Initializer. It creates and registers a pedersen DKG.

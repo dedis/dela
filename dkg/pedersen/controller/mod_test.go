@@ -12,13 +12,13 @@ import (
 )
 
 func TestMinimal_SetCommands(t *testing.T) {
-	minimal := NewMinimal()
+	minimal := NewController()
 
 	minimal.SetCommands(nil)
 }
 
 func TestMinimal_OnStart(t *testing.T) {
-	minimal := NewMinimal()
+	minimal := NewController()
 
 	inj := newInjector(fake.Mino{})
 	err := minimal.OnStart(nil, inj)
@@ -32,7 +32,7 @@ func TestMinimal_OnStart(t *testing.T) {
 }
 
 func TestMinimal_OnStop(t *testing.T) {
-	minimal := NewMinimal()
+	minimal := NewController()
 
 	err := minimal.OnStop(node.NewInjector())
 	require.NoError(t, err)

@@ -63,9 +63,9 @@ const (
 
 	CloseElectionArg = "evoting:closeElectionArgs"
 
-	ShuffleBallotsArg = "evoting:shuffleBallotsArg"
+	ShuffleBallotsArg = "evoting:shuffleBallotsArgs"
 
-	DecryptBallotsArg = "evoting:decryptBallotsArg"
+	DecryptBallotsArg = "evoting:decryptBallotsArgs"
 
 	// credentialAllCommand defines the credential command that is allowed to
 	// perform all commands.
@@ -491,6 +491,9 @@ type CastVoteTransaction struct {
 }
 
 func (e evotingCommand) castVote(snap store.Snapshot, step execution.Step) error {
+
+	// todo : check ballots in candidates
+
 	castVoteArg := step.Current.GetArg(CastVoteArg)
 
 	castVoteTransaction := new (CastVoteTransaction)
