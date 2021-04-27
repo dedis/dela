@@ -42,7 +42,7 @@ const closeElectionEndpoint = "/evoting/close"
 const shuffleBallotsEndpoint = "/evoting/shuffle"
 const decryptBallotsEndpoint = "/evoting/decrypt"
 const getElectionResultEndpoint = "/evoting/result"
-const cancelElectionEndpoint = "/evoting/decrypt"
+const cancelElectionEndpoint = "/evoting/cancel"
 
 const token = "token"
 const signerFilePath = "private.key"
