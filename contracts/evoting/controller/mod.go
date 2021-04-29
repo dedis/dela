@@ -31,7 +31,8 @@ func (m controller) SetCommands(builder node.Builder) {
 		Required: true,
 	})
 	sub.SetAction(builder.MakeAction(&initHttpServerAction{
-		ElectionIdNonce: 0,
+		ElectionIdNonce: 0 ,
+		ElectionIds: make([]string, 0),
 		// TODO : should have the same client as pool controller
 		client:          &client{nonce: 1},
 	}))

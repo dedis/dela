@@ -3,7 +3,6 @@ package types
 import (
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/registry"
-	"golang.org/x/xerrors"
 )
 
 //Todo : redefine structs using non-raw types
@@ -15,7 +14,7 @@ func RegisterMessageFormat(c serde.Format, f serde.FormatEngine) {
 	msgFormats.Register(c, f)
 }
 
-type ID uint16
+type ID string
 
 //todo : status should be string ?
 type status uint16
@@ -50,6 +49,7 @@ type SimpleBallot struct {
 	Vote string
 }
 
+/*
 // Election contains all information about an election
 //
 // - implements serde.Message
@@ -63,6 +63,7 @@ type Election struct {
 	ShuffledBallots  [][]byte
 	DecryptedBallots []Ballot
 }
+
 
 // NewElection creates a new Election.
 func NewElection(ElectionId ID, AdminId ID, Configuration Configuration, Status status, Pubkey []byte,
@@ -313,3 +314,4 @@ func (t Text) Serialize(ctx serde.Context) ([]byte, error) {
 
 	return data, nil
 }
+*/

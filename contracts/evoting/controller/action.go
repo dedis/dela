@@ -66,7 +66,8 @@ var getManager = func(signer crypto.Signer, s signed.Client) txn.Manager {
 type initHttpServerAction struct {
 	// TODO : mutex ?
 
-	ElectionIdNonce uint16
+	ElectionIdNonce int
+	ElectionIds []string
 	client *client
 }
 
@@ -85,7 +86,7 @@ type CreateSimpleElectionRequest struct {
 }
 
 type CreateSimpleElectionTransaction struct {
-	ElectionID uint16
+	ElectionID string
 	Title string
 	AdminId string
 	Candidates []string
@@ -93,20 +94,20 @@ type CreateSimpleElectionTransaction struct {
 }
 
 type CreateSimpleElectionResponse struct {
-	ElectionID uint16
+	ElectionID string
 	//Success bool
 	//Error string
 }
 
 type CastVoteRequest struct {
-	ElectionID uint16
+	ElectionID string
 	UserId string
 	Ballot []byte
 	Token string
 }
 
 type CastVoteTransaction struct {
-	ElectionID uint16
+	ElectionID string
 	UserId string
 	Ballot []byte
 }
@@ -128,13 +129,13 @@ type Ciphertext struct {
 }
 
 type CloseElectionRequest struct {
-	ElectionID uint16
+	ElectionID string
 	UserId string
 	Token string
 }
 
 type CloseElectionTransaction struct {
-	ElectionID uint16
+	ElectionID string
 	UserId string
 }
 
@@ -144,14 +145,14 @@ type CloseElectionResponse struct {
 }
 
 type ShuffleBallotsRequest struct {
-	ElectionID uint16
+	ElectionID string
 	UserId string
 	Token string
 	Members []CollectiveAuthorityMember
 }
 
 type ShuffleBallotsTransaction struct {
-	ElectionID uint16
+	ElectionID string
 	UserId string
 	ShuffledBallots  [][]byte
 	Proof 			 []byte
@@ -163,13 +164,13 @@ type ShuffleBallotsResponse struct {
 }
 
 type DecryptBallotsRequest struct {
-	ElectionID uint16
+	ElectionID string
 	UserId string
 	Token string
 }
 
 type DecryptBallotsTransaction struct {
-	ElectionID uint16
+	ElectionID string
 	UserId string
 	DecryptedBallots []types.SimpleBallot
 }
@@ -180,7 +181,7 @@ type DecryptBallotsResponse struct {
 }
 
 type GetElectionResultRequest struct {
-	ElectionID uint16
+	ElectionID string
 	//UserId string
 	Token string
 }
@@ -192,7 +193,7 @@ type GetElectionResultResponse struct {
 }
 
 type GetElectionInfoRequest struct {
-	ElectionID uint16
+	ElectionID string
 	//UserId string
 	Token string
 }
@@ -207,13 +208,13 @@ type GetElectionInfoResponse struct {
 }
 
 type CancelElectionRequest struct {
-	ElectionID uint16
+	ElectionID string
 	UserId string
 	Token string
 }
 
 type CancelElectionTransaction struct {
-	ElectionID uint16
+	ElectionID string
 	UserId string
 }
 
@@ -297,7 +298,11 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		electionId := a.ElectionIdNonce
+		electionId :=  strconv.Itoa(a.ElectionIdNonce)
+		l := len (electionId)
+		for i := l; i <32; i++ {
+			electionId = "0" + electionId
+		}
 
 		createSimpleElectionTransaction := CreateSimpleElectionTransaction{
 			ElectionID: electionId,
@@ -367,7 +372,8 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 					return
 				}
 
-				a.ElectionIdNonce+=100
+				a.ElectionIdNonce+=1
+				a.ElectionIds = append(a.ElectionIds, electionId)
 
 				response := CreateSimpleElectionResponse{
 					ElectionID: electionId,
@@ -415,7 +421,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		if getElectionInfoRequest.ElectionID >= a.ElectionIdNonce{
+		if !contains(a.ElectionIds, getElectionInfoRequest.ElectionID){
 			http.Error(w, "The election does not exist", http.StatusNotFound)
 			return
 		}
@@ -427,7 +433,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		proof, err := service.GetProof([]byte(strconv.Itoa(int(getElectionInfoRequest.ElectionID))))
+		proof, err := service.GetProof([]byte(getElectionInfoRequest.ElectionID))
 		if err != nil {
 			http.Error(w, "failed to read on the blockchain: " + err.Error(), http.StatusInternalServerError)
 			return
@@ -485,7 +491,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		if castVoteRequest.ElectionID >= a.ElectionIdNonce{
+		if !contains(a.ElectionIds, castVoteRequest.ElectionID){
 			http.Error(w, "The election does not exist", http.StatusNotFound)
 			return
 		}
@@ -623,7 +629,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		if closeElectionRequest.ElectionID >= a.ElectionIdNonce{
+		if !contains(a.ElectionIds, closeElectionRequest.ElectionID){
 			http.Error(w, "The election does not exist", http.StatusNotFound)
 			return
 		}
@@ -769,7 +775,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		if shuffleBallotsRequest.ElectionID >= a.ElectionIdNonce{
+		if !contains(a.ElectionIds, shuffleBallotsRequest.ElectionID){
 			http.Error(w, "The election does not exist", http.StatusNotFound)
 			return
 		}
@@ -781,7 +787,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		proof, err := service.GetProof([]byte(strconv.Itoa(int(shuffleBallotsRequest.ElectionID))))
+		proof, err := service.GetProof([]byte(shuffleBallotsRequest.ElectionID))
 		if err != nil {
 			http.Error(w, "failed to read on the blockchain: " + err.Error(), http.StatusInternalServerError)
 			return
@@ -1045,7 +1051,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		if decryptBallotsRequest.ElectionID >= a.ElectionIdNonce{
+		if !contains(a.ElectionIds, decryptBallotsRequest.ElectionID){
 			http.Error(w, "The election does not exist", http.StatusNotFound)
 			return
 		}
@@ -1057,7 +1063,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		proof, err := service.GetProof([]byte(strconv.Itoa(int(decryptBallotsRequest.ElectionID))))
+		proof, err := service.GetProof([]byte(decryptBallotsRequest.ElectionID))
 		if err != nil {
 			http.Error(w, "failed to read on the blockchain: " + err.Error(), http.StatusInternalServerError)
 			return
@@ -1263,7 +1269,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		if getElectionResultRequest.ElectionID >= a.ElectionIdNonce{
+		if !contains(a.ElectionIds, getElectionResultRequest.ElectionID){
 			http.Error(w, "The election does not exist", http.StatusNotFound)
 			return
 		}
@@ -1275,7 +1281,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		proof, err := service.GetProof([]byte(strconv.Itoa(int(getElectionResultRequest.ElectionID))))
+		proof, err := service.GetProof([]byte(getElectionResultRequest.ElectionID))
 		if err != nil {
 			http.Error(w, "failed to read on the blockchain: " + err.Error(), http.StatusInternalServerError)
 			return
@@ -1333,7 +1339,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		if cancelElectionRequest.ElectionID >= a.ElectionIdNonce{
+		if !contains(a.ElectionIds, cancelElectionRequest.ElectionID){
 			http.Error(w, "The election does not exist", http.StatusNotFound)
 			return
 		}
@@ -1543,7 +1549,7 @@ type castVoteTestAction struct {
 func (a *castVoteTestAction) Execute(ctx node.Context) error {
 
 	castVoteRequest := CastVoteRequest{
-		ElectionID: 0,
+		ElectionID: "00000000000000000000000000000000",
 		UserId:     "user1",
 		Ballot:     []byte("ballot1"),
 		Token:      token,
@@ -1589,7 +1595,7 @@ func (a *castVoteTestAction) Execute(ctx node.Context) error {
 	return nil
 }
 
-// castVoteTestAction is an action to
+// scenarioTestAction is an action to
 //
 // - implements node.ActionTemplate
 type scenarioTestAction struct {
@@ -1657,12 +1663,13 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 
 	electionId := createSimpleElectionResponse.ElectionID
 
-	proof, err := service.GetProof([]byte(strconv.Itoa(int(electionId))))
+	proof, err := service.GetProof([]byte(electionId))
 	if err != nil {
 		return xerrors.Errorf("failed to read on the blockchain: %v", err)
 	}
 
 
+	dela.Logger.Info().Msg("Proof : " + string(proof.GetValue()))
 	simpleElection := new (types.SimpleElection)
 	err = json.NewDecoder(bytes.NewBuffer(proof.GetValue())).Decode(simpleElection)
 	if err != nil {
@@ -1670,6 +1677,7 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	}
 
 	dela.Logger.Info().Msg("Title of the election : " + simpleElection.Title)
+	dela.Logger.Info().Msg("ID of the election : " + string(simpleElection.ElectionID))
 	dela.Logger.Info().Msg("Admin Id of the election : " + simpleElection.AdminId)
 	dela.Logger.Info().Msg("Status of the election : " + strconv.Itoa(int(simpleElection.Status)))
 
@@ -1698,7 +1706,7 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	dela.Logger.Info().Msg("Response body : " + string(body))
 	resp.Body.Close()
 
-	proof, err = service.GetProof([]byte(strconv.Itoa(int(electionId))))
+	proof, err = service.GetProof([]byte(electionId))
 	if err != nil {
 		return xerrors.Errorf("failed to read on the blockchain: %v", err)
 	}
@@ -1710,6 +1718,7 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	}
 
 	dela.Logger.Info().Msg("Title of the election : " + simpleElection.Title)
+	dela.Logger.Info().Msg("ID of the election : " + string(simpleElection.ElectionID))
 	dela.Logger.Info().Msg("Status of the election : " + strconv.Itoa(int(simpleElection.Status)))
 	dela.Logger.Info().Msg("Pubkey of the election : " + string(simpleElection.Pubkey))
 	dela.Logger.Info().
@@ -1802,7 +1811,7 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	resp.Body.Close()
 
 
-	proof, err = service.GetProof([]byte(strconv.Itoa(int(electionId))))
+	proof, err = service.GetProof([]byte(electionId))
 	if err != nil {
 		return xerrors.Errorf("failed to read on the blockchain: %v", err)
 	}
@@ -1817,6 +1826,7 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	dela.Logger.Info().Msg("Ballot of user1 : " + string(simpleElection.EncryptedBallots["user1"]))
 	dela.Logger.Info().Msg("Ballot of user2 : " + string(simpleElection.EncryptedBallots["user2"]))
 	dela.Logger.Info().Msg("Ballot of user3 : " + string(simpleElection.EncryptedBallots["user3"]))
+	dela.Logger.Info().Msg("ID of the election : " + string(simpleElection.ElectionID))
 	dela.Logger.Info().Msg("Status of the election : " + strconv.Itoa(int(simpleElection.Status)))
 
 	// ##################################### CAST BALLOTS ##############################################################
@@ -1846,7 +1856,7 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	dela.Logger.Info().Msg("Response body : " + string(body))
 	resp.Body.Close()
 
-	proof, err = service.GetProof([]byte(strconv.Itoa(int(electionId))))
+	proof, err = service.GetProof([]byte(electionId))
 	if err != nil {
 		return xerrors.Errorf("failed to read on the blockchain: %v", err)
 	}
@@ -1858,6 +1868,7 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	}
 
 	dela.Logger.Info().Msg("Title of the election : " + simpleElection.Title)
+	dela.Logger.Info().Msg("ID of the election : " + string(simpleElection.ElectionID))
 	dela.Logger.Info().Msg("Admin Id of the election : " + simpleElection.AdminId)
 	dela.Logger.Info().Msg("Status of the election : " + strconv.Itoa(int(simpleElection.Status)))
 
@@ -1894,7 +1905,7 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	dela.Logger.Info().Msg("Response body : " + string(body))
 	resp.Body.Close()
 
-	proof, err = service.GetProof([]byte(strconv.Itoa(int(electionId))))
+	proof, err = service.GetProof([]byte(electionId))
 	if err != nil {
 		return xerrors.Errorf("failed to read on the blockchain: %v", err)
 	}
@@ -1906,6 +1917,7 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	}
 
 	dela.Logger.Info().Msg("Title of the election : " + simpleElection.Title)
+	dela.Logger.Info().Msg("ID of the election : " + string(simpleElection.ElectionID))
 	dela.Logger.Info().Msg("Status of the election : " + strconv.Itoa(int(simpleElection.Status)))
 	dela.Logger.Info().Msg("Number of shuffled ballots : " + strconv.Itoa(len(simpleElection.ShuffledBallots)))
 	dela.Logger.Info().Msg("Number of encrypted ballots : " + strconv.Itoa(len(simpleElection.EncryptedBallots)))
@@ -1938,7 +1950,7 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	dela.Logger.Info().Msg("Response body : " + string(body))
 	resp.Body.Close()
 
-	proof, err = service.GetProof([]byte(strconv.Itoa(int(electionId))))
+	proof, err = service.GetProof([]byte(electionId))
 	if err != nil {
 		return xerrors.Errorf("failed to read on the blockchain: %v", err)
 	}
@@ -1950,6 +1962,7 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	}
 
 	dela.Logger.Info().Msg("Title of the election : " + simpleElection.Title)
+	dela.Logger.Info().Msg("ID of the election : " + string(simpleElection.ElectionID))
 	dela.Logger.Info().Msg("Status of the election : " + strconv.Itoa(int(simpleElection.Status)))
 	dela.Logger.Info().Msg("Number of decrypted ballots : " + strconv.Itoa(len(simpleElection.DecryptedBallots)))
 	dela.Logger.Info().Msg("decrypted ballots [0] : " + simpleElection.DecryptedBallots[0].Vote)
@@ -1984,7 +1997,7 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	dela.Logger.Info().Msg("Response body : " + string(body))
 	resp.Body.Close()
 
-	proof, err = service.GetProof([]byte(strconv.Itoa(int(electionId))))
+	proof, err = service.GetProof([]byte(electionId))
 	if err != nil {
 		return xerrors.Errorf("failed to read on the blockchain: %v", err)
 	}
@@ -1996,6 +2009,7 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	}
 
 	dela.Logger.Info().Msg("Title of the election : " + simpleElection.Title)
+	dela.Logger.Info().Msg("ID of the election : " + string(simpleElection.ElectionID))
 	dela.Logger.Info().Msg("Status of the election : " + strconv.Itoa(int(simpleElection.Status)))
 	dela.Logger.Info().Msg("Number of decrypted ballots : " + strconv.Itoa(len(simpleElection.DecryptedBallots)))
 	dela.Logger.Info().Msg("decrypted ballots [0] : " + simpleElection.DecryptedBallots[0].Vote)
@@ -2062,4 +2076,14 @@ func decodeMemberFromContext(str string) (string, string, error) {
 	}
 
 	return parts[0], parts[1], nil
+}
+
+func contains(s []string, str string) bool {
+	for _, v := range s {
+		if v == str {
+			return true
+		}
+	}
+
+	return false
 }

@@ -15,7 +15,6 @@ import (
 	"golang.org/x/xerrors"
 	"io"
 	"net/http"
-	"strconv"
 )
 
 const url = "http://localhost:"
@@ -249,7 +248,7 @@ type evotingCommand struct {
 }
 
 type CloseElectionTransaction struct {
-	ElectionID uint16
+	ElectionID string
 	UserId string
 }
 
@@ -263,9 +262,9 @@ func (e evotingCommand) closeElection(snap store.Snapshot, step execution.Step) 
 	}
 
 	// todo : method to cast election id to bytes or even change type of election id
-	electionMarshalled, err := snap.Get([]byte(strconv.Itoa(int(closeElectionTransaction.ElectionID))))
+	electionMarshalled, err := snap.Get([]byte(closeElectionTransaction.ElectionID))
 	if err != nil {
-		return xerrors.Errorf("failed to get key '%s': %v", []byte(strconv.Itoa(int(closeElectionTransaction.ElectionID))), err)
+		return xerrors.Errorf("failed to get key '%s': %v", []byte(closeElectionTransaction.ElectionID), err)
 	}
 
 	simpleElection := new (types.SimpleElection)
@@ -290,7 +289,7 @@ func (e evotingCommand) closeElection(snap store.Snapshot, step execution.Step) 
 		return xerrors.Errorf("failed to set marshall types.SimpleElection : %v", err)
 	}
 
-	err = snap.Set([]byte(strconv.Itoa(int(simpleElection.ElectionID))), js)
+	err = snap.Set([]byte(simpleElection.ElectionID), js)
 	if err != nil {
 		return xerrors.Errorf("failed to set value: %v", err)
 	}
@@ -299,7 +298,7 @@ func (e evotingCommand) closeElection(snap store.Snapshot, step execution.Step) 
 }
 
 type ShuffleBallotsTransaction struct {
-	ElectionID uint16
+	ElectionID string
 	UserId string
 	ShuffledBallots  [][]byte
 	Proof 			 []byte
@@ -320,9 +319,9 @@ func (e evotingCommand) shuffleBallots(snap store.Snapshot, step execution.Step)
 	}
 
 	// todo : method to cast election id to bytes or even change type of election id
-	electionMarshalled, err := snap.Get([]byte(strconv.Itoa(int(shuffleBallotsTransaction.ElectionID))))
+	electionMarshalled, err := snap.Get([]byte(shuffleBallotsTransaction.ElectionID))
 	if err != nil {
-		return xerrors.Errorf("failed to get key '%s': %v", []byte(strconv.Itoa(int(shuffleBallotsTransaction.ElectionID))), err)
+		return xerrors.Errorf("failed to get key '%s': %v", []byte(shuffleBallotsTransaction.ElectionID), err)
 	}
 
 	simpleElection := new (types.SimpleElection)
@@ -379,7 +378,7 @@ func (e evotingCommand) shuffleBallots(snap store.Snapshot, step execution.Step)
 		return xerrors.Errorf("failed to marshall types.SimpleElection : %v", err)
 	}
 
-	err = snap.Set([]byte(strconv.Itoa(int(simpleElection.ElectionID))), js)
+	err = snap.Set([]byte(simpleElection.ElectionID), js)
 	if err != nil {
 		return xerrors.Errorf("failed to set value: %v", err)
 	}
@@ -388,7 +387,7 @@ func (e evotingCommand) shuffleBallots(snap store.Snapshot, step execution.Step)
 }
 
 type DecryptBallotsTransaction struct {
-	ElectionID uint16
+	ElectionID string
 	UserId string
 	DecryptedBallots []types.SimpleBallot
 }
@@ -403,9 +402,9 @@ func (e evotingCommand) decryptBallots(snap store.Snapshot, step execution.Step)
 	}
 
 	// todo : method to cast election id to bytes or even change type of election id
-	electionMarshalled, err := snap.Get([]byte(strconv.Itoa(int(decryptBallotsTransaction.ElectionID))))
+	electionMarshalled, err := snap.Get([]byte(decryptBallotsTransaction.ElectionID))
 	if err != nil {
-		return xerrors.Errorf("failed to get key '%s': %v", []byte(strconv.Itoa(int(decryptBallotsTransaction.ElectionID))), err)
+		return xerrors.Errorf("failed to get key '%s': %v", []byte(decryptBallotsTransaction.ElectionID), err)
 	}
 
 	simpleElection := new (types.SimpleElection)
@@ -431,7 +430,7 @@ func (e evotingCommand) decryptBallots(snap store.Snapshot, step execution.Step)
 		return xerrors.Errorf("failed to marshall types.SimpleElection : %v", err)
 	}
 
-	err = snap.Set([]byte(strconv.Itoa(int(simpleElection.ElectionID))), js)
+	err = snap.Set([]byte(simpleElection.ElectionID), js)
 	if err != nil {
 		return xerrors.Errorf("failed to set value: %v", err)
 	}
@@ -440,7 +439,7 @@ func (e evotingCommand) decryptBallots(snap store.Snapshot, step execution.Step)
 }
 
 type CancelElectionTransaction struct {
-	ElectionID uint16
+	ElectionID string
 	UserId string
 }
 
@@ -454,9 +453,9 @@ func (e evotingCommand) cancelElection(snap store.Snapshot, step execution.Step)
 	}
 
 	// todo : method to cast election id to bytes or even change type of election id
-	electionMarshalled, err := snap.Get([]byte(strconv.Itoa(int(cancelElectionTransaction.ElectionID))))
+	electionMarshalled, err := snap.Get([]byte(cancelElectionTransaction.ElectionID))
 	if err != nil {
-		return xerrors.Errorf("failed to get key '%s': %v", []byte(strconv.Itoa(int(cancelElectionTransaction.ElectionID))), err)
+		return xerrors.Errorf("failed to get key '%s': %v", []byte(cancelElectionTransaction.ElectionID), err)
 	}
 
 	simpleElection := new (types.SimpleElection)
@@ -476,7 +475,7 @@ func (e evotingCommand) cancelElection(snap store.Snapshot, step execution.Step)
 		return xerrors.Errorf("failed to set marshall types.SimpleElection : %v", err)
 	}
 
-	err = snap.Set([]byte(strconv.Itoa(int(simpleElection.ElectionID))), js)
+	err = snap.Set([]byte(simpleElection.ElectionID), js)
 	if err != nil {
 		return xerrors.Errorf("failed to set value: %v", err)
 	}
@@ -485,7 +484,7 @@ func (e evotingCommand) cancelElection(snap store.Snapshot, step execution.Step)
 }
 
 type CastVoteTransaction struct {
-	ElectionID uint16
+	ElectionID string
 	UserId string
 	Ballot []byte
 }
@@ -503,9 +502,9 @@ func (e evotingCommand) castVote(snap store.Snapshot, step execution.Step) error
 	}
 
 	// todo : method to cast election id to bytes or even change type of election id
-	electionMarshalled, err := snap.Get([]byte(strconv.Itoa(int(castVoteTransaction.ElectionID))))
+	electionMarshalled, err := snap.Get([]byte(castVoteTransaction.ElectionID))
 	if err != nil {
-		return xerrors.Errorf("failed to get key '%s': %v", []byte(strconv.Itoa(int(castVoteTransaction.ElectionID))), err)
+		return xerrors.Errorf("failed to get key '%s': %v", []byte(castVoteTransaction.ElectionID), err)
 	}
 
 	simpleElection := new (types.SimpleElection)
@@ -526,7 +525,8 @@ func (e evotingCommand) castVote(snap store.Snapshot, step execution.Step) error
 		return xerrors.Errorf("failed to set marshall types.SimpleElection : %v", err)
 	}
 
-	err = snap.Set([]byte(strconv.Itoa(int(simpleElection.ElectionID))), js)
+	dela.Logger.Info().Msg("Pushed Election : " + string(js))
+	err = snap.Set([]byte(simpleElection.ElectionID), js)
 	if err != nil {
 		return xerrors.Errorf("failed to set value: %v", err)
 	}
@@ -536,7 +536,7 @@ func (e evotingCommand) castVote(snap store.Snapshot, step execution.Step) error
 }
 
 type CreateSimpleElectionTransaction struct {
-	ElectionID uint16
+	ElectionID string
 	Title string
 	AdminId string
 	Candidates []string
@@ -569,7 +569,7 @@ func (e evotingCommand) createSimpleElection(snap store.Snapshot, step execution
 		return xerrors.Errorf("failed to set marshall types.SimpleElection : %v", err)
 	}
 
-	err = snap.Set([]byte(strconv.Itoa(int(simpleElection.ElectionID))), js)
+	err = snap.Set([]byte(simpleElection.ElectionID), js)
 	if err != nil {
 		return xerrors.Errorf("failed to set value: %v", err)
 	}
