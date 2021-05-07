@@ -485,8 +485,15 @@ func (n *InteriorNode) GetPrefix() *big.Int {
 // Search implements binprefix.TreeNode. It recursively search for the value in
 // the correct child.
 func (n *InteriorNode) Search(key *big.Int, path *Path, b kv.Bucket) ([]byte, error) {
-	right, _ := n.load(n.right, key, 1, b)
-	left, _ := n.load(n.left, key, 0, b)
+	left, err := n.load(n.left, key, 0, b)
+	if err != nil {
+		return nil, err // no wrapping to avoid long recursive error
+	}
+
+	right, err := n.load(n.right, key, 1, b)
+	if err != nil {
+		return nil, err // no wrapping to avoid long recursive error
+	}
 
 	if key.Bit(int(n.depth)) == 0 {
 		if path != nil {

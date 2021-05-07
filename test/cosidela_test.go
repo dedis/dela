@@ -2,8 +2,10 @@ package integration
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/x509"
+	"io"
 	"math/rand"
 	"net"
 	"os"
@@ -29,6 +31,7 @@ import (
 	"go.dedis.ch/dela/core/txn/pool"
 	poolimpl "go.dedis.ch/dela/core/txn/pool/gossip"
 	"go.dedis.ch/dela/core/txn/signed"
+	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/cosi/threshold"
 	"go.dedis.ch/dela/crypto"
@@ -41,7 +44,14 @@ import (
 	"go.dedis.ch/dela/mino/minogrpc/session"
 	"go.dedis.ch/dela/mino/router/tree"
 	"go.dedis.ch/dela/serde/json"
+	"golang.org/x/xerrors"
 )
+
+const certKeyName = "cert.key"
+const privateKeyFile = "private.key"
+
+var aKey = [32]byte{1}
+var valueAccessKey = [32]byte{2}
 
 // cosiDela defines the interface needed to use a Dela node using cosi.
 type cosiDela interface {
@@ -54,6 +64,9 @@ type cosiDela interface {
 	GetTree() hashtree.Tree
 }
 
+// cosiDelaNode represents a Dela node using cosi pbft
+//
+// - implements dela
 type cosiDelaNode struct {
 	t             *testing.T
 	onet          mino.Mino
@@ -278,4 +291,129 @@ func (c cosiDelaNode) GetAccessStore() accessstore {
 // GetTree implements cosiDela
 func (c cosiDelaNode) GetTree() hashtree.Tree {
 	return c.tree
+}
+
+// generator can generate a private key compatible with the x509 certificate.
+//
+// - implements loader.Generator
+type certGenerator struct {
+	random io.Reader
+	curve  elliptic.Curve
+}
+
+func newCertGenerator(r io.Reader, c elliptic.Curve) loader.Generator {
+	return certGenerator{
+		random: r,
+		curve:  c,
+	}
+}
+
+// certGenerator implements loader.Generator. It returns the serialized data of
+// a private key generated from the an elliptic curve. The data is formatted as
+// a PEM block "EC PRIVATE KEY".
+func (g certGenerator) Generate() ([]byte, error) {
+	priv, err := ecdsa.GenerateKey(g.curve, g.random)
+	if err != nil {
+		return nil, xerrors.Errorf("ecdsa: %v", err)
+	}
+
+	data, err := x509.MarshalECPrivateKey(priv)
+	if err != nil {
+		return nil, xerrors.Errorf("while marshaling: %v", err)
+	}
+
+	return data, nil
+}
+
+func newKeyGenerator() loader.Generator {
+	return keyGenerator{}
+}
+
+// keyGenerator is an implementation to generate a private key.
+//
+// - implements loader.Generator
+type keyGenerator struct {
+}
+
+// Generate implements loader.Generator. It returns the marshaled data of a
+// private key.
+func (g keyGenerator) Generate() ([]byte, error) {
+	signer := bls.NewSigner()
+
+	data, err := signer.MarshalBinary()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to marshal signer: %v", err)
+	}
+
+	return data, nil
+}
+
+// Client is a local client for the manager to read the current identity's nonce
+// from the ordering service.
+//
+// - implements signed.Client
+type client struct {
+	srvc ordering.Service
+	mgr  validation.Service
+}
+
+// GetNonce implements signed.Client. It reads the store of the ordering service
+// to get the next nonce of the identity and returns it.
+func (c client) GetNonce(ident access.Identity) (uint64, error) {
+	store := c.srvc.GetStore()
+
+	nonce, err := c.mgr.GetNonce(store, ident)
+	if err != nil {
+		return 0, err
+	}
+
+	return nonce, nil
+}
+
+// newAccessStore returns a new access store
+func newAccessStore() accessstore {
+	return accessstore{
+		bucket: make(map[string][]byte),
+	}
+}
+
+// accessstore is an in-memory store access
+//
+// - implements store.Readable
+// - implements store.Writable
+type accessstore struct {
+	bucket map[string][]byte
+}
+
+// Get implements store.Readable
+func (a accessstore) Get(key []byte) ([]byte, error) {
+	return a.bucket[string(key)], nil
+}
+
+// Set implements store.Writable
+func (a accessstore) Set(key, value []byte) error {
+	a.bucket[string(key)] = value
+
+	return nil
+}
+
+// Delete implements store.Writable
+func (a accessstore) Delete(key []byte) error {
+	delete(a.bucket, string(key))
+
+	return nil
+}
+
+// txClient return monotically increasing nonce
+//
+// - implements signed.Client
+type txClient struct {
+	nonce uint64
+}
+
+// GetNonce implements signed.Client
+func (c *txClient) GetNonce(access.Identity) (uint64, error) {
+	res := c.nonce
+	c.nonce++
+	return res, nil
 }

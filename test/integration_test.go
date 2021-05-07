@@ -3,12 +3,8 @@ package integration
 import (
 	"bytes"
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
-	"io"
 	"io/ioutil"
 	"math/rand"
 	"os"
@@ -18,22 +14,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 	accessContract "go.dedis.ch/dela/contracts/access"
-	"go.dedis.ch/dela/core/access"
-	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/signed"
-	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/crypto/loader"
-	"go.dedis.ch/dela/mino"
-	"golang.org/x/xerrors"
 )
-
-const certKeyName = "cert.key"
-const privateKeyFile = "private.key"
-
-var aKey = [32]byte{1}
-var valueAccessKey = [32]byte{2}
 
 func init() {
 	rand.Seed(0)
@@ -140,7 +125,7 @@ func addAndWait(t *testing.T, manager txn.Manager, node cosiDelaNode, args ...tx
 		for _, result := range event.Transactions {
 			tx := result.GetTransaction()
 
-			if bytes.Compare(tx.GetID(), tx.GetID()) == 0 {
+			if bytes.Equal(tx.GetID(), tx.GetID()) {
 				accepted, err := event.Transactions[0].GetStatus()
 				require.Empty(t, err)
 
@@ -151,138 +136,4 @@ func addAndWait(t *testing.T, manager txn.Manager, node cosiDelaNode, args ...tx
 	}
 
 	t.Error("transaction not found")
-}
-
-// dela defines the common interface for a Dela node.
-type dela interface {
-	Setup(...dela)
-	GetMino() mino.Mino
-	GetOrdering() ordering.Service
-	GetTxManager() txn.Manager
-	GetAccessService() access.Service
-}
-
-// generator can generate a private key compatible with the x509 certificate.
-//
-// - implements loader.Generator
-type certGenerator struct {
-	random io.Reader
-	curve  elliptic.Curve
-}
-
-func newCertGenerator(r io.Reader, c elliptic.Curve) loader.Generator {
-	return certGenerator{
-		random: r,
-		curve:  c,
-	}
-}
-
-// certGenerator implements loader.Generator. It returns the serialized data of
-// a private key generated from the an elliptic curve. The data is formatted as
-// a PEM block "EC PRIVATE KEY".
-func (g certGenerator) Generate() ([]byte, error) {
-	priv, err := ecdsa.GenerateKey(g.curve, g.random)
-	if err != nil {
-		return nil, xerrors.Errorf("ecdsa: %v", err)
-	}
-
-	data, err := x509.MarshalECPrivateKey(priv)
-	if err != nil {
-		return nil, xerrors.Errorf("while marshaling: %v", err)
-	}
-
-	return data, nil
-}
-
-func newKeyGenerator() loader.Generator {
-	return keyGenerator{}
-}
-
-// keyGenerator is an implementation to generate a private key.
-//
-// - implements loader.Generator
-type keyGenerator struct {
-}
-
-// Generate implements loader.Generator. It returns the marshaled data of a
-// private key.
-func (g keyGenerator) Generate() ([]byte, error) {
-	signer := bls.NewSigner()
-
-	data, err := signer.MarshalBinary()
-	if err != nil {
-		return nil, xerrors.Errorf("failed to marshal signer: %v", err)
-	}
-
-	return data, nil
-}
-
-// Client is a local client for the manager to read the current identity's nonce
-// from the ordering service.
-//
-// - implements signed.Client
-type client struct {
-	srvc ordering.Service
-	mgr  validation.Service
-}
-
-// GetNonce implements signed.Client. It reads the store of the ordering service
-// to get the next nonce of the identity and returns it.
-func (c client) GetNonce(ident access.Identity) (uint64, error) {
-	store := c.srvc.GetStore()
-
-	nonce, err := c.mgr.GetNonce(store, ident)
-	if err != nil {
-		return 0, err
-	}
-
-	return nonce, nil
-}
-
-// newAccessStore returns a new access store
-func newAccessStore() accessstore {
-	return accessstore{
-		bucket: make(map[string][]byte),
-	}
-}
-
-// accessstore is an in-memory store access
-//
-// - implements store.Readable
-// - implements store.Writable
-type accessstore struct {
-	bucket map[string][]byte
-}
-
-// Get implements store.Readable
-func (a accessstore) Get(key []byte) ([]byte, error) {
-	return a.bucket[string(key)], nil
-}
-
-// Set implements store.Writable
-func (a accessstore) Set(key, value []byte) error {
-	a.bucket[string(key)] = value
-
-	return nil
-}
-
-// Delete implements store.Writable
-func (a accessstore) Delete(key []byte) error {
-	delete(a.bucket, string(key))
-
-	return nil
-}
-
-// txClient return monotically increasing nonce
-//
-// - implements signed.Client
-type txClient struct {
-	nonce uint64
-}
-
-// GetNonce implements signed.Client
-func (c *txClient) GetNonce(access.Identity) (uint64, error) {
-	res := c.nonce
-	c.nonce++
-	return res, nil
 }

@@ -325,6 +325,20 @@ func TestInteriorNode_Search(t *testing.T) {
 	require.Len(t, path.interiors, 1)
 }
 
+func TestInteriorNode_Search_Error(t *testing.T) {
+	node := NewInteriorNode(0, big.NewInt(0))
+	node.left = NewDiskNode(0, nil, testCtx, NodeFactory{})
+
+	_, err := node.Search(big.NewInt(0), nil, &fakeBucket{})
+	require.EqualError(t, err, "failed to load node: prefix 0 (depth 0) not in database")
+
+	node.left = nil
+	node.right = NewDiskNode(0, nil, testCtx, NodeFactory{})
+
+	_, err = node.Search(big.NewInt(0), nil, &fakeBucket{})
+	require.EqualError(t, err, "failed to load node: prefix 1 (depth 0) not in database")
+}
+
 func TestInteriorNode_Insert(t *testing.T) {
 	node := NewInteriorNode(0, big.NewInt(0))
 
