@@ -137,6 +137,7 @@ type ShuffleBallotsTransaction struct {
 	Node string
 }
 
+// Todo : for now the front end must poll the server, add last round end message
 func (h *Handler) HandleStartShuffleMessage (startShuffleMessage types.StartShuffle, from mino.Address, out mino.Sender,
 	in mino.Receiver) error {
 
@@ -167,18 +168,18 @@ func (h *Handler) HandleStartShuffleMessage (startShuffleMessage types.StartShuf
 			return xerrors.Errorf("failed to read on the blockchain: %v", err)
 		}
 
-		simpleElection := new(electionTypes.SimpleElection)
+		election := new(electionTypes.Election)
 
-		err = json.NewDecoder(bytes.NewBuffer(prf.GetValue())).Decode(simpleElection)
+		err = json.NewDecoder(bytes.NewBuffer(prf.GetValue())).Decode(election)
 		if err != nil {
 			return xerrors.Errorf("failed to unmarshall SimpleElection: %v", err)
 		}
 
-		if simpleElection.Status != electionTypes.Closed {
+		if election.Status != electionTypes.Closed {
 			return xerrors.Errorf("The election must be closed !")
 		}
 
-		encryptedBallotsMap := simpleElection.EncryptedBallots
+		encryptedBallotsMap := election.EncryptedBallots
 
 		encryptedBallots := make([][]byte, 0, len(encryptedBallotsMap))
 
@@ -189,7 +190,7 @@ func (h *Handler) HandleStartShuffleMessage (startShuffleMessage types.StartShuf
 		}
 
 		if round > 1 {
-			encryptedBallots = simpleElection.ShuffledBallots[round-1]
+			encryptedBallots = election.ShuffledBallots[round-1]
 		}
 
 		Ks := make([]kyber.Point, 0, len(encryptedBallotsMap))
@@ -219,7 +220,7 @@ func (h *Handler) HandleStartShuffleMessage (startShuffleMessage types.StartShuf
 		}
 
 		pubKey := suite.Point()
-		err = pubKey.UnmarshalBinary(simpleElection.Pubkey)
+		err = pubKey.UnmarshalBinary(election.Pubkey)
 		if err != nil {
 			return xerrors.Errorf("couldn't unmarshal public key: %v", err)
 		}
