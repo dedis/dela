@@ -1,9 +1,9 @@
 package controller
 
 import (
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
-	"go.dedis.ch/dela/core/access"
 )
 
 // NewController returns a new controller initializer
@@ -14,7 +14,8 @@ func NewController() node.Initializer {
 // controller is an initializer with a set of commands.
 //
 // - implements node.Initializer
-type controller struct{}
+type controller struct{
+}
 
 // Build implements node.Initializer.
 func (m controller) SetCommands(builder node.Builder) {
@@ -30,11 +31,11 @@ func (m controller) SetCommands(builder node.Builder) {
 		Usage:    "port number of the HTTP server",
 		Required: true,
 	})
+
+	dela.Logger.Info().Msg("PUSH CLIENT")
 	sub.SetAction(builder.MakeAction(&initHttpServerAction{
 		ElectionIdNonce: 0 ,
 		ElectionIds: make([]string, 0),
-		// TODO : should have the same client as pool controller
-		client:          &client{nonce: 1},
 	}))
 
 	sub = cmd.SetSubCommand("createElectionTest")
@@ -63,18 +64,4 @@ func (m controller) OnStart(ctx cli.Flags, inj node.Injector) error {
 // OnStop implements node.Initializer.
 func (controller) OnStop(node.Injector) error {
 	return nil
-}
-
-// client return monotically increasing nonce
-//
-// - implements signed.Client
-type client struct {
-	nonce uint64
-}
-
-// GetNonce implements signed.Client
-func (c *client) GetNonce(access.Identity) (uint64, error) {
-	res := c.nonce
-	c.nonce++
-	return res, nil
 }

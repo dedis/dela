@@ -10,6 +10,9 @@ import (
 	"go.dedis.ch/dela/core/execution/native"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/kyber/v3"
+	"go.dedis.ch/kyber/v3/proof"
+	shuffleKyber "go.dedis.ch/kyber/v3/shuffle"
+
 	//shuffleKyber "go.dedis.ch/kyber/v3/shuffle"
 	"go.dedis.ch/kyber/v3/suites"
 	"golang.org/x/xerrors"
@@ -21,6 +24,8 @@ const url = "http://localhost:"
 const getPublicKeyEndPoint = "/dkg/pubkey"
 const encryptEndPoint = "/dkg/encrypt"
 const decryptEndPoint = "/dkg/decrypt"
+const protocolName = "PairShuffle"
+const messageOnlyOneShufflePerRound = "Only one shuffle per round is allowed"
 var suite = suites.MustFind("Ed25519")
 
 
@@ -299,9 +304,10 @@ func (e evotingCommand) closeElection(snap store.Snapshot, step execution.Step) 
 
 type ShuffleBallotsTransaction struct {
 	ElectionID string
-	UserId string
+	Round int
 	ShuffledBallots  [][]byte
 	Proof 			 []byte
+	Node string
 }
 
 type Ciphertext struct {
@@ -310,12 +316,41 @@ type Ciphertext struct {
 }
 
 func (e evotingCommand) shuffleBallots(snap store.Snapshot, step execution.Step) error {
+
+	dela.Logger.Info().Msg("--------------------------------------SHUFFLE TRANSACTION START...")
 	shuffleBallotsArg := step.Current.GetArg(ShuffleBallotsArg)
 
 	shuffleBallotsTransaction := new (ShuffleBallotsTransaction)
 	err := json.NewDecoder(bytes.NewBuffer(shuffleBallotsArg)).Decode(shuffleBallotsTransaction)
 	if err != nil {
 		return xerrors.Errorf("failed to unmarshall ShuffleBallotsTransaction : %v", err)
+	}
+
+	dela.Logger.Info().Msg(string(shuffleBallotsArg))
+	for _, tx := range step.Previous {
+		// Only one view change transaction is allowed per block to prevent
+		// malicious peers to reach the threshold.
+
+		if string(tx.GetArg(native.ContractArg)) == ContractName {
+
+			if string(tx.GetArg("evoting:command")) == "evoting:command"{
+
+				shuffleBallotsArgTx := tx.GetArg(ShuffleBallotsArg)
+				shuffleBallotsTransactionTx := new (ShuffleBallotsTransaction)
+				err := json.NewDecoder(bytes.NewBuffer(shuffleBallotsArgTx)).Decode(shuffleBallotsTransactionTx)
+
+				if err != nil {
+					return xerrors.Errorf("failed to unmarshall ShuffleBallotsTransaction : %v", err)
+				}
+
+				//todo : same electionid
+				if shuffleBallotsTransactionTx.Round == shuffleBallotsTransaction.Round {
+					dela.Logger.Info().Msg("--------------------------------------FOUND PREVIOUS SAME ROUND...")
+					return xerrors.New(messageOnlyOneShufflePerRound)
+				}
+				dela.Logger.Info().Msg("--------------------------------------FOUND PREVIOUS...")
+			}
+		}
 	}
 
 	// todo : method to cast election id to bytes or even change type of election id
@@ -330,17 +365,18 @@ func (e evotingCommand) shuffleBallots(snap store.Snapshot, step execution.Step)
 		return xerrors.Errorf("failed to unmarshall SimpleElection : %v", err)
 	}
 
-	if simpleElection.AdminId != shuffleBallotsTransaction.UserId{
-		return xerrors.Errorf("Only the admin can shuffle the ballots")
-	}
-
 	if simpleElection.Status != types.Closed{
 		// todo : send status ?
 		return xerrors.Errorf("The election is not closed.")
 	}
 
-	Ks := make([]kyber.Point, 0, len(shuffleBallotsTransaction.ShuffledBallots))
-	Cs := make([]kyber.Point, 0, len(shuffleBallotsTransaction.ShuffledBallots))
+	if len(simpleElection.ShuffledBallots) != shuffleBallotsTransaction.Round-1{
+		dela.Logger.Info().Msg("--------------------------------------FOUND PREVIOUS SAME ROUND...")
+		return xerrors.Errorf(messageOnlyOneShufflePerRound)
+	}
+
+	KsShuffled := make([]kyber.Point, 0, len(shuffleBallotsTransaction.ShuffledBallots))
+	CsShuffled := make([]kyber.Point, 0, len(shuffleBallotsTransaction.ShuffledBallots))
 	for _, v := range shuffleBallotsTransaction.ShuffledBallots{
 		ciphertext:= new (Ciphertext)
 		err = json.NewDecoder(bytes.NewBuffer(v)).Decode(ciphertext)
@@ -360,18 +396,75 @@ func (e evotingCommand) shuffleBallots(snap store.Snapshot, step execution.Step)
 			return xerrors.Errorf("failed to unmarshall kyber.Point : %v", err)
 		}
 
-		Ks = append(Ks, K)
-		Cs = append(Cs, C)
+		KsShuffled = append(KsShuffled, K)
+		CsShuffled = append(CsShuffled, C)
 
 	}
 
-	// todo : we need all shuffles and all proofs, ask Noémien and Gaurav!
+	Ks := make([]kyber.Point, 0, len(KsShuffled))
+	Cs := make([]kyber.Point, 0, len(CsShuffled))
 
-	//verifier := shuffleKyber.Verifier(suite, nil, pubKey, Ks, Cs, KsShuffled, CsShuffled)
+	encryptedBallotsMap := simpleElection.EncryptedBallots
 
-	simpleElection.Status = types.ShuffledBallots
-	simpleElection.ShuffledBallots = shuffleBallotsTransaction.ShuffledBallots
-	simpleElection.Proof = shuffleBallotsTransaction.Proof
+	encryptedBallots := make([][]byte, 0, len(encryptedBallotsMap))
+
+	if shuffleBallotsTransaction.Round == 1 {
+		for _, value := range encryptedBallotsMap {
+			encryptedBallots = append(encryptedBallots, value)
+		}
+	}
+
+	if shuffleBallotsTransaction.Round > 1 {
+		encryptedBallots = simpleElection.ShuffledBallots[shuffleBallotsTransaction.Round-1]
+	}
+
+	for _, v := range encryptedBallots {
+		ciphertext := new(Ciphertext)
+		err = json.NewDecoder(bytes.NewBuffer(v)).Decode(ciphertext)
+		if err != nil {
+			return xerrors.Errorf("failed to unmarshall ciphertext: %v", err)
+		}
+
+		K := suite.Point()
+		err = K.UnmarshalBinary(ciphertext.K)
+		if err != nil {
+			return xerrors.Errorf("failed to unmarshall K: %v", err)
+		}
+
+		C := suite.Point()
+		err = C.UnmarshalBinary(ciphertext.C)
+		if err != nil {
+			return xerrors.Errorf("failed to unmarshall C: %v", err)
+		}
+
+		Ks = append(Ks, K)
+		Cs = append(Cs, C)
+	}
+
+
+	pubKey := suite.Point()
+	err = pubKey.UnmarshalBinary(simpleElection.Pubkey)
+	if err != nil {
+		return xerrors.Errorf("couldn't unmarshal public key: %v", err)
+	}
+
+
+	//todo: add trusted nodes in election struct
+	verifier := shuffleKyber.Verifier(suite, nil, pubKey, Ks, Cs, KsShuffled, CsShuffled)
+	err = proof.HashVerify(suite, protocolName, verifier, shuffleBallotsTransaction.Proof)
+	if err != nil {
+		dela.Logger.Info().Msg("--------------------------------------PROOF FAILED !!!!!!!! ..." + err.Error())
+		//return xerrors.Errorf("proof verification failed: %v", err)
+	}
+
+
+	//todo : threshold should be part of election struct
+	if shuffleBallotsTransaction.Round == 3 {
+		simpleElection.Status = types.ShuffledBallots
+	}
+
+	simpleElection.ShuffledBallots[shuffleBallotsTransaction.Round] = shuffleBallotsTransaction.ShuffledBallots
+	simpleElection.Proofs[shuffleBallotsTransaction.Round] = shuffleBallotsTransaction.Proof
 
 	js, err := json.Marshal(simpleElection)
 	if err != nil {
@@ -525,7 +618,7 @@ func (e evotingCommand) castVote(snap store.Snapshot, step execution.Step) error
 		return xerrors.Errorf("failed to set marshall types.SimpleElection : %v", err)
 	}
 
-	dela.Logger.Info().Msg("Pushed Election : " + string(js))
+	//dela.Logger.Info().Msg("Pushed Election : " + string(js))
 	err = snap.Set([]byte(simpleElection.ElectionID), js)
 	if err != nil {
 		return xerrors.Errorf("failed to set value: %v", err)
@@ -551,7 +644,7 @@ func (e evotingCommand) createSimpleElection(snap store.Snapshot, step execution
 	if err != nil {
 		return xerrors.Errorf("failed to set unmarshall CreateSimpleElectionTransaction : %v", err)
 	}
-	
+
 	simpleElection := types.SimpleElection{
 		Title:            createSimpleElectionTransaction.Title,
 		ElectionID:       types.ID(createSimpleElectionTransaction.ElectionID),
@@ -560,7 +653,8 @@ func (e evotingCommand) createSimpleElection(snap store.Snapshot, step execution
 		Status:           types.Open,
 		Pubkey:           createSimpleElectionTransaction.PublicKey,
 		EncryptedBallots: map[string][]byte{},
-		ShuffledBallots:  [][]byte{},
+		ShuffledBallots:  map[int][][]byte{},
+		Proofs:           map[int][]byte{},
 		DecryptedBallots: []types.SimpleBallot{},
 	}
 
@@ -575,7 +669,7 @@ func (e evotingCommand) createSimpleElection(snap store.Snapshot, step execution
 	}
 
 	return nil
-	
+
 }
 
 // getPublicKey implements commands. It performs the GETPUBLICKEY command

@@ -2,6 +2,9 @@ package neff
 
 import (
 	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/core/ordering"
+	"go.dedis.ch/dela/core/txn/pool"
+	txnPoolController "go.dedis.ch/dela/core/txn/pool/controller"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
@@ -13,6 +16,7 @@ import (
 	"go.dedis.ch/kyber/v3/suites"
 	"golang.org/x/net/context"
 	"golang.org/x/xerrors"
+	"strconv"
 	"time"
 )
 
@@ -27,22 +31,28 @@ const (
 type NeffShuffle struct {
 	mino    mino.Mino
 	factory serde.Factory
+	service ordering.Service
+	p       pool.Pool
+	client  *txnPoolController.Client
 }
 
 // NewNeffShuffle returns a new NeffShuffle factory.
-func NewNeffShuffle(m mino.Mino) *NeffShuffle {
+func NewNeffShuffle(m mino.Mino, s ordering.Service, p pool.Pool, client *txnPoolController.Client) *NeffShuffle {
 	factory := types.NewMessageFactory(m.GetAddressFactory())
 
 	return &NeffShuffle{
 		mino:    m,
 		factory: factory,
+		service: s,
+		p :      p,
+		client: client,
 	}
 }
 
 // Listen implements shuffle.SHUFFLE. It must be called on each node that participates
 // in the SHUFFLE. Creates the RPC.
 func (n NeffShuffle) Listen() (shuffle.Actor, error) {
-	h := NewHandler(n.mino.GetAddress())
+	h := NewHandler(n.mino.GetAddress(), n.service, n.p, n.client)
 
 	a := &Actor{
 		rpc:      mino.MustCreateRPC(n.mino, "shuffle", h, n.factory),
@@ -60,25 +70,23 @@ func (n NeffShuffle) Listen() (shuffle.Actor, error) {
 // - implements shuffle.Actor
 type Actor struct {
 	rpc      mino.RPC
-	mino    mino.Mino
+	mino     mino.Mino
 	factory  serde.Factory
 	startRes *state
 }
 
 // Shuffle must be called by ONE of the actor to shuffle the list of ElGamal pairs.
 // Each node represented by a player must first execute Listen().
-func (a Actor) Shuffle(co crypto.CollectiveAuthority, suiteName string, Ks []kyber.Point,
-	Cs []kyber.Point, pubKey kyber.Point) (KsShuffled []kyber.Point,
-	CsShuffled []kyber.Point, prf []byte, err error) {
+func (a Actor) Shuffle(co crypto.CollectiveAuthority, electionId string) (err error) {
 
-	suite := suites.MustFind(suiteName)
+	//suite := suites.MustFind(suiteName)
 
 	ctx, cancel := context.WithTimeout(context.Background(), shuffleTimeout)
 	defer cancel()
 
-	sender, receiver, err := a.rpc.Stream(ctx, co)
+	sender, _, err := a.rpc.Stream(ctx, co)
 	if err != nil {
-		return nil, nil, nil, xerrors.Errorf("failed to stream: %v", err)
+		return xerrors.Errorf("failed to stream: %v", err)
 	}
 
 	addrs := make([]mino.Address, 0, co.Len())
@@ -93,23 +101,29 @@ func (a Actor) Shuffle(co crypto.CollectiveAuthority, suiteName string, Ks []kyb
 		}
 	}
 
-	rand := suite.RandomStream()
+	/*rand := suite.RandomStream()
 	Kbar, Cbar, prover := shuffleKyber.Shuffle(suite, nil, pubKey, Ks, Cs, rand)
 	shuffleProof, err := proof.HashProve(suite, protocolName, prover)
 	if err != nil {
 		return nil, nil, nil, xerrors.Errorf("Shuffle proof failed: ", err.Error())
 	}
 
-	message := types.NewShuffleMessage(addrs, suiteName, pubKey, Kbar, Cbar, Ks, Cs, shuffleProof)
+	message := types.NewShuffleMessage(addrs, suiteName, pubKey, Kbar, Cbar, Ks, Cs, shuffleProof)*/
+	threshold := len(addrs)
+	message := types.NewStartShuffle(threshold, electionId, addrs)
+	dela.Logger.Info().Msg( "threshold : "  + strconv.Itoa(threshold))
 
-	errs := sender.Send(message, addrs[0])
+	dela.Logger.Info().Msg("--------------------------------------Starting the neff shuffle protocol ...")
+
+	errs := sender.Send(message, addrs...)
 	err = <-errs
 	if err != nil {
-		return nil, nil, nil, xerrors.Errorf("failed to send first message: %v", err)
+		return xerrors.Errorf("failed to send first message: %v", err)
 	}
 
-	dela.Logger.Info().Msg("Starting the neff shuffle protocol ...")
+	return nil
 
+	/*
 	addr, msg, err := receiver.Recv(context.Background())
 
 	dela.Logger.Info().Msg("End of the shuffle protocol.")
@@ -138,7 +152,7 @@ func (a Actor) Shuffle(co crypto.CollectiveAuthority, suiteName string, Ks []kyb
 	}
 
 	return kBar, cBar, finalProof, nil
-
+	*/
 }
 
 // Verify allows to verify a Shuffle

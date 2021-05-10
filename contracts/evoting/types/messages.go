@@ -37,10 +37,8 @@ type SimpleElection struct {
 	Status           status // Initial | Open | Closed | Shuffling | Decrypting | ..
 	Pubkey           []byte
 	EncryptedBallots map[string][]byte
-	//todo : all shuffled ballots [][][]byte
-	ShuffledBallots  [][]byte
-	//todo : all proofs [][]byte
-	Proof 			 []byte
+	ShuffledBallots  map[int][][]byte
+	Proofs 			 map[int][]byte
 	DecryptedBallots []SimpleBallot
 }
 

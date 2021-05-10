@@ -15,6 +15,74 @@ func RegisterMessageFormat(c serde.Format, f serde.FormatEngine) {
 	msgFormats.Register(c, f)
 }
 
+// StartShuffle is the message the initiator of the DKG protocol should send to all the
+// nodes.
+//
+// - implements serde.Message
+type StartShuffle struct {
+	threshold  int
+	electionId string
+	addresses []mino.Address
+}
+
+// NewStart creates a new start message.
+func NewStartShuffle(threshold int, electionId string, addresses []mino.Address) StartShuffle {
+	return StartShuffle{
+		threshold:   threshold,
+		electionId : electionId,
+		addresses : addresses,
+	}
+}
+
+// GetThreshold returns the threshold.
+func (s StartShuffle) GetThreshold() int {
+	return s.threshold
+}
+
+// GetElectionId returns the electionId.
+func (s StartShuffle) GetElectionId() string {
+	return s.electionId
+}
+
+// GetAddresses returns the list of addresses.
+func (s StartShuffle) GetAddresses() []mino.Address {
+	return append([]mino.Address{}, s.addresses...)
+}
+
+// Serialize implements serde.Message. It looks up the format and returns the
+// serialized data for the start message.
+func (s StartShuffle) Serialize(ctx serde.Context) ([]byte, error) {
+	format := msgFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, s)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't encode StartShuffle message: %v", err)
+	}
+
+	return data, nil
+}
+
+type EndShuffle struct {
+}
+
+func NewEndShuffle() EndShuffle {
+	return EndShuffle{
+	}
+}
+
+// Serialize implements serde.Message. It looks up the format and returns the
+// serialized data for the start message.
+func (e EndShuffle) Serialize(ctx serde.Context) ([]byte, error) {
+	format := msgFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, e)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't encode EndShuffle message: %v", err)
+	}
+
+	return data, nil
+}
+
 // ShuffleMessage is a message that contains every information needed to run the shuffle protocol.
 //
 // - implements serde.Message

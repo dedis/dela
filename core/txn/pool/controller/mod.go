@@ -5,6 +5,7 @@
 package controller
 
 import (
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/core/access"
@@ -19,18 +20,20 @@ const (
 )
 
 type miniController struct {
+	Client *Client
 }
 
 // NewController creates a new minimal controller for the pool
 //
 // - implements node.Initializer
 func NewController() node.Initializer {
-	return miniController{}
+	dela.Logger.Info().Msg("CREATE CLIENT")
+	return miniController{Client: &Client{}}
 }
 
 // SetCommands implements mode.Initializer. It sets the command to interact with
 // the pool.
-func (miniController) SetCommands(builder node.Builder) {
+func (m miniController) SetCommands(builder node.Builder) {
 	cmd := builder.SetCommand("pool")
 	cmd.SetDescription("interact with the pool")
 
@@ -49,13 +52,16 @@ func (miniController) SetCommands(builder node.Builder) {
 		Usage:    "path to the private keyfile",
 		Required: true,
 	})
+	dela.Logger.Info().Msg("TXN PUSH CLIENT")
 	sub.SetAction(builder.MakeAction(&addAction{
-		client: &client{},
+		client: m.Client,
 	}))
 }
 
 // OnStart implements node.Initializer
 func (m miniController) OnStart(flags cli.Flags, inj node.Injector) error {
+	dela.Logger.Info().Msg("INJECT CLIENT")
+	inj.Inject(m.Client)
 	return nil
 }
 
@@ -67,13 +73,13 @@ func (miniController) OnStop(inj node.Injector) error {
 // client return monotically increasing nonce
 //
 // - implements signed.Client
-type client struct {
-	nonce uint64
+type Client struct {
+	Nonce uint64
 }
 
 // GetNonce implements signed.Client
-func (c *client) GetNonce(access.Identity) (uint64, error) {
-	res := c.nonce
-	c.nonce++
+func (c *Client) GetNonce(access.Identity) (uint64, error) {
+	res := c.Nonce
+	c.Nonce++
 	return res, nil
 }

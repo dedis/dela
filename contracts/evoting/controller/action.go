@@ -13,6 +13,7 @@ import (
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/pool"
+	txnPoolController "go.dedis.ch/dela/core/txn/pool/controller"
 	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
@@ -47,7 +48,6 @@ const cancelElectionEndpoint = "/evoting/cancel"
 
 const token = "token"
 const signerFilePath = "private.key"
-
 const createElectionTimeout = 2 * time.Second
 
 var suite = suites.MustFind("Ed25519")
@@ -68,7 +68,6 @@ type initHttpServerAction struct {
 
 	ElectionIdNonce int
 	ElectionIds []string
-	client *client
 }
 
 // Todo : all types should be in another file
@@ -290,7 +289,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		manager := getManager(signer, a.client)
+		var client *txnPoolController.Client
+		err = ctx.Injector.Resolve(&client)
+		if err != nil {
+			http.Error(w, "Failed to resolve txn pool controller Client" + err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		manager := getManager(signer, client)
 
 		err = manager.Sync()
 		if err != nil {
@@ -509,7 +515,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		manager := getManager(signer, a.client)
+		var client *txnPoolController.Client
+		err = ctx.Injector.Resolve(&client)
+		if err != nil {
+			http.Error(w, "Failed to resolve txn pool controller Client" + err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		manager := getManager(signer, client)
 
 		err = manager.Sync()
 		if err != nil {
@@ -647,7 +660,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		manager := getManager(signer, a.client)
+		var client *txnPoolController.Client
+		err = ctx.Injector.Resolve(&client)
+		if err != nil {
+			http.Error(w, "Failed to resolve txn pool controller Client" + err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		manager := getManager(signer, client)
 
 		err = manager.Sync()
 		if err != nil {
@@ -805,6 +825,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
+		// todo : only server node checks this, maybe new transaction that changes the state !
 		if simpleElection.AdminId != shuffleBallotsRequest.UserId{
 			http.Error(w, "Only the admin can shuffle the ballots !", http.StatusUnauthorized)
 			return
@@ -833,36 +854,6 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		collectiveAuthority := authority.New(addrs, pubkeys)
 
-		encryptedBallotsMap := simpleElection.EncryptedBallots
-		Ks := make([]kyber.Point, 0, len(encryptedBallotsMap))
-		Cs := make([]kyber.Point, 0, len(encryptedBallotsMap))
-		for _, v := range encryptedBallotsMap{
-			ciphertext:= new (Ciphertext)
-			err = json.NewDecoder(bytes.NewBuffer(v)).Decode(ciphertext)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-
-			K := suite.Point()
-			err = K.UnmarshalBinary(ciphertext.K)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-
-			C := suite.Point()
-			err = C.UnmarshalBinary(ciphertext.C)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-
-			Ks = append(Ks, K)
-			Cs = append(Cs, C)
-
-		}
-
 		var shuffleActor shuffle.Actor
 		err = ctx.Injector.Resolve(&shuffleActor)
 		if err != nil {
@@ -870,161 +861,28 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		publicKey := suite.Point()
-
-		err = publicKey.UnmarshalBinary(simpleElection.Pubkey)
-		if err != nil {
-			http.Error(w, "failed to unmarshal public key: " + err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		KsShuffled, CsShuffled, prf, err := shuffleActor.Shuffle(collectiveAuthority, "Ed25519",
-			Ks, Cs, publicKey)
+		err = shuffleActor.Shuffle(collectiveAuthority, string(simpleElection.ElectionID))
 
 		if err != nil {
 			http.Error(w, "failed to shuffle: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		shuffledBallots := make([][]byte, 0, len(KsShuffled))
-
-		for i := 0; i < len(KsShuffled); i++ {
-
-			kMarshalled, err := KsShuffled[i].MarshalBinary()
-			if err != nil {
-				http.Error(w, "failed to marshall kyber.Point: " + err.Error(), http.StatusInternalServerError)
-				return
-			}
-
-			cMarshalled, err := CsShuffled[i].MarshalBinary()
-			if err != nil {
-				http.Error(w, "failed to marshall kyber.Point: " + err.Error(), http.StatusInternalServerError)
-				return
-			}
-
-			ciphertext := Ciphertext{K: kMarshalled, C: cMarshalled}
-			js, err := json.Marshal(ciphertext)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-
-			shuffledBallots = append(shuffledBallots, js)
-
+		response := ShuffleBallotsResponse{
 		}
 
-		var p pool.Pool
-		err = ctx.Injector.Resolve(&p)
+		js, err := json.Marshal(response)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		signer, err := getSigner(signerFilePath)
+		w.Header().Set("Content-Type", "application/json")
+		_, err = w.Write(js)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-
-		manager := getManager(signer, a.client)
-
-		err = manager.Sync()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		shuffleBallotsTransaction := ShuffleBallotsTransaction{
-			ElectionID:      shuffleBallotsRequest.ElectionID,
-			UserId:          shuffleBallotsRequest.UserId,
-			ShuffledBallots: shuffledBallots,
-			Proof:           prf,
-		}
-
-		js, err := json.Marshal(shuffleBallotsTransaction)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-
-		args := make([]txn.Arg, 3)
-		args[0] = txn.Arg{
-			//todo : should be global variable
-			Key:   "go.dedis.ch/dela.ContractArg",
-			Value: []byte("go.dedis.ch/dela.Evoting"),
-		}
-		args[1] = txn.Arg{
-			//todo : should be global variable
-			Key:   "evoting:command",
-			Value: []byte("SHUFFLE_BALLOTS"),
-		}
-		args[2] = txn.Arg{
-			//todo : should be global variable
-			Key:   "evoting:shuffleBallotsArgs",
-			Value: js,
-		}
-
-		tx, err := manager.Make(args...)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		//var service ordering.Service
-		err = ctx.Injector.Resolve(&service)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		watchCtx, cancel := context.WithTimeout(context.Background(), createElectionTimeout)
-		defer cancel()
-
-		events := service.Watch(watchCtx)
-
-		err = p.Add(tx)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		for event := range events {
-			for _, res := range event.Transactions {
-				if !bytes.Equal(res.GetTransaction().GetID(), tx.GetID()) {
-					continue
-				}
-
-				dela.Logger.Debug().
-					Hex("id", tx.GetID()).
-					Msg("transaction included in the block")
-
-				accepted, msg := res.GetStatus()
-				if !accepted {
-					http.Error(w, "Transaction refused : " + msg, http.StatusInternalServerError)
-					return
-				}
-
-				response := ShuffleBallotsResponse{
-				}
-
-				js, err := json.Marshal(response)
-				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
-
-				w.Header().Set("Content-Type", "application/json")
-				_, err = w.Write(js)
-				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
-				return
-			}
-		}
-
-		http.Error(w, "Transaction not found in the block", http.StatusInternalServerError)
 		return
 
 	})
@@ -1089,7 +947,9 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		Ks := make([]kyber.Point, 0, len(simpleElection.ShuffledBallots))
 		Cs := make([]kyber.Point, 0, len(simpleElection.ShuffledBallots))
 
-		for _, v := range simpleElection.ShuffledBallots{
+
+		// todo : PUT THRESHOLD IN ELECTION
+		for _, v := range simpleElection.ShuffledBallots[3]{
 			ciphertext:= new (Ciphertext)
 			err = json.NewDecoder(bytes.NewBuffer(v)).Decode(ciphertext)
 			if err != nil {
@@ -1149,7 +1009,16 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		manager := getManager(signer, a.client)
+		var client *txnPoolController.Client
+		err = ctx.Injector.Resolve(&client)
+		if err != nil {
+			http.Error(w, "Failed to resolve txn pool controller Client" + err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		client.Nonce+=3
+
+		manager := getManager(signer, client)
 
 		err = manager.Sync()
 		if err != nil {
@@ -1357,7 +1226,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		manager := getManager(signer, a.client)
+		var client *txnPoolController.Client
+		err = ctx.Injector.Resolve(&client)
+		if err != nil {
+			http.Error(w, "Failed to resolve txn pool controller Client" + err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		manager := getManager(signer, client)
 
 		err = manager.Sync()
 		if err != nil {
@@ -1905,6 +1781,8 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	dela.Logger.Info().Msg("Response body : " + string(body))
 	resp.Body.Close()
 
+	time.Sleep(20 * time.Second)
+
 	proof, err = service.GetProof([]byte(electionId))
 	if err != nil {
 		return xerrors.Errorf("failed to read on the blockchain: %v", err)
@@ -1961,6 +1839,7 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 		return xerrors.Errorf("failed to unmarshall SimpleElection : %v", err)
 	}
 
+	dela.Logger.Info().Msg("----------------------- Election : " + string(proof.GetValue()))
 	dela.Logger.Info().Msg("Title of the election : " + simpleElection.Title)
 	dela.Logger.Info().Msg("ID of the election : " + string(simpleElection.ElectionID))
 	dela.Logger.Info().Msg("Status of the election : " + strconv.Itoa(int(simpleElection.Status)))
@@ -1973,6 +1852,7 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	// ###################################### DECRYPT BALLOTS ##########################################################
 
 	// ###################################### GET ELECTION RESULT ######################################################
+
 
 	dela.Logger.Info().Msg("----------------------- GET ELECTION RESULT : ")
 

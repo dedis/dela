@@ -90,7 +90,8 @@ func (a *shuffleAction) Execute(ctx node.Context) error {
 		Y[i] = C
 
 	}
-
+	print(roster)
+/*
 	KsShuffled, CsShuffled, _, err := actor.Shuffle(roster, "Ed25519", X, Y, H)
 
 	if err != nil {
@@ -111,7 +112,7 @@ func (a *shuffleAction) Execute(ctx node.Context) error {
 
 		dela.Logger.Info().Msg(string(message))
 	}
-
+*/
 	return nil
 }
 

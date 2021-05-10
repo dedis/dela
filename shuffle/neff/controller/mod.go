@@ -3,6 +3,9 @@ package controller
 import (
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
+	"go.dedis.ch/dela/core/ordering"
+	"go.dedis.ch/dela/core/txn/pool"
+	txnPoolController "go.dedis.ch/dela/core/txn/pool/controller"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/shuffle/neff"
 	"golang.org/x/xerrors"
@@ -50,10 +53,28 @@ func (m controller) OnStart(ctx cli.Flags, inj node.Injector) error {
 	var no mino.Mino
 	err := inj.Resolve(&no)
 	if err != nil {
-		return xerrors.Errorf("failed to resolve mino: %v", err)
+		return xerrors.Errorf("failed to resolve mino.Mino: %v", err)
 	}
 
-	neffShuffle := neff.NewNeffShuffle(no)
+	var p pool.Pool
+	err = inj.Resolve(&p)
+	if err != nil {
+		return xerrors.Errorf("failed to resolve pool.Pool: %v", err)
+	}
+
+	var service ordering.Service
+	err = inj.Resolve(&service)
+	if err != nil {
+		return xerrors.Errorf("failed to resolve ordering.Service: %v", err)
+	}
+
+	var client *txnPoolController.Client
+	err = inj.Resolve(&client)
+	if err != nil {
+		return xerrors.Errorf("failed to resolve txn pool client: %v", err)
+	}
+
+	neffShuffle := neff.NewNeffShuffle(no, service, p, client)
 
 	inj.Inject(neffShuffle)
 
