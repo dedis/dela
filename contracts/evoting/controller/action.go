@@ -40,6 +40,7 @@ const loginEndPoint = "/evoting/login"
 const createElectionEndPoint = "/evoting/create"
 const castVoteEndpoint = "/evoting/cast"
 const getElectionInfoEndpoint = "/evoting/info"
+const getAllElectionsInfoEndpoint = "/evoting/info/all"
 const closeElectionEndpoint = "/evoting/close"
 const shuffleBallotsEndpoint = "/evoting/shuffle"
 const decryptBallotsEndpoint = "/evoting/decrypt"
@@ -205,6 +206,17 @@ type GetElectionInfoResponse struct {
 	//Success bool
 	//Error string
 }
+
+type GetAllElectionsInfoRequest struct {
+	//UserId string
+	Token string
+}
+
+type GetAllElectionsInfoResponse struct {
+	//UserId string
+	AllElectionsInfo []GetElectionInfoResponse
+}
+
 
 type CancelElectionRequest struct {
 	ElectionID string
@@ -471,6 +483,81 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		return
+
+	})
+
+	http.HandleFunc(getAllElectionsInfoEndpoint, func(w http.ResponseWriter, r *http.Request){
+
+		dela.Logger.Info().Msg(getAllElectionsInfoEndpoint)
+
+		body, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		getAllElectionsInfoRequest := new (GetAllElectionsInfoRequest)
+		err = json.NewDecoder(bytes.NewBuffer(body)).Decode(getAllElectionsInfoRequest)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		if getAllElectionsInfoRequest.Token != token{
+			http.Error(w, "Invalid token", http.StatusUnauthorized)
+			return
+		}
+
+		var service ordering.Service
+		err = ctx.Injector.Resolve(&service)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		allElectionsInfo := make([]GetElectionInfoResponse, 0, len(a.ElectionIds))
+
+		for _, id := range a.ElectionIds {
+
+			proof, err := service.GetProof([]byte(id))
+			if err != nil {
+				http.Error(w, "failed to read on the blockchain: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			simpleElection := new(types.SimpleElection)
+			err = json.NewDecoder(bytes.NewBuffer(proof.GetValue())).Decode(simpleElection)
+			if err != nil {
+				http.Error(w, "failed to unmarshall SimpleElection: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			info := GetElectionInfoResponse{
+				Title:      simpleElection.Title,
+				Candidates: simpleElection.Candidates,
+				Status:     uint16(simpleElection.Status),
+				Pubkey:     simpleElection.Pubkey,
+			}
+
+			allElectionsInfo = append(allElectionsInfo, info)
+		}
+
+		response := GetAllElectionsInfoResponse{AllElectionsInfo: allElectionsInfo}
+
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, err = w.Write(js)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
 		return
 
 	})
