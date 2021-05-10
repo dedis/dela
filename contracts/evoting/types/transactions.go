@@ -1,6 +1,6 @@
 package types
 
-type CreateSimpleElectionTransaction struct {
+type CreateElectionTransaction struct {
 	ElectionID string
 	Title string
 	AdminId string

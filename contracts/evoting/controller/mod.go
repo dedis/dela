@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
 )
@@ -32,7 +31,6 @@ func (m controller) SetCommands(builder node.Builder) {
 		Required: true,
 	})
 
-	dela.Logger.Info().Msg("PUSH CLIENT")
 	sub.SetAction(builder.MakeAction(&initHttpServerAction{
 		ElectionIdNonce: 0 ,
 		ElectionIds: make([]string, 0),

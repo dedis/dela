@@ -79,8 +79,6 @@ type Actor struct {
 // Each node represented by a player must first execute Listen().
 func (a Actor) Shuffle(co crypto.CollectiveAuthority, electionId string) (err error) {
 
-	//suite := suites.MustFind(suiteName)
-
 	ctx, cancel := context.WithTimeout(context.Background(), shuffleTimeout)
 	defer cancel()
 
@@ -101,19 +99,9 @@ func (a Actor) Shuffle(co crypto.CollectiveAuthority, electionId string) (err er
 		}
 	}
 
-	/*rand := suite.RandomStream()
-	Kbar, Cbar, prover := shuffleKyber.Shuffle(suite, nil, pubKey, Ks, Cs, rand)
-	shuffleProof, err := proof.HashProve(suite, protocolName, prover)
-	if err != nil {
-		return nil, nil, nil, xerrors.Errorf("Shuffle proof failed: ", err.Error())
-	}
-
-	message := types.NewShuffleMessage(addrs, suiteName, pubKey, Kbar, Cbar, Ks, Cs, shuffleProof)*/
 	threshold := len(addrs)
 	message := types.NewStartShuffle(threshold, electionId, addrs)
-	dela.Logger.Info().Msg( "threshold : "  + strconv.Itoa(threshold))
-
-	dela.Logger.Info().Msg("--------------------------------------Starting the neff shuffle protocol ...")
+	dela.Logger.Info().Msg( "threshold: "  + strconv.Itoa(threshold))
 
 	errs := sender.Send(message, addrs...)
 	err = <-errs
@@ -122,37 +110,6 @@ func (a Actor) Shuffle(co crypto.CollectiveAuthority, electionId string) (err er
 	}
 
 	return nil
-
-	/*
-	addr, msg, err := receiver.Recv(context.Background())
-
-	dela.Logger.Info().Msg("End of the shuffle protocol.")
-
-	if err != nil {
-		return nil, nil, nil, xerrors.Errorf("got an error from '%s' while "+
-			"receiving: %v", addr, err)
-	}
-
-	shuffleMsg, ok := msg.(types.ShuffleMessage)
-	if !ok {
-		return nil, nil, nil, xerrors.Errorf("expected to receive a Shuffle message, but "+
-			"go the following: %T", msg)
-	}
-
-	kBar := shuffleMsg.GetkBar()
-	cBar := shuffleMsg.GetcBar()
-	finalProof := shuffleMsg.GetProof()
-
-	kBarPrevious := shuffleMsg.GetkBarPrevious()
-	cBarPrevious := shuffleMsg.GetcBarPrevious()
-
-	err = a.Verify(suiteName, kBarPrevious, cBarPrevious, pubKey, kBar, cBar, finalProof)
-	if err != nil {
-		return nil, nil, nil, xerrors.Errorf("Shuffle verify failed: %v", err)
-	}
-
-	return kBar, cBar, finalProof, nil
-	*/
 }
 
 // Verify allows to verify a Shuffle

@@ -5,7 +5,7 @@ type LoginResponse struct {
 	Token string
 }
 
-type CreateSimpleElectionRequest struct {
+type CreateElectionRequest struct {
 	Title string
 	AdminId string
 	Candidates []string
@@ -13,7 +13,7 @@ type CreateSimpleElectionRequest struct {
 	PublicKey []byte
 }
 
-type CreateSimpleElectionResponse struct {
+type CreateElectionResponse struct {
 	ElectionID string
 }
 

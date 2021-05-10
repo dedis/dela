@@ -90,14 +90,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		js, err := json.Marshal(response)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to marshal LoginResponse: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		_, err = w.Write(js)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to write in ResponseWriter: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -109,18 +109,18 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, "Failed to read Body: " + err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		createSimpleElectionRequest := new (types.CreateSimpleElectionRequest)
-		err = json.NewDecoder(bytes.NewBuffer(body)).Decode(createSimpleElectionRequest)
+		createElectionRequest := new (types.CreateElectionRequest)
+		err = json.NewDecoder(bytes.NewBuffer(body)).Decode(createElectionRequest)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, "Failed to decode CreateElectionRequest: " + err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		if createSimpleElectionRequest.Token != token{
+		if createElectionRequest.Token != token{
 			http.Error(w, "Invalid token", http.StatusUnauthorized)
 			return
 		}
@@ -128,20 +128,20 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		var p pool.Pool
 		err = ctx.Injector.Resolve(&p)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to resolve pool.Pool: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		signer, err := getSigner(signerFilePath)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to get Signer: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		var client *txnPoolController.Client
 		err = ctx.Injector.Resolve(&client)
 		if err != nil {
-			http.Error(w, "Failed to resolve txn pool controller Client" + err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to resolve txn pool controller Client: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -149,7 +149,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		err = manager.Sync()
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to sync manager: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -159,17 +159,17 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			electionId = "0" + electionId
 		}
 
-		createSimpleElectionTransaction := types.CreateSimpleElectionTransaction{
+		createElectionTransaction := types.CreateElectionTransaction{
 			ElectionID: electionId,
-			Title:      createSimpleElectionRequest.Title,
-			AdminId:    createSimpleElectionRequest.AdminId,
-			Candidates: createSimpleElectionRequest.Candidates,
-			PublicKey:  createSimpleElectionRequest.PublicKey,
+			Title:      createElectionRequest.Title,
+			AdminId:    createElectionRequest.AdminId,
+			Candidates: createElectionRequest.Candidates,
+			PublicKey:  createElectionRequest.PublicKey,
 		}
 
-		js, err := json.Marshal(createSimpleElectionTransaction)
+		js, err := json.Marshal(createElectionTransaction)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to marshal CreateElectionTransaction: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -180,23 +180,23 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		}
 		args[1] = txn.Arg{
 			Key:   "evoting:command",
-			Value: []byte("CREATE_SIMPLE_ELECTION"),
+			Value: []byte("CREATE_ELECTION"),
 		}
 		args[2] = txn.Arg{
-			Key:   "evoting:simpleElectionArgs",
+			Key:   "evoting:ElectionArgs",
 			Value: js,
 		}
 
 		tx, err := manager.Make(args...)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to create transaction: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		var service ordering.Service
 		err = ctx.Injector.Resolve(&service)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, "Failed to resolve ordering.Service: " + err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -207,7 +207,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		err = p.Add(tx)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to add transaction to the pool: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -223,27 +223,27 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 				accepted, msg := res.GetStatus()
 				if !accepted {
-					http.Error(w, "Transaction refused : " + msg, http.StatusInternalServerError)
+					http.Error(w, "Transaction not accepted: " + msg, http.StatusInternalServerError)
 					return
 				}
 
 				a.ElectionIdNonce+=1
 				a.ElectionIds = append(a.ElectionIds, electionId)
 
-				response := types.CreateSimpleElectionResponse{
+				response := types.CreateElectionResponse{
 					ElectionID: electionId,
 				}
 
 				js, err := json.Marshal(response)
 				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
+					http.Error(w, "Failed to marshal CreateElectionResponse: " + err.Error(), http.StatusInternalServerError)
 					return
 				}
 
 				w.Header().Set("Content-Type", "application/json")
 				_, err = w.Write(js)
 				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
+					http.Error(w, "Failed to write in ResponseWriter: " + err.Error(), http.StatusInternalServerError)
 					return
 				}
 				return
@@ -260,14 +260,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, "Failed to read Body: " + err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		getElectionInfoRequest := new (types.GetElectionInfoRequest)
 		err = json.NewDecoder(bytes.NewBuffer(body)).Decode(getElectionInfoRequest)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, "Failed to decode GetElectionInfoRequest: " + err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -284,20 +284,20 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		var service ordering.Service
 		err = ctx.Injector.Resolve(&service)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to resolve ordering.Service: " + err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		proof, err := service.GetProof([]byte(getElectionInfoRequest.ElectionID))
 		if err != nil {
-			http.Error(w, "failed to read on the blockchain: " + err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to read on the blockchain: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		election := new (types.Election)
 		err = json.NewDecoder(bytes.NewBuffer(proof.GetValue())).Decode(election)
 		if err != nil {
-			http.Error(w, "failed to unmarshall SimpleElection: " + err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to unmarshal Election: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -310,16 +310,17 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		js, err := json.Marshal(response)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to marshal GetElectionInfoResponse: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		_, err = w.Write(js)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to write in ResponseWriter: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
+
 		return
 
 	})
@@ -330,14 +331,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, "Failed to read Body: " + err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		getAllElectionsInfoRequest := new (types.GetAllElectionsInfoRequest)
 		err = json.NewDecoder(bytes.NewBuffer(body)).Decode(getAllElectionsInfoRequest)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, "Failed to decode GetAllElectionsInfoRequest: " + err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -349,7 +350,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		var service ordering.Service
 		err = ctx.Injector.Resolve(&service)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to resolve ordering.Service: " + err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -359,14 +360,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 			proof, err := service.GetProof([]byte(id))
 			if err != nil {
-				http.Error(w, "failed to read on the blockchain: "+err.Error(), http.StatusInternalServerError)
+				http.Error(w, "Failed to read on the blockchain: "+err.Error(), http.StatusInternalServerError)
 				return
 			}
 
 			election := new(types.Election)
 			err = json.NewDecoder(bytes.NewBuffer(proof.GetValue())).Decode(election)
 			if err != nil {
-				http.Error(w, "failed to unmarshall SimpleElection: "+err.Error(), http.StatusInternalServerError)
+				http.Error(w, "Failed to unmarshal Election: "+err.Error(), http.StatusInternalServerError)
 				return
 			}
 
@@ -384,14 +385,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		js, err := json.Marshal(response)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to marshal GetAllElectionsInfoResponse: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		_, err = w.Write(js)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to write in ResponseWriter: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -405,14 +406,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, "Failed to read Body: " + err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		castVoteRequest := new (types.CastVoteRequest)
 		err = json.NewDecoder(bytes.NewBuffer(body)).Decode(castVoteRequest)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, "Failed to decode CastVoteRequest: " + err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -429,20 +430,20 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		var p pool.Pool
 		err = ctx.Injector.Resolve(&p)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to resolve pool.Pool: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		signer, err := getSigner(signerFilePath)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to get Signer: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		var client *txnPoolController.Client
 		err = ctx.Injector.Resolve(&client)
 		if err != nil {
-			http.Error(w, "Failed to resolve txn pool controller Client" + err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to resolve txn pool controller Client: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -450,7 +451,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		err = manager.Sync()
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to sync manager: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -462,7 +463,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		js, err := json.Marshal(castVoteTransaction)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to marshal CastVoteTransaction: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -482,14 +483,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		tx, err := manager.Make(args...)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to create transaction: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		var service ordering.Service
 		err = ctx.Injector.Resolve(&service)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to resolve ordering.Service: " + err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -500,7 +501,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		err = p.Add(tx)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to add transaction to the pool: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -516,7 +517,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 				accepted, msg := res.GetStatus()
 				if !accepted {
-					http.Error(w, "Transaction refused : " + msg, http.StatusInternalServerError)
+					http.Error(w, "Transaction not accepted: " + msg, http.StatusInternalServerError)
 					return
 				}
 
@@ -525,14 +526,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 				js, err := json.Marshal(response)
 				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
+					http.Error(w, "Failed to marshal CastVoteResponse: " + err.Error(), http.StatusInternalServerError)
 					return
 				}
 
 				w.Header().Set("Content-Type", "application/json")
 				_, err = w.Write(js)
 				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
+					http.Error(w, "Failed to write in ResponseWriter: " + err.Error(), http.StatusInternalServerError)
 					return
 				}
 				return
@@ -550,14 +551,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, "Failed to read Body: " + err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		closeElectionRequest := new (types.CloseElectionRequest)
 		err = json.NewDecoder(bytes.NewBuffer(body)).Decode(closeElectionRequest)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, "Failed to decode CloseElectionRequest: " + err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -574,13 +575,13 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		var p pool.Pool
 		err = ctx.Injector.Resolve(&p)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to resolve pool.Pool: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		signer, err := getSigner(signerFilePath)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to get Signer: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -595,7 +596,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		err = manager.Sync()
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to sync manager: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -606,7 +607,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		js, err := json.Marshal(closeElectionTransaction)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to marshal CloseElectionTransaction: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -626,14 +627,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		tx, err := manager.Make(args...)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to create transaction: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		var service ordering.Service
 		err = ctx.Injector.Resolve(&service)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, "Failed to resolve Service: " + err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -644,7 +645,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		err = p.Add(tx)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to add transaction to the pool: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -660,34 +661,26 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 				accepted, msg := res.GetStatus()
 				if !accepted {
-					http.Error(w, "Transaction refused : " + msg, http.StatusInternalServerError)
+					http.Error(w, "Transaction not accepted: " + msg, http.StatusInternalServerError)
 					return
 				}
-/*
-				var dkgActor dkg.Actor
-				err = ctx.Injector.Resolve(&dkgActor)
-				if err != nil {
-					http.Error(w, "failed to resolve dkg.Actor: " + err.Error(), http.StatusInternalServerError)
-					return
-				}
-
-				*/
 
 				response := types.CloseElectionResponse{
 				}
 
 				js, err := json.Marshal(response)
 				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
+					http.Error(w, "Failed to marshal CloseElectionResponse: " + err.Error(), http.StatusInternalServerError)
 					return
 				}
 
 				w.Header().Set("Content-Type", "application/json")
 				_, err = w.Write(js)
 				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
+					http.Error(w, "Failed to write in ResponseWriter: " + err.Error(), http.StatusInternalServerError)
 					return
 				}
+
 				return
 			}
 		}
@@ -703,14 +696,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, "Failed to read Body: " + err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		shuffleBallotsRequest := new (types.ShuffleBallotsRequest)
 		err = json.NewDecoder(bytes.NewBuffer(body)).Decode(shuffleBallotsRequest)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, "Failed to decode ShuffleBallotsRequest: " + err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -727,20 +720,20 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		var service ordering.Service
 		err = ctx.Injector.Resolve(&service)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to resolve ordering.Service: " + err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		proof, err := service.GetProof([]byte(shuffleBallotsRequest.ElectionID))
 		if err != nil {
-			http.Error(w, "failed to read on the blockchain: " + err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to read on the blockchain: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		election := new (types.Election)
 		err = json.NewDecoder(bytes.NewBuffer(proof.GetValue())).Decode(election)
 		if err != nil {
-			http.Error(w, "failed to unmarshall SimpleElection: " + err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to unmarshal Election: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -761,14 +754,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		var m mino.Mino
 		err = ctx.Injector.Resolve(&m)
 		if err != nil {
-			http.Error(w, "failed to resolve mino.Mino: " + err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to resolve mino.Mino: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		for i, member := range shuffleBallotsRequest.Members {
 			addr, pubkey, err := decodeMember(member.Address, member.PublicKey, m)
 			if err != nil {
-				http.Error(w, "failed to decode collectiveAuthority member: " + err.Error(), http.StatusInternalServerError)
+				http.Error(w, "Failed to decode CollectiveAuthorityMember: " + err.Error(), http.StatusInternalServerError)
 				return
 			}
 
@@ -781,14 +774,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		var shuffleActor shuffle.Actor
 		err = ctx.Injector.Resolve(&shuffleActor)
 		if err != nil {
-			http.Error(w, "failed to resolve shuffle.Actor: " + err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to resolve shuffle.Actor: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		err = shuffleActor.Shuffle(collectiveAuthority, string(election.ElectionID))
 
 		if err != nil {
-			http.Error(w, "failed to shuffle: " + err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to shuffle: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -797,16 +790,17 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		js, err := json.Marshal(response)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to marshal ShuffleBallotsResponse: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		_, err = w.Write(js)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to write in ResponseWriter: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
+
 		return
 
 	})
@@ -817,14 +811,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, "Failed to read Body: " + err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		decryptBallotsRequest := new (types.DecryptBallotsRequest)
 		err = json.NewDecoder(bytes.NewBuffer(body)).Decode(decryptBallotsRequest)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, "Failed to decode DecryptBallotsRequest: " + err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -841,20 +835,20 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		var service ordering.Service
 		err = ctx.Injector.Resolve(&service)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to resolve ordering.Service: " + err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		proof, err := service.GetProof([]byte(decryptBallotsRequest.ElectionID))
 		if err != nil {
-			http.Error(w, "failed to read on the blockchain: " + err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to read on the blockchain: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		election := new (types.Election)
 		err = json.NewDecoder(bytes.NewBuffer(proof.GetValue())).Decode(election)
 		if err != nil {
-			http.Error(w, "failed to unmarshall SimpleElection: " + err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to unmarshal Election: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -877,21 +871,21 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			ciphertext:= new (types.Ciphertext)
 			err = json.NewDecoder(bytes.NewBuffer(v)).Decode(ciphertext)
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				http.Error(w, "Failed to unmarshal Ciphertext: " + err.Error(), http.StatusInternalServerError)
 				return
 			}
 
 			K := suite.Point()
 			err = K.UnmarshalBinary(ciphertext.K)
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				http.Error(w, "Failed to unmarshal Kyber.Point: " + err.Error(), http.StatusInternalServerError)
 				return
 			}
 
 			C := suite.Point()
 			err = C.UnmarshalBinary(ciphertext.C)
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				http.Error(w, "Failed to unmarshal Kyber.Point: " + err.Error(), http.StatusInternalServerError)
 				return
 			}
 
@@ -904,7 +898,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		var dkgActor dkg.Actor
 		err = ctx.Injector.Resolve(&dkgActor)
 		if err != nil {
-			http.Error(w, "failed to resolve dkg.Actor: " + err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to resolve dkg.Actor: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -913,7 +907,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		for i:=0; i < len(Ks); i++ {
 			message, err := dkgActor.Decrypt(Ks[i], Cs[i])
 			if err != nil {
-				http.Error(w, "failed to decrypt (K,C): " + err.Error(), http.StatusInternalServerError)
+				http.Error(w, "Failed to decrypt (K,C): " + err.Error(), http.StatusInternalServerError)
 				return
 			}
 
@@ -923,13 +917,13 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		var p pool.Pool
 		err = ctx.Injector.Resolve(&p)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to resolve pool.Pool: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		signer, err := getSigner(signerFilePath)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to get Signer: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -946,7 +940,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		err = manager.Sync()
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to sync manager: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -958,7 +952,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		js, err := json.Marshal(decryptBallotsTransaction)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to marshal DecryptBallotsTransaction: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -978,14 +972,13 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		tx, err := manager.Make(args...)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to create transaction: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		//var service ordering.Service
 		err = ctx.Injector.Resolve(&service)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to resolve ordering.Service: " + err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -996,7 +989,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		err = p.Add(tx)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to add transaction to the pool: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -1012,7 +1005,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 				accepted, msg := res.GetStatus()
 				if !accepted {
-					http.Error(w, "Transaction refused : " + msg, http.StatusInternalServerError)
+					http.Error(w, "Transaction not accepted: " + msg, http.StatusInternalServerError)
 					return
 				}
 
@@ -1021,14 +1014,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 				js, err := json.Marshal(response)
 				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
+					http.Error(w, "Failed to marshal DecryptBallotsResponse: " + err.Error(), http.StatusInternalServerError)
 					return
 				}
 
 				w.Header().Set("Content-Type", "application/json")
 				_, err = w.Write(js)
 				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
+					http.Error(w, "Failed to write in ResponseWriter: " + err.Error(), http.StatusInternalServerError)
 					return
 				}
 				return
@@ -1046,14 +1039,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, "Failed to read Body: " + err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		getElectionResultRequest := new (types.GetElectionResultRequest)
 		err = json.NewDecoder(bytes.NewBuffer(body)).Decode(getElectionResultRequest)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, "Failed to decode GetElectionResultRequest: " + err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -1070,20 +1063,20 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		var service ordering.Service
 		err = ctx.Injector.Resolve(&service)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to resolve ordering.Service: " + err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		proof, err := service.GetProof([]byte(getElectionResultRequest.ElectionID))
 		if err != nil {
-			http.Error(w, "failed to read on the blockchain: " + err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to read on the blockchain: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		election := new (types.Election)
 		err = json.NewDecoder(bytes.NewBuffer(proof.GetValue())).Decode(election)
 		if err != nil {
-			http.Error(w, "failed to unmarshall SimpleElection: " + err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to unmarshal Election: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -1096,14 +1089,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		js, err := json.Marshal(response)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to marshal GetElectionResultResponse: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		_, err = w.Write(js)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to write in ResponseWriter: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 		return
@@ -1116,14 +1109,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, "Failed to read Body: " + err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		cancelElectionRequest := new (types.CancelElectionRequest)
 		err = json.NewDecoder(bytes.NewBuffer(body)).Decode(cancelElectionRequest)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, "Failed to decode CancelElectionRequest: " + err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -1140,20 +1133,20 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		var p pool.Pool
 		err = ctx.Injector.Resolve(&p)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to resolve pool.Pool: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		signer, err := getSigner(signerFilePath)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to get Signer: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		var client *txnPoolController.Client
 		err = ctx.Injector.Resolve(&client)
 		if err != nil {
-			http.Error(w, "Failed to resolve txn pool controller Client" + err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to resolve txn pool controller Client: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -1161,7 +1154,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		err = manager.Sync()
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to sync manager: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -1172,7 +1165,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		js, err := json.Marshal(cancelElectionTransaction)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to marshal CancelElectionTransaction: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -1192,14 +1185,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		tx, err := manager.Make(args...)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to create transaction: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		var service ordering.Service
 		err = ctx.Injector.Resolve(&service)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, "Failed to resolve ordering.Service: " + err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -1210,7 +1203,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		err = p.Add(tx)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to add transaction to the pool: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -1226,7 +1219,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 				accepted, msg := res.GetStatus()
 				if !accepted {
-					http.Error(w, "Transaction refused : " + msg, http.StatusInternalServerError)
+					http.Error(w, "Transaction not accepted: " + msg, http.StatusInternalServerError)
 					return
 				}
 
@@ -1235,14 +1228,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 				js, err := json.Marshal(response)
 				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
+					http.Error(w, "Failed to marshal CreateElectionResponse: " + err.Error(), http.StatusInternalServerError)
 					return
 				}
 
 				w.Header().Set("Content-Type", "application/json")
 				_, err = w.Write(js)
 				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
+					http.Error(w, "Failed to write in ResponseWriter: " + err.Error(), http.StatusInternalServerError)
 					return
 				}
 				return
@@ -1279,7 +1272,7 @@ func decodeMember(address string, publicKey string, m mino.Mino) (mino.Address, 
 
 	pubkey, err := publicKeyFactory.FromBytes(pubkeyBuf)
 	if err != nil {
-		return nil, nil, xerrors.Errorf("failed to decode public key: %v", err)
+		return nil, nil, xerrors.Errorf("Failed to decode public key: %v", err)
 	}
 
 	return addr, pubkey, nil
@@ -1293,12 +1286,12 @@ func getSigner(filePath string) (crypto.Signer, error) {
 
 	signerData, err := l.Load()
 	if err != nil {
-		return nil, xerrors.Errorf("failed to load signer: %v", err)
+		return nil, xerrors.Errorf("Failed to load signer: %v", err)
 	}
 
 	signer, err := bls.NewSignerFromBytes(signerData)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to unmarshal signer: %v", err)
+		return nil, xerrors.Errorf("Failed to unmarshal signer: %v", err)
 	}
 
 	return signer, nil
@@ -1313,7 +1306,7 @@ type createElectionTestAction struct {
 // Execute implements node.ActionTemplate. It creates
 func (a *createElectionTestAction) Execute(ctx node.Context) error {
 
-	createSimpleElectionRequest := types.CreateSimpleElectionRequest{
+	createSimpleElectionRequest := types.CreateElectionRequest{
 		Title:      "TitleTest",
 		AdminId:    "adminId",
 		Candidates: nil,
@@ -1384,7 +1377,7 @@ func (a *castVoteTestAction) Execute(ctx node.Context) error {
 	election := new (types.Election)
 	err = json.NewDecoder(bytes.NewBuffer(proof.GetValue())).Decode(election)
 	if err != nil {
-		return xerrors.Errorf("failed to set unmarshall SimpleElection : %v", err)
+		return xerrors.Errorf("failed to set unmarshal SimpleElection : %v", err)
 	}
 
 
@@ -1431,7 +1424,7 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 
 	dela.Logger.Info().Msg("----------------------- CREATE SIMPLE ELECTION : ")
 
-	createSimpleElectionRequest := types.CreateSimpleElectionRequest{
+	createSimpleElectionRequest := types.CreateElectionRequest{
 		Title:      "TitleTest",
 		AdminId:    "adminId",
 		Candidates: nil,
@@ -1454,11 +1447,11 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	dela.Logger.Info().Msg("Response body : " + string(body))
 	resp.Body.Close()
 
-	createSimpleElectionResponse := new(types.CreateSimpleElectionResponse)
+	createSimpleElectionResponse := new(types.CreateElectionResponse)
 
 	err = json.NewDecoder(bytes.NewBuffer(body)).Decode(createSimpleElectionResponse)
 	if err != nil {
-		return xerrors.Errorf("failed to set unmarshall CastVoteTransaction : %v", err)
+		return xerrors.Errorf("failed to set unmarshal CastVoteTransaction : %v", err)
 	}
 
 	electionId := createSimpleElectionResponse.ElectionID
@@ -1473,7 +1466,7 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	election := new (types.Election)
 	err = json.NewDecoder(bytes.NewBuffer(proof.GetValue())).Decode(election)
 	if err != nil {
-		return xerrors.Errorf("failed to unmarshall SimpleElection : %v", err)
+		return xerrors.Errorf("failed to unmarshal SimpleElection : %v", err)
 	}
 
 	dela.Logger.Info().Msg("Title of the election : " + election.Title)
@@ -1514,7 +1507,7 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	election = new (types.Election)
 	err = json.NewDecoder(bytes.NewBuffer(proof.GetValue())).Decode(election)
 	if err != nil {
-		return xerrors.Errorf("failed to unmarshall SimpleElection : %v", err)
+		return xerrors.Errorf("failed to unmarshal SimpleElection : %v", err)
 	}
 
 	dela.Logger.Info().Msg("Title of the election : " + election.Title)
@@ -1619,7 +1612,7 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	election = new (types.Election)
 	err = json.NewDecoder(bytes.NewBuffer(proof.GetValue())).Decode(election)
 	if err != nil {
-		return xerrors.Errorf("failed to set unmarshall SimpleElection : %v", err)
+		return xerrors.Errorf("failed to set unmarshal SimpleElection : %v", err)
 	}
 
 	dela.Logger.Info().Msg("Length encrypted ballots : " + strconv.Itoa(len(election.EncryptedBallots)))
