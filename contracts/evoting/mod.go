@@ -59,7 +59,7 @@ const (
 	// run on the contract. Should be one of the Command type.
 	CmdArg = "evoting:command"
 
-	CreateElectionArg = "evoting:ElectionArgs"
+	CreateElectionArg = "evoting:createElectionArgs"
 
 	CastVoteArg = "evoting:castVoteArgs"
 

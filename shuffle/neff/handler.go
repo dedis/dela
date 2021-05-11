@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/contracts/evoting"
 	electionTypes "go.dedis.ch/dela/contracts/evoting/types"
+	"go.dedis.ch/dela/core/execution/native"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/pool"
@@ -244,18 +246,15 @@ func (h *Handler) HandleStartShuffleMessage (startShuffleMessage types.StartShuf
 
 		args := make([]txn.Arg, 3)
 		args[0] = txn.Arg{
-			//todo : should be global variable
-			Key:   "go.dedis.ch/dela.ContractArg",
-			Value: []byte("go.dedis.ch/dela.Evoting"),
+			Key:   native.ContractArg,
+			Value: []byte(evoting.ContractName),
 		}
 		args[1] = txn.Arg{
-			//todo : should be global variable
-			Key:   "evoting:command",
-			Value: []byte("SHUFFLE_BALLOTS"),
+			Key:   evoting.CmdArg,
+			Value: []byte(evoting.CmdShuffleBallots),
 		}
 		args[2] = txn.Arg{
-			//todo : should be global variable
-			Key:   "evoting:shuffleBallotsArgs",
+			Key:   evoting.ShuffleBallotsArg,
 			Value: js,
 		}
 

@@ -8,7 +8,9 @@ import (
 	"github.com/satori/go.uuid"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cli/node"
+	"go.dedis.ch/dela/contracts/evoting"
 	"go.dedis.ch/dela/contracts/evoting/types"
+	"go.dedis.ch/dela/core/execution/native"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/txn"
@@ -54,6 +56,8 @@ const createElectionTimeout = 2 * time.Second
 var suite = suites.MustFind("Ed25519")
 
 // TODO : Merge evoting and DKG web server ?
+
+// todo : server should not panic when shuffling 1 ballot
 
 // getManager is the function called when we need a transaction manager. It
 // allows us to use a different manager for the tests.
@@ -175,15 +179,15 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		args := make([]txn.Arg, 3)
 		args[0] = txn.Arg{
-			Key:   "go.dedis.ch/dela.ContractArg",
-			Value: []byte("go.dedis.ch/dela.Evoting"),
+			Key:   native.ContractArg,
+			Value: []byte(evoting.ContractName),
 		}
 		args[1] = txn.Arg{
-			Key:   "evoting:command",
-			Value: []byte("CREATE_ELECTION"),
+			Key:   evoting.CmdArg,
+			Value: []byte(evoting.CmdCreateElection),
 		}
 		args[2] = txn.Arg{
-			Key:   "evoting:ElectionArgs",
+			Key:   evoting.CreateElectionArg,
 			Value: js,
 		}
 
@@ -469,15 +473,15 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		args := make([]txn.Arg, 3)
 		args[0] = txn.Arg{
-			Key:   "go.dedis.ch/dela.ContractArg",
-			Value: []byte("go.dedis.ch/dela.Evoting"),
+			Key:   native.ContractArg,
+			Value: []byte(evoting.ContractName),
 		}
 		args[1] = txn.Arg{
-			Key:   "evoting:command",
-			Value: []byte("CAST_VOTE"),
+			Key:   evoting.CmdArg,
+			Value: []byte(evoting.CmdCastVote),
 		}
 		args[2] = txn.Arg{
-			Key:   "evoting:castVoteArgs",
+			Key:   evoting.CastVoteArg,
 			Value: js,
 		}
 
@@ -613,15 +617,15 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		args := make([]txn.Arg, 3)
 		args[0] = txn.Arg{
-			Key:   "go.dedis.ch/dela.ContractArg",
-			Value: []byte("go.dedis.ch/dela.Evoting"),
+			Key:   native.ContractArg,
+			Value: []byte(evoting.ContractName),
 		}
 		args[1] = txn.Arg{
-			Key:   "evoting:command",
-			Value: []byte("CLOSE_ELECTION"),
+			Key:   evoting.CmdArg,
+			Value: []byte(evoting.CmdCloseElection),
 		}
 		args[2] = txn.Arg{
-			Key:   "evoting:closeElectionArgs",
+			Key:   evoting.CloseElectionArg,
 			Value: js,
 		}
 
@@ -958,15 +962,15 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		args := make([]txn.Arg, 3)
 		args[0] = txn.Arg{
-			Key:   "go.dedis.ch/dela.ContractArg",
-			Value: []byte("go.dedis.ch/dela.Evoting"),
+			Key:   native.ContractArg,
+			Value: []byte(evoting.ContractName),
 		}
 		args[1] = txn.Arg{
-			Key:   "evoting:command",
-			Value: []byte("DECRYPT_BALLOTS"),
+			Key:   evoting.CmdArg,
+			Value: []byte(evoting.CmdDecryptBallots),
 		}
 		args[2] = txn.Arg{
-			Key:   "evoting:decryptBallotsArgs",
+			Key:   evoting.DecryptBallotsArg,
 			Value: js,
 		}
 
@@ -1171,15 +1175,15 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		args := make([]txn.Arg, 3)
 		args[0] = txn.Arg{
-			Key:   "go.dedis.ch/dela.ContractArg",
-			Value: []byte("go.dedis.ch/dela.Evoting"),
+			Key:   native.ContractArg,
+			Value: []byte(evoting.ContractName),
 		}
 		args[1] = txn.Arg{
-			Key:   "evoting:command",
-			Value: []byte("CANCEL_ELECTION"),
+			Key:   evoting.CmdArg,
+			Value: []byte(evoting.CmdCancelElection),
 		}
 		args[2] = txn.Arg{
-			Key:   "evoting:cancelElectionArgs",
+			Key:   evoting.CancelElectionArg,
 			Value: js,
 		}
 
