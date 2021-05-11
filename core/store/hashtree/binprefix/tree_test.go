@@ -79,6 +79,58 @@ func TestTree_Insert(t *testing.T) {
 	require.EqualError(t, err, fake.Err("failed to insert"))
 }
 
+func TestTree_Insert_UpdateLeaf(t *testing.T) {
+	bucket := &fakeBucket{}
+	hashFactory := crypto.NewSha256Factory()
+	tree := NewTree(Nonce{})
+
+	for i := 0; i <= math.MaxUint8; i++ {
+		key := []byte{byte(i)}
+		err := tree.Insert(key[:], key[:], bucket)
+		require.NoError(t, err)
+	}
+
+	err := tree.CalculateRoot(hashFactory, bucket)
+	require.NoError(t, err)
+
+	updateKey := makeKey([]byte{byte(math.MaxUint8 - 1)})
+
+	var existingHash []byte
+	tree.root.Visit(func(node TreeNode) error {
+		lnode, ok := node.(*LeafNode)
+		if ok && lnode.key.Cmp(updateKey) == 0 {
+			existingHash = lnode.GetHash()
+		}
+
+		return nil
+	})
+
+	require.NotEmpty(t, existingHash)
+
+	err = tree.Persist(bucket)
+	require.NoError(t, err)
+
+	clone := tree.Clone()
+
+	err = clone.Insert([]byte{byte(math.MaxUint8 - 1)}, []byte{0}, bucket)
+	require.NoError(t, err)
+
+	err = clone.CalculateRoot(hashFactory, bucket)
+	require.NoError(t, err)
+
+	var updatedHash []byte
+	clone.root.Visit(func(node TreeNode) error {
+		lnode, ok := node.(*LeafNode)
+		if ok && lnode.key.Cmp(updateKey) == 0 {
+			updatedHash = lnode.GetHash()
+		}
+		return nil
+	})
+
+	require.NotEmpty(t, updatedHash)
+	require.NotEqual(t, existingHash, updatedHash)
+}
+
 func TestTree_Delete(t *testing.T) {
 	tree := NewTree(Nonce{})
 

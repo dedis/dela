@@ -724,6 +724,7 @@ func (n *LeafNode) Search(key *big.Int, path *Path, b kv.Bucket) ([]byte, error)
 // interior node that contains both the current pair and the new one to insert.
 func (n *LeafNode) Insert(key *big.Int, value []byte, b kv.Bucket) (TreeNode, error) {
 	if n.key.Cmp(key) == 0 {
+		n.hash = nil
 		n.value = value
 		return n, nil
 	}
