@@ -179,7 +179,7 @@ func (c valueCommand) write(snap store.Snapshot, step execution.Step) error {
 
 	c.index[string(key)] = struct{}{}
 
-	dela.Logger.Info().Str("contract", ContractName).Msgf("setting %s=%s", key, value)
+	dela.Logger.Info().Str("contract", ContractName).Msgf("setting %x=%s", key, value)
 
 	return nil
 }
@@ -196,7 +196,7 @@ func (c valueCommand) read(snap store.Snapshot, step execution.Step) error {
 		return xerrors.Errorf("failed to get key '%s': %v", key, err)
 	}
 
-	fmt.Fprintf(c.printer, "%s=%s", key, val)
+	fmt.Fprintf(c.printer, "%x=%s", key, val)
 
 	return nil
 }
@@ -210,7 +210,7 @@ func (c valueCommand) delete(snap store.Snapshot, step execution.Step) error {
 
 	err := snap.Delete(key)
 	if err != nil {
-		return xerrors.Errorf("failed to delete key '%s': %v", key, err)
+		return xerrors.Errorf("failed to delete key '%x': %v", key, err)
 	}
 
 	delete(c.index, string(key))
@@ -228,7 +228,7 @@ func (c valueCommand) list(snap store.Snapshot) error {
 			return xerrors.Errorf("failed to get key '%s': %v", k, err)
 		}
 
-		res = append(res, fmt.Sprintf("%s=%s", k, v))
+		res = append(res, fmt.Sprintf("%x=%s", k, v))
 	}
 
 	sort.Strings(res)
