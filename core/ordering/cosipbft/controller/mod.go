@@ -196,6 +196,7 @@ func (m miniController) OnStart(flags cli.Flags, inj node.Injector) error {
 	inj.Inject(vs)
 	inj.Inject(exec)
 	inj.Inject(&access)
+	inj.Inject(blocks)
 
 	return nil
 }

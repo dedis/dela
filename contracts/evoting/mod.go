@@ -151,8 +151,6 @@ func RegisterContract(exec *native.Service, c Contract) {
 //
 // - implements native.Contract
 type Contract struct {
-	// todo : do we really need this ?
-	//indexElection map[string]struct{}
 
 	// access is the access control service managing this smart contract
 	access access.Service

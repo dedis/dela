@@ -4,8 +4,8 @@ import (
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/core/ordering"
+	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/txn/pool"
-	txnPoolController "go.dedis.ch/dela/core/txn/pool/controller"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/shuffle/neff"
 	"golang.org/x/xerrors"
@@ -68,13 +68,13 @@ func (m controller) OnStart(ctx cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("failed to resolve ordering.Service: %v", err)
 	}
 
-	var client *txnPoolController.Client
-	err = inj.Resolve(&client)
+	var blocks *blockstore.InDisk
+	err = inj.Resolve(&blocks)
 	if err != nil {
-		return xerrors.Errorf("failed to resolve txn pool client: %v", err)
+		return xerrors.Errorf("failed to resolve blockstore.InDisk: %v", err)
 	}
 
-	neffShuffle := neff.NewNeffShuffle(no, service, p, client)
+	neffShuffle := neff.NewNeffShuffle(no, service, p, blocks)
 
 	inj.Inject(neffShuffle)
 

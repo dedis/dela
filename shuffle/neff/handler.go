@@ -9,6 +9,7 @@ import (
 	electionTypes "go.dedis.ch/dela/contracts/evoting/types"
 	"go.dedis.ch/dela/core/execution/native"
 	"go.dedis.ch/dela/core/ordering"
+	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/pool"
 	txnPoolController "go.dedis.ch/dela/core/txn/pool/controller"
@@ -54,18 +55,18 @@ type Handler struct {
 	me        mino.Address
 	startRes  *state
 	service   ordering.Service
-	p pool.Pool
-	client *txnPoolController.Client
+	p 		  pool.Pool
+	blocks    *blockstore.InDisk
 }
 
 // NewHandler creates a new handler
-func NewHandler(me mino.Address, service ordering.Service, p pool.Pool, client *txnPoolController.Client) *Handler {
+func NewHandler(me mino.Address, service ordering.Service, p pool.Pool, blocks *blockstore.InDisk) *Handler {
 	return &Handler{
 		me:       me,
 		startRes: &state{},
 		service:  service,
 		p:        p,
-		client :client,
+		blocks:   blocks,
 	}
 }
 
@@ -111,18 +112,6 @@ func (h *Handler) HandleStartShuffleMessage (startShuffleMessage types.StartShuf
 	signer, err := getSigner(signerFilePath)
 	if err != nil {
 		return xerrors.Errorf("failed to getSigner: %v", err)
-	}
-
-
-	// Todo : Handle Nonce !
-	nonce := uint64(6)
-
-	if "00000000000000000000000000000001" == startShuffleMessage.GetElectionId(){
-		nonce = uint64(15)
-	}
-
-	if "00000000000000000000000000000002" == startShuffleMessage.GetElectionId(){
-		nonce = uint64(24)
 	}
 
 	for round := 1; round <= startShuffleMessage.GetThreshold(); round++ {
@@ -221,13 +210,27 @@ func (h *Handler) HandleStartShuffleMessage (startShuffleMessage types.StartShuf
 
 		}
 
-		client := &txnPoolController.Client{Nonce: nonce}
+		blockLink, err := h.blocks.Last()
+		if err != nil {
+			return xerrors.Errorf("failed to fetch last block: %v", err.Error())
+		}
+
+		transactions := blockLink.GetBlock().GetTransactions()
+		nonce := uint64(0)
+
+		for _, tx := range transactions {
+			if tx.GetNonce() > nonce{
+				nonce = tx.GetNonce()
+			}
+		}
+
 		nonce += 1
+		client := &txnPoolController.Client{Nonce: nonce}
 		manager := getManager(signer, client)
 
 		err = manager.Sync()
 		if err != nil {
-			return xerrors.Errorf("Failed to sync manager: %v", err.Error())
+			return xerrors.Errorf("failed to sync manager: %v", err.Error())
 		}
 
 		shuffleBallotsTransaction := electionTypes.ShuffleBallotsTransaction{

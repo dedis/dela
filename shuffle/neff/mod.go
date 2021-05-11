@@ -3,8 +3,8 @@ package neff
 import (
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/core/ordering"
+	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/txn/pool"
-	txnPoolController "go.dedis.ch/dela/core/txn/pool/controller"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
@@ -33,11 +33,11 @@ type NeffShuffle struct {
 	factory serde.Factory
 	service ordering.Service
 	p       pool.Pool
-	client  *txnPoolController.Client
+	blocks  *blockstore.InDisk
 }
 
 // NewNeffShuffle returns a new NeffShuffle factory.
-func NewNeffShuffle(m mino.Mino, s ordering.Service, p pool.Pool, client *txnPoolController.Client) *NeffShuffle {
+func NewNeffShuffle(m mino.Mino, s ordering.Service, p pool.Pool, blocks *blockstore.InDisk) *NeffShuffle {
 	factory := types.NewMessageFactory(m.GetAddressFactory())
 
 	return &NeffShuffle{
@@ -45,14 +45,14 @@ func NewNeffShuffle(m mino.Mino, s ordering.Service, p pool.Pool, client *txnPoo
 		factory: factory,
 		service: s,
 		p :      p,
-		client: client,
+		blocks:  blocks,
 	}
 }
 
 // Listen implements shuffle.SHUFFLE. It must be called on each node that participates
 // in the SHUFFLE. Creates the RPC.
 func (n NeffShuffle) Listen() (shuffle.Actor, error) {
-	h := NewHandler(n.mino.GetAddress(), n.service, n.p, n.client)
+	h := NewHandler(n.mino.GetAddress(), n.service, n.p, n.blocks)
 
 	a := &Actor{
 		rpc:      mino.MustCreateRPC(n.mino, "shuffle", h, n.factory),

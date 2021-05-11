@@ -13,6 +13,7 @@ import (
 	"go.dedis.ch/dela/core/execution/native"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
+	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/pool"
 	txnPoolController "go.dedis.ch/dela/core/txn/pool/controller"
@@ -142,12 +143,38 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
+		/*
 		var client *txnPoolController.Client
 		err = ctx.Injector.Resolve(&client)
 		if err != nil {
 			http.Error(w, "Failed to resolve txn pool controller Client: " + err.Error(), http.StatusInternalServerError)
 			return
+		}*/
+
+		var blocks *blockstore.InDisk
+		err = ctx.Injector.Resolve(&blocks)
+		if err != nil {
+			http.Error(w, "Failed to resolve blockstore.InDisk: " + err.Error(), http.StatusInternalServerError)
+			return
 		}
+
+		blockLink, err := blocks.Last()
+		if err != nil {
+			http.Error(w, "Failed to fetch last block: " + err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		transactions := blockLink.GetBlock().GetTransactions()
+		nonce := uint64(0)
+
+		for _, tx := range transactions {
+			if tx.GetNonce() > nonce{
+				nonce = tx.GetNonce()
+			}
+		}
+
+		nonce += 1
+		client := &txnPoolController.Client{Nonce: nonce}
 
 		manager := getManager(signer, client)
 
@@ -444,12 +471,30 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		var client *txnPoolController.Client
-		err = ctx.Injector.Resolve(&client)
+		var blocks *blockstore.InDisk
+		err = ctx.Injector.Resolve(&blocks)
 		if err != nil {
-			http.Error(w, "Failed to resolve txn pool controller Client: " + err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to resolve blockstore.InDisk: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
+
+		blockLink, err := blocks.Last()
+		if err != nil {
+			http.Error(w, "Failed to fetch last block: " + err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		transactions := blockLink.GetBlock().GetTransactions()
+		nonce := uint64(0)
+
+		for _, tx := range transactions {
+			if tx.GetNonce() > nonce{
+				nonce = tx.GetNonce()
+			}
+		}
+
+		nonce += 1
+		client := &txnPoolController.Client{Nonce: nonce}
 
 		manager := getManager(signer, client)
 
@@ -589,12 +634,30 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		var client *txnPoolController.Client
-		err = ctx.Injector.Resolve(&client)
+		var blocks *blockstore.InDisk
+		err = ctx.Injector.Resolve(&blocks)
 		if err != nil {
-			http.Error(w, "Failed to resolve txn pool controller Client" + err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to resolve blockstore.InDisk: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
+
+		blockLink, err := blocks.Last()
+		if err != nil {
+			http.Error(w, "Failed to fetch last block: " + err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		transactions := blockLink.GetBlock().GetTransactions()
+		nonce := uint64(0)
+
+		for _, tx := range transactions {
+			if tx.GetNonce() > nonce{
+				nonce = tx.GetNonce()
+			}
+		}
+
+		nonce += 1
+		client := &txnPoolController.Client{Nonce: nonce}
 
 		manager := getManager(signer, client)
 
@@ -743,6 +806,11 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		if election.Status != types.Closed{
 			http.Error(w, "The election must be closed !", http.StatusUnauthorized)
+			return
+		}
+
+		if !(len(election.EncryptedBallots) > 1) {
+			http.Error(w, "Only one vote has been casted !", http.StatusNotAcceptable)
 			return
 		}
 
@@ -931,14 +999,30 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		var client *txnPoolController.Client
-		err = ctx.Injector.Resolve(&client)
+		var blocks *blockstore.InDisk
+		err = ctx.Injector.Resolve(&blocks)
 		if err != nil {
-			http.Error(w, "Failed to resolve txn pool controller Client" + err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to resolve blockstore.InDisk: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		client.Nonce+=3
+		blockLink, err := blocks.Last()
+		if err != nil {
+			http.Error(w, "Failed to fetch last block: " + err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		transactions := blockLink.GetBlock().GetTransactions()
+		nonce := uint64(0)
+
+		for _, tx := range transactions {
+			if tx.GetNonce() > nonce{
+				nonce = tx.GetNonce()
+			}
+		}
+
+		nonce += 1
+		client := &txnPoolController.Client{Nonce: nonce}
 
 		manager := getManager(signer, client)
 
@@ -1147,12 +1231,30 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		var client *txnPoolController.Client
-		err = ctx.Injector.Resolve(&client)
+		var blocks *blockstore.InDisk
+		err = ctx.Injector.Resolve(&blocks)
 		if err != nil {
-			http.Error(w, "Failed to resolve txn pool controller Client: " + err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to resolve blockstore.InDisk: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
+
+		blockLink, err := blocks.Last()
+		if err != nil {
+			http.Error(w, "Failed to fetch last block: " + err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		transactions := blockLink.GetBlock().GetTransactions()
+		nonce := uint64(0)
+
+		for _, tx := range transactions {
+			if tx.GetNonce() > nonce{
+				nonce = tx.GetNonce()
+			}
+		}
+
+		nonce += 1
+		client := &txnPoolController.Client{Nonce: nonce}
 
 		manager := getManager(signer, client)
 
@@ -1765,9 +1867,9 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	dela.Logger.Info().Msg("ID of the election : " + string(election.ElectionID))
 	dela.Logger.Info().Msg("Status of the election : " + strconv.Itoa(int(election.Status)))
 	dela.Logger.Info().Msg("Number of decrypted ballots : " + strconv.Itoa(len(election.DecryptedBallots)))
-	dela.Logger.Info().Msg("decrypted ballots [0] : " + election.DecryptedBallots[0].Vote)
-	dela.Logger.Info().Msg("decrypted ballots [1] : " + election.DecryptedBallots[1].Vote)
-	dela.Logger.Info().Msg("decrypted ballots [2] : " + election.DecryptedBallots[2].Vote)
+	//dela.Logger.Info().Msg("decrypted ballots [0] : " + election.DecryptedBallots[0].Vote)
+	//dela.Logger.Info().Msg("decrypted ballots [1] : " + election.DecryptedBallots[1].Vote)
+	//dela.Logger.Info().Msg("decrypted ballots [2] : " + election.DecryptedBallots[2].Vote)
 
 
 	// ###################################### DECRYPT BALLOTS ##########################################################
@@ -1813,9 +1915,9 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	dela.Logger.Info().Msg("ID of the election : " + string(election.ElectionID))
 	dela.Logger.Info().Msg("Status of the election : " + strconv.Itoa(int(election.Status)))
 	dela.Logger.Info().Msg("Number of decrypted ballots : " + strconv.Itoa(len(election.DecryptedBallots)))
-	dela.Logger.Info().Msg("decrypted ballots [0] : " + election.DecryptedBallots[0].Vote)
-	dela.Logger.Info().Msg("decrypted ballots [1] : " + election.DecryptedBallots[1].Vote)
-	dela.Logger.Info().Msg("decrypted ballots [2] : " + election.DecryptedBallots[2].Vote)
+	//dela.Logger.Info().Msg("decrypted ballots [0] : " + election.DecryptedBallots[0].Vote)
+	//dela.Logger.Info().Msg("decrypted ballots [1] : " + election.DecryptedBallots[1].Vote)
+	//dela.Logger.Info().Msg("decrypted ballots [2] : " + election.DecryptedBallots[2].Vote)
 
 
 	// ###################################### GET ELECTION RESULT ######################################################
