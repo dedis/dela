@@ -23,7 +23,7 @@ func main() {
 		panic("failed to create addr: " + err.Error())
 	}
 
-	evmSvc, err := evm.NewExecution("instruction")
+	evmSvc, err := evm.NewExecution("increment")
 	if err != nil {
 		log.Fatalf("failed to start evm svc: %v\n", err)
 	}

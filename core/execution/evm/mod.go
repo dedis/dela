@@ -119,7 +119,7 @@ func NewExecution(contract string) (*evmService, error) {
 		return nil, xerrors.Errorf("failed to commit root to trie: %v", err)
 	}
 
-	contractJSON, err := ioutil.ReadFile(fmt.Sprintf("contracts/%s.abi", contract))
+	contractJSON, err := ioutil.ReadFile(fmt.Sprintf("../evm/contracts/%s.abi", contract))
 	if err != nil {
 		return nil, xerrors.Errorf("failed to read %s contract abi: %v", contract, err)
 	}
@@ -146,7 +146,7 @@ func NewExecution(contract string) (*evmService, error) {
 
 func spawnContract(contract string, contractAbi abi.ABI, stateDb *state.StateDB, account *EvmAccount) error {
 
-	contractBuf, err := ioutil.ReadFile(fmt.Sprintf("contracts/%s.bin", contract))
+	contractBuf, err := ioutil.ReadFile(fmt.Sprintf("../evm/contracts/%s.bin", contract))
 	if err != nil {
 		return xerrors.Errorf("failed to read %s contract: %v", contract, err)
 	}

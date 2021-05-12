@@ -1,8 +1,6 @@
 package main
 
 import (
-	"encoding/binary"
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -19,15 +17,24 @@ const iterations = 50
 
 var suite = suites.MustFind("Ed25519")
 
-func BenchmarkLocal(b *testing.B) {
+// Increment benchmark
+
+func BenchmarkNative_Increment(b *testing.B) {
+	for i := 0; i < iterations; i++ {
+		k := 0
+		k++
+	}
+}
+
+func BenchmarkLocalTCP_Increment(b *testing.B) {
 	testWithAddr(b, "127.0.0.1:12346")
 }
 
-func BenchmarkUnikernel(b *testing.B) {
-	testWithAddr(b, "192.168.232.128:12345")
+func BenchmarkUnikernelTCP_Increment(b *testing.B) {
+	testWithAddr(b, "172.52.0.10:12345")
 }
 
-func BenchmarkEVMIncrement(b *testing.B) {
+func BenchmarkEVMLocal_Increment(b *testing.B) {
 	n := iterations
 
 	storage := newInmemory()
@@ -47,11 +54,13 @@ func BenchmarkEVMIncrement(b *testing.B) {
 	}
 }
 
-func BenchmarkEVMNetwork(b *testing.B) {
+func BenchmarkEVMTCP_Increment(b *testing.B) {
 	testWithAddr(b, "127.0.0.1:12347")
 }
 
-func BenchmarkNativeEC(b *testing.B) {
+// Simple crypto (Elliptic curve - EC) benchmarks
+
+func BenchmarkNative_EC(b *testing.B) {
 	for i := 0; i < iterations; i++ {
 		scalar := suite.Scalar().Pick(suite.RandomStream())
 		_, err := scalar.MarshalBinary()
@@ -63,7 +72,7 @@ func BenchmarkNativeEC(b *testing.B) {
 	}
 }
 
-func BenchmarkEVMEC(b *testing.B) {
+func BenchmarkEVMLocal_EC(b *testing.B) {
 	storage := newInmemory()
 	step := execution.Step{Previous: []txn.Transaction{}, Current: tx{
 		args: map[string][]byte{"contractName": []byte("Ed25519")},
@@ -94,17 +103,17 @@ func BenchmarkEVMEC(b *testing.B) {
 		}
 	}
 
-	gasUsageBuf, err := storage.Get(gasUsageKey[:])
-	require.NoError(b, err)
+//	gasUsageBuf, err := storage.Get(gasUsageKey[:])
+//	require.NoError(b, err)
 
-	gasUsage := float64(binary.LittleEndian.Uint64(gasUsageBuf))
+//	gasUsage := float64(binary.LittleEndian.Uint64(gasUsageBuf))
 
-	runCountBuf, err := storage.Get(runCountKey[:])
-	require.NoError(b, err)
+//	runCountBuf, err := storage.Get(runCountKey[:])
+//	require.NoError(b, err)
 
-	runCount := float64(binary.LittleEndian.Uint64(runCountBuf))
+//	runCount := float64(binary.LittleEndian.Uint64(runCountBuf))
 
-	fmt.Printf("Did %f multiplications. Average Gas Usage=%.2f\n", runCount, gasUsage/runCount)
+//	fmt.Printf("Did %f multiplications. Average Gas Usage=%.2f\n", runCount, gasUsage/runCount)
 
 }
 
