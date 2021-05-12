@@ -306,7 +306,7 @@ func (e evotingCommand) shuffleBallots(snap store.Snapshot, step execution.Step)
 		return xerrors.Errorf("failed to unmarshall ShuffleBallotsTransaction : %v", err)
 	}
 
-	dela.Logger.Info().Msg(string(shuffleBallotsArg))
+	//dela.Logger.Info().Msg(string(shuffleBallotsArg))
 	for _, tx := range step.Previous {
 
 		if string(tx.GetArg(native.ContractArg)) == ContractName {

@@ -82,7 +82,7 @@ func (a Actor) Shuffle(co crypto.CollectiveAuthority, electionId string) (err er
 	ctx, cancel := context.WithTimeout(context.Background(), shuffleTimeout)
 	defer cancel()
 
-	sender, _, err := a.rpc.Stream(ctx, co)
+	sender, receiver, err := a.rpc.Stream(ctx, co)
 	if err != nil {
 		return xerrors.Errorf("failed to stream: %v", err)
 	}
@@ -107,6 +107,19 @@ func (a Actor) Shuffle(co crypto.CollectiveAuthority, electionId string) (err er
 	err = <-errs
 	if err != nil {
 		return xerrors.Errorf("failed to send first message: %v", err)
+	}
+
+	addr, msg, err := receiver.Recv(context.Background())
+
+	if err != nil {
+		return xerrors.Errorf("got an error from '%s' while "+
+			"receiving: %v", addr, err)
+	}
+	_, ok := msg.(types.EndShuffle)
+	if !ok {
+		cancel()
+		return xerrors.Errorf("expected to receive an EndShuffle message, but " +
+			"go the following: %T", msg)
 	}
 
 	return nil

@@ -299,6 +299,49 @@ func (h *Handler) HandleStartShuffleMessage (startShuffleMessage types.StartShuf
 					break
 				} else {
 					dela.Logger.Info().Msg("ACCEPTED")
+
+					if round == startShuffleMessage.GetThreshold(){
+						message := types.EndShuffle{}
+						addrs := make([]mino.Address, 0, len(startShuffleMessage.GetAddresses())-1)
+						for _, addr := range startShuffleMessage.GetAddresses() {
+							if !(addr.Equal(h.me)){
+								addrs = append(addrs, addr)
+							}
+						}
+						errs := out.Send(message, addrs...)
+						err = <-errs
+						if err != nil {
+							cancel()
+							return xerrors.Errorf("failed to send EndShuffle message: %v", err)
+						}
+						dela.Logger.Info().Msg("SENT END SHUFFLE MESSAGES")
+					} else {
+						dela.Logger.Info().Msg("WAITING FOR END SHUFFLE MESSAGE")
+						addr, msg, err := in.Recv(context.Background())
+						if err != nil {
+							cancel()
+							return xerrors.Errorf("got an error from '%s' while "+
+								"receiving: %v", addr, err)
+						}
+						_, ok := msg.(types.EndShuffle)
+						if !ok {
+							cancel()
+							return xerrors.Errorf("expected to receive an EndShuffle message, but "+
+								"go the following: %T", msg)
+						}
+						dela.Logger.Info().Msg("RECEIVED END SHUFFLE MESSAGE")
+					}
+
+					if startShuffleMessage.GetAddresses()[0].Equal(h.me){
+						message := types.EndShuffle{}
+						errs := out.Send(message, from)
+						err = <-errs
+						if err != nil {
+							cancel()
+							return xerrors.Errorf("failed to send EndShuffle message: %v", err)
+						}
+					}
+
 					cancel()
 					return nil
 				}

@@ -1804,7 +1804,7 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	dela.Logger.Info().Msg("Response body : " + string(body))
 	resp.Body.Close()
 
-	time.Sleep(20 * time.Second)
+	//time.Sleep(20 * time.Second)
 
 	proof, err = service.GetProof([]byte(electionId))
 	if err != nil {
