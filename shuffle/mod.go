@@ -15,12 +15,12 @@ type SHUFFLE interface {
 // Actor defines the primitives to use a DKG protocol
 type Actor interface {
 
-	// Shuffle must be called by ONE of the actor to shuffle the list of ElGamal pairs.
+	// Shuffle must be called by ONE of the actor to shuffle the list of ElGamal
+	// pairs.
 	// Each node represented by a player must first execute Listen().
 	Shuffle(co crypto.CollectiveAuthority, electionId string) (err error)
 
 	// Verify allows to verify a Shuffle
 	Verify(suiteName string, Ks []kyber.Point, Cs []kyber.Point, pubKey kyber.Point, KsShuffled []kyber.Point,
 		CsShuffled []kyber.Point, proof []byte) (err error)
-
 }

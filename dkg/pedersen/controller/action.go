@@ -29,7 +29,6 @@ const decryptEndPoint = "/dkg/decrypt"
 
 var suite = suites.MustFind("Ed25519")
 
-
 // initAction is an action to initialize the DKG protocol
 //
 // - implements node.ActionTemplate
@@ -55,7 +54,8 @@ func (a *initAction) Execute(ctx node.Context) error {
 	return nil
 }
 
-// setupAction is an action to setup the DKG protocol and generate a collective public key
+// setupAction is an action to setup the DKG protocol and generate a collective
+// public key
 //
 // - implements node.ActionTemplate
 type setupAction struct {
@@ -185,13 +185,15 @@ func decodeMember(ctx node.Context, str string) (mino.Address, crypto.PublicKey,
 	return addr, pubkey, nil
 }
 
-/* initHttpServerAction is an action to start an HTTP server handling the following endpoints :
+/* initHttpServerAction is an action to start an HTTP server handling the
+following endpoints :
  /dkg/pubkey  : get request that returns the collective public key
  /dkg/encrypt : get request that returns the encryption of "hello"
- /dkg/decrypt : post request that returns the decryption of a ciphertext sent by the client
+ /dkg/decrypt : post request that returns the decryption of a ciphertext sent
+                by the client
 
  - implements node.ActionTemplate
- */
+*/
 type initHttpServerAction struct {
 }
 
@@ -201,19 +203,19 @@ type Ciphertext struct {
 	C []byte
 }
 
-// Execute implements node.ActionTemplate. It implements the handling of endpoints
-// and start the HTTP server
+// Execute implements node.ActionTemplate. It implements the handling of
+// endpoints and start the HTTP server
 func (a *initHttpServerAction) Execute(ctx node.Context) error {
 	portNumber := ctx.Flags.String("portNumber")
 
-	//todo : think of where resolving dkg.Actor ! either now or when handling requests
+	// todo : think of where resolving dkg.Actor ! either now or when handling requests
 	var actor dkg.Actor
 	err := ctx.Injector.Resolve(&actor)
 	if err != nil {
 		return xerrors.Errorf("failed to resolve actor: %v", err)
 	}
 
-	http.HandleFunc(getPublicKeyEndPoint, func(w http.ResponseWriter, r *http.Request){
+	http.HandleFunc(getPublicKeyEndPoint, func(w http.ResponseWriter, r *http.Request) {
 
 		pubkey, err := actor.GetPublicKey()
 		if err != nil {
@@ -251,7 +253,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		return xerrors.Errorf("failed to marshall the C element of the ciphertext pair: %v", err)
 	}
 
-	http.HandleFunc(encryptEndPoint, func(w http.ResponseWriter, r *http.Request){
+	http.HandleFunc(encryptEndPoint, func(w http.ResponseWriter, r *http.Request) {
 
 		response := Ciphertext{K: Kmarshalled, C: Cmarshalled}
 		js, err := json.Marshal(response)
@@ -268,14 +270,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		}
 	})
 
-	http.HandleFunc(decryptEndPoint, func(w http.ResponseWriter, r *http.Request){
+	http.HandleFunc(decryptEndPoint, func(w http.ResponseWriter, r *http.Request) {
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		ciphertext:= new (Ciphertext)
+		ciphertext := new(Ciphertext)
 		err = json.NewDecoder(bytes.NewBuffer(body)).Decode(ciphertext)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -310,7 +312,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 	})
 
-	log.Fatal(http.ListenAndServe(":" + portNumber, nil))
+	log.Fatal(http.ListenAndServe(":"+portNumber, nil))
 
 	return nil
 }

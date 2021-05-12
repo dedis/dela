@@ -23,7 +23,7 @@ type ShuffleBallotsTransaction struct {
 	ElectionID      string
 	Round           int
 	ShuffledBallots [][]byte
-	Proof 			[]byte
+	Proof           []byte
 	Node            string
 }
 

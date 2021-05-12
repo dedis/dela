@@ -22,7 +22,6 @@ const separator = ":"
 
 var suite = suites.MustFind("Ed25519")
 
-
 // initAction is an action to initialize the shuffle protocol
 //
 // - implements node.ActionTemplate
@@ -48,7 +47,8 @@ func (a *initAction) Execute(ctx node.Context) error {
 	return nil
 }
 
-// shuffleAction is an action that shuffles hardcoded ElGamal pairs and verifies their decryption
+// shuffleAction is an action that shuffles hardcoded ElGamal pairs and verifies
+// their decryption
 //
 // - implements node.ActionTemplate
 type shuffleAction struct {
@@ -82,37 +82,37 @@ func (a *shuffleAction) Execute(ctx node.Context) error {
 		M := suite.Point().Embed([]byte(message), random.New())
 
 		// ElGamal-encrypt the point to produce ciphertext (K,C).
-		k := suite.Scalar().Pick(random.New())             // ephemeral private key
-		K := suite.Point().Mul(k, nil)                      // ephemeral DH public key
-		S := suite.Point().Mul(k, H) // ephemeral DH shared secret
-		C := S.Add(S, M)                                    // message blinded with secret
+		k := suite.Scalar().Pick(random.New()) // ephemeral private key
+		K := suite.Point().Mul(k, nil)         // ephemeral DH public key
+		S := suite.Point().Mul(k, H)           // ephemeral DH shared secret
+		C := S.Add(S, M)                       // message blinded with secret
 		X[i] = K
 		Y[i] = C
 
 	}
 	print(roster)
-/*
-	KsShuffled, CsShuffled, _, err := actor.Shuffle(roster, "Ed25519", X, Y, H)
+	/*
+		KsShuffled, CsShuffled, _, err := actor.Shuffle(roster, "Ed25519", X, Y, H)
 
-	if err != nil {
-		return xerrors.Errorf("failed to shuffle: %v", err)
-	}
-
-	for i := 0; i < k; i++ {
-		K := KsShuffled[i]
-		C := CsShuffled[i]
-
-		S := suite.Point().Mul(h, K) // regenerate shared secret
-		M := suite.Point().Sub(C, S)      // use to un-blind the message
-
-		message, err := M.Data()           // extract the embedded data
 		if err != nil {
-			return xerrors.Errorf("failed to decrypt: %v", err)
+			return xerrors.Errorf("failed to shuffle: %v", err)
 		}
 
-		dela.Logger.Info().Msg(string(message))
-	}
-*/
+		for i := 0; i < k; i++ {
+			K := KsShuffled[i]
+			C := CsShuffled[i]
+
+			S := suite.Point().Mul(h, K) // regenerate shared secret
+			M := suite.Point().Sub(C, S)      // use to un-blind the message
+
+			message, err := M.Data()           // extract the embedded data
+			if err != nil {
+				return xerrors.Errorf("failed to decrypt: %v", err)
+			}
+
+			dela.Logger.Info().Msg(string(message))
+		}
+	*/
 	return nil
 }
 

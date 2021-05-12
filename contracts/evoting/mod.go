@@ -13,7 +13,7 @@ import (
 	"go.dedis.ch/kyber/v3/proof"
 	shuffleKyber "go.dedis.ch/kyber/v3/shuffle"
 
-	//shuffleKyber "go.dedis.ch/kyber/v3/shuffle"
+	// shuffleKyber "go.dedis.ch/kyber/v3/shuffle"
 	"go.dedis.ch/kyber/v3/suites"
 	"golang.org/x/xerrors"
 	"io"
@@ -26,11 +26,10 @@ const encryptEndPoint = "/dkg/encrypt"
 const decryptEndPoint = "/dkg/decrypt"
 const protocolName = "PairShuffle"
 const messageOnlyOneShufflePerRound = "Only one shuffle per round is allowed"
+
 var suite = suites.MustFind("Ed25519")
 
-
-// commands defines the commands of the evoting contract. This interface helps in
-// testing the contract.
+// commands defines the commands of the evoting contract.
 type commands interface {
 	getPublicKey(snap store.Snapshot, step execution.Step) error
 	encrypt(snap store.Snapshot, step execution.Step) error
@@ -84,42 +83,50 @@ const (
 	memcoin --config /tmp/node1 pool add\
 	    --key private.key\
 	    --args go.dedis.ch/dela.ContractArg --args go.dedis.ch/dela.Access\
-	    --args access:grant_id --args 0300000000000000000000000000000000000000000000000000000000000000\
+	    --args access:grant_id
+	--args 0300000000000000000000000000000000000000000000000000000000000000\
 	    --args access:grant_contract --args go.dedis.ch/dela.Evoting\
 	    --args access:grant_command --args all\
-	    --args access:identity --args $(crypto bls signer read --path private.key --format BASE64_PUBKEY)\
+	    --args access:identity --args $(crypto bls signer read --path
+	private.key --format BASE64_PUBKEY)\
 	    --args access:command --args GRANT
-	 */
+	*/
 
-	// CmdGetPublicKey defines the command to init the DKG protocol and generate the public key
+	// CmdGetPublicKey defines the command to init the DKG protocol and
+	// generate the public key
 	/*
-	memcoin --config /tmp/node1 pool add\
-	    --key private.key\
-	    --args go.dedis.ch/dela.ContractArg --args go.dedis.ch/dela.Evoting\
-	    --args evoting:command --args GETPUBLICKEY --args evoting:portNumber --args 8080
-	 */
+		memcoin --config /tmp/node1 pool add\
+		    --key private.key\
+		    --args go.dedis.ch/dela.ContractArg --args go.dedis.ch/dela.Evoting\
+		    --args evoting:command --args GETPUBLICKEY --args evoting:portNumber
+		--args 8080
+	*/
 	CmdGetPublicKey Command = "GETPUBLICKEY"
 
-	// This command helps in testing, voters would send already encrypted ballots.
+	// This command helps in testing, voters would send already encrypted
+	// ballots.
 	// TODO : convert to a Store like command
-	// CmdEncrypt defines the command store the encryption of a random plaintext, this plaintext is encrypted only once
-	// in the server since its encryption is non-deterministic and the storing of the ciphertext would result in a
-	// mismatch tree root error
+	// CmdEncrypt defines the command store the encryption of a random
+	// plaintext, this plaintext is encrypted only once in the server since its
+	// encryption is non-deterministic and the storing of the ciphertext would
+	// result in a mismatch tree root error
 	/*
-	memcoin --config /tmp/node1 pool add\
-	    --key private.key\
-	    --args go.dedis.ch/dela.ContractArg --args go.dedis.ch/dela.Evoting\
-	    --args evoting:command --args ENCRYPT --args evoting:portNumber --args 8080 --args evoting:key --args ciphertext1
-	 */
+		memcoin --config /tmp/node1 pool add\
+		    --key private.key\
+		    --args go.dedis.ch/dela.ContractArg --args go.dedis.ch/dela.Evoting\
+		    --args evoting:command --args ENCRYPT --args evoting:portNumber --args
+		8080 --args evoting:key --args ciphertext1
+	*/
 	CmdEncrypt Command = "ENCRYPT"
 
 	// CmdDecrypt defines the command to decrypt a value and print it
 	/*
-	memcoin --config /tmp/node1 pool add\
-	    --key private.key\
-	    --args go.dedis.ch/dela.ContractArg --args go.dedis.ch/dela.Evoting\
-	    --args evoting:command --args DECRYPT --args evoting:portNumber --args 8080 --args evoting:key --args ciphertext1
-	 */
+		memcoin --config /tmp/node1 pool add\
+		    --key private.key\
+		    --args go.dedis.ch/dela.ContractArg --args go.dedis.ch/dela.Evoting\
+		    --args evoting:command --args DECRYPT --args evoting:portNumber --args
+		8080 --args evoting:key --args ciphertext1
+	*/
 	CmdDecrypt Command = "DECRYPT"
 
 	CmdCreateElection Command = "CREATE_ELECTION"
@@ -133,7 +140,6 @@ const (
 	CmdDecryptBallots Command = "DECRYPT_BALLOTS"
 
 	CmdCancelElection Command = "CANCEL_ELECTION"
-
 )
 
 // NewCreds creates new credentials for a evoting contract execution. We might
@@ -160,13 +166,12 @@ type Contract struct {
 
 	// cmd provides the commands that can be executed by this smart contract
 	cmd commands
-
 }
 
 // NewContract creates a new Value contract
 func NewContract(aKey []byte, srvc access.Service) Contract {
 	contract := Contract{
-		//indexElection:     map[string]struct{}{},
+		// indexElection:     map[string]struct{}{},
 		access:    srvc,
 		accessKey: aKey,
 	}
@@ -242,7 +247,6 @@ func (c Contract) Execute(snap store.Snapshot, step execution.Step) error {
 	return nil
 }
 
-
 // evotingCommand implements the commands of the evoting contract
 //
 // - implements commands
@@ -253,7 +257,7 @@ type evotingCommand struct {
 func (e evotingCommand) closeElection(snap store.Snapshot, step execution.Step) error {
 	closeElectionArg := step.Current.GetArg(CloseElectionArg)
 
-	closeElectionTransaction := new (types.CloseElectionTransaction)
+	closeElectionTransaction := new(types.CloseElectionTransaction)
 	err := json.NewDecoder(bytes.NewBuffer(closeElectionArg)).Decode(closeElectionTransaction)
 	if err != nil {
 		return xerrors.Errorf("failed to unmarshall CloseElectionTransaction: %v", err)
@@ -265,17 +269,17 @@ func (e evotingCommand) closeElection(snap store.Snapshot, step execution.Step) 
 		return xerrors.Errorf("failed to get key '%s': %v", []byte(closeElectionTransaction.ElectionID), err)
 	}
 
-	election := new (types.Election)
+	election := new(types.Election)
 	err = json.NewDecoder(bytes.NewBuffer(electionMarshalled)).Decode(election)
 	if err != nil {
 		return xerrors.Errorf("failed to marshall Election: %v", err)
 	}
 
-	if election.AdminId != closeElectionTransaction.UserId{
+	if election.AdminId != closeElectionTransaction.UserId {
 		return xerrors.Errorf("Only the admin can close the election")
 	}
 
-	if election.Status != types.Open{
+	if election.Status != types.Open {
 		// todo : send status ?
 		return xerrors.Errorf("The election is not open.")
 	}
@@ -300,28 +304,28 @@ func (e evotingCommand) shuffleBallots(snap store.Snapshot, step execution.Step)
 	dela.Logger.Info().Msg("--------------------------------------SHUFFLE TRANSACTION START...")
 	shuffleBallotsArg := step.Current.GetArg(ShuffleBallotsArg)
 
-	shuffleBallotsTransaction := new (types.ShuffleBallotsTransaction)
+	shuffleBallotsTransaction := new(types.ShuffleBallotsTransaction)
 	err := json.NewDecoder(bytes.NewBuffer(shuffleBallotsArg)).Decode(shuffleBallotsTransaction)
 	if err != nil {
 		return xerrors.Errorf("failed to unmarshall ShuffleBallotsTransaction : %v", err)
 	}
 
-	//dela.Logger.Info().Msg(string(shuffleBallotsArg))
+	// dela.Logger.Info().Msg(string(shuffleBallotsArg))
 	for _, tx := range step.Previous {
 
 		if string(tx.GetArg(native.ContractArg)) == ContractName {
 
-			if string(tx.GetArg("evoting:command")) == "evoting:command"{
+			if string(tx.GetArg("evoting:command")) == "evoting:command" {
 
 				shuffleBallotsArgTx := tx.GetArg(ShuffleBallotsArg)
-				shuffleBallotsTransactionTx := new (types.ShuffleBallotsTransaction)
+				shuffleBallotsTransactionTx := new(types.ShuffleBallotsTransaction)
 				err := json.NewDecoder(bytes.NewBuffer(shuffleBallotsArgTx)).Decode(shuffleBallotsTransactionTx)
 
 				if err != nil {
 					return xerrors.Errorf("failed to unmarshall ShuffleBallotsTransaction : %v", err)
 				}
 
-				//todo : same electionid
+				// todo : same electionid
 				if shuffleBallotsTransactionTx.Round == shuffleBallotsTransaction.Round {
 					dela.Logger.Info().Msg("FOUND PREVIOUS SAME ROUND...")
 					return xerrors.Errorf(messageOnlyOneShufflePerRound)
@@ -337,26 +341,26 @@ func (e evotingCommand) shuffleBallots(snap store.Snapshot, step execution.Step)
 		return xerrors.Errorf("failed to get key '%s': %v", []byte(shuffleBallotsTransaction.ElectionID), err)
 	}
 
-	election := new (types.Election)
+	election := new(types.Election)
 	err = json.NewDecoder(bytes.NewBuffer(electionMarshalled)).Decode(election)
 	if err != nil {
 		return xerrors.Errorf("failed to unmarshal Election : %v", err)
 	}
 
-	if election.Status != types.Closed{
+	if election.Status != types.Closed {
 		// todo : send status ?
 		return xerrors.Errorf("The election is not closed.")
 	}
 
-	if len(election.ShuffledBallots) != shuffleBallotsTransaction.Round-1{
+	if len(election.ShuffledBallots) != shuffleBallotsTransaction.Round-1 {
 		dela.Logger.Info().Msg("FOUND PREVIOUS SAME ROUND...")
 		return xerrors.Errorf(messageOnlyOneShufflePerRound)
 	}
 
 	KsShuffled := make([]kyber.Point, 0, len(shuffleBallotsTransaction.ShuffledBallots))
 	CsShuffled := make([]kyber.Point, 0, len(shuffleBallotsTransaction.ShuffledBallots))
-	for _, v := range shuffleBallotsTransaction.ShuffledBallots{
-		ciphertext:= new (types.Ciphertext)
+	for _, v := range shuffleBallotsTransaction.ShuffledBallots {
+		ciphertext := new(types.Ciphertext)
 		err = json.NewDecoder(bytes.NewBuffer(v)).Decode(ciphertext)
 		if err != nil {
 			return xerrors.Errorf("failed to unmarshall Ciphertext: %v", err)
@@ -425,15 +429,15 @@ func (e evotingCommand) shuffleBallots(snap store.Snapshot, step execution.Step)
 		return xerrors.Errorf("failed to unmarshal public key: %v", err)
 	}
 
-	//todo: add trusted nodes in election struct
+	// todo: add trusted nodes in election struct
 	verifier := shuffleKyber.Verifier(suite, nil, pubKey, Ks, Cs, KsShuffled, CsShuffled)
 	err = proof.HashVerify(suite, protocolName, verifier, shuffleBallotsTransaction.Proof)
 	if err != nil {
 		dela.Logger.Info().Msg("PROOF FAILED !!!!!!!!" + err.Error())
-		//return xerrors.Errorf("proof verification failed: %v", err)
+		// return xerrors.Errorf("proof verification failed: %v", err)
 	}
 
-	//todo : threshold should be part of election struct
+	// todo : threshold should be part of election struct
 	if shuffleBallotsTransaction.Round == 3 {
 		election.Status = types.ShuffledBallots
 	}
@@ -457,7 +461,7 @@ func (e evotingCommand) shuffleBallots(snap store.Snapshot, step execution.Step)
 func (e evotingCommand) decryptBallots(snap store.Snapshot, step execution.Step) error {
 	decryptBallotsArg := step.Current.GetArg(DecryptBallotsArg)
 
-	decryptBallotsTransaction := new (types.DecryptBallotsTransaction)
+	decryptBallotsTransaction := new(types.DecryptBallotsTransaction)
 	err := json.NewDecoder(bytes.NewBuffer(decryptBallotsArg)).Decode(decryptBallotsTransaction)
 	if err != nil {
 		return xerrors.Errorf("failed to unmarshal DecryptBallotsTransaction : %v", err)
@@ -469,17 +473,17 @@ func (e evotingCommand) decryptBallots(snap store.Snapshot, step execution.Step)
 		return xerrors.Errorf("failed to get key '%s': %v", []byte(decryptBallotsTransaction.ElectionID), err)
 	}
 
-	election := new (types.Election)
+	election := new(types.Election)
 	err = json.NewDecoder(bytes.NewBuffer(electionMarshalled)).Decode(election)
 	if err != nil {
 		return xerrors.Errorf("failed to unmarshall Election : %v", err)
 	}
 
-	if election.AdminId != decryptBallotsTransaction.UserId{
+	if election.AdminId != decryptBallotsTransaction.UserId {
 		return xerrors.Errorf("Only the admin can decrypt the ballots")
 	}
 
-	if election.Status != types.ShuffledBallots{
+	if election.Status != types.ShuffledBallots {
 		// todo : send status ?
 		return xerrors.Errorf("The ballots are not shuffled.")
 	}
@@ -503,7 +507,7 @@ func (e evotingCommand) decryptBallots(snap store.Snapshot, step execution.Step)
 func (e evotingCommand) cancelElection(snap store.Snapshot, step execution.Step) error {
 	cancelElectionArg := step.Current.GetArg(CancelElectionArg)
 
-	cancelElectionTransaction := new (types.CancelElectionTransaction)
+	cancelElectionTransaction := new(types.CancelElectionTransaction)
 	err := json.NewDecoder(bytes.NewBuffer(cancelElectionArg)).Decode(cancelElectionTransaction)
 	if err != nil {
 		return xerrors.Errorf("failed to unmarshal CancelElectionTransaction : %v", err)
@@ -515,13 +519,13 @@ func (e evotingCommand) cancelElection(snap store.Snapshot, step execution.Step)
 		return xerrors.Errorf("failed to get key '%s': %v", []byte(cancelElectionTransaction.ElectionID), err)
 	}
 
-	election := new (types.Election)
+	election := new(types.Election)
 	err = json.NewDecoder(bytes.NewBuffer(electionMarshalled)).Decode(election)
 	if err != nil {
 		return xerrors.Errorf("failed to unmarshal Election : %v", err)
 	}
 
-	if election.AdminId != cancelElectionTransaction.UserId{
+	if election.AdminId != cancelElectionTransaction.UserId {
 		return xerrors.Errorf("Only the admin can cancel the election")
 	}
 
@@ -546,7 +550,7 @@ func (e evotingCommand) castVote(snap store.Snapshot, step execution.Step) error
 
 	castVoteArg := step.Current.GetArg(CastVoteArg)
 
-	castVoteTransaction := new (types.CastVoteTransaction)
+	castVoteTransaction := new(types.CastVoteTransaction)
 	err := json.NewDecoder(bytes.NewBuffer(castVoteArg)).Decode(castVoteTransaction)
 	if err != nil {
 		return xerrors.Errorf("failed to unmarshal CastVoteTransaction : %v", err)
@@ -558,13 +562,13 @@ func (e evotingCommand) castVote(snap store.Snapshot, step execution.Step) error
 		return xerrors.Errorf("failed to get key '%s': %v", []byte(castVoteTransaction.ElectionID), err)
 	}
 
-	election := new (types.Election)
+	election := new(types.Election)
 	err = json.NewDecoder(bytes.NewBuffer(electionMarshalled)).Decode(election)
 	if err != nil {
 		return xerrors.Errorf("failed to unmarshal Election : %v", err)
 	}
 
-	if election.Status != types.Open{
+	if election.Status != types.Open {
 		// todo : send status ?
 		return xerrors.Errorf("The election is not open.")
 	}
@@ -576,7 +580,7 @@ func (e evotingCommand) castVote(snap store.Snapshot, step execution.Step) error
 		return xerrors.Errorf("failed to marshal Election : %v", err)
 	}
 
-	//dela.Logger.Info().Msg("Pushed Election : " + string(js))
+	// dela.Logger.Info().Msg("Pushed Election : " + string(js))
 	err = snap.Set([]byte(election.ElectionID), js)
 	if err != nil {
 		return xerrors.Errorf("failed to set value: %v", err)
@@ -589,7 +593,7 @@ func (e evotingCommand) castVote(snap store.Snapshot, step execution.Step) error
 func (e evotingCommand) createElection(snap store.Snapshot, step execution.Step) error {
 	createElectionArg := step.Current.GetArg(CreateElectionArg)
 
-	createElectionTransaction := new (types.CreateElectionTransaction)
+	createElectionTransaction := new(types.CreateElectionTransaction)
 	err := json.NewDecoder(bytes.NewBuffer(createElectionArg)).Decode(createElectionTransaction)
 	if err != nil {
 		return xerrors.Errorf("failed to unmarshal CreateElectionTransaction : %v", err)
@@ -685,7 +689,7 @@ func (e evotingCommand) decrypt(snap store.Snapshot, step execution.Step) error 
 		return xerrors.Errorf("failed to get key '%s': %v", keyArg, err)
 	}
 
-	resp, err := http.Post(url + string(portNumber) + decryptEndPoint, "application/json", bytes.NewBuffer(value))
+	resp, err := http.Post(url+string(portNumber)+decryptEndPoint, "application/json", bytes.NewBuffer(value))
 	if err != nil {
 		return xerrors.Errorf("failed retrieve the decryption from the server: %v", err)
 	}
@@ -700,4 +704,3 @@ func (e evotingCommand) decrypt(snap store.Snapshot, step execution.Step) error 
 
 	return nil
 }
-

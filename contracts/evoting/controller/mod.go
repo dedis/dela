@@ -13,7 +13,7 @@ func NewController() node.Initializer {
 // controller is an initializer with a set of commands.
 //
 // - implements node.Initializer
-type controller struct{
+type controller struct {
 }
 
 // Build implements node.Initializer.
@@ -32,8 +32,8 @@ func (m controller) SetCommands(builder node.Builder) {
 	})
 
 	sub.SetAction(builder.MakeAction(&initHttpServerAction{
-		ElectionIdNonce: 0 ,
-		ElectionIds: make([]string, 0),
+		ElectionIdNonce: 0,
+		ElectionIds:     make([]string, 0),
 	}))
 
 	sub = cmd.SetSubCommand("scenarioTest")

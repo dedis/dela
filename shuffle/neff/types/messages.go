@@ -15,22 +15,22 @@ func RegisterMessageFormat(c serde.Format, f serde.FormatEngine) {
 	msgFormats.Register(c, f)
 }
 
-// StartShuffle is the message the initiator of the DKG protocol should send to all the
-// nodes.
+// StartShuffle is the message the initiator of the DKG protocol should send to
+// all the nodes.
 //
 // - implements serde.Message
 type StartShuffle struct {
 	threshold  int
 	electionId string
-	addresses []mino.Address
+	addresses  []mino.Address
 }
 
 // NewStart creates a new start message.
 func NewStartShuffle(threshold int, electionId string, addresses []mino.Address) StartShuffle {
 	return StartShuffle{
-		threshold:   threshold,
-		electionId : electionId,
-		addresses : addresses,
+		threshold:  threshold,
+		electionId: electionId,
+		addresses:  addresses,
 	}
 }
 
@@ -83,7 +83,8 @@ func (e EndShuffle) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
-// ShuffleMessage is a message that contains every information needed to run the shuffle protocol.
+// ShuffleMessage is a message that contains every information needed to run the
+// shuffle protocol.
 //
 // - implements serde.Message
 type ShuffleMessage struct {
@@ -92,7 +93,7 @@ type ShuffleMessage struct {
 	addresses []mino.Address
 
 	// The name of the curve.
-	suiteName	string
+	suiteName string
 
 	// The kyber.Point public key used to generate the ElGamal pairs.
 	publicKey kyber.Point
@@ -107,21 +108,20 @@ type ShuffleMessage struct {
 
 	// The proof of the previous shuffle.
 	prf []byte
-
 }
 
 // NewShuffleMessage creates a new ShuffleMessage.
-func NewShuffleMessage(addresses []mino.Address, suiteName	string, publicKey kyber.Point, kBar []kyber.Point, cBar []kyber.Point,
+func NewShuffleMessage(addresses []mino.Address, suiteName string, publicKey kyber.Point, kBar []kyber.Point, cBar []kyber.Point,
 	kBarPrevious []kyber.Point, cBarPrevious []kyber.Point, prf []byte) ShuffleMessage {
 	return ShuffleMessage{
-		addresses:	addresses,
-		suiteName:	suiteName,
-		publicKey:	publicKey,
-		kBar:	kBar,
-		cBar:   cBar,
-		kBarPrevious: 	kBarPrevious,
-		cBarPrevious:	cBarPrevious,
-		prf:	prf,
+		addresses:    addresses,
+		suiteName:    suiteName,
+		publicKey:    publicKey,
+		kBar:         kBar,
+		cBar:         cBar,
+		kBarPrevious: kBarPrevious,
+		cBarPrevious: cBarPrevious,
+		prf:          prf,
 	}
 }
 
@@ -150,12 +150,14 @@ func (s ShuffleMessage) GetcBar() []kyber.Point {
 	return append([]kyber.Point{}, s.cBar...)
 }
 
-// GetkBarPrevious and GetcBarPrevious return the list of the previously shuffled ElGamal pairs.
+// GetkBarPrevious and GetcBarPrevious return the list of the previously
+// shuffled ElGamal pairs.
 func (s ShuffleMessage) GetkBarPrevious() []kyber.Point {
 	return append([]kyber.Point{}, s.kBarPrevious...)
 }
 
-// GetkBarPrevious and GetcBarPrevious return the list of the previously shuffled ElGamal pairs.
+// GetkBarPrevious and GetcBarPrevious return the list of the previously
+// shuffled ElGamal pairs.
 func (s ShuffleMessage) GetcBarPrevious() []kyber.Point {
 	return append([]kyber.Point{}, s.cBarPrevious...)
 }

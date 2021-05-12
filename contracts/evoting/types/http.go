@@ -68,18 +68,18 @@ type DecryptBallotsResponse struct {
 
 type GetElectionResultRequest struct {
 	ElectionID string
-	//UserId   string
-	Token      string
+	// UserId   string
+	Token string
 }
 
 type GetElectionResultResponse struct {
-	Result  []Ballot
+	Result []Ballot
 }
 
 type GetElectionInfoRequest struct {
 	ElectionID string
-	//UserId string
-	Token      string
+	// UserId string
+	Token string
 }
 
 type GetElectionInfoResponse struct {
@@ -90,12 +90,12 @@ type GetElectionInfoResponse struct {
 }
 
 type GetAllElectionsInfoRequest struct {
-	//UserId string
+	// UserId string
 	Token string
 }
 
 type GetAllElectionsInfoResponse struct {
-	//UserId         string
+	// UserId         string
 	AllElectionsInfo []GetElectionInfoResponse
 }
 

@@ -2,29 +2,30 @@ package types
 
 type ID string
 
-//todo : status should be string ?
+// todo : status should be string ?
 type status uint16
-const(
-	//Initial = 0
-	Open = 1
-	Closed = 2
+
+const (
+	// Initial = 0
+	Open            = 1
+	Closed          = 2
 	ShuffledBallots = 3
-	//DecryptedBallots = 4
+	// DecryptedBallots = 4
 	ResultAvailable = 5
-	Canceled = 6
+	Canceled        = 6
 )
 
 // Election contains all information about a simple election
 type Election struct {
 	Title            string
 	ElectionID       ID
-	AdminId			 string
+	AdminId          string
 	Candidates       []string
-	Status           status // Initial | Open | Closed | Shuffling | Decrypting | ..
+	Status           status // Initial | Open | Closed | Shuffling | Decrypting
 	Pubkey           []byte
 	EncryptedBallots map[string][]byte
 	ShuffledBallots  map[int][][]byte
-	Proofs 			 map[int][]byte
+	Proofs           map[int][]byte
 	DecryptedBallots []Ballot
 	ShuffleThreshold int
 }

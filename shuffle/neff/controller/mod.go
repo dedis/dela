@@ -21,7 +21,6 @@ func NewController() node.Initializer {
 // - implements node.Initializer
 type controller struct{}
 
-
 // Build implements node.Initializer.
 func (m controller) SetCommands(builder node.Builder) {
 

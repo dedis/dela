@@ -26,18 +26,17 @@ type StartShuffle struct {
 }
 
 type EndShuffle struct {
-
 }
 
 type ShuffleMessage struct {
-	Addresses  []Address
-	Kbar []ElementOfCiphertextPair
-	Cbar []ElementOfCiphertextPair
-	PubKey PublicKey
+	Addresses    []Address
+	Kbar         []ElementOfCiphertextPair
+	Cbar         []ElementOfCiphertextPair
+	PubKey       PublicKey
 	KbarPrevious []ElementOfCiphertextPair
 	CbarPrevious []ElementOfCiphertextPair
-	SuiteName string
-	Prf []byte
+	SuiteName    string
+	Prf          []byte
 }
 
 type Message struct {
@@ -148,14 +147,14 @@ func (f MsgFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) 
 		}
 
 		shuffleMessage := ShuffleMessage{
-			Addresses:  addrs,
-			Kbar: kBar,
-			Cbar: cBar,
-			PubKey: pubKeyMarshalled,
+			Addresses:    addrs,
+			Kbar:         kBar,
+			Cbar:         cBar,
+			PubKey:       pubKeyMarshalled,
 			KbarPrevious: kBarPrevious,
 			CbarPrevious: cBarPrevious,
-			SuiteName: in.GetSuiteName(),
-			Prf: in.GetProof(),
+			SuiteName:    in.GetSuiteName(),
+			Prf:          in.GetProof(),
 		}
 
 		m = Message{ShuffleMessage: &shuffleMessage}
@@ -208,7 +207,6 @@ func (f MsgFormat) decodeStartShuffle(ctx serde.Context, startShuffle *StartShuf
 	for i, addr := range startShuffle.Addresses {
 		addrs[i] = fac.FromText(addr)
 	}
-
 
 	s := types.NewStartShuffle(startShuffle.Threshold, startShuffle.ElectionId, addrs)
 

@@ -30,16 +30,19 @@ import (
 )
 
 const shuffleTransactionTimeout = time.Second * 2
+
 var suite = suites.MustFind("Ed25519")
+
 const signerFilePath = "private.key"
 
-// Todo : either add some sort of setup call to set participants or public key (and thus reduce message size ) or remove state
+// Todo : either add some sort of setup call to set participants or public key
+//  (and thus reduce message size ) or remove state
 // state is a struct contained in a handler that allows an actor to read the
 // state of that handler. The actor should only use the getter functions to read
 // the attributes.
 type state struct {
 	sync.Mutex
-	//participants []mino.Address
+	// participants []mino.Address
 }
 
 // Handler represents the RPC executed on each node
@@ -48,11 +51,11 @@ type state struct {
 type Handler struct {
 	mino.UnsupportedHandler
 	sync.RWMutex
-	me        mino.Address
-	startRes  *state
-	service   ordering.Service
-	p 		  pool.Pool
-	blocks    *blockstore.InDisk
+	me       mino.Address
+	startRes *state
+	service  ordering.Service
+	p        pool.Pool
+	blocks   *blockstore.InDisk
 }
 
 // NewHandler creates a new handler
@@ -97,7 +100,7 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 	return nil
 }
 
-func (h *Handler) HandleStartShuffleMessage (startShuffleMessage types.StartShuffle, from mino.Address, out mino.Sender,
+func (h *Handler) HandleStartShuffleMessage(startShuffleMessage types.StartShuffle, from mino.Address, out mino.Sender,
 	in mino.Receiver) error {
 
 	dela.Logger.Info().Msg("Starting the neff shuffle protocol ...")
@@ -234,14 +237,13 @@ func (h *Handler) HandleStartShuffleMessage (startShuffleMessage types.StartShuf
 			Round:           round,
 			ShuffledBallots: shuffledBallots,
 			Proof:           shuffleProof,
-			Node: h.me.String(),
+			Node:            h.me.String(),
 		}
 
 		js, err := json.Marshal(shuffleBallotsTransaction)
 		if err != nil {
 			return xerrors.Errorf("failed to marshal ShuffleBallotsTransaction: %v", err.Error())
 		}
-
 
 		args := make([]txn.Arg, 3)
 		args[0] = txn.Arg{
@@ -296,11 +298,11 @@ func (h *Handler) HandleStartShuffleMessage (startShuffleMessage types.StartShuf
 				} else {
 					dela.Logger.Info().Msg("ACCEPTED")
 
-					if round == startShuffleMessage.GetThreshold(){
+					if round == startShuffleMessage.GetThreshold() {
 						message := types.EndShuffle{}
 						addrs := make([]mino.Address, 0, len(startShuffleMessage.GetAddresses())-1)
 						for _, addr := range startShuffleMessage.GetAddresses() {
-							if !(addr.Equal(h.me)){
+							if !(addr.Equal(h.me)) {
 								addrs = append(addrs, addr)
 							}
 						}
@@ -328,7 +330,7 @@ func (h *Handler) HandleStartShuffleMessage (startShuffleMessage types.StartShuf
 						dela.Logger.Info().Msg("RECEIVED END SHUFFLE MESSAGE")
 					}
 
-					if startShuffleMessage.GetAddresses()[0].Equal(h.me){
+					if startShuffleMessage.GetAddresses()[0].Equal(h.me) {
 						message := types.EndShuffle{}
 						errs := out.Send(message, from)
 						err = <-errs
@@ -342,7 +344,7 @@ func (h *Handler) HandleStartShuffleMessage (startShuffleMessage types.StartShuf
 					return nil
 				}
 			}
-			if notAccepted{
+			if notAccepted {
 				break
 			}
 		}
@@ -351,8 +353,8 @@ func (h *Handler) HandleStartShuffleMessage (startShuffleMessage types.StartShuf
 		dela.Logger.Info().Msg("NEXT ROUND")
 		continue
 
-		//cancel()
-		//return xerrors.Errorf("Transaction not found in the block")
+		// cancel()
+		// return xerrors.Errorf("Transaction not found in the block")
 	}
 
 	// Todo : think about this !! should not reach this code
@@ -360,7 +362,7 @@ func (h *Handler) HandleStartShuffleMessage (startShuffleMessage types.StartShuf
 }
 
 // Todo : handle edge cases
-func (h *Handler) HandleShuffleMessage (shuffleMessage types.ShuffleMessage, from mino.Address, out mino.Sender,
+func (h *Handler) HandleShuffleMessage(shuffleMessage types.ShuffleMessage, from mino.Address, out mino.Sender,
 	in mino.Receiver) error {
 
 	dela.Logger.Info().Msg("SHUFFLE / RECEIVED FROM  : " + from.String())
@@ -396,7 +398,7 @@ func (h *Handler) HandleShuffleMessage (shuffleMessage types.ShuffleMessage, fro
 		return nil
 	}
 
-	//Todo : check you received from the correct node
+	// Todo : check you received from the correct node
 
 	err := verify(suite, kBarPrevious, cBarPrevious, publicKey, kBar, cBar, prf)
 	if err != nil {
@@ -420,7 +422,7 @@ func (h *Handler) HandleShuffleMessage (shuffleMessage types.ShuffleMessage, fro
 			break
 		}
 	}
-	//todo : use modulo
+	// todo : use modulo
 	index += 2
 
 	if index >= len(addrs) {
@@ -438,7 +440,7 @@ func (h *Handler) HandleShuffleMessage (shuffleMessage types.ShuffleMessage, fro
 	return nil
 }
 
-func verify (suite suites.Suite, Ks []kyber.Point, Cs []kyber.Point,
+func verify(suite suites.Suite, Ks []kyber.Point, Cs []kyber.Point,
 	pubKey kyber.Point, KsShuffled []kyber.Point, CsShuffled []kyber.Point, prf []byte) (err error) {
 
 	verifier := shuffleKyber.Verifier(suite, nil, pubKey, Ks, Cs, KsShuffled, CsShuffled)
@@ -468,4 +470,3 @@ func getSigner(filePath string) (crypto.Signer, error) {
 var getManager = func(signer crypto.Signer, s signed.Client) txn.Manager {
 	return signed.NewManager(signer, s)
 }
-
