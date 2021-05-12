@@ -14,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/internal/tracing"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
@@ -779,14 +780,14 @@ func TestConnManager_FailLoadDistantCert_Acquire(t *testing.T) {
 	mgr.certs = fakeCerts{errLoad: fake.GetError()}
 
 	_, err := mgr.Acquire(fake.NewAddress(0))
-	require.EqualError(t, err, fake.Err("while loading distant cert"))
+	require.EqualError(t, err, fake.Err("failed to retrieve transport credential: while loading distant cert"))
 }
 
 func TestConnManager_MissingCert_Acquire(t *testing.T) {
 	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore())
 
 	_, err := mgr.Acquire(fake.NewAddress(1))
-	require.EqualError(t, err, "certificate for 'fake.Address[1]' not found")
+	require.EqualError(t, err, "failed to retrieve transport credential: certificate for 'fake.Address[1]' not found")
 }
 
 func TestConnManager_FailLoadOwnCert_Acquire(t *testing.T) {
@@ -797,7 +798,7 @@ func TestConnManager_FailLoadOwnCert_Acquire(t *testing.T) {
 	}
 
 	_, err := mgr.Acquire(fake.NewAddress(0))
-	require.EqualError(t, err, fake.Err("while loading own cert"))
+	require.EqualError(t, err, fake.Err("failed to retrieve transport credential: while loading own cert"))
 }
 
 func TestConnManager_MissingOwnCert_Acquire(t *testing.T) {
@@ -805,7 +806,7 @@ func TestConnManager_MissingOwnCert_Acquire(t *testing.T) {
 	mgr.certs.Store(fake.NewAddress(1), fake.MakeCertificate(t, 0))
 
 	_, err := mgr.Acquire(fake.NewAddress(1))
-	require.EqualError(t, err, "couldn't find server 'fake.Address[0]' certificate")
+	require.EqualError(t, err, "failed to retrieve transport credential: couldn't find server 'fake.Address[0]' certificate")
 }
 
 func TestConnManager_BadAddress_Acquire(t *testing.T) {
@@ -814,6 +815,33 @@ func TestConnManager_BadAddress_Acquire(t *testing.T) {
 
 	_, err := mgr.Acquire(mgr.myAddr)
 	require.EqualError(t, err, "invalid address type 'fake.Address'")
+}
+
+func TestConnManager_BadTracer_Acquire(t *testing.T) {
+	addr := ParseAddress("127.0.0.1", 0)
+
+	dst, err := NewMinogrpc(addr, nil)
+	require.NoError(t, err)
+
+	defer dst.GracefulStop()
+
+	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore())
+
+	getTracerForAddr = fake.GetTracerForAddrWithError
+
+	certs := mgr.certs
+	certs.Store(mgr.myAddr, &tls.Certificate{})
+	certs.Store(dst.GetAddress(), dst.GetCertificate())
+
+	dstAddr := dst.GetAddress()
+	_, err = mgr.Acquire(dstAddr)
+	require.EqualError(
+		t,
+		err,
+		fmt.Sprintf("failed to get tracer for addr %s: %s", dst.GetAddress(), fake.GetError().Error()),
+	)
+
+	getTracerForAddr = tracing.GetTracerForAddr
 }
 
 // -----------------------------------------------------------------------------

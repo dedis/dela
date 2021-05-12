@@ -2,6 +2,8 @@ package value
 
 import (
 	"bytes"
+	"encoding/hex"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -85,6 +87,9 @@ func TestCommand_Read(t *testing.T) {
 		Contract: &contract,
 	}
 
+	key := []byte("dummy")
+	keyHex := hex.EncodeToString(key)
+
 	err := cmd.read(fake.NewSnapshot(), makeStep(t))
 	require.EqualError(t, err, "'value:key' not found in tx arg")
 
@@ -92,7 +97,7 @@ func TestCommand_Read(t *testing.T) {
 	require.EqualError(t, err, fake.Err("failed to get key 'dummy'"))
 
 	snap := fake.NewSnapshot()
-	snap.Set([]byte("dummy"), []byte("value"))
+	snap.Set(key, []byte("value"))
 
 	buf := &bytes.Buffer{}
 	cmd.Contract.printer = buf
@@ -100,7 +105,7 @@ func TestCommand_Read(t *testing.T) {
 	err = cmd.read(snap, makeStep(t, KeyArg, "dummy"))
 	require.NoError(t, err)
 
-	require.Equal(t, "dummy=value", buf.String())
+	require.Equal(t, keyHex+"=value", buf.String())
 }
 
 func TestCommand_Delete(t *testing.T) {
@@ -110,31 +115,39 @@ func TestCommand_Delete(t *testing.T) {
 		Contract: &contract,
 	}
 
+	key := []byte("dummy")
+	keyHex := hex.EncodeToString(key)
+	keyStr := string(key)
+
 	err := cmd.delete(fake.NewSnapshot(), makeStep(t))
 	require.EqualError(t, err, "'value:key' not found in tx arg")
 
-	err = cmd.delete(fake.NewBadSnapshot(), makeStep(t, KeyArg, "dummy"))
-	require.EqualError(t, err, fake.Err("failed to delete key 'dummy'"))
+	err = cmd.delete(fake.NewBadSnapshot(), makeStep(t, KeyArg, keyStr))
+	require.EqualError(t, err, fake.Err("failed to delete key '"+keyHex+"'"))
 
 	snap := fake.NewSnapshot()
-	snap.Set([]byte("dummy"), []byte("value"))
-	contract.index["dummy"] = struct{}{}
+	snap.Set(key, []byte("value"))
+	contract.index[keyStr] = struct{}{}
 
-	err = cmd.delete(snap, makeStep(t, KeyArg, "dummy"))
+	err = cmd.delete(snap, makeStep(t, KeyArg, keyStr))
 	require.NoError(t, err)
 
-	res, err := snap.Get([]byte("dummy"))
+	res, err := snap.Get(key)
 	require.Nil(t, err)
 	require.Nil(t, res)
 
-	_, found := contract.index["dummy"]
+	_, found := contract.index[keyStr]
 	require.False(t, found)
 }
 
 func TestCommand_List(t *testing.T) {
 	contract := NewContract([]byte{}, fakeAccess{})
-	contract.index["key1"] = struct{}{}
-	contract.index["key2"] = struct{}{}
+
+	key1 := "key1"
+	key2 := "key2"
+
+	contract.index[key1] = struct{}{}
+	contract.index[key2] = struct{}{}
 
 	buf := &bytes.Buffer{}
 	contract.printer = buf
@@ -144,13 +157,13 @@ func TestCommand_List(t *testing.T) {
 	}
 
 	snap := fake.NewSnapshot()
-	snap.Set([]byte("key1"), []byte("value1"))
-	snap.Set([]byte("key2"), []byte("value2"))
+	snap.Set([]byte(key1), []byte("value1"))
+	snap.Set([]byte(key2), []byte("value2"))
 
 	err := cmd.list(snap)
 	require.NoError(t, err)
 
-	require.Equal(t, "key1=value1,key2=value2", buf.String())
+	require.Equal(t, fmt.Sprintf("%x=value1,%x=value2", key1, key2), buf.String())
 
 	err = cmd.list(fake.NewBadSnapshot())
 	// we can't assume an order from the map

@@ -11,6 +11,7 @@ import (
 
 	"github.com/rs/xid"
 	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/internal/tracing"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
 	"go.dedis.ch/dela/mino/minogrpc/session"
@@ -144,7 +145,16 @@ func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, m
 	md := metadata.Pairs(
 		headerURIKey, rpc.uri,
 		headerStreamIDKey, streamID,
-		headerGatewayKey, rpc.overlay.myAddrStr)
+		headerGatewayKey, rpc.overlay.myAddrStr,
+	)
+
+	protocol := ctx.Value(tracing.ProtocolKey)
+
+	if protocol != nil {
+		md.Append(tracing.ProtocolTag, protocol.(string))
+	} else {
+		md.Append(tracing.ProtocolTag, tracing.UndefinedProtocol)
+	}
 
 	table, err := rpc.overlay.router.New(mino.NewAddresses(), rpc.overlay.myAddr)
 	if err != nil {

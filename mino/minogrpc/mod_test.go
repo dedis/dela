@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/internal/tracing"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/session"
 	"go.dedis.ch/dela/mino/minogrpc/tokens"
@@ -78,6 +79,23 @@ func TestMinogrpc_BadAddress_New(t *testing.T) {
 	//   couldn't start the server: failed to listen: listen tcp 123.4.5.6:1:
 	//     bind: cannot assign requested address
 	require.Regexp(t, "^failed to bind: listen tcp 123.4.5.6:1:", err)
+}
+
+func TestMinogrpc_BadTracer_New(t *testing.T) {
+	getTracerForAddr = fake.GetTracerForAddrWithError
+
+	addr := ParseAddress("127.0.0.1", 3333)
+
+	router := tree.NewRouter(addressFac)
+
+	_, err := NewMinogrpc(addr, router)
+	require.EqualError(
+		t,
+		err,
+		fake.Err("failed to get tracer for addr 127.0.0.1:3333"),
+	)
+
+	getTracerForAddr = tracing.GetTracerForAddr
 }
 
 func TestMinogrpc_GetAddressFactory(t *testing.T) {
