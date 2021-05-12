@@ -26,6 +26,7 @@ type Election struct {
 	ShuffledBallots  map[int][][]byte
 	Proofs 			 map[int][]byte
 	DecryptedBallots []Ballot
+	ShuffleThreshold int
 }
 
 // Ballot contains all information about a simple ballot

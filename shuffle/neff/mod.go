@@ -109,6 +109,7 @@ func (a Actor) Shuffle(co crypto.CollectiveAuthority, electionId string) (err er
 		return xerrors.Errorf("failed to send first message: %v", err)
 	}
 
+	// todo add timeout
 	addr, msg, err := receiver.Recv(context.Background())
 
 	if err != nil {

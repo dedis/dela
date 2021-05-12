@@ -634,6 +634,9 @@ func (e evotingCommand) getPublicKey(snap store.Snapshot, step execution.Step) e
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return xerrors.Errorf("failed to read the body of the response: %v", err)
+	}
 
 	dela.Logger.Info().Msg("Response body : " + string(body))
 
@@ -658,6 +661,9 @@ func (e evotingCommand) encrypt(snap store.Snapshot, step execution.Step) error 
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return xerrors.Errorf("failed to read the body of the response: %v", err)
+	}
 
 	dela.Logger.Info().Msg("Response body : " + string(body))
 
@@ -686,6 +692,9 @@ func (e evotingCommand) decrypt(snap store.Snapshot, step execution.Step) error 
 
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return xerrors.Errorf("failed to read the body of the response: %v", err)
+	}
 
 	dela.Logger.Info().Msg("Response body : " + string(body))
 

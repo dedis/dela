@@ -30,7 +30,6 @@ type EndShuffle struct {
 }
 
 type ShuffleMessage struct {
-	// Todo : a threshold might help to handle edge cases
 	Addresses  []Address
 	Kbar []ElementOfCiphertextPair
 	Cbar []ElementOfCiphertextPair

@@ -27,7 +27,7 @@ func TestExecute(t *testing.T) {
 
 	ctx.Flags.(node.FlagSet)["args"] = []interface{}{"1", "2"}
 
-	action := addAction{client: &client{}}
+	action := addAction{client: &Client{}}
 	ctx.Injector.Inject(mem.NewPool())
 
 	buf, err := bls.NewSigner().MarshalBinary()

@@ -2,15 +2,15 @@ package types
 
 type LoginResponse struct {
 	UserID string
-	Token string
+	Token  string
 }
 
 type CreateElectionRequest struct {
-	Title string
-	AdminId string
+	Title      string
+	AdminId    string
 	Candidates []string
-	Token string
-	PublicKey []byte
+	Token      string
+	PublicKey  []byte
 }
 
 type CreateElectionResponse struct {
@@ -19,16 +19,16 @@ type CreateElectionResponse struct {
 
 type CastVoteRequest struct {
 	ElectionID string
-	UserId string
-	Ballot []byte
-	Token string
+	UserId     string
+	Ballot     []byte
+	Token      string
 }
 
 type CastVoteResponse struct {
 }
 
 type CollectiveAuthorityMember struct {
-	Address string
+	Address   string
 	PublicKey string
 }
 
@@ -40,8 +40,8 @@ type Ciphertext struct {
 
 type CloseElectionRequest struct {
 	ElectionID string
-	UserId string
-	Token string
+	UserId     string
+	Token      string
 }
 
 type CloseElectionResponse struct {
@@ -49,9 +49,9 @@ type CloseElectionResponse struct {
 
 type ShuffleBallotsRequest struct {
 	ElectionID string
-	UserId string
-	Token string
-	Members []CollectiveAuthorityMember
+	UserId     string
+	Token      string
+	Members    []CollectiveAuthorityMember
 }
 
 type ShuffleBallotsResponse struct {
@@ -59,8 +59,8 @@ type ShuffleBallotsResponse struct {
 
 type DecryptBallotsRequest struct {
 	ElectionID string
-	UserId string
-	Token string
+	UserId     string
+	Token      string
 }
 
 type DecryptBallotsResponse struct {
@@ -68,8 +68,8 @@ type DecryptBallotsResponse struct {
 
 type GetElectionResultRequest struct {
 	ElectionID string
-	//UserId string
-	Token string
+	//UserId   string
+	Token      string
 }
 
 type GetElectionResultResponse struct {
@@ -79,14 +79,14 @@ type GetElectionResultResponse struct {
 type GetElectionInfoRequest struct {
 	ElectionID string
 	//UserId string
-	Token string
+	Token      string
 }
 
 type GetElectionInfoResponse struct {
-	Title            string
-	Candidates       []string
-	Status           uint16
-	Pubkey           []byte
+	Title      string
+	Candidates []string
+	Status     uint16
+	Pubkey     []byte
 }
 
 type GetAllElectionsInfoRequest struct {
@@ -95,14 +95,14 @@ type GetAllElectionsInfoRequest struct {
 }
 
 type GetAllElectionsInfoResponse struct {
-	//UserId string
+	//UserId         string
 	AllElectionsInfo []GetElectionInfoResponse
 }
 
 type CancelElectionRequest struct {
 	ElectionID string
-	UserId string
-	Token string
+	UserId     string
+	Token      string
 }
 
 type CancelElectionResponse struct {

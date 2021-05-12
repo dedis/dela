@@ -36,7 +36,7 @@ func TestMiniController_OnStop(t *testing.T) {
 }
 
 func TestClient(t *testing.T) {
-	c := client{}
+	c := Client{}
 
 	n, err := c.GetNonce(nil)
 	require.NoError(t, err)

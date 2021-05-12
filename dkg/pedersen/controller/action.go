@@ -227,7 +227,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		_, err = fmt.Fprintf(w, string(pubkeyBuf))
+		_, err = fmt.Fprint(w, string(pubkeyBuf))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -302,7 +302,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		_, err = fmt.Fprintf(w, string(message))
+		_, err = fmt.Fprint(w, string(message))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

@@ -34,6 +34,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -43,7 +44,7 @@ const loginEndPoint = "/evoting/login"
 const createElectionEndPoint = "/evoting/create"
 const castVoteEndpoint = "/evoting/cast"
 const getElectionInfoEndpoint = "/evoting/info"
-const getAllElectionsInfoEndpoint = "/evoting/info/all"
+const getAllElectionsInfoEndpoint = "/evoting/all"
 const closeElectionEndpoint = "/evoting/close"
 const shuffleBallotsEndpoint = "/evoting/shuffle"
 const decryptBallotsEndpoint = "/evoting/decrypt"
@@ -58,7 +59,6 @@ var suite = suites.MustFind("Ed25519")
 
 // TODO : Merge evoting and DKG web server ?
 
-// todo : server should not panic when shuffling 1 ballot
 
 // getManager is the function called when we need a transaction manager. It
 // allows us to use a different manager for the tests.
@@ -70,10 +70,10 @@ var getManager = func(signer crypto.Signer, s signed.Client) txn.Manager {
 //
 // - implements node.ActionTemplate
 type initHttpServerAction struct {
-	// TODO : mutex ?
-
+	// TODO : handle concurrent call ?
+	sync.Mutex
 	ElectionIdNonce int
-	ElectionIds []string
+	ElectionIds     []string
 }
 
 // Execute implements node.ActionTemplate. It implements the handling of endpoints
@@ -82,6 +82,11 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 	portNumber := ctx.Flags.String("portNumber")
 
 	http.HandleFunc(loginEndPoint, func(w http.ResponseWriter, r *http.Request){
+
+		time.Sleep(1 * time.Second)
+
+		a.Lock()
+		defer a.Unlock()
 
 		dela.Logger.Info().Msg(loginEndPoint)
 
@@ -109,6 +114,11 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 	})
 
 	http.HandleFunc(createElectionEndPoint, func(w http.ResponseWriter, r *http.Request){
+
+		time.Sleep(1 * time.Second)
+
+		a.Lock()
+		defer a.Unlock()
 
 		dela.Logger.Info().Msg(createElectionEndPoint)
 
@@ -164,12 +174,13 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		transactions := blockLink.GetBlock().GetTransactions()
+		transactionResults := blockLink.GetBlock().GetData().GetTransactionResults()
 		nonce := uint64(0)
 
-		for _, tx := range transactions {
-			if tx.GetNonce() > nonce{
-				nonce = tx.GetNonce()
+		for _, txResult := range transactionResults {
+			status, _ := txResult.GetStatus()
+			if status && txResult.GetTransaction().GetNonce() > nonce {
+				nonce = txResult.GetTransaction().GetNonce()
 			}
 		}
 
@@ -282,10 +293,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		}
 
 		http.Error(w, "Transaction not found in the block", http.StatusInternalServerError)
-		return
 	})
 
 	http.HandleFunc(getElectionInfoEndpoint, func(w http.ResponseWriter, r *http.Request){
+
+		time.Sleep(1 * time.Second)
+
+		a.Lock()
+		defer a.Unlock()
 
 		dela.Logger.Info().Msg(getElectionInfoEndpoint)
 
@@ -352,11 +367,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		return
-
 	})
 
 	http.HandleFunc(getAllElectionsInfoEndpoint, func(w http.ResponseWriter, r *http.Request){
+
+		time.Sleep(1 * time.Second)
+
+		a.Lock()
+		defer a.Unlock()
 
 		dela.Logger.Info().Msg(getAllElectionsInfoEndpoint)
 
@@ -427,11 +445,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		return
-
 	})
 
 	http.HandleFunc(castVoteEndpoint, func(w http.ResponseWriter, r *http.Request){
+
+		time.Sleep(1 * time.Second)
+
+		a.Lock()
+		defer a.Unlock()
 
 		dela.Logger.Info().Msg(castVoteEndpoint)
 
@@ -484,12 +505,13 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		transactions := blockLink.GetBlock().GetTransactions()
+		transactionResults := blockLink.GetBlock().GetData().GetTransactionResults()
 		nonce := uint64(0)
 
-		for _, tx := range transactions {
-			if tx.GetNonce() > nonce{
-				nonce = tx.GetNonce()
+		for _, txResult := range transactionResults {
+			status, _ := txResult.GetStatus()
+			if status && txResult.GetTransaction().GetNonce() > nonce {
+				nonce = txResult.GetTransaction().GetNonce()
 			}
 		}
 
@@ -590,11 +612,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		}
 
 		http.Error(w, "Transaction not found in the block", http.StatusInternalServerError)
-		return
-
 	})
 
 	http.HandleFunc(closeElectionEndpoint, func(w http.ResponseWriter, r *http.Request){
+
+		time.Sleep(1 * time.Second)
+
+		a.Lock()
+		defer a.Unlock()
 
 		dela.Logger.Info().Msg(closeElectionEndpoint)
 
@@ -647,12 +672,13 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		transactions := blockLink.GetBlock().GetTransactions()
+		transactionResults := blockLink.GetBlock().GetData().GetTransactionResults()
 		nonce := uint64(0)
 
-		for _, tx := range transactions {
-			if tx.GetNonce() > nonce{
-				nonce = tx.GetNonce()
+		for _, txResult := range transactionResults {
+			status, _ := txResult.GetStatus()
+			if status && txResult.GetTransaction().GetNonce() > nonce {
+				nonce = txResult.GetTransaction().GetNonce()
 			}
 		}
 
@@ -753,11 +779,15 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		}
 
 		http.Error(w, "Transaction not found in the block", http.StatusInternalServerError)
-		return
 
 	})
 
 	http.HandleFunc(shuffleBallotsEndpoint, func(w http.ResponseWriter, r *http.Request){
+
+		time.Sleep(1 * time.Second)
+
+		a.Lock()
+		defer a.Unlock()
 
 		dela.Logger.Info().Msg(shuffleBallotsEndpoint)
 
@@ -814,7 +844,6 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		// todo : only server node checks this, maybe new transaction that changes the state !
 		if election.AdminId != shuffleBallotsRequest.UserId{
 			http.Error(w, "Only the admin can shuffle the ballots !", http.StatusUnauthorized)
 			return
@@ -873,11 +902,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		return
-
 	})
 
 	http.HandleFunc(decryptBallotsEndpoint, func(w http.ResponseWriter, r *http.Request){
+
+		time.Sleep(1 * time.Second)
+
+		a.Lock()
+		defer a.Unlock()
 
 		dela.Logger.Info().Msg(decryptBallotsEndpoint)
 
@@ -1012,12 +1044,13 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		transactions := blockLink.GetBlock().GetTransactions()
+		transactionResults := blockLink.GetBlock().GetData().GetTransactionResults()
 		nonce := uint64(0)
 
-		for _, tx := range transactions {
-			if tx.GetNonce() > nonce{
-				nonce = tx.GetNonce()
+		for _, txResult := range transactionResults {
+			status, _ := txResult.GetStatus()
+			if status && txResult.GetTransaction().GetNonce() > nonce {
+				nonce = txResult.GetTransaction().GetNonce()
 			}
 		}
 
@@ -1117,11 +1150,15 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		}
 
 		http.Error(w, "Transaction not found in the block", http.StatusInternalServerError)
-		return
 
 	})
 
 	http.HandleFunc(getElectionResultEndpoint, func(w http.ResponseWriter, r *http.Request){
+
+		time.Sleep(1 * time.Second)
+
+		a.Lock()
+		defer a.Unlock()
 
 		dela.Logger.Info().Msg(getElectionResultEndpoint)
 
@@ -1187,11 +1224,14 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			http.Error(w, "Failed to write in ResponseWriter: " + err.Error(), http.StatusInternalServerError)
 			return
 		}
-		return
-
 	})
 
 	http.HandleFunc(cancelElectionEndpoint, func(w http.ResponseWriter, r *http.Request){
+
+		time.Sleep(1 * time.Second)
+
+		a.Lock()
+		defer a.Unlock()
 
 		dela.Logger.Info().Msg(cancelElectionEndpoint)
 
@@ -1244,12 +1284,13 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		transactions := blockLink.GetBlock().GetTransactions()
+		transactionResults := blockLink.GetBlock().GetData().GetTransactionResults()
 		nonce := uint64(0)
 
-		for _, tx := range transactions {
-			if tx.GetNonce() > nonce{
-				nonce = tx.GetNonce()
+		for _, txResult := range transactionResults {
+			status, _ := txResult.GetStatus()
+			if status && txResult.GetTransaction().GetNonce() > nonce {
+				nonce = txResult.GetTransaction().GetNonce()
 			}
 		}
 
@@ -1349,8 +1390,6 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		}
 
 		http.Error(w, "Transaction not found in the block", http.StatusInternalServerError)
-		return
-
 	})
 
 	log.Fatal(http.ListenAndServe(":" + portNumber, nil))
@@ -1401,97 +1440,6 @@ func getSigner(filePath string) (crypto.Signer, error) {
 	}
 
 	return signer, nil
-}
-
-// createElectionTestAction is an action to
-//
-// - implements node.ActionTemplate
-type createElectionTestAction struct {
-}
-
-// Execute implements node.ActionTemplate. It creates
-func (a *createElectionTestAction) Execute(ctx node.Context) error {
-
-	createSimpleElectionRequest := types.CreateElectionRequest{
-		Title:      "TitleTest",
-		AdminId:    "adminId",
-		Candidates: nil,
-		Token:      "token",
-		PublicKey:  nil,
-	}
-
-	js, err := json.Marshal(createSimpleElectionRequest)
-	if err != nil {
-		return xerrors.Errorf("failed to set marshall types.SimpleElection : %v", err)
-	}
-
-	resp, err := http.Post(url + strconv.Itoa(1000) + createElectionEndPoint, "application/json", bytes.NewBuffer(js))
-	if err != nil {
-		return xerrors.Errorf("failed retrieve the decryption from the server: %v", err)
-	}
-
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-
-	dela.Logger.Info().Msg("Response body : " + string(body))
-
-	return nil
-}
-
-// castVoteTestAction is an action to
-//
-// - implements node.ActionTemplate
-type castVoteTestAction struct {
-}
-
-// Execute implements node.ActionTemplate. It creates
-func (a *castVoteTestAction) Execute(ctx node.Context) error {
-
-	castVoteRequest := types.CastVoteRequest{
-		ElectionID: "00000000000000000000000000000000",
-		UserId:     "user1",
-		Ballot:     []byte("ballot1"),
-		Token:      token,
-	}
-
-	js, err := json.Marshal(castVoteRequest)
-	if err != nil {
-		return xerrors.Errorf("failed to set marshall types.SimpleElection : %v", err)
-	}
-
-	resp, err := http.Post(url + strconv.Itoa(1000) + castVoteEndpoint, "application/json", bytes.NewBuffer(js))
-	if err != nil {
-		return xerrors.Errorf("failed retrieve the decryption from the server: %v", err)
-	}
-
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-
-	dela.Logger.Info().Msg("Response body : " + string(body))
-
-	var service ordering.Service
-	err = ctx.Injector.Resolve(&service)
-	if err != nil {
-		return xerrors.Errorf("failed to resolve service: %v", err)
-	}
-
-	proof, err := service.GetProof([]byte(strconv.Itoa(0)))
-	if err != nil {
-		return xerrors.Errorf("failed to read on the blockchain: %v", err)
-	}
-
-	election := new (types.Election)
-	err = json.NewDecoder(bytes.NewBuffer(proof.GetValue())).Decode(election)
-	if err != nil {
-		return xerrors.Errorf("failed to set unmarshal SimpleElection : %v", err)
-	}
-
-
-
-	dela.Logger.Info().Msg("Length encrypted ballots : " + strconv.Itoa(len(election.EncryptedBallots)))
-	dela.Logger.Info().Msg("Ballot of user1 : " + string(election.EncryptedBallots["user1"]))
-
-	return nil
 }
 
 // scenarioTestAction is an action to
@@ -1549,6 +1497,9 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	}
 
 	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return xerrors.Errorf("failed to read the body of the response: %v", err)
+	}
 
 	dela.Logger.Info().Msg("Response body : " + string(body))
 	resp.Body.Close()
@@ -1602,6 +1553,10 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	}
 
 	body, err = io.ReadAll(resp.Body)
+	if err != nil {
+		return xerrors.Errorf("failed to read the body of the response: %v", err)
+	}
+
 	dela.Logger.Info().Msg("Response body : " + string(body))
 	resp.Body.Close()
 
@@ -1664,6 +1619,9 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	}
 
 	body, err = io.ReadAll(resp.Body)
+	if err != nil {
+		return xerrors.Errorf("failed to read the body of the response: %v", err)
+	}
 	dela.Logger.Info().Msg("Response body : " + string(body))
 	resp.Body.Close()
 
@@ -1685,6 +1643,9 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	}
 
 	body, err = io.ReadAll(resp.Body)
+	if err != nil {
+		return xerrors.Errorf("failed to read the body of the response: %v", err)
+	}
 	dela.Logger.Info().Msg("Response body : " + string(body))
 	resp.Body.Close()
 
@@ -1706,6 +1667,9 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	}
 
 	body, err = io.ReadAll(resp.Body)
+	if err != nil {
+		return xerrors.Errorf("failed to read the body of the response: %v", err)
+	}
 	dela.Logger.Info().Msg("Response body : " + string(body))
 	resp.Body.Close()
 
@@ -1751,6 +1715,9 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	}
 
 	body, err = io.ReadAll(resp.Body)
+	if err != nil {
+		return xerrors.Errorf("failed to read the body of the response: %v", err)
+	}
 
 	dela.Logger.Info().Msg("Response body : " + string(body))
 	resp.Body.Close()
@@ -1800,6 +1767,9 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	}
 
 	body, err = io.ReadAll(resp.Body)
+	if err != nil {
+		return xerrors.Errorf("failed to read the body of the response: %v", err)
+	}
 
 	dela.Logger.Info().Msg("Response body : " + string(body))
 	resp.Body.Close()
@@ -1847,6 +1817,9 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	}
 
 	body, err = io.ReadAll(resp.Body)
+	if err != nil {
+		return xerrors.Errorf("failed to read the body of the response: %v", err)
+	}
 
 	dela.Logger.Info().Msg("Response body : " + string(body))
 	resp.Body.Close()
@@ -1896,6 +1869,9 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	}
 
 	body, err = io.ReadAll(resp.Body)
+	if err != nil {
+		return xerrors.Errorf("failed to read the body of the response: %v", err)
+	}
 
 	dela.Logger.Info().Msg("Response body : " + string(body))
 	resp.Body.Close()

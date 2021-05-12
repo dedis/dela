@@ -88,8 +88,6 @@ func (e EndShuffle) Serialize(ctx serde.Context) ([]byte, error) {
 // - implements serde.Message
 type ShuffleMessage struct {
 
-	// Todo : a threshold might help to handle edge cases
-
 	// The full list of addresses that will participate in the shuffle protocol.
 	addresses []mino.Address
 

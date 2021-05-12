@@ -36,14 +36,6 @@ func (m controller) SetCommands(builder node.Builder) {
 		ElectionIds: make([]string, 0),
 	}))
 
-	sub = cmd.SetSubCommand("createElectionTest")
-	sub.SetDescription("createElectionTest")
-	sub.SetAction(builder.MakeAction(&createElectionTestAction{}))
-
-	sub = cmd.SetSubCommand("castVoteTest")
-	sub.SetDescription("castVoteTest")
-	sub.SetAction(builder.MakeAction(&castVoteTestAction{}))
-
 	sub = cmd.SetSubCommand("scenarioTest")
 	sub.SetDescription("scenarioTest")
 	sub.SetFlags(cli.StringSliceFlag{

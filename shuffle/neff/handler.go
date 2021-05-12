@@ -21,7 +21,6 @@ import (
 	"go.dedis.ch/dela/shuffle/neff/types"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/proof"
-	pedersen "go.dedis.ch/kyber/v3/share/dkg/pedersen"
 	shuffleKyber "go.dedis.ch/kyber/v3/shuffle"
 	"go.dedis.ch/kyber/v3/suites"
 	"golang.org/x/xerrors"
@@ -30,8 +29,6 @@ import (
 	"time"
 )
 
-// Todo :  use a timeout, the maximum time a node will wait for a response
-const recvResponseTimeout = time.Second * 10
 const shuffleTransactionTimeout = time.Second * 2
 var suite = suites.MustFind("Ed25519")
 const signerFilePath = "private.key"
@@ -42,7 +39,7 @@ const signerFilePath = "private.key"
 // the attributes.
 type state struct {
 	sync.Mutex
-	participants []mino.Address
+	//participants []mino.Address
 }
 
 // Handler represents the RPC executed on each node
@@ -51,7 +48,6 @@ type state struct {
 type Handler struct {
 	mino.UnsupportedHandler
 	sync.RWMutex
-	dkg       *pedersen.DistKeyGenerator
 	me        mino.Address
 	startRes  *state
 	service   ordering.Service
@@ -101,7 +97,6 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 	return nil
 }
 
-// Todo : for now the front end must poll the server, add last round end message
 func (h *Handler) HandleStartShuffleMessage (startShuffleMessage types.StartShuffle, from mino.Address, out mino.Sender,
 	in mino.Receiver) error {
 
@@ -215,12 +210,13 @@ func (h *Handler) HandleStartShuffleMessage (startShuffleMessage types.StartShuf
 			return xerrors.Errorf("failed to fetch last block: %v", err.Error())
 		}
 
-		transactions := blockLink.GetBlock().GetTransactions()
+		transactionResults := blockLink.GetBlock().GetData().GetTransactionResults()
 		nonce := uint64(0)
 
-		for _, tx := range transactions {
-			if tx.GetNonce() > nonce{
-				nonce = tx.GetNonce()
+		for _, txResult := range transactionResults {
+			status, _ := txResult.GetStatus()
+			if status && txResult.GetTransaction().GetNonce() > nonce {
+				nonce = txResult.GetTransaction().GetNonce()
 			}
 		}
 
@@ -388,6 +384,9 @@ func (h *Handler) HandleShuffleMessage (shuffleMessage types.ShuffleMessage, fro
 		}
 
 		lastNodeAddress, msg, err := in.Recv(context.Background())
+		if err != nil {
+			return xerrors.Errorf("failed to receive msg: %v", err)
+		}
 		dela.Logger.Info().Msg("RECEIVED FROM  : " + lastNodeAddress.String())
 		errs = out.Send(msg, from)
 		err = <-errs
@@ -408,7 +407,7 @@ func (h *Handler) HandleShuffleMessage (shuffleMessage types.ShuffleMessage, fro
 	KbarNext, CbarNext, prover := shuffleKyber.Shuffle(suite, nil, publicKey, kBar, cBar, rand)
 	prfNext, err := proof.HashProve(suite, protocolName, prover)
 	if err != nil {
-		return xerrors.Errorf("Shuffle proof failed: ", err.Error())
+		return xerrors.Errorf("Shuffle proof failed: %v", err)
 	}
 
 	message := types.NewShuffleMessage(addrs, shuffleMessage.GetSuiteName(), publicKey, KbarNext,
