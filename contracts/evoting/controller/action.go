@@ -83,7 +83,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 	http.HandleFunc(loginEndPoint, func(w http.ResponseWriter, r *http.Request){
 
-		time.Sleep(1 * time.Second)
+		//time.Sleep(1 * time.Second)
 
 		a.Lock()
 		defer a.Unlock()
@@ -115,7 +115,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 	http.HandleFunc(createElectionEndPoint, func(w http.ResponseWriter, r *http.Request){
 
-		time.Sleep(1 * time.Second)
+		//time.Sleep(1 * time.Second)
 
 		a.Lock()
 		defer a.Unlock()
@@ -297,7 +297,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 	http.HandleFunc(getElectionInfoEndpoint, func(w http.ResponseWriter, r *http.Request){
 
-		time.Sleep(1 * time.Second)
+		//time.Sleep(1 * time.Second)
 
 		a.Lock()
 		defer a.Unlock()
@@ -371,7 +371,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 	http.HandleFunc(getAllElectionsInfoEndpoint, func(w http.ResponseWriter, r *http.Request){
 
-		time.Sleep(1 * time.Second)
+		//time.Sleep(1 * time.Second)
 
 		a.Lock()
 		defer a.Unlock()
@@ -449,7 +449,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 	http.HandleFunc(castVoteEndpoint, func(w http.ResponseWriter, r *http.Request){
 
-		time.Sleep(1 * time.Second)
+		//time.Sleep(1 * time.Second)
 
 		a.Lock()
 		defer a.Unlock()
@@ -616,7 +616,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 	http.HandleFunc(closeElectionEndpoint, func(w http.ResponseWriter, r *http.Request){
 
-		time.Sleep(1 * time.Second)
+		//time.Sleep(1 * time.Second)
 
 		a.Lock()
 		defer a.Unlock()
@@ -784,7 +784,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 	http.HandleFunc(shuffleBallotsEndpoint, func(w http.ResponseWriter, r *http.Request){
 
-		time.Sleep(1 * time.Second)
+		//time.Sleep(1 * time.Second)
 
 		a.Lock()
 		defer a.Unlock()
@@ -906,7 +906,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 	http.HandleFunc(decryptBallotsEndpoint, func(w http.ResponseWriter, r *http.Request){
 
-		time.Sleep(1 * time.Second)
+		//time.Sleep(1 * time.Second)
 
 		a.Lock()
 		defer a.Unlock()
@@ -1155,7 +1155,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 	http.HandleFunc(getElectionResultEndpoint, func(w http.ResponseWriter, r *http.Request){
 
-		time.Sleep(1 * time.Second)
+		//time.Sleep(1 * time.Second)
 
 		a.Lock()
 		defer a.Unlock()
@@ -1228,7 +1228,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 	http.HandleFunc(cancelElectionEndpoint, func(w http.ResponseWriter, r *http.Request){
 
-		time.Sleep(1 * time.Second)
+		//time.Sleep(1 * time.Second)
 
 		a.Lock()
 		defer a.Unlock()
