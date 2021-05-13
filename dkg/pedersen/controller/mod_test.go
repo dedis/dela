@@ -1,6 +1,7 @@
 package controller
 
-// TODO : these tests are not suitable for the new DKG controller, implement new ones
+// TODO : these tests are not suitable for the new DKG controller,
+//  implement new ones
 
 /*
 import (

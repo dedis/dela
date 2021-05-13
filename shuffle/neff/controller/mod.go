@@ -31,7 +31,9 @@ func (m controller) SetCommands(builder node.Builder) {
 	sub.SetDescription("Initialize the SHUFFLE protocol")
 	sub.SetAction(builder.MakeAction(&initAction{}))
 
-	// memcoin --config /tmp/node1 shuffle testNeff --member $(memcoin --config /tmp/node1 shuffle export) --member $(memcoin --config /tmp/node2 shuffle export) --member $(memcoin --config /tmp/node3 shuffle export)
+	// memcoin --config /tmp/node1 shuffle testNeff --member $(memcoin --config
+	// /tmp/node1 shuffle export) --member $(memcoin --config /tmp/node2 shuffle
+	// export) --member $(memcoin --config /tmp/node3 shuffle export)
 	// Todo : implement tests !
 	sub = cmd.SetSubCommand("testNeff")
 	sub.SetDescription("Runs the neff shuffle protocol on the hardcoded ElGamal pairs")

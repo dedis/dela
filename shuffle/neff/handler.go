@@ -447,7 +447,8 @@ func verify(suite suites.Suite, Ks []kyber.Point, Cs []kyber.Point,
 	return proof.HashVerify(suite, protocolName, verifier, prf)
 }
 
-// TODO : the user has to create the file in advance, maybe we should create it here ?
+// TODO : the user has to create the file in advance, maybe we should create it
+//  here ?
 // getSigner creates a signer from a file.
 func getSigner(filePath string) (crypto.Signer, error) {
 	l := loader.NewFileLoader(filePath)

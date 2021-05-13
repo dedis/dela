@@ -1834,9 +1834,6 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	dela.Logger.Info().Msg("ID of the election : " + string(election.ElectionID))
 	dela.Logger.Info().Msg("Status of the election : " + strconv.Itoa(int(election.Status)))
 	dela.Logger.Info().Msg("Number of decrypted ballots : " + strconv.Itoa(len(election.DecryptedBallots)))
-	// dela.Logger.Info().Msg("decrypted ballots [0] : " + election.DecryptedBallots[0].Vote)
-	// dela.Logger.Info().Msg("decrypted ballots [1] : " + election.DecryptedBallots[1].Vote)
-	// dela.Logger.Info().Msg("decrypted ballots [2] : " + election.DecryptedBallots[2].Vote)
 
 	// ###################################### DECRYPT BALLOTS ##################
 

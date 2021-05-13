@@ -5,7 +5,6 @@
 package controller
 
 import (
-	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/core/access"
@@ -20,20 +19,18 @@ const (
 )
 
 type miniController struct {
-	Client *Client
 }
 
 // NewController creates a new minimal controller for the pool
 //
 // - implements node.Initializer
 func NewController() node.Initializer {
-	dela.Logger.Info().Msg("CREATE CLIENT")
-	return miniController{Client: &Client{}}
+	return miniController{}
 }
 
 // SetCommands implements mode.Initializer. It sets the command to interact with
 // the pool.
-func (m miniController) SetCommands(builder node.Builder) {
+func (miniController) SetCommands(builder node.Builder) {
 	cmd := builder.SetCommand("pool")
 	cmd.SetDescription("interact with the pool")
 
@@ -52,16 +49,13 @@ func (m miniController) SetCommands(builder node.Builder) {
 		Usage:    "path to the private keyfile",
 		Required: true,
 	})
-	dela.Logger.Info().Msg("TXN PUSH CLIENT")
 	sub.SetAction(builder.MakeAction(&addAction{
-		client: m.Client,
+		client: &Client{},
 	}))
 }
 
 // OnStart implements node.Initializer
 func (m miniController) OnStart(flags cli.Flags, inj node.Injector) error {
-	dela.Logger.Info().Msg("INJECT CLIENT")
-	inj.Inject(m.Client)
 	return nil
 }
 

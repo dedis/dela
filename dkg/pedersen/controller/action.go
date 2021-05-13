@@ -208,7 +208,8 @@ type Ciphertext struct {
 func (a *initHttpServerAction) Execute(ctx node.Context) error {
 	portNumber := ctx.Flags.String("portNumber")
 
-	// todo : think of where resolving dkg.Actor ! either now or when handling requests
+	// todo : think of where resolving dkg.Actor ! either now or when handling
+	//  requests
 	var actor dkg.Actor
 	err := ctx.Injector.Resolve(&actor)
 	if err != nil {
