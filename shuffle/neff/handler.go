@@ -360,8 +360,10 @@ func (h *Handler) HandleStartShuffleMessage(startShuffleMessage types.StartShuff
 }
 /*
 
+// Todo : eventually remove the previous implementation !
 // Todo : handle edge cases
-func (h *Handler) HandleShuffleMessage(shuffleMessage types.ShuffleMessage, from mino.Address, out mino.Sender,
+func (h *Handler) HandleShuffleMessage(shuffleMessage types.ShuffleMessage,
+from mino.Address, out mino.Sender,
 	in mino.Receiver) error {
 
 	dela.Logger.Info().Msg("SHUFFLE / RECEIVED FROM  : " + from.String())
@@ -405,13 +407,15 @@ func (h *Handler) HandleShuffleMessage(shuffleMessage types.ShuffleMessage, from
 	}
 
 	rand := suite.RandomStream()
-	KbarNext, CbarNext, prover := shuffleKyber.Shuffle(suite, nil, publicKey, kBar, cBar, rand)
+	KbarNext, CbarNext, prover := shuffleKyber.Shuffle(suite, nil, publicKey,
+kBar, cBar, rand)
 	prfNext, err := proof.HashProve(suite, protocolName, prover)
 	if err != nil {
 		return xerrors.Errorf("Shuffle proof failed: %v", err)
 	}
 
-	message := types.NewShuffleMessage(addrs, shuffleMessage.GetSuiteName(), publicKey, KbarNext,
+	message := types.NewShuffleMessage(addrs, shuffleMessage.GetSuiteName(),
+publicKey, KbarNext,
 		CbarNext, kBar, cBar, prfNext)
 
 	index := 0
@@ -440,9 +444,11 @@ func (h *Handler) HandleShuffleMessage(shuffleMessage types.ShuffleMessage, from
 }
 
 func verify(suite suites.Suite, Ks []kyber.Point, Cs []kyber.Point,
-	pubKey kyber.Point, KsShuffled []kyber.Point, CsShuffled []kyber.Point, prf []byte) (err error) {
+	pubKey kyber.Point, KsShuffled []kyber.Point, CsShuffled []kyber.Point, prf
+[]byte) (err error) {
 
-	verifier := shuffleKyber.Verifier(suite, nil, pubKey, Ks, Cs, KsShuffled, CsShuffled)
+	verifier := shuffleKyber.Verifier(suite, nil, pubKey, Ks, Cs, KsShuffled,
+CsShuffled)
 	return proof.HashVerify(suite, protocolName, verifier, prf)
 }*/
 
