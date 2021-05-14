@@ -489,18 +489,6 @@ type fakeCmd struct {
 	err error
 }
 
-func (c fakeCmd) getPublicKey(snap store.Snapshot, step execution.Step) error {
-	return c.err
-}
-
-func (c fakeCmd) encrypt(snap store.Snapshot, step execution.Step) error {
-	return c.err
-}
-
-func (c fakeCmd) decrypt(snap store.Snapshot, step execution.Step) error {
-	return c.err
-}
-
 func (c fakeCmd) createElection(snap store.Snapshot, step execution.Step) error {
 	return c.err
 }
