@@ -83,6 +83,7 @@ type GetElectionInfoRequest struct {
 }
 
 type GetElectionInfoResponse struct {
+	ElectionID string
 	Title      string
 	Candidates []string
 	Status     uint16

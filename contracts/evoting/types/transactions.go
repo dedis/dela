@@ -24,7 +24,6 @@ type ShuffleBallotsTransaction struct {
 	Round           int
 	ShuffledBallots [][]byte
 	Proof           []byte
-	Node            string
 }
 
 type DecryptBallotsTransaction struct {

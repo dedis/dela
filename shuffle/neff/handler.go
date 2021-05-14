@@ -86,13 +86,13 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 			return xerrors.Errorf("failed to handle StartShuffle message: %v", err)
 		}
 
-	/*case types.ShuffleMessage:
-		err := h.HandleShuffleMessage(msg, from, out, in)
-		if err != nil {
-			return xerrors.Errorf("failed to handle ShuffleMessage: %v", err)
-		}
+	/* case types.ShuffleMessage:
+	err := h.HandleShuffleMessage(msg, from, out, in)
+	if err != nil {
+		return xerrors.Errorf("failed to handle ShuffleMessage: %v", err)
+	}
 
-	 */
+	*/
 
 	default:
 		return xerrors.Errorf("expected Start message, decrypt request or "+
@@ -235,7 +235,6 @@ func (h *Handler) HandleStartShuffleMessage(startShuffleMessage types.StartShuff
 			Round:           round,
 			ShuffledBallots: shuffledBallots,
 			Proof:           shuffleProof,
-			Node:            h.me.String(),
 		}
 
 		js, err := json.Marshal(shuffleBallotsTransaction)
@@ -358,12 +357,11 @@ func (h *Handler) HandleStartShuffleMessage(startShuffleMessage types.StartShuff
 	// Todo : think about this !! should not reach this code
 	return xerrors.Errorf("Weird, should be unreachable")
 }
-/*
 
 // Todo : eventually remove the previous implementation !
 // Todo : handle edge cases
 func (h *Handler) HandleShuffleMessage(shuffleMessage types.ShuffleMessage,
-from mino.Address, out mino.Sender,
+	from mino.Address, out mino.Sender,
 	in mino.Receiver) error {
 
 	dela.Logger.Info().Msg("SHUFFLE / RECEIVED FROM  : " + from.String())
@@ -408,14 +406,14 @@ from mino.Address, out mino.Sender,
 
 	rand := suite.RandomStream()
 	KbarNext, CbarNext, prover := shuffleKyber.Shuffle(suite, nil, publicKey,
-kBar, cBar, rand)
+		kBar, cBar, rand)
 	prfNext, err := proof.HashProve(suite, protocolName, prover)
 	if err != nil {
 		return xerrors.Errorf("Shuffle proof failed: %v", err)
 	}
 
 	message := types.NewShuffleMessage(addrs, shuffleMessage.GetSuiteName(),
-publicKey, KbarNext,
+		publicKey, KbarNext,
 		CbarNext, kBar, cBar, prfNext)
 
 	index := 0
@@ -444,13 +442,13 @@ publicKey, KbarNext,
 }
 
 func verify(suite suites.Suite, Ks []kyber.Point, Cs []kyber.Point,
-	pubKey kyber.Point, KsShuffled []kyber.Point, CsShuffled []kyber.Point, prf
-[]byte) (err error) {
+	pubKey kyber.Point, KsShuffled []kyber.Point, CsShuffled []kyber.Point,
+	prf []byte) (err error) {
 
 	verifier := shuffleKyber.Verifier(suite, nil, pubKey, Ks, Cs, KsShuffled,
-CsShuffled)
+		CsShuffled)
 	return proof.HashVerify(suite, protocolName, verifier, prf)
-}*/
+}
 
 func (h *Handler) getClient() (*txnPoolController.Client, error) {
 

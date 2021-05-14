@@ -401,6 +401,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			}
 
 			info := types.GetElectionInfoResponse{
+				ElectionID: string(election.ElectionID),
 				Title:      election.Title,
 				Candidates: election.Candidates,
 				Status:     uint16(election.Status),
