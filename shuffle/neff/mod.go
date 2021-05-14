@@ -17,6 +17,7 @@ import (
 	"golang.org/x/net/context"
 	"golang.org/x/xerrors"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -69,6 +70,7 @@ func (n NeffShuffle) Listen() (shuffle.Actor, error) {
 //
 // - implements shuffle.Actor
 type Actor struct {
+	sync.Mutex
 	rpc      mino.RPC
 	mino     mino.Mino
 	factory  serde.Factory
@@ -78,7 +80,10 @@ type Actor struct {
 // Shuffle must be called by ONE of the actor to shuffle the list of ElGamal
 // pairs.
 // Each node represented by a player must first execute Listen().
-func (a Actor) Shuffle(co crypto.CollectiveAuthority, electionId string) (err error) {
+func (a *Actor) Shuffle(co crypto.CollectiveAuthority, electionId string) (err error) {
+
+	a.Lock()
+	defer a.Unlock()
 
 	ctx, cancel := context.WithTimeout(context.Background(), shuffleTimeout)
 	defer cancel()
@@ -128,7 +133,7 @@ func (a Actor) Shuffle(co crypto.CollectiveAuthority, electionId string) (err er
 }
 
 // Verify allows to verify a Shuffle
-func (a Actor) Verify(suiteName string, Ks []kyber.Point, Cs []kyber.Point,
+func (a *Actor) Verify(suiteName string, Ks []kyber.Point, Cs []kyber.Point,
 	pubKey kyber.Point, KsShuffled []kyber.Point, CsShuffled []kyber.Point, prf []byte) (err error) {
 
 	suite := suites.MustFind(suiteName)

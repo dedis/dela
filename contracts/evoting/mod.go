@@ -431,6 +431,14 @@ func (e evotingCommand) shuffleBallots(snap store.Snapshot, step execution.Step)
 
 	// todo: add trusted nodes in election struct
 	verifier := shuffleKyber.Verifier(suite, nil, pubKey, Ks, Cs, KsShuffled, CsShuffled)
+
+	/*
+	fmt.Printf(" KS : %v", Ks)
+	fmt.Printf(" CS : %v", Cs)
+	fmt.Printf(" KsShuffled : %v", KsShuffled)
+	fmt.Printf(" CsShuffled : %v", CsShuffled)
+	 */
+	
 	err = proof.HashVerify(suite, protocolName, verifier, shuffleBallotsTransaction.Proof)
 	if err != nil {
 		dela.Logger.Info().Msg("PROOF FAILED !!!!!!!!" + err.Error())

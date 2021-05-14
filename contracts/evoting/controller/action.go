@@ -161,31 +161,11 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 				return
 			}*/
 
-		var blocks *blockstore.InDisk
-		err = ctx.Injector.Resolve(&blocks)
+		client, err := a.getClient(ctx)
 		if err != nil {
-			http.Error(w, "Failed to resolve blockstore.InDisk: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to get Client: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-
-		blockLink, err := blocks.Last()
-		if err != nil {
-			http.Error(w, "Failed to fetch last block: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		transactionResults := blockLink.GetBlock().GetData().GetTransactionResults()
-		nonce := uint64(0)
-
-		for _, txResult := range transactionResults {
-			status, _ := txResult.GetStatus()
-			if status && txResult.GetTransaction().GetNonce() > nonce {
-				nonce = txResult.GetTransaction().GetNonce()
-			}
-		}
-
-		nonce += 1
-		client := &txnPoolController.Client{Nonce: nonce}
 
 		manager := getManager(signer, client)
 
@@ -492,31 +472,11 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		var blocks *blockstore.InDisk
-		err = ctx.Injector.Resolve(&blocks)
+		client, err := a.getClient(ctx)
 		if err != nil {
-			http.Error(w, "Failed to resolve blockstore.InDisk: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to get Client: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-
-		blockLink, err := blocks.Last()
-		if err != nil {
-			http.Error(w, "Failed to fetch last block: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		transactionResults := blockLink.GetBlock().GetData().GetTransactionResults()
-		nonce := uint64(0)
-
-		for _, txResult := range transactionResults {
-			status, _ := txResult.GetStatus()
-			if status && txResult.GetTransaction().GetNonce() > nonce {
-				nonce = txResult.GetTransaction().GetNonce()
-			}
-		}
-
-		nonce += 1
-		client := &txnPoolController.Client{Nonce: nonce}
 
 		manager := getManager(signer, client)
 
@@ -659,31 +619,11 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		var blocks *blockstore.InDisk
-		err = ctx.Injector.Resolve(&blocks)
+		client, err := a.getClient(ctx)
 		if err != nil {
-			http.Error(w, "Failed to resolve blockstore.InDisk: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to get Client: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-
-		blockLink, err := blocks.Last()
-		if err != nil {
-			http.Error(w, "Failed to fetch last block: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		transactionResults := blockLink.GetBlock().GetData().GetTransactionResults()
-		nonce := uint64(0)
-
-		for _, txResult := range transactionResults {
-			status, _ := txResult.GetStatus()
-			if status && txResult.GetTransaction().GetNonce() > nonce {
-				nonce = txResult.GetTransaction().GetNonce()
-			}
-		}
-
-		nonce += 1
-		client := &txnPoolController.Client{Nonce: nonce}
 
 		manager := getManager(signer, client)
 
@@ -1030,31 +970,11 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		var blocks *blockstore.InDisk
-		err = ctx.Injector.Resolve(&blocks)
+		client, err := a.getClient(ctx)
 		if err != nil {
-			http.Error(w, "Failed to resolve blockstore.InDisk: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to get Client: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-
-		blockLink, err := blocks.Last()
-		if err != nil {
-			http.Error(w, "Failed to fetch last block: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		transactionResults := blockLink.GetBlock().GetData().GetTransactionResults()
-		nonce := uint64(0)
-
-		for _, txResult := range transactionResults {
-			status, _ := txResult.GetStatus()
-			if status && txResult.GetTransaction().GetNonce() > nonce {
-				nonce = txResult.GetTransaction().GetNonce()
-			}
-		}
-
-		nonce += 1
-		client := &txnPoolController.Client{Nonce: nonce}
 
 		manager := getManager(signer, client)
 
@@ -1270,31 +1190,11 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		var blocks *blockstore.InDisk
-		err = ctx.Injector.Resolve(&blocks)
+		client, err := a.getClient(ctx)
 		if err != nil {
-			http.Error(w, "Failed to resolve blockstore.InDisk: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to get Client: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-
-		blockLink, err := blocks.Last()
-		if err != nil {
-			http.Error(w, "Failed to fetch last block: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		transactionResults := blockLink.GetBlock().GetData().GetTransactionResults()
-		nonce := uint64(0)
-
-		for _, txResult := range transactionResults {
-			status, _ := txResult.GetStatus()
-			if status && txResult.GetTransaction().GetNonce() > nonce {
-				nonce = txResult.GetTransaction().GetNonce()
-			}
-		}
-
-		nonce += 1
-		client := &txnPoolController.Client{Nonce: nonce}
 
 		manager := getManager(signer, client)
 
@@ -1394,6 +1294,64 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 	log.Fatal(http.ListenAndServe(":"+portNumber, nil))
 
 	return nil
+}
+
+func (a *initHttpServerAction) getClient(ctx node.Context) (*txnPoolController.Client, error) {
+	var blocks *blockstore.InDisk
+	err := ctx.Injector.Resolve(&blocks)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to resolve blockstore.InDisk: %v", err)
+	}
+
+	blockLink, err := blocks.Last()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to fetch last block: %v", err)
+	}
+
+	transactionResults := blockLink.GetBlock().GetData().GetTransactionResults()
+	nonce := uint64(0)
+
+	for _, txResult := range transactionResults {
+		status, _ := txResult.GetStatus()
+		if status && txResult.GetTransaction().GetNonce() > nonce {
+			nonce = txResult.GetTransaction().GetNonce()
+		}
+		if !status {
+			dela.Logger.Info().Msg("transaction refused")
+		}
+	}
+
+	previousDigest := blockLink.GetFrom()
+
+	for nonce == 0 {
+		previousBlock, err := blocks.Get(previousDigest)
+		if err != nil {
+			if strings.Contains(err.Error(), "not found: no block") {
+				dela.Logger.Info().Msg("FIRST BLOCK")
+				break
+			} else {
+				return nil, xerrors.Errorf("failed to fetch previous block: %v", err)
+			}
+		} else {
+			transactionResults := previousBlock.GetBlock().GetData().GetTransactionResults()
+
+			for _, txResult := range transactionResults {
+				status, _ := txResult.GetStatus()
+				if status && txResult.GetTransaction().GetNonce() > nonce {
+					nonce = txResult.GetTransaction().GetNonce()
+				}
+				if !status {
+					dela.Logger.Info().Msg("transaction refused")
+				}
+			}
+			previousDigest = previousBlock.GetFrom()
+		}
+	}
+
+	nonce += 1
+	client := &txnPoolController.Client{Nonce: nonce}
+
+	return client, nil
 }
 
 func decodeMember(address string, publicKey string, m mino.Mino) (mino.Address, crypto.PublicKey, error) {
@@ -1829,7 +1787,8 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 		return xerrors.Errorf("failed to unmarshall SimpleElection : %v", err)
 	}
 
-	dela.Logger.Info().Msg("----------------------- Election : " + string(proof.GetValue()))
+	// dela.Logger.Info().Msg("----------------------- Election : " +
+	// string(proof.GetValue()))
 	dela.Logger.Info().Msg("Title of the election : " + election.Title)
 	dela.Logger.Info().Msg("ID of the election : " + string(election.ElectionID))
 	dela.Logger.Info().Msg("Status of the election : " + strconv.Itoa(int(election.Status)))

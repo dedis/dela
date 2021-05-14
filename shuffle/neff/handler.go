@@ -25,6 +25,7 @@ import (
 	"go.dedis.ch/kyber/v3/suites"
 	"golang.org/x/xerrors"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -50,7 +51,6 @@ type state struct {
 // - implements mino.Handler
 type Handler struct {
 	mino.UnsupportedHandler
-	sync.RWMutex
 	me       mino.Address
 	startRes *state
 	service  ordering.Service
@@ -86,11 +86,13 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 			return xerrors.Errorf("failed to handle StartShuffle message: %v", err)
 		}
 
-	case types.ShuffleMessage:
+	/*case types.ShuffleMessage:
 		err := h.HandleShuffleMessage(msg, from, out, in)
 		if err != nil {
 			return xerrors.Errorf("failed to handle ShuffleMessage: %v", err)
 		}
+
+	 */
 
 	default:
 		return xerrors.Errorf("expected Start message, decrypt request or "+
@@ -111,6 +113,14 @@ func (h *Handler) HandleStartShuffleMessage(startShuffleMessage types.StartShuff
 	if err != nil {
 		return xerrors.Errorf("failed to getSigner: %v", err)
 	}
+
+	/*nonceIncrement := 0
+	for i, address := range startShuffleMessage.GetAddresses() {
+		if address.Equal(h.me){
+			nonceIncrement = i
+			break
+		}
+	}*/
 
 	for round := 1; round <= startShuffleMessage.GetThreshold(); round++ {
 		dela.Logger.Info().Msg("SHUFFLE / ROUND : " + strconv.Itoa(round))
@@ -208,23 +218,11 @@ func (h *Handler) HandleStartShuffleMessage(startShuffleMessage types.StartShuff
 
 		}
 
-		blockLink, err := h.blocks.Last()
+		client, err := h.getClient()
 		if err != nil {
-			return xerrors.Errorf("failed to fetch last block: %v", err.Error())
+			return xerrors.Errorf("failed to get Client: %v", err.Error())
 		}
 
-		transactionResults := blockLink.GetBlock().GetData().GetTransactionResults()
-		nonce := uint64(0)
-
-		for _, txResult := range transactionResults {
-			status, _ := txResult.GetStatus()
-			if status && txResult.GetTransaction().GetNonce() > nonce {
-				nonce = txResult.GetTransaction().GetNonce()
-			}
-		}
-
-		nonce += 1
-		client := &txnPoolController.Client{Nonce: nonce}
 		manager := getManager(signer, client)
 
 		err = manager.Sync()
@@ -360,6 +358,7 @@ func (h *Handler) HandleStartShuffleMessage(startShuffleMessage types.StartShuff
 	// Todo : think about this !! should not reach this code
 	return xerrors.Errorf("Weird, should be unreachable")
 }
+/*
 
 // Todo : handle edge cases
 func (h *Handler) HandleShuffleMessage(shuffleMessage types.ShuffleMessage, from mino.Address, out mino.Sender,
@@ -445,6 +444,58 @@ func verify(suite suites.Suite, Ks []kyber.Point, Cs []kyber.Point,
 
 	verifier := shuffleKyber.Verifier(suite, nil, pubKey, Ks, Cs, KsShuffled, CsShuffled)
 	return proof.HashVerify(suite, protocolName, verifier, prf)
+}*/
+
+func (h *Handler) getClient() (*txnPoolController.Client, error) {
+
+	blockLink, err := h.blocks.Last()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to fetch last block: %v", err.Error())
+	}
+
+	transactionResults := blockLink.GetBlock().GetData().GetTransactionResults()
+	nonce := uint64(0)
+
+	for _, txResult := range transactionResults {
+		status, _ := txResult.GetStatus()
+		if status && txResult.GetTransaction().GetNonce() > nonce {
+			nonce = txResult.GetTransaction().GetNonce()
+		}
+		if !status {
+			dela.Logger.Info().Msg("transaction refused")
+		}
+	}
+
+	previousDigest := blockLink.GetFrom()
+
+	for nonce == 0 {
+		previousBlock, err := h.blocks.Get(previousDigest)
+		if err != nil {
+			if strings.Contains(err.Error(), "not found: no block") {
+				dela.Logger.Info().Msg("FIRST BLOCK")
+			} else {
+				return nil, xerrors.Errorf("failed to fetch previous block: %v", err)
+			}
+		} else {
+			transactionResults := previousBlock.GetBlock().GetData().GetTransactionResults()
+
+			for _, txResult := range transactionResults {
+				status, _ := txResult.GetStatus()
+				if status && txResult.GetTransaction().GetNonce() > nonce {
+					nonce = txResult.GetTransaction().GetNonce()
+				}
+				if !status {
+					dela.Logger.Info().Msg("transaction refused")
+				}
+			}
+			previousDigest = previousBlock.GetFrom()
+		}
+	}
+
+	nonce += 1
+	client := &txnPoolController.Client{Nonce: nonce}
+
+	return client, nil
 }
 
 // TODO : the user has to create the file in advance, maybe we should create it
