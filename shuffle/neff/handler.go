@@ -26,7 +26,6 @@ import (
 	"golang.org/x/xerrors"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -36,36 +35,26 @@ var suite = suites.MustFind("Ed25519")
 
 const signerFilePath = "private.key"
 
-// Todo : either add some sort of setup call to set participants or public key
-//  (and thus reduce message size ) or remove state
-// state is a struct contained in a handler that allows an actor to read the
-// state of that handler. The actor should only use the getter functions to read
-// the attributes.
-type state struct {
-	sync.Mutex
-	// participants []mino.Address
-}
-
 // Handler represents the RPC executed on each node
 //
 // - implements mino.Handler
 type Handler struct {
 	mino.UnsupportedHandler
-	me       mino.Address
-	startRes *state
-	service  ordering.Service
-	p        pool.Pool
-	blocks   *blockstore.InDisk
+	me mino.Address
+	// startRes *state
+	service ordering.Service
+	p       pool.Pool
+	blocks  blockstore.BlockStore
 }
 
 // NewHandler creates a new handler
-func NewHandler(me mino.Address, service ordering.Service, p pool.Pool, blocks *blockstore.InDisk) *Handler {
+func NewHandler(me mino.Address, service ordering.Service, p pool.Pool, blocks blockstore.BlockStore) *Handler {
 	return &Handler{
-		me:       me,
-		startRes: &state{},
-		service:  service,
-		p:        p,
-		blocks:   blocks,
+		me: me,
+		// startRes: &state{},
+		service: service,
+		p:       p,
+		blocks:  blocks,
 	}
 }
 

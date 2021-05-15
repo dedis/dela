@@ -34,11 +34,11 @@ type NeffShuffle struct {
 	factory serde.Factory
 	service ordering.Service
 	p       pool.Pool
-	blocks  *blockstore.InDisk
+	blocks  blockstore.BlockStore
 }
 
 // NewNeffShuffle returns a new NeffShuffle factory.
-func NewNeffShuffle(m mino.Mino, s ordering.Service, p pool.Pool, blocks *blockstore.InDisk) *NeffShuffle {
+func NewNeffShuffle(m mino.Mino, s ordering.Service, p pool.Pool, blocks blockstore.BlockStore) *NeffShuffle {
 	factory := types.NewMessageFactory(m.GetAddressFactory())
 
 	return &NeffShuffle{
@@ -56,10 +56,10 @@ func (n NeffShuffle) Listen() (shuffle.Actor, error) {
 	h := NewHandler(n.mino.GetAddress(), n.service, n.p, n.blocks)
 
 	a := &Actor{
-		rpc:      mino.MustCreateRPC(n.mino, "shuffle", h, n.factory),
-		factory:  n.factory,
-		startRes: h.startRes,
-		mino:     n.mino,
+		rpc:     mino.MustCreateRPC(n.mino, "shuffle", h, n.factory),
+		factory: n.factory,
+		// startRes: h.startRes,
+		mino: n.mino,
 	}
 
 	return a, nil
@@ -71,10 +71,10 @@ func (n NeffShuffle) Listen() (shuffle.Actor, error) {
 // - implements shuffle.Actor
 type Actor struct {
 	sync.Mutex
-	rpc      mino.RPC
-	mino     mino.Mino
-	factory  serde.Factory
-	startRes *state
+	rpc     mino.RPC
+	mino    mino.Mino
+	factory serde.Factory
+	// startRes *state
 }
 
 // Shuffle must be called by ONE of the actor to shuffle the list of ElGamal
@@ -115,7 +115,7 @@ func (a *Actor) Shuffle(co crypto.CollectiveAuthority, electionId string) (err e
 		return xerrors.Errorf("failed to send first message: %v", err)
 	}
 
-	// todo add timeout
+	// todo add timeout, ask noémien and gaurav about every timeout
 	addr, msg, err := receiver.Recv(context.Background())
 
 	if err != nil {
@@ -132,6 +132,7 @@ func (a *Actor) Shuffle(co crypto.CollectiveAuthority, electionId string) (err e
 	return nil
 }
 
+// Todo : this is useless in the new implementation, maybe remove ?
 // Verify allows to verify a Shuffle
 func (a *Actor) Verify(suiteName string, Ks []kyber.Point, Cs []kyber.Point,
 	pubKey kyber.Point, KsShuffled []kyber.Point, CsShuffled []kyber.Point, prf []byte) (err error) {
