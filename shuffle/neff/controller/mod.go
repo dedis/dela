@@ -82,7 +82,8 @@ func (m controller) OnStart(ctx cli.Flags, inj node.Injector) error {
 
 	signer, err := getSigner(signerFilePath)
 	if err != nil {
-		return xerrors.Errorf("failed to getSigner: %v", err)
+		// Todo : ask noémien and gaurav how to handle this
+		// return xerrors.Errorf("failed to getSigner: %v", err)
 	}
 
 	neffShuffle := neff.NewNeffShuffle(no, service, p, blocks, signer)
