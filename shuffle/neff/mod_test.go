@@ -1,16 +1,8 @@
 package neff
 
 import (
-	"context"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/core/ordering"
-	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
-	orderingTypes "go.dedis.ch/dela/core/ordering/cosipbft/types"
-	"go.dedis.ch/dela/core/store"
-	"go.dedis.ch/dela/core/txn"
-	"go.dedis.ch/dela/core/txn/pool"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"go.dedis.ch/dela/mino"
 	neffShuffleTypes "go.dedis.ch/dela/shuffle/neff/types"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/proof"
@@ -22,7 +14,7 @@ import (
 
 func TestNeffShuffle_Listen(t *testing.T) {
 
-	NeffShuffle := NewNeffShuffle(fake.Mino{}, FakeOrdering{}, FakePool{}, FakeBlockStore{})
+	NeffShuffle := NewNeffShuffle(fake.Mino{}, &FakeService{}, &FakePool{}, FakeBlockStore{}, fake.NewSigner())
 
 	actor, err := NeffShuffle.Listen()
 	require.NoError(t, err)
@@ -108,103 +100,4 @@ func TestNeffShuffle_Verify(t *testing.T) {
 
 	err = actor.Verify(suite.String(), X, Y, H, Kbar, Cbar, shuffleProof)
 	require.NoError(t, err)
-}
-
-// -----------------------------------------------------------------------------
-// Utility functions
-
-//
-// Fake Ordering
-//
-
-type FakeOrdering struct {
-}
-
-func (f FakeOrdering) GetProof(key []byte) (ordering.Proof, error) {
-	return nil, nil
-}
-
-func (f FakeOrdering) GetStore() store.Readable {
-	return nil
-}
-
-func (f FakeOrdering) Watch(ctx context.Context) <-chan ordering.Event {
-	return nil
-}
-
-func (f FakeOrdering) Close() error {
-	return nil
-}
-
-//
-// Fake Pool
-//
-
-type FakePool struct {
-}
-
-func (f FakePool) SetPlayers(players mino.Players) error {
-	return nil
-}
-
-func (f FakePool) AddFilter(filter pool.Filter) {
-}
-
-func (f FakePool) Len() int {
-	return 0
-}
-
-func (f FakePool) Add(transaction txn.Transaction) error {
-	return nil
-}
-
-func (f FakePool) Remove(transaction txn.Transaction) error {
-	return nil
-}
-
-func (f FakePool) Gather(ctx context.Context, config pool.Config) []txn.Transaction {
-	return nil
-}
-
-func (f FakePool) Close() error {
-	return nil
-}
-
-//
-// Fake BlockStore
-//
-
-type FakeBlockStore struct {
-}
-
-func (f FakeBlockStore) Len() uint64 {
-	return 0
-}
-
-func (f FakeBlockStore) Store(link orderingTypes.BlockLink) error {
-	return nil
-}
-
-func (f FakeBlockStore) Get(id orderingTypes.Digest) (orderingTypes.BlockLink, error) {
-	return nil, nil
-}
-
-func (f FakeBlockStore) GetByIndex(index uint64) (orderingTypes.BlockLink, error) {
-	return nil, nil
-}
-
-func (f FakeBlockStore) GetChain() (orderingTypes.Chain, error) {
-	return nil, nil
-}
-
-func (f FakeBlockStore) Last() (orderingTypes.BlockLink, error) {
-	return nil, nil
-}
-
-func (f FakeBlockStore) Watch(ctx context.Context) <-chan orderingTypes.BlockLink {
-	return nil
-}
-
-func (f FakeBlockStore) WithTx(transaction store.Transaction) blockstore.BlockStore {
-	return nil
 }

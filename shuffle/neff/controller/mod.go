@@ -6,10 +6,15 @@ import (
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/txn/pool"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/crypto/bls"
+	"go.dedis.ch/dela/crypto/loader"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/shuffle/neff"
 	"golang.org/x/xerrors"
 )
+
+const signerFilePath = "private.key"
 
 // NewController returns a new controller initializer
 func NewController() node.Initializer {
@@ -75,7 +80,12 @@ func (m controller) OnStart(ctx cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("failed to resolve blockstore.InDisk: %v", err)
 	}
 
-	neffShuffle := neff.NewNeffShuffle(no, service, p, blocks)
+	signer, err := getSigner(signerFilePath)
+	if err != nil {
+		return xerrors.Errorf("failed to getSigner: %v", err)
+	}
+
+	neffShuffle := neff.NewNeffShuffle(no, service, p, blocks, signer)
 
 	inj.Inject(neffShuffle)
 
@@ -85,4 +95,23 @@ func (m controller) OnStart(ctx cli.Flags, inj node.Injector) error {
 // OnStop implements node.Initializer.
 func (controller) OnStop(node.Injector) error {
 	return nil
+}
+
+// TODO : the user has to create the file in advance, maybe we should create it
+//  here ?
+// getSigner creates a signer from a file.
+func getSigner(filePath string) (crypto.Signer, error) {
+	l := loader.NewFileLoader(filePath)
+
+	signerData, err := l.Load()
+	if err != nil {
+		return nil, xerrors.Errorf("failed to load signer: %v", err)
+	}
+
+	signer, err := bls.NewSignerFromBytes(signerData)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to unmarshal signer: %v", err)
+	}
+
+	return signer, nil
 }

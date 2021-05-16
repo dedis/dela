@@ -1312,19 +1312,16 @@ func (a *initHttpServerAction) getClient(ctx node.Context) (*txnPoolController.C
 	transactionResults := blockLink.GetBlock().GetData().GetTransactionResults()
 	nonce := uint64(0)
 
-	for _, txResult := range transactionResults {
-		status, _ := txResult.GetStatus()
-		if status && txResult.GetTransaction().GetNonce() > nonce {
-			nonce = txResult.GetTransaction().GetNonce()
-		}
-		if !status {
-			dela.Logger.Info().Msg("transaction refused")
-		}
-	}
-
-	previousDigest := blockLink.GetFrom()
-
 	for nonce == 0 {
+		for _, txResult := range transactionResults {
+			status, _ := txResult.GetStatus()
+			if status && txResult.GetTransaction().GetNonce() > nonce {
+				nonce = txResult.GetTransaction().GetNonce()
+			}
+		}
+
+		previousDigest := blockLink.GetFrom()
+
 		previousBlock, err := blocks.Get(previousDigest)
 		if err != nil {
 			if strings.Contains(err.Error(), "not found: no block") {
@@ -1334,21 +1331,9 @@ func (a *initHttpServerAction) getClient(ctx node.Context) (*txnPoolController.C
 				return nil, xerrors.Errorf("failed to fetch previous block: %v", err)
 			}
 		} else {
-			transactionResults := previousBlock.GetBlock().GetData().GetTransactionResults()
-
-			for _, txResult := range transactionResults {
-				status, _ := txResult.GetStatus()
-				if status && txResult.GetTransaction().GetNonce() > nonce {
-					nonce = txResult.GetTransaction().GetNonce()
-				}
-				if !status {
-					dela.Logger.Info().Msg("transaction refused")
-				}
-			}
-			previousDigest = previousBlock.GetFrom()
+			transactionResults = previousBlock.GetBlock().GetData().GetTransactionResults()
 		}
 	}
-
 	nonce += 1
 	client := &txnPoolController.Client{Nonce: nonce}
 

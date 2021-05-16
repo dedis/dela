@@ -15,8 +15,6 @@ import (
 	txnPoolController "go.dedis.ch/dela/core/txn/pool/controller"
 	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/crypto/bls"
-	"go.dedis.ch/dela/crypto/loader"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/shuffle/neff/types"
 	"go.dedis.ch/kyber/v3"
@@ -33,28 +31,26 @@ const shuffleTransactionTimeout = time.Second * 2
 
 var suite = suites.MustFind("Ed25519")
 
-const signerFilePath = "private.key"
-
 // Handler represents the RPC executed on each node
 //
 // - implements mino.Handler
 type Handler struct {
 	mino.UnsupportedHandler
-	me mino.Address
-	// startRes *state
+	me      mino.Address
 	service ordering.Service
 	p       pool.Pool
 	blocks  blockstore.BlockStore
+	signer  crypto.Signer
 }
 
 // NewHandler creates a new handler
-func NewHandler(me mino.Address, service ordering.Service, p pool.Pool, blocks blockstore.BlockStore) *Handler {
+func NewHandler(me mino.Address, service ordering.Service, p pool.Pool, blocks blockstore.BlockStore, signer crypto.Signer) *Handler {
 	return &Handler{
-		me: me,
-		// startRes: &state{},
+		me:      me,
 		service: service,
 		p:       p,
 		blocks:  blocks,
+		signer:  signer,
 	}
 }
 
@@ -75,17 +71,8 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 			return xerrors.Errorf("failed to handle StartShuffle message: %v", err)
 		}
 
-	/* case types.ShuffleMessage:
-	err := h.HandleShuffleMessage(msg, from, out, in)
-	if err != nil {
-		return xerrors.Errorf("failed to handle ShuffleMessage: %v", err)
-	}
-
-	*/
-
 	default:
-		return xerrors.Errorf("expected Start message, decrypt request or "+
-			"Deal as first message, got: %T", msg)
+		return xerrors.Errorf("expected StartShuffle message, got: %T", msg)
 	}
 
 	return nil
@@ -97,19 +84,6 @@ func (h *Handler) HandleStartShuffleMessage(startShuffleMessage types.StartShuff
 	dela.Logger.Info().Msg("Starting the neff shuffle protocol ...")
 
 	dela.Logger.Info().Msg("SHUFFLE / RECEIVED FROM  : " + from.String())
-
-	signer, err := getSigner(signerFilePath)
-	if err != nil {
-		return xerrors.Errorf("failed to getSigner: %v", err)
-	}
-
-	/*nonceIncrement := 0
-	for i, address := range startShuffleMessage.GetAddresses() {
-		if address.Equal(h.me){
-			nonceIncrement = i
-			break
-		}
-	}*/
 
 	for round := 1; round <= startShuffleMessage.GetThreshold(); round++ {
 		dela.Logger.Info().Msg("SHUFFLE / ROUND : " + strconv.Itoa(round))
@@ -127,7 +101,7 @@ func (h *Handler) HandleStartShuffleMessage(startShuffleMessage types.StartShuff
 		}
 
 		if election.Status != electionTypes.Closed {
-			return xerrors.Errorf("The election must be closed !")
+			return xerrors.Errorf("the election must be closed")
 		}
 
 		encryptedBallotsMap := election.EncryptedBallots
@@ -212,7 +186,7 @@ func (h *Handler) HandleStartShuffleMessage(startShuffleMessage types.StartShuff
 			return xerrors.Errorf("failed to get Client: %v", err.Error())
 		}
 
-		manager := getManager(signer, client)
+		manager := getManager(h.signer, client)
 
 		err = manager.Sync()
 		if err != nil {
@@ -250,23 +224,21 @@ func (h *Handler) HandleStartShuffleMessage(startShuffleMessage types.StartShuff
 			return xerrors.Errorf("failed to make transaction: %v", err.Error())
 		}
 		dela.Logger.Info().Msg("TRANSACTION NONCE : " + strconv.Itoa(int(tx.GetNonce())))
-
 		watchCtx, cancel := context.WithTimeout(context.Background(), shuffleTransactionTimeout)
+
+		err = h.p.Add(tx)
 
 		events := h.service.Watch(watchCtx)
 
-		err = h.p.Add(tx)
+		// err = h.p.Add(tx)
 		if err != nil {
 			cancel()
 			return xerrors.Errorf("failed to add transaction to the pool: %v", err.Error())
 		}
-
 		notAccepted := false
 
 		for event := range events {
-			dela.Logger.Info().Msg("iterating events...")
 			for _, res := range event.Transactions {
-				dela.Logger.Info().Msg("iterating transactions...")
 				if !bytes.Equal(res.GetTransaction().GetID(), tx.GetID()) {
 					continue
 				}
@@ -279,7 +251,7 @@ func (h *Handler) HandleStartShuffleMessage(startShuffleMessage types.StartShuff
 
 				if !accepted {
 					notAccepted = true
-					dela.Logger.Info().Msg("NOT ACCEPTED : " + msg)
+					dela.Logger.Info().Msg("Denied : " + msg)
 					break
 				} else {
 					dela.Logger.Info().Msg("ACCEPTED")
@@ -325,7 +297,6 @@ func (h *Handler) HandleStartShuffleMessage(startShuffleMessage types.StartShuff
 							return xerrors.Errorf("failed to send EndShuffle message: %v", err)
 						}
 					}
-
 					cancel()
 					return nil
 				}
@@ -334,109 +305,12 @@ func (h *Handler) HandleStartShuffleMessage(startShuffleMessage types.StartShuff
 				break
 			}
 		}
-
 		cancel()
 		dela.Logger.Info().Msg("NEXT ROUND")
 		continue
-
-		// cancel()
-		// return xerrors.Errorf("Transaction not found in the block")
 	}
 
-	// Todo : think about this !! should not reach this code
-	return xerrors.Errorf("Weird, should be unreachable")
-}
-
-// Todo : eventually remove the previous implementation !
-// Todo : handle edge cases
-func (h *Handler) HandleShuffleMessage(shuffleMessage types.ShuffleMessage,
-	from mino.Address, out mino.Sender,
-	in mino.Receiver) error {
-
-	dela.Logger.Info().Msg("SHUFFLE / RECEIVED FROM  : " + from.String())
-
-	addrs := shuffleMessage.GetAddresses()
-	suite := suites.MustFind(shuffleMessage.GetSuiteName())
-	publicKey := shuffleMessage.GetPublicKey()
-	kBar := shuffleMessage.GetkBar()
-	cBar := shuffleMessage.GetcBar()
-	kBarPrevious := shuffleMessage.GetkBarPrevious()
-	cBarPrevious := shuffleMessage.GetcBarPrevious()
-	prf := shuffleMessage.GetProof()
-
-	// leader node
-	if addrs[0].Equal(h.me) {
-		dela.Logger.Info().Msg("SHUFFLE / SENDING TO : " + addrs[1].String())
-		errs := out.Send(shuffleMessage, addrs[1])
-		err := <-errs
-		if err != nil {
-			return xerrors.Errorf("failed to send Shuffle Message: %v", err)
-		}
-
-		lastNodeAddress, msg, err := in.Recv(context.Background())
-		if err != nil {
-			return xerrors.Errorf("failed to receive msg: %v", err)
-		}
-		dela.Logger.Info().Msg("RECEIVED FROM  : " + lastNodeAddress.String())
-		errs = out.Send(msg, from)
-		err = <-errs
-		if err != nil {
-			return xerrors.Errorf("failed to send Shuffle Message: %v", err)
-		}
-		return nil
-	}
-
-	// Todo : check you received from the correct node
-
-	err := verify(suite, kBarPrevious, cBarPrevious, publicKey, kBar, cBar, prf)
-	if err != nil {
-		return xerrors.Errorf("Shuffle verify failed: %v", err)
-	}
-
-	rand := suite.RandomStream()
-	KbarNext, CbarNext, prover := shuffleKyber.Shuffle(suite, nil, publicKey,
-		kBar, cBar, rand)
-	prfNext, err := proof.HashProve(suite, protocolName, prover)
-	if err != nil {
-		return xerrors.Errorf("Shuffle proof failed: %v", err)
-	}
-
-	message := types.NewShuffleMessage(addrs, shuffleMessage.GetSuiteName(),
-		publicKey, KbarNext,
-		CbarNext, kBar, cBar, prfNext)
-
-	index := 0
-	for i, addr := range addrs {
-		if addr.Equal(from) {
-			index = i
-			break
-		}
-	}
-	// todo : use modulo
-	index += 2
-
-	if index >= len(addrs) {
-		index = 0
-	}
-
-	dela.Logger.Info().Msg("SHUFFLE / SENDING TO : " + addrs[index].String())
-
-	errs := out.Send(message, addrs[index])
-	err = <-errs
-	if err != nil {
-		return xerrors.Errorf("failed to send Shuffle Message: %v", err)
-	}
-
-	return nil
-}
-
-func verify(suite suites.Suite, Ks []kyber.Point, Cs []kyber.Point,
-	pubKey kyber.Point, KsShuffled []kyber.Point, CsShuffled []kyber.Point,
-	prf []byte) (err error) {
-
-	verifier := shuffleKyber.Verifier(suite, nil, pubKey, Ks, Cs, KsShuffled,
-		CsShuffled)
-	return proof.HashVerify(suite, protocolName, verifier, prf)
+	return xerrors.Errorf("failed to shuffle, all your transactions got denied")
 }
 
 func (h *Handler) getClient() (*txnPoolController.Client, error) {
@@ -449,65 +323,34 @@ func (h *Handler) getClient() (*txnPoolController.Client, error) {
 	transactionResults := blockLink.GetBlock().GetData().GetTransactionResults()
 	nonce := uint64(0)
 
-	for _, txResult := range transactionResults {
-		status, _ := txResult.GetStatus()
-		if status && txResult.GetTransaction().GetNonce() > nonce {
-			nonce = txResult.GetTransaction().GetNonce()
-		}
-		if !status {
-			dela.Logger.Info().Msg("transaction refused")
-		}
-	}
-
-	previousDigest := blockLink.GetFrom()
-
 	for nonce == 0 {
+		for _, txResult := range transactionResults {
+			status, _ := txResult.GetStatus()
+			if status && txResult.GetTransaction().GetNonce() > nonce {
+				nonce = txResult.GetTransaction().GetNonce()
+			}
+		}
+
+		previousDigest := blockLink.GetFrom()
+
 		previousBlock, err := h.blocks.Get(previousDigest)
 		if err != nil {
 			if strings.Contains(err.Error(), "not found: no block") {
 				dela.Logger.Info().Msg("FIRST BLOCK")
+				break
 			} else {
 				return nil, xerrors.Errorf("failed to fetch previous block: %v", err)
 			}
 		} else {
-			transactionResults := previousBlock.GetBlock().GetData().GetTransactionResults()
-
-			for _, txResult := range transactionResults {
-				status, _ := txResult.GetStatus()
-				if status && txResult.GetTransaction().GetNonce() > nonce {
-					nonce = txResult.GetTransaction().GetNonce()
-				}
-				if !status {
-					dela.Logger.Info().Msg("transaction refused")
-				}
-			}
-			previousDigest = previousBlock.GetFrom()
+			transactionResults = previousBlock.GetBlock().GetData().GetTransactionResults()
 		}
 	}
 
 	nonce += 1
+
 	client := &txnPoolController.Client{Nonce: nonce}
 
 	return client, nil
-}
-
-// TODO : the user has to create the file in advance, maybe we should create it
-//  here ?
-// getSigner creates a signer from a file.
-func getSigner(filePath string) (crypto.Signer, error) {
-	l := loader.NewFileLoader(filePath)
-
-	signerData, err := l.Load()
-	if err != nil {
-		return nil, xerrors.Errorf("failed to load signer: %v", err)
-	}
-
-	signer, err := bls.NewSignerFromBytes(signerData)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to unmarshal signer: %v", err)
-	}
-
-	return signer, nil
 }
 
 // getManager is the function called when we need a transaction manager. It
