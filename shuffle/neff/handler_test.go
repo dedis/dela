@@ -362,7 +362,7 @@ type FakeService struct {
 }
 
 func (f FakeService) GetProof(key []byte) (ordering.Proof, error) {
-	if bytes.Compare(key, []byte(f.electionId)) == 0 {
+	if bytes.Equal(key, []byte(f.electionId)) {
 		js, _ := json.Marshal(f.election)
 		proof := FakeProof{
 			key:   key,
