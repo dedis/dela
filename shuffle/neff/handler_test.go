@@ -3,6 +3,7 @@ package neff
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"github.com/stretchr/testify/require"
 	electionTypes "go.dedis.ch/dela/contracts/evoting/types"
@@ -58,7 +59,7 @@ func TestHandler_StartShuffle(t *testing.T) {
 
 		// ElGamal-encrypt the point to produce ciphertext (K,C).
 		k := suite.Scalar().Pick(random.New()) // ephemeral private key
-		K := suite.Point().Mul(k, nil)      // ephemeral DH public key
+		K := suite.Point().Mul(k, nil)         // ephemeral DH public key
 		S := suite.Point().Mul(k, pubKey)      // ephemeral DH shared secret
 		C := S.Add(S, M)                       // message blinded with secret
 
@@ -246,7 +247,7 @@ func TestHandler_StartShuffle(t *testing.T) {
 		err:        nil,
 		election:   election,
 		electionId: "dummyId",
-		pool: &badPool,
+		pool:       &badPool,
 	}
 	handler.service = &service
 
@@ -258,8 +259,8 @@ func TestHandler_StartShuffle(t *testing.T) {
 		err:        nil,
 		election:   election,
 		electionId: "dummyId",
-		pool: &fakePool,
-		status: true,
+		pool:       &fakePool,
+		status:     true,
 	}
 
 	handler.service = &service
@@ -319,8 +320,8 @@ func TestHandler_StartShuffle(t *testing.T) {
 		err:        nil,
 		election:   election,
 		electionId: "dummyId",
-		pool: &fakePool,
-		status: false,
+		pool:       &fakePool,
+		status:     false,
 	}
 
 	err = handler.HandleStartShuffleMessage(startShuffle, from, fakeSender, fakeReceiver)
@@ -354,15 +355,17 @@ func (f FakeProof) GetValue() []byte {
 //
 
 type FakeService struct {
-	err         error
-	election    interface{}
-	electionId  electionTypes.ID
-	pool *FakePool
-	status bool
+	err        error
+	election   interface{}
+	electionId electionTypes.ID
+	pool       *FakePool
+	status     bool
 }
 
 func (f FakeService) GetProof(key []byte) (ordering.Proof, error) {
-	if bytes.Equal(key, []byte(f.electionId)) {
+	electionIDBuff, _ := hex.DecodeString(string(f.electionId))
+
+	if bytes.Equal(key, electionIDBuff) {
 		js, _ := json.Marshal(f.election)
 		proof := FakeProof{
 			key:   key,
@@ -382,16 +385,18 @@ func (f *FakeService) Watch(ctx context.Context) <-chan ordering.Event {
 
 	results := make([]validation.TransactionResult, 3)
 
+	electionIDBuffDummy1, _ := hex.DecodeString("dummyId1")
 	results[0] = FakeTransactionResult{
 		status:      true,
 		message:     "",
-		transaction: FakeTransaction{nonce: 10, id: []byte("dummyId1")},
+		transaction: FakeTransaction{nonce: 10, id: electionIDBuffDummy1},
 	}
 
+	electionIDBuffDummy2, _ := hex.DecodeString("dummyId2")
 	results[1] = FakeTransactionResult{
 		status:      true,
 		message:     "",
-		transaction: FakeTransaction{nonce: 11, id: []byte("dummyId2")},
+		transaction: FakeTransaction{nonce: 11, id: electionIDBuffDummy2},
 	}
 
 	results[2] = FakeTransactionResult{
@@ -422,7 +427,7 @@ func (f FakeService) Close() error {
 //
 
 type FakePool struct {
-	err error
+	err         error
 	transaction FakeTransaction
 }
 
@@ -597,7 +602,7 @@ func (f FakeBlockLink) Reduce() orderingTypes.Link {
 //
 
 type FakeBlockStore struct {
-	getErr error
+	getErr  error
 	lastErr error
 }
 
