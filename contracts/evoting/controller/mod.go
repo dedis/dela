@@ -32,8 +32,7 @@ func (m controller) SetCommands(builder node.Builder) {
 	})
 
 	sub.SetAction(builder.MakeAction(&initHttpServerAction{
-		ElectionIdNonce: 0,
-		ElectionIds:     make([]string, 0),
+		ElectionIds: make([]string, 0),
 	}))
 
 	sub = cmd.SetSubCommand("scenarioTest")

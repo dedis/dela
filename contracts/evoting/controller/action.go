@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"github.com/satori/go.uuid"
 	"go.dedis.ch/dela"
@@ -31,6 +32,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/http"
 	"strconv"
 	"strings"
@@ -71,8 +73,7 @@ var getManager = func(signer crypto.Signer, s signed.Client) txn.Manager {
 type initHttpServerAction struct {
 	// TODO : handle concurrent call ?
 	sync.Mutex
-	ElectionIdNonce int
-	ElectionIds     []string
+	ElectionIds []string
 }
 
 // Execute implements node.ActionTemplate. It implements the handling of
@@ -113,8 +114,6 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 	})
 
 	http.HandleFunc(createElectionEndPoint, func(w http.ResponseWriter, r *http.Request) {
-
-		// time.Sleep(1 * time.Second)
 
 		a.Lock()
 		defer a.Unlock()
@@ -175,11 +174,22 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		electionId := strconv.Itoa(a.ElectionIdNonce)
-		l := len(electionId)
-		for i := l; i < 32; i++ {
-			electionId = "0" + electionId
+		/*
+			electionId := strconv.Itoa(a.ElectionIdNonce)
+			l := len(electionId)
+			for i := l; i < 32; i++ {
+				electionId = "0" + electionId
+			}*/
+
+		// random id
+		electionIDBuff := make([]byte, 32)
+		_, err = rand.Read(electionIDBuff)
+		if err != nil {
+			http.Error(w, "Failed to generate random bytes: "+err.Error(), http.StatusInternalServerError)
+			return
 		}
+
+		electionId := hex.EncodeToString(electionIDBuff)
 
 		createElectionTransaction := types.CreateElectionTransaction{
 			ElectionID: electionId,
@@ -249,7 +259,6 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 					return
 				}
 
-				a.ElectionIdNonce += 1
 				a.ElectionIds = append(a.ElectionIds, electionId)
 
 				response := types.CreateElectionResponse{
@@ -314,7 +323,13 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		proof, err := service.GetProof([]byte(getElectionInfoRequest.ElectionID))
+		electionIDBuff, err := hex.DecodeString(getElectionInfoRequest.ElectionID)
+		if err != nil {
+			http.Error(w, "Failed to decode electionID: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		proof, err := service.GetProof(electionIDBuff)
 		if err != nil {
 			http.Error(w, "Failed to read on the blockchain: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -387,7 +402,13 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		for _, id := range a.ElectionIds {
 
-			proof, err := service.GetProof([]byte(id))
+			electionIDBuff, err := hex.DecodeString(id)
+			if err != nil {
+				http.Error(w, "Failed to decode electionID: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			proof, err := service.GetProof(electionIDBuff)
 			if err != nil {
 				http.Error(w, "Failed to read on the blockchain: "+err.Error(), http.StatusInternalServerError)
 				return
@@ -762,7 +783,13 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		proof, err := service.GetProof([]byte(shuffleBallotsRequest.ElectionID))
+		electionIDBuff, err := hex.DecodeString(shuffleBallotsRequest.ElectionID)
+		if err != nil {
+			http.Error(w, "Failed to decode electionID: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		proof, err := service.GetProof(electionIDBuff)
 		if err != nil {
 			http.Error(w, "Failed to read on the blockchain: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -884,7 +911,13 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		proof, err := service.GetProof([]byte(decryptBallotsRequest.ElectionID))
+		electionIDBuff, err := hex.DecodeString(decryptBallotsRequest.ElectionID)
+		if err != nil {
+			http.Error(w, "Failed to decode electionID: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		proof, err := service.GetProof(electionIDBuff)
 		if err != nil {
 			http.Error(w, "Failed to read on the blockchain: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -1112,7 +1145,13 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		proof, err := service.GetProof([]byte(getElectionResultRequest.ElectionID))
+		electionIDBuff, err := hex.DecodeString(getElectionResultRequest.ElectionID)
+		if err != nil {
+			http.Error(w, "Failed to decode electionID: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		proof, err := service.GetProof(electionIDBuff)
 		if err != nil {
 			http.Error(w, "Failed to read on the blockchain: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -1455,7 +1494,12 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 
 	electionId := createSimpleElectionResponse.ElectionID
 
-	proof, err := service.GetProof([]byte(electionId))
+	electionIDBuff, err := hex.DecodeString(createSimpleElectionResponse.ElectionID)
+	if err != nil {
+		return xerrors.Errorf("failed to decode electionID: %v", err)
+	}
+
+	proof, err := service.GetProof(electionIDBuff)
 	if err != nil {
 		return xerrors.Errorf("failed to read on the blockchain: %v", err)
 	}
@@ -1501,7 +1545,7 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	dela.Logger.Info().Msg("Response body : " + string(body))
 	resp.Body.Close()
 
-	proof, err = service.GetProof([]byte(electionId))
+	proof, err = service.GetProof(electionIDBuff)
 	if err != nil {
 		return xerrors.Errorf("failed to read on the blockchain: %v", err)
 	}
@@ -1613,7 +1657,7 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	dela.Logger.Info().Msg("Response body : " + string(body))
 	resp.Body.Close()
 
-	proof, err = service.GetProof([]byte(electionId))
+	proof, err = service.GetProof(electionIDBuff)
 	if err != nil {
 		return xerrors.Errorf("failed to read on the blockchain: %v", err)
 	}
@@ -1661,7 +1705,7 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	dela.Logger.Info().Msg("Response body : " + string(body))
 	resp.Body.Close()
 
-	proof, err = service.GetProof([]byte(electionId))
+	proof, err = service.GetProof(electionIDBuff)
 	if err != nil {
 		return xerrors.Errorf("failed to read on the blockchain: %v", err)
 	}
@@ -1715,7 +1759,7 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 
 	// time.Sleep(20 * time.Second)
 
-	proof, err = service.GetProof([]byte(electionId))
+	proof, err = service.GetProof(electionIDBuff)
 	if err != nil {
 		return xerrors.Errorf("failed to read on the blockchain: %v", err)
 	}
@@ -1762,7 +1806,7 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	dela.Logger.Info().Msg("Response body : " + string(body))
 	resp.Body.Close()
 
-	proof, err = service.GetProof([]byte(electionId))
+	proof, err = service.GetProof(electionIDBuff)
 	if err != nil {
 		return xerrors.Errorf("failed to read on the blockchain: %v", err)
 	}
@@ -1809,7 +1853,7 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	dela.Logger.Info().Msg("Response body : " + string(body))
 	resp.Body.Close()
 
-	proof, err = service.GetProof([]byte(electionId))
+	proof, err = service.GetProof(electionIDBuff)
 	if err != nil {
 		return xerrors.Errorf("failed to read on the blockchain: %v", err)
 	}

@@ -3,6 +3,7 @@ package neff
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/contracts/evoting"
@@ -88,7 +89,9 @@ func (h *Handler) HandleStartShuffleMessage(startShuffleMessage types.StartShuff
 	for round := 1; round <= startShuffleMessage.GetThreshold(); round++ {
 		dela.Logger.Info().Msg("SHUFFLE / ROUND : " + strconv.Itoa(round))
 
-		prf, err := h.service.GetProof([]byte(startShuffleMessage.GetElectionId()))
+		electionIDBuff, _ := hex.DecodeString(startShuffleMessage.GetElectionId())
+
+		prf, err := h.service.GetProof(electionIDBuff)
 		if err != nil {
 			return xerrors.Errorf("failed to read on the blockchain: %v", err)
 		}

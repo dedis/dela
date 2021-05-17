@@ -2,6 +2,7 @@ package evoting
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/contracts/evoting/types"
@@ -184,10 +185,11 @@ func (e evotingCommand) closeElection(snap store.Snapshot, step execution.Step) 
 		return xerrors.Errorf("failed to unmarshal CloseElectionTransaction: %v", err)
 	}
 
-	// todo : method to cast election id to bytes or even change type of election id
-	electionMarshalled, err := snap.Get([]byte(closeElectionTransaction.ElectionID))
+	electionTxIDBuff, _ := hex.DecodeString(closeElectionTransaction.ElectionID)
+
+	electionMarshalled, err := snap.Get(electionTxIDBuff)
 	if err != nil {
-		return xerrors.Errorf("failed to get key '%s': %v", []byte(closeElectionTransaction.ElectionID), err)
+		return xerrors.Errorf("failed to get key '%s': %v", electionTxIDBuff, err)
 	}
 
 	election := new(types.Election)
@@ -212,7 +214,9 @@ func (e evotingCommand) closeElection(snap store.Snapshot, step execution.Step) 
 		return xerrors.Errorf("failed to marshal Election: %v", err)
 	}
 
-	err = snap.Set([]byte(election.ElectionID), js)
+	electionIDBuff, _ := hex.DecodeString(string(election.ElectionID))
+
+	err = snap.Set(electionIDBuff, js)
 	if err != nil {
 		return xerrors.Errorf("failed to set value: %v", err)
 	}
@@ -257,10 +261,11 @@ func (e evotingCommand) shuffleBallots(snap store.Snapshot, step execution.Step)
 		}
 	}
 
-	// todo : method to cast election id to bytes or even change type of election id
-	electionMarshalled, err := snap.Get([]byte(shuffleBallotsTransaction.ElectionID))
+	electionTxIDBuff, _ := hex.DecodeString(shuffleBallotsTransaction.ElectionID)
+
+	electionMarshalled, err := snap.Get(electionTxIDBuff)
 	if err != nil {
-		return xerrors.Errorf("failed to get key '%s': %v", []byte(shuffleBallotsTransaction.ElectionID), err)
+		return xerrors.Errorf("failed to get key '%s': %v", electionTxIDBuff, err)
 	}
 
 	election := new(types.Election)
@@ -379,7 +384,9 @@ func (e evotingCommand) shuffleBallots(snap store.Snapshot, step execution.Step)
 		return xerrors.Errorf("failed to marshall Election : %v", err)
 	}
 
-	err = snap.Set([]byte(election.ElectionID), js)
+	electionIDBuff, _ := hex.DecodeString(string(election.ElectionID))
+
+	err = snap.Set(electionIDBuff, js)
 	if err != nil {
 		return xerrors.Errorf("failed to set value: %v", err)
 	}
@@ -399,10 +406,11 @@ func (e evotingCommand) decryptBallots(snap store.Snapshot, step execution.Step)
 		return xerrors.Errorf("failed to unmarshal DecryptBallotsTransaction: %v", err)
 	}
 
-	// todo : method to cast election id to bytes or even change type of election id
-	electionMarshalled, err := snap.Get([]byte(decryptBallotsTransaction.ElectionID))
+	electionTxIDBuff, _ := hex.DecodeString(decryptBallotsTransaction.ElectionID)
+
+	electionMarshalled, err := snap.Get(electionTxIDBuff)
 	if err != nil {
-		return xerrors.Errorf("failed to get key '%s': %v", []byte(decryptBallotsTransaction.ElectionID), err)
+		return xerrors.Errorf("failed to get key '%s': %v", electionTxIDBuff, err)
 	}
 
 	election := new(types.Election)
@@ -428,7 +436,9 @@ func (e evotingCommand) decryptBallots(snap store.Snapshot, step execution.Step)
 		return xerrors.Errorf("failed to marshall Election : %v", err)
 	}
 
-	err = snap.Set([]byte(election.ElectionID), js)
+	electionIDBuff, _ := hex.DecodeString(string(election.ElectionID))
+
+	err = snap.Set(electionIDBuff, js)
 	if err != nil {
 		return xerrors.Errorf("failed to set value: %v", err)
 	}
@@ -448,10 +458,11 @@ func (e evotingCommand) cancelElection(snap store.Snapshot, step execution.Step)
 		return xerrors.Errorf("failed to unmarshal CancelElectionTransaction: %v", err)
 	}
 
-	// todo : method to cast election id to bytes or even change type of election id
-	electionMarshalled, err := snap.Get([]byte(cancelElectionTransaction.ElectionID))
+	electionTxIDBuff, _ := hex.DecodeString(cancelElectionTransaction.ElectionID)
+
+	electionMarshalled, err := snap.Get(electionTxIDBuff)
 	if err != nil {
-		return xerrors.Errorf("failed to get key '%s': %v", []byte(cancelElectionTransaction.ElectionID), err)
+		return xerrors.Errorf("failed to get key '%s': %v", electionTxIDBuff, err)
 	}
 
 	election := new(types.Election)
@@ -471,7 +482,9 @@ func (e evotingCommand) cancelElection(snap store.Snapshot, step execution.Step)
 		return xerrors.Errorf("failed to marshal Election : %v", err)
 	}
 
-	err = snap.Set([]byte(election.ElectionID), js)
+	electionIDBuff, _ := hex.DecodeString(string(election.ElectionID))
+
+	err = snap.Set(electionIDBuff, js)
 	if err != nil {
 		return xerrors.Errorf("failed to set value: %v", err)
 	}
@@ -491,10 +504,11 @@ func (e evotingCommand) castVote(snap store.Snapshot, step execution.Step) error
 		return xerrors.Errorf("failed to unmarshal CastVoteTransaction: %v", err)
 	}
 
-	// todo : method to cast election id to bytes or even change type of election id
-	electionMarshalled, err := snap.Get([]byte(castVoteTransaction.ElectionID))
+	electionTxIDBuff, _ := hex.DecodeString(castVoteTransaction.ElectionID)
+
+	electionMarshalled, err := snap.Get(electionTxIDBuff)
 	if err != nil {
-		return xerrors.Errorf("failed to get key '%s': %v", []byte(castVoteTransaction.ElectionID), err)
+		return xerrors.Errorf("failed to get key '%s': %v", electionTxIDBuff, err)
 	}
 
 	election := new(types.Election)
@@ -515,8 +529,9 @@ func (e evotingCommand) castVote(snap store.Snapshot, step execution.Step) error
 		return xerrors.Errorf("failed to marshal Election : %v", err)
 	}
 
-	// dela.Logger.Info().Msg("Pushed Election : " + string(js))
-	err = snap.Set([]byte(election.ElectionID), js)
+	electionIDBuff, _ := hex.DecodeString(string(election.ElectionID))
+
+	err = snap.Set(electionIDBuff, js)
 	if err != nil {
 		return xerrors.Errorf("failed to set value: %v", err)
 	}
@@ -555,11 +570,12 @@ func (e evotingCommand) createElection(snap store.Snapshot, step execution.Step)
 		return xerrors.Errorf("failed to marshal Election : %v", err)
 	}
 
-	err = snap.Set([]byte(election.ElectionID), js)
+	electionIDBuff, _ := hex.DecodeString(string(election.ElectionID))
+
+	err = snap.Set(electionIDBuff, js)
 	if err != nil {
 		return xerrors.Errorf("failed to set value: %v", err)
 	}
 
 	return nil
-
 }
