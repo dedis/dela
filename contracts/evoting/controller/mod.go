@@ -20,11 +20,11 @@ type controller struct {
 func (m controller) SetCommands(builder node.Builder) {
 
 	cmd := builder.SetCommand("e-voting")
-	cmd.SetDescription("... ")
+	cmd.SetDescription("interact with the evoting service")
 
 	// memcoin --config /tmp/node1 e-voting initHttpServer --portNumber 8080
 	sub := cmd.SetSubCommand("initHttpServer")
-	sub.SetDescription("Initialize the HTTP server")
+	sub.SetDescription("initialize the HTTP server")
 	sub.SetFlags(cli.StringFlag{
 		Name:     "portNumber",
 		Usage:    "port number of the HTTP server",
@@ -36,7 +36,7 @@ func (m controller) SetCommands(builder node.Builder) {
 	}))
 
 	sub = cmd.SetSubCommand("scenarioTest")
-	sub.SetDescription("scenarioTest")
+	sub.SetDescription("evoting scenario test")
 	sub.SetFlags(cli.StringSliceFlag{
 		Name:     "member",
 		Usage:    "nodes participating in SHUFFLE",

@@ -19,7 +19,7 @@ func TestController_SetCommands(t *testing.T) {
 
 	require.Equal(t, 6, call.Len())
 	require.Equal(t, "shuffle", call.Get(0, 0))
-	require.Equal(t, "interact with the SHUFFLE protocol", call.Get(1, 0))
+	require.Equal(t, "interact with the SHUFFLE service", call.Get(1, 0))
 	require.Equal(t, "init", call.Get(2, 0))
 	require.Equal(t, "initialize the SHUFFLE protocol", call.Get(3, 0))
 	require.IsType(t, &initAction{}, call.Get(4, 0))

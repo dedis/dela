@@ -30,7 +30,7 @@ type controller struct{}
 func (m controller) SetCommands(builder node.Builder) {
 
 	cmd := builder.SetCommand("shuffle")
-	cmd.SetDescription("interact with the SHUFFLE protocol")
+	cmd.SetDescription("interact with the SHUFFLE service")
 
 	sub := cmd.SetSubCommand("init")
 	sub.SetDescription("initialize the SHUFFLE protocol")
