@@ -23,16 +23,16 @@ type controller struct{}
 func (m controller) SetCommands(builder node.Builder) {
 
 	cmd := builder.SetCommand("dkg")
-	cmd.SetDescription("... ")
+	cmd.SetDescription("interact with the DKG service")
 
 	sub := cmd.SetSubCommand("init")
-	sub.SetDescription("Initialize the DKG protocol")
+	sub.SetDescription("initialize the DKG protocol")
 	sub.SetAction(builder.MakeAction(&initAction{}))
 
 	// memcoin --config /tmp/node1 dkg setup --member $(memcoin --config
 	// /tmp/node1 dkg export) --member $(memcoin --config /tmp/node2 dkg export)
 	sub = cmd.SetSubCommand("setup")
-	sub.SetDescription("Creates the public distributed key and the private share on each node")
+	sub.SetDescription("creates the public distributed key and the private share on each node")
 	sub.SetFlags(cli.StringSliceFlag{
 		Name:     "member",
 		Usage:    "nodes participating in DKG",
@@ -41,7 +41,7 @@ func (m controller) SetCommands(builder node.Builder) {
 	sub.SetAction(builder.MakeAction(&setupAction{}))
 
 	sub = cmd.SetSubCommand("initHttpServer")
-	sub.SetDescription("Initialize the DKG service HTTP server")
+	sub.SetDescription("initialize the DKG service HTTP server")
 	sub.SetFlags(cli.StringFlag{
 		Name:     "portNumber",
 		Usage:    "port number of the HTTP server",
@@ -50,17 +50,17 @@ func (m controller) SetCommands(builder node.Builder) {
 	sub.SetAction(builder.MakeAction(&initHttpServerAction{}))
 
 	sub = cmd.SetSubCommand("export")
-	sub.SetDescription("Export the node address and public key")
+	sub.SetDescription("export the node address and public key")
 	sub.SetAction(builder.MakeAction(&exportInfoAction{}))
 
 	sub = cmd.SetSubCommand("getPublicKey")
-	sub.SetDescription("Prints the public Key")
+	sub.SetDescription("prints the distributed public Key")
 	sub.SetAction(builder.MakeAction(&getPublicKeyAction{}))
 
 	// memcoin --config /tmp/node1 dkg encrypt --plaintext Hello --KfilePath K
 	// --CfilePath C
 	sub = cmd.SetSubCommand("encrypt")
-	sub.SetDescription("Encrypt the given string and write the ciphertext pair in the corresponding file")
+	sub.SetDescription("encrypt the given string and write the ciphertext pair in the corresponding file")
 	sub.SetFlags(cli.StringFlag{
 		Name:     "plaintext",
 		Usage:    "plaintext to encrypt",
@@ -78,7 +78,7 @@ func (m controller) SetCommands(builder node.Builder) {
 
 	// memcoin --config /tmp/node2 dkg decrypt --KfilePath K --CfilePath C
 	sub = cmd.SetSubCommand("decrypt")
-	sub.SetDescription("Decrypt the given ciphertext pair and print the corresponding plaintext")
+	sub.SetDescription("decrypt the given ciphertext pair and print the corresponding plaintext")
 	sub.SetFlags(cli.StringFlag{
 		Name:     "KfilePath",
 		Usage:    "path to retreive the K element of the ciphertext pair",
@@ -113,10 +113,7 @@ func (m controller) OnStart(ctx cli.Flags, inj node.Injector) error {
 		Hex("public key", pubkeyBuf).
 		Msg("perdersen public key")
 
-	// dela.Logger.Info().Msg( base64.StdEncoding.EncodeToString(pubkeyBuf))
-
 	return nil
-
 }
 
 // OnStop implements node.Initializer.
