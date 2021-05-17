@@ -970,8 +970,6 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			Cs = append(Cs, C)
 		}
 
-		// todo : implement a dkg call to decrypt multiple ciphertexts
-
 		var dkgActor dkg.Actor
 		err = ctx.Injector.Resolve(&dkgActor)
 		if err != nil {

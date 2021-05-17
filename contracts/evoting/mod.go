@@ -253,7 +253,6 @@ func (e evotingCommand) shuffleBallots(snap store.Snapshot, step execution.Step)
 					return xerrors.Errorf("failed to unmarshall ShuffleBallotsTransaction : %v", err)
 				}
 
-				// todo : same electionid
 				if shuffleBallotsTransactionTx.Round == shuffleBallotsTransaction.Round {
 					return xerrors.Errorf(messageOnlyOneShufflePerRound)
 				}
