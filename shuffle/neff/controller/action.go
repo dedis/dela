@@ -22,10 +22,12 @@ func (a *initAction) Execute(ctx node.Context) error {
 		return xerrors.Errorf("failed to resolve shuffle: %v", err)
 	}
 
-	actor, err := neffShuffle.Listen()
-	if err != nil {
-		return xerrors.Errorf("failed to initialize the neff shuffle protocol: %v", err)
-	}
+	actor, _ := neffShuffle.Listen()
+
+	/* if err != nil {
+		return xerrors.Errorf("failed to initialize the neff shuffle
+	protocol: %v", err)
+	} */
 
 	ctx.Injector.Inject(actor)
 	dela.Logger.Info().Msg("The shuffle protocol has been initialized successfully")
