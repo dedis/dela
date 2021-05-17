@@ -91,7 +91,7 @@ func TestCommand_CreateElection(t *testing.T) {
 	err = cmd.createElection(snap, makeStep(t, CreateElectionArg, string(js)))
 	require.NoError(t, err)
 
-	dummyElectionIdBuff, err := hex.DecodeString("dummyId")
+	dummyElectionIdBuff, _ := hex.DecodeString("dummyId")
 	res, err := snap.Get(dummyElectionIdBuff)
 	require.NoError(t, err)
 
