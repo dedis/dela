@@ -105,12 +105,8 @@ func (b fakeBuilder) MakeAction(tmpl node.ActionTemplate) cli.Action {
 
 type fakePool struct {
 	pool.Pool
-
-	err error
 }
 
 type fakeService struct {
 	ordering.Service
-
-	err error
 }
