@@ -132,12 +132,6 @@ func newInjector(mino mino.Mino) node.Injector {
 	}
 }
 
-func newBadInjector() node.Injector {
-	return &fakeInjector{
-		isBad: true,
-	}
-}
-
 // fakeInjector is a fake injector
 //
 // - implements node.Injector
