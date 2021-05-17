@@ -14,6 +14,8 @@ import (
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/kyber/v3/util/random"
+	"strconv"
 	"testing"
 )
 
@@ -242,10 +244,12 @@ func TestCommand_CloseElection(t *testing.T) {
 // todo : finish implementation of this test
 func TestCommand_ShuffleBallots(t *testing.T) {
 
+	k := 3
+
 	dummyShuffleBallotsTransaction := types.ShuffleBallotsTransaction{
 		ElectionID:      "dummyId",
 		Round:           0,
-		ShuffledBallots: nil,
+		ShuffledBallots: make([][]byte, 3),
 		Proof:           nil,
 	}
 	jsShuffleBallotsTransaction, _ := json.Marshal(dummyShuffleBallotsTransaction)
@@ -259,7 +263,7 @@ func TestCommand_ShuffleBallots(t *testing.T) {
 		Pubkey:           nil,
 		EncryptedBallots: map[string][]byte{},
 		ShuffledBallots:  map[int][][]byte{},
-		Proofs:           nil,
+		Proofs:           map[int][]byte{},
 		DecryptedBallots: nil,
 		ShuffleThreshold: 0,
 	}
@@ -295,6 +299,153 @@ func TestCommand_ShuffleBallots(t *testing.T) {
 	_ = snap.Set([]byte("dummyId"), jsElection)
 	err = cmd.shuffleBallots(snap, makeStep(t, ShuffleBallotsArg, string(jsShuffleBallotsTransaction)))
 	require.EqualError(t, err, messageOnlyOneShufflePerRound)
+
+	dummyShuffleBallotsTransaction.Round = 1
+
+	RandomStream := suite.RandomStream()
+	h := suite.Scalar().Pick(RandomStream)
+	pubKey := suite.Point().Mul(h, nil)
+
+	KsMarshalled := make([][]byte, 0, k)
+	CsMarshalled := make([][]byte, 0, k)
+
+	for i := 0; i < k; i++ {
+		// Embed the message into a curve point
+		message := "Ballot" + strconv.Itoa(i)
+		M := suite.Point().Embed([]byte(message), random.New())
+
+		// ElGamal-encrypt the point to produce ciphertext (K,C).
+		k := suite.Scalar().Pick(random.New()) // ephemeral private key
+		K := suite.Point().Mul(k, nil)         // ephemeral DH public key
+		S := suite.Point().Mul(k, pubKey)      // ephemeral DH shared secret
+		C := S.Add(S, M)                       // message blinded with secret
+
+		Kmarshalled, _ := K.MarshalBinary()
+		Cmarshalled, _ := C.MarshalBinary()
+
+		KsMarshalled = append(KsMarshalled, Kmarshalled)
+		CsMarshalled = append(CsMarshalled, Cmarshalled)
+	}
+
+	for i := 0; i < k; i++ {
+		dummyShuffleBallotsTransaction.ShuffledBallots[i] = []byte("badCiphertext")
+	}
+	jsShuffleBallotsTransaction, _ = json.Marshal(dummyShuffleBallotsTransaction)
+	err = cmd.shuffleBallots(snap, makeStep(t, ShuffleBallotsArg, string(jsShuffleBallotsTransaction)))
+	require.EqualError(t, err, "failed to unmarshal Ciphertext: invalid character 'b' looking for beginning of value")
+
+	for i := 0; i < k; i++ {
+		ballot := types.Ciphertext{
+			K: []byte("fakeVoteK"),
+			C: []byte("fakeVoteC"),
+		}
+		js, _ := json.Marshal(ballot)
+		dummyShuffleBallotsTransaction.ShuffledBallots[i] = js
+	}
+	jsShuffleBallotsTransaction, _ = json.Marshal(dummyShuffleBallotsTransaction)
+	err = cmd.shuffleBallots(snap, makeStep(t, ShuffleBallotsArg, string(jsShuffleBallotsTransaction)))
+	require.EqualError(t, err, "failed to unmarshal K kyber.Point: invalid Ed25519 curve point")
+
+	for i := 0; i < k; i++ {
+		ballot := types.Ciphertext{
+			K: KsMarshalled[i],
+			C: []byte("fakeVoteC"),
+		}
+		js, _ := json.Marshal(ballot)
+		dummyShuffleBallotsTransaction.ShuffledBallots[i] = js
+	}
+	jsShuffleBallotsTransaction, _ = json.Marshal(dummyShuffleBallotsTransaction)
+	err = cmd.shuffleBallots(snap, makeStep(t, ShuffleBallotsArg, string(jsShuffleBallotsTransaction)))
+	require.EqualError(t, err, "failed to unmarshal C kyber.Point: invalid Ed25519 curve point")
+
+	for i := 0; i < k; i++ {
+		ballot := types.Ciphertext{
+			K: KsMarshalled[i],
+			C: CsMarshalled[i],
+		}
+		js, _ := json.Marshal(ballot)
+		dummyShuffleBallotsTransaction.ShuffledBallots[i] = js
+	}
+	jsShuffleBallotsTransaction, _ = json.Marshal(dummyShuffleBallotsTransaction)
+	err = cmd.shuffleBallots(snap, makeStep(t, ShuffleBallotsArg, string(jsShuffleBallotsTransaction)))
+	require.EqualError(t, err, "failed to unmarshal public key: invalid Ed25519 curve point")
+
+	pubKeyMarshalled, _ := pubKey.MarshalBinary()
+	dummyElection.Pubkey = pubKeyMarshalled
+
+	for i := 0; i < k; i++ {
+		ballot := []byte("badCiphertext")
+		dummyElection.EncryptedBallots["user"+strconv.Itoa(i)] = ballot
+	}
+
+	jsElection, _ = json.Marshal(dummyElection)
+	_ = snap.Set([]byte("dummyId"), jsElection)
+	err = cmd.shuffleBallots(snap, makeStep(t, ShuffleBallotsArg, string(jsShuffleBallotsTransaction)))
+	require.EqualError(t, err, "failed to unmarshal Ciphertext: invalid character 'b' looking for beginning of value")
+
+	for i := 0; i < k; i++ {
+		ballot := types.Ciphertext{
+			K: []byte("fakeVoteK"),
+			C: []byte("fakeVoteC"),
+		}
+		js, _ := json.Marshal(ballot)
+		dummyElection.EncryptedBallots["user"+strconv.Itoa(i)] = js
+	}
+
+	jsElection, _ = json.Marshal(dummyElection)
+	_ = snap.Set([]byte("dummyId"), jsElection)
+	err = cmd.shuffleBallots(snap, makeStep(t, ShuffleBallotsArg, string(jsShuffleBallotsTransaction)))
+	require.EqualError(t, err, "failed to unmarshal K kyber.Point: invalid Ed25519 curve point")
+
+	for i := 0; i < k; i++ {
+		ballot := types.Ciphertext{
+			K: KsMarshalled[i],
+			C: []byte("fakeVoteC"),
+		}
+		js, _ := json.Marshal(ballot)
+		dummyElection.EncryptedBallots["user"+strconv.Itoa(i)] = js
+	}
+
+	jsElection, _ = json.Marshal(dummyElection)
+	_ = snap.Set([]byte("dummyId"), jsElection)
+	err = cmd.shuffleBallots(snap, makeStep(t, ShuffleBallotsArg, string(jsShuffleBallotsTransaction)))
+	require.EqualError(t, err, "failed to unmarshal C kyber.Point: invalid Ed25519 curve point")
+
+	for i := 0; i < k; i++ {
+		ballot := types.Ciphertext{
+			K: KsMarshalled[i],
+			C: CsMarshalled[i],
+		}
+		js, _ := json.Marshal(ballot)
+		dummyElection.EncryptedBallots["user"+strconv.Itoa(i)] = js
+	}
+
+	jsElection, _ = json.Marshal(dummyElection)
+	_ = snap.Set([]byte("dummyId"), jsElection)
+	err = cmd.shuffleBallots(snap, makeStep(t, ShuffleBallotsArg, string(jsShuffleBallotsTransaction)))
+	require.NoError(t, err)
+
+	dummyShuffleBallotsTransaction.Round = k
+	jsShuffleBallotsTransaction, _ = json.Marshal(dummyShuffleBallotsTransaction)
+
+	for i := 1; i <= k-1; i++ {
+		dummyElection.ShuffledBallots[i] = make([][]byte, 3)
+	}
+
+	for i := 0; i < k; i++ {
+		ballot := types.Ciphertext{
+			K: KsMarshalled[i],
+			C: CsMarshalled[i],
+		}
+		js, _ := json.Marshal(ballot)
+		dummyElection.ShuffledBallots[k-1][i] = js
+	}
+
+	jsElection, _ = json.Marshal(dummyElection)
+	_ = snap.Set([]byte("dummyId"), jsElection)
+	err = cmd.shuffleBallots(snap, makeStep(t, ShuffleBallotsArg, string(jsShuffleBallotsTransaction)))
+	require.NoError(t, err)
+
 }
 
 func TestCommand_DecryptBallots(t *testing.T) {

@@ -62,7 +62,6 @@ const (
 type Command string
 
 const (
-
 	CmdCreateElection Command = "CREATE_ELECTION"
 
 	CmdCastVote Command = "CAST_VOTE"
@@ -235,7 +234,7 @@ func (e evotingCommand) shuffleBallots(snap store.Snapshot, step execution.Step)
 		return xerrors.Errorf("failed to unmarshal ShuffleBallotsTransaction: %v", err)
 	}
 
-	// dela.Logger.Info().Msg(string(shuffleBallotsArg))
+	// todo : implement test for this
 	for _, tx := range step.Previous {
 
 		if string(tx.GetArg(native.ContractArg)) == ContractName {
@@ -285,24 +284,30 @@ func (e evotingCommand) shuffleBallots(snap store.Snapshot, step execution.Step)
 		ciphertext := new(types.Ciphertext)
 		err = json.NewDecoder(bytes.NewBuffer(v)).Decode(ciphertext)
 		if err != nil {
-			return xerrors.Errorf("failed to unmarshall Ciphertext: %v", err)
+			return xerrors.Errorf("failed to unmarshal Ciphertext: %v", err)
 		}
 
 		K := suite.Point()
 		err = K.UnmarshalBinary(ciphertext.K)
 		if err != nil {
-			return xerrors.Errorf("failed to unmarshall kyber.Point: %v", err)
+			return xerrors.Errorf("failed to unmarshal K kyber.Point: %v", err)
 		}
 
 		C := suite.Point()
 		err = C.UnmarshalBinary(ciphertext.C)
 		if err != nil {
-			return xerrors.Errorf("failed to unmarshall kyber.Point: %v", err)
+			return xerrors.Errorf("failed to unmarshal C kyber.Point: %v", err)
 		}
 
 		KsShuffled = append(KsShuffled, K)
 		CsShuffled = append(CsShuffled, C)
 
+	}
+
+	pubKey := suite.Point()
+	err = pubKey.UnmarshalBinary(election.Pubkey)
+	if err != nil {
+		return xerrors.Errorf("failed to unmarshal public key: %v", err)
 	}
 
 	Ks := make([]kyber.Point, 0, len(KsShuffled))
@@ -332,34 +337,28 @@ func (e evotingCommand) shuffleBallots(snap store.Snapshot, step execution.Step)
 		K := suite.Point()
 		err = K.UnmarshalBinary(ciphertext.K)
 		if err != nil {
-			return xerrors.Errorf("failed to unmarshal K: %v", err)
+			return xerrors.Errorf("failed to unmarshal K kyber.Point: %v", err)
 		}
 
 		C := suite.Point()
 		err = C.UnmarshalBinary(ciphertext.C)
 		if err != nil {
-			return xerrors.Errorf("failed to unmarshal C: %v", err)
+			return xerrors.Errorf("failed to unmarshal C kyber.Point: %v", err)
 		}
 
 		Ks = append(Ks, K)
 		Cs = append(Cs, C)
 	}
 
-	pubKey := suite.Point()
-	err = pubKey.UnmarshalBinary(election.Pubkey)
-	if err != nil {
-		return xerrors.Errorf("failed to unmarshal public key: %v", err)
-	}
-
 	// todo: add trusted nodes in election struct
 	verifier := shuffleKyber.Verifier(suite, nil, pubKey, Ks, Cs, KsShuffled, CsShuffled)
 
 	/*
-	fmt.Printf(" KS : %v", Ks)
-	fmt.Printf(" CS : %v", Cs)
-	fmt.Printf(" KsShuffled : %v", KsShuffled)
-	fmt.Printf(" CsShuffled : %v", CsShuffled)
-	 */
+		fmt.Printf(" KS : %v", Ks)
+		fmt.Printf(" CS : %v", Cs)
+		fmt.Printf(" KsShuffled : %v", KsShuffled)
+		fmt.Printf(" CsShuffled : %v", CsShuffled)
+	*/
 
 	err = proof.HashVerify(suite, protocolName, verifier, shuffleBallotsTransaction.Proof)
 	if err != nil {
