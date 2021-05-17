@@ -92,44 +92,6 @@ func (a *setupAction) Execute(ctx node.Context) error {
 	return nil
 }
 
-// exportInfoAction is an action to display a base64 string describing the node.
-// It can be used to transmit the identity of a node to another one.
-//
-// - implements node.ActionTemplate
-type exportInfoAction struct {
-}
-
-// Execute implements node.ActionTemplate. It looks for the node address and
-// public key and prints "$ADDR_BASE64:$PUBLIC_KEY_BASE64".
-func (a *exportInfoAction) Execute(ctx node.Context) error {
-	var m mino.Mino
-	err := ctx.Injector.Resolve(&m)
-	if err != nil {
-		return xerrors.Errorf("injector: %v", err)
-	}
-
-	addr, err := m.GetAddress().MarshalText()
-	if err != nil {
-		return xerrors.Errorf("failed to marshal address: %v", err)
-	}
-	var pubkey kyber.Point
-	err = ctx.Injector.Resolve(&pubkey)
-	if err != nil {
-		return xerrors.Errorf("injector: %v", err)
-	}
-
-	pubkeyMarshalled, err := pubkey.MarshalBinary()
-	if err != nil {
-		return xerrors.Errorf("failed to marshal public key: %v", err)
-	}
-
-	desc := base64.StdEncoding.EncodeToString(addr) + separator + base64.StdEncoding.EncodeToString(pubkeyMarshalled)
-
-	fmt.Fprint(ctx.Out, desc)
-
-	return nil
-}
-
 func (a setupAction) readMembers(ctx node.Context) (authority.Authority, error) {
 	members := ctx.Flags.StringSlice("member")
 
@@ -183,6 +145,45 @@ func decodeMember(ctx node.Context, str string) (mino.Address, crypto.PublicKey,
 	}
 
 	return addr, pubkey, nil
+}
+
+// exportInfoAction is an action to display a base64 string describing the node.
+// It can be used to transmit the identity of a node to another one.
+//
+// - implements node.ActionTemplate
+type exportInfoAction struct {
+}
+
+// Execute implements node.ActionTemplate. It looks for the node address and
+// public key and prints "$ADDR_BASE64:$PUBLIC_KEY_BASE64".
+func (a *exportInfoAction) Execute(ctx node.Context) error {
+	var m mino.Mino
+	err := ctx.Injector.Resolve(&m)
+	if err != nil {
+		return xerrors.Errorf("injector: %v", err)
+	}
+
+	addr, err := m.GetAddress().MarshalText()
+	if err != nil {
+		return xerrors.Errorf("failed to marshal address: %v", err)
+	}
+	var pubkey kyber.Point
+
+	err = ctx.Injector.Resolve(&pubkey)
+	if err != nil {
+		return xerrors.Errorf("injector: %v", err)
+	}
+
+	pubkeyMarshalled, err := pubkey.MarshalBinary()
+	if err != nil {
+		return xerrors.Errorf("failed to marshal public key: %v", err)
+	}
+
+	desc := base64.StdEncoding.EncodeToString(addr) + separator + base64.StdEncoding.EncodeToString(pubkeyMarshalled)
+
+	fmt.Fprint(ctx.Out, desc)
+
+	return nil
 }
 
 /* initHttpServerAction is an action to start an HTTP server handling the
