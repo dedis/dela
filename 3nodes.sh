@@ -27,4 +27,4 @@ memcoin --config /tmp/node1 dkg setup --member $(memcoin --config /tmp/node1 dkg
 memcoin --config /tmp/node1 shuffle init
 memcoin --config /tmp/node2 shuffle init
 memcoin --config /tmp/node3 shuffle init
-memcoin --config /tmp/node1 e-voting initHttpServer --portNumber 1000
+memcoin --config /tmp/node1 e-voting initHttpServer --portNumber 2000

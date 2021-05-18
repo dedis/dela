@@ -39,7 +39,7 @@ const loginEndPoint = "/evoting/login"
 const createElectionEndPoint = "/evoting/create"
 const castVoteEndpoint = "/evoting/cast"
 const getElectionInfoEndpoint = "/evoting/info"
-const getAllElectionsInfoEndpoint = "/evoting/info/all"
+const getAllElectionsInfoEndpoint = "/evoting/all"
 const closeElectionEndpoint = "/evoting/close"
 const shuffleBallotsEndpoint = "/evoting/shuffle"
 const decryptBallotsEndpoint = "/evoting/decrypt"
@@ -200,10 +200,12 @@ type GetElectionInfoRequest struct {
 }
 
 type GetElectionInfoResponse struct {
+	ElectionID string
 	Title            string
 	Candidates       []string
 	Status           uint16
 	Pubkey           []byte
+	Result  []types.SimpleBallot
 	//Success bool
 	//Error string
 }
@@ -463,6 +465,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			Candidates: simpleElection.Candidates,
 			Status:     uint16(simpleElection.Status),
 			Pubkey:     simpleElection.Pubkey,
+			Result: simpleElection.DecryptedBallots,
 		}
 
 		js, err := json.Marshal(response)
@@ -528,10 +531,12 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			}
 
 			info := GetElectionInfoResponse{
+				ElectionID: string(simpleElection.ElectionID),
 				Title:      simpleElection.Title,
 				Candidates: simpleElection.Candidates,
 				Status:     uint16(simpleElection.Status),
 				Pubkey:     simpleElection.Pubkey,
+				Result: simpleElection.DecryptedBallots,
 			}
 
 			allElectionsInfo = append(allElectionsInfo, info)
@@ -1107,6 +1112,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 					http.Error(w, err.Error(), http.StatusInternalServerError)
 					return
 				}
+				dela.Logger.Info().Msg("ShuffleProblem")
 				return
 			}
 		}
