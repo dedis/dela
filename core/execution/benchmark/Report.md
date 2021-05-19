@@ -112,8 +112,7 @@ We perform two series of experiment:
 1. **Increment**: in this series of experiment the smart contract increments
    the input it receives by 1.
 2. **Simple crypto**: in this series of experiment the smart contract performs a
-   simple operation on ed25519 elliptic curves. The smart contract takes two
-   points (A,B) and a scalar (S) in argument. It then performs (A+B)*S.
+   simple operation on ed25519 elliptic curves. The smart contract takes a scalar (s) in argument. It then performs `s*G`, where `G` is the ed25519 base point.
 
 ## Results
 
