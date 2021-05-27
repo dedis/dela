@@ -237,6 +237,14 @@ func TestCommand_CloseElection(t *testing.T) {
 	_ = snap.Set(dummyElectionIdBuff, jsElection)
 
 	err = cmd.closeElection(snap, makeStep(t, CloseElectionArg, string(jsCloseElectionTransaction)))
+	require.EqualError(t, err, "at least two ballots are required")
+
+	dummyElection.EncryptedBallots["dummyUser1"] = []byte("dummyBallot1")
+	dummyElection.EncryptedBallots["dummyUser2"] = []byte("dummyBallot2")
+	jsElection, _ = json.Marshal(dummyElection)
+	_ = snap.Set(dummyElectionIdBuff, jsElection)
+
+	err = cmd.closeElection(snap, makeStep(t, CloseElectionArg, string(jsCloseElectionTransaction)))
 	require.NoError(t, err)
 
 	res, err := snap.Get(dummyElectionIdBuff)
