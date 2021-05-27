@@ -88,6 +88,7 @@ type GetElectionInfoResponse struct {
 	Candidates []string
 	Status     uint16
 	Pubkey     []byte
+	Result     []Ballot
 }
 
 type GetAllElectionsInfoRequest struct {

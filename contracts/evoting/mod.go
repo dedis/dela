@@ -207,6 +207,10 @@ func (e evotingCommand) closeElection(snap store.Snapshot, step execution.Step) 
 		return xerrors.Errorf("the election is not open")
 	}
 
+	if len(election.EncryptedBallots) <= 1 {
+		return xerrors.Errorf("at least two ballots are required")
+	}
+
 	election.Status = types.Closed
 
 	js, err := json.Marshal(election)

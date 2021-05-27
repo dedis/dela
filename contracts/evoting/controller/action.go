@@ -347,6 +347,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			Candidates: election.Candidates,
 			Status:     uint16(election.Status),
 			Pubkey:     election.Pubkey,
+			Result:     election.DecryptedBallots,
 		}
 
 		js, err := json.Marshal(response)
@@ -427,6 +428,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 				Candidates: election.Candidates,
 				Status:     uint16(election.Status),
 				Pubkey:     election.Pubkey,
+				Result:     election.DecryptedBallots,
 			}
 
 			allElectionsInfo = append(allElectionsInfo, info)
