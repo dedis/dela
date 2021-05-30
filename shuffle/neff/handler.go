@@ -328,8 +328,9 @@ func (h *Handler) getClient() (*txnPoolController.Client, error) {
 
 	for nonce == 0 {
 		for _, txResult := range transactionResults {
-			status, _ := txResult.GetStatus()
-			if status && txResult.GetTransaction().GetNonce() > nonce {
+			_, msg := txResult.GetStatus()
+			// if status && txResult.GetTransaction().GetNonce() > nonce {
+			if !strings.Contains(msg, "nonce") && txResult.GetTransaction().GetNonce() > nonce {
 				nonce = txResult.GetTransaction().GetNonce()
 			}
 		}

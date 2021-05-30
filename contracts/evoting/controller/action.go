@@ -174,13 +174,6 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		/*
-			electionId := strconv.Itoa(a.ElectionIdNonce)
-			l := len(electionId)
-			for i := l; i < 32; i++ {
-				electionId = "0" + electionId
-			}*/
-
 		// random id
 		electionIDBuff := make([]byte, 32)
 		_, err = rand.Read(electionIDBuff)
@@ -1353,8 +1346,9 @@ func (a *initHttpServerAction) getClient(ctx node.Context) (*txnPoolController.C
 
 	for nonce == 0 {
 		for _, txResult := range transactionResults {
-			status, _ := txResult.GetStatus()
-			if status && txResult.GetTransaction().GetNonce() > nonce {
+			_, msg := txResult.GetStatus()
+			// if status && txResult.GetTransaction().GetNonce() > nonce {
+			if !strings.Contains(msg, "nonce") && txResult.GetTransaction().GetNonce() > nonce {
 				nonce = txResult.GetTransaction().GetNonce()
 			}
 		}
@@ -1566,6 +1560,49 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 
 	// ##################################### GET ELECTION INFO #################
 
+	dela.Logger.Info().Msg("----------------------- CLOSE ELECTION : ")
+
+	closeElectionRequest := types.CloseElectionRequest{
+		ElectionID: electionId,
+		UserId:     "adminId",
+		Token:      token,
+	}
+
+	js, err = json.Marshal(closeElectionRequest)
+	if err != nil {
+		return xerrors.Errorf("failed to set marshall types.SimpleElection : %v", err)
+	}
+
+	resp, err = http.Post(url+strconv.Itoa(1000)+closeElectionEndpoint, "application/json", bytes.NewBuffer(js))
+	if err != nil {
+		return xerrors.Errorf("failed retrieve the decryption from the server: %v", err)
+	}
+
+	body, err = io.ReadAll(resp.Body)
+	if err != nil {
+		return xerrors.Errorf("failed to read the body of the response: %v", err)
+	}
+
+	dela.Logger.Info().Msg("Response body : " + string(body))
+	resp.Body.Close()
+
+	proof, err = service.GetProof(electionIDBuff)
+	if err != nil {
+		return xerrors.Errorf("failed to read on the blockchain: %v", err)
+	}
+
+	election = new(types.Election)
+	err = json.NewDecoder(bytes.NewBuffer(proof.GetValue())).Decode(election)
+	if err != nil {
+		return xerrors.Errorf("failed to unmarshall SimpleElection : %v", err)
+	}
+
+	dela.Logger.Info().Msg("Title of the election : " + election.Title)
+	dela.Logger.Info().Msg("ID of the election : " + string(election.ElectionID))
+	dela.Logger.Info().Msg("Admin Id of the election : " + election.AdminId)
+	dela.Logger.Info().Msg("Status of the election : " + strconv.Itoa(int(election.Status)))
+
+
 	// ##################################### CAST BALLOTS ######################
 
 	dela.Logger.Info().Msg("----------------------- CAST BALLOTS : ")
@@ -1681,7 +1718,7 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 
 	dela.Logger.Info().Msg("----------------------- CLOSE ELECTION : ")
 
-	closeElectionRequest := types.CloseElectionRequest{
+	closeElectionRequest = types.CloseElectionRequest{
 		ElectionID: electionId,
 		UserId:     "adminId",
 		Token:      token,
