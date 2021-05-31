@@ -10,7 +10,7 @@ type CreateElectionRequest struct {
 	AdminId    string
 	Candidates []string
 	Token      string
-	PublicKey  []byte
+	PublicKey  string
 }
 
 type CreateElectionResponse struct {
@@ -87,7 +87,7 @@ type GetElectionInfoResponse struct {
 	Title      string
 	Candidates []string
 	Status     uint16
-	Pubkey     []byte
+	Pubkey     string
 	Result     []Ballot
 }
 

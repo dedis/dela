@@ -183,13 +183,18 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		}
 
 		electionId := hex.EncodeToString(electionIDBuff)
+		publicKey, err := hex.DecodeString(createElectionRequest.PublicKey)
+		if err != nil {
+			http.Error(w, "Failed to decode publicKey: " + err.Error(), http.StatusInternalServerError)
+			return
+		}
 
 		createElectionTransaction := types.CreateElectionTransaction{
 			ElectionID: electionId,
 			Title:      createElectionRequest.Title,
 			AdminId:    createElectionRequest.AdminId,
 			Candidates: createElectionRequest.Candidates,
-			PublicKey:  createElectionRequest.PublicKey,
+			PublicKey:  publicKey,
 		}
 
 		js, err := json.Marshal(createElectionTransaction)
@@ -339,7 +344,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			Title:      election.Title,
 			Candidates: election.Candidates,
 			Status:     uint16(election.Status),
-			Pubkey:     election.Pubkey,
+			Pubkey:     hex.EncodeToString(election.Pubkey),
 			Result:     election.DecryptedBallots,
 		}
 
@@ -420,7 +425,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 				Title:      election.Title,
 				Candidates: election.Candidates,
 				Status:     uint16(election.Status),
-				Pubkey:     election.Pubkey,
+				Pubkey:     hex.EncodeToString(election.Pubkey),
 				Result:     election.DecryptedBallots,
 			}
 
@@ -1458,7 +1463,7 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 		AdminId:    "adminId",
 		Candidates: nil,
 		Token:      "token",
-		PublicKey:  pubkeyBuf,
+		PublicKey:  hex.EncodeToString(pubkeyBuf),
 	}
 
 	js, err := json.Marshal(createSimpleElectionRequest)
