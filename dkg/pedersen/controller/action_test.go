@@ -151,6 +151,10 @@ func (f fakePedersen) Listen() (dkg.Actor, error) {
 	return nil, f.err
 }
 
+func (f fakePedersen) GetLastActor() (dkg.Actor, error) {
+	return nil, f.err
+}
+
 type fakeActor struct {
 	err    error
 	pubKey kyber.Point

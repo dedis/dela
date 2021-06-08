@@ -214,45 +214,30 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		for event := range events {
-			for _, res := range event.Transactions {
-				if !bytes.Equal(res.GetTransaction().GetID(), tx.GetID()) {
-					continue
-				}
-
-				dela.Logger.Debug().
-					Hex("id", tx.GetID()).
-					Msg("transaction included in the block")
-
-				accepted, msg := res.GetStatus()
-				if !accepted {
-					http.Error(w, "Transaction not accepted: "+msg, http.StatusInternalServerError)
-					return
-				}
-
-				a.ElectionIds = append(a.ElectionIds, electionId)
-
-				response := types.CreateElectionResponse{
-					ElectionID: electionId,
-				}
-
-				js, err := json.Marshal(response)
-				if err != nil {
-					http.Error(w, "Failed to marshal CreateElectionResponse: "+err.Error(), http.StatusInternalServerError)
-					return
-				}
-
-				w.Header().Set("Content-Type", "application/json")
-				_, err = w.Write(js)
-				if err != nil {
-					http.Error(w, "Failed to write in ResponseWriter: "+err.Error(), http.StatusInternalServerError)
-					return
-				}
-				return
-			}
+		accepted, errorMessage := checkTransactionInclusion(events, tx)
+		if !accepted {
+			http.Error(w, "Transaction not accepted: "+errorMessage, http.StatusInternalServerError)
+			return
 		}
 
-		http.Error(w, "Transaction not found in the block", http.StatusInternalServerError)
+		a.ElectionIds = append(a.ElectionIds, electionId)
+
+		response := types.CreateElectionResponse{
+			ElectionID: electionId,
+		}
+
+		js, err = json.Marshal(response)
+		if err != nil {
+			http.Error(w, "Failed to marshal CreateElectionResponse: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, err = w.Write(js)
+		if err != nil {
+			http.Error(w, "Failed to write in ResponseWriter: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 	})
 
 	http.HandleFunc(getElectionInfoEndpoint, func(w http.ResponseWriter, r *http.Request) {
@@ -477,42 +462,28 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		for event := range events {
-			for _, res := range event.Transactions {
-				if !bytes.Equal(res.GetTransaction().GetID(), tx.GetID()) {
-					continue
-				}
-
-				dela.Logger.Debug().
-					Hex("id", tx.GetID()).
-					Msg("transaction included in the block")
-
-				accepted, msg := res.GetStatus()
-				if !accepted {
-					http.Error(w, "Transaction not accepted: "+msg, http.StatusInternalServerError)
-					return
-				}
-
-				response := types.CastVoteResponse{
-				}
-
-				js, err := json.Marshal(response)
-				if err != nil {
-					http.Error(w, "Failed to marshal CastVoteResponse: "+err.Error(), http.StatusInternalServerError)
-					return
-				}
-
-				w.Header().Set("Content-Type", "application/json")
-				_, err = w.Write(js)
-				if err != nil {
-					http.Error(w, "Failed to write in ResponseWriter: "+err.Error(), http.StatusInternalServerError)
-					return
-				}
-				return
-			}
+		accepted, errorMessage := checkTransactionInclusion(events, tx)
+		if !accepted {
+			http.Error(w, "Transaction not accepted: "+errorMessage, http.StatusInternalServerError)
+			return
 		}
 
-		http.Error(w, "Transaction not found in the block", http.StatusInternalServerError)
+		response := types.CastVoteResponse{
+		}
+
+		js, err = json.Marshal(response)
+		if err != nil {
+			http.Error(w, "Failed to marshal CastVoteResponse: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, err = w.Write(js)
+		if err != nil {
+			http.Error(w, "Failed to write in ResponseWriter: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
 	})
 
 	http.HandleFunc(closeElectionEndpoint, func(w http.ResponseWriter, r *http.Request) {
@@ -587,44 +558,27 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		for event := range events {
-			for _, res := range event.Transactions {
-				if !bytes.Equal(res.GetTransaction().GetID(), tx.GetID()) {
-					continue
-				}
-
-				dela.Logger.Debug().
-					Hex("id", tx.GetID()).
-					Msg("transaction included in the block")
-
-				accepted, msg := res.GetStatus()
-				if !accepted {
-					http.Error(w, "Transaction not accepted: "+msg, http.StatusInternalServerError)
-					return
-				}
-
-				response := types.CloseElectionResponse{
-				}
-
-				js, err := json.Marshal(response)
-				if err != nil {
-					http.Error(w, "Failed to marshal CloseElectionResponse: "+err.Error(), http.StatusInternalServerError)
-					return
-				}
-
-				w.Header().Set("Content-Type", "application/json")
-				_, err = w.Write(js)
-				if err != nil {
-					http.Error(w, "Failed to write in ResponseWriter: "+err.Error(), http.StatusInternalServerError)
-					return
-				}
-
-				return
-			}
+		accepted, errorMessage := checkTransactionInclusion(events, tx)
+		if !accepted {
+			http.Error(w, "Transaction not accepted: "+errorMessage, http.StatusInternalServerError)
+			return
 		}
 
-		http.Error(w, "Transaction not found in the block", http.StatusInternalServerError)
+		response := types.CloseElectionResponse{
+		}
 
+		js, err = json.Marshal(response)
+		if err != nil {
+			http.Error(w, "Failed to marshal CloseElectionResponse: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, err = w.Write(js)
+		if err != nil {
+			http.Error(w, "Failed to write in ResponseWriter: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 	})
 
 	http.HandleFunc(shuffleBallotsEndpoint, func(w http.ResponseWriter, r *http.Request) {
@@ -897,43 +851,27 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		for event := range events {
-			for _, res := range event.Transactions {
-				if !bytes.Equal(res.GetTransaction().GetID(), tx.GetID()) {
-					continue
-				}
-
-				dela.Logger.Debug().
-					Hex("id", tx.GetID()).
-					Msg("transaction included in the block")
-
-				accepted, msg := res.GetStatus()
-				if !accepted {
-					http.Error(w, "Transaction not accepted: "+msg, http.StatusInternalServerError)
-					return
-				}
-
-				response := types.DecryptBallotsResponse{
-				}
-
-				js, err := json.Marshal(response)
-				if err != nil {
-					http.Error(w, "Failed to marshal DecryptBallotsResponse: "+err.Error(), http.StatusInternalServerError)
-					return
-				}
-
-				w.Header().Set("Content-Type", "application/json")
-				_, err = w.Write(js)
-				if err != nil {
-					http.Error(w, "Failed to write in ResponseWriter: "+err.Error(), http.StatusInternalServerError)
-					return
-				}
-				return
-			}
+		accepted, errorMessage := checkTransactionInclusion(events, tx)
+		if !accepted {
+			http.Error(w, "Transaction not accepted: "+errorMessage, http.StatusInternalServerError)
+			return
 		}
 
-		http.Error(w, "Transaction not found in the block", http.StatusInternalServerError)
+		response := types.DecryptBallotsResponse{
+		}
 
+		js, err = json.Marshal(response)
+		if err != nil {
+			http.Error(w, "Failed to marshal DecryptBallotsResponse: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, err = w.Write(js)
+		if err != nil {
+			http.Error(w, "Failed to write in ResponseWriter: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 	})
 
 	http.HandleFunc(getElectionResultEndpoint, func(w http.ResponseWriter, r *http.Request) {
@@ -1078,69 +1016,32 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		for event := range events {
-			for _, res := range event.Transactions {
-				if !bytes.Equal(res.GetTransaction().GetID(), tx.GetID()) {
-					continue
-				}
-
-				dela.Logger.Debug().
-					Hex("id", tx.GetID()).
-					Msg("transaction included in the block")
-
-				accepted, msg := res.GetStatus()
-				if !accepted {
-					http.Error(w, "Transaction not accepted: "+msg, http.StatusInternalServerError)
-					return
-				}
-
-				response := types.CancelElectionResponse{
-				}
-
-				js, err := json.Marshal(response)
-				if err != nil {
-					http.Error(w, "Failed to marshal CreateElectionResponse: "+err.Error(), http.StatusInternalServerError)
-					return
-				}
-
-				w.Header().Set("Content-Type", "application/json")
-				_, err = w.Write(js)
-				if err != nil {
-					http.Error(w, "Failed to write in ResponseWriter: "+err.Error(), http.StatusInternalServerError)
-					return
-				}
-				return
-			}
+		accepted, errorMessage := checkTransactionInclusion(events, tx)
+		if !accepted {
+			http.Error(w, "Transaction not accepted: "+errorMessage, http.StatusInternalServerError)
+			return
 		}
 
-		http.Error(w, "Transaction not found in the block", http.StatusInternalServerError)
+		response := types.CancelElectionResponse{
+		}
+
+		js, err = json.Marshal(response)
+		if err != nil {
+			http.Error(w, "Failed to marshal CreateElectionResponse: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, err = w.Write(js)
+		if err != nil {
+			http.Error(w, "Failed to write in ResponseWriter: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 	})
 
 	log.Fatal(http.ListenAndServe(":"+portNumber, nil))
 
 	return nil
-}
-
-func createTransaction(js []byte, manager txn.Manager, commandType evoting.Command, commandArg string) (txn.Transaction, error) {
-	args := make([]txn.Arg, 3)
-	args[0] = txn.Arg{
-		Key:   native.ContractArg,
-		Value: []byte(evoting.ContractName),
-	}
-	args[1] = txn.Arg{
-		Key:   evoting.CmdArg,
-		Value: []byte(commandType),
-	}
-	args[2] = txn.Arg{
-		Key:   commandArg,
-		Value: js,
-	}
-
-	tx, err := manager.Make(args...)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to create transaction from manager: %v", err)
-	}
-	return tx, nil
 }
 
 func (a *initHttpServerAction) getClient(ctx node.Context, signer crypto.Signer) (*txnPoolController.Client, error) {
@@ -1185,6 +1086,50 @@ func (a *initHttpServerAction) getClient(ctx node.Context, signer crypto.Signer)
 	client := &txnPoolController.Client{Nonce: nonce}
 
 	return client, nil
+}
+
+func createTransaction(js []byte, manager txn.Manager, commandType evoting.Command, commandArg string) (txn.Transaction, error) {
+	args := make([]txn.Arg, 3)
+	args[0] = txn.Arg{
+		Key:   native.ContractArg,
+		Value: []byte(evoting.ContractName),
+	}
+	args[1] = txn.Arg{
+		Key:   evoting.CmdArg,
+		Value: []byte(commandType),
+	}
+	args[2] = txn.Arg{
+		Key:   commandArg,
+		Value: js,
+	}
+
+	tx, err := manager.Make(args...)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to create transaction from manager: %v", err)
+	}
+	return tx, nil
+}
+
+func checkTransactionInclusion(events <-chan ordering.Event, transaction txn.Transaction) (bool, string) {
+	for event := range events {
+		for _, res := range event.Transactions {
+			if !bytes.Equal(res.GetTransaction().GetID(), transaction.GetID()) {
+				continue
+			}
+
+			dela.Logger.Debug().
+				Hex("id", transaction.GetID()).
+				Msg("transaction included in the block")
+
+			accepted, msg := res.GetStatus()
+			if !accepted {
+				dela.Logger.Info().Msg("transaction denied : " + msg)
+			}
+
+			return accepted, msg
+		}
+	}
+	return false, "transaction not found"
 }
 
 func decodeMember(address string, publicKey string, m mino.Mino) (mino.Address, crypto.PublicKey, error) {
