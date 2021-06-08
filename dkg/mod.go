@@ -10,6 +10,9 @@ type DKG interface {
 	// Listen starts the RPC. This function should be called on each node that
 	// wishes to participate in a DKG.
 	Listen() (Actor, error)
+
+	// GetActor allows to retrieve the last generated Actor
+	GetLastActor() (Actor, error)
 }
 
 // Actor defines the primitives to use a DKG protocol

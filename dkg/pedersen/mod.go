@@ -43,6 +43,7 @@ type Pedersen struct {
 	privKey kyber.Scalar
 	mino    mino.Mino
 	factory serde.Factory
+	actor   dkg.Actor
 }
 
 // NewPedersen returns a new DKG Pedersen factory
@@ -70,7 +71,17 @@ func (s *Pedersen) Listen() (dkg.Actor, error) {
 		startRes: h.startRes,
 	}
 
+	s.actor = a
+
 	return a, nil
+}
+
+func (s *Pedersen) GetLastActor() (dkg.Actor, error) {
+	if s.actor != nil {
+		return s.actor, nil
+	} else {
+		return nil, xerrors.Errorf("listen has not been called")
+	}
 }
 
 // Actor allows one to perform DKG operations like encrypt/decrypt a message

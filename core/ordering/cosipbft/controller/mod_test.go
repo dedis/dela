@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding"
+	"go.dedis.ch/dela/dkg"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -34,6 +35,7 @@ func TestMinimal_OnStart(t *testing.T) {
 	inj := node.NewInjector()
 	inj.Inject(fake.Mino{})
 	inj.Inject(db)
+	inj.Inject(fakeDKG{})
 
 	err = m.OnStart(flags, inj)
 	require.NoError(t, err)
@@ -56,6 +58,7 @@ func TestMinimal_FailLoadKey_OnStart(t *testing.T) {
 	inj := node.NewInjector()
 	inj.Inject(fake.Mino{})
 	inj.Inject(fake.NewInMemoryDB())
+	inj.Inject(fakeDKG{})
 
 	m.signerFn = badFn
 
@@ -72,6 +75,7 @@ func TestMinimal_MissingDB_OnStart(t *testing.T) {
 
 	inj := node.NewInjector()
 	inj.Inject(fake.Mino{})
+	inj.Inject(fakeDKG{})
 
 	err := m.OnStart(flags, inj)
 	require.EqualError(t, err, "injector: couldn't find dependency for 'kv.DB'")
@@ -86,6 +90,7 @@ func TestMinimal_MalformedKey_OnStart(t *testing.T) {
 	inj := node.NewInjector()
 	inj.Inject(fake.Mino{})
 	inj.Inject(fake.NewInMemoryDB())
+	inj.Inject(fakeDKG{})
 
 	file, err := os.Create(filepath.Join(dir, privateKeyFile))
 	require.NoError(t, err)
@@ -114,6 +119,7 @@ func TestMinimal_OnStop(t *testing.T) {
 	inj := node.NewInjector()
 	inj.Inject(fake.Mino{})
 	inj.Inject(db)
+	inj.Inject(fakeDKG{})
 
 	err = m.OnStart(fset, inj)
 	require.NoError(t, err)
@@ -155,6 +161,18 @@ func makeFlags(t *testing.T) (cli.Flags, string, func()) {
 
 func badFn() encoding.BinaryMarshaler {
 	return fake.NewBadHash()
+}
+
+type fakeDKG struct {
+	err error
+}
+
+func (f fakeDKG) Listen() (dkg.Actor, error) {
+	return nil, f.err
+}
+
+func (f fakeDKG) GetLastActor() (dkg.Actor, error) {
+	return nil, f.err
 }
 
 type fakePool struct {

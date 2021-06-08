@@ -10,6 +10,7 @@ import (
 	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/execution/native"
 	"go.dedis.ch/dela/core/store"
+	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/proof"
 	shuffleKyber "go.dedis.ch/kyber/v3/shuffle"
@@ -24,9 +25,11 @@ const messageOnlyOneShufflePerRound = "shuffle is already happening in this roun
 
 var suite = suites.MustFind("Ed25519")
 
+// TODO : the smart contract should create its own dkg Actor
+
 // commands defines the commands of the evoting contract.
 type commands interface {
-	createElection(snap store.Snapshot, step execution.Step) error
+	createElection(snap store.Snapshot, step execution.Step, dkgActor dkg.Actor) error
 	castVote(snap store.Snapshot, step execution.Step) error
 	closeElection(snap store.Snapshot, step execution.Step) error
 	shuffleBallots(snap store.Snapshot, step execution.Step) error
@@ -100,14 +103,17 @@ type Contract struct {
 
 	// cmd provides the commands that can be executed by this smart contract
 	cmd commands
+
+	pedersen dkg.DKG
 }
 
 // NewContract creates a new Value contract
-func NewContract(aKey []byte, srvc access.Service) Contract {
+func NewContract(aKey []byte, srvc access.Service, pedersen dkg.DKG) Contract {
 	contract := Contract{
 		// indexElection:     map[string]struct{}{},
 		access:    srvc,
 		accessKey: aKey,
+		pedersen:  pedersen,
 	}
 
 	contract.cmd = evotingCommand{Contract: &contract}
@@ -130,7 +136,11 @@ func (c Contract) Execute(snap store.Snapshot, step execution.Step) error {
 
 	switch Command(cmd) {
 	case CmdCreateElection:
-		err := c.cmd.createElection(snap, step)
+		dkgActor, err := c.pedersen.GetLastActor()
+		if err != nil {
+			return xerrors.Errorf("failed to get dkgActor: %v", err)
+		}
+		err = c.cmd.createElection(snap, step, dkgActor)
 		if err != nil {
 			return xerrors.Errorf("failed to create election: %v", err)
 		}
@@ -174,7 +184,7 @@ type evotingCommand struct {
 }
 
 // createElection implements commands. It performs the CREATE_ELECTION command
-func (e evotingCommand) createElection(snap store.Snapshot, step execution.Step) error {
+func (e evotingCommand) createElection(snap store.Snapshot, step execution.Step, dkgActor dkg.Actor) error {
 	createElectionArg := step.Current.GetArg(CreateElectionArg)
 	if len(createElectionArg) == 0 {
 		return xerrors.Errorf("'%s' not found in tx arg", CreateElectionArg)
@@ -186,13 +196,23 @@ func (e evotingCommand) createElection(snap store.Snapshot, step execution.Step)
 		return xerrors.Errorf("failed to unmarshal CreateElectionTransaction : %v", err)
 	}
 
+	publicKey, err := dkgActor.GetPublicKey()
+	if err != nil {
+		return xerrors.Errorf("failed to get dkg public key : %v", err)
+	}
+
+	publicKeyBuf, err := publicKey.MarshalBinary()
+	if err != nil {
+		return xerrors.Errorf("failed to marshall dkg public key : %v", err)
+	}
+
 	election := types.Election{
 		Title:            createElectionTransaction.Title,
 		ElectionID:       types.ID(createElectionTransaction.ElectionID),
 		AdminId:          createElectionTransaction.AdminId,
 		Candidates:       createElectionTransaction.Candidates,
 		Status:           types.Open,
-		Pubkey:           createElectionTransaction.PublicKey,
+		Pubkey:           publicKeyBuf,
 		EncryptedBallots: map[string][]byte{},
 		ShuffledBallots:  map[int][][]byte{},
 		Proofs:           map[int][]byte{},

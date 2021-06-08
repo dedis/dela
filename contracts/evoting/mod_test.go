@@ -14,19 +14,26 @@ import (
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/signed"
+	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/util/random"
 	"strconv"
 	"testing"
 )
 
 func TestExecute(t *testing.T) {
-	contract := NewContract([]byte{}, fakeAccess{err: fake.GetError()})
+	fakeDkg := fakeDKG{
+		actor: fakeDkgActor{},
+		err:   nil,
+	}
+	contract := NewContract([]byte{}, fakeAccess{err: fake.GetError()}, fakeDkg)
 
 	err := contract.Execute(fakeStore{}, makeStep(t))
 	require.EqualError(t, err, "identity not authorized: fake.PublicKey ("+fake.GetError().Error()+")")
 
-	contract = NewContract([]byte{}, fakeAccess{})
+	contract = NewContract([]byte{}, fakeAccess{}, fakeDkg)
 	err = contract.Execute(fakeStore{}, makeStep(t))
 	require.EqualError(t, err, "'evoting:command' not found in tx arg")
 
@@ -60,40 +67,48 @@ func TestExecute(t *testing.T) {
 }
 
 func TestCommand_CreateElection(t *testing.T) {
+	fakeActor := fakeDkgActor{
+		publicKey: suite.Point(),
+		err:       nil,
+	}
+
+	fakeDKG := fakeDKG{
+		actor: fakeActor,
+		err:   nil,
+	}
 
 	dummyCreateElectionTransaction := types.CreateElectionTransaction{
 		ElectionID: "dummyId",
 		Title:      "dummyTitle",
 		AdminId:    "dummyAdminId",
 		Candidates: []string{},
-		PublicKey:  []byte{},
 	}
 
 	js, _ := json.Marshal(dummyCreateElectionTransaction)
 
-	contract := NewContract([]byte{}, fakeAccess{})
+	contract := NewContract([]byte{}, fakeAccess{}, fakeDKG)
 
 	cmd := evotingCommand{
 		Contract: &contract,
 	}
 
-	err := cmd.createElection(fake.NewSnapshot(), makeStep(t))
+	err := cmd.createElection(fake.NewSnapshot(), makeStep(t), fakeActor)
 	require.EqualError(t, err, "'evoting:createElectionArgs' not found in tx arg")
 
-	err = cmd.createElection(fake.NewSnapshot(), makeStep(t, CreateElectionArg, "dummy"))
+	err = cmd.createElection(fake.NewSnapshot(), makeStep(t, CreateElectionArg, "dummy"), fakeActor)
 	require.EqualError(t, err, "failed to unmarshal CreateElectionTransaction : "+
 		"invalid character 'd' looking for beginning of value")
 
-	err = cmd.createElection(fake.NewBadSnapshot(), makeStep(t, CreateElectionArg, string(js)))
+	err = cmd.createElection(fake.NewBadSnapshot(), makeStep(t, CreateElectionArg, string(js)), fakeActor)
 	require.EqualError(t, err, "failed to decode ElectionID : encoding/hex: invalid byte: U+0075 'u'")
 
 	dummyCreateElectionTransaction.ElectionID = hex.EncodeToString([]byte("dummyId"))
 	js, _ = json.Marshal(dummyCreateElectionTransaction)
-	err = cmd.createElection(fake.NewBadSnapshot(), makeStep(t, CreateElectionArg, string(js)))
+	err = cmd.createElection(fake.NewBadSnapshot(), makeStep(t, CreateElectionArg, string(js)), fakeActor)
 	require.EqualError(t, err, fake.Err("failed to set value"))
 
 	snap := fake.NewSnapshot()
-	err = cmd.createElection(snap, makeStep(t, CreateElectionArg, string(js)))
+	err = cmd.createElection(snap, makeStep(t, CreateElectionArg, string(js)), fakeActor)
 	require.NoError(t, err)
 
 	dummyElectionIdBuff, _ := hex.DecodeString(dummyCreateElectionTransaction.ElectionID)
@@ -107,12 +122,15 @@ func TestCommand_CreateElection(t *testing.T) {
 	require.Equal(t, dummyCreateElectionTransaction.Title, election.Title)
 	require.Equal(t, dummyCreateElectionTransaction.AdminId, election.AdminId)
 	require.Equal(t, dummyCreateElectionTransaction.Candidates, election.Candidates)
-	require.Equal(t, dummyCreateElectionTransaction.PublicKey, election.Pubkey)
 	require.Equal(t, types.Open, int(election.Status))
 
 }
 
 func TestCommand_CastVote(t *testing.T) {
+	fakeDkg := fakeDKG{
+		actor: fakeDkgActor{},
+		err:   nil,
+	}
 
 	dummyElectionIdBuff, _ := hex.DecodeString("dummyId")
 
@@ -138,7 +156,7 @@ func TestCommand_CastVote(t *testing.T) {
 	}
 	jsElection, _ := json.Marshal(dummyElection)
 
-	contract := NewContract([]byte{}, fakeAccess{})
+	contract := NewContract([]byte{}, fakeAccess{}, fakeDkg)
 
 	cmd := evotingCommand{
 		Contract: &contract,
@@ -182,6 +200,10 @@ func TestCommand_CastVote(t *testing.T) {
 }
 
 func TestCommand_CloseElection(t *testing.T) {
+	fakeDkg := fakeDKG{
+		actor: fakeDkgActor{},
+		err:   nil,
+	}
 
 	dummyElectionIdBuff, _ := hex.DecodeString("dummyId")
 
@@ -206,7 +228,7 @@ func TestCommand_CloseElection(t *testing.T) {
 	}
 	jsElection, _ := json.Marshal(dummyElection)
 
-	contract := NewContract([]byte{}, fakeAccess{})
+	contract := NewContract([]byte{}, fakeAccess{}, fakeDkg)
 
 	cmd := evotingCommand{
 		Contract: &contract,
@@ -263,6 +285,10 @@ func TestCommand_CloseElection(t *testing.T) {
 }
 
 func TestCommand_ShuffleBallots(t *testing.T) {
+	fakeDkg := fakeDKG{
+		actor: fakeDkgActor{},
+		err:   nil,
+	}
 
 	dummyElectionIdBuff, _ := hex.DecodeString("dummyId")
 
@@ -291,7 +317,7 @@ func TestCommand_ShuffleBallots(t *testing.T) {
 	}
 	jsElection, _ := json.Marshal(dummyElection)
 
-	contract := NewContract([]byte{}, fakeAccess{})
+	contract := NewContract([]byte{}, fakeAccess{}, fakeDkg)
 
 	cmd := evotingCommand{
 		Contract: &contract,
@@ -472,6 +498,10 @@ func TestCommand_ShuffleBallots(t *testing.T) {
 }
 
 func TestCommand_DecryptBallots(t *testing.T) {
+	fakeDkg := fakeDKG{
+		actor: fakeDkgActor{},
+		err:   nil,
+	}
 
 	dummyElectionIdBuff, _ := hex.DecodeString("dummyId")
 
@@ -500,7 +530,7 @@ func TestCommand_DecryptBallots(t *testing.T) {
 	}
 	jsElection, _ := json.Marshal(dummyElection)
 
-	contract := NewContract([]byte{}, fakeAccess{})
+	contract := NewContract([]byte{}, fakeAccess{}, fakeDkg)
 
 	cmd := evotingCommand{
 		Contract: &contract,
@@ -551,6 +581,10 @@ func TestCommand_DecryptBallots(t *testing.T) {
 }
 
 func TestCommand_CancelElection(t *testing.T) {
+	fakeDkg := fakeDKG{
+		actor: fakeDkgActor{},
+		err:   nil,
+	}
 
 	dummyElectionIdBuff, _ := hex.DecodeString("dummyId")
 
@@ -575,7 +609,7 @@ func TestCommand_CancelElection(t *testing.T) {
 	}
 	jsElection, _ := json.Marshal(dummyElection)
 
-	contract := NewContract([]byte{}, fakeAccess{})
+	contract := NewContract([]byte{}, fakeAccess{}, fakeDkg)
 
 	cmd := evotingCommand{
 		Contract: &contract,
@@ -639,6 +673,44 @@ func makeTx(t *testing.T, args ...string) txn.Transaction {
 	return tx
 }
 
+type fakeDKG struct {
+	actor fakeDkgActor
+	err   error
+}
+
+func (f fakeDKG) Listen() (dkg.Actor, error) {
+	return f.actor, f.err
+}
+
+func (f fakeDKG) GetLastActor() (dkg.Actor, error) {
+	return f.actor, f.err
+}
+
+type fakeDkgActor struct {
+	publicKey kyber.Point
+	err       error
+}
+
+func (f fakeDkgActor) Setup(co crypto.CollectiveAuthority, threshold int) (pubKey kyber.Point, err error) {
+	return nil, f.err
+}
+
+func (f fakeDkgActor) GetPublicKey() (kyber.Point, error) {
+	return f.publicKey, f.err
+}
+
+func (f fakeDkgActor) Encrypt(message []byte) (K, C kyber.Point, remainder []byte, err error) {
+	return nil, nil, nil, f.err
+}
+
+func (f fakeDkgActor) Decrypt(K, C kyber.Point) ([]byte, error) {
+	return nil, f.err
+}
+
+func (f fakeDkgActor) Reshare() error {
+	return f.err
+}
+
 type fakeAccess struct {
 	access.Service
 
@@ -669,7 +741,7 @@ type fakeCmd struct {
 	err error
 }
 
-func (c fakeCmd) createElection(snap store.Snapshot, step execution.Step) error {
+func (c fakeCmd) createElection(snap store.Snapshot, step execution.Step, dkgActor dkg.Actor) error {
 	return c.err
 }
 

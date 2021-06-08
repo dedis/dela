@@ -184,24 +184,11 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		electionId := hex.EncodeToString(electionIDBuff)
 
-		publicKey, err := dkgActor.GetPublicKey()
-		if err != nil {
-			http.Error(w, "Failed to get publicKey: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		publicKeyBuf, err := publicKey.MarshalBinary()
-		if err != nil {
-			http.Error(w, "Failed to marshal publicKey: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
 		createElectionTransaction := types.CreateElectionTransaction{
 			ElectionID: electionId,
 			Title:      createElectionRequest.Title,
 			AdminId:    createElectionRequest.AdminId,
 			Candidates: createElectionRequest.Candidates,
-			PublicKey:  publicKeyBuf,
 		}
 
 		js, err := json.Marshal(createElectionTransaction)
@@ -1730,6 +1717,9 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	dela.Logger.Info().Msg("ID of the election : " + string(election.ElectionID))
 	dela.Logger.Info().Msg("Status of the election : " + strconv.Itoa(int(election.Status)))
 	dela.Logger.Info().Msg("Number of decrypted ballots : " + strconv.Itoa(len(election.DecryptedBallots)))
+	dela.Logger.Info().Msg(election.DecryptedBallots[0].Vote)
+	dela.Logger.Info().Msg(election.DecryptedBallots[1].Vote)
+	dela.Logger.Info().Msg(election.DecryptedBallots[2].Vote)
 
 	// ###################################### GET ELECTION RESULT ##############
 

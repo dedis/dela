@@ -5,7 +5,6 @@ type CreateElectionTransaction struct {
 	Title      string
 	AdminId    string
 	Candidates []string
-	PublicKey  []byte
 }
 
 type CastVoteTransaction struct {
