@@ -83,19 +83,29 @@ func TestHandler_StartShuffle(t *testing.T) {
 	}
 	handler.service = &badService
 
+	badDummyId := "dummyId"
 	startShuffle := types.NewStartShuffle(
 		1,
-		"dummyId",
+		badDummyId,
 		nil)
 
 	from := fake.NewAddress(0)
+
 	err := handler.HandleStartShuffleMessage(startShuffle, from, nil, nil)
+	require.EqualError(t, err, "failed to decode election id: encoding/hex: invalid byte: U+0075 'u'")
+
+	dummyId := hex.EncodeToString([]byte("dummyId"))
+	startShuffle = types.NewStartShuffle(
+		1,
+		dummyId,
+		nil)
+	err = handler.HandleStartShuffleMessage(startShuffle, from, nil, nil)
 	require.EqualError(t, err, "failed to read on the blockchain: "+"fake error")
 
 	service := FakeService{
 		err:        nil,
 		election:   "fakeElection",
-		electionId: "dummyId",
+		electionId: electionTypes.ID(dummyId),
 	}
 	handler.service = &service
 
@@ -104,7 +114,7 @@ func TestHandler_StartShuffle(t *testing.T) {
 
 	election := electionTypes.Election{
 		Title:            "dummyTitle",
-		ElectionID:       "dummyId",
+		ElectionID:       electionTypes.ID(dummyId),
 		AdminId:          "dummyAdminId",
 		Candidates:       nil,
 		Status:           0,
@@ -119,7 +129,7 @@ func TestHandler_StartShuffle(t *testing.T) {
 	service = FakeService{
 		err:        nil,
 		election:   election,
-		electionId: "dummyId",
+		electionId: electionTypes.ID(dummyId),
 	}
 	handler.service = &service
 
@@ -132,7 +142,7 @@ func TestHandler_StartShuffle(t *testing.T) {
 	service = FakeService{
 		err:        nil,
 		election:   election,
-		electionId: "dummyId",
+		electionId: electionTypes.ID(dummyId),
 	}
 
 	handler.service = &service
@@ -153,7 +163,7 @@ func TestHandler_StartShuffle(t *testing.T) {
 	service = FakeService{
 		err:        nil,
 		election:   election,
-		electionId: "dummyId",
+		electionId: electionTypes.ID(dummyId),
 	}
 
 	handler.service = &service
@@ -172,7 +182,7 @@ func TestHandler_StartShuffle(t *testing.T) {
 	service = FakeService{
 		err:        nil,
 		election:   election,
-		electionId: "dummyId",
+		electionId: electionTypes.ID(dummyId),
 	}
 
 	handler.service = &service
@@ -192,7 +202,7 @@ func TestHandler_StartShuffle(t *testing.T) {
 	service = FakeService{
 		err:        nil,
 		election:   election,
-		electionId: "dummyId",
+		electionId: electionTypes.ID(dummyId),
 	}
 
 	handler.service = &service
@@ -206,7 +216,7 @@ func TestHandler_StartShuffle(t *testing.T) {
 	service = FakeService{
 		err:        nil,
 		election:   election,
-		electionId: "dummyId",
+		electionId: electionTypes.ID(dummyId),
 	}
 
 	handler.service = &service
@@ -246,7 +256,7 @@ func TestHandler_StartShuffle(t *testing.T) {
 	service = FakeService{
 		err:        nil,
 		election:   election,
-		electionId: "dummyId",
+		electionId: electionTypes.ID(dummyId),
 		pool:       &badPool,
 	}
 	handler.service = &service
@@ -258,7 +268,7 @@ func TestHandler_StartShuffle(t *testing.T) {
 	service = FakeService{
 		err:        nil,
 		election:   election,
-		electionId: "dummyId",
+		electionId: electionTypes.ID(dummyId),
 		pool:       &fakePool,
 		status:     true,
 	}
@@ -268,7 +278,7 @@ func TestHandler_StartShuffle(t *testing.T) {
 
 	startShuffle = types.NewStartShuffle(
 		1,
-		"dummyId",
+		dummyId,
 		[]mino.Address{fake.NewAddress(0), fake.NewAddress(1)})
 
 	badSender := fake.NewBadSender()
@@ -282,7 +292,7 @@ func TestHandler_StartShuffle(t *testing.T) {
 
 	startShuffle = types.NewStartShuffle(
 		2,
-		"dummyId",
+		dummyId,
 		[]mino.Address{fake.NewAddress(0), fake.NewAddress(1)})
 
 	badReceiver := fake.NewBadReceiver()
@@ -301,14 +311,14 @@ func TestHandler_StartShuffle(t *testing.T) {
 	handler.service = &service
 	startShuffle = types.NewStartShuffle(
 		1,
-		"dummyId",
+		dummyId,
 		[]mino.Address{fake.NewAddress(0), fake.NewAddress(1)})
 	err = handler.HandleStartShuffleMessage(startShuffle, from, fakeSender, fakeReceiver)
 	require.EqualError(t, err, "failed to shuffle, all your transactions got denied")
 
 	startShuffle = types.NewStartShuffle(
 		2,
-		"dummyId",
+		dummyId,
 		[]mino.Address{fake.NewAddress(0), fake.NewAddress(1)})
 
 	for _, value := range election.EncryptedBallots {
@@ -319,7 +329,7 @@ func TestHandler_StartShuffle(t *testing.T) {
 	service = FakeService{
 		err:        nil,
 		election:   election,
-		electionId: "dummyId",
+		electionId: electionTypes.ID(dummyId),
 		pool:       &fakePool,
 		status:     false,
 	}

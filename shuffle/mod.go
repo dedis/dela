@@ -5,14 +5,14 @@ import (
 	"go.dedis.ch/kyber/v3"
 )
 
-// SHUFFLE defines the primitive to start a SHUFFLE protocol
-type SHUFFLE interface {
+// Shuffle defines the primitive to start a shuffle protocol
+type Shuffle interface {
 	// Listen starts the RPC. This function should be called on each node that
-	// wishes to participate in a SHUFFLE.
+	// wishes to participate in a shuffle.
 	Listen() (Actor, error)
 }
 
-// Actor defines the primitives to use a DKG protocol
+// Actor defines the primitives to use a shuffle protocol
 type Actor interface {
 
 	// Shuffle must be called by ONE of the actor to shuffle the list of ElGamal
@@ -20,7 +20,7 @@ type Actor interface {
 	// Each node represented by a player must first execute Listen().
 	Shuffle(co crypto.CollectiveAuthority, electionId string) (err error)
 
-	// Verify allows to verify a Shuffle
+	// Verify allows to verify a shuffle
 	Verify(suiteName string, Ks []kyber.Point, Cs []kyber.Point, pubKey kyber.Point, KsShuffled []kyber.Point,
 		CsShuffled []kyber.Point, proof []byte) (err error)
 }

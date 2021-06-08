@@ -55,6 +55,7 @@ type ShuffleBallotsRequest struct {
 }
 
 type ShuffleBallotsResponse struct {
+	Message string
 }
 
 type DecryptBallotsRequest struct {

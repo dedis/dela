@@ -114,7 +114,7 @@ func (a setupAction) readMembers(ctx node.Context) (authority.Authority, error) 
 func decodeMember(ctx node.Context, str string) (mino.Address, crypto.PublicKey, error) {
 	parts := strings.Split(str, separator)
 	if len(parts) != 2 {
-		return nil, nil, xerrors.New("invalid member base64 string")
+		return nil, nil, xerrors.Errorf("invalid member base64 string '%s'", str)
 	}
 
 	// 1. Deserialize the address.

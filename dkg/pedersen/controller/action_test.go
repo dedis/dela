@@ -54,7 +54,7 @@ func TestSetupAction_Execute(t *testing.T) {
 	ctx.Flags = flags
 
 	err := action.Execute(ctx)
-	require.EqualError(t, err, "failed to read roster: failed to decode: invalid member base64 string")
+	require.EqualError(t, err, "failed to read roster: failed to decode: invalid member base64 string 'badAddress'")
 
 	flags.strings["member"] = []string{"badAddress:badKey"}
 	ctx.Flags = flags

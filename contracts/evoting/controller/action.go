@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"github.com/satori/go.uuid"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cli/node"
@@ -55,7 +56,7 @@ const cancelElectionEndpoint = "/evoting/cancel"
 
 const token = "token"
 const signerFilePath = "private.key"
-const createElectionTimeout = 2 * time.Second
+const inclusionTimeout = 2 * time.Second
 
 var suite = suites.MustFind("Ed25519")
 
@@ -81,9 +82,24 @@ type initHttpServerAction struct {
 func (a *initHttpServerAction) Execute(ctx node.Context) error {
 	portNumber := ctx.Flags.String("portNumber")
 
-	http.HandleFunc(loginEndPoint, func(w http.ResponseWriter, r *http.Request) {
+	signer, err := getSigner(signerFilePath)
+	if err != nil {
+		return xerrors.Errorf("failed to get the signer: %v", err)
+	}
 
-		// time.Sleep(1 * time.Second)
+	var p pool.Pool
+	err = ctx.Injector.Resolve(&p)
+	if err != nil {
+		return xerrors.Errorf("failed to resolve pool.Pool: %v", err)
+	}
+
+	var service ordering.Service
+	err = ctx.Injector.Resolve(&service)
+	if err != nil {
+		return xerrors.Errorf("failed to resolve ordering.Service: %v", err)
+	}
+
+	http.HandleFunc(loginEndPoint, func(w http.ResponseWriter, r *http.Request) {
 
 		a.Lock()
 		defer a.Unlock()
@@ -138,29 +154,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		var p pool.Pool
-		err = ctx.Injector.Resolve(&p)
-		if err != nil {
-			http.Error(w, "Failed to resolve pool.Pool: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		signer, err := getSigner(signerFilePath)
-		if err != nil {
-			http.Error(w, "Failed to get Signer: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		/*
-			var client *txnPoolController.Client
-			err = ctx.Injector.Resolve(&client)
-			if err != nil {
-				http.Error(w, "Failed to resolve txn pool controller Client: " +
-			err.Error(), http.StatusInternalServerError)
-				return
-			}*/
-
-		client, err := a.getClient(ctx)
+		client, err := a.getClient(ctx, signer)
 		if err != nil {
 			http.Error(w, "Failed to get Client: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -185,7 +179,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		electionId := hex.EncodeToString(electionIDBuff)
 		publicKey, err := hex.DecodeString(createElectionRequest.PublicKey)
 		if err != nil {
-			http.Error(w, "Failed to decode publicKey: " + err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to decode publicKey: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -203,34 +197,13 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		args := make([]txn.Arg, 3)
-		args[0] = txn.Arg{
-			Key:   native.ContractArg,
-			Value: []byte(evoting.ContractName),
-		}
-		args[1] = txn.Arg{
-			Key:   evoting.CmdArg,
-			Value: []byte(evoting.CmdCreateElection),
-		}
-		args[2] = txn.Arg{
-			Key:   evoting.CreateElectionArg,
-			Value: js,
-		}
-
-		tx, err := manager.Make(args...)
+		tx, err := createTransaction(js, manager, evoting.CmdCreateElection, evoting.CreateElectionArg)
 		if err != nil {
-			http.Error(w, "Failed to create transaction: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to create transaction: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		var service ordering.Service
-		err = ctx.Injector.Resolve(&service)
-		if err != nil {
-			http.Error(w, "Failed to resolve ordering.Service: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		watchCtx, cancel := context.WithTimeout(context.Background(), createElectionTimeout)
+		watchCtx, cancel := context.WithTimeout(context.Background(), inclusionTimeout)
 		defer cancel()
 
 		events := service.Watch(watchCtx)
@@ -284,8 +257,6 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 	http.HandleFunc(getElectionInfoEndpoint, func(w http.ResponseWriter, r *http.Request) {
 
-		// time.Sleep(1 * time.Second)
-
 		a.Lock()
 		defer a.Unlock()
 
@@ -311,13 +282,6 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		if !contains(a.ElectionIds, getElectionInfoRequest.ElectionID) {
 			http.Error(w, "The election does not exist", http.StatusNotFound)
-			return
-		}
-
-		var service ordering.Service
-		err = ctx.Injector.Resolve(&service)
-		if err != nil {
-			http.Error(w, "Failed to resolve ordering.Service: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -365,8 +329,6 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 	http.HandleFunc(getAllElectionsInfoEndpoint, func(w http.ResponseWriter, r *http.Request) {
 
-		// time.Sleep(1 * time.Second)
-
 		a.Lock()
 		defer a.Unlock()
 
@@ -387,13 +349,6 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		if getAllElectionsInfoRequest.Token != token {
 			http.Error(w, "Invalid token", http.StatusUnauthorized)
-			return
-		}
-
-		var service ordering.Service
-		err = ctx.Injector.Resolve(&service)
-		if err != nil {
-			http.Error(w, "Failed to resolve ordering.Service: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -451,8 +406,6 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 	http.HandleFunc(castVoteEndpoint, func(w http.ResponseWriter, r *http.Request) {
 
-		// time.Sleep(1 * time.Second)
-
 		a.Lock()
 		defer a.Unlock()
 
@@ -481,20 +434,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		var p pool.Pool
-		err = ctx.Injector.Resolve(&p)
-		if err != nil {
-			http.Error(w, "Failed to resolve pool.Pool: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		signer, err := getSigner(signerFilePath)
-		if err != nil {
-			http.Error(w, "Failed to get Signer: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		client, err := a.getClient(ctx)
+		client, err := a.getClient(ctx, signer)
 		if err != nil {
 			http.Error(w, "Failed to get Client: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -520,34 +460,13 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		args := make([]txn.Arg, 3)
-		args[0] = txn.Arg{
-			Key:   native.ContractArg,
-			Value: []byte(evoting.ContractName),
-		}
-		args[1] = txn.Arg{
-			Key:   evoting.CmdArg,
-			Value: []byte(evoting.CmdCastVote),
-		}
-		args[2] = txn.Arg{
-			Key:   evoting.CastVoteArg,
-			Value: js,
-		}
-
-		tx, err := manager.Make(args...)
+		tx, err := createTransaction(js, manager, evoting.CmdCastVote, evoting.CastVoteArg)
 		if err != nil {
-			http.Error(w, "Failed to create transaction: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to create transaction: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		var service ordering.Service
-		err = ctx.Injector.Resolve(&service)
-		if err != nil {
-			http.Error(w, "Failed to resolve ordering.Service: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		watchCtx, cancel := context.WithTimeout(context.Background(), createElectionTimeout)
+		watchCtx, cancel := context.WithTimeout(context.Background(), inclusionTimeout)
 		defer cancel()
 
 		events := service.Watch(watchCtx)
@@ -598,8 +517,6 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 	http.HandleFunc(closeElectionEndpoint, func(w http.ResponseWriter, r *http.Request) {
 
-		// time.Sleep(1 * time.Second)
-
 		a.Lock()
 		defer a.Unlock()
 
@@ -628,20 +545,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		var p pool.Pool
-		err = ctx.Injector.Resolve(&p)
-		if err != nil {
-			http.Error(w, "Failed to resolve pool.Pool: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		signer, err := getSigner(signerFilePath)
-		if err != nil {
-			http.Error(w, "Failed to get Signer: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		client, err := a.getClient(ctx)
+		client, err := a.getClient(ctx, signer)
 		if err != nil {
 			http.Error(w, "Failed to get Client: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -666,34 +570,13 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		args := make([]txn.Arg, 3)
-		args[0] = txn.Arg{
-			Key:   native.ContractArg,
-			Value: []byte(evoting.ContractName),
-		}
-		args[1] = txn.Arg{
-			Key:   evoting.CmdArg,
-			Value: []byte(evoting.CmdCloseElection),
-		}
-		args[2] = txn.Arg{
-			Key:   evoting.CloseElectionArg,
-			Value: js,
-		}
-
-		tx, err := manager.Make(args...)
+		tx, err := createTransaction(js, manager, evoting.CmdCloseElection, evoting.CloseElectionArg)
 		if err != nil {
-			http.Error(w, "Failed to create transaction: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to create transaction: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		var service ordering.Service
-		err = ctx.Injector.Resolve(&service)
-		if err != nil {
-			http.Error(w, "Failed to resolve Service: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		watchCtx, cancel := context.WithTimeout(context.Background(), createElectionTimeout)
+		watchCtx, cancel := context.WithTimeout(context.Background(), inclusionTimeout)
 		defer cancel()
 
 		events := service.Watch(watchCtx)
@@ -746,8 +629,6 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 	http.HandleFunc(shuffleBallotsEndpoint, func(w http.ResponseWriter, r *http.Request) {
 
-		// time.Sleep(1 * time.Second)
-
 		a.Lock()
 		defer a.Unlock()
 
@@ -773,13 +654,6 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		if !contains(a.ElectionIds, shuffleBallotsRequest.ElectionID) {
 			http.Error(w, "The election does not exist", http.StatusNotFound)
-			return
-		}
-
-		var service ordering.Service
-		err = ctx.Injector.Resolve(&service)
-		if err != nil {
-			http.Error(w, "Failed to resolve ordering.Service: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -855,6 +729,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		}
 
 		response := types.ShuffleBallotsResponse{
+			Message: fmt.Sprintf("shuffle started for nodes %v", addrs),
 		}
 
 		js, err := json.Marshal(response)
@@ -873,8 +748,6 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 	})
 
 	http.HandleFunc(decryptBallotsEndpoint, func(w http.ResponseWriter, r *http.Request) {
-
-		// time.Sleep(1 * time.Second)
 
 		a.Lock()
 		defer a.Unlock()
@@ -901,13 +774,6 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		if !contains(a.ElectionIds, decryptBallotsRequest.ElectionID) {
 			http.Error(w, "The election does not exist", http.StatusNotFound)
-			return
-		}
-
-		var service ordering.Service
-		err = ctx.Injector.Resolve(&service)
-		if err != nil {
-			http.Error(w, "Failed to resolve ordering.Service: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -989,20 +855,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			decryptedBallots = append(decryptedBallots, types.Ballot{Vote: string(message)})
 		}
 
-		var p pool.Pool
-		err = ctx.Injector.Resolve(&p)
-		if err != nil {
-			http.Error(w, "Failed to resolve pool.Pool: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		signer, err := getSigner(signerFilePath)
-		if err != nil {
-			http.Error(w, "Failed to get Signer: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		client, err := a.getClient(ctx)
+		client, err := a.getClient(ctx, signer)
 		if err != nil {
 			http.Error(w, "Failed to get Client: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -1028,23 +881,9 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		args := make([]txn.Arg, 3)
-		args[0] = txn.Arg{
-			Key:   native.ContractArg,
-			Value: []byte(evoting.ContractName),
-		}
-		args[1] = txn.Arg{
-			Key:   evoting.CmdArg,
-			Value: []byte(evoting.CmdDecryptBallots),
-		}
-		args[2] = txn.Arg{
-			Key:   evoting.DecryptBallotsArg,
-			Value: js,
-		}
-
-		tx, err := manager.Make(args...)
+		tx, err := createTransaction(js, manager, evoting.CmdDecryptBallots, evoting.DecryptBallotsArg)
 		if err != nil {
-			http.Error(w, "Failed to create transaction: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to create transaction: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -1054,7 +893,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		watchCtx, cancel := context.WithTimeout(context.Background(), createElectionTimeout)
+		watchCtx, cancel := context.WithTimeout(context.Background(), inclusionTimeout)
 		defer cancel()
 
 		events := service.Watch(watchCtx)
@@ -1106,8 +945,6 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 	http.HandleFunc(getElectionResultEndpoint, func(w http.ResponseWriter, r *http.Request) {
 
-		// time.Sleep(1 * time.Second)
-
 		a.Lock()
 		defer a.Unlock()
 
@@ -1133,13 +970,6 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 		if !contains(a.ElectionIds, getElectionResultRequest.ElectionID) {
 			http.Error(w, "The election does not exist", http.StatusNotFound)
-			return
-		}
-
-		var service ordering.Service
-		err = ctx.Injector.Resolve(&service)
-		if err != nil {
-			http.Error(w, "Failed to resolve ordering.Service: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -1185,8 +1015,6 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 
 	http.HandleFunc(cancelElectionEndpoint, func(w http.ResponseWriter, r *http.Request) {
 
-		// time.Sleep(1 * time.Second)
-
 		a.Lock()
 		defer a.Unlock()
 
@@ -1215,20 +1043,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		var p pool.Pool
-		err = ctx.Injector.Resolve(&p)
-		if err != nil {
-			http.Error(w, "Failed to resolve pool.Pool: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		signer, err := getSigner(signerFilePath)
-		if err != nil {
-			http.Error(w, "Failed to get Signer: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		client, err := a.getClient(ctx)
+		client, err := a.getClient(ctx, signer)
 		if err != nil {
 			http.Error(w, "Failed to get Client: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -1253,34 +1068,13 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		args := make([]txn.Arg, 3)
-		args[0] = txn.Arg{
-			Key:   native.ContractArg,
-			Value: []byte(evoting.ContractName),
-		}
-		args[1] = txn.Arg{
-			Key:   evoting.CmdArg,
-			Value: []byte(evoting.CmdCancelElection),
-		}
-		args[2] = txn.Arg{
-			Key:   evoting.CancelElectionArg,
-			Value: js,
-		}
-
-		tx, err := manager.Make(args...)
+		tx, err := createTransaction(js, manager, evoting.CmdCancelElection, evoting.CancelElectionArg)
 		if err != nil {
-			http.Error(w, "Failed to create transaction: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to create transaction: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		var service ordering.Service
-		err = ctx.Injector.Resolve(&service)
-		if err != nil {
-			http.Error(w, "Failed to resolve ordering.Service: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		watchCtx, cancel := context.WithTimeout(context.Background(), createElectionTimeout)
+		watchCtx, cancel := context.WithTimeout(context.Background(), inclusionTimeout)
 		defer cancel()
 
 		events := service.Watch(watchCtx)
@@ -1334,7 +1128,29 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 	return nil
 }
 
-func (a *initHttpServerAction) getClient(ctx node.Context) (*txnPoolController.Client, error) {
+func createTransaction(js []byte, manager txn.Manager, commandType evoting.Command, commandArg string) (txn.Transaction, error) {
+	args := make([]txn.Arg, 3)
+	args[0] = txn.Arg{
+		Key:   native.ContractArg,
+		Value: []byte(evoting.ContractName),
+	}
+	args[1] = txn.Arg{
+		Key:   evoting.CmdArg,
+		Value: []byte(commandType),
+	}
+	args[2] = txn.Arg{
+		Key:   commandArg,
+		Value: js,
+	}
+
+	tx, err := manager.Make(args...)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to create transaction from manager: %v", err)
+	}
+	return tx, nil
+}
+
+func (a *initHttpServerAction) getClient(ctx node.Context, signer crypto.Signer) (*txnPoolController.Client, error) {
 	var blocks *blockstore.InDisk
 	err := ctx.Injector.Resolve(&blocks)
 	if err != nil {
@@ -1352,8 +1168,8 @@ func (a *initHttpServerAction) getClient(ctx node.Context) (*txnPoolController.C
 	for nonce == 0 {
 		for _, txResult := range transactionResults {
 			_, msg := txResult.GetStatus()
-			// if status && txResult.GetTransaction().GetNonce() > nonce {
-			if !strings.Contains(msg, "nonce") && txResult.GetTransaction().GetNonce() > nonce {
+			if !strings.Contains(msg, "nonce") && txResult.GetTransaction().GetNonce() > nonce &&
+				txResult.GetTransaction().GetIdentity().Equal(signer.GetPublicKey()) {
 				nonce = txResult.GetTransaction().GetNonce()
 			}
 		}
@@ -1606,7 +1422,6 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 	dela.Logger.Info().Msg("ID of the election : " + string(election.ElectionID))
 	dela.Logger.Info().Msg("Admin Id of the election : " + election.AdminId)
 	dela.Logger.Info().Msg("Status of the election : " + strconv.Itoa(int(election.Status)))
-
 
 	// ##################################### CAST BALLOTS ######################
 

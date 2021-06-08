@@ -37,7 +37,8 @@ func (m controller) SetCommands(builder node.Builder) {
 	sub.SetAction(builder.MakeAction(&initAction{}))
 }
 
-// OnStart implements node.Initializer. It creates and registers a pedersen DKG.
+// OnStart implements node.Initializer. It creates and registers a neff
+// Shuffling.
 func (m controller) OnStart(ctx cli.Flags, inj node.Injector) error {
 	var no mino.Mino
 	err := inj.Resolve(&no)
@@ -63,12 +64,10 @@ func (m controller) OnStart(ctx cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("failed to resolve blockstore.InDisk: %v", err)
 	}
 
-	signer, _ := getSigner(signerFilePath)
-	// Todo : ask noémien and gaurav how to handle this
-	/*
-		if err != nil {
-			// return xerrors.Errorf("failed to getSigner: %v", err)
-		}*/
+	signer, err := getSigner(signerFilePath)
+	if err != nil {
+		// return xerrors.Errorf("failed to getSigner: %v", err)
+	}
 
 	neffShuffle := neff.NewNeffShuffle(no, service, p, blocks, signer)
 

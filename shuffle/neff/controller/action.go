@@ -16,18 +16,17 @@ type initAction struct {
 // Execute implements node.ActionTemplate. It creates an actor from
 // the neffShuffle instance
 func (a *initAction) Execute(ctx node.Context) error {
-	var neffShuffle shuffle.SHUFFLE
+	var neffShuffle shuffle.Shuffle
 	err := ctx.Injector.Resolve(&neffShuffle)
 	if err != nil {
 		return xerrors.Errorf("failed to resolve shuffle: %v", err)
 	}
 
-	actor, _ := neffShuffle.Listen()
+	actor, err := neffShuffle.Listen()
 
-	/* if err != nil {
-		return xerrors.Errorf("failed to initialize the neff shuffle
-	protocol: %v", err)
-	} */
+	if err != nil {
+		return xerrors.Errorf("failed to initialize the neff shuffle	protocol: %v", err)
+	}
 
 	ctx.Injector.Inject(actor)
 	dela.Logger.Info().Msg("The shuffle protocol has been initialized successfully")

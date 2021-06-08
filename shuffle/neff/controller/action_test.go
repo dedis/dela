@@ -21,7 +21,7 @@ func TestInitAction_Execute(t *testing.T) {
 	action := initAction{}
 
 	err := action.Execute(ctx)
-	require.EqualError(t, err, "failed to resolve shuffle: couldn't find dependency for 'shuffle.SHUFFLE'")
+	require.EqualError(t, err, "failed to resolve shuffle: couldn't find dependency for 'shuffle.Shuffle'")
 
 	ctx.Injector.Inject(neff.NewNeffShuffle(fake.Mino{}, fakeService{}, fakePool{}, &blockstore.InDisk{}, fake.NewSigner()))
 	err = action.Execute(ctx)

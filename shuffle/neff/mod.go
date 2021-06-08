@@ -16,7 +16,6 @@ import (
 	"go.dedis.ch/kyber/v3/suites"
 	"golang.org/x/net/context"
 	"golang.org/x/xerrors"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -60,8 +59,7 @@ func (n NeffShuffle) Listen() (shuffle.Actor, error) {
 	a := &Actor{
 		rpc:     mino.MustCreateRPC(n.mino, "shuffle", h, n.factory),
 		factory: n.factory,
-		// startRes: h.startRes,
-		mino: n.mino,
+		mino:    n.mino,
 	}
 
 	return a, nil
@@ -109,7 +107,7 @@ func (a *Actor) Shuffle(co crypto.CollectiveAuthority, electionId string) (err e
 
 	threshold := len(addrs)
 	message := types.NewStartShuffle(threshold, electionId, addrs)
-	dela.Logger.Info().Msg("threshold: " + strconv.Itoa(threshold))
+	dela.Logger.Info().Msgf("threshold: %d", threshold)
 
 	errs := sender.Send(message, addrs...)
 	err = <-errs

@@ -45,7 +45,8 @@ type Handler struct {
 }
 
 // NewHandler creates a new handler
-func NewHandler(me mino.Address, service ordering.Service, p pool.Pool, blocks blockstore.BlockStore, signer crypto.Signer) *Handler {
+func NewHandler(me mino.Address, service ordering.Service, p pool.Pool,
+	blocks blockstore.BlockStore, signer crypto.Signer) *Handler {
 	return &Handler{
 		me:      me,
 		service: service,
@@ -86,10 +87,13 @@ func (h *Handler) HandleStartShuffleMessage(startShuffleMessage types.StartShuff
 
 	dela.Logger.Info().Msg("SHUFFLE / RECEIVED FROM  : " + from.String())
 
-	for round := 1; round <= startShuffleMessage.GetThreshold(); round++ {
-		dela.Logger.Info().Msg("SHUFFLE / ROUND : " + strconv.Itoa(round))
+	electionIDBuff, err := hex.DecodeString(startShuffleMessage.GetElectionId())
+	if err != nil {
+		return xerrors.Errorf("failed to decode election id: %v", err)
+	}
 
-		electionIDBuff, _ := hex.DecodeString(startShuffleMessage.GetElectionId())
+	for round := 1; round <= startShuffleMessage.GetThreshold(); round++ {
+		dela.Logger.Info().Msgf("SHUFFLE / ROUND : %d", round)
 
 		prf, err := h.service.GetProof(electionIDBuff)
 		if err != nil {
@@ -115,9 +119,10 @@ func (h *Handler) HandleStartShuffleMessage(startShuffleMessage types.StartShuff
 			for _, value := range encryptedBallotsMap {
 				encryptedBallots = append(encryptedBallots, value)
 			}
-		}
-
-		if round > 1 {
+		} else {
+			if len(election.ShuffledBallots[round-1]) != len(encryptedBallotsMap) {
+				return xerrors.Errorf("the election must be closed")
+			}
 			encryptedBallots = election.ShuffledBallots[round-1]
 		}
 
@@ -240,6 +245,7 @@ func (h *Handler) HandleStartShuffleMessage(startShuffleMessage types.StartShuff
 		}
 		notAccepted := false
 
+	loopTxs:
 		for event := range events {
 			for _, res := range event.Transactions {
 				if !bytes.Equal(res.GetTransaction().GetID(), tx.GetID()) {
@@ -255,7 +261,7 @@ func (h *Handler) HandleStartShuffleMessage(startShuffleMessage types.StartShuff
 				if !accepted {
 					notAccepted = true
 					dela.Logger.Info().Msg("Denied : " + msg)
-					break
+					break loopTxs
 				} else {
 					dela.Logger.Info().Msg("ACCEPTED")
 
@@ -310,7 +316,7 @@ func (h *Handler) HandleStartShuffleMessage(startShuffleMessage types.StartShuff
 		}
 		cancel()
 		dela.Logger.Info().Msg("NEXT ROUND")
-		continue
+
 	}
 
 	return xerrors.Errorf("failed to shuffle, all your transactions got denied")
@@ -329,8 +335,8 @@ func (h *Handler) getClient() (*txnPoolController.Client, error) {
 	for nonce == 0 {
 		for _, txResult := range transactionResults {
 			_, msg := txResult.GetStatus()
-			// if status && txResult.GetTransaction().GetNonce() > nonce {
 			if !strings.Contains(msg, "nonce") && txResult.GetTransaction().GetNonce() > nonce {
+// && txResult.GetTransaction().GetIdentity().Equal(h.signer.GetPublicKey())
 				nonce = txResult.GetTransaction().GetNonce()
 			}
 		}
@@ -350,7 +356,7 @@ func (h *Handler) getClient() (*txnPoolController.Client, error) {
 		}
 	}
 
-	nonce += 1
+	nonce++
 
 	client := &txnPoolController.Client{Nonce: nonce}
 

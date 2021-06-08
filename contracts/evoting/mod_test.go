@@ -33,22 +33,22 @@ func TestExecute(t *testing.T) {
 	contract.cmd = fakeCmd{err: fake.GetError()}
 
 	err = contract.Execute(fakeStore{}, makeStep(t, CmdArg, string(CmdCreateElection)))
-	require.EqualError(t, err, fake.Err("failed to CREATE ELECTION"))
+	require.EqualError(t, err, fake.Err("failed to create election"))
 
 	err = contract.Execute(fakeStore{}, makeStep(t, CmdArg, string(CmdCastVote)))
-	require.EqualError(t, err, fake.Err("failed to CAST VOTE"))
+	require.EqualError(t, err, fake.Err("failed to cast vote"))
 
 	err = contract.Execute(fakeStore{}, makeStep(t, CmdArg, string(CmdCloseElection)))
-	require.EqualError(t, err, fake.Err("failed to CLOSE ELECTION"))
+	require.EqualError(t, err, fake.Err("failed to close election"))
 
 	err = contract.Execute(fakeStore{}, makeStep(t, CmdArg, string(CmdShuffleBallots)))
-	require.EqualError(t, err, fake.Err("failed to SHUFFLE BALLOTS"))
+	require.EqualError(t, err, fake.Err("failed to shuffle ballots"))
 
 	err = contract.Execute(fakeStore{}, makeStep(t, CmdArg, string(CmdDecryptBallots)))
-	require.EqualError(t, err, fake.Err("failed to DECRYPT BALLOTS"))
+	require.EqualError(t, err, fake.Err("failed to decrypt ballots"))
 
 	err = contract.Execute(fakeStore{}, makeStep(t, CmdArg, string(CmdCancelElection)))
-	require.EqualError(t, err, fake.Err("failed to CANCEL ELECTION"))
+	require.EqualError(t, err, fake.Err("failed to cancel election"))
 
 	err = contract.Execute(fakeStore{}, makeStep(t, CmdArg, "fake"))
 	require.EqualError(t, err, "unknown command: fake")
@@ -85,13 +85,18 @@ func TestCommand_CreateElection(t *testing.T) {
 		"invalid character 'd' looking for beginning of value")
 
 	err = cmd.createElection(fake.NewBadSnapshot(), makeStep(t, CreateElectionArg, string(js)))
+	require.EqualError(t, err, "failed to decode ElectionID : encoding/hex: invalid byte: U+0075 'u'")
+
+	dummyCreateElectionTransaction.ElectionID = hex.EncodeToString([]byte("dummyId"))
+	js, _ = json.Marshal(dummyCreateElectionTransaction)
+	err = cmd.createElection(fake.NewBadSnapshot(), makeStep(t, CreateElectionArg, string(js)))
 	require.EqualError(t, err, fake.Err("failed to set value"))
 
 	snap := fake.NewSnapshot()
 	err = cmd.createElection(snap, makeStep(t, CreateElectionArg, string(js)))
 	require.NoError(t, err)
 
-	dummyElectionIdBuff, _ := hex.DecodeString("dummyId")
+	dummyElectionIdBuff, _ := hex.DecodeString(dummyCreateElectionTransaction.ElectionID)
 	res, err := snap.Get(dummyElectionIdBuff)
 	require.NoError(t, err)
 
@@ -265,7 +270,7 @@ func TestCommand_ShuffleBallots(t *testing.T) {
 
 	dummyShuffleBallotsTransaction := types.ShuffleBallotsTransaction{
 		ElectionID:      "dummyId",
-		Round:           0,
+		Round:           2,
 		ShuffledBallots: make([][]byte, 3),
 		Proof:           nil,
 	}
@@ -316,7 +321,7 @@ func TestCommand_ShuffleBallots(t *testing.T) {
 	jsElection, _ = json.Marshal(dummyElection)
 	_ = snap.Set(dummyElectionIdBuff, jsElection)
 	err = cmd.shuffleBallots(snap, makeStep(t, ShuffleBallotsArg, string(jsShuffleBallotsTransaction)))
-	require.EqualError(t, err, messageOnlyOneShufflePerRound)
+	require.EqualError(t, err, "wrong number of shuffled ballots: expected '1', got '0'")
 
 	dummyShuffleBallotsTransaction.Round = 1
 
