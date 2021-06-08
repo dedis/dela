@@ -99,6 +99,12 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		return xerrors.Errorf("failed to resolve ordering.Service: %v", err)
 	}
 
+	var dkgActor dkg.Actor
+	err = ctx.Injector.Resolve(&dkgActor)
+	if err != nil {
+		return xerrors.Errorf("failed to resolve dkg.Actor: %v", err)
+	}
+
 	http.HandleFunc(loginEndPoint, func(w http.ResponseWriter, r *http.Request) {
 
 		a.Lock()
@@ -177,9 +183,16 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		}
 
 		electionId := hex.EncodeToString(electionIDBuff)
-		publicKey, err := hex.DecodeString(createElectionRequest.PublicKey)
+
+		publicKey, err := dkgActor.GetPublicKey()
 		if err != nil {
-			http.Error(w, "Failed to decode publicKey: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Failed to get publicKey: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		publicKeyBuf, err := publicKey.MarshalBinary()
+		if err != nil {
+			http.Error(w, "Failed to marshal publicKey: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -188,7 +201,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			Title:      createElectionRequest.Title,
 			AdminId:    createElectionRequest.AdminId,
 			Candidates: createElectionRequest.Candidates,
-			PublicKey:  publicKey,
+			PublicKey:  publicKeyBuf,
 		}
 
 		js, err := json.Marshal(createElectionTransaction)
@@ -836,13 +849,6 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			Cs = append(Cs, C)
 		}
 
-		var dkgActor dkg.Actor
-		err = ctx.Injector.Resolve(&dkgActor)
-		if err != nil {
-			http.Error(w, "Failed to resolve dkg.Actor: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
 		decryptedBallots := make([]types.Ballot, 0, len(election.ShuffledBallots))
 
 		for i := 0; i < len(Ks); i++ {
@@ -1279,7 +1285,6 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 		AdminId:    "adminId",
 		Candidates: nil,
 		Token:      "token",
-		PublicKey:  hex.EncodeToString(pubkeyBuf),
 	}
 
 	js, err := json.Marshal(createSimpleElectionRequest)

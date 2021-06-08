@@ -64,10 +64,10 @@ func (m controller) OnStart(ctx cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("failed to resolve blockstore.InDisk: %v", err)
 	}
 
-	signer, err := getSigner(signerFilePath)
-	if err != nil {
-		// return xerrors.Errorf("failed to getSigner: %v", err)
-	}
+	signer, _ := getSigner(signerFilePath)
+	// if err != nil {
+	// return xerrors.Errorf("failed to getSigner: %v", err)
+	// }
 
 	neffShuffle := neff.NewNeffShuffle(no, service, p, blocks, signer)
 

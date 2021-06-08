@@ -40,15 +40,6 @@ func (m controller) SetCommands(builder node.Builder) {
 	})
 	sub.SetAction(builder.MakeAction(&setupAction{}))
 
-	sub = cmd.SetSubCommand("initHttpServer")
-	sub.SetDescription("initialize the DKG service HTTP server")
-	sub.SetFlags(cli.StringFlag{
-		Name:     "portNumber",
-		Usage:    "port number of the HTTP server",
-		Required: true,
-	})
-	sub.SetAction(builder.MakeAction(&initHttpServerAction{}))
-
 	sub = cmd.SetSubCommand("export")
 	sub.SetDescription("export the node address and public key")
 	sub.SetAction(builder.MakeAction(&exportInfoAction{}))

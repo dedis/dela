@@ -17,7 +17,7 @@ func TestController_SetCommands(t *testing.T) {
 	call := &fake.Call{}
 	c.SetCommands(fakeBuilder{call: call})
 
-	require.Equal(t, 34, call.Len())
+	require.Equal(t, 29, call.Len())
 	require.Equal(t, "dkg", call.Get(0, 0))
 	require.Equal(t, "interact with the DKG service", call.Get(1, 0))
 
@@ -32,33 +32,27 @@ func TestController_SetCommands(t *testing.T) {
 	require.IsType(t, &setupAction{}, call.Get(9, 0))
 	require.Nil(t, call.Get(10, 0))
 
-	require.Equal(t, "initHttpServer", call.Get(11, 0))
-	require.Equal(t, "initialize the DKG service HTTP server", call.Get(12, 0))
-	require.Len(t, call.Get(13, 0), 1)
-	require.IsType(t, &initHttpServerAction{}, call.Get(14, 0))
-	require.Nil(t, call.Get(15, 0))
+	require.Equal(t, "export", call.Get(11, 0))
+	require.Equal(t, "export the node address and public key", call.Get(12, 0))
+	require.IsType(t, &exportInfoAction{}, call.Get(13, 0))
+	require.Nil(t, call.Get(14, 0))
 
-	require.Equal(t, "export", call.Get(16, 0))
-	require.Equal(t, "export the node address and public key", call.Get(17, 0))
-	require.IsType(t, &exportInfoAction{}, call.Get(18, 0))
-	require.Nil(t, call.Get(19, 0))
+	require.Equal(t, "getPublicKey", call.Get(15, 0))
+	require.Equal(t, "prints the distributed public Key", call.Get(16, 0))
+	require.IsType(t, &getPublicKeyAction{}, call.Get(17, 0))
+	require.Nil(t, call.Get(18, 0))
 
-	require.Equal(t, "getPublicKey", call.Get(20, 0))
-	require.Equal(t, "prints the distributed public Key", call.Get(21, 0))
-	require.IsType(t, &getPublicKeyAction{}, call.Get(22, 0))
+	require.Equal(t, "encrypt", call.Get(19, 0))
+	require.Equal(t, "encrypt the given string and write the ciphertext pair in the corresponding file", call.Get(20, 0))
+	require.Len(t, call.Get(21, 0), 3)
+	require.IsType(t, &encryptAction{}, call.Get(22, 0))
 	require.Nil(t, call.Get(23, 0))
 
-	require.Equal(t, "encrypt", call.Get(24, 0))
-	require.Equal(t, "encrypt the given string and write the ciphertext pair in the corresponding file", call.Get(25, 0))
-	require.Len(t, call.Get(26, 0), 3)
-	require.IsType(t, &encryptAction{}, call.Get(27, 0))
+	require.Equal(t, "decrypt", call.Get(24, 0))
+	require.Equal(t, "decrypt the given ciphertext pair and print the corresponding plaintext", call.Get(25, 0))
+	require.Len(t, call.Get(26, 0), 2)
+	require.IsType(t, &decryptAction{}, call.Get(27, 0))
 	require.Nil(t, call.Get(28, 0))
-
-	require.Equal(t, "decrypt", call.Get(29, 0))
-	require.Equal(t, "decrypt the given ciphertext pair and print the corresponding plaintext", call.Get(30, 0))
-	require.Len(t, call.Get(31, 0), 2)
-	require.IsType(t, &decryptAction{}, call.Get(32, 0))
-	require.Nil(t, call.Get(33, 0))
 }
 
 func TestMinimal_OnStart(t *testing.T) {

@@ -1,9 +1,7 @@
 package controller
 
 import (
-	"bytes"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cli/node"
@@ -16,16 +14,11 @@ import (
 	"go.dedis.ch/kyber/v3/suites"
 	"golang.org/x/xerrors"
 	"io/ioutil"
-	"log"
-	"net/http"
 	"os"
 	"strings"
 )
 
 const separator = ":"
-const getPublicKeyEndPoint = "/dkg/pubkey"
-const encryptEndPoint = "/dkg/encrypt"
-const decryptEndPoint = "/dkg/decrypt"
 
 var suite = suites.MustFind("Ed25519")
 
@@ -186,135 +179,10 @@ func (a *exportInfoAction) Execute(ctx node.Context) error {
 	return nil
 }
 
-/* initHttpServerAction is an action to start an HTTP server handling the
-following endpoints :
- /dkg/pubkey  : get request that returns the collective public key
- /dkg/encrypt : get request that returns the encryption of "hello"
- /dkg/decrypt : post request that returns the decryption of a ciphertext sent
-                by the client
-
- - implements node.ActionTemplate
-*/
-type initHttpServerAction struct {
-}
-
 // Wraps the ciphertext pairs
 type Ciphertext struct {
 	K []byte
 	C []byte
-}
-
-// Execute implements node.ActionTemplate. It implements the handling of
-// endpoints and start the HTTP server
-func (a *initHttpServerAction) Execute(ctx node.Context) error {
-	portNumber := ctx.Flags.String("portNumber")
-
-	var actor dkg.Actor
-	err := ctx.Injector.Resolve(&actor)
-	if err != nil {
-		return xerrors.Errorf("failed to resolve actor: %v", err)
-	}
-
-	http.HandleFunc(getPublicKeyEndPoint, func(w http.ResponseWriter, r *http.Request) {
-
-		pubkey, err := actor.GetPublicKey()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		pubkeyBuf, err := pubkey.MarshalBinary()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		_, err = fmt.Fprint(w, string(pubkeyBuf))
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	})
-
-	plaintext := "hello"
-
-	K, C, _, err := actor.Encrypt([]byte(plaintext))
-	if err != nil {
-		return xerrors.Errorf("failed to encrypt the plaintext: %v", err)
-	}
-
-	Kmarshalled, err := K.MarshalBinary()
-	if err != nil {
-		return xerrors.Errorf("failed to marshall the K element of the ciphertext pair: %v", err)
-	}
-
-	Cmarshalled, err := C.MarshalBinary()
-	if err != nil {
-		return xerrors.Errorf("failed to marshall the C element of the ciphertext pair: %v", err)
-	}
-
-	http.HandleFunc(encryptEndPoint, func(w http.ResponseWriter, r *http.Request) {
-
-		response := Ciphertext{K: Kmarshalled, C: Cmarshalled}
-		js, err := json.Marshal(response)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		_, err = w.Write(js)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	})
-
-	http.HandleFunc(decryptEndPoint, func(w http.ResponseWriter, r *http.Request) {
-		body, err := ioutil.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		ciphertext := new(Ciphertext)
-		err = json.NewDecoder(bytes.NewBuffer(body)).Decode(ciphertext)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		K := suite.Point()
-		err = K.UnmarshalBinary(ciphertext.K)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		C := suite.Point()
-		err = C.UnmarshalBinary(ciphertext.C)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		message, err := actor.Decrypt(K, C)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		_, err = fmt.Fprint(w, string(message))
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-	})
-
-	log.Fatal(http.ListenAndServe(":"+portNumber, nil))
-
-	return nil
 }
 
 // getPublicKeyAction is an action that prints the collective public key

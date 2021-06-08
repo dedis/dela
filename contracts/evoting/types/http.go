@@ -10,7 +10,7 @@ type CreateElectionRequest struct {
 	AdminId    string
 	Candidates []string
 	Token      string
-	PublicKey  string
+	// PublicKey  string
 }
 
 type CreateElectionResponse struct {
