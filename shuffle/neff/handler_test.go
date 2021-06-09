@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"github.com/stretchr/testify/require"
+	evotingController "go.dedis.ch/dela/contracts/evoting/controller"
 	electionTypes "go.dedis.ch/dela/contracts/evoting/types"
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/ordering"
@@ -220,32 +221,44 @@ func TestHandler_StartShuffle(t *testing.T) {
 	}
 
 	handler.service = &service
+	/*
+	   todo : use this code to test getNonce from evotingController.Client
 
-	badBlockstore := FakeBlockStore{
-		lastErr: fakeErr,
-	}
+	   	badBlockstore := FakeBlockStore{
+	   		lastErr: fakeErr,
+	   	}
 
-	handler.blocks = badBlockstore
+	   	handler.blocks = badBlockstore
 
-	err = handler.HandleStartShuffleMessage(startShuffle, from, nil, nil)
-	require.EqualError(t, err, "failed to get Client: failed to fetch last block: fake error")
+	   	err = handler.HandleStartShuffleMessage(startShuffle, from, nil, nil)
+	   	require.EqualError(t, err, "failed to get Client: failed to fetch
+	   last block: fake error")
 
-	badBlockstore = FakeBlockStore{
-		getErr: fakeErr,
-	}
+	   	badBlockstore = FakeBlockStore{
+	   		getErr: fakeErr,
+	   	}
 
-	handler.blocks = badBlockstore
+	   	handler.blocks = badBlockstore
 
-	err = handler.HandleStartShuffleMessage(startShuffle, from, nil, nil)
-	require.EqualError(t, err, "failed to get Client: failed to fetch previous block: fake error")
+	   	err = handler.HandleStartShuffleMessage(startShuffle, from, nil, nil)
+	   	require.EqualError(t, err, "failed to get Client: failed to fetch previous
+	   block: fake error")
 
-	blocks := FakeBlockStore{
-		getErr: xerrors.Errorf("not found: no block"),
-	}
+	   	blocks := FakeBlockStore{
+	   		getErr: xerrors.Errorf("not found: no block"),
+	   	}
 
-	handler.blocks = blocks
+	   	handler.blocks = blocks
+
+	*/
 	handler.signer = fake.NewBadSigner()
-
+	handler.client = &evotingController.Client{
+		Nonce: 0,
+		Blocks: FakeBlockStore{
+			getErr:  nil,
+			lastErr: nil,
+		},
+	}
 	err = handler.HandleStartShuffleMessage(startShuffle, from, nil, nil)
 	require.EqualError(t, err, fake.Err("failed to make transaction: failed to sign: signer"))
 

@@ -18,7 +18,6 @@ import (
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/pool"
-	txnPoolController "go.dedis.ch/dela/core/txn/pool/controller"
 	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
@@ -72,9 +71,9 @@ var getManager = func(signer crypto.Signer, s signed.Client) txn.Manager {
 //
 // - implements node.ActionTemplate
 type initHttpServerAction struct {
-	// TODO : handle concurrent call ?
 	sync.Mutex
 	ElectionIds []string
+	client      *Client
 }
 
 // Execute implements node.ActionTemplate. It implements the handling of
@@ -98,6 +97,13 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 	if err != nil {
 		return xerrors.Errorf("failed to resolve ordering.Service: %v", err)
 	}
+
+	var blocks *blockstore.InDisk
+	err = ctx.Injector.Resolve(&blocks)
+	if err != nil {
+		return xerrors.Errorf("failed to resolve blockstore.InDisk: %v", err)
+	}
+	a.client.Blocks = blocks
 
 	var dkgActor dkg.Actor
 	err = ctx.Injector.Resolve(&dkgActor)
@@ -160,13 +166,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		client, err := a.getClient(ctx, signer)
-		if err != nil {
-			http.Error(w, "Failed to get Client: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		manager := getManager(signer, client)
+		manager := getManager(signer, a.client)
 
 		err = manager.Sync()
 		if err != nil {
@@ -419,13 +419,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		client, err := a.getClient(ctx, signer)
-		if err != nil {
-			http.Error(w, "Failed to get Client: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		manager := getManager(signer, client)
+		manager := getManager(signer, a.client)
 
 		err = manager.Sync()
 		if err != nil {
@@ -516,13 +510,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		client, err := a.getClient(ctx, signer)
-		if err != nil {
-			http.Error(w, "Failed to get Client: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		manager := getManager(signer, client)
+		manager := getManager(signer, a.client)
 
 		err = manager.Sync()
 		if err != nil {
@@ -802,13 +790,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			decryptedBallots = append(decryptedBallots, types.Ballot{Vote: string(message)})
 		}
 
-		client, err := a.getClient(ctx, signer)
-		if err != nil {
-			http.Error(w, "Failed to get Client: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		manager := getManager(signer, client)
+		manager := getManager(signer, a.client)
 
 		err = manager.Sync()
 		if err != nil {
@@ -831,12 +813,6 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		tx, err := createTransaction(js, manager, evoting.CmdDecryptBallots, evoting.DecryptBallotsArg)
 		if err != nil {
 			http.Error(w, "Failed to create transaction: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		err = ctx.Injector.Resolve(&service)
-		if err != nil {
-			http.Error(w, "Failed to resolve ordering.Service: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -974,13 +950,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		client, err := a.getClient(ctx, signer)
-		if err != nil {
-			http.Error(w, "Failed to get Client: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		manager := getManager(signer, client)
+		manager := getManager(signer, a.client)
 
 		err = manager.Sync()
 		if err != nil {
@@ -1042,50 +1012,6 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 	log.Fatal(http.ListenAndServe(":"+portNumber, nil))
 
 	return nil
-}
-
-func (a *initHttpServerAction) getClient(ctx node.Context, signer crypto.Signer) (*txnPoolController.Client, error) {
-	var blocks *blockstore.InDisk
-	err := ctx.Injector.Resolve(&blocks)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to resolve blockstore.InDisk: %v", err)
-	}
-
-	blockLink, err := blocks.Last()
-	if err != nil {
-		return nil, xerrors.Errorf("failed to fetch last block: %v", err)
-	}
-
-	transactionResults := blockLink.GetBlock().GetData().GetTransactionResults()
-	nonce := uint64(0)
-
-	for nonce == 0 {
-		for _, txResult := range transactionResults {
-			_, msg := txResult.GetStatus()
-			if !strings.Contains(msg, "nonce") && txResult.GetTransaction().GetNonce() > nonce &&
-				txResult.GetTransaction().GetIdentity().Equal(signer.GetPublicKey()) {
-				nonce = txResult.GetTransaction().GetNonce()
-			}
-		}
-
-		previousDigest := blockLink.GetFrom()
-
-		previousBlock, err := blocks.Get(previousDigest)
-		if err != nil {
-			if strings.Contains(err.Error(), "not found: no block") {
-				dela.Logger.Info().Msg("FIRST BLOCK")
-				break
-			} else {
-				return nil, xerrors.Errorf("failed to fetch previous block: %v", err)
-			}
-		} else {
-			transactionResults = previousBlock.GetBlock().GetData().GetTransactionResults()
-		}
-	}
-	nonce += 1
-	client := &txnPoolController.Client{Nonce: nonce}
-
-	return client, nil
 }
 
 func createTransaction(js []byte, manager txn.Manager, commandType evoting.Command, commandArg string) (txn.Transaction, error) {

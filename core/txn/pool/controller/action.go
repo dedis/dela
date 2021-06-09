@@ -31,7 +31,7 @@ var getManager = func(signer crypto.Signer, s signed.Client) txn.Manager {
 type addAction struct {
 	sync.Mutex
 
-	client *Client
+	client *client
 }
 
 // Execute implements node.ActionTemplate
@@ -57,7 +57,7 @@ func (a *addAction) Execute(ctx node.Context) error {
 
 	nonce := ctx.Flags.Int(nonceFlag)
 	if nonce != -1 {
-		a.client.Nonce = uint64(nonce)
+		a.client.nonce = uint64(nonce)
 	}
 
 	manager := getManager(signer, a.client)

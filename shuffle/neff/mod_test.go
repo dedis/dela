@@ -14,7 +14,7 @@ import (
 
 func TestNeffShuffle_Listen(t *testing.T) {
 
-	NeffShuffle := NewNeffShuffle(fake.Mino{}, &FakeService{}, &FakePool{}, FakeBlockStore{}, fake.NewSigner())
+	NeffShuffle := NewNeffShuffle(fake.Mino{}, &FakeService{}, &FakePool{}, nil, fake.NewSigner())
 
 	actor, err := NeffShuffle.Listen()
 	require.NoError(t, err)

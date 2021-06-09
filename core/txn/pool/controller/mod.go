@@ -50,7 +50,7 @@ func (miniController) SetCommands(builder node.Builder) {
 		Required: true,
 	})
 	sub.SetAction(builder.MakeAction(&addAction{
-		client: &Client{},
+		client: &client{},
 	}))
 }
 
@@ -67,13 +67,13 @@ func (miniController) OnStop(inj node.Injector) error {
 // client return monotically increasing nonce
 //
 // - implements signed.Client
-type Client struct {
-	Nonce uint64
+type client struct {
+	nonce uint64
 }
 
 // GetNonce implements signed.Client
-func (c *Client) GetNonce(access.Identity) (uint64, error) {
-	res := c.Nonce
-	c.Nonce++
+func (c *client) GetNonce(access.Identity) (uint64, error) {
+	res := c.nonce
+	c.nonce++
 	return res, nil
 }

@@ -7,13 +7,12 @@ import (
 	"encoding/json"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/contracts/evoting"
+	evotingController "go.dedis.ch/dela/contracts/evoting/controller"
 	electionTypes "go.dedis.ch/dela/contracts/evoting/types"
 	"go.dedis.ch/dela/core/execution/native"
 	"go.dedis.ch/dela/core/ordering"
-	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/pool"
-	txnPoolController "go.dedis.ch/dela/core/txn/pool/controller"
 	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/mino"
@@ -24,7 +23,6 @@ import (
 	"go.dedis.ch/kyber/v3/suites"
 	"golang.org/x/xerrors"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -40,19 +38,19 @@ type Handler struct {
 	me      mino.Address
 	service ordering.Service
 	p       pool.Pool
-	blocks  blockstore.BlockStore
 	signer  crypto.Signer
+	client  *evotingController.Client
 }
 
 // NewHandler creates a new handler
 func NewHandler(me mino.Address, service ordering.Service, p pool.Pool,
-	blocks blockstore.BlockStore, signer crypto.Signer) *Handler {
+	signer crypto.Signer, client *evotingController.Client) *Handler {
 	return &Handler{
 		me:      me,
 		service: service,
 		p:       p,
-		blocks:  blocks,
 		signer:  signer,
+		client:  client,
 	}
 }
 
@@ -189,12 +187,7 @@ func (h *Handler) HandleStartShuffleMessage(startShuffleMessage types.StartShuff
 
 		}
 
-		client, err := h.getClient()
-		if err != nil {
-			return xerrors.Errorf("failed to get Client: %v", err.Error())
-		}
-
-		manager := getManager(h.signer, client)
+		manager := getManager(h.signer, h.client)
 
 		err = manager.Sync()
 		if err != nil {
@@ -320,47 +313,6 @@ func (h *Handler) HandleStartShuffleMessage(startShuffleMessage types.StartShuff
 	}
 
 	return xerrors.Errorf("failed to shuffle, all your transactions got denied")
-}
-
-func (h *Handler) getClient() (*txnPoolController.Client, error) {
-
-	blockLink, err := h.blocks.Last()
-	if err != nil {
-		return nil, xerrors.Errorf("failed to fetch last block: %v", err.Error())
-	}
-
-	transactionResults := blockLink.GetBlock().GetData().GetTransactionResults()
-	nonce := uint64(0)
-
-	for nonce == 0 {
-		for _, txResult := range transactionResults {
-			_, msg := txResult.GetStatus()
-			if !strings.Contains(msg, "nonce") && txResult.GetTransaction().GetNonce() > nonce {
-// && txResult.GetTransaction().GetIdentity().Equal(h.signer.GetPublicKey())
-				nonce = txResult.GetTransaction().GetNonce()
-			}
-		}
-
-		previousDigest := blockLink.GetFrom()
-
-		previousBlock, err := h.blocks.Get(previousDigest)
-		if err != nil {
-			if strings.Contains(err.Error(), "not found: no block") {
-				dela.Logger.Info().Msg("FIRST BLOCK")
-				break
-			} else {
-				return nil, xerrors.Errorf("failed to fetch previous block: %v", err)
-			}
-		} else {
-			transactionResults = previousBlock.GetBlock().GetData().GetTransactionResults()
-		}
-	}
-
-	nonce++
-
-	client := &txnPoolController.Client{Nonce: nonce}
-
-	return client, nil
 }
 
 // getManager is the function called when we need a transaction manager. It
