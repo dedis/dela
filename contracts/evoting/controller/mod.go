@@ -37,7 +37,6 @@ func (m controller) SetCommands(builder node.Builder) {
 	})
 
 	sub.SetAction(builder.MakeAction(&initHttpServerAction{
-		ElectionIds: make([]string, 0),
 		client: &Client{
 			Nonce: 0,
 		},

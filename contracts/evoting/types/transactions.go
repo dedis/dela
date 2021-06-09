@@ -1,5 +1,9 @@
 package types
 
+type ElectionsMetadata struct{
+	ElectionsIds []string
+}
+
 type CreateElectionTransaction struct {
 	ElectionID string
 	Title      string

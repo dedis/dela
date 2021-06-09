@@ -22,6 +22,7 @@ import (
 
 const protocolName = "PairShuffle"
 const messageOnlyOneShufflePerRound = "shuffle is already happening in this round"
+const ElectionsMetadataKey = "ElectionsMetadataKey"
 
 var suite = suites.MustFind("Ed25519")
 
@@ -230,6 +231,34 @@ func (e evotingCommand) createElection(snap store.Snapshot, step execution.Step,
 	}
 
 	err = snap.Set(electionIDBuff, js)
+	if err != nil {
+		return xerrors.Errorf("failed to set value: %v", err)
+	}
+
+	electionsMetadataBuff, err := snap.Get([]byte(ElectionsMetadataKey))
+	if err != nil {
+		return xerrors.Errorf("failed to get key '%s': %v", electionsMetadataBuff, err)
+	}
+
+	electionsMetadata := new(types.ElectionsMetadata)
+
+	if len(electionsMetadataBuff) == 0 {
+		electionsMetadata.ElectionsIds = []string{}
+	} else {
+		err = json.NewDecoder(bytes.NewBuffer(electionsMetadataBuff)).Decode(electionsMetadata)
+		if err != nil {
+			return xerrors.Errorf("failed to unmarshal Election: %v", err)
+		}
+	}
+
+	electionsMetadata.ElectionsIds = append(electionsMetadata.ElectionsIds, createElectionTransaction.ElectionID)
+
+	js, err = json.Marshal(electionsMetadata)
+	if err != nil {
+		return xerrors.Errorf("failed to marshal ElectionsMetadata: %v", err)
+	}
+
+	err = snap.Set([]byte(ElectionsMetadataKey), js)
 	if err != nil {
 		return xerrors.Errorf("failed to set value: %v", err)
 	}

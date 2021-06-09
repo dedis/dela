@@ -72,8 +72,7 @@ var getManager = func(signer crypto.Signer, s signed.Client) txn.Manager {
 // - implements node.ActionTemplate
 type initHttpServerAction struct {
 	sync.Mutex
-	ElectionIds []string
-	client      *Client
+	client *Client
 }
 
 // Execute implements node.ActionTemplate. It implements the handling of
@@ -220,8 +219,6 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		a.ElectionIds = append(a.ElectionIds, electionId)
-
 		response := types.CreateElectionResponse{
 			ElectionID: electionId,
 		}
@@ -265,7 +262,13 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		if !contains(a.ElectionIds, getElectionInfoRequest.ElectionID) {
+		electionsMetadata, err := getElectionsMetadata(service)
+		if err != nil {
+			http.Error(w, "Failed to get election metadata", http.StatusNotFound)
+			return
+		}
+
+		if !contains(electionsMetadata.ElectionsIds, getElectionInfoRequest.ElectionID) {
 			http.Error(w, "The election does not exist", http.StatusNotFound)
 			return
 		}
@@ -337,9 +340,15 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		allElectionsInfo := make([]types.GetElectionInfoResponse, 0, len(a.ElectionIds))
+		electionsMetadata, err := getElectionsMetadata(service)
+		if err != nil {
+			http.Error(w, "Failed to get election metadata", http.StatusNotFound)
+			return
+		}
 
-		for _, id := range a.ElectionIds {
+		allElectionsInfo := make([]types.GetElectionInfoResponse, 0, len(electionsMetadata.ElectionsIds))
+
+		for _, id := range electionsMetadata.ElectionsIds {
 
 			electionIDBuff, err := hex.DecodeString(id)
 			if err != nil {
@@ -414,7 +423,13 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		if !contains(a.ElectionIds, castVoteRequest.ElectionID) {
+		electionsMetadata, err := getElectionsMetadata(service)
+		if err != nil {
+			http.Error(w, "Failed to get election metadata", http.StatusNotFound)
+			return
+		}
+
+		if !contains(electionsMetadata.ElectionsIds, castVoteRequest.ElectionID) {
 			http.Error(w, "The election does not exist", http.StatusNotFound)
 			return
 		}
@@ -505,7 +520,13 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		if !contains(a.ElectionIds, closeElectionRequest.ElectionID) {
+		electionsMetadata, err := getElectionsMetadata(service)
+		if err != nil {
+			http.Error(w, "Failed to get election metadata", http.StatusNotFound)
+			return
+		}
+
+		if !contains(electionsMetadata.ElectionsIds, closeElectionRequest.ElectionID) {
 			http.Error(w, "The election does not exist", http.StatusNotFound)
 			return
 		}
@@ -594,7 +615,13 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		if !contains(a.ElectionIds, shuffleBallotsRequest.ElectionID) {
+		electionsMetadata, err := getElectionsMetadata(service)
+		if err != nil {
+			http.Error(w, "Failed to get election metadata", http.StatusNotFound)
+			return
+		}
+
+		if !contains(electionsMetadata.ElectionsIds, shuffleBallotsRequest.ElectionID) {
 			http.Error(w, "The election does not exist", http.StatusNotFound)
 			return
 		}
@@ -714,7 +741,13 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		if !contains(a.ElectionIds, decryptBallotsRequest.ElectionID) {
+		electionsMetadata, err := getElectionsMetadata(service)
+		if err != nil {
+			http.Error(w, "Failed to get election metadata", http.StatusNotFound)
+			return
+		}
+
+		if !contains(electionsMetadata.ElectionsIds, decryptBallotsRequest.ElectionID) {
 			http.Error(w, "The election does not exist", http.StatusNotFound)
 			return
 		}
@@ -875,7 +908,13 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		if !contains(a.ElectionIds, getElectionResultRequest.ElectionID) {
+		electionsMetadata, err := getElectionsMetadata(service)
+		if err != nil {
+			http.Error(w, "Failed to get election metadata", http.StatusNotFound)
+			return
+		}
+
+		if !contains(electionsMetadata.ElectionsIds, getElectionResultRequest.ElectionID) {
 			http.Error(w, "The election does not exist", http.StatusNotFound)
 			return
 		}
@@ -945,7 +984,13 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		if !contains(a.ElectionIds, cancelElectionRequest.ElectionID) {
+		electionsMetadata, err := getElectionsMetadata(service)
+		if err != nil {
+			http.Error(w, "Failed to get election metadata", http.StatusNotFound)
+			return
+		}
+
+		if !contains(electionsMetadata.ElectionsIds, cancelElectionRequest.ElectionID) {
 			http.Error(w, "The election does not exist", http.StatusNotFound)
 			return
 		}
@@ -1012,6 +1057,22 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 	log.Fatal(http.ListenAndServe(":"+portNumber, nil))
 
 	return nil
+}
+
+func getElectionsMetadata(service ordering.Service) (*types.ElectionsMetadata, error) {
+	electionsMetadata := new(types.ElectionsMetadata)
+
+	electionMetadataProof, err := service.GetProof([]byte(evoting.ElectionsMetadataKey))
+	if err != nil {
+		return nil, xerrors.Errorf("failed to read on the blockchain: %v", err)
+	}
+
+	err = json.NewDecoder(bytes.NewBuffer(electionMetadataProof.GetValue())).Decode(electionsMetadata)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to unmarshal SimpleElection: %v", err)
+	}
+
+	return electionsMetadata, nil
 }
 
 func createTransaction(js []byte, manager txn.Manager, commandType evoting.Command, commandArg string) (txn.Transaction, error) {
