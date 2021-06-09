@@ -45,6 +45,7 @@ const url = "http://localhost:"
 const loginEndPoint = "/evoting/login"
 const createElectionEndPoint = "/evoting/create"
 const castVoteEndpoint = "/evoting/cast"
+const getAllElectionsIdsEndpoint = "/evoting/allids"
 const getElectionInfoEndpoint = "/evoting/info"
 const getAllElectionsInfoEndpoint = "/evoting/all"
 const closeElectionEndpoint = "/evoting/close"
@@ -237,6 +238,54 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			http.Error(w, "Failed to write in ResponseWriter: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+	})
+
+	http.HandleFunc(getAllElectionsIdsEndpoint, func(w http.ResponseWriter, r *http.Request) {
+
+		a.Lock()
+		defer a.Unlock()
+
+		dela.Logger.Info().Msg(getAllElectionsIdsEndpoint)
+
+		body, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Failed to read Body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		getAllElectionsIdsRequest := new(types.GetAllElectionsIdsRequest)
+		err = json.NewDecoder(bytes.NewBuffer(body)).Decode(getAllElectionsIdsRequest)
+		if err != nil {
+			http.Error(w, "Failed to decode GetElectionInfoRequest: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		if getAllElectionsIdsRequest.Token != token {
+			http.Error(w, "Invalid token", http.StatusUnauthorized)
+			return
+		}
+
+		electionsMetadata, err := getElectionsMetadata(service)
+		if err != nil {
+			http.Error(w, "Failed to get election metadata", http.StatusNotFound)
+			return
+		}
+
+		response := types.GetAllElectionsIdsResponse{ElectionsIds: electionsMetadata.ElectionsIds}
+
+		js, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, "Failed to marshal GetAllElectionsIdsResponse: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, err = w.Write(js)
+		if err != nil {
+			http.Error(w, "Failed to write in ResponseWriter: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
 	})
 
 	http.HandleFunc(getElectionInfoEndpoint, func(w http.ResponseWriter, r *http.Request) {

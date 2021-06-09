@@ -102,6 +102,16 @@ type GetAllElectionsInfoResponse struct {
 	AllElectionsInfo []GetElectionInfoResponse
 }
 
+type GetAllElectionsIdsRequest struct {
+	// UserId string
+	Token string
+}
+
+type GetAllElectionsIdsResponse struct {
+	// UserId         string
+	ElectionsIds []string
+}
+
 type CancelElectionRequest struct {
 	ElectionID string
 	UserId     string

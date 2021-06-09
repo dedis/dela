@@ -27,7 +27,7 @@ import (
 )
 
 const shuffleTransactionTimeout = time.Second * 1
-const endShuffleTimeout = time.Second * 50
+// const endShuffleTimeout = time.Second * 50
 
 
 var suite = suites.MustFind("Ed25519")
@@ -270,9 +270,7 @@ func (h *Handler) HandleStartShuffleMessage(startShuffleMessage types.StartShuff
 						dela.Logger.Info().Msg("SENT END SHUFFLE MESSAGES")
 					} else {
 						dela.Logger.Info().Msg("WAITING FOR END SHUFFLE MESSAGE")
-						contextEnd, cancelEnd := context.WithTimeout(context.Background(), endShuffleTimeout)
-						defer cancelEnd()
-						addr, msg, err := in.Recv(contextEnd)
+						addr, msg, err := in.Recv(context.Background())
 						if err != nil {
 							cancel()
 							return xerrors.Errorf("got an error from '%s' while "+
