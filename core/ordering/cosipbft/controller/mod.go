@@ -119,31 +119,12 @@ func (m miniController) OnStart(flags cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("injector: %v", err)
 	}
 
-	var pedersen dkg.DKG
-	err = inj.Resolve(&pedersen)
+	var dkgPedersen dkg.DKG
+	err = inj.Resolve(&dkgPedersen)
 	if err != nil {
 		return xerrors.Errorf("injector: %v", err)
 	}
-	/*
-		dkgActor, err := pedersen.Listen()
-		if err != nil {
-			return xerrors.Errorf("failed to listen: %v", err)
-		}
 
-		doSetup := flags.Bool("setup")
-
-		if doSetup{
-			roster, err := readMembersDKG(flags, onet)
-			if err != nil {
-				return xerrors.Errorf("failed to read roster: %v", err)
-			}
-
-			_, err = dkgActor.Setup(roster, roster.Len())
-			if err != nil {
-				return xerrors.Errorf("failed to setup DKG: %v", err)
-			}
-		}
-	*/
 	signer, err := m.getSigner(flags)
 	if err != nil {
 		return xerrors.Errorf("signer: %v", err)
@@ -160,7 +141,7 @@ func (m miniController) OnStart(flags cli.Flags, inj node.Injector) error {
 
 	value.RegisterContract(exec, value.NewContract(valueAccessKey[:], access))
 
-	evoting.RegisterContract(exec, evoting.NewContract(evotingAccessKey[:], access, pedersen))
+	evoting.RegisterContract(exec, evoting.NewContract(evotingAccessKey[:], access, dkgPedersen))
 
 	txFac := signed.NewTransactionFactory()
 	vs := simple.NewService(exec, txFac)
@@ -215,6 +196,8 @@ func (m miniController) OnStart(flags cli.Flags, inj node.Injector) error {
 	if err != nil {
 		return xerrors.Errorf("service: %v", err)
 	}
+
+	dkgPedersen.SetService(srvc)
 
 	inj.Inject(srvc)
 	inj.Inject(cosi)

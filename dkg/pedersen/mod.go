@@ -1,6 +1,7 @@
 package pedersen
 
 import (
+	"go.dedis.ch/dela/core/ordering"
 	"time"
 
 	"go.dedis.ch/dela/crypto/ed25519"
@@ -44,10 +45,12 @@ type Pedersen struct {
 	mino    mino.Mino
 	factory serde.Factory
 	actor   dkg.Actor
+	service ordering.Service
+	evoting bool
 }
 
 // NewPedersen returns a new DKG Pedersen factory
-func NewPedersen(m mino.Mino) (*Pedersen, kyber.Point) {
+func NewPedersen(m mino.Mino, evoting bool) (*Pedersen, kyber.Point) {
 	factory := types.NewMessageFactory(m.GetAddressFactory())
 
 	privkey := suite.Scalar().Pick(suite.RandomStream())
@@ -57,13 +60,14 @@ func NewPedersen(m mino.Mino) (*Pedersen, kyber.Point) {
 		privKey: privkey,
 		mino:    m,
 		factory: factory,
+		evoting: evoting,
 	}, pubkey
 }
 
 // Listen implements dkg.DKG. It must be called on each node that participates
 // in the DKG. Creates the RPC.
 func (s *Pedersen) Listen() (dkg.Actor, error) {
-	h := NewHandler(s.privKey, s.mino.GetAddress())
+	h := NewHandler(s.privKey, s.mino.GetAddress(), s.service, s.evoting)
 
 	a := &Actor{
 		rpc:      mino.MustCreateRPC(s.mino, "dkg", h, s.factory),
@@ -82,6 +86,10 @@ func (s *Pedersen) GetLastActor() (dkg.Actor, error) {
 	} else {
 		return nil, xerrors.Errorf("listen has not been called")
 	}
+}
+
+func (s *Pedersen) SetService(service ordering.Service) () {
+	s.service = service
 }
 
 // Actor allows one to perform DKG operations like encrypt/decrypt a message
@@ -203,7 +211,7 @@ func (a *Actor) Encrypt(message []byte) (K, C kyber.Point, remainder []byte,
 // decrypt the  message.
 // TODO: perform a re-encryption instead of gathering the private shares, which
 // should never happen.
-func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
+func (a *Actor) Decrypt(K, C kyber.Point, electionId string) ([]byte, error) {
 
 	if !a.startRes.Done() {
 		return nil, xerrors.Errorf("you must first initialize DKG. " +
@@ -229,7 +237,7 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 		addrs = append(addrs, iterator.GetNext())
 	}
 
-	message := types.NewDecryptRequest(K, C)
+	message := types.NewDecryptRequest(K, C, electionId)
 
 	err = <-sender.Send(message, addrs...)
 	if err != nil {

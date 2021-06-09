@@ -1,6 +1,7 @@
 package dkg
 
 import (
+	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/kyber/v3"
 )
@@ -13,6 +14,10 @@ type DKG interface {
 
 	// GetActor allows to retrieve the last generated Actor
 	GetLastActor() (Actor, error)
+
+	// SetService allows to set the ordering.Service service, then it is passed
+	// to the handler to read from the database
+	SetService(service ordering.Service) ()
 }
 
 // Actor defines the primitives to use a DKG protocol
@@ -27,7 +32,7 @@ type Actor interface {
 	GetPublicKey() (kyber.Point, error)
 
 	Encrypt(message []byte) (K, C kyber.Point, remainder []byte, err error)
-	Decrypt(K, C kyber.Point) ([]byte, error)
+	Decrypt(K, C kyber.Point, electionId string) ([]byte, error)
 
 	Reshare() error
 }

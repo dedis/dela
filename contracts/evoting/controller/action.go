@@ -184,10 +184,12 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		electionId := hex.EncodeToString(electionIDBuff)
 
 		createElectionTransaction := types.CreateElectionTransaction{
-			ElectionID: electionId,
-			Title:      createElectionRequest.Title,
-			AdminId:    createElectionRequest.AdminId,
-			Candidates: createElectionRequest.Candidates,
+			ElectionID:       electionId,
+			Title:            createElectionRequest.Title,
+			AdminId:          createElectionRequest.AdminId,
+			ShuffleThreshold: createElectionRequest.ShuffleThreshold,
+			Members:          createElectionRequest.Members,
+			Format:           createElectionRequest.Format,
 		}
 
 		js, err := json.Marshal(createElectionTransaction)
@@ -293,11 +295,12 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		}
 
 		response := types.GetElectionInfoResponse{
+			ElectionID: string(election.ElectionID),
 			Title:      election.Title,
-			Candidates: election.Candidates,
 			Status:     uint16(election.Status),
 			Pubkey:     hex.EncodeToString(election.Pubkey),
 			Result:     election.DecryptedBallots,
+			Format:     election.Format,
 		}
 
 		js, err := json.Marshal(response)
@@ -372,10 +375,10 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			info := types.GetElectionInfoResponse{
 				ElectionID: string(election.ElectionID),
 				Title:      election.Title,
-				Candidates: election.Candidates,
 				Status:     uint16(election.Status),
 				Pubkey:     hex.EncodeToString(election.Pubkey),
 				Result:     election.DecryptedBallots,
+				Format:     election.Format,
 			}
 
 			allElectionsInfo = append(allElectionsInfo, info)
@@ -660,8 +663,8 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		addrs := make([]mino.Address, len(shuffleBallotsRequest.Members))
-		pubkeys := make([]crypto.PublicKey, len(shuffleBallotsRequest.Members))
+		addrs := make([]mino.Address, len(election.Members))
+		pubkeys := make([]crypto.PublicKey, len(election.Members))
 
 		var m mino.Mino
 		err = ctx.Injector.Resolve(&m)
@@ -670,7 +673,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 			return
 		}
 
-		for i, member := range shuffleBallotsRequest.Members {
+		for i, member := range election.Members {
 			addr, pubkey, err := decodeMember(member.Address, member.PublicKey, m)
 			if err != nil {
 				http.Error(w, "Failed to decode CollectiveAuthorityMember: "+err.Error(), http.StatusInternalServerError)
@@ -784,8 +787,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		Ks := make([]kyber.Point, 0, len(election.ShuffledBallots))
 		Cs := make([]kyber.Point, 0, len(election.ShuffledBallots))
 
-		// todo : PUT THRESHOLD IN ELECTION
-		for _, v := range election.ShuffledBallots[3] {
+		for _, v := range election.ShuffledBallots[election.ShuffleThreshold] {
 			ciphertext := new(types.Ciphertext)
 			err = json.NewDecoder(bytes.NewBuffer(v)).Decode(ciphertext)
 			if err != nil {
@@ -814,7 +816,7 @@ func (a *initHttpServerAction) Execute(ctx node.Context) error {
 		decryptedBallots := make([]types.Ballot, 0, len(election.ShuffledBallots))
 
 		for i := 0; i < len(Ks); i++ {
-			message, err := dkgActor.Decrypt(Ks[i], Cs[i])
+			message, err := dkgActor.Decrypt(Ks[i], Cs[i], string(election.ElectionID))
 			if err != nil {
 				http.Error(w, "Failed to decrypt (K,C): "+err.Error(), http.StatusInternalServerError)
 				return
@@ -1069,7 +1071,7 @@ func getElectionsMetadata(service ordering.Service) (*types.ElectionsMetadata, e
 
 	err = json.NewDecoder(bytes.NewBuffer(electionMetadataProof.GetValue())).Decode(electionsMetadata)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to unmarshal SimpleElection: %v", err)
+		return nil, xerrors.Errorf("failed to unmarshal ElectionMetadata: %v", err)
 	}
 
 	return electionsMetadata, nil
@@ -1199,11 +1201,17 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 
 	dela.Logger.Info().Msg("----------------------- CREATE SIMPLE ELECTION : ")
 
+	roster, err := a.readMembers(ctx)
+	if err != nil {
+		return xerrors.Errorf("failed to read roster: %v", err)
+	}
+
 	createSimpleElectionRequest := types.CreateElectionRequest{
-		Title:      "TitleTest",
-		AdminId:    "adminId",
-		Candidates: nil,
-		Token:      "token",
+		Title:            "TitleTest",
+		AdminId:          "adminId",
+		Token:            "token",
+		Members:          roster,
+		ShuffleThreshold: 2,
 	}
 
 	js, err := json.Marshal(createSimpleElectionRequest)
@@ -1508,16 +1516,10 @@ func (a *scenarioTestAction) Execute(ctx node.Context) error {
 
 	dela.Logger.Info().Msg("----------------------- SHUFFLE BALLOTS : ")
 
-	roster, err := a.readMembers(ctx)
-	if err != nil {
-		return xerrors.Errorf("failed to read roster: %v", err)
-	}
-
 	shuffleBallotsRequest := types.ShuffleBallotsRequest{
 		ElectionID: electionId,
 		UserId:     "adminId",
 		Token:      token,
-		Members:    roster,
 	}
 
 	js, err = json.Marshal(shuffleBallotsRequest)

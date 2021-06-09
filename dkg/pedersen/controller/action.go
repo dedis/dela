@@ -13,8 +13,6 @@ import (
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/suites"
 	"golang.org/x/xerrors"
-	"io/ioutil"
-	"os"
 	"strings"
 )
 
@@ -213,106 +211,6 @@ func (a *getPublicKeyAction) Execute(ctx node.Context) error {
 	dela.Logger.Info().
 		Hex("DKG public key", pubkeyBuf).
 		Msg("DKG public key")
-
-	return nil
-}
-
-// encryptAction is an action that encrypt the given plaintext
-//
-// - implements node.ActionTemplate
-type encryptAction struct {
-}
-
-// Execute implements node.ActionTemplate. It retrieves the encryption
-// of the given plaintext from the DKG service and writes the
-// ciphertext pair in files
-func (a *encryptAction) Execute(ctx node.Context) error {
-	message := ctx.Flags.String("plaintext")
-	KfilePath := ctx.Flags.String("KfilePath")
-	CfilePath := ctx.Flags.String("CfilePath")
-
-	var actor dkg.Actor
-	err := ctx.Injector.Resolve(&actor)
-	if err != nil {
-		return xerrors.Errorf("failed to resolve actor: %v", err)
-	}
-
-	K, C, _, err := actor.Encrypt([]byte(message))
-	if err != nil {
-		return xerrors.Errorf("failed to encrypt the plaintext: %v", err)
-	}
-
-	Kmarshalled, err := K.MarshalBinary()
-	if err != nil {
-		return xerrors.Errorf("failed to marshall the K element of the ciphertext pair: %v", err)
-	}
-
-	err = ioutil.WriteFile(KfilePath, Kmarshalled, os.ModePerm)
-	if err != nil {
-		return xerrors.Errorf("failed to write file: %v", err)
-	}
-
-	Cmarshalled, err := C.MarshalBinary()
-	if err != nil {
-		return xerrors.Errorf("failed to marshall the C element of the ciphertext pair: %v", err)
-	}
-
-	err = ioutil.WriteFile(CfilePath, Cmarshalled, os.ModePerm)
-	if err != nil {
-		return xerrors.Errorf("failed to write file: %v", err)
-	}
-
-	return nil
-}
-
-// decryptAction is an action that decrypts the given ciphertext
-//
-// - implements node.ActionTemplate
-type decryptAction struct {
-}
-
-// Execute implements node.ActionTemplate. It reads the ciphertext pair,
-// it retrieves the decryption from the DKG service and prints the
-// corresponding plaintext
-func (a *decryptAction) Execute(ctx node.Context) error {
-	KfilePath := ctx.Flags.String("KfilePath")
-	CfilePath := ctx.Flags.String("CfilePath")
-
-	var actor dkg.Actor
-	err := ctx.Injector.Resolve(&actor)
-	if err != nil {
-		return xerrors.Errorf("failed to resolve actor: %v", err)
-	}
-
-	Kmarshalled, err := ioutil.ReadFile(KfilePath)
-	if err != nil {
-		return xerrors.Errorf("failed to read K file: %v", err)
-	}
-
-	K := suite.Point()
-	err = K.UnmarshalBinary(Kmarshalled)
-	if err != nil {
-		return xerrors.Errorf("failed to unmarshal K: %v", err)
-	}
-
-	Cmarshalled, err := ioutil.ReadFile(CfilePath)
-	if err != nil {
-		return xerrors.Errorf("failed to read C file: %v", err)
-	}
-
-	C := suite.Point()
-	err = C.UnmarshalBinary(Cmarshalled)
-	if err != nil {
-		return xerrors.Errorf("failed to unmarshal C: %v", err)
-	}
-
-	message, err := actor.Decrypt(K, C)
-	if err != nil {
-		return xerrors.Errorf("failed to decrypt (K,C): %v", err)
-	}
-
-	dela.Logger.Info().
-		Msg(string(message))
 
 	return nil
 }

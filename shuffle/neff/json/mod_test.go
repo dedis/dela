@@ -20,17 +20,17 @@ func TestMessageFormat_StartShuffle_Encode(t *testing.T) {
 	_, err = format.Encode(ctx, fake.Message{})
 	require.EqualError(t, err, "unsupported message of type 'fake.Message'")
 
-	startShuffle := types.NewStartShuffle(0, "", []mino.Address{fake.NewBadAddress()})
+	startShuffle := types.NewStartShuffle("", []mino.Address{fake.NewBadAddress()})
 
 	_, err = format.Encode(ctx, startShuffle)
 	require.EqualError(t, err, fake.Err("couldn't marshal address"))
 
-	startShuffle = types.NewStartShuffle(1, "dummyId", []mino.Address{fake.NewAddress(0)})
+	startShuffle = types.NewStartShuffle("dummyId", []mino.Address{fake.NewAddress(0)})
 
 	data, err := format.Encode(ctx, startShuffle)
 	require.NoError(t, err)
 
-	regexp := `{"StartShuffle":{"Threshold":1,"ElectionId":"dummyId","Addresses":\["AAAAAA=="\]`
+	regexp := `{"StartShuffle":{"ElectionId":"dummyId","Addresses":\["AAAAAA=="\]`
 	require.Regexp(t, regexp, string(data))
 }
 
@@ -63,7 +63,6 @@ func TestMessageFormat_StartShuffle_Decode(t *testing.T) {
 	require.EqualError(t, err, "invalid factory of type '<nil>'")
 
 	expected := types.NewStartShuffle(
-		5,
 		"dummyId",
 		[]mino.Address{fake.NewAddress(0)},
 	)
@@ -73,7 +72,6 @@ func TestMessageFormat_StartShuffle_Decode(t *testing.T) {
 
 	startShuffle, err := format.Decode(ctx, data)
 	require.NoError(t, err)
-	require.Equal(t, expected.GetThreshold(), startShuffle.(types.StartShuffle).GetThreshold())
 	require.Equal(t, expected.GetElectionId(), startShuffle.(types.StartShuffle).GetElectionId())
 	require.Len(t, startShuffle.(types.StartShuffle).GetAddresses(), len(expected.GetAddresses()))
 

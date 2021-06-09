@@ -20,7 +20,6 @@ type Election struct {
 	Title            string
 	ElectionID       ID
 	AdminId          string
-	Candidates       []string
 	Status           status // Initial | Open | Closed | Shuffling | Decrypting
 	Pubkey           []byte
 	EncryptedBallots map[string][]byte
@@ -28,6 +27,8 @@ type Election struct {
 	Proofs           map[int][]byte
 	DecryptedBallots []Ballot
 	ShuffleThreshold int
+	Members          []CollectiveAuthorityMember
+	Format           []byte
 }
 
 // Ballot contains all information about a simple ballot

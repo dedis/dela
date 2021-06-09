@@ -47,39 +47,6 @@ func (m controller) SetCommands(builder node.Builder) {
 	sub = cmd.SetSubCommand("getPublicKey")
 	sub.SetDescription("prints the distributed public Key")
 	sub.SetAction(builder.MakeAction(&getPublicKeyAction{}))
-
-	// memcoin --config /tmp/node1 dkg encrypt --plaintext Hello --KfilePath K
-	// --CfilePath C
-	sub = cmd.SetSubCommand("encrypt")
-	sub.SetDescription("encrypt the given string and write the ciphertext pair in the corresponding file")
-	sub.SetFlags(cli.StringFlag{
-		Name:     "plaintext",
-		Usage:    "plaintext to encrypt",
-		Required: true,
-	}, cli.StringFlag{
-		Name:     "KfilePath",
-		Usage:    "path to write the K element of the ciphertext pair",
-		Required: true,
-	}, cli.StringFlag{
-		Name:     "CfilePath",
-		Usage:    "path to write the C element of the ciphertext pair",
-		Required: true,
-	})
-	sub.SetAction(builder.MakeAction(&encryptAction{}))
-
-	// memcoin --config /tmp/node2 dkg decrypt --KfilePath K --CfilePath C
-	sub = cmd.SetSubCommand("decrypt")
-	sub.SetDescription("decrypt the given ciphertext pair and print the corresponding plaintext")
-	sub.SetFlags(cli.StringFlag{
-		Name:     "KfilePath",
-		Usage:    "path to retreive the K element of the ciphertext pair",
-		Required: true,
-	}, cli.StringFlag{
-		Name:     "CfilePath",
-		Usage:    "path to retreive the C element of the ciphertext pair",
-		Required: true,
-	})
-	sub.SetAction(builder.MakeAction(&decryptAction{}))
 }
 
 // OnStart implements node.Initializer. It creates and registers a pedersen DKG.
@@ -90,7 +57,7 @@ func (m controller) OnStart(ctx cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("failed to resolve mino: %v", err)
 	}
 
-	dkg, pubkey := pedersen.NewPedersen(no)
+	dkg, pubkey := pedersen.NewPedersen(no, true)
 
 	inj.Inject(dkg)
 	inj.Inject(pubkey)

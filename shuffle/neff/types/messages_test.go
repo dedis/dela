@@ -15,20 +15,14 @@ func init() {
 	RegisterMessageFormat(fake.BadFormat, fake.NewBadFormat())
 }
 
-func TestStartShuffle_GetThreshold(t *testing.T) {
-	startShuffle := NewStartShuffle(5, "", nil)
-
-	require.Equal(t, 5, startShuffle.GetThreshold())
-}
-
 func TestStartShuffle_GetElectionId(t *testing.T) {
-	startShuffle := NewStartShuffle(0, "dummyId", nil)
+	startShuffle := NewStartShuffle("dummyId", nil)
 
 	require.Equal(t, "dummyId", startShuffle.GetElectionId())
 }
 
 func TestStartShuffle_GetAddresses(t *testing.T) {
-	startShuffle := NewStartShuffle(0, "", []mino.Address{fake.NewAddress(0)})
+	startShuffle := NewStartShuffle("", []mino.Address{fake.NewAddress(0)})
 
 	require.Len(t, startShuffle.GetAddresses(), 1)
 }

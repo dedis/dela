@@ -207,17 +207,23 @@ func (e evotingCommand) createElection(snap store.Snapshot, step execution.Step,
 		return xerrors.Errorf("failed to marshall dkg public key : %v", err)
 	}
 
+	if float64(createElectionTransaction.ShuffleThreshold) < (float64(2) / 3 * float64(len(createElectionTransaction.Members))) {
+		return xerrors.Errorf("the threshold is too low, it should be at least 2/3 of the length of the roster")
+	}
+
 	election := types.Election{
 		Title:            createElectionTransaction.Title,
 		ElectionID:       types.ID(createElectionTransaction.ElectionID),
 		AdminId:          createElectionTransaction.AdminId,
-		Candidates:       createElectionTransaction.Candidates,
 		Status:           types.Open,
 		Pubkey:           publicKeyBuf,
 		EncryptedBallots: map[string][]byte{},
 		ShuffledBallots:  map[int][][]byte{},
 		Proofs:           map[int][]byte{},
 		DecryptedBallots: []types.Ballot{},
+		ShuffleThreshold: createElectionTransaction.ShuffleThreshold,
+		Members:          createElectionTransaction.Members,
+		Format:           createElectionTransaction.Format,
 	}
 
 	js, err := json.Marshal(election)
@@ -247,7 +253,7 @@ func (e evotingCommand) createElection(snap store.Snapshot, step execution.Step,
 	} else {
 		err = json.NewDecoder(bytes.NewBuffer(electionsMetadataBuff)).Decode(electionsMetadata)
 		if err != nil {
-			return xerrors.Errorf("failed to unmarshal Election: %v", err)
+			return xerrors.Errorf("failed to unmarshal ElectionsMetadata: %v", err)
 		}
 	}
 
@@ -446,7 +452,7 @@ func (e evotingCommand) shuffleBallots(snap store.Snapshot, step execution.Step)
 	}
 
 	// todo : threshold should be part of election struct
-	if shuffleBallotsTransaction.Round == 3 {
+	if shuffleBallotsTransaction.Round == election.ShuffleThreshold {
 		election.Status = types.ShuffledBallots
 	}
 

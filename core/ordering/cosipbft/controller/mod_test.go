@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding"
+	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/dkg"
 	"io/ioutil"
 	"os"
@@ -173,6 +174,9 @@ func (f fakeDKG) Listen() (dkg.Actor, error) {
 
 func (f fakeDKG) GetLastActor() (dkg.Actor, error) {
 	return nil, f.err
+}
+
+func (f fakeDKG) SetService(service ordering.Service) {
 }
 
 type fakePool struct {

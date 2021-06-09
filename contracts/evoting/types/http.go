@@ -5,12 +5,18 @@ type LoginResponse struct {
 	Token  string
 }
 
+type CollectiveAuthorityMember struct {
+	Address   string
+	PublicKey string
+}
+
 type CreateElectionRequest struct {
-	Title      string
-	AdminId    string
-	Candidates []string
-	Token      string
-	// PublicKey  string
+	Title            string
+	AdminId          string
+	Token            string
+	Members          []CollectiveAuthorityMember
+	ShuffleThreshold int
+	Format           []byte
 }
 
 type CreateElectionResponse struct {
@@ -25,11 +31,6 @@ type CastVoteRequest struct {
 }
 
 type CastVoteResponse struct {
-}
-
-type CollectiveAuthorityMember struct {
-	Address   string
-	PublicKey string
 }
 
 // Wraps the ciphertext pairs
@@ -51,7 +52,6 @@ type ShuffleBallotsRequest struct {
 	ElectionID string
 	UserId     string
 	Token      string
-	Members    []CollectiveAuthorityMember
 }
 
 type ShuffleBallotsResponse struct {
@@ -86,10 +86,10 @@ type GetElectionInfoRequest struct {
 type GetElectionInfoResponse struct {
 	ElectionID string
 	Title      string
-	Candidates []string
 	Status     uint16
 	Pubkey     string
 	Result     []Ballot
+	Format     []byte
 }
 
 type GetAllElectionsInfoRequest struct {

@@ -11,6 +11,7 @@ import (
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/execution/native"
+	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/signed"
@@ -81,7 +82,6 @@ func TestCommand_CreateElection(t *testing.T) {
 		ElectionID: "dummyId",
 		Title:      "dummyTitle",
 		AdminId:    "dummyAdminId",
-		Candidates: []string{},
 	}
 
 	js, _ := json.Marshal(dummyCreateElectionTransaction)
@@ -121,7 +121,6 @@ func TestCommand_CreateElection(t *testing.T) {
 	require.Equal(t, dummyCreateElectionTransaction.ElectionID, string(election.ElectionID))
 	require.Equal(t, dummyCreateElectionTransaction.Title, election.Title)
 	require.Equal(t, dummyCreateElectionTransaction.AdminId, election.AdminId)
-	require.Equal(t, dummyCreateElectionTransaction.Candidates, election.Candidates)
 	require.Equal(t, types.Open, int(election.Status))
 
 }
@@ -145,7 +144,6 @@ func TestCommand_CastVote(t *testing.T) {
 		Title:            "dummyTitle",
 		ElectionID:       "dummyId",
 		AdminId:          "dummyAdminId",
-		Candidates:       nil,
 		Status:           0,
 		Pubkey:           nil,
 		EncryptedBallots: map[string][]byte{},
@@ -217,7 +215,6 @@ func TestCommand_CloseElection(t *testing.T) {
 		Title:            "dummyTitle",
 		ElectionID:       "dummyId",
 		AdminId:          "dummyAdminId",
-		Candidates:       nil,
 		Status:           0,
 		Pubkey:           nil,
 		EncryptedBallots: map[string][]byte{},
@@ -306,7 +303,6 @@ func TestCommand_ShuffleBallots(t *testing.T) {
 		Title:            "dummyTitle",
 		ElectionID:       "dummyId",
 		AdminId:          "dummyAdminId",
-		Candidates:       nil,
 		Status:           0,
 		Pubkey:           nil,
 		EncryptedBallots: map[string][]byte{},
@@ -519,7 +515,6 @@ func TestCommand_DecryptBallots(t *testing.T) {
 		Title:            "dummyTitle",
 		ElectionID:       "dummyId",
 		AdminId:          "dummyAdminId",
-		Candidates:       nil,
 		Status:           0,
 		Pubkey:           nil,
 		EncryptedBallots: map[string][]byte{},
@@ -598,7 +593,6 @@ func TestCommand_CancelElection(t *testing.T) {
 		Title:            "dummyTitle",
 		ElectionID:       "dummyId",
 		AdminId:          "dummyAdminId",
-		Candidates:       nil,
 		Status:           1,
 		Pubkey:           nil,
 		EncryptedBallots: map[string][]byte{},
@@ -686,6 +680,9 @@ func (f fakeDKG) GetLastActor() (dkg.Actor, error) {
 	return f.actor, f.err
 }
 
+func (f fakeDKG) SetService(service ordering.Service) {
+}
+
 type fakeDkgActor struct {
 	publicKey kyber.Point
 	err       error
@@ -703,7 +700,7 @@ func (f fakeDkgActor) Encrypt(message []byte) (K, C kyber.Point, remainder []byt
 	return nil, nil, nil, f.err
 }
 
-func (f fakeDkgActor) Decrypt(K, C kyber.Point) ([]byte, error) {
+func (f fakeDkgActor) Decrypt(K, C kyber.Point, electionId string) ([]byte, error) {
 	return nil, f.err
 }
 

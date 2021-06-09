@@ -15,7 +15,6 @@ func init() {
 type Address []byte
 
 type StartShuffle struct {
-	Threshold  int
 	ElectionId string
 	Addresses  []Address
 }
@@ -61,7 +60,6 @@ func (f MsgFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) 
 		}
 
 		startShuffle := StartShuffle{
-			Threshold:  in.GetThreshold(),
 			ElectionId: in.GetElectionId(),
 			Addresses:  addrs,
 		}
@@ -116,7 +114,7 @@ func (f MsgFormat) decodeStartShuffle(ctx serde.Context, startShuffle *StartShuf
 		addrs[i] = fac.FromText(addr)
 	}
 
-	s := types.NewStartShuffle(startShuffle.Threshold, startShuffle.ElectionId, addrs)
+	s := types.NewStartShuffle(startShuffle.ElectionId, addrs)
 
 	return s, nil
 }

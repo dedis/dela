@@ -1,7 +1,6 @@
 package neff
 
 import (
-	"go.dedis.ch/dela"
 	evotingController "go.dedis.ch/dela/contracts/evoting/controller"
 	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
@@ -110,9 +109,7 @@ func (a *Actor) Shuffle(co crypto.CollectiveAuthority, electionId string) (err e
 		}
 	}
 
-	threshold := len(addrs)
-	message := types.NewStartShuffle(threshold, electionId, addrs)
-	dela.Logger.Info().Msgf("threshold: %d", threshold)
+	message := types.NewStartShuffle(electionId, addrs)
 
 	errs := sender.Send(message, addrs...)
 	err = <-errs
@@ -121,7 +118,7 @@ func (a *Actor) Shuffle(co crypto.CollectiveAuthority, electionId string) (err e
 	}
 
 	// todo add timeout, ask noémien and gaurav about every timeout
-	addr, msg, err := receiver.Recv(context.Background())
+	addr, msg, err := receiver.Recv(ctx)
 
 	if err != nil {
 		return xerrors.Errorf("got an error from '%s' while "+

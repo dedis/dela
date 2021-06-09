@@ -265,15 +265,17 @@ func (s StartDone) Serialize(ctx serde.Context) ([]byte, error) {
 //
 // - implements serde.Message
 type DecryptRequest struct {
-	K kyber.Point
-	C kyber.Point
+	K          kyber.Point
+	C          kyber.Point
+	electionId string
 }
 
 // NewDecryptRequest creates a new decryption request.
-func NewDecryptRequest(k, c kyber.Point) DecryptRequest {
+func NewDecryptRequest(k, c kyber.Point, electionId string) DecryptRequest {
 	return DecryptRequest{
-		K: k,
-		C: c,
+		K:          k,
+		C:          c,
+		electionId: electionId,
 	}
 }
 
@@ -285,6 +287,11 @@ func (req DecryptRequest) GetK() kyber.Point {
 // GetC returns C.
 func (req DecryptRequest) GetC() kyber.Point {
 	return req.C
+}
+
+// GetElectionId returns electionId.
+func (req DecryptRequest) GetElectionId() string {
+	return req.electionId
 }
 
 // Serialize implements serde.Message.

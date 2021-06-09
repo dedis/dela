@@ -53,8 +53,9 @@ type StartDone struct {
 }
 
 type DecryptRequest struct {
-	K []byte
-	C []byte
+	K          []byte
+	C          []byte
+	ElectionId string
 }
 
 type DecryptReply struct {
@@ -166,8 +167,9 @@ func (f msgFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) 
 		}
 
 		req := DecryptRequest{
-			K: k,
-			C: c,
+			K:          k,
+			C:          c,
+			ElectionId: in.GetElectionId(),
 		}
 
 		m = Message{DecryptRequest: &req}
@@ -262,7 +264,7 @@ func (f msgFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error)
 			return nil, xerrors.Errorf("couldn't unmarshal C: %v", err)
 		}
 
-		req := types.NewDecryptRequest(k, c)
+		req := types.NewDecryptRequest(k, c, m.DecryptRequest.ElectionId)
 
 		return req, nil
 	}

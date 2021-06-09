@@ -26,7 +26,9 @@ import (
 	"time"
 )
 
-const shuffleTransactionTimeout = time.Second * 2
+const shuffleTransactionTimeout = time.Second * 1
+const endShuffleTimeout = time.Second * 50
+
 
 var suite = suites.MustFind("Ed25519")
 
@@ -85,24 +87,17 @@ func (h *Handler) HandleStartShuffleMessage(startShuffleMessage types.StartShuff
 
 	dela.Logger.Info().Msg("SHUFFLE / RECEIVED FROM  : " + from.String())
 
-	electionIDBuff, err := hex.DecodeString(startShuffleMessage.GetElectionId())
+	election, err := h.getElection(startShuffleMessage)
 	if err != nil {
-		return xerrors.Errorf("failed to decode election id: %v", err)
+		return xerrors.Errorf("failed to get election: %v", err)
 	}
 
-	for round := 1; round <= startShuffleMessage.GetThreshold(); round++ {
+	for round := 1; round <= election.ShuffleThreshold; round++ {
 		dela.Logger.Info().Msgf("SHUFFLE / ROUND : %d", round)
 
-		prf, err := h.service.GetProof(electionIDBuff)
+		election, err := h.getElection(startShuffleMessage)
 		if err != nil {
-			return xerrors.Errorf("failed to read on the blockchain: %v", err)
-		}
-
-		election := new(electionTypes.Election)
-
-		err = json.NewDecoder(bytes.NewBuffer(prf.GetValue())).Decode(election)
-		if err != nil {
-			return xerrors.Errorf("failed to unmarshal Election: %v", err)
+			return xerrors.Errorf("failed to get election: %v", err)
 		}
 
 		if election.Status != electionTypes.Closed {
@@ -258,7 +253,7 @@ func (h *Handler) HandleStartShuffleMessage(startShuffleMessage types.StartShuff
 				} else {
 					dela.Logger.Info().Msg("ACCEPTED")
 
-					if round == startShuffleMessage.GetThreshold() {
+					if round == election.ShuffleThreshold {
 						message := types.EndShuffle{}
 						addrs := make([]mino.Address, 0, len(startShuffleMessage.GetAddresses())-1)
 						for _, addr := range startShuffleMessage.GetAddresses() {
@@ -275,7 +270,9 @@ func (h *Handler) HandleStartShuffleMessage(startShuffleMessage types.StartShuff
 						dela.Logger.Info().Msg("SENT END SHUFFLE MESSAGES")
 					} else {
 						dela.Logger.Info().Msg("WAITING FOR END SHUFFLE MESSAGE")
-						addr, msg, err := in.Recv(context.Background())
+						contextEnd, cancelEnd := context.WithTimeout(context.Background(), endShuffleTimeout)
+						defer cancelEnd()
+						addr, msg, err := in.Recv(contextEnd)
 						if err != nil {
 							cancel()
 							return xerrors.Errorf("got an error from '%s' while "+
@@ -311,8 +308,28 @@ func (h *Handler) HandleStartShuffleMessage(startShuffleMessage types.StartShuff
 		dela.Logger.Info().Msg("NEXT ROUND")
 
 	}
+	dela.Logger.Info().Msg("Shuffle is done without your contribution")
+	return nil
+}
 
-	return xerrors.Errorf("failed to shuffle, all your transactions got denied")
+func (h *Handler) getElection(startShuffleMessage types.StartShuffle) (*electionTypes.Election, error) {
+	electionIDBuff, err := hex.DecodeString(startShuffleMessage.GetElectionId())
+	if err != nil {
+		return nil, xerrors.Errorf("failed to decode election id: %v", err)
+	}
+
+	prf, err := h.service.GetProof(electionIDBuff)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to read on the blockchain: %v", err)
+	}
+
+	election := new(electionTypes.Election)
+
+	err = json.NewDecoder(bytes.NewBuffer(prf.GetValue())).Decode(election)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to unmarshal Election: %v", err)
+	}
+	return election, nil
 }
 
 // getManager is the function called when we need a transaction manager. It

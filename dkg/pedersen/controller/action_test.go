@@ -5,6 +5,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
+	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/internal/testing/fake"
@@ -138,8 +139,6 @@ func TestExportInfoAction_Execute(t *testing.T) {
 	// todo : check context writer
 }
 
-// todo : test other actions or remove ?
-
 // -----------------------------------------------------------------------------
 // Utility functions
 
@@ -153,6 +152,9 @@ func (f fakePedersen) Listen() (dkg.Actor, error) {
 
 func (f fakePedersen) GetLastActor() (dkg.Actor, error) {
 	return nil, f.err
+}
+
+func (f fakePedersen) SetService(service ordering.Service) () {
 }
 
 type fakeActor struct {
@@ -172,7 +174,7 @@ func (f fakeActor) Encrypt(message []byte) (K, C kyber.Point, remainder []byte, 
 	return nil, nil, nil, f.err
 }
 
-func (f fakeActor) Decrypt(K, C kyber.Point) ([]byte, error) {
+func (f fakeActor) Decrypt(K, C kyber.Point, electionId string) ([]byte, error) {
 	return nil, f.err
 }
 

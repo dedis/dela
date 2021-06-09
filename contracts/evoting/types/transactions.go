@@ -1,14 +1,16 @@
 package types
 
-type ElectionsMetadata struct{
+type ElectionsMetadata struct {
 	ElectionsIds []string
 }
 
 type CreateElectionTransaction struct {
-	ElectionID string
-	Title      string
-	AdminId    string
-	Candidates []string
+	ElectionID       string
+	Title            string
+	AdminId          string
+	ShuffleThreshold int
+	Members          []CollectiveAuthorityMember
+	Format           []byte
 }
 
 type CastVoteTransaction struct {

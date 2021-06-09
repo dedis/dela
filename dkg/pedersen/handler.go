@@ -1,11 +1,13 @@
 package pedersen
 
 import (
+	"bytes"
 	"context"
-	"sync"
-	"time"
-
+	"encoding/hex"
+	"encoding/json"
 	"go.dedis.ch/dela"
+	evotingTypes "go.dedis.ch/dela/contracts/evoting/types"
+	"go.dedis.ch/dela/core/ordering"
 	"go.dedis.ch/dela/dkg/pedersen/types"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/kyber/v3"
@@ -13,6 +15,8 @@ import (
 	pedersen "go.dedis.ch/kyber/v3/share/dkg/pedersen"
 	vss "go.dedis.ch/kyber/v3/share/vss/pedersen"
 	"golang.org/x/xerrors"
+	"sync"
+	"time"
 )
 
 // recvResponseTimeout is the maximum time a node will wait for a response
@@ -68,14 +72,18 @@ type Handler struct {
 	me        mino.Address
 	privShare *share.PriShare
 	startRes  *state
+	service   ordering.Service
+	evoting   bool
 }
 
 // NewHandler creates a new handler
-func NewHandler(privKey kyber.Scalar, me mino.Address) *Handler {
+func NewHandler(privKey kyber.Scalar, me mino.Address, service ordering.Service, evoting bool) *Handler {
 	return &Handler{
 		privKey:  privKey,
 		me:       me,
 		startRes: &state{},
+		service:  service,
+		evoting:  evoting,
 	}
 }
 
@@ -137,6 +145,17 @@ mainSwitch:
 		if !h.startRes.Done() {
 			return xerrors.Errorf("you must first initialize DKG. Did you " +
 				"call setup() first?")
+		}
+
+		if h.evoting {
+			isShuffled, err := h.checkIsShuffled(msg.K, msg.C, msg.GetElectionId())
+			if err != nil {
+				return xerrors.Errorf("failed to check if the ciphertext has been shuffled: %v", err)
+			}
+
+			if !isShuffled {
+				return xerrors.Errorf("the ciphertext has not been shuffled")
+			}
 		}
 
 		// TODO: check if started before
@@ -407,4 +426,53 @@ func (h *Handler) handleDeal(msg types.Deal, from mino.Address, addrs []mino.Add
 	}
 
 	return nil
+}
+
+// checkIsShuffled allows to check if the ciphertext to decrypt has been
+// previously shuffled
+func (h *Handler) checkIsShuffled(K kyber.Point, C kyber.Point, electionId string) (bool, error) {
+
+	electionIDBuff, err := hex.DecodeString(electionId)
+	if err != nil {
+		return false, xerrors.Errorf("failed to decode electionID: %v", err)
+	}
+
+	proof, err := h.service.GetProof(electionIDBuff)
+	if err != nil {
+		return false, xerrors.Errorf("failed to read on the blockchain: %v", err)
+	}
+
+	election := new(evotingTypes.Election)
+	err = json.NewDecoder(bytes.NewBuffer(proof.GetValue())).Decode(election)
+	if err != nil {
+		return false, xerrors.Errorf("failed to unmarshal Election: %v", err)
+	}
+
+	for _, v := range election.ShuffledBallots[election.ShuffleThreshold] {
+		ciphertext := new(evotingTypes.Ciphertext)
+		err = json.NewDecoder(bytes.NewBuffer(v)).Decode(ciphertext)
+		if err != nil {
+			return false, xerrors.Errorf("failed to unmarshal Ciphertext: %v", err)
+		}
+
+		Kprime := suite.Point()
+		err = Kprime.UnmarshalBinary(ciphertext.K)
+		if err != nil {
+			return false, xerrors.Errorf("failed to unmarshal Kyber.Point: %v", err)
+		}
+
+		Cprime := suite.Point()
+
+		err = Cprime.UnmarshalBinary(ciphertext.C)
+		if err != nil {
+			return false, xerrors.Errorf("failed to unmarshal Kyber.Point: %v", err)
+		}
+
+		if Kprime.Equal(K) && Cprime.Equal(C) {
+			return true, nil
+		}
+	}
+
+	return false, nil
+
 }
