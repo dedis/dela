@@ -16,7 +16,7 @@ type CreateElectionRequest struct {
 	Token            string
 	Members          []CollectiveAuthorityMember
 	ShuffleThreshold int
-	Format           []byte
+	Format           string
 }
 
 type CreateElectionResponse struct {
@@ -89,7 +89,7 @@ type GetElectionInfoResponse struct {
 	Status     uint16
 	Pubkey     string
 	Result     []Ballot
-	Format     []byte
+	Format     string
 }
 
 type GetAllElectionsInfoRequest struct {

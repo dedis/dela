@@ -28,7 +28,7 @@ type Election struct {
 	DecryptedBallots []Ballot
 	ShuffleThreshold int
 	Members          []CollectiveAuthorityMember
-	Format           []byte
+	Format           string
 }
 
 // Ballot contains all information about a simple ballot

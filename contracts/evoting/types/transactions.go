@@ -10,7 +10,7 @@ type CreateElectionTransaction struct {
 	AdminId          string
 	ShuffleThreshold int
 	Members          []CollectiveAuthorityMember
-	Format           []byte
+	Format           string
 }
 
 type CastVoteTransaction struct {
