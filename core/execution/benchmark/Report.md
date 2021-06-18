@@ -10,6 +10,8 @@ is to get a comparison between a Unikernel-based solution and other common ones.
 The benchmark are run in go, using the native benchmark solution. The benchmark
 reports the time by operation: ns/op.
 
+Inside each benchmark we iterate the operations 50 times.
+
 The code used for those results uses version
 `d936178eccb2264109ecd8fc59fc9cfd8dfb79e0` of
 https://github.com/dedis/dela/tree/unikernel-initial.
@@ -105,6 +107,21 @@ Bench              │      Sol VM│
 └──────────┘       └──┴─────────┘
 ```
 
+### WASM
+
+This setup uses the Web-Assembly virtual machine.
+
+Based on the work in https://github.com/dedis/student_21_dela-wasm version
+`fc381375cb68a26d46cdbd070243e7244c2e54a1`, with the update that the point
+selection is made inside the iteration loop.
+
+```
+Bench                WASM
+┌─────────┐       ┌────────────┐
+│         ├──────►│   Smart C. │
+└─────────┘       └────────────┘
+```
+
 ## Experiments
 
 We perform two series of experiment:
@@ -116,7 +133,12 @@ We perform two series of experiment:
 
 ## Results
 
-|   [ns/op]    |Native|Unikernel |TCP   |Solidity|Solidity TCP|
-|--------------|------|----------|------|--------|------------|
-|Increment     |0.000 |0.470     |0.014 |0.001   |0.014       |
-|Simple crypto |0.005 |          |      |0.237   |            |
+|   [ns/op]    |Increment|Simple crypto|
+|--------------|---------|-------------|
+| Native       |0.00     |0.005        |
+| Unikernel    |0.470    |             |
+| TCP          |0.014    |             |
+| Solidity     |0.001    |0.237        |
+| Solidity TCP |0.014    |             |
+| WASM Go      |0.0238   |0.058        |
+| WASM C       |0.0162   |0.052        |
