@@ -16,7 +16,7 @@ import (
 )
 
 func TestPedersen_Listen(t *testing.T) {
-	pedersen, _ := NewPedersen(fake.Mino{})
+	pedersen, _ := NewPedersen(fake.Mino{}, false)
 
 	actor, err := pedersen.Listen()
 	require.NoError(t, err)
@@ -87,13 +87,13 @@ func TestPedersen_Decrypt(t *testing.T) {
 		startRes: &state{participants: []mino.Address{fake.NewAddress(0)}, distrKey: suite.Point()},
 	}
 
-	_, err := actor.Decrypt(suite.Point(), suite.Point())
+	_, err := actor.Decrypt(suite.Point(), suite.Point(), "electionId")
 	require.EqualError(t, err, fake.Err("failed to create stream"))
 
 	rpc := fake.NewStreamRPC(fake.NewBadReceiver(), fake.NewBadSender())
 	actor.rpc = rpc
 
-	_, err = actor.Decrypt(suite.Point(), suite.Point())
+	_, err = actor.Decrypt(suite.Point(), suite.Point(), "electionId")
 	require.EqualError(t, err, fake.Err("failed to send decrypt request"))
 
 	recv := fake.NewReceiver(fake.NewRecvMsg(fake.NewAddress(0), nil))
@@ -101,7 +101,7 @@ func TestPedersen_Decrypt(t *testing.T) {
 	rpc = fake.NewStreamRPC(recv, fake.Sender{})
 	actor.rpc = rpc
 
-	_, err = actor.Decrypt(suite.Point(), suite.Point())
+	_, err = actor.Decrypt(suite.Point(), suite.Point(), "electionId")
 	require.EqualError(t, err, "got unexpected reply, expected types.DecryptReply but got: <nil>")
 
 	recv = fake.NewReceiver(
@@ -111,7 +111,7 @@ func TestPedersen_Decrypt(t *testing.T) {
 	rpc = fake.NewStreamRPC(recv, fake.Sender{})
 	actor.rpc = rpc
 
-	_, err = actor.Decrypt(suite.Point(), suite.Point())
+	_, err = actor.Decrypt(suite.Point(), suite.Point(), "electionId")
 	require.EqualError(t, err, "failed to recover commit: share: not enough "+
 		"good public shares to reconstruct secret commitment")
 
@@ -122,7 +122,7 @@ func TestPedersen_Decrypt(t *testing.T) {
 	rpc = fake.NewStreamRPC(recv, fake.Sender{})
 	actor.rpc = rpc
 
-	_, err = actor.Decrypt(suite.Point(), suite.Point())
+	_, err = actor.Decrypt(suite.Point(), suite.Point(), "electionId")
 	require.NoError(t, err)
 }
 
@@ -165,7 +165,7 @@ func TestPedersen_Scenario(t *testing.T) {
 			mino.(*minogrpc.Minogrpc).GetCertificateStore().Store(m.GetAddress(), m.(*minogrpc.Minogrpc).GetCertificate())
 		}
 
-		dkg, pubkey := NewPedersen(mino.(*minogrpc.Minogrpc))
+		dkg, pubkey := NewPedersen(mino.(*minogrpc.Minogrpc), false)
 
 		dkgs[i] = dkg
 		pubkeys[i] = pubkey
@@ -185,7 +185,7 @@ func TestPedersen_Scenario(t *testing.T) {
 	// trying to call a decrypt/encrypt before a setup
 	_, _, _, err := actors[0].Encrypt(message)
 	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")
-	_, err = actors[0].Decrypt(nil, nil)
+	_, err = actors[0].Decrypt(nil, nil, "electionId")
 	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")
 
 	_, err = actors[0].Setup(fakeAuthority, n)
@@ -199,7 +199,7 @@ func TestPedersen_Scenario(t *testing.T) {
 		K, C, remainder, err := actors[i].Encrypt(message)
 		require.NoError(t, err)
 		require.Len(t, remainder, 0)
-		decrypted, err := actors[i].Decrypt(K, C)
+		decrypted, err := actors[i].Decrypt(K, C, "electionId")
 		require.NoError(t, err)
 		require.Equal(t, message, decrypted)
 	}

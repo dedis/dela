@@ -165,15 +165,21 @@ func TestStartDone_Serialize(t *testing.T) {
 }
 
 func TestDecryptRequest_GetK(t *testing.T) {
-	req := NewDecryptRequest(fakePoint{}, nil)
+	req := NewDecryptRequest(fakePoint{}, nil, "")
 
 	require.Equal(t, fakePoint{}, req.GetK())
 }
 
 func TestDecryptRequest_GetC(t *testing.T) {
-	req := NewDecryptRequest(nil, fakePoint{})
+	req := NewDecryptRequest(nil, fakePoint{}, "")
 
 	require.Equal(t, fakePoint{}, req.GetC())
+}
+
+func TestDecryptRequest_GetElectionId(t *testing.T) {
+	req := NewDecryptRequest(nil, nil, "electionId")
+
+	require.Equal(t, "electionId", req.GetElectionId())
 }
 
 func TestDecryptRequest_Serialize(t *testing.T) {

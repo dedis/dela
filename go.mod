@@ -10,6 +10,7 @@ require (
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/rs/xid v1.2.1
 	github.com/rs/zerolog v1.19.0
+	github.com/satori/go.uuid v1.2.0
 	github.com/stretchr/testify v1.6.1
 	github.com/uber/jaeger-client-go v2.25.0+incompatible
 	github.com/uber/jaeger-lib v2.4.0+incompatible // indirect

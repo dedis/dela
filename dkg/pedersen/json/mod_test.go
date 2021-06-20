@@ -82,14 +82,14 @@ func TestMessageFormat_StartDone_Encode(t *testing.T) {
 }
 
 func TestMessageFormat_DecryptRequest_Encode(t *testing.T) {
-	req := types.NewDecryptRequest(suite.Point(), suite.Point())
+	req := types.NewDecryptRequest(suite.Point(), suite.Point(), "electionId")
 
 	format := newMsgFormat()
 	ctx := serde.NewContext(fake.ContextEngine{})
 
 	data, err := format.Encode(ctx, req)
 	require.NoError(t, err)
-	require.Regexp(t, `{(("DecryptRequest":{"K":"[^"]+","C":"[^"]+"}|"\w+":null),?)+}`, string(data))
+	require.Regexp(t, `{(("DecryptRequest":{"K":"[^"]+","C":"[^"]+","ElectionId":"electionId"}|"\w+":null),?)+}`, string(data))
 
 	req.K = badPoint{}
 	_, err = format.Encode(ctx, req)
