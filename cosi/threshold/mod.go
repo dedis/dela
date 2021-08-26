@@ -38,9 +38,8 @@ func OneThreshold(n int) int {
 	return n - 1
 }
 
-// ByzantineThreshold returns the minimum number of honest
-// nodes required given `n` total nodes in a Byzantine
-// Fault Tolerant system.
+// ByzantineThreshold returns the minimum number of honest nodes required given
+// `n` total nodes in a Byzantine Fault Tolerant system.
 func ByzantineThreshold(n int) int {
 	if n <= 0 {
 		return 0
