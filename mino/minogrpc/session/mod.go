@@ -121,7 +121,7 @@ type session struct {
 
 	parents map[mino.Address]parent
 	// A read-write lock is used there as there are much more read requests than
-	// write ones, and the read should be parralellized.
+	// write ones, and the read should be parallelized.
 	parentsLock sync.RWMutex
 }
 
