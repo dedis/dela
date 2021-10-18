@@ -27,11 +27,24 @@ jobs:
       
     - name: Test with coverage
       if: matrix.platform == 'ubuntu-latest'
-      run: go test -covermode=count -coverprofile=profile.cov ./...
+      run: go test -json -covermode=count -coverprofile=profile.cov ./... > report.json
 
     - name: Test without coverage
       if: matrix.platform == 'macos-latest' || matrix.platform == 'windows-latest'
       run: go test ./...
+
+    - name: Sonarcloud scan
+      if: matrix.platform == 'ubuntu-latest'
+      uses: sonarsource/sonarcloud-github-action@master
+      with:
+        args: >
+          -Dsonar.organization=dedis
+          -Dsonar.projectKey=dedis_dela
+          -Dsonar.go.tests.reportPaths=report.json
+          -Dsonar.go.coverage.reportPaths=profile.cov
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
     - name: Send coverage
       if: matrix.platform == 'ubuntu-latest'
