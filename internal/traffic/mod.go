@@ -87,7 +87,7 @@ func (w *Watcher) WatchIns(ctx context.Context) <-chan Event {
 	return watch(ctx, w.inWatcher)
 }
 
-// watch is a generic message to watch for events
+// watch is a generic function to watch for events
 func watch(ctx context.Context, watcher core.Observable) <-chan Event {
 	obs := observer{ch: make(chan Event, watcherSize)}
 
