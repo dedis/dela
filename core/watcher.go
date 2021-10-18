@@ -30,7 +30,7 @@ type Observable interface {
 //
 // - implements core.Observable
 type Watcher struct {
-	sync.Mutex
+	sync.RWMutex
 
 	observers map[Observer]struct{}
 }
@@ -61,8 +61,8 @@ func (w *Watcher) Remove(observer Observer) {
 // Notify implements core.Observable. It notifies the whole list of observers
 // one after each other.
 func (w *Watcher) Notify(event interface{}) {
-	w.Lock()
-	defer w.Unlock()
+	w.RLock()
+	defer w.RUnlock()
 
 	for w := range w.observers {
 		w.NotifyCallback(event)

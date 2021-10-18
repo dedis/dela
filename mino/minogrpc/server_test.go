@@ -323,7 +323,7 @@ func TestOverlayServer_Share(t *testing.T) {
 
 	_, err = overlay.Share(ctx, &ptypes.Certificate{})
 	require.EqualError(t, err,
-		"couldn't parse certificate: asn1: syntax error: sequence truncated")
+		"couldn't parse certificate: x509: malformed certificate")
 }
 
 func TestOverlayServer_Call(t *testing.T) {
@@ -743,7 +743,7 @@ func TestOverlay_Join(t *testing.T) {
 	overlay.connMgr = fakeConnMgr{resp: ptypes.JoinResponse{Peers: []*ptypes.Certificate{{}}}}
 	err = overlay.Join("", "", nil)
 	require.EqualError(t, err,
-		"couldn't parse certificate: asn1: syntax error: sequence truncated")
+		"couldn't parse certificate: x509: malformed certificate")
 }
 
 func TestConnManager_Acquire(t *testing.T) {

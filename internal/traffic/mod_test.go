@@ -160,6 +160,44 @@ func TestGenerateEventGraphViz(t *testing.T) {
 	require.Contains(t, buffer.String(), `"fake.Address[0]" -> "fake.Address[1]"`)
 }
 
+func TestWatcherIns(t *testing.T) {
+	watcher := GlobalWatcher
+	events := watcher.WatchIns(context.Background())
+
+	traffic := NewTraffic(fake.NewAddress(0), ioutil.Discard)
+
+	addr := fake.NewAddress(0)
+	pkt := newFakePacket(fake.NewAddress(1), fake.NewAddress(2))
+	traffic.LogRecv(context.Background(), addr, pkt)
+
+	select {
+	case event := <-events:
+		require.Equal(t, addr, event.Address)
+		require.Equal(t, pkt, event.Pkt)
+	default:
+		t.Error("events not saved")
+	}
+}
+
+func TestWatcherOuts(t *testing.T) {
+	watcher := GlobalWatcher
+	events := watcher.WatchOuts(context.Background())
+
+	traffic := NewTraffic(fake.NewAddress(0), ioutil.Discard)
+
+	addr := fake.NewAddress(0)
+	pkt := newFakePacket(fake.NewAddress(1), fake.NewAddress(2))
+	traffic.LogSend(context.Background(), addr, pkt)
+
+	select {
+	case event := <-events:
+		require.Equal(t, addr, event.Address)
+		require.Equal(t, pkt, event.Pkt)
+	default:
+		t.Error("events not saved")
+	}
+}
+
 // -----------------------------------------------------------------------------
 // Utility functions
 

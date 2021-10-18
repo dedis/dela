@@ -20,6 +20,7 @@ import (
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	opentracing "github.com/opentracing/opentracing-go"
 	"go.dedis.ch/dela/internal/tracing"
+	"go.dedis.ch/dela/internal/traffic"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
@@ -314,6 +315,11 @@ func (m *Minogrpc) CreateRPC(name string, h mino.Handler, f serde.Factory) (mino
 // instance.
 func (m *Minogrpc) String() string {
 	return fmt.Sprintf("mino[%v]", m.overlay.myAddr)
+}
+
+// GetTrafficWatcher returns the traffic watcher.
+func (m *Minogrpc) GetTrafficWatcher() traffic.Watcher {
+	return traffic.GlobalWatcher
 }
 
 // Listen starts the server. It waits for the go routine to start before

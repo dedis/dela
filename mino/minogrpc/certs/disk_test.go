@@ -137,7 +137,7 @@ func TestDiskStore_MalformedCert_Load(t *testing.T) {
 
 	_, err = store.Load(fake.NewAddress(0))
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "certificate malformed: asn1: ")
+	require.Contains(t, err.Error(), "certificate malformed: x509: ")
 }
 
 func TestDiskStore_Delete(t *testing.T) {
@@ -243,7 +243,7 @@ func TestDiskNode_MalformedCertificate_Range(t *testing.T) {
 
 	err := store.Range(func(addr mino.Address, cert *tls.Certificate) bool { return true })
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "while reading db: certificate malformed: asn1: ")
+	require.Contains(t, err.Error(), "while reading db: certificate malformed: x509: ")
 }
 
 // -----------------------------------------------------------------------------
