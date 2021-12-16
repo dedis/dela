@@ -36,9 +36,9 @@ func TestIntegration_Value_Simple(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	nodes := []dela{
-		newDelaNode(t, filepath.Join(dir, "node1"), 2001),
-		newDelaNode(t, filepath.Join(dir, "node2"), 2002),
-		newDelaNode(t, filepath.Join(dir, "node3"), 2003),
+		newDelaNode(t, filepath.Join(dir, "node1"), 0),
+		newDelaNode(t, filepath.Join(dir, "node2"), 0),
+		newDelaNode(t, filepath.Join(dir, "node3"), 0),
 	}
 
 	nodes[0].Setup(nodes[1:]...)

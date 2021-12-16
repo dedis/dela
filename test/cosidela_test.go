@@ -7,7 +7,6 @@ import (
 	"crypto/x509"
 	"io"
 	"math/rand"
-	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -57,7 +56,6 @@ var valueAccessKey = [32]byte{2}
 type cosiDela interface {
 	dela
 
-	GetAddr() net.Addr
 	GetPublicKey() crypto.PublicKey
 	GetPool() pool.Pool
 	GetAccessStore() accessstore
@@ -73,7 +71,6 @@ type cosiDelaNode struct {
 	ordering      ordering.Service
 	cosi          *threshold.Threshold
 	txManager     txn.Manager
-	addr          net.Addr
 	pool          pool.Pool
 	accessService access.Service
 	accessStore   accessstore
@@ -109,6 +106,7 @@ func newDelaNode(t *testing.T, path string, port int) dela {
 
 	onet, err := minogrpc.NewMinogrpc(addr, router, opts...)
 	require.NoError(t, err)
+	onet.GetAddress()
 
 	// ordering + validation + execution
 	fload = loader.NewFileLoader(filepath.Join(path, privateKeyFile))
@@ -185,7 +183,6 @@ func newDelaNode(t *testing.T, path string, port int) dela {
 		ordering:      srvc,
 		cosi:          cosi,
 		txManager:     mgr,
-		addr:          addr,
 		pool:          pool,
 		accessService: accessService,
 		accessStore:   accessStore,
@@ -200,7 +197,7 @@ func (c cosiDelaNode) Setup(delas ...dela) {
 	joinable, ok := c.onet.(minogrpc.Joinable)
 	require.True(c.t, ok)
 
-	addrStr := c.addr.String()
+	addrStr := c.onet.GetAddress().String()
 	token := joinable.GenerateToken(time.Hour)
 
 	certHash, err := joinable.GetCertificateStore().Hash(joinable.GetCertificate())
@@ -266,11 +263,6 @@ func (c cosiDelaNode) GetTxManager() txn.Manager {
 // GetAccessService implements dela
 func (c cosiDelaNode) GetAccessService() access.Service {
 	return c.accessService
-}
-
-// GetAddr implements cosiDela
-func (c cosiDelaNode) GetAddr() net.Addr {
-	return c.addr
 }
 
 // GetPublicKey  implements cosiDela
