@@ -48,7 +48,7 @@ func (ftx fakeTx) GetArg(key string) []byte {
 	return []byte(ftx.address)
 }
 
-// inMemoryStore in a simple implementation of a store using an in-memory
+// inMemoryStore is a simple implementation of a store using an in-memory
 // map.
 //
 // - implements store.Snapshot
