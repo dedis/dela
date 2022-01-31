@@ -19,17 +19,19 @@ var packetFormat = registry.NewSimpleRegistry()
 //
 // - implements router.Packet
 type Packet struct {
-	src  mino.Address
-	dest []mino.Address
-	msg  []byte
+	pktid string
+	src   mino.Address
+	dest  []mino.Address
+	msg   []byte
 }
 
 // NewPacket creates a new packet.
-func NewPacket(src mino.Address, msg []byte, dest ...mino.Address) *Packet {
+func NewPacket(pkid string, src mino.Address, msg []byte, dest ...mino.Address) *Packet {
 	return &Packet{
-		src:  src,
-		dest: dest,
-		msg:  msg,
+		pktid: pkid,
+		src:   src,
+		dest:  dest,
+		msg:   msg,
 	}
 }
 
@@ -61,6 +63,11 @@ func (p *Packet) Add(to mino.Address) {
 	}
 
 	p.dest = append(p.dest, to)
+}
+
+// GetPacketID implements router.Packet. It returns the uniq packet identifier.
+func (p *Packet) GetPacketID() string {
+	return p.pktid
 }
 
 // Slice implements router.Packet. It removes the address from the destination

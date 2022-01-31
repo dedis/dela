@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/internal/traffic"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
 	"go.dedis.ch/dela/mino/minogrpc/session"
@@ -166,6 +167,7 @@ func TestRPC_Stream(t *testing.T) {
 			context:     json.NewContext(),
 		},
 		factory: fake.MessageFactory{},
+		eh:      traffic.NewEventHandler(),
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

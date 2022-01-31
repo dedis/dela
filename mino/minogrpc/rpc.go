@@ -12,6 +12,7 @@ import (
 	"github.com/rs/xid"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/internal/tracing"
+	"go.dedis.ch/dela/internal/traffic"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
 	"go.dedis.ch/dela/mino/minogrpc/session"
@@ -30,6 +31,7 @@ type RPC struct {
 	overlay *overlay
 	uri     string
 	factory serde.Factory
+	eh      traffic.EventsHandler
 }
 
 // Call implements mino.RPC. It calls the RPC on each provided address.
@@ -206,6 +208,7 @@ func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, m
 		rpc.overlay.router.GetPacketFactory(),
 		rpc.overlay.context,
 		rpc.overlay.connMgr,
+		rpc.eh,
 	)
 
 	// There is no listen for the orchestrator as we need to forward the

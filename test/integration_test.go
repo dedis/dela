@@ -116,7 +116,7 @@ func addAndWait(t *testing.T, manager txn.Manager, node cosiDelaNode, args ...tx
 	err = node.GetPool().Add(tx)
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*20)
 	defer cancel()
 
 	events := node.GetOrdering().Watch(ctx)

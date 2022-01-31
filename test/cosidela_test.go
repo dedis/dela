@@ -106,7 +106,6 @@ func newDelaNode(t *testing.T, path string, port int) dela {
 
 	onet, err := minogrpc.NewMinogrpc(addr, router, opts...)
 	require.NoError(t, err)
-	onet.GetAddress()
 
 	// ordering + validation + execution
 	fload = loader.NewFileLoader(filepath.Join(path, privateKeyFile))

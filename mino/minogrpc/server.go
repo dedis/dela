@@ -19,6 +19,7 @@ import (
 
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/internal/tracing"
+	"go.dedis.ch/dela/internal/traffic"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
@@ -57,8 +58,10 @@ var getTracerForAddr = tracing.GetTracerForAddr
 
 type overlayServer struct {
 	*overlay
+	ptypes.UnimplementedOverlayServer
 
 	endpoints map[string]*Endpoint
+	notifier  traffic.Notifier
 }
 
 // Join implements ptypes.OverlayServer. It processes the request by checking
@@ -263,6 +266,7 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 			o.router.GetPacketFactory(),
 			o.context,
 			o.connMgr,
+			o.notifier,
 		)
 
 		endpoint.streams[streamID] = sess

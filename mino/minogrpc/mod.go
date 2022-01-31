@@ -104,6 +104,8 @@ type Minogrpc struct {
 	endpoints map[string]*Endpoint
 	started   chan struct{}
 	closing   chan error
+
+	eh traffic.EventsHandler
 }
 
 type minoTemplate struct {
@@ -191,6 +193,7 @@ func NewMinogrpc(addr net.Addr, router router.Router, opts ...Option) (*Minogrpc
 		endpoints: make(map[string]*Endpoint),
 		started:   make(chan struct{}),
 		closing:   make(chan error, 1),
+		eh:        traffic.NewEventHandler(),
 	}
 
 	// Counter needs to be >=1 for asynchronous call to Add.
@@ -199,6 +202,7 @@ func NewMinogrpc(addr net.Addr, router router.Router, opts ...Option) (*Minogrpc
 	ptypes.RegisterOverlayServer(server, &overlayServer{
 		overlay:   o,
 		endpoints: m.endpoints,
+		notifier:  m.eh,
 	})
 
 	m.listen(socket)
@@ -273,6 +277,7 @@ func (m *Minogrpc) WithSegment(segment string) mino.Mino {
 		overlay:   m.overlay,
 		segments:  append(m.segments, segment),
 		endpoints: m.endpoints,
+		eh:        m.eh,
 	}
 
 	return newM
@@ -288,6 +293,7 @@ func (m *Minogrpc) CreateRPC(name string, h mino.Handler, f serde.Factory) (mino
 		uri:     strings.Join(uri, "/"),
 		overlay: m.overlay,
 		factory: f,
+		eh:      m.eh,
 	}
 
 	for _, segment := range uri {
@@ -319,7 +325,7 @@ func (m *Minogrpc) String() string {
 
 // GetTrafficWatcher returns the traffic watcher.
 func (m *Minogrpc) GetTrafficWatcher() traffic.Watcher {
-	return traffic.GlobalWatcher
+	return m.eh
 }
 
 // Listen starts the server. It waits for the go routine to start before

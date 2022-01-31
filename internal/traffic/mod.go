@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"go.dedis.ch/dela"
-	"go.dedis.ch/dela/core"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/router"
 	"golang.org/x/xerrors"
@@ -64,43 +63,6 @@ var (
 
 	headerURIKey = "apiuri"
 )
-
-// GlobalWatcher can be used to watch for sent and received messages.
-var GlobalWatcher = Watcher{
-	outWatcher: core.NewWatcher(),
-	inWatcher:  core.NewWatcher(),
-}
-
-// Watcher defines an element to watch for sent and received messages.
-type Watcher struct {
-	outWatcher core.Observable
-	inWatcher  core.Observable
-}
-
-// WatchOuts returns a channel populated with sent messages.
-func (w *Watcher) WatchOuts(ctx context.Context) <-chan Event {
-	return watch(ctx, w.outWatcher)
-}
-
-// WatchIns returns a channel populated with received messages.
-func (w *Watcher) WatchIns(ctx context.Context) <-chan Event {
-	return watch(ctx, w.inWatcher)
-}
-
-// watch is a generic function to watch for events
-func watch(ctx context.Context, watcher core.Observable) <-chan Event {
-	obs := observer{ch: make(chan Event, watcherSize)}
-
-	watcher.Add(obs)
-
-	go func() {
-		<-ctx.Done()
-		watcher.Remove(obs)
-		close(obs.ch)
-	}()
-
-	return obs.ch
-}
 
 // SaveItems saves all the items as a graph
 func SaveItems(path string, withSend, withRcv bool) error {
@@ -161,16 +123,12 @@ func (t *Traffic) Save(path string, withSend, withRcv bool) error {
 // sender and the gateway as the receiver, while also recording the packet
 // itself.
 func (t *Traffic) LogSend(ctx context.Context, gateway mino.Address, pkt router.Packet) {
-	GlobalWatcher.outWatcher.Notify(Event{Address: gateway, Pkt: pkt})
-
 	t.addItem(ctx, "send", gateway, pkt)
 }
 
 // LogRecv records a packet received by the node. The sender is the gateway and
 // the receiver the node.
 func (t *Traffic) LogRecv(ctx context.Context, gateway mino.Address, pkt router.Packet) {
-	GlobalWatcher.inWatcher.Notify(Event{Address: gateway, Pkt: pkt})
-
 	t.addItem(ctx, "received", gateway, pkt)
 }
 

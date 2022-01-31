@@ -122,7 +122,7 @@ func TestMinogrpc_Scenario_Failures(t *testing.T) {
 
 	authority := fake.NewAuthorityFromMino(fake.NewSigner, srvs...)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
 	defer cancel()
 
 	sender, recvr, err := rpcs[1].Stream(ctx, authority)
@@ -142,7 +142,10 @@ func TestMinogrpc_Scenario_Failures(t *testing.T) {
 		checkError(t, <-errs, srvs[0])
 		require.NoError(t, <-errs)
 
-		from, _, err := recvr.Recv(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+		defer cancel()
+
+		from, _, err := recvr.Recv(ctx)
 		require.NoError(t, err)
 		require.True(t, to.Equal(from))
 	}
@@ -169,7 +172,10 @@ func TestMinogrpc_Scenario_Failures(t *testing.T) {
 		checkError(t, <-errs, srvs[0], srvs[2], srvs[4])
 		require.NoError(t, <-errs)
 
-		from, _, err := recvr.Recv(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+		defer cancel()
+
+		from, _, err := recvr.Recv(ctx)
 		require.NoError(t, err)
 		require.True(t, to.Equal(from))
 	}
