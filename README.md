@@ -16,3 +16,10 @@ Copyright 2016-2020 by EPFL/DEDIS. All rights reserved.
 This project is licensed under the terms of the AGPL licence. If this license is
 not suitable for your business or project please contact us for a full
 commercial license.
+
+---
+
+<img width="200px" src="docs/unicore_logo.png"/>
+
+This project has received funding from the European Union's Horizon 2020 
+research and innovation programme under grant agreement No 825377.
