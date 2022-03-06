@@ -7,7 +7,7 @@ set -o errexit
 
 command -v tmux >/dev/null 2>&1 || { echo >&2 "tmux is not on your PATH!"; exit 1; }
 
-go install ./cli/memcoin
+go install ./cli/node/memcoin
 
 # Launch session
 s="dela-nodes-test"
