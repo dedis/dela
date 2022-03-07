@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/mino/proxy"
 	"go.dedis.ch/dela/mino/proxy/http"
@@ -38,6 +39,25 @@ func (a startAction) Execute(ctx node.Context) error {
 	// We assume the listen worked proprely, however it might not be the case.
 	// The log should inform the user about that.
 	fmt.Fprintf(ctx.Out, "started proxy server on %s", proxyhttp.GetAddr().String())
+
+	return nil
+}
+
+type promAction struct{}
+
+// Execute implements node.ActionTemplate. It registers the Prometheus handler.
+func (a promAction) Execute(ctx node.Context) error {
+	var proxyhttp proxy.Proxy
+
+	err := ctx.Injector.Resolve(&proxyhttp)
+	if err != nil {
+		return xerrors.Errorf("failed to resolve the proxy: %v", err)
+	}
+
+	path := ctx.Flags.String("path")
+
+	proxyhttp.RegisterHandler(path, promhttp.Handler().ServeHTTP)
+	fmt.Fprintf(ctx.Out, "registered prometheus service on %q\n", path)
 
 	return nil
 }

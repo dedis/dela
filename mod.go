@@ -15,12 +15,27 @@ import (
 	"os"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/rs/zerolog"
 )
 
 // EnvLogLevel is the name of the environment variable to change the logging
 // level.
 const EnvLogLevel = "LLVL"
+
+// defines prometheus metrics
+var (
+	promWarns = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "dela_log_warns",
+		Help: "total number of warnings from the log",
+	})
+
+	promErrs = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "dela_log_errs",
+		Help: "total number of errors from the log",
+	})
+)
 
 const defaultLevel = zerolog.NoLevel
 
@@ -58,4 +73,21 @@ var logout = zerolog.ConsoleWriter{
 // error level messages but it can be changed through a environment variable.
 var Logger = zerolog.New(logout).Level(defaultLevel).
 	With().Timestamp().Logger().
-	With().Caller().Logger()
+	With().Caller().Logger().
+	Hook(promHook{})
+
+// promHook defines a zerolog hook that logs Prometheus metrics. Note that the
+// log level MUST be set to at least the WARN level to get metrics.
+//
+// - implements zerolog.Hook
+type promHook struct{}
+
+// Run implements zerolog.Hook
+func (promHook) Run(e *zerolog.Event, level zerolog.Level, message string) {
+	switch level {
+	case zerolog.WarnLevel:
+		promWarns.Inc()
+	case zerolog.ErrorLevel:
+		promErrs.Inc()
+	}
+}
