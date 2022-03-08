@@ -196,7 +196,7 @@ func TestStateMachine_MismatchTreeRoot_Prepare(t *testing.T) {
 	other, err := types.NewBlock(simple.NewResult(nil), types.WithTreeRoot(types.Digest{}))
 	require.NoError(t, err)
 
-	sm.val = simple.NewService(fakeExec{}, nil)
+	sm.val = unacceptedTxsValidation{}
 	_, err = sm.Prepare(fake.NewAddress(0), other)
 	require.EqualError(t, err, "mismatch tree root '71b6c1d5' != '00000000'")
 }
@@ -874,6 +874,16 @@ type badValidation struct {
 
 func (v badValidation) Validate(store.Snapshot, []txn.Transaction) (validation.Result, error) {
 	return nil, fake.GetError()
+}
+
+type unacceptedTxsValidation struct {
+	validation.Service
+}
+
+func (v unacceptedTxsValidation) Validate(store.Snapshot, []txn.Transaction) (validation.Result, error) {
+	return simple.NewResult([]simple.TransactionResult{
+		simple.NewTransactionResult(nil, false, "unaccepted"),
+	}), nil
 }
 
 type badBlockStore struct {
