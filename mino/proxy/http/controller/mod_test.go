@@ -16,7 +16,7 @@ func TestMinimal_SetCommands(t *testing.T) {
 	builder := &fakeBuilder{call: &call}
 	minimal.SetCommands(builder)
 
-	require.Equal(t, call.Len(), 6)
+	require.Equal(t, call.Len(), 11)
 }
 
 func TestMinimal_OnStart(t *testing.T) {
