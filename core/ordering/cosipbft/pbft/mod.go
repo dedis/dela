@@ -62,14 +62,26 @@ var (
 		Help: "total number of blocks",
 	})
 
-	promTxs = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "dela_cosipbft_transactions_block",
-		Help: "total number of transactions in the last block",
+	promTxs = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "dela_cosipbft_transactions_block",
+		Help:    "total number of transactions in the last block",
+		Buckets: []float64{0, 1, 2, 3, 5, 8, 13, 20, 30, 50, 100},
 	})
 
-	promRejectedTxs = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "dela_cosipbft_transactions_rejected_block",
-		Help: "total number of rejected transactions in the last block",
+	promTxsTot = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "dela_cosipbft_transactions_tot",
+		Help: "total number of transactions in history",
+	})
+
+	promRejectedTxs = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "dela_cosipbft_transactions_rejected_block",
+		Help:    "total number of rejected transactions in the last block",
+		Buckets: []float64{0, 1, 2, 3, 5, 8, 13, 20, 30, 50, 100},
+	})
+
+	promRejectedTxsTot = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "dela_cosipbft_transactions_rejected_tot",
+		Help: "total number of rejected transactions in history",
 	})
 
 	promLeader = promauto.NewGauge(prometheus.GaugeOpts{
@@ -616,8 +628,11 @@ func (m *pbftsm) verifyPrepare(tree hashtree.Tree, block types.Block, r *round, 
 			}
 		}
 
-		promTxs.Set(float64(len(txs)))
-		promRejectedTxs.Set(float64(rejected))
+		promTxs.Observe(float64(len(txs)))
+		promTxsTot.Add(float64(len(txs)))
+
+		promRejectedTxs.Observe(float64(rejected))
+		promRejectedTxsTot.Add(float64(rejected))
 
 		return nil
 	})
