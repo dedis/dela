@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/mino/proxy"
 	"go.dedis.ch/dela/mino/proxy/http"
@@ -56,8 +58,15 @@ func (a promAction) Execute(ctx node.Context) error {
 
 	path := ctx.Flags.String("path")
 
+	for _, c := range dela.PromCollectors {
+		err = prometheus.DefaultRegisterer.Register(c)
+		if err != nil {
+			fmt.Fprintf(ctx.Out, "ERROR: failed to register: %v", err)
+		}
+	}
+
 	proxyhttp.RegisterHandler(path, promhttp.Handler().ServeHTTP)
-	fmt.Fprintf(ctx.Out, "registered prometheus service on %q\n", path)
+	fmt.Fprintf(ctx.Out, "registered prometheus service on %q", path)
 
 	return nil
 }

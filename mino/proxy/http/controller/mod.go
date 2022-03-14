@@ -37,7 +37,8 @@ func (m minimal) SetCommands(builder node.Builder) {
 
 	sub = cmd.SetSubCommand("prom")
 
-	sub.SetDescription("start a prometheus handler")
+	sub.SetDescription("registers the collectors and starts a prometheus handler. " +
+		"Will panic if the path is used more than once.")
 	sub.SetFlags(cli.StringFlag{
 		Name:     "path",
 		Required: false,

@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/rs/zerolog"
 )
 
@@ -24,14 +23,25 @@ import (
 // level.
 const EnvLogLevel = "LLVL"
 
+// PromCollectors exposes Prometheus collectors created in Dela. By default Dela
+// doesn't register the metrics. It is left to the user to use the registry of
+// its choice and register the collectors. For example with the default:
+//
+//   prometheus.DefaultRegisterer.MustRegister(PromCollectors...)
+//
+// Note that the collectors can be registered only once and will panic
+// otherwise. This slice is not thread-safe and should only be initialized in
+// init() functions.
+var PromCollectors []prometheus.Collector
+
 // defines prometheus metrics
 var (
-	promWarns = promauto.NewCounter(prometheus.CounterOpts{
+	promWarns = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "dela_log_warns",
 		Help: "total number of warnings from the log",
 	})
 
-	promErrs = promauto.NewCounter(prometheus.CounterOpts{
+	promErrs = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "dela_log_errs",
 		Help: "total number of errors from the log",
 	})
@@ -62,6 +72,8 @@ func init() {
 	}
 
 	Logger = Logger.Level(level)
+
+	PromCollectors = append(PromCollectors, promWarns, promErrs)
 }
 
 var logout = zerolog.ConsoleWriter{

@@ -19,8 +19,8 @@ import (
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/rs/zerolog"
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/core"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
@@ -57,24 +57,24 @@ func (s State) String() string {
 
 // defines prometheus metrics
 var (
-	promBlocks = promauto.NewGauge(prometheus.GaugeOpts{
+	promBlocks = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "dela_cosipbft_blocks_total",
 		Help: "total number of blocks",
 	})
 
-	promTxs = promauto.NewHistogram(prometheus.HistogramOpts{
+	promTxs = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name:    "dela_cosipbft_transactions_block",
 		Help:    "total number of transactions in the last block",
 		Buckets: []float64{0, 1, 2, 3, 5, 8, 13, 20, 30, 50, 100},
 	})
 
-	promRejectedTxs = promauto.NewHistogram(prometheus.HistogramOpts{
+	promRejectedTxs = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name:    "dela_cosipbft_transactions_rejected_block",
 		Help:    "total number of rejected transactions in the last block",
 		Buckets: []float64{0, 1, 2, 3, 5, 8, 13, 20, 30, 50, 100},
 	})
 
-	promLeader = promauto.NewGauge(prometheus.GaugeOpts{
+	promLeader = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "dela_cosipbft_leader",
 		Help: "leader index from the roster",
 	})
@@ -100,6 +100,11 @@ const (
 	// the machine is waiting for view change requests.
 	ViewChangeState
 )
+
+func init() {
+	dela.PromCollectors = append(dela.PromCollectors, promBlocks, promTxs,
+		promRejectedTxs, promLeader)
+}
 
 // StateMachine is the interface to implement to support a PBFT protocol.
 type StateMachine interface {
