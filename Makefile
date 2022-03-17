@@ -2,11 +2,12 @@ generate:
 	go get -u github.com/golang/protobuf/protoc-gen-go@v1.3.5
 	go generate ./...
 
+# Some packages are exluded from staticcheck due to deprecated warnings: #208.
 lint:
 	# Coding style static check.
 	@go get -v honnef.co/go/tools/cmd/staticcheck
 	@go mod tidy
-	staticcheck ./...
+	staticcheck `go list ./... | grep -Ev "(go\.dedis\.ch/dela/internal/testing|go\.dedis\.ch/dela/mino/minogrpc/ptypes)"`
 
 vet:
 	@echo "⚠️ Warning: the following only works with go >= 1.14" && \

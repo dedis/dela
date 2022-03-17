@@ -18,7 +18,9 @@ import (
 	"context"
 	"sync"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/core"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
@@ -53,6 +55,31 @@ func (s State) String() string {
 	}
 }
 
+// defines prometheus metrics
+var (
+	promBlocks = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "dela_cosipbft_blocks_total",
+		Help: "total number of blocks",
+	})
+
+	promTxs = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "dela_cosipbft_transactions_block",
+		Help:    "total number of transactions in the last block",
+		Buckets: []float64{0, 1, 2, 3, 5, 8, 13, 20, 30, 50, 100},
+	})
+
+	promRejectedTxs = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "dela_cosipbft_transactions_rejected_block",
+		Help:    "total number of rejected transactions in the last block",
+		Buckets: []float64{0, 1, 2, 3, 5, 8, 13, 20, 30, 50, 100},
+	})
+
+	promLeader = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "dela_cosipbft_leader",
+		Help: "leader index from the roster",
+	})
+)
+
 const (
 	// NoneState is the very first state of the machine where nothing is set.
 	NoneState State = iota
@@ -73,6 +100,11 @@ const (
 	// the machine is waiting for view change requests.
 	ViewChangeState
 )
+
+func init() {
+	dela.PromCollectors = append(dela.PromCollectors, promBlocks, promTxs,
+		promRejectedTxs, promLeader)
+}
 
 // StateMachine is the interface to implement to support a PBFT protocol.
 type StateMachine interface {
@@ -575,7 +607,10 @@ func (m *pbftsm) Watch(ctx context.Context) <-chan State {
 
 func (m *pbftsm) verifyPrepare(tree hashtree.Tree, block types.Block, r *round, ro authority.Authority) error {
 	stageTree, err := tree.Stage(func(snap store.Snapshot) error {
-		res, err := m.val.Validate(snap, block.GetTransactions())
+		txs := block.GetTransactions()
+		rejected := 0
+
+		res, err := m.val.Validate(snap, txs)
 		if err != nil {
 			return xerrors.Errorf("validation failed: %v", err)
 		}
@@ -584,8 +619,12 @@ func (m *pbftsm) verifyPrepare(tree hashtree.Tree, block types.Block, r *round, 
 			accepted, reason := r.GetStatus()
 			if !accepted {
 				m.logger.Warn().Str("reason", reason).Msg("transaction not accepted")
+				rejected++
 			}
 		}
+
+		promTxs.Observe(float64(len(txs)))
+		promRejectedTxs.Observe(float64(rejected))
 
 		return nil
 	})
@@ -710,6 +749,8 @@ func (m *pbftsm) verifyFinalize(r *round, sig crypto.Signature, ro authority.Aut
 		// Only release the tree cache at the very end of the transaction, so
 		// that a call to get the tree will hold until the block is stored.
 		txn.OnCommit(func() {
+			promBlocks.Set(float64(m.blocks.Len()))
+			promLeader.Set(float64(m.round.leader))
 			unlock()
 		})
 
