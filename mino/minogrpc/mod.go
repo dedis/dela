@@ -171,7 +171,12 @@ func NewMinogrpc(addr net.Addr, router router.Router, opts ...Option) (*Minogrpc
 		return nil, xerrors.Errorf("overlay: %v", err)
 	}
 
-	creds := credentials.NewServerTLSFromCert(o.GetCertificate())
+	cert := o.GetCertificate()
+	creds := credentials.NewTLS(&tls.Config{
+		Certificates: []tls.Certificate{*cert},
+		MinVersion:   tls.VersionTLS12,
+	})
+
 	dialAddr := o.myAddr.GetDialAddress()
 	tracer, err := getTracerForAddr(dialAddr)
 	if err != nil {
