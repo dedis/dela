@@ -707,7 +707,7 @@ func (mgr *connManager) getTransportCredential(addr mino.Address) (credentials.T
 	ta := credentials.NewTLS(&tls.Config{
 		Certificates: []tls.Certificate{*me},
 		RootCAs:      pool,
-		MinVersion:   tls.VersionTLS11,
+		MinVersion:   tls.VersionTLS12,
 	})
 
 	return ta, nil
