@@ -7,8 +7,6 @@ set -o errexit
 
 command -v tmux >/dev/null 2>&1 || { echo >&2 "tmux is not on your PATH!"; exit 1; }
 
-go install ./cli/node/memcoin
-
 # Launch session
 s="dela-nodes-test"
 
@@ -18,8 +16,8 @@ tmux new -s $s -d
 
 tmux split-window -t $s -h
 tmux split-window -t $s:0.%1
-tmux split-window -t $s:0.%1
 tmux split-window -t $s:0.%2
+tmux split-window -t $s:0.%3
 
 # session s, window 0, panes 0 to 4
 master="tmux send-keys -t $s:0.%0"
@@ -35,6 +33,6 @@ $node4 "LLVL=info memcoin --config /tmp/node4 start --port 2004" C-m
 
 tmux select-pane -t 0
 
-$master "test/testsetup.sh" C-m
+$master "./testsetup.sh" C-m
 
 tmux a
