@@ -14,7 +14,6 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"io"
-	"math"
 	"net"
 	"path/filepath"
 	"time"
@@ -112,11 +111,6 @@ func (m miniController) SetCommands(builder node.Builder) {
 // OnStart implements node.Initializer. It starts the minogrpc instance and
 // injects it in the dependency resolver.
 func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
-
-	port := ctx.Int("port")
-	if port < 0 || port > math.MaxUint16 {
-		return xerrors.Errorf("invalid port value %d", port)
-	}
 
 	listenAddr, err := net.ResolveTCPAddr("tcp", ctx.String("listenAddr"))
 	if err != nil {

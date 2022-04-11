@@ -3,8 +3,10 @@ package controller
 import (
 	"crypto/elliptic"
 	"io/ioutil"
+	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -47,11 +49,37 @@ func TestMiniController_OnStart(t *testing.T) {
 	require.NoError(t, m.GracefulStop())
 }
 
-func TestMiniController_InvalidPort_OnStart(t *testing.T) {
+func TestMiniController_InvalidAddr_OnStart(t *testing.T) {
 	ctrl := NewController()
 
-	err := ctrl.OnStart(fakeContext{num: 100000}, node.NewInjector())
-	require.EqualError(t, err, "invalid port value 100000")
+	err := ctrl.OnStart(fakeContext{str: "xxx"}, node.NewInjector())
+	require.EqualError(t, err, "failed to resolve tcp address: address xxx: missing port in address")
+}
+
+func TestMiniController_OverlayFailed_OnStart(t *testing.T) {
+	dir, err := ioutil.TempDir(os.TempDir(), "minogrpc")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
+	db, err := kv.New(filepath.Join(dir, "test.db"))
+	require.NoError(t, err)
+
+	ctrl := NewController().(miniController)
+
+	injector := node.NewInjector()
+	injector.Inject(db)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	defer listener.Close()
+
+	// The address is correct but it will yield an error because it is already
+	// used.
+
+	err = ctrl.OnStart(fakeContext{path: dir, str: listener.Addr().String()}, injector)
+	require.True(t, strings.HasPrefix(err.Error(), "couldn't make overlay: failed to bind"))
 }
 
 func TestMiniController_MissingDB_OnStart(t *testing.T) {
