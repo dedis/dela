@@ -5,9 +5,9 @@
 //  # Expect GOPATH to be correctly set to have memcoin available.
 //  go install
 //
-//  memcoin --config /tmp/node1 start --port 2001 &
-//  memcoin --config /tmp/node2 start --port 2002 &
-//  memcoin --config /tmp/node3 start --port 2003 &
+//  memcoin --config /tmp/node1 start --listen 127.0.0.1:2001 &
+//  memcoin --config /tmp/node2 start --listen 127.0.0.1:2002 &
+//  memcoin --config /tmp/node3 start --listen 127.0.0.1:2003 &
 //
 //  # Share the different certificates among the participants.
 //  memcoin --config /tmp/node2 minogrpc join --address 127.0.0.1:2001\

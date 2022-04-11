@@ -145,23 +145,23 @@ func WithRandom(r io.Reader) Option {
 }
 
 // NewMinogrpc creates and starts a new instance. it will try to listen for the
-// address and returns an error if it fails. "laddr" is the local address, while
-// "naddr" is the public node address. If naddr is empty it uses the local
-// address.
-func NewMinogrpc(laddr net.Addr, naddr string, router router.Router, opts ...Option) (*Minogrpc, error) {
-	socket, err := net.Listen(laddr.Network(), laddr.String())
+// address and returns an error if it fails. "listen" is the local address,
+// while "public" is the public node address. If public is empty it uses the
+// local address.
+func NewMinogrpc(listen net.Addr, public string, router router.Router, opts ...Option) (*Minogrpc, error) {
+	socket, err := net.Listen(listen.Network(), listen.String())
 	if err != nil {
 		return nil, xerrors.Errorf("failed to bind: %v", err)
 	}
 
-	if naddr == "" {
-		naddr = socket.Addr().String()
+	if public == "" {
+		public = socket.Addr().String()
 	}
 
-	dela.Logger.Info().Msgf("public address is: %s", naddr)
+	dela.Logger.Info().Msgf("public address is: %s", public)
 
 	tmpl := minoTemplate{
-		myAddr: session.NewAddress(naddr),
+		myAddr: session.NewAddress(public),
 		router: router,
 		fac:    addressFac,
 		certs:  certs.NewInMemoryStore(),

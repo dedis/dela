@@ -52,17 +52,17 @@ func NewController() node.Initializer {
 // Build implements node.Initializer. It populates the builder with the commands
 // to control Minogrpc.
 func (m miniController) SetCommands(builder node.Builder) {
-	// listenAddr
-	// nodeAddr
+	// listen
+	// public
 	builder.SetStartFlags(
 		cli.StringFlag{
-			Name:  "listenAddr",
+			Name:  "listen",
 			Usage: "set the address to listen on",
 			Value: "0.0.0.0:2000",
 		},
 		cli.StringFlag{
-			Name:     "nodeAddr",
-			Usage:    "sets the public node address. By it default uses the same as listenAddr",
+			Name:     "public",
+			Usage:    "sets the public node address. By default it uses the same as --listen",
 			Value:    "",
 			Required: false,
 		},
@@ -112,7 +112,7 @@ func (m miniController) SetCommands(builder node.Builder) {
 // injects it in the dependency resolver.
 func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
 
-	listenAddr, err := net.ResolveTCPAddr("tcp", ctx.String("listenAddr"))
+	listen, err := net.ResolveTCPAddr("tcp", ctx.String("listen"))
 	if err != nil {
 		return xerrors.Errorf("failed to resolve tcp address: %v", err)
 	}
@@ -137,7 +137,7 @@ func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
 		minogrpc.WithCertificateKey(key, key.Public()),
 	}
 
-	o, err := minogrpc.NewMinogrpc(listenAddr, ctx.String("nodeAddr"), rter, opts...)
+	o, err := minogrpc.NewMinogrpc(listen, ctx.String("public"), rter, opts...)
 	if err != nil {
 		return xerrors.Errorf("couldn't make overlay: %v", err)
 	}

@@ -234,7 +234,7 @@ func waitDaemon(t *testing.T, daemons []string) bool {
 
 func makeNodeArg(path string, port uint16) []string {
 	return []string{
-		os.Args[0], "--config", path, "start", "--listenAddr", "127.0.0.1:" + strconv.Itoa(int(port)),
+		os.Args[0], "--config", path, "start", "--listen", "127.0.0.1:" + strconv.Itoa(int(port)),
 	}
 }
 
