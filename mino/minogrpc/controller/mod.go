@@ -15,6 +15,7 @@ import (
 	"crypto/x509"
 	"io"
 	"math"
+	"net"
 	"path/filepath"
 	"time"
 
@@ -52,11 +53,19 @@ func NewController() node.Initializer {
 // Build implements node.Initializer. It populates the builder with the commands
 // to control Minogrpc.
 func (m miniController) SetCommands(builder node.Builder) {
+	// listenAddr
+	// nodeAddr
 	builder.SetStartFlags(
-		cli.IntFlag{
-			Name:  "port",
-			Usage: "set the port to listen on",
-			Value: 2000,
+		cli.StringFlag{
+			Name:  "listenAddr",
+			Usage: "set the address to listen on",
+			Value: "0.0.0.0:2000",
+		},
+		cli.StringFlag{
+			Name:     "nodeAddr",
+			Usage:    "sets the public node address. By it default uses the same as listenAddr",
+			Value:    "",
+			Required: false,
 		},
 	)
 
@@ -109,12 +118,15 @@ func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("invalid port value %d", port)
 	}
 
+	listenAddr, err := net.ResolveTCPAddr("tcp", ctx.String("listenAddr"))
+	if err != nil {
+		return xerrors.Errorf("failed to resolve tcp address: %v", err)
+	}
+
 	rter := tree.NewRouter(minogrpc.NewAddressFactory())
 
-	addr := minogrpc.ParseAddress("127.0.0.1", uint16(port))
-
 	var db kv.DB
-	err := inj.Resolve(&db)
+	err = inj.Resolve(&db)
 	if err != nil {
 		return xerrors.Errorf("injector: %v", err)
 	}
@@ -131,7 +143,7 @@ func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
 		minogrpc.WithCertificateKey(key, key.Public()),
 	}
 
-	o, err := minogrpc.NewMinogrpc(addr, rter, opts...)
+	o, err := minogrpc.NewMinogrpc(listenAddr, ctx.String("nodeAddr"), rter, opts...)
 	if err != nil {
 		return xerrors.Errorf("couldn't make overlay: %v", err)
 	}

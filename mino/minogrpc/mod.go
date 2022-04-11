@@ -19,6 +19,7 @@ import (
 
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	opentracing "github.com/opentracing/opentracing-go"
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/internal/tracing"
 	"go.dedis.ch/dela/internal/traffic"
 	"go.dedis.ch/dela/mino"
@@ -144,15 +145,23 @@ func WithRandom(r io.Reader) Option {
 }
 
 // NewMinogrpc creates and starts a new instance. it will try to listen for the
-// address and returns an error if it fails.
-func NewMinogrpc(addr net.Addr, router router.Router, opts ...Option) (*Minogrpc, error) {
-	socket, err := net.Listen(addr.Network(), addr.String())
+// address and returns an error if it fails. "laddr" is the local address, while
+// "naddr" is the public node address. If naddr is empty it uses the local
+// address.
+func NewMinogrpc(laddr net.Addr, naddr string, router router.Router, opts ...Option) (*Minogrpc, error) {
+	socket, err := net.Listen(laddr.Network(), laddr.String())
 	if err != nil {
 		return nil, xerrors.Errorf("failed to bind: %v", err)
 	}
 
+	if naddr == "" {
+		naddr = socket.Addr().String()
+	}
+
+	dela.Logger.Info().Msgf("public address is: %s", naddr)
+
 	tmpl := minoTemplate{
-		myAddr: session.NewAddress(socket.Addr().String()),
+		myAddr: session.NewAddress(naddr),
 		router: router,
 		fac:    addressFac,
 		certs:  certs.NewInMemoryStore(),
@@ -206,6 +215,8 @@ func NewMinogrpc(addr net.Addr, router router.Router, opts ...Option) (*Minogrpc
 		endpoints: m.endpoints,
 	})
 
+	dela.Logger.Info().Msgf("listening on: %s", socket.Addr().String())
+
 	m.listen(socket)
 
 	return m, nil
@@ -236,7 +247,7 @@ func (m *Minogrpc) GracefulStop() error {
 	return m.postCheckClose()
 }
 
-// Stop stops the server immediatly.
+// Stop stops the server immediately.
 func (m *Minogrpc) Stop() error {
 	m.server.Stop()
 

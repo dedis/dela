@@ -568,6 +568,7 @@ func (o *overlay) makeCertificate() error {
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		IPAddresses:  ipAddrs,
+		DNSNames:     []string{hostname},
 		NotBefore:    time.Now(),
 		NotAfter:     time.Now().Add(certificateDuration),
 

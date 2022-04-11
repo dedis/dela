@@ -749,7 +749,7 @@ func TestOverlay_Join(t *testing.T) {
 func TestConnManager_Acquire(t *testing.T) {
 	addr := ParseAddress("127.0.0.1", 0)
 
-	dst, err := NewMinogrpc(addr, nil)
+	dst, err := NewMinogrpc(addr, "", nil)
 	require.NoError(t, err)
 
 	defer dst.GracefulStop()
@@ -820,7 +820,7 @@ func TestConnManager_BadAddress_Acquire(t *testing.T) {
 func TestConnManager_BadTracer_Acquire(t *testing.T) {
 	addr := ParseAddress("127.0.0.1", 0)
 
-	dst, err := NewMinogrpc(addr, nil)
+	dst, err := NewMinogrpc(addr, "", nil)
 	require.NoError(t, err)
 
 	defer dst.GracefulStop()
@@ -853,7 +853,7 @@ func makeInstances(t *testing.T, n int, call *fake.Call) ([]mino.Mino, []mino.RP
 	for i := range mm {
 		addr := ParseAddress("127.0.0.1", 0)
 
-		m, err := NewMinogrpc(addr, tree.NewRouter(addressFac))
+		m, err := NewMinogrpc(addr, "", tree.NewRouter(addressFac))
 		require.NoError(t, err)
 
 		mm[i] = m

@@ -12,7 +12,7 @@ import (
 func ExampleStorage_Fetch() {
 	router := tree.NewRouter(minogrpc.NewAddressFactory())
 
-	m, err := minogrpc.NewMinogrpc(minogrpc.ParseAddress("127.0.0.1", 0), router)
+	m, err := minogrpc.NewMinogrpc(minogrpc.ParseAddress("127.0.0.1", 0), "", router)
 	if err != nil {
 		panic("couldn't start mino: " + err.Error())
 	}

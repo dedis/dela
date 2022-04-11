@@ -104,7 +104,7 @@ func newDelaNode(t *testing.T, path string, port int) dela {
 		minogrpc.WithCertificateKey(key, key.Public()),
 	}
 
-	onet, err := minogrpc.NewMinogrpc(addr, router, opts...)
+	onet, err := minogrpc.NewMinogrpc(addr, "", router, opts...)
 	require.NoError(t, err)
 	onet.GetAddress()
 
