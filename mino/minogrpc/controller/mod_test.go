@@ -52,8 +52,10 @@ func TestMiniController_OnStart(t *testing.T) {
 func TestMiniController_InvalidAddr_OnStart(t *testing.T) {
 	ctrl := NewController()
 
-	err := ctrl.OnStart(fakeContext{str: "xxx"}, node.NewInjector())
-	require.EqualError(t, err, "failed to resolve tcp address: address xxx: missing port in address")
+	str := map[string]string{"listen": ":xxx"}
+
+	err := ctrl.OnStart(fakeContext{str: str}, node.NewInjector())
+	require.EqualError(t, err, "failed to parse listen URL: parse \":xxx\": missing protocol scheme")
 }
 
 func TestMiniController_OverlayFailed_OnStart(t *testing.T) {
@@ -78,8 +80,10 @@ func TestMiniController_OverlayFailed_OnStart(t *testing.T) {
 	// The address is correct but it will yield an error because it is already
 	// used.
 
-	err = ctrl.OnStart(fakeContext{path: dir, str: listener.Addr().String()}, injector)
-	require.True(t, strings.HasPrefix(err.Error(), "couldn't make overlay: failed to bind"))
+	str := map[string]string{"listen": "tcp://" + listener.Addr().String()}
+
+	err = ctrl.OnStart(fakeContext{path: dir, str: str}, injector)
+	require.True(t, strings.HasPrefix(err.Error(), "couldn't make overlay: failed to bind"), err.Error())
 }
 
 func TestMiniController_MissingDB_OnStart(t *testing.T) {
@@ -132,6 +136,38 @@ func TestMiniController_FailParseKey_OnStart(t *testing.T) {
 	err = ctrl.OnStart(fakeContext{path: dir}, inj)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "cert private key: while parsing: x509: ")
+}
+
+func TestMiniController_FailedTCPResolve_OnStart(t *testing.T) {
+	ctrl := NewController()
+
+	str := map[string]string{"listen": "yyy:xxx"}
+
+	err := ctrl.OnStart(fakeContext{str: str}, node.NewInjector())
+	require.EqualError(t, err, "failed to resolve tcp address: unknown network yyy")
+}
+
+func TestMiniController_FailedPublicParse_OnStart(t *testing.T) {
+	dir, err := ioutil.TempDir(os.TempDir(), "minogrpc")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(dir)
+
+	db, err := kv.New(filepath.Join(dir, "test.db"))
+	require.NoError(t, err)
+
+	ctrl := NewController().(miniController)
+
+	injector := node.NewInjector()
+	injector.Inject(db)
+
+	// The address is correct but it will yield an error because it is already
+	// used.
+
+	str := map[string]string{"listen": "tcp://1.2.3.4:0", "public": ":xxx"}
+
+	err = ctrl.OnStart(fakeContext{path: dir, str: str}, injector)
+	require.EqualError(t, err, `failed to parse public: parse ":xxx": missing protocol scheme`)
 }
 
 func TestMiniController_OnStop(t *testing.T) {

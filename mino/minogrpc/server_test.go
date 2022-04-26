@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"net"
+	"net/url"
 	"sync"
 	"testing"
 	"time"
@@ -679,6 +680,20 @@ func TestOverlay_New(t *testing.T) {
 	require.NotNil(t, cert)
 }
 
+func TestOverlay_New_Hostname(t *testing.T) {
+	o, err := newOverlay(minoTemplate{
+		myAddr: session.NewAddress("localhost:0"),
+		certs:  certs.NewInMemoryStore(),
+		curve:  elliptic.P521(),
+		random: rand.Reader,
+	})
+	require.NoError(t, err)
+
+	cert, err := o.certs.Load(session.NewAddress("localhost:0"))
+	require.NoError(t, err)
+	require.NotNil(t, cert)
+}
+
 func TestOverlay_Panic_GetCertificate(t *testing.T) {
 	defer func() {
 		r := recover()
@@ -723,33 +738,41 @@ func TestOverlay_Join(t *testing.T) {
 	}
 
 	overlay.certs = fakeCerts{}
-	err = overlay.Join("", "", nil)
+	err = overlay.Join(&url.URL{}, "", nil)
 	require.NoError(t, err)
 
 	overlay.myAddr = session.NewAddress("127.0.0.1:0")
 	overlay.certs = fakeCerts{err: fake.GetError()}
-	err = overlay.Join("", "", nil)
+	err = overlay.Join(&url.URL{}, "", nil)
 	require.EqualError(t, err, fake.Err("couldn't fetch distant certificate"))
 
 	overlay.certs = fakeCerts{}
 	overlay.connMgr = fakeConnMgr{err: fake.GetError()}
-	err = overlay.Join("", "", nil)
+	err = overlay.Join(&url.URL{}, "", nil)
 	require.EqualError(t, err, fake.Err("couldn't open connection"))
 
 	overlay.connMgr = fakeConnMgr{resp: ptypes.JoinResponse{}, errConn: fake.GetError()}
-	err = overlay.Join("", "", nil)
+	err = overlay.Join(&url.URL{}, "", nil)
 	require.EqualError(t, err, fake.Err("couldn't call join"))
 
 	overlay.connMgr = fakeConnMgr{resp: ptypes.JoinResponse{Peers: []*ptypes.Certificate{{}}}}
-	err = overlay.Join("", "", nil)
+	err = overlay.Join(&url.URL{}, "", nil)
 	require.EqualError(t, err,
 		"couldn't parse certificate: x509: malformed certificate")
+}
+
+func TestMakeCertificate_WrongHostname(t *testing.T) {
+	o := overlay{}
+	o.myAddr = session.NewAddress(":xxx")
+
+	err := o.makeCertificate()
+	require.EqualError(t, err, "failed to get hostname: malformed address: parse \"//:xxx\": invalid port \":xxx\" after host")
 }
 
 func TestConnManager_Acquire(t *testing.T) {
 	addr := ParseAddress("127.0.0.1", 0)
 
-	dst, err := NewMinogrpc(addr, "", nil)
+	dst, err := NewMinogrpc(addr, nil, nil)
 	require.NoError(t, err)
 
 	defer dst.GracefulStop()
@@ -820,7 +843,7 @@ func TestConnManager_BadAddress_Acquire(t *testing.T) {
 func TestConnManager_BadTracer_Acquire(t *testing.T) {
 	addr := ParseAddress("127.0.0.1", 0)
 
-	dst, err := NewMinogrpc(addr, "", nil)
+	dst, err := NewMinogrpc(addr, nil, nil)
 	require.NoError(t, err)
 
 	defer dst.GracefulStop()
@@ -853,7 +876,7 @@ func makeInstances(t *testing.T, n int, call *fake.Call) ([]mino.Mino, []mino.RP
 	for i := range mm {
 		addr := ParseAddress("127.0.0.1", 0)
 
-		m, err := NewMinogrpc(addr, "", tree.NewRouter(addressFac))
+		m, err := NewMinogrpc(addr, nil, tree.NewRouter(addressFac))
 		require.NoError(t, err)
 
 		mm[i] = m

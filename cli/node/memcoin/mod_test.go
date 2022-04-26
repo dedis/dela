@@ -57,9 +57,9 @@ func TestMemcoin_Scenario_SetupAndTransactions(t *testing.T) {
 	require.True(t, waitDaemon(t, []string{node1, node2, node3}), "daemon failed to start")
 
 	// Share the certificates.
-	shareCert(t, node2, node1, "127.0.0.1:2111")
-	shareCert(t, node3, node1, "127.0.0.1:2111")
-	shareCert(t, node5, node1, "127.0.0.1:2111")
+	shareCert(t, node2, node1, "//127.0.0.1:2111")
+	shareCert(t, node3, node1, "//127.0.0.1:2111")
+	shareCert(t, node5, node1, "//127.0.0.1:2111")
 
 	// Setup the chain with nodes 1 and 2.
 	args := append(append(
@@ -191,7 +191,7 @@ func setupChain(t *testing.T, nodes []string, ports []uint16) {
 
 	waitDaemon(t, nodes)
 
-	shareCert(t, nodes[1], nodes[0], fmt.Sprintf("127.0.0.1:%d", ports[0]))
+	shareCert(t, nodes[1], nodes[0], fmt.Sprintf("//127.0.0.1:%d", ports[0]))
 
 	args := append(append(
 		[]string{os.Args[0], "--config", nodes[0], "ordering", "setup"},
@@ -234,7 +234,7 @@ func waitDaemon(t *testing.T, daemons []string) bool {
 
 func makeNodeArg(path string, port uint16) []string {
 	return []string{
-		os.Args[0], "--config", path, "start", "--listen", "127.0.0.1:" + strconv.Itoa(int(port)),
+		os.Args[0], "--config", path, "start", "--listen", "tcp://127.0.0.1:" + strconv.Itoa(int(port)),
 	}
 }
 

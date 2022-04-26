@@ -15,6 +15,7 @@ import (
 	"crypto/x509"
 	"io"
 	"net"
+	"net/url"
 	"path/filepath"
 	"time"
 
@@ -111,8 +112,12 @@ func (m miniController) SetCommands(builder node.Builder) {
 // OnStart implements node.Initializer. It starts the minogrpc instance and
 // injects it in the dependency resolver.
 func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
+	listenURL, err := url.Parse(ctx.String("listen"))
+	if err != nil {
+		return xerrors.Errorf("failed to parse listen URL: %v", err)
+	}
 
-	listen, err := net.ResolveTCPAddr("tcp", ctx.String("listen"))
+	listen, err := net.ResolveTCPAddr(listenURL.Scheme, listenURL.Host)
 	if err != nil {
 		return xerrors.Errorf("failed to resolve tcp address: %v", err)
 	}
@@ -137,7 +142,16 @@ func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
 		minogrpc.WithCertificateKey(key, key.Public()),
 	}
 
-	o, err := minogrpc.NewMinogrpc(listen, ctx.String("public"), rter, opts...)
+	var public *url.URL
+
+	if ctx.String("public") != "" {
+		public, err = url.Parse(ctx.String("public"))
+		if err != nil {
+			return xerrors.Errorf("failed to parse public: %v", err)
+		}
+	}
+
+	o, err := minogrpc.NewMinogrpc(listen, public, rter, opts...)
 	if err != nil {
 		return xerrors.Errorf("couldn't make overlay: %v", err)
 	}

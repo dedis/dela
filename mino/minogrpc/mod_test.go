@@ -1,6 +1,7 @@
 package minogrpc
 
 import (
+	"net"
 	"sync"
 	"testing"
 	"time"
@@ -20,7 +21,7 @@ func TestMinogrpc_New(t *testing.T) {
 
 	router := tree.NewRouter(addressFac)
 
-	m, err := NewMinogrpc(addr, "", router)
+	m, err := NewMinogrpc(addr, nil, router)
 	require.NoError(t, err)
 
 	require.Equal(t, "127.0.0.1:3333", m.GetAddress().String())
@@ -33,11 +34,29 @@ func TestMinogrpc_New(t *testing.T) {
 	require.NoError(t, m.GracefulStop())
 }
 
+func TestMinogrpc_New_FailedParsePublic(t *testing.T) {
+	l := listener
+	defer func() {
+		listener = l
+	}()
+
+	listener = func(network, address string) (net.Listener, error) {
+		return fakeListener{addr: ":xxx"}, nil
+	}
+
+	router := tree.NewRouter(addressFac)
+
+	addr := net.IPAddr{}
+
+	_, err := NewMinogrpc(&addr, nil, router)
+	require.EqualError(t, err, "failed to parse public URL: parse \"//:xxx\": invalid port \":xxx\" after host")
+}
+
 func TestMinogrpc_FailGenerateKey_New(t *testing.T) {
 	addr := ParseAddress("127.0.0.1", 3333)
 	router := tree.NewRouter(addressFac)
 
-	_, err := NewMinogrpc(addr, "", router, WithRandom(badReader{}))
+	_, err := NewMinogrpc(addr, nil, router, WithRandom(badReader{}))
 	require.EqualError(t, err, fake.Err("overlay: cert private key"))
 }
 
@@ -45,7 +64,7 @@ func TestMinogrpc_FailCreateCert_New(t *testing.T) {
 	addr := ParseAddress("127.0.0.1", 3333)
 	router := tree.NewRouter(addressFac)
 
-	_, err := NewMinogrpc(addr, "", router, WithCertificateKey(struct{}{}, struct{}{}))
+	_, err := NewMinogrpc(addr, nil, router, WithCertificateKey(struct{}{}, struct{}{}))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "overlay: certificate failed: while creating: x509: ")
 }
@@ -54,7 +73,7 @@ func TestMinogrpc_FailStoreCert_New(t *testing.T) {
 	addr := ParseAddress("127.0.0.1", 3333)
 	router := tree.NewRouter(addressFac)
 
-	_, err := NewMinogrpc(addr, "", router, WithStorage(fakeCerts{errStore: fake.GetError()}))
+	_, err := NewMinogrpc(addr, nil, router, WithStorage(fakeCerts{errStore: fake.GetError()}))
 	require.EqualError(t, err, fake.Err("overlay: certificate failed: while storing"))
 }
 
@@ -62,7 +81,7 @@ func TestMinogrpc_FailLoadCert_New(t *testing.T) {
 	addr := ParseAddress("127.0.0.1", 3333)
 	router := tree.NewRouter(addressFac)
 
-	_, err := NewMinogrpc(addr, "", router, WithStorage(fakeCerts{errLoad: fake.GetError()}))
+	_, err := NewMinogrpc(addr, nil, router, WithStorage(fakeCerts{errLoad: fake.GetError()}))
 	require.EqualError(t, err, fake.Err("overlay: while loading cert"))
 }
 
@@ -70,7 +89,7 @@ func TestMinogrpc_BadAddress_New(t *testing.T) {
 	addr := ParseAddress("123.4.5.6", 1)
 	router := tree.NewRouter(addressFac)
 
-	_, err := NewMinogrpc(addr, "", router)
+	_, err := NewMinogrpc(addr, nil, router)
 	require.Error(t, err)
 	// Funny enough, macos would output:
 	//   couldn't start the server: failed to listen: listen tcp 123.4.5.6:1:
@@ -88,7 +107,7 @@ func TestMinogrpc_BadTracer_New(t *testing.T) {
 
 	router := tree.NewRouter(addressFac)
 
-	_, err := NewMinogrpc(addr, "", router)
+	_, err := NewMinogrpc(addr, nil, router)
 	require.EqualError(
 		t,
 		err,
@@ -96,6 +115,11 @@ func TestMinogrpc_BadTracer_New(t *testing.T) {
 	)
 
 	getTracerForAddr = tracing.GetTracerForAddr
+}
+
+func TestMinogrpc_GetTrafficWatcher(t *testing.T) {
+	m := Minogrpc{}
+	m.GetTrafficWatcher()
 }
 
 func TestMinogrpc_GetAddressFactory(t *testing.T) {
@@ -219,4 +243,22 @@ type badReader struct{}
 
 func (badReader) Read([]byte) (int, error) {
 	return 0, fake.GetError()
+}
+
+type fakeListener struct {
+	net.Listener
+	addr string
+}
+
+func (l fakeListener) Addr() net.Addr {
+	return fakeAddr{addr: l.addr}
+}
+
+type fakeAddr struct {
+	net.Addr
+	addr string
+}
+
+func (a fakeAddr) String() string {
+	return a.addr
 }

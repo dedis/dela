@@ -6,15 +6,15 @@ PATH environment.
 
 ```sh
 # Run three nodes
-LLVL=info memcoin --config /tmp/node1 start --listen 127.0.0.1:2001
-LLVL=info memcoin --config /tmp/node2 start --listen 127.0.0.1:2002
-LLVL=info memcoin --config /tmp/node3 start --listen 127.0.0.1:2003
+LLVL=info memcoin --config /tmp/node1 start --listen tcp://127.0.0.1:2001
+LLVL=info memcoin --config /tmp/node2 start --listen tcp://127.0.0.1:2002
+LLVL=info memcoin --config /tmp/node3 start --listen tcp://127.0.0.1:2003
 
 # Share the certificate
 memcoin --config /tmp/node2 minogrpc join \
-    --address 127.0.0.1:2001 $(memcoin --config /tmp/node1 minogrpc token)
+    --address //127.0.0.1:2001 $(memcoin --config /tmp/node1 minogrpc token)
 memcoin --config /tmp/node3 minogrpc join \
-    --address 127.0.0.1:2001 $(memcoin --config /tmp/node1 minogrpc token)
+    --address //127.0.0.1:2001 $(memcoin --config /tmp/node1 minogrpc token)
 
 # Create a new chain with the three nodes
 memcoin --config /tmp/node1 ordering setup\

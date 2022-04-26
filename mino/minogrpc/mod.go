@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"regexp"
 	"strings"
 	"sync"
@@ -52,6 +53,10 @@ func ParseAddress(ip string, port uint16) net.Addr {
 	}
 }
 
+// listener is the default listener used to create the socket. Having it as a
+// variable is convenient for the tests.
+var listener = net.Listen
+
 // Joinable is an extension of the mino.Mino interface to allow distant servers
 // to join a network of participants.
 type Joinable interface {
@@ -74,7 +79,10 @@ type Joinable interface {
 	//
 	// The token and the certificate digest are provided by the distant peer
 	// over a secure channel.
-	Join(addr, token string, certHash []byte) error
+	//
+	// Only the "host" and "path" parts are used in the URL, which must be of
+	// form //<host>:<port>/<path>
+	Join(addr *url.URL, token string, certHash []byte) error
 }
 
 // Endpoint defines the requirement of an endpoint. Since the endpoint can be
@@ -147,21 +155,25 @@ func WithRandom(r io.Reader) Option {
 // NewMinogrpc creates and starts a new instance. it will try to listen for the
 // address and returns an error if it fails. "listen" is the local address,
 // while "public" is the public node address. If public is empty it uses the
-// local address.
-func NewMinogrpc(listen net.Addr, public string, router router.Router, opts ...Option) (*Minogrpc, error) {
-	socket, err := net.Listen(listen.Network(), listen.String())
+// local address. Public does not support any scheme, it should be of form
+// //<hostname>:<port>/<path>.
+func NewMinogrpc(listen net.Addr, public *url.URL, router router.Router, opts ...Option) (*Minogrpc, error) {
+	socket, err := listener(listen.Network(), listen.String())
 	if err != nil {
 		return nil, xerrors.Errorf("failed to bind: %v", err)
 	}
 
-	if public == "" {
-		public = socket.Addr().String()
+	if public == nil {
+		public, err = url.Parse("//" + socket.Addr().String())
+		if err != nil {
+			return nil, xerrors.Errorf("failed to parse public URL: %v", err)
+		}
 	}
 
-	dela.Logger.Info().Msgf("public address is: %s", public)
+	dela.Logger.Info().Msgf("public URL is: %s", public.String())
 
 	tmpl := minoTemplate{
-		myAddr: session.NewAddress(public),
+		myAddr: session.NewAddress(public.Host + public.Path),
 		router: router,
 		fac:    addressFac,
 		certs:  certs.NewInMemoryStore(),
