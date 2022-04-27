@@ -23,7 +23,7 @@ func TestMiniController_Build(t *testing.T) {
 	call := &fake.Call{}
 	ctrl.SetCommands(fakeBuilder{call: call})
 
-	require.Equal(t, 17, call.Len())
+	require.Equal(t, 22, call.Len())
 }
 
 func TestMiniController_OnStart(t *testing.T) {
