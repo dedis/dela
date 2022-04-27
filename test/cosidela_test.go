@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"io"
 	"math/rand"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -104,7 +105,7 @@ func newDelaNode(t *testing.T, path string, port int) dela {
 		minogrpc.WithCertificateKey(key, key.Public()),
 	}
 
-	onet, err := minogrpc.NewMinogrpc(addr, router, opts...)
+	onet, err := minogrpc.NewMinogrpc(addr, nil, router, opts...)
 	require.NoError(t, err)
 	onet.GetAddress()
 
@@ -197,7 +198,9 @@ func (c cosiDelaNode) Setup(delas ...dela) {
 	joinable, ok := c.onet.(minogrpc.Joinable)
 	require.True(c.t, ok)
 
-	addrStr := c.onet.GetAddress().String()
+	addrURL, err := url.Parse("//" + c.onet.GetAddress().String())
+	require.NoError(c.t, err, addrURL)
+
 	token := joinable.GenerateToken(time.Hour)
 
 	certHash, err := joinable.GetCertificateStore().Hash(joinable.GetCertificate())
@@ -207,7 +210,7 @@ func (c cosiDelaNode) Setup(delas ...dela) {
 		otherJoinable, ok := dela.GetMino().(minogrpc.Joinable)
 		require.True(c.t, ok)
 
-		err = otherJoinable.Join(addrStr, token, certHash)
+		err = otherJoinable.Join(addrURL, token, certHash)
 		require.NoError(c.t, err)
 	}
 

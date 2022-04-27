@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
+	"net/url"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 )
@@ -79,6 +81,30 @@ func TestTokenAction_Execute(t *testing.T) {
 		"couldn't resolve: couldn't find dependency for 'minogrpc.Joinable'")
 }
 
+func TestTokenAction_FailedHash(t *testing.T) {
+	action := tokenAction{}
+
+	flags := make(node.FlagSet)
+	flags["expiration"] = time.Millisecond
+
+	out := new(bytes.Buffer)
+	req := node.Context{
+		Out:      out,
+		Flags:    flags,
+		Injector: node.NewInjector(),
+	}
+
+	cert := fake.MakeCertificate(t, 1)
+
+	store := certs.NewInMemoryStore()
+	store.Store(fake.NewAddress(0), cert)
+
+	req.Injector.Inject(fakeJoinable{certs: badCertStore{err: fake.GetError()}})
+
+	err := action.Execute(req)
+	require.EqualError(t, err, fake.Err("couldn't hash certificate"))
+}
+
 func TestJoinAction_Execute(t *testing.T) {
 	action := joinAction{}
 
@@ -111,6 +137,16 @@ func TestJoinAction_Execute(t *testing.T) {
 		"couldn't resolve: couldn't find dependency for 'minogrpc.Joinable'")
 }
 
+func TestJoinAction_FailedParseAddr(t *testing.T) {
+	action := joinAction{}
+
+	flags := make(node.FlagSet)
+	flags["address"] = ":xxx"
+
+	err := action.Execute(node.Context{Flags: flags})
+	require.EqualError(t, err, "failed to parse addr: parse \":xxx\": missing protocol scheme")
+}
+
 // -----------------------------------------------------------------------------
 // Utility functions
 
@@ -121,10 +157,7 @@ type fakeJoinable struct {
 }
 
 func (j fakeJoinable) GetCertificate() *tls.Certificate {
-	cert, err := j.certs.Load(fake.NewAddress(0))
-	if err != nil {
-		panic(err)
-	}
+	cert, _ := j.certs.Load(fake.NewAddress(0))
 
 	return cert
 }
@@ -137,14 +170,14 @@ func (j fakeJoinable) GenerateToken(time.Duration) string {
 	return "abc"
 }
 
-func (j fakeJoinable) Join(string, string, []byte) error {
+func (j fakeJoinable) Join(*url.URL, string, []byte) error {
 	return j.err
 }
 
 type fakeContext struct {
 	cli.Flags
 	duration time.Duration
-	str      string
+	str      map[string]string
 	path     string
 	num      int
 }
@@ -153,8 +186,8 @@ func (ctx fakeContext) Duration(string) time.Duration {
 	return ctx.duration
 }
 
-func (ctx fakeContext) String(string) string {
-	return ctx.str
+func (ctx fakeContext) String(key string) string {
+	return ctx.str[key]
 }
 
 func (ctx fakeContext) Path(string) string {
@@ -163,4 +196,17 @@ func (ctx fakeContext) Path(string) string {
 
 func (ctx fakeContext) Int(string) int {
 	return ctx.num
+}
+
+type badCertStore struct {
+	certs.Storage
+	err error
+}
+
+func (badCertStore) Load(mino.Address) (*tls.Certificate, error) {
+	return nil, nil
+}
+
+func (c badCertStore) Hash(*tls.Certificate) ([]byte, error) {
+	return nil, c.err
 }

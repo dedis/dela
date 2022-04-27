@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
+	"net/url"
 
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/mino"
@@ -79,11 +80,15 @@ type joinAction struct{}
 // join request to the distant node.
 func (a joinAction) Execute(req node.Context) error {
 	token := req.Flags.String("token")
-	addr := req.Flags.String("address")
 	certHash := req.Flags.String("cert-hash")
 
+	addrURL, err := url.Parse(req.Flags.String("address"))
+	if err != nil {
+		return xerrors.Errorf("failed to parse addr: %v", err)
+	}
+
 	var m minogrpc.Joinable
-	err := req.Injector.Resolve(&m)
+	err = req.Injector.Resolve(&m)
 	if err != nil {
 		return xerrors.Errorf("couldn't resolve: %v", err)
 	}
@@ -93,7 +98,7 @@ func (a joinAction) Execute(req node.Context) error {
 		return xerrors.Errorf("couldn't decode digest: %v", err)
 	}
 
-	err = m.Join(addr, token, cert)
+	err = m.Join(addrURL, token, cert)
 	if err != nil {
 		return xerrors.Errorf("couldn't join: %v", err)
 	}

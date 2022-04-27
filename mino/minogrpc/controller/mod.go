@@ -14,7 +14,8 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"io"
-	"math"
+	"net"
+	"net/url"
 	"path/filepath"
 	"time"
 
@@ -52,11 +53,19 @@ func NewController() node.Initializer {
 // Build implements node.Initializer. It populates the builder with the commands
 // to control Minogrpc.
 func (m miniController) SetCommands(builder node.Builder) {
+	// listen
+	// public
 	builder.SetStartFlags(
-		cli.IntFlag{
-			Name:  "port",
-			Usage: "set the port to listen on",
-			Value: 2000,
+		cli.StringFlag{
+			Name:  "listen",
+			Usage: "set the address to listen on",
+			Value: "0.0.0.0:2000",
+		},
+		cli.StringFlag{
+			Name:     "public",
+			Usage:    "sets the public node address. By default it uses the same as --listen",
+			Value:    "",
+			Required: false,
 		},
 	)
 
@@ -103,18 +112,20 @@ func (m miniController) SetCommands(builder node.Builder) {
 // OnStart implements node.Initializer. It starts the minogrpc instance and
 // injects it in the dependency resolver.
 func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
+	listenURL, err := url.Parse(ctx.String("listen"))
+	if err != nil {
+		return xerrors.Errorf("failed to parse listen URL: %v", err)
+	}
 
-	port := ctx.Int("port")
-	if port < 0 || port > math.MaxUint16 {
-		return xerrors.Errorf("invalid port value %d", port)
+	listen, err := net.ResolveTCPAddr(listenURL.Scheme, listenURL.Host)
+	if err != nil {
+		return xerrors.Errorf("failed to resolve tcp address: %v", err)
 	}
 
 	rter := tree.NewRouter(minogrpc.NewAddressFactory())
 
-	addr := minogrpc.ParseAddress("127.0.0.1", uint16(port))
-
 	var db kv.DB
-	err := inj.Resolve(&db)
+	err = inj.Resolve(&db)
 	if err != nil {
 		return xerrors.Errorf("injector: %v", err)
 	}
@@ -131,7 +142,16 @@ func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
 		minogrpc.WithCertificateKey(key, key.Public()),
 	}
 
-	o, err := minogrpc.NewMinogrpc(addr, rter, opts...)
+	var public *url.URL
+
+	if ctx.String("public") != "" {
+		public, err = url.Parse(ctx.String("public"))
+		if err != nil {
+			return xerrors.Errorf("failed to parse public: %v", err)
+		}
+	}
+
+	o, err := minogrpc.NewMinogrpc(listen, public, rter, opts...)
 	if err != nil {
 		return xerrors.Errorf("couldn't make overlay: %v", err)
 	}

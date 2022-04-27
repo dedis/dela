@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"regexp"
 	"strings"
 	"sync"
@@ -19,6 +20,7 @@ import (
 
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	opentracing "github.com/opentracing/opentracing-go"
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/internal/tracing"
 	"go.dedis.ch/dela/internal/traffic"
 	"go.dedis.ch/dela/mino"
@@ -51,6 +53,10 @@ func ParseAddress(ip string, port uint16) net.Addr {
 	}
 }
 
+// listener is the default listener used to create the socket. Having it as a
+// variable is convenient for the tests.
+var listener = net.Listen
+
 // Joinable is an extension of the mino.Mino interface to allow distant servers
 // to join a network of participants.
 type Joinable interface {
@@ -73,7 +79,10 @@ type Joinable interface {
 	//
 	// The token and the certificate digest are provided by the distant peer
 	// over a secure channel.
-	Join(addr, token string, certHash []byte) error
+	//
+	// Only the "host" and "path" parts are used in the URL, which must be of
+	// form //<host>:<port>/<path>
+	Join(addr *url.URL, token string, certHash []byte) error
 }
 
 // Endpoint defines the requirement of an endpoint. Since the endpoint can be
@@ -144,15 +153,27 @@ func WithRandom(r io.Reader) Option {
 }
 
 // NewMinogrpc creates and starts a new instance. it will try to listen for the
-// address and returns an error if it fails.
-func NewMinogrpc(addr net.Addr, router router.Router, opts ...Option) (*Minogrpc, error) {
-	socket, err := net.Listen(addr.Network(), addr.String())
+// address and returns an error if it fails. "listen" is the local address,
+// while "public" is the public node address. If public is empty it uses the
+// local address. Public does not support any scheme, it should be of form
+// //<hostname>:<port>/<path>.
+func NewMinogrpc(listen net.Addr, public *url.URL, router router.Router, opts ...Option) (*Minogrpc, error) {
+	socket, err := listener(listen.Network(), listen.String())
 	if err != nil {
 		return nil, xerrors.Errorf("failed to bind: %v", err)
 	}
 
+	if public == nil {
+		public, err = url.Parse("//" + socket.Addr().String())
+		if err != nil {
+			return nil, xerrors.Errorf("failed to parse public URL: %v", err)
+		}
+	}
+
+	dela.Logger.Info().Msgf("public URL is: %s", public.String())
+
 	tmpl := minoTemplate{
-		myAddr: session.NewAddress(socket.Addr().String()),
+		myAddr: session.NewAddress(public.Host + public.Path),
 		router: router,
 		fac:    addressFac,
 		certs:  certs.NewInMemoryStore(),
@@ -206,6 +227,8 @@ func NewMinogrpc(addr net.Addr, router router.Router, opts ...Option) (*Minogrpc
 		endpoints: m.endpoints,
 	})
 
+	dela.Logger.Info().Msgf("listening on: %s", socket.Addr().String())
+
 	m.listen(socket)
 
 	return m, nil
@@ -236,7 +259,7 @@ func (m *Minogrpc) GracefulStop() error {
 	return m.postCheckClose()
 }
 
-// Stop stops the server immediatly.
+// Stop stops the server immediately.
 func (m *Minogrpc) Stop() error {
 	m.server.Stop()
 

@@ -5,7 +5,7 @@ generate:
 # Some packages are exluded from staticcheck due to deprecated warnings: #208.
 lint:
 	# Coding style static check.
-	@go get -v honnef.co/go/tools/cmd/staticcheck
+	@go install honnef.co/go/tools/cmd/staticcheck@latest
 	@go mod tidy
 	staticcheck `go list ./... | grep -Ev "(go\.dedis\.ch/dela/internal/testing|go\.dedis\.ch/dela/mino/minogrpc/ptypes)"`
 
