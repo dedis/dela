@@ -76,6 +76,15 @@ func (m miniController) SetCommands(builder node.Builder) {
 	sub.SetDescription("list the certificates of the server")
 	sub.SetAction(builder.MakeAction(certAction{}))
 
+	rm := sub.SetSubCommand("rm")
+	rm.SetDescription("remove a certificate")
+	rm.SetFlags(cli.StringFlag{
+		Name:     "address",
+		Usage:    "address associated to the certificate(s), in base64",
+		Required: true,
+	})
+	rm.SetAction(builder.MakeAction(removeAction{}))
+
 	sub = cmd.SetSubCommand("token")
 	sub.SetDescription("generate a token to share to others to join the network")
 	sub.SetFlags(

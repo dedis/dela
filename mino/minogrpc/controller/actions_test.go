@@ -36,13 +36,103 @@ func TestCertAction_Execute(t *testing.T) {
 
 	err := action.Execute(req)
 	require.NoError(t, err)
-	expected := fmt.Sprintf("Address: fake.Address[0] Certificate: %v\n", cert.Leaf.NotAfter)
+	expected := fmt.Sprintf("Address: fake.Address[0] (AAAAAA==) Certificate: %v\n", cert.Leaf.NotAfter)
 	require.Equal(t, expected, out.String())
 
 	req.Injector = node.NewInjector()
 	err = action.Execute(req)
 	require.EqualError(t, err,
 		"couldn't resolve: couldn't find dependency for 'minogrpc.Joinable'")
+}
+
+func TestRemoveCert_Execute(t *testing.T) {
+	action := removeAction{}
+
+	addr := fake.NewAddress(0)
+	addrBuff, err := addr.MarshalText()
+	require.NoError(t, err)
+
+	addrB64 := base64.StdEncoding.EncodeToString(addrBuff)
+
+	out := new(bytes.Buffer)
+	req := node.Context{
+		Out:      out,
+		Injector: node.NewInjector(),
+		Flags: node.FlagSet{
+			"address": addrB64,
+		},
+	}
+
+	cert := fake.MakeCertificate(t, 1)
+
+	store := certs.NewInMemoryStore()
+	store.Store(addr, cert)
+
+	req.Injector.Inject(fakeJoinable{certs: store})
+
+	err = action.Execute(req)
+	require.NoError(t, err)
+
+	store.Range(func(addr mino.Address, cert *tls.Certificate) bool {
+		t.Error("store should be empty")
+		return false
+	})
+
+	expected := fmt.Sprintf("certificate(s) with address %q removed", addrBuff)
+	require.Equal(t, expected, out.String())
+}
+
+func TestRemoveCert_Execute_NoJoinable(t *testing.T) {
+	action := removeAction{}
+
+	out := new(bytes.Buffer)
+	req := node.Context{
+		Out:      out,
+		Injector: node.NewInjector(),
+	}
+
+	err := action.Execute(req)
+	require.EqualError(t, err, "couldn't resolve: couldn't find dependency for 'minogrpc.Joinable'")
+}
+
+func TestRemoveCert_Execute_BadAddress(t *testing.T) {
+	action := removeAction{}
+
+	out := new(bytes.Buffer)
+	req := node.Context{
+		Out:      out,
+		Injector: node.NewInjector(),
+		Flags: node.FlagSet{
+			"address": "xx",
+		},
+	}
+
+	store := certs.NewInMemoryStore()
+
+	req.Injector.Inject(fakeJoinable{certs: store})
+
+	err := action.Execute(req)
+	require.EqualError(t, err, "failed to decode base64 address: illegal base64 data at input byte 0")
+}
+
+func TestRemoveCert_Execute_BadDelete(t *testing.T) {
+	action := removeAction{}
+
+	out := new(bytes.Buffer)
+	req := node.Context{
+		Out:      out,
+		Injector: node.NewInjector(),
+		Flags: node.FlagSet{
+			"address": "xx==",
+		},
+	}
+
+	store := badCertStore{err: fake.GetError()}
+
+	req.Injector.Inject(fakeJoinable{certs: store})
+
+	err := action.Execute(req)
+	require.EqualError(t, err, fake.Err("failed to delete"))
 }
 
 func TestTokenAction_Execute(t *testing.T) {
@@ -174,6 +264,10 @@ func (j fakeJoinable) Join(*url.URL, string, []byte) error {
 	return j.err
 }
 
+func (fakeJoinable) GetAddressFactory() mino.AddressFactory {
+	return fake.AddressFactory{}
+}
+
 type fakeContext struct {
 	cli.Flags
 	duration time.Duration
@@ -209,4 +303,8 @@ func (badCertStore) Load(mino.Address) (*tls.Certificate, error) {
 
 func (c badCertStore) Hash(*tls.Certificate) ([]byte, error) {
 	return nil, c.err
+}
+
+func (c badCertStore) Delete(mino.Address) error {
+	return c.err
 }
