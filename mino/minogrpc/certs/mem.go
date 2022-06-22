@@ -78,6 +78,7 @@ func (s *InMemoryStore) Fetch(addr Dialable, hash []byte) error {
 		// communicate, only fetch the certificate. The integrity is verified
 		// through the hash to prevent man-in-the-middle attacks.
 		InsecureSkipVerify: true,
+		MinVersion:         tls.VersionTLS12,
 	}
 
 	// This connection will be used to fetch the certificate of the server and

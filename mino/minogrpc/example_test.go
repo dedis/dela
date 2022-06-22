@@ -12,14 +12,14 @@ import (
 )
 
 func ExampleRPC_Call() {
-	mA, err := NewMinogrpc(ParseAddress("127.0.0.1", 0), tree.NewRouter(NewAddressFactory()))
+	mA, err := NewMinogrpc(ParseAddress("127.0.0.1", 0), nil, tree.NewRouter(NewAddressFactory()))
 	if err != nil {
 		panic("overlay A failed: " + err.Error())
 	}
 
 	rpcA := mino.MustCreateRPC(mA, "test", exampleHandler{}, exampleFactory{})
 
-	mB, err := NewMinogrpc(ParseAddress("127.0.0.1", 0), tree.NewRouter(NewAddressFactory()))
+	mB, err := NewMinogrpc(ParseAddress("127.0.0.1", 0), nil, tree.NewRouter(NewAddressFactory()))
 	if err != nil {
 		panic("overlay B failed: " + err.Error())
 	}
@@ -58,14 +58,14 @@ func ExampleRPC_Call() {
 }
 
 func ExampleRPC_Stream() {
-	mA, err := NewMinogrpc(ParseAddress("127.0.0.1", 0), tree.NewRouter(NewAddressFactory()))
+	mA, err := NewMinogrpc(ParseAddress("127.0.0.1", 0), nil, tree.NewRouter(NewAddressFactory()))
 	if err != nil {
 		panic("overlay A failed: " + err.Error())
 	}
 
 	rpcA := mino.MustCreateRPC(mA, "test", exampleHandler{}, exampleFactory{})
 
-	mB, err := NewMinogrpc(ParseAddress("127.0.0.1", 0), tree.NewRouter(NewAddressFactory()))
+	mB, err := NewMinogrpc(ParseAddress("127.0.0.1", 0), nil, tree.NewRouter(NewAddressFactory()))
 	if err != nil {
 		panic("overlay B failed: " + err.Error())
 	}
@@ -108,7 +108,7 @@ func ExampleRPC_OpentracingDemo() {
 	rpcs := make([]mino.RPC, N)
 
 	for i := 0; i < N; i++ {
-		m, err := NewMinogrpc(ParseAddress("127.0.0.1", 0), tree.NewRouter(NewAddressFactory()))
+		m, err := NewMinogrpc(ParseAddress("127.0.0.1", 0), nil, tree.NewRouter(NewAddressFactory()))
 		if err != nil {
 			panic(fmt.Sprintf("overlay %d failed: %s", i, err.Error()))
 		}
