@@ -28,6 +28,8 @@ import (
 	"go.dedis.ch/dela/mino/minogrpc"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/session"
+	"go.dedis.ch/dela/mino/router"
+	"go.dedis.ch/dela/mino/router/flat"
 	"go.dedis.ch/dela/mino/router/tree"
 	"golang.org/x/xerrors"
 )
@@ -53,8 +55,6 @@ func NewController() node.Initializer {
 // Build implements node.Initializer. It populates the builder with the commands
 // to control Minogrpc.
 func (m miniController) SetCommands(builder node.Builder) {
-	// listen
-	// public
 	builder.SetStartFlags(
 		cli.StringFlag{
 			Name:  "listen",
@@ -65,6 +65,12 @@ func (m miniController) SetCommands(builder node.Builder) {
 			Name:     "public",
 			Usage:    "sets the public node address. By default it uses the same as --listen",
 			Value:    "",
+			Required: false,
+		},
+		cli.StringFlag{
+			Name:     "routing",
+			Usage:    "sets the kind of routing: 'flat' or 'tree'",
+			Value:    "flat",
 			Required: false,
 		},
 	)
@@ -131,7 +137,16 @@ func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("failed to resolve tcp address: %v", err)
 	}
 
-	rter := tree.NewRouter(minogrpc.NewAddressFactory())
+	var rter router.Router
+
+	switch ctx.String("routing") {
+	case "flat":
+		rter = flat.NewRouter(minogrpc.NewAddressFactory())
+	case "tree":
+		rter = tree.NewRouter(minogrpc.NewAddressFactory())
+	default:
+		return xerrors.Errorf("unknown routing: %s", ctx.String("routing"))
+	}
 
 	var db kv.DB
 	err = inj.Resolve(&db)

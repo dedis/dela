@@ -20,6 +20,7 @@ import (
 	_ "go.dedis.ch/dela/crypto/bls/json"
 	_ "go.dedis.ch/dela/crypto/ed25519/json"
 	_ "go.dedis.ch/dela/dkg/pedersen/json"
+	_ "go.dedis.ch/dela/mino/router/flat/json"
 	_ "go.dedis.ch/dela/mino/router/tree/json"
 	"go.dedis.ch/dela/serde"
 )
