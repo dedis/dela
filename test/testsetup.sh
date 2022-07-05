@@ -14,11 +14,11 @@ sleep 1
 
 echo -e "${GREEN}[CONNECT]${NC} connect nodes"
 memcoin --config /tmp/node2 minogrpc join \
-    --address 127.0.0.1:2001 $(memcoin --config /tmp/node1 minogrpc token)
+    --address //127.0.0.1:2001 $(memcoin --config /tmp/node1 minogrpc token)
 memcoin --config /tmp/node3 minogrpc join \
-    --address 127.0.0.1:2001 $(memcoin --config /tmp/node1 minogrpc token)
+    --address //127.0.0.1:2001 $(memcoin --config /tmp/node1 minogrpc token)
 memcoin --config /tmp/node4 minogrpc join \
-    --address 127.0.0.1:2001 $(memcoin --config /tmp/node1 minogrpc token)
+    --address //127.0.0.1:2001 $(memcoin --config /tmp/node1 minogrpc token)
 
 echo -e "${GREEN}[CHAIN]${NC} create a chain"
 memcoin --config /tmp/node1 ordering setup\

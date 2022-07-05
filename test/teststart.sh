@@ -26,10 +26,10 @@ node2="tmux send-keys -t $s:0.%2"
 node3="tmux send-keys -t $s:0.%3"
 node4="tmux send-keys -t $s:0.%4"
 
-$node1 "LLVL=info memcoin --config /tmp/node1 start --port 2001" C-m
-$node2 "LLVL=info memcoin --config /tmp/node2 start --port 2002" C-m
-$node3 "LLVL=info memcoin --config /tmp/node3 start --port 2003" C-m
-$node4 "LLVL=info memcoin --config /tmp/node4 start --port 2004" C-m
+$node1 "LLVL=info memcoin --config /tmp/node1 start --listen //127.0.0.1:2001" C-m
+$node2 "LLVL=info memcoin --config /tmp/node2 start --listen //127.0.0.1:2002" C-m
+$node3 "LLVL=info memcoin --config /tmp/node3 start --listen //127.0.0.1:2003" C-m
+$node4 "LLVL=info memcoin --config /tmp/node4 start --listen //127.0.0.1:2004" C-m
 
 tmux select-pane -t 0
 
