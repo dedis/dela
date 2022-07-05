@@ -22,6 +22,9 @@ Setup the manual test environment in a tmux multi-pane window
 ./teststart.sh
 ```
 
+Use <kbd>CTRL</kbd> + <kbd>b</kbd> and arrows to move around panes. Also
+<kbd>CTRL</kbd> + <kbd>b</kbd> + <kbd>[</kbd> to scroll a window.
+
 ## Add transactions
 
 Following commands are given as examples:
