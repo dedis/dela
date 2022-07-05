@@ -166,6 +166,10 @@ type round struct {
 	committed  bool
 	prevViews  map[mino.Address]View
 	views      map[mino.Address]View
+
+	// allows a node to catch up on a new leader
+	tentativeRound  types.Digest
+	tentativeLeader uint16
 }
 
 // AuthorityReader is a function to help the state machine to read the current
@@ -303,6 +307,11 @@ func (m *pbftsm) Prepare(from mino.Address, block types.Block) (types.Digest, er
 	_, index := roster.GetPublicKey(from)
 
 	if uint16(index) != m.round.leader {
+		// Allows the node to catchup on the leader. It rejects the proposal,
+		// but will accept this leader later if the block is finalized and
+		// synced to us.
+		m.round.tentativeRound = block.GetHash()
+		m.round.tentativeLeader = uint16(index)
 		return id, xerrors.Errorf("'%v' is not the leader", from)
 	}
 
@@ -377,6 +386,8 @@ func (m *pbftsm) Finalize(id types.Digest, sig crypto.Signature) error {
 	if err != nil {
 		return err
 	}
+
+	dela.Logger.Info().Msgf("finalize round with leader: %d", m.round.leader)
 
 	m.round.prevViews = nil
 	m.round.views = nil
@@ -511,6 +522,8 @@ func (m *pbftsm) Expire(addr mino.Address) (View, error) {
 	m.Lock()
 	defer m.Unlock()
 
+	m.logger.Info().Msgf("expire: current leader is %d", m.round.leader)
+
 	roster, err := m.init()
 	if err != nil {
 		return View{}, xerrors.Errorf("init: %v", err)
@@ -579,6 +592,11 @@ func (m *pbftsm) CatchUp(link types.BlockLink) error {
 	err = m.verifyFinalize(&r, link.GetCommitSignature(), roster)
 	if err != nil {
 		return xerrors.Errorf("finalize failed: %v", err)
+	}
+
+	if link.GetTo() == m.round.tentativeRound {
+		m.round.leader = m.round.tentativeLeader
+		dela.Logger.Info().Msgf("accepting to set leader to: %d", m.round.leader)
 	}
 
 	m.round.views = nil
@@ -831,5 +849,9 @@ func (obs observer) NotifyCallback(event interface{}) {
 // be found with n = 3*f+1 where n is the number of participants.
 func calculateThreshold(n int) int {
 	f := (n - 1) / 3
+	if f == 0 {
+		return n
+	}
+
 	return 2 * f
 }

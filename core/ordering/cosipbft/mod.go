@@ -512,7 +512,7 @@ func (s *Service) doRound(ctx context.Context) error {
 			for resp := range resps {
 				_, err = resp.GetMessageOrError()
 				if err != nil {
-					s.logger.Warn().Err(err).Msg("view propagation failure")
+					s.logger.Warn().Err(err).Str("to", resp.GetFrom().String()).Msg("view propagation failure")
 				}
 			}
 
