@@ -40,7 +40,14 @@ func TestMiniController_OnStart(t *testing.T) {
 	injector := node.NewInjector()
 	injector.Inject(db)
 
-	err = ctrl.OnStart(fakeContext{path: dir}, injector)
+	str := map[string]string{"routing": "flat"}
+
+	err = ctrl.OnStart(fakeContext{path: dir, str: str}, injector)
+	require.NoError(t, err)
+
+	str = map[string]string{"routing": "tree"}
+
+	err = ctrl.OnStart(fakeContext{path: dir, str: str}, injector)
 	require.NoError(t, err)
 
 	var m *minogrpc.Minogrpc
@@ -80,7 +87,7 @@ func TestMiniController_OverlayFailed_OnStart(t *testing.T) {
 	// The address is correct but it will yield an error because it is already
 	// used.
 
-	str := map[string]string{"listen": "tcp://" + listener.Addr().String()}
+	str := map[string]string{"listen": "tcp://" + listener.Addr().String(), "routing": "flat"}
 
 	err = ctrl.OnStart(fakeContext{path: dir, str: str}, injector)
 	require.True(t, strings.HasPrefix(err.Error(), "couldn't make overlay: failed to bind"), err.Error())
@@ -89,8 +96,19 @@ func TestMiniController_OverlayFailed_OnStart(t *testing.T) {
 func TestMiniController_MissingDB_OnStart(t *testing.T) {
 	ctrl := NewController()
 
-	err := ctrl.OnStart(fakeContext{}, node.NewInjector())
+	str := map[string]string{"routing": "flat"}
+
+	err := ctrl.OnStart(fakeContext{str: str}, node.NewInjector())
 	require.EqualError(t, err, "injector: couldn't find dependency for 'kv.DB'")
+}
+
+func TestMiniController_UnknownRouting_OnStart(t *testing.T) {
+	ctrl := NewController()
+
+	str := map[string]string{"routing": "fake"}
+
+	err := ctrl.OnStart(fakeContext{str: str}, node.NewInjector())
+	require.EqualError(t, err, "unknown routing: fake")
 }
 
 func TestMiniController_FailGenerateKey_OnStart(t *testing.T) {
@@ -100,7 +118,9 @@ func TestMiniController_FailGenerateKey_OnStart(t *testing.T) {
 	inj := node.NewInjector()
 	inj.Inject(fake.NewInMemoryDB())
 
-	err := ctrl.OnStart(fakeContext{}, inj)
+	str := map[string]string{"routing": "flat"}
+
+	err := ctrl.OnStart(fakeContext{str: str}, inj)
 	require.EqualError(t, err,
 		fake.Err("cert private key: while loading: generator failed: ecdsa"))
 }
@@ -112,7 +132,9 @@ func TestMiniController_FailMarshalKey_OnStart(t *testing.T) {
 	inj := node.NewInjector()
 	inj.Inject(fake.NewInMemoryDB())
 
-	err := ctrl.OnStart(fakeContext{}, inj)
+	str := map[string]string{"routing": "flat"}
+
+	err := ctrl.OnStart(fakeContext{str: str}, inj)
 	require.EqualError(t, err,
 		"cert private key: while loading: generator failed: while marshaling: x509: unknown elliptic curve")
 }
@@ -133,7 +155,9 @@ func TestMiniController_FailParseKey_OnStart(t *testing.T) {
 
 	defer file.Close()
 
-	err = ctrl.OnStart(fakeContext{path: dir}, inj)
+	str := map[string]string{"routing": "flat"}
+
+	err = ctrl.OnStart(fakeContext{path: dir, str: str}, inj)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "cert private key: while parsing: x509: ")
 }
@@ -164,7 +188,7 @@ func TestMiniController_FailedPublicParse_OnStart(t *testing.T) {
 	// The address is correct but it will yield an error because it is already
 	// used.
 
-	str := map[string]string{"listen": "tcp://1.2.3.4:0", "public": ":xxx"}
+	str := map[string]string{"listen": "tcp://1.2.3.4:0", "public": ":xxx", "routing": "flat"}
 
 	err = ctrl.OnStart(fakeContext{path: dir, str: str}, injector)
 	require.EqualError(t, err, `failed to parse public: parse ":xxx": missing protocol scheme`)
@@ -184,7 +208,9 @@ func TestMiniController_OnStop(t *testing.T) {
 	injector := node.NewInjector()
 	injector.Inject(db)
 
-	err = ctrl.OnStart(fakeContext{path: dir}, injector)
+	str := map[string]string{"routing": "flat"}
+
+	err = ctrl.OnStart(fakeContext{path: dir, str: str}, injector)
 	require.NoError(t, err)
 
 	err = ctrl.OnStop(injector)
