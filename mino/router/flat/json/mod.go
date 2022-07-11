@@ -14,9 +14,10 @@ func init() {
 
 // PacketJSON describes a JSON formatted packet
 type PacketJSON struct {
-	Source  []byte
-	Dest    [][]byte
-	Message []byte
+	PacketID string
+	Source   []byte
+	Dest     [][]byte
+	Message  []byte
 }
 
 // HandshakeJSON is the JSON message for the handshake.
@@ -54,9 +55,10 @@ func (f packetFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, erro
 	}
 
 	p := PacketJSON{
-		Source:  source,
-		Dest:    dest,
-		Message: packet.GetMessage(),
+		Source:   source,
+		Dest:     dest,
+		Message:  packet.GetMessage(),
+		PacketID: packet.GetPacketID(),
 	}
 
 	data, err := ctx.Marshal(p)
@@ -91,7 +93,7 @@ func (f packetFormat) Decode(ctx serde.Context, data []byte) (serde.Message, err
 		dest[i] = fac.FromText(buf)
 	}
 
-	packet := types.NewPacket(source, p.Message, dest...)
+	packet := types.NewPacket(p.PacketID, source, p.Message, dest...)
 
 	return packet, nil
 }

@@ -13,19 +13,19 @@ func TestPacketFormat_Encode(t *testing.T) {
 	fmt := packetFormat{}
 
 	ctx := fake.NewContext()
-	pkt := types.NewPacket(fake.NewAddress(0), []byte("data"), fake.NewAddress(1))
+	pkt := types.NewPacket("id", fake.NewAddress(0), []byte("data"), fake.NewAddress(1))
 
 	data, err := fmt.Encode(ctx, pkt)
 	require.NoError(t, err)
-	require.Equal(t, `{"Source":"AAAAAA==","Dest":["AQAAAA=="],"Message":"ZGF0YQ=="}`, string(data))
+	require.Equal(t, `{"PacketID":"id","Source":"AAAAAA==","Dest":["AQAAAA=="],"Message":"ZGF0YQ=="}`, string(data))
 
 	_, err = fmt.Encode(ctx, fake.Message{})
 	require.EqualError(t, err, "unsupported message 'fake.Message'")
 
-	_, err = fmt.Encode(ctx, types.NewPacket(fake.NewBadAddress(), nil))
+	_, err = fmt.Encode(ctx, types.NewPacket("", fake.NewBadAddress(), nil))
 	require.EqualError(t, err, fake.Err("failed to marshal source addr"))
 
-	_, err = fmt.Encode(ctx, types.NewPacket(fake.NewAddress(0), nil, fake.NewBadAddress()))
+	_, err = fmt.Encode(ctx, types.NewPacket("", fake.NewAddress(0), nil, fake.NewBadAddress()))
 	require.EqualError(t, err, fake.Err("failed to marshal dest addr"))
 
 	_, err = fmt.Encode(fake.NewBadContext(), pkt)
@@ -35,7 +35,7 @@ func TestPacketFormat_Encode(t *testing.T) {
 func TestPacketFormat_Decode(t *testing.T) {
 	fmt := packetFormat{}
 
-	pkt := types.NewPacket(fake.NewAddress(0), []byte{}, fake.NewAddress(1))
+	pkt := types.NewPacket("", fake.NewAddress(0), []byte{}, fake.NewAddress(1))
 
 	ctx := fake.NewContext()
 	ctx = serde.WithFactory(ctx, types.AddrKey{}, fake.AddressFactory{})
