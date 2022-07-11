@@ -26,15 +26,15 @@ func TestSession_New(t *testing.T) {
 	defer os.Setenv(traffic.EnvVariable, curr)
 
 	os.Setenv(traffic.EnvVariable, "log")
-	sess := NewSession(nil, fake.NewAddress(999), nil, nil, fake.NewContext(), nil)
+	sess := NewSession(nil, fake.NewAddress(999), nil, nil, fake.NewContext(), nil, nil)
 	require.NotNil(t, sess.(*session).traffic)
 
 	os.Setenv(traffic.EnvVariable, "print")
-	sess = NewSession(nil, fake.NewAddress(999), nil, nil, fake.NewContext(), nil)
+	sess = NewSession(nil, fake.NewAddress(999), nil, nil, fake.NewContext(), nil, nil)
 	require.NotNil(t, sess.(*session).traffic)
 
 	os.Unsetenv(traffic.EnvVariable)
-	sess = NewSession(nil, fake.NewAddress(999), nil, nil, fake.NewContext(), nil)
+	sess = NewSession(nil, fake.NewAddress(999), nil, nil, fake.NewContext(), nil, nil)
 	require.Nil(t, sess.(*session).traffic)
 }
 
@@ -118,6 +118,7 @@ func TestSession_RecvPacket(t *testing.T) {
 				table: fakeTable{err: xerrors.New("bad route")},
 			},
 		},
+		notifier: traffic.NewEventHandler(),
 	}
 
 	ack, err := sess.RecvPacket(fake.NewAddress(0), &ptypes.Packet{})
@@ -150,6 +151,7 @@ func TestSession_Send(t *testing.T) {
 				table: fakeTable{},
 			},
 		},
+		notifier: traffic.NewEventHandler(),
 	}
 
 	errs := sess.Send(fake.Message{}, newWrapAddress(fake.NewAddress(0)))
@@ -317,7 +319,8 @@ func TestSession_Recv(t *testing.T) {
 
 func TestSession_OnFailure(t *testing.T) {
 	sess := &session{
-		queue: newNonBlockingQueue(),
+		queue:    newNonBlockingQueue(),
+		notifier: traffic.NewEventHandler(),
 	}
 
 	p := parent{

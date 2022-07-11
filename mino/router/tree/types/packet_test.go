@@ -15,25 +15,31 @@ func init() {
 }
 
 func TestPacket_GetSource(t *testing.T) {
-	pkt := NewPacket(fake.NewAddress(0), nil)
+	pkt := NewPacket("", fake.NewAddress(0), nil)
 
 	require.Equal(t, fake.NewAddress(0), pkt.GetSource())
 }
 
 func TestPacket_GetDestination(t *testing.T) {
-	pkt := NewPacket(fake.NewAddress(0), nil, makeAddrs(5)...)
+	pkt := NewPacket("", fake.NewAddress(0), nil, makeAddrs(5)...)
 
 	require.Len(t, pkt.GetDestination(), 5)
 }
 
 func TestPacket_GetMessage(t *testing.T) {
-	pkt := NewPacket(fake.NewAddress(0), []byte{1, 2, 3})
+	pkt := NewPacket("", fake.NewAddress(0), []byte{1, 2, 3})
 
 	require.Equal(t, []byte{1, 2, 3}, pkt.GetMessage())
 }
 
+func TestPacket_GetPacketID(t *testing.T) {
+	pkt := NewPacket("XX", fake.NewAddress(0), []byte{1, 2, 3})
+
+	require.Equal(t, "XX", pkt.GetPacketID())
+}
+
 func TestPacket_Add(t *testing.T) {
-	pkt := NewPacket(fake.NewAddress(0), nil)
+	pkt := NewPacket("", fake.NewAddress(0), nil)
 	require.Len(t, pkt.dest, 0)
 
 	pkt.Add(fake.NewAddress(0))
@@ -47,7 +53,7 @@ func TestPacket_Add(t *testing.T) {
 }
 
 func TestPacket_Slice(t *testing.T) {
-	pkt := NewPacket(fake.NewAddress(0), []byte{0xaa}, makeAddrs(10)...)
+	pkt := NewPacket("", fake.NewAddress(0), []byte{0xaa}, makeAddrs(10)...)
 
 	newPkt := pkt.Slice(fake.NewAddress(500))
 	require.Nil(t, newPkt)
@@ -58,7 +64,7 @@ func TestPacket_Slice(t *testing.T) {
 }
 
 func TestPacket_Serialize(t *testing.T) {
-	pkt := NewPacket(fake.NewAddress(0), nil)
+	pkt := NewPacket("", fake.NewAddress(0), nil)
 
 	data, err := pkt.Serialize(fake.NewContext())
 	require.NoError(t, err)

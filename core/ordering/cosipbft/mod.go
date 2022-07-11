@@ -62,14 +62,14 @@ import (
 const (
 	// RoundTimeout is the maximum of time the service waits for an event to
 	// happen.
-	RoundTimeout = 10 * time.Second
+	RoundTimeout = 20 * time.Second
 
 	// RoundWait is the constant value of the exponential backoff use between
 	// round failures.
-	RoundWait = 5 * time.Millisecond
+	RoundWait = 15 * time.Millisecond
 
 	// RoundMaxWait is the maximum amount for the backoff.
-	RoundMaxWait = 5 * time.Minute
+	RoundMaxWait = 15 * time.Minute
 
 	rpcName = "cosipbft"
 )

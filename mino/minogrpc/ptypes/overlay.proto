@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package ptypes;
 
+option go_package = "go.dedis.ch/dela/mino/minogrpc/ptypes";
+
 // Certificate is a wrapper around a x509 raw certificate and its address.
 message Certificate {
     bytes address = 1;
@@ -32,7 +34,8 @@ message Message {
 
 // Packet is a wrapper around a packet.
 message Packet {
-    bytes serialized = 1;
+    string requestid = 1;
+    bytes serialized = 2;
 }
 
 // Ack is the return of a unicast request to forward a message.

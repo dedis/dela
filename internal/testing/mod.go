@@ -5,9 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/golang/protobuf/descriptor"
-	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 )
 
 // CoverProtoMessage triggers a test on the message definition to force the
@@ -18,9 +17,6 @@ func CoverProtoMessage(t *testing.T, message proto.Message) error {
 	err = proto.Unmarshal(buffer, message)
 	require.NoError(t, err)
 	proto.Merge(message, message)
-	proto.DiscardUnknown(message)
-	require.NotNil(t, message.String())
-	message.(descriptor.Message).Descriptor()
 
 	// Run the getters
 	tt := reflect.TypeOf(message)

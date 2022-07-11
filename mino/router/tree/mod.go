@@ -14,6 +14,7 @@
 package tree
 
 import (
+	"github.com/rs/xid"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/router"
 	"go.dedis.ch/dela/mino/router/tree/types"
@@ -95,7 +96,8 @@ func NewTable(height int, expected []mino.Address) Table {
 // Make implements router.RoutingTable. It creates a packet with the source
 // address, the destination addresses and the payload.
 func (t Table) Make(src mino.Address, to []mino.Address, msg []byte) router.Packet {
-	return types.NewPacket(src, msg, to...)
+	id := xid.New().String()
+	return types.NewPacket(id, src, msg, to...)
 }
 
 // PrepareHandshakeFor implements router.RoutingTable. It creates a handshake
@@ -122,7 +124,8 @@ func (t Table) Forward(packet router.Packet) (router.Routes, router.Voids) {
 
 		p, ok := routes[gateway]
 		if !ok {
-			p = types.NewPacket(packet.GetSource(), packet.GetMessage())
+			id := xid.New().String()
+			p = types.NewPacket(id, packet.GetSource(), packet.GetMessage())
 			routes[gateway] = p
 		}
 

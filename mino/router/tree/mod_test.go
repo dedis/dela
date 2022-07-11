@@ -76,7 +76,7 @@ func TestTable_PrepareHandshakeFor(t *testing.T) {
 func TestTable_Forward(t *testing.T) {
 	table := NewTable(3, makeAddrs(20))
 
-	pkt := types.NewPacket(fake.NewAddress(0), []byte{1, 2, 3}, makeAddrs(20)...)
+	pkt := types.NewPacket("", fake.NewAddress(0), []byte{1, 2, 3}, makeAddrs(20)...)
 
 	routes, voids := table.Forward(pkt)
 	require.Empty(t, voids)

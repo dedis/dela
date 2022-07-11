@@ -161,14 +161,13 @@ func TestGenerateEventGraphViz(t *testing.T) {
 }
 
 func TestWatcherIns(t *testing.T) {
-	watcher := GlobalWatcher
-	events := watcher.WatchIns(context.Background())
-
-	traffic := NewTraffic(fake.NewAddress(0), ioutil.Discard)
+	eh := NewEventHandler()
+	events := eh.WatchIns(context.Background())
 
 	addr := fake.NewAddress(0)
 	pkt := newFakePacket(fake.NewAddress(1), fake.NewAddress(2))
-	traffic.LogRecv(context.Background(), addr, pkt)
+
+	eh.NotifyIn(addr, pkt)
 
 	select {
 	case event := <-events:
@@ -180,14 +179,13 @@ func TestWatcherIns(t *testing.T) {
 }
 
 func TestWatcherOuts(t *testing.T) {
-	watcher := GlobalWatcher
-	events := watcher.WatchOuts(context.Background())
-
-	traffic := NewTraffic(fake.NewAddress(0), ioutil.Discard)
+	eh := NewEventHandler()
+	events := eh.WatchOuts(context.Background())
 
 	addr := fake.NewAddress(0)
 	pkt := newFakePacket(fake.NewAddress(1), fake.NewAddress(2))
-	traffic.LogSend(context.Background(), addr, pkt)
+
+	eh.NotifyOut(addr, pkt)
 
 	select {
 	case event := <-events:

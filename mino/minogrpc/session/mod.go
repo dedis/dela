@@ -21,8 +21,10 @@ import (
 	"context"
 	"io"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
@@ -123,6 +125,8 @@ type session struct {
 	// A read-write lock is used there as there are much more read requests than
 	// write ones, and the read should be parallelized.
 	parentsLock sync.RWMutex
+
+	notifier traffic.Notifier
 }
 
 // NewSession creates a new session for the provided parent relay.
@@ -133,19 +137,21 @@ func NewSession(
 	pktFac router.PacketFactory,
 	ctx serde.Context,
 	connMgr ConnectionManager,
+	notifier traffic.Notifier,
 ) Session {
 	sess := &session{
-		logger:  dela.Logger.With().Str("addr", me.String()).Logger(),
-		md:      md,
-		me:      me,
-		errs:    make(chan error, 1),
-		msgFac:  msgFac,
-		pktFac:  pktFac,
-		context: ctx,
-		queue:   newNonBlockingQueue(),
-		relays:  make(map[mino.Address]Relay),
-		connMgr: connMgr,
-		parents: make(map[mino.Address]parent),
+		logger:   dela.Logger.With().Str("addr", me.String()).Logger(),
+		md:       md,
+		me:       me,
+		errs:     make(chan error, 1),
+		msgFac:   msgFac,
+		pktFac:   pktFac,
+		context:  ctx,
+		queue:    newNonBlockingQueue(),
+		relays:   make(map[mino.Address]Relay),
+		connMgr:  connMgr,
+		parents:  make(map[mino.Address]parent),
+		notifier: notifier,
 	}
 
 	switch os.Getenv(traffic.EnvVariable) {
@@ -234,7 +240,10 @@ func (s *session) RecvPacket(from mino.Address, p *ptypes.Packet) (*ptypes.Ack, 
 
 	// Try to send the packet to each parent until one works.
 	for _, parent := range s.parents {
+		time.Sleep(time.Millisecond * time.Duration(rand.Intn(500)))
+
 		s.traffic.LogRecv(parent.relay.Stream().Context(), from, pkt)
+		s.notifier.NotifyIn(from, pkt)
 
 		errs := make(chan error, len(pkt.GetDestination()))
 		sent := s.sendPacket(parent, pkt, errs)
@@ -374,7 +383,10 @@ func (s *session) sendTo(p parent, to mino.Address, pkt router.Packet, errs chan
 
 	ctx := p.relay.Stream().Context()
 
+	time.Sleep(time.Millisecond * time.Duration(rand.Intn(500)))
+
 	s.traffic.LogSend(ctx, relay.GetDistantAddress(), pkt)
+	s.notifier.NotifyOut(relay.GetDistantAddress(), pkt)
 
 	ack, err := relay.Send(ctx, pkt)
 	if to == nil && err != nil {

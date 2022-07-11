@@ -29,6 +29,8 @@ type Packet interface {
 	// Slice removes the address from the destination if found and return a new
 	// packet with the addr as the destination. If not found return nil.
 	Slice(addr mino.Address) Packet
+
+	GetPacketID() string
 }
 
 // PacketFactory describes the primitives to deserialize a packet
