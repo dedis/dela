@@ -18,7 +18,9 @@ import (
 	"context"
 	"sync"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/core"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
@@ -53,6 +55,31 @@ func (s State) String() string {
 	}
 }
 
+// defines prometheus metrics
+var (
+	promBlocks = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "dela_cosipbft_blocks_total",
+		Help: "total number of blocks",
+	})
+
+	promTxs = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "dela_cosipbft_transactions_block",
+		Help:    "total number of transactions in the last block",
+		Buckets: []float64{0, 1, 2, 3, 5, 8, 13, 20, 30, 50, 100},
+	})
+
+	promRejectedTxs = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "dela_cosipbft_transactions_rejected_block",
+		Help:    "total number of rejected transactions in the last block",
+		Buckets: []float64{0, 1, 2, 3, 5, 8, 13, 20, 30, 50, 100},
+	})
+
+	promLeader = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "dela_cosipbft_leader",
+		Help: "leader index from the roster",
+	})
+)
+
 const (
 	// NoneState is the very first state of the machine where nothing is set.
 	NoneState State = iota
@@ -73,6 +100,11 @@ const (
 	// the machine is waiting for view change requests.
 	ViewChangeState
 )
+
+func init() {
+	dela.PromCollectors = append(dela.PromCollectors, promBlocks, promTxs,
+		promRejectedTxs, promLeader)
+}
 
 // StateMachine is the interface to implement to support a PBFT protocol.
 type StateMachine interface {
@@ -134,6 +166,10 @@ type round struct {
 	committed  bool
 	prevViews  map[mino.Address]View
 	views      map[mino.Address]View
+
+	// allows a node to catch up on a new leader
+	tentativeRound  types.Digest
+	tentativeLeader uint16
 }
 
 // AuthorityReader is a function to help the state machine to read the current
@@ -271,6 +307,11 @@ func (m *pbftsm) Prepare(from mino.Address, block types.Block) (types.Digest, er
 	_, index := roster.GetPublicKey(from)
 
 	if uint16(index) != m.round.leader {
+		// Allows the node to catchup on the leader. It rejects the proposal,
+		// but will accept this leader later if the block is finalized and
+		// synced to us.
+		m.round.tentativeRound = block.GetHash()
+		m.round.tentativeLeader = uint16(index)
 		return id, xerrors.Errorf("'%v' is not the leader", from)
 	}
 
@@ -345,6 +386,8 @@ func (m *pbftsm) Finalize(id types.Digest, sig crypto.Signature) error {
 	if err != nil {
 		return err
 	}
+
+	dela.Logger.Info().Msgf("finalize round with leader: %d", m.round.leader)
 
 	m.round.prevViews = nil
 	m.round.views = nil
@@ -479,6 +522,8 @@ func (m *pbftsm) Expire(addr mino.Address) (View, error) {
 	m.Lock()
 	defer m.Unlock()
 
+	m.logger.Info().Msgf("expire: current leader is %d", m.round.leader)
+
 	roster, err := m.init()
 	if err != nil {
 		return View{}, xerrors.Errorf("init: %v", err)
@@ -549,6 +594,11 @@ func (m *pbftsm) CatchUp(link types.BlockLink) error {
 		return xerrors.Errorf("finalize failed: %v", err)
 	}
 
+	if link.GetTo() == m.round.tentativeRound {
+		m.round.leader = m.round.tentativeLeader
+		dela.Logger.Info().Msgf("accepting to set leader to: %d", m.round.leader)
+	}
+
 	m.round.views = nil
 	m.round.prevViews = nil
 	m.setState(InitialState)
@@ -575,7 +625,10 @@ func (m *pbftsm) Watch(ctx context.Context) <-chan State {
 
 func (m *pbftsm) verifyPrepare(tree hashtree.Tree, block types.Block, r *round, ro authority.Authority) error {
 	stageTree, err := tree.Stage(func(snap store.Snapshot) error {
-		res, err := m.val.Validate(snap, block.GetTransactions())
+		txs := block.GetTransactions()
+		rejected := 0
+
+		res, err := m.val.Validate(snap, txs)
 		if err != nil {
 			return xerrors.Errorf("validation failed: %v", err)
 		}
@@ -584,8 +637,12 @@ func (m *pbftsm) verifyPrepare(tree hashtree.Tree, block types.Block, r *round, 
 			accepted, reason := r.GetStatus()
 			if !accepted {
 				m.logger.Warn().Str("reason", reason).Msg("transaction not accepted")
+				rejected++
 			}
 		}
+
+		promTxs.Observe(float64(len(txs)))
+		promRejectedTxs.Observe(float64(rejected))
 
 		return nil
 	})
@@ -710,6 +767,8 @@ func (m *pbftsm) verifyFinalize(r *round, sig crypto.Signature, ro authority.Aut
 		// Only release the tree cache at the very end of the transaction, so
 		// that a call to get the tree will hold until the block is stored.
 		txn.OnCommit(func() {
+			promBlocks.Set(float64(m.blocks.Len()))
+			promLeader.Set(float64(m.round.leader))
 			unlock()
 		})
 
@@ -790,5 +849,9 @@ func (obs observer) NotifyCallback(event interface{}) {
 // be found with n = 3*f+1 where n is the number of participants.
 func calculateThreshold(n int) int {
 	f := (n - 1) / 3
+	if f == 0 {
+		return n
+	}
+
 	return 2 * f
 }

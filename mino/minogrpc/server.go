@@ -14,6 +14,7 @@ import (
 	"crypto/x509"
 	"math/big"
 	"net"
+	"net/url"
 	"sync"
 	"time"
 
@@ -505,8 +506,9 @@ func (o *overlay) GetCertificateStore() certs.Storage {
 
 // Join sends a join request to a distant node with token generated beforehands
 // by the later.
-func (o *overlay) Join(addr, token string, certHash []byte) error {
-	target := session.NewAddress(addr)
+func (o *overlay) Join(addr *url.URL, token string, certHash []byte) error {
+
+	target := session.NewAddress(addr.Host + addr.Path)
 
 	meCert := o.GetCertificate()
 
@@ -559,19 +561,29 @@ func (o *overlay) Join(addr, token string, certHash []byte) error {
 }
 
 func (o *overlay) makeCertificate() error {
+	var ips []net.IP
+	var dnsNames []string
+
 	hostname, err := o.myAddr.GetHostname()
 	if err != nil {
-		return xerrors.Errorf("error retrieving hostname: %v", err)
+		return xerrors.Errorf("failed to get hostname: %v", err)
 	}
 
-	ipAddrs, err := net.LookupIP(hostname)
-	if err != nil {
-		return xerrors.Errorf("error resolving IP: %v", err)
+	ip := net.ParseIP(hostname)
+	if ip != nil {
+		ips = []net.IP{ip}
+	} else {
+		dnsNames = []string{hostname}
 	}
+
+	dela.Logger.Info().Str("hostname", hostname).
+		Strs("dnsNames", dnsNames).
+		Msgf("creating certificate: ips: %v", ips)
 
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
-		IPAddresses:  ipAddrs,
+		IPAddresses:  ips,
+		DNSNames:     dnsNames,
 		NotBefore:    time.Now(),
 		NotAfter:     time.Now().Add(certificateDuration),
 
@@ -711,6 +723,7 @@ func (mgr *connManager) getTransportCredential(addr mino.Address) (credentials.T
 	ta := credentials.NewTLS(&tls.Config{
 		Certificates: []tls.Certificate{*me},
 		RootCAs:      pool,
+		MinVersion:   tls.VersionTLS12,
 	})
 
 	return ta, nil

@@ -14,7 +14,8 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"io"
-	"math"
+	"net"
+	"net/url"
 	"path/filepath"
 	"time"
 
@@ -27,6 +28,8 @@ import (
 	"go.dedis.ch/dela/mino/minogrpc"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/session"
+	"go.dedis.ch/dela/mino/router"
+	"go.dedis.ch/dela/mino/router/flat"
 	"go.dedis.ch/dela/mino/router/tree"
 	"golang.org/x/xerrors"
 )
@@ -53,10 +56,22 @@ func NewController() node.Initializer {
 // to control Minogrpc.
 func (m miniController) SetCommands(builder node.Builder) {
 	builder.SetStartFlags(
-		cli.IntFlag{
-			Name:  "port",
-			Usage: "set the port to listen on",
-			Value: 2000,
+		cli.StringFlag{
+			Name:  "listen",
+			Usage: "set the address to listen on",
+			Value: "0.0.0.0:2000",
+		},
+		cli.StringFlag{
+			Name:     "public",
+			Usage:    "sets the public node address. By default it uses the same as --listen",
+			Value:    "",
+			Required: false,
+		},
+		cli.StringFlag{
+			Name:     "routing",
+			Usage:    "sets the kind of routing: 'flat' or 'tree'",
+			Value:    "flat",
+			Required: false,
 		},
 	)
 
@@ -66,6 +81,15 @@ func (m miniController) SetCommands(builder node.Builder) {
 	sub := cmd.SetSubCommand("certificates")
 	sub.SetDescription("list the certificates of the server")
 	sub.SetAction(builder.MakeAction(certAction{}))
+
+	rm := sub.SetSubCommand("rm")
+	rm.SetDescription("remove a certificate")
+	rm.SetFlags(cli.StringFlag{
+		Name:     "address",
+		Usage:    "address associated to the certificate(s), in base64",
+		Required: true,
+	})
+	rm.SetAction(builder.MakeAction(removeAction{}))
 
 	sub = cmd.SetSubCommand("token")
 	sub.SetDescription("generate a token to share to others to join the network")
@@ -103,18 +127,29 @@ func (m miniController) SetCommands(builder node.Builder) {
 // OnStart implements node.Initializer. It starts the minogrpc instance and
 // injects it in the dependency resolver.
 func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
-
-	port := ctx.Int("port")
-	if port < 0 || port > math.MaxUint16 {
-		return xerrors.Errorf("invalid port value %d", port)
+	listenURL, err := url.Parse(ctx.String("listen"))
+	if err != nil {
+		return xerrors.Errorf("failed to parse listen URL: %v", err)
 	}
 
-	rter := tree.NewRouter(minogrpc.NewAddressFactory())
+	listen, err := net.ResolveTCPAddr(listenURL.Scheme, listenURL.Host)
+	if err != nil {
+		return xerrors.Errorf("failed to resolve tcp address: %v", err)
+	}
 
-	addr := minogrpc.ParseAddress("127.0.0.1", uint16(port))
+	var rter router.Router
+
+	switch ctx.String("routing") {
+	case "flat":
+		rter = flat.NewRouter(minogrpc.NewAddressFactory())
+	case "tree":
+		rter = tree.NewRouter(minogrpc.NewAddressFactory())
+	default:
+		return xerrors.Errorf("unknown routing: %s", ctx.String("routing"))
+	}
 
 	var db kv.DB
-	err := inj.Resolve(&db)
+	err = inj.Resolve(&db)
 	if err != nil {
 		return xerrors.Errorf("injector: %v", err)
 	}
@@ -131,7 +166,16 @@ func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
 		minogrpc.WithCertificateKey(key, key.Public()),
 	}
 
-	o, err := minogrpc.NewMinogrpc(addr, rter, opts...)
+	var public *url.URL
+
+	if ctx.String("public") != "" {
+		public, err = url.Parse(ctx.String("public"))
+		if err != nil {
+			return xerrors.Errorf("failed to parse public: %v", err)
+		}
+	}
+
+	o, err := minogrpc.NewMinogrpc(listen, public, rter, opts...)
 	if err != nil {
 		return xerrors.Errorf("couldn't make overlay: %v", err)
 	}

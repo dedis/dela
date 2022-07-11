@@ -76,7 +76,10 @@ type Router interface {
 	GenerateTableFrom(Handshake) (RoutingTable, error)
 }
 
-// Routes is a set of relay addresses where to send the packet.
+// Routes is a set of relay addresses where to send the packet. Key is the relay
+// address. It can be nil, and in that case minogrpc sends the message to its
+// parent relay. This is the case when the destination address is the
+// orchestrator address.
 type Routes map[mino.Address]Packet
 
 // Void is the structure that describes a void route.

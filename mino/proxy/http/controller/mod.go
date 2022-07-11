@@ -8,6 +8,8 @@ import (
 
 const defaultAddr = "127.0.0.1:8080"
 
+const defaultProm = "/metrics"
+
 // NewController returns a new minimal initializer
 func NewController() node.Initializer {
 	return minimal{}
@@ -32,6 +34,18 @@ func (m minimal) SetCommands(builder node.Builder) {
 		Value:    defaultAddr,
 	})
 	sub.SetAction(builder.MakeAction(startAction{}))
+
+	sub = cmd.SetSubCommand("prom")
+
+	sub.SetDescription("registers the collectors and starts a prometheus handler. " +
+		"Will panic if the path is used more than once.")
+	sub.SetFlags(cli.StringFlag{
+		Name:     "path",
+		Required: false,
+		Usage:    "the handler path",
+		Value:    defaultProm,
+	})
+	sub.SetAction(builder.MakeAction(promAction{}))
 }
 
 // OnStart implements node.Initializer. It creates, starts, and registers a

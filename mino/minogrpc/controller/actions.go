@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
+	"net/url"
 
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/mino"
@@ -32,9 +33,44 @@ func (a certAction) Execute(req node.Context) error {
 	}
 
 	m.GetCertificateStore().Range(func(addr mino.Address, cert *tls.Certificate) bool {
-		fmt.Fprintf(req.Out, "Address: %v Certificate: %v\n", addr, cert.Leaf.NotAfter)
+		buff, _ := addr.MarshalText()
+		addrB64 := base64.StdEncoding.EncodeToString(buff)
+		fmt.Fprintf(req.Out, "Address: %v (%s) Certificate: %v\n", addr, addrB64, cert.Leaf.NotAfter)
 		return true
 	})
+
+	return nil
+}
+
+// RemoveAction is an action to remove certificates associated to an address
+// from the server.
+//
+// - implements node.ActionTemplate
+type removeAction struct{}
+
+// Execute implements node.ActionTemplate. It removes a certificate based on an
+// address.
+func (a removeAction) Execute(req node.Context) error {
+	var m minogrpc.Joinable
+
+	err := req.Injector.Resolve(&m)
+	if err != nil {
+		return xerrors.Errorf("couldn't resolve: %v", err)
+	}
+
+	addrBuf, err := base64.StdEncoding.DecodeString(req.Flags.String("address"))
+	if err != nil {
+		return xerrors.Errorf("failed to decode base64 address: %v", err)
+	}
+
+	addr := m.GetAddressFactory().FromText(addrBuf)
+
+	err = m.GetCertificateStore().Delete(addr)
+	if err != nil {
+		return xerrors.Errorf("failed to delete: %v", err)
+	}
+
+	fmt.Fprintf(req.Out, "certificate(s) with address %q removed", addrBuf)
 
 	return nil
 }
@@ -79,11 +115,15 @@ type joinAction struct{}
 // join request to the distant node.
 func (a joinAction) Execute(req node.Context) error {
 	token := req.Flags.String("token")
-	addr := req.Flags.String("address")
 	certHash := req.Flags.String("cert-hash")
 
+	addrURL, err := url.Parse(req.Flags.String("address"))
+	if err != nil {
+		return xerrors.Errorf("failed to parse addr: %v", err)
+	}
+
 	var m minogrpc.Joinable
-	err := req.Injector.Resolve(&m)
+	err = req.Injector.Resolve(&m)
 	if err != nil {
 		return xerrors.Errorf("couldn't resolve: %v", err)
 	}
@@ -93,7 +133,7 @@ func (a joinAction) Execute(req node.Context) error {
 		return xerrors.Errorf("couldn't decode digest: %v", err)
 	}
 
-	err = m.Join(addr, token, cert)
+	err = m.Join(addrURL, token, cert)
 	if err != nil {
 		return xerrors.Errorf("couldn't join: %v", err)
 	}

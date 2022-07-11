@@ -196,7 +196,7 @@ func TestStateMachine_MismatchTreeRoot_Prepare(t *testing.T) {
 	other, err := types.NewBlock(simple.NewResult(nil), types.WithTreeRoot(types.Digest{}))
 	require.NoError(t, err)
 
-	sm.val = simple.NewService(fakeExec{}, nil)
+	sm.val = unacceptedTxsValidation{}
 	_, err = sm.Prepare(fake.NewAddress(0), other)
 	require.EqualError(t, err, "mismatch tree root '71b6c1d5' != '00000000'")
 }
@@ -814,6 +814,54 @@ func TestStateMachine_CatchUp(t *testing.T) {
 	require.EqualError(t, err, fake.Err("finalize failed: couldn't marshal signature"))
 }
 
+// checks that the tentative leader is set in case the tentative round is equal
+// to the proposed block.
+func TestStateMachine_CatchUp_Tentative_Leader_Accept(t *testing.T) {
+	tree, db, clean := makeTree(t)
+	defer clean()
+
+	ro := authority.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+
+	param := StateMachineParam{
+		Validation:      simple.NewService(fakeExec{}, nil),
+		VerifierFactory: fake.VerifierFactory{},
+		Blocks:          blockstore.NewInMemory(),
+		Genesis:         blockstore.NewGenesisStore(),
+		Tree:            blockstore.NewTreeCache(tree),
+		AuthorityReader: func(hashtree.Tree) (authority.Authority, error) {
+			return ro, nil
+		},
+		DB: db,
+	}
+
+	param.Genesis.Set(types.Genesis{})
+
+	root := types.Digest{}
+	copy(root[:], tree.GetRoot())
+
+	block, err := types.NewBlock(simple.NewResult(nil), types.WithTreeRoot(root), types.WithIndex(0))
+	require.NoError(t, err)
+
+	sm := NewStateMachine(param).(*pbftsm)
+
+	opts := []types.LinkOption{
+		types.WithSignatures(fake.Signature{}, fake.Signature{}),
+		types.WithChangeSet(authority.NewChangeSet()),
+	}
+
+	link, err := types.NewBlockLink(types.Digest{}, block, opts...)
+	require.NoError(t, err)
+
+	tentativeLeader := uint16(9)
+	sm.round.tentativeRound = link.GetTo()
+	sm.round.tentativeLeader = tentativeLeader
+
+	err = sm.CatchUp(link)
+	require.NoError(t, err)
+
+	require.Equal(t, tentativeLeader, sm.round.leader)
+}
+
 func TestStateMachine_Watch(t *testing.T) {
 	sm := &pbftsm{
 		watcher: core.NewWatcher(),
@@ -874,6 +922,16 @@ type badValidation struct {
 
 func (v badValidation) Validate(store.Snapshot, []txn.Transaction) (validation.Result, error) {
 	return nil, fake.GetError()
+}
+
+type unacceptedTxsValidation struct {
+	validation.Service
+}
+
+func (v unacceptedTxsValidation) Validate(store.Snapshot, []txn.Transaction) (validation.Result, error) {
+	return simple.NewResult([]simple.TransactionResult{
+		simple.NewTransactionResult(nil, false, "unaccepted"),
+	}), nil
 }
 
 type badBlockStore struct {
