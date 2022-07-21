@@ -124,6 +124,7 @@ type minoTemplate struct {
 	public interface{}
 	curve  elliptic.Curve
 	random io.Reader
+	cert   *tls.Certificate
 }
 
 // Option is the type to set some fields when instantiating an overlay.
@@ -149,6 +150,14 @@ func WithCertificateKey(secret, public interface{}) Option {
 func WithRandom(r io.Reader) Option {
 	return func(tmpl *minoTemplate) {
 		tmpl.random = r
+	}
+}
+
+// WithCert is an option to set the node's certificate in case it is not already
+// present in the certificate store.
+func WithCert(cert *tls.Certificate) Option {
+	return func(tmpl *minoTemplate) {
+		tmpl.cert = cert
 	}
 }
 
@@ -192,9 +201,9 @@ func NewMinogrpc(listen net.Addr, public *url.URL, router router.Router, opts ..
 		return nil, xerrors.Errorf("overlay: %v", err)
 	}
 
-	cert := o.GetCertificate()
+	// cert := o.GetCertificate()
 	creds := credentials.NewTLS(&tls.Config{
-		Certificates: []tls.Certificate{*cert},
+		Certificates: []tls.Certificate{*tmpl.cert},
 		MinVersion:   tls.VersionTLS12,
 	})
 

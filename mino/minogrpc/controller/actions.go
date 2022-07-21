@@ -7,6 +7,7 @@ package controller
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"fmt"
 	"net/url"
@@ -94,7 +95,16 @@ func (a tokenAction) Execute(req node.Context) error {
 
 	token := m.GenerateToken(exp)
 
-	digest, err := m.GetCertificateStore().Hash(m.GetCertificate())
+	cert := m.GetCertificate()
+
+	leaf, err := x509.ParseCertificate(cert.Certificate[len(cert.Certificate)-1])
+	if err != nil {
+		return xerrors.Errorf("failed to parse: %v", err)
+	}
+
+	cert.Leaf = leaf
+
+	digest, err := m.GetCertificateStore().Hash(cert)
 	if err != nil {
 		return xerrors.Errorf("couldn't hash certificate: %v", err)
 	}

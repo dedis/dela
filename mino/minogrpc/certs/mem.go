@@ -8,6 +8,8 @@ package certs
 import (
 	"bytes"
 	"crypto/tls"
+	"encoding/hex"
+	"fmt"
 	"sync"
 
 	"go.dedis.ch/dela/crypto"
@@ -92,11 +94,23 @@ func (s *InMemoryStore) Fetch(addr Dialable, hash []byte) error {
 
 	peers := conn.ConnectionState().PeerCertificates
 	// Server certificate should be self-signed and thus a chain of length 1.
-	if len(peers) != 1 {
-		return xerrors.Errorf("expect exactly one certificate but found %d", len(peers))
+	if len(peers) == 0 {
+		return xerrors.New("no certificate found")
 	}
 
-	cert := &tls.Certificate{Leaf: peers[0]}
+	fmt.Println("checking peer certificates...")
+	fmt.Println("Hash:", hex.EncodeToString(hash))
+
+	for i, p := range peers {
+		cert := &tls.Certificate{Leaf: p}
+		digest, _ := s.Hash(cert)
+		fmt.Printf("- %d - %s\n", i, hex.EncodeToString(digest))
+	}
+
+	cert := &tls.Certificate{
+		Certificate: [][]byte{peers[len(peers)-1].Raw},
+		Leaf:        peers[len(peers)-1],
+	}
 
 	digest, err := s.Hash(cert)
 	if err != nil {
@@ -121,6 +135,8 @@ func (s *InMemoryStore) Hash(cert *tls.Certificate) ([]byte, error) {
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't write leaf: %v", err)
 	}
+
+	fmt.Println("Hash, raw:", hex.EncodeToString(cert.Leaf.Raw))
 
 	return h.Sum(nil), nil
 }

@@ -12,6 +12,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 	"math/big"
 	"net"
 	"net/url"
@@ -78,7 +79,7 @@ func (o overlayServer) Join(ctx context.Context, req *ptypes.JoinRequest) (*ptyp
 	// 2. Share certificates to current participants.
 	list := make(map[mino.Address][]byte)
 	o.certs.Range(func(addr mino.Address, cert *tls.Certificate) bool {
-		list[addr] = cert.Leaf.Raw
+		list[addr] = cert.Certificate[0]
 		return true
 	})
 
@@ -429,6 +430,8 @@ type overlay struct {
 	// Keep a text marshalled value for the overlay address so that it's not
 	// calculated for each request.
 	myAddrStr string
+
+	myCerts *tls.Certificate
 }
 
 func newOverlay(tmpl minoTemplate) (*overlay, error) {
@@ -453,10 +456,18 @@ func newOverlay(tmpl minoTemplate) (*overlay, error) {
 		tokens:      tokens.NewInMemoryHolder(),
 		certs:       tmpl.certs,
 		router:      tmpl.router,
-		connMgr:     newConnManager(tmpl.myAddr, tmpl.certs),
+		connMgr:     newConnManager(tmpl.myAddr, tmpl.certs, tmpl.cert),
 		addrFactory: tmpl.fac,
 		secret:      tmpl.secret,
 		public:      tmpl.public,
+		myCerts:     tmpl.cert,
+	}
+
+	if tmpl.cert != nil {
+		err := o.certs.Store(o.myAddr, tmpl.cert)
+		if err != nil {
+			return nil, xerrors.Errorf("failed to store cert: %v", err)
+		}
 	}
 
 	cert, err := o.certs.Load(o.myAddr)
@@ -477,6 +488,10 @@ func newOverlay(tmpl minoTemplate) (*overlay, error) {
 // GetCertificate returns the certificate of the overlay with its private key
 // set.
 func (o *overlay) GetCertificate() *tls.Certificate {
+	if true {
+		return o.myCerts
+	}
+
 	me, err := o.certs.Load(o.myAddr)
 	if err != nil {
 		// An error when getting the certificate of the server is caused by the
@@ -489,6 +504,8 @@ func (o *overlay) GetCertificate() *tls.Certificate {
 		// provoke several issues later on.
 		panic("certificate of the overlay must be populated")
 	}
+
+	fmt.Println("GetCertificate:", me)
 
 	me.PrivateKey = o.secret
 
@@ -624,14 +641,16 @@ type connManager struct {
 	myAddr   mino.Address
 	counters map[mino.Address]int
 	conns    map[mino.Address]*grpc.ClientConn
+	myCert   *tls.Certificate
 }
 
-func newConnManager(myAddr mino.Address, certs certs.Storage) *connManager {
+func newConnManager(myAddr mino.Address, certs certs.Storage, myCert *tls.Certificate) *connManager {
 	return &connManager{
 		certs:    certs,
 		myAddr:   myAddr,
 		counters: make(map[mino.Address]int),
 		conns:    make(map[mino.Address]*grpc.ClientConn),
+		myCert:   myCert,
 	}
 }
 
@@ -649,6 +668,8 @@ func (mgr *connManager) Len() int {
 func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, error) {
 	mgr.Lock()
 	defer mgr.Unlock()
+
+	fmt.Println("Acquire to", to.String())
 
 	conn, ok := mgr.conns[to]
 	if ok {
@@ -717,7 +738,7 @@ func (mgr *connManager) getTransportCredential(addr mino.Address) (credentials.T
 	}
 
 	ta := credentials.NewTLS(&tls.Config{
-		Certificates: []tls.Certificate{*me},
+		Certificates: []tls.Certificate{*mgr.myCert},
 		RootCAs:      pool,
 		MinVersion:   tls.VersionTLS12,
 	})

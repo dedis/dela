@@ -9,10 +9,15 @@
 package controller
 
 import (
+	"bytes"
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
+	"fmt"
 	"io"
 	"net"
 	"net/url"
@@ -35,6 +40,7 @@ import (
 )
 
 const certKeyName = "cert.key"
+const certName = "cert.pem"
 
 // MiniController is an initializer with the minimum set of commands.
 //
@@ -161,9 +167,50 @@ func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("cert private key: %v", err)
 	}
 
+	certfile := filepath.Join(ctx.Path("config"), certName)
+	keyfile := filepath.Join(ctx.Path("config"), certKeyName)
+
+	cert, err := tls.LoadX509KeyPair(certfile, keyfile)
+	if err != nil {
+		return xerrors.Errorf("failed to load certificate: %v", err)
+	}
+
+	allCerts := bytes.Buffer{}
+	for _, b := range cert.Certificate {
+		allCerts.Write(b)
+	}
+
+	leafs, err := x509.ParseCertificates(allCerts.Bytes())
+	if err != nil {
+		return xerrors.Errorf("failed to parse certs: %v", err)
+	}
+
+	cert.Leaf = leafs[len(leafs)-1]
+
+	// leaf.KeyUsage = x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign
+	// leaf.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
+	// leaf.BasicConstraintsValid = true
+	// leaf.MaxPathLen = 1
+	// leaf.IsCA = true
+
+	// cert = tls.Certificate{
+	// 	Certificate: [][]byte{leaf.Raw},
+	// 	PrivateKey:  key,
+	// 	Leaf:        leaf,
+	// }
+
+	for i, l := range leafs {
+		fmt.Println(i, "-", l.IsCA, l.Issuer)
+	}
+
+	type extendedKey interface {
+		Public() crypto.PublicKey
+	}
+
 	opts := []minogrpc.Option{
 		minogrpc.WithStorage(certs),
-		minogrpc.WithCertificateKey(key, key.Public()),
+		minogrpc.WithCertificateKey(key, key.(extendedKey).Public()),
+		minogrpc.WithCert(&cert),
 	}
 
 	var public *url.URL
@@ -210,7 +257,7 @@ func (m miniController) OnStop(inj node.Injector) error {
 	return nil
 }
 
-func (m miniController) getKey(flags cli.Flags) (*ecdsa.PrivateKey, error) {
+func (m miniController) getKey(flags cli.Flags) (crypto.PrivateKey, error) {
 	loader := loader.NewFileLoader(filepath.Join(flags.Path("config"), certKeyName))
 
 	keydata, err := loader.LoadOrCreate(newGenerator(m.random, m.curve))
@@ -218,12 +265,29 @@ func (m miniController) getKey(flags cli.Flags) (*ecdsa.PrivateKey, error) {
 		return nil, xerrors.Errorf("while loading: %v", err)
 	}
 
-	key, err := x509.ParseECPrivateKey(keydata)
-	if err != nil {
-		return nil, xerrors.Errorf("while parsing: %v", err)
+	var key crypto.PrivateKey
+
+	block, _ := pem.Decode(keydata)
+	if block != nil {
+		keydata = block.Bytes
 	}
 
-	return key, nil
+	key, err = x509.ParseECPrivateKey(keydata)
+	if err == nil {
+		return key, nil
+	}
+
+	key, err = x509.ParsePKCS1PrivateKey(keydata)
+	if err == nil {
+		return key, nil
+	}
+
+	key, err = x509.ParsePKCS8PrivateKey(keydata)
+	if err == nil {
+		return key, nil
+	}
+
+	return nil, xerrors.Errorf("key parsing failed: %v", err)
 }
 
 // generator can generate a private key compatible with the x509 certificate.
