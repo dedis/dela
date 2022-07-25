@@ -9,7 +9,6 @@
 package controller
 
 import (
-	"bytes"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -17,7 +16,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
-	"fmt"
 	"io"
 	"net"
 	"net/url"
@@ -77,6 +75,16 @@ func (m miniController) SetCommands(builder node.Builder) {
 			Name:     "routing",
 			Usage:    "sets the kind of routing: 'flat' or 'tree'",
 			Value:    "flat",
+			Required: false,
+		},
+		cli.StringFlag{
+			Name:     "certKey",
+			Usage:    "provides the certificate private key path",
+			Required: false,
+		},
+		cli.StringFlag{
+			Name:     "certChain",
+			Usage:    "provides the chain certificate file path",
 			Required: false,
 		},
 	)
@@ -167,50 +175,29 @@ func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("cert private key: %v", err)
 	}
 
-	certfile := filepath.Join(ctx.Path("config"), certName)
-	keyfile := filepath.Join(ctx.Path("config"), certKeyName)
-
-	cert, err := tls.LoadX509KeyPair(certfile, keyfile)
-	if err != nil {
-		return xerrors.Errorf("failed to load certificate: %v", err)
+	certKey := ctx.Path("certKey")
+	if certKey == "" {
+		certKey = filepath.Join(ctx.Path("config"), certKey)
 	}
 
-	allCerts := bytes.Buffer{}
-	for _, b := range cert.Certificate {
-		allCerts.Write(b)
-	}
-
-	leafs, err := x509.ParseCertificates(allCerts.Bytes())
-	if err != nil {
-		return xerrors.Errorf("failed to parse certs: %v", err)
-	}
-
-	cert.Leaf = leafs[len(leafs)-1]
-
-	// leaf.KeyUsage = x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign
-	// leaf.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
-	// leaf.BasicConstraintsValid = true
-	// leaf.MaxPathLen = 1
-	// leaf.IsCA = true
-
-	// cert = tls.Certificate{
-	// 	Certificate: [][]byte{leaf.Raw},
-	// 	PrivateKey:  key,
-	// 	Leaf:        leaf,
-	// }
-
-	for i, l := range leafs {
-		fmt.Println(i, "-", l.IsCA, l.Issuer)
-	}
+	certChain := ctx.Path("certChain")
 
 	type extendedKey interface {
 		Public() crypto.PublicKey
 	}
 
 	opts := []minogrpc.Option{
-		minogrpc.WithStorage(certs),
 		minogrpc.WithCertificateKey(key, key.(extendedKey).Public()),
-		minogrpc.WithCert(&cert),
+		minogrpc.WithStorage(certs),
+	}
+
+	if certChain != "" {
+		cert, err := tls.LoadX509KeyPair(certChain, certKey)
+		if err != nil {
+			return xerrors.Errorf("failed to load certificate: %v", err)
+		}
+
+		opts = append(opts, minogrpc.WithCert(&cert))
 	}
 
 	var public *url.URL

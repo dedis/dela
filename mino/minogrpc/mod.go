@@ -9,6 +9,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"net"
@@ -62,8 +63,8 @@ var listener = net.Listen
 type Joinable interface {
 	mino.Mino
 
-	// GetCertificate returns the certificate of the instance.
-	GetCertificate() *tls.Certificate
+	// GetCertificateChain returns the certificate chain of the instance.
+	GetCertificateChain() certs.CertChain
 
 	// GetCertificateStore returns the certificate storage which contains every
 	// known peer certificate.
@@ -201,10 +202,23 @@ func NewMinogrpc(listen net.Addr, public *url.URL, router router.Router, opts ..
 		return nil, xerrors.Errorf("overlay: %v", err)
 	}
 
-	// cert := o.GetCertificate()
+	chainBuf := o.GetCertificateChain()
+	certs, err := x509.ParseCertificates(chainBuf)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to get parse chain: %v", err)
+	}
+
+	certsBuf := make([][]byte, len(certs))
+	for i, c := range certs {
+		certsBuf[i] = c.Raw
+	}
+
 	creds := credentials.NewTLS(&tls.Config{
-		Certificates: []tls.Certificate{*tmpl.cert},
-		MinVersion:   tls.VersionTLS12,
+		Certificates: []tls.Certificate{{
+			Certificate: certsBuf,
+			Leaf:        certs[0],
+		}},
+		MinVersion: tls.VersionTLS12,
 	})
 
 	dialAddr := o.myAddr.GetDialAddress()

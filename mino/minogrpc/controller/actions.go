@@ -6,15 +6,17 @@
 package controller
 
 import (
-	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc"
+	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"golang.org/x/xerrors"
 )
 
@@ -33,10 +35,21 @@ func (a certAction) Execute(req node.Context) error {
 		return xerrors.Errorf("couldn't resolve: %v", err)
 	}
 
-	m.GetCertificateStore().Range(func(addr mino.Address, cert *tls.Certificate) bool {
+	m.GetCertificateStore().Range(func(addr mino.Address, chain certs.CertChain) bool {
 		buff, _ := addr.MarshalText()
 		addrB64 := base64.StdEncoding.EncodeToString(buff)
-		fmt.Fprintf(req.Out, "Address: %v (%s) Certificate: %v\n", addr, addrB64, cert.Leaf.NotAfter)
+
+		certs, err := x509.ParseCertificates(chain)
+		if err != nil {
+			return false
+		}
+
+		certStr := make([]string, len(certs))
+		for i, c := range certs {
+			certStr[i] = hex.EncodeToString(c.Raw[:8]) + "..."
+		}
+
+		fmt.Fprintf(req.Out, "Address: %v (%s) Certificate: %s\n", addr, addrB64, strings.Join(certStr, "<-"))
 		return true
 	})
 
@@ -95,16 +108,9 @@ func (a tokenAction) Execute(req node.Context) error {
 
 	token := m.GenerateToken(exp)
 
-	cert := m.GetCertificate()
+	chain := m.GetCertificateChain()
 
-	leaf, err := x509.ParseCertificate(cert.Certificate[len(cert.Certificate)-1])
-	if err != nil {
-		return xerrors.Errorf("failed to parse: %v", err)
-	}
-
-	cert.Leaf = leaf
-
-	digest, err := m.GetCertificateStore().Hash(cert)
+	digest, err := m.GetCertificateStore().Hash(chain)
 	if err != nil {
 		return xerrors.Errorf("couldn't hash certificate: %v", err)
 	}
