@@ -41,13 +41,14 @@ func TestMiniController_OnStart(t *testing.T) {
 	injector.Inject(db)
 
 	str := map[string]string{"routing": "flat"}
+	paths := map[string]string{"config": dir}
 
-	err = ctrl.OnStart(fakeContext{path: dir, str: str}, injector)
+	err = ctrl.OnStart(fakeContext{path: paths, str: str}, injector)
 	require.NoError(t, err)
 
 	str = map[string]string{"routing": "tree"}
 
-	err = ctrl.OnStart(fakeContext{path: dir, str: str}, injector)
+	err = ctrl.OnStart(fakeContext{path: paths, str: str}, injector)
 	require.NoError(t, err)
 
 	var m *minogrpc.Minogrpc
@@ -88,8 +89,9 @@ func TestMiniController_OverlayFailed_OnStart(t *testing.T) {
 	// used.
 
 	str := map[string]string{"listen": "tcp://" + listener.Addr().String(), "routing": "flat"}
+	paths := map[string]string{"config": dir}
 
-	err = ctrl.OnStart(fakeContext{path: dir, str: str}, injector)
+	err = ctrl.OnStart(fakeContext{path: paths, str: str}, injector)
 	require.True(t, strings.HasPrefix(err.Error(), "couldn't make overlay: failed to bind"), err.Error())
 }
 
@@ -156,10 +158,11 @@ func TestMiniController_FailParseKey_OnStart(t *testing.T) {
 	defer file.Close()
 
 	str := map[string]string{"routing": "flat"}
+	paths := map[string]string{"config": dir}
 
-	err = ctrl.OnStart(fakeContext{path: dir, str: str}, inj)
+	err = ctrl.OnStart(fakeContext{path: paths, str: str}, inj)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "cert private key: while parsing: x509: ")
+	require.Contains(t, err.Error(), "cert private key: key parsing failed: ", err.Error())
 }
 
 func TestMiniController_FailedTCPResolve_OnStart(t *testing.T) {
@@ -189,8 +192,9 @@ func TestMiniController_FailedPublicParse_OnStart(t *testing.T) {
 	// used.
 
 	str := map[string]string{"listen": "tcp://1.2.3.4:0", "public": ":xxx", "routing": "flat"}
+	paths := map[string]string{"config": dir}
 
-	err = ctrl.OnStart(fakeContext{path: dir, str: str}, injector)
+	err = ctrl.OnStart(fakeContext{path: paths, str: str}, injector)
 	require.EqualError(t, err, `failed to parse public: parse ":xxx": missing protocol scheme`)
 }
 
@@ -209,8 +213,9 @@ func TestMiniController_OnStop(t *testing.T) {
 	injector.Inject(db)
 
 	str := map[string]string{"routing": "flat"}
+	paths := map[string]string{"config": dir}
 
-	err = ctrl.OnStart(fakeContext{path: dir, str: str}, injector)
+	err = ctrl.OnStart(fakeContext{path: paths, str: str}, injector)
 	require.NoError(t, err)
 
 	err = ctrl.OnStop(injector)

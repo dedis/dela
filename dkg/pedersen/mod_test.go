@@ -162,7 +162,7 @@ func TestPedersen_Scenario(t *testing.T) {
 
 	for i, mino := range minos {
 		for _, m := range minos {
-			mino.(*minogrpc.Minogrpc).GetCertificateStore().Store(m.GetAddress(), m.(*minogrpc.Minogrpc).GetCertificate())
+			mino.(*minogrpc.Minogrpc).GetCertificateStore().Store(m.GetAddress(), m.(*minogrpc.Minogrpc).GetCertificateChain())
 		}
 
 		dkg, pubkey := NewPedersen(mino.(*minogrpc.Minogrpc))

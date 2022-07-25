@@ -195,7 +195,7 @@ func NewMinogrpc(listen net.Addr, public *url.URL, router router.Router, opts ..
 		opt(&tmpl)
 	}
 
-	o, err := newOverlay(tmpl)
+	o, err := newOverlay(&tmpl)
 	if err != nil {
 		socket.Close()
 
@@ -205,7 +205,7 @@ func NewMinogrpc(listen net.Addr, public *url.URL, router router.Router, opts ..
 	chainBuf := o.GetCertificateChain()
 	certs, err := x509.ParseCertificates(chainBuf)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to get parse chain: %v", err)
+		return nil, xerrors.Errorf("failed to parse chain: %v", err)
 	}
 
 	certsBuf := make([][]byte, len(certs))
@@ -217,6 +217,7 @@ func NewMinogrpc(listen net.Addr, public *url.URL, router router.Router, opts ..
 		Certificates: []tls.Certificate{{
 			Certificate: certsBuf,
 			Leaf:        certs[0],
+			PrivateKey:  tmpl.secret,
 		}},
 		MinVersion: tls.VersionTLS12,
 	})

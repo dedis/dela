@@ -13,7 +13,6 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"fmt"
 	"math/big"
 	"net"
 	"net/url"
@@ -456,11 +455,9 @@ type overlay struct {
 	// Keep a text marshalled value for the overlay address so that it's not
 	// calculated for each request.
 	myAddrStr string
-
-	myCerts *tls.Certificate
 }
 
-func newOverlay(tmpl minoTemplate) (*overlay, error) {
+func newOverlay(tmpl *minoTemplate) (*overlay, error) {
 	// session.Address never returns an error
 	myAddrBuf, _ := tmpl.myAddr.MarshalText()
 
@@ -482,11 +479,10 @@ func newOverlay(tmpl minoTemplate) (*overlay, error) {
 		tokens:      tokens.NewInMemoryHolder(),
 		certs:       tmpl.certs,
 		router:      tmpl.router,
-		connMgr:     newConnManager(tmpl.myAddr, tmpl.certs, tmpl.cert),
+		connMgr:     newConnManager(tmpl.myAddr, tmpl.certs),
 		addrFactory: tmpl.fac,
 		secret:      tmpl.secret,
 		public:      tmpl.public,
-		myCerts:     tmpl.cert,
 	}
 
 	if tmpl.cert != nil {
@@ -494,6 +490,7 @@ func newOverlay(tmpl minoTemplate) (*overlay, error) {
 		for _, c := range tmpl.cert.Certificate {
 			chain.Write(c)
 		}
+
 		err := o.certs.Store(o.myAddr, chain.Bytes())
 		if err != nil {
 			return nil, xerrors.Errorf("failed to store cert: %v", err)
@@ -648,16 +645,14 @@ type connManager struct {
 	myAddr   mino.Address
 	counters map[mino.Address]int
 	conns    map[mino.Address]*grpc.ClientConn
-	myCert   *tls.Certificate
 }
 
-func newConnManager(myAddr mino.Address, certs certs.Storage, myCert *tls.Certificate) *connManager {
+func newConnManager(myAddr mino.Address, certs certs.Storage) *connManager {
 	return &connManager{
 		certs:    certs,
 		myAddr:   myAddr,
 		counters: make(map[mino.Address]int),
 		conns:    make(map[mino.Address]*grpc.ClientConn),
-		myCert:   myCert,
 	}
 }
 
@@ -675,8 +670,6 @@ func (mgr *connManager) Len() int {
 func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, error) {
 	mgr.Lock()
 	defer mgr.Unlock()
-
-	fmt.Println("Acquire to", to.String())
 
 	conn, ok := mgr.conns[to]
 	if ok {
@@ -737,24 +730,36 @@ func (mgr *connManager) getTransportCredential(addr mino.Address) (credentials.T
 
 	certs, err := x509.ParseCertificates(clientChain)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to parse cert: %v", err)
+		return nil, xerrors.Errorf("failed to parse distant cert: %v", err)
 	}
 
 	// Add the root certificate as the CA
 	pool.AddCert(certs[len(certs)-1])
 
-	me, err := mgr.certs.Load(mgr.myAddr)
+	meChain, err := mgr.certs.Load(mgr.myAddr)
 	if err != nil {
 		return nil, xerrors.Errorf("while loading own cert: %v", err)
 	}
-	if me == nil {
-		return nil, xerrors.Errorf("couldn't find server '%v' certificate", mgr.myAddr)
+	if meChain == nil {
+		return nil, xerrors.Errorf("couldn't find server '%v' cert", mgr.myAddr)
+	}
+
+	meCerts, err := x509.ParseCertificates(meChain)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to parse our own cert: %v", err)
+	}
+
+	if len(meCerts) == 0 {
+		return nil, xerrors.New("no certificate found")
 	}
 
 	ta := credentials.NewTLS(&tls.Config{
-		Certificates: []tls.Certificate{*mgr.myCert},
-		RootCAs:      pool,
-		MinVersion:   tls.VersionTLS12,
+		Certificates: []tls.Certificate{{
+			Certificate: [][]byte{meCerts[0].Raw},
+			Leaf:        meCerts[0],
+		}},
+		RootCAs:    pool,
+		MinVersion: tls.VersionTLS12,
 	})
 
 	return ta, nil

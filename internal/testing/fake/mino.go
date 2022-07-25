@@ -466,7 +466,31 @@ func (m Mino) CreateRPC(string, mino.Handler, serde.Factory) (mino.RPC, error) {
 
 // MakeCertificate generates a valid certificate for the localhost address and
 // for an hour.
-func MakeCertificate(t *testing.T, n int, ips ...net.IP) *tls.Certificate {
+func MakeCertificate(t *testing.T, n int, ips ...net.IP) []byte {
+	priv, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
+	require.NoError(t, err)
+
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		IPAddresses:           ips,
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		MaxPathLen:            1,
+	}
+
+	buf, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
+	require.NoError(t, err)
+
+	return buf
+}
+
+// MakeFullCertificate generates a valid certificate for the localhost address
+// and for an hour.
+func MakeFullCertificate(t *testing.T, n int, ips ...net.IP) (*tls.Certificate, []byte) {
 	priv, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
 	require.NoError(t, err)
 
@@ -497,5 +521,5 @@ func MakeCertificate(t *testing.T, n int, ips ...net.IP) *tls.Certificate {
 		Certificate: chain,
 		PrivateKey:  priv,
 		Leaf:        cert,
-	}
+	}, buf
 }

@@ -4,8 +4,6 @@ import (
 	"context"
 	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/tls"
-	"crypto/x509"
 	"fmt"
 	"net"
 	"net/url"
@@ -179,7 +177,7 @@ func TestMinogrpc_Scenario_Failures(t *testing.T) {
 }
 
 func TestOverlayServer_Join(t *testing.T) {
-	o, err := newOverlay(minoTemplate{
+	o, err := newOverlay(&minoTemplate{
 		myAddr: session.NewAddress("127.0.0.1:0"),
 		certs:  certs.NewInMemoryStore(),
 		router: tree.NewRouter(addressFac),
@@ -192,15 +190,15 @@ func TestOverlayServer_Join(t *testing.T) {
 
 	overlay := &overlayServer{overlay: o}
 
-	cert := overlay.GetCertificate()
+	cert := overlay.GetCertificateChain()
 	token := overlay.tokens.Generate(time.Hour)
 
 	ctx := context.Background()
 	req := &ptypes.JoinRequest{
 		Token: token,
-		Certificate: &ptypes.Certificate{
+		Chain: &ptypes.CertificateChain{
 			Address: []byte{},
-			Value:   cert.Leaf.Raw,
+			Value:   cert,
 		},
 	}
 
@@ -307,11 +305,9 @@ func TestOverlayServer_Share(t *testing.T) {
 	fromBuf, err := from.MarshalText()
 	require.NoError(t, err)
 
-	cert := fake.MakeCertificate(t, 1, net.IPv4(127, 0, 0, 1))
-
-	req := &ptypes.Certificate{
+	req := &ptypes.CertificateChain{
 		Address: fromBuf,
-		Value:   cert.Leaf.Raw,
+		Value:   fake.MakeCertificate(t, 1, net.IPv4(127, 0, 0, 1)),
 	}
 
 	resp, err := overlay.Share(ctx, req)
@@ -322,9 +318,9 @@ func TestOverlayServer_Share(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, shared)
 
-	_, err = overlay.Share(ctx, &ptypes.Certificate{})
+	_, err = overlay.Share(ctx, &ptypes.CertificateChain{})
 	require.EqualError(t, err,
-		"couldn't parse certificate: x509: malformed certificate")
+		"no certificate found")
 }
 
 func TestOverlayServer_Call(t *testing.T) {
@@ -667,7 +663,7 @@ func TestOverlay_Forward(t *testing.T) {
 }
 
 func TestOverlay_New(t *testing.T) {
-	o, err := newOverlay(minoTemplate{
+	o, err := newOverlay(&minoTemplate{
 		myAddr: session.NewAddress("127.0.0.1:0"),
 		certs:  certs.NewInMemoryStore(),
 		curve:  elliptic.P521(),
@@ -681,7 +677,7 @@ func TestOverlay_New(t *testing.T) {
 }
 
 func TestOverlay_New_Hostname(t *testing.T) {
-	o, err := newOverlay(minoTemplate{
+	o, err := newOverlay(&minoTemplate{
 		myAddr: session.NewAddress("localhost:0"),
 		certs:  certs.NewInMemoryStore(),
 		curve:  elliptic.P521(),
@@ -704,7 +700,7 @@ func TestOverlay_Panic_GetCertificate(t *testing.T) {
 		certs: certs.NewInMemoryStore(),
 	}
 
-	o.GetCertificate()
+	o.GetCertificateChain()
 }
 
 func TestOverlay_Panic2_GetCertificate(t *testing.T) {
@@ -717,11 +713,11 @@ func TestOverlay_Panic2_GetCertificate(t *testing.T) {
 		certs: fakeCerts{errLoad: fake.GetError()},
 	}
 
-	o.GetCertificate()
+	o.GetCertificateChain()
 }
 
 func TestOverlay_Join(t *testing.T) {
-	overlay, err := newOverlay(minoTemplate{
+	overlay, err := newOverlay(&minoTemplate{
 		myAddr: session.NewAddress("127.0.0.1:0"),
 		certs:  certs.NewInMemoryStore(),
 		router: tree.NewRouter(addressFac),
@@ -733,7 +729,7 @@ func TestOverlay_Join(t *testing.T) {
 
 	overlay.connMgr = fakeConnMgr{
 		resp: ptypes.JoinResponse{
-			Peers: []*ptypes.Certificate{{Value: overlay.GetCertificate().Leaf.Raw}},
+			Peers: []*ptypes.CertificateChain{{Value: overlay.GetCertificateChain()}},
 		},
 	}
 
@@ -754,11 +750,6 @@ func TestOverlay_Join(t *testing.T) {
 	overlay.connMgr = fakeConnMgr{resp: ptypes.JoinResponse{}, errConn: fake.GetError()}
 	err = overlay.Join(&url.URL{}, "", nil)
 	require.EqualError(t, err, fake.Err("couldn't call join"))
-
-	overlay.connMgr = fakeConnMgr{resp: ptypes.JoinResponse{Peers: []*ptypes.Certificate{{}}}}
-	err = overlay.Join(&url.URL{}, "", nil)
-	require.EqualError(t, err,
-		"couldn't parse certificate: x509: malformed certificate")
 }
 
 func TestMakeCertificate_WrongHostname(t *testing.T) {
@@ -779,9 +770,9 @@ func TestConnManager_Acquire(t *testing.T) {
 
 	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore())
 
-	certs := mgr.certs
-	certs.Store(mgr.myAddr, &tls.Certificate{})
-	certs.Store(dst.GetAddress(), dst.GetCertificate())
+	certsStore := mgr.certs
+	certsStore.Store(mgr.myAddr, certs.CertChain(fake.MakeCertificate(t, 1)))
+	certsStore.Store(dst.GetAddress(), dst.GetCertificateChain())
 
 	conn, err := mgr.Acquire(dst.GetAddress())
 	require.NoError(t, err)
@@ -821,19 +812,21 @@ func TestConnManager_FailLoadOwnCert_Acquire(t *testing.T) {
 	}
 
 	_, err := mgr.Acquire(fake.NewAddress(0))
-	require.EqualError(t, err, fake.Err("failed to retrieve transport credential: while loading own cert"))
+	require.EqualError(t, err, "failed to retrieve transport credential: failed to parse distant cert: x509: malformed certificate")
 }
 
 func TestConnManager_MissingOwnCert_Acquire(t *testing.T) {
 	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore())
+
 	mgr.certs.Store(fake.NewAddress(1), fake.MakeCertificate(t, 0))
 
 	_, err := mgr.Acquire(fake.NewAddress(1))
-	require.EqualError(t, err, "failed to retrieve transport credential: couldn't find server 'fake.Address[0]' certificate")
+	require.EqualError(t, err, "failed to retrieve transport credential: couldn't find server 'fake.Address[0]' cert")
 }
 
 func TestConnManager_BadAddress_Acquire(t *testing.T) {
 	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore())
+
 	mgr.certs.Store(fake.NewAddress(0), fake.MakeCertificate(t, 0))
 
 	_, err := mgr.Acquire(mgr.myAddr)
@@ -852,9 +845,9 @@ func TestConnManager_BadTracer_Acquire(t *testing.T) {
 
 	getTracerForAddr = fake.GetTracerForAddrWithError
 
-	certs := mgr.certs
-	certs.Store(mgr.myAddr, &tls.Certificate{})
-	certs.Store(dst.GetAddress(), dst.GetCertificate())
+	certsStore := mgr.certs
+	certsStore.Store(mgr.myAddr, certs.CertChain(fake.MakeCertificate(t, 0)))
+	certsStore.Store(dst.GetAddress(), dst.GetCertificateChain())
 
 	dstAddr := dst.GetAddress()
 	_, err = mgr.Acquire(dstAddr)
@@ -885,8 +878,8 @@ func makeInstances(t *testing.T, n int, call *fake.Call) ([]mino.Mino, []mino.RP
 		for _, k := range mm[:i] {
 			km := k.(*Minogrpc)
 
-			m.GetCertificateStore().Store(k.GetAddress(), km.GetCertificate())
-			km.GetCertificateStore().Store(m.GetAddress(), m.GetCertificate())
+			m.GetCertificateStore().Store(k.GetAddress(), km.GetCertificateChain())
+			km.GetCertificateStore().Store(m.GetAddress(), m.GetCertificateChain())
 		}
 	}
 
@@ -979,11 +972,11 @@ type fakeCerts struct {
 	counter  *fake.Counter
 }
 
-func (s fakeCerts) Store(mino.Address, *tls.Certificate) error {
+func (s fakeCerts) Store(mino.Address, certs.CertChain) error {
 	return s.errStore
 }
 
-func (s fakeCerts) Load(mino.Address) (*tls.Certificate, error) {
+func (s fakeCerts) Load(mino.Address) (certs.CertChain, error) {
 	if s.errStore != nil {
 		return nil, s.errLoad
 	}
@@ -994,7 +987,7 @@ func (s fakeCerts) Load(mino.Address) (*tls.Certificate, error) {
 
 	s.counter.Decrease()
 
-	return &tls.Certificate{Leaf: &x509.Certificate{Raw: []byte{0x89}}}, nil
+	return []byte{0x89}, nil
 }
 
 func (s fakeCerts) Fetch(certs.Dialable, []byte) error {

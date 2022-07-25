@@ -38,7 +38,6 @@ import (
 )
 
 const certKeyName = "cert.key"
-const certName = "cert.pem"
 
 // MiniController is an initializer with the minimum set of commands.
 //
@@ -180,8 +179,6 @@ func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
 		certKey = filepath.Join(ctx.Path("config"), certKey)
 	}
 
-	certChain := ctx.Path("certChain")
-
 	type extendedKey interface {
 		Public() crypto.PublicKey
 	}
@@ -190,6 +187,8 @@ func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
 		minogrpc.WithCertificateKey(key, key.(extendedKey).Public()),
 		minogrpc.WithStorage(certs),
 	}
+
+	certChain := ctx.Path("certChain")
 
 	if certChain != "" {
 		cert, err := tls.LoadX509KeyPair(certChain, certKey)

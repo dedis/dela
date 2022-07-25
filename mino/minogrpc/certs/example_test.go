@@ -1,6 +1,7 @@
 package certs_test
 
 import (
+	"crypto/x509"
 	"fmt"
 
 	"go.dedis.ch/dela/mino/minogrpc"
@@ -19,7 +20,7 @@ func ExampleStorage_Fetch() {
 
 	store := certs.NewInMemoryStore()
 
-	digest, err := store.Hash(m.GetCertificate())
+	digest, err := store.Hash(m.GetCertificateChain())
 	if err != nil {
 		panic("certificate digest failed: " + err.Error())
 	}
@@ -29,12 +30,17 @@ func ExampleStorage_Fetch() {
 		panic("fetch failed: " + err.Error())
 	}
 
-	cert, err := store.Load(m.GetAddress())
+	certBuf, err := store.Load(m.GetAddress())
 	if err != nil {
 		panic("while loading certificate: " + err.Error())
 	}
 
-	fmt.Println("Certificate host", cert.Leaf.IPAddresses)
+	cert, err := x509.ParseCertificate(certBuf)
+	if err != nil {
+		panic("while parsing certificate")
+	}
+
+	fmt.Println("Certificate host", cert.IPAddresses)
 
 	// Output: Certificate host [127.0.0.1]
 }

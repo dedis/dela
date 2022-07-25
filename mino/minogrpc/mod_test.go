@@ -27,7 +27,7 @@ func TestMinogrpc_New(t *testing.T) {
 	require.Equal(t, "127.0.0.1:3333", m.GetAddress().String())
 	require.Empty(t, m.segments)
 
-	cert := m.GetCertificate()
+	cert := m.GetCertificateChain()
 	require.NotNil(t, cert)
 
 	<-m.started

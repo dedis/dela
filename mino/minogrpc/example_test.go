@@ -26,8 +26,8 @@ func ExampleRPC_Call() {
 
 	mino.MustCreateRPC(mB, "test", exampleHandler{}, exampleFactory{})
 
-	mA.GetCertificateStore().Store(mB.GetAddress(), mB.GetCertificate())
-	mB.GetCertificateStore().Store(mA.GetAddress(), mA.GetCertificate())
+	mA.GetCertificateStore().Store(mB.GetAddress(), mB.GetCertificateChain())
+	mB.GetCertificateStore().Store(mA.GetAddress(), mA.GetCertificateChain())
 
 	addrs := mino.NewAddresses(mA.GetAddress(), mB.GetAddress())
 
@@ -72,8 +72,8 @@ func ExampleRPC_Stream() {
 
 	mino.MustCreateRPC(mB, "test", exampleHandler{}, exampleFactory{})
 
-	mA.GetCertificateStore().Store(mB.GetAddress(), mB.GetCertificate())
-	mB.GetCertificateStore().Store(mA.GetAddress(), mA.GetCertificate())
+	mA.GetCertificateStore().Store(mB.GetAddress(), mB.GetCertificateChain())
+	mB.GetCertificateStore().Store(mA.GetAddress(), mA.GetCertificateChain())
 
 	addrs := mino.NewAddresses(mA.GetAddress(), mB.GetAddress())
 
@@ -124,7 +124,7 @@ func ExampleRPC_OpentracingDemo() {
 				continue
 			}
 			mA, mB := minos[i], minos[j]
-			mA.GetCertificateStore().Store(mB.GetAddress(), mB.GetCertificate())
+			mA.GetCertificateStore().Store(mB.GetAddress(), mB.GetCertificateChain())
 		}
 	}
 
