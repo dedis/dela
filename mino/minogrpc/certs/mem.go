@@ -90,11 +90,8 @@ func (s *InMemoryStore) Fetch(addr Dialable, hash []byte) error {
 
 	conn.Close()
 
+	// we can assume that `peers` is not empty
 	peers := conn.ConnectionState().PeerCertificates
-	// Server certificate should be self-signed and thus a chain of length 1.
-	if len(peers) == 0 {
-		return xerrors.New("no certificate found")
-	}
 
 	chain := bytes.Buffer{}
 

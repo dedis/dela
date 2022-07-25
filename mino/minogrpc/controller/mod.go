@@ -16,6 +16,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"net"
 	"net/url"
@@ -176,7 +177,7 @@ func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
 
 	certKey := ctx.Path("certKey")
 	if certKey == "" {
-		certKey = filepath.Join(ctx.Path("config"), certKey)
+		certKey = filepath.Join(ctx.Path("config"), certKeyName)
 	}
 
 	type extendedKey interface {
@@ -191,6 +192,7 @@ func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
 	certChain := ctx.Path("certChain")
 
 	if certChain != "" {
+		fmt.Println("certChain:", certChain, "certKey:", certKey)
 		cert, err := tls.LoadX509KeyPair(certChain, certKey)
 		if err != nil {
 			return xerrors.Errorf("failed to load certificate: %v", err)
@@ -259,11 +261,6 @@ func (m miniController) getKey(flags cli.Flags) (crypto.PrivateKey, error) {
 	}
 
 	key, err = x509.ParseECPrivateKey(keydata)
-	if err == nil {
-		return key, nil
-	}
-
-	key, err = x509.ParsePKCS1PrivateKey(keydata)
 	if err == nil {
 		return key, nil
 	}
