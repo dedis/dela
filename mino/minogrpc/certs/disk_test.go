@@ -16,8 +16,8 @@ func TestDiskStore_Store(t *testing.T) {
 	db, clean := makeDb(t)
 	defer clean()
 
-	cert0 := fake.MakeCertificate(t, 1, net.IPv4(127, 0, 0, 1))
-	cert12 := fake.MakeCertificate(t, 1, net.IPv4(127, 0, 0, 12))
+	cert0 := fake.MakeCertificate(t, net.IPv4(127, 0, 0, 1))
+	cert12 := fake.MakeCertificate(t, net.IPv4(127, 0, 0, 12))
 
 	store := NewDiskStore(db, fake.AddressFactory{})
 
@@ -56,7 +56,7 @@ func TestDiskStore_FailCreateBucket_Store(t *testing.T) {
 		db: fake.NewBadDB(),
 	}
 
-	err := store.Store(fake.NewAddress(0), fake.MakeCertificate(t, 0))
+	err := store.Store(fake.NewAddress(0), fake.MakeCertificate(t))
 	require.EqualError(t, err, fake.Err("while updating db: while getting bucket"))
 }
 
@@ -69,7 +69,7 @@ func TestDiskStore_FailWriteDB_Store(t *testing.T) {
 		db:     memdb,
 	}
 
-	err := store.Store(fake.NewAddress(0), fake.MakeCertificate(t, 0))
+	err := store.Store(fake.NewAddress(0), fake.MakeCertificate(t))
 	require.EqualError(t, err, fake.Err("while updating db: while writing"))
 }
 
@@ -79,7 +79,7 @@ func TestDiskStore_Load(t *testing.T) {
 
 	store := NewDiskStore(db, fake.AddressFactory{})
 
-	err := store.Store(fake.NewAddress(0), fake.MakeCertificate(t, 0))
+	err := store.Store(fake.NewAddress(0), fake.MakeCertificate(t))
 	require.NoError(t, err)
 
 	cert, err := store.Load(fake.NewAddress(0))
@@ -126,7 +126,7 @@ func TestDiskStore_Delete(t *testing.T) {
 	err := store.Delete(key)
 	require.NoError(t, err)
 
-	err = store.Store(key, fake.MakeCertificate(t, 0))
+	err = store.Store(key, fake.MakeCertificate(t))
 	require.NoError(t, err)
 
 	err = store.Delete(key)
@@ -180,13 +180,13 @@ func TestDiskStore_Range(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, count)
 
-	err = store.Store(fake.NewAddress(0), fake.MakeCertificate(t, 0))
+	err = store.Store(fake.NewAddress(0), fake.MakeCertificate(t))
 	require.NoError(t, err)
 
-	err = store.Store(fake.NewAddress(1), fake.MakeCertificate(t, 0))
+	err = store.Store(fake.NewAddress(1), fake.MakeCertificate(t))
 	require.NoError(t, err)
 
-	err = store.Store(fake.NewAddress(2), fake.MakeCertificate(t, 0))
+	err = store.Store(fake.NewAddress(2), fake.MakeCertificate(t))
 	require.NoError(t, err)
 
 	err = store.Range(func(addr mino.Address, chain CertChain) bool {

@@ -138,6 +138,11 @@ func (o overlayServer) Join(ctx context.Context, req *ptypes.JoinRequest) (*ptyp
 func (o overlayServer) Share(ctx context.Context, msg *ptypes.CertificateChain) (*ptypes.CertificateAck, error) {
 	from := o.addrFactory.FromText(msg.GetAddress()).(session.Address)
 
+	hostname, err := from.GetHostname()
+	if err != nil {
+		return nil, xerrors.Errorf("malformed address: %v", err)
+	}
+
 	certs, err := x509.ParseCertificates(msg.GetValue())
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't parse certificate: %v", err)
@@ -157,11 +162,6 @@ func (o overlayServer) Share(ctx context.Context, msg *ptypes.CertificateChain) 
 		intermediate.AddCert(certs[i])
 	}
 
-	hostname, err := from.GetHostname()
-	if err != nil {
-		return nil, xerrors.Errorf("malformed address: %v", err)
-	}
-
 	opts := x509.VerifyOptions{
 		DNSName:       hostname,
 		Roots:         root,
@@ -172,19 +172,6 @@ func (o overlayServer) Share(ctx context.Context, msg *ptypes.CertificateChain) 
 	_, err = certs[0].Verify(opts)
 	if err != nil {
 		return nil, xerrors.Errorf("chain cert invalid: %v", err)
-	}
-
-	// Validate the chain of certificate
-	for i := 0; i < len(certs)-1; i++ {
-		err = certs[i].CheckSignatureFrom(certs[i+1])
-		if err != nil {
-			return nil, xerrors.Errorf("invalid certificate signature: %v", err)
-		}
-	}
-
-	err = certs[0].VerifyHostname(hostname)
-	if err != nil {
-		return nil, xerrors.Errorf("invalid hostname: %v", err)
 	}
 
 	o.certs.Store(from, msg.GetValue())
@@ -726,6 +713,14 @@ func (mgr *connManager) getTransportCredential(addr mino.Address) (credentials.T
 		return nil, xerrors.Errorf("certificate for '%v' not found", addr)
 	}
 
+	meChain, err := mgr.certs.Load(mgr.myAddr)
+	if err != nil {
+		return nil, xerrors.Errorf("while loading own cert: %v", err)
+	}
+	if meChain == nil {
+		return nil, xerrors.Errorf("couldn't find server '%v' cert", mgr.myAddr)
+	}
+
 	pool := x509.NewCertPool()
 
 	certs, err := x509.ParseCertificates(clientChain)
@@ -735,14 +730,6 @@ func (mgr *connManager) getTransportCredential(addr mino.Address) (credentials.T
 
 	// Add the root certificate as the CA
 	pool.AddCert(certs[len(certs)-1])
-
-	meChain, err := mgr.certs.Load(mgr.myAddr)
-	if err != nil {
-		return nil, xerrors.Errorf("while loading own cert: %v", err)
-	}
-	if meChain == nil {
-		return nil, xerrors.Errorf("couldn't find server '%v' cert", mgr.myAddr)
-	}
 
 	meCerts, err := x509.ParseCertificates(meChain)
 	if err != nil {

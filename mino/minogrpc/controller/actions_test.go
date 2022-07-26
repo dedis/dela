@@ -27,7 +27,7 @@ func TestCertAction_Execute(t *testing.T) {
 		Injector: node.NewInjector(),
 	}
 
-	cert, chain := fake.MakeFullCertificate(t, 1)
+	cert, chain := fake.MakeFullCertificate(t)
 
 	store := certs.NewInMemoryStore()
 	store.Store(fake.NewAddress(0), chain)
@@ -39,6 +39,11 @@ func TestCertAction_Execute(t *testing.T) {
 
 	expected := fmt.Sprintf("Address: fake.Address[0] (AAAAAA==) Certificate: %s...\n", hex.EncodeToString(cert.Certificate[0][:8]))
 	require.Equal(t, expected, out.String())
+
+	req.Injector.Inject(fakeJoinable{certs: badCertStore{}})
+
+	err = action.Execute(req)
+	require.NoError(t, err, "")
 
 	req.Injector = node.NewInjector()
 	err = action.Execute(req)
@@ -64,7 +69,7 @@ func TestRemoveCert_Execute(t *testing.T) {
 		},
 	}
 
-	cert := fake.MakeCertificate(t, 1)
+	cert := fake.MakeCertificate(t)
 
 	store := certs.NewInMemoryStore()
 	store.Store(addr, cert)
@@ -149,7 +154,7 @@ func TestTokenAction_Execute(t *testing.T) {
 		Injector: node.NewInjector(),
 	}
 
-	cert := fake.MakeCertificate(t, 1)
+	cert := fake.MakeCertificate(t)
 
 	store := certs.NewInMemoryStore()
 	store.Store(fake.NewAddress(0), cert)
@@ -185,7 +190,7 @@ func TestTokenAction_FailedHash(t *testing.T) {
 		Injector: node.NewInjector(),
 	}
 
-	cert := fake.MakeCertificate(t, 1)
+	cert := fake.MakeCertificate(t)
 
 	store := certs.NewInMemoryStore()
 	store.Store(fake.NewAddress(0), cert)
@@ -308,4 +313,9 @@ func (c badCertStore) Hash(certs.CertChain) ([]byte, error) {
 
 func (c badCertStore) Delete(mino.Address) error {
 	return c.err
+}
+
+func (c badCertStore) Range(f func(addr mino.Address, chain certs.CertChain) bool) error {
+	f(fake.NewAddress(0), certs.CertChain("bad cert"))
+	return nil
 }

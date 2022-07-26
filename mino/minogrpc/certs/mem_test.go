@@ -80,7 +80,7 @@ func TestInMemoryStore_Range(t *testing.T) {
 func TestInMemoryStore_Fetch(t *testing.T) {
 	store := NewInMemoryStore()
 
-	cert, certBuf := fake.MakeFullCertificate(t, 1)
+	cert, certBuf := fake.MakeFullCertificate(t)
 
 	cfg := &tls.Config{
 		Certificates: []tls.Certificate{*cert},

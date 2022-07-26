@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -231,7 +232,7 @@ func TestOverlayJoin_BadAddress_Join(t *testing.T) {
 		},
 	}
 
-	overlay.certs.Store(fake.NewBadAddress(), fake.MakeCertificate(t, 0))
+	overlay.certs.Store(fake.NewBadAddress(), fake.MakeCertificate(t))
 
 	token := overlay.tokens.Generate(time.Hour)
 
@@ -253,7 +254,7 @@ func TestOverlayJoin_BadNetwork_Join(t *testing.T) {
 		},
 	}
 
-	overlay.certs.Store(session.NewAddress(""), fake.MakeCertificate(t, 0))
+	overlay.certs.Store(session.NewAddress(""), fake.MakeCertificate(t))
 
 	token := overlay.tokens.Generate(time.Hour)
 
@@ -276,7 +277,7 @@ func TestOverlayJoin_BadConn_Join(t *testing.T) {
 		},
 	}
 
-	overlay.certs.Store(session.NewAddress(""), fake.MakeCertificate(t, 0))
+	overlay.certs.Store(session.NewAddress(""), fake.MakeCertificate(t))
 
 	token := overlay.tokens.Generate(time.Hour)
 
@@ -307,7 +308,7 @@ func TestOverlayServer_Share(t *testing.T) {
 
 	req := &ptypes.CertificateChain{
 		Address: fromBuf,
-		Value:   fake.MakeCertificate(t, 1, net.IPv4(127, 0, 0, 1)),
+		Value:   fake.MakeCertificate(t, net.IPv4(127, 0, 0, 1)),
 	}
 
 	resp, err := overlay.Share(ctx, req)
@@ -321,6 +322,103 @@ func TestOverlayServer_Share(t *testing.T) {
 	_, err = overlay.Share(ctx, &ptypes.CertificateChain{})
 	require.EqualError(t, err,
 		"no certificate found")
+}
+
+func TestOverlayServer_Share_Bad_Cert(t *testing.T) {
+	overlay := overlayServer{
+		overlay: &overlay{
+			addrFactory: addressFac,
+		},
+	}
+
+	from := session.NewAddress("127.0.0.1:8080")
+	fromBuf, err := from.MarshalText()
+	require.NoError(t, err)
+
+	msg := &ptypes.CertificateChain{
+		Address: fromBuf,
+		Value:   []byte("wrong cert"),
+	}
+	_, err = overlay.Share(context.Background(), msg)
+	require.EqualError(t, err, "couldn't parse certificate: x509: malformed certificate")
+}
+
+func TestOverlayServer_Share_Chain_OK(t *testing.T) {
+	certs := certs.NewInMemoryStore()
+	addr := session.NewAddress("127.0.0.1:0")
+
+	chain := fake.MakeCertificateChain(t)
+
+	overlay := overlayServer{
+		overlay: &overlay{
+			addrFactory: addressFac,
+			certs:       certs,
+			myAddr:      addr,
+		},
+	}
+
+	from := session.NewAddress("127.0.0.1:8080")
+	fromBuf, err := from.MarshalText()
+	require.NoError(t, err)
+
+	msg := &ptypes.CertificateChain{
+		Address: fromBuf,
+		Value:   chain,
+	}
+
+	_, err = overlay.Share(context.Background(), msg)
+	require.NoError(t, err)
+}
+
+func TestOverlayServer_Share_Malformed_Address(t *testing.T) {
+	chain := fake.MakeCertificateChain(t)
+
+	overlay := overlayServer{
+		overlay: &overlay{
+			addrFactory: addressFac,
+			certs:       certs.NewInMemoryStore(),
+		},
+	}
+
+	from := session.NewAddress(" ")
+	fromBuf, err := from.MarshalText()
+	require.NoError(t, err)
+
+	msg := &ptypes.CertificateChain{
+		Address: fromBuf,
+		Value:   chain,
+	}
+
+	_, err = overlay.Share(context.Background(), msg)
+	require.NotNil(t, err)
+	require.True(t, strings.HasPrefix(err.Error(), "malformed address:"), err)
+}
+
+func TestOverlayServer_Share_Chain_Invalid(t *testing.T) {
+	certs := certs.NewInMemoryStore()
+	addr := session.NewAddress("127.0.0.1:0")
+
+	chain, _ := fake.MakeFullCertificate(t)
+
+	overlay := overlayServer{
+		overlay: &overlay{
+			addrFactory: addressFac,
+			certs:       certs,
+			myAddr:      addr,
+		},
+	}
+
+	from := session.NewAddress("127.0.0.1:8080")
+	fromBuf, err := from.MarshalText()
+	require.NoError(t, err)
+
+	msg := &ptypes.CertificateChain{
+		Address: fromBuf,
+		Value:   chain.Certificate[0],
+	}
+
+	_, err = overlay.Share(context.Background(), msg)
+	require.EqualError(t, err, "chain cert invalid: x509: cannot validate certificate for 127.0.0.1 because it doesn't contain any IP SANs")
 }
 
 func TestOverlayServer_Call(t *testing.T) {
@@ -690,6 +788,18 @@ func TestOverlay_New_Hostname(t *testing.T) {
 	require.NotNil(t, cert)
 }
 
+func TestOverlay_New_Wrong_Cert_Store(t *testing.T) {
+	cert, _ := fake.MakeFullCertificate(t)
+
+	_, err := newOverlay(&minoTemplate{
+		cert:   cert,
+		certs:  fakeCerts{errStore: fake.GetError()},
+		curve:  elliptic.P521(),
+		random: rand.Reader,
+	})
+	require.EqualError(t, err, fake.Err("failed to store cert"))
+}
+
 func TestOverlay_Panic_GetCertificate(t *testing.T) {
 	defer func() {
 		r := recover()
@@ -771,7 +881,7 @@ func TestConnManager_Acquire(t *testing.T) {
 	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore())
 
 	certsStore := mgr.certs
-	certsStore.Store(mgr.myAddr, certs.CertChain(fake.MakeCertificate(t, 1)))
+	certsStore.Store(mgr.myAddr, certs.CertChain(fake.MakeCertificate(t)))
 	certsStore.Store(dst.GetAddress(), dst.GetCertificateChain())
 
 	conn, err := mgr.Acquire(dst.GetAddress())
@@ -812,22 +922,52 @@ func TestConnManager_FailLoadOwnCert_Acquire(t *testing.T) {
 	}
 
 	_, err := mgr.Acquire(fake.NewAddress(0))
-	require.EqualError(t, err, "failed to retrieve transport credential: failed to parse distant cert: x509: malformed certificate")
+	require.EqualError(t, err, fake.Err("failed to retrieve transport credential: while loading own cert"))
 }
 
 func TestConnManager_MissingOwnCert_Acquire(t *testing.T) {
 	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore())
 
-	mgr.certs.Store(fake.NewAddress(1), fake.MakeCertificate(t, 0))
+	mgr.certs.Store(fake.NewAddress(1), fake.MakeCertificate(t))
 
 	_, err := mgr.Acquire(fake.NewAddress(1))
 	require.EqualError(t, err, "failed to retrieve transport credential: couldn't find server 'fake.Address[0]' cert")
 }
 
+func TestConnManager_BadDistantCert_Acquire(t *testing.T) {
+	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore())
+
+	mgr.certs.Store(fake.NewAddress(0), fake.MakeCertificate(t))
+	mgr.certs.Store(fake.NewAddress(1), certs.CertChain("bad chain"))
+
+	_, err := mgr.Acquire(fake.NewAddress(1))
+	require.EqualError(t, err, "failed to retrieve transport credential: failed to parse distant cert: x509: malformed certificate")
+}
+
+func TestConnManager_BadOwnCert_Acquire(t *testing.T) {
+	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore())
+
+	mgr.certs.Store(fake.NewAddress(0), certs.CertChain("bad chain"))
+	mgr.certs.Store(fake.NewAddress(1), fake.MakeCertificate(t))
+
+	_, err := mgr.Acquire(fake.NewAddress(1))
+	require.EqualError(t, err, "failed to retrieve transport credential: failed to parse our own cert: x509: malformed certificate")
+}
+
+func TestConnManager_EmptyOwnCert_Acquire(t *testing.T) {
+	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore())
+
+	mgr.certs.Store(fake.NewAddress(0), certs.CertChain{})
+	mgr.certs.Store(fake.NewAddress(1), fake.MakeCertificate(t))
+
+	_, err := mgr.Acquire(fake.NewAddress(1))
+	require.EqualError(t, err, "failed to retrieve transport credential: no certificate found")
+}
+
 func TestConnManager_BadAddress_Acquire(t *testing.T) {
 	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore())
 
-	mgr.certs.Store(fake.NewAddress(0), fake.MakeCertificate(t, 0))
+	mgr.certs.Store(fake.NewAddress(0), fake.MakeCertificate(t))
 
 	_, err := mgr.Acquire(mgr.myAddr)
 	require.EqualError(t, err, "invalid address type 'fake.Address'")
@@ -846,18 +986,20 @@ func TestConnManager_BadTracer_Acquire(t *testing.T) {
 	getTracerForAddr = fake.GetTracerForAddrWithError
 
 	certsStore := mgr.certs
-	certsStore.Store(mgr.myAddr, certs.CertChain(fake.MakeCertificate(t, 0)))
+	certsStore.Store(mgr.myAddr, certs.CertChain(fake.MakeCertificate(t)))
 	certsStore.Store(dst.GetAddress(), dst.GetCertificateChain())
 
 	dstAddr := dst.GetAddress()
 	_, err = mgr.Acquire(dstAddr)
-	require.EqualError(
-		t,
-		err,
-		fmt.Sprintf("failed to get tracer for addr %s: %s", dst.GetAddress(), fake.GetError().Error()),
-	)
+	require.EqualError(t, err, fmt.Sprintf("failed to get tracer for addr %s: %s",
+		dst.GetAddress(), fake.GetError().Error()))
 
 	getTracerForAddr = tracing.GetTracerForAddr
+}
+
+func TestDecorateClientTrace_NoFound(t *testing.T) {
+	ctx := context.Background()
+	decorateClientTrace(ctx, nil, "", nil, nil, nil)
 }
 
 // -----------------------------------------------------------------------------

@@ -205,6 +205,8 @@ func NewMinogrpc(listen net.Addr, public *url.URL, router router.Router, opts ..
 	chainBuf := o.GetCertificateChain()
 	certs, err := x509.ParseCertificates(chainBuf)
 	if err != nil {
+		socket.Close()
+
 		return nil, xerrors.Errorf("failed to parse chain: %v", err)
 	}
 
