@@ -16,6 +16,7 @@ import (
 	"go.dedis.ch/dela/core"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/router"
+	"go.uber.org/atomic"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc/metadata"
 )
@@ -64,6 +65,8 @@ var (
 
 	headerURIKey = "apiuri"
 )
+
+var Counter atomic.Uint64
 
 // GlobalWatcher can be used to watch for sent and received messages.
 var GlobalWatcher = Watcher{
@@ -198,7 +201,8 @@ func (t *Traffic) Display(out io.Writer) {
 }
 
 func (t *Traffic) addItem(ctx context.Context, typeStr string, gw mino.Address, msg router.Packet) {
-	if t == nil || !LogItems {
+	Counter.Add(1)
+	if t == nil || !LogItems || true {
 		return
 	}
 

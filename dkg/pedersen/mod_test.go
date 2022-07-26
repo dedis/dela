@@ -2,6 +2,7 @@ package pedersen
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/crypto"
@@ -9,9 +10,10 @@ import (
 	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/dkg/pedersen/types"
 	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/internal/traffic"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc"
-	"go.dedis.ch/dela/mino/router/tree"
+	"go.dedis.ch/dela/mino/router/flat"
 	"go.dedis.ch/kyber/v3"
 )
 
@@ -142,6 +144,13 @@ func TestPedersen_Scenario(t *testing.T) {
 
 	n := 5
 
+	go func() {
+		for {
+			time.Sleep(time.Second * 1)
+			t.Logf("count: %s", traffic.Counter.String())
+		}
+	}()
+
 	minos := make([]mino.Mino, n)
 	dkgs := make([]dkg.DKG, n)
 	addrs := make([]mino.Address, n)
@@ -149,7 +158,7 @@ func TestPedersen_Scenario(t *testing.T) {
 	for i := 0; i < n; i++ {
 		addr := minogrpc.ParseAddress("127.0.0.1", 0)
 
-		minogrpc, err := minogrpc.NewMinogrpc(addr, nil, tree.NewRouter(minogrpc.NewAddressFactory()))
+		minogrpc, err := minogrpc.NewMinogrpc(addr, nil, flat.NewRouter(minogrpc.NewAddressFactory()))
 		require.NoError(t, err)
 
 		defer minogrpc.GracefulStop()
@@ -191,11 +200,18 @@ func TestPedersen_Scenario(t *testing.T) {
 	_, err = actors[0].Setup(fakeAuthority, n)
 	require.NoError(t, err)
 
+	t.Log("setup done =)")
+
+	if true {
+		return
+	}
+
 	_, err = actors[0].Setup(fakeAuthority, n)
 	require.EqualError(t, err, "startRes is already done, only one setup call is allowed")
 
 	// every node should be able to encrypt/decrypt
 	for i := 0; i < n; i++ {
+		t.Logf("encrypt: %d", i)
 		K, C, remainder, err := actors[i].Encrypt(message)
 		require.NoError(t, err)
 		require.Len(t, remainder, 0)

@@ -19,6 +19,7 @@ package session
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -474,6 +475,7 @@ func (s *session) setupRelay(p parent, addr mino.Address) (Relay, error) {
 
 		for {
 			_, err := stream.Recv()
+			fmt.Println("i stay in the loop. please help...")
 			code := status.Code(err)
 			if err == io.EOF || code != codes.Unknown {
 				s.logger.Trace().

@@ -34,7 +34,6 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 
-	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing/opentracing-go"
 )
 
@@ -668,10 +667,10 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 
 	// Connecting using TLS and the distant server certificate as the root.
 	addr := netAddr.GetDialAddress()
-	tracer, err := getTracerForAddr(addr)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to get tracer for addr %s: %v", addr, err)
-	}
+	// tracer, err := getTracerForAddr(addr)
+	// if err != nil {
+	// 	return nil, xerrors.Errorf("failed to get tracer for addr %s: %v", addr, err)
+	// }
 
 	conn, err = grpc.Dial(addr,
 		grpc.WithTransportCredentials(ta),
@@ -679,12 +678,12 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 			Backoff:           backoff.DefaultConfig,
 			MinConnectTimeout: defaultMinConnectTimeout,
 		}),
-		grpc.WithUnaryInterceptor(
-			otgrpc.OpenTracingClientInterceptor(tracer, otgrpc.SpanDecorator(decorateClientTrace)),
-		),
-		grpc.WithStreamInterceptor(
-			otgrpc.OpenTracingStreamClientInterceptor(tracer, otgrpc.SpanDecorator(decorateClientTrace)),
-		),
+		// grpc.WithUnaryInterceptor(
+		// 	otgrpc.OpenTracingClientInterceptor(tracer, otgrpc.SpanDecorator(decorateClientTrace)),
+		// ),
+		// grpc.WithStreamInterceptor(
+		// 	otgrpc.OpenTracingStreamClientInterceptor(tracer, otgrpc.SpanDecorator(decorateClientTrace)),
+		// ),
 	)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to dial: %v", err)
