@@ -1,6 +1,7 @@
 package minogrpc
 
 import (
+	"context"
 	"net"
 	"sync"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/internal/tracing"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/session"
 	"go.dedis.ch/dela/mino/minogrpc/tokens"
 	"go.dedis.ch/dela/mino/router/tree"
@@ -27,7 +29,7 @@ func TestMinogrpc_New(t *testing.T) {
 	require.Equal(t, "127.0.0.1:3333", m.GetAddress().String())
 	require.Empty(t, m.segments)
 
-	cert := m.GetCertificate()
+	cert := m.GetCertificateChain()
 	require.NotNil(t, cert)
 
 	<-m.started
@@ -85,6 +87,29 @@ func TestMinogrpc_FailLoadCert_New(t *testing.T) {
 	require.EqualError(t, err, fake.Err("overlay: while loading cert"))
 }
 
+func TestMinogrpc_FailedBadCert_New(t *testing.T) {
+	addr := ParseAddress("127.0.0.1", 3333)
+	router := tree.NewRouter(addressFac)
+
+	_, err := NewMinogrpc(addr, nil, router, WithStorage(fakeCerts{}))
+	require.EqualError(t, err, "failed to parse chain: x509: malformed certificate")
+}
+
+func TestMinogrpc_WithCert_New(t *testing.T) {
+	addr := ParseAddress("127.0.0.1", 3333)
+	router := tree.NewRouter(addressFac)
+
+	cert, _ := fake.MakeFullCertificate(t)
+
+	m, err := NewMinogrpc(addr, nil, router, WithCert(cert))
+	require.NoError(t, err)
+
+	defer m.GracefulStop()
+
+	chain := m.GetCertificateChain()
+	require.Equal(t, certs.CertChain(cert.Certificate[0]), chain)
+}
+
 func TestMinogrpc_BadAddress_New(t *testing.T) {
 	addr := ParseAddress("123.4.5.6", 1)
 	router := tree.NewRouter(addressFac)
@@ -108,11 +133,7 @@ func TestMinogrpc_BadTracer_New(t *testing.T) {
 	router := tree.NewRouter(addressFac)
 
 	_, err := NewMinogrpc(addr, nil, router)
-	require.EqualError(
-		t,
-		err,
-		fake.Err("failed to get tracer for addr 127.0.0.1:3333"),
-	)
+	require.EqualError(t, err, fake.Err("failed to get tracer for addr 127.0.0.1:3333"))
 
 	getTracerForAddr = tracing.GetTracerForAddr
 }
@@ -234,6 +255,11 @@ func TestMinogrpc_String(t *testing.T) {
 	}
 
 	require.Equal(t, "mino[]", minoGrpc.String())
+}
+
+func TestMinogrpc_DecorateTrace_NoFound(t *testing.T) {
+	ctx := context.Background()
+	decorateServerTrace(ctx, nil, "", nil, nil, nil)
 }
 
 // -----------------------------------------------------------------------------

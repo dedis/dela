@@ -1,6 +1,7 @@
 package fake
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -465,8 +466,8 @@ func (m Mino) CreateRPC(string, mino.Handler, serde.Factory) (mino.RPC, error) {
 }
 
 // MakeCertificate generates a valid certificate for the localhost address and
-// for an hour.
-func MakeCertificate(t *testing.T, n int, ips ...net.IP) *tls.Certificate {
+// for an hour. It outputs only its byte representation.
+func MakeCertificate(t *testing.T, ips ...net.IP) []byte {
 	priv, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
 	require.NoError(t, err)
 
@@ -485,17 +486,130 @@ func MakeCertificate(t *testing.T, n int, ips ...net.IP) *tls.Certificate {
 	buf, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
 	require.NoError(t, err)
 
+	return buf
+}
+
+// MakeFullCertificate generates a valid certificate for the localhost address
+// and for an hour. it outputs the TLS certificate and its byte representation.
+func MakeFullCertificate(t *testing.T) (*tls.Certificate, []byte) {
+	priv, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
+	require.NoError(t, err)
+
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		IPAddresses:           []net.IP{},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		MaxPathLen:            1,
+	}
+
+	buf, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
+	require.NoError(t, err)
+
 	cert, err := x509.ParseCertificate(buf)
 	require.NoError(t, err)
 
-	chain := make([][]byte, n)
-	for i := range chain {
-		chain[i] = buf
-	}
-
 	return &tls.Certificate{
-		Certificate: chain,
+		Certificate: [][]byte{buf},
 		PrivateKey:  priv,
 		Leaf:        cert,
+	}, buf
+}
+
+// MakeCertificateChain creates a valid certificate chain with an intermediary
+// certificate.
+func MakeCertificateChain(t *testing.T) []byte {
+	root, pk := makeRootCertificate(t)
+	intermediary, pk2 := makeIntermediaryCertificate(t, root, pk)
+	server, _ := makeServerCertificate(t, intermediary, pk2)
+
+	chain := bytes.Buffer{}
+	chain.Write(server.Raw)
+	chain.Write(intermediary.Raw)
+	chain.Write(root.Raw)
+
+	return chain.Bytes()
+}
+
+func genCert(t *testing.T, template, parent *x509.Certificate,
+	publicKey *ecdsa.PublicKey, privateKey *ecdsa.PrivateKey) *x509.Certificate {
+
+	certBytes, err := x509.CreateCertificate(rand.Reader, template, parent, publicKey, privateKey)
+	require.NoError(t, err)
+
+	cert, err := x509.ParseCertificate(certBytes)
+	require.NoError(t, err)
+
+	return cert
+}
+
+func makeRootCertificate(t *testing.T) (*x509.Certificate, *ecdsa.PrivateKey) {
+	var template = x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		MaxPathLen:            2,
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
 	}
+
+	priv, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
+	require.NoError(t, err)
+
+	rootCert := genCert(t, &template, &template, &priv.PublicKey, priv)
+
+	return rootCert, priv
+}
+
+func makeIntermediaryCertificate(t *testing.T, rootCert *x509.Certificate,
+	rootKey *ecdsa.PrivateKey) (*x509.Certificate, *ecdsa.PrivateKey) {
+
+	priv, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
+	require.NoError(t, err)
+
+	var template = x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		MaxPathLenZero:        false,
+		MaxPathLen:            1,
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
+	}
+
+	intermediary := genCert(t, &template, rootCert, &priv.PublicKey, rootKey)
+
+	return intermediary, priv
+}
+
+func makeServerCertificate(t *testing.T, intermediaryCert *x509.Certificate,
+	intermediaryKey *ecdsa.PrivateKey) (*x509.Certificate, *ecdsa.PrivateKey) {
+
+	priv, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
+	require.NoError(t, err)
+
+	var template = x509.Certificate{
+		SerialNumber:   big.NewInt(1),
+		NotBefore:      time.Now().Add(-10 * time.Second),
+		NotAfter:       time.Now().AddDate(10, 0, 0),
+		KeyUsage:       x509.KeyUsageCRLSign,
+		ExtKeyUsage:    []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IsCA:           false,
+		MaxPathLenZero: true,
+		IPAddresses:    []net.IP{net.ParseIP("127.0.0.1")},
+	}
+
+	ServerCert := genCert(t, &template, intermediaryCert, &priv.PublicKey, intermediaryKey)
+
+	return ServerCert, priv
 }

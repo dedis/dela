@@ -2,8 +2,8 @@ package controller
 
 import (
 	"bytes"
-	"crypto/tls"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"net/url"
 	"testing"
@@ -27,17 +27,23 @@ func TestCertAction_Execute(t *testing.T) {
 		Injector: node.NewInjector(),
 	}
 
-	cert := fake.MakeCertificate(t, 1)
+	cert, chain := fake.MakeFullCertificate(t)
 
 	store := certs.NewInMemoryStore()
-	store.Store(fake.NewAddress(0), cert)
+	store.Store(fake.NewAddress(0), chain)
 
 	req.Injector.Inject(fakeJoinable{certs: store})
 
 	err := action.Execute(req)
 	require.NoError(t, err)
-	expected := fmt.Sprintf("Address: fake.Address[0] (AAAAAA==) Certificate: %v\n", cert.Leaf.NotAfter)
+
+	expected := fmt.Sprintf("Address: fake.Address[0] (AAAAAA==) Certificate: %s...\n", hex.EncodeToString(cert.Certificate[0][:8]))
 	require.Equal(t, expected, out.String())
+
+	req.Injector.Inject(fakeJoinable{certs: badCertStore{}})
+
+	err = action.Execute(req)
+	require.NoError(t, err, "")
 
 	req.Injector = node.NewInjector()
 	err = action.Execute(req)
@@ -63,7 +69,7 @@ func TestRemoveCert_Execute(t *testing.T) {
 		},
 	}
 
-	cert := fake.MakeCertificate(t, 1)
+	cert := fake.MakeCertificate(t)
 
 	store := certs.NewInMemoryStore()
 	store.Store(addr, cert)
@@ -73,7 +79,7 @@ func TestRemoveCert_Execute(t *testing.T) {
 	err = action.Execute(req)
 	require.NoError(t, err)
 
-	store.Range(func(addr mino.Address, cert *tls.Certificate) bool {
+	store.Range(func(addr mino.Address, cert certs.CertChain) bool {
 		t.Error("store should be empty")
 		return false
 	})
@@ -148,7 +154,7 @@ func TestTokenAction_Execute(t *testing.T) {
 		Injector: node.NewInjector(),
 	}
 
-	cert := fake.MakeCertificate(t, 1)
+	cert := fake.MakeCertificate(t)
 
 	store := certs.NewInMemoryStore()
 	store.Store(fake.NewAddress(0), cert)
@@ -184,7 +190,7 @@ func TestTokenAction_FailedHash(t *testing.T) {
 		Injector: node.NewInjector(),
 	}
 
-	cert := fake.MakeCertificate(t, 1)
+	cert := fake.MakeCertificate(t)
 
 	store := certs.NewInMemoryStore()
 	store.Store(fake.NewAddress(0), cert)
@@ -246,7 +252,7 @@ type fakeJoinable struct {
 	err   error
 }
 
-func (j fakeJoinable) GetCertificate() *tls.Certificate {
+func (j fakeJoinable) GetCertificateChain() certs.CertChain {
 	cert, _ := j.certs.Load(fake.NewAddress(0))
 
 	return cert
@@ -272,7 +278,7 @@ type fakeContext struct {
 	cli.Flags
 	duration time.Duration
 	str      map[string]string
-	path     string
+	path     map[string]string
 	num      int
 }
 
@@ -284,8 +290,8 @@ func (ctx fakeContext) String(key string) string {
 	return ctx.str[key]
 }
 
-func (ctx fakeContext) Path(string) string {
-	return ctx.path
+func (ctx fakeContext) Path(key string) string {
+	return ctx.path[key]
 }
 
 func (ctx fakeContext) Int(string) int {
@@ -297,14 +303,19 @@ type badCertStore struct {
 	err error
 }
 
-func (badCertStore) Load(mino.Address) (*tls.Certificate, error) {
+func (badCertStore) Load(mino.Address) (certs.CertChain, error) {
 	return nil, nil
 }
 
-func (c badCertStore) Hash(*tls.Certificate) ([]byte, error) {
+func (c badCertStore) Hash(certs.CertChain) ([]byte, error) {
 	return nil, c.err
 }
 
 func (c badCertStore) Delete(mino.Address) error {
 	return c.err
+}
+
+func (c badCertStore) Range(f func(addr mino.Address, chain certs.CertChain) bool) error {
+	f(fake.NewAddress(0), certs.CertChain("bad cert"))
+	return nil
 }

@@ -203,7 +203,7 @@ func (c cosiDelaNode) Setup(delas ...dela) {
 
 	token := joinable.GenerateToken(time.Hour)
 
-	certHash, err := joinable.GetCertificateStore().Hash(joinable.GetCertificate())
+	certHash, err := joinable.GetCertificateStore().Hash(joinable.GetCertificateChain())
 	require.NoError(c.t, err)
 
 	for _, dela := range delas {

@@ -2,9 +2,13 @@ syntax = "proto3";
 
 package ptypes;
 
-// Certificate is a wrapper around a x509 raw certificate and its address.
-message Certificate {
+// CertificateChain is a wrapper around a chain of x509 raw certificates and its
+// address.
+message CertificateChain {
     bytes address = 1;
+    // value represents certificates as ASN.1 DER data. The certificates must be
+    // concatenated with no intermediate padding. This value can be parsed with
+    // `x509.LoadCertificates`.
     bytes value = 2;
 }
 
@@ -14,13 +18,13 @@ message CertificateAck {}
 // contain a valid token and its own certificate.
 message JoinRequest {
     string token = 1;
-    Certificate certificate = 2;
+    CertificateChain chain = 2;
 }
 
 // JoinResponse is a response of a join request that contains the list of
 // certificates known by the distant node.
 message JoinResponse {
-    repeated Certificate peers = 1;
+    repeated CertificateChain peers = 1;
 }
 
 // Message is a network message that contains the address of the sender and the
@@ -47,7 +51,7 @@ service Overlay {
 
     // Share handles a certificate share from another participant of the
     // network.
-    rpc Share(Certificate) returns (CertificateAck) {}
+    rpc Share(CertificateChain) returns (CertificateAck) {}
 
     // Call is a unicast rpc to send a message to a participant and expect a
     // reply from it.

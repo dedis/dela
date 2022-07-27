@@ -34,21 +34,21 @@ func NewInMemoryStore() *InMemoryStore {
 
 // Store implements certs.Storage. It stores the certificate with the address as
 // the key.
-func (s *InMemoryStore) Store(addr mino.Address, cert *tls.Certificate) error {
-	s.certs.Store(addr, cert)
+func (s *InMemoryStore) Store(addr mino.Address, chain CertChain) error {
+	s.certs.Store(addr, chain)
 
 	return nil
 }
 
 // Load implements certs.Storage. It looks for the certificate associated to the
 // address. If it does not exist, it will return nil.
-func (s *InMemoryStore) Load(addr mino.Address) (*tls.Certificate, error) {
+func (s *InMemoryStore) Load(addr mino.Address) (CertChain, error) {
 	val, found := s.certs.Load(addr)
 	if !found {
 		return nil, nil
 	}
 
-	return val.(*tls.Certificate), nil
+	return val.(CertChain), nil
 }
 
 // Delete implements certs.Storage. It deletes the certificate associated to the
@@ -61,9 +61,9 @@ func (s *InMemoryStore) Delete(addr mino.Address) error {
 
 // Range implements certs.Storage. It iterates over all the certificates stored
 // as long as the callback return true.
-func (s *InMemoryStore) Range(fn func(addr mino.Address, cert *tls.Certificate) bool) error {
+func (s *InMemoryStore) Range(fn func(addr mino.Address, chain CertChain) bool) error {
 	s.certs.Range(func(key, value interface{}) bool {
-		return fn(key.(mino.Address), value.(*tls.Certificate))
+		return fn(key.(mino.Address), value.(CertChain))
 	})
 
 	return nil
@@ -90,15 +90,16 @@ func (s *InMemoryStore) Fetch(addr Dialable, hash []byte) error {
 
 	conn.Close()
 
+	// we can assume that `peers` is not empty (see doc of `PeerCertificates`)
 	peers := conn.ConnectionState().PeerCertificates
-	// Server certificate should be self-signed and thus a chain of length 1.
-	if len(peers) != 1 {
-		return xerrors.Errorf("expect exactly one certificate but found %d", len(peers))
+
+	chain := bytes.Buffer{}
+
+	for _, peer := range peers {
+		chain.Write(peer.Raw)
 	}
 
-	cert := &tls.Certificate{Leaf: peers[0]}
-
-	digest, err := s.Hash(cert)
+	digest, err := s.Hash(chain.Bytes())
 	if err != nil {
 		return xerrors.Errorf("couldn't hash certificate: %v", err)
 	}
@@ -107,19 +108,21 @@ func (s *InMemoryStore) Fetch(addr Dialable, hash []byte) error {
 		return xerrors.Errorf("mismatch certificate digest")
 	}
 
-	s.certs.Store(addr, cert)
+	// We need only the root certificate from a distant peer, as it is
+	// sufficient to verify it.
+	s.certs.Store(addr, CertChain(peers[len(peers)-1].Raw))
 
 	return nil
 }
 
 // Hash implements certs.Storage. It returns the unique digest for the
 // certificate.
-func (s *InMemoryStore) Hash(cert *tls.Certificate) ([]byte, error) {
+func (s *InMemoryStore) Hash(chain CertChain) ([]byte, error) {
 	h := s.hashFactory.New()
 
-	_, err := h.Write(cert.Leaf.Raw)
+	_, err := h.Write(chain)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't write leaf: %v", err)
+		return nil, xerrors.Errorf("couldn't write cert: %v", err)
 	}
 
 	return h.Sum(nil), nil

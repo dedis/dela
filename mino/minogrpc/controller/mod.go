@@ -9,10 +9,14 @@
 package controller
 
 import (
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
+	"fmt"
 	"io"
 	"net"
 	"net/url"
@@ -71,6 +75,16 @@ func (m miniController) SetCommands(builder node.Builder) {
 			Name:     "routing",
 			Usage:    "sets the kind of routing: 'flat' or 'tree'",
 			Value:    "flat",
+			Required: false,
+		},
+		cli.StringFlag{
+			Name:     "certKey",
+			Usage:    "provides the certificate private key path",
+			Required: false,
+		},
+		cli.StringFlag{
+			Name:     "certChain",
+			Usage:    "provides the chain certificate file path",
 			Required: false,
 		},
 	)
@@ -161,9 +175,30 @@ func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("cert private key: %v", err)
 	}
 
+	certKey := ctx.Path("certKey")
+	if certKey == "" {
+		certKey = filepath.Join(ctx.Path("config"), certKeyName)
+	}
+
+	type extendedKey interface {
+		Public() crypto.PublicKey
+	}
+
 	opts := []minogrpc.Option{
+		minogrpc.WithCertificateKey(key, key.(extendedKey).Public()),
 		minogrpc.WithStorage(certs),
-		minogrpc.WithCertificateKey(key, key.Public()),
+	}
+
+	certChain := ctx.Path("certChain")
+
+	if certChain != "" {
+		fmt.Println("certChain:", certChain, "certKey:", certKey)
+		cert, err := tls.LoadX509KeyPair(certChain, certKey)
+		if err != nil {
+			return xerrors.Errorf("failed to load certificate: %v", err)
+		}
+
+		opts = append(opts, minogrpc.WithCert(&cert))
 	}
 
 	var public *url.URL
@@ -210,7 +245,7 @@ func (m miniController) OnStop(inj node.Injector) error {
 	return nil
 }
 
-func (m miniController) getKey(flags cli.Flags) (*ecdsa.PrivateKey, error) {
+func (m miniController) getKey(flags cli.Flags) (crypto.PrivateKey, error) {
 	loader := loader.NewFileLoader(filepath.Join(flags.Path("config"), certKeyName))
 
 	keydata, err := loader.LoadOrCreate(newGenerator(m.random, m.curve))
@@ -218,12 +253,24 @@ func (m miniController) getKey(flags cli.Flags) (*ecdsa.PrivateKey, error) {
 		return nil, xerrors.Errorf("while loading: %v", err)
 	}
 
-	key, err := x509.ParseECPrivateKey(keydata)
-	if err != nil {
-		return nil, xerrors.Errorf("while parsing: %v", err)
+	var key crypto.PrivateKey
+
+	block, _ := pem.Decode(keydata)
+	if block != nil {
+		keydata = block.Bytes
 	}
 
-	return key, nil
+	key, err = x509.ParseECPrivateKey(keydata)
+	if err == nil {
+		return key, nil
+	}
+
+	key, err = x509.ParsePKCS8PrivateKey(keydata)
+	if err == nil {
+		return key, nil
+	}
+
+	return nil, xerrors.Errorf("key parsing failed: %v", err)
 }
 
 // generator can generate a private key compatible with the x509 certificate.

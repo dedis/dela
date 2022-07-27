@@ -142,9 +142,10 @@ func (dbTx) OnCommit(fn func()) {}
 type Bucket struct {
 	kv.Bucket
 
-	values    map[string][]byte
-	errSet    error
-	errDelete error
+	values     map[string][]byte
+	errSet     error
+	errDelete  error
+	errForeach error
 }
 
 // NewBucket returns a new empty bucket.
@@ -166,6 +167,14 @@ func NewBadWriteBucket() *Bucket {
 func NewBadDeleteBucket() *Bucket {
 	b := NewBucket()
 	b.errDelete = fakeErr
+
+	return b
+}
+
+// NewBadForeachBucket returns a new empty bucket that fails to iterate
+func NewBadForeachBucket() *Bucket {
+	b := NewBucket()
+	b.errForeach = fakeErr
 
 	return b
 }
@@ -198,5 +207,5 @@ func (b *Bucket) ForEach(fn func(key, value []byte) error) error {
 		}
 	}
 
-	return nil
+	return b.errForeach
 }

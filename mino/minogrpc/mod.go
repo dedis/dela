@@ -9,6 +9,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"net"
@@ -62,8 +63,8 @@ var listener = net.Listen
 type Joinable interface {
 	mino.Mino
 
-	// GetCertificate returns the certificate of the instance.
-	GetCertificate() *tls.Certificate
+	// GetCertificateChain returns the certificate chain of the instance.
+	GetCertificateChain() certs.CertChain
 
 	// GetCertificateStore returns the certificate storage which contains every
 	// known peer certificate.
@@ -124,6 +125,7 @@ type minoTemplate struct {
 	public interface{}
 	curve  elliptic.Curve
 	random io.Reader
+	cert   *tls.Certificate
 }
 
 // Option is the type to set some fields when instantiating an overlay.
@@ -149,6 +151,14 @@ func WithCertificateKey(secret, public interface{}) Option {
 func WithRandom(r io.Reader) Option {
 	return func(tmpl *minoTemplate) {
 		tmpl.random = r
+	}
+}
+
+// WithCert is an option to set the node's certificate in case it is not already
+// present in the certificate store.
+func WithCert(cert *tls.Certificate) Option {
+	return func(tmpl *minoTemplate) {
+		tmpl.cert = cert
 	}
 }
 
@@ -185,17 +195,31 @@ func NewMinogrpc(listen net.Addr, public *url.URL, router router.Router, opts ..
 		opt(&tmpl)
 	}
 
-	o, err := newOverlay(tmpl)
+	o, err := newOverlay(&tmpl)
 	if err != nil {
 		socket.Close()
-
 		return nil, xerrors.Errorf("overlay: %v", err)
 	}
 
-	cert := o.GetCertificate()
+	chainBuf := o.GetCertificateChain()
+	certs, err := x509.ParseCertificates(chainBuf)
+	if err != nil {
+		socket.Close()
+		return nil, xerrors.Errorf("failed to parse chain: %v", err)
+	}
+
+	certsBuf := make([][]byte, len(certs))
+	for i, c := range certs {
+		certsBuf[i] = c.Raw
+	}
+
 	creds := credentials.NewTLS(&tls.Config{
-		Certificates: []tls.Certificate{*cert},
-		MinVersion:   tls.VersionTLS12,
+		Certificates: []tls.Certificate{{
+			Certificate: certsBuf,
+			Leaf:        certs[0],
+			PrivateKey:  tmpl.secret,
+		}},
+		MinVersion: tls.VersionTLS12,
 	})
 
 	dialAddr := o.myAddr.GetDialAddress()

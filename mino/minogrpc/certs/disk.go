@@ -7,8 +7,6 @@
 package certs
 
 import (
-	"crypto/tls"
-	"crypto/x509"
 	"errors"
 
 	"go.dedis.ch/dela/core/store/kv"
@@ -45,7 +43,7 @@ func NewDiskStore(db kv.DB, fac mino.AddressFactory) *DiskStore {
 
 // Store implements certs.Storage. It stores the certificate in the disk and in
 // the cache.
-func (s *DiskStore) Store(addr mino.Address, cert *tls.Certificate) error {
+func (s *DiskStore) Store(addr mino.Address, chain CertChain) error {
 	key, err := addr.MarshalText()
 	if err != nil {
 		return xerrors.Errorf("certificate key failed: %v", err)
@@ -58,7 +56,7 @@ func (s *DiskStore) Store(addr mino.Address, cert *tls.Certificate) error {
 			return xerrors.Errorf("while getting bucket: %v", err)
 		}
 
-		err = bucket.Set(key, cert.Leaf.Raw)
+		err = bucket.Set(key, chain)
 		if err != nil {
 			return xerrors.Errorf("while writing: %v", err)
 		}
@@ -69,17 +67,17 @@ func (s *DiskStore) Store(addr mino.Address, cert *tls.Certificate) error {
 		return xerrors.Errorf("while updating db: %v", err)
 	}
 
-	s.InMemoryStore.Store(addr, cert)
+	s.InMemoryStore.Store(addr, chain)
 
 	return nil
 }
 
 // Load implements certs.Storage. It first tries to read the certificate from
 // the cache, then from the disk. It returns nil if not found in both.
-func (s *DiskStore) Load(addr mino.Address) (*tls.Certificate, error) {
-	cert, _ := s.InMemoryStore.Load(addr)
-	if cert != nil {
-		return cert, nil
+func (s *DiskStore) Load(addr mino.Address) (CertChain, error) {
+	cached, _ := s.InMemoryStore.Load(addr)
+	if cached != nil {
+		return cached, nil
 	}
 
 	key, err := addr.MarshalText()
@@ -87,7 +85,7 @@ func (s *DiskStore) Load(addr mino.Address) (*tls.Certificate, error) {
 		return nil, xerrors.Errorf("certificate key failed: %v", err)
 	}
 
-	var leaf *x509.Certificate
+	var chain CertChain
 
 	err = s.db.View(func(tx kv.ReadableTx) error {
 		bucket := tx.GetBucket(s.bucket)
@@ -104,10 +102,7 @@ func (s *DiskStore) Load(addr mino.Address) (*tls.Certificate, error) {
 		data := make([]byte, len(value))
 		copy(data, value)
 
-		leaf, err = x509.ParseCertificate(data)
-		if err != nil {
-			return xerrors.Errorf("certificate malformed: %v", err)
-		}
+		chain = data
 
 		return nil
 	})
@@ -115,19 +110,10 @@ func (s *DiskStore) Load(addr mino.Address) (*tls.Certificate, error) {
 		return nil, xerrors.Errorf("while reading db: %v", err)
 	}
 
-	if leaf == nil {
-		return nil, nil
-	}
-
-	cert = &tls.Certificate{
-		Certificate: [][]byte{leaf.Raw},
-		Leaf:        leaf,
-	}
-
 	// Keep the certificate in cache for faster access.
-	s.InMemoryStore.Store(addr, cert)
+	s.InMemoryStore.Store(addr, chain)
 
-	return cert, nil
+	return chain, nil
 }
 
 // Delete implements certs.Storage. It deletes the certificate from the disk and
@@ -162,7 +148,7 @@ func (s *DiskStore) Delete(addr mino.Address) error {
 
 // Range implements certs.Storage. It iterates over each certificate present in
 // the disk.
-func (s *DiskStore) Range(fn func(addr mino.Address, cert *tls.Certificate) bool) error {
+func (s *DiskStore) Range(fn func(mino.Address, CertChain) bool) error {
 	err := s.db.View(func(tx kv.ReadableTx) error {
 		bucket := tx.GetBucket(s.bucket)
 		if bucket == nil {
@@ -176,14 +162,9 @@ func (s *DiskStore) Range(fn func(addr mino.Address, cert *tls.Certificate) bool
 			data := make([]byte, len(value))
 			copy(data, value)
 
-			leaf, err := x509.ParseCertificate(data)
-			if err != nil {
-				return xerrors.Errorf("certificate malformed: %v", err)
-			}
-
 			addr := s.addrFac.FromText(key)
 
-			next := fn(addr, &tls.Certificate{Leaf: leaf})
+			next := fn(addr, data)
 			if !next {
 				return errInterrupt
 			}
