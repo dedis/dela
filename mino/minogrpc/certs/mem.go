@@ -90,7 +90,7 @@ func (s *InMemoryStore) Fetch(addr Dialable, hash []byte) error {
 
 	conn.Close()
 
-	// we can assume that `peers` is not empty
+	// we can assume that `peers` is not empty (see doc of `PeerCertificates`)
 	peers := conn.ConnectionState().PeerCertificates
 
 	chain := bytes.Buffer{}

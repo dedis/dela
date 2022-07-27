@@ -198,7 +198,6 @@ func NewMinogrpc(listen net.Addr, public *url.URL, router router.Router, opts ..
 	o, err := newOverlay(&tmpl)
 	if err != nil {
 		socket.Close()
-
 		return nil, xerrors.Errorf("overlay: %v", err)
 	}
 
@@ -206,7 +205,6 @@ func NewMinogrpc(listen net.Addr, public *url.URL, router router.Router, opts ..
 	certs, err := x509.ParseCertificates(chainBuf)
 	if err != nil {
 		socket.Close()
-
 		return nil, xerrors.Errorf("failed to parse chain: %v", err)
 	}
 
