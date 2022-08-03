@@ -1,7 +1,9 @@
 package pedersen
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/dkg/pedersen/types"
@@ -42,6 +44,8 @@ func TestHandler_Stream(t *testing.T) {
 	require.EqualError(t, err, "expected Start message, decrypt request or Deal as first message, got: fake.Message")
 }
 
+// TODO: rewrite
+/*
 func TestHandler_Start(t *testing.T) {
 	privKey := suite.Scalar().Pick(suite.RandomStream())
 	pubKey := suite.Point().Mul(privKey, nil)
@@ -81,8 +85,9 @@ func TestHandler_Start(t *testing.T) {
 	err = h.start(start, []types.Deal{{}}, []*pedersen.Response{}, nil, fake.NewBadSender(), &fake.Receiver{})
 	require.EqualError(t, err, "failed to certify: expected a response, got: <nil>")
 }
+*/
 
-func TestHandler_Certify(t *testing.T) {
+func TestHandler_CertifyCanTimeOut(t *testing.T) {
 	privKey := suite.Scalar().Pick(suite.RandomStream())
 	pubKey := suite.Point().Mul(privKey, nil)
 
@@ -93,17 +98,37 @@ func TestHandler_Certify(t *testing.T) {
 		startRes: &state{},
 		dkg:      dkg,
 	}
-	receiver := fake.NewBadReceiver()
-	responses := []*pedersen.Response{{Response: &vss.Response{}}}
 
-	err = h.certify(responses, fake.Sender{}, receiver, nil)
-	require.EqualError(t, err, fake.Err("failed to receive after sending deals"))
-
-	dkg = getCertified(t)
-	h.dkg = dkg
-	err = h.certify(responses, fake.NewBadSender(), &fake.Receiver{}, nil)
-	require.EqualError(t, err, fake.Err("got an error while sending pub key"))
+	responses := make(chan responseFrom, 1)
+	ctx, _ := context.WithTimeout(context.Background(), 0*time.Second)
+	err = h.certify(responses, ctx)
+	require.EqualError(t, err, "timed out while receiving responses")
 }
+
+func TestHandler_CertifyTimesOutWithoutValidResponses(t *testing.T) {
+	privKey := suite.Scalar().Pick(suite.RandomStream())
+	pubKey := suite.Point().Mul(privKey, nil)
+
+	dkg, err := pedersen.NewDistKeyGenerator(suite, privKey, []kyber.Point{pubKey, suite.Point()}, 2)
+	require.NoError(t, err)
+
+	h := Handler{
+		startRes: &state{},
+		dkg:      dkg,
+	}
+
+	resp := responseFrom{
+		&pedersen.Response{Response: &vss.Response{}},
+		fake.NewAddress(0),
+	}
+	responses := make(chan responseFrom, 1)
+	responses <- resp
+	ctx, _ := context.WithTimeout(context.Background(), 1*time.Second)
+	err = h.certify(responses, ctx)
+	require.EqualError(t, err, "timed out while receiving responses")
+}
+
+// TODO: TestHandler_CertifySucceedWithValidResponses
 
 func TestHandler_HandleDeal(t *testing.T) {
 	privKey1 := suite.Scalar().Pick(suite.RandomStream())
