@@ -2,7 +2,6 @@ package pedersen
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/crypto"
@@ -10,7 +9,6 @@ import (
 	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/dkg/pedersen/types"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"go.dedis.ch/dela/internal/traffic"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc"
 	"go.dedis.ch/dela/mino/router/flat"
@@ -142,14 +140,14 @@ func TestPedersen_Scenario(t *testing.T) {
 	// 	traffic.SaveEvents("events.dot")
 	// }()
 
-	n := 5
+	n := 3
 
-	go func() {
-		for {
-			time.Sleep(time.Second * 1)
-			t.Logf("count: %s", traffic.Counter.String())
-		}
-	}()
+	// go func() {
+	// 	for {
+	// 		time.Sleep(time.Second * 1)
+	// 		t.Logf("count: %s", traffic.Counter.String())
+	// 	}
+	// }()
 
 	minos := make([]mino.Mino, n)
 	dkgs := make([]dkg.DKG, n)
@@ -202,6 +200,7 @@ func TestPedersen_Scenario(t *testing.T) {
 
 	t.Log("setup done =)")
 
+	// TODO: remove this
 	if true {
 		return
 	}
