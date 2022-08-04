@@ -6,9 +6,7 @@
 package session
 
 import (
-	"math"
-	"sync"
-
+	"fmt"
 	"go.dedis.ch/dela/mino/router"
 	"golang.org/x/xerrors"
 )
@@ -29,20 +27,20 @@ type Queue interface {
 //
 // - implements session.Queue
 type NonBlockingQueue struct {
-	sync.Mutex
+	/*sync.Mutex
 	working sync.WaitGroup
 	buffer  []router.Packet
 	cap     float64
 	limit   float64
-	running bool
-	ch      chan router.Packet
+	running bool*/
+	ch chan router.Packet
 }
 
 func newNonBlockingQueue() *NonBlockingQueue {
 	return &NonBlockingQueue{
-		ch:    make(chan router.Packet, 1),
-		cap:   initialCapacity,
-		limit: limitExponent,
+		ch: make(chan router.Packet, initialCapacity),
+		//cap:   initialCapacity,
+		//limit: limitExponent,
 	}
 }
 
@@ -54,6 +52,21 @@ func newNonBlockingQueue() *NonBlockingQueue {
 func (q *NonBlockingQueue) Channel() <-chan router.Packet {
 	return q.ch
 }
+
+// Push implements session.Queue. It appends the message to the queue without
+// blocking. The message is dropped if the queue is at maximum capacity by
+// returning an error.
+func (q *NonBlockingQueue) Push(msg router.Packet) error {
+	select {
+	case q.ch <- msg:
+		return nil
+	default:
+		fmt.Printf("Dropped a message !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+		return xerrors.New("queue is at maximum capacity")
+	}
+}
+
+/*
 
 // Push implements session.Queue. It appends the message to the queue without
 // blocking. The message is dropped if the queue is at maximum capacity by
@@ -124,3 +137,4 @@ func (q *NonBlockingQueue) replaceBuffer() bool {
 
 	return true
 }
+*/

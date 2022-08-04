@@ -33,8 +33,7 @@ type RPC struct {
 }
 
 // Call implements mino.RPC. It calls the RPC on each provided address.
-func (rpc *RPC) Call(ctx context.Context,
-	req serde.Message, players mino.Players) (<-chan mino.Response, error) {
+func (rpc *RPC) Call(ctx context.Context, req serde.Message, players mino.Players) (<-chan mino.Response, error) {
 
 	data, err := req.Serialize(rpc.overlay.context)
 	if err != nil {
@@ -55,8 +54,14 @@ func (rpc *RPC) Call(ctx context.Context,
 	for iter.HasNext() {
 		addr := iter.GetNext()
 
-		go func() {
+		go func(addr mino.Address) {
 			defer wg.Done()
+
+			dela.Logger.Trace().
+				Stringer("from", rpc.overlay.myAddr).
+				Stringer("to", addr).
+				Str("rpc", rpc.uri).
+				Msg("calling")
 
 			clientConn, err := rpc.overlay.connMgr.Acquire(addr)
 			if err != nil {
@@ -93,17 +98,14 @@ func (rpc *RPC) Call(ctx context.Context,
 
 			resp, err := rpc.factory.Deserialize(rpc.overlay.context, callResp.GetPayload())
 			if err != nil {
-				resp := mino.NewResponseWithError(
-					addr,
-					xerrors.Errorf("couldn't unmarshal payload: %v", err),
-				)
+				resp := mino.NewResponseWithError(addr, xerrors.Errorf("couldn't unmarshal payload: %v", err))
 
 				out <- resp
 				return
 			}
 
 			out <- mino.NewResponse(addr, resp)
-		}()
+		}(addr)
 	}
 
 	go func() {
@@ -135,7 +137,8 @@ func (rpc *RPC) Call(ctx context.Context,
 // If C has to send a message to B, it will send it through node A. Similarly,
 // if D has to send a message to G, it will move up the tree through B, A and
 // finally C.
-func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, mino.Receiver, error) {
+func (rpc RPC) Stream(ctx context.Context, players mino.Players) (
+	mino.Sender, mino.Receiver, error) {
 	if players == nil || players.Len() == 0 {
 		return nil, nil, xerrors.New("empty list of addresses")
 	}
@@ -147,6 +150,10 @@ func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, m
 		headerStreamIDKey, streamID,
 		headerGatewayKey, rpc.overlay.myAddrStr,
 	)
+
+	dela.Logger.Trace().
+		Stringer("from", rpc.overlay.myAddr).
+		Msg("starting new stream")
 
 	protocol := ctx.Value(tracing.ProtocolKey)
 
@@ -190,6 +197,10 @@ func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, m
 
 	// Wait for the event from the server to tell that the stream is
 	// initialized.
+
+	dela.Logger.Trace().
+		Stringer("from", rpc.overlay.myAddr).
+		Msg("waiting for headers")
 	_, err = stream.Header()
 	if err != nil {
 		rpc.overlay.connMgr.Release(gw)
@@ -215,6 +226,10 @@ func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, m
 	rpc.overlay.closer.Add(1)
 
 	go func() {
+		dela.Logger.Trace().
+			Stringer("from", rpc.overlay.myAddr).
+			Msg("receiving from stream")
+
 		defer func() {
 			relay.Close()
 			rpc.overlay.connMgr.Release(gw)

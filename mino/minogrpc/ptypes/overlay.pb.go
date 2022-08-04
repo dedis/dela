@@ -7,6 +7,7 @@ import (
 	context "context"
 	fmt "fmt"
 	proto "github.com/golang/protobuf/proto"
+	"go.dedis.ch/dela"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -565,7 +566,11 @@ func _Overlay_Call_Handler(srv interface{}, ctx context.Context, dec func(interf
 }
 
 func _Overlay_Stream_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(OverlayServer).Stream(&overlayStreamServer{stream})
+	err := srv.(OverlayServer).Stream(&overlayStreamServer{stream})
+	if err != nil {
+		dela.Logger.Err(err).Msg("Server stream handler failure")
+	}
+	return err
 }
 
 type Overlay_StreamServer interface {

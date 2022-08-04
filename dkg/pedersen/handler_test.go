@@ -99,9 +99,8 @@ func TestHandler_CertifyCanTimeOut(t *testing.T) {
 		dkg:      dkg,
 	}
 
-	responses := make(chan responseFrom, 1)
 	ctx, _ := context.WithTimeout(context.Background(), 0*time.Second)
-	err = h.certify(responses, ctx)
+	err = h.certify(ctx)
 	require.EqualError(t, err, "timed out while receiving responses")
 }
 
@@ -121,10 +120,9 @@ func TestHandler_CertifyTimesOutWithoutValidResponses(t *testing.T) {
 		&pedersen.Response{Response: &vss.Response{}},
 		fake.NewAddress(0),
 	}
-	responses := make(chan responseFrom, 1)
-	responses <- resp
+	h.responses <- resp
 	ctx, _ := context.WithTimeout(context.Background(), 1*time.Second)
-	err = h.certify(responses, ctx)
+	err = h.certify(ctx)
 	require.EqualError(t, err, "timed out while receiving responses")
 }
 

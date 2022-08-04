@@ -19,12 +19,12 @@ package session
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
 	"sync"
 
+	"github.com/dlsniper/debugger"
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/internal/traffic"
@@ -170,32 +170,48 @@ func (s *session) GetNumParents() int {
 
 // Listen implements session.Session. It listens for the stream and returns only
 // when the stream has been closed.
-func (s *session) Listen(relay Relay, table router.RoutingTable, ready chan struct{}) {
+func (s *session) Listen(
+	relay Relay, table router.RoutingTable, ready chan struct{},
+) {
 	defer func() {
+		s.logger.Trace().
+			Stringer("from", s.me).
+			Msg("deleting distant address from parents!")
 		s.parentsLock.Lock()
 
 		delete(s.parents, relay.GetDistantAddress())
 
 		s.parentsLock.Unlock()
+
+		s.logger.Trace().
+			Stringer("from", s.me).
+			Msg("deleted distant address from parents!")
 	}()
 
-	s.parentsLock.Lock()
-	s.parents[relay.GetDistantAddress()] = parent{relay: relay, table: table}
-	s.parentsLock.Unlock()
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Msg("adding distant address to parents!")
 
+	s.SetPassive(relay, table)
+
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Msg("listen ready!")
 	close(ready)
 
+	stream := relay.Stream()
 	for {
-		_, err := relay.Stream().Recv()
+		_, err := stream.Recv()
 		code := status.Code(err)
 		if err == io.EOF || code != codes.Unknown {
 			s.logger.Trace().Stringer("code", code).Msg("session closing")
-
 			return
 		}
 		if err != nil {
+			s.logger.Err(err).
+				Stringer("from", s.me).
+				Msg("stream closed unexpectedly!")
 			s.errs <- xerrors.Errorf("stream closed unexpectedly: %v", err)
-
 			return
 		}
 	}
@@ -205,11 +221,12 @@ func (s *session) Listen(relay Relay, table router.RoutingTable, ready chan stru
 // but in the contrary of Listen, it won't listen for the stream.
 func (s *session) SetPassive(p Relay, table router.RoutingTable) {
 	s.parentsLock.Lock()
+	defer s.parentsLock.Unlock()
+
 	s.parents[p.GetDistantAddress()] = parent{
 		relay: p,
 		table: table,
 	}
-	s.parentsLock.Unlock()
 }
 
 // Close implements session.Session. It shutdowns the session and waits for the
@@ -224,7 +241,9 @@ func (s *session) Close() {
 
 // RecvPacket implements session.Session. It process the packet and send it to
 // the relays, or itself.
-func (s *session) RecvPacket(from mino.Address, p *ptypes.Packet) (*ptypes.Ack, error) {
+func (s *session) RecvPacket(from mino.Address, p *ptypes.Packet) (
+	*ptypes.Ack, error,
+) {
 	pkt, err := s.pktFac.PacketOf(s.context, p.GetSerialized())
 	if err != nil {
 		return nil, xerrors.Errorf("packet malformed: %v", err)
@@ -252,7 +271,9 @@ func (s *session) RecvPacket(from mino.Address, p *ptypes.Packet) (*ptypes.Ack, 
 		}
 	}
 
-	return nil, xerrors.Errorf("packet is dropped (tried %d parent-s)", len(s.parents))
+	return nil, xerrors.Errorf(
+		"packet is dropped (tried %d parent-s)", len(s.parents),
+	)
 }
 
 // Send implements mino.Sender. It sends the message to the provided addresses
@@ -269,6 +290,15 @@ func (s *session) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 
 	go func() {
 		defer close(errs)
+
+		debugger.SetLabels(
+			func() []string {
+				return []string{
+					"module", "mino/session",
+					"operation", "send",
+				}
+			},
+		)
 
 		data, err := msg.Serialize(s.context)
 		if err != nil {
@@ -297,14 +327,18 @@ func (s *session) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 // Recv implements mino.Receiver. It waits for a message to arrive and returns
 // it, or returns an error if something wrong happens. The context can cancel
 // the blocking call.
-func (s *session) Recv(ctx context.Context) (mino.Address, serde.Message, error) {
+func (s *session) Recv(ctx context.Context) (
+	mino.Address, serde.Message, error,
+) {
 	select {
 	case <-ctx.Done():
 		return nil, nil, ctx.Err()
 
 	case err := <-s.errs:
 		if err != nil {
-			return nil, nil, xerrors.Errorf("stream closed unexpectedly: %v", err)
+			return nil, nil, xerrors.Errorf(
+				"stream closed unexpectedly: %v", err,
+			)
 		}
 
 		return nil, nil, io.EOF
@@ -323,7 +357,9 @@ func (s *session) Recv(ctx context.Context) (mino.Address, serde.Message, error)
 	}
 }
 
-func (s *session) sendPacket(p parent, pkt router.Packet, errs chan error) bool {
+func (s *session) sendPacket(
+	p parent, pkt router.Packet, errs chan error,
+) bool {
 	me := pkt.Slice(s.me)
 	if me != nil {
 		err := s.queue.Push(me)
@@ -353,8 +389,21 @@ func (s *session) sendPacket(p parent, pkt router.Packet, errs chan error) bool 
 	return true
 }
 
-func (s *session) sendTo(p parent, to mino.Address, pkt router.Packet, errs chan error, wg *sync.WaitGroup) {
+func (s *session) sendTo(
+	p parent, to mino.Address, pkt router.Packet, errs chan error,
+	wg *sync.WaitGroup,
+) {
 	defer wg.Done()
+
+	debugger.SetLabels(
+		func() []string {
+			return []string{
+				"module", "mino/session",
+				"operation", "sendTo",
+				"source", pkt.GetSource().String(),
+			}
+		},
+	)
 
 	var relay Relay
 	var err error
@@ -364,7 +413,9 @@ func (s *session) sendTo(p parent, to mino.Address, pkt router.Packet, errs chan
 	} else {
 		relay, err = s.setupRelay(p, to)
 		if err != nil {
-			s.logger.Warn().Err(err).Stringer("to", to).Msg("failed to setup relay")
+			s.logger.Warn().Err(err).Stringer(
+				"to", to,
+			).Msg("failed to setup relay")
 
 			// Try to open a different relay.
 			s.onFailure(p, to, pkt, errs)
@@ -455,6 +506,17 @@ func (s *session) setupRelay(p parent, addr mino.Address) (Relay, error) {
 
 	go func() {
 		defer func() {
+			debugger.SetLabels(
+				func() []string {
+					return []string{
+						"module", "mino/session",
+						"operation", "relay",
+						"addr", addr.String(),
+						"status", "terminating",
+					}
+				},
+			)
+
 			s.Lock()
 			delete(s.relays, addr)
 			s.Unlock()
@@ -473,9 +535,19 @@ func (s *session) setupRelay(p parent, addr mino.Address) (Relay, error) {
 				Msg("relay has closed")
 		}()
 
+		debugger.SetLabels(
+			func() []string {
+				return []string{
+					"module", "mino/session",
+					"operation", "relay",
+					"addr", addr.String(),
+					"status", "relaying",
+				}
+			},
+		)
+
 		for {
 			_, err := stream.Recv()
-			fmt.Println("i stay in the loop. please help...")
 			code := status.Code(err)
 			if err == io.EOF || code != codes.Unknown {
 				s.logger.Trace().
@@ -507,7 +579,9 @@ func (s *session) setupRelay(p parent, addr mino.Address) (Relay, error) {
 	return newRelay, nil
 }
 
-func (s *session) onFailure(p parent, gateway mino.Address, pkt router.Packet, errs chan error) {
+func (s *session) onFailure(
+	p parent, gateway mino.Address, pkt router.Packet, errs chan error,
+) {
 	err := p.table.OnFailure(gateway)
 	if err != nil {
 		errs <- xerrors.Errorf("no route to %v: %v", gateway, err)
@@ -542,8 +616,10 @@ type unicastRelay struct {
 
 // NewRelay returns a new relay that will send messages to the gateway through
 // unicast requests.
-func NewRelay(stream PacketStream, gw mino.Address,
-	ctx serde.Context, conn grpc.ClientConnInterface, md metadata.MD) Relay {
+func NewRelay(
+	stream PacketStream, gw mino.Address,
+	ctx serde.Context, conn grpc.ClientConnInterface, md metadata.MD,
+) Relay {
 
 	r := &unicastRelay{
 		md:      md,
@@ -569,7 +645,9 @@ func (r *unicastRelay) Stream() PacketStream {
 }
 
 // Send implements session.Relay. It sends the message to the distant peer.
-func (r *unicastRelay) Send(ctx context.Context, p router.Packet) (*ptypes.Ack, error) {
+func (r *unicastRelay) Send(ctx context.Context, p router.Packet) (
+	*ptypes.Ack, error,
+) {
 	data, err := p.Serialize(r.context)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to serialize: %v", err)
@@ -612,7 +690,9 @@ type streamRelay struct {
 
 // NewStreamRelay creates a new relay that will send the packets through the
 // stream.
-func NewStreamRelay(gw mino.Address, stream PacketStream, ctx serde.Context) Relay {
+func NewStreamRelay(
+	gw mino.Address, stream PacketStream, ctx serde.Context,
+) Relay {
 	return &streamRelay{
 		gw:      gw,
 		stream:  stream,
@@ -633,7 +713,9 @@ func (r *streamRelay) Stream() PacketStream {
 }
 
 // Send implements session.Relay. It sends the packet through the stream.
-func (r *streamRelay) Send(ctx context.Context, p router.Packet) (*ptypes.Ack, error) {
+func (r *streamRelay) Send(ctx context.Context, p router.Packet) (
+	*ptypes.Ack, error,
+) {
 	data, err := p.Serialize(r.context)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to serialize: %v", err)

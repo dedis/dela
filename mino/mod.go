@@ -25,8 +25,8 @@ import (
 type Mino interface {
 	GetAddressFactory() AddressFactory
 
-	// Address returns the address that other participants should use to contact
-	// this instance.
+	// GetAddress returns the address that other participants should use to
+	// contact this instance.
 	GetAddress() Address
 
 	// WithSegment returns a new mino instance that will have its URI path
@@ -93,7 +93,9 @@ type RPC interface {
 	//
 	// The response channel must be closed once the request ends in a result,
 	// either a reply or an error.
-	Call(ctx context.Context, req serde.Message, players Players) (<-chan Response, error)
+	Call(
+		ctx context.Context, req serde.Message, players Players,
+	) (<-chan Response, error)
 
 	// Stream is a persistent request that will be closed only when the
 	// orchestrator is done or an error has occured, or the context is done.

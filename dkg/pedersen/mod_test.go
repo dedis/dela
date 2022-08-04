@@ -1,6 +1,7 @@
 package pedersen
 
 import (
+	"github.com/dlsniper/debugger"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -39,7 +40,9 @@ func TestPedersen_Setup(t *testing.T) {
 	actor.rpc = rpc
 
 	_, err = actor.Setup(fakeAuthority, 0)
-	require.EqualError(t, err, "expected ed25519.PublicKey, got 'fake.PublicKey'")
+	require.EqualError(
+		t, err, "expected ed25519.PublicKey, got 'fake.PublicKey'",
+	)
 
 	rpc = fake.NewStreamRPC(fake.NewBadReceiver(), fake.Sender{})
 	actor.rpc = rpc
@@ -47,7 +50,9 @@ func TestPedersen_Setup(t *testing.T) {
 	fakeAuthority = fake.NewAuthority(2, ed25519.NewSigner)
 
 	_, err = actor.Setup(fakeAuthority, 1)
-	require.EqualError(t, err, fake.Err("got an error from '%!s(<nil>)' while receiving"))
+	require.EqualError(
+		t, err, fake.Err("got an error from '%!s(<nil>)' while receiving"),
+	)
 
 	recv := fake.NewReceiver(fake.NewRecvMsg(fake.NewAddress(0), nil))
 
@@ -55,12 +60,22 @@ func TestPedersen_Setup(t *testing.T) {
 	actor.rpc = rpc
 
 	_, err = actor.Setup(fakeAuthority, 1)
-	require.EqualError(t, err, "expected to receive a Done message, but go the following: <nil>")
+	require.EqualError(
+		t, err,
+		"expected to receive a Done message, but go the following: <nil>",
+	)
 
-	rpc = fake.NewStreamRPC(fake.NewReceiver(
-		fake.NewRecvMsg(fake.NewAddress(0), types.NewStartDone(suite.Point())),
-		fake.NewRecvMsg(fake.NewAddress(0), types.NewStartDone(suite.Point().Pick(suite.RandomStream()))),
-	), fake.Sender{})
+	rpc = fake.NewStreamRPC(
+		fake.NewReceiver(
+			fake.NewRecvMsg(
+				fake.NewAddress(0), types.NewStartDone(suite.Point()),
+			),
+			fake.NewRecvMsg(
+				fake.NewAddress(0),
+				types.NewStartDone(suite.Point().Pick(suite.RandomStream())),
+			),
+		), fake.Sender{},
+	)
 	actor.rpc = rpc
 
 	_, err = actor.Setup(fakeAuthority, 1)
@@ -76,15 +91,21 @@ func TestPedersen_GetPublicKey(t *testing.T) {
 	_, err := actor.GetPublicKey()
 	require.EqualError(t, err, "DKG has not been initialized")
 
-	actor.startRes = &state{participants: []mino.Address{fake.NewAddress(0)}, distrKey: suite.Point()}
+	actor.startRes = &state{
+		participants: []mino.Address{fake.NewAddress(0)},
+		distrKey:     suite.Point(),
+	}
 	_, err = actor.GetPublicKey()
 	require.NoError(t, err)
 }
 
 func TestPedersen_Decrypt(t *testing.T) {
 	actor := Actor{
-		rpc:      fake.NewBadRPC(),
-		startRes: &state{participants: []mino.Address{fake.NewAddress(0)}, distrKey: suite.Point()},
+		rpc: fake.NewBadRPC(),
+		startRes: &state{
+			participants: []mino.Address{fake.NewAddress(0)},
+			distrKey:     suite.Point(),
+		},
 	}
 
 	_, err := actor.Decrypt(suite.Point(), suite.Point())
@@ -102,21 +123,30 @@ func TestPedersen_Decrypt(t *testing.T) {
 	actor.rpc = rpc
 
 	_, err = actor.Decrypt(suite.Point(), suite.Point())
-	require.EqualError(t, err, "got unexpected reply, expected types.DecryptReply but got: <nil>")
+	require.EqualError(
+		t, err,
+		"got unexpected reply, expected types.DecryptReply but got: <nil>",
+	)
 
 	recv = fake.NewReceiver(
-		fake.NewRecvMsg(fake.NewAddress(0), types.DecryptReply{I: -1, V: suite.Point()}),
+		fake.NewRecvMsg(
+			fake.NewAddress(0), types.DecryptReply{I: -1, V: suite.Point()},
+		),
 	)
 
 	rpc = fake.NewStreamRPC(recv, fake.Sender{})
 	actor.rpc = rpc
 
 	_, err = actor.Decrypt(suite.Point(), suite.Point())
-	require.EqualError(t, err, "failed to recover commit: share: not enough "+
-		"good public shares to reconstruct secret commitment")
+	require.EqualError(
+		t, err, "failed to recover commit: share: not enough "+
+			"good public shares to reconstruct secret commitment",
+	)
 
 	recv = fake.NewReceiver(
-		fake.NewRecvMsg(fake.NewAddress(0), types.DecryptReply{I: 1, V: suite.Point()}),
+		fake.NewRecvMsg(
+			fake.NewAddress(0), types.DecryptReply{I: 1, V: suite.Point()},
+		),
 	)
 
 	rpc = fake.NewStreamRPC(recv, fake.Sender{})
@@ -140,7 +170,7 @@ func TestPedersen_Scenario(t *testing.T) {
 	// 	traffic.SaveEvents("events.dot")
 	// }()
 
-	n := 3
+	n := 8
 
 	// go func() {
 	// 	for {
@@ -149,6 +179,14 @@ func TestPedersen_Scenario(t *testing.T) {
 	// 	}
 	// }()
 
+	debugger.SetLabels(
+		func() []string {
+			return []string{
+				"module", "dkg/test",
+			}
+		},
+	)
+
 	minos := make([]mino.Mino, n)
 	dkgs := make([]dkg.DKG, n)
 	addrs := make([]mino.Address, n)
@@ -156,7 +194,9 @@ func TestPedersen_Scenario(t *testing.T) {
 	for i := 0; i < n; i++ {
 		addr := minogrpc.ParseAddress("127.0.0.1", 0)
 
-		minogrpc, err := minogrpc.NewMinogrpc(addr, nil, flat.NewRouter(minogrpc.NewAddressFactory()))
+		minogrpc, err := minogrpc.NewMinogrpc(
+			addr, nil, flat.NewRouter(minogrpc.NewAddressFactory()),
+		)
 		require.NoError(t, err)
 
 		defer minogrpc.GracefulStop()
@@ -169,7 +209,9 @@ func TestPedersen_Scenario(t *testing.T) {
 
 	for i, mino := range minos {
 		for _, m := range minos {
-			mino.(*minogrpc.Minogrpc).GetCertificateStore().Store(m.GetAddress(), m.(*minogrpc.Minogrpc).GetCertificate())
+			mino.(*minogrpc.Minogrpc).GetCertificateStore().Store(
+				m.GetAddress(), m.(*minogrpc.Minogrpc).GetCertificate(),
+			)
 		}
 
 		dkg, pubkey := NewPedersen(mino.(*minogrpc.Minogrpc))
@@ -191,9 +233,13 @@ func TestPedersen_Scenario(t *testing.T) {
 
 	// trying to call a decrypt/encrypt before a setup
 	_, _, _, err := actors[0].Encrypt(message)
-	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")
+	require.EqualError(
+		t, err, "you must first initialize DKG. Did you call setup() first?",
+	)
 	_, err = actors[0].Decrypt(nil, nil)
-	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")
+	require.EqualError(
+		t, err, "you must first initialize DKG. Did you call setup() first?",
+	)
 
 	_, err = actors[0].Setup(fakeAuthority, n)
 	require.NoError(t, err)
@@ -206,7 +252,9 @@ func TestPedersen_Scenario(t *testing.T) {
 	}
 
 	_, err = actors[0].Setup(fakeAuthority, n)
-	require.EqualError(t, err, "startRes is already done, only one setup call is allowed")
+	require.EqualError(
+		t, err, "startRes is already done, only one setup call is allowed",
+	)
 
 	// every node should be able to encrypt/decrypt
 	for i := 0; i < n; i++ {
@@ -238,7 +286,9 @@ type CollectiveAuthority struct {
 
 // NewAuthority returns a new collective authority of n members with new signers
 // generated by g.
-func NewAuthority(addrs []mino.Address, pubkeys []kyber.Point) CollectiveAuthority {
+func NewAuthority(
+	addrs []mino.Address, pubkeys []kyber.Point,
+) CollectiveAuthority {
 	signers := make([]crypto.Signer, len(pubkeys))
 	for i, pubkey := range pubkeys {
 		signers[i] = newFakeSigner(pubkey)
@@ -252,7 +302,9 @@ func NewAuthority(addrs []mino.Address, pubkeys []kyber.Point) CollectiveAuthori
 }
 
 // GetPublicKey implements cosi.CollectiveAuthority.
-func (ca CollectiveAuthority) GetPublicKey(addr mino.Address) (crypto.PublicKey, int) {
+func (ca CollectiveAuthority) GetPublicKey(addr mino.Address) (
+	crypto.PublicKey, int,
+) {
 
 	for i, address := range ca.addrs {
 		if address.Equal(addr) {
