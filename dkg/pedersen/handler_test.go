@@ -16,7 +16,11 @@ import (
 )
 
 func TestHandler_Stream(t *testing.T) {
-	h := Handler{startRes: &state{}}
+	h := Handler{
+		startRes:  &state{},
+		deals:     make(chan dealFrom, 10),
+		responses: make(chan responseFrom, 10),
+	}
 	receiver := fake.NewBadReceiver()
 	err := h.Stream(fake.Sender{}, receiver)
 	require.EqualError(t, err, fake.Err("failed to receive"))
@@ -44,7 +48,6 @@ func TestHandler_Stream(t *testing.T) {
 	require.EqualError(t, err, "expected Start message, decrypt request or Deal as first message, got: fake.Message")
 }
 
-// TODO: rewrite
 /*
 func TestHandler_Start(t *testing.T) {
 	privKey := suite.Scalar().Pick(suite.RandomStream())
@@ -99,9 +102,8 @@ func TestHandler_CertifyCanTimeOut(t *testing.T) {
 		dkg:      dkg,
 	}
 
-	responses := make(chan responseFrom, 1)
 	ctx, _ := context.WithTimeout(context.Background(), 0*time.Second)
-	err = h.certify(responses, ctx)
+	err = h.certify(ctx)
 	require.EqualError(t, err, "timed out while receiving responses")
 }
 
@@ -113,18 +115,19 @@ func TestHandler_CertifyTimesOutWithoutValidResponses(t *testing.T) {
 	require.NoError(t, err)
 
 	h := Handler{
-		startRes: &state{},
-		dkg:      dkg,
+		startRes:  &state{},
+		dkg:       dkg,
+		deals:     make(chan dealFrom, 10),
+		responses: make(chan responseFrom, 10),
 	}
 
 	resp := responseFrom{
 		&pedersen.Response{Response: &vss.Response{}},
 		fake.NewAddress(0),
 	}
-	responses := make(chan responseFrom, 1)
-	responses <- resp
+	h.responses <- resp
 	ctx, _ := context.WithTimeout(context.Background(), 1*time.Second)
-	err = h.certify(responses, ctx)
+	err = h.certify(ctx)
 	require.EqualError(t, err, "timed out while receiving responses")
 }
 
@@ -151,21 +154,10 @@ func TestHandler_HandleDeal(t *testing.T) {
 		deal = d
 	}
 
-	dealMsg := types.NewDeal(
-		deal.Index,
-		deal.Signature,
-		types.NewEncryptedDeal(
-			deal.Deal.DHKey,
-			deal.Deal.Signature,
-			deal.Deal.Nonce,
-			deal.Deal.Cipher,
-		),
-	)
-
 	h := Handler{
 		dkg: dkg1,
 	}
-	err = h.handleDeal(dealMsg, nil, []mino.Address{fake.NewAddress(0)}, fake.NewBadSender())
+	err = h.handleDeal(deal, nil, []mino.Address{fake.NewAddress(0)}, fake.NewBadSender())
 	require.EqualError(t, err, fake.Err("failed to send response to 'fake.Address[0]'"))
 }
 
