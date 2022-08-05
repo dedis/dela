@@ -170,7 +170,7 @@ func TestPedersen_Scenario(t *testing.T) {
 	// 	traffic.SaveEvents("events.dot")
 	// }()
 
-	n := 8
+	n := 5
 
 	// go func() {
 	// 	for {

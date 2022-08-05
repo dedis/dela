@@ -165,6 +165,10 @@ func (s *session) GetNumParents() int {
 	s.parentsLock.RLock()
 	defer s.parentsLock.RUnlock()
 
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Msg("reading number of parents!")
+
 	return len(s.parents)
 }
 
@@ -187,10 +191,6 @@ func (s *session) Listen(
 			Stringer("from", s.me).
 			Msg("deleted distant address from parents!")
 	}()
-
-	s.logger.Trace().
-		Stringer("from", s.me).
-		Msg("adding distant address to parents!")
 
 	s.SetPassive(relay, table)
 
@@ -220,10 +220,22 @@ func (s *session) Listen(
 // SetPassive implements session.Session. It adds the parent relay to the map
 // but in the contrary of Listen, it won't listen for the stream.
 func (s *session) SetPassive(p Relay, table router.RoutingTable) {
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Msg("adding distant address to parents")
+
 	s.parentsLock.Lock()
 	defer s.parentsLock.Unlock()
 
-	s.parents[p.GetDistantAddress()] = parent{
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Msg("reading distant address")
+	addr := p.GetDistantAddress()
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Msg("reading distant address - done")
+
+	s.parents[addr] = parent{
 		relay: p,
 		table: table,
 	}
@@ -232,11 +244,17 @@ func (s *session) SetPassive(p Relay, table router.RoutingTable) {
 // Close implements session.Session. It shutdowns the session and waits for the
 // relays to close.
 func (s *session) Close() {
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Msg("closing session")
+
 	close(s.errs)
 
 	s.Wait()
 
-	s.logger.Trace().Msg("session has been closed")
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Msg("closing session - done")
 }
 
 // RecvPacket implements session.Session. It process the packet and send it to
@@ -249,6 +267,9 @@ func (s *session) RecvPacket(from mino.Address, p *ptypes.Packet) (
 		return nil, xerrors.Errorf("packet malformed: %v", err)
 	}
 
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Msg("RecvPacket() sending to a parent")
 	s.parentsLock.RLock()
 	defer s.parentsLock.RUnlock()
 
@@ -267,10 +288,16 @@ func (s *session) RecvPacket(from mino.Address, p *ptypes.Packet) (
 				ack.Errors = append(ack.Errors, err.Error())
 			}
 
+			s.logger.Trace().
+				Stringer("from", s.me).
+				Msg("RecvPacket() sending to a parent - done")
 			return ack, nil
 		}
 	}
 
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Msg("RecvPacket() sending to a parent - failed")
 	return nil, xerrors.Errorf(
 		"packet is dropped (tried %d parent-s)", len(s.parents),
 	)
@@ -279,6 +306,10 @@ func (s *session) RecvPacket(from mino.Address, p *ptypes.Packet) (
 // Send implements mino.Sender. It sends the message to the provided addresses
 // through the relays or the parent.
 func (s *session) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Msg("Send() sends messages")
+
 	errs := make(chan error, len(addrs)+1)
 
 	for i, addr := range addrs {
@@ -306,6 +337,10 @@ func (s *session) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 			return
 		}
 
+		s.logger.Trace().
+			Stringer("from", s.me).
+			Msg("Send() find a parent to send packet")
+
 		s.parentsLock.RLock()
 		defer s.parentsLock.RUnlock()
 
@@ -314,10 +349,16 @@ func (s *session) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 
 			sent := s.sendPacket(parent, packet, errs)
 			if sent {
+				s.logger.Trace().
+					Stringer("from", s.me).
+					Msg("Send() find a parent to send packet - done")
 				return
 			}
 		}
 
+		s.logger.Trace().
+			Stringer("from", s.me).
+			Msg("Send() find a parent to send packet - failed")
 		errs <- xerrors.New("packet ignored")
 	}()
 
@@ -330,22 +371,38 @@ func (s *session) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 func (s *session) Recv(ctx context.Context) (
 	mino.Address, serde.Message, error,
 ) {
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Msg("Recv() receiving new message")
+
 	select {
 	case <-ctx.Done():
+		s.logger.Trace().
+			Stringer("from", s.me).
+			Msg("Recv() receiving new message - done (ctx)")
 		return nil, nil, ctx.Err()
 
 	case err := <-s.errs:
 		if err != nil {
+			s.logger.Trace().
+				Stringer("from", s.me).
+				Msg("Recv() receiving new message - failed (stream closed)")
 			return nil, nil, xerrors.Errorf(
 				"stream closed unexpectedly: %v", err,
 			)
 		}
+		s.logger.Trace().
+			Stringer("from", s.me).
+			Msg("Recv() receiving new message - failed (EOF)")
 
 		return nil, nil, io.EOF
 
 	case packet := <-s.queue.Channel():
 		msg, err := s.msgFac.Deserialize(s.context, packet.GetMessage())
 		if err != nil {
+			s.logger.Trace().
+				Stringer("from", s.me).
+				Msg("Recv() receiving new message - failed (deserialize)")
 			return nil, nil, xerrors.Errorf("message: %v", err)
 		}
 
@@ -353,6 +410,10 @@ func (s *session) Recv(ctx context.Context) (
 		// its actual source address to the caller.
 		from := newWrapAddress(packet.GetSource())
 
+		s.logger.Trace().
+			Stringer("from", s.me).
+			Stringer("alias-from", from).
+			Msg("Recv() receiving new message - done")
 		return from, msg, nil
 	}
 }
