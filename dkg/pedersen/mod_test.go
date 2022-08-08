@@ -2,6 +2,7 @@ package pedersen
 
 import (
 	"github.com/dlsniper/debugger"
+	"go.dedis.ch/dela/mino/router/flat"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -12,7 +13,6 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc"
-	"go.dedis.ch/dela/mino/router/flat"
 	"go.dedis.ch/kyber/v3"
 )
 

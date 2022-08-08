@@ -10,6 +10,10 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
+	"runtime"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -44,6 +48,17 @@ const (
 	// wait for a grpc connection to complete
 	defaultMinConnectTimeout = 10 * time.Second
 )
+
+func goid() string {
+	var buf [64]byte
+	n := runtime.Stack(buf[:], false)
+	idField := strings.Fields(strings.TrimPrefix(string(buf[:n]), "goroutine "))[0]
+	_, err := strconv.Atoi(idField)
+	if err != nil {
+		panic(fmt.Sprintf("cannot get goroutine id: %v", err))
+	}
+	return idField
+}
 
 var getTracerForAddr = tracing.GetTracerForAddr
 
@@ -227,6 +242,7 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 
 	dela.Logger.Trace().
 		Stringer("from", o.myAddr).
+		Str("goid", goid()).
 		Msg("starting server stream")
 
 	headers, ok := metadata.FromIncomingContext(stream.Context())
@@ -258,6 +274,7 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 
 	dela.Logger.Trace().
 		Stringer("from", o.myAddr).
+		Str("goid", goid()).
 		Msg("locking endpoint")
 
 	// This lock will make sure that a session is ready before any message
@@ -268,6 +285,7 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 	if !initiated {
 		dela.Logger.Trace().
 			Stringer("from", o.myAddr).
+			Str("goid", goid()).
 			Msg("new session!")
 
 		sess = session.NewSession(
@@ -289,6 +307,7 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 	if isRoot {
 		dela.Logger.Trace().
 			Stringer("from", o.myAddr).
+			Str("goid", goid()).
 			Msg("we're root - setting up relay!")
 
 		// Only the original address is sent to make use of the cached marshaled
@@ -302,6 +321,7 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 	} else {
 		dela.Logger.Trace().
 			Stringer("from", o.myAddr).
+			Str("goid", goid()).
 			Msg("we're not root - connecting to gateway!")
 
 		conn, err = o.connMgr.Acquire(gatewayAddr)
@@ -321,6 +341,7 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 
 	dela.Logger.Trace().
 		Stringer("from", o.myAddr).
+		Str("goid", goid()).
 		Msg("listening")
 
 	go func() {
@@ -338,6 +359,7 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 
 	dela.Logger.Trace().
 		Stringer("from", o.myAddr).
+		Str("goid", goid()).
 		Msg("unlocking endpoint & ready!")
 
 	// This event sends a confirmation to the parent that the stream is
@@ -346,6 +368,7 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 	if err != nil {
 		dela.Logger.Error().
 			Stringer("from", o.myAddr).
+			Str("goid", goid()).
 			Msg("failed to send headers!")
 
 		return xerrors.Errorf("failed to send header: %v", err)
@@ -353,6 +376,7 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 
 	dela.Logger.Trace().
 		Stringer("from", o.myAddr).
+		Str("goid", goid()).
 		Msg("sent headers!")
 
 	err = endpoint.Handler.Stream(sess, sess)
@@ -362,18 +386,25 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 
 	dela.Logger.Trace().
 		Stringer("from", o.myAddr).
+		Str("goid", goid()).
 		Msg("streamed!")
 
 	<-stream.Context().Done()
 
 	dela.Logger.Trace().
 		Stringer("from", o.myAddr).
+		Str("goid", goid()).
 		Msg("done!")
 
 	return nil
 }
 
 func (o *overlayServer) cleanStream(endpoint *Endpoint, id string) {
+	dela.Logger.Trace().
+		Str("goid", goid()).
+		Str("id", id).
+		Msg("cleaning stream")
+
 	endpoint.Lock()
 	defer endpoint.Unlock()
 
@@ -393,6 +424,7 @@ func (o *overlayServer) cleanStream(endpoint *Endpoint, id string) {
 	sess.Close()
 
 	dela.Logger.Trace().
+		Str("goid", goid()).
 		Str("id", id).
 		Msg("stream has been cleaned")
 }
@@ -497,13 +529,20 @@ func (mgr *connManager) Len() int {
 func (mgr *connManager) Acquire(to mino.Address) (
 	grpc.ClientConnInterface, error,
 ) {
-	mgr.Lock()
-	defer mgr.Unlock()
-
 	dela.Logger.Trace().
 		Stringer("to", to).
 		Stringer("from", mgr.myAddr).
-		Msg("establishing connection")
+		Str("goid", goid()).
+		Msg("connManager.acquire lock")
+
+	defer dela.Logger.Trace().
+		Stringer("to", to).
+		Stringer("from", mgr.myAddr).
+		Str("goid", goid()).
+		Msg("connManager.acquire unlock")
+
+	mgr.Lock()
+	defer mgr.Unlock()
 
 	conn, ok := mgr.conns[to]
 	if ok {
@@ -556,6 +595,7 @@ func (mgr *connManager) Acquire(to mino.Address) (
 	dela.Logger.Debug().
 		Stringer("to", to).
 		Stringer("from", mgr.myAddr).
+		Str("goid", goid()).
 		Msg("connection established")
 
 	return conn, nil
@@ -607,6 +647,7 @@ func (mgr *connManager) Release(to mino.Address) {
 		dela.Logger.Error().
 			Stringer("to", to).
 			Stringer("from", mgr.myAddr).
+			Str("goid", goid()).
 			Msg(
 				"Asked to release a connection that did not exist to %v -" +
 					" this likely indicates a bug as it should never have happened",
@@ -627,6 +668,7 @@ func (mgr *connManager) Release(to mino.Address) {
 			Err(err).
 			Stringer("to", to).
 			Stringer("from", mgr.myAddr).
+			Str("goid", goid()).
 			Int("length", len(mgr.conns)).
 			Msg("connection closed")
 

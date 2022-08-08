@@ -95,25 +95,7 @@ func (t Table) Forward(packet router.Packet) (router.Routes, router.Voids) {
 	voids := make(router.Voids)
 
 	for _, dest := range packet.GetDestination() {
-
-		var gateway mino.Address
-
-		// check that we know the destination address, otherwise the gateway is
-		// nil.
-		for _, addr := range t.known {
-			if dest.Equal(addr) {
-				gateway = dest
-				break
-			}
-		}
-
-		p, ok := routes[gateway]
-		if !ok {
-			p = types.NewPacket(packet.GetSource(), packet.GetMessage())
-			routes[gateway] = p
-		}
-
-		p.(*types.Packet).Add(dest)
+		routes[dest] = types.NewPacket(packet.GetSource(), packet.GetMessage(), dest)
 	}
 
 	return routes, voids

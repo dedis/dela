@@ -19,9 +19,13 @@ package session
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
+	"runtime"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/dlsniper/debugger"
@@ -38,6 +42,17 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
+
+func goid() string {
+	var buf [64]byte
+	n := runtime.Stack(buf[:], false)
+	idField := strings.Fields(strings.TrimPrefix(string(buf[:n]), "goroutine "))[0]
+	_, err := strconv.Atoi(idField)
+	if err != nil {
+		panic(fmt.Sprintf("cannot get goroutine id: %v", err))
+	}
+	return idField
+}
 
 // HandshakeKey is the key to the handshake store in the headers.
 const HandshakeKey = "handshake"
@@ -167,6 +182,7 @@ func (s *session) GetNumParents() int {
 
 	s.logger.Trace().
 		Stringer("from", s.me).
+		Str("goid", goid()).
 		Msg("reading number of parents!")
 
 	return len(s.parents)
@@ -180,6 +196,7 @@ func (s *session) Listen(
 	defer func() {
 		s.logger.Trace().
 			Stringer("from", s.me).
+			Str("goid", goid()).
 			Msg("deleting distant address from parents!")
 		s.parentsLock.Lock()
 
@@ -189,6 +206,7 @@ func (s *session) Listen(
 
 		s.logger.Trace().
 			Stringer("from", s.me).
+			Str("goid", goid()).
 			Msg("deleted distant address from parents!")
 	}()
 
@@ -196,6 +214,7 @@ func (s *session) Listen(
 
 	s.logger.Trace().
 		Stringer("from", s.me).
+		Str("goid", goid()).
 		Msg("listen ready!")
 	close(ready)
 
@@ -210,6 +229,7 @@ func (s *session) Listen(
 		if err != nil {
 			s.logger.Err(err).
 				Stringer("from", s.me).
+				Str("goid", goid()).
 				Msg("stream closed unexpectedly!")
 			s.errs <- xerrors.Errorf("stream closed unexpectedly: %v", err)
 			return
@@ -222,23 +242,23 @@ func (s *session) Listen(
 func (s *session) SetPassive(p Relay, table router.RoutingTable) {
 	s.logger.Trace().
 		Stringer("from", s.me).
+		Str("goid", goid()).
 		Msg("adding distant address to parents")
 
 	s.parentsLock.Lock()
 	defer s.parentsLock.Unlock()
 
-	s.logger.Trace().
-		Stringer("from", s.me).
-		Msg("reading distant address")
 	addr := p.GetDistantAddress()
-	s.logger.Trace().
-		Stringer("from", s.me).
-		Msg("reading distant address - done")
 
 	s.parents[addr] = parent{
 		relay: p,
 		table: table,
 	}
+
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Str("goid", goid()).
+		Msg("added distant address to parents")
 }
 
 // Close implements session.Session. It shutdowns the session and waits for the
@@ -246,6 +266,7 @@ func (s *session) SetPassive(p Relay, table router.RoutingTable) {
 func (s *session) Close() {
 	s.logger.Trace().
 		Stringer("from", s.me).
+		Str("goid", goid()).
 		Msg("closing session")
 
 	close(s.errs)
@@ -254,6 +275,7 @@ func (s *session) Close() {
 
 	s.logger.Trace().
 		Stringer("from", s.me).
+		Str("goid", goid()).
 		Msg("closing session - done")
 }
 
@@ -269,6 +291,7 @@ func (s *session) RecvPacket(from mino.Address, p *ptypes.Packet) (
 
 	s.logger.Trace().
 		Stringer("from", s.me).
+		Str("goid", goid()).
 		Msg("RecvPacket() sending to a parent")
 	s.parentsLock.RLock()
 	defer s.parentsLock.RUnlock()
@@ -290,6 +313,7 @@ func (s *session) RecvPacket(from mino.Address, p *ptypes.Packet) (
 
 			s.logger.Trace().
 				Stringer("from", s.me).
+				Str("goid", goid()).
 				Msg("RecvPacket() sending to a parent - done")
 			return ack, nil
 		}
@@ -297,6 +321,7 @@ func (s *session) RecvPacket(from mino.Address, p *ptypes.Packet) (
 
 	s.logger.Trace().
 		Stringer("from", s.me).
+		Str("goid", goid()).
 		Msg("RecvPacket() sending to a parent - failed")
 	return nil, xerrors.Errorf(
 		"packet is dropped (tried %d parent-s)", len(s.parents),
@@ -308,6 +333,7 @@ func (s *session) RecvPacket(from mino.Address, p *ptypes.Packet) (
 func (s *session) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 	s.logger.Trace().
 		Stringer("from", s.me).
+		Str("goid", goid()).
 		Msg("Send() sends messages")
 
 	errs := make(chan error, len(addrs)+1)
@@ -339,26 +365,43 @@ func (s *session) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 
 		s.logger.Trace().
 			Stringer("from", s.me).
-			Msg("Send() find a parent to send packet")
+			Str("goid", goid()).
+			Msg("Send() finding a parent to send packet")
 
 		s.parentsLock.RLock()
 		defer s.parentsLock.RUnlock()
 
-		for _, parent := range s.parents {
-			packet := parent.table.Make(s.me, addrs, data)
+		s.logger.Trace().
+			Stringer("from", s.me).
+			Str("goid", goid()).
+			Msg("Send() iterating over parents")
 
-			sent := s.sendPacket(parent, packet, errs)
+		for _, parent := range s.parents {
+			s.logger.Trace().
+				Stringer("from", s.me).
+				Str("goid", goid()).
+				Msg("Send() making a packet")
+
+			packet := parent.table.Make(s.me, addrs, data) // <---
+
+			s.logger.Trace().
+				Stringer("from", s.me).
+				Str("goid", goid()).
+				Msg("Send() about to send a packet")
+			sent := s.sendPacket(parent, packet, errs) // <---
 			if sent {
 				s.logger.Trace().
 					Stringer("from", s.me).
-					Msg("Send() find a parent to send packet - done")
+					Str("goid", goid()).
+					Msg("Send() found a parent to send packet")
 				return
 			}
 		}
 
 		s.logger.Trace().
 			Stringer("from", s.me).
-			Msg("Send() find a parent to send packet - failed")
+			Str("goid", goid()).
+			Msg("Send() failed finding a parent to send packet")
 		errs <- xerrors.New("packet ignored")
 	}()
 
@@ -373,12 +416,14 @@ func (s *session) Recv(ctx context.Context) (
 ) {
 	s.logger.Trace().
 		Stringer("from", s.me).
+		Str("goid", goid()).
 		Msg("Recv() receiving new message")
 
 	select {
 	case <-ctx.Done():
 		s.logger.Trace().
 			Stringer("from", s.me).
+			Str("goid", goid()).
 			Msg("Recv() receiving new message - done (ctx)")
 		return nil, nil, ctx.Err()
 
@@ -386,6 +431,7 @@ func (s *session) Recv(ctx context.Context) (
 		if err != nil {
 			s.logger.Trace().
 				Stringer("from", s.me).
+				Str("goid", goid()).
 				Msg("Recv() receiving new message - failed (stream closed)")
 			return nil, nil, xerrors.Errorf(
 				"stream closed unexpectedly: %v", err,
@@ -393,6 +439,7 @@ func (s *session) Recv(ctx context.Context) (
 		}
 		s.logger.Trace().
 			Stringer("from", s.me).
+			Str("goid", goid()).
 			Msg("Recv() receiving new message - failed (EOF)")
 
 		return nil, nil, io.EOF
@@ -402,6 +449,7 @@ func (s *session) Recv(ctx context.Context) (
 		if err != nil {
 			s.logger.Trace().
 				Stringer("from", s.me).
+				Str("goid", goid()).
 				Msg("Recv() receiving new message - failed (deserialize)")
 			return nil, nil, xerrors.Errorf("message: %v", err)
 		}
@@ -412,6 +460,7 @@ func (s *session) Recv(ctx context.Context) (
 
 		s.logger.Trace().
 			Stringer("from", s.me).
+			Str("goid", goid()).
 			Stringer("alias-from", from).
 			Msg("Recv() receiving new message - done")
 		return from, msg, nil
@@ -421,16 +470,37 @@ func (s *session) Recv(ctx context.Context) (
 func (s *session) sendPacket(
 	p parent, pkt router.Packet, errs chan error,
 ) bool {
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Str("goid", goid()).
+		Msg("sendPacket() making a packet")
+
 	me := pkt.Slice(s.me)
 	if me != nil {
+		s.logger.Trace().
+			Stringer("from", s.me).
+			Str("goid", goid()).
+			Msg("sendPacket() pushing on queue")
 		err := s.queue.Push(me)
 		if err != nil {
+			s.logger.Warn().
+				Stringer("from", s.me).
+				Str("goid", goid()).
+				Msg("sendPacket() dropping packet")
 			errs <- xerrors.Errorf("%v dropped the packet: %v", s.me, err)
 		}
 	}
 
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Str("goid", goid()).
+		Msg("sendPacket() forward")
 	routes, voids := p.table.Forward(pkt)
 	for addr, void := range voids {
+		s.logger.Warn().
+			Stringer("from", s.me).
+			Str("goid", goid()).
+			Msg("sendPacket() no route")
 		errs <- xerrors.Errorf("no route to %v: %v", addr, void.Error)
 	}
 
@@ -441,11 +511,25 @@ func (s *session) sendPacket(
 	wg := sync.WaitGroup{}
 	wg.Add(len(routes))
 
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Str("goid", goid()).
+		Msg("sendPacket() starting sendTo's")
 	for addr, packet := range routes {
 		go s.sendTo(p, addr, packet, errs, &wg)
 	}
 
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Str("goid", goid()).
+		Msg("sendPacket() waiting")
+
 	wg.Wait()
+
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Str("goid", goid()).
+		Msg("sendPacket() done waiting")
 
 	return true
 }
@@ -469,6 +553,11 @@ func (s *session) sendTo(
 	var relay Relay
 	var err error
 
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Str("goid", goid()).
+		Msg("sendTo() starting")
+
 	if to == nil {
 		relay = p.relay
 	} else {
@@ -485,10 +574,23 @@ func (s *session) sendTo(
 		}
 	}
 
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Str("goid", goid()).
+		Msg("sendTo() streaming")
+
 	ctx := p.relay.Stream().Context()
 
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Str("goid", goid()).
+		Msg("sendTo() log send")
 	s.traffic.LogSend(ctx, relay.GetDistantAddress(), pkt)
 
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Str("goid", goid()).
+		Msg("sendTo() relay send")
 	ack, err := relay.Send(ctx, pkt)
 	if to == nil && err != nil {
 		// The parent relay is unavailable which means the session will
@@ -510,14 +612,33 @@ func (s *session) sendTo(
 		return
 	}
 
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Str("goid", goid()).
+		Msg("sendTo() adding errors to channel")
+
 	for _, err := range ack.Errors {
 		// Note: it would be possible to use this ack feedback to further
 		// improve the correction of the routes by retrying here too.
 		errs <- xerrors.New(err)
 	}
+
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Str("goid", goid()).
+		Msg("sendTo() done adding errors to channel")
 }
 
 func (s *session) setupRelay(p parent, addr mino.Address) (Relay, error) {
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Str("goid", goid()).
+		Msg("setupRelay() locking")
+	defer s.logger.Trace().
+		Stringer("from", s.me).
+		Str("goid", goid()).
+		Msg("setupRelay() unlocking")
+
 	s.Lock()
 	defer s.Unlock()
 
@@ -532,6 +653,12 @@ func (s *session) setupRelay(p parent, addr mino.Address) (Relay, error) {
 		return nil, xerrors.Errorf("failed to serialize handshake: %v", err)
 	}
 
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Stringer("to", s.me).
+		Str("goid", goid()).
+		Msg("setupRelay() acquiring addr")
+
 	// 1. Acquire a connection to the distant peer.
 	conn, err := s.connMgr.Acquire(addr)
 	if err != nil {
@@ -545,6 +672,11 @@ func (s *session) setupRelay(p parent, addr mino.Address) (Relay, error) {
 
 	cl := ptypes.NewOverlayClient(conn)
 
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Str("goid", goid()).
+		Msg("setupRelay() streaming")
+
 	stream, err := cl.Stream(ctx, grpc.WaitForReady(false))
 	if err != nil {
 		s.connMgr.Release(addr)
@@ -553,6 +685,10 @@ func (s *session) setupRelay(p parent, addr mino.Address) (Relay, error) {
 
 	// 2. Wait for the header event to confirm the stream is registered in the
 	// session at the other end.
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Str("goid", goid()).
+		Msg("setupRelay() asking for header")
 	_, err = stream.Header()
 	if err != nil {
 		s.connMgr.Release(addr)
@@ -560,6 +696,10 @@ func (s *session) setupRelay(p parent, addr mino.Address) (Relay, error) {
 	}
 
 	// 3. Create and run the relay to respond to incoming packets.
+	s.logger.Trace().
+		Stringer("from", s.me).
+		Str("goid", goid()).
+		Msg("setupRelay() new relay")
 	newRelay := NewRelay(stream, addr, s.context, conn, s.md)
 
 	s.relays[addr] = newRelay
@@ -578,9 +718,19 @@ func (s *session) setupRelay(p parent, addr mino.Address) (Relay, error) {
 				},
 			)
 
+			s.logger.Trace().
+				Stringer("from", s.me).
+				Str("goid", goid()).
+				Msg("setupRelay() go lock")
+
 			s.Lock()
 			delete(s.relays, addr)
 			s.Unlock()
+
+			s.logger.Trace().
+				Stringer("from", s.me).
+				Str("goid", goid()).
+				Msg("setupRelay() go unlock")
 
 			newRelay.Close()
 
@@ -606,6 +756,11 @@ func (s *session) setupRelay(p parent, addr mino.Address) (Relay, error) {
 				}
 			},
 		)
+
+		s.logger.Trace().
+			Stringer("from", s.me).
+			Str("goid", goid()).
+			Msg("setupRelay() receiving")
 
 		for {
 			_, err := stream.Recv()
@@ -709,6 +864,13 @@ func (r *unicastRelay) Stream() PacketStream {
 func (r *unicastRelay) Send(ctx context.Context, p router.Packet) (
 	*ptypes.Ack, error,
 ) {
+	dela.Logger.Trace().
+		Str("goid", goid()).
+		Msg("unicastRelay.Send()")
+	defer dela.Logger.Trace().
+		Str("goid", goid()).
+		Msg("unicastRelay.Send() done")
+
 	data, err := p.Serialize(r.context)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to serialize: %v", err)
@@ -777,6 +939,13 @@ func (r *streamRelay) Stream() PacketStream {
 func (r *streamRelay) Send(ctx context.Context, p router.Packet) (
 	*ptypes.Ack, error,
 ) {
+	dela.Logger.Trace().
+		Str("goid", goid()).
+		Msg("streamRelay.Send()")
+	defer dela.Logger.Trace().
+		Str("goid", goid()).
+		Msg("streamRelay.Send() done")
+
 	data, err := p.Serialize(r.context)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to serialize: %v", err)

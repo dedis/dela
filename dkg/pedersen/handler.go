@@ -182,7 +182,7 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 				from,
 			}
 
-			dela.Logger.Warn().Msgf(
+			dela.Logger.Trace().Msgf(
 				"%v received response from %v\n", h.me, from,
 			)
 
