@@ -83,6 +83,33 @@ func TestHandler_Start(t *testing.T) {
 		"schnorr: signature of invalid length 0 instead of 64")
 }
 
+func TestHandler_SendDeals(t *testing.T) {
+	privKey := suite.Scalar().Pick(suite.RandomStream())
+	pubKey := suite.Point().Mul(privKey, nil)
+
+	privKey2 := suite.Scalar().Pick(suite.RandomStream())
+	pubKey2 := suite.Point().Mul(privKey2, nil)
+
+	dkg, err := pedersen.NewDistKeyGenerator(suite, privKey, []kyber.Point{pubKey, pubKey2}, 2)
+	require.NoError(t, err)
+
+	h := Handler{
+		startRes: &state{},
+		dkg:      dkg,
+	}
+
+	participants := []mino.Address{
+		fake.NewAddress(0),
+		fake.NewAddress(1),
+	}
+
+	err = h.sendDeals(context.Background(), fake.NewBadSender(), participants)
+	require.EqualError(t, err, fake.Err("failed sending a deal"))
+
+	err = h.sendDeals(context.Background(), fake.Sender{}, participants)
+	require.NoError(t, err)
+}
+
 func TestHandler_CertifyCanTimeOut(t *testing.T) {
 	privKey := suite.Scalar().Pick(suite.RandomStream())
 	pubKey := suite.Point().Mul(privKey, nil)
@@ -124,7 +151,34 @@ func TestHandler_CertifyTimesOutWithoutValidResponses(t *testing.T) {
 	require.EqualError(t, err, "timed out while receiving responses")
 }
 
-// TODO: TestHandler_CertifySucceedWithValidResponses
+func TestHandler_CertifyCanSucceed(t *testing.T) {
+	privKey := suite.Scalar().Pick(suite.RandomStream())
+	pubKey := suite.Point().Mul(privKey, nil)
+
+	dkg, err := pedersen.NewDistKeyGenerator(suite, privKey, []kyber.Point{pubKey, suite.Point()}, 2)
+	require.NoError(t, err)
+	h := Handler{
+		startRes:  &state{},
+		dkg:       dkg,
+		responses: make(chan responseFrom, 10),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	err = h.certify(ctx)
+	require.EqualError(t, err, "timed out while receiving responses")
+
+	dkg, resp := getCertified(t)
+	h.dkg = dkg
+
+	h.responses <- responseFrom{
+		response: &resp,
+		from:     nil,
+	}
+	err = h.certify(context.Background())
+	require.NoError(t, err)
+	require.True(t, h.dkg.Certified())
+}
 
 func TestHandler_HandleDeal(t *testing.T) {
 	privKey1 := suite.Scalar().Pick(suite.RandomStream())
@@ -167,19 +221,17 @@ func TestHandler_HandleDeal(t *testing.T) {
 
 // -----------------------------------------------------------------------------
 // Utility functions
-/*
-func getCertified(t *testing.T) *pedersen.DistKeyGenerator {
+
+func getCertified(t *testing.T) (*pedersen.DistKeyGenerator, types.Response) {
 	privKey1 := suite.Scalar().Pick(suite.RandomStream())
 	pubKey1 := suite.Point().Mul(privKey1, nil)
 
 	privKey2 := suite.Scalar().Pick(suite.RandomStream())
 	pubKey2 := suite.Point().Mul(privKey2, nil)
 
-	dkg1, err := pedersen.NewDistKeyGenerator(suite, privKey1,
-		[]kyber.Point{pubKey1, pubKey2}, 2)
+	dkg1, err := pedersen.NewDistKeyGenerator(suite, privKey1, []kyber.Point{pubKey1, pubKey2}, 2)
 	require.NoError(t, err)
-	dkg2, err := pedersen.NewDistKeyGenerator(suite, privKey2,
-		[]kyber.Point{pubKey1, pubKey2}, 2)
+	dkg2, err := pedersen.NewDistKeyGenerator(suite, privKey2, []kyber.Point{pubKey1, pubKey2}, 2)
 	require.NoError(t, err)
 
 	deals1, err := dkg1.Deals()
@@ -201,14 +253,18 @@ func getCertified(t *testing.T) *pedersen.DistKeyGenerator {
 		require.NoError(t, err)
 	}
 
-	_, err = dkg1.ProcessResponse(resp2)
-	require.NoError(t, err)
 	_, err = dkg2.ProcessResponse(resp1)
 	require.NoError(t, err)
 
-	require.True(t, dkg1.Certified())
-	require.True(t, dkg2.Certified())
+	respMsg := types.NewResponse(
+		resp2.Index,
+		types.NewDealerResponse(
+			resp2.Response.Index,
+			resp2.Response.Status,
+			resp2.Response.SessionID,
+			resp2.Response.Signature,
+		),
+	)
 
-	return dkg1
+	return dkg1, respMsg
 }
-*/
