@@ -15,9 +15,6 @@ import (
 	"golang.org/x/xerrors"
 )
 
-// recvResponseTimeout is the maximum time a node will wait for a response
-const recvResponseTimeout = time.Second * 10
-
 // state is a struct contained in a handler that allows an actor to read the
 // state of that handler. The actor should only use the getter functions to read
 // the attributes.
@@ -103,12 +100,12 @@ func NewHandler(privKey kyber.Scalar, me mino.Address) *Handler {
 }
 
 type dealFrom struct {
-	deal *pedersen.Deal
+	deal *types.Deal
 	from mino.Address
 }
 
 type responseFrom struct {
-	response *pedersen.Response
+	response *types.Response
 	from     mino.Address
 }
 
@@ -158,37 +155,16 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 		case types.Deal:
 			dela.Logger.Trace().Msgf("%v received deal from %v\n", h.me, from)
 
-			deal := &pedersen.Deal{
-				Index: msg.GetIndex(),
-				Deal: &vss.EncryptedDeal{
-					DHKey:     msg.GetEncryptedDeal().GetDHKey(),
-					Signature: msg.GetEncryptedDeal().GetSignature(),
-					Nonce:     msg.GetEncryptedDeal().GetNonce(),
-					Cipher:    msg.GetEncryptedDeal().GetCipher(),
-				},
-				Signature: msg.GetSignature(),
-			}
-
 			h.deals <- dealFrom{
-				deal,
+				&msg,
 				from,
 			}
 
 		case types.Response:
 			dela.Logger.Trace().Msgf("%v received response from %v\n", h.me, from)
 
-			response := &pedersen.Response{
-				Index: msg.GetIndex(),
-				Response: &vss.Response{
-					SessionID: msg.GetResponse().GetSessionID(),
-					Index:     msg.GetResponse().GetIndex(),
-					Status:    msg.GetResponse().GetStatus(),
-					Signature: msg.GetResponse().GetSignature(),
-				},
-			}
-
 			h.responses <- responseFrom{
-				response,
+				&msg,
 				from,
 			}
 
@@ -294,7 +270,7 @@ func (h *Handler) start(ctx context.Context, start types.Start,
 	if len(participants) != len(start.GetPublicKeys()) {
 		return xerrors.Errorf(
 			"there should be as many participants as "+
-				"pubKey: %d := %d", len(start.GetAddresses()),
+				"pubKey: %d != %d", len(start.GetAddresses()),
 			len(start.GetPublicKeys()),
 		)
 	}
@@ -363,8 +339,9 @@ func (h *Handler) sendDeals(ctx context.Context, out mino.Sender,
 		dela.Logger.Trace().Msgf("%s sent deal %d", h.me, i)
 		errch := out.Send(dealMsg, participants[i])
 
-		// this should be further improved by using a worker pool, as opposed to an unbounded
-		// number of goroutines, but for the time being is okay-ish. -- 2022/08/09
+		// this should be further improved by using a worker pool,
+		// as opposed to an unbounded number of goroutines,
+		// but for the time being is okay-ish. -- 2022/08/09
 		go func(errs <-chan error, idx int) {
 			err := <-errs
 			if err != nil {
@@ -386,7 +363,7 @@ func (h *Handler) sendDeals(ctx context.Context, out mino.Sender,
 
 		case err := <-errors:
 			dela.Logger.Error().Msgf("%s failed sending a deal: %v", h.me, err)
-			return xerrors.Errorf("failed sending a deal", err)
+			return xerrors.Errorf("failed sending a deal: %v", err)
 
 		case <-ctx.Done():
 			dela.Logger.Error().Msgf("%s timed out while sending deals", h.me)
@@ -411,11 +388,12 @@ func (h *Handler) receiveDeals(ctx context.Context, participants []mino.Address,
 			if err != nil {
 				dela.Logger.Warn().Msgf("%s failed to handle received deal from %s: %v",
 					h.me, from, err)
-			} else {
-				dela.Logger.Trace().Msgf("%s handled deal #%v from %s",
-					h.me, numReceivedDeals, df.from)
-				numReceivedDeals++
+				return xerrors.Errorf("failed to handle received deal: %v", err)
 			}
+
+			dela.Logger.Trace().Msgf("%s handled deal #%v from %s",
+				h.me, numReceivedDeals, df.from)
+			numReceivedDeals++
 
 		case <-ctx.Done():
 			dela.Logger.Error().Msgf("%s timed out while receiving deals", h.me)
@@ -429,10 +407,22 @@ func (h *Handler) receiveDeals(ctx context.Context, participants []mino.Address,
 }
 
 // handleDeal process the Deal and send the responses to the other nodes.
-func (h *Handler) handleDeal(deal *pedersen.Deal, from mino.Address, participants []mino.Address,
-	out mino.Sender) error {
+func (h *Handler) handleDeal(msg *types.Deal, from mino.Address,
+	participants []mino.Address, out mino.Sender) error {
 
 	dela.Logger.Trace().Msgf("%v processing deal from %v\n", h.me, from)
+
+	deal := &pedersen.Deal{
+		Index: msg.GetIndex(),
+		Deal: &vss.EncryptedDeal{
+			DHKey:     msg.GetEncryptedDeal().GetDHKey(),
+			Signature: msg.GetEncryptedDeal().GetSignature(),
+			Nonce:     msg.GetEncryptedDeal().GetNonce(),
+			Cipher:    msg.GetEncryptedDeal().GetCipher(),
+		},
+		Signature: msg.GetSignature(),
+	}
+
 	response, err := h.dkg.ProcessDeal(deal)
 	if err != nil {
 		return xerrors.Errorf("failed to process deal from %s: %v", h.me, err)
@@ -454,6 +444,10 @@ func (h *Handler) handleDeal(deal *pedersen.Deal, from mino.Address, participant
 		}
 
 		dela.Logger.Trace().Msgf("%v sending response to %v\n", h.me, addr)
+
+		// this should be further improved by using a worker pool,
+		// as opposed to a strictly sequential send,
+		// but for the time being is okay-ish. -- 2022/08/09
 		errs := out.Send(resp, addr)
 		err = <-errs
 		if err != nil {
@@ -480,7 +474,19 @@ func (h *Handler) certify(ctx context.Context) error {
 				"%s about to handle response from %s",
 				h.me, rf.from,
 			)
-			_, err := h.dkg.ProcessResponse(rf.response)
+
+			msg := rf.response
+			response := &pedersen.Response{
+				Index: msg.GetIndex(),
+				Response: &vss.Response{
+					SessionID: msg.GetResponse().GetSessionID(),
+					Index:     msg.GetResponse().GetIndex(),
+					Status:    msg.GetResponse().GetStatus(),
+					Signature: msg.GetResponse().GetSignature(),
+				},
+			}
+
+			_, err := h.dkg.ProcessResponse(response)
 			if err != nil {
 				dela.Logger.Warn().Msgf("%s failed to process response: %v", h.me, err)
 			} else {
