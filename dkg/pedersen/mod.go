@@ -29,11 +29,15 @@ var (
 	// protocolNameDecrypt denotes the value of the protocol span tag
 	// associated with the `dkg-decrypt` protocol.
 	protocolNameDecrypt = "dkg-decrypt"
+	// protocolNameResharing denotes the value of the protocol span tag
+	// associated with the `dkg-resharing` protocol.
+	protocolNameResharing = "dkg-resharing"
 )
 
 const (
-	setupTimeout   = time.Second * 300
-	decryptTimeout = time.Second * 100
+	setupTimeout     = time.Second * 300
+	decryptTimeout   = time.Second * 100
+	resharingTimeout = time.Second * 300
 )
 
 // Pedersen allows one to initialize a new DKG protocol.
@@ -260,7 +264,49 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 
 // Reshare implements dkg.Actor. It recreates the DKG with an updated list of
 // participants.
-// TODO: to do
-func (a *Actor) Reshare() error {
+
+func (a *Actor) Reshare(T_new int, T_old int, addrs_new []mino.Address, pubkeys_new []kyber.Point, pubkeys_old []kyber.Point) error {
+	if !a.startRes.Done() {
+		return xerrors.Errorf("you must first initialize DKG. " +
+			"Did you call setup() first?")
+	}
+	// get the union of the new members and the old members
+	addrs_all := unionOfTwoSlides(a.startRes.GetParticipants(), addrs_new)
+	players := mino.NewAddresses(addrs_all...)
+	ctx, cancel := context.WithTimeout(context.Background(), resharingTimeout)
+	defer cancel()
+	ctx = context.WithValue(ctx, tracing.ProtocolKey, protocolNameResharing)
+	sender, receiver, err := a.rpc.Stream(ctx, players)
+	if err != nil {
+		return xerrors.Errorf("failed to create stream: %v", err)
+	}
+	message := types.NewResharingRequest(T_new, T_old, addrs_new, a.startRes.GetParticipants(), pubkeys_new, pubkeys_old)
+	// send the resharing request to all the old and new nodes
+	err = <-sender.Send(message, addrs_all...)
+	if err != nil {
+		return xerrors.Errorf("failed to send decrypt request: %v", err)
+	}
+	dkgPubKeys := make([]kyber.Point, len(addrs_new))
+	// wait for receiving the response from the new nodes
+	for i := 0; i < len(addrs_new); i++ {
+
+		_, msg, err := receiver.Recv(ctx)
+		if err != nil {
+			return xerrors.Errorf("stream stopped unexpectedly: %v", err)
+		}
+
+		doneMsg, ok := msg.(types.StartDone)
+		if !ok {
+			return xerrors.Errorf("expected to receive a Done message, but "+
+				"go the following: %T", msg)
+		}
+		dkgPubKeys[i] = doneMsg.GetPublicKey()
+		// this is a simple check that every node sends back the same DKG pub
+		// key.
+		// TODO: handle the situation where a pub key is not the same
+		if i != 0 && !dkgPubKeys[i-1].Equal(doneMsg.GetPublicKey()) {
+			return xerrors.Errorf("the public keys does not match: %v", dkgPubKeys)
+		}
+	}
 	return nil
 }

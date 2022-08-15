@@ -1,7 +1,9 @@
 package pedersen
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/dkg/pedersen/types"
@@ -10,11 +12,14 @@ import (
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/share"
 	pedersen "go.dedis.ch/kyber/v3/share/dkg/pedersen"
-	vss "go.dedis.ch/kyber/v3/share/vss/pedersen"
 )
 
 func TestHandler_Stream(t *testing.T) {
-	h := Handler{startRes: &state{}}
+	h := Handler{
+		startRes:  &state{},
+		deals:     make(chan dealFrom, 10),
+		responses: make(chan responseFrom, 10),
+	}
 	receiver := fake.NewBadReceiver()
 	err := h.Stream(fake.Sender{}, receiver)
 	require.EqualError(t, err, fake.Err("failed to receive"))
@@ -47,42 +52,65 @@ func TestHandler_Start(t *testing.T) {
 	pubKey := suite.Point().Mul(privKey, nil)
 
 	h := Handler{
-		startRes: &state{},
-		privKey:  privKey,
+		startRes:  &state{},
+		privKey:   privKey,
+		deals:     make(chan dealFrom, 10),
+		responses: make(chan responseFrom, 10),
 	}
 	start := types.NewStart(
 		0,
 		[]mino.Address{fake.NewAddress(0)},
 		[]kyber.Point{},
 	)
-	err := h.start(start, []types.Deal{}, []*pedersen.Response{}, nil, nil, nil)
-	require.EqualError(t, err, "there should be as many players as pubKey: 1 := 0")
+	from := fake.NewAddress(0)
+	err := h.start(context.Background(), start, from, fake.Sender{})
+	require.EqualError(t, err, "there should be as many participants as pubKey: 1 != 0")
 
 	start = types.NewStart(
 		2,
 		[]mino.Address{fake.NewAddress(0), fake.NewAddress(1)},
 		[]kyber.Point{pubKey, suite.Point()},
 	)
-	receiver := fake.NewBadReceiver()
-	err = h.start(start, []types.Deal{}, []*pedersen.Response{}, nil, fake.Sender{}, receiver)
-	require.EqualError(t, err, fake.Err("failed to receive after sending deals"))
 
-	receiver = fake.NewReceiver(
-		fake.NewRecvMsg(fake.NewAddress(0), types.Deal{}),
-		fake.NewRecvMsg(fake.NewAddress(0), nil),
-	)
-	err = h.start(start, []types.Deal{}, []*pedersen.Response{}, nil, fake.Sender{}, receiver)
-	require.EqualError(t, err, "failed to handle deal from 'fake.Address[0]': failed to process deal from %!s(<nil>): schnorr: signature of invalid length 0 instead of 64")
-
-	err = h.start(start, []types.Deal{}, []*pedersen.Response{}, nil, fake.Sender{}, &fake.Receiver{})
-	require.EqualError(t, err, "unexpected message: <nil>")
-
-	// We check when there is already something in the slice if Deals
-	err = h.start(start, []types.Deal{{}}, []*pedersen.Response{}, nil, fake.NewBadSender(), &fake.Receiver{})
-	require.EqualError(t, err, "failed to certify: expected a response, got: <nil>")
+	h.deals <- dealFrom{
+		&types.Deal{},
+		fake.NewAddress(0),
+	}
+	err = h.start(context.Background(), start, from, fake.Sender{})
+	require.EqualError(t, err, "failed to receive deals: "+
+		"failed to handle received deal: "+
+		"failed to process deal from %!s(<nil>): "+
+		"schnorr: signature of invalid length 0 instead of 64")
 }
 
-func TestHandler_Certify(t *testing.T) {
+func TestHandler_SendDeals(t *testing.T) {
+	privKey := suite.Scalar().Pick(suite.RandomStream())
+	pubKey := suite.Point().Mul(privKey, nil)
+
+	privKey2 := suite.Scalar().Pick(suite.RandomStream())
+	pubKey2 := suite.Point().Mul(privKey2, nil)
+
+	dkg, err := pedersen.NewDistKeyGenerator(suite, privKey, []kyber.Point{pubKey, pubKey2}, 2)
+	require.NoError(t, err)
+
+	h := Handler{
+		startRes: &state{},
+		dkg:      dkg,
+	}
+
+	participants := []mino.Address{
+		fake.NewAddress(0),
+		fake.NewAddress(1),
+	}
+
+	err = h.sendDeals(context.Background(), fake.NewBadSender(), participants)
+	require.EqualError(t, err, fake.Err("failed sending a deal"))
+
+	err = h.sendDeals(context.Background(), fake.Sender{}, participants)
+	require.NoError(t, err)
+}
+
+func TestHandler_CertifyCanTimeOut(t *testing.T) {
 	privKey := suite.Scalar().Pick(suite.RandomStream())
 	pubKey := suite.Point().Mul(privKey, nil)
 
@@ -93,16 +121,63 @@ func TestHandler_Certify(t *testing.T) {
 		startRes: &state{},
 		dkg:      dkg,
 	}
-	receiver := fake.NewBadReceiver()
-	responses := []*pedersen.Response{{Response: &vss.Response{}}}
 
-	err = h.certify(responses, fake.Sender{}, receiver, nil)
-	require.EqualError(t, err, fake.Err("failed to receive after sending deals"))
+	ctx, _ := context.WithTimeout(context.Background(), 0*time.Second)
+	err = h.certify(ctx)
+	require.EqualError(t, err, "timed out while receiving responses")
+}
 
-	dkg = getCertified(t)
+func TestHandler_CertifyTimesOutWithoutValidResponses(t *testing.T) {
+	privKey := suite.Scalar().Pick(suite.RandomStream())
+	pubKey := suite.Point().Mul(privKey, nil)
+
+	dkg, err := pedersen.NewDistKeyGenerator(suite, privKey, []kyber.Point{pubKey, suite.Point()}, 2)
+	require.NoError(t, err)
+
+	h := Handler{
+		startRes:  &state{},
+		dkg:       dkg,
+		deals:     make(chan dealFrom, 10),
+		responses: make(chan responseFrom, 10),
+	}
+
+	resp := responseFrom{
+		&types.Response{},
+		fake.NewAddress(0),
+	}
+	h.responses <- resp
+	ctx, _ := context.WithTimeout(context.Background(), 1*time.Second)
+	err = h.certify(ctx)
+	require.EqualError(t, err, "timed out while receiving responses")
+}
+
+func TestHandler_CertifyCanSucceed(t *testing.T) {
+	privKey := suite.Scalar().Pick(suite.RandomStream())
+	pubKey := suite.Point().Mul(privKey, nil)
+
+	dkg, err := pedersen.NewDistKeyGenerator(suite, privKey, []kyber.Point{pubKey, suite.Point()}, 2)
+	require.NoError(t, err)
+	h := Handler{
+		startRes:  &state{},
+		dkg:       dkg,
+		responses: make(chan responseFrom, 10),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	err = h.certify(ctx)
+	require.EqualError(t, err, "timed out while receiving responses")
+
+	dkg, resp := getCertified(t)
 	h.dkg = dkg
-	err = h.certify(responses, fake.NewBadSender(), &fake.Receiver{}, nil)
-	require.EqualError(t, err, fake.Err("got an error while sending pub key"))
+
+	h.responses <- responseFrom{
+		response: &resp,
+		from:     nil,
+	}
+	err = h.certify(context.Background())
+	require.NoError(t, err)
+	require.True(t, h.dkg.Certified())
 }
 
 func TestHandler_HandleDeal(t *testing.T) {
@@ -140,14 +215,14 @@ func TestHandler_HandleDeal(t *testing.T) {
 	h := Handler{
 		dkg: dkg1,
 	}
-	err = h.handleDeal(dealMsg, nil, []mino.Address{fake.NewAddress(0)}, fake.NewBadSender())
+	err = h.handleDeal(&dealMsg, nil, []mino.Address{fake.NewAddress(0)}, fake.NewBadSender())
 	require.EqualError(t, err, fake.Err("failed to send response to 'fake.Address[0]'"))
 }
 
 // -----------------------------------------------------------------------------
 // Utility functions
 
-func getCertified(t *testing.T) *pedersen.DistKeyGenerator {
+func getCertified(t *testing.T) (*pedersen.DistKeyGenerator, types.Response) {
 	privKey1 := suite.Scalar().Pick(suite.RandomStream())
 	pubKey1 := suite.Point().Mul(privKey1, nil)
 
@@ -178,13 +253,18 @@ func getCertified(t *testing.T) *pedersen.DistKeyGenerator {
 		require.NoError(t, err)
 	}
 
-	_, err = dkg1.ProcessResponse(resp2)
-	require.NoError(t, err)
 	_, err = dkg2.ProcessResponse(resp1)
 	require.NoError(t, err)
 
-	require.True(t, dkg1.Certified())
-	require.True(t, dkg2.Certified())
+	respMsg := types.NewResponse(
+		resp2.Index,
+		types.NewDealerResponse(
+			resp2.Response.Index,
+			resp2.Response.Status,
+			resp2.Response.SessionID,
+			resp2.Response.Signature,
+		),
+	)
 
-	return dkg1
+	return dkg1, respMsg
 }
