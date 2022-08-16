@@ -229,8 +229,6 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 				"Deal as first message, got: %T", msg)
 		}
 	}
-
-	return nil
 }
 
 func (h *Handler) handleDecrypt(out mino.Sender, msg types.DecryptRequest,
