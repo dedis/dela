@@ -3,6 +3,9 @@ package minogrpc
 import (
 	"context"
 	"fmt"
+	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/mino/router/flat"
+	"testing"
 	"time"
 
 	"go.dedis.ch/dela/internal/tracing"
@@ -10,6 +13,110 @@ import (
 	"go.dedis.ch/dela/mino/router/tree"
 	"go.dedis.ch/dela/serde"
 )
+
+func TestRpcStreamTree(t *testing.T) {
+	NB_NODES := 200
+
+	nodes := createNodes(NB_NODES, false)
+	rpcs := createRpcs(nodes)
+	exchangeCertificates(nodes)
+	players := createPlayers(nodes)
+	msgs := generateMessages(NB_NODES)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	for i, r := range rpcs {
+		go func(i int, rpc mino.RPC) {
+			sender, receiver, err := rpc.Stream(ctx, players)
+			if err != nil {
+				panic("stream failed: " + err.Error())
+			}
+
+			for _, n := range nodes {
+				addr := n.GetAddress()
+
+				msgSent := msgs[i]
+				err = <-sender.Send(exampleMessage{value: msgSent}, addr)
+				if err != nil {
+					panic("failed to send: " + err.Error())
+				}
+
+				from, msgReceived, err := receiver.Recv(ctx)
+				if err != nil {
+					panic("failed to receive: " + err.Error())
+				}
+
+				require.True(t, from.Equal(addr))
+				require.Equal(t, msgReceived, msgSent)
+			}
+		}(i, r)
+	}
+}
+
+func generateMessages(nbNodes int) []string {
+	var messages []string
+
+	for i := 0; i < nbNodes; i++ {
+		messages = append(messages, fmt.Sprintf("MSG%d", i))
+	}
+
+	return messages
+}
+
+func createPlayers(nodes []*Minogrpc) mino.Players {
+	var addresses []mino.Address
+	for _, n := range nodes {
+		addresses = append(addresses, n.GetAddress())
+	}
+
+	players := mino.NewAddresses(addresses...)
+
+	return players
+}
+
+func exchangeCertificates(nodes []*Minogrpc) {
+	for _, n := range nodes {
+		for _, m := range nodes {
+			//if i != j {
+			n.GetCertificateStore().Store(m.GetAddress(), m.GetCertificateChain())
+			//}
+		}
+	}
+}
+
+func createRpcs(nodes []*Minogrpc) []mino.RPC {
+	var rpcs []mino.RPC
+
+	for _, n := range nodes {
+		r := mino.MustCreateRPC(n, "test", exampleHandler{}, exampleFactory{})
+		rpcs = append(rpcs, r)
+	}
+
+	return rpcs
+}
+
+func createNodes(nbNodes int, useTree bool) []*Minogrpc {
+	var nodes []*Minogrpc
+	for i := 0; i < nbNodes; i++ {
+		var n *Minogrpc
+		var err error
+
+		if useTree {
+			n, err = NewMinogrpc(ParseAddress("127.0.0.1", 0), nil, tree.NewRouter(NewAddressFactory()))
+		} else {
+			n, err = NewMinogrpc(ParseAddress("127.0.0.1", 0), nil, flat.NewRouter(NewAddressFactory()))
+		}
+
+		if err != nil {
+			panic("overlay A failed: " + err.Error())
+		} else {
+			nodes = append(nodes, n)
+		}
+	}
+
+	return nodes
+}
 
 func ExampleRPC_Call() {
 	mA, err := NewMinogrpc(ParseAddress("127.0.0.1", 0), nil, tree.NewRouter(NewAddressFactory()))
@@ -80,7 +187,7 @@ func ExampleRPC_Stream() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	sender, recv, err := rpcA.Stream(ctx, addrs)
+	sender, receiver, err := rpcA.Stream(ctx, addrs)
 	if err != nil {
 		panic("stream failed: " + err.Error())
 	}
@@ -90,7 +197,7 @@ func ExampleRPC_Stream() {
 		panic("failed to send: " + err.Error())
 	}
 
-	from, msg, err := recv.Recv(ctx)
+	from, msg, err := receiver.Recv(ctx)
 	if err != nil {
 		panic("failed to receive: " + err.Error())
 	}
