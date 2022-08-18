@@ -4,7 +4,11 @@ import (
 	"context"
 	"fmt"
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/mino/router/flat"
+	"strconv"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,53 +19,68 @@ import (
 )
 
 func TestRpcStreamTree(t *testing.T) {
-	NB_NODES := 200
+	NB_NODES := 4
 
-	nodes := createNodes(NB_NODES, false)
+	nodes := createNodes(NB_NODES, true)
 	rpcs := createRpcs(nodes)
 	exchangeCertificates(nodes)
 	players := createPlayers(nodes)
-	msgs := generateMessages(NB_NODES)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	startLock := sync.RWMutex{}
+	startLock.Lock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	for i, r := range rpcs {
-		go func(i int, rpc mino.RPC) {
-			sender, receiver, err := rpc.Stream(ctx, players)
-			if err != nil {
-				panic("stream failed: " + err.Error())
-			}
+	done := make(chan struct{})
 
-			for _, n := range nodes {
-				addr := n.GetAddress()
+	for i, rpc := range rpcs {
+		sender, receiver, err := rpc.Stream(ctx, players)
+		if err != nil {
+			panic("stream failed: " + err.Error())
+		}
 
-				msgSent := msgs[i]
-				err = <-sender.Send(exampleMessage{value: msgSent}, addr)
-				if err != nil {
-					panic("failed to send: " + err.Error())
-				}
-
-				from, msgReceived, err := receiver.Recv(ctx)
-				if err != nil {
-					panic("failed to receive: " + err.Error())
-				}
-
-				require.True(t, from.Equal(addr))
-				require.Equal(t, msgReceived, msgSent)
-			}
-		}(i, r)
+		go sendMessages(sender, nodes, i, startLock)
+		go receiveMessages(receiver, nodes, t, ctx, startLock, done)
 	}
+
+	startLock.Unlock()
+
+	<-done
+	dela.Logger.Trace().Msg("Test - done")
 }
 
-func generateMessages(nbNodes int) []string {
-	var messages []string
+func receiveMessages(receiver mino.Receiver, nodes []*Minogrpc, t *testing.T, ctx context.Context, mutex sync.RWMutex, done chan struct{}) {
+	mutex.RLock()
+	defer mutex.RUnlock()
 
-	for i := 0; i < nbNodes; i++ {
-		messages = append(messages, fmt.Sprintf("MSG%d", i))
+	for _, n := range nodes {
+		from, msg, err := receiver.Recv(ctx)
+		require.NoError(t, err)
+
+		dela.Logger.Debug().Msgf("Received msg:%v from: %v", msg, from)
+
+		addr := n.GetAddress()
+		require.True(t, from.Equal(addr))
 	}
+	close(done)
+}
 
-	return messages
+func sendMessages(from mino.Sender, toNodes []*Minogrpc, fromIndex int, mutex sync.RWMutex) {
+	mutex.RLock()
+	defer mutex.RUnlock()
+
+	for toIdx, n := range toNodes {
+		addr := n.GetAddress()
+
+		msg := fmt.Sprintf("S[%d:%d]", fromIndex, toIdx)
+		err := <-from.Send(exampleMessage{value: msg}, addr)
+		if err != nil {
+			panic("failed to send " + msg + " to:" + addr.String() + ", error=" + err.Error())
+			//		} else {
+			//			fmt.Printf("Sent message %v\n", msg)
+		}
+	}
 }
 
 func createPlayers(nodes []*Minogrpc) mino.Players {
@@ -76,11 +95,11 @@ func createPlayers(nodes []*Minogrpc) mino.Players {
 }
 
 func exchangeCertificates(nodes []*Minogrpc) {
-	for _, n := range nodes {
-		for _, m := range nodes {
-			//if i != j {
-			n.GetCertificateStore().Store(m.GetAddress(), m.GetCertificateChain())
-			//}
+	for i, n := range nodes {
+		for j, m := range nodes {
+			if i != j {
+				n.GetCertificateStore().Store(m.GetAddress(), m.GetCertificateChain())
+			}
 		}
 	}
 }
@@ -89,7 +108,7 @@ func createRpcs(nodes []*Minogrpc) []mino.RPC {
 	var rpcs []mino.RPC
 
 	for _, n := range nodes {
-		r := mino.MustCreateRPC(n, "test", exampleHandler{}, exampleFactory{})
+		r := mino.MustCreateRPC(n, "test", exampleHandler{nodes: nodes}, exampleFactory{})
 		rpcs = append(rpcs, r)
 	}
 
@@ -298,7 +317,8 @@ func ExampleRPC_OpentracingDemo() {
 //
 // - implements mino.Handler
 type exampleHandler struct {
-	mino.UnsupportedHandler
+	handler mino.UnsupportedHandler
+	nodes   []*Minogrpc
 }
 
 // Process implements mino.Handler. It returns the message received.
@@ -307,20 +327,36 @@ func (exampleHandler) Process(req mino.Request) (serde.Message, error) {
 }
 
 // Stream implements mino.Handler. It returns the message to the sender.
-func (exampleHandler) Stream(sender mino.Sender, recv mino.Receiver) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+func (e exampleHandler) Stream(sender mino.Sender, receiver mino.Receiver) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	//ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	from, msg, err := recv.Recv(ctx)
+	_, msg, err := receiver.Recv(ctx)
 	if err != nil {
 		return err
 	}
 
-	err = <-sender.Send(msg, from)
-	if err != nil {
-		return err
-	}
+	msgString := strings.Replace(msg.(exampleMessage).value, "S", "", -1)
+	msgString = strings.Replace(msgString, "[", "", -1)
+	msgString = strings.Replace(msgString, "]", "", -1)
+	sub := strings.Split(msgString, string(':'))
+	fromNb, _ := strconv.ParseInt(sub[0], 0, 64)
+	toNb, _ := strconv.ParseInt(sub[1], 0, 64)
 
+	dela.Logger.Trace().Msgf("Received: %v\n", msg.(exampleMessage).value)
+
+	msgString = fmt.Sprintf("R[%d:%d]", toNb, fromNb)
+
+	for _, n := range e.nodes {
+		addr := n.GetAddress()
+		err = <-sender.Send(exampleMessage{value: msgString}, addr)
+		if err != nil {
+			return err
+		} else {
+			dela.Logger.Trace().Msgf("Sent %v\n", msgString)
+		}
+	}
 	return nil
 }
 
