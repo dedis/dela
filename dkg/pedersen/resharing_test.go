@@ -9,8 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 	_ "go.dedis.ch/dela/dkg/pedersen/json"
 
-	//minogrpc "go.dedis.ch/dela/mino/minoch"
-	//"go.dedis.ch/dela/mino/router/tree"
 	"net/http"
 	_ "net/http/pprof"
 
