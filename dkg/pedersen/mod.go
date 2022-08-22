@@ -289,24 +289,40 @@ func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
 	}
 
 	// get the union of the new members and the old members
-	addrsAll := unionOfTwoSlides(a.startRes.GetParticipants(), addrsNew)
+	addrsAll := unionOfTwoSlices(a.startRes.GetParticipants(), addrsNew)
 	players := mino.NewAddresses(addrsAll...)
+
 	ctx, cancel := context.WithTimeout(context.Background(), resharingTimeout)
 	defer cancel()
+
 	ctx = context.WithValue(ctx, tracing.ProtocolKey, protocolNameResharing)
+
 	sender, receiver, err := a.rpc.Stream(ctx, players)
 	if err != nil {
 		return xerrors.Errorf("failed to create stream: %v", err)
 	}
+
 	thresholdOld := a.startRes.GetThreshold()
 	pubkeysOld := a.startRes.GetPublicKeys()
-	//fmt.Println(TNew, TOld, addrsNew, a.startRes.GetParticipants(), pubkeysNew, pubkeysOld)
-	message := types.NewResharingRequest(thresholdNew, thresholdOld, addrsNew, a.startRes.GetParticipants(), pubkeysNew, pubkeysOld)
-	// send the resharing request to all the old and new nodes
-	err = <-sender.Send(message, addrsAll...)
+
+	// we don't need to send the old threshold or old public keys to the old or common nodes
+	messageOld := types.NewResharingRequest(thresholdNew, 0, addrsNew, nil, pubkeysNew, nil)
+	// send the resharing request to the old and common nodes
+	err = <-sender.Send(messageOld, a.startRes.GetParticipants()...)
 	if err != nil {
-		return xerrors.Errorf("failed to send decrypt request: %v", err)
+		return xerrors.Errorf("failed to send resharing request: %v", err)
 	}
+
+	// first find the set of new nodes that are not common between the old and new committee
+	addrsNewNotCommon := subtractOfTwoSlices(addrsNew, a.startRes.GetParticipants())
+	// then create a resharing request message for them. we should send the old threshold and ol public keys to them
+	messageNew := types.NewResharingRequest(thresholdNew, thresholdOld, addrsNew, a.startRes.GetParticipants(), pubkeysNew, pubkeysOld)
+	// send the resharing request to the new but not common nodes
+	err = <-sender.Send(messageNew, addrsNewNotCommon...)
+	if err != nil {
+		return xerrors.Errorf("failed to send resharing request: %v", err)
+	}
+
 	dkgPubKeys := make([]kyber.Point, len(addrsNew))
 	// wait for receiving the response from the new nodes
 	for i := 0; i < len(addrsNew); i++ {
@@ -330,4 +346,22 @@ func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
 		}
 	}
 	return nil
+}
+
+// gets the list of the old committee members and new committee members and returns the new committee members that are not common
+func subtractOfTwoSlices(addrsSlice1 []mino.Address, addrsSlice2 []mino.Address) []mino.Address {
+	var subtractedSlice []mino.Address
+	for _, i := range addrsSlice1 {
+		exist := false
+		for _, j := range addrsSlice2 {
+			if i == j {
+				exist = true
+				break
+			}
+		}
+		if !exist {
+			subtractedSlice = append(subtractedSlice, i)
+		}
+	}
+	return subtractedSlice
 }
