@@ -34,95 +34,96 @@ func TestResharing(t *testing.T) {
 		log.Println(http.ListenAndServe("localhost:6060", nil))
 	}()
 	// setting up the first dkg
-	n_old := 10
-	threshold_old := 10
-	minos_old := make([]mino.Mino, n_old)
-	dkgs_old := make([]dkg.DKG, n_old)
-	addrs_old := make([]mino.Address, n_old)
-	pubkeys_old := make([]kyber.Point, len(minos_old))
+	nOld := 10
+	thresholdOld := 10
+	minosOld := make([]mino.Mino, nOld)
+	dkgsOld := make([]dkg.DKG, nOld)
+	addrsOld := make([]mino.Address, nOld)
+	pubkeysOld := make([]kyber.Point, len(minosOld))
 	minoManager := minoch.NewManager()
 	// defining the addresses
-	for i := 0; i < n_old; i++ {
+	for i := 0; i < nOld; i++ {
 		minogrpc := minoch.MustCreate(minoManager, fmt.Sprintf("addr %d", i))
-		minos_old[i] = minogrpc
-		addrs_old[i] = minogrpc.GetAddress()
+		minosOld[i] = minogrpc
+		addrsOld[i] = minogrpc.GetAddress()
 	}
 	// initializing the pedersen
-	for i, mino := range minos_old {
+	for i, mino := range minosOld {
 		dkg, pubkey := NewPedersen(mino)
-		dkgs_old[i] = dkg
-		pubkeys_old[i] = pubkey
+		dkgsOld[i] = dkg
+		pubkeysOld[i] = pubkey
 	}
-	fakeAuthority := NewAuthority(addrs_old, pubkeys_old)
+	fakeAuthority := NewAuthority(addrsOld, pubkeysOld)
 	// initializing the old committee actors
-	actors_old := make([]dkg.Actor, n_old)
-	for i := 0; i < n_old; i++ {
-		actor, err := dkgs_old[i].Listen()
+	actorsOld := make([]dkg.Actor, nOld)
+	for i := 0; i < nOld; i++ {
+		actor, err := dkgsOld[i].Listen()
 		require.NoError(t, err)
-		actors_old[i] = actor
+		actorsOld[i] = actor
 	}
-	_, err := actors_old[1].Setup(fakeAuthority, threshold_old)
+	_, err := actorsOld[1].Setup(fakeAuthority, thresholdOld)
 	require.NoError(t, err, "setting up the firs dkg was not successful")
 	// encrypt a message with the old committee public key. the new committee should be able to decrypt
 	// it successfully
 	message := []byte("Hello world")
-	K, C, remainder, err := actors_old[0].Encrypt(message)
+	K, C, remainder, err := actorsOld[0].Encrypt(message)
 	require.NoError(t, err, "encrypting the message was not successful")
 	require.Len(t, remainder, 0)
 	//setting up the second dkg
-	// n_common is the number of nodes that are common between the new and the old committee
-	n_common := 10
-	// the number of new added nodes. the new committee should have n_common+n_new nodes in totatl
-	n_new := 20
-	threshold_new := 30
-	minos_new := make([]mino.Mino, n_new+n_common)
-	dkgs_new := make([]dkg.DKG, n_new+n_common)
-	addrs_new := make([]mino.Address, n_new+n_common)
-	//the first n_common nodes of  committee are the same as the first n_common nodes of the old committee
-	for i := 0; i < n_common; i++ {
-		minos_new[i] = minos_old[i]
-		addrs_new[i] = minos_old[i].GetAddress()
+	// nCommon is the number of nodes that are common between the new and the old committee
+	nCommon := 5
+	// the number of new added nodes. the new committee should have nCommon+nNew nodes in totatl
+	nNew := 50
+	thresholdNew := 55
+	minosNew := make([]mino.Mino, nNew+nCommon)
+	dkgsNew := make([]dkg.DKG, nNew+nCommon)
+	addrsNew := make([]mino.Address, nNew+nCommon)
+	//the first nCommon nodes of  committee are the same as the first nCommon nodes of the old committee
+	for i := 0; i < nCommon; i++ {
+		minosNew[i] = minosOld[i]
+		addrsNew[i] = minosOld[i].GetAddress()
 	}
 
-	pubkeys_new := make([]kyber.Point, len(minos_new))
+	pubkeysNew := make([]kyber.Point, len(minosNew))
 	// defining the address of the new nodes.
-	for i := 0; i < n_new; i++ {
+	for i := 0; i < nNew; i++ {
 		minogrpc := minoch.MustCreate(minoManager, fmt.Sprintf("addr new %d", i))
-		minos_new[i+n_common] = minogrpc
-		addrs_new[i+n_common] = minogrpc.GetAddress()
+		minosNew[i+nCommon] = minogrpc
+		addrsNew[i+nCommon] = minogrpc.GetAddress()
 	}
 	// initializing the pedersen of the new nodes. the common nodes already have a pedersen
-	for i := 0; i < n_new; i++ {
-		dkg, pubkey := NewPedersen(minos_new[i+n_common])
-		dkgs_new[i+n_common] = dkg
-		pubkeys_new[i+n_common] = pubkey
+	for i := 0; i < nNew; i++ {
+		dkg, pubkey := NewPedersen(minosNew[i+nCommon])
+		dkgsNew[i+nCommon] = dkg
+		pubkeysNew[i+nCommon] = pubkey
 	}
-	for i := 0; i < n_common; i++ {
-		dkgs_new[i] = dkgs_old[i]
-		pubkeys_new[i] = pubkeys_old[i]
+	for i := 0; i < nCommon; i++ {
+		dkgsNew[i] = dkgsOld[i]
+		pubkeysNew[i] = pubkeysOld[i]
 	}
 	// initializing the actor of the new nodes. the common nodes already have an actor
-	actors_new := make([]dkg.Actor, n_new+n_common)
-	for i := 0; i < n_common; i++ {
-		actors_new[i] = actors_old[i]
+	actorsNew := make([]dkg.Actor, nNew+nCommon)
+	for i := 0; i < nCommon; i++ {
+		actorsNew[i] = actorsOld[i]
 	}
-	for i := 0; i < n_new; i++ {
-		actor, err := dkgs_new[i+n_common].Listen()
+	for i := 0; i < nNew; i++ {
+		actor, err := dkgsNew[i+nCommon].Listen()
 		require.NoError(t, err)
-		actors_new[i+n_common] = actor
+		actorsNew[i+nCommon] = actor
 	}
 	// resharing the committee secret among the new committee
-	err = actors_old[0].Reshare(threshold_new, threshold_old, addrs_new, pubkeys_new, pubkeys_old)
+	fakeAuthority = NewAuthority(addrsNew, pubkeysNew)
+	err = actorsOld[0].Reshare(fakeAuthority, thresholdNew)
 	require.NoError(t, err, "Resharing was not successful")
 	// comparing the public key of the old and the new committee
-	oldPubKey, err := actors_old[0].GetPublicKey()
+	oldPubKey, err := actorsOld[0].GetPublicKey()
 	require.NoError(t, err)
-	for _, actor_new := range actors_new {
-		newPubKey, err := actor_new.GetPublicKey()
+	for _, actorNew := range actorsNew {
+		newPubKey, err := actorNew.GetPublicKey()
 		// the public key should remain the same
 		require.NoError(t, err, "the public key should remain the same")
 		newPubKey.Equal(oldPubKey)
-		decrypted, err := actor_new.Decrypt(K, C)
+		decrypted, err := actorNew.Decrypt(K, C)
 		require.NoError(t, err, "decryption was not successful")
 		require.Equal(t, message, decrypted, "the new committee should be able to decrypt the messages encrypted by the old committee")
 	}

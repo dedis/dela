@@ -264,15 +264,33 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 
 // Reshare implements dkg.Actor. It recreates the DKG with an updated list of
 // participants.
-
-func (a *Actor) Reshare(T_new int, T_old int, addrs_new []mino.Address, pubkeys_new []kyber.Point, pubkeys_old []kyber.Point) error {
+func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
 	if !a.startRes.Done() {
 		return xerrors.Errorf("you must first initialize DKG. " +
 			"Did you call setup() first?")
 	}
+
+	addrsNew := make([]mino.Address, 0, co.Len())
+	pubkeysNew := make([]kyber.Point, 0, co.Len())
+
+	addrIter := co.AddressIterator()
+	pubkeyIter := co.PublicKeyIterator()
+
+	for addrIter.HasNext() && pubkeyIter.HasNext() {
+		addrsNew = append(addrsNew, addrIter.GetNext())
+
+		pubkey := pubkeyIter.GetNext()
+		edKey, ok := pubkey.(ed25519.PublicKey)
+		if !ok {
+			return xerrors.Errorf("expected ed25519.PublicKey, got '%T'", pubkey)
+		}
+
+		pubkeysNew = append(pubkeysNew, edKey.GetPoint())
+	}
+
 	// get the union of the new members and the old members
-	addrs_all := unionOfTwoSlides(a.startRes.GetParticipants(), addrs_new)
-	players := mino.NewAddresses(addrs_all...)
+	addrsAll := unionOfTwoSlides(a.startRes.GetParticipants(), addrsNew)
+	players := mino.NewAddresses(addrsAll...)
 	ctx, cancel := context.WithTimeout(context.Background(), resharingTimeout)
 	defer cancel()
 	ctx = context.WithValue(ctx, tracing.ProtocolKey, protocolNameResharing)
@@ -280,15 +298,18 @@ func (a *Actor) Reshare(T_new int, T_old int, addrs_new []mino.Address, pubkeys_
 	if err != nil {
 		return xerrors.Errorf("failed to create stream: %v", err)
 	}
-	message := types.NewResharingRequest(T_new, T_old, addrs_new, a.startRes.GetParticipants(), pubkeys_new, pubkeys_old)
+	thresholdOld := a.startRes.GetThreshold()
+	pubkeysOld := a.startRes.GetPublicKeys()
+	//fmt.Println(TNew, TOld, addrsNew, a.startRes.GetParticipants(), pubkeysNew, pubkeysOld)
+	message := types.NewResharingRequest(thresholdNew, thresholdOld, addrsNew, a.startRes.GetParticipants(), pubkeysNew, pubkeysOld)
 	// send the resharing request to all the old and new nodes
-	err = <-sender.Send(message, addrs_all...)
+	err = <-sender.Send(message, addrsAll...)
 	if err != nil {
 		return xerrors.Errorf("failed to send decrypt request: %v", err)
 	}
-	dkgPubKeys := make([]kyber.Point, len(addrs_new))
+	dkgPubKeys := make([]kyber.Point, len(addrsNew))
 	// wait for receiving the response from the new nodes
-	for i := 0; i < len(addrs_new); i++ {
+	for i := 0; i < len(addrsNew); i++ {
 
 		_, msg, err := receiver.Recv(ctx)
 		if err != nil {

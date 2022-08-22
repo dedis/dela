@@ -24,6 +24,8 @@ type state struct {
 	resharing    bool
 	distrKey     kyber.Point
 	participants []mino.Address
+	publicKeys   []kyber.Point
+	threshold    int
 }
 
 func (s *state) IsStarting() bool {
@@ -92,31 +94,55 @@ func (s *state) SetParticipants(addrs []mino.Address) {
 	s.Unlock()
 }
 
+func (s *state) GetPublicKeys() []kyber.Point {
+	s.Lock()
+	defer s.Unlock()
+	return s.publicKeys
+}
+
+func (s *state) SetPublicKeys(publicKeys []kyber.Point) {
+	s.Lock()
+	s.publicKeys = publicKeys
+	s.Unlock()
+}
+
+func (s *state) GetThreshold() int {
+	s.Lock()
+	defer s.Unlock()
+	return s.threshold
+}
+
+func (s *state) SetThreshold(threshold int) {
+	s.Lock()
+	s.threshold = threshold
+	s.Unlock()
+}
+
 // Handler represents the RPC executed on each node
 //
 // - implements mino.Handler
 type Handler struct {
 	mino.UnsupportedHandler
 	sync.RWMutex
-	dkg             *pedersen.DistKeyGenerator
-	privKey         kyber.Scalar
-	me              mino.Address
-	privShare       *share.PriShare
-	startRes        *state
-	deals           chan dealFrom
-	deals_resharing chan dealFrom_resharing
-	responses       chan responseFrom
+	dkg            *pedersen.DistKeyGenerator
+	privKey        kyber.Scalar
+	me             mino.Address
+	privShare      *share.PriShare
+	startRes       *state
+	deals          chan dealFrom
+	dealsResharing chan dealFromResharing
+	responses      chan responseFrom
 }
 
 // NewHandler creates a new handler
 func NewHandler(privKey kyber.Scalar, me mino.Address) *Handler {
 	return &Handler{
-		privKey:         privKey,
-		me:              me,
-		startRes:        &state{},
-		deals:           make(chan dealFrom, 1000),
-		deals_resharing: make(chan dealFrom_resharing, 1000),
-		responses:       make(chan responseFrom, 1000),
+		privKey:        privKey,
+		me:             me,
+		startRes:       &state{},
+		deals:          make(chan dealFrom, 1000),
+		dealsResharing: make(chan dealFromResharing, 1000),
+		responses:      make(chan responseFrom, 1000),
 	}
 }
 
@@ -125,9 +151,9 @@ type dealFrom struct {
 	from mino.Address
 }
 
-type dealFrom_resharing struct {
-	deal_resharing *types.Deal_resharing
-	from           mino.Address
+type dealFromResharing struct {
+	dealResharing *types.DealResharing
+	from          mino.Address
 }
 
 type responseFrom struct {
@@ -200,10 +226,10 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 				from,
 			}
 
-		case types.Deal_resharing:
+		case types.DealResharing:
 			//dela.Logger.Trace().Msgf("%v received resharing deal from %v\n", h.me, from)
 
-			h.deals_resharing <- dealFrom_resharing{
+			h.dealsResharing <- dealFromResharing{
 				&msg,
 				from,
 			}
@@ -341,6 +367,8 @@ func (h *Handler) start(ctx context.Context, start types.Start,
 	}
 
 	h.startRes.SetParticipants(participants)
+	h.startRes.SetPublicKeys(start.GetPublicKeys())
+	h.startRes.SetThreshold(start.GetThreshold())
 
 	// 4. Certify
 	err = h.certify(ctx)
@@ -632,18 +660,18 @@ func (h *Handler) reshare(ctx context.Context, resharingRequest types.ResharingR
 
 	dela.Logger.Info().Msgf("%v is resharing", h.me)
 
-	addrs_new := resharingRequest.GetAddrs_new()
-	addrs_old := resharingRequest.GetAddrs_old()
+	addrsNew := resharingRequest.GetAddrsNew()
+	addrsOld := resharingRequest.GetAddrsOld()
 
-	if len(addrs_new) != len(resharingRequest.GetPubkeys_new()) {
+	if len(addrsNew) != len(resharingRequest.GetPubkeysNew()) {
 		return xerrors.Errorf(
 			"there should be as many participants as "+
-				"pubKey: %d != %d", len(addrs_new),
-			len(resharingRequest.GetPubkeys_new()),
+				"pubKey: %d != %d", len(addrsNew),
+			len(resharingRequest.GetPubkeysNew()),
 		)
 	}
 	// this variable is true if the node is common between the old and the new committee
-	commonNode := addrIsInSlice(h.me, addrs_new) && addrIsInSlice(h.me, addrs_old)
+	commonNode := addrIsInSlice(h.me, addrsNew) && addrIsInSlice(h.me, addrsOld)
 	// if the node is in the old committee, it should do the following steps
 	if h.startRes.distrKey != nil {
 		// 1. update mydkg for resharing
@@ -654,13 +682,12 @@ func (h *Handler) reshare(ctx context.Context, resharingRequest types.ResharingR
 		c := &pedersen.Config{
 			Suite:        suite,
 			Longterm:     h.privKey,
-			OldNodes:     resharingRequest.GetPubkeys_old(),
-			NewNodes:     resharingRequest.GetPubkeys_new(),
+			OldNodes:     resharingRequest.GetPubkeysOld(),
+			NewNodes:     resharingRequest.GetPubkeysNew(),
 			Share:        share,
-			Threshold:    resharingRequest.GetT_new(),
-			OldThreshold: resharingRequest.GetT_old(),
+			Threshold:    resharingRequest.GetTNew(),
+			OldThreshold: resharingRequest.GetTOld(),
 		}
-
 		d, err := pedersen.NewDistKeyHandler(c)
 		if err != nil {
 			return xerrors.Errorf("failed to compute the new dkg: %v", err)
@@ -668,7 +695,7 @@ func (h *Handler) reshare(ctx context.Context, resharingRequest types.ResharingR
 		h.dkg = d
 
 		// 2. Send my Deals to the new and common nodes
-		err = h.sendDeals_resharing(ctx, out, addrs_new, share.Commits)
+		err = h.senddealsResharing(ctx, out, addrsNew, share.Commits)
 		if err != nil {
 			return xerrors.Errorf("failed to send deals: %v", err)
 		}
@@ -676,11 +703,14 @@ func (h *Handler) reshare(ctx context.Context, resharingRequest types.ResharingR
 	// if the node is a new node or is a common node it should do the next steps
 	if h.startRes.distrKey == nil || commonNode {
 		// 1. Process the incoming deals
-		err := h.receiveDeals_resharing(ctx, commonNode, resharingRequest, from, out)
+		err := h.receivedealsResharing(ctx, commonNode, resharingRequest, from, out)
 		if err != nil {
 			return xerrors.Errorf("failed to receive deals: %v", err)
 		}
-		h.startRes.SetParticipants(resharingRequest.GetAddrs_new())
+		h.startRes.SetParticipants(resharingRequest.GetAddrsNew())
+		h.startRes.SetPublicKeys(resharingRequest.GetPubkeysNew())
+		h.startRes.SetThreshold(resharingRequest.TNew)
+
 	}
 	// all the nodes should certify
 	// 4. Certify
@@ -699,8 +729,8 @@ func (h *Handler) reshare(ctx context.Context, resharingRequest types.ResharingR
 	return nil
 }
 
-// similar to sendDeals except that it creates Deal_resharing which has more data than Deal
-func (h *Handler) sendDeals_resharing(ctx context.Context, out mino.Sender,
+// similar to sendDeals except that it creates dealResharing which has more data than Deal
+func (h *Handler) senddealsResharing(ctx context.Context, out mino.Sender,
 	participants []mino.Address, publicCoeff []kyber.Point) error {
 	dela.Logger.Trace().Msgf("%v is generating its deals", h.me)
 	deals, err := h.dkg.Deals()
@@ -724,11 +754,11 @@ func (h *Handler) sendDeals_resharing(ctx context.Context, out mino.Sender,
 				deal.Deal.Cipher,
 			),
 		)
-		//deal_resharing contains the public coefficients as well
-		deal_resharingMsg := types.NewDeal_resharing(dealMsg, publicCoeff)
+		//dealResharing contains the public coefficients as well
+		dealResharingMsg := types.NewDealResharing(dealMsg, publicCoeff)
 
-		dela.Logger.Trace().Msgf("%s sent deal_resharing %d", h.me, i)
-		errch := out.Send(deal_resharingMsg, participants[i])
+		dela.Logger.Trace().Msgf("%s sent dealResharing %d", h.me, i)
+		errch := out.Send(dealResharingMsg, participants[i])
 
 		// this should be further improved by using a worker pool,
 		// as opposed to an unbounded number of goroutines,
@@ -737,7 +767,7 @@ func (h *Handler) sendDeals_resharing(ctx context.Context, out mino.Sender,
 			err := <-errs
 			if err != nil {
 				dela.Logger.Warn().Msgf(
-					"got an error while sending deal_resharing %v: %v", i, err)
+					"got an error while sending dealResharing %v: %v", i, err)
 				errors <- err
 			} else {
 				done <- idx
@@ -767,37 +797,37 @@ func (h *Handler) sendDeals_resharing(ctx context.Context, out mino.Sender,
 	return nil
 }
 
-// similar to receiveDeals except that it receives the Deal_resharing
-func (h *Handler) receiveDeals_resharing(ctx context.Context, commonNode bool, resharingRequest types.ResharingRequest, from mino.Address, out mino.Sender) error {
+// similar to receiveDeals except that it receives the dealResharing
+func (h *Handler) receivedealsResharing(ctx context.Context, commonNode bool, resharingRequest types.ResharingRequest, from mino.Address, out mino.Sender) error {
 	//dela.Logger.Trace().Msgf("%v is handling deals from other nodes", h.me)
 
-	addrs_new := resharingRequest.GetAddrs_new()
-	addrs_old := resharingRequest.GetAddrs_old()
-	addrs_all := unionOfTwoSlides(addrs_new, addrs_old)
+	addrsNew := resharingRequest.GetAddrsNew()
+	addrsOld := resharingRequest.GetAddrsOld()
+	addrsAll := unionOfTwoSlides(addrsNew, addrsOld)
 
 	numReceivedDeals := 0
 	expectedDeals := 0
 	// common nodes receive one deal less than the new nodes
 	if commonNode {
-		expectedDeals = len(addrs_old) - 1
+		expectedDeals = len(addrsOld) - 1
 	} else {
-		expectedDeals = len(addrs_old)
+		expectedDeals = len(addrsOld)
 	}
 
 	for numReceivedDeals < expectedDeals {
 		select {
 
-		case df := <-h.deals_resharing:
+		case df := <-h.dealsResharing:
 			// the new nodes that are not part of the old committee should create a dkg after receiving their first deal
 			if !commonNode && numReceivedDeals == 0 {
 				c := &pedersen.Config{
 					Suite:        suite,
 					Longterm:     h.privKey,
-					OldNodes:     resharingRequest.GetPubkeys_old(),
-					NewNodes:     resharingRequest.GetPubkeys_new(),
-					PublicCoeffs: df.deal_resharing.GetPublicCoeffs(),
-					Threshold:    resharingRequest.GetT_new(),
-					OldThreshold: resharingRequest.GetT_old(),
+					OldNodes:     resharingRequest.GetPubkeysOld(),
+					NewNodes:     resharingRequest.GetPubkeysNew(),
+					PublicCoeffs: df.dealResharing.GetPublicCoeffs(),
+					Threshold:    resharingRequest.GetTNew(),
+					OldThreshold: resharingRequest.GetTOld(),
 				}
 
 				newDkg, err := pedersen.NewDistKeyHandler(c)
@@ -808,8 +838,8 @@ func (h *Handler) receiveDeals_resharing(ctx context.Context, commonNode bool, r
 				h.dkg = newDkg
 			}
 
-			deal := df.deal_resharing.GetDeal()
-			err := h.handleDeal(&deal, df.from, addrs_all, out)
+			deal := df.dealResharing.GetDeal()
+			err := h.handleDeal(&deal, df.from, addrsAll, out)
 			if err != nil {
 				dela.Logger.Warn().Msgf("%s failed to handle received deal from %s: %v",
 					h.me, from, err)
@@ -845,7 +875,7 @@ func addrIsInSlice(addr mino.Address, addrSlice []mino.Address) bool {
 
 // gets the list of the old committee members and new committee members and returns the union
 func unionOfTwoSlides(addrsSlice1 []mino.Address, addrsSlice2 []mino.Address) []mino.Address {
-	addrs_all := addrsSlice1
+	addrsAll := addrsSlice1
 	for _, i := range addrsSlice2 {
 		exist := false
 		for _, j := range addrsSlice1 {
@@ -855,8 +885,8 @@ func unionOfTwoSlides(addrsSlice1 []mino.Address, addrsSlice2 []mino.Address) []
 			}
 		}
 		if !exist {
-			addrs_all = append(addrs_all, i)
+			addrsAll = append(addrsAll, i)
 		}
 	}
-	return addrs_all
+	return addrsAll
 }
