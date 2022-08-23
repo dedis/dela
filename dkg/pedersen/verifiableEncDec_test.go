@@ -41,6 +41,7 @@ func Test_verifiableEncDec(t *testing.T) {
 	minos := make([]mino.Mino, n)
 	dkgs := make([]dkg.DKG, n)
 	addrs := make([]mino.Address, n)
+
 	// creating GBar. we need a generator in order to follow the encryption and decryption protocol of https://arxiv.org/pdf/2205.08529.pdf /
 	// we take an agreed data among the participants and embed it as a point. the result is the generator that we are seeking
 	agreedData := make([]byte, 32)
@@ -75,6 +76,7 @@ func Test_verifiableEncDec(t *testing.T) {
 
 	_, err = actors[0].Setup(fakeAuthority, threshold)
 	require.NoError(t, err)
+
 	//generating random messages in batch and encrypt them
 	const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	keys := make([][]byte, batchSize)

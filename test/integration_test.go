@@ -1,8 +1,6 @@
 package integration
 
 import (
-	"bytes"
-	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"io/ioutil"
@@ -10,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	accessContract "go.dedis.ch/dela/contracts/access"
@@ -107,33 +104,33 @@ func TestIntegration_Value_Simple(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-func addAndWait(t *testing.T, manager txn.Manager, node cosiDelaNode, args ...txn.Arg) {
-	manager.Sync()
+// func addAndWait(t *testing.T, manager txn.Manager, node cosiDelaNode, args ...txn.Arg) {
+// 	manager.Sync()
 
-	tx, err := manager.Make(args...)
-	require.NoError(t, err)
+// 	tx, err := manager.Make(args...)
+// 	require.NoError(t, err)
 
-	err = node.GetPool().Add(tx)
-	require.NoError(t, err)
+// 	err = node.GetPool().Add(tx)
+// 	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
-	defer cancel()
+// 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
+// 	defer cancel()
 
-	events := node.GetOrdering().Watch(ctx)
+// 	events := node.GetOrdering().Watch(ctx)
 
-	for event := range events {
-		for _, result := range event.Transactions {
-			tx := result.GetTransaction()
+// 	for event := range events {
+// 		for _, result := range event.Transactions {
+// 			tx := result.GetTransaction()
 
-			if bytes.Equal(tx.GetID(), tx.GetID()) {
-				accepted, err := event.Transactions[0].GetStatus()
-				require.Empty(t, err)
+// 			if bytes.Equal(tx.GetID(), tx.GetID()) {
+// 				accepted, err := event.Transactions[0].GetStatus()
+// 				require.Empty(t, err)
 
-				require.True(t, accepted)
-				return
-			}
-		}
-	}
+// 				require.True(t, accepted)
+// 				return
+// 			}
+// 		}
+// 	}
 
-	t.Error("transaction not found")
-}
+// 	t.Error("transaction not found")
+// }
