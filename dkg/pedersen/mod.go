@@ -323,9 +323,9 @@ func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
 		return xerrors.Errorf("failed to send resharing request: %v", err)
 	}
 
-	dkgPubKeys := make([]kyber.Point, len(addrsNew))
+	dkgPubKeys := make([]kyber.Point, len(addrsAll))
 	// wait for receiving the response from the new nodes
-	for i := 0; i < len(addrsNew); i++ {
+	for i := 0; i < len(addrsAll); i++ {
 
 		_, msg, err := receiver.Recv(ctx)
 		if err != nil {

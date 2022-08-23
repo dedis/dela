@@ -377,7 +377,7 @@ func (h *Handler) start(ctx context.Context, start types.Start,
 	}
 
 	// 5. Announce the DKG public key
-	err = h.announceDkgPublicKey(out, from)
+	err = h.announceDkgPublicKey(true, out, from)
 	if err != nil {
 		return xerrors.Errorf("failed to announce dkg public key: %v", err)
 	}
@@ -581,24 +581,32 @@ func (h *Handler) certify(ctx context.Context) error {
 	return nil
 }
 
-func (h *Handler) announceDkgPublicKey(out mino.Sender, from mino.Address) error {
+func (h *Handler) announceDkgPublicKey(commonNode bool, out mino.Sender, from mino.Address) error {
 	// 6. Send back the public DKG key
 
-	distrKey, err := h.dkg.DistKeyShare()
-	if err != nil {
-		return xerrors.Errorf("failed to get distr key: %v", err)
+	var publicKey kyber.Point
+
+	// if the node is new or a common node it should update its state
+	if h.startRes.distrKey == nil || commonNode {
+		distrKey, err := h.dkg.DistKeyShare()
+		if err != nil {
+			return xerrors.Errorf("failed to get distr key: %v", err)
+		}
+		publicKey = distrKey.Public()
+		// 7. Update the state before sending to acknowledgement to the
+		// orchestrator, so that it can process decrypt requests right away.
+		h.startRes.SetDistKey(distrKey.Public())
+		h.Lock()
+		h.privShare = distrKey.PriShare()
+		h.Unlock()
+	} else {
+		publicKey = h.startRes.GetDistKey()
 	}
 
-	// 7. Update the state before sending to acknowledgement to the
-	// orchestrator, so that it can process decrypt requests right away.
-	h.startRes.SetDistKey(distrKey.Public())
-
-	h.Lock()
-	h.privShare = distrKey.PriShare()
-	h.Unlock()
-
-	done := types.NewStartDone(distrKey.Public())
-	err = <-out.Send(done, from)
+	// all the old, new and common nodes should announce their public key to the initiator,
+	// in this way the initiator can make sure that every body has finished the resharing successfully
+	done := types.NewStartDone(publicKey)
+	err := <-out.Send(done, from)
 	if err != nil {
 		return xerrors.Errorf("got an error while sending pub key: %v", err)
 	}
@@ -720,20 +728,22 @@ func (h *Handler) reshare(ctx context.Context, resharingRequest types.ResharingR
 		h.startRes.SetThreshold(resharingRequest.TNew)
 
 	}
-	// all the nodes should certify
+
 	// 4. Certify
+	// all the nodes should certify
 	err := h.certify(ctx)
 	if err != nil {
 		return xerrors.Errorf("failed to certify: %v", err)
 	}
-	// only the new or common nodes would announce the public key
+
 	// 5. Announce the DKG public key
-	if h.startRes.distrKey == nil || commonNode {
-		err := h.announceDkgPublicKey(out, from)
-		if err != nil {
-			return xerrors.Errorf("failed to announce dkg public key: %v", err)
-		}
+	// all the old, new and common nodes would announce the public key in this way the initiator can make sure the
+	//resharing was completely successful
+	err = h.announceDkgPublicKey(commonNode, out, from)
+	if err != nil {
+		return xerrors.Errorf("failed to announce dkg public key: %v", err)
 	}
+
 	return nil
 }
 
@@ -817,7 +827,7 @@ func (h *Handler) receiveDealsResharing(ctx context.Context, commonNode bool, re
 	// common nodes receive one deal less than the new nodes and they have the old addresses saved in their state
 	if commonNode {
 		addrsOld = h.startRes.GetParticipants()
-		expectedDeals = len(addrsOld) - 1
+		expectedDeals = len(addrsOld)
 
 	} else {
 		addrsOld = resharingRequest.GetAddrsOld()
