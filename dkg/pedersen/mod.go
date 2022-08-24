@@ -305,18 +305,24 @@ func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
 	thresholdOld := a.startRes.GetThreshold()
 	pubkeysOld := a.startRes.GetPublicKeys()
 
-	// we don't need to send the old threshold or old public keys to the old or common nodes
+	// we don't need to send the old threshold or old public keys to the old or
+	// common nodes
 	messageOld := types.NewResharingRequest(thresholdNew, 0, addrsNew, nil, pubkeysNew, nil)
+
 	// send the resharing request to the old and common nodes
 	err = <-sender.Send(messageOld, a.startRes.GetParticipants()...)
 	if err != nil {
 		return xerrors.Errorf("failed to send resharing request: %v", err)
 	}
 
-	// first find the set of new nodes that are not common between the old and new committee
+	// first find the set of new nodes that are not common between the old and
+	// new committee
 	addrsNewNotCommon := subtractOfTwoSlices(addrsNew, a.startRes.GetParticipants())
-	// then create a resharing request message for them. we should send the old threshold and ol public keys to them
+
+	// then create a resharing request message for them. we should send the old
+	// threshold and old public keys to them
 	messageNew := types.NewResharingRequest(thresholdNew, thresholdOld, addrsNew, a.startRes.GetParticipants(), pubkeysNew, pubkeysOld)
+
 	// send the resharing request to the new but not common nodes
 	err = <-sender.Send(messageNew, addrsNewNotCommon...)
 	if err != nil {
@@ -339,8 +345,7 @@ func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
 		}
 		dkgPubKeys[i] = doneMsg.GetPublicKey()
 		// this is a simple check that every node sends back the same DKG pub
-		// key.
-		// TODO: handle the situation where a pub key is not the same
+		// key. TODO: handle the situation where a pub key is not the same
 		if i != 0 && !dkgPubKeys[i-1].Equal(doneMsg.GetPublicKey()) {
 			return xerrors.Errorf("the public keys does not match: %v", dkgPubKeys)
 		}
@@ -351,16 +356,16 @@ func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
 // gets the list of the old committee members and new committee members and returns the new committee members that are not common
 func subtractOfTwoSlices(addrsSlice1 []mino.Address, addrsSlice2 []mino.Address) []mino.Address {
 	var subtractedSlice []mino.Address
-	for _, i := range addrsSlice1 {
+	for _, addr1 := range addrsSlice1 {
 		exist := false
-		for _, j := range addrsSlice2 {
-			if i == j {
+		for _, addr2 := range addrsSlice2 {
+			if addr1.Equal(addr2) {
 				exist = true
 				break
 			}
 		}
 		if !exist {
-			subtractedSlice = append(subtractedSlice, i)
+			subtractedSlice = append(subtractedSlice, addr1)
 		}
 	}
 	return subtractedSlice

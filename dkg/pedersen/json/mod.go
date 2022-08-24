@@ -134,7 +134,6 @@ func (f msgFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) 
 		}
 
 		m = Message{Start: &start}
-
 	case types.ResharingRequest:
 
 		resharingRequest, err := f.encodeResharingRequest(in)
@@ -156,7 +155,6 @@ func (f msgFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) 
 		}
 
 		m = Message{Deal: &d}
-
 	case types.DealResharing:
 		d := Deal{
 			Index:     in.GetDeal().GetIndex(),
@@ -293,6 +291,7 @@ func (f msgFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error)
 		)
 
 		publicCoeff := make([]kyber.Point, len(m.DealResharing.PublicCoeff))
+
 		for i, coeff := range m.DealResharing.PublicCoeff {
 			point := f.suite.Point()
 			err := point.UnmarshalBinary(coeff)
@@ -446,6 +445,7 @@ func (f msgFormat) encodeResharingRequest(in types.ResharingRequest) (ResharingR
 		PubkeysNew: pubkeysNew,
 		PubkeysOld: pubkeysOld,
 	}
+
 	return resharingRequest, nil
 
 }

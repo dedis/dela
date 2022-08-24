@@ -65,7 +65,7 @@ func (s Start) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
-// ResharingRequest is the message the initiator of the resjaring protocol should send to all the
+// ResharingRequest is the message the initiator of the resharing protocol should send to all the
 // old nodes.
 //
 // - implements serde.Message
