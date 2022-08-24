@@ -137,7 +137,7 @@ type responseFrom struct {
 }
 
 var (
-	workerNum    = 5
+	workerNum    = 2
 	wgBatchReply sync.WaitGroup
 )
 
@@ -336,11 +336,15 @@ func (h *Handler) handleVerifiableDecrypt(out mino.Sender, msg types.VerifiableD
 	errs := out.Send(verifiableDecryptReply, from)
 	err := <-errs
 	if err != nil {
+		dela.Logger.Error().Msgf(
+			"%v couldn't send its share back \n", h.me,
+		)
 		return xerrors.Errorf(
 			"got an error while sending the verifiable decrypt "+
 				"reply: %v", err,
 		)
 	}
+
 	return nil
 }
 

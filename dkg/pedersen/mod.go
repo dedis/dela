@@ -39,7 +39,7 @@ var (
 
 const (
 	setupTimeout     = time.Second * 300
-	decryptTimeout   = time.Second * 100
+	decryptTimeout   = time.Second * 10000
 	resharingTimeout = time.Second * 300
 )
 
@@ -359,7 +359,8 @@ func (a *Actor) VerifiableDecrypt(ciphertexts []types.Ciphertext, workerNum int)
 	var activeAddrs []mino.Address
 	// receive decrypt reply from the nodes
 	for i := 0; i < len(addrs); i++ {
-		_, message, err := receiver.Recv(ctx)
+		from, message, err := receiver.Recv(ctx)
+		dela.Logger.Debug().Msgf("received the %d th share from %v\n", i, from)
 
 		if err != nil {
 			return [][]byte{}, xerrors.Errorf("stream stopped unexpectedly: %v", err)

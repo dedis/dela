@@ -7,6 +7,7 @@ package minoch
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"math"
 	"sync"
@@ -140,10 +141,15 @@ func (c RPC) runFilters(req mino.Request) bool {
 // Stream implements mino.RPC. It simulates the stream by using the orchestrator
 // as the router for all the messages. They are redirected to the channel
 // associated with the address.
+// Stream implements mino.RPC. It simulates the stream by using the orchestrator
+// as the router for all the messages. They are redirected to the channel
+// associated with the address.
 func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, mino.Receiver, error) {
-	in := make(chan Envelope, 100)
-	out := make(chan Envelope, 100)
-	errs := make(chan error, 1)
+	bufSize := 10000
+
+	in := make(chan Envelope, bufSize)
+	out := make(chan Envelope, bufSize)
+	errs := make(chan error, 1000)
 
 	outs := make(map[string]receiver)
 
@@ -156,7 +162,7 @@ func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, min
 			return nil, nil, xerrors.Errorf("couldn't find peer: %v", err)
 		}
 
-		ch := make(chan Envelope, 1)
+		ch := make(chan Envelope, bufSize*100)
 		outs[addr.String()] = receiver{
 			out:     ch,
 			context: c.context,
@@ -172,6 +178,7 @@ func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, min
 
 			err := peer.rpcs[c.path].h.Stream(s, r)
 			if err != nil {
+				fmt.Println("Error:", err)
 				errs <- xerrors.Errorf("couldn't process: %v", err)
 			}
 		}(outs[addr.String()])
@@ -207,9 +214,19 @@ func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, min
 			case env := <-in:
 				for _, to := range env.to {
 					if to.(address).orchestrator {
-						orchRecv.out <- env
+						select {
+						case orchRecv.out <- env:
+						default:
+							fmt.Println("FULL!! (orch)")
+							orchRecv.out <- env
+						}
 					} else {
-						outs[to.String()].out <- env
+						select {
+						case outs[to.String()].out <- env:
+						default:
+							fmt.Println("FULL!!")
+							outs[to.String()].out <- env
+						}
 					}
 				}
 			}
