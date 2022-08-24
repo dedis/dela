@@ -11,17 +11,38 @@ import (
 
 // NewMinimal returns a new minimal initializer
 func NewMinimal() node.Initializer {
-	return minimal{}
+	return minimal{
+		la: &listenAction{},
+	}
 }
 
 // minimal is an initializer with the minimum set of commands. Indeed it only
 // creates and injects a new DKG
 //
 // - implements node.Initializer
-type minimal struct{}
+type minimal struct {
+	la *listenAction
+}
 
 // Build implements node.Initializer. In this case we don't need any command.
-func (m minimal) SetCommands(_ node.Builder) {}
+func (m minimal) SetCommands(builder node.Builder) {
+	cmd := builder.SetCommand("dkg")
+	cmd.SetDescription("DKG service administration")
+
+	sub := cmd.SetSubCommand("listen")
+	sub.SetDescription("initialize DKG, create the actor and save the authority configuration")
+	sub.SetAction(builder.MakeAction(m.la))
+
+	sub = cmd.SetSubCommand("setup")
+	sub.SetDescription("setup the DKG service")
+	sub.SetFlags(
+		cli.StringSliceFlag{
+			Name:  "authority",
+			Usage: "<ADDR>:<PK> string, where each token is encoded in base64",
+		},
+	)
+	sub.SetAction(builder.MakeAction(setupAction{}))
+}
 
 // OnStart implements node.Initializer. It creates and registers a pedersen DKG.
 func (m minimal) OnStart(ctx cli.Flags, inj node.Injector) error {
@@ -43,6 +64,9 @@ func (m minimal) OnStart(ctx cli.Flags, inj node.Injector) error {
 	dela.Logger.Info().
 		Hex("public key", pubkeyBuf).
 		Msg("perdersen public key")
+
+	// the listen action is expecting the pubkey to be set
+	m.la.pubkey = pubkey
 
 	return nil
 }

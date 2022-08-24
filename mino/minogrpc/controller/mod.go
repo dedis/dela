@@ -5,7 +5,6 @@
 // when the CLI daemon is stopping.
 //
 // Documentation Last Review: 07.10.2020
-//
 package controller
 
 import (
@@ -63,7 +62,7 @@ func (m miniController) SetCommands(builder node.Builder) {
 		cli.StringFlag{
 			Name:  "listen",
 			Usage: "set the address to listen on",
-			Value: "0.0.0.0:2000",
+			Value: "tcp://0.0.0.0:2000",
 		},
 		cli.StringFlag{
 			Name:     "public",

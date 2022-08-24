@@ -1,3 +1,4 @@
 .DS_Store
 cli/node/memcoin/memcoin
 test/private.key
+dkg/pedersen/dkgcli/dkgcli
