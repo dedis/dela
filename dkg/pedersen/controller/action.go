@@ -3,7 +3,7 @@ package controller
 import (
 	"encoding/base64"
 	"fmt"
-	"os"
+	"io/ioutil"
 	"path/filepath"
 	"strings"
 
@@ -101,7 +101,7 @@ func (a listenAction) Execute(ctx node.Context) error {
 
 	path := filepath.Join(ctx.Flags.Path("config"), authconfig)
 
-	err = os.WriteFile(path, []byte(str), 0755)
+	err = ioutil.WriteFile(path, []byte(str), 0755)
 	if err != nil {
 		return xerrors.Errorf("failed to write authority configuration: %v", err)
 	}
