@@ -42,6 +42,26 @@ func (m minimal) SetCommands(builder node.Builder) {
 		},
 	)
 	sub.SetAction(builder.MakeAction(setupAction{}))
+
+	sub = cmd.SetSubCommand("encrypt")
+	sub.SetDescription("encrypt a message. Outputs <hex(K)>:<hex(C)>:<hex(remainder)>")
+	sub.SetFlags(
+		cli.StringFlag{
+			Name:  "message",
+			Usage: "the message to encrypt, encoded in hex",
+		},
+	)
+	sub.SetAction(builder.MakeAction(encryptAction{}))
+
+	sub = cmd.SetSubCommand("decrypt")
+	sub.SetDescription("decrypt a message")
+	sub.SetFlags(
+		cli.StringFlag{
+			Name:  "encrypted",
+			Usage: "the encrypted string, as <hex(K)>:<hex(C)>",
+		},
+	)
+	sub.SetAction(builder.MakeAction(decryptAction{}))
 }
 
 // OnStart implements node.Initializer. It creates and registers a pedersen DKG.
