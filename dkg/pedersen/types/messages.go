@@ -65,22 +65,22 @@ func (s Start) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
-// ResharingRequest is the message the initiator of the resharing protocol should send to all the
-// old nodes.
+// ResharingRequest is the message the initiator of the resharing protocol
+// should send to all the old nodes.
 //
 // - implements serde.Message
 type ResharingRequest struct {
-	// new threshold
+	// New threshold
 	TNew int
-	// old threshold
+	// Old threshold
 	TOld int
-	// the full list of addresses that will participate in the new DKG
+	// The full list of addresses that will participate in the new DKG
 	addrsNew []mino.Address
-	// the full list of addresses of old dkg members
+	// The full list of addresses of old dkg members
 	addrsOld []mino.Address
-	// the corresponding kyber.Point pub keys of the new addresses
+	// The corresponding kyber.Point pub keys of the new addresses
 	pubkeysNew []kyber.Point
-	// the corresponding kyber.Point pub keys of the old addresses
+	// The corresponding kyber.Point pub keys of the old addresses
 	pubkeysOld []kyber.Point
 }
 
@@ -107,22 +107,22 @@ func (r ResharingRequest) GetTOld() int {
 	return r.TOld
 }
 
-//  GetaddrsNew returns the list of new addresses.
+// GetaddrsNew returns the list of new addresses.
 func (r ResharingRequest) GetAddrsNew() []mino.Address {
 	return append([]mino.Address{}, r.addrsNew...)
 }
 
-//  GetaddrsOld returns the list of old addresses.
+// GetaddrsOld returns the list of old addresses.
 func (r ResharingRequest) GetAddrsOld() []mino.Address {
 	return append([]mino.Address{}, r.addrsOld...)
 }
 
-//  GetpubkeysNew returns the list of new public keys.
+// GetpubkeysNew returns the list of new public keys.
 func (r ResharingRequest) GetPubkeysNew() []kyber.Point {
 	return append([]kyber.Point{}, r.pubkeysNew...)
 }
 
-//  GetpubkeysOld returns the list of old public keys.
+// GetpubkeysOld returns the list of old public keys.
 func (r ResharingRequest) GetPubkeysOld() []kyber.Point {
 	return append([]kyber.Point{}, r.pubkeysOld...)
 }
@@ -225,7 +225,7 @@ func (d Deal) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
-// deal messages for resharing process
+// DealResharing messages for resharing process
 // - implements serde.Message
 type DealResharing struct {
 	deal        Deal

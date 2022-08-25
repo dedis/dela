@@ -447,7 +447,6 @@ func (f msgFormat) encodeResharingRequest(in types.ResharingRequest) (ResharingR
 	}
 
 	return resharingRequest, nil
-
 }
 
 func (f msgFormat) decodeResharingRequest(ctx serde.Context, resharingRequest *ResharingRequest) (serde.Message, error) {
@@ -495,5 +494,4 @@ func (f msgFormat) decodeResharingRequest(ctx serde.Context, resharingRequest *R
 		addrsOld, pubkeysNew, pubkeysOld)
 
 	return s, nil
-
 }

@@ -29,7 +29,7 @@ var (
 	// protocolNameDecrypt denotes the value of the protocol span tag
 	// associated with the `dkg-decrypt` protocol.
 	protocolNameDecrypt = "dkg-decrypt"
-	// protocolNameResharing denotes the value of the protocol span tag
+	// ProtocolNameResharing denotes the value of the protocol span tag
 	// associated with the `dkg-resharing` protocol.
 	protocolNameResharing = "dkg-resharing"
 )
@@ -288,7 +288,7 @@ func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
 		pubkeysNew = append(pubkeysNew, edKey.GetPoint())
 	}
 
-	// get the union of the new members and the old members
+	// Get the union of the new members and the old members
 	addrsAll := unionOfTwoSlices(a.startRes.GetParticipants(), addrsNew)
 	players := mino.NewAddresses(addrsAll...)
 
@@ -305,32 +305,32 @@ func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
 	thresholdOld := a.startRes.GetThreshold()
 	pubkeysOld := a.startRes.GetPublicKeys()
 
-	// we don't need to send the old threshold or old public keys to the old or
+	// We don't need to send the old threshold or old public keys to the old or
 	// common nodes
 	messageOld := types.NewResharingRequest(thresholdNew, 0, addrsNew, nil, pubkeysNew, nil)
 
-	// send the resharing request to the old and common nodes
+	// Send the resharing request to the old and common nodes
 	err = <-sender.Send(messageOld, a.startRes.GetParticipants()...)
 	if err != nil {
 		return xerrors.Errorf("failed to send resharing request: %v", err)
 	}
 
-	// first find the set of new nodes that are not common between the old and
+	// First find the set of new nodes that are not common between the old and
 	// new committee
 	addrsNewNotCommon := subtractOfTwoSlices(addrsNew, a.startRes.GetParticipants())
 
-	// then create a resharing request message for them. we should send the old
+	// Then create a resharing request message for them. We should send the old
 	// threshold and old public keys to them
 	messageNew := types.NewResharingRequest(thresholdNew, thresholdOld, addrsNew, a.startRes.GetParticipants(), pubkeysNew, pubkeysOld)
 
-	// send the resharing request to the new but not common nodes
+	// Send the resharing request to the new but not common nodes
 	err = <-sender.Send(messageNew, addrsNewNotCommon...)
 	if err != nil {
 		return xerrors.Errorf("failed to send resharing request: %v", err)
 	}
 
 	dkgPubKeys := make([]kyber.Point, len(addrsAll))
-	// wait for receiving the response from the new nodes
+	// Wait for receiving the response from the new nodes
 	for i := 0; i < len(addrsAll); i++ {
 
 		_, msg, err := receiver.Recv(ctx)
@@ -344,7 +344,8 @@ func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
 				"go the following: %T", msg)
 		}
 		dkgPubKeys[i] = doneMsg.GetPublicKey()
-		// this is a simple check that every node sends back the same DKG pub
+
+		// This is a simple check that every node sends back the same DKG pub
 		// key. TODO: handle the situation where a pub key is not the same
 		if i != 0 && !dkgPubKeys[i-1].Equal(doneMsg.GetPublicKey()) {
 			return xerrors.Errorf("the public keys does not match: %v", dkgPubKeys)
@@ -353,7 +354,8 @@ func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
 	return nil
 }
 
-// gets the list of the old committee members and new committee members and returns the new committee members that are not common
+// Gets the list of the old committee members and new committee members and
+// returns the new committee members that are not common
 func subtractOfTwoSlices(addrsSlice1 []mino.Address, addrsSlice2 []mino.Address) []mino.Address {
 	var subtractedSlice []mino.Address
 	for _, addr1 := range addrsSlice1 {

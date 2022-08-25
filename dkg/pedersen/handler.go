@@ -622,7 +622,8 @@ func (h *Handler) announceDkgPublicKey(isCommonNode bool, out mino.Sender, from 
 	return nil
 }
 
-// handles the resharing request - acts differently for the new and old and common nodes
+// handleReshare handles the resharing request. Acts differently for the new
+// and old and common nodes
 func (h *Handler) handleReshare(out mino.Sender,
 	from mino.Address, msg types.ResharingRequest, done chan struct{}) error {
 
@@ -670,17 +671,17 @@ func (h *Handler) reshare(ctx context.Context, resharingRequest types.ResharingR
 	isOldNode := h.startRes.distrKey != nil
 	isNewNode := !isOldNode
 
-	// by default the node is not common. later we check
+	// By default the node is not common. Later we check
 	isCommonNode := false
 
-	// if the node is in the old committee, it should do the following steps
+	// If the node is in the old committee, it should do the following steps
 	if isOldNode {
 		addrsOld := h.startRes.GetParticipants()
 
-		// this variable is true if the node is common between the old and the new committee
+		// This variable is true if the node is common between the old and the new committee
 		isCommonNode = isInSlice(h.me, addrsNew) && isInSlice(h.me, addrsOld)
 
-		// 1. update mydkg for resharing
+		// 1. Update mydkg for resharing
 		share, err := h.dkg.DistKeyShare()
 		if err != nil {
 			return xerrors.Errorf("failed to create : %v", err)
@@ -710,7 +711,7 @@ func (h *Handler) reshare(ctx context.Context, resharingRequest types.ResharingR
 		}
 	}
 
-	// if the node is a new node or is a common node it should do the next steps
+	// If the node is a new node or is a common node it should do the next steps
 	if isNewNode || isCommonNode {
 		// 1. Process the incoming deals
 		err := h.receiveDealsResharing(ctx, isCommonNode, resharingRequest, from, out)
@@ -718,7 +719,7 @@ func (h *Handler) reshare(ctx context.Context, resharingRequest types.ResharingR
 			return xerrors.Errorf("failed to receive deals: %v", err)
 		}
 
-		// save the specifications of the new committee in the handler state
+		// Save the specifications of the new committee in the handler state
 		h.startRes.SetParticipants(resharingRequest.GetAddrsNew())
 		h.startRes.SetPublicKeys(resharingRequest.GetPubkeysNew())
 		h.startRes.SetThreshold(resharingRequest.TNew)
@@ -731,9 +732,9 @@ func (h *Handler) reshare(ctx context.Context, resharingRequest types.ResharingR
 		return xerrors.Errorf("failed to certify: %v", err)
 	}
 
-	// 5. Announce the DKG public key
-	// all the old, new and common nodes would announce the public key in this way the initiator can make sure the
-	//resharing was completely successful
+	// 5. Announce the DKG public key All the old, new and common nodes would
+	// announce the public key. In this way the initiator can make sure the
+	// resharing was completely successful.
 	err = h.announceDkgPublicKey(isCommonNode, out, from)
 	if err != nil {
 		return xerrors.Errorf("failed to announce dkg public key: %v", err)
@@ -744,8 +745,9 @@ func (h *Handler) reshare(ctx context.Context, resharingRequest types.ResharingR
 	return nil
 }
 
-// similar to sendDeals except that it creates dealResharing which has more data
-// than Deal only the old nodes call this function
+// sendDealsResharing is similar to sendDeals except that it creates
+// dealResharing which has more data than Deal. Only the old nodes call this
+// function
 func (h *Handler) sendDealsResharing(ctx context.Context, out mino.Sender,
 	participants []mino.Address, publicCoeff []kyber.Point) error {
 
@@ -816,8 +818,8 @@ func (h *Handler) sendDealsResharing(ctx context.Context, out mino.Sender,
 	return nil
 }
 
-// similar to receiveDeals except that it receives the dealResharing only the
-// new or common nodes call this function
+// receiveDealsResharing is similar to receiveDeals except that it receives the
+// dealResharing. Only the new or common nodes call this function
 func (h *Handler) receiveDealsResharing(ctx context.Context, isCommonNode bool, resharingRequest types.ResharingRequest, from mino.Address, out mino.Sender) error {
 	dela.Logger.Trace().Msgf("%v is handling deals from other nodes", h.me)
 
@@ -895,9 +897,9 @@ func (h *Handler) receiveDealsResharing(ctx context.Context, isCommonNode bool, 
 
 ///////// auxiliary functions
 
-// gets an address and a slice of addresses and returns true if that address is
-// in the slice.
-//  this function is called for cheking whether an old committee member is in the new commmitte as well or not
+// isInSlice gets an address and a slice of addresses and returns true if that
+// address is in the slice. This function is called for cheking whether an old
+// committee member is in the new commmitte as well or not
 func isInSlice(addr mino.Address, addrs []mino.Address) bool {
 
 	for _, other := range addrs {
@@ -909,8 +911,8 @@ func isInSlice(addr mino.Address, addrs []mino.Address) bool {
 	return false
 }
 
-// gets the list of the old committee members and new committee members and
-// returns the union
+// unionOfTwoSlices gets the list of the old committee members and new committee
+// members and returns the union.
 func unionOfTwoSlices(addrsSlice1 []mino.Address, addrsSlice2 []mino.Address) []mino.Address {
 	addrsAll := addrsSlice1
 

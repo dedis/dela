@@ -28,12 +28,12 @@ func init() {
 
 // This test creates a dkg committee then creates another committee (that can
 // share some nodes with the old committee) and then redistributes the secret to
-// the new commitee. using minoch as the underlying network
+// the new commitee. Using minoch as the underlying network
 func TestResharing_minoch(t *testing.T) {
 
-	// setting up the first dkg
-	nOld := 3
-	thresholdOld := 3
+	// Setting up the first dkg
+	nOld := 100
+	thresholdOld := 100
 
 	minosOld := make([]mino.Mino, nOld)
 	dkgsOld := make([]dkg.DKG, nOld)
@@ -41,14 +41,14 @@ func TestResharing_minoch(t *testing.T) {
 	pubkeysOld := make([]kyber.Point, len(minosOld))
 	minoManager := minoch.NewManager()
 
-	// defining the addresses
+	// Defining the addresses
 	for i := 0; i < nOld; i++ {
 		mino := minoch.MustCreate(minoManager, fmt.Sprintf("addr %d", i))
 		minosOld[i] = mino
 		addrsOld[i] = mino.GetAddress()
 	}
 
-	// initializing the pedersen
+	// Initializing the pedersen
 	for i, mino := range minosOld {
 		dkg, pubkey := NewPedersen(mino)
 		dkgsOld[i] = dkg
@@ -57,8 +57,9 @@ func TestResharing_minoch(t *testing.T) {
 
 	fakeAuthority := NewAuthority(addrsOld, pubkeysOld)
 
-	// initializing the old committee actors
+	// Initializing the old committee actors
 	actorsOld := make([]dkg.Actor, nOld)
+
 	for i := 0; i < nOld; i++ {
 		actor, err := dkgsOld[i].Listen()
 		require.NoError(t, err)
@@ -68,27 +69,27 @@ func TestResharing_minoch(t *testing.T) {
 	_, err := actorsOld[1].Setup(fakeAuthority, thresholdOld)
 	require.NoError(t, err, "setting up the firs dkg was not successful")
 
-	// encrypt a message with the old committee public key. the new committee
+	// Encrypt a message with the old committee public key. The new committee
 	// should be able to decrypt it successfully
 	message := []byte("Hello world")
 	K, C, remainder, err := actorsOld[0].Encrypt(message)
 	require.NoError(t, err, "encrypting the message was not successful")
 	require.Len(t, remainder, 0)
 
-	// setting up the second dkg nCommon is the number of nodes that are common
-	// between the new and the old committee
-	nCommon := 1
+	// Setting up the second dkg nCommon is the number of nodes that are common
+	// between the new and the old committee.
+	nCommon := 50
 
-	// the number of new added nodes. the new committee should have nCommon+nNew
-	// nodes in totatl
-	nNew := 2
+	// The number of new added nodes. the new committee should have nCommon+nNew
+	// nodes in totatl.
+	nNew := 50
 	thresholdNew := nCommon + nNew
 	minosNew := make([]mino.Mino, nNew+nCommon)
 	dkgsNew := make([]dkg.DKG, nNew+nCommon)
 	addrsNew := make([]mino.Address, nNew+nCommon)
 
-	//the first nCommon nodes of  committee are the same as the first nCommon
-	//nodes of the old committee
+	// The first nCommon nodes of  committee are the same as the first nCommon
+	// nodes of the old committee
 	for i := 0; i < nCommon; i++ {
 		minosNew[i] = minosOld[i]
 		addrsNew[i] = minosOld[i].GetAddress()
@@ -96,14 +97,14 @@ func TestResharing_minoch(t *testing.T) {
 
 	pubkeysNew := make([]kyber.Point, len(minosNew))
 
-	// defining the address of the new nodes.
+	// Defining the address of the new nodes.
 	for i := 0; i < nNew; i++ {
 		minogrpc := minoch.MustCreate(minoManager, fmt.Sprintf("addr new %d", i))
 		minosNew[i+nCommon] = minogrpc
 		addrsNew[i+nCommon] = minogrpc.GetAddress()
 	}
 
-	// initializing the pedersen of the new nodes. the common nodes already have
+	// Initializing the pedersen of the new nodes. the common nodes already have
 	// a pedersen
 	for i := 0; i < nNew; i++ {
 		dkg, pubkey := NewPedersen(minosNew[i+nCommon])
@@ -116,9 +117,10 @@ func TestResharing_minoch(t *testing.T) {
 		pubkeysNew[i] = pubkeysOld[i]
 	}
 
-	// initializing the actor of the new nodes. the common nodes already have an
+	// Initializing the actor of the new nodes. the common nodes already have an
 	// actor
 	actorsNew := make([]dkg.Actor, nNew+nCommon)
+
 	for i := 0; i < nCommon; i++ {
 		actorsNew[i] = actorsOld[i]
 	}
@@ -129,18 +131,19 @@ func TestResharing_minoch(t *testing.T) {
 		actorsNew[i+nCommon] = actor
 	}
 
-	// resharing the committee secret among the new committee
+	// Resharing the committee secret among the new committee
 	fakeAuthority = NewAuthority(addrsNew, pubkeysNew)
 	err = actorsOld[0].Reshare(fakeAuthority, thresholdNew)
 	require.NoError(t, err, "Resharing was not successful")
 
-	// comparing the public key of the old and the new committee
+	// Comparing the public key of the old and the new committee
 	oldPubKey, err := actorsOld[0].GetPublicKey()
 	require.NoError(t, err)
+
 	for _, actorNew := range actorsNew {
 		newPubKey, err := actorNew.GetPublicKey()
 
-		// the public key should remain the same
+		// The public key should remain the same
 		require.NoError(t, err, "the public key should remain the same")
 		newPubKey.Equal(oldPubKey)
 		decrypted, err := actorNew.Decrypt(K, C)
@@ -150,12 +153,12 @@ func TestResharing_minoch(t *testing.T) {
 
 }
 
-// this test creats a dkg committee then creats another committee (that can
+// This test creats a dkg committee then creats another committee (that can
 // share some nodes with the old committee) and then redistributes the secret to
-// the new commitee using minogrpc as the underlying network
+// the new commitee. Using minogrpc as the underlying network
 func TestResharing_minogrpc(t *testing.T) {
 
-	// setting up the first dkg
+	// Setting up the first dkg
 	nOld := 10
 	thresholdOld := 10
 
@@ -164,7 +167,7 @@ func TestResharing_minogrpc(t *testing.T) {
 	addrsOld := make([]mino.Address, nOld)
 	pubkeysOld := make([]kyber.Point, len(minosOld))
 
-	// defining the addresses
+	// Defining the addresses
 	for i := 0; i < nOld; i++ {
 		addr := minogrpc.ParseAddress("127.0.0.1", 0)
 		minogrpc, err := minogrpc.NewMinogrpc(addr, nil, tree.NewRouter(minogrpc.NewAddressFactory()))
@@ -175,7 +178,7 @@ func TestResharing_minogrpc(t *testing.T) {
 		addrsOld[i] = minogrpc.GetAddress()
 	}
 
-	// initializing the pedersen
+	// Initializing the pedersen
 	for i, mino := range minosOld {
 		for _, m := range minosOld {
 			mino.(*minogrpc.Minogrpc).GetCertificateStore().Store(m.GetAddress(), m.(*minogrpc.Minogrpc).GetCertificateChain())
@@ -189,8 +192,9 @@ func TestResharing_minogrpc(t *testing.T) {
 
 	fakeAuthority := NewAuthority(addrsOld, pubkeysOld)
 
-	// initializing the old committee actors
+	// Initializing the old committee actors
 	actorsOld := make([]dkg.Actor, nOld)
+
 	for i := 0; i < nOld; i++ {
 		actor, err := dkgsOld[i].Listen()
 		require.NoError(t, err)
@@ -200,18 +204,18 @@ func TestResharing_minogrpc(t *testing.T) {
 	_, err := actorsOld[1].Setup(fakeAuthority, thresholdOld)
 	require.NoError(t, err, "setting up the firs dkg was not successful")
 
-	// encrypt a message with the old committee public key. the new committee
+	// Encrypt a message with the old committee public key. the new committee
 	// should be able to decrypt it successfully
 	message := []byte("Hello world")
 	K, C, remainder, err := actorsOld[0].Encrypt(message)
 	require.NoError(t, err, "encrypting the message was not successful")
 	require.Len(t, remainder, 0)
 
-	//setting up the second dkg
+	// Setting up the second dkg
 	// nCommon is the number of nodes that are common between the new and the old committee
 	nCommon := 5
 
-	// the number of new added nodes. the new committee should have nCommon+nNew
+	// The number of new added nodes. the new committee should have nCommon+nNew
 	// nodes in totatl
 	nNew := 20
 	thresholdNew := nCommon + nNew
@@ -220,8 +224,8 @@ func TestResharing_minogrpc(t *testing.T) {
 	dkgsNew := make([]dkg.DKG, nNew+nCommon)
 	addrsNew := make([]mino.Address, nNew+nCommon)
 
-	//the first nCommon nodes of  committee are the same as the first nCommon
-	//nodes of the old committee
+	// The first nCommon nodes of  committee are the same as the first nCommon
+	// nodes of the old committee
 	for i := 0; i < nCommon; i++ {
 		minosNew[i] = minosOld[i]
 		addrsNew[i] = minosOld[i].GetAddress()
@@ -229,7 +233,7 @@ func TestResharing_minogrpc(t *testing.T) {
 
 	pubkeysNew := make([]kyber.Point, len(minosNew))
 
-	// defining the address of the new nodes.
+	// Defining the address of the new nodes.
 	for i := 0; i < nNew; i++ {
 		addr := minogrpc.ParseAddress("127.0.0.1", 0)
 		minogrpc, err := minogrpc.NewMinogrpc(addr, nil, tree.NewRouter(minogrpc.NewAddressFactory()))
@@ -240,14 +244,14 @@ func TestResharing_minogrpc(t *testing.T) {
 		addrsNew[i+nCommon] = minogrpc.GetAddress()
 	}
 
-	//the first nCommon nodes of  committee are the same as the first nCommon
-	//nodes of the old committee
+	// The first nCommon nodes of  committee are the same as the first nCommon
+	// nodes of the old committee
 	for i := 0; i < nCommon; i++ {
 		dkgsNew[i] = dkgsOld[i]
 		pubkeysNew[i] = pubkeysOld[i]
 	}
 
-	// initializing the pedersen of the new nodes. the common nodes already have
+	// Initializing the pedersen of the new nodes. the common nodes already have
 	// a pedersen
 	for i, mino := range minosNew[nCommon:] {
 		for _, m := range minosNew {
@@ -263,9 +267,10 @@ func TestResharing_minogrpc(t *testing.T) {
 		pubkeysNew[i+nCommon] = pubkey
 	}
 
-	// initializing the actor of the new nodes. the common nodes already have an
+	// Initializing the actor of the new nodes. the common nodes already have an
 	// actor
 	actorsNew := make([]dkg.Actor, nNew+nCommon)
+
 	for i := 0; i < nCommon; i++ {
 		actorsNew[i] = actorsOld[i]
 	}
@@ -275,19 +280,19 @@ func TestResharing_minogrpc(t *testing.T) {
 		actorsNew[i+nCommon] = actor
 	}
 
-	// resharing the committee secret among the new committee
+	// Resharing the committee secret among the new committee
 	fakeAuthority = NewAuthority(addrsNew, pubkeysNew)
 	err = actorsOld[0].Reshare(fakeAuthority, thresholdNew)
 	require.NoError(t, err, "Resharing was not successful")
 
-	// comparing the public key of the old and the new committee
+	// Comparing the public key of the old and the new committee
 	oldPubKey, err := actorsOld[0].GetPublicKey()
 	require.NoError(t, err)
 
 	for _, actorNew := range actorsNew {
 		newPubKey, err := actorNew.GetPublicKey()
 
-		// the public key should remain the same
+		// The public key should remain the same
 		require.NoError(t, err, "the public key should remain the same")
 		newPubKey.Equal(oldPubKey)
 		decrypted, err := actorNew.Decrypt(K, C)
@@ -298,13 +303,13 @@ func TestResharing_minogrpc(t *testing.T) {
 
 // This test creates a dkg committee then creates another committee (that can
 // share some nodes with the old committee) and then redistributes the secret to
-// the new commitee. later a third committee is built which has a common node
+// the new commitee; later a third committee is built which has a common node
 // with both the first and second committee and shares another node only with
-// second committee. the third committee also has a brand new node.
-// the secret is redistributed among the third committee
+// second committee. The third committee also has a brand new node.
+// The secret is redistributed among the third committee
 func TestResharingTwice(t *testing.T) {
 
-	// setting up the first dkg
+	// Setting up the first dkg
 	n1 := 5
 	threshold1 := 5
 
@@ -314,14 +319,14 @@ func TestResharingTwice(t *testing.T) {
 	pubkeys1 := make([]kyber.Point, len(minos1))
 	minoManager := minoch.NewManager()
 
-	// defining the addresses
+	// Defining the addresses
 	for i := 0; i < n1; i++ {
 		mino := minoch.MustCreate(minoManager, fmt.Sprintf("addr %d", i))
 		minos1[i] = mino
 		addrs1[i] = mino.GetAddress()
 	}
 
-	// initializing the pedersen
+	// Initializing the pedersen
 	for i, mino := range minos1 {
 		dkg, pubkey := NewPedersen(mino)
 		dkgs1[i] = dkg
@@ -330,8 +335,9 @@ func TestResharingTwice(t *testing.T) {
 
 	fakeAuthority := NewAuthority(addrs1, pubkeys1)
 
-	// initializing the old committee actors
+	// Initializing the old committee actors
 	actors1 := make([]dkg.Actor, n1)
+
 	for i := 0; i < n1; i++ {
 		actor, err := dkgs1[i].Listen()
 		require.NoError(t, err)
@@ -341,18 +347,18 @@ func TestResharingTwice(t *testing.T) {
 	_, err := actors1[1].Setup(fakeAuthority, threshold1)
 	require.NoError(t, err, "setting up the firs dkg was not successful")
 
-	// encrypt a message with the old committee public key. the new committee
+	// Encrypt a message with the old committee public key. the new committee
 	// should be able to decrypt it successfully
 	message := []byte("Hello world")
 	K, C, remainder, err := actors1[0].Encrypt(message)
 	require.NoError(t, err, "encrypting the message was not successful")
 	require.Len(t, remainder, 0)
 
-	// setting up the second dkg nCommon is the number of nodes that are common
+	// Setting up the second dkg nCommon is the number of nodes that are common
 	// between the new and the old committee
 	nCommon12 := 1
 
-	// the number of new added nodes. the new committee should have nCommon+nNew
+	// The number of new added nodes. the new committee should have nCommon+nNew
 	// nodes in totatl
 	n2 := 2
 	threshold2 := nCommon12 + n2
@@ -360,8 +366,8 @@ func TestResharingTwice(t *testing.T) {
 	dkgs2 := make([]dkg.DKG, n2+nCommon12)
 	addrs2 := make([]mino.Address, n2+nCommon12)
 
-	//the first nCommon nodes of  committee are the same as the first nCommon
-	//nodes of the old committee
+	// The first nCommon nodes of  committee are the same as the first nCommon
+	// nodes of the old committee
 	for i := 0; i < nCommon12; i++ {
 		minos2[i] = minos1[i]
 		addrs2[i] = minos1[i].GetAddress()
@@ -369,14 +375,14 @@ func TestResharingTwice(t *testing.T) {
 
 	pubkeys2 := make([]kyber.Point, len(minos2))
 
-	// defining the address of the new nodes.
+	// Defining the address of the new nodes.
 	for i := 0; i < n2; i++ {
 		minogrpc := minoch.MustCreate(minoManager, fmt.Sprintf("addr new %d", i))
 		minos2[i+nCommon12] = minogrpc
 		addrs2[i+nCommon12] = minogrpc.GetAddress()
 	}
 
-	// initializing the pedersen of the new nodes. the common nodes already have
+	// Initializing the pedersen of the new nodes. the common nodes already have
 	// a pedersen
 	for i := 0; i < n2; i++ {
 		dkg, pubkey := NewPedersen(minos2[i+nCommon12])
@@ -389,9 +395,10 @@ func TestResharingTwice(t *testing.T) {
 		pubkeys2[i] = pubkeys1[i]
 	}
 
-	// initializing the actor of the new nodes. the common nodes already have an
+	// Initializing the actor of the new nodes. the common nodes already have an
 	// actor
 	actors2 := make([]dkg.Actor, n2+nCommon12)
+
 	for i := 0; i < nCommon12; i++ {
 		actors2[i] = actors1[i]
 	}
@@ -402,18 +409,19 @@ func TestResharingTwice(t *testing.T) {
 		actors2[i+nCommon12] = actor
 	}
 
-	// resharing the committee secret among the new committee
+	// Resharing the committee secret among the new committee
 	fakeAuthority = NewAuthority(addrs2, pubkeys2)
 	err = actors1[0].Reshare(fakeAuthority, threshold2)
 	require.NoError(t, err, "Resharing was not successful")
 
-	// comparing the public key of the old and the new committee
+	// Comparing the public key of the old and the new committee
 	oldPubKey, err := actors1[0].GetPublicKey()
 	require.NoError(t, err)
+
 	for _, actorNew := range actors2 {
 		newPubKey, err := actorNew.GetPublicKey()
 
-		// the public key should remain the same
+		// The public key should remain the same
 		require.NoError(t, err, "the public key should remain the same")
 		newPubKey.Equal(oldPubKey)
 		decrypted, err := actorNew.Decrypt(K, C)
@@ -421,29 +429,28 @@ func TestResharingTwice(t *testing.T) {
 		require.Equal(t, message, decrypted, "the new committee should be able to decrypt the messages encrypted by the old committee")
 	}
 
-	// setting up the third dkg
-
+	// Setting up the third dkg
 	// 1 completely new node
 	n3 := 1
 
-	// this dkg committee shares 2 nodes with the second committee
+	// This dkg committee shares 2 nodes with the second committee
 	threshold3 := 2 + n3
 	minos3 := make([]mino.Mino, 2+n3)
 	dkgs3 := make([]dkg.DKG, 2+n3)
 	addrs3 := make([]mino.Address, 2+n3)
 
-	// node with index 0 in the third dkg is a node from the second committee
+	// Node with index 0 in the third dkg is a node from the second committee
 	minos3[0] = minos2[n2-1]
 	addrs3[0] = minos2[n2-1].GetAddress()
 
-	// node with index 1 in the third dkg is a node from both the first and the
+	// Node with index 1 in the third dkg is a node from both the first and the
 	// second committee
 	minos3[1] = minos2[0]
 	addrs3[1] = minos2[0].GetAddress()
 
 	pubkeys3 := make([]kyber.Point, len(minos3))
 
-	// defining the address of the new node.
+	// Defining the address of the new node.
 	for i := 0; i < n3; i++ {
 		minogrpc := minoch.MustCreate(minoManager, fmt.Sprintf("addr new new %d", i))
 		minos3[i+2] = minogrpc
@@ -456,7 +463,7 @@ func TestResharingTwice(t *testing.T) {
 	dkgs3[1] = dkgs2[0]
 	pubkeys3[1] = pubkeys2[0]
 
-	// initializing the pedersen of the new node. the common nodes already have
+	// Initializing the pedersen of the new node. the common nodes already have
 	// a pedersen
 	for i := 0; i < n3; i++ {
 		dkg, pubkey := NewPedersen(minos3[i+2])
@@ -469,7 +476,7 @@ func TestResharingTwice(t *testing.T) {
 	actors3[0] = actors2[n2-1]
 	actors3[1] = actors2[0]
 
-	// initializing the actor of the new nodes. the common nodes already have an
+	// Initializing the actor of the new nodes. the common nodes already have an
 	// actor
 	for i := 0; i < n3; i++ {
 		actor, err := dkgs3[i+2].Listen()
@@ -477,18 +484,19 @@ func TestResharingTwice(t *testing.T) {
 		actors3[i+2] = actor
 	}
 
-	// resharing the committee secret among the third committee
+	// Resharing the committee secret among the third committee
 	fakeAuthority = NewAuthority(addrs3, pubkeys3)
 	err = actors2[2].Reshare(fakeAuthority, threshold3)
 	require.NoError(t, err, "Resharing was not successful")
 
-	// comparing the public key of the second and the third committee
+	// Comparing the public key of the second and the third committee
 	oldPubKey, err = actors2[1].GetPublicKey()
 	require.NoError(t, err)
+
 	for _, actorNew := range actors3 {
 		newPubKey, err := actorNew.GetPublicKey()
 
-		// the public key should remain the same
+		// The public key should remain the same
 		require.NoError(t, err, "the public key should remain the same")
 		newPubKey.Equal(oldPubKey)
 		decrypted, err := actorNew.Decrypt(K, C)
