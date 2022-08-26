@@ -32,7 +32,7 @@ var (
 	// protocolNameDecrypt denotes the value of the protocol span tag
 	// associated with the `dkg-decrypt` protocol.
 	protocolNameDecrypt = "dkg-decrypt"
-	// protocolNameResharing denotes the value of the protocol span tag
+	// ProtocolNameResharing denotes the value of the protocol span tag
 	// associated with the `dkg-resharing` protocol.
 	protocolNameResharing = "dkg-resharing"
 )
@@ -432,31 +432,74 @@ func (a *Actor) VerifiableDecrypt(ciphertexts []types.Ciphertext, workerNum int)
 
 // Reshare implements dkg.Actor. It recreates the DKG with an updated list of
 // participants.
-
-func (a *Actor) Reshare(T_new int, T_old int, addrs_new []mino.Address, pubkeys_new []kyber.Point, pubkeys_old []kyber.Point) error {
+func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
 	if !a.startRes.Done() {
 		return xerrors.Errorf("you must first initialize DKG. " +
 			"Did you call setup() first?")
 	}
-	// get the union of the new members and the old members
-	addrs_all := unionOfTwoSlides(a.startRes.GetParticipants(), addrs_new)
-	players := mino.NewAddresses(addrs_all...)
+
+	addrsNew := make([]mino.Address, 0, co.Len())
+	pubkeysNew := make([]kyber.Point, 0, co.Len())
+
+	addrIter := co.AddressIterator()
+	pubkeyIter := co.PublicKeyIterator()
+
+	for addrIter.HasNext() && pubkeyIter.HasNext() {
+		addrsNew = append(addrsNew, addrIter.GetNext())
+
+		pubkey := pubkeyIter.GetNext()
+		edKey, ok := pubkey.(ed25519.PublicKey)
+		if !ok {
+			return xerrors.Errorf("expected ed25519.PublicKey, got '%T'", pubkey)
+		}
+
+		pubkeysNew = append(pubkeysNew, edKey.GetPoint())
+	}
+
+	// Get the union of the new members and the old members
+	addrsAll := unionOfTwoSlices(a.startRes.GetParticipants(), addrsNew)
+	players := mino.NewAddresses(addrsAll...)
+
 	ctx, cancel := context.WithTimeout(context.Background(), resharingTimeout)
 	defer cancel()
+
 	ctx = context.WithValue(ctx, tracing.ProtocolKey, protocolNameResharing)
+
 	sender, receiver, err := a.rpc.Stream(ctx, players)
 	if err != nil {
 		return xerrors.Errorf("failed to create stream: %v", err)
 	}
-	message := types.NewResharingRequest(T_new, T_old, addrs_new, a.startRes.GetParticipants(), pubkeys_new, pubkeys_old)
-	// send the resharing request to all the old and new nodes
-	err = <-sender.Send(message, addrs_all...)
+
+	thresholdOld := a.startRes.GetThreshold()
+	pubkeysOld := a.startRes.GetPublicKeys()
+
+	// We don't need to send the old threshold or old public keys to the old or
+	// common nodes
+	messageOld := types.NewResharingRequest(thresholdNew, 0, addrsNew, nil, pubkeysNew, nil)
+
+	// Send the resharing request to the old and common nodes
+	err = <-sender.Send(messageOld, a.startRes.GetParticipants()...)
 	if err != nil {
-		return xerrors.Errorf("failed to send decrypt request: %v", err)
+		return xerrors.Errorf("failed to send resharing request: %v", err)
 	}
-	dkgPubKeys := make([]kyber.Point, len(addrs_new))
-	// wait for receiving the response from the new nodes
-	for i := 0; i < len(addrs_new); i++ {
+
+	// First find the set of new nodes that are not common between the old and
+	// new committee
+	addrsNewNotCommon := subtractOfTwoSlices(addrsNew, a.startRes.GetParticipants())
+
+	// Then create a resharing request message for them. We should send the old
+	// threshold and old public keys to them
+	messageNew := types.NewResharingRequest(thresholdNew, thresholdOld, addrsNew, a.startRes.GetParticipants(), pubkeysNew, pubkeysOld)
+
+	// Send the resharing request to the new but not common nodes
+	err = <-sender.Send(messageNew, addrsNewNotCommon...)
+	if err != nil {
+		return xerrors.Errorf("failed to send resharing request: %v", err)
+	}
+
+	dkgPubKeys := make([]kyber.Point, len(addrsAll))
+	// Wait for receiving the response from the new nodes
+	for i := 0; i < len(addrsAll); i++ {
 
 		_, msg, err := receiver.Recv(ctx)
 		if err != nil {
@@ -469,9 +512,9 @@ func (a *Actor) Reshare(T_new int, T_old int, addrs_new []mino.Address, pubkeys_
 				"go the following: %T", msg)
 		}
 		dkgPubKeys[i] = doneMsg.GetPublicKey()
-		// this is a simple check that every node sends back the same DKG pub
-		// key.
-		// TODO: handle the situation where a pub key is not the same
+
+		// This is a simple check that every node sends back the same DKG pub
+		// key. TODO: handle the situation where a pub key is not the same
 		if i != 0 && !dkgPubKeys[i-1].Equal(doneMsg.GetPublicKey()) {
 			return xerrors.Errorf("the public keys does not match: %v", dkgPubKeys)
 		}
@@ -502,5 +545,23 @@ func checkDecryptionProof(sp types.ShareAndProof, K kyber.Point) error {
 		return xerrors.Errorf("hash is not valid")
 	}
 	return nil
+}
 
+// Gets the list of the old committee members and new committee members and
+// returns the new committee members that are not common
+func subtractOfTwoSlices(addrsSlice1 []mino.Address, addrsSlice2 []mino.Address) []mino.Address {
+	var subtractedSlice []mino.Address
+	for _, addr1 := range addrsSlice1 {
+		exist := false
+		for _, addr2 := range addrsSlice2 {
+			if addr1.Equal(addr2) {
+				exist = true
+				break
+			}
+		}
+		if !exist {
+			subtractedSlice = append(subtractedSlice, addr1)
+		}
+	}
+	return subtractedSlice
 }

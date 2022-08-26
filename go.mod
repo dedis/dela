@@ -15,7 +15,7 @@ require (
 	github.com/uber/jaeger-client-go v2.25.0+incompatible
 	github.com/uber/jaeger-lib v2.4.0+incompatible // indirect
 	github.com/urfave/cli/v2 v2.2.0
-	go.dedis.ch/kyber/v3 v3.0.13
+	go.dedis.ch/kyber/v3 v3.0.14
 	go.etcd.io/bbolt v1.3.5
 	go.uber.org/atomic v1.7.0 // indirect
 	golang.org/x/net v0.0.0-20211015210444-4f30a5c0130f

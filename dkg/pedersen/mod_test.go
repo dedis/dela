@@ -126,11 +126,6 @@ func TestPedersen_Decrypt(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// func TestPedersen_Reshare(t *testing.T) {
-// 	actor := Actor{}
-// 	actor.Reshare()
-// }
-
 func TestPedersen_Scenario(t *testing.T) {
 	// Use with MINO_TRAFFIC=log
 	// traffic.LogItems = false
