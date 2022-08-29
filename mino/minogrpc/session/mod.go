@@ -14,7 +14,6 @@
 // feedbacks on the status of the message.
 //
 // Documentation Last Review: 07.10.20202
-//
 package session
 
 import (
@@ -161,8 +160,14 @@ func NewSession(
 // GetNumParents implements session.Session. It returns the number of active
 // parents in the session.
 func (s *session) GetNumParents() int {
-	s.parentsLock.RLock()
+	if !s.parentsLock.TryRLock() {
+		s.logger.Debug().Msg("\t\t\t\t\t\t >>> RPLock - GetNumParents - tried and failed")
+		s.parentsLock.RLock()
+	}
+	s.logger.Debug().Msg("\t\t\t\t\t\t >>> RPLock - GetNumParents")
+
 	defer s.parentsLock.RUnlock()
+	defer s.logger.Debug().Msg("\t\t\t\t\t\t <<< RPUnLock - GetNumParents")
 
 	return len(s.parents)
 }
@@ -170,17 +175,31 @@ func (s *session) GetNumParents() int {
 // Listen implements session.Session. It listens for the stream and returns only
 // when the stream has been closed.
 func (s *session) Listen(relay Relay, table router.RoutingTable, ready chan struct{}) {
-	defer func() {
-		s.parentsLock.Lock()
+	distantAddr := relay.GetDistantAddress()
 
-		delete(s.parents, relay.GetDistantAddress())
+	defer func() {
+		if !s.parentsLock.TryLock() {
+			s.logger.Debug().Msg("\t\t\t\t >>> PLock - Listen - tried and failed")
+			s.parentsLock.Lock()
+		}
+		s.logger.Debug().Msg("\t\t\t\t >>> PLock - Listen")
+
+		delete(s.parents, distantAddr)
 
 		s.parentsLock.Unlock()
+		s.logger.Debug().Msg("\t\t\t\t <<< PUnlock - Listen")
 	}()
 
-	s.parentsLock.Lock()
-	s.parents[relay.GetDistantAddress()] = parent{relay: relay, table: table}
+	if !s.parentsLock.TryLock() {
+		s.logger.Debug().Msg("\t\t\t\t >>> PLock - Listen - tried and failed")
+		s.parentsLock.Lock()
+	}
+	s.logger.Debug().Msg("\t\t\t\t >>> PLock - Listen")
+
+	s.parents[distantAddr] = parent{relay: relay, table: table}
+
 	s.parentsLock.Unlock()
+	s.logger.Debug().Msg("\t\t\t\t <<< PUnlock - Listen")
 
 	close(ready)
 
@@ -203,15 +222,20 @@ func (s *session) Listen(relay Relay, table router.RoutingTable, ready chan stru
 // SetPassive implements session.Session. It adds the parent relay to the map
 // but in the contrary of Listen, it won't listen for the stream.
 func (s *session) SetPassive(p Relay, table router.RoutingTable) {
-	s.parentsLock.Lock()
+	if !s.parentsLock.TryLock() {
+		s.logger.Debug().Msg("\t\t\t\t >>> PLock - SetPassive - tried and failed")
+		s.parentsLock.Lock()
+	}
+	s.logger.Debug().Msg("\t\t\t\t >>> PLock - SetPassive")
 	s.parents[p.GetDistantAddress()] = parent{
 		relay: p,
 		table: table,
 	}
 	s.parentsLock.Unlock()
+	s.logger.Debug().Msg("\t\t\t\t <<< PUnlock - SetPassive")
 }
 
-// Close implements session.Session. It shutdowns the session and waits for the
+// Close implements session.Session. It shuts down the session and waits for the
 // relays to close.
 func (s *session) Close() {
 	close(s.errs)
@@ -229,8 +253,13 @@ func (s *session) RecvPacket(from mino.Address, p *ptypes.Packet) (*ptypes.Ack, 
 		return nil, xerrors.Errorf("packet malformed: %v", err)
 	}
 
-	s.parentsLock.RLock()
+	if !s.parentsLock.TryRLock() {
+		s.logger.Debug().Msg("\t\t\t\t\t\t >>> RPLock - RecvPacket - tried and failed")
+		s.parentsLock.RLock()
+	}
+	s.logger.Debug().Msg("\t\t\t\t\t\t >>> RPLock - RecvPacket")
 	defer s.parentsLock.RUnlock()
+	defer s.logger.Debug().Msg("\t\t\t\t\t\t <<< RPUnlock - RecvPacket")
 
 	// Try to send the packet to each parent until one works.
 	for _, parent := range s.parents {
@@ -275,8 +304,14 @@ func (s *session) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 			return
 		}
 
-		s.parentsLock.RLock()
+		if !s.parentsLock.TryRLock() {
+			s.logger.Debug().Msg("\t\t\t\t\t\t >>> RPLock - Send - tried and failed")
+			s.parentsLock.RLock()
+		}
+		s.logger.Debug().Msg("\t\t\t\t\t\t >>> RPLock - Send")
+
 		defer s.parentsLock.RUnlock()
+		defer s.logger.Debug().Msg("\t\t\t\t\t\t <<< RPUnlock - Send")
 
 		for _, parent := range s.parents {
 			packet := parent.table.Make(s.me, addrs, data)
@@ -345,14 +380,18 @@ func (s *session) sendPacket(p parent, pkt router.Packet, errs chan error) bool 
 
 	for addr, packet := range routes {
 		go s.sendTo(p, addr, packet, errs, &wg)
+		//s.sendTo(p, addr, packet, errs)
 	}
 
+	//s.logger.Debug().Msg("\t\t\t\t\t\t\t\t >>> Wait - sendPacket")
 	wg.Wait()
+	//s.logger.Debug().Msg("\t\t\t\t\t\t\t\t >>> Wait - sendPacket - done")
 
 	return true
 }
 
 func (s *session) sendTo(p parent, to mino.Address, pkt router.Packet, errs chan error, wg *sync.WaitGroup) {
+	//func (s *session) sendTo(p parent, to mino.Address, pkt router.Packet, errs chan error) {
 	defer wg.Done()
 
 	var relay Relay
@@ -405,8 +444,14 @@ func (s *session) sendTo(p parent, to mino.Address, pkt router.Packet, errs chan
 }
 
 func (s *session) setupRelay(p parent, addr mino.Address) (Relay, error) {
-	s.Lock()
+	if !s.TryLock() {
+		s.logger.Debug().Msg("\t\t >>> SLock - setupRelay - tried and failed")
+		s.Lock()
+	}
+	s.logger.Debug().Msg("\t\t >>> SLock - setupRelay")
+
 	defer s.Unlock()
+	defer s.logger.Debug().Msg("\t\t <<< SUnlock - setupRelay")
 
 	relay, initiated := s.relays[addr]
 
@@ -454,9 +499,14 @@ func (s *session) setupRelay(p parent, addr mino.Address) (Relay, error) {
 
 	go func() {
 		defer func() {
-			s.Lock()
+			if !s.TryLock() {
+				s.logger.Debug().Msg("\t\t >>> SLock - setupRelay - tried and failed")
+				s.Lock()
+			}
+			s.logger.Debug().Msg("\t\t >>> SLock - setupRelay")
 			delete(s.relays, addr)
 			s.Unlock()
+			s.logger.Debug().Msg("\t\t <<< SUnlock - setupRelay")
 
 			newRelay.Close()
 

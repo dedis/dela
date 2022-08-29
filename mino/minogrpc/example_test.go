@@ -19,68 +19,80 @@ import (
 )
 
 func TestRpcStreamTree(t *testing.T) {
-	NB_NODES := 4
+	NbNodes := 100
 
-	nodes := createNodes(NB_NODES, true)
+	nodes := createNodes(NbNodes, true)
 	rpcs := createRpcs(nodes)
 	exchangeCertificates(nodes)
 	players := createPlayers(nodes)
 
-	startLock := sync.RWMutex{}
-	startLock.Lock()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	done := make(chan struct{})
+	sendWg := sync.WaitGroup{}
+	sendWg.Add(NbNodes * NbNodes)
+
+	receiveWg := sync.WaitGroup{}
+	receiveWg.Add(NbNodes * NbNodes)
 
 	for i, rpc := range rpcs {
+		// stream: FROM n TO all players
 		sender, receiver, err := rpc.Stream(ctx, players)
 		if err != nil {
 			panic("stream failed: " + err.Error())
 		}
 
-		go sendMessages(sender, nodes, i, startLock)
-		go receiveMessages(receiver, nodes, t, ctx, startLock, done)
+		dela.Logger.Debug().Msgf("Created RPC stream %v", i)
+
+		go sendMessages(sender, nodes, i, &sendWg)
+		go receiveMessages(receiver, nodes, t, ctx, &receiveWg)
 	}
 
-	startLock.Unlock()
+	dela.Logger.Info().Msg("Send - wait")
+	sendWg.Wait()
+	dela.Logger.Info().Msg("Send - done")
 
-	<-done
-	dela.Logger.Trace().Msg("Test - done")
+	dela.Logger.Info().Msg("Receive - wait")
+	receiveWg.Wait()
+	dela.Logger.Info().Msg("Receive - done")
 }
 
-func receiveMessages(receiver mino.Receiver, nodes []*Minogrpc, t *testing.T, ctx context.Context, mutex sync.RWMutex, done chan struct{}) {
-	mutex.RLock()
-	defer mutex.RUnlock()
+func receiveMessages(receiver mino.Receiver, nodes []*Minogrpc, t *testing.T, ctx context.Context, wg *sync.WaitGroup) {
+	for _, _ = range nodes {
+		for i, _ := range nodes {
+			from, msg, err := receiver.Recv(ctx)
+			if err != nil {
+				dela.Logger.Error().Msgf("Received err: %v", err)
+			} else {
+				dela.Logger.Debug().Msgf("Received msg #: %d (%v) from: %v", i, msg.(exampleMessage).value, from)
+				require.NoError(t, err)
+				/*
+					addr := n.GetAddress()
+					if !from.Equal(addr) {
+						dela.Logger.Error().Msgf("Received msg #: %d (%v) from: %v instead of: %v", i, msg.(exampleMessage).value, from, addr)
+					}
 
-	for _, n := range nodes {
-		from, msg, err := receiver.Recv(ctx)
-		require.NoError(t, err)
-
-		dela.Logger.Debug().Msgf("Received msg:%v from: %v", msg, from)
-
-		addr := n.GetAddress()
-		require.True(t, from.Equal(addr))
+				*/
+			}
+			wg.Done()
+		}
 	}
-	close(done)
 }
 
-func sendMessages(from mino.Sender, toNodes []*Minogrpc, fromIndex int, mutex sync.RWMutex) {
-	mutex.RLock()
-	defer mutex.RUnlock()
-
+func sendMessages(from mino.Sender, toNodes []*Minogrpc, fromIndex int, wg *sync.WaitGroup) {
 	for toIdx, n := range toNodes {
 		addr := n.GetAddress()
 
 		msg := fmt.Sprintf("S[%d:%d]", fromIndex, toIdx)
 		err := <-from.Send(exampleMessage{value: msg}, addr)
+		dela.Logger.Info().Msgf("Ping:%v", msg)
+		wg.Done()
+
 		if err != nil {
 			panic("failed to send " + msg + " to:" + addr.String() + ", error=" + err.Error())
-			//		} else {
-			//			fmt.Printf("Sent message %v\n", msg)
 		}
 	}
+
 }
 
 func createPlayers(nodes []*Minogrpc) mino.Players {
@@ -328,35 +340,42 @@ func (exampleHandler) Process(req mino.Request) (serde.Message, error) {
 
 // Stream implements mino.Handler. It returns the message to the sender.
 func (e exampleHandler) Stream(sender mino.Sender, receiver mino.Receiver) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	//ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, msg, err := receiver.Recv(ctx)
+	from, msg, err := receiver.Recv(ctx)
 	if err != nil {
 		return err
 	}
-
-	msgString := strings.Replace(msg.(exampleMessage).value, "S", "", -1)
+	msgString := msg.(exampleMessage).value
+	if strings.Contains(msgString, "R[") {
+		return nil
+	}
+	msgString = strings.Replace(msgString, "S", "", -1)
 	msgString = strings.Replace(msgString, "[", "", -1)
 	msgString = strings.Replace(msgString, "]", "", -1)
 	sub := strings.Split(msgString, string(':'))
-	fromNb, _ := strconv.ParseInt(sub[0], 0, 64)
-	toNb, _ := strconv.ParseInt(sub[1], 0, 64)
-
-	dela.Logger.Trace().Msgf("Received: %v\n", msg.(exampleMessage).value)
+	fromNb, _ := strconv.Atoi(sub[0])
+	toNb, _ := strconv.Atoi(sub[1])
 
 	msgString = fmt.Sprintf("R[%d:%d]", toNb, fromNb)
 
-	for _, n := range e.nodes {
-		addr := n.GetAddress()
-		err = <-sender.Send(exampleMessage{value: msgString}, addr)
-		if err != nil {
-			return err
-		} else {
-			dela.Logger.Trace().Msgf("Sent %v\n", msgString)
-		}
+	if toNb == 1 && fromNb == 1 {
+		dela.Logger.Info().Msgf("got it !")
 	}
+
+	//	for _, n := range e.nodes {
+	//		addr := n.GetAddress()
+	err = <-sender.Send(exampleMessage{value: msgString}, from)
+	if err != nil {
+		dela.Logger.Error().Msgf("Error sending pong %v", err)
+		return err
+	} else {
+		dela.Logger.Info().Msgf("\tPong:%v", msgString)
+	}
+	//	}
+
 	return nil
 }
 
