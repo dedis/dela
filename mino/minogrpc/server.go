@@ -35,9 +35,10 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 
-	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing/opentracing-go"
 )
+
+// GRPC_GO_LOG_SEVERITY_LEVEL=info;GRPC_GO_LOG_VERBOSITY_LEVEL=10;
 
 const (
 	// headerURIKey is the key used in rpc header to pass the handler URI
@@ -52,7 +53,7 @@ const (
 
 	// defaultMinConnectTimeout is the minimum amount of time we are willing to
 	// wait for a grpc connection to complete
-	defaultMinConnectTimeout = 10 * time.Second
+	defaultMinConnectTimeout = 60 * time.Second
 )
 
 var getTracerForAddr = tracing.GetTracerForAddr
@@ -266,7 +267,9 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 
 	// This lock will make sure that a session is ready before any message
 	// forwarded will be received.
+	dela.Logger.Warn().Msgf("overlayServer.Stream [stream %v] - locking", streamID)
 	endpoint.Lock()
+	dela.Logger.Warn().Msgf("overlayServer.Stream [stream %v] - LOCK", streamID)
 
 	sess, initiated := endpoint.streams[streamID]
 	if !initiated {
@@ -298,6 +301,7 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 	} else {
 		conn, err = o.connMgr.Acquire(gatewayAddr)
 		if err != nil {
+			dela.Logger.Warn().Msgf("overlayServer.Stream [stream %v] - UNLOCKED", streamID)
 			endpoint.Unlock()
 			return xerrors.Errorf("gateway connection failed: %v", err)
 		}
@@ -320,8 +324,10 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 
 	// There, it is important to make sure the parent relay is registered in the
 	// session before releasing the endpoint.
+	dela.Logger.Warn().Msgf("overlayServer.Stream [stream %v] - waiting for ready", streamID)
 	<-ready
 
+	dela.Logger.Warn().Msgf("overlayServer.Stream [stream %v] - UNLOCKED", streamID)
 	endpoint.Unlock()
 
 	// This event sends a confirmation to the parent that the stream is
@@ -342,8 +348,11 @@ func (o *overlayServer) Stream(stream ptypes.Overlay_StreamServer) error {
 }
 
 func (o *overlayServer) cleanStream(endpoint *Endpoint, id string) {
+	dela.Logger.Warn().Msgf("overlayServer.cleanStream [stream %v] - locking", id)
 	endpoint.Lock()
+	dela.Logger.Warn().Msgf("overlayServer.cleanStream [stream %v] - LOCKED", id)
 	defer endpoint.Unlock()
+	defer dela.Logger.Warn().Msgf("overlayServer.cleanStream [stream %v] - UNLOCKED", id)
 
 	// It's important to check the session currently stored as it may be a new
 	// one with an active parent, or it might be already cleaned.
@@ -399,6 +408,7 @@ func (o *overlayServer) tableFromHeaders(h metadata.MD) (router.RoutingTable, bo
 // Forward implements ptypes.OverlayServer. It handles a request to forward a
 // packet by sending it to the appropriate session.
 func (o *overlayServer) Forward(ctx context.Context, p *ptypes.Packet) (*ptypes.Ack, error) {
+
 	headers, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return nil, xerrors.New("no header in the context")
@@ -410,6 +420,9 @@ func (o *overlayServer) Forward(ctx context.Context, p *ptypes.Packet) (*ptypes.
 	if !found {
 		return nil, xerrors.Errorf("handler '%s' is not registered", uri)
 	}
+
+	dela.Logger.Warn().Msgf("overlayServer.Forward [stream %v]", streamID)
+	defer dela.Logger.Warn().Msgf("overlayServer.Forward [stream %v] - DONE", streamID)
 
 	endpoint.RLock()
 	sess, ok := endpoint.streams[streamID]
@@ -676,23 +689,31 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 
 	// Connecting using TLS and the distant server certificate as the root.
 	addr := netAddr.GetDialAddress()
-	tracer, err := getTracerForAddr(addr)
+	//	tracer, err := getTracerForAddr(addr)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to get tracer for addr %s: %v", addr, err)
 	}
 
-	conn, err = grpc.Dial(addr,
+	grpc.EnableTracing = true
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(2)*time.Second)
+	defer cancel()
+
+	conn, err = grpc.DialContext(
+		ctx,
+		addr,
 		grpc.WithTransportCredentials(ta),
 		grpc.WithConnectParams(grpc.ConnectParams{
 			Backoff:           backoff.DefaultConfig,
 			MinConnectTimeout: defaultMinConnectTimeout,
 		}),
-		grpc.WithUnaryInterceptor(
-			otgrpc.OpenTracingClientInterceptor(tracer, otgrpc.SpanDecorator(decorateClientTrace)),
-		),
-		grpc.WithStreamInterceptor(
-			otgrpc.OpenTracingStreamClientInterceptor(tracer, otgrpc.SpanDecorator(decorateClientTrace)),
-		),
+		/*
+			grpc.WithUnaryInterceptor(
+				otgrpc.OpenTracingClientInterceptor(tracer, otgrpc.SpanDecorator(decorateClientTrace)),
+			),
+			grpc.WithStreamInterceptor(
+				otgrpc.OpenTracingStreamClientInterceptor(tracer, otgrpc.SpanDecorator(decorateClientTrace)),
+			),
+		*/
 	)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to dial: %v", err)

@@ -1,7 +1,6 @@
 // Package minogrpc implements a network overlay using gRPC.
 //
 // Documentation Last Review: 07.10.2020
-//
 package minogrpc
 
 import (
@@ -228,12 +227,14 @@ func NewMinogrpc(listen net.Addr, public *url.URL, router router.Router, opts ..
 		return nil, xerrors.Errorf("failed to get tracer for addr %s: %v", dialAddr, err)
 	}
 
+	grpc.EnableTracing = true
+
 	server := grpc.NewServer(
 		grpc.Creds(creds),
 		grpc.UnaryInterceptor(otgrpc.OpenTracingServerInterceptor(tracer, otgrpc.SpanDecorator(decorateServerTrace))),
 		grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(tracer, otgrpc.SpanDecorator(decorateServerTrace))),
 	)
-
+	
 	m := &Minogrpc{
 		overlay:   o,
 		server:    server,

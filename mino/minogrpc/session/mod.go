@@ -14,7 +14,6 @@
 // feedbacks on the status of the message.
 //
 // Documentation Last Review: 07.10.20202
-//
 package session
 
 import (
@@ -171,15 +170,21 @@ func (s *session) GetNumParents() int {
 // when the stream has been closed.
 func (s *session) Listen(relay Relay, table router.RoutingTable, ready chan struct{}) {
 	defer func() {
+		dela.Logger.Warn().Msgf("session.Listen [session %v] - locking", s.me)
 		s.parentsLock.Lock()
+		dela.Logger.Warn().Msgf("session.Listen [session %v] - LOCKED", s.me)
 
 		delete(s.parents, relay.GetDistantAddress())
 
+		dela.Logger.Warn().Msgf("session.Listen [session %v] - UNLOCKED", s.me)
 		s.parentsLock.Unlock()
 	}()
 
+	dela.Logger.Warn().Msgf("session.Listen [session %v] - locking", s.me)
 	s.parentsLock.Lock()
+	dela.Logger.Warn().Msgf("session.Listen [session %v] - LOCKED", s.me)
 	s.parents[relay.GetDistantAddress()] = parent{relay: relay, table: table}
+	dela.Logger.Warn().Msgf("session.Listen [session %v] - UNLOCKED", s.me)
 	s.parentsLock.Unlock()
 
 	close(ready)
@@ -229,18 +234,24 @@ func (s *session) RecvPacket(from mino.Address, p *ptypes.Packet) (*ptypes.Ack, 
 		return nil, xerrors.Errorf("packet malformed: %v", err)
 	}
 
+	dela.Logger.Warn().Msgf("session.RecvPacket [session %v] - locking", s.me)
 	s.parentsLock.RLock()
+	dela.Logger.Warn().Msgf("session.RecvPacket [session %v] - LOCKED", s.me)
 	defer s.parentsLock.RUnlock()
+	defer dela.Logger.Warn().Msgf("session.RecvPacket [session %v] - UNLOCKED", s.me)
 
 	// Try to send the packet to each parent until one works.
 	for _, parent := range s.parents {
 		s.traffic.LogRecv(parent.relay.Stream().Context(), from, pkt)
 
 		errs := make(chan error, len(pkt.GetDestination()))
+		s.logger.Debug().Msgf("RecvPacket sending packet")
 		sent := s.sendPacket(parent, pkt, errs)
 		close(errs)
 
 		if sent {
+			s.logger.Debug().Msgf("RecvPacket sending packet - done")
+
 			ack := &ptypes.Ack{}
 
 			for err := range errs {
@@ -248,6 +259,8 @@ func (s *session) RecvPacket(from mino.Address, p *ptypes.Packet) (*ptypes.Ack, 
 			}
 
 			return ack, nil
+		} else {
+			s.logger.Debug().Msgf("RecvPacket sending packet - failed")
 		}
 	}
 
@@ -275,15 +288,22 @@ func (s *session) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 			return
 		}
 
+		dela.Logger.Warn().Msgf("session.Send [session %v] - locking", s.me)
 		s.parentsLock.RLock()
+		dela.Logger.Warn().Msgf("session.Send [session %v] - LOCKED", s.me)
 		defer s.parentsLock.RUnlock()
+		defer dela.Logger.Warn().Msgf("session.Send [session %v] - UNLOCKED", s.me)
 
 		for _, parent := range s.parents {
 			packet := parent.table.Make(s.me, addrs, data)
 
+			s.logger.Debug().Msgf("Send sending packet")
 			sent := s.sendPacket(parent, packet, errs)
 			if sent {
+				s.logger.Debug().Msgf("Send sending packet - done")
 				return
+			} else {
+				s.logger.Debug().Msgf("Send sending packet - failed")
 			}
 		}
 
@@ -347,7 +367,9 @@ func (s *session) sendPacket(p parent, pkt router.Packet, errs chan error) bool 
 		go s.sendTo(p, addr, packet, errs, &wg)
 	}
 
+	dela.Logger.Warn().Msgf("session.sendPacket [session %v] - waiting", s.me)
 	wg.Wait()
+	dela.Logger.Warn().Msgf("session.sendPacket [session %v] - DONE", s.me)
 
 	return true
 }
@@ -369,12 +391,14 @@ func (s *session) sendTo(p parent, to mino.Address, pkt router.Packet, errs chan
 			s.onFailure(p, to, pkt, errs)
 
 			return
+		} else {
+			s.logger.Debug().Msgf("sendTo setup new relay")
 		}
 	}
 
 	ctx := p.relay.Stream().Context()
 
-	s.traffic.LogSend(ctx, relay.GetDistantAddress(), pkt)
+	//s.traffic.LogSend(ctx, relay.GetDistantAddress(), pkt)
 
 	ack, err := relay.Send(ctx, pkt)
 	if to == nil && err != nil {
@@ -405,8 +429,11 @@ func (s *session) sendTo(p parent, to mino.Address, pkt router.Packet, errs chan
 }
 
 func (s *session) setupRelay(p parent, addr mino.Address) (Relay, error) {
+	dela.Logger.Warn().Msgf("session.setupRelay [session %v] - locking", s.me)
 	s.Lock()
+	dela.Logger.Warn().Msgf("session.setupRelay [session %v] - LOCKED", s.me)
 	defer s.Unlock()
+	defer dela.Logger.Warn().Msgf("session.setupRelay [session %v] - UNLOCKED", s.me)
 
 	relay, initiated := s.relays[addr]
 
@@ -577,6 +604,14 @@ func (r *unicastRelay) Send(ctx context.Context, p router.Packet) (*ptypes.Ack, 
 
 	ctx = metadata.NewOutgoingContext(ctx, r.md)
 
+	dela.Logger.Debug().Msgf("UnicastRelay SEND (%v - %v) - about to lock", r.gw, r.GetDistantAddress())
+
+	r.Lock()
+	dela.Logger.Debug().Msgf("UnicastRelay SEND (%v - %v)", r.gw, r.GetDistantAddress())
+
+	defer r.Unlock()
+	defer dela.Logger.Debug().Msgf("UnicastRelay SEND (%v - %v) - done", r.gw, r.GetDistantAddress())
+
 	ack, err := client.Forward(ctx, &ptypes.Packet{Serialized: data})
 	if err != nil {
 		return nil, xerrors.Errorf("client: %w", err)
@@ -603,6 +638,7 @@ func (r *unicastRelay) Close() error {
 //
 // - implements session.Relay
 type streamRelay struct {
+	sync.Mutex
 	gw      mino.Address
 	stream  PacketStream
 	context serde.Context
@@ -637,7 +673,11 @@ func (r *streamRelay) Send(ctx context.Context, p router.Packet) (*ptypes.Ack, e
 		return nil, xerrors.Errorf("failed to serialize: %v", err)
 	}
 
+	r.Lock()
+	defer r.Unlock()
+
 	err = r.stream.Send(&ptypes.Packet{Serialized: data})
+
 	if err != nil {
 		return nil, xerrors.Errorf("stream: %v", err)
 	}
