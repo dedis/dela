@@ -19,7 +19,7 @@ import (
 )
 
 func TestRpcStreamTree(t *testing.T) {
-	NbNodes := 100
+	NbNodes := 5
 
 	nodes := createNodes(NbNodes, true)
 	rpcs := createRpcs(nodes)
