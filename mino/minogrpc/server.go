@@ -694,7 +694,7 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 		return nil, xerrors.Errorf("failed to get tracer for addr %s: %v", addr, err)
 	}
 
-	grpc.EnableTracing = true
+	// grpc.EnableTracing = true
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(2)*time.Second)
 	defer cancel()
 

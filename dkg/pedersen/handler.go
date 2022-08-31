@@ -462,6 +462,7 @@ func (h *Handler) handleDeal(msg *types.Deal, from mino.Address,
 func (h *Handler) certify(ctx context.Context) error {
 	dela.Logger.Trace().Msgf("%v is certifying dkg", h.me)
 
+	i := 0
 	for !h.dkg.Certified() {
 		select {
 		case rf, ok := <-h.responses:
@@ -487,10 +488,11 @@ func (h *Handler) certify(ctx context.Context) error {
 
 			_, err := h.dkg.ProcessResponse(response)
 			if err != nil {
-				dela.Logger.Warn().Msgf("%s failed to process response: %v", h.me, err)
+				dela.Logger.Err(err).Msgf("%s failed to process response", h.me)
 			} else {
-				dela.Logger.Trace().Msgf("%s handled response from %s",
-					h.me, rf.from)
+				dela.Logger.Trace().Msgf("%s handled response (%d) from %s",
+					h.me, i, rf.from)
+				i++
 			}
 
 		case <-ctx.Done():

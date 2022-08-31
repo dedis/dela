@@ -32,8 +32,8 @@ var (
 )
 
 const (
-	setupTimeout   = time.Second * 100
-	decryptTimeout = time.Second * 30
+	setupTimeout   = time.Second * 10000
+	decryptTimeout = time.Second * 30000
 )
 
 // Pedersen allows one to initialize a new DKG protocol.

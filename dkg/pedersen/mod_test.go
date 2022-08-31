@@ -1,7 +1,7 @@
 package pedersen
 
 import (
-	"go.dedis.ch/dela/mino/router/flat"
+	"go.dedis.ch/dela/mino/router/tree"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -140,7 +140,7 @@ func TestPedersen_Scenario(t *testing.T) {
 	// 	traffic.SaveEvents("events.dot")
 	// }()
 
-	n := 5
+	n := 50
 
 	minos := make([]mino.Mino, n)
 	dkgs := make([]dkg.DKG, n)
@@ -149,7 +149,7 @@ func TestPedersen_Scenario(t *testing.T) {
 	for i := 0; i < n; i++ {
 		addr := minogrpc.ParseAddress("127.0.0.1", 0)
 
-		minogrpc, err := minogrpc.NewMinogrpc(addr, nil, flat.NewRouter(minogrpc.NewAddressFactory()))
+		minogrpc, err := minogrpc.NewMinogrpc(addr, nil, tree.NewRouter(minogrpc.NewAddressFactory()))
 		require.NoError(t, err)
 
 		defer minogrpc.GracefulStop()
