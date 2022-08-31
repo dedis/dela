@@ -10,12 +10,12 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"go.dedis.ch/dela/internal/debugsync"
 	"io"
 	"net"
 	"net/url"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	otgrpc "github.com/opentracing-contrib/go-grpc"
@@ -93,7 +93,7 @@ type Endpoint struct {
 	// that the stream session must be created. Using a sync.Map would require
 	// to use the "LoadOrStore" function, which would make us create the session
 	// each time, but only saving it the first time.
-	sync.RWMutex
+	debugsync.RWMutex
 
 	Handler mino.Handler
 	Factory serde.Factory
@@ -234,7 +234,7 @@ func NewMinogrpc(listen net.Addr, public *url.URL, router router.Router, opts ..
 		grpc.UnaryInterceptor(otgrpc.OpenTracingServerInterceptor(tracer, otgrpc.SpanDecorator(decorateServerTrace))),
 		grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(tracer, otgrpc.SpanDecorator(decorateServerTrace))),
 	)
-	
+
 	m := &Minogrpc{
 		overlay:   o,
 		server:    server,

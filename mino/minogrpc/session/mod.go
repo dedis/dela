@@ -18,13 +18,9 @@ package session
 
 import (
 	"context"
-	"io"
-	"io/ioutil"
-	"os"
-	"sync"
-
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/internal/debugsync"
 	"go.dedis.ch/dela/internal/traffic"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
@@ -35,6 +31,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"io"
+	"io/ioutil"
+	"os"
 )
 
 // HandshakeKey is the key to the handshake store in the headers.
@@ -103,8 +102,8 @@ type parent struct {
 //
 // - implements session.Session
 type session struct {
-	sync.Mutex
-	sync.WaitGroup
+	debugsync.Mutex
+	debugsync.WaitGroup
 
 	logger  zerolog.Logger
 	md      metadata.MD
@@ -121,7 +120,7 @@ type session struct {
 	parents map[mino.Address]parent
 	// A read-write lock is used there as there are much more read requests than
 	// write ones, and the read should be parallelized.
-	parentsLock sync.RWMutex
+	parentsLock debugsync.RWMutex
 }
 
 // NewSession creates a new session for the provided parent relay.
@@ -170,21 +169,21 @@ func (s *session) GetNumParents() int {
 // when the stream has been closed.
 func (s *session) Listen(relay Relay, table router.RoutingTable, ready chan struct{}) {
 	defer func() {
-		dela.Logger.Warn().Msgf("session.Listen [session %v] - locking", s.me)
+		dela.Logger.Debug().Msgf("session.Listen [session %v] - locking", s.me)
 		s.parentsLock.Lock()
-		dela.Logger.Warn().Msgf("session.Listen [session %v] - LOCKED", s.me)
+		dela.Logger.Debug().Msgf("session.Listen [session %v] - LOCKED", s.me)
 
 		delete(s.parents, relay.GetDistantAddress())
 
-		dela.Logger.Warn().Msgf("session.Listen [session %v] - UNLOCKED", s.me)
+		dela.Logger.Debug().Msgf("session.Listen [session %v] - UNLOCKED", s.me)
 		s.parentsLock.Unlock()
 	}()
 
-	dela.Logger.Warn().Msgf("session.Listen [session %v] - locking", s.me)
+	dela.Logger.Debug().Msgf("session.Listen [session %v] - locking", s.me)
 	s.parentsLock.Lock()
-	dela.Logger.Warn().Msgf("session.Listen [session %v] - LOCKED", s.me)
+	dela.Logger.Debug().Msgf("session.Listen [session %v] - LOCKED", s.me)
 	s.parents[relay.GetDistantAddress()] = parent{relay: relay, table: table}
-	dela.Logger.Warn().Msgf("session.Listen [session %v] - UNLOCKED", s.me)
+	dela.Logger.Debug().Msgf("session.Listen [session %v] - UNLOCKED", s.me)
 	s.parentsLock.Unlock()
 
 	close(ready)
@@ -242,13 +241,13 @@ func (s *session) RecvPacket(from mino.Address, p *ptypes.Packet) (*ptypes.Ack, 
 		return nil, xerrors.Errorf("packet malformed: %v", err)
 	}
 
-	dela.Logger.Warn().Msgf("session.RecvPacket [session %v] - locking", s.me)
+	dela.Logger.Debug().Msgf("session.RecvPacket [session %v] - locking", s.me)
 	s.parentsLock.RLock()
-	dela.Logger.Warn().Msgf("session.RecvPacket [session %v] - LOCKED", s.me)
+	dela.Logger.Debug().Msgf("session.RecvPacket [session %v] - LOCKED", s.me)
 
 	parents := s.CopyParents()
 
-	dela.Logger.Warn().Msgf("session.RecvPacket [session %v] - UNLOCKED", s.me)
+	dela.Logger.Debug().Msgf("session.RecvPacket [session %v] - UNLOCKED", s.me)
 	s.parentsLock.RUnlock()
 
 	// Try to send the packet to each parent until one works.
@@ -257,7 +256,7 @@ func (s *session) RecvPacket(from mino.Address, p *ptypes.Packet) (*ptypes.Ack, 
 
 		errs := make(chan error, len(pkt.GetDestination()))
 		s.logger.Debug().Msgf("RecvPacket sending packet")
-		sent := s.sendPacket(parent, pkt, errs)
+		sent := s.sendPacket(parent, pkt, errs) //*****
 		close(errs)
 
 		if sent {
@@ -299,13 +298,13 @@ func (s *session) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 			return
 		}
 
-		dela.Logger.Warn().Msgf("session.Send [session %v] - locking", s.me)
+		dela.Logger.Debug().Msgf("session.Send [session %v] - locking", s.me)
 		s.parentsLock.RLock()
-		dela.Logger.Warn().Msgf("session.Send [session %v] - LOCKED", s.me)
+		dela.Logger.Debug().Msgf("session.Send [session %v] - LOCKED", s.me)
 
 		parents := s.CopyParents()
 
-		dela.Logger.Warn().Msgf("session.Send [session %v] - UNLOCKED", s.me)
+		dela.Logger.Debug().Msgf("session.Send [session %v] - UNLOCKED", s.me)
 		s.parentsLock.RUnlock()
 
 		for _, parent := range parents {
@@ -374,21 +373,21 @@ func (s *session) sendPacket(p parent, pkt router.Packet, errs chan error) bool 
 		return me != nil
 	}
 
-	wg := sync.WaitGroup{}
+	wg := debugsync.WaitGroup{}
 	wg.Add(len(routes))
 
 	for addr, packet := range routes {
 		go s.sendTo(p, addr, packet, errs, &wg)
 	}
 
-	dela.Logger.Warn().Msgf("session.sendPacket [session %v] - waiting", s.me)
-	wg.Wait()
-	dela.Logger.Warn().Msgf("session.sendPacket [session %v] - waiting DONE", s.me)
+	dela.Logger.Debug().Msgf("session.sendPacket [session %v] - waiting", s.me)
+	wg.Wait() //*****
+	dela.Logger.Debug().Msgf("session.sendPacket [session %v] - waiting DONE", s.me)
 
 	return true
 }
 
-func (s *session) sendTo(p parent, to mino.Address, pkt router.Packet, errs chan error, wg *sync.WaitGroup) {
+func (s *session) sendTo(p parent, to mino.Address, pkt router.Packet, errs chan error, wg *debugsync.WaitGroup) {
 	defer wg.Done()
 
 	var relay Relay
@@ -443,11 +442,11 @@ func (s *session) sendTo(p parent, to mino.Address, pkt router.Packet, errs chan
 }
 
 func (s *session) setupRelay(p parent, addr mino.Address) (Relay, error) {
-	dela.Logger.Warn().Msgf("session.setupRelay [session %v] - locking", s.me)
+	dela.Logger.Debug().Msgf("session.setupRelay [session %v] - locking", s.me)
 	s.Lock()
-	dela.Logger.Warn().Msgf("session.setupRelay [session %v] - LOCKED", s.me)
+	dela.Logger.Debug().Msgf("session.setupRelay [session %v] - LOCKED", s.me)
 	defer s.Unlock()
-	defer dela.Logger.Warn().Msgf("session.setupRelay [session %v] - UNLOCKED", s.me)
+	defer dela.Logger.Debug().Msgf("session.setupRelay [session %v] - UNLOCKED", s.me)
 
 	relay, initiated := s.relays[addr]
 
@@ -571,7 +570,7 @@ type PacketStream interface {
 //
 // - implements session.Relay
 type unicastRelay struct {
-	sync.Mutex
+	debugsync.Mutex
 	md      metadata.MD
 	gw      mino.Address
 	stream  PacketStream
@@ -618,13 +617,13 @@ func (r *unicastRelay) Send(ctx context.Context, p router.Packet) (*ptypes.Ack, 
 
 	ctx = metadata.NewOutgoingContext(ctx, r.md)
 
-	dela.Logger.Warn().Msgf("UnicastRelay SEND (%v - %v) - locking", r.gw, r.GetDistantAddress())
+	dela.Logger.Debug().Msgf("UnicastRelay SEND (%v - %v) - locking", r.gw, r.GetDistantAddress())
 
-	r.Lock()
-	dela.Logger.Warn().Msgf("UnicastRelay SEND (%v - %v) - LOCKED", r.gw, r.GetDistantAddress())
+	// r.Lock() //*****
+	dela.Logger.Debug().Msgf("UnicastRelay SEND (%v - %v) - LOCKED", r.gw, r.GetDistantAddress())
 
-	defer r.Unlock()
-	defer dela.Logger.Warn().Msgf("UnicastRelay SEND (%v - %v) - UNLOCKED", r.gw, r.GetDistantAddress())
+	// defer r.Unlock()
+	defer dela.Logger.Debug().Msgf("UnicastRelay SEND (%v - %v) - UNLOCKED", r.gw, r.GetDistantAddress())
 
 	ack, err := client.Forward(ctx, &ptypes.Packet{Serialized: data})
 	if err != nil {
@@ -652,7 +651,7 @@ func (r *unicastRelay) Close() error {
 //
 // - implements session.Relay
 type streamRelay struct {
-	sync.Mutex
+	debugsync.Mutex
 	gw      mino.Address
 	stream  PacketStream
 	context serde.Context
