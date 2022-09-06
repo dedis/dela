@@ -14,13 +14,11 @@
 // feedbacks on the status of the message.
 //
 // Documentation Last Review: 07.10.20202
-//
 package session
 
 import (
 	"context"
 	"io"
-	"io/ioutil"
 	"os"
 	"sync"
 
@@ -150,7 +148,7 @@ func NewSession(
 
 	switch os.Getenv(traffic.EnvVariable) {
 	case "log":
-		sess.traffic = traffic.NewTraffic(me, ioutil.Discard)
+		sess.traffic = traffic.NewTraffic(me, io.Discard)
 	case "print":
 		sess.traffic = traffic.NewTraffic(me, os.Stdout)
 	}
@@ -221,6 +219,14 @@ func (s *session) Close() {
 	s.logger.Trace().Msg("session has been closed")
 }
 
+func (s *session) CopyParents() map[mino.Address]parent {
+	ps := map[mino.Address]parent{}
+	for k, v := range s.parents {
+		ps[k] = v
+	}
+	return ps
+}
+
 // RecvPacket implements session.Session. It process the packet and send it to
 // the relays, or itself.
 func (s *session) RecvPacket(from mino.Address, p *ptypes.Packet) (*ptypes.Ack, error) {
@@ -230,10 +236,11 @@ func (s *session) RecvPacket(from mino.Address, p *ptypes.Packet) (*ptypes.Ack, 
 	}
 
 	s.parentsLock.RLock()
-	defer s.parentsLock.RUnlock()
+	parents := s.CopyParents()
+	s.parentsLock.RUnlock()
 
 	// Try to send the packet to each parent until one works.
-	for _, parent := range s.parents {
+	for _, parent := range parents {
 		s.traffic.LogRecv(parent.relay.Stream().Context(), from, pkt)
 
 		errs := make(chan error, len(pkt.GetDestination()))
@@ -251,7 +258,7 @@ func (s *session) RecvPacket(from mino.Address, p *ptypes.Packet) (*ptypes.Ack, 
 		}
 	}
 
-	return nil, xerrors.Errorf("packet is dropped (tried %d parent-s)", len(s.parents))
+	return nil, xerrors.Errorf("packet is dropped (tried %d parent-s)", len(parents))
 }
 
 // Send implements mino.Sender. It sends the message to the provided addresses
@@ -276,9 +283,10 @@ func (s *session) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
 		}
 
 		s.parentsLock.RLock()
-		defer s.parentsLock.RUnlock()
+		parents := s.CopyParents()
+		s.parentsLock.RUnlock()
 
-		for _, parent := range s.parents {
+		for _, parent := range parents {
 			packet := parent.table.Make(s.me, addrs, data)
 
 			sent := s.sendPacket(parent, packet, errs)
@@ -373,8 +381,6 @@ func (s *session) sendTo(p parent, to mino.Address, pkt router.Packet, errs chan
 	}
 
 	ctx := p.relay.Stream().Context()
-
-	s.traffic.LogSend(ctx, relay.GetDistantAddress(), pkt)
 
 	ack, err := relay.Send(ctx, pkt)
 	if to == nil && err != nil {
@@ -491,7 +497,7 @@ func (s *session) setupRelay(p parent, addr mino.Address) (Relay, error) {
 
 				// Relay has lost the connection, therefore we announce the
 				// address as unreachable.
-				p.table.OnFailure(addr)
+				err = p.table.OnFailure(addr)
 
 				return
 			}
@@ -603,6 +609,7 @@ func (r *unicastRelay) Close() error {
 //
 // - implements session.Relay
 type streamRelay struct {
+	sync.Mutex
 	gw      mino.Address
 	stream  PacketStream
 	context serde.Context
@@ -637,7 +644,11 @@ func (r *streamRelay) Send(ctx context.Context, p router.Packet) (*ptypes.Ack, e
 		return nil, xerrors.Errorf("failed to serialize: %v", err)
 	}
 
+	r.Lock()
+	defer r.Unlock()
+
 	err = r.stream.Send(&ptypes.Packet{Serialized: data})
+
 	if err != nil {
 		return nil, xerrors.Errorf("stream: %v", err)
 	}

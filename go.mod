@@ -21,7 +21,7 @@ require (
 	golang.org/x/net v0.0.0-20211015210444-4f30a5c0130f
 	golang.org/x/tools v0.1.11-0.20220316014157-77aa08bb151a
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
-	google.golang.org/grpc v1.45.0
+	google.golang.org/grpc v1.49.0
 	gopkg.in/check.v1 v1.0.0-20200902074654-038fdea0a05b // indirect
 	gopkg.in/yaml.v2 v2.4.0
 )

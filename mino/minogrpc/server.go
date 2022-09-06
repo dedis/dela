@@ -35,7 +35,6 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 
-	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing/opentracing-go"
 )
 
@@ -52,7 +51,7 @@ const (
 
 	// defaultMinConnectTimeout is the minimum amount of time we are willing to
 	// wait for a grpc connection to complete
-	defaultMinConnectTimeout = 10 * time.Second
+	defaultMinConnectTimeout = 60 * time.Second
 )
 
 var getTracerForAddr = tracing.GetTracerForAddr
@@ -676,23 +675,18 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 
 	// Connecting using TLS and the distant server certificate as the root.
 	addr := netAddr.GetDialAddress()
-	tracer, err := getTracerForAddr(addr)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to get tracer for addr %s: %v", addr, err)
-	}
 
-	conn, err = grpc.Dial(addr,
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(2)*time.Second)
+	defer cancel()
+
+	conn, err = grpc.DialContext(
+		ctx,
+		addr,
 		grpc.WithTransportCredentials(ta),
 		grpc.WithConnectParams(grpc.ConnectParams{
 			Backoff:           backoff.DefaultConfig,
 			MinConnectTimeout: defaultMinConnectTimeout,
 		}),
-		grpc.WithUnaryInterceptor(
-			otgrpc.OpenTracingClientInterceptor(tracer, otgrpc.SpanDecorator(decorateClientTrace)),
-		),
-		grpc.WithStreamInterceptor(
-			otgrpc.OpenTracingStreamClientInterceptor(tracer, otgrpc.SpanDecorator(decorateClientTrace)),
-		),
 	)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to dial: %v", err)

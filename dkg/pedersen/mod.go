@@ -1,6 +1,7 @@
 package pedersen
 
 import (
+	"go.dedis.ch/dela"
 	"time"
 
 	"go.dedis.ch/dela/crypto/ed25519"
@@ -228,10 +229,12 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 	pubShares := make([]*share.PubShare, len(addrs))
 
 	for i := 0; i < len(addrs); i++ {
-		_, message, err := receiver.Recv(ctx)
+		src, message, err := receiver.Recv(ctx)
 		if err != nil {
 			return []byte{}, xerrors.Errorf("stream stopped unexpectedly: %v", err)
 		}
+
+		dela.Logger.Debug().Msgf("Received a decryption reply from %v", src)
 
 		decryptReply, ok := message.(types.DecryptReply)
 		if !ok {
@@ -254,6 +257,8 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 	if err != nil {
 		return []byte{}, xerrors.Errorf("failed to get embeded data: %v", err)
 	}
+
+	dela.Logger.Info().Msgf("Decrypted message: %v", decryptedMessage)
 
 	return decryptedMessage, nil
 }

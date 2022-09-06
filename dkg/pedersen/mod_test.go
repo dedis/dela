@@ -1,6 +1,7 @@
 package pedersen
 
 import (
+	"go.dedis.ch/dela/mino/router/flat"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -11,7 +12,6 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc"
-	"go.dedis.ch/dela/mino/router/tree"
 	"go.dedis.ch/kyber/v3"
 )
 
@@ -128,7 +128,8 @@ func TestPedersen_Decrypt(t *testing.T) {
 
 func TestPedersen_Reshare(t *testing.T) {
 	actor := Actor{}
-	actor.Reshare()
+	err := actor.Reshare()
+	require.NoError(t, err)
 }
 
 func TestPedersen_Scenario(t *testing.T) {
@@ -140,7 +141,7 @@ func TestPedersen_Scenario(t *testing.T) {
 	// 	traffic.SaveEvents("events.dot")
 	// }()
 
-	n := 5
+	n := 50
 
 	minos := make([]mino.Mino, n)
 	dkgs := make([]dkg.DKG, n)
@@ -149,13 +150,13 @@ func TestPedersen_Scenario(t *testing.T) {
 	for i := 0; i < n; i++ {
 		addr := minogrpc.ParseAddress("127.0.0.1", 0)
 
-		minogrpc, err := minogrpc.NewMinogrpc(addr, nil, tree.NewRouter(minogrpc.NewAddressFactory()))
+		m, err := minogrpc.NewMinogrpc(addr, nil, flat.NewRouter(minogrpc.NewAddressFactory()))
 		require.NoError(t, err)
 
-		defer minogrpc.GracefulStop()
+		defer m.GracefulStop()
 
-		minos[i] = minogrpc
-		addrs[i] = minogrpc.GetAddress()
+		minos[i] = m
+		addrs[i] = m.GetAddress()
 	}
 
 	pubkeys := make([]kyber.Point, len(minos))
@@ -165,9 +166,9 @@ func TestPedersen_Scenario(t *testing.T) {
 			mino.(*minogrpc.Minogrpc).GetCertificateStore().Store(m.GetAddress(), m.(*minogrpc.Minogrpc).GetCertificateChain())
 		}
 
-		dkg, pubkey := NewPedersen(mino.(*minogrpc.Minogrpc))
+		d, pubkey := NewPedersen(mino.(*minogrpc.Minogrpc))
 
-		dkgs[i] = dkg
+		dkgs[i] = d
 		pubkeys[i] = pubkey
 	}
 
