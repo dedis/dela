@@ -7,8 +7,7 @@ import (
 )
 
 type WaitGroup struct {
-	wg        sync.WaitGroup
-	unlocking chan struct{}
+	wg sync.WaitGroup
 }
 
 // Add adds delta, which may be negative, to the WaitGroup counter.

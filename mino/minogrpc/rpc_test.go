@@ -2,8 +2,8 @@ package minogrpc
 
 import (
 	context "context"
+	"go.dedis.ch/dela/internal/debugsync"
 	"io"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -158,7 +158,7 @@ func TestRPC_Stream(t *testing.T) {
 
 	rpc := &RPC{
 		overlay: &overlay{
-			closer:      new(sync.WaitGroup),
+			closer:      new(debugsync.WaitGroup),
 			myAddr:      session.NewAddress("C"),
 			router:      tree.NewRouter(addressFac),
 			addrFactory: addressFac,

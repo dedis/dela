@@ -497,7 +497,7 @@ func (s *session) setupRelay(p parent, addr mino.Address) (Relay, error) {
 
 				// Relay has lost the connection, therefore we announce the
 				// address as unreachable.
-				err = p.table.OnFailure(addr)
+				p.table.OnFailure(addr)
 
 				return
 			}

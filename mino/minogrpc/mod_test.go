@@ -2,8 +2,8 @@ package minogrpc
 
 import (
 	"context"
+	"go.dedis.ch/dela/internal/debugsync"
 	"net"
-	"sync"
 	"testing"
 	"time"
 
@@ -169,7 +169,7 @@ func TestMinogrpc_Token(t *testing.T) {
 func TestMinogrpc_GracefulClose(t *testing.T) {
 	m := &Minogrpc{
 		overlay: &overlay{
-			closer:  new(sync.WaitGroup),
+			closer:  new(debugsync.WaitGroup),
 			connMgr: fakeConnMgr{},
 		},
 		server:  grpc.NewServer(),

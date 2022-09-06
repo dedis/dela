@@ -13,6 +13,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"github.com/opentracing/opentracing-go"
 	"go.dedis.ch/dela/internal/debugsync"
 	"math/big"
 	"net"
@@ -34,8 +35,6 @@ import (
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
-
-	"github.com/opentracing/opentracing-go"
 )
 
 const (

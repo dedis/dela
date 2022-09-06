@@ -5,10 +5,10 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"fmt"
+	"go.dedis.ch/dela/internal/debugsync"
 	"net"
 	"net/url"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -520,7 +520,7 @@ func TestOverlayServer_Stream(t *testing.T) {
 			context:     json.NewContext(),
 			addrFactory: addressFac,
 			myAddr:      session.NewAddress("127.0.0.1:0"),
-			closer:      &sync.WaitGroup{},
+			closer:      &debugsync.WaitGroup{},
 			connMgr:     fakeConnMgr{},
 		},
 		endpoints: map[string]*Endpoint{
@@ -539,7 +539,7 @@ func TestOverlayServer_Stream(t *testing.T) {
 		headerStreamIDKey, "streamTest",
 		session.HandshakeKey, "{}"))
 
-	wg := sync.WaitGroup{}
+	wg := debugsync.WaitGroup{}
 	wg.Add(5)
 	for i := 0; i < 5; i++ {
 		go func() {
@@ -563,7 +563,7 @@ func TestOverlayServer_Stream(t *testing.T) {
 func TestOverlay_MissingHeaders_Stream(t *testing.T) {
 	overlay := overlayServer{
 		overlay: &overlay{
-			closer: &sync.WaitGroup{},
+			closer: &debugsync.WaitGroup{},
 		},
 	}
 
@@ -576,7 +576,7 @@ func TestOverlay_MissingHeaders_Stream(t *testing.T) {
 func TestOverlay_MalformedRtingTable_Stream(t *testing.T) {
 	overlay := overlayServer{
 		overlay: &overlay{
-			closer:      &sync.WaitGroup{},
+			closer:      &debugsync.WaitGroup{},
 			router:      badRouter{},
 			addrFactory: addressFac,
 		},
@@ -605,7 +605,7 @@ func TestOverlay_MalformedRtingTable_Stream(t *testing.T) {
 func TestOverlay_UnknownHandler_Stream(t *testing.T) {
 	overlay := overlayServer{
 		overlay: &overlay{
-			closer:      &sync.WaitGroup{},
+			closer:      &debugsync.WaitGroup{},
 			router:      tree.NewRouter(addressFac),
 			addrFactory: addressFac,
 			context:     json.NewContext(),
@@ -631,7 +631,7 @@ func TestOverlay_UnknownHandler_Stream(t *testing.T) {
 func TestOverlay_BadStreamID_Stream(t *testing.T) {
 	overlay := overlayServer{
 		overlay: &overlay{
-			closer:      &sync.WaitGroup{},
+			closer:      &debugsync.WaitGroup{},
 			router:      tree.NewRouter(addressFac),
 			addrFactory: addressFac,
 			context:     json.NewContext(),
@@ -650,7 +650,7 @@ func TestOverlay_BadHandler_Stream(t *testing.T) {
 	overlay := overlayServer{
 		overlay: &overlay{
 			myAddr:      session.NewAddress(""),
-			closer:      &sync.WaitGroup{},
+			closer:      &debugsync.WaitGroup{},
 			router:      tree.NewRouter(addressFac),
 			addrFactory: addressFac,
 			context:     json.NewContext(),
@@ -676,7 +676,7 @@ func TestOverlay_BadConn_Stream(t *testing.T) {
 	overlay := overlayServer{
 		overlay: &overlay{
 			myAddr:      session.NewAddress(""),
-			closer:      &sync.WaitGroup{},
+			closer:      &debugsync.WaitGroup{},
 			router:      tree.NewRouter(addressFac),
 			addrFactory: addressFac,
 			context:     json.NewContext(),
@@ -702,7 +702,7 @@ func TestOverlay_BadParentGateway_Stream(t *testing.T) {
 	overlay := overlayServer{
 		overlay: &overlay{
 			myAddr:      session.NewAddress(""),
-			closer:      &sync.WaitGroup{},
+			closer:      &debugsync.WaitGroup{},
 			router:      tree.NewRouter(addressFac),
 			addrFactory: addressFac,
 			context:     json.NewContext(),
@@ -731,7 +731,7 @@ func TestOverlay_Forward(t *testing.T) {
 			context:     json.NewContext(),
 			addrFactory: addressFac,
 			myAddr:      session.NewAddress("127.0.0.1:0"),
-			closer:      &sync.WaitGroup{},
+			closer:      &debugsync.WaitGroup{},
 			connMgr:     fakeConnMgr{},
 		},
 		endpoints: make(map[string]*Endpoint),
