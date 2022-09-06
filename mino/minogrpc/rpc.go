@@ -7,10 +7,9 @@ package minogrpc
 
 import (
 	context "context"
-	"sync"
-
 	"github.com/rs/xid"
 	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/internal/debugsync"
 	"go.dedis.ch/dela/internal/tracing"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
@@ -48,7 +47,7 @@ func (rpc *RPC) Call(ctx context.Context,
 
 	out := make(chan mino.Response, players.Len())
 
-	wg := sync.WaitGroup{}
+	wg := debugsync.WaitGroup{}
 	wg.Add(players.Len())
 
 	iter := players.AddressIterator()
@@ -124,13 +123,13 @@ func (rpc *RPC) Call(ctx context.Context,
 // the endpoint. It can for instance use a tree structure, which means the
 // network for 8 nodes could look like this:
 //
-//                               Orchestrator
-//                                     |
-//                                  __ A __
-//                                 /       \
-//                                B         C
-//                              / | \     /   \
-//                             D  E  F   G     H
+//	  Orchestrator
+//	        |
+//	     __ A __
+//	    /       \
+//	   B         C
+//	 / | \     /   \
+//	D  E  F   G     H
 //
 // If C has to send a message to B, it will send it through node A. Similarly,
 // if D has to send a message to G, it will move up the tree through B, A and

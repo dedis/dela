@@ -141,7 +141,7 @@ func TestPedersen_Scenario(t *testing.T) {
 	// 	traffic.SaveEvents("events.dot")
 	// }()
 
-	n := 50
+	n := 100
 
 	minos := make([]mino.Mino, n)
 	dkgs := make([]dkg.DKG, n)
@@ -161,12 +161,12 @@ func TestPedersen_Scenario(t *testing.T) {
 
 	pubkeys := make([]kyber.Point, len(minos))
 
-	for i, mino := range minos {
+	for i, mi := range minos {
 		for _, m := range minos {
-			mino.(*minogrpc.Minogrpc).GetCertificateStore().Store(m.GetAddress(), m.(*minogrpc.Minogrpc).GetCertificateChain())
+			mi.(*minogrpc.Minogrpc).GetCertificateStore().Store(m.GetAddress(), m.(*minogrpc.Minogrpc).GetCertificateChain())
 		}
 
-		d, pubkey := NewPedersen(mino.(*minogrpc.Minogrpc))
+		d, pubkey := NewPedersen(mi.(*minogrpc.Minogrpc))
 
 		dkgs[i] = d
 		pubkeys[i] = pubkey

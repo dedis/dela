@@ -5,8 +5,8 @@
 package tree
 
 import (
+	"go.dedis.ch/dela/internal/debugsync"
 	"math"
-	"sync"
 
 	"go.dedis.ch/dela/mino"
 	"golang.org/x/xerrors"
@@ -77,7 +77,7 @@ func (c Branches) Search(to mino.Address) mino.Address {
 //
 // - implements tree.Tree
 type dynTree struct {
-	sync.Mutex
+	debugsync.Mutex
 	height   int
 	m        int
 	branches Branches
