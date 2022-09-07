@@ -1,8 +1,9 @@
 package pedersen
 
 import (
-	"go.dedis.ch/dela"
 	"time"
+
+	"go.dedis.ch/dela"
 
 	"go.dedis.ch/dela/crypto/ed25519"
 
@@ -140,6 +141,8 @@ func (a *Actor) Setup(co crypto.CollectiveAuthority, threshold int) (kyber.Point
 			return nil, xerrors.Errorf("expected to receive a Done message, but "+
 				"go the following: %T", msg)
 		}
+
+		dela.Logger.Info().Msgf("node %q done", addr.String())
 
 		dkgPubKeys[i] = doneMsg.GetPublicKey()
 
