@@ -10,7 +10,6 @@ import (
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/share"
-	dkg "go.dedis.ch/kyber/v3/share/dkg/pedersen"
 	pedersen "go.dedis.ch/kyber/v3/share/dkg/pedersen"
 )
 
@@ -28,7 +27,7 @@ func TestHandler_Stream(t *testing.T) {
 		fake.NewRecvMsg(fake.NewAddress(0), types.DecryptRequest{}),
 	)
 	err = h.Stream(fake.Sender{}, receiver)
-	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")
+	require.EqualError(t, err, "DKG is running")
 
 	h.startRes.distrKey = suite.Point()
 	h.startRes.participants = []mino.Address{fake.NewAddress(0)}
@@ -133,7 +132,7 @@ func TestHandler_HandleDeal(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-func getCertified(t *testing.T) (*pedersen.DistKeyGenerator, *dkg.Response) {
+func getCertified(t *testing.T) (*pedersen.DistKeyGenerator, *pedersen.Response) {
 	privKey1 := suite.Scalar().Pick(suite.RandomStream())
 	pubKey1 := suite.Point().Mul(privKey1, nil)
 

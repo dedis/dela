@@ -28,14 +28,13 @@ const recvTimeout = time.Second * 4
 
 // the time after which we expect new messages (deals or responses) to be
 // received.
-const retryTimeout = time.Second * 2
+const retryTimeout = time.Millisecond * 200
 
 // state is a struct contained in a handler that allows an actor to read the
 // state of that handler. The actor should only use the getter functions to read
 // the attributes.
 type state struct {
 	sync.Mutex
-	starting     bool
 	distrKey     kyber.Point
 	participants []mino.Address
 }
@@ -82,6 +81,7 @@ type Handler struct {
 	privShare *share.PriShare
 	startRes  *state
 	log       zerolog.Logger
+	running   bool
 }
 
 // NewHandler creates a new handler
@@ -93,17 +93,8 @@ func NewHandler(privKey kyber.Scalar, me mino.Address) *Handler {
 		me:       me,
 		startRes: &state{},
 		log:      log,
+		running:  false,
 	}
-}
-
-type dealFrom struct {
-	deal *types.Deal
-	from mino.Address
-}
-
-type responseFrom struct {
-	response *types.Response
-	from     mino.Address
 }
 
 // Stream implements mino.Handler. It allows one to stream messages to the
@@ -115,6 +106,19 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 	// this start message earlier than us, start their DKG work by sending
 	// messages to the other nodes, and then we might get their messages before
 	// the start message.
+
+	// We make sure not additional request is accepted if a setup is in
+	// progress.
+	h.Lock()
+	if !h.startRes.Done() && h.running {
+		h.Unlock()
+		return xerrors.Errorf("DKG is running")
+	}
+	if !h.startRes.Done() {
+		// This is the first setup
+		h.running = true
+	}
+	h.Unlock()
 
 	deals := list.New()
 	responses := list.New()
@@ -142,8 +146,6 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 
 		h.log.Info().Str("from", from.String()).Str("type", fmt.Sprintf("%T", msg)).
 			Msg("message received")
-
-		fmt.Printf("%s-->%s:%T\n", from.String()[14:], h.me.String()[14:], msg)
 
 		// We expect a Start message or a decrypt request at first, but we might
 		// receive other messages in the meantime, like a Deal.
@@ -173,6 +175,7 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 
 			h.Lock()
 			responses.PushBack(response)
+			h.log.Info().Int("total", responses.Len()).Msg("pushing a response")
 			h.Unlock()
 
 		case types.DecryptRequest:
@@ -272,6 +275,7 @@ func (h *Handler) doDKG(deals, resps *list.List, out mino.Sender, from mino.Addr
 
 	h.Lock()
 	h.privShare = distKey.PriShare()
+	h.running = false
 	h.Unlock()
 
 	done := types.NewStartDone(distKey.Public())
@@ -286,9 +290,8 @@ func (h *Handler) doDKG(deals, resps *list.List, out mino.Sender, from mino.Addr
 
 func (h *Handler) deal(out mino.Sender) error {
 	// Send my Deals to the other nodes. Note that we take an optimistic
-	// approach and don't check if the deals are correctly sent to the node. The
-	// DKG setup needs a full connectivity anyway, and for the moment everything
-	// fails if this assumption breaks.
+	// approach and expect nodes to always accept messages. If not, the protocol
+	// can hang forever.
 
 	deals, err := h.dkg.Deals()
 	if err != nil {
@@ -311,7 +314,13 @@ func (h *Handler) deal(out mino.Sender) error {
 
 		h.log.Info().Str("to", to.String()).Msg("send deal")
 
-		out.Send(dealMsg, to)
+		errs := out.Send(dealMsg, to)
+
+		// this can be blocking if the recipient is not receiving message
+		err = <-errs
+		if err != nil {
+			h.log.Err(err).Str("to", to.String()).Msg("failed to send deal")
+		}
 	}
 
 	return nil
@@ -368,6 +377,8 @@ func (h *Handler) certify(resps *list.List, out mino.Sender) error {
 		}
 
 		responsesReceived++
+
+		h.log.Info().Int("total", responsesReceived).Msg("response processed")
 	}
 
 	if !h.dkg.Certified() {
@@ -419,8 +430,6 @@ func (h *Handler) handleDeal(msg types.Deal, out mino.Sender) error {
 		if err != nil {
 			return xerrors.Errorf("failed to send response to '%s': %v", addr, err)
 		}
-
-		fmt.Printf("%s->%s:response(%d)\n", h.me.String()[14:], addr.String()[14:], resp.GetIndex())
 	}
 
 	return nil
