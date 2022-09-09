@@ -1,7 +1,6 @@
 // Package minogrpc implements a network overlay using gRPC.
 //
 // Documentation Last Review: 07.10.2020
-//
 package minogrpc
 
 import (
@@ -217,7 +216,7 @@ func NewMinogrpc(listen net.Addr, public *url.URL, router router.Router, opts ..
 		Certificates: []tls.Certificate{{
 			Certificate: certsBuf,
 			Leaf:        certs[0],
-			PrivateKey:  tmpl.secret,
+			PrivateKey:  o.secret,
 		}},
 		MinVersion: tls.VersionTLS12,
 	})
