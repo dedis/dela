@@ -13,6 +13,8 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+
+	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing/opentracing-go"
 	"go.dedis.ch/dela/internal/debugsync"
 	"math/big"
@@ -674,6 +676,10 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 
 	// Connecting using TLS and the distant server certificate as the root.
 	addr := netAddr.GetDialAddress()
+	tracer, err := getTracerForAddr(addr)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to get tracer for addr %s: %v", addr, err)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(2)*time.Second)
 	defer cancel()
@@ -686,6 +692,12 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 			Backoff:           backoff.DefaultConfig,
 			MinConnectTimeout: defaultMinConnectTimeout,
 		}),
+		grpc.WithUnaryInterceptor(
+			otgrpc.OpenTracingClientInterceptor(tracer, otgrpc.SpanDecorator(decorateClientTrace)),
+		),
+		grpc.WithStreamInterceptor(
+			otgrpc.OpenTracingStreamClientInterceptor(tracer, otgrpc.SpanDecorator(decorateClientTrace)),
+		),
 	)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to dial: %v", err)
