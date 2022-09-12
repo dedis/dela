@@ -218,7 +218,7 @@ func NewMinogrpc(listen net.Addr, public *url.URL, router router.Router, opts ..
 		Certificates: []tls.Certificate{{
 			Certificate: certsBuf,
 			Leaf:        certs[0],
-			PrivateKey:  tmpl.secret,
+			PrivateKey:  o.secret,
 		}},
 		MinVersion: tls.VersionTLS12,
 	})

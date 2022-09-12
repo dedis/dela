@@ -9,6 +9,7 @@ package minogrpc
 import (
 	"bytes"
 	"context"
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/tls"
@@ -448,7 +449,14 @@ func newOverlay(tmpl *minoTemplate) (*overlay, error) {
 	// session.Address never returns an error
 	myAddrBuf, _ := tmpl.myAddr.MarshalText()
 
-	if tmpl.secret == nil || tmpl.public == nil {
+	if tmpl.cert != nil {
+		tmpl.secret = tmpl.cert.PrivateKey
+		// it is okay to crash at this point, as the certificate's key is
+		// invalid
+		tmpl.public = tmpl.cert.PrivateKey.(interface{ Public() crypto.PublicKey }).Public()
+	}
+
+	if tmpl.secret == nil {
 		priv, err := ecdsa.GenerateKey(tmpl.curve, tmpl.random)
 		if err != nil {
 			return nil, xerrors.Errorf("cert private key: %v", err)
@@ -514,8 +522,6 @@ func (o *overlay) GetCertificateChain() certs.CertChain {
 		// provoke several issues later on.
 		panic("certificate of the overlay must be populated")
 	}
-
-	// me.PrivateKey = o.secret
 
 	return me
 }
