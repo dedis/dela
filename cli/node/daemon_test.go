@@ -17,7 +17,7 @@ import (
 )
 
 func TestSocketClient_Send(t *testing.T) {
-	dir, err := ioutil.TempDir(os.TempDir(), "dela")
+	dir, err := os.MkdirTemp(os.TempDir(), "dela")
 	require.NoError(t, err)
 
 	defer os.RemoveAll(dir)

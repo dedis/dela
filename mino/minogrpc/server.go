@@ -14,10 +14,10 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"sync"
 
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing/opentracing-go"
-	"go.dedis.ch/dela/internal/debugsync"
 	"math/big"
 	"net"
 	"net/url"
@@ -426,7 +426,7 @@ func (o *overlayServer) Forward(ctx context.Context, p *ptypes.Packet) (*ptypes.
 }
 
 type overlay struct {
-	closer      *debugsync.WaitGroup
+	closer      *sync.WaitGroup
 	context     serde.Context
 	myAddr      session.Address
 	certs       certs.Storage
@@ -467,7 +467,7 @@ func newOverlay(tmpl *minoTemplate) (*overlay, error) {
 	}
 
 	o := &overlay{
-		closer:      new(debugsync.WaitGroup),
+		closer:      new(sync.WaitGroup),
 		context:     json.NewContext(),
 		myAddr:      tmpl.myAddr,
 		myAddrStr:   string(myAddrBuf),
@@ -633,7 +633,7 @@ func (o *overlay) makeCertificate() error {
 //
 // - implements session.ConnectionManager
 type connManager struct {
-	debugsync.Mutex
+	sync.Mutex
 	certs    certs.Storage
 	myAddr   mino.Address
 	counters map[mino.Address]int

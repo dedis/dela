@@ -9,7 +9,6 @@ import (
 	context "context"
 	"github.com/rs/xid"
 	"go.dedis.ch/dela"
-	"go.dedis.ch/dela/internal/debugsync"
 	"go.dedis.ch/dela/internal/tracing"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
@@ -19,6 +18,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"sync"
 )
 
 // RPC represents an RPC that has been registered by a client, which allows
@@ -47,7 +47,7 @@ func (rpc *RPC) Call(ctx context.Context,
 
 	out := make(chan mino.Response, players.Len())
 
-	wg := debugsync.WaitGroup{}
+	wg := sync.WaitGroup{}
 	wg.Add(players.Len())
 
 	iter := players.AddressIterator()

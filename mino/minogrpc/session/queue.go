@@ -6,10 +6,10 @@
 package session
 
 import (
-	"go.dedis.ch/dela/internal/debugsync"
 	"go.dedis.ch/dela/mino/router"
 	"golang.org/x/xerrors"
 	"math"
+	"sync"
 )
 
 // maximum capacity of the buffer is: (2^limitExponent) * initialCapacity
@@ -28,8 +28,8 @@ type Queue interface {
 //
 // - implements session.Queue
 type NonBlockingQueue struct {
-	debugsync.Mutex
-	working debugsync.WaitGroup
+	sync.Mutex
+	working sync.WaitGroup
 	buffer  []router.Packet
 	cap     float64
 	limit   float64

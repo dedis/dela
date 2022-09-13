@@ -20,10 +20,10 @@ import (
 	"context"
 	"io"
 	"os"
+	"sync"
 
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
-	"go.dedis.ch/dela/internal/debugsync"
 	"go.dedis.ch/dela/internal/traffic"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
@@ -102,8 +102,8 @@ type parent struct {
 //
 // - implements session.Session
 type session struct {
-	debugsync.Mutex
-	debugsync.WaitGroup
+	sync.Mutex
+	sync.WaitGroup
 
 	logger  zerolog.Logger
 	md      metadata.MD
@@ -120,7 +120,7 @@ type session struct {
 	parents map[mino.Address]parent
 	// A read-write lock is used there as there are much more read requests than
 	// write ones, and the read should be parallelized.
-	parentsLock debugsync.RWMutex
+	parentsLock sync.RWMutex
 }
 
 // NewSession creates a new session for the provided parent relay.
@@ -348,7 +348,7 @@ func (s *session) sendPacket(p parent, pkt router.Packet, errs chan error) bool 
 		return me != nil
 	}
 
-	wg := debugsync.WaitGroup{}
+	wg := sync.WaitGroup{}
 	wg.Add(len(routes))
 
 	for addr, packet := range routes {
@@ -360,7 +360,7 @@ func (s *session) sendPacket(p parent, pkt router.Packet, errs chan error) bool 
 	return true
 }
 
-func (s *session) sendTo(p parent, to mino.Address, pkt router.Packet, errs chan error, wg *debugsync.WaitGroup) {
+func (s *session) sendTo(p parent, to mino.Address, pkt router.Packet, errs chan error, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	var relay Relay
@@ -536,7 +536,7 @@ type PacketStream interface {
 //
 // - implements session.Relay
 type unicastRelay struct {
-	debugsync.Mutex
+	sync.Mutex
 	md      metadata.MD
 	gw      mino.Address
 	stream  PacketStream
@@ -609,7 +609,7 @@ func (r *unicastRelay) Close() error {
 //
 // - implements session.Relay
 type streamRelay struct {
-	debugsync.Mutex
+	sync.Mutex
 	gw      mino.Address
 	stream  PacketStream
 	context serde.Context
