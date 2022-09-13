@@ -10,8 +10,11 @@ import (
 	"go.dedis.ch/dela/serde/json"
 )
 
+// constant holding the temporary dela directory name
+const delaTestDir = "dela-test-"
+
 func TestJstore_New(t *testing.T) {
-	dir, err := os.MkdirTemp(os.TempDir(), "dela-test-")
+	dir, err := os.MkdirTemp(os.TempDir(), delaTestDir)
 	require.NoError(t, err)
 
 	defer os.RemoveAll(dir)
@@ -36,7 +39,7 @@ func TestJstore_New(t *testing.T) {
 }
 
 func TestJstore_Set_Get_Delete(t *testing.T) {
-	dir, err := os.MkdirTemp(os.TempDir(), "dela-test-")
+	dir, err := os.MkdirTemp(os.TempDir(), delaTestDir)
 	require.NoError(t, err)
 
 	defer os.RemoveAll(dir)
@@ -67,7 +70,7 @@ func TestJstore_Set_Get_Delete(t *testing.T) {
 }
 
 func TestJstore_SaveFile(t *testing.T) {
-	dir, err := os.MkdirTemp(os.TempDir(), "dela-test-")
+	dir, err := os.MkdirTemp(os.TempDir(), delaTestDir)
 	require.NoError(t, err)
 
 	defer os.RemoveAll(dir)
@@ -91,7 +94,7 @@ func TestJstore_SaveFile(t *testing.T) {
 }
 
 func TestJstore_Scenario(t *testing.T) {
-	dir, err := os.MkdirTemp(os.TempDir(), "dela-test-")
+	dir, err := os.MkdirTemp(os.TempDir(), delaTestDir)
 	require.NoError(t, err)
 
 	defer os.RemoveAll(dir)

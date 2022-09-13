@@ -10,7 +10,7 @@ lint:
 	staticcheck `go list ./... | grep -Ev "(go\.dedis\.ch/dela/internal/testing|go\.dedis\.ch/dela/mino/minogrpc/ptypes)"`
 
 vet:
-	@echo "⚠️ Warning: the following only works with go >= 1.14" && \
+	@echo "⚠️ Warning: the following only works with go >= 1.19" && \
 	go install ./internal/mcheck && \
 	go vet -vettool=`go env GOPATH`/bin/mcheck -commentLen -ifInit ./...
 

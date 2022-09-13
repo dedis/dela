@@ -30,6 +30,9 @@ const recvTimeout = time.Second * 4
 // received.
 const retryTimeout = time.Millisecond * 200
 
+// constant used in the logs
+const newState = "new state"
+
 // state is a struct contained in a handler that allows an actor to read the
 // state of that handler. The actor should only use the getter functions to read
 // the attributes.
@@ -247,20 +250,20 @@ func (h *Handler) start(start types.Start, deals, resps *list.List, from mino.Ad
 
 // doDKG calls the subsequent DKG steps
 func (h *Handler) doDKG(deals, resps *list.List, out mino.Sender, from mino.Address) {
-	h.log.Info().Str("action", "deal").Msg("new state")
+	h.log.Info().Str("action", "deal").Msg(newState)
 	h.deal(out)
 
-	h.log.Info().Str("action", "respond").Msg("new state")
+	h.log.Info().Str("action", "respond").Msg(newState)
 	h.respond(deals, out)
 
-	h.log.Info().Str("action", "certify").Msg("new state")
+	h.log.Info().Str("action", "certify").Msg(newState)
 	err := h.certify(resps, out)
 	if err != nil {
 		dela.Logger.Error().Msgf("failed to certify: %v", err)
 		return
 	}
 
-	h.log.Info().Str("action", "finalize").Msg("new state")
+	h.log.Info().Str("action", "finalize").Msg(newState)
 
 	// Send back the public DKG key
 	distKey, err := h.dkg.DistKeyShare()
@@ -285,7 +288,7 @@ func (h *Handler) doDKG(deals, resps *list.List, out mino.Sender, from mino.Addr
 		return
 	}
 
-	h.log.Info().Str("action", "done").Msg("new state")
+	h.log.Info().Str("action", "done").Msg(newState)
 }
 
 func (h *Handler) deal(out mino.Sender) error {
