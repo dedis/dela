@@ -5,7 +5,7 @@
 package loader
 
 import (
-	"io/ioutil"
+	"io"
 	"os"
 
 	"golang.org/x/xerrors"
@@ -76,7 +76,7 @@ func (l fileLoader) Load() ([]byte, error) {
 
 	defer file.Close()
 
-	data, err := ioutil.ReadAll(file)
+	data, err := io.ReadAll(file)
 	if err != nil {
 		return nil, xerrors.Errorf("while reading file: %v", err)
 	}

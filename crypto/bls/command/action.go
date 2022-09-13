@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 
 	"go.dedis.ch/dela/crypto"
@@ -96,7 +95,7 @@ func saveToFile(path string, force bool, data []byte) error {
 			"want to overwrite", path)
 	}
 
-	err := ioutil.WriteFile(path, data, os.ModePerm)
+	err := os.WriteFile(path, data, os.ModePerm)
 	if err != nil {
 		return xerrors.Errorf("failed to write file: %v", err)
 	}

@@ -2,7 +2,6 @@ package pbft
 
 import (
 	"context"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -885,7 +884,7 @@ func TestStateMachine_Watch(t *testing.T) {
 // Utility functions
 
 func makeTree(t *testing.T) (hashtree.Tree, kv.DB, func()) {
-	dir, err := ioutil.TempDir(os.TempDir(), "pbft")
+	dir, err := os.MkdirTemp(os.TempDir(), "pbft")
 	require.NoError(t, err)
 
 	db, err := kv.New(filepath.Join(dir, "test.db"))

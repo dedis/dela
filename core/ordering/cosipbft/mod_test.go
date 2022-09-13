@@ -3,7 +3,6 @@ package cosipbft
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -938,7 +937,7 @@ func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()
 		c := threshold.NewThreshold(m, signer)
 		c.SetThreshold(threshold.ByzantineThreshold)
 
-		dir, err := ioutil.TempDir(os.TempDir(), "cosipbft")
+		dir, err := os.MkdirTemp(os.TempDir(), "cosipbft")
 		require.NoError(t, err)
 
 		db, err := kv.New(filepath.Join(dir, "test.db"))

@@ -2,7 +2,6 @@
 package command
 
 import (
-	"io/ioutil"
 	"os"
 
 	"go.dedis.ch/dela/cli"
@@ -22,7 +21,7 @@ func (i Initializer) SetCommands(provider cli.Provider) {
 
 		genSigner: bls.NewSigner().MarshalBinary,
 		getPubKey: getPubkey,
-		readFile:  ioutil.ReadFile,
+		readFile:  os.ReadFile,
 		saveFile:  saveToFile,
 	}
 

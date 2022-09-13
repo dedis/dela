@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -28,7 +27,7 @@ func init() {
 // Use the value contract
 // Check the state
 func TestIntegration_Value_Simple(t *testing.T) {
-	dir, err := ioutil.TempDir(os.TempDir(), "dela-integration-test")
+	dir, err := os.MkdirTemp(os.TempDir(), "dela-integration-test")
 	require.NoError(t, err)
 
 	t.Logf("using temps dir %s", dir)

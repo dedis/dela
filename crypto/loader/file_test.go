@@ -1,7 +1,6 @@
 package loader
 
 import (
-	"io/ioutil"
 	"os"
 	"testing"
 
@@ -10,7 +9,7 @@ import (
 )
 
 func TestFileLoader_LoadOrCreate(t *testing.T) {
-	file, err := ioutil.TempFile(os.TempDir(), "dela")
+	file, err := os.CreateTemp(os.TempDir(), "dela")
 	require.NoError(t, err)
 
 	file.Close()

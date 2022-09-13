@@ -1,7 +1,7 @@
 package command
 
 import (
-	"io/ioutil"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,7 +15,7 @@ import (
 
 func TestNewSignerAction(t *testing.T) {
 	action := action{
-		printer:   ioutil.Discard,
+		printer:   io.Discard,
 		genSigner: badGenSigner,
 		saveFile:  fakeSaveFile,
 		getPubKey: getPubkey,
@@ -38,7 +38,7 @@ func TestNewSignerAction(t *testing.T) {
 
 func TestLoadSignerAction(t *testing.T) {
 	action := action{
-		printer:  ioutil.Discard,
+		printer:  io.Discard,
 		readFile: badReadFile,
 	}
 
@@ -80,7 +80,7 @@ func TestLoadSignerAction(t *testing.T) {
 }
 
 func TestSaveToFile(t *testing.T) {
-	path, err := ioutil.TempDir("", "dela-test-")
+	path, err := os.MkdirTemp("", "dela-test-")
 	require.NoError(t, err)
 
 	defer os.RemoveAll(path)
@@ -89,7 +89,7 @@ func TestSaveToFile(t *testing.T) {
 	err = saveToFile(file, false, []byte{1})
 	require.NoError(t, err)
 
-	res, err := ioutil.ReadFile(file)
+	res, err := os.ReadFile(file)
 	require.NoError(t, err)
 	require.Equal(t, []byte{1}, res)
 
@@ -102,7 +102,7 @@ func TestSaveToFile(t *testing.T) {
 	err = saveToFile(file, true, []byte{2})
 	require.NoError(t, err)
 
-	res, err = ioutil.ReadFile(file)
+	res, err = os.ReadFile(file)
 	require.NoError(t, err)
 	require.Equal(t, []byte{2}, res)
 }

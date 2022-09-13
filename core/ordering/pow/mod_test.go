@@ -2,7 +2,6 @@ package pow
 
 import (
 	"context"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -127,7 +126,7 @@ func TestService_GetProof(t *testing.T) {
 const testContractName = "abc"
 
 func makeTree(t *testing.T) (hashtree.Tree, func()) {
-	dir, err := ioutil.TempDir(os.TempDir(), "dela-pow")
+	dir, err := os.MkdirTemp(os.TempDir(), "dela-pow")
 	require.NoError(t, err)
 
 	db, err := kv.New(filepath.Join(dir, "test.db"))

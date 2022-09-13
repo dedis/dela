@@ -1,7 +1,6 @@
 package kv
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,7 +11,7 @@ import (
 )
 
 func TestBoltDB_UpdateAndView(t *testing.T) {
-	dir, err := ioutil.TempDir(os.TempDir(), "dela-core-kv")
+	dir, err := os.MkdirTemp(os.TempDir(), "dela-core-kv")
 	require.NoError(t, err)
 
 	defer os.RemoveAll(dir)
@@ -50,7 +49,7 @@ func TestBoltDB_UpdateAndView(t *testing.T) {
 }
 
 func TestBoltDB_Close(t *testing.T) {
-	dir, err := ioutil.TempDir(os.TempDir(), "dela-core-kv")
+	dir, err := os.MkdirTemp(os.TempDir(), "dela-core-kv")
 	require.NoError(t, err)
 
 	defer os.RemoveAll(dir)
@@ -64,7 +63,7 @@ func TestBoltDB_Close(t *testing.T) {
 }
 
 func TestBoltTx_GetBucket(t *testing.T) {
-	dir, err := ioutil.TempDir(os.TempDir(), "dela-core-kv")
+	dir, err := os.MkdirTemp(os.TempDir(), "dela-core-kv")
 	require.NoError(t, err)
 
 	defer os.RemoveAll(dir)
@@ -88,7 +87,7 @@ func TestBoltTx_GetBucket(t *testing.T) {
 }
 
 func TestBoltBucket_Get_Set_Delete(t *testing.T) {
-	dir, err := ioutil.TempDir(os.TempDir(), "dela-core-kv")
+	dir, err := os.MkdirTemp(os.TempDir(), "dela-core-kv")
 	require.NoError(t, err)
 
 	defer os.RemoveAll(dir)
@@ -120,7 +119,7 @@ func TestBoltBucket_Get_Set_Delete(t *testing.T) {
 }
 
 func TestBoltBucket_ForEach(t *testing.T) {
-	dir, err := ioutil.TempDir(os.TempDir(), "dela-core-kv")
+	dir, err := os.MkdirTemp(os.TempDir(), "dela-core-kv")
 	require.NoError(t, err)
 
 	defer os.RemoveAll(dir)
@@ -148,7 +147,7 @@ func TestBoltBucket_ForEach(t *testing.T) {
 }
 
 func TestBoltBucket_Scan(t *testing.T) {
-	dir, err := ioutil.TempDir(os.TempDir(), "dela-core-kv")
+	dir, err := os.MkdirTemp(os.TempDir(), "dela-core-kv")
 	require.NoError(t, err)
 
 	defer os.RemoveAll(dir)

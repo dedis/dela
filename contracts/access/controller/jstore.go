@@ -6,7 +6,6 @@
 package controller
 
 import (
-	"io/ioutil"
 	"os"
 	"sync"
 
@@ -34,7 +33,7 @@ func newJstore(path string) (accessStore, error) {
 	}
 
 	if fileExist(path) {
-		buf, err := ioutil.ReadFile(path)
+		buf, err := os.ReadFile(path)
 		if err != nil {
 			return nil, xerrors.Errorf("failed to read file '%s': %v", path, err)
 		}
@@ -100,7 +99,7 @@ func (s *jstore) saveFile() error {
 		return xerrors.Errorf("failed to marshal data: %v", err)
 	}
 
-	err = ioutil.WriteFile(s.path, buf, 0644)
+	err = os.WriteFile(s.path, buf, 0644)
 	if err != nil {
 		return xerrors.Errorf("failed to save file '%s': %v", s.path, err)
 	}

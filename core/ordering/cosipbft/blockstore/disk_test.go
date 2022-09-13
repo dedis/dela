@@ -2,7 +2,6 @@ package blockstore
 
 import (
 	"context"
-	"io/ioutil"
 	"os"
 	"testing"
 
@@ -221,7 +220,7 @@ func TestInDisk_WithTx(t *testing.T) {
 // Utility functions
 
 func makeDB(t *testing.T) (kv.DB, func()) {
-	file, err := ioutil.TempFile(os.TempDir(), "dela-blockstore")
+	file, err := os.CreateTemp(os.TempDir(), "dela-blockstore")
 	require.NoError(t, err)
 
 	db, err := kv.New(file.Name())

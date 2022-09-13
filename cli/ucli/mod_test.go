@@ -1,7 +1,7 @@
 package ucli
 
 import (
-	"io/ioutil"
+	"io"
 	"testing"
 	"time"
 
@@ -14,7 +14,7 @@ func TestBuild(t *testing.T) {
 	builder := NewBuilder("test", nil)
 	app := builder.Build().(*urfave.App)
 
-	app.Writer = ioutil.Discard
+	app.Writer = io.Discard
 
 	require.Equal(t, "test", app.Name)
 

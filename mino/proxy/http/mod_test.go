@@ -2,7 +2,7 @@ package http
 
 import (
 	"bytes"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"os"
 	"testing"
@@ -38,7 +38,7 @@ func TestHTTP_Listen(t *testing.T) {
 	res, err := http.Get("http://127.0.0.1:2010/fake")
 	require.NoError(t, err)
 
-	output, err := ioutil.ReadAll(res.Body)
+	output, err := io.ReadAll(res.Body)
 	require.NoError(t, err)
 
 	require.Equal(t, "hello", string(output))
