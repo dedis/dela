@@ -1,11 +1,11 @@
 package pedersen
 
 import (
-	"container/list"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -26,12 +26,56 @@ import (
 // Allows to exit the loop.
 const recvTimeout = time.Second * 4
 
-// the time after which we expect new messages (deals or responses) to be
-// received.
-const retryTimeout = time.Millisecond * 200
+// the channel size used to stored buffered deals and responses. This arbitrary
+// value must be set according to the characteristic of the system: number of
+// nodes, networking, memory, etc...
+const chanSize = 200
 
 // constant used in the logs
 const newState = "new state"
+
+func newCryChan[T any](bufSize int) cryChan[T] {
+	llvl := zerolog.NoLevel
+	if os.Getenv("CRY_LVL") == "warn" {
+		llvl = zerolog.WarnLevel
+	}
+
+	return cryChan[T]{
+		c: make(chan T, bufSize),
+		log: dela.Logger.With().Str("role", "cry chan").Int("size", bufSize).
+			Logger().Level(llvl),
+	}
+}
+
+type cryChan[T any] struct {
+	c   chan T
+	log zerolog.Logger
+}
+
+func (c *cryChan[T]) push(e T) {
+	start := time.Now()
+	select {
+	case c.c <- e:
+	case <-time.After(time.Millisecond * 100):
+		c.log.Warn().Str("obj", fmt.Sprintf("%+v", e)).Msg("channel blocking")
+		c.c <- e
+		c.log.Warn().Str("obj", fmt.Sprintf("%+v", e)).
+			Str("elapsed", time.Since(start).String()).Msg("channel unblocked")
+	}
+}
+
+func (c *cryChan[T]) pop(ctx context.Context) (t T, err error) {
+	select {
+	case el := <-c.c:
+		return el, nil
+	case <-ctx.Done():
+		return t, ctx.Err()
+	}
+}
+
+func (c *cryChan[T]) Len() int {
+	return len(c.c)
+}
 
 // state is a struct contained in a handler that allows an actor to read the
 // state of that handler. The actor should only use the getter functions to read
@@ -113,7 +157,7 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 	// We make sure not additional request is accepted if a setup is in
 	// progress.
 	h.Lock()
-	if !h.startRes.Done() && h.running {
+	if h.running {
 		h.Unlock()
 		return xerrors.Errorf("DKG is running")
 	}
@@ -123,8 +167,11 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 	}
 	h.Unlock()
 
-	deals := list.New()
-	responses := list.New()
+	deals := newCryChan[types.Deal](chanSize)
+	responses := newCryChan[*pedersen.Response](chanSize)
+
+	globalCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), recvTimeout)
@@ -155,15 +202,13 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 		switch msg := msg.(type) {
 
 		case types.Start:
-			err := h.start(msg, deals, responses, from, out)
+			err := h.start(globalCtx, msg, deals, responses, from, out)
 			if err != nil {
 				return xerrors.Errorf("failed to start: %v", err)
 			}
 
 		case types.Deal:
-			h.Lock()
-			deals.PushBack(msg)
-			h.Unlock()
+			deals.push(msg)
 
 		case types.Response:
 			response := &pedersen.Response{
@@ -176,10 +221,8 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 				},
 			}
 
-			h.Lock()
-			responses.PushBack(response)
+			responses.push(response)
 			h.log.Info().Int("total", responses.Len()).Msg("pushing a response")
-			h.Unlock()
 
 		case types.DecryptRequest:
 			dela.Logger.Trace().Msgf("%v received decrypt request from %v", h.me, from)
@@ -222,8 +265,8 @@ func (h *Handler) handleDecrypt(out mino.Sender, msg types.DecryptRequest,
 // start is called when the node has received its start message. Note that we
 // might have already received some deals from other nodes in the meantime. The
 // function handles the DKG creation protocol.
-func (h *Handler) start(start types.Start, deals, resps *list.List, from mino.Address,
-	out mino.Sender) error {
+func (h *Handler) start(ctx context.Context, start types.Start, deals cryChan[types.Deal],
+	resps cryChan[*pedersen.Response], from mino.Address, out mino.Sender) error {
 
 	if len(start.GetAddresses()) != len(start.GetPublicKeys()) {
 		return xerrors.Errorf("there should be as many participants as "+
@@ -243,24 +286,42 @@ func (h *Handler) start(start types.Start, deals, resps *list.List, from mino.Ad
 
 	// asynchronously start the procedure. This allows for receiving messages
 	// in the main for loop in the meantime.
-	go h.doDKG(deals, resps, out, from)
+	go func() {
+		err = h.doDKG(ctx, deals, resps, out, from)
+		if err != nil {
+			h.log.Err(err).Msg("something went wrong during DKG")
+		}
+	}()
 
 	return nil
 }
 
 // doDKG calls the subsequent DKG steps
-func (h *Handler) doDKG(deals, resps *list.List, out mino.Sender, from mino.Address) {
+func (h *Handler) doDKG(ctx context.Context, deals cryChan[types.Deal],
+	resps cryChan[*pedersen.Response], out mino.Sender, from mino.Address) error {
+
+	defer func() {
+		h.Lock()
+		h.running = false
+		h.Unlock()
+	}()
+
 	h.log.Info().Str("action", "deal").Msg(newState)
-	h.deal(out)
+	err := h.deal(ctx, out)
+	if err != nil {
+		return xerrors.Errorf("failed to deal: %v", err)
+	}
 
 	h.log.Info().Str("action", "respond").Msg(newState)
-	h.respond(deals, out)
+	err = h.respond(ctx, deals, out)
+	if err != nil {
+		return xerrors.Errorf("failed to respond: %v", err)
+	}
 
 	h.log.Info().Str("action", "certify").Msg(newState)
-	err := h.certify(resps, out)
+	err = h.certify(ctx, resps, out)
 	if err != nil {
-		dela.Logger.Error().Msgf("failed to certify: %v", err)
-		return
+		return xerrors.Errorf("failed to certify: %v", err)
 	}
 
 	h.log.Info().Str("action", "finalize").Msg(newState)
@@ -268,8 +329,8 @@ func (h *Handler) doDKG(deals, resps *list.List, out mino.Sender, from mino.Addr
 	// Send back the public DKG key
 	distKey, err := h.dkg.DistKeyShare()
 	if err != nil {
-		dela.Logger.Error().Msgf("failed to get distr key: %v", err)
-		return
+		return xerrors.Errorf("failed to get distr key: %v", err)
+
 	}
 
 	// Update the state before sending to acknowledgement to the
@@ -278,20 +339,20 @@ func (h *Handler) doDKG(deals, resps *list.List, out mino.Sender, from mino.Addr
 
 	h.Lock()
 	h.privShare = distKey.PriShare()
-	h.running = false
 	h.Unlock()
 
 	done := types.NewStartDone(distKey.Public())
 	err = <-out.Send(done, from)
 	if err != nil {
-		dela.Logger.Error().Msgf("got an error while sending pub key: %v", err)
-		return
+		return xerrors.Errorf("got an error while sending pub key: %v", err)
 	}
 
 	h.log.Info().Str("action", "done").Msg(newState)
+
+	return nil
 }
 
-func (h *Handler) deal(out mino.Sender) error {
+func (h *Handler) deal(ctx context.Context, out mino.Sender) error {
 	// Send my Deals to the other nodes. Note that we take an optimistic
 	// approach and expect nodes to always accept messages. If not, the protocol
 	// can hang forever.
@@ -320,63 +381,55 @@ func (h *Handler) deal(out mino.Sender) error {
 		errs := out.Send(dealMsg, to)
 
 		// this can be blocking if the recipient is not receiving message
-		err = <-errs
-		if err != nil {
-			h.log.Err(err).Str("to", to.String()).Msg("failed to send deal")
+		select {
+		case err = <-errs:
+			if err != nil {
+				h.log.Err(err).Str("to", to.String()).Msg("failed to send deal")
+			}
+		case <-ctx.Done():
+			return xerrors.Errorf("context done: %v", ctx.Err())
 		}
 	}
 
 	return nil
 }
 
-func (h *Handler) respond(deals *list.List, out mino.Sender) {
+func (h *Handler) respond(ctx context.Context, deals cryChan[types.Deal], out mino.Sender) error {
 	numReceivedDeals := 0
 
 	for numReceivedDeals < len(h.startRes.participants)-1 {
-		h.Lock()
-		deal := deals.Front()
-		if deal != nil {
-			deals.Remove(deal)
-		}
-		h.Unlock()
-
-		if deal == nil {
-			time.Sleep(retryTimeout)
-			continue
-		}
-
-		err := h.handleDeal(deal.Value.(types.Deal), out)
+		deal, err := deals.pop(ctx)
 		if err != nil {
-			h.log.Warn().Msgf("failed to handle received deal: %v", err)
+			return xerrors.Errorf("context done: %v", err)
+		}
+
+		err = h.handleDeal(ctx, deal, out)
+		if err != nil {
+			return xerrors.Errorf("failed to handle received deal: %v", err)
 		}
 
 		numReceivedDeals++
 
 		h.log.Info().Str("total", strconv.Itoa(numReceivedDeals)).Msg("deal received")
 	}
+
+	return nil
 }
 
-func (h *Handler) certify(resps *list.List, out mino.Sender) error {
+func (h *Handler) certify(ctx context.Context, resps cryChan[*pedersen.Response], out mino.Sender) error {
 
 	responsesReceived := 0
 	expected := (len(h.startRes.participants) - 1) * (len(h.startRes.participants) - 1)
 
 	for responsesReceived < expected {
-		h.Lock()
-		resp := resps.Front()
-		if resp != nil {
-			resps.Remove(resp)
-		}
-		h.Unlock()
-
-		if resp == nil {
-			time.Sleep(retryTimeout)
-			continue
-		}
-
-		_, err := h.dkg.ProcessResponse(resp.Value.(*pedersen.Response))
+		resp, err := resps.pop(ctx)
 		if err != nil {
-			h.log.Warn().Msgf("%s failed to process response: %v", h.me, err)
+			return xerrors.Errorf("context done: %v", err)
+		}
+
+		_, err = h.dkg.ProcessResponse(resp)
+		if err != nil {
+			return xerrors.Errorf("failed to process response: %v", err)
 		}
 
 		responsesReceived++
@@ -385,14 +438,14 @@ func (h *Handler) certify(resps *list.List, out mino.Sender) error {
 	}
 
 	if !h.dkg.Certified() {
-		h.log.Error().Msg("node should be certified")
+		return xerrors.New("node is not certified")
 	}
 
 	return nil
 }
 
 // handleDeal process the Deal and send the responses to the other nodes.
-func (h *Handler) handleDeal(msg types.Deal, out mino.Sender) error {
+func (h *Handler) handleDeal(ctx context.Context, msg types.Deal, out mino.Sender) error {
 
 	deal := &pedersen.Deal{
 		Index: msg.GetIndex(),
@@ -429,9 +482,13 @@ func (h *Handler) handleDeal(msg types.Deal, out mino.Sender) error {
 
 		errs := out.Send(resp, addr)
 
-		err = <-errs
-		if err != nil {
-			return xerrors.Errorf("failed to send response to '%s': %v", addr, err)
+		select {
+		case err = <-errs:
+			if err != nil {
+				return xerrors.Errorf("failed to send response to '%s': %v", addr, err)
+			}
+		case <-ctx.Done():
+			return xerrors.Errorf("context done: %v", ctx.Err())
 		}
 	}
 
