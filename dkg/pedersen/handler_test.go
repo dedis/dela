@@ -58,12 +58,12 @@ func TestHandler_Start(t *testing.T) {
 	start := types.NewStart(0, []mino.Address{fake.NewAddress(0)}, []kyber.Point{})
 	from := fake.NewAddress(0)
 
-	err := h.start(context.Background(), start, cryChan[types.Deal]{}, cryChan[*pedersen.Response]{}, from, fake.Sender{})
+	err := h.start(context.Background(), start, cryChan[types.Deal]{}, cryChan[pedersen.Response]{}, from, fake.Sender{})
 	require.EqualError(t, err, "there should be as many participants as pubKey: 1 != 0")
 
 	start = types.NewStart(2, []mino.Address{fake.NewAddress(0), fake.NewAddress(1)}, []kyber.Point{pubKey, suite.Point()})
 
-	err = h.start(context.Background(), start, cryChan[types.Deal]{}, cryChan[*pedersen.Response]{}, from, fake.Sender{})
+	err = h.start(context.Background(), start, cryChan[types.Deal]{}, cryChan[pedersen.Response]{}, from, fake.Sender{})
 	require.NoError(t, err)
 }
 
@@ -114,10 +114,10 @@ func TestHandler_CertifyCanSucceed(t *testing.T) {
 		dkg:      dkg,
 	}
 
-	responses := newCryChan[*pedersen.Response](1)
+	responses := newCryChan[pedersen.Response](1)
 
 	dkg, resp := getCertified(t)
-	responses.push(resp)
+	responses.push(*resp)
 
 	h.dkg = dkg
 	err = h.certify(context.Background(), responses, fake.NewBadSender())
@@ -133,7 +133,7 @@ func TestHandler_Certify_Ctx_Fail(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := h.certify(ctx, newCryChan[*pedersen.Response](1), nil)
+	err := h.certify(ctx, newCryChan[pedersen.Response](1), nil)
 	require.EqualError(t, err, "context done: context canceled")
 }
 

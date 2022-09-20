@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"strconv"
 	"sync"
 	"time"
@@ -56,11 +57,17 @@ func (c *cryChan[T]) push(e T) {
 	start := time.Now()
 	select {
 	case c.c <- e:
-	case <-time.After(time.Millisecond * 100):
-		c.log.Warn().Str("obj", fmt.Sprintf("%+v", e)).Msg("channel blocking")
+	case <-time.After(time.Second * 1):
+		// prints the first 16 bytes of the trace, which should contain at least
+		// the goroutine id.
+		trace := make([]byte, 16)
+		runtime.Stack(trace, false)
+		c.log.Warn().Str("obj", fmt.Sprintf("%+v", e)).
+			Str("trace", string(trace)).Msg("channel blocking")
 		c.c <- e
 		c.log.Warn().Str("obj", fmt.Sprintf("%+v", e)).
-			Str("elapsed", time.Since(start).String()).Msg("channel unblocked")
+			Str("elapsed", time.Since(start).String()).
+			Str("trace", string(trace)).Msg("channel unblocked")
 	}
 }
 
@@ -168,7 +175,7 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 	h.Unlock()
 
 	deals := newCryChan[types.Deal](chanSize)
-	responses := newCryChan[*pedersen.Response](chanSize)
+	responses := newCryChan[pedersen.Response](chanSize)
 
 	globalCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -211,7 +218,7 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 			deals.push(msg)
 
 		case types.Response:
-			response := &pedersen.Response{
+			response := pedersen.Response{
 				Index: msg.GetIndex(),
 				Response: &vss.Response{
 					SessionID: msg.GetResponse().GetSessionID(),
@@ -266,7 +273,7 @@ func (h *Handler) handleDecrypt(out mino.Sender, msg types.DecryptRequest,
 // might have already received some deals from other nodes in the meantime. The
 // function handles the DKG creation protocol.
 func (h *Handler) start(ctx context.Context, start types.Start, deals cryChan[types.Deal],
-	resps cryChan[*pedersen.Response], from mino.Address, out mino.Sender) error {
+	resps cryChan[pedersen.Response], from mino.Address, out mino.Sender) error {
 
 	if len(start.GetAddresses()) != len(start.GetPublicKeys()) {
 		return xerrors.Errorf("there should be as many participants as "+
@@ -298,7 +305,7 @@ func (h *Handler) start(ctx context.Context, start types.Start, deals cryChan[ty
 
 // doDKG calls the subsequent DKG steps
 func (h *Handler) doDKG(ctx context.Context, deals cryChan[types.Deal],
-	resps cryChan[*pedersen.Response], out mino.Sender, from mino.Address) error {
+	resps cryChan[pedersen.Response], out mino.Sender, from mino.Address) error {
 
 	defer func() {
 		h.Lock()
@@ -325,26 +332,9 @@ func (h *Handler) doDKG(ctx context.Context, deals cryChan[types.Deal],
 	}
 
 	h.log.Info().Str("action", "finalize").Msg(newState)
-
-	// Send back the public DKG key
-	distKey, err := h.dkg.DistKeyShare()
+	err = h.finalize(ctx, from, out)
 	if err != nil {
-		return xerrors.Errorf("failed to get distr key: %v", err)
-
-	}
-
-	// Update the state before sending to acknowledgement to the
-	// orchestrator, so that it can process decrypt requests right away.
-	h.startRes.SetDistKey(distKey.Public())
-
-	h.Lock()
-	h.privShare = distKey.PriShare()
-	h.Unlock()
-
-	done := types.NewStartDone(distKey.Public())
-	err = <-out.Send(done, from)
-	if err != nil {
-		return xerrors.Errorf("got an error while sending pub key: %v", err)
+		return xerrors.Errorf("failed to finalize: %v", err)
 	}
 
 	h.log.Info().Str("action", "done").Msg(newState)
@@ -416,7 +406,7 @@ func (h *Handler) respond(ctx context.Context, deals cryChan[types.Deal], out mi
 	return nil
 }
 
-func (h *Handler) certify(ctx context.Context, resps cryChan[*pedersen.Response], out mino.Sender) error {
+func (h *Handler) certify(ctx context.Context, resps cryChan[pedersen.Response], out mino.Sender) error {
 
 	responsesReceived := 0
 	expected := (len(h.startRes.participants) - 1) * (len(h.startRes.participants) - 1)
@@ -427,7 +417,7 @@ func (h *Handler) certify(ctx context.Context, resps cryChan[*pedersen.Response]
 			return xerrors.Errorf("context done: %v", err)
 		}
 
-		_, err = h.dkg.ProcessResponse(resp)
+		_, err = h.dkg.ProcessResponse(&resp)
 		if err != nil {
 			return xerrors.Errorf("failed to process response: %v", err)
 		}
@@ -439,6 +429,37 @@ func (h *Handler) certify(ctx context.Context, resps cryChan[*pedersen.Response]
 
 	if !h.dkg.Certified() {
 		return xerrors.New("node is not certified")
+	}
+
+	return nil
+}
+
+// finalize saves the result and announces it to the orchestrator.
+func (h *Handler) finalize(ctx context.Context, from mino.Address, out mino.Sender) error {
+	// Send back the public DKG key
+	distKey, err := h.dkg.DistKeyShare()
+	if err != nil {
+		return xerrors.Errorf("failed to get distr key: %v", err)
+
+	}
+
+	// Update the state before sending the acknowledgement to the
+	// orchestrator, so that it can process decrypt requests right away.
+	h.startRes.SetDistKey(distKey.Public())
+
+	h.Lock()
+	h.privShare = distKey.PriShare()
+	h.Unlock()
+
+	done := types.NewStartDone(distKey.Public())
+
+	select {
+	case err = <-out.Send(done, from):
+		if err != nil {
+			return xerrors.Errorf("got an error while sending pub key: %v", err)
+		}
+	case <-ctx.Done():
+		return xerrors.Errorf("context done: %v", ctx.Err())
 	}
 
 	return nil
