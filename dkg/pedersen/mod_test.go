@@ -1,7 +1,6 @@
 package pedersen
 
 import (
-	"go.dedis.ch/dela/mino/router/flat"
 	"testing"
 
 	"github.com/rs/zerolog"
@@ -14,6 +13,7 @@ import (
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc"
+	"go.dedis.ch/dela/mino/router/tree"
 	"go.dedis.ch/kyber/v3"
 )
 
@@ -159,13 +159,10 @@ func TestPedersen_Scenario(t *testing.T) {
 	for i := 0; i < n; i++ {
 		addr := minogrpc.ParseAddress("127.0.0.1", 0)
 
-		m, err := minogrpc.NewMinogrpc(addr, nil, flat.NewRouter(minogrpc.NewAddressFactory()))
+		m, err := minogrpc.NewMinogrpc(addr, nil, tree.NewRouter(minogrpc.NewAddressFactory()))
 		require.NoError(t, err)
 
-		defer func() {
-			err = m.GracefulStop()
-			require.NoError(t, err)
-		}()
+		defer m.GracefulStop()
 
 		minos[i] = m
 		addrs[i] = m.GetAddress()
@@ -175,8 +172,7 @@ func TestPedersen_Scenario(t *testing.T) {
 
 	for i, mi := range minos {
 		for _, m := range minos {
-			err := mi.(*minogrpc.Minogrpc).GetCertificateStore().Store(m.GetAddress(), m.(*minogrpc.Minogrpc).GetCertificateChain())
-			require.NoError(t, err)
+			mi.(*minogrpc.Minogrpc).GetCertificateStore().Store(m.GetAddress(), m.(*minogrpc.Minogrpc).GetCertificateChain())
 		}
 
 		d, pubkey := NewPedersen(mi.(*minogrpc.Minogrpc))
