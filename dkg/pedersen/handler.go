@@ -175,7 +175,7 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 	h.Unlock()
 
 	deals := newCryChan[types.Deal](chanSize)
-	responses := newCryChan[pedersen.Response](chanSize)
+	responses := newCryChan[types.Response](chanSize)
 
 	globalCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -218,17 +218,7 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 			deals.push(msg)
 
 		case types.Response:
-			response := pedersen.Response{
-				Index: msg.GetIndex(),
-				Response: &vss.Response{
-					SessionID: msg.GetResponse().GetSessionID(),
-					Index:     msg.GetResponse().GetIndex(),
-					Status:    msg.GetResponse().GetStatus(),
-					Signature: msg.GetResponse().GetSignature(),
-				},
-			}
-
-			responses.push(response)
+			responses.push(msg)
 			h.log.Info().Int("total", responses.Len()).Msg("pushing a response")
 
 		case types.DecryptRequest:
@@ -273,7 +263,7 @@ func (h *Handler) handleDecrypt(out mino.Sender, msg types.DecryptRequest,
 // might have already received some deals from other nodes in the meantime. The
 // function handles the DKG creation protocol.
 func (h *Handler) start(ctx context.Context, start types.Start, deals cryChan[types.Deal],
-	resps cryChan[pedersen.Response], from mino.Address, out mino.Sender) error {
+	resps cryChan[types.Response], from mino.Address, out mino.Sender) error {
 
 	if len(start.GetAddresses()) != len(start.GetPublicKeys()) {
 		return xerrors.Errorf("there should be as many participants as "+
@@ -305,7 +295,7 @@ func (h *Handler) start(ctx context.Context, start types.Start, deals cryChan[ty
 
 // doDKG calls the subsequent DKG steps
 func (h *Handler) doDKG(ctx context.Context, deals cryChan[types.Deal],
-	resps cryChan[pedersen.Response], out mino.Sender, from mino.Address) error {
+	resps cryChan[types.Response], out mino.Sender, from mino.Address) error {
 
 	defer func() {
 		h.Lock()
@@ -406,15 +396,25 @@ func (h *Handler) respond(ctx context.Context, deals cryChan[types.Deal], out mi
 	return nil
 }
 
-func (h *Handler) certify(ctx context.Context, resps cryChan[pedersen.Response], out mino.Sender) error {
+func (h *Handler) certify(ctx context.Context, resps cryChan[types.Response], out mino.Sender) error {
 
 	responsesReceived := 0
 	expected := (len(h.startRes.participants) - 1) * (len(h.startRes.participants) - 1)
 
 	for responsesReceived < expected {
-		resp, err := resps.pop(ctx)
+		msg, err := resps.pop(ctx)
 		if err != nil {
 			return xerrors.Errorf("context done: %v", err)
+		}
+
+		resp := pedersen.Response{
+			Index: msg.GetIndex(),
+			Response: &vss.Response{
+				SessionID: msg.GetResponse().GetSessionID(),
+				Index:     msg.GetResponse().GetIndex(),
+				Status:    msg.GetResponse().GetStatus(),
+				Signature: msg.GetResponse().GetSignature(),
+			},
 		}
 
 		_, err = h.dkg.ProcessResponse(&resp)
