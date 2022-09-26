@@ -7,8 +7,6 @@ package minogrpc
 
 import (
 	context "context"
-	"sync"
-
 	"github.com/rs/xid"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/internal/tracing"
@@ -20,6 +18,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"sync"
 )
 
 // RPC represents an RPC that has been registered by a client, which allows
@@ -124,13 +123,13 @@ func (rpc *RPC) Call(ctx context.Context,
 // the endpoint. It can for instance use a tree structure, which means the
 // network for 8 nodes could look like this:
 //
-//                               Orchestrator
-//                                     |
-//                                  __ A __
-//                                 /       \
-//                                B         C
-//                              / | \     /   \
-//                             D  E  F   G     H
+//	  Orchestrator
+//	        |
+//	     __ A __
+//	    /       \
+//	   B         C
+//	 / | \     /   \
+//	D  E  F   G     H
 //
 // If C has to send a message to B, it will send it through node A. Similarly,
 // if D has to send a message to G, it will move up the tree through B, A and

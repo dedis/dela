@@ -1,7 +1,7 @@
 // This file contains the implementation of the inner overlay of the minogrpc
 // instance which processes the requests from the gRPC server.
 //
-// Dcoumentation Last Review: 07.10.2020
+// Documentation Last Review: 07.10.2020
 //
 
 package minogrpc
@@ -14,10 +14,13 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"sync"
+
+	otgrpc "github.com/opentracing-contrib/go-grpc"
+	"github.com/opentracing/opentracing-go"
 	"math/big"
 	"net"
 	"net/url"
-	"sync"
 	"time"
 
 	"go.dedis.ch/dela"
@@ -35,9 +38,6 @@ import (
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
-
-	otgrpc "github.com/opentracing-contrib/go-grpc"
-	"github.com/opentracing/opentracing-go"
 )
 
 const (
@@ -53,7 +53,7 @@ const (
 
 	// defaultMinConnectTimeout is the minimum amount of time we are willing to
 	// wait for a grpc connection to complete
-	defaultMinConnectTimeout = 10 * time.Second
+	defaultMinConnectTimeout = 60 * time.Second
 )
 
 var getTracerForAddr = tracing.GetTracerForAddr
@@ -687,7 +687,12 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 		return nil, xerrors.Errorf("failed to get tracer for addr %s: %v", addr, err)
 	}
 
-	conn, err = grpc.Dial(addr,
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(2)*time.Second)
+	defer cancel()
+
+	conn, err = grpc.DialContext(
+		ctx,
+		addr,
 		grpc.WithTransportCredentials(ta),
 		grpc.WithConnectParams(grpc.ConnectParams{
 			Backoff:           backoff.DefaultConfig,

@@ -3,7 +3,6 @@ package types
 import (
 	"bytes"
 	"io"
-	"io/ioutil"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -157,7 +156,7 @@ func TestBlock_Fingerprint(t *testing.T) {
 	require.EqualError(t, err, fake.Err("couldn't write root"))
 
 	block.data = badData{}
-	err = block.Fingerprint(ioutil.Discard)
+	err = block.Fingerprint(io.Discard)
 	require.EqualError(t, err, fake.Err("data fingerprint failed"))
 
 	_, err = NewBlock(block.data, WithHashFactory(fake.NewHashFactory(fake.NewBadHash())))

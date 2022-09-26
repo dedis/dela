@@ -2,13 +2,12 @@ package kv
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 )
 
 func ExampleBucket_Scan() {
-	dir, err := ioutil.TempDir(os.TempDir(), "example")
+	dir, err := os.MkdirTemp(os.TempDir(), "example")
 	if err != nil {
 		panic("failed to create folder: " + err.Error())
 	}

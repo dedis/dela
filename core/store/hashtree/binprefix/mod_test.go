@@ -3,7 +3,6 @@ package binprefix
 import (
 	"bytes"
 	"crypto/rand"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -318,7 +317,7 @@ func TestWritableMerkleTree_Delete(t *testing.T) {
 // Utility functions
 
 func makeDB(t *testing.T) (kv.DB, func()) {
-	dir, err := ioutil.TempDir(os.TempDir(), "dela-pow")
+	dir, err := os.MkdirTemp(os.TempDir(), "dela-pow")
 	require.NoError(t, err)
 
 	db, err := kv.New(filepath.Join(dir, "test.db"))

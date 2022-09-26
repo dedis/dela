@@ -3,7 +3,7 @@ package traffic
 import (
 	"bytes"
 	"context"
-	"io/ioutil"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -21,7 +21,7 @@ func TestTraffic_Integration(t *testing.T) {
 	a2 := fake.NewAddress(1)
 	gw := fake.NewAddress(2)
 
-	traffic := NewTraffic(src, ioutil.Discard)
+	traffic := NewTraffic(src, io.Discard)
 
 	header := metadata.New(map[string]string{headerURIKey: "test"})
 	ctx := metadata.NewOutgoingContext(context.Background(), header)
@@ -57,13 +57,13 @@ func TestTraffic_Integration(t *testing.T) {
 
 	defer os.Remove(file)
 
-	content, err := ioutil.ReadFile(file)
+	content, err := os.ReadFile(file)
 	require.NoError(t, err)
 	require.True(t, len(content) > 0)
 }
 
 func TestSaveItems(t *testing.T) {
-	file, err := ioutil.TempFile(os.TempDir(), "")
+	file, err := os.CreateTemp(os.TempDir(), "")
 	require.NoError(t, err)
 	defer os.Remove(file.Name())
 
@@ -79,7 +79,7 @@ func TestSaveItems(t *testing.T) {
 }
 
 func TestSaveEvents(t *testing.T) {
-	file, err := ioutil.TempFile(os.TempDir(), "")
+	file, err := os.CreateTemp(os.TempDir(), "")
 	require.NoError(t, err)
 	defer os.Remove(file.Name())
 
@@ -95,7 +95,7 @@ func TestSaveEvents(t *testing.T) {
 }
 
 func TestTraffic_Save(t *testing.T) {
-	traffic := NewTraffic(fake.NewAddress(0), ioutil.Discard)
+	traffic := NewTraffic(fake.NewAddress(0), io.Discard)
 
 	if runtime.GOOS == "windows" {
 		return
@@ -111,7 +111,7 @@ func TestTraffic_LogRecv(t *testing.T) {
 	// Should not panic
 	traffic.LogRecv(context.Background(), nil, nil)
 
-	traffic = NewTraffic(fake.NewAddress(0), ioutil.Discard)
+	traffic = NewTraffic(fake.NewAddress(0), io.Discard)
 	require.Len(t, traffic.items, 0)
 
 	traffic.LogRecv(context.Background(), nil, nil)
@@ -126,7 +126,7 @@ func TestTraffic_LogRelay(t *testing.T) {
 	var traffic *Traffic
 	traffic.LogRelay(fake.NewAddress(1))
 
-	traffic = NewTraffic(fake.NewAddress(0), ioutil.Discard)
+	traffic = NewTraffic(fake.NewAddress(0), io.Discard)
 	require.Len(t, traffic.events, 0)
 
 	traffic.LogRelay(fake.NewAddress(5))
@@ -134,13 +134,13 @@ func TestTraffic_LogRelay(t *testing.T) {
 }
 
 func TestGenerateItemsGraphViz(t *testing.T) {
-	traffic := NewTraffic(fake.NewAddress(0), ioutil.Discard)
+	traffic := NewTraffic(fake.NewAddress(0), io.Discard)
 	traffic.LogRecv(context.Background(), fake.NewAddress(1), newFakePacket(fake.NewAddress(2)))
 	traffic.LogSend(context.Background(), fake.NewAddress(1), newFakePacket(fake.NewAddress(2)))
 
-	traffic2 := NewTraffic(fake.NewAddress(1), ioutil.Discard)
+	traffic2 := NewTraffic(fake.NewAddress(1), io.Discard)
 
-	traffic3 := NewTraffic(fake.NewAddress(3), ioutil.Discard)
+	traffic3 := NewTraffic(fake.NewAddress(3), io.Discard)
 	traffic3.LogRelay(fake.NewAddress(0))
 
 	buffer := new(bytes.Buffer)
@@ -150,7 +150,7 @@ func TestGenerateItemsGraphViz(t *testing.T) {
 }
 
 func TestGenerateEventGraphViz(t *testing.T) {
-	traffic := NewTraffic(fake.NewAddress(0), ioutil.Discard)
+	traffic := NewTraffic(fake.NewAddress(0), io.Discard)
 	traffic.LogRelay(fake.NewAddress(1))
 	traffic.LogRelay(fake.NewAddress(2))
 	traffic.LogRelayClosed(fake.NewAddress(2))
@@ -164,7 +164,7 @@ func TestWatcherIns(t *testing.T) {
 	watcher := GlobalWatcher
 	events := watcher.WatchIns(context.Background())
 
-	traffic := NewTraffic(fake.NewAddress(0), ioutil.Discard)
+	traffic := NewTraffic(fake.NewAddress(0), io.Discard)
 
 	addr := fake.NewAddress(0)
 	pkt := newFakePacket(fake.NewAddress(1), fake.NewAddress(2))
@@ -183,7 +183,7 @@ func TestWatcherOuts(t *testing.T) {
 	watcher := GlobalWatcher
 	events := watcher.WatchOuts(context.Background())
 
-	traffic := NewTraffic(fake.NewAddress(0), ioutil.Discard)
+	traffic := NewTraffic(fake.NewAddress(0), io.Discard)
 
 	addr := fake.NewAddress(0)
 	pkt := newFakePacket(fake.NewAddress(1), fake.NewAddress(2))

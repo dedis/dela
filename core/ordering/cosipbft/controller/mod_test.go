@@ -2,7 +2,6 @@ package controller
 
 import (
 	"encoding"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -98,7 +97,7 @@ func TestMinimal_MalformedKey_OnStart(t *testing.T) {
 }
 
 func TestMinimal_OnStop(t *testing.T) {
-	dir, err := ioutil.TempDir(os.TempDir(), "dela-test-")
+	dir, err := os.MkdirTemp(os.TempDir(), "dela-test-")
 	require.NoError(t, err)
 
 	db, err := kv.New(filepath.Join(dir, "test.db"))
@@ -144,7 +143,7 @@ func TestMinimal_OnStop(t *testing.T) {
 // Utility functions
 
 func makeFlags(t *testing.T) (cli.Flags, string, func()) {
-	dir, err := ioutil.TempDir(os.TempDir(), "dela-")
+	dir, err := os.MkdirTemp(os.TempDir(), "dela-")
 	require.NoError(t, err)
 
 	fset := make(node.FlagSet)

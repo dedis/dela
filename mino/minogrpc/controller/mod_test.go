@@ -2,7 +2,6 @@ package controller
 
 import (
 	"crypto/elliptic"
-	"io/ioutil"
 	"net"
 	"os"
 	"path/filepath"
@@ -27,7 +26,7 @@ func TestMiniController_Build(t *testing.T) {
 }
 
 func TestMiniController_OnStart(t *testing.T) {
-	dir, err := ioutil.TempDir(os.TempDir(), "minogrpc")
+	dir, err := os.MkdirTemp(os.TempDir(), "minogrpc")
 	require.NoError(t, err)
 
 	defer os.RemoveAll(dir)
@@ -67,7 +66,7 @@ func TestMiniController_InvalidAddr_OnStart(t *testing.T) {
 }
 
 func TestMiniController_OverlayFailed_OnStart(t *testing.T) {
-	dir, err := ioutil.TempDir(os.TempDir(), "minogrpc")
+	dir, err := os.MkdirTemp(os.TempDir(), "minogrpc")
 	require.NoError(t, err)
 
 	defer os.RemoveAll(dir)
@@ -142,7 +141,7 @@ func TestMiniController_FailMarshalKey_OnStart(t *testing.T) {
 }
 
 func TestMiniController_FailParseKey_OnStart(t *testing.T) {
-	dir, err := ioutil.TempDir(os.TempDir(), "dela")
+	dir, err := os.MkdirTemp(os.TempDir(), "dela")
 	require.NoError(t, err)
 
 	defer os.RemoveAll(dir)
@@ -166,7 +165,7 @@ func TestMiniController_FailParseKey_OnStart(t *testing.T) {
 }
 
 func TestMiniController_LoadCertChain_OnStart(t *testing.T) {
-	dir, err := ioutil.TempDir(os.TempDir(), "minogrpc")
+	dir, err := os.MkdirTemp(os.TempDir(), "minogrpc")
 	require.NoError(t, err)
 
 	defer os.RemoveAll(dir)
@@ -236,7 +235,7 @@ func TestMiniController_FailedTCPResolve_OnStart(t *testing.T) {
 }
 
 func TestMiniController_FailedPublicParse_OnStart(t *testing.T) {
-	dir, err := ioutil.TempDir(os.TempDir(), "minogrpc")
+	dir, err := os.MkdirTemp(os.TempDir(), "minogrpc")
 	require.NoError(t, err)
 
 	defer os.RemoveAll(dir)
@@ -260,7 +259,7 @@ func TestMiniController_FailedPublicParse_OnStart(t *testing.T) {
 }
 
 func TestMiniController_OnStop(t *testing.T) {
-	dir, err := ioutil.TempDir(os.TempDir(), "minogrpc")
+	dir, err := os.MkdirTemp(os.TempDir(), "minogrpc")
 	require.NoError(t, err)
 
 	defer os.RemoveAll(dir)
@@ -301,7 +300,7 @@ func TestMiniController_FailStopMino_OnStop(t *testing.T) {
 }
 
 func TestGetKey_Pem(t *testing.T) {
-	dir, err := ioutil.TempDir(os.TempDir(), "minogrpc")
+	dir, err := os.MkdirTemp(os.TempDir(), "minogrpc")
 	require.NoError(t, err)
 
 	defer os.RemoveAll(dir)

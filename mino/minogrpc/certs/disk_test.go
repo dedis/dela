@@ -1,7 +1,6 @@
 package certs
 
 import (
-	"io/ioutil"
 	"net"
 	"os"
 	"testing"
@@ -218,7 +217,7 @@ func TestDiskStore_Range_DB_Fail(t *testing.T) {
 // Utility functions
 
 func makeDb(t *testing.T) (kv.DB, func()) {
-	file, err := ioutil.TempFile(os.TempDir(), "minogrpc-certs")
+	file, err := os.CreateTemp(os.TempDir(), "minogrpc-certs")
 	require.NoError(t, err)
 
 	db, err := kv.New(file.Name())

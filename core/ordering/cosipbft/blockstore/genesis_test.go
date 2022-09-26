@@ -1,7 +1,6 @@
 package blockstore
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -58,7 +57,7 @@ func TestCachedGenesis_Exists(t *testing.T) {
 }
 
 func TestGenesisDiskStore_Load(t *testing.T) {
-	dir, err := ioutil.TempDir(os.TempDir(), "dela-blockstore-")
+	dir, err := os.MkdirTemp(os.TempDir(), "dela-blockstore-")
 	require.NoError(t, err)
 
 	defer os.RemoveAll(dir)
@@ -92,7 +91,7 @@ func TestGenesisDiskStore_Load(t *testing.T) {
 }
 
 func TestGenesisDiskStore_Set(t *testing.T) {
-	dir, err := ioutil.TempDir(os.TempDir(), "dela-blockstore-")
+	dir, err := os.MkdirTemp(os.TempDir(), "dela-blockstore-")
 	require.NoError(t, err)
 
 	defer os.RemoveAll(dir)

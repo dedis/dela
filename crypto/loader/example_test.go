@@ -2,13 +2,12 @@ package loader
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 )
 
 func ExampleLoader_LoadOrCreate() {
-	dir, err := ioutil.TempDir(os.TempDir(), "example")
+	dir, err := os.MkdirTemp(os.TempDir(), "example")
 	if err != nil {
 		panic("no folder: " + err.Error())
 	}

@@ -181,3 +181,12 @@ func (h handler) Stream(out mino.Sender, in mino.Receiver) error {
     return nil
 }
 ```
+
+#### Notes
+
+Set these env. flags to show GRPC traces:
+```
+GRPC_GO_LOG_SEVERITY_LEVEL=info;
+GRPC_GO_LOG_VERBOSITY_LEVEL=10;
+```
+

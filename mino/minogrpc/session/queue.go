@@ -6,15 +6,14 @@
 package session
 
 import (
-	"math"
-	"sync"
-
 	"go.dedis.ch/dela/mino/router"
 	"golang.org/x/xerrors"
+	"math"
+	"sync"
 )
 
 // maximum capacity of the buffer is: (2^limitExponent) * initialCapacity
-const initialCapacity = 100
+const initialCapacity = 10000
 const limitExponent = 14
 
 // Queue is an interface to queue messages.

@@ -2,7 +2,7 @@ package controller
 
 import (
 	"encoding/base64"
-	"io/ioutil"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -17,7 +17,7 @@ func TestAddAction_Execute(t *testing.T) {
 	ctx := node.Context{
 		Injector: node.NewInjector(),
 		Flags:    make(node.FlagSet),
-		Out:      ioutil.Discard,
+		Out:      io.Discard,
 	}
 
 	action := addAction{}

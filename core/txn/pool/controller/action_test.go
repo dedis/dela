@@ -2,7 +2,7 @@ package controller
 
 import (
 	"errors"
-	"io/ioutil"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -22,7 +22,7 @@ func TestExecute(t *testing.T) {
 	ctx := node.Context{
 		Injector: node.NewInjector(),
 		Flags:    make(node.FlagSet),
-		Out:      ioutil.Discard,
+		Out:      io.Discard,
 	}
 
 	ctx.Flags.(node.FlagSet)["args"] = []interface{}{"1", "2"}
@@ -36,7 +36,7 @@ func TestExecute(t *testing.T) {
 	keyFile := filepath.Join(os.TempDir(), "key.buf")
 	ctx.Flags.(node.FlagSet)[signerFlag] = keyFile
 
-	err = ioutil.WriteFile(keyFile, buf, os.ModePerm)
+	err = os.WriteFile(keyFile, buf, os.ModePerm)
 	require.NoError(t, err)
 	defer os.RemoveAll(keyFile)
 
@@ -62,7 +62,7 @@ func TestExecute(t *testing.T) {
 	err = action.Execute(ctx)
 	require.EqualError(t, err, "failed to sync manager: "+fake.Err("sync fail"))
 
-	err = ioutil.WriteFile(keyFile, []byte("bad signer"), os.ModePerm)
+	err = os.WriteFile(keyFile, []byte("bad signer"), os.ModePerm)
 	require.NoError(t, err)
 
 	err = action.Execute(ctx)

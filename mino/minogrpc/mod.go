@@ -1,6 +1,8 @@
 // Package minogrpc implements a network overlay using gRPC.
 //
 // Documentation Last Review: 07.10.2020
+//
+
 package minogrpc
 
 import (

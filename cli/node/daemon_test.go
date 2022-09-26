@@ -3,7 +3,6 @@ package node
 import (
 	"bytes"
 	"encoding/json"
-	"io/ioutil"
 	"net"
 	"os"
 	"path/filepath"
@@ -17,7 +16,7 @@ import (
 )
 
 func TestSocketClient_Send(t *testing.T) {
-	dir, err := ioutil.TempDir(os.TempDir(), "dela")
+	dir, err := os.MkdirTemp(os.TempDir(), "dela")
 	require.NoError(t, err)
 
 	defer os.RemoveAll(dir)
@@ -72,7 +71,7 @@ func TestSocketClient_BadInConn_Send(t *testing.T) {
 }
 
 func TestSocketDaemon_Listen(t *testing.T) {
-	dir, err := ioutil.TempDir(os.TempDir(), "dela")
+	dir, err := os.MkdirTemp(os.TempDir(), "dela")
 	require.NoError(t, err)
 
 	defer os.RemoveAll(dir)
@@ -86,7 +85,7 @@ func TestSocketDaemon_Listen(t *testing.T) {
 	actions := &actionMap{}
 	actions.Set(fakeAction{
 		intFlags: map[string]int{"1": 1},
-	}) // id 0
+	})                                            // id 0
 	actions.Set(fakeAction{err: fake.GetError()}) // id 1
 
 	daemon := &socketDaemon{
@@ -130,7 +129,7 @@ func TestSocketDaemon_Listen(t *testing.T) {
 }
 
 func TestSocketDaemon_ConnectivityTest_Listen(t *testing.T) {
-	dir, err := ioutil.TempDir(os.TempDir(), "dela")
+	dir, err := os.MkdirTemp(os.TempDir(), "dela")
 	require.NoError(t, err)
 
 	defer os.RemoveAll(dir)
