@@ -153,8 +153,7 @@ func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
 
 	switch ctx.String("routing") {
 	case "flat":
-		//TODO: tree.NewRouterWithOptions(...)
-		rter = tree.NewRouter(minogrpc.NewAddressFactory())
+		rter = tree.NewRouter(minogrpc.NewAddressFactory(), tree.WithHeight(1))
 	case "tree":
 		rter = tree.NewRouter(minogrpc.NewAddressFactory())
 	default:

@@ -10,7 +10,6 @@
 // tree are the first participants to be contacted.
 //
 // Documentation Last Review: 06.10.2020
-//
 package tree
 
 import (
@@ -32,8 +31,17 @@ type Router struct {
 	hsFac     router.HandshakeFactory
 }
 
+// RouterOption is the signature of the option constructor
+type RouterOption func(*Router)
+
+func WithHeight(maxHeight int) RouterOption {
+	return func(r *Router) {
+		r.maxHeight = maxHeight
+	}
+}
+
 // NewRouter returns a new router.
-func NewRouter(f mino.AddressFactory) Router {
+func NewRouter(f mino.AddressFactory, options ...RouterOption) Router {
 	fac := types.NewPacketFactory(f)
 	hsFac := types.NewHandshakeFactory(f)
 
@@ -43,6 +51,10 @@ func NewRouter(f mino.AddressFactory) Router {
 		hsFac:     hsFac,
 	}
 
+	// Loop through each option
+	for _, opt := range options {
+		opt(&r)
+	}
 	return r
 }
 
