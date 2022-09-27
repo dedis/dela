@@ -65,6 +65,81 @@ func (s Start) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
+// ResharingRequest is the message the initiator of the resharing protocol
+// should send to all the old nodes.
+//
+// - implements serde.Message
+type ResharingRequest struct {
+	// New threshold
+	TNew int
+	// Old threshold
+	TOld int
+	// The full list of addresses that will participate in the new DKG
+	addrsNew []mino.Address
+	// The full list of addresses of old dkg members
+	addrsOld []mino.Address
+	// The corresponding kyber.Point pub keys of the new addresses
+	pubkeysNew []kyber.Point
+	// The corresponding kyber.Point pub keys of the old addresses
+	pubkeysOld []kyber.Point
+}
+
+// NewResharingRequest creates a new start message.
+func NewResharingRequest(TNew int, TOld int, addrsNew []mino.Address, addrsOld []mino.Address,
+	pubkeysNew []kyber.Point, pubkeysOld []kyber.Point) ResharingRequest {
+	return ResharingRequest{
+		TNew:       TNew,
+		TOld:       TOld,
+		addrsNew:   addrsNew,
+		addrsOld:   addrsOld,
+		pubkeysNew: pubkeysNew,
+		pubkeysOld: pubkeysOld,
+	}
+}
+
+// GetTNew returns the new threshold.
+func (r ResharingRequest) GetTNew() int {
+	return r.TNew
+}
+
+// GetTOld returns the old threshold.
+func (r ResharingRequest) GetTOld() int {
+	return r.TOld
+}
+
+// GetaddrsNew returns the list of new addresses.
+func (r ResharingRequest) GetAddrsNew() []mino.Address {
+	return append([]mino.Address{}, r.addrsNew...)
+}
+
+// GetaddrsOld returns the list of old addresses.
+func (r ResharingRequest) GetAddrsOld() []mino.Address {
+	return append([]mino.Address{}, r.addrsOld...)
+}
+
+// GetpubkeysNew returns the list of new public keys.
+func (r ResharingRequest) GetPubkeysNew() []kyber.Point {
+	return append([]kyber.Point{}, r.pubkeysNew...)
+}
+
+// GetpubkeysOld returns the list of old public keys.
+func (r ResharingRequest) GetPubkeysOld() []kyber.Point {
+	return append([]kyber.Point{}, r.pubkeysOld...)
+}
+
+// Serialize implements serde.Message. It looks up the format and returns the
+// serialized data for the resharingRequest message.
+func (r ResharingRequest) Serialize(ctx serde.Context) ([]byte, error) {
+	format := msgFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, r)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't encode message: %v", err)
+	}
+
+	return data, nil
+}
+
 // EncryptedDeal contains the different parameters and data of an encrypted
 // deal.
 type EncryptedDeal struct {
@@ -140,6 +215,43 @@ func (d Deal) GetEncryptedDeal() EncryptedDeal {
 
 // Serialize implements serde.Message.
 func (d Deal) Serialize(ctx serde.Context) ([]byte, error) {
+	format := msgFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, d)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't encode deal: %v", err)
+	}
+
+	return data, nil
+}
+
+// DealResharing messages for resharing process
+// - implements serde.Message
+type DealResharing struct {
+	deal        Deal
+	PublicCoeff []kyber.Point
+}
+
+// NewDeal creates a new deal.
+func NewDealResharing(deal Deal, publicCoeff []kyber.Point) DealResharing {
+	return DealResharing{
+		deal:        deal,
+		PublicCoeff: publicCoeff,
+	}
+}
+
+// GetDeal returns the deal.
+func (d DealResharing) GetDeal() Deal {
+	return d.deal
+}
+
+// GetDPublicCoeff returns the public coeff.
+func (d DealResharing) GetPublicCoeffs() []kyber.Point {
+	return d.PublicCoeff
+}
+
+// Serialize implements serde.Message.
+func (d DealResharing) Serialize(ctx serde.Context) ([]byte, error) {
 	format := msgFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, d)

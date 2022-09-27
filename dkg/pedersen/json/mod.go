@@ -23,6 +23,15 @@ type Start struct {
 	PublicKeys []PublicKey
 }
 
+type ResharingRequest struct {
+	TNew       int
+	TOld       int
+	AddrsNew   []Address
+	AddrsOld   []Address
+	PubkeysNew []PublicKey
+	PubkeysOld []PublicKey
+}
+
 type EncryptedDeal struct {
 	DHKey     []byte
 	Signature []byte
@@ -34,6 +43,11 @@ type Deal struct {
 	Index         uint32
 	Signature     []byte
 	EncryptedDeal EncryptedDeal
+}
+
+type DealResharing struct {
+	Deal        Deal
+	PublicCoeff []PublicKey
 }
 
 type DealerResponse struct {
@@ -63,12 +77,14 @@ type DecryptReply struct {
 }
 
 type Message struct {
-	Start          *Start          `json:",omitempty"`
-	Deal           *Deal           `json:",omitempty"`
-	Response       *Response       `json:",omitempty"`
-	StartDone      *StartDone      `json:",omitempty"`
-	DecryptRequest *DecryptRequest `json:",omitempty"`
-	DecryptReply   *DecryptReply   `json:",omitempty"`
+	Start            *Start            `json:",omitempty"`
+	ResharingRequest *ResharingRequest `json:",omitempty"`
+	Deal             *Deal             `json:",omitempty"`
+	DealResharing    *DealResharing    `json:",omitempty"`
+	Response         *Response         `json:",omitempty"`
+	StartDone        *StartDone        `json:",omitempty"`
+	DecryptRequest   *DecryptRequest   `json:",omitempty"`
+	DecryptReply     *DecryptReply     `json:",omitempty"`
 }
 
 // MsgFormat is the engine to encode and decode dkg messages in JSON format.
@@ -118,6 +134,14 @@ func (f msgFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) 
 		}
 
 		m = Message{Start: &start}
+	case types.ResharingRequest:
+
+		resharingRequest, err := f.encodeResharingRequest(in)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't marshal public key: %v", err)
+		}
+
+		m = Message{ResharingRequest: &resharingRequest}
 	case types.Deal:
 		d := Deal{
 			Index:     in.GetIndex(),
@@ -131,6 +155,33 @@ func (f msgFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) 
 		}
 
 		m = Message{Deal: &d}
+	case types.DealResharing:
+		d := Deal{
+			Index:     in.GetDeal().GetIndex(),
+			Signature: in.GetDeal().GetSignature(),
+			EncryptedDeal: EncryptedDeal{
+				DHKey:     in.GetDeal().GetEncryptedDeal().GetDHKey(),
+				Signature: in.GetDeal().GetEncryptedDeal().GetSignature(),
+				Nonce:     in.GetDeal().GetEncryptedDeal().GetNonce(),
+				Cipher:    in.GetDeal().GetEncryptedDeal().GetCipher(),
+			},
+		}
+
+		publicCoeff := make([]PublicKey, len(in.GetPublicCoeffs()))
+		for i, coeff := range in.GetPublicCoeffs() {
+			data, err := coeff.MarshalBinary()
+			if err != nil {
+				return nil, xerrors.Errorf("couldn't marshal public coeffcient %v", err)
+			}
+			publicCoeff[i] = data
+		}
+
+		dr := DealResharing{
+			Deal:        d,
+			PublicCoeff: publicCoeff,
+		}
+		m = Message{DealResharing: &dr}
+
 	case types.Response:
 		r := Response{
 			Index: in.GetIndex(),
@@ -208,6 +259,10 @@ func (f msgFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error)
 		return f.decodeStart(ctx, m.Start)
 	}
 
+	if m.ResharingRequest != nil {
+		return f.decodeResharingRequest(ctx, m.ResharingRequest)
+	}
+
 	if m.Deal != nil {
 		deal := types.NewDeal(
 			m.Deal.Index,
@@ -221,6 +276,35 @@ func (f msgFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error)
 		)
 
 		return deal, nil
+	}
+
+	if m.DealResharing != nil {
+		deal := types.NewDeal(
+			m.DealResharing.Deal.Index,
+			m.DealResharing.Deal.Signature,
+			types.NewEncryptedDeal(
+				m.DealResharing.Deal.EncryptedDeal.DHKey,
+				m.DealResharing.Deal.EncryptedDeal.Signature,
+				m.DealResharing.Deal.EncryptedDeal.Nonce,
+				m.DealResharing.Deal.EncryptedDeal.Cipher,
+			),
+		)
+
+		publicCoeff := make([]kyber.Point, len(m.DealResharing.PublicCoeff))
+
+		for i, coeff := range m.DealResharing.PublicCoeff {
+			point := f.suite.Point()
+			err := point.UnmarshalBinary(coeff)
+			if err != nil {
+				return nil, xerrors.Errorf("couldn't unmarshal public key: %v", err)
+			}
+
+			publicCoeff[i] = point
+		}
+
+		dealResharing := types.NewDealResharing(deal, publicCoeff)
+
+		return dealResharing, nil
 	}
 
 	if m.Response != nil {
@@ -307,6 +391,107 @@ func (f msgFormat) decodeStart(ctx serde.Context, start *Start) (serde.Message, 
 	}
 
 	s := types.NewStart(start.Threshold, addrs, pubkeys)
+
+	return s, nil
+}
+
+func (f msgFormat) encodeResharingRequest(in types.ResharingRequest) (ResharingRequest, error) {
+
+	addrsNew := make([]Address, len(in.GetAddrsNew()))
+	for i, addr := range in.GetAddrsNew() {
+		data, err := addr.MarshalText()
+		if err != nil {
+			return ResharingRequest{}, xerrors.Errorf("couldn't marshal address: %v", err)
+		}
+
+		addrsNew[i] = data
+	}
+
+	addrsOld := make([]Address, len(in.GetAddrsOld()))
+	for i, addr := range in.GetAddrsOld() {
+		data, err := addr.MarshalText()
+		if err != nil {
+			return ResharingRequest{}, xerrors.Errorf("couldn't marshal address: %v", err)
+		}
+
+		addrsOld[i] = data
+	}
+
+	pubkeysNew := make([]PublicKey, len(in.GetPubkeysNew()))
+	for i, pubkey := range in.GetPubkeysNew() {
+		data, err := pubkey.MarshalBinary()
+		if err != nil {
+			return ResharingRequest{}, xerrors.Errorf("couldn't marshal public key: %v", err)
+		}
+
+		pubkeysNew[i] = data
+	}
+
+	pubkeysOld := make([]PublicKey, len(in.GetPubkeysOld()))
+	for i, pubkey := range in.GetPubkeysOld() {
+		data, err := pubkey.MarshalBinary()
+		if err != nil {
+			return ResharingRequest{}, xerrors.Errorf("couldn't marshal public key: %v", err)
+		}
+
+		pubkeysOld[i] = data
+	}
+
+	resharingRequest := ResharingRequest{
+		TNew:       in.GetTNew(),
+		TOld:       in.GetTOld(),
+		AddrsNew:   addrsNew,
+		AddrsOld:   addrsOld,
+		PubkeysNew: pubkeysNew,
+		PubkeysOld: pubkeysOld,
+	}
+
+	return resharingRequest, nil
+}
+
+func (f msgFormat) decodeResharingRequest(ctx serde.Context, resharingRequest *ResharingRequest) (serde.Message, error) {
+
+	factory := ctx.GetFactory(types.AddrKey{})
+
+	fac, ok := factory.(mino.AddressFactory)
+	if !ok {
+		return nil, xerrors.Errorf("invalid factory of type '%T'", factory)
+	}
+
+	addrsNew := make([]mino.Address, len(resharingRequest.AddrsNew))
+	for i, addr := range resharingRequest.AddrsNew {
+		addrsNew[i] = fac.FromText(addr)
+	}
+
+	addrsOld := make([]mino.Address, len(resharingRequest.AddrsOld))
+	for i, addr := range resharingRequest.AddrsOld {
+		addrsOld[i] = fac.FromText(addr)
+	}
+
+	pubkeysNew := make([]kyber.Point, len(resharingRequest.PubkeysNew))
+	for i, pubkey := range resharingRequest.PubkeysNew {
+		point := f.suite.Point()
+		err := point.UnmarshalBinary(pubkey)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't unmarshal public key: %v", err)
+		}
+
+		pubkeysNew[i] = point
+	}
+
+	pubkeysOld := make([]kyber.Point, len(resharingRequest.PubkeysOld))
+	for i, pubkey := range resharingRequest.PubkeysOld {
+		point := f.suite.Point()
+		err := point.UnmarshalBinary(pubkey)
+		if err != nil {
+			return nil, xerrors.Errorf("couldn't unmarshal public key: %v", err)
+		}
+
+		pubkeysOld[i] = point
+	}
+
+	s := types.NewResharingRequest(resharingRequest.TNew, resharingRequest.TOld, addrsNew,
+		addrsOld, pubkeysNew, pubkeysOld)
 
 	return s, nil
 }

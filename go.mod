@@ -12,7 +12,7 @@ require (
 	github.com/stretchr/testify v1.7.0
 	github.com/uber/jaeger-client-go v2.25.0+incompatible
 	github.com/urfave/cli/v2 v2.2.0
-	go.dedis.ch/kyber/v3 v3.0.13
+	go.dedis.ch/kyber/v3 v3.0.14
 	go.etcd.io/bbolt v1.3.5
 	golang.org/x/net v0.0.0-20211015210444-4f30a5c0130f
 	golang.org/x/tools v0.1.11-0.20220316014157-77aa08bb151a

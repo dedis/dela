@@ -31,11 +31,15 @@ var (
 	// protocolNameDecrypt denotes the value of the protocol span tag
 	// associated with the `dkg-decrypt` protocol.
 	protocolNameDecrypt = "dkg-decrypt"
+	// ProtocolNameResharing denotes the value of the protocol span tag
+	// associated with the `dkg-resharing` protocol.
+	protocolNameResharing = "dkg-resharing"
 )
 
 const (
-	setupTimeout   = time.Minute * 30
-	decryptTimeout = time.Minute * 30
+	setupTimeout     = time.Second * 300
+	decryptTimeout   = time.Second * 100
+	resharingTimeout = time.Second * 300
 )
 
 // Pedersen allows one to initialize a new DKG protocol.
@@ -268,7 +272,111 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 
 // Reshare implements dkg.Actor. It recreates the DKG with an updated list of
 // participants.
-// TODO: to do
-func (a *Actor) Reshare() error {
+func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
+	if !a.startRes.Done() {
+		return xerrors.Errorf("you must first initialize DKG. " +
+			"Did you call setup() first?")
+	}
+
+	addrsNew := make([]mino.Address, 0, co.Len())
+	pubkeysNew := make([]kyber.Point, 0, co.Len())
+
+	addrIter := co.AddressIterator()
+	pubkeyIter := co.PublicKeyIterator()
+
+	for addrIter.HasNext() && pubkeyIter.HasNext() {
+		addrsNew = append(addrsNew, addrIter.GetNext())
+
+		pubkey := pubkeyIter.GetNext()
+		edKey, ok := pubkey.(ed25519.PublicKey)
+		if !ok {
+			return xerrors.Errorf("expected ed25519.PublicKey, got '%T'", pubkey)
+		}
+
+		pubkeysNew = append(pubkeysNew, edKey.GetPoint())
+	}
+
+	// Get the union of the new members and the old members
+	addrsAll := unionOfTwoSlices(a.startRes.GetParticipants(), addrsNew)
+	players := mino.NewAddresses(addrsAll...)
+
+	ctx, cancel := context.WithTimeout(context.Background(), resharingTimeout)
+	defer cancel()
+
+	ctx = context.WithValue(ctx, tracing.ProtocolKey, protocolNameResharing)
+
+	sender, receiver, err := a.rpc.Stream(ctx, players)
+	if err != nil {
+		return xerrors.Errorf("failed to create stream: %v", err)
+	}
+
+	thresholdOld := a.startRes.GetThreshold()
+	pubkeysOld := a.startRes.GetPublicKeys()
+
+	// We don't need to send the old threshold or old public keys to the old or
+	// common nodes
+	messageOld := types.NewResharingRequest(thresholdNew, 0, addrsNew, nil, pubkeysNew, nil)
+
+	// Send the resharing request to the old and common nodes
+	err = <-sender.Send(messageOld, a.startRes.GetParticipants()...)
+	if err != nil {
+		return xerrors.Errorf("failed to send resharing request: %v", err)
+	}
+
+	// First find the set of new nodes that are not common between the old and
+	// new committee
+	addrsNewNotCommon := subtractOfTwoSlices(addrsNew, a.startRes.GetParticipants())
+
+	// Then create a resharing request message for them. We should send the old
+	// threshold and old public keys to them
+	messageNew := types.NewResharingRequest(thresholdNew, thresholdOld, addrsNew, a.startRes.GetParticipants(), pubkeysNew, pubkeysOld)
+
+	// Send the resharing request to the new but not common nodes
+	err = <-sender.Send(messageNew, addrsNewNotCommon...)
+	if err != nil {
+		return xerrors.Errorf("failed to send resharing request: %v", err)
+	}
+
+	dkgPubKeys := make([]kyber.Point, len(addrsAll))
+	// Wait for receiving the response from the new nodes
+	for i := 0; i < len(addrsAll); i++ {
+
+		_, msg, err := receiver.Recv(ctx)
+		if err != nil {
+			return xerrors.Errorf("stream stopped unexpectedly: %v", err)
+		}
+
+		doneMsg, ok := msg.(types.StartDone)
+		if !ok {
+			return xerrors.Errorf("expected to receive a Done message, but "+
+				"go the following: %T", msg)
+		}
+		dkgPubKeys[i] = doneMsg.GetPublicKey()
+
+		// This is a simple check that every node sends back the same DKG pub
+		// key. TODO: handle the situation where a pub key is not the same
+		if i != 0 && !dkgPubKeys[i-1].Equal(doneMsg.GetPublicKey()) {
+			return xerrors.Errorf("the public keys does not match: %v", dkgPubKeys)
+		}
+	}
 	return nil
+}
+
+// Gets the list of the old committee members and new committee members and
+// returns the new committee members that are not common
+func subtractOfTwoSlices(addrsSlice1 []mino.Address, addrsSlice2 []mino.Address) []mino.Address {
+	var subtractedSlice []mino.Address
+	for _, addr1 := range addrsSlice1 {
+		exist := false
+		for _, addr2 := range addrsSlice2 {
+			if addr1.Equal(addr2) {
+				exist = true
+				break
+			}
+		}
+		if !exist {
+			subtractedSlice = append(subtractedSlice, addr1)
+		}
+	}
+	return subtractedSlice
 }
