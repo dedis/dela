@@ -34,13 +34,15 @@ type Router struct {
 // RouterOption is the signature of the option constructor
 type RouterOption func(*Router)
 
+// WithHeight allows to specify the maximum height of the tree
+// when calling NewRouter
 func WithHeight(maxHeight int) RouterOption {
 	return func(r *Router) {
 		r.maxHeight = maxHeight
 	}
 }
 
-// NewRouter returns a new router.
+// NewRouter returns a new router
 func NewRouter(f mino.AddressFactory, options ...RouterOption) Router {
 	fac := types.NewPacketFactory(f)
 	hsFac := types.NewHandshakeFactory(f)
@@ -71,7 +73,7 @@ func (r Router) GetHandshakeFactory() router.HandshakeFactory {
 
 // New implements router.Router. It creates the routing table for the node that
 // is booting the protocol. This node will be the root of the tree.
-func (r Router) New(players mino.Players, me mino.Address) (router.RoutingTable, error) {
+func (r Router) New(players mino.Players, _ mino.Address) (router.RoutingTable, error) {
 	addrs := make([]mino.Address, 0, players.Len())
 	iter := players.AddressIterator()
 	for iter.HasNext() {
