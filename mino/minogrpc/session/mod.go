@@ -105,7 +105,7 @@ type session struct {
 	sync.Mutex
 	sync.WaitGroup
 
-	logger  zerolog.Logger
+	log     zerolog.Logger
 	md      metadata.MD
 	me      mino.Address
 	errs    chan error
@@ -133,7 +133,7 @@ func NewSession(
 	connMgr ConnectionManager,
 ) Session {
 	sess := &session{
-		logger:  dela.Logger.With().Str("addr", me.String()).Logger(),
+		log:     dela.Logger.With().Str("addr", me.String()).Logger(),
 		md:      md,
 		me:      me,
 		errs:    make(chan error, 1),
@@ -186,7 +186,7 @@ func (s *session) Listen(relay Relay, table router.RoutingTable, ready chan stru
 		_, err := relay.Stream().Recv()
 		code := status.Code(err)
 		if err == io.EOF || code != codes.Unknown {
-			s.logger.Trace().Stringer("code", code).Msg("session closing")
+			s.log.Trace().Stringer("code", code).Msg("session closing")
 
 			return
 		}
@@ -216,7 +216,7 @@ func (s *session) Close() {
 
 	s.Wait()
 
-	s.logger.Trace().Msg("session has been closed")
+	s.log.Trace().Msg("session has been closed")
 }
 
 func (s *session) CopyParents() map[mino.Address]parent {
@@ -371,7 +371,7 @@ func (s *session) sendTo(p parent, to mino.Address, pkt router.Packet, errs chan
 	} else {
 		relay, err = s.setupRelay(p, to)
 		if err != nil {
-			s.logger.Warn().Err(err).Stringer("to", to).Msg("failed to setup relay")
+			s.log.Warn().Err(err).Stringer("to", to).Msg("failed to setup relay")
 
 			// Try to open a different relay.
 			s.onFailure(p, to, pkt, errs)
@@ -386,7 +386,7 @@ func (s *session) sendTo(p parent, to mino.Address, pkt router.Packet, errs chan
 	if to == nil && err != nil {
 		// The parent relay is unavailable which means the session will
 		// eventually close.
-		s.logger.Warn().Err(err).Msg("parent is closing")
+		s.log.Warn().Err(err).Msg("parent is closing")
 
 		code := status.Code(xerrors.Unwrap(err))
 
@@ -395,7 +395,7 @@ func (s *session) sendTo(p parent, to mino.Address, pkt router.Packet, errs chan
 		return
 	}
 	if err != nil {
-		s.logger.Warn().Err(err).Msg("relay failed to send")
+		s.log.Warn().Err(err).Msg("relay failed to send")
 
 		// Try to send the packet through a different route.
 		s.onFailure(p, relay.GetDistantAddress(), pkt, errs)
@@ -472,7 +472,7 @@ func (s *session) setupRelay(p parent, addr mino.Address) (Relay, error) {
 			s.Done()
 
 			s.traffic.LogRelayClosed(addr)
-			s.logger.Trace().
+			s.log.Trace().
 				Err(err).
 				Stringer("gateway", addr).
 				Msg("relay has closed")
@@ -482,7 +482,7 @@ func (s *session) setupRelay(p parent, addr mino.Address) (Relay, error) {
 			_, err := stream.Recv()
 			code := status.Code(err)
 			if err == io.EOF || code != codes.Unknown {
-				s.logger.Trace().
+				s.log.Trace().
 					Stringer("code", code).
 					Stringer("to", addr).
 					Msg("relay is closing")
@@ -490,7 +490,7 @@ func (s *session) setupRelay(p parent, addr mino.Address) (Relay, error) {
 				return
 			}
 			if err != nil {
-				s.logger.
+				s.log.
 					Err(err).
 					Stringer("to", addr).
 					Msg("relay closed unexpectedly")
@@ -506,7 +506,7 @@ func (s *session) setupRelay(p parent, addr mino.Address) (Relay, error) {
 
 	s.traffic.LogRelay(addr)
 
-	s.logger.Trace().Stringer("to", addr).Msg("relay opened")
+	s.log.Trace().Stringer("to", addr).Msg("relay opened")
 
 	return newRelay, nil
 }

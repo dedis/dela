@@ -5,7 +5,6 @@
 // when the CLI daemon is stopping.
 //
 // Documentation Last Review: 07.10.2020
-//
 package controller
 
 import (
@@ -33,7 +32,6 @@ import (
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/session"
 	"go.dedis.ch/dela/mino/router"
-	"go.dedis.ch/dela/mino/router/flat"
 	"go.dedis.ch/dela/mino/router/tree"
 	"golang.org/x/xerrors"
 )
@@ -155,7 +153,7 @@ func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
 
 	switch ctx.String("routing") {
 	case "flat":
-		rter = flat.NewRouter(minogrpc.NewAddressFactory())
+		rter = tree.NewRouter(minogrpc.NewAddressFactory(), tree.WithHeight(1))
 	case "tree":
 		rter = tree.NewRouter(minogrpc.NewAddressFactory())
 	default:
