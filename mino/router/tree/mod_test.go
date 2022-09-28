@@ -24,11 +24,14 @@ func TestRouter_GetHandshakeFactory(t *testing.T) {
 }
 
 func TestRouter_New(t *testing.T) {
-	f := func(height, n uint8) bool {
-		router := NewRouter(fake.AddressFactory{})
-		router.maxHeight = int(height)
+	f := func(height, nbNodes uint8) bool {
+		h := int(height)
+		n := int(nbNodes)
 
-		fakeAddrs := makeAddrs(int(n))
+		router := NewRouter(fake.AddressFactory{})
+		router.maxHeight = h
+
+		fakeAddrs := makeAddrs(n)
 
 		var table minoRouter.RoutingTable
 		var err error
@@ -40,7 +43,33 @@ func TestRouter_New(t *testing.T) {
 		}
 		require.NoError(t, err)
 
-		return router.maxHeight == table.(Table).tree.GetMaxHeight()
+		return table.(Table).tree.GetMaxHeight() == h
+	}
+
+	err := quick.Check(f, nil)
+	require.NoError(t, err)
+}
+
+func TestRouter_OptionWithHeight(t *testing.T) {
+	f := func(height, nbNodes uint8) bool {
+		h := int(height)
+		n := int(nbNodes)
+
+		router := NewRouter(fake.AddressFactory{}, WithHeight(h))
+
+		fakeAddrs := makeAddrs(n)
+
+		var table minoRouter.RoutingTable
+		var err error
+
+		if n > 0 {
+			table, err = router.New(mino.NewAddresses(fakeAddrs...), fakeAddrs[0])
+		} else {
+			table, err = router.New(mino.NewAddresses(fakeAddrs...), nil)
+		}
+		require.NoError(t, err)
+
+		return table.(Table).tree.GetMaxHeight() == h
 	}
 
 	err := quick.Check(f, nil)
