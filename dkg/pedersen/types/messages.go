@@ -107,22 +107,22 @@ func (r ResharingRequest) GetTOld() int {
 	return r.TOld
 }
 
-// GetaddrsNew returns the list of new addresses.
+// GetAddrsNew returns the list of new addresses.
 func (r ResharingRequest) GetAddrsNew() []mino.Address {
 	return append([]mino.Address{}, r.addrsNew...)
 }
 
-// GetaddrsOld returns the list of old addresses.
+// GetAddrsOld returns the list of old addresses.
 func (r ResharingRequest) GetAddrsOld() []mino.Address {
 	return append([]mino.Address{}, r.addrsOld...)
 }
 
-// GetpubkeysNew returns the list of new public keys.
+// GetPubkeysNew returns the list of new public keys.
 func (r ResharingRequest) GetPubkeysNew() []kyber.Point {
 	return append([]kyber.Point{}, r.pubkeysNew...)
 }
 
-// GetpubkeysOld returns the list of old public keys.
+// GetPubkeysOld returns the list of old public keys.
 func (r ResharingRequest) GetPubkeysOld() []kyber.Point {
 	return append([]kyber.Point{}, r.pubkeysOld...)
 }
@@ -225,33 +225,33 @@ func (d Deal) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
-// DealResharing messages for resharing process
+// Reshare messages for resharing process
 // - implements serde.Message
-type DealResharing struct {
+type Reshare struct {
 	deal        Deal
 	PublicCoeff []kyber.Point
 }
 
-// NewDeal creates a new deal.
-func NewDealResharing(deal Deal, publicCoeff []kyber.Point) DealResharing {
-	return DealResharing{
+// NewReshare creates a new deal.
+func NewReshare(deal Deal, publicCoeff []kyber.Point) Reshare {
+	return Reshare{
 		deal:        deal,
 		PublicCoeff: publicCoeff,
 	}
 }
 
 // GetDeal returns the deal.
-func (d DealResharing) GetDeal() Deal {
+func (d Reshare) GetDeal() Deal {
 	return d.deal
 }
 
-// GetDPublicCoeff returns the public coeff.
-func (d DealResharing) GetPublicCoeffs() []kyber.Point {
+// GetPublicCoeffs returns the public coeff.
+func (d Reshare) GetPublicCoeffs() []kyber.Point {
 	return d.PublicCoeff
 }
 
 // Serialize implements serde.Message.
-func (d DealResharing) Serialize(ctx serde.Context) ([]byte, error) {
+func (d Reshare) Serialize(ctx serde.Context) ([]byte, error) {
 	format := msgFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, d)

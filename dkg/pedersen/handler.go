@@ -84,53 +84,92 @@ func (c *cryChan[T]) Len() int {
 	return len(c.c)
 }
 
+// dkgState represents the states of a DKG node. States change as follow:
+//
+//	┌───────┐          ┌───────┐
+//	│Initial├─────────►│Sharing│
+//	└───┬───┘          └───┬───┘
+//		│                  │
+//	┌───▼─────┬─────►┌─────▼───┐
+//	│Resharing│      │Certified│
+//	└─────────┘◄─────┴─────────┘
+type dkgState byte
+
+func (s dkgState) String() string {
+	switch s {
+	case initial:
+		return "Initial"
+	case sharing:
+		return "Sharing"
+	case certified:
+		return "Certified"
+	case resharing:
+		return "Resharing"
+	default:
+		return "UNKNOWN"
+	}
+}
+
+const (
+	initial dkgState = iota
+	sharing
+	certified
+	resharing
+)
+
 // state is a struct contained in a handler that allows an actor to read the
 // state of that handler. The actor should only use the getter functions to read
 // the attributes.
 type state struct {
 	sync.Mutex
-	starting     bool
-	resharing    bool
 	distrKey     kyber.Point
 	participants []mino.Address
 	publicKeys   []kyber.Point
 	threshold    int
+	dkgState     dkgState
 }
 
-func (s *state) IsStarting() bool {
+func (s *state) switchState(new dkgState) error {
 	s.Lock()
 	defer s.Unlock()
-	return s.starting
+
+	current := s.dkgState
+
+	switch new {
+	case initial:
+		return xerrors.Errorf("initial state cannot be set manually")
+	case sharing:
+		if current != initial {
+			return xerrors.Errorf("sharing state must switch from initial: %s", current)
+		}
+	case certified:
+		if current != sharing && current != resharing {
+			return xerrors.Errorf("certified state must switch from sharing or resharing: %s", current)
+		}
+	case resharing:
+		if current != initial && current != certified {
+			return xerrors.Errorf("resharing state must switch from initial or certified: %s", current)
+		}
+	}
+
+	s.dkgState = new
+
+	return nil
 }
 
-func (s *state) Start() {
+func (s *state) checkState(states ...dkgState) error {
 	s.Lock()
 	defer s.Unlock()
-	s.starting = true
-}
 
-func (s *state) AbortStart() {
-	s.Lock()
-	defer s.Unlock()
-	s.starting = false
-}
+	current := s.dkgState
 
-func (s *state) IsReshare() bool {
-	s.Lock()
-	defer s.Unlock()
-	return s.resharing
-}
+	for _, s := range states {
+		if s == current {
+			return nil
+		}
+	}
 
-func (s *state) Reshare() {
-	s.Lock()
-	defer s.Unlock()
-	s.resharing = true
-}
-
-func (s *state) FinishReshare() {
-	s.Lock()
-	defer s.Unlock()
-	s.resharing = false
+	return xerrors.Errorf("unexpected state: %s != one of %v", current, states)
 }
 
 func (s *state) Done() bool {
@@ -207,11 +246,13 @@ func NewHandler(privKey kyber.Scalar, me mino.Address) *Handler {
 	log := dela.Logger.With().Str("role", "DKG handler").Str("addr", me.String()).Logger()
 
 	return &Handler{
-		privKey:  privKey,
-		me:       me,
-		startRes: &state{},
-		log:      log,
-		running:  false,
+		privKey: privKey,
+		me:      me,
+		startRes: &state{
+			dkgState: initial,
+		},
+		log:     log,
+		running: false,
 	}
 }
 
@@ -225,18 +266,7 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 	// messages to the other nodes, and then we might get their messages before
 	// the start message.
 
-	// We make sure not additional request is accepted if a setup is in
-	// progress.
-	h.Lock()
-	if h.running {
-		h.Unlock()
-		return xerrors.Errorf("DKG is running")
-	}
-	if !h.startRes.Done() {
-		// This is the first setup
-		h.running = true
-	}
-	h.Unlock()
+	h.log.Trace().Msg("stream start")
 
 	deals := newCryChan[types.Deal](chanSize)
 	responses := newCryChan[types.Response](chanSize)
@@ -274,41 +304,56 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 		switch msg := msg.(type) {
 
 		case types.Start:
-			err := h.start(globalCtx, msg, deals, responses, from, out)
+			err = h.startRes.switchState(sharing)
+			if err != nil {
+				return xerrors.Errorf("failed to switch state: %v", err)
+			}
+
+			err = h.start(globalCtx, msg, deals, responses, from, out)
 			if err != nil {
 				return xerrors.Errorf("failed to start: %v", err)
 			}
 
 		case types.ResharingRequest:
-			dela.Logger.Trace().Msgf("%v received resharing request from %v\n", h.me, from)
+			err := h.startRes.switchState(resharing)
+			if err != nil {
+				return xerrors.Errorf("failed to switch state: %v", err)
+			}
 
-			done := make(chan struct{})
-
-			err = h.handleReshare(out, from, msg, done, reshares, responses)
+			err = h.reshare(globalCtx, out, from, msg, reshares, responses)
 			if err != nil {
 				return xerrors.Errorf("failed to handle resharing: %v", err)
 			}
-			go func() {
-				<-done
-				if h.startRes.Done() {
-					cancel()
-				}
-			}()
 
 		case types.Deal:
+			err = h.startRes.checkState(initial, sharing, resharing)
+			if err != nil {
+				return xerrors.Errorf("bad state: %v", err)
+			}
+
 			deals.push(msg)
 
 		case types.Reshare:
-			dela.Logger.Trace().Msgf("%v received resharing deal from %v\n", h.me, from)
+			err = h.startRes.checkState(initial, certified, resharing)
+			if err != nil {
+				return xerrors.Errorf("bad state: %v", err)
+			}
 
 			reshares.push(msg)
 
 		case types.Response:
+			err = h.startRes.checkState(initial, sharing, certified, resharing)
+			if err != nil {
+				return xerrors.Errorf("bad state: %v", err)
+			}
+
 			responses.push(msg)
-			h.log.Info().Int("total", responses.Len()).Msg("pushing a response")
 
 		case types.DecryptRequest:
-			dela.Logger.Trace().Msgf("%v received decrypt request from %v", h.me, from)
+			err = h.startRes.checkState(certified)
+			if err != nil {
+				return xerrors.Errorf("bad state: %v", err)
+			}
 
 			return h.handleDecrypt(out, msg, from)
 
@@ -366,6 +411,8 @@ func (h *Handler) start(ctx context.Context, start types.Start, deals cryChan[ty
 	h.dkg = d
 
 	h.startRes.SetParticipants(start.GetAddresses())
+	h.startRes.SetPublicKeys(start.GetPublicKeys())
+	h.startRes.SetThreshold(start.GetThreshold())
 
 	// asynchronously start the procedure. This allows for receiving messages
 	// in the main for loop in the meantime.
@@ -402,7 +449,8 @@ func (h *Handler) doDKG(ctx context.Context, deals cryChan[types.Deal],
 	}
 
 	h.log.Info().Str("action", "certify").Msg(newState)
-	err = h.certify(ctx, resps, out)
+	numResps := (len(h.startRes.GetParticipants()) - 1) * (len(h.startRes.GetParticipants()) - 1)
+	err = h.certify(ctx, resps, numResps)
 	if err != nil {
 		return xerrors.Errorf("failed to certify: %v", err)
 	}
@@ -440,9 +488,9 @@ func (h *Handler) deal(ctx context.Context, out mino.Sender) error {
 			),
 		)
 
-		to := h.startRes.participants[i]
+		to := h.startRes.GetParticipants()[i]
 
-		h.log.Info().Str("to", to.String()).Msg("send deal")
+		h.log.Trace().Str("to", to.String()).Msg("send deal")
 
 		errs := out.Send(dealMsg, to)
 
@@ -463,7 +511,7 @@ func (h *Handler) deal(ctx context.Context, out mino.Sender) error {
 func (h *Handler) respond(ctx context.Context, deals cryChan[types.Deal], out mino.Sender) error {
 	numReceivedDeals := 0
 
-	for numReceivedDeals < len(h.startRes.participants)-1 {
+	for numReceivedDeals < len(h.startRes.GetParticipants())-1 {
 		deal, err := deals.pop(ctx)
 		if err != nil {
 			return xerrors.Errorf("context done: %v", err)
@@ -476,16 +524,20 @@ func (h *Handler) respond(ctx context.Context, deals cryChan[types.Deal], out mi
 
 		numReceivedDeals++
 
-		h.log.Info().Str("total", strconv.Itoa(numReceivedDeals)).Msg("deal received")
+		h.log.Trace().Str("total", strconv.Itoa(numReceivedDeals)).Msg("deal received")
 	}
 
 	return nil
 }
 
-func (h *Handler) certify(ctx context.Context, resps cryChan[types.Response], out mino.Sender) error {
+// certify collects the responses and checks if the node is certified
+// The number of expected responses depends on the case:
+//   - Basic setup: (n_participants-1)^2
+//   - Resharing with leaving or joining node: (n_common + n_new - 1) * n_old
+//   - Resharing with staying node: (n_common + n_new) * n_old
+func (h *Handler) certify(ctx context.Context, resps cryChan[types.Response], expected int) error {
 
 	responsesReceived := 0
-	expected := (len(h.startRes.participants) - 1) * (len(h.startRes.participants) - 1)
 
 	for responsesReceived < expected {
 		msg, err := resps.pop(ctx)
@@ -510,11 +562,16 @@ func (h *Handler) certify(ctx context.Context, resps cryChan[types.Response], ou
 
 		responsesReceived++
 
-		h.log.Info().Int("total", responsesReceived).Msg("response processed")
+		h.log.Trace().Int("total", responsesReceived).Msg("response processed")
 	}
 
 	if !h.dkg.Certified() {
 		return xerrors.New("node is not certified")
+	}
+
+	err := h.startRes.switchState(certified)
+	if err != nil {
+		return xerrors.Errorf("failed to switch state: %v", err)
 	}
 
 	return nil
@@ -585,7 +642,7 @@ func (h *Handler) handleDeal(ctx context.Context, msg types.Deal, out mino.Sende
 			continue
 		}
 
-		h.log.Info().Str("to", addr.String()).Str("dealer", strconv.Itoa(int(response.Index))).Msg("sending response")
+		h.log.Trace().Str("to", addr.String()).Str("dealer", strconv.Itoa(int(response.Index))).Msg("sending response")
 
 		errs := out.Send(resp, addr)
 
@@ -609,7 +666,7 @@ func (h *Handler) announceDkgPublicKey(isCommonNode bool, out mino.Sender, from 
 
 	var publicKey kyber.Point
 
-	isOldNode := h.startRes.distrKey != nil
+	isOldNode := h.startRes.GetDistKey() != nil
 	isNewNode := !isOldNode
 
 	// if the node is new or a common node it should update its state
@@ -629,8 +686,9 @@ func (h *Handler) announceDkgPublicKey(isCommonNode bool, out mino.Sender, from 
 		publicKey = h.startRes.GetDistKey()
 	}
 
-	// all the old, new and common nodes should announce their public key to the initiator,
-	// in this way the initiator can make sure that every body has finished the resharing successfully
+	// all the old, new and common nodes should announce their public key to the
+	// initiator, in this way the initiator can make sure that every body has
+	// finished the resharing successfully
 	done := types.NewStartDone(publicKey)
 	err := <-out.Send(done, from)
 	if err != nil {
@@ -642,64 +700,52 @@ func (h *Handler) announceDkgPublicKey(isCommonNode bool, out mino.Sender, from 
 	return nil
 }
 
-// handleReshare handles the resharing request. Acts differently for the new
+// reshare handles the resharing request. Acts differently for the new
 // and old and common nodes
-func (h *Handler) handleReshare(out mino.Sender,
-	from mino.Address, msg types.ResharingRequest, done chan struct{}, reshares cryChan[types.Reshare], resps cryChan[types.Response]) error {
+func (h *Handler) reshare(ctx context.Context, out mino.Sender,
+	from mino.Address, msg types.ResharingRequest, reshares cryChan[types.Reshare], resps cryChan[types.Response]) error {
 
-	if h.startRes.IsReshare() {
-		dela.Logger.Warn().Msgf(
-			"%v ignored reshare request from %v as it "+
-				" is already resharing\n", h.me, from)
-		return xerrors.Errorf("dkg is already resharing")
+	addrsNew := msg.GetAddrsNew()
+
+	if len(addrsNew) != len(msg.GetPubkeysNew()) {
+		return xerrors.Errorf("there should be as many participants as pubKey: %d != %d",
+			len(addrsNew), len(msg.GetPubkeysNew()))
 	}
 
-	h.startRes.Reshare()
-
-	ctx := context.Background()
-	ctx, _ = context.WithTimeout(ctx, 5*time.Minute)
 	go func() {
-		err := h.reshare(ctx, msg, from, out, reshares, resps)
+		err := h.doReshare(ctx, msg, from, out, reshares, resps)
 		if err != nil {
-			dela.Logger.Error().Msgf(
-				"%v failed to reshare: %v", h.me, err)
-			h.startRes.FinishReshare()
+			h.log.Err(err).Msg("failed to reshare")
 		}
-		close(done)
 	}()
 
 	return nil
 }
 
-// reshare is called when the node has received its reshare message. Note that
+// doReshare is called when the node has received its reshare message. Note that
 // we might have already received some deals from other nodes in the meantime.
 // The function handles the DKG resharing protocol.
-func (h *Handler) reshare(ctx context.Context, resharingRequest types.ResharingRequest,
+func (h *Handler) doReshare(ctx context.Context, resharingRequest types.ResharingRequest,
 	from mino.Address, out mino.Sender, reshares cryChan[types.Reshare], resps cryChan[types.Response]) error {
 
-	dela.Logger.Info().Msgf("%v is resharing", h.me)
+	h.log.Info().Msgf("resharing with %v", resharingRequest.GetAddrsNew())
 
 	addrsNew := resharingRequest.GetAddrsNew()
 
-	if len(addrsNew) != len(resharingRequest.GetPubkeysNew()) {
-		return xerrors.Errorf(
-			"there should be as many participants as "+
-				"pubKey: %d != %d", len(addrsNew),
-			len(resharingRequest.GetPubkeysNew()),
-		)
-	}
-
-	isOldNode := h.startRes.distrKey != nil
+	isOldNode := h.startRes.GetDistKey() != nil
 	isNewNode := !isOldNode
 
 	// By default the node is not common. Later we check
 	isCommonNode := false
 
+	var expectedResponses int
+	addrsOld := h.startRes.GetParticipants()
+
 	// If the node is in the old committee, it should do the following steps
 	if isOldNode {
-		addrsOld := h.startRes.GetParticipants()
 
-		// This variable is true if the node is common between the old and the new committee
+		// This variable is true if the node is common between the old and the
+		// new committee
 		isCommonNode = isInSlice(h.me, addrsNew) && isInSlice(h.me, addrsOld)
 
 		// 1. Update mydkg for resharing
@@ -708,6 +754,8 @@ func (h *Handler) reshare(ctx context.Context, resharingRequest types.ResharingR
 			return xerrors.Errorf("failed to create : %v", err)
 		}
 
+		h.log.Trace().Msgf("old node: %v", h.startRes.GetPublicKeys())
+
 		c := &pedersen.Config{
 			Suite:        suite,
 			Longterm:     h.privKey,
@@ -715,7 +763,7 @@ func (h *Handler) reshare(ctx context.Context, resharingRequest types.ResharingR
 			NewNodes:     resharingRequest.GetPubkeysNew(),
 			Share:        share,
 			Threshold:    resharingRequest.GetTNew(),
-			OldThreshold: h.startRes.threshold,
+			OldThreshold: h.startRes.GetThreshold(),
 		}
 
 		d, err := pedersen.NewDistKeyHandler(c)
@@ -746,9 +794,20 @@ func (h *Handler) reshare(ctx context.Context, resharingRequest types.ResharingR
 		h.startRes.SetThreshold(resharingRequest.TNew)
 	}
 
+	// Note that a node can be old and common
+	if isOldNode {
+		expectedResponses = (resharingRequest.TNew) * len(h.startRes.GetParticipants())
+	}
+	if isCommonNode {
+		expectedResponses = (resharingRequest.TNew - 1) * len(addrsOld)
+	}
+	if isNewNode {
+		expectedResponses = (resharingRequest.TNew - 1) * resharingRequest.TOld
+	}
+
 	// 4. Certify
 	// all the nodes should certify
-	err := h.certify(ctx, resps, out)
+	err := h.certify(ctx, resps, expectedResponses)
 	if err != nil {
 		return xerrors.Errorf("failed to certify: %v", err)
 	}
@@ -761,8 +820,6 @@ func (h *Handler) reshare(ctx context.Context, resharingRequest types.ResharingR
 		return xerrors.Errorf("failed to announce dkg public key: %v", err)
 	}
 
-	h.startRes.FinishReshare()
-
 	return nil
 }
 
@@ -772,17 +829,14 @@ func (h *Handler) reshare(ctx context.Context, resharingRequest types.ResharingR
 func (h *Handler) sendDealsResharing(ctx context.Context, out mino.Sender,
 	participants []mino.Address, publicCoeff []kyber.Point) error {
 
-	dela.Logger.Trace().Msgf("%v is generating its deals", h.me)
+	h.log.Trace().Msgf("%v is generating its deals", h.me)
 
 	deals, err := h.dkg.Deals()
 	if err != nil {
 		return xerrors.Errorf("failed to compute the deals: %v", err)
 	}
 
-	dela.Logger.Trace().Msgf("%s is sending its deals", h.me)
-
-	done := make(chan int)
-	errors := make(chan error)
+	h.log.Trace().Msgf("%s is sending its deals", h.me)
 
 	for i, deal := range deals {
 		dealMsg := types.NewDeal(
@@ -799,42 +853,19 @@ func (h *Handler) sendDealsResharing(ctx context.Context, out mino.Sender,
 		//dealResharing contains the public coefficients as well
 		dealResharingMsg := types.NewReshare(dealMsg, publicCoeff)
 
-		dela.Logger.Trace().Msgf("%s sent dealResharing %d", h.me, i)
-		errch := out.Send(dealResharingMsg, participants[i])
+		h.log.Trace().Msgf("%s sent dealResharing %d", h.me, i)
 
-		// this should be further improved by using a worker pool,
-		// as opposed to an unbounded number of goroutines,
-		// but for the time being is okay-ish. -- 2022/08/09
-		go func(errs <-chan error, idx int) {
-			err := <-errs
-			if err != nil {
-				dela.Logger.Warn().Msgf(
-					"got an error while sending dealResharing %v: %v", i, err)
-				errors <- err
-			} else {
-				done <- idx
-			}
-		}(errch, i)
-	}
-
-	sent := 0
-	for sent < len(deals) {
 		select {
-		case idx := <-done:
-			dela.Logger.Trace().Msgf("%s sent deal resharing %v", h.me, idx)
-			sent++
-
-		case err := <-errors:
-			dela.Logger.Error().Msgf("%s failed sending a deal: %v", h.me, err)
-			return xerrors.Errorf("failed sending a deal: %v", err)
-
+		case err := <-out.Send(dealResharingMsg, participants[i]):
+			if err != nil {
+				return xerrors.Errorf("failed to send resharing deal: %v", err)
+			}
 		case <-ctx.Done():
-			dela.Logger.Error().Msgf("%s timed out while sending deals", h.me)
-			return xerrors.Errorf("timed out while sending deals")
+			return xerrors.Errorf("context done: %v", ctx.Err())
 		}
 	}
 
-	dela.Logger.Debug().Msgf("%s sent all its deals", h.me)
+	h.log.Debug().Msgf("%s sent all its deals", h.me)
 
 	return nil
 }
@@ -842,7 +873,7 @@ func (h *Handler) sendDealsResharing(ctx context.Context, out mino.Sender,
 // receiveDealsResharing is similar to receiveDeals except that it receives the
 // dealResharing. Only the new or common nodes call this function
 func (h *Handler) receiveDealsResharing(ctx context.Context, isCommonNode bool, resharingRequest types.ResharingRequest, out mino.Sender, reshares cryChan[types.Reshare]) error {
-	dela.Logger.Trace().Msgf("%v is handling deals from other nodes", h.me)
+	h.log.Trace().Msgf("%v is handling deals from other nodes", h.me)
 
 	addrsNew := resharingRequest.GetAddrsNew()
 	var addrsOld []mino.Address
@@ -895,14 +926,14 @@ func (h *Handler) receiveDealsResharing(ctx context.Context, isCommonNode bool, 
 
 		err = h.handleDeal(ctx, deal, out, addrsAll)
 		if err != nil {
-			dela.Logger.Warn().Msgf("%s failed to handle deal: %v", h.me, err)
+			h.log.Warn().Msgf("%s failed to handle deal: %v", h.me, err)
 			return xerrors.Errorf("failed to handle received deal: %v", err)
 		}
 
 		numReceivedDeals++
 	}
 
-	dela.Logger.Debug().Msgf("%v received all the expected deals", h.me)
+	h.log.Debug().Msgf("%v received all the expected deals", h.me)
 
 	return nil
 }

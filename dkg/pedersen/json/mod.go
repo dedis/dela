@@ -155,7 +155,7 @@ func (f msgFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) 
 		}
 
 		m = Message{Deal: &d}
-	case types.DealResharing:
+	case types.Reshare:
 		d := Deal{
 			Index:     in.GetDeal().GetIndex(),
 			Signature: in.GetDeal().GetSignature(),
@@ -302,7 +302,7 @@ func (f msgFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error)
 			publicCoeff[i] = point
 		}
 
-		dealResharing := types.NewDealResharing(deal, publicCoeff)
+		dealResharing := types.NewReshare(deal, publicCoeff)
 
 		return dealResharing, nil
 	}

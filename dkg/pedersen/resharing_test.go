@@ -3,21 +3,17 @@ package pedersen
 import (
 	"fmt"
 	"math/rand"
-	_ "net/http/pprof"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	_ "go.dedis.ch/dela/dkg/pedersen/json"
 
 	"go.dedis.ch/dela/mino/minogrpc"
-	_ "go.dedis.ch/dela/mino/minogrpc"
 	"go.dedis.ch/dela/mino/router/tree"
 
 	"go.dedis.ch/dela/dkg"
 
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minoch"
-	_ "go.dedis.ch/dela/mino/minoch"
 
 	"go.dedis.ch/kyber/v3"
 )
@@ -32,8 +28,8 @@ func init() {
 func TestResharing_minoch(t *testing.T) {
 
 	// Setting up the first dkg
-	nOld := 100
-	thresholdOld := 100
+	nOld := 15
+	thresholdOld := nOld
 
 	minosOld := make([]mino.Mino, nOld)
 	dkgsOld := make([]dkg.DKG, nOld)
@@ -69,6 +65,8 @@ func TestResharing_minoch(t *testing.T) {
 	_, err := actorsOld[1].Setup(fakeAuthority, thresholdOld)
 	require.NoError(t, err, "setting up the firs dkg was not successful")
 
+	t.Log("setup done")
+
 	// Encrypt a message with the old committee public key. The new committee
 	// should be able to decrypt it successfully
 	message := []byte("Hello world")
@@ -78,11 +76,11 @@ func TestResharing_minoch(t *testing.T) {
 
 	// Setting up the second dkg nCommon is the number of nodes that are common
 	// between the new and the old committee.
-	nCommon := 50
+	nCommon := 5
 
 	// The number of new added nodes. the new committee should have nCommon+nNew
-	// nodes in totatl.
-	nNew := 50
+	// nodes in total.
+	nNew := 10
 	thresholdNew := nCommon + nNew
 	minosNew := make([]mino.Mino, nNew+nCommon)
 	dkgsNew := make([]dkg.DKG, nNew+nCommon)
@@ -148,7 +146,8 @@ func TestResharing_minoch(t *testing.T) {
 		newPubKey.Equal(oldPubKey)
 		decrypted, err := actorNew.Decrypt(K, C)
 		require.NoError(t, err, "decryption was not successful")
-		require.Equal(t, message, decrypted, "the new committee should be able to decrypt the messages encrypted by the old committee")
+		require.Equal(t, message, decrypted, "the new committee should be able "+
+			"to decrypt the messages encrypted by the old committee")
 	}
 
 }
@@ -181,7 +180,8 @@ func TestResharing_minogrpc(t *testing.T) {
 	// Initializing the pedersen
 	for i, mino := range minosOld {
 		for _, m := range minosOld {
-			mino.(*minogrpc.Minogrpc).GetCertificateStore().Store(m.GetAddress(), m.(*minogrpc.Minogrpc).GetCertificateChain())
+			mino.(*minogrpc.Minogrpc).GetCertificateStore().Store(m.GetAddress(),
+				m.(*minogrpc.Minogrpc).GetCertificateChain())
 		}
 
 		dkg, pubkey := NewPedersen(mino.(*minogrpc.Minogrpc))
@@ -211,8 +211,8 @@ func TestResharing_minogrpc(t *testing.T) {
 	require.NoError(t, err, "encrypting the message was not successful")
 	require.Len(t, remainder, 0)
 
-	// Setting up the second dkg
-	// nCommon is the number of nodes that are common between the new and the old committee
+	// Setting up the second dkg. nCommon is the number of nodes that are common
+	// between the new and the old committee
 	nCommon := 5
 
 	// The number of new added nodes. the new committee should have nCommon+nNew
@@ -255,12 +255,16 @@ func TestResharing_minogrpc(t *testing.T) {
 	// a pedersen
 	for i, mino := range minosNew[nCommon:] {
 		for _, m := range minosNew {
-			mino.(*minogrpc.Minogrpc).GetCertificateStore().Store(m.GetAddress(), m.(*minogrpc.Minogrpc).GetCertificateChain())
-			m.(*minogrpc.Minogrpc).GetCertificateStore().Store(mino.GetAddress(), mino.(*minogrpc.Minogrpc).GetCertificateChain())
+			mino.(*minogrpc.Minogrpc).GetCertificateStore().Store(m.GetAddress(),
+				m.(*minogrpc.Minogrpc).GetCertificateChain())
+			m.(*minogrpc.Minogrpc).GetCertificateStore().Store(mino.GetAddress(),
+				mino.(*minogrpc.Minogrpc).GetCertificateChain())
 		}
 		for _, m := range minosOld[nCommon:] {
-			mino.(*minogrpc.Minogrpc).GetCertificateStore().Store(m.GetAddress(), m.(*minogrpc.Minogrpc).GetCertificateChain())
-			m.(*minogrpc.Minogrpc).GetCertificateStore().Store(mino.GetAddress(), mino.(*minogrpc.Minogrpc).GetCertificateChain())
+			mino.(*minogrpc.Minogrpc).GetCertificateStore().Store(m.GetAddress(),
+				m.(*minogrpc.Minogrpc).GetCertificateChain())
+			m.(*minogrpc.Minogrpc).GetCertificateStore().Store(mino.GetAddress(),
+				mino.(*minogrpc.Minogrpc).GetCertificateChain())
 		}
 		dkg, pubkey := NewPedersen(mino.(*minogrpc.Minogrpc))
 		dkgsNew[i+nCommon] = dkg
@@ -297,7 +301,8 @@ func TestResharing_minogrpc(t *testing.T) {
 		newPubKey.Equal(oldPubKey)
 		decrypted, err := actorNew.Decrypt(K, C)
 		require.NoError(t, err, "decryption was not successful")
-		require.Equal(t, message, decrypted, "the new committee should be able to decrypt the messages encrypted by the old committee")
+		require.Equal(t, message, decrypted, "the new committee should be able "+
+			"to decrypt the messages encrypted by the old committee")
 	}
 }
 
@@ -426,7 +431,8 @@ func TestResharingTwice(t *testing.T) {
 		newPubKey.Equal(oldPubKey)
 		decrypted, err := actorNew.Decrypt(K, C)
 		require.NoError(t, err, "decryption was not successful")
-		require.Equal(t, message, decrypted, "the new committee should be able to decrypt the messages encrypted by the old committee")
+		require.Equal(t, message, decrypted, "the new committee should be able "+
+			"to decrypt the messages encrypted by the old committee")
 	}
 
 	// Setting up the third dkg
@@ -501,7 +507,8 @@ func TestResharingTwice(t *testing.T) {
 		newPubKey.Equal(oldPubKey)
 		decrypted, err := actorNew.Decrypt(K, C)
 		require.NoError(t, err, "decryption was not successful")
-		require.Equal(t, message, decrypted, "the new committee should be able to decrypt the messages encrypted by the old committee")
+		require.Equal(t, message, decrypted, "the new committee should be able "+
+			"to decrypt the messages encrypted by the old committee")
 	}
 
 }

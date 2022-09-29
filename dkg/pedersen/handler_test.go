@@ -27,8 +27,9 @@ func TestHandler_Stream(t *testing.T) {
 		fake.NewRecvMsg(fake.NewAddress(0), types.Deal{}),
 		fake.NewRecvMsg(fake.NewAddress(0), types.DecryptRequest{}),
 	)
+
 	err = h.Stream(fake.Sender{}, receiver)
-	require.EqualError(t, err, "DKG is running")
+	require.EqualError(t, err, "bad state: unexpected state: Initial != one of [Certified]")
 
 	h.startRes.distrKey = suite.Point()
 	h.startRes.participants = []mino.Address{fake.NewAddress(0)}
@@ -36,13 +37,15 @@ func TestHandler_Stream(t *testing.T) {
 	receiver = fake.NewReceiver(
 		fake.NewRecvMsg(fake.NewAddress(0), types.DecryptRequest{C: suite.Point()}),
 	)
-	h.running = false
+	h.startRes.dkgState = certified
+
 	err = h.Stream(fake.NewBadSender(), receiver)
 	require.EqualError(t, err, fake.Err("got an error while sending the decrypt reply"))
 
 	receiver = fake.NewReceiver(
 		fake.NewRecvMsg(fake.NewAddress(0), fake.Message{}),
 	)
+
 	err = h.Stream(fake.Sender{}, receiver)
 	require.EqualError(t, err, "expected Start message, decrypt request or Deal as first message, got: fake.Message")
 }
@@ -110,7 +113,7 @@ func TestHandler_CertifyCanSucceed(t *testing.T) {
 	require.NoError(t, err)
 
 	h := Handler{
-		startRes: &state{},
+		startRes: &state{dkgState: sharing},
 		dkg:      dkg,
 	}
 
@@ -131,7 +134,7 @@ func TestHandler_CertifyCanSucceed(t *testing.T) {
 	responses.push(msg)
 
 	h.dkg = dkg
-	err = h.certify(context.Background(), responses, fake.NewBadSender())
+	err = h.certify(context.Background(), responses, 1)
 	require.NoError(t, err)
 }
 
@@ -144,7 +147,7 @@ func TestHandler_Certify_Ctx_Fail(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := h.certify(ctx, newCryChan[types.Response](1), nil)
+	err := h.certify(ctx, newCryChan[types.Response](1), 1)
 	require.EqualError(t, err, "context done: context canceled")
 }
 
@@ -186,7 +189,7 @@ func TestHandler_HandleDeal(t *testing.T) {
 			participants: []mino.Address{fake.NewAddress(0)},
 		},
 	}
-	err = h.handleDeal(context.Background(), dealMsg, fake.NewBadSender())
+	err = h.handleDeal(context.Background(), dealMsg, fake.NewBadSender(), h.startRes.GetParticipants())
 	require.EqualError(t, err, fake.Err("failed to send response to 'fake.Address[0]'"))
 }
 
@@ -232,7 +235,7 @@ func TestHandler_HandleDeal_Ctx_Fail(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.TODO())
 	cancel()
 
-	err = h.handleDeal(ctx, dealMsg, noSender{})
+	err = h.handleDeal(ctx, dealMsg, noSender{}, h.startRes.GetParticipants())
 	require.EqualError(t, err, "context done: context canceled")
 }
 
