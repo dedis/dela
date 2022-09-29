@@ -7,6 +7,7 @@ package main
 import (
 	"go/ast"
 	"strings"
+	"unicode/utf8"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -70,9 +71,9 @@ fileLoop:
 					if strings.HasPrefix(line, "// http://") || strings.HasPrefix(line, "// https://") {
 						continue
 					}
-					if len(line) > MaxLen {
+					if utf8.RuneCountInString(line) > MaxLen {
 						pass.Reportf(c.Pos(), "Comment too long: %s (%d)",
-							line, len(line))
+							line, utf8.RuneCountInString(line))
 					}
 					if strings.HasPrefix(line, NoLint) {
 						// Skip next comment for block comment.
