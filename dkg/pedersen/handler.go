@@ -89,7 +89,7 @@ func (c *cryChan[T]) Len() int {
 //	┌───────┐          ┌───────┐
 //	│Initial├─────────►│Sharing│
 //	└───┬───┘          └───┬───┘
-//		│                  │
+//	    │                  │
 //	┌───▼─────┬─────►┌─────▼───┐
 //	│Resharing│      │Certified│
 //	└─────────┘◄─────┴─────────┘
@@ -304,11 +304,6 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 		switch msg := msg.(type) {
 
 		case types.Start:
-			err = h.startRes.switchState(sharing)
-			if err != nil {
-				return xerrors.Errorf("failed to switch state: %v", err)
-			}
-
 			err = h.start(globalCtx, msg, deals, responses, from, out)
 			if err != nil {
 				return xerrors.Errorf("failed to start: %v", err)
@@ -326,7 +321,7 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 			}
 
 		case types.Deal:
-			err = h.startRes.checkState(initial, sharing, resharing)
+			err = h.startRes.checkState(initial, sharing, certified, resharing)
 			if err != nil {
 				return xerrors.Errorf("bad state: %v", err)
 			}
@@ -395,6 +390,11 @@ func (h *Handler) handleDecrypt(out mino.Sender, msg types.DecryptRequest,
 // function handles the DKG creation protocol.
 func (h *Handler) start(ctx context.Context, start types.Start, deals cryChan[types.Deal],
 	resps cryChan[types.Response], from mino.Address, out mino.Sender) error {
+
+	err := h.startRes.switchState(sharing)
+	if err != nil {
+		return xerrors.Errorf("failed to switch state: %v", err)
+	}
 
 	if len(start.GetAddresses()) != len(start.GetPublicKeys()) {
 		return xerrors.Errorf("there should be as many participants as "+
@@ -656,34 +656,29 @@ func (h *Handler) handleDeal(ctx context.Context, msg types.Deal, out mino.Sende
 		}
 	}
 
-	dela.Logger.Debug().Msgf("%s is certified", h.me)
-
 	return nil
 }
 
 func (h *Handler) announceDkgPublicKey(isCommonNode bool, out mino.Sender, from mino.Address) error {
-	// 6. Send back the public DKG key
+	// Send back the public DKG key
 
-	var publicKey kyber.Point
-
-	isOldNode := h.startRes.GetDistKey() != nil
-	isNewNode := !isOldNode
+	publicKey := h.startRes.GetDistKey()
 
 	// if the node is new or a common node it should update its state
-	if isNewNode || isCommonNode {
+	if publicKey == nil || isCommonNode {
 		distrKey, err := h.dkg.DistKeyShare()
 		if err != nil {
 			return xerrors.Errorf("failed to get distr key: %v", err)
 		}
+
 		publicKey = distrKey.Public()
-		// 7. Update the state before sending to acknowledgement to the
+		// Update the state before sending to acknowledgement to the
 		// orchestrator, so that it can process decrypt requests right away.
+
 		h.startRes.SetDistKey(distrKey.Public())
 		h.Lock()
 		h.privShare = distrKey.PriShare()
 		h.Unlock()
-	} else {
-		publicKey = h.startRes.GetDistKey()
 	}
 
 	// all the old, new and common nodes should announce their public key to the
@@ -893,7 +888,7 @@ func (h *Handler) receiveDealsResharing(ctx context.Context, isCommonNode bool, 
 
 	// we find the union of the old and new address sets to aviod from sending a
 	// message to the common nodes multiple times
-	addrsAll := unionOfTwoSlices(addrsNew, addrsOld)
+	addrsAll := merge(addrsNew, addrsOld)
 
 	for numReceivedDeals < expectedDeals {
 		reshare, err := reshares.pop(ctx)
@@ -938,13 +933,10 @@ func (h *Handler) receiveDealsResharing(ctx context.Context, isCommonNode bool, 
 	return nil
 }
 
-///////// auxiliary functions
-
 // isInSlice gets an address and a slice of addresses and returns true if that
-// address is in the slice. This function is called for cheking whether an old
-// committee member is in the new commmitte as well or not
+// address is in the slice. This function is called for checking whether an old
+// committee member is in the new committee as well or not
 func isInSlice(addr mino.Address, addrs []mino.Address) bool {
-
 	for _, other := range addrs {
 		if addr.Equal(other) {
 			return true
@@ -954,9 +946,9 @@ func isInSlice(addr mino.Address, addrs []mino.Address) bool {
 	return false
 }
 
-// unionOfTwoSlices gets the list of the old committee members and new committee
+// merge gets the list of the old committee members and new committee
 // members and returns the union.
-func unionOfTwoSlices(addrsSlice1 []mino.Address, addrsSlice2 []mino.Address) []mino.Address {
+func merge(addrsSlice1 []mino.Address, addrsSlice2 []mino.Address) []mino.Address {
 	addrsAll := addrsSlice1
 
 	for _, other := range addrsSlice2 {

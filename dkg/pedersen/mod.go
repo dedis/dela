@@ -288,6 +288,7 @@ func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
 		addrsNew = append(addrsNew, addrIter.GetNext())
 
 		pubkey := pubkeyIter.GetNext()
+
 		edKey, ok := pubkey.(ed25519.PublicKey)
 		if !ok {
 			return xerrors.Errorf("expected ed25519.PublicKey, got '%T'", pubkey)
@@ -297,13 +298,15 @@ func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
 	}
 
 	// Get the union of the new members and the old members
-	addrsAll := unionOfTwoSlices(a.startRes.GetParticipants(), addrsNew)
+	addrsAll := merge(a.startRes.GetParticipants(), addrsNew)
 	players := mino.NewAddresses(addrsAll...)
 
 	ctx, cancel := context.WithTimeout(context.Background(), resharingTimeout)
 	defer cancel()
 
 	ctx = context.WithValue(ctx, tracing.ProtocolKey, protocolNameResharing)
+
+	dela.Logger.Info().Msgf("resharing with the following participants: %v", addrsAll)
 
 	sender, receiver, err := a.rpc.Stream(ctx, players)
 	if err != nil {
@@ -315,33 +318,39 @@ func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
 
 	// We don't need to send the old threshold or old public keys to the old or
 	// common nodes
-	messageOld := types.NewResharingRequest(thresholdNew, 0, addrsNew, nil, pubkeysNew, nil)
+	reshare := types.NewResharingRequest(thresholdNew, 0, addrsNew, nil, pubkeysNew, nil)
+
+	dela.Logger.Info().Msgf("resharing to old participants: %v",
+		a.startRes.GetParticipants())
 
 	// Send the resharing request to the old and common nodes
-	err = <-sender.Send(messageOld, a.startRes.GetParticipants()...)
+	err = <-sender.Send(reshare, a.startRes.GetParticipants()...)
 	if err != nil {
 		return xerrors.Errorf("failed to send resharing request: %v", err)
 	}
 
 	// First find the set of new nodes that are not common between the old and
 	// new committee
-	addrsNewNotCommon := subtractOfTwoSlices(addrsNew, a.startRes.GetParticipants())
+	newParticipants := substract(addrsNew, a.startRes.GetParticipants())
 
 	// Then create a resharing request message for them. We should send the old
 	// threshold and old public keys to them
-	messageNew := types.NewResharingRequest(thresholdNew, thresholdOld, addrsNew, a.startRes.GetParticipants(), pubkeysNew, pubkeysOld)
+	reshare = types.NewResharingRequest(thresholdNew, thresholdOld, addrsNew,
+		a.startRes.GetParticipants(), pubkeysNew, pubkeysOld)
+
+	dela.Logger.Info().Msgf("resharing to new participants: %v", newParticipants)
 
 	// Send the resharing request to the new but not common nodes
-	err = <-sender.Send(messageNew, addrsNewNotCommon...)
+	err = <-sender.Send(reshare, newParticipants...)
 	if err != nil {
 		return xerrors.Errorf("failed to send resharing request: %v", err)
 	}
 
 	dkgPubKeys := make([]kyber.Point, len(addrsAll))
+
 	// Wait for receiving the response from the new nodes
 	for i := 0; i < len(addrsAll); i++ {
-
-		_, msg, err := receiver.Recv(ctx)
+		src, msg, err := receiver.Recv(ctx)
 		if err != nil {
 			return xerrors.Errorf("stream stopped unexpectedly: %v", err)
 		}
@@ -349,23 +358,31 @@ func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
 		doneMsg, ok := msg.(types.StartDone)
 		if !ok {
 			return xerrors.Errorf("expected to receive a Done message, but "+
-				"go the following: %T", msg)
+				"got the following: %T, from %s", msg, src.String())
 		}
+
 		dkgPubKeys[i] = doneMsg.GetPublicKey()
 
+		dela.Logger.Debug().Str("from", src.String()).Msgf("received a done reply")
+
 		// This is a simple check that every node sends back the same DKG pub
-		// key. TODO: handle the situation where a pub key is not the same
+		// key.
+		// TODO: handle the situation where a pub key is not the same
 		if i != 0 && !dkgPubKeys[i-1].Equal(doneMsg.GetPublicKey()) {
 			return xerrors.Errorf("the public keys does not match: %v", dkgPubKeys)
 		}
 	}
+
+	dela.Logger.Info().Msgf("resharing done")
+
 	return nil
 }
 
 // Gets the list of the old committee members and new committee members and
 // returns the new committee members that are not common
-func subtractOfTwoSlices(addrsSlice1 []mino.Address, addrsSlice2 []mino.Address) []mino.Address {
-	var subtractedSlice []mino.Address
+func substract(addrsSlice1 []mino.Address, addrsSlice2 []mino.Address) []mino.Address {
+	var result []mino.Address
+
 	for _, addr1 := range addrsSlice1 {
 		exist := false
 		for _, addr2 := range addrsSlice2 {
@@ -374,9 +391,11 @@ func subtractOfTwoSlices(addrsSlice1 []mino.Address, addrsSlice2 []mino.Address)
 				break
 			}
 		}
+
 		if !exist {
-			subtractedSlice = append(subtractedSlice, addr1)
+			result = append(result, addr1)
 		}
 	}
-	return subtractedSlice
+
+	return result
 }

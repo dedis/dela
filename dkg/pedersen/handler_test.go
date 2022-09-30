@@ -64,6 +64,8 @@ func TestHandler_Start(t *testing.T) {
 	err := h.start(context.Background(), start, cryChan[types.Deal]{}, cryChan[types.Response]{}, from, fake.Sender{})
 	require.EqualError(t, err, "there should be as many participants as pubKey: 1 != 0")
 
+	h.startRes.dkgState = initial
+
 	start = types.NewStart(2, []mino.Address{fake.NewAddress(0), fake.NewAddress(1)}, []kyber.Point{pubKey, suite.Point()})
 
 	err = h.start(context.Background(), start, cryChan[types.Deal]{}, cryChan[types.Response]{}, from, fake.Sender{})

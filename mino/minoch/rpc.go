@@ -7,11 +7,11 @@ package minoch
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"math"
 	"sync"
 
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
@@ -175,7 +175,6 @@ func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, min
 
 			err := peer.rpcs[c.path].h.Stream(s, r)
 			if err != nil {
-				fmt.Println("Error:", err)
 				errs <- xerrors.Errorf("couldn't process: %v", err)
 			}
 		}(outs[addr.String()])
@@ -211,17 +210,22 @@ func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, min
 			case env := <-in:
 				for _, to := range env.to {
 					if to.(address).orchestrator {
+						// FIXME: use a crychan
 						select {
 						case orchRecv.out <- env:
 						default:
-							fmt.Println("FULL!! (orch)")
+							dela.Logger.Warn().Str("role", "orchestrator").
+								Str("to", to.String()).
+								Str("from", env.from.String()).Msg("full")
 							orchRecv.out <- env
 						}
 					} else {
 						select {
 						case outs[to.String()].out <- env:
 						default:
-							fmt.Println("FULL!!")
+							dela.Logger.Warn().Str("role", "orchestrator").
+								Str("to", to.String()).
+								Str("from", env.from.String()).Msg("full")
 							outs[to.String()].out <- env
 						}
 					}

@@ -135,7 +135,6 @@ func (f msgFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) 
 
 		m = Message{Start: &start}
 	case types.ResharingRequest:
-
 		resharingRequest, err := f.encodeResharingRequest(in)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't marshal public key: %v", err)
