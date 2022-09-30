@@ -257,11 +257,6 @@ func NewHandler(privKey kyber.Scalar, me mino.Address) *Handler {
 	}
 }
 
-var (
-	workerNum    = 2
-	wgBatchReply sync.WaitGroup
-)
-
 type job struct {
 	index int
 	cp    types.Ciphertext
@@ -365,7 +360,10 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 			return h.handleDecrypt(out, msg, from)
 
 		case types.VerifiableDecryptRequest:
-			dela.Logger.Trace().Msgf("%v received verifiable decrypt request from %v\n", h.me, from)
+			err = h.startRes.checkState(certified)
+			if err != nil {
+				return xerrors.Errorf("bad state: %v", err)
+			}
 
 			return h.handleVerifiableDecrypt(out, msg, from)
 
@@ -603,8 +601,8 @@ func (h *Handler) finalize(ctx context.Context, from mino.Address, out mino.Send
 
 	}
 
-	// Update the state before sending the acknowledgement to the
-	// orchestrator, so that it can process decrypt requests right away.
+	// Update the state before sending the acknowledgement to the orchestrator,
+	// so that it can process decrypt requests right away.
 	h.startRes.SetDistKey(distKey.Public())
 
 	h.Lock()
@@ -884,7 +882,9 @@ func (h *Handler) sendDealsResharing(ctx context.Context, out mino.Sender,
 
 // receiveDealsResharing is similar to receiveDeals except that it receives the
 // dealResharing. Only the new or common nodes call this function
-func (h *Handler) receiveDealsResharing(ctx context.Context, isCommonNode bool, resharingRequest types.StartResharing, out mino.Sender, reshares cryChan[types.Reshare]) error {
+func (h *Handler) receiveDealsResharing(ctx context.Context, isCommonNode bool,
+	resharingRequest types.StartResharing, out mino.Sender, reshares cryChan[types.Reshare]) error {
+
 	h.log.Trace().Msgf("%v is handling deals from other nodes", h.me)
 
 	addrsNew := resharingRequest.GetAddrsNew()
@@ -927,8 +927,7 @@ func (h *Handler) receiveDealsResharing(ctx context.Context, isCommonNode bool, 
 
 			newDkg, err := pedersen.NewDistKeyHandler(c)
 			if err != nil {
-				return xerrors.Errorf("failed to create the new dkg for %s: %v",
-					h.me, err)
+				return xerrors.Errorf("failed to create the new dkg for %s: %v", h.me, err)
 			}
 
 			h.dkg = newDkg
@@ -938,7 +937,6 @@ func (h *Handler) receiveDealsResharing(ctx context.Context, isCommonNode bool, 
 
 		err = h.handleDeal(ctx, deal, out, addrsAll)
 		if err != nil {
-			h.log.Warn().Msgf("%s failed to handle deal: %v", h.me, err)
 			return xerrors.Errorf("failed to handle received deal: %v", err)
 		}
 
@@ -952,17 +950,11 @@ func (h *Handler) receiveDealsResharing(ctx context.Context, isCommonNode bool, 
 
 func (h *Handler) handleVerifiableDecrypt(out mino.Sender, msg types.VerifiableDecryptRequest,
 	from mino.Address) error {
-	dela.Logger.Trace().Msgf(
-		"%v received verifiable decrypt request from %v\n", h.me, from,
-	)
-	if !h.startRes.Done() {
-		return xerrors.Errorf(
-			"you must first initialize DKG. Did you " +
-				"call setup() first?",
-		)
-	}
+
 	ciphertexts := msg.GetCiphertexts()
 	batchsize := len(ciphertexts)
+
+	wgBatchReply := sync.WaitGroup{}
 
 	shareAndProofs := make([]types.ShareAndProof, batchsize)
 	jobChan := make(chan job, batchsize)
@@ -1011,8 +1003,9 @@ func (h *Handler) handleVerifiableDecrypt(out mino.Sender, msg types.VerifiableD
 	return nil
 }
 
-// this function verifies the encryption proofs
-// a discription can be found in https://arxiv.org/pdf/2205.08529.pdf / section 5.4 Protocol / ster 3: key reconstruction
+// checkEncryptionProof verifies the encryption proofs.
+//
+// See https://arxiv.org/pdf/2205.08529.pdf / section 5.4 Protocol / step 3
 func (h *Handler) checkEncryptionProof(cp types.Ciphertext) error {
 
 	tmp1 := suite.Point().Mul(cp.F, nil)
@@ -1036,54 +1029,54 @@ func (h *Handler) checkEncryptionProof(cp types.Ciphertext) error {
 	return nil
 }
 
-// this function generates the decryption shares as well as the decryption proof
-// a discription can be found in https://arxiv.org/pdf/2205.08529.pdf / section 5.4 Protocol / ster 3: key reconstruction
-func (h *Handler) verifiableDecryption(jptr *job) {
+// verifiableDecryption generates the decryption shares as well as the
+// decryption proof.
+//
+// See https://arxiv.org/pdf/2205.08529.pdf / section 5.4 Protocol / ster 3
+func (h *Handler) verifiableDecryption(jptr *job) error {
 	cp := jptr.cp
+
 	err := h.checkEncryptionProof(cp)
 	if err != nil {
-		dela.Logger.Error().Msgf(
-			"%v encryption proof verification failed for index %d\n", h.me, jptr.index,
-		)
-		//return xerrors.Errorf("got an error while sending the decrypt "+
-		//"request: %v", err)
-	} else {
-		h.RLock()
-		// ui
-		Ui := suite.Point().Mul(h.privShare.V, cp.K) // ui in the paper
-		h.RUnlock()
-		partial := suite.Point().Sub(cp.C, Ui) //share of this party. needed for decrypting
-		si := suite.Scalar().Pick(suite.RandomStream())
-		UHat := suite.Point().Mul(si, cp.K)
-		HHat := suite.Point().Mul(si, nil)
-		hash := sha256.New()
-		Ui.MarshalTo(hash)
-		UHat.MarshalTo(hash)
-		HHat.MarshalTo(hash)
-		Ei := suite.Scalar().SetBytes(hash.Sum(nil))
-		h.RLock()
-		Fi := suite.Scalar().Add(si, suite.Scalar().Mul(Ei, h.privShare.V))
-		Hi := suite.Point().Mul(h.privShare.V, nil)
-		h.RUnlock()
-
-		h.RLock()
-
-		sp := types.ShareAndProof{
-			V:  partial,
-			I:  int64(h.privShare.I),
-			Ui: Ui,
-			Ei: Ei,
-			Fi: Fi,
-			Hi: Hi,
-		}
-		h.RUnlock()
-		*jptr = job{
-			index: jptr.index,
-			cp:    jptr.cp,
-			sp:    sp,
-		}
+		return xerrors.Errorf("%v encryption proof verification failed for index %d\n", h.me, jptr.index)
 	}
 
+	h.RLock()
+	// ui
+	ui := suite.Point().Mul(h.privShare.V, cp.K) // ui in the paper
+	h.RUnlock()
+	partial := suite.Point().Sub(cp.C, ui) //share of this party. needed for decrypting
+	si := suite.Scalar().Pick(suite.RandomStream())
+	UHat := suite.Point().Mul(si, cp.K)
+	HHat := suite.Point().Mul(si, nil)
+	hash := sha256.New()
+	ui.MarshalTo(hash)
+	UHat.MarshalTo(hash)
+	HHat.MarshalTo(hash)
+	Ei := suite.Scalar().SetBytes(hash.Sum(nil))
+	h.RLock()
+	Fi := suite.Scalar().Add(si, suite.Scalar().Mul(Ei, h.privShare.V))
+	Hi := suite.Point().Mul(h.privShare.V, nil)
+	h.RUnlock()
+
+	h.RLock()
+	sp := types.ShareAndProof{
+		V:  partial,
+		I:  int64(h.privShare.I),
+		Ui: ui,
+		Ei: Ei,
+		Fi: Fi,
+		Hi: Hi,
+	}
+	h.RUnlock()
+
+	*jptr = job{
+		index: jptr.index,
+		cp:    jptr.cp,
+		sp:    sp,
+	}
+
+	return nil
 }
 
 // isInSlice gets an address and a slice of addresses and returns true if that

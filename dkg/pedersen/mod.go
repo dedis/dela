@@ -2,6 +2,7 @@ package pedersen
 
 import (
 	"crypto/sha256"
+	"runtime"
 	"sync"
 	"time"
 
@@ -36,6 +37,8 @@ var (
 	// ProtocolNameResharing denotes the value of the protocol span tag
 	// associated with the `dkg-resharing` protocol.
 	protocolNameResharing = "dkg-resharing"
+	// number of workers used to perform the encryption/decryption
+	workerNum = runtime.NumCPU()
 )
 
 const (
@@ -198,9 +201,11 @@ func (a *Actor) Encrypt(message []byte) (K, C kyber.Point, remainder []byte,
 	return K, C, remainder, nil
 }
 
-// Encrypt implements dkg.Actor. It uses the DKG public key to encrypt a
-// message and provide a zero knowledge proof that the encryption is done by this person
-// a discription can be found in https://arxiv.org/pdf/2205.08529.pdf / section 5.4 Protocol / ster 1: write transaction
+// VerifiableEncrypt implements dkg.Actor. It uses the DKG public key to encrypt
+// a message and provide a zero knowledge proof that the encryption is done by
+// this person.
+//
+// See https://arxiv.org/pdf/2205.08529.pdf / section 5.4 Protocol / step 1
 func (a *Actor) VerifiableEncrypt(message []byte, GBar kyber.Point) (ciphertext types.Ciphertext, remainder []byte,
 	err error) {
 
@@ -249,8 +254,6 @@ func (a *Actor) VerifiableEncrypt(message []byte, GBar kyber.Point) (ciphertext 
 
 // Decrypt implements dkg.Actor. It gets the private shares of the nodes and
 // decrypt the  message.
-// TODO: perform a re-encryption instead of gathering the private shares, which
-// should never happen.
 func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 
 	if !a.startRes.Done() {
@@ -321,12 +324,11 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 	return decryptedMessage, nil
 }
 
-// VerifiableDecrypt implements dkg.Actor. This function gets a batch of ciphertext and dends it to the nodes and then
-// receives the private shares of the nodes and decrypt the message. in addition it checks whether the decryption proofs are valid and returns the
-// a discription can be found in https://arxiv.org/pdf/2205.08529.pdf / section 5.4 Protocol / ster 3: key reconstruction
-// TODO: perform a re-encryption instead of gathering the private shares, which
-// should never happen.
-func (a *Actor) VerifiableDecrypt(ciphertexts []types.Ciphertext, workerNum int) ([][]byte, error) {
+// VerifiableDecrypt implements dkg.Actor. It does as Decrypt() but in addition
+// it checks whether the decryption proofs are valid.
+//
+// See https://arxiv.org/pdf/2205.08529.pdf / section 5.4 Protocol / step 3
+func (a *Actor) VerifiableDecrypt(ciphertexts []types.Ciphertext) ([][]byte, error) {
 
 	if !a.startRes.Done() {
 		return nil, xerrors.Errorf("you must first initialize DKG. " +
@@ -362,26 +364,29 @@ func (a *Actor) VerifiableDecrypt(ciphertexts []types.Ciphertext, workerNum int)
 	}
 
 	var respondArr []types.VerifiableDecryptReply
-	// active address keeps the addresses of the nodes that actively participate in the decryption process
+	// active address keeps the addresses of the nodes that actively participate
+	// in the decryption process
 	var activeAddrs []mino.Address
 	// receive decrypt reply from the nodes
+
 	for i := 0; i < len(addrs); i++ {
 		from, message, err := receiver.Recv(ctx)
 		dela.Logger.Debug().Msgf("received the %d th share from %v\n", i, from)
 
 		if err != nil {
 			return [][]byte{}, xerrors.Errorf("stream stopped unexpectedly: %v", err)
-		} else {
-
-			shareAndProof, ok := message.(types.VerifiableDecryptReply)
-			if !ok {
-				return [][]byte{}, xerrors.Errorf("got unexpected reply, expected "+
-					"%T but got: %T", shareAndProof, message)
-			}
-			respondArr = append(respondArr, shareAndProof)
-			activeAddrs = append(activeAddrs, addrs[i])
 		}
+
+		shareAndProof, ok := message.(types.VerifiableDecryptReply)
+		if !ok {
+			return [][]byte{}, xerrors.Errorf("got unexpected reply, expected "+
+				"%T but got: %T", shareAndProof, message)
+		}
+
+		respondArr = append(respondArr, shareAndProof)
+		activeAddrs = append(activeAddrs, addrs[i])
 	}
+
 	// the final decrypted message
 	decryptedMessage := make([][]byte, batchsize)
 
@@ -397,6 +402,7 @@ func (a *Actor) VerifiableDecrypt(ciphertexts []types.Ciphertext, workerNum int)
 	if batchsize < workerNum {
 		workerNum = batchsize
 	}
+
 	for i := 0; i < workerNum; i++ {
 		wgBatchReply.Add(1)
 
@@ -498,7 +504,7 @@ func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
 
 	// First find the set of new nodes that are not common between the old and
 	// new committee
-	newParticipants := substract(addrsNew, a.startRes.GetParticipants())
+	newParticipants := difference(addrsNew, a.startRes.GetParticipants())
 
 	// Then create a resharing request message for them. We should send the old
 	// threshold and old public keys to them
@@ -545,8 +551,9 @@ func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
 	return nil
 }
 
-// thif function verifies the decryption proof
-// a discription can be found in https://arxiv.org/pdf/2205.08529.pdf / section 5.4 Protocol / step 3: key reconstruction
+// checkDecryptionProof verifies the decryption proof.
+//
+// See https://arxiv.org/pdf/2205.08529.pdf / section 5.4 Protocol / step 3
 func checkDecryptionProof(sp types.ShareAndProof, K kyber.Point) error {
 
 	tmp1 := suite.Point().Mul(sp.Fi, K)
@@ -569,14 +576,14 @@ func checkDecryptionProof(sp types.ShareAndProof, K kyber.Point) error {
 	return nil
 }
 
-// Gets the list of the old committee members and new committee members and
-// returns the new committee members that are not common
-func substract(addrsSlice1 []mino.Address, addrsSlice2 []mino.Address) []mino.Address {
+// difference performs "el1 difference el2", i.e. it extracts all members of el1
+// that are not present in el2.
+func difference(el1 []mino.Address, el2 []mino.Address) []mino.Address {
 	var result []mino.Address
 
-	for _, addr1 := range addrsSlice1 {
+	for _, addr1 := range el1 {
 		exist := false
-		for _, addr2 := range addrsSlice2 {
+		for _, addr2 := range el2 {
 			if addr1.Equal(addr2) {
 				exist = true
 				break

@@ -436,7 +436,8 @@ func (req DecryptRequest) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
-// VerifiableDecryptRequest is a message sent to request a verifiable decryption.
+// VerifiableDecryptRequest is a message sent to request a verifiable
+// decryption.
 //
 // - implements serde.Message
 type VerifiableDecryptRequest struct {
@@ -444,7 +445,6 @@ type VerifiableDecryptRequest struct {
 }
 
 // NewVerifiableDecryptRequest creates a new verifiable decryption request.
-
 func NewVerifiableDecryptRequest(ciphertexts []Ciphertext) VerifiableDecryptRequest {
 	return VerifiableDecryptRequest{
 		ciphertexts: ciphertexts,
@@ -506,22 +506,22 @@ func (resp DecryptReply) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
-// VerifiableDecryptRequest is a message sent to request a verifiable decryption.
+// VerifiableDecryptReply is a message sent to request a verifiable
+// decryption.
 //
 // - implements serde.Message
 type VerifiableDecryptReply struct {
 	shareAndProof []ShareAndProof
 }
 
-// NewVerifiableDecryptRequest creates a new verifiable decryption request.
-
+// NewVerifiableDecryptReply creates a new verifiable decryption reply.
 func NewVerifiableDecryptReply(shareAndProof []ShareAndProof) VerifiableDecryptReply {
 	return VerifiableDecryptReply{
 		shareAndProof: shareAndProof,
 	}
 }
 
-// GetCiphertexts returns ciphertexts.
+// GetShareAndProof returns ShareAndProof.
 func (resp VerifiableDecryptReply) GetShareAndProof() []ShareAndProof {
 	return resp.shareAndProof
 }

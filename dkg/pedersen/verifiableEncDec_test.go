@@ -11,16 +11,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	_ "net/http/pprof"
-
-	"net/http"
-
 	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/dkg/pedersen/types"
 	"go.dedis.ch/dela/mino"
 
 	"go.dedis.ch/dela/mino/minoch"
-	_ "go.dedis.ch/dela/mino/minoch"
 	"go.dedis.ch/dela/mino/minogrpc"
 	"go.dedis.ch/dela/mino/router/tree"
 
@@ -33,22 +28,19 @@ func init() {
 }
 
 func Test_verifiableEncDec_minoch(t *testing.T) {
-
-	go func() {
-		log.Println(http.ListenAndServe("localhost:6060", nil))
-	}()
-	// setting up the dkg
-	n := 180
-	threshold := 180
-	batchSize := 100
-	workerNum := 8
+	// setup up the dkg
+	n := 18
+	threshold := n
+	batchSize := 10
 
 	minos := make([]mino.Mino, n)
 	dkgs := make([]dkg.DKG, n)
 	addrs := make([]mino.Address, n)
 
-	// creating GBar. we need a generator in order to follow the encryption and decryption protocol of https://arxiv.org/pdf/2205.08529.pdf /
-	// we take an agreed data among the participants and embed it as a point. the result is the generator that we are seeking
+	// Create GBar. we need a generator in order to follow the encryption and
+	// decryption protocol of https://arxiv.org/pdf/2205.08529.pdf / we take an
+	// agreed data among the participants and embed it as a point. the result is
+	// the generator that we are seeking
 	agreedData := make([]byte, 32)
 	_, err := rand.Read(agreedData)
 	require.NoError(t, err)
@@ -85,7 +77,7 @@ func Test_verifiableEncDec_minoch(t *testing.T) {
 	require.NoError(t, err)
 
 	fmt.Println("generating the message and encrypting it ...")
-	//generating random messages in batch and encrypt them
+	// generating random messages in batch and encrypt them
 	const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	keys := make([][]byte, batchSize)
 	var ciphertexts []types.Ciphertext
@@ -102,7 +94,7 @@ func Test_verifiableEncDec_minoch(t *testing.T) {
 
 	// decrypting the batch ciphertext message
 	fmt.Println("decrypting the ciphertext ...")
-	decrypted, err := actors[0].VerifiableDecrypt(ciphertexts, workerNum)
+	decrypted, err := actors[0].VerifiableDecrypt(ciphertexts)
 	require.NoError(t, err)
 	for i := 0; i < batchSize; i++ {
 		require.Equal(t, keys[i], decrypted[i])
@@ -111,14 +103,9 @@ func Test_verifiableEncDec_minoch(t *testing.T) {
 }
 
 func Test_verifiableEncDec_minogrpc(t *testing.T) {
+	// we want to time the decryption for different batch sizes with different
+	// number of nodes
 
-	go func() {
-		log.Println(http.ListenAndServe("localhost:6060", nil))
-	}()
-
-	// we want to time the decryption for different batch sizes with different number of nodes
-	// numWorkersSlice := []int{16, 16, 32, 64, 64, 64, 64}
-	// batchSizeSlice := []int{32, 64, 128, 256, 512, 1024, 2048}
 	numWorkersSlice := []int{8}
 	batchSizeSlice := []int{32}
 
@@ -130,15 +117,17 @@ func Test_verifiableEncDec_minogrpc(t *testing.T) {
 	log.SetOutput(wrt)
 
 	// setting up the dkg
-	n := 64
-	threshold := 64
+	n := 18
+	threshold := n
 
 	minos := make([]mino.Mino, n)
 	dkgs := make([]dkg.DKG, n)
 	addrs := make([]mino.Address, n)
 
-	// creating GBar. we need a generator in order to follow the encryption and decryption protocol of https://arxiv.org/pdf/2205.08529.pdf /
-	// we take an agreed data among the participants and embed it as a point. the result is the generator that we are seeking
+	// Create GBar. we need a generator in order to follow the encryption and
+	// decryption protocol of https://arxiv.org/pdf/2205.08529.pdf. We take an
+	// agreed data among the participants and embed it as a point. the result is
+	// the generator that we are seeking.
 	agreedData := make([]byte, 32)
 	_, err = rand.Read(agreedData)
 	require.NoError(t, err)
@@ -161,7 +150,8 @@ func Test_verifiableEncDec_minogrpc(t *testing.T) {
 
 	for i, mino := range minos {
 		for _, m := range minos {
-			mino.(*minogrpc.Minogrpc).GetCertificateStore().Store(m.GetAddress(), m.(*minogrpc.Minogrpc).GetCertificateChain())
+			mino.(*minogrpc.Minogrpc).GetCertificateStore().Store(m.GetAddress(),
+				m.(*minogrpc.Minogrpc).GetCertificateChain())
 		}
 		dkg, pubkey := NewPedersen(mino.(*minogrpc.Minogrpc))
 		dkgs[i] = dkg
@@ -183,7 +173,7 @@ func Test_verifiableEncDec_minogrpc(t *testing.T) {
 	require.NoError(t, err)
 	setupTime := time.Since(start)
 
-	//generating random messages in batch and encrypt them
+	// generating random messages in batch and encrypt them
 	for i, batchSize := range batchSizeSlice {
 		fmt.Printf("=== starting the process with batch size = %d === \n", batchSize)
 		workerNum = numWorkersSlice[i]
@@ -201,16 +191,16 @@ func Test_verifiableEncDec_minogrpc(t *testing.T) {
 			require.Len(t, remainder, 0)
 			ciphertexts = append(ciphertexts, ciphertext)
 		}
-		// decryopting the batch ciphertext message
+		// decrypting the batch ciphertext message
 		fmt.Println("decrypting the batch ...")
 		start = time.Now()
-		_, err := actors[0].VerifiableDecrypt(ciphertexts, workerNum)
+		decrypted, err := actors[0].VerifiableDecrypt(ciphertexts)
 		decryptionTime := time.Since(start)
 		require.NoError(t, err)
 
-		// for i := 0; i < batchSize; i++ {
-		// 	require.Equal(t, keys[i], decrypted[i])
-		// }
+		for i := 0; i < batchSize; i++ {
+			require.Equal(t, keys[i], decrypted[i])
+		}
 
 		log.Printf("n = %d , batchSize = %d ,  workerNum = %d,decryption time = %v s, throughput =  %v tx/s , dkg setup time = %v s",
 			n, batchSize, workerNum, decryptionTime.Seconds(), float32(batchSize)/float32(decryptionTime.Seconds()), float32(setupTime.Seconds()))
