@@ -17,6 +17,9 @@ import (
 	"golang.org/x/xerrors"
 )
 
+// bufSize defines the buffer size of channels used to store messages
+var bufSize = 10000
+
 // Envelope is the wrapper to send messages through streams.
 type Envelope struct {
 	to      []mino.Address
@@ -142,8 +145,6 @@ func (c RPC) runFilters(req mino.Request) bool {
 // as the router for all the messages. They are redirected to the channel
 // associated with the address.
 func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, mino.Receiver, error) {
-	bufSize := 10000
-
 	in := make(chan Envelope, bufSize)
 	out := make(chan Envelope, bufSize)
 	errs := make(chan error, 1000)
@@ -209,25 +210,18 @@ func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, min
 				return
 			case env := <-in:
 				for _, to := range env.to {
-					if to.(address).orchestrator {
-						// FIXME: use a crychan
-						select {
-						case orchRecv.out <- env:
-						default:
-							dela.Logger.Warn().Str("role", "orchestrator").
-								Str("to", to.String()).
-								Str("from", env.from.String()).Msg("full")
-							orchRecv.out <- env
-						}
-					} else {
-						select {
-						case outs[to.String()].out <- env:
-						default:
-							dela.Logger.Warn().Str("role", "orchestrator").
-								Str("to", to.String()).
-								Str("from", env.from.String()).Msg("full")
-							outs[to.String()].out <- env
-						}
+					output := orchRecv.out
+					if !to.(address).orchestrator {
+						output = outs[to.String()].out
+					}
+
+					// FIXME: use a crychan
+					select {
+					case output <- env:
+					default:
+						dela.Logger.Warn().Str("to", to.String()).
+							Str("from", env.from.String()).Msg("full")
+						output <- env
 					}
 				}
 			}
