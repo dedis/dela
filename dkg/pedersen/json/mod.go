@@ -134,7 +134,7 @@ func (f msgFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) 
 		}
 
 		m = Message{Start: &start}
-	case types.ResharingRequest:
+	case types.StartResharing:
 		resharingRequest, err := f.encodeResharingRequest(in)
 		if err != nil {
 			return nil, xerrors.Errorf("couldn't marshal public key: %v", err)
@@ -394,7 +394,7 @@ func (f msgFormat) decodeStart(ctx serde.Context, start *Start) (serde.Message, 
 	return s, nil
 }
 
-func (f msgFormat) encodeResharingRequest(in types.ResharingRequest) (ResharingRequest, error) {
+func (f msgFormat) encodeResharingRequest(in types.StartResharing) (ResharingRequest, error) {
 
 	addrsNew := make([]Address, len(in.GetAddrsNew()))
 	for i, addr := range in.GetAddrsNew() {
@@ -489,7 +489,7 @@ func (f msgFormat) decodeResharingRequest(ctx serde.Context, resharingRequest *R
 		pubkeysOld[i] = point
 	}
 
-	s := types.NewResharingRequest(resharingRequest.TNew, resharingRequest.TOld, addrsNew,
+	s := types.NewStartResharing(resharingRequest.TNew, resharingRequest.TOld, addrsNew,
 		addrsOld, pubkeysNew, pubkeysOld)
 
 	return s, nil

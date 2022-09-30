@@ -318,7 +318,7 @@ func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
 
 	// We don't need to send the old threshold or old public keys to the old or
 	// common nodes
-	reshare := types.NewResharingRequest(thresholdNew, 0, addrsNew, nil, pubkeysNew, nil)
+	reshare := types.NewStartResharing(thresholdNew, 0, addrsNew, nil, pubkeysNew, nil)
 
 	dela.Logger.Info().Msgf("resharing to old participants: %v",
 		a.startRes.GetParticipants())
@@ -335,7 +335,7 @@ func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
 
 	// Then create a resharing request message for them. We should send the old
 	// threshold and old public keys to them
-	reshare = types.NewResharingRequest(thresholdNew, thresholdOld, addrsNew,
+	reshare = types.NewStartResharing(thresholdNew, thresholdOld, addrsNew,
 		a.startRes.GetParticipants(), pubkeysNew, pubkeysOld)
 
 	dela.Logger.Info().Msgf("resharing to new participants: %v", newParticipants)

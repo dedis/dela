@@ -65,15 +65,15 @@ func (s Start) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
-// ResharingRequest is the message the initiator of the resharing protocol
+// StartResharing is the message the initiator of the resharing protocol
 // should send to all the old nodes.
 //
 // - implements serde.Message
-type ResharingRequest struct {
+type StartResharing struct {
 	// New threshold
-	TNew int
+	tNew int
 	// Old threshold
-	TOld int
+	tOld int
 	// The full list of addresses that will participate in the new DKG
 	addrsNew []mino.Address
 	// The full list of addresses of old dkg members
@@ -84,12 +84,12 @@ type ResharingRequest struct {
 	pubkeysOld []kyber.Point
 }
 
-// NewResharingRequest creates a new start message.
-func NewResharingRequest(TNew int, TOld int, addrsNew []mino.Address, addrsOld []mino.Address,
-	pubkeysNew []kyber.Point, pubkeysOld []kyber.Point) ResharingRequest {
-	return ResharingRequest{
-		TNew:       TNew,
-		TOld:       TOld,
+// NewStartResharing creates a new start resharing message.
+func NewStartResharing(tNew int, tOld int, addrsNew []mino.Address, addrsOld []mino.Address,
+	pubkeysNew []kyber.Point, pubkeysOld []kyber.Point) StartResharing {
+	return StartResharing{
+		tNew:       tNew,
+		tOld:       tOld,
 		addrsNew:   addrsNew,
 		addrsOld:   addrsOld,
 		pubkeysNew: pubkeysNew,
@@ -98,38 +98,38 @@ func NewResharingRequest(TNew int, TOld int, addrsNew []mino.Address, addrsOld [
 }
 
 // GetTNew returns the new threshold.
-func (r ResharingRequest) GetTNew() int {
-	return r.TNew
+func (r StartResharing) GetTNew() int {
+	return r.tNew
 }
 
 // GetTOld returns the old threshold.
-func (r ResharingRequest) GetTOld() int {
-	return r.TOld
+func (r StartResharing) GetTOld() int {
+	return r.tOld
 }
 
 // GetAddrsNew returns the list of new addresses.
-func (r ResharingRequest) GetAddrsNew() []mino.Address {
+func (r StartResharing) GetAddrsNew() []mino.Address {
 	return append([]mino.Address{}, r.addrsNew...)
 }
 
 // GetAddrsOld returns the list of old addresses.
-func (r ResharingRequest) GetAddrsOld() []mino.Address {
+func (r StartResharing) GetAddrsOld() []mino.Address {
 	return append([]mino.Address{}, r.addrsOld...)
 }
 
 // GetPubkeysNew returns the list of new public keys.
-func (r ResharingRequest) GetPubkeysNew() []kyber.Point {
+func (r StartResharing) GetPubkeysNew() []kyber.Point {
 	return append([]kyber.Point{}, r.pubkeysNew...)
 }
 
 // GetPubkeysOld returns the list of old public keys.
-func (r ResharingRequest) GetPubkeysOld() []kyber.Point {
+func (r StartResharing) GetPubkeysOld() []kyber.Point {
 	return append([]kyber.Point{}, r.pubkeysOld...)
 }
 
 // Serialize implements serde.Message. It looks up the format and returns the
 // serialized data for the resharingRequest message.
-func (r ResharingRequest) Serialize(ctx serde.Context) ([]byte, error) {
+func (r StartResharing) Serialize(ctx serde.Context) ([]byte, error) {
 	format := msgFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, r)

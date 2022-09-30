@@ -309,7 +309,7 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 				return xerrors.Errorf("failed to start: %v", err)
 			}
 
-		case types.ResharingRequest:
+		case types.StartResharing:
 			err := h.startRes.switchState(resharing)
 			if err != nil {
 				return xerrors.Errorf("failed to switch state: %v", err)
@@ -698,7 +698,7 @@ func (h *Handler) announceDkgPublicKey(isCommonNode bool, out mino.Sender, from 
 // reshare handles the resharing request. Acts differently for the new
 // and old and common nodes
 func (h *Handler) reshare(ctx context.Context, out mino.Sender,
-	from mino.Address, msg types.ResharingRequest, reshares cryChan[types.Reshare], resps cryChan[types.Response]) error {
+	from mino.Address, msg types.StartResharing, reshares cryChan[types.Reshare], resps cryChan[types.Response]) error {
 
 	addrsNew := msg.GetAddrsNew()
 
@@ -720,7 +720,7 @@ func (h *Handler) reshare(ctx context.Context, out mino.Sender,
 // doReshare is called when the node has received its reshare message. Note that
 // we might have already received some deals from other nodes in the meantime.
 // The function handles the DKG resharing protocol.
-func (h *Handler) doReshare(ctx context.Context, resharingRequest types.ResharingRequest,
+func (h *Handler) doReshare(ctx context.Context, resharingRequest types.StartResharing,
 	from mino.Address, out mino.Sender, reshares cryChan[types.Reshare], resps cryChan[types.Response]) error {
 
 	h.log.Info().Msgf("resharing with %v", resharingRequest.GetAddrsNew())
@@ -786,18 +786,18 @@ func (h *Handler) doReshare(ctx context.Context, resharingRequest types.Resharin
 		// Save the specifications of the new committee in the handler state
 		h.startRes.SetParticipants(resharingRequest.GetAddrsNew())
 		h.startRes.SetPublicKeys(resharingRequest.GetPubkeysNew())
-		h.startRes.SetThreshold(resharingRequest.TNew)
+		h.startRes.SetThreshold(resharingRequest.GetTNew())
 	}
 
 	// Note that a node can be old and common
 	if isOldNode {
-		expectedResponses = (resharingRequest.TNew) * len(h.startRes.GetParticipants())
+		expectedResponses = (resharingRequest.GetTNew()) * len(h.startRes.GetParticipants())
 	}
 	if isCommonNode {
-		expectedResponses = (resharingRequest.TNew - 1) * len(addrsOld)
+		expectedResponses = (resharingRequest.GetTNew() - 1) * len(addrsOld)
 	}
 	if isNewNode {
-		expectedResponses = (resharingRequest.TNew - 1) * resharingRequest.TOld
+		expectedResponses = (resharingRequest.GetTNew() - 1) * resharingRequest.GetTOld()
 	}
 
 	// 4. Certify
@@ -867,7 +867,7 @@ func (h *Handler) sendDealsResharing(ctx context.Context, out mino.Sender,
 
 // receiveDealsResharing is similar to receiveDeals except that it receives the
 // dealResharing. Only the new or common nodes call this function
-func (h *Handler) receiveDealsResharing(ctx context.Context, isCommonNode bool, resharingRequest types.ResharingRequest, out mino.Sender, reshares cryChan[types.Reshare]) error {
+func (h *Handler) receiveDealsResharing(ctx context.Context, isCommonNode bool, resharingRequest types.StartResharing, out mino.Sender, reshares cryChan[types.Reshare]) error {
 	h.log.Trace().Msgf("%v is handling deals from other nodes", h.me)
 
 	addrsNew := resharingRequest.GetAddrsNew()
