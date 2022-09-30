@@ -144,6 +144,9 @@ func (c RPC) runFilters(req mino.Request) bool {
 // Stream implements mino.RPC. It simulates the stream by using the orchestrator
 // as the router for all the messages. They are redirected to the channel
 // associated with the address.
+// Stream implements mino.RPC. It simulates the stream by using the orchestrator
+// as the router for all the messages. They are redirected to the channel
+// associated with the address.
 func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, mino.Receiver, error) {
 	in := make(chan Envelope, bufSize)
 	out := make(chan Envelope, bufSize)

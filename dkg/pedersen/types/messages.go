@@ -8,6 +8,31 @@ import (
 	"golang.org/x/xerrors"
 )
 
+// the ciphertext provided by the verifiable encryption function
+// a discription can be found in https://arxiv.org/pdf/2205.08529.pdf
+// the equivalent of each parameter in the paper is written in front of it
+type Ciphertext struct {
+	K    kyber.Point  // r
+	C    kyber.Point  // C
+	UBar kyber.Point  //ubar
+	E    kyber.Scalar //e
+	F    kyber.Scalar //f
+	GBar kyber.Point  // GBar
+}
+
+// the ShareAndProof provided by the verifiable decryption function
+// a discription can be found in https://arxiv.org/pdf/2205.08529.pdf
+// the equivalent of each parameter in the paper is written in front of it
+type ShareAndProof struct {
+	V  kyber.Point
+	I  int64
+	Ui kyber.Point  // u_i
+	Ei kyber.Scalar // e_i
+	Fi kyber.Scalar // f_i
+	Hi kyber.Point  // h_i
+
+}
+
 var msgFormats = registry.NewSimpleRegistry()
 
 // RegisterMessageFormat register the engine for the provided format.
@@ -411,6 +436,38 @@ func (req DecryptRequest) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
+// VerifiableDecryptRequest is a message sent to request a verifiable decryption.
+//
+// - implements serde.Message
+type VerifiableDecryptRequest struct {
+	ciphertexts []Ciphertext
+}
+
+// NewVerifiableDecryptRequest creates a new verifiable decryption request.
+
+func NewVerifiableDecryptRequest(ciphertexts []Ciphertext) VerifiableDecryptRequest {
+	return VerifiableDecryptRequest{
+		ciphertexts: ciphertexts,
+	}
+}
+
+// GetCiphertexts returns ciphertexts.
+func (req VerifiableDecryptRequest) GetCiphertexts() []Ciphertext {
+	return req.ciphertexts
+}
+
+// Serialize implements serde.Message.
+func (resp VerifiableDecryptRequest) Serialize(ctx serde.Context) ([]byte, error) {
+	format := msgFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, resp)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't encode decrypt reply: %v", err)
+	}
+
+	return data, nil
+}
+
 // DecryptReply is the response of a decryption request.
 //
 // - implements serde.Message
@@ -439,6 +496,38 @@ func (resp DecryptReply) GetI() int64 {
 
 // Serialize implements serde.Message.
 func (resp DecryptReply) Serialize(ctx serde.Context) ([]byte, error) {
+	format := msgFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, resp)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't encode decrypt reply: %v", err)
+	}
+
+	return data, nil
+}
+
+// VerifiableDecryptRequest is a message sent to request a verifiable decryption.
+//
+// - implements serde.Message
+type VerifiableDecryptReply struct {
+	shareAndProof []ShareAndProof
+}
+
+// NewVerifiableDecryptRequest creates a new verifiable decryption request.
+
+func NewVerifiableDecryptReply(shareAndProof []ShareAndProof) VerifiableDecryptReply {
+	return VerifiableDecryptReply{
+		shareAndProof: shareAndProof,
+	}
+}
+
+// GetCiphertexts returns ciphertexts.
+func (resp VerifiableDecryptReply) GetShareAndProof() []ShareAndProof {
+	return resp.shareAndProof
+}
+
+// Serialize implements serde.Message.
+func (resp VerifiableDecryptReply) Serialize(ctx serde.Context) ([]byte, error) {
 	format := msgFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, resp)

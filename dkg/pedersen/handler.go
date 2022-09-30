@@ -2,6 +2,7 @@ package pedersen
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -256,6 +257,17 @@ func NewHandler(privKey kyber.Scalar, me mino.Address) *Handler {
 	}
 }
 
+var (
+	workerNum    = 2
+	wgBatchReply sync.WaitGroup
+)
+
+type job struct {
+	index int
+	cp    types.Ciphertext
+	sp    types.ShareAndProof
+}
+
 // Stream implements mino.Handler. It allows one to stream messages to the
 // players.
 func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
@@ -351,6 +363,11 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 			}
 
 			return h.handleDecrypt(out, msg, from)
+
+		case types.VerifiableDecryptRequest:
+			dela.Logger.Trace().Msgf("%v received verifiable decrypt request from %v\n", h.me, from)
+
+			return h.handleVerifiableDecrypt(out, msg, from)
 
 		default:
 			return xerrors.Errorf("expected Start message, decrypt request or "+
@@ -931,6 +948,142 @@ func (h *Handler) receiveDealsResharing(ctx context.Context, isCommonNode bool, 
 	h.log.Debug().Msgf("%v received all the expected deals", h.me)
 
 	return nil
+}
+
+func (h *Handler) handleVerifiableDecrypt(out mino.Sender, msg types.VerifiableDecryptRequest,
+	from mino.Address) error {
+	dela.Logger.Trace().Msgf(
+		"%v received verifiable decrypt request from %v\n", h.me, from,
+	)
+	if !h.startRes.Done() {
+		return xerrors.Errorf(
+			"you must first initialize DKG. Did you " +
+				"call setup() first?",
+		)
+	}
+	ciphertexts := msg.GetCiphertexts()
+	batchsize := len(ciphertexts)
+
+	shareAndProofs := make([]types.ShareAndProof, batchsize)
+	jobChan := make(chan job, batchsize)
+
+	for i, cp := range ciphertexts {
+		jobChan <- job{
+			index: i,
+			cp:    cp,
+		}
+
+	}
+	close(jobChan)
+
+	if batchsize < workerNum {
+		workerNum = batchsize
+	}
+	for i := 0; i < workerNum; i++ {
+		wgBatchReply.Add(1)
+		go func(jobChan <-chan job) {
+			defer wgBatchReply.Done()
+
+			for j := range jobChan {
+				h.verifiableDecryption(&j)
+				shareAndProofs[j.index] = j.sp
+
+			}
+
+		}(jobChan)
+	}
+
+	wgBatchReply.Wait()
+	verifiableDecryptReply := types.NewVerifiableDecryptReply(shareAndProofs)
+
+	errs := out.Send(verifiableDecryptReply, from)
+	err := <-errs
+	if err != nil {
+		dela.Logger.Error().Msgf(
+			"%v couldn't send its share back \n", h.me,
+		)
+		return xerrors.Errorf(
+			"got an error while sending the verifiable decrypt "+
+				"reply: %v", err,
+		)
+	}
+
+	return nil
+}
+
+// this function verifies the encryption proofs
+// a discription can be found in https://arxiv.org/pdf/2205.08529.pdf / section 5.4 Protocol / ster 3: key reconstruction
+func (h *Handler) checkEncryptionProof(cp types.Ciphertext) error {
+
+	tmp1 := suite.Point().Mul(cp.F, nil)
+	tmp2 := suite.Point().Mul(cp.E, cp.K)
+	w := suite.Point().Sub(tmp1, tmp2)
+
+	tmp1 = suite.Point().Mul(cp.F, cp.GBar)
+	tmp2 = suite.Point().Mul(cp.E, cp.UBar)
+	wBar := suite.Point().Sub(tmp1, tmp2)
+
+	hash := sha256.New()
+	cp.C.MarshalTo(hash)
+	cp.K.MarshalTo(hash)
+	cp.UBar.MarshalTo(hash)
+	w.MarshalTo(hash)
+	wBar.MarshalTo(hash)
+	tmp := suite.Scalar().SetBytes(hash.Sum(nil))
+	if !tmp.Equal(cp.E) {
+		return xerrors.Errorf("hash is not valid")
+	}
+	return nil
+}
+
+// this function generates the decryption shares as well as the decryption proof
+// a discription can be found in https://arxiv.org/pdf/2205.08529.pdf / section 5.4 Protocol / ster 3: key reconstruction
+func (h *Handler) verifiableDecryption(jptr *job) {
+	cp := jptr.cp
+	err := h.checkEncryptionProof(cp)
+	if err != nil {
+		dela.Logger.Error().Msgf(
+			"%v encryption proof verification failed for index %d\n", h.me, jptr.index,
+		)
+		//return xerrors.Errorf("got an error while sending the decrypt "+
+		//"request: %v", err)
+	} else {
+		h.RLock()
+		// ui
+		Ui := suite.Point().Mul(h.privShare.V, cp.K) // ui in the paper
+		h.RUnlock()
+		partial := suite.Point().Sub(cp.C, Ui) //share of this party. needed for decrypting
+		si := suite.Scalar().Pick(suite.RandomStream())
+		UHat := suite.Point().Mul(si, cp.K)
+		HHat := suite.Point().Mul(si, nil)
+		hash := sha256.New()
+		Ui.MarshalTo(hash)
+		UHat.MarshalTo(hash)
+		HHat.MarshalTo(hash)
+		Ei := suite.Scalar().SetBytes(hash.Sum(nil))
+		h.RLock()
+		Fi := suite.Scalar().Add(si, suite.Scalar().Mul(Ei, h.privShare.V))
+		Hi := suite.Point().Mul(h.privShare.V, nil)
+		h.RUnlock()
+
+		h.RLock()
+
+		sp := types.ShareAndProof{
+			V:  partial,
+			I:  int64(h.privShare.I),
+			Ui: Ui,
+			Ei: Ei,
+			Fi: Fi,
+			Hi: Hi,
+		}
+		h.RUnlock()
+		*jptr = job{
+			index: jptr.index,
+			cp:    jptr.cp,
+			sp:    sp,
+		}
+	}
+
 }
 
 // isInSlice gets an address and a slice of addresses and returns true if that

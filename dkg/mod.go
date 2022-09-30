@@ -2,6 +2,7 @@ package dkg
 
 import (
 	"go.dedis.ch/dela/crypto"
+	"go.dedis.ch/dela/dkg/pedersen/types"
 	"go.dedis.ch/kyber/v3"
 )
 
@@ -27,4 +28,7 @@ type Actor interface {
 	Decrypt(K, C kyber.Point) ([]byte, error)
 
 	Reshare(co crypto.CollectiveAuthority, newThreshold int) error
+
+	VerifiableDecrypt(ciphertexts []types.Ciphertext, workerNum int) ([][]byte, error)
+	VerifiableEncrypt(message []byte, GBar kyber.Point) (ciphertext types.Ciphertext, remainder []byte, err error)
 }
