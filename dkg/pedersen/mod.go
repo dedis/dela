@@ -43,7 +43,7 @@ var (
 
 const (
 	setupTimeout     = time.Second * 300
-	decryptTimeout   = time.Second * 10000
+	decryptTimeout   = time.Second * 100
 	resharingTimeout = time.Second * 300
 )
 
@@ -216,16 +216,20 @@ func (a *Actor) VerifiableEncrypt(message []byte, GBar kyber.Point) (ciphertext 
 
 	// Embed the message (or as much of it as will fit) into a curve point.
 	M := suite.Point().Embed(message, random.New())
+
 	max := suite.Point().EmbedLen()
 	if max > len(message) {
 		max = len(message)
 	}
+
 	remainder = message[max:]
+
 	// ElGamal-encrypt the point to produce ciphertext (K,C).
 	k := suite.Scalar().Pick(random.New())             // ephemeral private key
 	K := suite.Point().Mul(k, nil)                     // ephemeral DH public key
 	S := suite.Point().Mul(k, a.startRes.GetDistKey()) // ephemeral DH shared secret
 	C := S.Add(S, M)                                   // message blinded with secret
+
 	// producing the zero knowledge proof
 	UBar := suite.Point().Mul(k, GBar)
 	s := suite.Scalar().Pick(random.New())
@@ -238,8 +242,10 @@ func (a *Actor) VerifiableEncrypt(message []byte, GBar kyber.Point) (ciphertext 
 	UBar.MarshalTo(hash)
 	W.MarshalTo(hash)
 	WBar.MarshalTo(hash)
+
 	E := suite.Scalar().SetBytes(hash.Sum(nil))
 	F := suite.Scalar().Add(s, suite.Scalar().Mul(E, k))
+
 	ciphertext = types.Ciphertext{
 		K:    K,
 		C:    C,
@@ -364,11 +370,12 @@ func (a *Actor) VerifiableDecrypt(ciphertexts []types.Ciphertext) ([][]byte, err
 	}
 
 	var respondArr []types.VerifiableDecryptReply
+
 	// active address keeps the addresses of the nodes that actively participate
 	// in the decryption process
 	var activeAddrs []mino.Address
-	// receive decrypt reply from the nodes
 
+	// receive decrypt reply from the nodes
 	for i := 0; i < len(addrs); i++ {
 		from, message, err := receiver.Recv(ctx)
 		dela.Logger.Debug().Msgf("received the %d th share from %v\n", i, from)

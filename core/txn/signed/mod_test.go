@@ -19,7 +19,7 @@ func init() {
 	RegisterTransactionFormat(serde.Format("BAD_TYPE"), fake.Format{Msg: fake.Message{}})
 }
 
-func TestTransactionNew(t *testing.T) {
+func TestTransaction_New(t *testing.T) {
 	signer := bls.NewSigner()
 
 	tx, err := NewTransaction(0, signer.GetPublicKey())

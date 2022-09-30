@@ -257,12 +257,6 @@ func NewHandler(privKey kyber.Scalar, me mino.Address) *Handler {
 	}
 }
 
-type job struct {
-	index int
-	cp    types.Ciphertext
-	sp    types.ShareAndProof
-}
-
 // Stream implements mino.Handler. It allows one to stream messages to the
 // players.
 func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
@@ -381,15 +375,10 @@ func (h *Handler) handleDecrypt(out mino.Sender, msg types.DecryptRequest,
 		return xerrors.Errorf("you must first initialize DKG. Did you call setup() first?")
 	}
 
-	h.RLock()
 	S := suite.Point().Mul(h.privShare.V, msg.K)
-	h.RUnlock()
 
 	partial := suite.Point().Sub(msg.C, S)
-
-	h.RLock()
 	decryptReply := types.NewDecryptReply(int64(h.privShare.I), partial)
-	h.RUnlock()
 
 	errs := out.Send(decryptReply, from)
 	err := <-errs
@@ -474,6 +463,11 @@ func (h *Handler) doDKG(ctx context.Context, deals cryChan[types.Deal],
 	err = h.finalize(ctx, from, out)
 	if err != nil {
 		return xerrors.Errorf("failed to finalize: %v", err)
+	}
+
+	err = h.startRes.switchState(certified)
+	if err != nil {
+		return xerrors.Errorf("failed to switch state: %v", err)
 	}
 
 	h.log.Info().Str("action", "done").Msg(newState)
@@ -584,11 +578,6 @@ func (h *Handler) certify(ctx context.Context, resps cryChan[types.Response], ex
 		return xerrors.New("node is not certified")
 	}
 
-	err := h.startRes.switchState(certified)
-	if err != nil {
-		return xerrors.Errorf("failed to switch state: %v", err)
-	}
-
 	return nil
 }
 
@@ -598,7 +587,6 @@ func (h *Handler) finalize(ctx context.Context, from mino.Address, out mino.Send
 	distKey, err := h.dkg.DistKeyShare()
 	if err != nil {
 		return xerrors.Errorf("failed to get distr key: %v", err)
-
 	}
 
 	// Update the state before sending the acknowledgement to the orchestrator,
@@ -657,7 +645,7 @@ func (h *Handler) handleDeal(ctx context.Context, msg types.Deal, out mino.Sende
 			continue
 		}
 
-		h.log.Trace().Str("to", addr.String()).Str("dealer", strconv.Itoa(int(response.Index))).Msg("sending response")
+		h.log.Trace().Str("to", addr.String()).Uint32("dealer", response.Index).Msg("sending response")
 
 		errs := out.Send(resp, addr)
 
@@ -674,7 +662,7 @@ func (h *Handler) handleDeal(ctx context.Context, msg types.Deal, out mino.Sende
 	return nil
 }
 
-func (h *Handler) announceDkgPublicKey(isCommonNode bool, out mino.Sender, from mino.Address) error {
+func (h *Handler) finalizeReshare(isCommonNode bool, out mino.Sender, from mino.Address) error {
 	// Send back the public DKG key
 
 	publicKey := h.startRes.GetDistKey()
@@ -825,9 +813,14 @@ func (h *Handler) doReshare(ctx context.Context, resharingRequest types.StartRes
 	// 5. Announce the DKG public key All the old, new and common nodes would
 	// announce the public key. In this way the initiator can make sure the
 	// resharing was completely successful.
-	err = h.announceDkgPublicKey(isCommonNode, out, from)
+	err = h.finalizeReshare(isCommonNode, out, from)
 	if err != nil {
 		return xerrors.Errorf("failed to announce dkg public key: %v", err)
+	}
+
+	err = h.startRes.switchState(certified)
+	if err != nil {
+		return xerrors.Errorf("failed to switch state: %v", err)
 	}
 
 	return nil
@@ -948,8 +941,13 @@ func (h *Handler) receiveDealsResharing(ctx context.Context, isCommonNode bool,
 	return nil
 }
 
-func (h *Handler) handleVerifiableDecrypt(out mino.Sender, msg types.VerifiableDecryptRequest,
-	from mino.Address) error {
+func (h *Handler) handleVerifiableDecrypt(out mino.Sender,
+	msg types.VerifiableDecryptRequest, from mino.Address) error {
+
+	type job struct {
+		index int // index to put the response
+		ct    types.Ciphertext
+	}
 
 	ciphertexts := msg.GetCiphertexts()
 	batchsize := len(ciphertexts)
@@ -957,32 +955,41 @@ func (h *Handler) handleVerifiableDecrypt(out mino.Sender, msg types.VerifiableD
 	wgBatchReply := sync.WaitGroup{}
 
 	shareAndProofs := make([]types.ShareAndProof, batchsize)
-	jobChan := make(chan job, batchsize)
+	jobChan := make(chan job)
 
-	for i, cp := range ciphertexts {
-		jobChan <- job{
-			index: i,
-			cp:    cp,
+	// Fill the chan with jobs
+	go func() {
+		for i, ct := range ciphertexts {
+			jobChan <- job{
+				index: i,
+				ct:    ct,
+			}
+
 		}
+		close(jobChan)
+	}()
 
+	n := workerNum
+	if batchsize < n {
+		n = batchsize
 	}
-	close(jobChan)
 
-	if batchsize < workerNum {
-		workerNum = batchsize
-	}
-	for i := 0; i < workerNum; i++ {
+	// Spin up workers to process jobs from the chan
+	for i := 0; i < n; i++ {
 		wgBatchReply.Add(1)
-		go func(jobChan <-chan job) {
+		go func() {
 			defer wgBatchReply.Done()
 
 			for j := range jobChan {
-				h.verifiableDecryption(&j)
-				shareAndProofs[j.index] = j.sp
+				sp, err := h.verifiableDecryption(j.ct)
+				if err != nil {
+					h.log.Err(err).Msg("verifiable decryption failed")
+				}
 
+				shareAndProofs[j.index] = *sp
 			}
 
-		}(jobChan)
+		}()
 	}
 
 	wgBatchReply.Wait()
@@ -991,13 +998,7 @@ func (h *Handler) handleVerifiableDecrypt(out mino.Sender, msg types.VerifiableD
 	errs := out.Send(verifiableDecryptReply, from)
 	err := <-errs
 	if err != nil {
-		dela.Logger.Error().Msgf(
-			"%v couldn't send its share back \n", h.me,
-		)
-		return xerrors.Errorf(
-			"got an error while sending the verifiable decrypt "+
-				"reply: %v", err,
-		)
+		return xerrors.Errorf("failed to send verifiable decrypt: %v", err)
 	}
 
 	return nil
@@ -1022,10 +1023,12 @@ func (h *Handler) checkEncryptionProof(cp types.Ciphertext) error {
 	cp.UBar.MarshalTo(hash)
 	w.MarshalTo(hash)
 	wBar.MarshalTo(hash)
+
 	tmp := suite.Scalar().SetBytes(hash.Sum(nil))
 	if !tmp.Equal(cp.E) {
 		return xerrors.Errorf("hash is not valid")
 	}
+
 	return nil
 }
 
@@ -1033,27 +1036,29 @@ func (h *Handler) checkEncryptionProof(cp types.Ciphertext) error {
 // decryption proof.
 //
 // See https://arxiv.org/pdf/2205.08529.pdf / section 5.4 Protocol / ster 3
-func (h *Handler) verifiableDecryption(jptr *job) error {
-	cp := jptr.cp
-
-	err := h.checkEncryptionProof(cp)
+func (h *Handler) verifiableDecryption(ct types.Ciphertext) (*types.ShareAndProof, error) {
+	err := h.checkEncryptionProof(ct)
 	if err != nil {
-		return xerrors.Errorf("%v encryption proof verification failed for index %d\n", h.me, jptr.index)
+		return nil, xerrors.Errorf("failed to check proof: %v", err)
 	}
 
 	h.RLock()
-	// ui
-	ui := suite.Point().Mul(h.privShare.V, cp.K) // ui in the paper
+	ui := suite.Point().Mul(h.privShare.V, ct.K)
 	h.RUnlock()
-	partial := suite.Point().Sub(cp.C, ui) //share of this party. needed for decrypting
+
+	//share of this party. needed for decrypting
+	partial := suite.Point().Sub(ct.C, ui)
+
 	si := suite.Scalar().Pick(suite.RandomStream())
-	UHat := suite.Point().Mul(si, cp.K)
+	UHat := suite.Point().Mul(si, ct.K)
 	HHat := suite.Point().Mul(si, nil)
+
 	hash := sha256.New()
 	ui.MarshalTo(hash)
 	UHat.MarshalTo(hash)
 	HHat.MarshalTo(hash)
 	Ei := suite.Scalar().SetBytes(hash.Sum(nil))
+
 	h.RLock()
 	Fi := suite.Scalar().Add(si, suite.Scalar().Mul(Ei, h.privShare.V))
 	Hi := suite.Point().Mul(h.privShare.V, nil)
@@ -1070,13 +1075,7 @@ func (h *Handler) verifiableDecryption(jptr *job) error {
 	}
 	h.RUnlock()
 
-	*jptr = job{
-		index: jptr.index,
-		cp:    jptr.cp,
-		sp:    sp,
-	}
-
-	return nil
+	return &sp, nil
 }
 
 // isInSlice gets an address and a slice of addresses and returns true if that

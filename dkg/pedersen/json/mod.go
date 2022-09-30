@@ -252,9 +252,9 @@ func (f msgFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) 
 		m = Message{DecryptRequest: &req}
 
 	case types.VerifiableDecryptRequest:
-
 		chiphertexts := in.GetCiphertexts()
 		var encodedCiphertexts []Ciphertext
+
 		for _, cp := range chiphertexts {
 			K, err := cp.K.MarshalBinary()
 			if err != nil {
@@ -320,6 +320,7 @@ func (f msgFormat) Encode(ctx serde.Context, msg serde.Message) ([]byte, error) 
 	case types.VerifiableDecryptReply:
 		sps := in.GetShareAndProof()
 		var encodedSps []ShareAndProof
+
 		for _, sp := range sps {
 			V, err := sp.V.MarshalBinary()
 			if err != nil {

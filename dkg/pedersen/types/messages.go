@@ -20,9 +20,12 @@ type Ciphertext struct {
 	GBar kyber.Point  // GBar
 }
 
-// the ShareAndProof provided by the verifiable decryption function
-// a discription can be found in https://arxiv.org/pdf/2205.08529.pdf
-// the equivalent of each parameter in the paper is written in front of it
+// ShareAndProof is the ShareAndProof provided by the verifiable decryption
+// function.
+//
+//	see: https://arxiv.org/pdf/2205.08529.pdf
+//
+// The equivalent of each parameter in the paper is mentioned
 type ShareAndProof struct {
 	V  kyber.Point
 	I  int64

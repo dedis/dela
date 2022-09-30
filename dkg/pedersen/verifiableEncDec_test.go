@@ -2,10 +2,8 @@ package pedersen
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"math/rand"
-	"os"
 	"testing"
 	"time"
 
@@ -109,13 +107,6 @@ func Test_verifiableEncDec_minogrpc(t *testing.T) {
 	numWorkersSlice := []int{8}
 	batchSizeSlice := []int{32}
 
-	// initiating the log file for writing the delay and throughput data
-	f, err := os.OpenFile("../logs/test.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-	require.NoError(t, err)
-	defer f.Close()
-	wrt := io.MultiWriter(os.Stdout, f)
-	log.SetOutput(wrt)
-
 	// setting up the dkg
 	n := 18
 	threshold := n
@@ -129,7 +120,7 @@ func Test_verifiableEncDec_minogrpc(t *testing.T) {
 	// agreed data among the participants and embed it as a point. the result is
 	// the generator that we are seeking.
 	agreedData := make([]byte, 32)
-	_, err = rand.Read(agreedData)
+	_, err := rand.Read(agreedData)
 	require.NoError(t, err)
 	GBar := suite.Point().Embed(agreedData, keccak.New(agreedData))
 
@@ -191,6 +182,7 @@ func Test_verifiableEncDec_minogrpc(t *testing.T) {
 			require.Len(t, remainder, 0)
 			ciphertexts = append(ciphertexts, ciphertext)
 		}
+
 		// decrypting the batch ciphertext message
 		fmt.Println("decrypting the batch ...")
 		start = time.Now()

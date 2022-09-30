@@ -9,7 +9,7 @@ import (
 	"go.dedis.ch/dela/core/access"
 )
 
-func TestIdentitySeTNew(t *testing.T) {
+func TestIdentitySeT_New(t *testing.T) {
 	iset := NewIdentitySet(newIdentity("A"), newIdentity("B"), newIdentity("A"))
 	require.Len(t, iset, 2)
 }
