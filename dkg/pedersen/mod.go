@@ -172,7 +172,7 @@ func (a *Actor) GetPublicKey() (kyber.Point, error) {
 		return nil, xerrors.Errorf("DKG has not been initialized")
 	}
 
-	return a.startRes.GetDistKey(), nil
+	return a.startRes.getDistKey(), nil
 }
 
 // Encrypt implements dkg.Actor. It uses the DKG public key to encrypt a
@@ -195,7 +195,7 @@ func (a *Actor) Encrypt(message []byte) (K, C kyber.Point, remainder []byte,
 	// ElGamal-encrypt the point to produce ciphertext (K,C).
 	k := suite.Scalar().Pick(random.New())             // ephemeral private key
 	K = suite.Point().Mul(k, nil)                      // ephemeral DH public key
-	S := suite.Point().Mul(k, a.startRes.GetDistKey()) // ephemeral DH shared secret
+	S := suite.Point().Mul(k, a.startRes.getDistKey()) // ephemeral DH shared secret
 	C = S.Add(S, M)                                    // message blinded with secret
 
 	return K, C, remainder, nil
@@ -206,12 +206,12 @@ func (a *Actor) Encrypt(message []byte) (K, C kyber.Point, remainder []byte,
 // this person.
 //
 // See https://arxiv.org/pdf/2205.08529.pdf / section 5.4 Protocol / step 1
-func (a *Actor) VerifiableEncrypt(message []byte, GBar kyber.Point) (ciphertext types.Ciphertext, remainder []byte,
-	err error) {
+func (a *Actor) VerifiableEncrypt(message []byte, GBar kyber.Point) (ciphertext types.Ciphertext,
+	remainder []byte, err error) {
 
 	if !a.startRes.Done() {
-		return types.Ciphertext{}, nil, xerrors.Errorf("you must first initialize DKG. " +
-			"Did you call setup() first?")
+		return types.Ciphertext{}, nil, xerrors.Errorf("you must first initialize " +
+			"DKG. Did you call setup() first?")
 	}
 
 	// Embed the message (or as much of it as will fit) into a curve point.
@@ -227,7 +227,7 @@ func (a *Actor) VerifiableEncrypt(message []byte, GBar kyber.Point) (ciphertext 
 	// ElGamal-encrypt the point to produce ciphertext (K,C).
 	k := suite.Scalar().Pick(random.New())             // ephemeral private key
 	K := suite.Point().Mul(k, nil)                     // ephemeral DH public key
-	S := suite.Point().Mul(k, a.startRes.GetDistKey()) // ephemeral DH shared secret
+	S := suite.Point().Mul(k, a.startRes.getDistKey()) // ephemeral DH shared secret
 	C := S.Add(S, M)                                   // message blinded with secret
 
 	// producing the zero knowledge proof
@@ -267,7 +267,7 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 			"Did you call setup() first?")
 	}
 
-	players := mino.NewAddresses(a.startRes.GetParticipants()...)
+	players := mino.NewAddresses(a.startRes.getParticipants()...)
 
 	ctx, cancel := context.WithTimeout(context.Background(), decryptTimeout)
 	defer cancel()
@@ -278,7 +278,7 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 		return nil, xerrors.Errorf("failed to create stream: %v", err)
 	}
 
-	players = mino.NewAddresses(a.startRes.GetParticipants()...)
+	players = mino.NewAddresses(a.startRes.getParticipants()...)
 	iterator := players.AddressIterator()
 
 	addrs := make([]mino.Address, 0, players.Len())
@@ -341,7 +341,7 @@ func (a *Actor) VerifiableDecrypt(ciphertexts []types.Ciphertext) ([][]byte, err
 			"Did you call setup() first?")
 	}
 
-	players := mino.NewAddresses(a.startRes.GetParticipants()...)
+	players := mino.NewAddresses(a.startRes.getParticipants()...)
 
 	ctx, cancel := context.WithTimeout(context.Background(), decryptTimeout)
 	defer cancel()
@@ -352,7 +352,7 @@ func (a *Actor) VerifiableDecrypt(ciphertexts []types.Ciphertext) ([][]byte, err
 		return nil, xerrors.Errorf("failed to create stream: %v", err)
 	}
 
-	players = mino.NewAddresses(a.startRes.GetParticipants()...)
+	players = mino.NewAddresses(a.startRes.getParticipants()...)
 	iterator := players.AddressIterator()
 
 	addrs := make([]mino.Address, 0, players.Len())
@@ -478,7 +478,7 @@ func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
 	}
 
 	// Get the union of the new members and the old members
-	addrsAll := merge(a.startRes.GetParticipants(), addrsNew)
+	addrsAll := union(a.startRes.getParticipants(), addrsNew)
 	players := mino.NewAddresses(addrsAll...)
 
 	ctx, cancel := context.WithTimeout(context.Background(), resharingTimeout)
@@ -493,7 +493,7 @@ func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
 		return xerrors.Errorf("failed to create stream: %v", err)
 	}
 
-	thresholdOld := a.startRes.GetThreshold()
+	thresholdOld := a.startRes.getThreshold()
 	pubkeysOld := a.startRes.GetPublicKeys()
 
 	// We don't need to send the old threshold or old public keys to the old or
@@ -501,22 +501,22 @@ func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
 	reshare := types.NewStartResharing(thresholdNew, 0, addrsNew, nil, pubkeysNew, nil)
 
 	dela.Logger.Info().Msgf("resharing to old participants: %v",
-		a.startRes.GetParticipants())
+		a.startRes.getParticipants())
 
 	// Send the resharing request to the old and common nodes
-	err = <-sender.Send(reshare, a.startRes.GetParticipants()...)
+	err = <-sender.Send(reshare, a.startRes.getParticipants()...)
 	if err != nil {
 		return xerrors.Errorf("failed to send resharing request: %v", err)
 	}
 
 	// First find the set of new nodes that are not common between the old and
 	// new committee
-	newParticipants := difference(addrsNew, a.startRes.GetParticipants())
+	newParticipants := difference(addrsNew, a.startRes.getParticipants())
 
 	// Then create a resharing request message for them. We should send the old
 	// threshold and old public keys to them
 	reshare = types.NewStartResharing(thresholdNew, thresholdOld, addrsNew,
-		a.startRes.GetParticipants(), pubkeysNew, pubkeysOld)
+		a.startRes.getParticipants(), pubkeysNew, pubkeysOld)
 
 	dela.Logger.Info().Msgf("resharing to new participants: %v", newParticipants)
 

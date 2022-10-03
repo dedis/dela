@@ -123,9 +123,11 @@ const (
 // the attributes.
 type state struct {
 	sync.Mutex
-	distrKey     kyber.Point
+	// distrKey is only set once the node is certified
+	distrKey kyber.Point
+	// participants is set once a sharing or resharing starts
 	participants []mino.Address
-	publicKeys   []kyber.Point
+	pubkeys      []kyber.Point
 	threshold    int
 	dkgState     dkgState
 }
@@ -176,55 +178,46 @@ func (s *state) checkState(states ...dkgState) error {
 func (s *state) Done() bool {
 	s.Lock()
 	defer s.Unlock()
-	return s.distrKey != nil && s.participants != nil
+	return s.distrKey != nil
 }
 
-func (s *state) GetDistKey() kyber.Point {
+func (s *state) init(participants []mino.Address, pubkeys []kyber.Point, t int) {
+	s.Lock()
+	defer s.Unlock()
+
+	s.participants = participants
+	s.pubkeys = pubkeys
+	s.threshold = t
+}
+
+func (s *state) getDistKey() kyber.Point {
 	s.Lock()
 	defer s.Unlock()
 	return s.distrKey
 }
 
-func (s *state) SetDistKey(key kyber.Point) {
+func (s *state) setDistKey(key kyber.Point) {
 	s.Lock()
 	s.distrKey = key
 	s.Unlock()
 }
 
-func (s *state) GetParticipants() []mino.Address {
+func (s *state) getParticipants() []mino.Address {
 	s.Lock()
 	defer s.Unlock()
 	return s.participants
 }
 
-func (s *state) SetParticipants(addrs []mino.Address) {
-	s.Lock()
-	s.participants = addrs
-	s.Unlock()
-}
-
 func (s *state) GetPublicKeys() []kyber.Point {
 	s.Lock()
 	defer s.Unlock()
-	return s.publicKeys
+	return s.pubkeys
 }
 
-func (s *state) SetPublicKeys(publicKeys []kyber.Point) {
-	s.Lock()
-	s.publicKeys = publicKeys
-	s.Unlock()
-}
-
-func (s *state) GetThreshold() int {
+func (s *state) getThreshold() int {
 	s.Lock()
 	defer s.Unlock()
 	return s.threshold
-}
-
-func (s *state) SetThreshold(threshold int) {
-	s.Lock()
-	s.threshold = threshold
-	s.Unlock()
 }
 
 // Handler represents the RPC executed on each node
@@ -414,9 +407,7 @@ func (h *Handler) start(ctx context.Context, start types.Start, deals cryChan[ty
 
 	h.dkg = d
 
-	h.startRes.SetParticipants(start.GetAddresses())
-	h.startRes.SetPublicKeys(start.GetPublicKeys())
-	h.startRes.SetThreshold(start.GetThreshold())
+	h.startRes.init(start.GetAddresses(), start.GetPublicKeys(), start.GetThreshold())
 
 	// asynchronously start the procedure. This allows for receiving messages
 	// in the main for loop in the meantime.
@@ -453,7 +444,7 @@ func (h *Handler) doDKG(ctx context.Context, deals cryChan[types.Deal],
 	}
 
 	h.log.Info().Str("action", "certify").Msg(newState)
-	numResps := (len(h.startRes.GetParticipants()) - 1) * (len(h.startRes.GetParticipants()) - 1)
+	numResps := (len(h.startRes.getParticipants()) - 1) * (len(h.startRes.getParticipants()) - 1)
 	err = h.certify(ctx, resps, numResps)
 	if err != nil {
 		return xerrors.Errorf("failed to certify: %v", err)
@@ -497,7 +488,7 @@ func (h *Handler) deal(ctx context.Context, out mino.Sender) error {
 			),
 		)
 
-		to := h.startRes.GetParticipants()[i]
+		to := h.startRes.getParticipants()[i]
 
 		h.log.Trace().Str("to", to.String()).Msg("send deal")
 
@@ -520,13 +511,13 @@ func (h *Handler) deal(ctx context.Context, out mino.Sender) error {
 func (h *Handler) respond(ctx context.Context, deals cryChan[types.Deal], out mino.Sender) error {
 	numReceivedDeals := 0
 
-	for numReceivedDeals < len(h.startRes.GetParticipants())-1 {
+	for numReceivedDeals < len(h.startRes.getParticipants())-1 {
 		deal, err := deals.pop(ctx)
 		if err != nil {
 			return xerrors.Errorf("context done: %v", err)
 		}
 
-		err = h.handleDeal(ctx, deal, out, h.startRes.GetParticipants())
+		err = h.handleDeal(ctx, deal, out, h.startRes.getParticipants())
 		if err != nil {
 			return xerrors.Errorf("failed to handle received deal: %v", err)
 		}
@@ -539,10 +530,13 @@ func (h *Handler) respond(ctx context.Context, deals cryChan[types.Deal], out mi
 	return nil
 }
 
-// certify collects the responses and checks if the node is certified
-// The number of expected responses depends on the case:
-//   - Basic setup: (n_participants-1)^2
-//   - Resharing with leaving or joining node: (n_common + n_new - 1) * n_old
+// certify collects the responses and checks if the node is certified The number
+// of expected responses depends on the case:
+//   - Basic setup: (n_participants-1)^2, because each node won't broadcast the
+//     certification of their own deals, and they won't sent to themselves their
+//     own deal certification either
+//   - Resharing with leaving or joining node: (n_common + (n_new - 1)) * n_old,
+//     nodes that are doing a resharing will broadcast their own deals
 //   - Resharing with staying node: (n_common + n_new) * n_old
 func (h *Handler) certify(ctx context.Context, resps cryChan[types.Response], expected int) error {
 
@@ -591,7 +585,7 @@ func (h *Handler) finalize(ctx context.Context, from mino.Address, out mino.Send
 
 	// Update the state before sending the acknowledgement to the orchestrator,
 	// so that it can process decrypt requests right away.
-	h.startRes.SetDistKey(distKey.Public())
+	h.startRes.setDistKey(distKey.Public())
 
 	h.Lock()
 	h.privShare = distKey.PriShare()
@@ -612,7 +606,8 @@ func (h *Handler) finalize(ctx context.Context, from mino.Address, out mino.Send
 }
 
 // handleDeal process the Deal and send the responses to the other nodes.
-func (h *Handler) handleDeal(ctx context.Context, msg types.Deal, out mino.Sender, to []mino.Address) error {
+func (h *Handler) handleDeal(ctx context.Context, msg types.Deal,
+	out mino.Sender, to []mino.Address) error {
 
 	deal := &pedersen.Deal{
 		Index: msg.GetIndex(),
@@ -645,7 +640,8 @@ func (h *Handler) handleDeal(ctx context.Context, msg types.Deal, out mino.Sende
 			continue
 		}
 
-		h.log.Trace().Str("to", addr.String()).Uint32("dealer", response.Index).Msg("sending response")
+		h.log.Trace().Str("to", addr.String()).Uint32("dealer", response.Index).
+			Msg("sending response")
 
 		errs := out.Send(resp, addr)
 
@@ -664,8 +660,7 @@ func (h *Handler) handleDeal(ctx context.Context, msg types.Deal, out mino.Sende
 
 func (h *Handler) finalizeReshare(isCommonNode bool, out mino.Sender, from mino.Address) error {
 	// Send back the public DKG key
-
-	publicKey := h.startRes.GetDistKey()
+	publicKey := h.startRes.getDistKey()
 
 	// if the node is new or a common node it should update its state
 	if publicKey == nil || isCommonNode {
@@ -675,10 +670,10 @@ func (h *Handler) finalizeReshare(isCommonNode bool, out mino.Sender, from mino.
 		}
 
 		publicKey = distrKey.Public()
+
 		// Update the state before sending to acknowledgement to the
 		// orchestrator, so that it can process decrypt requests right away.
-
-		h.startRes.SetDistKey(distrKey.Public())
+		h.startRes.setDistKey(distrKey.Public())
 		h.Lock()
 		h.privShare = distrKey.PriShare()
 		h.Unlock()
@@ -723,21 +718,21 @@ func (h *Handler) reshare(ctx context.Context, out mino.Sender,
 // doReshare is called when the node has received its reshare message. Note that
 // we might have already received some deals from other nodes in the meantime.
 // The function handles the DKG resharing protocol.
-func (h *Handler) doReshare(ctx context.Context, resharingRequest types.StartResharing,
+func (h *Handler) doReshare(ctx context.Context, start types.StartResharing,
 	from mino.Address, out mino.Sender, reshares cryChan[types.Reshare], resps cryChan[types.Response]) error {
 
-	h.log.Info().Msgf("resharing with %v", resharingRequest.GetAddrsNew())
+	h.log.Info().Msgf("resharing with %v", start.GetAddrsNew())
 
-	addrsNew := resharingRequest.GetAddrsNew()
+	addrsNew := start.GetAddrsNew()
 
-	isOldNode := h.startRes.GetDistKey() != nil
+	isOldNode := h.startRes.getDistKey() != nil
 	isNewNode := !isOldNode
 
 	// By default the node is not common. Later we check
 	isCommonNode := false
 
 	var expectedResponses int
-	addrsOld := h.startRes.GetParticipants()
+	addrsOld := h.startRes.getParticipants()
 
 	// If the node is in the old committee, it should do the following steps
 	if isOldNode {
@@ -746,7 +741,7 @@ func (h *Handler) doReshare(ctx context.Context, resharingRequest types.StartRes
 		// new committee
 		isCommonNode = isInSlice(h.me, addrsNew) && isInSlice(h.me, addrsOld)
 
-		// 1. Update mydkg for resharing
+		// 1. Update local DKG for resharing
 		share, err := h.dkg.DistKeyShare()
 		if err != nil {
 			return xerrors.Errorf("failed to create : %v", err)
@@ -758,10 +753,10 @@ func (h *Handler) doReshare(ctx context.Context, resharingRequest types.StartRes
 			Suite:        suite,
 			Longterm:     h.privKey,
 			OldNodes:     h.startRes.GetPublicKeys(),
-			NewNodes:     resharingRequest.GetPubkeysNew(),
+			NewNodes:     start.GetPubkeysNew(),
 			Share:        share,
-			Threshold:    resharingRequest.GetTNew(),
-			OldThreshold: h.startRes.GetThreshold(),
+			Threshold:    start.GetTNew(),
+			OldThreshold: h.startRes.getThreshold(),
 		}
 
 		d, err := pedersen.NewDistKeyHandler(c)
@@ -781,36 +776,33 @@ func (h *Handler) doReshare(ctx context.Context, resharingRequest types.StartRes
 	// If the node is a new node or is a common node it should do the next steps
 	if isNewNode || isCommonNode {
 		// 1. Process the incoming deals
-		err := h.receiveDealsResharing(ctx, isCommonNode, resharingRequest, out, reshares)
+		err := h.receiveDealsResharing(ctx, isCommonNode, start, out, reshares)
 		if err != nil {
 			return xerrors.Errorf("failed to receive deals: %v", err)
 		}
 
 		// Save the specifications of the new committee in the handler state
-		h.startRes.SetParticipants(resharingRequest.GetAddrsNew())
-		h.startRes.SetPublicKeys(resharingRequest.GetPubkeysNew())
-		h.startRes.SetThreshold(resharingRequest.GetTNew())
+		h.startRes.init(start.GetAddrsNew(), start.GetPubkeysNew(), start.GetTNew())
 	}
 
 	// Note that a node can be old and common
 	if isOldNode {
-		expectedResponses = (resharingRequest.GetTNew()) * len(h.startRes.GetParticipants())
+		expectedResponses = (start.GetTNew()) * len(h.startRes.getParticipants())
 	}
 	if isCommonNode {
-		expectedResponses = (resharingRequest.GetTNew() - 1) * len(addrsOld)
+		expectedResponses = (start.GetTNew() - 1) * len(addrsOld)
 	}
 	if isNewNode {
-		expectedResponses = (resharingRequest.GetTNew() - 1) * resharingRequest.GetTOld()
+		expectedResponses = (start.GetTNew() - 1) * start.GetTOld()
 	}
 
-	// 4. Certify
-	// all the nodes should certify
+	// All nodes should certify.
 	err := h.certify(ctx, resps, expectedResponses)
 	if err != nil {
 		return xerrors.Errorf("failed to certify: %v", err)
 	}
 
-	// 5. Announce the DKG public key All the old, new and common nodes would
+	// Announce the DKG public key All the old, new and common nodes would
 	// announce the public key. In this way the initiator can make sure the
 	// resharing was completely successful.
 	err = h.finalizeReshare(isCommonNode, out, from)
@@ -828,7 +820,7 @@ func (h *Handler) doReshare(ctx context.Context, resharingRequest types.StartRes
 
 // sendDealsResharing is similar to sendDeals except that it creates
 // dealResharing which has more data than Deal. Only the old nodes call this
-// function
+// function.
 func (h *Handler) sendDealsResharing(ctx context.Context, out mino.Sender,
 	participants []mino.Address, publicCoeff []kyber.Point) error {
 
@@ -887,7 +879,7 @@ func (h *Handler) receiveDealsResharing(ctx context.Context, isCommonNode bool,
 	expectedDeals := 0
 
 	// by default we read the old addresses from the state
-	addrsOld = h.startRes.GetParticipants()
+	addrsOld = h.startRes.getParticipants()
 
 	// the new nodes don't have the old addresses in their state
 	if !isCommonNode {
@@ -896,9 +888,9 @@ func (h *Handler) receiveDealsResharing(ctx context.Context, isCommonNode bool,
 
 	expectedDeals = len(addrsOld)
 
-	// we find the union of the old and new address sets to aviod from sending a
+	// we find the union of the old and new address sets to avoid from sending a
 	// message to the common nodes multiple times
-	addrsAll := merge(addrsNew, addrsOld)
+	addrsAll := union(addrsNew, addrsOld)
 
 	for numReceivedDeals < expectedDeals {
 		reshare, err := reshares.pop(ctx)
@@ -945,7 +937,7 @@ func (h *Handler) handleVerifiableDecrypt(out mino.Sender,
 	msg types.VerifiableDecryptRequest, from mino.Address) error {
 
 	type job struct {
-		index int // index to put the response
+		index int // index where to put the response
 		ct    types.Ciphertext
 	}
 
@@ -974,7 +966,7 @@ func (h *Handler) handleVerifiableDecrypt(out mino.Sender,
 		n = batchsize
 	}
 
-	// Spin up workers to process jobs from the chan
+	// Spins up workers to process jobs from the chan
 	for i := 0; i < n; i++ {
 		wgBatchReply.Add(1)
 		go func() {
@@ -1026,7 +1018,7 @@ func (h *Handler) checkEncryptionProof(cp types.Ciphertext) error {
 
 	tmp := suite.Scalar().SetBytes(hash.Sum(nil))
 	if !tmp.Equal(cp.E) {
-		return xerrors.Errorf("hash is not valid")
+		return xerrors.Errorf("hash not valid: %x != %x", cp.E, tmp)
 	}
 
 	return nil
@@ -1035,7 +1027,7 @@ func (h *Handler) checkEncryptionProof(cp types.Ciphertext) error {
 // verifiableDecryption generates the decryption shares as well as the
 // decryption proof.
 //
-// See https://arxiv.org/pdf/2205.08529.pdf / section 5.4 Protocol / ster 3
+// See https://arxiv.org/pdf/2205.08529.pdf / section 5.4 Protocol / step 3
 func (h *Handler) verifiableDecryption(ct types.Ciphertext) (*types.ShareAndProof, error) {
 	err := h.checkEncryptionProof(ct)
 	if err != nil {
@@ -1046,7 +1038,7 @@ func (h *Handler) verifiableDecryption(ct types.Ciphertext) (*types.ShareAndProo
 	ui := suite.Point().Mul(h.privShare.V, ct.K)
 	h.RUnlock()
 
-	//share of this party. needed for decrypting
+	// share of this party, needed for decrypting
 	partial := suite.Point().Sub(ct.C, ui)
 
 	si := suite.Scalar().Pick(suite.RandomStream())
@@ -1091,14 +1083,13 @@ func isInSlice(addr mino.Address, addrs []mino.Address) bool {
 	return false
 }
 
-// merge gets the list of the old committee members and new committee
-// members and returns the union.
-func merge(addrsSlice1 []mino.Address, addrsSlice2 []mino.Address) []mino.Address {
-	addrsAll := addrsSlice1
+// union performs a union of el1 and el2.
+func union(el1 []mino.Address, el2 []mino.Address) []mino.Address {
+	addrsAll := el1
 
-	for _, other := range addrsSlice2 {
+	for _, other := range el2 {
 		exist := false
-		for _, addr := range addrsSlice1 {
+		for _, addr := range el1 {
 			if addr.Equal(other) {
 				exist = true
 				break

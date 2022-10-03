@@ -191,7 +191,7 @@ func TestHandler_HandleDeal(t *testing.T) {
 			participants: []mino.Address{fake.NewAddress(0)},
 		},
 	}
-	err = h.handleDeal(context.Background(), dealMsg, fake.NewBadSender(), h.startRes.GetParticipants())
+	err = h.handleDeal(context.Background(), dealMsg, fake.NewBadSender(), h.startRes.getParticipants())
 	require.EqualError(t, err, fake.Err("failed to send response to 'fake.Address[0]'"))
 }
 
@@ -237,7 +237,7 @@ func TestHandler_HandleDeal_Ctx_Fail(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.TODO())
 	cancel()
 
-	err = h.handleDeal(ctx, dealMsg, noSender{}, h.startRes.GetParticipants())
+	err = h.handleDeal(ctx, dealMsg, noSender{}, h.startRes.getParticipants())
 	require.EqualError(t, err, "context done: context canceled")
 }
 
