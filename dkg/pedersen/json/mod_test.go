@@ -29,11 +29,11 @@ func TestMessageFormat_Start_Encode(t *testing.T) {
 
 	start = types.NewStart(0, []mino.Address{fake.NewBadAddress()}, nil)
 	_, err = format.Encode(ctx, start)
-	require.EqualError(t, err, fake.Err("couldn't marshal address"))
+	require.EqualError(t, err, fake.Err("failed to encode message: couldn't marshal address"))
 
 	start = types.NewStart(0, nil, []kyber.Point{badPoint{}})
 	_, err = format.Encode(ctx, start)
-	require.EqualError(t, err, fake.Err("couldn't marshal public key"))
+	require.EqualError(t, err, fake.Err("failed to encode message: couldn't marshal public key"))
 
 	_, err = format.Encode(fake.NewBadContext(), types.Start{})
 	require.EqualError(t, err, fake.Err("couldn't marshal"))
@@ -78,7 +78,7 @@ func TestMessageFormat_StartDone_Encode(t *testing.T) {
 
 	done = types.NewStartDone(badPoint{})
 	_, err = format.Encode(ctx, done)
-	require.EqualError(t, err, fake.Err("couldn't marshal public key"))
+	require.EqualError(t, err, fake.Err("failed to encode message: couldn't marshal public key"))
 }
 
 func TestMessageFormat_DecryptRequest_Encode(t *testing.T) {
@@ -93,12 +93,12 @@ func TestMessageFormat_DecryptRequest_Encode(t *testing.T) {
 
 	req.K = badPoint{}
 	_, err = format.Encode(ctx, req)
-	require.EqualError(t, err, fake.Err("couldn't marshal K"))
+	require.EqualError(t, err, fake.Err("failed to encode message: couldn't marshal K"))
 
 	req.K = suite.Point()
 	req.C = badPoint{}
 	_, err = format.Encode(ctx, req)
-	require.EqualError(t, err, fake.Err("couldn't marshal C"))
+	require.EqualError(t, err, fake.Err("failed to encode message: couldn't marshal C"))
 }
 
 func TestMessageFormat_DecryptReply_Encode(t *testing.T) {
@@ -113,7 +113,7 @@ func TestMessageFormat_DecryptReply_Encode(t *testing.T) {
 
 	resp.V = badPoint{}
 	_, err = format.Encode(ctx, resp)
-	require.EqualError(t, err, fake.Err("couldn't marshal V"))
+	require.EqualError(t, err, fake.Err("failed to encode message: couldn't marshal V"))
 }
 
 func TestMessageFormat_Decode(t *testing.T) {
