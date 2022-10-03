@@ -62,7 +62,7 @@ func TestMinogrpc_FailGenerateKey_New(t *testing.T) {
 	require.EqualError(t, err, fake.Err("overlay: cert private key"))
 }
 
-func TestMinogrpc_FailCreateCerTNew(t *testing.T) {
+func TestMinogrpc_FailCreateCertNew(t *testing.T) {
 	addr := ParseAddress("127.0.0.1", 3333)
 	router := tree.NewRouter(addressFac)
 
