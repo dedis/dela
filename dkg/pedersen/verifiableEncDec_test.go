@@ -2,7 +2,6 @@ package pedersen
 
 import (
 	"fmt"
-	"log"
 	"math/rand"
 	"testing"
 	"time"
@@ -35,10 +34,10 @@ func Test_verifiableEncDec_minoch(t *testing.T) {
 	dkgs := make([]dkg.DKG, n)
 	addrs := make([]mino.Address, n)
 
-	// Create GBar. we need a generator in order to follow the encryption and
+	// Create GBar. We need a generator in order to follow the encryption and
 	// decryption protocol of https://arxiv.org/pdf/2205.08529.pdf / we take an
-	// agreed data among the participants and embed it as a point. the result is
-	// the generator that we are seeking
+	// agreed data among the participants and embed it as a point. The result is
+	// the generator that we are seeking.
 	agreedData := make([]byte, 32)
 	_, err := rand.Read(agreedData)
 	require.NoError(t, err)
@@ -69,35 +68,35 @@ func Test_verifiableEncDec_minoch(t *testing.T) {
 		actors[i] = actor
 	}
 
-	fmt.Println("setting up the dkg ...")
+	t.Log("setting up the dkg ...")
 
 	_, err = actors[0].Setup(fakeAuthority, threshold)
 	require.NoError(t, err)
 
-	fmt.Println("generating the message and encrypting it ...")
+	t.Log("generating the message and encrypting it ...")
+
 	// generating random messages in batch and encrypt them
-	const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	keys := make([][]byte, batchSize)
+	keys := make([][29]byte, batchSize)
+
 	var ciphertexts []types.Ciphertext
 	for i := 0; i < batchSize; i++ {
-		keys[i] = make([]byte, 29)
-		for j := range keys[i] {
-			keys[i][j] = letterBytes[rand.Intn(len(letterBytes))]
-		}
-		ciphertext, remainder, err := actors[0].VerifiableEncrypt(keys[i], GBar)
+		_, err = rand.Read(keys[i][:])
+		require.NoError(t, err)
+
+		ciphertext, remainder, err := actors[0].VerifiableEncrypt(keys[i][:], GBar)
 		require.NoError(t, err)
 		require.Len(t, remainder, 0)
+
 		ciphertexts = append(ciphertexts, ciphertext)
 	}
 
-	// decrypting the batch ciphertext message
-	fmt.Println("decrypting the ciphertext ...")
+	t.Log("decrypting the ciphertext ...")
+
 	decrypted, err := actors[0].VerifiableDecrypt(ciphertexts)
 	require.NoError(t, err)
 	for i := 0; i < batchSize; i++ {
-		require.Equal(t, keys[i], decrypted[i])
+		require.Equal(t, keys[i][:], decrypted[i])
 	}
-
 }
 
 func Test_verifiableEncDec_minogrpc(t *testing.T) {
@@ -115,16 +114,17 @@ func Test_verifiableEncDec_minogrpc(t *testing.T) {
 	dkgs := make([]dkg.DKG, n)
 	addrs := make([]mino.Address, n)
 
-	// Create GBar. we need a generator in order to follow the encryption and
+	// Create GBar. We need a generator in order to follow the encryption and
 	// decryption protocol of https://arxiv.org/pdf/2205.08529.pdf. We take an
-	// agreed data among the participants and embed it as a point. the result is
+	// agreed data among the participants and embed it as a point. The result is
 	// the generator that we are seeking.
 	agreedData := make([]byte, 32)
 	_, err := rand.Read(agreedData)
 	require.NoError(t, err)
 	GBar := suite.Point().Embed(agreedData, keccak.New(agreedData))
 
-	fmt.Println("initiating the dkg nodes ...")
+	t.Log("initiating the dkg nodes ...")
+
 	for i := 0; i < n; i++ {
 		addr := minogrpc.ParseAddress("127.0.0.1", 0)
 
@@ -158,7 +158,8 @@ func Test_verifiableEncDec_minogrpc(t *testing.T) {
 		actors[i] = actor
 	}
 
-	fmt.Println("setting up the dkg ...")
+	t.Log("setting up the dkg ...")
+
 	start := time.Now()
 	_, err = actors[0].Setup(fakeAuthority, threshold)
 	require.NoError(t, err)
@@ -166,37 +167,37 @@ func Test_verifiableEncDec_minogrpc(t *testing.T) {
 
 	// generating random messages in batch and encrypt them
 	for i, batchSize := range batchSizeSlice {
-		fmt.Printf("=== starting the process with batch size = %d === \n", batchSize)
+		t.Logf("=== starting the process with batch size = %d === \n", batchSize)
+
 		workerNum = numWorkersSlice[i]
 
-		const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-		keys := make([][]byte, batchSize)
+		keys := make([][29]byte, batchSize)
 		var ciphertexts []types.Ciphertext
 		for i := 0; i < batchSize; i++ {
-			keys[i] = make([]byte, 29)
-			for j := range keys[i] {
-				keys[i][j] = letterBytes[rand.Intn(len(letterBytes))]
-			}
-			ciphertext, remainder, err := actors[0].VerifiableEncrypt(keys[i], GBar)
+			_, err = rand.Read(keys[i][:])
+			require.NoError(t, err)
+
+			ciphertext, remainder, err := actors[0].VerifiableEncrypt(keys[i][:], GBar)
 			require.NoError(t, err)
 			require.Len(t, remainder, 0)
+
 			ciphertexts = append(ciphertexts, ciphertext)
 		}
 
-		// decrypting the batch ciphertext message
-		fmt.Println("decrypting the batch ...")
+		t.Log("decrypting the batch ...")
+
 		start = time.Now()
 		decrypted, err := actors[0].VerifiableDecrypt(ciphertexts)
 		decryptionTime := time.Since(start)
 		require.NoError(t, err)
 
 		for i := 0; i < batchSize; i++ {
-			require.Equal(t, keys[i], decrypted[i])
+			require.Equal(t, keys[i][:], decrypted[i])
 		}
 
-		log.Printf("n = %d , batchSize = %d ,  workerNum = %d,decryption time = %v s, throughput =  %v tx/s , dkg setup time = %v s",
-			n, batchSize, workerNum, decryptionTime.Seconds(), float32(batchSize)/float32(decryptionTime.Seconds()), float32(setupTime.Seconds()))
-
+		t.Logf("n=%d, batchSize=%d, workerNum=%d, decryption time=%s, "+
+			"throughput=%v[tx/s], dkg setup time=%s", n, batchSize, workerNum,
+			decryptionTime, float64(batchSize)/decryptionTime.Seconds(), setupTime)
 	}
 
 }

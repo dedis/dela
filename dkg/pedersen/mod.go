@@ -369,85 +369,114 @@ func (a *Actor) VerifiableDecrypt(ciphertexts []types.Ciphertext) ([][]byte, err
 		return nil, xerrors.Errorf("failed to send verifiable decrypt request: %v", err)
 	}
 
-	var respondArr []types.VerifiableDecryptReply
-
-	// active address keeps the addresses of the nodes that actively participate
-	// in the decryption process
-	var activeAddrs []mino.Address
+	responses := make([]types.VerifiableDecryptReply, len(addrs))
 
 	// receive decrypt reply from the nodes
-	for i := 0; i < len(addrs); i++ {
+	for i := range addrs {
 		from, message, err := receiver.Recv(ctx)
-		dela.Logger.Debug().Msgf("received the %d th share from %v\n", i, from)
-
 		if err != nil {
-			return [][]byte{}, xerrors.Errorf("stream stopped unexpectedly: %v", err)
+			return nil, xerrors.Errorf("stream stopped unexpectedly: %v", err)
 		}
+
+		dela.Logger.Debug().Msgf("received share from %v\n", from)
 
 		shareAndProof, ok := message.(types.VerifiableDecryptReply)
 		if !ok {
-			return [][]byte{}, xerrors.Errorf("got unexpected reply, expected "+
+			return nil, xerrors.Errorf("got unexpected reply, expected "+
 				"%T but got: %T", shareAndProof, message)
 		}
 
-		respondArr = append(respondArr, shareAndProof)
-		activeAddrs = append(activeAddrs, addrs[i])
+		responses[i] = shareAndProof
 	}
 
 	// the final decrypted message
 	decryptedMessage := make([][]byte, batchsize)
 
 	var wgBatchReply sync.WaitGroup
-	jobChan := make(chan int, batchsize)
+	jobChan := make(chan int)
 
-	for i := 0; i < batchsize; i++ {
-		jobChan <- i
-	}
+	go func() {
+		for i := 0; i < batchsize; i++ {
+			jobChan <- i
+		}
 
-	close(jobChan)
+		close(jobChan)
+	}()
 
 	if batchsize < workerNum {
 		workerNum = batchsize
 	}
 
+	worker := newWorker(len(addrs), decryptedMessage, responses, ciphertexts)
+
 	for i := 0; i < workerNum; i++ {
 		wgBatchReply.Add(1)
 
-		go func(jobChan <-chan int) {
+		go func() {
 			defer wgBatchReply.Done()
-
 			for j := range jobChan {
-				pubShares := make([]*share.PubShare, len(activeAddrs))
-
-				for k := 0; k < len(activeAddrs); k++ {
-					resp := respondArr[k].GetShareAndProof()[j]
-
-					err = checkDecryptionProof(resp, ciphertexts[j].K)
-					if err != nil {
-						dela.Logger.Error().Msgf("failed to verify the decryption proof : %v", err)
-					} else {
-						pubShares[k] = &share.PubShare{
-							I: int(resp.I),
-							V: resp.V,
-						}
-					}
-				}
-				res, err := share.RecoverCommit(suite, pubShares, len(addrs), len(addrs))
-
+				err := worker.work(j)
 				if err != nil {
-					dela.Logger.Error().Msgf("failed to recover the message : %v", err)
-				}
-				decryptedMessage[j], err = res.Data()
-				if err != nil {
-					dela.Logger.Error().Msgf("failed to get enbeded data : %v", err)
+					dela.Logger.Err(err).Msgf("error in a worker")
 				}
 			}
-		}(jobChan)
+		}()
 	}
 
 	wgBatchReply.Wait()
 
 	return decryptedMessage, nil
+}
+
+func newWorker(numParticipants int, decryptedMessage [][]byte,
+	responses []types.VerifiableDecryptReply, ciphertexts []types.Ciphertext) worker {
+
+	return worker{
+		numParticipants:  numParticipants,
+		decryptedMessage: decryptedMessage,
+		responses:        responses,
+		ciphertexts:      ciphertexts,
+	}
+}
+
+// worker contains the data needed by a worker to perform the verifiable
+// decryption job. All its fields must be read-only, except the
+// decryptedMessage, which can be written at a provided jobIndex.
+type worker struct {
+	numParticipants  int
+	decryptedMessage [][]byte
+	ciphertexts      []types.Ciphertext
+	responses        []types.VerifiableDecryptReply
+}
+
+func (w worker) work(jobIndex int) error {
+	pubShares := make([]*share.PubShare, w.numParticipants)
+
+	for k, response := range w.responses {
+		resp := response.GetShareAndProof()[jobIndex]
+
+		err := checkDecryptionProof(resp, w.ciphertexts[jobIndex].K)
+		if err != nil {
+			return xerrors.Errorf("failed to check the decryption proof: %v", err)
+		}
+
+		pubShares[k] = &share.PubShare{
+			I: int(resp.I),
+			V: resp.V,
+		}
+	}
+
+	res, err := share.RecoverCommit(suite, pubShares, w.numParticipants, w.numParticipants)
+	if err != nil {
+		return xerrors.Errorf("failed to recover the commit: %v", err)
+	}
+
+	w.decryptedMessage[jobIndex], err = res.Data()
+	if err != nil {
+		return xerrors.Errorf("failed to get embedded data : %v", err)
+	}
+
+	return nil
 }
 
 // Reshare implements dkg.Actor. It recreates the DKG with an updated list of
@@ -578,8 +607,9 @@ func checkDecryptionProof(sp types.ShareAndProof, K kyber.Point) error {
 	tmp := suite.Scalar().SetBytes(hash.Sum(nil))
 
 	if !tmp.Equal(sp.Ei) {
-		return xerrors.Errorf("hash is not valid")
+		return xerrors.Errorf("hash is not valid: %x != %x", sp.Ei, tmp)
 	}
+
 	return nil
 }
 
