@@ -200,7 +200,7 @@ func Test_F3B(t *testing.T) {
 			}
 
 			// we read the recorded data on the blockchain and make sure that
-			// the data was submitted corrrectly
+			// the data was submitted correctly
 			err = addAndWait(t, to, manager, nodes[0].(cosiDelaNode), argSlice[i]...)
 			require.NoError(t, err)
 		}

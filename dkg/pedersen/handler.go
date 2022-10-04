@@ -208,7 +208,7 @@ func (s *state) getParticipants() []mino.Address {
 	return s.participants
 }
 
-func (s *state) GetPublicKeys() []kyber.Point {
+func (s *state) getPublicKeys() []kyber.Point {
 	s.Lock()
 	defer s.Unlock()
 	return s.pubkeys
@@ -450,15 +450,15 @@ func (h *Handler) doDKG(ctx context.Context, deals cryChan[types.Deal],
 		return xerrors.Errorf("failed to certify: %v", err)
 	}
 
+	err = h.startRes.switchState(certified)
+	if err != nil {
+		return xerrors.Errorf("failed to switch state: %v", err)
+	}
+
 	h.log.Info().Str("action", "finalize").Msg(newState)
 	err = h.finalize(ctx, from, out)
 	if err != nil {
 		return xerrors.Errorf("failed to finalize: %v", err)
-	}
-
-	err = h.startRes.switchState(certified)
-	if err != nil {
-		return xerrors.Errorf("failed to switch state: %v", err)
 	}
 
 	h.log.Info().Str("action", "done").Msg(newState)
@@ -738,12 +738,12 @@ func (h *Handler) doReshare(ctx context.Context, start types.StartResharing,
 			return xerrors.Errorf("failed to create : %v", err)
 		}
 
-		h.log.Trace().Msgf("old node: %v", h.startRes.GetPublicKeys())
+		h.log.Trace().Msgf("old node: %v", h.startRes.getPublicKeys())
 
 		c := &pedersen.Config{
 			Suite:        suite,
 			Longterm:     h.privKey,
-			OldNodes:     h.startRes.GetPublicKeys(),
+			OldNodes:     h.startRes.getPublicKeys(),
 			NewNodes:     start.GetPubkeysNew(),
 			Share:        share,
 			Threshold:    start.GetTNew(),
@@ -793,17 +793,17 @@ func (h *Handler) doReshare(ctx context.Context, start types.StartResharing,
 		return xerrors.Errorf("failed to certify: %v", err)
 	}
 
+	err = h.startRes.switchState(certified)
+	if err != nil {
+		return xerrors.Errorf("failed to switch state: %v", err)
+	}
+
 	// Announce the DKG public key All the old, new and common nodes would
 	// announce the public key. In this way the initiator can make sure the
 	// resharing was completely successful.
 	err = h.finalizeReshare(isCommonNode, out, from)
 	if err != nil {
 		return xerrors.Errorf("failed to announce dkg public key: %v", err)
-	}
-
-	err = h.startRes.switchState(certified)
-	if err != nil {
-		return xerrors.Errorf("failed to switch state: %v", err)
 	}
 
 	return nil

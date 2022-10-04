@@ -523,7 +523,7 @@ func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
 	}
 
 	thresholdOld := a.startRes.getThreshold()
-	pubkeysOld := a.startRes.GetPublicKeys()
+	pubkeysOld := a.startRes.getPublicKeys()
 
 	// We don't need to send the old threshold or old public keys to the old or
 	// common nodes
