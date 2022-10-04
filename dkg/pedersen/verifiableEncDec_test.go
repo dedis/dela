@@ -199,5 +199,4 @@ func Test_verifiableEncDec_minogrpc(t *testing.T) {
 			"throughput=%v[tx/s], dkg setup time=%s", n, batchSize, workerNum,
 			decryptionTime, float64(batchSize)/decryptionTime.Seconds(), setupTime)
 	}
-
 }

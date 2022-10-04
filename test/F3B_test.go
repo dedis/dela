@@ -4,11 +4,11 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"math/rand"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	_ "net/http/pprof"
 
@@ -25,8 +25,6 @@ import (
 	"go.dedis.ch/dela/dkg/pedersen/types"
 	"go.dedis.ch/dela/internal/testing/fake"
 
-	"net/http"
-
 	"go.dedis.ch/dela/mino"
 
 	"go.dedis.ch/dela/mino/minoch"
@@ -41,16 +39,13 @@ func init() {
 }
 
 func Test_F3B(t *testing.T) {
-
-	go func() {
-		log.Println(http.ListenAndServe("localhost:6060", nil))
-	}()
-
 	batchSizeSlice := []int{8, 32, 64}
+	to := time.Second * 10 // transaction inclusion timeout
 
-	fmt.Println("setting up the dkg ...")
+	t.Log("setting up the dkg ...")
+
 	n := 32
-	threshold := 32
+	threshold := n
 
 	// set up the dkg
 	minos := make([]mino.Mino, n)
@@ -86,7 +81,8 @@ func Test_F3B(t *testing.T) {
 	require.NoError(t, err)
 
 	// setting up the blockchain
-	fmt.Println("setting up the dela blockchain ...")
+	t.Log("setting up the dela blockchain ...")
+
 	dir, err := os.MkdirTemp("", "dela-integration-test")
 	require.NoError(t, err)
 
@@ -135,7 +131,8 @@ func Test_F3B(t *testing.T) {
 	}
 
 	// waiting for the confirmation of the transaction
-	addAndWait(t, manager, nodes[0].(cosiDelaNode), args...)
+	err = addAndWait(t, to, manager, nodes[0].(cosiDelaNode), args...)
+	require.NoError(t, err)
 
 	// creating GBar. we need a generator in order to follow the encryption and
 	// decryption protocol of https://arxiv.org/pdf/2205.08529.pdf / we take an
@@ -151,7 +148,7 @@ func Test_F3B(t *testing.T) {
 	// batch to increase the throughput for more information refer to
 	// https://arxiv.org/pdf/2205.08529.pdf / page 6 / step 1 (write
 	// transaction)
-	fmt.Println("encrypting the data ...")
+	t.Log("encrypting the data ...")
 
 	for _, batchSize := range batchSizeSlice {
 		// the write transaction arguments
@@ -204,16 +201,19 @@ func Test_F3B(t *testing.T) {
 
 			// we read the recorded data on the blockchain and make sure that
 			// the data was submitted corrrectly
-			addAndWait(t, manager, nodes[0].(cosiDelaNode), argSlice[i]...)
+			err = addAndWait(t, to, manager, nodes[0].(cosiDelaNode), argSlice[i]...)
+			require.NoError(t, err)
 		}
 
-		fmt.Println("decrypting the data ...")
+		t.Log("decrypting the data ...")
+
 		// decrypting the symmetric key in batch
 		decrypted, err := actors[0].VerifiableDecrypt(ciphertexts)
 		require.NoError(t, err)
 
+		t.Log("verify the decryption ...")
+
 		// make sure that the decryption was correct
-		fmt.Println("verify the decryption ...")
 		for i := 0; i < batchSize; i++ {
 			require.Equal(t, keys[i], decrypted[i])
 		}
