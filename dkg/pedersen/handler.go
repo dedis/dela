@@ -530,8 +530,8 @@ func (h *Handler) respond(ctx context.Context, deals cryChan[types.Deal], out mi
 	return nil
 }
 
-// certify collects the responses and checks if the node is certified The number
-// of expected responses depends on the case:
+// certify collects the responses and checks if the node is certified. The
+// number of expected responses depends on the case:
 //   - Basic setup: (n_participants-1)^2, because each node won't broadcast the
 //     certification of their own deals, and they won't sent to themselves their
 //     own deal certification either
@@ -723,24 +723,15 @@ func (h *Handler) doReshare(ctx context.Context, start types.StartResharing,
 
 	h.log.Info().Msgf("resharing with %v", start.GetAddrsNew())
 
+	var expectedResponses int
+	addrsOld := h.startRes.getParticipants()
 	addrsNew := start.GetAddrsNew()
 
 	isOldNode := h.startRes.getDistKey() != nil
 	isNewNode := !isOldNode
+	isCommonNode := isOldNode && isInSlice(h.me, addrsNew) && isInSlice(h.me, addrsOld)
 
-	// By default the node is not common. Later we check
-	isCommonNode := false
-
-	var expectedResponses int
-	addrsOld := h.startRes.getParticipants()
-
-	// If the node is in the old committee, it should do the following steps
 	if isOldNode {
-
-		// This variable is true if the node is common between the old and the
-		// new committee
-		isCommonNode = isInSlice(h.me, addrsNew) && isInSlice(h.me, addrsOld)
-
 		// 1. Update local DKG for resharing
 		share, err := h.dkg.DistKeyShare()
 		if err != nil {
