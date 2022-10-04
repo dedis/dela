@@ -257,14 +257,14 @@ func (d Deal) Serialize(ctx serde.Context) ([]byte, error) {
 // - implements serde.Message
 type Reshare struct {
 	deal        Deal
-	PublicCoeff []kyber.Point
+	publicCoeff []kyber.Point
 }
 
 // NewReshare creates a new deal.
 func NewReshare(deal Deal, publicCoeff []kyber.Point) Reshare {
 	return Reshare{
 		deal:        deal,
-		PublicCoeff: publicCoeff,
+		publicCoeff: publicCoeff,
 	}
 }
 
@@ -275,7 +275,7 @@ func (d Reshare) GetDeal() Deal {
 
 // GetPublicCoeffs returns the public coeff.
 func (d Reshare) GetPublicCoeffs() []kyber.Point {
-	return d.PublicCoeff
+	return d.publicCoeff
 }
 
 // Serialize implements serde.Message.
@@ -460,12 +460,12 @@ func (req VerifiableDecryptRequest) GetCiphertexts() []Ciphertext {
 }
 
 // Serialize implements serde.Message.
-func (resp VerifiableDecryptRequest) Serialize(ctx serde.Context) ([]byte, error) {
+func (req VerifiableDecryptRequest) Serialize(ctx serde.Context) ([]byte, error) {
 	format := msgFormats.Get(ctx.GetFormat())
 
-	data, err := format.Encode(ctx, resp)
+	data, err := format.Encode(ctx, req)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't encode decrypt reply: %v", err)
+		return nil, xerrors.Errorf("couldn't encode verifiable decrypt request: %v", err)
 	}
 
 	return data, nil
@@ -535,7 +535,7 @@ func (resp VerifiableDecryptReply) Serialize(ctx serde.Context) ([]byte, error) 
 
 	data, err := format.Encode(ctx, resp)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't encode decrypt reply: %v", err)
+		return nil, xerrors.Errorf("couldn't encode verifiable decrypt reply: %v", err)
 	}
 
 	return data, nil

@@ -45,7 +45,7 @@ type Deal struct {
 	EncryptedDeal EncryptedDeal
 }
 
-type DealResharing struct {
+type Reshare struct {
 	Deal        Deal
 	PublicCoeff []PublicKey
 }
@@ -107,7 +107,7 @@ type Message struct {
 	Start                    *Start                    `json:",omitempty"`
 	StartResharing           *StartResharing           `json:",omitempty"`
 	Deal                     *Deal                     `json:",omitempty"`
-	DealResharing            *DealResharing            `json:",omitempty"`
+	Reshare                  *Reshare                  `json:",omitempty"`
 	Response                 *Response                 `json:",omitempty"`
 	StartDone                *StartDone                `json:",omitempty"`
 	DecryptRequest           *DecryptRequest           `json:",omitempty"`
@@ -225,8 +225,8 @@ func (f msgFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error)
 		return deal, nil
 	}
 
-	if m.DealResharing != nil {
-		return f.decodeReshare(ctx, m.DealResharing)
+	if m.Reshare != nil {
+		return f.decodeReshare(ctx, m.Reshare)
 	}
 
 	if m.Response != nil {
@@ -330,7 +330,7 @@ func encodeStartResharing(msg types.StartResharing) (Message, error) {
 	for i, addr := range msg.GetAddrsNew() {
 		data, err := addr.MarshalText()
 		if err != nil {
-			return Message{}, xerrors.Errorf("couldn't marshal address: %v", err)
+			return Message{}, xerrors.Errorf("couldn't marshal new address: %v", err)
 		}
 
 		addrsNew[i] = data
@@ -340,7 +340,7 @@ func encodeStartResharing(msg types.StartResharing) (Message, error) {
 	for i, addr := range msg.GetAddrsOld() {
 		data, err := addr.MarshalText()
 		if err != nil {
-			return Message{}, xerrors.Errorf("couldn't marshal address: %v", err)
+			return Message{}, xerrors.Errorf("couldn't marshal old address: %v", err)
 		}
 
 		addrsOld[i] = data
@@ -350,7 +350,7 @@ func encodeStartResharing(msg types.StartResharing) (Message, error) {
 	for i, pubkey := range msg.GetPubkeysNew() {
 		data, err := pubkey.MarshalBinary()
 		if err != nil {
-			return Message{}, xerrors.Errorf("couldn't marshal public key: %v", err)
+			return Message{}, xerrors.Errorf("couldn't marshal new public key: %v", err)
 		}
 
 		pubkeysNew[i] = data
@@ -360,7 +360,7 @@ func encodeStartResharing(msg types.StartResharing) (Message, error) {
 	for i, pubkey := range msg.GetPubkeysOld() {
 		data, err := pubkey.MarshalBinary()
 		if err != nil {
-			return Message{}, xerrors.Errorf("couldn't marshal public key: %v", err)
+			return Message{}, xerrors.Errorf("couldn't marshal old public key: %v", err)
 		}
 
 		pubkeysOld[i] = data
@@ -403,7 +403,7 @@ func (f msgFormat) decodeStartResharing(ctx serde.Context,
 		point := f.suite.Point()
 		err := point.UnmarshalBinary(pubkey)
 		if err != nil {
-			return nil, xerrors.Errorf("couldn't unmarshal public key: %v", err)
+			return nil, xerrors.Errorf("couldn't unmarshal new public key: %v", err)
 		}
 
 		pubkeysNew[i] = point
@@ -414,7 +414,7 @@ func (f msgFormat) decodeStartResharing(ctx serde.Context,
 		point := f.suite.Point()
 		err := point.UnmarshalBinary(pubkey)
 		if err != nil {
-			return nil, xerrors.Errorf("couldn't unmarshal public key: %v", err)
+			return nil, xerrors.Errorf("couldn't unmarshal old public key: %v", err)
 		}
 
 		pubkeysOld[i] = point
@@ -442,21 +442,21 @@ func encodeReshare(msg types.Reshare) (Message, error) {
 	for i, coeff := range msg.GetPublicCoeffs() {
 		data, err := coeff.MarshalBinary()
 		if err != nil {
-			return Message{}, xerrors.Errorf("couldn't marshal public coefficient %v", err)
+			return Message{}, xerrors.Errorf("couldn't marshal public coefficient: %v", err)
 		}
 		publicCoeff[i] = data
 	}
 
-	dr := DealResharing{
+	dr := Reshare{
 		Deal:        d,
 		PublicCoeff: publicCoeff,
 	}
 
-	return Message{DealResharing: &dr}, nil
+	return Message{Reshare: &dr}, nil
 }
 
 func (f msgFormat) decodeReshare(ctx serde.Context,
-	msg *DealResharing) (serde.Message, error) {
+	msg *Reshare) (serde.Message, error) {
 
 	deal := types.NewDeal(
 		msg.Deal.Index,
@@ -475,7 +475,7 @@ func (f msgFormat) decodeReshare(ctx serde.Context,
 		point := f.suite.Point()
 		err := point.UnmarshalBinary(coeff)
 		if err != nil {
-			return nil, xerrors.Errorf("couldn't unmarshal public key: %v", err)
+			return nil, xerrors.Errorf("couldn't unmarshal public coeff key: %v", err)
 		}
 
 		publicCoeff[i] = point
