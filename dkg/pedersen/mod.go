@@ -42,8 +42,8 @@ var (
 )
 
 const (
-	setupTimeout     = time.Minute * 5
-	decryptTimeout   = time.Minute * 2
+	setupTimeout     = time.Minute * 50
+	decryptTimeout   = time.Minute * 5
 	resharingTimeout = time.Minute * 5
 )
 

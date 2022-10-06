@@ -39,134 +39,148 @@ func init() {
 }
 
 func Test_F3B(t *testing.T) {
-	batchSizeSlice := []int{8, 32, 64}
-	to := time.Second * 10 // transaction inclusion timeout
+	batchSizes := []int{1}
+	// numDKGs := []int{3, 10, 20, 30, 50, 70, 100}
+	numDKGs := []int{32}
 
-	t.Log("setting up the dkg ...")
-
-	n := 32
-	threshold := n
-
-	// set up the dkg
-	minos := make([]mino.Mino, n)
-	dkgs := make([]dkg.DKG, n)
-	addrs := make([]mino.Address, n)
-
-	minoManager := minoch.NewManager()
-
-	// initializing the addresses
-	for i := 0; i < n; i++ {
-		minogrpc := minoch.MustCreate(minoManager, fmt.Sprintf("addr %d", i))
-		minos[i] = minogrpc
-		addrs[i] = minogrpc.GetAddress()
+	for _, batchSize := range batchSizes {
+		for _, numDKG := range numDKGs {
+			t.Run(fmt.Sprintf("batch size %d num dkg %d", batchSize, numDKG), f3bScenario(batchSize, numDKG, 3))
+		}
 	}
+}
 
-	pubkeys := make([]kyber.Point, len(minos))
+func f3bScenario(batchSize, numDKG, numNodes int) func(t *testing.T) {
+	return func(t *testing.T) {
 
-	for i, mino := range minos {
-		dkg, pubkey := pedersen.NewPedersen(mino)
-		dkgs[i] = dkg
-		pubkeys[i] = pubkey
-	}
+		require.Greater(t, numDKG, 0)
+		require.Greater(t, numNodes, 0)
+		require.GreaterOrEqual(t, numDKG, numNodes)
 
-	actors := make([]dkg.Actor, n)
-	for i := 0; i < n; i++ {
-		actor, err := dkgs[i].Listen()
+		to := time.Second * 10 // transaction inclusion timeout
+
+		// set up the dkg
+		minos := make([]mino.Mino, numDKG)
+		dkgs := make([]dkg.DKG, numDKG)
+		addrs := make([]mino.Address, numDKG)
+
+		minoManager := minoch.NewManager()
+
+		// initializing the addresses
+		for i := 0; i < numDKG; i++ {
+			minogrpc := minoch.MustCreate(minoManager, fmt.Sprintf("addr %d", i))
+			minos[i] = minogrpc
+			addrs[i] = minogrpc.GetAddress()
+		}
+
+		pubkeys := make([]kyber.Point, len(minos))
+
+		for i, mino := range minos {
+			dkg, pubkey := pedersen.NewPedersen(mino)
+			dkgs[i] = dkg
+			pubkeys[i] = pubkey
+		}
+
+		actors := make([]dkg.Actor, numDKG)
+		for i := 0; i < numDKG; i++ {
+			actor, err := dkgs[i].Listen()
+			require.NoError(t, err)
+			actors[i] = actor
+		}
+
+		fakeAuthority := NewAuthority(addrs, pubkeys)
+		start := time.Now()
+		_, err := actors[0].Setup(fakeAuthority, numDKG)
 		require.NoError(t, err)
-		actors[i] = actor
-	}
 
-	fakeAuthority := NewAuthority(addrs, pubkeys)
-	_, err := actors[0].Setup(fakeAuthority, threshold)
-	require.NoError(t, err)
+		setupTime := time.Since(start)
+		t.Logf("setup done in %s", setupTime)
 
-	// setting up the blockchain
-	t.Log("setting up the dela blockchain ...")
+		// setting up the blockchain
 
-	dir, err := os.MkdirTemp("", "dela-integration-test")
-	require.NoError(t, err)
+		dir, err := os.MkdirTemp("", "dela-integration-test")
+		require.NoError(t, err)
 
-	t.Logf("using temps dir %s", dir)
+		t.Logf("using temps dir %s", dir)
 
-	defer os.RemoveAll(dir)
+		defer os.RemoveAll(dir)
 
-	// running the dela blockchain with 3 nodes
-	nodes := []dela{
-		newDelaNode(t, filepath.Join(dir, "node1"), 0),
-		newDelaNode(t, filepath.Join(dir, "node2"), 0),
-		newDelaNode(t, filepath.Join(dir, "node3"), 0),
-	}
+		nodes := make([]dela, numNodes)
 
-	nodes[0].Setup(nodes[1:]...)
+		for i := range nodes {
+			nodes[i] = newDelaNode(t, filepath.Join(dir, fmt.Sprintf("node%d", i)), 0)
+		}
 
-	l := loader.NewFileLoader(filepath.Join(dir, "private.key"))
+		nodes[0].Setup(nodes[1:]...)
 
-	// creating a new client/signer
-	signerdata, err := l.LoadOrCreate(newKeyGenerator())
-	require.NoError(t, err)
+		l := loader.NewFileLoader(filepath.Join(dir, "private.key"))
 
-	signer, err := bls.NewSignerFromBytes(signerdata)
-	require.NoError(t, err)
+		// creating a new client/signer
+		signerdata, err := l.LoadOrCreate(newKeyGenerator())
+		require.NoError(t, err)
 
-	pubKey := signer.GetPublicKey()
-	cred := accessContract.NewCreds(aKey[:])
+		signer, err := bls.NewSignerFromBytes(signerdata)
+		require.NoError(t, err)
 
-	for _, node := range nodes {
-		node.GetAccessService().Grant(node.(cosiDelaNode).GetAccessStore(), cred, pubKey)
-	}
+		pubKey := signer.GetPublicKey()
+		cred := accessContract.NewCreds(aKey[:])
 
-	manager := signed.NewManager(signer, &txClient{})
+		for _, node := range nodes {
+			node.GetAccessService().Grant(node.(cosiDelaNode).GetAccessStore(), cred, pubKey)
+		}
 
-	pubKeyBuf, err := signer.GetPublicKey().MarshalBinary()
-	require.NoError(t, err)
+		manager := signed.NewManager(signer, &txClient{})
 
-	// sending the grant transaction to the blockchain
-	args := []txn.Arg{
-		{Key: "go.dedis.ch/dela.ContractArg", Value: []byte("go.dedis.ch/dela.Access")},
-		{Key: "access:grant_id", Value: []byte(hex.EncodeToString(valueAccessKey[:]))},
-		{Key: "access:grant_contract", Value: []byte("go.dedis.ch/dela.Value")},
-		{Key: "access:grant_command", Value: []byte("all")},
-		{Key: "access:identity", Value: []byte(base64.StdEncoding.EncodeToString(pubKeyBuf))},
-		{Key: "access:command", Value: []byte("GRANT")},
-	}
+		pubKeyBuf, err := signer.GetPublicKey().MarshalBinary()
+		require.NoError(t, err)
 
-	// waiting for the confirmation of the transaction
-	err = addAndWait(t, to, manager, nodes[0].(cosiDelaNode), args...)
-	require.NoError(t, err)
+		// sending the grant transaction to the blockchain
+		args := []txn.Arg{
+			{Key: "go.dedis.ch/dela.ContractArg", Value: []byte("go.dedis.ch/dela.Access")},
+			{Key: "access:grant_id", Value: []byte(hex.EncodeToString(valueAccessKey[:]))},
+			{Key: "access:grant_contract", Value: []byte("go.dedis.ch/dela.Value")},
+			{Key: "access:grant_command", Value: []byte("all")},
+			{Key: "access:identity", Value: []byte(base64.StdEncoding.EncodeToString(pubKeyBuf))},
+			{Key: "access:command", Value: []byte("GRANT")},
+		}
 
-	// creating GBar. we need a generator in order to follow the encryption and
-	// decryption protocol of https://arxiv.org/pdf/2205.08529.pdf / we take an
-	// agreed data among the participants and embed it as a point. the result is
-	// the generator that we are seeking
-	var suite = suites.MustFind("Ed25519")
-	agreedData := make([]byte, 32)
-	_, err = rand.Read(agreedData)
-	require.NoError(t, err)
-	gBar := suite.Point().Embed(agreedData, keccak.New(agreedData))
+		// waiting for the confirmation of the transaction
+		err = addAndWait(t, to, manager, nodes[0].(cosiDelaNode), args...)
+		require.NoError(t, err)
 
-	// creating the symmetric keys in batch. we process the transactions in
-	// batch to increase the throughput for more information refer to
-	// https://arxiv.org/pdf/2205.08529.pdf / page 6 / step 1 (write
-	// transaction)
-	t.Log("encrypting the data ...")
+		// creating GBar. we need a generator in order to follow the encryption and
+		// decryption protocol of https://arxiv.org/pdf/2205.08529.pdf / we take an
+		// agreed data among the participants and embed it as a point. the result is
+		// the generator that we are seeking
+		var suite = suites.MustFind("Ed25519")
+		agreedData := make([]byte, 32)
+		_, err = rand.Read(agreedData)
+		require.NoError(t, err)
+		gBar := suite.Point().Embed(agreedData, keccak.New(agreedData))
 
-	for _, batchSize := range batchSizeSlice {
+		// creating the symmetric keys in batch. we process the transactions in
+		// batch to increase the throughput for more information refer to
+		// https://arxiv.org/pdf/2205.08529.pdf / page 6 / step 1 (write
+		// transaction)
+
 		// the write transaction arguments
 		argSlice := make([][]txn.Arg, batchSize)
 
 		var ciphertexts []types.Ciphertext
 
-		const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-		keys := make([][]byte, batchSize)
-		//Create a Write instance
-		for i := 0; i < batchSize; i++ {
-			keys[i] = make([]byte, 29)
-			for j := range keys[i] {
-				keys[i][j] = letterBytes[rand.Intn(len(letterBytes))]
-			}
+		// generate random messages to be encrypted
+		keys := make([][29]byte, batchSize)
+		for i := range keys {
+			_, err = rand.Read(keys[i][:])
+			require.NoError(t, err)
+		}
 
+		start = time.Now()
+
+		// Create a Write instance
+		for i := 0; i < batchSize; i++ {
 			// Encrypting the symmetric key
-			ciphertext, remainder, err := actors[0].VerifiableEncrypt(keys[i], gBar)
+			ciphertext, remainder, err := actors[0].VerifiableEncrypt(keys[i][:], gBar)
 			require.NoError(t, err)
 			require.Len(t, remainder, 0)
 
@@ -205,20 +219,26 @@ func Test_F3B(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		t.Log("decrypting the data ...")
+		submitTime := time.Since(start)
+		t.Logf("submit batch: %s", submitTime)
+
+		start = time.Now()
 
 		// decrypting the symmetric key in batch
 		decrypted, err := actors[0].VerifiableDecrypt(ciphertexts)
 		require.NoError(t, err)
 
-		t.Log("verify the decryption ...")
+		decryptTime := time.Since(start)
+		t.Logf("decrypt batch: %s", decryptTime)
 
 		// make sure that the decryption was correct
 		for i := 0; i < batchSize; i++ {
-			require.Equal(t, keys[i], decrypted[i])
+			require.Equal(t, keys[i][:], decrypted[i])
 		}
-	}
 
+		fmt.Println("Setup,\tSubmit,\tDecrypt")
+		fmt.Printf("%d,\t%d,\t%d\n", setupTime.Milliseconds(), submitTime.Milliseconds(), decryptTime.Milliseconds())
+	}
 }
 
 // -----------------------------------------------------------------------------
