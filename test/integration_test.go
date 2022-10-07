@@ -31,7 +31,7 @@ func TestIntegration_Value_Simple(t *testing.T) {
 	dir, err := os.MkdirTemp(os.TempDir(), "dela-integration-test")
 	require.NoError(t, err)
 
-	to := time.Second * 10 // transaction inclusion timeout
+	timeout := time.Second * 10 // transaction inclusion timeout
 
 	t.Logf("using temps dir %s", dir)
 
@@ -73,7 +73,7 @@ func TestIntegration_Value_Simple(t *testing.T) {
 		{Key: "access:identity", Value: []byte(base64.StdEncoding.EncodeToString(pubKeyBuf))},
 		{Key: "access:command", Value: []byte("GRANT")},
 	}
-	err = addAndWait(t, to, manager, nodes[0].(cosiDelaNode), args...)
+	err = addAndWait(t, timeout, manager, nodes[0].(cosiDelaNode), args...)
 	require.NoError(t, err)
 
 	key1 := make([]byte, 32)
@@ -87,7 +87,7 @@ func TestIntegration_Value_Simple(t *testing.T) {
 		{Key: "value:value", Value: []byte("value1")},
 		{Key: "value:command", Value: []byte("WRITE")},
 	}
-	err = addAndWait(t, to, manager, nodes[0].(cosiDelaNode), args...)
+	err = addAndWait(t, timeout, manager, nodes[0].(cosiDelaNode), args...)
 	require.NoError(t, err)
 
 	proof, err := nodes[0].GetOrdering().GetProof(key1)
@@ -105,7 +105,7 @@ func TestIntegration_Value_Simple(t *testing.T) {
 		{Key: "value:value", Value: []byte("value2")},
 		{Key: "value:command", Value: []byte("WRITE")},
 	}
-	err = addAndWait(t, to, manager, nodes[0].(cosiDelaNode), args...)
+	err = addAndWait(t, timeout, manager, nodes[0].(cosiDelaNode), args...)
 	require.NoError(t, err)
 }
 

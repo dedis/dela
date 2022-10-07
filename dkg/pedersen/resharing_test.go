@@ -7,8 +7,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	_ "net/http/pprof"
-
 	"go.dedis.ch/dela/mino/minogrpc"
 	"go.dedis.ch/dela/mino/router/tree"
 

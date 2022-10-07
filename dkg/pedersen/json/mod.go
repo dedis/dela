@@ -202,15 +202,14 @@ func (f msgFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error)
 		return nil, xerrors.Errorf("couldn't deserialize message: %v", err)
 	}
 
-	if m.Start != nil {
+	switch {
+	case m.Start != nil:
 		return f.decodeStart(ctx, m.Start)
-	}
 
-	if m.StartResharing != nil {
+	case m.StartResharing != nil:
 		return f.decodeStartResharing(ctx, m.StartResharing)
-	}
 
-	if m.Deal != nil {
+	case m.Deal != nil:
 		deal := types.NewDeal(
 			m.Deal.Index,
 			m.Deal.Signature,
@@ -223,13 +222,11 @@ func (f msgFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error)
 		)
 
 		return deal, nil
-	}
 
-	if m.Reshare != nil {
+	case m.Reshare != nil:
 		return f.decodeReshare(ctx, m.Reshare)
-	}
 
-	if m.Response != nil {
+	case m.Response != nil:
 		resp := types.NewResponse(
 			m.Response.Index,
 			types.NewDealerResponse(
@@ -241,25 +238,20 @@ func (f msgFormat) Decode(ctx serde.Context, data []byte) (serde.Message, error)
 		)
 
 		return resp, nil
-	}
 
-	if m.StartDone != nil {
+	case m.StartDone != nil:
 		return f.decodeStartDone(ctx, m.StartDone)
-	}
 
-	if m.DecryptRequest != nil {
+	case m.DecryptRequest != nil:
 		return f.decodeDecryptRequest(ctx, m.DecryptRequest)
-	}
 
-	if m.VerifiableDecryptRequest != nil {
+	case m.VerifiableDecryptRequest != nil:
 		return f.decodeVerifiableDecryptRequest(ctx, m.VerifiableDecryptRequest)
-	}
 
-	if m.DecryptReply != nil {
+	case m.DecryptReply != nil:
 		return f.decodeDecryptReply(ctx, m.DecryptReply)
-	}
 
-	if m.VerifiableDecryptReply != nil {
+	case m.VerifiableDecryptReply != nil:
 		return f.decodeVerifiableDecryptReply(ctx, m.VerifiableDecryptReply)
 	}
 

@@ -31,7 +31,7 @@ const recvTimeout = time.Second * 30
 // the channel size used to stored buffered deals and responses. This arbitrary
 // value must be set according to the characteristic of the system: number of
 // nodes, networking, memory, etc...
-const chanSize = 10000
+// const chanSize = 10000
 
 // constant used in the logs
 const newState = "new state"
