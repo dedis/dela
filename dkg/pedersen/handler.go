@@ -178,7 +178,9 @@ func (s *state) checkState(states ...dkgState) error {
 func (s *state) Done() bool {
 	s.Lock()
 	defer s.Unlock()
-	return s.distrKey != nil
+
+	current := s.dkgState
+	return current == certified
 }
 
 func (s *state) init(participants []mino.Address, pubkeys []kyber.Point, t int) {
@@ -260,14 +262,17 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 	// messages to the other nodes, and then we might get their messages before
 	// the start message.
 
-	h.log.Trace().Msg("stream start")
+	h.log.Info().Msg("stream start")
 
-	deals := newCryChan[types.Deal](chanSize)
-	responses := newCryChan[types.Response](chanSize)
-	reshares := newCryChan[types.Reshare](chanSize)
+	deals := newCryChan[types.Deal](200)
+	responses := newCryChan[types.Response](100000)
+	reshares := newCryChan[types.Reshare](200)
 
 	globalCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	running := true
+	runMux := sync.Mutex{}
 
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), recvTimeout)
@@ -275,14 +280,18 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 		cancel()
 
 		if errors.Is(err, context.DeadlineExceeded) {
-			if h.startRes.Done() {
+			runMux.Lock()
+			if !running {
+				h.log.Info().Msg("stream done, deadline exceeded")
+				runMux.Unlock()
 				return nil
 			}
-
+			runMux.Unlock()
 			continue
 		}
 
 		if errors.Is(err, io.EOF) {
+			h.log.Info().Msg("stream done, EOF")
 			return nil
 		}
 
@@ -298,21 +307,28 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 		switch msg := msg.(type) {
 
 		case types.Start:
-			err = h.start(globalCtx, msg, deals, responses, from, out)
-			if err != nil {
-				return xerrors.Errorf("failed to start: %v", err)
-			}
+			go func() {
+				err = h.start(globalCtx, msg, deals, responses, from, out)
+				if err != nil {
+					h.log.Err(err).Msg("failed to start")
+				}
+
+				runMux.Lock()
+				running = false
+				runMux.Unlock()
+			}()
 
 		case types.StartResharing:
-			err := h.startRes.switchState(resharing)
-			if err != nil {
-				return xerrors.Errorf("failed to switch state: %v", err)
-			}
+			go func() {
+				err = h.reshare(globalCtx, out, from, msg, reshares, responses)
+				if err != nil {
+					h.log.Err(err).Msg("failed to handle resharing")
+				}
 
-			err = h.reshare(globalCtx, out, from, msg, reshares, responses)
-			if err != nil {
-				return xerrors.Errorf("failed to handle resharing: %v", err)
-			}
+				runMux.Lock()
+				running = false
+				runMux.Unlock()
+			}()
 
 		case types.Deal:
 			err = h.startRes.checkState(initial, sharing, certified, resharing)
@@ -409,14 +425,10 @@ func (h *Handler) start(ctx context.Context, start types.Start, deals cryChan[ty
 
 	h.startRes.init(start.GetAddresses(), start.GetPublicKeys(), start.GetThreshold())
 
-	// asynchronously start the procedure. This allows for receiving messages
-	// in the main for loop in the meantime.
-	go func() {
-		err = h.doDKG(ctx, deals, resps, out, from)
-		if err != nil {
-			h.log.Err(err).Msg("something went wrong during DKG")
-		}
-	}()
+	err = h.doDKG(ctx, deals, resps, out, from)
+	if err != nil {
+		xerrors.Errorf("something went wrong during DKG: %v", err)
+	}
 
 	return nil
 }
@@ -599,7 +611,7 @@ func (h *Handler) finalize(ctx context.Context, from mino.Address, out mino.Send
 			return xerrors.Errorf("got an error while sending pub key: %v", err)
 		}
 	case <-ctx.Done():
-		return xerrors.Errorf("context done: %v", ctx.Err())
+		h.log.Warn().Msgf("context done (this might be expected): %v", ctx.Err())
 	}
 
 	return nil
@@ -658,7 +670,7 @@ func (h *Handler) handleDeal(ctx context.Context, msg types.Deal,
 	return nil
 }
 
-func (h *Handler) finalizeReshare(isCommonNode bool, out mino.Sender, from mino.Address) error {
+func (h *Handler) finalizeReshare(ctx context.Context, isCommonNode bool, out mino.Sender, from mino.Address) error {
 	// Send back the public DKG key
 	publicKey := h.startRes.getDistKey()
 
@@ -683,9 +695,14 @@ func (h *Handler) finalizeReshare(isCommonNode bool, out mino.Sender, from mino.
 	// initiator, in this way the initiator can make sure that every body has
 	// finished the resharing successfully
 	done := types.NewStartDone(publicKey)
-	err := <-out.Send(done, from)
-	if err != nil {
-		return xerrors.Errorf("got an error while sending pub key: %v", err)
+
+	select {
+	case err := <-out.Send(done, from):
+		if err != nil {
+			return xerrors.Errorf("got an error while sending pub key: %v", err)
+		}
+	case <-ctx.Done():
+		h.log.Warn().Msgf("context done (this might be expected): %v", ctx.Err())
 	}
 
 	dela.Logger.Info().Msgf("%s announced the DKG public key", h.me)
@@ -698,6 +715,11 @@ func (h *Handler) finalizeReshare(isCommonNode bool, out mino.Sender, from mino.
 func (h *Handler) reshare(ctx context.Context, out mino.Sender,
 	from mino.Address, msg types.StartResharing, reshares cryChan[types.Reshare], resps cryChan[types.Response]) error {
 
+	err := h.startRes.switchState(resharing)
+	if err != nil {
+		return xerrors.Errorf("failed to switch state: %v", err)
+	}
+
 	addrsNew := msg.GetAddrsNew()
 
 	if len(addrsNew) != len(msg.GetPubkeysNew()) {
@@ -705,12 +727,10 @@ func (h *Handler) reshare(ctx context.Context, out mino.Sender,
 			len(addrsNew), len(msg.GetPubkeysNew()))
 	}
 
-	go func() {
-		err := h.doReshare(ctx, msg, from, out, reshares, resps)
-		if err != nil {
-			h.log.Err(err).Msg("failed to reshare")
-		}
-	}()
+	err = h.doReshare(ctx, msg, from, out, reshares, resps)
+	if err != nil {
+		xerrors.Errorf("failed to reshare: %v", err)
+	}
 
 	return nil
 }
@@ -801,7 +821,7 @@ func (h *Handler) doReshare(ctx context.Context, start types.StartResharing,
 	// Announce the DKG public key All the old, new and common nodes would
 	// announce the public key. In this way the initiator can make sure the
 	// resharing was completely successful.
-	err = h.finalizeReshare(isCommonNode, out, from)
+	err = h.finalizeReshare(ctx, isCommonNode, out, from)
 	if err != nil {
 		return xerrors.Errorf("failed to announce dkg public key: %v", err)
 	}
