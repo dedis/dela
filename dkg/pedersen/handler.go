@@ -26,7 +26,7 @@ import (
 
 // the receiving time out, after which we check if the DKG setup is done or not.
 // Allows to exit the loop.
-const recvTimeout = time.Second * 4
+const recvTimeout = time.Second * 30
 
 // the channel size used to stored buffered deals and responses. This arbitrary
 // value must be set according to the characteristic of the system: number of

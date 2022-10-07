@@ -41,7 +41,7 @@ func init() {
 func Test_F3B(t *testing.T) {
 	batchSizes := []int{1}
 	// numDKGs := []int{3, 10, 20, 30, 50, 70, 100}
-	numDKGs := []int{32}
+	numDKGs := []int{128}
 
 	for _, batchSize := range batchSizes {
 		for _, numDKG := range numDKGs {

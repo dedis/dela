@@ -72,12 +72,12 @@ func (s Start) GetThreshold() int {
 
 // GetAddresses returns the list of addresses.
 func (s Start) GetAddresses() []mino.Address {
-	return append([]mino.Address{}, s.addresses...)
+	return s.addresses
 }
 
 // GetPublicKeys returns the list of public keys.
 func (s Start) GetPublicKeys() []kyber.Point {
-	return append([]kyber.Point{}, s.pubkeys...)
+	return s.pubkeys
 }
 
 // Serialize implements serde.Message. It looks up the format and returns the
@@ -137,22 +137,22 @@ func (r StartResharing) GetTOld() int {
 
 // GetAddrsNew returns the list of new addresses.
 func (r StartResharing) GetAddrsNew() []mino.Address {
-	return append([]mino.Address{}, r.addrsNew...)
+	return r.addrsNew
 }
 
 // GetAddrsOld returns the list of old addresses.
 func (r StartResharing) GetAddrsOld() []mino.Address {
-	return append([]mino.Address{}, r.addrsOld...)
+	return r.addrsOld
 }
 
 // GetPubkeysNew returns the list of new public keys.
 func (r StartResharing) GetPubkeysNew() []kyber.Point {
-	return append([]kyber.Point{}, r.pubkeysNew...)
+	return r.pubkeysNew
 }
 
 // GetPubkeysOld returns the list of old public keys.
 func (r StartResharing) GetPubkeysOld() []kyber.Point {
-	return append([]kyber.Point{}, r.pubkeysOld...)
+	return r.pubkeysOld
 }
 
 // Serialize implements serde.Message. It looks up the format and returns the
@@ -189,22 +189,22 @@ func NewEncryptedDeal(dhkey, sig, nonce, cipher []byte) EncryptedDeal {
 
 // GetDHKey returns the Diffie-Helmann key in bytes.
 func (d EncryptedDeal) GetDHKey() []byte {
-	return append([]byte{}, d.dhkey...)
+	return d.dhkey
 }
 
 // GetSignature returns the signatures in bytes.
 func (d EncryptedDeal) GetSignature() []byte {
-	return append([]byte{}, d.signature...)
+	return d.signature
 }
 
 // GetNonce returns the nonce in bytes.
 func (d EncryptedDeal) GetNonce() []byte {
-	return append([]byte{}, d.nonce...)
+	return d.nonce
 }
 
 // GetCipher returns the cipher in bytes.
 func (d EncryptedDeal) GetCipher() []byte {
-	return append([]byte{}, d.cipher...)
+	return d.cipher
 }
 
 // Deal matches the attributes defined in kyber dkg.Deal.
@@ -233,7 +233,7 @@ func (d Deal) GetIndex() uint32 {
 
 // GetSignature returns the signature in bytes.
 func (d Deal) GetSignature() []byte {
-	return append([]byte{}, d.signature...)
+	return d.signature
 }
 
 // GetEncryptedDeal returns the encrypted deal.
@@ -312,7 +312,7 @@ func NewDealerResponse(index uint32, status bool, sessionID, sig []byte) DealerR
 
 // GetSessionID returns the session ID in bytes.
 func (dresp DealerResponse) GetSessionID() []byte {
-	return append([]byte{}, dresp.sessionID...)
+	return dresp.sessionID
 }
 
 // GetIndex returns the index.
@@ -327,7 +327,7 @@ func (dresp DealerResponse) GetStatus() bool {
 
 // GetSignature returns the signature in bytes.
 func (dresp DealerResponse) GetSignature() []byte {
-	return append([]byte{}, dresp.signature...)
+	return dresp.signature
 }
 
 // Response matches the attributes defined in kyber pedersen.Response.
