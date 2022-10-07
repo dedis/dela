@@ -28,6 +28,8 @@ import (
 	"go.dedis.ch/dela/mino"
 
 	"go.dedis.ch/dela/mino/minoch"
+	"go.dedis.ch/dela/mino/minogrpc"
+	"go.dedis.ch/dela/mino/router/tree"
 
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/suites"
@@ -41,16 +43,18 @@ func init() {
 func Test_F3B(t *testing.T) {
 	batchSizes := []int{1}
 	// numDKGs := []int{3, 10, 20, 30, 50, 70, 100}
-	numDKGs := []int{128}
+	numDKGs := []int{3}
+	withGrpc := false
 
 	for _, batchSize := range batchSizes {
 		for _, numDKG := range numDKGs {
-			t.Run(fmt.Sprintf("batch size %d num dkg %d", batchSize, numDKG), f3bScenario(batchSize, numDKG, 3))
+			t.Run(fmt.Sprintf("batch size %d num dkg %d", batchSize, numDKG),
+				f3bScenario(batchSize, numDKG, 3, withGrpc))
 		}
 	}
 }
 
-func f3bScenario(batchSize, numDKG, numNodes int) func(t *testing.T) {
+func f3bScenario(batchSize, numDKG, numNodes int, withGrpc bool) func(t *testing.T) {
 	return func(t *testing.T) {
 
 		require.Greater(t, numDKG, 0)
@@ -60,17 +64,18 @@ func f3bScenario(batchSize, numDKG, numNodes int) func(t *testing.T) {
 		to := time.Second * 10 // transaction inclusion timeout
 
 		// set up the dkg
-		minos := make([]mino.Mino, numDKG)
+		minosBuilder := getMinoch
+		if withGrpc {
+			minosBuilder = getMinogRPCs
+		}
+
+		minos := minosBuilder(t, numDKG)
 		dkgs := make([]dkg.DKG, numDKG)
 		addrs := make([]mino.Address, numDKG)
 
-		minoManager := minoch.NewManager()
-
 		// initializing the addresses
-		for i := 0; i < numDKG; i++ {
-			minogrpc := minoch.MustCreate(minoManager, fmt.Sprintf("addr %d", i))
-			minos[i] = minogrpc
-			addrs[i] = minogrpc.GetAddress()
+		for i, mino := range minos {
+			addrs[i] = mino.GetAddress()
 		}
 
 		pubkeys := make([]kyber.Point, len(minos))
@@ -239,6 +244,37 @@ func f3bScenario(batchSize, numDKG, numNodes int) func(t *testing.T) {
 		fmt.Println("Setup,\tSubmit,\tDecrypt")
 		fmt.Printf("%d,\t%d,\t%d\n", setupTime.Milliseconds(), submitTime.Milliseconds(), decryptTime.Milliseconds())
 	}
+}
+
+type minosFac func(t *testing.T, n int) []mino.Mino
+
+func getMinoch(t *testing.T, n int) []mino.Mino {
+	res := make([]mino.Mino, n)
+
+	minoManager := minoch.NewManager()
+
+	for i := range res {
+		minoch := minoch.MustCreate(minoManager, fmt.Sprintf("addr %d", i))
+		res[i] = minoch
+	}
+
+	return res
+}
+
+func getMinogRPCs(t *testing.T, n int) []mino.Mino {
+	res := make([]mino.Mino, n)
+
+	addr := minogrpc.ParseAddress("127.0.0.1", uint16(0))
+	router := tree.NewRouter(minogrpc.NewAddressFactory(), tree.WithHeight(1))
+
+	for i := range res {
+		grpc, err := minogrpc.NewMinogrpc(addr, nil, router, minogrpc.DisableTLS())
+		require.NoError(t, err)
+
+		res[i] = grpc
+	}
+
+	return res
 }
 
 // -----------------------------------------------------------------------------
