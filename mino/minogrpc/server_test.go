@@ -878,7 +878,7 @@ func TestConnManager_Acquire(t *testing.T) {
 
 	defer dst.GracefulStop()
 
-	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore())
+	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore(), true)
 
 	certsStore := mgr.certs
 	certsStore.Store(mgr.myAddr, certs.CertChain(fake.MakeCertificate(t)))
@@ -900,72 +900,119 @@ func TestConnManager_Acquire(t *testing.T) {
 }
 
 func TestConnManager_FailLoadDistantCert_Acquire(t *testing.T) {
-	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore())
+	oldGetter := getTracerForAddr
+	defer func() {
+		getTracerForAddr = oldGetter
+	}()
+	getTracerForAddr = fake.GetTracerForAddrEmpty
+
+	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore(), false)
 	mgr.certs = fakeCerts{errLoad: fake.GetError()}
 
-	_, err := mgr.Acquire(fake.NewAddress(0))
+	_, err := mgr.Acquire(session.Address{})
 	require.EqualError(t, err, fake.Err("failed to retrieve transport credential: while loading distant cert"))
 }
 
 func TestConnManager_MissingCert_Acquire(t *testing.T) {
-	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore())
+	oldGetter := getTracerForAddr
+	defer func() {
+		getTracerForAddr = oldGetter
+	}()
+	getTracerForAddr = fake.GetTracerForAddrEmpty
 
-	_, err := mgr.Acquire(fake.NewAddress(1))
-	require.EqualError(t, err, "failed to retrieve transport credential: certificate for 'fake.Address[1]' not found")
+	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore(), false)
+
+	to := session.NewAddress("fake")
+	_, err := mgr.Acquire(to)
+	require.EqualError(t, err, "failed to retrieve transport credential: certificate for 'fake' not found")
 }
 
 func TestConnManager_FailLoadOwnCert_Acquire(t *testing.T) {
-	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore())
+	oldGetter := getTracerForAddr
+	defer func() {
+		getTracerForAddr = oldGetter
+	}()
+	getTracerForAddr = fake.GetTracerForAddrEmpty
+
+	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore(), false)
 	mgr.certs = fakeCerts{
 		errLoad: fake.GetError(),
 		counter: fake.NewCounter(1),
 	}
 
-	_, err := mgr.Acquire(fake.NewAddress(0))
+	_, err := mgr.Acquire(session.Address{})
 	require.EqualError(t, err, fake.Err("failed to retrieve transport credential: while loading own cert"))
 }
 
 func TestConnManager_MissingOwnCert_Acquire(t *testing.T) {
-	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore())
+	oldGetter := getTracerForAddr
+	defer func() {
+		getTracerForAddr = oldGetter
+	}()
+	getTracerForAddr = fake.GetTracerForAddrEmpty
 
-	mgr.certs.Store(fake.NewAddress(1), fake.MakeCertificate(t))
+	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore(), false)
 
-	_, err := mgr.Acquire(fake.NewAddress(1))
+	to := session.NewAddress("fake")
+	mgr.certs.Store(to, fake.MakeCertificate(t))
+
+	_, err := mgr.Acquire(to)
 	require.EqualError(t, err, "failed to retrieve transport credential: couldn't find server 'fake.Address[0]' cert")
 }
 
 func TestConnManager_BadDistantCert_Acquire(t *testing.T) {
-	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore())
+	oldGetter := getTracerForAddr
+	defer func() {
+		getTracerForAddr = oldGetter
+	}()
+	getTracerForAddr = fake.GetTracerForAddrEmpty
+
+	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore(), false)
+	to := session.NewAddress("fake")
 
 	mgr.certs.Store(fake.NewAddress(0), fake.MakeCertificate(t))
-	mgr.certs.Store(fake.NewAddress(1), certs.CertChain("bad chain"))
+	mgr.certs.Store(to, certs.CertChain("bad chain"))
 
-	_, err := mgr.Acquire(fake.NewAddress(1))
+	_, err := mgr.Acquire(to)
 	require.EqualError(t, err, "failed to retrieve transport credential: failed to parse distant cert: x509: malformed certificate")
 }
 
 func TestConnManager_BadOwnCert_Acquire(t *testing.T) {
-	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore())
+	oldGetter := getTracerForAddr
+	defer func() {
+		getTracerForAddr = oldGetter
+	}()
+	getTracerForAddr = fake.GetTracerForAddrEmpty
+
+	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore(), false)
+	to := session.NewAddress("fake")
 
 	mgr.certs.Store(fake.NewAddress(0), certs.CertChain("bad chain"))
-	mgr.certs.Store(fake.NewAddress(1), fake.MakeCertificate(t))
+	mgr.certs.Store(to, fake.MakeCertificate(t))
 
-	_, err := mgr.Acquire(fake.NewAddress(1))
+	_, err := mgr.Acquire(to)
 	require.EqualError(t, err, "failed to retrieve transport credential: failed to parse our own cert: x509: malformed certificate")
 }
 
 func TestConnManager_EmptyOwnCert_Acquire(t *testing.T) {
-	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore())
+	oldGetter := getTracerForAddr
+	defer func() {
+		getTracerForAddr = oldGetter
+	}()
+	getTracerForAddr = fake.GetTracerForAddrEmpty
+
+	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore(), false)
+	to := session.NewAddress("fake")
 
 	mgr.certs.Store(fake.NewAddress(0), certs.CertChain{})
-	mgr.certs.Store(fake.NewAddress(1), fake.MakeCertificate(t))
+	mgr.certs.Store(to, fake.MakeCertificate(t))
 
-	_, err := mgr.Acquire(fake.NewAddress(1))
+	_, err := mgr.Acquire(to)
 	require.EqualError(t, err, "failed to retrieve transport credential: no certificate found")
 }
 
 func TestConnManager_BadAddress_Acquire(t *testing.T) {
-	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore())
+	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore(), true)
 
 	mgr.certs.Store(fake.NewAddress(0), fake.MakeCertificate(t))
 
@@ -981,7 +1028,7 @@ func TestConnManager_BadTracer_Acquire(t *testing.T) {
 
 	defer dst.GracefulStop()
 
-	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore())
+	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore(), true)
 
 	getTracerForAddr = fake.GetTracerForAddrWithError
 

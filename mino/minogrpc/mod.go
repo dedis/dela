@@ -118,15 +118,16 @@ type Minogrpc struct {
 }
 
 type minoTemplate struct {
-	myAddr session.Address
-	router router.Router
-	fac    mino.AddressFactory
-	certs  certs.Storage
-	secret interface{}
-	public interface{}
-	curve  elliptic.Curve
-	random io.Reader
-	cert   *tls.Certificate
+	myAddr   session.Address
+	router   router.Router
+	fac      mino.AddressFactory
+	certs    certs.Storage
+	secret   interface{}
+	public   interface{}
+	curve    elliptic.Curve
+	random   io.Reader
+	cert     *tls.Certificate
+	insecure bool
 }
 
 // Option is the type to set some fields when instantiating an overlay.
@@ -163,6 +164,14 @@ func WithCert(cert *tls.Certificate) Option {
 	}
 }
 
+// DisableTLS disables TLS encryption on gRPC connections. It takes precedence
+// over WithCert.
+func DisableTLS() Option {
+	return func(tmpl *minoTemplate) {
+		tmpl.insecure = true
+	}
+}
+
 // NewMinogrpc creates and starts a new instance. it will try to listen for the
 // address and returns an error if it fails. "listen" is the local address,
 // while "public" is the public node address. If public is empty it uses the
@@ -184,12 +193,13 @@ func NewMinogrpc(listen net.Addr, public *url.URL, router router.Router, opts ..
 	dela.Logger.Info().Msgf("public URL is: %s", public.String())
 
 	tmpl := minoTemplate{
-		myAddr: session.NewAddress(public.Host + public.Path),
-		router: router,
-		fac:    addressFac,
-		certs:  certs.NewInMemoryStore(),
-		curve:  elliptic.P521(),
-		random: rand.Reader,
+		myAddr:   session.NewAddress(public.Host + public.Path),
+		router:   router,
+		fac:      addressFac,
+		certs:    certs.NewInMemoryStore(),
+		curve:    elliptic.P521(),
+		random:   rand.Reader,
+		insecure: false,
 	}
 
 	for _, opt := range opts {
@@ -202,38 +212,44 @@ func NewMinogrpc(listen net.Addr, public *url.URL, router router.Router, opts ..
 		return nil, xerrors.Errorf("overlay: %v", err)
 	}
 
-	chainBuf := o.GetCertificateChain()
-	certs, err := x509.ParseCertificates(chainBuf)
-	if err != nil {
-		socket.Close()
-		return nil, xerrors.Errorf("failed to parse chain: %v", err)
-	}
-
-	certsBuf := make([][]byte, len(certs))
-	for i, c := range certs {
-		certsBuf[i] = c.Raw
-	}
-
-	creds := credentials.NewTLS(&tls.Config{
-		Certificates: []tls.Certificate{{
-			Certificate: certsBuf,
-			Leaf:        certs[0],
-			PrivateKey:  o.secret,
-		}},
-		MinVersion: tls.VersionTLS12,
-	})
-
 	dialAddr := o.myAddr.GetDialAddress()
 	tracer, err := getTracerForAddr(dialAddr)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to get tracer for addr %s: %v", dialAddr, err)
 	}
 
-	server := grpc.NewServer(
-		grpc.Creds(creds),
+	srvOpts := []grpc.ServerOption{
 		grpc.UnaryInterceptor(otgrpc.OpenTracingServerInterceptor(tracer, otgrpc.SpanDecorator(decorateServerTrace))),
 		grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(tracer, otgrpc.SpanDecorator(decorateServerTrace))),
-	)
+	}
+
+	if !tmpl.insecure {
+		chainBuf := o.GetCertificateChain()
+		certs, err := x509.ParseCertificates(chainBuf)
+		if err != nil {
+			socket.Close()
+			return nil, xerrors.Errorf("failed to parse chain: %v", err)
+		}
+
+		certsBuf := make([][]byte, len(certs))
+		for i, c := range certs {
+			certsBuf[i] = c.Raw
+		}
+
+		creds := credentials.NewTLS(&tls.Config{
+			Certificates: []tls.Certificate{{
+				Certificate: certsBuf,
+				Leaf:        certs[0],
+				PrivateKey:  o.secret,
+			}},
+			MinVersion: tls.VersionTLS12,
+		})
+
+		srvOpts = append(srvOpts, grpc.Creds(creds))
+
+	}
+
+	server := grpc.NewServer(srvOpts...)
 
 	m := &Minogrpc{
 		overlay:   o,
