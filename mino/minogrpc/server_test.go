@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/internal/tracing"
@@ -184,6 +185,7 @@ func TestOverlayServer_Join(t *testing.T) {
 		router: tree.NewRouter(addressFac),
 		curve:  elliptic.P521(),
 		random: rand.Reader,
+		useTLS: true,
 	})
 	require.NoError(t, err)
 
@@ -766,6 +768,7 @@ func TestOverlay_New(t *testing.T) {
 		certs:  certs.NewInMemoryStore(),
 		curve:  elliptic.P521(),
 		random: rand.Reader,
+		useTLS: true,
 	})
 	require.NoError(t, err)
 
@@ -780,6 +783,7 @@ func TestOverlay_New_Hostname(t *testing.T) {
 		certs:  certs.NewInMemoryStore(),
 		curve:  elliptic.P521(),
 		random: rand.Reader,
+		useTLS: true,
 	})
 	require.NoError(t, err)
 
@@ -796,6 +800,7 @@ func TestOverlay_New_Wrong_Cert_Store(t *testing.T) {
 		certs:  fakeCerts{errStore: fake.GetError()},
 		curve:  elliptic.P521(),
 		random: rand.Reader,
+		useTLS: true,
 	})
 	require.EqualError(t, err, fake.Err("failed to store cert"))
 }
@@ -834,6 +839,7 @@ func TestOverlay_Join(t *testing.T) {
 		fac:    addressFac,
 		curve:  elliptic.P521(),
 		random: rand.Reader,
+		useTLS: true,
 	})
 	require.NoError(t, err)
 
@@ -900,13 +906,10 @@ func TestConnManager_Acquire(t *testing.T) {
 }
 
 func TestConnManager_FailLoadDistantCert_Acquire(t *testing.T) {
-	oldGetter := getTracerForAddr
-	defer func() {
-		getTracerForAddr = oldGetter
-	}()
+	defer revertGetTracer(getTracerForAddr)
 	getTracerForAddr = fake.GetTracerForAddrEmpty
 
-	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore(), false)
+	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore(), true)
 	mgr.certs = fakeCerts{errLoad: fake.GetError()}
 
 	_, err := mgr.Acquire(session.Address{})
@@ -914,13 +917,10 @@ func TestConnManager_FailLoadDistantCert_Acquire(t *testing.T) {
 }
 
 func TestConnManager_MissingCert_Acquire(t *testing.T) {
-	oldGetter := getTracerForAddr
-	defer func() {
-		getTracerForAddr = oldGetter
-	}()
+	defer revertGetTracer(getTracerForAddr)
 	getTracerForAddr = fake.GetTracerForAddrEmpty
 
-	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore(), false)
+	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore(), true)
 
 	to := session.NewAddress("fake")
 	_, err := mgr.Acquire(to)
@@ -928,13 +928,10 @@ func TestConnManager_MissingCert_Acquire(t *testing.T) {
 }
 
 func TestConnManager_FailLoadOwnCert_Acquire(t *testing.T) {
-	oldGetter := getTracerForAddr
-	defer func() {
-		getTracerForAddr = oldGetter
-	}()
+	defer revertGetTracer(getTracerForAddr)
 	getTracerForAddr = fake.GetTracerForAddrEmpty
 
-	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore(), false)
+	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore(), true)
 	mgr.certs = fakeCerts{
 		errLoad: fake.GetError(),
 		counter: fake.NewCounter(1),
@@ -945,13 +942,10 @@ func TestConnManager_FailLoadOwnCert_Acquire(t *testing.T) {
 }
 
 func TestConnManager_MissingOwnCert_Acquire(t *testing.T) {
-	oldGetter := getTracerForAddr
-	defer func() {
-		getTracerForAddr = oldGetter
-	}()
+	defer revertGetTracer(getTracerForAddr)
 	getTracerForAddr = fake.GetTracerForAddrEmpty
 
-	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore(), false)
+	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore(), true)
 
 	to := session.NewAddress("fake")
 	mgr.certs.Store(to, fake.MakeCertificate(t))
@@ -961,13 +955,10 @@ func TestConnManager_MissingOwnCert_Acquire(t *testing.T) {
 }
 
 func TestConnManager_BadDistantCert_Acquire(t *testing.T) {
-	oldGetter := getTracerForAddr
-	defer func() {
-		getTracerForAddr = oldGetter
-	}()
+	defer revertGetTracer(getTracerForAddr)
 	getTracerForAddr = fake.GetTracerForAddrEmpty
 
-	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore(), false)
+	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore(), true)
 	to := session.NewAddress("fake")
 
 	mgr.certs.Store(fake.NewAddress(0), fake.MakeCertificate(t))
@@ -978,13 +969,10 @@ func TestConnManager_BadDistantCert_Acquire(t *testing.T) {
 }
 
 func TestConnManager_BadOwnCert_Acquire(t *testing.T) {
-	oldGetter := getTracerForAddr
-	defer func() {
-		getTracerForAddr = oldGetter
-	}()
+	defer revertGetTracer(getTracerForAddr)
 	getTracerForAddr = fake.GetTracerForAddrEmpty
 
-	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore(), false)
+	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore(), true)
 	to := session.NewAddress("fake")
 
 	mgr.certs.Store(fake.NewAddress(0), certs.CertChain("bad chain"))
@@ -995,13 +983,10 @@ func TestConnManager_BadOwnCert_Acquire(t *testing.T) {
 }
 
 func TestConnManager_EmptyOwnCert_Acquire(t *testing.T) {
-	oldGetter := getTracerForAddr
-	defer func() {
-		getTracerForAddr = oldGetter
-	}()
+	defer revertGetTracer(getTracerForAddr)
 	getTracerForAddr = fake.GetTracerForAddrEmpty
 
-	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore(), false)
+	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore(), true)
 	to := session.NewAddress("fake")
 
 	mgr.certs.Store(fake.NewAddress(0), certs.CertChain{})
@@ -1012,7 +997,7 @@ func TestConnManager_EmptyOwnCert_Acquire(t *testing.T) {
 }
 
 func TestConnManager_BadAddress_Acquire(t *testing.T) {
-	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore(), true)
+	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore(), false)
 
 	mgr.certs.Store(fake.NewAddress(0), fake.MakeCertificate(t))
 
@@ -1028,7 +1013,7 @@ func TestConnManager_BadTracer_Acquire(t *testing.T) {
 
 	defer dst.GracefulStop()
 
-	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore(), true)
+	mgr := newConnManager(fake.NewAddress(0), certs.NewInMemoryStore(), false)
 
 	getTracerForAddr = fake.GetTracerForAddrWithError
 
@@ -1199,4 +1184,8 @@ func (fakeSession) Listen(p session.Relay, t router.RoutingTable, c chan struct{
 
 func (fakeSession) RecvPacket(mino.Address, *ptypes.Packet) (*ptypes.Ack, error) {
 	return &ptypes.Ack{}, nil
+}
+
+func revertGetTracer(getTracer func(addr string) (opentracing.Tracer, error)) {
+	getTracerForAddr = getTracer
 }

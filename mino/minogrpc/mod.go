@@ -127,7 +127,7 @@ type minoTemplate struct {
 	curve  elliptic.Curve
 	random io.Reader
 	cert   *tls.Certificate
-	noTLS  bool
+	useTLS bool
 }
 
 // Option is the type to set some fields when instantiating an overlay.
@@ -168,7 +168,7 @@ func WithCert(cert *tls.Certificate) Option {
 // over WithCert.
 func DisableTLS() Option {
 	return func(tmpl *minoTemplate) {
-		tmpl.noTLS = true
+		tmpl.useTLS = false
 	}
 }
 
@@ -199,7 +199,7 @@ func NewMinogrpc(listen net.Addr, public *url.URL, router router.Router, opts ..
 		certs:  certs.NewInMemoryStore(),
 		curve:  elliptic.P521(),
 		random: rand.Reader,
-		noTLS:  false,
+		useTLS: true,
 	}
 
 	for _, opt := range opts {
@@ -223,7 +223,12 @@ func NewMinogrpc(listen net.Addr, public *url.URL, router router.Router, opts ..
 		grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(tracer, otgrpc.SpanDecorator(decorateServerTrace))),
 	}
 
-	if !tmpl.noTLS {
+	if !tmpl.useTLS {
+		dela.Logger.Warn().Msg("⚠️ running in insecure mode, you should not " +
+			"publicly expose the node's socket")
+	}
+
+	if tmpl.useTLS {
 		chainBuf := o.GetCertificateChain()
 		certs, err := x509.ParseCertificates(chainBuf)
 		if err != nil {
@@ -246,9 +251,6 @@ func NewMinogrpc(listen net.Addr, public *url.URL, router router.Router, opts ..
 		})
 
 		srvOpts = append(srvOpts, grpc.Creds(creds))
-	} else {
-		dela.Logger.Warn().Msg("⚠️ running in insecure mode, you should not " +
-			"publicly expose the node's socket")
 	}
 
 	server := grpc.NewServer(srvOpts...)

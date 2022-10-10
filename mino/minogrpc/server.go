@@ -451,14 +451,14 @@ func newOverlay(tmpl *minoTemplate) (*overlay, error) {
 	// session.Address never returns an error
 	myAddrBuf, _ := tmpl.myAddr.MarshalText()
 
-	if tmpl.cert != nil && !tmpl.noTLS {
+	if tmpl.cert != nil && tmpl.useTLS {
 		tmpl.secret = tmpl.cert.PrivateKey
 		// it is okay to crash at this point, as the certificate's key is
 		// invalid
 		tmpl.public = tmpl.cert.PrivateKey.(interface{ Public() crypto.PublicKey }).Public()
 	}
 
-	if tmpl.secret == nil && !tmpl.noTLS {
+	if tmpl.secret == nil && tmpl.useTLS {
 		priv, err := ecdsa.GenerateKey(tmpl.curve, tmpl.random)
 		if err != nil {
 			return nil, xerrors.Errorf("cert private key: %v", err)
@@ -476,13 +476,13 @@ func newOverlay(tmpl *minoTemplate) (*overlay, error) {
 		tokens:      tokens.NewInMemoryHolder(),
 		certs:       tmpl.certs,
 		router:      tmpl.router,
-		connMgr:     newConnManager(tmpl.myAddr, tmpl.certs, tmpl.noTLS),
+		connMgr:     newConnManager(tmpl.myAddr, tmpl.certs, tmpl.useTLS),
 		addrFactory: tmpl.fac,
 		secret:      tmpl.secret,
 		public:      tmpl.public,
 	}
 
-	if tmpl.cert != nil && !tmpl.noTLS {
+	if tmpl.cert != nil && tmpl.useTLS {
 		chain := bytes.Buffer{}
 		for _, c := range tmpl.cert.Certificate {
 			chain.Write(c)
@@ -494,7 +494,7 @@ func newOverlay(tmpl *minoTemplate) (*overlay, error) {
 		}
 	}
 
-	if !tmpl.noTLS {
+	if tmpl.useTLS {
 		cert, err := o.certs.Load(o.myAddr)
 		if err != nil {
 			return nil, xerrors.Errorf("while loading cert: %v", err)
@@ -642,16 +642,16 @@ type connManager struct {
 	myAddr   mino.Address
 	counters map[mino.Address]int
 	conns    map[mino.Address]*grpc.ClientConn
-	insecure bool
+	useTLS   bool
 }
 
-func newConnManager(myAddr mino.Address, certs certs.Storage, insecure bool) *connManager {
+func newConnManager(myAddr mino.Address, certs certs.Storage, useTLS bool) *connManager {
 	return &connManager{
 		certs:    certs,
 		myAddr:   myAddr,
 		counters: make(map[mino.Address]int),
 		conns:    make(map[mino.Address]*grpc.ClientConn),
-		insecure: insecure,
+		useTLS:   useTLS,
 	}
 }
 
@@ -705,7 +705,7 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	}
 
-	if !mgr.insecure {
+	if mgr.useTLS {
 		ta, err := mgr.getTransportCredential(to)
 		if err != nil {
 			return nil, xerrors.Errorf("failed to retrieve transport credential: %v", err)
