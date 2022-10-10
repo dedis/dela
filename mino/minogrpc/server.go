@@ -16,12 +16,13 @@ import (
 	"crypto/x509"
 	"sync"
 
-	otgrpc "github.com/opentracing-contrib/go-grpc"
-	"github.com/opentracing/opentracing-go"
 	"math/big"
 	"net"
 	"net/url"
 	"time"
+
+	otgrpc "github.com/opentracing-contrib/go-grpc"
+	"github.com/opentracing/opentracing-go"
 
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/internal/tracing"
@@ -37,6 +38,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -449,14 +451,14 @@ func newOverlay(tmpl *minoTemplate) (*overlay, error) {
 	// session.Address never returns an error
 	myAddrBuf, _ := tmpl.myAddr.MarshalText()
 
-	if tmpl.cert != nil {
+	if tmpl.cert != nil && tmpl.useTLS {
 		tmpl.secret = tmpl.cert.PrivateKey
 		// it is okay to crash at this point, as the certificate's key is
 		// invalid
 		tmpl.public = tmpl.cert.PrivateKey.(interface{ Public() crypto.PublicKey }).Public()
 	}
 
-	if tmpl.secret == nil {
+	if tmpl.secret == nil && tmpl.useTLS {
 		priv, err := ecdsa.GenerateKey(tmpl.curve, tmpl.random)
 		if err != nil {
 			return nil, xerrors.Errorf("cert private key: %v", err)
@@ -474,13 +476,13 @@ func newOverlay(tmpl *minoTemplate) (*overlay, error) {
 		tokens:      tokens.NewInMemoryHolder(),
 		certs:       tmpl.certs,
 		router:      tmpl.router,
-		connMgr:     newConnManager(tmpl.myAddr, tmpl.certs),
+		connMgr:     newConnManager(tmpl.myAddr, tmpl.certs, tmpl.useTLS),
 		addrFactory: tmpl.fac,
 		secret:      tmpl.secret,
 		public:      tmpl.public,
 	}
 
-	if tmpl.cert != nil {
+	if tmpl.cert != nil && tmpl.useTLS {
 		chain := bytes.Buffer{}
 		for _, c := range tmpl.cert.Certificate {
 			chain.Write(c)
@@ -492,15 +494,17 @@ func newOverlay(tmpl *minoTemplate) (*overlay, error) {
 		}
 	}
 
-	cert, err := o.certs.Load(o.myAddr)
-	if err != nil {
-		return nil, xerrors.Errorf("while loading cert: %v", err)
-	}
-
-	if cert == nil {
-		err = o.makeCertificate()
+	if tmpl.useTLS {
+		cert, err := o.certs.Load(o.myAddr)
 		if err != nil {
-			return nil, xerrors.Errorf("certificate failed: %v", err)
+			return nil, xerrors.Errorf("while loading cert: %v", err)
+		}
+
+		if cert == nil {
+			err = o.makeCertificate()
+			if err != nil {
+				return nil, xerrors.Errorf("certificate failed: %v", err)
+			}
 		}
 	}
 
@@ -508,7 +512,7 @@ func newOverlay(tmpl *minoTemplate) (*overlay, error) {
 }
 
 // GetCertificate returns the certificate of the overlay with its private key
-// set.
+// set. This function will panic if the overlay has the "noTLS" flag sets.
 func (o *overlay) GetCertificateChain() certs.CertChain {
 	me, err := o.certs.Load(o.myAddr)
 	if err != nil {
@@ -638,14 +642,16 @@ type connManager struct {
 	myAddr   mino.Address
 	counters map[mino.Address]int
 	conns    map[mino.Address]*grpc.ClientConn
+	useTLS   bool
 }
 
-func newConnManager(myAddr mino.Address, certs certs.Storage) *connManager {
+func newConnManager(myAddr mino.Address, certs certs.Storage, useTLS bool) *connManager {
 	return &connManager{
 		certs:    certs,
 		myAddr:   myAddr,
 		counters: make(map[mino.Address]int),
 		conns:    make(map[mino.Address]*grpc.ClientConn),
+		useTLS:   useTLS,
 	}
 }
 
@@ -670,11 +676,6 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 		return conn, nil
 	}
 
-	ta, err := mgr.getTransportCredential(to)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to retrieve transport credential: %v", err)
-	}
-
 	netAddr, ok := to.(session.Address)
 	if !ok {
 		return nil, xerrors.Errorf("invalid address type '%T'", to)
@@ -690,10 +691,7 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(2)*time.Second)
 	defer cancel()
 
-	conn, err = grpc.DialContext(
-		ctx,
-		addr,
-		grpc.WithTransportCredentials(ta),
+	opts := []grpc.DialOption{
 		grpc.WithConnectParams(grpc.ConnectParams{
 			Backoff:           backoff.DefaultConfig,
 			MinConnectTimeout: defaultMinConnectTimeout,
@@ -704,6 +702,22 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 		grpc.WithStreamInterceptor(
 			otgrpc.OpenTracingStreamClientInterceptor(tracer, otgrpc.SpanDecorator(decorateClientTrace)),
 		),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	}
+
+	if mgr.useTLS {
+		ta, err := mgr.getTransportCredential(to)
+		if err != nil {
+			return nil, xerrors.Errorf("failed to retrieve transport credential: %v", err)
+		}
+
+		opts = append(opts, grpc.WithTransportCredentials(ta))
+	}
+
+	conn, err = grpc.DialContext(
+		ctx,
+		addr,
+		opts...,
 	)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to dial: %v", err)
