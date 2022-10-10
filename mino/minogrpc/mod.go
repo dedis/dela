@@ -118,16 +118,16 @@ type Minogrpc struct {
 }
 
 type minoTemplate struct {
-	myAddr   session.Address
-	router   router.Router
-	fac      mino.AddressFactory
-	certs    certs.Storage
-	secret   interface{}
-	public   interface{}
-	curve    elliptic.Curve
-	random   io.Reader
-	cert     *tls.Certificate
-	insecure bool
+	myAddr session.Address
+	router router.Router
+	fac    mino.AddressFactory
+	certs  certs.Storage
+	secret interface{}
+	public interface{}
+	curve  elliptic.Curve
+	random io.Reader
+	cert   *tls.Certificate
+	noTLS  bool
 }
 
 // Option is the type to set some fields when instantiating an overlay.
@@ -168,7 +168,7 @@ func WithCert(cert *tls.Certificate) Option {
 // over WithCert.
 func DisableTLS() Option {
 	return func(tmpl *minoTemplate) {
-		tmpl.insecure = true
+		tmpl.noTLS = true
 	}
 }
 
@@ -193,13 +193,13 @@ func NewMinogrpc(listen net.Addr, public *url.URL, router router.Router, opts ..
 	dela.Logger.Info().Msgf("public URL is: %s", public.String())
 
 	tmpl := minoTemplate{
-		myAddr:   session.NewAddress(public.Host + public.Path),
-		router:   router,
-		fac:      addressFac,
-		certs:    certs.NewInMemoryStore(),
-		curve:    elliptic.P521(),
-		random:   rand.Reader,
-		insecure: false,
+		myAddr: session.NewAddress(public.Host + public.Path),
+		router: router,
+		fac:    addressFac,
+		certs:  certs.NewInMemoryStore(),
+		curve:  elliptic.P521(),
+		random: rand.Reader,
+		noTLS:  false,
 	}
 
 	for _, opt := range opts {
@@ -223,7 +223,7 @@ func NewMinogrpc(listen net.Addr, public *url.URL, router router.Router, opts ..
 		grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(tracer, otgrpc.SpanDecorator(decorateServerTrace))),
 	}
 
-	if !tmpl.insecure {
+	if !tmpl.noTLS {
 		chainBuf := o.GetCertificateChain()
 		certs, err := x509.ParseCertificates(chainBuf)
 		if err != nil {

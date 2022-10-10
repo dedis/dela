@@ -36,7 +36,7 @@ func TestMinogrpc_New(t *testing.T) {
 	require.NoError(t, m.GracefulStop())
 }
 
-func TestMinogrpc_insecure(t *testing.T) {
+func TestMinogrpc_noTLS(t *testing.T) {
 	addr := ParseAddress("127.0.0.1", 3333)
 
 	router := tree.NewRouter(addressFac)

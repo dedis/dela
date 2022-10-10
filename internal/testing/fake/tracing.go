@@ -9,7 +9,7 @@ func GetTracerForAddrWithError(addr string) (opentracing.Tracer, error) {
 }
 
 // GetTracerForAddrEmpty is used to mock `tracing.GetTracerForAddr` with an
-// error.
+// empty tracer.
 func GetTracerForAddrEmpty(_ string) (opentracing.Tracer, error) {
 	return opentracing.NoopTracer{}, nil
 }

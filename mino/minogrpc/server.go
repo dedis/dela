@@ -451,14 +451,14 @@ func newOverlay(tmpl *minoTemplate) (*overlay, error) {
 	// session.Address never returns an error
 	myAddrBuf, _ := tmpl.myAddr.MarshalText()
 
-	if tmpl.cert != nil && !tmpl.insecure {
+	if tmpl.cert != nil && !tmpl.noTLS {
 		tmpl.secret = tmpl.cert.PrivateKey
 		// it is okay to crash at this point, as the certificate's key is
 		// invalid
 		tmpl.public = tmpl.cert.PrivateKey.(interface{ Public() crypto.PublicKey }).Public()
 	}
 
-	if tmpl.secret == nil && !tmpl.insecure {
+	if tmpl.secret == nil && !tmpl.noTLS {
 		priv, err := ecdsa.GenerateKey(tmpl.curve, tmpl.random)
 		if err != nil {
 			return nil, xerrors.Errorf("cert private key: %v", err)
@@ -476,13 +476,13 @@ func newOverlay(tmpl *minoTemplate) (*overlay, error) {
 		tokens:      tokens.NewInMemoryHolder(),
 		certs:       tmpl.certs,
 		router:      tmpl.router,
-		connMgr:     newConnManager(tmpl.myAddr, tmpl.certs, tmpl.insecure),
+		connMgr:     newConnManager(tmpl.myAddr, tmpl.certs, tmpl.noTLS),
 		addrFactory: tmpl.fac,
 		secret:      tmpl.secret,
 		public:      tmpl.public,
 	}
 
-	if tmpl.cert != nil && !tmpl.insecure {
+	if tmpl.cert != nil && !tmpl.noTLS {
 		chain := bytes.Buffer{}
 		for _, c := range tmpl.cert.Certificate {
 			chain.Write(c)
@@ -494,7 +494,7 @@ func newOverlay(tmpl *minoTemplate) (*overlay, error) {
 		}
 	}
 
-	if !tmpl.insecure {
+	if !tmpl.noTLS {
 		cert, err := o.certs.Load(o.myAddr)
 		if err != nil {
 			return nil, xerrors.Errorf("while loading cert: %v", err)
@@ -512,7 +512,7 @@ func newOverlay(tmpl *minoTemplate) (*overlay, error) {
 }
 
 // GetCertificate returns the certificate of the overlay with its private key
-// set. This function will panic if the overlay is not using TLS.
+// set. This function will panic if the overlay has the "noTLS" flag sets.
 func (o *overlay) GetCertificateChain() certs.CertChain {
 	me, err := o.certs.Load(o.myAddr)
 	if err != nil {
