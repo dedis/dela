@@ -21,7 +21,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func TestSession_New(t *testing.T) {
+func TestSessionNew(t *testing.T) {
 	curr := os.Getenv(traffic.EnvVariable)
 	defer os.Setenv(traffic.EnvVariable, curr)
 

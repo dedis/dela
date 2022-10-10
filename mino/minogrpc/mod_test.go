@@ -62,7 +62,7 @@ func TestMinogrpc_FailGenerateKey_New(t *testing.T) {
 	require.EqualError(t, err, fake.Err("overlay: cert private key"))
 }
 
-func TestMinogrpc_FailCreateCert_New(t *testing.T) {
+func TestMinogrpc_FailCreateCertNew(t *testing.T) {
 	addr := ParseAddress("127.0.0.1", 3333)
 	router := tree.NewRouter(addressFac)
 
@@ -71,7 +71,7 @@ func TestMinogrpc_FailCreateCert_New(t *testing.T) {
 	require.Contains(t, err.Error(), "overlay: certificate failed: while creating: x509: ")
 }
 
-func TestMinogrpc_FailStoreCert_New(t *testing.T) {
+func TestMinogrpc_FailStoreCerTNew(t *testing.T) {
 	addr := ParseAddress("127.0.0.1", 3333)
 	router := tree.NewRouter(addressFac)
 
@@ -79,7 +79,7 @@ func TestMinogrpc_FailStoreCert_New(t *testing.T) {
 	require.EqualError(t, err, fake.Err("overlay: certificate failed: while storing"))
 }
 
-func TestMinogrpc_FailLoadCert_New(t *testing.T) {
+func TestMinogrpc_FailLoadCerTNew(t *testing.T) {
 	addr := ParseAddress("127.0.0.1", 3333)
 	router := tree.NewRouter(addressFac)
 
@@ -87,7 +87,7 @@ func TestMinogrpc_FailLoadCert_New(t *testing.T) {
 	require.EqualError(t, err, fake.Err("overlay: while loading cert"))
 }
 
-func TestMinogrpc_FailedBadCert_New(t *testing.T) {
+func TestMinogrpc_FailedBadCerTNew(t *testing.T) {
 	addr := ParseAddress("127.0.0.1", 3333)
 	router := tree.NewRouter(addressFac)
 
@@ -95,7 +95,7 @@ func TestMinogrpc_FailedBadCert_New(t *testing.T) {
 	require.EqualError(t, err, "failed to parse chain: x509: malformed certificate")
 }
 
-func TestMinogrpc_WithCert_New(t *testing.T) {
+func TestMinogrpc_WithCerTNew(t *testing.T) {
 	addr := ParseAddress("127.0.0.1", 3333)
 	router := tree.NewRouter(addressFac)
 
