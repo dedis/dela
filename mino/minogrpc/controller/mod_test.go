@@ -56,6 +56,15 @@ func TestMiniController_OnStart(t *testing.T) {
 	require.NoError(t, m.GracefulStop())
 }
 
+func TestMiniController_OnStart_NoTLS(t *testing.T) {
+	ctrl := NewController()
+
+	str := map[string]string{"routing": "flat"}
+
+	err := ctrl.OnStart(fakeContext{str: str, boolean: true}, node.NewInjector())
+	require.NoError(t, err)
+}
+
 func TestMiniController_InvalidAddr_OnStart(t *testing.T) {
 	ctrl := NewController()
 
@@ -100,7 +109,7 @@ func TestMiniController_MissingDB_OnStart(t *testing.T) {
 	str := map[string]string{"routing": "flat"}
 
 	err := ctrl.OnStart(fakeContext{str: str}, node.NewInjector())
-	require.EqualError(t, err, "injector: couldn't find dependency for 'kv.DB'")
+	require.EqualError(t, err, "failed to get cert option: injector: couldn't find dependency for 'kv.DB'")
 }
 
 func TestMiniController_UnknownRouting_OnStart(t *testing.T) {
@@ -123,7 +132,7 @@ func TestMiniController_FailGenerateKey_OnStart(t *testing.T) {
 
 	err := ctrl.OnStart(fakeContext{str: str}, inj)
 	require.EqualError(t, err,
-		fake.Err("cert private key: while loading: generator failed: ecdsa"))
+		fake.Err("failed to get cert option: cert private key: while loading: generator failed: ecdsa"))
 }
 
 func TestMiniController_FailMarshalKey_OnStart(t *testing.T) {
@@ -136,8 +145,8 @@ func TestMiniController_FailMarshalKey_OnStart(t *testing.T) {
 	str := map[string]string{"routing": "flat"}
 
 	err := ctrl.OnStart(fakeContext{str: str}, inj)
-	require.EqualError(t, err,
-		"cert private key: while loading: generator failed: while marshaling: x509: unknown elliptic curve")
+	require.EqualError(t, err, "failed to get cert option: cert private key: "+
+		"while loading: generator failed: while marshaling: x509: unknown elliptic curve")
 }
 
 func TestMiniController_FailParseKey_OnStart(t *testing.T) {
@@ -183,7 +192,8 @@ func TestMiniController_LoadCertChain_OnStart(t *testing.T) {
 	paths := map[string]string{"config": dir, "certChain": certPath}
 
 	err = ctrl.OnStart(fakeContext{path: paths, str: str}, injector)
-	require.True(t, strings.HasPrefix(err.Error(), "failed to load certificate:"), err)
+	require.True(t, strings.HasPrefix(err.Error(), "failed to get cert option: "+
+		"failed to load certificate:"), err)
 
 	// openssl ecparam -genkey -name secp384r1 -out server.key
 	key := []byte(`

@@ -246,7 +246,9 @@ func NewMinogrpc(listen net.Addr, public *url.URL, router router.Router, opts ..
 		})
 
 		srvOpts = append(srvOpts, grpc.Creds(creds))
-
+	} else {
+		dela.Logger.Warn().Msg("⚠️ running in insecure mode, you should not " +
+			"publicly expose the node's socket")
 	}
 
 	server := grpc.NewServer(srvOpts...)
