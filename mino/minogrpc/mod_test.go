@@ -36,6 +36,25 @@ func TestMinogrpc_New(t *testing.T) {
 	require.NoError(t, m.GracefulStop())
 }
 
+func TestMinogrpc_noTLS(t *testing.T) {
+	addr := ParseAddress("127.0.0.1", 3333)
+
+	router := tree.NewRouter(addressFac)
+
+	m, err := NewMinogrpc(addr, nil, router, DisableTLS())
+	require.NoError(t, err)
+
+	require.Equal(t, "127.0.0.1:3333", m.GetAddress().String())
+	require.Empty(t, m.segments)
+
+	cert, err := m.certs.Load(m.GetAddress())
+	require.NoError(t, err)
+	require.Nil(t, cert)
+
+	<-m.started
+	require.NoError(t, m.GracefulStop())
+}
+
 func TestMinogrpc_New_FailedParsePublic(t *testing.T) {
 	l := listener
 	defer func() {

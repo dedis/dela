@@ -280,6 +280,7 @@ type fakeContext struct {
 	str      map[string]string
 	path     map[string]string
 	num      int
+	boolean  bool
 }
 
 func (ctx fakeContext) Duration(string) time.Duration {
@@ -296,6 +297,10 @@ func (ctx fakeContext) Path(key string) string {
 
 func (ctx fakeContext) Int(string) int {
 	return ctx.num
+}
+
+func (ctx fakeContext) Bool(string) bool {
+	return ctx.boolean
 }
 
 type badCertStore struct {
