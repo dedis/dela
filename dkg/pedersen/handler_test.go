@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/dkg/pedersen/types"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
@@ -57,6 +58,7 @@ func TestHandler_Start(t *testing.T) {
 	h := Handler{
 		startRes: &state{},
 		privKey:  privKey,
+		log:      dela.Logger,
 	}
 	start := types.NewStart(0, []mino.Address{fake.NewAddress(0)}, []kyber.Point{})
 	from := fake.NewAddress(0)
@@ -68,7 +70,10 @@ func TestHandler_Start(t *testing.T) {
 
 	start = types.NewStart(2, []mino.Address{fake.NewAddress(0), fake.NewAddress(1)}, []kyber.Point{pubKey, suite.Point()})
 
-	err = h.start(context.Background(), start, cryChan[types.Deal]{}, cryChan[types.Response]{}, from, fake.Sender{})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err = h.start(ctx, start, cryChan[types.Deal]{}, cryChan[types.Response]{}, from, fake.Sender{})
 	require.NoError(t, err)
 }
 

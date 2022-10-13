@@ -246,8 +246,6 @@ func f3bScenario(batchSize, numDKG, numNodes int, withGrpc bool) func(t *testing
 	}
 }
 
-type minosFac func(t *testing.T, n int) []mino.Mino
-
 func getMinoch(t *testing.T, n int) []mino.Mino {
 	res := make([]mino.Mino, n)
 

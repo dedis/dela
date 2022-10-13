@@ -78,15 +78,16 @@ func TestPedersen_GetPublicKey(t *testing.T) {
 	_, err := actor.GetPublicKey()
 	require.EqualError(t, err, "DKG has not been initialized")
 
-	actor.startRes = &state{participants: []mino.Address{fake.NewAddress(0)}, distrKey: suite.Point()}
+	actor.startRes = &state{dkgState: certified}
 	_, err = actor.GetPublicKey()
 	require.NoError(t, err)
 }
 
 func TestPedersen_Decrypt(t *testing.T) {
 	actor := Actor{
-		rpc:      fake.NewBadRPC(),
-		startRes: &state{participants: []mino.Address{fake.NewAddress(0)}, distrKey: suite.Point()},
+		rpc: fake.NewBadRPC(),
+		startRes: &state{dkgState: certified,
+			participants: []mino.Address{fake.NewAddress(0)}, distrKey: suite.Point()},
 	}
 
 	_, err := actor.Decrypt(suite.Point(), suite.Point())
