@@ -2,3 +2,4 @@
 cli/node/memcoin/memcoin
 test/private.key
 dkg/logs
+dkg/pedersen/dkgcli/dkgcli

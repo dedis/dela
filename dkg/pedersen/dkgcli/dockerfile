@@ -1,0 +1,17 @@
+# Defines a docker container to use dkgcli
+#
+# Build from the dela folder:
+#   docker build -t dela/dkg:latest -f dkg/pedersen/dkgcli/dockerfile .
+# Run with:
+#   docker run --rm -e LLVL=info dela/dkg
+#
+FROM golang:1.14 AS build
+ADD . /dela
+WORKDIR /dela
+RUN CGO_ENABLED=0 GOOS=linux go build -o dkgcli ./dkg/pedersen/dkgcli
+
+FROM alpine:latest  
+COPY --from=build /dela/dkgcli /usr/local/bin
+
+ENTRYPOINT [ "dkgcli" ]
+CMD ["--config", "/config", "start", "--routing", "tree", "--listen", "tcp://0.0.0.0:2000"]
