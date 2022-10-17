@@ -40,6 +40,10 @@ func (m minimal) SetCommands(builder node.Builder) {
 			Name:  "authority",
 			Usage: "<ADDR>:<PK> string, where each token is encoded in base64",
 		},
+		cli.IntFlag{
+			Name:  "threshold",
+			Usage: "the threshold of the committee",
+		},
 	)
 	sub.SetAction(builder.MakeAction(setupAction{}))
 
@@ -82,8 +86,9 @@ func (m minimal) SetCommands(builder node.Builder) {
 	sub.SetDescription("decrypt a message and verify the decryption and encryption proof")
 	sub.SetFlags(
 		cli.StringFlag{
-			Name:  "ciphertext",
-			Usage: "the ciphertext string, as <hex(K)>:<hex(C)>:<hex(Ubar)>:<hex(E)>:<hex(F)>",
+			Name: "ciphertexts",
+			Usage: "a list of ciphertext strings " +
+				"<hex(K)>:<hex(C)>:<hex(Ubar)>:<hex(E)>:<hex(F)>[:<hex(k)>:...]",
 		},
 		cli.StringFlag{
 			Name:  "GBar",
@@ -91,6 +96,21 @@ func (m minimal) SetCommands(builder node.Builder) {
 		},
 	)
 	sub.SetAction(builder.MakeAction(verifiableDecryptAction{}))
+
+	sub = cmd.SetSubCommand("reshare")
+	sub.SetDescription("reshare the DKG secret")
+	sub.SetFlags(
+		cli.StringSliceFlag{
+			Name:  "authority",
+			Usage: "<ADDR>:<PK> string, where each token is encoded in base64",
+		},
+		cli.IntFlag{
+			Name:     "thresholdNew",
+			Usage:    "the threshold of the new committee",
+			Required: true,
+		},
+	)
+	sub.SetAction(builder.MakeAction(reshareAction{}))
 }
 
 // OnStart implements node.Initializer. It creates and registers a pedersen DKG.
