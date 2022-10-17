@@ -13,6 +13,7 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/ed25519"
 	"go.dedis.ch/dela/dkg"
+	mTypes "go.dedis.ch/dela/dkg/pedersen/types"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/suites"
@@ -279,4 +280,204 @@ func decodeEncrypted(str string) (k kyber.Point, c kyber.Point, err error) {
 	}
 
 	return k, c, nil
+}
+
+// Verifiable encryption
+
+type verifiableEncryptAction struct{}
+
+func (a verifiableEncryptAction) Execute(ctx node.Context) error {
+	var actor dkg.Actor
+
+	err := ctx.Injector.Resolve(&actor)
+	if err != nil {
+		return xerrors.Errorf("failed to resolve actor, did you call listen?: %v", err)
+	}
+
+	// Decode GBar
+	gBarbuff, err := hex.DecodeString(ctx.Flags.String("GBar"))
+	if err != nil {
+		return xerrors.Errorf("failed to decode GBar point: %v", err)
+	}
+
+	gBar := suite.Point()
+
+	err = gBar.UnmarshalBinary(gBarbuff)
+	if err != nil {
+		return xerrors.Errorf("failed to unmarshal GBar point: %v", err)
+	}
+
+	// Decode the message
+	message, err := hex.DecodeString(ctx.Flags.String("message"))
+	if err != nil {
+		return xerrors.Errorf("failed to decode message: %v", err)
+	}
+
+	ciphertext, remainder, err := actor.VerifiableEncrypt(message, gBar)
+	if err != nil {
+		return xerrors.Errorf("failed to encrypt: %v", err)
+	}
+
+	// Encoding the ciphertext
+	// Encoding K
+	kbuff, err := ciphertext.K.MarshalBinary()
+	if err != nil {
+		return xerrors.Errorf("failed to marshal k: %v", err)
+	}
+
+	// Encoding C
+	cbuff, err := ciphertext.C.MarshalBinary()
+	if err != nil {
+		return xerrors.Errorf("failed to marshal c: %v", err)
+	}
+
+	// Encoding Ubar
+	uBarbuff, err := ciphertext.UBar.MarshalBinary()
+	if err != nil {
+		return xerrors.Errorf("failed to marshal Ubar: %v", err)
+	}
+
+	// Encoding E
+	ebuff, err := ciphertext.E.MarshalBinary()
+	if err != nil {
+		return xerrors.Errorf("failed to marshal E: %v", err)
+	}
+
+	// Encoding F
+	fbuff, err := ciphertext.F.MarshalBinary()
+	if err != nil {
+		return xerrors.Errorf("failed to marshal F: %v", err)
+	}
+
+	outStr := hex.EncodeToString(kbuff) + separator +
+		hex.EncodeToString(cbuff) + separator +
+		hex.EncodeToString(uBarbuff) + separator +
+		hex.EncodeToString(ebuff) + separator +
+		hex.EncodeToString(fbuff) + separator +
+		hex.EncodeToString(remainder)
+
+	fmt.Fprint(ctx.Out, outStr)
+
+	return nil
+}
+
+// Verifiable decrypt
+
+type verifiableDecryptAction struct{}
+
+func (a verifiableDecryptAction) Execute(ctx node.Context) error {
+	var actor dkg.Actor
+
+	err := ctx.Injector.Resolve(&actor)
+	if err != nil {
+		return xerrors.Errorf("failed to resolve actor, did you call listen?: %v", err)
+	}
+
+	// Decode GBar
+	gBarbuff, err := hex.DecodeString(ctx.Flags.String("GBar"))
+	if err != nil {
+		return xerrors.Errorf("failed to decode GBar point: %v", err)
+	}
+
+	gBar := suite.Point()
+
+	err = gBar.UnmarshalBinary(gBarbuff)
+	if err != nil {
+		return xerrors.Errorf("failed to unmarshal GBar point: %v", err)
+	}
+
+	// Decode the ciphertext
+	ciphertext := ctx.Flags.String("ciphertext")
+
+	parts := strings.Split(ciphertext, separator)
+	if len(parts) < 5 {
+		return xerrors.Errorf("malformed encoded: %s", ciphertext)
+	}
+
+	// Decode K
+	kbuff, err := hex.DecodeString(parts[0])
+	if err != nil {
+		return xerrors.Errorf("failed to decode k point: %v", err)
+	}
+
+	k := suite.Point()
+
+	err = k.UnmarshalBinary(kbuff)
+	if err != nil {
+		return xerrors.Errorf("failed to unmarshal k point: %v", err)
+	}
+
+	// Decode C
+	cbuff, err := hex.DecodeString(parts[1])
+	if err != nil {
+		return xerrors.Errorf("failed to decode c point: %v", err)
+	}
+
+	c := suite.Point()
+
+	err = c.UnmarshalBinary(cbuff)
+	if err != nil {
+		return xerrors.Errorf("failed to unmarshal c point: %v", err)
+	}
+
+	// Decode UBar
+	uBarbuff, err := hex.DecodeString(parts[2])
+	if err != nil {
+		return xerrors.Errorf("failed to decode UBar point: %v", err)
+	}
+
+	uBar := suite.Point()
+
+	err = uBar.UnmarshalBinary(uBarbuff)
+	if err != nil {
+		return xerrors.Errorf("failed to unmarshal UBar point: %v", err)
+	}
+
+	// Decode E
+	ebuff, err := hex.DecodeString(parts[3])
+	if err != nil {
+		return xerrors.Errorf("failed to decode E: %v", err)
+	}
+
+	e := suite.Scalar()
+
+	err = e.UnmarshalBinary(ebuff)
+	if err != nil {
+		return xerrors.Errorf("failed to unmarshal E: %v", err)
+	}
+
+	// Decode F
+	fbuff, err := hex.DecodeString(parts[4])
+	if err != nil {
+		return xerrors.Errorf("failed to decode F: %v", err)
+	}
+
+	f := suite.Scalar()
+
+	err = f.UnmarshalBinary(fbuff)
+	if err != nil {
+		return xerrors.Errorf("failed to unmarshal F: %v", err)
+	}
+
+	ciphertextStruct := mTypes.Ciphertext{
+		K:    k,
+		C:    c,
+		UBar: uBar,
+		E:    e,
+		F:    f,
+		GBar: gBar,
+	}
+
+	var ciphertextSlice []mTypes.Ciphertext
+
+	ciphertextSlice = append(ciphertextSlice, ciphertextStruct)
+
+	decrypted, err := actor.VerifiableDecrypt(ciphertextSlice, 1)
+	if err != nil {
+		return xerrors.Errorf("failed to decrypt: %v", err)
+	}
+
+	fmt.Fprint(ctx.Out, hex.EncodeToString(decrypted[0]))
+
+	return nil
 }

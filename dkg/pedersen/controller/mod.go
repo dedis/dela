@@ -62,6 +62,35 @@ func (m minimal) SetCommands(builder node.Builder) {
 		},
 	)
 	sub.SetAction(builder.MakeAction(decryptAction{}))
+
+	sub = cmd.SetSubCommand("verifiableEncrypt")
+	sub.SetDescription("encrypt a message and provides a proof. " +
+		"Outputs <hex(K)>:<hex(C)>:<hex(Ubar)>:<hex(E)>:<hex(F)>:<hex(remainder)>")
+	sub.SetFlags(
+		cli.StringFlag{
+			Name:  "message",
+			Usage: "the message to encrypt, encoded in hex",
+		},
+		cli.StringFlag{
+			Name:  "GBar",
+			Usage: "the second generator",
+		},
+	)
+	sub.SetAction(builder.MakeAction(verifiableEncryptAction{}))
+
+	sub = cmd.SetSubCommand("verifiableDecrypt")
+	sub.SetDescription("decrypt a message and verify the decryption and encryption proof")
+	sub.SetFlags(
+		cli.StringFlag{
+			Name:  "ciphertext",
+			Usage: "the ciphertext string, as <hex(K)>:<hex(C)>:<hex(Ubar)>:<hex(E)>:<hex(F)>",
+		},
+		cli.StringFlag{
+			Name:  "GBar",
+			Usage: "the second generator",
+		},
+	)
+	sub.SetAction(builder.MakeAction(verifiableDecryptAction{}))
 }
 
 // OnStart implements node.Initializer. It creates and registers a pedersen DKG.
