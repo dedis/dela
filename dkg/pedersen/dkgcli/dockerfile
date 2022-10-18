@@ -5,7 +5,7 @@
 # Run with:
 #   docker run --rm -e LLVL=info dela/dkg
 #
-FROM golang:1.14 AS build
+FROM golang:1.19 AS build
 ADD . /dela
 WORKDIR /dela
 RUN CGO_ENABLED=0 GOOS=linux go build -o dkgcli ./dkg/pedersen/dkgcli

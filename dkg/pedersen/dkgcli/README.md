@@ -31,3 +31,76 @@ dkgcli --config /tmp/node2 dkg encrypt --message deadbeef
 
 # Decrypt a message
 dkgcli --config /tmp/node3 dkg decrypt --encrypted <...>
+```
+
+# Use docker
+
+Build an image if needed (from the root of the repo):
+
+```sh
+docker build -t dela/dkg:latest -f dkg/pedersen/dkgcli/dockerfile .
+```
+
+Create a network if not exist. We use a user-defined bridge to make use of
+Docker's DNS service, which allows containers to communicate among themselves
+using their names:
+
+```sh
+sudo docker network create dkg-net
+```
+
+Run 3 nodes:
+
+```sh
+for i in {1..3}
+do
+    sudo docker run --rm -d -e LLVL=info --expose 2000 --net dkg-net --name node$i dela/dkg:latest --config /config start --listen tcp://0.0.0.0:2000 --public //node$i:2000
+done
+```
+
+Exchange certificates:
+
+```sh
+for i in {2..3}
+do
+    sudo docker exec node$i dkgcli --config /config minogrpc join --address //node1:2000 $(sudo docker exec node1 dkgcli --config /config minogrpc token)
+done
+```
+
+Listen:
+
+```sh
+for i in {1..3}
+do
+    sudo docker exec node$i dkgcli --config /config dkg listen
+done
+```
+
+Setup:
+
+```sh
+authorities=""
+
+for i in {1..3}
+do
+    authorities="$authorities --authority $(sudo docker exec node$i cat /config/dkgauthority)"    
+done
+
+sudo docker exec node1 dkgcli --config /config dkg setup $authorities
+```
+
+Encrypt/Decrypt:
+
+```sh
+encrypted=$(sudo docker exec node2 dkgcli --config /config dkg encrypt --message deadbeef)
+sudo docker exec node2 dkgcli --config /config dkg decrypt --encrypted $encrypted
+```
+
+Stop:
+
+```sh
+for i in {1..3}
+do
+    sudo docker stop node$i
+done
+```
