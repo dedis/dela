@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -63,46 +62,44 @@ func TestTraffic_Integration(t *testing.T) {
 }
 
 func TestSaveItems(t *testing.T) {
-	file, err := os.CreateTemp(os.TempDir(), "")
-	require.NoError(t, err)
-	defer os.Remove(file.Name())
-
-	err = SaveItems(file.Name(), true, true)
+	path, err := os.MkdirTemp("", "go-test-save-items")
 	require.NoError(t, err)
 
-	if runtime.GOOS == "windows" {
-		return
-	}
+	defer os.RemoveAll(path)
 
-	err = SaveItems("/items.dot", true, true)
-	require.Contains(t, err.Error(), "file: open /items.dot: ")
+	err = os.Chmod(path, 0000)
+	require.NoError(t, err)
+
+	err = SaveItems(path+"/items.dot", true, true)
+	require.Contains(t, err.Error(), "permission denied")
 }
 
 func TestSaveEvents(t *testing.T) {
-	file, err := os.CreateTemp(os.TempDir(), "")
-	require.NoError(t, err)
-	defer os.Remove(file.Name())
-
-	err = SaveEvents(file.Name())
+	path, err := os.MkdirTemp("", "go-test-save-events")
 	require.NoError(t, err)
 
-	if runtime.GOOS == "windows" {
-		return
-	}
+	defer os.RemoveAll(path)
 
-	err = SaveEvents("/events.dot")
-	require.Contains(t, err.Error(), "file: open /events.dot: ")
+	err = os.Chmod(path, 0000)
+	require.NoError(t, err)
+
+	err = SaveEvents(path + "/events.dot")
+	require.Contains(t, err.Error(), "permission denied")
 }
 
 func TestTraffic_Save(t *testing.T) {
 	traffic := NewTraffic(fake.NewAddress(0), io.Discard)
 
-	if runtime.GOOS == "windows" {
-		return
-	}
+	path, err := os.MkdirTemp("", "go-test-traffic-save")
+	require.NoError(t, err)
 
-	err := traffic.Save("/traffic.dot", false, false)
-	require.Contains(t, err.Error(), "file: open /traffic.dot: ")
+	defer os.RemoveAll(path)
+
+	err = os.Chmod(path, 0000)
+	require.NoError(t, err)
+
+	err = traffic.Save(path+"/traffic.dot", false, false)
+	require.Contains(t, err.Error(), "permission denied")
 }
 
 func TestTraffic_LogRecv(t *testing.T) {
