@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -67,6 +68,10 @@ func TestSaveItems(t *testing.T) {
 
 	defer os.RemoveAll(path)
 
+	if runtime.GOOS == "windows" {
+		return
+	}
+
 	err = os.Chmod(path, 0000)
 	require.NoError(t, err)
 
@@ -79,6 +84,10 @@ func TestSaveEvents(t *testing.T) {
 	require.NoError(t, err)
 
 	defer os.RemoveAll(path)
+
+	if runtime.GOOS == "windows" {
+		return
+	}
 
 	err = os.Chmod(path, 0000)
 	require.NoError(t, err)
@@ -94,6 +103,10 @@ func TestTraffic_Save(t *testing.T) {
 	require.NoError(t, err)
 
 	defer os.RemoveAll(path)
+
+	if runtime.GOOS == "windows" {
+		return
+	}
 
 	err = os.Chmod(path, 0000)
 	require.NoError(t, err)
