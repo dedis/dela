@@ -28,13 +28,10 @@ import (
 // Allows to exit the loop.
 const recvTimeout = time.Second * 30
 
-// the channel size used to stored buffered deals and responses. This arbitrary
-// value must be set according to the characteristic of the system: number of
-// nodes, networking, memory, etc...
-// const chanSize = 10000
-
 // constant used in the logs
 const newState = "new state"
+const badState = "bad state: %v"
+const failedState = "failed to switch state: %v"
 
 func newCryChan[T any](bufSize int) cryChan[T] {
 	llvl := zerolog.NoLevel
@@ -166,8 +163,8 @@ func (s *state) checkState(states ...dkgState) error {
 
 	current := s.dkgState
 
-	for _, s := range states {
-		if s == current {
+	for _, state := range states {
+		if state == current {
 			return nil
 		}
 	}
@@ -333,7 +330,7 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 		case types.Deal:
 			err = h.startRes.checkState(initial, sharing, certified, resharing)
 			if err != nil {
-				return xerrors.Errorf("bad state: %v", err)
+				return xerrors.Errorf(badState, err)
 			}
 
 			deals.push(msg)
@@ -341,7 +338,7 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 		case types.Reshare:
 			err = h.startRes.checkState(initial, certified, resharing)
 			if err != nil {
-				return xerrors.Errorf("bad state: %v", err)
+				return xerrors.Errorf(badState, err)
 			}
 
 			reshares.push(msg)
@@ -349,7 +346,7 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 		case types.Response:
 			err = h.startRes.checkState(initial, sharing, certified, resharing)
 			if err != nil {
-				return xerrors.Errorf("bad state: %v", err)
+				return xerrors.Errorf(badState, err)
 			}
 
 			responses.push(msg)
@@ -357,7 +354,7 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 		case types.DecryptRequest:
 			err = h.startRes.checkState(certified)
 			if err != nil {
-				return xerrors.Errorf("bad state: %v", err)
+				return xerrors.Errorf(badState, err)
 			}
 
 			return h.handleDecrypt(out, msg, from)
@@ -365,7 +362,7 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 		case types.VerifiableDecryptRequest:
 			err = h.startRes.checkState(certified)
 			if err != nil {
-				return xerrors.Errorf("bad state: %v", err)
+				return xerrors.Errorf(badState, err)
 			}
 
 			return h.handleVerifiableDecrypt(out, msg, from)
@@ -406,7 +403,7 @@ func (h *Handler) start(ctx context.Context, start types.Start, deals cryChan[ty
 
 	err := h.startRes.switchState(sharing)
 	if err != nil {
-		return xerrors.Errorf("failed to switch state: %v", err)
+		return xerrors.Errorf(failedState, err)
 	}
 
 	if len(start.GetAddresses()) != len(start.GetPublicKeys()) {
@@ -464,7 +461,7 @@ func (h *Handler) doDKG(ctx context.Context, deals cryChan[types.Deal],
 
 	err = h.startRes.switchState(certified)
 	if err != nil {
-		return xerrors.Errorf("failed to switch state: %v", err)
+		return xerrors.Errorf(failedState, err)
 	}
 
 	h.log.Info().Str("action", "finalize").Msg(newState)
@@ -717,7 +714,7 @@ func (h *Handler) reshare(ctx context.Context, out mino.Sender,
 
 	err := h.startRes.switchState(resharing)
 	if err != nil {
-		return xerrors.Errorf("failed to switch state: %v", err)
+		return xerrors.Errorf(failedState, err)
 	}
 
 	addrsNew := msg.GetAddrsNew()
@@ -815,7 +812,7 @@ func (h *Handler) doReshare(ctx context.Context, start types.StartResharing,
 
 	err = h.startRes.switchState(certified)
 	if err != nil {
-		return xerrors.Errorf("failed to switch state: %v", err)
+		return xerrors.Errorf(failedState, err)
 	}
 
 	// Announce the DKG public key All the old, new and common nodes would

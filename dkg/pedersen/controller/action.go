@@ -25,6 +25,7 @@ var suite = suites.MustFind("Ed25519")
 
 const separator = ":"
 const authconfig = "dkgauthority"
+const resolveActorFailed = "failed to resolve actor, did you call listen?: %v"
 
 type setupAction struct{}
 
@@ -33,7 +34,7 @@ func (a setupAction) Execute(ctx node.Context) error {
 
 	err := ctx.Injector.Resolve(&actor)
 	if err != nil {
-		return xerrors.Errorf("failed to resolve actor, did you call listen?: %v", err)
+		return xerrors.Errorf(resolveActorFailed, err)
 	}
 
 	co, err := getCollectiveAuth(ctx)
@@ -179,7 +180,7 @@ func (a encryptAction) Execute(ctx node.Context) error {
 
 	err := ctx.Injector.Resolve(&actor)
 	if err != nil {
-		return xerrors.Errorf("failed to resolve actor, did you call listen?: %v", err)
+		return xerrors.Errorf(resolveActorFailed, err)
 	}
 
 	message, err := hex.DecodeString(ctx.Flags.String("message"))
@@ -209,7 +210,7 @@ func (a decryptAction) Execute(ctx node.Context) error {
 
 	err := ctx.Injector.Resolve(&actor)
 	if err != nil {
-		return xerrors.Errorf("failed to resolve actor, did you call listen?: %v", err)
+		return xerrors.Errorf(resolveActorFailed, err)
 	}
 
 	encrypted := ctx.Flags.String("encrypted")
@@ -291,7 +292,7 @@ func (a verifiableEncryptAction) Execute(ctx node.Context) error {
 
 	err := ctx.Injector.Resolve(&actor)
 	if err != nil {
-		return xerrors.Errorf("failed to resolve actor, did you call listen?: %v", err)
+		return xerrors.Errorf(resolveActorFailed, err)
 	}
 
 	// Decode GBar
@@ -370,7 +371,7 @@ func (a verifiableDecryptAction) Execute(ctx node.Context) error {
 
 	err := ctx.Injector.Resolve(&actor)
 	if err != nil {
-		return xerrors.Errorf("failed to resolve actor, did you call listen?: %v", err)
+		return xerrors.Errorf(resolveActorFailed, err)
 	}
 
 	// Decode GBar
@@ -502,7 +503,7 @@ func (a reshareAction) Execute(ctx node.Context) error {
 
 	err := ctx.Injector.Resolve(&actor)
 	if err != nil {
-		return xerrors.Errorf("failed to resolve actor, did you call listen?: %v", err)
+		return xerrors.Errorf(resolveActorFailed, err)
 	}
 
 	co, err := getCollectiveAuth(ctx)
