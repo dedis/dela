@@ -9,6 +9,7 @@ import (
 	"context"
 	"io"
 	"math"
+	"runtime/debug"
 	"sync"
 
 	"go.dedis.ch/dela"
@@ -215,12 +216,11 @@ func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, min
 						output = outs[to.String()].out
 					}
 
-					// FIXME: use a crychan
 					select {
 					case output <- env:
 					default:
 						dela.Logger.Warn().Str("to", to.String()).
-							Str("from", env.from.String()).Msg("full")
+							Str("from", env.from.String()).Msgf("output is full! %v", debug.Stack())
 						output <- env
 					}
 				}
