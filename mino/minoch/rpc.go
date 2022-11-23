@@ -215,7 +215,6 @@ func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, min
 						output = outs[to.String()].out
 					}
 
-					// FIXME: use a crychan
 					select {
 					case output <- env:
 					default:
