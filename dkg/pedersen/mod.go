@@ -24,6 +24,15 @@ import (
 	"golang.org/x/xerrors"
 )
 
+// initDkgFirst message helping the developer to verify whether setup did occur
+const initDkgFirst = "you must first initialize DKG. Did you call setup() first?"
+
+// failedStreamCreation message indicating a stream creation failure
+const failedStreamCreation = "failed to create stream: %v"
+
+// unexpectedStreamStop message indicating that a stream stopped unexpectedly
+const unexpectedStreamStop = "stream stopped unexpectedly: %v"
+
 // suite is the Kyber suite for Pedersen.
 var suite = suites.MustFind("Ed25519")
 
@@ -181,8 +190,7 @@ func (a *Actor) Encrypt(message []byte) (K, C kyber.Point, remainder []byte,
 	err error) {
 
 	if !a.startRes.Done() {
-		return nil, nil, nil, xerrors.Errorf("you must first initialize DKG. " +
-			"Did you call setup() first?")
+		return nil, nil, nil, xerrors.Errorf(initDkgFirst)
 	}
 
 	// Embed the message (or as much of it as will fit) into a curve point.
@@ -263,8 +271,7 @@ func (a *Actor) VerifiableEncrypt(message []byte, GBar kyber.Point) (ciphertext 
 func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 
 	if !a.startRes.Done() {
-		return nil, xerrors.Errorf("you must first initialize DKG. " +
-			"Did you call setup() first?")
+		return nil, xerrors.Errorf(initDkgFirst)
 	}
 
 	players := mino.NewAddresses(a.startRes.getParticipants()...)
@@ -275,7 +282,7 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 
 	sender, receiver, err := a.rpc.Stream(ctx, players)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to create stream: %v", err)
+		return nil, xerrors.Errorf(failedStreamCreation, err)
 	}
 
 	players = mino.NewAddresses(a.startRes.getParticipants()...)
@@ -298,7 +305,7 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 	for i := 0; i < len(addrs); i++ {
 		src, message, err := receiver.Recv(ctx)
 		if err != nil {
-			return []byte{}, xerrors.Errorf("stream stopped unexpectedly: %v", err)
+			return []byte{}, xerrors.Errorf(unexpectedStreamStop, err)
 		}
 
 		dela.Logger.Debug().Msgf("Received a decryption reply from %v", src)
@@ -337,8 +344,7 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 func (a *Actor) VerifiableDecrypt(ciphertexts []types.Ciphertext) ([][]byte, error) {
 
 	if !a.startRes.Done() {
-		return nil, xerrors.Errorf("you must first initialize DKG. " +
-			"Did you call setup() first?")
+		return nil, xerrors.Errorf(initDkgFirst)
 	}
 
 	players := mino.NewAddresses(a.startRes.getParticipants()...)
@@ -349,7 +355,7 @@ func (a *Actor) VerifiableDecrypt(ciphertexts []types.Ciphertext) ([][]byte, err
 
 	sender, receiver, err := a.rpc.Stream(ctx, players)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to create stream: %v", err)
+		return nil, xerrors.Errorf(failedStreamCreation, err)
 	}
 
 	players = mino.NewAddresses(a.startRes.getParticipants()...)
@@ -375,7 +381,7 @@ func (a *Actor) VerifiableDecrypt(ciphertexts []types.Ciphertext) ([][]byte, err
 	for i := range addrs {
 		from, message, err := receiver.Recv(ctx)
 		if err != nil {
-			return nil, xerrors.Errorf("stream stopped unexpectedly: %v", err)
+			return nil, xerrors.Errorf(unexpectedStreamStop, err)
 		}
 
 		dela.Logger.Debug().Msgf("received share from %v\n", from)
@@ -483,8 +489,7 @@ func (w worker) work(jobIndex int) error {
 // participants.
 func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
 	if !a.startRes.Done() {
-		return xerrors.Errorf("you must first initialize DKG. " +
-			"Did you call setup() first?")
+		return xerrors.Errorf(initDkgFirst)
 	}
 
 	addrsNew := make([]mino.Address, 0, co.Len())
@@ -519,7 +524,7 @@ func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
 
 	sender, receiver, err := a.rpc.Stream(ctx, players)
 	if err != nil {
-		return xerrors.Errorf("failed to create stream: %v", err)
+		return xerrors.Errorf(failedStreamCreation, err)
 	}
 
 	thresholdOld := a.startRes.getThreshold()
@@ -561,7 +566,7 @@ func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
 	for i := 0; i < len(addrsAll); i++ {
 		src, msg, err := receiver.Recv(ctx)
 		if err != nil {
-			return xerrors.Errorf("stream stopped unexpectedly: %v", err)
+			return xerrors.Errorf(unexpectedStreamStop, err)
 		}
 
 		doneMsg, ok := msg.(types.StartDone)
