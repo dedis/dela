@@ -37,7 +37,7 @@ type nodeType byte
 
 // enumeration of the node type
 const (
-	unknownNode = iota
+	unknownNode nodeType = iota
 	oldNode
 	commonNode
 	newNode
@@ -754,7 +754,7 @@ func (h *Handler) doReshare(ctx context.Context, start types.StartResharing,
 	addrsOld := h.startRes.getParticipants()
 	addrsNew := start.GetAddrsNew()
 
-	var nt nodeType = newNode
+	nt := newNode
 	if h.startRes.getDistKey() != nil {
 		if isInSlice(h.me, addrsNew) && isInSlice(h.me, addrsOld) {
 			nt = commonNode
