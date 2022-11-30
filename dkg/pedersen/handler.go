@@ -33,12 +33,14 @@ const newState = "new state"
 const badState = "bad state: %v"
 const failedState = "failed to switch state: %v"
 
+type nodeType byte
+
 // enumeration of the node type
 const (
 	unknownNode = iota
-	oldNode     = iota
-	commonNode  = iota
-	newNode     = iota
+	oldNode
+	commonNode
+	newNode
 )
 
 func newCryChan[T any](bufSize int) cryChan[T] {
@@ -675,12 +677,12 @@ func (h *Handler) handleDeal(ctx context.Context, msg types.Deal,
 	return nil
 }
 
-func (h *Handler) finalizeReshare(ctx context.Context, nodeType int, out mino.Sender, from mino.Address) error {
+func (h *Handler) finalizeReshare(ctx context.Context, nt nodeType, out mino.Sender, from mino.Address) error {
 	// Send back the public DKG key
 	publicKey := h.startRes.getDistKey()
 
 	// if the node is new or a common node it should update its state
-	if publicKey == nil || nodeType == commonNode {
+	if publicKey == nil || nt == commonNode {
 		distrKey, err := h.dkg.DistKeyShare()
 		if err != nil {
 			return xerrors.Errorf("failed to get distr key: %v", err)
@@ -752,16 +754,16 @@ func (h *Handler) doReshare(ctx context.Context, start types.StartResharing,
 	addrsOld := h.startRes.getParticipants()
 	addrsNew := start.GetAddrsNew()
 
-	nodeType := newNode
+	var nt nodeType = newNode
 	if h.startRes.getDistKey() != nil {
 		if isInSlice(h.me, addrsNew) && isInSlice(h.me, addrsOld) {
-			nodeType = commonNode
+			nt = commonNode
 		} else {
-			nodeType = oldNode
+			nt = oldNode
 		}
 	}
 
-	switch nodeType {
+	switch nt {
 	case oldNode:
 		// Update local DKG for resharing
 		share, err := h.dkg.DistKeyShare()
@@ -829,7 +831,7 @@ func (h *Handler) doReshare(ctx context.Context, start types.StartResharing,
 		}
 
 		// Process the incoming deals
-		err = h.receiveDealsResharing(ctx, nodeType, start, out, reshares)
+		err = h.receiveDealsResharing(ctx, nt, start, out, reshares)
 		if err != nil {
 			return xerrors.Errorf("failed to receive deals: %v", err)
 		}
@@ -841,7 +843,7 @@ func (h *Handler) doReshare(ctx context.Context, start types.StartResharing,
 
 	case newNode:
 		// Process the incoming deals
-		err := h.receiveDealsResharing(ctx, nodeType, start, out, reshares)
+		err := h.receiveDealsResharing(ctx, nt, start, out, reshares)
 		if err != nil {
 			return xerrors.Errorf("failed to receive deals: %v", err)
 		}
@@ -866,7 +868,7 @@ func (h *Handler) doReshare(ctx context.Context, start types.StartResharing,
 	// Announce the DKG public key All the old, new and common nodes would
 	// announce the public key. In this way the initiator can make sure the
 	// resharing was completely successful.
-	err = h.finalizeReshare(ctx, nodeType, out, from)
+	err = h.finalizeReshare(ctx, nt, out, from)
 	if err != nil {
 		return xerrors.Errorf("failed to announce dkg public key: %v", err)
 	}
@@ -923,7 +925,7 @@ func (h *Handler) sendDealsResharing(ctx context.Context, out mino.Sender,
 
 // receiveDealsResharing is similar to receiveDeals except that it receives the
 // dealResharing. Only the new or common nodes call this function
-func (h *Handler) receiveDealsResharing(ctx context.Context, nodeType int,
+func (h *Handler) receiveDealsResharing(ctx context.Context, nt nodeType,
 	resharingRequest types.StartResharing, out mino.Sender, reshares cryChan[types.Reshare]) error {
 
 	h.log.Trace().Msgf("%v is handling deals from other nodes", h.me)
@@ -938,7 +940,7 @@ func (h *Handler) receiveDealsResharing(ctx context.Context, nodeType int,
 	addrsOld = h.startRes.getParticipants()
 
 	// the new nodes don't have the old addresses in their state
-	if nodeType == newNode {
+	if nt == newNode {
 		addrsOld = resharingRequest.GetAddrsOld()
 	}
 
@@ -954,7 +956,7 @@ func (h *Handler) receiveDealsResharing(ctx context.Context, nodeType int,
 			return xerrors.Errorf("context done: %v", err)
 		}
 
-		if nodeType == newNode && numReceivedDeals == 0 {
+		if nt == newNode && numReceivedDeals == 0 {
 
 			c := &pedersen.Config{
 				Suite:        suite,
