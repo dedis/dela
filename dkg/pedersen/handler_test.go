@@ -2,6 +2,7 @@ package pedersen
 
 import (
 	"context"
+	"github.com/dedis/debugtools/channel"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -63,7 +64,7 @@ func TestHandler_Start(t *testing.T) {
 	start := types.NewStart(0, []mino.Address{fake.NewAddress(0)}, []kyber.Point{})
 	from := fake.NewAddress(0)
 
-	err := h.start(context.Background(), start, cryChan[types.Deal]{}, cryChan[types.Response]{}, from, fake.Sender{})
+	err := h.start(context.Background(), start, channel.Timed[types.Deal]{}, channel.Timed[types.Response]{}, from, fake.Sender{})
 	require.EqualError(t, err, "there should be as many participants as pubKey: 1 != 0")
 
 	h.startRes.dkgState = initial
@@ -73,7 +74,7 @@ func TestHandler_Start(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err = h.start(ctx, start, cryChan[types.Deal]{}, cryChan[types.Response]{}, from, fake.Sender{})
+	err = h.start(ctx, start, channel.Timed[types.Deal]{}, channel.Timed[types.Response]{}, from, fake.Sender{})
 	require.NoError(t, err)
 }
 
@@ -108,8 +109,8 @@ func TestHandler_Respond_Ctx_Fail(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := h.respond(ctx, newCryChan[types.Deal](1), nil)
-	require.EqualError(t, err, "context done: context canceled")
+	err := h.respond(ctx, channel.WithExpiration[types.Deal](1), nil)
+	require.EqualError(t, err, "context done: Could not receive data from channel.")
 }
 
 func TestHandler_CertifyCanSucceed(t *testing.T) {
@@ -124,7 +125,7 @@ func TestHandler_CertifyCanSucceed(t *testing.T) {
 		dkg:      dkg,
 	}
 
-	responses := newCryChan[types.Response](1)
+	responses := channel.WithExpiration[types.Response](1)
 
 	dkg, resp := getCertified(t)
 
@@ -138,7 +139,7 @@ func TestHandler_CertifyCanSucceed(t *testing.T) {
 		),
 	)
 
-	responses.push(msg)
+	responses.Send(msg)
 
 	h.dkg = dkg
 	err = h.certify(context.Background(), responses, 1)
@@ -154,8 +155,8 @@ func TestHandler_Certify_Ctx_Fail(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := h.certify(ctx, newCryChan[types.Response](1), 1)
-	require.EqualError(t, err, "context done: context canceled")
+	err := h.certify(ctx, channel.WithExpiration[types.Response](1), 1)
+	require.EqualError(t, err, "context done: Could not receive data from channel.")
 }
 
 func TestHandler_HandleDeal(t *testing.T) {
