@@ -5,9 +5,9 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"github.com/dedis/debugtools/channel"
+	"go.dedis.ch/kyber/v3"
 	"io"
-	"os"
-	"runtime"
 	"strconv"
 	"sync"
 	"time"
@@ -17,7 +17,6 @@ import (
 	"go.dedis.ch/dela/cosi/threshold"
 	"go.dedis.ch/dela/dkg/pedersen/types"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/share"
 	pedersen "go.dedis.ch/kyber/v3/share/dkg/pedersen"
 	vss "go.dedis.ch/kyber/v3/share/vss/pedersen"
@@ -37,60 +36,11 @@ type nodeType byte
 
 // enumeration of the node type
 const (
-	unknownNode = iota
+	unknownNode nodeType = iota
 	oldNode
 	commonNode
 	newNode
 )
-
-func newCryChan[T any](bufSize int) cryChan[T] {
-	llvl := zerolog.NoLevel
-	if os.Getenv("CRY_LVL") == "warn" {
-		llvl = zerolog.WarnLevel
-	}
-
-	return cryChan[T]{
-		c: make(chan T, bufSize),
-		log: dela.Logger.With().Str("role", "cry chan").Int("size", bufSize).
-			Logger().Level(llvl),
-	}
-}
-
-type cryChan[T any] struct {
-	c   chan T
-	log zerolog.Logger
-}
-
-func (c *cryChan[T]) push(e T) {
-	start := time.Now()
-	select {
-	case c.c <- e:
-	case <-time.After(time.Second * 1):
-		// prints the first 16 bytes of the trace, which should contain at least
-		// the goroutine id.
-		trace := make([]byte, 16)
-		runtime.Stack(trace, false)
-		c.log.Warn().Str("obj", fmt.Sprintf("%+v", e)).
-			Str("trace", string(trace)).Msg("channel blocking")
-		c.c <- e
-		c.log.Warn().Str("obj", fmt.Sprintf("%+v", e)).
-			Str("elapsed", time.Since(start).String()).
-			Str("trace", string(trace)).Msg("channel unblocked")
-	}
-}
-
-func (c *cryChan[T]) pop(ctx context.Context) (t T, err error) {
-	select {
-	case el := <-c.c:
-		return el, nil
-	case <-ctx.Done():
-		return t, ctx.Err()
-	}
-}
-
-func (c *cryChan[T]) Len() int {
-	return len(c.c)
-}
 
 // dkgState represents the states of a DKG node. States change as follow:
 //
@@ -271,9 +221,9 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 
 	h.log.Info().Msg("stream start")
 
-	deals := newCryChan[types.Deal](200)
-	responses := newCryChan[types.Response](100000)
-	reshares := newCryChan[types.Reshare](200)
+	deals := channel.WithExpiration[types.Deal](200)
+	responses := channel.WithExpiration[types.Response](100000)
+	reshares := channel.WithExpiration[types.Reshare](200)
 
 	globalCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -343,7 +293,7 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 				return xerrors.Errorf(badState, err)
 			}
 
-			deals.push(msg)
+			deals.Send(msg)
 
 		case types.Reshare:
 			err = h.startRes.checkState(initial, certified, resharing)
@@ -351,7 +301,7 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 				return xerrors.Errorf(badState, err)
 			}
 
-			reshares.push(msg)
+			reshares.Send(msg)
 
 		case types.Response:
 			err = h.startRes.checkState(initial, sharing, certified, resharing)
@@ -359,7 +309,7 @@ func (h *Handler) Stream(out mino.Sender, in mino.Receiver) error {
 				return xerrors.Errorf(badState, err)
 			}
 
-			responses.push(msg)
+			responses.Send(msg)
 
 		case types.DecryptRequest:
 			err = h.startRes.checkState(certified)
@@ -408,8 +358,8 @@ func (h *Handler) handleDecrypt(out mino.Sender, msg types.DecryptRequest,
 // start is called when the node has received its start message. Note that we
 // might have already received some deals from other nodes in the meantime. The
 // function handles the DKG creation protocol.
-func (h *Handler) start(ctx context.Context, start types.Start, deals cryChan[types.Deal],
-	resps cryChan[types.Response], from mino.Address, out mino.Sender) error {
+func (h *Handler) start(ctx context.Context, start types.Start, deals channel.Timed[types.Deal],
+	resps channel.Timed[types.Response], from mino.Address, out mino.Sender) error {
 
 	err := h.startRes.switchState(sharing)
 	if err != nil {
@@ -441,8 +391,8 @@ func (h *Handler) start(ctx context.Context, start types.Start, deals cryChan[ty
 }
 
 // doDKG calls the subsequent DKG steps
-func (h *Handler) doDKG(ctx context.Context, deals cryChan[types.Deal],
-	resps cryChan[types.Response], out mino.Sender, from mino.Address) error {
+func (h *Handler) doDKG(ctx context.Context, deals channel.Timed[types.Deal],
+	resps channel.Timed[types.Response], out mino.Sender, from mino.Address) error {
 
 	defer func() {
 		h.Lock()
@@ -527,11 +477,11 @@ func (h *Handler) deal(ctx context.Context, out mino.Sender) error {
 	return nil
 }
 
-func (h *Handler) respond(ctx context.Context, deals cryChan[types.Deal], out mino.Sender) error {
+func (h *Handler) respond(ctx context.Context, deals channel.Timed[types.Deal], out mino.Sender) error {
 	numReceivedDeals := 0
 
 	for numReceivedDeals < len(h.startRes.getParticipants())-1 {
-		deal, err := deals.pop(ctx)
+		deal, err := deals.NonBlockingReceiveWithContext(ctx)
 		if err != nil {
 			return xerrors.Errorf("context done: %v", err)
 		}
@@ -557,12 +507,12 @@ func (h *Handler) respond(ctx context.Context, deals cryChan[types.Deal], out mi
 //   - Resharing with leaving or joining node: (n_common + (n_new - 1)) * n_old,
 //     nodes that are doing a resharing will broadcast their own deals
 //   - Resharing with staying node: (n_common + n_new) * n_old
-func (h *Handler) certify(ctx context.Context, resps cryChan[types.Response], expected int) error {
+func (h *Handler) certify(ctx context.Context, resps channel.Timed[types.Response], expected int) error {
 
 	responsesReceived := 0
 
 	for responsesReceived < expected {
-		msg, err := resps.pop(ctx)
+		msg, err := resps.NonBlockingReceiveWithContext(ctx)
 		if err != nil {
 			return xerrors.Errorf("context done: %v", err)
 		}
@@ -720,7 +670,7 @@ func (h *Handler) finalizeReshare(ctx context.Context, nt nodeType, out mino.Sen
 // reshare handles the resharing request. Acts differently for the new
 // and old and common nodes
 func (h *Handler) reshare(ctx context.Context, out mino.Sender,
-	from mino.Address, msg types.StartResharing, reshares cryChan[types.Reshare], resps cryChan[types.Response]) error {
+	from mino.Address, msg types.StartResharing, reshares channel.Timed[types.Reshare], resps channel.Timed[types.Response]) error {
 
 	err := h.startRes.switchState(resharing)
 	if err != nil {
@@ -746,7 +696,7 @@ func (h *Handler) reshare(ctx context.Context, out mino.Sender,
 // we might have already received some deals from other nodes in the meantime.
 // The function handles the DKG resharing protocol.
 func (h *Handler) doReshare(ctx context.Context, start types.StartResharing,
-	from mino.Address, out mino.Sender, reshares cryChan[types.Reshare], resps cryChan[types.Response]) error {
+	from mino.Address, out mino.Sender, reshares channel.Timed[types.Reshare], resps channel.Timed[types.Response]) error {
 
 	h.log.Info().Msgf("resharing with %v", start.GetAddrsNew())
 
@@ -754,7 +704,7 @@ func (h *Handler) doReshare(ctx context.Context, start types.StartResharing,
 	addrsOld := h.startRes.getParticipants()
 	addrsNew := start.GetAddrsNew()
 
-	var nt nodeType = newNode
+	nt := newNode
 	if h.startRes.getDistKey() != nil {
 		if isInSlice(h.me, addrsNew) && isInSlice(h.me, addrsOld) {
 			nt = commonNode
@@ -926,7 +876,7 @@ func (h *Handler) sendDealsResharing(ctx context.Context, out mino.Sender,
 // receiveDealsResharing is similar to receiveDeals except that it receives the
 // dealResharing. Only the new or common nodes call this function
 func (h *Handler) receiveDealsResharing(ctx context.Context, nt nodeType,
-	resharingRequest types.StartResharing, out mino.Sender, reshares cryChan[types.Reshare]) error {
+	resharingRequest types.StartResharing, out mino.Sender, reshares channel.Timed[types.Reshare]) error {
 
 	h.log.Trace().Msgf("%v is handling deals from other nodes", h.me)
 
@@ -951,7 +901,7 @@ func (h *Handler) receiveDealsResharing(ctx context.Context, nt nodeType,
 	addrsAll := union(addrsNew, addrsOld)
 
 	for numReceivedDeals < expectedDeals {
-		reshare, err := reshares.pop(ctx)
+		reshare, err := reshares.NonBlockingReceiveWithContext(ctx)
 		if err != nil {
 			return xerrors.Errorf("context done: %v", err)
 		}
