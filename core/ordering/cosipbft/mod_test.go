@@ -417,7 +417,7 @@ func TestService_ViewchangeFailed_DoRound(t *testing.T) {
 	defer cancel()
 
 	err := srvc.doRound(ctx)
-	require.EqualError(t, err, "viewchange failed")
+	require.EqualError(t, err, "view change failed")
 }
 
 func TestService_FailPBFTExpire_DoRound(t *testing.T) {

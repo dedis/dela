@@ -465,85 +465,24 @@ func (s *Service) doRound(ctx context.Context) error {
 		return xerrors.Errorf("reading roster: %v", err)
 	}
 
-	leader, err := s.pbftsm.GetLeader()
-	if err != nil {
-		return xerrors.Errorf("reading leader: %v", err)
-	}
-
 	timeout := s.timeoutRound
 	if s.failedRound {
 		timeout = s.timeoutRoundAfterFailure
 	}
 
-	for !s.me.Equal(leader) {
-		// Only enters the loop if the node is not the leader. It has to wait
-		// for the new block, or the round timeout, to proceed.
-
-		select {
-		case <-time.After(timeout):
-			if s.pool.Len() == 0 {
-				// When the pool of transactions is empty, the round is aborted
-				// and everything restart.
-				return nil
-			}
-
-			s.logger.Warn().Msg("round reached the timeout")
-
-			// Mark that the view change happened during this round.
-			s.failedRound = true
-
-			ctx, cancel := context.WithTimeout(ctx, s.timeoutViewchange)
-
-			view, err := s.pbftsm.Expire(s.me)
-			if err != nil {
-				cancel()
-				return xerrors.Errorf("pbft expire failed: %v", err)
-			}
-
-			viewMsg := types.NewViewMessage(view.GetID(), view.GetLeader(), view.GetSignature())
-
-			resps, err := s.rpc.Call(ctx, viewMsg, roster)
-			if err != nil {
-				cancel()
-				return xerrors.Errorf("rpc failed to send views: %v", err)
-			}
-
-			for resp := range resps {
-				_, err = resp.GetMessageOrError()
-				if err != nil {
-					s.logger.Warn().Err(err).Str("to", resp.GetFrom().String()).Msg("view propagation failure")
-				}
-			}
-
-			statesCh := s.pbftsm.Watch(ctx)
-
-			state := s.pbftsm.GetState()
-			var more bool
-
-			for state == pbft.ViewChangeState {
-				state, more = <-statesCh
-				if !more {
-					cancel()
-					return xerrors.New("viewchange failed")
-				}
-			}
-
-			s.logger.Debug().Msgf("view change successful for %d", viewMsg.GetLeader())
-
-			cancel()
-			return nil
-		case <-s.events:
-			// As a child, a block has been committed thus the previous view
-			// change succeeded.
-			s.failedRound = false
-
-			// A block has been created meaning that the round is over.
-			return nil
-		case <-s.closing:
-			return nil
-		}
+	leader, err := s.pbftsm.GetLeader()
+	if err != nil {
+		return xerrors.Errorf("reading leader: %v", err)
 	}
 
+	if s.me.Equal(leader) {
+		return s.doLeaderRound(ctx, roster, timeout)
+	}
+
+	return s.doFollowerRound(ctx, roster, timeout)
+}
+
+func (s *Service) doLeaderRound(ctx context.Context, roster authority.Authority, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -551,7 +490,7 @@ func (s *Service) doRound(ctx context.Context) error {
 
 	// Send a synchronization to the roster so that they can learn about the
 	// latest block of the chain.
-	err = s.sync.Sync(ctx, roster, blocksync.Config{MinHard: threshold.ByzantineThreshold(roster.Len())})
+	err := s.sync.Sync(ctx, roster, blocksync.Config{MinHard: threshold.ByzantineThreshold(roster.Len())})
 	if err != nil {
 		return xerrors.Errorf("sync failed: %v", err)
 	}
@@ -568,6 +507,73 @@ func (s *Service) doRound(ctx context.Context) error {
 	s.failedRound = false
 
 	return nil
+}
+
+func (s *Service) doFollowerRound(ctx context.Context, roster authority.Authority, timeout time.Duration) error {
+	// A follower has to wait for the new block, or the round timeout, to proceed.
+	select {
+	case <-time.After(timeout):
+		if s.pool.Len() == 0 {
+			// When the pool of transactions is empty, the round is aborted
+			// and everything restart.
+			return nil
+		}
+
+		s.logger.Warn().Msg("round reached the timeout")
+
+		// Mark that the view change happened during this round.
+		s.failedRound = true
+
+		ctx, cancel := context.WithTimeout(ctx, s.timeoutViewchange)
+
+		view, err := s.pbftsm.Expire(s.me)
+		if err != nil {
+			cancel()
+			return xerrors.Errorf("pbft expire failed: %v", err)
+		}
+
+		viewMsg := types.NewViewMessage(view.GetID(), view.GetLeader(), view.GetSignature())
+
+		resps, err := s.rpc.Call(ctx, viewMsg, roster)
+		if err != nil {
+			cancel()
+			return xerrors.Errorf("rpc failed to send views: %v", err)
+		}
+
+		for resp := range resps {
+			_, err = resp.GetMessageOrError()
+			if err != nil {
+				s.logger.Warn().Err(err).Str("to", resp.GetFrom().String()).Msg("view propagation failure")
+			}
+		}
+
+		statesCh := s.pbftsm.Watch(ctx)
+
+		state := s.pbftsm.GetState()
+		var more bool
+
+		for state == pbft.ViewChangeState {
+			state, more = <-statesCh
+			if !more {
+				cancel()
+				return xerrors.New("view change failed")
+			}
+		}
+
+		s.logger.Debug().Msgf("view change successful for %d", viewMsg.GetLeader())
+
+		cancel()
+		return nil
+	case <-s.events:
+		// As a child, a block has been committed thus the previous view
+		// change succeeded.
+		s.failedRound = false
+
+		// A block has been created meaning that the round is over.
+		return nil
+	case <-s.closing:
+		return nil
+	}
 }
 
 func (s *Service) doPBFT(ctx context.Context) error {
