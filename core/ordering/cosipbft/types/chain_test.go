@@ -205,43 +205,44 @@ func TestChain_Verify(t *testing.T) {
 
 	c := NewChain(makeLink(t, genesis.digest), nil)
 
-	err = c.Verify(genesis, fake.VerifierFactory{})
+	err = c.Verify(genesis, genesis.GetHash(), fake.VerifierFactory{})
 	require.NoError(t, err)
 
-	err = c.Verify(genesis, fake.VerifierFactory{})
+	err = c.Verify(genesis, genesis.GetHash(), fake.VerifierFactory{})
 	require.NoError(t, err)
 
-	c = NewChain(makeLink(t, Digest{}), nil)
-	err = c.Verify(genesis, fake.VerifierFactory{})
+	l := makeLink(t, Digest{})
+	c = NewChain(l, nil)
+	err = c.Verify(genesis, l.GetFrom(), fake.VerifierFactory{})
 	require.EqualError(t, err, fmt.Sprintf("mismatch from: '00000000' != '%v'", genesis.GetHash()))
 
 	c = NewChain(makeLink(t, genesis.digest), nil)
-	err = c.Verify(genesis, fake.NewBadVerifierFactory())
+	err = c.Verify(genesis, genesis.GetHash(), fake.NewBadVerifierFactory())
 	require.EqualError(t, err, fake.Err("verifier factory failed"))
 
-	err = c.Verify(genesis, fake.NewVerifierFactory(fake.NewBadVerifier()))
+	err = c.Verify(genesis, genesis.GetHash(), fake.NewVerifierFactory(fake.NewBadVerifier()))
 	require.EqualError(t, err, fake.Err("invalid prepare signature"))
 
 	link := makeLink(t, genesis.digest).(blockLink)
 	link.prepareSig = nil
 	c = NewChain(link, nil)
-	err = c.Verify(genesis, fake.VerifierFactory{})
+	err = c.Verify(genesis, genesis.GetHash(), fake.VerifierFactory{})
 	require.EqualError(t, err, "unexpected nil prepare signature in link")
 
 	link.prepareSig = fake.Signature{}
 	link.commitSig = nil
 	c = NewChain(link, nil)
-	err = c.Verify(genesis, fake.VerifierFactory{})
+	err = c.Verify(genesis, genesis.GetHash(), fake.VerifierFactory{})
 	require.EqualError(t, err, "unexpected nil commit signature in link")
 
 	link.prepareSig = fake.NewBadSignature()
 	link.commitSig = fake.Signature{}
 	c = NewChain(link, nil)
-	err = c.Verify(genesis, fake.VerifierFactory{})
+	err = c.Verify(genesis, genesis.GetHash(), fake.VerifierFactory{})
 	require.EqualError(t, err, fake.Err("failed to marshal signature"))
 
 	c = NewChain(makeLink(t, genesis.digest), nil)
-	err = c.Verify(genesis, fake.NewVerifierFactory(fake.NewBadVerifierWithDelay(1)))
+	err = c.Verify(genesis, genesis.GetHash(), fake.NewVerifierFactory(fake.NewBadVerifierWithDelay(1)))
 	require.EqualError(t, err, fake.Err("invalid commit signature"))
 }
 

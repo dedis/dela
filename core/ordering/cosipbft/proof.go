@@ -40,9 +40,9 @@ func (p Proof) GetValue() []byte {
 }
 
 // Verify takes the genesis block and the verifier factory to verify the chain
-// up to the latest block.
+// up to the latest block. It verifies the whole chain.
 func (p Proof) Verify(genesis types.Genesis, fac crypto.VerifierFactory) error {
-	err := p.chain.Verify(genesis, fac)
+	err := p.chain.Verify(genesis, genesis.GetHash(), fac)
 	if err != nil {
 		return xerrors.Errorf("failed to verify chain: %v", err)
 	}

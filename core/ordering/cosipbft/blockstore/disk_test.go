@@ -264,6 +264,10 @@ func (badLinkFac) BlockLinkOf(serde.Context, []byte) (types.BlockLink, error) {
 	return nil, fake.GetError()
 }
 
+func (badLinkFac) LinkOf(serde.Context, []byte) (types.Link, error) {
+	return nil, fake.GetError()
+}
+
 type badLink struct {
 	types.BlockLink
 }

@@ -321,13 +321,26 @@ func (c chain) GetBlock() Block {
 }
 
 // Verify implements types.Chain. It verifies the integrity of the chain using
-// the genesis block and the verifier factory.
-func (c chain) Verify(genesis Genesis, fac crypto.VerifierFactory) error {
+// the genesis block and the verifier factory. It starts the verification at the
+// link whose previous block equals the given Digest. If the genesis hash is
+// provided, the whole chain is going to be validated.
+func (c chain) Verify(genesis Genesis, from Digest, fac crypto.VerifierFactory) error {
 	authority := genesis.GetRoster()
 
 	prev := genesis.GetHash()
 
+	toProcess := false
+
 	for _, link := range c.GetLinks() {
+		// Skip the verification until we reach the provided Digest. We still
+		// have to update the roster though.
+		if !toProcess && link.GetFrom() != from {
+			authority = authority.Apply(link.GetChangeSet())
+			continue
+		}
+
+		toProcess = true
+
 		// It makes sure that the chain of links is consistent.
 		if prev != link.GetFrom() {
 			return xerrors.Errorf("mismatch from: '%v' != '%v'", link.GetFrom(), prev)
