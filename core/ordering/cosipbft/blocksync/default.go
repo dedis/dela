@@ -240,7 +240,7 @@ func (h *handler) Stream(out mino.Sender, in mino.Receiver) error {
 	// have.
 	bl, err := h.blocks.Last()
 	if err == nil {
-		from = bl.GetHash()
+		from = bl.GetFrom()
 	}
 
 	err = m.GetChain().Verify(genesis, from, h.verifierFac)

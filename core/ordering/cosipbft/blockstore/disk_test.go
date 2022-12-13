@@ -145,6 +145,20 @@ func TestInDisk_GetChain(t *testing.T) {
 
 	store.fac = badLinkFac{}
 	_, err = store.GetChain()
+	require.EqualError(t, err, fake.Err("while reading database: while scanning: link malformed"))
+}
+
+func TestInDisk_GetChain_BadBlockLink(t *testing.T) {
+	db, clean := makeDB(t)
+	defer clean()
+
+	store := NewDiskStore(db, makeBlockFac())
+
+	err := store.Store(makeLink(t, types.Digest{}, types.WithIndex(0)))
+	require.NoError(t, err)
+
+	store.fac = badLinkFac{}
+	_, err = store.GetChain()
 	require.EqualError(t, err, fake.Err("while reading database: while scanning: block malformed"))
 }
 

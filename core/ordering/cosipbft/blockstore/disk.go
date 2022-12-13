@@ -218,7 +218,7 @@ func (s *InDisk) GetChain() (types.Chain, error) {
 
 			link, err := s.fac.LinkOf(s.context, value)
 			if err != nil {
-				return xerrors.Errorf("block malformed: %v", err)
+				return xerrors.Errorf("link malformed: %v", err)
 			}
 
 			prevs[i] = link

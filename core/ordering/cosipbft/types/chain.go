@@ -335,6 +335,7 @@ func (c chain) Verify(genesis Genesis, from Digest, fac crypto.VerifierFactory) 
 		// Skip the verification until we reach the provided Digest. We still
 		// have to update the roster though.
 		if !toProcess && link.GetFrom() != from {
+			prev = link.GetTo()
 			authority = authority.Apply(link.GetChangeSet())
 			continue
 		}
@@ -383,6 +384,10 @@ func (c chain) Verify(genesis Genesis, from Digest, fac crypto.VerifierFactory) 
 		prev = link.GetTo()
 
 		authority = authority.Apply(link.GetChangeSet())
+	}
+
+	if !toProcess {
+		return xerrors.Errorf("no verification made (from Digest %v)", from)
 	}
 
 	return nil
