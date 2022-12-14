@@ -361,6 +361,6 @@ func (c fakeChain) GetBlock() otypes.Block {
 	return c.block
 }
 
-func (c fakeChain) Verify(otypes.Genesis, crypto.VerifierFactory) error {
+func (c fakeChain) Verify(otypes.Genesis, otypes.Digest, crypto.VerifierFactory) error {
 	return c.err
 }

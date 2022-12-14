@@ -206,17 +206,22 @@ func (s *InDisk) GetChain() (types.Chain, error) {
 
 		i := uint64(0)
 		err := bucket.Scan([]byte{}, func(key, value []byte) error {
-			link, err := s.fac.BlockLinkOf(s.context, value)
-			if err != nil {
-				return xerrors.Errorf("block malformed: %v", err)
-			}
-
 			if i >= length-1 {
+				link, err := s.fac.BlockLinkOf(s.context, value)
+				if err != nil {
+					return xerrors.Errorf("block malformed: %v", err)
+				}
+
 				chain = types.NewChain(link, prevs)
 				return nil
 			}
 
-			prevs[i] = link.Reduce()
+			link, err := s.fac.LinkOf(s.context, value)
+			if err != nil {
+				return xerrors.Errorf("link malformed: %v", err)
+			}
+
+			prevs[i] = link
 			i++
 
 			return nil
