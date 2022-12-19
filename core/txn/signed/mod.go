@@ -5,13 +5,13 @@
 // of an existing transaction.
 //
 // Documentation Last Review: 08.10.2020
-//
 package signed
 
 import (
 	"encoding/binary"
 	"io"
 	"sort"
+	"time"
 
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/core/access"
@@ -30,6 +30,11 @@ func RegisterTransactionFormat(f serde.Format, e serde.FormatEngine) {
 	txFormats.Register(f, e)
 }
 
+// Stats to help sorting the transactions
+type Stats struct {
+	Ts time.Time
+}
+
 // Transaction is a signed transaction using a nonce to protect itself against
 // replay attack.
 //
@@ -40,6 +45,7 @@ type Transaction struct {
 	pubkey crypto.PublicKey
 	sig    crypto.Signature
 	hash   []byte
+	stats  Stats
 }
 
 type template struct {
@@ -213,6 +219,11 @@ func (t *Transaction) Serialize(ctx serde.Context) ([]byte, error) {
 	}
 
 	return data, nil
+}
+
+// SetTimestamp records the time when the transaction was added
+func (t *Transaction) SetTimestamp() {
+	t.stats.Ts = time.Now()
 }
 
 // PublicKeyFac is the key of the public key factory.

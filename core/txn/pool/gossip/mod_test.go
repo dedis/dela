@@ -252,6 +252,9 @@ func (tx fakeTx) Serialize(serde.Context) ([]byte, error) {
 	return tx.GetID(), nil
 }
 
+func (tx fakeTx) SetTimestamp() {
+}
+
 type fakeTxFac struct {
 	txn.Factory
 }

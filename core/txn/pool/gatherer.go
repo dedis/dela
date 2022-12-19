@@ -3,18 +3,17 @@ package pool
 import (
 	"bytes"
 	"context"
-	"sort"
-	"sync"
-
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/validation"
 	"golang.org/x/xerrors"
+	"sort"
+	"sync"
 )
 
 // DefaultIdentitySize is the default size defined for each identity to store
 // transactions.
-const DefaultIdentitySize = 10
+const DefaultIdentitySize = 100
 
 // Transactions is a sortable list of transactions.
 //
@@ -57,7 +56,8 @@ func (txs transactions) Add(other txn.Transaction) transactions {
 func (txs transactions) Remove(other txn.Transaction) transactions {
 	for i, tx := range txs {
 		if bytes.Equal(tx.GetID(), other.GetID()) {
-			return append(txs[:i], txs[i+1:]...)
+			txs = append(txs[:i], txs[i+1:]...)
+			break
 		}
 	}
 
@@ -107,7 +107,7 @@ type simpleGatherer struct {
 
 	// A string key is generated for each unique identity, which will have its
 	// own list of transactions, so that a limited size can be enforced
-	// independently from each other.
+	// independently of each other.
 	txs map[string]transactions
 }
 
@@ -158,6 +158,7 @@ func (g *simpleGatherer) Add(tx txn.Transaction) error {
 
 	g.Lock()
 
+	tx.SetTimestamp()
 	g.txs[key] = g.txs[key].Add(tx)
 
 	g.notify(g.calculateLength())

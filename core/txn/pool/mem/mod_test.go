@@ -113,6 +113,9 @@ func (tx fakeTx) GetID() []byte {
 	return tx.id
 }
 
+func (tx fakeTx) SetTimestamp() {
+}
+
 type badGatherer struct {
 	pool.Gatherer
 }

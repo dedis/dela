@@ -9,7 +9,6 @@
 // the transaction to be valid.
 //
 // Documentation Last Review: 08.10.2020
-//
 package txn
 
 import (
@@ -35,6 +34,9 @@ type Transaction interface {
 
 	// GetArg is a getter for the arguments of the transaction.
 	GetArg(key string) []byte
+
+	// SetTimestamp records the time when the transaction was added
+	SetTimestamp()
 }
 
 // Factory is the definition of a factory to deserialize transaction

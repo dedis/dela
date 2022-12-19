@@ -255,6 +255,9 @@ func (fakeTx) GetID() []byte {
 	return []byte{0xaa}
 }
 
+func (fakeTx) SetTimestamp() {
+}
+
 type fakeResult struct {
 	validation.TransactionResult
 	refused bool
