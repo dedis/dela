@@ -94,12 +94,54 @@ func TestService_Scenario_Basic(t *testing.T) {
 	checkProof(t, proof.(Proof), nodes[0].service)
 }
 
+func TestService_Scenario_NoViewChangeOnLoadedLeader(t *testing.T) {
+	nodes, ro, clean := makeAuthority(t, 3)
+	defer clean()
+
+	for _, node := range nodes {
+		// Short timeout for the first round that we want to fail.
+		node.service.timeoutRound = 200 * time.Millisecond
+		// Long enough timeout so that any slow machine won't fail the test.
+		node.service.timeoutRoundAfterFailure = 30 * time.Second
+		node.service.timeoutViewchange = 30 * time.Second
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := nodes[0].service.Setup(ctx, ro)
+	require.NoError(t, err)
+
+	events := nodes[2].service.Watch(ctx)
+
+	maxTn := 20
+
+	for tn := 0; tn < maxTn; tn++ {
+		err = nodes[1].pool.Add(makeTx(t, uint64(tn), nodes[1].signer))
+		t.Logf("added Tx[%v] to the pool", tn)
+		require.NoError(t, err)
+	}
+
+	for tn := 0; tn < maxTn; tn++ {
+		evt := waitEventNoFail(t, events)
+		if len(evt.Transactions) == 0 {
+			break
+		}
+		t.Logf("received Evt[%v]", len(evt.Transactions))
+		tn += len(evt.Transactions)
+	}
+
+	for _, node := range nodes {
+		require.NotEqual(t, pbft.ViewChangeState, node.service.pbftsm.GetState())
+	}
+}
+
 func TestService_Scenario_ViewChange(t *testing.T) {
 	nodes, ro, clean := makeAuthority(t, 4)
 	defer clean()
 
 	for _, node := range nodes {
-		// Short timeout to for the first round that we want to fail.
+		// Short timeout for the first round that we want to fail.
 		node.service.timeoutRound = 50 * time.Millisecond
 		// Long enough timeout so that any slow machine won't fail the test.
 		node.service.timeoutRoundAfterFailure = 30 * time.Second
@@ -911,8 +953,18 @@ func makeRosterTx(t *testing.T, nonce uint64, roster authority.Authority, signer
 
 func waitEvent(t *testing.T, events <-chan ordering.Event) ordering.Event {
 	select {
-	case <-time.After(15 * time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("no event received before the timeout")
+		return ordering.Event{}
+	case evt := <-events:
+		return evt
+	}
+}
+
+func waitEventNoFail(t *testing.T, events <-chan ordering.Event) ordering.Event {
+	select {
+	case <-time.After(1 * time.Second):
+		t.Log("no event received before the timeout")
 		return ordering.Event{}
 	case evt := <-events:
 		return evt
