@@ -521,14 +521,28 @@ func (s *Service) doFollowerRound(ctx context.Context, roster authority.Authorit
 
 		s.logger.Warn().Msg("round reached the timeout")
 
-		// Mark that the view change happened during this round.
-		s.failedRound = true
-
 		ctx, cancel := context.WithTimeout(ctx, s.timeoutViewchange)
+		defer cancel()
 
+		// 1. gather transactions
+		txs := s.pool.Gather(ctx, pool.Config{Min: 1})
+
+		// 2. find out if some transaction processing have timed out
+		for _, t := range txs {
+			if t.GetElapsed() >= time.Duration(s.timeoutViewchange.Seconds()*30) {
+				// Mark that the view change happened during this round.
+				s.failedRound = true
+			}
+		}
+
+		// 3. decide whether to view change or not
+		if !s.failedRound {
+			return nil
+		}
+
+		// 4. if a viewChange is required, continue with the view change
 		view, err := s.pbftsm.Expire(s.me)
 		if err != nil {
-			cancel()
 			return xerrors.Errorf("pbft expire failed: %v", err)
 		}
 
@@ -536,7 +550,6 @@ func (s *Service) doFollowerRound(ctx context.Context, roster authority.Authorit
 
 		resps, err := s.rpc.Call(ctx, viewMsg, roster)
 		if err != nil {
-			cancel()
 			return xerrors.Errorf("rpc failed to send views: %v", err)
 		}
 
@@ -555,14 +568,12 @@ func (s *Service) doFollowerRound(ctx context.Context, roster authority.Authorit
 		for state == pbft.ViewChangeState {
 			state, more = <-statesCh
 			if !more {
-				cancel()
 				return xerrors.New("view change failed")
 			}
 		}
 
 		s.logger.Debug().Msgf("view change successful for %d", viewMsg.GetLeader())
 
-		cancel()
 		return nil
 	case <-s.events:
 		// As a child, a block has been committed thus the previous view
@@ -756,9 +767,9 @@ type poolFilter struct {
 // Accept implements pool.Filter. It returns an error if the transaction exists
 // already or the nonce is invalid.
 func (f poolFilter) Accept(tx txn.Transaction, leeway validation.Leeway) error {
-	store := f.tree.Get()
+	s := f.tree.Get()
 
-	err := f.srvc.Accept(store, tx, leeway)
+	err := f.srvc.Accept(s, tx, leeway)
 	if err != nil {
 		return xerrors.Errorf("unacceptable transaction: %v", err)
 	}

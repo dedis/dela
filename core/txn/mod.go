@@ -14,6 +14,7 @@ package txn
 import (
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/serde"
+	"time"
 )
 
 // Transaction is what triggers a smart contract execution by passing it as part
@@ -37,6 +38,9 @@ type Transaction interface {
 
 	// SetTimestamp records the time when the transaction was added
 	SetTimestamp()
+
+	// GetElapsed returns the elapsed time since the time stamp was set
+	GetElapsed() time.Duration
 }
 
 // Factory is the definition of a factory to deserialize transaction

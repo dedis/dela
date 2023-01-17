@@ -221,6 +221,11 @@ func (t *Transaction) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
+// GetElapsed returns the elapsed time since the time stamp was set
+func (t *Transaction) GetElapsed() time.Duration {
+	return time.Since(t.stats.Ts)
+}
+
 // SetTimestamp records the time when the transaction was added
 func (t *Transaction) SetTimestamp() {
 	t.stats.Ts = time.Now()
