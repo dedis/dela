@@ -529,7 +529,7 @@ func (s *Service) doFollowerRound(ctx context.Context, roster authority.Authorit
 
 		// 2. find out if some transaction processing have timed out
 		for _, t := range txs {
-			if t.GetElapsed() >= time.Duration(s.timeoutViewchange.Seconds()*30) {
+			if t.GetElapsed() >= s.timeoutRound {
 				// Mark that the view change happened during this round.
 				s.failedRound = true
 			}
