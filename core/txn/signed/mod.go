@@ -9,10 +9,6 @@ package signed
 
 import (
 	"encoding/binary"
-	"io"
-	"sort"
-	"time"
-
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/txn"
@@ -21,6 +17,8 @@ import (
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
+	"io"
+	"sort"
 )
 
 var txFormats = registry.NewSimpleRegistry()
@@ -28,11 +26,6 @@ var txFormats = registry.NewSimpleRegistry()
 // RegisterTransactionFormat registers the engine for the provided format.
 func RegisterTransactionFormat(f serde.Format, e serde.FormatEngine) {
 	txFormats.Register(f, e)
-}
-
-// Stats to help sorting the transactions
-type Stats struct {
-	Ts time.Time
 }
 
 // Transaction is a signed transaction using a nonce to protect itself against
@@ -45,7 +38,6 @@ type Transaction struct {
 	pubkey crypto.PublicKey
 	sig    crypto.Signature
 	hash   []byte
-	stats  Stats
 }
 
 type template struct {
@@ -219,16 +211,6 @@ func (t *Transaction) Serialize(ctx serde.Context) ([]byte, error) {
 	}
 
 	return data, nil
-}
-
-// GetElapsed returns the elapsed time since the time stamp was set
-func (t *Transaction) GetElapsed() time.Duration {
-	return time.Since(t.stats.Ts)
-}
-
-// SetTimestamp records the time when the transaction was added
-func (t *Transaction) SetTimestamp() {
-	t.stats.Ts = time.Now()
 }
 
 // PublicKeyFac is the key of the public key factory.

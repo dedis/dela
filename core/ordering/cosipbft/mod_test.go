@@ -61,26 +61,26 @@ func TestService_Scenario_Basic(t *testing.T) {
 	err = nodes[0].pool.Add(makeTx(t, 0, signer))
 	require.NoError(t, err)
 
-	evt := waitEvent(t, events)
+	evt := waitEvent(t, events, 1*time.Second)
 	require.Equal(t, uint64(0), evt.Index)
 
 	err = nodes[1].pool.Add(makeTx(t, 1, signer))
 	require.NoError(t, err)
 
-	evt = waitEvent(t, events)
+	evt = waitEvent(t, events, 1*time.Second)
 	require.Equal(t, uint64(1), evt.Index)
 
 	err = nodes[1].pool.Add(makeRosterTx(t, 2, ro, signer))
 	require.NoError(t, err)
 
-	evt = waitEvent(t, events)
+	evt = waitEvent(t, events, 1*time.Second)
 	require.Equal(t, uint64(2), evt.Index)
 
 	for i := 0; i < 3; i++ {
 		err = nodes[1].pool.Add(makeTx(t, uint64(i+3), signer))
 		require.NoError(t, err)
 
-		evt = waitEvent(t, events)
+		evt = waitEvent(t, events, 2*time.Second)
 		require.Equal(t, uint64(i+3), evt.Index)
 	}
 
@@ -100,10 +100,10 @@ func TestService_Scenario_NoViewChangeOnLoadedLeader(t *testing.T) {
 
 	for _, node := range nodes {
 		// Short timeout for the first round that we want to fail.
-		node.service.timeoutRound = 200 * time.Millisecond
+		node.service.timeoutRound = 10 * time.Millisecond
 		// Long enough timeout so that any slow machine won't fail the test.
-		node.service.timeoutRoundAfterFailure = 30 * time.Second
-		node.service.timeoutViewchange = 30 * time.Second
+		node.service.timeoutRoundAfterFailure = 100 * time.Millisecond
+		node.service.timeoutViewchange = 2 * time.Second
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -123,7 +123,7 @@ func TestService_Scenario_NoViewChangeOnLoadedLeader(t *testing.T) {
 	}
 
 	for tn := 0; tn < maxTn; tn++ {
-		evt := waitEventNoFail(t, events)
+		evt := waitEventNoFail(t, events, 1*time.Second)
 		if len(evt.Transactions) == 0 {
 			break
 		}
@@ -142,10 +142,10 @@ func TestService_Scenario_ViewChange(t *testing.T) {
 
 	for _, node := range nodes {
 		// Short timeout for the first round that we want to fail.
-		node.service.timeoutRound = 50 * time.Millisecond
+		node.service.timeoutRound = 10 * time.Millisecond
 		// Long enough timeout so that any slow machine won't fail the test.
-		node.service.timeoutRoundAfterFailure = 30 * time.Second
-		node.service.timeoutViewchange = 30 * time.Second
+		node.service.timeoutRoundAfterFailure = 100 * time.Millisecond
+		node.service.timeoutViewchange = 1 * time.Second
 	}
 
 	// Simulate an issue with the leader transaction pool so that it does not
@@ -164,7 +164,7 @@ func TestService_Scenario_ViewChange(t *testing.T) {
 	err = nodes[1].pool.Add(makeTx(t, 0, nodes[1].signer))
 	require.NoError(t, err)
 
-	evt := waitEvent(t, events)
+	evt := waitEvent(t, events, 2*time.Second)
 	require.Equal(t, uint64(0), evt.Index)
 }
 
@@ -207,7 +207,7 @@ func TestService_Scenario_FinalizeFailure(t *testing.T) {
 	err = nodes[0].pool.Add(makeTx(t, 0, nodes[0].signer))
 	require.NoError(t, err)
 
-	evt := waitEvent(t, events)
+	evt := waitEvent(t, events, 15*time.Second)
 	require.Equal(t, uint64(0), evt.Index)
 }
 
@@ -252,10 +252,10 @@ func TestService_Setup(t *testing.T) {
 
 	rpc.Done()
 
-	authority := fake.NewAuthority(3, fake.NewSigner)
+	a := fake.NewAuthority(3, fake.NewSigner)
 	ctx := context.Background()
 
-	err := srvc.Setup(ctx, authority)
+	err := srvc.Setup(ctx, a)
 	require.NoError(t, err)
 
 	_, more := <-srvc.started
@@ -276,12 +276,12 @@ func TestService_AlreadySet_Setup(t *testing.T) {
 	srvc.genesis = blockstore.NewGenesisStore()
 	srvc.genesis.Set(types.Genesis{})
 
-	authority := fake.NewAuthority(3, fake.NewSigner)
+	a := fake.NewAuthority(3, fake.NewSigner)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	err := srvc.Setup(ctx, authority)
+	err := srvc.Setup(ctx, a)
 	require.EqualError(t, err,
 		"creating genesis: set genesis failed: genesis block is already set")
 }
@@ -295,12 +295,12 @@ func TestService_FailReadGenesis_Setup(t *testing.T) {
 	srvc.access = fakeAccess{}
 	srvc.genesis = fakeGenesisStore{errGet: fake.GetError()}
 
-	authority := fake.NewAuthority(3, fake.NewSigner)
+	a := fake.NewAuthority(3, fake.NewSigner)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	err := srvc.Setup(ctx, authority)
+	err := srvc.Setup(ctx, a)
 	require.EqualError(t, err, fake.Err("failed to read genesis"))
 }
 
@@ -314,12 +314,12 @@ func TestService_FailPropagate_Setup(t *testing.T) {
 	srvc.genesis = blockstore.NewGenesisStore()
 	srvc.rpc = fake.NewBadRPC()
 
-	authority := fake.NewAuthority(3, fake.NewSigner)
+	a := fake.NewAuthority(3, fake.NewSigner)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	err := srvc.Setup(ctx, authority)
+	err := srvc.Setup(ctx, a)
 	require.EqualError(t, err, fake.Err("sending genesis"))
 }
 
@@ -336,12 +336,12 @@ func TestService_RequestFailure_Setup(t *testing.T) {
 	rpc.SendResponseWithError(fake.NewAddress(1), fake.GetError())
 	srvc.rpc = rpc
 
-	authority := fake.NewAuthority(3, fake.NewSigner)
+	a := fake.NewAuthority(3, fake.NewSigner)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	err := srvc.Setup(ctx, authority)
+	err := srvc.Setup(ctx, a)
 	require.EqualError(t, err, fake.Err("one request failed"))
 }
 
@@ -951,9 +951,9 @@ func makeRosterTx(t *testing.T, nonce uint64, roster authority.Authority, signer
 	return tx
 }
 
-func waitEvent(t *testing.T, events <-chan ordering.Event) ordering.Event {
+func waitEvent(t *testing.T, events <-chan ordering.Event, timeout time.Duration) ordering.Event {
 	select {
-	case <-time.After(5 * time.Second):
+	case <-time.After(timeout):
 		t.Fatal("no event received before the timeout")
 		return ordering.Event{}
 	case evt := <-events:
@@ -961,9 +961,9 @@ func waitEvent(t *testing.T, events <-chan ordering.Event) ordering.Event {
 	}
 }
 
-func waitEventNoFail(t *testing.T, events <-chan ordering.Event) ordering.Event {
+func waitEventNoFail(t *testing.T, events <-chan ordering.Event, timeout time.Duration) ordering.Event {
 	select {
-	case <-time.After(1 * time.Second):
+	case <-time.After(timeout):
 		t.Log("no event received before the timeout")
 		return ordering.Event{}
 	case evt := <-events:
@@ -997,7 +997,7 @@ func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()
 
 		txFac := signed.NewTransactionFactory()
 
-		pool, err := poolimpl.NewPool(gossip.NewFlat(m, txFac))
+		p, err := poolimpl.NewPool(gossip.NewFlat(m, txFac))
 		require.NoError(t, err)
 
 		tree := binprefix.NewMerkleTree(db, binprefix.Nonce{})
@@ -1017,7 +1017,7 @@ func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()
 			Cosi:       c,
 			Validation: vs,
 			Access:     accessSrvc,
-			Pool:       pool,
+			Pool:       p,
 			Tree:       tree,
 			DB:         db,
 		}
@@ -1028,7 +1028,7 @@ func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()
 		nodes[i] = testNode{
 			onet:    m,
 			service: srv,
-			pool:    pool,
+			pool:    p,
 			db:      db,
 			dbpath:  dir,
 			signer:  c.GetSigner(),

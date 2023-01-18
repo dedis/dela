@@ -5,6 +5,7 @@ package pool
 
 import (
 	"context"
+	"time"
 
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/validation"
@@ -55,4 +56,15 @@ type Pool interface {
 
 	// Close closes the pool and cleans the resources.
 	Close() error
+}
+
+// Stats contains the statistics about a transactions
+type Stats struct {
+	Ts time.Time
+}
+
+// TransactionStats includes a transaction with its statistics
+type TransactionStats struct {
+	txn.Transaction
+	Stats Stats
 }

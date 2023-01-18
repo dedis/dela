@@ -35,12 +35,11 @@ type Transaction interface {
 
 	// GetArg is a getter for the arguments of the transaction.
 	GetArg(key string) []byte
+}
 
-	// SetTimestamp records the time when the transaction was added
-	SetTimestamp()
-
-	// GetElapsed returns the elapsed time since the time stamp was set
-	GetElapsed() time.Duration
+// TransactionStats enhances a transaction by adding statistics to it.
+type TransactionStats interface {
+	IsRotten(time.Duration) bool
 }
 
 // Factory is the definition of a factory to deserialize transaction

@@ -158,7 +158,6 @@ func (g *simpleGatherer) Add(tx txn.Transaction) error {
 
 	g.Lock()
 
-	tx.SetTimestamp()
 	g.txs[key] = g.txs[key].Add(tx)
 
 	g.notify(g.calculateLength())

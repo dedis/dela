@@ -5,12 +5,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/txn"
-	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"sync"
 	"testing"
-	"time"
 )
 
 func TestSimpleGatherer_Len(t *testing.T) {
@@ -137,7 +135,6 @@ func TestSimpleGatherer_Close(t *testing.T) {
 
 type fakeTx struct {
 	txn.Transaction
-	stats    signed.Stats
 	id       uint64
 	identity access.Identity
 }
@@ -159,10 +156,6 @@ func (tx fakeTx) GetNonce() uint64 {
 
 func (tx fakeTx) GetIdentity() access.Identity {
 	return tx.identity
-}
-
-func (tx fakeTx) SetTimestamp() {
-	tx.stats.Ts = time.Now()
 }
 
 type fakeIdentity struct {

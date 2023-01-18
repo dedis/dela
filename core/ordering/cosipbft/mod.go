@@ -197,9 +197,9 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 		VerifierFactory: param.Cosi.GetVerifierFactory(),
 	}
 
-	blocksync := blocksync.NewSynchronizer(syncparam)
+	bs := blocksync.NewSynchronizer(syncparam)
 
-	proc.sync = blocksync
+	proc.sync = bs
 
 	fac := types.NewMessageFactory(
 		types.NewGenesisFactory(proc.rosterFac),
@@ -479,7 +479,7 @@ func (s *Service) doRound(ctx context.Context) error {
 		return s.doLeaderRound(ctx, roster, timeout)
 	}
 
-	return s.doFollowerRound(ctx, roster, timeout)
+	return s.doFollowerRound(ctx, roster)
 }
 
 func (s *Service) doLeaderRound(ctx context.Context, roster authority.Authority, timeout time.Duration) error {
@@ -509,10 +509,10 @@ func (s *Service) doLeaderRound(ctx context.Context, roster authority.Authority,
 	return nil
 }
 
-func (s *Service) doFollowerRound(ctx context.Context, roster authority.Authority, timeout time.Duration) error {
+func (s *Service) doFollowerRound(ctx context.Context, roster authority.Authority) error {
 	// A follower has to wait for the new block, or the round timeout, to proceed.
 	select {
-	case <-time.After(timeout):
+	case <-time.After(s.timeoutRound):
 		if s.pool.Len() == 0 {
 			// When the pool of transactions is empty, the round is aborted
 			// and everything restart.
@@ -529,9 +529,11 @@ func (s *Service) doFollowerRound(ctx context.Context, roster authority.Authorit
 
 		// 2. find out if some transaction processing have timed out
 		for _, t := range txs {
-			if t.GetElapsed() >= s.timeoutRound {
+			ts, ok := t.(txn.TransactionStats)
+			if !ok || ts.IsRotten(s.timeoutViewchange) {
 				// Mark that the view change happened during this round.
 				s.failedRound = true
+				break
 			}
 		}
 
