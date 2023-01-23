@@ -1,7 +1,6 @@
 // Package controller implements a minimal controller for cosipbft.
 //
 // Documentation Last Review: 13.10.2020
-//
 package controller
 
 import (

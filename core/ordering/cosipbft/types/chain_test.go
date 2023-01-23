@@ -203,46 +203,106 @@ func TestChain_Verify(t *testing.T) {
 	genesis, err := NewGenesis(ro)
 	require.NoError(t, err)
 
-	c := NewChain(makeLink(t, genesis.digest), nil)
+	c := NewChain(makeLink(t, genesis.digest, Digest{}), nil)
 
-	err = c.Verify(genesis, fake.VerifierFactory{})
+	err = c.Verify(genesis, genesis.GetHash(), fake.VerifierFactory{})
 	require.NoError(t, err)
 
-	err = c.Verify(genesis, fake.VerifierFactory{})
+	err = c.Verify(genesis, genesis.GetHash(), fake.VerifierFactory{})
 	require.NoError(t, err)
 
-	c = NewChain(makeLink(t, Digest{}), nil)
-	err = c.Verify(genesis, fake.VerifierFactory{})
+	l := makeLink(t, Digest{}, Digest{})
+	c = NewChain(l, nil)
+	err = c.Verify(genesis, l.GetFrom(), fake.VerifierFactory{})
 	require.EqualError(t, err, fmt.Sprintf("mismatch from: '00000000' != '%v'", genesis.GetHash()))
 
-	c = NewChain(makeLink(t, genesis.digest), nil)
-	err = c.Verify(genesis, fake.NewBadVerifierFactory())
+	c = NewChain(makeLink(t, genesis.digest, Digest{}), nil)
+	err = c.Verify(genesis, genesis.GetHash(), fake.NewBadVerifierFactory())
 	require.EqualError(t, err, fake.Err("verifier factory failed"))
 
-	err = c.Verify(genesis, fake.NewVerifierFactory(fake.NewBadVerifier()))
+	err = c.Verify(genesis, genesis.GetHash(), fake.NewVerifierFactory(fake.NewBadVerifier()))
 	require.EqualError(t, err, fake.Err("invalid prepare signature"))
 
-	link := makeLink(t, genesis.digest).(blockLink)
+	link := makeLink(t, genesis.digest, Digest{}).(blockLink)
 	link.prepareSig = nil
 	c = NewChain(link, nil)
-	err = c.Verify(genesis, fake.VerifierFactory{})
+	err = c.Verify(genesis, genesis.GetHash(), fake.VerifierFactory{})
 	require.EqualError(t, err, "unexpected nil prepare signature in link")
 
 	link.prepareSig = fake.Signature{}
 	link.commitSig = nil
 	c = NewChain(link, nil)
-	err = c.Verify(genesis, fake.VerifierFactory{})
+	err = c.Verify(genesis, genesis.GetHash(), fake.VerifierFactory{})
 	require.EqualError(t, err, "unexpected nil commit signature in link")
 
 	link.prepareSig = fake.NewBadSignature()
 	link.commitSig = fake.Signature{}
 	c = NewChain(link, nil)
-	err = c.Verify(genesis, fake.VerifierFactory{})
+	err = c.Verify(genesis, genesis.GetHash(), fake.VerifierFactory{})
 	require.EqualError(t, err, fake.Err("failed to marshal signature"))
 
-	c = NewChain(makeLink(t, genesis.digest), nil)
-	err = c.Verify(genesis, fake.NewVerifierFactory(fake.NewBadVerifierWithDelay(1)))
+	c = NewChain(makeLink(t, genesis.digest, Digest{}), nil)
+	err = c.Verify(genesis, genesis.GetHash(), fake.NewVerifierFactory(fake.NewBadVerifierWithDelay(1)))
 	require.EqualError(t, err, fake.Err("invalid commit signature"))
+}
+
+func TestChain_Verify_Skip(t *testing.T) {
+	ro := authority.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+
+	genesis, err := NewGenesis(ro)
+	require.NoError(t, err)
+
+	link1 := makeLink(t, genesis.digest, digest(0x1))
+	link2 := makeLink(t, digest(0x1), digest(0x2))
+	link3 := makeLink(t, digest(0x2), digest(0x3))
+
+	c := NewChain(link3, []Link{link1, link2})
+
+	// Check the whole chain
+	err = c.Verify(genesis, genesis.GetHash(), fake.VerifierFactory{})
+	require.NoError(t, err)
+
+	// Check from link2
+	err = c.Verify(genesis, digest(0x2), fake.VerifierFactory{})
+	require.NoError(t, err)
+}
+
+func TestChain_Verify_Skip_Invalid(t *testing.T) {
+	ro := authority.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+
+	genesis, err := NewGenesis(ro)
+	require.NoError(t, err)
+
+	link1 := makeLink(t, genesis.digest, digest(0x10))
+	link2 := makeLink(t, digest(0x1), digest(0x2))
+	link3 := makeLink(t, digest(0x2), digest(0x3))
+
+	c := NewChain(link3, []Link{link1, link2})
+
+	// Check the whole chain, should be an error with invalid link 1
+	err = c.Verify(genesis, genesis.GetHash(), fake.VerifierFactory{})
+	require.Error(t, err)
+
+	// Check from link3, no error since we skip
+	err = c.Verify(genesis, digest(0x2), fake.VerifierFactory{})
+	require.NoError(t, err)
+}
+
+func TestChain_Verify_Skip_NoCheck(t *testing.T) {
+	ro := authority.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
+
+	genesis, err := NewGenesis(ro)
+	require.NoError(t, err)
+
+	link1 := makeLink(t, genesis.digest, digest(0x10))
+	link2 := makeLink(t, digest(0x1), digest(0x2))
+	link3 := makeLink(t, digest(0x2), digest(0x3))
+
+	c := NewChain(link3, []Link{link1, link2})
+
+	// Check with an inexistent digest
+	err = c.Verify(genesis, digest(0x33), fake.VerifierFactory{})
+	require.EqualError(t, err, "no verification made (from Digest 33000000)")
 }
 
 func TestChain_Serialize(t *testing.T) {
@@ -273,9 +333,15 @@ func TestChainFactory_Deserialize(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-func makeLink(t *testing.T, from Digest) BlockLink {
-	link, err := NewForwardLink(from, Digest{}, WithSignatures(fake.Signature{}, fake.Signature{}))
+func makeLink(t *testing.T, from, to Digest) BlockLink {
+	link, err := NewForwardLink(from, to, WithSignatures(fake.Signature{}, fake.Signature{}))
 	require.NoError(t, err)
 
 	return blockLink{forwardLink: link.(forwardLink)}
+}
+
+func digest(b byte) Digest {
+	var d Digest
+	d[0] = b
+	return d
 }

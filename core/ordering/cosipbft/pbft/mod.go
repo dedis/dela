@@ -11,7 +11,6 @@
 // proof of acceptance of the block.
 //
 // Documentation Last Review: 13.10.2020
-//
 package pbft
 
 import (

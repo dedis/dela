@@ -4,7 +4,6 @@
 // when importing the serde formats.
 //
 // Documentation Last Review: 13.10.2020
-//
 package types
 
 import (
@@ -75,8 +74,8 @@ type Chain interface {
 	GetBlock() Block
 
 	// Verify takes the genesis block and the verifier factory that should
-	// verify the chain.
-	Verify(genesis Genesis, fac crypto.VerifierFactory) error
+	// verify the chain. Performs the verification starting at the link Digest.
+	Verify(genesis Genesis, from Digest, fac crypto.VerifierFactory) error
 }
 
 // ChainFactory is the interface to serialize and deserialize chains.

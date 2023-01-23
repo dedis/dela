@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -28,98 +29,101 @@ func init() {
 // Use the value contract
 // Check the state
 func TestIntegration_Value_Simple(t *testing.T) {
-	dir, err := os.MkdirTemp(os.TempDir(), "dela-integration-test")
-	require.NoError(t, err)
+	t.Run("3 nodes", getTest[*testing.T](3, 2))
+}
 
-	timeout := time.Second * 10 // transaction inclusion timeout
+func BenchmarkValue(b *testing.B) {
+	getTest[*testing.B](5, b.N)(b)
+}
 
-	t.Logf("using temps dir %s", dir)
+func getTest[T require.TestingT](numNode, numTx int) func(t T) {
+	return func(t T) {
+		dir, err := os.MkdirTemp(os.TempDir(), "dela-integration-test")
+		require.NoError(t, err)
 
-	defer os.RemoveAll(dir)
+		timeout := time.Second * 10 // transaction inclusion timeout
 
-	nodes := []dela{
-		newDelaNode(t, filepath.Join(dir, "node1"), 0),
-		newDelaNode(t, filepath.Join(dir, "node2"), 0),
-		newDelaNode(t, filepath.Join(dir, "node3"), 0),
+		defer os.RemoveAll(dir)
+
+		nodes := make([]dela, numNode)
+
+		for i := range nodes {
+			node := newDelaNode(t, filepath.Join(dir, "node"+strconv.Itoa(i)), 0)
+			nodes[i] = node
+		}
+
+		nodes[0].Setup(nodes[1:]...)
+
+		l := loader.NewFileLoader(filepath.Join(dir, "private.key"))
+
+		signerdata, err := l.LoadOrCreate(newKeyGenerator())
+		require.NoError(t, err)
+
+		signer, err := bls.NewSignerFromBytes(signerdata)
+		require.NoError(t, err)
+
+		pubKey := signer.GetPublicKey()
+		cred := accessContract.NewCreds(aKey[:])
+
+		for _, node := range nodes {
+			node.GetAccessService().Grant(node.(cosiDelaNode).GetAccessStore(), cred, pubKey)
+		}
+
+		manager := signed.NewManager(signer, &txClient{})
+
+		pubKeyBuf, err := signer.GetPublicKey().MarshalBinary()
+		require.NoError(t, err)
+
+		args := []txn.Arg{
+			{Key: "go.dedis.ch/dela.ContractArg", Value: []byte("go.dedis.ch/dela.Access")},
+			{Key: "access:grant_id", Value: []byte(hex.EncodeToString(valueAccessKey[:]))},
+			{Key: "access:grant_contract", Value: []byte("go.dedis.ch/dela.Value")},
+			{Key: "access:grant_command", Value: []byte("all")},
+			{Key: "access:identity", Value: []byte(base64.StdEncoding.EncodeToString(pubKeyBuf))},
+			{Key: "access:command", Value: []byte("GRANT")},
+		}
+
+		err = addAndWait(t, timeout, manager, nodes[0].(cosiDelaNode), args...)
+		require.NoError(t, err)
+
+		for i := 0; i < numTx; i++ {
+			key := make([]byte, 32)
+
+			_, err = rand.Read(key)
+			require.NoError(t, err)
+
+			args = []txn.Arg{
+				{Key: "go.dedis.ch/dela.ContractArg", Value: []byte("go.dedis.ch/dela.Value")},
+				{Key: "value:key", Value: key},
+				{Key: "value:value", Value: []byte("value1")},
+				{Key: "value:command", Value: []byte("WRITE")},
+			}
+
+			err = addAndWait(t, timeout, manager, nodes[0].(cosiDelaNode), args...)
+			require.NoError(t, err)
+
+			proof, err := nodes[0].GetOrdering().GetProof(key)
+			require.NoError(t, err)
+			require.Equal(t, []byte("value1"), proof.GetValue())
+		}
 	}
-
-	nodes[0].Setup(nodes[1:]...)
-
-	l := loader.NewFileLoader(filepath.Join(dir, "private.key"))
-
-	signerdata, err := l.LoadOrCreate(newKeyGenerator())
-	require.NoError(t, err)
-
-	signer, err := bls.NewSignerFromBytes(signerdata)
-	require.NoError(t, err)
-
-	pubKey := signer.GetPublicKey()
-	cred := accessContract.NewCreds(aKey[:])
-
-	for _, node := range nodes {
-		node.GetAccessService().Grant(node.(cosiDelaNode).GetAccessStore(), cred, pubKey)
-	}
-
-	manager := signed.NewManager(signer, &txClient{})
-
-	pubKeyBuf, err := signer.GetPublicKey().MarshalBinary()
-	require.NoError(t, err)
-
-	args := []txn.Arg{
-		{Key: "go.dedis.ch/dela.ContractArg", Value: []byte("go.dedis.ch/dela.Access")},
-		{Key: "access:grant_id", Value: []byte(hex.EncodeToString(valueAccessKey[:]))},
-		{Key: "access:grant_contract", Value: []byte("go.dedis.ch/dela.Value")},
-		{Key: "access:grant_command", Value: []byte("all")},
-		{Key: "access:identity", Value: []byte(base64.StdEncoding.EncodeToString(pubKeyBuf))},
-		{Key: "access:command", Value: []byte("GRANT")},
-	}
-	err = addAndWait(t, timeout, manager, nodes[0].(cosiDelaNode), args...)
-	require.NoError(t, err)
-
-	key1 := make([]byte, 32)
-
-	_, err = rand.Read(key1)
-	require.NoError(t, err)
-
-	args = []txn.Arg{
-		{Key: "go.dedis.ch/dela.ContractArg", Value: []byte("go.dedis.ch/dela.Value")},
-		{Key: "value:key", Value: key1},
-		{Key: "value:value", Value: []byte("value1")},
-		{Key: "value:command", Value: []byte("WRITE")},
-	}
-	err = addAndWait(t, timeout, manager, nodes[0].(cosiDelaNode), args...)
-	require.NoError(t, err)
-
-	proof, err := nodes[0].GetOrdering().GetProof(key1)
-	require.NoError(t, err)
-	require.Equal(t, []byte("value1"), proof.GetValue())
-
-	key2 := make([]byte, 32)
-
-	_, err = rand.Read(key2)
-	require.NoError(t, err)
-
-	args = []txn.Arg{
-		{Key: "go.dedis.ch/dela.ContractArg", Value: []byte("go.dedis.ch/dela.Value")},
-		{Key: "value:key", Value: key2},
-		{Key: "value:value", Value: []byte("value2")},
-		{Key: "value:command", Value: []byte("WRITE")},
-	}
-	err = addAndWait(t, timeout, manager, nodes[0].(cosiDelaNode), args...)
-	require.NoError(t, err)
 }
 
 // -----------------------------------------------------------------------------
 // Utility functions
 
-func addAndWait(t *testing.T, to time.Duration, manager txn.Manager, node cosiDelaNode, args ...txn.Arg) error {
+func addAndWait(t require.TestingT, to time.Duration, manager txn.Manager, node cosiDelaNode, args ...txn.Arg) error {
 	manager.Sync()
 
 	tx, err := manager.Make(args...)
-	require.NoError(t, err)
+	if err != nil {
+		return xerrors.Errorf("failed to make tx: %v", err)
+	}
 
 	err = node.GetPool().Add(tx)
-	require.NoError(t, err)
+	if err != nil {
+		return xerrors.Errorf("failed to add tx: %v", err)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), to)
 	defer cancel()
@@ -140,5 +144,5 @@ func addAndWait(t *testing.T, to time.Duration, manager txn.Manager, node cosiDe
 		}
 	}
 
-	return xerrors.Errorf("transaction not found")
+	return xerrors.New("transaction not included")
 }
