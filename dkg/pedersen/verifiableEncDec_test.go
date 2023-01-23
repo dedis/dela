@@ -10,6 +10,7 @@ import (
 
 	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/dkg/pedersen/types"
+	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 
 	"go.dedis.ch/dela/mino/minoch"
@@ -22,6 +23,23 @@ import (
 
 func init() {
 	rand.Seed(0)
+}
+
+func Test_VerifiableEncrypt_NotInit(t *testing.T) {
+	a := Actor{
+		startRes: &state{},
+	}
+	_, _, err := a.VerifiableEncrypt(nil, nil)
+	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")
+}
+
+func Test_VerifiableEncrypt_ShostMsg(t *testing.T) {
+	a := Actor{
+		startRes: &state{dkgState: certified},
+	}
+	_, reminder, err := a.VerifiableEncrypt(make([]byte, 28), nil)
+	require.NoError(t, err)
+	require.Len(t, reminder, 0)
 }
 
 func Test_verifiableEncDec_minoch(t *testing.T) {
@@ -199,4 +217,63 @@ func Test_verifiableEncDec_minogrpc(t *testing.T) {
 			"throughput=%v[tx/s], dkg setup time=%s", n, batchSize, workerNum,
 			decryptionTime, float64(batchSize)/decryptionTime.Seconds(), setupTime)
 	}
+}
+
+func Test_VerifiableDecrypt_NotStarted(t *testing.T) {
+	a := Actor{
+		startRes: &state{dkgState: initial},
+	}
+
+	_, err := a.VerifiableDecrypt(nil)
+	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")
+}
+
+func Test_VerifiableDecrypt_BadRPC(t *testing.T) {
+	a := Actor{
+		startRes: &state{dkgState: certified},
+		rpc:      fake.NewBadRPC(),
+	}
+
+	_, err := a.VerifiableDecrypt(nil)
+	require.EqualError(t, err, fake.Err("failed to create stream"))
+}
+
+func Test_VerifiableDecrypt_BadSender(t *testing.T) {
+	a := Actor{
+		startRes: &state{dkgState: certified},
+		rpc:      fake.NewStreamRPC(nil, fake.NewBadSender()),
+	}
+
+	_, err := a.VerifiableDecrypt(nil)
+	require.EqualError(t, err, fake.Err("failed to send verifiable decrypt request"))
+}
+
+func Test_VerifiableDecrypt_BadReceiver(t *testing.T) {
+	a := Actor{
+		startRes: &state{
+			dkgState:     certified,
+			participants: []mino.Address{fake.NewAddress(0)},
+		},
+		rpc: fake.NewStreamRPC(fake.NewBadReceiver(), fake.Sender{}),
+	}
+
+	_, err := a.VerifiableDecrypt(nil)
+	require.EqualError(t, err, fake.Err("stream stopped unexpectedly"))
+}
+
+func Test_VerifiableDecrypt_BadReply(t *testing.T) {
+	reply := fake.NewRecvMsg(fake.NewAddress(0), fake.Message{})
+
+	a := Actor{
+		startRes: &state{
+			dkgState:     certified,
+			participants: []mino.Address{fake.NewAddress(0)},
+		},
+		rpc: fake.NewStreamRPC(&fake.Receiver{
+			Msgs: []fake.ReceiverMessage{reply},
+		}, fake.Sender{}),
+	}
+
+	_, err := a.VerifiableDecrypt(nil)
+	require.EqualError(t, err, "got unexpected reply, expected types.VerifiableDecryptReply but got: fake.Message")
 }
