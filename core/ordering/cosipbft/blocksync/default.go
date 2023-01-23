@@ -234,7 +234,16 @@ func (h *handler) Stream(out mino.Sender, in mino.Receiver) error {
 		return xerrors.Errorf("reading genesis: %v", err)
 	}
 
-	err = m.GetChain().Verify(genesis, h.verifierFac)
+	from := genesis.GetHash()
+
+	// We trust our storage, thus we won't check links on blocks we already
+	// have.
+	bl, err := h.blocks.Last()
+	if err == nil {
+		from = bl.GetFrom()
+	}
+
+	err = m.GetChain().Verify(genesis, from, h.verifierFac)
 	if err != nil {
 		return xerrors.Errorf("failed to verify chain: %v", err)
 	}

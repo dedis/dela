@@ -80,6 +80,6 @@ func (c fakeChain) GetBlock() types.Block {
 	return c.block
 }
 
-func (c fakeChain) Verify(types.Genesis, crypto.VerifierFactory) error {
+func (c fakeChain) Verify(types.Genesis, types.Digest, crypto.VerifierFactory) error {
 	return c.err
 }

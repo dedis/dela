@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -67,7 +66,7 @@ type cosiDela interface {
 //
 // - implements dela
 type cosiDelaNode struct {
-	t             *testing.T
+	t             require.TestingT
 	onet          mino.Mino
 	ordering      ordering.Service
 	cosi          *threshold.Threshold
@@ -78,7 +77,7 @@ type cosiDelaNode struct {
 	tree          hashtree.Tree
 }
 
-func newDelaNode(t *testing.T, path string, port int) dela {
+func newDelaNode(t require.TestingT, path string, port int) dela {
 	err := os.MkdirAll(path, 0700)
 	require.NoError(t, err)
 

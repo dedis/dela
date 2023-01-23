@@ -130,10 +130,10 @@ func TestService_Scenario_ViewChange(t *testing.T) {
 // propagation failed.
 //
 // Expected log warnings and errors:
-//  - timeout from the followers
-//  - block not from the leader
-//  - round failed on node 0
-//  - mismatch state viewchange != (initial|prepare)
+//   - timeout from the followers
+//   - block not from the leader
+//   - round failed on node 0
+//   - mismatch state viewchange != (initial|prepare)
 func TestService_Scenario_FinalizeFailure(t *testing.T) {
 	nodes, ro, clean := makeAuthority(t, 4)
 	defer clean()

@@ -27,7 +27,6 @@
 // https://www.usenix.org/system/files/conference/usenixsecurity16/sec16_paper_kokoris-kogias.pdf
 //
 // Documentation Last Review: 12.10.2020
-//
 package cosipbft
 
 import (
