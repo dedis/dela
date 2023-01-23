@@ -8,15 +8,15 @@ import (
 	"golang.org/x/xerrors"
 )
 
-// the ciphertext provided by the verifiable encryption function
-// a discription can be found in https://arxiv.org/pdf/2205.08529.pdf
-// the equivalent of each parameter in the paper is written in front of it
+// Ciphertext provides the verifiable encryption function. A description can be
+// found in https://arxiv.org/pdf/2205.08529.pdf. The equivalent of each
+// parameter in the paper is written in front of it.
 type Ciphertext struct {
 	K    kyber.Point  // r
 	C    kyber.Point  // C
-	UBar kyber.Point  //ubar
-	E    kyber.Scalar //e
-	F    kyber.Scalar //f
+	UBar kyber.Point  // ubar
+	E    kyber.Scalar // e
+	F    kyber.Scalar // f
 	GBar kyber.Point  // GBar
 }
 
@@ -25,7 +25,7 @@ type Ciphertext struct {
 //
 //	see: https://arxiv.org/pdf/2205.08529.pdf
 //
-// The equivalent of each parameter in the paper is mentioned
+// The equivalent of each parameter in the paper is mentioned.
 type ShareAndProof struct {
 	V  kyber.Point
 	I  int64
