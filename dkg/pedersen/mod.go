@@ -87,7 +87,7 @@ func (s *Pedersen) Listen() (dkg.Actor, error) {
 	a := &Actor{
 		rpc:      mino.MustCreateRPC(s.mino, "dkg", h, s.factory),
 		factory:  s.factory,
-		startRes: h.startRes,
+		startRes: h.dkgHandler.getState(),
 	}
 
 	return a, nil
@@ -329,7 +329,7 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 
 	decryptedMessage, err := res.Data()
 	if err != nil {
-		return []byte{}, xerrors.Errorf("failed to get embeded data: %v", err)
+		return []byte{}, xerrors.Errorf("failed to get embedded data: %v", err)
 	}
 
 	dela.Logger.Info().Msgf("Decrypted message: %v", decryptedMessage)
