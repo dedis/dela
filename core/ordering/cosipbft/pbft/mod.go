@@ -521,7 +521,7 @@ func (m *pbftsm) Expire(addr mino.Address) (View, error) {
 	m.Lock()
 	defer m.Unlock()
 
-	m.logger.Info().Msgf("expire: current leader is %d", m.round.leader)
+	m.logger.Warn().Msgf("expire: current leader is %d", m.round.leader)
 
 	roster, err := m.init()
 	if err != nil {

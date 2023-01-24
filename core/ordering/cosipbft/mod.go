@@ -476,9 +476,11 @@ func (s *Service) doRound(ctx context.Context) error {
 	}
 
 	if s.me.Equal(leader) {
+		s.logger.Info().Msgf("doLeaderRound with timeout %d", timeout)
 		return s.doLeaderRound(ctx, roster, timeout)
 	}
 
+	s.logger.Info().Msgf("doFollowerRound with timeout %d", timeout)
 	return s.doFollowerRound(ctx, roster)
 }
 
@@ -519,7 +521,7 @@ func (s *Service) doFollowerRound(ctx context.Context, roster authority.Authorit
 			return nil
 		}
 
-		s.logger.Warn().Msg("round reached the timeout")
+		s.logger.Debug().Msg("round reached the timeout")
 
 		ctx, cancel := context.WithTimeout(ctx, s.timeoutViewchange)
 		defer cancel()
@@ -531,7 +533,7 @@ func (s *Service) doFollowerRound(ctx context.Context, roster authority.Authorit
 		for _, t := range txs {
 			ts, ok := t.(txn.TransactionStats)
 			if !ok || ts.IsRotten(s.timeoutViewchange) {
-				// Mark that the view change happened during this round.
+				s.logger.Warn().Msg("found a rotten transaction")
 				s.failedRound = true
 				break
 			}
@@ -542,7 +544,16 @@ func (s *Service) doFollowerRound(ctx context.Context, roster authority.Authorit
 			return nil
 		}
 
-		// 4. if a viewChange is required, continue with the view change
+		// 4. reset timings to avoid infinite view change
+		for _, t := range txs {
+			ts, ok := t.(txn.TransactionStats)
+			if ok {
+				s.logger.Debug().Msg("reset transaction time")
+				ts.ResetStats()
+			}
+		}
+
+		// 5. if a viewChange is required, continue with the view change
 		view, err := s.pbftsm.Expire(s.me)
 		if err != nil {
 			return xerrors.Errorf("pbft expire failed: %v", err)
@@ -574,7 +585,7 @@ func (s *Service) doFollowerRound(ctx context.Context, roster authority.Authorit
 			}
 		}
 
-		s.logger.Debug().Msgf("view change successful for %d", viewMsg.GetLeader())
+		s.logger.Info().Msgf("view change for %d", viewMsg.GetLeader())
 
 		return nil
 	case <-s.events:

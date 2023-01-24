@@ -40,6 +40,7 @@ type Transaction interface {
 // TransactionStats enhances a transaction by adding statistics to it.
 type TransactionStats interface {
 	IsRotten(time.Duration) bool
+	ResetStats()
 }
 
 // Factory is the definition of a factory to deserialize transaction

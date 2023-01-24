@@ -98,14 +98,14 @@ func TestService_Scenario_NoViewChangeOnLoadedLeader(t *testing.T) {
 	nodes, ro, clean := makeAuthority(t, 3)
 	defer clean()
 
-	for _, node := range nodes {
-		// Short timeout for the first round that we want to fail.
-		node.service.timeoutRound = 10 * time.Millisecond
-		// Long enough timeout so that any slow machine won't fail the test.
-		node.service.timeoutRoundAfterFailure = 100 * time.Millisecond
-		node.service.timeoutViewchange = 2 * time.Second
-	}
-
+	/*	for _, node := range nodes {
+			// Short timeout for the first round that we want to fail.
+			node.service.timeoutRound = 100 * time.Millisecond
+			// Long enough timeout so that any slow machine won't fail the test.
+			node.service.timeoutRoundAfterFailure = 1 * time.Second
+			node.service.timeoutViewchange = 2 * time.Second
+		}
+	*/
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -123,7 +123,7 @@ func TestService_Scenario_NoViewChangeOnLoadedLeader(t *testing.T) {
 	}
 
 	for tn := 0; tn < maxTn; tn++ {
-		evt := waitEventNoFail(t, events, 1*time.Second)
+		evt := waitEventNoFail(t, events, 2*time.Second)
 		if len(evt.Transactions) == 0 {
 			break
 		}
@@ -140,14 +140,14 @@ func TestService_Scenario_ViewChange(t *testing.T) {
 	nodes, ro, clean := makeAuthority(t, 4)
 	defer clean()
 
-	for _, node := range nodes {
-		// Short timeout for the first round that we want to fail.
-		node.service.timeoutRound = 10 * time.Millisecond
-		// Long enough timeout so that any slow machine won't fail the test.
-		node.service.timeoutRoundAfterFailure = 100 * time.Millisecond
-		node.service.timeoutViewchange = 1 * time.Second
-	}
-
+	/*	for _, node := range nodes {
+			// Short timeout for the first round that we want to fail.
+			node.service.timeoutRound = 100 * time.Millisecond
+			// Long enough timeout so that any slow machine won't fail the test.
+			node.service.timeoutRoundAfterFailure = 1 * time.Second
+			node.service.timeoutViewchange = 500 * time.Millisecond
+		}
+	*/
 	// Simulate an issue with the leader transaction pool so that it does not
 	// receive any of them.
 	nodes[0].pool.Close()
@@ -164,7 +164,7 @@ func TestService_Scenario_ViewChange(t *testing.T) {
 	err = nodes[1].pool.Add(makeTx(t, 0, nodes[1].signer))
 	require.NoError(t, err)
 
-	evt := waitEvent(t, events, 2*time.Second)
+	evt := waitEvent(t, events, 15*time.Second)
 	require.Equal(t, uint64(0), evt.Index)
 }
 

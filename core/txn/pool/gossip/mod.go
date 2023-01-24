@@ -38,6 +38,12 @@ func (t TransactionStats) IsRotten(duration time.Duration) bool {
 	return time.Since(t.insertionTime) > duration
 }
 
+// ResetStats resets the insertion time to now.
+// It is used when a leader view change is necessary.
+func (t *TransactionStats) ResetStats() {
+	t.insertionTime = time.Now()
+}
+
 // NewPool creates a new empty pool and starts to gossip incoming transaction.
 func NewPool(gossiper gossip.Gossiper) (*Pool, error) {
 	actor, err := gossiper.Listen()
