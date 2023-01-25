@@ -59,9 +59,17 @@ import (
 )
 
 const (
-	// RoundTimeout is the maximum of time the service waits for an event to
+	// DefaultRoundTimeout is the maximum time the service waits for an event to
 	// happen.
-	RoundTimeout = 10 * time.Second
+	DefaultRoundTimeout = 1 * time.Second
+
+	// DefaultRoundTimeoutAfterFailure is the maximum time the service waits for an
+	// event to happen after a view change.
+	DefaultRoundTimeoutAfterFailure = 10 * time.Second
+
+	// DefaultTimeoutBeforeViewchange is the maximum time spent decided before a
+	// view change is executed.
+	DefaultTimeoutBeforeViewchange = 15 * time.Second
 
 	// RoundWait is the constant value of the exponential backoff use between
 	// round failures.
@@ -223,9 +231,9 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 		actor:                    actor,
 		val:                      param.Validation,
 		verifierFac:              param.Cosi.GetVerifierFactory(),
-		timeoutRound:             RoundTimeout,
-		timeoutRoundAfterFailure: RoundTimeout,
-		timeoutViewchange:        RoundTimeout,
+		timeoutRound:             DefaultRoundTimeout,
+		timeoutRoundAfterFailure: DefaultRoundTimeoutAfterFailure,
+		timeoutViewchange:        DefaultTimeoutBeforeViewchange,
 		events:                   make(chan ordering.Event, 1),
 		closing:                  make(chan struct{}),
 		closed:                   make(chan struct{}),
@@ -476,11 +484,11 @@ func (s *Service) doRound(ctx context.Context) error {
 	}
 
 	if s.me.Equal(leader) {
-		s.logger.Info().Msgf("doLeaderRound with timeout %d", timeout)
+		s.logger.Info().Msgf("doLeaderRound with timeout %f", float32(timeout)/1000000000)
 		return s.doLeaderRound(ctx, roster, timeout)
 	}
 
-	s.logger.Info().Msgf("doFollowerRound with timeout %d", timeout)
+	s.logger.Info().Msgf("doFollowerRound with timeout %f", float32(timeout)/1000000000)
 	return s.doFollowerRound(ctx, roster)
 }
 
@@ -523,9 +531,6 @@ func (s *Service) doFollowerRound(ctx context.Context, roster authority.Authorit
 
 		s.logger.Debug().Msg("round reached the timeout")
 
-		ctx, cancel := context.WithTimeout(ctx, s.timeoutViewchange)
-		defer cancel()
-
 		// 1. gather transactions
 		txs := s.pool.Gather(ctx, pool.Config{Min: 1})
 
@@ -560,6 +565,9 @@ func (s *Service) doFollowerRound(ctx context.Context, roster authority.Authorit
 		}
 
 		viewMsg := types.NewViewMessage(view.GetID(), view.GetLeader(), view.GetSignature())
+
+		ctx, cancel := context.WithTimeout(ctx, s.timeoutRound)
+		defer cancel()
 
 		resps, err := s.rpc.Call(ctx, viewMsg, roster)
 		if err != nil {

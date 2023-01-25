@@ -61,26 +61,28 @@ func TestService_Scenario_Basic(t *testing.T) {
 	err = nodes[0].pool.Add(makeTx(t, 0, signer))
 	require.NoError(t, err)
 
-	evt := waitEvent(t, events, 1*time.Second)
+	evt := waitEvent(t, events, DefaultRoundTimeout)
 	require.Equal(t, uint64(0), evt.Index)
 
-	err = nodes[1].pool.Add(makeTx(t, 1, signer))
+	signer = nodes[1].signer
+
+	err = nodes[1].pool.Add(makeTx(t, 0, signer))
 	require.NoError(t, err)
 
-	evt = waitEvent(t, events, 1*time.Second)
+	evt = waitEvent(t, events, DefaultRoundTimeout)
 	require.Equal(t, uint64(1), evt.Index)
 
-	err = nodes[1].pool.Add(makeRosterTx(t, 2, ro, signer))
+	err = nodes[1].pool.Add(makeRosterTx(t, 1, ro, signer))
 	require.NoError(t, err)
 
-	evt = waitEvent(t, events, 1*time.Second)
+	evt = waitEvent(t, events, DefaultRoundTimeout)
 	require.Equal(t, uint64(2), evt.Index)
 
 	for i := 0; i < 3; i++ {
-		err = nodes[1].pool.Add(makeTx(t, uint64(i+3), signer))
+		err = nodes[1].pool.Add(makeTx(t, uint64(i+2), signer))
 		require.NoError(t, err)
 
-		evt = waitEvent(t, events, 2*time.Second)
+		evt = waitEvent(t, events, DefaultRoundTimeout)
 		require.Equal(t, uint64(i+3), evt.Index)
 	}
 
@@ -578,8 +580,8 @@ func TestService_FailPBFT_DoRound(t *testing.T) {
 	srvc := &Service{
 		processor:                newProcessor(),
 		me:                       fake.NewAddress(0),
-		timeoutRound:             RoundTimeout,
-		timeoutRoundAfterFailure: RoundTimeout,
+		timeoutRound:             DefaultRoundTimeout,
+		timeoutRoundAfterFailure: DefaultRoundTimeoutAfterFailure,
 		val:                      fakeValidation{err: fake.GetError()},
 	}
 
