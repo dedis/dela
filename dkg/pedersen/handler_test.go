@@ -15,56 +15,6 @@ import (
 	"go.dedis.ch/dela/serde"
 )
 
-func TestDKGState(t *testing.T) {
-	states := []dkgState{
-		initial,
-		sharing,
-		certified,
-		resharing,
-		0xaa,
-	}
-	strings := []string{
-		"Initial",
-		"Sharing",
-		"Certified",
-		"Resharing",
-		"UNKNOWN",
-	}
-
-	for i := range states {
-		require.Equal(t, strings[i], states[i].String())
-	}
-}
-
-func TestSwitchState(t *testing.T) {
-	state := state{dkgState: initial}
-
-	err := state.switchState(initial)
-	require.EqualError(t, err, "initial state cannot be set manually")
-
-	state.dkgState = certified
-
-	err = state.switchState(sharing)
-	require.EqualError(t, err, "sharing state must switch from initial: Certified")
-
-	state.dkgState = initial
-
-	err = state.switchState(certified)
-	require.EqualError(t, err, "certified state must switch from sharing or resharing: Initial")
-
-	state.dkgState = resharing
-
-	err = state.switchState(resharing)
-	require.EqualError(t, err, "resharing state must switch from initial or certified: Resharing")
-}
-
-func TestCheckStateUnknown(t *testing.T) {
-	state := state{}
-
-	err := state.checkState(0xaa)
-	require.EqualError(t, err, "unexpected state: Initial != one of [UNKNOWN]")
-}
-
 func TestHandler_Stream_Deadline(t *testing.T) {
 	old := recvTimeout
 	defer func() {
@@ -77,8 +27,8 @@ func TestHandler_Stream_Deadline(t *testing.T) {
 	log := zerolog.New(out)
 
 	h := Handler{
-		dkgHandler: fakeHandler{running: false},
-		log:        log,
+		dkgInstance: fakeHandler{running: false},
+		log:         log,
 	}
 
 	err := h.Stream(nil, fake.NewBlockingReceiver())
@@ -103,7 +53,7 @@ func TestHandler_Stream_EOF(t *testing.T) {
 
 func TestHandler_StreamWrongMsg(t *testing.T) {
 	h := Handler{
-		dkgHandler: fakeHandler{err: fake.GetError()},
+		dkgInstance: fakeHandler{err: fake.GetError()},
 	}
 
 	msg := fake.NewRecvMsg(fake.NewAddress(0), fake.Message{})
@@ -123,7 +73,7 @@ func TestHandler_Stream(t *testing.T) {
 // Utility functions
 
 type fakeHandler struct {
-	dkgHandler
+	dkgInstance
 	running bool
 	err     error
 }

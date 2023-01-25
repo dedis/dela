@@ -87,13 +87,16 @@ func (s *Pedersen) Listen() (dkg.Actor, error) {
 	a := &Actor{
 		rpc:      mino.MustCreateRPC(s.mino, "dkg", h, s.factory),
 		factory:  s.factory,
-		startRes: h.dkgHandler.getState(),
+		startRes: h.dkgInstance.getState(),
 	}
 
 	return a, nil
 }
 
 // Actor allows one to perform DKG operations like encrypt/decrypt a message
+//
+// Currently, a lot of the Actor code is dealing with low-level crypto.
+// TODO: split (high-level) Actor functions and (low-level) DKG crypto. (#241)
 //
 // - implements dkg.Actor
 type Actor struct {
@@ -592,32 +595,6 @@ func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
 	return nil
 }
 
-// checkDecryptionProof verifies the decryption proof.
-//
-// See https://arxiv.org/pdf/2205.08529.pdf / section 5.4 Protocol / step 3
-func checkDecryptionProof(sp types.ShareAndProof, K kyber.Point) error {
-
-	tmp1 := suite.Point().Mul(sp.Fi, K)
-	tmp2 := suite.Point().Mul(sp.Ei, sp.Ui)
-	UHat := suite.Point().Sub(tmp1, tmp2)
-
-	tmp1 = suite.Point().Mul(sp.Fi, nil)
-	tmp2 = suite.Point().Mul(sp.Ei, sp.Hi)
-	HHat := suite.Point().Sub(tmp1, tmp2)
-
-	hash := sha256.New()
-	sp.Ui.MarshalTo(hash)
-	UHat.MarshalTo(hash)
-	HHat.MarshalTo(hash)
-	tmp := suite.Scalar().SetBytes(hash.Sum(nil))
-
-	if !tmp.Equal(sp.Ei) {
-		return xerrors.Errorf("hash is not valid: %x != %x", sp.Ei, tmp)
-	}
-
-	return nil
-}
-
 // difference performs "el1 difference el2", i.e. it extracts all members of el1
 // that are not present in el2.
 func difference(el1 []mino.Address, el2 []mino.Address) []mino.Address {
@@ -638,4 +615,24 @@ func difference(el1 []mino.Address, el2 []mino.Address) []mino.Address {
 	}
 
 	return result
+}
+
+// union performs a union of el1 and el2.
+func union(el1 []mino.Address, el2 []mino.Address) []mino.Address {
+	addrsAll := el1
+
+	for _, other := range el2 {
+		exist := false
+		for _, addr := range el1 {
+			if addr.Equal(other) {
+				exist = true
+				break
+			}
+		}
+		if !exist {
+			addrsAll = append(addrsAll, other)
+		}
+	}
+
+	return addrsAll
 }

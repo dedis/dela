@@ -20,8 +20,8 @@ import (
 	vss "go.dedis.ch/kyber/v3/share/vss/pedersen"
 )
 
-func TestDKGHandler_IsRunning(t *testing.T) {
-	s := simpleHandler{
+func TestDKGInstance_IsRunning(t *testing.T) {
+	s := instance{
 		running: false,
 	}
 
@@ -31,11 +31,11 @@ func TestDKGHandler_IsRunning(t *testing.T) {
 	require.True(t, s.isRunning())
 }
 
-func TestDKGHandler_HandleStartFail(t *testing.T) {
+func TestDKGInstance_HandleStartFail(t *testing.T) {
 	out := &bytes.Buffer{}
 	log := zerolog.New(out)
 
-	s := simpleHandler{
+	s := instance{
 		startRes: &state{dkgState: certified},
 		log:      log,
 	}
@@ -48,11 +48,11 @@ func TestDKGHandler_HandleStartFail(t *testing.T) {
 	require.Regexp(t, "failed to start", out.String())
 }
 
-func TestDKGHandler_HandleStartResharingFail(t *testing.T) {
+func TestDKGInstance_HandleStartResharingFail(t *testing.T) {
 	out := &bytes.Buffer{}
 	log := zerolog.New(out)
 
-	s := simpleHandler{
+	s := instance{
 		startRes: &state{dkgState: sharing},
 		log:      log,
 	}
@@ -65,8 +65,8 @@ func TestDKGHandler_HandleStartResharingFail(t *testing.T) {
 	require.Regexp(t, "failed to handle resharing", out.String())
 }
 
-func TestDKGHandler_HandleDealFail(t *testing.T) {
-	s := simpleHandler{
+func TestDKGInstance_HandleDealFail(t *testing.T) {
+	s := instance{
 		startRes: &state{dkgState: 0xaa},
 	}
 
@@ -75,8 +75,8 @@ func TestDKGHandler_HandleDealFail(t *testing.T) {
 		"UNKNOWN != one of [Initial Sharing Certified Resharing]")
 }
 
-func TestDKGHandler_HandleReshareFail(t *testing.T) {
-	s := simpleHandler{
+func TestDKGInstance_HandleReshareFail(t *testing.T) {
+	s := instance{
 		startRes: &state{dkgState: 0xaa},
 	}
 
@@ -85,8 +85,8 @@ func TestDKGHandler_HandleReshareFail(t *testing.T) {
 		"UNKNOWN != one of [Initial Certified Resharing]")
 }
 
-func TestDKGHandler_HandleResponseFail(t *testing.T) {
-	s := simpleHandler{
+func TestDKGInstance_HandleResponseFail(t *testing.T) {
+	s := instance{
 		startRes: &state{dkgState: 0xaa},
 	}
 
@@ -95,8 +95,8 @@ func TestDKGHandler_HandleResponseFail(t *testing.T) {
 		"UNKNOWN != one of [Initial Sharing Certified Resharing]")
 }
 
-func TestDKGHandler_HandleDecryptRequestFail(t *testing.T) {
-	s := simpleHandler{
+func TestDKGInstance_HandleDecryptRequestFail(t *testing.T) {
+	s := instance{
 		startRes: &state{dkgState: 0xaa},
 	}
 
@@ -106,8 +106,8 @@ func TestDKGHandler_HandleDecryptRequestFail(t *testing.T) {
 	require.EqualError(t, err, "bad state: unexpected state: UNKNOWN != one of [Certified]")
 }
 
-func TestDKGHandler_HandleVerifiableDecryptRequestFail(t *testing.T) {
-	s := simpleHandler{
+func TestDKGInstance_HandleVerifiableDecryptRequestFail(t *testing.T) {
+	s := instance{
 		startRes: &state{dkgState: 0xaa},
 	}
 
@@ -117,8 +117,8 @@ func TestDKGHandler_HandleVerifiableDecryptRequestFail(t *testing.T) {
 	require.EqualError(t, err, "bad state: unexpected state: UNKNOWN != one of [Certified]")
 }
 
-func TestDKGHandler_HandleUnknown(t *testing.T) {
-	s := simpleHandler{
+func TestDKGInstance_HandleUnknown(t *testing.T) {
+	s := instance{
 		startRes: &state{dkgState: 0xaa},
 	}
 
@@ -128,8 +128,8 @@ func TestDKGHandler_HandleUnknown(t *testing.T) {
 		"Deal as first message, got: fake.Message")
 }
 
-func TestDKGHandler_StartFailNewDKG(t *testing.T) {
-	s := simpleHandler{
+func TestDKGInstance_StartFailNewDKG(t *testing.T) {
+	s := instance{
 		startRes: &state{},
 	}
 
@@ -139,11 +139,11 @@ func TestDKGHandler_StartFailNewDKG(t *testing.T) {
 	require.EqualError(t, err, "failed to create new DKG: dkg: can't run with empty node list")
 }
 
-func TestDKGHandler_Start(t *testing.T) {
+func TestDKGInstance_Start(t *testing.T) {
 	privKey := suite.Scalar().Pick(suite.RandomStream())
 	pubKey := suite.Point().Mul(privKey, nil)
 
-	s := simpleHandler{
+	s := instance{
 		startRes: &state{},
 		privKey:  privKey,
 		log:      dela.Logger,
@@ -169,8 +169,8 @@ func TestDKGHandler_Start(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestDKGHandler_doDKG_DealFail(t *testing.T) {
-	s := simpleHandler{
+func TestDKGInstance_doDKG_DealFail(t *testing.T) {
+	s := instance{
 		dkg: fakeDKGService{dealsErr: fake.GetError()},
 	}
 
@@ -180,8 +180,8 @@ func TestDKGHandler_doDKG_DealFail(t *testing.T) {
 	require.EqualError(t, err, fake.Err("failed to deal: failed to compute the deals"))
 }
 
-func TestDKGHandler_doDKG_RespondFail(t *testing.T) {
-	s := simpleHandler{
+func TestDKGInstance_doDKG_RespondFail(t *testing.T) {
+	s := instance{
 		dkg: fakeDKGService{
 			respoErr: fake.GetError(),
 		},
@@ -200,8 +200,8 @@ func TestDKGHandler_doDKG_RespondFail(t *testing.T) {
 		"receive data from channel.")
 }
 
-func TestDKGHandler_doDKG_CertifyFail(t *testing.T) {
-	s := simpleHandler{
+func TestDKGInstance_doDKG_CertifyFail(t *testing.T) {
+	s := instance{
 		dkg:      fakeDKGService{},
 		startRes: &state{},
 	}
@@ -216,8 +216,8 @@ func TestDKGHandler_doDKG_CertifyFail(t *testing.T) {
 		"receive data from channel.")
 }
 
-func TestDKGHandler_doDKG_SwitchFail(t *testing.T) {
-	s := simpleHandler{
+func TestDKGInstance_doDKG_SwitchFail(t *testing.T) {
+	s := instance{
 		dkg: fakeDKGService{
 			certified: true,
 		},
@@ -234,8 +234,8 @@ func TestDKGHandler_doDKG_SwitchFail(t *testing.T) {
 		"switch from sharing or resharing: Initial")
 }
 
-func TestDKGHandler_doDKG_FinalizeFail(t *testing.T) {
-	s := simpleHandler{
+func TestDKGInstance_doDKG_FinalizeFail(t *testing.T) {
+	s := instance{
 		dkg: fakeDKGService{
 			certified: true,
 			shareErr:  fake.GetError(),
@@ -252,13 +252,13 @@ func TestDKGHandler_doDKG_FinalizeFail(t *testing.T) {
 	require.EqualError(t, err, fake.Err("failed to finalize: failed to get distr key"))
 }
 
-func TestDKGHandler_deal_SendFail(t *testing.T) {
+func TestDKGInstance_deal_SendFail(t *testing.T) {
 	deals := map[int]*pedersen.Deal{0: {Deal: &vss.EncryptedDeal{}}}
 
 	out := &bytes.Buffer{}
 	log := zerolog.New(out)
 
-	s := simpleHandler{
+	s := instance{
 		dkg: fakeDKGService{
 			deals: deals,
 		},
@@ -274,7 +274,7 @@ func TestDKGHandler_deal_SendFail(t *testing.T) {
 	require.Regexp(t, "failed to send deal", out.String())
 }
 
-func TestDKGHandler_deal_ctxFail(t *testing.T) {
+func TestDKGInstance_deal_ctxFail(t *testing.T) {
 	privKey1 := suite.Scalar().Pick(suite.RandomStream())
 	pubKey1 := suite.Point().Mul(privKey1, nil)
 	privKey2 := suite.Scalar().Pick(suite.RandomStream())
@@ -283,7 +283,7 @@ func TestDKGHandler_deal_ctxFail(t *testing.T) {
 	dkg, err := pedersen.NewDistKeyGenerator(suite, privKey1, []kyber.Point{pubKey1, pubKey2}, 2)
 	require.NoError(t, err)
 
-	s := simpleHandler{
+	s := instance{
 		dkg: dkg,
 		startRes: &state{
 			participants: []mino.Address{fake.NewAddress(0), fake.NewAddress(1)},
@@ -297,8 +297,8 @@ func TestDKGHandler_deal_ctxFail(t *testing.T) {
 	require.EqualError(t, err, "context done: context canceled")
 }
 
-func TestDKGHandler_respond_handleFail(t *testing.T) {
-	s := simpleHandler{
+func TestDKGInstance_respond_handleFail(t *testing.T) {
+	s := instance{
 		dkg: fakeDKGService{
 			processErr: fake.GetError(),
 		},
@@ -314,8 +314,8 @@ func TestDKGHandler_respond_handleFail(t *testing.T) {
 	require.EqualError(t, err, fake.Err("failed to handle received deal: failed to process deal"))
 }
 
-func TestDKGHandler_respond_ctxFail(t *testing.T) {
-	s := simpleHandler{startRes: &state{
+func TestDKGInstance_respond_ctxFail(t *testing.T) {
+	s := instance{startRes: &state{
 		participants: []mino.Address{fake.NewAddress(0), fake.NewAddress(1)},
 	}}
 
@@ -326,8 +326,8 @@ func TestDKGHandler_respond_ctxFail(t *testing.T) {
 	require.EqualError(t, err, "context done: Could not receive data from channel.")
 }
 
-func TestDKGHandler_certifyProcessFail(t *testing.T) {
-	s := simpleHandler{
+func TestDKGInstance_certifyProcessFail(t *testing.T) {
+	s := instance{
 		dkg: fakeDKGService{
 			respoErr: fake.GetError(),
 		},
@@ -340,8 +340,8 @@ func TestDKGHandler_certifyProcessFail(t *testing.T) {
 	require.EqualError(t, err, fake.Err("failed to process response"))
 }
 
-func TestDKGHandler_certifyCertifyFail(t *testing.T) {
-	s := simpleHandler{
+func TestDKGInstance_certifyCertifyFail(t *testing.T) {
+	s := instance{
 		dkg: fakeDKGService{
 			certified: false,
 		},
@@ -354,7 +354,7 @@ func TestDKGHandler_certifyCertifyFail(t *testing.T) {
 	require.EqualError(t, err, "node is not certified")
 }
 
-func TestDKGHandler_certifyOK(t *testing.T) {
+func TestDKGInstance_certifyOK(t *testing.T) {
 	privKey := suite.Scalar().Pick(suite.RandomStream())
 	pubKey := suite.Point().Mul(privKey, nil)
 
@@ -362,7 +362,7 @@ func TestDKGHandler_certifyOK(t *testing.T) {
 		[]kyber.Point{pubKey, suite.Point()}, 2)
 	require.NoError(t, err)
 
-	s := simpleHandler{
+	s := instance{
 		startRes: &state{dkgState: sharing},
 		dkg:      dkg,
 	}
@@ -388,8 +388,8 @@ func TestDKGHandler_certifyOK(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestDKGHandler_certify_ctxFail(t *testing.T) {
-	s := simpleHandler{
+func TestDKGInstance_certify_ctxFail(t *testing.T) {
+	s := instance{
 		startRes: &state{
 			participants: []mino.Address{fake.NewAddress(0), fake.NewAddress(1)},
 		},
@@ -401,8 +401,8 @@ func TestDKGHandler_certify_ctxFail(t *testing.T) {
 	require.EqualError(t, err, "context done: Could not receive data from channel.")
 }
 
-func TestDKGHandler_finalize_sendFail(t *testing.T) {
-	s := simpleHandler{
+func TestDKGInstance_finalize_sendFail(t *testing.T) {
+	s := instance{
 		dkg: fakeDKGService{
 			distKeyShare: &pedersen.DistKeyShare{
 				Commits: []kyber.Point{suite.Point()},
@@ -415,11 +415,11 @@ func TestDKGHandler_finalize_sendFail(t *testing.T) {
 	require.EqualError(t, err, fake.Err("got an error while sending pub key"))
 }
 
-func TestDKGHandler_finalize_ctxFail(t *testing.T) {
+func TestDKGInstance_finalize_ctxFail(t *testing.T) {
 	out := &bytes.Buffer{}
 	log := zerolog.New(out)
 
-	s := simpleHandler{
+	s := instance{
 		dkg: fakeDKGService{
 			distKeyShare: &pedersen.DistKeyShare{
 				Commits: []kyber.Point{suite.Point()},
@@ -438,8 +438,8 @@ func TestDKGHandler_finalize_ctxFail(t *testing.T) {
 	require.Regexp(t, "context done", out.String())
 }
 
-func TestDKGHandler_finalizeReshare_sistKeyFail(t *testing.T) {
-	s := simpleHandler{
+func TestDKGInstance_finalizeReshare_sistKeyFail(t *testing.T) {
+	s := instance{
 		dkg: fakeDKGService{
 			shareErr: fake.GetError(),
 		},
@@ -450,8 +450,8 @@ func TestDKGHandler_finalizeReshare_sistKeyFail(t *testing.T) {
 	require.EqualError(t, err, fake.Err("failed to get distr key"))
 }
 
-func TestDKGHandler_finalizeReshare_sendFail(t *testing.T) {
-	s := simpleHandler{
+func TestDKGInstance_finalizeReshare_sendFail(t *testing.T) {
+	s := instance{
 		dkg: fakeDKGService{
 			distKeyShare: &pedersen.DistKeyShare{Commits: []kyber.Point{suite.Point()}},
 		},
@@ -462,11 +462,11 @@ func TestDKGHandler_finalizeReshare_sendFail(t *testing.T) {
 	require.EqualError(t, err, fake.Err("got an error while sending pub key"))
 }
 
-func TestDKGHandler_finalizeReshare_ctxFail(t *testing.T) {
+func TestDKGInstance_finalizeReshare_ctxFail(t *testing.T) {
 	out := &bytes.Buffer{}
 	log := zerolog.New(out)
 
-	s := simpleHandler{
+	s := instance{
 		dkg: fakeDKGService{
 			distKeyShare: &pedersen.DistKeyShare{Commits: []kyber.Point{suite.Point()}},
 		},
@@ -483,8 +483,8 @@ func TestDKGHandler_finalizeReshare_ctxFail(t *testing.T) {
 	require.Regexp(t, "context done", out.String())
 }
 
-func TestDKGHandler_reshare_lenFail(t *testing.T) {
-	s := simpleHandler{
+func TestDKGInstance_reshare_lenFail(t *testing.T) {
+	s := instance{
 		startRes: &state{},
 	}
 
@@ -496,8 +496,8 @@ func TestDKGHandler_reshare_lenFail(t *testing.T) {
 	require.EqualError(t, err, "there should be as many participants as pubKey: 1 != 0")
 }
 
-func TestDKGHandler_reshare_doDKGFail(t *testing.T) {
-	s := simpleHandler{
+func TestDKGInstance_reshare_doDKGFail(t *testing.T) {
+	s := instance{
 		startRes: &state{
 			dkgState: resharing,
 		},
@@ -515,8 +515,8 @@ func TestDKGHandler_reshare_doDKGFail(t *testing.T) {
 		"switch from initial or certified: Resharing")
 }
 
-func TestDKGHandler_doReshare_oldNode_getDistKeyFail(t *testing.T) {
-	s := simpleHandler{
+func TestDKGInstance_doReshare_oldNode_getDistKeyFail(t *testing.T) {
+	s := instance{
 		startRes: &state{
 			distrKey: suite.Point(),
 		},
@@ -531,8 +531,8 @@ func TestDKGHandler_doReshare_oldNode_getDistKeyFail(t *testing.T) {
 	require.EqualError(t, err, fake.Err("old node failed to create"))
 }
 
-func TestDKGHandler_doReshare_oldNode_NewDistKeyFail(t *testing.T) {
-	s := simpleHandler{
+func TestDKGInstance_doReshare_oldNode_NewDistKeyFail(t *testing.T) {
+	s := instance{
 		startRes: &state{
 			distrKey: suite.Point(),
 		},
@@ -546,7 +546,7 @@ func TestDKGHandler_doReshare_oldNode_NewDistKeyFail(t *testing.T) {
 		"can't run with empty node list")
 }
 
-func TestDKGHandler_doReshare_oldNode_sendDealFail(t *testing.T) {
+func TestDKGInstance_doReshare_oldNode_sendDealFail(t *testing.T) {
 	// We need to have an actual correct DKG for resharing.
 	privKey1 := suite.Scalar().Pick(suite.RandomStream())
 	pubKey1 := suite.Point().Mul(privKey1, nil)
@@ -584,7 +584,7 @@ func TestDKGHandler_doReshare_oldNode_sendDealFail(t *testing.T) {
 	_, err = dkg1.ProcessResponse(resp2)
 	require.NoError(t, err)
 
-	s := simpleHandler{
+	s := instance{
 		startRes: &state{
 			distrKey:     suite.Point(),
 			participants: []mino.Address{},
@@ -607,10 +607,10 @@ func TestDKGHandler_doReshare_oldNode_sendDealFail(t *testing.T) {
 		"failed to send resharing deal"))
 }
 
-func TestDKGHandler_doReshare_commonNode_getDistKeyFail(t *testing.T) {
+func TestDKGInstance_doReshare_commonNode_getDistKeyFail(t *testing.T) {
 	me := fake.NewAddress(0)
 
-	s := simpleHandler{
+	s := instance{
 		startRes: &state{
 			distrKey:     suite.Point(),
 			participants: []mino.Address{me},
@@ -629,10 +629,10 @@ func TestDKGHandler_doReshare_commonNode_getDistKeyFail(t *testing.T) {
 	require.EqualError(t, err, fake.Err("common node failed to create"))
 }
 
-func TestDKGHandler_doReshare_commonNode_NewDistKeyFail(t *testing.T) {
+func TestDKGInstance_doReshare_commonNode_NewDistKeyFail(t *testing.T) {
 	me := fake.NewAddress(0)
 
-	s := simpleHandler{
+	s := instance{
 		startRes: &state{
 			distrKey:     suite.Point(),
 			participants: []mino.Address{me},
@@ -650,7 +650,7 @@ func TestDKGHandler_doReshare_commonNode_NewDistKeyFail(t *testing.T) {
 		"dkg: can't run with empty node list")
 }
 
-func TestDKGHandler_doReshare_commonNode_sendDealFail(t *testing.T) {
+func TestDKGInstance_doReshare_commonNode_sendDealFail(t *testing.T) {
 	// We need to have an actual correct DKG for resharing.
 	privKey1 := suite.Scalar().Pick(suite.RandomStream())
 	pubKey1 := suite.Point().Mul(privKey1, nil)
@@ -690,7 +690,7 @@ func TestDKGHandler_doReshare_commonNode_sendDealFail(t *testing.T) {
 
 	me := fake.NewAddress(0)
 
-	s := simpleHandler{
+	s := instance{
 		startRes: &state{
 			distrKey:     suite.Point(),
 			participants: []mino.Address{me},
@@ -712,7 +712,7 @@ func TestDKGHandler_doReshare_commonNode_sendDealFail(t *testing.T) {
 		"failed to send resharing deal"))
 }
 
-func TestDKGHandler_doReshare_commonNode_receiveDealFail(t *testing.T) {
+func TestDKGInstance_doReshare_commonNode_receiveDealFail(t *testing.T) {
 	// We need to have an actual correct DKG for resharing.
 	privKey1 := suite.Scalar().Pick(suite.RandomStream())
 	pubKey1 := suite.Point().Mul(privKey1, nil)
@@ -752,7 +752,7 @@ func TestDKGHandler_doReshare_commonNode_receiveDealFail(t *testing.T) {
 
 	me := fake.NewAddress(0)
 
-	s := simpleHandler{
+	s := instance{
 		startRes: &state{
 			distrKey:     suite.Point(),
 			participants: []mino.Address{me},
@@ -777,10 +777,10 @@ func TestDKGHandler_doReshare_commonNode_receiveDealFail(t *testing.T) {
 	require.Regexp(t, "^common node failed to receive deals", err.Error())
 }
 
-func TestDKGHandler_doReshare_newNode_ctxFail(t *testing.T) {
+func TestDKGInstance_doReshare_newNode_ctxFail(t *testing.T) {
 	me := fake.NewAddress(0)
 
-	s := simpleHandler{
+	s := instance{
 		startRes: &state{
 			participants: []mino.Address{fake.NewAddress(2)},
 		},
@@ -801,10 +801,10 @@ func TestDKGHandler_doReshare_newNode_ctxFail(t *testing.T) {
 		"context done: Could not receive data from channel.")
 }
 
-func TestDKGHandler_doReshare_certifyFail(t *testing.T) {
+func TestDKGInstance_doReshare_certifyFail(t *testing.T) {
 	me := fake.NewAddress(0)
 
-	s := simpleHandler{
+	s := instance{
 		startRes: &state{
 			dkgState:     initial,
 			participants: []mino.Address{fake.NewAddress(2)},
@@ -827,10 +827,10 @@ func TestDKGHandler_doReshare_certifyFail(t *testing.T) {
 		"Could not receive data from channel.")
 }
 
-func TestDKGHandler_doReshare_switchStateFail(t *testing.T) {
+func TestDKGInstance_doReshare_switchStateFail(t *testing.T) {
 	me := fake.NewAddress(0)
 
-	s := simpleHandler{
+	s := instance{
 		startRes: &state{
 			dkgState:     initial,
 			participants: []mino.Address{fake.NewAddress(2)},
@@ -855,10 +855,10 @@ func TestDKGHandler_doReshare_switchStateFail(t *testing.T) {
 		"certified state must switch from sharing or resharing: Initial")
 }
 
-func TestDKGHandler_doReshare_finalizeFail(t *testing.T) {
+func TestDKGInstance_doReshare_finalizeFail(t *testing.T) {
 	me := fake.NewAddress(0)
 
-	s := simpleHandler{
+	s := instance{
 		startRes: &state{
 			dkgState:     sharing,
 			participants: []mino.Address{fake.NewAddress(2)},
@@ -884,8 +884,8 @@ func TestDKGHandler_doReshare_finalizeFail(t *testing.T) {
 		"got an error while sending pub key"))
 }
 
-func TestDKGHandler_sendDealsResharing_dealsFail(t *testing.T) {
-	s := simpleHandler{
+func TestDKGInstance_sendDealsResharing_dealsFail(t *testing.T) {
+	s := instance{
 		dkg: fakeDKGService{
 			dealsErr: fake.GetError(),
 		},
@@ -895,8 +895,8 @@ func TestDKGHandler_sendDealsResharing_dealsFail(t *testing.T) {
 	require.EqualError(t, err, fake.Err("failed to compute the deals"))
 }
 
-func TestDKGHandler_sendDealsResharing_ctxFail(t *testing.T) {
-	s := simpleHandler{
+func TestDKGInstance_sendDealsResharing_ctxFail(t *testing.T) {
+	s := instance{
 		dkg: fakeDKGService{
 			deals: map[int]*pedersen.Deal{0: {Deal: &vss.EncryptedDeal{}}},
 		},
@@ -909,8 +909,8 @@ func TestDKGHandler_sendDealsResharing_ctxFail(t *testing.T) {
 	require.EqualError(t, err, "context done: context canceled")
 }
 
-func TestDKGHandler_handleDecrypt_notStarted(t *testing.T) {
-	s := simpleHandler{
+func TestDKGInstance_handleDecrypt_notStarted(t *testing.T) {
+	s := instance{
 		startRes: &state{},
 	}
 
@@ -918,8 +918,8 @@ func TestDKGHandler_handleDecrypt_notStarted(t *testing.T) {
 	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")
 }
 
-func TestDKGHandler_handleDecrypt_sendFail(t *testing.T) {
-	s := simpleHandler{
+func TestDKGInstance_handleDecrypt_sendFail(t *testing.T) {
+	s := instance{
 		startRes: &state{
 			dkgState: certified,
 		},
@@ -932,7 +932,7 @@ func TestDKGHandler_handleDecrypt_sendFail(t *testing.T) {
 	require.EqualError(t, err, fake.Err("got an error while sending the decrypt reply"))
 }
 
-func TestDKGHandler_handleDeal_responseFail(t *testing.T) {
+func TestDKGInstance_handleDeal_responseFail(t *testing.T) {
 	privKey1 := suite.Scalar().Pick(suite.RandomStream())
 	pubKey1 := suite.Point().Mul(privKey1, nil)
 	privKey2 := suite.Scalar().Pick(suite.RandomStream())
@@ -964,7 +964,7 @@ func TestDKGHandler_handleDeal_responseFail(t *testing.T) {
 		),
 	)
 
-	s := simpleHandler{
+	s := instance{
 		dkg: dkg1,
 		startRes: &state{
 			participants: []mino.Address{fake.NewAddress(0)},
@@ -977,7 +977,7 @@ func TestDKGHandler_handleDeal_responseFail(t *testing.T) {
 	require.EqualError(t, err, fake.Err("failed to send response to 'fake.Address[0]'"))
 }
 
-func TestDKGHandler_handleDeal_ctxFail(t *testing.T) {
+func TestDKGInstance_handleDeal_ctxFail(t *testing.T) {
 	privKey1 := suite.Scalar().Pick(suite.RandomStream())
 	pubKey1 := suite.Point().Mul(privKey1, nil)
 	privKey2 := suite.Scalar().Pick(suite.RandomStream())
@@ -1009,7 +1009,7 @@ func TestDKGHandler_handleDeal_ctxFail(t *testing.T) {
 		),
 	)
 
-	s := simpleHandler{
+	s := instance{
 		dkg: dkg1,
 		startRes: &state{
 			participants: []mino.Address{fake.NewAddress(0)},

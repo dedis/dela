@@ -19,6 +19,21 @@ import (
 	"golang.org/x/xerrors"
 )
 
+// constant used in the logs
+const newState = "new state"
+const badState = "bad state: %v"
+const failedState = "failed to switch state: %v"
+
+type nodeType byte
+
+// enumeration of the node type
+const (
+	unknownNode nodeType = iota
+	oldNode
+	commonNode
+	newNode
+)
+
 // dkgService specifies all we need from the kyber library
 type dkgService interface {
 	Deals() (map[int]*pedersen.Deal, error)
@@ -28,17 +43,17 @@ type dkgService interface {
 	ProcessDeal(dd *pedersen.Deal) (*pedersen.Response, error)
 }
 
-// dkgHandler specify what a stream handler needs from a service that handles
+// dkgInstance specify what a stream handler needs from a service that handles
 // dkg operations.
-type dkgHandler interface {
+type dkgInstance interface {
 	isRunning() bool
 	handleMessage(ctx context.Context, msg serde.Message, from mino.Address, out mino.Sender) error
 	getState() *state
 }
 
-// newSimpleHandler returns a new initialized dkg handler
-func newSimpleHandler(log zerolog.Logger, me mino.Address, privKey kyber.Scalar) *simpleHandler {
-	return &simpleHandler{
+// newInstance returns a new initialized dkg handler
+func newInstance(log zerolog.Logger, me mino.Address, privKey kyber.Scalar) *instance {
+	return &instance{
 		running:   true,
 		deals:     channel.WithExpiration[types.Deal](200),
 		responses: channel.WithExpiration[types.Response](100000),
@@ -54,10 +69,10 @@ func newSimpleHandler(log zerolog.Logger, me mino.Address, privKey kyber.Scalar)
 	}
 }
 
-// simpleHandler implements the default dkgHandler
+// instance implements the default dkgInstance
 //
-// - implements dkgHandler
-type simpleHandler struct {
+// - implements dkgInstance
+type instance struct {
 	sync.Mutex
 
 	running bool
@@ -76,22 +91,22 @@ type simpleHandler struct {
 	startRes *state
 }
 
-// isRunning implements dkgHandler. It tells if an instance of DKG is already
+// isRunning implements dkgInstance. It tells if an instance of DKG is already
 // running or not.
-func (s *simpleHandler) isRunning() bool {
+func (s *instance) isRunning() bool {
 	s.Lock()
 	defer s.Unlock()
 
 	return s.running
 }
 
-// getState implements dkgHandler. It returns the internal state.
-func (s *simpleHandler) getState() *state {
+// getState implements dkgInstance. It returns the internal state.
+func (s *instance) getState() *state {
 	return s.startRes
 }
 
-// handleMessage implements dkgHandler. It handles the DKG messages.
-func (s *simpleHandler) handleMessage(ctx context.Context, msg serde.Message, from mino.Address, out mino.Sender) error {
+// handleMessage implements dkgInstance. It handles the DKG messages.
+func (s *instance) handleMessage(ctx context.Context, msg serde.Message, from mino.Address, out mino.Sender) error {
 	// We expect a Start message or a decrypt request at first, but we might
 	// receive other messages in the meantime, like a Deal.
 	switch msg := msg.(type) {
@@ -171,7 +186,7 @@ func (s *simpleHandler) handleMessage(ctx context.Context, msg serde.Message, fr
 // start is called when the node has received its start message. Note that we
 // might have already received some deals from other nodes in the meantime. The
 // function handles the DKG creation protocol.
-func (s *simpleHandler) start(ctx context.Context, start types.Start, deals channel.Timed[types.Deal],
+func (s *instance) start(ctx context.Context, start types.Start, deals channel.Timed[types.Deal],
 	resps channel.Timed[types.Response], from mino.Address, out mino.Sender) error {
 
 	err := s.startRes.switchState(sharing)
@@ -204,7 +219,7 @@ func (s *simpleHandler) start(ctx context.Context, start types.Start, deals chan
 }
 
 // doDKG calls the subsequent DKG steps
-func (s *simpleHandler) doDKG(ctx context.Context, deals channel.Timed[types.Deal],
+func (s *instance) doDKG(ctx context.Context, deals channel.Timed[types.Deal],
 	resps channel.Timed[types.Response], out mino.Sender, from mino.Address) error {
 
 	defer func() {
@@ -248,7 +263,7 @@ func (s *simpleHandler) doDKG(ctx context.Context, deals channel.Timed[types.Dea
 	return nil
 }
 
-func (s *simpleHandler) deal(ctx context.Context, out mino.Sender) error {
+func (s *instance) deal(ctx context.Context, out mino.Sender) error {
 	// Send my Deals to the other nodes. Note that we take an optimistic
 	// approach and expect nodes to always accept messages. If not, the protocol
 	// can hang forever.
@@ -290,7 +305,7 @@ func (s *simpleHandler) deal(ctx context.Context, out mino.Sender) error {
 	return nil
 }
 
-func (s *simpleHandler) respond(ctx context.Context, deals channel.Timed[types.Deal], out mino.Sender) error {
+func (s *instance) respond(ctx context.Context, deals channel.Timed[types.Deal], out mino.Sender) error {
 	numReceivedDeals := 0
 
 	for numReceivedDeals < len(s.startRes.getParticipants())-1 {
@@ -320,7 +335,7 @@ func (s *simpleHandler) respond(ctx context.Context, deals channel.Timed[types.D
 //   - Resharing with leaving or joining node: (n_common + (n_new - 1)) * n_old,
 //     nodes that are doing a resharing will broadcast their own deals
 //   - Resharing with staying node: (n_common + n_new) * n_old
-func (s *simpleHandler) certify(ctx context.Context, resps channel.Timed[types.Response], expected int) error {
+func (s *instance) certify(ctx context.Context, resps channel.Timed[types.Response], expected int) error {
 
 	responsesReceived := 0
 
@@ -358,7 +373,7 @@ func (s *simpleHandler) certify(ctx context.Context, resps channel.Timed[types.R
 }
 
 // finalize saves the result and announces it to the orchestrator.
-func (s *simpleHandler) finalize(ctx context.Context, from mino.Address, out mino.Sender) error {
+func (s *instance) finalize(ctx context.Context, from mino.Address, out mino.Sender) error {
 	// Send back the public DKG key
 	distKey, err := s.dkg.DistKeyShare()
 	if err != nil {
@@ -388,7 +403,7 @@ func (s *simpleHandler) finalize(ctx context.Context, from mino.Address, out min
 }
 
 // handleDeal process the Deal and send the responses to the other nodes.
-func (s *simpleHandler) handleDeal(ctx context.Context, msg types.Deal,
+func (s *instance) handleDeal(ctx context.Context, msg types.Deal,
 	out mino.Sender, to []mino.Address) error {
 
 	deal := &pedersen.Deal{
@@ -440,7 +455,7 @@ func (s *simpleHandler) handleDeal(ctx context.Context, msg types.Deal,
 	return nil
 }
 
-func (s *simpleHandler) finalizeReshare(ctx context.Context, nt nodeType, out mino.Sender, from mino.Address) error {
+func (s *instance) finalizeReshare(ctx context.Context, nt nodeType, out mino.Sender, from mino.Address) error {
 	// Send back the public DKG key
 	publicKey := s.startRes.getDistKey()
 
@@ -482,7 +497,7 @@ func (s *simpleHandler) finalizeReshare(ctx context.Context, nt nodeType, out mi
 
 // reshare handles the resharing request. Acts differently for the new
 // and old and common nodes
-func (s *simpleHandler) reshare(ctx context.Context, out mino.Sender,
+func (s *instance) reshare(ctx context.Context, out mino.Sender,
 	from mino.Address, msg types.StartResharing, reshares channel.Timed[types.Reshare], resps channel.Timed[types.Response]) error {
 
 	err := s.startRes.switchState(resharing)
@@ -508,7 +523,7 @@ func (s *simpleHandler) reshare(ctx context.Context, out mino.Sender,
 // doReshare is called when the node has received its reshare message. Note that
 // we might have already received some deals from other nodes in the meantime.
 // The function handles the DKG resharing protocol.
-func (s *simpleHandler) doReshare(ctx context.Context, start types.StartResharing,
+func (s *instance) doReshare(ctx context.Context, start types.StartResharing,
 	from mino.Address, out mino.Sender, reshares channel.Timed[types.Reshare], resps channel.Timed[types.Response]) error {
 
 	s.log.Info().Msgf("resharing with %v", start.GetAddrsNew())
@@ -642,7 +657,7 @@ func (s *simpleHandler) doReshare(ctx context.Context, start types.StartResharin
 // sendDealsResharing is similar to sendDeals except that it creates
 // dealResharing which has more data than Deal. Only the old nodes call this
 // function.
-func (s *simpleHandler) sendDealsResharing(ctx context.Context, out mino.Sender,
+func (s *instance) sendDealsResharing(ctx context.Context, out mino.Sender,
 	participants []mino.Address, publicCoeff []kyber.Point) error {
 
 	s.log.Trace().Msgf("%v is generating its deals", s.me)
@@ -688,7 +703,7 @@ func (s *simpleHandler) sendDealsResharing(ctx context.Context, out mino.Sender,
 
 // receiveDealsResharing is similar to receiveDeals except that it receives the
 // dealResharing. Only the new or common nodes call this function
-func (s *simpleHandler) receiveDealsResharing(ctx context.Context, nt nodeType,
+func (s *instance) receiveDealsResharing(ctx context.Context, nt nodeType,
 	resharingRequest types.StartResharing, out mino.Sender, reshares channel.Timed[types.Reshare]) error {
 
 	s.log.Trace().Msgf("%v is handling deals from other nodes", s.me)
@@ -754,7 +769,7 @@ func (s *simpleHandler) receiveDealsResharing(ctx context.Context, nt nodeType,
 	return nil
 }
 
-func (s *simpleHandler) handleDecrypt(out mino.Sender, msg types.DecryptRequest,
+func (s *instance) handleDecrypt(out mino.Sender, msg types.DecryptRequest,
 	from mino.Address) error {
 
 	if !s.startRes.Done() {
@@ -775,7 +790,7 @@ func (s *simpleHandler) handleDecrypt(out mino.Sender, msg types.DecryptRequest,
 	return nil
 }
 
-func (s *simpleHandler) handleVerifiableDecrypt(out mino.Sender,
+func (s *instance) handleVerifiableDecrypt(out mino.Sender,
 	msg types.VerifiableDecryptRequest, from mino.Address) error {
 
 	type job struct {
@@ -839,4 +854,17 @@ func (s *simpleHandler) handleVerifiableDecrypt(out mino.Sender,
 	}
 
 	return nil
+}
+
+// isInSlice gets an address and a slice of addresses and returns true if that
+// address is in the slice. This function is called for checking whether an old
+// committee member is in the new committee as well or not
+func isInSlice(addr mino.Address, addrs []mino.Address) bool {
+	for _, other := range addrs {
+		if addr.Equal(other) {
+			return true
+		}
+	}
+
+	return false
 }

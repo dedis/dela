@@ -42,7 +42,7 @@ func Test_VerifiableEncrypt_ShostMsg(t *testing.T) {
 	require.Len(t, reminder, 0)
 }
 
-func Test_verifiableEncDec_minoch(t *testing.T) {
+func Test_VerifiableEncDec_minoch(t *testing.T) {
 	// setup up the dkg
 	n := 18
 	threshold := n
@@ -117,7 +117,7 @@ func Test_verifiableEncDec_minoch(t *testing.T) {
 	}
 }
 
-func Test_verifiableEncDec_minogrpc(t *testing.T) {
+func Test_VerifiableEncDec_minogrpc(t *testing.T) {
 	// we want to time the decryption for different batch sizes with different
 	// number of nodes
 
