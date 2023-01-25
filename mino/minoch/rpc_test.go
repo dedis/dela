@@ -1,11 +1,15 @@
 package minoch
 
 import (
+	"bytes"
 	"context"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
@@ -182,6 +186,34 @@ func TestRPC_Failures_Stream(t *testing.T) {
 	_, _, err = rpc.Stream(ctx, mino.NewAddresses(fake.NewAddress(0)))
 	require.EqualError(t, err,
 		"couldn't find peer: invalid address type 'fake.Address'")
+}
+
+func TestRPC_Full_Stream(t *testing.T) {
+	bufSize = 0
+
+	oldLogger := dela.Logger
+	defer func() {
+		dela.Logger = oldLogger
+	}()
+
+	buf := new(bytes.Buffer)
+	dela.Logger = zerolog.New(buf)
+
+	manager := NewManager()
+
+	m := MustCreate(manager, "A")
+	rpc := mino.MustCreateRPC(m, "test", fakeStreamHandler{}, fake.MessageFactory{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sender, _, err := rpc.Stream(ctx, mino.NewAddresses(m.GetAddress()))
+	require.NoError(t, err)
+
+	go sender.Send(fake.Message{}, m.GetAddress())
+	time.Sleep(time.Millisecond * 10)
+
+	expected := `{"level":"warn","to":"A","from":"A","message":"full"}`
+	require.True(t, strings.Contains(buf.String(), expected), buf.String())
 }
 
 func TestReceiver_Recv(t *testing.T) {

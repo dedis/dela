@@ -61,7 +61,7 @@ func (m miniController) SetCommands(builder node.Builder) {
 		cli.StringFlag{
 			Name:  "listen",
 			Usage: "set the address to listen on",
-			Value: "0.0.0.0:2000",
+			Value: "tcp://0.0.0.0:2000",
 		},
 		cli.StringFlag{
 			Name:     "public",

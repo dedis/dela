@@ -41,6 +41,8 @@ func getTest[T require.TestingT](numNode, numTx int) func(t T) {
 		dir, err := os.MkdirTemp(os.TempDir(), "dela-integration-test")
 		require.NoError(t, err)
 
+		timeout := time.Second * 10 // transaction inclusion timeout
+
 		defer os.RemoveAll(dir)
 
 		nodes := make([]dela, numNode)
@@ -81,7 +83,7 @@ func getTest[T require.TestingT](numNode, numTx int) func(t T) {
 			{Key: "access:command", Value: []byte("GRANT")},
 		}
 
-		addAndWait(t, manager, nodes[0].(cosiDelaNode), args...)
+		err = addAndWait(t, timeout, manager, nodes[0].(cosiDelaNode), args...)
 		require.NoError(t, err)
 
 		for i := 0; i < numTx; i++ {
@@ -97,7 +99,7 @@ func getTest[T require.TestingT](numNode, numTx int) func(t T) {
 				{Key: "value:command", Value: []byte("WRITE")},
 			}
 
-			addAndWait(t, manager, nodes[0].(cosiDelaNode), args...)
+			err = addAndWait(t, timeout, manager, nodes[0].(cosiDelaNode), args...)
 			require.NoError(t, err)
 
 			proof, err := nodes[0].GetOrdering().GetProof(key)
@@ -110,7 +112,7 @@ func getTest[T require.TestingT](numNode, numTx int) func(t T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-func addAndWait(t require.TestingT, manager txn.Manager, node cosiDelaNode, args ...txn.Arg) error {
+func addAndWait(t require.TestingT, to time.Duration, manager txn.Manager, node cosiDelaNode, args ...txn.Arg) error {
 	manager.Sync()
 
 	tx, err := manager.Make(args...)
@@ -123,7 +125,7 @@ func addAndWait(t require.TestingT, manager txn.Manager, node cosiDelaNode, args
 		return xerrors.Errorf("failed to add tx: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
+	ctx, cancel := context.WithTimeout(context.Background(), to)
 	defer cancel()
 
 	events := node.GetOrdering().Watch(ctx)
@@ -142,5 +144,5 @@ func addAndWait(t require.TestingT, manager txn.Manager, node cosiDelaNode, args
 		}
 	}
 
-	return xerrors.New("transaction not included")
+	return xerrors.Errorf("transaction not found")
 }

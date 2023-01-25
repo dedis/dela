@@ -8,6 +8,34 @@ import (
 	"golang.org/x/xerrors"
 )
 
+// Ciphertext provides the verifiable encryption function. A description can be
+// found in https://arxiv.org/pdf/2205.08529.pdf. The equivalent of each
+// parameter in the paper is written in front of it.
+type Ciphertext struct {
+	K    kyber.Point  // r
+	C    kyber.Point  // C
+	UBar kyber.Point  // ubar
+	E    kyber.Scalar // e
+	F    kyber.Scalar // f
+	GBar kyber.Point  // GBar
+}
+
+// ShareAndProof is the ShareAndProof provided by the verifiable decryption
+// function.
+//
+//	see: https://arxiv.org/pdf/2205.08529.pdf
+//
+// The equivalent of each parameter in the paper is mentioned.
+type ShareAndProof struct {
+	V  kyber.Point
+	I  int64
+	Ui kyber.Point  // u_i
+	Ei kyber.Scalar // e_i
+	Fi kyber.Scalar // f_i
+	Hi kyber.Point  // h_i
+
+}
+
 var msgFormats = registry.NewSimpleRegistry()
 
 // RegisterMessageFormat register the engine for the provided format.
@@ -44,12 +72,12 @@ func (s Start) GetThreshold() int {
 
 // GetAddresses returns the list of addresses.
 func (s Start) GetAddresses() []mino.Address {
-	return append([]mino.Address{}, s.addresses...)
+	return emptyIfNil(s.addresses)
 }
 
 // GetPublicKeys returns the list of public keys.
 func (s Start) GetPublicKeys() []kyber.Point {
-	return append([]kyber.Point{}, s.pubkeys...)
+	return emptyIfNil(s.pubkeys)
 }
 
 // Serialize implements serde.Message. It looks up the format and returns the
@@ -58,6 +86,81 @@ func (s Start) Serialize(ctx serde.Context) ([]byte, error) {
 	format := msgFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, s)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't encode message: %v", err)
+	}
+
+	return data, nil
+}
+
+// StartResharing is the message the initiator of the resharing protocol
+// should send to all the old nodes.
+//
+// - implements serde.Message
+type StartResharing struct {
+	// New threshold
+	tNew int
+	// Old threshold
+	tOld int
+	// The full list of addresses that will participate in the new DKG
+	addrsNew []mino.Address
+	// The full list of addresses of old dkg members
+	addrsOld []mino.Address
+	// The corresponding kyber.Point pub keys of the new addresses
+	pubkeysNew []kyber.Point
+	// The corresponding kyber.Point pub keys of the old addresses
+	pubkeysOld []kyber.Point
+}
+
+// NewStartResharing creates a new start resharing message.
+func NewStartResharing(tNew int, tOld int, addrsNew []mino.Address, addrsOld []mino.Address,
+	pubkeysNew []kyber.Point, pubkeysOld []kyber.Point) StartResharing {
+	return StartResharing{
+		tNew:       tNew,
+		tOld:       tOld,
+		addrsNew:   addrsNew,
+		addrsOld:   addrsOld,
+		pubkeysNew: pubkeysNew,
+		pubkeysOld: pubkeysOld,
+	}
+}
+
+// GetTNew returns the new threshold.
+func (r StartResharing) GetTNew() int {
+	return r.tNew
+}
+
+// GetTOld returns the old threshold.
+func (r StartResharing) GetTOld() int {
+	return r.tOld
+}
+
+// GetAddrsNew returns the list of new addresses.
+func (r StartResharing) GetAddrsNew() []mino.Address {
+	return emptyIfNil(r.addrsNew)
+}
+
+// GetAddrsOld returns the list of old addresses.
+func (r StartResharing) GetAddrsOld() []mino.Address {
+	return emptyIfNil(r.addrsOld)
+}
+
+// GetPubkeysNew returns the list of new public keys.
+func (r StartResharing) GetPubkeysNew() []kyber.Point {
+	return emptyIfNil(r.pubkeysNew)
+}
+
+// GetPubkeysOld returns the list of old public keys.
+func (r StartResharing) GetPubkeysOld() []kyber.Point {
+	return emptyIfNil(r.pubkeysOld)
+}
+
+// Serialize implements serde.Message. It looks up the format and returns the
+// serialized data for the resharingRequest message.
+func (r StartResharing) Serialize(ctx serde.Context) ([]byte, error) {
+	format := msgFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, r)
 	if err != nil {
 		return nil, xerrors.Errorf("couldn't encode message: %v", err)
 	}
@@ -86,22 +189,22 @@ func NewEncryptedDeal(dhkey, sig, nonce, cipher []byte) EncryptedDeal {
 
 // GetDHKey returns the Diffie-Helmann key in bytes.
 func (d EncryptedDeal) GetDHKey() []byte {
-	return append([]byte{}, d.dhkey...)
+	return emptyIfNil(d.dhkey)
 }
 
 // GetSignature returns the signatures in bytes.
 func (d EncryptedDeal) GetSignature() []byte {
-	return append([]byte{}, d.signature...)
+	return emptyIfNil(d.signature)
 }
 
 // GetNonce returns the nonce in bytes.
 func (d EncryptedDeal) GetNonce() []byte {
-	return append([]byte{}, d.nonce...)
+	return emptyIfNil(d.nonce)
 }
 
 // GetCipher returns the cipher in bytes.
 func (d EncryptedDeal) GetCipher() []byte {
-	return append([]byte{}, d.cipher...)
+	return emptyIfNil(d.cipher)
 }
 
 // Deal matches the attributes defined in kyber dkg.Deal.
@@ -130,7 +233,7 @@ func (d Deal) GetIndex() uint32 {
 
 // GetSignature returns the signature in bytes.
 func (d Deal) GetSignature() []byte {
-	return append([]byte{}, d.signature...)
+	return emptyIfNil(d.signature)
 }
 
 // GetEncryptedDeal returns the encrypted deal.
@@ -140,6 +243,43 @@ func (d Deal) GetEncryptedDeal() EncryptedDeal {
 
 // Serialize implements serde.Message.
 func (d Deal) Serialize(ctx serde.Context) ([]byte, error) {
+	format := msgFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, d)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't encode deal: %v", err)
+	}
+
+	return data, nil
+}
+
+// Reshare messages for resharing process
+// - implements serde.Message
+type Reshare struct {
+	deal        Deal
+	publicCoeff []kyber.Point
+}
+
+// NewReshare creates a new deal.
+func NewReshare(deal Deal, publicCoeff []kyber.Point) Reshare {
+	return Reshare{
+		deal:        deal,
+		publicCoeff: publicCoeff,
+	}
+}
+
+// GetDeal returns the deal.
+func (d Reshare) GetDeal() Deal {
+	return d.deal
+}
+
+// GetPublicCoeffs returns the public coeff.
+func (d Reshare) GetPublicCoeffs() []kyber.Point {
+	return d.publicCoeff
+}
+
+// Serialize implements serde.Message.
+func (d Reshare) Serialize(ctx serde.Context) ([]byte, error) {
 	format := msgFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, d)
@@ -172,7 +312,7 @@ func NewDealerResponse(index uint32, status bool, sessionID, sig []byte) DealerR
 
 // GetSessionID returns the session ID in bytes.
 func (dresp DealerResponse) GetSessionID() []byte {
-	return append([]byte{}, dresp.sessionID...)
+	return emptyIfNil(dresp.sessionID)
 }
 
 // GetIndex returns the index.
@@ -187,7 +327,7 @@ func (dresp DealerResponse) GetStatus() bool {
 
 // GetSignature returns the signature in bytes.
 func (dresp DealerResponse) GetSignature() []byte {
-	return append([]byte{}, dresp.signature...)
+	return emptyIfNil(dresp.signature)
 }
 
 // Response matches the attributes defined in kyber pedersen.Response.
@@ -299,6 +439,38 @@ func (req DecryptRequest) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
+// VerifiableDecryptRequest is a message sent to request a verifiable
+// decryption.
+//
+// - implements serde.Message
+type VerifiableDecryptRequest struct {
+	ciphertexts []Ciphertext
+}
+
+// NewVerifiableDecryptRequest creates a new verifiable decryption request.
+func NewVerifiableDecryptRequest(ciphertexts []Ciphertext) VerifiableDecryptRequest {
+	return VerifiableDecryptRequest{
+		ciphertexts: ciphertexts,
+	}
+}
+
+// GetCiphertexts returns ciphertexts.
+func (req VerifiableDecryptRequest) GetCiphertexts() []Ciphertext {
+	return req.ciphertexts
+}
+
+// Serialize implements serde.Message.
+func (req VerifiableDecryptRequest) Serialize(ctx serde.Context) ([]byte, error) {
+	format := msgFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, req)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't encode verifiable decrypt request: %v", err)
+	}
+
+	return data, nil
+}
+
 // DecryptReply is the response of a decryption request.
 //
 // - implements serde.Message
@@ -337,6 +509,38 @@ func (resp DecryptReply) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
+// VerifiableDecryptReply is a message sent to request a verifiable
+// decryption.
+//
+// - implements serde.Message
+type VerifiableDecryptReply struct {
+	shareAndProof []ShareAndProof
+}
+
+// NewVerifiableDecryptReply creates a new verifiable decryption reply.
+func NewVerifiableDecryptReply(shareAndProof []ShareAndProof) VerifiableDecryptReply {
+	return VerifiableDecryptReply{
+		shareAndProof: shareAndProof,
+	}
+}
+
+// GetShareAndProof returns ShareAndProof.
+func (resp VerifiableDecryptReply) GetShareAndProof() []ShareAndProof {
+	return resp.shareAndProof
+}
+
+// Serialize implements serde.Message.
+func (resp VerifiableDecryptReply) Serialize(ctx serde.Context) ([]byte, error) {
+	format := msgFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, resp)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't encode verifiable decrypt reply: %v", err)
+	}
+
+	return data, nil
+}
+
 // AddrKey is the key for the address factory.
 type AddrKey struct{}
 
@@ -366,4 +570,12 @@ func (f MessageFactory) Deserialize(ctx serde.Context, data []byte) (serde.Messa
 	}
 
 	return msg, nil
+}
+
+func emptyIfNil[T any](slice []T) []T {
+	if slice == nil {
+		return make([]T, 0)
+	}
+
+	return slice
 }

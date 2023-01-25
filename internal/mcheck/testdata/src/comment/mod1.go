@@ -23,3 +23,5 @@ this should not raise an error because we manually set to no lint the next line 
 // http://thisisaverylongurlthatshouldnotraiseanyproblembecauseweacceptlongurlincomments
 
 //go:generate this line should be ignore even if it's too long because it started with a go:generate
+
+//	┌───▼─────┬─────►┌─────▼───┐ even with UFT-8 chars, it counts runes properly

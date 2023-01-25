@@ -43,18 +43,20 @@ func TestPedersen_Setup(t *testing.T) {
 	_, err = actor.Setup(fakeAuthority, 0)
 	require.EqualError(t, err, "expected ed25519.PublicKey, got 'fake.PublicKey'")
 
+	fakeAuthority = fake.NewAuthority(2, ed25519.NewSigner)
+
+	_, err = actor.Setup(fakeAuthority, 1)
+	require.EqualError(t, err, fake.Err("failed to send start"))
+
 	rpc = fake.NewStreamRPC(fake.NewBadReceiver(), fake.Sender{})
 	actor.rpc = rpc
-
-	fakeAuthority = fake.NewAuthority(2, ed25519.NewSigner)
 
 	_, err = actor.Setup(fakeAuthority, 1)
 	require.EqualError(t, err, fake.Err("got an error from '%!s(<nil>)' while receiving"))
 
 	recv := fake.NewReceiver(fake.NewRecvMsg(fake.NewAddress(0), nil))
 
-	rpc = fake.NewStreamRPC(recv, fake.Sender{})
-	actor.rpc = rpc
+	actor.rpc = fake.NewStreamRPC(recv, fake.Sender{})
 
 	_, err = actor.Setup(fakeAuthority, 1)
 	require.EqualError(t, err, "expected to receive a Done message, but go the following: <nil>")
@@ -78,15 +80,16 @@ func TestPedersen_GetPublicKey(t *testing.T) {
 	_, err := actor.GetPublicKey()
 	require.EqualError(t, err, "DKG has not been initialized")
 
-	actor.startRes = &state{participants: []mino.Address{fake.NewAddress(0)}, distrKey: suite.Point()}
+	actor.startRes = &state{dkgState: certified}
 	_, err = actor.GetPublicKey()
 	require.NoError(t, err)
 }
 
 func TestPedersen_Decrypt(t *testing.T) {
 	actor := Actor{
-		rpc:      fake.NewBadRPC(),
-		startRes: &state{participants: []mino.Address{fake.NewAddress(0)}, distrKey: suite.Point()},
+		rpc: fake.NewBadRPC(),
+		startRes: &state{dkgState: certified,
+			participants: []mino.Address{fake.NewAddress(0)}, distrKey: suite.Point()},
 	}
 
 	_, err := actor.Decrypt(suite.Point(), suite.Point())
@@ -128,10 +131,17 @@ func TestPedersen_Decrypt(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestPedersen_Reshare(t *testing.T) {
-	actor := Actor{}
-	err := actor.Reshare()
-	require.NoError(t, err)
+func Test_Decrypt_StreamStop(t *testing.T) {
+	a := Actor{
+		rpc: fake.NewStreamRPC(fake.NewBadReceiver(), fake.Sender{}),
+		startRes: &state{
+			dkgState:     certified,
+			participants: []mino.Address{fake.NewAddress(0)},
+		},
+	}
+
+	_, err := a.Decrypt(nil, nil)
+	require.EqualError(t, err, fake.Err("stream stopped unexpectedly"))
 }
 
 func TestPedersen_Scenario(t *testing.T) {
@@ -213,6 +223,106 @@ func TestPedersen_Scenario(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, message, decrypted)
 	}
+}
+
+func Test_Worker_BadProof(t *testing.T) {
+	ct := types.Ciphertext{
+		K:    suite.Point(),
+		C:    suite.Point(),
+		UBar: suite.Point(),
+		E:    suite.Scalar(),
+		F:    suite.Scalar(),
+		GBar: suite.Point(),
+	}
+
+	sap := types.ShareAndProof{
+		V:  suite.Point(),
+		I:  0,
+		Ui: suite.Point(),
+		Ei: suite.Scalar(),
+		Fi: suite.Scalar(),
+		Hi: suite.Point(),
+	}
+
+	w := worker{
+		numParticipants:  0,
+		decryptedMessage: [][]byte{},
+		ciphertexts: []types.Ciphertext{
+			ct,
+		},
+		responses: []types.VerifiableDecryptReply{types.NewVerifiableDecryptReply([]types.ShareAndProof{sap})},
+	}
+
+	err := w.work(0)
+	require.Regexp(t, "^failed to check the decryption proof: hash is not valid", err.Error())
+}
+
+func Test_Worker_BadRecover(t *testing.T) {
+	w := worker{
+		numParticipants:  2,
+		decryptedMessage: [][]byte{},
+		ciphertexts:      []types.Ciphertext{},
+		responses:        []types.VerifiableDecryptReply{},
+	}
+
+	err := w.work(0)
+	require.Regexp(t, "^failed to recover the commit:", err.Error())
+}
+
+func Test_Reshare_NotDone(t *testing.T) {
+	a := Actor{
+		startRes: &state{dkgState: initial},
+	}
+
+	err := a.Reshare(nil, 0)
+	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")
+}
+
+func Test_Reshare_WrongPK(t *testing.T) {
+	a := Actor{
+		startRes: &state{dkgState: certified},
+	}
+
+	co := fake.NewAuthority(1, fake.NewSigner)
+
+	err := a.Reshare(co, 0)
+	require.EqualError(t, err, "expected ed25519.PublicKey, got 'fake.PublicKey'")
+}
+
+func Test_Reshare_BadRPC(t *testing.T) {
+	a := Actor{
+		startRes: &state{dkgState: certified},
+		rpc:      fake.NewBadRPC(),
+	}
+
+	co := NewAuthority(nil, nil)
+
+	err := a.Reshare(co, 0)
+	require.EqualError(t, err, fake.Err("failed to create stream"))
+}
+
+func Test_Reshare_BadSender(t *testing.T) {
+	a := Actor{
+		startRes: &state{dkgState: certified},
+		rpc:      fake.NewStreamRPC(nil, fake.NewBadSender()),
+	}
+
+	co := NewAuthority(nil, nil)
+
+	err := a.Reshare(co, 0)
+	require.EqualError(t, err, fake.Err("failed to send resharing request"))
+}
+
+func Test_Reshare_BadReceiver(t *testing.T) {
+	a := Actor{
+		startRes: &state{dkgState: certified},
+		rpc:      fake.NewStreamRPC(fake.NewBadReceiver(), fake.Sender{}),
+	}
+
+	co := NewAuthority([]mino.Address{fake.NewAddress(0)}, []kyber.Point{suite.Point()})
+
+	err := a.Reshare(co, 0)
+	require.EqualError(t, err, fake.Err("stream stopped unexpectedly"))
 }
 
 // -----------------------------------------------------------------------------

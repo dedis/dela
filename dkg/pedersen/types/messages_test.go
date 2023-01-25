@@ -48,6 +48,55 @@ func TestStart_Serialize(t *testing.T) {
 	require.EqualError(t, err, fake.Err("couldn't encode message"))
 }
 
+func TestResharingStart_GetTNew(t *testing.T) {
+	start := NewStartResharing(5, 0, nil, nil, nil, nil)
+
+	require.Equal(t, 5, start.GetTNew())
+}
+
+func TestResharingStart_GetTOld(t *testing.T) {
+	start := NewStartResharing(0, 5, nil, nil, nil, nil)
+
+	require.Equal(t, 5, start.GetTOld())
+}
+
+func TestResharingStart_GetAddrsNew(t *testing.T) {
+	addrs := []mino.Address{fake.NewAddress(0)}
+	start := NewStartResharing(0, 0, addrs, nil, nil, nil)
+
+	require.Equal(t, addrs, start.GetAddrsNew())
+}
+
+func TestResharingStart_GetAddrsOld(t *testing.T) {
+	addrs := []mino.Address{fake.NewAddress(0)}
+	start := NewStartResharing(0, 0, nil, addrs, nil, nil)
+
+	require.Equal(t, addrs, start.GetAddrsOld())
+}
+
+func TestResharingStart_GetPubKeysNew(t *testing.T) {
+	start := NewStartResharing(0, 0, nil, nil, []kyber.Point{nil, nil}, nil)
+
+	require.Len(t, start.GetPubkeysNew(), 2)
+}
+
+func TestResharingStart_GetPubKeysOld(t *testing.T) {
+	start := NewStartResharing(0, 0, nil, nil, nil, []kyber.Point{nil, nil})
+
+	require.Len(t, start.GetPubkeysOld(), 2)
+}
+
+func TestResharingStart_Serialize(t *testing.T) {
+	start := StartResharing{}
+
+	data, err := start.Serialize(fake.NewContext())
+	require.NoError(t, err)
+	require.Equal(t, fake.GetFakeFormatValue(), data)
+
+	_, err = start.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, fake.Err("couldn't encode message"))
+}
+
 func TestEncryptedDeal_Getters(t *testing.T) {
 	f := func(key, sig, nonce, cipher []byte) bool {
 		e := NewEncryptedDeal(key, sig, nonce, cipher)
@@ -119,6 +168,30 @@ func TestDealerResponse_Getters(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestReshare_GetDeal(t *testing.T) {
+	deal := Deal{index: 5}
+	reshare := NewReshare(deal, nil)
+
+	require.Equal(t, deal, reshare.GetDeal())
+}
+
+func TestReshare_GetPublicCoeffs(t *testing.T) {
+	reshare := NewReshare(Deal{}, []kyber.Point{nil, nil})
+
+	require.Len(t, reshare.GetPublicCoeffs(), 2)
+}
+
+func TestReshare_Serialize(t *testing.T) {
+	reshare := Reshare{}
+
+	data, err := reshare.Serialize(fake.NewContext())
+	require.NoError(t, err)
+	require.Equal(t, fake.GetFakeFormatValue(), data)
+
+	_, err = reshare.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, fake.Err("couldn't encode deal"))
+}
+
 func TestResponse_GetIndex(t *testing.T) {
 	f := func(index uint32) bool {
 		resp := NewResponse(index, DealerResponse{})
@@ -187,6 +260,23 @@ func TestDecryptRequest_Serialize(t *testing.T) {
 	require.EqualError(t, err, fake.Err("couldn't encode decrypt request"))
 }
 
+func TestVerifiableDecryptRequest_Get(t *testing.T) {
+	req := NewVerifiableDecryptRequest([]Ciphertext{{}, {}})
+
+	require.Len(t, req.GetCiphertexts(), 2)
+}
+
+func TestVerifiableDecryptRequest_Serialize(t *testing.T) {
+	req := VerifiableDecryptRequest{}
+
+	data, err := req.Serialize(fake.NewContext())
+	require.NoError(t, err)
+	require.Equal(t, fake.GetFakeFormatValue(), data)
+
+	_, err = req.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, fake.Err("couldn't encode verifiable decrypt request"))
+}
+
 func TestDecryptReply_GetV(t *testing.T) {
 	resp := NewDecryptReply(0, fakePoint{})
 
@@ -208,6 +298,23 @@ func TestDecryptReply_Serialize(t *testing.T) {
 
 	_, err = resp.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("couldn't encode decrypt reply"))
+}
+
+func TestVerifiableDecryptReply_Get(t *testing.T) {
+	req := NewVerifiableDecryptReply([]ShareAndProof{{}, {}})
+
+	require.Len(t, req.GetShareAndProof(), 2)
+}
+
+func TestVerifiableDecryptReply_Serialize(t *testing.T) {
+	req := VerifiableDecryptReply{}
+
+	data, err := req.Serialize(fake.NewContext())
+	require.NoError(t, err)
+	require.Equal(t, fake.GetFakeFormatValue(), data)
+
+	_, err = req.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, fake.Err("couldn't encode verifiable decrypt reply"))
 }
 
 func TestMessageFactory(t *testing.T) {

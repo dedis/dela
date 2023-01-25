@@ -14,7 +14,8 @@ import (
 func TestMinimal_SetCommands(t *testing.T) {
 	minimal := NewMinimal()
 
-	minimal.SetCommands(nil)
+	b := node.NewBuilder()
+	minimal.SetCommands(b)
 }
 
 func TestMinimal_OnStart(t *testing.T) {

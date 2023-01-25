@@ -11,10 +11,14 @@ import (
 	"math"
 	"sync"
 
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
+
+// bufSize defines the buffer size of channels used to store messages
+var bufSize = 10000
 
 // Envelope is the wrapper to send messages through streams.
 type Envelope struct {
@@ -141,9 +145,9 @@ func (c RPC) runFilters(req mino.Request) bool {
 // as the router for all the messages. They are redirected to the channel
 // associated with the address.
 func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, mino.Receiver, error) {
-	in := make(chan Envelope, 100)
-	out := make(chan Envelope, 100)
-	errs := make(chan error, 1)
+	in := make(chan Envelope, bufSize)
+	out := make(chan Envelope, bufSize)
+	errs := make(chan error, 1000)
 
 	outs := make(map[string]receiver)
 
@@ -156,7 +160,7 @@ func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, min
 			return nil, nil, xerrors.Errorf("couldn't find peer: %v", err)
 		}
 
-		ch := make(chan Envelope, 1)
+		ch := make(chan Envelope, bufSize*100)
 		outs[addr.String()] = receiver{
 			out:     ch,
 			context: c.context,
@@ -206,10 +210,17 @@ func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, min
 				return
 			case env := <-in:
 				for _, to := range env.to {
-					if to.(address).orchestrator {
-						orchRecv.out <- env
-					} else {
-						outs[to.String()].out <- env
+					output := orchRecv.out
+					if !to.(address).orchestrator {
+						output = outs[to.String()].out
+					}
+
+					select {
+					case output <- env:
+					default:
+						dela.Logger.Warn().Str("to", to.String()).
+							Str("from", env.from.String()).Msg("full")
+						output <- env
 					}
 				}
 			}
