@@ -97,17 +97,9 @@ func TestService_Scenario_Basic(t *testing.T) {
 }
 
 func TestService_Scenario_NoViewChangeOnLoadedLeader(t *testing.T) {
-	nodes, ro, clean := makeAuthority(t, 3)
+	nodes, ro, clean := makeAuthority(t, 5)
 	defer clean()
 
-	/*	for _, node := range nodes {
-			// Short timeout for the first round that we want to fail.
-			node.service.timeoutRound = 100 * time.Millisecond
-			// Long enough timeout so that any slow machine won't fail the test.
-			node.service.timeoutRoundAfterFailure = 1 * time.Second
-			node.service.timeoutViewchange = 2 * time.Second
-		}
-	*/
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -116,7 +108,7 @@ func TestService_Scenario_NoViewChangeOnLoadedLeader(t *testing.T) {
 
 	events := nodes[2].service.Watch(ctx)
 
-	maxTn := 20
+	maxTn := 50
 
 	for tn := 0; tn < maxTn; tn++ {
 		err = nodes[1].pool.Add(makeTx(t, uint64(tn), nodes[1].signer))
@@ -125,11 +117,11 @@ func TestService_Scenario_NoViewChangeOnLoadedLeader(t *testing.T) {
 	}
 
 	for tn := 0; tn < maxTn; tn++ {
-		evt := waitEventNoFail(t, events, 2*time.Second)
+		evt := waitEventNoFail(t, events, DefaultTimeoutBeforeViewchange)
 		if len(evt.Transactions) == 0 {
 			break
 		}
-		t.Logf("received Evt[%v]", len(evt.Transactions))
+		t.Logf("evnt: received %v transactions", len(evt.Transactions))
 		tn += len(evt.Transactions)
 	}
 
@@ -142,14 +134,6 @@ func TestService_Scenario_ViewChange(t *testing.T) {
 	nodes, ro, clean := makeAuthority(t, 4)
 	defer clean()
 
-	/*	for _, node := range nodes {
-			// Short timeout for the first round that we want to fail.
-			node.service.timeoutRound = 100 * time.Millisecond
-			// Long enough timeout so that any slow machine won't fail the test.
-			node.service.timeoutRoundAfterFailure = 1 * time.Second
-			node.service.timeoutViewchange = 500 * time.Millisecond
-		}
-	*/
 	// Simulate an issue with the leader transaction pool so that it does not
 	// receive any of them.
 	nodes[0].pool.Close()
