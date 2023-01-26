@@ -28,17 +28,17 @@ jobs:
     - name: Check out code into the Go module directory
       uses: actions/checkout@v2
       
-    - name: Test with coverage
-      env:
-        CRY_LVL: "warn"
-      if: matrix.platform == 'ubuntu-latest'
-      run: go test -json -covermode=count -coverprofile=profile.cov ./... > report.json
-
     - name: Test without coverage
       env:
         CRY_LVL: "warn"
       if: matrix.platform == 'macos-latest' || matrix.platform == 'windows-latest'
       run: go test ./...
+
+    - name: Test with coverage
+      env:
+        CRY_LVL: "warn"
+      if: matrix.platform == 'ubuntu-latest'
+      run: go test -json -covermode=count -coverprofile=profile.cov ./... > report.json
 
     - name: Sonarcloud scan
       if: matrix.platform == 'ubuntu-latest'
