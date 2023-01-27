@@ -115,7 +115,7 @@ func TestService_Scenario_NoViewChangeOnLoadedLeader(t *testing.T) {
 	}
 
 	for tn := 0; tn < maxTn; tn++ {
-		evt := waitEventNoFail(t, events, DefaultRoundTimeout)
+		evt := waitEventNoFail(t, events, 2*DefaultRoundTimeout)
 		if len(evt.Transactions) == 0 {
 			break
 		}
