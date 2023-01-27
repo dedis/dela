@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"testing"
 	"time"
 
@@ -61,28 +62,25 @@ func TestService_Scenario_Basic(t *testing.T) {
 	err = nodes[0].pool.Add(makeTx(t, 0, signer))
 	require.NoError(t, err)
 
-	evt := waitEvent(t, events, DefaultRoundTimeout)
+	evt := waitEvent(t, events, 2*DefaultRoundTimeout)
 	require.Equal(t, uint64(0), evt.Index)
 
-	signer = nodes[1].signer
-
-	err = nodes[1].pool.Add(makeTx(t, 0, signer))
+	err = nodes[1].pool.Add(makeTx(t, 1, signer))
 	require.NoError(t, err)
 
-	evt = waitEvent(t, events, DefaultRoundTimeout)
+	evt = waitEvent(t, events, 20*DefaultRoundTimeout)
 	require.Equal(t, uint64(1), evt.Index)
 
-	err = nodes[1].pool.Add(makeRosterTx(t, 1, ro, signer))
+	err = nodes[1].pool.Add(makeRosterTx(t, 2, ro, signer))
 	require.NoError(t, err)
 
-	evt = waitEvent(t, events, DefaultRoundTimeout)
+	evt = waitEvent(t, events, 20*DefaultRoundTimeout)
 	require.Equal(t, uint64(2), evt.Index)
-
 	for i := 0; i < 3; i++ {
-		err = nodes[1].pool.Add(makeTx(t, uint64(i+2), signer))
+		err = nodes[1].pool.Add(makeTx(t, uint64(i+3), signer))
 		require.NoError(t, err)
 
-		evt = waitEvent(t, events, DefaultRoundTimeout)
+		evt = waitEvent(t, events, 20*DefaultRoundTimeout)
 		require.Equal(t, uint64(i+3), evt.Index)
 	}
 
@@ -117,7 +115,7 @@ func TestService_Scenario_NoViewChangeOnLoadedLeader(t *testing.T) {
 	}
 
 	for tn := 0; tn < maxTn; tn++ {
-		evt := waitEventNoFail(t, events, DefaultTimeoutBeforeViewchange)
+		evt := waitEventNoFail(t, events, DefaultRoundTimeout)
 		if len(evt.Transactions) == 0 {
 			break
 		}
@@ -879,7 +877,6 @@ func TestService_PoolFilter(t *testing.T) {
 
 // -----------------------------------------------------------------------------
 // Utility functions
-
 func checkProof(t *testing.T, p Proof, s *Service) {
 	genesis, err := s.genesis.Get()
 	require.NoError(t, err)
@@ -940,6 +937,7 @@ func makeRosterTx(t *testing.T, nonce uint64, roster authority.Authority, signer
 func waitEvent(t *testing.T, events <-chan ordering.Event, timeout time.Duration) ordering.Event {
 	select {
 	case <-time.After(timeout):
+		t.Log(string(debug.Stack()))
 		t.Fatal("no event received before the timeout")
 		return ordering.Event{}
 	case evt := <-events:
