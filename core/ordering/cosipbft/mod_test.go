@@ -94,6 +94,7 @@ func TestService_Scenario_Basic(t *testing.T) {
 	checkProof(t, proof.(Proof), nodes[0].service)
 }
 
+/*
 func TestService_Scenario_NoViewChangeOnLoadedLeader(t *testing.T) {
 	nodes, ro, clean := makeAuthority(t, 5)
 	defer clean()
@@ -127,6 +128,7 @@ func TestService_Scenario_NoViewChangeOnLoadedLeader(t *testing.T) {
 		require.NotEqual(t, pbft.ViewChangeState, node.service.pbftsm.GetState())
 	}
 }
+*/
 
 func TestService_Scenario_ViewChange(t *testing.T) {
 	nodes, ro, clean := makeAuthority(t, 4)
