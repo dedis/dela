@@ -94,42 +94,6 @@ func TestService_Scenario_Basic(t *testing.T) {
 	checkProof(t, proof.(Proof), nodes[0].service)
 }
 
-/*
-func TestService_Scenario_NoViewChangeOnLoadedLeader(t *testing.T) {
-	nodes, ro, clean := makeAuthority(t, 5)
-	defer clean()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	err := nodes[0].service.Setup(ctx, ro)
-	require.NoError(t, err)
-
-	events := nodes[2].service.Watch(ctx)
-
-	maxTn := 50
-
-	for tn := 0; tn < maxTn; tn++ {
-		err = nodes[1].pool.Add(makeTx(t, uint64(tn), nodes[1].signer))
-		t.Logf("added Tx[%v] to the pool", tn)
-		require.NoError(t, err)
-	}
-
-	for tn := 0; tn < maxTn; tn++ {
-		evt := waitEventNoFail(t, events, 2*DefaultRoundTimeout)
-		if len(evt.Transactions) == 0 {
-			break
-		}
-		t.Logf("evnt: received %v transactions", len(evt.Transactions))
-		tn += len(evt.Transactions)
-	}
-
-	for _, node := range nodes {
-		require.NotEqual(t, pbft.ViewChangeState, node.service.pbftsm.GetState())
-	}
-}
-*/
-
 func TestService_Scenario_ViewChange(t *testing.T) {
 	nodes, ro, clean := makeAuthority(t, 4)
 	defer clean()
@@ -152,6 +116,28 @@ func TestService_Scenario_ViewChange(t *testing.T) {
 
 	evt := waitEvent(t, events, 15*time.Second)
 	require.Equal(t, uint64(0), evt.Index)
+}
+
+func TestService_Scenario_NoViewChange(t *testing.T) {
+	nodes, ro, clean := makeAuthority(t, 4)
+	defer clean()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := nodes[1].service.Setup(ctx, ro)
+	require.NoError(t, err)
+
+	events := nodes[2].service.Watch(ctx)
+
+	// Other nodes will detect a transaction but no block incoming => timeout
+	err = nodes[1].pool.Add(makeTx(t, 0, nodes[1].signer))
+	require.NoError(t, err)
+
+	evt := waitEvent(t, events, 500*time.Millisecond)
+	require.Equal(t, uint64(0), evt.Index)
+
+	require.NotEqual(t, nodes[1].service.pbftsm.GetState(), pbft.ViewChangeState)
 }
 
 // Test that a block committed will be eventually finalized even if the
@@ -941,16 +927,6 @@ func waitEvent(t *testing.T, events <-chan ordering.Event, timeout time.Duration
 	case <-time.After(timeout):
 		t.Log(string(debug.Stack()))
 		t.Fatal("no event received before the timeout")
-		return ordering.Event{}
-	case evt := <-events:
-		return evt
-	}
-}
-
-func waitEventNoFail(t *testing.T, events <-chan ordering.Event, timeout time.Duration) ordering.Event {
-	select {
-	case <-time.After(timeout):
-		t.Log("no event received before the timeout")
 		return ordering.Event{}
 	case evt := <-events:
 		return evt
