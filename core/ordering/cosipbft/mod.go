@@ -364,7 +364,10 @@ func (s *Service) watchBlocks() {
 	for link := range linkCh {
 		// 1. Remove the transactions from the pool to avoid duplicates.
 		for _, res := range link.GetBlock().GetData().GetTransactionResults() {
-			s.pool.Remove(res.GetTransaction())
+			err := s.pool.Remove(res.GetTransaction())
+			if err != nil {
+				s.logger.Err(err).Msg("removing transaction")
+			}
 		}
 
 		// 2. Update the current membership.
@@ -531,35 +534,15 @@ func (s *Service) doFollowerRound(ctx context.Context, roster authority.Authorit
 
 		s.logger.Debug().Msg("round reached the timeout")
 
-		// 1. gather transactions
 		txs := s.pool.Gather(ctx, pool.Config{Min: 1})
 
-		// 2. find out if some transaction processing have timed out
-		for _, t := range txs {
-			ts, ok := t.(txn.TransactionStats)
-			if !ok || ts.IsRotten(s.timeoutViewchange) {
-				s.logger.Warn().Msg("found a rotten transaction")
-				s.failedRound = true
-				break
-			}
-		}
-
-		// 3. decide whether to view change or not
-		if !s.failedRound {
+		if !s.roundHasFailed(txs) {
 			return nil
 		}
 
-		// 4. reset timings to avoid infinite view change
-		for _, t := range txs {
-			ts, ok := t.(txn.TransactionStats)
-			if ok {
-				s.logger.Debug().Msg("reset transaction time")
-				ts.ResetStats()
-			}
-		}
+		s.resetTransactionStats(txs) // avoid infinite view change
 
-		// 5. if a viewChange is required, continue with the view change
-		view, err := s.pbftsm.Expire(s.me)
+		view, err := s.pbftsm.Expire(s.me) // do a viewChange
 		if err != nil {
 			return xerrors.Errorf("pbft expire failed: %v", err)
 		}
@@ -605,6 +588,30 @@ func (s *Service) doFollowerRound(ctx context.Context, roster authority.Authorit
 		return nil
 	case <-s.closing:
 		return nil
+	}
+}
+
+func (s *Service) roundHasFailed(txs []txn.Transaction) bool {
+	// find out if some transaction processing have timed out
+	for _, t := range txs {
+		ts, ok := t.(txn.TransactionStats)
+		if !ok || ts.IsRotten(s.timeoutViewchange) {
+			s.logger.Warn().Msg("found a rotten transaction")
+			s.failedRound = true
+			break
+		}
+	}
+
+	return s.failedRound
+}
+
+func (s *Service) resetTransactionStats(txs []txn.Transaction) {
+	for _, t := range txs {
+		ts, ok := t.(txn.TransactionStats)
+		if ok {
+			s.logger.Debug().Msg("reset transaction time")
+			ts.ResetStats()
+		}
 	}
 }
 
