@@ -29,21 +29,21 @@ func TestPool_Basic(t *testing.T) {
 
 	go func() {
 		for i := 0; i < 50; i++ {
-			err := pools[0].Add(makeTx(uint64(i)))
+			err := pools[0].Add(makeFakeTx(uint64(i)))
 			require.NoError(t, err)
 		}
 	}()
 
 	go func() {
 		for i := 0; i < 50; i++ {
-			err := pools[2].Add(makeTx(uint64(i + 50)))
+			err := pools[2].Add(makeFakeTx(uint64(i + 50)))
 			require.NoError(t, err)
 		}
 	}()
 
 	go func() {
 		for i := 0; i < 50; i++ {
-			err := pools[7].Add(makeTx(uint64(i + 100)))
+			err := pools[7].Add(makeFakeTx(uint64(i + 100)))
 			require.NoError(t, err)
 		}
 	}()
@@ -74,7 +74,7 @@ func TestPool_Len(t *testing.T) {
 
 	require.Equal(t, 0, p.Len())
 
-	p.gatherer.Add(makeTx(0))
+	p.gatherer.Add(makeFakeTx(0))
 	require.Equal(t, 1, p.Len())
 }
 
@@ -92,16 +92,16 @@ func TestPool_Add(t *testing.T) {
 		gatherer: pool.NewSimpleGatherer(),
 	}
 
-	err := p.Add(makeTx(0))
+	err := p.Add(makeFakeTx(0))
 	require.NoError(t, err)
 
 	p.gatherer = badGatherer{}
-	err = p.Add(makeTx(0))
+	err = p.Add(makeFakeTx(0))
 	require.EqualError(t, err, fake.Err("store failed"))
 
 	p.gatherer = pool.NewSimpleGatherer()
 	p.actor = fakeActor{err: fake.GetError()}
-	err = p.Add(makeTx(0))
+	err = p.Add(makeFakeTx(0))
 	require.EqualError(t, err, fake.Err("failed to gossip tx"))
 }
 
@@ -111,7 +111,7 @@ func TestPool_Remove(t *testing.T) {
 		gatherer: pool.NewSimpleGatherer(),
 	}
 
-	tx := makeTx(0)
+	tx := makeFakeTx(0)
 
 	require.NoError(t, p.gatherer.Add(tx))
 
@@ -132,8 +132,8 @@ func TestPool_Gather(t *testing.T) {
 	ctx := context.Background()
 
 	cb := func() {
-		require.NoError(t, p.Add(makeTx(0)))
-		require.NoError(t, p.Add(makeTx(1)))
+		require.NoError(t, p.Add(makeFakeTx(0)))
+		require.NoError(t, p.Add(makeFakeTx(1)))
 	}
 
 	txs := p.Gather(ctx, pool.Config{Min: 2, Callback: cb})
@@ -176,7 +176,7 @@ func TestPool_ListenRumors(t *testing.T) {
 
 	ch := make(chan gossip.Rumor)
 	go func() {
-		ch <- makeTx(0)
+		ch <- makeFakeTx(0)
 		close(p.closing)
 	}()
 
@@ -188,7 +188,7 @@ func TestPool_ListenRumors(t *testing.T) {
 
 	ch = make(chan gossip.Rumor)
 	go func() {
-		ch <- makeTx(0)
+		ch <- makeFakeTx(0)
 		close(p.closing)
 	}()
 
@@ -199,7 +199,7 @@ func TestPool_ListenRumors(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-func makeTx(nonce uint64) txn.Transaction {
+func makeFakeTx(nonce uint64) txn.Transaction {
 	return fakeTx{nonce: nonce}
 }
 

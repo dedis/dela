@@ -25,7 +25,7 @@ import (
 	"go.dedis.ch/dela/core/store/kv"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/pool"
-	poolimpl "go.dedis.ch/dela/core/txn/pool/gossip"
+	poolgossip "go.dedis.ch/dela/core/txn/pool/gossip"
 	"go.dedis.ch/dela/core/txn/pool/mem"
 	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/core/validation"
@@ -134,10 +134,58 @@ func TestService_Scenario_NoViewChange(t *testing.T) {
 	err = nodes[1].pool.Add(makeTx(t, 0, nodes[1].signer))
 	require.NoError(t, err)
 
-	evt := waitEvent(t, events, 500*time.Millisecond)
+	evt := waitEvent(t, events, 1*time.Second)
 	require.Equal(t, uint64(0), evt.Index)
 
 	require.NotEqual(t, nodes[1].service.pbftsm.GetState(), pbft.ViewChangeState)
+}
+
+func TestService_Scenario_FindRottenTransaction(t *testing.T) {
+	nodes, ro, clean := makeAuthority(t, 4)
+	defer clean()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := nodes[1].service.Setup(ctx, ro)
+	require.NoError(t, err)
+
+	// Other nodes will detect a transaction but no block incoming => timeout
+	tx := makeTx(t, 0, nodes[1].signer)
+	err = nodes[1].pool.Add(tx)
+	require.NoError(t, err)
+
+	txs := nodes[1].pool.Gather(ctx, pool.Config{Min: 1})
+
+	ts := txs[0].(poolgossip.TransactionStats)
+	require.False(t, ts.IsRotten(1*time.Second))
+	time.Sleep(1 * time.Second)
+	require.True(t, ts.IsRotten(1*time.Second))
+}
+
+func TestService_Scenario_CanResetTransactionStats(t *testing.T) {
+	nodes, ro, clean := makeAuthority(t, 4)
+	defer clean()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := nodes[1].service.Setup(ctx, ro)
+	require.NoError(t, err)
+
+	// Other nodes will detect a transaction but no block incoming => timeout
+	tx := makeTx(t, 0, nodes[1].signer)
+	err = nodes[1].pool.Add(tx)
+	require.NoError(t, err)
+
+	txs := nodes[1].pool.Gather(ctx, pool.Config{Min: 1})
+
+	ts := txs[0].(poolgossip.TransactionStats)
+	require.False(t, ts.IsRotten(1*time.Second))
+	time.Sleep(1 * time.Second)
+	require.True(t, ts.IsRotten(1*time.Second))
+	ts.ResetStats()
+	require.False(t, ts.IsRotten(1*time.Second))
 }
 
 // Test that a block committed will be eventually finalized even if the
@@ -876,7 +924,7 @@ func checkProof(t *testing.T, p Proof, s *Service) {
 type testNode struct {
 	onet    *minoch.Minoch
 	service *Service
-	pool    *poolimpl.Pool
+	pool    *poolgossip.Pool
 	db      kv.DB
 	dbpath  string
 	signer  crypto.Signer
@@ -959,7 +1007,7 @@ func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()
 
 		txFac := signed.NewTransactionFactory()
 
-		p, err := poolimpl.NewPool(gossip.NewFlat(m, txFac))
+		p, err := poolgossip.NewPool(gossip.NewFlat(m, txFac))
 		require.NoError(t, err)
 
 		tree := binprefix.NewMerkleTree(db, binprefix.Nonce{})

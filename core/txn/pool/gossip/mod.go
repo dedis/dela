@@ -35,7 +35,8 @@ type TransactionStats struct {
 
 // IsRotten checks if a transaction has exceeded the given time in a pool
 func (t TransactionStats) IsRotten(duration time.Duration) bool {
-	return time.Since(t.insertionTime) > duration
+	txDuration := time.Since(t.insertionTime)
+	return txDuration > duration
 }
 
 // ResetStats resets the insertion time to now.
