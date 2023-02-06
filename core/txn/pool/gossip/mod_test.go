@@ -22,8 +22,8 @@ import (
 func TestPool_Basic(t *testing.T) {
 	_, pools := makeRoster(t, 10)
 	defer func() {
-		for _, pool := range pools {
-			require.NoError(t, pool.Close())
+		for _, p := range pools {
+			require.NoError(t, p.Close())
 		}
 	}()
 
@@ -56,11 +56,11 @@ func TestPool_Basic(t *testing.T) {
 }
 
 func TestPool_New(t *testing.T) {
-	pool, err := NewPool(fakeGossiper{})
+	p, err := NewPool(fakeGossiper{})
 	require.NoError(t, err)
-	require.NotNil(t, pool)
+	require.NotNil(t, p)
 
-	err = pool.Close()
+	err = p.Close()
 	require.NoError(t, err)
 
 	_, err = NewPool(fakeGossiper{err: fake.GetError()})
@@ -72,10 +72,10 @@ func TestPool_Len(t *testing.T) {
 		gatherer: pool.NewSimpleGatherer(),
 	}
 
-	require.Equal(t, 0, p.Len())
+	require.Equal(t, 0, p.Stats().TxCount)
 
 	p.gatherer.Add(makeFakeTx(0))
-	require.Equal(t, 1, p.Len())
+	require.Equal(t, 1, p.Stats().TxCount)
 }
 
 func TestPool_AddFilter(t *testing.T) {
@@ -150,18 +150,18 @@ func TestPool_Gather(t *testing.T) {
 }
 
 func TestPool_Close(t *testing.T) {
-	pool := &Pool{
+	p := &Pool{
 		gatherer: pool.NewSimpleGatherer(),
 		closing:  make(chan struct{}),
 		actor:    fakeActor{},
 	}
 
-	err := pool.Close()
+	err := p.Close()
 	require.NoError(t, err)
 
-	pool.closing = make(chan struct{})
-	pool.actor = fakeActor{err: fake.GetError()}
-	err = pool.Close()
+	p.closing = make(chan struct{})
+	p.actor = fakeActor{err: fake.GetError()}
+	err = p.Close()
 	require.EqualError(t, err, fake.Err("failed to close gossiper"))
 }
 
@@ -216,15 +216,15 @@ func makeRoster(t *testing.T, n int) (mino.Players, []*Pool) {
 
 		g := gossip.NewFlat(m, fakeTxFac{})
 
-		pool, err := NewPool(g)
+		p, err := NewPool(g)
 		require.NoError(t, err)
 
-		pools[i] = pool
+		pools[i] = p
 	}
 
 	players := mino.NewAddresses(addrs...)
-	for _, pool := range pools {
-		pool.SetPlayers(players)
+	for _, p := range pools {
+		p.SetPlayers(players)
 	}
 
 	return players, pools

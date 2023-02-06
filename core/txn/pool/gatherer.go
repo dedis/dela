@@ -17,9 +17,6 @@ const DefaultIdentitySize = 100
 // Gatherer is a common tool to the pool implementations that helps to implement
 // the gathering process.
 type Gatherer interface {
-	// Len returns the number of pending transactions.
-	Len() int
-
 	// AddFilter adds the filter to the list that a transaction will go through
 	// before being accepted by the gatherer.
 	AddFilter(Filter)
@@ -70,15 +67,6 @@ func NewSimpleGatherer() Gatherer {
 		limit: DefaultIdentitySize,
 		txs:   make(map[string]transactions),
 	}
-}
-
-// Len implements pool.Gatherer. It returns the number of transaction available
-// in the pool.
-func (g *simpleGatherer) Len() int {
-	g.Lock()
-	defer g.Unlock()
-
-	return g.calculateLength()
 }
 
 // AddFilter implements pool.Gatherer. It adds the filter to the list that a

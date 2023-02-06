@@ -55,12 +55,6 @@ func (p *Pool) AddFilter(filter pool.Filter) {
 	p.gatherer.AddFilter(filter)
 }
 
-// Len implements pool.Pool. It returns the number of transactions available in
-// the pool.
-func (p *Pool) Len() int {
-	return p.gatherer.Len()
-}
-
 // Add implements pool.Pool. It adds the transaction to the pool and gossips it
 // to other participants.
 func (p *Pool) Add(tx txn.Transaction) error {

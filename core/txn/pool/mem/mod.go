@@ -23,12 +23,6 @@ func NewPool() *Pool {
 	}
 }
 
-// Len implements pool.Pool. It returns the number of transactions available in
-// the pool.
-func (p *Pool) Len() int {
-	return p.gatherer.Len()
-}
-
 // AddFilter implements pool.Pool. It adds the filter to the gatherer.
 func (p *Pool) AddFilter(filter pool.Filter) {
 	p.gatherer.AddFilter(filter)
