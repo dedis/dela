@@ -526,19 +526,12 @@ func (s *Service) doFollowerRound(ctx context.Context, roster authority.Authorit
 	// A follower has to wait for the new block, or the round timeout, to proceed.
 	select {
 	case <-time.After(s.timeoutRound):
-		if s.pool.Len() == 0 {
-			// When the pool of transactions is empty, the round is aborted
-			// and everything restart.
-			return nil
-		}
-
-		s.logger.Debug().Msg("round reached the timeout")
-
 		if !s.roundHasFailed() {
 			return nil
 		}
 
-		// round has failed, do a view change !
+		s.logger.Info().Msg("round has failed, do a view change !")
+
 		s.pool.ResetStats() // avoid infinite view change
 
 		view, err := s.pbftsm.Expire(s.me) // start the viewChange
@@ -592,10 +585,18 @@ func (s *Service) doFollowerRound(ctx context.Context, roster authority.Authorit
 
 func (s *Service) roundHasFailed() bool {
 	stats := s.pool.Stats()
+
+	if stats.TxCount == 0 {
+		// When the pool of transactions is empty, the round is aborted
+		// and everything restart.
+		return false
+	}
+
 	if time.Since(stats.OldestTx) > s.timeoutViewchange {
 		s.logger.Warn().Msg("found a rotten transaction")
 		s.failedRound = true
 	}
+
 	return s.failedRound
 }
 

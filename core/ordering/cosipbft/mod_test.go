@@ -118,6 +118,35 @@ func TestService_Scenario_ViewChange(t *testing.T) {
 	require.Equal(t, uint64(0), evt.Index)
 }
 
+func TestService_Scenario_ViewChangeRequests(t *testing.T) {
+	nodes, ro, clean := makeAuthority(t, 4)
+	defer clean()
+	nodes[3].service.pool = fakePool{
+		Pool: nodes[3].service.pool,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := nodes[1].service.Setup(ctx, ro)
+	require.NoError(t, err)
+
+	leader, err := nodes[0].service.pbftsm.GetLeader()
+	require.NoError(t, err)
+	require.Equal(t, leader, nodes[0].onet.GetAddress())
+
+	time.Sleep(DefaultRoundTimeout + 1*time.Second)
+
+	require.Equal(t, nodes[3].service.pbftsm.GetState(), pbft.ViewChangeState)
+	require.NotEqual(t, nodes[2].service.pbftsm.GetState(), pbft.ViewChangeState)
+	require.NotEqual(t, nodes[1].service.pbftsm.GetState(), pbft.ViewChangeState)
+
+	leader, err = nodes[0].service.pbftsm.GetLeader()
+	require.NoError(t, err)
+	// assert that node 0 is still the leader
+	require.Equal(t, leader, nodes[0].onet.GetAddress())
+}
+
 func TestService_Scenario_NoViewChange(t *testing.T) {
 	nodes, ro, clean := makeAuthority(t, 4)
 	defer clean()
@@ -1068,6 +1097,17 @@ type badRosterFac struct {
 
 func (fac badRosterFac) AuthorityOf(serde.Context, []byte) (authority.Authority, error) {
 	return nil, fake.GetError()
+}
+
+type fakePool struct {
+	pool.Pool
+}
+
+func (f fakePool) Stats() pool.Stats {
+	return pool.Stats{
+		OldestTx: time.Now().Add(-100 * time.Hour),
+		TxCount:  1,
+	}
 }
 
 type badPool struct {
