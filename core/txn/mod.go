@@ -14,7 +14,6 @@ package txn
 import (
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/serde"
-	"time"
 )
 
 // Transaction is what triggers a smart contract execution by passing it as part
@@ -35,12 +34,6 @@ type Transaction interface {
 
 	// GetArg is a getter for the arguments of the transaction.
 	GetArg(key string) []byte
-}
-
-// TransactionStats enhances a transaction by adding statistics to it.
-type TransactionStats interface {
-	IsRotten(time.Duration) bool
-	ResetStats()
 }
 
 // Factory is the definition of a factory to deserialize transaction

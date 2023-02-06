@@ -151,75 +151,38 @@ func TestService_Scenario_NoViewChange(t *testing.T) {
 	nodes, ro, clean := makeAuthority(t, 4)
 	defer clean()
 
+	signer := nodes[0].signer
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	err := nodes[1].service.Setup(ctx, ro)
+	initial := ro.Take(mino.RangeFilter(0, 4)).(crypto.CollectiveAuthority)
+
+	err := nodes[0].service.Setup(ctx, initial)
 	require.NoError(t, err)
+
+	leader, err := nodes[0].service.pbftsm.GetLeader()
+	require.NoError(t, err)
+	require.Equal(t, leader, nodes[0].onet.GetAddress())
 
 	events := nodes[2].service.Watch(ctx)
 
-	// Other nodes will detect a transaction but no block incoming => timeout
-	err = nodes[1].pool.Add(makeTx(t, 0, nodes[1].signer))
+	err = nodes[0].pool.Add(makeTx(t, 0, signer))
 	require.NoError(t, err)
 
-	evt := waitEvent(t, events, 1*time.Second)
+	evt := waitEvent(t, events, 2*DefaultRoundTimeout)
 	require.Equal(t, uint64(0), evt.Index)
 
+	require.NotEqual(t, nodes[3].service.pbftsm.GetState(), pbft.ViewChangeState)
+	require.NotEqual(t, nodes[2].service.pbftsm.GetState(), pbft.ViewChangeState)
 	require.NotEqual(t, nodes[1].service.pbftsm.GetState(), pbft.ViewChangeState)
+	require.NotEqual(t, nodes[0].service.pbftsm.GetState(), pbft.ViewChangeState)
+
+	leader, err = nodes[0].service.pbftsm.GetLeader()
+	require.NoError(t, err)
+	// assert that node 0 is still the leader
+	require.Equal(t, leader, nodes[0].onet.GetAddress())
 }
-
-/*
-func TestService_Scenario_FindRottenTransaction(t *testing.T) {
-	nodes, ro, clean := makeAuthority(t, 4)
-	defer clean()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	err := nodes[1].service.Setup(ctx, ro)
-	require.NoError(t, err)
-
-	// Other nodes will detect a transaction but no block incoming => timeout
-	tx := makeTx(t, 0, nodes[1].signer)
-	err = nodes[1].pool.Add(tx)
-	require.NoError(t, err)
-
-	txs := nodes[1].pool.Gather(ctx, pool.Config{Min: 1})
-
-	ts := txs[0].(pool.TransactionStats)
-	require.False(t, ts.IsRotten(1*time.Second))
-	time.Sleep(1 * time.Second)
-	require.True(t, ts.IsRotten(1*time.Second))
-}
-*/
-
-/*
-func TestService_Scenario_CanResetTransactionStats(t *testing.T) {
-	nodes, ro, clean := makeAuthority(t, 4)
-	defer clean()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	err := nodes[1].service.Setup(ctx, ro)
-	require.NoError(t, err)
-
-	// Other nodes will detect a transaction but no block incoming => timeout
-	tx := makeTx(t, 0, nodes[1].signer)
-	err = nodes[1].pool.Add(tx)
-	require.NoError(t, err)
-
-	txs := nodes[1].pool.Gather(ctx, pool.Config{Min: 1})
-
-	ts := txs[0].(pool.TransactionStats)
-	require.False(t, ts.IsRotten(1*time.Second))
-	time.Sleep(1 * time.Second)
-	require.True(t, ts.IsRotten(1*time.Second))
-	ts.ResetStats()
-	require.False(t, ts.IsRotten(1*time.Second))
-}
-*/
 
 // Test that a block committed will be eventually finalized even if the
 // propagation failed.
