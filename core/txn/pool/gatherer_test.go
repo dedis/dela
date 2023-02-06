@@ -15,10 +15,10 @@ func TestSimpleGatherer_Len(t *testing.T) {
 	gatherer := NewSimpleGatherer().(*simpleGatherer)
 	require.Equal(t, 0, gatherer.Len())
 
-	gatherer.txs["Alice"] = transactions{fakeTx{}}
+	gatherer.txs["Alice"] = transactions{emptyTx()}
 	require.Equal(t, 1, gatherer.Len())
 
-	gatherer.txs["Bob"] = transactions{fakeTx{}, fakeTx{}}
+	gatherer.txs["Bob"] = transactions{emptyTx(), emptyTx()}
 	require.Equal(t, 3, gatherer.Len())
 }
 
@@ -139,10 +139,18 @@ type fakeTx struct {
 	identity access.Identity
 }
 
-func newTx(nonce uint64, identity string) fakeTx {
-	return fakeTx{
-		id:       nonce,
-		identity: fakeIdentity{text: identity},
+func emptyTx() transactionStats {
+	return transactionStats{
+		Transaction: fakeTx{},
+	}
+}
+
+func newTx(nonce uint64, identity string) transactionStats {
+	return transactionStats{
+		Transaction: fakeTx{
+			id:       nonce,
+			identity: fakeIdentity{text: identity},
+		},
 	}
 }
 

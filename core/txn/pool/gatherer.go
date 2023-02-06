@@ -1,68 +1,18 @@
 package pool
 
 import (
-	"bytes"
 	"context"
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/validation"
 	"golang.org/x/xerrors"
-	"sort"
 	"sync"
+	"time"
 )
 
 // DefaultIdentitySize is the default size defined for each identity to store
 // transactions.
 const DefaultIdentitySize = 100
-
-// Transactions is a sortable list of transactions.
-//
-// - implements sort.Interface
-type transactions []txn.Transaction
-
-// Len implements sort.Interface. It returns the length of the list.
-func (txs transactions) Len() int {
-	return len(txs)
-}
-
-// Less implements sort.Interface. It returns true if the nonce of the ith
-// transaction is smaller than the jth.
-func (txs transactions) Less(i, j int) bool {
-	return txs[i].GetNonce() < txs[j].GetNonce()
-}
-
-// Swap implements sort.Interface. It swaps the ith and the jth transactions.
-func (txs transactions) Swap(i, j int) {
-	txs[i], txs[j] = txs[j], txs[i]
-}
-
-// Add adds the transaction to the list if and only if the nonce is unique. The
-// resulting list will be sorted by nonce.
-func (txs transactions) Add(other txn.Transaction) transactions {
-	for _, tx := range txs {
-		if tx.GetNonce() == other.GetNonce() {
-			return txs
-		}
-	}
-
-	list := append(txs, other)
-	sort.Sort(list)
-
-	return list
-}
-
-// Remove removes the transaction from the list if it exists, while preserving
-// the order of the transactions.
-func (txs transactions) Remove(other txn.Transaction) transactions {
-	for i, tx := range txs {
-		if bytes.Equal(tx.GetID(), other.GetID()) {
-			txs = append(txs[:i], txs[i+1:]...)
-			break
-		}
-	}
-
-	return txs
-}
 
 // Gatherer is a common tool to the pool implementations that helps to implement
 // the gathering process.
@@ -86,6 +36,9 @@ type Gatherer interface {
 
 	// Close closes current operations and cleans the resources.
 	Close()
+
+	Stats() Stats
+	ResetStats()
 }
 
 type item struct {
@@ -158,7 +111,10 @@ func (g *simpleGatherer) Add(tx txn.Transaction) error {
 
 	g.Lock()
 
-	g.txs[key] = g.txs[key].Add(tx)
+	g.txs[key] = g.txs[key].Add(transactionStats{
+		tx,
+		time.Now(),
+	})
 
 	g.notify(g.calculateLength())
 
@@ -214,6 +170,35 @@ func (g *simpleGatherer) Wait(ctx context.Context, cfg Config) []txn.Transaction
 	}
 }
 
+func (g *simpleGatherer) Stats() Stats {
+	g.Lock()
+	defer g.Unlock()
+
+	txs := g.makeStatsArray()
+	stats := Stats{
+		TxCount:  len(txs),
+		OldestTx: time.Now(),
+	}
+
+	for _, tx := range txs {
+		if tx.insertionTime.Before(stats.OldestTx) {
+			stats.OldestTx = tx.insertionTime
+		}
+	}
+
+	return stats
+}
+
+func (g *simpleGatherer) ResetStats() {
+	g.Lock()
+	defer g.Unlock()
+
+	txs := g.makeStatsArray()
+	for _, tx := range txs {
+		tx.ResetStats()
+	}
+}
+
 // Close implements pool.Gatherer. It closes the operations and cleans the
 // resources.
 func (g *simpleGatherer) Close() {
@@ -254,10 +239,21 @@ func (g *simpleGatherer) calculateLength() int {
 	return num
 }
 
-func (g *simpleGatherer) makeArray() []txn.Transaction {
-	txs := make([]txn.Transaction, 0, g.calculateLength())
+func (g *simpleGatherer) makeStatsArray() []transactionStats {
+	txs := make([]transactionStats, 0, g.calculateLength())
 	for _, list := range g.txs {
 		txs = append(txs, list...)
+	}
+
+	return txs
+}
+
+func (g *simpleGatherer) makeArray() []txn.Transaction {
+	stxs := g.makeStatsArray()
+	txs := make([]txn.Transaction, 0, len(stxs))
+
+	for _, t := range stxs {
+		txs = append(txs, t.Transaction)
 	}
 
 	return txs

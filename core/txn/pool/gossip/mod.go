@@ -4,8 +4,6 @@ package gossip
 
 import (
 	"context"
-	"time"
-
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/core/txn"
@@ -24,25 +22,6 @@ type Pool struct {
 	actor    gossip.Actor
 	gatherer pool.Gatherer
 	closing  chan struct{}
-}
-
-// TransactionStats enhances a transaction with some statistics
-// to allow the detection of rotten transactions in a pool.
-type TransactionStats struct {
-	txn.Transaction
-	insertionTime time.Time
-}
-
-// IsRotten checks if a transaction has exceeded the given time in a pool
-func (t TransactionStats) IsRotten(duration time.Duration) bool {
-	txDuration := time.Since(t.insertionTime)
-	return txDuration > duration
-}
-
-// ResetStats resets the insertion time to now.
-// It is used when a leader view change is necessary.
-func (t *TransactionStats) ResetStats() {
-	t.insertionTime = time.Now()
 }
 
 // NewPool creates a new empty pool and starts to gossip incoming transaction.
@@ -85,12 +64,7 @@ func (p *Pool) Len() int {
 // Add implements pool.Pool. It adds the transaction to the pool and gossips it
 // to other participants.
 func (p *Pool) Add(tx txn.Transaction) error {
-	ts := TransactionStats{
-		Transaction:   tx,
-		insertionTime: time.Now(),
-	}
-
-	err := p.gatherer.Add(ts)
+	err := p.gatherer.Add(tx)
 	if err != nil {
 		return xerrors.Errorf("store failed: %v", err)
 	}
@@ -116,14 +90,15 @@ func (p *Pool) Remove(tx txn.Transaction) error {
 // Gather implements pool.Pool. It blocks until the pool has enough transactions
 // according to the configuration and then returns the transactions.
 func (p *Pool) Gather(ctx context.Context, cfg pool.Config) []txn.Transaction {
-	transactions := p.gatherer.Wait(ctx, cfg)
-	result := make([]txn.Transaction, len(transactions))
+	return p.gatherer.Wait(ctx, cfg)
+}
 
-	for i, t := range transactions {
-		result[i] = t.(TransactionStats)
-	}
+func (p *Pool) Stats() pool.Stats {
+	return p.gatherer.Stats()
+}
 
-	return result
+func (p *Pool) ResetStats() {
+	p.gatherer.ResetStats()
 }
 
 // Close stops the gossiper and terminate the routine that listens for rumors.
@@ -146,12 +121,7 @@ func (p *Pool) listenRumors(ch <-chan gossip.Rumor) {
 		case rumor := <-ch:
 			tx, ok := rumor.(txn.Transaction)
 			if ok {
-				ts := TransactionStats{
-					Transaction:   tx,
-					insertionTime: time.Now(),
-				}
-
-				err := p.gatherer.Add(ts)
+				err := p.gatherer.Add(tx)
 				if err != nil {
 					p.logger.Debug().Err(err).Msg("failed to add transaction")
 				}

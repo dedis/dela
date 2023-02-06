@@ -54,17 +54,15 @@ type Pool interface {
 	// configuration allows one to specify criterion before returning.
 	Gather(context.Context, Config) []txn.Transaction
 
+	Stats() Stats
+
+	ResetStats()
+
 	// Close closes the pool and cleans the resources.
 	Close() error
 }
 
-// Stats contains the statistics about a transactions
 type Stats struct {
-	Ts time.Time
-}
-
-// TransactionStats includes a transaction with its statistics
-type TransactionStats struct {
-	txn.Transaction
-	Stats Stats
+	OldestTx time.Time
+	TxCount  int
 }

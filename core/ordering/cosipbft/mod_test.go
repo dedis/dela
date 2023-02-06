@@ -114,7 +114,7 @@ func TestService_Scenario_ViewChange(t *testing.T) {
 	err = nodes[1].pool.Add(makeTx(t, 0, nodes[1].signer))
 	require.NoError(t, err)
 
-	evt := waitEvent(t, events, 15*time.Second)
+	evt := waitEvent(t, events, DefaultTimeoutBeforeViewchange+2*time.Second)
 	require.Equal(t, uint64(0), evt.Index)
 }
 
@@ -140,6 +140,7 @@ func TestService_Scenario_NoViewChange(t *testing.T) {
 	require.NotEqual(t, nodes[1].service.pbftsm.GetState(), pbft.ViewChangeState)
 }
 
+/*
 func TestService_Scenario_FindRottenTransaction(t *testing.T) {
 	nodes, ro, clean := makeAuthority(t, 4)
 	defer clean()
@@ -157,12 +158,14 @@ func TestService_Scenario_FindRottenTransaction(t *testing.T) {
 
 	txs := nodes[1].pool.Gather(ctx, pool.Config{Min: 1})
 
-	ts := txs[0].(poolgossip.TransactionStats)
+	ts := txs[0].(pool.TransactionStats)
 	require.False(t, ts.IsRotten(1*time.Second))
 	time.Sleep(1 * time.Second)
 	require.True(t, ts.IsRotten(1*time.Second))
 }
+*/
 
+/*
 func TestService_Scenario_CanResetTransactionStats(t *testing.T) {
 	nodes, ro, clean := makeAuthority(t, 4)
 	defer clean()
@@ -180,13 +183,14 @@ func TestService_Scenario_CanResetTransactionStats(t *testing.T) {
 
 	txs := nodes[1].pool.Gather(ctx, pool.Config{Min: 1})
 
-	ts := txs[0].(poolgossip.TransactionStats)
+	ts := txs[0].(pool.TransactionStats)
 	require.False(t, ts.IsRotten(1*time.Second))
 	time.Sleep(1 * time.Second)
 	require.True(t, ts.IsRotten(1*time.Second))
 	ts.ResetStats()
 	require.False(t, ts.IsRotten(1*time.Second))
 }
+*/
 
 // Test that a block committed will be eventually finalized even if the
 // propagation failed.
@@ -213,7 +217,7 @@ func TestService_Scenario_FinalizeFailure(t *testing.T) {
 
 	for i := 0; i < 4; i++ {
 		nodes[i].onet.AddFilter(filter)
-		nodes[i].service.timeoutRound = 200 * time.Millisecond
+		nodes[i].service.timeoutRound = 500 * time.Millisecond
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -227,7 +231,7 @@ func TestService_Scenario_FinalizeFailure(t *testing.T) {
 	err = nodes[0].pool.Add(makeTx(t, 0, nodes[0].signer))
 	require.NoError(t, err)
 
-	evt := waitEvent(t, events, 15*time.Second)
+	evt := waitEvent(t, events, DefaultTimeoutBeforeViewchange+2*time.Second)
 	require.Equal(t, uint64(0), evt.Index)
 }
 

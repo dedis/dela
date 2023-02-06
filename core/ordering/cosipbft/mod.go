@@ -534,15 +534,14 @@ func (s *Service) doFollowerRound(ctx context.Context, roster authority.Authorit
 
 		s.logger.Debug().Msg("round reached the timeout")
 
-		txs := s.pool.Gather(ctx, pool.Config{Min: 1})
-
-		if !s.roundHasFailed(txs) {
+		if !s.roundHasFailed() {
 			return nil
 		}
 
-		s.resetTransactionStats(txs) // avoid infinite view change
+		// round has failed, do a view change !
+		s.pool.ResetStats() // avoid infinite view change
 
-		view, err := s.pbftsm.Expire(s.me) // do a viewChange
+		view, err := s.pbftsm.Expire(s.me) // start the viewChange
 		if err != nil {
 			return xerrors.Errorf("pbft expire failed: %v", err)
 		}
@@ -591,28 +590,13 @@ func (s *Service) doFollowerRound(ctx context.Context, roster authority.Authorit
 	}
 }
 
-func (s *Service) roundHasFailed(txs []txn.Transaction) bool {
-	// find out if some transaction processing have timed out
-	for _, t := range txs {
-		ts, ok := t.(txn.TransactionStats)
-		if !ok || ts.IsRotten(s.timeoutViewchange) {
-			s.logger.Warn().Msg("found a rotten transaction")
-			s.failedRound = true
-			break
-		}
+func (s *Service) roundHasFailed() bool {
+	stats := s.pool.Stats()
+	if time.Since(stats.OldestTx) > s.timeoutViewchange {
+		s.logger.Warn().Msg("found a rotten transaction")
+		s.failedRound = true
 	}
-
 	return s.failedRound
-}
-
-func (s *Service) resetTransactionStats(txs []txn.Transaction) {
-	for _, t := range txs {
-		ts, ok := t.(txn.TransactionStats)
-		if ok {
-			s.logger.Debug().Msg("reset transaction time")
-			ts.ResetStats()
-		}
-	}
 }
 
 func (s *Service) doPBFT(ctx context.Context) error {
