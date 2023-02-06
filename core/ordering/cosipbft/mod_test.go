@@ -209,7 +209,6 @@ func TestService_Scenario_FinalizeFailure(t *testing.T) {
 
 	for i := 0; i < 4; i++ {
 		nodes[i].onet.AddFilter(filter)
-		nodes[i].service.timeoutRound = 500 * time.Millisecond
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -223,7 +222,7 @@ func TestService_Scenario_FinalizeFailure(t *testing.T) {
 	err = nodes[0].pool.Add(makeTx(t, 0, nodes[0].signer))
 	require.NoError(t, err)
 
-	evt := waitEvent(t, events, DefaultTimeoutBeforeViewchange+5*time.Second)
+	evt := waitEvent(t, events, 2*DefaultTimeoutBeforeViewchange)
 	require.Equal(t, uint64(0), evt.Index)
 }
 

@@ -65,11 +65,11 @@ const (
 
 	// DefaultRoundTimeoutAfterFailure is the maximum time the service waits for an
 	// event to happen after a view change.
-	DefaultRoundTimeoutAfterFailure = 10 * time.Second
+	DefaultRoundTimeoutAfterFailure = 3 * time.Second
 
 	// DefaultTimeoutBeforeViewchange is the maximum time spent decided before a
 	// view change is executed.
-	DefaultTimeoutBeforeViewchange = 15 * time.Second
+	DefaultTimeoutBeforeViewchange = 10 * time.Second
 
 	// RoundWait is the constant value of the exponential backoff use between
 	// round failures.
