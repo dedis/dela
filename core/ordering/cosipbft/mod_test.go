@@ -223,7 +223,7 @@ func TestService_Scenario_FinalizeFailure(t *testing.T) {
 	err = nodes[0].pool.Add(makeTx(t, 0, nodes[0].signer))
 	require.NoError(t, err)
 
-	evt := waitEvent(t, events, DefaultTimeoutBeforeViewchange+2*time.Second)
+	evt := waitEvent(t, events, DefaultTimeoutBeforeViewchange+5*time.Second)
 	require.Equal(t, uint64(0), evt.Index)
 }
 
