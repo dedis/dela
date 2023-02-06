@@ -16,13 +16,11 @@
 //	    0 /      \ 1    0 /     \ 1
 //	     /        \      /       \
 //	DiskNode  Interior  Empty    Interior
-//	           /   \              /    \
-//
-// -------------------------------------------------------------- Memory Depth
-//
-//	   0 /       \ 1      0 /        \ 1
-//	    /         \        /          \
-//	DiskNode  DiskNode  DiskNode   DiskNode
+//	             /   \              /    \
+//	 - - - - - -/- - -\- - - - - - / - - -\- - - - - - - - - - - Memory Depth
+//	         0 /       \ 1      0 /        \ 1
+//	          /         \        /          \
+//	       DiskNode  DiskNode  DiskNode   DiskNode
 //
 // The drawing above demonstrates an example of a tree. Here the memory depth is
 // set at 3 which means that every node after this level will be a disk node. It
