@@ -12,6 +12,9 @@ func TestStats_Reset(t *testing.T) {
 	}
 
 	now := time.Now()
+	require.False(t, stats.insertionTime.After(now))
+
 	stats.ResetStats()
+	time.Sleep(10 * time.Millisecond)
 	require.True(t, stats.insertionTime.After(now))
 }
