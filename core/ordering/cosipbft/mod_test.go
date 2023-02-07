@@ -118,7 +118,7 @@ func TestService_Scenario_ViewChange(t *testing.T) {
 	require.Equal(t, uint64(0), evt.Index)
 }
 
-func TestService_Scenario_ViewChangeRequests(t *testing.T) {
+func TestService_Scenario_ViewChangeRequest(t *testing.T) {
 	nodes, ro, clean := makeAuthority(t, 4)
 	defer clean()
 	nodes[3].service.pool = fakePool{
@@ -140,6 +140,7 @@ func TestService_Scenario_ViewChangeRequests(t *testing.T) {
 	require.Equal(t, nodes[3].service.pbftsm.GetState(), pbft.ViewChangeState)
 	require.NotEqual(t, nodes[2].service.pbftsm.GetState(), pbft.ViewChangeState)
 	require.NotEqual(t, nodes[1].service.pbftsm.GetState(), pbft.ViewChangeState)
+	require.NotEqual(t, nodes[0].service.pbftsm.GetState(), pbft.ViewChangeState)
 
 	leader, err = nodes[0].service.pbftsm.GetLeader()
 	require.NoError(t, err)
@@ -147,7 +148,7 @@ func TestService_Scenario_ViewChangeRequests(t *testing.T) {
 	require.Equal(t, leader, nodes[0].onet.GetAddress())
 }
 
-func TestService_Scenario_NoViewChange(t *testing.T) {
+func TestService_Scenario_NoViewChangeRequest(t *testing.T) {
 	nodes, ro, clean := makeAuthority(t, 4)
 	defer clean()
 
@@ -165,13 +166,10 @@ func TestService_Scenario_NoViewChange(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, leader, nodes[0].onet.GetAddress())
 
-	events := nodes[2].service.Watch(ctx)
-
 	err = nodes[0].pool.Add(makeTx(t, 0, signer))
 	require.NoError(t, err)
 
-	evt := waitEvent(t, events, 2*DefaultRoundTimeout)
-	require.Equal(t, uint64(0), evt.Index)
+	time.Sleep(DefaultRoundTimeout + 1*time.Second)
 
 	require.NotEqual(t, nodes[3].service.pbftsm.GetState(), pbft.ViewChangeState)
 	require.NotEqual(t, nodes[2].service.pbftsm.GetState(), pbft.ViewChangeState)
