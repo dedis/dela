@@ -69,10 +69,12 @@ func (p *Pool) Close() error {
 	return nil
 }
 
+// Stats implements pool.Pool. It gets the transaction statistics.
 func (p *Pool) Stats() pool.Stats {
 	return p.gatherer.Stats()
 }
 
+// ResetStats implements pool.Pool. It resets the transaction statistics.
 func (p *Pool) ResetStats() {
 	p.gatherer.ResetStats()
 }

@@ -34,7 +34,10 @@ type Gatherer interface {
 	// Close closes current operations and cleans the resources.
 	Close()
 
+	// Stats gets the transaction statistics.
 	Stats() Stats
+
+	// ResetStats resets the transaction statistics.
 	ResetStats()
 }
 
@@ -158,6 +161,7 @@ func (g *simpleGatherer) Wait(ctx context.Context, cfg Config) []txn.Transaction
 	}
 }
 
+// Stats implements pool.Gatherer. It gets the transaction statistics.
 func (g *simpleGatherer) Stats() Stats {
 	g.Lock()
 	defer g.Unlock()
@@ -177,6 +181,7 @@ func (g *simpleGatherer) Stats() Stats {
 	return stats
 }
 
+// ResetStats implements pool.Gatherer. It resets the transactions statistics.
 func (g *simpleGatherer) ResetStats() {
 	g.Lock()
 	defer g.Unlock()

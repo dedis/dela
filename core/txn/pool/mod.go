@@ -54,7 +54,7 @@ type Pool interface {
 	// Stats gets the transactions statistics
 	Stats() Stats
 
-	// ResetStats resets the transactions statistics
+	// ResetStats resets the transaction statistics.
 	ResetStats()
 
 	// Close closes the pool and cleans the resources.
