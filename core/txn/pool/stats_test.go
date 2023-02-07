@@ -11,11 +11,9 @@ func TestStats_Reset(t *testing.T) {
 		insertionTime: time.Now().Add(-time.Hour),
 	}
 
-	now := time.Now()
-	require.False(t, stats.insertionTime.After(now))
-
+	isRotten := time.Since(stats.insertionTime) > time.Minute
+	require.True(t, isRotten)
 	stats.ResetStats()
-	time.Sleep(1 * time.Second)
-	isAfter := stats.insertionTime.After(now)
-	require.True(t, isAfter)
+	isRotten = time.Since(stats.insertionTime) > time.Minute
+	require.False(t, isRotten)
 }
