@@ -71,7 +71,7 @@ const (
 
 	// DefaultTransactionTimeout is the maximum allowed age of transactions
 	// before a view change is executed.
-	DefaultTransactionTimeout = 5 * time.Second
+	DefaultTransactionTimeout = 10 * time.Second
 
 	// RoundWait is the constant value of the exponential backoff use between
 	// round failures.
@@ -491,11 +491,11 @@ func (s *Service) doRound(ctx context.Context) error {
 	}
 
 	if s.me.Equal(leader) {
-		s.logger.Debug().Msgf("Starting a leader round with a %f seconds timeout", timeout.Seconds())
+		s.logger.Debug().Msgf("Starting a leader round with a %.1f seconds timeout", timeout.Seconds())
 		return s.doLeaderRound(ctx, roster, timeout)
 	}
 
-	s.logger.Debug().Msgf("Starting a follower round with a %f seconds timeout", timeout.Seconds())
+	s.logger.Debug().Msgf("Starting a follower round with a %.1f seconds timeout", timeout.Seconds())
 	return s.doFollowerRound(ctx, roster)
 }
 
