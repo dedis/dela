@@ -59,17 +59,19 @@ import (
 )
 
 const (
-	// DefaultRoundTimeout is the maximum time the service waits for an event to
-	// happen.
+	// DefaultRoundTimeout is the maximum round time the service waits
+	// for an event to happen.
 	DefaultRoundTimeout = 1 * time.Second
 
-	// DefaultRoundTimeoutAfterFailure is the maximum time the service waits for an
-	// event to happen after a view change.
-	DefaultRoundTimeoutAfterFailure = 3 * time.Second
+	// DefaultFailedRoundTimeout is the maximum round time the service waits
+	// for an event to happen, after a round has failed, thus letting time
+	// for a view change to establish a new leader.
+	// DefaultFailedRoundTimeout is generally bigger than DefaultRoundTimeout
+	DefaultFailedRoundTimeout = 2 * time.Second
 
-	// DefaultTimeoutBeforeViewchange is the maximum time spent decided before a
-	// view change is executed.
-	DefaultTimeoutBeforeViewchange = 10 * time.Second
+	// DefaultTransactionTimeout is the maximum allowed age of transactions
+	// before a view change is executed.
+	DefaultTransactionTimeout = 5 * time.Second
 
 	// RoundWait is the constant value of the exponential backoff use between
 	// round failures.
@@ -104,7 +106,7 @@ type Service struct {
 
 	timeoutRound             time.Duration
 	timeoutRoundAfterFailure time.Duration
-	timeoutViewchange        time.Duration
+	transactionTimeout       time.Duration
 
 	events      chan ordering.Event
 	closing     chan struct{}
@@ -232,8 +234,8 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 		val:                      param.Validation,
 		verifierFac:              param.Cosi.GetVerifierFactory(),
 		timeoutRound:             DefaultRoundTimeout,
-		timeoutRoundAfterFailure: DefaultRoundTimeoutAfterFailure,
-		timeoutViewchange:        DefaultTimeoutBeforeViewchange,
+		timeoutRoundAfterFailure: DefaultFailedRoundTimeout,
+		transactionTimeout:       DefaultTransactionTimeout,
 		events:                   make(chan ordering.Event, 1),
 		closing:                  make(chan struct{}),
 		closed:                   make(chan struct{}),
@@ -420,6 +422,7 @@ func (s *Service) main() error {
 		// A genesis block has been set, the node will then follow the chain
 		// related to it.
 		s.logger.Info().Msg("node has started following the chain")
+
 	case <-s.closing:
 		return nil
 	}
@@ -443,6 +446,7 @@ func (s *Service) main() error {
 		select {
 		case <-s.closing:
 			return nil
+
 		default:
 			ctx, cancel := context.WithCancel(context.Background())
 
@@ -487,11 +491,11 @@ func (s *Service) doRound(ctx context.Context) error {
 	}
 
 	if s.me.Equal(leader) {
-		s.logger.Info().Msgf("doLeaderRound with timeout %f", float32(timeout)/1000000000)
+		s.logger.Debug().Msgf("Starting a leader round with a %f seconds timeout", timeout.Seconds())
 		return s.doLeaderRound(ctx, roster, timeout)
 	}
 
-	s.logger.Info().Msgf("doFollowerRound with timeout %f", float32(timeout)/1000000000)
+	s.logger.Debug().Msgf("Starting a follower round with a %f seconds timeout", timeout.Seconds())
 	return s.doFollowerRound(ctx, roster)
 }
 
@@ -571,6 +575,7 @@ func (s *Service) doFollowerRound(ctx context.Context, roster authority.Authorit
 		s.logger.Info().Msgf("view change for %d", viewMsg.GetLeader())
 
 		return nil
+
 	case <-s.events:
 		// As a child, a block has been committed thus the previous view
 		// change succeeded.
@@ -578,6 +583,7 @@ func (s *Service) doFollowerRound(ctx context.Context, roster authority.Authorit
 
 		// A block has been created meaning that the round is over.
 		return nil
+
 	case <-s.closing:
 		return nil
 	}
@@ -592,7 +598,7 @@ func (s *Service) roundHasFailed() bool {
 		return false
 	}
 
-	if time.Since(stats.OldestTx) > s.timeoutViewchange {
+	if time.Since(stats.OldestTx) > s.transactionTimeout {
 		s.logger.Warn().Msg("found a rotten transaction")
 		s.failedRound = true
 	}

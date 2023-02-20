@@ -114,7 +114,7 @@ func TestService_Scenario_ViewChange(t *testing.T) {
 	err = nodes[1].pool.Add(makeTx(t, 0, nodes[1].signer))
 	require.NoError(t, err)
 
-	evt := waitEvent(t, events, DefaultTimeoutBeforeViewchange+2*time.Second)
+	evt := waitEvent(t, events, DefaultTransactionTimeout+2*time.Second)
 	require.Equal(t, uint64(0), evt.Index)
 }
 
@@ -135,7 +135,8 @@ func TestService_Scenario_ViewChangeRequest(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, leader, nodes[0].onet.GetAddress())
 
-	time.Sleep(DefaultRoundTimeout + 1*time.Second)
+	// let enough time for a round to run
+	time.Sleep(DefaultRoundTimeout + 100*time.Millisecond)
 
 	require.Equal(t, nodes[3].service.pbftsm.GetState(), pbft.ViewChangeState)
 	require.NotEqual(t, nodes[2].service.pbftsm.GetState(), pbft.ViewChangeState)
@@ -169,7 +170,8 @@ func TestService_Scenario_NoViewChangeRequest(t *testing.T) {
 	err = nodes[0].pool.Add(makeTx(t, 0, signer))
 	require.NoError(t, err)
 
-	time.Sleep(DefaultRoundTimeout + 1*time.Second)
+	// let enough time for a round to run
+	time.Sleep(DefaultRoundTimeout + 100*time.Millisecond)
 
 	require.NotEqual(t, nodes[3].service.pbftsm.GetState(), pbft.ViewChangeState)
 	require.NotEqual(t, nodes[2].service.pbftsm.GetState(), pbft.ViewChangeState)
@@ -220,7 +222,7 @@ func TestService_Scenario_FinalizeFailure(t *testing.T) {
 	err = nodes[0].pool.Add(makeTx(t, 0, nodes[0].signer))
 	require.NoError(t, err)
 
-	evt := waitEvent(t, events, 2*DefaultTimeoutBeforeViewchange)
+	evt := waitEvent(t, events, DefaultTransactionTimeout+2*time.Second)
 	require.Equal(t, uint64(0), evt.Index)
 }
 
@@ -592,7 +594,7 @@ func TestService_FailPBFT_DoRound(t *testing.T) {
 		processor:                newProcessor(),
 		me:                       fake.NewAddress(0),
 		timeoutRound:             DefaultRoundTimeout,
-		timeoutRoundAfterFailure: DefaultRoundTimeoutAfterFailure,
+		timeoutRoundAfterFailure: DefaultFailedRoundTimeout,
 		val:                      fakeValidation{err: fake.GetError()},
 	}
 

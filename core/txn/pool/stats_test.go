@@ -1,9 +1,10 @@
 package pool
 
 import (
-	"github.com/stretchr/testify/require"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestStats_Reset(t *testing.T) {

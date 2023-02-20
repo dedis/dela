@@ -2,6 +2,7 @@ package mem
 
 import (
 	"context"
+
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/pool"
 	"go.dedis.ch/dela/mino"

@@ -9,6 +9,9 @@ package signed
 
 import (
 	"encoding/binary"
+	"io"
+	"sort"
+
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/txn"
@@ -17,8 +20,6 @@ import (
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/registry"
 	"golang.org/x/xerrors"
-	"io"
-	"sort"
 )
 
 var txFormats = registry.NewSimpleRegistry()

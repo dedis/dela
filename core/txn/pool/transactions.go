@@ -2,8 +2,9 @@ package pool
 
 import (
 	"bytes"
-	"go.dedis.ch/dela/core/txn"
 	"sort"
+
+	"go.dedis.ch/dela/core/txn"
 )
 
 // Transactions is a sortable list of transactions.

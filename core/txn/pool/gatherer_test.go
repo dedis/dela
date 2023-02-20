@@ -2,13 +2,14 @@ package pool
 
 import (
 	"context"
+	"sync"
+	"testing"
+
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/internal/testing/fake"
-	"sync"
-	"testing"
 )
 
 func TestSimpleGatherer_Len(t *testing.T) {

@@ -4,6 +4,7 @@ package gossip
 
 import (
 	"context"
+
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/core/txn"

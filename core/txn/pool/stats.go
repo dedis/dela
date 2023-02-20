@@ -1,8 +1,9 @@
 package pool
 
 import (
-	"go.dedis.ch/dela/core/txn"
 	"time"
+
+	"go.dedis.ch/dela/core/txn"
 )
 
 // transactionStats enhances a transaction with some statistics
@@ -13,7 +14,7 @@ type transactionStats struct {
 }
 
 // ResetStats resets the insertion time to now.
-// It is used when a leader view change is necessary.
+// It is used when a leader view change is initiated.
 func (t *transactionStats) ResetStats() {
 	t.insertionTime = time.Now()
 }
