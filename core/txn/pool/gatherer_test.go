@@ -14,13 +14,13 @@ import (
 
 func TestSimpleGatherer_Len(t *testing.T) {
 	gatherer := NewSimpleGatherer().(*simpleGatherer)
-	require.Equal(t, 0, gatherer.Len())
+	require.Equal(t, 0, gatherer.Stats().TxCount)
 
-	gatherer.txs["Alice"] = transactions{fakeTx{}}
-	require.Equal(t, 1, gatherer.Len())
+	gatherer.txs["Alice"] = transactions{emptyTx()}
+	require.Equal(t, 1, gatherer.Stats().TxCount)
 
-	gatherer.txs["Bob"] = transactions{fakeTx{}, fakeTx{}}
-	require.Equal(t, 3, gatherer.Len())
+	gatherer.txs["Bob"] = transactions{emptyTx(), emptyTx()}
+	require.Equal(t, 3, gatherer.Stats().TxCount)
 }
 
 func TestSimpleGatherer_Add(t *testing.T) {
@@ -33,7 +33,7 @@ func TestSimpleGatherer_Add(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	require.Equal(t, DefaultIdentitySize, gatherer.Len())
+	require.Equal(t, DefaultIdentitySize, gatherer.Stats().TxCount)
 
 	err := gatherer.Add(newTx(DefaultIdentitySize-1, "Alice"))
 	require.NoError(t, err)
@@ -136,15 +136,22 @@ func TestSimpleGatherer_Close(t *testing.T) {
 
 type fakeTx struct {
 	txn.Transaction
-
 	id       uint64
 	identity access.Identity
 }
 
-func newTx(nonce uint64, identity string) fakeTx {
-	return fakeTx{
-		id:       nonce,
-		identity: fakeIdentity{text: identity},
+func emptyTx() transactionStats {
+	return transactionStats{
+		Transaction: fakeTx{},
+	}
+}
+
+func newTx(nonce uint64, identity string) transactionStats {
+	return transactionStats{
+		Transaction: fakeTx{
+			id:       nonce,
+			identity: fakeIdentity{text: identity},
+		},
 	}
 }
 

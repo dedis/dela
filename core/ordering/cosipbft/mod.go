@@ -59,9 +59,19 @@ import (
 )
 
 const (
-	// RoundTimeout is the maximum of time the service waits for an event to
-	// happen.
-	RoundTimeout = 10 * time.Second
+	// DefaultRoundTimeout is the maximum round time the service waits
+	// for an event to happen.
+	DefaultRoundTimeout = 1 * time.Second
+
+	// DefaultFailedRoundTimeout is the maximum round time the service waits
+	// for an event to happen, after a round has failed, thus letting time
+	// for a view change to establish a new leader.
+	// DefaultFailedRoundTimeout is generally bigger than DefaultRoundTimeout
+	DefaultFailedRoundTimeout = 2 * time.Second
+
+	// DefaultTransactionTimeout is the maximum allowed age of transactions
+	// before a view change is executed.
+	DefaultTransactionTimeout = 10 * time.Second
 
 	// RoundWait is the constant value of the exponential backoff use between
 	// round failures.
@@ -96,7 +106,7 @@ type Service struct {
 
 	timeoutRound             time.Duration
 	timeoutRoundAfterFailure time.Duration
-	timeoutViewchange        time.Duration
+	transactionTimeout       time.Duration
 
 	events      chan ordering.Event
 	closing     chan struct{}
@@ -197,9 +207,9 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 		VerifierFactory: param.Cosi.GetVerifierFactory(),
 	}
 
-	blocksync := blocksync.NewSynchronizer(syncparam)
+	bs := blocksync.NewSynchronizer(syncparam)
 
-	proc.sync = blocksync
+	proc.sync = bs
 
 	fac := types.NewMessageFactory(
 		types.NewGenesisFactory(proc.rosterFac),
@@ -223,9 +233,9 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 		actor:                    actor,
 		val:                      param.Validation,
 		verifierFac:              param.Cosi.GetVerifierFactory(),
-		timeoutRound:             RoundTimeout,
-		timeoutRoundAfterFailure: RoundTimeout,
-		timeoutViewchange:        RoundTimeout,
+		timeoutRound:             DefaultRoundTimeout,
+		timeoutRoundAfterFailure: DefaultFailedRoundTimeout,
+		transactionTimeout:       DefaultTransactionTimeout,
 		events:                   make(chan ordering.Event, 1),
 		closing:                  make(chan struct{}),
 		closed:                   make(chan struct{}),
@@ -356,7 +366,10 @@ func (s *Service) watchBlocks() {
 	for link := range linkCh {
 		// 1. Remove the transactions from the pool to avoid duplicates.
 		for _, res := range link.GetBlock().GetData().GetTransactionResults() {
-			s.pool.Remove(res.GetTransaction())
+			err := s.pool.Remove(res.GetTransaction())
+			if err != nil {
+				s.logger.Err(err).Msg("removing transaction")
+			}
 		}
 
 		// 2. Update the current membership.
@@ -409,6 +422,7 @@ func (s *Service) main() error {
 		// A genesis block has been set, the node will then follow the chain
 		// related to it.
 		s.logger.Info().Msg("node has started following the chain")
+
 	case <-s.closing:
 		return nil
 	}
@@ -432,6 +446,7 @@ func (s *Service) main() error {
 		select {
 		case <-s.closing:
 			return nil
+
 		default:
 			ctx, cancel := context.WithCancel(context.Background())
 
@@ -465,85 +480,26 @@ func (s *Service) doRound(ctx context.Context) error {
 		return xerrors.Errorf("reading roster: %v", err)
 	}
 
-	leader, err := s.pbftsm.GetLeader()
-	if err != nil {
-		return xerrors.Errorf("reading leader: %v", err)
-	}
-
 	timeout := s.timeoutRound
 	if s.failedRound {
 		timeout = s.timeoutRoundAfterFailure
 	}
 
-	for !s.me.Equal(leader) {
-		// Only enters the loop if the node is not the leader. It has to wait
-		// for the new block, or the round timeout, to proceed.
-
-		select {
-		case <-time.After(timeout):
-			if s.pool.Len() == 0 {
-				// When the pool of transactions is empty, the round is aborted
-				// and everything restart.
-				return nil
-			}
-
-			s.logger.Warn().Msg("round reached the timeout")
-
-			// Mark that the view change happened during this round.
-			s.failedRound = true
-
-			ctx, cancel := context.WithTimeout(ctx, s.timeoutViewchange)
-
-			view, err := s.pbftsm.Expire(s.me)
-			if err != nil {
-				cancel()
-				return xerrors.Errorf("pbft expire failed: %v", err)
-			}
-
-			viewMsg := types.NewViewMessage(view.GetID(), view.GetLeader(), view.GetSignature())
-
-			resps, err := s.rpc.Call(ctx, viewMsg, roster)
-			if err != nil {
-				cancel()
-				return xerrors.Errorf("rpc failed to send views: %v", err)
-			}
-
-			for resp := range resps {
-				_, err = resp.GetMessageOrError()
-				if err != nil {
-					s.logger.Warn().Err(err).Str("to", resp.GetFrom().String()).Msg("view propagation failure")
-				}
-			}
-
-			statesCh := s.pbftsm.Watch(ctx)
-
-			state := s.pbftsm.GetState()
-			var more bool
-
-			for state == pbft.ViewChangeState {
-				state, more = <-statesCh
-				if !more {
-					cancel()
-					return xerrors.New("viewchange failed")
-				}
-			}
-
-			s.logger.Debug().Msgf("view change successful for %d", viewMsg.GetLeader())
-
-			cancel()
-			return nil
-		case <-s.events:
-			// As a child, a block has been committed thus the previous view
-			// change succeeded.
-			s.failedRound = false
-
-			// A block has been created meaning that the round is over.
-			return nil
-		case <-s.closing:
-			return nil
-		}
+	leader, err := s.pbftsm.GetLeader()
+	if err != nil {
+		return xerrors.Errorf("reading leader: %v", err)
 	}
 
+	if s.me.Equal(leader) {
+		s.logger.Debug().Msgf("Starting a leader round with a %.1f seconds timeout", timeout.Seconds())
+		return s.doLeaderRound(ctx, roster, timeout)
+	}
+
+	s.logger.Debug().Msgf("Starting a follower round with a %.1f seconds timeout", timeout.Seconds())
+	return s.doFollowerRound(ctx, roster)
+}
+
+func (s *Service) doLeaderRound(ctx context.Context, roster authority.Authority, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -551,7 +507,7 @@ func (s *Service) doRound(ctx context.Context) error {
 
 	// Send a synchronization to the roster so that they can learn about the
 	// latest block of the chain.
-	err = s.sync.Sync(ctx, roster, blocksync.Config{MinHard: threshold.ByzantineThreshold(roster.Len())})
+	err := s.sync.Sync(ctx, roster, blocksync.Config{MinHard: threshold.ByzantineThreshold(roster.Len())})
 	if err != nil {
 		return xerrors.Errorf("sync failed: %v", err)
 	}
@@ -568,6 +524,86 @@ func (s *Service) doRound(ctx context.Context) error {
 	s.failedRound = false
 
 	return nil
+}
+
+func (s *Service) doFollowerRound(ctx context.Context, roster authority.Authority) error {
+	// A follower has to wait for the new block, or the round timeout, to proceed.
+	select {
+	case <-time.After(s.timeoutRound):
+		if !s.roundHasFailed() {
+			return nil
+		}
+
+		s.logger.Info().Msg("round has failed, do a view change !")
+
+		s.pool.ResetStats() // avoid infinite view change
+
+		view, err := s.pbftsm.Expire(s.me) // start the viewChange
+		if err != nil {
+			return xerrors.Errorf("pbft expire failed: %v", err)
+		}
+
+		viewMsg := types.NewViewMessage(view.GetID(), view.GetLeader(), view.GetSignature())
+
+		ctx, cancel := context.WithTimeout(ctx, s.timeoutRound)
+		defer cancel()
+
+		resps, err := s.rpc.Call(ctx, viewMsg, roster)
+		if err != nil {
+			return xerrors.Errorf("rpc failed to send views: %v", err)
+		}
+
+		for resp := range resps {
+			_, err = resp.GetMessageOrError()
+			if err != nil {
+				s.logger.Warn().Err(err).Str("to", resp.GetFrom().String()).Msg("view propagation failure")
+			}
+		}
+
+		statesCh := s.pbftsm.Watch(ctx)
+
+		state := s.pbftsm.GetState()
+		var more bool
+
+		for state == pbft.ViewChangeState {
+			state, more = <-statesCh
+			if !more {
+				return xerrors.New("view change failed")
+			}
+		}
+
+		s.logger.Info().Msgf("view change for %d", viewMsg.GetLeader())
+
+		return nil
+
+	case <-s.events:
+		// As a child, a block has been committed thus the previous view
+		// change succeeded.
+		s.failedRound = false
+
+		// A block has been created meaning that the round is over.
+		return nil
+
+	case <-s.closing:
+		return nil
+	}
+}
+
+func (s *Service) roundHasFailed() bool {
+	stats := s.pool.Stats()
+
+	if stats.TxCount == 0 {
+		// When the pool of transactions is empty, the round is aborted
+		// and everything restart.
+		return false
+	}
+
+	if time.Since(stats.OldestTx) > s.transactionTimeout {
+		s.logger.Warn().Msg("found a rotten transaction")
+		s.failedRound = true
+	}
+
+	return s.failedRound
 }
 
 func (s *Service) doPBFT(ctx context.Context) error {
@@ -750,9 +786,9 @@ type poolFilter struct {
 // Accept implements pool.Filter. It returns an error if the transaction exists
 // already or the nonce is invalid.
 func (f poolFilter) Accept(tx txn.Transaction, leeway validation.Leeway) error {
-	store := f.tree.Get()
+	s := f.tree.Get()
 
-	err := f.srvc.Accept(store, tx, leeway)
+	err := f.srvc.Accept(s, tx, leeway)
 	if err != nil {
 		return xerrors.Errorf("unacceptable transaction: %v", err)
 	}

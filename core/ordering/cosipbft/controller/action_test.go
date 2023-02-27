@@ -94,7 +94,7 @@ func TestRosterAddAction_Execute(t *testing.T) {
 
 	var p pool.Pool
 	require.NoError(t, ctx.Injector.Resolve(&p))
-	require.Equal(t, 1, p.Len())
+	require.Equal(t, 1, p.Stats().TxCount)
 
 	ctx.Injector = node.NewInjector()
 	err = action.Execute(ctx)

@@ -5,7 +5,6 @@
 // of an existing transaction.
 //
 // Documentation Last Review: 08.10.2020
-//
 package signed
 
 import (

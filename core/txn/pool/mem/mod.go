@@ -24,21 +24,15 @@ func NewPool() *Pool {
 	}
 }
 
-// Len implements pool.Pool. It returns the number of transactions available in
-// the pool.
-func (s *Pool) Len() int {
-	return s.gatherer.Len()
-}
-
 // AddFilter implements pool.Pool. It adds the filter to the gatherer.
-func (s *Pool) AddFilter(filter pool.Filter) {
-	s.gatherer.AddFilter(filter)
+func (p *Pool) AddFilter(filter pool.Filter) {
+	p.gatherer.AddFilter(filter)
 }
 
 // Add implements pool.Pool. It adds the transaction to the pool of waiting
 // transactions.
-func (s *Pool) Add(tx txn.Transaction) error {
-	err := s.gatherer.Add(tx)
+func (p *Pool) Add(tx txn.Transaction) error {
+	err := p.gatherer.Add(tx)
 	if err != nil {
 		return xerrors.Errorf("store failed: %v", err)
 	}
@@ -48,8 +42,8 @@ func (s *Pool) Add(tx txn.Transaction) error {
 
 // Remove implements pool.Pool. It removes the transaction from the pool if it
 // exists, otherwise it returns an error.
-func (s *Pool) Remove(tx txn.Transaction) error {
-	err := s.gatherer.Remove(tx)
+func (p *Pool) Remove(tx txn.Transaction) error {
+	err := p.gatherer.Remove(tx)
 	if err != nil {
 		return xerrors.Errorf("store failed: %v", err)
 	}
@@ -59,19 +53,29 @@ func (s *Pool) Remove(tx txn.Transaction) error {
 
 // SetPlayers implements pool.Pool. It does nothing as the pool is in-memory and
 // only shares the transactions to the host.
-func (s *Pool) SetPlayers(mino.Players) error {
+func (p *Pool) SetPlayers(mino.Players) error {
 	return nil
 }
 
 // Gather implements pool.Pool. It gathers the transactions of the pool and
 // return them.
-func (s *Pool) Gather(ctx context.Context, cfg pool.Config) []txn.Transaction {
-	return s.gatherer.Wait(ctx, cfg)
+func (p *Pool) Gather(ctx context.Context, cfg pool.Config) []txn.Transaction {
+	return p.gatherer.Wait(ctx, cfg)
 }
 
 // Close implements pool.Pool. It cleans the resources of the gatherer.
-func (s *Pool) Close() error {
-	s.gatherer.Close()
+func (p *Pool) Close() error {
+	p.gatherer.Close()
 
 	return nil
+}
+
+// Stats implements pool.Pool. It gets the transaction statistics.
+func (p *Pool) Stats() pool.Stats {
+	return p.gatherer.Stats()
+}
+
+// ResetStats implements pool.Pool. It resets the transaction statistics.
+func (p *Pool) ResetStats() {
+	p.gatherer.ResetStats()
 }

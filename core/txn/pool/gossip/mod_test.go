@@ -22,28 +22,28 @@ import (
 func TestPool_Basic(t *testing.T) {
 	_, pools := makeRoster(t, 10)
 	defer func() {
-		for _, pool := range pools {
-			require.NoError(t, pool.Close())
+		for _, p := range pools {
+			require.NoError(t, p.Close())
 		}
 	}()
 
 	go func() {
 		for i := 0; i < 50; i++ {
-			err := pools[0].Add(makeTx(uint64(i)))
+			err := pools[0].Add(makeFakeTx(uint64(i)))
 			require.NoError(t, err)
 		}
 	}()
 
 	go func() {
 		for i := 0; i < 50; i++ {
-			err := pools[2].Add(makeTx(uint64(i + 50)))
+			err := pools[2].Add(makeFakeTx(uint64(i + 50)))
 			require.NoError(t, err)
 		}
 	}()
 
 	go func() {
 		for i := 0; i < 50; i++ {
-			err := pools[7].Add(makeTx(uint64(i + 100)))
+			err := pools[7].Add(makeFakeTx(uint64(i + 100)))
 			require.NoError(t, err)
 		}
 	}()
@@ -56,11 +56,11 @@ func TestPool_Basic(t *testing.T) {
 }
 
 func TestPool_New(t *testing.T) {
-	pool, err := NewPool(fakeGossiper{})
+	p, err := NewPool(fakeGossiper{})
 	require.NoError(t, err)
-	require.NotNil(t, pool)
+	require.NotNil(t, p)
 
-	err = pool.Close()
+	err = p.Close()
 	require.NoError(t, err)
 
 	_, err = NewPool(fakeGossiper{err: fake.GetError()})
@@ -72,10 +72,10 @@ func TestPool_Len(t *testing.T) {
 		gatherer: pool.NewSimpleGatherer(),
 	}
 
-	require.Equal(t, 0, p.Len())
+	require.Equal(t, 0, p.Stats().TxCount)
 
-	p.gatherer.Add(makeTx(0))
-	require.Equal(t, 1, p.Len())
+	p.gatherer.Add(makeFakeTx(0))
+	require.Equal(t, 1, p.Stats().TxCount)
 }
 
 func TestPool_AddFilter(t *testing.T) {
@@ -92,16 +92,16 @@ func TestPool_Add(t *testing.T) {
 		gatherer: pool.NewSimpleGatherer(),
 	}
 
-	err := p.Add(makeTx(0))
+	err := p.Add(makeFakeTx(0))
 	require.NoError(t, err)
 
 	p.gatherer = badGatherer{}
-	err = p.Add(makeTx(0))
+	err = p.Add(makeFakeTx(0))
 	require.EqualError(t, err, fake.Err("store failed"))
 
 	p.gatherer = pool.NewSimpleGatherer()
 	p.actor = fakeActor{err: fake.GetError()}
-	err = p.Add(makeTx(0))
+	err = p.Add(makeFakeTx(0))
 	require.EqualError(t, err, fake.Err("failed to gossip tx"))
 }
 
@@ -111,7 +111,7 @@ func TestPool_Remove(t *testing.T) {
 		gatherer: pool.NewSimpleGatherer(),
 	}
 
-	tx := makeTx(0)
+	tx := makeFakeTx(0)
 
 	require.NoError(t, p.gatherer.Add(tx))
 
@@ -132,8 +132,8 @@ func TestPool_Gather(t *testing.T) {
 	ctx := context.Background()
 
 	cb := func() {
-		require.NoError(t, p.Add(makeTx(0)))
-		require.NoError(t, p.Add(makeTx(1)))
+		require.NoError(t, p.Add(makeFakeTx(0)))
+		require.NoError(t, p.Add(makeFakeTx(1)))
 	}
 
 	txs := p.Gather(ctx, pool.Config{Min: 2, Callback: cb})
@@ -150,18 +150,18 @@ func TestPool_Gather(t *testing.T) {
 }
 
 func TestPool_Close(t *testing.T) {
-	pool := &Pool{
+	p := &Pool{
 		gatherer: pool.NewSimpleGatherer(),
 		closing:  make(chan struct{}),
 		actor:    fakeActor{},
 	}
 
-	err := pool.Close()
+	err := p.Close()
 	require.NoError(t, err)
 
-	pool.closing = make(chan struct{})
-	pool.actor = fakeActor{err: fake.GetError()}
-	err = pool.Close()
+	p.closing = make(chan struct{})
+	p.actor = fakeActor{err: fake.GetError()}
+	err = p.Close()
 	require.EqualError(t, err, fake.Err("failed to close gossiper"))
 }
 
@@ -176,7 +176,7 @@ func TestPool_ListenRumors(t *testing.T) {
 
 	ch := make(chan gossip.Rumor)
 	go func() {
-		ch <- makeTx(0)
+		ch <- makeFakeTx(0)
 		close(p.closing)
 	}()
 
@@ -188,7 +188,7 @@ func TestPool_ListenRumors(t *testing.T) {
 
 	ch = make(chan gossip.Rumor)
 	go func() {
-		ch <- makeTx(0)
+		ch <- makeFakeTx(0)
 		close(p.closing)
 	}()
 
@@ -199,7 +199,7 @@ func TestPool_ListenRumors(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-func makeTx(nonce uint64) txn.Transaction {
+func makeFakeTx(nonce uint64) txn.Transaction {
 	return fakeTx{nonce: nonce}
 }
 
@@ -216,15 +216,15 @@ func makeRoster(t *testing.T, n int) (mino.Players, []*Pool) {
 
 		g := gossip.NewFlat(m, fakeTxFac{})
 
-		pool, err := NewPool(g)
+		p, err := NewPool(g)
 		require.NoError(t, err)
 
-		pools[i] = pool
+		pools[i] = p
 	}
 
 	players := mino.NewAddresses(addrs...)
-	for _, pool := range pools {
-		pool.SetPlayers(players)
+	for _, p := range pools {
+		p.SetPlayers(players)
 	}
 
 	return players, pools

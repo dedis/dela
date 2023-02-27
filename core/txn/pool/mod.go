@@ -5,6 +5,7 @@ package pool
 
 import (
 	"context"
+	"time"
 
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/validation"
@@ -40,9 +41,6 @@ type Pool interface {
 
 	AddFilter(Filter)
 
-	// Len returns the number of transactions available in the pool.
-	Len() int
-
 	// Add adds the transaction to the pool.
 	Add(txn.Transaction) error
 
@@ -53,6 +51,21 @@ type Pool interface {
 	// configuration allows one to specify criterion before returning.
 	Gather(context.Context, Config) []txn.Transaction
 
+	// Stats gets the transactions statistics
+	Stats() Stats
+
+	// ResetStats resets the transaction statistics.
+	ResetStats()
+
 	// Close closes the pool and cleans the resources.
 	Close() error
+}
+
+// Stats groups statistics used to manage the pool
+type Stats struct {
+	// OldestTx is the time at which the oldest transaction was added to the pool.
+	OldestTx time.Time
+
+	// TxCount is the number of transactions available in the pool.
+	TxCount int
 }

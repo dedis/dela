@@ -1064,8 +1064,6 @@ func getCertified(t *testing.T) (*pedersen.DistKeyGenerator, *pedersen.Response)
 }
 
 type fakeDKGService struct {
-	dkgService
-
 	dealsErr   error
 	respoErr   error
 	shareErr   error

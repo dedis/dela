@@ -9,7 +9,6 @@
 // the transaction to be valid.
 //
 // Documentation Last Review: 08.10.2020
-//
 package txn
 
 import (

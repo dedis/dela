@@ -13,10 +13,10 @@ import (
 
 func TestPool_Len(t *testing.T) {
 	p := NewPool()
-	require.Equal(t, 0, p.Len())
+	require.Equal(t, 0, p.Stats().TxCount)
 
 	p.gatherer.Add(fakeTx{})
-	require.Equal(t, 1, p.Len())
+	require.Equal(t, 1, p.Stats().TxCount)
 }
 
 func TestPool_AddFilter(t *testing.T) {
@@ -58,9 +58,9 @@ func TestPool_Remove(t *testing.T) {
 }
 
 func TestPool_SetPlayers(t *testing.T) {
-	pool := NewPool()
+	p := NewPool()
 
-	require.NoError(t, pool.SetPlayers(nil))
+	require.NoError(t, p.SetPlayers(nil))
 }
 
 func TestPool_Gather(t *testing.T) {

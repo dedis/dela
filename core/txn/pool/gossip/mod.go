@@ -56,12 +56,6 @@ func (p *Pool) AddFilter(filter pool.Filter) {
 	p.gatherer.AddFilter(filter)
 }
 
-// Len implements pool.Pool. It returns the number of transactions available in
-// the pool.
-func (p *Pool) Len() int {
-	return p.gatherer.Len()
-}
-
 // Add implements pool.Pool. It adds the transaction to the pool and gossips it
 // to other participants.
 func (p *Pool) Add(tx txn.Transaction) error {
@@ -92,6 +86,16 @@ func (p *Pool) Remove(tx txn.Transaction) error {
 // according to the configuration and then returns the transactions.
 func (p *Pool) Gather(ctx context.Context, cfg pool.Config) []txn.Transaction {
 	return p.gatherer.Wait(ctx, cfg)
+}
+
+// Stats implements pool.Pool. It gets the transaction statistics.
+func (p *Pool) Stats() pool.Stats {
+	return p.gatherer.Stats()
+}
+
+// ResetStats implements pool.Pool. It resets the transaction statistics.
+func (p *Pool) ResetStats() {
+	p.gatherer.ResetStats()
 }
 
 // Close stops the gossiper and terminate the routine that listens for rumors.
