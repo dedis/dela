@@ -1,5 +1,4 @@
 - **General purpose**
-- [Introduction](introduction.md)
 - [Dela](dela.md)
 - [Serde](serde.md)
 - [Mino](mino.md)

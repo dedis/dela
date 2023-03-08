@@ -1,4 +1,17 @@
+![Infography](assets/infograph.png)
+
 # Dela
+
+Dela stands for DEDIS Ledger Architecture. It is both a set of abstractions and
+an implementation of a distributed ledger architecture.
+
+Dela has 2 main purposes:
+
+- Provide a modular, global-purpose, and universal framework that describes a
+  minimal and extended set of abstractions for a distributed ledger
+  architecture.
+- Provide multiple modules implementations that can be combined to run a
+  distributed ledger.
 
 With Dela you can:
 
