@@ -4,11 +4,6 @@ This page covers some opinionated rules that are not (or not enough) covered by
 the golang best practices. We first stick to the official and common golang 
 best practices, using this as a supplement.
 
-## Files
-
-The root implementation of a package should always be located in a `mod.go`
-file.
-
 ## Comments
 
 Any comments should be formatted at 80 chars (in VS code the *Rewrap* does the
