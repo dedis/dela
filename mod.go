@@ -90,7 +90,7 @@ func init() {
 		Logger.Info().Msgf("Using log file: %v", logFile)
 	}
 
-	Logger.Info().Msgf("DELA Logger initialised!")
+	Logger.Info().Msgf("DELA Logger initialized!")
 }
 
 var consoleOut = zerolog.ConsoleWriter{
