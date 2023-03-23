@@ -1,6 +1,6 @@
 .PHONY: all tidy generate lint vet test coverage pushdoc
 
-# Default "make" target to check locally and before creating a PR
+# Default "make" target to check locally that everything is ok, BEFORE pushing remotely
 all: lint vet test
 	@echo "Done with the standard checks"
 
