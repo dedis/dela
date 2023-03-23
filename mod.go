@@ -6,9 +6,9 @@
 // Dela is using a global logger with some default parameters. It is disabled by
 // default and the level can be increased using a environment variable:
 //
-//   LLVL=trace go test ./...
-//   LLVL=info go test ./...
-//
+//	LLVL=trace go test ./...
+//	LLVL=info go test ./...
+//	LLVL=debug LOGF=$HOME/dela.log go test ./...
 package dela
 
 import (
@@ -23,11 +23,14 @@ import (
 // level.
 const EnvLogLevel = "LLVL"
 
+// EnvLogFile is the name of the environment variable to log in a given file.
+const EnvLogFile = "LOGF"
+
 // PromCollectors exposes Prometheus collectors created in Dela. By default Dela
 // doesn't register the metrics. It is left to the user to use the registry of
 // its choice and register the collectors. For example with the default:
 //
-//   prometheus.DefaultRegisterer.MustRegister(PromCollectors...)
+//	prometheus.DefaultRegisterer.MustRegister(PromCollectors...)
 //
 // Note that the collectors can be registered only once and will panic
 // otherwise. This slice is not thread-safe and should only be initialized in
@@ -50,11 +53,11 @@ var (
 const defaultLevel = zerolog.NoLevel
 
 func init() {
-	lvl := os.Getenv(EnvLogLevel)
+	logLevel := os.Getenv(EnvLogLevel)
 
 	var level zerolog.Level
 
-	switch lvl {
+	switch logLevel {
 	case "error":
 		level = zerolog.ErrorLevel
 	case "warn":
@@ -72,18 +75,32 @@ func init() {
 	}
 
 	Logger = Logger.Level(level)
-
 	PromCollectors = append(PromCollectors, promWarns, promErrs)
+
+	logFile := os.Getenv(EnvLogFile)
+	if len(logFile) > 3 {
+		fileOut, err := os.OpenFile(logFile, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
+		if err != nil {
+			Logger.Error().Msgf("COULD NOT OPEN %v", logFile)
+			os.Exit(2)
+		}
+
+		multiWriter := zerolog.MultiLevelWriter(fileOut, consoleOut)
+		Logger = Logger.Output(multiWriter)
+		Logger.Info().Msgf("Using log file: %v", logFile)
+	}
+
+	Logger.Info().Msgf("DELA Logger initialized!")
 }
 
-var logout = zerolog.ConsoleWriter{
+var consoleOut = zerolog.ConsoleWriter{
 	Out:        os.Stdout,
 	TimeFormat: time.RFC3339,
 }
 
 // Logger is a globally available logger instance. By default, it only prints
 // error level messages but it can be changed through a environment variable.
-var Logger = zerolog.New(logout).Level(defaultLevel).
+var Logger = zerolog.New(consoleOut).Level(defaultLevel).
 	With().Timestamp().Logger().
 	With().Caller().Logger().
 	Hook(promHook{})
