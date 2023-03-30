@@ -5,6 +5,7 @@ package calypso
 import (
 	"fmt"
 	"io"
+	"net"
 	"sort"
 	"strings"
 
@@ -157,19 +158,27 @@ func (c calypsoCommand) advertiseSmc(snap store.Snapshot, step execution.Step) e
 		return xerrors.Errorf("'%s' not found in tx arg", KeyArg)
 	}
 
-	value := step.Current.GetArg(RosterArg)
-	if len(value) == 0 {
+	roster := step.Current.GetArg(RosterArg)
+	if len(roster) == 0 {
 		return xerrors.Errorf("'%s' not found in tx arg", RosterArg)
 	}
 
-	err := snap.Set(key, value)
+	nodeList := strings.Split(string(roster), ",")
+	for _, r := range nodeList {
+		_, _, err := net.SplitHostPort(r)
+		if err != nil {
+			return xerrors.Errorf("invalid node '%s' in roster", r, err)
+		}
+	}
+
+	err := snap.Set(key, roster)
 	if err != nil {
-		return xerrors.Errorf("failed to set value: %v", err)
+		return xerrors.Errorf("failed to set roster: %v", err)
 	}
 
 	c.index[string(key)] = struct{}{}
 
-	dela.Logger.Info().Str("contract", ContractName).Msgf("setting %x=%s", key, value)
+	dela.Logger.Info().Str("contract", ContractName).Msgf("setting %x=%s", key, roster)
 
 	return nil
 }

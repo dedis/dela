@@ -58,15 +58,21 @@ func TestCommand_AdvertiseSmc(t *testing.T) {
 	err = cmd.advertiseSmc(fake.NewSnapshot(), makeStep(t, KeyArg, "dummy"))
 	require.EqualError(t, err, "'calypso:roster' not found in tx arg")
 
-	err = cmd.advertiseSmc(fake.NewBadSnapshot(), makeStep(t, KeyArg, "dummy", RosterArg, "value"))
-	require.EqualError(t, err, fake.Err("failed to set value"))
+	err = cmd.advertiseSmc(fake.NewBadSnapshot(), makeStep(t, KeyArg, "dummy", RosterArg, "node:12345"))
+	require.EqualError(t, err, fake.Err("failed to set roster"))
+
+	err = cmd.advertiseSmc(fake.NewBadSnapshot(), makeStep(t, KeyArg, "dummy", RosterArg, ","))
+	require.ErrorContains(t, err, "invalid node '' in roster")
+
+	err = cmd.advertiseSmc(fake.NewBadSnapshot(), makeStep(t, KeyArg, "dummy", RosterArg, "abcd"))
+	require.ErrorContains(t, err, "invalid node 'abcd' in roster")
 
 	snap := fake.NewSnapshot()
 
 	_, found := contract.index["dummy"]
 	require.False(t, found)
 
-	err = cmd.advertiseSmc(snap, makeStep(t, KeyArg, "dummy", RosterArg, "value"))
+	err = cmd.advertiseSmc(snap, makeStep(t, KeyArg, "dummy", RosterArg, "node:12345"))
 	require.NoError(t, err)
 
 	_, found = contract.index["dummy"]
@@ -74,7 +80,7 @@ func TestCommand_AdvertiseSmc(t *testing.T) {
 
 	res, err := snap.Get([]byte("dummy"))
 	require.NoError(t, err)
-	require.Equal(t, "value", string(res))
+	require.Equal(t, "node:12345", string(res))
 }
 
 func TestCommand_DeleteSmc(t *testing.T) {
@@ -95,7 +101,7 @@ func TestCommand_DeleteSmc(t *testing.T) {
 	require.EqualError(t, err, fake.Err("failed to deleteSmc key '"+keyHex+"'"))
 
 	snap := fake.NewSnapshot()
-	snap.Set(key, []byte("value"))
+	snap.Set(key, []byte("localhost:12345"))
 	contract.index[keyStr] = struct{}{}
 
 	err = cmd.deleteSmc(snap, makeStep(t, KeyArg, keyStr))
@@ -126,13 +132,13 @@ func TestCommand_ListSmc(t *testing.T) {
 	}
 
 	snap := fake.NewSnapshot()
-	snap.Set([]byte(key1), []byte("value1"))
-	snap.Set([]byte(key2), []byte("value2"))
+	snap.Set([]byte(key1), []byte("localhost:12345"))
+	snap.Set([]byte(key2), []byte("localhost:12345,remote:54321"))
 
 	err := cmd.listSmc(snap)
 	require.NoError(t, err)
 
-	require.Equal(t, fmt.Sprintf("%x=value1,%x=value2", key1, key2), buf.String())
+	require.Equal(t, fmt.Sprintf("%x=localhost:12345,%x=localhost:12345,remote:54321", key1, key2), buf.String())
 
 	err = cmd.listSmc(fake.NewBadSnapshot())
 	// we can't assume an order from the map
