@@ -53,10 +53,10 @@ func TestCommand_AdvertiseSmc(t *testing.T) {
 	}
 
 	err := cmd.advertiseSmc(fake.NewSnapshot(), makeStep(t))
-	require.EqualError(t, err, "'calypso:public_key' not found in tx arg")
+	require.EqualError(t, err, "'calypso:smc_key' not found in tx arg")
 
 	err = cmd.advertiseSmc(fake.NewSnapshot(), makeStep(t, KeyArg, "dummy"))
-	require.EqualError(t, err, "'calypso:roster' not found in tx arg")
+	require.EqualError(t, err, "'calypso:smc_roster' not found in tx arg")
 
 	err = cmd.advertiseSmc(fake.NewBadSnapshot(), makeStep(t, KeyArg, "dummy", RosterArg, "node:12345"))
 	require.EqualError(t, err, fake.Err("failed to set roster"))
@@ -72,10 +72,16 @@ func TestCommand_AdvertiseSmc(t *testing.T) {
 	_, found := contract.index["dummy"]
 	require.False(t, found)
 
+	_, found = contract.secrets["dummy"]
+	require.False(t, found)
+
 	err = cmd.advertiseSmc(snap, makeStep(t, KeyArg, "dummy", RosterArg, "node:12345"))
 	require.NoError(t, err)
 
 	_, found = contract.index["dummy"]
+	require.True(t, found)
+
+	_, found = contract.secrets["dummy"]
 	require.True(t, found)
 
 	res, err := snap.Get([]byte("dummy"))
@@ -95,7 +101,7 @@ func TestCommand_DeleteSmc(t *testing.T) {
 	keyStr := string(key)
 
 	err := cmd.deleteSmc(fake.NewSnapshot(), makeStep(t))
-	require.EqualError(t, err, "'calypso:public_key' not found in tx arg")
+	require.EqualError(t, err, "'calypso:smc_key' not found in tx arg")
 
 	err = cmd.deleteSmc(fake.NewBadSnapshot(), makeStep(t, KeyArg, keyStr))
 	require.EqualError(t, err, fake.Err("failed to deleteSmc key '"+keyHex+"'"))
@@ -143,6 +149,97 @@ func TestCommand_ListSmc(t *testing.T) {
 	err = cmd.listSmc(fake.NewBadSnapshot())
 	// we can't assume an order from the map
 	require.Regexp(t, "^failed to get key", err.Error())
+}
+
+func TestCommand_CreateSecret_BadSnapshot(t *testing.T) {
+	// Arrange
+	contract := NewContract([]byte{}, fakeAccess{})
+
+	cmd := calypsoCommand{
+		Contract: &contract,
+	}
+
+	badSnap := fake.NewBadSnapshot()
+	badSnap.ErrWrite = nil // temporarily disable errors
+
+	err := cmd.advertiseSmc(badSnap, makeStep(t, KeyArg, "dummy", RosterArg, "node:12345"))
+	require.NoError(t, err)
+
+	badSnap.ErrWrite = fake.GetError() // re-enable errors
+
+	// Act
+	err = cmd.createSecret(badSnap,
+		makeStep(t, KeyArg, "dummy", SecretNameArg, "name", SecretArg, "value"))
+
+	// Assert
+	require.EqualError(t, err, fake.Err("failed to set secret"))
+}
+
+func TestCommand_CreateSecret_Succeeds(t *testing.T) {
+	// Arrange
+	contract := NewContract([]byte{}, fakeAccess{})
+
+	cmd := calypsoCommand{
+		Contract: &contract,
+	}
+
+	snap := fake.NewSnapshot()
+	err := cmd.advertiseSmc(snap, makeStep(t, KeyArg, "dummy", RosterArg, "node:12345"))
+	require.NoError(t, err)
+
+	// Verify pre-conditions
+	_, found := contract.index["dummy"]
+	require.True(t, found)
+
+	_, found = contract.secrets["dummy"]
+	require.True(t, found)
+
+	dummy := contract.secrets["dummy"]
+	require.Equal(t, 0, len(dummy))
+
+	// Act
+	err = cmd.createSecret(snap,
+		makeStep(t, KeyArg, "dummy", SecretNameArg, "my_secret", SecretArg, "my_value"))
+
+	// Assert
+	require.NoError(t, err)
+
+	dummy = contract.secrets["dummy"]
+	require.Equal(t, 1, len(dummy))
+	require.Equal(t, "my_secret", string(dummy[0]))
+
+	res, err := snap.Get([]byte("my_secret"))
+	require.NoError(t, err)
+	require.Equal(t, "my_value", string(res))
+}
+
+func TestCommand_CreateSecret_InvalidInputs(t *testing.T) {
+	contract := NewContract([]byte{}, fakeAccess{})
+
+	cmd := calypsoCommand{
+		Contract: &contract,
+	}
+
+	err := cmd.createSecret(fake.NewSnapshot(), makeStep(t))
+	require.ErrorContains(t, err, "not found in tx arg")
+
+	err = cmd.createSecret(fake.NewSnapshot(), makeStep(t, SecretNameArg, "name", SecretArg, "value"))
+	require.EqualError(t, err, "'calypso:smc_key' not found in tx arg")
+
+	err = cmd.createSecret(fake.NewSnapshot(), makeStep(t, KeyArg, "dummy", SecretNameArg, "name"))
+	require.EqualError(t, err, "'calypso:secret_value' not found in tx arg")
+
+	err = cmd.createSecret(fake.NewSnapshot(), makeStep(t, KeyArg, "dummy", SecretArg, "value"))
+	require.EqualError(t, err, "'calypso:secret_name' not found in tx arg")
+
+	err = cmd.createSecret(fake.NewSnapshot(), makeStep(t, KeyArg, "dummy", SecretNameArg, "name", SecretArg, ""))
+	require.ErrorContains(t, err, "'calypso:secret_value' not found in tx arg")
+
+	err = cmd.createSecret(fake.NewSnapshot(), makeStep(t, KeyArg, "dummy", SecretNameArg, "", SecretArg, "value"))
+	require.ErrorContains(t, err, "'calypso:secret_name' not found in tx arg")
+
+	err = cmd.createSecret(fake.NewSnapshot(), makeStep(t, KeyArg, "invalid", SecretNameArg, "n", SecretArg, "v"))
+	require.ErrorContains(t, err, "'invalid' was not found among the SMCs")
 }
 
 func TestInfoLog(t *testing.T) {
@@ -215,5 +312,13 @@ func (c fakeCmd) deleteSmc(snap store.Snapshot, step execution.Step) error {
 }
 
 func (c fakeCmd) listSmc(snap store.Snapshot) error {
+	return c.err
+}
+
+func (c fakeCmd) createSecret(snap store.Snapshot, step execution.Step) error {
+	return c.err
+}
+
+func (c fakeCmd) listSecrets(snap store.Snapshot, step execution.Step) error {
 	return c.err
 }

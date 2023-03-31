@@ -23,6 +23,9 @@ type commands interface {
 	advertiseSmc(snap store.Snapshot, step execution.Step) error
 	deleteSmc(snap store.Snapshot, step execution.Step) error
 	listSmc(snap store.Snapshot) error
+
+	createSecret(snap store.Snapshot, step execution.Step) error
+	listSecrets(snap store.Snapshot, step execution.Step) error
 }
 
 const (
@@ -31,11 +34,19 @@ const (
 
 	// KeyArg is the argument's name in the transaction that contains the
 	// public key of the SMC to update.
-	KeyArg = "calypso:public_key"
+	KeyArg = "calypso:smc_key"
 
 	// RosterArg is the argument's name in the transaction that contains the
 	// roster to associate with a given public key.
-	RosterArg = "calypso:roster"
+	RosterArg = "calypso:smc_roster"
+
+	// SecretNameArg is the argument's name in the transaction that contains
+	// the name of the secret to be published on the blockchain.
+	SecretNameArg = "calypso:secret_name"
+
+	// SecretArg is the argument's name in the transaction that contains the
+	// secret to be published on the blockchain.
+	SecretArg = "calypso:secret_value"
 
 	// CmdArg is the argument's name to indicate the kind of command we want to
 	// run on the contract. Should be one of the Command type.
@@ -56,8 +67,14 @@ const (
 	// CmdDeleteSmc defines a command to deleteSmc a SMC
 	CmdDeleteSmc Command = "DELETE_SMC"
 
-	// CmdListSmc defines a command to listSmc all SMCs (and not deleted) so far.
+	// CmdListSmc defines a command to list all SMCs (not deleted) so far.
 	CmdListSmc Command = "LIST_SMC"
+
+	// CmdCreateSecret defines a command to create a new secret.
+	CmdCreateSecret Command = "CREATE_SECRET"
+
+	// CmdListSecret defines a command to list secrets for a SMC.
+	CmdListSecret Command = "LIST_SECRETS"
 )
 
 // NewCreds creates new credentials for a value contract execution. We might
@@ -79,6 +96,9 @@ type Contract struct {
 	// index contains all the keys set (and not deleteSmc) by this contract so far
 	index map[string]struct{}
 
+	// secrets contains a mapping between the keys and their associated secrets
+	secrets map[string][]string
+
 	// access is the access control service managing this smart contract
 	access access.Service
 
@@ -96,6 +116,7 @@ type Contract struct {
 func NewContract(aKey []byte, srvc access.Service) Contract {
 	contract := Contract{
 		index:     map[string]struct{}{},
+		secrets:   map[string][]string{},
 		access:    srvc,
 		accessKey: aKey,
 		printer:   infoLog{},
@@ -137,6 +158,11 @@ func (c Contract) Execute(snap store.Snapshot, step execution.Step) error {
 		if err != nil {
 			return xerrors.Errorf("failed to LIST_SMC: %v", err)
 		}
+	case CmdCreateSecret:
+		err := c.cmd.createSecret(snap, step)
+		if err != nil {
+			return xerrors.Errorf("failed to CREATE_SECRET: %v", err)
+		}
 	default:
 		return xerrors.Errorf("unknown command: %s", cmd)
 	}
@@ -151,7 +177,7 @@ type calypsoCommand struct {
 	*Contract
 }
 
-// advertiseSmc implements commands. It performs the WRITE command
+// advertiseSmc implements commands. It performs the ADVERTISE_SMC command
 func (c calypsoCommand) advertiseSmc(snap store.Snapshot, step execution.Step) error {
 	key := step.Current.GetArg(KeyArg)
 	if len(key) == 0 {
@@ -177,13 +203,14 @@ func (c calypsoCommand) advertiseSmc(snap store.Snapshot, step execution.Step) e
 	}
 
 	c.index[string(key)] = struct{}{}
+	c.secrets[string(key)] = []string{}
 
 	dela.Logger.Info().Str("contract", ContractName).Msgf("setting %x=%s", key, roster)
 
 	return nil
 }
 
-// deleteSmc implements commands. It performs the DELETE command
+// deleteSmc implements commands. It performs the DELETE_SMC command
 func (c calypsoCommand) deleteSmc(snap store.Snapshot, step execution.Step) error {
 	key := step.Current.GetArg(KeyArg)
 	if len(key) == 0 {
@@ -195,16 +222,90 @@ func (c calypsoCommand) deleteSmc(snap store.Snapshot, step execution.Step) erro
 		return xerrors.Errorf("failed to deleteSmc key '%x': %v", key, err)
 	}
 
+	for _, secret := range c.secrets[string(key)] {
+		dela.Logger.Info().
+			Msgf("Deleting secret '%s' that depended on deleted SMC '%s'", secret, key)
+
+		err = snap.Delete([]byte(secret))
+		if err != nil {
+			dela.Logger.Warn().
+				Msgf("Could not delete secret '%s', "+
+					"orphaned by deleted SMC '%s'", secret, key)
+		}
+	}
+
 	delete(c.index, string(key))
+	delete(c.secrets, string(key))
 
 	return nil
 }
 
-// listSmc implements commands. It performs the LIST command
+// listSmc implements commands. It performs the LIST_SMC command
 func (c calypsoCommand) listSmc(snap store.Snapshot) error {
 	res := []string{}
 
 	for k := range c.index {
+		v, err := snap.Get([]byte(k))
+		if err != nil {
+			return xerrors.Errorf("failed to get key '%s': %v", k, err)
+		}
+
+		res = append(res, fmt.Sprintf("%x=%s", k, v))
+	}
+
+	sort.Strings(res)
+	fmt.Fprint(c.printer, strings.Join(res, ","))
+
+	return nil
+}
+
+// createSecret implements commands. It performs the CREATE_SECRET command
+func (c calypsoCommand) createSecret(snap store.Snapshot, step execution.Step) error {
+
+	key := step.Current.GetArg(KeyArg)
+	if len(key) == 0 {
+		return xerrors.Errorf("'%s' not found in tx arg", KeyArg)
+	}
+
+	_, ok := c.index[string(key)]
+	if !ok {
+		return xerrors.Errorf("'%s' was not found among the SMCs", key)
+	}
+
+	name := step.Current.GetArg(SecretNameArg)
+	if len(name) == 0 {
+		return xerrors.Errorf("'%s' not found in tx arg", SecretNameArg)
+	}
+
+	secret := step.Current.GetArg(SecretArg)
+	if len(secret) == 0 {
+		return xerrors.Errorf("'%s' not found in tx arg", SecretArg)
+	}
+
+	err := snap.Set(name, secret)
+	if err != nil {
+		return xerrors.Errorf("failed to set secret: %v", err)
+	}
+
+	c.secrets[string(key)] = append(c.secrets[string(key)], string(name))
+
+	dela.Logger.Info().
+		Str("contract", ContractName).
+		Msgf("setting secret %x=%s", name, secret)
+
+	return nil
+}
+
+// listSecrets implements commands. It performs the LIST_SECRETS command
+func (c calypsoCommand) listSecrets(snap store.Snapshot, step execution.Step) error {
+	res := []string{}
+
+	key := step.Current.GetArg(KeyArg)
+	if len(key) == 0 {
+		return xerrors.Errorf("'%s' not found in tx arg", KeyArg)
+	}
+
+	for _, k := range c.secrets[string(key)] {
 		v, err := snap.Get([]byte(k))
 		if err != nil {
 			return xerrors.Errorf("failed to get key '%s': %v", k, err)
