@@ -167,7 +167,7 @@ func (c calypsoCommand) advertiseSmc(snap store.Snapshot, step execution.Step) e
 	for _, r := range nodeList {
 		_, _, err := net.SplitHostPort(r)
 		if err != nil {
-			return xerrors.Errorf("invalid node '%s' in roster", r, err)
+			return xerrors.Errorf("invalid node '%s' in roster: %v", r, err)
 		}
 	}
 
