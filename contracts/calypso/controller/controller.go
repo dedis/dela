@@ -25,6 +25,7 @@ func NewController() node.Initializer {
 
 // SetCommands implements node.Initializer.
 func (miniController) SetCommands(builder node.Builder) {
+	// For now, no need to do anything here.
 }
 
 // OnStart implements node.Initializer. It registers the value contract.

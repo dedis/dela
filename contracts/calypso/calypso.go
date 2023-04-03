@@ -77,6 +77,11 @@ const (
 	CmdListSecret Command = "LIST_SECRETS"
 )
 
+// Common error messages
+const (
+	notFoundInTxArg = "'%s' not found in tx arg"
+)
+
 // NewCreds creates new credentials for a value contract execution. We might
 // want to use in the future a separate credential for each command.
 func NewCreds(id []byte) access.Credential {
@@ -139,7 +144,7 @@ func (c Contract) Execute(snap store.Snapshot, step execution.Step) error {
 
 	cmd := step.Current.GetArg(CmdArg)
 	if len(cmd) == 0 {
-		return xerrors.Errorf("'%s' not found in tx arg", CmdArg)
+		return xerrors.Errorf(notFoundInTxArg, CmdArg)
 	}
 
 	switch Command(cmd) {
@@ -181,12 +186,12 @@ type calypsoCommand struct {
 func (c calypsoCommand) advertiseSmc(snap store.Snapshot, step execution.Step) error {
 	key := step.Current.GetArg(KeyArg)
 	if len(key) == 0 {
-		return xerrors.Errorf("'%s' not found in tx arg", KeyArg)
+		return xerrors.Errorf(notFoundInTxArg, KeyArg)
 	}
 
 	roster := step.Current.GetArg(RosterArg)
 	if len(roster) == 0 {
-		return xerrors.Errorf("'%s' not found in tx arg", RosterArg)
+		return xerrors.Errorf(notFoundInTxArg, RosterArg)
 	}
 
 	nodeList := strings.Split(string(roster), ",")
@@ -214,7 +219,7 @@ func (c calypsoCommand) advertiseSmc(snap store.Snapshot, step execution.Step) e
 func (c calypsoCommand) deleteSmc(snap store.Snapshot, step execution.Step) error {
 	key := step.Current.GetArg(KeyArg)
 	if len(key) == 0 {
-		return xerrors.Errorf("'%s' not found in tx arg", KeyArg)
+		return xerrors.Errorf(notFoundInTxArg, KeyArg)
 	}
 
 	err := snap.Delete(key)
@@ -264,7 +269,7 @@ func (c calypsoCommand) createSecret(snap store.Snapshot, step execution.Step) e
 
 	key := step.Current.GetArg(KeyArg)
 	if len(key) == 0 {
-		return xerrors.Errorf("'%s' not found in tx arg", KeyArg)
+		return xerrors.Errorf(notFoundInTxArg, KeyArg)
 	}
 
 	_, ok := c.index[string(key)]
@@ -274,12 +279,12 @@ func (c calypsoCommand) createSecret(snap store.Snapshot, step execution.Step) e
 
 	name := step.Current.GetArg(SecretNameArg)
 	if len(name) == 0 {
-		return xerrors.Errorf("'%s' not found in tx arg", SecretNameArg)
+		return xerrors.Errorf(notFoundInTxArg, SecretNameArg)
 	}
 
 	secret := step.Current.GetArg(SecretArg)
 	if len(secret) == 0 {
-		return xerrors.Errorf("'%s' not found in tx arg", SecretArg)
+		return xerrors.Errorf(notFoundInTxArg, SecretArg)
 	}
 
 	err := snap.Set(name, secret)
@@ -302,7 +307,7 @@ func (c calypsoCommand) listSecrets(snap store.Snapshot, step execution.Step) er
 
 	key := step.Current.GetArg(KeyArg)
 	if len(key) == 0 {
-		return xerrors.Errorf("'%s' not found in tx arg", KeyArg)
+		return xerrors.Errorf(notFoundInTxArg, KeyArg)
 	}
 
 	for _, k := range c.secrets[string(key)] {
