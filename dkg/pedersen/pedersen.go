@@ -212,6 +212,31 @@ func (a *Actor) Encrypt(message []byte) (K, C kyber.Point, remainder []byte,
 	return K, C, remainder, nil
 }
 
+// EncryptWithPublicKey implements dkg.Actor. It uses the given public key
+// to encrypt a message.
+func (a *Actor) EncryptWithPublicKey(message []byte, pk kyber.Point) (K, C kyber.Point, remainder []byte, err error) {
+	if !a.startRes.Done() {
+		return nil, nil, nil, xerrors.Errorf(initDkgFirst)
+	}
+
+	// Embed the message (or as much of it as will fit) into a curve point.
+	M := suite.Point().Embed(message, random.New())
+	max := suite.Point().EmbedLen()
+	if max > len(message) {
+		max = len(message)
+	}
+	remainder = message[max:]
+
+	//TODO: make calculate re-encryption correctly
+	// ElGamal-encrypt the point to produce ciphertext (K,C).
+	k := suite.Scalar().Pick(random.New()) // ephemeral private key
+	K = suite.Point().Mul(k, nil)          // ephemeral DH public key
+	S := suite.Point().Mul(k, pk)          // ephemeral DH shared secret
+	C = S.Add(S, M)                        // message blinded with secret
+
+	return K, C, remainder, nil
+}
+
 // VerifiableEncrypt implements dkg.Actor. It uses the DKG public key to encrypt
 // a message and provide a zero knowledge proof that the encryption is done by
 // this person.

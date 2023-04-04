@@ -81,14 +81,14 @@ type listenAction struct {
 }
 
 func (a listenAction) Execute(ctx node.Context) error {
-	var dkg dkg.DKG
+	var d dkg.DKG
 
-	err := ctx.Injector.Resolve(&dkg)
+	err := ctx.Injector.Resolve(&d)
 	if err != nil {
 		return xerrors.Errorf("failed to resolve dkg: %v", err)
 	}
 
-	actor, err := dkg.Listen()
+	actor, err := d.Listen()
 	if err != nil {
 		return xerrors.Errorf("failed to listen: %v", err)
 	}
@@ -228,6 +228,71 @@ func (a decryptAction) Execute(ctx node.Context) error {
 	fmt.Fprint(ctx.Out, hex.EncodeToString(decrypted))
 
 	return nil
+}
+
+type reencryptAction struct{}
+
+func (a reencryptAction) Execute(ctx node.Context) error {
+	var actor dkg.Actor
+
+	err := ctx.Injector.Resolve(&actor)
+	if err != nil {
+		return xerrors.Errorf(resolveActorFailed, err)
+	}
+
+	// first, let's decrypt the given data
+	encrypted := ctx.Flags.String("encrypted")
+
+	k, c, err := decodeEncrypted(encrypted)
+	if err != nil {
+		return xerrors.Errorf("failed to decode encrypted str: %v", err)
+	}
+
+	decrypted, err := actor.Decrypt(k, c)
+	if err != nil {
+		return xerrors.Errorf("failed to decrypt: %v", err)
+	}
+
+	fmt.Fprint(ctx.Out, hex.EncodeToString(decrypted))
+
+	// second, let's encrypt 'decrypted' with the given public key
+	publickey := ctx.Flags.String("publickey")
+
+	pk, err := decodePublickey(publickey)
+	if err != nil {
+		return xerrors.Errorf("failed to decode public key str: %v", err)
+	}
+
+	k, c, remainder, err := actor.EncryptWithPublicKey(decrypted, pk)
+	if err != nil {
+		return xerrors.Errorf("failed to reencrypt: %v", err)
+	}
+
+	outStr, err := encodeEncrypted(k, c, remainder)
+	if err != nil {
+		return xerrors.Errorf("failed to generate output: %v", err)
+	}
+
+	fmt.Fprint(ctx.Out, outStr)
+
+	return nil
+}
+
+func decodePublickey(str string) (pk kyber.Point, err error) {
+	// Decode public key
+	publickey, err := hex.DecodeString(str)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to decode pk: %v", err)
+	}
+
+	pk = suite.Point()
+
+	err = pk.UnmarshalBinary(publickey)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to unmarshal pk point: %v", err)
+	}
+
+	return pk, nil
 }
 
 func encodeEncrypted(k, c kyber.Point, remainder []byte) (string, error) {
