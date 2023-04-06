@@ -2,6 +2,7 @@ package controller
 
 import (
 	"crypto/elliptic"
+	"math/big"
 	"net"
 	"os"
 	"path/filepath"
@@ -137,12 +138,15 @@ func TestMiniController_FailGenerateKey_OnStart(t *testing.T) {
 
 func TestMiniController_FailMarshalKey_OnStart(t *testing.T) {
 	ctrl := NewController().(miniController)
-	ctrl.curve = badCurve{Curve: elliptic.P224()}
+	ctrl.curve = badCurve{}
 
 	inj := node.NewInjector()
 	inj.Inject(fake.NewInMemoryDB())
 
-	str := map[string]string{"routing": "flat"}
+	str := map[string]string{
+		"routing": "flat",
+		"config":  "/THIS_PATH_DEFINITELY_DOESNT_EXIST/",
+	}
 
 	err := ctrl.OnStart(fakeContext{str: str}, inj)
 	require.EqualError(t, err, "failed to get cert option: cert private key: "+
@@ -418,6 +422,31 @@ func (badReader) Read([]byte) (int, error) {
 	return 0, fake.GetError()
 }
 
-type badCurve struct {
-	elliptic.Curve
+type badCurve struct{}
+
+func (b badCurve) Params() *elliptic.CurveParams {
+	return &elliptic.CurveParams{
+		Name: "BadCurve",
+		N:    big.NewInt(65536),
+	}
+}
+
+func (b badCurve) IsOnCurve(x, y *big.Int) bool {
+	return false
+}
+
+func (b badCurve) Add(x1, y1, x2, y2 *big.Int) (x, y *big.Int) {
+	panic("unsupported")
+}
+
+func (b badCurve) Double(x1, y1 *big.Int) (x, y *big.Int) {
+	panic("unsupported")
+}
+
+func (b badCurve) ScalarMult(x1, y1 *big.Int, k []byte) (x, y *big.Int) {
+	panic("unsupported")
+}
+
+func (b badCurve) ScalarBaseMult(k []byte) (x, y *big.Int) {
+	return big.NewInt(0), big.NewInt(0)
 }
