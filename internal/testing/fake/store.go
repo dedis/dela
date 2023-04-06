@@ -130,7 +130,13 @@ func (tx dbTx) GetBucket(name []byte) kv.Bucket {
 
 // GetBucketOrCreate implements kv.WritableTx.
 func (tx dbTx) GetBucketOrCreate(name []byte) (kv.Bucket, error) {
-	return tx.GetBucket(name), tx.err
+	bucket, found := tx.buckets[string(name)]
+	if !found {
+		bucket = NewBucket()
+		tx.buckets[string(name)] = bucket
+	}
+
+	return bucket, tx.err
 }
 
 // GetBucketOrCreate implements store.Transaction.
