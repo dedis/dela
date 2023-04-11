@@ -73,8 +73,8 @@ const (
 	// CmdCreateSecret defines a command to create a new secret.
 	CmdCreateSecret Command = "CREATE_SECRET"
 
-	// CmdListSecret defines a command to list secrets for a SMC.
-	CmdListSecret Command = "LIST_SECRETS"
+	// CmdListSecrets defines a command to list secrets for a SMC.
+	CmdListSecrets Command = "LIST_SECRETS"
 )
 
 // Common error messages
@@ -167,6 +167,11 @@ func (c Contract) Execute(snap store.Snapshot, step execution.Step) error {
 		err := c.cmd.createSecret(snap, step)
 		if err != nil {
 			return xerrors.Errorf("failed to CREATE_SECRET: %v", err)
+		}
+	case CmdListSecrets:
+		err := c.cmd.listSecrets(snap, step)
+		if err != nil {
+			return xerrors.Errorf("failed to LIST_SECRETS: %v", err)
 		}
 	default:
 		return xerrors.Errorf("unknown command: %s", cmd)
@@ -272,11 +277,6 @@ func (c calypsoCommand) createSecret(snap store.Snapshot, step execution.Step) e
 		return xerrors.Errorf(notFoundInTxArg, KeyArg)
 	}
 
-	_, ok := c.index[string(key)]
-	if !ok {
-		return xerrors.Errorf("'%s' was not found among the SMCs", key)
-	}
-
 	name := step.Current.GetArg(SecretNameArg)
 	if len(name) == 0 {
 		return xerrors.Errorf(notFoundInTxArg, SecretNameArg)
@@ -285,6 +285,11 @@ func (c calypsoCommand) createSecret(snap store.Snapshot, step execution.Step) e
 	secret := step.Current.GetArg(SecretArg)
 	if len(secret) == 0 {
 		return xerrors.Errorf(notFoundInTxArg, SecretArg)
+	}
+
+	_, ok := c.index[string(key)]
+	if !ok {
+		return xerrors.Errorf("'%s' was not found among the SMCs", key)
 	}
 
 	err := snap.Set(name, secret)
@@ -310,13 +315,18 @@ func (c calypsoCommand) listSecrets(snap store.Snapshot, step execution.Step) er
 		return xerrors.Errorf(notFoundInTxArg, KeyArg)
 	}
 
+	_, found := c.secrets[string(key)]
+	if !found {
+		return xerrors.Errorf("SMC not found: %s", key)
+	}
+
 	for _, k := range c.secrets[string(key)] {
 		v, err := snap.Get([]byte(k))
 		if err != nil {
 			return xerrors.Errorf("failed to get key '%s': %v", k, err)
 		}
 
-		res = append(res, fmt.Sprintf("%x=%s", k, v))
+		res = append(res, fmt.Sprintf("%s=%s", k, v))
 	}
 
 	sort.Strings(res)

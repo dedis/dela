@@ -242,6 +242,110 @@ func TestCommand_CreateSecret_InvalidInputs(t *testing.T) {
 	require.ErrorContains(t, err, "'invalid' was not found among the SMCs")
 }
 
+func TestCommand_ListSecrets(t *testing.T) {
+
+	// Arrange (2 SMCs, "dummy" has 2 secrets, "other" has 1)
+
+	contract := NewContract([]byte{}, fakeAccess{})
+
+	buf := &bytes.Buffer{}
+	contract.printer = buf
+
+	cmd := calypsoCommand{
+		Contract: &contract,
+	}
+
+	snap := fake.NewSnapshot()
+
+	err := cmd.advertiseSmc(snap, makeStep(t, KeyArg, "dummy", RosterArg, "node:12345"))
+	require.NoError(t, err)
+
+	err = cmd.advertiseSmc(snap, makeStep(t, KeyArg, "other", RosterArg, "node:32145"))
+	require.NoError(t, err)
+
+	err = cmd.createSecret(snap, makeStep(t, KeyArg, "dummy", SecretNameArg, "name1", SecretArg, "secret1"))
+	require.NoError(t, err)
+
+	err = cmd.createSecret(snap, makeStep(t, KeyArg, "dummy", SecretNameArg, "name2", SecretArg, "secret2"))
+	require.NoError(t, err)
+
+	err = cmd.createSecret(snap, makeStep(t, KeyArg, "other", SecretNameArg, "name3", SecretArg, "secret3"))
+	require.NoError(t, err)
+
+	// Verify pre-conditions
+	_, found := contract.index["dummy"]
+	require.True(t, found)
+
+	_, found = contract.secrets["dummy"]
+	require.True(t, found)
+
+	require.Equal(t, 2, len(contract.secrets["dummy"]))
+
+	_, found = contract.index["other"]
+	require.True(t, found)
+
+	_, found = contract.secrets["other"]
+	require.True(t, found)
+
+	require.Equal(t, 1, len(contract.secrets["other"]))
+
+	// Act
+	err = cmd.listSecrets(snap, makeStep(t, KeyArg, "dummy"))
+
+	// Assert
+	require.NoError(t, err)
+	require.Equal(t, fmt.Sprintf("name1=secret1,name2=secret2"), buf.String())
+}
+
+func TestCommand_ListSecrets_InexistentSmc(t *testing.T) {
+	// Arrange
+	contract := NewContract([]byte{}, fakeAccess{})
+
+	buf := &bytes.Buffer{}
+	contract.printer = buf
+
+	cmd := calypsoCommand{
+		Contract: &contract,
+	}
+
+	// Act
+	err := cmd.listSecrets(fake.NewSnapshot(), makeStep(t, KeyArg, "noexist"))
+
+	// Assert
+	require.ErrorContains(t, err, "SMC not found: noexist")
+}
+
+func TestCommand_ListSecrets_InvalidSnapshot(t *testing.T) {
+	// Arrange
+	contract := NewContract([]byte{}, fakeAccess{})
+
+	buf := &bytes.Buffer{}
+	contract.printer = buf
+
+	cmd := calypsoCommand{
+		Contract: &contract,
+	}
+
+	snap := fake.NewBadSnapshot()
+	snap.ErrWrite = nil
+	snap.ErrRead = nil
+
+	err := cmd.advertiseSmc(snap, makeStep(t, KeyArg, "dummy", RosterArg, "node:12345"))
+	require.NoError(t, err)
+
+	err = cmd.createSecret(snap, makeStep(t, KeyArg, "dummy", SecretNameArg, "name1", SecretArg, "secret1"))
+	require.NoError(t, err)
+
+	snap.ErrWrite = fake.GetError()
+	snap.ErrRead = fake.GetError()
+
+	// Act
+	err = cmd.listSecrets(snap, makeStep(t, KeyArg, "dummy"))
+
+	// Assert
+	require.ErrorContains(t, err, "failed to get key")
+}
+
 func TestInfoLog(t *testing.T) {
 	log := infoLog{}
 
