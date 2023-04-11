@@ -426,3 +426,7 @@ func (c fakeCmd) createSecret(snap store.Snapshot, step execution.Step) error {
 func (c fakeCmd) listSecrets(snap store.Snapshot, step execution.Step) error {
 	return c.err
 }
+
+func (c fakeCmd) revealSecret(step execution.Step) error {
+	return c.err
+}

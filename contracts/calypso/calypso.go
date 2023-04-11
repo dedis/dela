@@ -26,6 +26,7 @@ type commands interface {
 
 	createSecret(snap store.Snapshot, step execution.Step) error
 	listSecrets(snap store.Snapshot, step execution.Step) error
+	revealSecret(step execution.Step) error
 }
 
 const (
@@ -75,6 +76,9 @@ const (
 
 	// CmdListSecrets defines a command to list secrets for a SMC.
 	CmdListSecrets Command = "LIST_SECRETS"
+
+	// CmdRevealSecret defines a command to reveal a secret.
+	CmdRevealSecret Command = "REVEAL_SECRET"
 )
 
 // Common error messages
@@ -172,6 +176,11 @@ func (c Contract) Execute(snap store.Snapshot, step execution.Step) error {
 		err := c.cmd.listSecrets(snap, step)
 		if err != nil {
 			return xerrors.Errorf("failed to LIST_SECRETS: %v", err)
+		}
+	case CmdRevealSecret:
+		err := c.cmd.revealSecret(step)
+		if err != nil {
+			return xerrors.Errorf("failed to REVEAL_SECRET: %v", err)
 		}
 	default:
 		return xerrors.Errorf("unknown command: %s", cmd)
@@ -331,6 +340,43 @@ func (c calypsoCommand) listSecrets(snap store.Snapshot, step execution.Step) er
 
 	sort.Strings(res)
 	fmt.Fprint(c.printer, strings.Join(res, ","))
+
+	return nil
+}
+
+// revealSecret implements commands. It performs the REVEAL_SECRET command
+func (c calypsoCommand) revealSecret(step execution.Step) error {
+
+	key := step.Current.GetArg(KeyArg)
+	if len(key) == 0 {
+		return xerrors.Errorf(notFoundInTxArg, KeyArg)
+	}
+
+	name := step.Current.GetArg(SecretNameArg)
+	if len(name) == 0 {
+		return xerrors.Errorf(notFoundInTxArg, SecretNameArg)
+	}
+
+	secrets, ok := c.secrets[string(key)]
+	if !ok {
+		return xerrors.Errorf("'%s' was not found among the SMCs", key)
+	}
+
+	found := false
+	for _, s := range secrets {
+		if s == string(name) {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return xerrors.Errorf("'%s' was not found among the secrets", name)
+	}
+
+	dela.Logger.Info().
+		Str("contract", ContractName).
+		Msgf("revealed secret %x to %s", name, step.Current.GetIdentity())
 
 	return nil
 }
