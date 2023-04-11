@@ -436,15 +436,15 @@ func (b badCurve) IsOnCurve(x, y *big.Int) bool {
 }
 
 func (b badCurve) Add(x1, y1, x2, y2 *big.Int) (x, y *big.Int) {
-	panic("unsupported")
+	panic("not implemented - should not be needed by tests")
 }
 
 func (b badCurve) Double(x1, y1 *big.Int) (x, y *big.Int) {
-	panic("unsupported")
+	panic("not implemented - should not be needed by tests")
 }
 
 func (b badCurve) ScalarMult(x1, y1 *big.Int, k []byte) (x, y *big.Int) {
-	panic("unsupported")
+	panic("not implemented - should not be needed by tests")
 }
 
 func (b badCurve) ScalarBaseMult(k []byte) (x, y *big.Int) {
