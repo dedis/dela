@@ -5,6 +5,7 @@ import (
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/registry"
 	"go.dedis.ch/kyber/v3"
+	"go.dedis.ch/kyber/v3/share"
 	"golang.org/x/xerrors"
 )
 
@@ -429,6 +430,67 @@ func (req DecryptRequest) GetC() kyber.Point {
 
 // Serialize implements serde.Message.
 func (req DecryptRequest) Serialize(ctx serde.Context) ([]byte, error) {
+	format := msgFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, req)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't encode decrypt request: %v", err)
+	}
+
+	return data, nil
+}
+
+// ReencryptRequest is a message sent to request a reencryption.
+//
+// - implements serde.Message
+type ReencryptRequest struct {
+	// U is the point from the write-request
+	U kyber.Point
+	// Pk is the public key of the reader
+	Pk kyber.Point
+	// VerificationData is optional and can be any slice of bytes, so that each
+	// node can verify if the reencryption request is valid or not.
+	VerificationData *[]byte
+}
+
+// NewReencryptRequest creates a new decryption request.
+func NewReencryptRequest(u, pk kyber.Point) ReencryptRequest {
+	return ReencryptRequest{
+		U:  u,
+		Pk: pk,
+	}
+}
+
+// Serialize implements serde.Message.
+func (req ReencryptRequest) Serialize(ctx serde.Context) ([]byte, error) {
+	format := msgFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, req)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't encode decrypt request: %v", err)
+	}
+
+	return data, nil
+}
+
+// ReencryptReply returns the share to re-encrypt from one node
+type ReencryptReply struct {
+	Ui *share.PubShare
+	Ei kyber.Scalar
+	Fi kyber.Scalar
+}
+
+// NewReencryptReply creates a new decryption request.
+func NewReencryptReply(ui *share.PubShare, ei, fi kyber.Scalar) ReencryptReply {
+	return ReencryptReply{
+		Ui: ui,
+		Ei: ei,
+		Fi: fi,
+	}
+}
+
+// Serialize implements serde.Message.
+func (req ReencryptReply) Serialize(ctx serde.Context) ([]byte, error) {
 	format := msgFormats.Get(ctx.GetFormat())
 
 	data, err := format.Encode(ctx, req)

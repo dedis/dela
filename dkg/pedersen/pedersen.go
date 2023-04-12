@@ -43,6 +43,9 @@ var (
 	// protocolNameDecrypt denotes the value of the protocol span tag
 	// associated with the `dkg-decrypt` protocol.
 	protocolNameDecrypt = "dkg-decrypt"
+	// protocolNameReencrypt denotes the value of the protocol span tag
+	// associated with the `dkg-reencrypt` protocol.
+	protocolNameReencrypt = "dkg-reencrypt"
 	// ProtocolNameResharing denotes the value of the protocol span tag
 	// associated with the `dkg-resharing` protocol.
 	protocolNameResharing = "dkg-resharing"
@@ -53,6 +56,7 @@ var (
 const (
 	setupTimeout     = time.Minute * 50
 	decryptTimeout   = time.Minute * 5
+	reencryptTimeout = time.Minute * 5
 	resharingTimeout = time.Minute * 5
 )
 
@@ -212,6 +216,114 @@ func (a *Actor) Encrypt(message []byte) (K, C kyber.Point, remainder []byte,
 	return K, C, remainder, nil
 }
 
+// Reencrypt implements dkg.Actor. It uses the given public key
+// to reencrypt an encrypted message.
+func (a *Actor) Reencrypt(k, c, pk kyber.Point) (K, C kyber.Point, remainder []byte, err error) {
+	if !a.startRes.Done() {
+		return nil, nil, []byte{}, xerrors.Errorf(initDkgFirst)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), reencryptTimeout)
+	defer cancel()
+	ctx = context.WithValue(ctx, tracing.ProtocolKey, protocolNameReencrypt)
+
+	players := mino.NewAddresses(a.startRes.getParticipants()...)
+
+	sender, receiver, err := a.rpc.Stream(ctx, players)
+	if err != nil {
+		return nil, nil, []byte{}, xerrors.Errorf(failedStreamCreation, err)
+	}
+
+	iterator := players.AddressIterator()
+	addrs := make([]mino.Address, 0, players.Len())
+
+	for iterator.HasNext() {
+		addrs = append(addrs, iterator.GetNext())
+	}
+
+	//TODO: how to calculate (k, pk) in place of (U, Xc) ?
+	// seems correct, as in:
+	//	type OCS struct {
+	//	*onet.TreeNodeInstance
+	//	Shared    *dkgprotocol.SharedSecret // Shared represents the private key
+	//	Poly      *share.PubPoly            // Represents all public keys
+	//	U         kyber.Point               // U is the encrypted secret
+	//	Xc        kyber.Point               // The client's public key
+	//	Threshold int                       // How many replies are needed to re-create the secret
+	message := types.NewReencryptRequest(k, pk)
+
+	err = <-sender.Send(message, addrs...)
+	if err != nil {
+		return nil, nil, []byte{}, xerrors.Errorf("failed to send decrypt request: %v", err)
+	}
+
+	pubShares := make([]*share.PubShare, len(addrs))
+	U := k
+	Xc := pk
+	pubShares[0] = a.getUI(k, pk) // TODO: verify that this getUI(U, Xc) call is correct
+
+	for i := 0; i < len(addrs); i++ {
+		src, message, err := receiver.Recv(ctx)
+		if err != nil && i < a.startRes.threshold {
+			return nil, nil, []byte{}, xerrors.Errorf(unexpectedStreamStop, err)
+		}
+
+		dela.Logger.Debug().Msgf("Received a reencryption reply from %v", src)
+
+		r, ok := message.(types.ReencryptReply)
+		if !ok {
+			return nil, nil, []byte{}, xerrors.Errorf("got unexpected reply, expected "+
+				"%T but got: %T", r, message)
+		}
+
+		// Verify proofs
+		ufi := suite.Point().Mul(r.Fi, suite.Point().Add(U, Xc))
+		uiei := suite.Point().Mul(suite.Scalar().Neg(r.Ei), r.Ui.V)
+		uiHat := suite.Point().Add(ufi, uiei)
+
+		gfi := suite.Point().Mul(r.Fi, nil)
+		gxi := Poly.Eval(r.Ui.I).V //TODO: Poly *share.PubPoly            // Represents all public keys
+		hiei := suite.Point().Mul(suite.Scalar().Neg(r.Ei), gxi)
+		hiHat := suite.Point().Add(gfi, hiei)
+		hash := sha256.New()
+		r.Ui.V.MarshalTo(hash)
+		uiHat.MarshalTo(hash)
+		hiHat.MarshalTo(hash)
+
+		e := suite.Scalar().SetBytes(hash.Sum(nil))
+		if e.Equal(r.Ei) {
+			pubShares[r.Ui.I] = r.Ui
+		} else {
+			dela.Logger.Warn().Msgf("Received invalid share from node", r.Ui.I)
+		}
+	}
+
+	res, err := share.RecoverCommit(suite, pubShares, len(addrs), len(addrs))
+	if err != nil {
+		return nil, nil, []byte{}, xerrors.Errorf("failed to recover commit: %v", err)
+	}
+
+	decryptedMessage, err := res.Data()
+	if err != nil {
+		return nil, nil, []byte{}, xerrors.Errorf("failed to get embedded data: %v", err)
+	}
+
+	dela.Logger.Info().Msgf("Decrypted message: %v", decryptedMessage)
+
+	//	return new encrypted message, nil
+	return K, C, remainder, nil
+}
+
+// TODO: not where to get this UI ?
+func (a *Actor) getUI(U, Xc kyber.Point) *share.PubShare {
+	v := suite.Point().Mul(s.privShare.V, U)
+	v.Add(v, suite.Point().Mul(s.privShare.V, Xc))
+	return &share.PubShare{
+		I: s.privShare.I,
+		V: v,
+	}
+}
+
 // EncryptWithPublicKey implements dkg.Actor. It uses the given public key
 // to encrypt a message.
 func (a *Actor) EncryptWithPublicKey(message []byte, pk kyber.Point) (K, C kyber.Point, remainder []byte, err error) {
@@ -302,21 +414,20 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 		return nil, xerrors.Errorf(initDkgFirst)
 	}
 
-	players := mino.NewAddresses(a.startRes.getParticipants()...)
-
 	ctx, cancel := context.WithTimeout(context.Background(), decryptTimeout)
 	defer cancel()
 	ctx = context.WithValue(ctx, tracing.ProtocolKey, protocolNameDecrypt)
+
+	players := mino.NewAddresses(a.startRes.getParticipants()...)
 
 	sender, receiver, err := a.rpc.Stream(ctx, players)
 	if err != nil {
 		return nil, xerrors.Errorf(failedStreamCreation, err)
 	}
 
-	players = mino.NewAddresses(a.startRes.getParticipants()...)
 	iterator := players.AddressIterator()
-
 	addrs := make([]mino.Address, 0, players.Len())
+
 	for iterator.HasNext() {
 		addrs = append(addrs, iterator.GetNext())
 	}

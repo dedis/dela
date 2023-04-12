@@ -240,7 +240,7 @@ func (a reencryptAction) Execute(ctx node.Context) error {
 		return xerrors.Errorf(resolveActorFailed, err)
 	}
 
-	// first, let's decrypt the given data
+	// first, let's reencrypt the given data
 	encrypted := ctx.Flags.String("encrypted")
 
 	k, c, err := decodeEncrypted(encrypted)
@@ -248,14 +248,6 @@ func (a reencryptAction) Execute(ctx node.Context) error {
 		return xerrors.Errorf("failed to decode encrypted str: %v", err)
 	}
 
-	decrypted, err := actor.Decrypt(k, c)
-	if err != nil {
-		return xerrors.Errorf("failed to decrypt: %v", err)
-	}
-
-	fmt.Fprint(ctx.Out, hex.EncodeToString(decrypted))
-
-	// second, let's encrypt 'decrypted' with the given public key
 	publickey := ctx.Flags.String("publickey")
 
 	pk, err := decodePublickey(publickey)
@@ -263,7 +255,7 @@ func (a reencryptAction) Execute(ctx node.Context) error {
 		return xerrors.Errorf("failed to decode public key str: %v", err)
 	}
 
-	k, c, remainder, err := actor.EncryptWithPublicKey(decrypted, pk)
+	k, c, remainder, err := actor.Reencrypt(k, c, pk)
 	if err != nil {
 		return xerrors.Errorf("failed to reencrypt: %v", err)
 	}

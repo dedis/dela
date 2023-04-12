@@ -26,7 +26,7 @@ type Actor interface {
 
 	Encrypt(message []byte) (K, C kyber.Point, remainder []byte, err error)
 	Decrypt(K, C kyber.Point) ([]byte, error)
-	EncryptWithPublicKey(message []byte, pk kyber.Point) (K, C kyber.Point, remainder []byte, err error)
+	Reencrypt(k, c, pk kyber.Point) (K, C kyber.Point, remainder []byte, err error)
 
 	Reshare(co crypto.CollectiveAuthority, newThreshold int) error
 
