@@ -816,7 +816,7 @@ func (s *instance) handleReencryptRequest(out mino.Sender, msg types.ReencryptRe
 	ui := s.getUI(msg.U, msg.Pk)
 
 	// Calculating proofs
-	si := suite.Scalar().Pick(suite().RandomStream())
+	si := suite.Scalar().Pick(suite.RandomStream())
 	uiHat := suite.Point().Mul(si, suite.Point().Add(msg.U, msg.Pk))
 	hiHat := suite.Point().Mul(si, nil)
 	hash := sha256.New()

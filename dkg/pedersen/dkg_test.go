@@ -117,6 +117,17 @@ func TestDKGInstance_HandleVerifiableDecryptRequestFail(t *testing.T) {
 	require.EqualError(t, err, "bad state: unexpected state: UNKNOWN != one of [Certified]")
 }
 
+func TestDKGInstance_HandleReencryptRequestFail(t *testing.T) {
+	s := instance{
+		startRes: &state{dkgState: 0xaa},
+	}
+
+	err := s.handleMessage(context.TODO(), types.ReencryptRequest{},
+		fake.NewAddress(0), nil)
+
+	require.EqualError(t, err, "bad state: unexpected state: UNKNOWN != one of [Certified]")
+}
+
 func TestDKGInstance_HandleUnknown(t *testing.T) {
 	s := instance{
 		startRes: &state{dkgState: 0xaa},

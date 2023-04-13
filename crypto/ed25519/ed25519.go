@@ -328,3 +328,13 @@ func (s Signer) Sign(msg []byte) (crypto.Signature, error) {
 
 	return Signature{data: sig}, nil
 }
+
+func ElGamalDecrypt(group kyber.Group, prikey kyber.Scalar, K, C kyber.Point) (
+	message []byte, err error) {
+
+	// ElGamal-decrypt the ciphertext (K,C) to reproduce the message.
+	S := group.Point().Mul(prikey, K) // regenerate shared secret
+	M := group.Point().Sub(C, S)      // use to un-blind the message
+	message, err = M.Data()           // extract the embedded data
+	return
+}

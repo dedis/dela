@@ -249,7 +249,8 @@ func (a *Actor) Reencrypt(k, c, pk kyber.Point) (K, C kyber.Point, remainder []b
 	//	Poly      *share.PubPoly            // Represents all public keys
 	//	U         kyber.Point               // U is the encrypted secret
 	//	Xc        kyber.Point               // The client's public key
-	//	Threshold int                       // How many replies are needed to re-create the secret
+	//	Threshold int                       // How many replies are needed
+	//	to re-create the secret
 	message := types.NewReencryptRequest(k, pk)
 
 	err = <-sender.Send(message, addrs...)
@@ -282,7 +283,7 @@ func (a *Actor) Reencrypt(k, c, pk kyber.Point) (K, C kyber.Point, remainder []b
 		uiHat := suite.Point().Add(ufi, uiei)
 
 		gfi := suite.Point().Mul(r.Fi, nil)
-		gxi := Poly.Eval(r.Ui.I).V //TODO: Poly *share.PubPoly            // Represents all public keys
+		gxi := a.startRes.poly.Eval(r.Ui.I).V //TODO: Poly *share.PubPoly represents all public keys
 		hiei := suite.Point().Mul(suite.Scalar().Neg(r.Ei), gxi)
 		hiHat := suite.Point().Add(gfi, hiei)
 		hash := sha256.New()
@@ -294,7 +295,7 @@ func (a *Actor) Reencrypt(k, c, pk kyber.Point) (K, C kyber.Point, remainder []b
 		if e.Equal(r.Ei) {
 			pubShares[r.Ui.I] = r.Ui
 		} else {
-			dela.Logger.Warn().Msgf("Received invalid share from node", r.Ui.I)
+			dela.Logger.Warn().Msgf("Received invalid share %v from node", r.Ui.I)
 		}
 	}
 
@@ -314,39 +315,14 @@ func (a *Actor) Reencrypt(k, c, pk kyber.Point) (K, C kyber.Point, remainder []b
 	return K, C, remainder, nil
 }
 
-// TODO: not where to get this UI ?
+// TODO: where to get this UI ?
 func (a *Actor) getUI(U, Xc kyber.Point) *share.PubShare {
-	v := suite.Point().Mul(s.privShare.V, U)
-	v.Add(v, suite.Point().Mul(s.privShare.V, Xc))
+	v := suite.Point().Mul(suite.Scalar().Zero(), U)
+	v.Add(v, suite.Point().Mul(suite.Scalar().Zero(), Xc))
 	return &share.PubShare{
-		I: s.privShare.I,
+		I: 0,
 		V: v,
 	}
-}
-
-// EncryptWithPublicKey implements dkg.Actor. It uses the given public key
-// to encrypt a message.
-func (a *Actor) EncryptWithPublicKey(message []byte, pk kyber.Point) (K, C kyber.Point, remainder []byte, err error) {
-	if !a.startRes.Done() {
-		return nil, nil, nil, xerrors.Errorf(initDkgFirst)
-	}
-
-	// Embed the message (or as much of it as will fit) into a curve point.
-	M := suite.Point().Embed(message, random.New())
-	max := suite.Point().EmbedLen()
-	if max > len(message) {
-		max = len(message)
-	}
-	remainder = message[max:]
-
-	//TODO: make calculate re-encryption correctly
-	// ElGamal-encrypt the point to produce ciphertext (K,C).
-	k := suite.Scalar().Pick(random.New()) // ephemeral private key
-	K = suite.Point().Mul(k, nil)          // ephemeral DH public key
-	S := suite.Point().Mul(k, pk)          // ephemeral DH shared secret
-	C = S.Add(S, M)                        // message blinded with secret
-
-	return K, C, remainder, nil
 }
 
 // VerifiableEncrypt implements dkg.Actor. It uses the DKG public key to encrypt

@@ -3,6 +3,7 @@ package pedersen
 import (
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/kyber/v3"
+	"go.dedis.ch/kyber/v3/share"
 	"golang.org/x/xerrors"
 	"sync"
 )
@@ -50,6 +51,7 @@ type state struct {
 	// participants is set once a sharing or resharing starts
 	participants []mino.Address
 	pubkeys      []kyber.Point
+	poly         *share.PubPoly // TODO: is it the right place for reencrypt ?
 	threshold    int
 	dkgState     dkgState
 }

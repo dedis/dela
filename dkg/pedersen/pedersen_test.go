@@ -1,6 +1,7 @@
 package pedersen
 
 import (
+	"go.dedis.ch/kyber/v3/group/edwards25519"
 	"testing"
 
 	"github.com/rs/zerolog"
@@ -220,6 +221,87 @@ func TestPedersen_Scenario(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, remainder, 0)
 		decrypted, err := actors[i].Decrypt(K, C)
+		require.NoError(t, err)
+		require.Equal(t, message, decrypted)
+	}
+}
+
+func TestPedersen_ReencryptScenario(t *testing.T) {
+	oldLog := dela.Logger
+	defer func() {
+		dela.Logger = oldLog
+	}()
+
+	dela.Logger = dela.Logger.Level(zerolog.DebugLevel)
+
+	n := 7
+
+	minos := make([]mino.Mino, n)
+	dkgs := make([]dkg.DKG, n)
+	addrs := make([]mino.Address, n)
+
+	for i := 0; i < n; i++ {
+		addr := minogrpc.ParseAddress("127.0.0.1", 0)
+
+		m, err := minogrpc.NewMinogrpc(addr, nil, tree.NewRouter(minogrpc.NewAddressFactory()))
+		require.NoError(t, err)
+
+		defer m.GracefulStop()
+
+		minos[i] = m
+		addrs[i] = m.GetAddress()
+	}
+
+	pubkeys := make([]kyber.Point, len(minos))
+
+	for i, mi := range minos {
+		for _, m := range minos {
+			mi.(*minogrpc.Minogrpc).GetCertificateStore().Store(m.GetAddress(), m.(*minogrpc.Minogrpc).GetCertificateChain())
+		}
+
+		d, pubkey := NewPedersen(mi.(*minogrpc.Minogrpc))
+
+		dkgs[i] = d
+		pubkeys[i] = pubkey
+	}
+
+	fakeAuthority := NewAuthority(addrs, pubkeys)
+
+	actors := make([]dkg.Actor, n)
+	for i := 0; i < n; i++ {
+		actor, err := dkgs[i].Listen()
+		require.NoError(t, err)
+
+		actors[i] = actor
+	}
+
+	// trying to call a reencrypt before a setup
+	_, _, _, err := actors[0].Reencrypt(nil, nil, nil)
+	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")
+
+	_, err = actors[0].Setup(fakeAuthority, n)
+	require.NoError(t, err)
+
+	suite := edwards25519.NewBlakeSHA256Ed25519()
+
+	// Create a public/private keypair
+	privKey := suite.Scalar().Pick(suite.RandomStream())
+	pubKey := suite.Point().Mul(privKey, nil)
+
+	// every node should be able to encrypt/reencrypt with new PUBK/decrypt with new privk
+	for i := 0; i < n; i++ {
+		//TODO: generate random message
+		message := []byte("Hello world")
+
+		K, C, remainder, err := actors[i].Encrypt(message)
+		require.NoError(t, err)
+		require.Len(t, remainder, 0)
+
+		K, C, remainder, err = actors[i].Reencrypt(K, C, pubKey)
+		require.NoError(t, err)
+		require.Len(t, remainder, 0)
+
+		decrypted, err := ed25519.ElGamalDecrypt(suite, privKey, K, C)
 		require.NoError(t, err)
 		require.Equal(t, message, decrypted)
 	}
