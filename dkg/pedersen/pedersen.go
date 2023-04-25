@@ -1,5 +1,6 @@
 package pedersen
 
+import "C"
 import (
 	"crypto/sha256"
 	"runtime"
@@ -547,6 +548,116 @@ func (a *Actor) VerifiableDecrypt(ciphertexts []types.Ciphertext) ([][]byte, err
 	wgBatchReply.Wait()
 
 	return decryptedMessage, nil
+}
+
+func (a *Actor) VerifiableReencrypt(cipher []types.Ciphertext, pubk kyber.Point) (ciphertext []types.Ciphertext, remainder []byte, err error) {
+	if !a.startRes.Done() {
+		return []types.Ciphertext{}, nil, xerrors.Errorf(initDkgFirst)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), reencryptTimeout)
+	defer cancel()
+	ctx = context.WithValue(ctx, tracing.ProtocolKey, protocolNameReencrypt)
+
+	players := mino.NewAddresses(a.startRes.getParticipants()...)
+
+	sender, receiver, err := a.rpc.Stream(ctx, players)
+	if err != nil {
+		return []types.Ciphertext{}, nil, xerrors.Errorf(failedStreamCreation, err)
+	}
+
+	iterator := players.AddressIterator()
+
+	addrs := make([]mino.Address, 0, players.Len())
+	for iterator.HasNext() {
+		addrs = append(addrs, iterator.GetNext())
+	}
+
+	//TODO: how to calculate (k, pk) in place of (U, Xc) ?
+	// copied from cothority/calypso/protocol/ocs.go:
+	//	type OCS struct {
+	//	*onet.TreeNodeInstance
+	//	Shared    *dkgprotocol.SharedSecret // Shared represents the private key
+	//	Poly      *share.PubPoly            // Represents all public keys
+	//	U         kyber.Point               // U is the encrypted secret
+	//	Xc        kyber.Point               // The client's public key
+	//	Threshold int                       // How many replies are needed
+	//	to re-create the secret
+
+	//TODO is the following correct ???
+	U := cipher[0].K
+	Xc := pubk
+
+	batchsize := len(cipher)
+
+	message := types.NewReencryptRequest(U, Xc)
+
+	err = <-sender.Send(message, addrs...)
+	if err != nil {
+		return []types.Ciphertext{}, nil, xerrors.Errorf("failed to send decrypt request: %v", err)
+	}
+
+	pubShares := make([]*share.PubShare, len(addrs))
+	pubShares[0] = a.getUI(U, Xc) // TODO: verify that this getUI(U, Xc) call is correct
+
+	for i := 0; i < len(addrs); i++ {
+		src, message, err := receiver.Recv(ctx)
+		if err != nil && i < a.startRes.threshold {
+			return []types.Ciphertext{}, nil, xerrors.Errorf(unexpectedStreamStop, err)
+		}
+
+		dela.Logger.Debug().Msgf("Received a reencryption reply from %v", src)
+
+		r, ok := message.(types.ReencryptReply)
+		if !ok {
+			return []types.Ciphertext{}, nil, xerrors.Errorf("got unexpected reply, expected "+
+				"%T but got: %T", r, message)
+		}
+
+		// Verify proofs
+		ufi := suite.Point().Mul(r.Fi, suite.Point().Add(U, Xc))
+		uiei := suite.Point().Mul(suite.Scalar().Neg(r.Ei), r.Ui.V)
+		uiHat := suite.Point().Add(ufi, uiei)
+
+		gfi := suite.Point().Mul(r.Fi, nil)
+		gxi := a.startRes.poly.Eval(r.Ui.I).V //TODO: Poly *share.PubPoly represents all public keys
+		hiei := suite.Point().Mul(suite.Scalar().Neg(r.Ei), gxi)
+		hiHat := suite.Point().Add(gfi, hiei)
+		hash := sha256.New()
+		r.Ui.V.MarshalTo(hash)
+		uiHat.MarshalTo(hash)
+		hiHat.MarshalTo(hash)
+
+		e := suite.Scalar().SetBytes(hash.Sum(nil))
+		if e.Equal(r.Ei) {
+			pubShares[r.Ui.I] = r.Ui
+		} else {
+			dela.Logger.Warn().Msgf("Received invalid share %v from node", r.Ui.I)
+		}
+	}
+
+	res, err := share.RecoverCommit(suite, pubShares, len(addrs), len(addrs))
+	if err != nil {
+		return []types.Ciphertext{}, nil, xerrors.Errorf("failed to recover commit: %v", err)
+	}
+
+	decryptedMessage, err := res.Data()
+	if err != nil {
+		return []types.Ciphertext{}, nil, xerrors.Errorf("failed to get embedded data: %v", err)
+	}
+
+	dela.Logger.Info().Msgf("Decrypted message: %v", decryptedMessage)
+
+	ciphertext = []types.Ciphertext{
+		K:    K,
+		C:    C,
+		UBar: UBar,
+		E:    E,
+		F:    F,
+		GBar: GBar,
+	}
+
+	return ciphertext, remainder, nil
 }
 
 func newWorker(numParticipants int, decryptedMessage [][]byte,

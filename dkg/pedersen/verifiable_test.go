@@ -314,14 +314,15 @@ func Test_VerifiableReencrypt_minogrpc(t *testing.T) {
 		pubKey := suite.Point().Mul(privKey, nil)
 
 		start = time.Now()
-		reencrypted, err := actors[0].VerifiableReencrypt(ciphertexts, pubKey)
+		reencrypted, rem, err := actors[0].VerifiableReencrypt(ciphertexts, pubKey)
+		//TODO what to do with rem here ?
 		reencryptionTime := time.Since(start)
 		require.NoError(t, err)
 
 		for i := 0; i < batchSize; i++ {
-			//TODO: extract K,C from reencrypted ?
-			K := suite.Point()
-			C := suite.Point()
+			//TODO verify this extraction ?
+			K := reencrypted[i].K
+			C := reencrypted[i].C
 			decrypted, err := ed25519.ElGamalDecrypt(suite, privKey, K, C)
 			require.NoError(t, err)
 			require.Equal(t, msg[i][:], decrypted[i])
