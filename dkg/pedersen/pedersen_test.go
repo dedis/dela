@@ -1,7 +1,11 @@
 package pedersen
 
 import (
-	"go.dedis.ch/kyber/v3/group/edwards25519"
+	"fmt"
+	"go.dedis.ch/dela/mino/minoch"
+	"go.dedis.ch/kyber/v3/share"
+	"go.dedis.ch/kyber/v3/suites"
+	"go.dedis.ch/kyber/v3/util/key"
 	"testing"
 
 	"github.com/rs/zerolog"
@@ -192,9 +196,6 @@ func TestPedersen_Scenario(t *testing.T) {
 		pubkeys[i] = pubkey
 	}
 
-	fakeAuthority := NewAuthority(addrs, pubkeys)
-
-	message := []byte("Hello world")
 	actors := make([]dkg.Actor, n)
 	for i := 0; i < n; i++ {
 		actor, err := dkgs[i].Listen()
@@ -204,10 +205,14 @@ func TestPedersen_Scenario(t *testing.T) {
 	}
 
 	// trying to call a decrypt/encrypt before a setup
+	message := []byte("Hello world")
+
 	_, _, _, err := actors[0].Encrypt(message)
 	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")
 	_, err = actors[0].Decrypt(nil, nil)
 	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")
+
+	fakeAuthority := NewAuthority(addrs, pubkeys)
 
 	_, err = actors[0].Setup(fakeAuthority, n)
 	require.NoError(t, err)
@@ -227,81 +232,67 @@ func TestPedersen_Scenario(t *testing.T) {
 }
 
 func TestPedersen_ReencryptScenario(t *testing.T) {
+	// Use with MINO_TRAFFIC=log
+	// traffic.LogItems = false
+	// traffic.LogEvent = false
+	// defer func() {
+	// 	traffic.SaveItems("graph.dot", true, false)
+	// 	traffic.SaveEvents("events.dot")
+	// }()
+
 	oldLog := dela.Logger
 	defer func() {
 		dela.Logger = oldLog
 	}()
 
-	dela.Logger = dela.Logger.Level(zerolog.DebugLevel)
+	dela.Logger = dela.Logger.Level(zerolog.WarnLevel)
 
-	n := 7
+	nbNodes := 7
 
-	minos := make([]mino.Mino, n)
-	dkgs := make([]dkg.DKG, n)
-	addrs := make([]mino.Address, n)
+	minos := make([]mino.Mino, nbNodes)
+	dkgs := make([]dkg.DKG, nbNodes)
+	addrs := make([]mino.Address, nbNodes)
 
-	for i := 0; i < n; i++ {
-		addr := minogrpc.ParseAddress("127.0.0.1", 0)
+	manager := minoch.NewManager()
 
-		m, err := minogrpc.NewMinogrpc(addr, nil, tree.NewRouter(minogrpc.NewAddressFactory()))
-		require.NoError(t, err)
-
-		defer m.GracefulStop()
-
-		minos[i] = m
-		addrs[i] = m.GetAddress()
+	for i := 0; i < nbNodes; i++ {
+		minos[i] = minoch.MustCreate(manager, fmt.Sprint("node", i))
+		addrs[i] = minos[i].GetAddress()
 	}
 
 	pubkeys := make([]kyber.Point, len(minos))
 
 	for i, mi := range minos {
-		for _, m := range minos {
-			mi.(*minogrpc.Minogrpc).GetCertificateStore().Store(m.GetAddress(), m.(*minogrpc.Minogrpc).GetCertificateChain())
-		}
-
-		d, pubkey := NewPedersen(mi.(*minogrpc.Minogrpc))
-
+		d, pubkey := NewPedersen(mi.(*minoch.Minoch))
 		dkgs[i] = d
 		pubkeys[i] = pubkey
 	}
 
-	fakeAuthority := NewAuthority(addrs, pubkeys)
-
-	actors := make([]dkg.Actor, n)
-	for i := 0; i < n; i++ {
+	actors := make([]dkg.Actor, nbNodes)
+	for i := 0; i < nbNodes; i++ {
 		actor, err := dkgs[i].Listen()
 		require.NoError(t, err)
 
 		actors[i] = actor
 	}
 
-	// trying to call a reencrypt before a setup
-	_, _, _, err := actors[0].Reencrypt(nil, nil, nil)
-	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")
-
-	_, err = actors[0].Setup(fakeAuthority, n)
+	fakeAuthority := NewAuthority(addrs, pubkeys)
+	_, err := actors[0].Setup(fakeAuthority, nbNodes)
 	require.NoError(t, err)
 
-	suite := edwards25519.NewBlakeSHA256Ed25519()
+	// every node should be able to encrypt/reencrypt/decrypt
+	message := []byte("Hello world")
+	kp := key.NewKeyPair(suites.MustFind("Ed25519"))
 
-	// Create a public/private keypair
-	privKey := suite.Scalar().Pick(suite.RandomStream())
-	pubKey := suite.Point().Mul(privKey, nil)
+	for i := 0; i < nbNodes; i++ {
+		U, Cs := actors[i].EncryptSecret(message)
 
-	// every node should be able to encrypt/reencrypt with new PUBK/decrypt with new privk
-	for i := 0; i < n; i++ {
-		//TODO: generate random message
-		message := []byte("Hello world")
-
-		K, C, remainder, err := actors[i].Encrypt(message)
+		Uis, err := actors[i].ReencryptSecret(U, kp.Public)
 		require.NoError(t, err)
-		require.Len(t, remainder, 0)
 
-		K, C, remainder, err = actors[i].Reencrypt(K, C, pubKey)
-		require.NoError(t, err)
-		require.Len(t, remainder, 0)
+		XhatEnc, err := share.RecoverCommit(suites.MustFind("Ed25519"), Uis, (2*nbNodes/3)+1, nbNodes)
 
-		decrypted, err := ed25519.ElGamalDecrypt(suite, privKey, K, C)
+		decrypted, err := actors[i].DecryptSecret(Cs, XhatEnc, kp.Private)
 		require.NoError(t, err)
 		require.Equal(t, message, decrypted)
 	}

@@ -2,8 +2,6 @@ package pedersen
 
 import (
 	"fmt"
-	"go.dedis.ch/dela/crypto/ed25519"
-	"go.dedis.ch/kyber/v3/group/edwards25519"
 	"math/rand"
 	"testing"
 	"time"
@@ -218,119 +216,6 @@ func Test_VerifiableEncDec_minogrpc(t *testing.T) {
 		t.Logf("n=%d, batchSize=%d, workerNum=%d, decryption time=%s, "+
 			"throughput=%v[tx/s], dkg setup time=%s", n, batchSize, workerNum,
 			decryptionTime, float64(batchSize)/decryptionTime.Seconds(), setupTime)
-	}
-}
-
-func Test_VerifiableReencrypt_minogrpc(t *testing.T) {
-	// we want to time the decryption for different batch sizes with different
-	// number of nodes
-
-	numWorkersSlice := []int{8}
-	batchSizeSlice := []int{32}
-
-	// setting up the dkg
-	n := 7
-	threshold := n
-
-	minos := make([]mino.Mino, n)
-	dkgs := make([]dkg.DKG, n)
-	addrs := make([]mino.Address, n)
-
-	// Create GBar. We need a generator in order to follow the encryption and
-	// decryption protocol of https://arxiv.org/pdf/2205.08529.pdf. We take an
-	// agreed data among the participants and embed it as a point. The result is
-	// the generator that we are seeking.
-	agreedData := make([]byte, 32)
-	_, err := rand.Read(agreedData)
-	require.NoError(t, err)
-	GBar := suite.Point().Embed(agreedData, keccak.New(agreedData))
-
-	t.Log("initiating the dkg nodes ...")
-
-	for i := 0; i < n; i++ {
-		addr := minogrpc.ParseAddress("127.0.0.1", 0)
-
-		minogrpc, err := minogrpc.NewMinogrpc(addr, nil, tree.NewRouter(minogrpc.NewAddressFactory()))
-		require.NoError(t, err)
-
-		defer minogrpc.GracefulStop()
-
-		minos[i] = minogrpc
-		addrs[i] = minogrpc.GetAddress()
-	}
-
-	pubkeys := make([]kyber.Point, n)
-
-	for i, mino := range minos {
-		for _, m := range minos {
-			mino.(*minogrpc.Minogrpc).GetCertificateStore().Store(m.GetAddress(),
-				m.(*minogrpc.Minogrpc).GetCertificateChain())
-		}
-		dkg, pubkey := NewPedersen(mino.(*minogrpc.Minogrpc))
-		dkgs[i] = dkg
-		pubkeys[i] = pubkey
-	}
-
-	fakeAuthority := NewAuthority(addrs, pubkeys)
-
-	actors := make([]dkg.Actor, n)
-	for i := 0; i < n; i++ {
-		actor, err := dkgs[i].Listen()
-		require.NoError(t, err)
-		actors[i] = actor
-	}
-
-	t.Log("setting up the dkg ...")
-
-	start := time.Now()
-	_, err = actors[0].Setup(fakeAuthority, threshold)
-	require.NoError(t, err)
-	setupTime := time.Since(start)
-
-	// generating random messages in batch and encrypt them
-	for i, batchSize := range batchSizeSlice {
-		t.Logf("=== starting the process with batch size = %d === \n", batchSize)
-
-		workerNum = numWorkersSlice[i]
-
-		msg := make([][29]byte, batchSize)
-		var ciphertexts []types.Ciphertext
-		for i := 0; i < batchSize; i++ {
-			_, err = rand.Read(msg[i][:])
-			require.NoError(t, err)
-
-			ciphertext, remainder, err := actors[0].VerifiableEncrypt(msg[i][:], GBar)
-			require.NoError(t, err)
-			require.Len(t, remainder, 0)
-
-			ciphertexts = append(ciphertexts, ciphertext)
-		}
-
-		t.Log("reencrypting the batch ...")
-
-		// create pub/priv key pair
-		var suite = edwards25519.NewBlakeSHA256Ed25519()
-		privKey := suite.Scalar().Pick(suite.RandomStream())
-		pubKey := suite.Point().Mul(privKey, nil)
-
-		start = time.Now()
-		reencrypted, rem, err := actors[0].VerifiableReencrypt(ciphertexts, pubKey)
-		//TODO what to do with rem here ?
-		reencryptionTime := time.Since(start)
-		require.NoError(t, err)
-
-		for i := 0; i < batchSize; i++ {
-			//TODO verify this extraction ?
-			K := reencrypted[i].K
-			C := reencrypted[i].C
-			decrypted, err := ed25519.ElGamalDecrypt(suite, privKey, K, C)
-			require.NoError(t, err)
-			require.Equal(t, msg[i][:], decrypted[i])
-		}
-
-		t.Logf("n=%d, batchSize=%d, workerNum=%d, decryption time=%s, "+
-			"throughput=%v[tx/s], dkg setup time=%s", n, batchSize, workerNum,
-			reencryptionTime, float64(batchSize)/reencryptionTime.Seconds(), setupTime)
 	}
 }
 

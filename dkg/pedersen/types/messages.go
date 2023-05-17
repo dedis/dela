@@ -440,24 +440,23 @@ func (req DecryptRequest) Serialize(ctx serde.Context) ([]byte, error) {
 	return data, nil
 }
 
-// ReencryptRequest is a message sent to request a reencryption.
-//
-// - implements serde.Message
+// ReencryptRequest share sent to a node in order to
+// reencrypt a secret with the given public key
 type ReencryptRequest struct {
 	// U is the point from the write-request
 	U kyber.Point
-	// Pk is the public key of the reader
-	Pk kyber.Point
+	// Xc is the public key of the reader
+	PubK kyber.Point
 	// VerificationData is optional and can be any slice of bytes, so that each
 	// node can verify if the reencryption request is valid or not.
 	VerificationData *[]byte
 }
 
 // NewReencryptRequest creates a new decryption request.
-func NewReencryptRequest(u, pk kyber.Point) ReencryptRequest {
-	return ReencryptRequest{
-		U:  u,
-		Pk: pk,
+func NewReencryptRequest(u, pubk kyber.Point) *ReencryptRequest {
+	return &ReencryptRequest{
+		U:    u,
+		PubK: pubk,
 	}
 }
 
@@ -475,14 +474,15 @@ func (req ReencryptRequest) Serialize(ctx serde.Context) ([]byte, error) {
 
 // ReencryptReply returns the share to re-encrypt from one node
 type ReencryptReply struct {
-	Ui *share.PubShare
-	Ei kyber.Scalar
-	Fi kyber.Scalar
+	PubK kyber.Point
+	Ui   *share.PubShare
+	Ei   kyber.Scalar
+	Fi   kyber.Scalar
 }
 
 // NewReencryptReply creates a new decryption request.
-func NewReencryptReply(ui *share.PubShare, ei, fi kyber.Scalar) ReencryptReply {
-	return ReencryptReply{
+func NewReencryptReply(ui *share.PubShare, ei, fi kyber.Scalar) *ReencryptReply {
+	return &ReencryptReply{
 		Ui: ui,
 		Ei: ei,
 		Fi: fi,

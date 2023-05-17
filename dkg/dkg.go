@@ -4,6 +4,7 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/dkg/pedersen/types"
 	"go.dedis.ch/kyber/v3"
+	"go.dedis.ch/kyber/v3/share"
 )
 
 // DKG defines the primitive to start a DKG protocol
@@ -26,11 +27,14 @@ type Actor interface {
 
 	Encrypt(message []byte) (K, C kyber.Point, remainder []byte, err error)
 	Decrypt(K, C kyber.Point) ([]byte, error)
-	Reencrypt(k, c, pk kyber.Point) (K, C kyber.Point, remainder []byte, err error)
 
 	Reshare(co crypto.CollectiveAuthority, newThreshold int) error
 
 	VerifiableEncrypt(message []byte, GBar kyber.Point) (ciphertext types.Ciphertext, remainder []byte, err error)
 	VerifiableDecrypt(ciphertexts []types.Ciphertext) ([][]byte, error)
-	VerifiableReencrypt(ciphertexts []types.Ciphertext, pubk kyber.Point) (ciphertext []types.Ciphertext, remainder []byte, err error)
+
+	EncryptSecret(message []byte) (U kyber.Point, Cs []kyber.Point)
+	ReencryptSecret(U kyber.Point, Pk kyber.Point) (Uis []*share.PubShare, err error)
+
+	DecryptSecret(Cs []kyber.Point, XhatEnc kyber.Point, Sk kyber.Scalar) (message []byte, err error)
 }

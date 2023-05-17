@@ -183,14 +183,6 @@ func (s *instance) handleMessage(ctx context.Context, msg serde.Message, from mi
 
 		return s.handleReencryptRequest(out, msg, from)
 
-	case types.ReencryptReply:
-		err := s.startRes.checkState(certified)
-		if err != nil {
-			return xerrors.Errorf(badState, err)
-		}
-
-		return s.handleReencryptReply(out, msg, from)
-
 	default:
 		return xerrors.Errorf("expected Start message, decrypt request or "+
 			"Deal as first message, got: %T", msg)
@@ -813,11 +805,11 @@ func (s *instance) handleReencryptRequest(out mino.Sender, msg types.ReencryptRe
 		return xerrors.Errorf("you must first initialize DKG. Did you call setup() first?")
 	}
 
-	ui := s.getUI(msg.U, msg.Pk)
+	ui := s.getUI(msg.U, msg.PubK)
 
 	// Calculating proofs
 	si := suite.Scalar().Pick(suite.RandomStream())
-	uiHat := suite.Point().Mul(si, suite.Point().Add(msg.U, msg.Pk))
+	uiHat := suite.Point().Mul(si, suite.Point().Add(msg.U, msg.PubK))
 	hiHat := suite.Point().Mul(si, nil)
 	hash := sha256.New()
 	ui.V.MarshalTo(hash)
@@ -831,30 +823,19 @@ func (s *instance) handleReencryptRequest(out mino.Sender, msg types.ReencryptRe
 	errs := out.Send(response, from)
 	err := <-errs
 	if err != nil {
-		return xerrors.Errorf("got an error while sending the decrypt reply: %v", err)
+		return xerrors.Errorf("got an error while sending the reencrypt reply: %v", err)
 	}
 
 	return nil
 }
 
-func (s *instance) getUI(U, Xc kyber.Point) *share.PubShare {
+func (s *instance) getUI(U, pubk kyber.Point) *share.PubShare {
 	v := suite.Point().Mul(s.privShare.V, U)
-	v.Add(v, suite.Point().Mul(s.privShare.V, Xc))
+	v.Add(v, suite.Point().Mul(s.privShare.V, pubk))
 	return &share.PubShare{
 		I: s.privShare.I,
 		V: v,
 	}
-}
-
-func (s *instance) handleReencryptReply(out mino.Sender, msg types.ReencryptReply,
-	from mino.Address) error {
-
-	if !s.startRes.Done() {
-		return xerrors.Errorf("you must first initialize DKG. Did you call setup() first?")
-	}
-
-	//TODO: to be continued...
-	return nil
 }
 
 func (s *instance) handleVerifiableDecrypt(out mino.Sender,
