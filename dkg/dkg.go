@@ -34,7 +34,7 @@ type Actor interface {
 	VerifiableDecrypt(ciphertexts []types.Ciphertext) ([][]byte, error)
 
 	EncryptSecret(message []byte) (U kyber.Point, Cs []kyber.Point)
-	ReencryptSecret(U kyber.Point, Pk kyber.Point) (Uis []*share.PubShare, err error)
+	ReencryptSecret(U kyber.Point, Pk kyber.Point, threshold int) (Uis []*share.PubShare, err error)
 
 	DecryptSecret(Cs []kyber.Point, XhatEnc kyber.Point, Sk kyber.Scalar) (message []byte, err error)
 }

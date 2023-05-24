@@ -447,9 +447,6 @@ type ReencryptRequest struct {
 	U kyber.Point
 	// Xc is the public key of the reader
 	PubK kyber.Point
-	// VerificationData is optional and can be any slice of bytes, so that each
-	// node can verify if the reencryption request is valid or not.
-	VerificationData *[]byte
 }
 
 // NewReencryptRequest creates a new decryption request.
@@ -481,11 +478,12 @@ type ReencryptReply struct {
 }
 
 // NewReencryptReply creates a new decryption request.
-func NewReencryptReply(ui *share.PubShare, ei, fi kyber.Scalar) *ReencryptReply {
+func NewReencryptReply(pubk kyber.Point, ui *share.PubShare, ei, fi kyber.Scalar) *ReencryptReply {
 	return &ReencryptReply{
-		Ui: ui,
-		Ei: ei,
-		Fi: fi,
+		PubK: pubk,
+		Ui:   ui,
+		Ei:   ei,
+		Fi:   fi,
 	}
 }
 

@@ -248,6 +248,7 @@ func TestPedersen_ReencryptScenario(t *testing.T) {
 	dela.Logger = dela.Logger.Level(zerolog.WarnLevel)
 
 	nbNodes := 7
+	threshold := (2 * nbNodes / 3) + 1
 
 	minos := make([]mino.Mino, nbNodes)
 	dkgs := make([]dkg.DKG, nbNodes)
@@ -287,10 +288,11 @@ func TestPedersen_ReencryptScenario(t *testing.T) {
 	for i := 0; i < nbNodes; i++ {
 		U, Cs := actors[i].EncryptSecret(message)
 
-		Uis, err := actors[i].ReencryptSecret(U, kp.Public)
+		Uis, err := actors[i].ReencryptSecret(U, kp.Public, threshold)
 		require.NoError(t, err)
+		require.NotNil(t, Uis)
 
-		XhatEnc, err := share.RecoverCommit(suites.MustFind("Ed25519"), Uis, (2*nbNodes/3)+1, nbNodes)
+		XhatEnc, err := share.RecoverCommit(suites.MustFind("Ed25519"), Uis, threshold, nbNodes)
 
 		decrypted, err := actors[i].DecryptSecret(Cs, XhatEnc, kp.Private)
 		require.NoError(t, err)

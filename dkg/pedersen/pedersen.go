@@ -521,15 +521,15 @@ func (a *Actor) EncryptSecret(msg []byte) (U kyber.Point, Cs []kyber.Point) {
 }
 
 type OCS struct {
-	shared     *share.PriShare        // Shared represents the private key
-	poly       *share.PubPoly         // Represents all public keys
-	replies    []types.ReencryptReply // replies received
-	U          kyber.Point            // U is the random part of the encrypted secret
-	pubk       kyber.Point            // The client's public key
-	nbnodes    int                    // How many nodes participate in the distributed operations
-	nbfailures int                    // How many failures occurred so far
-	threshold  int                    // How many replies are needed to re-create the secret
-	Uis        []*share.PubShare      // re-encrypted shares
+	U    kyber.Point // U is the random part of the encrypted secret
+	pubk kyber.Point // The client's public key
+
+	nbnodes    int // How many nodes participate in the distributed operations
+	nbfailures int // How many failures occurred so far
+	threshold  int // How many replies are needed to re-create the secret
+
+	replies []types.ReencryptReply // replies received
+	Uis     []*share.PubShare      // re-encrypted shares
 }
 
 // newOCS creates a new on-chain secret structure.
@@ -540,7 +540,7 @@ func newOCS(pubk kyber.Point) *OCS {
 }
 
 // ReencryptSecret implements dkg.Actor.
-func (a *Actor) ReencryptSecret(U kyber.Point, pubk kyber.Point) (Uis []*share.PubShare, err error) {
+func (a *Actor) ReencryptSecret(U kyber.Point, pubk kyber.Point, threshold int) (Uis []*share.PubShare, err error) {
 	if !a.startRes.Done() {
 		return nil, xerrors.Errorf(initDkgFirst)
 	}
@@ -573,7 +573,7 @@ func (a *Actor) ReencryptSecret(U kyber.Point, pubk kyber.Point) (Uis []*share.P
 	ocs := newOCS(pubk)
 	ocs.U = U
 	ocs.nbnodes = len(addrs)
-	ocs.threshold = ocs.nbnodes - 1
+	ocs.threshold = threshold
 
 	for i := 0; i < len(addrs); i++ {
 		src, rxMsg, err := receiver.Recv(ctx)
@@ -595,6 +595,7 @@ func (a *Actor) ReencryptSecret(U kyber.Point, pubk kyber.Point) (Uis []*share.P
 	dela.Logger.Info().Msgf("Reencrypted message: %v", ocs.Uis)
 
 	err = nil
+	Uis = ocs.Uis
 	return
 }
 
@@ -612,32 +613,36 @@ func processReencryptReply(ocs *OCS, reply *types.ReencryptReply) (err error) {
 
 	ocs.replies = append(ocs.replies, *reply)
 
-	// minus one to exclude the root
-	if len(ocs.replies) >= int(ocs.threshold-1) {
-		ocs.Uis = make([]*share.PubShare, ocs.nbnodes)
-		ocs.Uis[0] = getUi(ocs, ocs.U, ocs.pubk)
+	if len(ocs.replies) >= ocs.threshold {
+		ocs.Uis = make([]*share.PubShare, 0, ocs.nbnodes)
 
 		for _, r := range ocs.replies {
-			// Verify proofs
-			ufi := suite.Point().Mul(r.Fi, suite.Point().Add(ocs.U, ocs.pubk))
-			uiei := suite.Point().Mul(suite.Scalar().Neg(r.Ei), r.Ui.V)
-			uiHat := suite.Point().Add(ufi, uiei)
 
-			gfi := suite.Point().Mul(r.Fi, nil)
-			gxi := ocs.poly.Eval(r.Ui.I).V
-			hiei := suite.Point().Mul(suite.Scalar().Neg(r.Ei), gxi)
-			hiHat := suite.Point().Add(gfi, hiei)
-			hash := sha256.New()
-			r.Ui.V.MarshalTo(hash)
-			uiHat.MarshalTo(hash)
-			hiHat.MarshalTo(hash)
-			e := suite.Scalar().SetBytes(hash.Sum(nil))
-			if e.Equal(r.Ei) {
-				ocs.Uis[r.Ui.I] = r.Ui
-			} else {
-				dela.Logger.Warn().Msgf("Received invalid share from node: %v", r.Ui.I)
-				ocs.nbfailures++
-			}
+			/*
+				// Verify proofs
+				ufi := suite.Point().Mul(r.Fi, suite.Point().Add(ocs.U, ocs.pubk))
+				uiei := suite.Point().Mul(suite.Scalar().Neg(r.Ei), r.Ui.V)
+				uiHat := suite.Point().Add(ufi, uiei)
+
+				gfi := suite.Point().Mul(r.Fi, nil)
+				gxi := ocs.poly.Eval(r.Ui.I).V
+				hiei := suite.Point().Mul(suite.Scalar().Neg(r.Ei), gxi)
+				hiHat := suite.Point().Add(gfi, hiei)
+				hash := sha256.New()
+				r.Ui.V.MarshalTo(hash)
+				uiHat.MarshalTo(hash)
+				hiHat.MarshalTo(hash)
+				e := suite.Scalar().SetBytes(hash.Sum(nil))
+				if e.Equal(r.Ei) {
+
+			*/
+			ocs.Uis = append(ocs.Uis, r.Ui)
+			/*
+			   } else {
+			   				dela.Logger.Warn().Msgf("Received invalid share from node: %v", r.Ui.I)
+			   				ocs.nbfailures++
+			   			}
+			*/
 		}
 		dela.Logger.Info().Msg("Reencryption completed")
 		return nil
@@ -653,6 +658,14 @@ func processReencryptReply(ocs *OCS, reply *types.ReencryptReply) (err error) {
 	err = xerrors.Errorf("not enough replies")
 	dela.Logger.Warn().Msg(err.Error())
 	return err
+}
+
+// Helper functions
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // DecryptSecret implements dkg.Actor.
@@ -848,21 +861,4 @@ func union(el1 []mino.Address, el2 []mino.Address) []mino.Address {
 	}
 
 	return addrsAll
-}
-
-func getUi(ocs *OCS, U, pubk kyber.Point) *share.PubShare {
-	v := suite.Point().Mul(ocs.shared.V, U)
-	v.Add(v, suite.Point().Mul(ocs.shared.V, pubk))
-	return &share.PubShare{
-		I: ocs.shared.I,
-		V: v,
-	}
-}
-
-// Helper functions
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

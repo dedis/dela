@@ -818,7 +818,7 @@ func (s *instance) handleReencryptRequest(out mino.Sender, msg types.ReencryptRe
 	ei := suite.Scalar().SetBytes(hash.Sum(nil))
 	fi := suite.Scalar().Add(si, suite.Scalar().Mul(ei, s.privShare.V))
 
-	response := types.NewReencryptReply(ui, ei, fi)
+	response := types.NewReencryptReply(msg.PubK, ui, ei, fi)
 
 	errs := out.Send(response, from)
 	err := <-errs
