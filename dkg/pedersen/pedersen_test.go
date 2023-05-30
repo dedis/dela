@@ -293,6 +293,7 @@ func TestPedersen_ReencryptScenario(t *testing.T) {
 		require.NotNil(t, Uis)
 
 		XhatEnc, err := share.RecoverCommit(suites.MustFind("Ed25519"), Uis, threshold, nbNodes)
+		require.NoError(t, err)
 
 		decrypted, err := actors[i].DecryptSecret(Cs, XhatEnc, kp.Private)
 		require.NoError(t, err)

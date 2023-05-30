@@ -79,7 +79,7 @@ func (m minimal) SetCommands(builder node.Builder) {
 			Usage: "the new public key to reencrypt the message, as <hex(pk)>",
 		},
 	)
-	sub.SetAction(builder.MakeAction(reencryptAction{}))
+	//TODO sub.SetAction(builder.MakeAction(reencryptAction{}))
 
 	sub = cmd.SetSubCommand("verifiableEncrypt")
 	sub.SetDescription("encrypt a message and provides a proof. " +

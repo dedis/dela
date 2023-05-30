@@ -888,7 +888,7 @@ func (f msgFormat) decodeReencryptReply(ctx serde.Context, reply *ReencryptReply
 		return nil, xerrors.Errorf("couldn't unmarshal PubK: %v", err)
 	}
 
-	i := int(reply.UiI[0]<<24) + int(reply.UiI[1]<<16) + int(reply.UiI[2]<<8) + int(reply.UiI[3])
+	i := int(reply.UiI[0])<<24 + int(reply.UiI[1])<<16 + int(reply.UiI[2])<<8 + int(reply.UiI[3])
 
 	v := f.suite.Point()
 	err = v.UnmarshalBinary(reply.UiV)
