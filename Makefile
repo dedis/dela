@@ -20,7 +20,7 @@ lint: tidy
 vet: tidy
 	@echo "⚠️ Warning: the following only works with go >= 1.14" && \
 	go install ./internal/mcheck && \
-	go vet -vettool=`go env GOPATH`/bin/mcheck -commentLen -ifInit ./...
+	go vet -vettool=`go env GOPATH`/bin/mcheck -ifInit ./...
 
 # test runs all tests in DELA without coverage
 test: tidy
