@@ -859,7 +859,6 @@ func (f msgFormat) decodeVerifiableDecryptReply(ctx serde.Context,
 	return resp, nil
 }
 
-// TODO implement
 func (f msgFormat) decodeReencryptRequest(ctx serde.Context, request *ReencryptRequest) (serde.Message, error) {
 	u := f.suite.Point()
 	err := u.UnmarshalBinary(request.U)

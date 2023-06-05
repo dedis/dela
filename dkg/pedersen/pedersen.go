@@ -1,6 +1,5 @@
 package pedersen
 
-import "C"
 import (
 	"crypto/sha256"
 	"runtime"
@@ -45,8 +44,8 @@ var (
 	// associated with the `dkg-decrypt` protocol.
 	protocolNameDecrypt = "dkg-decrypt"
 	// protocolNameReencrypt denotes the value of the protocol span tag
-	// associated with the `dkg-reencrypt` protocol.
-	protocolNameReencrypt = "dkg-reencrypt"
+	//// associated with the `dkg-reencrypt` protocol.
+	//protocolNameReencrypt = "dkg-reencrypt"
 	// ProtocolNameResharing denotes the value of the protocol span tag
 	// associated with the `dkg-resharing` protocol.
 	protocolNameResharing = "dkg-resharing"
@@ -57,7 +56,6 @@ var (
 const (
 	setupTimeout     = time.Minute * 50
 	decryptTimeout   = time.Minute * 5
-	reencryptTimeout = time.Minute * 5
 	resharingTimeout = time.Minute * 5
 )
 
@@ -589,7 +587,10 @@ func (a *Actor) ReencryptSecret(U kyber.Point, pubk kyber.Point, threshold int) 
 				"%T but got: %T", reply, rxMsg)
 		}
 
-		processReencryptReply(ocs, &reply)
+		err = processReencryptReply(ocs, &reply)
+		if err != nil {
+			return nil, xerrors.Errorf("Reencryption failed: %v", err)
+		}
 	}
 
 	dela.Logger.Info().Msgf("Reencrypted message: %v", ocs.Uis)
@@ -653,7 +654,7 @@ func processReencryptReply(ocs *OCS, reply *types.ReencryptReply) (err error) {
 	// somehow. It will either happen because we get another
 	// reply, and now we have enough, or because we get enough
 	// failures and know to give up, or because o.timeout triggers
-	// and calls finish(false) in it's callback function.
+	// and calls finish(false) in its callback function.
 
 	err = xerrors.Errorf("not enough replies")
 	dela.Logger.Warn().Msg(err.Error())

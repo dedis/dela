@@ -168,12 +168,18 @@ func TestDKGInstance_Start(t *testing.T) {
 	require.EqualError(t, err, "there should be as many participants as pubKey: 1 != 0")
 
 	s.startRes.dkgState = initial
+	s.startRes.threshold = 2
 
-	start = types.NewStart(2, []mino.Address{fake.NewAddress(0),
-		fake.NewAddress(1)}, []kyber.Point{pubKey, suite.Point()})
+	start = types.NewStart(2,
+		[]mino.Address{
+			fake.NewAddress(0),
+			fake.NewAddress(1)},
+		[]kyber.Point{
+			pubKey,
+			suite.Point()})
 
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
+	defer cancel()
 
 	err = s.start(ctx, start, channel.Timed[types.Deal]{},
 		channel.Timed[types.Response]{}, from, fake.Sender{})
