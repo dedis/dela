@@ -220,7 +220,7 @@ func (s *instance) start(ctx context.Context, start types.Start, deals channel.T
 
 	err = s.doDKG(ctx, deals, resps, out, from)
 	if err != nil {
-		xerrors.Errorf("something went wrong during DKG: %v", err)
+		return xerrors.Errorf("something went wrong during DKG: %v", err)
 	}
 
 	return nil
@@ -522,7 +522,7 @@ func (s *instance) reshare(ctx context.Context, out mino.Sender,
 
 	err = s.doReshare(ctx, msg, from, out, reshares, resps)
 	if err != nil {
-		xerrors.Errorf("failed to reshare: %v", err)
+		return xerrors.Errorf("failed to reshare: %v", err)
 	}
 
 	return nil
@@ -552,7 +552,7 @@ func (s *instance) doReshare(ctx context.Context, start types.StartResharing,
 	switch nt {
 	case oldNode:
 		// Update local DKG for resharing
-		share, err := s.dkg.DistKeyShare()
+		distKeyShare, err := s.dkg.DistKeyShare()
 		if err != nil {
 			return xerrors.Errorf("old node failed to create: %v", err)
 		}
@@ -564,7 +564,7 @@ func (s *instance) doReshare(ctx context.Context, start types.StartResharing,
 			Longterm:     s.privKey,
 			OldNodes:     s.startRes.getPublicKeys(),
 			NewNodes:     start.GetPubkeysNew(),
-			Share:        share,
+			Share:        distKeyShare,
 			Threshold:    start.GetTNew(),
 			OldThreshold: s.startRes.getThreshold(),
 		}
@@ -577,7 +577,7 @@ func (s *instance) doReshare(ctx context.Context, start types.StartResharing,
 		s.dkg = d
 
 		// Send my Deals to the new and common nodes
-		err = s.sendDealsResharing(ctx, out, addrsNew, share.Commits)
+		err = s.sendDealsResharing(ctx, out, addrsNew, distKeyShare.Commits)
 		if err != nil {
 			return xerrors.Errorf("old node failed to send deals: %v", err)
 		}
@@ -586,7 +586,7 @@ func (s *instance) doReshare(ctx context.Context, start types.StartResharing,
 
 	case commonNode:
 		// Update local DKG for resharing
-		share, err := s.dkg.DistKeyShare()
+		distKeyShare, err := s.dkg.DistKeyShare()
 		if err != nil {
 			return xerrors.Errorf("common node failed to create: %v", err)
 		}
@@ -598,7 +598,7 @@ func (s *instance) doReshare(ctx context.Context, start types.StartResharing,
 			Longterm:     s.privKey,
 			OldNodes:     s.startRes.getPublicKeys(),
 			NewNodes:     start.GetPubkeysNew(),
-			Share:        share,
+			Share:        distKeyShare,
 			Threshold:    start.GetTNew(),
 			OldThreshold: s.startRes.getThreshold(),
 		}
@@ -611,7 +611,7 @@ func (s *instance) doReshare(ctx context.Context, start types.StartResharing,
 		s.dkg = d
 
 		// Send my Deals to the new and common nodes
-		err = s.sendDealsResharing(ctx, out, addrsNew, share.Commits)
+		err = s.sendDealsResharing(ctx, out, addrsNew, distKeyShare.Commits)
 		if err != nil {
 			return xerrors.Errorf("common node failed to send deals: %v", err)
 		}
