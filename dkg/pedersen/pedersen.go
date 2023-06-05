@@ -588,16 +588,14 @@ func (a *Actor) ReencryptSecret(U kyber.Point, pubk kyber.Point, threshold int) 
 		}
 
 		err = processReencryptReply(ocs, &reply)
-		if err != nil {
-			return nil, xerrors.Errorf("Reencryption failed: %v", err)
+		if err == nil {
+			dela.Logger.Info().Msgf("Reencrypted message: %v", ocs.Uis)
+
+			return ocs.Uis, nil
 		}
 	}
 
-	dela.Logger.Info().Msgf("Reencrypted message: %v", ocs.Uis)
-
-	err = nil
-	Uis = ocs.Uis
-	return
+	return nil, xerrors.Errorf("Reencryption failed: %v", err)
 }
 
 func processReencryptReply(ocs *OCS, reply *types.ReencryptReply) (err error) {
@@ -657,7 +655,7 @@ func processReencryptReply(ocs *OCS, reply *types.ReencryptReply) (err error) {
 	// and calls finish(false) in its callback function.
 
 	err = xerrors.Errorf("not enough replies")
-	dela.Logger.Warn().Msg(err.Error())
+	dela.Logger.Debug().Msg(err.Error())
 	return err
 }
 
