@@ -281,6 +281,7 @@ func (s *instance) deal(ctx context.Context, out mino.Sender) error {
 		return xerrors.Errorf("failed to compute the deals: %v", err)
 	}
 
+	participants := s.startRes.getParticipants()
 	for i, deal := range deals {
 		dealMsg := types.NewDeal(
 			deal.Index,
@@ -293,7 +294,7 @@ func (s *instance) deal(ctx context.Context, out mino.Sender) error {
 			),
 		)
 
-		to := s.startRes.getParticipants()[i]
+		to := participants[i]
 
 		s.log.Trace().Str("to", to.String()).Msg("send deal")
 
@@ -316,13 +317,14 @@ func (s *instance) deal(ctx context.Context, out mino.Sender) error {
 func (s *instance) respond(ctx context.Context, deals channel.Timed[types.Deal], out mino.Sender) error {
 	numReceivedDeals := 0
 
-	for numReceivedDeals < len(s.startRes.getParticipants())-1 {
+	participants := s.startRes.getParticipants()
+	for numReceivedDeals < len(participants)-1 {
 		deal, err := deals.NonBlockingReceiveWithContext(ctx)
 		if err != nil {
 			return xerrors.Errorf("context done: %v", err)
 		}
 
-		err = s.handleDeal(ctx, deal, out, s.startRes.getParticipants())
+		err = s.handleDeal(ctx, deal, out, participants)
 		if err != nil {
 			return xerrors.Errorf("failed to handle received deal: %v", err)
 		}

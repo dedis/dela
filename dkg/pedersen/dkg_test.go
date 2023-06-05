@@ -178,7 +178,7 @@ func TestDKGInstance_StartFailDeal(t *testing.T) {
 			pubKey,
 			suite.Point()})
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
 	err = s.start(ctx, start, channel.Timed[types.Deal]{},
