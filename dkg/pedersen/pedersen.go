@@ -33,6 +33,9 @@ const failedStreamCreation = "failed to create stream: %v"
 // unexpectedStreamStop message indicating that a stream stopped unexpectedly
 const unexpectedStreamStop = "stream stopped unexpectedly: %v"
 
+// unexpectedReply message indicating that a reply was not expected
+const unexpectedReply = "got unexpected reply, expected %T but got: %T"
+
 // suite is the Kyber suite for Pedersen.
 var suite = suites.MustFind("Ed25519")
 
@@ -260,8 +263,7 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 
 		decryptReply, ok := message.(types.DecryptReply)
 		if !ok {
-			return []byte{}, xerrors.Errorf("got unexpected reply, expected "+
-				"%T but got: %T", decryptReply, message)
+			return []byte{}, xerrors.Errorf(unexpectedReply, decryptReply, message)
 		}
 
 		pubShares[i] = &share.PubShare{
@@ -393,8 +395,7 @@ func (a *Actor) VerifiableDecrypt(ciphertexts []types.Ciphertext) ([][]byte, err
 
 		shareAndProof, ok := message.(types.VerifiableDecryptReply)
 		if !ok {
-			return nil, xerrors.Errorf("got unexpected reply, expected "+
-				"%T but got: %T", shareAndProof, message)
+			return nil, xerrors.Errorf(unexpectedReply, shareAndProof, message)
 		}
 
 		responses[i] = shareAndProof
@@ -583,8 +584,7 @@ func (a *Actor) ReencryptSecret(U kyber.Point, pubk kyber.Point, threshold int) 
 
 		reply, ok := rxMsg.(types.ReencryptReply)
 		if !ok {
-			return nil, xerrors.Errorf("got unexpected reply, expected "+
-				"%T but got: %T", reply, rxMsg)
+			return nil, xerrors.Errorf(unexpectedReply, reply, rxMsg)
 		}
 
 		err = processReencryptReply(ocs, &reply)

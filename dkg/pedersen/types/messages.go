@@ -9,6 +9,10 @@ import (
 	"golang.org/x/xerrors"
 )
 
+// couldntEncodeDecryptRequest indicates that a decrypt request couldn't be
+// encoded
+const couldntEncodeDecryptRequest = "couldn't encode decrypt request: %v"
+
 // Ciphertext provides the verifiable encryption function. A description can be
 // found in https://arxiv.org/pdf/2205.08529.pdf. The equivalent of each
 // parameter in the paper is written in front of it.
@@ -434,7 +438,7 @@ func (req DecryptRequest) Serialize(ctx serde.Context) ([]byte, error) {
 
 	data, err := format.Encode(ctx, req)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't encode decrypt request: %v", err)
+		return nil, xerrors.Errorf(couldntEncodeDecryptRequest, err)
 	}
 
 	return data, nil
@@ -463,7 +467,7 @@ func (req ReencryptRequest) Serialize(ctx serde.Context) ([]byte, error) {
 
 	data, err := format.Encode(ctx, req)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't encode decrypt request: %v", err)
+		return nil, xerrors.Errorf(couldntEncodeDecryptRequest, err)
 	}
 
 	return data, nil
@@ -493,7 +497,7 @@ func (req ReencryptReply) Serialize(ctx serde.Context) ([]byte, error) {
 
 	data, err := format.Encode(ctx, req)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't encode decrypt request: %v", err)
+		return nil, xerrors.Errorf(couldntEncodeDecryptRequest, err)
 	}
 
 	return data, nil
