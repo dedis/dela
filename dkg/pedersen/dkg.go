@@ -282,6 +282,7 @@ func (s *instance) deal(ctx context.Context, out mino.Sender) error {
 	}
 
 	participants := s.startRes.getParticipants()
+	//	for _, to := range participants {
 	for i, deal := range deals {
 		dealMsg := types.NewDeal(
 			deal.Index,
