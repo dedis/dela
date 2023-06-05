@@ -637,10 +637,12 @@ func processReencryptReply(ocs *OCS, reply *types.ReencryptReply) (err error) {
 			*/
 			ocs.Uis = append(ocs.Uis, r.Ui)
 			/*
-			   } else {
-			   				dela.Logger.Warn().Msgf("Received invalid share from node: %v", r.Ui.I)
-			   				ocs.nbfailures++
-			   			}
+				}
+				else
+				{
+					dela.Logger.Warn().Msgf("Received invalid share from node: %v", r.Ui.I)
+					ocs.nbfailures++
+				}
 			*/
 		}
 		dela.Logger.Info().Msg("Reencryption completed")
