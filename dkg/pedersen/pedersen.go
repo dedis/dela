@@ -195,32 +195,53 @@ func (a *Actor) GetPublicKey() (kyber.Point, error) {
 
 // Encrypt implements dkg.Actor. It uses the DKG public key to encrypt a
 // message.
-func (a *Actor) Encrypt(message []byte) (K, C kyber.Point, remainder []byte,
+func (a *Actor) Encrypt(msg []byte) (K kyber.Point, Cs []kyber.Point,
 	err error) {
 
 	if !a.startRes.Done() {
-		return nil, nil, nil, xerrors.Errorf(initDkgFirst)
+		return nil, nil, xerrors.Errorf(initDkgFirst)
 	}
 
-	// Embed the message (or as much of it as will fit) into a curve point.
-	M := suite.Point().Embed(message, random.New())
-	max := suite.Point().EmbedLen()
-	if max > len(message) {
-		max = len(message)
+	pubK, err := a.GetPublicKey()
+	if err != nil {
+		dela.Logger.Error().Msgf("Cannot encrypt: %v", err.Error())
 	}
-	remainder = message[max:]
+
 	// ElGamal-encrypt the point to produce ciphertext (K,C).
-	k := suite.Scalar().Pick(random.New())             // ephemeral private key
-	K = suite.Point().Mul(k, nil)                      // ephemeral DH public key
-	S := suite.Point().Mul(k, a.startRes.getDistKey()) // ephemeral DH shared secret
-	C = S.Add(S, M)                                    // message blinded with secret
+	// r: ephemeral, random private key
+	r := suite.Scalar().Pick(suite.RandomStream())
+	// K: ephemeral DH public key
+	// note K = U in cothority
+	K = suite.Point().Mul(r, nil)
+	dela.Logger.Debug().Msgf("K: %v", K.String())
 
-	return K, C, remainder, nil
+	C := suite.Point().Mul(r, pubK)
+	dela.Logger.Debug().Msgf("C: %v", C)
+
+	// S: ephemeral DH shared secret
+	S := suite.Point().Mul(r, pubK)
+	dela.Logger.Debug().Msgf("S: %v", S.String())
+
+	for len(msg) > 0 {
+		kp := suite.Point().Embed(msg, suite.RandomStream())
+		dela.Logger.Debug().Msgf("kp: %v", kp.String())
+
+		// message blinded with secret
+		c := suite.Point().Add(C, kp)
+		dela.Logger.Debug().Msgf("c: %v", c)
+
+		Cs = append(Cs, c)
+		dela.Logger.Debug().Msgf("Cs: %v", Cs)
+
+		msg = msg[min(len(msg), kp.EmbedLen()):]
+	}
+
+	return K, Cs, nil
 }
 
 // Decrypt implements dkg.Actor. It gets the private shares of the nodes and
 // decrypt the  message.
-func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
+func (a *Actor) Decrypt(K kyber.Point, Cs []kyber.Point) ([]byte, error) {
 
 	if !a.startRes.Done() {
 		return nil, xerrors.Errorf(initDkgFirst)
@@ -244,11 +265,87 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 		addrs = append(addrs, iterator.GetNext())
 	}
 
-	message := types.NewDecryptRequest(K, C)
+	var decryptedMessage []byte
+
+	for _, C := range Cs {
+		message := types.NewDecryptRequest(K, C)
+
+		err = <-sender.Send(message, addrs...)
+		if err != nil {
+			return nil, xerrors.Errorf("failed to send decrypt request: %v", err)
+		}
+
+		pubShares := make([]*share.PubShare, len(addrs))
+
+		for i := 0; i < len(addrs); i++ {
+			src, message, err := receiver.Recv(ctx)
+			if err != nil {
+				return []byte{}, xerrors.Errorf(unexpectedStreamStop, err)
+			}
+
+			dela.Logger.Debug().Msgf("Received a decryption reply from %v", src)
+
+			decryptReply, ok := message.(types.DecryptReply)
+			if !ok {
+				return []byte{}, xerrors.Errorf(unexpectedReply, decryptReply, message)
+			}
+
+			pubShares[i] = &share.PubShare{
+				I: int(decryptReply.I),
+				V: decryptReply.V,
+			}
+		}
+
+		res, err := share.RecoverCommit(suite, pubShares, len(addrs), len(addrs))
+		if err != nil {
+			return []byte{}, xerrors.Errorf("failed to recover commit: %v", err)
+		}
+
+		decrypted, err := res.Data()
+
+		decryptedMessage = append(decryptedMessage, decrypted...)
+		if err != nil {
+			return []byte{}, xerrors.Errorf("failed to get embedded data: %v", err)
+		}
+	}
+	dela.Logger.Info().Msgf("Decrypted message: %v", decryptedMessage)
+
+	return decryptedMessage, nil
+}
+
+// Reencrypt implements dkg.Actor. It reencrypts the K with the given
+// public key (pk), so that the user can decrypt the Cs with its
+// private key (sk)
+func (a *Actor) Reencrypt(K kyber.Point, PK kyber.Point) (
+	XhatEnc kyber.Point, err error) {
+
+	if !a.startRes.Done() {
+		return nil, xerrors.Errorf(initDkgFirst)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), decryptTimeout)
+	defer cancel()
+	ctx = context.WithValue(ctx, tracing.ProtocolKey, protocolNameDecrypt)
+
+	players := mino.NewAddresses(a.startRes.getParticipants()...)
+
+	sender, receiver, err := a.rpc.Stream(ctx, players)
+	if err != nil {
+		return nil, xerrors.Errorf(failedStreamCreation, err)
+	}
+
+	iterator := players.AddressIterator()
+	addrs := make([]mino.Address, 0, players.Len())
+
+	for iterator.HasNext() {
+		addrs = append(addrs, iterator.GetNext())
+	}
+
+	message := types.NewReencryptRequest(K, PK)
 
 	err = <-sender.Send(message, addrs...)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to send decrypt request: %v", err)
+		return nil, xerrors.Errorf("failed to send reencrypt request: %v", err)
 	}
 
 	pubShares := make([]*share.PubShare, len(addrs))
@@ -256,14 +353,14 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 	for i := 0; i < len(addrs); i++ {
 		src, message, err := receiver.Recv(ctx)
 		if err != nil {
-			return []byte{}, xerrors.Errorf(unexpectedStreamStop, err)
+			return nil, xerrors.Errorf(unexpectedStreamStop, err)
 		}
 
 		dela.Logger.Debug().Msgf("Received a decryption reply from %v", src)
 
 		decryptReply, ok := message.(types.DecryptReply)
 		if !ok {
-			return []byte{}, xerrors.Errorf(unexpectedReply, decryptReply, message)
+			return nil, xerrors.Errorf(unexpectedReply, decryptReply, message)
 		}
 
 		pubShares[i] = &share.PubShare{
@@ -272,19 +369,14 @@ func (a *Actor) Decrypt(K, C kyber.Point) ([]byte, error) {
 		}
 	}
 
-	res, err := share.RecoverCommit(suite, pubShares, len(addrs), len(addrs))
+	Xhat, err := share.RecoverCommit(suite, pubShares, a.startRes.threshold, len(addrs))
 	if err != nil {
-		return []byte{}, xerrors.Errorf("failed to recover commit: %v", err)
+		return nil, xerrors.Errorf("failed to recover commit: %v", err)
 	}
 
-	decryptedMessage, err := res.Data()
-	if err != nil {
-		return []byte{}, xerrors.Errorf("failed to get embedded data: %v", err)
-	}
+	dela.Logger.Info().Msgf("Xhat: %v", Xhat)
 
-	dela.Logger.Info().Msgf("Decrypted message: %v", decryptedMessage)
-
-	return decryptedMessage, nil
+	return Xhat, nil
 }
 
 // VerifiableEncrypt implements dkg.Actor. It uses the DKG public key to encrypt
@@ -510,7 +602,8 @@ func (a *Actor) EncryptSecret(msg []byte) (U kyber.Point, Cs []kyber.Point) {
 		dela.Logger.Debug().Msgf("Keypoint:%v", kp.String())
 		dela.Logger.Debug().Msgf("X:%v", pubK.String())
 
-		Cs = append(Cs, suite.Point().Add(C, kp))
+		c := suite.Point().Add(C, kp)
+		Cs = append(Cs, c)
 		dela.Logger.Debug().Msgf("Cs:%v", C)
 
 		msg = msg[min(len(msg), kp.EmbedLen()):]

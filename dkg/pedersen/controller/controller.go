@@ -48,7 +48,7 @@ func (m minimal) SetCommands(builder node.Builder) {
 	sub.SetAction(builder.MakeAction(setupAction{}))
 
 	sub = cmd.SetSubCommand("encrypt")
-	sub.SetDescription("encrypt a message. Outputs <hex(K)>:<hex(C)>:<hex(remainder)>")
+	sub.SetDescription("encrypt a message and outputs <hex(K)>:<hex(C1):<hex(C2):...>")
 	sub.SetFlags(
 		cli.StringFlag{
 			Name:  "message",
@@ -58,11 +58,11 @@ func (m minimal) SetCommands(builder node.Builder) {
 	sub.SetAction(builder.MakeAction(encryptAction{}))
 
 	sub = cmd.SetSubCommand("decrypt")
-	sub.SetDescription("decrypt a message")
+	sub.SetDescription("decrypt a message and outputs the decrypted message")
 	sub.SetFlags(
 		cli.StringFlag{
 			Name:  "encrypted",
-			Usage: "the encrypted string, as <hex(K)>:<hex(C)>",
+			Usage: "the encrypted string, as <hex(K)>:<hex(C1):<hex(C2):...>",
 		},
 	)
 	sub.SetAction(builder.MakeAction(decryptAction{}))

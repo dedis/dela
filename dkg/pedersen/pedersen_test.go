@@ -96,13 +96,16 @@ func TestPedersen_Decrypt(t *testing.T) {
 			participants: []mino.Address{fake.NewAddress(0)}, distrKey: suite.Point()},
 	}
 
-	_, err := actor.Decrypt(suite.Point(), suite.Point())
+	K := suite.Point()
+	Cs := make([]kyber.Point, 1)
+
+	_, err := actor.Decrypt(K, Cs)
 	require.EqualError(t, err, fake.Err("failed to create stream"))
 
 	rpc := fake.NewStreamRPC(fake.NewBadReceiver(), fake.NewBadSender())
 	actor.rpc = rpc
 
-	_, err = actor.Decrypt(suite.Point(), suite.Point())
+	_, err = actor.Decrypt(K, Cs)
 	require.EqualError(t, err, fake.Err("failed to send decrypt request"))
 
 	recv := fake.NewReceiver(fake.NewRecvMsg(fake.NewAddress(0), nil))
@@ -110,7 +113,7 @@ func TestPedersen_Decrypt(t *testing.T) {
 	rpc = fake.NewStreamRPC(recv, fake.Sender{})
 	actor.rpc = rpc
 
-	_, err = actor.Decrypt(suite.Point(), suite.Point())
+	_, err = actor.Decrypt(K, Cs)
 	require.EqualError(t, err, "got unexpected reply, expected types.DecryptReply but got: <nil>")
 
 	recv = fake.NewReceiver(
@@ -120,7 +123,7 @@ func TestPedersen_Decrypt(t *testing.T) {
 	rpc = fake.NewStreamRPC(recv, fake.Sender{})
 	actor.rpc = rpc
 
-	_, err = actor.Decrypt(suite.Point(), suite.Point())
+	_, err = actor.Decrypt(K, Cs)
 	require.EqualError(t, err, "failed to recover commit: share: not enough "+
 		"good public shares to reconstruct secret commitment")
 
@@ -131,7 +134,7 @@ func TestPedersen_Decrypt(t *testing.T) {
 	rpc = fake.NewStreamRPC(recv, fake.Sender{})
 	actor.rpc = rpc
 
-	_, err = actor.Decrypt(suite.Point(), suite.Point())
+	_, err = actor.Decrypt(K, Cs)
 	require.NoError(t, err)
 }
 
@@ -144,7 +147,9 @@ func Test_Decrypt_StreamStop(t *testing.T) {
 		},
 	}
 
-	_, err := a.Decrypt(nil, nil)
+	Cs := make([]kyber.Point, 1)
+
+	_, err := a.Decrypt(nil, Cs)
 	require.EqualError(t, err, fake.Err("stream stopped unexpectedly"))
 }
 
@@ -206,7 +211,7 @@ func TestPedersen_Scenario(t *testing.T) {
 	// trying to call a decrypt/encrypt before a setup
 	message := []byte("Hello world")
 
-	_, _, _, err := actors[0].Encrypt(message)
+	_, _, err := actors[0].Encrypt(message)
 	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")
 	_, err = actors[0].Decrypt(nil, nil)
 	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")
@@ -221,9 +226,8 @@ func TestPedersen_Scenario(t *testing.T) {
 
 	// every node should be able to encrypt/decrypt
 	for i := 0; i < n; i++ {
-		K, C, remainder, err := actors[i].Encrypt(message)
+		K, C, err := actors[i].Encrypt(message)
 		require.NoError(t, err)
-		require.Len(t, remainder, 0)
 		decrypted, err := actors[i].Decrypt(K, C)
 		require.NoError(t, err)
 		require.Equal(t, message, decrypted)

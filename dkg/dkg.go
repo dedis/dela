@@ -26,10 +26,15 @@ type Actor interface {
 
 	// Encrypt encrypts the given message into kyber points
 	// using the DKG public key
-	Encrypt(message []byte) (K, C kyber.Point, remainder []byte, err error)
+	Encrypt(message []byte) (K kyber.Point, Cs []kyber.Point, err error)
+
 	// Decrypt decrypts a pair of kyber points into the original message
 	// using the DKG internal private key
-	Decrypt(K, C kyber.Point) ([]byte, error)
+	Decrypt(K kyber.Point, Cs []kyber.Point) ([]byte, error)
+
+	// Reencrypt reencrypts generate a temporary key from the public key
+	// to be able to decrypt the message by the user's private key
+	Reencrypt(K kyber.Point, PK kyber.Point) (XhatEnc kyber.Point, err error)
 
 	// Reshare recreates the DKG with an updated list of participants.
 	Reshare(co crypto.CollectiveAuthority, newThreshold int) error
