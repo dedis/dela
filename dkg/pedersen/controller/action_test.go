@@ -385,18 +385,14 @@ func TestEncryptAction_encodeFail(t *testing.T) {
 	require.EqualError(t, err, fake.Err("failed to generate output: failed to marshal k"))
 }
 
-// TODO jean: re-enable this test ASAP
-func IgnoreTestEncryptAction_OK(t *testing.T) {
+func TestEncryptAction_OK(t *testing.T) {
 	a := encryptAction{}
 
 	data := "aa"
 	fakeK := badPoint{data: data}
 
-	var array interface{} = badPointArray{data: data}
-	fakeCs := array.([]kyber.Point)
-
-	//	fakeCs := make([]badPoint, 1)
-	//	fakeCs = append(fakeCs, badPoint{data: data})
+	fakeCs := make([]kyber.Point, 0, 1)
+	fakeCs = append(fakeCs, badPoint{data: data})
 	actor := fakeActor{k: fakeK, cs: fakeCs}
 
 	inj := node.NewInjector()
@@ -509,15 +505,21 @@ func TestDecryptAction_decryptOK(t *testing.T) {
 }
 
 func TestEncodeEncrypted_marshalKFail(t *testing.T) {
-	_, err := encodeEncrypted(badPoint{err: fake.GetError()}, nil)
+	fakeK := badPoint{err: fake.GetError()}
+	fakeCs := make([]kyber.Point, 0, 1)
+	fakeCs = append(fakeCs, badPoint{})
+
+	_, err := encodeEncrypted(fakeK, fakeCs)
 	require.EqualError(t, err, fake.Err("failed to marshal k"))
 }
 
-// TODO jean: reenable this test
-func IgnoreTestEncodeEncrypted_marshalCSFail(t *testing.T) {
-	//_, err := encodeEncrypted(badPoint{}, badPointArray{
-	// cs: make([]kyber.Point, 1), err: fake.GetError()})
-	//require.EqualError(t, err, fake.Err("failed to marshal c"))
+func TestEncodeEncrypted_marshalCSFail(t *testing.T) {
+	fakeK := badPoint{}
+	fakeCs := make([]kyber.Point, 0, 1)
+	fakeCs = append(fakeCs, badPoint{err: fake.GetError()})
+
+	_, err := encodeEncrypted(fakeK, fakeCs)
+	require.EqualError(t, err, fake.Err("failed to marshal c"))
 }
 
 func TestDecodeEncrypted_kHexBad(t *testing.T) {
@@ -1450,19 +1452,6 @@ type badPoint struct {
 
 func (b badPoint) MarshalBinary() (data []byte, err error) {
 	return []byte(b.data), b.err
-}
-
-type PointArray []kyber.Point
-type badPointArray struct {
-	PointArray
-
-	err  error
-	data string
-}
-
-func (b badPointArray) MarshalBinary() (data []byte, err error) {
-	data = []byte(b.data)
-	return data, b.err
 }
 
 type badScalar struct {
