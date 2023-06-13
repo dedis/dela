@@ -3,7 +3,6 @@ package pedersen
 import (
 	"fmt"
 	"go.dedis.ch/dela/mino/minoch"
-	"go.dedis.ch/kyber/v3/share"
 	"go.dedis.ch/kyber/v3/suites"
 	"go.dedis.ch/kyber/v3/util/key"
 	"testing"
@@ -248,7 +247,6 @@ func TestPedersen_ReencryptScenario(t *testing.T) {
 	dela.Logger = dela.Logger.Level(zerolog.WarnLevel)
 
 	nbNodes := 7
-	threshold := (2 * nbNodes / 3) + 1
 
 	minos := make([]mino.Mino, nbNodes)
 	dkgs := make([]dkg.DKG, nbNodes)
@@ -282,18 +280,15 @@ func TestPedersen_ReencryptScenario(t *testing.T) {
 	require.NoError(t, err)
 
 	// every node should be able to encrypt/reencrypt/decrypt
-	message := []byte("Hello world")
 	kp := key.NewKeyPair(suites.MustFind("Ed25519"))
 
 	for i := 0; i < nbNodes; i++ {
+		message := []byte(fmt.Sprint("Hello world, I'm", i))
 		U, Cs := actors[i].EncryptSecret(message)
 
-		Uis, err := actors[i].ReencryptSecret(U, kp.Public, threshold)
+		XhatEnc, err := actors[i].ReencryptSecret(U, kp.Public)
 		require.NoError(t, err)
-		require.NotNil(t, Uis)
-
-		XhatEnc, err := share.RecoverCommit(suites.MustFind("Ed25519"), Uis, threshold, nbNodes)
-		require.NoError(t, err)
+		require.NotNil(t, XhatEnc)
 
 		decrypted, err := actors[i].DecryptSecret(Cs, XhatEnc, kp.Private)
 		require.NoError(t, err)
