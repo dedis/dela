@@ -88,6 +88,13 @@ func TestPublicKey_MarshalText(t *testing.T) {
 	require.EqualError(t, err, fake.Err("couldn't marshal"))
 }
 
+func TestPublicKey_GetPoint(t *testing.T) {
+	point := suite.Point()
+	pk := NewPublicKeyFromPoint(point)
+
+	require.True(t, point.Equal(pk.GetPoint()))
+}
+
 func TestPublicKey_String(t *testing.T) {
 	signer := Generate()
 	str := signer.GetPublicKey().(PublicKey).String()
