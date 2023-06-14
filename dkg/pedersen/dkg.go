@@ -8,7 +8,6 @@ import (
 	"github.com/dedis/debugtools/channel"
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
-	"go.dedis.ch/dela/cosi/threshold"
 	"go.dedis.ch/dela/dkg/pedersen/types"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
@@ -200,7 +199,7 @@ func (s *instance) start(ctx context.Context, start types.Start, deals channel.T
 	}
 
 	// create the DKG
-	t := threshold.ByzantineThreshold(len(start.GetPublicKeys()))
+	t := start.GetThreshold()
 	d, err := pedersen.NewDistKeyGenerator(suite, s.privKey, start.GetPublicKeys(), t)
 	if err != nil {
 		return xerrors.Errorf("failed to create new DKG: %v", err)
