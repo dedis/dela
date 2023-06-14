@@ -16,6 +16,7 @@ func main() {
 	err := run(os.Args)
 	if err != nil {
 		fmt.Printf("%+v\n", err)
+		os.Exit(1)
 	}
 }
 
