@@ -160,7 +160,7 @@ func processReencryptReply(ocs *onChainSecret, reply *types.ReencryptReply) (err
 	return err
 }
 
-// Helper functions
+// min is a helper functions
 func min(a, b int) int {
 	if a < b {
 		return a
