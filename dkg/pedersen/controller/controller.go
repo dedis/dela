@@ -67,6 +67,20 @@ func (m minimal) SetCommands(builder node.Builder) {
 	)
 	sub.SetAction(builder.MakeAction(decryptAction{}))
 
+	sub = cmd.SetSubCommand("reencrypt")
+	sub.SetDescription("reencrypt a message and outputs <hex(XhatEnc)>")
+	sub.SetFlags(
+		cli.StringFlag{
+			Name:  "encrypted",
+			Usage: "the encrypted string, as <hex(K)>:<hex(C1):<hex(C2):...>",
+		},
+		cli.StringFlag{
+			Name:  "pubk",
+			Usage: "the new public key to reencrypt the message, as <hex(pk)>",
+		},
+	)
+	sub.SetAction(builder.MakeAction(reencryptAction{}))
+
 	sub = cmd.SetSubCommand("verifiableEncrypt")
 	sub.SetDescription("encrypt a message and provides a proof. " +
 		"Outputs <hex(K)>:<hex(C)>:<hex(Ubar)>:<hex(E)>:<hex(F)>:<hex(remainder)>")
