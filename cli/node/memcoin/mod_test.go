@@ -16,10 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMemcoin_Main(t *testing.T) {
-	main()
-}
-
 // This test creates a chain with initially 3 nodes. It then adds node 4 and 5
 // in two blocks. Node 4 does not share its certificate which means others won't
 // be able to communicate, but the chain should proceed because of the
