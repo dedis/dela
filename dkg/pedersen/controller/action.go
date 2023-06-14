@@ -85,7 +85,7 @@ func (a listenAction) Execute(ctx node.Context) error {
 
 	err := ctx.Injector.Resolve(&dkgObject)
 	if err != nil {
-		return xerrors.Errorf("failed to resolve dkgObject: %v", err)
+		return xerrors.Errorf("failed to resolve dkg: %v", err)
 	}
 
 	actor, err := dkgObject.Listen()
