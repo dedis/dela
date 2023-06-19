@@ -5,6 +5,7 @@ import (
 	"go.dedis.ch/dela/mino/minoch"
 	"go.dedis.ch/kyber/v3/suites"
 	"go.dedis.ch/kyber/v3/util/key"
+	"golang.org/x/xerrors"
 	"testing"
 
 	"github.com/rs/zerolog"
@@ -288,13 +289,17 @@ func TestPedersen_ReencryptScenario(t *testing.T) {
 
 	for i := 0; i < nbNodes; i++ {
 		message := []byte(fmt.Sprint("Hello world, I'm", i))
-		U, Cs := actors[i].EncryptSecret(message)
+		U, Cs, err := actors[i].Encrypt(message)
+		require.NoError(t, err)
 
-		XhatEnc, err := actors[i].ReencryptSecret(U, kp.Public)
+		XhatEnc, err := actors[i].Reencrypt(U, kp.Public)
 		require.NoError(t, err)
 		require.NotNil(t, XhatEnc)
 
-		decrypted, err := actors[i].DecryptSecret(Cs, XhatEnc, kp.Private)
+		dkgPk, err := actors[i].GetPublicKey()
+		require.NoError(t, err)
+
+		decrypted, err := decryptReencrypted(Cs, XhatEnc, dkgPk, kp.Private)
 		require.NoError(t, err)
 		require.Equal(t, message, decrypted)
 	}
@@ -473,4 +478,45 @@ type fakeSigner struct {
 // GetPublicKey implements crypto.Signer
 func (s fakeSigner) GetPublicKey() crypto.PublicKey {
 	return ed25519.NewPublicKeyFromPoint(s.pubkey)
+}
+
+// decryptReencrypted helps to decrypt a reencrypted message.
+func decryptReencrypted(Cs []kyber.Point, XhatEnc kyber.Point, dkgPk kyber.Point, Sk kyber.Scalar) (msg []byte, err error) {
+	dela.Logger.Debug().Msgf("DKG pubK:%v", dkgPk)
+	dela.Logger.Debug().Msgf("XhatEnc:%v", XhatEnc)
+	dela.Logger.Debug().Msgf("xc:%v", Sk)
+
+	xcInv := suite.Scalar().Neg(Sk)
+	dela.Logger.Debug().Msgf("xcInv:%v", xcInv)
+
+	sum := suite.Scalar().Add(Sk, xcInv)
+	dela.Logger.Debug().Msgf("xc + xcInv: %v", sum)
+
+	XhatDec := suite.Point().Mul(xcInv, dkgPk)
+	dela.Logger.Debug().Msgf("XhatDec:%v", XhatDec)
+
+	Xhat := suite.Point().Add(XhatEnc, XhatDec)
+	dela.Logger.Debug().Msgf("Xhat:%v", Xhat)
+
+	XhatInv := suite.Point().Neg(Xhat)
+	dela.Logger.Debug().Msgf("XhatInv:%v", XhatInv)
+
+	// Decrypt Cs to keyPointHat
+	for _, C := range Cs {
+		dela.Logger.Debug().Msgf("C:%v", C)
+
+		keyPointHat := suite.Point().Add(C, XhatInv)
+		dela.Logger.Debug().Msgf("keyPointHat:%v", keyPointHat)
+
+		keyPart, err := keyPointHat.Data()
+		dela.Logger.Debug().Msgf("keyPart:%v", keyPart)
+
+		if err != nil {
+			e := xerrors.Errorf("Error while decrypting Cs: %v", err)
+			dela.Logger.Error().Msg(e.Error())
+			return nil, e
+		}
+		msg = append(msg, keyPart...)
+	}
+	return
 }

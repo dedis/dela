@@ -31,15 +31,15 @@ func newOCS(pubk kyber.Point) *onChainSecret {
 	}
 }
 
-// ReencryptSecret implements dkg.Actor.
-func (a *Actor) ReencryptSecret(U kyber.Point, pubk kyber.Point) (XhatEnc kyber.Point, err error) {
+// Reencrypt implements dkg.Actor.
+func (a *Actor) Reencrypt(U kyber.Point, pubk kyber.Point) (XhatEnc kyber.Point, err error) {
 	if !a.startRes.Done() {
 		return nil, xerrors.Errorf(initDkgFirst)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), decryptTimeout)
 	defer cancel()
-	ctx = context.WithValue(ctx, tracing.ProtocolKey, protocolNameDecrypt)
+	ctx = context.WithValue(ctx, tracing.ProtocolKey, protocolNameReencrypt)
 
 	players := mino.NewAddresses(a.startRes.getParticipants()...)
 
@@ -67,7 +67,7 @@ func (a *Actor) ReencryptSecret(U kyber.Point, pubk kyber.Point) (XhatEnc kyber.
 	ocs.nbnodes = len(addrs)
 	ocs.threshold = a.startRes.getThreshold()
 
-	for i := 0; i < len(addrs); i++ {
+	for i := 0; i < ocs.nbnodes; i++ {
 		src, rxMsg, err := receiver.Recv(ctx)
 		if err != nil {
 			return nil, xerrors.Errorf(unexpectedStreamStop, err)

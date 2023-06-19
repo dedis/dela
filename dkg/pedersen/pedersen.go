@@ -48,7 +48,7 @@ var (
 	protocolNameDecrypt = "dkg-decrypt"
 	// protocolNameReencrypt denotes the value of the protocol span tag
 	//// associated with the `dkg-reencrypt` protocol.
-	//protocolNameReencrypt = "dkg-reencrypt"
+	protocolNameReencrypt = "dkg-reencrypt"
 	// ProtocolNameResharing denotes the value of the protocol span tag
 	// associated with the `dkg-resharing` protocol.
 	protocolNameResharing = "dkg-resharing"
@@ -313,72 +313,6 @@ func (a *Actor) Decrypt(K kyber.Point, Cs []kyber.Point) ([]byte, error) {
 	return decryptedMessage, nil
 }
 
-// Reencrypt implements dkg.Actor. It reencrypts the K with the given
-// public key (pk), so that the user can decrypt the Cs with its
-// private key (sk)
-func (a *Actor) Reencrypt(K kyber.Point, PK kyber.Point) (
-	XhatEnc kyber.Point, err error) {
-
-	if !a.startRes.Done() {
-		return nil, xerrors.Errorf(initDkgFirst)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), decryptTimeout)
-	defer cancel()
-	ctx = context.WithValue(ctx, tracing.ProtocolKey, protocolNameDecrypt)
-
-	players := mino.NewAddresses(a.startRes.getParticipants()...)
-
-	sender, receiver, err := a.rpc.Stream(ctx, players)
-	if err != nil {
-		return nil, xerrors.Errorf(failedStreamCreation, err)
-	}
-
-	iterator := players.AddressIterator()
-	addrs := make([]mino.Address, 0, players.Len())
-
-	for iterator.HasNext() {
-		addrs = append(addrs, iterator.GetNext())
-	}
-
-	message := types.NewReencryptRequest(K, PK)
-
-	err = <-sender.Send(message, addrs...)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to send reencrypt request: %v", err)
-	}
-
-	pubShares := make([]*share.PubShare, len(addrs))
-
-	for i := 0; i < len(addrs); i++ {
-		src, message, err := receiver.Recv(ctx)
-		if err != nil {
-			return nil, xerrors.Errorf(unexpectedStreamStop, err)
-		}
-
-		dela.Logger.Debug().Msgf("Received a decryption reply from %v", src)
-
-		decryptReply, ok := message.(types.DecryptReply)
-		if !ok {
-			return nil, xerrors.Errorf(unexpectedReply, decryptReply, message)
-		}
-
-		pubShares[i] = &share.PubShare{
-			I: int(decryptReply.I),
-			V: decryptReply.V,
-		}
-	}
-
-	Xhat, err := share.RecoverCommit(suite, pubShares, a.startRes.threshold, len(addrs))
-	if err != nil {
-		return nil, xerrors.Errorf("failed to recover commit: %v", err)
-	}
-
-	dela.Logger.Info().Msgf("Xhat: %v", Xhat)
-
-	return Xhat, nil
-}
-
 // VerifiableEncrypt implements dkg.Actor. It uses the DKG public key to encrypt
 // a message and provide a zero knowledge proof that the encryption is done by
 // this person.
@@ -581,81 +515,6 @@ func (w worker) work(jobIndex int) error {
 	}
 
 	return nil
-}
-
-// EncryptSecret implements dkg.Actor.
-func (a *Actor) EncryptSecret(msg []byte) (U kyber.Point, Cs []kyber.Point) {
-	pubK, err := a.GetPublicKey()
-	if err != nil {
-		dela.Logger.Error().Msgf("Cannot encrypt secret: %v", err.Error())
-	}
-
-	r := suite.Scalar().Pick(suite.RandomStream())
-	C := suite.Point().Mul(r, pubK)
-	dela.Logger.Debug().Msgf("C:%v", C)
-
-	U = suite.Point().Mul(r, nil)
-	dela.Logger.Debug().Msgf("U is:%v", U.String())
-
-	for len(msg) > 0 {
-		kp := suite.Point().Embed(msg, suite.RandomStream())
-		dela.Logger.Debug().Msgf("Keypoint:%v", kp.String())
-		dela.Logger.Debug().Msgf("X:%v", pubK.String())
-
-		c := suite.Point().Add(C, kp)
-		Cs = append(Cs, c)
-		dela.Logger.Debug().Msgf("Cs:%v", C)
-
-		msg = msg[min(len(msg), kp.EmbedLen()):]
-	}
-
-	return
-}
-
-// DecryptSecret implements dkg.Actor.
-func (a *Actor) DecryptSecret(Cs []kyber.Point, XhatEnc kyber.Point, Sk kyber.Scalar) (msg []byte, err error) {
-	pubK, err := a.GetPublicKey()
-	if err != nil {
-		dela.Logger.Error().Msgf("Cannot encrypt secret: %v", err.Error())
-	}
-
-	dela.Logger.Debug().Msgf("DKG pubK:%v", pubK)
-	dela.Logger.Debug().Msgf("XhatEnc:%v", XhatEnc)
-	dela.Logger.Debug().Msgf("xc:%v", Sk)
-
-	xcInv := suite.Scalar().Neg(Sk)
-	dela.Logger.Debug().Msgf("xcInv:%v", xcInv)
-
-	sum := suite.Scalar().Add(Sk, xcInv)
-	dela.Logger.Debug().Msgf("xc + xcInv: %v", sum)
-
-	XhatDec := suite.Point().Mul(xcInv, pubK)
-	dela.Logger.Debug().Msgf("XhatDec:%v", XhatDec)
-
-	Xhat := suite.Point().Add(XhatEnc, XhatDec)
-	dela.Logger.Debug().Msgf("Xhat:%v", Xhat)
-
-	XhatInv := suite.Point().Neg(Xhat)
-	dela.Logger.Debug().Msgf("XhatInv:%v", XhatInv)
-
-	// Decrypt Cs to keyPointHat
-	for _, C := range Cs {
-		dela.Logger.Debug().Msgf("C:%v", C)
-
-		keyPointHat := suite.Point().Add(C, XhatInv)
-		dela.Logger.Debug().Msgf("keyPointHat:%v", keyPointHat)
-
-		keyPart, err := keyPointHat.Data()
-		dela.Logger.Debug().Msgf("keyPart:%v", keyPart)
-
-		if err != nil {
-			e := xerrors.Errorf("Error while decrypting Cs: %v", err)
-			dela.Logger.Error().Msg(e.Error())
-			return nil, e
-		}
-		msg = append(msg, keyPart...)
-	}
-	return
 }
 
 // Reshare implements dkg.Actor. It recreates the DKG with an updated list of

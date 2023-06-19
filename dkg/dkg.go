@@ -46,15 +46,4 @@ type Actor interface {
 	// VerifiableDecrypt decrypts a pair of kyber points into the original message
 	// using the DKG internal private key and a proof of work algorithm.
 	VerifiableDecrypt(ciphertexts []types.Ciphertext) ([][]byte, error)
-
-	// EncryptSecret encrypts the given message the calypso way
-	EncryptSecret(message []byte) (U kyber.Point, Cs []kyber.Point)
-
-	// ReencryptSecret is the first version of the calypso
-	// reencryption algorithm in DELA
-	ReencryptSecret(U kyber.Point, Pk kyber.Point) (XhatEnc kyber.Point, err error)
-
-	// DecryptSecret is a helper function to decrypt a secret message previously
-	// encrypted and reencrypted by the DKG
-	DecryptSecret(Cs []kyber.Point, XhatEnc kyber.Point, Sk kyber.Scalar) (message []byte, err error)
 }
