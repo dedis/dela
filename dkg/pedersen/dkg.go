@@ -808,11 +808,11 @@ func (s *instance) handleReencryptRequest(out mino.Sender, msg types.ReencryptRe
 		return xerrors.Errorf("you must first initialize DKG. Did you call setup() first?")
 	}
 
-	ui := s.getUI(msg.U, msg.PubK)
+	ui := s.getUI(msg.K, msg.PubK)
 
-	// Calculating proofs
+	// Calculating proofs of reencryption
 	si := suite.Scalar().Pick(suite.RandomStream())
-	uiHat := suite.Point().Mul(si, suite.Point().Add(msg.U, msg.PubK))
+	uiHat := suite.Point().Mul(si, suite.Point().Add(msg.K, msg.PubK))
 	hiHat := suite.Point().Mul(si, nil)
 	hash := sha256.New()
 	ui.V.MarshalTo(hash)
@@ -832,8 +832,8 @@ func (s *instance) handleReencryptRequest(out mino.Sender, msg types.ReencryptRe
 	return nil
 }
 
-func (s *instance) getUI(U, pubk kyber.Point) *share.PubShare {
-	v := suite.Point().Mul(s.privShare.V, U)
+func (s *instance) getUI(K, pubk kyber.Point) *share.PubShare {
+	v := suite.Point().Mul(s.privShare.V, K)
 	v.Add(v, suite.Point().Mul(s.privShare.V, pubk))
 	return &share.PubShare{
 		I: s.privShare.I,

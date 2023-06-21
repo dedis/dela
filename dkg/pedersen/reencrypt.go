@@ -13,7 +13,7 @@ import (
 )
 
 type onChainSecret struct {
-	U    kyber.Point // U is the random part of the encrypted secret
+	K    kyber.Point // K is the random part of the encrypted secret
 	pubk kyber.Point // The client's public key
 
 	nbnodes    int // How many nodes participate in the distributed operations
@@ -25,14 +25,15 @@ type onChainSecret struct {
 }
 
 // newOCS creates a new on-chain secret structure.
-func newOCS(pubk kyber.Point) *onChainSecret {
+func newOCS(K kyber.Point, pubk kyber.Point) *onChainSecret {
 	return &onChainSecret{
+		K:    K,
 		pubk: pubk,
 	}
 }
 
 // Reencrypt implements dkg.Actor.
-func (a *Actor) Reencrypt(U kyber.Point, pubk kyber.Point) (XhatEnc kyber.Point, err error) {
+func (a *Actor) Reencrypt(K kyber.Point, pubk kyber.Point) (XhatEnc kyber.Point, err error) {
 	if !a.startRes.Done() {
 		return nil, xerrors.Errorf(initDkgFirst)
 	}
@@ -55,15 +56,14 @@ func (a *Actor) Reencrypt(U kyber.Point, pubk kyber.Point) (XhatEnc kyber.Point,
 		addrs = append(addrs, iterator.GetNext())
 	}
 
-	txMsg := types.NewReencryptRequest(U, pubk)
+	txMsg := types.NewReencryptRequest(K, pubk)
 
 	err = <-sender.Send(txMsg, addrs...)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to send reencrypt request: %v", err)
 	}
 
-	ocs := newOCS(pubk)
-	ocs.U = U
+	ocs := newOCS(K, pubk)
 	ocs.nbnodes = len(addrs)
 	ocs.threshold = a.startRes.getThreshold()
 

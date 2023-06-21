@@ -26,10 +26,14 @@ type Actor interface {
 
 	// Encrypt encrypts the given message into kyber points
 	// using the DKG public key
+	// where K is the ephemeral DH (Diffie-Hellman) public key
+	// and Cs is the resulting, encrypted message
 	Encrypt(message []byte) (K kyber.Point, Cs []kyber.Point, err error)
 
-	// Decrypt decrypts a pair of kyber points into the original message
-	// using the DKG internal private key
+	// Decrypt decrypts a ciphertext (composed of a K and an array of C's)
+	// into the original message using the DKG internal private key
+	// where K is the ephemeral DH (Diffie-Hellman) public key
+	// and Cs is the encrypted message
 	Decrypt(K kyber.Point, Cs []kyber.Point) ([]byte, error)
 
 	// Reencrypt reencrypts generate a temporary key from the public key
@@ -39,11 +43,11 @@ type Actor interface {
 	// Reshare recreates the DKG with an updated list of participants.
 	Reshare(co crypto.CollectiveAuthority, newThreshold int) error
 
-	// VerifiableEncrypt encrypts the given message into kyber points
-	// using the DKG public key and proof of work algorithm.
+	// VerifiableEncrypt encrypts the given message into a ciphertext
+	// using the DKG public key and a verifiable encryption function.
 	VerifiableEncrypt(message []byte, GBar kyber.Point) (ciphertext types.Ciphertext, remainder []byte, err error)
 
 	// VerifiableDecrypt decrypts a pair of kyber points into the original message
-	// using the DKG internal private key and a proof of work algorithm.
+	// using the DKG internal private key and a verifiable encryption function.
 	VerifiableDecrypt(ciphertexts []types.Ciphertext) ([][]byte, error)
 }
