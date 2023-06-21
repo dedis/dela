@@ -260,6 +260,17 @@ func TestDecryptRequest_Serialize(t *testing.T) {
 	require.EqualError(t, err, fake.Err("couldn't encode decrypt request"))
 }
 
+func TestReencryptRequest_Serialize(t *testing.T) {
+	req := ReencryptRequest{}
+
+	data, err := req.Serialize(fake.NewContext())
+	require.NoError(t, err)
+	require.Equal(t, fake.GetFakeFormatValue(), data)
+
+	_, err = req.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, fake.Err("couldn't encode decrypt request"))
+}
+
 func TestVerifiableDecryptRequest_Get(t *testing.T) {
 	req := NewVerifiableDecryptRequest([]Ciphertext{{}, {}})
 

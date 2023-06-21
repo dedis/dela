@@ -447,16 +447,16 @@ func (req DecryptRequest) Serialize(ctx serde.Context) ([]byte, error) {
 // ReencryptRequest share sent to a node in order to
 // reencrypt a secret with the given public key
 type ReencryptRequest struct {
-	// U is the point from the write-request
-	U kyber.Point
-	// Xc is the public key of the reader
+	// K is the point from the writer
+	K kyber.Point
+	// PubK is the public key of the reader
 	PubK kyber.Point
 }
 
-// NewReencryptRequest creates a new decryption request.
-func NewReencryptRequest(u, pubk kyber.Point) *ReencryptRequest {
+// NewReencryptRequest creates a new reencryption request.
+func NewReencryptRequest(k, pubk kyber.Point) *ReencryptRequest {
 	return &ReencryptRequest{
-		U:    u,
+		K:    k,
 		PubK: pubk,
 	}
 }
@@ -482,8 +482,8 @@ type ReencryptReply struct {
 }
 
 // NewReencryptReply creates a new decryption request.
-func NewReencryptReply(pubk kyber.Point, ui *share.PubShare, ei, fi kyber.Scalar) *ReencryptReply {
-	return &ReencryptReply{
+func NewReencryptReply(pubk kyber.Point, ui *share.PubShare, ei, fi kyber.Scalar) ReencryptReply {
+	return ReencryptReply{
 		PubK: pubk,
 		Ui:   ui,
 		Ei:   ei,
@@ -492,15 +492,25 @@ func NewReencryptReply(pubk kyber.Point, ui *share.PubShare, ei, fi kyber.Scalar
 }
 
 // Serialize implements serde.Message.
-func (req ReencryptReply) Serialize(ctx serde.Context) ([]byte, error) {
+func (reply ReencryptReply) Serialize(ctx serde.Context) ([]byte, error) {
 	format := msgFormats.Get(ctx.GetFormat())
 
-	data, err := format.Encode(ctx, req)
+	data, err := format.Encode(ctx, reply)
 	if err != nil {
 		return nil, xerrors.Errorf(couldntEncodeDecryptRequest, err)
 	}
 
 	return data, nil
+}
+
+// GetI returns I.
+func (reply ReencryptReply) GetI() int {
+	return reply.Ui.I
+}
+
+// GetV returns V.
+func (reply ReencryptReply) GetV() kyber.Point {
+	return reply.Ui.V
 }
 
 // VerifiableDecryptRequest is a message sent to request a verifiable

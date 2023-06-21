@@ -302,11 +302,11 @@ func (a *Actor) Decrypt(K kyber.Point, Cs []kyber.Point) ([]byte, error) {
 		}
 
 		decrypted, err := res.Data()
-
-		decryptedMessage = append(decryptedMessage, decrypted...)
 		if err != nil {
 			return []byte{}, xerrors.Errorf("failed to get embedded data: %v", err)
 		}
+
+		decryptedMessage = append(decryptedMessage, decrypted...)
 	}
 	dela.Logger.Info().Msgf("Decrypted message: %v", decryptedMessage)
 
