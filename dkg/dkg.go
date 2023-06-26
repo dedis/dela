@@ -27,7 +27,8 @@ type Actor interface {
 	// Encrypt encrypts the given message into kyber points
 	// using the DKG public key
 	// where K is the ephemeral DH (Diffie-Hellman) public key
-	// and Cs is the resulting, encrypted message
+	// and Cs is the resulting, encrypted points
+	// or an error if encryption is not possible.
 	Encrypt(message []byte) (K kyber.Point, Cs []kyber.Point, err error)
 
 	// Decrypt decrypts a ciphertext (composed of a K and an array of C's)

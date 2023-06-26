@@ -392,7 +392,7 @@ func TestEncryptAction_OK(t *testing.T) {
 	fakeK := badPoint{data: data}
 
 	fakeCs := make([]kyber.Point, 0, 1)
-	fakeCs = append(fakeCs, badPoint{data: data})
+	fakeCs = append(fakeCs, fakeK)
 	actor := fakeActor{k: fakeK, cs: fakeCs}
 
 	inj := node.NewInjector()

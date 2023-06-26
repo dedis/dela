@@ -112,7 +112,7 @@ type Actor struct {
 }
 
 // Setup implement dkg.Actor. It initializes the DKG.
-func (a *Actor) Setup(co crypto.CollectiveAuthority, threshold int) (kyber.Point, error) {
+func (a *Actor) Setup(coAuth crypto.CollectiveAuthority, threshold int) (kyber.Point, error) {
 
 	if a.startRes.Done() {
 		return nil, xerrors.Errorf("startRes is already done, only one setup call is allowed")
@@ -122,16 +122,16 @@ func (a *Actor) Setup(co crypto.CollectiveAuthority, threshold int) (kyber.Point
 	defer cancel()
 	ctx = context.WithValue(ctx, tracing.ProtocolKey, protocolNameSetup)
 
-	sender, receiver, err := a.rpc.Stream(ctx, co)
+	sender, receiver, err := a.rpc.Stream(ctx, coAuth)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to stream: %v", err)
 	}
 
-	addrs := make([]mino.Address, 0, co.Len())
-	pubkeys := make([]kyber.Point, 0, co.Len())
+	addrs := make([]mino.Address, 0, coAuth.Len())
+	pubkeys := make([]kyber.Point, 0, coAuth.Len())
 
-	addrIter := co.AddressIterator()
-	pubkeyIter := co.PublicKeyIterator()
+	addrIter := coAuth.AddressIterator()
+	pubkeyIter := coAuth.PublicKeyIterator()
 
 	for addrIter.HasNext() && pubkeyIter.HasNext() {
 		addrs = append(addrs, addrIter.GetNext())
@@ -194,9 +194,9 @@ func (a *Actor) GetPublicKey() (kyber.Point, error) {
 }
 
 // Encrypt implements dkg.Actor. It uses the DKG public key to encrypt a
-// message.
-func (a *Actor) Encrypt(msg []byte) (K kyber.Point, Cs []kyber.Point,
-	err error) {
+// message, and returns a random, ephemeral part K
+// and the cipher as an array of Kyber points
+func (a *Actor) Encrypt(msg []byte) (kyber.Point, []kyber.Point, error) {
 
 	if !a.startRes.Done() {
 		return nil, nil, xerrors.Errorf(initDkgFirst)
@@ -208,11 +208,9 @@ func (a *Actor) Encrypt(msg []byte) (K kyber.Point, Cs []kyber.Point,
 	}
 
 	// ElGamal-encrypt the point to produce ciphertext (K,C).
-	// r: ephemeral, random private key
 	r := suite.Scalar().Pick(suite.RandomStream())
-	// K: ephemeral DH public key
-	// note K = U in cothority
-	K = suite.Point().Mul(r, nil)
+
+	K := suite.Point().Mul(r, nil)
 	dela.Logger.Debug().Msgf("K: %v", K.String())
 
 	C := suite.Point().Mul(r, pubK)
@@ -222,6 +220,7 @@ func (a *Actor) Encrypt(msg []byte) (K kyber.Point, Cs []kyber.Point,
 	S := suite.Point().Mul(r, pubK)
 	dela.Logger.Debug().Msgf("S: %v", S.String())
 
+	Cs := make([]kyber.Point, 0, 16)
 	for len(msg) > 0 {
 		kp := suite.Point().Embed(msg, suite.RandomStream())
 		dela.Logger.Debug().Msgf("kp: %v", kp.String())
@@ -318,8 +317,8 @@ func (a *Actor) Decrypt(K kyber.Point, Cs []kyber.Point) ([]byte, error) {
 // this person.
 //
 // See https://arxiv.org/pdf/2205.08529.pdf / section 5.4 Protocol / step 1
-func (a *Actor) VerifiableEncrypt(message []byte, GBar kyber.Point) (ciphertext types.Ciphertext,
-	remainder []byte, err error) {
+func (a *Actor) VerifiableEncrypt(message []byte, GBar kyber.Point) (types.Ciphertext,
+	[]byte, error) {
 
 	if !a.startRes.Done() {
 		return types.Ciphertext{}, nil, xerrors.Errorf("you must first initialize " +
@@ -334,7 +333,7 @@ func (a *Actor) VerifiableEncrypt(message []byte, GBar kyber.Point) (ciphertext 
 		max = len(message)
 	}
 
-	remainder = message[max:]
+	remainder := message[max:]
 
 	// ElGamal-encrypt the point to produce ciphertext (localK,localC).
 	localk := suite.Scalar().Pick(random.New())                  // ephemeral private key
@@ -358,7 +357,7 @@ func (a *Actor) VerifiableEncrypt(message []byte, GBar kyber.Point) (ciphertext 
 	E := suite.Scalar().SetBytes(hash.Sum(nil))
 	F := suite.Scalar().Add(s, suite.Scalar().Mul(E, localk))
 
-	ciphertext = types.Ciphertext{
+	ciphertext := types.Ciphertext{
 		K:    localK,
 		C:    localC,
 		UBar: UBar,
@@ -519,16 +518,16 @@ func (w worker) work(jobIndex int) error {
 
 // Reshare implements dkg.Actor. It recreates the DKG with an updated list of
 // participants.
-func (a *Actor) Reshare(co crypto.CollectiveAuthority, thresholdNew int) error {
+func (a *Actor) Reshare(coAuth crypto.CollectiveAuthority, thresholdNew int) error {
 	if !a.startRes.Done() {
 		return xerrors.Errorf(initDkgFirst)
 	}
 
-	addrsNew := make([]mino.Address, 0, co.Len())
-	pubkeysNew := make([]kyber.Point, 0, co.Len())
+	addrsNew := make([]mino.Address, 0, coAuth.Len())
+	pubkeysNew := make([]kyber.Point, 0, coAuth.Len())
 
-	addrIter := co.AddressIterator()
-	pubkeyIter := co.PublicKeyIterator()
+	addrIter := coAuth.AddressIterator()
+	pubkeyIter := coAuth.PublicKeyIterator()
 
 	for addrIter.HasNext() && pubkeyIter.HasNext() {
 		addrsNew = append(addrsNew, addrIter.GetNext())

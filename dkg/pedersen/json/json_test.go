@@ -412,7 +412,6 @@ func TestMessageFormat_DecodeReencryptReply(t *testing.T) {
 		testPoint, testPoint, testPoint))
 	_, err = format.Decode(ctx, data)
 	require.ErrorContains(t, err, "couldn't unmarshal Fi")
-
 }
 
 func TestMessageFormat_DecodeStartResharing(t *testing.T) {
