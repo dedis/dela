@@ -446,7 +446,7 @@ func (req DecryptRequest) Serialize(ctx serde.Context) ([]byte, error) {
 
 // ReencryptRequest share is sent to a node in order to reencrypt a secret
 // using the original randomness K from the write request
-// and the public key PubK of the reader
+// and the public key PubK from the reader
 type ReencryptRequest struct {
 	K    kyber.Point
 	PubK kyber.Point

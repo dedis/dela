@@ -315,43 +315,42 @@ func encodeEncrypted(k kyber.Point, cs []kyber.Point) (string, error) {
 	return encoded, nil
 }
 
-func decodeEncrypted(str string) (k kyber.Point, cs []kyber.Point, err error) {
+func decodeEncrypted(str string) (kyber.Point, []kyber.Point, error) {
 	parts := strings.Split(str, separator)
 	if len(parts) < 2 {
 		return nil, nil, xerrors.Errorf("malformed encoded: %s", str)
 	}
 
-	for i, p := range parts {
-		if i == 0 {
-			// Decode K
-			kbuff, err := hex.DecodeString(p)
-			if err != nil {
-				return nil, nil, xerrors.Errorf("failed to decode k point: %v", err)
-			}
+	// Decode K
+	kbuff, err := hex.DecodeString(parts[0])
+	if err != nil {
+		return nil, nil, xerrors.Errorf("failed to decode k point: %v", err)
+	}
 
-			k = suite.Point()
+	k := suite.Point()
 
-			err = k.UnmarshalBinary(kbuff)
-			if err != nil {
-				return nil, nil, xerrors.Errorf("failed to unmarshal k point: %v", err)
-			}
+	err = k.UnmarshalBinary(kbuff)
+	if err != nil {
+		return nil, nil, xerrors.Errorf("failed to unmarshal k point: %v", err)
+	}
 
-		} else {
-			// Decode C
-			cbuff, err := hex.DecodeString(p)
-			if err != nil {
-				return nil, nil, xerrors.Errorf("failed to decode c point: %v", err)
-			}
+	// Decode Cs
+	cs := make([]kyber.Point, 0, len(parts)-1)
 
-			c := suite.Point()
-
-			err = c.UnmarshalBinary(cbuff)
-			if err != nil {
-				return nil, nil, xerrors.Errorf("failed to unmarshal c point: %v", err)
-			}
-
-			cs = append(cs, c)
+	for _, p := range parts[1:] {
+		cbuff, err := hex.DecodeString(p)
+		if err != nil {
+			return nil, nil, xerrors.Errorf("failed to decode c point: %v", err)
 		}
+
+		c := suite.Point()
+
+		err = c.UnmarshalBinary(cbuff)
+		if err != nil {
+			return nil, nil, xerrors.Errorf("failed to unmarshal c point: %v", err)
+		}
+
+		cs = append(cs, c)
 	}
 
 	return k, cs, nil

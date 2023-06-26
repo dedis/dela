@@ -10,6 +10,9 @@ import (
 	"golang.org/x/xerrors"
 )
 
+const ERROR_MARSHAL_K = "couldn't marshal K: %v"
+const ERROR_UNMARSHAL_K = "couldn't unmarshal K: %v"
+
 func init() {
 	types.RegisterMessageFormat(serde.FormatJSON, newMsgFormat())
 }
@@ -530,7 +533,7 @@ func (f msgFormat) decodeStartDone(ctx serde.Context, msg *StartDone) (serde.Mes
 func encodeDecryptRequest(msg types.DecryptRequest) (Message, error) {
 	k, err := msg.GetK().MarshalBinary()
 	if err != nil {
-		return Message{}, xerrors.Errorf("couldn't marshal K: %v", err)
+		return Message{}, xerrors.Errorf(ERROR_MARSHAL_K, err)
 	}
 
 	c, err := msg.GetC().MarshalBinary()
@@ -550,7 +553,7 @@ func (f msgFormat) decodeDecryptRequest(ctx serde.Context, msg *DecryptRequest) 
 	k := f.suite.Point()
 	err := k.UnmarshalBinary(msg.K)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't unmarshal K: %v", err)
+		return nil, xerrors.Errorf(ERROR_UNMARSHAL_K, err)
 	}
 
 	c := f.suite.Point()
@@ -567,7 +570,7 @@ func (f msgFormat) decodeDecryptRequest(ctx serde.Context, msg *DecryptRequest) 
 func encodeReencryptRequest(msg types.ReencryptRequest) (Message, error) {
 	k, err := msg.K.MarshalBinary()
 	if err != nil {
-		return Message{}, xerrors.Errorf("couldn't marshal K: %v", err)
+		return Message{}, xerrors.Errorf(ERROR_MARSHAL_K, err)
 	}
 
 	pubk, err := msg.PubK.MarshalBinary()
@@ -624,7 +627,7 @@ func encodeVerifiableDecryptRequest(msg types.VerifiableDecryptRequest) (Message
 	for _, cp := range ciphertexts {
 		K, err := cp.K.MarshalBinary()
 		if err != nil {
-			return Message{}, xerrors.Errorf("couldn't marshal K: %v", err)
+			return Message{}, xerrors.Errorf(ERROR_MARSHAL_K, err)
 		}
 
 		C, err := cp.C.MarshalBinary()
@@ -681,7 +684,7 @@ func (f msgFormat) decodeVerifiableDecryptRequest(ctx serde.Context,
 		K := f.suite.Point()
 		err := K.UnmarshalBinary(cp.K)
 		if err != nil {
-			return nil, xerrors.Errorf("couldn't unmarshal K: %v", err)
+			return nil, xerrors.Errorf(ERROR_UNMARSHAL_K, err)
 		}
 
 		C := f.suite.Point()
@@ -862,7 +865,7 @@ func (f msgFormat) decodeReencryptRequest(ctx serde.Context, request *ReencryptR
 	k := f.suite.Point()
 	err := k.UnmarshalBinary(request.K)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't unmarshal K: %v", err)
+		return nil, xerrors.Errorf(ERROR_UNMARSHAL_K, err)
 	}
 
 	pubk := f.suite.Point()

@@ -34,7 +34,7 @@ type Actor interface {
 	// Decrypt decrypts a ciphertext (composed of a K and an array of C's)
 	// into the original message using the DKG internal private key
 	// where K is the ephemeral DH (Diffie-Hellman) public key
-	// and Cs is the encrypted message
+	// and Cs is the encrypted points
 	Decrypt(K kyber.Point, Cs []kyber.Point) ([]byte, error)
 
 	// Reencrypt reencrypts generate a temporary key from the public key
