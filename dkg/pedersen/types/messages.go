@@ -13,6 +13,14 @@ import (
 // encoded
 const couldntEncodeDecryptRequest = "couldn't encode decrypt request: %v"
 
+// couldntEncodeReencryptRequest indicates that a reencrypt request couldn't be
+// encoded
+const couldntEncodeReencryptRequest = "couldn't encode reencrypt request: %v"
+
+// couldntEncodeReencryptReply indicates that a reencrypt reply couldn't be
+// encoded
+const couldntEncodeReencryptReply = "couldn't encode reencrypt reply: %v"
+
 // Ciphertext provides the verifiable encryption function. A description can be
 // found in https://arxiv.org/pdf/2205.08529.pdf. The equivalent of each
 // parameter in the paper is written in front of it.
@@ -38,7 +46,6 @@ type ShareAndProof struct {
 	Ei kyber.Scalar // e_i
 	Fi kyber.Scalar // f_i
 	Hi kyber.Point  // h_i
-
 }
 
 var msgFormats = registry.NewSimpleRegistry()
@@ -466,7 +473,7 @@ func (req ReencryptRequest) Serialize(ctx serde.Context) ([]byte, error) {
 
 	data, err := format.Encode(ctx, req)
 	if err != nil {
-		return nil, xerrors.Errorf(couldntEncodeDecryptRequest, err)
+		return nil, xerrors.Errorf(couldntEncodeReencryptRequest, err)
 	}
 
 	return data, nil
@@ -496,7 +503,7 @@ func (reply ReencryptReply) Serialize(ctx serde.Context) ([]byte, error) {
 
 	data, err := format.Encode(ctx, reply)
 	if err != nil {
-		return nil, xerrors.Errorf(couldntEncodeDecryptRequest, err)
+		return nil, xerrors.Errorf(couldntEncodeReencryptReply, err)
 	}
 
 	return data, nil

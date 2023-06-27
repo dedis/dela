@@ -2,6 +2,7 @@ package types
 
 import (
 	"bytes"
+	"go.dedis.ch/kyber/v3/share"
 	"testing"
 	"testing/quick"
 
@@ -261,14 +262,15 @@ func TestDecryptRequest_Serialize(t *testing.T) {
 }
 
 func TestReencryptRequest_Serialize(t *testing.T) {
-	req := ReencryptRequest{}
+	var fakePoint kyber.Point
+	req := NewReencryptRequest(fakePoint, fakePoint)
 
 	data, err := req.Serialize(fake.NewContext())
 	require.NoError(t, err)
 	require.Equal(t, fake.GetFakeFormatValue(), data)
 
 	_, err = req.Serialize(fake.NewBadContext())
-	require.EqualError(t, err, fake.Err("couldn't encode decrypt request"))
+	require.ErrorContains(t, err, fake.Err("couldn't encode reencrypt request"))
 }
 
 func TestVerifiableDecryptRequest_Get(t *testing.T) {
@@ -309,6 +311,20 @@ func TestDecryptReply_Serialize(t *testing.T) {
 
 	_, err = resp.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("couldn't encode decrypt reply"))
+}
+
+func TestReencryptReply_Serialize(t *testing.T) {
+	var fpoint kyber.Point
+	var fscalar kyber.Scalar
+	var fshare share.PubShare
+	resp := NewReencryptReply(fpoint, &fshare, fscalar, fscalar)
+
+	data, err := resp.Serialize(fake.NewContext())
+	require.NoError(t, err)
+	require.Equal(t, fake.GetFakeFormatValue(), data)
+
+	_, err = resp.Serialize(fake.NewBadContext())
+	require.EqualError(t, err, fake.Err("couldn't encode reencrypt reply"))
 }
 
 func TestVerifiableDecryptReply_Get(t *testing.T) {

@@ -283,7 +283,7 @@ func encodeReencrypted(xhatenc kyber.Point) (string, error) {
 func decodePublicKey(str string) (pk kyber.Point, err error) {
 	pkbuff, err := hex.DecodeString(str)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to decode public key: %v", err)
+		return nil, xerrors.Errorf("malformed encoded: %s", str)
 	}
 
 	pk = suite.Point()
