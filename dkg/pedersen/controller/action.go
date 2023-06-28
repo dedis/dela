@@ -468,7 +468,7 @@ func (a verifiableDecryptAction) Execute(ctx node.Context) error {
 
 	parts := strings.Split(ciphertextString, separator)
 	if len(parts)%5 != 0 {
-		return xerrors.Errorf(MalformedEncoded, ciphertextString)
+		return xerrors.Errorf(malformedEncoded, ciphertextString)
 	}
 
 	batchSize := len(parts) / 5
