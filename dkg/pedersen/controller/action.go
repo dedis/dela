@@ -26,6 +26,7 @@ var suite = suites.MustFind("Ed25519")
 const separator = ":"
 const authconfig = "dkgauthority"
 const resolveActorFailed = "failed to resolve actor, did you call listen?: %v"
+const malformedEncoded = "malformed encoded: %s"
 
 type setupAction struct{}
 
@@ -283,7 +284,7 @@ func encodeReencrypted(xhatenc kyber.Point) (string, error) {
 func decodePublicKey(str string) (pk kyber.Point, err error) {
 	pkbuff, err := hex.DecodeString(str)
 	if err != nil {
-		return nil, xerrors.Errorf("malformed encoded: %s", str)
+		return nil, xerrors.Errorf(malformedEncoded, str)
 	}
 
 	pk = suite.Point()
@@ -318,7 +319,7 @@ func encodeEncrypted(k kyber.Point, cs []kyber.Point) (string, error) {
 func decodeEncrypted(str string) (kyber.Point, []kyber.Point, error) {
 	parts := strings.Split(str, separator)
 	if len(parts) < 2 {
-		return nil, nil, xerrors.Errorf("malformed encoded: %s", str)
+		return nil, nil, xerrors.Errorf(malformedEncoded, str)
 	}
 
 	// Decode K
@@ -467,7 +468,7 @@ func (a verifiableDecryptAction) Execute(ctx node.Context) error {
 
 	parts := strings.Split(ciphertextString, separator)
 	if len(parts)%5 != 0 {
-		return xerrors.Errorf("malformed encoded: %s", ciphertextString)
+		return xerrors.Errorf(MalformedEncoded, ciphertextString)
 	}
 
 	batchSize := len(parts) / 5
