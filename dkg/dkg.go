@@ -26,30 +26,29 @@ type Actor interface {
 
 	// Encrypt encrypts the given message into kyber points
 	// using the DKG public key
-	Encrypt(message []byte) (K, C kyber.Point, remainder []byte, err error)
-	// Decrypt decrypts a pair of kyber points into the original message
-	// using the DKG internal private key
-	Decrypt(K, C kyber.Point) ([]byte, error)
+	// where K is the ephemeral DH (Diffie-Hellman) public key
+	// and Cs is the resulting, encrypted points
+	// or an error if encryption is not possible.
+	Encrypt(message []byte) (K kyber.Point, Cs []kyber.Point, err error)
+
+	// Decrypt decrypts a ciphertext (composed of a K and an array of C's)
+	// into the original message using the DKG internal private key
+	// where K is the ephemeral DH (Diffie-Hellman) public key
+	// and Cs is the encrypted points
+	Decrypt(K kyber.Point, Cs []kyber.Point) ([]byte, error)
+
+	// Reencrypt reencrypts generate a temporary key from the public key
+	// to be able to decrypt the message by the user's private key
+	Reencrypt(K kyber.Point, PK kyber.Point) (XhatEnc kyber.Point, err error)
 
 	// Reshare recreates the DKG with an updated list of participants.
 	Reshare(co crypto.CollectiveAuthority, newThreshold int) error
 
-	// VerifiableEncrypt encrypts the given message into kyber points
-	// using the DKG public key and proof of work algorithm.
+	// VerifiableEncrypt encrypts the given message into a ciphertext
+	// using the DKG public key and a verifiable encryption function.
 	VerifiableEncrypt(message []byte, GBar kyber.Point) (ciphertext types.Ciphertext, remainder []byte, err error)
 
 	// VerifiableDecrypt decrypts a pair of kyber points into the original message
-	// using the DKG internal private key and a proof of work algorithm.
+	// using the DKG internal private key and a verifiable encryption function.
 	VerifiableDecrypt(ciphertexts []types.Ciphertext) ([][]byte, error)
-
-	// EncryptSecret encrypts the given message the calypso way
-	EncryptSecret(message []byte) (U kyber.Point, Cs []kyber.Point)
-
-	// ReencryptSecret is the first version of the calypso
-	// reencryption algorithm in DELA
-	ReencryptSecret(U kyber.Point, Pk kyber.Point) (XhatEnc kyber.Point, err error)
-
-	// DecryptSecret is a helper function to decrypt a secret message previously
-	// encrypted and reencrypted by the DKG
-	DecryptSecret(Cs []kyber.Point, XhatEnc kyber.Point, Sk kyber.Scalar) (message []byte, err error)
 }

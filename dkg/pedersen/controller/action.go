@@ -26,6 +26,7 @@ var suite = suites.MustFind("Ed25519")
 const separator = ":"
 const authconfig = "dkgauthority"
 const resolveActorFailed = "failed to resolve actor, did you call listen?: %v"
+const malformedEncoded = "malformed encoded: %s"
 
 type setupAction struct{}
 
@@ -188,12 +189,12 @@ func (a encryptAction) Execute(ctx node.Context) error {
 		return xerrors.Errorf("failed to decode message: %v", err)
 	}
 
-	k, c, remainder, err := actor.Encrypt(message)
+	k, cs, err := actor.Encrypt(message)
 	if err != nil {
 		return xerrors.Errorf("failed to encrypt: %v", err)
 	}
 
-	outStr, err := encodeEncrypted(k, c, remainder)
+	outStr, err := encodeEncrypted(k, cs)
 	if err != nil {
 		return xerrors.Errorf("failed to generate output: %v", err)
 	}
@@ -215,12 +216,12 @@ func (a decryptAction) Execute(ctx node.Context) error {
 
 	encrypted := ctx.Flags.String("encrypted")
 
-	k, c, err := decodeEncrypted(encrypted)
+	k, cs, err := decodeEncrypted(encrypted)
 	if err != nil {
 		return xerrors.Errorf("failed to decode encrypted str: %v", err)
 	}
 
-	decrypted, err := actor.Decrypt(k, c)
+	decrypted, err := actor.Decrypt(k, cs)
 	if err != nil {
 		return xerrors.Errorf("failed to decrypt: %v", err)
 	}
@@ -230,28 +231,95 @@ func (a decryptAction) Execute(ctx node.Context) error {
 	return nil
 }
 
-func encodeEncrypted(k, c kyber.Point, remainder []byte) (string, error) {
+type reencryptAction struct{}
+
+func (a reencryptAction) Execute(ctx node.Context) error {
+	var actor dkg.Actor
+
+	err := ctx.Injector.Resolve(&actor)
+	if err != nil {
+		return xerrors.Errorf(resolveActorFailed, err)
+	}
+
+	encrypted := ctx.Flags.String("encrypted")
+
+	k, _, err := decodeEncrypted(encrypted)
+	if err != nil {
+		return xerrors.Errorf("failed to decode encrypted str: %v", err)
+	}
+
+	publicKey := ctx.Flags.String("pubk")
+
+	pk, err := decodePublicKey(publicKey)
+	if err != nil {
+		return xerrors.Errorf("failed to decode public key str: %v", err)
+	}
+
+	xhatenc, err := actor.Reencrypt(k, pk)
+	if err != nil {
+		return xerrors.Errorf("failed to reencrypt: %v", err)
+	}
+
+	outStr, err := encodeReencrypted(xhatenc)
+	if err != nil {
+		return xerrors.Errorf("failed to encode the reencryption data: %v", err)
+	}
+
+	fmt.Fprint(ctx.Out, outStr)
+
+	return nil
+}
+
+func encodeReencrypted(xhatenc kyber.Point) (string, error) {
+	buff, err := xhatenc.MarshalBinary()
+	if err != nil {
+		return "", xerrors.Errorf("failed to marshal xhatenc: %v", err)
+	}
+
+	encoded := hex.EncodeToString(buff)
+
+	return encoded, nil
+}
+
+func decodePublicKey(str string) (pk kyber.Point, err error) {
+	pkbuff, err := hex.DecodeString(str)
+	if err != nil {
+		return nil, xerrors.Errorf(malformedEncoded, str)
+	}
+
+	pk = suite.Point()
+
+	err = pk.UnmarshalBinary(pkbuff)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to unmarshal pk: %v", err)
+	}
+
+	return pk, nil
+}
+
+func encodeEncrypted(k kyber.Point, cs []kyber.Point) (string, error) {
 	kbuff, err := k.MarshalBinary()
 	if err != nil {
 		return "", xerrors.Errorf("failed to marshal k: %v", err)
 	}
 
-	cbuff, err := c.MarshalBinary()
-	if err != nil {
-		return "", xerrors.Errorf("failed to marshal c: %v", err)
-	}
+	encoded := hex.EncodeToString(kbuff)
 
-	encoded := hex.EncodeToString(kbuff) + separator +
-		hex.EncodeToString(cbuff) + separator +
-		hex.EncodeToString(remainder)
+	for _, c := range cs {
+		cbuff, err := c.MarshalBinary()
+		if err != nil {
+			return "", xerrors.Errorf("failed to marshal c: %v", err)
+		}
+		encoded += separator + hex.EncodeToString(cbuff)
+	}
 
 	return encoded, nil
 }
 
-func decodeEncrypted(str string) (k kyber.Point, c kyber.Point, err error) {
+func decodeEncrypted(str string) (kyber.Point, []kyber.Point, error) {
 	parts := strings.Split(str, separator)
 	if len(parts) < 2 {
-		return nil, nil, xerrors.Errorf("malformed encoded: %s", str)
+		return nil, nil, xerrors.Errorf(malformedEncoded, str)
 	}
 
 	// Decode K
@@ -260,27 +328,33 @@ func decodeEncrypted(str string) (k kyber.Point, c kyber.Point, err error) {
 		return nil, nil, xerrors.Errorf("failed to decode k point: %v", err)
 	}
 
-	k = suite.Point()
+	k := suite.Point()
 
 	err = k.UnmarshalBinary(kbuff)
 	if err != nil {
 		return nil, nil, xerrors.Errorf("failed to unmarshal k point: %v", err)
 	}
 
-	// Decode C
-	cbuff, err := hex.DecodeString(parts[1])
-	if err != nil {
-		return nil, nil, xerrors.Errorf("failed to decode c point: %v", err)
+	// Decode Cs
+	cs := make([]kyber.Point, 0, len(parts)-1)
+
+	for _, p := range parts[1:] {
+		cbuff, err := hex.DecodeString(p)
+		if err != nil {
+			return nil, nil, xerrors.Errorf("failed to decode c point: %v", err)
+		}
+
+		c := suite.Point()
+
+		err = c.UnmarshalBinary(cbuff)
+		if err != nil {
+			return nil, nil, xerrors.Errorf("failed to unmarshal c point: %v", err)
+		}
+
+		cs = append(cs, c)
 	}
 
-	c = suite.Point()
-
-	err = c.UnmarshalBinary(cbuff)
-	if err != nil {
-		return nil, nil, xerrors.Errorf("failed to unmarshal c point: %v", err)
-	}
-
-	return k, c, nil
+	return k, cs, nil
 }
 
 // Verifiable encryption
@@ -394,7 +468,7 @@ func (a verifiableDecryptAction) Execute(ctx node.Context) error {
 
 	parts := strings.Split(ciphertextString, separator)
 	if len(parts)%5 != 0 {
-		return xerrors.Errorf("malformed encoded: %s", ciphertextString)
+		return xerrors.Errorf(malformedEncoded, ciphertextString)
 	}
 
 	batchSize := len(parts) / 5
