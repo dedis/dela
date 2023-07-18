@@ -12,7 +12,7 @@ import (
 	"golang.org/x/xerrors"
 )
 
-type onChainSecret struct {
+type reencryptStatus struct {
 	K    kyber.Point // K is the random part of the encrypted secret
 	pubk kyber.Point // The client's public key
 
@@ -22,14 +22,6 @@ type onChainSecret struct {
 
 	replies []types.ReencryptReply // replies received
 	Uis     []*share.PubShare      // re-encrypted shares
-}
-
-// newOCS creates a new on-chain secret structure.
-func newOCS(K kyber.Point, pubk kyber.Point) *onChainSecret {
-	return &onChainSecret{
-		K:    K,
-		pubk: pubk,
-	}
 }
 
 // Reencrypt implements dkg.Actor.
@@ -63,11 +55,14 @@ func (a *Actor) Reencrypt(K kyber.Point, pubk kyber.Point) (XhatEnc kyber.Point,
 		return nil, xerrors.Errorf("failed to send reencrypt request: %v", err)
 	}
 
-	ocs := newOCS(K, pubk)
-	ocs.nbnodes = len(addrs)
-	ocs.threshold = a.startRes.getThreshold()
+	status := &reencryptStatus{
+		K:    K,
+		pubk: pubk,
+	}
+	status.nbnodes = len(addrs)
+	status.threshold = a.startRes.getThreshold()
 
-	for i := 0; i < ocs.nbnodes; i++ {
+	for i := 0; i < status.nbnodes; i++ {
 		src, rxMsg, err := receiver.Recv(ctx)
 		if err != nil {
 			return nil, xerrors.Errorf(unexpectedStreamStop, err)
@@ -80,11 +75,11 @@ func (a *Actor) Reencrypt(K kyber.Point, pubk kyber.Point) (XhatEnc kyber.Point,
 			return nil, xerrors.Errorf(unexpectedReply, reply, rxMsg)
 		}
 
-		err = processReencryptReply(ocs, &reply)
+		err = status.processReencryptReply(&reply)
 		if err == nil {
-			dela.Logger.Debug().Msgf("Reencryption Uis: %v", ocs.Uis)
+			dela.Logger.Debug().Msgf("Reencryption Uis: %v", status.Uis)
 
-			XhatEnc, err := share.RecoverCommit(suites.MustFind("Ed25519"), ocs.Uis, ocs.threshold, ocs.nbnodes)
+			XhatEnc, err := share.RecoverCommit(suites.MustFind("Ed25519"), status.Uis, status.threshold, status.nbnodes)
 			if err != nil {
 				return nil, xerrors.Errorf("Reencryption failed: %v", err)
 			}
@@ -97,33 +92,33 @@ func (a *Actor) Reencrypt(K kyber.Point, pubk kyber.Point) (XhatEnc kyber.Point,
 	return nil, xerrors.Errorf("Reencryption failed: %v", err)
 }
 
-func processReencryptReply(ocs *onChainSecret, reply *types.ReencryptReply) (err error) {
+func (s *reencryptStatus) processReencryptReply(reply *types.ReencryptReply) (err error) {
 	if reply.Ui == nil {
 		err = xerrors.Errorf("Received empty reply")
 		dela.Logger.Warn().Msg("Empty reply received")
-		ocs.nbfailures++
-		if ocs.nbfailures > ocs.nbnodes-ocs.threshold {
+		s.nbfailures++
+		if s.nbfailures > s.nbnodes-s.threshold {
 			err = xerrors.Errorf("couldn't get enough shares")
 			dela.Logger.Warn().Msg(err.Error())
 		}
 		return err
 	}
 
-	ocs.replies = append(ocs.replies, *reply)
+	s.replies = append(s.replies, *reply)
 
-	if len(ocs.replies) >= ocs.threshold {
-		ocs.Uis = make([]*share.PubShare, 0, ocs.nbnodes)
+	if len(s.replies) >= s.threshold {
+		s.Uis = make([]*share.PubShare, 0, s.nbnodes)
 
-		for _, r := range ocs.replies {
+		for _, r := range s.replies {
 
 			/*
 				// Verify proofs
-				ufi := suite.Point().Mul(r.Fi, suite.Point().Add(ocs.U, ocs.pubk))
+				ufi := suite.Point().Mul(r.Fi, suite.Point().Add(s.U, s.pubk))
 				uiei := suite.Point().Mul(suite.Scalar().Neg(r.Ei), r.Ui.V)
 				uiHat := suite.Point().Add(ufi, uiei)
 
 				gfi := suite.Point().Mul(r.Fi, nil)
-				gxi := ocs.poly.Eval(r.Ui.I).V
+				gxi := s.poly.Eval(r.Ui.I).V
 				hiei := suite.Point().Mul(suite.Scalar().Neg(r.Ei), gxi)
 				hiHat := suite.Point().Add(gfi, hiei)
 				hash := sha256.New()
@@ -134,13 +129,13 @@ func processReencryptReply(ocs *onChainSecret, reply *types.ReencryptReply) (err
 				if e.Equal(r.Ei) {
 
 			*/
-			ocs.Uis = append(ocs.Uis, r.Ui)
+			s.Uis = append(s.Uis, r.Ui)
 			/*
 				}
 				else
 				{
 					dela.Logger.Warn().Msgf("Received invalid share from node: %v", r.Ui.I)
-					ocs.nbfailures++
+					s.nbfailures++
 				}
 			*/
 		}
