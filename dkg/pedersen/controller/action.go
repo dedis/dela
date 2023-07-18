@@ -44,6 +44,9 @@ func (a setupAction) Execute(ctx node.Context) error {
 	}
 
 	t := ctx.Flags.Int("threshold")
+	if t < 2 || t > co.Len() {
+		return xerrors.Errorf("thresold (%d) needs to be between 2 and %d", t, co.Len())
+	}
 
 	pubkey, err := actor.Setup(co, t)
 	if err != nil {

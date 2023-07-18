@@ -482,9 +482,10 @@ func (s fakeSigner) GetPublicKey() crypto.PublicKey {
 
 // decryptReencrypted helps to decrypt a reencrypted message.
 func decryptReencrypted(Cs []kyber.Point, XhatEnc kyber.Point, dkgPk kyber.Point, Sk kyber.Scalar) (msg []byte, err error) {
-	dela.Logger.Debug().Msgf("DKG pubK:%v", dkgPk)
+
 	dela.Logger.Debug().Msgf("XhatEnc:%v", XhatEnc)
-	dela.Logger.Debug().Msgf("xc:%v", Sk)
+	dela.Logger.Debug().Msgf("DKG pubK:%v", dkgPk)
+	dela.Logger.Debug().Msgf("Sk:%v", Sk)
 
 	xcInv := suite.Scalar().Neg(Sk)
 	dela.Logger.Debug().Msgf("xcInv:%v", xcInv)
