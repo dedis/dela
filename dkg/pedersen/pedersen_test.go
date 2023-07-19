@@ -37,33 +37,39 @@ func TestPedersen_Setup(t *testing.T) {
 		startRes: &state{},
 	}
 
-	fakeAuthority := fake.NewAuthority(1, fake.NewSigner)
+	fakeAuthority := fake.NewAuthority(0, fake.NewSigner)
+	_, err := actor.Setup(fakeAuthority, 1)
+	require.EqualError(t, err, "number of nodes cannot be zero")
 
-	_, err := actor.Setup(fakeAuthority, 0)
+	fakeAuthority = fake.NewAuthority(1, fake.NewSigner)
+	_, err = actor.Setup(fakeAuthority, 0)
+	require.ErrorContains(t, err, "DKG threshold (0) needs to be between")
+
+	_, err = actor.Setup(fakeAuthority, 1)
 	require.EqualError(t, err, fake.Err("failed to stream"))
 
 	rpc := fake.NewStreamRPC(fake.NewReceiver(), fake.NewBadSender())
 	actor.rpc = rpc
 
-	_, err = actor.Setup(fakeAuthority, 0)
+	_, err = actor.Setup(fakeAuthority, 1)
 	require.EqualError(t, err, "expected ed25519.PublicKey, got 'fake.PublicKey'")
 
 	fakeAuthority = fake.NewAuthority(2, ed25519.NewSigner)
 
-	_, err = actor.Setup(fakeAuthority, 1)
+	_, err = actor.Setup(fakeAuthority, 2)
 	require.EqualError(t, err, fake.Err("failed to send start"))
 
 	rpc = fake.NewStreamRPC(fake.NewBadReceiver(), fake.Sender{})
 	actor.rpc = rpc
 
-	_, err = actor.Setup(fakeAuthority, 1)
+	_, err = actor.Setup(fakeAuthority, 2)
 	require.EqualError(t, err, fake.Err("got an error from '%!s(<nil>)' while receiving"))
 
 	recv := fake.NewReceiver(fake.NewRecvMsg(fake.NewAddress(0), nil))
 
 	actor.rpc = fake.NewStreamRPC(recv, fake.Sender{})
 
-	_, err = actor.Setup(fakeAuthority, 1)
+	_, err = actor.Setup(fakeAuthority, 2)
 	require.EqualError(t, err, "expected to receive a Done message, but go the following: <nil>")
 
 	rpc = fake.NewStreamRPC(fake.NewReceiver(
@@ -72,7 +78,7 @@ func TestPedersen_Setup(t *testing.T) {
 	), fake.Sender{})
 	actor.rpc = rpc
 
-	_, err = actor.Setup(fakeAuthority, 1)
+	_, err = actor.Setup(fakeAuthority, 2)
 	require.Error(t, err)
 	require.Regexp(t, "^the public keys does not match:", err)
 }
