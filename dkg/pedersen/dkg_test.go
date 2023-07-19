@@ -117,6 +117,17 @@ func TestDKGInstance_HandleVerifiableDecryptRequestFail(t *testing.T) {
 	require.EqualError(t, err, "bad state: unexpected state: UNKNOWN != one of [Certified]")
 }
 
+func TestDKGInstance_HandleReencryptRequestFail(t *testing.T) {
+	s := instance{
+		startRes: &state{dkgState: 0xaa},
+	}
+
+	err := s.handleMessage(context.TODO(), types.ReencryptRequest{},
+		fake.NewAddress(0), nil)
+
+	require.EqualError(t, err, "bad state: unexpected state: UNKNOWN != one of [Certified]")
+}
+
 func TestDKGInstance_HandleUnknown(t *testing.T) {
 	s := instance{
 		startRes: &state{dkgState: 0xaa},
@@ -139,7 +150,7 @@ func TestDKGInstance_StartFailNewDKG(t *testing.T) {
 	require.EqualError(t, err, "failed to create new DKG: dkg: can't run with empty node list")
 }
 
-func TestDKGInstance_Start(t *testing.T) {
+func TestDKGInstance_StartFailDeal(t *testing.T) {
 	privKey := suite.Scalar().Pick(suite.RandomStream())
 	pubKey := suite.Point().Mul(privKey, nil)
 
@@ -157,16 +168,25 @@ func TestDKGInstance_Start(t *testing.T) {
 	require.EqualError(t, err, "there should be as many participants as pubKey: 1 != 0")
 
 	s.startRes.dkgState = initial
+	s.startRes.threshold = 2
 
-	start = types.NewStart(2, []mino.Address{fake.NewAddress(0),
-		fake.NewAddress(1)}, []kyber.Point{pubKey, suite.Point()})
+	start = types.NewStart(2,
+		[]mino.Address{
+			fake.NewAddress(0),
+			fake.NewAddress(1)},
+		[]kyber.Point{
+			pubKey,
+			suite.Point()})
 
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
 
 	err = s.start(ctx, start, channel.Timed[types.Deal]{},
 		channel.Timed[types.Response]{}, from, fake.Sender{})
-	require.NoError(t, err)
+	require.ErrorContains(t, err,
+		"something went wrong during DKG: failed to respond")
+	// this actually ensures that the start occurred successfully,
+	// but the DKG execution failed because deals are not sent.
 }
 
 func TestDKGInstance_doDKG_DealFail(t *testing.T) {

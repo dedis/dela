@@ -2,6 +2,7 @@ package json
 
 import (
 	"fmt"
+	"go.dedis.ch/kyber/v3/share"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -16,7 +17,7 @@ import (
 // suite is the Kyber suite for Pedersen.
 var suite = suites.MustFind("Ed25519")
 
-func TestMessageFormat_Start_Encode(t *testing.T) {
+func TestMessageFormat_EncodeStart(t *testing.T) {
 	start := types.NewStart(1, []mino.Address{fake.NewAddress(0)}, []kyber.Point{suite.Point()})
 
 	format := newMsgFormat()
@@ -42,7 +43,7 @@ func TestMessageFormat_Start_Encode(t *testing.T) {
 	require.EqualError(t, err, "unsupported message of type 'fake.Message'")
 }
 
-func TestMessageFormat_StartResharing_Encode(t *testing.T) {
+func TestMessageFormat_EncodeStartResharing(t *testing.T) {
 	start := types.NewStartResharing(1, 1, []mino.Address{fake.NewAddress(0)},
 		[]mino.Address{fake.NewAddress(1)}, []kyber.Point{suite.Point()},
 		[]kyber.Point{suite.Point()})
@@ -72,7 +73,7 @@ func TestMessageFormat_StartResharing_Encode(t *testing.T) {
 	require.EqualError(t, err, fake.Err("failed to encode message: couldn't marshal old public key"))
 }
 
-func TestMessageFormat_Deal_Encode(t *testing.T) {
+func TestMessageFormat_EncodeEncryptDeal(t *testing.T) {
 	deal := types.NewDeal(1, []byte{1}, types.EncryptedDeal{})
 
 	format := newMsgFormat()
@@ -84,7 +85,7 @@ func TestMessageFormat_Deal_Encode(t *testing.T) {
 	require.Equal(t, expected, string(data))
 }
 
-func TestMessageFormat_Reshare_Encode(t *testing.T) {
+func TestMessageFormat_EncodeReshare(t *testing.T) {
 	reshare := types.NewReshare(types.Deal{}, []kyber.Point{suite.Point()})
 	format := newMsgFormat()
 	ctx := serde.NewContext(fake.ContextEngine{})
@@ -99,7 +100,7 @@ func TestMessageFormat_Reshare_Encode(t *testing.T) {
 	require.EqualError(t, err, fake.Err("failed to encode message: couldn't marshal public coefficient"))
 }
 
-func TestMessageFormat_Response_Encode(t *testing.T) {
+func TestMessageFormat_EncodeDealerResponse(t *testing.T) {
 	resp := types.NewResponse(1, types.DealerResponse{})
 
 	format := newMsgFormat()
@@ -111,7 +112,7 @@ func TestMessageFormat_Response_Encode(t *testing.T) {
 	require.Equal(t, expected, string(data))
 }
 
-func TestMessageFormat_StartDone_Encode(t *testing.T) {
+func TestMessageFormat_EncodeStartDone(t *testing.T) {
 	done := types.NewStartDone(suite.Point())
 
 	format := newMsgFormat()
@@ -126,7 +127,7 @@ func TestMessageFormat_StartDone_Encode(t *testing.T) {
 	require.EqualError(t, err, fake.Err("failed to encode message: couldn't marshal public key"))
 }
 
-func TestMessageFormat_DecryptRequest_Encode(t *testing.T) {
+func TestMessageFormat_EncodeDecryptRequest(t *testing.T) {
 	req := types.NewDecryptRequest(suite.Point(), suite.Point())
 
 	format := newMsgFormat()
@@ -146,7 +147,7 @@ func TestMessageFormat_DecryptRequest_Encode(t *testing.T) {
 	require.EqualError(t, err, fake.Err("failed to encode message: couldn't marshal C"))
 }
 
-func TestMessageFormat_VerifiableDecryptRequest_Encode(t *testing.T) {
+func TestMessageFormat_EncodeVerifiableDecryptRequest(t *testing.T) {
 	req := types.NewVerifiableDecryptRequest([]types.Ciphertext{{
 		K:    suite.Point(),
 		C:    suite.Point(),
@@ -180,7 +181,7 @@ func TestMessageFormat_VerifiableDecryptRequest_Encode(t *testing.T) {
 	t.Run("GBar", check("GBar", types.Ciphertext{K: suite.Point(), C: suite.Point(), UBar: suite.Point(), E: suite.Scalar(), F: suite.Scalar(), GBar: badPoint{}}))
 }
 
-func TestMessageFormat_DecryptReply_Encode(t *testing.T) {
+func TestMessageFormat_EncodeDecryptReply(t *testing.T) {
 	resp := types.NewDecryptReply(5, suite.Point())
 
 	format := newMsgFormat()
@@ -195,10 +196,34 @@ func TestMessageFormat_DecryptReply_Encode(t *testing.T) {
 	require.EqualError(t, err, fake.Err("failed to encode message: couldn't marshal V"))
 }
 
-func TestMessageFormat_VerifiableDecryptReply_Encode(t *testing.T) {
+func TestMessageFormat_EncodeReencryptReply(t *testing.T) {
+	resp := types.NewReencryptReply(
+		suite.Point(),
+		&share.PubShare{
+			I: int(12358),
+			V: suite.Point(),
+		},
+		suite.Scalar().Pick(suite.RandomStream()),
+		suite.Scalar(),
+	)
+
+	format := newMsgFormat()
+	ctx := serde.NewContext(fake.ContextEngine{})
+
+	data, err := format.Encode(ctx, resp)
+	require.NoError(t, err)
+
+	require.Regexp(t, `{"ReencryptReply":{"PubK":"[^"]+","UiI":12358,"UiV":"[^"]+","Ei":"[^"]+","Fi":"[^"]+"}}`, string(data))
+
+	resp.PubK = badPoint{}
+	_, err = format.Encode(ctx, resp)
+	require.EqualError(t, err, fake.Err("failed to encode message: couldn't marshal PubK"))
+}
+
+func TestMessageFormat_EncodeVerifiableDecryptReply(t *testing.T) {
 	req := types.NewVerifiableDecryptReply([]types.ShareAndProof{{
 		V:  suite.Point(),
-		I:  int64(0),
+		I:  int64(1321),
 		Ui: suite.Point(),
 		Ei: suite.Scalar(),
 		Fi: suite.Scalar(),
@@ -210,7 +235,7 @@ func TestMessageFormat_VerifiableDecryptReply_Encode(t *testing.T) {
 
 	data, err := format.Encode(ctx, req)
 	require.NoError(t, err)
-	regexp := `{"VerifiableDecryptReply":{"Sp":\[{"V":"[^"]+","I":0,"Ui":"[^"]+","Ei":"[^"]+","Fi":"[^"]+","Hi":"[^"]+"}\]}}`
+	regexp := `{"VerifiableDecryptReply":{"Sp":\[{"V":"[^"]+","I":1321,"Ui":"[^"]+","Ei":"[^"]+","Fi":"[^"]+","Hi":"[^"]+"}\]}}`
 	require.Regexp(t, regexp, string(data))
 
 	check := func(attr string, sp types.ShareAndProof) func(t *testing.T) {
@@ -228,7 +253,7 @@ func TestMessageFormat_VerifiableDecryptReply_Encode(t *testing.T) {
 	t.Run("Hi", check("H_i", types.ShareAndProof{V: suite.Point(), Ui: suite.Point(), Ei: suite.Scalar(), Fi: suite.Scalar(), Hi: badPoint{}}))
 }
 
-func TestMessageFormat_Decode(t *testing.T) {
+func TestMessageFormat_DecodeStart(t *testing.T) {
 	format := newMsgFormat()
 	ctx := serde.NewContext(fake.ContextEngine{})
 	ctx = serde.WithFactory(ctx, types.AddrKey{}, fake.AddressFactory{})
@@ -256,19 +281,30 @@ func TestMessageFormat_Decode(t *testing.T) {
 	badCtx := serde.WithFactory(ctx, types.AddrKey{}, nil)
 	_, err = format.Decode(badCtx, []byte(`{"Start":{}}`))
 	require.EqualError(t, err, "invalid factory of type '<nil>'")
+}
+func TestMessageFormat_DecodeEncryptedDeal(t *testing.T) {
+	format := newMsgFormat()
+	ctx := serde.NewContext(fake.ContextEngine{})
 
-	// Decode deal messages.
 	deal, err := format.Decode(ctx, []byte(`{"Deal":{}}`))
 	require.NoError(t, err)
 	require.Equal(t, types.NewDeal(0, nil, types.EncryptedDeal{}), deal)
+}
 
-	// Decode response messages.
+func TestMessageFormat_DecodeDealerResponse(t *testing.T) {
+	format := newMsgFormat()
+	ctx := serde.NewContext(fake.ContextEngine{})
+
 	resp, err := format.Decode(ctx, []byte(`{"Response":{}}`))
 	require.NoError(t, err)
 	require.Equal(t, types.NewResponse(0, types.DealerResponse{}), resp)
+}
 
-	// Decode start done messages.
-	data = []byte(fmt.Sprintf(`{"StartDone":{"PublicKey":"%s"}}`, testPoint))
+func TestMessageFormat_DecodeStartDone(t *testing.T) {
+	format := newMsgFormat()
+	ctx := serde.NewContext(fake.ContextEngine{})
+
+	data := []byte(fmt.Sprintf(`{"StartDone":{"PublicKey":"%s"}}`, testPoint))
 	done, err := format.Decode(ctx, data)
 	require.NoError(t, err)
 	require.IsType(t, types.StartDone{}, done)
@@ -277,9 +313,13 @@ func TestMessageFormat_Decode(t *testing.T) {
 	_, err = format.Decode(ctx, data)
 	require.EqualError(t, err,
 		"couldn't unmarshal public key: invalid Ed25519 curve point")
+}
 
-	// Decode decryption request messages.
-	data = []byte(fmt.Sprintf(`{"DecryptRequest":{"K":"%s","C":"%s"}}`, testPoint, testPoint))
+func TestMessageFormat_DecodeDecryptRequest(t *testing.T) {
+	format := newMsgFormat()
+	ctx := serde.NewContext(fake.ContextEngine{})
+
+	data := []byte(fmt.Sprintf(`{"DecryptRequest":{"K":"%s","C":"%s"}}`, testPoint, testPoint))
 	req, err := format.Decode(ctx, data)
 	require.NoError(t, err)
 	require.IsType(t, types.DecryptRequest{}, req)
@@ -294,11 +334,16 @@ func TestMessageFormat_Decode(t *testing.T) {
 	require.EqualError(t, err,
 		"couldn't unmarshal C: invalid Ed25519 curve point")
 
-	// Decode decryption reply messages.
-	data = []byte(fmt.Sprintf(`{"DecryptReply":{"I":4,"V":"%s"}}`, testPoint))
-	resp, err = format.Decode(ctx, data)
+}
+
+func TestMessageFormat_DecodeDecryptReply(t *testing.T) {
+	format := newMsgFormat()
+	ctx := serde.NewContext(fake.ContextEngine{})
+
+	data := []byte(fmt.Sprintf(`{"DecryptReply":{"I":4,"V":"%s"}}`, testPoint))
+	reply, err := format.Decode(ctx, data)
 	require.NoError(t, err)
-	require.IsType(t, types.DecryptReply{}, resp)
+	require.IsType(t, types.DecryptReply{}, reply)
 
 	data = []byte(`{"DecryptReply":{"V":[]}}`)
 	_, err = format.Decode(ctx, data)
@@ -312,7 +357,64 @@ func TestMessageFormat_Decode(t *testing.T) {
 	require.EqualError(t, err, "message is empty")
 }
 
-func TestMessageFormat_Decode_StartResharing(t *testing.T) {
+func TestMessageFormat_DecodeReencryptRequest(t *testing.T) {
+	format := newMsgFormat()
+	ctx := serde.NewContext(fake.ContextEngine{})
+
+	data := []byte(fmt.Sprintf(`{"ReencryptRequest":{"K":"%s","PubK":"%s"}}`, testPoint, testPoint))
+	request, err := format.Decode(ctx, data)
+	require.NoError(t, err)
+	require.IsType(t, types.ReencryptRequest{}, request)
+
+	data = []byte(fmt.Sprintf(`{"ReencryptRequest":{"K":[],"PubK":"%s"}}`, testPoint))
+	_, err = format.Decode(ctx, data)
+	require.EqualError(t, err,
+		"couldn't unmarshal K: invalid Ed25519 curve point")
+
+	data = []byte(fmt.Sprintf(`{"ReencryptRequest":{"K":"%s","PubK":[]}}`, testPoint))
+	_, err = format.Decode(ctx, data)
+	require.EqualError(t, err,
+		"couldn't unmarshal PubK: invalid Ed25519 curve point")
+}
+
+func TestMessageFormat_DecodeReencryptReply(t *testing.T) {
+	format := newMsgFormat()
+	ctx := serde.NewContext(fake.ContextEngine{})
+
+	data := []byte(fmt.Sprintf(`{"ReencryptReply":{"Pubk":"%s","UiI":13,"UiV":"%s","Ei":"%s","Fi":"%s"}}`,
+		testPoint, testPoint, testPoint, testPoint))
+	reply, err := format.Decode(ctx, data)
+	require.NoError(t, err)
+	require.IsType(t, types.ReencryptReply{}, reply)
+
+	data = []byte(fmt.Sprintf(`{"ReencryptReply":{"Pubk":[],"UiI":13,"UiV":"%s","Ei":"%s","Fi":"%s"}}`,
+		testPoint, testPoint, testPoint))
+	_, err = format.Decode(ctx, data)
+	require.ErrorContains(t, err, "couldn't unmarshal PubK")
+
+	data = []byte(fmt.Sprintf(`{"ReencryptReply":{"Pubk":"%s","UiI":"0","UiV":"%s","Ei":"%s","Fi":"%s"}}`,
+		testPoint, testPoint, testPoint, testPoint))
+	_, err = format.Decode(ctx, data)
+	require.ErrorContains(t, err, "json: cannot unmarshal string into")
+	require.ErrorContains(t, err, "of type int")
+
+	data = []byte(fmt.Sprintf(`{"ReencryptReply":{"Pubk":"%s","UiI":13,"UiV":[],"Ei":"%s","Fi":"%s"}}`,
+		testPoint, testPoint, testPoint))
+	_, err = format.Decode(ctx, data)
+	require.ErrorContains(t, err, "couldn't unmarshal UiV")
+
+	data = []byte(fmt.Sprintf(`{"ReencryptReply":{"Pubk":"%s","UiI":13,"UiV":"%s","Ei":[],"Fi":"%s"}}`,
+		testPoint, testPoint, testPoint))
+	_, err = format.Decode(ctx, data)
+	require.ErrorContains(t, err, "couldn't unmarshal Ei")
+
+	data = []byte(fmt.Sprintf(`{"ReencryptReply":{"Pubk":"%s","UiI":13,"UiV":"%s","Ei":"%s","Fi":[]}}`,
+		testPoint, testPoint, testPoint))
+	_, err = format.Decode(ctx, data)
+	require.ErrorContains(t, err, "couldn't unmarshal Fi")
+}
+
+func TestMessageFormat_DecodeStartResharing(t *testing.T) {
 	format := newMsgFormat()
 	ctx := serde.NewContext(fake.ContextEngine{})
 	ctx = serde.WithFactory(ctx, types.AddrKey{}, fake.AddressFactory{})
@@ -349,7 +451,7 @@ func TestMessageFormat_Decode_StartResharing(t *testing.T) {
 		"couldn't unmarshal old public key: invalid Ed25519 curve point")
 }
 
-func TestMessageFormat_Decode_Reshare(t *testing.T) {
+func TestMessageFormat_DecodeReshare(t *testing.T) {
 	format := newMsgFormat()
 	ctx := serde.NewContext(fake.ContextEngine{})
 	ctx = serde.WithFactory(ctx, types.AddrKey{}, fake.AddressFactory{})
@@ -371,7 +473,7 @@ func TestMessageFormat_Decode_Reshare(t *testing.T) {
 	require.EqualError(t, err, "couldn't unmarshal public coeff key: invalid Ed25519 curve point")
 }
 
-func TestMessageFormat_Decode_VerifiableDecryptRequest(t *testing.T) {
+func TestMessageFormat_DecodeVerifiableDecryptRequest(t *testing.T) {
 	format := newMsgFormat()
 	ctx := serde.NewContext(fake.ContextEngine{})
 	ctx = serde.WithFactory(ctx, types.AddrKey{}, fake.AddressFactory{})
@@ -420,7 +522,7 @@ func TestMessageFormat_Decode_VerifiableDecryptRequest(t *testing.T) {
 	require.EqualError(t, err, "couldn't unmarshal GBar: invalid Ed25519 curve point")
 }
 
-func TestMessageFormat_Decode_VerifiableDecryptReply(t *testing.T) {
+func TestMessageFormat_DecodeVerifiableDecryptReply(t *testing.T) {
 	format := newMsgFormat()
 	ctx := serde.NewContext(fake.ContextEngine{})
 	ctx = serde.WithFactory(ctx, types.AddrKey{}, fake.AddressFactory{})

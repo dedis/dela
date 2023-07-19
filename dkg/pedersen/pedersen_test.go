@@ -1,6 +1,11 @@
 package pedersen
 
 import (
+	"fmt"
+	"go.dedis.ch/dela/mino/minoch"
+	"go.dedis.ch/kyber/v3/suites"
+	"go.dedis.ch/kyber/v3/util/key"
+	"golang.org/x/xerrors"
 	"testing"
 
 	"github.com/rs/zerolog"
@@ -32,33 +37,39 @@ func TestPedersen_Setup(t *testing.T) {
 		startRes: &state{},
 	}
 
-	fakeAuthority := fake.NewAuthority(1, fake.NewSigner)
+	fakeAuthority := fake.NewAuthority(0, fake.NewSigner)
+	_, err := actor.Setup(fakeAuthority, 1)
+	require.EqualError(t, err, "number of nodes cannot be zero")
 
-	_, err := actor.Setup(fakeAuthority, 0)
+	fakeAuthority = fake.NewAuthority(1, fake.NewSigner)
+	_, err = actor.Setup(fakeAuthority, 0)
+	require.ErrorContains(t, err, "DKG threshold (0) needs to be between")
+
+	_, err = actor.Setup(fakeAuthority, 1)
 	require.EqualError(t, err, fake.Err("failed to stream"))
 
 	rpc := fake.NewStreamRPC(fake.NewReceiver(), fake.NewBadSender())
 	actor.rpc = rpc
 
-	_, err = actor.Setup(fakeAuthority, 0)
+	_, err = actor.Setup(fakeAuthority, 1)
 	require.EqualError(t, err, "expected ed25519.PublicKey, got 'fake.PublicKey'")
 
 	fakeAuthority = fake.NewAuthority(2, ed25519.NewSigner)
 
-	_, err = actor.Setup(fakeAuthority, 1)
+	_, err = actor.Setup(fakeAuthority, 2)
 	require.EqualError(t, err, fake.Err("failed to send start"))
 
 	rpc = fake.NewStreamRPC(fake.NewBadReceiver(), fake.Sender{})
 	actor.rpc = rpc
 
-	_, err = actor.Setup(fakeAuthority, 1)
+	_, err = actor.Setup(fakeAuthority, 2)
 	require.EqualError(t, err, fake.Err("got an error from '%!s(<nil>)' while receiving"))
 
 	recv := fake.NewReceiver(fake.NewRecvMsg(fake.NewAddress(0), nil))
 
 	actor.rpc = fake.NewStreamRPC(recv, fake.Sender{})
 
-	_, err = actor.Setup(fakeAuthority, 1)
+	_, err = actor.Setup(fakeAuthority, 2)
 	require.EqualError(t, err, "expected to receive a Done message, but go the following: <nil>")
 
 	rpc = fake.NewStreamRPC(fake.NewReceiver(
@@ -67,7 +78,7 @@ func TestPedersen_Setup(t *testing.T) {
 	), fake.Sender{})
 	actor.rpc = rpc
 
-	_, err = actor.Setup(fakeAuthority, 1)
+	_, err = actor.Setup(fakeAuthority, 2)
 	require.Error(t, err)
 	require.Regexp(t, "^the public keys does not match:", err)
 }
@@ -92,13 +103,16 @@ func TestPedersen_Decrypt(t *testing.T) {
 			participants: []mino.Address{fake.NewAddress(0)}, distrKey: suite.Point()},
 	}
 
-	_, err := actor.Decrypt(suite.Point(), suite.Point())
+	K := suite.Point()
+	Cs := make([]kyber.Point, 1)
+
+	_, err := actor.Decrypt(K, Cs)
 	require.EqualError(t, err, fake.Err("failed to create stream"))
 
 	rpc := fake.NewStreamRPC(fake.NewBadReceiver(), fake.NewBadSender())
 	actor.rpc = rpc
 
-	_, err = actor.Decrypt(suite.Point(), suite.Point())
+	_, err = actor.Decrypt(K, Cs)
 	require.EqualError(t, err, fake.Err("failed to send decrypt request"))
 
 	recv := fake.NewReceiver(fake.NewRecvMsg(fake.NewAddress(0), nil))
@@ -106,7 +120,7 @@ func TestPedersen_Decrypt(t *testing.T) {
 	rpc = fake.NewStreamRPC(recv, fake.Sender{})
 	actor.rpc = rpc
 
-	_, err = actor.Decrypt(suite.Point(), suite.Point())
+	_, err = actor.Decrypt(K, Cs)
 	require.EqualError(t, err, "got unexpected reply, expected types.DecryptReply but got: <nil>")
 
 	recv = fake.NewReceiver(
@@ -116,7 +130,7 @@ func TestPedersen_Decrypt(t *testing.T) {
 	rpc = fake.NewStreamRPC(recv, fake.Sender{})
 	actor.rpc = rpc
 
-	_, err = actor.Decrypt(suite.Point(), suite.Point())
+	_, err = actor.Decrypt(K, Cs)
 	require.EqualError(t, err, "failed to recover commit: share: not enough "+
 		"good public shares to reconstruct secret commitment")
 
@@ -127,7 +141,7 @@ func TestPedersen_Decrypt(t *testing.T) {
 	rpc = fake.NewStreamRPC(recv, fake.Sender{})
 	actor.rpc = rpc
 
-	_, err = actor.Decrypt(suite.Point(), suite.Point())
+	_, err = actor.Decrypt(K, Cs)
 	require.NoError(t, err)
 }
 
@@ -140,7 +154,9 @@ func Test_Decrypt_StreamStop(t *testing.T) {
 		},
 	}
 
-	_, err := a.Decrypt(nil, nil)
+	Cs := make([]kyber.Point, 1)
+
+	_, err := a.Decrypt(nil, Cs)
 	require.EqualError(t, err, fake.Err("stream stopped unexpectedly"))
 }
 
@@ -191,9 +207,6 @@ func TestPedersen_Scenario(t *testing.T) {
 		pubkeys[i] = pubkey
 	}
 
-	fakeAuthority := NewAuthority(addrs, pubkeys)
-
-	message := []byte("Hello world")
 	actors := make([]dkg.Actor, n)
 	for i := 0; i < n; i++ {
 		actor, err := dkgs[i].Listen()
@@ -203,10 +216,14 @@ func TestPedersen_Scenario(t *testing.T) {
 	}
 
 	// trying to call a decrypt/encrypt before a setup
-	_, _, _, err := actors[0].Encrypt(message)
+	message := []byte("Hello world")
+
+	_, _, err := actors[0].Encrypt(message)
 	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")
 	_, err = actors[0].Decrypt(nil, nil)
 	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")
+
+	fakeAuthority := NewAuthority(addrs, pubkeys)
 
 	_, err = actors[0].Setup(fakeAuthority, n)
 	require.NoError(t, err)
@@ -216,10 +233,79 @@ func TestPedersen_Scenario(t *testing.T) {
 
 	// every node should be able to encrypt/decrypt
 	for i := 0; i < n; i++ {
-		K, C, remainder, err := actors[i].Encrypt(message)
+		K, C, err := actors[i].Encrypt(message)
 		require.NoError(t, err)
-		require.Len(t, remainder, 0)
 		decrypted, err := actors[i].Decrypt(K, C)
+		require.NoError(t, err)
+		require.Equal(t, message, decrypted)
+	}
+}
+
+func TestPedersen_ReencryptScenario(t *testing.T) {
+	// Use with MINO_TRAFFIC=log
+	// traffic.LogItems = false
+	// traffic.LogEvent = false
+	// defer func() {
+	// 	traffic.SaveItems("graph.dot", true, false)
+	// 	traffic.SaveEvents("events.dot")
+	// }()
+
+	oldLog := dela.Logger
+	defer func() {
+		dela.Logger = oldLog
+	}()
+
+	dela.Logger = dela.Logger.Level(zerolog.WarnLevel)
+
+	nbNodes := 7
+
+	minos := make([]mino.Mino, nbNodes)
+	dkgs := make([]dkg.DKG, nbNodes)
+	addrs := make([]mino.Address, nbNodes)
+
+	manager := minoch.NewManager()
+
+	for i := 0; i < nbNodes; i++ {
+		minos[i] = minoch.MustCreate(manager, fmt.Sprint("node", i))
+		addrs[i] = minos[i].GetAddress()
+	}
+
+	pubkeys := make([]kyber.Point, len(minos))
+
+	for i, mi := range minos {
+		d, pubkey := NewPedersen(mi.(*minoch.Minoch))
+		dkgs[i] = d
+		pubkeys[i] = pubkey
+	}
+
+	actors := make([]dkg.Actor, nbNodes)
+	for i := 0; i < nbNodes; i++ {
+		actor, err := dkgs[i].Listen()
+		require.NoError(t, err)
+
+		actors[i] = actor
+	}
+
+	fakeAuthority := NewAuthority(addrs, pubkeys)
+	_, err := actors[0].Setup(fakeAuthority, nbNodes)
+	require.NoError(t, err)
+
+	// every node should be able to encrypt/reencrypt/decrypt
+	kp := key.NewKeyPair(suites.MustFind("Ed25519"))
+
+	for i := 0; i < nbNodes; i++ {
+		message := []byte(fmt.Sprint("Hello world, I'm", i))
+		U, Cs, err := actors[i].Encrypt(message)
+		require.NoError(t, err)
+
+		XhatEnc, err := actors[i].Reencrypt(U, kp.Public)
+		require.NoError(t, err)
+		require.NotNil(t, XhatEnc)
+
+		dkgPk, err := actors[i].GetPublicKey()
+		require.NoError(t, err)
+
+		decrypted, err := decryptReencrypted(Cs, XhatEnc, dkgPk, kp.Private)
 		require.NoError(t, err)
 		require.Equal(t, message, decrypted)
 	}
@@ -398,4 +484,46 @@ type fakeSigner struct {
 // GetPublicKey implements crypto.Signer
 func (s fakeSigner) GetPublicKey() crypto.PublicKey {
 	return ed25519.NewPublicKeyFromPoint(s.pubkey)
+}
+
+// decryptReencrypted helps to decrypt a reencrypted message.
+func decryptReencrypted(Cs []kyber.Point, XhatEnc kyber.Point, dkgPk kyber.Point, Sk kyber.Scalar) (msg []byte, err error) {
+
+	dela.Logger.Debug().Msgf("XhatEnc:%v", XhatEnc)
+	dela.Logger.Debug().Msgf("DKG pubK:%v", dkgPk)
+	dela.Logger.Debug().Msgf("Sk:%v", Sk)
+
+	xcInv := suite.Scalar().Neg(Sk)
+	dela.Logger.Debug().Msgf("xcInv:%v", xcInv)
+
+	sum := suite.Scalar().Add(Sk, xcInv)
+	dela.Logger.Debug().Msgf("xc + xcInv: %v", sum)
+
+	XhatDec := suite.Point().Mul(xcInv, dkgPk)
+	dela.Logger.Debug().Msgf("XhatDec:%v", XhatDec)
+
+	Xhat := suite.Point().Add(XhatEnc, XhatDec)
+	dela.Logger.Debug().Msgf("Xhat:%v", Xhat)
+
+	XhatInv := suite.Point().Neg(Xhat)
+	dela.Logger.Debug().Msgf("XhatInv:%v", XhatInv)
+
+	// Decrypt Cs to keyPointHat
+	for _, C := range Cs {
+		dela.Logger.Debug().Msgf("C:%v", C)
+
+		keyPointHat := suite.Point().Add(C, XhatInv)
+		dela.Logger.Debug().Msgf("keyPointHat:%v", keyPointHat)
+
+		keyPart, err := keyPointHat.Data()
+		dela.Logger.Debug().Msgf("keyPart:%v", keyPart)
+
+		if err != nil {
+			e := xerrors.Errorf("Error while decrypting Cs: %v", err)
+			dela.Logger.Error().Msg(e.Error())
+			return nil, e
+		}
+		msg = append(msg, keyPart...)
+	}
+	return
 }

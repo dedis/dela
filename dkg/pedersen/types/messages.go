@@ -5,8 +5,21 @@ import (
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/registry"
 	"go.dedis.ch/kyber/v3"
+	"go.dedis.ch/kyber/v3/share"
 	"golang.org/x/xerrors"
 )
+
+// couldntEncodeDecryptRequest indicates that a decrypt request couldn't be
+// encoded
+const couldntEncodeDecryptRequest = "couldn't encode decrypt request: %v"
+
+// couldntEncodeReencryptRequest indicates that a reencrypt request couldn't be
+// encoded
+const couldntEncodeReencryptRequest = "couldn't encode reencrypt request: %v"
+
+// couldntEncodeReencryptReply indicates that a reencrypt reply couldn't be
+// encoded
+const couldntEncodeReencryptReply = "couldn't encode reencrypt reply: %v"
 
 // Ciphertext provides the verifiable encryption function. A description can be
 // found in https://arxiv.org/pdf/2205.08529.pdf. The equivalent of each
@@ -33,7 +46,6 @@ type ShareAndProof struct {
 	Ei kyber.Scalar // e_i
 	Fi kyber.Scalar // f_i
 	Hi kyber.Point  // h_i
-
 }
 
 var msgFormats = registry.NewSimpleRegistry()
@@ -433,10 +445,78 @@ func (req DecryptRequest) Serialize(ctx serde.Context) ([]byte, error) {
 
 	data, err := format.Encode(ctx, req)
 	if err != nil {
-		return nil, xerrors.Errorf("couldn't encode decrypt request: %v", err)
+		return nil, xerrors.Errorf(couldntEncodeDecryptRequest, err)
 	}
 
 	return data, nil
+}
+
+// ReencryptRequest share is sent to a node in order to reencrypt a secret
+// using the original randomness K from the write request
+// and the public key PubK from the reader
+type ReencryptRequest struct {
+	K    kyber.Point
+	PubK kyber.Point
+}
+
+// NewReencryptRequest creates a new reencryption request.
+func NewReencryptRequest(k, pubk kyber.Point) *ReencryptRequest {
+	return &ReencryptRequest{
+		K:    k,
+		PubK: pubk,
+	}
+}
+
+// Serialize implements serde.Message.
+func (req ReencryptRequest) Serialize(ctx serde.Context) ([]byte, error) {
+	format := msgFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, req)
+	if err != nil {
+		return nil, xerrors.Errorf(couldntEncodeReencryptRequest, err)
+	}
+
+	return data, nil
+}
+
+// ReencryptReply returns the share to re-encrypt from one node
+type ReencryptReply struct {
+	PubK kyber.Point
+	Ui   *share.PubShare
+	Ei   kyber.Scalar
+	Fi   kyber.Scalar
+}
+
+// NewReencryptReply creates a new decryption request.
+func NewReencryptReply(pubk kyber.Point, ui *share.PubShare, ei, fi kyber.Scalar) ReencryptReply {
+	return ReencryptReply{
+		PubK: pubk,
+		Ui:   ui,
+		Ei:   ei,
+		Fi:   fi,
+	}
+}
+
+// Serialize implements serde.Message.
+func (reply ReencryptReply) Serialize(ctx serde.Context) ([]byte, error) {
+	format := msgFormats.Get(ctx.GetFormat())
+
+	data, err := format.Encode(ctx, reply)
+	if err != nil {
+		return nil, xerrors.Errorf(couldntEncodeReencryptReply, err)
+	}
+
+	return data, nil
+}
+
+// GetI returns I.
+func (reply ReencryptReply) GetI() int {
+	return reply.Ui.I
+}
+
+// GetV returns V.
+func (reply ReencryptReply) GetV() kyber.Point {
+	return reply.Ui.V
 }
 
 // VerifiableDecryptRequest is a message sent to request a verifiable

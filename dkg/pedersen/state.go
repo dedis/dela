@@ -50,8 +50,9 @@ type state struct {
 	// participants is set once a sharing or resharing starts
 	participants []mino.Address
 	pubkeys      []kyber.Point
-	threshold    int
-	dkgState     dkgState
+	//TODO add verifiability (poly         *share.PubPoly)
+	threshold int
+	dkgState  dkgState
 }
 
 func (s *state) switchState(new dkgState) error {

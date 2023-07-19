@@ -2,6 +2,7 @@ package pedersen
 
 import (
 	"context"
+	"crypto/sha256"
 	"strconv"
 	"sync"
 
@@ -174,6 +175,14 @@ func (s *instance) handleMessage(ctx context.Context, msg serde.Message, from mi
 
 		return s.handleVerifiableDecrypt(out, msg, from)
 
+	case types.ReencryptRequest:
+		err := s.startRes.checkState(certified)
+		if err != nil {
+			return xerrors.Errorf(badState, err)
+		}
+
+		return s.handleReencryptRequest(out, msg, from)
+
 	default:
 		return xerrors.Errorf("expected Start message, decrypt request or "+
 			"Deal as first message, got: %T", msg)
@@ -211,7 +220,7 @@ func (s *instance) start(ctx context.Context, start types.Start, deals channel.T
 
 	err = s.doDKG(ctx, deals, resps, out, from)
 	if err != nil {
-		xerrors.Errorf("something went wrong during DKG: %v", err)
+		return xerrors.Errorf("something went wrong during DKG: %v", err)
 	}
 
 	return nil
@@ -272,6 +281,8 @@ func (s *instance) deal(ctx context.Context, out mino.Sender) error {
 		return xerrors.Errorf("failed to compute the deals: %v", err)
 	}
 
+	participants := s.startRes.getParticipants()
+
 	for i, deal := range deals {
 		dealMsg := types.NewDeal(
 			deal.Index,
@@ -284,7 +295,7 @@ func (s *instance) deal(ctx context.Context, out mino.Sender) error {
 			),
 		)
 
-		to := s.startRes.getParticipants()[i]
+		to := participants[i]
 
 		s.log.Trace().Str("to", to.String()).Msg("send deal")
 
@@ -307,13 +318,14 @@ func (s *instance) deal(ctx context.Context, out mino.Sender) error {
 func (s *instance) respond(ctx context.Context, deals channel.Timed[types.Deal], out mino.Sender) error {
 	numReceivedDeals := 0
 
-	for numReceivedDeals < len(s.startRes.getParticipants())-1 {
+	participants := s.startRes.getParticipants()
+	for numReceivedDeals < len(participants)-1 {
 		deal, err := deals.NonBlockingReceiveWithContext(ctx)
 		if err != nil {
 			return xerrors.Errorf("context done: %v", err)
 		}
 
-		err = s.handleDeal(ctx, deal, out, s.startRes.getParticipants())
+		err = s.handleDeal(ctx, deal, out, participants)
 		if err != nil {
 			return xerrors.Errorf("failed to handle received deal: %v", err)
 		}
@@ -513,7 +525,7 @@ func (s *instance) reshare(ctx context.Context, out mino.Sender,
 
 	err = s.doReshare(ctx, msg, from, out, reshares, resps)
 	if err != nil {
-		xerrors.Errorf("failed to reshare: %v", err)
+		return xerrors.Errorf("failed to reshare: %v", err)
 	}
 
 	return nil
@@ -543,7 +555,7 @@ func (s *instance) doReshare(ctx context.Context, start types.StartResharing,
 	switch nt {
 	case oldNode:
 		// Update local DKG for resharing
-		share, err := s.dkg.DistKeyShare()
+		distKeyShare, err := s.dkg.DistKeyShare()
 		if err != nil {
 			return xerrors.Errorf("old node failed to create: %v", err)
 		}
@@ -555,7 +567,7 @@ func (s *instance) doReshare(ctx context.Context, start types.StartResharing,
 			Longterm:     s.privKey,
 			OldNodes:     s.startRes.getPublicKeys(),
 			NewNodes:     start.GetPubkeysNew(),
-			Share:        share,
+			Share:        distKeyShare,
 			Threshold:    start.GetTNew(),
 			OldThreshold: s.startRes.getThreshold(),
 		}
@@ -568,7 +580,7 @@ func (s *instance) doReshare(ctx context.Context, start types.StartResharing,
 		s.dkg = d
 
 		// Send my Deals to the new and common nodes
-		err = s.sendDealsResharing(ctx, out, addrsNew, share.Commits)
+		err = s.sendDealsResharing(ctx, out, addrsNew, distKeyShare.Commits)
 		if err != nil {
 			return xerrors.Errorf("old node failed to send deals: %v", err)
 		}
@@ -577,7 +589,7 @@ func (s *instance) doReshare(ctx context.Context, start types.StartResharing,
 
 	case commonNode:
 		// Update local DKG for resharing
-		share, err := s.dkg.DistKeyShare()
+		distKeyShare, err := s.dkg.DistKeyShare()
 		if err != nil {
 			return xerrors.Errorf("common node failed to create: %v", err)
 		}
@@ -589,7 +601,7 @@ func (s *instance) doReshare(ctx context.Context, start types.StartResharing,
 			Longterm:     s.privKey,
 			OldNodes:     s.startRes.getPublicKeys(),
 			NewNodes:     start.GetPubkeysNew(),
-			Share:        share,
+			Share:        distKeyShare,
 			Threshold:    start.GetTNew(),
 			OldThreshold: s.startRes.getThreshold(),
 		}
@@ -602,7 +614,7 @@ func (s *instance) doReshare(ctx context.Context, start types.StartResharing,
 		s.dkg = d
 
 		// Send my Deals to the new and common nodes
-		err = s.sendDealsResharing(ctx, out, addrsNew, share.Commits)
+		err = s.sendDealsResharing(ctx, out, addrsNew, distKeyShare.Commits)
 		if err != nil {
 			return xerrors.Errorf("common node failed to send deals: %v", err)
 		}
@@ -787,6 +799,46 @@ func (s *instance) handleDecrypt(out mino.Sender, msg types.DecryptRequest,
 	}
 
 	return nil
+}
+
+func (s *instance) handleReencryptRequest(out mino.Sender, msg types.ReencryptRequest,
+	from mino.Address) error {
+
+	if !s.startRes.Done() {
+		return xerrors.Errorf("you must first initialize DKG. Did you call setup() first?")
+	}
+
+	ui := s.getUI(msg.K, msg.PubK)
+
+	// Calculating proofs of reencryption
+	si := suite.Scalar().Pick(suite.RandomStream())
+	uiHat := suite.Point().Mul(si, suite.Point().Add(msg.K, msg.PubK))
+	hiHat := suite.Point().Mul(si, nil)
+	hash := sha256.New()
+	ui.V.MarshalTo(hash)
+	uiHat.MarshalTo(hash)
+	hiHat.MarshalTo(hash)
+	ei := suite.Scalar().SetBytes(hash.Sum(nil))
+	fi := suite.Scalar().Add(si, suite.Scalar().Mul(ei, s.privShare.V))
+
+	response := types.NewReencryptReply(msg.PubK, ui, ei, fi)
+
+	errs := out.Send(response, from)
+	err := <-errs
+	if err != nil {
+		return xerrors.Errorf("got an error while sending the reencrypt reply: %v", err)
+	}
+
+	return nil
+}
+
+func (s *instance) getUI(K, pubk kyber.Point) *share.PubShare {
+	v := suite.Point().Mul(s.privShare.V, K)
+	v.Add(v, suite.Point().Mul(s.privShare.V, pubk))
+	return &share.PubShare{
+		I: s.privShare.I,
+		V: v,
+	}
 }
 
 func (s *instance) handleVerifiableDecrypt(out mino.Sender,

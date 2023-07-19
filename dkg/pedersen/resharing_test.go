@@ -79,9 +79,8 @@ func TestResharing_minoch(t *testing.T) {
 	// Encrypt a message with the old committee public key. The new committee
 	// should be able to decrypt it successfully
 	message := []byte(testMessage)
-	K, C, remainder, err := actorsOld[0].Encrypt(message)
+	K, Cs, err := actorsOld[0].Encrypt(message)
 	require.NoError(t, err, "encrypting the message was not successful")
-	require.Len(t, remainder, 0)
 
 	// Setting up the second dkg nCommon is the number of nodes that are common
 	// between the new and the old committee.
@@ -153,7 +152,7 @@ func TestResharing_minoch(t *testing.T) {
 		// The public key should remain the same
 		require.NoError(t, err, "the public key should remain the same")
 		newPubKey.Equal(oldPubKey)
-		decrypted, err := actorNew.Decrypt(K, C)
+		decrypted, err := actorNew.Decrypt(K, Cs)
 		require.NoError(t, err, "decryption was not successful")
 		require.Equal(t, message, decrypted, "the new committee should be able "+
 			"to decrypt the messages encrypted by the old committee")
@@ -219,9 +218,8 @@ func TestResharing_minogrpc(t *testing.T) {
 	// Encrypt a message with the old committee public key. the new committee
 	// should be able to decrypt it successfully
 	message := []byte(testMessage)
-	K, C, remainder, err := actorsOld[0].Encrypt(message)
+	K, Cs, err := actorsOld[0].Encrypt(message)
 	require.NoError(t, err, "encrypting the message was not successful")
-	require.Len(t, remainder, 0)
 
 	// Setting up the second dkg. nCommon is the number of nodes that are common
 	// between the new and the old committee
@@ -318,7 +316,7 @@ func TestResharing_minogrpc(t *testing.T) {
 		// The public key should remain the same
 		require.NoError(t, err, "the public key should remain the same")
 		newPubKey.Equal(oldPubKey)
-		decrypted, err := actorNew.Decrypt(K, C)
+		decrypted, err := actorNew.Decrypt(K, Cs)
 		require.NoError(t, err, "decryption was not successful")
 		require.Equal(t, message, decrypted, "the new committee should be able "+
 			"to decrypt the messages encrypted by the old committee")
@@ -374,9 +372,8 @@ func TestResharingTwice(t *testing.T) {
 	// Encrypt a message with the old committee public key. the new committee
 	// should be able to decrypt it successfully
 	message := []byte(testMessage)
-	K, C, remainder, err := actors1[0].Encrypt(message)
+	K, Cs, err := actors1[0].Encrypt(message)
 	require.NoError(t, err, "encrypting the message was not successful")
-	require.Len(t, remainder, 0)
 
 	// Setting up the second dkg nCommon is the number of nodes that are common
 	// between the new and the old committee
@@ -448,7 +445,7 @@ func TestResharingTwice(t *testing.T) {
 		// The public key should remain the same
 		require.NoError(t, err, "the public key should remain the same")
 		newPubKey.Equal(oldPubKey)
-		decrypted, err := actorNew.Decrypt(K, C)
+		decrypted, err := actorNew.Decrypt(K, Cs)
 		require.NoError(t, err, "decryption was not successful")
 		require.Equal(t, message, decrypted, "the new committee should be able "+
 			"to decrypt the messages encrypted by the old committee")
@@ -524,7 +521,7 @@ func TestResharingTwice(t *testing.T) {
 		// The public key should remain the same
 		require.NoError(t, err, "the public key should remain the same")
 		newPubKey.Equal(oldPubKey)
-		decrypted, err := actorNew.Decrypt(K, C)
+		decrypted, err := actorNew.Decrypt(K, Cs)
 		require.NoError(t, err, "decryption was not successful")
 		require.Equal(t, message, decrypted, "the new committee should be able "+
 			"to decrypt the messages encrypted by the old committee")

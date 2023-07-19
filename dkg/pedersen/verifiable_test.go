@@ -189,13 +189,13 @@ func Test_VerifiableEncDec_minogrpc(t *testing.T) {
 
 		workerNum = numWorkersSlice[i]
 
-		keys := make([][29]byte, batchSize)
+		msg := make([][29]byte, batchSize)
 		var ciphertexts []types.Ciphertext
 		for i := 0; i < batchSize; i++ {
-			_, err = rand.Read(keys[i][:])
+			_, err = rand.Read(msg[i][:])
 			require.NoError(t, err)
 
-			ciphertext, remainder, err := actors[0].VerifiableEncrypt(keys[i][:], GBar)
+			ciphertext, remainder, err := actors[0].VerifiableEncrypt(msg[i][:], GBar)
 			require.NoError(t, err)
 			require.Len(t, remainder, 0)
 
@@ -210,7 +210,7 @@ func Test_VerifiableEncDec_minogrpc(t *testing.T) {
 		require.NoError(t, err)
 
 		for i := 0; i < batchSize; i++ {
-			require.Equal(t, keys[i][:], decrypted[i])
+			require.Equal(t, msg[i][:], decrypted[i])
 		}
 
 		t.Logf("n=%d, batchSize=%d, workerNum=%d, decryption time=%s, "+
