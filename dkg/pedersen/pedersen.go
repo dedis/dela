@@ -119,7 +119,7 @@ func (a *Actor) Setup(coAuth crypto.CollectiveAuthority, threshold int) (kyber.P
 	}
 
 	if threshold < 2 || threshold > coAuth.Len() {
-		return nil, xerrors.Errorf("DKG thresold (%d) needs to be between 2 and %d", threshold, coAuth.Len())```
+		return nil, xerrors.Errorf("DKG threshold (%d) needs to be between 2 and %d", threshold, coAuth.Len())
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), setupTimeout)
