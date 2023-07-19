@@ -118,8 +118,8 @@ func (a *Actor) Setup(coAuth crypto.CollectiveAuthority, threshold int) (kyber.P
 		return nil, xerrors.Errorf("startRes is already done, only one setup call is allowed")
 	}
 
-	if threshold <= 1 {
-		return nil, xerrors.Errorf("DKG threshold needs to be > 1")
+	if threshold < 2 || threshold > coAuth.Len() {
+		return nil, xerrors.Errorf("DKG thresold (%d) needs to be between 2 and %d", threshold, coAuth.Len())```
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), setupTimeout)
