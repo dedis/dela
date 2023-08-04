@@ -1,6 +1,7 @@
 package binprefix
 
 import (
+	"fmt"
 	"math"
 	"math/big"
 	"testing"
@@ -57,7 +58,7 @@ func TestTree_Search(t *testing.T) {
 	require.Equal(t, []byte("B"), value)
 
 	_, err = tree.Search(make([]byte, MaxDepth+1), nil, &fakeBucket{})
-	require.EqualError(t, err, "mismatch key length 33 > 32")
+	require.EqualError(t, err, mismatchKeyLength())
 
 	tree.root = fakeNode{err: fake.GetError()}
 	_, err = tree.Search([]byte("A"), nil, nil)
@@ -72,7 +73,7 @@ func TestTree_Insert(t *testing.T) {
 	require.Equal(t, 1, tree.Len())
 
 	err = tree.Insert(make([]byte, MaxDepth+1), nil, &fakeBucket{})
-	require.EqualError(t, err, "mismatch key length 33 > 32")
+	require.EqualError(t, err, mismatchKeyLength())
 
 	tree.root = fakeNode{err: fake.GetError()}
 	err = tree.Insert([]byte("A"), []byte("B"), nil)
@@ -146,7 +147,7 @@ func TestTree_Delete(t *testing.T) {
 	require.IsType(t, (*EmptyNode)(nil), tree.root)
 
 	err = tree.Delete(make([]byte, MaxDepth+1), &fakeBucket{})
-	require.EqualError(t, err, "mismatch key length 33 > 32")
+	require.EqualError(t, err, mismatchKeyLength())
 
 	tree.root = fakeNode{err: fake.GetError()}
 	err = tree.Delete([]byte("A"), nil)
@@ -628,6 +629,10 @@ func TestNodeFactory_Deserialize(t *testing.T) {
 
 // -----------------------------------------------------------------------------
 // Utility functions
+
+func mismatchKeyLength() string {
+	return fmt.Sprintf("mismatch key length %v > %v", MaxDepth+1, MaxDepth)
+}
 
 func makeBucket(t *testing.T) *fakeBucket {
 	emptyNode, err := NewEmptyNode(1, big.NewInt(0)).Serialize(testCtx)

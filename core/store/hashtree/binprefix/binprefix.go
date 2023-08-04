@@ -4,7 +4,7 @@
 // https://www.usenix.org/system/files/conference/usenixsecurity15/sec15-paper-melara.pdf
 //
 // The merkle tree is stored in-memory until it reaches a certain threshold of
-// depth where it will write the nodes in disk. The leaf are always stored in
+// depth where it will write the nodes in disk. A leaf is always stored on
 // disk because of the value it holds.
 //
 //		         Interior (Root)
