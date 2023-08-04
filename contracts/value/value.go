@@ -44,6 +44,9 @@ const (
 	// credentialAllCommand defines the credential command that is allowed to
 	// perform all commands.
 	credentialAllCommand = "all"
+
+	// contractKeyPrefix is used to prefix keys in the K/V store.
+	contractKeyPrefix = "VAL"
 )
 
 // Command defines a type of command for the value contract
@@ -172,14 +175,17 @@ func (c valueCommand) write(snap store.Snapshot, step execution.Step) error {
 		return xerrors.Errorf("'%s' not found in tx arg", ValueArg)
 	}
 
-	err := snap.Set(key, value)
+	snapKey := prefix(key)
+	err := snap.Set(snapKey, value)
 	if err != nil {
 		return xerrors.Errorf("failed to set value: %v", err)
 	}
 
 	c.index[string(key)] = struct{}{}
 
-	dela.Logger.Info().Str("contract", ContractName).Msgf("setting %x=%s", key, value)
+	dela.Logger.Info().
+		Str("contract", ContractName).
+		Msgf("setting value %x=%s", snapKey, value)
 
 	return nil
 }
@@ -191,7 +197,7 @@ func (c valueCommand) read(snap store.Snapshot, step execution.Step) error {
 		return xerrors.Errorf("'%s' not found in tx arg", KeyArg)
 	}
 
-	val, err := snap.Get(key)
+	val, err := snap.Get(prefix(key))
 	if err != nil {
 		return xerrors.Errorf("failed to get key '%s': %v", key, err)
 	}
@@ -208,12 +214,17 @@ func (c valueCommand) delete(snap store.Snapshot, step execution.Step) error {
 		return xerrors.Errorf("'%s' not found in tx arg", KeyArg)
 	}
 
-	err := snap.Delete(key)
+	snapKey := prefix(key)
+	err := snap.Delete(snapKey)
 	if err != nil {
 		return xerrors.Errorf("failed to delete key '%x': %v", key, err)
 	}
 
 	delete(c.index, string(key))
+
+	dela.Logger.Info().
+		Str("contract", ContractName).
+		Msgf("deleting value %x", snapKey)
 
 	return nil
 }
@@ -223,7 +234,7 @@ func (c valueCommand) list(snap store.Snapshot) error {
 	res := []string{}
 
 	for k := range c.index {
-		v, err := snap.Get([]byte(k))
+		v, err := snap.Get(prefix([]byte(k)))
 		if err != nil {
 			return xerrors.Errorf("failed to get key '%s': %v", k, err)
 		}
@@ -246,4 +257,8 @@ func (h infoLog) Write(p []byte) (int, error) {
 	dela.Logger.Info().Msg(string(p))
 
 	return len(p), nil
+}
+
+func prefix(key []byte) []byte {
+	return append([]byte(contractKeyPrefix), key...)
 }
