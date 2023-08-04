@@ -38,7 +38,7 @@ import (
 const privateKeyFile = "private.key"
 
 // valueAccessKey is the access key used for the value contract.
-var valueAccessKey = [32]byte{2}
+var valueAccessKey = [28]byte{2}
 
 func blsSigner() encoding.BinaryMarshaler {
 	return bls.NewSigner()

@@ -49,8 +49,8 @@ import (
 const certKeyName = "cert.key"
 const privateKeyFile = "private.key"
 
-var aKey = [32]byte{1}
-var valueAccessKey = [32]byte{2}
+var aKey = [28]byte{1}
+var valueAccessKey = [28]byte{2}
 
 // cosiDela defines the interface needed to use a Dela node using cosi.
 type cosiDela interface {

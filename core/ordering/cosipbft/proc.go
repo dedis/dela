@@ -29,8 +29,8 @@ import (
 )
 
 var (
-	keyRoster = [32]byte{}
-	keyAccess = [32]byte{1}
+	keyRoster = [28]byte{}
+	keyAccess = [28]byte{1}
 )
 
 // Processor processes the messages to run a collective signing PBFT consensus.

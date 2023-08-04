@@ -14,7 +14,7 @@ import (
 	"golang.org/x/xerrors"
 )
 
-var aKey = [32]byte{1}
+var aKey = [28]byte{1}
 
 // newStore is the function used to create the new store. It allows us to create
 // a different store in the tests.

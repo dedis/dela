@@ -10,7 +10,7 @@ import (
 )
 
 // aKey is the access key used for the value contract
-var aKey = [32]byte{2}
+var aKey = [28]byte{2}
 
 // miniController is a CLI initializer to register the value contract
 //
