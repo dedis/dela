@@ -27,8 +27,8 @@ func TestService_Match(t *testing.T) {
 	data, err := perm.Serialize(testCtx)
 	require.NoError(t, err)
 
-	store.Set([]byte{0xaa}, data)
-	store.Set([]byte{0xbb}, []byte{})
+	store.Set(append([]byte("DARC"), 0xaa), data)
+	store.Set(append([]byte("DARC"), 0xbb), []byte{})
 
 	srvc := NewService(testCtx)
 
@@ -57,7 +57,7 @@ func TestService_Match(t *testing.T) {
 
 func TestService_Grant(t *testing.T) {
 	store := fake.NewSnapshot()
-	store.Set([]byte{0xbb}, []byte{})
+	store.Set(append([]byte("DARC"), 0xbb), []byte{})
 
 	creds := access.NewContractCreds([]byte{0xaa}, "test", "grant")
 
