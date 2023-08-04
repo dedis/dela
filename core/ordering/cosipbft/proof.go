@@ -50,7 +50,7 @@ func (p Proof) Verify(genesis types.Genesis, fac crypto.VerifierFactory) error {
 	last := p.chain.GetBlock()
 
 	// The path object is transmitted with enough information so that when it is
-	// instanciated, it can calculate the Merkle root. It is therefore
+	// instantiated, it can calculate the Merkle root. It is therefore
 	// unnecessary to do it again here.
 	root := types.Digest{}
 	copy(root[:], p.path.GetRoot())
