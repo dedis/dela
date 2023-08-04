@@ -46,7 +46,7 @@ const (
 	credentialAllCommand = "all"
 
 	// contractKeyPrefix is used to prefix keys in the K/V store.
-	contractKeyPrefix = "VAL"
+	contractKeyPrefix = "VALU" // intentionally 4 bytes only, not a typo!
 )
 
 // Command defines a type of command for the value contract
