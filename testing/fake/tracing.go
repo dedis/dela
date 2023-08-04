@@ -1,6 +1,6 @@
 package fake
 
-import opentracing "github.com/opentracing/opentracing-go"
+import "github.com/opentracing/opentracing-go"
 
 // GetTracerForAddrWithError is used to mock `tracing.GetTracerForAddr` with an
 // error.

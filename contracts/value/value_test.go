@@ -13,14 +13,15 @@ import (
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/signed"
-	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestExecute(t *testing.T) {
 	contract := NewContract([]byte{}, fakeAccess{err: fake.GetError()})
 
 	err := contract.Execute(fakeStore{}, makeStep(t))
-	require.EqualError(t, err, "identity not authorized: fake.PublicKey ("+fake.GetError().Error()+")")
+	require.EqualError(t, err,
+		"identity not authorized: fake.PublicKey ("+fake.GetError().Error()+")")
 
 	contract = NewContract([]byte{}, fakeAccess{})
 	err = contract.Execute(fakeStore{}, makeStep(t))

@@ -14,9 +14,9 @@ import (
 	"go.dedis.ch/dela/core/store/hashtree"
 	"go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde/json"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestProcessor_BlockMessage_Invoke(t *testing.T) {

@@ -7,8 +7,8 @@ import (
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestTxFormat_Encode(t *testing.T) {
@@ -80,8 +80,10 @@ func TestTxFormat_Decode(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-func makeTx(t *testing.T, nonce uint64,
-	pk crypto.PublicKey, opts ...signed.TransactionOption) txn.Transaction {
+func makeTx(
+	t *testing.T, nonce uint64,
+	pk crypto.PublicKey, opts ...signed.TransactionOption,
+) txn.Transaction {
 
 	opts = append([]signed.TransactionOption{signed.WithSignature(fake.Signature{})}, opts...)
 

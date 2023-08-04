@@ -10,7 +10,7 @@ import (
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/core/execution/native"
 	"go.dedis.ch/dela/crypto/bls"
-	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestAddAction_Execute(t *testing.T) {
@@ -22,19 +22,22 @@ func TestAddAction_Execute(t *testing.T) {
 
 	action := addAction{}
 	err := action.Execute(ctx)
-	require.EqualError(t, err, "failed to resolve native service: couldn't find dependency for '*native.Service'")
+	require.EqualError(t, err,
+		"failed to resolve native service: couldn't find dependency for '*native.Service'")
 
 	native := native.NewExecution()
 	ctx.Injector.Inject(native)
 
 	err = action.Execute(ctx)
-	require.EqualError(t, err, "failed to resolve access service: couldn't find dependency for 'access.Service'")
+	require.EqualError(t, err,
+		"failed to resolve access service: couldn't find dependency for 'access.Service'")
 
 	access := fakeAccess{}
 	ctx.Injector.Inject(&access)
 
 	err = action.Execute(ctx)
-	require.EqualError(t, err, "failed to resolve access store: couldn't find dependency for 'controller.accessStore'")
+	require.EqualError(t, err,
+		"failed to resolve access store: couldn't find dependency for 'controller.accessStore'")
 
 	store := fakeStore{}
 	ctx.Injector.Inject(&store)
@@ -52,12 +55,14 @@ func TestAddAction_Execute(t *testing.T) {
 	flags.strings["identity"] = []string{"a"}
 
 	err = action.Execute(ctx)
-	require.EqualError(t, err, "failed to parse identities: failed to decode pub key 'a': illegal base64 data at input byte 0")
+	require.EqualError(t, err,
+		"failed to parse identities: failed to decode pub key 'a': illegal base64 data at input byte 0")
 
 	flags.strings["identity"] = []string{"AA=="}
 
 	err = action.Execute(ctx)
-	require.EqualError(t, err, "failed to parse identities: failed to unmarshal identity 'AA==': bn256.G2: not enough data")
+	require.EqualError(t, err,
+		"failed to parse identities: failed to unmarshal identity 'AA==': bn256.G2: not enough data")
 
 	signer := bls.NewSigner()
 	buf, err := signer.GetPublicKey().MarshalBinary()

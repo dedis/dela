@@ -5,8 +5,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func init() {

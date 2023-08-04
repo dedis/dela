@@ -15,7 +15,7 @@ import (
 	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
-	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestExecute(t *testing.T) {
@@ -66,13 +66,16 @@ func TestExecute(t *testing.T) {
 	require.NoError(t, err)
 
 	err = action.Execute(ctx)
-	require.EqualError(t, err, "failed to get signer: failed to unmarshal signer: while unmarshaling scalar: UnmarshalBinary: wrong size buffer")
+	require.EqualError(t, err,
+		"failed to get signer: failed to unmarshal signer: while unmarshaling scalar: UnmarshalBinary: wrong size buffer")
 
 	ctx.Flags.(node.FlagSet)[signerFlag] = "/not/exist"
 
 	err = action.Execute(ctx)
 	// the error message can be different based on the platform
-	require.Regexp(t, "^failed to get signer: failed to load signer: while opening file: open /not/exist:", err.Error())
+	require.Regexp(t,
+		"^failed to get signer: failed to load signer: while opening file: open /not/exist:",
+		err.Error())
 
 	ctx.Flags.(node.FlagSet)["args"] = []interface{}{"1"}
 

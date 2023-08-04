@@ -8,7 +8,7 @@ import (
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/validation/simple"
-	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestInMemory_Len(t *testing.T) {
@@ -202,7 +202,8 @@ func makeLink(t *testing.T, from types.Digest, opts ...types.BlockOption) types.
 	to, err := types.NewBlock(simple.NewResult(nil), opts...)
 	require.NoError(t, err)
 
-	link, err := types.NewBlockLink(from, to, types.WithSignatures(fake.Signature{}, fake.Signature{}))
+	link, err := types.NewBlockLink(from, to,
+		types.WithSignatures(fake.Signature{}, fake.Signature{}))
 	require.NoError(t, err)
 
 	return link

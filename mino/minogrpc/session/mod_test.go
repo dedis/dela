@@ -8,12 +8,12 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/internal/traffic"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
 	"go.dedis.ch/dela/mino/router"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/testing/fake"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -555,8 +555,10 @@ type fakeConnection struct {
 	errHeader error
 }
 
-func (conn fakeConnection) Invoke(ctx context.Context,
-	method string, args interface{}, reply interface{}, opts ...grpc.CallOption) error {
+func (conn fakeConnection) Invoke(
+	ctx context.Context,
+	method string, args interface{}, reply interface{}, opts ...grpc.CallOption,
+) error {
 
 	if conn.ack != nil {
 		*(reply.(*ptypes.Ack)) = *conn.ack
@@ -565,8 +567,10 @@ func (conn fakeConnection) Invoke(ctx context.Context,
 	return conn.err
 }
 
-func (conn fakeConnection) NewStream(ctx context.Context, desc *grpc.StreamDesc,
-	m string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+func (conn fakeConnection) NewStream(
+	ctx context.Context, desc *grpc.StreamDesc,
+	m string, opts ...grpc.CallOption,
+) (grpc.ClientStream, error) {
 
 	ch := make(chan *ptypes.Packet, 1)
 

@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/store/kv"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/testing/fake"
 	"golang.org/x/xerrors"
 )
 
@@ -302,7 +302,8 @@ func TestEmptyNode_Prepare(t *testing.T) {
 
 	calls := &fake.Call{}
 	node.hash = nil
-	_, err = node.Prepare([]byte{1}, new(big.Int).SetBytes([]byte{2}), nil, fake.NewHashFactory(&fake.Hash{Call: calls}))
+	_, err = node.Prepare([]byte{1}, new(big.Int).SetBytes([]byte{2}), nil,
+		fake.NewHashFactory(&fake.Hash{Call: calls}))
 	require.NoError(t, err)
 	require.Equal(t, 1, calls.Len())
 	require.Equal(t, "\x00\x01\x02\x03\x00", string(calls.Get(0, 0).([]byte)))
@@ -432,7 +433,8 @@ func TestInteriorNode_Prepare(t *testing.T) {
 	node.right = fakeNode{data: []byte{0xbb}}
 	calls := &fake.Call{}
 
-	_, err := node.Prepare([]byte{1}, big.NewInt(1), nil, fake.NewHashFactory(&fake.Hash{Call: calls}))
+	_, err := node.Prepare([]byte{1}, big.NewInt(1), nil,
+		fake.NewHashFactory(&fake.Hash{Call: calls}))
 	require.NoError(t, err)
 	require.Equal(t, 1, calls.Len())
 	require.Equal(t, "\xaa\xbb", string(calls.Get(0, 0).([]byte)))
@@ -566,7 +568,8 @@ func TestLeafNode_Prepare(t *testing.T) {
 	node := NewLeafNode(3, makeKey([]byte("ping")), []byte("pong"))
 	calls := &fake.Call{}
 
-	_, err := node.Prepare([]byte{1}, big.NewInt(2), nil, fake.NewHashFactory(&fake.Hash{Call: calls}))
+	_, err := node.Prepare([]byte{1}, big.NewInt(2), nil,
+		fake.NewHashFactory(&fake.Hash{Call: calls}))
 	require.NoError(t, err)
 	require.Equal(t, 1, calls.Len())
 	require.Equal(t, "\x02\x01\x03\x00\x02pingpong", string(calls.Get(0, 0).([]byte)))
@@ -605,7 +608,8 @@ func TestLeafNode_Serialize(t *testing.T) {
 
 	data, err := node.Serialize(testCtx)
 	require.NoError(t, err)
-	require.Equal(t, `{"Leaf":{"Digest":"","Depth":2,"Prefix":"Ag==","Value":"qg=="}}`, string(data))
+	require.Equal(t, `{"Leaf":{"Digest":"","Depth":2,"Prefix":"Ag==","Value":"qg=="}}`,
+		string(data))
 
 	_, err = node.Serialize(fake.NewBadContext())
 	require.EqualError(t, err, fake.Err("failed to encode leaf node"))
@@ -691,8 +695,10 @@ func (n fakeNode) Delete(key *big.Int, b kv.Bucket) (TreeNode, error) {
 	return nil, n.err
 }
 
-func (n fakeNode) Prepare(nonce []byte,
-	prefix *big.Int, b kv.Bucket, fac crypto.HashFactory) ([]byte, error) {
+func (n fakeNode) Prepare(
+	nonce []byte,
+	prefix *big.Int, b kv.Bucket, fac crypto.HashFactory,
+) ([]byte, error) {
 
 	return n.data, n.err
 }

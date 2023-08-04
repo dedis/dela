@@ -6,8 +6,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino/proxy/http"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestMinimal_SetCommands(t *testing.T) {

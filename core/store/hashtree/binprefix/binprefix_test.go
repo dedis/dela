@@ -13,7 +13,7 @@ import (
 	"go.dedis.ch/dela/core/store/hashtree"
 	"go.dedis.ch/dela/core/store/kv"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestMerkleTree_IntegrationTest(t *testing.T) {

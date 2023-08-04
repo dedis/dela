@@ -9,7 +9,7 @@ import (
 	"go.dedis.ch/dela/core/store/hashtree"
 	"go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestProof_GetKey(t *testing.T) {

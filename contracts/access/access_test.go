@@ -12,13 +12,14 @@ import (
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/crypto/bls"
-	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestExecute(t *testing.T) {
 	contract := NewContract([]byte{}, fakeAccess{err: fake.GetError()}, fakeStore{})
 	err := contract.Execute(fakeStore{}, makeStep(t, CmdArg, ""))
-	require.EqualError(t, err, "identity not authorized: fake.PublicKey ("+fake.GetError().Error()+")")
+	require.EqualError(t, err,
+		"identity not authorized: fake.PublicKey ("+fake.GetError().Error()+")")
 
 	contract = NewContract([]byte{}, fakeAccess{}, fakeStore{})
 	err = contract.Execute(fakeStore{}, makeStep(t, CmdArg, ""))
@@ -48,7 +49,8 @@ func TestGrant(t *testing.T) {
 	require.EqualError(t, err, "'access:grant_id' not found in tx arg")
 
 	err = contract.grant(fakeStore{}, makeStep(t, GrantIDArg, "x"))
-	require.EqualError(t, err, "failed to decode id from tx arg: encoding/hex: invalid byte: U+0078 'x'")
+	require.EqualError(t, err,
+		"failed to decode id from tx arg: encoding/hex: invalid byte: U+0078 'x'")
 
 	err = contract.grant(fakeStore{}, makeStep(t, GrantIDArg, "deadbeef"))
 	require.EqualError(t, err, "'access:grant_contract' not found in tx arg")

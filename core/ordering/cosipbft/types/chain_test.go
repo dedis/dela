@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func init() {
@@ -242,7 +242,8 @@ func TestChain_Verify(t *testing.T) {
 	require.EqualError(t, err, fake.Err("failed to marshal signature"))
 
 	c = NewChain(makeLink(t, genesis.digest, Digest{}), nil)
-	err = c.Verify(genesis, genesis.GetHash(), fake.NewVerifierFactory(fake.NewBadVerifierWithDelay(1)))
+	err = c.Verify(genesis, genesis.GetHash(),
+		fake.NewVerifierFactory(fake.NewBadVerifierWithDelay(1)))
 	require.EqualError(t, err, fake.Err("invalid commit signature"))
 }
 

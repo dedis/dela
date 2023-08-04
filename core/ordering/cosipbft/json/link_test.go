@@ -8,8 +8,8 @@ import (
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/validation"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func init() {
@@ -110,7 +110,8 @@ func TestLinkFormat_Decode(t *testing.T) {
 
 	_, err = format.Decode(ctx, []byte(`{"Block":{}}`))
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "creating block link: creating forward link: failed to fingerprint: ")
+	require.Contains(t, err.Error(),
+		"creating block link: creating forward link: failed to fingerprint: ")
 }
 
 // -----------------------------------------------------------------------------

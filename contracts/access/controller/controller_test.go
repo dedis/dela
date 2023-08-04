@@ -9,7 +9,7 @@ import (
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/execution/native"
 	"go.dedis.ch/dela/core/store"
-	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestSetCommands(t *testing.T) {
@@ -26,13 +26,15 @@ func TestOnStart(t *testing.T) {
 
 	injector := node.NewInjector()
 	err := ctrl.OnStart(node.FlagSet{}, injector)
-	require.EqualError(t, err, "failed to resolve access service: couldn't find dependency for 'access.Service'")
+	require.EqualError(t, err,
+		"failed to resolve access service: couldn't find dependency for 'access.Service'")
 
 	access := fakeAccess{}
 	injector.Inject(&access)
 
 	err = ctrl.OnStart(node.FlagSet{}, injector)
-	require.EqualError(t, err, "failed to resolve native service: couldn't find dependency for '*native.Service'")
+	require.EqualError(t, err,
+		"failed to resolve native service: couldn't find dependency for '*native.Service'")
 
 	native := native.NewExecution()
 	injector.Inject(native)
@@ -106,6 +108,10 @@ type fakeAccess struct {
 	err error
 }
 
-func (a fakeAccess) Grant(store store.Snapshot, creds access.Credential, idents ...access.Identity) error {
+func (a fakeAccess) Grant(
+	store store.Snapshot,
+	creds access.Credential,
+	idents ...access.Identity,
+) error {
 	return a.err
 }

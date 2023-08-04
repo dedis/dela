@@ -18,8 +18,8 @@ import (
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/cosi"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestSetupAction_Execute(t *testing.T) {
@@ -36,7 +36,8 @@ func TestSetupAction_Execute(t *testing.T) {
 
 	ctx.Flags.(node.FlagSet)["member"] = []interface{}{""}
 	err = action.Execute(ctx)
-	require.EqualError(t, err, "failed to read roster: failed to decode: invalid member base64 string")
+	require.EqualError(t, err,
+		"failed to read roster: failed to decode: invalid member base64 string")
 
 	ctx.Flags = make(node.FlagSet)
 	ctx.Injector = node.NewInjector()

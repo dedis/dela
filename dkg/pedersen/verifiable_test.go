@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/testing/fake"
 
 	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/dkg/pedersen/types"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 
 	"go.dedis.ch/dela/mino/minoch"
@@ -146,7 +146,8 @@ func Test_VerifiableEncDec_minogrpc(t *testing.T) {
 	for i := 0; i < n; i++ {
 		addr := minogrpc.ParseAddress("127.0.0.1", 0)
 
-		minogrpc, err := minogrpc.NewMinogrpc(addr, nil, tree.NewRouter(minogrpc.NewAddressFactory()))
+		minogrpc, err := minogrpc.NewMinogrpc(addr, nil,
+			tree.NewRouter(minogrpc.NewAddressFactory()))
 		require.NoError(t, err)
 
 		defer minogrpc.GracefulStop()
@@ -275,5 +276,6 @@ func Test_VerifiableDecrypt_BadReply(t *testing.T) {
 	}
 
 	_, err := a.VerifiableDecrypt(nil)
-	require.EqualError(t, err, "got unexpected reply, expected types.VerifiableDecryptReply but got: fake.Message")
+	require.EqualError(t, err,
+		"got unexpected reply, expected types.VerifiableDecryptReply but got: fake.Message")
 }

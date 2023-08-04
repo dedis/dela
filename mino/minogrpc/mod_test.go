@@ -8,13 +8,13 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/internal/tracing"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/session"
 	"go.dedis.ch/dela/mino/minogrpc/tokens"
 	"go.dedis.ch/dela/mino/router/tree"
+	"go.dedis.ch/dela/testing/fake"
 	"google.golang.org/grpc"
 )
 
@@ -70,7 +70,8 @@ func TestMinogrpc_New_FailedParsePublic(t *testing.T) {
 	addr := net.IPAddr{}
 
 	_, err := NewMinogrpc(&addr, nil, router)
-	require.EqualError(t, err, "failed to parse public URL: parse \"//:xxx\": invalid port \":xxx\" after host")
+	require.EqualError(t, err,
+		"failed to parse public URL: parse \"//:xxx\": invalid port \":xxx\" after host")
 }
 
 func TestMinogrpc_FailGenerateKey_New(t *testing.T) {

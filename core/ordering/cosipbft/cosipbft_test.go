@@ -35,12 +35,12 @@ import (
 	"go.dedis.ch/dela/cosi/threshold"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/gossip"
 	"go.dedis.ch/dela/mino/minoch"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/json"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestService_Scenario_Basic(t *testing.T) {
@@ -948,7 +948,12 @@ func makeTx(t *testing.T, nonce uint64, signer crypto.Signer) txn.Transaction {
 	return tx
 }
 
-func makeRosterTx(t *testing.T, nonce uint64, roster authority.Authority, signer crypto.Signer) txn.Transaction {
+func makeRosterTx(
+	t *testing.T,
+	nonce uint64,
+	roster authority.Authority,
+	signer crypto.Signer,
+) txn.Transaction {
 	data, err := roster.Serialize(json.NewContext())
 	require.NoError(t, err)
 
@@ -1127,8 +1132,10 @@ type fakeCosiActor struct {
 	err     error
 }
 
-func (c fakeCosiActor) Sign(ctx context.Context, msg serde.Message,
-	ca crypto.CollectiveAuthority) (crypto.Signature, error) {
+func (c fakeCosiActor) Sign(
+	ctx context.Context, msg serde.Message,
+	ca crypto.CollectiveAuthority,
+) (crypto.Signature, error) {
 
 	if c.counter.Done() {
 		return fake.Signature{}, c.err

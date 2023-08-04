@@ -12,8 +12,8 @@ import (
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/dkg/pedersen/types"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/testing/fake"
 	"go.dedis.ch/kyber/v3"
 )
 
@@ -673,7 +673,8 @@ func TestVerifiableEncryptAction_noActor(t *testing.T) {
 	}
 
 	err := a.Execute(ctx)
-	require.EqualError(t, err, "failed to resolve actor, did you call listen?: couldn't find dependency for 'dkg.Actor'")
+	require.EqualError(t, err,
+		"failed to resolve actor, did you call listen?: couldn't find dependency for 'dkg.Actor'")
 }
 
 func TestVerifiableEncryptAction_badHexGbar(t *testing.T) {
@@ -980,7 +981,8 @@ func TestVerifiableDecryptAction_noActor(t *testing.T) {
 	}
 
 	err := a.Execute(ctx)
-	require.EqualError(t, err, "failed to resolve actor, did you call listen?: couldn't find dependency for 'dkg.Actor'")
+	require.EqualError(t, err,
+		"failed to resolve actor, did you call listen?: couldn't find dependency for 'dkg.Actor'")
 }
 
 func TestVerifiableDecryptAction_badHexGbar(t *testing.T) {
@@ -1294,7 +1296,8 @@ func TestVerifiableDecryptAction_badHexF(t *testing.T) {
 	inj := node.NewInjector()
 	inj.Inject(fakeActor{})
 
-	ciphertext := fmt.Sprintf("%s:%s:%s:%s:%s", aPointHex, aPointHex, aPointHex, aScalarHex, "not hex")
+	ciphertext := fmt.Sprintf("%s:%s:%s:%s:%s", aPointHex, aPointHex, aPointHex, aScalarHex,
+		"not hex")
 
 	flags := node.FlagSet{
 		"GBar":        aPointHex,
@@ -1328,7 +1331,8 @@ func TestVerifiableDecryptAction_badUnmarshalF(t *testing.T) {
 	inj := node.NewInjector()
 	inj.Inject(fakeActor{})
 
-	ciphertext := fmt.Sprintf("%s:%s:%s:%s:%s", aPointHex, aPointHex, aPointHex, aScalarHex, "aef123")
+	ciphertext := fmt.Sprintf("%s:%s:%s:%s:%s", aPointHex, aPointHex, aPointHex, aScalarHex,
+		"aef123")
 
 	flags := node.FlagSet{
 		"GBar":        aPointHex,
@@ -1364,7 +1368,8 @@ func TestVerifiableDecryptAction_decryptFail(t *testing.T) {
 		vdecryptErr: fake.GetError(),
 	})
 
-	ciphertext := fmt.Sprintf("%s:%s:%s:%s:%s", aPointHex, aPointHex, aPointHex, aScalarHex, aScalarHex)
+	ciphertext := fmt.Sprintf("%s:%s:%s:%s:%s", aPointHex, aPointHex, aPointHex, aScalarHex,
+		aScalarHex)
 
 	flags := node.FlagSet{
 		"GBar":        aPointHex,
@@ -1400,7 +1405,8 @@ func TestVerifiableDecryptAction_OK(t *testing.T) {
 		vdecryptData: make([][]byte, 1),
 	})
 
-	ciphertext := fmt.Sprintf("%s:%s:%s:%s:%s", aPointHex, aPointHex, aPointHex, aScalarHex, aScalarHex)
+	ciphertext := fmt.Sprintf("%s:%s:%s:%s:%s", aPointHex, aPointHex, aPointHex, aScalarHex,
+		aScalarHex)
 
 	flags := node.FlagSet{
 		"GBar":        aPointHex,
@@ -1431,7 +1437,8 @@ func TestReshareAction_noActor(t *testing.T) {
 	}
 
 	err := a.Execute(ctx)
-	require.EqualError(t, err, "failed to resolve actor, did you call listen?: couldn't find dependency for 'dkg.Actor'")
+	require.EqualError(t, err,
+		"failed to resolve actor, did you call listen?: couldn't find dependency for 'dkg.Actor'")
 }
 
 func TestReshareAction_NoCollectiveAuth(t *testing.T) {
@@ -1518,7 +1525,10 @@ type fakeActor struct {
 	vdecryptData [][]byte
 }
 
-func (f fakeActor) Setup(co crypto.CollectiveAuthority, threshold int) (pubKey kyber.Point, err error) {
+func (f fakeActor) Setup(co crypto.CollectiveAuthority, threshold int) (
+	pubKey kyber.Point,
+	err error,
+) {
 	return suite.Point(), f.setupErr
 }
 
@@ -1534,7 +1544,11 @@ func (f fakeActor) Reencrypt(K kyber.Point, PK kyber.Point) (XhatEnc kyber.Point
 	return f.xhatenc, f.reencryptErr
 }
 
-func (f fakeActor) VerifiableEncrypt(message []byte, GBar kyber.Point) (ciphertext types.Ciphertext, remainder []byte, err error) {
+func (f fakeActor) VerifiableEncrypt(message []byte, GBar kyber.Point) (
+	ciphertext types.Ciphertext,
+	remainder []byte,
+	err error,
+) {
 	return f.ct, nil, f.vencryptErr
 }
 
