@@ -82,7 +82,7 @@ func TestTree_Insert(t *testing.T) {
 
 func TestTree_Insert_UpdateLeaf(t *testing.T) {
 	bucket := &fakeBucket{}
-	hashFactory := crypto.NewSha256Factory()
+	hashFactory := crypto.NewHashFactory(crypto.Sha256)
 	tree := NewTree(Nonce{})
 
 	for i := 0; i <= math.MaxUint8; i++ {
@@ -248,8 +248,8 @@ func TestTree_Clone(t *testing.T) {
 	clone := tree.Clone()
 	require.Equal(t, tree.Len(), clone.Len())
 
-	require.NoError(t, tree.CalculateRoot(crypto.NewSha256Factory(), &fakeBucket{}))
-	require.NoError(t, clone.CalculateRoot(crypto.NewSha256Factory(), &fakeBucket{}))
+	require.NoError(t, tree.CalculateRoot(crypto.NewHashFactory(crypto.Sha256), &fakeBucket{}))
+	require.NoError(t, clone.CalculateRoot(crypto.NewHashFactory(crypto.Sha256), &fakeBucket{}))
 	require.Equal(t, tree.root.GetHash(), clone.root.GetHash())
 }
 
@@ -295,7 +295,7 @@ func TestEmptyNode_Delete(t *testing.T) {
 func TestEmptyNode_Prepare(t *testing.T) {
 	node := NewEmptyNode(3, big.NewInt(0))
 
-	fac := crypto.NewSha256Factory()
+	fac := crypto.NewHashFactory(crypto.Sha256)
 
 	hash, err := node.Prepare([]byte("nonce"), new(big.Int), nil, fac)
 	require.NoError(t, err)
@@ -442,12 +442,12 @@ func TestInteriorNode_Prepare(t *testing.T) {
 
 	node.hash = nil
 	node.left = fakeNode{err: xerrors.New("bad node error")}
-	_, err = node.Prepare([]byte{1}, big.NewInt(2), nil, crypto.NewSha256Factory())
+	_, err = node.Prepare([]byte{1}, big.NewInt(2), nil, crypto.NewHashFactory(crypto.Sha256))
 	require.EqualError(t, err, "bad node error")
 
 	node.left = fakeNode{}
 	node.right = fakeNode{err: xerrors.New("bad node error")}
-	_, err = node.Prepare([]byte{1}, big.NewInt(2), nil, crypto.NewSha256Factory())
+	_, err = node.Prepare([]byte{1}, big.NewInt(2), nil, crypto.NewHashFactory(crypto.Sha256))
 	require.EqualError(t, err, "bad node error")
 
 	node.right = fakeNode{}
@@ -505,7 +505,7 @@ func TestLeafNode_GetHash(t *testing.T) {
 
 	require.Empty(t, node.GetHash())
 
-	_, err := node.Prepare([]byte{1}, big.NewInt(2), nil, crypto.NewSha256Factory())
+	_, err := node.Prepare([]byte{1}, big.NewInt(2), nil, crypto.NewHashFactory(crypto.Sha256))
 	require.NoError(t, err)
 	require.Len(t, node.GetHash(), 32)
 }

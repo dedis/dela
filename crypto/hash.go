@@ -7,19 +7,43 @@ package crypto
 import (
 	"crypto/sha256"
 	"hash"
+
+	"golang.org/x/crypto/sha3"
 )
 
-// Sha256Factory is a hash factory that is using SHA256.
+type HashAlgorithm int
+
+const (
+	Sha256 HashAlgorithm = iota
+	Sha3_224
+)
+
+// hashFactory is a hash factory that is using SHA algorithms.
 //
 // - implements crypto.HashFactory
-type Sha256Factory struct{}
-
-// NewSha256Factory returns a new instance of the factory.
-func NewSha256Factory() Sha256Factory {
-	return Sha256Factory{}
+type hashFactory struct {
+	hashType HashAlgorithm
 }
 
-// New implements crypto.HashFactory. It returns a new SHA256 instance.
-func (f Sha256Factory) New() hash.Hash {
-	return sha256.New()
+// NewSha256Factory returns a new instance of the factory.
+// Deprecated: use NewHashFactory instead.
+func NewSha256Factory() hashFactory {
+	return hashFactory{Sha256}
+}
+
+// NewHashFactory returns a new instance of the factory.
+func NewHashFactory(a HashAlgorithm) hashFactory {
+	return hashFactory{a}
+}
+
+// New implements crypto.HashFactory. It returns a new Hash instance.
+func (f hashFactory) New() hash.Hash {
+	switch f.hashType {
+	case Sha256:
+		return sha256.New()
+	case Sha3_224:
+		return sha3.New224()
+	default:
+		panic("unknown hash type")
+	}
 }

@@ -7,6 +7,18 @@ import (
 )
 
 func TestSha256Factory_New(t *testing.T) {
-	factory := NewSha256Factory()
+	factory := NewHashFactory(Sha256)
 	require.NotNil(t, factory.New())
+}
+
+func TestSha3224Factory_New(t *testing.T) {
+	factory := NewHashFactory(Sha3_224)
+	require.NotNil(t, factory.New())
+}
+
+func TestUnsupportedPanics(t *testing.T) {
+	require.Panics(t, func() {
+		factory := NewHashFactory(3)
+		factory.New()
+	})
 }

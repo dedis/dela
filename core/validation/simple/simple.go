@@ -32,7 +32,7 @@ func NewService(exec execution.Service, f txn.Factory) Service {
 	return Service{
 		execution: exec,
 		fac:       NewResultFactory(f),
-		hashFac:   crypto.NewSha256Factory(),
+		hashFac:   crypto.NewHashFactory(crypto.Sha256),
 	}
 }
 

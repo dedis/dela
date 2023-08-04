@@ -146,7 +146,7 @@ func TestMerkleTree_Random_IntegrationTest(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, value, path.GetValue())
 
-			root, err := path.(Path).computeRoot(crypto.NewSha256Factory())
+			root, err := path.(Path).computeRoot(crypto.NewHashFactory(crypto.Sha256))
 			require.NoError(t, err)
 			require.Equal(t, tree.GetRoot(), root)
 		}
@@ -162,7 +162,7 @@ func TestMerkleTree_Random_IntegrationTest(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, value, path.GetValue())
 
-			root, err := path.(Path).computeRoot(crypto.NewSha256Factory())
+			root, err := path.(Path).computeRoot(crypto.NewHashFactory(crypto.Sha256))
 			require.NoError(t, err)
 			require.Equal(t, newTree.GetRoot(), root)
 		}

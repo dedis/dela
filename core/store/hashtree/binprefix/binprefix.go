@@ -65,7 +65,7 @@ func NewMerkleTree(db kv.DB, nonce Nonce) *MerkleTree {
 		tree:        NewTree(nonce),
 		db:          db,
 		bucket:      []byte("hashtree"),
-		hashFactory: crypto.NewSha256Factory(),
+		hashFactory: crypto.NewHashFactory(crypto.Sha256),
 	}
 }
 
