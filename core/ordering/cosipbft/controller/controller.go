@@ -178,7 +178,8 @@ func (m miniController) OnStart(flags cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("failed to load blocks: %v", err)
 	}
 
-	srvc, err := cosipbft.NewService(param, cosipbft.WithGenesisStore(genstore), cosipbft.WithBlockStore(blocks))
+	srvc, err := cosipbft.NewService(param, cosipbft.WithGenesisStore(genstore),
+		cosipbft.WithBlockStore(blocks))
 	if err != nil {
 		return xerrors.Errorf("service: %v", err)
 	}

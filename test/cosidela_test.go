@@ -93,7 +93,8 @@ func newDelaNode(t require.TestingT, path string, port int) dela {
 
 	fload := loader.NewFileLoader(filepath.Join(path, certKeyName))
 
-	keydata, err := fload.LoadOrCreate(newCertGenerator(rand.New(rand.NewSource(0)), elliptic.P521()))
+	keydata, err := fload.LoadOrCreate(newCertGenerator(rand.New(rand.NewSource(0)),
+		elliptic.P521()))
 	require.NoError(t, err)
 
 	key, err := x509.ParseECPrivateKey(keydata)
