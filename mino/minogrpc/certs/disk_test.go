@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/store/kv"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestDiskStore_Store(t *testing.T) {

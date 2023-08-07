@@ -5,10 +5,10 @@ import (
 	"testing/quick"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	minoRouter "go.dedis.ch/dela/mino/router"
 	"go.dedis.ch/dela/mino/router/tree/types"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestRouter_GetPacketFactory(t *testing.T) {

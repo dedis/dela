@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/dkg/pedersen/types"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/testing/fake"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/share"
 	pedersen "go.dedis.ch/kyber/v3/share/dkg/pedersen"
@@ -173,10 +173,12 @@ func TestDKGInstance_StartFailDeal(t *testing.T) {
 	start = types.NewStart(2,
 		[]mino.Address{
 			fake.NewAddress(0),
-			fake.NewAddress(1)},
+			fake.NewAddress(1),
+		},
 		[]kyber.Point{
 			pubKey,
-			suite.Point()})
+			suite.Point(),
+		})
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -335,9 +337,11 @@ func TestDKGInstance_respond_handleFail(t *testing.T) {
 }
 
 func TestDKGInstance_respond_ctxFail(t *testing.T) {
-	s := instance{startRes: &state{
-		participants: []mino.Address{fake.NewAddress(0), fake.NewAddress(1)},
-	}}
+	s := instance{
+		startRes: &state{
+			participants: []mino.Address{fake.NewAddress(0), fake.NewAddress(1)},
+		},
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -616,8 +620,10 @@ func TestDKGInstance_doReshare_oldNode_sendDealFail(t *testing.T) {
 		privKey: privKey1,
 	}
 
-	msg := types.NewStartResharing(2, 2, []mino.Address{fake.NewAddress(0),
-		fake.NewAddress(1)}, []mino.Address{fake.NewAddress(0)},
+	msg := types.NewStartResharing(2, 2, []mino.Address{
+		fake.NewAddress(0),
+		fake.NewAddress(1),
+	}, []mino.Address{fake.NewAddress(0)},
 		[]kyber.Point{pubKey1, pubKey2}, nil)
 
 	err = s.doReshare(context.Background(), msg, fake.NewAddress(0),

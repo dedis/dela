@@ -12,8 +12,8 @@ import (
 	"go.dedis.ch/dela/core/store/kv"
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/core/validation/simple"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestInDisk_Len(t *testing.T) {

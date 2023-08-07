@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/cli"
-	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/testing/fake"
 	"golang.org/x/xerrors"
 )
 
@@ -85,7 +85,7 @@ func TestSocketDaemon_Listen(t *testing.T) {
 	actions := &actionMap{}
 	actions.Set(fakeAction{
 		intFlags: map[string]int{"1": 1},
-	})                                            // id 0
+	}) // id 0
 	actions.Set(fakeAction{err: fake.GetError()}) // id 1
 
 	daemon := &socketDaemon{

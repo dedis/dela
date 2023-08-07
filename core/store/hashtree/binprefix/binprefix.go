@@ -7,20 +7,20 @@
 // depth where it will write the nodes in disk. The leaf are always stored in
 // disk because of the value it holds.
 //
-//	         Interior (Root)
-//	           /        \
-//	        0 /          \ 1
-//	         /            \
-//	      Interior       Interior
-//	       /    \          /   \
-//	    0 /      \ 1    0 /     \ 1
-//	     /        \      /       \
-//	DiskNode  Interior  Empty    Interior
-//	             /   \              /    \
-//	 - - - - - -/- - -\- - - - - - / - - -\- - - - - - - - - - - Memory Depth
-//	         0 /       \ 1      0 /        \ 1
-//	          /         \        /          \
-//	       DiskNode  DiskNode  DiskNode   DiskNode
+//		         Interior (Root)
+//		           /        \
+//		        0 /          \ 1
+//		         /            \
+//		      Interior       Interior
+//		       /    \          /   \
+//		    0 /      \ 1    0 /     \ 1
+//		     /        \      /       \
+//		DiskNode  Interior  Empty   Interior
+//		            /   \             /    \
+//	 --------------/-----\-----------/------\----------- Memory Depth
+//	              / 0     \ 1     0 /        \ 1
+//	             /         \       /          \
+//	        DiskNode   DiskNode  DiskNode   DiskNode
 //
 // The drawing above demonstrates an example of a tree. Here the memory depth is
 // set at 3 which means that every node after this level will be a disk node. It

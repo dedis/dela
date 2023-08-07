@@ -1,13 +1,12 @@
 package minogrpc
 
 import (
-	context "context"
+	"context"
 	"io"
 	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/ptypes"
 	"go.dedis.ch/dela/mino/minogrpc/session"
@@ -15,6 +14,7 @@ import (
 	"go.dedis.ch/dela/mino/router/tree"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/json"
+	"go.dedis.ch/dela/testing/fake"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
@@ -348,8 +348,10 @@ type fakeConnection struct {
 	errStream error
 }
 
-func (conn fakeConnection) Invoke(ctx context.Context, m string, arg interface{},
-	resp interface{}, opts ...grpc.CallOption) error {
+func (conn fakeConnection) Invoke(
+	ctx context.Context, m string, arg interface{},
+	resp interface{}, opts ...grpc.CallOption,
+) error {
 
 	if conn.empty {
 		return conn.err
@@ -368,8 +370,10 @@ func (conn fakeConnection) Invoke(ctx context.Context, m string, arg interface{}
 	return conn.err
 }
 
-func (conn fakeConnection) NewStream(ctx context.Context, desc *grpc.StreamDesc,
-	m string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+func (conn fakeConnection) NewStream(
+	ctx context.Context, desc *grpc.StreamDesc,
+	m string, opts ...grpc.CallOption,
+) (grpc.ClientStream, error) {
 
 	ch := make(chan *ptypes.Packet, 1)
 

@@ -6,9 +6,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestChangeSetFormat_Encode(t *testing.T) {
@@ -99,7 +99,8 @@ func TestRosterFormat_Encode(t *testing.T) {
 	_, err = format.Encode(ctx, ro)
 	require.EqualError(t, err, fake.Err("couldn't marshal address"))
 
-	ro = authority.New([]mino.Address{fake.NewAddress(0)}, []crypto.PublicKey{fake.NewBadPublicKey()})
+	ro = authority.New([]mino.Address{fake.NewAddress(0)},
+		[]crypto.PublicKey{fake.NewBadPublicKey()})
 	_, err = format.Encode(ctx, ro)
 	require.EqualError(t, err, fake.Err("couldn't serialize public key"))
 }

@@ -12,10 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestCertAction_Execute(t *testing.T) {
@@ -37,7 +37,8 @@ func TestCertAction_Execute(t *testing.T) {
 	err := action.Execute(req)
 	require.NoError(t, err)
 
-	expected := fmt.Sprintf("Address: fake.Address[0] (AAAAAA==) Certificate: %s...\n", hex.EncodeToString(cert.Certificate[0][:8]))
+	expected := fmt.Sprintf("Address: fake.Address[0] (AAAAAA==) Certificate: %s...\n",
+		hex.EncodeToString(cert.Certificate[0][:8]))
 	require.Equal(t, expected, out.String())
 
 	req.Injector.Inject(fakeJoinable{certs: badCertStore{}})
@@ -118,7 +119,8 @@ func TestRemoveCert_Execute_BadAddress(t *testing.T) {
 	req.Injector.Inject(fakeJoinable{certs: store})
 
 	err := action.Execute(req)
-	require.EqualError(t, err, "failed to decode base64 address: illegal base64 data at input byte 0")
+	require.EqualError(t, err,
+		"failed to decode base64 address: illegal base64 data at input byte 0")
 }
 
 func TestRemoveCert_Execute_BadDelete(t *testing.T) {

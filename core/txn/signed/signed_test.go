@@ -9,8 +9,8 @@ import (
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func init() {
@@ -32,7 +32,8 @@ func TestTransaction_New(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, tx.GetSignature())
 
-	_, err = NewTransaction(0, fake.PublicKey{}, WithHashFactory(fake.NewHashFactory(fake.NewBadHash())))
+	_, err = NewTransaction(0, fake.PublicKey{},
+		WithHashFactory(fake.NewHashFactory(fake.NewBadHash())))
 	require.EqualError(t, err, fake.Err("couldn't fingerprint tx: couldn't write nonce"))
 
 	_, err = NewTransaction(1, signer.GetPublicKey(), WithSignature(tx.GetSignature()))
@@ -62,7 +63,8 @@ func TestTransaction_GetIdentity(t *testing.T) {
 }
 
 func TestTransaction_GetArgs(t *testing.T) {
-	tx, err := NewTransaction(5, fake.PublicKey{}, WithArg("A", []byte{1}), WithArg("B", []byte{2}))
+	tx, err := NewTransaction(5, fake.PublicKey{}, WithArg("A", []byte{1}),
+		WithArg("B", []byte{2}))
 	require.NoError(t, err)
 
 	args := tx.GetArgs()
@@ -71,7 +73,8 @@ func TestTransaction_GetArgs(t *testing.T) {
 }
 
 func TestTransaction_GetArg(t *testing.T) {
-	tx, err := NewTransaction(5, fake.PublicKey{}, WithArg("A", []byte{1}), WithArg("B", []byte{2}))
+	tx, err := NewTransaction(5, fake.PublicKey{}, WithArg("A", []byte{1}),
+		WithArg("B", []byte{2}))
 	require.NoError(t, err)
 
 	value := tx.GetArg("A")

@@ -20,7 +20,7 @@ import (
 	val "go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
-	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/testing/fake"
 	"golang.org/x/xerrors"
 )
 

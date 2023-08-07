@@ -11,8 +11,8 @@ import (
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/signed"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestRegisterContract(t *testing.T) {

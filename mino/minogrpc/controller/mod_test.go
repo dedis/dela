@@ -13,8 +13,8 @@ import (
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/core/store/kv"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino/minogrpc"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestMiniController_Build(t *testing.T) {
@@ -72,7 +72,8 @@ func TestMiniController_InvalidAddr_OnStart(t *testing.T) {
 	str := map[string]string{"listen": ":xxx"}
 
 	err := ctrl.OnStart(fakeContext{str: str}, node.NewInjector())
-	require.EqualError(t, err, "failed to parse listen URL: parse \":xxx\": missing protocol scheme")
+	require.EqualError(t, err,
+		"failed to parse listen URL: parse \":xxx\": missing protocol scheme")
 }
 
 func TestMiniController_OverlayFailed_OnStart(t *testing.T) {
@@ -101,7 +102,8 @@ func TestMiniController_OverlayFailed_OnStart(t *testing.T) {
 	paths := map[string]string{"config": dir}
 
 	err = ctrl.OnStart(fakeContext{path: paths, str: str}, injector)
-	require.True(t, strings.HasPrefix(err.Error(), "couldn't make overlay: failed to bind"), err.Error())
+	require.True(t, strings.HasPrefix(err.Error(), "couldn't make overlay: failed to bind"),
+		err.Error())
 }
 
 func TestMiniController_MissingDB_OnStart(t *testing.T) {
@@ -110,7 +112,8 @@ func TestMiniController_MissingDB_OnStart(t *testing.T) {
 	str := map[string]string{"routing": "flat"}
 
 	err := ctrl.OnStart(fakeContext{str: str}, node.NewInjector())
-	require.EqualError(t, err, "failed to get cert option: injector: couldn't find dependency for 'kv.DB'")
+	require.EqualError(t, err,
+		"failed to get cert option: injector: couldn't find dependency for 'kv.DB'")
 }
 
 func TestMiniController_UnknownRouting_OnStart(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 	urfave "github.com/urfave/cli/v2"
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/ucli"
-	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestCliBuilder_SetStartFlags(t *testing.T) {

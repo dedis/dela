@@ -17,9 +17,9 @@ import (
 	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minoch"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestDefaultSync_Basic(t *testing.T) {
@@ -210,7 +210,8 @@ func TestHandler_Stream(t *testing.T) {
 	require.EqualError(t, err, "reading genesis: missing genesis block")
 
 	recv = fake.NewReceiver(
-		fake.NewRecvMsg(fake.NewAddress(0), types.NewSyncMessage(fakeChain{err: fake.GetError()})),
+		fake.NewRecvMsg(fake.NewAddress(0),
+			types.NewSyncMessage(fakeChain{err: fake.GetError()})),
 	)
 
 	handler.genesis.Set(otypes.Genesis{})

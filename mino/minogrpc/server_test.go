@@ -12,9 +12,8 @@ import (
 	"testing"
 	"time"
 
-	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/internal/tracing"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
@@ -25,6 +24,7 @@ import (
 	"go.dedis.ch/dela/mino/router/tree"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/json"
+	"go.dedis.ch/dela/testing/fake"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -420,7 +420,8 @@ func TestOverlayServer_Share_Chain_Invalid(t *testing.T) {
 	}
 
 	_, err = overlay.Share(context.Background(), msg)
-	require.EqualError(t, err, "chain cert invalid: x509: cannot validate certificate for 127.0.0.1 because it doesn't contain any IP SANs")
+	require.EqualError(t, err,
+		"chain cert invalid: x509: cannot validate certificate for 127.0.0.1 because it doesn't contain any IP SANs")
 }
 
 func TestOverlayServer_Call(t *testing.T) {
@@ -758,7 +759,8 @@ func TestOverlay_Forward(t *testing.T) {
 	_, err = overlay.Forward(makeCtx(headerURIKey, "unknown"), &ptypes.Packet{})
 	require.EqualError(t, err, "handler 'unknown' is not registered")
 
-	_, err = overlay.Forward(makeCtx(headerURIKey, "test", headerStreamIDKey, "nope"), &ptypes.Packet{})
+	_, err = overlay.Forward(makeCtx(headerURIKey, "test", headerStreamIDKey, "nope"),
+		&ptypes.Packet{})
 	require.EqualError(t, err, "no stream 'nope' found")
 }
 
@@ -873,7 +875,8 @@ func TestMakeCertificate_WrongHostname(t *testing.T) {
 	o.myAddr = session.NewAddress(":xxx")
 
 	err := o.makeCertificate()
-	require.EqualError(t, err, "failed to get hostname: malformed address: parse \"//:xxx\": invalid port \":xxx\" after host")
+	require.EqualError(t, err,
+		"failed to get hostname: malformed address: parse \"//:xxx\": invalid port \":xxx\" after host")
 }
 
 func TestConnManager_Acquire(t *testing.T) {
@@ -913,7 +916,8 @@ func TestConnManager_FailLoadDistantCert_Acquire(t *testing.T) {
 	mgr.certs = fakeCerts{errLoad: fake.GetError()}
 
 	_, err := mgr.Acquire(session.Address{})
-	require.EqualError(t, err, fake.Err("failed to retrieve transport credential: while loading distant cert"))
+	require.EqualError(t, err,
+		fake.Err("failed to retrieve transport credential: while loading distant cert"))
 }
 
 func TestConnManager_MissingCert_Acquire(t *testing.T) {
@@ -924,7 +928,8 @@ func TestConnManager_MissingCert_Acquire(t *testing.T) {
 
 	to := session.NewAddress("fake")
 	_, err := mgr.Acquire(to)
-	require.EqualError(t, err, "failed to retrieve transport credential: certificate for 'fake' not found")
+	require.EqualError(t, err,
+		"failed to retrieve transport credential: certificate for 'fake' not found")
 }
 
 func TestConnManager_FailLoadOwnCert_Acquire(t *testing.T) {
@@ -938,7 +943,8 @@ func TestConnManager_FailLoadOwnCert_Acquire(t *testing.T) {
 	}
 
 	_, err := mgr.Acquire(session.Address{})
-	require.EqualError(t, err, fake.Err("failed to retrieve transport credential: while loading own cert"))
+	require.EqualError(t, err,
+		fake.Err("failed to retrieve transport credential: while loading own cert"))
 }
 
 func TestConnManager_MissingOwnCert_Acquire(t *testing.T) {
@@ -951,7 +957,8 @@ func TestConnManager_MissingOwnCert_Acquire(t *testing.T) {
 	mgr.certs.Store(to, fake.MakeCertificate(t))
 
 	_, err := mgr.Acquire(to)
-	require.EqualError(t, err, "failed to retrieve transport credential: couldn't find server 'fake.Address[0]' cert")
+	require.EqualError(t, err,
+		"failed to retrieve transport credential: couldn't find server 'fake.Address[0]' cert")
 }
 
 func TestConnManager_BadDistantCert_Acquire(t *testing.T) {
@@ -965,7 +972,8 @@ func TestConnManager_BadDistantCert_Acquire(t *testing.T) {
 	mgr.certs.Store(to, certs.CertChain("bad chain"))
 
 	_, err := mgr.Acquire(to)
-	require.EqualError(t, err, "failed to retrieve transport credential: failed to parse distant cert: x509: malformed certificate")
+	require.EqualError(t, err,
+		"failed to retrieve transport credential: failed to parse distant cert: x509: malformed certificate")
 }
 
 func TestConnManager_BadOwnCert_Acquire(t *testing.T) {
@@ -979,7 +987,8 @@ func TestConnManager_BadOwnCert_Acquire(t *testing.T) {
 	mgr.certs.Store(to, fake.MakeCertificate(t))
 
 	_, err := mgr.Acquire(to)
-	require.EqualError(t, err, "failed to retrieve transport credential: failed to parse our own cert: x509: malformed certificate")
+	require.EqualError(t, err,
+		"failed to retrieve transport credential: failed to parse our own cert: x509: malformed certificate")
 }
 
 func TestConnManager_EmptyOwnCert_Acquire(t *testing.T) {

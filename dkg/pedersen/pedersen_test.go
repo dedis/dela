@@ -2,11 +2,13 @@ package pedersen
 
 import (
 	"fmt"
+	"testing"
+
 	"go.dedis.ch/dela/mino/minoch"
+	"go.dedis.ch/dela/testing/fake"
 	"go.dedis.ch/kyber/v3/suites"
 	"go.dedis.ch/kyber/v3/util/key"
 	"golang.org/x/xerrors"
-	"testing"
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
@@ -15,7 +17,6 @@ import (
 	"go.dedis.ch/dela/crypto/ed25519"
 	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/dkg/pedersen/types"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc"
 	"go.dedis.ch/dela/mino/router/tree"
@@ -74,7 +75,8 @@ func TestPedersen_Setup(t *testing.T) {
 
 	rpc = fake.NewStreamRPC(fake.NewReceiver(
 		fake.NewRecvMsg(fake.NewAddress(0), types.NewStartDone(suite.Point())),
-		fake.NewRecvMsg(fake.NewAddress(0), types.NewStartDone(suite.Point().Pick(suite.RandomStream()))),
+		fake.NewRecvMsg(fake.NewAddress(0),
+			types.NewStartDone(suite.Point().Pick(suite.RandomStream()))),
 	), fake.Sender{})
 	actor.rpc = rpc
 
@@ -99,8 +101,10 @@ func TestPedersen_GetPublicKey(t *testing.T) {
 func TestPedersen_Decrypt(t *testing.T) {
 	actor := Actor{
 		rpc: fake.NewBadRPC(),
-		startRes: &state{dkgState: certified,
-			participants: []mino.Address{fake.NewAddress(0)}, distrKey: suite.Point()},
+		startRes: &state{
+			dkgState:     certified,
+			participants: []mino.Address{fake.NewAddress(0)}, distrKey: suite.Point(),
+		},
 	}
 
 	K := suite.Point()
@@ -198,7 +202,8 @@ func TestPedersen_Scenario(t *testing.T) {
 
 	for i, mi := range minos {
 		for _, m := range minos {
-			mi.(*minogrpc.Minogrpc).GetCertificateStore().Store(m.GetAddress(), m.(*minogrpc.Minogrpc).GetCertificateChain())
+			mi.(*minogrpc.Minogrpc).GetCertificateStore().Store(m.GetAddress(),
+				m.(*minogrpc.Minogrpc).GetCertificateChain())
 		}
 
 		d, pubkey := NewPedersen(mi.(*minogrpc.Minogrpc))
@@ -487,7 +492,12 @@ func (s fakeSigner) GetPublicKey() crypto.PublicKey {
 }
 
 // decryptReencrypted helps to decrypt a reencrypted message.
-func decryptReencrypted(Cs []kyber.Point, XhatEnc kyber.Point, dkgPk kyber.Point, Sk kyber.Scalar) (msg []byte, err error) {
+func decryptReencrypted(
+	Cs []kyber.Point,
+	XhatEnc kyber.Point,
+	dkgPk kyber.Point,
+	Sk kyber.Scalar,
+) (msg []byte, err error) {
 
 	dela.Logger.Debug().Msgf("XhatEnc:%v", XhatEnc)
 	dela.Logger.Debug().Msgf("DKG pubK:%v", dkgPk)

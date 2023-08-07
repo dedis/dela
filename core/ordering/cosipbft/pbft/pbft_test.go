@@ -21,8 +21,8 @@ import (
 	"go.dedis.ch/dela/core/validation/simple"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestState_String(t *testing.T) {
@@ -118,7 +118,8 @@ func TestStateMachine_Prepare(t *testing.T) {
 	root := types.Digest{}
 	copy(root[:], tree.GetRoot())
 
-	block, err := types.NewBlock(simple.NewResult(nil), types.WithTreeRoot(root), types.WithIndex(0))
+	block, err := types.NewBlock(simple.NewResult(nil), types.WithTreeRoot(root),
+		types.WithIndex(0))
 	require.NoError(t, err)
 
 	from := fake.NewAddress(0)
@@ -765,7 +766,8 @@ func TestStateMachine_CatchUp(t *testing.T) {
 	root := types.Digest{}
 	copy(root[:], tree.GetRoot())
 
-	block, err := types.NewBlock(simple.NewResult(nil), types.WithTreeRoot(root), types.WithIndex(0))
+	block, err := types.NewBlock(simple.NewResult(nil), types.WithTreeRoot(root),
+		types.WithIndex(0))
 	require.NoError(t, err)
 
 	sm := NewStateMachine(param).(*pbftsm)
@@ -838,7 +840,8 @@ func TestStateMachine_CatchUp_Tentative_Leader_Accept(t *testing.T) {
 	root := types.Digest{}
 	copy(root[:], tree.GetRoot())
 
-	block, err := types.NewBlock(simple.NewResult(nil), types.WithTreeRoot(root), types.WithIndex(0))
+	block, err := types.NewBlock(simple.NewResult(nil), types.WithTreeRoot(root),
+		types.WithIndex(0))
 	require.NoError(t, err)
 
 	sm := NewStateMachine(param).(*pbftsm)
@@ -927,7 +930,10 @@ type unacceptedTxsValidation struct {
 	validation.Service
 }
 
-func (v unacceptedTxsValidation) Validate(store.Snapshot, []txn.Transaction) (validation.Result, error) {
+func (v unacceptedTxsValidation) Validate(store.Snapshot, []txn.Transaction) (
+	validation.Result,
+	error,
+) {
 	return simple.NewResult([]simple.TransactionResult{
 		simple.NewTransactionResult(nil, false, "unaccepted"),
 	}), nil

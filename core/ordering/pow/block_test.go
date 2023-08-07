@@ -8,11 +8,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/validation"
 	"go.dedis.ch/dela/crypto"
-	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestBlock_New(t *testing.T) {
-	block, err := NewBlock(context.Background(), fakeData{}, WithIndex(1), WithNonce(2), WithRoot([]byte{3}))
+	block, err := NewBlock(context.Background(), fakeData{}, WithIndex(1), WithNonce(2),
+		WithRoot([]byte{3}))
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), block.index)
 	require.Equal(t, uint64(2), block.nonce)

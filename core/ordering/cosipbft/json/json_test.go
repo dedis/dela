@@ -7,9 +7,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func init() {
@@ -151,7 +151,8 @@ func TestMsgFormat_Encode(t *testing.T) {
 	data, err = format.Encode(ctx, types.NewBlockMessage(block, views))
 	require.NoError(t, err)
 	require.Regexp(t,
-		`{"Block":{"Block":{},"Views":{"[^"]+":{"Leader":5,"ID":"[^"]+","Signature":{}}}}}`, string(data))
+		`{"Block":{"Block":{},"Views":{"[^"]+":{"Leader":5,"ID":"[^"]+","Signature":{}}}}}`,
+		string(data))
 
 	views[fake.NewAddress(0)] = types.NewViewMessage(types.Digest{}, 0, fake.NewBadSignature())
 	_, err = format.Encode(ctx, types.NewBlockMessage(block, views))
@@ -186,7 +187,8 @@ func TestMsgFormat_Encode(t *testing.T) {
 	_, err = format.Encode(ctx, types.NewViewMessage(types.Digest{}, 0, fake.NewBadSignature()))
 	require.EqualError(t, err, fake.Err("view: failed to serialize signature"))
 
-	_, err = format.Encode(fake.NewBadContext(), types.NewViewMessage(types.Digest{}, 0, fake.Signature{}))
+	_, err = format.Encode(fake.NewBadContext(),
+		types.NewViewMessage(types.Digest{}, 0, fake.Signature{}))
 	require.EqualError(t, err, fake.Err("failed to marshal"))
 }
 

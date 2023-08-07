@@ -2,12 +2,13 @@ package json
 
 import (
 	"fmt"
-	"go.dedis.ch/kyber/v3/share"
 	"testing"
+
+	"go.dedis.ch/dela/testing/fake"
+	"go.dedis.ch/kyber/v3/share"
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/dkg/pedersen/types"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/kyber/v3"
@@ -66,11 +67,13 @@ func TestMessageFormat_EncodeStartResharing(t *testing.T) {
 
 	start = types.NewStartResharing(1, 1, nil, nil, []kyber.Point{badPoint{}}, nil)
 	_, err = format.Encode(ctx, start)
-	require.EqualError(t, err, fake.Err("failed to encode message: couldn't marshal new public key"))
+	require.EqualError(t, err,
+		fake.Err("failed to encode message: couldn't marshal new public key"))
 
 	start = types.NewStartResharing(1, 1, nil, nil, nil, []kyber.Point{badPoint{}})
 	_, err = format.Encode(ctx, start)
-	require.EqualError(t, err, fake.Err("failed to encode message: couldn't marshal old public key"))
+	require.EqualError(t, err,
+		fake.Err("failed to encode message: couldn't marshal old public key"))
 }
 
 func TestMessageFormat_EncodeEncryptDeal(t *testing.T) {
@@ -97,7 +100,8 @@ func TestMessageFormat_EncodeReshare(t *testing.T) {
 
 	reshare = types.NewReshare(types.Deal{}, []kyber.Point{badPoint{}})
 	_, err = format.Encode(ctx, reshare)
-	require.EqualError(t, err, fake.Err("failed to encode message: couldn't marshal public coefficient"))
+	require.EqualError(t, err,
+		fake.Err("failed to encode message: couldn't marshal public coefficient"))
 }
 
 func TestMessageFormat_EncodeDealerResponse(t *testing.T) {
@@ -135,7 +139,8 @@ func TestMessageFormat_EncodeDecryptRequest(t *testing.T) {
 
 	data, err := format.Encode(ctx, req)
 	require.NoError(t, err)
-	require.Regexp(t, `{(("DecryptRequest":{"K":"[^"]+","C":"[^"]+"}|"\w+":null),?)+}`, string(data))
+	require.Regexp(t, `{(("DecryptRequest":{"K":"[^"]+","C":"[^"]+"}|"\w+":null),?)+}`,
+		string(data))
 
 	req.K = badPoint{}
 	_, err = format.Encode(ctx, req)
@@ -148,14 +153,16 @@ func TestMessageFormat_EncodeDecryptRequest(t *testing.T) {
 }
 
 func TestMessageFormat_EncodeVerifiableDecryptRequest(t *testing.T) {
-	req := types.NewVerifiableDecryptRequest([]types.Ciphertext{{
-		K:    suite.Point(),
-		C:    suite.Point(),
-		UBar: suite.Point(),
-		E:    suite.Scalar(),
-		F:    suite.Scalar(),
-		GBar: suite.Point(),
-	}})
+	req := types.NewVerifiableDecryptRequest([]types.Ciphertext{
+		{
+			K:    suite.Point(),
+			C:    suite.Point(),
+			UBar: suite.Point(),
+			E:    suite.Scalar(),
+			F:    suite.Scalar(),
+			GBar: suite.Point(),
+		},
+	})
 
 	format := newMsgFormat()
 	ctx := serde.NewContext(fake.ContextEngine{})
@@ -169,16 +176,32 @@ func TestMessageFormat_EncodeVerifiableDecryptRequest(t *testing.T) {
 		return func(t *testing.T) {
 			req := types.NewVerifiableDecryptRequest([]types.Ciphertext{ct})
 			_, err = format.Encode(ctx, req)
-			require.EqualError(t, err, fake.Err("failed to encode message: couldn't marshal "+attr))
+			require.EqualError(t, err,
+				fake.Err("failed to encode message: couldn't marshal "+attr))
 		}
 	}
 
 	t.Run("K", check("K", types.Ciphertext{K: badPoint{}}))
 	t.Run("C", check("C", types.Ciphertext{K: suite.Point(), C: badPoint{}}))
-	t.Run("UBar", check("UBar", types.Ciphertext{K: suite.Point(), C: suite.Point(), UBar: badPoint{}}))
-	t.Run("E", check("E", types.Ciphertext{K: suite.Point(), C: suite.Point(), UBar: suite.Point(), E: badScallar{}}))
-	t.Run("F", check("F", types.Ciphertext{K: suite.Point(), C: suite.Point(), UBar: suite.Point(), E: suite.Scalar(), F: badScallar{}}))
-	t.Run("GBar", check("GBar", types.Ciphertext{K: suite.Point(), C: suite.Point(), UBar: suite.Point(), E: suite.Scalar(), F: suite.Scalar(), GBar: badPoint{}}))
+	t.Run("UBar",
+		check("UBar", types.Ciphertext{K: suite.Point(), C: suite.Point(), UBar: badPoint{}}))
+	t.Run("E", check("E",
+		types.Ciphertext{K: suite.Point(), C: suite.Point(), UBar: suite.Point(), E: badScallar{}}))
+	t.Run("F", check("F", types.Ciphertext{
+		K:    suite.Point(),
+		C:    suite.Point(),
+		UBar: suite.Point(),
+		E:    suite.Scalar(),
+		F:    badScallar{},
+	}))
+	t.Run("GBar", check("GBar", types.Ciphertext{
+		K:    suite.Point(),
+		C:    suite.Point(),
+		UBar: suite.Point(),
+		E:    suite.Scalar(),
+		F:    suite.Scalar(),
+		GBar: badPoint{},
+	}))
 }
 
 func TestMessageFormat_EncodeDecryptReply(t *testing.T) {
@@ -213,7 +236,9 @@ func TestMessageFormat_EncodeReencryptReply(t *testing.T) {
 	data, err := format.Encode(ctx, resp)
 	require.NoError(t, err)
 
-	require.Regexp(t, `{"ReencryptReply":{"PubK":"[^"]+","UiI":12358,"UiV":"[^"]+","Ei":"[^"]+","Fi":"[^"]+"}}`, string(data))
+	require.Regexp(t,
+		`{"ReencryptReply":{"PubK":"[^"]+","UiI":12358,"UiV":"[^"]+","Ei":"[^"]+","Fi":"[^"]+"}}`,
+		string(data))
 
 	resp.PubK = badPoint{}
 	_, err = format.Encode(ctx, resp)
@@ -221,14 +246,16 @@ func TestMessageFormat_EncodeReencryptReply(t *testing.T) {
 }
 
 func TestMessageFormat_EncodeVerifiableDecryptReply(t *testing.T) {
-	req := types.NewVerifiableDecryptReply([]types.ShareAndProof{{
-		V:  suite.Point(),
-		I:  int64(1321),
-		Ui: suite.Point(),
-		Ei: suite.Scalar(),
-		Fi: suite.Scalar(),
-		Hi: suite.Point(),
-	}})
+	req := types.NewVerifiableDecryptReply([]types.ShareAndProof{
+		{
+			V:  suite.Point(),
+			I:  int64(1321),
+			Ui: suite.Point(),
+			Ei: suite.Scalar(),
+			Fi: suite.Scalar(),
+			Hi: suite.Point(),
+		},
+	})
 
 	format := newMsgFormat()
 	ctx := serde.NewContext(fake.ContextEngine{})
@@ -242,15 +269,28 @@ func TestMessageFormat_EncodeVerifiableDecryptReply(t *testing.T) {
 		return func(t *testing.T) {
 			req := types.NewVerifiableDecryptReply([]types.ShareAndProof{sp})
 			_, err = format.Encode(ctx, req)
-			require.EqualError(t, err, fake.Err("failed to encode message: couldn't marshal "+attr))
+			require.EqualError(t, err,
+				fake.Err("failed to encode message: couldn't marshal "+attr))
 		}
 	}
 
 	t.Run("V", check("V", types.ShareAndProof{V: badPoint{}}))
 	t.Run("Ui", check("U_i", types.ShareAndProof{V: suite.Point(), Ui: badPoint{}}))
-	t.Run("Ei", check("E_i", types.ShareAndProof{V: suite.Point(), Ui: suite.Point(), Ei: badScallar{}}))
-	t.Run("Fi", check("F_i", types.ShareAndProof{V: suite.Point(), Ui: suite.Point(), Ei: suite.Scalar(), Fi: badScallar{}}))
-	t.Run("Hi", check("H_i", types.ShareAndProof{V: suite.Point(), Ui: suite.Point(), Ei: suite.Scalar(), Fi: suite.Scalar(), Hi: badPoint{}}))
+	t.Run("Ei",
+		check("E_i", types.ShareAndProof{V: suite.Point(), Ui: suite.Point(), Ei: badScallar{}}))
+	t.Run("Fi", check("F_i", types.ShareAndProof{
+		V:  suite.Point(),
+		Ui: suite.Point(),
+		Ei: suite.Scalar(),
+		Fi: badScallar{},
+	}))
+	t.Run("Hi", check("H_i", types.ShareAndProof{
+		V:  suite.Point(),
+		Ui: suite.Point(),
+		Ei: suite.Scalar(),
+		Fi: suite.Scalar(),
+		Hi: badPoint{},
+	}))
 }
 
 func TestMessageFormat_DecodeStart(t *testing.T) {
@@ -466,7 +506,8 @@ func TestMessageFormat_DecodeReshare(t *testing.T) {
 
 	reshare, err := format.Decode(ctx, data)
 	require.NoError(t, err)
-	require.True(t, expected.GetPublicCoeffs()[0].Equal(reshare.(types.Reshare).GetPublicCoeffs()[0]))
+	require.True(t,
+		expected.GetPublicCoeffs()[0].Equal(reshare.(types.Reshare).GetPublicCoeffs()[0]))
 	require.Equal(t, expected.GetDeal(), reshare.(types.Reshare).GetDeal())
 
 	_, err = format.Decode(ctx, []byte(`{"Reshare":{"PublicCoeff":[[]]}}`))
@@ -495,30 +536,39 @@ func TestMessageFormat_DecodeVerifiableDecryptRequest(t *testing.T) {
 	reshare, err := format.Decode(ctx, data)
 	require.NoError(t, err)
 
-	require.True(t, expected.GetCiphertexts()[0].K.Equal(reshare.(types.VerifiableDecryptRequest).GetCiphertexts()[0].K))
-	require.True(t, expected.GetCiphertexts()[0].E.Equal(reshare.(types.VerifiableDecryptRequest).GetCiphertexts()[0].E))
+	require.True(t,
+		expected.GetCiphertexts()[0].K.Equal(reshare.(types.VerifiableDecryptRequest).GetCiphertexts()[0].K))
+	require.True(t,
+		expected.GetCiphertexts()[0].E.Equal(reshare.(types.VerifiableDecryptRequest).GetCiphertexts()[0].E))
 
 	_, err = format.Decode(ctx, []byte(`{"VerifiableDecryptRequest":{"Ciphertexts":[{}]}}`))
 	require.EqualError(t, err, "couldn't unmarshal K: invalid Ed25519 curve point")
 
 	ctJSON := fmt.Sprintf(`{"K":"%s"}`, testPoint)
-	_, err = format.Decode(ctx, []byte(fmt.Sprintf(`{"VerifiableDecryptRequest":{"Ciphertexts":[%s]}}`, ctJSON)))
+	_, err = format.Decode(ctx,
+		[]byte(fmt.Sprintf(`{"VerifiableDecryptRequest":{"Ciphertexts":[%s]}}`, ctJSON)))
 	require.EqualError(t, err, "couldn't unmarshal C: invalid Ed25519 curve point")
 
 	ctJSON = fmt.Sprintf(`{"K":"%s", "C": "%s"}`, testPoint, testPoint)
-	_, err = format.Decode(ctx, []byte(fmt.Sprintf(`{"VerifiableDecryptRequest":{"Ciphertexts":[%s]}}`, ctJSON)))
+	_, err = format.Decode(ctx,
+		[]byte(fmt.Sprintf(`{"VerifiableDecryptRequest":{"Ciphertexts":[%s]}}`, ctJSON)))
 	require.EqualError(t, err, "couldn't unmarshal Ubar: invalid Ed25519 curve point")
 
 	ctJSON = fmt.Sprintf(`{"K": "%s", "C": "%s", "Ubar": "%s"}`, testPoint, testPoint, testPoint)
-	_, err = format.Decode(ctx, []byte(fmt.Sprintf(`{"VerifiableDecryptRequest":{"Ciphertexts":[%s]}}`, ctJSON)))
+	_, err = format.Decode(ctx,
+		[]byte(fmt.Sprintf(`{"VerifiableDecryptRequest":{"Ciphertexts":[%s]}}`, ctJSON)))
 	require.EqualError(t, err, "couldn't unmarshal E: wrong size buffer")
 
-	ctJSON = fmt.Sprintf(`{"K": "%s", "C": "%s", "Ubar": "%s", "E": "%s"}`, testPoint, testPoint, testPoint, testPoint)
-	_, err = format.Decode(ctx, []byte(fmt.Sprintf(`{"VerifiableDecryptRequest":{"Ciphertexts":[%s]}}`, ctJSON)))
+	ctJSON = fmt.Sprintf(`{"K": "%s", "C": "%s", "Ubar": "%s", "E": "%s"}`, testPoint, testPoint,
+		testPoint, testPoint)
+	_, err = format.Decode(ctx,
+		[]byte(fmt.Sprintf(`{"VerifiableDecryptRequest":{"Ciphertexts":[%s]}}`, ctJSON)))
 	require.EqualError(t, err, "couldn't unmarshal F: wrong size buffer")
 
-	ctJSON = fmt.Sprintf(`{"K": "%s", "C": "%s", "Ubar": "%s", "E": "%s", "F": "%s"}`, testPoint, testPoint, testPoint, testPoint, testPoint)
-	_, err = format.Decode(ctx, []byte(fmt.Sprintf(`{"VerifiableDecryptRequest":{"Ciphertexts":[%s]}}`, ctJSON)))
+	ctJSON = fmt.Sprintf(`{"K": "%s", "C": "%s", "Ubar": "%s", "E": "%s", "F": "%s"}`, testPoint,
+		testPoint, testPoint, testPoint, testPoint)
+	_, err = format.Decode(ctx,
+		[]byte(fmt.Sprintf(`{"VerifiableDecryptRequest":{"Ciphertexts":[%s]}}`, ctJSON)))
 	require.EqualError(t, err, "couldn't unmarshal GBar: invalid Ed25519 curve point")
 }
 
@@ -544,26 +594,33 @@ func TestMessageFormat_DecodeVerifiableDecryptReply(t *testing.T) {
 	reshare, err := format.Decode(ctx, data)
 	require.NoError(t, err)
 
-	require.True(t, expected.GetShareAndProof()[0].V.Equal(reshare.(types.VerifiableDecryptReply).GetShareAndProof()[0].V))
-	require.True(t, expected.GetShareAndProof()[0].Ei.Equal(reshare.(types.VerifiableDecryptReply).GetShareAndProof()[0].Ei))
+	require.True(t,
+		expected.GetShareAndProof()[0].V.Equal(reshare.(types.VerifiableDecryptReply).GetShareAndProof()[0].V))
+	require.True(t,
+		expected.GetShareAndProof()[0].Ei.Equal(reshare.(types.VerifiableDecryptReply).GetShareAndProof()[0].Ei))
 
 	_, err = format.Decode(ctx, []byte(`{"VerifiableDecryptReply":{"Sp":[{}]}}`))
 	require.EqualError(t, err, "couldn't unmarshal V: invalid Ed25519 curve point")
 
 	ctJSON := fmt.Sprintf(`{"V":"%s"}`, testPoint)
-	_, err = format.Decode(ctx, []byte(fmt.Sprintf(`{"VerifiableDecryptReply":{"Sp":[%s]}}`, ctJSON)))
+	_, err = format.Decode(ctx,
+		[]byte(fmt.Sprintf(`{"VerifiableDecryptReply":{"Sp":[%s]}}`, ctJSON)))
 	require.EqualError(t, err, "couldn't unmarshal E_i: wrong size buffer")
 
 	ctJSON = fmt.Sprintf(`{"V":"%s", "Ei": "%s"}`, testPoint, testPoint)
-	_, err = format.Decode(ctx, []byte(fmt.Sprintf(`{"VerifiableDecryptReply":{"Sp":[%s]}}`, ctJSON)))
+	_, err = format.Decode(ctx,
+		[]byte(fmt.Sprintf(`{"VerifiableDecryptReply":{"Sp":[%s]}}`, ctJSON)))
 	require.EqualError(t, err, "couldn't unmarshal U_i: invalid Ed25519 curve point")
 
 	ctJSON = fmt.Sprintf(`{"V": "%s", "Ei": "%s", "Ui": "%s"}`, testPoint, testPoint, testPoint)
-	_, err = format.Decode(ctx, []byte(fmt.Sprintf(`{"VerifiableDecryptReply":{"Sp":[%s]}}`, ctJSON)))
+	_, err = format.Decode(ctx,
+		[]byte(fmt.Sprintf(`{"VerifiableDecryptReply":{"Sp":[%s]}}`, ctJSON)))
 	require.EqualError(t, err, "couldn't unmarshal F_i: wrong size buffer")
 
-	ctJSON = fmt.Sprintf(`{"V": "%s", "Ei": "%s", "Ui": "%s", "Fi": "%s"}`, testPoint, testPoint, testPoint, testPoint)
-	_, err = format.Decode(ctx, []byte(fmt.Sprintf(`{"VerifiableDecryptReply":{"Sp":[%s]}}`, ctJSON)))
+	ctJSON = fmt.Sprintf(`{"V": "%s", "Ei": "%s", "Ui": "%s", "Fi": "%s"}`, testPoint, testPoint,
+		testPoint, testPoint)
+	_, err = format.Decode(ctx,
+		[]byte(fmt.Sprintf(`{"VerifiableDecryptReply":{"Sp":[%s]}}`, ctJSON)))
 	require.EqualError(t, err, "couldn't unmarshal H_i: invalid Ed25519 curve point")
 }
 

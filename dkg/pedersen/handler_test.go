@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"go.dedis.ch/dela/testing/fake"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 )
@@ -82,8 +82,10 @@ func (f fakeHandler) isRunning() bool {
 	return f.running
 }
 
-func (f fakeHandler) handleMessage(ctx context.Context, msg serde.Message,
-	from mino.Address, out mino.Sender) error {
+func (f fakeHandler) handleMessage(
+	ctx context.Context, msg serde.Message,
+	from mino.Address, out mino.Sender,
+) error {
 
 	return f.err
 }

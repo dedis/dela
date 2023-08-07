@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
-	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestMiniController_Build(t *testing.T) {

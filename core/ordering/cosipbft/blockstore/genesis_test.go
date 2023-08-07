@@ -9,7 +9,7 @@ import (
 	"go.dedis.ch/dela/core/ordering/cosipbft/authority"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store/kv"
-	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestCachedGenesis_Get(t *testing.T) {

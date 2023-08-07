@@ -2,12 +2,13 @@ package types
 
 import (
 	"bytes"
-	"go.dedis.ch/kyber/v3/share"
 	"testing"
 	"testing/quick"
 
+	"go.dedis.ch/dela/testing/fake"
+	"go.dedis.ch/kyber/v3/share"
+
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/kyber/v3"

@@ -5,7 +5,7 @@ import (
 	"testing/quick"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/testing/fake"
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/sign/schnorr"
 	"go.dedis.ch/kyber/v3/util/key"

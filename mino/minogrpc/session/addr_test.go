@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestAddress_GetDialAddress(t *testing.T) {
@@ -28,7 +28,8 @@ func TestAddress_GetHostname(t *testing.T) {
 	addr = NewAddress("\x00")
 
 	_, err = addr.GetHostname()
-	require.EqualError(t, err, "malformed address: parse \"//\\x00\": net/url: invalid control character in URL")
+	require.EqualError(t, err,
+		"malformed address: parse \"//\\x00\": net/url: invalid control character in URL")
 }
 
 func TestAddress_Equal(t *testing.T) {

@@ -5,8 +5,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/crypto/ed25519"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/testing/fake"
 	"go.dedis.ch/kyber/v3"
 )
 
@@ -46,7 +46,8 @@ func TestPubKkeyFormat_Decode(t *testing.T) {
 	require.True(t, signer.GetPublicKey().Equal(pubkey.(ed25519.PublicKey)))
 
 	_, err = format.Decode(ctx, []byte(`{"Data":[]}`))
-	require.EqualError(t, err, "couldn't create public key: couldn't unmarshal point: invalid Ed25519 curve point")
+	require.EqualError(t, err,
+		"couldn't create public key: couldn't unmarshal point: invalid Ed25519 curve point")
 
 	_, err = format.Decode(fake.NewBadContext(), []byte(`{}`))
 	require.EqualError(t, err, fake.Err("couldn't unmarshal public key"))

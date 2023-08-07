@@ -7,9 +7,9 @@ import (
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/access/darc/types"
 	"go.dedis.ch/dela/crypto/bls"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/json"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 var testCtx = json.NewContext()

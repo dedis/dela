@@ -11,7 +11,7 @@ import (
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/core/store/kv"
 	"go.dedis.ch/dela/core/txn/pool"
-	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestMinimal_SetCommands(t *testing.T) {

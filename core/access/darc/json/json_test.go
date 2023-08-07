@@ -5,8 +5,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/core/access/darc/types"
-	"go.dedis.ch/dela/internal/testing/fake"
 	"go.dedis.ch/dela/serde"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 const testValue = `{"Expressions":{"test":{"Identities":[{}],"Matches":[[0]]}}}`
@@ -30,7 +30,8 @@ func TestPermFormat_Encode(t *testing.T) {
 
 	perm = types.NewPermission(types.WithRule("test", fake.NewBadPublicKey()))
 	_, err = fmt.Encode(ctx, perm)
-	require.EqualError(t, err, fake.Err("failed to encode expression: failed to serialize identity"))
+	require.EqualError(t, err,
+		fake.Err("failed to encode expression: failed to serialize identity"))
 }
 
 func TestPermFormat_Decode(t *testing.T) {

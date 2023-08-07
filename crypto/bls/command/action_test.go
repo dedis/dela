@@ -10,7 +10,7 @@ import (
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/crypto/bls"
-	"go.dedis.ch/dela/internal/testing/fake"
+	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestNewSignerAction(t *testing.T) {
@@ -117,7 +117,8 @@ func TestGetPUBKEY_Happy(t *testing.T) {
 
 func TestGetPUBKEY_Error(t *testing.T) {
 	_, err := getPubkey(nil)
-	require.EqualError(t, err, "failed to unmarshal signer: while unmarshaling scalar: UnmarshalBinary: wrong size buffer")
+	require.EqualError(t, err,
+		"failed to unmarshal signer: while unmarshaling scalar: UnmarshalBinary: wrong size buffer")
 }
 
 // -----------------------------------------------------------------------------
