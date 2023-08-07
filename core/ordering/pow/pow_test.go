@@ -169,6 +169,10 @@ func (e testExec) Execute(store store.Snapshot, step execution.Step) error {
 	return nil
 }
 
+func (e testExec) UID() string {
+	return "TEST"
+}
+
 type badValidation struct {
 	validation.Service
 }

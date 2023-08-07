@@ -20,6 +20,7 @@ const (
 // be executed natively.
 type Contract interface {
 	Execute(store.Snapshot, execution.Step) error
+	UID() string
 }
 
 // Service is an execution service for packaged applications. Those
@@ -27,21 +28,41 @@ type Contract interface {
 //
 // - implements execution.Service
 type Service struct {
-	contracts map[string]Contract
+	contracts    map[string]Contract
+	contractUIDs map[string]struct{}
 }
 
 // NewExecution returns a new native execution. The given service will be
 // executed for every incoming transaction.
 func NewExecution() *Service {
 	return &Service{
-		contracts: map[string]Contract{},
+		contracts:    map[string]Contract{},
+		contractUIDs: map[string]struct{}{},
 	}
 }
 
 // Set stores the contract using the name as the key. A transaction can trigger
 // this contract by using the same name as the contract argument.
 func (ns *Service) Set(name string, contract Contract) {
+	// Check if the contract is already registered
+	if _, ok := ns.contracts[name]; ok {
+		panic(xerrors.Errorf("contract '%s' already registered", name))
+	}
+
+	uid := contract.UID()
+
+	// UIDs are expected to be 4 bytes long, always.
+	if len(uid) != 4 {
+		panic(xerrors.Errorf("contract UID '%x' for '%s' is not 4 bytes long", uid, name))
+	}
+
+	// Check if the contract's UID is already registered
+	if _, ok := ns.contractUIDs[uid]; ok {
+		panic(xerrors.Errorf("contract UID '%x' for '%s' already registered", uid, name))
+	}
+
 	ns.contracts[name] = contract
+	ns.contractUIDs[uid] = struct{}{}
 }
 
 // Execute implements execution.Service. It uses the executor to process the

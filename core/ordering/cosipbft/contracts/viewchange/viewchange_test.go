@@ -40,7 +40,7 @@ func TestNewTransaction(t *testing.T) {
 func TestContract_Execute(t *testing.T) {
 	fac := authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 
-	contract := NewContract([]byte("roster"), []byte("access"), fac, fakeAccess{})
+	contract := NewContract(fac, fakeAccess{})
 
 	err := contract.Execute(fakeStore{}, makeStep(t, "[]"))
 	require.NoError(t, err)

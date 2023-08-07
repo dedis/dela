@@ -127,7 +127,7 @@ func (m miniController) OnStart(flags cli.Flags, inj node.Injector) error {
 	rosterFac := authority.NewFactory(onet.GetAddressFactory(), cosi.GetPublicKeyFactory())
 	cosipbft.RegisterRosterContract(exec, rosterFac, access)
 
-	value.RegisterContract(exec, value.NewContract(valueAccessKey[:], access))
+	value.RegisterContract(exec, value.NewContract(access))
 
 	txFac := signed.NewTransactionFactory()
 	vs := simple.NewService(exec, txFac)

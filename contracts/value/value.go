@@ -26,6 +26,10 @@ type commands interface {
 }
 
 const (
+	// ContractUID is the unique (4-bytes) identifier of the contract, it is
+	// used to prefix keys in the K/V store and by DARCs for access control.
+	ContractUID = "VALU"
+
 	// ContractName is the name of the contract.
 	ContractName = "go.dedis.ch/dela.Value"
 
@@ -41,12 +45,9 @@ const (
 	// run on the contract. Should be one of the Command type.
 	CmdArg = "value:command"
 
-	// credentialAllCommand defines the credential command that is allowed to
+	// CredentialAllCommand defines the credential command that is allowed to
 	// perform all commands.
-	credentialAllCommand = "all"
-
-	// contractKeyPrefix is used to prefix keys in the K/V store.
-	contractKeyPrefix = "VALU" // intentionally 4 bytes only, not a typo!
+	CredentialAllCommand = "all"
 )
 
 // Command defines a type of command for the value contract
@@ -69,8 +70,8 @@ const (
 
 // NewCreds creates new credentials for a value contract execution. We might
 // want to use in the future a separate credential for each command.
-func NewCreds(id []byte) access.Credential {
-	return access.NewContractCreds(id, ContractName, credentialAllCommand)
+func NewCreds() access.Credential {
+	return access.NewContractCreds([]byte(ContractUID), ContractName, CredentialAllCommand)
 }
 
 // RegisterContract registers the value contract to the given execution service.
@@ -89,9 +90,6 @@ type Contract struct {
 	// access is the access control service managing this smart contract
 	access access.Service
 
-	// accessKey is the access identifier allowed to use this smart contract
-	accessKey []byte
-
 	// cmd provides the commands that can be executed by this smart contract
 	cmd commands
 
@@ -100,12 +98,11 @@ type Contract struct {
 }
 
 // NewContract creates a new Value contract
-func NewContract(aKey []byte, srvc access.Service) Contract {
+func NewContract(srvc access.Service) Contract {
 	contract := Contract{
-		index:     map[string]struct{}{},
-		access:    srvc,
-		accessKey: aKey,
-		printer:   infoLog{},
+		index:   map[string]struct{}{},
+		access:  srvc,
+		printer: infoLog{},
 	}
 
 	contract.cmd = valueCommand{Contract: &contract}
@@ -115,7 +112,7 @@ func NewContract(aKey []byte, srvc access.Service) Contract {
 
 // Execute implements native.Contract. It runs the appropriate command.
 func (c Contract) Execute(snap store.Snapshot, step execution.Step) error {
-	creds := NewCreds(c.accessKey)
+	creds := NewCreds()
 
 	err := c.access.Match(snap, creds, step.Current.GetIdentity())
 	if err != nil {
@@ -154,6 +151,13 @@ func (c Contract) Execute(snap store.Snapshot, step execution.Step) error {
 	}
 
 	return nil
+}
+
+// UID returns the unique 4-bytes contract identifier.
+//
+// - implements native.Contract
+func (c Contract) UID() string {
+	return ContractUID
 }
 
 // valueCommand implements the commands of the value contract
@@ -260,5 +264,5 @@ func (h infoLog) Write(p []byte) (int, error) {
 }
 
 func prefix(key []byte) []byte {
-	return append([]byte(contractKeyPrefix), key...)
+	return append([]byte(ContractUID), key...)
 }

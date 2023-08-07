@@ -1,6 +1,7 @@
 package native
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -10,10 +11,41 @@ import (
 	"go.dedis.ch/dela/testing/fake"
 )
 
+func TestService_RequireUniqueContractName(t *testing.T) {
+	srvc := NewExecution()
+	srvc.Set("abc", fakeExec{uid: "abcd"})
+
+	require.PanicsWithError(t, "contract 'abc' already registered", func() {
+		srvc.Set("abc", fakeExec{uid: "badd"})
+	})
+}
+
+func TestService_RequireUniqueContractID(t *testing.T) {
+	srvc := NewExecution()
+	srvc.Set("abc", fakeExec{uid: "abcd"})
+
+	err := fmt.Sprintf("contract UID '%x' for '%s' already registered",
+		"abcd", "bad")
+
+	require.PanicsWithError(t, err, func() {
+		srvc.Set("bad", fakeExec{uid: "abcd"})
+	})
+}
+
+func TestService_VerifyContractIDFormat(t *testing.T) {
+	srvc := NewExecution()
+	err := fmt.Sprintf("contract UID '%x' for '%s' is not 4 bytes long",
+		"abc", "bad")
+
+	require.PanicsWithError(t, err, func() {
+		srvc.Set("bad", fakeExec{uid: "abc"})
+	})
+}
+
 func TestService_Execute(t *testing.T) {
 	srvc := NewExecution()
-	srvc.Set("abc", fakeExec{})
-	srvc.Set("bad", fakeExec{err: fake.GetError()})
+	srvc.Set("abc", fakeExec{uid: "abcd"})
+	srvc.Set("bad", fakeExec{uid: "badd", err: fake.GetError()})
 
 	step := execution.Step{}
 	step.Current = fakeTx{contract: "abc"}
@@ -37,10 +69,15 @@ func TestService_Execute(t *testing.T) {
 
 type fakeExec struct {
 	err error
+	uid string
 }
 
 func (e fakeExec) Execute(store.Snapshot, execution.Step) error {
 	return e.err
+}
+
+func (e fakeExec) UID() string {
+	return e.uid
 }
 
 type fakeTx struct {

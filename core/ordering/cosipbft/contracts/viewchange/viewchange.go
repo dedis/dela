@@ -18,6 +18,10 @@ import (
 )
 
 const (
+	// ContractUID is the unique (4-bytes) identifier of the contract, it is
+	// used to prefix keys in the K/V store and by DARCs for access control.
+	ContractUID = "COSI"
+
 	// ContractName is the name of the contract.
 	ContractName = "go.dedis.ch/dela.ViewChange"
 
@@ -34,6 +38,20 @@ const (
 	messageUnauthorized     = "unauthorized identity"
 )
 
+var (
+	rosterKey [32]byte
+)
+
+func init() {
+	copy(rosterKey[:4], ContractUID)
+}
+
+// GetRosterKey returns the key used to store the roster in the K/V storage.
+// It is formatted like ContractUID + roster key.
+func GetRosterKey() []byte {
+	return rosterKey[:]
+}
+
 // RegisterContract registers the view change contract to the given execution
 // service.
 func RegisterContract(exec *native.Service, c Contract) {
@@ -41,8 +59,8 @@ func RegisterContract(exec *native.Service, c Contract) {
 }
 
 // NewCreds creates new credentials for a view change contract execution.
-func NewCreds(id []byte) access.Credential {
-	return access.NewContractCreds(id, ContractName, "update")
+func NewCreds() access.Credential {
+	return access.NewContractCreds([]byte(ContractUID), ContractName, "update")
 }
 
 // Manager is an extension of a normal transaction manager to help creating view
@@ -84,19 +102,15 @@ func (mgr Manager) Make(roster authority.Authority) (txn.Transaction, error) {
 //
 // - implements native.Contract
 type Contract struct {
-	rosterKey []byte
 	rosterFac authority.Factory
-	accessKey []byte
 	access    access.Service
 	context   serde.Context
 }
 
 // NewContract creates a new viewchange contract.
-func NewContract(rKey, aKey []byte, rFac authority.Factory, srvc access.Service) Contract {
+func NewContract(rFac authority.Factory, srvc access.Service) Contract {
 	return Contract{
-		rosterKey: rKey,
 		rosterFac: rFac,
-		accessKey: aKey,
 		access:    srvc,
 		context:   json.NewContext(),
 	}
@@ -121,7 +135,7 @@ func (c Contract) Execute(snap store.Snapshot, step execution.Step) error {
 		return xerrors.New(messageArgMissing)
 	}
 
-	currData, err := snap.Get(c.rosterKey)
+	currData, err := snap.Get(rosterKey[:])
 	if err != nil {
 		reportErr(step.Current, xerrors.Errorf("reading store: %v", err))
 
@@ -148,7 +162,7 @@ func (c Contract) Execute(snap store.Snapshot, step execution.Step) error {
 		}
 	}
 
-	creds := NewCreds(c.accessKey)
+	creds := NewCreds()
 
 	err = c.access.Match(snap, creds, step.Current.GetIdentity())
 	if err != nil {
@@ -157,7 +171,7 @@ func (c Contract) Execute(snap store.Snapshot, step execution.Step) error {
 		return xerrors.Errorf("%s: %v", messageUnauthorized, step.Current.GetIdentity())
 	}
 
-	err = snap.Set(c.rosterKey, step.Current.GetArg(AuthorityArg))
+	err = snap.Set(rosterKey[:], step.Current.GetArg(AuthorityArg))
 	if err != nil {
 		reportErr(step.Current, xerrors.Errorf("writing store: %v", err))
 
@@ -165,6 +179,13 @@ func (c Contract) Execute(snap store.Snapshot, step execution.Step) error {
 	}
 
 	return nil
+}
+
+// UID returns the unique 4-bytes contract identifier.
+//
+// - implements native.Contract
+func (c Contract) UID() string {
+	return ContractUID
 }
 
 // reportErr prints a log with the actual error while the transaction will

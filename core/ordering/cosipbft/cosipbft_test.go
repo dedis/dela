@@ -43,6 +43,8 @@ import (
 	"go.dedis.ch/dela/testing/fake"
 )
 
+// This test is known to be VERY flaky on Windows.
+// Further investigation is needed.
 func TestService_Scenario_Basic(t *testing.T) {
 	nodes, ro, clean := makeAuthority(t, 5)
 	defer clean()
@@ -84,11 +86,11 @@ func TestService_Scenario_Basic(t *testing.T) {
 		require.Equal(t, uint64(i+3), evt.Index)
 	}
 
-	proof, err := nodes[0].service.GetProof(keyRoster[:])
+	proof, err := nodes[0].service.GetProof(viewchange.GetRosterKey())
 	require.NoError(t, err)
 	require.NotNil(t, proof.GetValue())
 
-	require.Equal(t, keyRoster[:], proof.GetKey())
+	require.Equal(t, viewchange.GetRosterKey(), proof.GetKey())
 	require.NotNil(t, proof.GetValue())
 
 	checkProof(t, proof.(Proof), nodes[0].service)
@@ -933,6 +935,10 @@ type testExec struct {
 
 func (e testExec) Execute(store.Snapshot, execution.Step) error {
 	return e.err
+}
+
+func (e testExec) UID() string {
+	return "TEST"
 }
 
 func makeTx(t *testing.T, nonce uint64, signer crypto.Signer) txn.Transaction {

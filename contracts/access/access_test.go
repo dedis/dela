@@ -16,12 +16,12 @@ import (
 )
 
 func TestExecute(t *testing.T) {
-	contract := NewContract([]byte{}, fakeAccess{err: fake.GetError()}, fakeStore{})
+	contract := NewContract(fakeAccess{err: fake.GetError()}, fakeStore{})
 	err := contract.Execute(fakeStore{}, makeStep(t, CmdArg, ""))
 	require.EqualError(t, err,
 		"identity not authorized: fake.PublicKey ("+fake.GetError().Error()+")")
 
-	contract = NewContract([]byte{}, fakeAccess{}, fakeStore{})
+	contract = NewContract(fakeAccess{}, fakeStore{})
 	err = contract.Execute(fakeStore{}, makeStep(t, CmdArg, ""))
 	require.EqualError(t, err, "'access:command' not found in tx arg")
 
@@ -44,7 +44,7 @@ func TestExecute(t *testing.T) {
 }
 
 func TestGrant(t *testing.T) {
-	contract := NewContract([]byte{}, fakeAccess{}, fakeStore{})
+	contract := NewContract(fakeAccess{}, fakeStore{})
 	err := contract.grant(fakeStore{}, makeStep(t))
 	require.EqualError(t, err, "'access:grant_id' not found in tx arg")
 
@@ -86,7 +86,7 @@ func TestGrant(t *testing.T) {
 		IdentityArg, id))
 	require.NoError(t, err)
 
-	contract = NewContract([]byte{}, fakeAccess{err: fake.GetError()}, fakeStore{})
+	contract = NewContract(fakeAccess{err: fake.GetError()}, fakeStore{})
 	err = contract.grant(fakeStore{}, makeStep(t, GrantIDArg, "deadbeef",
 		GrantContractArg, "fake contract",
 		GrantCommandArg, "fake command",

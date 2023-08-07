@@ -14,8 +14,6 @@ import (
 	"golang.org/x/xerrors"
 )
 
-var aKey = [28]byte{1}
-
 // newStore is the function used to create the new store. It allows us to create
 // a different store in the tests.
 var newStore = func(path string) (accessStore, error) {
@@ -68,7 +66,7 @@ func (m miniController) OnStart(flags cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("failed to create access store: %v", err)
 	}
 
-	contract := accessContract.NewContract(aKey[:], access, accessStore)
+	contract := accessContract.NewContract(access, accessStore)
 	accessContract.RegisterContract(exec, contract)
 
 	inj.Inject(accessStore)

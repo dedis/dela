@@ -14,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	accessContract "go.dedis.ch/dela/contracts/access"
+	"go.dedis.ch/dela/contracts/value"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/crypto/bls"
@@ -63,7 +64,7 @@ func getTest[T require.TestingT](numNode, numTx int) func(t T) {
 		require.NoError(t, err)
 
 		pubKey := signer.GetPublicKey()
-		cred := accessContract.NewCreds(aKey[:])
+		cred := accessContract.NewCreds()
 
 		for _, node := range nodes {
 			node.GetAccessService().Grant(node.(cosiDelaNode).GetAccessStore(), cred, pubKey)
@@ -76,7 +77,7 @@ func getTest[T require.TestingT](numNode, numTx int) func(t T) {
 
 		args := []txn.Arg{
 			{Key: "go.dedis.ch/dela.ContractArg", Value: []byte("go.dedis.ch/dela.Access")},
-			{Key: "access:grant_id", Value: []byte(hex.EncodeToString(valueAccessKey[:]))},
+			{Key: "access:grant_id", Value: []byte(hex.EncodeToString([]byte(value.ContractUID)))},
 			{Key: "access:grant_contract", Value: []byte("go.dedis.ch/dela.Value")},
 			{Key: "access:grant_command", Value: []byte("all")},
 			{Key: "access:identity", Value: []byte(base64.StdEncoding.EncodeToString(pubKeyBuf))},

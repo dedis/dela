@@ -90,6 +90,10 @@ func (exampleContract) Execute(store store.Snapshot, step execution.Step) error 
 	return nil
 }
 
+func (exampleContract) UID() string {
+	return "EXPL"
+}
+
 // inMemoryStore in a simple implementation of a store using an in-memory
 // map.
 //

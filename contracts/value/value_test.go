@@ -17,13 +17,13 @@ import (
 )
 
 func TestExecute(t *testing.T) {
-	contract := NewContract([]byte{}, fakeAccess{err: fake.GetError()})
+	contract := NewContract(fakeAccess{err: fake.GetError()})
 
 	err := contract.Execute(fakeStore{}, makeStep(t))
 	require.EqualError(t, err,
 		"identity not authorized: fake.PublicKey ("+fake.GetError().Error()+")")
 
-	contract = NewContract([]byte{}, fakeAccess{})
+	contract = NewContract(fakeAccess{})
 	err = contract.Execute(fakeStore{}, makeStep(t))
 	require.EqualError(t, err, "'value:command' not found in tx arg")
 
@@ -50,7 +50,7 @@ func TestExecute(t *testing.T) {
 }
 
 func TestCommand_Write(t *testing.T) {
-	contract := NewContract([]byte{}, fakeAccess{})
+	contract := NewContract(fakeAccess{})
 
 	cmd := valueCommand{
 		Contract: &contract,
@@ -82,7 +82,7 @@ func TestCommand_Write(t *testing.T) {
 }
 
 func TestCommand_Read(t *testing.T) {
-	contract := NewContract([]byte{}, fakeAccess{})
+	contract := NewContract(fakeAccess{})
 
 	cmd := valueCommand{
 		Contract: &contract,
@@ -110,7 +110,7 @@ func TestCommand_Read(t *testing.T) {
 }
 
 func TestCommand_Delete(t *testing.T) {
-	contract := NewContract([]byte{}, fakeAccess{})
+	contract := NewContract(fakeAccess{})
 
 	cmd := valueCommand{
 		Contract: &contract,
@@ -142,7 +142,7 @@ func TestCommand_Delete(t *testing.T) {
 }
 
 func TestCommand_List(t *testing.T) {
-	contract := NewContract([]byte{}, fakeAccess{})
+	contract := NewContract(fakeAccess{})
 
 	key1 := "key1"
 	key2 := "key2"
