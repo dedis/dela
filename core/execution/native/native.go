@@ -45,7 +45,8 @@ func NewExecution() *Service {
 // this contract by using the same name as the contract argument.
 func (ns *Service) Set(name string, contract Contract) {
 	// Check if the contract is already registered
-	if _, ok := ns.contracts[name]; ok {
+	_, found := ns.contracts[name]
+	if found {
 		panic(xerrors.Errorf("contract '%s' already registered", name))
 	}
 
@@ -57,7 +58,8 @@ func (ns *Service) Set(name string, contract Contract) {
 	}
 
 	// Check if the contract's UID is already registered
-	if _, ok := ns.contractUIDs[uid]; ok {
+	_, found = ns.contractUIDs[uid]
+	if found {
 		panic(xerrors.Errorf("contract UID '%x' for '%s' already registered", uid, name))
 	}
 
