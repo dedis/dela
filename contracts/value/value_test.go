@@ -76,7 +76,7 @@ func TestCommand_Write(t *testing.T) {
 	_, found = contract.index["dummy"]
 	require.True(t, found)
 
-	res, err := snap.Get([]byte("dummy"))
+	res, err := snap.Get(prefix([]byte("dummy")))
 	require.NoError(t, err)
 	require.Equal(t, "value", string(res))
 }
@@ -98,7 +98,7 @@ func TestCommand_Read(t *testing.T) {
 	require.EqualError(t, err, fake.Err("failed to get key 'dummy'"))
 
 	snap := fake.NewSnapshot()
-	snap.Set(key, []byte("value"))
+	snap.Set(prefix(key), []byte("value"))
 
 	buf := &bytes.Buffer{}
 	cmd.Contract.printer = buf
@@ -127,13 +127,13 @@ func TestCommand_Delete(t *testing.T) {
 	require.EqualError(t, err, fake.Err("failed to delete key '"+keyHex+"'"))
 
 	snap := fake.NewSnapshot()
-	snap.Set(key, []byte("value"))
+	snap.Set(prefix(key), []byte("value"))
 	contract.index[keyStr] = struct{}{}
 
 	err = cmd.delete(snap, makeStep(t, KeyArg, keyStr))
 	require.NoError(t, err)
 
-	res, err := snap.Get(key)
+	res, err := snap.Get(prefix(key))
 	require.Nil(t, err)
 	require.Nil(t, res)
 
@@ -158,8 +158,8 @@ func TestCommand_List(t *testing.T) {
 	}
 
 	snap := fake.NewSnapshot()
-	snap.Set([]byte(key1), []byte("value1"))
-	snap.Set([]byte(key2), []byte("value2"))
+	snap.Set(prefix([]byte(key1)), []byte("value1"))
+	snap.Set(prefix([]byte(key2)), []byte("value2"))
 
 	err := cmd.list(snap)
 	require.NoError(t, err)
