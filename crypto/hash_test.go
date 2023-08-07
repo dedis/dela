@@ -6,6 +6,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestSha256Factory_NewDeprecated(t *testing.T) {
+	factory := NewSha256Factory()
+	require.NotNil(t, factory.New())
+}
+
 func TestSha256Factory_New(t *testing.T) {
 	factory := NewHashFactory(Sha256)
 	require.NotNil(t, factory.New())
