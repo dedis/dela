@@ -272,7 +272,13 @@ func (t *Tree) Persist(b kv.Bucket) error {
 	})
 }
 
-func (t *Tree) toDisk(depth uint16, prefix *big.Int, node TreeNode, b kv.Bucket, clean, store bool) error {
+func (t *Tree) toDisk(
+	depth uint16,
+	prefix *big.Int,
+	node TreeNode,
+	b kv.Bucket,
+	clean, store bool,
+) error {
 	disknode := NewDiskNode(depth, nil, t.context, t.factory)
 
 	if clean {
@@ -370,8 +376,10 @@ func (n *EmptyNode) Delete(key *big.Int, b kv.Bucket) (TreeNode, error) {
 
 // Prepare implements binprefix.TreeNode. It updates the hash of the node if not
 // already set and returns the digest.
-func (n *EmptyNode) Prepare(nonce []byte,
-	prefix *big.Int, b kv.Bucket, fac crypto.HashFactory) ([]byte, error) {
+func (n *EmptyNode) Prepare(
+	nonce []byte,
+	prefix *big.Int, b kv.Bucket, fac crypto.HashFactory,
+) ([]byte, error) {
 
 	if len(n.hash) > 0 {
 		// Hash is already calculated so we can skip and return.
@@ -452,7 +460,12 @@ func NewInteriorNode(depth uint16, prefix *big.Int) *InteriorNode {
 
 // NewInteriorNodeWithChildren creates a new interior node with the two given
 // children.
-func NewInteriorNodeWithChildren(depth uint16, prefix *big.Int, hash []byte, left, right TreeNode) *InteriorNode {
+func NewInteriorNodeWithChildren(
+	depth uint16,
+	prefix *big.Int,
+	hash []byte,
+	left, right TreeNode,
+) *InteriorNode {
 	return &InteriorNode{
 		depth:  depth,
 		prefix: prefix,
@@ -577,8 +590,10 @@ func (n *InteriorNode) load(node TreeNode, key *big.Int, bit uint, b kv.Bucket) 
 
 // Prepare implements binprefix.TreeNode. It updates the hash of the node if not
 // already set and returns the digest.
-func (n *InteriorNode) Prepare(nonce []byte,
-	prefix *big.Int, b kv.Bucket, fac crypto.HashFactory) ([]byte, error) {
+func (n *InteriorNode) Prepare(
+	nonce []byte,
+	prefix *big.Int, b kv.Bucket, fac crypto.HashFactory,
+) ([]byte, error) {
 
 	if len(n.hash) > 0 {
 		// Hash is already calculated so we can skip and return.
@@ -755,8 +770,10 @@ func (n *LeafNode) Delete(key *big.Int, b kv.Bucket) (TreeNode, error) {
 
 // Prepare implements binprefix.TreeNode. It updates the hash of the node if not
 // already set and returns the digest.
-func (n *LeafNode) Prepare(nonce []byte,
-	prefix *big.Int, b kv.Bucket, fac crypto.HashFactory) ([]byte, error) {
+func (n *LeafNode) Prepare(
+	nonce []byte,
+	prefix *big.Int, b kv.Bucket, fac crypto.HashFactory,
+) ([]byte, error) {
 
 	if len(n.hash) > 0 {
 		// Hash is already calculated so we can skip and return.

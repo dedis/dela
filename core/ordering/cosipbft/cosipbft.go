@@ -159,7 +159,7 @@ type ServiceParam struct {
 // NewService starts a new ordering service.
 func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 	tmpl := serviceTemplate{
-		hashFac: crypto.NewSha256Factory(),
+		hashFac: crypto.NewHashFactory(crypto.Sha256),
 		genesis: blockstore.NewGenesisStore(),
 		blocks:  blockstore.NewInMemory(),
 	}
@@ -173,7 +173,8 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 	proc.blocks = tmpl.blocks
 	proc.genesis = tmpl.genesis
 	proc.pool = param.Pool
-	proc.rosterFac = authority.NewFactory(param.Mino.GetAddressFactory(), param.Cosi.GetPublicKeyFactory())
+	proc.rosterFac = authority.NewFactory(param.Mino.GetAddressFactory(),
+		param.Cosi.GetPublicKeyFactory())
 	proc.tree = blockstore.NewTreeCache(param.Tree)
 	proc.access = param.Access
 	proc.logger = dela.Logger.With().Str("addr", param.Mino.GetAddress().String()).Logger()
@@ -193,7 +194,8 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 	proc.pbftsm = pbft.NewStateMachine(pcparam)
 
 	blockFac := types.NewBlockFactory(param.Validation.GetFactory())
-	csFac := authority.NewChangeSetFactory(param.Mino.GetAddressFactory(), param.Cosi.GetPublicKeyFactory())
+	csFac := authority.NewChangeSetFactory(param.Mino.GetAddressFactory(),
+		param.Cosi.GetPublicKeyFactory())
 	linkFac := types.NewLinkFactory(blockFac, param.Cosi.GetSignatureFactory(), csFac)
 	chainFac := types.NewChainFactory(linkFac)
 
@@ -491,15 +493,21 @@ func (s *Service) doRound(ctx context.Context) error {
 	}
 
 	if s.me.Equal(leader) {
-		s.logger.Debug().Msgf("Starting a leader round with a %.1f seconds timeout", timeout.Seconds())
+		s.logger.Debug().Msgf("Starting a leader round with a %.1f seconds timeout",
+			timeout.Seconds())
 		return s.doLeaderRound(ctx, roster, timeout)
 	}
 
-	s.logger.Debug().Msgf("Starting a follower round with a %.1f seconds timeout", timeout.Seconds())
+	s.logger.Debug().Msgf("Starting a follower round with a %.1f seconds timeout",
+		timeout.Seconds())
 	return s.doFollowerRound(ctx, roster)
 }
 
-func (s *Service) doLeaderRound(ctx context.Context, roster authority.Authority, timeout time.Duration) error {
+func (s *Service) doLeaderRound(
+	ctx context.Context,
+	roster authority.Authority,
+	timeout time.Duration,
+) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -507,7 +515,8 @@ func (s *Service) doLeaderRound(ctx context.Context, roster authority.Authority,
 
 	// Send a synchronization to the roster so that they can learn about the
 	// latest block of the chain.
-	err := s.sync.Sync(ctx, roster, blocksync.Config{MinHard: threshold.ByzantineThreshold(roster.Len())})
+	err := s.sync.Sync(ctx, roster,
+		blocksync.Config{MinHard: threshold.ByzantineThreshold(roster.Len())})
 	if err != nil {
 		return xerrors.Errorf("sync failed: %v", err)
 	}
@@ -556,7 +565,8 @@ func (s *Service) doFollowerRound(ctx context.Context, roster authority.Authorit
 		for resp := range resps {
 			_, err = resp.GetMessageOrError()
 			if err != nil {
-				s.logger.Warn().Err(err).Str("to", resp.GetFrom().String()).Msg("view propagation failure")
+				s.logger.Warn().Err(err).Str("to",
+					resp.GetFrom().String()).Msg("view propagation failure")
 			}
 		}
 
@@ -712,7 +722,11 @@ func (s *Service) prepareViews() map[mino.Address]types.ViewMessage {
 	return msgs
 }
 
-func (s *Service) prepareData(txs []txn.Transaction) (data validation.Result, id types.Digest, err error) {
+func (s *Service) prepareData(txs []txn.Transaction) (
+	data validation.Result,
+	id types.Digest,
+	err error,
+) {
 	var stageTree hashtree.StagingTree
 
 	stageTree, err = s.tree.Get().Stage(func(snap store.Snapshot) error {
@@ -747,7 +761,8 @@ func (s *Service) wakeUp(ctx context.Context, ro authority.Authority) error {
 		return xerrors.Errorf("read genesis failed: %v", err)
 	}
 
-	resps, err := s.rpc.Call(ctx, types.NewGenesisMessage(genesis), mino.NewAddresses(changeset.GetNewAddresses()...))
+	resps, err := s.rpc.Call(ctx, types.NewGenesisMessage(genesis),
+		mino.NewAddresses(changeset.GetNewAddresses()...))
 	if err != nil {
 		return xerrors.Errorf("rpc failed: %v", err)
 	}

@@ -28,7 +28,7 @@ type InMemoryStore struct {
 func NewInMemoryStore() *InMemoryStore {
 	return &InMemoryStore{
 		certs:       &sync.Map{},
-		hashFactory: crypto.NewSha256Factory(),
+		hashFactory: crypto.NewHashFactory(crypto.Sha256),
 	}
 }
 

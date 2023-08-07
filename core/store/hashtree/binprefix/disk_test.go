@@ -119,7 +119,8 @@ func TestDiskNode_Prepare(t *testing.T) {
 
 	bucket := newFakeBucket(node.prepareKey(big.NewInt(0)), data)
 
-	hash, err := node.Prepare([]byte{1}, big.NewInt(0), bucket, crypto.NewSha256Factory())
+	hash, err := node.Prepare([]byte{1}, big.NewInt(0), bucket,
+		crypto.NewHashFactory(crypto.Sha256))
 	require.NoError(t, err)
 	require.Len(t, hash, 32)
 	require.Equal(t, hash, node.hash)
@@ -129,7 +130,7 @@ func TestDiskNode_Prepare(t *testing.T) {
 	require.EqualError(t, err, "failed to load node: prefix 0 (depth 0) not in database")
 
 	bucket.errSet = fake.GetError()
-	_, err = node.Prepare([]byte{}, big.NewInt(0), bucket, crypto.NewSha256Factory())
+	_, err = node.Prepare([]byte{}, big.NewInt(0), bucket, crypto.NewHashFactory(crypto.Sha256))
 	require.EqualError(t, err, fake.Err("failed to store node: failed to set key"))
 
 	inter := NewInteriorNode(0, big.NewInt(0))
@@ -138,7 +139,7 @@ func TestDiskNode_Prepare(t *testing.T) {
 
 	bucket = newFakeBucket(node.prepareKey(big.NewInt(0)), data)
 
-	_, err = node.Prepare([]byte{}, big.NewInt(0), bucket, crypto.NewSha256Factory())
+	_, err = node.Prepare([]byte{}, big.NewInt(0), bucket, crypto.NewHashFactory(crypto.Sha256))
 	require.EqualError(t, err, "failed to load node: prefix 0 (depth 1) not in database")
 }
 

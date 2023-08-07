@@ -71,7 +71,7 @@ func NewBlock(ctx context.Context, data validation.Result, opts ...BlockOption) 
 		Block: Block{
 			data: data,
 		},
-		hashFactory: crypto.NewSha256Factory(),
+		hashFactory: crypto.NewHashFactory(crypto.Sha256),
 		difficulty:  Difficulty,
 	}
 

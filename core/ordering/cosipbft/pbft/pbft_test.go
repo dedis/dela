@@ -272,7 +272,7 @@ func TestStateMachine_FailReadRosterInStageTree_Prepare(t *testing.T) {
 		},
 		genesis: blockstore.NewGenesisStore(),
 		blocks:  blockstore.NewInMemory(),
-		hashFac: crypto.NewSha256Factory(),
+		hashFac: crypto.NewHashFactory(crypto.Sha256),
 		watcher: core.NewWatcher(),
 	}
 
@@ -564,7 +564,7 @@ func TestStateMachine_FailStoreBlock_Finalize(t *testing.T) {
 		genesis:     blockstore.NewGenesisStore(),
 		blocks:      badBlockStore{},
 		db:          db,
-		hashFac:     crypto.NewSha256Factory(),
+		hashFac:     crypto.NewHashFactory(crypto.Sha256),
 		round: round{
 			prepareSig: fake.Signature{},
 			tree:       tree.(hashtree.StagingTree),

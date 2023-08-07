@@ -89,7 +89,7 @@ func NewGenesis(ro authority.Authority, opts ...GenesisOption) (Genesis, error) 
 			roster:   ro,
 			treeRoot: Digest{},
 		},
-		hashFactory: crypto.NewSha256Factory(),
+		hashFactory: crypto.NewHashFactory(crypto.Sha256),
 	}
 
 	for _, opt := range opts {
@@ -231,7 +231,7 @@ func NewBlock(data validation.Result, opts ...BlockOption) (Block, error) {
 			data:     data,
 			treeRoot: Digest{},
 		},
-		hashFactory: crypto.NewSha256Factory(),
+		hashFactory: crypto.NewHashFactory(crypto.Sha256),
 	}
 
 	for _, opt := range opts {

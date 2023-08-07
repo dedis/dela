@@ -33,11 +33,11 @@ func TestBlock_Prepare(t *testing.T) {
 
 	ctx := context.Background()
 
-	err := block.prepare(ctx, crypto.NewSha256Factory(), 1)
+	err := block.prepare(ctx, crypto.NewHashFactory(crypto.Sha256), 1)
 	require.NoError(t, err)
 	require.Len(t, block.hash, 32)
 
-	err = block.prepare(ctx, crypto.NewSha256Factory(), 0)
+	err = block.prepare(ctx, crypto.NewHashFactory(crypto.Sha256), 0)
 	require.NoError(t, err)
 	require.Len(t, block.hash, 32)
 
@@ -48,7 +48,7 @@ func TestBlock_Prepare(t *testing.T) {
 	require.EqualError(t, err, fake.Err("failed to write root"))
 
 	block.data = fakeData{err: fake.GetError()}
-	err = block.prepare(ctx, crypto.NewSha256Factory(), 0)
+	err = block.prepare(ctx, crypto.NewHashFactory(crypto.Sha256), 0)
 	require.EqualError(t, err, fake.Err("failed to fingerprint data"))
 
 	block.data = fakeData{}

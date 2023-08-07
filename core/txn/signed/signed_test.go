@@ -172,7 +172,7 @@ func TestManager_Make(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to create tx: ")
 
-	mgr.hashFac = crypto.NewSha256Factory()
+	mgr.hashFac = crypto.NewHashFactory(crypto.Sha256)
 	mgr.signer = fake.NewBadSigner()
 	_, err = mgr.Make()
 	require.EqualError(t, err, fake.Err("failed to sign: signer"))

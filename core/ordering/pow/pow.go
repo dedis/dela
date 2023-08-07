@@ -46,7 +46,7 @@ func NewService(pool pool.Pool, val validation.Service, trie hashtree.Tree) *Ser
 		pool:        pool,
 		validation:  val,
 		epochs:      []epoch{{store: trie}},
-		hashFactory: crypto.NewSha256Factory(),
+		hashFactory: crypto.NewHashFactory(crypto.Sha256),
 		difficulty:  1,
 		watcher:     core.NewWatcher(),
 	}

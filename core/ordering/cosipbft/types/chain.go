@@ -85,7 +85,7 @@ func NewForwardLink(from, to Digest, opts ...LinkOption) (Link, error) {
 			to:        to,
 			changeset: authority.NewChangeSet(),
 		},
-		hashFac: crypto.NewSha256Factory(),
+		hashFac: crypto.NewHashFactory(crypto.Sha256),
 	}
 
 	for _, opt := range opts {
@@ -230,8 +230,10 @@ type linkFac struct {
 }
 
 // NewLinkFactory creates a new block link factory.
-func NewLinkFactory(blockFac serde.Factory,
-	sigFac crypto.SignatureFactory, csFac authority.ChangeSetFactory) LinkFactory {
+func NewLinkFactory(
+	blockFac serde.Factory,
+	sigFac crypto.SignatureFactory, csFac authority.ChangeSetFactory,
+) LinkFactory {
 
 	return linkFac{
 		blockFac: blockFac,

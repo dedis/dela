@@ -260,7 +260,7 @@ func TestService_Setup(t *testing.T) {
 
 	srvc := &Service{processor: newProcessor()}
 	srvc.rpc = rpc
-	srvc.hashFactory = crypto.NewSha256Factory()
+	srvc.hashFactory = crypto.NewHashFactory(crypto.Sha256)
 	srvc.tree = blockstore.NewTreeCache(fakeTree{})
 	srvc.genesis = blockstore.NewGenesisStore()
 	srvc.access = fakeAccess{}
@@ -623,7 +623,7 @@ func TestService_DoPBFT(t *testing.T) {
 	srvc.val = fakeValidation{}
 	srvc.blocks = blockstore.NewInMemory()
 	srvc.genesis = blockstore.NewGenesisStore()
-	srvc.hashFactory = crypto.NewSha256Factory()
+	srvc.hashFactory = crypto.NewHashFactory(crypto.Sha256)
 	srvc.pbftsm = fakeSM{}
 	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 	srvc.actor = fakeCosiActor{}
@@ -707,7 +707,7 @@ func TestService_FailPrepare_DoPBFT(t *testing.T) {
 	srvc.tree = blockstore.NewTreeCache(fakeTree{})
 	srvc.pbftsm = fakeSM{err: fake.GetError()}
 	srvc.pool = mem.NewPool()
-	srvc.hashFactory = crypto.NewSha256Factory()
+	srvc.hashFactory = crypto.NewHashFactory(crypto.Sha256)
 	srvc.blocks = blockstore.NewInMemory()
 
 	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
@@ -725,7 +725,7 @@ func TestService_FailReadRoster_DoPBFT(t *testing.T) {
 	srvc.tree = blockstore.NewTreeCache(fakeTree{err: fake.GetError()})
 	srvc.pbftsm = fakeSM{}
 	srvc.pool = mem.NewPool()
-	srvc.hashFactory = crypto.NewSha256Factory()
+	srvc.hashFactory = crypto.NewHashFactory(crypto.Sha256)
 	srvc.blocks = blockstore.NewInMemory()
 
 	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
@@ -743,7 +743,7 @@ func TestService_FailPrepareSig_DoPBFT(t *testing.T) {
 	srvc.tree = blockstore.NewTreeCache(fakeTree{})
 	srvc.pbftsm = fakeSM{}
 	srvc.pool = mem.NewPool()
-	srvc.hashFactory = crypto.NewSha256Factory()
+	srvc.hashFactory = crypto.NewHashFactory(crypto.Sha256)
 	srvc.blocks = blockstore.NewInMemory()
 	srvc.actor = fakeCosiActor{err: fake.GetError()}
 	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
@@ -763,7 +763,7 @@ func TestService_FailCommitSign_DoPBFT(t *testing.T) {
 	srvc.tree = blockstore.NewTreeCache(fakeTree{})
 	srvc.pbftsm = fakeSM{}
 	srvc.pool = mem.NewPool()
-	srvc.hashFactory = crypto.NewSha256Factory()
+	srvc.hashFactory = crypto.NewHashFactory(crypto.Sha256)
 	srvc.blocks = blockstore.NewInMemory()
 	srvc.actor = fakeCosiActor{
 		err:     fake.GetError(),
@@ -786,7 +786,7 @@ func TestService_FailPropagation_DoPBFT(t *testing.T) {
 	srvc.tree = blockstore.NewTreeCache(fakeTree{})
 	srvc.pbftsm = fakeSM{}
 	srvc.pool = mem.NewPool()
-	srvc.hashFactory = crypto.NewSha256Factory()
+	srvc.hashFactory = crypto.NewHashFactory(crypto.Sha256)
 	srvc.blocks = blockstore.NewInMemory()
 	srvc.actor = fakeCosiActor{}
 	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
@@ -810,7 +810,7 @@ func TestService_FailWakeUp_DoPBFT(t *testing.T) {
 	srvc.tree = blockstore.NewTreeCache(fakeTree{})
 	srvc.pbftsm = fakeSM{}
 	srvc.pool = mem.NewPool()
-	srvc.hashFactory = crypto.NewSha256Factory()
+	srvc.hashFactory = crypto.NewHashFactory(crypto.Sha256)
 	srvc.blocks = blockstore.NewInMemory()
 	srvc.actor = fakeCosiActor{}
 	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})

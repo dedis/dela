@@ -74,14 +74,17 @@ func WithHashFactory(f crypto.HashFactory) TransactionOption {
 }
 
 // NewTransaction creates a new transaction with the provided nonce.
-func NewTransaction(nonce uint64, pk crypto.PublicKey, opts ...TransactionOption) (*Transaction, error) {
+func NewTransaction(nonce uint64, pk crypto.PublicKey, opts ...TransactionOption) (
+	*Transaction,
+	error,
+) {
 	tmpl := template{
 		Transaction: Transaction{
 			nonce:  nonce,
 			pubkey: pk,
 			args:   make(map[string][]byte),
 		},
-		hashFactory: crypto.NewSha256Factory(),
+		hashFactory: crypto.NewHashFactory(crypto.Sha256),
 	}
 
 	for _, opt := range opts {
@@ -289,7 +292,7 @@ func NewManager(signer crypto.Signer, client Client) *TransactionManager {
 		client:  client,
 		signer:  signer,
 		nonce:   0,
-		hashFac: crypto.NewSha256Factory(),
+		hashFac: crypto.NewHashFactory(crypto.Sha256),
 	}
 }
 

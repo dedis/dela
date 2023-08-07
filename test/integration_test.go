@@ -87,7 +87,7 @@ func getTest[T require.TestingT](numNode, numTx int) func(t T) {
 		require.NoError(t, err)
 
 		for i := 0; i < numTx; i++ {
-			key := make([]byte, 32)
+			key := make([]byte, 28) // only 224 bits are available
 
 			_, err = rand.Read(key)
 			require.NoError(t, err)
@@ -102,7 +102,7 @@ func getTest[T require.TestingT](numNode, numTx int) func(t T) {
 			err = addAndWait(t, timeout, manager, nodes[0].(cosiDelaNode), args...)
 			require.NoError(t, err)
 
-			proof, err := nodes[0].GetOrdering().GetProof(key)
+			proof, err := nodes[0].GetOrdering().GetProof(append([]byte("VALU"), key...))
 			require.NoError(t, err)
 			require.Equal(t, []byte("value1"), proof.GetValue())
 		}
@@ -112,7 +112,13 @@ func getTest[T require.TestingT](numNode, numTx int) func(t T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-func addAndWait(t require.TestingT, to time.Duration, manager txn.Manager, node cosiDelaNode, args ...txn.Arg) error {
+func addAndWait(
+	t require.TestingT,
+	to time.Duration,
+	manager txn.Manager,
+	node cosiDelaNode,
+	args ...txn.Arg,
+) error {
 	manager.Sync()
 
 	tx, err := manager.Make(args...)

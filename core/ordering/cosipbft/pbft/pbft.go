@@ -219,7 +219,7 @@ func NewStateMachine(param StateMachineParam) StateMachine {
 	return &pbftsm{
 		logger:      param.Logger,
 		watcher:     core.NewWatcher(),
-		hashFac:     crypto.NewSha256Factory(),
+		hashFac:     crypto.NewHashFactory(crypto.Sha256),
 		val:         param.Validation,
 		verifierFac: param.VerifierFactory,
 		signer:      param.Signer,
@@ -622,7 +622,12 @@ func (m *pbftsm) Watch(ctx context.Context) <-chan State {
 	return ch
 }
 
-func (m *pbftsm) verifyPrepare(tree hashtree.Tree, block types.Block, r *round, ro authority.Authority) error {
+func (m *pbftsm) verifyPrepare(
+	tree hashtree.Tree,
+	block types.Block,
+	r *round,
+	ro authority.Authority,
+) error {
 	stageTree, err := tree.Stage(func(snap store.Snapshot) error {
 		txs := block.GetTransactions()
 		rejected := 0

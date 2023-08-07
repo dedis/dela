@@ -3,6 +3,7 @@ package binprefix
 import (
 	"bytes"
 	"crypto/rand"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -145,7 +146,7 @@ func TestMerkleTree_Random_IntegrationTest(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, value, path.GetValue())
 
-			root, err := path.(Path).computeRoot(crypto.NewSha256Factory())
+			root, err := path.(Path).computeRoot(crypto.NewHashFactory(crypto.Sha256))
 			require.NoError(t, err)
 			require.Equal(t, tree.GetRoot(), root)
 		}
@@ -161,7 +162,7 @@ func TestMerkleTree_Random_IntegrationTest(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, value, path.GetValue())
 
-			root, err := path.(Path).computeRoot(crypto.NewSha256Factory())
+			root, err := path.(Path).computeRoot(crypto.NewHashFactory(crypto.Sha256))
 			require.NoError(t, err)
 			require.Equal(t, newTree.GetRoot(), root)
 		}
@@ -204,7 +205,7 @@ func TestMerkleTree_Get(t *testing.T) {
 	require.Nil(t, value)
 
 	_, err = tree.Get(make([]byte, MaxDepth+1))
-	require.EqualError(t, err, "couldn't search key: mismatch key length 33 > 32")
+	require.EqualError(t, err, couldntError("search key"))
 
 	tree.tx = wrongTx{}
 	_, err = tree.Get([]byte{})
@@ -254,7 +255,7 @@ func TestMerkleTree_GetPath(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = tree.GetPath(make([]byte, MaxDepth+1))
-	require.EqualError(t, err, "couldn't search key: mismatch key length 33 > 32")
+	require.EqualError(t, err, couldntError("search key"))
 }
 
 func TestMerkleTree_Stage(t *testing.T) {
@@ -300,7 +301,7 @@ func TestWritableMerkleTree_Set(t *testing.T) {
 	require.Equal(t, 1, tree.tree.Len())
 
 	err = tree.Set(make([]byte, MaxDepth+1), nil)
-	require.EqualError(t, err, "couldn't insert pair: mismatch key length 33 > 32")
+	require.EqualError(t, err, couldntError("insert pair"))
 }
 
 func TestWritableMerkleTree_Delete(t *testing.T) {
@@ -310,7 +311,7 @@ func TestWritableMerkleTree_Delete(t *testing.T) {
 	require.NoError(t, err)
 
 	err = tree.Delete(make([]byte, MaxDepth+1))
-	require.EqualError(t, err, "couldn't delete key: mismatch key length 33 > 32")
+	require.EqualError(t, err, couldntError("delete key"))
 }
 
 // -----------------------------------------------------------------------------
@@ -336,4 +337,8 @@ func (tx badTx) GetBucketOrCreate([]byte) (kv.Bucket, error) {
 
 type wrongTx struct {
 	store.Transaction
+}
+
+func couldntError(op string) string {
+	return fmt.Sprintf("couldn't %v: %v", op, mismatchKeyLength())
 }
