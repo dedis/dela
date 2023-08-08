@@ -65,12 +65,6 @@ func (snap *InMemorySnapshot) Delete(key []byte) error {
 		return snap.ErrDelete
 	}
 
-	_, found := snap.values[string(key)]
-	if !found {
-		// is this behaviour correct or should it be ignored ?
-		return xerrors.Errorf("key not found: %s", key)
-	}
-
 	delete(snap.values, string(key))
 
 	return nil
