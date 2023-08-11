@@ -1,1 +1,52 @@
-[*]charset = utf-8end_of_line = lfindent_size = 4indent_style = spaceinsert_final_newline = falsemax_line_length = 100tab_width = 4ij_continuation_indent_size = 4ij_formatter_off_tag = @formatter:offij_formatter_on_tag = @formatter:onij_formatter_tags_enabled = trueij_smart_tabs = falseij_visual_guides = 80ij_wrap_on_typing = false[.editorconfig]ij_editorconfig_align_group_field_declarations = falseij_editorconfig_space_after_colon = falseij_editorconfig_space_after_comma = trueij_editorconfig_space_before_colon = falseij_editorconfig_space_before_comma = falseij_editorconfig_spaces_around_assignment_operators = true[*.go]indent_style = tabij_smart_tabs = trueij_go_GROUP_CURRENT_PROJECT_IMPORTS = trueij_go_add_leading_space_to_comments = trueij_go_add_parentheses_for_single_import = falseij_go_call_parameters_new_line_after_left_paren = falseij_go_call_parameters_right_paren_on_new_line = falseij_go_call_parameters_wrap = normalij_go_fill_paragraph_width = 80ij_go_group_stdlib_imports = falseij_go_import_sorting = goimportsij_go_keep_indents_on_empty_lines = falseij_go_local_group_mode = projectij_go_move_all_imports_in_one_declaration = trueij_go_move_all_stdlib_imports_in_one_group = falseij_go_remove_redundant_import_aliases = trueij_go_run_go_fmt_on_reformat = trueij_go_use_back_quotes_for_imports = falseij_go_wrap_comp_lit = on_every_itemij_go_wrap_comp_lit_newline_after_lbrace = trueij_go_wrap_comp_lit_newline_before_rbrace = trueij_go_wrap_func_params = on_every_itemij_go_wrap_func_params_newline_after_lparen = trueij_go_wrap_func_params_newline_before_rparen = trueij_go_wrap_func_result = on_every_itemij_go_wrap_func_result_newline_after_lparen = trueij_go_wrap_func_result_newline_before_rparen = true
+[*]
+charset = utf-8
+end_of_line = lf
+indent_size = 4
+indent_style = space
+insert_final_newline = false
+max_line_length = 100
+tab_width = 4
+ij_continuation_indent_size = 4
+ij_formatter_off_tag = @formatter:off
+ij_formatter_on_tag = @formatter:on
+ij_formatter_tags_enabled = true
+ij_smart_tabs = false
+ij_visual_guides = 80
+ij_wrap_on_typing = false
+
+[.editorconfig]
+ij_editorconfig_align_group_field_declarations = false
+ij_editorconfig_space_after_colon = false
+ij_editorconfig_space_after_comma = true
+ij_editorconfig_space_before_colon = false
+ij_editorconfig_space_before_comma = false
+ij_editorconfig_spaces_around_assignment_operators = true
+
+[*.go]
+indent_style = tab
+ij_smart_tabs = true
+ij_go_GROUP_CURRENT_PROJECT_IMPORTS = true
+ij_go_add_leading_space_to_comments = true
+ij_go_add_parentheses_for_single_import = false
+ij_go_call_parameters_new_line_after_left_paren = false
+ij_go_call_parameters_right_paren_on_new_line = false
+ij_go_call_parameters_wrap = normal
+ij_go_fill_paragraph_width = 80
+ij_go_group_stdlib_imports = false
+ij_go_import_sorting = goimports
+ij_go_keep_indents_on_empty_lines = false
+ij_go_local_group_mode = project
+ij_go_move_all_imports_in_one_declaration = true
+ij_go_move_all_stdlib_imports_in_one_group = false
+ij_go_remove_redundant_import_aliases = true
+ij_go_run_go_fmt_on_reformat = true
+ij_go_use_back_quotes_for_imports = false
+ij_go_wrap_comp_lit = on_every_item
+ij_go_wrap_comp_lit_newline_after_lbrace = true
+ij_go_wrap_comp_lit_newline_before_rbrace = true
+ij_go_wrap_func_params = on_every_item
+ij_go_wrap_func_params_newline_after_lparen = true
+ij_go_wrap_func_params_newline_before_rparen = true
+ij_go_wrap_func_result = on_every_item
+ij_go_wrap_func_result_newline_after_lparen = true
+ij_go_wrap_func_result_newline_before_rparen = true
