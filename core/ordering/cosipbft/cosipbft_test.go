@@ -64,25 +64,25 @@ func TestService_Scenario_Basic(t *testing.T) {
 	err = nodes[0].pool.Add(makeTx(t, 0, signer))
 	require.NoError(t, err)
 
-	evt := waitEvent(t, events, 2*DefaultRoundTimeout)
+	evt := waitEvent(t, events, 3*DefaultRoundTimeout)
 	require.Equal(t, uint64(0), evt.Index)
 
 	err = nodes[1].pool.Add(makeTx(t, 1, signer))
 	require.NoError(t, err)
 
-	evt = waitEvent(t, events, 20*DefaultRoundTimeout)
+	evt = waitEvent(t, events, 10*DefaultRoundTimeout)
 	require.Equal(t, uint64(1), evt.Index)
 
 	err = nodes[1].pool.Add(makeRosterTx(t, 2, ro, signer))
 	require.NoError(t, err)
 
-	evt = waitEvent(t, events, 20*DefaultRoundTimeout)
+	evt = waitEvent(t, events, 10*DefaultRoundTimeout)
 	require.Equal(t, uint64(2), evt.Index)
 	for i := 0; i < 3; i++ {
 		err = nodes[1].pool.Add(makeTx(t, uint64(i+3), signer))
 		require.NoError(t, err)
 
-		evt = waitEvent(t, events, 20*DefaultRoundTimeout)
+		evt = waitEvent(t, events, 10*DefaultRoundTimeout)
 		require.Equal(t, uint64(i+3), evt.Index)
 	}
 
