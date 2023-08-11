@@ -11,6 +11,9 @@ import (
 	"golang.org/x/xerrors"
 )
 
+// 4 bytes used to prefix DARC keys in the K/V store.
+const ContractUID = "DARC"
+
 // Service is an implementation of an access service that will allow one to
 // store and verify access for a group of identities.
 //
@@ -76,7 +79,7 @@ func (srvc Service) Grant(
 		return xerrors.Errorf("failed to serialize: %v", err)
 	}
 
-	err = store.Set(prefixKey(cred.GetID()), value)
+	err = store.Set(cred.GetID(), value)
 	if err != nil {
 		return xerrors.Errorf("store failed to write: %v", err)
 	}
@@ -85,7 +88,7 @@ func (srvc Service) Grant(
 }
 
 func (srvc Service) readPermission(store store.Readable, key []byte) (types.Permission, error) {
-	value, err := store.Get(prefixKey(key))
+	value, err := store.Get(key)
 	if err != nil {
 		return nil, xerrors.Errorf("while reading: %v", err)
 	}
@@ -100,11 +103,4 @@ func (srvc Service) readPermission(store store.Readable, key []byte) (types.Perm
 	}
 
 	return perm, nil
-}
-
-// 4 bytes used to prefix DARC keys in the K/V store.
-const darcPrefix = "DARC"
-
-func prefixKey(key []byte) []byte {
-	return append([]byte(darcPrefix), key...)
 }

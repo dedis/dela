@@ -13,6 +13,7 @@ import (
 	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/execution/native"
 	"go.dedis.ch/dela/core/store"
+	"go.dedis.ch/dela/core/store/prefixed"
 	"golang.org/x/xerrors"
 )
 
@@ -125,6 +126,8 @@ func (c Contract) Execute(snap store.Snapshot, step execution.Step) error {
 		return xerrors.Errorf("'%s' not found in tx arg", CmdArg)
 	}
 
+	snap = prefixed.NewSnapshot(ContractUID, snap)
+
 	switch Command(cmd) {
 	case CmdWrite:
 		err := c.cmd.write(snap, step)
@@ -179,8 +182,7 @@ func (c valueCommand) write(snap store.Snapshot, step execution.Step) error {
 		return xerrors.Errorf("'%s' not found in tx arg", ValueArg)
 	}
 
-	snapKey := prefix(key)
-	err := snap.Set(snapKey, value)
+	err := snap.Set(key, value)
 	if err != nil {
 		return xerrors.Errorf("failed to set value: %v", err)
 	}
@@ -189,7 +191,7 @@ func (c valueCommand) write(snap store.Snapshot, step execution.Step) error {
 
 	dela.Logger.Info().
 		Str("contract", ContractName).
-		Msgf("setting value %x=%s", snapKey, value)
+		Msgf("setting value %x=%s", key, value)
 
 	return nil
 }
@@ -201,7 +203,7 @@ func (c valueCommand) read(snap store.Snapshot, step execution.Step) error {
 		return xerrors.Errorf("'%s' not found in tx arg", KeyArg)
 	}
 
-	val, err := snap.Get(prefix(key))
+	val, err := snap.Get(key)
 	if err != nil {
 		return xerrors.Errorf("failed to get key '%s': %v", key, err)
 	}
@@ -218,8 +220,7 @@ func (c valueCommand) delete(snap store.Snapshot, step execution.Step) error {
 		return xerrors.Errorf("'%s' not found in tx arg", KeyArg)
 	}
 
-	snapKey := prefix(key)
-	err := snap.Delete(snapKey)
+	err := snap.Delete(key)
 	if err != nil {
 		return xerrors.Errorf("failed to delete key '%x': %v", key, err)
 	}
@@ -228,7 +229,7 @@ func (c valueCommand) delete(snap store.Snapshot, step execution.Step) error {
 
 	dela.Logger.Info().
 		Str("contract", ContractName).
-		Msgf("deleting value %x", snapKey)
+		Msgf("deleting value %x", key)
 
 	return nil
 }
@@ -238,7 +239,7 @@ func (c valueCommand) list(snap store.Snapshot) error {
 	res := []string{}
 
 	for k := range c.index {
-		v, err := snap.Get(prefix([]byte(k)))
+		v, err := snap.Get([]byte(k))
 		if err != nil {
 			return xerrors.Errorf("failed to get key '%s': %v", k, err)
 		}
@@ -261,8 +262,4 @@ func (h infoLog) Write(p []byte) (int, error) {
 	dela.Logger.Info().Msg(string(p))
 
 	return len(p), nil
-}
-
-func prefix(key []byte) []byte {
-	return append([]byte(ContractUID), key...)
 }

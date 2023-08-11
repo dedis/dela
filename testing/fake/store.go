@@ -139,8 +139,8 @@ func (tx dbTx) GetBucketOrCreate(name []byte) (kv.Bucket, error) {
 	return bucket, tx.err
 }
 
-// GetBucketOrCreate implements store.Transaction.
-func (dbTx) OnCommit(fn func()) {}
+// OnCommit implements store.Transaction.
+func (dbTx) OnCommit(_ func()) {}
 
 // Bucket is a fake key/value storage bucket.
 //

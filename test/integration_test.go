@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	accessContract "go.dedis.ch/dela/contracts/access"
 	"go.dedis.ch/dela/contracts/value"
+	"go.dedis.ch/dela/core/store/prefixed"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/crypto/bls"
@@ -88,7 +89,7 @@ func getTest[T require.TestingT](numNode, numTx int) func(t T) {
 		require.NoError(t, err)
 
 		for i := 0; i < numTx; i++ {
-			key := make([]byte, 28) // only 224 bits are available
+			key := make([]byte, 32) // only 224 bits are available
 
 			_, err = rand.Read(key)
 			require.NoError(t, err)
@@ -103,7 +104,8 @@ func getTest[T require.TestingT](numNode, numTx int) func(t T) {
 			err = addAndWait(t, timeout, manager, nodes[0].(cosiDelaNode), args...)
 			require.NoError(t, err)
 
-			proof, err := nodes[0].GetOrdering().GetProof(append([]byte("VALU"), key...))
+			prefixedKey := prefixed.NewPrefixedKey([]byte("VALU"), key)
+			proof, err := nodes[0].GetOrdering().GetProof(prefixedKey)
 			require.NoError(t, err)
 			require.Equal(t, []byte("value1"), proof.GetValue())
 		}
@@ -120,7 +122,8 @@ func addAndWait(
 	node cosiDelaNode,
 	args ...txn.Arg,
 ) error {
-	manager.Sync()
+	err := manager.Sync()
+	require.NoError(t, err)
 
 	tx, err := manager.Make(args...)
 	if err != nil {
@@ -139,9 +142,9 @@ func addAndWait(
 
 	for event := range events {
 		for _, result := range event.Transactions {
-			tx := result.GetTransaction()
+			txDone := result.GetTransaction()
 
-			if bytes.Equal(tx.GetID(), tx.GetID()) {
+			if bytes.Equal(tx.GetID(), txDone.GetID()) {
 				accepted, err := event.Transactions[0].GetStatus()
 				require.Empty(t, err)
 
