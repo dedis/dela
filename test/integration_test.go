@@ -89,7 +89,7 @@ func getTest[T require.TestingT](numNode, numTx int) func(t T) {
 		require.NoError(t, err)
 
 		for i := 0; i < numTx; i++ {
-			key := make([]byte, 32) // only 224 bits are available
+			key := make([]byte, 32)
 
 			_, err = rand.Read(key)
 			require.NoError(t, err)
@@ -104,7 +104,7 @@ func getTest[T require.TestingT](numNode, numTx int) func(t T) {
 			err = addAndWait(t, timeout, manager, nodes[0].(cosiDelaNode), args...)
 			require.NoError(t, err)
 
-			prefixedKey := prefixed.NewPrefixedKey([]byte("VALU"), key)
+			prefixedKey := prefixed.NewPrefixedKey([]byte(value.ContractUID), key)
 			proof, err := nodes[0].GetOrdering().GetProof(prefixedKey)
 			require.NoError(t, err)
 			require.Equal(t, []byte("value1"), proof.GetValue())
