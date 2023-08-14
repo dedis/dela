@@ -14,6 +14,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	accessContract "go.dedis.ch/dela/contracts/access"
+	"go.dedis.ch/dela/contracts/value"
+	"go.dedis.ch/dela/core/store/prefixed"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/crypto/bls"
@@ -63,7 +65,7 @@ func getTest[T require.TestingT](numNode, numTx int) func(t T) {
 		require.NoError(t, err)
 
 		pubKey := signer.GetPublicKey()
-		cred := accessContract.NewCreds(aKey[:])
+		cred := accessContract.NewCreds()
 
 		for _, node := range nodes {
 			node.GetAccessService().Grant(node.(cosiDelaNode).GetAccessStore(), cred, pubKey)
@@ -76,7 +78,7 @@ func getTest[T require.TestingT](numNode, numTx int) func(t T) {
 
 		args := []txn.Arg{
 			{Key: "go.dedis.ch/dela.ContractArg", Value: []byte("go.dedis.ch/dela.Access")},
-			{Key: "access:grant_id", Value: []byte(hex.EncodeToString(valueAccessKey[:]))},
+			{Key: "access:grant_id", Value: []byte(hex.EncodeToString([]byte(value.ContractUID)))},
 			{Key: "access:grant_contract", Value: []byte("go.dedis.ch/dela.Value")},
 			{Key: "access:grant_command", Value: []byte("all")},
 			{Key: "access:identity", Value: []byte(base64.StdEncoding.EncodeToString(pubKeyBuf))},
@@ -87,7 +89,7 @@ func getTest[T require.TestingT](numNode, numTx int) func(t T) {
 		require.NoError(t, err)
 
 		for i := 0; i < numTx; i++ {
-			key := make([]byte, 28) // only 224 bits are available
+			key := make([]byte, 32)
 
 			_, err = rand.Read(key)
 			require.NoError(t, err)
@@ -102,7 +104,8 @@ func getTest[T require.TestingT](numNode, numTx int) func(t T) {
 			err = addAndWait(t, timeout, manager, nodes[0].(cosiDelaNode), args...)
 			require.NoError(t, err)
 
-			proof, err := nodes[0].GetOrdering().GetProof(append([]byte("VALU"), key...))
+			prefixedKey := prefixed.NewPrefixedKey([]byte(value.ContractUID), key)
+			proof, err := nodes[0].GetOrdering().GetProof(prefixedKey)
 			require.NoError(t, err)
 			require.Equal(t, []byte("value1"), proof.GetValue())
 		}
@@ -119,7 +122,8 @@ func addAndWait(
 	node cosiDelaNode,
 	args ...txn.Arg,
 ) error {
-	manager.Sync()
+	err := manager.Sync()
+	require.NoError(t, err)
 
 	tx, err := manager.Make(args...)
 	if err != nil {
@@ -138,9 +142,9 @@ func addAndWait(
 
 	for event := range events {
 		for _, result := range event.Transactions {
-			tx := result.GetTransaction()
+			txDone := result.GetTransaction()
 
-			if bytes.Equal(tx.GetID(), tx.GetID()) {
+			if bytes.Equal(tx.GetID(), txDone.GetID()) {
 				accepted, err := event.Transactions[0].GetStatus()
 				require.Empty(t, err)
 

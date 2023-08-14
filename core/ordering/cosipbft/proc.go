@@ -28,11 +28,6 @@ import (
 	"golang.org/x/xerrors"
 )
 
-var (
-	keyRoster = [32]byte{}
-	keyAccess = [32]byte{1}
-)
-
 // Processor processes the messages to run a collective signing PBFT consensus.
 //
 // - implements cosi.Reactor
@@ -176,7 +171,7 @@ func (h *processor) getCurrentRoster() (authority.Authority, error) {
 }
 
 func (h *processor) readRoster(tree hashtree.Tree) (authority.Authority, error) {
-	data, err := tree.Get(keyRoster[:])
+	data, err := tree.Get(viewchange.GetRosterKey())
 	if err != nil {
 		return nil, xerrors.Errorf("read from tree: %v", err)
 	}
@@ -201,7 +196,7 @@ func (h *processor) storeGenesis(roster authority.Authority, match *types.Digest
 			return xerrors.Errorf("failed to set access: %v", err)
 		}
 
-		err = snap.Set(keyRoster[:], value)
+		err = snap.Set(viewchange.GetRosterKey(), value)
 		if err != nil {
 			return xerrors.Errorf("failed to store roster: %v", err)
 		}
@@ -242,7 +237,7 @@ func (h *processor) storeGenesis(roster authority.Authority, match *types.Digest
 }
 
 func (h *processor) makeAccess(store store.Snapshot, roster authority.Authority) error {
-	creds := viewchange.NewCreds(keyAccess[:])
+	creds := viewchange.NewCreds()
 
 	iter := roster.PublicKeyIterator()
 	for iter.HasNext() {

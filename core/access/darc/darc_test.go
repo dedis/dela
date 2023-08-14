@@ -4,8 +4,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	contract "go.dedis.ch/dela/contracts/access"
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/access/darc/types"
+	"go.dedis.ch/dela/core/store/prefixed"
 	"go.dedis.ch/dela/crypto/bls"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/serde/json"
@@ -27,8 +29,9 @@ func TestService_Match(t *testing.T) {
 	data, err := perm.Serialize(testCtx)
 	require.NoError(t, err)
 
-	store.Set([]byte{0xaa}, data)
-	store.Set([]byte{0xbb}, []byte{})
+	prefixStore := prefixed.NewSnapshot(contract.ContractUID, store)
+	prefixStore.Set([]byte{0xaa}, data)
+	prefixStore.Set([]byte{0xbb}, []byte{})
 
 	srvc := NewService(testCtx)
 
@@ -57,7 +60,8 @@ func TestService_Match(t *testing.T) {
 
 func TestService_Grant(t *testing.T) {
 	store := fake.NewSnapshot()
-	store.Set([]byte{0xbb}, []byte{})
+	prefixStore := prefixed.NewSnapshot(contract.ContractUID, store)
+	prefixStore.Set([]byte{0xbb}, []byte{})
 
 	creds := access.NewContractCreds([]byte{0xaa}, "test", "grant")
 

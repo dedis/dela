@@ -11,19 +11,20 @@ import (
 	"go.dedis.ch/dela/core/execution"
 	"go.dedis.ch/dela/core/execution/native"
 	"go.dedis.ch/dela/core/store"
+	"go.dedis.ch/dela/core/store/prefixed"
 	"go.dedis.ch/dela/core/txn"
 	"go.dedis.ch/dela/core/txn/signed"
 	"go.dedis.ch/dela/testing/fake"
 )
 
 func TestExecute(t *testing.T) {
-	contract := NewContract([]byte{}, fakeAccess{err: fake.GetError()})
+	contract := NewContract(fakeAccess{err: fake.GetError()})
 
 	err := contract.Execute(fakeStore{}, makeStep(t))
 	require.EqualError(t, err,
 		"identity not authorized: fake.PublicKey ("+fake.GetError().Error()+")")
 
-	contract = NewContract([]byte{}, fakeAccess{})
+	contract = NewContract(fakeAccess{})
 	err = contract.Execute(fakeStore{}, makeStep(t))
 	require.EqualError(t, err, "'value:command' not found in tx arg")
 
@@ -50,39 +51,41 @@ func TestExecute(t *testing.T) {
 }
 
 func TestCommand_Write(t *testing.T) {
-	contract := NewContract([]byte{}, fakeAccess{})
+	contract := NewContract(fakeAccess{})
 
 	cmd := valueCommand{
 		Contract: &contract,
 	}
 
-	err := cmd.write(fake.NewSnapshot(), makeStep(t))
+	snap := prefixed.NewSnapshot(ContractUID, fake.NewSnapshot())
+	err := cmd.write(snap, makeStep(t))
 	require.EqualError(t, err, "'value:key' not found in tx arg")
 
-	err = cmd.write(fake.NewSnapshot(), makeStep(t, KeyArg, "dummy"))
+	snap = prefixed.NewSnapshot(ContractUID, fake.NewSnapshot())
+	err = cmd.write(snap, makeStep(t, KeyArg, "dummy"))
 	require.EqualError(t, err, "'value:value' not found in tx arg")
 
-	err = cmd.write(fake.NewBadSnapshot(), makeStep(t, KeyArg, "dummy", ValueArg, "value"))
+	snap = prefixed.NewSnapshot(ContractUID, fake.NewBadSnapshot())
+	err = cmd.write(snap, makeStep(t, KeyArg, "dummy", ValueArg, "value"))
 	require.EqualError(t, err, fake.Err("failed to set value"))
-
-	snap := fake.NewSnapshot()
 
 	_, found := contract.index["dummy"]
 	require.False(t, found)
 
+	snap = prefixed.NewSnapshot(ContractUID, fake.NewSnapshot())
 	err = cmd.write(snap, makeStep(t, KeyArg, "dummy", ValueArg, "value"))
 	require.NoError(t, err)
 
 	_, found = contract.index["dummy"]
 	require.True(t, found)
 
-	res, err := snap.Get(prefix([]byte("dummy")))
+	res, err := snap.Get([]byte("dummy"))
 	require.NoError(t, err)
 	require.Equal(t, "value", string(res))
 }
 
 func TestCommand_Read(t *testing.T) {
-	contract := NewContract([]byte{}, fakeAccess{})
+	contract := NewContract(fakeAccess{})
 
 	cmd := valueCommand{
 		Contract: &contract,
@@ -91,14 +94,17 @@ func TestCommand_Read(t *testing.T) {
 	key := []byte("dummy")
 	keyHex := hex.EncodeToString(key)
 
-	err := cmd.read(fake.NewSnapshot(), makeStep(t))
+	snap := prefixed.NewSnapshot(ContractUID, fake.NewSnapshot())
+	err := cmd.read(snap, makeStep(t))
 	require.EqualError(t, err, "'value:key' not found in tx arg")
 
-	err = cmd.read(fake.NewBadSnapshot(), makeStep(t, KeyArg, "dummy"))
+	badSnap := prefixed.NewSnapshot(ContractUID, fake.NewBadSnapshot())
+	err = cmd.read(badSnap, makeStep(t, KeyArg, "dummy"))
 	require.EqualError(t, err, fake.Err("failed to get key 'dummy'"))
 
-	snap := fake.NewSnapshot()
-	snap.Set(prefix(key), []byte("value"))
+	snap = prefixed.NewSnapshot(ContractUID, fake.NewSnapshot())
+	err = snap.Set(key, []byte("value"))
+	require.NoError(t, err)
 
 	buf := &bytes.Buffer{}
 	cmd.Contract.printer = buf
@@ -110,7 +116,7 @@ func TestCommand_Read(t *testing.T) {
 }
 
 func TestCommand_Delete(t *testing.T) {
-	contract := NewContract([]byte{}, fakeAccess{})
+	contract := NewContract(fakeAccess{})
 
 	cmd := valueCommand{
 		Contract: &contract,
@@ -120,29 +126,32 @@ func TestCommand_Delete(t *testing.T) {
 	keyHex := hex.EncodeToString(key)
 	keyStr := string(key)
 
-	err := cmd.delete(fake.NewSnapshot(), makeStep(t))
+	snap := prefixed.NewSnapshot(ContractUID, fake.NewSnapshot())
+	err := cmd.delete(snap, makeStep(t))
 	require.EqualError(t, err, "'value:key' not found in tx arg")
 
-	err = cmd.delete(fake.NewBadSnapshot(), makeStep(t, KeyArg, keyStr))
+	badSnap := prefixed.NewSnapshot(ContractUID, fake.NewBadSnapshot())
+	err = cmd.delete(badSnap, makeStep(t, KeyArg, keyStr))
 	require.EqualError(t, err, fake.Err("failed to delete key '"+keyHex+"'"))
 
-	snap := fake.NewSnapshot()
-	snap.Set(prefix(key), []byte("value"))
+	snap = prefixed.NewSnapshot(ContractUID, fake.NewSnapshot())
+	err = snap.Set(key, []byte("value"))
+	require.NoError(t, err)
 	contract.index[keyStr] = struct{}{}
 
 	err = cmd.delete(snap, makeStep(t, KeyArg, keyStr))
 	require.NoError(t, err)
 
-	res, err := snap.Get(prefix(key))
+	res, err := snap.Get(key)
 	require.Nil(t, err)
-	require.Nil(t, res)
+	require.Nil(t, res) // = "key not found"
 
 	_, found := contract.index[keyStr]
 	require.False(t, found)
 }
 
 func TestCommand_List(t *testing.T) {
-	contract := NewContract([]byte{}, fakeAccess{})
+	contract := NewContract(fakeAccess{})
 
 	key1 := "key1"
 	key2 := "key2"
@@ -157,16 +166,19 @@ func TestCommand_List(t *testing.T) {
 		Contract: &contract,
 	}
 
-	snap := fake.NewSnapshot()
-	snap.Set(prefix([]byte(key1)), []byte("value1"))
-	snap.Set(prefix([]byte(key2)), []byte("value2"))
+	snap := prefixed.NewSnapshot(ContractUID, fake.NewSnapshot())
+	err := snap.Set([]byte(key1), []byte("value1"))
+	require.NoError(t, err)
+	err = snap.Set([]byte(key2), []byte("value2"))
+	require.NoError(t, err)
 
-	err := cmd.list(snap)
+	err = cmd.list(snap)
 	require.NoError(t, err)
 
 	require.Equal(t, fmt.Sprintf("%x=value1,%x=value2", key1, key2), buf.String())
 
-	err = cmd.list(fake.NewBadSnapshot())
+	badSnap := prefixed.NewSnapshot(ContractUID, fake.NewBadSnapshot())
+	err = cmd.list(badSnap)
 	// we can't assume an order from the map
 	require.Regexp(t, "^failed to get key", err.Error())
 }
@@ -220,11 +232,11 @@ type fakeStore struct {
 	store.Snapshot
 }
 
-func (s fakeStore) Get(key []byte) ([]byte, error) {
+func (s fakeStore) Get(_ []byte) ([]byte, error) {
 	return nil, nil
 }
 
-func (s fakeStore) Set(key, value []byte) error {
+func (s fakeStore) Set(_, _ []byte) error {
 	return nil
 }
 
@@ -232,18 +244,18 @@ type fakeCmd struct {
 	err error
 }
 
-func (c fakeCmd) write(snap store.Snapshot, step execution.Step) error {
+func (c fakeCmd) write(_ store.Snapshot, _ execution.Step) error {
 	return c.err
 }
 
-func (c fakeCmd) read(snap store.Snapshot, step execution.Step) error {
+func (c fakeCmd) read(_ store.Snapshot, _ execution.Step) error {
 	return c.err
 }
 
-func (c fakeCmd) delete(snap store.Snapshot, step execution.Step) error {
+func (c fakeCmd) delete(_ store.Snapshot, _ execution.Step) error {
 	return c.err
 }
 
-func (c fakeCmd) list(snap store.Snapshot) error {
+func (c fakeCmd) list(_ store.Snapshot) error {
 	return c.err
 }

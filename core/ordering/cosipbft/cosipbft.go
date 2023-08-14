@@ -86,7 +86,7 @@ const (
 // RegisterRosterContract registers the native smart contract to update the
 // roster to the given service.
 func RegisterRosterContract(exec *native.Service, rFac authority.Factory, srvc access.Service) {
-	contract := viewchange.NewContract(keyRoster[:], keyAccess[:], rFac, srvc)
+	contract := viewchange.NewContract(rFac, srvc)
 
 	viewchange.RegisterContract(exec, contract)
 }

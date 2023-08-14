@@ -43,6 +43,8 @@ import (
 	"go.dedis.ch/dela/testing/fake"
 )
 
+// This test is known to be VERY flaky on Windows.
+// Further investigation is needed.
 func TestService_Scenario_Basic(t *testing.T) {
 	nodes, ro, clean := makeAuthority(t, 5)
 	defer clean()
@@ -62,33 +64,33 @@ func TestService_Scenario_Basic(t *testing.T) {
 	err = nodes[0].pool.Add(makeTx(t, 0, signer))
 	require.NoError(t, err)
 
-	evt := waitEvent(t, events, 2*DefaultRoundTimeout)
+	evt := waitEvent(t, events, 3*DefaultRoundTimeout)
 	require.Equal(t, uint64(0), evt.Index)
 
 	err = nodes[1].pool.Add(makeTx(t, 1, signer))
 	require.NoError(t, err)
 
-	evt = waitEvent(t, events, 20*DefaultRoundTimeout)
+	evt = waitEvent(t, events, 10*DefaultRoundTimeout)
 	require.Equal(t, uint64(1), evt.Index)
 
 	err = nodes[1].pool.Add(makeRosterTx(t, 2, ro, signer))
 	require.NoError(t, err)
 
-	evt = waitEvent(t, events, 20*DefaultRoundTimeout)
+	evt = waitEvent(t, events, 10*DefaultRoundTimeout)
 	require.Equal(t, uint64(2), evt.Index)
 	for i := 0; i < 3; i++ {
 		err = nodes[1].pool.Add(makeTx(t, uint64(i+3), signer))
 		require.NoError(t, err)
 
-		evt = waitEvent(t, events, 20*DefaultRoundTimeout)
+		evt = waitEvent(t, events, 10*DefaultRoundTimeout)
 		require.Equal(t, uint64(i+3), evt.Index)
 	}
 
-	proof, err := nodes[0].service.GetProof(keyRoster[:])
+	proof, err := nodes[0].service.GetProof(viewchange.GetRosterKey())
 	require.NoError(t, err)
 	require.NotNil(t, proof.GetValue())
 
-	require.Equal(t, keyRoster[:], proof.GetKey())
+	require.Equal(t, viewchange.GetRosterKey(), proof.GetKey())
 	require.NotNil(t, proof.GetValue())
 
 	checkProof(t, proof.(Proof), nodes[0].service)
@@ -933,6 +935,10 @@ type testExec struct {
 
 func (e testExec) Execute(store.Snapshot, execution.Step) error {
 	return e.err
+}
+
+func (e testExec) UID() string {
+	return "TEST"
 }
 
 func makeTx(t *testing.T, nonce uint64, signer crypto.Signer) txn.Transaction {

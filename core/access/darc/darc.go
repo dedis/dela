@@ -4,9 +4,11 @@
 package darc
 
 import (
+	contract "go.dedis.ch/dela/contracts/access"
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/access/darc/types"
 	"go.dedis.ch/dela/core/store"
+	"go.dedis.ch/dela/core/store/prefixed"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
@@ -31,7 +33,12 @@ func NewService(ctx serde.Context) Service {
 // Match implements access.Service. It returns nil if the group of identities
 // have access to the given credentials, otherwise a meaningful error on the
 // reason if it does not have access.
-func (srvc Service) Match(store store.Readable, creds access.Credential, idents ...access.Identity) error {
+func (srvc Service) Match(
+	store store.Readable,
+	creds access.Credential,
+	idents ...access.Identity,
+) error {
+	store = prefixed.NewReadable(contract.ContractUID, store)
 	perm, err := srvc.readPermission(store, creds.GetID())
 	if err != nil {
 		return xerrors.Errorf("store failed: %v", err)
@@ -51,7 +58,13 @@ func (srvc Service) Match(store store.Readable, creds access.Credential, idents 
 
 // Grant implements access.Service. It updates or creates the credential and
 // grants the access to the group of identities.
-func (srvc Service) Grant(store store.Snapshot, cred access.Credential, idents ...access.Identity) error {
+func (srvc Service) Grant(
+	store store.Snapshot,
+	cred access.Credential,
+	idents ...access.Identity,
+) error {
+	store = prefixed.NewSnapshot(contract.ContractUID, store)
+
 	perm, err := srvc.readPermission(store, cred.GetID())
 	if err != nil {
 		return xerrors.Errorf("store failed: %v", err)

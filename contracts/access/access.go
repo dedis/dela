@@ -27,6 +27,10 @@ import (
 )
 
 const (
+	// ContractUID is the unique (4-bytes) identifier of the contract, it is
+	// used to prefix keys in the K/V store and by DARCs for access control.
+	ContractUID = "DARC"
+
 	// ContractName is the name of the access contract.
 	ContractName = "go.dedis.ch/dela.Access"
 
@@ -50,9 +54,9 @@ const (
 	// run on the contract. Should be one of the Command type.
 	CmdArg = "access:command"
 
-	// credentialAllCommand defines the credential command that is allowed to
+	// CredentialAllCommand defines the credential command that is allowed to
 	// perform all commands.
-	credentialAllCommand = "all"
+	CredentialAllCommand = "all"
 )
 
 // Command defines a command for the command contract
@@ -64,8 +68,8 @@ const (
 )
 
 // NewCreds creates new credentials for an access contract execution.
-func NewCreds(id []byte) access.Credential {
-	return access.NewContractCreds(id, ContractName, credentialAllCommand)
+func NewCreds() access.Credential {
+	return access.NewContractCreds([]byte(ContractUID), ContractName, CredentialAllCommand)
 }
 
 // RegisterContract registers the access contract to the given execution
@@ -81,24 +85,20 @@ type Contract struct {
 	// access is the access service that will be modified.
 	access access.Service
 
-	// accessKey is the credential's ID allowed to use this smart contract
-	accessKey []byte
-
 	store store.Readable
 }
 
 // NewContract creates a new access contract
-func NewContract(aKey []byte, srvc access.Service, store store.Readable) Contract {
+func NewContract(srvc access.Service, store store.Readable) Contract {
 	return Contract{
-		access:    srvc,
-		accessKey: aKey,
-		store:     store,
+		access: srvc,
+		store:  store,
 	}
 }
 
 // Execute implements native.Contract
 func (c Contract) Execute(snap store.Snapshot, step execution.Step) error {
-	creds := NewCreds(c.accessKey)
+	creds := NewCreds()
 
 	err := c.access.Match(c.store, creds, step.Current.GetIdentity())
 	if err != nil {
@@ -121,6 +121,13 @@ func (c Contract) Execute(snap store.Snapshot, step execution.Step) error {
 	}
 
 	return nil
+}
+
+// UID returns the unique 4-bytes contract identifier.
+//
+// - implements native.Contract
+func (c Contract) UID() string {
+	return ContractUID
 }
 
 // grant perform the GRANT command

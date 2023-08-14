@@ -9,9 +9,6 @@ import (
 	"golang.org/x/xerrors"
 )
 
-// aKey is the access key used for the value contract
-var aKey = [32]byte{2}
-
 // miniController is a CLI initializer to register the value contract
 //
 // - implements node.Initializer
@@ -41,7 +38,7 @@ func (m miniController) OnStart(flags cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("failed to resolve native service: %v", err)
 	}
 
-	contract := value.NewContract(aKey[:], access)
+	contract := value.NewContract(access)
 
 	value.RegisterContract(exec, contract)
 

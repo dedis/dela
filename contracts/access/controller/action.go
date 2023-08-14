@@ -49,7 +49,7 @@ func (a addAction) Execute(ctx node.Context) error {
 		return xerrors.Errorf("failed to parse identities: %v", err)
 	}
 
-	err = asrv.Grant(accessStore, accessContract.NewCreds(aKey[:]), identities...)
+	err = asrv.Grant(accessStore, accessContract.NewCreds(), identities...)
 	if err != nil {
 		return xerrors.Errorf("failed to grant: %v", err)
 	}

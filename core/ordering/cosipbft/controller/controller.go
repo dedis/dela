@@ -37,9 +37,6 @@ import (
 
 const privateKeyFile = "private.key"
 
-// valueAccessKey is the access key used for the value contract.
-var valueAccessKey = [32]byte{2}
-
 func blsSigner() encoding.BinaryMarshaler {
 	return bls.NewSigner()
 }
@@ -127,7 +124,7 @@ func (m miniController) OnStart(flags cli.Flags, inj node.Injector) error {
 	rosterFac := authority.NewFactory(onet.GetAddressFactory(), cosi.GetPublicKeyFactory())
 	cosipbft.RegisterRosterContract(exec, rosterFac, access)
 
-	value.RegisterContract(exec, value.NewContract(valueAccessKey[:], access))
+	value.RegisterContract(exec, value.NewContract(access))
 
 	txFac := signed.NewTransactionFactory()
 	vs := simple.NewService(exec, txFac)
@@ -178,7 +175,8 @@ func (m miniController) OnStart(flags cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("failed to load blocks: %v", err)
 	}
 
-	srvc, err := cosipbft.NewService(param, cosipbft.WithGenesisStore(genstore), cosipbft.WithBlockStore(blocks))
+	srvc, err := cosipbft.NewService(param, cosipbft.WithGenesisStore(genstore),
+		cosipbft.WithBlockStore(blocks))
 	if err != nil {
 		return xerrors.Errorf("service: %v", err)
 	}

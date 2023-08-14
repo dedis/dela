@@ -49,9 +49,6 @@ import (
 const certKeyName = "cert.key"
 const privateKeyFile = "private.key"
 
-var aKey = [32]byte{1}
-var valueAccessKey = [32]byte{2}
-
 // cosiDela defines the interface needed to use a Dela node using cosi.
 type cosiDela interface {
 	dela
@@ -93,7 +90,8 @@ func newDelaNode(t require.TestingT, path string, port int) dela {
 
 	fload := loader.NewFileLoader(filepath.Join(path, certKeyName))
 
-	keydata, err := fload.LoadOrCreate(newCertGenerator(rand.New(rand.NewSource(0)), elliptic.P521()))
+	keydata, err := fload.LoadOrCreate(newCertGenerator(rand.New(rand.NewSource(0)),
+		elliptic.P521()))
 	require.NoError(t, err)
 
 	key, err := x509.ParseECPrivateKey(keydata)
@@ -126,7 +124,7 @@ func newDelaNode(t require.TestingT, path string, port int) dela {
 	rosterFac := authority.NewFactory(onet.GetAddressFactory(), cosi.GetPublicKeyFactory())
 	cosipbft.RegisterRosterContract(exec, rosterFac, accessService)
 
-	value.RegisterContract(exec, value.NewContract(valueAccessKey[:], accessService))
+	value.RegisterContract(exec, value.NewContract(accessService))
 
 	txFac := signed.NewTransactionFactory()
 	vs := simple.NewService(exec, txFac)
@@ -174,7 +172,7 @@ func newDelaNode(t require.TestingT, path string, port int) dela {
 
 	// access
 	accessStore := newAccessStore()
-	contract := accessContract.NewContract(aKey[:], accessService, accessStore)
+	contract := accessContract.NewContract(accessService, accessStore)
 	accessContract.RegisterContract(exec, contract)
 
 	return cosiDelaNode{
