@@ -4,15 +4,14 @@
 package darc
 
 import (
+	contract "go.dedis.ch/dela/contracts/access"
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/access/darc/types"
 	"go.dedis.ch/dela/core/store"
+	"go.dedis.ch/dela/core/store/prefixed"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
 )
-
-// 4 bytes used to prefix DARC keys in the K/V store.
-const ContractUID = "DARC"
 
 // Service is an implementation of an access service that will allow one to
 // store and verify access for a group of identities.
@@ -39,6 +38,7 @@ func (srvc Service) Match(
 	creds access.Credential,
 	idents ...access.Identity,
 ) error {
+	store = prefixed.NewReadable(contract.ContractUID, store)
 	perm, err := srvc.readPermission(store, creds.GetID())
 	if err != nil {
 		return xerrors.Errorf("store failed: %v", err)
@@ -63,6 +63,8 @@ func (srvc Service) Grant(
 	cred access.Credential,
 	idents ...access.Identity,
 ) error {
+	store = prefixed.NewSnapshot(contract.ContractUID, store)
+
 	perm, err := srvc.readPermission(store, cred.GetID())
 	if err != nil {
 		return xerrors.Errorf("store failed: %v", err)

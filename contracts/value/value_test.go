@@ -144,7 +144,7 @@ func TestCommand_Delete(t *testing.T) {
 
 	res, err := snap.Get(key)
 	require.Nil(t, err)
-	require.Nil(t, res)
+	require.Nil(t, res) // = "key not found"
 
 	_, found := contract.index[keyStr]
 	require.False(t, found)

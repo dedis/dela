@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	contract "go.dedis.ch/dela/contracts/access"
 	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/core/access/darc/types"
 	"go.dedis.ch/dela/core/store/prefixed"
@@ -16,22 +17,21 @@ import (
 var testCtx = json.NewContext()
 
 func TestService_Match(t *testing.T) {
-	store := prefixed.NewSnapshot(ContractUID, fake.NewSnapshot())
+	store := fake.NewSnapshot()
 
 	alice := bls.NewSigner()
 	bob := bls.NewSigner()
 
-	creds := access.NewContractCreds([]byte{'A'}, "test", "match")
+	creds := access.NewContractCreds([]byte{0xaa}, "test", "match")
 
 	perm := types.NewPermission()
 	perm.Allow(creds.GetRule(), alice.GetPublicKey())
 	data, err := perm.Serialize(testCtx)
 	require.NoError(t, err)
 
-	err = store.Set([]byte{'A'}, data)
-	require.NoError(t, err)
-	err = store.Set([]byte{'B'}, []byte{})
-	require.NoError(t, err)
+	prefixStore := prefixed.NewSnapshot(contract.ContractUID, store)
+	prefixStore.Set([]byte{0xaa}, data)
+	prefixStore.Set([]byte{0xbb}, []byte{})
 
 	srvc := NewService(testCtx)
 
@@ -47,41 +47,39 @@ func TestService_Match(t *testing.T) {
 	require.Regexp(t,
 		"^permission: rule 'test:match': unauthorized: \\[bls:[[:xdigit:]]+\\]", err.Error())
 
-	badStore := prefixed.NewSnapshot(ContractUID, fake.NewBadSnapshot())
-	err = srvc.Match(badStore, creds, alice.GetPublicKey())
+	err = srvc.Match(fake.NewBadSnapshot(), creds, alice.GetPublicKey())
 	require.EqualError(t, err, fake.Err("store failed: while reading"))
 
-	err = srvc.Match(store, access.NewContractCreds([]byte{'C'}, "", ""))
-	require.EqualError(t, err, "permission 0x43 not found")
+	err = srvc.Match(store, access.NewContractCreds([]byte{0xcc}, "", ""))
+	require.EqualError(t, err, "permission 0xcc not found")
 
-	err = srvc.Match(store, access.NewContractCreds([]byte{'B'}, "", ""), alice.GetPublicKey())
+	err = srvc.Match(store, access.NewContractCreds([]byte{0xbb}, "", ""), alice.GetPublicKey())
 	require.EqualError(t, err,
 		"store failed: permission malformed: JSON format: failed to unmarshal: unexpected end of JSON input")
 }
 
 func TestService_Grant(t *testing.T) {
-	store := prefixed.NewSnapshot(ContractUID, fake.NewSnapshot())
-	err := store.Set([]byte{'B'}, []byte{})
-	require.NoError(t, err)
+	store := fake.NewSnapshot()
+	prefixStore := prefixed.NewSnapshot(contract.ContractUID, store)
+	prefixStore.Set([]byte{0xbb}, []byte{})
 
-	creds := access.NewContractCreds([]byte{'A'}, "test", "grant")
+	creds := access.NewContractCreds([]byte{0xaa}, "test", "grant")
 
 	alice := bls.NewSigner()
 	bob := bls.NewSigner()
 
 	srvc := NewService(testCtx)
 
-	err = srvc.Grant(store, creds, alice.GetPublicKey())
+	err := srvc.Grant(store, creds, alice.GetPublicKey())
 	require.NoError(t, err)
 
 	err = srvc.Grant(store, creds, bob.GetPublicKey())
 	require.NoError(t, err)
 
-	badStore := prefixed.NewSnapshot(ContractUID, fake.NewBadSnapshot())
-	err = srvc.Grant(badStore, creds)
+	err = srvc.Grant(fake.NewBadSnapshot(), creds)
 	require.EqualError(t, err, fake.Err("store failed: while reading"))
 
-	err = srvc.Grant(store, access.NewContractCreds([]byte{'B'}, "", ""))
+	err = srvc.Grant(store, access.NewContractCreds([]byte{0xbb}, "", ""))
 	require.EqualError(t, err,
 		"store failed: permission malformed: JSON format: failed to unmarshal: unexpected end of JSON input")
 
@@ -89,9 +87,8 @@ func TestService_Grant(t *testing.T) {
 	err = srvc.Grant(store, creds, alice.GetPublicKey())
 	require.EqualError(t, err, fake.Err("failed to serialize"))
 
-	fakeSnap := fake.NewSnapshot()
-	fakeSnap.ErrWrite = fake.GetError()
-	badStore = prefixed.NewSnapshot(ContractUID, fakeSnap)
+	badStore := fake.NewSnapshot()
+	badStore.ErrWrite = fake.GetError()
 	err = srvc.Grant(badStore, creds, alice.GetPublicKey())
 	require.EqualError(t, err, fake.Err("store failed to write"))
 }

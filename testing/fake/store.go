@@ -3,7 +3,6 @@ package fake
 import (
 	"go.dedis.ch/dela/core/store"
 	"go.dedis.ch/dela/core/store/kv"
-	"golang.org/x/xerrors"
 )
 
 // InMemorySnapshot is a fake implementation of a store snapshot.
@@ -45,7 +44,7 @@ func (snap *InMemorySnapshot) Get(key []byte) ([]byte, error) {
 	if found {
 		return value, nil
 	}
-	return nil, xerrors.Errorf("key not found: %s", key)
+	return nil, nil
 }
 
 // Set implements store.Snapshot.
