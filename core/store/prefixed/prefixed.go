@@ -22,13 +22,19 @@ type snapshot struct {
 	*readable
 }
 
-// NewSnapShot creates a new prefixed Snapshot.
+// NewSnapshot creates a new prefixed Snapshot.
 func NewSnapshot(prefix string, snap store.Snapshot) store.Snapshot {
 	p := []byte(prefix)
 	return &snapshot{
 		&writable{snap, p},
 		&readable{snap, p},
 	}
+}
+
+// NewReadable creates a new prefixed Readable.
+func NewReadable(prefix string, r store.Readable) store.Readable {
+	p := []byte(prefix)
+	return &readable{r, p}
 }
 
 // Get implements store.Readable

@@ -12,6 +12,9 @@ type Readable interface {
 type Writable interface {
 	Set(key []byte, value []byte) error
 
+	// Delete deletes a given key.
+	// It can return an error if deleting from a read-only store
+	// No error is returned if the key does not exist.
 	Delete(key []byte) error
 }
 

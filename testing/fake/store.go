@@ -36,21 +36,37 @@ func NewBadSnapshot() *InMemorySnapshot {
 
 // Get implements store.Snapshot.
 func (snap *InMemorySnapshot) Get(key []byte) ([]byte, error) {
-	return snap.values[string(key)], snap.ErrRead
+	if snap.ErrRead != nil {
+		return nil, snap.ErrRead
+	}
+
+	value, found := snap.values[string(key)]
+	if found {
+		return value, nil
+	}
+	return nil, nil
 }
 
 // Set implements store.Snapshot.
 func (snap *InMemorySnapshot) Set(key, value []byte) error {
+	if snap.ErrWrite != nil {
+		return snap.ErrWrite
+	}
+
 	snap.values[string(key)] = value
 
-	return snap.ErrWrite
+	return nil
 }
 
 // Delete implements store.Snapshot.
 func (snap *InMemorySnapshot) Delete(key []byte) error {
+	if snap.ErrDelete != nil {
+		return snap.ErrDelete
+	}
+
 	delete(snap.values, string(key))
 
-	return snap.ErrDelete
+	return nil
 }
 
 // InMemoryDB is a fake implementation of a key/value storage.
