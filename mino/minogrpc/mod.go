@@ -65,6 +65,9 @@ var listener = net.Listen
 type Joinable interface {
 	mino.Mino
 
+	// ServeTLS returns true if this node is running with TLS for gRPC.
+	ServeTLS() bool
+
 	// GetCertificateChain returns the certificate chain of the instance.
 	GetCertificateChain() certs.CertChain
 

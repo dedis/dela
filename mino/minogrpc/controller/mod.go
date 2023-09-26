@@ -136,7 +136,7 @@ func (m miniController) SetCommands(builder node.Builder) {
 		cli.StringFlag{
 			Name:     "cert-hash",
 			Usage:    "certificate hash of the distant server",
-			Required: true,
+			Required: false,
 		},
 	)
 	sub.SetAction(builder.MakeAction(joinAction{}))
