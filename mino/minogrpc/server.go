@@ -14,6 +14,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"google.golang.org/grpc/credentials/insecure"
+	"strings"
 	"sync"
 
 	"net/url"
@@ -449,7 +450,7 @@ func newOverlay(tmpl *minoTemplate) (*overlay, error) {
 	// session.Address never returns an error
 	myAddrBuf, _ := tmpl.myAddr.MarshalText()
 
-	if tmpl.useTLS {
+	if tmpl.serveTLS {
 		if tmpl.cert != nil {
 			tmpl.secret = tmpl.cert.PrivateKey
 			// it is okay to crash at this point, as the certificate's key is
@@ -498,11 +499,11 @@ func newOverlay(tmpl *minoTemplate) (*overlay, error) {
 		tokens:      tokens.NewInMemoryHolder(),
 		certs:       tmpl.certs,
 		router:      tmpl.router,
-		connMgr:     newConnManager(tmpl.myAddr, tmpl.certs, tmpl.useTLS),
+		connMgr:     newConnManager(tmpl.myAddr, tmpl.certs, tmpl.serveTLS),
 		addrFactory: tmpl.fac,
 		secret:      tmpl.secret,
 		public:      tmpl.public,
-		useTLS:      tmpl.useTLS,
+		serveTLS:    tmpl.serveTLS,
 	}
 
 	return o, nil
@@ -592,16 +593,16 @@ type connManager struct {
 	myAddr   mino.Address
 	counters map[mino.Address]int
 	conns    map[mino.Address]*grpc.ClientConn
-	useTLS   bool
+	serveTLS bool
 }
 
-func newConnManager(myAddr mino.Address, certs certs.Storage, useTLS bool) *connManager {
+func newConnManager(myAddr mino.Address, certs certs.Storage, serveTLS bool) *connManager {
 	return &connManager{
 		certs:    certs,
 		myAddr:   myAddr,
 		counters: make(map[mino.Address]int),
 		conns:    make(map[mino.Address]*grpc.ClientConn),
-		useTLS:   useTLS,
+		serveTLS: serveTLS,
 	}
 }
 
@@ -652,10 +653,9 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 		grpc.WithStreamInterceptor(
 			otgrpc.OpenTracingStreamClientInterceptor(tracer, otgrpc.SpanDecorator(decorateClientTrace)),
 		),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	}
 
-	if mgr.useTLS {
+	if mgr.serveTLS {
 		ta, err := mgr.getTransportCredential(to)
 		if err != nil {
 			return nil, xerrors.Errorf("failed to retrieve transport credential: %v", err)

@@ -77,7 +77,7 @@ func (m miniController) SetCommands(builder node.Builder) {
 		},
 		cli.StringFlag{
 			Name:     "certKey",
-			Usage:    "provides the certificate private key path",
+			Usage:    "provides the certificate private key path and enables 'serveTLS' if certChain is given",
 			Required: false,
 		},
 		cli.StringFlag{
@@ -86,8 +86,8 @@ func (m miniController) SetCommands(builder node.Builder) {
 			Required: false,
 		},
 		cli.BoolFlag{
-			Name:     "noTLS",
-			Usage:    "disables TLS on gRPC connections",
+			Name:     "serveTLS",
+			Usage:    "enables TLS on the gRPC server and creates a self-signed certificate if necessary",
 			Required: false,
 			Value:    false,
 		},
@@ -166,15 +166,13 @@ func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
 		return xerrors.Errorf("unknown routing: %s", ctx.String("routing"))
 	}
 
-	var opts []minogrpc.Option
+	opts, err := m.getOptionCert(ctx, inj)
+	if err != nil {
+		return xerrors.Errorf("failed to get cert option: %v", err)
+	}
 
-	if !ctx.Bool("noTLS") {
-		opts, err = m.getOptionCert(ctx, inj)
-		if err != nil {
-			return xerrors.Errorf("failed to get cert option: %v", err)
-		}
-	} else {
-		opts = []minogrpc.Option{minogrpc.DisableTLS()}
+	if ctx.Bool("serveTLS") {
+		opts = append(opts, minogrpc.ServeTLS())
 	}
 
 	var public *url.URL
@@ -235,11 +233,6 @@ func (m miniController) getOptionCert(ctx cli.Flags, inj node.Injector) ([]minog
 		return nil, xerrors.Errorf("cert private key: %v", err)
 	}
 
-	certKey := ctx.Path("certKey")
-	if certKey == "" {
-		certKey = filepath.Join(ctx.Path("config"), certKeyName)
-	}
-
 	type extendedKey interface {
 		Public() crypto.PublicKey
 	}
@@ -249,16 +242,21 @@ func (m miniController) getOptionCert(ctx cli.Flags, inj node.Injector) ([]minog
 		minogrpc.WithStorage(certs),
 	}
 
-	certChain := ctx.Path("certChain")
+	certKey := ctx.Path("certKey")
+	if certKey == "" {
+		certKey = filepath.Join(ctx.Path("config"), certKeyName)
 
-	if certChain != "" {
-		fmt.Println("certChain:", certChain, "certKey:", certKey)
-		cert, err := tls.LoadX509KeyPair(certChain, certKey)
-		if err != nil {
-			return nil, xerrors.Errorf("failed to load certificate: %v", err)
+		certChain := ctx.Path("certChain")
+		if certChain != "" {
+			fmt.Println("certChain:", certChain, "certKey:", certKey)
+			cert, err := tls.LoadX509KeyPair(certChain, certKey)
+			if err != nil {
+				return nil, xerrors.Errorf("failed to load certificate: %v", err)
+			}
+
+			opts = append(opts, minogrpc.WithCert(&cert))
+			opts = append(opts, minogrpc.ServeTLS())
 		}
-
-		opts = append(opts, minogrpc.WithCert(&cert))
 	}
 
 	return opts, nil

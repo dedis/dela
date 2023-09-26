@@ -41,7 +41,7 @@ func TestMinogrpc_noTLS(t *testing.T) {
 
 	router := tree.NewRouter(addressFac)
 
-	m, err := NewMinogrpc(addr, nil, router, DisableTLS())
+	m, err := NewMinogrpc(addr, nil, router, ServeTLS())
 	require.NoError(t, err)
 
 	require.Equal(t, "127.0.0.1:3333", m.GetAddress().String())

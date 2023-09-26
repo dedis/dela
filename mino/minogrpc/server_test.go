@@ -180,12 +180,12 @@ func TestMinogrpc_Scenario_Failures(t *testing.T) {
 
 func TestOverlayServer_Join(t *testing.T) {
 	o, err := newOverlay(&minoTemplate{
-		myAddr: session.NewAddress("127.0.0.1:0"),
-		certs:  certs.NewInMemoryStore(),
-		router: tree.NewRouter(addressFac),
-		curve:  elliptic.P521(),
-		random: rand.Reader,
-		useTLS: true,
+		myAddr:   session.NewAddress("127.0.0.1:0"),
+		certs:    certs.NewInMemoryStore(),
+		router:   tree.NewRouter(addressFac),
+		curve:    elliptic.P521(),
+		random:   rand.Reader,
+		serveTLS: true,
 	})
 	require.NoError(t, err)
 
@@ -764,11 +764,11 @@ func TestOverlay_Forward(t *testing.T) {
 
 func TestOverlay_New(t *testing.T) {
 	o, err := newOverlay(&minoTemplate{
-		myAddr: session.NewAddress("127.0.0.1:0"),
-		certs:  certs.NewInMemoryStore(),
-		curve:  elliptic.P521(),
-		random: rand.Reader,
-		useTLS: true,
+		myAddr:   session.NewAddress("127.0.0.1:0"),
+		certs:    certs.NewInMemoryStore(),
+		curve:    elliptic.P521(),
+		random:   rand.Reader,
+		serveTLS: true,
 	})
 	require.NoError(t, err)
 
@@ -779,11 +779,11 @@ func TestOverlay_New(t *testing.T) {
 
 func TestOverlay_New_Hostname(t *testing.T) {
 	o, err := newOverlay(&minoTemplate{
-		myAddr: session.NewAddress("localhost:0"),
-		certs:  certs.NewInMemoryStore(),
-		curve:  elliptic.P521(),
-		random: rand.Reader,
-		useTLS: true,
+		myAddr:   session.NewAddress("localhost:0"),
+		certs:    certs.NewInMemoryStore(),
+		curve:    elliptic.P521(),
+		random:   rand.Reader,
+		serveTLS: true,
 	})
 	require.NoError(t, err)
 
@@ -796,11 +796,11 @@ func TestOverlay_New_Wrong_Cert_Store(t *testing.T) {
 	cert, _ := fake.MakeFullCertificate(t)
 
 	_, err := newOverlay(&minoTemplate{
-		cert:   cert,
-		certs:  fakeCerts{errStore: fake.GetError()},
-		curve:  elliptic.P521(),
-		random: rand.Reader,
-		useTLS: true,
+		cert:     cert,
+		certs:    fakeCerts{errStore: fake.GetError()},
+		curve:    elliptic.P521(),
+		random:   rand.Reader,
+		serveTLS: true,
 	})
 	require.EqualError(t, err, fake.Err("failed to store cert"))
 }
@@ -833,13 +833,13 @@ func TestOverlay_Panic2_GetCertificate(t *testing.T) {
 
 func TestOverlay_Join(t *testing.T) {
 	overlay, err := newOverlay(&minoTemplate{
-		myAddr: session.NewAddress("127.0.0.1:0"),
-		certs:  certs.NewInMemoryStore(),
-		router: tree.NewRouter(addressFac),
-		fac:    addressFac,
-		curve:  elliptic.P521(),
-		random: rand.Reader,
-		useTLS: true,
+		myAddr:   session.NewAddress("127.0.0.1:0"),
+		certs:    certs.NewInMemoryStore(),
+		router:   tree.NewRouter(addressFac),
+		fac:      addressFac,
+		curve:    elliptic.P521(),
+		random:   rand.Reader,
+		serveTLS: true,
 	})
 	require.NoError(t, err)
 
