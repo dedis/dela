@@ -13,6 +13,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"net/url"
 	"regexp"
@@ -128,6 +129,53 @@ type minoTemplate struct {
 	random io.Reader
 	cert   *tls.Certificate
 	useTLS bool
+}
+
+func (m *minoTemplate) makeCertificate() error {
+	var ips []net.IP
+	var dnsNames []string
+
+	hostname, err := m.myAddr.GetHostname()
+	if err != nil {
+		return xerrors.Errorf("failed to get hostname: %v", err)
+	}
+
+	ip := net.ParseIP(hostname)
+	if ip != nil {
+		ips = []net.IP{ip}
+	} else {
+		dnsNames = []string{hostname}
+	}
+
+	dela.Logger.Info().Str("hostname", hostname).
+		Strs("dnsNames", dnsNames).
+		Msgf("creating certificate: ips: %v", ips)
+
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		IPAddresses:  ips,
+		DNSNames:     dnsNames,
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().Add(certificateDuration),
+
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		MaxPathLen:            1,
+		IsCA:                  true,
+	}
+
+	buf, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, m.public, m.secret)
+	if err != nil {
+		return xerrors.Errorf("while creating: %+v", err)
+	}
+
+	err = m.certs.Store(m.myAddr, buf)
+	if err != nil {
+		return xerrors.Errorf("while storing: %v", err)
+	}
+
+	return nil
 }
 
 // Option is the type to set some fields when instantiating an overlay.

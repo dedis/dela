@@ -11,13 +11,10 @@ import (
 	"context"
 	"crypto"
 	"crypto/ecdsa"
-	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"sync"
 
-	"math/big"
-	"net"
 	"net/url"
 	"time"
 
@@ -436,6 +433,7 @@ type overlay struct {
 	router      router.Router
 	connMgr     session.ConnectionManager
 	addrFactory mino.AddressFactory
+	useTLS      bool
 
 	// secret and public are the key pair that has generated the server
 	// certificate.
@@ -451,21 +449,45 @@ func newOverlay(tmpl *minoTemplate) (*overlay, error) {
 	// session.Address never returns an error
 	myAddrBuf, _ := tmpl.myAddr.MarshalText()
 
-	if tmpl.cert != nil && tmpl.useTLS {
-		tmpl.secret = tmpl.cert.PrivateKey
-		// it is okay to crash at this point, as the certificate's key is
-		// invalid
-		tmpl.public = tmpl.cert.PrivateKey.(interface{ Public() crypto.PublicKey }).Public()
-	}
+	if tmpl.useTLS {
+		if tmpl.cert != nil {
+			tmpl.secret = tmpl.cert.PrivateKey
+			// it is okay to crash at this point, as the certificate's key is
+			// invalid
+			tmpl.public = tmpl.cert.PrivateKey.(interface{ Public() crypto.PublicKey }).Public()
 
-	if tmpl.secret == nil && tmpl.useTLS {
-		priv, err := ecdsa.GenerateKey(tmpl.curve, tmpl.random)
-		if err != nil {
-			return nil, xerrors.Errorf("cert private key: %v", err)
+			chain := bytes.Buffer{}
+			for _, c := range tmpl.cert.Certificate {
+				chain.Write(c)
+			}
+
+			err := tmpl.certs.Store(tmpl.myAddr, chain.Bytes())
+			if err != nil {
+				return nil, xerrors.Errorf("failed to store cert: %v", err)
+			}
 		}
 
-		tmpl.secret = priv
-		tmpl.public = priv.Public()
+		if tmpl.secret == nil {
+			priv, err := ecdsa.GenerateKey(tmpl.curve, tmpl.random)
+			if err != nil {
+				return nil, xerrors.Errorf("cert private key: %v", err)
+			}
+
+			tmpl.secret = priv
+			tmpl.public = priv.Public()
+		}
+
+		// Need to make sure that the certificate we loaded actually matches our address.
+		cert, err := tmpl.certs.Load(tmpl.myAddr)
+		if err != nil {
+			return nil, xerrors.Errorf("while loading cert: %v", err)
+		}
+		if cert == nil {
+			err = tmpl.makeCertificate()
+			if err != nil {
+				return nil, xerrors.Errorf("certificate failed: %v", err)
+			}
+		}
 	}
 
 	o := &overlay{
@@ -480,38 +502,13 @@ func newOverlay(tmpl *minoTemplate) (*overlay, error) {
 		addrFactory: tmpl.fac,
 		secret:      tmpl.secret,
 		public:      tmpl.public,
-	}
-
-	if tmpl.cert != nil && tmpl.useTLS {
-		chain := bytes.Buffer{}
-		for _, c := range tmpl.cert.Certificate {
-			chain.Write(c)
-		}
-
-		err := o.certs.Store(o.myAddr, chain.Bytes())
-		if err != nil {
-			return nil, xerrors.Errorf("failed to store cert: %v", err)
-		}
-	}
-
-	if tmpl.useTLS {
-		cert, err := o.certs.Load(o.myAddr)
-		if err != nil {
-			return nil, xerrors.Errorf("while loading cert: %v", err)
-		}
-
-		if cert == nil {
-			err = o.makeCertificate()
-			if err != nil {
-				return nil, xerrors.Errorf("certificate failed: %v", err)
-			}
-		}
+		useTLS:      tmpl.useTLS,
 	}
 
 	return o, nil
 }
 
-// GetCertificate returns the certificate of the overlay with its private key
+// GetCertificateChain returns the certificate of the overlay with its private key
 // set. This function will panic if the overlay has the "noTLS" flag sets.
 func (o *overlay) GetCertificateChain() certs.CertChain {
 	me, err := o.certs.Load(o.myAddr)
@@ -580,53 +577,6 @@ func (o *overlay) Join(addr *url.URL, token string, certHash []byte) error {
 	for _, raw := range resp.Peers {
 		from := o.addrFactory.FromText(raw.GetAddress())
 		o.certs.Store(from, raw.GetValue())
-	}
-
-	return nil
-}
-
-func (o *overlay) makeCertificate() error {
-	var ips []net.IP
-	var dnsNames []string
-
-	hostname, err := o.myAddr.GetHostname()
-	if err != nil {
-		return xerrors.Errorf("failed to get hostname: %v", err)
-	}
-
-	ip := net.ParseIP(hostname)
-	if ip != nil {
-		ips = []net.IP{ip}
-	} else {
-		dnsNames = []string{hostname}
-	}
-
-	dela.Logger.Info().Str("hostname", hostname).
-		Strs("dnsNames", dnsNames).
-		Msgf("creating certificate: ips: %v", ips)
-
-	tmpl := &x509.Certificate{
-		SerialNumber: big.NewInt(1),
-		IPAddresses:  ips,
-		DNSNames:     dnsNames,
-		NotBefore:    time.Now(),
-		NotAfter:     time.Now().Add(certificateDuration),
-
-		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		BasicConstraintsValid: true,
-		MaxPathLen:            1,
-		IsCA:                  true,
-	}
-
-	buf, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, o.public, o.secret)
-	if err != nil {
-		return xerrors.Errorf("while creating: %+v", err)
-	}
-
-	err = o.certs.Store(o.myAddr, buf)
-	if err != nil {
-		return xerrors.Errorf("while storing: %v", err)
 	}
 
 	return nil

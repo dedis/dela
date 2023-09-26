@@ -869,7 +869,7 @@ func TestOverlay_Join(t *testing.T) {
 }
 
 func TestMakeCertificate_WrongHostname(t *testing.T) {
-	o := overlay{}
+	o := minoTemplate{}
 	o.myAddr = session.NewAddress(":xxx")
 
 	err := o.makeCertificate()
