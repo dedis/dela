@@ -65,6 +65,10 @@ var listener = net.Listen
 type Joinable interface {
 	mino.Mino
 
+	// HasCertificate returns true if this node is running with certifications
+	// for gRPC.
+	HasCertificate() bool
+
 	// GetCertificateChain returns the certificate chain of the instance.
 	GetCertificateChain() certs.CertChain
 

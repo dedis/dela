@@ -6,7 +6,6 @@
 // node. See the example.
 //
 // Document Last Review: 13.10.2020
-//
 package node
 
 import (
@@ -57,7 +56,7 @@ type Injector interface {
 // Initializer is the interface that a module can implement to set its own
 // commands and inject the dependencies that will be resolved in the actions.
 type Initializer interface {
-	// Build populates the builder with the commands of the controller.
+	// SetCommands populates the builder with the commands of the controller.
 	SetCommands(Builder)
 
 	// OnStart starts the components of the initializer and populates the

@@ -54,7 +54,7 @@ func NewController() node.Initializer {
 	}
 }
 
-// Build implements node.Initializer. It populates the builder with the commands
+// SetCommands implements node.Initializer. It populates the builder with the commands
 // to control Minogrpc.
 func (m miniController) SetCommands(builder node.Builder) {
 	builder.SetStartFlags(
@@ -136,7 +136,7 @@ func (m miniController) SetCommands(builder node.Builder) {
 		cli.StringFlag{
 			Name:     "cert-hash",
 			Usage:    "certificate hash of the distant server",
-			Required: true,
+			Required: false,
 		},
 	)
 	sub.SetAction(builder.MakeAction(joinAction{}))
