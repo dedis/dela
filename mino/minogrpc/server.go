@@ -13,6 +13,9 @@ import (
 	"crypto/ecdsa"
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
+	"google.golang.org/grpc/credentials/insecure"
+	"strings"
 	"sync"
 
 	"net/url"
@@ -35,7 +38,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -677,7 +679,13 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 		grpc.WithStreamInterceptor(
 			otgrpc.OpenTracingStreamClientInterceptor(tracer, otgrpc.SpanDecorator(decorateClientTrace)),
 		),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	}
+
+	fmt.Println("Yep, using new file")
+	if strings.HasSuffix(addr, ":443") {
+		opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{})))
+	} else {
+		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
 
 	if mgr.useTLS {
