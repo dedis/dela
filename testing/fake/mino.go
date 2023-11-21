@@ -59,6 +59,11 @@ func (a Address) String() string {
 	return fmt.Sprintf("fake.Address[%d]", a.index)
 }
 
+// ConnectionType always returns ACTgRPCS
+func (a Address) ConnectionType() mino.AddressConnectionType {
+	return mino.ACTgRPC
+}
+
 // AddressFactory is a fake implementation of an address factory.
 //
 // - implements mino.AddressFactory

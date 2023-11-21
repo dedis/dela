@@ -28,7 +28,7 @@ func ExampleRouter_New() {
 	}
 
 	// Output: map[]
-	// 127.0.0.1:3000
+	// grpcs://127.0.0.1:3000
 }
 
 func ExampleTable_PrepareHandshakeFor() {
@@ -60,6 +60,6 @@ func ExampleTable_PrepareHandshakeFor() {
 	fmt.Println(packet.GetSource())
 	fmt.Println(packet.GetDestination())
 
-	// Output: 127.0.0.1:3000
-	// [127.0.0.1:2000]
+	// Output: grpcs://127.0.0.1:3000
+	// [grpcs://127.0.0.1:2000]
 }

@@ -198,7 +198,7 @@ func (c cosiDelaNode) Setup(delas ...dela) {
 	joinable, ok := c.onet.(minogrpc.Joinable)
 	require.True(c.t, ok)
 
-	addrURL, err := url.Parse("//" + c.onet.GetAddress().String())
+	addrURL, err := url.Parse(c.onet.GetAddress().String())
 	require.NoError(c.t, err, addrURL)
 
 	token := joinable.GenerateToken(time.Hour)
