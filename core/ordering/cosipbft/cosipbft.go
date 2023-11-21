@@ -61,17 +61,17 @@ import (
 const (
 	// DefaultRoundTimeout is the maximum round time the service waits
 	// for an event to happen.
-	DefaultRoundTimeout = 1 * time.Second
+	DefaultRoundTimeout = 10 * time.Second
 
 	// DefaultFailedRoundTimeout is the maximum round time the service waits
 	// for an event to happen, after a round has failed, thus letting time
 	// for a view change to establish a new leader.
 	// DefaultFailedRoundTimeout is generally bigger than DefaultRoundTimeout
-	DefaultFailedRoundTimeout = 2 * time.Second
+	DefaultFailedRoundTimeout = 20 * time.Second
 
 	// DefaultTransactionTimeout is the maximum allowed age of transactions
 	// before a view change is executed.
-	DefaultTransactionTimeout = 10 * time.Second
+	DefaultTransactionTimeout = 30 * time.Second
 
 	// RoundWait is the constant value of the exponential backoff use between
 	// round failures.
@@ -158,6 +158,18 @@ type ServiceParam struct {
 
 // NewService starts a new ordering service.
 func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
+	s, err := NewServiceStruct(param, opts...)
+	if err != nil {
+		return nil, err
+	}
+	NewServiceStart(s)
+	return s, nil
+}
+
+// NewServiceStruct returns the service struct without actually starting the
+// service.
+// This is useful for testing purposes.
+func NewServiceStruct(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 	tmpl := serviceTemplate{
 		hashFac: crypto.NewHashFactory(crypto.Sha256),
 		genesis: blockstore.NewGenesisStore(),
@@ -247,6 +259,11 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 	// service.
 	param.Pool.AddFilter(poolFilter{tree: proc.tree, srvc: param.Validation})
 
+	return s, nil
+}
+
+// NewServiceStart runs the necessary go-routines to start the service
+func NewServiceStart(s *Service) {
 	go func() {
 		err := s.main()
 		if err != nil {
@@ -262,8 +279,13 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 		// participate in the chain.
 		close(s.started)
 	}
+}
 
-	return s, nil
+// SetTimeouts sets the timeouts for the service.
+func (s *Service) SetTimeouts(round, roundAfterFailure, transaction time.Duration) {
+	s.timeoutRound = round
+	s.timeoutRoundAfterFailure = roundAfterFailure
+	s.transactionTimeout = transaction
 }
 
 // Setup creates a genesis block and sends it to the collective authority.

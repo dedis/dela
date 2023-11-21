@@ -280,9 +280,11 @@ func TestService_New(t *testing.T) {
 		WithBlockStore(blockstore.NewInMemory()),
 	}
 
-	srvc, err := NewService(param, opts...)
+	srvc, err := NewServiceStruct(param, opts...)
 	require.NoError(t, err)
 	require.NotNil(t, srvc)
+	srvc.SetTimeouts(1*time.Second, 3*time.Second, 10*time.Second)
+	NewServiceStart(srvc)
 
 	<-srvc.closed
 
@@ -1084,8 +1086,11 @@ func makeAuthorityTimeout(t *testing.T, n int, mult int, opts ...ServiceOption) 
 			DB:         db,
 		}
 
-		srv, err := NewService(param)
+		srv, err := NewServiceStruct(param, opts...)
 		require.NoError(t, err)
+		mTime := time.Millisecond * time.Duration(mult)
+		srv.SetTimeouts(300*mTime, 500*mTime, 700*mTime)
+		NewServiceStart(srv)
 
 		nodes[i] = testNode{
 			onet:    m,

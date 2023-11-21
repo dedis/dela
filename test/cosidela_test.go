@@ -161,8 +161,11 @@ func newDelaNode(t require.TestingT, path string, port int) dela {
 	err = blocks.Load()
 	require.NoError(t, err)
 
-	srvc, err := cosipbft.NewService(param)
+	srvc, err := cosipbft.NewServiceStruct(param)
 	require.NoError(t, err)
+	require.NotNil(t, srvc)
+	srvc.SetTimeouts(1*time.Second, 3*time.Second, 10*time.Second)
+	cosipbft.NewServiceStart(srvc)
 
 	// tx
 	mgr := signed.NewManager(cosi.GetSigner(), client{
