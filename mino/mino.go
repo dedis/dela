@@ -24,7 +24,7 @@ import (
 type Mino interface {
 	GetAddressFactory() AddressFactory
 
-	// Address returns the address that other participants should use to contact
+	// GetAddress returns the address that other participants should use to contact
 	// this instance.
 	GetAddress() Address
 

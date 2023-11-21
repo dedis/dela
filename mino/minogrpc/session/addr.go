@@ -21,7 +21,7 @@ const (
 
 // Address is a representation of the network Address of a participant. The
 // overlay implementation requires a difference between an orchestrator and its
-// source address, where the former initiates a protocol and the later
+// source address, where the former initiates a protocol and the latter
 // participates.
 //
 // See session.wrapAddress for the abstraction provided to a caller external to
@@ -63,9 +63,9 @@ func (a Address) GetHostname() (string, error) {
 	return url.Hostname(), nil
 }
 
-// Equal implements mino.Address. It returns true if both addresses are exactly
-// similar, in the sense that an orchestrator won't match a follower address
-// with the same host.
+// Equal implements 'mino.Address'. It returns true if both addresses
+// are exactly similar, in the sense that an orchestrator won't match
+// a follower address with the same host.
 func (a Address) Equal(other mino.Address) bool {
 	switch addr := other.(type) {
 	case Address:
@@ -122,7 +122,7 @@ func (a wrapAddress) Unwrap() mino.Address {
 	return a.Address
 }
 
-// Equal implements mino.Address. When it wraps a network address, it will
+// Equal implements 'mino.Address'. When it wraps a network address, it will
 // consider addresses with the same host as similar, otherwise it returns the
 // result of the underlying address comparison. That way, an orchestrator
 // address will match the address with the same origin.

@@ -522,7 +522,7 @@ func (o *overlay) GetCertificateChain() certs.CertChain {
 		panic(xerrors.Errorf("certificate of the overlay is inaccessible: %v", err))
 	}
 	if me == nil {
-		// This should never happen and it will panic if it does as this will
+		// This should never happen, and it will panic if it does as this will
 		// provoke several issues later on.
 		panic("certificate of the overlay must be populated")
 	}
