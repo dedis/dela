@@ -124,7 +124,7 @@ func TestService_Scenario_ViewChange_Basic(t *testing.T) {
 
 	// Simulate an issue with the leader transaction pool so that it does not
 	// receive any of them.
-	nodes[0].pool.Close()
+	require.NoError(t, nodes[0].pool.Close())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -272,7 +272,7 @@ func TestService_New(t *testing.T) {
 	}
 
 	genesis := blockstore.NewGenesisStore()
-	genesis.Set(types.Genesis{})
+	require.NoError(t, genesis.Set(types.Genesis{}))
 
 	opts := []ServiceOption{
 		WithHashFactory(fake.NewHashFactory(&fake.Hash{})),
@@ -325,7 +325,7 @@ func TestService_AlreadySet_Setup(t *testing.T) {
 	srvc.tree = blockstore.NewTreeCache(fakeTree{})
 	srvc.access = fakeAccess{}
 	srvc.genesis = blockstore.NewGenesisStore()
-	srvc.genesis.Set(types.Genesis{})
+	require.NoError(t, srvc.genesis.Set(types.Genesis{}))
 
 	a := fake.NewAuthority(3, fake.NewSigner)
 
@@ -467,7 +467,7 @@ func TestService_DoRound(t *testing.T) {
 	err := srvc.doRound(ctx)
 	require.NoError(t, err)
 
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 
 	go func() {
 		ch <- pbft.InitialState
@@ -504,7 +504,7 @@ func TestService_ViewchangeFailed_DoRound(t *testing.T) {
 	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 	srvc.pbftsm = pbftsm
 
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -534,7 +534,7 @@ func TestService_FailPBFTExpire_DoRound(t *testing.T) {
 		state: pbft.InitialState,
 	}
 
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -558,7 +558,7 @@ func TestService_FailSendViews_DoRound(t *testing.T) {
 	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 	srvc.pbftsm = fakeSM{}
 
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -641,7 +641,7 @@ func TestService_FailPBFT_DoRound(t *testing.T) {
 	srvc.pbftsm = fakeSM{}
 	srvc.sync = fakeSync{}
 
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -671,7 +671,7 @@ func TestService_DoPBFT(t *testing.T) {
 
 	rpc.SendResponseWithError(fake.NewAddress(5), fake.GetError())
 	rpc.Done()
-	srvc.genesis.Set(types.Genesis{})
+	require.NoError(t, srvc.genesis.Set(types.Genesis{}))
 
 	// Context timed out and no transaction are in the pool.
 	err := srvc.doPBFT(ctx)
@@ -679,7 +679,7 @@ func TestService_DoPBFT(t *testing.T) {
 
 	// This time the gathering succeeds.
 	ctx = context.Background()
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 	err = srvc.doPBFT(ctx)
 	require.NoError(t, err)
 }
@@ -691,7 +691,7 @@ func TestService_ContextCanceld_DoPBFT(t *testing.T) {
 	srvc.pbftsm = fakeSM{}
 	srvc.pool = mem.NewPool()
 
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -707,7 +707,7 @@ func TestService_FailValidation_DoPBFT(t *testing.T) {
 	srvc.pbftsm = fakeSM{}
 	srvc.pool = mem.NewPool()
 
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -727,7 +727,7 @@ func TestService_FailCreateBlock_DoPBFT(t *testing.T) {
 	srvc.hashFactory = fake.NewHashFactory(fake.NewBadHash())
 	srvc.blocks = blockstore.NewInMemory()
 
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -746,7 +746,7 @@ func TestService_FailPrepare_DoPBFT(t *testing.T) {
 	srvc.hashFactory = crypto.NewHashFactory(crypto.Sha256)
 	srvc.blocks = blockstore.NewInMemory()
 
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -764,7 +764,7 @@ func TestService_FailReadRoster_DoPBFT(t *testing.T) {
 	srvc.hashFactory = crypto.NewHashFactory(crypto.Sha256)
 	srvc.blocks = blockstore.NewInMemory()
 
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -784,7 +784,7 @@ func TestService_FailPrepareSig_DoPBFT(t *testing.T) {
 	srvc.actor = fakeCosiActor{err: fake.GetError()}
 	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -807,7 +807,7 @@ func TestService_FailCommitSign_DoPBFT(t *testing.T) {
 	}
 	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -828,7 +828,7 @@ func TestService_FailPropagation_DoPBFT(t *testing.T) {
 	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 	srvc.rpc = fake.NewBadRPC()
 
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -853,7 +853,7 @@ func TestService_FailWakeUp_DoPBFT(t *testing.T) {
 	srvc.rpc = rpc
 	srvc.genesis = blockstore.NewGenesisStore()
 
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -868,7 +868,7 @@ func TestService_WakeUp(t *testing.T) {
 	srvc := &Service{processor: newProcessor()}
 	srvc.tree = blockstore.NewTreeCache(fakeTree{})
 	srvc.genesis = blockstore.NewGenesisStore()
-	srvc.genesis.Set(types.Genesis{})
+	require.NoError(t, srvc.genesis.Set(types.Genesis{}))
 	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 	srvc.rpc = rpc
 
@@ -895,7 +895,7 @@ func TestService_GetProof(t *testing.T) {
 	srvc := &Service{processor: newProcessor()}
 	srvc.tree = blockstore.NewTreeCache(fakeTree{})
 	srvc.blocks = blockstore.NewInMemory()
-	srvc.blocks.Store(makeBlock(t, types.Digest{}))
+	require.NoError(t, srvc.blocks.Store(makeBlock(t, types.Digest{})))
 
 	proof, err := srvc.GetProof([]byte("A"))
 	require.NoError(t, err)
