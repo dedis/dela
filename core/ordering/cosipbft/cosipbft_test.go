@@ -46,6 +46,10 @@ import (
 // This test is known to be VERY flaky on Windows.
 // Further investigation is needed.
 func TestService_Scenario_Basic(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping flaky test")
+	}
+
 	nodes, ro, clean := makeAuthority(t, 5)
 	defer clean()
 
@@ -59,7 +63,7 @@ func TestService_Scenario_Basic(t *testing.T) {
 	err := nodes[0].service.Setup(ctx, initial)
 	require.NoError(t, err)
 
-	events := nodes[2].service.Watch(ctx)
+	events := nodes[0].service.Watch(ctx)
 
 	err = nodes[0].pool.Add(makeTx(t, 0, signer))
 	require.NoError(t, err)
@@ -67,23 +71,37 @@ func TestService_Scenario_Basic(t *testing.T) {
 	evt := waitEvent(t, events, 3*DefaultRoundTimeout)
 	require.Equal(t, uint64(0), evt.Index)
 
-	err = nodes[1].pool.Add(makeTx(t, 1, signer))
+	err = nodes[0].pool.Add(makeTx(t, 1, signer))
 	require.NoError(t, err)
 
 	evt = waitEvent(t, events, 10*DefaultRoundTimeout)
 	require.Equal(t, uint64(1), evt.Index)
 
-	err = nodes[1].pool.Add(makeRosterTx(t, 2, ro, signer))
+	err = nodes[0].pool.Add(makeRosterTx(t, 2, ro, signer))
 	require.NoError(t, err)
 
 	evt = waitEvent(t, events, 10*DefaultRoundTimeout)
 	require.Equal(t, uint64(2), evt.Index)
-	for i := 0; i < 3; i++ {
-		err = nodes[1].pool.Add(makeTx(t, uint64(i+3), signer))
+
+	err = nodes[0].pool.Add(makeTx(t, 3, signer))
+	require.NoError(t, err)
+
+	evt4 := nodes[4].service.Watch(ctx)
+	evt = waitEvent(t, events, 10*DefaultRoundTimeout)
+	require.Equal(t, uint64(3), evt.Index)
+
+	// Waiting for node4 to catch up all blocks
+	for i := 0; i < 4; i++ {
+		evt := waitEvent(t, evt4, 10*DefaultRoundTimeout)
+		require.Equal(t, uint64(i), evt.Index)
+	}
+
+	for i := 0; i < 4; i++ {
+		err = nodes[0].pool.Add(makeTx(t, uint64(i+4), signer))
 		require.NoError(t, err)
 
 		evt = waitEvent(t, events, 10*DefaultRoundTimeout)
-		require.Equal(t, uint64(i+3), evt.Index)
+		require.Equal(t, uint64(i+4), evt.Index)
 	}
 
 	proof, err := nodes[0].service.GetProof(viewchange.GetRosterKey())
@@ -96,8 +114,12 @@ func TestService_Scenario_Basic(t *testing.T) {
 	checkProof(t, proof.(Proof), nodes[0].service)
 }
 
-func TestService_Scenario_ViewChange(t *testing.T) {
-	nodes, ro, clean := makeAuthority(t, 4)
+func TestService_Scenario_ViewChange_Basic(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping flaky test")
+	}
+
+	nodes, ro, clean := makeAuthorityTimeout(t, 4, 1)
 	defer clean()
 
 	// Simulate an issue with the leader transaction pool so that it does not
@@ -120,8 +142,12 @@ func TestService_Scenario_ViewChange(t *testing.T) {
 	require.Equal(t, uint64(0), evt.Index)
 }
 
-func TestService_Scenario_ViewChangeRequest(t *testing.T) {
-	nodes, ro, clean := makeAuthority(t, 4)
+func TestService_Scenario_ViewChange_Request(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping flaky test")
+	}
+
+	nodes, ro, clean := makeAuthorityTimeout(t, 4, 1)
 	defer clean()
 	nodes[3].service.pool = fakePool{
 		Pool: nodes[3].service.pool,
@@ -151,8 +177,12 @@ func TestService_Scenario_ViewChangeRequest(t *testing.T) {
 	require.Equal(t, leader, nodes[0].onet.GetAddress())
 }
 
-func TestService_Scenario_NoViewChangeRequest(t *testing.T) {
-	nodes, ro, clean := makeAuthority(t, 4)
+func TestService_Scenario_ViewChange_NoRequest(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping flaky test")
+	}
+
+	nodes, ro, clean := makeAuthorityTimeout(t, 4, 1)
 	defer clean()
 
 	signer := nodes[0].signer
@@ -195,6 +225,10 @@ func TestService_Scenario_NoViewChangeRequest(t *testing.T) {
 //   - round failed on node 0
 //   - mismatch state viewchange != (initial|prepare)
 func TestService_Scenario_FinalizeFailure(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping flaky test")
+	}
+
 	nodes, ro, clean := makeAuthority(t, 4)
 	defer clean()
 
@@ -987,7 +1021,19 @@ func waitEvent(t *testing.T, events <-chan ordering.Event, timeout time.Duration
 	}
 }
 
-func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()) {
+func makeAuthority(t *testing.T, n int, opts ...ServiceOption) (
+	[]testNode,
+	authority.Authority,
+	func(),
+) {
+	return makeAuthorityTimeout(t, n, 10, opts...)
+}
+
+func makeAuthorityTimeout(t *testing.T, n int, mult int, opts ...ServiceOption) (
+	[]testNode,
+	authority.Authority,
+	func(),
+) {
 	manager := minoch.NewManager()
 
 	addrs := make([]mino.Address, n)
@@ -1139,8 +1185,9 @@ type fakeCosiActor struct {
 }
 
 func (c fakeCosiActor) Sign(
-	ctx context.Context, msg serde.Message,
-	ca crypto.CollectiveAuthority,
+	context.Context,
+	serde.Message,
+	crypto.CollectiveAuthority,
 ) (crypto.Signature, error) {
 
 	if c.counter.Done() {
