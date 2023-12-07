@@ -10,7 +10,6 @@
 // instance should drop the message.
 //
 // Documentation Last Review: 06.10.2020
-//
 package minoch
 
 import (
@@ -85,7 +84,7 @@ func (m *Minoch) GetAddress() mino.Address {
 	return address{id: m.identifier}
 }
 
-// AddFilter adds the filter to all of the RPCs. This must be called before
+// AddFilter adds the filter to all the RPCs. This must be called before
 // receiving requests.
 func (m *Minoch) AddFilter(filter Filter) {
 	m.filters = append(m.filters, filter)
