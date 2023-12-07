@@ -33,20 +33,38 @@ func TestFilter_RotateFilter(t *testing.T) {
 
 func TestFilter_IndexFilter(t *testing.T) {
 	filters := &Filter{Indices: []int{}}
-
 	IndexFilter(1)(filters)
-	require.Equal(t, filters.Indices, []int{1})
+	require.Equal(t, []int{1}, filters.Indices)
 
 	IndexFilter(2)(filters)
-	require.Equal(t, filters.Indices, []int{1, 2})
+	require.Equal(t, []int{1, 2}, filters.Indices)
 
-	IndexFilter(0)(filters)
-	require.Equal(t, filters.Indices, []int{0, 1, 2})
-
-	IndexFilter(0)(filters)
-	IndexFilter(1)(filters)
 	IndexFilter(2)(filters)
-	require.Equal(t, filters.Indices, []int{0, 1, 2})
+	require.Equal(t, []int{1, 2}, filters.Indices)
+
+	IndexFilter(0)(filters)
+	require.Equal(t, []int{0, 1, 2}, filters.Indices)
+}
+
+func TestFilter_RejectFilter(t *testing.T) {
+	filters := &Filter{Indices: []int{1, 2, 3, 4}}
+
+	testCases := []struct {
+		filterVal int
+		expected  []int
+	}{
+		{0, []int{1, 2, 3, 4}},
+		{5, []int{1, 2, 3, 4}},
+		{2, []int{1, 3, 4}},
+		{1, []int{3, 4}},
+		{4, []int{3}},
+		{3, []int{}},
+	}
+
+	for _, tc := range testCases {
+		RejectFilter(tc.filterVal)(filters)
+		require.Equal(t, tc.expected, filters.Indices)
+	}
 }
 
 func TestFilter_RangeFilter(t *testing.T) {
