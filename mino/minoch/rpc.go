@@ -211,7 +211,7 @@ func (c RPC) Stream(ctx context.Context, memship mino.Players) (mino.Sender, min
 			case env := <-in:
 				for _, to := range env.to {
 					output := orchRecv.out
-					if !to.(address).orchestrator {
+					if !to.(address).orchestrator || !to.Equal(orchAddr) {
 						output = outs[to.String()].out
 					}
 
