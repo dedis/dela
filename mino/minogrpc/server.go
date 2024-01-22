@@ -112,7 +112,8 @@ func (o overlayServer) Join(ctx context.Context, req *ptypes.JoinRequest) (
 
 			client := ptypes.NewOverlayClient(conn)
 
-			_, err = client.Share(ctx, req.GetChain())
+			_, err = client.Share(ctx, req.GetChain(),
+				grpc.MaxCallRecvMsgSize(session.MaxMessageSize))
 			if err != nil {
 				res <- xerrors.Errorf("couldn't call share: %v", err)
 				return
@@ -585,7 +586,7 @@ func (o *overlay) Join(addr *url.URL, token string, certHash []byte) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	resp, err := client.Join(ctx, req)
+	resp, err := client.Join(ctx, req, grpc.MaxCallRecvMsgSize(session.MaxMessageSize))
 	if err != nil {
 		return xerrors.Errorf("couldn't call join: %v", err)
 	}
@@ -663,6 +664,7 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 			Backoff:           backoff.DefaultConfig,
 			MinConnectTimeout: defaultMinConnectTimeout,
 		}),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(session.MaxMessageSize)),
 		grpc.WithUnaryInterceptor(
 			otgrpc.OpenTracingClientInterceptor(tracer, otgrpc.SpanDecorator(decorateClientTrace)),
 		),

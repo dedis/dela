@@ -12,6 +12,7 @@
 package dela
 
 import (
+	"fmt"
 	"os"
 	"time"
 
@@ -73,6 +74,7 @@ func init() {
 	default:
 		level = zerolog.TraceLevel
 	}
+	fmt.Println("LogLevel is:", logLevel, level)
 
 	Logger = Logger.Level(level)
 	PromCollectors = append(PromCollectors, promWarns, promErrs)

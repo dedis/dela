@@ -40,6 +40,9 @@ import (
 // HandshakeKey is the key to the handshake store in the headers.
 const HandshakeKey = "handshake"
 
+// MaxMessageSize that will be sent using grpc
+var MaxMessageSize = int(1e9)
+
 // ConnectionManager is an interface required by the session to open and release
 // connections to the relays.
 type ConnectionManager interface {
@@ -445,7 +448,10 @@ func (s *session) setupRelay(p parent, addr mino.Address) (Relay, error) {
 
 	cl := ptypes.NewOverlayClient(conn)
 
-	stream, err := cl.Stream(ctx, grpc.WaitForReady(false))
+	stream, err := cl.Stream(ctx,
+		grpc.WaitForReady(false),
+		grpc.MaxCallRecvMsgSize(MaxMessageSize),
+	)
 	if err != nil {
 		s.connMgr.Release(addr)
 		return nil, xerrors.Errorf("client: %v", err)
@@ -592,7 +598,8 @@ func (r *unicastRelay) Send(ctx context.Context, p router.Packet) (*ptypes.Ack, 
 
 	ctx = metadata.NewOutgoingContext(ctx, r.md)
 
-	ack, err := client.Forward(ctx, &ptypes.Packet{Serialized: data})
+	ack, err := client.Forward(ctx, &ptypes.Packet{Serialized: data},
+		grpc.MaxCallRecvMsgSize(MaxMessageSize))
 	if err != nil {
 		return nil, xerrors.Errorf("client: %w", err)
 	}
