@@ -281,6 +281,7 @@ func NewMinogrpc(listen net.Addr, public *url.URL, router router.Router, opts ..
 			otgrpc.SpanDecorator(decorateServerTrace))),
 		grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(tracer,
 			otgrpc.SpanDecorator(decorateServerTrace))),
+		grpc.MaxRecvMsgSize(session.MaxMessageSize),
 	}
 
 	if !tmpl.serveTLS {

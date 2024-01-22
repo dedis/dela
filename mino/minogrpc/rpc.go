@@ -7,6 +7,8 @@ package minogrpc
 
 import (
 	context "context"
+	"sync"
+
 	"github.com/rs/xid"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/internal/tracing"
@@ -15,10 +17,10 @@ import (
 	"go.dedis.ch/dela/mino/minogrpc/session"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"sync"
 )
 
 // RPC represents an RPC that has been registered by a client, which allows
@@ -32,8 +34,10 @@ type RPC struct {
 }
 
 // Call implements mino.RPC. It calls the RPC on each provided address.
-func (rpc *RPC) Call(ctx context.Context,
-	req serde.Message, players mino.Players) (<-chan mino.Response, error) {
+func (rpc *RPC) Call(
+	ctx context.Context,
+	req serde.Message, players mino.Players,
+) (<-chan mino.Response, error) {
 
 	data, err := req.Serialize(rpc.overlay.context)
 	if err != nil {
@@ -75,7 +79,8 @@ func (rpc *RPC) Call(ctx context.Context,
 			header := metadata.New(map[string]string{headerURIKey: rpc.uri})
 			newCtx := metadata.NewOutgoingContext(ctx, header)
 
-			callResp, err := cl.Call(newCtx, sendMsg)
+			callResp, err := cl.Call(newCtx, sendMsg,
+				grpc.MaxCallRecvMsgSize(session.MaxMessageSize))
 			if err != nil {
 				resp := mino.NewResponseWithError(
 					addr,
@@ -134,7 +139,11 @@ func (rpc *RPC) Call(ctx context.Context,
 // If C has to send a message to B, it will send it through node A. Similarly,
 // if D has to send a message to G, it will move up the tree through B, A and
 // finally C.
-func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, mino.Receiver, error) {
+func (rpc RPC) Stream(ctx context.Context, players mino.Players) (
+	mino.Sender,
+	mino.Receiver,
+	error,
+) {
 	if players == nil || players.Len() == 0 {
 		return nil, nil, xerrors.New("empty list of addresses")
 	}
@@ -180,7 +189,7 @@ func (rpc RPC) Stream(ctx context.Context, players mino.Players) (mino.Sender, m
 
 	ctx = metadata.NewOutgoingContext(ctx, md)
 
-	stream, err := client.Stream(ctx)
+	stream, err := client.Stream(ctx, grpc.MaxCallRecvMsgSize(session.MaxMessageSize))
 	if err != nil {
 		rpc.overlay.connMgr.Release(gw)
 
