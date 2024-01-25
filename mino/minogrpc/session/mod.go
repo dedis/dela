@@ -39,6 +39,9 @@ import (
 // HandshakeKey is the key to the handshake store in the headers.
 const HandshakeKey = "handshake"
 
+// MaxMessageSize that will be sent using grpc
+var MaxMessageSize = int(1e9)
+
 // ConnectionManager is an interface required by the session to open and release
 // connections to the relays.
 type ConnectionManager interface {
@@ -360,7 +363,13 @@ func (s *session) sendPacket(p parent, pkt router.Packet, errs chan error) bool 
 	return true
 }
 
-func (s *session) sendTo(p parent, to mino.Address, pkt router.Packet, errs chan error, wg *sync.WaitGroup) {
+func (s *session) sendTo(
+	p parent,
+	to mino.Address,
+	pkt router.Packet,
+	errs chan error,
+	wg *sync.WaitGroup,
+) {
 	defer wg.Done()
 
 	var relay Relay
@@ -438,7 +447,10 @@ func (s *session) setupRelay(p parent, addr mino.Address) (Relay, error) {
 
 	cl := ptypes.NewOverlayClient(conn)
 
-	stream, err := cl.Stream(ctx, grpc.WaitForReady(false))
+	stream, err := cl.Stream(ctx,
+		grpc.WaitForReady(false),
+		grpc.MaxCallRecvMsgSize(MaxMessageSize),
+	)
 	if err != nil {
 		s.connMgr.Release(addr)
 		return nil, xerrors.Errorf("client: %v", err)
@@ -546,8 +558,10 @@ type unicastRelay struct {
 
 // NewRelay returns a new relay that will send messages to the gateway through
 // unicast requests.
-func NewRelay(stream PacketStream, gw mino.Address,
-	ctx serde.Context, conn grpc.ClientConnInterface, md metadata.MD) Relay {
+func NewRelay(
+	stream PacketStream, gw mino.Address,
+	ctx serde.Context, conn grpc.ClientConnInterface, md metadata.MD,
+) Relay {
 
 	r := &unicastRelay{
 		md:      md,
@@ -583,7 +597,8 @@ func (r *unicastRelay) Send(ctx context.Context, p router.Packet) (*ptypes.Ack, 
 
 	ctx = metadata.NewOutgoingContext(ctx, r.md)
 
-	ack, err := client.Forward(ctx, &ptypes.Packet{Serialized: data})
+	ack, err := client.Forward(ctx, &ptypes.Packet{Serialized: data},
+		grpc.MaxCallRecvMsgSize(MaxMessageSize))
 	if err != nil {
 		return nil, xerrors.Errorf("client: %w", err)
 	}

@@ -84,6 +84,8 @@ func (ns *Service) Execute(snap store.Snapshot, step execution.Step) (execution.
 	err := contract.Execute(snap, step)
 	if err != nil {
 		res.Accepted = false
+		// LG: DEBUG - I'd like to keep this commented line, as it helps debugging.
+		// res.Message = fmt.Sprintf("%+v", err)
 		res.Message = err.Error()
 	}
 

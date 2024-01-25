@@ -184,7 +184,7 @@ func (s fastSync) requestSync(
 
 		catchup, ok := msg.(types.CatchupMessage)
 		if ok {
-			s.logger.Trace().Msgf("Got %d blocks from %v",
+			s.logger.Info().Msgf("Got %d fastsync blocks from %v",
 				len(catchup.GetBlockLinks()), from)
 
 			replies[from.String()] = struct{}{}

@@ -66,7 +66,10 @@ type overlayServer struct {
 // Join implements ptypes.OverlayServer. It processes the request by checking
 // the validity of the token and if it is accepted, by sending the certificate
 // to the known peers. It finally returns the certificates to the caller.
-func (o overlayServer) Join(ctx context.Context, req *ptypes.JoinRequest) (*ptypes.JoinResponse, error) {
+func (o overlayServer) Join(ctx context.Context, req *ptypes.JoinRequest) (
+	*ptypes.JoinResponse,
+	error,
+) {
 	// 1. Check validity of the token.
 	if !o.tokens.Verify(req.Token) {
 		return nil, xerrors.Errorf("token '%s' is invalid", req.Token)
@@ -109,7 +112,8 @@ func (o overlayServer) Join(ctx context.Context, req *ptypes.JoinRequest) (*ptyp
 
 			client := ptypes.NewOverlayClient(conn)
 
-			_, err = client.Share(ctx, req.GetChain())
+			_, err = client.Share(ctx, req.GetChain(),
+				grpc.MaxCallRecvMsgSize(session.MaxMessageSize))
 			if err != nil {
 				res <- xerrors.Errorf("couldn't call share: %v", err)
 				return
@@ -135,7 +139,10 @@ func (o overlayServer) Join(ctx context.Context, req *ptypes.JoinRequest) (*ptyp
 
 // Share implements ptypes.OverlayServer. It accepts a certificate from a
 // participant only if it is valid from the address it claims to be.
-func (o overlayServer) Share(ctx context.Context, msg *ptypes.CertificateChain) (*ptypes.CertificateAck, error) {
+func (o overlayServer) Share(
+	ctx context.Context,
+	msg *ptypes.CertificateChain,
+) (*ptypes.CertificateAck, error) {
 	from := o.addrFactory.FromText(msg.GetAddress()).(session.Address)
 
 	hostname, err := from.GetHostname()
@@ -579,7 +586,7 @@ func (o *overlay) Join(addr *url.URL, token string, certHash []byte) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	resp, err := client.Join(ctx, req)
+	resp, err := client.Join(ctx, req, grpc.MaxCallRecvMsgSize(session.MaxMessageSize))
 	if err != nil {
 		return xerrors.Errorf("couldn't call join: %v", err)
 	}
@@ -660,11 +667,13 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 			Backoff:           backoff.DefaultConfig,
 			MinConnectTimeout: defaultMinConnectTimeout,
 		}),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(session.MaxMessageSize)),
 		grpc.WithUnaryInterceptor(
 			otgrpc.OpenTracingClientInterceptor(tracer, otgrpc.SpanDecorator(decorateClientTrace)),
 		),
 		grpc.WithStreamInterceptor(
-			otgrpc.OpenTracingStreamClientInterceptor(tracer, otgrpc.SpanDecorator(decorateClientTrace)),
+			otgrpc.OpenTracingStreamClientInterceptor(tracer,
+				otgrpc.SpanDecorator(decorateClientTrace)),
 		),
 	}
 
@@ -697,7 +706,10 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 	return conn, nil
 }
 
-func (mgr *connManager) getTransportCredential(addr mino.Address) (credentials.TransportCredentials, error) {
+func (mgr *connManager) getTransportCredential(addr mino.Address) (
+	credentials.TransportCredentials,
+	error,
+) {
 	clientChain, err := mgr.certs.Load(addr)
 	if err != nil {
 		return nil, xerrors.Errorf("while loading distant cert: %v", err)
@@ -734,10 +746,12 @@ func (mgr *connManager) getTransportCredential(addr mino.Address) (credentials.T
 	}
 
 	ta := credentials.NewTLS(&tls.Config{
-		Certificates: []tls.Certificate{{
-			Certificate: [][]byte{meCerts[0].Raw},
-			Leaf:        meCerts[0],
-		}},
+		Certificates: []tls.Certificate{
+			{
+				Certificate: [][]byte{meCerts[0].Raw},
+				Leaf:        meCerts[0],
+			},
+		},
 		RootCAs:    pool,
 		MinVersion: tls.VersionTLS12,
 	})
@@ -808,8 +822,10 @@ func uriFromContext(ctx context.Context) string {
 
 // decorateClientTrace adds the protocol tag and the streamID tag to a client
 // side trace.
-func decorateClientTrace(ctx context.Context, span opentracing.Span, method string,
-	req, resp interface{}, grpcError error) {
+func decorateClientTrace(
+	ctx context.Context, span opentracing.Span, method string,
+	req, resp interface{}, grpcError error,
+) {
 	md, ok := metadata.FromOutgoingContext(ctx)
 	if !ok {
 		return
