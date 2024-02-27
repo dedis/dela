@@ -62,7 +62,7 @@ import (
 const (
 	// DefaultRoundTimeout is the maximum round time the service waits
 	// for an event to happen.
-	DefaultRoundTimeout = 200 * time.Second
+	DefaultRoundTimeout = time.Hour
 
 	// DefaultFailedRoundTimeout is the maximum round time the service waits
 	// for an event to happen, after a round has failed, thus letting time
