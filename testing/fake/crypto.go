@@ -3,6 +3,7 @@ package fake
 import (
 	"hash"
 
+	"go.dedis.ch/dela/core/access"
 	"go.dedis.ch/dela/crypto"
 	"go.dedis.ch/dela/serde"
 )
@@ -251,6 +252,19 @@ func (s Signer) Sign([]byte) (crypto.Signature, error) {
 // Aggregate implements crypto.AggregateSigner.
 func (s Signer) Aggregate(...crypto.Signature) (crypto.Signature, error) {
 	return Signature{}, s.err
+}
+
+type Client struct {
+	nonce uint64
+}
+
+// NewClient returns a fake client
+func NewClient() Client {
+	return Client{}
+}
+
+func (c Client) GetNonce(access.Identity) (uint64, error) {
+	return c.nonce, nil
 }
 
 // Verifier is a fake implementation of crypto.Verifier.

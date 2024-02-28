@@ -399,16 +399,13 @@ func (a accessstore) Delete(key []byte) error {
 	return nil
 }
 
-// txClient return monotically increasing nonce
+// txClient returns always a 0 nonce
 //
 // - implements signed.Client
 type txClient struct {
-	nonce uint64
 }
 
 // GetNonce implements signed.Client
 func (c *txClient) GetNonce(access.Identity) (uint64, error) {
-	res := c.nonce
-	c.nonce++
-	return res, nil
+	return 0, nil
 }
