@@ -10,7 +10,8 @@ import (
 func ExampleTransactionManager_Make() {
 	signer := bls.NewSigner()
 
-	manager := NewManager(signer, exampleClient{nonce: 5})
+	nonce := uint64(0)
+	manager := NewManager(signer, exampleClient{nonce: &nonce})
 
 	tx, err := manager.Make()
 	if err != nil {
@@ -19,6 +20,7 @@ func ExampleTransactionManager_Make() {
 
 	fmt.Println(tx.GetNonce())
 
+	nonce = uint64(5)
 	err = manager.Sync()
 	if err != nil {
 		panic("failed to synchronize: " + err.Error())
@@ -31,8 +33,16 @@ func ExampleTransactionManager_Make() {
 
 	fmt.Println(tx.GetNonce())
 
+	tx, err = manager.Make()
+	if err != nil {
+		panic("failed to create second transaction: " + err.Error())
+	}
+
+	fmt.Println(tx.GetNonce())
+
 	// Output: 0
 	// 5
+	// 6
 }
 
 // exampleClient is an example of a manager client. It always synchronize the
@@ -40,11 +50,11 @@ func ExampleTransactionManager_Make() {
 //
 // - implements signed.Client
 type exampleClient struct {
-	nonce uint64
+	nonce *uint64
 }
 
 // GetNonce implements signed.Client. It always return the same nonce for
 // simplicity.
 func (cl exampleClient) GetNonce(identity access.Identity) (uint64, error) {
-	return cl.nonce, nil
+	return *cl.nonce, nil
 }

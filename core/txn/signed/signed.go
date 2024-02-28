@@ -306,6 +306,17 @@ func (mgr *TransactionManager) Make(args ...txn.Arg) (txn.Transaction, error) {
 
 	opts = append(opts, WithHashFactory(mgr.hashFac))
 
+	nonce, err := mgr.client.GetNonce(mgr.signer.GetPublicKey())
+	if err != nil {
+		dela.Logger.Err(err).Msg("Couldn't update nonce")
+	}
+	// Only update our nonce if the stored nonce is bigger than ours.
+	// This allows to have transactions in the pool which are not yet accepted,
+	// but still have the correct nonce.
+	if nonce > mgr.nonce {
+		mgr.nonce = nonce
+	}
+
 	tx, err := NewTransaction(mgr.nonce, mgr.signer.GetPublicKey(), opts...)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create tx: %v", err)

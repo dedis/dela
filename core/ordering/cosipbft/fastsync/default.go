@@ -241,7 +241,7 @@ func (h *handler) Stream(out mino.Sender, in mino.Receiver) error {
 			return xerrors.Errorf("creating blocks to send failed: %v", err)
 		}
 
-		sentAllBlocks = m.GetLatest()+uint64(len(blReply)) == h.blocks.Len()
+		sentAllBlocks = m.GetLatest()+uint64(len(blReply)) >= h.blocks.Len()
 		err = <-out.Send(types.NewCatchupMessage(
 			!sentAllBlocks, blReply), orch)
 		if err != nil {
