@@ -8,6 +8,7 @@ package cosipbft
 
 import (
 	"context"
+	"time"
 
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela/core"
@@ -306,10 +307,14 @@ func (h *processor) catchupHandler() {
 	for players := range h.catchup {
 		if h.syncMethod() == syncMethodFast {
 			ctx, cancel := context.WithCancel(context.Background())
-			err := h.fsync.Sync(ctx, players,
-				fastsync.Config{SplitMessageSize: DefaultFastSyncMessageSize})
-			if err != nil {
-				h.logger.Err(err)
+			for {
+				err := h.fsync.Sync(ctx, players,
+					fastsync.Config{SplitMessageSize: DefaultFastSyncMessageSize})
+				if err == nil {
+					break
+				}
+				h.logger.Err(err).Msg("Couldn't sync - trying again in 10 seconds")
+				time.Sleep(10 * time.Second)
 			}
 			cancel()
 		}
