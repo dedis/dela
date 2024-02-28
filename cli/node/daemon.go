@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -98,6 +99,14 @@ type socketDaemon struct {
 // Listen implements node.Daemon. It starts the daemon by creating the unix
 // socket file to the path.
 func (d *socketDaemon) Listen() error {
+	_, err := os.Stat(d.socketpath)
+	if err == nil {
+		d.logger.Warn().Msg("Cleaning existing socket file")
+		err := os.Remove(d.socketpath)
+		if err != nil {
+			return xerrors.Errorf("couldn't clear tangling socketpath: %v", err)
+		}
+	}
 	socket, err := d.listenFn("unix", d.socketpath)
 	if err != nil {
 		return xerrors.Errorf("couldn't bind socket: %v", err)
