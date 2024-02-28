@@ -22,7 +22,7 @@ func TestRegisterContract(t *testing.T) {
 }
 
 func TestNewTransaction(t *testing.T) {
-	mgr := NewManager(signed.NewManager(fake.NewSigner(), nil))
+	mgr := NewManager(signed.NewManager(fake.NewSigner(), fake.NewClient()))
 
 	tx, err := mgr.Make(authority.New(nil, nil))
 	require.NoError(t, err)

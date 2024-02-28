@@ -175,7 +175,7 @@ func TestService_Scenario_ViewChange_Request(t *testing.T) {
 	require.Equal(t, leader, nodes[0].onet.GetAddress())
 
 	// let enough time for a round to run
-	time.Sleep(DefaultRoundTimeout + 100*time.Millisecond)
+	time.Sleep(time.Second)
 
 	require.Equal(t, nodes[3].service.pbftsm.GetState(), pbft.ViewChangeState)
 	require.NotEqual(t, nodes[2].service.pbftsm.GetState(), pbft.ViewChangeState)
@@ -214,7 +214,7 @@ func TestService_Scenario_ViewChange_NoRequest(t *testing.T) {
 	require.NoError(t, err)
 
 	// let enough time for a round to run
-	time.Sleep(DefaultRoundTimeout + 100*time.Millisecond)
+	time.Sleep(time.Second)
 
 	require.NotEqual(t, nodes[3].service.pbftsm.GetState(), pbft.ViewChangeState)
 	require.NotEqual(t, nodes[2].service.pbftsm.GetState(), pbft.ViewChangeState)
