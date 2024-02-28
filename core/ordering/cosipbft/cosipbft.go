@@ -62,7 +62,7 @@ import (
 const (
 	// DefaultRoundTimeout is the maximum round time the service waits
 	// for an event to happen.
-	DefaultRoundTimeout = time.Hour
+	DefaultRoundTimeout = 10 * time.Minute
 
 	// DefaultFailedRoundTimeout is the maximum round time the service waits
 	// for an event to happen, after a round has failed, thus letting time
@@ -72,14 +72,14 @@ const (
 
 	// DefaultTransactionTimeout is the maximum allowed age of transactions
 	// before a view change is executed.
-	DefaultTransactionTimeout = 30 * time.Second
+	DefaultTransactionTimeout = 5 * time.Minute
 
 	// RoundWait is the constant value of the exponential backoff use between
 	// round failures.
-	RoundWait = 5 * time.Millisecond
+	RoundWait = 50 * time.Millisecond
 
 	// RoundMaxWait is the maximum amount for the backoff.
-	RoundMaxWait = 5 * time.Minute
+	RoundMaxWait = 10 * time.Minute
 
 	// DefaultFastSyncMessageSize defines when a fast sync message will be split.
 	DefaultFastSyncMessageSize = 1e6
