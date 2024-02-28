@@ -201,6 +201,8 @@ func (s fastSync) requestSync(
 		}
 	}
 
+	s.logger.Info().Msgf("Currently have %d blocks", s.blocks.Len())
+
 	return moreBlocks, nil
 }
 
