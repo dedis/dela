@@ -62,7 +62,7 @@ import (
 const (
 	// DefaultRoundTimeout is the maximum round time the service waits
 	// for an event to happen.
-	DefaultRoundTimeout = time.Hour
+	DefaultRoundTimeout = 10 * time.Minute
 
 	// DefaultFailedRoundTimeout is the maximum round time the service waits
 	// for an event to happen, after a round has failed, thus letting time
@@ -72,14 +72,14 @@ const (
 
 	// DefaultTransactionTimeout is the maximum allowed age of transactions
 	// before a view change is executed.
-	DefaultTransactionTimeout = 30 * time.Second
+	DefaultTransactionTimeout = 5 * time.Minute
 
 	// RoundWait is the constant value of the exponential backoff use between
 	// round failures.
-	RoundWait = 5 * time.Millisecond
+	RoundWait = 50 * time.Millisecond
 
 	// RoundMaxWait is the maximum amount for the backoff.
-	RoundMaxWait = 5 * time.Minute
+	RoundMaxWait = 10 * time.Minute
 
 	// DefaultFastSyncMessageSize defines when a fast sync message will be split.
 	DefaultFastSyncMessageSize = 1e6
@@ -288,23 +288,20 @@ func NewServiceStart(s *Service) {
 	go s.watchBlocks()
 
 	if s.genesis.Exists() {
-		if s.syncMethod() == syncMethodFast {
-			ctx, done := context.WithCancel(context.Background())
-			roster, err := s.readRoster(s.tree.Get())
-			if err != nil {
-				panic("couldn't get roster of latest block: " + err.Error())
-			}
-			err = s.fsync.Sync(ctx, roster,
-				fastsync.Config{SplitMessageSize: DefaultFastSyncMessageSize})
-			if err != nil {
-				s.logger.Warn().Msgf("while syncing with other nodes: %+v", err)
-			}
-			done()
-		}
-
-		// If the genesis already exists, the service can start right away to
-		// participate in the chain.
+		// If the genesis already exists, and all blocks are loaded,
+		// the service can start right away to participate in the chain.
 		close(s.started)
+		if s.syncMethod() == syncMethodFast {
+			go func() {
+				roster, err := s.getCurrentRoster()
+				if err != nil {
+					s.logger.Err(err).Msg("Couldn't get roster")
+				} else {
+					s.logger.Info().Msg("Triggering catchup")
+					s.catchup <- roster
+				}
+			}()
+		}
 	}
 }
 

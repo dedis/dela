@@ -25,7 +25,7 @@ var getManager = func(signer crypto.Signer, s signed.Client) txn.Manager {
 	return signed.NewManager(signer, s)
 }
 
-// addAction describes an action to add an new transaction to the pool.
+// addAction describes an action to add a new transaction to the pool.
 //
 // - implements node.ActionTemplate
 type addAction struct {

@@ -47,7 +47,7 @@ var (
 	// associated with the `dkg-decrypt` protocol.
 	protocolNameDecrypt = "dkg-decrypt"
 	// protocolNameReencrypt denotes the value of the protocol span tag
-	//// associated with the `dkg-reencrypt` protocol.
+	// associated with the `dkg-reencrypt` protocol.
 	protocolNameReencrypt = "dkg-reencrypt"
 	// ProtocolNameResharing denotes the value of the protocol span tag
 	// associated with the `dkg-resharing` protocol.
@@ -336,8 +336,7 @@ func (a *Actor) VerifiableEncrypt(message []byte, GBar kyber.Point) (types.Ciphe
 	[]byte, error) {
 
 	if !a.startRes.Done() {
-		return types.Ciphertext{}, nil, xerrors.Errorf("you must first initialize " +
-			"DKG. Did you call setup() first?")
+		return types.Ciphertext{}, nil, xerrors.Errorf(initDkgFirst)
 	}
 
 	// Embed the message (or as much of it as will fit) into a curve point.

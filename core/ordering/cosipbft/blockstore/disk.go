@@ -11,6 +11,7 @@ import (
 	"encoding/binary"
 	"sync"
 
+	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/core"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
@@ -87,6 +88,9 @@ func (s *InDisk) Load() error {
 			s.last = link
 			s.indices[link.GetBlock().GetHash()] = link.GetBlock().GetIndex()
 
+			if s.length%100 == 0 {
+				dela.Logger.Info().Msgf("Loaded %d blocks", s.length)
+			}
 			return nil
 		})
 
