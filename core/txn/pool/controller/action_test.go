@@ -49,18 +49,11 @@ func TestExecute(t *testing.T) {
 	require.EqualError(t, err, "failed to include tx: "+fake.Err("failed to add"))
 
 	getManager = func(c crypto.Signer, s signed.Client) txn.Manager {
-		return badManager{}
-	}
-
-	err = action.Execute(ctx)
-	require.EqualError(t, err, "creating transaction: "+fake.Err("make fail"))
-
-	getManager = func(c crypto.Signer, s signed.Client) txn.Manager {
 		return badManager{failSync: true}
 	}
 
 	err = action.Execute(ctx)
-	require.EqualError(t, err, "failed to sync manager: "+fake.Err("sync fail"))
+	require.EqualError(t, err, "creating transaction: "+fake.Err("make fail"))
 
 	err = os.WriteFile(keyFile, []byte("bad signer"), os.ModePerm)
 	require.NoError(t, err)

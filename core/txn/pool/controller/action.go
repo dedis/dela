@@ -62,11 +62,6 @@ func (a *addAction) Execute(ctx node.Context) error {
 
 	manager := getManager(signer, a.client)
 
-	err = manager.Sync()
-	if err != nil {
-		return xerrors.Errorf("failed to sync manager: %v", err)
-	}
-
 	tx, err := manager.Make(args...)
 	if err != nil {
 		return xerrors.Errorf("creating transaction: %v", err)
