@@ -247,7 +247,13 @@ func NewService(param ServiceParam, opts ...ServiceOption) (*Service, error) {
 	// service.
 	param.Pool.AddFilter(poolFilter{tree: proc.tree, srvc: param.Validation})
 
-	go s.main()
+	go func() {
+		err := s.main()
+		if err != nil {
+			s.logger.Err(err).Msg("While running main")
+			close(s.closing)
+		}
+	}()
 
 	go s.watchBlocks()
 

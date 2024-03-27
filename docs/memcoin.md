@@ -40,7 +40,7 @@ memcoin --config /tmp/node3 access add \
 memcoin --config /tmp/node1 pool add\
     --key private.key\
     --args go.dedis.ch/dela.ContractArg --args go.dedis.ch/dela.Access\
-    --args access:grant_id --args 0200000000000000000000000000000000000000000000000000000000000000\
+    --args access:grant_id --args 56414c55\
     --args access:grant_contract --args go.dedis.ch/dela.Value\
     --args access:grant_command --args all\
     --args access:identity --args $(crypto bls signer read --path private.key --format BASE64_PUBKEY)\

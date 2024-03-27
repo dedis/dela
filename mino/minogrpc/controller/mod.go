@@ -54,8 +54,8 @@ func NewController() node.Initializer {
 	}
 }
 
-// Build implements node.Initializer. It populates the builder with the commands
-// to control Minogrpc.
+// SetCommands implements node.Initializer. It populates the builder with
+// the commands to control Minogrpc.
 func (m miniController) SetCommands(builder node.Builder) {
 	builder.SetStartFlags(
 		cli.StringFlag{
