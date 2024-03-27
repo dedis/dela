@@ -46,6 +46,10 @@ import (
 // This test is known to be VERY flaky on Windows.
 // Further investigation is needed.
 func TestService_Scenario_Basic(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping flaky test")
+	}
+
 	nodes, ro, clean := makeAuthority(t, 5)
 	defer clean()
 
@@ -59,7 +63,7 @@ func TestService_Scenario_Basic(t *testing.T) {
 	err := nodes[0].service.Setup(ctx, initial)
 	require.NoError(t, err)
 
-	events := nodes[2].service.Watch(ctx)
+	events := nodes[0].service.Watch(ctx)
 
 	err = nodes[0].pool.Add(makeTx(t, 0, signer))
 	require.NoError(t, err)
@@ -67,23 +71,37 @@ func TestService_Scenario_Basic(t *testing.T) {
 	evt := waitEvent(t, events, 3*DefaultRoundTimeout)
 	require.Equal(t, uint64(0), evt.Index)
 
-	err = nodes[1].pool.Add(makeTx(t, 1, signer))
+	err = nodes[0].pool.Add(makeTx(t, 1, signer))
 	require.NoError(t, err)
 
 	evt = waitEvent(t, events, 10*DefaultRoundTimeout)
 	require.Equal(t, uint64(1), evt.Index)
 
-	err = nodes[1].pool.Add(makeRosterTx(t, 2, ro, signer))
+	err = nodes[0].pool.Add(makeRosterTx(t, 2, ro, signer))
 	require.NoError(t, err)
 
 	evt = waitEvent(t, events, 10*DefaultRoundTimeout)
 	require.Equal(t, uint64(2), evt.Index)
-	for i := 0; i < 3; i++ {
-		err = nodes[1].pool.Add(makeTx(t, uint64(i+3), signer))
+
+	err = nodes[0].pool.Add(makeTx(t, 3, signer))
+	require.NoError(t, err)
+
+	evt4 := nodes[4].service.Watch(ctx)
+	evt = waitEvent(t, events, 10*DefaultRoundTimeout)
+	require.Equal(t, uint64(3), evt.Index)
+
+	// Waiting for node4 to catch up all blocks
+	for i := 0; i < 4; i++ {
+		evt := waitEvent(t, evt4, 10*DefaultRoundTimeout)
+		require.Equal(t, uint64(i), evt.Index)
+	}
+
+	for i := 0; i < 4; i++ {
+		err = nodes[0].pool.Add(makeTx(t, uint64(i+4), signer))
 		require.NoError(t, err)
 
 		evt = waitEvent(t, events, 10*DefaultRoundTimeout)
-		require.Equal(t, uint64(i+3), evt.Index)
+		require.Equal(t, uint64(i+4), evt.Index)
 	}
 
 	proof, err := nodes[0].service.GetProof(viewchange.GetRosterKey())
@@ -96,13 +114,17 @@ func TestService_Scenario_Basic(t *testing.T) {
 	checkProof(t, proof.(Proof), nodes[0].service)
 }
 
-func TestService_Scenario_ViewChange(t *testing.T) {
-	nodes, ro, clean := makeAuthority(t, 4)
+func TestService_Scenario_ViewChange_Basic(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping flaky test")
+	}
+
+	nodes, ro, clean := makeAuthorityTimeout(t, 4, 1)
 	defer clean()
 
 	// Simulate an issue with the leader transaction pool so that it does not
 	// receive any of them.
-	nodes[0].pool.Close()
+	require.NoError(t, nodes[0].pool.Close())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -120,8 +142,12 @@ func TestService_Scenario_ViewChange(t *testing.T) {
 	require.Equal(t, uint64(0), evt.Index)
 }
 
-func TestService_Scenario_ViewChangeRequest(t *testing.T) {
-	nodes, ro, clean := makeAuthority(t, 4)
+func TestService_Scenario_ViewChange_Request(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping flaky test")
+	}
+
+	nodes, ro, clean := makeAuthorityTimeout(t, 4, 1)
 	defer clean()
 	nodes[3].service.pool = fakePool{
 		Pool: nodes[3].service.pool,
@@ -151,8 +177,12 @@ func TestService_Scenario_ViewChangeRequest(t *testing.T) {
 	require.Equal(t, leader, nodes[0].onet.GetAddress())
 }
 
-func TestService_Scenario_NoViewChangeRequest(t *testing.T) {
-	nodes, ro, clean := makeAuthority(t, 4)
+func TestService_Scenario_ViewChange_NoRequest(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping flaky test")
+	}
+
+	nodes, ro, clean := makeAuthorityTimeout(t, 4, 1)
 	defer clean()
 
 	signer := nodes[0].signer
@@ -195,6 +225,10 @@ func TestService_Scenario_NoViewChangeRequest(t *testing.T) {
 //   - round failed on node 0
 //   - mismatch state viewchange != (initial|prepare)
 func TestService_Scenario_FinalizeFailure(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping flaky test")
+	}
+
 	nodes, ro, clean := makeAuthority(t, 4)
 	defer clean()
 
@@ -238,7 +272,7 @@ func TestService_New(t *testing.T) {
 	}
 
 	genesis := blockstore.NewGenesisStore()
-	genesis.Set(types.Genesis{})
+	require.NoError(t, genesis.Set(types.Genesis{}))
 
 	opts := []ServiceOption{
 		WithHashFactory(fake.NewHashFactory(&fake.Hash{})),
@@ -246,9 +280,11 @@ func TestService_New(t *testing.T) {
 		WithBlockStore(blockstore.NewInMemory()),
 	}
 
-	srvc, err := NewService(param, opts...)
+	srvc, err := NewServiceStruct(param, opts...)
 	require.NoError(t, err)
 	require.NotNil(t, srvc)
+	srvc.SetTimeouts(1*time.Second, 3*time.Second, 10*time.Second)
+	NewServiceStart(srvc)
 
 	<-srvc.closed
 
@@ -291,7 +327,7 @@ func TestService_AlreadySet_Setup(t *testing.T) {
 	srvc.tree = blockstore.NewTreeCache(fakeTree{})
 	srvc.access = fakeAccess{}
 	srvc.genesis = blockstore.NewGenesisStore()
-	srvc.genesis.Set(types.Genesis{})
+	require.NoError(t, srvc.genesis.Set(types.Genesis{}))
 
 	a := fake.NewAuthority(3, fake.NewSigner)
 
@@ -433,7 +469,7 @@ func TestService_DoRound(t *testing.T) {
 	err := srvc.doRound(ctx)
 	require.NoError(t, err)
 
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 
 	go func() {
 		ch <- pbft.InitialState
@@ -470,7 +506,7 @@ func TestService_ViewchangeFailed_DoRound(t *testing.T) {
 	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 	srvc.pbftsm = pbftsm
 
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -500,7 +536,7 @@ func TestService_FailPBFTExpire_DoRound(t *testing.T) {
 		state: pbft.InitialState,
 	}
 
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -524,7 +560,7 @@ func TestService_FailSendViews_DoRound(t *testing.T) {
 	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 	srvc.pbftsm = fakeSM{}
 
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -607,7 +643,7 @@ func TestService_FailPBFT_DoRound(t *testing.T) {
 	srvc.pbftsm = fakeSM{}
 	srvc.sync = fakeSync{}
 
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -637,7 +673,7 @@ func TestService_DoPBFT(t *testing.T) {
 
 	rpc.SendResponseWithError(fake.NewAddress(5), fake.GetError())
 	rpc.Done()
-	srvc.genesis.Set(types.Genesis{})
+	require.NoError(t, srvc.genesis.Set(types.Genesis{}))
 
 	// Context timed out and no transaction are in the pool.
 	err := srvc.doPBFT(ctx)
@@ -645,7 +681,7 @@ func TestService_DoPBFT(t *testing.T) {
 
 	// This time the gathering succeeds.
 	ctx = context.Background()
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 	err = srvc.doPBFT(ctx)
 	require.NoError(t, err)
 }
@@ -657,7 +693,7 @@ func TestService_ContextCanceld_DoPBFT(t *testing.T) {
 	srvc.pbftsm = fakeSM{}
 	srvc.pool = mem.NewPool()
 
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -673,7 +709,7 @@ func TestService_FailValidation_DoPBFT(t *testing.T) {
 	srvc.pbftsm = fakeSM{}
 	srvc.pool = mem.NewPool()
 
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -693,7 +729,7 @@ func TestService_FailCreateBlock_DoPBFT(t *testing.T) {
 	srvc.hashFactory = fake.NewHashFactory(fake.NewBadHash())
 	srvc.blocks = blockstore.NewInMemory()
 
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -712,7 +748,7 @@ func TestService_FailPrepare_DoPBFT(t *testing.T) {
 	srvc.hashFactory = crypto.NewHashFactory(crypto.Sha256)
 	srvc.blocks = blockstore.NewInMemory()
 
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -730,7 +766,7 @@ func TestService_FailReadRoster_DoPBFT(t *testing.T) {
 	srvc.hashFactory = crypto.NewHashFactory(crypto.Sha256)
 	srvc.blocks = blockstore.NewInMemory()
 
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -750,7 +786,7 @@ func TestService_FailPrepareSig_DoPBFT(t *testing.T) {
 	srvc.actor = fakeCosiActor{err: fake.GetError()}
 	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -773,7 +809,7 @@ func TestService_FailCommitSign_DoPBFT(t *testing.T) {
 	}
 	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -794,7 +830,7 @@ func TestService_FailPropagation_DoPBFT(t *testing.T) {
 	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 	srvc.rpc = fake.NewBadRPC()
 
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -819,7 +855,7 @@ func TestService_FailWakeUp_DoPBFT(t *testing.T) {
 	srvc.rpc = rpc
 	srvc.genesis = blockstore.NewGenesisStore()
 
-	srvc.pool.Add(makeTx(t, 0, fake.NewSigner()))
+	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -834,7 +870,7 @@ func TestService_WakeUp(t *testing.T) {
 	srvc := &Service{processor: newProcessor()}
 	srvc.tree = blockstore.NewTreeCache(fakeTree{})
 	srvc.genesis = blockstore.NewGenesisStore()
-	srvc.genesis.Set(types.Genesis{})
+	require.NoError(t, srvc.genesis.Set(types.Genesis{}))
 	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 	srvc.rpc = rpc
 
@@ -861,7 +897,7 @@ func TestService_GetProof(t *testing.T) {
 	srvc := &Service{processor: newProcessor()}
 	srvc.tree = blockstore.NewTreeCache(fakeTree{})
 	srvc.blocks = blockstore.NewInMemory()
-	srvc.blocks.Store(makeBlock(t, types.Digest{}))
+	require.NoError(t, srvc.blocks.Store(makeBlock(t, types.Digest{})))
 
 	proof, err := srvc.GetProof([]byte("A"))
 	require.NoError(t, err)
@@ -987,7 +1023,19 @@ func waitEvent(t *testing.T, events <-chan ordering.Event, timeout time.Duration
 	}
 }
 
-func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()) {
+func makeAuthority(t *testing.T, n int, opts ...ServiceOption) (
+	[]testNode,
+	authority.Authority,
+	func(),
+) {
+	return makeAuthorityTimeout(t, n, 10, opts...)
+}
+
+func makeAuthorityTimeout(t *testing.T, n int, mult int, opts ...ServiceOption) (
+	[]testNode,
+	authority.Authority,
+	func(),
+) {
 	manager := minoch.NewManager()
 
 	addrs := make([]mino.Address, n)
@@ -1038,8 +1086,11 @@ func makeAuthority(t *testing.T, n int) ([]testNode, authority.Authority, func()
 			DB:         db,
 		}
 
-		srv, err := NewService(param)
+		srv, err := NewServiceStruct(param, opts...)
 		require.NoError(t, err)
+		mTime := time.Millisecond * time.Duration(mult)
+		srv.SetTimeouts(300*mTime, 500*mTime, 700*mTime)
+		NewServiceStart(srv)
 
 		nodes[i] = testNode{
 			onet:    m,
@@ -1139,8 +1190,9 @@ type fakeCosiActor struct {
 }
 
 func (c fakeCosiActor) Sign(
-	ctx context.Context, msg serde.Message,
-	ca crypto.CollectiveAuthority,
+	context.Context,
+	serde.Message,
+	crypto.CollectiveAuthority,
 ) (crypto.Signature, error) {
 
 	if c.counter.Done() {

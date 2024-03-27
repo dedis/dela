@@ -97,6 +97,8 @@ type tokenAction struct{}
 
 // Execute implements node.ActionTemplate. It generates a token that will be
 // valid for the amount of time given in the request.
+// If this node serves TLS itself, a hash of the certificate will be
+// printed, too.
 func (a tokenAction) Execute(req node.Context) error {
 	exp := req.Flags.Duration("expiration")
 
@@ -108,15 +110,20 @@ func (a tokenAction) Execute(req node.Context) error {
 
 	token := m.GenerateToken(exp)
 
-	chain := m.GetCertificateChain()
+	var certHash string
+	if m.ServeTLS() {
+		chain := m.GetCertificateChain()
 
-	digest, err := m.GetCertificateStore().Hash(chain)
-	if err != nil {
-		return xerrors.Errorf("couldn't hash certificate: %v", err)
+		digest, err := m.GetCertificateStore().Hash(chain)
+		if err != nil {
+			return xerrors.Errorf("couldn't hash certificate: %v", err)
+		}
+
+		certHash = fmt.Sprintf(" --cert-hash %s", base64.StdEncoding.EncodeToString(digest))
 	}
 
-	fmt.Fprintf(req.Out, "--token %s --cert-hash %s\n",
-		token, base64.StdEncoding.EncodeToString(digest))
+	fmt.Fprintf(req.Out, "--token %s%s\n",
+		token, certHash)
 
 	return nil
 }

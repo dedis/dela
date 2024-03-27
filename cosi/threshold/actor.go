@@ -35,10 +35,12 @@ type thresholdActor struct {
 // collective authority, or an error if it failed. The signature may be composed
 // of only a subset of the participants, depending on the threshold. The
 // function will return as soon as a valid signature is available.
-// The context must be cancel at some point, and it will interrupt the protocol
-// if it is not done yet.
-func (a thresholdActor) Sign(ctx context.Context, msg serde.Message,
-	ca crypto.CollectiveAuthority) (crypto.Signature, error) {
+// The context must be canceled at some point, and it will interrupt the
+// protocol if it is not done yet.
+func (a thresholdActor) Sign(
+	ctx context.Context, msg serde.Message,
+	ca crypto.CollectiveAuthority,
+) (crypto.Signature, error) {
 
 	ctx = context.WithValue(ctx, tracing.ProtocolKey, protocolName)
 
@@ -86,7 +88,7 @@ func (a thresholdActor) Sign(ctx context.Context, msg serde.Message,
 		}
 	}
 
-	// Each signature is individually verified so we can assume the aggregated
+	// Each signature is individually verified, so we can assume the aggregated
 	// signature is correct.
 	return signature, nil
 }
@@ -105,8 +107,10 @@ func (a thresholdActor) waitResp(errs <-chan error, maxErrs int, cancel func()) 
 	}
 }
 
-func (a thresholdActor) merge(signature *types.Signature, m serde.Message,
-	index int, pubkey crypto.PublicKey, digest []byte) error {
+func (a thresholdActor) merge(
+	signature *types.Signature, m serde.Message,
+	index int, pubkey crypto.PublicKey, digest []byte,
+) error {
 
 	resp, ok := m.(cosi.SignatureResponse)
 	if !ok {

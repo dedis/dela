@@ -24,7 +24,7 @@ import (
 type Mino interface {
 	GetAddressFactory() AddressFactory
 
-	// Address returns the address that other participants should use to contact
+	// GetAddress returns the address that other participants should use to contact
 	// this instance.
 	GetAddress() Address
 
@@ -38,6 +38,18 @@ type Mino interface {
 	CreateRPC(name string, h Handler, f serde.Factory) (RPC, error)
 }
 
+// AddressConnectionType indicates how to connect to the remote end.
+type AddressConnectionType int32
+
+const (
+	// ACTgRPC is a plain text connection
+	ACTgRPC AddressConnectionType = iota
+	// ACTgRPCS is a self-signed TLS secured grpc connection
+	ACTgRPCS
+	// ACThttps is a publicly signed TLS secured grpc connection
+	ACThttps
+)
+
 // Address is a representation of a node's address.
 type Address interface {
 	encoding.TextMarshaler
@@ -47,6 +59,9 @@ type Address interface {
 
 	// String returns a string representation of the address.
 	String() string
+
+	// ConnectionType returns the type of connection for this Address
+	ConnectionType() AddressConnectionType
 }
 
 // AddressFactory is the factory to deserialize addresses.

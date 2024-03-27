@@ -43,8 +43,7 @@ const (
 
 var nodeFormats = registry.NewSimpleRegistry()
 
-// TreeNode is the interface for the different types of nodes that a Merkle tree
-// could have.
+// TreeNode is the interface for the different types of nodes of a Merkle tree.
 type TreeNode interface {
 	serde.Message
 
@@ -241,7 +240,7 @@ func (t *Tree) CalculateRoot(fac crypto.HashFactory, b kv.Bucket) error {
 }
 
 // Persist visits the whole tree and stores the leaf node in the database and
-// replaces the node with disk nodes. Depending of the parameter, it also stores
+// replaces the node with disk nodes. Depending on the parameter, it also stores
 // intermediate nodes on the disk.
 func (t *Tree) Persist(b kv.Bucket) error {
 	return t.root.Visit(func(n TreeNode) error {

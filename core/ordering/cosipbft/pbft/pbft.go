@@ -386,7 +386,7 @@ func (m *pbftsm) Finalize(id types.Digest, sig crypto.Signature) error {
 		return err
 	}
 
-	dela.Logger.Info().Msgf("finalize round with leader: %d", m.round.leader)
+	m.logger.Info().Msgf("finalize round with leader: %d", m.round.leader)
 
 	m.round.prevViews = nil
 	m.round.views = nil

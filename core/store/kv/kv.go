@@ -17,10 +17,10 @@ type Bucket interface {
 	// Set assigns the value to the provided key.
 	Set(key, value []byte) error
 
-	// Delete deletes the key from the bucket.
+	// Delete the key from the bucket.
 	Delete(key []byte) error
 
-	// ForEach iterates over all the items in the bucket in a unspecified order.
+	// ForEach iterates over all the items in the bucket in an unspecified order.
 	// The iteration stops when the callback returns an error.
 	ForEach(func(k, v []byte) error) error
 

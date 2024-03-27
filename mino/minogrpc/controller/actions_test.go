@@ -254,6 +254,10 @@ type fakeJoinable struct {
 	err   error
 }
 
+func (j fakeJoinable) ServeTLS() bool {
+	return true
+}
+
 func (j fakeJoinable) GetCertificateChain() certs.CertChain {
 	cert, _ := j.certs.Load(fake.NewAddress(0))
 

@@ -26,7 +26,7 @@ func TestMinogrpc_New(t *testing.T) {
 	m, err := NewMinogrpc(addr, nil, router)
 	require.NoError(t, err)
 
-	require.Equal(t, "127.0.0.1:3333", m.GetAddress().String())
+	require.Equal(t, "grpcs://127.0.0.1:3333", m.GetAddress().String())
 	require.Empty(t, m.segments)
 
 	cert := m.GetCertificateChain()
@@ -41,10 +41,10 @@ func TestMinogrpc_noTLS(t *testing.T) {
 
 	router := tree.NewRouter(addressFac)
 
-	m, err := NewMinogrpc(addr, nil, router, DisableTLS())
+	m, err := NewMinogrpc(addr, nil, router, NoTLS())
 	require.NoError(t, err)
 
-	require.Equal(t, "127.0.0.1:3333", m.GetAddress().String())
+	require.Equal(t, "grpcs://127.0.0.1:3333", m.GetAddress().String())
 	require.Empty(t, m.segments)
 
 	cert, err := m.certs.Load(m.GetAddress())
@@ -274,7 +274,7 @@ func TestMinogrpc_String(t *testing.T) {
 		overlay: &overlay{myAddr: session.Address{}},
 	}
 
-	require.Equal(t, "mino[]", minoGrpc.String())
+	require.Equal(t, "mino[grpc://]", minoGrpc.String())
 }
 
 func TestMinogrpc_DecorateTrace_NoFound(t *testing.T) {

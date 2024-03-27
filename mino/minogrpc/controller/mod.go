@@ -15,7 +15,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
-	"fmt"
 	"io"
 	"net"
 	"net/url"
@@ -54,8 +53,8 @@ func NewController() node.Initializer {
 	}
 }
 
-// Build implements node.Initializer. It populates the builder with the commands
-// to control Minogrpc.
+// SetCommands implements node.Initializer. It populates the builder with
+// the commands to control Minogrpc.
 func (m miniController) SetCommands(builder node.Builder) {
 	builder.SetStartFlags(
 		cli.StringFlag{
@@ -77,17 +76,17 @@ func (m miniController) SetCommands(builder node.Builder) {
 		},
 		cli.StringFlag{
 			Name:     "certKey",
-			Usage:    "provides the certificate private key path",
+			Usage:    "provides the certificate private key path - requires that --certChain is given, too",
 			Required: false,
 		},
 		cli.StringFlag{
 			Name:     "certChain",
-			Usage:    "provides the chain certificate file path",
+			Usage:    "provides the chain certificate file path - requires that --certKey is given, too",
 			Required: false,
 		},
 		cli.BoolFlag{
 			Name:     "noTLS",
-			Usage:    "disables TLS on gRPC connections",
+			Usage:    "dont't serve TLS on the grpc endpoint",
 			Required: false,
 			Value:    false,
 		},
@@ -136,7 +135,7 @@ func (m miniController) SetCommands(builder node.Builder) {
 		cli.StringFlag{
 			Name:     "cert-hash",
 			Usage:    "certificate hash of the distant server",
-			Required: true,
+			Required: false,
 		},
 	)
 	sub.SetAction(builder.MakeAction(joinAction{}))
@@ -167,14 +166,13 @@ func (m miniController) OnStart(ctx cli.Flags, inj node.Injector) error {
 	}
 
 	var opts []minogrpc.Option
-
-	if !ctx.Bool("noTLS") {
+	if ctx.Bool("noTLS") {
+		opts = append(opts, minogrpc.NoTLS())
+	} else {
 		opts, err = m.getOptionCert(ctx, inj)
 		if err != nil {
 			return xerrors.Errorf("failed to get cert option: %v", err)
 		}
-	} else {
-		opts = []minogrpc.Option{minogrpc.DisableTLS()}
 	}
 
 	var public *url.URL
@@ -228,31 +226,25 @@ func (m miniController) getOptionCert(ctx cli.Flags, inj node.Injector) ([]minog
 		return nil, xerrors.Errorf("injector: %v", err)
 	}
 
-	certs := certs.NewDiskStore(db, session.AddressFactory{})
+	certificate := certs.NewDiskStore(db, session.AddressFactory{})
 
 	key, err := m.getKey(ctx)
 	if err != nil {
 		return nil, xerrors.Errorf("cert private key: %v", err)
 	}
 
+	opts := []minogrpc.Option{
+		minogrpc.WithCertificateKey(key, key.(interface{ Public() crypto.PublicKey }).Public()),
+		minogrpc.WithStorage(certificate),
+	}
+
 	certKey := ctx.Path("certKey")
+	certChain := ctx.Path("certChain")
 	if certKey == "" {
 		certKey = filepath.Join(ctx.Path("config"), certKeyName)
 	}
 
-	type extendedKey interface {
-		Public() crypto.PublicKey
-	}
-
-	opts := []minogrpc.Option{
-		minogrpc.WithCertificateKey(key, key.(extendedKey).Public()),
-		minogrpc.WithStorage(certs),
-	}
-
-	certChain := ctx.Path("certChain")
-
 	if certChain != "" {
-		fmt.Println("certChain:", certChain, "certKey:", certKey)
 		cert, err := tls.LoadX509KeyPair(certChain, certKey)
 		if err != nil {
 			return nil, xerrors.Errorf("failed to load certificate: %v", err)

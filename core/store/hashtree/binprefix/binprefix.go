@@ -147,7 +147,7 @@ func (t *MerkleTree) GetPath(key []byte) (hashtree.Path, error) {
 }
 
 // Stage implements hashtree.Tree. It executes the callback over a clone of the
-// current tree and return the clone with the root calculated.
+// current tree and returns the clone with the root calculated.
 func (t *MerkleTree) Stage(fn func(store.Snapshot) error) (hashtree.StagingTree, error) {
 	clone := t.clone()
 
@@ -199,8 +199,8 @@ func (t *MerkleTree) Commit() error {
 	return nil
 }
 
-// WithTx implements hashtree.StagingTree. It returns a tree that will share the
-// same underlying data but it will perform operations on the database through
+// WithTx implements hashtree.StagingTree. It returns a tree that shares the
+// same underlying data, but it will perform operations on the database through
 // the transaction.
 func (t *MerkleTree) WithTx(tx store.Transaction) hashtree.StagingTree {
 	return &MerkleTree{

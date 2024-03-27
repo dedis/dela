@@ -36,6 +36,11 @@ func (a address) String() string {
 	return a.id
 }
 
+// ConnectionType always returns plain connection
+func (a address) ConnectionType() mino.AddressConnectionType {
+	return mino.ACTgRPCS
+}
+
 // AddressFactory is a factory to deserialize Minoch addresses.
 //
 // - implements mino.AddressFactory

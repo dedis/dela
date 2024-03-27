@@ -8,6 +8,7 @@ package session
 import (
 	"fmt"
 	"net/url"
+	"strings"
 
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
@@ -21,7 +22,7 @@ const (
 
 // Address is a representation of the network Address of a participant. The
 // overlay implementation requires a difference between an orchestrator and its
-// source address, where the former initiates a protocol and the later
+// source address, where the former initiates a protocol and the latter
 // participates.
 //
 // See session.wrapAddress for the abstraction provided to a caller external to
@@ -29,28 +30,74 @@ const (
 //
 // - implements mino.Address
 type Address struct {
-	orchestrator bool
-	host         string
+	orchestrator   bool
+	host           string
+	connectionType mino.AddressConnectionType
 }
 
 // NewOrchestratorAddress creates a new address which will be considered as the
 // initiator of a protocol.
 func NewOrchestratorAddress(addr mino.Address) Address {
-	return Address{
-		orchestrator: true,
-		host:         addr.String(),
-	}
+	a := NewAddress(addr.String())
+	a.orchestrator = true
+	return a
 }
 
 // NewAddress creates a new address.
 func NewAddress(host string) Address {
-	return Address{host: host}
+	hostSlash := host
+	if !strings.Contains(host, "//") {
+		hostSlash = "//" + host
+	}
+	u, err := url.Parse(hostSlash)
+	if err != nil {
+		return Address{connectionType: mino.ACTgRPCS, host: host}
+	}
+	a, err := NewAddressFromURL(*u)
+	if err != nil {
+		return Address{connectionType: mino.ACTgRPCS, host: host}
+	}
+	return a
+}
+
+// NewAddressFromURL creates a new address given a URL.
+func NewAddressFromURL(addr url.URL) (a Address, err error) {
+	if addr.Port() == "" {
+		err = xerrors.Errorf("no port given or not able to infer it from protocol")
+		return
+	}
+
+	scheme := addr.Scheme
+	// This seems to be the default when looking at tests.
+	if scheme == "" {
+		scheme = "grpcs"
+	}
+
+	switch scheme {
+	case "grpc":
+		a.connectionType = mino.ACTgRPC
+	case "grpcs":
+		a.connectionType = mino.ACTgRPCS
+	case "https":
+		a.connectionType = mino.ACThttps
+	default:
+		err = xerrors.Errorf("unknown scheme '%s' in address", addr.Scheme)
+		return
+	}
+
+	a.host = addr.Host
+	return
 }
 
 // GetDialAddress returns a string formatted to be understood by grpc.Dial()
 // functions.
 func (a Address) GetDialAddress() string {
 	return a.host
+}
+
+// ConnectionType returns how to connect to the other host
+func (a Address) ConnectionType() mino.AddressConnectionType {
+	return a.connectionType
 }
 
 // GetHostname parses the address to extract the hostname.
@@ -63,9 +110,9 @@ func (a Address) GetHostname() (string, error) {
 	return url.Hostname(), nil
 }
 
-// Equal implements mino.Address. It returns true if both addresses are exactly
-// similar, in the sense that an orchestrator won't match a follower address
-// with the same host.
+// Equal implements 'mino.Address'. It returns true if both addresses
+// are exactly similar, in the sense that an orchestrator won't match
+// a follower address with the same host.
 func (a Address) Equal(other mino.Address) bool {
 	switch addr := other.(type) {
 	case Address:
@@ -85,7 +132,7 @@ func (a Address) MarshalText() ([]byte, error) {
 	if a.orchestrator {
 		data = []byte(orchestratorCode)
 	}
-
+	data = append(data, byte(a.connectionType+'A'))
 	data = append(data, []byte(a.host)...)
 
 	return data, nil
@@ -94,11 +141,20 @@ func (a Address) MarshalText() ([]byte, error) {
 // String implements fmt.Stringer. It returns a string representation of the
 // address.
 func (a Address) String() string {
+	url := "grpcs://"
+	switch a.connectionType {
+	case mino.ACTgRPCS:
+		url += a.host
+	case mino.ACTgRPC:
+		url = "grpc://" + a.host
+	case mino.ACThttps:
+		url = "https://" + a.host
+	}
 	if a.orchestrator {
-		return fmt.Sprintf("Orchestrator:%s", a.host)
+		return "Orchestrator:" + url
 	}
 
-	return a.host
+	return url
 }
 
 // WrapAddress is a super type of the address so that the orchestrator becomes
@@ -122,7 +178,7 @@ func (a wrapAddress) Unwrap() mino.Address {
 	return a.Address
 }
 
-// Equal implements mino.Address. When it wraps a network address, it will
+// Equal implements 'mino.Address'. When it wraps a network address, it will
 // consider addresses with the same host as similar, otherwise it returns the
 // result of the underlying address comparison. That way, an orchestrator
 // address will match the address with the same origin.
@@ -151,15 +207,16 @@ type AddressFactory struct {
 
 // FromText implements mino.AddressFactory. It returns an instance of an
 // address from a byte slice.
-func (f AddressFactory) FromText(text []byte) mino.Address {
-	str := string(text)
+func (f AddressFactory) FromText(buf []byte) mino.Address {
+	str := string(buf)
 
-	if len(str) == 0 {
+	if len(str) < 2 {
 		return Address{}
 	}
 
 	return Address{
-		host:         str[1:],
-		orchestrator: str[0] == orchestratorCode[0],
+		orchestrator:   str[0] == orchestratorCode[0],
+		connectionType: mino.AddressConnectionType(buf[1] - 'A'),
+		host:           str[2:],
 	}
 }
