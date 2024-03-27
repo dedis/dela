@@ -306,7 +306,7 @@ func (s *InDisk) doView(fn func(tx kv.ReadableTx) error) error {
 
 func (s *InDisk) makeKey(index uint64) []byte {
 	key := make([]byte, 8)
-	binary.LittleEndian.PutUint64(key, index)
+	binary.BigEndian.PutUint64(key, index)
 
 	return key
 }
