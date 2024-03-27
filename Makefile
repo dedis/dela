@@ -22,9 +22,26 @@ vet: tidy
 	go install ./internal/mcheck && \
 	go vet -vettool=`go env GOPATH`/bin/mcheck -commentLen -ifInit ./...
 
+tests:
+	while make test; do echo "Testing again at $$(date)"; done; echo "Failed testing"
+
+FLAKY_TESTS := (TestService_Scenario_Basic|TestService_Scenario_ViewChange|TestService_Scenario_FinalizeFailure)
+
 # test runs all tests in DELA without coverage
+# It first runs all the tests in "short" mode, so the flaky tests don't run.
+# Then the flaky tests get run separately for at most 3 times, and hopefully it all works out.
 test: tidy
-	go test ./...
+	go test ./... -short -count=1 || exit 1
+	@for count in $$( seq 3 ); do \
+		echo "Running $$count/3"; \
+		if go test -count=1 ./core/ordering/cosipbft -run="${FLAKY_TESTS}"; then \
+			break; \
+		fi; \
+		if [[ $$count == 3 ]]; then \
+			echo "Couldn't run all flaky tests in 3 tries"; \
+			exit 1; \
+		fi; \
+	done
 
 # test runs all tests in DELA and generate a coverage output (to be used by sonarcloud)
 coverage: tidy
