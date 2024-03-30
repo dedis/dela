@@ -57,7 +57,7 @@ func TestMemcoin_Scenario_SetupAndTransactions(t *testing.T) {
 	shareCert(t, node3, node1, "//127.0.0.1:2111")
 	shareCert(t, node5, node1, "//127.0.0.1:2111")
 
-	// Setup the chain with nodes 1 and 2.
+	// Set up the chain with nodes 1 and 2.
 	args := append(append(
 		append(
 			[]string{os.Args[0], "--config", node1, "ordering", "setup"},
@@ -95,7 +95,7 @@ func TestMemcoin_Scenario_SetupAndTransactions(t *testing.T) {
 	// Run a few transactions.
 	for i := 0; i < 5; i++ {
 		err = runWithCfg(args, config{})
-		require.EqualError(t, err, "command error: transaction refused: duplicate in roster: 127.0.0.1:2115")
+		require.EqualError(t, err, "command error: transaction refused: duplicate in roster: grpcs://127.0.0.1:2115")
 	}
 
 	// Test a timeout waiting for a transaction.
@@ -151,7 +151,7 @@ func TestMemcoin_Scenario_RestartNode(t *testing.T) {
 	)
 
 	err = run(args)
-	require.EqualError(t, err, "command error: transaction refused: duplicate in roster: 127.0.0.1:2210")
+	require.EqualError(t, err, "command error: transaction refused: duplicate in roster: grpcs://127.0.0.1:2210")
 }
 
 // -----------------------------------------------------------------------------

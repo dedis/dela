@@ -55,21 +55,20 @@ func TestAddress_MarshalText(t *testing.T) {
 
 	buffer, err := addr.MarshalText()
 	require.NoError(t, err)
-	require.Equal(t, "F127.0.0.1:2000", string(buffer))
+	require.Equal(t, "FB127.0.0.1:2000", string(buffer))
 
 	orch := NewOrchestratorAddress(addr)
 
 	buffer, err = orch.MarshalText()
 	require.NoError(t, err)
-	require.Equal(t, "O127.0.0.1:2000", string(buffer))
+	require.Equal(t, "OB127.0.0.1:2000", string(buffer))
 }
 
 func TestAddress_String(t *testing.T) {
 	addr := NewAddress("127.0.0.1:2000")
-	require.Equal(t, addr.host, addr.String())
 
 	orch := NewOrchestratorAddress(addr)
-	require.Equal(t, "Orchestrator:"+addr.host, orch.String())
+	require.Equal(t, "Orchestrator:"+addr.String(), orch.String())
 }
 
 func TestWrapAddress_Unwrap(t *testing.T) {
@@ -81,7 +80,7 @@ func TestWrapAddress_Unwrap(t *testing.T) {
 func TestAddressFactory_FromText(t *testing.T) {
 	factory := AddressFactory{}
 
-	addr := factory.FromText([]byte(orchestratorCode + "127.0.0.1:2000"))
+	addr := factory.FromText([]byte(orchestratorCode + "A127.0.0.1:2000"))
 	require.Equal(t, "127.0.0.1:2000", addr.(Address).host)
 	require.True(t, addr.(Address).orchestrator)
 
@@ -89,7 +88,7 @@ func TestAddressFactory_FromText(t *testing.T) {
 	require.Equal(t, "", addr.(Address).host)
 	require.False(t, addr.(Address).orchestrator)
 
-	addr = factory.FromText([]byte(followerCode + "127.0.0.1:2001"))
+	addr = factory.FromText([]byte(followerCode + "A127.0.0.1:2001"))
 	require.Equal(t, "127.0.0.1:2001", addr.(Address).host)
 	require.False(t, addr.(Address).orchestrator)
 

@@ -13,6 +13,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"net/url"
 	"regexp"
@@ -63,6 +64,9 @@ var listener = net.Listen
 // to join a network of participants.
 type Joinable interface {
 	mino.Mino
+
+	// ServeTLS returns true if this node is running with TLS for gRPC.
+	ServeTLS() bool
 
 	// GetCertificateChain returns the certificate chain of the instance.
 	GetCertificateChain() certs.CertChain
@@ -118,16 +122,63 @@ type Minogrpc struct {
 }
 
 type minoTemplate struct {
-	myAddr session.Address
-	router router.Router
-	fac    mino.AddressFactory
-	certs  certs.Storage
-	secret interface{}
-	public interface{}
-	curve  elliptic.Curve
-	random io.Reader
-	cert   *tls.Certificate
-	useTLS bool
+	myAddr   session.Address
+	router   router.Router
+	fac      mino.AddressFactory
+	certs    certs.Storage
+	secret   interface{}
+	public   interface{}
+	curve    elliptic.Curve
+	random   io.Reader
+	cert     *tls.Certificate
+	serveTLS bool
+}
+
+func (m *minoTemplate) makeCertificate() error {
+	var ips []net.IP
+	var dnsNames []string
+
+	hostname, err := m.myAddr.GetHostname()
+	if err != nil {
+		return xerrors.Errorf("failed to get hostname: %v", err)
+	}
+
+	ip := net.ParseIP(hostname)
+	if ip != nil {
+		ips = []net.IP{ip}
+	} else {
+		dnsNames = []string{hostname}
+	}
+
+	dela.Logger.Info().Str("hostname", hostname).
+		Strs("dnsNames", dnsNames).
+		Msgf("creating certificate: ips: %v", ips)
+
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		IPAddresses:  ips,
+		DNSNames:     dnsNames,
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().Add(certificateDuration),
+
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		MaxPathLen:            1,
+		IsCA:                  true,
+	}
+
+	buf, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, m.public, m.secret)
+	if err != nil {
+		return xerrors.Errorf("while creating: %+v", err)
+	}
+
+	err = m.certs.Store(m.myAddr, buf)
+	if err != nil {
+		return xerrors.Errorf("while storing: %v", err)
+	}
+
+	return nil
 }
 
 // Option is the type to set some fields when instantiating an overlay.
@@ -164,11 +215,10 @@ func WithCert(cert *tls.Certificate) Option {
 	}
 }
 
-// DisableTLS disables TLS encryption on gRPC connections. It takes precedence
-// over WithCert.
-func DisableTLS() Option {
+// NoTLS sets up the gRPC server to serve plain connections only.
+func NoTLS() Option {
 	return func(tmpl *minoTemplate) {
-		tmpl.useTLS = false
+		tmpl.serveTLS = false
 	}
 }
 
@@ -177,7 +227,10 @@ func DisableTLS() Option {
 // while "public" is the public node address. If public is empty it uses the
 // local address. Public does not support any scheme, it should be of form
 // //<hostname>:<port>/<path>.
-func NewMinogrpc(listen net.Addr, public *url.URL, router router.Router, opts ...Option) (*Minogrpc, error) {
+func NewMinogrpc(listen net.Addr, public *url.URL, router router.Router, opts ...Option) (
+	*Minogrpc,
+	error,
+) {
 	socket, err := listener(listen.Network(), listen.String())
 	if err != nil {
 		return nil, xerrors.Errorf("failed to bind: %v", err)
@@ -192,14 +245,19 @@ func NewMinogrpc(listen net.Addr, public *url.URL, router router.Router, opts ..
 
 	dela.Logger.Info().Msgf("public URL is: %s", public.String())
 
+	myAddr, err := session.NewAddressFromURL(*public)
+	if err != nil {
+		return nil, xerrors.Errorf("couldn't parse public URL: %v", err)
+	}
+
 	tmpl := minoTemplate{
-		myAddr: session.NewAddress(public.Host + public.Path),
-		router: router,
-		fac:    addressFac,
-		certs:  certs.NewInMemoryStore(),
-		curve:  elliptic.P521(),
-		random: rand.Reader,
-		useTLS: true,
+		myAddr:   myAddr,
+		router:   router,
+		fac:      addressFac,
+		certs:    certs.NewInMemoryStore(),
+		curve:    elliptic.P521(),
+		random:   rand.Reader,
+		serveTLS: true,
 	}
 
 	for _, opt := range opts {
@@ -219,34 +277,36 @@ func NewMinogrpc(listen net.Addr, public *url.URL, router router.Router, opts ..
 	}
 
 	srvOpts := []grpc.ServerOption{
-		grpc.UnaryInterceptor(otgrpc.OpenTracingServerInterceptor(tracer, otgrpc.SpanDecorator(decorateServerTrace))),
-		grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(tracer, otgrpc.SpanDecorator(decorateServerTrace))),
+		grpc.UnaryInterceptor(otgrpc.OpenTracingServerInterceptor(tracer,
+			otgrpc.SpanDecorator(decorateServerTrace))),
+		grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(tracer,
+			otgrpc.SpanDecorator(decorateServerTrace))),
 	}
 
-	if !tmpl.useTLS {
-		dela.Logger.Warn().Msg("⚠️ running in insecure mode, you should not " +
-			"publicly expose the node's socket")
-	}
-
-	if tmpl.useTLS {
+	if !tmpl.serveTLS {
+		dela.Logger.Warn().Msg("⚠️ running in insecure mode and no TLS endpoint, you should not " +
+			"publicly expose the node's socket without TLS")
+	} else {
 		chainBuf := o.GetCertificateChain()
-		certs, err := x509.ParseCertificates(chainBuf)
+		certificates, err := x509.ParseCertificates(chainBuf)
 		if err != nil {
 			socket.Close()
 			return nil, xerrors.Errorf("failed to parse chain: %v", err)
 		}
 
-		certsBuf := make([][]byte, len(certs))
-		for i, c := range certs {
+		certsBuf := make([][]byte, len(certificates))
+		for i, c := range certificates {
 			certsBuf[i] = c.Raw
 		}
 
 		creds := credentials.NewTLS(&tls.Config{
-			Certificates: []tls.Certificate{{
-				Certificate: certsBuf,
-				Leaf:        certs[0],
-				PrivateKey:  o.secret,
-			}},
+			Certificates: []tls.Certificate{
+				{
+					Certificate: certsBuf,
+					Leaf:        certificates[0],
+					PrivateKey:  o.secret,
+				},
+			},
 			MinVersion: tls.VersionTLS12,
 		})
 
@@ -418,8 +478,10 @@ func (m *Minogrpc) listen(socket net.Listener) {
 
 // decorateServerTrace adds the protocol tag and the streamID tag to a server
 // side trace.
-func decorateServerTrace(ctx context.Context, span opentracing.Span, method string,
-	req, resp interface{}, grpcError error) {
+func decorateServerTrace(
+	ctx context.Context, span opentracing.Span, method string,
+	req, resp interface{}, grpcError error,
+) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return
