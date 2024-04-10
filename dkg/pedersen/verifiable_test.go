@@ -21,8 +21,10 @@ import (
 	"go.dedis.ch/kyber/v3/xof/keccak"
 )
 
+var randGen *rand.Rand
+
 func init() {
-	rand.Seed(0)
+	randGen = rand.New(rand.NewSource(0))
 }
 
 func Test_VerifiableEncrypt_NotInit(t *testing.T) {
@@ -57,7 +59,7 @@ func Test_VerifiableEncDec_minoch(t *testing.T) {
 	// agreed data among the participants and embed it as a point. The result is
 	// the generator that we are seeking.
 	agreedData := make([]byte, 32)
-	_, err := rand.Read(agreedData)
+	_, err := randGen.Read(agreedData)
 	require.NoError(t, err)
 	GBar := suite.Point().Embed(agreedData, keccak.New(agreedData))
 
@@ -93,12 +95,12 @@ func Test_VerifiableEncDec_minoch(t *testing.T) {
 
 	t.Log("generating the message and encrypting it ...")
 
-	// generating random messages in batch and encrypt them
+	// generating random value messages in batch and encrypt them
 	keys := make([][29]byte, batchSize)
 
 	var ciphertexts []types.Ciphertext
 	for i := 0; i < batchSize; i++ {
-		_, err = rand.Read(keys[i][:])
+		_, err = randGen.Read(keys[i][:])
 		require.NoError(t, err)
 
 		ciphertext, remainder, err := actors[0].VerifiableEncrypt(keys[i][:], GBar)
@@ -137,7 +139,7 @@ func Test_VerifiableEncDec_minogrpc(t *testing.T) {
 	// agreed data among the participants and embed it as a point. The result is
 	// the generator that we are seeking.
 	agreedData := make([]byte, 32)
-	_, err := rand.Read(agreedData)
+	_, err := randGen.Read(agreedData)
 	require.NoError(t, err)
 	GBar := suite.Point().Embed(agreedData, keccak.New(agreedData))
 
@@ -193,7 +195,7 @@ func Test_VerifiableEncDec_minogrpc(t *testing.T) {
 		msg := make([][29]byte, batchSize)
 		var ciphertexts []types.Ciphertext
 		for i := 0; i < batchSize; i++ {
-			_, err = rand.Read(msg[i][:])
+			_, err = randGen.Read(msg[i][:])
 			require.NoError(t, err)
 
 			ciphertext, remainder, err := actors[0].VerifiableEncrypt(msg[i][:], GBar)

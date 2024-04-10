@@ -18,6 +18,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"sync"
@@ -360,7 +361,13 @@ func (s *session) sendPacket(p parent, pkt router.Packet, errs chan error) bool 
 	return true
 }
 
-func (s *session) sendTo(p parent, to mino.Address, pkt router.Packet, errs chan error, wg *sync.WaitGroup) {
+func (s *session) sendTo(
+	p parent,
+	to mino.Address,
+	pkt router.Packet,
+	errs chan error,
+	wg *sync.WaitGroup,
+) {
 	defer wg.Done()
 
 	var relay Relay
@@ -388,7 +395,7 @@ func (s *session) sendTo(p parent, to mino.Address, pkt router.Packet, errs chan
 		// eventually close.
 		s.log.Warn().Err(err).Msg("parent is closing")
 
-		code := status.Code(xerrors.Unwrap(err))
+		code := status.Code(errors.Unwrap(err))
 
 		errs <- xerrors.Errorf("session %v is closing: %v", s.me, code)
 
@@ -546,8 +553,10 @@ type unicastRelay struct {
 
 // NewRelay returns a new relay that will send messages to the gateway through
 // unicast requests.
-func NewRelay(stream PacketStream, gw mino.Address,
-	ctx serde.Context, conn grpc.ClientConnInterface, md metadata.MD) Relay {
+func NewRelay(
+	stream PacketStream, gw mino.Address,
+	ctx serde.Context, conn grpc.ClientConnInterface, md metadata.MD,
+) Relay {
 
 	r := &unicastRelay{
 		md:      md,

@@ -3,7 +3,6 @@ module go.dedis.ch/dela
 go 1.21
 
 require (
-	github.com/dedis/debugtools/channel v0.0.0-20221128114715-e08a435e7984
 	github.com/golang/protobuf v1.5.4
 	github.com/opentracing-contrib/go-grpc v0.0.0-20210225150812-73cb765af46e
 	github.com/opentracing/opentracing-go v1.2.0
@@ -13,6 +12,7 @@ require (
 	github.com/stretchr/testify v1.9.0
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
 	github.com/urfave/cli/v2 v2.27.1
+	go.dedis.ch/debugtools v0.1.1
 	go.dedis.ch/kyber/v3 v3.1.0
 	go.etcd.io/bbolt v1.3.9
 	golang.org/x/crypto v0.22.0

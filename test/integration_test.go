@@ -23,8 +23,10 @@ import (
 	"golang.org/x/xerrors"
 )
 
+var randGen *rand.Rand
+
 func init() {
-	rand.Seed(0)
+	randGen = rand.New(rand.NewSource(0))
 }
 
 // Start 3 nodes
@@ -91,7 +93,7 @@ func getTest[T require.TestingT](numNode, numTx int) func(t T) {
 		for i := 0; i < numTx; i++ {
 			key := make([]byte, 32)
 
-			_, err = rand.Read(key)
+			_, err = randGen.Read(key)
 			require.NoError(t, err)
 
 			args = []txn.Arg{
