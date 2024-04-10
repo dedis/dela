@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dedis/debugtools/channel"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/debugtools/channel"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/dkg/pedersen/types"
 	"go.dedis.ch/dela/mino"

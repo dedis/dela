@@ -2,7 +2,6 @@ package pedersen
 
 import (
 	"fmt"
-	"math/rand"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -26,10 +25,6 @@ const testMessage = "Hello World"
 
 // resharingUnsuccessful message showing that resharing didn't work
 const resharingUnsuccessful = "Resharing was not successful"
-
-func init() {
-	rand.Seed(0)
-}
 
 // This test creates a dkg committee then creates another committee (that can
 // share some nodes with the old committee) and then redistributes the secret to
