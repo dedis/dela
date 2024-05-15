@@ -2,7 +2,7 @@ name: Go test
 
 on:
   push:
-    branches: [ master ]
+    branches: [ main ]
   pull_request:
     types:
       - opened
