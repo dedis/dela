@@ -43,14 +43,25 @@ import (
 	"go.dedis.ch/dela/testing/fake"
 )
 
+func TestService_Scenario_Basic_Blocksync(t *testing.T) {
+	testserviceScenarioBasic(t, syncMethodBlock)
+}
+func TestService_Scenario_Basic_Fastsync(t *testing.T) {
+	testserviceScenarioBasic(t, syncMethodFast)
+}
+
 // This test is known to be VERY flaky on Windows.
 // Further investigation is needed.
-func TestService_Scenario_Basic(t *testing.T) {
+func testserviceScenarioBasic(t *testing.T, sm syncMethodType) {
 	if testing.Short() {
 		t.Skip("Skipping flaky test")
 	}
 
-	nodes, ro, clean := makeAuthority(t, 5)
+	var opts []ServiceOption
+	if sm == syncMethodBlock {
+		opts = append(opts, WithBlockSync())
+	}
+	nodes, ro, clean := makeAuthority(t, 5, opts...)
 	defer clean()
 
 	signer := nodes[0].signer
@@ -164,7 +175,7 @@ func TestService_Scenario_ViewChange_Request(t *testing.T) {
 	require.Equal(t, leader, nodes[0].onet.GetAddress())
 
 	// let enough time for a round to run
-	time.Sleep(DefaultRoundTimeout + 100*time.Millisecond)
+	time.Sleep(time.Second)
 
 	require.Equal(t, nodes[3].service.pbftsm.GetState(), pbft.ViewChangeState)
 	require.NotEqual(t, nodes[2].service.pbftsm.GetState(), pbft.ViewChangeState)
@@ -203,7 +214,7 @@ func TestService_Scenario_ViewChange_NoRequest(t *testing.T) {
 	require.NoError(t, err)
 
 	// let enough time for a round to run
-	time.Sleep(DefaultRoundTimeout + 100*time.Millisecond)
+	time.Sleep(time.Second)
 
 	require.NotEqual(t, nodes[3].service.pbftsm.GetState(), pbft.ViewChangeState)
 	require.NotEqual(t, nodes[2].service.pbftsm.GetState(), pbft.ViewChangeState)
@@ -450,7 +461,7 @@ func TestService_DoRound(t *testing.T) {
 		closing:                  make(chan struct{}),
 	}
 	srvc.blocks = blockstore.NewInMemory()
-	srvc.sync = fakeSync{}
+	srvc.bsync = fakeSync{}
 	srvc.pool = mem.NewPool()
 	srvc.tree = blockstore.NewTreeCache(fakeTree{})
 	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
@@ -618,7 +629,7 @@ func TestService_FailSync_DoRound(t *testing.T) {
 	srvc.tree = blockstore.NewTreeCache(fakeTree{})
 	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 	srvc.pbftsm = fakeSM{}
-	srvc.sync = fakeSync{err: fake.GetError()}
+	srvc.bsync = fakeSync{err: fake.GetError()}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -641,7 +652,7 @@ func TestService_FailPBFT_DoRound(t *testing.T) {
 	srvc.tree = blockstore.NewTreeCache(fakeTree{})
 	srvc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
 	srvc.pbftsm = fakeSM{}
-	srvc.sync = fakeSync{}
+	srvc.bsync = fakeSync{}
 
 	require.NoError(t, srvc.pool.Add(makeTx(t, 0, fake.NewSigner())))
 

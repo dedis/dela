@@ -25,7 +25,7 @@ var getManager = func(signer crypto.Signer, s signed.Client) txn.Manager {
 	return signed.NewManager(signer, s)
 }
 
-// addAction describes an action to add an new transaction to the pool.
+// addAction describes an action to add a new transaction to the pool.
 //
 // - implements node.ActionTemplate
 type addAction struct {
@@ -61,11 +61,6 @@ func (a *addAction) Execute(ctx node.Context) error {
 	}
 
 	manager := getManager(signer, a.client)
-
-	err = manager.Sync()
-	if err != nil {
-		return xerrors.Errorf("failed to sync manager: %v", err)
-	}
 
 	tx, err := manager.Make(args...)
 	if err != nil {

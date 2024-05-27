@@ -826,7 +826,7 @@ func (s *instance) handleDecrypt(
 ) error {
 
 	if !s.startRes.Done() {
-		return xerrors.Errorf("you must first initialize DKG. Did you call setup() first?")
+		return xerrors.Errorf(initDkgFirst)
 	}
 
 	S := suite.Point().Mul(s.privShare.V, msg.K)
@@ -849,7 +849,7 @@ func (s *instance) handleReencryptRequest(
 ) error {
 
 	if !s.startRes.Done() {
-		return xerrors.Errorf("you must first initialize DKG. Did you call setup() first?")
+		return xerrors.Errorf(initDkgFirst)
 	}
 
 	ui := s.getUI(msg.K, msg.PubK)
