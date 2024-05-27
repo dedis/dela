@@ -8,6 +8,7 @@ package cosipbft
 
 import (
 	"context"
+	"time"
 
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela/core"
@@ -16,6 +17,7 @@ import (
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blocksync"
 	"go.dedis.ch/dela/core/ordering/cosipbft/contracts/viewchange"
+	"go.dedis.ch/dela/core/ordering/cosipbft/fastsync"
 	"go.dedis.ch/dela/core/ordering/cosipbft/pbft"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
@@ -28,6 +30,13 @@ import (
 	"golang.org/x/xerrors"
 )
 
+type syncMethodType bool
+
+const (
+	syncMethodFast  syncMethodType = false
+	syncMethodBlock syncMethodType = true
+)
+
 // Processor processes the messages to run a collective signing PBFT consensus.
 //
 // - implements cosi.Reactor
@@ -38,7 +47,8 @@ type processor struct {
 
 	logger      zerolog.Logger
 	pbftsm      pbft.StateMachine
-	sync        blocksync.Synchronizer
+	bsync       blocksync.Synchronizer
+	fsync       fastsync.Synchronizer
 	tree        blockstore.TreeCache
 	pool        pool.Pool
 	watcher     core.Observable
@@ -49,20 +59,32 @@ type processor struct {
 	context serde.Context
 	genesis blockstore.GenesisStore
 	blocks  blockstore.BlockStore
+	// catchup sends catchup requests to the players to get new blocks
+	catchup chan mino.Players
 
 	started chan struct{}
 }
 
 func newProcessor() *processor {
-	return &processor{
+	proc := &processor{
 		watcher: core.NewWatcher(),
 		context: json.NewContext(),
 		started: make(chan struct{}),
+		catchup: make(chan mino.Players),
 	}
+	go proc.catchupHandler()
+	return proc
+}
+
+func (h *processor) syncMethod() syncMethodType {
+	if h.bsync != nil {
+		return syncMethodBlock
+	}
+	return syncMethodFast
 }
 
 // Invoke implements cosi.Reactor. It processes the messages from the collective
-// signature module. The messages are either from the the prepare or the commit
+// signature module. The messages are either from the prepare or the commit
 // phase.
 func (h *processor) Invoke(from mino.Address, msg serde.Message) ([]byte, error) {
 	switch in := msg.(type) {
@@ -70,16 +92,39 @@ func (h *processor) Invoke(from mino.Address, msg serde.Message) ([]byte, error)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		blocks := h.blocks.Watch(ctx)
+		if h.syncMethod() == syncMethodFast {
+			// Check if a catchup is needed for fastsync
+			var roster mino.Players
+			if h.blocks.Len() == 0 && in.GetBlock().GetIndex() > 0 {
+				h.logger.Info().Msgf("node joined an existing blockchain from %+v", from)
+				roster = mino.NewAddresses(from)
+			} else if in.GetBlock().GetIndex() > h.blocks.Len() {
+				h.logger.Warn().Msgf("node got asked to sign block-index %d, "+
+					"but has only %d blocks", in.GetBlock().GetIndex(),
+					h.blocks.Len())
+				var err error
+				roster, err = h.getCurrentRoster()
+				if err != nil {
+					return nil, xerrors.Errorf("failed to get roster: %v", err)
+				}
+			}
 
-		// In case the node is falling behind the chain, it gives it a chance to
-		// catch up before moving forward.
-		latest := h.sync.GetLatest()
+			if roster != nil {
+				h.catchup <- roster
+				return nil, xerrors.Errorf("needed to catch up")
+			}
+		} else {
+			blocks := h.blocks.Watch(ctx)
 
-		if latest > h.blocks.Len() {
-			for link := range blocks {
-				if link.GetBlock().GetIndex() >= latest {
-					cancel()
+			// In case the node is falling behind the chain, it gives it a chance to
+			// catch up before moving forward.
+			latest := h.bsync.GetLatest()
+
+			if latest > h.blocks.Len() {
+				for link := range blocks {
+					if link.GetBlock().GetIndex() >= latest {
+						cancel()
+					}
 				}
 			}
 		}
@@ -144,9 +189,14 @@ func (h *processor) Process(req mino.Request) (serde.Message, error) {
 
 		return nil, h.storeGenesis(msg.GetGenesis().GetRoster(), &root)
 	case types.DoneMessage:
-		err := h.pbftsm.Finalize(msg.GetID(), msg.GetSignature())
-		if err != nil {
-			return nil, xerrors.Errorf("pbftsm finalized failed: %v", err)
+		if h.pbftsm.GetState() == pbft.InitialState {
+			h.logger.Warn().Msgf("Got block without commit from %v - catching up", req.Address)
+			h.catchup <- mino.NewAddresses(req.Address)
+		} else {
+			err := h.pbftsm.Finalize(msg.GetID(), msg.GetSignature())
+			if err != nil {
+				return nil, xerrors.Errorf("pbftsm finalized failed: %v", err)
+			}
 		}
 	case types.ViewMessage:
 		param := pbft.ViewParam{
@@ -249,4 +299,25 @@ func (h *processor) makeAccess(store store.Snapshot, roster authority.Authority)
 	}
 
 	return nil
+}
+
+// catchupHandler listens to incoming requests for potentially missing blocks.
+// It is started as a go-routine
+func (h *processor) catchupHandler() {
+	for players := range h.catchup {
+		if h.syncMethod() == syncMethodFast {
+			ctx, cancel := context.WithCancel(context.Background())
+			for {
+				err := h.fsync.Sync(ctx, players,
+					fastsync.Config{SplitMessageSize: DefaultFastSyncMessageSize})
+				if err == nil {
+					break
+				}
+				h.logger.Err(err).Msg("Couldn't sync - trying again in 10 seconds")
+				time.Sleep(10 * time.Second)
+			}
+			cancel()
+		}
+	}
+	panic("catchup channel got closed - this should not happen")
 }

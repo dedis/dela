@@ -124,9 +124,6 @@ func addAndWait(
 	node cosiDelaNode,
 	args ...txn.Arg,
 ) error {
-	err := manager.Sync()
-	require.NoError(t, err)
-
 	tx, err := manager.Make(args...)
 	if err != nil {
 		return xerrors.Errorf("failed to make tx: %v", err)

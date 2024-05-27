@@ -6,7 +6,7 @@
 // protocol and the followers wait for incoming messages to update their own
 // state machines and reply with signatures when the leader candidate is valid.
 // If the leader fails to send a candidate, or finalize it, the followers will
-// timeout after some time and move to a view change state.
+// time out after some time and move to a view change state.
 //
 // The view change procedure is always waiting on the leader+1 confirmation
 // before moving to leader+2, leader+3, etc. It means that if not enough nodes
@@ -43,6 +43,7 @@ import (
 	"go.dedis.ch/dela/core/ordering/cosipbft/blockstore"
 	"go.dedis.ch/dela/core/ordering/cosipbft/blocksync"
 	"go.dedis.ch/dela/core/ordering/cosipbft/contracts/viewchange"
+	"go.dedis.ch/dela/core/ordering/cosipbft/fastsync"
 	"go.dedis.ch/dela/core/ordering/cosipbft/pbft"
 	"go.dedis.ch/dela/core/ordering/cosipbft/types"
 	"go.dedis.ch/dela/core/store"
@@ -61,7 +62,7 @@ import (
 const (
 	// DefaultRoundTimeout is the maximum round time the service waits
 	// for an event to happen.
-	DefaultRoundTimeout = 10 * time.Second
+	DefaultRoundTimeout = 10 * time.Minute
 
 	// DefaultFailedRoundTimeout is the maximum round time the service waits
 	// for an event to happen, after a round has failed, thus letting time
@@ -71,14 +72,17 @@ const (
 
 	// DefaultTransactionTimeout is the maximum allowed age of transactions
 	// before a view change is executed.
-	DefaultTransactionTimeout = 30 * time.Second
+	DefaultTransactionTimeout = 5 * time.Minute
 
 	// RoundWait is the constant value of the exponential backoff use between
 	// round failures.
-	RoundWait = 5 * time.Millisecond
+	RoundWait = 50 * time.Millisecond
 
 	// RoundMaxWait is the maximum amount for the backoff.
-	RoundMaxWait = 5 * time.Minute
+	RoundMaxWait = 10 * time.Minute
+
+	// DefaultFastSyncMessageSize defines when a fast sync message will be split.
+	DefaultFastSyncMessageSize = 1e6
 
 	rpcName = "cosipbft"
 )
@@ -115,9 +119,10 @@ type Service struct {
 }
 
 type serviceTemplate struct {
-	hashFac crypto.HashFactory
-	blocks  blockstore.BlockStore
-	genesis blockstore.GenesisStore
+	hashFac    crypto.HashFactory
+	blocks     blockstore.BlockStore
+	genesis    blockstore.GenesisStore
+	syncMethod syncMethodType
 }
 
 // ServiceOption is the type of option to set some fields of the service.
@@ -144,8 +149,15 @@ func WithHashFactory(fac crypto.HashFactory) ServiceOption {
 	}
 }
 
+// WithBlockSync enables the old, slow syncing algorithm in the cosipbft module.
+func WithBlockSync() ServiceOption {
+	return func(tmpl *serviceTemplate) {
+		tmpl.syncMethod = syncMethodBlock
+	}
+}
+
 // ServiceParam is the different components to provide to the service. All the
-// fields are mandatory and it will panic if any is nil.
+// fields are mandatory, and it will panic if any is nil.
 type ServiceParam struct {
 	Mino       mino.Mino
 	Cosi       cosi.CollectiveSigning
@@ -220,10 +232,11 @@ func NewServiceStruct(param ServiceParam, opts ...ServiceOption) (*Service, erro
 		ChainFactory:    chainFac,
 		VerifierFactory: param.Cosi.GetVerifierFactory(),
 	}
-
-	bs := blocksync.NewSynchronizer(syncparam)
-
-	proc.sync = bs
+	if tmpl.syncMethod == syncMethodBlock {
+		proc.bsync = blocksync.NewSynchronizer(syncparam)
+	} else {
+		proc.fsync = fastsync.NewSynchronizer(syncparam)
+	}
 
 	fac := types.NewMessageFactory(
 		types.NewGenesisFactory(proc.rosterFac),
@@ -275,9 +288,20 @@ func NewServiceStart(s *Service) {
 	go s.watchBlocks()
 
 	if s.genesis.Exists() {
-		// If the genesis already exists, the service can start right away to
-		// participate in the chain.
+		// If the genesis already exists, and all blocks are loaded,
+		// the service can start right away to participate in the chain.
 		close(s.started)
+		if s.syncMethod() == syncMethodFast {
+			go func() {
+				roster, err := s.getCurrentRoster()
+				if err != nil {
+					s.logger.Err(err).Msg("Couldn't get roster")
+				} else {
+					s.logger.Info().Msg("Triggering catchup")
+					s.catchup <- roster
+				}
+			}()
+		}
 	}
 }
 
@@ -541,17 +565,21 @@ func (s *Service) doLeaderRound(
 
 	s.logger.Debug().Uint64("index", s.blocks.Len()).Msg("round has started")
 
-	// Send a synchronization to the roster so that they can learn about the
-	// latest block of the chain.
-	err := s.sync.Sync(ctx, roster,
-		blocksync.Config{MinHard: threshold.ByzantineThreshold(roster.Len())})
-	if err != nil {
-		return xerrors.Errorf("sync failed: %v", err)
+	// When using blocksync, the updates are sent before every new block, which
+	// uses a lot of bandwidth if there are more than just a few blocks.
+	if s.syncMethod() == syncMethodBlock {
+		// Send a synchronization to the roster so that they can learn about the
+		// latest block of the chain.
+		err := s.bsync.Sync(ctx, roster,
+			blocksync.Config{MinHard: threshold.ByzantineThreshold(roster.Len())})
+		if err != nil {
+			return xerrors.Errorf("sync failed: %v", err)
+		}
 	}
 
 	s.logger.Debug().Uint64("index", s.blocks.Len()).Msg("pbft has started")
 
-	err = s.doPBFT(ctx)
+	err := s.doPBFT(ctx)
 	if err != nil {
 		return xerrors.Errorf("pbft failed: %v", err)
 	}
@@ -677,7 +705,7 @@ func (s *Service) doPBFT(ctx context.Context) error {
 		block, err = types.NewBlock(
 			data,
 			types.WithTreeRoot(root),
-			types.WithIndex(uint64(s.blocks.Len())),
+			types.WithIndex(s.blocks.Len()),
 			types.WithHashFactory(s.hashFactory))
 
 		if err != nil {

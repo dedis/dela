@@ -63,7 +63,7 @@ func (miniController) OnStop(inj node.Injector) error {
 	return nil
 }
 
-// client return monotically increasing nonce
+// client returns monotonically increasing nonce
 //
 // - implements signed.Client
 type client struct {

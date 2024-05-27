@@ -24,7 +24,7 @@ func TestProcessor_BlockMessage_Invoke(t *testing.T) {
 
 	proc := newProcessor()
 	proc.rosterFac = authority.NewFactory(fake.AddressFactory{}, fake.PublicKeyFactory{})
-	proc.sync = fakeSync{latest: 1}
+	proc.bsync = fakeSync{latest: 1}
 	proc.blocks = fakeStore{}
 	proc.pbftsm = fakeSM{
 		state: pbft.InitialState,
