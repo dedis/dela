@@ -150,8 +150,8 @@ type Sender interface {
 // Receiver is an abstraction to receive messages from a stream in the context
 // of a distributed RPC.
 type Receiver interface {
-	// Recv waits for a message to send received from the stream. It returns the
-	// address of the original sender and the message, or a message if the
+	// Recv waits for a message to be received from the stream. It returns the
+	// address of the original sender and the message, or an error if the
 	// stream is closed or the context is done.
 	Recv(context.Context) (Address, serde.Message, error)
 }
