@@ -5,6 +5,9 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/x509"
+	ma "github.com/multiformats/go-multiaddr"
+	"go.dedis.ch/dela/mino/minows"
+	"go.dedis.ch/dela/mino/minows/key"
 	"io"
 	"math/rand"
 	"net/url"
@@ -46,6 +49,9 @@ import (
 	"golang.org/x/xerrors"
 )
 
+const minoGRPC = "grpc"
+const minoWS = "ws"
+
 const certKeyName = "cert.key"
 const privateKeyFile = "private.key"
 
@@ -74,7 +80,7 @@ type cosiDelaNode struct {
 	tree          hashtree.Tree
 }
 
-func newDelaNode(t require.TestingT, path string, port int) dela {
+func newDelaNode(t require.TestingT, path string, port int, kind string) dela {
 	err := os.MkdirAll(path, 0700)
 	require.NoError(t, err)
 
@@ -83,31 +89,43 @@ func newDelaNode(t require.TestingT, path string, port int) dela {
 	require.NoError(t, err)
 
 	// mino
-	router := tree.NewRouter(minogrpc.NewAddressFactory())
-	addr := minogrpc.ParseAddress("127.0.0.1", uint16(port))
+	var onet mino.Mino
+	switch kind {
+	case minoGRPC:
+		router := tree.NewRouter(minogrpc.NewAddressFactory())
+		addr := minogrpc.ParseAddress("127.0.0.1", uint16(port))
 
-	certs := certs.NewDiskStore(db, session.AddressFactory{})
+		certs := certs.NewDiskStore(db, session.AddressFactory{})
 
-	fload := loader.NewFileLoader(filepath.Join(path, certKeyName))
+		fload := loader.NewFileLoader(filepath.Join(path, certKeyName))
+		keydata, err := fload.LoadOrCreate(newCertGenerator(rand.New(rand.NewSource(0)),
+			elliptic.P521()))
+		require.NoError(t, err)
 
-	keydata, err := fload.LoadOrCreate(newCertGenerator(rand.New(rand.NewSource(0)),
-		elliptic.P521()))
-	require.NoError(t, err)
+		key, err := x509.ParseECPrivateKey(keydata)
+		require.NoError(t, err)
 
-	key, err := x509.ParseECPrivateKey(keydata)
-	require.NoError(t, err)
+		opts := []minogrpc.Option{
+			minogrpc.WithStorage(certs),
+			minogrpc.WithCertificateKey(key, key.Public()),
+		}
 
-	opts := []minogrpc.Option{
-		minogrpc.WithStorage(certs),
-		minogrpc.WithCertificateKey(key, key.Public()),
+		onet, err = minogrpc.NewMinogrpc(addr, nil, router, opts...)
+		require.NoError(t, err)
+	case minoWS:
+		listen, err := ma.NewMultiaddr("/ip4/127.0.0.1/tcp/0/ws")
+		require.NoError(t, err)
+
+		storage := key.NewStorage(db)
+		key, _ := storage.LoadOrCreate()
+
+		onet, err = minows.NewMinows(listen, nil, key)
+		require.NoError(t, err)
 	}
-
-	onet, err := minogrpc.NewMinogrpc(addr, nil, router, opts...)
-	require.NoError(t, err)
 	onet.GetAddress()
 
 	// ordering + validation + execution
-	fload = loader.NewFileLoader(filepath.Join(path, privateKeyFile))
+	fload := loader.NewFileLoader(filepath.Join(path, privateKeyFile))
 
 	signerdata, err := fload.LoadOrCreate(newKeyGenerator())
 	require.NoError(t, err)
@@ -193,25 +211,27 @@ func newDelaNode(t require.TestingT, path string, port int) dela {
 
 // Setup implements dela. It creates the roster, shares the certificate, and
 // create an new chain.
-func (c cosiDelaNode) Setup(delas ...dela) {
+func (c cosiDelaNode) Setup(kind string, delas ...dela) {
 	// share the certificates
-	joinable, ok := c.onet.(minogrpc.Joinable)
-	require.True(c.t, ok)
-
-	addrURL, err := url.Parse(c.onet.GetAddress().String())
-	require.NoError(c.t, err, addrURL)
-
-	token := joinable.GenerateToken(time.Hour)
-
-	certHash, err := joinable.GetCertificateStore().Hash(joinable.GetCertificateChain())
-	require.NoError(c.t, err)
-
-	for _, dela := range delas {
-		otherJoinable, ok := dela.GetMino().(minogrpc.Joinable)
+	if kind == minoGRPC {
+		joinable, ok := c.onet.(minogrpc.Joinable)
 		require.True(c.t, ok)
 
-		err = otherJoinable.Join(addrURL, token, certHash)
+		addrURL, err := url.Parse(c.onet.GetAddress().String())
+		require.NoError(c.t, err, addrURL)
+
+		token := joinable.GenerateToken(time.Hour)
+
+		certHash, err := joinable.GetCertificateStore().Hash(joinable.GetCertificateChain())
 		require.NoError(c.t, err)
+
+		for _, dela := range delas {
+			otherJoinable, ok := dela.GetMino().(minogrpc.Joinable)
+			require.True(c.t, ok)
+
+			err = otherJoinable.Join(addrURL, token, certHash)
+			require.NoError(c.t, err)
+		}
 	}
 
 	type extendedService interface {
@@ -244,7 +264,7 @@ func (c cosiDelaNode) Setup(delas ...dela) {
 	roster := authority.New(minoAddrs, pubKeys)
 
 	// create chain
-	err = extended.Setup(context.Background(), roster)
+	err := extended.Setup(context.Background(), roster)
 	require.NoError(c.t, err)
 }
 
