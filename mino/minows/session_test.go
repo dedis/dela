@@ -2,14 +2,17 @@ package minows
 
 import (
 	"context"
+	"io"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-yamux/v4"
 	"github.com/stretchr/testify/require"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/testing/fake"
-	"io"
-	"testing"
-	"time"
 )
 
 func Test_session_Send(t *testing.T) {
@@ -43,8 +46,8 @@ func Test_session_Send(t *testing.T) {
 	require.False(t, open)
 
 	wait()
-	require.Equal(t, []mino.Address{s.(*orchestrator).myAddr,
-		s.(*orchestrator).myAddr, s.(*orchestrator).myAddr}, handler.from)
+	require.Equal(t, []mino.Address{s.(*messageHandler).myAddr,
+		s.(*messageHandler).myAddr, s.(*messageHandler).myAddr}, handler.from)
 	require.Equal(t, []serde.Message{fake.Message{},
 		fake.Message{}, fake.Message{}}, handler.messages)
 }
@@ -75,11 +78,11 @@ func Test_session_Send_ToSelf(t *testing.T) {
 	require.False(t, open)
 
 	wait()
-	require.Equal(t, []mino.Address{s.(*orchestrator).myAddr,
-		s.(*orchestrator).myAddr, s.(*orchestrator).myAddr}, handler.from)
+	require.Equal(t, []mino.Address{s.(*messageHandler).myAddr,
+		s.(*messageHandler).myAddr, s.(*messageHandler).myAddr}, handler.from)
 	require.Equal(t, []serde.Message{fake.Message{},
 		fake.Message{}, fake.Message{}}, handler.messages)
-	require.NotEqual(t, s.(*orchestrator).myAddr, initiator.GetAddress())
+	require.NotEqual(t, s.(*messageHandler).myAddr, initiator.GetAddress())
 }
 
 func Test_session_Send_WrongAddressType(t *testing.T) {
@@ -139,8 +142,12 @@ func Test_session_Send_SessionEnded(t *testing.T) {
 	wait()
 
 	errs := s.Send(fake.Message{}, initiator.GetAddress(), player.GetAddress())
-	require.ErrorContains(t, <-errs, network.ErrReset.Error())
-	require.ErrorContains(t, <-errs, network.ErrReset.Error())
+	for i := 0; i < 2; i++ {
+		err := (<-errs).Error()
+		require.True(t, strings.Contains(err, network.ErrReset.Error()) ||
+			strings.Contains(err, yamux.ErrSessionShutdown.Error()))
+	}
+
 	_, open := <-errs
 	require.False(t, open)
 	require.Nil(t, handler.messages)
@@ -237,9 +244,9 @@ func Test_session_Recv_FromSelf(t *testing.T) {
 	require.Equal(t, fake.Message{}, msg)
 
 	require.NotEqual(t, from1, from2)
-	require.Equal(t, []mino.Address{s.(*orchestrator).myAddr,
-		s.(*orchestrator).myAddr, s.(*orchestrator).myAddr}, handler.from)
-	require.NotEqual(t, s.(*orchestrator).myAddr, initiator.GetAddress())
+	require.Equal(t, []mino.Address{s.(*messageHandler).myAddr,
+		s.(*messageHandler).myAddr, s.(*messageHandler).myAddr}, handler.from)
+	require.NotEqual(t, s.(*messageHandler).myAddr, initiator.GetAddress())
 }
 
 func Test_session_Recv_SessionEnded(t *testing.T) {

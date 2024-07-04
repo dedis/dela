@@ -16,18 +16,17 @@ import (
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
-	"strings"
 	"sync"
-	"time"
 )
 
 const pathCall = "/call"
 const pathStream = "/stream"
 
-// Packet encapsulates a message sent over the network streams.
-type Packet struct {
-	Source  []byte
-	Payload []byte
+// packet encapsulates a message sent over the network streams.
+type packet struct {
+	Source      []byte
+	Payload     []byte
+	ForwardDest *[]byte
 }
 
 type envelope struct {
@@ -81,6 +80,7 @@ func (r rpc) Call(ctx context.Context, req serde.Message,
 	go func() {
 		defer close(responses)
 		for i := 0; i < len(addrs); i++ {
+
 			select {
 			case <-ctx.Done():
 				return
@@ -125,6 +125,7 @@ func (r rpc) Stream(ctx context.Context, players mino.Players) (mino.Sender, min
 			return nil, nil, xerrors.Errorf("%v: %T",
 				ErrWrongAddressType, player)
 		}
+
 		go func(addr address) {
 			defer wg.Done()
 			initiator.Peerstore().AddAddr(addr.identity, addr.location,
@@ -137,6 +138,7 @@ func (r rpc) Stream(ctx context.Context, players mino.Players) (mino.Sender, min
 				return
 			}
 			streams <- stream
+
 			go func() {
 				<-ctx.Done()
 				err = stream.Reset()
@@ -166,31 +168,23 @@ func (r rpc) Stream(ctx context.Context, players mino.Players) (mino.Sender, min
 }
 
 func (r rpc) handleCall(stream network.Stream) {
-	handle := func() error {
-		dec := gob.NewDecoder(stream)
-		from, req, err := r.receive(dec)
-		if err != nil {
-			return xerrors.Errorf("could not receive: %v", err)
-		}
-
-		id := stream.Conn().RemotePeer()
-		author := address{location: from, identity: id}
-		reply, err := r.handler.Process(mino.Request{Address: author, Message: req})
-		if err != nil {
-			return xerrors.Errorf("could not process: %v", err)
-		}
-
-		enc := gob.NewEncoder(stream)
-		err = r.send(enc, reply)
-		if err != nil {
-			return xerrors.Errorf("could not reply: %v", err)
-		}
-		return nil
+	dec := gob.NewDecoder(stream)
+	from, req, err := r.receive(dec)
+	if err != nil {
+		r.logger.Error().Err(err).Msg("could not receive")
 	}
 
-	err := handle()
+	id := stream.Conn().RemotePeer()
+	author := address{location: from, identity: id}
+	reply, err := r.handler.Process(mino.Request{Address: author, Message: req})
 	if err != nil {
-		r.logger.Error().Err(err).Msg("could not handle call")
+		r.logger.Error().Err(err).Msg("could not process")
+	}
+
+	enc := gob.NewEncoder(stream)
+	err = r.send(enc, reply)
+	if err != nil {
+		r.logger.Error().Err(err).Msg("could not reply")
 	}
 }
 
@@ -278,7 +272,7 @@ func (r rpc) send(enc *gob.Encoder, msg serde.Message) error {
 		payload = bytes
 	}
 
-	err := enc.Encode(&Packet{Source: from, Payload: payload})
+	err := enc.Encode(&packet{Source: from, Payload: payload})
 	if errors.Is(err, network.ErrReset) {
 		return err
 	}
@@ -289,8 +283,8 @@ func (r rpc) send(enc *gob.Encoder, msg serde.Message) error {
 }
 
 func (r rpc) receive(dec *gob.Decoder) (ma.Multiaddr, serde.Message, error) {
-	var packet Packet
-	err := dec.Decode(&packet)
+	var pkt packet
+	err := dec.Decode(&pkt)
 	if errors.Is(err, network.ErrReset) {
 		return nil, nil, err
 	}
@@ -298,16 +292,16 @@ func (r rpc) receive(dec *gob.Decoder) (ma.Multiaddr, serde.Message, error) {
 		return nil, nil, xerrors.Errorf("could not decode packet: %v", err)
 	}
 
-	from, err := ma.NewMultiaddrBytes(packet.Source)
+	from, err := ma.NewMultiaddrBytes(pkt.Source)
 	if err != nil {
 		return nil, nil, xerrors.Errorf("could not unmarshal address: %v",
-			packet.Source)
+			pkt.Source)
 	}
 
-	if packet.Payload == nil {
+	if pkt.Payload == nil {
 		return from, nil, nil
 	}
-	msg, err := r.factory.Deserialize(r.context, packet.Payload)
+	msg, err := r.factory.Deserialize(r.context, pkt.Payload)
 	if err != nil {
 		return from, nil, xerrors.Errorf(
 			"could not deserialize message: %v",
@@ -317,7 +311,7 @@ func (r rpc) receive(dec *gob.Decoder) (ma.Multiaddr, serde.Message, error) {
 }
 
 func (r rpc) createOrchestrator(ctx context.Context,
-	initiator host.Host, streams []network.Stream) (*orchestrator, error) {
+	initiator host.Host, streams []network.Stream) (*messageHandler, error) {
 	participant := r.mino.GetAddress().(address).location
 	myAddr, err := newOrchestratorAddr(participant, initiator.ID())
 	if err != nil {
@@ -329,94 +323,35 @@ func (r rpc) createOrchestrator(ctx context.Context,
 		encoders[stream.Conn().RemotePeer()] = gob.NewEncoder(stream)
 	}
 
-	o := &orchestrator{
+	m := &messageHandler{
 		logger: r.logger.With().Stringer("mino", myAddr).
 			Stringer("orchestrator", xid.New()).Logger(),
-		myAddr: myAddr,
-		rpc:    r,
-		outs:   encoders,
-		in:     make(chan Packet, MaxUnreadAllowed),
+		myAddr:  myAddr,
+		rpc:     r,
+		streams: streams,
+		outs:    encoders,
+		in:      make(chan packet, MaxUnreadAllowed),
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(len(streams))
-	for _, stream := range streams {
-		go func(stream network.Stream) {
-			defer wg.Done()
-			decoder := gob.NewDecoder(stream)
-			for {
-				packet, err := o.listen(decoder)
-				if err != nil {
-					if strings.Contains(err.Error(), network.ErrReset.Error()) {
-						return
-					}
-					r.logger.Error().Err(err).Msg("message dropped")
-					continue
-				}
-				select {
-				case <-ctx.Done():
-					return
-				case o.in <- packet:
-				}
-			}
-		}(stream)
-	}
-
-	go func() {
-		wg.Wait()
-		close(o.in)
-	}()
-
-	return o, nil
+	m.loop(ctx)
+	return m, nil
 }
 
-func (r rpc) createParticipant(stream network.Stream) participant {
-	encoder := gob.NewEncoder(stream)
-	decoder := gob.NewDecoder(stream)
+func (r rpc) createParticipant(stream network.Stream) messageHandler {
+	out := gob.NewEncoder(stream)
 
-	p := participant{
-		logger: r.logger.With().Stringer("participant", xid.New()).Logger(),
-		myAddr: r.mino.myAddr,
-		rpc:    r,
-		out:    encoder,
-		in:     make(chan Packet),
+	ctx, cancel := context.WithCancel(context.Background())
+	m := messageHandler{
+		logger:  r.logger.With().Stringer("participant", xid.New()).Logger(),
+		myAddr:  r.mino.myAddr,
+		rpc:     r,
+		cancel:  cancel,
+		streams: []network.Stream{stream},
+		outs:    map[peer.ID]*gob.Encoder{stream.Conn().RemotePeer(): out},
+		in:      make(chan packet),
 	}
 
-	done := make(chan any)
-	go func() {
-		hasReset := func() bool {
-			for _, s := range stream.Conn().GetStreams() {
-				if s.ID() == stream.ID() {
-					return false
-				}
-			}
-			return true
-		}
+	m.loop(ctx)
 
-		for !hasReset() {
-			time.Sleep(2 * time.Second)
-		}
-		close(done)
-	}()
-
-	go func() {
-		for {
-			packet, err := p.listen(decoder)
-			if err != nil {
-				if strings.Contains(err.Error(), network.ErrReset.Error()) {
-					close(p.in)
-					return
-				}
-				r.logger.Error().Err(err).Msg("message dropped")
-				continue
-			}
-			select {
-			case <-done:
-				return
-			case p.in <- packet:
-			}
-		}
-	}()
-
-	return p
+	return m
 }

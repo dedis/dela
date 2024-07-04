@@ -25,9 +25,15 @@ type address struct {
 // newAddress creates a new address from a publicly reachable location with a
 // peer identity.
 func newAddress(location ma.Multiaddr, identity peer.ID) (address, error) {
-	if location == nil || identity.String() == "" {
-		return address{}, xerrors.New("address must have location and identity")
+	if location == nil {
+		return address{}, xerrors.New("address must have a location")
 	}
+
+	err := identity.Validate()
+	if err != nil {
+		return address{}, xerrors.Errorf("address must have a valid identity: %v", err)
+	}
+
 	return address{
 		location: location,
 		identity: identity,

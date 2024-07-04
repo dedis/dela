@@ -2,6 +2,7 @@ package key
 
 import (
 	"crypto/rand"
+
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"go.dedis.ch/dela/core/store/kv"
 	"golang.org/x/xerrors"
@@ -16,7 +17,7 @@ type Storage struct {
 // NewStorage creates a new Storage for private keys.
 func NewStorage(db kv.DB) *Storage {
 	return &Storage{
-		bucket: []byte("keys"),
+		bucket: []byte("minows_keys"),
 		db:     db,
 	}
 }

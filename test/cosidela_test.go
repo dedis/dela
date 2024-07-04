@@ -5,15 +5,17 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/x509"
-	ma "github.com/multiformats/go-multiaddr"
-	"go.dedis.ch/dela/mino/minows"
-	"go.dedis.ch/dela/mino/minows/key"
+	"fmt"
 	"io"
 	"math/rand"
 	"net/url"
 	"os"
 	"path/filepath"
 	"time"
+
+	ma "github.com/multiformats/go-multiaddr"
+	"go.dedis.ch/dela/mino/minows"
+	"go.dedis.ch/dela/mino/minows/key"
 
 	"github.com/stretchr/testify/require"
 	accessContract "go.dedis.ch/dela/contracts/access"
@@ -95,31 +97,31 @@ func newDelaNode(t require.TestingT, path string, port int, kind string) dela {
 		router := tree.NewRouter(minogrpc.NewAddressFactory())
 		addr := minogrpc.ParseAddress("127.0.0.1", uint16(port))
 
-		certs := certs.NewDiskStore(db, session.AddressFactory{})
+		delaCerts := certs.NewDiskStore(db, session.AddressFactory{})
 
 		fload := loader.NewFileLoader(filepath.Join(path, certKeyName))
 		keydata, err := fload.LoadOrCreate(newCertGenerator(rand.New(rand.NewSource(0)),
 			elliptic.P521()))
 		require.NoError(t, err)
 
-		key, err := x509.ParseECPrivateKey(keydata)
+		privateKey, err := x509.ParseECPrivateKey(keydata)
 		require.NoError(t, err)
 
 		opts := []minogrpc.Option{
-			minogrpc.WithStorage(certs),
-			minogrpc.WithCertificateKey(key, key.Public()),
+			minogrpc.WithStorage(delaCerts),
+			minogrpc.WithCertificateKey(privateKey, privateKey.Public()),
 		}
 
 		onet, err = minogrpc.NewMinogrpc(addr, nil, router, opts...)
 		require.NoError(t, err)
 	case minoWS:
-		listen, err := ma.NewMultiaddr("/ip4/127.0.0.1/tcp/0/ws")
+		listen, err := ma.NewMultiaddr(fmt.Sprintf("/ip4/127.0.0.1/tcp/%d/ws", port))
 		require.NoError(t, err)
 
 		storage := key.NewStorage(db)
-		key, _ := storage.LoadOrCreate()
+		privKey, _ := storage.LoadOrCreate()
 
-		onet, err = minows.NewMinows(listen, nil, key)
+		onet, err = minows.NewMinows(listen, nil, privKey)
 		require.NoError(t, err)
 	}
 	onet.GetAddress()
@@ -147,22 +149,22 @@ func newDelaNode(t require.TestingT, path string, port int, kind string) dela {
 	txFac := signed.NewTransactionFactory()
 	vs := simple.NewService(exec, txFac)
 
-	pool, err := poolimpl.NewPool(gossip.NewFlat(onet.WithSegment("pool"), txFac))
+	newPool, err := poolimpl.NewPool(gossip.NewFlat(onet.WithSegment("pool"), txFac))
 	require.NoError(t, err)
 
-	tree := binprefix.NewMerkleTree(db, binprefix.Nonce{})
+	newTree := binprefix.NewMerkleTree(db, binprefix.Nonce{})
 
 	param := cosipbft.ServiceParam{
 		Mino:       onet,
 		Cosi:       cosi,
 		Validation: vs,
 		Access:     accessService,
-		Pool:       pool,
+		Pool:       newPool,
 		DB:         db,
-		Tree:       tree,
+		Tree:       newTree,
 	}
 
-	err = tree.Load()
+	err = newTree.Load()
 	require.NoError(t, err)
 
 	genstore := blockstore.NewGenesisDiskStore(db, types.NewGenesisFactory(rosterFac))
@@ -202,10 +204,10 @@ func newDelaNode(t require.TestingT, path string, port int, kind string) dela {
 		ordering:      srvc,
 		cosi:          cosi,
 		txManager:     mgr,
-		pool:          pool,
+		pool:          newPool,
 		accessService: accessService,
 		accessStore:   accessStore,
-		tree:          tree,
+		tree:          newTree,
 	}
 }
 
