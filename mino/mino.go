@@ -48,6 +48,8 @@ const (
 	ACTgRPCS
 	// ACThttps is a publicly signed TLS secured grpc connection
 	ACThttps
+	// ACTws is a WebSocket connection
+	ACTws
 )
 
 // Address is a representation of a node's address.
@@ -150,8 +152,8 @@ type Sender interface {
 // Receiver is an abstraction to receive messages from a stream in the context
 // of a distributed RPC.
 type Receiver interface {
-	// Recv waits for a message to send received from the stream. It returns the
-	// address of the original sender and the message, or a message if the
+	// Recv waits for a message to be received from the stream. It returns the
+	// address of the original sender and the message, or an error if the
 	// stream is closed or the context is done.
 	Recv(context.Context) (Address, serde.Message, error)
 }

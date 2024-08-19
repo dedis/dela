@@ -62,6 +62,7 @@ jobs:
         
   # notifies that all test jobs are finished.
   finish:
+    if: github.repository == 'dedis/dela'
     needs: test
     runs-on: ubuntu-latest
     steps:

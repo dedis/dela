@@ -14,7 +14,7 @@ generate: tidy
 # Some packages are excluded from staticcheck due to deprecated warnings: #208.
 lint: tidy
 	# Coding style static check.
-	@go install honnef.co/go/tools/cmd/staticcheck@latest
+	@go install honnef.co/go/tools/cmd/staticcheck@v0.4.7
 	staticcheck `go list ./... | grep -Ev "(go\.dedis\.ch/dela/internal/testing|go\.dedis\.ch/dela/mino/minogrpc/ptypes)"`
 
 vet: tidy

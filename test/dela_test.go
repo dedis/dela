@@ -9,7 +9,7 @@ import (
 
 // dela defines the common interface for a Dela node.
 type dela interface {
-	Setup(...dela)
+	Setup(string, ...dela)
 	GetMino() mino.Mino
 	GetOrdering() ordering.Service
 	GetTxManager() txn.Manager
