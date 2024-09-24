@@ -250,6 +250,9 @@ func Test_session_Recv_FromSelf(t *testing.T) {
 }
 
 func Test_session_Recv_SessionEnded(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Will be tested in a loop")
+	}
 	handler := &echoHandler{}
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
 	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
