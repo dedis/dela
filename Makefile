@@ -25,22 +25,27 @@ vet: tidy
 tests:
 	while make test; do echo "Testing again at $$(date)"; done; echo "Failed testing"
 
-FLAKY_TESTS := (TestService_Scenario_Basic|TestService_Scenario_ViewChange|TestService_Scenario_FinalizeFailure)
+FLAKY_TESTS_PBFT := (TestService_Scenario_Basic|TestService_Scenario_ViewChange|TestService_Scenario_FinalizeFailure)
+FLAKY_TESTS_MINOWS := (Test_session_Recv_SessionEnded)
 
 # test runs all tests in DELA without coverage
 # It first runs all the tests in "short" mode, so the flaky tests don't run.
 # Then the flaky tests get run separately for at most 3 times, and hopefully it all works out.
 test: tidy
 	go test ./... -short -count=1 || exit 1
-	@for count in $$( seq 3 ); do \
-		echo "Running $$count/3"; \
-		if go test -count=1 ./core/ordering/cosipbft -run="${FLAKY_TESTS}"; then \
-			break; \
-		fi; \
-		if [[ $$count == 3 ]]; then \
+	@for count in $$( seq 4 ); do \
+		if [ "$$count" -eq 4 ]; then \
 			echo "Couldn't run all flaky tests in 3 tries"; \
 			exit 1; \
 		fi; \
+		echo "Running $$count/3"; \
+		if ! go test -count=1 ./mino/minows -run="${FLAKY_TESTS_MINOWS}"; then \
+			continue; \
+		fi; \
+		if ! go test -count=1 ./core/ordering/cosipbft -run="${FLAKY_TESTS_PBFT}"; then \
+			continue; \
+		fi; \
+		break; \
 	done
 
 # test runs all tests in DELA and generate a coverage output (to be used by sonarcloud)

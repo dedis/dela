@@ -3,7 +3,6 @@ package minows
 import (
 	"context"
 	"encoding/gob"
-	"fmt"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/rs/zerolog"
@@ -113,7 +112,7 @@ func (m messageHandler) passMessages(ctx context.Context, stream network.Stream,
 		}
 		select {
 		case <-ctx.Done():
-			fmt.Println("messageHandler done:", m.isOrchestrator())
+			m.logger.Trace().Msgf("messageHandler done: %v", m.isOrchestrator())
 			return
 		case m.in <- pkt:
 		}

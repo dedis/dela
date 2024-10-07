@@ -6,6 +6,7 @@ import (
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"go.dedis.ch/dela/testing/fake"
+	"sync"
 	"testing"
 )
 
@@ -244,8 +245,14 @@ func Test_rpc_Stream_ContextCancelled(t *testing.T) {
 // echos back the same message
 // - implements mino.Handler
 type echoHandler struct {
-	from     []mino.Address
-	messages []serde.Message
+	from       []mino.Address
+	messages   []serde.Message
+	mutex      sync.Mutex
+	msgCounter chan struct{}
+}
+
+func newEchoHandler() *echoHandler {
+	return &echoHandler{msgCounter: make(chan struct{}, 100)}
 }
 
 func (h *echoHandler) Process(req mino.Request) (resp serde.Message,
@@ -261,12 +268,21 @@ func (h *echoHandler) Stream(out mino.Sender, in mino.Receiver) error {
 		if err != nil {
 			return err
 		}
+		h.mutex.Lock()
 		h.from = append(h.from, from)
 		h.messages = append(h.messages, msg)
 		err = <-out.Send(msg, from)
+		h.msgCounter <- struct{}{}
+		h.mutex.Unlock()
 		if err != nil {
 			return err
 		}
+	}
+}
+
+func (h *echoHandler) wait(count int) {
+	for i := 0; i < count; i++ {
+		<-h.msgCounter
 	}
 }
 

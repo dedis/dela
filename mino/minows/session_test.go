@@ -16,7 +16,7 @@ import (
 )
 
 func Test_session_Send(t *testing.T) {
-	handler := &echoHandler{}
+	handler := newEchoHandler()
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
 	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
 	defer stop()
@@ -45,7 +45,7 @@ func Test_session_Send(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, open)
 
-	wait()
+	handler.wait(3)
 	require.Equal(t, []mino.Address{s.(*messageHandler).myAddr,
 		s.(*messageHandler).myAddr, s.(*messageHandler).myAddr}, handler.from)
 	require.Equal(t, []serde.Message{fake.Message{},
@@ -53,7 +53,7 @@ func Test_session_Send(t *testing.T) {
 }
 
 func Test_session_Send_ToSelf(t *testing.T) {
-	handler := &echoHandler{}
+	handler := newEchoHandler()
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
 	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
 	defer stop()
@@ -77,7 +77,7 @@ func Test_session_Send_ToSelf(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, open)
 
-	wait()
+	handler.wait(3)
 	require.Equal(t, []mino.Address{s.(*messageHandler).myAddr,
 		s.(*messageHandler).myAddr, s.(*messageHandler).myAddr}, handler.from)
 	require.Equal(t, []serde.Message{fake.Message{},
@@ -86,7 +86,7 @@ func Test_session_Send_ToSelf(t *testing.T) {
 }
 
 func Test_session_Send_WrongAddressType(t *testing.T) {
-	handler := &echoHandler{}
+	handler := newEchoHandler()
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
 	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
 	defer stop()
@@ -105,7 +105,7 @@ func Test_session_Send_WrongAddressType(t *testing.T) {
 }
 
 func Test_session_Send_AddressNotPlayer(t *testing.T) {
-	handler := &echoHandler{}
+	handler := newEchoHandler()
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
 	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
 	defer stop()
@@ -126,7 +126,7 @@ func Test_session_Send_AddressNotPlayer(t *testing.T) {
 }
 
 func Test_session_Send_SessionEnded(t *testing.T) {
-	handler := &echoHandler{}
+	handler := newEchoHandler()
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
 	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
 	defer stop()
@@ -139,7 +139,6 @@ func Test_session_Send_SessionEnded(t *testing.T) {
 
 	s, _, stop := mustStream(t, rpc, initiator, player)
 	stop()
-	wait()
 
 	errs := s.Send(fake.Message{}, initiator.GetAddress(), player.GetAddress())
 	for i := 0; i < 2; i++ {
@@ -154,7 +153,7 @@ func Test_session_Send_SessionEnded(t *testing.T) {
 }
 
 func Test_session_Recv(t *testing.T) {
-	handler := &echoHandler{}
+	handler := newEchoHandler()
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
 	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
 	defer stop()
@@ -203,7 +202,7 @@ func Test_session_Recv(t *testing.T) {
 }
 
 func Test_session_Recv_FromSelf(t *testing.T) {
-	handler := &echoHandler{}
+	handler := newEchoHandler()
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
 	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
 	defer stop()
@@ -250,7 +249,10 @@ func Test_session_Recv_FromSelf(t *testing.T) {
 }
 
 func Test_session_Recv_SessionEnded(t *testing.T) {
-	handler := &echoHandler{}
+	if testing.Short() {
+		t.Skip("See issue https://github.com/dedis/dela/issues/291")
+	}
+	handler := newEchoHandler()
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
 	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
 	defer stop()
@@ -276,7 +278,7 @@ func Test_session_Recv_SessionEnded(t *testing.T) {
 }
 
 func Test_session_Recv_ContextCancelled(t *testing.T) {
-	handler := &echoHandler{}
+	handler := newEchoHandler()
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
 	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
 	defer stop()
@@ -299,10 +301,6 @@ func Test_session_Recv_ContextCancelled(t *testing.T) {
 func setTimeout() (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	return ctx, cancel
-}
-
-func wait() {
-	time.Sleep(2 * time.Second)
 }
 
 func mustStream(t *testing.T, rpc mino.RPC,
