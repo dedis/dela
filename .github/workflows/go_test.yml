@@ -18,7 +18,7 @@ jobs:
     runs-on: ${{matrix.platform}}
     env:
       LLVL: trace
-      coverage: ${{ matrix.platform == 'ubuntu-latest' && github.repository == 'dedis/dela' }}
+      coverage: ${{ matrix.platform == 'ubuntu-latest' && github.event.pull_request.head.repo.full_name == 'dedis/dela' }}
     steps:
     - name: Check out code into the Go module directory
       uses: actions/checkout@v4
