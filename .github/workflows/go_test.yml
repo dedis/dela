@@ -18,7 +18,7 @@ jobs:
     runs-on: ${{matrix.platform}}
     env:
       LLVL: trace
-      coverage: ${{ matrix.platform == 'ubuntu-latest' && github.repository == 'dedis/dela' }}
+      coverage: ${{ matrix.platform == 'ubuntu-latest' && secrets.SONAR_TOKEN != '' }}
     steps:
     - name: Check out code into the Go module directory
       uses: actions/checkout@v4
@@ -62,7 +62,7 @@ jobs:
         
   # notifies that all test jobs are finished.
   finish:
-    if: github.repository == 'dedis/dela'
+    if: ${{ secrets.SONAR_TOKEN != '' }}
     needs: test
     runs-on: ubuntu-latest
     steps:
