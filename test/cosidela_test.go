@@ -2,21 +2,12 @@ package integration
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/x509"
 	"fmt"
-	"io"
-	"math/rand"
-	"net/url"
 	"os"
 	"path/filepath"
 	"time"
 
 	ma "github.com/multiformats/go-multiaddr"
-	"go.dedis.ch/dela/mino/minows"
-	"go.dedis.ch/dela/mino/minows/key"
-
 	"github.com/stretchr/testify/require"
 	accessContract "go.dedis.ch/dela/contracts/access"
 	"go.dedis.ch/dela/contracts/value"
@@ -43,18 +34,14 @@ import (
 	"go.dedis.ch/dela/crypto/loader"
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/gossip"
-	"go.dedis.ch/dela/mino/minogrpc"
-	"go.dedis.ch/dela/mino/minogrpc/certs"
-	"go.dedis.ch/dela/mino/minogrpc/session"
-	"go.dedis.ch/dela/mino/router/tree"
+	"go.dedis.ch/dela/mino/minows"
+	"go.dedis.ch/dela/mino/minows/key"
 	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
 )
 
-const minoGRPC = "grpc"
 const minoWS = "ws"
 
-const certKeyName = "cert.key"
 const privateKeyFile = "private.key"
 
 // cosiDela defines the interface needed to use a Dela node using cosi.
@@ -93,33 +80,11 @@ func newDelaNode(t require.TestingT, path string, port int, kind string) dela {
 	// mino
 	var onet mino.Mino
 	switch kind {
-	case minoGRPC:
-		router := tree.NewRouter(minogrpc.NewAddressFactory())
-		addr := minogrpc.ParseAddress("127.0.0.1", uint16(port))
-
-		delaCerts := certs.NewDiskStore(db, session.AddressFactory{})
-
-		fload := loader.NewFileLoader(filepath.Join(path, certKeyName))
-		keydata, err := fload.LoadOrCreate(newCertGenerator(rand.New(rand.NewSource(0)),
-			elliptic.P521()))
-		require.NoError(t, err)
-
-		privateKey, err := x509.ParseECPrivateKey(keydata)
-		require.NoError(t, err)
-
-		opts := []minogrpc.Option{
-			minogrpc.WithStorage(delaCerts),
-			minogrpc.WithCertificateKey(privateKey, privateKey.Public()),
-		}
-
-		onet, err = minogrpc.NewMinogrpc(addr, nil, router, opts...)
-		require.NoError(t, err)
 	case minoWS:
 		listen, err := ma.NewMultiaddr(fmt.Sprintf("/ip4/127.0.0.1/tcp/%d/ws", port))
 		require.NoError(t, err)
 
-		storage := key.NewStorage(db)
-		privKey, _ := storage.LoadOrCreate()
+		privKey, _ := minokey.NewKey(db)
 
 		onet, err = minows.NewMinows(listen, nil, privKey)
 		require.NoError(t, err)
@@ -212,30 +177,8 @@ func newDelaNode(t require.TestingT, path string, port int, kind string) dela {
 }
 
 // Setup implements dela. It creates the roster, shares the certificate, and
-// create an new chain.
+// create a new chain.
 func (c cosiDelaNode) Setup(kind string, delas ...dela) {
-	// share the certificates
-	if kind == minoGRPC {
-		joinable, ok := c.onet.(minogrpc.Joinable)
-		require.True(c.t, ok)
-
-		addrURL, err := url.Parse(c.onet.GetAddress().String())
-		require.NoError(c.t, err, addrURL)
-
-		token := joinable.GenerateToken(time.Hour)
-
-		certHash, err := joinable.GetCertificateStore().Hash(joinable.GetCertificateChain())
-		require.NoError(c.t, err)
-
-		for _, dela := range delas {
-			otherJoinable, ok := dela.GetMino().(minogrpc.Joinable)
-			require.True(c.t, ok)
-
-			err = otherJoinable.Join(addrURL, token, certHash)
-			require.NoError(c.t, err)
-		}
-	}
-
 	type extendedService interface {
 		GetRoster() (authority.Authority, error)
 		Setup(ctx context.Context, ca crypto.CollectiveAuthority) error
@@ -308,38 +251,6 @@ func (c cosiDelaNode) GetAccessStore() accessstore {
 // GetTree implements cosiDela
 func (c cosiDelaNode) GetTree() hashtree.Tree {
 	return c.tree
-}
-
-// generator can generate a private key compatible with the x509 certificate.
-//
-// - implements loader.Generator
-type certGenerator struct {
-	random io.Reader
-	curve  elliptic.Curve
-}
-
-func newCertGenerator(r io.Reader, c elliptic.Curve) loader.Generator {
-	return certGenerator{
-		random: r,
-		curve:  c,
-	}
-}
-
-// certGenerator implements loader.Generator. It returns the serialized data of
-// a private key generated from the an elliptic curve. The data is formatted as
-// a PEM block "EC PRIVATE KEY".
-func (g certGenerator) Generate() ([]byte, error) {
-	priv, err := ecdsa.GenerateKey(g.curve, g.random)
-	if err != nil {
-		return nil, xerrors.Errorf("ecdsa: %v", err)
-	}
-
-	data, err := x509.MarshalECPrivateKey(priv)
-	if err != nil {
-		return nil, xerrors.Errorf("while marshaling: %v", err)
-	}
-
-	return data, nil
 }
 
 func newKeyGenerator() loader.Generator {

@@ -34,7 +34,7 @@ type Players interface {
 
 It provides simple primitives to filter and get the list of addresses. Each
 implementation of Mino has its own address representation. Minoch uses Go
-channels and therefore uses string identifiers, whereas Minogrpc uses actual
+channels and therefore uses string identifiers, whereas Minows uses actual
 network addresses.
 
 This interface can later be extended to add more information to the identity of

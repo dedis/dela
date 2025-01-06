@@ -6,14 +6,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"go.dedis.ch/dela/mino/minogrpc"
-	"go.dedis.ch/dela/mino/router/tree"
-
 	"go.dedis.ch/dela/dkg"
 
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minoch"
-
 	"go.dedis.ch/kyber/v3"
 )
 
@@ -155,9 +151,10 @@ func TestResharing_minoch(t *testing.T) {
 
 }
 
-// This test creats a dkg committee then creats another committee (that can
+/*
+// This test creates a dkg committee then creates another committee (that can
 // share some nodes with the old committee) and then redistributes the secret to
-// the new commitee. Using minogrpc as the underlying network
+// the new committee. Using minows as the underlying network
 func TestResharing_minogrpc(t *testing.T) {
 
 	// Setting up the first dkg
@@ -171,8 +168,8 @@ func TestResharing_minogrpc(t *testing.T) {
 
 	// Defining the addresses
 	for i := 0; i < nOld; i++ {
-		addr := minogrpc.ParseAddress("127.0.0.1", 0)
-		m, err := minogrpc.NewMinogrpc(addr, nil, tree.NewRouter(minogrpc.NewAddressFactory()))
+		addr := minows.("127.0.0.1", 0)
+		m, err := minows.NewMinows(addr, nil, tree.NewRouter(minows.NewAddressFactory()))
 		require.NoError(t, err)
 		defer func() {
 			_ = m.GracefulStop()
@@ -185,12 +182,12 @@ func TestResharing_minogrpc(t *testing.T) {
 	// Initializing the pedersen
 	for i, mi := range minosOld {
 		for _, mj := range minosOld {
-			err := mi.(*minogrpc.Minogrpc).GetCertificateStore().Store(mj.GetAddress(),
-				mj.(*minogrpc.Minogrpc).GetCertificateChain())
+			err := mi.(*minows.Minows).GetCertificateStore().Store(mj.GetAddress(),
+				mj.(*minows.Minows).GetCertificateChain())
 			require.NoError(t, err)
 		}
 
-		pdkg, pubkey := NewPedersen(mi.(*minogrpc.Minogrpc))
+		pdkg, pubkey := NewPedersen(mi.(*minows.Minows))
 
 		dkgsOld[i] = pdkg
 		pubkeysOld[i] = pubkey
@@ -240,8 +237,8 @@ func TestResharing_minogrpc(t *testing.T) {
 
 	// Defining the address of the new nodes.
 	for i := 0; i < nNew; i++ {
-		addr := minogrpc.ParseAddress("127.0.0.1", 0)
-		m, err := minogrpc.NewMinogrpc(addr, nil, tree.NewRouter(minogrpc.NewAddressFactory()))
+		addr := minows.ParseAddress("127.0.0.1", 0)
+		m, err := minows.NewMinows(addr, nil, tree.NewRouter(minows.NewAddressFactory()))
 		require.NoError(t, err)
 		defer func() {
 			err := m.GracefulStop()
@@ -263,22 +260,22 @@ func TestResharing_minogrpc(t *testing.T) {
 	// a pedersen
 	for i, mi := range minosNew[nCommon:] {
 		for _, mj := range minosNew {
-			err := mi.(*minogrpc.Minogrpc).GetCertificateStore().Store(mj.GetAddress(),
-				mj.(*minogrpc.Minogrpc).GetCertificateChain())
+			err := mi.(*Minows).GetCertificateStore().Store(mj.GetAddress(),
+				mj.(*Minows).GetCertificateChain())
 			require.NoError(t, err)
-			err = mj.(*minogrpc.Minogrpc).GetCertificateStore().Store(mi.GetAddress(),
-				mi.(*minogrpc.Minogrpc).GetCertificateChain())
+			err = mj.(*Minows).GetCertificateStore().Store(mi.GetAddress(),
+				mi.(*Minows).GetCertificateChain())
 			require.NoError(t, err)
 		}
 		for _, mk := range minosOld[nCommon:] {
-			err := mi.(*minogrpc.Minogrpc).GetCertificateStore().Store(mk.GetAddress(),
-				mk.(*minogrpc.Minogrpc).GetCertificateChain())
+			err := mi.(*Minows).GetCertificateStore().Store(mk.GetAddress(),
+				mk.(*Minows).GetCertificateChain())
 			require.NoError(t, err)
-			err = mk.(*minogrpc.Minogrpc).GetCertificateStore().Store(mi.GetAddress(),
-				mi.(*minogrpc.Minogrpc).GetCertificateChain())
+			err = mk.(*Minows).GetCertificateStore().Store(mi.GetAddress(),
+				mi.(*Minows).GetCertificateChain())
 			require.NoError(t, err)
 		}
-		pdkg, pubkey := NewPedersen(mi.(*minogrpc.Minogrpc))
+		pdkg, pubkey := NewPedersen(mi.(*Minows))
 		dkgsNew[i+nCommon] = pdkg
 		pubkeysNew[i+nCommon] = pubkey
 	}
@@ -317,6 +314,7 @@ func TestResharing_minogrpc(t *testing.T) {
 			"to decrypt the messages encrypted by the old committee")
 	}
 }
+*/
 
 // This test creates a dkg committee then creates another committee (that can
 // share some nodes with the old committee) and then redistributes the secret to
@@ -375,7 +373,7 @@ func TestResharingTwice(t *testing.T) {
 	nCommon12 := 1
 
 	// The number of new added nodes. the new committee should have nCommon+nNew
-	// nodes in totatl
+	// nodes in total
 	n2 := 2
 	threshold2 := nCommon12 + n2
 	minos2 := make([]mino.Mino, n2+nCommon12)

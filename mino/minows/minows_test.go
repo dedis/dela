@@ -2,11 +2,12 @@ package minows
 
 import (
 	"crypto/rand"
+	"testing"
+
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func TestNewMinows(t *testing.T) {
@@ -29,8 +30,8 @@ func TestNewMinows(t *testing.T) {
 			m, err := NewMinows(listen, public, key)
 			require.NoError(t, err)
 			require.NotNil(t, m)
-			require.IsType(t, &minows{}, m)
-			require.NoError(t, m.(*minows).stop())
+			require.IsType(t, &Minows{}, m)
+			require.NoError(t, m.(*Minows).stop())
 		})
 	}
 }
@@ -49,8 +50,8 @@ func TestNewMinows_OptionalPublic(t *testing.T) {
 			m, err := NewMinows(tt, nil, key)
 			require.NoError(t, err)
 			require.NotNil(t, m)
-			require.IsType(t, &minows{}, m)
-			require.NoError(t, m.(*minows).stop())
+			require.IsType(t, &Minows{}, m)
+			require.NoError(t, m.(*Minows).stop())
 		})
 
 	}
@@ -110,7 +111,7 @@ func Test_minows_GetAddress(t *testing.T) {
 			m, err := NewMinows(mustCreateMultiaddress(t, tt.m.listen),
 				mustCreateMultiaddress(t, tt.m.public), tt.m.key)
 			require.NoError(t, err)
-			defer require.NoError(t, m.(*minows).stop())
+			defer require.NoError(t, m.(*Minows).stop())
 			want := mustCreateAddress(t, tt.want.location, tt.want.identity)
 
 			got := m.GetAddress()
@@ -125,7 +126,7 @@ func Test_minows_GetAddress_Random(t *testing.T) {
 	key := mustCreateKey(t)
 	m, err := NewMinows(listen, nil, key)
 	require.NoError(t, err)
-	defer require.NoError(t, m.(*minows).stop())
+	defer require.NoError(t, m.(*Minows).stop())
 
 	got := m.GetAddress().(address)
 	port, err := got.location.ValueForProtocol(ma.P_TCP)
@@ -184,7 +185,7 @@ func Test_minows_CreateRPC_InvalidSegment(t *testing.T) {
 	const ws = "/ip4/127.0.0.1/tcp/7452/ws"
 	m, stop := mustCreateMinows(t, listen, ws)
 	defer stop()
-	m = m.WithSegment("invalid segment").(*minows)
+	m = m.WithSegment("invalid segment").(*Minows)
 
 	_, err := m.CreateRPC("test", nil, nil)
 	require.Error(t, err)
@@ -203,7 +204,7 @@ func Test_minows_CreateRPC(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, r2)
 
-	m = m.WithSegment("segment").(*minows)
+	m = m.WithSegment("segment").(*Minows)
 	r3, err := m.CreateRPC("test", nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, r3)
@@ -212,14 +213,16 @@ func Test_minows_CreateRPC(t *testing.T) {
 	require.NotNil(t, r4)
 }
 
-func mustCreateMinows(t *testing.T, listen string, public string) (*minows,
-	func()) {
+func mustCreateMinows(t *testing.T, listen string, public string) (
+	*Minows,
+	func(),
+) {
 	key := mustCreateKey(t)
 	lis := mustCreateMultiaddress(t, listen)
 	pub := mustCreateMultiaddress(t, public)
 	m, err := NewMinows(lis, pub, key)
 	require.NoError(t, err)
-	ws := m.(*minows)
+	ws := m.(*Minows)
 	stop := func() { require.NoError(t, ws.stop()) }
 	return ws, stop
 }
@@ -231,7 +234,7 @@ func mustCreateKey(t *testing.T) crypto.PrivKey {
 }
 
 func mustDerivePeerID(t *testing.T, key crypto.PrivKey) peer.ID {
-	pid, err := peer.IDFromPrivateKey(key)
+	peerId, err := peer.IDFromPrivateKey(key)
 	require.NoError(t, err)
-	return pid
+	return peerId
 }

@@ -14,7 +14,7 @@ import (
 	"go.dedis.ch/dela/mino"
 
 	"go.dedis.ch/dela/mino/minoch"
-	"go.dedis.ch/dela/mino/minogrpc"
+	"go.dedis.ch/dela/mino/minows"
 	"go.dedis.ch/dela/mino/router/tree"
 
 	"go.dedis.ch/kyber/v3"
@@ -119,7 +119,7 @@ func Test_VerifiableEncDec_minoch(t *testing.T) {
 	}
 }
 
-func Test_VerifiableEncDec_minogrpc(t *testing.T) {
+func Test_VerifiableEncDec_minows(t *testing.T) {
 	// we want to time the decryption for different batch sizes with different
 	// number of nodes
 
@@ -146,26 +146,26 @@ func Test_VerifiableEncDec_minogrpc(t *testing.T) {
 	t.Log("initiating the dkg nodes ...")
 
 	for i := 0; i < n; i++ {
-		addr := minogrpc.ParseAddress("127.0.0.1", 0)
+		addr := minows.ParseAddress("127.0.0.1", 0)
 
-		minogrpc, err := minogrpc.NewMinogrpc(addr, nil,
-			tree.NewRouter(minogrpc.NewAddressFactory()))
+		mino, err := minows.NewMinows(addr, nil,
+			tree.NewRouter(minows.NewAddressFactory()))
 		require.NoError(t, err)
 
-		defer minogrpc.GracefulStop()
+		defer mino.GracefulStop()
 
-		minos[i] = minogrpc
-		addrs[i] = minogrpc.GetAddress()
+		minos[i] = mino
+		addrs[i] = mino.GetAddress()
 	}
 
 	pubkeys := make([]kyber.Point, len(minos))
 
 	for i, mino := range minos {
 		for _, m := range minos {
-			mino.(*minogrpc.Minogrpc).GetCertificateStore().Store(m.GetAddress(),
-				m.(*minogrpc.Minogrpc).GetCertificateChain())
+			mino.(*minows.Minows).GetCertificateStore().Store(m.GetAddress(),
+				m.(*minows.Minows).GetCertificateChain())
 		}
-		dkg, pubkey := NewPedersen(mino.(*minogrpc.Minogrpc))
+		dkg, pubkey := NewPedersen(mino.(*minows.Minows))
 		dkgs[i] = dkg
 		pubkeys[i] = pubkey
 	}

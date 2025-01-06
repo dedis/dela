@@ -36,7 +36,7 @@ import (
 	db "go.dedis.ch/dela/core/store/kv/controller"
 	pool "go.dedis.ch/dela/core/txn/pool/controller"
 	signed "go.dedis.ch/dela/core/txn/signed/controller"
-	mino "go.dedis.ch/dela/mino/minogrpc/controller"
+	minows "go.dedis.ch/dela/mino/minows"
 	proxy "go.dedis.ch/dela/mino/proxy/http/controller"
 )
 
@@ -62,7 +62,7 @@ func runWithCfg(args []string, cfg config) error {
 		cfg.Channel,
 		cfg.Writer,
 		db.NewController(),
-		mino.NewController(),
+		minows.NewController(),
 		cosipbft.NewController(),
 		signed.NewManagerController(),
 		pool.NewController(),

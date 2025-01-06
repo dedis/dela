@@ -9,7 +9,7 @@ import (
 
 	db "go.dedis.ch/dela/core/store/kv/controller"
 	dkg "go.dedis.ch/dela/dkg/pedersen/controller"
-	mino "go.dedis.ch/dela/mino/minogrpc/controller"
+	mino "go.dedis.ch/dela/mino/minows"
 )
 
 func main() {

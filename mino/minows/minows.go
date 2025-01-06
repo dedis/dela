@@ -1,11 +1,12 @@
 package minows
 
 import (
+	"regexp"
+	"strings"
+
 	"github.com/rs/zerolog"
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/serde/json"
-	"regexp"
-	"strings"
 
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/crypto"
@@ -21,7 +22,7 @@ var pattern = regexp.MustCompile("^[a-zA-Z0-9]+$")
 
 // Minows
 // - implements mino.Mino
-type minows struct {
+type Minows struct {
 	logger zerolog.Logger
 
 	myAddr   address
@@ -39,8 +40,10 @@ type minows struct {
 // `public` can be nil and will be determined
 // by the listening address and the port the host has bound to.
 // key: private key representing this mino instance's identity
-func NewMinows(listen, public ma.Multiaddr, key crypto.PrivKey) (mino.Mino,
-	error) {
+func NewMinows(listen, public ma.Multiaddr, key crypto.PrivKey) (
+	mino.Mino,
+	error,
+) {
 	h, err := libp2p.New(libp2p.ListenAddrs(listen), libp2p.Identity(key))
 	if err != nil {
 		return nil, xerrors.Errorf("could not start host: %v", err)
@@ -54,7 +57,7 @@ func NewMinows(listen, public ma.Multiaddr, key crypto.PrivKey) (mino.Mino,
 		return nil, xerrors.Errorf("could not create address: %v", err)
 	}
 
-	return &minows{
+	return &Minows{
 		logger:   dela.Logger.With().Str("mino", myAddr.String()).Logger(),
 		myAddr:   myAddr,
 		segments: nil,
@@ -64,20 +67,20 @@ func NewMinows(listen, public ma.Multiaddr, key crypto.PrivKey) (mino.Mino,
 	}, nil
 }
 
-func (m *minows) GetAddressFactory() mino.AddressFactory {
+func (m *Minows) GetAddressFactory() mino.AddressFactory {
 	return m.factory
 }
 
-func (m *minows) GetAddress() mino.Address {
+func (m *Minows) GetAddress() mino.Address {
 	return m.myAddr
 }
 
-func (m *minows) WithSegment(segment string) mino.Mino {
+func (m *Minows) WithSegment(segment string) mino.Mino {
 	if segment == "" {
 		return m
 	}
 
-	return &minows{
+	return &Minows{
 		logger:   m.logger,
 		myAddr:   m.myAddr,
 		segments: append(m.segments, segment),
@@ -87,7 +90,7 @@ func (m *minows) WithSegment(segment string) mino.Mino {
 	}
 }
 
-func (m *minows) CreateRPC(name string, h mino.Handler, f serde.Factory) (mino.RPC, error) {
+func (m *Minows) CreateRPC(name string, h mino.Handler, f serde.Factory) (mino.RPC, error) {
 	if len(m.rpcs) == 0 {
 		for _, seg := range m.segments {
 			if !pattern.MatchString(seg) {
@@ -122,6 +125,6 @@ func (m *minows) CreateRPC(name string, h mino.Handler, f serde.Factory) (mino.R
 	return r, nil
 }
 
-func (m *minows) stop() error {
+func (m *Minows) stop() error {
 	return m.host.Close()
 }

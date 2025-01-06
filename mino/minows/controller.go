@@ -2,6 +2,7 @@ package minows
 
 import (
 	"fmt"
+
 	ma "github.com/multiformats/go-multiaddr"
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
@@ -58,8 +59,8 @@ func (c controller) OnStart(flags cli.Flags, inj node.Injector) error {
 	if err != nil {
 		return xerrors.Errorf("could not resolve db: %v", err)
 	}
-	storage := key.NewStorage(db)
-	key, err := storage.LoadOrCreate()
+
+	key, err := minokey.NewKey(db)
 	if err != nil {
 		return xerrors.Errorf("could not load key: %v", err)
 	}
@@ -82,7 +83,7 @@ func (c controller) OnStart(flags cli.Flags, inj node.Injector) error {
 }
 
 func (c controller) OnStop(inj node.Injector) error {
-	var m *minows
+	var m *Minows
 	err := inj.Resolve(&m)
 	if err != nil {
 		return xerrors.Errorf("could not resolve mino: %v", err)
