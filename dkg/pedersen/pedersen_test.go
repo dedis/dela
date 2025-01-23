@@ -193,8 +193,9 @@ func TestPedersen_Scenario(t *testing.T) {
 	listen, err := ma.NewMultiaddr("/ip4/0.0.0.0/tcp/0")
 	require.NoError(t, err)
 
+	manager := minows.NewManager()
 	for i := 0; i < n; i++ {
-		m, err := minows.NewMinows(listen, nil, k)
+		m, err := minows.NewMinows(manager, listen, nil, k)
 		require.NoError(t, err)
 
 		minos[i] = m

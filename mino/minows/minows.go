@@ -8,7 +8,7 @@ import (
 	"go.dedis.ch/dela"
 	"go.dedis.ch/dela/serde/json"
 
-	"github.com/libp2p/go-libp2p"
+	libp2p "github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/protocol"
@@ -25,6 +25,7 @@ var pattern = regexp.MustCompile("^[a-zA-Z0-9]+$")
 type Minows struct {
 	logger zerolog.Logger
 
+	manager  *Manager
 	myAddr   address
 	host     host.Host
 	segments []string
@@ -40,7 +41,7 @@ type Minows struct {
 // `public` can be nil and will be determined
 // by the listening address and the port the host has bound to.
 // key: private key representing this mino instance's identity
-func NewMinows(listen, public ma.Multiaddr, key crypto.PrivKey) (
+func NewMinows(manager *Manager, listen, public ma.Multiaddr, key crypto.PrivKey) (
 	mino.Mino,
 	error,
 ) {
@@ -52,19 +53,43 @@ func NewMinows(listen, public ma.Multiaddr, key crypto.PrivKey) (
 	if public == nil {
 		public = h.Addrs()[0]
 	}
-	myAddr, err := newAddress(public, h.ID())
+	myAddr, err := newAdress(public, h.ID())
 	if err != nil {
 		return nil, xerrors.Errorf("could not create address: %v", err)
 	}
 
-	return &Minows{
+	inst := &Minows{
+		manager:  manager,
 		logger:   dela.Logger.With().Str("mino", myAddr.String()).Logger(),
 		myAddr:   myAddr,
 		segments: nil,
 		host:     h,
 		rpcs:     make(map[string]any),
 		factory:  addressFactory{},
-	}, nil
+	}
+
+	err = manager.insert(inst)
+	if err != nil {
+		return nil, xerrors.Errorf("manager refused: %v", err.Error())
+	}
+
+	return inst, nil
+}
+
+// MustCreate creates a new Minows instance and panic if the identifier is
+// refused by the manager.
+func MustCreate(
+	manager *Manager,
+	listen ma.Multiaddr,
+	public ma.Multiaddr,
+	key crypto.PrivKey,
+) mino.Mino {
+	m, err := NewMinows(manager, listen, public, key)
+	if err != nil {
+		panic(err)
+	}
+
+	return m
 }
 
 func (m *Minows) GetAddressFactory() mino.AddressFactory {

@@ -86,7 +86,8 @@ func newDelaNode(t require.TestingT, path string, port int, kind string) dela {
 
 		privKey, _ := minokey.NewKey(db)
 
-		onet, err = minows.NewMinows(listen, nil, privKey)
+		manager := minows.NewManager()
+		onet, err = minows.NewMinows(manager, listen, nil, privKey)
 		require.NoError(t, err)
 	}
 	onet.GetAddress()

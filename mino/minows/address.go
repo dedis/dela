@@ -1,8 +1,9 @@
 package minows
 
 import (
-	"go.dedis.ch/dela"
 	"strings"
+
+	"go.dedis.ch/dela"
 
 	"github.com/libp2p/go-libp2p/core/peer"
 	ma "github.com/multiformats/go-multiaddr"
@@ -22,9 +23,9 @@ type address struct {
 	identity peer.ID
 }
 
-// newAddress creates a new address from a publicly reachable location with a
+// newAdress creates a new address from a publicly reachable location with a
 // peer identity.
-func newAddress(location ma.Multiaddr, identity peer.ID) (address, error) {
+func newAdress(location ma.Multiaddr, identity peer.ID) (address, error) {
 	if location == nil {
 		return address{}, xerrors.New("address must have a location")
 	}
@@ -88,9 +89,11 @@ type orchestratorAddr struct {
 	address
 }
 
-func newOrchestratorAddr(location ma.Multiaddr,
-	identity peer.ID) (orchestratorAddr, error) {
-	addr, err := newAddress(location, identity)
+func newOrchestratorAddr(
+	location ma.Multiaddr,
+	identity peer.ID,
+) (orchestratorAddr, error) {
+	addr, err := newAdress(location, identity)
 	if err != nil {
 		return orchestratorAddr{}, err
 	}
@@ -150,7 +153,7 @@ func (f addressFactory) FromText(text []byte) mino.Address {
 
 	var addr mino.Address
 	if len(parts) == 2 {
-		addr, err = newAddress(location, identity)
+		addr, err = newAdress(location, identity)
 	} else if parts[2] == "o" {
 		addr, err = newOrchestratorAddr(location, identity)
 	}

@@ -62,7 +62,7 @@ func NewMinoch(manager *Manager, identifier string) (*Minoch, error) {
 	return inst, nil
 }
 
-// MustCreate creates a new minoch instance and panic if the identifier is
+// MustCreate creates a new Minoch instance and panic if the identifier is
 // refused by the manager.
 func MustCreate(manager *Manager, identifier string) *Minoch {
 	m, err := NewMinoch(manager, identifier)

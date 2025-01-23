@@ -22,12 +22,13 @@ func TestNewMinows(t *testing.T) {
 		"wss": {listen: listen, public: wss},
 	}
 	key := mustCreateKey(t)
+	manager := NewManager()
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			listen := mustCreateMultiaddress(t, tt.listen)
 			public := mustCreateMultiaddress(t, tt.public)
 
-			m, err := NewMinows(listen, public, key)
+			m, err := NewMinows(manager, listen, public, key)
 			require.NoError(t, err)
 			require.NotNil(t, m)
 			require.IsType(t, &Minows{}, m)
@@ -44,10 +45,10 @@ func TestNewMinows_OptionalPublic(t *testing.T) {
 		"random listen": random,
 	}
 	key := mustCreateKey(t)
-
+	manager := NewManager()
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			m, err := NewMinows(tt, nil, key)
+			m, err := NewMinows(manager, tt, nil, key)
 			require.NoError(t, err)
 			require.NotNil(t, m)
 			require.IsType(t, &Minows{}, m)
@@ -106,9 +107,10 @@ func Test_minows_GetAddress(t *testing.T) {
 		"wss":       {m{listen, wss, key}, want{wss, id}},
 		"no public": {m{listen, "", key}, want{listen, id}},
 	}
+	manager := NewManager()
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			m, err := NewMinows(mustCreateMultiaddress(t, tt.m.listen),
+			m, err := NewMinows(manager, mustCreateMultiaddress(t, tt.m.listen),
 				mustCreateMultiaddress(t, tt.m.public), tt.m.key)
 			require.NoError(t, err)
 			defer require.NoError(t, m.(*Minows).stop())
@@ -124,7 +126,8 @@ func Test_minows_GetAddress_Random(t *testing.T) {
 	random := "/ip4/127.0.0.1/tcp/0/ws"
 	listen := mustCreateMultiaddress(t, random)
 	key := mustCreateKey(t)
-	m, err := NewMinows(listen, nil, key)
+	manager := NewManager()
+	m, err := NewMinows(manager, listen, nil, key)
 	require.NoError(t, err)
 	defer require.NoError(t, m.(*Minows).stop())
 
@@ -220,7 +223,8 @@ func mustCreateMinows(t *testing.T, listen string, public string) (
 	key := mustCreateKey(t)
 	lis := mustCreateMultiaddress(t, listen)
 	pub := mustCreateMultiaddress(t, public)
-	m, err := NewMinows(lis, pub, key)
+	manager := NewManager()
+	m, err := NewMinows(manager, lis, pub, key)
 	require.NoError(t, err)
 	ws := m.(*Minows)
 	stop := func() { require.NoError(t, ws.stop()) }

@@ -6,7 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/crypto"
+	ma "github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/mino/minows"
 	"go.dedis.ch/dela/testing/fake"
 
 	"go.dedis.ch/dela/dkg"
@@ -14,9 +17,6 @@ import (
 	"go.dedis.ch/dela/mino"
 
 	"go.dedis.ch/dela/mino/minoch"
-	"go.dedis.ch/dela/mino/minows"
-	"go.dedis.ch/dela/mino/router/tree"
-
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/xof/keccak"
 )
@@ -133,39 +133,23 @@ func Test_VerifiableEncDec_minows(t *testing.T) {
 	minos := make([]mino.Mino, n)
 	dkgs := make([]dkg.DKG, n)
 	addrs := make([]mino.Address, n)
+	manager := minows.NewManager()
 
-	// Create GBar. We need a generator in order to follow the encryption and
-	// decryption protocol of https://arxiv.org/pdf/2205.08529.pdf. We take an
-	// agreed data among the participants and embed it as a point. The result is
-	// the generator that we are seeking.
-	agreedData := make([]byte, 32)
-	_, err := randGen.Read(agreedData)
-	require.NoError(t, err)
-	GBar := suite.Point().Embed(agreedData, keccak.New(agreedData))
-
-	t.Log("initiating the dkg nodes ...")
-
-	for i := 0; i < n; i++ {
-		addr := minows.ParseAddress("127.0.0.1", 0)
-
-		mino, err := minows.NewMinows(addr, nil,
-			tree.NewRouter(minows.NewAddressFactory()))
+	for i := range n {
+		multi, err := ma.NewMultiaddr("/ip4/127.0.0.1/tcp/80")
 		require.NoError(t, err)
 
-		defer mino.GracefulStop()
+		priv, _, err := crypto.GenerateKeyPair(crypto.Ed25519, 512)
+		require.NoError(t, err)
 
-		minos[i] = mino
-		addrs[i] = mino.GetAddress()
+		minos[i] = minows.MustCreate(manager, multi, multi, priv)
+		addrs[i] = minos[i].GetAddress()
 	}
 
 	pubkeys := make([]kyber.Point, len(minos))
 
 	for i, mino := range minos {
-		for _, m := range minos {
-			mino.(*minows.Minows).GetCertificateStore().Store(m.GetAddress(),
-				m.(*minows.Minows).GetCertificateChain())
-		}
-		dkg, pubkey := NewPedersen(mino.(*minows.Minows))
+		dkg, pubkey := NewPedersen(mino)
 		dkgs[i] = dkg
 		pubkeys[i] = pubkey
 	}
@@ -182,9 +166,18 @@ func Test_VerifiableEncDec_minows(t *testing.T) {
 	t.Log("setting up the dkg ...")
 
 	start := time.Now()
-	_, err = actors[0].Setup(fakeAuthority, threshold)
+	_, err := actors[0].Setup(fakeAuthority, threshold)
 	require.NoError(t, err)
 	setupTime := time.Since(start)
+
+	// Create GBar. We need a generator in order to follow the encryption and
+	// decryption protocol of https://arxiv.org/pdf/2205.08529.pdf. We take an
+	// agreed data among the participants and embed it as a point. The result is
+	// the generator that we are seeking.
+	agreedData := make([]byte, 32)
+	_, err = randGen.Read(agreedData)
+	require.NoError(t, err)
+	GBar := suite.Point().Embed(agreedData, keccak.New(agreedData))
 
 	// generating random messages in batch and encrypt them
 	for i, batchSize := range batchSizeSlice {

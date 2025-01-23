@@ -74,7 +74,9 @@ func (c controller) OnStart(flags cli.Flags, inj node.Injector) error {
 		}
 	}
 
-	m, err := NewMinows(listen, public, key)
+	manager := NewManager()
+
+	m, err := NewMinows(manager, listen, public, key)
 	if err != nil {
 		return xerrors.Errorf("could not start mino: %v", err)
 	}

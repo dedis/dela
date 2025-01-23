@@ -1,10 +1,11 @@
 package minows
 
 import (
+	"testing"
+
 	"github.com/libp2p/go-libp2p/core/peer"
 	ma "github.com/multiformats/go-multiaddr"
 	"go.dedis.ch/dela/mino"
-	"testing"
 
 	"github.com/stretchr/testify/require"
 )
@@ -38,7 +39,7 @@ func Test_newAddress(t *testing.T) {
 			location := mustCreateMultiaddress(t, tt.args.location)
 			identity := mustCreatePeerID(t, tt.args.identity)
 
-			_, err := newAddress(location, identity)
+			_, err := newAdress(location, identity)
 			require.NoError(t, err)
 		})
 	}
@@ -59,11 +60,12 @@ func Test_newAddress_Invalid(t *testing.T) {
 		"missing identity": {
 			location: mustCreateMultiaddress(t, addrAllInterface),
 			identity: "",
-		}}
+		},
+	}
 	for name, tt := range tests {
 		tt := tt
 		t.Run(name, func(t *testing.T) {
-			_, err := newAddress(tt.location, tt.identity)
+			_, err := newAdress(tt.location, tt.identity)
 			require.Error(t, err)
 		})
 	}
@@ -298,7 +300,7 @@ func mustCreateOrchestratorAddr(t *testing.T, location, identity string) orchest
 }
 
 func mustCreateAddress(t *testing.T, location, identity string) address {
-	addr, err := newAddress(mustCreateMultiaddress(t, location),
+	addr, err := newAdress(mustCreateMultiaddress(t, location),
 		mustCreatePeerID(t, identity))
 	require.NoError(t, err)
 	return addr
