@@ -16,6 +16,8 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
+const WINDOWS = "windows"
+
 func TestTraffic_Integration(t *testing.T) {
 	src := fake.NewAddress(0)
 	a2 := fake.NewAddress(1)
@@ -68,7 +70,7 @@ func TestSaveItems(t *testing.T) {
 
 	defer os.RemoveAll(path)
 
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == WINDOWS {
 		return
 	}
 
@@ -85,7 +87,7 @@ func TestSaveEvents(t *testing.T) {
 
 	defer os.RemoveAll(path)
 
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == WINDOWS {
 		return
 	}
 
@@ -104,7 +106,7 @@ func TestTraffic_Save(t *testing.T) {
 
 	defer os.RemoveAll(path)
 
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == WINDOWS {
 		return
 	}
 

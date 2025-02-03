@@ -25,23 +25,6 @@ func NewManager() *Manager {
 	}
 }
 
-func (m *Manager) get(a mino.Address) (*Minows, error) {
-	m.Lock()
-	defer m.Unlock()
-
-	addr, ok := a.(address)
-	if !ok {
-		return nil, xerrors.Errorf("invalid address type '%T'", a)
-	}
-
-	instance, ok := m.instances[addr.identity]
-	if !ok {
-		return nil, xerrors.Errorf("address <%s> not found", addr.identity)
-	}
-
-	return instance, nil
-}
-
 func (m *Manager) insert(inst mino.Mino) error {
 	instance, ok := inst.(*Minows)
 	if !ok {

@@ -13,6 +13,7 @@ import (
 func TestBuild(t *testing.T) {
 	builder := NewBuilder("test", nil)
 	app := builder.Build().(*urfave.App)
+	require.NotNil(t, app)
 
 	app.Writer = io.Discard
 
@@ -29,6 +30,7 @@ func TestSetCommand(t *testing.T) {
 	builder.SetCommand("second")
 
 	app := builder.Build().(*urfave.App)
+	require.NotNil(t, app)
 
 	require.Len(t, app.Commands, 3)
 
@@ -40,6 +42,8 @@ func TestSetCommand(t *testing.T) {
 
 func TestCommandBuilder(t *testing.T) {
 	builder := NewBuilder("test", nil).(*Builder)
+	require.NotNil(t, builder)
+
 	cmd := builder.SetCommand("first")
 
 	fakeAction := func(flags cli.Flags) error {

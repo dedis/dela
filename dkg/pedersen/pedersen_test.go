@@ -183,9 +183,6 @@ func TestPedersen_Scenario(t *testing.T) {
 
 	n := 32
 
-	k, err := minokey.NewKey(nil)
-	require.NoError(t, err)
-
 	minos := make([]mino.Mino, n)
 	dkgs := make([]dkg.DKG, n)
 	addrs := make([]mino.Address, n)
@@ -195,6 +192,9 @@ func TestPedersen_Scenario(t *testing.T) {
 
 	manager := minows.NewManager()
 	for i := 0; i < n; i++ {
+		k, err := minokey.NewKey(nil)
+		require.NoError(t, err)
+
 		m, err := minows.NewMinows(manager, listen, nil, k)
 		require.NoError(t, err)
 

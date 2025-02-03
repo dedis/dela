@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -53,8 +54,9 @@ func NewHTTP(listenAddr string) proxy.Proxy {
 	return &HTTP{
 		mux: mux,
 		server: &http.Server{
-			Addr:    listenAddr,
-			Handler: tracing(nextRequestID)(logging(logger)(mux)),
+			Addr:              listenAddr,
+			Handler:           tracing(nextRequestID)(logging(logger)(mux)),
+			ReadHeaderTimeout: time.Second,
 		},
 		logger:     logger,
 		listenAddr: listenAddr,
@@ -113,7 +115,7 @@ func (h *HTTP) Listen() {
 	h.logger.Info().Msgf("Server is ready to handle requests at %s", ln.Addr())
 
 	err = h.server.Serve(ln)
-	if err != nil && err != http.ErrServerClosed {
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		h.logger.Fatal().Msgf("Could not listen on %s: %v", h.listenAddr, err)
 	}
 
@@ -138,8 +140,12 @@ func (h HTTP) GetAddr() net.Addr {
 }
 
 // RegisterHandler implements proxy.Proxy
-func (h HTTP) RegisterHandler(path string, handler func(http.ResponseWriter,
-	*http.Request)) {
+func (h HTTP) RegisterHandler(
+	path string, handler func(
+		http.ResponseWriter,
+		*http.Request,
+	),
+) {
 
 	h.mux.HandleFunc(path, handler)
 }

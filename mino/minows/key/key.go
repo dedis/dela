@@ -14,22 +14,26 @@ type Storage struct {
 	db     kv.DB
 }
 
+var localstorage *Storage
+
 // NewKey creates a new private key in a new DB.
 func NewKey(db kv.DB) (crypto.PrivKey, error) {
-	if db == nil {
-		d, err := kv.New("minows")
-		if err != nil {
-			return nil, xerrors.Errorf("could not create key DB: %v", err)
+	if localstorage == nil {
+		if db == nil {
+			d, err := kv.New("minows")
+			if err != nil {
+				return nil, xerrors.Errorf("could not create key DB: %v", err)
+			}
+			db = d
 		}
-		db = d
+
+		localstorage = &Storage{
+			bucket: []byte("minows_keys"),
+			db:     db,
+		}
 	}
 
-	s := &Storage{
-		bucket: []byte("minows_keys"),
-		db:     db,
-	}
-
-	key, err := s.LoadOrCreate()
+	key, err := localstorage.LoadOrCreate()
 
 	return key, err
 }

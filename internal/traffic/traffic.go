@@ -20,6 +20,9 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
+const RECEIVED_STR = "received"
+const SEND_STR = "send"
+
 // EnvVariable is the name of the environment variable to enable the traffic.
 const EnvVariable = "MINO_TRAFFIC"
 
@@ -171,7 +174,7 @@ func (t *Traffic) LogSend(ctx context.Context, gateway mino.Address, pkt router.
 func (t *Traffic) LogRecv(ctx context.Context, gateway mino.Address, pkt router.Packet) {
 	GlobalWatcher.inWatcher.Notify(Event{Address: gateway, Pkt: pkt})
 
-	t.addItem(ctx, "received", gateway, pkt)
+	t.addItem(ctx, RECEIVED_STR, gateway, pkt)
 }
 
 // LogRelay records a new relay.
@@ -215,9 +218,9 @@ func (t *Traffic) addItem(ctx context.Context, typeStr string, gw mino.Address, 
 	}
 
 	switch typeStr {
-	case "received":
+	case RECEIVED_STR:
 		newItem.typeCounter = recvCounter.IncrementAndGet()
-	case "send":
+	case SEND_STR:
 		newItem.typeCounter = sendCounter.IncrementAndGet()
 	}
 
@@ -307,7 +310,9 @@ func GenerateItemsGraphviz(out io.Writer, withSend, withRcv bool, traffics ...*T
 
 	fmt.Fprintf(out, "digraph network_activity {\n")
 	fmt.Fprintf(out, "labelloc=\"t\";")
-	fmt.Fprintf(out, "label = <Network Diagram of %d nodes <font point-size='10'><br/>(generated %s)</font>>;", len(traffics), time.Now().Format("2 Jan 06 - 15:04:05"))
+	fmt.Fprintf(out, "label = <Network Diagram of %d nodes <font point-size='10'><br/>"+
+		"(generated %s)</font>>;",
+		len(traffics), time.Now().Format("2 Jan 06 - 15:04:05"))
 	fmt.Fprintf(out, "graph [fontname = \"helvetica\"];")
 	fmt.Fprintf(out, "graph [fontname = \"helvetica\"];")
 	fmt.Fprintf(out, "node [fontname = \"helvetica\"];")
@@ -316,16 +321,16 @@ func GenerateItemsGraphviz(out io.Writer, withSend, withRcv bool, traffics ...*T
 	for _, traffic := range traffics {
 		for _, item := range traffic.items {
 
-			if !withSend && item.typeStr == "send" {
+			if !withSend && item.typeStr == SEND_STR {
 				continue
 			}
-			if !withRcv && item.typeStr == "received" {
+			if !withRcv && item.typeStr == RECEIVED_STR {
 				continue
 			}
 
 			color := "#4AB2FF"
 
-			if item.typeStr == "received" {
+			if item.typeStr == RECEIVED_STR {
 				color = "#A8A8A8"
 			}
 
@@ -343,7 +348,8 @@ func GenerateItemsGraphviz(out io.Writer, withSend, withRcv bool, traffics ...*T
 			}
 
 			fmt.Fprintf(out, "\"%v\" -> \"%v\" "+
-				"[ label = < <font color='#303030'><b>%d</b> <font point-size='10'>(%d)</font></font><br/>%s> color=\"%s\" ];\n",
+				"[ label = < <font color='#303030'><b>%d</b> <font point-size='10'>(%d)"+
+				"</font></font><br/>%s> color=\"%s\" ];\n",
 				item.src, item.gateway, item.typeCounter, item.globalCounter, msgStr, color)
 		}
 	}
@@ -357,7 +363,9 @@ func GenerateEventGraphviz(out io.Writer, traffics ...*Traffic) {
 
 	fmt.Fprintf(out, "digraph network_activity {\n")
 	fmt.Fprintf(out, "labelloc=\"t\";")
-	fmt.Fprintf(out, "label = <Network Diagram of %d nodes <font point-size='10'><br/>(generated %s)</font>>;", len(traffics), time.Now().Format("2 Jan 06 - 15:04:05"))
+	fmt.Fprintf(out,
+		"label = <Network Diagram of %d nodes <font point-size='10'><br/>(generated %s)</font>>;",
+		len(traffics), time.Now().Format("2 Jan 06 - 15:04:05"))
 	fmt.Fprintf(out, "graph [fontname = \"helvetica\"];")
 	fmt.Fprintf(out, "graph [fontname = \"helvetica\"];")
 	fmt.Fprintf(out, "node [fontname = \"helvetica\"];")
