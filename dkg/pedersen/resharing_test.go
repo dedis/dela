@@ -6,10 +6,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"go.dedis.ch/dela/mino/minogrpc"
+	"go.dedis.ch/dela/mino/router/tree"
+
 	"go.dedis.ch/dela/dkg"
 
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minoch"
+
 	"go.dedis.ch/kyber/v3"
 )
 
@@ -153,8 +157,8 @@ func TestResharing_minoch(t *testing.T) {
 
 // This test creates a dkg committee then creates another committee (that can
 // share some nodes with the old committee) and then redistributes the secret to
-// the new committee. Using minows as the underlying network
-func IgnoreTestResharing_minogrpc(t *testing.T) {
+// the new commitee. Using minogrpc as the underlying network
+func TestResharing_minogrpc(t *testing.T) {
 
 	// Setting up the first dkg
 	nOld := 10
@@ -167,8 +171,8 @@ func IgnoreTestResharing_minogrpc(t *testing.T) {
 
 	// Defining the addresses
 	for i := 0; i < nOld; i++ {
-		addr := minows.("127.0.0.1", 0)
-		m, err := minows.NewMinows(addr, nil, tree.NewRouter(minows.NewAddressFactory()))
+		addr := minogrpc.ParseAddress("127.0.0.1", 0)
+		m, err := minogrpc.NewMinogrpc(addr, nil, tree.NewRouter(minogrpc.NewAddressFactory()))
 		require.NoError(t, err)
 		defer func() {
 			_ = m.GracefulStop()
@@ -181,12 +185,12 @@ func IgnoreTestResharing_minogrpc(t *testing.T) {
 	// Initializing the pedersen
 	for i, mi := range minosOld {
 		for _, mj := range minosOld {
-			err := mi.(*minows.Minows).GetCertificateStore().Store(mj.GetAddress(),
-				mj.(*minows.Minows).GetCertificateChain())
+			err := mi.(*minogrpc.Minogrpc).GetCertificateStore().Store(mj.GetAddress(),
+				mj.(*minogrpc.Minogrpc).GetCertificateChain())
 			require.NoError(t, err)
 		}
 
-		pdkg, pubkey := NewPedersen(mi.(*minows.Minows))
+		pdkg, pubkey := NewPedersen(mi.(*minogrpc.Minogrpc))
 
 		dkgsOld[i] = pdkg
 		pubkeysOld[i] = pubkey
@@ -236,8 +240,8 @@ func IgnoreTestResharing_minogrpc(t *testing.T) {
 
 	// Defining the address of the new nodes.
 	for i := 0; i < nNew; i++ {
-		addr := minows.ParseAddress("127.0.0.1", 0)
-		m, err := minows.NewMinows(addr, nil, tree.NewRouter(minows.NewAddressFactory()))
+		addr := minogrpc.ParseAddress("127.0.0.1", 0)
+		m, err := minogrpc.NewMinogrpc(addr, nil, tree.NewRouter(minogrpc.NewAddressFactory()))
 		require.NoError(t, err)
 		defer func() {
 			err := m.GracefulStop()
@@ -259,22 +263,22 @@ func IgnoreTestResharing_minogrpc(t *testing.T) {
 	// a pedersen
 	for i, mi := range minosNew[nCommon:] {
 		for _, mj := range minosNew {
-			err := mi.(*Minows).GetCertificateStore().Store(mj.GetAddress(),
-				mj.(*Minows).GetCertificateChain())
+			err := mi.(*minogrpc.Minogrpc).GetCertificateStore().Store(mj.GetAddress(),
+				mj.(*minogrpc.Minogrpc).GetCertificateChain())
 			require.NoError(t, err)
-			err = mj.(*Minows).GetCertificateStore().Store(mi.GetAddress(),
-				mi.(*Minows).GetCertificateChain())
+			err = mj.(*minogrpc.Minogrpc).GetCertificateStore().Store(mi.GetAddress(),
+				mi.(*minogrpc.Minogrpc).GetCertificateChain())
 			require.NoError(t, err)
 		}
 		for _, mk := range minosOld[nCommon:] {
-			err := mi.(*Minows).GetCertificateStore().Store(mk.GetAddress(),
-				mk.(*Minows).GetCertificateChain())
+			err := mi.(*minogrpc.Minogrpc).GetCertificateStore().Store(mk.GetAddress(),
+				mk.(*minogrpc.Minogrpc).GetCertificateChain())
 			require.NoError(t, err)
-			err = mk.(*Minows).GetCertificateStore().Store(mi.GetAddress(),
-				mi.(*Minows).GetCertificateChain())
+			err = mk.(*minogrpc.Minogrpc).GetCertificateStore().Store(mi.GetAddress(),
+				mi.(*minogrpc.Minogrpc).GetCertificateChain())
 			require.NoError(t, err)
 		}
-		pdkg, pubkey := NewPedersen(mi.(*Minows))
+		pdkg, pubkey := NewPedersen(mi.(*minogrpc.Minogrpc))
 		dkgsNew[i+nCommon] = pdkg
 		pubkeysNew[i+nCommon] = pubkey
 	}

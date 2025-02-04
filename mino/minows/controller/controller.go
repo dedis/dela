@@ -132,7 +132,7 @@ func (c controller) OnStop(inj node.Injector) error {
 	if err != nil {
 		return xerrors.Errorf("could not resolve mino: %v", err)
 	}
-	err = m.(*Minows).stop()
+	err = m.stop()
 	if err != nil {
 		return xerrors.Errorf("could not stop mino: %v", err)
 	}

@@ -17,7 +17,6 @@ import (
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/mino/minogrpc"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
-	"go.dedis.ch/dela/mino/minows"
 	"golang.org/x/xerrors"
 )
 

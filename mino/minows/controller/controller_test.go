@@ -1,9 +1,10 @@
 package controller
 
 import (
-	"go.dedis.ch/dela/mino/minows"
 	"testing"
 	"time"
+
+	"go.dedis.ch/dela/mino/minows"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"

@@ -4,10 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	ma "github.com/multiformats/go-multiaddr"
 	"go.dedis.ch/dela/mino/minoch"
-	"go.dedis.ch/dela/mino/minows"
-	minokey "go.dedis.ch/dela/mino/minows/key"
 	"go.dedis.ch/dela/testing/fake"
 	"go.dedis.ch/kyber/v3/suites"
 	"go.dedis.ch/kyber/v3/util/key"
@@ -21,6 +18,8 @@ import (
 	"go.dedis.ch/dela/dkg"
 	"go.dedis.ch/dela/dkg/pedersen/types"
 	"go.dedis.ch/dela/mino"
+	"go.dedis.ch/dela/mino/minogrpc"
+	"go.dedis.ch/dela/mino/router/tree"
 	"go.dedis.ch/kyber/v3"
 )
 
@@ -187,16 +186,13 @@ func TestPedersen_Scenario(t *testing.T) {
 	dkgs := make([]dkg.DKG, n)
 	addrs := make([]mino.Address, n)
 
-	listen, err := ma.NewMultiaddr("/ip4/0.0.0.0/tcp/0")
-	require.NoError(t, err)
-
-	manager := minows.NewManager()
 	for i := 0; i < n; i++ {
-		k, err := minokey.NewKey(nil)
+		addr := minogrpc.ParseAddress("127.0.0.1", 0)
+
+		m, err := minogrpc.NewMinogrpc(addr, nil, tree.NewRouter(minogrpc.NewAddressFactory()))
 		require.NoError(t, err)
 
-		m, err := minows.NewMinows(manager, listen, nil, k)
-		require.NoError(t, err)
+		defer m.GracefulStop()
 
 		minos[i] = m
 		addrs[i] = m.GetAddress()
@@ -205,12 +201,12 @@ func TestPedersen_Scenario(t *testing.T) {
 	pubkeys := make([]kyber.Point, len(minos))
 
 	for i, mi := range minos {
-		// for _, m := range minos {
-		// 	mi.(*minows).GetCertificateStore().Store(m.GetAddress(),
-		// 		m.(*minows).GetCertificateChain())
-		// }
+		for _, m := range minos {
+			mi.(*minogrpc.Minogrpc).GetCertificateStore().Store(m.GetAddress(),
+				m.(*minogrpc.Minogrpc).GetCertificateChain())
+		}
 
-		d, pubkey := NewPedersen(mi.(*minows.Minows))
+		d, pubkey := NewPedersen(mi.(*minogrpc.Minogrpc))
 
 		dkgs[i] = d
 		pubkeys[i] = pubkey
@@ -227,7 +223,7 @@ func TestPedersen_Scenario(t *testing.T) {
 	// trying to call a decrypt/encrypt before a setup
 	message := []byte("Hello world")
 
-	_, _, err = actors[0].Encrypt(message)
+	_, _, err := actors[0].Encrypt(message)
 	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")
 	_, err = actors[0].Decrypt(nil, nil)
 	require.EqualError(t, err, "you must first initialize DKG. Did you call setup() first?")

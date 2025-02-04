@@ -8,7 +8,7 @@ tidy:
 	go mod tidy
 
 generate: tidy
-	go get -u github.com/golang/protobuf/protoc-gen-go@v1.3.5
+	go get -u google.golang.org/protobuf@v1.36.4
 	go generate ./...
 
 # Coding style static check.
