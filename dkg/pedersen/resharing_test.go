@@ -155,7 +155,7 @@ func TestResharing_minoch(t *testing.T) {
 
 }
 
-// This test creats a dkg committee then creats another committee (that can
+// This test creates a dkg committee then creates another committee (that can
 // share some nodes with the old committee) and then redistributes the secret to
 // the new commitee. Using minogrpc as the underlying network
 func TestResharing_minogrpc(t *testing.T) {
@@ -375,7 +375,7 @@ func TestResharingTwice(t *testing.T) {
 	nCommon12 := 1
 
 	// The number of new added nodes. the new committee should have nCommon+nNew
-	// nodes in totatl
+	// nodes in total
 	n2 := 2
 	threshold2 := nCommon12 + n2
 	minos2 := make([]mino.Mino, n2+nCommon12)

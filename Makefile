@@ -8,14 +8,13 @@ tidy:
 	go mod tidy
 
 generate: tidy
-	go get -u github.com/golang/protobuf/protoc-gen-go@v1.3.5
+	go get -u google.golang.org/protobuf@v1.36.4
 	go generate ./...
 
-# Some packages are excluded from staticcheck due to deprecated warnings: #208.
+# Coding style static check.
 lint: tidy
-	# Coding style static check.
-	@go install honnef.co/go/tools/cmd/staticcheck@v0.4.7
-	staticcheck `go list ./... | grep -Ev "(go\.dedis\.ch/dela/internal/testing|go\.dedis\.ch/dela/mino/minogrpc/ptypes)"`
+	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.60.3
+	golangci-lint run
 
 vet: tidy
 	@echo "⚠️ Warning: the following only works with go >= 1.14" && \

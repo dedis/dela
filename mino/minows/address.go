@@ -1,8 +1,9 @@
 package minows
 
 import (
-	"go.dedis.ch/dela"
 	"strings"
+
+	"go.dedis.ch/dela"
 
 	"github.com/libp2p/go-libp2p/core/peer"
 	ma "github.com/multiformats/go-multiaddr"
@@ -88,8 +89,10 @@ type orchestratorAddr struct {
 	address
 }
 
-func newOrchestratorAddr(location ma.Multiaddr,
-	identity peer.ID) (orchestratorAddr, error) {
+func newOrchestratorAddr(
+	location ma.Multiaddr,
+	identity peer.ID,
+) (orchestratorAddr, error) {
 	addr, err := newAddress(location, identity)
 	if err != nil {
 		return orchestratorAddr{}, err

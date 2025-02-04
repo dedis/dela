@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.dedis.ch/dela/mino/minogrpc"
+	"go.dedis.ch/dela/mino/router/tree"
 	"go.dedis.ch/dela/testing/fake"
 
 	"go.dedis.ch/dela/dkg"
@@ -14,9 +16,6 @@ import (
 	"go.dedis.ch/dela/mino"
 
 	"go.dedis.ch/dela/mino/minoch"
-	"go.dedis.ch/dela/mino/minogrpc"
-	"go.dedis.ch/dela/mino/router/tree"
-
 	"go.dedis.ch/kyber/v3"
 	"go.dedis.ch/kyber/v3/xof/keccak"
 )

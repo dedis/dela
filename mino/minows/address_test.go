@@ -1,10 +1,11 @@
 package minows
 
 import (
+	"testing"
+
 	"github.com/libp2p/go-libp2p/core/peer"
 	ma "github.com/multiformats/go-multiaddr"
 	"go.dedis.ch/dela/mino"
-	"testing"
 
 	"github.com/stretchr/testify/require"
 )
@@ -59,7 +60,8 @@ func Test_newAddress_Invalid(t *testing.T) {
 		"missing identity": {
 			location: mustCreateMultiaddress(t, addrAllInterface),
 			identity: "",
-		}}
+		},
+	}
 	for name, tt := range tests {
 		tt := tt
 		t.Run(name, func(t *testing.T) {

@@ -1,10 +1,11 @@
 package pedersen
 
 import (
+	"sync"
+
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/kyber/v3"
 	"golang.org/x/xerrors"
-	"sync"
 )
 
 // dkgState represents the states of a DKG node. States change as follow:
@@ -50,18 +51,18 @@ type state struct {
 	// participants is set once a sharing or resharing starts
 	participants []mino.Address
 	pubkeys      []kyber.Point
-	//TODO add verifiability (poly         *share.PubPoly)
+	// TODO add verifiability (poly         *share.PubPoly)
 	threshold int
 	dkgState  dkgState
 }
 
-func (s *state) switchState(new dkgState) error {
+func (s *state) switchState(newState dkgState) error {
 	s.Lock()
 	defer s.Unlock()
 
 	current := s.dkgState
 
-	switch new {
+	switch newState {
 	case initial:
 		return xerrors.Errorf("initial state cannot be set manually")
 	case sharing:
@@ -70,15 +71,17 @@ func (s *state) switchState(new dkgState) error {
 		}
 	case certified:
 		if current != sharing && current != resharing {
-			return xerrors.Errorf("certified state must switch from sharing or resharing: %s", current)
+			return xerrors.Errorf("certified state must switch from sharing or resharing: %s",
+				current)
 		}
 	case resharing:
 		if current != initial && current != certified {
-			return xerrors.Errorf("resharing state must switch from initial or certified: %s", current)
+			return xerrors.Errorf("resharing state must switch from initial or certified: %s",
+				current)
 		}
 	}
 
-	s.dkgState = new
+	s.dkgState = newState
 
 	return nil
 }

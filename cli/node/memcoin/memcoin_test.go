@@ -55,9 +55,9 @@ func TestMemcoin_Scenario_SetupAndTransactions(t *testing.T) {
 	require.True(t, waitDaemon(t, []string{node1, node2, node3}), "daemon failed to start")
 
 	// Share the certificates.
-	shareCert(t, node2, node1, "//127.0.0.1:2111")
-	shareCert(t, node3, node1, "//127.0.0.1:2111")
-	shareCert(t, node5, node1, "//127.0.0.1:2111")
+	shareCert(t, node2, node1, "/ip4/127.0.0.1/tcp/2111/ws")
+	shareCert(t, node3, node1, "/ip4/127.0.0.1/tcp/2111/ws")
+	shareCert(t, node5, node1, "/ip4/127.0.0.1/tcp/2111/ws")
 
 	// Set up the chain with nodes 1 and 2.
 	args := append(append(
@@ -86,7 +86,7 @@ func TestMemcoin_Scenario_SetupAndTransactions(t *testing.T) {
 
 	// Add the certificate and push two new blocks to make sure node4 is
 	// fully participating
-	shareCert(t, node4, node1, "//127.0.0.1:2111")
+	shareCert(t, node4, node1, "/ip4/127.0.0.1/tcp/2111/ws")
 	publicKey, err := bn256.NewSuiteG2().Point().MarshalBinary()
 	require.NoError(t, err)
 	publicKeyHex := base64.StdEncoding.EncodeToString(publicKey)
@@ -212,7 +212,7 @@ func setupChain(t *testing.T, nodes []string, ports []uint16) {
 
 	waitDaemon(t, nodes)
 
-	shareCert(t, nodes[1], nodes[0], fmt.Sprintf("//127.0.0.1:%d", ports[0]))
+	shareCert(t, nodes[1], nodes[0], fmt.Sprintf("/ip4/127.0.0.1/tcp/%d/ws", ports[0]))
 
 	args := append(append(
 		[]string{os.Args[0], "--config", nodes[0], "ordering", "setup"},
@@ -260,13 +260,13 @@ func makeNodeArg(path string, port uint16) []string {
 		path,
 		"start",
 		"--listen",
-		"tcp://127.0.0.1:" + strconv.Itoa(int(port)),
+		"/ip4/127.0.0.1/tcp/" + strconv.Itoa(int(port)) + "/ws",
 	}
 }
 
 func shareCert(t *testing.T, path string, src string, addr string) {
 	args := append(
-		[]string{os.Args[0], "--config", path, "minogrpc", "join", "--address", addr},
+		[]string{os.Args[0], "--config", path, "minows", "join", "--address", addr},
 		getToken(t, src)...,
 	)
 
@@ -280,7 +280,7 @@ func getToken(t *testing.T, path string) []string {
 		Writer: buffer,
 	}
 
-	args := []string{os.Args[0], "--config", path, "minogrpc", "token"}
+	args := []string{os.Args[0], "--config", path, "minows", "token"}
 	err := runWithCfg(args, cfg)
 	require.NoError(t, err)
 

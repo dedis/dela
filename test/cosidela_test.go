@@ -14,9 +14,6 @@ import (
 	"time"
 
 	ma "github.com/multiformats/go-multiaddr"
-	"go.dedis.ch/dela/mino/minows"
-	"go.dedis.ch/dela/mino/minows/key"
-
 	"github.com/stretchr/testify/require"
 	accessContract "go.dedis.ch/dela/contracts/access"
 	"go.dedis.ch/dela/contracts/value"
@@ -46,6 +43,8 @@ import (
 	"go.dedis.ch/dela/mino/minogrpc"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/session"
+	"go.dedis.ch/dela/mino/minows"
+	"go.dedis.ch/dela/mino/minows/key"
 	"go.dedis.ch/dela/mino/router/tree"
 	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
@@ -121,7 +120,8 @@ func newDelaNode(t require.TestingT, path string, port int, kind string) dela {
 		storage := key.NewStorage(db)
 		privKey, _ := storage.LoadOrCreate()
 
-		onet, err = minows.NewMinows(listen, nil, privKey)
+		manager := minows.NewManager()
+		onet, err = minows.NewMinows(manager, listen, nil, privKey)
 		require.NoError(t, err)
 	}
 	onet.GetAddress()
@@ -212,7 +212,7 @@ func newDelaNode(t require.TestingT, path string, port int, kind string) dela {
 }
 
 // Setup implements dela. It creates the roster, shares the certificate, and
-// create an new chain.
+// create a new chain.
 func (c cosiDelaNode) Setup(kind string, delas ...dela) {
 	// share the certificates
 	if kind == minoGRPC {

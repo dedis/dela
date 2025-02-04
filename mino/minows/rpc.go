@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/gob"
 	"errors"
-	"github.com/libp2p/go-libp2p"
+	"sync"
+
+	libp2p "github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -16,7 +18,6 @@ import (
 	"go.dedis.ch/dela/mino"
 	"go.dedis.ch/dela/serde"
 	"golang.org/x/xerrors"
-	"sync"
 )
 
 const pathCall = "/call"
@@ -42,13 +43,15 @@ type rpc struct {
 
 	uri     string
 	handler mino.Handler
-	mino    *minows
+	mino    *Minows
 	factory serde.Factory
 	context serde.Context
 }
 
-func (r rpc) Call(ctx context.Context, req serde.Message,
-	players mino.Players) (<-chan mino.Response, error) {
+func (r rpc) Call(
+	ctx context.Context, req serde.Message,
+	players mino.Players,
+) (<-chan mino.Response, error) {
 	if players == nil || players.Len() == 0 {
 		resp := make(chan mino.Response)
 		close(resp)
@@ -221,7 +224,8 @@ func (r rpc) addPeers(addrs []address) {
 }
 
 func (r rpc) unicast(ctx context.Context, dest address, req serde.Message) (
-	serde.Message, error) {
+	serde.Message, error,
+) {
 	stream, err := r.openStream(ctx, dest, pathCall)
 	if err != nil {
 		return nil, xerrors.Errorf("could not open stream: %v", err)
@@ -241,8 +245,10 @@ func (r rpc) unicast(ctx context.Context, dest address, req serde.Message) (
 	return reply, nil
 }
 
-func (r rpc) openStream(ctx context.Context, dest address,
-	path string) (network.Stream, error) {
+func (r rpc) openStream(
+	ctx context.Context, dest address,
+	path string,
+) (network.Stream, error) {
 	pid := protocol.ID(r.uri + path)
 	stream, err := r.mino.host.NewStream(ctx, dest.identity, pid)
 	if err != nil {
@@ -310,8 +316,10 @@ func (r rpc) receive(dec *gob.Decoder) (ma.Multiaddr, serde.Message, error) {
 	return from, msg, nil
 }
 
-func (r rpc) createOrchestrator(ctx context.Context,
-	initiator host.Host, streams []network.Stream) (*messageHandler, error) {
+func (r rpc) createOrchestrator(
+	ctx context.Context,
+	initiator host.Host, streams []network.Stream,
+) (*messageHandler, error) {
 	participant := r.mino.GetAddress().(address).location
 	myAddr, err := newOrchestratorAddr(participant, initiator.ID())
 	if err != nil {
