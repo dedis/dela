@@ -1,4 +1,4 @@
-package minokey
+package key
 
 import (
 	"crypto/rand"
@@ -14,35 +14,18 @@ type Storage struct {
 	db     kv.DB
 }
 
-var localstorage *Storage
-
-// NewKey creates a new private key in a new DB.
-func NewKey(db kv.DB) (crypto.PrivKey, error) {
-	if localstorage == nil {
-		if db == nil {
-			d, err := kv.New("minows")
-			if err != nil {
-				return nil, xerrors.Errorf("could not create key DB: %v", err)
-			}
-			db = d
-		}
-
-		localstorage = &Storage{
-			bucket: []byte("minows_keys"),
-			db:     db,
-		}
+// NewStorage creates a new Storage for private keys.
+func NewStorage(db kv.DB) *Storage {
+	return &Storage{
+		bucket: []byte("minows_keys"),
+		db:     db,
 	}
-
-	key, err := localstorage.LoadOrCreate()
-
-	return key, err
 }
 
 // LoadOrCreate loads the private key from Storage or
 // creates a new one if none exists.
 func (s *Storage) LoadOrCreate() (crypto.PrivKey, error) {
 	key := []byte("private_key")
-
 	var buffer []byte
 	err := s.db.Update(func(tx kv.WritableTx) error {
 		bucket, err := tx.GetBucketOrCreate(s.bucket)

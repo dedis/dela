@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"go.dedis.ch/dela/cli/node"
-	"go.dedis.ch/dela/mino/minows"
+	"go.dedis.ch/dela/mino/minows/controller"
 
 	db "go.dedis.ch/dela/core/store/kv/controller"
 	dkg "go.dedis.ch/dela/dkg/pedersen/controller"
@@ -34,7 +34,7 @@ func runWithCfg(args []string, cfg config) error {
 		cfg.Channel,
 		cfg.Writer,
 		db.NewController(),
-		minows.NewController(),
+		controller.NewController(),
 		dkg.NewMinimal(),
 	)
 

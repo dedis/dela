@@ -1,6 +1,7 @@
-package minows
+package controller
 
 import (
+	"go.dedis.ch/dela/mino/minows"
 	"testing"
 	"time"
 
@@ -18,7 +19,7 @@ func TestController_OnStart(t *testing.T) {
 
 	err := ctrl.OnStart(flags, inj)
 	require.NoError(t, err)
-	var m *Minows
+	var m *minows.Minows
 	err = inj.Resolve(&m)
 	require.NoError(t, err)
 }
@@ -29,7 +30,7 @@ func TestController_OptionalPublic(t *testing.T) {
 
 	err := ctrl.OnStart(flags, inj)
 	require.NoError(t, err)
-	var m *Minows
+	var m *minows.Minows
 	err = inj.Resolve(&m)
 	require.NoError(t, err)
 }

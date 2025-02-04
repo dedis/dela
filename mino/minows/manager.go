@@ -47,3 +47,24 @@ func (m *Manager) insert(inst mino.Mino) error {
 
 	return nil
 }
+
+func (m *Manager) remove(inst mino.Mino) error {
+	instance, ok := inst.(*Minows)
+	if !ok {
+		return xerrors.Errorf("invalid instance type '%T'", inst)
+	}
+
+	if instance.myAddr.identity == "" {
+		return xerrors.New("cannot have an empty identifier")
+	}
+
+	m.Lock()
+	defer m.Unlock()
+
+	_, found := m.instances[instance.myAddr.identity]
+	if found {
+		delete(m.instances, instance.myAddr.identity)
+	}
+
+	return nil
+}

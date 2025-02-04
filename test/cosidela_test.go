@@ -84,7 +84,8 @@ func newDelaNode(t require.TestingT, path string, port int, kind string) dela {
 		listen, err := ma.NewMultiaddr(fmt.Sprintf("/ip4/127.0.0.1/tcp/%d/ws", port))
 		require.NoError(t, err)
 
-		privKey, _ := minokey.NewKey(db)
+		storage := key.NewStorage(db)
+		privKey, _ := storage.LoadOrCreate()
 
 		manager := minows.NewManager()
 		onet, err = minows.NewMinows(manager, listen, nil, privKey)

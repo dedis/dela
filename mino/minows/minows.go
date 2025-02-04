@@ -53,7 +53,7 @@ func NewMinows(manager *Manager, listen, public ma.Multiaddr, key crypto.PrivKey
 	if public == nil {
 		public = h.Addrs()[0]
 	}
-	myAddr, err := newAdress(public, h.ID())
+	myAddr, err := newAddress(public, h.ID())
 	if err != nil {
 		return nil, xerrors.Errorf("could not create address: %v", err)
 	}
@@ -151,5 +151,8 @@ func (m *Minows) CreateRPC(name string, h mino.Handler, f serde.Factory) (mino.R
 }
 
 func (m *Minows) stop() error {
-	return m.host.Close()
+	err := m.host.Close()
+	m.manager.remove(m)
+
+	return err
 }

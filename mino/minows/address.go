@@ -23,9 +23,9 @@ type address struct {
 	identity peer.ID
 }
 
-// newAdress creates a new address from a publicly reachable location with a
+// newAddress creates a new address from a publicly reachable location with a
 // peer identity.
-func newAdress(location ma.Multiaddr, identity peer.ID) (address, error) {
+func newAddress(location ma.Multiaddr, identity peer.ID) (address, error) {
 	if location == nil {
 		return address{}, xerrors.New("address must have a location")
 	}
@@ -93,7 +93,7 @@ func newOrchestratorAddr(
 	location ma.Multiaddr,
 	identity peer.ID,
 ) (orchestratorAddr, error) {
-	addr, err := newAdress(location, identity)
+	addr, err := newAddress(location, identity)
 	if err != nil {
 		return orchestratorAddr{}, err
 	}
@@ -153,7 +153,7 @@ func (f addressFactory) FromText(text []byte) mino.Address {
 
 	var addr mino.Address
 	if len(parts) == 2 {
-		addr, err = newAdress(location, identity)
+		addr, err = newAddress(location, identity)
 	} else if parts[2] == "o" {
 		addr, err = newOrchestratorAddr(location, identity)
 	}

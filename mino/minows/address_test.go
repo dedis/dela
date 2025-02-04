@@ -39,7 +39,7 @@ func Test_newAddress(t *testing.T) {
 			location := mustCreateMultiaddress(t, tt.args.location)
 			identity := mustCreatePeerID(t, tt.args.identity)
 
-			_, err := newAdress(location, identity)
+			_, err := newAddress(location, identity)
 			require.NoError(t, err)
 		})
 	}
@@ -65,7 +65,7 @@ func Test_newAddress_Invalid(t *testing.T) {
 	for name, tt := range tests {
 		tt := tt
 		t.Run(name, func(t *testing.T) {
-			_, err := newAdress(tt.location, tt.identity)
+			_, err := newAddress(tt.location, tt.identity)
 			require.Error(t, err)
 		})
 	}
@@ -300,7 +300,7 @@ func mustCreateOrchestratorAddr(t *testing.T, location, identity string) orchest
 }
 
 func mustCreateAddress(t *testing.T, location, identity string) address {
-	addr, err := newAdress(mustCreateMultiaddress(t, location),
+	addr, err := newAddress(mustCreateMultiaddress(t, location),
 		mustCreatePeerID(t, identity))
 	require.NoError(t, err)
 	return addr

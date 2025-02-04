@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package ptypes;
+
+// CertificateChain is a wrapper around a chain of x509 raw certificates and its
+// address.
+message CertificateChain {
+    bytes address = 1;
+    // value represents certificates as ASN.1 DER data. The certificates must be
+    // concatenated with no intermediate padding. This value can be parsed with
+    // `x509.LoadCertificates`.
+    bytes value = 2;
+}
+
+message CertificateAck {}
+
+// JoinRequest sends a request to join a network to a distant node. It must
+// contain a valid token and its own certificate.
+message JoinRequest {
+    string token = 1;
+    CertificateChain chain = 2;
+}
+
+// JoinResponse is a response of a join request that contains the list of
+// certificates known by the distant node.
+message JoinResponse {
+    repeated CertificateChain peers = 1;
+}
+
+// Message is a network message that contains the address of the sender and the
+// payload.
+message Message {
+    bytes from = 1;
+    bytes payload = 2;
+}
+
+// Packet is a wrapper around a packet.
+message Packet {
+    bytes serialized = 1;
+}
+
+// Ack is the return of a unicast request to forward a message.
+message Ack {
+    repeated string errors = 1;
+}
+
+service Overlay {
+    // Join handles join request from an unknown node. It accepts to share the
+    // certificates if the token is valid.
+    rpc Join(JoinRequest) returns (JoinResponse) {}
+
+    // Share handles a certificate share from another participant of the
+    // network.
+    rpc Share(CertificateChain) returns (CertificateAck) {}
+
+    // Call is a unicast rpc to send a message to a participant and expect a
+    // reply from it.
+    rpc Call(Message) returns (Message) {}
+    
+    // Stream is a stream rpc that will build a network of nodes which will
+    // relay the messages between each others.
+    rpc Stream(stream Packet) returns (stream Packet) {}
+
+    // Forward is used in association with Stream to send a message through
+    // relays and get a feedback that the message has been received.
+    rpc Forward(Packet) returns (Ack) {}
+}

@@ -151,11 +151,10 @@ func TestResharing_minoch(t *testing.T) {
 
 }
 
-/*
 // This test creates a dkg committee then creates another committee (that can
 // share some nodes with the old committee) and then redistributes the secret to
 // the new committee. Using minows as the underlying network
-func TestResharing_minogrpc(t *testing.T) {
+func IgnoreTestResharing_minogrpc(t *testing.T) {
 
 	// Setting up the first dkg
 	nOld := 10
@@ -314,7 +313,6 @@ func TestResharing_minogrpc(t *testing.T) {
 			"to decrypt the messages encrypted by the old committee")
 	}
 }
-*/
 
 // This test creates a dkg committee then creates another committee (that can
 // share some nodes with the old committee) and then redistributes the secret to

@@ -36,7 +36,7 @@ import (
 	db "go.dedis.ch/dela/core/store/kv/controller"
 	pool "go.dedis.ch/dela/core/txn/pool/controller"
 	signed "go.dedis.ch/dela/core/txn/signed/controller"
-	minows "go.dedis.ch/dela/mino/minows"
+	minows "go.dedis.ch/dela/mino/minows/controller"
 	proxy "go.dedis.ch/dela/mino/proxy/http/controller"
 )
 
