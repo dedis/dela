@@ -32,7 +32,7 @@ func TestNewMinows(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, m)
 			require.IsType(t, &Minows{}, m)
-			require.NoError(t, m.(*Minows).stop())
+			require.NoError(t, m.(*Minows).Stop())
 		})
 	}
 }
@@ -52,7 +52,7 @@ func TestNewMinows_OptionalPublic(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, m)
 			require.IsType(t, &Minows{}, m)
-			require.NoError(t, m.(*Minows).stop())
+			require.NoError(t, m.(*Minows).Stop())
 		})
 
 	}
@@ -113,7 +113,7 @@ func Test_minows_GetAddress(t *testing.T) {
 			m, err := NewMinows(manager, mustCreateMultiaddress(t, tt.m.listen),
 				mustCreateMultiaddress(t, tt.m.public), tt.m.key)
 			require.NoError(t, err)
-			defer require.NoError(t, m.(*Minows).stop())
+			defer require.NoError(t, m.(*Minows).Stop())
 			want := mustCreateAddress(t, tt.want.location, tt.want.identity)
 
 			got := m.GetAddress()
@@ -129,7 +129,7 @@ func Test_minows_GetAddress_Random(t *testing.T) {
 	manager := NewManager()
 	m, err := NewMinows(manager, listen, nil, key)
 	require.NoError(t, err)
-	defer require.NoError(t, m.(*Minows).stop())
+	defer require.NoError(t, m.(*Minows).Stop())
 
 	got := m.GetAddress().(address)
 	port, err := got.location.ValueForProtocol(ma.P_TCP)
@@ -227,7 +227,7 @@ func mustCreateMinows(t *testing.T, listen string, public string) (
 	m, err := NewMinows(manager, lis, pub, key)
 	require.NoError(t, err)
 	ws := m.(*Minows)
-	stop := func() { require.NoError(t, ws.stop()) }
+	stop := func() { require.NoError(t, ws.Stop()) }
 	return ws, stop
 }
 

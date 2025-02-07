@@ -150,7 +150,7 @@ func (m *Minows) CreateRPC(name string, h mino.Handler, f serde.Factory) (mino.R
 	return r, nil
 }
 
-func (m *Minows) stop() error {
+func (m *Minows) Stop() error {
 	err := m.host.Close()
 	m.manager.remove(m)
 
