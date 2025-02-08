@@ -13,7 +13,8 @@ import (
 )
 
 func TestCachedGenesis_Get(t *testing.T) {
-	store := NewGenesisStore().(*cachedGenesis)
+	store := NewGenesisStore().(*cachedGenesis) //nolint:errcheck
+	require.NotNil(t, store)
 
 	ro := authority.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
 

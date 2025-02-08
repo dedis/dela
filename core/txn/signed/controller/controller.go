@@ -31,7 +31,7 @@ func (mgrController) SetCommands(node.Builder) {}
 
 // OnStart implements node.Initializer. It creates a transaction manager using
 // the signer of the collective signing component and injects it.
-func (mgrController) OnStart(flags cli.Flags, inj node.Injector) error {
+func (mgrController) OnStart(_ cli.Flags, inj node.Injector) error {
 	var srvc ordering.Service
 	err := inj.Resolve(&srvc)
 	if err != nil {

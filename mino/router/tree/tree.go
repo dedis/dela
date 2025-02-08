@@ -139,7 +139,7 @@ func (t *dynTree) GetRoute(to mino.Address) (mino.Address, error) {
 		return to, nil
 	}
 
-	return nil, nil
+	return nil, nil // xerrors.Errorf("address is not routable")
 }
 
 // GetChildren implements tree.Tree. It returns the children of a branch.

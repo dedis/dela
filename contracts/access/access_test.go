@@ -94,7 +94,7 @@ func TestGrant(t *testing.T) {
 	require.EqualError(t, err, fake.Err("failed to grant"))
 }
 
-func TestRegisterContract(t *testing.T) {
+func TestRegisterContract(_ *testing.T) {
 	RegisterContract(native.NewExecution(), Contract{})
 }
 
@@ -135,10 +135,10 @@ type fakeStore struct {
 	store.Snapshot
 }
 
-func (s fakeStore) Get(key []byte) ([]byte, error) {
+func (s fakeStore) Get(_ []byte) ([]byte, error) {
 	return nil, nil
 }
 
-func (s fakeStore) Set(key, value []byte) error {
+func (s fakeStore) Set(_, _ []byte) error {
 	return nil
 }

@@ -25,17 +25,23 @@ func TestSessionNew(t *testing.T) {
 	curr := os.Getenv(traffic.EnvVariable)
 	defer os.Setenv(traffic.EnvVariable, curr)
 
-	os.Setenv(traffic.EnvVariable, "log")
+	t.Setenv(traffic.EnvVariable, "log")
 	sess := NewSession(nil, fake.NewAddress(999), nil, nil, fake.NewContext(), nil)
-	require.NotNil(t, sess.(*session).traffic)
+	se, err := sess.(*session)
+	require.NotNil(t, err)
+	require.NotNil(t, se.traffic)
 
-	os.Setenv(traffic.EnvVariable, "print")
+	t.Setenv(traffic.EnvVariable, "print")
 	sess = NewSession(nil, fake.NewAddress(999), nil, nil, fake.NewContext(), nil)
-	require.NotNil(t, sess.(*session).traffic)
+	se, err = sess.(*session)
+	require.NotNil(t, err)
+	require.NotNil(t, se.traffic)
 
 	os.Unsetenv(traffic.EnvVariable)
 	sess = NewSession(nil, fake.NewAddress(999), nil, nil, fake.NewContext(), nil)
-	require.Nil(t, sess.(*session).traffic)
+	se, err = sess.(*session)
+	require.NotNil(t, err)
+	require.Nil(t, se.traffic)
 }
 
 func TestSession_getNumParents(t *testing.T) {

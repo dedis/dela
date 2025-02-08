@@ -258,15 +258,15 @@ type fakeSnapshot struct {
 	err error
 }
 
-func (snap fakeSnapshot) Get(key []byte) ([]byte, error) {
+func (snap fakeSnapshot) Get(_ []byte) ([]byte, error) {
 	return []byte{}, snap.err
 }
 
-func (snap fakeSnapshot) Set(key []byte, value []byte) error {
+func (snap fakeSnapshot) Set(_ []byte, value []byte) error {
 	return snap.err
 }
 
-func (snap fakeSnapshot) Delete(key []byte) error {
+func (snap fakeSnapshot) Delete(_ []byte) error {
 	return snap.err
 }
 
@@ -283,11 +283,11 @@ func (t fakeTree) GetRoot() []byte {
 	return []byte("root")
 }
 
-func (t fakeTree) GetPath(key []byte) (hashtree.Path, error) {
+func (t fakeTree) GetPath(_ []byte) (hashtree.Path, error) {
 	return nil, t.err
 }
 
-func (t fakeTree) Get(key []byte) ([]byte, error) {
+func (t fakeTree) Get(_ []byte) ([]byte, error) {
 	return []byte("[]"), t.err
 }
 

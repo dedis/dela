@@ -24,7 +24,7 @@ func NewController() node.Initializer {
 }
 
 // SetCommands implements node.Initializer. It does not register any command.
-func (m minimalController) SetCommands(builder node.Builder) {}
+func (m minimalController) SetCommands(_ node.Builder) {}
 
 // OnStart implements node.Initializer. It opens the database in a file using
 // the config path as the base.

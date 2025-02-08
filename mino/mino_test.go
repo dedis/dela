@@ -28,6 +28,7 @@ func TestMustCreateRPC(t *testing.T) {
 func TestMustCreateRPC_Panic(t *testing.T) {
 	defer func() {
 		err := recover().(error)
+		require.NotNil(t, err)
 		require.EqualError(t, err, "rpc_error")
 	}()
 
@@ -47,6 +48,6 @@ type fakeMino struct {
 	err error
 }
 
-func (m fakeMino) CreateRPC(name string, h Handler, f serde.Factory) (RPC, error) {
+func (m fakeMino) CreateRPC(_ string, _ Handler, _ serde.Factory) (RPC, error) {
 	return fakeRPC{}, m.err
 }

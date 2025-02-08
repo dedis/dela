@@ -61,10 +61,12 @@ func NewAddress(host string) Address {
 }
 
 // NewAddressFromURL creates a new address given a URL.
-func NewAddressFromURL(addr url.URL) (a Address, err error) {
+func NewAddressFromURL(addr url.URL) (Address, error) {
+	var a Address
+	a.host = addr.Host
+
 	if addr.Port() == "" {
-		err = xerrors.Errorf("no port given or not able to infer it from protocol")
-		return
+		return a, xerrors.Errorf("no port given or not able to infer it from protocol")
 	}
 
 	scheme := addr.Scheme
@@ -81,12 +83,12 @@ func NewAddressFromURL(addr url.URL) (a Address, err error) {
 	case "https":
 		a.connectionType = mino.ACThttps
 	default:
-		err = xerrors.Errorf("unknown scheme '%s' in address", addr.Scheme)
-		return
+		return a, xerrors.Errorf("unknown scheme '%s' in address", addr.Scheme)
 	}
 
 	a.host = addr.Host
-	return
+
+	return a, nil
 }
 
 // GetDialAddress returns a string formatted to be understood by grpc.Dial()
@@ -149,6 +151,10 @@ func (a Address) String() string {
 		url = "grpc://" + a.host
 	case mino.ACThttps:
 		url = "https://" + a.host
+	case mino.ACTws:
+		url = "ws://" + a.host
+	default:
+		url = "unknown://" + a.host
 	}
 	if a.orchestrator {
 		return "Orchestrator:" + url

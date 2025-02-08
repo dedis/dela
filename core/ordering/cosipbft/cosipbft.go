@@ -838,7 +838,7 @@ type observer struct {
 }
 
 func (obs observer) NotifyCallback(event interface{}) {
-	obs.ch <- event.(ordering.Event)
+	obs.ch <- event.(ordering.Event) //nolint:errcheck
 }
 
 func calculateBackoff(backoff float64) time.Duration {

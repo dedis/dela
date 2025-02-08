@@ -687,6 +687,8 @@ func (mgr *connManager) Acquire(to mino.Address) (grpc.ClientConnInterface, erro
 		opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{})))
 	case mino.ACTgRPC:
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	default:
+		return nil, xerrors.Errorf("unsupported connection type '%v'", to.ConnectionType())
 	}
 
 	conn, err = grpc.NewClient(

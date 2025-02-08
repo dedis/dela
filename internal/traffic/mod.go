@@ -307,7 +307,8 @@ func GenerateItemsGraphviz(out io.Writer, withSend, withRcv bool, traffics ...*T
 
 	fmt.Fprintf(out, "digraph network_activity {\n")
 	fmt.Fprintf(out, "labelloc=\"t\";")
-	fmt.Fprintf(out, "label = <Network Diagram of %d nodes <font point-size='10'><br/>(generated %s)</font>>;", len(traffics), time.Now().Format("2 Jan 06 - 15:04:05"))
+	fmt.Fprintf(out, "label = <Network Diagram of %d nodes <font point-size='10'><br/>"+
+		"(generated %s)</font>>;", len(traffics), time.Now().Format("2 Jan 06 - 15:04:05"))
 	fmt.Fprintf(out, "graph [fontname = \"helvetica\"];")
 	fmt.Fprintf(out, "graph [fontname = \"helvetica\"];")
 	fmt.Fprintf(out, "node [fontname = \"helvetica\"];")
@@ -343,7 +344,8 @@ func GenerateItemsGraphviz(out io.Writer, withSend, withRcv bool, traffics ...*T
 			}
 
 			fmt.Fprintf(out, "\"%v\" -> \"%v\" "+
-				"[ label = < <font color='#303030'><b>%d</b> <font point-size='10'>(%d)</font></font><br/>%s> color=\"%s\" ];\n",
+				"[ label = < <font color='#303030'><b>%d</b> "+
+				"<font point-size='10'>(%d)</font></font><br/>%s> color=\"%s\" ];\n",
 				item.src, item.gateway, item.typeCounter, item.globalCounter, msgStr, color)
 		}
 	}
@@ -357,7 +359,9 @@ func GenerateEventGraphviz(out io.Writer, traffics ...*Traffic) {
 
 	fmt.Fprintf(out, "digraph network_activity {\n")
 	fmt.Fprintf(out, "labelloc=\"t\";")
-	fmt.Fprintf(out, "label = <Network Diagram of %d nodes <font point-size='10'><br/>(generated %s)</font>>;", len(traffics), time.Now().Format("2 Jan 06 - 15:04:05"))
+	fmt.Fprintf(out,
+		"label = <Network Diagram of %d nodes <font point-size='10'><br/>(generated %s)</font>>;",
+		len(traffics), time.Now().Format("2 Jan 06 - 15:04:05"))
 	fmt.Fprintf(out, "graph [fontname = \"helvetica\"];")
 	fmt.Fprintf(out, "graph [fontname = \"helvetica\"];")
 	fmt.Fprintf(out, "node [fontname = \"helvetica\"];")
