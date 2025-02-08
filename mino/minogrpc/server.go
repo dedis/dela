@@ -58,6 +58,7 @@ const (
 var getTracerForAddr = tracing.GetTracerForAddr
 
 type overlayServer struct {
+	ptypes.UnimplementedOverlayServer
 	*overlay
 
 	endpoints map[string]*Endpoint

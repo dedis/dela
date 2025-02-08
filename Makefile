@@ -8,7 +8,9 @@ tidy:
 	go mod tidy
 
 generate: tidy
-	go get -u github.com/golang/protobuf/protoc-gen-go@v1.3.5
+	go get -u google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.5
+	go get -u google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
+	go get -u google.golang.org/genproto/googleapis/rpc
 	go generate ./...
 
 # Some packages are excluded from staticcheck due to deprecated warnings: #208.
