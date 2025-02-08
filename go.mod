@@ -18,7 +18,7 @@ require (
 	go.dedis.ch/kyber/v3 v3.1.0
 	go.etcd.io/bbolt v1.3.9
 	golang.org/x/crypto v0.31.0
-	golang.org/x/net v0.32.0
+	golang.org/x/net v0.33.0
 	golang.org/x/tools v0.28.0
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028
 	google.golang.org/grpc v1.70.0
