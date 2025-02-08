@@ -112,7 +112,7 @@ func (b *CLIBuilder) MakeAction(tmpl ActionTemplate) cli.Action {
 		// Prepare a set of flags that will be transmitted to the daemon so that
 		// the action has access to the same flags and their values.
 		fset := make(FlagSet)
-		lookupFlags(fset, c.(*urfave.Context))
+		lookupFlags(fset, c.(*urfave.Context)) //nolint:errcheck
 
 		buf, err := json.Marshal(fset)
 		if err != nil {

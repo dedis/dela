@@ -87,7 +87,7 @@ func TestSaveEvents(t *testing.T) {
 
 	defer os.RemoveAll(path)
 
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == Windows {
 		return
 	}
 
@@ -106,7 +106,7 @@ func TestTraffic_Save(t *testing.T) {
 
 	defer os.RemoveAll(path)
 
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == Windows {
 		return
 	}
 
