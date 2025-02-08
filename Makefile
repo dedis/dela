@@ -13,11 +13,9 @@ generate: tidy
 	go get -u google.golang.org/genproto/googleapis/rpc
 	go generate ./...
 
-# Some packages are excluded from staticcheck due to deprecated warnings: #208.
 lint: tidy
-	# Coding style static check.
-	@go install honnef.co/go/tools/cmd/staticcheck@v0.4.7
-	staticcheck `go list ./... | grep -Ev "(go\.dedis\.ch/dela/internal/testing|go\.dedis\.ch/dela/mino/minogrpc/ptypes)"`
+	@go get github.com/golangci/golangci-lint/cmd/golangci-lint
+	golangci-lint run
 
 vet: tidy
 	@echo "⚠️ Warning: the following only works with go >= 1.14" && \
