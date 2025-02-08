@@ -8,19 +8,14 @@ tidy:
 	go mod tidy
 
 generate: tidy
-	go get -u github.com/golang/protobuf/protoc-gen-go@v1.3.5
+	go get -u google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.5
+	go get -u google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
+	go get -u google.golang.org/genproto/googleapis/rpc
 	go generate ./...
 
-# Some packages are excluded from staticcheck due to deprecated warnings: #208.
 lint: tidy
-	# Coding style static check.
-	@go install honnef.co/go/tools/cmd/staticcheck@v0.4.7
-	staticcheck `go list ./... | grep -Ev "(go\.dedis\.ch/dela/internal/testing|go\.dedis\.ch/dela/mino/minogrpc/ptypes)"`
-
-vet: tidy
-	@echo "⚠️ Warning: the following only works with go >= 1.14" && \
-	go install ./internal/mcheck && \
-	go vet -vettool=`go env GOPATH`/bin/mcheck -commentLen -ifInit ./...
+	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	golangci-lint run
 
 tests:
 	while make test; do echo "Testing again at $$(date)"; done; echo "Failed testing"

@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 package ptypes;
+option go_package = ".;ptypes";
 
 // CertificateChain is a wrapper around a chain of x509 raw certificates and its
 // address.

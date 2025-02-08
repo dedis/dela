@@ -2,4 +2,4 @@
 // minogrpc.
 package ptypes
 
-//go:generate protoc -I ./ --go_out=plugins=grpc:./ ./overlay.proto
+//go:generate protoc -I ./ --go_out=./ --go-grpc_out=./ ./overlay.proto
