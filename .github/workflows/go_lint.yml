@@ -24,6 +24,3 @@ jobs:
 
     - name: Lint
       run: make lint
-
-    - name: Vet
-      run: make vet

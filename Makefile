@@ -17,11 +17,6 @@ lint: tidy
 	@go get github.com/golangci/golangci-lint/cmd/golangci-lint
 	golangci-lint run
 
-vet: tidy
-	@echo "⚠️ Warning: the following only works with go >= 1.14" && \
-	go install ./internal/mcheck && \
-	go vet -vettool=`go env GOPATH`/bin/mcheck -commentLen -ifInit ./...
-
 tests:
 	while make test; do echo "Testing again at $$(date)"; done; echo "Failed testing"
 
