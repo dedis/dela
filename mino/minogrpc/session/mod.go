@@ -189,7 +189,7 @@ func (s *session) Listen(relay Relay, table router.RoutingTable, ready chan stru
 	for {
 		_, err := relay.Stream().Recv()
 		code := status.Code(err)
-		if err == io.EOF || code != codes.Unknown {
+		if errors.Is(err, io.EOF) || code != codes.Unknown {
 			s.log.Trace().Stringer("code", code).Msg("session closing")
 
 			return
@@ -494,7 +494,7 @@ func (s *session) setupRelay(p parent, addr mino.Address) (Relay, error) {
 		for {
 			_, err := stream.Recv()
 			code := status.Code(err)
-			if err == io.EOF || code != codes.Unknown {
+			if errors.Is(err, io.EOF) || code != codes.Unknown {
 				s.log.Trace().
 					Stringer("code", code).
 					Stringer("to", addr).

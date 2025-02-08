@@ -166,10 +166,12 @@ func (s *InDisk) Get(id types.Digest) (types.BlockLink, error) {
 
 // GetByIndex implements blockstore.BlockStore. It returns the block associated
 // to the index if it exists, otherwise it returns an error.
-func (s *InDisk) GetByIndex(index uint64) (link types.BlockLink, err error) {
+func (s *InDisk) GetByIndex(index uint64) (types.BlockLink, error) {
+	var link types.BlockLink
+
 	key := s.makeKey(index)
 
-	err = s.doView(func(tx kv.ReadableTx) error {
+	err := s.doView(func(tx kv.ReadableTx) error {
 		bucket := tx.GetBucket(s.bucket)
 
 		value := bucket.Get(key)
@@ -187,7 +189,7 @@ func (s *InDisk) GetByIndex(index uint64) (link types.BlockLink, err error) {
 		return nil
 	})
 
-	return
+	return link, err
 }
 
 // GetChain implements blockstore.Blockstore. It returns a chain to the latest

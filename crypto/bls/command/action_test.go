@@ -50,30 +50,30 @@ func TestLoadSignerAction(t *testing.T) {
 	err = action.loadSignerAction(set)
 	require.EqualError(t, err, "unknown format ''")
 
-	set["format"] = "PUBKEY"
+	set["format"] = Pubkey
 	action.getPubKey = badGetPubKey
 	err = action.loadSignerAction(set)
-	require.EqualError(t, err, fake.Err("failed to get PUBKEY"))
+	require.EqualError(t, err, fake.Err("failed to get Pubkey"))
 
 	action.getPubKey = wrongGetPubKey
 	err = action.loadSignerAction(set)
 	require.EqualError(t, err, fake.Err("failed to marshal pubkey"))
 
-	set["format"] = "BASE64_PUBKEY"
+	set["format"] = Base64Pubkey
 	action.getPubKey = badGetPubKey
 	err = action.loadSignerAction(set)
-	require.EqualError(t, err, fake.Err("failed to get PUBKEY"))
+	require.EqualError(t, err, fake.Err("failed to get Pubkey"))
 
 	action.getPubKey = wrongGetPubKey
 	err = action.loadSignerAction(set)
 	require.EqualError(t, err, fake.Err("failed to marshal pubkey"))
 
-	set["format"] = "BASE64_PUBKEY"
+	set["format"] = Base64Pubkey
 	action.getPubKey = fakeGetPubKey
 	err = action.loadSignerAction(set)
 	require.NoError(t, err)
 
-	set["format"] = "BASE64"
+	set["format"] = Base64
 	action.getPubKey = badGetPubKey
 	err = action.loadSignerAction(set)
 	require.NoError(t, err)
@@ -128,19 +128,19 @@ func badGenSigner() ([]byte, error) {
 	return nil, fake.GetError()
 }
 
-func badReadFile(path string) ([]byte, error) {
+func badReadFile(_ string) ([]byte, error) {
 	return nil, fake.GetError()
 }
 
-func badSaveFile(path string, force bool, data []byte) error {
+func badSaveFile(_ string, _ bool, _ []byte) error {
 	return fake.GetError()
 }
 
-func fakeReadFile(path string) ([]byte, error) {
+func fakeReadFile(_ string) ([]byte, error) {
 	return nil, nil
 }
 
-func fakeSaveFile(path string, force bool, data []byte) error {
+func fakeSaveFile(_ string, _ bool, _ []byte) error {
 	return nil
 }
 

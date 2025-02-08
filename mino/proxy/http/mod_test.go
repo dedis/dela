@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"io"
 	"net/http"
-	"os"
 	"testing"
 	"time"
 
@@ -13,15 +12,15 @@ import (
 )
 
 func TestInit(t *testing.T) {
-	os.Setenv("PROXY_LOG", "warn")
+	t.Setenv("PROXY_LOG", "warn")
 	setLogLevel()
 	require.Equal(t, defaultLevel, zerolog.WarnLevel)
 
-	os.Setenv("PROXY_LOG", "no")
+	t.Setenv("PROXY_LOG", "no")
 	setLogLevel()
 	require.Equal(t, defaultLevel, zerolog.Disabled)
 
-	os.Setenv("PROXY_LOG", "info")
+	t.Setenv("PROXY_LOG", "info")
 	setLogLevel()
 	require.Equal(t, defaultLevel, zerolog.InfoLevel)
 }
@@ -37,6 +36,9 @@ func TestHTTP_Listen(t *testing.T) {
 
 	res, err := http.Get("http://127.0.0.1:2010/fake")
 	require.NoError(t, err)
+	require.NotNil(t, res)
+	defer res.Body.Close()
+	require.NoError(t, err)
 
 	output, err := io.ReadAll(res.Body)
 	require.NoError(t, err)
@@ -48,7 +50,6 @@ func TestHTPP_Listen_EmptyAddr(t *testing.T) {
 	// in this case it will use a random free port
 	proxy := NewHTTP("")
 	httpProxy := proxy.(*HTTP)
-
 	require.Nil(t, httpProxy.ln)
 
 	go proxy.Listen()

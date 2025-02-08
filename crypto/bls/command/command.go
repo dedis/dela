@@ -28,9 +28,9 @@ func (i Initializer) SetCommands(provider cli.Provider) {
 	cmd := provider.SetCommand("bls")
 	signer := cmd.SetSubCommand("signer")
 
-	new := signer.SetSubCommand("new")
-	new.SetDescription("create a new bls signer")
-	new.SetFlags(cli.StringFlag{
+	newsigner := signer.SetSubCommand("newsigner")
+	newsigner.SetDescription("create a newsigner bls signer")
+	newsigner.SetFlags(cli.StringFlag{
 		Name:     "save",
 		Usage:    "if provided, save the signer to that file",
 		Required: false,
@@ -39,7 +39,7 @@ func (i Initializer) SetCommands(provider cli.Provider) {
 		Usage:    "in the case it saves the signer, will overwrite if needed",
 		Required: false,
 	})
-	new.SetAction(action.newSignerAction)
+	newsigner.SetAction(action.newSignerAction)
 
 	read := signer.SetSubCommand("read")
 	read.SetDescription("read a signer")
@@ -49,8 +49,8 @@ func (i Initializer) SetCommands(provider cli.Provider) {
 		Required: true,
 	}, cli.StringFlag{
 		Name:     "format",
-		Usage:    "output format: [PUBKEY | BASE64 | BASE64_PUBKEY]",
-		Value:    "PUBKEY",
+		Usage:    "output format: [Pubkey | Base64 | Base64Pubkey]",
+		Value:    "Pubkey",
 		Required: false,
 	})
 	read.SetAction(action.loadSignerAction)

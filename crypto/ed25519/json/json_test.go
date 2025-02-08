@@ -43,7 +43,8 @@ func TestPubKkeyFormat_Decode(t *testing.T) {
 
 	pubkey, err := format.Decode(ctx, data)
 	require.NoError(t, err)
-	require.True(t, signer.GetPublicKey().Equal(pubkey.(ed25519.PublicKey)))
+	p := pubkey.(ed25519.PublicKey)
+	require.True(t, signer.GetPublicKey().Equal(p))
 
 	_, err = format.Decode(ctx, []byte(`{"Data":[]}`))
 	require.EqualError(t, err,

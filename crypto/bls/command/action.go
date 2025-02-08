@@ -13,6 +13,10 @@ import (
 	"golang.org/x/xerrors"
 )
 
+const Base64Pubkey = "Base64Pubkey"
+const Base64 = "Base64"
+const Pubkey = "Pubkey"
+
 // action defines the different cli actions of the BLS commands. Defining
 // functions and printer helps in testing the commands.
 type action struct {
@@ -53,10 +57,10 @@ func (a action) loadSignerAction(flags cli.Flags) error {
 	var out []byte
 
 	switch flags.String("format") {
-	case "PUBKEY":
+	case Pubkey:
 		pubkey, err := a.getPubKey(data)
 		if err != nil {
-			return xerrors.Errorf("failed to get PUBKEY: %v", err)
+			return xerrors.Errorf("failed to get Pubkey: %v", err)
 		}
 
 		out, err = pubkey.MarshalText()
@@ -64,10 +68,10 @@ func (a action) loadSignerAction(flags cli.Flags) error {
 			return xerrors.Errorf("failed to marshal pubkey: %v", err)
 		}
 
-	case "BASE64_PUBKEY":
+	case Base64Pubkey:
 		pubkey, err := a.getPubKey(data)
 		if err != nil {
-			return xerrors.Errorf("failed to get PUBKEY: %v", err)
+			return xerrors.Errorf("failed to get Pubkey: %v", err)
 		}
 
 		buf, err := pubkey.MarshalBinary()
@@ -77,7 +81,7 @@ func (a action) loadSignerAction(flags cli.Flags) error {
 
 		out = []byte(base64.StdEncoding.EncodeToString(buf))
 
-	case "BASE64":
+	case Base64:
 		out = []byte(base64.StdEncoding.EncodeToString(data))
 
 	default:

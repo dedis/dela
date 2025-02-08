@@ -452,7 +452,8 @@ func TestDecryptAction_decodeFail(t *testing.T) {
 }
 
 func TestDecryptAction_decryptFail(t *testing.T) {
-	encrypted := "abea449f0ab86029c529f541cdd7f48aee3102b9c1ea2999b5d39c2cc49a4c23:ae29dd65cb4ceaaf7830008b9544625a05b6dbbcd421cf8475aedbef8e8d1da9"
+	encrypted := "abea449f0ab86029c529f541cdd7f48aee3102b9c1ea2999b5d39c2cc49a4c23" +
+		":ae29dd65cb4ceaaf7830008b9544625a05b6dbbcd421cf8475aedbef8e8d1da9"
 	a := decryptAction{}
 
 	inj := node.NewInjector()
@@ -474,7 +475,8 @@ func TestDecryptAction_decryptFail(t *testing.T) {
 }
 
 func TestDecryptAction_OK(t *testing.T) {
-	encrypted := "abea449f0ab86029c529f541cdd7f48aee3102b9c1ea2999b5d39c2cc49a4c23:ae29dd65cb4ceaaf7830008b9544625a05b6dbbcd421cf8475aedbef8e8d1da9"
+	encrypted := "abea449f0ab86029c529f541cdd7f48aee3102b9c1ea2999b5d39c2cc49a4c23" +
+		":ae29dd65cb4ceaaf7830008b9544625a05b6dbbcd421cf8475aedbef8e8d1da9"
 
 	message := "fake"
 	expected := hex.EncodeToString([]byte(message))
@@ -545,8 +547,9 @@ func TestReencryptAction_decodePubkFail(t *testing.T) {
 	inj.Inject(fakeActor{})
 
 	flags := node.FlagSet{
-		"encrypted": "abea449f0ab86029c529f541cdd7f48aee3102b9c1ea2999b5d39c2cc49a4c23:ae29dd65cb4ceaaf7830008b9544625a05b6dbbcd421cf8475aedbef8e8d1da9",
-		"pubk":      "not hex",
+		"encrypted": "abea449f0ab86029c529f541cdd7f48aee3102b9c1ea2999b5d39c2cc49a4c23" +
+			":ae29dd65cb4ceaaf7830008b9544625a05b6dbbcd421cf8475aedbef8e8d1da9",
+		"pubk": "not hex",
 	}
 
 	ctx := node.Context{
@@ -559,7 +562,8 @@ func TestReencryptAction_decodePubkFail(t *testing.T) {
 }
 
 func TestReencryptAction_reencryptFail(t *testing.T) {
-	encrypted := "abea449f0ab86029c529f541cdd7f48aee3102b9c1ea2999b5d39c2cc49a4c23:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	encrypted := "abea449f0ab86029c529f541cdd7f48aee3102b9c1ea2999b5d39c2cc49a4c23" +
+		":aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	pubk := "ae29dd65cb4ceaaf7830008b9544625a05b6dbbcd421cf8475aedbef8e8d1da9"
 
 	a := reencryptAction{}
@@ -584,7 +588,8 @@ func TestReencryptAction_reencryptFail(t *testing.T) {
 }
 
 func TestReencryptAction_OK(t *testing.T) {
-	encrypted := "abea449f0ab86029c529f541cdd7f48aee3102b9c1ea2999b5d39c2cc49a4c23:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	encrypted := "abea449f0ab86029c529f541cdd7f48aee3102b9c1ea2999b5d39c2cc49a4c23" +
+		":aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	pubk := "ae29dd65cb4ceaaf7830008b9544625a05b6dbbcd421cf8475aedbef8e8d1da9"
 
 	sk := suite.Scalar().Pick(suite.RandomStream())

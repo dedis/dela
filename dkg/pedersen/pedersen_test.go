@@ -497,7 +497,8 @@ func decryptReencrypted(
 	XhatEnc kyber.Point,
 	dkgPk kyber.Point,
 	Sk kyber.Scalar,
-) (msg []byte, err error) {
+) ([]byte, error) {
+	var msg []byte
 
 	dela.Logger.Debug().Msgf("XhatEnc:%v", XhatEnc)
 	dela.Logger.Debug().Msgf("DKG pubK:%v", dkgPk)
@@ -535,5 +536,6 @@ func decryptReencrypted(
 		}
 		msg = append(msg, keyPart...)
 	}
-	return
+
+	return msg, nil
 }

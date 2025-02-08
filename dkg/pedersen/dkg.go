@@ -677,6 +677,9 @@ func (s *instance) doReshare(
 		s.startRes.init(start.GetAddrsNew(), start.GetPubkeysNew(), start.GetTNew())
 
 		expectedResponses = (start.GetTNew() - 1) * start.GetTOld()
+
+	default:
+		return xerrors.New("unknown node type")
 	}
 
 	// All nodes should certify.

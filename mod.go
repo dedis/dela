@@ -112,11 +112,13 @@ var Logger = zerolog.New(consoleOut).Level(defaultLevel).
 type promHook struct{}
 
 // Run implements zerolog.Hook
-func (promHook) Run(e *zerolog.Event, level zerolog.Level, message string) {
+func (promHook) Run(_ *zerolog.Event, level zerolog.Level, _ string) {
 	switch level {
 	case zerolog.WarnLevel:
 		promWarns.Inc()
 	case zerolog.ErrorLevel:
 		promErrs.Inc()
+	default:
+		return
 	}
 }
