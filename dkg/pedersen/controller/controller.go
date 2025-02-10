@@ -128,7 +128,7 @@ func (m minimal) SetCommands(builder node.Builder) {
 }
 
 // OnStart implements node.Initializer. It creates and registers a pedersen DKG.
-func (m minimal) OnStart(ctx cli.Flags, inj node.Injector) error {
+func (m minimal) OnStart(_ cli.Flags, inj node.Injector) error {
 	var no mino.Mino
 	err := inj.Resolve(&no)
 	if err != nil {

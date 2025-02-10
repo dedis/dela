@@ -349,8 +349,8 @@ type fakeConnection struct {
 }
 
 func (conn fakeConnection) Invoke(
-	ctx context.Context, m string, arg interface{},
-	resp interface{}, opts ...grpc.CallOption,
+	_ context.Context, _ string, _ interface{},
+	resp interface{}, _ ...grpc.CallOption,
 ) error {
 
 	if conn.empty {
@@ -371,8 +371,8 @@ func (conn fakeConnection) Invoke(
 }
 
 func (conn fakeConnection) NewStream(
-	ctx context.Context, desc *grpc.StreamDesc,
-	m string, opts ...grpc.CallOption,
+	ctx context.Context, _ *grpc.StreamDesc,
+	_ string, _ ...grpc.CallOption,
 ) (grpc.ClientStream, error) {
 
 	ch := make(chan *ptypes.Packet, 1)

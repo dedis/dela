@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	opentracing "github.com/opentracing/opentracing-go"
-	_ "github.com/uber/jaeger-client-go"
 	jaegercfg "github.com/uber/jaeger-client-go/config"
 	"golang.org/x/xerrors"
 )

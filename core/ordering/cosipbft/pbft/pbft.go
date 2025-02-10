@@ -368,7 +368,7 @@ func (m *pbftsm) Commit(id types.Digest, sig crypto.Signature) error {
 
 // Finalize implements pbft.StateMachine. It makes sure the commit signature is
 // correct and then moves to the initial state.
-func (m *pbftsm) Finalize(id types.Digest, sig crypto.Signature) error {
+func (m *pbftsm) Finalize(_ types.Digest, sig crypto.Signature) error {
 	m.Lock()
 	defer m.Unlock()
 

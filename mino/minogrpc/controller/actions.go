@@ -35,7 +35,10 @@ func (a certAction) Execute(req node.Context) error {
 		return xerrors.Errorf("couldn't resolve: %v", err)
 	}
 
-	m.GetCertificateStore().Range(func(addr mino.Address, chain certs.CertChain) bool {
+	m.GetCertificateStore().Range(func(
+		addr mino.Address,
+		chain certs.CertChain,
+	) bool { //nolint:errcheck
 		buff, _ := addr.MarshalText()
 		addrB64 := base64.StdEncoding.EncodeToString(buff)
 
@@ -49,7 +52,8 @@ func (a certAction) Execute(req node.Context) error {
 			certStr[i] = hex.EncodeToString(c.Raw[:8]) + "..."
 		}
 
-		fmt.Fprintf(req.Out, "Address: %v (%s) Certificate: %s\n", addr, addrB64, strings.Join(certStr, "<-"))
+		fmt.Fprintf(req.Out, "Address: %v (%s) Certificate: %s\n", addr, addrB64,
+			strings.Join(certStr, "<-"))
 		return true
 	})
 

@@ -10,7 +10,7 @@ import (
 	"go.dedis.ch/dela/core/store"
 )
 
-func TestSetCommands(t *testing.T) {
+func TestSetCommands(_ *testing.T) {
 	ctrl := NewController()
 	ctrl.SetCommands(nil)
 }
@@ -20,13 +20,15 @@ func TestOnStart(t *testing.T) {
 
 	injector := node.NewInjector()
 	err := ctrl.OnStart(node.FlagSet{}, injector)
-	require.EqualError(t, err, "failed to resolve access service: couldn't find dependency for 'access.Service'")
+	require.EqualError(t, err,
+		"failed to resolve access service: couldn't find dependency for 'access.Service'")
 
 	access := fakeAccess{}
 	injector.Inject(&access)
 
 	err = ctrl.OnStart(node.FlagSet{}, injector)
-	require.EqualError(t, err, "failed to resolve native service: couldn't find dependency for '*native.Service'")
+	require.EqualError(t, err,
+		"failed to resolve native service: couldn't find dependency for '*native.Service'")
 
 	native := native.NewExecution()
 	injector.Inject(native)

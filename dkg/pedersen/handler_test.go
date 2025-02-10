@@ -83,8 +83,8 @@ func (f fakeHandler) isRunning() bool {
 }
 
 func (f fakeHandler) handleMessage(
-	ctx context.Context, msg serde.Message,
-	from mino.Address, out mino.Sender,
+	_ context.Context, _ serde.Message,
+	_ mino.Address, _ mino.Sender,
 ) error {
 
 	return f.err
@@ -94,6 +94,6 @@ type eofReceiver struct {
 	mino.Receiver
 }
 
-func (r *eofReceiver) Recv(ctx context.Context) (mino.Address, serde.Message, error) {
+func (r *eofReceiver) Recv(_ context.Context) (mino.Address, serde.Message, error) {
 	return nil, nil, io.EOF
 }

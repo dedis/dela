@@ -248,7 +248,7 @@ func (sync fakeSync) GetLatest() uint64 {
 	return sync.latest
 }
 
-func (sync fakeSync) Sync(ctx context.Context, players mino.Players, cfg blocksync.Config) error {
+func (sync fakeSync) Sync(_ context.Context, _ mino.Players, _ blocksync.Config) error {
 	return sync.err
 }
 
@@ -262,7 +262,7 @@ func (snap fakeSnapshot) Get(_ []byte) ([]byte, error) {
 	return []byte{}, snap.err
 }
 
-func (snap fakeSnapshot) Set(_ []byte, value []byte) error {
+func (snap fakeSnapshot) Set(_ []byte, _ []byte) error {
 	return snap.err
 }
 

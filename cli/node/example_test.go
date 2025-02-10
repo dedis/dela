@@ -89,7 +89,7 @@ func (exampleController) SetCommands(builder Builder) {
 }
 
 // OnStart implements node.Initializer. It injects the hello component.
-func (exampleController) OnStart(flags cli.Flags, inj Injector) error {
+func (exampleController) OnStart(_ cli.Flags, inj Injector) error {
 	inj.Inject(simpleHello{})
 
 	return nil

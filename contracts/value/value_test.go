@@ -191,7 +191,7 @@ func TestInfoLog(t *testing.T) {
 	require.Equal(t, 2, n)
 }
 
-func TestRegisterContract(t *testing.T) {
+func TestRegisterContract(_ *testing.T) {
 	RegisterContract(native.NewExecution(), Contract{})
 }
 

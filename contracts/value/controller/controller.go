@@ -21,11 +21,11 @@ func NewController() node.Initializer {
 }
 
 // SetCommands implements node.Initializer.
-func (miniController) SetCommands(builder node.Builder) {
+func (miniController) SetCommands(_ node.Builder) {
 }
 
 // OnStart implements node.Initializer. It registers the value contract.
-func (m miniController) OnStart(flags cli.Flags, inj node.Injector) error {
+func (m miniController) OnStart(_ cli.Flags, inj node.Injector) error {
 	var access access.Service
 	err := inj.Resolve(&access)
 	if err != nil {
@@ -46,6 +46,6 @@ func (m miniController) OnStart(flags cli.Flags, inj node.Injector) error {
 }
 
 // OnStop implements node.Initializer.
-func (miniController) OnStop(inj node.Injector) error {
+func (miniController) OnStop(_ node.Injector) error {
 	return nil
 }

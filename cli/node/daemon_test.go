@@ -39,7 +39,7 @@ func TestSocketClient_Send(t *testing.T) {
 func TestSocketClient_FailDial_Send(t *testing.T) {
 	client := socketClient{
 		socketpath: "",
-		dialFn: func(network, addr string, timeout time.Duration) (net.Conn, error) {
+		dialFn: func(_, _ string, _ time.Duration) (net.Conn, error) {
 			return nil, fake.GetError()
 		},
 	}
@@ -50,7 +50,7 @@ func TestSocketClient_FailDial_Send(t *testing.T) {
 
 func TestSocketClient_BadOutConn_Send(t *testing.T) {
 	client := socketClient{
-		dialFn: func(network, addr string, timeout time.Duration) (net.Conn, error) {
+		dialFn: func(_, _ string, timeout time.Duration) (net.Conn, error) {
 			return badConn{}, nil
 		},
 	}
@@ -61,7 +61,7 @@ func TestSocketClient_BadOutConn_Send(t *testing.T) {
 
 func TestSocketClient_BadInConn_Send(t *testing.T) {
 	client := socketClient{
-		dialFn: func(network, addr string, timeout time.Duration) (net.Conn, error) {
+		dialFn: func(_, _ string, timeout time.Duration) (net.Conn, error) {
 			return badConn{counter: fake.NewCounter(1)}, nil
 		},
 	}
@@ -154,7 +154,7 @@ func TestSocketDaemon_ConnectivityTest_Listen(t *testing.T) {
 
 func TestSocketDaemon_FailBindSocket_Listen(t *testing.T) {
 	daemon := &socketDaemon{
-		listenFn: func(network, addr string) (net.Listener, error) {
+		listenFn: func(_, _ string) (net.Listener, error) {
 			return nil, fake.GetError()
 		},
 	}
@@ -307,7 +307,7 @@ type fakeContext struct {
 	path string
 }
 
-func (ctx fakeContext) Path(name string) string {
+func (ctx fakeContext) Path(_ string) string {
 	return ctx.path
 }
 
@@ -335,7 +335,7 @@ func (conn badConn) Write(data []byte) (int, error) {
 	return 0, fake.GetError()
 }
 
-func (badConn) SetReadDeadline(t time.Time) error {
+func (badConn) SetReadDeadline(_ time.Time) error {
 	return nil
 }
 

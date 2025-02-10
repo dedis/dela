@@ -275,7 +275,7 @@ type fakeTxManager struct {
 	errSync error
 }
 
-func (mgr fakeTxManager) Make(args ...txn.Arg) (txn.Transaction, error) {
+func (mgr fakeTxManager) Make(_ ...txn.Arg) (txn.Transaction, error) {
 	return fakeTx{}, mgr.errMake
 }
 

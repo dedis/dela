@@ -141,7 +141,7 @@ func (o overlayServer) Join(ctx context.Context, req *ptypes.JoinRequest) (
 // Share implements ptypes.OverlayServer. It accepts a certificate from a
 // participant only if it is valid from the address it claims to be.
 func (o overlayServer) Share(
-	ctx context.Context,
+	_ context.Context,
 	msg *ptypes.CertificateChain,
 ) (*ptypes.CertificateAck, error) {
 	from := o.addrFactory.FromText(msg.GetAddress()).(session.Address)
@@ -822,8 +822,8 @@ func uriFromContext(ctx context.Context) string {
 // decorateClientTrace adds the protocol tag and the streamID tag to a client
 // side trace.
 func decorateClientTrace(
-	ctx context.Context, span opentracing.Span, method string,
-	req, resp interface{}, grpcError error,
+	ctx context.Context, span opentracing.Span, _ string,
+	_, _ interface{}, _ error,
 ) {
 	md, ok := metadata.FromOutgoingContext(ctx)
 	if !ok {

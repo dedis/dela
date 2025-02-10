@@ -9,6 +9,7 @@ package node
 import (
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -64,7 +65,7 @@ func (c socketClient) Send(data []byte) error {
 
 	for {
 		err = dec.Decode(&evt)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return nil
 		}
 		if err != nil {
@@ -153,7 +154,7 @@ func (d *socketDaemon) handleConn(conn net.Conn) {
 	conn.SetReadDeadline(time.Now().Add(d.readTimeout))
 
 	_, err := conn.Read(buffer)
-	if err == io.EOF {
+	if errors.Is(err, io.EOF) {
 		// Connection closed upfront so it does not need further handling. This
 		// happens for instance when testing the connectivity of the daemon.
 		return

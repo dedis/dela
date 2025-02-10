@@ -15,11 +15,12 @@ func TestPool_Len(t *testing.T) {
 	p := NewPool()
 	require.Equal(t, 0, p.Stats().TxCount)
 
-	p.gatherer.Add(fakeTx{})
+	err := p.gatherer.Add(fakeTx{})
+	require.NoError(t, err)
 	require.Equal(t, 1, p.Stats().TxCount)
 }
 
-func TestPool_AddFilter(t *testing.T) {
+func TestPool_AddFilter(_ *testing.T) {
 	p := NewPool()
 
 	p.AddFilter(nil)
@@ -117,10 +118,10 @@ type badGatherer struct {
 	pool.Gatherer
 }
 
-func (g badGatherer) Add(tx txn.Transaction) error {
+func (g badGatherer) Add(_ txn.Transaction) error {
 	return fake.GetError()
 }
 
-func (g badGatherer) Remove(tx txn.Transaction) error {
+func (g badGatherer) Remove(_ txn.Transaction) error {
 	return fake.GetError()
 }

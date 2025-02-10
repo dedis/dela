@@ -54,12 +54,12 @@ func (miniController) SetCommands(builder node.Builder) {
 }
 
 // OnStart implements node.Initializer
-func (m miniController) OnStart(flags cli.Flags, inj node.Injector) error {
+func (m miniController) OnStart(_ cli.Flags, inj node.Injector) error {
 	return nil
 }
 
 // OnStop implements node.Initializer
-func (miniController) OnStop(inj node.Injector) error {
+func (miniController) OnStop(_ node.Injector) error {
 	return nil
 }
 

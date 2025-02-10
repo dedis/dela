@@ -43,7 +43,7 @@ func TestTraffic_Integration(t *testing.T) {
 ---- To: [fake.Address[1]]
 --- context: test
 -- item:
---- typeStr: send
+--- typeStr: sent
 --- node: fake.Address[0]
 --- gateway: fake.Address[2]
 --- msg: (type traffic.fakePacket) fakePacket

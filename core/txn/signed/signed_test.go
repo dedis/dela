@@ -164,7 +164,8 @@ func TestManager_Make(t *testing.T) {
 
 	tx, err := mgr.Make(txn.Arg{Key: "a", Value: []byte{1, 2, 3}})
 	require.NoError(t, err)
-	require.Equal(t, uint64(0), tx.(*Transaction).nonce)
+	require.Equal(t, uint64(0),
+		tx.(*Transaction).nonce) //nolint:errcheck // Error return value is not checked
 	require.Equal(t, []byte{1, 2, 3}, tx.GetArg("a"))
 
 	mgr.hashFac = fake.NewHashFactory(fake.NewBadHash())

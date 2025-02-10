@@ -55,6 +55,6 @@ type exampleClient struct {
 
 // GetNonce implements signed.Client. It always return the same nonce for
 // simplicity.
-func (cl exampleClient) GetNonce(identity access.Identity) (uint64, error) {
+func (cl exampleClient) GetNonce(_ access.Identity) (uint64, error) {
 	return *cl.nonce, nil
 }

@@ -14,7 +14,7 @@ import (
 	"go.dedis.ch/dela/testing/fake"
 )
 
-func TestMinimal_SetCommands(t *testing.T) {
+func TestMinimal_SetCommands(_ *testing.T) {
 	m := NewController()
 
 	b := node.NewBuilder()

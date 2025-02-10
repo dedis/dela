@@ -79,7 +79,8 @@ func (a *Actor) Reencrypt(K kyber.Point, pubk kyber.Point) (XhatEnc kyber.Point,
 		if err == nil {
 			dela.Logger.Debug().Msgf("Reencryption Uis: %v", status.Uis)
 
-			XhatEnc, err := share.RecoverCommit(suites.MustFind("Ed25519"), status.Uis, status.threshold, status.nbnodes)
+			XhatEnc, err := share.RecoverCommit(suites.MustFind("Ed25519"), status.Uis,
+				status.threshold, status.nbnodes)
 			if err != nil {
 				return nil, xerrors.Errorf("Reencryption failed: %v", err)
 			}
@@ -93,7 +94,7 @@ func (a *Actor) Reencrypt(K kyber.Point, pubk kyber.Point) (XhatEnc kyber.Point,
 }
 
 func (s *reencryptStatus) processReencryptReply(reply *types.ReencryptReply) (err error) {
-	if reply.Ui == nil {
+	if reply.UI == nil {
 		err = xerrors.Errorf("Received empty reply")
 		dela.Logger.Warn().Msg("Empty reply received")
 		s.nbfailures++
@@ -129,7 +130,7 @@ func (s *reencryptStatus) processReencryptReply(reply *types.ReencryptReply) (er
 				if e.Equal(r.Ei) {
 
 			*/
-			s.Uis = append(s.Uis, r.Ui)
+			s.Uis = append(s.Uis, r.UI)
 			/*
 				}
 				else
@@ -153,12 +154,4 @@ func (s *reencryptStatus) processReencryptReply(reply *types.ReencryptReply) (er
 	err = xerrors.Errorf("not enough replies")
 	dela.Logger.Debug().Msg(err.Error())
 	return err
-}
-
-// min is a helper functions
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

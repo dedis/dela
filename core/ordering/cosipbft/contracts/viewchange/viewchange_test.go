@@ -15,7 +15,7 @@ import (
 	"go.dedis.ch/dela/testing/fake"
 )
 
-func TestRegisterContract(t *testing.T) {
+func TestRegisterContract(_ *testing.T) {
 	srvc := native.NewExecution()
 
 	RegisterContract(srvc, Contract{})
@@ -101,11 +101,11 @@ type fakeStore struct {
 	errSet error
 }
 
-func (snap fakeStore) Get(key []byte) ([]byte, error) {
+func (snap fakeStore) Get(_ []byte) ([]byte, error) {
 	return []byte("[{}]"), snap.errGet
 }
 
-func (snap fakeStore) Set(key, value []byte) error {
+func (snap fakeStore) Set(_, _ []byte) error {
 	return snap.errSet
 }
 
@@ -135,7 +135,7 @@ type badManager struct {
 	txn.Manager
 }
 
-func (badManager) Make(opts ...txn.Arg) (txn.Transaction, error) {
+func (badManager) Make(_ ...txn.Arg) (txn.Transaction, error) {
 	return nil, fake.GetError()
 }
 

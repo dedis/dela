@@ -174,12 +174,12 @@ type Handler interface {
 type UnsupportedHandler struct{}
 
 // Process is the default implementation for a handler. It will return an error.
-func (h UnsupportedHandler) Process(req Request) (serde.Message, error) {
+func (h UnsupportedHandler) Process(_ Request) (serde.Message, error) {
 	return nil, errors.New("rpc is not supported")
 }
 
 // Stream is the default implementation for a handler. It will return an error.
-func (h UnsupportedHandler) Stream(in Sender, out Receiver) error {
+func (h UnsupportedHandler) Stream(_ Sender, _ Receiver) error {
 	return errors.New("stream is not supported")
 }
 

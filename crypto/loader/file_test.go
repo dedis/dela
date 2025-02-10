@@ -50,7 +50,7 @@ func TestFileLoader_FailCreateFile_LoadOrCreate(t *testing.T) {
 	loader := fileLoader{
 		path:   "",
 		statFn: statNotExists,
-		openFileFn: func(path string, flags int, perms os.FileMode) (*os.File, error) {
+		openFileFn: func(_ string, _ int, _ os.FileMode) (*os.File, error) {
 			return nil, fake.GetError()
 		},
 	}
@@ -63,7 +63,7 @@ func TestFileLoader_FailWriteFile_LoadOrCreate(t *testing.T) {
 	loader := fileLoader{
 		path:   "",
 		statFn: statNotExists,
-		openFileFn: func(path string, flags int, perms os.FileMode) (*os.File, error) {
+		openFileFn: func(_ string, _ int, _ os.FileMode) (*os.File, error) {
 			return os.NewFile(0, ""), nil
 		},
 	}
@@ -77,7 +77,7 @@ func TestFileLoader_FailOpenFile_LoadOrCreate(t *testing.T) {
 	loader := fileLoader{
 		path:   "",
 		statFn: statExists,
-		openFn: func(path string) (*os.File, error) {
+		openFn: func(_ string) (*os.File, error) {
 			return nil, fake.GetError()
 		},
 	}
@@ -90,7 +90,7 @@ func TestFileLoader_FailReadFile_LoadOrCreate(t *testing.T) {
 	loader := fileLoader{
 		path:   "",
 		statFn: statExists,
-		openFn: func(path string) (*os.File, error) {
+		openFn: func(_ string) (*os.File, error) {
 			return os.Open(os.TempDir())
 		},
 	}
@@ -103,11 +103,11 @@ func TestFileLoader_FailReadFile_LoadOrCreate(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-func statNotExists(path string) (os.FileInfo, error) {
+func statNotExists(_ string) (os.FileInfo, error) {
 	return nil, os.ErrNotExist
 }
 
-func statExists(path string) (os.FileInfo, error) {
+func statExists(_ string) (os.FileInfo, error) {
 	return nil, nil
 }
 

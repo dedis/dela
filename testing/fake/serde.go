@@ -63,7 +63,7 @@ func NewBadMessageFactory() MessageFactory {
 }
 
 // Deserialize implements serde.Factory.
-func (f MessageFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+func (f MessageFactory) Deserialize(_ serde.Context, _ []byte) (serde.Message, error) {
 	return Message{}, f.err
 }
 
@@ -105,7 +105,7 @@ func NewMsgFormat() MessageFormat {
 }
 
 // Encode implements serde.FormatEngine.
-func (f MessageFormat) Encode(ctx serde.Context, m serde.Message) ([]byte, error) {
+func (f MessageFormat) Encode(ctx serde.Context, _ serde.Message) ([]byte, error) {
 	return Message{}.Serialize(ctx)
 }
 

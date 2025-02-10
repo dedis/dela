@@ -27,9 +27,9 @@ func ExampleService_Grant_alone() {
 	err = srvc.Match(store, credential, alice.GetPublicKey())
 	if err != nil {
 		panic("alice has no access: " + err.Error())
-	} else {
-		fmt.Println("Alice has the access")
 	}
+
+	fmt.Println("Alice has the access")
 
 	err = srvc.Match(store, credential, bob.GetPublicKey())
 	if err != nil {
@@ -58,9 +58,9 @@ func ExampleService_Grant_group() {
 	err = srvc.Match(store, credential, alice.GetPublicKey(), bob.GetPublicKey())
 	if err != nil {
 		panic("alice and bob have no access: " + err.Error())
-	} else {
-		fmt.Println("[Alice, Bob] have the access")
 	}
+
+	fmt.Println("[Alice, Bob] have the access")
 
 	err = srvc.Match(store, credential, alice.GetPublicKey())
 	if err != nil {

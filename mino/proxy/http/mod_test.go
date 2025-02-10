@@ -98,6 +98,6 @@ func TestGetAddr_Nil(t *testing.T) {
 	require.Nil(t, proxy.GetAddr())
 }
 
-func fakeHandler(w http.ResponseWriter, r *http.Request) {
+func fakeHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Write([]byte("hello"))
 }

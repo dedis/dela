@@ -13,7 +13,7 @@ import (
 )
 
 func TestSimpleGatherer_Len(t *testing.T) {
-	gatherer := NewSimpleGatherer().(*simpleGatherer)
+	gatherer := NewSimpleGatherer().(*simpleGatherer) //nolint:errcheck
 	require.Equal(t, 0, gatherer.Stats().TxCount)
 
 	gatherer.txs["Alice"] = transactions{emptyTx()}
@@ -24,7 +24,7 @@ func TestSimpleGatherer_Len(t *testing.T) {
 }
 
 func TestSimpleGatherer_Add(t *testing.T) {
-	gatherer := NewSimpleGatherer().(*simpleGatherer)
+	gatherer := NewSimpleGatherer().(*simpleGatherer) //nolint:errcheck
 	gatherer.AddFilter(nil)
 	gatherer.AddFilter(fakeFilter{})
 
@@ -55,7 +55,7 @@ func TestSimpleGatherer_Add(t *testing.T) {
 }
 
 func TestSimpleGatherer_Remove(t *testing.T) {
-	gatherer := NewSimpleGatherer().(*simpleGatherer)
+	gatherer := NewSimpleGatherer().(*simpleGatherer) //nolint:errcheck
 	gatherer.txs["Alice"] = transactions{newTx(0, "Alice"), newTx(1, "Alice")}
 
 	err := gatherer.Remove(newTx(0, "Alice"))
@@ -75,7 +75,7 @@ func TestSimpleGatherer_Remove(t *testing.T) {
 }
 
 func TestSimpleGatherer_Wait(t *testing.T) {
-	gatherer := NewSimpleGatherer().(*simpleGatherer)
+	gatherer := NewSimpleGatherer().(*simpleGatherer) //nolint:errcheck
 
 	ctx := context.Background()
 
@@ -101,7 +101,7 @@ func TestSimpleGatherer_Wait(t *testing.T) {
 }
 
 func TestSimpleGatherer_Close(t *testing.T) {
-	gatherer := NewSimpleGatherer().(*simpleGatherer)
+	gatherer := NewSimpleGatherer().(*simpleGatherer) //nolint:errcheck
 
 	require.NoError(t, gatherer.Add(newTx(0, "Alice")))
 	require.NoError(t, gatherer.Add(newTx(1, "Alice")))

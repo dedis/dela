@@ -40,7 +40,7 @@ func TestOnStart(t *testing.T) {
 	injector.Inject(native)
 
 	oldStore := newStore
-	newStore = func(path string) (accessStore, error) {
+	newStore = func(_ string) (accessStore, error) {
 		return nil, fake.GetError()
 	}
 
@@ -109,9 +109,9 @@ type fakeAccess struct {
 }
 
 func (a fakeAccess) Grant(
-	store store.Snapshot,
-	creds access.Credential,
-	idents ...access.Identity,
+	_ store.Snapshot,
+	_ access.Credential,
+	_ ...access.Identity,
 ) error {
 	return a.err
 }

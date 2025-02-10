@@ -224,7 +224,7 @@ func setupChain(t *testing.T, nodes []string, ports []uint16) {
 	require.NoError(t, err)
 }
 
-func waitDaemon(t *testing.T, daemons []string) bool {
+func waitDaemon(_ *testing.T, daemons []string) bool {
 	num := 50
 
 	for _, daemon := range daemons {

@@ -75,6 +75,6 @@ func (m miniController) OnStart(flags cli.Flags, inj node.Injector) error {
 }
 
 // OnStop implements node.Initializer.
-func (miniController) OnStop(inj node.Injector) error {
+func (miniController) OnStop(_ node.Injector) error {
 	return nil
 }

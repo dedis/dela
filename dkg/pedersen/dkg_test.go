@@ -1105,7 +1105,7 @@ func (s fakeDKGService) Deals() (map[int]*pedersen.Deal, error) {
 	return s.deals, s.dealsErr
 }
 
-func (s fakeDKGService) ProcessResponse(resp *pedersen.Response) (*pedersen.Justification, error) {
+func (s fakeDKGService) ProcessResponse(_ *pedersen.Response) (*pedersen.Justification, error) {
 	return nil, s.respoErr
 }
 
@@ -1117,13 +1117,13 @@ func (s fakeDKGService) DistKeyShare() (*pedersen.DistKeyShare, error) {
 	return s.distKeyShare, s.shareErr
 }
 
-func (s fakeDKGService) ProcessDeal(dd *pedersen.Deal) (*pedersen.Response, error) {
+func (s fakeDKGService) ProcessDeal(_ *pedersen.Deal) (*pedersen.Response, error) {
 	return nil, s.processErr
 }
 
 type blockingSender struct {
 }
 
-func (blockingSender) Send(msg serde.Message, addrs ...mino.Address) <-chan error {
+func (blockingSender) Send(msg serde.Message, _ ...mino.Address) <-chan error {
 	return make(<-chan error)
 }

@@ -45,14 +45,14 @@ func TestAddressFactory_FromText(t *testing.T) {
 		factory := AddressFactory{}
 		addr := factory.FromText([]byte(id))
 
-		return addr.(address).id == id
+		return addr.(address).id == id //nolint:errcheck
 	}
 
 	err := quick.Check(f, nil)
 	require.NoError(t, err)
 }
 
-//------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------
 // Utility functions
 
 type fakeAddress struct {

@@ -54,7 +54,8 @@ func TestMessageFormat_EncodeStartResharing(t *testing.T) {
 
 	data, err := format.Encode(ctx, start)
 	require.NoError(t, err)
-	regexp := `{"StartResharing":{"TNew":1,"TOld":1,"AddrsNew":\["AAAAAA=="\],"AddrsOld":\["AQAAAA=="\],"PubkeysNew":\["[^"]+"\],"PubkeysOld":\["[^"]+"\]}}`
+	regexp := `{"StartResharing":{"TNew":1,"TOld":1,"AddrsNew":\["AAAAAA=="\],` +
+		`"AddrsOld":\["AQAAAA=="\],"PubkeysNew":\["[^"]+"\],"PubkeysOld":\["[^"]+"\]}}`
 	require.Regexp(t, regexp, string(data))
 
 	start = types.NewStartResharing(1, 1, []mino.Address{fake.NewBadAddress()}, nil, nil, nil)
@@ -84,7 +85,8 @@ func TestMessageFormat_EncodeEncryptDeal(t *testing.T) {
 
 	data, err := format.Encode(ctx, deal)
 	require.NoError(t, err)
-	expected := `{"Deal":{"Index":1,"Signature":"AQ==","EncryptedDeal":{"DHKey":"","Signature":"","Nonce":"","Cipher":""}}}`
+	expected := `{"Deal":{"Index":1,"Signature":"AQ==","EncryptedDeal":` +
+		`{"DHKey":"","Signature":"","Nonce":"","Cipher":""}}}`
 	require.Equal(t, expected, string(data))
 }
 
@@ -95,7 +97,8 @@ func TestMessageFormat_EncodeReshare(t *testing.T) {
 
 	data, err := format.Encode(ctx, reshare)
 	require.NoError(t, err)
-	regexp := `{"Reshare":{"Deal":{"Index":0,"Signature":"","EncryptedDeal":{"DHKey":"","Signature":"","Nonce":"","Cipher":""}},"PublicCoeff":\["[^"]+"\]}}`
+	regexp := `{"Reshare":{"Deal":{"Index":0,"Signature":"","EncryptedDeal":` +
+		`{"DHKey":"","Signature":"","Nonce":"","Cipher":""}},"PublicCoeff":\["[^"]+"\]}}`
 	require.Regexp(t, regexp, string(data))
 
 	reshare = types.NewReshare(types.Deal{}, []kyber.Point{badPoint{}})
@@ -112,7 +115,8 @@ func TestMessageFormat_EncodeDealerResponse(t *testing.T) {
 
 	data, err := format.Encode(ctx, resp)
 	require.NoError(t, err)
-	expected := `{"Response":{"Index":1,"Response":{"SessionID":"","Index":0,"Status":false,"Signature":""}}}`
+	expected := `{"Response":{"Index":1,"Response":{"SessionID":"",` +
+		`"Index":0,"Status":false,"Signature":""}}}`
 	require.Equal(t, expected, string(data))
 }
 
@@ -169,7 +173,8 @@ func TestMessageFormat_EncodeVerifiableDecryptRequest(t *testing.T) {
 
 	data, err := format.Encode(ctx, req)
 	require.NoError(t, err)
-	regexp := `{"VerifiableDecryptRequest":{"Ciphertexts":\[{"K":"[^"]+","C":"[^"]+","UBar":"[^"]+","E":"[^"]+","F":"[^"]+","GBar":"[^"]+"}\]}}`
+	regexp := `{"VerifiableDecryptRequest":{"Ciphertexts":\[{"K":"[^"]+","C":"[^"]+",` +
+		`"UBar":"[^"]+","E":"[^"]+","F":"[^"]+","GBar":"[^"]+"}\]}}`
 	require.Regexp(t, regexp, string(data))
 
 	check := func(attr string, ct types.Ciphertext) func(t *testing.T) {
@@ -237,7 +242,7 @@ func TestMessageFormat_EncodeReencryptReply(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Regexp(t,
-		`{"ReencryptReply":{"PubK":"[^"]+","UiI":12358,"UiV":"[^"]+","Ei":"[^"]+","Fi":"[^"]+"}}`,
+		`{"ReencryptReply":{"PubK":"[^"]+","UII":12358,"UIV":"[^"]+","Ei":"[^"]+","Fi":"[^"]+"}}`,
 		string(data))
 
 	resp.PubK = badPoint{}
@@ -250,7 +255,7 @@ func TestMessageFormat_EncodeVerifiableDecryptReply(t *testing.T) {
 		{
 			V:  suite.Point(),
 			I:  int64(1321),
-			Ui: suite.Point(),
+			UI: suite.Point(),
 			Ei: suite.Scalar(),
 			Fi: suite.Scalar(),
 			Hi: suite.Point(),
@@ -262,7 +267,8 @@ func TestMessageFormat_EncodeVerifiableDecryptReply(t *testing.T) {
 
 	data, err := format.Encode(ctx, req)
 	require.NoError(t, err)
-	regexp := `{"VerifiableDecryptReply":{"Sp":\[{"V":"[^"]+","I":1321,"Ui":"[^"]+","Ei":"[^"]+","Fi":"[^"]+","Hi":"[^"]+"}\]}}`
+	regexp := `{"VerifiableDecryptReply":{"Sp":\[{"V":"[^"]+","I":1321,"UI":"[^"]+",` +
+		`"Ei":"[^"]+","Fi":"[^"]+","Hi":"[^"]+"}\]}}`
 	require.Regexp(t, regexp, string(data))
 
 	check := func(attr string, sp types.ShareAndProof) func(t *testing.T) {
@@ -275,18 +281,18 @@ func TestMessageFormat_EncodeVerifiableDecryptReply(t *testing.T) {
 	}
 
 	t.Run("V", check("V", types.ShareAndProof{V: badPoint{}}))
-	t.Run("Ui", check("U_i", types.ShareAndProof{V: suite.Point(), Ui: badPoint{}}))
+	t.Run("Ui", check("U_i", types.ShareAndProof{V: suite.Point(), UI: badPoint{}}))
 	t.Run("Ei",
-		check("E_i", types.ShareAndProof{V: suite.Point(), Ui: suite.Point(), Ei: badScallar{}}))
+		check("E_i", types.ShareAndProof{V: suite.Point(), UI: suite.Point(), Ei: badScallar{}}))
 	t.Run("Fi", check("F_i", types.ShareAndProof{
 		V:  suite.Point(),
-		Ui: suite.Point(),
+		UI: suite.Point(),
 		Ei: suite.Scalar(),
 		Fi: badScallar{},
 	}))
 	t.Run("Hi", check("H_i", types.ShareAndProof{
 		V:  suite.Point(),
-		Ui: suite.Point(),
+		UI: suite.Point(),
 		Ei: suite.Scalar(),
 		Fi: suite.Scalar(),
 		Hi: badPoint{},
@@ -421,34 +427,40 @@ func TestMessageFormat_DecodeReencryptReply(t *testing.T) {
 	format := newMsgFormat()
 	ctx := serde.NewContext(fake.ContextEngine{})
 
-	data := []byte(fmt.Sprintf(`{"ReencryptReply":{"Pubk":"%s","UiI":13,"UiV":"%s","Ei":"%s","Fi":"%s"}}`,
+	data := []byte(fmt.Sprintf(`{"ReencryptReply":{"Pubk":"%s","UiI":13,"UiV":"%s",`+
+		`"Ei":"%s","Fi":"%s"}}`,
 		testPoint, testPoint, testPoint, testPoint))
 	reply, err := format.Decode(ctx, data)
 	require.NoError(t, err)
 	require.IsType(t, types.ReencryptReply{}, reply)
 
-	data = []byte(fmt.Sprintf(`{"ReencryptReply":{"Pubk":[],"UiI":13,"UiV":"%s","Ei":"%s","Fi":"%s"}}`,
+	data = []byte(fmt.Sprintf(`{"ReencryptReply":{"Pubk":[],"UiI":13,"UiV":"%s",`+
+		`"Ei":"%s","Fi":"%s"}}`,
 		testPoint, testPoint, testPoint))
 	_, err = format.Decode(ctx, data)
 	require.ErrorContains(t, err, "couldn't unmarshal PubK")
 
-	data = []byte(fmt.Sprintf(`{"ReencryptReply":{"Pubk":"%s","UiI":"0","UiV":"%s","Ei":"%s","Fi":"%s"}}`,
+	data = []byte(fmt.Sprintf(`{"ReencryptReply":{"Pubk":"%s","UiI":"0","UiV":"%s",`+
+		`"Ei":"%s","Fi":"%s"}}`,
 		testPoint, testPoint, testPoint, testPoint))
 	_, err = format.Decode(ctx, data)
 	require.ErrorContains(t, err, "json: cannot unmarshal string into")
 	require.ErrorContains(t, err, "of type int")
 
-	data = []byte(fmt.Sprintf(`{"ReencryptReply":{"Pubk":"%s","UiI":13,"UiV":[],"Ei":"%s","Fi":"%s"}}`,
+	data = []byte(fmt.Sprintf(`{"ReencryptReply":{"Pubk":"%s","UiI":13,"UiV":[],`+
+		`"Ei":"%s","Fi":"%s"}}`,
 		testPoint, testPoint, testPoint))
 	_, err = format.Decode(ctx, data)
 	require.ErrorContains(t, err, "couldn't unmarshal UiV")
 
-	data = []byte(fmt.Sprintf(`{"ReencryptReply":{"Pubk":"%s","UiI":13,"UiV":"%s","Ei":[],"Fi":"%s"}}`,
+	data = []byte(fmt.Sprintf(`{"ReencryptReply":{"Pubk":"%s","UiI":13,"UiV":"%s",`+
+		`"Ei":[],"Fi":"%s"}}`,
 		testPoint, testPoint, testPoint))
 	_, err = format.Decode(ctx, data)
 	require.ErrorContains(t, err, "couldn't unmarshal Ei")
 
-	data = []byte(fmt.Sprintf(`{"ReencryptReply":{"Pubk":"%s","UiI":13,"UiV":"%s","Ei":"%s","Fi":[]}}`,
+	data = []byte(fmt.Sprintf(`{"ReencryptReply":{"Pubk":"%s","UiI":13,"UiV":"%s",`+
+		`"Ei":"%s","Fi":[]}}`,
 		testPoint, testPoint, testPoint))
 	_, err = format.Decode(ctx, data)
 	require.ErrorContains(t, err, "couldn't unmarshal Fi")
@@ -580,7 +592,7 @@ func TestMessageFormat_DecodeVerifiableDecryptReply(t *testing.T) {
 	sp := types.ShareAndProof{
 		V:  suite.Point().Pick(suite.RandomStream()),
 		I:  int64(0),
-		Ui: suite.Point(),
+		UI: suite.Point(),
 		Ei: suite.Scalar().Pick(suite.RandomStream()),
 		Fi: suite.Scalar(),
 		Hi: suite.Point(),

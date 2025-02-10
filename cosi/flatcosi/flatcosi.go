@@ -65,7 +65,7 @@ func (flat *Flat) GetVerifierFactory() crypto.VerifierFactory {
 
 // SetThreshold implements cosi.CollectiveSigning. It ignores the new threshold
 // as this implementation only accepts full participation.
-func (flat *Flat) SetThreshold(fn cosi.Threshold) {}
+func (flat *Flat) SetThreshold(_ cosi.Threshold) {}
 
 // Listen implements cosi.CollectiveSigning. It creates an actor that starts an
 // RPC called cosi and respond to signing requests. The actor can also be used
@@ -99,8 +99,10 @@ type flatActor struct {
 
 // Sign implements cosi.Actor. It returns the collective signature of the
 // message if every participant returns its signature.
-func (a flatActor) Sign(ctx context.Context, msg serde.Message,
-	ca crypto.CollectiveAuthority) (crypto.Signature, error) {
+func (a flatActor) Sign(
+	ctx context.Context, msg serde.Message,
+	ca crypto.CollectiveAuthority,
+) (crypto.Signature, error) {
 
 	verifier, err := a.signer.GetVerifierFactory().FromAuthority(ca)
 	if err != nil {
@@ -149,7 +151,10 @@ func (a flatActor) Sign(ctx context.Context, msg serde.Message,
 	}
 }
 
-func (a flatActor) processResponse(resp serde.Message, agg crypto.Signature) (crypto.Signature, error) {
+func (a flatActor) processResponse(resp serde.Message, agg crypto.Signature) (
+	crypto.Signature,
+	error,
+) {
 	reply, ok := resp.(cosi.SignatureResponse)
 	if !ok {
 		return nil, xerrors.Errorf("invalid response type '%T'", resp)

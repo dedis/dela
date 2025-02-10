@@ -138,7 +138,7 @@ func TestBoltBucket_ForEach(t *testing.T) {
 		require.NoError(t, b.Set([]byte{1}, []byte{1}))
 		require.NoError(t, b.Set([]byte{0}, []byte{0}))
 
-		var i byte = 0
+		var i byte
 		return b.ForEach(func(k, v []byte) error {
 			require.Equal(t, []byte{i}, k)
 			require.Equal(t, []byte{i}, v)
@@ -165,7 +165,7 @@ func TestBoltBucket_Scan(t *testing.T) {
 		require.NoError(t, b.Set([]byte{7}, []byte{7}))
 		require.NoError(t, b.Set([]byte{0}, []byte{0}))
 
-		var i byte = 0
+		var i byte
 		err = b.Scan(nil, func(k, v []byte) error {
 			require.Equal(t, []byte{i}, k)
 			require.Equal(t, []byte{i}, v)

@@ -329,7 +329,7 @@ func Test_Worker_BadProof(t *testing.T) {
 	sap := types.ShareAndProof{
 		V:  suite.Point(),
 		I:  0,
-		Ui: suite.Point(),
+		UI: suite.Point(),
 		Ei: suite.Scalar(),
 		Fi: suite.Scalar(),
 		Hi: suite.Point(),

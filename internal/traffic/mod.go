@@ -23,6 +23,11 @@ import (
 // EnvVariable is the name of the environment variable to enable the traffic.
 const EnvVariable = "MINO_TRAFFIC"
 
+const received = "received"
+const sent = "sent"
+const closed = "closed"
+const relayed = "relayed"
+
 //
 // Traffic is a utility to save network information. It can be useful for
 // debugging and to understand how the network works. Each server has an
@@ -163,7 +168,7 @@ func (t *Traffic) Save(path string, withSend, withRcv bool) error {
 func (t *Traffic) LogSend(ctx context.Context, gateway mino.Address, pkt router.Packet) {
 	GlobalWatcher.outWatcher.Notify(Event{Address: gateway, Pkt: pkt})
 
-	t.addItem(ctx, "send", gateway, pkt)
+	t.addItem(ctx, sent, gateway, pkt)
 }
 
 // LogRecv records a packet received by the node. The sender is the gateway and
@@ -171,17 +176,17 @@ func (t *Traffic) LogSend(ctx context.Context, gateway mino.Address, pkt router.
 func (t *Traffic) LogRecv(ctx context.Context, gateway mino.Address, pkt router.Packet) {
 	GlobalWatcher.inWatcher.Notify(Event{Address: gateway, Pkt: pkt})
 
-	t.addItem(ctx, "received", gateway, pkt)
+	t.addItem(ctx, received, gateway, pkt)
 }
 
 // LogRelay records a new relay.
 func (t *Traffic) LogRelay(to mino.Address) {
-	t.addEvent("relay", to)
+	t.addEvent(relayed, to)
 }
 
 // LogRelayClosed records the end of a relay.
 func (t *Traffic) LogRelayClosed(to mino.Address) {
-	t.addEvent("close", to)
+	t.addEvent(closed, to)
 }
 
 // Display prints the current traffic to the writer.
@@ -215,9 +220,9 @@ func (t *Traffic) addItem(ctx context.Context, typeStr string, gw mino.Address, 
 	}
 
 	switch typeStr {
-	case "received":
+	case received:
 		newItem.typeCounter = recvCounter.IncrementAndGet()
-	case "send":
+	case sent:
 		newItem.typeCounter = sendCounter.IncrementAndGet()
 	}
 
@@ -317,16 +322,16 @@ func GenerateItemsGraphviz(out io.Writer, withSend, withRcv bool, traffics ...*T
 	for _, traffic := range traffics {
 		for _, item := range traffic.items {
 
-			if !withSend && item.typeStr == "send" {
+			if !withSend && item.typeStr == sent {
 				continue
 			}
-			if !withRcv && item.typeStr == "received" {
+			if !withRcv && item.typeStr == received {
 				continue
 			}
 
 			color := "#4AB2FF"
 
-			if item.typeStr == "received" {
+			if item.typeStr == received {
 				color = "#A8A8A8"
 			}
 
@@ -374,7 +379,7 @@ func GenerateEventGraphviz(out io.Writer, traffics ...*Traffic) {
 
 			color := "#4AB2FF"
 
-			if event.typeStr == "close" {
+			if event.typeStr == closed {
 				color = "#A8A8A8"
 			}
 
@@ -444,7 +449,7 @@ func (o observer) NotifyCallback(event interface{}) {
 	}
 }
 
-// Event defines the elements of a receive or sent event
+// Event defines the elements of a received or sent event
 type Event struct {
 	Address mino.Address
 	Pkt     router.Packet

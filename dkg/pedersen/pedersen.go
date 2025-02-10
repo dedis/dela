@@ -332,8 +332,10 @@ func (a *Actor) Decrypt(K kyber.Point, Cs []kyber.Point) ([]byte, error) {
 // this person.
 //
 // See https://arxiv.org/pdf/2205.08529.pdf / section 5.4 Protocol / step 1
-func (a *Actor) VerifiableEncrypt(message []byte, GBar kyber.Point) (types.Ciphertext,
-	[]byte, error) {
+func (a *Actor) VerifiableEncrypt(message []byte, GBar kyber.Point) (
+	types.Ciphertext,
+	[]byte, error,
+) {
 
 	if !a.startRes.Done() {
 		return types.Ciphertext{}, nil, xerrors.Errorf(initDkgFirst)
@@ -342,12 +344,9 @@ func (a *Actor) VerifiableEncrypt(message []byte, GBar kyber.Point) (types.Ciphe
 	// Embed the message (or as much of it as will fit) into a curve point.
 	M := suite.Point().Embed(message, random.New())
 
-	max := suite.Point().EmbedLen()
-	if max > len(message) {
-		max = len(message)
-	}
+	maxMsgLen := min(suite.Point().EmbedLen(), len(message))
 
-	remainder := message[max:]
+	remainder := message[maxMsgLen:]
 
 	// ElGamal-encrypt the point to produce ciphertext (localK,localC).
 	localk := suite.Scalar().Pick(random.New())                  // ephemeral private key
@@ -479,8 +478,10 @@ func (a *Actor) VerifiableDecrypt(ciphertexts []types.Ciphertext) ([][]byte, err
 	return decryptedMessage, nil
 }
 
-func newWorker(numParticipants int, decryptedMessage [][]byte,
-	responses []types.VerifiableDecryptReply, ciphertexts []types.Ciphertext) worker {
+func newWorker(
+	numParticipants int, decryptedMessage [][]byte,
+	responses []types.VerifiableDecryptReply, ciphertexts []types.Ciphertext,
+) worker {
 
 	return worker{
 		numParticipants:  numParticipants,

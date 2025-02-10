@@ -291,7 +291,7 @@ func NewBadVerifierWithDelay(value int) Verifier {
 }
 
 // Verify implements crypto.Verifier.
-func (v Verifier) Verify(msg []byte, s crypto.Signature) error {
+func (v Verifier) Verify(_ []byte, _ crypto.Signature) error {
 	if !v.count.Done() {
 		v.count.Decrease()
 		return nil

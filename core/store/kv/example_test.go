@@ -51,7 +51,7 @@ func ExampleBucket_Scan() {
 			return nil
 		}
 
-		return bucket.Scan(nil, func(key, value []byte) error {
+		return bucket.Scan(nil, func(key, _ []byte) error {
 			fmt.Printf("%04b", key)
 			fmt.Println("")
 			return nil

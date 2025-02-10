@@ -1530,26 +1530,26 @@ type fakeActor struct {
 	vdecryptData [][]byte
 }
 
-func (f fakeActor) Setup(co crypto.CollectiveAuthority, threshold int) (
+func (f fakeActor) Setup(_ crypto.CollectiveAuthority, _ int) (
 	pubKey kyber.Point,
 	err error,
 ) {
 	return suite.Point(), f.setupErr
 }
 
-func (f fakeActor) Encrypt(message []byte) (K kyber.Point, CS []kyber.Point, err error) {
+func (f fakeActor) Encrypt(_ []byte) (K kyber.Point, CS []kyber.Point, err error) {
 	return f.k, f.cs, f.encryptErr
 }
 
-func (f fakeActor) Decrypt(K kyber.Point, CS []kyber.Point) ([]byte, error) {
+func (f fakeActor) Decrypt(_ kyber.Point, _ []kyber.Point) ([]byte, error) {
 	return f.decryptData, f.decryptErr
 }
 
-func (f fakeActor) Reencrypt(K kyber.Point, PK kyber.Point) (XhatEnc kyber.Point, err error) {
+func (f fakeActor) Reencrypt(_ kyber.Point, _ kyber.Point) (XhatEnc kyber.Point, err error) {
 	return f.xhatenc, f.reencryptErr
 }
 
-func (f fakeActor) VerifiableEncrypt(message []byte, GBar kyber.Point) (
+func (f fakeActor) VerifiableEncrypt(_ []byte, _ kyber.Point) (
 	ciphertext types.Ciphertext,
 	remainder []byte,
 	err error,
@@ -1557,11 +1557,11 @@ func (f fakeActor) VerifiableEncrypt(message []byte, GBar kyber.Point) (
 	return f.ct, nil, f.vencryptErr
 }
 
-func (f fakeActor) VerifiableDecrypt(ciphertexts []types.Ciphertext) ([][]byte, error) {
+func (f fakeActor) VerifiableDecrypt(_ []types.Ciphertext) ([][]byte, error) {
 	return f.vdecryptData, f.vdecryptErr
 }
 
-func (f fakeActor) Reshare(co crypto.CollectiveAuthority, newThreshold int) error {
+func (f fakeActor) Reshare(_ crypto.CollectiveAuthority, _ int) error {
 	return f.reshareErr
 }
 

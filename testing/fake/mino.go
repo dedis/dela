@@ -412,8 +412,10 @@ func (rpc *RPC) Done() {
 }
 
 // Call implements mino.RPC.
-func (rpc *RPC) Call(ctx context.Context,
-	m serde.Message, p mino.Players) (<-chan mino.Response, error) {
+func (rpc *RPC) Call(
+	ctx context.Context,
+	m serde.Message, p mino.Players,
+) (<-chan mino.Response, error) {
 
 	rpc.Calls.Add(ctx, m, p)
 
@@ -461,7 +463,7 @@ func (m Mino) GetAddressFactory() mino.AddressFactory {
 }
 
 // WithSegment implements mino.Mino.
-func (m Mino) WithSegment(segment string) mino.Mino {
+func (m Mino) WithSegment(_ string) mino.Mino {
 	return m
 }
 
@@ -540,8 +542,10 @@ func MakeCertificateChain(t *testing.T) []byte {
 	return chain.Bytes()
 }
 
-func genCert(t *testing.T, template, parent *x509.Certificate,
-	publicKey *ecdsa.PublicKey, privateKey *ecdsa.PrivateKey) *x509.Certificate {
+func genCert(
+	t *testing.T, template, parent *x509.Certificate,
+	publicKey *ecdsa.PublicKey, privateKey *ecdsa.PrivateKey,
+) *x509.Certificate {
 
 	certBytes, err := x509.CreateCertificate(rand.Reader, template, parent, publicKey, privateKey)
 	require.NoError(t, err)
@@ -573,8 +577,10 @@ func makeRootCertificate(t *testing.T) (*x509.Certificate, *ecdsa.PrivateKey) {
 	return rootCert, priv
 }
 
-func makeIntermediaryCertificate(t *testing.T, rootCert *x509.Certificate,
-	rootKey *ecdsa.PrivateKey) (*x509.Certificate, *ecdsa.PrivateKey) {
+func makeIntermediaryCertificate(
+	t *testing.T, rootCert *x509.Certificate,
+	rootKey *ecdsa.PrivateKey,
+) (*x509.Certificate, *ecdsa.PrivateKey) {
 
 	priv, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
 	require.NoError(t, err)
@@ -597,8 +603,10 @@ func makeIntermediaryCertificate(t *testing.T, rootCert *x509.Certificate,
 	return intermediary, priv
 }
 
-func makeServerCertificate(t *testing.T, intermediaryCert *x509.Certificate,
-	intermediaryKey *ecdsa.PrivateKey) (*x509.Certificate, *ecdsa.PrivateKey) {
+func makeServerCertificate(
+	t *testing.T, intermediaryCert *x509.Certificate,
+	intermediaryKey *ecdsa.PrivateKey,
+) (*x509.Certificate, *ecdsa.PrivateKey) {
 
 	priv, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
 	require.NoError(t, err)

@@ -42,7 +42,7 @@ type Ciphertext struct {
 type ShareAndProof struct {
 	V  kyber.Point
 	I  int64
-	Ui kyber.Point  // u_i
+	UI kyber.Point  // u_i
 	Ei kyber.Scalar // e_i
 	Fi kyber.Scalar // f_i
 	Hi kyber.Point  // h_i
@@ -125,8 +125,10 @@ type StartResharing struct {
 }
 
 // NewStartResharing creates a new start resharing message.
-func NewStartResharing(tNew int, tOld int, addrsNew []mino.Address, addrsOld []mino.Address,
-	pubkeysNew []kyber.Point, pubkeysOld []kyber.Point) StartResharing {
+func NewStartResharing(
+	tNew int, tOld int, addrsNew []mino.Address, addrsOld []mino.Address,
+	pubkeysNew []kyber.Point, pubkeysOld []kyber.Point,
+) StartResharing {
 	return StartResharing{
 		tNew:       tNew,
 		tOld:       tOld,
@@ -482,7 +484,7 @@ func (req ReencryptRequest) Serialize(ctx serde.Context) ([]byte, error) {
 // ReencryptReply returns the share to re-encrypt from one node
 type ReencryptReply struct {
 	PubK kyber.Point
-	Ui   *share.PubShare
+	UI   *share.PubShare
 	Ei   kyber.Scalar
 	Fi   kyber.Scalar
 }
@@ -491,7 +493,7 @@ type ReencryptReply struct {
 func NewReencryptReply(pubk kyber.Point, ui *share.PubShare, ei, fi kyber.Scalar) ReencryptReply {
 	return ReencryptReply{
 		PubK: pubk,
-		Ui:   ui,
+		UI:   ui,
 		Ei:   ei,
 		Fi:   fi,
 	}
@@ -511,12 +513,12 @@ func (reply ReencryptReply) Serialize(ctx serde.Context) ([]byte, error) {
 
 // GetI returns I.
 func (reply ReencryptReply) GetI() int {
-	return reply.Ui.I
+	return reply.UI.I
 }
 
 // GetV returns V.
 func (reply ReencryptReply) GetV() kyber.Point {
-	return reply.Ui.V
+	return reply.UI.V
 }
 
 // VerifiableDecryptRequest is a message sent to request a verifiable

@@ -64,31 +64,31 @@ func (f *fakeBuilder) Build() cli.Application {
 	return &fakeApp{err: f.err}
 }
 
-func (f *fakeBuilder) SetCommand(name string) cli.CommandBuilder {
+func (f *fakeBuilder) SetCommand(_ string) cli.CommandBuilder {
 	return fakeCommandBuilder{}
 }
 
 type fakeCommandBuilder struct {
 }
 
-func (b fakeCommandBuilder) SetSubCommand(name string) cli.CommandBuilder {
+func (b fakeCommandBuilder) SetSubCommand(_ string) cli.CommandBuilder {
 	return b
 }
 
-func (b fakeCommandBuilder) SetDescription(value string) {
+func (b fakeCommandBuilder) SetDescription(_ string) {
 }
 
-func (b fakeCommandBuilder) SetFlags(flags ...cli.Flag) {
+func (b fakeCommandBuilder) SetFlags(_ ...cli.Flag) {
 }
 
-func (b fakeCommandBuilder) SetAction(a cli.Action) {
+func (b fakeCommandBuilder) SetAction(_ cli.Action) {
 }
 
 type fakeApp struct {
 	err error
 }
 
-func (f fakeApp) Run(arguments []string) error {
+func (f fakeApp) Run(_ []string) error {
 	return f.err
 }
 

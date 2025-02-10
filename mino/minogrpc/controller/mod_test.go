@@ -435,22 +435,22 @@ func (b badCurve) Params() *elliptic.CurveParams {
 	}
 }
 
-func (b badCurve) IsOnCurve(x, y *big.Int) bool {
+func (b badCurve) IsOnCurve(_, _ *big.Int) bool {
 	return false
 }
 
-func (b badCurve) Add(x1, y1, x2, y2 *big.Int) (x, y *big.Int) {
+func (b badCurve) Add(_, _, _, _ *big.Int) (x, y *big.Int) {
 	panic("not implemented - should not be needed by tests")
 }
 
-func (b badCurve) Double(x1, y1 *big.Int) (x, y *big.Int) {
+func (b badCurve) Double(_, _ *big.Int) (x, y *big.Int) {
 	panic("not implemented - should not be needed by tests")
 }
 
-func (b badCurve) ScalarMult(x1, y1 *big.Int, k []byte) (x, y *big.Int) {
+func (b badCurve) ScalarMult(_, _ *big.Int, _ []byte) (x, y *big.Int) {
 	panic("not implemented - should not be needed by tests")
 }
 
-func (b badCurve) ScalarBaseMult(k []byte) (x, y *big.Int) {
+func (b badCurve) ScalarBaseMult(_ []byte) (x, y *big.Int) {
 	return big.NewInt(0), big.NewInt(0)
 }

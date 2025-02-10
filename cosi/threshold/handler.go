@@ -7,6 +7,7 @@ package threshold
 
 import (
 	"context"
+	"errors"
 	"io"
 
 	"go.dedis.ch/dela/cosi"
@@ -39,7 +40,7 @@ func (h thresholdHandler) Stream(out mino.Sender, in mino.Receiver) error {
 
 	for {
 		addr, msg, err := in.Recv(ctx)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return nil
 		}
 		if err != nil {
@@ -53,7 +54,11 @@ func (h thresholdHandler) Stream(out mino.Sender, in mino.Receiver) error {
 	}
 }
 
-func (h thresholdHandler) processRequest(sender mino.Sender, msg serde.Message, addr mino.Address) error {
+func (h thresholdHandler) processRequest(
+	sender mino.Sender,
+	msg serde.Message,
+	addr mino.Address,
+) error {
 	req, ok := msg.(cosi.SignatureRequest)
 	if !ok {
 		return xerrors.Errorf("invalid request type '%T'", msg)

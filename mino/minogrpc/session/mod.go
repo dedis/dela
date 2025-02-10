@@ -654,7 +654,7 @@ func (r *streamRelay) Stream() PacketStream {
 }
 
 // Send implements session.Relay. It sends the packet through the stream.
-func (r *streamRelay) Send(ctx context.Context, p router.Packet) (*ptypes.Ack, error) {
+func (r *streamRelay) Send(_ context.Context, p router.Packet) (*ptypes.Ack, error) {
 	data, err := p.Serialize(r.context)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to serialize: %v", err)

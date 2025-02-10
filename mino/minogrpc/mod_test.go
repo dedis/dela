@@ -61,7 +61,7 @@ func TestMinogrpc_New_FailedParsePublic(t *testing.T) {
 		listener = l
 	}()
 
-	listener = func(network, address string) (net.Listener, error) {
+	listener = func(_, _ string) (net.Listener, error) {
 		return fakeListener{addr: ":xxx"}, nil
 	}
 
@@ -158,7 +158,7 @@ func TestMinogrpc_BadTracer_New(t *testing.T) {
 	getTracerForAddr = tracing.GetTracerForAddr
 }
 
-func TestMinogrpc_GetTrafficWatcher(t *testing.T) {
+func TestMinogrpc_GetTrafficWatcher(_ *testing.T) {
 	m := Minogrpc{}
 	m.GetTrafficWatcher()
 }

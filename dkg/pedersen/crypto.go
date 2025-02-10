@@ -2,6 +2,7 @@ package pedersen
 
 import (
 	"crypto/sha256"
+
 	"go.dedis.ch/dela/dkg/pedersen/types"
 	"go.dedis.ch/kyber/v3"
 	"golang.org/x/xerrors"
@@ -16,7 +17,7 @@ import (
 func checkDecryptionProof(sp types.ShareAndProof, K kyber.Point) error {
 
 	tmp1 := suite.Point().Mul(sp.Fi, K)
-	tmp2 := suite.Point().Mul(sp.Ei, sp.Ui)
+	tmp2 := suite.Point().Mul(sp.Ei, sp.UI)
 	UHat := suite.Point().Sub(tmp1, tmp2)
 
 	tmp1 = suite.Point().Mul(sp.Fi, nil)
@@ -24,9 +25,18 @@ func checkDecryptionProof(sp types.ShareAndProof, K kyber.Point) error {
 	HHat := suite.Point().Sub(tmp1, tmp2)
 
 	hash := sha256.New()
-	sp.Ui.MarshalTo(hash)
-	UHat.MarshalTo(hash)
-	HHat.MarshalTo(hash)
+	_, err := sp.UI.MarshalTo(hash)
+	if err != nil {
+		return xerrors.Errorf("failed to marshal Ui: %v", err)
+	}
+	_, err = UHat.MarshalTo(hash)
+	if err != nil {
+		return xerrors.Errorf("failed to marshal UHat: %v", err)
+	}
+	_, err = HHat.MarshalTo(hash)
+	if err != nil {
+		return xerrors.Errorf("failed to marshal HHat: %v", err)
+	}
 	tmp := suite.Scalar().SetBytes(hash.Sum(nil))
 
 	if !tmp.Equal(sp.Ei) {
@@ -68,7 +78,10 @@ func checkEncryptionProof(cp types.Ciphertext) error {
 // decryption proof.
 //
 // See https://arxiv.org/pdf/2205.08529.pdf / section 5.4 Protocol / step 3
-func verifiableDecryption(ct types.Ciphertext, V kyber.Scalar, I int) (*types.ShareAndProof, error) {
+func verifiableDecryption(ct types.Ciphertext, V kyber.Scalar, I int) (
+	*types.ShareAndProof,
+	error,
+) {
 	err := checkEncryptionProof(ct)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to check proof: %v", err)
@@ -95,7 +108,7 @@ func verifiableDecryption(ct types.Ciphertext, V kyber.Scalar, I int) (*types.Sh
 	sp := types.ShareAndProof{
 		V:  partial,
 		I:  int64(I),
-		Ui: ui,
+		UI: ui,
 		Ei: Ei,
 		Fi: Fi,
 		Hi: Hi,

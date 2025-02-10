@@ -111,7 +111,8 @@ func TestPromAction_ErrorInjector(t *testing.T) {
 
 	action := promAction{}
 	err := action.Execute(ctx)
-	require.EqualError(t, err, "failed to resolve the proxy: couldn't find dependency for 'proxy.Proxy'")
+	require.EqualError(t, err,
+		"failed to resolve the proxy: couldn't find dependency for 'proxy.Proxy'")
 }
 
 func TestPromAction_ErrorCollector(t *testing.T) {
@@ -145,7 +146,7 @@ func TestPromAction_ErrorCollector(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Utility functions
 
-func newFake(addr string) proxy.Proxy {
+func newFake(_ string) proxy.Proxy {
 	return &fakeProxy{}
 }
 
@@ -163,7 +164,10 @@ func (fakeProxy) GetAddr() net.Addr {
 	return nil
 }
 
-func (f *fakeProxy) RegisterHandler(path string, handler func(nhttp.ResponseWriter, *nhttp.Request)) {
+func (f *fakeProxy) RegisterHandler(
+	path string,
+	handler func(nhttp.ResponseWriter, *nhttp.Request),
+) {
 	f.handlers = append(f.handlers, path)
 }
 

@@ -78,7 +78,7 @@ func (msg exampleMessage) Serialize(ctx serde.Context) ([]byte, error) {
 
 type exampleReactor struct{}
 
-func (exampleReactor) Invoke(from mino.Address, msg serde.Message) ([]byte, error) {
+func (exampleReactor) Invoke(_ mino.Address, msg serde.Message) ([]byte, error) {
 	example, ok := msg.(exampleMessage)
 	if !ok {
 		return nil, errors.New("unsupported message")

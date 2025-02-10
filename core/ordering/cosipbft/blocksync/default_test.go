@@ -347,7 +347,7 @@ func (s badBlockStore) GetChain() (otypes.Chain, error) {
 	return nil, s.errChain
 }
 
-func (s badBlockStore) GetByIndex(index uint64) (otypes.BlockLink, error) {
+func (s badBlockStore) GetByIndex(_ uint64) (otypes.BlockLink, error) {
 	return nil, fake.GetError()
 }
 

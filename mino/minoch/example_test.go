@@ -35,7 +35,7 @@ func ExampleRPC_Call() {
 			panic("error in response: " + err.Error())
 		}
 
-		fmt.Println(reply.(exampleMessage).value)
+		fmt.Println(reply.(exampleMessage).value) //nolint:errcheck
 	}
 
 	// Output: Hello World!
@@ -74,6 +74,6 @@ type exampleFactory struct{}
 
 // Deserialize implements serde.Factory. It returns the message using data as
 // the inner value.
-func (exampleFactory) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+func (exampleFactory) Deserialize(_ serde.Context, data []byte) (serde.Message, error) {
 	return exampleMessage{value: string(data)}, nil
 }

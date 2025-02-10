@@ -105,6 +105,6 @@ type fakeReactor struct {
 	err error
 }
 
-func (h fakeReactor) Invoke(addr mino.Address, in serde.Message) ([]byte, error) {
+func (h fakeReactor) Invoke(_ mino.Address, _ serde.Message) ([]byte, error) {
 	return []byte{0xff}, h.err
 }

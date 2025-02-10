@@ -78,7 +78,7 @@ func TestPool_Len(t *testing.T) {
 	require.Equal(t, 1, p.Stats().TxCount)
 }
 
-func TestPool_AddFilter(t *testing.T) {
+func TestPool_AddFilter(_ *testing.T) {
 	p := &Pool{
 		gatherer: pool.NewSimpleGatherer(),
 	}
@@ -256,7 +256,7 @@ type fakeTxFac struct {
 	txn.Factory
 }
 
-func (fakeTxFac) Deserialize(ctx serde.Context, data []byte) (serde.Message, error) {
+func (fakeTxFac) Deserialize(_ serde.Context, data []byte) (serde.Message, error) {
 	return fakeTx{nonce: uint64(data[0])}, nil
 }
 
@@ -291,10 +291,10 @@ type badGatherer struct {
 	pool.Gatherer
 }
 
-func (g badGatherer) Add(tx txn.Transaction) error {
+func (g badGatherer) Add(_ txn.Transaction) error {
 	return fake.GetError()
 }
 
-func (g badGatherer) Remove(tx txn.Transaction) error {
+func (g badGatherer) Remove(_ txn.Transaction) error {
 	return fake.GetError()
 }

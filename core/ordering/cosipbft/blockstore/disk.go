@@ -78,7 +78,7 @@ func (s *InDisk) Load() error {
 			return nil
 		}
 
-		err := bucket.Scan([]byte{}, func(key, value []byte) error {
+		err := bucket.Scan([]byte{}, func(_, value []byte) error {
 			link, err := s.fac.BlockLinkOf(s.context, value)
 			if err != nil {
 				return xerrors.Errorf("malformed block: %v", err)
@@ -211,7 +211,7 @@ func (s *InDisk) GetChain() (types.Chain, error) {
 		bucket := tx.GetBucket(s.bucket)
 
 		i := uint64(0)
-		err := bucket.Scan([]byte{}, func(key, value []byte) error {
+		err := bucket.Scan([]byte{}, func(_, value []byte) error {
 			if i >= length-1 {
 				link, err := s.fac.BlockLinkOf(s.context, value)
 				if err != nil {

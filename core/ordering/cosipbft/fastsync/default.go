@@ -2,6 +2,7 @@ package fastsync
 
 import (
 	"context"
+	"errors"
 	"io"
 	"sync"
 	"time"
@@ -168,7 +169,9 @@ func (s fastSync) requestSync(
 	for len(replies) < nodes.Len() {
 		s.logger.Debug().Msgf("Waiting for replies: %d < %d", len(replies), nodes.Len())
 		from, msg, err := rcvr.Recv(ctx)
-		if err == context.Canceled || err == context.DeadlineExceeded || err == io.EOF {
+		if errors.Is(err, context.Canceled) ||
+			errors.Is(err, context.DeadlineExceeded) ||
+			errors.Is(err, io.EOF) {
 			return moreBlocks, nil
 		}
 		if err != nil {

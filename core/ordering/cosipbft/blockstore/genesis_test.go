@@ -13,7 +13,7 @@ import (
 )
 
 func TestCachedGenesis_Get(t *testing.T) {
-	store := NewGenesisStore().(*cachedGenesis) //nolint:errcheck
+	store := NewGenesisStore().(*cachedGenesis)
 	require.NotNil(t, store)
 
 	ro := authority.FromAuthority(fake.NewAuthority(3, fake.NewSigner))
@@ -53,7 +53,8 @@ func TestCachedGenesis_Exists(t *testing.T) {
 
 	require.False(t, store.Exists())
 
-	store.Set(types.Genesis{})
+	err := store.Set(types.Genesis{})
+	require.NoError(t, err)
 	require.True(t, store.Exists())
 }
 
@@ -149,7 +150,7 @@ type badBucket struct {
 	kv.Bucket
 }
 
-func (badBucket) Set(key, value []byte) error {
+func (badBucket) Set(_, _ []byte) error {
 	return fake.GetError()
 }
 
@@ -159,7 +160,7 @@ type badTx struct {
 	bucket kv.Bucket
 }
 
-func (tx badTx) GetBucketOrCreate(name []byte) (kv.Bucket, error) {
+func (tx badTx) GetBucketOrCreate(_ []byte) (kv.Bucket, error) {
 	if tx.bucket != nil {
 		return tx.bucket, nil
 	}

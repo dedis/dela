@@ -11,7 +11,7 @@ import (
 	"golang.org/x/xerrors"
 )
 
-func TestMinimal_SetCommands(t *testing.T) {
+func TestMinimal_SetCommands(_ *testing.T) {
 	minimal := NewMinimal()
 
 	b := node.NewBuilder()

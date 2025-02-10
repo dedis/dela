@@ -12,7 +12,7 @@ import (
 
 func TestBuild(t *testing.T) {
 	builder := NewBuilder("test", nil)
-	app := builder.Build().(*urfave.App)
+	app := builder.Build().(*urfave.App) //nolint:errcheck
 
 	app.Writer = io.Discard
 
@@ -28,7 +28,7 @@ func TestSetCommand(t *testing.T) {
 	builder.SetCommand("first")
 	builder.SetCommand("second")
 
-	app := builder.Build().(*urfave.App)
+	app := builder.Build().(*urfave.App) //nolint:errcheck
 
 	require.Len(t, app.Commands, 3)
 
@@ -39,10 +39,10 @@ func TestSetCommand(t *testing.T) {
 }
 
 func TestCommandBuilder(t *testing.T) {
-	builder := NewBuilder("test", nil).(*Builder)
+	builder := NewBuilder("test", nil).(*Builder) //nolint:errcheck
 	cmd := builder.SetCommand("first")
 
-	fakeAction := func(flags cli.Flags) error {
+	fakeAction := func(_ cli.Flags) error {
 		return nil
 	}
 

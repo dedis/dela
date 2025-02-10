@@ -172,7 +172,7 @@ func TestDiskStore_Range(t *testing.T) {
 	store := NewDiskStore(db, fake.AddressFactory{})
 
 	count := 0
-	err := store.Range(func(addr mino.Address, chain CertChain) bool {
+	err := store.Range(func(_ mino.Address, chain CertChain) bool {
 		count++
 		return true
 	})
@@ -188,14 +188,14 @@ func TestDiskStore_Range(t *testing.T) {
 	err = store.Store(fake.NewAddress(2), fake.MakeCertificate(t))
 	require.NoError(t, err)
 
-	err = store.Range(func(addr mino.Address, chain CertChain) bool {
+	err = store.Range(func(_ mino.Address, chain CertChain) bool {
 		count++
 		return true
 	})
 	require.NoError(t, err)
 	require.Equal(t, 3, count)
 
-	err = store.Range(func(addr mino.Address, chain CertChain) bool {
+	err = store.Range(func(_ mino.Address, chain CertChain) bool {
 		count++
 		return false
 	})

@@ -7,6 +7,7 @@ package blocksync
 
 import (
 	"context"
+	"errors"
 	"io"
 	"sync"
 
@@ -142,7 +143,9 @@ func (s defaultSync) Sync(ctx context.Context, players mino.Players, cfg Config)
 
 		for {
 			from, msg, err := rcvr.Recv(ctx)
-			if err == context.Canceled || err == context.DeadlineExceeded || err == io.EOF {
+			if errors.Is(err, context.Canceled) ||
+				errors.Is(err, context.DeadlineExceeded) ||
+				errors.Is(err, io.EOF) {
 				return
 			}
 			if err != nil {
@@ -296,8 +299,10 @@ func (h *handler) Stream(out mino.Sender, in mino.Receiver) error {
 	return h.ack(out, orch)
 }
 
-func (h *handler) waitAnnounce(ctx context.Context,
-	in mino.Receiver) (*types.SyncMessage, mino.Address, error) {
+func (h *handler) waitAnnounce(
+	ctx context.Context,
+	in mino.Receiver,
+) (*types.SyncMessage, mino.Address, error) {
 
 	for {
 		orch, msg, err := in.Recv(ctx)

@@ -862,16 +862,25 @@ func (s *instance) handleReencryptRequest(
 	uiHat := suite.Point().Mul(si, suite.Point().Add(msg.K, msg.PubK))
 	hiHat := suite.Point().Mul(si, nil)
 	hash := sha256.New()
-	ui.V.MarshalTo(hash)
-	uiHat.MarshalTo(hash)
-	hiHat.MarshalTo(hash)
+	_, err := ui.V.MarshalTo(hash)
+	if err != nil {
+		return xerrors.Errorf("failed to marshal ui.V: %v", err)
+	}
+	_, err = uiHat.MarshalTo(hash)
+	if err != nil {
+		return xerrors.Errorf("failed to marshal uiHat: %v", err)
+	}
+	_, err = hiHat.MarshalTo(hash)
+	if err != nil {
+		return xerrors.Errorf("failed to marshal hiHat: %v", err)
+	}
 	ei := suite.Scalar().SetBytes(hash.Sum(nil))
 	fi := suite.Scalar().Add(si, suite.Scalar().Mul(ei, s.privShare.V))
 
 	response := types.NewReencryptReply(msg.PubK, ui, ei, fi)
 
 	errs := out.Send(response, from)
-	err := <-errs
+	err = <-errs
 	if err != nil {
 		return xerrors.Errorf("got an error while sending the reencrypt reply: %v", err)
 	}

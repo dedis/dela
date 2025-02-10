@@ -85,6 +85,6 @@ type fakeTx struct {
 	contract string
 }
 
-func (tx fakeTx) GetArg(key string) []byte {
+func (tx fakeTx) GetArg(_ string) []byte {
 	return []byte(tx.contract)
 }

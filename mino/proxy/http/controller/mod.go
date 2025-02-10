@@ -50,7 +50,7 @@ func (m minimal) SetCommands(builder node.Builder) {
 
 // OnStart implements node.Initializer. It creates, starts, and registers a
 // client proxy.
-func (m minimal) OnStart(ctx cli.Flags, inj node.Injector) error {
+func (m minimal) OnStart(_ cli.Flags, _ node.Injector) error {
 	return nil
 }
 
