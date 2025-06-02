@@ -14,9 +14,6 @@ import (
 	"time"
 
 	ma "github.com/multiformats/go-multiaddr"
-	"go.dedis.ch/dela/mino/minows"
-	"go.dedis.ch/dela/mino/minows/key"
-
 	"github.com/stretchr/testify/require"
 	accessContract "go.dedis.ch/dela/contracts/access"
 	"go.dedis.ch/dela/contracts/value"
@@ -46,6 +43,7 @@ import (
 	"go.dedis.ch/dela/mino/minogrpc"
 	"go.dedis.ch/dela/mino/minogrpc/certs"
 	"go.dedis.ch/dela/mino/minogrpc/session"
+	"go.dedis.ch/dela/mino/minows"
 	"go.dedis.ch/dela/mino/router/tree"
 	"go.dedis.ch/dela/serde/json"
 	"golang.org/x/xerrors"
@@ -118,10 +116,7 @@ func newDelaNode(t require.TestingT, path string, port int, kind string) dela {
 		listen, err := ma.NewMultiaddr(fmt.Sprintf("/ip4/127.0.0.1/tcp/%d/ws", port))
 		require.NoError(t, err)
 
-		storage := key.NewStorage(db)
-		privKey, _ := storage.LoadOrCreate()
-
-		onet, err = minows.NewMinows(listen, nil, privKey)
+		onet, err = minows.NewMinows(listen, nil, &db)
 		require.NoError(t, err)
 	}
 	onet.GetAddress()

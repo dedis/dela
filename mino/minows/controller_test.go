@@ -17,7 +17,7 @@ func TestController_OnStart(t *testing.T) {
 
 	err := ctrl.OnStart(flags, inj)
 	require.NoError(t, err)
-	var m *minows
+	var m *Minows
 	err = inj.Resolve(&m)
 	require.NoError(t, err)
 }
@@ -28,7 +28,7 @@ func TestController_OptionalPublic(t *testing.T) {
 
 	err := ctrl.OnStart(flags, inj)
 	require.NoError(t, err)
-	var m *minows
+	var m *Minows
 	err = inj.Resolve(&m)
 	require.NoError(t, err)
 }
@@ -78,7 +78,8 @@ func mustCreateController(t *testing.T, inj node.Injector) (node.Initializer, fu
 }
 
 func setUp(t *testing.T, listen string, public string) (
-	cli.Flags, node.Injector, node.Initializer, func()) {
+	cli.Flags, node.Injector, node.Initializer, func(),
+) {
 	flags := new(mockFlags)
 	flags.On("String", "listen").Return(listen)
 	flags.On("String", "public").Return(public)

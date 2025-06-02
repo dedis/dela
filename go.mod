@@ -26,7 +26,7 @@ require (
 	gopkg.in/yaml.v2 v2.4.0
 )
 
-require google.golang.org/genproto/googleapis/rpc v0.0.0-20250409194420-de1ac958c67a // indirect
+require google.golang.org/genproto/googleapis/rpc v0.0.0-20250528174236-200df99c418a // indirect
 
 require (
 	github.com/HdrHistogram/hdrhistogram-go v1.1.2 // indirect

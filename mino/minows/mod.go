@@ -1,11 +1,15 @@
 package minows
 
 import (
-	"github.com/rs/zerolog"
-	"go.dedis.ch/dela"
-	"go.dedis.ch/dela/serde/json"
 	"regexp"
 	"strings"
+
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/rs/zerolog"
+	"go.dedis.ch/dela"
+	"go.dedis.ch/dela/core/store/kv"
+	"go.dedis.ch/dela/mino/minows/key"
+	"go.dedis.ch/dela/serde/json"
 
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/crypto"
@@ -21,7 +25,7 @@ var pattern = regexp.MustCompile("^[a-zA-Z0-9]+$")
 
 // Minows
 // - implements mino.Mino
-type minows struct {
+type Minows struct {
 	logger zerolog.Logger
 
 	myAddr   address
@@ -29,6 +33,8 @@ type minows struct {
 	segments []string
 	rpcs     map[string]any
 	factory  addressFactory
+
+	privkey crypto.PrivKey
 }
 
 // NewMinows creates a new Minows instance that starts listening.
@@ -39,9 +45,18 @@ type minows struct {
 // `public` can be nil and will be determined
 // by the listening address and the port the host has bound to.
 // key: private key representing this mino instance's identity
-func NewMinows(listen, public ma.Multiaddr, key crypto.PrivKey) (mino.Mino,
-	error) {
-	h, err := libp2p.New(libp2p.ListenAddrs(listen), libp2p.Identity(key))
+func NewMinows(listen, public ma.Multiaddr, db *kv.DB) (
+	mino.Mino,
+	error,
+) {
+	// Load or generate a unique private key for the mino instance.
+	storage := key.NewStorage(*db)
+	privk, err := storage.LoadOrCreate()
+	if err != nil {
+		return nil, xerrors.Errorf("could not load or generate key: %v", err)
+	}
+
+	h, err := libp2p.New(libp2p.ListenAddrs(listen), libp2p.Identity(privk))
 	if err != nil {
 		return nil, xerrors.Errorf("could not start host: %v", err)
 	}
@@ -54,30 +69,31 @@ func NewMinows(listen, public ma.Multiaddr, key crypto.PrivKey) (mino.Mino,
 		return nil, xerrors.Errorf("could not create address: %v", err)
 	}
 
-	return &minows{
+	return &Minows{
 		logger:   dela.Logger.With().Str("mino", myAddr.String()).Logger(),
 		myAddr:   myAddr,
 		segments: nil,
 		host:     h,
 		rpcs:     make(map[string]any),
 		factory:  addressFactory{},
+		privkey:  privk,
 	}, nil
 }
 
-func (m *minows) GetAddressFactory() mino.AddressFactory {
+func (m *Minows) GetAddressFactory() mino.AddressFactory {
 	return m.factory
 }
 
-func (m *minows) GetAddress() mino.Address {
+func (m *Minows) GetAddress() mino.Address {
 	return m.myAddr
 }
 
-func (m *minows) WithSegment(segment string) mino.Mino {
+func (m *Minows) WithSegment(segment string) mino.Mino {
 	if segment == "" {
 		return m
 	}
 
-	return &minows{
+	return &Minows{
 		logger:   m.logger,
 		myAddr:   m.myAddr,
 		segments: append(m.segments, segment),
@@ -87,7 +103,7 @@ func (m *minows) WithSegment(segment string) mino.Mino {
 	}
 }
 
-func (m *minows) CreateRPC(name string, h mino.Handler, f serde.Factory) (mino.RPC, error) {
+func (m *Minows) CreateRPC(name string, h mino.Handler, f serde.Factory) (mino.RPC, error) {
 	if len(m.rpcs) == 0 {
 		for _, seg := range m.segments {
 			if !pattern.MatchString(seg) {
@@ -122,6 +138,12 @@ func (m *minows) CreateRPC(name string, h mino.Handler, f serde.Factory) (mino.R
 	return r, nil
 }
 
-func (m *minows) stop() error {
+func (m *Minows) Stop() error {
 	return m.host.Close()
+}
+
+func (m *Minows) GetPeerID() string {
+	pid, _ := peer.IDFromPrivateKey(m.privkey)
+	s := pid.String()
+	return s
 }
