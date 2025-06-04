@@ -29,7 +29,7 @@ func TestNewMinows(t *testing.T) {
 			db, err := kv.New(filepath.Join(t.TempDir(), "minows.db"))
 			require.NoError(t, err)
 
-			m, err := NewMinows(listen, public, &db)
+			m, err := NewMinows(listen, public, db, 0)
 			require.NoError(t, err)
 			require.NotNil(t, m)
 			require.IsType(t, &Minows{}, m)
@@ -51,7 +51,7 @@ func TestNewMinows_OptionalPublic(t *testing.T) {
 			db, err := kv.New(filepath.Join(t.TempDir(), "minows.db"))
 			require.NoError(t, err)
 
-			m, err := NewMinows(tt, nil, &db)
+			m, err := NewMinows(tt, nil, db, 0)
 			require.NoError(t, err)
 			require.NotNil(t, m)
 			require.IsType(t, &Minows{}, m)
@@ -77,7 +77,7 @@ func Test_minows_GetAddressFactory(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			m, stop := mustCreateMinows(t, tt.m.listen, tt.m.public)
+			m, stop := mustCreateMinows(t, tt.m.listen, tt.m.public, 0)
 			defer stop()
 
 			factory := m.GetAddressFactory()
@@ -113,9 +113,10 @@ func Test_minows_GetAddress(t *testing.T) {
 			require.NoError(t, err)
 
 			m, err := NewMinows(mustCreateMultiaddress(t, tt.m.listen),
-				mustCreateMultiaddress(t, tt.m.public), &db)
+				mustCreateMultiaddress(t, tt.m.public), db, 0)
 			require.NoError(t, err)
 			defer require.NoError(t, m.(*Minows).Stop())
+
 			want := mustCreateAddress(t, tt.want.location, m.(*Minows).GetPeerID())
 
 			got := m.GetAddress()
@@ -131,7 +132,7 @@ func Test_minows_GetAddress_Random(t *testing.T) {
 	db, err := kv.New(filepath.Join(t.TempDir(), "minows.db"))
 	require.NoError(t, err)
 
-	m, err := NewMinows(listen, nil, &db)
+	m, err := NewMinows(listen, nil, db, 0)
 	require.NoError(t, err)
 	defer require.NoError(t, m.(*Minows).Stop())
 
@@ -144,7 +145,7 @@ func Test_minows_GetAddress_Random(t *testing.T) {
 func Test_minows_WithSegment_Empty(t *testing.T) {
 	const listen = "/ip4/0.0.0.0/tcp/7452"
 	const ws = "/ip4/127.0.0.1/tcp/7452/ws"
-	m, stop := mustCreateMinows(t, listen, ws)
+	m, stop := mustCreateMinows(t, listen, ws, 0)
 	defer stop()
 
 	got := m.WithSegment("")
@@ -154,7 +155,7 @@ func Test_minows_WithSegment_Empty(t *testing.T) {
 func Test_minows_WithSegment(t *testing.T) {
 	const listen = "/ip4/0.0.0.0/tcp/7452"
 	const ws = "/ip4/127.0.0.1/tcp/7452/ws"
-	m, stop := mustCreateMinows(t, listen, ws)
+	m, stop := mustCreateMinows(t, listen, ws, 0)
 	defer stop()
 
 	got := m.WithSegment("test")
@@ -168,7 +169,7 @@ func Test_minows_WithSegment(t *testing.T) {
 func Test_minows_CreateRPC_InvalidName(t *testing.T) {
 	const listen = "/ip4/0.0.0.0/tcp/7452"
 	const ws = "/ip4/127.0.0.1/tcp/7452/ws"
-	m, stop := mustCreateMinows(t, listen, ws)
+	m, stop := mustCreateMinows(t, listen, ws, 0)
 	defer stop()
 
 	_, err := m.CreateRPC("invalid name", nil, nil)
@@ -178,7 +179,7 @@ func Test_minows_CreateRPC_InvalidName(t *testing.T) {
 func Test_minows_CreateRPC_AlreadyExists(t *testing.T) {
 	const listen = "/ip4/0.0.0.0/tcp/7452"
 	const ws = "/ip4/127.0.0.1/tcp/7452/ws"
-	m, stop := mustCreateMinows(t, listen, ws)
+	m, stop := mustCreateMinows(t, listen, ws, 0)
 	defer stop()
 
 	_, err := m.CreateRPC("test", nil, nil)
@@ -190,7 +191,7 @@ func Test_minows_CreateRPC_AlreadyExists(t *testing.T) {
 func Test_minows_CreateRPC_InvalidSegment(t *testing.T) {
 	const listen = "/ip4/0.0.0.0/tcp/7452"
 	const ws = "/ip4/127.0.0.1/tcp/7452/ws"
-	m, stop := mustCreateMinows(t, listen, ws)
+	m, stop := mustCreateMinows(t, listen, ws, 0)
 	defer stop()
 	m = m.WithSegment("invalid segment").(*Minows)
 
@@ -201,7 +202,7 @@ func Test_minows_CreateRPC_InvalidSegment(t *testing.T) {
 func Test_minows_CreateRPC(t *testing.T) {
 	const listen = "/ip4/0.0.0.0/tcp/7452"
 	const ws = "/ip4/127.0.0.1/tcp/7452/ws"
-	m, stop := mustCreateMinows(t, listen, ws)
+	m, stop := mustCreateMinows(t, listen, ws, 0)
 	defer stop()
 
 	r1, err := m.CreateRPC("test", nil, nil)
@@ -220,7 +221,7 @@ func Test_minows_CreateRPC(t *testing.T) {
 	require.NotNil(t, r4)
 }
 
-func mustCreateMinows(t *testing.T, listen string, public string) (
+func mustCreateMinows(t *testing.T, listen string, public string, instance int) (
 	*Minows,
 	func(),
 ) {
@@ -230,7 +231,7 @@ func mustCreateMinows(t *testing.T, listen string, public string) (
 
 	lis := mustCreateMultiaddress(t, listen)
 	pub := mustCreateMultiaddress(t, public)
-	m, err := NewMinows(lis, pub, &db)
+	m, err := NewMinows(lis, pub, db, instance)
 	require.NoError(t, err)
 	ws := m.(*Minows)
 	stop := func() { require.NoError(t, ws.Stop()) }

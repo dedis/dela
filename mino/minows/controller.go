@@ -22,6 +22,7 @@ func NewController() node.Initializer {
 
 const flagListen = "listen"
 const flagPublic = "public"
+const flagInstance = "instance"
 
 func (c controller) SetCommands(builder node.Builder) {
 	builder.SetStartFlags(
@@ -38,6 +39,12 @@ func (c controller) SetCommands(builder node.Builder) {
 				"default listen address)",
 			Required: false,
 			Value:    "",
+		},
+		cli.IntFlag{
+			Name:     flagInstance,
+			Usage:    "Set the instance number (default 0)",
+			Required: false,
+			Value:    0,
 		},
 	)
 
@@ -68,7 +75,9 @@ func (c controller) OnStart(flags cli.Flags, inj node.Injector) error {
 		}
 	}
 
-	m, err := NewMinows(listen, public, &db)
+	i := flags.Int(flagInstance)
+
+	m, err := NewMinows(listen, public, db, i)
 	if err != nil {
 		return xerrors.Errorf("could not start mino: %v", err)
 	}

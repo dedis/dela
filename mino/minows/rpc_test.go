@@ -14,12 +14,12 @@ import (
 func Test_rpc_Call(t *testing.T) {
 	handler := &echoHandler{}
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
-	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
+	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator, 0)
 	defer stop()
 	r := mustCreateRPC(t, initiator, handler)
 
 	const addrPlayer = "/ip4/127.0.0.1/tcp/6002/ws"
-	player, stop := mustCreateMinows(t, addrPlayer, addrPlayer)
+	player, stop := mustCreateMinows(t, addrPlayer, addrPlayer, 1)
 	defer stop()
 	mustCreateRPC(t, player, handler)
 
@@ -44,7 +44,7 @@ func Test_rpc_Call(t *testing.T) {
 func Test_rpc_Call_ToSelf(t *testing.T) {
 	handler := &echoHandler{}
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
-	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
+	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator, 0)
 	defer stop()
 	r := mustCreateRPC(t, initiator, handler)
 
@@ -68,7 +68,7 @@ func Test_rpc_Call_ToSelf(t *testing.T) {
 func Test_rpc_Call_NoPlayers(t *testing.T) {
 	handler := &echoHandler{}
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
-	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
+	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator, 0)
 	defer stop()
 	r := mustCreateRPC(t, initiator, handler)
 
@@ -84,12 +84,12 @@ func Test_rpc_Call_NoPlayers(t *testing.T) {
 func Test_rpc_Call_WrongAddressType(t *testing.T) {
 	handler := &echoHandler{}
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
-	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
+	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator, 0)
 	defer stop()
 	r := mustCreateRPC(t, initiator, handler)
 
 	const addrPlayer = "/ip4/127.0.0.1/tcp/6002/ws"
-	player, stop := mustCreateMinows(t, addrPlayer, addrPlayer)
+	player, stop := mustCreateMinows(t, addrPlayer, addrPlayer, 1)
 	defer stop()
 	mustCreateRPC(t, player, handler)
 
@@ -105,12 +105,12 @@ func Test_rpc_Call_WrongAddressType(t *testing.T) {
 func Test_rpc_Call_DiffNamespace(t *testing.T) {
 	handler := &echoHandler{}
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
-	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
+	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator, 0)
 	defer stop()
 	r := mustCreateRPC(t, initiator, handler)
 
 	const addrPlayer = "/ip4/127.0.0.1/tcp/6002/ws"
-	player, stop := mustCreateMinows(t, addrPlayer, addrPlayer)
+	player, stop := mustCreateMinows(t, addrPlayer, addrPlayer, 1)
 	defer stop()
 	mustCreateRPC(t, player.WithSegment("segment"), handler)
 
@@ -133,12 +133,12 @@ func Test_rpc_Call_DiffNamespace(t *testing.T) {
 func Test_rpc_Call_ContextCancelled(t *testing.T) {
 	handler := &echoHandler{}
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
-	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
+	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator, 0)
 	defer stop()
 	r := mustCreateRPC(t, initiator, handler)
 
 	const addrPlayer = "/ip4/127.0.0.1/tcp/6002/ws"
-	player, stop := mustCreateMinows(t, addrPlayer, addrPlayer)
+	player, stop := mustCreateMinows(t, addrPlayer, addrPlayer, 1)
 	defer stop()
 	mustCreateRPC(t, player, handler)
 
@@ -156,12 +156,12 @@ func Test_rpc_Call_ContextCancelled(t *testing.T) {
 func Test_rpc_Stream(t *testing.T) {
 	handler := &echoHandler{}
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
-	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
+	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator, 0)
 	defer stop()
 	r := mustCreateRPC(t, initiator, handler)
 
 	const addrPlayer = "/ip4/127.0.0.1/tcp/6002/ws"
-	player, stop := mustCreateMinows(t, addrPlayer, addrPlayer)
+	player, stop := mustCreateMinows(t, addrPlayer, addrPlayer, 1)
 	defer stop()
 	mustCreateRPC(t, player, handler)
 
@@ -178,7 +178,7 @@ func Test_rpc_Stream(t *testing.T) {
 func Test_rpc_Stream_ToSelf(t *testing.T) {
 	handler := &echoHandler{}
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
-	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
+	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator, 0)
 	defer stop()
 	r := mustCreateRPC(t, initiator, handler)
 
@@ -195,7 +195,7 @@ func Test_rpc_Stream_ToSelf(t *testing.T) {
 func Test_rpc_Stream_NoPlayers(t *testing.T) {
 	handler := &echoHandler{}
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
-	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
+	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator, 0)
 	defer stop()
 	r := mustCreateRPC(t, initiator, handler)
 
@@ -210,7 +210,7 @@ func Test_rpc_Stream_NoPlayers(t *testing.T) {
 func Test_rpc_Stream_WrongAddressType(t *testing.T) {
 	handler := &echoHandler{}
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
-	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
+	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator, 0)
 	defer stop()
 	r := mustCreateRPC(t, initiator, handler)
 
@@ -225,11 +225,11 @@ func Test_rpc_Stream_WrongAddressType(t *testing.T) {
 func Test_rpc_Stream_ContextCancelled(t *testing.T) {
 	handler := &echoHandler{}
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
-	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
+	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator, 0)
 	defer stop()
 	r := mustCreateRPC(t, initiator, handler)
 	const addrPlayer = "/ip4/127.0.0.1/tcp/6002/ws"
-	player, stop := mustCreateMinows(t, addrPlayer, addrPlayer)
+	player, stop := mustCreateMinows(t, addrPlayer, addrPlayer, 1)
 	defer stop()
 	mustCreateRPC(t, player, handler)
 

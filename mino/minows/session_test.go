@@ -18,22 +18,22 @@ import (
 func Test_session_3_nodes(t *testing.T) {
 	handler := newEchoHandler()
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6010/ws"
-	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
+	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator, 0)
 	defer stop()
 	r := mustCreateRPC(t, initiator, handler)
 
 	const addrPlayer1 = "/ip4/127.0.0.1/tcp/6011/ws"
-	player1, stop := mustCreateMinows(t, addrPlayer1, addrPlayer1)
+	player1, stop := mustCreateMinows(t, addrPlayer1, addrPlayer1, 1)
 	defer stop()
 	mustCreateRPC(t, player1, handler)
 
 	const addrPlayer2 = "/ip4/127.0.0.1/tcp/6012/ws"
-	player2, stop := mustCreateMinows(t, addrPlayer2, addrPlayer2)
+	player2, stop := mustCreateMinows(t, addrPlayer2, addrPlayer2, 2)
 	defer stop()
 	mustCreateRPC(t, player2, handler)
 
 	const addrPlayer3 = "/ip4/127.0.0.1/tcp/6013/ws"
-	player3, stop := mustCreateMinows(t, addrPlayer3, addrPlayer3)
+	player3, stop := mustCreateMinows(t, addrPlayer3, addrPlayer3, 3)
 	defer stop()
 	mustCreateRPC(t, player3, handler)
 
@@ -77,17 +77,17 @@ func Test_session_3_nodes(t *testing.T) {
 func Test_session_Send(t *testing.T) {
 	handler := newEchoHandler()
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
-	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
+	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator, 0)
 	defer stop()
 	r := mustCreateRPC(t, initiator, handler)
 
 	const addrPlayer1 = "/ip4/127.0.0.1/tcp/6002/ws"
-	player1, stop := mustCreateMinows(t, addrPlayer1, addrPlayer1)
+	player1, stop := mustCreateMinows(t, addrPlayer1, addrPlayer1, 1)
 	defer stop()
 	mustCreateRPC(t, player1, handler)
 
 	const addrPlayer2 = "/ip4/127.0.0.1/tcp/6003/ws"
-	player2, stop := mustCreateMinows(t, addrPlayer2, addrPlayer2)
+	player2, stop := mustCreateMinows(t, addrPlayer2, addrPlayer2, 2)
 	defer stop()
 	mustCreateRPC(t, player2, handler)
 
@@ -120,12 +120,12 @@ func Test_session_Send(t *testing.T) {
 func Test_session_Send_ToSelf(t *testing.T) {
 	handler := newEchoHandler()
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
-	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
+	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator, 0)
 	defer stop()
 	r := mustCreateRPC(t, initiator, handler)
 
 	const addrPlayer1 = "/ip4/127.0.0.1/tcp/6002/ws"
-	player1, stop := mustCreateMinows(t, addrPlayer1, addrPlayer1)
+	player1, stop := mustCreateMinows(t, addrPlayer1, addrPlayer1, 1)
 	defer stop()
 	mustCreateRPC(t, player1, handler)
 
@@ -157,12 +157,12 @@ func Test_session_Send_ToSelf(t *testing.T) {
 func Test_session_Send_WrongAddressType(t *testing.T) {
 	handler := newEchoHandler()
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
-	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
+	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator, 0)
 	defer stop()
 	r := mustCreateRPC(t, initiator, handler)
 
 	const addrPlayer = "/ip4/127.0.0.1/tcp/6002/ws"
-	player, stop := mustCreateMinows(t, addrPlayer, addrPlayer)
+	player, stop := mustCreateMinows(t, addrPlayer, addrPlayer, 1)
 	defer stop()
 	mustCreateRPC(t, player, handler)
 
@@ -176,12 +176,12 @@ func Test_session_Send_WrongAddressType(t *testing.T) {
 func Test_session_Send_AddressNotPlayer(t *testing.T) {
 	handler := newEchoHandler()
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
-	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
+	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator, 0)
 	defer stop()
 	r := mustCreateRPC(t, initiator, handler)
 
 	const addrPlayer = "/ip4/127.0.0.1/tcp/6002/ws"
-	player, stop := mustCreateMinows(t, addrPlayer, addrPlayer)
+	player, stop := mustCreateMinows(t, addrPlayer, addrPlayer, 1)
 	defer stop()
 	mustCreateRPC(t, player, handler)
 
@@ -197,12 +197,12 @@ func Test_session_Send_AddressNotPlayer(t *testing.T) {
 func Test_session_Send_SessionEnded(t *testing.T) {
 	handler := newEchoHandler()
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
-	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
+	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator, 0)
 	defer stop()
 	rpc := mustCreateRPC(t, initiator, handler)
 
 	const addrPlayer = "/ip4/127.0.0.1/tcp/6002/ws"
-	player, stop := mustCreateMinows(t, addrPlayer, addrPlayer)
+	player, stop := mustCreateMinows(t, addrPlayer, addrPlayer, 1)
 	defer stop()
 	mustCreateRPC(t, player, handler)
 
@@ -224,17 +224,17 @@ func Test_session_Send_SessionEnded(t *testing.T) {
 func Test_session_Recv(t *testing.T) {
 	handler := newEchoHandler()
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
-	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
+	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator, 0)
 	defer stop()
 	r := mustCreateRPC(t, initiator, handler)
 
 	const addrPlayer1 = "/ip4/127.0.0.1/tcp/6002/ws"
-	player1, stop := mustCreateMinows(t, addrPlayer1, addrPlayer1)
+	player1, stop := mustCreateMinows(t, addrPlayer1, addrPlayer1, 1)
 	defer stop()
 	mustCreateRPC(t, player1, handler)
 
 	const addrPlayer2 = "/ip4/127.0.0.1/tcp/6003/ws"
-	player2, stop := mustCreateMinows(t, addrPlayer2, addrPlayer2)
+	player2, stop := mustCreateMinows(t, addrPlayer2, addrPlayer2, 2)
 	defer stop()
 	mustCreateRPC(t, player2, handler)
 
@@ -273,12 +273,12 @@ func Test_session_Recv(t *testing.T) {
 func Test_session_Recv_FromSelf(t *testing.T) {
 	handler := newEchoHandler()
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
-	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
+	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator, 0)
 	defer stop()
 	rpc := mustCreateRPC(t, initiator, handler)
 
 	const addrPlayer1 = "/ip4/127.0.0.1/tcp/6002/ws"
-	player1, stop := mustCreateMinows(t, addrPlayer1, addrPlayer1)
+	player1, stop := mustCreateMinows(t, addrPlayer1, addrPlayer1, 1)
 	defer stop()
 	mustCreateRPC(t, player1, handler)
 
@@ -325,12 +325,12 @@ func Test_session_Recv_SessionEnded(t *testing.T) {
 	}
 	handler := newEchoHandler()
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
-	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
+	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator, 0)
 	defer stop()
 	rpc := mustCreateRPC(t, initiator, handler)
 
 	const addrPlayer = "/ip4/127.0.0.1/tcp/6002/ws"
-	player, stop := mustCreateMinows(t, addrPlayer, addrPlayer)
+	player, stop := mustCreateMinows(t, addrPlayer, addrPlayer, 1)
 	defer stop()
 	mustCreateRPC(t, player, handler)
 
@@ -351,12 +351,12 @@ func Test_session_Recv_SessionEnded(t *testing.T) {
 func Test_session_Recv_ContextCancelled(t *testing.T) {
 	handler := newEchoHandler()
 	const addrInitiator = "/ip4/127.0.0.1/tcp/6001/ws"
-	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator)
+	initiator, stop := mustCreateMinows(t, addrInitiator, addrInitiator, 0)
 	defer stop()
 	r := mustCreateRPC(t, initiator, handler)
 
 	const addrPlayer = "/ip4/127.0.0.1/tcp/6002/ws"
-	player, stop := mustCreateMinows(t, addrPlayer, addrPlayer)
+	player, stop := mustCreateMinows(t, addrPlayer, addrPlayer, 1)
 	defer stop()
 	mustCreateRPC(t, player, handler)
 

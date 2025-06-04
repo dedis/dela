@@ -2,6 +2,7 @@ package minows
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -35,6 +36,7 @@ type Minows struct {
 	factory  addressFactory
 
 	privkey crypto.PrivKey
+	db      kv.DB
 }
 
 // NewMinows creates a new Minows instance that starts listening.
@@ -45,13 +47,14 @@ type Minows struct {
 // `public` can be nil and will be determined
 // by the listening address and the port the host has bound to.
 // key: private key representing this mino instance's identity
-func NewMinows(listen, public ma.Multiaddr, db *kv.DB) (
+func NewMinows(listen, public ma.Multiaddr, db kv.DB, instance int) (
 	mino.Mino,
 	error,
 ) {
 	// Load or generate a unique private key for the mino instance.
-	storage := key.NewStorage(*db)
-	privk, err := storage.LoadOrCreate()
+	storage := key.NewStorage(db)
+
+	privk, err := storage.LoadOrCreate(strconv.Itoa(instance))
 	if err != nil {
 		return nil, xerrors.Errorf("could not load or generate key: %v", err)
 	}
@@ -77,6 +80,7 @@ func NewMinows(listen, public ma.Multiaddr, db *kv.DB) (
 		rpcs:     make(map[string]any),
 		factory:  addressFactory{},
 		privkey:  privk,
+		db:       db,
 	}, nil
 }
 
@@ -100,6 +104,8 @@ func (m *Minows) WithSegment(segment string) mino.Mino {
 		host:     m.host,
 		rpcs:     make(map[string]any),
 		factory:  addressFactory{},
+		privkey:  m.privkey,
+		db:       m.db,
 	}
 }
 
@@ -139,7 +145,12 @@ func (m *Minows) CreateRPC(name string, h mino.Handler, f serde.Factory) (mino.R
 }
 
 func (m *Minows) Stop() error {
-	return m.host.Close()
+	err := m.host.Close()
+	if err != nil {
+		return err
+	}
+	err = m.db.Close()
+	return err
 }
 
 func (m *Minows) GetPeerID() string {

@@ -46,6 +46,7 @@ import (
 	"go.dedis.ch/dela/mino/minows"
 	"go.dedis.ch/dela/mino/router/tree"
 	"go.dedis.ch/dela/serde/json"
+	"golang.org/x/net/html/atom"
 	"golang.org/x/xerrors"
 )
 
@@ -79,6 +80,8 @@ type cosiDelaNode struct {
 	accessStore   accessstore
 	tree          hashtree.Tree
 }
+
+var nodeInstance = atom.Nonce
 
 func newDelaNode(t require.TestingT, path string, port int, kind string) dela {
 	err := os.MkdirAll(path, 0700)
@@ -116,7 +119,7 @@ func newDelaNode(t require.TestingT, path string, port int, kind string) dela {
 		listen, err := ma.NewMultiaddr(fmt.Sprintf("/ip4/127.0.0.1/tcp/%d/ws", port))
 		require.NoError(t, err)
 
-		onet, err = minows.NewMinows(listen, nil, &db)
+		onet, err = minows.NewMinows(listen, nil, db, port)
 		require.NoError(t, err)
 	}
 	onet.GetAddress()
@@ -207,7 +210,7 @@ func newDelaNode(t require.TestingT, path string, port int, kind string) dela {
 }
 
 // Setup implements dela. It creates the roster, shares the certificate, and
-// create an new chain.
+// create a new chain.
 func (c cosiDelaNode) Setup(kind string, delas ...dela) {
 	// share the certificates
 	if kind == minoGRPC {
