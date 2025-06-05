@@ -118,6 +118,7 @@ func (m messageHandler) passMessages(
 				return
 			}
 			m.logger.Error().Err(err).Msg("message dropped")
+			// <-time.After(1000 * time.Millisecond)
 			continue
 		}
 		select {

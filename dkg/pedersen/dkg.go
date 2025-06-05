@@ -66,6 +66,8 @@ func newInstance(log zerolog.Logger, me mino.Address, privKey kyber.Scalar) *ins
 		startRes: &state{
 			dkgState: initial,
 		},
+
+		decryptCallback: handleDecrypt2,
 	}
 }
 
@@ -89,6 +91,13 @@ type instance struct {
 	privKey   kyber.Scalar
 
 	startRes *state
+
+	decryptCallback func(
+		out mino.Sender,
+		msg serde.Message,
+		from mino.Address,
+
+	) error
 }
 
 // isRunning implements dkgInstance. It tells if an instance of DKG is already
@@ -820,19 +829,23 @@ func (s *instance) receiveDealsResharing(
 	return nil
 }
 
-func (s *instance) handleDecrypt(
-	out mino.Sender, msg types.DecryptRequest,
-	from mino.Address,
+func handleDecrypt2(
+	out mino.Sender, m serde.Message,
+	from mino.Address, decrypt func(K, C kyber.Point) (index int64, share kyber.Point),
 ) error {
 
-	if !s.startRes.Done() {
-		return xerrors.Errorf(initDkgFirst)
+	// if !s.isDecryptAuthorized() {
+	//	return xerrors.Errorf("node %s is not authorized to decrypt", s.me)
+	// }
+
+	msg, ok := m.(types.DecryptRequest)
+	if !ok {
+		return xerrors.Errorf("expected DecryptRequest, got: %T", m)
 	}
 
-	S := suite.Point().Mul(s.privShare.V, msg.K)
+	I, partial := decrypt(msg.K, msg.C)
 
-	partial := suite.Point().Sub(msg.C, S)
-	decryptReply := types.NewDecryptReply(int64(s.privShare.I), partial)
+	decryptReply := types.NewDecryptReply(I, partial)
 
 	errs := out.Send(decryptReply, from)
 	err := <-errs
@@ -841,6 +854,24 @@ func (s *instance) handleDecrypt(
 	}
 
 	return nil
+}
+
+func (s *instance) decrypt(K, C kyber.Point) (int64, kyber.Point) {
+	S := suite.Point().Mul(s.privShare.V, K)
+
+	return int64(s.privShare.I), suite.Point().Sub(C, S)
+}
+
+func (s *instance) handleDecrypt(
+	out mino.Sender, msg serde.Message,
+	from mino.Address,
+) error {
+
+	if !s.startRes.Done() {
+		return xerrors.Errorf(initDkgFirst)
+	}
+
+	return s.decryptCallback(out, msg, from, s.decrypt)
 }
 
 func (s *instance) handleReencryptRequest(
@@ -889,6 +920,9 @@ func (s *instance) handleVerifiableDecrypt(
 	out mino.Sender,
 	msg types.VerifiableDecryptRequest, from mino.Address,
 ) error {
+	if !s.startRes.Done() {
+		return xerrors.Errorf(initDkgFirst)
+	}
 
 	type job struct {
 		index int // index where to put the response
