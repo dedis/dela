@@ -949,7 +949,8 @@ func TestDKGInstance_handleDecrypt_sendFail(t *testing.T) {
 		startRes: &state{
 			dkgState: certified,
 		},
-		privShare: &share.PriShare{V: suite.Scalar()},
+		privShare:       &share.PriShare{V: suite.Scalar()},
+		decryptCallback: handleDecrypt2,
 	}
 
 	req := types.DecryptRequest{K: suite.Point(), C: suite.Point()}

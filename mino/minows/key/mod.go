@@ -24,8 +24,8 @@ func NewStorage(db kv.DB) *Storage {
 
 // LoadOrCreate loads the private key from Storage or
 // creates a new one if none exists.
-func (s *Storage) LoadOrCreate() (crypto.PrivKey, error) {
-	key := []byte("private_key")
+func (s *Storage) LoadOrCreate(index string) (crypto.PrivKey, error) {
+	key := []byte("private_key:" + index)
 	var buffer []byte
 	err := s.db.Update(func(tx kv.WritableTx) error {
 		bucket, err := tx.GetBucketOrCreate(s.bucket)

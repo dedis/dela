@@ -2,12 +2,12 @@ package minows
 
 import (
 	"fmt"
+
 	ma "github.com/multiformats/go-multiaddr"
 	"go.dedis.ch/dela/cli"
 	"go.dedis.ch/dela/cli/node"
 	"go.dedis.ch/dela/core/store/kv"
 	"go.dedis.ch/dela/mino"
-	"go.dedis.ch/dela/mino/minows/key"
 	"golang.org/x/xerrors"
 )
 
@@ -22,6 +22,7 @@ func NewController() node.Initializer {
 
 const flagListen = "listen"
 const flagPublic = "public"
+const flagInstance = "instance"
 
 func (c controller) SetCommands(builder node.Builder) {
 	builder.SetStartFlags(
@@ -38,6 +39,12 @@ func (c controller) SetCommands(builder node.Builder) {
 				"default listen address)",
 			Required: false,
 			Value:    "",
+		},
+		cli.IntFlag{
+			Name:     flagInstance,
+			Usage:    "Set the instance number (default 0)",
+			Required: false,
+			Value:    0,
 		},
 	)
 
@@ -58,11 +65,6 @@ func (c controller) OnStart(flags cli.Flags, inj node.Injector) error {
 	if err != nil {
 		return xerrors.Errorf("could not resolve db: %v", err)
 	}
-	storage := key.NewStorage(db)
-	key, err := storage.LoadOrCreate()
-	if err != nil {
-		return xerrors.Errorf("could not load key: %v", err)
-	}
 
 	var public ma.Multiaddr
 	p := flags.String(flagPublic)
@@ -73,7 +75,9 @@ func (c controller) OnStart(flags cli.Flags, inj node.Injector) error {
 		}
 	}
 
-	m, err := NewMinows(listen, public, key)
+	i := flags.Int(flagInstance)
+
+	m, err := NewMinows(listen, public, db, i)
 	if err != nil {
 		return xerrors.Errorf("could not start mino: %v", err)
 	}
@@ -82,14 +86,14 @@ func (c controller) OnStart(flags cli.Flags, inj node.Injector) error {
 }
 
 func (c controller) OnStop(inj node.Injector) error {
-	var m *minows
+	var m *Minows
 	err := inj.Resolve(&m)
 	if err != nil {
 		return xerrors.Errorf("could not resolve mino: %v", err)
 	}
-	err = m.stop()
+	err = m.Stop()
 	if err != nil {
-		return xerrors.Errorf("could not stop mino: %v", err)
+		return xerrors.Errorf("could not Stop mino: %v", err)
 	}
 	return nil
 }

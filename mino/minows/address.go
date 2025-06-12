@@ -69,7 +69,7 @@ func (a address) String() string {
 }
 
 // ConnectionType implements mino.Address
-// Not used by minows
+// Not used by Minows
 func (a address) ConnectionType() mino.AddressConnectionType {
 	return mino.ACTws
 }
