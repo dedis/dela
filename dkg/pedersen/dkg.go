@@ -96,7 +96,7 @@ type instance struct {
 		out mino.Sender,
 		msg serde.Message,
 		from mino.Address,
-
+		decrypt func(K kyber.Point, C kyber.Point) (index int64, share kyber.Point),
 	) error
 }
 
@@ -866,9 +866,12 @@ func (s *instance) handleDecrypt(
 	out mino.Sender, msg serde.Message,
 	from mino.Address,
 ) error {
-
 	if !s.startRes.Done() {
 		return xerrors.Errorf(initDkgFirst)
+	}
+
+	if s.decryptCallback == nil {
+		return xerrors.Errorf("decrypt callback is not set")
 	}
 
 	return s.decryptCallback(out, msg, from, s.decrypt)
